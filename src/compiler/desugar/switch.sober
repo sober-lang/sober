@@ -36,7 +36,7 @@ func switchExpr(st mut S, sw NodeRef, eb int, ef int, depth int, want TyRef) (Co
     return r, nil
 }
 
-// hasWildcard は選択肢の列に `_` があるか
+// 選択肢の列に `_` があるか
 func hasWildcard(st mut S, alts ListRef) bool {
     for i <- iter.Range(0, lenL(mut st, alts)) {
         a := latN(mut st, alts, i)
@@ -47,17 +47,17 @@ func hasWildcard(st mut S, alts ListRef) bool {
     return false
 }
 
-// HasTopName は package pk のトップレベル名（const・関数・型・union の variant・error ラベル）か（name は裸の名前）
+// package pk のトップレベル名（const・関数・型・union の variant・error ラベル）か（name は裸の名前）
 func HasTopName(st mut S, pk int, name StrRef) bool {
     return lookupConst(mut st, pk, name, 0) >= 0 || fnIn(mut st, pk, name, 0) >= 0 || typeIn(mut st, pk, name, 0) != -1 || variantIn(mut st, pk, name, 0).decl != -1
 }
 
-// isBindingPattern はパターン位置の裸の識別子が束縛か（未知なら束縛）
+// パターン位置の裸の識別子が束縛か（未知なら束縛）
 func isBindingPattern(st mut S, eb int, name StrRef) bool {
     return lookup(mut st, eb, name) < 0 && !strIs(mut st, name, "true") && !strIs(mut st, name, "false") && !HasTopName(mut st, st.curPkg, name)
 }
 
-// multiResults は subject が結果 2 個以上の名前付き関数の呼び出しならその関数（でなければ -1）
+// subject が結果 2 個以上の名前付き関数の呼び出しならその関数（でなければ -1）
 func multiResults(st mut S, subj NodeRef, eb int) int {
     k := kindN(mut st, subj)
     mut callee := NodeRef(-1)
@@ -75,7 +75,7 @@ func multiResults(st mut S, subj NodeRef, eb int) int {
     return fi
 }
 
-// upJoinN は default の腕の型 d と腕の 3 つ組（cond, body, 型）の列から、全腕を最内の region へ上げた型が一致し、どれかが実際に上がるならその型（でなければ -1 — expr.sober の upJoin2 の n 腕版）
+// default の腕の型 d と腕の 3 つ組（cond, body, 型）の列から、全腕を最内の region へ上げた型が一致し、どれかが実際に上がるならその型（でなければ -1 — expr.sober の upJoin2 の n 腕版）
 func upJoinN(st mut S, d TyRef, arms mut []int) TyRef {
     if d == -1 {
         return -1
@@ -94,7 +94,7 @@ func upJoinN(st mut S, d TyRef, arms mut []int) TyRef {
     return if moved { up } else { TyRef(-1) }
 }
 
-// constSwitch は定数パターン / subject 無し / 複数 subject の switch を eq + ite に脱糖する
+// 定数パターン / subject 無し / 複数 subject の switch を eq + ite に脱糖する
 func constSwitch(st mut S, sw NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     subs := lA(nodeOf(mut st, sw))
     at := sw
@@ -150,7 +150,7 @@ func constSwitch(st mut S, sw NodeRef, eb int, ef int, depth int) (CoreRef, erro
     d2 := sb + n
     dflt := nC(nodeOf(mut st, sw))
     dbody := if dflt != -1 { scoped(mut st, lA(nodeOf(mut st, dflt)), eb, ef, d2, false, st.swStmt != 0, st.swWant)? } else { cTriv(mut st) }
-    // 値位置の switch は腕の region を合流させる（ifExpr の F-g と同じ — F-m）: 腕を (cond, body, 腕の型) の 3 つ組で 1 本の slice に積み、
+    // 値位置の switch は腕の region を合流させる（ifExpr と同じ）: 腕を (cond, body, 腕の型) の 3 つ組で 1 本の slice に積み、
     // 全腕を最内の region へ上げた型が一致するなら各腕をその型へ ann してから畳む
     joining := st.swStmt == 0 && dflt != -1
     mut up := if joining { armTy(mut st, lA(nodeOf(mut st, dflt)), eb, ef) } else { TyRef(-1) }
@@ -228,7 +228,7 @@ func constSwitch(st mut S, sw NodeRef, eb int, ef int, depth int) (CoreRef, erro
 // 行はソースの順（default は末尾）。variant ごとに、その variant か全域の行を上から照合する（入れ子が外れたら次の行 —
 // lower の逐次照合と同じ最初に一致した腕）。行の網羅と到達はパターン行列（patmat.sober — lower・analyzer と共有）で判定する
 
-// unionSwitch は型パターンの switch
+// 型パターンの switch
 func unionSwitch(st mut S, sw NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     subs := lA(nodeOf(mut st, sw))
     at := sw
@@ -324,7 +324,7 @@ func unionSwitch(st mut S, sw NodeRef, eb int, ef int, depth int) (CoreRef, erro
     return tree, nil
 }
 
-// MissingVariant は union の宣言 decl の variant のうち、型パターンの節の列 ps に名前で一度も現れない最初のものの節（全部現れていれば -1 —
+// union の宣言 decl の variant のうち、型パターンの節の列 ps に名前で一度も現れない最初のものの節（全部現れていれば -1 —
 // 入れ子の欄の網羅だけ漏れている）。網羅漏れの名指し（diag.NonExhaustive）— check と lower が共有
 func MissingVariant(st mut S, from int, decl NodeRef, ps []int) NodeRef {
     vs := lA(nodeOf(mut st, nC(nodeOf(mut st, decl))))
@@ -345,14 +345,14 @@ func MissingVariant(st mut S, from int, decl NodeRef, ps []int) NodeRef {
     return NodeRef(-1)
 }
 
-// armSet は腕の表の行 r
+// 腕の表の行 r
 func armSet(st mut S, arms int, r int, p NodeRef, blk NodeRef, vi int) {
     hset(mut st, arms + 1 + r * 3, int(p))
     hset(mut st, arms + 2 + r * 3, int(blk))
     hset(mut st, arms + 3 + r * 3, vi)
 }
 
-// armNext は行 k から先で variant vi に照合する最初の行（vi の型パターンか全域 — 無ければ -1）
+// 行 k から先で variant vi に照合する最初の行（vi の型パターンか全域 — 無ければ -1）
 func armNext(st mut S, arms int, vi int, k int) int {
     mut r := k
     while r < hget(mut st, arms) / 3 {
@@ -365,7 +365,7 @@ func armNext(st mut S, arms int, vi int, k int) int {
     return -1
 }
 
-// unionTree は subject の値 subject（式 s0）の case の木（hasBind なら subject を let で束縛してから — 腕の束縛名が指す）
+// subject の値 subject（式 s0）の case の木（hasBind なら subject を let で束縛してから — 腕の束縛名が指す）
 func unionTree(st mut S, subject CoreRef, s0 NodeRef, dpk int, decl NodeRef, arms int, eb int, ef int, depth int, hasBind bool) (CoreRef, error?) {
     if decl == NodeRef(ERRS) {
         // error（R4b K1''）: subject（先頭 + 鎖）を束縛し、先頭で分岐する。鎖は腕の `cause` が読む
@@ -385,7 +385,7 @@ func unionTree(st mut S, subject CoreRef, s0 NodeRef, dpk int, decl NodeRef, arm
     return caseTree(mut st, subject, dpk, decl, 0, arms, eb, ef, depth)
 }
 
-// caseTree は右結合の union の入れ子に沿った case の入れ子（variant の列は decl の start 番目から）
+// 右結合の union の入れ子に沿った case の入れ子（variant の列は decl の start 番目から）
 func caseTree(st mut S, subject CoreRef, pk int, decl NodeRef, start int, arms int, eb int, ef int, depth int) (CoreRef, error?) {
     n := vcount(mut st, decl) - start
     if n == 1 {
@@ -397,12 +397,12 @@ func caseTree(st mut S, subject CoreRef, pk int, decl NodeRef, start int, arms i
     return c3(mut st, CCase, subject, l, r), nil
 }
 
-// caseArm は case の腕（variant ai — ペイロード（フィールドの pair 鎖）がレベル depth、本体は depth + 1 から）
+// case の腕（variant ai — ペイロード（フィールドの pair 鎖）がレベル depth、本体は depth + 1 から）
 func caseArm(st mut S, arms int, ai int, union_pkg int, v NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     return armGen(mut st, ArmCont{arms: arms, vi: ai, k: 0, pk0: union_pkg, v: v, eb: eb, pl: depth}, ef, depth + 1)
 }
 
-// ArmCont は variant の腕の照合の続き: 腕の表 arms の行 k から、variant vi（節 v・宣言側 package pk0）のペイロード（レベル pl）を照合する（環境 eb）
+// variant の腕の照合の続き: 腕の表 arms の行 k から、variant vi（節 v・宣言側 package pk0）のペイロード（レベル pl）を照合する（環境 eb）
 type ArmCont struct {
     arms int
     vi int
@@ -413,7 +413,7 @@ type ArmCont struct {
     pl int
 }
 
-// armGen は続き c を今の深さ d で下ろす: 照合する行が尽きたら到達しない項（union は網羅を行列で確かめ済み・error は analyzer の判定 —
+// 続き c を今の深さ d で下ろす: 照合する行が尽きたら到達しない項（union は網羅を行列で確かめ済み・error は analyzer の判定 —
 // 型は switch の結果型、分からなければ return の結果型 → 文の switch の unit。違えば Lean の検査が型の不一致で拒否する — 黙らない）
 func armGen(st mut S, c ArmCont, ef int, d0 int) (CoreRef, error?) {
     r := armNext(mut st, c.arms, c.vi, c.k)
@@ -490,7 +490,7 @@ func armGen(st mut S, c ArmCont, ef int, d0 int) (CoreRef, error?) {
     return body, nil
 }
 
-// causeValue は error 値（先頭 + 鎖 — レベル lv）の cause（今の深さ d の式）: 鎖が空なら nil、でなければ (鎖の末尾, 鎖の残り)
+// error 値（先頭 + 鎖 — レベル lv）の cause（今の深さ d の式）: 鎖が空なら nil、でなければ (鎖の末尾, 鎖の残り)
 func causeValue(st mut S, lv int, d int) CoreRef {
     et := st.errTy
     chain := c1(mut st, CSnd, cVar(mut st, d - 1 - lv))
@@ -508,7 +508,7 @@ func causeValue(st mut S, lv int, d int) CoreRef {
 // （cause の `cause: e A{…}` は照合の後 — e は nil でない内側の error）。
 // 内側の照合が外れたら、同じ variant の次の行（ArmCont — 尽きたら到達しない項）: 上から順の照合と同値
 
-// PatStep は平たくした手: k = 0 は欄の束縛、k = 1 は欄の値の内側の union での照合（照合の本体のペイロードは枠 slot）、
+// 平たくした手: k = 0 は欄の束縛、k = 1 は欄の値の内側の union での照合（照合の本体のペイロードは枠 slot）、
 // k = 2 は error（先頭 + 鎖 — 枠 es）の cause の束縛、k = 3 は cause の照合（nil でない内側の error が枠 eslot・そのラベルのペイロードが枠 slot）、
 // k = 4 は名前を枠 slot のレベルにそのまま付ける束縛（`cause: e A{…}` の e — 型は error）
 type PatStep struct {
@@ -527,12 +527,12 @@ type PatStep struct {
     at NodeRef  // 欄のパターンの節（拒否の位置）
 }
 
-// pstep は手 i の記録（非ジェネリックの包み — F-10）
+// 手 i の記録（非ジェネリックの包み）
 func pstep(st mut S, i int) PatStep {
     return table.Get(mut st.psteps, i)
 }
 
-// hasNestedPat は型パターン tp の欄に型パターンがあるか
+// 型パターン tp の欄に型パターンがあるか
 func hasNestedPat(st mut S, tp NodeRef) bool {
     fps := lC(nodeOf(mut st, tp))
     for i <- iter.Range(0, lenL(mut st, fps)) {
@@ -544,7 +544,7 @@ func hasNestedPat(st mut S, tp NodeRef) bool {
     return false
 }
 
-// nestedArm は入れ子の型パターンの腕（行 c.k — ペイロードはレベル c.pl・本体は d0 から）
+// 入れ子の型パターンの腕（行 c.k — ペイロードはレベル c.pl・本体は d0 から）
 func nestedArm(st mut S, c ArmCont, tp NodeRef, blk NodeRef, pk int, ef int, d0 int) (CoreRef, error?) {
     eb2 := if nodeOf(mut st, tp).a >= 0 {
         bind(mut st, c.eb, sA(nodeOf(mut st, tp)), st.swSubj, false, st.swSubjDecl, st.swSubjTy, -1, 0, -1, false, st.swSubjSty)
@@ -564,7 +564,7 @@ func nestedArm(st mut S, c ArmCont, tp NodeRef, blk NodeRef, pk int, ef int, d0 
     return patGen(mut st, lo, table.Len(mut st.psteps), eb2, ef, d0, blk, c)
 }
 
-// patFlat は型パターン tp の欄を前順に平たくして st.psteps に積む（src = ペイロードの枠・es = cause を読む error 値の枠（-1 = ラベルでない）・
+// 型パターン tp の欄を前順に平たくして st.psteps に積む（src = ペイロードの枠・es = cause を読む error 値の枠（-1 = ラベルでない）・
 // vfs = variant の欄・pk = 宣言側 package）
 func patFlat(st mut S, tp NodeRef, src int, es int, vfs ListRef, pk int) error? {
     nf := lenL(mut st, vfs)
@@ -637,7 +637,7 @@ func patFlat(st mut S, tp NodeRef, src int, es int, vfs ListRef, pk int) error? 
     return nil
 }
 
-// patGen は手 [i, hi) を今の深さ d で下ろす。尽きたら腕の本体（外れの行き先は続き c — 同じ variant の次の行）
+// 手 [i, hi) を今の深さ d で下ろす。尽きたら腕の本体（外れの行き先は続き c — 同じ variant の次の行）
 func patGen(st mut S, i int, hi int, eb2 int, ef int, d int, blk NodeRef, c ArmCont) (CoreRef, error?) {
     if i == hi {
         return scoped(mut st, lA(nodeOf(mut st, blk)), eb2, ef, d, false, st.swStmt != 0, st.swWant)
@@ -679,7 +679,7 @@ func patGen(st mut S, i int, hi int, eb2 int, ef int, d int, blk NodeRef, c ArmC
     return cLet(mut st, val, body), nil
 }
 
-// patTree は手 i（照合）の case の木（caseTree と同じ右結合の入れ子 — variant の列は decl の start 番目から）
+// 手 i（照合）の case の木（caseTree と同じ右結合の入れ子 — variant の列は decl の start 番目から）
 func patTree(st mut S, subject CoreRef, i int, hi int, decl NodeRef, start int, eb2 int, ef int, d int, blk NodeRef, c ArmCont) (CoreRef, error?) {
     n := vcount(mut st, decl) - start
     if n == 1 {
@@ -691,7 +691,7 @@ func patTree(st mut S, subject CoreRef, i int, hi int, decl NodeRef, start int, 
     return c3(mut st, CCase, subject, l, r), nil
 }
 
-// patArm は照合の腕（ペイロードはレベル d）: 手 i の variant なら残りの手へ、でなければ続き（同じ variant の次の行）
+// 照合の腕（ペイロードはレベル d）: 手 i の variant なら残りの手へ、でなければ続き（同じ variant の次の行）
 func patArm(st mut S, i int, hi int, vi int, eb2 int, ef int, d int, blk NodeRef, c ArmCont) (CoreRef, error?) {
     s := pstep(mut st, i)
     if vi == s.vi {

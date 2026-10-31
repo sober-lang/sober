@@ -1,6 +1,6 @@
 package main
 
-// 名前付き関数型の @errors（language.md 13 節・12 節の面「高階」— effect の波 段 1）: F の後置 @errors は F の値の失敗の上界の契約。
+// 名前付き関数型の @errors（language.md 13 節・12 節の面「高階」）: F の後置 @errors は F の値の失敗の上界の契約。
 // F を通した呼び出し `g(3)?` の導出は宣言の集合（Run の @errors と main の switch がそれで閉じる）・F の値になるラムダは宣言と照合される
 // （漏れはそのラムダの位置で拒否 — 負例 fntype_errors_neg_leak）
 

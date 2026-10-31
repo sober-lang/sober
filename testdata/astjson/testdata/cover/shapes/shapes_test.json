@@ -1,0 +1,434 @@
+{
+  "package": "shapes",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "must",
+      "type_params": [],
+      "params": [
+        {
+          "name": "ok",
+          "type": {
+            "k": "name",
+            "name": "bool"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "unary",
+                "op": "!",
+                "operand": {
+                  "k": "ident",
+                  "name": "ok",
+                  "tok": 12
+                },
+                "tok": 11
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "bind",
+                    "names": [
+                      "none"
+                    ],
+                    "mutable": false,
+                    "values": [
+                      {
+                        "k": "slicelit",
+                        "elem": {
+                          "k": "name",
+                          "name": "int"
+                        },
+                        "elems": [],
+                        "mut": false,
+                        "tok": 16
+                      }
+                    ],
+                    "tok": 14
+                  },
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 22
+                      },
+                      "args": [
+                        {
+                          "k": "index",
+                          "base": {
+                            "k": "ident",
+                            "name": "none",
+                            "tok": 24
+                          },
+                          "idx": {
+                            "k": "int",
+                            "value": 0,
+                            "tok": 26
+                          },
+                          "tok": 25
+                        }
+                      ],
+                      "tok": 23
+                    }
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 10
+            }
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 34
+      },
+      "sig_end": 9
+    },
+    {
+      "name": "TestSquare",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "must",
+                "tok": 39
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Area",
+                      "tok": 41
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 43
+                      },
+                      {
+                        "k": "int",
+                        "value": 3,
+                        "tok": 45
+                      },
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 47
+                      }
+                    ],
+                    "tok": 42
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 9,
+                    "tok": 50
+                  },
+                  "tok": 49
+                }
+              ],
+              "tok": 40
+            }
+          }
+        ]
+      },
+      "tok": 35,
+      "bodiless": false,
+      "span": {
+        "start": 34,
+        "end": 55
+      },
+      "sig_end": 38
+    },
+    {
+      "name": "TestRect",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "must",
+                "tok": 60
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Area",
+                      "tok": 62
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 64
+                      },
+                      {
+                        "k": "int",
+                        "value": 2,
+                        "tok": 66
+                      },
+                      {
+                        "k": "int",
+                        "value": 3,
+                        "tok": 68
+                      }
+                    ],
+                    "tok": 63
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 6,
+                    "tok": 71
+                  },
+                  "tok": 70
+                }
+              ],
+              "tok": 61
+            }
+          }
+        ]
+      },
+      "tok": 56,
+      "bodiless": false,
+      "span": {
+        "start": 55,
+        "end": 76
+      },
+      "sig_end": 59
+    },
+    {
+      "name": "TestClampLow",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "must",
+                "tok": 81
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Clamp",
+                      "tok": 83
+                    },
+                    "args": [
+                      {
+                        "k": "unary",
+                        "op": "-",
+                        "operand": {
+                          "k": "int",
+                          "value": 1,
+                          "tok": 86
+                        },
+                        "tok": 85
+                      },
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 88
+                      },
+                      {
+                        "k": "int",
+                        "value": 10,
+                        "tok": 90
+                      }
+                    ],
+                    "tok": 84
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 93
+                  },
+                  "tok": 92
+                }
+              ],
+              "tok": 82
+            }
+          }
+        ]
+      },
+      "tok": 77,
+      "bodiless": false,
+      "span": {
+        "start": 76,
+        "end": 98
+      },
+      "sig_end": 80
+    },
+    {
+      "name": "TestDeep",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "must",
+                "tok": 103
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": ">",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Depth",
+                      "tok": 105
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 100000,
+                        "tok": 107
+                      }
+                    ],
+                    "tok": 106
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 110
+                  },
+                  "tok": 109
+                }
+              ],
+              "tok": 104
+            }
+          }
+        ]
+      },
+      "tok": 99,
+      "bodiless": false,
+      "span": {
+        "start": 98,
+        "end": 115
+      },
+      "sig_end": 102
+    },
+    {
+      "name": "TestBroken",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "must",
+                "tok": 120
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Clamp",
+                      "tok": 122
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 5,
+                        "tok": 124
+                      },
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 126
+                      },
+                      {
+                        "k": "int",
+                        "value": 10,
+                        "tok": 128
+                      }
+                    ],
+                    "tok": 123
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 6,
+                    "tok": 131
+                  },
+                  "tok": 130
+                }
+              ],
+              "tok": 121
+            }
+          }
+        ]
+      },
+      "tok": 116,
+      "bodiless": false,
+      "span": {
+        "start": 115,
+        "end": 136
+      },
+      "sig_end": 119
+    }
+  ],
+  "consts": []
+}

@@ -1,8 +1,8 @@
 package main
 
-// TLS 1.3 のサーバ（std/tls — language.md 28 節の tls・TLS 便 R4）: tls.Serve が handshake を済ませた接続だけを k に渡し、k は tls.Recv / tls.Send で
+// TLS 1.3 のサーバ（std/tls — language.md 28 節の tls）: tls.Serve が handshake を済ませた接続だけを k に渡し、k は tls.Recv / tls.Send で
 // net.Conn と同じ顔に読み書きする（ここでは echo）。既定の走りは設定の網（Parse の成功・ALPN の替え・壊れた PEM・鍵でない塊 — switch はラベルを網羅）。
-// `tls_serve live <port>` は 127.0.0.1:<port> で待ち受ける（`live-once` は break の後の Recv を見る once）（相互運用の計器 .pair/tools/tls/serve-live.sh — openssl s_client で HRR・ChaCha20・KeyUpdate の受け）
+// `tls_serve live <port>` は 127.0.0.1:<port> で待ち受ける（`live-once` は break の後の Recv を見る once）（openssl s_client で HRR・ChaCha20・KeyUpdate の受けを確かめる口）
 
 import "std/crypto/pem"
 import "std/crypto/rsa"
@@ -24,7 +24,7 @@ func echo(c tls.Conn) error? {
     return nil
 }
 
-// once は 1 回だけ echo して break し、2 度目の tls.Recv の返しを送る（break で抜けた後の読みは終わり — Closed。net.Conn と顔が違う唯一の点）
+// 1 回だけ echo して break し、2 度目の tls.Recv の返しを送る（break で抜けた後の読みは終わり — Closed。net.Conn と顔が違う唯一の点）
 func once(c tls.Conn) error? {
     for b <- tls.Recv(c)? {
         tls.Send(c, b)?

@@ -19,7 +19,7 @@ const IC_DEPTH = 3    // 展開入口の深度（return が戻す）
 const IC_END = 4      // 末尾のブロック
 const ICSZ = 5
 
-// Closure はラムダ引数（st.closures の要素 — 添字で指す）
+// ラムダ引数（st.closures の要素 — 添字で指す）
 type Closure struct {
     lambda desugar.NodeRef
     ft int        // FnType [params, results]
@@ -29,17 +29,17 @@ type Closure struct {
     inl int       // 定義時に展開中だった inline 関数の名前の列
     env int       // 定義時の型環境
     dest int      // 定義時の宛先の深度（st.destDepth — 本体の宛先構築の印〔e == 1 = 定義した関数の return へ流れ着く値〕はここに作る。
-                  // 展開先の関数〔inline 展開の中で呼ばれる〕の宛先ではない — report-689）
+                  // 展開先の関数〔inline 展開の中で呼ばれる〕の宛先ではない）
 }
 
-// cloAt は閉包 c の記録（非ジェネリックの包み — F-10）
+// 閉包 c の記録（非ジェネリックの包み — F-10）
 func cloAt(st mut St, c int) Closure {
     return table.Get(mut st.closures, c)
 }
 
 const LClosure = 2
 
-// freezeChain は今の鎖を、開いた上限を現在のスコープ数で閉じて複製する
+// 今の鎖を、開いた上限を現在のスコープ数で閉じて複製する
 func freezeChain(st mut St) int {
     ch := st.chain
     ns := st.nscope
@@ -55,7 +55,7 @@ func freezeChain(st mut St) int {
     return out
 }
 
-// enter は展開の文脈（鎖 = views + 自分の区間・package・return の行き先・ループの床・inline 列（-1 は据え置き））に差し替え、戻し先を返す
+// 展開の文脈（鎖 = views + 自分の区間・package・return の行き先・ループの床・inline 列（-1 は据え置き））に差し替え、戻し先を返す
 func enter(st mut St, views int, pk int, env int, ctx int, inl int) int {
     saved := rec4(mut st, st.chain, st.curPkg, st.inlining, st.tenv)
     st.tenv = env
@@ -86,7 +86,7 @@ func leave(st mut St, saved int) {
 }
 
 // declListHas / declListAdd は展開中の関数の宣言の節の列（[n, 節…]）。名前でなく宣言で引く — 別の package の同名の関数を入れ子に
-// 展開するのは再帰でない（lower.llen → desugar.Llen → desugar.llen を名前で引くと再帰と取り違えて拒否していた — S-4 M1）
+// 展開するのは再帰でない（lower.llen → desugar.Llen → desugar.llen を名前で引くと再帰と取り違えて拒否していた）
 func declListHas(st mut St, l int, decl int) bool {
     mut i := 0
     while i < desugar.HeapGet(mut st.d, l) {
@@ -108,7 +108,7 @@ func declListAdd(st mut St, l int, decl int) int {
     return out
 }
 
-// mutArgCell は mut 引数の実引数: 呼び手の mut ローカル `mut x` のスロットそのもの（名前の項）。欄の経路 `mut x.f.g`（F-17 案 2α で解禁）は
+// mut 引数の実引数: 呼び手の mut ローカル `mut x` のスロットそのもの（名前の項）。欄の経路 `mut x.f.g`（F-17 案 2α で解禁）は
 // 欄のアドレスを持つ合成の項 [0, 0, LCell, 欄の型, 欄のアドレス]（代入の行き先と同じ target で取る）
 func mutArgCell(st mut St, a desugar.NodeRef, at desugar.NodeRef) (int, error?) {
     if kindN(mut st, a) != ast.EMutArg {
@@ -141,14 +141,14 @@ func mutArgCell(st mut St, a desugar.NodeRef, at desugar.NodeRef) (int, error?) 
     return l, nil
 }
 
-// mutArgLevel は mut 実引数（`mut x` / `mut x.f.g`）の根の束縛の宣言の段（M5 — 無ければ今の段）
+// mut 実引数（`mut x` / `mut x.f.g`）の根の束縛の宣言の段（無ければ今の段）
 func mutArgLevel(st mut St, a desugar.NodeRef) int {
     parts := desugar.DotParts(mut st.d, nodeOf(mut st, a).a)
     l := lookup(mut st, desugar.StrRef(latI(mut st, parts, 0)))
     return if l >= 0 { desugar.HeapGet(mut st.d, l + 5) } else { st.rnest }
 }
 
-// closureArg は関数型の引数位置に書ける形: ラムダ（閉包にする）・閉包に束縛された名前（転送。型は一致が要る）。for 式は未対応
+// 関数型の引数位置に書ける形: ラムダ（閉包にする）・閉包に束縛された名前（転送。型は一致が要る）。for 式は未対応
 func closureArg(st mut St, a desugar.NodeRef, ft int, at desugar.NodeRef) (int, error?) {
     k := kindN(mut st, a)
     if k == ast.ELambda {
@@ -192,7 +192,7 @@ func makeClosure(st mut St, lam desugar.NodeRef, ft int) (int, error?) {
     return c, nil
 }
 
-// bindArg は展開の引数 1 つを束縛の Arg（種類, 型, 値）にする（mut は呼び手のセルの別名、関数型は閉包、他は評価してコピー）。到達しなければ種類 -1
+// 展開の引数 1 つを束縛の Arg（種類, 型, 値）にする（mut は呼び手のセルの別名、関数型は閉包、他は評価してコピー）。到達しなければ種類 -1
 func bindArg(st mut St, a desugar.NodeRef, pw int, mutable bool, at desugar.NodeRef) (Arg, error?) {
     if mutable {
         l := mutArgCell(mut st, a, at)?
@@ -219,7 +219,7 @@ func bindArg(st mut St, a desugar.NodeRef, pw int, mutable bool, at desugar.Node
     return Arg{k: LVal, t: x.t, v: copyVal(mut st, x.t, x.v)}, nil
 }
 
-// inlineCall は関数型か mut の仮引数を持つ関数（宣言 decl・package pk・署名）の呼び出し: 引数を呼び手の文脈で束縛し、callee の本体を新しい可視範囲で展開する
+// 関数型か mut の仮引数を持つ関数（宣言 decl・package pk・署名）の呼び出し: 引数を呼び手の文脈で束縛し、callee の本体を新しい可視範囲で展開する
 // body_env: ジェネリック inline の型環境（-2 なら呼び手の型環境のまま）
 func inlineCall(st mut St, decl desugar.NodeRef, pk int, params desugar.ListRef, results desugar.ListRef, args desugar.ListRef, at desugar.NodeRef, body_env int) (int, error?) {
     if declListHas(mut st, st.inlining, int(decl)) {
@@ -231,14 +231,14 @@ func inlineCall(st mut St, decl desugar.NodeRef, pk int, params desugar.ListRef,
     }
     ps := lC(nodeOf(mut st, decl))
     bs := listN(mut st, np * 3)
-    // mut 実引数の束縛の段（M5 — 展開の mut 仮引数は実引数の根の束縛の格納点の floor を引き継ぐ。展開の環境に入る前に引く）
+    // mut 実引数の束縛の段（展開の mut 仮引数は実引数の根の束縛の格納点の floor を引き継ぐ。展開の環境に入る前に引く）
     lvs := listN(mut st, np)
     for i <- iter.Range(0, np) {
         desugar.HeapSet(mut st.d, lvs + 1 + i, if ast.ParamIsMut(nodeOf(mut st, latN(mut st, ps, i))) { mutArgLevel(mut st, latN(mut st, args, i)) } else { 0 })
     }
     for i <- iter.Range(0, np) {
         if desugar.ParHandlesParam(mut st.d, pk, nB(nodeOf(mut st, latN(mut st, ps, i)))) {
-            // std/task の handle の slice の仮引数（Gather — 段 6 P3b-5）: 実引数（scope の本体の mut slice）をその型のまま束ねる（読むだけ）
+            // std/task の handle の slice の仮引数（Gather）: 実引数（scope の本体の mut slice）をその型のまま束ねる（読むだけ）
             x := expr(mut st, latN(mut st, args, i))?
             if isTag(mut st, x.t, TNever) {
                 return -1, nil
@@ -270,10 +270,10 @@ func inlineCall(st mut St, decl desugar.NodeRef, pk int, params desugar.ListRef,
     saved := enter(mut st, list0(mut st), pk, if body_env == -2 { st.tenv } else { body_env }, ctx, -1)
     st.inlining = declListAdd(mut st, st.inlining, int(decl))
     // 本体の宛先構築の印（e == 1 = callee の return へ流れ着く値）の行き先は展開入口の深度（inlineExit が結果を写す先）— 展開先の関数の宛先
-    // （st.destDepth のまま）にすると、ループの中の展開の結果が反復ごとに外の region へ積まれる（std/http.ServeConn の serveBuf — report-689）。
+    // （st.destDepth のまま）にすると、ループの中の展開の結果が反復ごとに外の region へ積まれる（std/http.ServeConn の serveBuf）。
     // ただし呼び出し点そのものに呼び手の印がある（ループ・ラムダの外で呼び手の return へ流れ着く — loader/dest.sober）なら呼び手の宛先のまま:
     // 結果は呼び手の宛先へ行くので、展開入口に作って inlineExit と呼び手の return で写す二重の写しが消える（extsort の lineOrder の
-    // `return sort.OrderUnstable(…)` — report-693）。呼び手が展開の本体なら st.destDepth は外の展開の入口の深度で、入れ子でも反復をまたがない。
+    // `return sort.OrderUnstable(…)`）。呼び手が展開の本体なら st.destDepth は外の展開の入口の深度で、入れ子でも反復をまたがない。
     // forceDest（外の束縛への代入の右辺）は含めない — ループの中の代入で本体の伸長の残骸が外の region に積もる
     savedDest := st.destDepth
     if !(int(at) >= 0 && destMark(mut st, at)) {
@@ -321,7 +321,7 @@ func inlineCall(st mut St, decl desugar.NodeRef, pk int, params desugar.ListRef,
     return out, nil
 }
 
-// inlineExit は inline 展開中の return / `?` のエラー側の後半: 展開範囲の defer → 結果の境界コピー（呼び出し点の深度へ）→ 展開入口の深度 → 末尾へ（値は書き済み）
+// inline 展開中の return / `?` のエラー側の後半: 展開範囲の defer → 結果の境界コピー（呼び出し点の深度へ）→ 展開入口の深度 → 末尾へ（値は書き済み）
 func inlineExit(st mut St, ctx int, at desugar.NodeRef) error? {
     runDefers(mut st, desugar.HeapGet(mut st.d, ctx + IC_BASE))?
     if cur(mut st) == -1 {
@@ -339,7 +339,7 @@ func inlineExit(st mut St, ctx int, at desugar.NodeRef) error? {
     return nil
 }
 
-// lambdaCall はラムダの呼び出し: 引数を評価して束縛し、定義時の可視範囲 + 引数スコープで本体を展開する
+// ラムダの呼び出し: 引数を評価して束縛し、定義時の可視範囲 + 引数スコープで本体を展開する
 func lambdaCall(st mut St, c int, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
     cr := cloAt(mut st, c)
     ft := cr.ft
@@ -367,7 +367,7 @@ func lambdaCall(st mut St, c int, args desugar.ListRef, at desugar.NodeRef) (int
     saved := enter(mut st, cr.chain, cr.pkg, cr.env, cr.ret, cr.inl)
     savedDest := st.destDepth
     st.destDepth = cr.dest
-    // 展開されるラムダの本体ではラムダの印（2）を使わない（展開の宛先は定義した関数の宛先 — ループの中の展開の結果が外の region へ積もる・report-1006 a3）
+    // 展開されるラムダの本体ではラムダの印（2）を使わない（展開の宛先は定義した関数の宛先 — ループの中の展開の結果が外の region へ積もる）
     savedLam := st.lamDest
     st.lamDest = false
     pushScope(mut st)
@@ -479,14 +479,14 @@ func lambdaCall(st mut St, c int, args desugar.ListRef, at desugar.NodeRef) (int
 
 // ── 関数値 ──
 
-// fnValue は名前付き関数の参照 = 関数値（コードアドレス 1 語）
+// 名前付き関数の参照 = 関数値（コードアドレス 1 語）
 func fnValue(st mut St, fi int) (int, int) {
     ft := rec4(mut st, int(infoAt(mut st, fi).params), int(infoAt(mut st, fi).results), 0, 0)
     t := rec4(mut st, TFnv, ft, 0, 0)
     return t, funcaddr(mut st, infoAt(mut st, fi).ir)
 }
 
-// liftLambda は関数値が期待される位置（struct の関数型フィールド）のラムダ → 匿名関数 lambda#N（作業列で下ろす）のコードアドレス。
+// 関数値が期待される位置（struct の関数型フィールド）のラムダ → 匿名関数 lambda#N（作業列で下ろす）のコードアドレス。
 // 本体の値は合成した return。外側のローカルは見えない（別の関数として下ろす）
 func liftLambda(st mut St, lam desugar.NodeRef, ft int, at desugar.NodeRef) (Val, error?) {
     // 辞書 const のラムダは単相・文脈固定なので、参照点が何箇所でも匿名関数は 1 本
@@ -494,7 +494,7 @@ func liftLambda(st mut St, lam desugar.NodeRef, ft int, at desugar.NodeRef) (Val
         mut x := st.dlifts
         while x >= 0 {
             if hgetN(mut st, x + 1) == lam {
-                lsEv(mut st, EV_LAM, desugar.HeapGet(mut st.d, x + 2), int(lam), 0, 0)
+                lsPush(mut st, EV_LAM, desugar.HeapGet(mut st.d, x + 2), int(lam), 0, 0)
                 return Val{t: rec4(mut st, TFnv, ft, 0, 0), v: funcaddr(mut st, FnRef(desugar.HeapGet(mut st.d, x + 2)))}, nil
             }
             x = desugar.HeapGet(mut st.d, x)
@@ -508,7 +508,7 @@ func liftLambda(st mut St, lam desugar.NodeRef, ft int, at desugar.NodeRef) (Val
     return Val{t: rec4(mut st, TFnv, ft, 0, 0), v: funcaddr(mut st, infoAt(mut st, fi).ir)}, nil
 }
 
-// liftLambdaFn はラムダ lam（関数型 ft — 仮引数の数と注釈の型は検査済み）を匿名関数 lambda#N に持ち上げる（作業列で下ろす）。
+// ラムダ lam（関数型 ft — 仮引数の数と注釈の型は検査済み）を匿名関数 lambda#N に持ち上げる（作業列で下ろす）。
 // env: 閉包の持ち上げ（隠れ第 1 引数 $env = env の番地 — closure.sober の closBind が入口で捕捉を束ねる）
 func liftLambdaFn(st mut St, lam desugar.NodeRef, ft int, env bool, at desugar.NodeRef) (int, error?) {
     ps := lA(nodeOf(mut st, lam))
@@ -554,8 +554,8 @@ func liftLambdaFn(st mut St, lam desugar.NodeRef, ft int, env bool, at desugar.N
         s := if !hasR { node(mut st, ast.SExpr, at, body, 0, 0, 0) } else { node(mut st, ast.SRet, at, list1(mut st, body), 0, 0, 0) }
         blk = node(mut st, ast.KBlock, at, list1(mut st, s), 0, 0, 0)
     }
-    // 関数値の呼び先の約束（report-1006 a2）: 結果が slice を持つ持ち上げたラムダは入口で宛先の深度のレジスタを読んで 0 に戻す（本体の KBlock の印 —
-    // 関数値の呼び出しは呼び手がレジスタを書く。読まない呼び先に残った値を、その中のループの印の無い呼び出しが拾う — report-692）
+    // 関数値の呼び先の約束: 結果が slice を持つ持ち上げたラムダは入口で宛先の深度のレジスタを読んで 0 に戻す（本体の KBlock の印 —
+    // 関数値の呼び出しは呼び手がレジスタを書く。読まない呼び先に残った値を、その中のループの印の無い呼び出しが拾う）
     if st.transparent && resultsHoldSlice(mut st, hgetL(mut st, ft + 1)) {
         b0 := nodeOf(mut st, desugar.NodeRef(blk))
         blk = desugar.SynNode(mut st.d, ast.Node{kind: b0.kind, tok: b0.tok, a: b0.a, b: b0.b, c: b0.c, d: b0.d, e: 1, f: b0.f}, at)
@@ -575,29 +575,29 @@ func liftLambdaFn(st mut St, lam desugar.NodeRef, ft int, env bool, at desugar.N
 
 // ── for 式（src/stage1/forexpand.zig の F1 脱糖 — 消費点での融合展開）──
 
-// lowerFor は for 式 → Iter[T] 型のラムダ `(yield) => { GEN(src, (x) => { if g { yield(e) } }) }`（組み立ては desugar.ForLower と共有）
+// for 式 → Iter[T] 型のラムダ `(yield) => { GEN(src, (x) => { if g { yield(e) } }) }`（組み立ては desugar.ForLower と共有）
 func lowerFor(st mut St, fe desugar.NodeRef) (desugar.NodeRef, error?) {
     kind := forKind(mut st, fe)?
     return desugar.ForLower(mut st.d, fe, kind, st.curPkg), nil
 }
 
-// isForStmt は文形の for か（desugar.IsForStmt）
+// 文形の for か（desugar.IsForStmt）
 func isForStmt(st mut St, e desugar.NodeRef) bool {
     return desugar.IsForStmt(mut st.d, e)
 }
 
-// callGenFn は呼び出し形の生成元（`x <- iter.Range(0, n)`）の関数表の添字（desugar.CallGenFn と同じ判定。当たらなければ -1）
+// 呼び出し形の生成元（`x <- iter.Range(0, n)`）の関数表の添字（desugar.CallGenFn と同じ判定。当たらなければ -1）
 func callGenFn(st mut St, src desugar.NodeRef) int {
     return desugar.CallGenFn(mut st.d, desugar.GenCallOf(mut st.d, src, st.curPkg), st.curPkg)
 }
 
-// forGen は for の生成元の呼び出し `GEN(src, (x) => { if g { 本体 } })`（文形 for はこれを文として下ろす。組み立ては desugar.ForGen と共有）
+// for の生成元の呼び出し `GEN(src, (x) => { if g { 本体 } })`（文形 for はこれを文として下ろす。組み立ては desugar.ForGen と共有）
 func forGen(st mut St, fe desugar.NodeRef) (desugar.NodeRef, error?) {
     kind := forKind(mut st, fe)?
     return desugar.ForGen(mut st.d, fe, kind, st.curPkg), nil
 }
 
-// closureGenCall は生成元が閉包の名前の呼び出し形か（desugar.closureGenCall と同じ判定 — 束縛の型〔展開される関数の匿名の関数型〕の
+// 生成元が閉包の名前の呼び出し形か（desugar.closureGenCall と同じ判定 — 束縛の型〔展開される関数の匿名の関数型〕の
 // 仮引数が実引数より 1 つ多く、最後が関数型。印つき `recv(a…)?` は `?` の内側を見る）
 func closureGenCall(st mut St, src desugar.NodeRef) bool {
     c := if kindN(mut st, src) == ast.ETry { nA(nodeOf(mut st, src)) } else { src }
@@ -613,7 +613,7 @@ func closureGenCall(st mut St, src desugar.NodeRef) bool {
     return n == lenL(mut st, lB(nodeOf(mut st, c))) + 1 && isTag(mut st, latI(mut st, fps, n - 1), TFunc)
 }
 
-// forKind は for の生成元の種類（desugar.FSlice 等）: 閉包の名前（束縛表）→ 呼び出し形 → 型（map か slice — 表層型検査器の表）
+// for の生成元の種類（desugar.FSlice 等）: 閉包の名前（束縛表）→ 呼び出し形 → 型（map か slice — 表層型検査器の表）
 func forKind(st mut St, fe desugar.NodeRef) (int, error?) {
     at := fe
     if desugar.ForOut(mut st.d, fe) {

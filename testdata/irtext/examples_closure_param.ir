@@ -1698,6 +1698,36 @@ b0:
   ret %2
 }
 
+func @main.apply(%0 i64, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64) i64 {
+  slot s0 [5]
+b0:
+  %6 = slotaddr s0
+  store %6[0], %0
+  store %6[1], %1
+  store %6[2], %2
+  store %6[3], %3
+  store %6[4], %4
+  %7 = region.depth
+  region.enter
+  %8 = load.i64 %6[0]
+  %9 = const 1
+  %10 = gep.word %6, %9
+  %11 = ptoi %10
+  %12 = call.indirect.i64 %8(%11, %5)
+  region.setdepth %7
+  ret %12
+}
+
+func @main.dbl(%0 i64) i64 {
+b0:
+  %1 = region.depth
+  region.enter
+  %2 = const 2
+  %3 = mul %0, %2
+  region.setdepth %1
+  ret %3
+}
+
 func @main.main() {
   slot s0 [3]
   slot s1 [3]
@@ -1815,6 +1845,64 @@ b0:
   call @rt.print_char(%64)
   region.setdepth %0
   ret
+}
+
+func @lambda#0(%0 i64, %1 i64) i64 {
+b0:
+  %2 = itop %0
+  %3 = region.depth
+  region.enter
+  %4 = const 100
+  %5 = add %1, %4
+  region.setdepth %3
+  ret %5
+}
+
+func @lambda#1(%0 i64, %1 i64) i64 {
+  slot s0 [3]
+b0:
+  %2 = itop %0
+  %3 = slotaddr s0
+  %4 = const 1
+  %5 = gep.word %2, %4
+  %6 = load.i64 %5[0]
+  store %3[0], %6
+  %7 = load.i64 %5[1]
+  store %3[1], %7
+  %8 = load.i64 %5[2]
+  store %3[2], %8
+  %9 = region.depth
+  region.enter
+  %10 = load.i64 %3[1]
+  %11 = add %1, %10
+  region.setdepth %9
+  ret %11
+}
+
+func @lambda#2(%0 i64, %1 i64) i64 {
+b0:
+  %2 = itop %0
+  %3 = region.depth
+  region.enter
+  %4 = call @main.dbl(%1)
+  region.setdepth %3
+  ret %4
+}
+
+func @rt.sigint() {
+b0:
+  %0 = const 231
+  %1 = const 130
+  %2 = syscall(%0, %1)
+  exit 130
+}
+
+func @rt.sigterm() {
+b0:
+  %0 = const 231
+  %1 = const 143
+  %2 = syscall(%0, %1)
+  exit 143
 }
 
 export func @sober_entry(%0 ptr) {
@@ -2410,92 +2498,4 @@ b91:
   %404 = const 1
   %405 = add %383, %404
   br b85(%401, %405)
-}
-
-func @rt.sigterm() {
-b0:
-  %0 = const 231
-  %1 = const 143
-  %2 = syscall(%0, %1)
-  exit 143
-}
-
-func @rt.sigint() {
-b0:
-  %0 = const 231
-  %1 = const 130
-  %2 = syscall(%0, %1)
-  exit 130
-}
-
-func @lambda#0(%0 i64, %1 i64) i64 {
-b0:
-  %2 = itop %0
-  %3 = region.depth
-  region.enter
-  %4 = const 100
-  %5 = add %1, %4
-  region.setdepth %3
-  ret %5
-}
-
-func @main.apply(%0 i64, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64) i64 {
-  slot s0 [5]
-b0:
-  %6 = slotaddr s0
-  store %6[0], %0
-  store %6[1], %1
-  store %6[2], %2
-  store %6[3], %3
-  store %6[4], %4
-  %7 = region.depth
-  region.enter
-  %8 = load.i64 %6[0]
-  %9 = const 1
-  %10 = gep.word %6, %9
-  %11 = ptoi %10
-  %12 = call.indirect.i64 %8(%11, %5)
-  region.setdepth %7
-  ret %12
-}
-
-func @lambda#1(%0 i64, %1 i64) i64 {
-  slot s0 [3]
-b0:
-  %2 = itop %0
-  %3 = slotaddr s0
-  %4 = const 1
-  %5 = gep.word %2, %4
-  %6 = load.i64 %5[0]
-  store %3[0], %6
-  %7 = load.i64 %5[1]
-  store %3[1], %7
-  %8 = load.i64 %5[2]
-  store %3[2], %8
-  %9 = region.depth
-  region.enter
-  %10 = load.i64 %3[1]
-  %11 = add %1, %10
-  region.setdepth %9
-  ret %11
-}
-
-func @lambda#2(%0 i64, %1 i64) i64 {
-b0:
-  %2 = itop %0
-  %3 = region.depth
-  region.enter
-  %4 = call @main.dbl(%1)
-  region.setdepth %3
-  ret %4
-}
-
-func @main.dbl(%0 i64) i64 {
-b0:
-  %1 = region.depth
-  region.enter
-  %2 = const 2
-  %3 = mul %0, %2
-  region.setdepth %1
-  ret %3
 }

@@ -1,7 +1,7 @@
 package main
 
-// 段 6 P3b（language.md 11 節「チャネル」）: 端点 2 型・SPSC・有界。送り端は give: でちょうど 1 つの子へ移る（名前付きの実引数は末尾・仮引数は親の名前と別の名前 — `task.Spawn(s, (out) => …, give: tx)`）。受け手は送られる数を
-// 知っている形で書く（Close は P3b-2c の Lean 便まで無い — Recv は T? だが今は nil にならない）
+// チャネル（language.md 11 節「チャネル」）: 端点 2 型・SPSC・有界。送り端は give: でちょうど 1 つの子へ移る（名前付きの実引数は末尾・仮引数は親の名前と別の名前 — `task.Spawn(s, (out) => …, give: tx)`）。受け手は送られる数を
+// 知っている形で書く（Recv は T? だが、ここでは nil にならない）
 
 import "std/task"
 

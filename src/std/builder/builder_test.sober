@@ -3,7 +3,7 @@ package builder
 // chunk の表現の網（white-box — 頭打ちの境目〔minBase = 1016・maxChunk = 1024〕と頭の列の伸び〔seeds = 16 本を使い切った後〕）:
 // 長さ 0〜5000 の各長さで Get が積んだ順の値・Build が同じ列・chunk の容量の和が積んだ量 + maxChunk 未満
 
-// fill は b に 0, 1, …, n − 1（を 251 で割った余り）を積む
+// b に 0, 1, …, n − 1（を 251 で割った余り）を積む
 func fill(b mut Builder[int], n int) {
     mut i := 0
     while i < n {

@@ -1,6 +1,6 @@
 package main
 
-// 保存の方針と認証の源（language.md 12 節・28 節 — effect の波 段 4a）: 応答の Cache-Control の既定は private（共有キャッシュに載せない）・
+// 保存の方針と認証の源（language.md 12 節・28 節）: 応答の Cache-Control の既定は private（共有キャッシュに載せない）・
 // 応答 1 件の方針は Private / NoStore・共有キャッシュも保存してよい方針（Fresh）はルートの行で書く（Dispatch が cache の無い応答に写す — 応答の方針が勝つ）。
 // 認証のヘッダ（Authorization・Cookie）は名指しの口 http.Authorization / http.Cookie でだけ読める（http.Header は nil）。
 // 保存の方針と検証子の名前（Cache-Control・ETag ほか）を任意ヘッダに書くと panic(BadHeader) — 最後の要求がそれで死ぬ（終了 101）。
@@ -48,7 +48,7 @@ func show(b []byte) error? {
     return nil
 }
 
-// give は切片を 2 つ渡す（予約名の panic の前に 1 つ目の切片の応答が出る）
+// 切片を 2 つ渡す（予約名の panic の前に 1 つ目の切片の応答が出る）
 func give(a string, b string, k func([]byte)) error? {
     k(bytes(a))
     k(bytes(b))

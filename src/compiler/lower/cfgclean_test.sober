@@ -1,12 +1,12 @@
 package lower
 
 // 死んだ仮引数の除去の実引数の残し方（cfgclean.sober ccKeepArgs）の単体テスト（`cd compiler && ../bin/sober test lower`）: 残す実引数を 1 つずらす形は
-// 数も定義もそろうので検証器を通り、題材でも等価になりうる（展開後の mem2reg は仮引数を列の末尾に足す — report-498 3 節 変異 2）。IR を手で組んで直に見る
+// 数も定義もそろうので検証器を通り、題材でも等価になりうる（展開後の mem2reg は仮引数を列の末尾に足す）。IR を手で組んで直に見る
 
 import "desugar"
 import "std/iter"
 
-// ckT は仮引数 3 本のブロックへの辺の実引数 [10, 20, 30] を、生きた仮引数の印 mask（ビット k = k 本目）で ccKeepArgs に掛けた列
+// 仮引数 3 本のブロックへの辺の実引数 [10, 20, 30] を、生きた仮引数の印 mask（ビット k = k 本目）で ccKeepArgs に掛けた列
 func ckT(mask int) []int {
     mut st := St{}
     initScalars(mut st)

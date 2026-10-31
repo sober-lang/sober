@@ -1,0 +1,34 @@
+package main
+
+// Abstraction 3: a closed set of kinds as a union, taken apart with a type-pattern switch
+// (docs/guide/abstraction.md). Adding a variant makes every switch that misses it a compile error
+
+type Payment union {
+    Card { last4 string }
+    Cash {}
+    Points { n int }
+}
+
+func describe(p Payment) string {
+    return switch p {
+    case Card{last4}: "card ending ${last4}"
+    case Cash{}: "cash"
+    case Points{n}: "${n} points"
+    }
+}
+
+// the fee in yen: only cards cost something
+func fee(p Payment, amount int) int {
+    return switch p {
+    case Card{}: amount * 3 / 100
+    case Cash{}: 0
+    case Points{}: 0
+    }
+}
+
+func main() {
+    ps := []Payment{Card{last4: "4242"}, Cash{}, Points{n: 500}}
+    for p <- ps {
+        println("${describe(p)}: fee ${fee(p, 1000)}")
+    }
+}

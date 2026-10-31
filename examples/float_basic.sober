@@ -1,6 +1,6 @@
 package main
 
-// float の段（language.md 37 節）: IEEE 754 binary64 の算術・比較・変換・特殊値（±Inf・NaN・-0）。印字は M5 まで math.Bits と int への変換で見る
+// float の段（language.md 37 節）: IEEE 754 binary64 の算術・比較・変換・特殊値（±Inf・NaN・-0）。値は math.Bits と int への変換でビット単位に照合する
 // （期待値は Go の双子 scripts/oracles/float_basic.go — 同じ計算を float64 で）
 
 import "std/iter"

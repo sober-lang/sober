@@ -1,8 +1,7 @@
 package main
 
-// F-6 のリテラル形（selfhost-drafts F-6・strlit の段）: 再帰する mut 引数の関数（Def として anchor つきで呼ぶ — R2）に
-// 文字列リテラルを渡す。リテラルは Def 呼び出しの実引数の位置で region 0（呼び手空間）に置かれるので、imm 引数の条件
-// （anchor 以下の region）を満たす。旧テンプレート（最内 region の freeze(append 連鎖)）では check が def error だった
+// 再帰する mut 引数の関数（Def として anchor つきで呼ぶ）に文字列リテラルを渡す。リテラルは Def 呼び出しの実引数の位置で
+// region 0（呼び手空間）に置かれるので、imm 引数の条件（anchor 以下の region）を満たす。
 
 import "std/builder"
 

@@ -1,6 +1,6 @@
 package main
 
-// R1（region 多相の裁定 ①s）の検証例: Builder[string]。
+// region 多相の Builder[string] の検証例。
 // 交錯成長（Builder へ積む合間に別の string を作る）でも成長のコピーが出ない Builder に string を積む。
 // 深いブロックで作った string は strings.Clone で Builder と同じ region へ置き直す
 

@@ -1,0 +1,94 @@
+package iface
+
+// 部分木の識別子の走査（.sobi のリンク可視の閉包 — iface.sober）。節の欄の種類の表は desugar/init.sober の desc の写し
+// （0 = 素の値・1 = 節・2 = 文字列・3 = 節の列・4 = 文字列の列・5 = 付加の列）
+
+import "ast"
+import "loader"
+import "std/iter"
+
+func d6(a int, b int, c int, d int, e int, f int) int {
+    return a + b * 8 + c * 64 + d * 512 + e * 4096 + f * 32768
+}
+
+func desc(k int) int {
+    return switch k {
+    case ast.EIdent | ast.EStrlit | ast.EMutArg | ast.TName: d6(2, 0, 0, 0, 0, 0)
+    case ast.EFloat: d6(0, 2, 0, 0, 0, 0)
+    case ast.EBinary: d6(0, 1, 1, 0, 0, 0)
+    case ast.EUnary: d6(0, 1, 0, 0, 0, 0)
+    case ast.ECall: d6(1, 3, 0, 0, 0, 0)
+    case ast.EPipe: d6(1, 1, 3, 0, 0, 0)
+    case ast.EIndex | ast.ETry | ast.SWhile | ast.KEntry | ast.TMap: d6(1, 1, 0, 0, 0, 0)
+    case ast.ESlice3 | ast.EIf: d6(1, 1, 1, 0, 0, 0)
+    case ast.EInterp: d6(4, 3, 0, 0, 0, 0)
+    case ast.ESlicelit: d6(1, 3, 0, 0, 0, 0)
+    case ast.EMaplit: d6(1, 1, 3, 0, 0, 0)
+    case ast.EComposite: d6(2, 3, 3, 0, 0, 0)
+    case ast.ESelector: d6(1, 2, 0, 0, 0, 0)
+    case ast.ELambda | ast.KCase: d6(3, 1, 0, 0, 0, 0)
+    case ast.ESwitch: d6(3, 3, 1, 0, 0, 0)
+    case ast.EBlock | ast.SRet | ast.KBlock | ast.BStruct | ast.BUnion | ast.BError | ast.KPConst: d6(3, 0, 0, 0, 0, 0)
+    case ast.EFor: d6(3, 0, 0, 0, 0, 0)
+    case ast.SBind: d6(4, 0, 3, 0, 0, 0)
+    case ast.SAssign: d6(3, 0, 3, 0, 0, 0)
+    case ast.SExpr | ast.SDefer | ast.SYield | ast.TOpt | ast.EParen | ast.TSlice | ast.BDefined | ast.BAlias: d6(1, 0, 0, 0, 0, 0)
+    case ast.TFunc | ast.BFunc: d6(3, 3, 4, 0, 0, 0)
+    case ast.TGeneric | ast.KVariant: d6(2, 3, 0, 0, 0, 0)
+    case ast.TTuple: d6(3, 0, 0, 0, 0, 0)
+    case ast.KPType: d6(2, 2, 3, 0, 0, 0)
+    case ast.KField | ast.KParam | ast.KConst | ast.KElem | ast.KLParam | ast.KFieldPat | ast.KNamedArg: d6(2, 1, 0, 0, 0, 0)
+    case ast.KGen: d6(4, 1, 3, 0, 0, 0)
+    case ast.ECatch: d6(1, 1, 0, 0, 0, 0)
+    default: 0
+    }
+}
+
+// 根の節（-1 は無視）の部分木の識別子の文字列（欄の選択 `x.f` の f・文字列リテラル・補間の文字列の断片は数えない）
+func identsUnder(t ast.Tree, roots []int) []string {
+    mut out := mut []string{}
+    mut stack := mut []int{}
+    for i <- iter.Range(0, len(roots)) {
+        if roots[i] >= 0 {
+            stack = append(stack, roots[i])
+        }
+    }
+    // 作業の列は伸ばすだけ（順は問わない — 集めた識別子は集合として使う）
+    mut w := 0
+    while w < len(stack) {
+        n := stack[w]
+        w += 1
+        x := t.nodes[n]
+        c := if x.kind == ast.EFor && x.b == 1 { d6(3, 0, 3, 0, 0, 0) } else if x.kind == ast.EFor { d6(3, 0, 1, 0, 0, 0) } else { desc(x.kind) }
+        fs := []int{x.a, x.b, x.c, x.d, x.e, x.f}
+        mut sh := 1
+        for k <- iter.Range(0, 6) {
+            code := c / sh % 8
+            sh = sh * 8
+            v := fs[k]
+            if v < 0 || code == 0 {
+                continue
+            }
+            if code == 1 {
+                stack = append(stack, v)
+            } else if code == 3 {
+                for j <- iter.Range(0, ast.ListLen(t, v)) {
+                    if ast.ListAt(t, v, j) >= 0 {
+                        stack = append(stack, ast.ListAt(t, v, j))
+                    }
+                }
+            } else if code == 2 {
+                if !(x.kind == ast.ESelector && k == 1) && x.kind != ast.EStrlit {
+                    out = append(out, loader.Name(t, v))
+                }
+            } else if code == 4 {
+                if x.kind != ast.EInterp {
+                    for j <- iter.Range(0, ast.ListLen(t, v)) {
+                        out = append(out, loader.Name(t, ast.ListAt(t, v, j)))
+                    }
+                }
+            }
+        }
+    }
+    return freeze(out)
+}

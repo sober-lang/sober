@@ -1,0 +1,20 @@
+package main
+
+// Abstraction 3, rejected: a switch on a union that misses a variant (docs/guide/abstraction.md)
+
+type Payment union {
+    Card { last4 string }
+    Cash {}
+    Points { n int }
+}
+
+func describe(p Payment) string {
+    return switch p {
+    case Card{last4}: "card ending ${last4}"
+    case Cash{}: "cash"
+    }
+}
+
+func main() {
+    println(describe(Cash{}))
+}

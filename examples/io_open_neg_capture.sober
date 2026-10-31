@@ -1,6 +1,6 @@
 package main
 
-// 負例: 子 task の閉包は File を捕獲できない（親の defer が子の終わりより先に閉じうる）（diag.FileUse — desugar/filecheck・language.md 28 節「資源とストリーム」— IO 便 段 2）
+// 負例: 子 task の閉包は File を捕獲できない（親の defer が子の終わりより先に閉じうる）（diag.FileUse — desugar/filecheck・language.md 28 節「資源とストリーム」）
 
 import "std/io"
 import "std/task"

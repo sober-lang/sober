@@ -1,0 +1,1273 @@
+package lower
+
+// 独自 SSA IR のモジュールと組み立て（src/stage1/ir.zig の Module / Builder の写し）。記録はヒープに積み、鎖で結ぶ:
+// - 関数 [F_*]: 追加順の鎖（印字順）。値の番号は関数ごとの通し（関数引数が 0 から）
+// - ブロック [B_*]: 関数ごとの追加順の鎖。番号 = 追加順（b0 が入口）。引数は [next, 値, 型] の鎖
+// - 命令 [I_*]: ブロックごとの追加順の鎖。結果の値は I_RES（無しは -1）
+// - スロット [next, 語数]・グローバル [G_*]
+// 辺・呼び出し・syscall の引数は値の列（[n, 値…]、空は -1 でもよい）。関数・グローバル・ブロックは記録の番地で指す
+// （印字は記録から名前・番号を引く — Zig 版の FuncId / GlobalId / BlockId の添字の代わり）。
+// 値の型の表は持たない（印字に要るのは関数引数・ブロック引数の型だけで、それは記録に持つ）
+
+import "desugar"
+import "std/iter"
+import "std/table"
+import "obuf"
+
+// 値の型
+const TyI64 = 0
+const TyPtr = 1
+const TyV128 = 2 // packed f64 の 16 B（OpPMem の load・OpPArith の lo / hi 以外 — 最適化のバックエンドの経路だけ。valueTypes が導く）
+
+// 関数
+const F_NEXT = 0
+const F_NAME = 1
+const F_PTYS = 2    // 引数の型の列（値 i = 引数 i）
+const F_RET = 3     // -1 / TyI64 / TyPtr
+const F_NVAL = 4
+const F_BHEAD = 5
+const F_BTAIL = 6
+const F_NBLK = 7
+const F_SHEAD = 8
+const F_STAIL = 9
+const F_NSLOT = 10
+const F_EXPORT = 11
+const F_RFREE = 12  // 設計整合パス P0 の記録（-1 = region を使う / 未判定、他は [region を使わないか 0 / 1, 呼ぶ関数の列] — opt.sober）
+const F_LLVT = 13   // .ll の印字の表（llvm.sober の llPrepare が印字の前に作る）: 値の型
+const F_LLINC = 14  // 入り辺
+const F_LLCS = 15   // 定数の表（印字中に埋める — 伸ばさない）
+const F_MUTP = 16   // mut 仮引数の印（ビット k = 引数 k が利用者の関数の mut 仮引数 — 呼び手のセル。hdr の資格・language.md 26 節の排他。k < 62 だけ）
+// F_MUTP のビット F_SRET_BIT = 引数 0 が sret の受け皿（newFuncSig が作る結果 2 語以上の関数だけ）。約束: 呼ばれた関数は ret の前に受け皿の全語を
+// 書き（return・後置 ? — 結果の前の語は零・error? は全語）、受け皿を書く前に読まない（受け皿を別の呼び出しへ渡す道も無い — 読むのは書いた後の
+// relocate と計装だけ）。task の子（kidFunc — 受け皿の位置の引数から捕獲を読む）は印を持たない。zeroinit がこの call を受け皿の書き込みに数える
+const F_SRET_BIT = 62
+const FSZ = 17
+
+// ブロック
+const B_NEXT = 0
+const B_ID = 1
+const B_PHEAD = 2
+const B_PTAIL = 3
+const B_IHEAD = 4
+const B_ITAIL = 5
+const B_TERM = 6
+const B_X1 = 7
+const B_X2 = 8
+const B_X3 = 9
+const B_X4 = 10
+const B_X5 = 11
+const B_PREDS = 12
+const B_LOOP = 13   // ビット 0 = 利用者のループの頭（whileLoop — 段 6 P4-5 のキャンセルの検査点はこの頭へ戻る辺にだけ置く。rt の展開のループには立たない・IR の展開で写す）。
+                    // ビット 1（2）= 全展開の写し（unroll.sober — 最終 IR の直線の長さの検査 urCheckRuns が数える。併合・インラインで引き継ぐ）
+                    // ビット 2（4）= 冷たい（error を返す return 文のブロック — lower の retStmt が立てる。インライナーの部分インラインの予算で数えない・
+                    // 写しは引き継ぐ。印であって意味は持たない）
+const BSZ = 14
+
+// 終端
+const TmNone = 0
+const TmBr = 1      // x1 = 行き先, x2 = 引数
+const TmCondbr = 2  // x1 = 条件, x2 = then, x3 = then の引数, x4 = else, x5 = else の引数
+const TmRet = 3     // x1 = 値（-1 = 無し）
+const TmExit = 4    // x1 = code
+
+// 命令
+const I_NEXT = 0
+const I_RES = 1
+const I_OP = 2
+const I_A = 3
+const I_B = 4
+const I_C = 5
+const ISZ = 6
+
+// FnRef / BlkRef / InsRef は関数 / ブロック / 命令の記録の参照（ヒープの番地 — named scalar。無しは -1）。C7b (i): 記憶の形は int のヒープのまま、
+// 参照の取り違えを型で止める。終端の x1〜x5・命令の a〜c は種類ごとに意味が違うので int のまま（読み手が BlkRef(…) 等で型を付ける）
+type FnRef int
+type BlkRef int
+type InsRef int
+
+// ── 記録の欄の読み書き（C7a — 掃除枠 B。記録の番地 + 欄の番号の算術を呼び手に書かせない。記憶の形を変えるときはここだけ）──
+
+func irFnNext(st mut St, f FnRef) FnRef { return FnRef(desugar.HeapGet(mut st.d, int(f) + F_NEXT)) }
+func irSetFnNext(st mut St, f FnRef, v FnRef) { desugar.HeapSet(mut st.d, int(f) + F_NEXT, int(v)) }
+func irFnName(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_NAME) }
+func irSetFnName(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_NAME, v) }
+func irFnPtys(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_PTYS) }
+func irSetFnPtys(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_PTYS, v) }
+func irFnRet(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_RET) }
+func irSetFnRet(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_RET, v) }
+func irFnNVal(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_NVAL) }
+func irSetFnNVal(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_NVAL, v) }
+func irFnBHead(st mut St, f FnRef) BlkRef { return BlkRef(desugar.HeapGet(mut st.d, int(f) + F_BHEAD)) }
+func irSetFnBHead(st mut St, f FnRef, v BlkRef) { desugar.HeapSet(mut st.d, int(f) + F_BHEAD, int(v)) }
+func irFnBTail(st mut St, f FnRef) BlkRef { return BlkRef(desugar.HeapGet(mut st.d, int(f) + F_BTAIL)) }
+func irSetFnBTail(st mut St, f FnRef, v BlkRef) { desugar.HeapSet(mut st.d, int(f) + F_BTAIL, int(v)) }
+func irFnNBlk(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_NBLK) }
+func irSetFnNBlk(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_NBLK, v) }
+func irFnSHead(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_SHEAD) }
+func irSetFnSHead(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_SHEAD, v) }
+func irFnSTail(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_STAIL) }
+func irSetFnSTail(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_STAIL, v) }
+func irFnNSlot(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_NSLOT) }
+func irSetFnNSlot(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_NSLOT, v) }
+func irFnExport(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_EXPORT) }
+func irSetFnExport(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_EXPORT, v) }
+func irFnRFree(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_RFREE) }
+func irSetFnRFree(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_RFREE, v) }
+func irFnMutP(st mut St, f FnRef) int {
+    v := desugar.HeapGet(mut st.d, int(f) + F_MUTP)
+    return if v < 0 { 0 } else { v }
+}
+func irSetFnMutP(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_MUTP, v) }
+func irFnLLVt(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_LLVT) }
+func irSetFnLLVt(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_LLVT, v) }
+func irFnLLInc(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_LLINC) }
+func irSetFnLLInc(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_LLINC, v) }
+func irFnLLCs(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_LLCS) }
+func irSetFnLLCs(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_LLCS, v) }
+
+func irBlkNext(st mut St, b BlkRef) BlkRef { return BlkRef(desugar.HeapGet(mut st.d, int(b) + B_NEXT)) }
+func irSetBlkNext(st mut St, b BlkRef, v BlkRef) { desugar.HeapSet(mut st.d, int(b) + B_NEXT, int(v)) }
+func irBlkId(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_ID) }
+func irSetBlkId(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_ID, v) }
+func irBlkPHead(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_PHEAD) }
+func irSetBlkPHead(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_PHEAD, v) }
+func irBlkPTail(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_PTAIL) }
+func irSetBlkPTail(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_PTAIL, v) }
+func irBlkIHead(st mut St, b BlkRef) InsRef { return InsRef(desugar.HeapGet(mut st.d, int(b) + B_IHEAD)) }
+func irSetBlkIHead(st mut St, b BlkRef, v InsRef) { desugar.HeapSet(mut st.d, int(b) + B_IHEAD, int(v)) }
+func irBlkITail(st mut St, b BlkRef) InsRef { return InsRef(desugar.HeapGet(mut st.d, int(b) + B_ITAIL)) }
+func irSetBlkITail(st mut St, b BlkRef, v InsRef) { desugar.HeapSet(mut st.d, int(b) + B_ITAIL, int(v)) }
+func irBlkTerm(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_TERM) }
+func irSetBlkTerm(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_TERM, v) }
+func irBlkX1(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_X1) }
+func irSetBlkX1(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_X1, v) }
+func irBlkX2(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_X2) }
+func irSetBlkX2(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_X2, v) }
+func irBlkX3(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_X3) }
+func irSetBlkX3(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_X3, v) }
+func irBlkX4(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_X4) }
+func irSetBlkX4(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_X4, v) }
+func irBlkX5(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_X5) }
+func irSetBlkX5(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_X5, v) }
+func irBlkPreds(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_PREDS) }
+func irSetBlkPreds(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_PREDS, v) }
+
+func irBlkLoop(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_LOOP) }
+
+func irSetBlkLoop(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_LOOP, v) }
+
+// 種類ごとの読み口（欄の意味が終端 / 命令の種類で決まるもの）: br の行き先 = x1、condbr の then / else = x2 / x4、call / funcaddr の関数 = a
+func irBrTo(st mut St, b BlkRef) BlkRef { return BlkRef(irBlkX1(mut st, b)) }
+func irSetBrTo(st mut St, b BlkRef, v BlkRef) { irSetBlkX1(mut st, b, int(v)) }
+func irCondThen(st mut St, b BlkRef) BlkRef { return BlkRef(irBlkX2(mut st, b)) }
+func irSetCondThen(st mut St, b BlkRef, v BlkRef) { irSetBlkX2(mut st, b, int(v)) }
+func irCondElse(st mut St, b BlkRef) BlkRef { return BlkRef(irBlkX4(mut st, b)) }
+func irSetCondElse(st mut St, b BlkRef, v BlkRef) { irSetBlkX4(mut st, b, int(v)) }
+func irInsFn(st mut St, i InsRef) FnRef { return FnRef(irInsA(mut st, i)) }
+
+func irInsNext(st mut St, i InsRef) InsRef { return InsRef(desugar.HeapGet(mut st.d, int(i) + I_NEXT)) }
+func irSetInsNext(st mut St, i InsRef, v InsRef) { desugar.HeapSet(mut st.d, int(i) + I_NEXT, int(v)) }
+func irInsRes(st mut St, i InsRef) int { return desugar.HeapGet(mut st.d, int(i) + I_RES) }
+func irSetInsRes(st mut St, i InsRef, v int) { desugar.HeapSet(mut st.d, int(i) + I_RES, v) }
+func irInsOp(st mut St, i InsRef) int { return desugar.HeapGet(mut st.d, int(i) + I_OP) }
+func irSetInsOp(st mut St, i InsRef, v int) { desugar.HeapSet(mut st.d, int(i) + I_OP, v) }
+func irInsA(st mut St, i InsRef) int { return desugar.HeapGet(mut st.d, int(i) + I_A) }
+func irSetInsA(st mut St, i InsRef, v int) { desugar.HeapSet(mut st.d, int(i) + I_A, v) }
+func irInsB(st mut St, i InsRef) int { return desugar.HeapGet(mut st.d, int(i) + I_B) }
+func irSetInsB(st mut St, i InsRef, v int) { desugar.HeapSet(mut st.d, int(i) + I_B, v) }
+func irInsC(st mut St, i InsRef) int { return desugar.HeapGet(mut st.d, int(i) + I_C) }
+func irSetInsC(st mut St, i InsRef, v int) { desugar.HeapSet(mut st.d, int(i) + I_C, v) }
+
+const OpConst = 1     // a = n
+const OpBin = 2       // a = BinOp, b, c
+const OpCmp = 3       // a = CmpOp, b, c
+const OpLoad = 4      // a = p, b = off
+const OpStore = 5     // a = p, b = off, c = v
+const OpLoad8 = 6
+const OpStore8 = 7
+const OpGepW = 8      // a = p, b = idx
+const OpGepB = 9
+const OpPtoi = 10
+const OpItop = 11
+const OpSlotaddr = 12 // a = スロット番号
+const OpGlobal = 13   // a = グローバルの記録
+const OpCall = 14     // a = 関数の記録, b = 引数
+const OpFuncaddr = 15 // a = 関数の記録
+const OpCallI = 16    // a = callee, b = 引数, c = 結果の型（-1 / TyI64 / TyPtr / CALLI_SRET）
+// CALLI_SRET は OpCallI の c の印: 結果なし（-1 と同じ — IR テキストも同じ）で、引数 0 が sret の受け皿（呼ばれた関数は受け皿の全語を書き、書く前に
+// 読まない — 直接呼び出しの F_SRET_BIT と同じ約束。関数値の呼び先は全部 lower が建てた関数で、sret の規約は同じ）。zeroinit / slotcolor が
+// 受け皿を「全語の書き」と読む口（無いと受け皿は逃げで、呼び出しごとに要零の専用スロットになる — report-1069）
+const CALLI_SRET = -2
+const OpSyscall = 17  // a = 引数・b = 1 なら vDSO の呼び出し（a の頭 = 関数の番地・残り = 引数 — C の呼び出し規約。vdsoCall）・b = 2 なら AES-GCM の塊（c = 種類 — aes.sober）
+const OpREnter = 18
+const OpRDepth = 19
+const OpRSetDepth = 20 // a = 値
+const OpRAlloc = 21    // a = depth, b = words
+const OpRBump = 22     // a = depth
+const OpRReloc = 23    // a = hdr, b = cellw, c = floor
+// rtlower の後の最適化のバックエンドの経路だけの op（IR テキストには出ない — stage1 の語彙の外。第三便のベクトル化スパイク — vec.sober）
+const OpScanB = 24     // a = 値の列 [p, i0, 上限…], b = 記述の列 [上限の数, 述語の数, (種類, K)…]（結果 = 読み飛ばした後の添字 — vec.sober の冒頭）
+// task の罠（段 6 P3a-2a — docs/ir.md「罠」）: 凍結以来 2 度目の IR の語彙の拡張（stage1 の外 — gatelib の beyond_stage1）。罠を使うモジュールだけが持つ
+const OpTrapI = 25     // a = callee（関数値）, b = 引数（1 語）: 罠を張って callee(引数) を呼ぶ。結果 = 0（戻った）/ 1（中で死んだ — 罠へ巻き戻った）
+const OpTSwitch = 27   // a = 退避先（語の番地）, b = [復元元（語の番地）]: 今の task の機械の文脈（callee-saved・xmm2〜15・再開番地）を積んで rsp を *a へ、
+                      // *b の rsp へ切り替えて相手を再開する。誰かが *a へ切り替えて戻すと続く（段 6 P3b — 戻ってくる不透明な呼び出し）
+const OpTStart = 28   // a = 退避先, b = [新しい rsp, 関数値, 引数]: OpTSwitch と同じく今の文脈を *a に積み、rsp を新しいスタックへ付け替えて関数(引数)を呼ぶ
+                      // （関数は戻らない — 終わりは別の task への OpTSwitch）
+// ワーカーの記録（段 6 P4-3 — docs/ir.md 4.7）: std/task を使うプログラムの rt の表（@rt.meta 等）の番地を今のワーカーの記録から引く。値は
+// スレッドの中で変わらない（task はワーカーに固定）— 最適化器からは globaladdr と同じ純粋な値。凍結以来 4 度目の語彙拡張（beyond_stage1）
+const OpFsAddr = 29    // a = グローバルの記録（G_WSLOT >= 0）: 今のワーカーのその表の番地（x86 = mov r, fs:[8 × G_WSLOT]）
+// 原子の op（段 6 P4-4 — docs/ir.md 4.8）: rt の中だけで使う（ユーザーの式からは生成しない）。凍結以来 5 度目の語彙拡張（beyond_stage1 — .ll の経路は持たない）。
+// 最適化器からは「任意のメモリに触れる不透明な呼び出し」と同じ扱い（OpTSwitch と同じ行 — 巻き上げ・load の転送・展開の対象外）
+const OpAtomic = 30    // a = 番地, b = 値の列（xadd / xchg = [v]・cas = [期待, 新]・fence = []）, c = 種類 | 語のオフセット << 3。結果 = 古い値（fence は無し）
+const OpClone = 31     // a = 新しいスタックの頂上, b = [関数値, 引数, %fs の基底]: clone（同じアドレス空間の新しいスレッド）— 子は新しいスタックで関数(引数) を
+                       // 呼ぶ（戻らない — 戻ったらスレッドだけ終わる）。結果 = 子の tid（親の側）
+// packed f64（段 4②a — report-551）: 最適化のバックエンドの経路だけ（B2 の後 — IR テキスト・stage1・.ll には出ない）。値の組 v128（xmm だけに住む 16 B —
+// 型 TyV128）。約束（検証器が照合）: v128 の値は定義と同じブロックの中でだけ使われ（ブロックの仮引数・辺の実引数・ret・condbr に現れない）、
+// 生きる区間に呼び出し系の op（call・間接 call・罠・切替・開始・原子・clone）を跨がない — callee-saved の xmm の退避（8 B）と task の文脈の積み方はそのまま。
+// 畳み込み・交換則・代数の簡約は掛けない（float の段の規約 — レーンごとに addsd 等と同じ丸め）
+const OpPMem = 32      // a = 番地, b = 語の欄（off）, c = 値（store — 結果なし）/ a（load — 結果 v128。sqrt の c = b と同じ埋め）: movupd [a + 8 × off]
+const OpPArith = 33    // a = 種類（BFAdd〜BFDiv・BFSqrt〔c = b〕・PK_PACK・PK_SPLAT・PK_LO・PK_HI）, b, c
+const PK_PACK = 20     // b = 下・c = 上の f64 → v128（unpcklpd）
+const PK_SPLAT = 21    // b = f64 → 両レーン（c = b — unpcklpd x, x。movddup は SSE3）
+const PK_LO = 22       // b = v128 → 下のレーンの f64（c = b）
+const PK_HI = 23       // b = v128 → 上のレーンの f64（c = b — unpckhpd）
+const AT_XADD = 0
+const AT_XCHG = 1
+const AT_CAS = 2
+const AT_FENCE = 3
+const AT_PAUSE = 4  // pause（スピンの待ちの 1 回 — 段 6 P4-6。fence と同じく番地・値・結果を持たない）
+// CRC-32 の折り畳み（report-774 — clmul.sober）: x86 の最適化のバックエンドの ELF の経路だけ（IR テキスト・.ll・写しのバックエンドには出ない — stage1 の語彙の外）。
+// c = CF_FOLD: a = [p, k, crc] → 畳んだ crc（p[0:k] を読む — 最適化器からは syscall と同じ不透明な読み）・c = CF_PCLMUL: a = [] → CPUID の PCLMULQDQ の bit（rt.cpu_probe）
+const OpCrcFold = 34
+const OpUnwind = 26    // 罠が張られていれば最内の罠へ巻き戻る（戻らない）。張られていなければ何もしない（続く exit 101 / 102 がプロセスを終える）
+
+// ── 欄の種別の表: op ごとの [A, B, C]・終端ごとの [X1〜X5] が何を持つか。被演算子の走査（opt の insOperands /
+// termOperands・irinl の ilCopyInst・検証器）はこの表を読む。x86 の xNOps / xOpnd / xNTermOps / xTermOpnd は熱い読み口なので専用形の
+// if の列のまま — 表との一致は lower の単体テスト（kinds_test.sober）が見る。印字は欄の書式が op ごとに違うので対象外。
+// 値（K_VAL）は関数ごとの通しの番号・列（K_VLIST / K_OLIST）は [n, …] の番地（-1 = 空）
+const K_NONE = 0
+const K_VAL = 1    // 値の番号
+const K_VLIST = 2  // 値の列
+const K_OPAQ = 3   // 不透明な int（種類・オフセット・定数・結果の型）
+const K_OLIST = 4  // 不透明な int の列（scanb の記述）
+const K_BLK = 5    // ブロックの記録
+const K_FN = 6     // 関数の記録
+const K_GLOB = 7   // グローバルの記録
+const K_SLOT = 8   // スロットの番号
+const K_VOPT = 9   // 値の番号か -1（無し — ret の値）
+
+// opRow は op の行（[A, B, C] の種別を 4 ビットずつ詰めたもの — A が下位）。表の本体（読みは St に組んだ写し st.opk を引く —
+// switch の比較の列を被演算子の走査ごとに回すと自己 build で 1.9 G 命令・詰めた定数の語を可変の shift で引く形は shift の量の検査で同じ桁）
+func opRow(op int) int {
+    return switch op {
+    case OpConst: K_OPAQ
+    case OpBin | OpCmp | OpPArith: K_OPAQ | K_VAL << 4 | K_VAL << 8
+    case OpLoad | OpLoad8: K_VAL | K_OPAQ << 4 | K_OPAQ << 8 // c = 1 なら ptr を読む（valueTypes）
+    case OpStore | OpStore8 | OpRReloc | OpPMem: K_VAL | K_OPAQ << 4 | K_VAL << 8
+    case OpGepW | OpGepB | OpRAlloc: K_VAL | K_VAL << 4
+    case OpPtoi | OpItop | OpRSetDepth | OpRBump: K_VAL
+    case OpSlotaddr: K_SLOT
+    case OpGlobal | OpFsAddr: K_GLOB
+    case OpCall: K_FN | K_VLIST << 4
+    case OpFuncaddr: K_FN
+    case OpCallI | OpAtomic: K_VAL | K_VLIST << 4 | K_OPAQ << 8
+    case OpTrapI | OpTSwitch | OpTStart | OpClone: K_VAL | K_VLIST << 4
+    case OpSyscall | OpCrcFold: K_VLIST
+    case OpScanB: K_VLIST | K_OLIST << 4
+    default: K_NONE // OpDead・OpREnter・OpRDepth・OpUnwind
+    }
+}
+
+// termRow は終端の行（[X1〜X5] の種別を 4 ビットずつ — X1 が下位）
+func termRow(t int) int {
+    return switch t {
+    case TmBr: K_BLK | K_VLIST << 4
+    case TmCondbr: K_VAL | K_BLK << 4 | K_VLIST << 8 | K_BLK << 12 | K_VLIST << 16
+    case TmRet: K_VOPT
+    case TmExit: K_OPAQ
+    default: K_NONE
+    }
+}
+
+const OP_N = 35 // op の番号の上限（OpDead = 0〜OpCrcFold = 34）
+
+// kindsInit は St の表（op ごとの行・終端ごとの行）を opRow / termRow から組む（St を組む側で 1 回 — initScalars・x86 の群の子。
+// 読み口で遅延して組む形は、確保しうる呼び出しが展開で各パスのループに入り反復ごとの region の enter を呼んだ）
+func kindsInit(st mut St) {
+    mut o := mut []int{}
+    for op <- iter.Range(0, OP_N) {
+        o = append(o, opRow(op))
+    }
+    st.opk = freeze(o)
+    mut t := mut []int{}
+    for x <- iter.Range(0, TmExit + 1) {
+        t = append(t, termRow(x))
+    }
+    st.tmk = freeze(t)
+}
+
+// 読み口は st.opk[op] / st.tmk[t]（行 — 読み手は下位から 4 ビットずつ欄 A, B, C / X1〜X5 の種別を取り出す）。読み口の関数は挟まない
+// （mut St を取る関数は展開されないので、走査ごとに呼び出しが 1 つ増える）
+
+// BinOp / CmpOp（印字の綴りの順 — ir.zig の enum の順）
+const BAdd = 0
+const BSub = 1
+const BMul = 2
+const BDiv = 3
+const BRem = 4
+const BAnd = 5
+const BOr = 6
+const BXor = 7
+const BShl = 8
+const BSar = 9
+// float の段（language.md 37 節）: 被演算子と結果は i64 に入れた binary64 のビット列。単項（sqrt / ofInt / toInt）は c = b（読まない）。
+// toInt は cvttsd2si の生の値（NaN・範囲外は i64 の最小値 — panic の検査は lower が前に置く）。畳み込み・交換則・代数の簡約は掛けない
+const BFAdd = 10
+const BFSub = 11
+const BFMul = 12
+const BFDiv = 13
+const BFSqrt = 14
+const BFOfInt = 15
+const BFToInt = 16
+// 64 × 64 → 128 の符号なしの積の上位 64 ビット（map のハッシュ — wyhash の芯 mum）。float の段の後ろに置く — float の判定は BFAdd〜BFToInt の範囲で
+const BMulHi = 17
+
+const CEq = 0
+const CNe = 1
+const CLt = 2
+const CLe = 3
+const CGt = 4
+const CGe = 5
+const CUlt = 6
+const CUge = 7
+// float の比較（IEEE — NaN は fne だけ真）。定数の畳み込みは掛けない
+const CFEq = 8
+const CFNe = 9
+const CFLt = 10
+const CFLe = 11
+const CFGt = 12
+const CFGe = 13
+
+// グローバル
+const G_NEXT = 0
+const G_NAME = 1
+const G_WORDS = 2
+const G_INIT = 3  // 語の列（-1 = .bss）
+const G_WSLOT = 4 // ワーカーの記録の表の番号（段 6 P4-3 — -1 = プロセスに 1 つの大域）
+const GSZ = 5
+
+// ── モジュール ──
+
+// addFunc は本体の無い関数を足す（本体は begin で後から組む — 前方参照の call に使う）。ptys は引数の型の列
+func addFunc(st mut St, name int, ptys desugar.ListRef, rty int) FnRef {
+    f := FnRef(recN(mut st, FSZ))
+    irSetFnName(mut st, f, name)
+    irSetFnPtys(mut st, f, int(ptys))
+    irSetFnRet(mut st, f, rty)
+    irSetFnNVal(mut st, f, lenL(mut st, ptys))
+    irSetFnNBlk(mut st, f, 0)
+    irSetFnNSlot(mut st, f, 0)
+    irSetFnExport(mut st, f, 0)
+    irSetFnRFree(mut st, f, -1)
+    irSetFnMutP(mut st, f, 0)
+    tail := st.ftail
+    if tail == -1 {
+        st.fhead = f
+    } else {
+        irSetFnNext(mut st, tail, f)
+    }
+    st.ftail = f
+    return f
+}
+
+func addGlobalInit(st mut St, name int, words int, init int) int {
+    g := recN(mut st, GSZ)
+    desugar.HeapSet(mut st.d, g + G_NAME, name)
+    desugar.HeapSet(mut st.d, g + G_WORDS, words)
+    desugar.HeapSet(mut st.d, g + G_INIT, init)
+    desugar.HeapSet(mut st.d, g + G_WSLOT, -1)
+    tail := st.gtail
+    if tail < 0 {
+        st.ghead = g
+    } else {
+        desugar.HeapSet(mut st.d, tail + G_NEXT, g)
+    }
+    st.gtail = g
+    return g
+}
+
+// ── 組み立て（cur = -1 は「到達しない」— 終端の直後。命令を足してはいけない）──
+
+// begin は関数 f の入口ブロックを作って cur にする
+func begin(st mut St, f FnRef) {
+    st.fn = f
+    st.slen = 0
+    st.lastConstV = -1
+    st.sealFn = -1
+    mut i := 0
+    while i < table.Len(mut st.sfree) {
+        table.Set(mut st.sfree, i, -1)
+        i += 1
+    }
+    b := newBlock(mut st)
+    st.cur = b
+}
+
+func newBlock(st mut St) BlkRef {
+    f := st.fn
+    b := BlkRef(recN(mut st, BSZ))
+    irSetBlkId(mut st, b, irFnNBlk(mut st, f))
+    irSetFnNBlk(mut st, f, irFnNBlk(mut st, f) + 1)
+    irSetBlkTerm(mut st, b, TmNone)
+    irSetBlkPreds(mut st, b, 0)
+    irSetBlkLoop(mut st, b, 0)
+    tail := irFnBTail(mut st, f)
+    if tail == -1 {
+        irSetFnBHead(mut st, f, b)
+    } else {
+        irSetBlkNext(mut st, tail, b)
+    }
+    irSetFnBTail(mut st, f, b)
+    return b
+}
+
+func cur(st mut St) BlkRef {
+    return st.cur
+}
+
+func setCur(st mut St, b BlkRef) {
+    st.cur = b
+}
+
+func newValue(st mut St) int {
+    f := st.fn
+    v := irFnNVal(mut st, f)
+    irSetFnNVal(mut st, f, v + 1)
+    return v
+}
+
+// param はブロック blk に型 t の引数を足す
+func param(st mut St, blk BlkRef, t int) int {
+    v := newValue(mut st)
+    p := rec4(mut st, -1, v, t, 0)
+    tail := irBlkPTail(mut st, blk)
+    if tail < 0 {
+        irSetBlkPHead(mut st, blk, p)
+    } else {
+        desugar.HeapSet(mut st.d, tail, p)
+    }
+    irSetBlkPTail(mut st, blk, p)
+    return v
+}
+
+// ── スロット（一時スロットは取った文の出口で返し、次に同じ語数を求めた newSlot が使い回す — スタックの規律、S-1）──
+// 記録 = [次, 語数, 番号, 空き鎖の次, 直近の slotaddr の値]。番号は宣言順（印字の s<番号>）で、使い回しても変わらない
+
+func newSlot(st mut St, words int) int {
+    if words < table.Len(mut st.sfree) {
+        r := table.Get(mut st.sfree, words)
+        if r >= 0 {
+            table.Set(mut st.sfree, words, desugar.HeapGet(mut st.d, r + 3))
+            desugar.HeapSet(mut st.d, r + 4, -1)
+            liveAdd(mut st, r)
+            st.slast = r
+            return desugar.HeapGet(mut st.d, r + 2)
+        }
+    }
+    return newSlotFresh(mut st, words)
+}
+
+// newSlotFresh は空き鎖を通らない新しいスロット（番号）
+func newSlotFresh(st mut St, words int) int {
+    f := st.fn
+    n := irFnNSlot(mut st, f)
+    s := rec4(mut st, -1, words, n, -1)
+    desugar.HeapPush(mut st.d, -1)
+    tail := irFnSTail(mut st, f)
+    if tail < 0 {
+        irSetFnSHead(mut st, f, s)
+    } else {
+        desugar.HeapSet(mut st.d, tail, s)
+    }
+    irSetFnSTail(mut st, f, s)
+    irSetFnNSlot(mut st, f, n + 1)
+    liveAdd(mut st, s)
+    st.slast = s
+    return n
+}
+
+// newSlotAddr は words 語のスロットを取ってそのアドレスを返す（値を記録に残す — 文の出口が束縛の置き場を見分ける）
+func newSlotAddr(st mut St, words int) int {
+    v := slotaddr(mut st, newSlot(mut st, words))
+    desugar.HeapSet(mut st.d, st.slast + 4, v)
+    return v
+}
+
+// newSlotAddrOwn は使い回さないスロットの番地（空き鎖から取らず、空き鎖へ返さない — SLOT_PINNED）。sret の結果の口（place の F 便 段 1 — report-517）:
+// 本物の呼び出しへ番地が逃げる結果スロットを、後で展開される呼び出しの結果スロットと共用すると、展開後もスロットが逃げたままで SROA / mem2reg が
+// 昇格しない（logagg の os.Args / io.ReadFile と utf8.Str 2 か所が 1 つの s0 を共用 — 展開された Str の結果 9 語が毎回メモリを往復した）
+func newSlotAddrOwn(st mut St, words int) int {
+    v := slotaddr(mut st, newSlotFresh(mut st, words))
+    desugar.HeapSet(mut st.d, st.slast + 4, v)
+    desugar.HeapSet(mut st.d, st.slast + 3, SLOT_PINNED)
+    return v
+}
+
+func liveAdd(st mut St, r int) {
+    if st.slen < table.Len(mut st.slive) {
+        table.Set(mut st.slive, st.slen, r)
+    } else {
+        table.Push(mut st.slive, r)
+    }
+    st.slen = st.slen + 1
+}
+
+// SLOT_PINNED は番地を rt へ渡した（境界の写しの in / out — relocateTo）一時スロットの印（記録の空き鎖の欄 r + 3 — 使用中は読まない欄）
+const SLOT_PINNED = -7
+
+// slotPin は値 p が使用中の一時スロットの番地なら、そのスロットを空き鎖へ返さない印を付ける（宛先構築レーン M5c — 番地が rt へ逃げた
+// スロットは SROA / mem2reg が昇格しない。空き鎖で後の束縛に使い回されると、熱い腕の束縛まで巻き込んでメモリに残った〔table.Push の
+// chunk のヘッダ — 冷たい腕の `t.chunks[k] = c` の写しと熱い腕の `c[j] = x` が同じスロット〕）
+func slotPin(st mut St, p int) {
+    for i <- iter.Range(0, st.slen) {
+        r := table.Get(mut st.slive, i)
+        if desugar.HeapGet(mut st.d, r + 4) == p {
+            desugar.HeapSet(mut st.d, r + 3, SLOT_PINNED)
+        }
+    }
+}
+
+// slotFree は記録 r のスロットを語数ごとの空き鎖に返す（番地が rt へ逃げたスロットは返さない — slotPin）
+func slotFree(st mut St, r int) {
+    if desugar.HeapGet(mut st.d, r + 3) == SLOT_PINNED {
+        return
+    }
+    w := desugar.HeapGet(mut st.d, r + 1)
+    while table.Len(mut st.sfree) <= w {
+        table.Push(mut st.sfree, -1)
+    }
+    desugar.HeapSet(mut st.d, r + 3, table.Get(mut st.sfree, w))
+    table.Set(mut st.sfree, w, r)
+}
+
+// push は cur に命令を足す（res: 結果の値を持つか）。結果の値（無しは -1）
+func push(st mut St, res bool, op int, a int, b int, c int) int {
+    r := if res { newValue(mut st) } else { -1 }
+    at := InsRef(desugar.HeapLen(mut st.d))
+    desugar.HeapPush(mut st.d, -1)
+    desugar.HeapPush(mut st.d, r)
+    desugar.HeapPush(mut st.d, op)
+    desugar.HeapPush(mut st.d, a)
+    desugar.HeapPush(mut st.d, b)
+    desugar.HeapPush(mut st.d, c)
+    blk := st.cur
+    tail := irBlkITail(mut st, blk)
+    if tail == -1 {
+        irSetBlkIHead(mut st, blk, at)
+    } else {
+        irSetInsNext(mut st, tail, at)
+    }
+    irSetBlkITail(mut st, blk, at)
+    return r
+}
+
+func iconst(st mut St, n int) int {
+    return iconstTag(mut st, n, 0)
+}
+
+// 番号の札（段 2 — report-1188 案 T）: 発見順の番号を運ぶ定数は OpConst の欄 b に札を持つ（印字は a だけ — IR テキストは不変）。
+// 札つきと札なしは GVN の鍵（op, a, b, c）で別の値番号になり、値が偶然同じ無関係な定数と併合されない。x86 は札つきの定数の imm32 を
+// 後埋め（種類 3 = panic の点・4 = spawn の点）にして、関数の機械語を番号から独立にする。b の 0 / −1（opt の合成の定数）とは別の値
+const CT_PSITE = 1000003
+const CT_SITE = 1000004
+
+// iconstTag は札 tag（0 = 札なし）の定数
+func iconstTag(st mut St, n int, tag int) int {
+    r := push(mut st, true, OpConst, n, tag, 0)
+    // 最後に作った定数（arith がゼロ除算の検査を省く判定に使う — panic.sober。関数の境で begin が消す）
+    st.lastConstV = r
+    st.lastConstN = n
+    return r
+}
+
+func bin(st mut St, op int, a int, b int) int {
+    return push(mut st, true, OpBin, op, a, b)
+}
+
+func cmp(st mut St, op int, a int, b int) int {
+    return push(mut st, true, OpCmp, op, a, b)
+}
+
+func load(st mut St, p int, off int) int {
+    return push(mut st, true, OpLoad, p, off, 0)
+}
+
+func store(st mut St, p int, off int, v int) {
+    push(mut st, false, OpStore, p, off, v)
+}
+
+func load8(st mut St, p int, off int) int {
+    return push(mut st, true, OpLoad8, p, off, 0)
+}
+
+func store8(st mut St, p int, off int, v int) {
+    push(mut st, false, OpStore8, p, off, v)
+}
+
+func gepWord(st mut St, p int, idx int) int {
+    return push(mut st, true, OpGepW, p, idx, 0)
+}
+
+func gepByte(st mut St, p int, idx int) int {
+    return push(mut st, true, OpGepB, p, idx, 0)
+}
+
+func ptoi(st mut St, p int) int {
+    return push(mut st, true, OpPtoi, p, 0, 0)
+}
+
+func itop(st mut St, v int) int {
+    return push(mut st, true, OpItop, v, 0, 0)
+}
+
+func slotaddr(st mut St, s int) int {
+    return push(mut st, true, OpSlotaddr, s, 0, 0)
+}
+
+func globaladdr(st mut St, g int) int {
+    if st.taskUse && desugar.HeapGet(mut st.d, g + G_WSLOT) >= 0 {
+        return push(mut st, true, OpFsAddr, g, 0, 0)
+    }
+    return push(mut st, true, OpGlobal, g, 0, 0)
+}
+
+// globaladdrRaw はワーカーの表でも大域そのものの番地（ワーカー 0 の記録を組む rt.worker_init だけ）
+func globaladdrRaw(st mut St, g int) int {
+    return push(mut st, true, OpGlobal, g, 0, 0)
+}
+
+// addWorkerGlobal はワーカーごとの rt の表（std/task を使うプログラムではワーカーの記録の表に番号を振る — 段 6 P4-3。使わなければ普通の大域）
+func addWorkerGlobal(st mut St, name int, words int) int {
+    g := addGlobalInit(mut st, name, words, -1)
+    if st.taskUse {
+        desugar.HeapSet(mut st.d, g + G_WSLOT, st.nwslot)
+        st.nwslot += 1
+    }
+    return g
+}
+
+// call は関数 f を呼ぶ（結果は f の ret — 無ければ -1）
+func call(st mut St, f FnRef, args int) int {
+    return push(mut st, irFnRet(mut st, f) >= 0, OpCall, int(f), args, 0)
+}
+
+func funcaddr(st mut St, f FnRef) int {
+    return push(mut st, true, OpFuncaddr, int(f), 0, 0)
+}
+
+func callIndirect(st mut St, callee int, args int, rty int) int {
+    return push(mut st, rty >= 0, OpCallI, callee, args, rty)
+}
+
+// trapCall は罠を張って関数値 callee を arg で呼ぶ（結果 0 = 戻った・1 = 死んだ）
+func trapCall(st mut St, callee int, arg int) int {
+    return push(mut st, true, OpTrapI, callee, list1(mut st, arg), TyI64)
+}
+
+// tswitch は今の task の文脈を save に積んで other の文脈へ切り替える（戻ってきたら続く — 段 6 P3b）
+func tswitch(st mut St, save int, other int) {
+    push(mut st, false, OpTSwitch, save, list1(mut st, other), 0)
+}
+
+// tstart は今の task の文脈を save に積み、新しいスタック sp で fn(arg) を始める（fn は戻らない — 戻ってきたら続く）
+func tstart(st mut St, save int, sp int, fn int, arg int) {
+    push(mut st, false, OpTStart, save, list3(mut st, sp, fn, arg), 0)
+}
+
+// atomicXadd は lock xadd [p + 8 off], v（結果 = 古い値）
+func atomicXadd(st mut St, p int, off int, v int) int {
+    return push(mut st, true, OpAtomic, p, list1(mut st, v), AT_XADD + off * 8)
+}
+
+// atomicXchg は xchg [p + 8 off], v（結果 = 古い値・全順序の柵）
+func atomicXchg(st mut St, p int, off int, v int) int {
+    return push(mut st, true, OpAtomic, p, list1(mut st, v), AT_XCHG + off * 8)
+}
+
+// atomicCas は lock cmpxchg [p + 8 off]: 期待 old と等しければ nw を書く（結果 = 古い値 — old と等しければ成功）
+func atomicCas(st mut St, p int, off int, old int, nw int) int {
+    return push(mut st, true, OpAtomic, p, list2(mut st, old, nw), AT_CAS + off * 8)
+}
+
+// atomicFence は mfence
+func atomicFence(st mut St) {
+    push(mut st, false, OpAtomic, iconst(mut st, 0), list0(mut st), AT_FENCE)
+}
+
+// atomicPause は pause（スピンの待ち — 段 6 P4-6）
+func atomicPause(st mut St) {
+    push(mut st, false, OpAtomic, iconst(mut st, 0), list0(mut st), AT_PAUSE)
+}
+
+// threadClone は新しいスレッドを sp のスタックで fn(arg) から始める（%fs の基底 = tls。結果 = tid か -errno）
+func threadClone(st mut St, sp int, fn int, arg int, tls int) int {
+    return push(mut st, true, OpClone, sp, list3(mut st, fn, arg, tls), 0)
+}
+
+// unwind は最内の罠へ巻き戻る（罠が無ければ何もしない）
+func unwind(st mut St) {
+    push(mut st, false, OpUnwind, 0, 0, 0)
+}
+
+func syscall(st mut St, args int) int {
+    return push(mut st, true, OpSyscall, args, 0, 0)
+}
+
+// vdsoCall は vDSO の関数（args の頭 = 番地・残り ≤ 6 個 = 引数）を C の呼び出し規約で呼ぶ（syscall の兄弟 — OS への口。効果の扱いは syscall と同じ・
+// 壊すのは C の caller-saved〔x86 の xVcall が生きている値を退避〕。vDSO の関数は SSE を使わない — Linux の vDSO は -mno-sse で建つ・report-656）
+func vdsoCall(st mut St, args int) int {
+    return push(mut st, true, OpSyscall, args, 1, 0)
+}
+
+func regionEnter(st mut St) {
+    push(mut st, false, OpREnter, 0, 0, 0)
+}
+
+func regionDepth(st mut St) int {
+    return push(mut st, true, OpRDepth, 0, 0, 0)
+}
+
+func regionSetDepth(st mut St, v int) {
+    push(mut st, false, OpRSetDepth, v, 0, 0)
+}
+
+func regionAlloc(st mut St, d int, w int) int {
+    return push(mut st, true, OpRAlloc, d, w, 0)
+}
+
+func regionBump(st mut St, d int) int {
+    return push(mut st, true, OpRBump, d, 0, 0)
+}
+
+func regionRelocate(st mut St, hdr int, cellw int, floor int) {
+    push(mut st, false, OpRReloc, hdr, cellw, floor)
+}
+
+// ── 終端（cur を -1 にする）──
+
+func terminate(st mut St, t int, x1 int, x2 int, x3 int, x4 int, x5 int) {
+    blk := st.cur
+    irSetBlkTerm(mut st, blk, t)
+    irSetBlkX1(mut st, blk, x1)
+    irSetBlkX2(mut st, blk, x2)
+    irSetBlkX3(mut st, blk, x3)
+    irSetBlkX4(mut st, blk, x4)
+    irSetBlkX5(mut st, blk, x5)
+    st.cur = -1
+}
+
+// br は to へ（args = 値の列か -1）。行き先の前任数を数える（Zig の edge）
+func br(st mut St, to BlkRef, args int) {
+    irSetBlkPreds(mut st, to, irBlkPreds(mut st, to) + 1)
+    terminate(mut st, TmBr, int(to), args, 0, 0, 0)
+}
+
+func condbr(st mut St, c int, t BlkRef, targs int, e BlkRef, eargs int) {
+    irSetBlkPreds(mut st, t, irBlkPreds(mut st, t) + 1)
+    irSetBlkPreds(mut st, e, irBlkPreds(mut st, e) + 1)
+    terminate(mut st, TmCondbr, c, int(t), targs, int(e), eargs)
+}
+
+func ret(st mut St, v int) {
+    terminate(mut st, TmRet, v, 0, 0, 0, 0)
+}
+
+func exit(st mut St, code int) {
+    terminate(mut st, TmExit, code, 0, 0, 0, 0)
+}
+
+// ── 印字（src/stage1/ir.zig の print — テキスト形式の正）──
+
+
+// num は 10 進（負号あり。最小値でも符号反転しない — 剰余を負のまま使う）
+func num(out mut []byte, n int) {
+    obuf.Int(mut out, n)
+}
+
+func val(out mut []byte, v int) {
+    out = append(out, '%')
+    num(mut out, v)
+}
+
+func tyName(out mut []byte, t int) {
+    if t == TyPtr {
+        obuf.Lit(mut out, "ptr")
+    } else {
+        obuf.Lit(mut out, "i64")
+    }
+}
+
+// isNameChar は名前の素の文字（これ以外を含む名前は `@"..."` に引用する — ir.zig の isNameChar）
+func isNameChar(c int) bool {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '.' || c == '#' || c == '/' || c == '$'
+}
+
+func printName(st mut St, out mut []byte, s int) {
+    n := dat(mut st, s)
+    mut bare := n > 0
+    for i <- iter.Range(0, n) {
+        if !isNameChar(dat(mut st, s + 1 + i)) {
+            bare = false
+        }
+    }
+    out = append(out, '@')
+    if bare {
+        for i <- iter.Range(0, n) {
+            out = append(out, byte(dat(mut st, s + 1 + i)))
+        }
+        return
+    }
+    out = append(out, '"')
+    for i <- iter.Range(0, n) {
+        c := dat(mut st, s + 1 + i)
+        if c == '"' || c == '\\' {
+            out = append(out, '\\')
+        }
+        out = append(out, byte(c))
+    }
+    out = append(out, '"')
+}
+
+// vals は値の列（-1 は空）を ", " 区切りで
+func vals(st mut St, out mut []byte, l int) {
+    if l < 0 {
+        return
+    }
+    mut i := 0
+    while i < desugar.HeapGet(mut st.d, l) {
+        if i > 0 {
+            obuf.Lit(mut out, ", ")
+        }
+        val(mut out, desugar.HeapGet(mut st.d, l + 1 + i))
+        i += 1
+    }
+}
+
+func binName(out mut []byte, op int) {
+    if op == BAdd {
+        obuf.Lit(mut out, "add")
+    } else if op == BSub {
+        obuf.Lit(mut out, "sub")
+    } else if op == BMul {
+        obuf.Lit(mut out, "mul")
+    } else if op == BDiv {
+        obuf.Lit(mut out, "div")
+    } else if op == BRem {
+        obuf.Lit(mut out, "rem")
+    } else if op == BAnd {
+        obuf.Lit(mut out, "and_")
+    } else if op == BOr {
+        obuf.Lit(mut out, "or_")
+    } else if op == BXor {
+        obuf.Lit(mut out, "xor")
+    } else if op == BShl {
+        obuf.Lit(mut out, "shl")
+    } else if op == BSar {
+        obuf.Lit(mut out, "sar")
+    } else if op == BMulHi {
+        obuf.Lit(mut out, "mulhi")
+    } else {
+        obuf.Lit(mut out, switch op {
+        case BFAdd: "fadd"
+        case BFSub: "fsub"
+        case BFMul: "fmul"
+        case BFDiv: "fdiv"
+        case BFSqrt: "fsqrt"
+        case BFOfInt: "fofint"
+        default: "ftoint"
+        })
+    }
+}
+
+func cmpName(out mut []byte, op int) {
+    if op == CEq {
+        obuf.Lit(mut out, "eq")
+    } else if op == CNe {
+        obuf.Lit(mut out, "ne")
+    } else if op == CLt {
+        obuf.Lit(mut out, "lt")
+    } else if op == CLe {
+        obuf.Lit(mut out, "le")
+    } else if op == CGt {
+        obuf.Lit(mut out, "gt")
+    } else if op == CGe {
+        obuf.Lit(mut out, "ge")
+    } else if op == CUlt {
+        obuf.Lit(mut out, "ult")
+    } else if op == CUge {
+        obuf.Lit(mut out, "uge")
+    } else {
+        obuf.Lit(mut out, switch op {
+        case CFEq: "feq"
+        case CFNe: "fne"
+        case CFLt: "flt"
+        case CFLe: "fle"
+        case CFGt: "fgt"
+        default: "fge"
+        })
+    }
+}
+
+// two は "%a, %b"
+func two(out mut []byte, a int, b int) {
+    val(mut out, a)
+    obuf.Lit(mut out, ", ")
+    val(mut out, b)
+}
+
+// mem は "%p[off]"
+func mem(out mut []byte, p int, off int) {
+    val(mut out, p)
+    out = append(out, '[')
+    num(mut out, off)
+    out = append(out, ']')
+}
+
+func printOp(st mut St, out mut []byte, i InsRef) {
+    op := irInsOp(mut st, i)
+    a := irInsA(mut st, i)
+    b := irInsB(mut st, i)
+    c := irInsC(mut st, i)
+    switch op {
+    case OpConst:
+        obuf.Lit(mut out, "const ")
+        num(mut out, a)
+        return
+    case OpBin:
+        binName(mut out, a)
+        out = append(out, ' ')
+        two(mut out, b, c)
+        return
+    case OpCmp:
+        cmpName(mut out, a)
+        out = append(out, ' ')
+        two(mut out, b, c)
+        return
+    case OpLoad:
+        obuf.Lit(mut out, "load.i64 ")
+        mem(mut out, a, b)
+        return
+    case OpStore | OpStore8:
+        obuf.Lit(mut out, if op == OpStore { "store " } else { "store8 " })
+        mem(mut out, a, b)
+        obuf.Lit(mut out, ", ")
+        val(mut out, c)
+        return
+    case OpLoad8:
+        obuf.Lit(mut out, "load8 ")
+        mem(mut out, a, b)
+        return
+    case OpGepW | OpGepB:
+        obuf.Lit(mut out, if op == OpGepW { "gep.word " } else { "gep.byte " })
+        two(mut out, a, b)
+        return
+    case OpPtoi:
+        obuf.Lit(mut out, "ptoi ")
+        val(mut out, a)
+        return
+    case OpItop:
+        obuf.Lit(mut out, "itop ")
+        val(mut out, a)
+        return
+    case OpSlotaddr:
+        obuf.Lit(mut out, "slotaddr s")
+        num(mut out, a)
+        return
+    case OpGlobal:
+        obuf.Lit(mut out, "globaladdr ")
+        printName(mut st, mut out, desugar.HeapGet(mut st.d, a + G_NAME))
+        return
+    case OpFsAddr:
+        obuf.Lit(mut out, "fsaddr ")
+        printName(mut st, mut out, desugar.HeapGet(mut st.d, a + G_NAME))
+        return
+    case OpCall:
+        obuf.Lit(mut out, "call ")
+        printName(mut st, mut out, irFnName(mut st, FnRef(a)))
+        out = append(out, '(')
+        vals(mut st, mut out, b)
+        out = append(out, ')')
+        return
+    case OpFuncaddr:
+        obuf.Lit(mut out, "funcaddr ")
+        printName(mut st, mut out, irFnName(mut st, FnRef(a)))
+        return
+    case OpCallI:
+        obuf.Lit(mut out, "call.indirect")
+        if c >= 0 {
+            out = append(out, '.')
+            tyName(mut out, c)
+        }
+        out = append(out, ' ')
+        val(mut out, a)
+        out = append(out, '(')
+        vals(mut st, mut out, b)
+        out = append(out, ')')
+        return
+    case OpTrapI:
+        obuf.Lit(mut out, "trap ")
+        val(mut out, a)
+        out = append(out, '(')
+        vals(mut st, mut out, b)
+        out = append(out, ')')
+        return
+    case OpUnwind:
+        obuf.Lit(mut out, "unwind")
+        return
+    case OpAtomic:
+        k := c & 7
+        obuf.Lit(mut out, if k == AT_XADD { "atomic.xadd " } else if k == AT_XCHG { "atomic.xchg " } else if k == AT_CAS { "atomic.cas " } else if k == AT_PAUSE { "pause" } else { "fence" })
+        if k != AT_FENCE && k != AT_PAUSE {
+            val(mut out, a)
+            out = append(out, '[')
+            num(mut out, c >> 3)
+            obuf.Lit(mut out, "](")
+            vals(mut st, mut out, b)
+            out = append(out, ')')
+        }
+        return
+    case OpClone:
+        obuf.Lit(mut out, "clone ")
+        val(mut out, a)
+        out = append(out, '(')
+        vals(mut st, mut out, b)
+        out = append(out, ')')
+        return
+    case OpTSwitch | OpTStart:
+        obuf.Lit(mut out, if op == OpTSwitch { "tswitch " } else { "tstart " })
+        val(mut out, a)
+        out = append(out, '(')
+        vals(mut st, mut out, b)
+        out = append(out, ')')
+        return
+    case OpSyscall:
+        if b == CY_B {
+            obuf.Lit(mut out, if c == 1 { "tsc()" } else { "cycles()" })
+            return
+        }
+        if b == MM_B {
+            obuf.Lit(mut out, mmName(c))
+            out = append(out, '(')
+            vals(mut st, mut out, a)
+            out = append(out, ')')
+            return
+        }
+        if b == AES_B {
+            obuf.Lit(mut out, aesName(c))
+            out = append(out, '(')
+            vals(mut st, mut out, a)
+            out = append(out, ')')
+            return
+        }
+        obuf.Lit(mut out, if b == 1 { "vcall(" } else { "syscall(" })
+        vals(mut st, mut out, a)
+        out = append(out, ')')
+        return
+    case OpScanB:
+        obuf.Lit(mut out, "scanb(")
+        vals(mut st, mut out, a)
+        out = append(out, ')')
+        return
+    case OpCrcFold:
+        obuf.Lit(mut out, if c == CF_PCLMUL { "cpuclmul(" } else if c == CF_CPUID7 { "cpuid7(" } else { "crcfold(" })
+        vals(mut st, mut out, a)
+        out = append(out, ')')
+        return
+    case OpPMem:
+        // 結果があれば load（c = a の埋め）・無ければ store
+        if irInsRes(mut st, i) >= 0 {
+            obuf.Lit(mut out, "load.v128 ")
+            mem(mut out, a, b)
+        } else {
+            obuf.Lit(mut out, "store.v128 ")
+            mem(mut out, a, b)
+            obuf.Lit(mut out, ", ")
+            val(mut out, c)
+        }
+        return
+    case OpPArith:
+        obuf.Lit(mut out, if a == BFAdd { "paddf " } else if a == BFSub { "psubf " } else if a == BFMul { "pmulf " } else if a == BFDiv { "pdivf " } else if a == BFSqrt { "psqrtf " } else if a == PK_PACK { "pack " } else if a == PK_SPLAT { "splat " } else if a == PK_LO { "lo " } else { "hi " })
+        if a == BFSqrt || a == PK_SPLAT || a == PK_LO || a == PK_HI {
+            val(mut out, b)
+        } else {
+            two(mut out, b, c)
+        }
+        return
+    case OpREnter:
+        obuf.Lit(mut out, "region.enter")
+        return
+    case OpRDepth:
+        obuf.Lit(mut out, "region.depth")
+        return
+    case OpRSetDepth:
+        obuf.Lit(mut out, "region.setdepth ")
+        val(mut out, a)
+        return
+    case OpRAlloc:
+        obuf.Lit(mut out, "region.alloc ")
+        two(mut out, a, b)
+        return
+    case OpRBump:
+        obuf.Lit(mut out, "region.bump ")
+        val(mut out, a)
+        return
+    }
+    obuf.Lit(mut out, "region.relocate ")
+    val(mut out, a)
+    obuf.Lit(mut out, ", ")
+    num(mut out, b)
+    obuf.Lit(mut out, ", ")
+    val(mut out, c)
+}
+
+func printEdge(st mut St, out mut []byte, to BlkRef, args int) {
+    out = append(out, 'b')
+    num(mut out, irBlkId(mut st, to))
+    if args >= 0 && desugar.HeapGet(mut st.d, args) > 0 {
+        out = append(out, '(')
+        vals(mut st, mut out, args)
+        out = append(out, ')')
+    }
+}
+
+func printTerm(st mut St, out mut []byte, b BlkRef) {
+    t := irBlkTerm(mut st, b)
+    x1 := irBlkX1(mut st, b)
+    if t == TmBr {
+        obuf.Lit(mut out, "br ")
+        printEdge(mut st, mut out, irBrTo(mut st, b), irBlkX2(mut st, b))
+    } else if t == TmCondbr {
+        obuf.Lit(mut out, "condbr ")
+        val(mut out, x1)
+        obuf.Lit(mut out, ", ")
+        printEdge(mut st, mut out, irCondThen(mut st, b), irBlkX3(mut st, b))
+        obuf.Lit(mut out, ", ")
+        printEdge(mut st, mut out, irCondElse(mut st, b), irBlkX5(mut st, b))
+    } else if t == TmRet {
+        if x1 >= 0 {
+            obuf.Lit(mut out, "ret ")
+            val(mut out, x1)
+        } else {
+            obuf.Lit(mut out, "ret")
+        }
+    } else if t == TmExit {
+        obuf.Lit(mut out, "exit ")
+        num(mut out, x1)
+    } else {
+        obuf.Lit(mut out, "<unterminated>")
+    }
+}
+
+func printFunc(st mut St, out mut []byte, f FnRef) {
+    obuf.Lit(mut out, if irFnExport(mut st, f) != 0 { "\nexport func " } else { "\nfunc " })
+    printName(mut st, mut out, irFnName(mut st, f))
+    out = append(out, '(')
+    ptys := irFnPtys(mut st, f)
+    mut i := 0
+    while i < desugar.HeapGet(mut st.d, ptys) {
+        if i > 0 {
+            obuf.Lit(mut out, ", ")
+        }
+        val(mut out, i)
+        out = append(out, ' ')
+        tyName(mut out, desugar.HeapGet(mut st.d, ptys + 1 + i))
+        i += 1
+    }
+    out = append(out, ')')
+    if irFnRet(mut st, f) >= 0 {
+        out = append(out, ' ')
+        tyName(mut out, irFnRet(mut st, f))
+    }
+    obuf.Lit(mut out, " {\n")
+    mut s := irFnSHead(mut st, f)
+    mut si := 0
+    while s >= 0 {
+        obuf.Lit(mut out, "  slot s")
+        num(mut out, si)
+        obuf.Lit(mut out, " [")
+        num(mut out, desugar.HeapGet(mut st.d, s + 1))
+        obuf.Lit(mut out, "]\n")
+        si += 1
+        s = desugar.HeapGet(mut st.d, s)
+    }
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        out = append(out, 'b')
+        num(mut out, irBlkId(mut st, b))
+        mut p := irBlkPHead(mut st, b)
+        if p >= 0 {
+            out = append(out, '(')
+            mut first := true
+            while p >= 0 {
+                if !first {
+                    obuf.Lit(mut out, ", ")
+                }
+                first = false
+                val(mut out, desugar.HeapGet(mut st.d, p + 1))
+                out = append(out, ' ')
+                tyName(mut out, desugar.HeapGet(mut st.d, p + 2))
+                p = desugar.HeapGet(mut st.d, p)
+            }
+            out = append(out, ')')
+        }
+        obuf.Lit(mut out, ":\n")
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            obuf.Lit(mut out, "  ")
+            if irInsRes(mut st, ins) >= 0 {
+                val(mut out, irInsRes(mut st, ins))
+                obuf.Lit(mut out, " = ")
+            }
+            printOp(mut st, mut out, ins)
+            out = append(out, '\n')
+            ins = irInsNext(mut st, ins)
+        }
+        obuf.Lit(mut out, "  ")
+        printTerm(mut st, mut out, b)
+        out = append(out, '\n')
+        b = irBlkNext(mut st, b)
+    }
+    obuf.Lit(mut out, "}\n")
+}
+
+// printModule はモジュール全体のテキスト（globals → 関数の順）
+func printModule(st mut St, out mut []byte) {
+    mut g := st.ghead
+    while g >= 0 {
+        obuf.Lit(mut out, "global ")
+        printName(mut st, mut out, desugar.HeapGet(mut st.d, g + G_NAME))
+        obuf.Lit(mut out, " [")
+        num(mut out, desugar.HeapGet(mut st.d, g + G_WORDS))
+        out = append(out, ']')
+        init := desugar.HeapGet(mut st.d, g + G_INIT)
+        if init >= 0 {
+            obuf.Lit(mut out, " = {")
+            mut i := 0
+            while i < desugar.HeapGet(mut st.d, init) {
+                if i > 0 {
+                    obuf.Lit(mut out, ", ")
+                }
+                num(mut out, desugar.HeapGet(mut st.d, init + 1 + i))
+                i += 1
+            }
+            out = append(out, '}')
+        }
+        out = append(out, '\n')
+        g = desugar.HeapGet(mut st.d, g + G_NEXT)
+    }
+    mut f := st.fhead
+    while f != -1 {
+        printFunc(mut st, mut out, f)
+        f = irFnNext(mut st, f)
+    }
+}

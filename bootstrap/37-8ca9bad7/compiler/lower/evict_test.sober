@@ -1,0 +1,80 @@
+package lower
+
+// 一段目の追い出し（x86.sober xPrioAlloc / xPrioEvict — 区間の便 段 2）の単体テスト（`cd src/compiler && ../../bin/sober test lower`）:
+// 部分区間を手で組み、10 本の汎用レジスタが長い区間で埋まった所へ短い熱い一時値が来たとき、どれを置くかを直に見る（1brc の mapfuse の型 —
+// 中に使用の無い素通りの区間が熱い一時値を締め出す — report-405・report-525 3 節）。中の触れの重みと使用の数（e.ev）は手で与える
+// （memo 済みとして xPcScan は走らない — IR は組まない）
+
+import "std/iter"
+
+// evT は値 11 個（0〜9 = 位置 [0, 100) の長い区間・重み 100 + k、10 = [40, 44) の一時値・重み w10）を割り当て、置き場の表を返す。
+// 値 9 は運搬値の穴で割れた値（続きの部分区間 11 = [200, 300) — 重み 1 で最後に置く。境目の写し 1 本は深さ 0 の重み 1）。
+// 値 9 の最初の部分区間の中の触れの重み = c9・使用の数 = u9（ほかの長い区間は使用 1・重み 200 — 追い出せない）。値 10 の費用 = 重み w10
+func evT(w10 int, c9 int, u9 int) []int {
+    n := 12
+    // 欄を省いた構造体リテラル（xF{opt: true, …}）は lower が Mismatch で落ちる — 空から代入で組む
+    mut e := xF{}
+    e.opt = true
+    e.nv = 11
+    e.npc = n
+    e.nx = xNXmm
+    e.ng = xNAlloc
+    e.norder = 1
+    for k <- iter.Range(0, n) {
+        e.ivS = append(e.ivS, if k < 10 { 0 } else if k == 10 { 40 } else { 200 })
+        e.ivE = append(e.ivE, if k < 10 { 100 } else if k == 10 { 44 } else { 300 })
+        e.pv = append(e.pv, if k == 11 { 9 } else { k })
+        e.pnx = append(e.pnx, if k == 9 { 11 } else { -1 })
+        e.pwt = append(e.pwt, if k < 10 { 100 + k } else if k == 10 { w10 } else { 1 })
+        // 作業域 e.ev の部分区間ごとの 4 語（追い出された回数・処理済み・中の触れの重み・中の使用の数）
+        e.ev = append(e.ev, 0)
+        e.ev = append(e.ev, 0)
+        e.ev = append(e.ev, if k < 9 { 200 } else if k == 9 { c9 } else if k == 10 { 16 } else { 1 })
+        e.ev = append(e.ev, if k == 9 { u9 } else { 1 })
+    }
+    // 中の触れは数え済み・ヒープは空
+    e.ev = append(e.ev, 1)
+    e.ev = append(e.ev, 0)
+    e.sv = append(e.sv, 9)
+    e.order = append(e.order, 0)
+    e.bpos = append(e.bpos, 0)
+    e.cold = append(e.cold, 0)
+    e.ldep = append(e.ldep, 0)
+    // 値 9 は運搬値の穴で割れた値（頭のブロック 0）— 追い出しの対象はこの形だけ
+    xFill(mut e.hdB, 11, -1)
+    e.hdB[9] = 0
+    xFill(mut e.fcls, n, 0)
+    xFill(mut e.hR, n, -1)
+    xFill(mut e.hP, n, -1)
+    xFill(mut e.hA1, n, -1)
+    xFill(mut e.hA2, n, -1)
+    xFill(mut e.hOp, n, -1)
+    xFill(mut e.loc, n, xSpill)
+    mut ivs := mut []int{}
+    for k <- iter.Range(0, n) {
+        ivs = append(ivs, k)
+    }
+    mut used := mut []int{}
+    xFill(mut used, 32, 0)
+    mut spills := mut []int{}
+    xFill(mut spills, n, 0)
+    mut st := St{}
+    _ = xPrioAlloc(mut st, mut e, mut ivs, n, mut used, mut spills)
+    return freeze(e.loc)
+}
+
+func TestEvict() {
+    // 0: 中に使用の無い長い区間（定義だけ — 重み 7 + 境目 1）は、2 倍以上重い一時値（16）に席を譲る — 一時値がレジスタ・値 9 が spill
+    a := evT(16, 7, 0)
+    assert(xIsReg(a[10]) && !xIsReg(a[9]))
+    // 1: 中に使用のある区間は追い出さない（静的な重みは兄弟の腕を全部熱く数える — 使用のある先客との入れ替えは実回数で逆になりうる）
+    b := evT(16, 7, 1)
+    assert(!xIsReg(b[10]) && xIsReg(b[9]))
+    // 2: 余裕が 2 倍に足りなければ追い出さない（先客 8 + 境目 1 > 一時値 16 の半分）
+    c := evT(16, 8, 0)
+    assert(!xIsReg(c[10]) && xIsReg(c[9]))
+    // 3: 置いた区間どうしは重ならない（追い出した先客は列から外れている）
+    for k <- iter.Range(0, 10) {
+        assert(!(xIsReg(a[k]) && a[k] == a[10]))
+    }
+}

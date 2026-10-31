@@ -5,6 +5,7 @@ package desugar
 // - 合成の節 = SBASE + st.syn の添字（脱糖器の書き換え — 補間・for 式・yield・名前付き関数型の展開など — と lower の持ち上げたラムダ・EVal。差し替えは文形 for の 1 か所だけ — synSet）
 // - 木の列・文字列 = LBASE + lk × LK + file × FW + data の添字。lk は列の要素の種類（LRAW = 文字列・値の列 / LNODES = 節の列 / LSTRS = 文字列の列）—
 //   木の data の要素は生の添字なので、latI 等が参照へ付け替えるのに要る
+// - 表層型検査器の店の列（型の列・印の列）= YLBASE + 店の列の添字（tystore.sober — 読みは木の列の枝の中で振り分ける）
 // - それ以外（< TBASE）はヒープ st.h の番地（脱糖器・lower が作る列・文字列）
 // 読みは基底で分かれる（nodeOf / kindN / tokN / lenL / latI / dat — state.sober）。取り違えは範囲外の添字で panic する（TBASE / CBASE と同じく音を立てる）
 
@@ -18,19 +19,19 @@ const LK = 1099511627776       // 2^40（列の要素の種類の桁）
 const FW = 16777216            // 2^24（ファイル内の添字の幅）
 const MAXFILES = 65536         // 2^16（file × FW が LK に届かない）
 
-// NodeRef は節の参照（木の節 ABASE / 合成の節 SBASE — language.md 32 節の named scalar）。ListRef は列の参照（木の列 LBASE / ヒープの列）。
+// 節の参照（木の節 ABASE / 合成の節 SBASE — language.md 32 節の named scalar）。ListRef は列の参照（木の列 LBASE / ヒープの列）。
 // 無しは -1（`!= -1` で見る）。欄（ast.Node の a〜f）は int のまま — 種類ごとの意味（init.sober の desc）に従って nA / lA 等で型付きに読む
 type NodeRef int
 type ListRef int
 
-// StrRef は文字列（名前・綴り — ヒープの [n, バイト…] か木の文字列 LBASE）の参照。無しは -1
+// 文字列（名前・綴り — ヒープの [n, バイト…] か木の文字列 LBASE）の参照。無しは -1
 type StrRef int
 
 const LRAW = 0
 const LNODES = 1
 const LSTRS = 2
 
-// isTreeNode は木の節の参照か（それ以外の節は合成の表 — 読みは SBASE を引いて添字にする。取り違えは範囲外で panic）
+// 木の節の参照か（それ以外の節は合成の表 — 読みは SBASE を引いて添字にする。取り違えは範囲外で panic）
 func isTreeNode(n int) bool {
     return n >= ABASE && n < SBASE
 }
@@ -44,12 +45,12 @@ func refIdx(r int) int {
     return r % FW
 }
 
-// refKind は木の列の参照の要素の種類
+// 木の列の参照の要素の種類
 func refKind(l int) int {
     return (l - LBASE) / LK
 }
 
-// unparenAt は括弧を剥がした節（木の中の添字）
+// 括弧を剥がした節（木の中の添字）
 func unparenAt(nodes []ast.Node, n0 int) int {
     mut n := n0
     while n >= 0 && nodes[n].kind == ast.EParen {
@@ -58,7 +59,7 @@ func unparenAt(nodes []ast.Node, n0 int) int {
     return n
 }
 
-// treeField は欄の値 x を種類 c で参照へ付け替える
+// 欄の値 x を種類 c で参照へ付け替える
 func treeField(file int, nodes []ast.Node, c int, x int) int {
     if c == 0 || x < 0 {
         return x
@@ -71,7 +72,7 @@ func treeField(file int, nodes []ast.Node, c int, x int) int {
     }
 }
 
-// treeNode は木（file 番目の nodes）の節 i を、欄を参照へ付け替えて返す（欄の種類は descs — desc の表）。`string(b)` の書き換え先 EUtf8Ref は
+// 木（file 番目の nodes）の節 i を、欄を参照へ付け替えて返す（欄の種類は descs — desc の表）。`string(b)` の書き換え先 EUtf8Ref は
 // 名前 `$utf8`（ヒープの文字列 utf8）の EIdent に見せる
 func treeNode(file int, nodes []ast.Node, i int, descs []int, utf8 int) ast.Node {
     x := nodes[i]
@@ -88,13 +89,13 @@ func treeNode(file int, nodes []ast.Node, i int, descs []int, utf8 int) ast.Node
     return ast.Node{kind: x.kind, tok: x.tok, a: treeField(file, nodes, c % 8, x.a), b: treeField(file, nodes, c / 8 % 8, x.b), c: treeField(file, nodes, c / 64 % 8, x.c), d: treeField(file, nodes, c / 512 % 8, x.d), e: treeField(file, nodes, c / 4096 % 8, x.e), f: treeField(file, nodes, c / 32768 % 8, x.f)}
 }
 
-// treeKind は木の節 i の種類（EUtf8Ref は EIdent に見せる — treeNode と同じ）
+// 木の節 i の種類（EUtf8Ref は EIdent に見せる — treeNode と同じ）
 func treeKind(t ast.Tree, i int) int {
     k := t.nodes[i].kind
     return if k == ast.EUtf8Ref { ast.EIdent } else { k }
 }
 
-// treeLat は木（file 番目の nodes / data）の列 x（要素の種類 lk）の i 番目を参照へ付け替えて返す（穴は -1）
+// 木（file 番目の nodes / data）の列 x（要素の種類 lk）の i 番目を参照へ付け替えて返す（穴は -1）
 func treeLat(file int, nodes []ast.Node, data []int, lk int, x int, i int) int {
     y := data[x + 1 + i]
     if y < 0 || lk == LRAW {
@@ -106,7 +107,7 @@ func treeLat(file int, nodes []ast.Node, data []int, lk int, x int, i int) int {
     return LBASE + file * FW + y
 }
 
-// descTable は節の種類 → desc の表（種類の番号は ast.NKinds 未満）
+// 節の種類 → desc の表（種類の番号は ast.NKinds 未満）
 func descTable() []int {
     mut ds := mut []int{}
     for k <- iter.Range(0, ast.NKinds) {
@@ -134,12 +135,12 @@ func dataIs(x []int, i int, w []byte) bool {
     return true
 }
 
-// badRef は参照の取り違え（panic 101 — 到達 = バグ）
+// 参照の取り違え（panic 101 — 到達 = バグ）
 func badRef() int {
     return panic(InvariantBroken{})
 }
 
-// checkTrees は木の大きさが参照の幅に収まることを確かめる（収まらなければ panic）
+// 木の大きさが参照の幅に収まることを確かめる（収まらなければ panic）
 func checkTrees(ts []ast.Tree) {
     if len(ts) >= MAXFILES {
         badRef()

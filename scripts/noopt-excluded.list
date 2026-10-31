@@ -1,0 +1,11 @@
+# 展開の口（SOBER_RAW_EXPAND=1 — raw で mut 引数だけの関数を呼び出し点ごとに展開する開発の口）で肥大して建たない entry —
+# 1 行 1 entry（examples/X.sober・testdata/D/app の綴り）、# はコメント。
+# 読み手: 展開の口の形だけ — regionbound（展開の粒度で region の境界を数える）・optdiff の「展開 ≡ 透過」の形。raw の既定の道（透過 —
+# elfeq・obs・irtext・lltext・optdiff の既定の形）は外さない。ここに残る entry は「展開 ≡ 透過」の照合の網の限界（照合されない）。
+#
+# std/cli の例題: 展開の形の raw の IR で @std/cli.Spec が 1 関数 110 万行・slot 3,927 本（json.PutString 1 回 ≈ 8,600 行 — quote の遅い道から
+# builder の遅い道まで全部展開 — × 静的な展開点 ≈ 118）。stage2 の展開の口の `build --no-opt` は W8 InvariantBroken / W1 RegionExceeded・
+# stage1 は 27 GB で OutOfMemory（report-1273 6 節・report-1278）。raw の既定の道（透過）では 1.6 MB で建つ。
+examples/cli_wc.sober
+examples/cli_sub.sober
+examples/cli_misuse.sober

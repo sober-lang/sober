@@ -43,6 +43,10 @@ Hello, Sober!
 | `sober check <file.sober>` | 型検査と解析器だけを掛ける（実行ファイルを作らない） |
 | `sober test <package>` | package の `*_test.sober` のテストを走らせる |
 
+コマンドとフラグの一覧は `sober --help`、コマンドごとのフラグは `sober <command> --help` で出ます。使い方の誤り（知らないフラグ・値の誤り）の終了コードは 2 です。
+
+`sober build` は中間生成物を `~/.cache/sober`（`SOBER_CACHE` か `XDG_CACHE_HOME` があればそちら）にキャッシュし、2 回目以降は変わった所だけを作り直します。出力の実行ファイルはキャッシュの有無で変わりません。切るには `SOBER_BUILD_CACHE=0`、置き場の一覧と掃除は `sober cache info` / `sober cache gc` です。
+
 ## サーバを走らせる
 
 std/net（したがって std/http と std/tls）を使うプログラムは、環境に 3 つのことを求めます:
@@ -55,7 +59,7 @@ std/net（したがって std/http と std/tls）を使うプログラムは、�
 
 ## 開発者向け: 検査の網を回す
 
-コンパイラ自身に手を入れるときは、`scripts/gates.sh --full` が全部の検査を回します。網には追加で次が要ります:
+コンパイラ自身に手を入れるときは、`scripts/gates.sh --full` が全部の検査を回します。入力が前回 PASS したときと同じ検査は、その記録を再利用します（`--no-cache` を付けると全部を走らせます）。網には追加で次が要ります:
 [Lean 4](https://lean-lang.org/)（`lean/lean-toolchain` の版 — `cd lean && lake build`）、Go（独立のオラクルと bench の双子）、Rust（bench の双子）、Node.js（一部の道具）、`perf`（bench）、GNU as（命令のエンコーダの照合）。
 
 次へ: [最初のプログラム](first-program.ja.md)

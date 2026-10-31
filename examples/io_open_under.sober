@@ -1,6 +1,6 @@
 package main
 
-// 根の下の開き（language.md 28 節「根の下の開き」— static 便）: `r := io.OpenRoot(dir)?` + `defer io.CloseRoot(r)`・`f := io.OpenUnder(r, rel)?` + `defer io.Close(f)`。
+// 根の下の開き（language.md 28 節「根の下の開き」）: `r := io.OpenRoot(dir)?` + `defer io.CloseRoot(r)`・`f := io.OpenUnder(r, rel)?` + `defer io.Close(f)`。
 // r の外へ出ないのはカーネルの保証（openat2 の RESOLVE_BENEATH）— `..`・絶対パス・外を指す symlink は io.Denied、中を指す symlink と中に留まる `..` は通る。
 // std は rel を文字列として検査しない。io.Stat は開いた File の属性（大きさ・更新時刻・種類 — 通常のファイルでなくても誤りにしない）。後始末は /proc/self/fd の項目の数の差で見る。
 // リポジトリのルートを cwd にして実行する（作業域は out/io_open_under — symlink は ln で張る）
@@ -22,7 +22,7 @@ func why(e error) string {
     }
 }
 
-// probe は r の下の rel を開いて大きさと中身を読む（Root を実引数で受ける helper）
+// r の下の rel を開いて大きさと中身を読む（Root を実引数で受ける helper）
 @errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired)
 func probe(r io.Root, rel string) (string, error?) {
     f := io.OpenUnder(r, rel)?
@@ -50,7 +50,7 @@ func show(r io.Root, rel string) {
     println(if e != nil { "${rel}: ${why(e)}" } else { "${rel}: ${s}" })
 }
 
-// mkdir は d を作る（既にあってよい — EEXIST は読み捨てる）
+// d を作る（既にあってよい — EEXIST は読み捨てる）
 @errors(io.NotFound, io.Denied, io.Other)
 func mkdir(d string) error? {
     e := os.Mkdir(d)
@@ -60,7 +60,7 @@ func mkdir(d string) error? {
     return e
 }
 
-// exists は e が EEXIST か
+// e が EEXIST か
 func exists(e error) bool {
     return switch e {
     case io.Other{errno}: errno == 17
@@ -98,7 +98,7 @@ func run(w string) error? {
     return nil
 }
 
-// rootOnFile は通常のファイルを根として開く（開ければ nil — ENOTDIR で NotFound になる）
+// 通常のファイルを根として開く（開ければ nil — ENOTDIR で NotFound になる）
 @errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired)
 func rootOnFile(w string) error? {
     r := io.OpenRoot(w + "/root/a.txt")?

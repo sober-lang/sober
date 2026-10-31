@@ -1,0 +1,378 @@
+package lower
+
+// 入口の零初期化の語の判定。IR の約束「スロットは入口で 0」（docs/ir.md 2 節）は、
+// 0 を観測できる読みがある語にだけ要る: 入口からのどれかの道で書かれていない語の load（前向きの must 解析 — 書き済みに数えるのは自分の store と、
+// sret の受け皿を渡す call〔呼ぶ関数の F_SRET_BIT — 受け皿の全語を書き、書く前に読まない約束〕）と、
+// 番地が load / store の番地以外へ逃げる点（call の引数・辺の引数・ret・格納される値・定数でない gep・バイトの読み書き — 印の無い call の
+// 受け皿は逃げのまま）でまだ書かれていない語。x86 の段の中で呼ぶので、IR は凍結した表の読み口（xi* / xb* / xf*）で読む。それ以外の語は入口の値が観測されないので 0 にしない。
+// 最適化のバックエンド（e.opt）だけが使う — 写しのバックエンド〔--backend=copy / --no-opt — elfeq が stage1 と照合する〕は全語を 0 にしたまま
+
+import "std/iter"
+import "std/os"
+
+// 関数 f のスロットの語ごとの要零をフレームの位置の列で返す（[P] = 1 なら入口で 0 にする。P = 1 は rbp - 8、slotWords は最も下 —
+// スロット k の語 j は rbp - 8 × (cum[k] - j)。ws[k] = スロット k の語数〔1 語未満は 1〕）
+func xZeroNeed(st mut St, f FnRef, ws []int) []int {
+    ns := len(ws)
+    mut start := mut []int{}
+    mut total := 0
+    for k <- iter.Range(0, ns) {
+        start = append(start, total)
+        total += ws[k]
+    }
+    mut need := mut []int{}
+    xFill(mut need, total, 0)
+    if total == 0 {
+        return xZeroByPos(freeze(need), ws)
+    }
+    // 語の通し番号 g（スロット k の語 j = start[k] + j）→ スロット
+    mut slotOfG := mut []int{}
+    for k <- iter.Range(0, ns) {
+        for j <- iter.Range(0, ws[k]) {
+            slotOfG = append(slotOfG, k)
+        }
+    }
+    sg := freeze(slotOfG)
+    sa := freeze(start)
+    nv := xfNVal(mut st, f)
+    nb := xfNBlk(mut st, f)
+    nw := (total + 63) / 64
+    // 走査 1 回目: 定数・番地（addr[v] = 値 v が指すスロットの語の通し番号・-1 = スロットの番地でない）・gen（ブロックの中の store の語 —
+    // 書き済みの集合は語のビット集合〔64 語 / int〕・nb × nw の平らな表）。並びの順で定義が先に来ない gep / store は後で解く（pg / ps）。
+    // 命令を読む走査はこれと最後の印の 2 回だけ（全語の列で毎周ブロックを歩き直すと自己 build の命令が大きく増える）
+    mut cval := mut []int{}
+    xFill(mut cval, nv, 0)
+    mut isc := mut []int{}
+    xFill(mut isc, nv, 0)
+    mut addr := mut []int{}
+    xFill(mut addr, nv, -1)
+    mut gen := mut []int{}
+    xFill(mut gen, nb * nw, 0)
+    mut bref := mut []int{}
+    xFill(mut bref, nb, -1)
+    mut pg := mut []int{}
+    mut ps := mut []int{}
+    mut psr := mut []int{}
+    mut b := xfBHead(mut st, f)
+    entry := xbId(mut st, b)
+    while b != -1 {
+        id := xbId(mut st, b)
+        bref[id] = int(b)
+        mut ins := xbIHead(mut st, b)
+        while ins != -1 {
+            op := xiOp(mut st, ins)
+            if op == OpStore {
+                if !zeroGen(mut gen, mut addr, ws, sa, sg, nw, id, xiA(mut st, ins), xiB(mut st, ins)) {
+                    ps = append(ps, int(ins))
+                    ps = append(ps, id)
+                }
+            } else if (op == OpCall || op == OpCallI) && zeroSretP(mut st, ins) >= 0 {
+                // sret の受け皿（引数 0）の全語を書く call（F_SRET_BIT の約束）— 番地が後で解ける形なら後で
+                if !zeroGenSret(mut gen, mut addr, ws, sa, sg, nw, id, zeroSretP(mut st, ins)) {
+                    psr = append(psr, int(ins))
+                    psr = append(psr, id)
+                }
+            } else if op == OpGepW {
+                if !zeroGep(mut addr, mut isc, mut cval, ws, sa, sg, xiRes(mut st, ins), xiA(mut st, ins), xiB(mut st, ins)) {
+                    pg = append(pg, int(ins))
+                }
+            } else {
+                r := xiRes(mut st, ins)
+                if op == OpConst && r >= 0 {
+                    isc[r] = 1
+                    cval[r] = xiA(mut st, ins)
+                } else if op == OpSlotaddr && r >= 0 {
+                    k := xiA(mut st, ins)
+                    if k >= 0 && k < ns {
+                        addr[r] = sa[k]
+                    }
+                }
+            }
+            ins = xiNext(mut st, ins)
+        }
+        b = xbNext(mut st, b)
+    }
+    // 後で解く gep（定義は使う点を支配するが並びの順とは限らないので、変わらなくなるまで）と store
+    mut changed := len(pg) > 0
+    while changed {
+        changed = false
+        for q <- iter.Range(0, len(pg)) {
+            i := InsRef(pg[q])
+            r := xiRes(mut st, i)
+            if r >= 0 && addr[r] < 0 && zeroGep(mut addr, mut isc, mut cval, ws, sa, sg, r, xiA(mut st, i), xiB(mut st, i)) {
+                changed = true
+            }
+        }
+    }
+    for q <- iter.Range(0, len(ps) / 2) {
+        i := InsRef(ps[2 * q])
+        _ = zeroGen(mut gen, mut addr, ws, sa, sg, nw, ps[2 * q + 1], xiA(mut st, i), xiB(mut st, i))
+    }
+    for q <- iter.Range(0, len(psr) / 2) {
+        _ = zeroGenSret(mut gen, mut addr, ws, sa, sg, nw, psr[2 * q + 1], zeroSretP(mut st, InsRef(psr[2 * q])))
+    }
+    ad := freeze(addr)
+    // 必ず書き済み（前向きの must 解析 — ブロックの入り = 前任の出の積集合・入口は全部未書き・到達しないブロックは全部書き済み）。
+    // 出 = 入り ∪ gen（逃げは書き済みを変えない — 書き済みに数えるのは自分の store だけ）
+    mut pcnt := mut []int{}
+    xFill(mut pcnt, nb + 1, 0)
+    for id <- iter.Range(0, nb) {
+        if bref[id] >= 0 {
+            for k <- iter.Range(0, xNSucc(mut st, BlkRef(bref[id]))) {
+                t := xSucc(mut st, BlkRef(bref[id]), k)
+                pcnt[t + 1] = pcnt[t + 1] + 1
+            }
+        }
+    }
+    for id <- iter.Range(0, nb) {
+        pcnt[id + 1] = pcnt[id + 1] + pcnt[id]
+    }
+    mut preds := mut []int{}
+    xFill(mut preds, pcnt[nb], 0)
+    mut pfill := mut []int{}
+    xFill(mut pfill, nb, 0)
+    for id <- iter.Range(0, nb) {
+        if bref[id] >= 0 {
+            for k <- iter.Range(0, xNSucc(mut st, BlkRef(bref[id]))) {
+                t := xSucc(mut st, BlkRef(bref[id]), k)
+                preds[pcnt[t] + pfill[t]] = id
+                pfill[t] = pfill[t] + 1
+            }
+        }
+    }
+    // 以後は読むだけの表（compiler/ は鎖の最後の段の言語 — 暗黙の freeze は無いので明示）
+    pr := freeze(preds)
+    pc := freeze(pcnt)
+    gn := freeze(gen)
+    mut outw := mut []int{}
+    xFill(mut outw, nb * nw, -1)
+    mut inw := mut []int{}
+    xFill(mut inw, nw, 0)
+    mut again := true
+    while again {
+        again = false
+        for id <- iter.Range(0, nb) {
+            if bref[id] < 0 {
+                continue
+            }
+            zeroInto(mut inw, mut outw, pr, pc, id, entry, nw)
+            for w <- iter.Range(0, nw) {
+                x := inw[w] | gn[id * nw + w]
+                if outw[id * nw + w] != x {
+                    outw[id * nw + w] = x
+                    again = true
+                }
+            }
+        }
+    }
+    // 走査 2 回目（印）: 入りから歩いて、書き済みでない語の load を要零に。番地の他の使い道（逃げ）はその点で書き済みでない語を要零に
+    for id <- iter.Range(0, nb) {
+        if bref[id] < 0 {
+            continue
+        }
+        zeroInto(mut inw, mut outw, pr, pc, id, entry, nw)
+        zeroScan(mut st, BlkRef(bref[id]), mut inw, ad, sg, sa, ws, nv, mut need)
+    }
+    return xZeroByPos(freeze(need), ws)
+}
+
+// gep.word の結果 r の番地を解く（基底がスロットの番地・変位が定数・同じスロットの中のとき）。解けなければ false
+func zeroGep(addr mut []int, isc mut []int, cval mut []int, ws []int, start []int, slotOfG []int, r int, p int, ix int) bool {
+    if r < 0 || addr[p] < 0 || isc[ix] != 1 {
+        return false
+    }
+    g := addr[p] + cval[ix]
+    k := slotOfG[addr[p]]
+    if g >= start[k] && g < start[k] + ws[k] {
+        addr[r] = g
+        return true
+    }
+    return false
+}
+
+// store（番地 p・語の変位 off）の語をブロック id の gen へ。番地がまだ解けていなければ false（範囲の外の store は書きに数えないので true）
+func zeroGen(gen mut []int, addr mut []int, ws []int, start []int, slotOfG []int, nw int, id int, p int, off int) bool {
+    if addr[p] < 0 {
+        return false
+    }
+    g := addr[p] + off
+    k := slotOfG[addr[p]]
+    if g >= start[k] && g < start[k] + ws[k] {
+        gen[id * nw + (g >> 6)] = gen[id * nw + (g >> 6)] | (1 << (g & 63))
+    }
+    return true
+}
+
+// 語の通し番号の列 need をフレームの位置の列へ（[P] — P = cum[k] - j・[0] は使わない）
+func xZeroByPos(need []int, ws []int) []int {
+    mut cum := 0
+    mut total := 0
+    for k <- iter.Range(0, len(ws)) {
+        total += ws[k]
+    }
+    mut out := mut []int{}
+    xFill(mut out, total + 1, 0)
+    mut g := 0
+    for k <- iter.Range(0, len(ws)) {
+        cum += ws[k]
+        for j <- iter.Range(0, ws[k]) {
+            if need[g] == 1 {
+                out[cum - j] = 1
+            }
+            g += 1
+        }
+    }
+    return freeze(out)
+}
+
+// 毒の口の環境変数 SOBER_SLOT_POISON が立っているか（値は問わない）
+func slotPoisonEnv() bool {
+    v, err := os.Getenv("SOBER_SLOT_POISON")
+    if err != nil {
+        return false
+    }
+    return v != nil
+}
+
+// ブロック id の入り（ビット集合 nw 語）を inw へ（前任の出の積集合 — 入口は全部 0・前任の無いブロックは到達しないので全部 1）
+func zeroInto(inw mut []int, outw mut []int, preds []int, pcnt []int, id int, entry int, nw int) {
+    for w <- iter.Range(0, nw) {
+        inw[w] = if id == entry { 0 } else { -1 }
+    }
+    if id == entry {
+        return
+    }
+    for q <- iter.Range(pcnt[id], pcnt[id + 1]) {
+        p := preds[q]
+        for w <- iter.Range(0, nw) {
+            inw[w] = inw[w] & outw[p * nw + w]
+        }
+    }
+}
+
+// 命令 ins が sret の受け皿を渡す call（呼ぶ関数の F_MUTP の F_SRET_BIT・間接なら c = CALLI_SRET）なら受け皿の値（引数 0）、それ以外は -1
+func zeroSretP(st mut St, ins InsRef) int {
+    if xiOp(mut st, ins) == OpCallI && xiC(mut st, ins) == CALLI_SRET && xLen(mut st, xiB(mut st, ins)) > 0 {
+        return xAt(mut st, xiB(mut st, ins), 0)
+    }
+    if xiOp(mut st, ins) != OpCall || xLen(mut st, xiB(mut st, ins)) == 0 {
+        return -1
+    }
+    m := xg(mut st, xiA(mut st, ins) + F_MUTP)
+    return if m >= 0 && (m >> F_SRET_BIT) & 1 == 1 { xAt(mut st, xiB(mut st, ins), 0) } else { -1 }
+}
+
+// 受け皿 p（スロットの頭の番地のときだけ）の全語をブロック id の gen へ。番地がまだ解けていなければ false
+func zeroGenSret(gen mut []int, addr mut []int, ws []int, start []int, slotOfG []int, nw int, id int, p int) bool {
+    if p >= len(addr) {
+        return true
+    }
+    if addr[p] < 0 {
+        return false
+    }
+    k := slotOfG[addr[p]]
+    if addr[p] == start[k] {
+        for g <- iter.Range(start[k], start[k] + ws[k]) {
+            gen[id * nw + (g >> 6)] = gen[id * nw + (g >> 6)] | (1 << (g & 63))
+        }
+    }
+    return true
+}
+
+// 語 g が書き済みか・zwSet は書き済みにする（ビット集合 wb）
+func zwHas(wb mut []int, g int) bool {
+    return ((wb[g >> 6] >> (g & 63)) & 1) == 1
+}
+
+func zwSet(wb mut []int, g int) {
+    wb[g >> 6] = wb[g >> 6] | (1 << (g & 63))
+}
+
+// ブロック b を歩いて wb（書き済みのビット集合）を進め、要零を立てる（書き済みでない語の load・逃げる点で書き済みでない語）
+func zeroScan(st mut St, b BlkRef, wb mut []int, addr []int, slotOfG []int, start []int, ws []int, nv int, need mut []int) {
+    mut ins := xbIHead(mut st, b)
+    while ins != -1 {
+        op := xiOp(mut st, ins)
+        if op == OpLoad {
+            p := xiA(mut st, ins)
+            if addr[p] >= 0 {
+                g := addr[p] + xiB(mut st, ins)
+                k := slotOfG[addr[p]]
+                if g < start[k] || g >= start[k] + ws[k] {
+                    zeroEscape(mut wb, k, start, ws, mut need)
+                } else if !zwHas(mut wb, g) {
+                    need[g] = 1
+                }
+            }
+        } else if op == OpStore {
+            p := xiA(mut st, ins)
+            v := xiC(mut st, ins)
+            if v >= 0 && v < nv && addr[v] >= 0 {
+                zeroEscape(mut wb, slotOfG[addr[v]], start, ws, mut need)
+            }
+            if addr[p] >= 0 {
+                g := addr[p] + xiB(mut st, ins)
+                k := slotOfG[addr[p]]
+                if g < start[k] || g >= start[k] + ws[k] {
+                    zeroEscape(mut wb, k, start, ws, mut need)
+                } else {
+                    zwSet(mut wb, g)
+                }
+            }
+        } else if op == OpGepW && xiRes(mut st, ins) >= 0 && addr[xiRes(mut st, ins)] >= 0 {
+            // 定数の変位の番地 — 基底は逃げない
+            gi := xiB(mut st, ins)
+            if gi >= 0 && gi < nv && addr[gi] >= 0 {
+                zeroEscape(mut wb, slotOfG[addr[gi]], start, ws, mut need)
+            }
+        } else if (op == OpCall || op == OpCallI) && zeroSretP(mut st, ins) >= 0 {
+            // 受け皿以外の引数は逃げ（呼ばれた関数が読みうる）。受け皿（スロットの頭）は全語を書き済みに — 呼ばれた関数は書く前に読まない。
+            // 被演算子の並び: 直接 = [引数…]（受け皿は 0）・間接 = [callee, 引数…]（受け皿は 1）
+            sk := if op == OpCallI { 1 } else { 0 }
+            for k <- iter.Range(0, xNOps(mut st, ins)) {
+                if k == sk {
+                    continue
+                }
+                o := xOpnd(mut st, ins, k)
+                if o >= 0 && o < nv && addr[o] >= 0 {
+                    zeroEscape(mut wb, slotOfG[addr[o]], start, ws, mut need)
+                }
+            }
+            p := zeroSretP(mut st, ins)
+            if p < nv && addr[p] >= 0 {
+                k := slotOfG[addr[p]]
+                if addr[p] == start[k] {
+                    for g <- iter.Range(start[k], start[k] + ws[k]) {
+                        zwSet(mut wb, g)
+                    }
+                } else {
+                    zeroEscape(mut wb, k, start, ws, mut need)
+                }
+            }
+        } else if op != OpSlotaddr {
+            for k <- iter.Range(0, xNOps(mut st, ins)) {
+                o := xOpnd(mut st, ins, k)
+                if o >= 0 && o < nv && addr[o] >= 0 {
+                    zeroEscape(mut wb, slotOfG[addr[o]], start, ws, mut need)
+                }
+            }
+        }
+        ins = xiNext(mut st, ins)
+    }
+    for k <- iter.Range(0, xNTermOps(mut st, b)) {
+        o := xTermOpnd(mut st, b, k)
+        if o >= 0 && o < nv && addr[o] >= 0 {
+            zeroEscape(mut wb, slotOfG[addr[o]], start, ws, mut need)
+        }
+    }
+}
+
+// スロット k の番地が逃げる点: 書き済みでない語を要零に（逃げた先が読みうる）。逃げた先の書きは書き済みに数えない
+// （例外は印のある sret の受け皿だけ — zeroScan の call の腕・zeroGenSret）
+func zeroEscape(wb mut []int, k int, start []int, ws []int, need mut []int) {
+    for g <- iter.Range(start[k], start[k] + ws[k]) {
+        if !zwHas(mut wb, g) {
+            need[g] = 1
+        }
+    }
+}

@@ -1,0 +1,86 @@
+package lower
+
+// 展開後の上限の巻き上げ（rlim.sober — std の work の席 段 2）の網: IR を手で組んで直に見る（`cd src/compiler && ../../bin/sober test lower`）。
+// 巻き上げは観測を変えない変換なので、門を緩めすぎる変異は例・題材の出力では鳴りにくい — 巻き上げる / 巻き上げない形をここで固定する
+
+import "desugar"
+
+// rmT は `for i < n { lim = meta[W_SLOTS] + (dd + 1) × meta[W_SLOT_SIZE]; c = i > lim; [kind の形] }`（dd = 頭の自明な仮引数 — 入りは仮引数 d）
+// の関数に巻き上げを掛け、本体のブロックに残った種の load の数と、入口のブロックに仮引数 d を被演算子に持つ算術があるか（自明な仮引数の付け替え）を返す。
+// kind: 0 = 何も足さない・1 = 未知の関数の呼び出し・2 = 番地が gep を挟む（globaladdr 直でない）・3 = meta[W_SLOTS] への store・4 = 既知の rt（slice_grow）の呼び出し
+func rmT(kind int) (int, bool) {
+    mut st := St{}
+    initScalars(mut st)
+    desugar.HeapPush(mut st.d, 0)
+    st.meta = addGlobalInit(mut st, 0, W_SLOT_SIZE + 1, -1)
+    pt := listN(mut st, 2)
+    desugar.HeapSet(mut st.d, pt + 1, TyI64)
+    desugar.HeapSet(mut st.d, pt + 2, TyI64)
+    g := addFunc(mut st, 0, desugar.ListRef(listN(mut st, 0)), -1)
+    st.rtGrow = g
+    other := addFunc(mut st, 0, desugar.ListRef(listN(mut st, 0)), -1)
+    f := addFunc(mut st, 0, desugar.ListRef(pt), -1)
+    st.fn = f
+    entry := newBlock(mut st)
+    st.cur = entry
+    hd := newBlock(mut st)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    irSetBlkLoop(mut st, hd, 1)
+    br(mut st, hd, list2(mut st, iconst(mut st, 0), 0))
+    setCur(mut st, hd)
+    i := param(mut st, hd, TyI64)
+    dd := param(mut st, hd, TyI64)
+    condbr(mut st, cmp(mut st, CLt, i, 1), body, -1, done, -1)
+    setCur(mut st, body)
+    m := globaladdr(mut st, st.meta)
+    a := if kind == 2 { gepWord(mut st, m, iconst(mut st, 0)) } else { m }
+    lim := bin(mut st, BAdd, load(mut st, a, W_SLOTS), bin(mut st, BMul, bin(mut st, BAdd, dd, iconst(mut st, 1)), load(mut st, a, W_SLOT_SIZE)))
+    _ = cmp(mut st, CGt, i, lim)
+    if kind == 1 {
+        _ = call(mut st, other, listN(mut st, 0))
+    } else if kind == 3 {
+        store(mut st, m, W_SLOTS, i)
+    } else if kind == 4 {
+        _ = call(mut st, g, listN(mut st, 0))
+    }
+    br(mut st, hd, list2(mut st, bin(mut st, BAdd, i, iconst(mut st, 1)), dd))
+    setCur(mut st, done)
+    ret(mut st, -1)
+    rlimFunc(mut st, f)
+    mut seeds := 0
+    mut k := irBlkIHead(mut st, body)
+    while k != -1 {
+        if irInsOp(mut st, k) == OpLoad && rmSeedOff(irInsB(mut st, k)) {
+            seeds += 1
+        }
+        k = irInsNext(mut st, k)
+    }
+    mut useD := false
+    k = irBlkIHead(mut st, entry)
+    while k != -1 {
+        if irInsOp(mut st, k) == OpBin && (irInsB(mut st, k) == 0 || irInsC(mut st, k) == 0) {
+            useD = true
+        }
+        k = irInsNext(mut st, k)
+    }
+    return seeds, useD
+}
+
+func TestRlim() {
+    // 0: 種の load と上限の算術は前置きへ出る — 本体に種が残らず、前置きの算術は自明な仮引数 dd の代わりに入りの実引数 d（値 0）を使う
+    a0, a1 := rmT(0)
+    assert(a0 == 0 && a1)
+    // 4: 既知の rt（slice_grow）の呼び出しだけのループも巻き上げる
+    e0, e1 := rmT(4)
+    assert(e0 == 0 && e1)
+    // 1: 未知の関数の呼び出しがあれば巻き上げない（呼び出しの門を緩めすぎる変異はここで落ちる）
+    b0, b1 := rmT(1)
+    assert(b0 == 2 && !b1)
+    // 2: 番地が globaladdr 直でなければ種にしない（taskUse のスロットの先頭の形 — 番地の門を緩めすぎる変異はここで落ちる）
+    c0, c1 := rmT(2)
+    assert(c0 == 2 && !c1)
+    // 3: ループの中に種の語への store があれば巻き上げない
+    d0, d1 := rmT(3)
+    assert(d0 == 2 && !d1)
+}

@@ -8,7 +8,7 @@ import "std/iter"
 // PKCS#8 の DER（PEM の中身を base64 で戻したもの）の RSA の秘密鍵
 @errors(BadKey)
 @effects(!io, !block, !nondet)
-func ParsePKCS8(der []byte) (PrivateKey, error?) { // 対の FormatPKCS8 は実需まで足さない（34 節 2 の注記・2026-10-20 ④）
+func ParsePKCS8(der []byte) (PrivateKey, error?) { // 対の FormatPKCS8 は実需まで足さない（34 節 2 の注記）
     bad := PrivateKey{pub: noPublic(), mp: noMont(), mq: noMont(), dp: []int{}, dq: []int{}, qinv: []int{}, pbits: 0, qbits: 0}
     // PrivateKeyInfo ::= SEQUENCE { version INTEGER, algorithm AlgorithmIdentifier, privateKey OCTET STRING }
     top, tl, te := tlv(der, 0, len(der), 0x30)
@@ -94,7 +94,7 @@ func NewPublic(nb []byte, eb []byte) (PublicKey, error?) {
     return newPublic(bnFromBytes(nb, (8 * k + 63) / 64), bnFromBytes(eb, 1), k), nil
 }
 
-// newPublic は法 n（偶数でも可 — Montgomery の文脈は奇数のときだけ意味を持ち、偶数の法は VerifyPSS が先に落とす）の公開鍵
+// 法 n（偶数でも可 — Montgomery の文脈は奇数のときだけ意味を持ち、偶数の法は VerifyPSS が先に落とす）の公開鍵
 func newPublic(n []int, e []int, k int) PublicKey {
     return PublicKey{n: n, e: e, k: k, bits: bnBits(n), mt: if n[0] & 1 == 1 { newMont(n) } else { noMont() }}
 }
@@ -107,7 +107,7 @@ func noPublic() PublicKey {
     return PublicKey{n: []int{}, e: []int{}, k: 0, bits: 0, mt: noMont()}
 }
 
-// tlv は b[at..end) の先頭の DER の要素（タグ tag）の中身の位置と長さ（形が違えば第 3 の値が true）
+// b[at..end) の先頭の DER の要素（タグ tag）の中身の位置と長さ（形が違えば第 3 の値が true）
 func tlv(b []byte, at int, end int, tag int) (int, int, bool) {
     if at + 2 > end || int(b[at]) != tag {
         return 0, 0, true

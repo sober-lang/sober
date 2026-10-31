@@ -57,7 +57,7 @@ const B_X3 = 9
 const B_X4 = 10
 const B_X5 = 11
 const B_PREDS = 12
-const B_LOOP = 13   // ビット 0 = 利用者のループの頭（whileLoop — 段 6 P4-5 のキャンセルの検査点はこの頭へ戻る辺にだけ置く。rt の展開のループには立たない・IR の展開で写す）。
+const B_LOOP = 13   // ビット 0 = 利用者のループの頭（whileLoop — キャンセルの検査点はこの頭へ戻る辺にだけ置く。rt の展開のループには立たない・IR の展開で写す）。
                     // ビット 1（2）= 全展開の写し（unroll.sober — 最終 IR の直線の長さの検査 urCheckRuns が数える。併合・インラインで引き継ぐ）
                     // ビット 2（4）= 冷たい（error を返す return 文のブロック — lower の retStmt が立てる。インライナーの部分インラインの予算で数えない・
                     // 写しは引き継ぐ。印であって意味は持たない）
@@ -194,9 +194,9 @@ const OpGlobal = 13   // a = グローバルの記録
 const OpCall = 14     // a = 関数の記録, b = 引数
 const OpFuncaddr = 15 // a = 関数の記録
 const OpCallI = 16    // a = callee, b = 引数, c = 結果の型（-1 / TyI64 / TyPtr / CALLI_SRET）
-// CALLI_SRET は OpCallI の c の印: 結果なし（-1 と同じ — IR テキストも同じ）で、引数 0 が sret の受け皿（呼ばれた関数は受け皿の全語を書き、書く前に
+// OpCallI の c の印: 結果なし（-1 と同じ — IR テキストも同じ）で、引数 0 が sret の受け皿（呼ばれた関数は受け皿の全語を書き、書く前に
 // 読まない — 直接呼び出しの F_SRET_BIT と同じ約束。関数値の呼び先は全部 lower が建てた関数で、sret の規約は同じ）。zeroinit / slotcolor が
-// 受け皿を「全語の書き」と読む口（無いと受け皿は逃げで、呼び出しごとに要零の専用スロットになる — report-1069）
+// 受け皿を「全語の書き」と読む口（無いと受け皿は逃げで、呼び出しごとに要零の専用スロットになる）
 const CALLI_SRET = -2
 const OpSyscall = 17  // a = 引数・b = 1 なら vDSO の呼び出し（a の頭 = 関数の番地・残り = 引数 — C の呼び出し規約。vdsoCall）・b = 2 なら AES-GCM の塊（c = 種類 — aes.sober）
 const OpREnter = 18
@@ -205,23 +205,23 @@ const OpRSetDepth = 20 // a = 値
 const OpRAlloc = 21    // a = depth, b = words
 const OpRBump = 22     // a = depth
 const OpRReloc = 23    // a = hdr, b = cellw, c = floor
-// rtlower の後の最適化のバックエンドの経路だけの op（IR テキストには出ない — stage1 の語彙の外。第三便のベクトル化スパイク — vec.sober）
+// rtlower の後の最適化のバックエンドの経路だけの op（IR テキストには出ない — stage1 の語彙の外。ベクトル化スパイク — vec.sober）
 const OpScanB = 24     // a = 値の列 [p, i0, 上限…], b = 記述の列 [上限の数, 述語の数, (種類, K)…]（結果 = 読み飛ばした後の添字 — vec.sober の冒頭）
-// task の罠（段 6 P3a-2a — docs/ir.md「罠」）: 凍結以来 2 度目の IR の語彙の拡張（stage1 の外 — gatelib の beyond_stage1）。罠を使うモジュールだけが持つ
+// task の罠（docs/ir.md「罠」）: 凍結以来 2 度目の IR の語彙の拡張（stage1 の外 — gatelib の beyond_stage1）。罠を使うモジュールだけが持つ
 const OpTrapI = 25     // a = callee（関数値）, b = 引数（1 語）: 罠を張って callee(引数) を呼ぶ。結果 = 0（戻った）/ 1（中で死んだ — 罠へ巻き戻った）
 const OpTSwitch = 27   // a = 退避先（語の番地）, b = [復元元（語の番地）]: 今の task の機械の文脈（callee-saved・xmm2〜15・再開番地）を積んで rsp を *a へ、
-                      // *b の rsp へ切り替えて相手を再開する。誰かが *a へ切り替えて戻すと続く（段 6 P3b — 戻ってくる不透明な呼び出し）
+                      // *b の rsp へ切り替えて相手を再開する。誰かが *a へ切り替えて戻すと続く（戻ってくる不透明な呼び出し）
 const OpTStart = 28   // a = 退避先, b = [新しい rsp, 関数値, 引数]: OpTSwitch と同じく今の文脈を *a に積み、rsp を新しいスタックへ付け替えて関数(引数)を呼ぶ
                       // （関数は戻らない — 終わりは別の task への OpTSwitch）
-// ワーカーの記録（段 6 P4-3 — docs/ir.md 4.7）: std/task を使うプログラムの rt の表（@rt.meta 等）の番地を今のワーカーの記録から引く。値は
+// ワーカーの記録（docs/ir.md 4.7）: std/task を使うプログラムの rt の表（@rt.meta 等）の番地を今のワーカーの記録から引く。値は
 // スレッドの中で変わらない（task はワーカーに固定）— 最適化器からは globaladdr と同じ純粋な値。凍結以来 4 度目の語彙拡張（beyond_stage1）
 const OpFsAddr = 29    // a = グローバルの記録（G_WSLOT >= 0）: 今のワーカーのその表の番地（x86 = mov r, fs:[8 × G_WSLOT]）
-// 原子の op（段 6 P4-4 — docs/ir.md 4.8）: rt の中だけで使う（ユーザーの式からは生成しない）。凍結以来 5 度目の語彙拡張（beyond_stage1 — .ll の経路は持たない）。
+// 原子の op（docs/ir.md 4.8）: rt の中だけで使う（ユーザーの式からは生成しない）。凍結以来 5 度目の語彙拡張（beyond_stage1 — .ll の経路は持たない）。
 // 最適化器からは「任意のメモリに触れる不透明な呼び出し」と同じ扱い（OpTSwitch と同じ行 — 巻き上げ・load の転送・展開の対象外）
 const OpAtomic = 30    // a = 番地, b = 値の列（xadd / xchg = [v]・cas = [期待, 新]・fence = []）, c = 種類 | 語のオフセット << 3。結果 = 古い値（fence は無し）
 const OpClone = 31     // a = 新しいスタックの頂上, b = [関数値, 引数, %fs の基底]: clone（同じアドレス空間の新しいスレッド）— 子は新しいスタックで関数(引数) を
                        // 呼ぶ（戻らない — 戻ったらスレッドだけ終わる）。結果 = 子の tid（親の側）
-// packed f64（段 4②a — report-551）: 最適化のバックエンドの経路だけ（B2 の後 — IR テキスト・stage1・.ll には出ない）。値の組 v128（xmm だけに住む 16 B —
+// packed f64: 最適化のバックエンドの経路だけ（B2 の後 — IR テキスト・stage1・.ll には出ない）。値の組 v128（xmm だけに住む 16 B —
 // 型 TyV128）。約束（検証器が照合）: v128 の値は定義と同じブロックの中でだけ使われ（ブロックの仮引数・辺の実引数・ret・condbr に現れない）、
 // 生きる区間に呼び出し系の op（call・間接 call・罠・切替・開始・原子・clone）を跨がない — callee-saved の xmm の退避（8 B）と task の文脈の積み方はそのまま。
 // 畳み込み・交換則・代数の簡約は掛けない（float の段の規約 — レーンごとに addsd 等と同じ丸め）
@@ -235,8 +235,8 @@ const AT_XADD = 0
 const AT_XCHG = 1
 const AT_CAS = 2
 const AT_FENCE = 3
-const AT_PAUSE = 4  // pause（スピンの待ちの 1 回 — 段 6 P4-6。fence と同じく番地・値・結果を持たない）
-// CRC-32 の折り畳み（report-774 — clmul.sober）: x86 の最適化のバックエンドの ELF の経路だけ（IR テキスト・.ll・写しのバックエンドには出ない — stage1 の語彙の外）。
+const AT_PAUSE = 4  // pause（スピンの待ちの 1 回。fence と同じく番地・値・結果を持たない）
+// CRC-32 の折り畳み（clmul.sober）: x86 の最適化のバックエンドの ELF の経路だけ（IR テキスト・.ll・写しのバックエンドには出ない — stage1 の語彙の外）。
 // c = CF_FOLD: a = [p, k, crc] → 畳んだ crc（p[0:k] を読む — 最適化器からは syscall と同じ不透明な読み）・c = CF_PCLMUL: a = [] → CPUID の PCLMULQDQ の bit（rt.cpu_probe）
 const OpCrcFold = 34
 const OpUnwind = 26    // 罠が張られていれば最内の罠へ巻き戻る（戻らない）。張られていなければ何もしない（続く exit 101 / 102 がプロセスを終える）
@@ -256,7 +256,7 @@ const K_GLOB = 7   // グローバルの記録
 const K_SLOT = 8   // スロットの番号
 const K_VOPT = 9   // 値の番号か -1（無し — ret の値）
 
-// opRow は op の行（[A, B, C] の種別を 4 ビットずつ詰めたもの — A が下位）。表の本体（読みは St に組んだ写し st.opk を引く —
+// op の行（[A, B, C] の種別を 4 ビットずつ詰めたもの — A が下位）。表の本体（読みは St に組んだ写し st.opk を引く —
 // switch の比較の列を被演算子の走査ごとに回すと自己 build で 1.9 G 命令・詰めた定数の語を可変の shift で引く形は shift の量の検査で同じ桁）
 func opRow(op int) int {
     return switch op {
@@ -278,7 +278,7 @@ func opRow(op int) int {
     }
 }
 
-// termRow は終端の行（[X1〜X5] の種別を 4 ビットずつ — X1 が下位）
+// 終端の行（[X1〜X5] の種別を 4 ビットずつ — X1 が下位）
 func termRow(t int) int {
     return switch t {
     case TmBr: K_BLK | K_VLIST << 4
@@ -291,7 +291,7 @@ func termRow(t int) int {
 
 const OP_N = 35 // op の番号の上限（OpDead = 0〜OpCrcFold = 34）
 
-// kindsInit は St の表（op ごとの行・終端ごとの行）を opRow / termRow から組む（St を組む側で 1 回 — initScalars・x86 の群の子。
+// St の表（op ごとの行・終端ごとの行）を opRow / termRow から組む（St を組む側で 1 回 — initScalars・x86 の群の子。
 // 読み口で遅延して組む形は、確保しうる呼び出しが展開で各パスのループに入り反復ごとの region の enter を呼んだ）
 func kindsInit(st mut St) {
     mut o := mut []int{}
@@ -353,12 +353,12 @@ const G_NEXT = 0
 const G_NAME = 1
 const G_WORDS = 2
 const G_INIT = 3  // 語の列（-1 = .bss）
-const G_WSLOT = 4 // ワーカーの記録の表の番号（段 6 P4-3 — -1 = プロセスに 1 つの大域）
+const G_WSLOT = 4 // ワーカーの記録の表の番号（-1 = プロセスに 1 つの大域）
 const GSZ = 5
 
 // ── モジュール ──
 
-// addFunc は本体の無い関数を足す（本体は begin で後から組む — 前方参照の call に使う）。ptys は引数の型の列
+// 本体の無い関数を足す（本体は begin で後から組む — 前方参照の call に使う）。ptys は引数の型の列
 func addFunc(st mut St, name int, ptys desugar.ListRef, rty int) FnRef {
     f := FnRef(recN(mut st, FSZ))
     irSetFnName(mut st, f, name)
@@ -398,11 +398,12 @@ func addGlobalInit(st mut St, name int, words int, init int) int {
 
 // ── 組み立て（cur = -1 は「到達しない」— 終端の直後。命令を足してはいけない）──
 
-// begin は関数 f の入口ブロックを作って cur にする
+// 関数 f の入口ブロックを作って cur にする
 func begin(st mut St, f FnRef) {
     st.fn = f
     st.slen = 0
     st.lastConstV = -1
+    st.sealFn = -1
     mut i := 0
     while i < table.Len(mut st.sfree) {
         table.Set(mut st.sfree, i, -1)
@@ -445,7 +446,7 @@ func newValue(st mut St) int {
     return v
 }
 
-// param はブロック blk に型 t の引数を足す
+// ブロック blk に型 t の引数を足す
 func param(st mut St, blk BlkRef, t int) int {
     v := newValue(mut st)
     p := rec4(mut st, -1, v, t, 0)
@@ -476,7 +477,7 @@ func newSlot(st mut St, words int) int {
     return newSlotFresh(mut st, words)
 }
 
-// newSlotFresh は空き鎖を通らない新しいスロット（番号）
+// 空き鎖を通らない新しいスロット（番号）
 func newSlotFresh(st mut St, words int) int {
     f := st.fn
     n := irFnNSlot(mut st, f)
@@ -495,14 +496,14 @@ func newSlotFresh(st mut St, words int) int {
     return n
 }
 
-// newSlotAddr は words 語のスロットを取ってそのアドレスを返す（値を記録に残す — 文の出口が束縛の置き場を見分ける）
+// words 語のスロットを取ってそのアドレスを返す（値を記録に残す — 文の出口が束縛の置き場を見分ける）
 func newSlotAddr(st mut St, words int) int {
     v := slotaddr(mut st, newSlot(mut st, words))
     desugar.HeapSet(mut st.d, st.slast + 4, v)
     return v
 }
 
-// newSlotAddrOwn は使い回さないスロットの番地（空き鎖から取らず、空き鎖へ返さない — SLOT_PINNED）。sret の結果の口（place の F 便 段 1 — report-517）:
+// 使い回さないスロットの番地（空き鎖から取らず、空き鎖へ返さない — SLOT_PINNED）。sret の結果の口（place）:
 // 本物の呼び出しへ番地が逃げる結果スロットを、後で展開される呼び出しの結果スロットと共用すると、展開後もスロットが逃げたままで SROA / mem2reg が
 // 昇格しない（logagg の os.Args / io.ReadFile と utf8.Str 2 か所が 1 つの s0 を共用 — 展開された Str の結果 9 語が毎回メモリを往復した）
 func newSlotAddrOwn(st mut St, words int) int {
@@ -521,10 +522,10 @@ func liveAdd(st mut St, r int) {
     st.slen = st.slen + 1
 }
 
-// SLOT_PINNED は番地を rt へ渡した（境界の写しの in / out — relocateTo）一時スロットの印（記録の空き鎖の欄 r + 3 — 使用中は読まない欄）
+// 番地を rt へ渡した（境界の写しの in / out — relocateTo）一時スロットの印（記録の空き鎖の欄 r + 3 — 使用中は読まない欄）
 const SLOT_PINNED = -7
 
-// slotPin は値 p が使用中の一時スロットの番地なら、そのスロットを空き鎖へ返さない印を付ける（宛先構築レーン M5c — 番地が rt へ逃げた
+// 値 p が使用中の一時スロットの番地なら、そのスロットを空き鎖へ返さない印を付ける（宛先構築 — 番地が rt へ逃げた
 // スロットは SROA / mem2reg が昇格しない。空き鎖で後の束縛に使い回されると、熱い腕の束縛まで巻き込んでメモリに残った〔table.Push の
 // chunk のヘッダ — 冷たい腕の `t.chunks[k] = c` の写しと熱い腕の `c[j] = x` が同じスロット〕）
 func slotPin(st mut St, p int) {
@@ -536,7 +537,7 @@ func slotPin(st mut St, p int) {
     }
 }
 
-// slotFree は記録 r のスロットを語数ごとの空き鎖に返す（番地が rt へ逃げたスロットは返さない — slotPin）
+// 記録 r のスロットを語数ごとの空き鎖に返す（番地が rt へ逃げたスロットは返さない — slotPin）
 func slotFree(st mut St, r int) {
     if desugar.HeapGet(mut st.d, r + 3) == SLOT_PINNED {
         return
@@ -549,7 +550,7 @@ func slotFree(st mut St, r int) {
     table.Set(mut st.sfree, w, r)
 }
 
-// push は cur に命令を足す（res: 結果の値を持つか）。結果の値（無しは -1）
+// cur に命令を足す（res: 結果の値を持つか）。結果の値（無しは -1）
 func push(st mut St, res bool, op int, a int, b int, c int) int {
     r := if res { newValue(mut st) } else { -1 }
     at := InsRef(desugar.HeapLen(mut st.d))
@@ -571,7 +572,18 @@ func push(st mut St, res bool, op int, a int, b int, c int) int {
 }
 
 func iconst(st mut St, n int) int {
-    r := push(mut st, true, OpConst, n, 0, 0)
+    return iconstTag(mut st, n, 0)
+}
+
+// 番号の札: 発見順の番号を運ぶ定数は OpConst の欄 b に札を持つ（印字は a だけ — IR テキストは不変）。
+// 札つきと札なしは GVN の鍵（op, a, b, c）で別の値番号になり、値が偶然同じ無関係な定数と併合されない。x86 は札つきの定数の imm32 を
+// 後埋め（種類 3 = panic の点・4 = spawn の点）にして、関数の機械語を番号から独立にする。b の 0 / −1（opt の合成の定数）とは別の値
+const CT_PSITE = 1000003
+const CT_SITE = 1000004
+
+// 札 tag（0 = 札なし）の定数
+func iconstTag(st mut St, n int, tag int) int {
+    r := push(mut st, true, OpConst, n, tag, 0)
     // 最後に作った定数（arith がゼロ除算の検査を省く判定に使う — panic.sober。関数の境で begin が消す）
     st.lastConstV = r
     st.lastConstN = n
@@ -629,12 +641,12 @@ func globaladdr(st mut St, g int) int {
     return push(mut st, true, OpGlobal, g, 0, 0)
 }
 
-// globaladdrRaw はワーカーの表でも大域そのものの番地（ワーカー 0 の記録を組む rt.worker_init だけ）
+// ワーカーの表でも大域そのものの番地（ワーカー 0 の記録を組む rt.worker_init だけ）
 func globaladdrRaw(st mut St, g int) int {
     return push(mut st, true, OpGlobal, g, 0, 0)
 }
 
-// addWorkerGlobal はワーカーごとの rt の表（std/task を使うプログラムではワーカーの記録の表に番号を振る — 段 6 P4-3。使わなければ普通の大域）
+// ワーカーごとの rt の表（std/task を使うプログラムではワーカーの記録の表に番号を振る。使わなければ普通の大域）
 func addWorkerGlobal(st mut St, name int, words int) int {
     g := addGlobalInit(mut st, name, words, -1)
     if st.taskUse {
@@ -644,7 +656,7 @@ func addWorkerGlobal(st mut St, name int, words int) int {
     return g
 }
 
-// call は関数 f を呼ぶ（結果は f の ret — 無ければ -1）
+// 関数 f を呼ぶ（結果は f の ret — 無ければ -1）
 func call(st mut St, f FnRef, args int) int {
     return push(mut st, irFnRet(mut st, f) >= 0, OpCall, int(f), args, 0)
 }
@@ -657,52 +669,52 @@ func callIndirect(st mut St, callee int, args int, rty int) int {
     return push(mut st, rty >= 0, OpCallI, callee, args, rty)
 }
 
-// trapCall は罠を張って関数値 callee を arg で呼ぶ（結果 0 = 戻った・1 = 死んだ）
+// 罠を張って関数値 callee を arg で呼ぶ（結果 0 = 戻った・1 = 死んだ）
 func trapCall(st mut St, callee int, arg int) int {
     return push(mut st, true, OpTrapI, callee, list1(mut st, arg), TyI64)
 }
 
-// tswitch は今の task の文脈を save に積んで other の文脈へ切り替える（戻ってきたら続く — 段 6 P3b）
+// 今の task の文脈を save に積んで other の文脈へ切り替える（戻ってきたら続く）
 func tswitch(st mut St, save int, other int) {
     push(mut st, false, OpTSwitch, save, list1(mut st, other), 0)
 }
 
-// tstart は今の task の文脈を save に積み、新しいスタック sp で fn(arg) を始める（fn は戻らない — 戻ってきたら続く）
+// 今の task の文脈を save に積み、新しいスタック sp で fn(arg) を始める（fn は戻らない — 戻ってきたら続く）
 func tstart(st mut St, save int, sp int, fn int, arg int) {
     push(mut st, false, OpTStart, save, list3(mut st, sp, fn, arg), 0)
 }
 
-// atomicXadd は lock xadd [p + 8 off], v（結果 = 古い値）
+// lock xadd [p + 8 off], v（結果 = 古い値）
 func atomicXadd(st mut St, p int, off int, v int) int {
     return push(mut st, true, OpAtomic, p, list1(mut st, v), AT_XADD + off * 8)
 }
 
-// atomicXchg は xchg [p + 8 off], v（結果 = 古い値・全順序の柵）
+// xchg [p + 8 off], v（結果 = 古い値・全順序の柵）
 func atomicXchg(st mut St, p int, off int, v int) int {
     return push(mut st, true, OpAtomic, p, list1(mut st, v), AT_XCHG + off * 8)
 }
 
-// atomicCas は lock cmpxchg [p + 8 off]: 期待 old と等しければ nw を書く（結果 = 古い値 — old と等しければ成功）
+// lock cmpxchg [p + 8 off]: 期待 old と等しければ nw を書く（結果 = 古い値 — old と等しければ成功）
 func atomicCas(st mut St, p int, off int, old int, nw int) int {
     return push(mut st, true, OpAtomic, p, list2(mut st, old, nw), AT_CAS + off * 8)
 }
 
-// atomicFence は mfence
+// mfence
 func atomicFence(st mut St) {
     push(mut st, false, OpAtomic, iconst(mut st, 0), list0(mut st), AT_FENCE)
 }
 
-// atomicPause は pause（スピンの待ち — 段 6 P4-6）
+// pause（スピンの待ち）
 func atomicPause(st mut St) {
     push(mut st, false, OpAtomic, iconst(mut st, 0), list0(mut st), AT_PAUSE)
 }
 
-// threadClone は新しいスレッドを sp のスタックで fn(arg) から始める（%fs の基底 = tls。結果 = tid か -errno）
+// 新しいスレッドを sp のスタックで fn(arg) から始める（%fs の基底 = tls。結果 = tid か -errno）
 func threadClone(st mut St, sp int, fn int, arg int, tls int) int {
     return push(mut st, true, OpClone, sp, list3(mut st, fn, arg, tls), 0)
 }
 
-// unwind は最内の罠へ巻き戻る（罠が無ければ何もしない）
+// 最内の罠へ巻き戻る（罠が無ければ何もしない）
 func unwind(st mut St) {
     push(mut st, false, OpUnwind, 0, 0, 0)
 }
@@ -711,8 +723,8 @@ func syscall(st mut St, args int) int {
     return push(mut st, true, OpSyscall, args, 0, 0)
 }
 
-// vdsoCall は vDSO の関数（args の頭 = 番地・残り ≤ 6 個 = 引数）を C の呼び出し規約で呼ぶ（syscall の兄弟 — OS への口。効果の扱いは syscall と同じ・
-// 壊すのは C の caller-saved〔x86 の xVcall が生きている値を退避〕。vDSO の関数は SSE を使わない — Linux の vDSO は -mno-sse で建つ・report-656）
+// vDSO の関数（args の頭 = 番地・残り ≤ 6 個 = 引数）を C の呼び出し規約で呼ぶ（syscall の兄弟 — OS への口。効果の扱いは syscall と同じ・
+// 壊すのは C の caller-saved〔x86 の xVcall が生きている値を退避〕。vDSO の関数は SSE を使わない — Linux の vDSO は -mno-sse で建つ）
 func vdsoCall(st mut St, args int) int {
     return push(mut st, true, OpSyscall, args, 1, 0)
 }
@@ -754,7 +766,7 @@ func terminate(st mut St, t int, x1 int, x2 int, x3 int, x4 int, x5 int) {
     st.cur = -1
 }
 
-// br は to へ（args = 値の列か -1）。行き先の前任数を数える（Zig の edge）
+// to へ（args = 値の列か -1）。行き先の前任数を数える（Zig の edge）
 func br(st mut St, to BlkRef, args int) {
     irSetBlkPreds(mut st, to, irBlkPreds(mut st, to) + 1)
     terminate(mut st, TmBr, int(to), args, 0, 0, 0)
@@ -777,7 +789,7 @@ func exit(st mut St, code int) {
 // ── 印字（src/stage1/ir.zig の print — テキスト形式の正）──
 
 
-// num は 10 進（負号あり。最小値でも符号反転しない — 剰余を負のまま使う）
+// 10 進（負号あり。最小値でも符号反転しない — 剰余を負のまま使う）
 func num(out mut []byte, n int) {
     obuf.Int(mut out, n)
 }
@@ -795,7 +807,7 @@ func tyName(out mut []byte, t int) {
     }
 }
 
-// isNameChar は名前の素の文字（これ以外を含む名前は `@"..."` に引用する — ir.zig の isNameChar）
+// 名前の素の文字（これ以外を含む名前は `@"..."` に引用する — ir.zig の isNameChar）
 func isNameChar(c int) bool {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '.' || c == '#' || c == '/' || c == '$'
 }
@@ -826,7 +838,7 @@ func printName(st mut St, out mut []byte, s int) {
     out = append(out, '"')
 }
 
-// vals は値の列（-1 は空）を ", " 区切りで
+// 値の列（-1 は空）を ", " 区切りで
 func vals(st mut St, out mut []byte, l int) {
     if l < 0 {
         return
@@ -906,14 +918,14 @@ func cmpName(out mut []byte, op int) {
     }
 }
 
-// two は "%a, %b"
+// "%a, %b"
 func two(out mut []byte, a int, b int) {
     val(mut out, a)
     obuf.Lit(mut out, ", ")
     val(mut out, b)
 }
 
-// mem は "%p[off]"
+// "%p[off]"
 func mem(out mut []byte, p int, off int) {
     val(mut out, p)
     out = append(out, '[')
@@ -930,6 +942,9 @@ func printOp(st mut St, out mut []byte, i InsRef) {
     case OpConst:
         obuf.Lit(mut out, "const ")
         num(mut out, a)
+        if st.irTags && (b == CT_PSITE || b == CT_SITE) {
+            obuf.Lit(mut out, if b == CT_PSITE { " !p" } else { " !s" })
+        }
         return
     case OpBin:
         binName(mut out, a)
@@ -1228,7 +1243,7 @@ func printFunc(st mut St, out mut []byte, f FnRef) {
     obuf.Lit(mut out, "}\n")
 }
 
-// printModule はモジュール全体のテキスト（globals → 関数の順）
+// モジュール全体のテキスト（globals → 関数の順）
 func printModule(st mut St, out mut []byte) {
     mut g := st.ghead
     while g >= 0 {

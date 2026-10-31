@@ -1,0 +1,100 @@
+package main
+
+// `sober test` の handler（package の *_test.sober の TestXxx() を集めて走らせる）
+
+import "std/io"
+import "std/iter"
+import "std/os"
+import "std/cli"
+import "std/strings"
+import "loader"
+import "lower"
+
+// `sober test <package>… [--work <dir>] [--run <接頭辞>] [-v]`（T1・T8）: package ごとに
+// テストのビルド（loader.LoadTestFs — 合成の main）を Sober の正規バックエンド（lower.ElfPasses — B-4）で <work>/t に書き、実行の bit を付けて
+// （os.WriteMode）、TestXxx を 1 つずつ別プロセス（std/os.Run）で走らせて終了コードを集計する。子の出力は親の標準出力をそのまま継ぐ
+// （捕まえない — os.Run は終了コードだけの最小面。-v は受けるが今は常に見せる形と同じ）。--run は名前の接頭辞で絞る。終了コード = 失敗があれば 1
+func cmdTest(cl cli.Parsed) int {
+    pkgs := cli.PosList(cl, Pkgs)
+    wo := cli.StrOpt(cl, TWork)
+    ro := cli.StrOpt(cl, TRun)
+    prefix := if ro == nil { "" } else { ro }
+    // --work が無ければ置き場を自分で作る（cacheDir()/sober-test/<pid> — 置き場が無ければ /tmp/sober-test/<pid>。同時に走る別のプロセスと
+    // テストの実行ファイルを取り合わない。std に削除の口が無いので後片付けはしない — 中身は最後のテストの実行ファイル 1 本）
+    work := if wo == nil { testWork() } else { wo }
+    if work == "" {
+        return fail("sober: test: cannot make a work directory (pass --work <dir>)")
+    }
+    std := Std
+    mut pass := 0
+    mut failn := 0
+    for k <- iter.Range(0, len(pkgs)) {
+        r := testPkg(pkgs[k], std, work, prefix)
+        pass += r.pass
+        failn += r.fail
+    }
+    println("${pass} passed, ${failn} failed")
+    return if failn == 0 { 0 } else { 1 }
+}
+
+// `sober test` の既定の作業場所（--work が無いとき）。pid は /proc/self/stat の最初の欄
+func testWork() string {
+    st := io.ReadFile("/proc/self/stat") catch return ""
+    mut n := 0
+    while n < len(st) && st[n] != ' ' {
+        n += 1
+    }
+    pid := string(st[0:n]) catch return ""
+    cd := cacheDir()
+    base := if cd == "" { "/tmp/sober-test" } else { cd + "/sober-test" }
+    dir := "${base}/${pid}"
+    mkdirs(dir)
+    return dir
+}
+
+// package 1 つ分の集計
+type TestTally struct {
+    pass int
+    fail int
+}
+
+// package pkg のテストを建てて走らせる（建たなければ FAIL 1 件として数える）
+func testPkg(pkg string, std map[string]string, work string, prefix string) TestTally {
+    p, _, lerr := loadNamed(pkg, true, std, loader.PcOff())
+    if lerr != nil {
+        println("FAIL ${pkg} (build)")
+        // 診断は標準エラーへ（書けなくても集計は同じ — 失敗 1 件）
+        if io.WriteStderr(bytes("sober: ${loadDiag(p, std, lerr)}\n")) != nil {
+            return TestTally{pass: 0, fail: 1}
+        }
+        return TestTally{pass: 0, fail: 1}
+    }
+    names, nerr := loader.TestNames(p, pkg)
+    exe, berr := lower.ElfPasses(p)
+    if nerr != nil || berr != nil {
+        println("FAIL ${pkg} (build)")
+        // 診断は build と同じ形で標準エラーへ（集計は同じ — 失敗 1 件）
+        _ = if nerr != nil { fail(loadDiag(p, std, nerr)) } else { lowerFail(p, std, berr) }
+        return TestTally{pass: 0, fail: 1}
+    }
+    bin := work + "/t"
+    if io.WriteFile(bin, exe) != nil || os.WriteMode(bin, 493) != nil {
+        println("FAIL ${pkg} (build)")
+        return TestTally{pass: 0, fail: 1}
+    }
+    mut pass := 0
+    mut failn := 0
+    for k <- iter.Range(0, len(names)) {
+        if prefix == "" || strings.HasPrefix(names[k], prefix) {
+            ec, eerr := os.Run(bin, []string{names[k]})
+            if eerr == nil && ec == 0 {
+                println("ok   ${pkg}.${names[k]}")
+                pass += 1
+            } else {
+                println("FAIL ${pkg}.${names[k]} (exit ${ec})")
+                failn += 1
+            }
+        }
+    }
+    return TestTally{pass: pass, fail: failn}
+}

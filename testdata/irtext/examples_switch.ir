@@ -1697,6 +1697,101 @@ b0:
   ret %2
 }
 
+func @main.sign(%0 i64) i64 {
+b0:
+  %1 = region.depth
+  region.enter
+  %2 = const 0
+  %3 = lt %0, %2
+  condbr %3, b2, b1
+b1:
+  %7 = const 0
+  %8 = eq %0, %7
+  condbr %8, b4, b3
+b2:
+  %4 = const 1
+  %5 = const 0
+  %6 = sub %5, %4
+  br b5(%6)
+b3:
+  %10 = const 1
+  br b5(%10)
+b4:
+  %9 = const 0
+  br b5(%9)
+b5(%11 i64):
+  region.setdepth %1
+  ret %11
+}
+
+func @main.classify(%0 i64) i64 {
+b0:
+  %1 = region.depth
+  region.enter
+  %2 = const 1
+  %3 = eq %0, %2
+  condbr %3, b2, b3
+b1:
+  %9 = const 4
+  %10 = eq %0, %9
+  condbr %10, b6, b5
+b2:
+  %8 = const 1
+  br b7(%8)
+b3:
+  %4 = const 2
+  %5 = eq %0, %4
+  condbr %5, b2, b4
+b4:
+  %6 = const 3
+  %7 = eq %0, %6
+  condbr %7, b2, b1
+b5:
+  %12 = const 9
+  br b7(%12)
+b6:
+  %11 = const 4
+  br b7(%11)
+b7(%13 i64):
+  region.setdepth %1
+  ret %13
+}
+
+func @main.pick(%0 i64, %1 i64) i64 {
+b0:
+  %2 = region.depth
+  region.enter
+  %3 = const 1
+  %4 = eq %0, %3
+  condbr %4, b2, b1
+b1:
+  %8 = const 9
+  %9 = eq %1, %8
+  condbr %9, b5, b4
+b2:
+  %5 = const 2
+  %6 = eq %1, %5
+  condbr %6, b3, b1
+b3:
+  %7 = const 12
+  br b8(%7)
+b4:
+  %11 = const 0
+  %12 = eq %1, %11
+  condbr %12, b7, b6
+b5:
+  %10 = const 9
+  br b8(%10)
+b6:
+  %13 = const 0
+  br b8(%13)
+b7:
+  br b8(%0)
+b8(%14 i64):
+  region.setdepth %2
+  ret %14
+}
+
 func @main.main() {
 b0:
   %0 = region.depth
@@ -1733,6 +1828,22 @@ b0:
   call @rt.print_char(%20)
   region.setdepth %0
   ret
+}
+
+func @rt.sigint() {
+b0:
+  %0 = const 231
+  %1 = const 130
+  %2 = syscall(%0, %1)
+  exit 130
+}
+
+func @rt.sigterm() {
+b0:
+  %0 = const 231
+  %1 = const 143
+  %2 = syscall(%0, %1)
+  exit 143
 }
 
 export func @sober_entry(%0 ptr) {
@@ -2328,115 +2439,4 @@ b91:
   %404 = const 1
   %405 = add %383, %404
   br b85(%401, %405)
-}
-
-func @rt.sigterm() {
-b0:
-  %0 = const 231
-  %1 = const 143
-  %2 = syscall(%0, %1)
-  exit 143
-}
-
-func @rt.sigint() {
-b0:
-  %0 = const 231
-  %1 = const 130
-  %2 = syscall(%0, %1)
-  exit 130
-}
-
-func @main.sign(%0 i64) i64 {
-b0:
-  %1 = region.depth
-  region.enter
-  %2 = const 0
-  %3 = lt %0, %2
-  condbr %3, b2, b1
-b1:
-  %7 = const 0
-  %8 = eq %0, %7
-  condbr %8, b4, b3
-b2:
-  %4 = const 1
-  %5 = const 0
-  %6 = sub %5, %4
-  br b5(%6)
-b3:
-  %10 = const 1
-  br b5(%10)
-b4:
-  %9 = const 0
-  br b5(%9)
-b5(%11 i64):
-  region.setdepth %1
-  ret %11
-}
-
-func @main.classify(%0 i64) i64 {
-b0:
-  %1 = region.depth
-  region.enter
-  %2 = const 1
-  %3 = eq %0, %2
-  condbr %3, b2, b3
-b1:
-  %9 = const 4
-  %10 = eq %0, %9
-  condbr %10, b6, b5
-b2:
-  %8 = const 1
-  br b7(%8)
-b3:
-  %4 = const 2
-  %5 = eq %0, %4
-  condbr %5, b2, b4
-b4:
-  %6 = const 3
-  %7 = eq %0, %6
-  condbr %7, b2, b1
-b5:
-  %12 = const 9
-  br b7(%12)
-b6:
-  %11 = const 4
-  br b7(%11)
-b7(%13 i64):
-  region.setdepth %1
-  ret %13
-}
-
-func @main.pick(%0 i64, %1 i64) i64 {
-b0:
-  %2 = region.depth
-  region.enter
-  %3 = const 1
-  %4 = eq %0, %3
-  condbr %4, b2, b1
-b1:
-  %8 = const 9
-  %9 = eq %1, %8
-  condbr %9, b5, b4
-b2:
-  %5 = const 2
-  %6 = eq %1, %5
-  condbr %6, b3, b1
-b3:
-  %7 = const 12
-  br b8(%7)
-b4:
-  %11 = const 0
-  %12 = eq %1, %11
-  condbr %12, b7, b6
-b5:
-  %10 = const 9
-  br b8(%10)
-b6:
-  %13 = const 0
-  br b8(%13)
-b7:
-  br b8(%0)
-b8(%14 i64):
-  region.setdepth %2
-  ret %14
 }

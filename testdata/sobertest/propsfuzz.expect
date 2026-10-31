@@ -1,0 +1,17 @@
+quick: panic at trial 2 (seed 758147475, 97 shrink runs)
+  Slice:
+    Int(0, 9) = 3
+    Int(0, 9) = 0
+    Int(0, 9) = 0
+  (3 items)
+panic: index out of range at testdata/sobertest/propsfuzz/propsfuzz.sober:6:14
+panic: quick.Crashed{exit: 101} at std/quick
+FAIL testdata/sobertest/propsfuzz.TestPanic (exit 101)
+quick: falsified at the corpus case testdata/sobertest/propsfuzz/testdata/fuzz/TestCorpus/0-hand (seed 14898373, 20 shrink runs)
+  Int(0, 1000000) = 777777
+assert failed: Accept(quick.Int(mut q, 0, 1000000))
+  quick.Int(mut q, 0, 1000000) = 777777
+panic: testing.AssertFailed{} at std/testing/testing.sober:25:10
+FAIL testdata/sobertest/propsfuzz.TestCorpus (exit 101)
+ok   testdata/sobertest/propsfuzz.TestOk
+1 passed, 2 failed

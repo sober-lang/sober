@@ -2,8 +2,8 @@ package main
 
 import "std/builder"
 
-// 再帰する mut 引数の関数に frame の imm slice を渡す（anchor 1 slot — 旧 testdata/checkneg/anchor_slot・F-6）。
-// 宛先構築レーン M4 で受理: imm の実引数は anchor の region へ形式コピー（imm は同一性が観測不能なので写しは常に健全 — build は元から受理）
+// 再帰する mut 引数の関数に frame の imm slice を渡す（anchor 1 slot）。
+// imm の実引数は anchor の region へ形式コピーする（imm は同一性が観測不能なので写しは常に健全）
 func walk(nb mut builder.Builder[int], w string, n int) int {
     builder.Push(mut nb, n)
     if n == 0 {

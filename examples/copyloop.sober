@@ -2,7 +2,7 @@ package main
 
 import "std/iter"
 
-// 写しのループの一括化（宛先構築レーン M1b — lower/copyloop.sober・--passes の経路だけ）: 形 (A) append の写し・(B) 添字の写し・(C) 同じ値の詰め。
+// 写しのループの一括化（lower/copyloop.sober・--passes の経路だけ）: 形 (A) append の写し・(B) 添字の写し・(C) 同じ値の詰め。
 // 一括の経路（範囲が通る）と元のループ（範囲が通らない — 回らない・途中から等）の両方を通す。no-opt ≟ opt（optdiff）と Go の双子が網
 
 func appendCopy(src []int, from int, to int) []int {

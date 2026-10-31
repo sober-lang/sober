@@ -1,0 +1,38 @@
+package lower
+
+// AES-128-GCM の塊（report-796 — std/crypto/aesgcm）: 組み込みの鍵 4 つ。cpuaes = この機械で塊を使えるか（0 / 1 — rt.cpu の印の bit 1・clmul.sober）・
+// aeskey(key, ctx)・aesctr(ctx, src, dst, n)・aesghash(ctx, p, n)（引数は全部番地と長さの int — 書くのは ctx と dst だけ）。
+// IR は OpSyscall の b = AES_B（c = 種類）: 番地を通して読み書きする不透明な op なので、効果の扱いは syscall と同じ（vcall〔b = 1〕の前例 —
+// 新しい op にすると最適化の各パスの効果の列に 1 語ずつ足すことになり、漏れが誤コンパイルになる）。x86 の最適化のバックエンドの ELF の道でだけ
+// 塊になり（x86.sober xAes）、IR テキストには `aes.<種類>` で出る（stage1 の語彙の外 — gatelib の beyond_stage1 が照合を飛ばす）・.ll では 0。
+// IR テキスト・.ll・写しのバックエンドでは cpuaes = 0 の印（AK_CPU）を出すだけで、std の分岐が塊を呼ばない
+//
+// ctx（272 バイト）の配置: [0, 176) 展開した鍵 11 段・[176, 240) GHASH の H^1〜H^4（バイト順を反転して 2 倍した形 — Go の gcm_amd64 の productTable と同じ流儀）・
+// [240, 256) CTR の計数器のブロック（そのままのバイト順 — 末尾 4 バイトが大きい端の 32 ビットの計数器）・[256, 272) GHASH の溜め Y（反転したバイト順）
+
+const AES_B = 2
+
+// 種類（OpSyscall の c）
+const AK_CPU = 0    // a = [] → 0（hw の道でない出力の cpuaes の印）
+const AK_KEY = 1    // a = [key, ctx]
+const AK_CTR = 2    // a = [ctx, src, dst, n]
+const AK_GHASH = 3  // a = [ctx, p, n]
+const AK_TAG = 4    // a = [ctx, dst]（dst[0:16] = Y ⊕ E(J0) — ctx は読むだけ）
+
+// cpuAes は cpuaes の値（hw の道: rt.cpu の印の bit 1）
+func cpuAes(st mut St) int {
+    if !st.hwFold {
+        return push(mut st, true, OpSyscall, list0(mut st), AES_B, AK_CPU)
+    }
+    return bin(mut st, BAnd, bin(mut st, BSar, cpuMarks(mut st), iconst(mut st, 1)), iconst(mut st, 1))
+}
+
+// aesOp は aeskey / aesctr / aesghash（kind = AK_KEY〜AK_GHASH・vs = 引数の列）
+func aesOp(st mut St, kind int, vs int) int {
+    return push(mut st, true, OpSyscall, vs, AES_B, kind)
+}
+
+// aesName は IR テキストの綴り
+func aesName(kind int) string {
+    return if kind == AK_CPU { "aes.cpu " } else if kind == AK_KEY { "aes.key " } else if kind == AK_CTR { "aes.ctr " } else if kind == AK_GHASH { "aes.ghash " } else { "aes.tag " }
+}

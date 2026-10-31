@@ -56,7 +56,7 @@ type Elf64Phdr struct {
     align u64le
 }
 
-// elfIdent は e_ident（ELFCLASS64・ELFDATA2LSB・EV_CURRENT・残りは 0）
+// e_ident（ELFCLASS64・ELFDATA2LSB・EV_CURRENT・残りは 0）
 func elfIdent() []byte {
     mut b := builder.Builder[byte]{}
     builder.Push(mut b, 127)

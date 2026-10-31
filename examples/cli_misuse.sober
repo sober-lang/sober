@@ -1,0 +1,60 @@
+package main
+
+// Misuse of a command line with std/cli: Parse returns an error label with the argument's index (argument 0 is the program name),
+// and Format turns it into the message cli.Main prints to stderr (exit code 2). The seven labels: UnknownFlag and UnknownCommand
+// (with a nearest spelling within edit distance 2), MissingValue, BadValue (with what it wants), Missing, Extra, Duplicate.
+// The reserved spellings (--help, -h, --help=dev, --version, --cli-spec) come back as Request — a document, not an error.
+// Callers that use Parse directly match the labels and pick the command with cli.Is.
+
+import "std/cli"
+import "std/strings"
+
+const Out = cli.StrFlag{name: "o", arg: "<file>", help: "write to <file>"}
+const Jobs = cli.IntFlag{name: "jobs", short: "j", help: "parallel jobs", def: 1, min: 1, max: 64}
+const Mode = cli.ChoiceFlag{name: "mode", help: "build mode", choices: []string{"debug", "release"}, def: "debug"}
+const Verbose = cli.BoolFlag{name: "verbose", short: "v", help: "say more"}
+const Src = cli.Positional{name: "src", help: "the source file"}
+
+const Build = cli.Command{name: "build", summary: "build a file", bools: []cli.BoolFlag{Verbose}, strs: []cli.StrFlag{Out},
+    ints: []cli.IntFlag{Jobs}, choices: []cli.ChoiceFlag{Mode}, pos: []cli.Positional{Src}}
+const Clean = cli.Command{name: "clean", summary: "remove the outputs"}
+
+const Tool = cli.App{name: "tool", version: "2.0", summary: "a build tool", commands: []cli.Command{Build, Clean}}
+
+func try(args []string) {
+    r, e := cli.Parse(Tool, args)
+    if e == nil {
+        println("ok build=${cli.Is(r, Build)} clean=${cli.Is(r, Clean)}")
+        return
+    }
+    kind := switch e {
+    case cli.UnknownFlag{arg, word, near}: "UnknownFlag at ${arg}"
+    case cli.UnknownCommand{arg, word, near}: "UnknownCommand at ${arg}"
+    case cli.MissingValue{arg, flag}: "MissingValue at ${arg}"
+    case cli.BadValue{arg, flag, word, want}: "BadValue at ${arg}"
+    case cli.Missing{flag}: "Missing " + flag
+    case cli.Extra{arg, word}: "Extra at ${arg}"
+    case cli.Duplicate{arg, flag, first}: "Duplicate at ${arg} (first ${first})"
+    case cli.Request{word}: "Request " + word
+    }
+    println("-- " + kind)
+    println(strings.TrimSuffix(cli.Format(Tool, r, e), "\n"))
+}
+
+func main() {
+    try([]string{"tool", "build", "main.src", "-o", "out", "-j", "4", "--mode=release", "-v"})
+    try([]string{"tool", "clean"})
+    try([]string{"tool", "build", "main.src", "--verbos"})
+    try([]string{"tool", "biuld"})
+    try([]string{"tool", "build", "main.src", "-o"})
+    try([]string{"tool", "build", "main.src", "-j", "0"})
+    try([]string{"tool", "build", "main.src", "--mode", "fast"})
+    try([]string{"tool", "build", "main.src", "-j", "two"})
+    try([]string{"tool", "build", "-o", "out"})
+    try([]string{"tool", "build", "main.src", "-o", "out", "extra.src"})
+    try([]string{"tool", "build", "main.src", "-o", "a", "-o", "b"})
+    try([]string{"tool", "build", "main.src", "-o", "out", "--verbose=yes"})
+    try([]string{"tool", "build", "main.src", "-run"})
+    try([]string{"tool", "--version"})
+    try([]string{"tool", "build", "-h"})
+}

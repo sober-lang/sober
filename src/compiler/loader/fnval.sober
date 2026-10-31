@@ -1,18 +1,17 @@
 package loader
 
-// 値の位置の判定の一元化（クロージャの波 工程 3 — language.md 25 節 2026-10-17・report-742 4 節・report-744）:
-// 「この位置のラムダ / 関数参照は値（クロージャ）か展開か」を loader の 1 か所で決め、check の脱糖（desugar）と build（lower — 工程 5）が
+// 値の位置の判定の一元化（language.md 25 節）:
+// 「この位置のラムダ / 関数参照は値（クロージャ）か展開か」を loader の 1 か所で決め、check の脱糖（desugar）と build（lower）が
 // 同じ判定を読む（check ⊂/⊃ build の割れの予防 — η 展開の前例の形）。
 //
-// 第 1 段の値の位置 = **値化可能な named fn type の struct の欄（+ その option `Fn?`）・関数の仮引数・結果**:
+// 値の位置 = **値化可能な named fn type の struct の欄（+ その option `Fn?`）・関数の仮引数・結果**:
 // - 値化可能 = 非ジェネリックで第一階（仮引数・結果のどこにも関数型を含まない）の named fn type。ただし仮引数は第一階の匿名の関数型でもよい
-//   （借り — (α-L0) 2026-10-17・language.md 25 節「借り」: 値の呼び出しの実引数のラムダは借りの閉包〔下の値の呼び出し〕・使い方の規則は desugar/filecheck）。
-//   `Iter[T] = func(func(T))` のような高階・ジェネリックは資格外 — 従来どおり展開（仮引数の emit を間接呼び出しの先で展開できない —
-//   report-740 W1 の構造）
-// - 第一階の匿名の関数型の欄（`less func(int, int) bool`）も値の位置（工程 5d — 匿名欄の反転）: env の鍵は関数型の構造（借りと同じ寄せ方）。
+//   （借り — language.md 25 節「借り」: 値の呼び出しの実引数のラムダは借りの閉包〔下の値の呼び出し〕・使い方の規則は desugar/filecheck）。
+//   `Iter[T] = func(func(T))` のような高階・ジェネリックは資格外 — 従来どおり展開（仮引数の emit を間接呼び出しの先で展開できない）
+// - 第一階の匿名の関数型の欄（`less func(int, int) bool`）も値の位置（匿名欄の反転）: env の鍵は関数型の構造（借りと同じ寄せ方）。
 //   高階の匿名欄は従来のまま（閉じた fnref 1 語）
-// - 値化可能な named fn type の **関数の仮引数・結果**も値の位置（工程 4 B1 の同梱 — 2026-10-17）: 実引数のラムダ・名前付き関数（η）・
-//   結果がそれの関数の return のラムダ。check の脱糖はその仮引数だけが展開の理由の関数を Def にする（ValFOnly）・build は工程 5 まで展開のまま。
+// - 値化可能な named fn type の **関数の仮引数・結果**も値の位置: 実引数のラムダ・名前付き関数（η）・
+//   結果がそれの関数の return のラムダ。check の脱糖はその仮引数だけが展開の理由の関数を Def にする（ValFOnly）・build は展開のまま。
 //   Iter のような資格外（高階・ジェネリック）の仮引数は従来どおり展開
 //
 // このパスがやること（finish — panicLabels の後・nodeRules の前）:
@@ -20,7 +19,7 @@ package loader
 //    写せない形は diag.FnArg（1 = mut 仮引数・2 = 仮引数の数が型と違う）
 // 2. 捕捉の走査: 値の位置のラムダごとに、外側の束縛の使用（= 捕捉）を最初に使った順で数え、Program の表（cap_*）で desugar へ渡す。
 //    値になれない形は diag.FnCap（1 = mut の捕捉・2 = 非局所 return・3 = `?`・4 = ラムダを越える break / continue）
-// 限界（第 1 段 — report-745）: 値の位置のラムダの中の値の位置のラムダ（入れ子）は、外のラムダの束縛を外側スコープとして見ない
+// 限界: 値の位置のラムダの中の値の位置のラムダ（入れ子）は、外のラムダの束縛を外側スコープとして見ない
 // （捕捉に数えず desugar の既存の拒否に落ちる — 誤受理はない）。switch パターンの束縛は KPType / KFieldPat の分だけ見る
 
 import "std/builder"
@@ -29,7 +28,7 @@ import "std/iter"
 import "ast"
 import "diag"
 
-// FnVals は fnValAll の結果: η 展開後の木と、値の位置のラムダの捕捉の表（ラムダは [ファイル, 節] で引く — 捕捉 0 本でも
+// fnValAll の結果: η 展開後の木と、値の位置のラムダの捕捉の表（ラムダは [ファイル, 節] で引く — 捕捉 0 本でも
 // 値の位置の印として載る）。names は [lo, hi) の切り出し
 type FnVals struct {
     trees []ast.Tree
@@ -39,20 +38,20 @@ type FnVals struct {
     cap_hi []int
     cap_names []string
     cap_brw []int
-    // 展開待ちの捕捉（language.md 25 節 (α-L0) の「囲む関数の仮引数を呼ぶ」— report-833〜836）: 1 本の列に詰める（欄を増やすと受ける関数の
-    // compile が重くなる）— [名前の数 N, 名前ごとの的の番号（-1 = 普通の捕捉・-2 = mut の束縛の捕捉〔(α-L1) — 借りの実引数のラムダだけ〕）× N, 行の数 R, 行ごとの流れの印 × R（1 = 的の仮引数へ流れる
+    // 展開待ちの捕捉（language.md 25 節の「囲む関数の仮引数を呼ぶ」）: 1 本の列に詰める（欄を増やすと受ける関数の
+    // compile が重くなる）— [名前の数 N, 名前ごとの的の番号（-1 = 普通の捕捉・-2 = mut の束縛の捕捉〔借りの実引数のラムダだけ〕）× N, 行の数 R, 行ごとの流れの印 × R（1 = 的の仮引数へ流れる
     // 実引数のラムダの行 — 持ち上げの時に捕捉を平たく積む元）, 的の数 Q, 流れる行の lo × Q, hi × Q, 流れる行…（推移 — 転送を含む）]
     cap_pend []int
 }
 
-// ProgCx は Program から Cx を組み直す（desugar が loader の判定 — FnValDecl — を読むための口。判定の一元化）
+// Program から Cx を組み直す（desugar が loader の判定 — FnValDecl — を読むための口。判定の一元化）
 func ProgCx(p Program) Cx {
     return Cx{p.trees, p.file_pkg, p.pkg_path, p.pkg_lo, p.pkg_hi, p.imp_pkg, p.imp_ref, p.imp_path, tyTab(p.trees, p.file_pkg)}
 }
 
-// tyTab は全ファイルの型宣言の索引を組む（typeDeclAt が呼び出しの実引数・仮引数・欄ごとに引く — 以前は package の型宣言を毎回総なめにし、
-// 見つからない組み込みの名前〔int / string …〕で歩き切っていた: 自己 build の loader 4.3 → 6.2 G の主犯・report-780）。
-// 形は 1 本の列（Cx の欄 1 語 — 欄を struct にすると Cx を受ける全関数の compile が重くなる・report-781）:
+// 全ファイルの型宣言の索引を組む（typeDeclAt が呼び出しの実引数・仮引数・欄ごとに引く — package の型宣言を毎回総なめにすると、
+// 見つからない組み込みの名前〔int / string …〕で歩き切ることになり自己 build が大きく重くなる）。
+// 形は 1 本の列（Cx の欄 1 語 — 欄を struct にすると Cx を受ける全関数の compile が重くなる）:
 // [mask, 鎖の頭 × (mask + 1), 宣言ごとに 4 語 = package・ファイル・節・鎖の次]。鎖は (ファイル, 宣言の並び) の昇順 = 線形に探したときに最初に当たる宣言が先頭
 func tyTab(ts []ast.Tree, file_pkg []int) []int {
     mut ent := builder.Builder[int]{}
@@ -93,7 +92,7 @@ func tyTab(ts []ast.Tree, file_pkg []int) []int {
     return freeze(out)
 }
 
-// typeDeclAt はファイル f から見た型の名前 n（`ref.X` か `X`）の型宣言の (ファイル, 節)（見つからなければ (-1, -1)）
+// ファイル f から見た型の名前 n（`ref.X` か `X`）の型宣言の (ファイル, 節)（見つからなければ (-1, -1)）
 func typeDeclAt(cx Cx, f int, n string) (int, int) {
     pk, base := idResolve(cx, f, n)
     if pk < 0 {
@@ -120,7 +119,7 @@ func typeDeclAt(cx Cx, f int, n string) (int, int) {
     return 0 - 1, 0 - 1
 }
 
-// fnValFirstOrder は型式 te（ファイル df の木）が関数型を含まないか（TOpt / TSlice / TMap / TGeneric / TTuple の中も見る — 保守的）
+// 型式 te（ファイル df の木）が関数型を含まないか（TOpt / TSlice / TMap / TGeneric / TTuple の中も見る — 保守的）
 func fnValFirstOrder(cx Cx, df int, te int) bool {
     t := cx.trees[df]
     x := t.nodes[te]
@@ -145,7 +144,7 @@ func fnValFirstOrder(cx Cx, df int, te int) bool {
     }
 }
 
-// FnValDecl は型宣言（ファイル df の節 td）が値化可能な named fn type か（クロージャの波 第 1 段 — 非ジェネリック・第一階）。
+// 型宣言（ファイル df の節 td）が値化可能な named fn type か（非ジェネリック・第一階）。
 // check の脱糖と build の lower が同じ判定を読む
 func FnValDecl(cx Cx, df int, td int) bool {
     t := cx.trees[df]
@@ -171,7 +170,7 @@ func FnValDecl(cx Cx, df int, td int) bool {
     return true
 }
 
-// fnValBorrowTE は仮引数の型式 te が借りの関数型か（(α-L0) — 第一階の匿名の関数型 `func(…) …`・深さ 1: 仮引数・結果に関数型を含まない）
+// 仮引数の型式 te が借りの関数型か（(α-L0) — 第一階の匿名の関数型 `func(…) …`・深さ 1: 仮引数・結果に関数型を含まない）
 func fnValBorrowTE(cx Cx, df int, te int) bool {
     t := cx.trees[df]
     x := t.nodes[te]
@@ -191,7 +190,7 @@ func fnValBorrowTE(cx Cx, df int, te int) bool {
     return true
 }
 
-// fnValFieldTy は struct の欄の型式 fieldTe（宣言のファイル df）が値の位置（値化可能な named fn type かその option）なら
+// struct の欄の型式 fieldTe（宣言のファイル df）が値の位置（値化可能な named fn type かその option）なら
 // その named fn type の宣言の (ファイル, 節)。でなければ (-1, -1)
 func fnValFieldTy(cx Cx, df int, fieldTe int) (int, int) {
     t := cx.trees[df]
@@ -209,7 +208,7 @@ func fnValFieldTy(cx Cx, df int, fieldTe int) (int, int) {
     return tf, tn
 }
 
-// fvHits は composite 節 n（ファイル f の木 t）の elems のうち値の位置の欄のもの: [elem 節, 型宣言ファイル, 型宣言節] の 3 語ずつ
+// composite 節 n（ファイル f の木 t）の elems のうち値の位置の欄のもの: [elem 節, 型宣言ファイル, 型宣言節] の 3 語ずつ
 // （匿名の関数型の欄は [elem 節, struct の宣言のファイル, -1 - 欄の型式の節]）
 // （elem 節の昇順 — elems の並び順）。struct でない composite・解決できない形は空
 func fvHits(cx Cx, f int, t ast.Tree, n int) []int {
@@ -268,12 +267,12 @@ func fvHits(cx Cx, f int, t ast.Tree, n int) []int {
     return builder.Build(mut out)
 }
 
-// FnValAnonTE は struct の欄の型式 te（ファイル f の木）が値の位置の匿名の関数型か（第一階の `func(…) …` — 工程 5d。desugar / lower の口）
+// struct の欄の型式 te（ファイル f の木）が値の位置の匿名の関数型か（第一階の `func(…) …` — 工程 5d。desugar / lower の口）
 func FnValAnonTE(cx Cx, f int, te int) bool {
     return fnValBorrowTE(cx, f, te)
 }
 
-// FnValAnonFields は全ファイルの struct の欄のうち値の位置の匿名の関数型の欄の型式: [ファイル, 型式の節] の 2 語ずつ（desugar の口 —
+// 全ファイルの struct の欄のうち値の位置の匿名の関数型の欄の型式: [ファイル, 型式の節] の 2 語ずつ（desugar の口 —
 // 欄の型の読みを閉包の型にする印）
 func FnValAnonFields(cx Cx) []int {
     mut out := builder.Builder[int]{}
@@ -296,13 +295,13 @@ func FnValAnonFields(cx Cx) []int {
     return builder.Build(mut out)
 }
 
-// FnValTE は型式 te（ファイル f の木）が値の位置の型（値化可能な named fn type かその option）か（desugar の口）
+// 型式 te（ファイル f の木）が値の位置の型（値化可能な named fn type かその option）か（desugar の口）
 func FnValTE(cx Cx, f int, te int) bool {
     tf, _ := fnValFieldTy(cx, f, te)
     return tf >= 0
 }
 
-// ValFOnly は関数宣言（ファイル f の節 fnode）が「値の位置の型の仮引数だけが展開の理由」の関数か: mut の仮引数なし・関数型の仮引数
+// 関数宣言（ファイル f の節 fnode）が「値の位置の型の仮引数だけが展開の理由」の関数か: mut の仮引数なし・関数型の仮引数
 // （匿名・名前付き）を 1 つ以上持ち、どれも値化可能な named fn type（`F` の形）。check の脱糖はこれを展開せず Def にする（工程 4 B1 の
 // 同梱 — named fn type の仮引数の昇格。build は工程 5 まで展開のまま）
 func ValFOnly(cx Cx, f int, fnode int) bool {
@@ -330,7 +329,7 @@ func ValFOnly(cx Cx, f int, fnode int) bool {
     return any
 }
 
-// callHits は呼び出し節 n（ファイル f の木 t）の実引数のうち、呼び先（名前付き関数）の仮引数の型が値の位置（値化可能な named fn type
+// 呼び出し節 n（ファイル f の木 t）の実引数のうち、呼び先（名前付き関数）の仮引数の型が値の位置（値化可能な named fn type
 // かその option）のもの: [実引数の節, 型宣言ファイル, 型宣言節] の 3 語ずつ（実引数の順。工程 4 B1 の同梱 — named fn type の仮引数の昇格）
 func callHits(cx Cx, ft FnTab, f int, t ast.Tree, n int) []int {
     gi := calleeFn(cx, ft, f, t.nodes[n].a, 0)
@@ -361,7 +360,7 @@ func callHits(cx Cx, ft FnTab, f int, t ast.Tree, n int) []int {
     return builder.Build(mut out)
 }
 
-// RetFnVal は関数宣言 fd（ファイル f の木）の結果が値の位置（結果 1 つで値化可能な named fn type かその option）か
+// 関数宣言 fd（ファイル f の木）の結果が値の位置（結果 1 つで値化可能な named fn type かその option）か
 func RetFnVal(cx Cx, f int, fd ast.Node) bool {
     t := cx.trees[f]
     if fd.d < 0 || ast.ListLen(t, fd.d) != 1 {
@@ -373,7 +372,7 @@ func RetFnVal(cx Cx, f int, fd ast.Node) bool {
 
 // ── η 展開（値の位置の欄に置いた名前付き関数 → ラムダ。eta.sober の形） ──
 
-// fnValEtaScan は composite 節 i の値の位置の欄のうち、名前付き関数を置いたものを hits に [elem 節, 仮引数の数] の 2 語ずつ積む
+// composite 節 i の値の位置の欄のうち、名前付き関数を置いたものを hits に [elem 節, 仮引数の数] の 2 語ずつ積む
 // （写せない形は kind + 字句 × 4 — eta.sober と同じ符号）
 func fnValEtaScan(cx Cx, ft FnTab, f int, i int, hits mut builder.Builder[int]) int {
     t := cx.trees[f]
@@ -408,7 +407,7 @@ func fnValEtaScan(cx Cx, ft FnTab, f int, i int, hits mut builder.Builder[int]) 
     return 0
 }
 
-// fnValEtaCallScan は呼び出し節 i の値の位置の実引数のうち、名前付き関数を置いたものを hits に [実引数の節, 仮引数の数] の 2 語ずつ積む
+// 呼び出し節 i の値の位置の実引数のうち、名前付き関数を置いたものを hits に [実引数の節, 仮引数の数] の 2 語ずつ積む
 // （写せない形は kind + 字句 × 4 — fnValEtaScan と同じ符号）
 func fnValEtaCallScan(cx Cx, ft FnTab, f int, i int, hits mut builder.Builder[int]) int {
     t := cx.trees[f]
@@ -442,7 +441,7 @@ func fnValEtaCallScan(cx Cx, ft FnTab, f int, i int, hits mut builder.Builder[in
     return 0
 }
 
-// fnValEtaArgRewrite は hits（[実引数の節, 仮引数の数]）の実引数を `($f<節>_0, …) => F($f<節>_0, …)` に写した木（実引数の節をその場で
+// hits（[実引数の節, 仮引数の数]）の実引数を `($f<節>_0, …) => F($f<節>_0, …)` に写した木（実引数の節をその場で
 // ラムダに差し替える — 元の関数参照は新しい節へ写す）
 func fnValEtaArgRewrite(t ast.Tree, hs []int) ast.Tree {
     mut ns := mut []ast.Node{}
@@ -479,7 +478,7 @@ func fnValEtaArgRewrite(t ast.Tree, hs []int) ast.Tree {
     return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
 }
 
-// fnValEtaRewrite は hits（[elem 節, 仮引数の数]）の欄の値を `($f<節>_0, …) => F($f<節>_0, …)` に写した木
+// hits（[elem 節, 仮引数の数]）の欄の値を `($f<節>_0, …) => F($f<節>_0, …)` に写した木
 func fnValEtaRewrite(t ast.Tree, hs []int) ast.Tree {
     mut ns := mut []ast.Node{}
     for x <- t.nodes {
@@ -517,7 +516,7 @@ func fnValEtaRewrite(t ast.Tree, hs []int) ast.Tree {
     return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
 }
 
-// anonFieldArity は値の位置の匿名の関数型の欄の名前ごとの仮引数の数（[名前…] と [数…] — 同じ名前で数の違う欄があれば -1。fnValAnonArgScan の材料）
+// 値の位置の匿名の関数型の欄の名前ごとの仮引数の数（[名前…] と [数…] — 同じ名前で数の違う欄があれば -1。fnValAnonArgScan の材料）
 func anonFieldArity(cx Cx) ([]string, []int) {
     afs := FnValAnonFields(cx)
     mut ns := mut []string{}
@@ -555,9 +554,9 @@ func anonFieldArity(cx Cx) ([]string, []int) {
     return freeze(ns), freeze(as)
 }
 
-// fnValAnonArgScan は呼び出し節 i が名前付き関数でない callee（値の呼び出し — 閉包の値・欄の関数値・展開の仮引数）なら、実引数のうち匿名の関数型の欄の読み
-// `x.f` を hits に [実引数の節, 仮引数の数] で積む（language.md 25 節 5d — 匿名の欄の env の鍵は借りの位置と分かれているので、欄の閉包の値を借りの位置へ
-// そのまま渡せない。η `(…) => x.f(…)` の借りのラムダに写す — 2026-10-22 ユーザー裁定・report-1038 (c) 案 A）。名前が引けない・数の割れた欄は写さない
+// 呼び出し節 i が名前付き関数でない callee（値の呼び出し — 閉包の値・欄の関数値・展開の仮引数）なら、実引数のうち匿名の関数型の欄の読み
+// `x.f` を hits に [実引数の節, 仮引数の数] で積む（language.md 25 節 — 匿名の欄の env の鍵は借りの位置と分かれているので、欄の閉包の値を借りの位置へ
+// そのまま渡せない。η `(…) => x.f(…)` の借りのラムダに写す）。名前が引けない・数の割れた欄は写さない
 func fnValAnonArgScan(cx Cx, ft FnTab, f int, i int, ns []string, as []int, hits mut builder.Builder[int]) {
     t := cx.trees[f]
     x := t.nodes[i]
@@ -615,7 +614,7 @@ func fnValEtaAll(cx Cx, ft FnTab) ([]ast.Tree, error?) {
 
 // ── 捕捉の走査 ──
 
-// FvW は走査の状態（1 つの mut にまとめる — 見えている束縛のスタック・ラムダごとの捕捉の一時列・入れ子の積み・結果の表）
+// 走査の状態（1 つの mut にまとめる — 見えている束縛のスタック・ラムダごとの捕捉の一時列・入れ子の積み・結果の表）
 type FvW struct {
     f int
     // 見えている束縛（sp が頂上 — pop は sp を戻すだけ）
@@ -699,7 +698,7 @@ func fvPushV(w mut FvW, name string, m bool, v bool) {
     w.sp = w.sp + 1
 }
 
-// fvValueCallee は呼び出しの callee（節 c）が値の呼び出しか（構文の判定 — 名前付き関数でない・局所の束縛か値化可能な仮引数の名前か欄の読み。
+// 呼び出しの callee（節 c）が値の呼び出しか（構文の判定 — 名前付き関数でない・局所の束縛か値化可能な仮引数の名前か欄の読み。
 // 関数の匿名の関数型の仮引数・ラムダの仮引数の呼び出しは展開なので数えない）。実引数のラムダは借りの閉包（(α-L0)）
 func fvValueCallee(w mut FvW, cx Cx, ft FnTab, c int) bool {
     t := cx.trees[w.f]
@@ -720,7 +719,7 @@ func fvValueCallee(w mut FvW, cx Cx, ft FnTab, c int) bool {
     return false
 }
 
-// fvLook は名前（木 t のデータ文字列 s）が見えている束縛にあるか（頂上から — 無ければ -1）
+// 名前（木 t のデータ文字列 s）が見えている束縛にあるか（頂上から — 無ければ -1）
 func fvLook(w mut FvW, t ast.Tree, s int) int {
     mut i := w.sp - 1
     while i >= 0 {
@@ -732,7 +731,7 @@ func fvLook(w mut FvW, t ast.Tree, s int) int {
     return 0 - 1
 }
 
-// fvLookRoot は点つきの経路（`x.f.g` — 木 t のデータ文字列 s）の根の名前の束縛（無ければ -1）
+// 点つきの経路（`x.f.g` — 木 t のデータ文字列 s）の根の名前の束縛（無ければ -1）
 func fvLookRoot(w mut FvW, t ast.Tree, s int) int {
     nm := Name(t, s)
     nb := bytes(nm)
@@ -751,17 +750,16 @@ func fvLookRoot(w mut FvW, t ast.Tree, s int) int {
     return 0 - 1
 }
 
-// fvMutCap は借りの実引数のラムダの mut の捕捉を積む（呼び出しの節・字句・名前 — fvMutOne の照合の材料）
+// 借りの実引数のラムダの mut の捕捉を積む（呼び出しの節・字句・名前 — fvMutOne の照合の材料）
 func fvMutCap(w mut FvW, name string, tok int) {
     builder.Push(mut w.mcall, w.bcall)
     builder.Push(mut w.mcall, tok)
     builder.Push(mut w.mname, name)
 }
 
-// fvMutOne は 1 つの値の呼び出しの借りの実引数のラムダが捕捉する mut の束縛が合わせて 1 つまでか（language.md 25 節 (α-L1) の縛り —
+// 1 つの値の呼び出しの借りの実引数のラムダが捕捉する mut の束縛が合わせて 1 つまでか（language.md 25 節の縛り —
 // anchor 1 slot を字面で決まる形に縮めたもの。名前は関数の中で一意〔影の禁止〕なので名前で束縛を数える）。違反は 2 つ目の束縛の字句で FnCap kind 6。
-// 同じ呼び出しが借りの値をそのまま実引数に渡していれば（fs — 転送する借りの閉包は Def の region 0）mut の捕捉は拒む（kind 7 — anchor が割れうる。
-// 2026-10-22 ユーザー裁定・report-1038 (b)）
+// 同じ呼び出しが借りの値をそのまま実引数に渡していれば（fs — 転送する借りの閉包は Def の region 0）mut の捕捉は拒む（kind 7 — anchor が割れうる）
 func fvMutOne(cs []int, ns []string, fs []int) int {
     for i <- iter.Range(0, len(ns)) {
         for q <- iter.Range(0, len(fs)) {
@@ -778,7 +776,7 @@ func fvMutOne(cs []int, ns []string, fs []int) int {
     return 0
 }
 
-// fvCapture は捕捉を tmp に積む（最初に使った順・重複なし）。k = 展開待ちの的の番号（-1 = 普通の捕捉）— 同じ名前を呼ぶ以外にも使う形は
+// 捕捉を tmp に積む（最初に使った順・重複なし）。k = 展開待ちの的の番号（-1 = 普通の捕捉）— 同じ名前を呼ぶ以外にも使う形は
 // 値になれない（展開待ちの仮引数は呼ぶだけ — kind 5）
 func fvCapture(w mut FvW, name string, k int, tok int) {
     mut i := 0
@@ -801,7 +799,7 @@ func fvCapture(w mut FvW, name string, k int, tok int) {
     w.tn = w.tn + 1
 }
 
-// fvQ は展開待ちの的（ファイル f の関数の節 fd の仮引数の位置 i）の番号（無ければ足す）
+// 展開待ちの的（ファイル f の関数の節 fd の仮引数の位置 i）の番号（無ければ足す）
 func fvQ(w mut FvW, f int, fd int, i int) int {
     q := fvQFind(mut w, f, fd, i)
     if q >= 0 {
@@ -823,7 +821,7 @@ func fvQFind(w mut FvW, f int, fd int, i int) int {
     return 0 - 1
 }
 
-// fvPendCallee は callee の節 c が、いまの関数の匿名の関数型の仮引数の名前なら仮引数の位置（でなければ -1）
+// callee の節 c が、いまの関数の匿名の関数型の仮引数の名前なら仮引数の位置（でなければ -1）
 func fvPendCallee(w mut FvW, t ast.Tree, c int) int {
     if t.nodes[c].kind != ast.EIdent {
         return 0 - 1
@@ -832,7 +830,7 @@ func fvPendCallee(w mut FvW, t ast.Tree, c int) int {
     return if b >= 0 { table.Get(mut w.scp, b) } else { 0 - 1 }
 }
 
-// fvCallFlow は展開の呼び出し n（値の位置のラムダの外）の実引数を見る: 囲む関数の展開待ちになりうる仮引数をそのまま渡す形は転送の辺に積み
+// 展開の呼び出し n（値の位置のラムダの外）の実引数を見る: 囲む関数の展開待ちになりうる仮引数をそのまま渡す形は転送の辺に積み
 // （1 回目）、的の仮引数へ渡すラムダは流れる行として数える（2 回目 — 実引数のラムダの捕捉の資格は値の位置のラムダと同じ検査）
 func fvCallFlow(w mut FvW, cx Cx, ft FnTab, n int) {
     if !w.flow && w.npf == 0 {
@@ -879,7 +877,7 @@ func fvCallFlow(w mut FvW, cx Cx, ft FnTab, n int) {
     }
 }
 
-// fvGen は for の生成子 KGen（src を見てから names を積む）
+// for の生成子 KGen（src を見てから names を積む）
 func fvGen(w mut FvW, cx Cx, ft FnTab, g int, vp bool, ld int) {
     t := cx.trees[w.f]
     x := t.nodes[g]
@@ -904,7 +902,7 @@ func fvL(w mut FvW, cx Cx, ft FnTab, l int, vp bool, ld int) {
     }
 }
 
-// fvN は節の走査。vp = 値の位置のラムダの中（捕捉を数える・値になれない形を拒否する）、ld = ラムダ（または関数）の中の loop の深さ
+// 節の走査。vp = 値の位置のラムダの中（捕捉を数える・値になれない形を拒否する）、ld = ラムダ（または関数）の中の loop の深さ
 func fvN(w mut FvW, cx Cx, ft FnTab, n int, vp bool, ld int) {
     if w.bad != 0 || n < 0 {
         return
@@ -1122,7 +1120,7 @@ func fvN(w mut FvW, cx Cx, ft FnTab, n int, vp bool, ld int) {
     }
 }
 
-// fvValLamAt は値の位置のラムダ v を数える（値の位置のラムダの中なら入れ子として積んで後で — fvValueLam）
+// 値の位置のラムダ v を数える（値の位置のラムダの中なら入れ子として積んで後で — fvValueLam）
 func fvValLamAt(w mut FvW, cx Cx, ft FnTab, v int, vp bool, mask int, call int) {
     if w.flow {
         return
@@ -1143,7 +1141,7 @@ func fvValLamAt(w mut FvW, cx Cx, ft FnTab, v int, vp bool, mask int, call int) 
     }
 }
 
-// fvOneLam は値の位置のラムダ 1 つの捕捉を数えて表に積む（本体だけを見る — ラムダの仮引数・中の束縛は外のスコープと衝突しない
+// 値の位置のラムダ 1 つの捕捉を数えて表に積む（本体だけを見る — ラムダの仮引数・中の束縛は外のスコープと衝突しない
 // 〔影の禁止 — localnames〕ので、外のスコープに当たった名前だけが捕捉）
 func fvOneLam(w mut FvW, cx Cx, ft FnTab, lam int, mask int, flow int, call int) {
     t := cx.trees[w.f]
@@ -1171,7 +1169,7 @@ func fvOneLam(w mut FvW, cx Cx, ft FnTab, lam int, mask int, flow int, call int)
     builder.Push(mut w.cfile, w.f)
     builder.Push(mut w.cnode, lam)
     builder.Push(mut w.cbrw, mask)
-    // 行の印: 1 = 流れの行・2 = 借りの実引数のラムダ（値の呼び出しの実引数 — lower が匿名の欄の鍵と分ける・report-1038 (c) 案 A）・0 = 他の値の位置
+    // 行の印: 1 = 流れの行・2 = 借りの実引数のラムダ（値の呼び出しの実引数 — lower が匿名の欄の鍵と分ける）・0 = 他の値の位置
     builder.Push(mut w.cflow, if flow != 0 { flow } else if call >= 0 { 2 } else { 0 })
     w.nrow = w.nrow + 1
     mut names := mut []string{}
@@ -1191,7 +1189,7 @@ func fvOneLam(w mut FvW, cx Cx, ft FnTab, lam int, mask int, flow int, call int)
     }
 }
 
-// fvValueLam は値の位置のラムダを数え、走査中に見つけた入れ子の値の位置のラムダも（同じスコープで）数える
+// 値の位置のラムダを数え、走査中に見つけた入れ子の値の位置のラムダも（同じスコープで）数える
 func fvValueLam(w mut FvW, cx Cx, ft FnTab, lam int, mask int, call int) {
     p0 := w.pn
     fvOneLam(mut w, cx, ft, lam, mask, 0, call)
@@ -1203,7 +1201,7 @@ func fvValueLam(w mut FvW, cx Cx, ft FnTab, lam int, mask int, call int) {
     w.pn = p0
 }
 
-// fnValAll は η 展開 + 捕捉の走査（finish — panicLabels の後）。写せない形・値になれない形は拒否
+// η 展開 + 捕捉の走査（finish — panicLabels の後）。写せない形・値になれない形は拒否
 @errors(diag.FnArg, diag.FnCap)
 func fnValAll(cx Cx, ft FnTab) (FnVals, error?) {
     ts, eerr := fnValEtaAll(cx, ft)
@@ -1270,7 +1268,7 @@ func fnValAll(cx Cx, ft FnTab) (FnVals, error?) {
         fvPendPack(builder.Build(mut w.cpk), builder.Build(mut w.cflow), pl, ph, pr)}, nil
 }
 
-// fvPendPack は展開待ちの捕捉の表を 1 本の列に詰める（FnVals.cap_pend の形）
+// 展開待ちの捕捉の表を 1 本の列に詰める（FnVals.cap_pend の形）
 func fvPendPack(pk []int, fl []int, lo []int, hi []int, rows []int) []int {
     mut out := mut []int{}
     out = append(out, len(pk))
@@ -1294,7 +1292,7 @@ func fvPendPack(pk []int, fl []int, lo []int, hi []int, rows []int) []int {
     return freeze(out)
 }
 
-// fvWalkFile はファイル f の関数と定数を歩く
+// ファイル f の関数と定数を歩く
 func fvWalkFile(w mut FvW, cx Cx, ft FnTab, f int) {
     t := cx.trees[f]
     w.f = f
@@ -1332,7 +1330,7 @@ func fvWalkFile(w mut FvW, cx Cx, ft FnTab, f int) {
     }
 }
 
-// fvQClose は転送の辺 es で的を閉じる（呼び先の的の仮引数へ自分の仮引数をそのまま渡す関数の、その仮引数も的）
+// 転送の辺 es で的を閉じる（呼び先の的の仮引数へ自分の仮引数をそのまま渡す関数の、その仮引数も的）
 func fvQClose(w mut FvW, es []int) {
     mut grew := true
     while grew {
@@ -1346,7 +1344,7 @@ func fvQClose(w mut FvW, es []int) {
     }
 }
 
-// fvPendRows は的ごとの流れる行（転送の元の的へ流れる行も含む — 推移）を [lo, hi) の列にする
+// 的ごとの流れる行（転送の元の的へ流れる行も含む — 推移）を [lo, hi) の列にする
 func fvPendRows(w mut FvW, es []int, fr []int) ([]int, []int, []int) {
     mut qs := mut []int{}
     mut rs := mut []int{}
@@ -1392,7 +1390,7 @@ func fvPendRows(w mut FvW, es []int, fr []int) ([]int, []int, []int) {
     return freeze(lo), freeze(hi), freeze(out)
 }
 
-// fnValBrwMask は値化可能な named fn type の宣言（ファイル df の節 td）の借りの仮引数のビット（i 番目が匿名の関数型なら 1 << i — (α-L0)）
+// 値化可能な named fn type の宣言（ファイル df の節 td）の借りの仮引数のビット（i 番目が匿名の関数型なら 1 << i — (α-L0)）
 func fnValBrwMask(cx Cx, df int, td int) int {
     t := cx.trees[df]
     b := t.nodes[t.nodes[td].c]
@@ -1407,13 +1405,13 @@ func fnValBrwMask(cx Cx, df int, td int) int {
     return m
 }
 
-// retBrwMask は関数宣言 fd（結果が値の位置）の結果の named fn type の借りの仮引数のビット
+// 関数宣言 fd（結果が値の位置）の結果の named fn type の借りの仮引数のビット
 func retBrwMask(cx Cx, f int, fd ast.Node) int {
     tf, tn := fnValFieldTy(cx, f, ast.ListAt(cx.trees[f], fd.d, 0))
     return if tf < 0 { 0 } else { fnValBrwMask(cx, tf, tn) }
 }
 
-// fvBrwEta は値の位置のラムダの本体の呼び出しの節 i で、借りの仮引数の名前（w.bn）を func 宣言の関数型リテラルの仮引数（展開の位置）へ
+// 値の位置のラムダの本体の呼び出しの節 i で、借りの仮引数の名前（w.bn）を func 宣言の関数型リテラルの仮引数（展開の位置）へ
 // 渡す実引数を η の的に積む（(α-L0) の借りの値の転送 — language.md 25 節。`f(k)` → `f(($e…) => k($e…))` の展開のラムダが借りを捕捉して呼ぶ。
 // 名前付き関数の η〔eta.sober〕と同じ写し・check と build が写した後の木を読む — 以前は desugar の closureArg が脱糖の中で写していた）
 func fvBrwEta(w mut FvW, cx Cx, ft FnTab, i int) {
@@ -1451,7 +1449,7 @@ func fvBrwEta(w mut FvW, cx Cx, ft FnTab, i int) {
     }
 }
 
-// fvIsBrw は名前がいま数えているラムダの借りの仮引数か
+// 名前がいま数えているラムダの借りの仮引数か
 func fvIsBrw(w mut FvW, name string) bool {
     for j <- iter.Range(0, w.bnn) {
         if table.Get(mut w.bn, j) == name {
@@ -1461,7 +1459,7 @@ func fvIsBrw(w mut FvW, name string) bool {
     return false
 }
 
-// fvEhNorm は η の的の 4 語組のうちファイル f のものを (呼び出しの節, 実引数の位置) で整列して重複を除いた 3 語組（同じ本体が 2 回歩かれうる —
+// η の的の 4 語組のうちファイル f のものを (呼び出しの節, 実引数の位置) で整列して重複を除いた 3 語組（同じ本体が 2 回歩かれうる —
 // etaRewrite は呼び出しごとに連続を要る）
 func fvEhNorm(xs []int) []int {
     mut idx := mut []int{}

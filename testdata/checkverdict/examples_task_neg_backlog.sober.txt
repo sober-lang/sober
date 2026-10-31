@@ -1,0 +1,2 @@
+sober: load error at examples/task_neg_backlog.sober:12:57: backlog: is a count written without calls or division (a literal, a name, + - *) — the bound on unstarted children per worker, 1 to 255
+exit=1

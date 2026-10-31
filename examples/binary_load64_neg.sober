@@ -1,6 +1,6 @@
 package main
 
-// std/binary の Load64 の負の添字（report-723）: i < 0 は panic(binary.OutOfRange{i, n})（exit 101 — i + 8 ≤ len(b) でも先頭より前は読まない）
+// std/binary の Load64 の負の添字: i < 0 は panic(binary.OutOfRange{i, n})（exit 101 — i + 8 ≤ len(b) でも先頭より前は読まない）
 
 import "std/binary"
 

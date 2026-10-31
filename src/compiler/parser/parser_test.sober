@@ -12,7 +12,7 @@ func parses(src string) bool {
     return ok
 }
 
-// kindCount は src を読んだ木の種類 k の節の数（読めなければ -1）
+// src を読んだ木の種類 k の節の数（読めなければ -1）
 func kindCount(src string, k int) int {
     b := bytes(src)
     t, ok := Parse(b, lexer.Lex(b))
@@ -28,7 +28,7 @@ func kindCount(src string, k int) int {
     return n
 }
 
-// firstOf は src を読んだ木の種類 k の最初の節（無ければ kind = 0）
+// src を読んだ木の種類 k の最初の節（無ければ kind = 0）
 func firstOf(src string, k int) ast.Node {
     b := bytes(src)
     t, ok := Parse(b, lexer.Lex(b))

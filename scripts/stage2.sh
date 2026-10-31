@@ -42,6 +42,11 @@ ZIG=${ZIG:-zig}
 OUT=$ROOT/out/stage2
 [ -x "$STAGE1" ] || { echo "stage2.sh: $STAGE1 not found (zig build)" >&2; exit 1; }
 mkdir -p "$OUT"
+# GATES_PREBUILT=1（成果物ごと写した木 — scripts/gatemut.sh の M2）: 鮮度を確かめずに今の sober2 を使う（写しはパスが違って鮮度の確認が外れ、鎖からの建て直しになる）
+if [ "${GATES_PREBUILT:-0}" = 1 ] && [ "$force" = 0 ] && [ -x "$OUT/sober2" ]; then
+    [ "$quiet" = 1 ] || echo "$OUT/sober2"
+    exit 0
+fi
 
 # ── 速い道（鮮度確認を安く — 温ビルド回収の一手目）──
 # 鮮度の入力の全部（stage1・鎖 = boot.commit・compiler/・std/・boot の ELF と .key・sober2 と .key）の stat 表
@@ -62,7 +67,7 @@ if [ "$force" = 0 ] && [ -x "$OUT/sober2" ] && [ -f "$STATF" ] && [ "$(stat_key)
 fi
 
 # 鎖 = bootstrap/chain.txt（畳んだ鎖 — 段のソースのスナップショット bootstrap/<段>/{compiler,std} と建て方。git の履歴に依らない — 公開準備便 ①）。
-# 段のディレクトリは不変（名前 = 段の番号 + 元のコミット）。private 側の 62 行の正史は scripts/boot.commit（scripts/bootcheck.sh が照合）
+# 段のディレクトリは不変（名前 = 段の番号 + 元のコミット）。private 側の 63 行の正史は scripts/boot.commit（scripts/bootcheck.sh が照合）
 mapfile -t CHAIN < <(grep -v '^#' "$ROOT/bootstrap/chain.txt" | awk 'NF { print $1 }')
 mapfile -t FORM < <(grep -v '^#' "$ROOT/bootstrap/chain.txt" | awk 'NF { print $2 }')
 [ "${#CHAIN[@]}" -gt 0 ] || { echo "stage2.sh: bootstrap/chain.txt has no step" >&2; exit 1; }
@@ -83,8 +88,10 @@ S2OPT=-O0
 # 決定 2026-10-02「bench の前」）。knows_elf <コミット>: そのコミットの compiler/app が --emit=elf を持つか
 # 段 i の boot が --emit=elf を知るか = 次の段の形が elf（最後の段は知っている — 最後の段の決まり）
 knows_elf_step() { local n=$(( $1 + 1 )); [ "$n" -ge "${#CHAIN[@]}" ] || [[ ${FORM[$n]} == elf* ]]; }
-# elf_build <コンパイラ> <出力> [フラグ…]: cwd のビルドの木の compiler/app を ELF に（実行の bit はここで — WriteMode を使わない古いコンパイラもある）
-elf_build() { local cc=$1 out=$2; shift 2; "$cc" build app/main.sober --emit=elf "$@" -o "$out" && chmod +x "$out"; }
+# elf_build <コンパイラ> <出力> [フラグ…]: cwd のビルドの木の compiler/app を ELF に（entry = ELF_ENTRY — 鎖の過去の段は app/main.sober・今の木は app）（実行の bit はここで — WriteMode を使わない古いコンパイラもある）
+elf_build() { local cc=$1 out=$2; shift 2; "$cc" build "${ELF_ENTRY:-app/main.sober}" --emit=elf "$@" -o "$out" && chmod +x "$out"; }
+# app_entry <木>: その木の compiler/app の entry（app が複数のファイルの package なら app・1 ファイルの段は app/main.sober）
+app_entry() { if [ "$(find "$1/app" -maxdepth 1 -name '*.sober' | wc -l)" -gt 1 ]; then echo app; else echo app/main.sober; fi; }
 secs() { awk -v a="$1" -v b="$(date +%s.%N)" 'BEGIN { printf "%.1f", b - a }'; }
 
 # ── boot の鎖（boot₀ = 1 行目のコミットの compiler/ を stage1 で、boot_i = i 行目を boot_{i-1} で）──
@@ -114,7 +121,7 @@ for i in "${!CHAIN[@]}"; do
                 (cd "$WB/root" && "$prev" build app/main.sober --emit=ll -o "$WB/boot.ll") >&2 || { echo "stage2.sh: FAIL stage1 build of src/compiler/app at $c" >&2; rm -rf "$WB"; exit 1; }
                 ll_cc "$WB/boot.ll" "$WB/sober-boot" >&2 || { echo "stage2.sh: FAIL zig cc boot.ll" >&2; rm -rf "$WB"; exit 1; }
             elif [ -n "$be" ]; then
-                (cd "$WB/root" && elf_build "$prev" "$WB/sober-boot" $bp) >&2 || { echo "stage2.sh: FAIL boot$((i - 1)) build of src/compiler/app at $c" >&2; rm -rf "$WB"; exit 1; }
+                (cd "$WB/root" && ELF_ENTRY=$(app_entry "$WB/root") elf_build "$prev" "$WB/sober-boot" $bp) >&2 || { echo "stage2.sh: FAIL boot$((i - 1)) build of src/compiler/app at $c" >&2; rm -rf "$WB"; exit 1; }
             else
                 (cd "$WB/root" && "$prev" build app/main.sober --emit=ll $bp -o "$WB/boot.ll") >&2 || { echo "stage2.sh: FAIL boot$((i - 1)) build of src/compiler/app at $c" >&2; rm -rf "$WB"; exit 1; }
                 ll_cc "$WB/boot.ll" "$WB/sober-boot" >&2 || { echo "stage2.sh: FAIL zig cc boot.ll" >&2; rm -rf "$WB"; exit 1; }
@@ -164,17 +171,17 @@ if [ "$force" = 1 ] || ! fresh "$k"; then
         tree_of "$W/root" "$ROOT/src/compiler" "$ROOT/src/std"
         # 設計整合パス（--passes — 最後の boot = 鎖の 5 行目以降が知っている）を掛けて建てる
         if [ "$S2VIA" = elf ]; then
-            (cd "$W/root" && elf_build "$BOOT" "$W/sober2" --passes) >&2 || { echo "stage2.sh: FAIL boot build of src/compiler/app" >&2; exit 1; }
+            (cd "$W/root" && ELF_ENTRY=app elf_build "$BOOT" "$W/sober2" --passes) >&2 || { echo "stage2.sh: FAIL boot build of src/compiler/app" >&2; exit 1; }
             # 2 段目: L0 を焼き込んで建て直す
             l0_bake "$W/sober2"
-            (cd "$W/root" && elf_build "$BOOT" "$W/sober2" --passes) >&2 || { echo "stage2.sh: FAIL boot build of src/compiler/app (with L0)" >&2; exit 1; }
+            (cd "$W/root" && ELF_ENTRY=app elf_build "$BOOT" "$W/sober2" --passes) >&2 || { echo "stage2.sh: FAIL boot build of src/compiler/app (with L0)" >&2; exit 1; }
             rm -f "$OUT/stage2.ll"
             mv "$W/sober2" "$OUT/sober2.new" && mv "$OUT/sober2.new" "$OUT/sober2"
         else
-            (cd "$W/root" && "$BOOT" build app/main.sober --emit=ll --passes -o "$W/stage2.ll") >&2 || { echo "stage2.sh: FAIL boot build of src/compiler/app" >&2; exit 1; }
+            (cd "$W/root" && "$BOOT" build app --emit=ll --passes -o "$W/stage2.ll") >&2 || { echo "stage2.sh: FAIL boot build of src/compiler/app" >&2; exit 1; }
             ll_cc "$W/stage2.ll" "$W/sober2" "$S2OPT" >&2 || { echo "stage2.sh: FAIL zig cc stage2.ll" >&2; exit 1; }
             l0_bake "$W/sober2"
-            (cd "$W/root" && "$BOOT" build app/main.sober --emit=ll --passes -o "$W/stage2.ll") >&2 || { echo "stage2.sh: FAIL boot build of src/compiler/app (with L0)" >&2; exit 1; }
+            (cd "$W/root" && "$BOOT" build app --emit=ll --passes -o "$W/stage2.ll") >&2 || { echo "stage2.sh: FAIL boot build of src/compiler/app (with L0)" >&2; exit 1; }
             ll_cc "$W/stage2.ll" "$W/sober2" "$S2OPT" >&2 || { echo "stage2.sh: FAIL zig cc stage2.ll (with L0)" >&2; exit 1; }
             mv "$W/stage2.ll" "$OUT/stage2.ll.new" && mv "$W/sober2" "$OUT/sober2.new"
             mv "$OUT/stage2.ll.new" "$OUT/stage2.ll" && mv "$OUT/sober2.new" "$OUT/sober2"

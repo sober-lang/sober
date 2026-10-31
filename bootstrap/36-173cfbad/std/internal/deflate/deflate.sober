@@ -1,0 +1,1111 @@
+package deflate
+
+// DEFLATE（RFC 1951）の符号器の核（std/compress/flate の Encode / EncodeWith / Prepare と std/compress/gzip が共有する — 公開の口は flate / gzip）。
+// 作業域の型 Work は flate.Work の実体（flate は `type Work = deflate.Work` の別名で約束の面に残す — language.md 32 節）
+
+import "std/binary"
+import "std/internal/crc32"
+import "std/iter"
+import "std/pool"
+
+// 符号器の作業域（flate.Work の注釈 — ワーカー局所の lease に置ける形: スカラーと pool.Scratch の欄だけ。region-domain-pool.md 4d 節）
+type Work struct {
+    // 欄はどれも符号器の中だけで使う（利用者は読み書きしない）
+
+    // syms は記号の列（文字 = 0〜255・一致 = (距離 << 8) | (長さ − 3)）— tally が書き、flush / symbols が素の口で読む
+
+    syms pool.Scratch
+    // head はハッシュ h の最新の「下駄つきの位置」（p + 1 + off）・prev[p & wmask] は p と同じハッシュの 1 つ前の下駄つきの位置。
+    // off は符号化ごとに前の入力の長さ + 1 だけ進む走行オフセット（Go の hashOffset の形）: 前の符号化の残り値は
+    // 引き算で必ず負になり、`c >= 0` が落とす — 表を符号化ごとに 0 へ戻さない（O(1) renew）。
+    // off の正は head の末尾のスロット（head[Cap − 1] — ハッシュのスロットは ≤ Cap − 2）: lease の窓は Work のスカラーを
+    // 窓のたびにまっさらにするが語は長命なので、語と一緒に生きる場所に置く（スカラーに置くと窓ごとに 0 へ戻り、前の窓の
+    // 下駄つきの値が偽の候補として蘇る）。lease の一周（LeaseAttach の tag = 0）の零化で off も 0 に戻り整合。
+    // off は単調増加（+n+1/符号化）で一周は 2^63 バイトを 1 つの Work に通したときだけ — 到達不能
+
+    head pool.Scratch
+    prev pool.Scratch
+    nsym int
+    // ハッシュの表の大きさ − 1（2^hb − 1 — insert のハッシュの切り方）
+
+    hmask int
+    // 位置の下駄（この符号化の間の写し — 正は head[Cap − 1]）
+
+    off int
+    // lazy の走査の続き（記号の溜めが満ちて走査を止め、ブロックを書いてから再開する — 今の位置の一致の長さ・始まりと、1 つ前の文字が未出力か）
+
+    ml int
+    ms int
+    avail bool
+}
+
+// w を最大の入力（窓 32 KiB の鎖・2^15 のハッシュの表・ブロック 1 つの記号）の容量に整える（task.NewLocal の整え方）
+func Prepare(w mut Work) {
+    pool.NewScratch(mut w.syms, symMax)
+    pool.NewScratch(mut w.prev, wmask + 1)
+    // +1 = off の置き場（head[Cap − 1] — Work の off の注釈）
+    pool.NewScratch(mut w.head, (1 << 15) + 1)
+}
+
+// flate.EncodeWith の本体（level は 0〜9 — 範囲の検査と panic(flate.BadLevel) は呼び手の flate。w の中身は入口で捨てる — 結果は w に依らず同じバイト列）
+func EncodeWith(w mut Work, data []byte, level int) []byte {
+    n := len(data)
+    // 要る容量: 記号は min(n + 1, symMax)・鎖は p & wmask で引くので min(n, 32768)・ハッシュの表は 2^hb（2^hb ≥ n / hdiv の最小・8〜15 —
+    // zlib の hash_bits の最大 15 と同じ上限。桁は入力で決める — 容量の大きい w でも同じハッシュ = 同じ出力）
+    nsy := if n < symMax { n + 1 } else { symMax }
+    np := if n < wmask + 1 { n } else { wmask + 1 }
+    mut hb := 8
+    while hb < 15 && (1 << hb) * hdiv < n {
+        hb += 1
+    }
+    if pool.Cap(mut w.syms) == 0 && pool.Cap(mut w.prev) == 0 && pool.Cap(mut w.head) == 0 {
+        // 表ごとに取り切ってから次へ（2 つを交互に伸ばすと先端が合わず毎回写しになる — language.md 21 節）
+        pool.NewScratch(mut w.syms, nsy)
+        pool.NewScratch(mut w.prev, np)
+        pool.NewScratch(mut w.head, (1 << hb) + 1)
+    } else if pool.Cap(mut w.syms) < nsy || pool.Cap(mut w.prev) < np || pool.Cap(mut w.head) < (1 << hb) + 1 {
+        mut f := Work{}
+        return EncodeWith(mut f, data, level)
+    }
+    // 3 つの作業域は pool の素の口（LoadRaw / StoreRaw — 世代の検査を払わない・report-732/733）で読み書きする。表は 0 へ戻さない:
+    // head / prev の値は下駄つきの位置（Work の off の注釈 — 734）で、前の符号化・前の lease の窓の残り値は引き算で負になり観測に出ない。
+    // syms は「tally が 0..nsym−1 を書いてから flush / symbols が読む」。off の正 = head[Cap − 1]: この符号化の下駄を読み、
+    // 次の下駄（今回の残り値の最大 + 1 = off + n + 1）を先に書き戻す（途中で倒れても次の符号化が必ず越える）
+    hc := pool.Cap(mut w.head)
+    w.off = pool.LoadRaw(mut w.head, hc - 1)
+    pool.StoreRaw(mut w.head, hc - 1, w.off + n + 1)
+    w.nsym = 0
+    w.hmask = (1 << hb) - 1
+    w.ml = minMatch - 1
+    w.ms = 0 - 1
+    w.avail = false
+    mut e := enc{}
+    setup(mut e)
+    if level == 0 {
+        stored(mut e, data, 0, n, true)
+    } else {
+        // 走査は溜めが満ちたブロックの終わり（cut）で止まり、ここでブロックを書く（−1 = 入力の終わり — 残りを最後のブロックに）
+        mut p := 0
+        mut bs := 0
+        mut cut := 0
+        while cut >= 0 {
+            if level <= 3 {
+                c, q := greedy(mut w, data, level, p)
+                cut = c
+                p = q
+            } else {
+                c, q := lazy(mut w, data, level, p)
+                cut = c
+                p = q
+            }
+            flush(mut e, mut w, data, bs, if cut >= 0 { cut } else { n }, cut < 0)
+            bs = cut
+        }
+    }
+    align(mut e)
+    return freeze(e.out)
+}
+
+const minMatch = 3
+const maxMatch = 258
+const wmask = 32767
+// maxDist は一致の距離の上限（zlib の MAX_DIST = 窓 − MIN_LOOKAHEAD — 同じ大きさの圧縮に揃える）
+const maxDist = 32506
+// hdiv はハッシュの表の大きさの割り: 2^hb ≥ n / hdiv（表の 1 区画あたり入力 hdiv バイトまで）。716 の作業域の詰めでは 4（命令 +22% の値札）—
+// lease（719）で作業域がワーカー局所になり接続数に比例しなくなったので 1（1 区画 1 バイト = 衝突最小）へ戻した。表は 0 へ戻さないので
+// 大きさの値札は Prep の確保だけ（report-734）
+const hdiv = 1
+// tooFar は長さ 3 の一致を捨てる距離（固定の符号では遠い 3 文字は 3 個の文字より高い — zlib の TOO_FAR）
+const tooFar = 4096
+// symMax はブロックの記号の数の上限（zlib の lit_bufsize − 1）
+const symMax = 16383
+
+// enc は符号器の状態（作業域 Work の外 — 出力・ビットの溜め・符号の表）
+type enc struct {
+    // out は append だけで伸ばす（setup の表を全部取った後に最初の append が来るので region の先端で写しなしに伸びる — 21 節）
+    out mut []byte
+    // bb の下位 bn ビットが未出力（LSB から — RFC 1951 3.1.1）
+    bb int
+    bn int
+    // 長さ − 3 → 長さの符号（0〜28 — 記号 257 + 符号）・距離 − 1 → 距離の符号（zlib の _length_code / _dist_code の形）
+    lcode []byte
+    dcode []byte
+    lbase []int
+    lext []int
+    dbase []int
+    dext []int
+    // 固定 Huffman の文字・長さと距離の符号の表（(長さ << 32) | ビット反転済みの符号 — lengths の結果と同じ形）— 固定のブロックを初めて書くときに作る（fixed = 作った。
+    // 大きさの比べは長さの範囲の式で数えるので表は要らない — 動的のブロックだけの符号化〔json-comp の本文〕は作らずに済む・report-725）
+    fixed bool
+    fp []int
+    fdp []int
+}
+
+// setup は符号の表をゼロ値から整える（mut の欄を持つ struct は関数から返せない — language.md 26 節 G3。io.Writer と同じ形）。
+// lcode / dcode は表を表のまま書く（RFC 1951 3.2.5 の範囲を展開した値 — 符号化ごとに 1 バイトずつ append で組んでいた 770 回が
+// 符号器の ≈ 6%〔setup + rt.tip8〕だった・report-1139 E1）。組み立ての式は単体の網（deflate_test.sober の TestCodeTables）が照合する
+func setup(e mut enc) {
+    lbase := []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258}
+    lext := []int{0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0}
+    dbase := []int{1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577}
+    dext := []int{0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13}
+    // 長さ − 3 → 長さの符号（符号 c が 2^lext[c] 個ずつ。長さ 258 = 末尾は符号 27 の範囲でなく自分の符号 28）
+    e.lcode = []byte{
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 12, 12, 13, 13, 13, 13, 14, 14, 14, 14, 15, 15, 15, 15,
+        16, 16, 16, 16, 16, 16, 16, 16, 17, 17, 17, 17, 17, 17, 17, 17, 18, 18, 18, 18, 18, 18, 18, 18, 19, 19, 19, 19, 19, 19, 19, 19,
+        20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21,
+        22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23,
+        24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24,
+        25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25,
+        26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26,
+        27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 28,
+    }
+    // 距離 − 1 → 距離の符号: 前半 256 項は x < 256 を 1 刻みで・後半 256 項は dcode[256 + (x >> 7)] を 128 刻みで（x >> 7 は 2 から始まるので
+    // 256・257 は使わない埋め）
+    e.dcode = []byte{
+        0, 1, 2, 3, 4, 4, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9,
+        10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11,
+        12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12,
+        13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
+        14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14,
+        14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14,
+        15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+        15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+        0, 0, 16, 17, 18, 18, 19, 19, 20, 20, 20, 20, 21, 21, 21, 21, 22, 22, 22, 22, 22, 22, 22, 22, 23, 23, 23, 23, 23, 23, 23, 23,
+        24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25,
+        26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26,
+        27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+        28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28,
+        28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28,
+        29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29,
+        29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29,
+    }
+    e.lbase = lbase
+    e.lext = lext
+    e.dbase = dbase
+    e.dext = dext
+}
+
+// setupFixed は固定 Huffman の表（RFC 1951 3.2.6 — 文字・長さ 0〜143 は 8 ビット・144〜255 は 9・256〜279 は 7・280〜287 は 8・距離は全部 5）を作る
+func setupFixed(e mut enc) {
+    mut fp := mut []int{}
+    mut s := 0
+    while s < 288 {
+        l := if s < 144 { 8 } else if s < 256 { 9 } else if s < 280 { 7 } else { 8 }
+        v := if s < 144 { 0x30 + s } else if s < 256 { 0x190 + s - 144 } else if s < 280 { s - 256 } else { 0xc0 + s - 280 }
+        fp = append(fp, (l << 32) | rev(v, l))
+        s += 1
+    }
+    mut fdp := mut []int{}
+    s = 0
+    while s < 30 {
+        fdp = append(fdp, (5 << 32) | rev(s, 5))
+        s += 1
+    }
+    e.fp = freeze(fp)
+    e.fdp = freeze(fdp)
+    e.fixed = true
+}
+
+// fill は空の列 xs を長さ n の v にする（min(n, 32) 個の塊を 1 つ作り、塊ごとに一括の写しの形〔iter.Range の append — lower の copyloop〕で足す。
+// 1 個ずつの append は要素ごとに rt の割り当てを呼び、小さい応答では符号化そのものより高かった。塊は呼び手の深度に残るので小さく — 256 語の塊は
+// flush のブロックごとの作業域に 2 KB 積んでいた・report-1015）
+func fill(xs mut []int, n int, v int) {
+    bn := if n < 32 { n } else { 32 }
+    mut b := mut []int{}
+    for j <- iter.Range(0, bn) {
+        b = append(b, v)
+    }
+    blk := freeze(b)
+    mut k := 0
+    while k + bn <= n && bn > 0 {
+        for j <- iter.Range(0, bn) {
+            xs = append(xs, blk[j])
+        }
+        k += bn
+    }
+    for j <- iter.Range(0, n - k) {
+        xs = append(xs, blk[j])
+    }
+}
+
+// rev は v の下位 l ビット（1 ≤ l ≤ 16・v < 2^l）の反転（Huffman の符号は MSB から詰める — RFC 1951 3.1.1）。16 ビットを隣どうし・2 ビット・
+// 4 ビット・バイトの入れ替えで反転してから下へずらす（分岐なし — 1 ビットずつのループは lengths の正準の符号の ≈ 20% だった・report-1145）
+func rev(v int, l int) int {
+    mut x := ((v & 0x5555) << 1) | ((v >> 1) & 0x5555)
+    x = ((x & 0x3333) << 2) | ((x >> 2) & 0x3333)
+    x = ((x & 0x0f0f) << 4) | ((x >> 4) & 0x0f0f)
+    x = ((x & 0x00ff) << 8) | ((x >> 8) & 0x00ff)
+    return x >> (16 - l)
+}
+
+// put は v の下位 nb ビット（nb ≤ 56・v の nb より上の桁は 0）を書く。溜め bb は 64 ビット — 満ちたら 8 バイトを書き切る
+// （書き切りの while は copyloop の形 D が 8 バイトの語の store 1 本に畳む — report-731。1 バイトずつの append の境界・成長の検査が 1/8 に）。
+// 満ちる枝では旧 bn ≥ 64 − nb ≥ 8 > 0 なので 64 − e.bn のずらしは 1〜56
+func put(e mut enc, v int, nb int) {
+    e.bb = e.bb | (v << e.bn)
+    nn := e.bn + nb
+    if nn >= 64 {
+        mut bb := e.bb
+        mut bn := 64
+        while bn >= 8 {
+            e.out = append(e.out, byte(bb & 0xff))
+            bb = bb >> 8
+            bn = bn - 8
+        }
+        e.bb = v >> (64 - e.bn)
+        e.bn = nn - 64
+    } else {
+        e.bn = nn
+    }
+}
+
+// drain は溜めの満ちたバイトを書き切る（冷たい道 — バイト境界の出力の前に呼ぶ。呼んだ後は e.bn < 8）
+func drain(e mut enc) {
+    mut bb := e.bb
+    mut bn := e.bn
+    while bn >= 8 {
+        e.out = append(e.out, byte(bb & 0xff))
+        bb = bb >> 8
+        bn = bn - 8
+    }
+    e.bb = bb
+    e.bn = bn
+}
+
+// align は溜めの端数を 0 で埋めてバイト境界へ（埋めて書き切る — e.out が今の全バイトを持ち e.bn = 0）
+func align(e mut enc) {
+    r := e.bn & 7
+    if r > 0 {
+        put(mut e, 0, 8 - r)
+    }
+    drain(mut e)
+}
+
+// dsym は距離 d（1〜32768）の符号
+func dsym(e mut enc, d int) int {
+    x := d - 1
+    return int(if x < 256 { e.dcode[x] } else { e.dcode[256 + (x >> 7)] })
+}
+
+// stored は data[s..t) を stored ブロック（65535 バイトずつ）で書く。last なら最後の切れに BFINAL
+func stored(e mut enc, data []byte, s int, t int, last bool) {
+    mut p := s
+    mut first := true
+    while first || p < t {
+        first = false
+        l := if t - p > 65535 { 65535 } else { t - p }
+        fin := if last && p + l == t { 1 } else { 0 }
+        put(mut e, fin, 3)
+        align(mut e)
+        put(mut e, l, 16)
+        put(mut e, l ^ 0xffff, 16)
+        // 生のバイトの前に溜めを書き切る（put は 64 ビットまで溜める — 731）
+        drain(mut e)
+        for j <- iter.Range(p, p + l) {
+            e.out = append(e.out, data[j])
+        }
+        p = p + l
+    }
+}
+
+// flush は溜めた記号をブロックにする（生の範囲 data[s..t)）。動的 Huffman・固定 Huffman・stored の大きさを数えて最小で書く
+// （同じなら固定 → 動的 → stored の順で前を取る。zlib の _tr_flush_block と同じ向き）
+func flush(e mut enc, w mut Work, data []byte, s int, t int, last bool) {
+    // 頻度（文字・長さ 0〜285 と距離 0〜29）と、どの木でも同じ追加ビット（長さ・距離の extra）
+    mut lf := mut []int{}
+    fill(mut lf, 286, 0)
+    mut df := mut []int{}
+    fill(mut df, 30, 0)
+    mut extra := 0
+    // 記号は溜めの生の形（文字 = 0〜255・一致 = (距離 << 8) | (長さ − 3)）のまま読む（(距離 << 16) | 長さ への組み直しを通さない — report-773）
+    for i <- iter.Range(0, w.nsym) {
+        x := pool.LoadRaw(mut w.syms, i)
+        if x < 256 {
+            lf[x] = lf[x] + 1
+        } else {
+            lc := int(e.lcode[x & 0xff])
+            dc := dsym(mut e, x >> 8)
+            lf[257 + lc] = lf[257 + lc] + 1
+            df[dc] = df[dc] + 1
+            extra = extra + e.lext[lc] + e.dext[dc]
+        }
+    }
+    lf[256] = 1
+    lfz := freeze(lf)
+    dfz := freeze(df)
+    // 動的 Huffman の木（文字・長さは 15 ビットまで・距離も 15 ビットまで — 記号ごとに (長さ << 32) | 符号 の 1 語）と、符号の長さの列の RLE（RFC 1951 3.2.7）
+    lp := lengths(lfz, 15)
+    dp := lengths(dfz, 15)
+    nl := used(lp, 257)
+    nd := used(dp, 1)
+    rl := rle(lp, nl, dp, nd)
+    mut cf := mut []int{}
+    fill(mut cf, 19, 0)
+    mut k := 0
+    while k < len(rl) {
+        cf[rl[k]] = cf[rl[k]] + 1
+        k = k + (if rl[k] >= 16 { 2 } else { 1 })
+    }
+    cp := lengths(freeze(cf), 7)
+    // HCLEN = 符号の長さの符号を並べる順（16, 17, 18, 0, 8, …）で末尾の 0 を落とした数（4 以上）
+    ord := []int{16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15}
+    mut nc := 19
+    while nc > 4 && (cp[ord[nc - 1]] >> 32) == 0 {
+        nc -= 1
+    }
+    mut dyn := 3 + 14 + 3 * nc + extra
+    mut fix := 3 + extra
+    for i <- iter.Range(0, 286) {
+        dyn = dyn + lfz[i] * (lp[i] >> 32)
+        fix = fix + lfz[i] * (if i < 144 { 8 } else if i < 256 { 9 } else if i < 280 { 7 } else { 8 })
+    }
+    for i <- iter.Range(0, 30) {
+        dyn = dyn + dfz[i] * (dp[i] >> 32)
+        fix = fix + dfz[i] * 5
+    }
+    k = 0
+    while k < len(rl) {
+        c := rl[k]
+        dyn = dyn + (cp[c] >> 32) + (if c == 16 { 2 } else if c == 17 { 3 } else if c == 18 { 7 } else { 0 })
+        k = k + (if c >= 16 { 2 } else { 1 })
+    }
+    sl := t - s
+    sbits := 8 * (sl + 5 * (if sl == 0 { 1 } else { (sl + 65534) / 65535 }))
+    fin := if last { 1 } else { 0 }
+    if sbits < fix && sbits < dyn {
+        stored(mut e, data, s, t, last)
+    } else if fix <= dyn {
+        put(mut e, fin | 2, 3)
+        if !e.fixed {
+            setupFixed(mut e)
+        }
+        symbols(mut e, mut w, e.fp, e.fdp)
+    } else {
+        put(mut e, fin | 4, 3)
+        put(mut e, nl - 257, 5)
+        put(mut e, nd - 1, 5)
+        put(mut e, nc - 4, 4)
+        for i <- iter.Range(0, nc) {
+            put(mut e, cp[ord[i]] >> 32, 3)
+        }
+        k = 0
+        while k < len(rl) {
+            c := rl[k]
+            put(mut e, cp[c] & 0xffffffff, cp[c] >> 32)
+            if c >= 16 {
+                put(mut e, rl[k + 1], if c == 16 { 2 } else if c == 17 { 3 } else { 7 })
+                k += 2
+            } else {
+                k += 1
+            }
+        }
+        symbols(mut e, mut w, lp, dp)
+    }
+    w.nsym = 0
+}
+
+// symbols は溜めた記号と EOB を符号の表（文字・長さ = lpz・距離 = dpz — どちらも記号ごとに (長さ << 32) | ビット反転済みの符号 の 1 語・読みが 1 本）で書く。
+// 一致は長さの符号・長さの extra・距離の符号・距離の extra を LSB の順に 1 語に連結する（最大 15 + 5 + 15 + 13 = 48 ビット）。
+// 連結した記号はローカルの語に 56 ビットまで溜めて put する — ビット列は 1 つずつ書いたのと同一（libdeflate の形・report-769）
+func symbols(e mut enc, w mut Work, lpz []int, dpz []int) {
+    // 記号のビットをローカルの語に溜め、56 ビットを越える手前で put（put の呼び出しと溜めの欄の読み書きが記号ごとでなくなる）
+    mut v := 0
+    mut nb := 0
+    for i <- iter.Range(0, w.nsym) {
+        // 溜めの生の形（文字 = 0〜255・一致 = (距離 << 8) | (長さ − 3)）のまま読む（report-773）
+        x := pool.LoadRaw(mut w.syms, i)
+        mut a := 0
+        mut an := 0
+        if x < 256 {
+            y := lpz[x]
+            a = y & 0xffffffff
+            an = y >> 32
+        } else {
+            l := (x & 0xff) + minMatch
+            d := x >> 8
+            c := int(e.lcode[x & 0xff])
+            y := lpz[257 + c]
+            an = y >> 32
+            a = (y & 0xffffffff) | ((l - e.lbase[c]) << an)
+            an = an + e.lext[c]
+            g := dsym(mut e, d)
+            z := dpz[g]
+            a = a | (((z & 0xffffffff) | ((d - e.dbase[g]) << (z >> 32))) << an)
+            an = an + (z >> 32) + e.dext[g]
+        }
+        if nb + an > 56 {
+            put(mut e, v, nb)
+            v = a
+            nb = an
+        } else {
+            v = v | (a << nb)
+            nb = nb + an
+        }
+    }
+    if nb > 0 {
+        put(mut e, v, nb)
+    }
+    put(mut e, lpz[256] & 0xffffffff, lpz[256] >> 32)
+}
+
+// used は符号の表 p（lengths の結果の形）の使う長さ（最後の長さが 0 でない位置 + 1・最小 m — HLIT / HDIST）
+func used(p []int, m int) int {
+    mut n := len(p)
+    while n > m && (p[n - 1] >> 32) == 0 {
+        n -= 1
+    }
+    return n
+}
+
+// rle は文字・長さの符号の長さ（lp[0..nl) の長さの側 — lengths の結果の形）と距離の dp[0..nd) を続けた列の RLE（RFC 1951 3.2.7 — 16 = 直前を 3〜6 回・17 = 0 を 3〜10 回・
+// 18 = 0 を 11〜138 回。16〜18 の後ろに追加ビットの値を 1 語）。miniz の tdefl_start_dynamic_block と同じ切り方（2 つの列をまたいで続ける）
+func rle(lp []int, nl int, dp []int, nd int) []int {
+    mut out := mut []int{}
+    mut prev := 0 - 1
+    mut rep := 0
+    mut zs := 0
+    for i <- iter.Range(0, nl + nd) {
+        c := if i < nl { lp[i] >> 32 } else { dp[i - nl] >> 32 }
+        if c == 0 {
+            if rep > 0 {
+                flushRep(mut out, prev, rep)
+                rep = 0
+            }
+            zs += 1
+            if zs == 138 {
+                flushZero(mut out, zs)
+                zs = 0
+            }
+        } else {
+            if zs > 0 {
+                flushZero(mut out, zs)
+                zs = 0
+            }
+            if c != prev {
+                if rep > 0 {
+                    flushRep(mut out, prev, rep)
+                    rep = 0
+                }
+                out = append(out, c)
+            } else {
+                rep += 1
+                if rep == 6 {
+                    flushRep(mut out, prev, rep)
+                    rep = 0
+                }
+            }
+        }
+        prev = c
+    }
+    if rep > 0 {
+        flushRep(mut out, prev, rep)
+    }
+    if zs > 0 {
+        flushZero(mut out, zs)
+    }
+    return freeze(out)
+}
+
+// flushRep は直前の長さ c の繰り返し n 回を積む（3 回未満はそのまま並べる）
+func flushRep(out mut []int, c int, n int) {
+    if n < 3 {
+        for i <- iter.Range(0, n) {
+            out = append(out, c)
+        }
+    } else {
+        out = append(out, 16)
+        out = append(out, n - 3)
+    }
+}
+
+// flushZero は 0 の n 回を積む（3 回未満はそのまま）
+func flushZero(out mut []int, n int) {
+    if n < 3 {
+        for i <- iter.Range(0, n) {
+            out = append(out, 0)
+        }
+    } else if n <= 10 {
+        out = append(out, 17)
+        out = append(out, n - 3)
+    } else {
+        out = append(out, 18)
+        out = append(out, n - 11)
+    }
+}
+
+// lengths は頻度 f の Huffman の符号の表 — 記号ごとに (符号の長さ << 32) | 正準の符号（RFC 1951 3.2.2 — ビット反転済み・長さ 0 は 0）の 1 語
+// （長さと符号を別の列にすると、どちらも呼び手〔flush — ブロックごと〕の深度に残った・report-1015）。符号の長さは最大 maxBits。使う記号が 2 つ未満なら番号の小さい未使用の記号を足して 2 つにする
+// （1 つだけの符号は解凍器が受けない — zlib の build_tree と同じ）。作り方は miniz と同じ: 頻度の昇順（同じなら番号順 — 決定的）に並べて
+// Moffat–Katajainen の in-place の算法で深さを出し、maxBits を越えた分を Kraft の和が 1 になるまで浅い符号へ押し戻し、頻度の高い順に短い長さを配る
+func lengths(f []int, maxBits int) []int {
+    n := len(f)
+    // 使う記号を頻度の昇順（同じなら番号順 — 決定的）に: 鍵 ks = 頻度 × 512 + 番号（一意）の数え上げのソート（libdeflate の sort_symbols の形）。
+    // 頻度 v の桶 min(v, nb − 1) で数え、番号の昇順に置く — 末尾の桶（頻度 nb − 1 以上 — 少数）だけ鍵の挿入ソートで後付け。
+    // 挿入ソート 1 本（m² / 4 回の移動 — json の文字・長さの側で m ≈ 70〜120）の置き換え（report-1139 E2）。sort.Order は閉包を取る形の check が
+    // 通らないので使わない — FLEDGER の sort.Order の候補〔report-651〕と同じ症状
+    nb := (n >> 2) + 4
+    mut pos := mut []int{}
+    fill(mut pos, nb, 0)
+    mut cnt := 0
+    for i <- iter.Range(0, n) {
+        v := f[i]
+        if v > 0 {
+            b := if v < nb { v } else { nb - 1 }
+            pos[b] = pos[b] + 1
+            cnt += 1
+        }
+    }
+    // 頻度の写しは足す記号があるときだけ（記号の数 n は 19 以上なので足した後は 2 つ — 足した記号は頻度 1 の桶）
+    fq := if cnt < 2 { pad2(f, cnt) } else { f }
+    if cnt < 2 {
+        pos[1] = pos[1] + 2 - cnt
+    }
+    m := if cnt < 2 { 2 } else { cnt }
+    mut s := 0
+    for b <- iter.Range(0, nb) {
+        c := pos[b]
+        pos[b] = s
+        s += c
+    }
+    tail := pos[nb - 1]
+    mut ks := mut []int{}
+    fill(mut ks, m, 0)
+    for i <- iter.Range(0, n) {
+        v := fq[i]
+        if v > 0 {
+            b := if v < nb { v } else { nb - 1 }
+            ks[pos[b]] = v * 512 + i
+            pos[b] = pos[b] + 1
+        }
+    }
+    mut t := tail + 1
+    while t < m {
+        k := ks[t]
+        mut j := t
+        while j > tail && ks[j - 1] > k {
+            ks[j] = ks[j - 1]
+            j -= 1
+        }
+        ks[j] = k
+        t += 1
+    }
+    // a[i] = 昇順 i 番目の頻度 → 深さ・sy[i] & 511 = その記号
+    mut a := mut []int{}
+    for i <- iter.Range(0, m) {
+        a = append(a, ks[i] >> 9)
+    }
+    sy := freeze(ks)
+    a[0] = a[0] + a[1]
+    mut root := 0
+    mut leaf := 2
+    for next <- iter.Range(1, m - 1) {
+        if leaf >= m || a[root] < a[leaf] {
+            a[next] = a[root]
+            a[root] = next
+            root += 1
+        } else {
+            a[next] = a[leaf]
+            leaf += 1
+        }
+        if leaf >= m || (root < next && a[root] < a[leaf]) {
+            a[next] = a[next] + a[root]
+            a[root] = next
+            root += 1
+        } else {
+            a[next] = a[next] + a[leaf]
+            leaf += 1
+        }
+    }
+    a[m - 2] = 0
+    mut q := m - 3
+    while q >= 0 {
+        a[q] = a[a[q]] + 1
+        q -= 1
+    }
+    mut avbl := 1
+    mut usedN := 0
+    mut dpth := 0
+    root = m - 2
+    mut nx := m - 1
+    while avbl > 0 {
+        while root >= 0 && a[root] == dpth {
+            usedN += 1
+            root -= 1
+        }
+        while avbl > usedN {
+            a[nx] = dpth
+            nx -= 1
+            avbl -= 1
+        }
+        avbl = 2 * usedN
+        dpth += 1
+        usedN = 0
+    }
+    // 深さごとの数（maxBits を越えた深さは maxBits へ寄せてから Kraft の和を 2^maxBits に戻す — miniz の enforce_max_code_size）
+    mut nc := mut []int{}
+    fill(mut nc, maxBits + 1, 0)
+    for i <- iter.Range(0, m) {
+        d := if a[i] > maxBits { maxBits } else { a[i] }
+        nc[d] = nc[d] + 1
+    }
+    mut total := 0
+    for i <- iter.Range(1, maxBits + 1) {
+        total = total + (nc[i] << (maxBits - i))
+    }
+    while total != (1 << maxBits) {
+        nc[maxBits] = nc[maxBits] - 1
+        mut i := maxBits - 1
+        while i > 0 {
+            if nc[i] > 0 {
+                nc[i] = nc[i] - 1
+                nc[i + 1] = nc[i + 1] + 2
+                i = 0
+            } else {
+                i -= 1
+            }
+        }
+        total -= 1
+    }
+    // 頻度の高い方（昇順の後ろ）から短い長さを配る
+    mut out := mut []int{}
+    fill(mut out, n, 0)
+    mut j := m
+    for l <- iter.Range(1, maxBits + 1) {
+        for r <- iter.Range(0, nc[l]) {
+            j -= 1
+            out[sy[j] & 511] = l
+        }
+    }
+    // 正準の符号（長さごとの最初の符号 next[l] から番号順に配る）を長さの上に詰める
+    mut next := mut []int{}
+    mut code := 0
+    next = append(next, 0)
+    for b <- iter.Range(1, maxBits + 1) {
+        code = (code + (if b == 1 { 0 } else { nc[b - 1] })) << 1
+        next = append(next, code)
+    }
+    for i <- iter.Range(0, n) {
+        l := out[i]
+        if l > 0 {
+            out[i] = (l << 32) | rev(next[l], l)
+            next[l] = next[l] + 1
+        }
+    }
+    return freeze(out)
+}
+
+// pad2 は使う記号が cnt（< 2）個の頻度 f に、番号の小さい未使用の記号を頻度 1 で足して 2 つにした写し
+func pad2(f []int, cnt int) []int {
+    mut fq := mut []int{}
+    for i <- iter.Range(0, len(f)) {
+        fq = append(fq, f[i])
+    }
+    mut c := cnt
+    mut z := 0
+    while c < 2 && z < len(f) {
+        if fq[z] == 0 {
+            fq[z] = 1
+            c += 1
+        }
+        z += 1
+    }
+    return freeze(fq)
+}
+
+// insert は位置 p（p + 3 ≤ len）を鎖に足し、同じハッシュの 1 つ前の最新の位置を返す（無ければ負）。ハッシュは 4 バイト u の乗算の上位の桁
+// （u × hmul の 49 桁目から hb 桁 — どの桁も u の 32 ビット全部に依る。ずらしの量が定数なので検査が無い。表の大きさの可変は & hmask の側）。
+// 4 バイトのハッシュ（Go の minMatch 4 と同じ幅 — report-732/733）: 長さ ≥ 4 の一致は先頭 4 バイトが等しいので必ず同じ鎖にいて、
+// 3 バイトの偽候補が消える分だけ同じ chain 予算で深く探せる。長さ 3 だけの一致は見つけない（字母の大きい入力では 3 文字の
+// リテラルより高いことが多く、捨てた方が縮む面もある — 率の線は flatecheck の check.ts・ユーザー裁定 2026-10-16 (A)）。
+// 語は 8 バイトの 1 回の読み（report-723 — 末尾の 7 位置だけバイトずつ・末尾 3 バイトの位置は 3 バイトのまま = 鎖の雑音だけで害なし）。
+// 表の値は下駄つき（p + 1 + off — Work の off の注釈）
+func insert(w mut Work, data []byte, p int) int {
+    mut u := 0
+    if p > len(data) - 8 {
+        u = int(data[p]) | (int(data[p + 1]) << 8) | (int(data[p + 2]) << 16)
+        if p + 3 < len(data) {
+            u = u | (int(data[p + 3]) << 24)
+        }
+    } else {
+        u = binary.Load64(data, p) & 4294967295
+    }
+    h := ((u * hmul) >> 49) & w.hmask
+    // head の読みと書きを続けて置く（同じ添字の境界検査とヘッダの読みが 1 回に畳まれる — prev の書きを間に挟むと別の番地の store で読み直しになる）
+    old := pool.LoadRaw(mut w.head, h)
+    pool.StoreRaw(mut w.head, h, p + 1 + w.off)
+    pool.StoreRaw(mut w.prev, p & wmask, old)
+    return old - 1 - w.off
+}
+
+// hmul はハッシュの乗数（2^64 / 黄金比の奇数 0x9E3779B97F4A7C15 を符号つきで）
+const hmul = -7046029254386353131
+
+// longest は位置 p から鎖を cur から辿って、prevLen より長い最長の一致を探す（zlib の longest_match）。
+// 返り = (長さ, 始まり) — prevLen を越えなければ (prevLen を残りで切った値, −1)
+func longest(w mut Work, data []byte, p int, cur int, prevLen int, good int, nice int, chain int) (int, int) {
+    n := len(data)
+    la := n - p
+    maxl := if la < maxMatch { la } else { maxMatch }
+    mut ch := if prevLen >= good { chain >> 2 } else { chain }
+    mut nc := if nice > la { la } else { nice }
+    mut best := prevLen
+    mut start := 0 - 1
+    lim := p - maxDist
+    mut c := cur
+    while best < maxl && c >= 0 && c > lim && ch > 0 {
+        // 振るいは zlib と同じ 4 バイト（best の位置・その 1 つ前・頭の 2 バイト — 外れの候補の大半はここで落ちる）。通った候補の伸ばしは
+        // 一致の長さの核 1 本（binary.MatchLen — x86 の最適化のバックエンドは 16 バイトずつの手書きの本体。c < p なので c + maxl ≤ p + maxl ≤ n・
+        // 3 ≤ maxl — SIMD の核 段 1・report-1137。旧形 = 8 バイトの xor + 1 バイトずつの末尾 — report-723）
+        if data[c + best] == data[p + best] && data[c + best - 1] == data[p + best - 1] && data[c] == data[p] && data[c + 1] == data[p + 1] {
+            l := 2 + binary.MatchLen(data, c + 2, p + 2, maxl - 2)
+            if l > best {
+                best = l
+                start = c
+                if l >= nc {
+                    ch = 0
+                }
+            }
+        }
+        c = pool.LoadRaw(mut w.prev, c & wmask) - 1 - w.off
+        ch -= 1
+    }
+    return if best > la { la } else { best }, start
+}
+
+// tally は記号を積み、溜めが満ちたら真
+func tally(w mut Work, x int) bool {
+    i := w.nsym
+    d := x >> 16
+    pool.StoreRaw(mut w.syms, i, if d == 0 { x } else { (d << 8) | ((x & 0xffff) - minMatch) })
+    w.nsym = i + 1
+    return w.nsym == symMax
+}
+
+// greedy は level 1〜3（zlib の deflate_fast — 一致を見つけたら取る。短い一致の中の位置だけ鎖に足す）を位置 p から走る。
+// 返り = (ブロックの終わり, 次の位置) — 記号の溜めが満ちたらそこで止める（終わり = −1 は入力の終わりまで走った）
+func greedy(w mut Work, data []byte, level int, p0 int) (int, int) {
+    good := 4
+    maxIns := if level == 1 { 4 } else if level == 2 { 5 } else { 6 }
+    nice := if level == 1 { 8 } else if level == 2 { 16 } else { 32 }
+    chain := if level == 1 { 4 } else if level == 2 { 8 } else { 32 }
+    n := len(data)
+    mut p := p0
+    while p < n {
+        mut hh := 0 - 1
+        if n - p >= minMatch {
+            hh = insert(mut w, data, p)
+        }
+        mut ml := 0
+        mut ms := 0 - 1
+        if hh >= 0 && p - hh <= maxDist {
+            l, st := longest(mut w, data, p, hh, minMatch - 1, good, nice, chain)
+            ml = l
+            ms = st
+        }
+        mut full := false
+        if ml >= minMatch && ms >= 0 {
+            full = tally(mut w, ((p - ms) << 16) | ml)
+            if ml <= maxIns && n - p - ml >= minMatch {
+                mut k := 1
+                while k < ml {
+                    insert(mut w, data, p + k)
+                    k += 1
+                }
+            }
+            p = p + ml
+        } else {
+            full = tally(mut w, int(data[p]))
+            p += 1
+        }
+        if full {
+            return p, p
+        }
+    }
+    return 0 - 1, p
+}
+
+// lazy は level 4〜9（zlib の deflate_slow — 一致を 1 文字待って、次の位置の一致が長ければ文字を出して送る）を位置 p から走る（返りは greedy と同じ。
+// 止めた所の一致と未出力の文字は w に残して再開する）
+func lazy(w mut Work, data []byte, level int, p0 int) (int, int) {
+    good := if level <= 4 { 4 } else if level <= 7 { 8 } else { 32 }
+    // maxLazy の lv6 だけ zlib / Go の表（16）と違う 12（report-1058 / 1059 — 長さ 12〜15 の一致の後ろの 1 文字待ちを省く。lv6 の命令 −6%・
+    // 率は json の本文で +0.2% と小さく、率の線〔flatecheck の check.ts ⑤〕は全部内。lv5 / lv7 は表のまま）
+    maxLazy := if level == 4 { 4 } else if level == 5 { 16 } else if level == 6 { 12 } else if level == 7 { 32 } else if level == 8 { 128 } else { 258 }
+    nice := if level == 4 { 16 } else if level == 5 { 32 } else if level <= 7 { 128 } else { 258 }
+    chain := if level == 4 { 16 } else if level == 5 { 32 } else if level == 6 { 128 } else if level == 7 { 256 } else if level == 8 { 1024 } else { 4096 }
+    skipIns := level <= 6
+    n := len(data)
+    mut p := p0
+    mut prevLen := minMatch - 1
+    mut prevMatch := 0
+    mut ml := w.ml
+    mut ms := w.ms
+    mut avail := w.avail
+    while p < n {
+        mut hh := 0 - 1
+        if n - p >= minMatch {
+            hh = insert(mut w, data, p)
+        }
+        prevLen = ml
+        prevMatch = ms
+        ml = minMatch - 1
+        if hh >= 0 && prevLen < maxLazy && p - hh <= maxDist {
+            l, st := longest(mut w, data, p, hh, prevLen, good, nice, chain)
+            ml = l
+            ms = st
+            if ml == minMatch && (st < 0 || p - st > tooFar) {
+                ml = minMatch - 1
+            }
+        }
+        if prevLen >= minMatch && ml <= prevLen {
+            full := tally(mut w, ((p - 1 - prevMatch) << 16) | prevLen)
+            maxIns := n - minMatch
+            mut q := p
+            mut k := prevLen - 2
+            // lv4〜6: 長い一致（> 8）で重ならない（距離 ≥ 長さ）ものは中の位置を鎖に足さず、末尾の 2 位置だけ足す（report-1058 の B3・
+            // report-1116 — 挿入は json の本文で全体の 8 割。率は zlib の同じ level より悪くなりうる〔線 = check.ts ⑤〕代わりに lv6 の符号化 −4 割級）。
+            // 重なる一致（距離 < 長さ — 0 の列・短い周期）は省かない（省くと距離が跳ねて率が崩れる）
+            if skipIns && prevLen > 8 && p - 1 - prevMatch >= prevLen {
+                q = p + prevLen - 4
+                k = 2
+            }
+            while k > 0 {
+                q += 1
+                if q <= maxIns {
+                    insert(mut w, data, q)
+                }
+                k -= 1
+            }
+            avail = false
+            ml = minMatch - 1
+            p = q + 1
+            if full {
+                w.ml = ml
+                w.ms = ms
+                w.avail = avail
+                return p, p
+            }
+        } else if avail {
+            full := tally(mut w, int(data[p - 1]))
+            p += 1
+            if full {
+                w.ml = ml
+                w.ms = ms
+                w.avail = avail
+                return p - 1, p
+            }
+        } else {
+            avail = true
+            p += 1
+        }
+    }
+    if avail {
+        tally(mut w, int(data[n - 1]))
+    }
+    return 0 - 1, p
+}
+
+// 逐次の符号器（language.md 28 節の compress + stream — http の stream の応答の圧縮の段が使う。flate / gzip の公開 API は一括のまま — 逐次の公開は実需まで）:
+//
+//     mut s := deflate.Stream{}
+//     deflate.Begin(mut s, 6, true)         // 応答ごとに新しく取る（lease しない — 窓は emit をまたいで持ち越す）
+//     a := deflate.Feed(mut s, chunk)       // emit 1 回 = 符号化 + sync flush 1 回（空の stored ブロック 00 00 ff ff で byte に揃う — zlib の Z_SYNC_FLUSH）
+//     z := deflate.End(mut s)               // 最後のブロック（固定 Huffman の空 = 03 00）+ gzip なら CRC-32 と長さ
+//
+// 出力を繋いだ列は 1 つの DEFLATE（gz なら gzip の 1 メンバ）で、Feed の返りまでの接頭辞だけで、そこまでの平文が復号できる（SSE の遅延の約束）。
+// 窓（32 KiB）は emit をまたいで持ち越す — Feed は「窓の残り（32 KiB 以上 64 KiB 未満）‖ p」の列を作って一括の核（greedy / lazy / flush）を p の頭から回す。
+// ずらしは 32768 の倍数（prev の添字 p & wmask を保つ）・ハッシュの表は下駄 off をずらし分だけ進めて使い回す（落とした位置は c >= 0 が落とす）。
+// 一致は emit の終わりを越えない（sync flush の約束）ので、同じ入力でも一括の Encode とは別のバイト列（emit の切り方で変わる・どれも読み戻しは同じ）
+type Stream struct {
+    w Work
+    // 窓の残り（8 バイトずつ little endian の語 — Feed の終わりで詰め、次の Feed の頭で列に戻す）と、そのバイト数
+    win pool.Scratch
+    wn int
+    level int
+    gz bool
+    // gzip の頭を書いたか・CRC-32（internal/crc32.Update の継ぎ足し）・長さ
+    started bool
+    crc int
+    size int
+    // 符号の表（setup / setupFixed の結果 — emit ごとに作らず写す）
+    lcode []byte
+    dcode []byte
+    lbase []int
+    lext []int
+    dbase []int
+    dext []int
+    fp []int
+    fdp []int
+}
+
+// s を level（0〜9 — 範囲の検査は呼び手）の逐次の符号器に整える。gz = gzip（RFC 1952 — 頭と末尾つき）・でなければ生の DEFLATE
+func Begin(s mut Stream, level int, gz bool) {
+    mut e := enc{}
+    setup(mut e)
+    setupFixed(mut e)
+    s.lcode = e.lcode
+    s.dcode = e.dcode
+    s.lbase = e.lbase
+    s.lext = e.lext
+    s.dbase = e.dbase
+    s.dext = e.dext
+    s.fp = e.fp
+    s.fdp = e.fdp
+    pool.NewScratch(mut s.w.syms, symMax)
+    pool.NewScratch(mut s.w.prev, wmask + 1)
+    pool.NewScratch(mut s.w.head, 1 << 15)
+    pool.NewScratch(mut s.win, 8192)
+    s.w.hmask = (1 << 15) - 1
+    s.w.off = 0
+    s.wn = 0
+    s.level = level
+    s.gz = gz
+    s.started = false
+    s.crc = 0
+    s.size = 0
+}
+
+// p を符号化して sync flush までのバイト列を返す（emit 1 回分 — gz の最初の呼び出しは gzip の頭から）。p が空でも sync flush は書く
+func Feed(s mut Stream, p []byte) []byte {
+    // 列 = 窓の残り ‖ p（窓の語は 8 バイトずつ — 書き切りの while は copyloop の形 D の語の store に畳まれる・put と同じ）
+    r := s.wn
+    mut buf := mut []byte{}
+    mut i := 0
+    while i < r >> 3 {
+        mut bb := pool.LoadRaw(mut s.win, i)
+        mut bn := 64
+        while bn >= 8 {
+            buf = append(buf, byte(bb & 0xff))
+            bb = bb >> 8
+            bn = bn - 8
+        }
+        i += 1
+    }
+    // 最後の端数の語（r & 7 バイト）と p
+    if r & 7 != 0 {
+        mut bb := pool.LoadRaw(mut s.win, i)
+        for j <- iter.Range(0, r & 7) {
+            buf = append(buf, byte(bb & 0xff))
+            bb = bb >> 8
+        }
+    }
+    for j <- iter.Range(0, len(p)) {
+        buf = append(buf, p[j])
+    }
+    data := freeze(buf)
+    n := len(data)
+    mut e := enc{}
+    e.lcode = s.lcode
+    e.dcode = s.dcode
+    e.lbase = s.lbase
+    e.lext = s.lext
+    e.dbase = s.dbase
+    e.dext = s.dext
+    e.fp = s.fp
+    e.fdp = s.fdp
+    e.fixed = true
+    if s.gz && !s.started {
+        gzHead(mut e, s.level)
+        s.started = true
+    }
+    if n > r {
+        if s.level == 0 {
+            stored(mut e, data, r, n, false)
+        } else {
+            // 窓の末尾の 3 位置は前の Feed で鎖に入っていない（続きのバイトが無かった — insert は n − p ≥ 3 の位置だけ）。今の列で足す
+            mut q := if r >= 3 { r - 3 } else { 0 }
+            while q < r && n - q >= minMatch {
+                insert(mut s.w, data, q)
+                q += 1
+            }
+            s.w.nsym = 0
+            s.w.ml = minMatch - 1
+            s.w.ms = 0 - 1
+            s.w.avail = false
+            mut at := r
+            mut bs := r
+            mut cut := 0
+            while cut >= 0 {
+                if s.level <= 3 {
+                    c, q2 := greedy(mut s.w, data, s.level, at)
+                    cut = c
+                    at = q2
+                } else {
+                    c, q2 := lazy(mut s.w, data, s.level, at)
+                    cut = c
+                    at = q2
+                }
+                flush(mut e, mut s.w, data, bs, if cut >= 0 { cut } else { n }, false)
+                bs = cut
+            }
+        }
+    }
+    // sync flush（空の stored ブロック — 00 00 ff ff。ここまでの出力が byte に揃い、受け手はここまでを復号できる）
+    stored(mut e, data, n, n, false)
+    if s.gz {
+        s.crc = crc32.Update(s.crc, p)
+        s.size += len(p)
+    }
+    keep(mut s, data)
+    return freeze(e.out)
+}
+
+// keep は列 data の末尾を窓の残りとして s.win に詰める（32 KiB 以上 64 KiB 未満 — ずらしは 32768 の倍数・下駄 off をずらし分だけ進める）
+func keep(s mut Stream, data []byte) {
+    n := len(data)
+    d := if n < 65536 { 0 } else { ((n - 32768) >> 15) << 15 }
+    s.w.off += d
+    m := n - d
+    // 今の窓の頭から変わらない語は書き直さない（ずらしが 0 なら前の Feed の残りの語はそのまま — 最後の端数の語から）
+    mut i := if d == 0 { s.wn >> 3 } else { 0 }
+    while (i << 3) + 8 <= m {
+        pool.StoreRaw(mut s.win, i, binary.Load64(data, d + (i << 3)))
+        i += 1
+    }
+    if (i << 3) < m {
+        mut v := 0
+        mut k := (i << 3)
+        while k < m {
+            v = v | (int(data[d + k]) << ((k & 7) << 3))
+            k += 1
+        }
+        pool.StoreRaw(mut s.win, i, v)
+    }
+    s.wn = m
+}
+
+// 最後のブロック（固定 Huffman の空のブロック — BFINAL・BTYPE 01・EOB の 10 ビット = 03 00）と、gz なら CRC-32 と長さ（little endian の 4 バイトずつ）。
+// End の後の s は使わない
+func End(s mut Stream) []byte {
+    mut e := enc{}
+    if s.gz && !s.started {
+        gzHead(mut e, s.level)
+        s.started = true
+    }
+    put(mut e, 3, 3)
+    put(mut e, 0, 7)
+    align(mut e)
+    if s.gz {
+        for i <- iter.Range(0, 4) {
+            e.out = append(e.out, byte((s.crc >> (8 * i)) & 0xff))
+        }
+        for i <- iter.Range(0, 4) {
+            e.out = append(e.out, byte((s.size >> (8 * i)) & 0xff))
+        }
+    }
+    return freeze(e.out)
+}
+
+// gzHead は gzip の頭（10 バイト — gzip.Encode と同じ欄: MTIME 0・XFL は level 9 で 2・level 1 で 4・OS 255）
+func gzHead(e mut enc, level int) {
+    xfl := if level == 9 { 2 } else if level == 1 { 4 } else { 0 }
+    e.out = append(e.out, byte(0x1f))
+    e.out = append(e.out, byte(0x8b))
+    e.out = append(e.out, byte(8))
+    for i <- iter.Range(0, 5) {
+        e.out = append(e.out, byte(0))
+    }
+    e.out = append(e.out, byte(xfl))
+    e.out = append(e.out, byte(255))
+}

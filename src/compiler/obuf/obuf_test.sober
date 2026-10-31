@@ -3,7 +3,7 @@ package obuf
 // obuf の単体テスト（`cd compiler && ../bin/sober test obuf` — compiler/ の最初の単体テスト。失敗 = panic）。
 // Int は負数・最小値で符号を反転しない書き方（C8 で写しの食い違いを畳んだ箇所）なので、境界の値を並べる。失敗の印字は power assert（T5）
 
-// text は out の中身の string（UTF-8 の検査に落ちたら panic — ここに来るのは ASCII だけ）
+// out の中身の string（UTF-8 の検査に落ちたら panic — ここに来るのは ASCII だけ）
 func text(out []byte) string {
     s := string(out) catch panic(Unreachable{})
     return s

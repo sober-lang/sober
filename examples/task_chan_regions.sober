@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P3b: 容量 1 のチャネルで親子が交互に待ちながら、両側が自分の region に確保する（中断した task の region に他の task が入らない — R1' の網）
+// 容量 1 のチャネルで親子が交互に待ちながら、両側が自分の region に確保する（中断した task の region に他の task が入らない）
 
 import "std/task"
 

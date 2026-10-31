@@ -19,7 +19,7 @@ type View struct {
     seal sealed
 }
 
-// sealed は View の封（非公開 — 外で値を書けない）
+// View の封（非公開 — 外で値を書けない）
 type sealed struct {
 }
 
@@ -40,7 +40,7 @@ func Bytes(v View) []byte {
     return v.b
 }
 
-// boundary は p が v の文字境界か（端か、継続バイト 10xxxxxx でない）
+// p が v の文字境界か（端か、継続バイト 10xxxxxx でない）
 func boundary(v View, p int) bool {
     return p == 0 || p == len(v.b) || (p > 0 && p < len(v.b) && int(v.b[p]) & 192 != 128)
 }
@@ -66,7 +66,7 @@ func Str(v View, s int, i int) (string, error?) {
 const CHECK_GRAIN = 1048576
 const CHECK_PAR_MIN = 2097152
 
-// indexInvalidPar は strings.IndexInvalid(b) と同じ値を区間ごとの並列の検査で求める。区間の頭は名目の位置から継続バイト（10xxxxxx）を読み飛ばした
+// strings.IndexInvalid(b) と同じ値を区間ごとの並列の検査で求める。区間の頭は名目の位置から継続バイト（10xxxxxx）を読み飛ばした
 // 最初の非継続バイト（か末尾）: 妥当な列の内側は継続バイトだけなので、手前の区間に不正が無ければ逐次の走査もちょうどそこを列の頭として通る。
 // 区間の末尾で途切れる列は、全体でも次のバイトが継続バイトでないので不正 — 区間ごとの判定は全体の判定と同じ。読み飛ばした継続バイトは
 // 手前の区間に入る（区間は隙間なく並ぶ）。答え = 区間の順で最初の不正（後ろの区間の不正は手前が全部妥当なときだけ採る — 逐次と同じ値）
@@ -101,7 +101,7 @@ func indexInvalidPar(b []byte) int {
     return -1
 }
 
-// chunkInvalid は b[lo:hi] の最初の不正の位置（b 上）、妥当なら -1
+// b[lo:hi] の最初の不正の位置（b 上）、妥当なら -1
 func chunkInvalid(b []byte, lo int, hi int) int {
     at := strings.IndexInvalid(b[lo:hi])
     return if at >= 0 { lo + at } else { -1 }

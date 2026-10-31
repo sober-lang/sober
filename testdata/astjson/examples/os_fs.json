@@ -1079,19 +1079,30 @@
                           "name": "os",
                           "tok": 295
                         },
-                        "field": "Rename",
+                        "field": "AppendFile",
                         "tok": 297
                       },
                       "args": [
                         {
                           "k": "ident",
-                          "name": "t",
+                          "name": "v",
                           "tok": 299
                         },
                         {
-                          "k": "ident",
-                          "name": "v",
-                          "tok": 301
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "bytes",
+                            "tok": 301
+                          },
+                          "args": [
+                            {
+                              "k": "strlit",
+                              "value": "+a",
+                              "tok": 303
+                            }
+                          ],
+                          "tok": 302
                         }
                       ],
                       "tok": 298
@@ -1101,6 +1112,547 @@
                 }
               ],
               "tok": 292
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 309
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "code",
+                    "tok": 311
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "os",
+                          "tok": 313
+                        },
+                        "field": "AppendFile",
+                        "tok": 315
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "v",
+                          "tok": 317
+                        },
+                        {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "bytes",
+                            "tok": 319
+                          },
+                          "args": [
+                            {
+                              "k": "strlit",
+                              "value": "+b",
+                              "tok": 321
+                            }
+                          ],
+                          "tok": 320
+                        }
+                      ],
+                      "tok": 316
+                    }
+                  ],
+                  "tok": 312
+                }
+              ],
+              "tok": 310
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "b2"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "io",
+                      "tok": 329
+                    },
+                    "field": "ReadFile",
+                    "tok": 331
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "v",
+                      "tok": 333
+                    }
+                  ],
+                  "tok": 332
+                },
+                "rhs": {
+                  "k": "ret",
+                  "values": [
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 337
+                    }
+                  ],
+                  "tok": 336
+                },
+                "tok": 335
+              }
+            ],
+            "tok": 327
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 339
+              },
+              "args": [
+                {
+                  "k": "catch",
+                  "e": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "$utf8",
+                        "tok": 341
+                      },
+                      "field": "Parse",
+                      "tok": 341
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "b2",
+                        "tok": 343
+                      }
+                    ],
+                    "tok": 342
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "?",
+                    "tok": 346
+                  },
+                  "tok": 345
+                }
+              ],
+              "tok": 340
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 349
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "code",
+                    "tok": 351
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "os",
+                          "tok": 353
+                        },
+                        "field": "AppendFile",
+                        "tok": 355
+                      },
+                      "args": [
+                        {
+                          "k": "strlit",
+                          "value": "out/no/such/parent/x",
+                          "tok": 357
+                        },
+                        {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "bytes",
+                            "tok": 359
+                          },
+                          "args": [
+                            {
+                              "k": "strlit",
+                              "value": "x",
+                              "tok": 361
+                            }
+                          ],
+                          "tok": 360
+                        }
+                      ],
+                      "tok": 356
+                    }
+                  ],
+                  "tok": 352
+                }
+              ],
+              "tok": 350
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 367
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "code",
+                    "tok": 369
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "os",
+                          "tok": 371
+                        },
+                        "field": "Rename",
+                        "tok": 373
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "t",
+                          "tok": 375
+                        },
+                        {
+                          "k": "ident",
+                          "name": "v",
+                          "tok": 377
+                        }
+                      ],
+                      "tok": 374
+                    }
+                  ],
+                  "tok": 370
+                }
+              ],
+              "tok": 368
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 382
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "code",
+                    "tok": 384
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "os",
+                          "tok": 386
+                        },
+                        "field": "Remove",
+                        "tok": 388
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "d",
+                          "tok": 390
+                        }
+                      ],
+                      "tok": 389
+                    }
+                  ],
+                  "tok": 385
+                }
+              ],
+              "tok": 383
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 395
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "code",
+                    "tok": 397
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "os",
+                          "tok": 399
+                        },
+                        "field": "RemoveDir",
+                        "tok": 401
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "d",
+                          "tok": 403
+                        }
+                      ],
+                      "tok": 402
+                    }
+                  ],
+                  "tok": 398
+                }
+              ],
+              "tok": 396
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 408
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "code",
+                    "tok": 410
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "os",
+                          "tok": 412
+                        },
+                        "field": "Remove",
+                        "tok": 414
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "v",
+                          "tok": 416
+                        }
+                      ],
+                      "tok": 415
+                    }
+                  ],
+                  "tok": 411
+                }
+              ],
+              "tok": 409
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 421
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "code",
+                    "tok": 423
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "os",
+                          "tok": 425
+                        },
+                        "field": "Remove",
+                        "tok": 427
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "v",
+                          "tok": 429
+                        }
+                      ],
+                      "tok": 428
+                    }
+                  ],
+                  "tok": 424
+                }
+              ],
+              "tok": 422
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 434
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "code",
+                    "tok": 436
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "os",
+                          "tok": 438
+                        },
+                        "field": "RemoveDir",
+                        "tok": 440
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "d",
+                          "tok": 442
+                        }
+                      ],
+                      "tok": 441
+                    }
+                  ],
+                  "tok": 437
+                }
+              ],
+              "tok": 435
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 447
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "code",
+                    "tok": 449
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "os",
+                          "tok": 451
+                        },
+                        "field": "RemoveDir",
+                        "tok": 453
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "d",
+                          "tok": 455
+                        }
+                      ],
+                      "tok": 454
+                    }
+                  ],
+                  "tok": 450
+                }
+              ],
+              "tok": 448
             }
           },
           {
@@ -1119,19 +1671,19 @@
                     "base": {
                       "k": "ident",
                       "name": "os",
-                      "tok": 308
+                      "tok": 462
                     },
                     "field": "Getenv",
-                    "tok": 310
+                    "tok": 464
                   },
                   "args": [
                     {
                       "k": "strlit",
                       "value": "SOBER_OS_FS_NO_SUCH_VARIABLE",
-                      "tok": 312
+                      "tok": 466
                     }
                   ],
-                  "tok": 311
+                  "tok": 465
                 },
                 "rhs": {
                   "k": "ret",
@@ -1139,15 +1691,15 @@
                     {
                       "k": "int",
                       "value": 1,
-                      "tok": 316
+                      "tok": 470
                     }
                   ],
-                  "tok": 315
+                  "tok": 469
                 },
-                "tok": 314
+                "tok": 468
               }
             ],
-            "tok": 306
+            "tok": 460
           },
           {
             "k": "expr",
@@ -1156,7 +1708,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 318
+                "tok": 472
               },
               "args": [
                 {
@@ -1165,16 +1717,16 @@
                   "lhs": {
                     "k": "ident",
                     "name": "n",
-                    "tok": 320
+                    "tok": 474
                   },
                   "rhs": {
                     "k": "nil",
-                    "tok": 322
+                    "tok": 476
                   },
-                  "tok": 321
+                  "tok": 475
                 }
               ],
-              "tok": 319
+              "tok": 473
             }
           },
           {
@@ -1193,13 +1745,13 @@
                     "base": {
                       "k": "ident",
                       "name": "os",
-                      "tok": 327
+                      "tok": 481
                     },
                     "field": "Args",
-                    "tok": 329
+                    "tok": 483
                   },
                   "args": [],
-                  "tok": 330
+                  "tok": 484
                 },
                 "rhs": {
                   "k": "ret",
@@ -1207,15 +1759,15 @@
                     {
                       "k": "int",
                       "value": 1,
-                      "tok": 334
+                      "tok": 488
                     }
                   ],
-                  "tok": 333
+                  "tok": 487
                 },
-                "tok": 332
+                "tok": 486
               }
             ],
-            "tok": 325
+            "tok": 479
           },
           {
             "k": "bind",
@@ -1233,16 +1785,16 @@
                     "base": {
                       "k": "ident",
                       "name": "os",
-                      "tok": 338
+                      "tok": 492
                     },
                     "field": "Run",
-                    "tok": 340
+                    "tok": 494
                   },
                   "args": [
                     {
                       "k": "strlit",
                       "value": "/usr/bin/env",
-                      "tok": 342
+                      "tok": 496
                     },
                     {
                       "k": "slicelit",
@@ -1254,33 +1806,33 @@
                         {
                           "k": "strlit",
                           "value": "SOBER_OS_FS_CHILD=a=b",
-                          "tok": 348
+                          "tok": 502
                         },
                         {
                           "k": "strlit",
                           "value": "SOBER_OS_FS_EMPTY=",
-                          "tok": 350
+                          "tok": 504
                         },
                         {
                           "k": "index",
                           "base": {
                             "k": "ident",
                             "name": "args",
-                            "tok": 352
+                            "tok": 506
                           },
                           "idx": {
                             "k": "int",
                             "value": 0,
-                            "tok": 354
+                            "tok": 508
                           },
-                          "tok": 353
+                          "tok": 507
                         }
                       ],
                       "mut": false,
-                      "tok": 344
+                      "tok": 498
                     }
                   ],
-                  "tok": 341
+                  "tok": 495
                 },
                 "rhs": {
                   "k": "ret",
@@ -1288,15 +1840,15 @@
                     {
                       "k": "int",
                       "value": 1,
-                      "tok": 360
+                      "tok": 514
                     }
                   ],
-                  "tok": 359
+                  "tok": 513
                 },
-                "tok": 358
+                "tok": 512
               }
             ],
-            "tok": 336
+            "tok": 490
           },
           {
             "k": "expr",
@@ -1305,16 +1857,16 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 362
+                "tok": 516
               },
               "args": [
                 {
                   "k": "ident",
                   "name": "c",
-                  "tok": 364
+                  "tok": 518
                 }
               ],
-              "tok": 363
+              "tok": 517
             }
           },
           {
@@ -1323,10 +1875,10 @@
               {
                 "k": "int",
                 "value": 0,
-                "tok": 368
+                "tok": 522
               }
             ],
-            "tok": 367
+            "tok": 521
           }
         ]
       },
@@ -1334,7 +1886,7 @@
       "bodiless": false,
       "span": {
         "start": 118,
-        "end": 372
+        "end": 526
       },
       "sig_end": 123
     }

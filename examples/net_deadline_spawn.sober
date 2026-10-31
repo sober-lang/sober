@@ -3,7 +3,7 @@ package main
 // net の期限は spawn された task の中の待ちも切り、ラベルは backend に依らず io.Expired（language.md 28 節の約束）。
 // 切られた待ちの -110 が std へ届く道は 2 本: sysWaitFd の結果（waitErr が読む — net_deadline が踏む道）と、ring の中の待ち
 // （netrecv の列・SEND の完了・accept の列 — rt が errno 110 で返し、sysWaitFd を経ないので waitErr に乗らない）。
-// 後者は errOf が自分の期限を見て Expired に読む（読みが無いと ring の道だけ io.Timeout になり、backend でラベルが割れた — report-741）
+// 後者は errOf が自分の期限を見て Expired に読む（読みが無いと ring の道だけ io.Timeout になり、backend でラベルが割れる）
 
 import "std/io"
 import "std/net"
@@ -28,7 +28,7 @@ func run() (string, error?) {
     return out, nil
 }
 
-// child は誰も送らない接続を Recv で待つ（期限が切る — spawn された task の待ちは ring の道では netrecv の列の待ちになる）
+// 誰も送らない接続を Recv で待つ（期限が切る — spawn された task の待ちは ring の道では netrecv の列の待ちになる）
 func child(addr string) int {
     e := waitRecv(addr)
     r := switch e {

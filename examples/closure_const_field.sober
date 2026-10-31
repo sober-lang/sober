@@ -1,6 +1,6 @@
 package main
 
-// 辞書 const の欄のラムダ（捕捉なし）と、同じ K の捕捉ありのラムダ（report-761 ② — const の欄も捕捉の表の行で持ち上がる）
+// 辞書 const の欄のラムダ（捕捉なし）と、同じ K の捕捉ありのラムダ（const の欄も捕捉の表の行で持ち上がる）
 type Gen func(n int) int
 
 type R struct {

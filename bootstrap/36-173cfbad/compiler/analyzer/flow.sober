@@ -1,0 +1,201 @@
+package analyzer
+
+// 値の流れのエンジンの核（effect の波 段 2 — language.md 12 節「2 つのエンジン」の値の流れ）: 格子の値 LSet と、名前空間ごとの解き手 Eng
+// （スロット・読み手・作業の列・局所の名前の表）。今の名前空間は error のラベル（az.er — errors.sober が転送関数）だけ。
+// 転送関数（式ごとに集合を作る規則・源・包み替え・`?`・スロットの母集団・関数値の呼び出し・消費者の記録）は名前空間の側に置く —
+// 差し替えの口は 2 つ目の名前空間（@secret — 段 3）の起案で切る。
+// LSet = ラベルの 2 語の集合: ラベル 0〜63 = lo のビット・64〜125 = hi のビット 0〜61・hi のビット 62 = TOP（不明）・63 = 擬ラベル FLOW
+
+import "desugar"
+import "std/iter"
+import "std/table"
+
+type LSet struct {
+    lo int
+    hi int
+}
+
+// Eng は 1 つの名前空間の解き手（スロット s の集合 = sets の [2s, 2s+1]・局所 [名前, lo, hi]… の envN 個が有効）
+type Eng struct {
+    sets table.Table[int]    // スロットの集合（2 語ずつ）
+    rhead table.Table[int]   // スロットの読み手の鎖の頭（-1 = 無し）
+    rnode table.Table[int]   // 読み手の鎖の項 [関数, 次]
+    work table.Table[int]    // 作業の列
+    inq table.Table[int]     // 関数が作業の列にいるか
+    env table.Table[int]     // 今の関数の局所 [名前, lo, hi]…
+    envN int
+    envChanged bool
+}
+
+const NBITS = 126                 // これ以上のタグのラベルは TOP に倒す（2 語の集合）
+const PBITS = 62                  // 仮引数の集合（Flow・Cand — 1 語のビット j = 仮引数 j）の上限
+const TOPH = 4611686018427387904  // hi の 1 << 62
+
+// ── 集合 ──
+
+func lsNone() LSet {
+    return LSet{lo: 0, hi: 0}
+}
+
+func lsTop() LSet {
+    return LSet{lo: 0, hi: TOPH}
+}
+
+// lsFlow は擬ラベル FLOW（hi の 1 << 63 — 符号のビット。const にすると .sobi が `-9223372036854775808` と印字して読み戻せない）
+func lsFlow() LSet {
+    return LSet{lo: 0, hi: TOPH << 1}
+}
+
+// lsBit はラベル L の集合
+func lsBit(L int) LSet {
+    return if L >= 0 && L < 64 { LSet{lo: 1 << L, hi: 0} } else if L >= 64 && L < NBITS { LSet{lo: 0, hi: 1 << (L - 64)} } else { lsTop() }
+}
+
+// lsHas はラベル L を含むか
+func lsHas(m LSet, L int) bool {
+    return if L >= 0 && L < 64 { (m.lo & (1 << L)) != 0 } else if L >= 64 && L < NBITS { (m.hi & (1 << (L - 64))) != 0 } else { false }
+}
+
+func lsOr(a LSet, b LSet) LSet {
+    return LSet{lo: a.lo | b.lo, hi: a.hi | b.hi}
+}
+
+func lsAnd(a LSet, b LSet) LSet {
+    return LSet{lo: a.lo & b.lo, hi: a.hi & b.hi}
+}
+
+// lsMinus は a から b を除いた集合
+func lsMinus(a LSet, b LSet) LSet {
+    return LSet{lo: a.lo & ^b.lo, hi: a.hi & ^b.hi}
+}
+
+func lsEq(a LSet, b LSet) bool {
+    return a.lo == b.lo && a.hi == b.hi
+}
+
+func lsEmpty(m LSet) bool {
+    return m.lo == 0 && m.hi == 0
+}
+
+// lsSub は a ⊆ b
+func lsSub(a LSet, b LSet) bool {
+    return (a.lo | b.lo) == b.lo && (a.hi | b.hi) == b.hi
+}
+
+func lsIsTop(m LSet) bool {
+    return (m.hi & TOPH) != 0
+}
+
+func lsIsFlow(m LSet) bool {
+    return (m.hi & (TOPH << 1)) != 0
+}
+
+// lsNoFlow は FLOW を除いた集合
+func lsNoFlow(m LSet) LSet {
+    return LSet{lo: m.lo, hi: m.hi & ^(TOPH << 1)}
+}
+
+// ── スロット ──
+
+func newSlot(az mut Az, v LSet) int {
+    table.Push(mut az.er.sets, v.lo)
+    table.Push(mut az.er.sets, v.hi)
+    table.Push(mut az.er.rhead, -1)
+    return table.Len(mut az.er.rhead) - 1
+}
+
+// slotGet はスロット s の集合（読み手に登録しない — 照合と印字）
+func slotGet(az mut Az, s int) LSet {
+    return LSet{lo: table.Get(mut az.er.sets, s * 2), hi: table.Get(mut az.er.sets, s * 2 + 1)}
+}
+
+// readSlot はスロット s の集合（今歩いている関数を読み手に登録する）
+func readSlot(az mut Az, s int) LSet {
+    mut r := table.Get(mut az.er.rhead, s)
+    mut seen := false
+    while r != -1 && !seen {
+        if table.Get(mut az.er.rnode, r) == az.cur {
+            seen = true
+        }
+        r = table.Get(mut az.er.rnode, r + 1)
+    }
+    if !seen {
+        table.Push(mut az.er.rnode, az.cur)
+        table.Push(mut az.er.rnode, table.Get(mut az.er.rhead, s))
+        table.Set(mut az.er.rhead, s, table.Len(mut az.er.rnode) - 2)
+    }
+    return slotGet(mut az, s)
+}
+
+// addSlot はスロット s に集合 m を合併する（広がったら読み手を作業の列へ）
+func addSlot(az mut Az, s int, m LSet) {
+    if s == -1 || lsEmpty(m) {
+        return
+    }
+    // FLOW を持てるのは今の関数の戻りだけ（他の置き場では呼び出し点ごとの集合を言えない — TOP）
+    n := if lsIsFlow(m) && s != az.cur { lsOr(lsNoFlow(m), lsTop()) } else { m }
+    o := slotGet(mut az, s)
+    if lsSub(n, o) {
+        return
+    }
+    u := lsOr(o, n)
+    table.Set(mut az.er.sets, s * 2, u.lo)
+    table.Set(mut az.er.sets, s * 2 + 1, u.hi)
+    mut r := table.Get(mut az.er.rhead, s)
+    while r != -1 {
+        enqueue(mut az, table.Get(mut az.er.rnode, r))
+        r = table.Get(mut az.er.rnode, r + 1)
+    }
+}
+
+func enqueue(az mut Az, f int) {
+    if table.Get(mut az.er.inq, f) == 0 {
+        table.Set(mut az.er.inq, f, 1)
+        table.Push(mut az.er.work, f)
+    }
+}
+
+// ── 局所（名前 → 集合 — az.er.envN 個が有効）──
+
+func envFind(az mut Az, name desugar.StrRef) int {
+    for i <- iter.Range(0, az.er.envN) {
+        if desugar.StrEq(mut az.d, desugar.StrRef(table.Get(mut az.er.env, i * 3)), name) {
+            return i
+        }
+    }
+    return -1
+}
+
+func envGet(az mut Az, i int) LSet {
+    return LSet{lo: table.Get(mut az.er.env, i * 3 + 1), hi: table.Get(mut az.er.env, i * 3 + 2)}
+}
+
+func envAdd(az mut Az, name desugar.StrRef, m LSet) {
+    if name == -1 {
+        return
+    }
+    i := envFind(mut az, name)
+    if i == -1 {
+        if az.er.envN * 3 < table.Len(mut az.er.env) {
+            table.Set(mut az.er.env, az.er.envN * 3, int(name))
+            table.Set(mut az.er.env, az.er.envN * 3 + 1, m.lo)
+            table.Set(mut az.er.env, az.er.envN * 3 + 2, m.hi)
+        } else {
+            table.Push(mut az.er.env, int(name))
+            table.Push(mut az.er.env, m.lo)
+            table.Push(mut az.er.env, m.hi)
+        }
+        az.er.envN += 1
+        if !lsEmpty(m) {
+            az.er.envChanged = true
+        }
+        return
+    }
+    o := envGet(mut az, i)
+    if !lsSub(m, o) {
+        u := lsOr(o, m)
+        table.Set(mut az.er.env, i * 3 + 1, u.lo)
+        table.Set(mut az.er.env, i * 3 + 2, u.hi)
+        az.er.envChanged = true
+    }
+}

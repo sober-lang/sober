@@ -1,0 +1,614 @@
+package lower
+
+import "std/iter"
+import "std/table"
+import "desugar"
+
+// ── 後段の関数キャッシュの鍵（インクリ + 並列の波 段 3 R1 — report-1194）──
+//
+// 切り口は束の子の境界の 2 段: α = B1（optFunc + lB1Func の入力）・β = B2 + cut + x86（lB2Func の入力 + cutInsert の 2 bit + x86 が読む外の事実）。
+// 鍵の主成分は入力の本体の正準形: 詰めた形（mvPack — 内側の参照は相対の番地）のうち外を指す語だけを置き換える — 関数・大域の参照（欄の種別の表
+// opk / tmk の K_FN / K_GLOB）は段 2 の安定な鍵のハッシュへ、番号の定数（札つきの OpConst）は点の安定な鍵へ（値 a は捨てる）。手で並べる表は持たない。
+// ハッシュは語単位の 2 本の 64 bit（128 bit）。置き場はまだ無い（R2）— R1 は鍵を計算して `--emit=cachekeys` に出すだけ
+
+const CK_M1 = -7046029254386353131 // 0x9E3779B97F4A7C15
+const CK_M2 = -4417276706812531889 // 0xC2B2AE3D27D4EB4F
+const CK_S1 = 1609587929392839161
+const CK_S2 = -8796714831421723037
+const CK_VER = 2      // 鍵の形の版（形を変えたら上げる — 2 = 記録の事実に mut 仮引数の印とワーカーの大域の印〔R3 の扉の監査〕）
+const CK_REF = 1993   // 外を指す語の印（安定な鍵の前に混ぜる）
+const CK_NUM = 1997   // 番号の定数の印
+
+func ckM1(h int, w int) int {
+    x := (h ^ w) * CK_M1
+    return x ^ (x >> 29)
+}
+
+func ckM2(h int, w int) int {
+    x := (h ^ w) * CK_M2
+    return x ^ (x >> 31)
+}
+
+// CkTab は親が組む鍵の表（子へ渡す — 子は名前を引けない）: ix = 関数・大域の記録 → hs の添字・hs = 安定な鍵のハッシュ [h1, h2]…・
+// ps / ss = panic / spawn の点（番号 − 下駄 の順）の安定な鍵のハッシュ・off = 下駄（SOBER_NUMOFF）・c1 / c2 = cfg の正準形のハッシュ
+type CkTab struct {
+    on bool
+    ix map[int]int
+    hs []int
+    rs []int   // 記録の事実（hs と同じ添字 — ckFact: 関数 = 戻りの型 + mut 仮引数の印・大域 = ワーカーの大域か。外の関数の本体が読む欄の全部 — R3 の扉の監査が確かめる）
+    ps []int
+    ss []int
+    off int
+    c1 int
+    c2 int
+    rec []int      // hs の添字 → 記録（置き場の読み戻し — R2。置き場を使わない道は空）
+    rv map[int]int // 安定な鍵の h1 → hs の添字（同上）
+    pv map[int]int // panic の点の h1 → 点の添字（同上）
+    sv map[int]int // spawn の点の h1 → 点の添字（同上）
+}
+
+func ckNone() CkTab {
+    return CkTab{on: false, ix: map[int]int{}, hs: []int{}, rs: []int{}, ps: []int{}, ss: []int{}, off: 0, c1: 0, c2: 0, rec: []int{}, rv: map[int]int{}, pv: map[int]int{}, sv: map[int]int{}}
+}
+
+// ckBytesTo は安定な鍵の綴り b のハッシュを out に 2 語で積む
+func ckBytesTo(out mut []int, b []byte) {
+    mut a := CK_S1
+    mut c := CK_S2
+    for x <- b {
+        a = ckM1(a, int(x))
+        c = ckM2(c, int(x))
+    }
+    a = ckM1(a, len(b))
+    c = ckM2(c, len(b))
+    out = append(out, a)
+    out = append(out, c)
+}
+
+// ckTab は鍵の表（cfg = 束の子へ配る cfg — 正準形のハッシュを c1 / c2 に）。安定な鍵の綴りは xFnKey / xGlobKey（fnhash と同じ材料）。
+// build の中で 2 回目からは前の表（st.ckt）にある記録のハッシュを使い回し、増えた記録（spec の複製・後から足した大域）だけ綴りを作る。
+// panic / spawn の点のハッシュは持ち主のハッシュ ‖ 種類 ‖ 持ち主の中の序数（綴り `<持ち主>#p<序数>` と同じ材料）
+func ckTab(st mut St, cfg []int) CkTab {
+    ix := xSkIndex(mut st)
+    old := st.ckt
+    mut m := mut map[int]int{}
+    mut hs := mut []int{}
+    mut rs := mut []int{}
+    mut n := 0
+    mut f := st.fhead
+    while f != -1 {
+        m[int(f)] = n
+        rs = append(rs, ckFact(mut st, int(f), true))
+        o := if old.on { ckIdx(old.ix, int(f)) } else { -1 }
+        if o >= 0 {
+            hs = append(hs, old.hs[2 * o])
+            hs = append(hs, old.hs[2 * o + 1])
+        } else {
+            ckBytesTo(mut hs, xFnKey(mut st, ix, int(f)))
+        }
+        n += 1
+        f = irFnNext(mut st, f)
+    }
+    mut g := st.ghead
+    while g >= 0 {
+        m[g] = n
+        rs = append(rs, ckFact(mut st, g, false))
+        o := if old.on { ckIdx(old.ix, g) } else { -1 }
+        if o >= 0 {
+            hs = append(hs, old.hs[2 * o])
+            hs = append(hs, old.hs[2 * o + 1])
+        } else {
+            ckBytesTo(mut hs, xGlobKey(mut st, g))
+        }
+        n += 1
+        g = xGlobNext(mut st, g)
+    }
+    mut pts := mut []int{}
+    for pass <- iter.Range(0, 2) {
+        xs := if pass == 0 { ix.ps } else { ix.ss }
+        mut k := 0
+        while k + 1 < len(xs) {
+            mut oi := -1
+            o0 := m[xs[k]]
+            if o0 != nil {
+                oi = o0
+            }
+            if oi < 0 {
+                panic(InvariantBroken{})
+            }
+            pts = append(pts, ckM1(ckM1(ckM1(hs[2 * oi], CK_NUM), pass), xs[k + 1]))
+            pts = append(pts, ckM2(ckM2(ckM2(hs[2 * oi + 1], CK_NUM), pass), xs[k + 1]))
+            k += 2
+        }
+    }
+    np := len(ix.ps)
+    fp := freeze(pts)
+    // 置き場の読み戻しの逆引き（R2 — 置き場を使う build だけ）
+    mut rec := mut []int{}
+    mut rv := mut map[int]int{}
+    mut pv := mut map[int]int{}
+    mut sv := mut map[int]int{}
+    if st.bcv.on {
+        mut f1 := st.fhead
+        while f1 != -1 {
+            rv[hs[2 * len(rec)]] = len(rec)
+            rec = append(rec, int(f1))
+            f1 = irFnNext(mut st, f1)
+        }
+        mut g1 := st.ghead
+        while g1 >= 0 {
+            rv[hs[2 * len(rec)]] = len(rec)
+            rec = append(rec, g1)
+            g1 = xGlobNext(mut st, g1)
+        }
+        for k <- iter.Range(0, np / 2) {
+            pv[fp[2 * k]] = k
+        }
+        for k <- iter.Range(0, (len(fp) - np) / 2) {
+            sv[fp[np + 2 * k]] = k
+        }
+    }
+    t0 := CkTab{on: true, ix: freeze(m), hs: freeze(hs), rs: freeze(rs), ps: fp[0:np], ss: fp[np:len(fp)], off: st.numOff, c1: 0, c2: 0, rec: freeze(rec), rv: freeze(rv), pv: freeze(pv), sv: freeze(sv)}
+    mut rets := mut []int{}
+    for w <- cfg {
+        rt := if ckIsFn(t0, w) { t0.rs[ckIdx(t0.ix, w)] } else { 0 }
+        rets = append(rets, rt)
+    }
+    h := ckCfg(t0, cfg, freeze(rets))
+    return CkTab{on: true, ix: t0.ix, hs: t0.hs, rs: t0.rs, ps: t0.ps, ss: t0.ss, off: t0.off, c1: h[0], c2: h[1], rec: t0.rec, rv: t0.rv, pv: t0.pv, sv: t0.sv}
+}
+
+// ckFact は記録 r の事実の語（鍵で安定な鍵と一緒に混ぜる — 外の関数の本体〔束の子・x86 の群の子〕が r について読むもの）: 関数 = 戻りの型
+// （束の子の lFnRet・x86）‖ mut 仮引数の印（x86 の呼び出しの点の slotcolor / zeroinit）・大域 = ワーカーの大域か（x86 の罠の表の xTrapFs が
+// G_WSLOT の符号を読む — 番号そのものは後埋め）
+func ckFact(st mut St, r int, fn bool) int {
+    if fn {
+        return ckM2(ckM1(CK_S1, irFnRet(mut st, FnRef(r))), irFnMutP(mut st, FnRef(r)))
+    }
+    return if desugar.HeapGet(mut st.d, r + G_WSLOT) >= 0 { -11 } else { -7 }
+}
+
+// ckIsFn は cfg の語 w が記録（関数・大域）の番地か。記録の番地はヒープの頭（0 の語・型の表）より後ろ — 64 未満の旗の値と重ならない
+func ckIsFn(t CkTab, w int) bool {
+    return w >= 64 && t.ix[w] != nil
+}
+
+// ckCfg は cfg の正準形のハッシュ（記録の番地は安定な鍵 + 戻りの型へ・他の語は値のまま）
+func ckCfg(t CkTab, cfg []int, rets []int) []int {
+    mut a := ckM1(CK_S1, CK_VER)
+    mut c := ckM2(CK_S2, CK_VER)
+    for k <- iter.Range(0, len(cfg)) {
+        w := cfg[k]
+        if ckIsFn(t, w) {
+            i := ckIdx(t.ix, w)
+            a = ckM1(ckM1(ckM1(a, CK_REF), t.hs[2 * i]), rets[k])
+            c = ckM2(ckM2(ckM2(c, CK_REF), t.hs[2 * i + 1]), rets[k])
+        } else {
+            a = ckM1(a, w)
+            c = ckM2(c, w)
+        }
+    }
+    return []int{a, c}
+}
+
+// ckIdx は索引 m の k（無ければ -1）
+func ckIdx(m map[int]int, k int) int {
+    v := m[k]
+    if v != nil {
+        return v
+    }
+    return -1
+}
+
+// ckNumAt は札つきの定数（札 tag・値 v）の点の添字（ps / ss の中）。表の外は -1 と st.ckBad（鍵が閉じない — ckFn が歩きの後で落とす）
+func ckNumAt(st mut St, tag int, v int) int {
+    k := if tag == CT_PSITE { v - st.ckt.off } else { (v >> 2) - st.ckt.off - 1 }
+    n := if tag == CT_PSITE { len(st.ckt.ps) } else { len(st.ckt.ss) }
+    if k < 0 || 2 * k + 1 >= n {
+        st.ckBad = true
+        return -1
+    }
+    return k
+}
+
+// ckList は値の列 l（[n, 要素…] か -1）の中身のハッシュを st.ckLa / st.ckLc に（列は記録の番地で指されるので、番地でなく中身で）
+func ckList(st mut St, l int) {
+    mut a := CK_S1
+    mut c := CK_S2
+    if l >= 0 {
+        n := desugar.HeapGet(mut st.d, l)
+        mut w := l
+        end := l + 1 + n
+        while w < end {
+            x := desugar.HeapGet(mut st.d, w)
+            a = (a ^ x) * CK_M1
+            a = a ^ (a >> 29)
+            c = (c + x) * CK_M2
+            w += 1
+        }
+    } else {
+        a = a ^ l
+    }
+    st.ckLa = a
+    st.ckLc = c
+}
+
+// ckOpnd は欄の種別 kind の語 v の正準形を st.ckLa / st.ckLc に（関数・大域 = 安定な鍵 ‖ 関数なら戻りの型・ブロック = 関数の中の番号 B_ID・
+// 列 = 中身・他 = 値のまま）。表に無い記録は st.ckBad（鍵が閉じない — ckFn が歩きの後で落とす）
+func ckOpnd(st mut St, kind int, v int) {
+    if (kind == K_FN || kind == K_GLOB) && v >= 0 {
+        i := ckIdx(st.ckt.ix, v)
+        if i < 0 {
+            st.ckBad = true
+            return
+        }
+        rt := st.ckt.rs[i]
+        if kind == K_FN {
+            table.Push(mut st.ckCal, v)
+        }
+        st.ckLa = (st.ckt.hs[2 * i] ^ CK_REF) * CK_M1 + rt
+        st.ckLc = st.ckt.hs[2 * i + 1] + rt
+    } else if kind == K_BLK && v >= 0 {
+        st.ckLa = desugar.HeapGet(mut st.d, v + B_ID) ^ CK_REF
+        st.ckLc = 3
+    } else if (kind == K_VLIST || kind == K_OLIST) {
+        ckList(mut st, v)
+    } else {
+        st.ckLa = v
+        st.ckLc = 0
+    }
+}
+
+// ckFn は関数 f の本体の正準形のハッシュ（[h1, h2]）— 束の子の入力（詰めた形 mvPack が運ぶもの）と同じ中身を、ヒープの記録から直に歩く:
+// 頭（値・ブロック・スロットの数）・引数の型・戻りの型・mut 仮引数の印・スロット [語数, 番号, 直近の値]（空き鎖の欄は lower の間だけの欄で、束の子へは他の関数を指す鎖・SLOT_PINNED が -1 に潰れて渡る — 子が読まない欄なので鍵に入れない）・ブロックごとに
+// [B_ID, 前任数, ループの印, 引数 [値, 型…], 命令 [結果, op, 欄…], 終端 [種類, 欄…]]。鎖の欄は歩く順に畳む（番地を混ぜない）。
+// 親（全体の道）でも束の子（積み戻した後の記録）でも同じ関数で歩く — W に依らず同じ鍵（網 = selfpar の W1 ≡ W8 と cachekeys の W1 ≡ W8）
+func ckFn(st mut St, f FnRef, stage int) []int {
+    cal0 := table.Len(mut st.ckCal)
+    // 表の外の記録・点（鍵が閉じない — st.ckBad）は歩きの後で 1 回落とす — 歩きの中の呼び先が panic の値を確保すると、ループの反復ごとの
+    // region が消えない（rlight の要約は呼び先の戻らない道の確保も数える — 段 3' R2 後半・report-1238）
+    st.ckBad = false
+    mut a := ckM1(st.ckt.c1, stage)
+    mut c := ckM2(st.ckt.c2, stage)
+    a = ckM1(a, irFnRet(mut st, f))
+    c = ckM2(c, irFnMutP(mut st, f))
+    ckList(mut st, irFnPtys(mut st, f))
+    a = ckM1(a, st.ckLa)
+    c = ckM2(c, st.ckLc)
+    a = ckM1(a, desugar.HeapGet(mut st.d, int(f) + F_NVAL))
+    c = ckM2(c, desugar.HeapGet(mut st.d, int(f) + F_NBLK))
+    a = ckM1(a, desugar.HeapGet(mut st.d, int(f) + F_NSLOT))
+    mut s := irFnSHead(mut st, f)
+    while s >= 0 {
+        a = ckM1(a, desugar.HeapGet(mut st.d, s + 1))
+        c = ckM2(c, desugar.HeapGet(mut st.d, s + 2))
+        c = ckM2(c, desugar.HeapGet(mut st.d, s + 4))
+        s = desugar.HeapGet(mut st.d, s)
+    }
+    mut b := irFnBHead(mut st, f)
+    while int(b) != -1 {
+        bi := int(b)
+        a = ckM1(a, desugar.HeapGet(mut st.d, bi + B_ID))
+        c = ckM2(c, desugar.HeapGet(mut st.d, bi + B_PREDS))
+        a = ckM1(a, desugar.HeapGet(mut st.d, bi + B_LOOP))
+        mut pp := desugar.HeapGet(mut st.d, bi + B_PHEAD)
+        while pp >= 0 {
+            a = ckM1(a, desugar.HeapGet(mut st.d, pp + 1))
+            c = ckM2(c, desugar.HeapGet(mut st.d, pp + 2))
+            a = ckM1(a, desugar.HeapGet(mut st.d, pp + 3))
+            pp = desugar.HeapGet(mut st.d, pp)
+        }
+        mut i := desugar.HeapGet(mut st.d, bi + B_IHEAD)
+        while i != -1 {
+            op := desugar.HeapGet(mut st.d, i + I_OP)
+            a = (a ^ desugar.HeapGet(mut st.d, i + I_RES)) * CK_M1
+            c = (c + op) * CK_M2
+            tag := if op == OpConst { desugar.HeapGet(mut st.d, i + I_B) } else { 0 }
+            if op == OpConst && (tag == CT_PSITE || tag == CT_SITE) {
+                v := desugar.HeapGet(mut st.d, i + I_A)
+                q := ckNumAt(mut st, tag, v)
+                if q >= 0 {
+                    low := if tag == CT_SITE { v & 3 } else { 0 }
+                    a = ckM1(ckM1(ckM1(a, CK_NUM), if tag == CT_PSITE { st.ckt.ps[2 * q] } else { st.ckt.ss[2 * q] }), low)
+                    c = ckM2(ckM2(ckM2(c, tag), if tag == CT_PSITE { st.ckt.ps[2 * q + 1] } else { st.ckt.ss[2 * q + 1] }), desugar.HeapGet(mut st.d, i + I_C))
+                }
+            } else {
+                mut r := st.opk[op]
+                mut w := i + I_A
+                while r != 0 {
+                    kind := r & 15
+                    v := desugar.HeapGet(mut st.d, w)
+                    // 外を指す欄・ブロック・列だけ正準化の呼び出しへ（値の番号・不透明な int・スロットの番号は値のまま）
+                    if kind == K_FN || kind == K_GLOB || kind == K_BLK || kind == K_VLIST || kind == K_OLIST {
+                        ckOpnd(mut st, kind, v)
+                        a = (a ^ st.ckLa) * CK_M1
+                        c = (c + st.ckLc) * CK_M2
+                    } else {
+                        a = (a ^ v) * CK_M1
+                        c = (c + v) * CK_M2
+                    }
+                    a = a ^ (a >> 29)
+                    r = r >> 4
+                    w += 1
+                }
+            }
+            a = a ^ (a >> 31)
+            i = desugar.HeapGet(mut st.d, i + I_NEXT)
+        }
+        tm := desugar.HeapGet(mut st.d, bi + B_TERM)
+        a = ckM1(a, tm)
+        mut r := st.tmk[tm]
+        mut w := bi + B_X1
+        while r != 0 {
+            ckOpnd(mut st, r & 15, desugar.HeapGet(mut st.d, w))
+            a = (a ^ st.ckLa) * CK_M1
+            a = a ^ (a >> 29)
+            c = (c + st.ckLc) * CK_M2
+            r = r >> 4
+            w += 1
+        }
+        b = irBlkNext(mut st, b)
+    }
+    if st.ckBad {
+        panic(InvariantBroken{})
+    }
+    // [h1, h2, 呼び先の数, 呼び先…]（呼び先 = 本体の関数の参照 — β の「番地を取られる」印の材料。B2 の段だけ使う）
+    mut out := mut []int{ckM1(a, c), ckM2(c, a)}
+    cal1 := table.Len(mut st.ckCal)
+    // 扉の監査（bcache.sober の bcAud*）は α の段の呼び先の列も鍵に入れた相手として使う
+    out = append(out, if stage == 1 || st.bcAud { cal1 - cal0 } else { 0 })
+    if stage == 1 || st.bcAud {
+        for q <- iter.Range(cal0, cal1) {
+            out = append(out, table.Get(mut st.ckCal, q))
+        }
+    }
+    return freeze(out)
+}
+
+// ckAll は全体の道（束を回さない形）で段 stage（0 = α・1 = B2）の鍵を全関数ぶん st.ckk に積む（cfg は束の子に配るのと同じ lParCfg）
+func ckAll(st mut St, stage int) {
+    cfg := lParCfg(mut st, stage == 1)
+    st.ckt = ckTab(mut st, cfg)
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            ckPush(mut st, stage, int(f), ckFn(mut st, f, stage), 0)
+        }
+        f = irFnNext(mut st, f)
+    }
+    if st.bcAud {
+        ckSens(mut st, stage, cfg)
+    }
+}
+
+// ckSens は扉の監査（SOBER_CACHE_VERIFY=2）の鍵の感度の検査（段 3 R3-c — report-1202）: 鍵に入れたはずの事実を揺らした表で段 stage の鍵を
+// 計算し直し、変わらない関数を名指しする（`cache: insensitive key …` — bcAudReport）。揺らすのは記録の事実（ckFact — 呼び先を持つ関数で
+// 鍵が変わること）と cfg の列（語を 1 つ足す — 全部の関数で変わること）。扉の監査は「読んだ相手 ⊆ 宣言」を見るが、宣言した事実が鍵に
+// 本当に混ざっているかはここが見る（鍵の成分を落とした変異 ① / ② の受け持ち）
+func ckSens(st mut St, stage int, cfg []int) {
+    t0 := st.ckt
+    mut rs := mut []int{}
+    for r <- t0.rs {
+        rs = append(rs, r ^ 85)
+    }
+    tr := CkTab{on: true, ix: t0.ix, hs: t0.hs, rs: freeze(rs), ps: t0.ps, ss: t0.ss, off: t0.off, c1: t0.c1, c2: t0.c2, rec: t0.rec, rv: t0.rv, pv: t0.pv, sv: t0.sv}
+    mut cf := mut []int{}
+    for w <- cfg {
+        cf = append(cf, w)
+    }
+    cf = append(cf, 1)
+    tc := ckTab(mut st, freeze(cf))
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            st.ckt = t0
+            k0 := ckFn(mut st, f, stage)
+            st.ckt = tr
+            kr := ckFn(mut st, f, stage)
+            st.ckt = tc
+            kc := ckFn(mut st, f, stage)
+            if k0[2] > 0 && k0[0] == kr[0] && k0[1] == kr[1] {
+                ckSensRec(mut st, stage, int(f), 40)
+            }
+            if k0[0] == kc[0] && k0[1] == kc[1] {
+                ckSensRec(mut st, stage, int(f), 41)
+            }
+        }
+        f = irFnNext(mut st, f)
+    }
+    st.ckt = t0
+}
+
+// ckSensRec は感度の検査の名指し 1 つ（kind 40 = 記録の事実・41 = cfg — st.bcUnd の形）
+func ckSensRec(st mut St, stage int, f int, kind int) {
+    table.Push(mut st.bcUnd, stage)
+    table.Push(mut st.bcUnd, f)
+    table.Push(mut st.bcUnd, kind)
+    table.Push(mut st.bcUnd, -1)
+    table.Push(mut st.bcUnd, 0)
+    table.Push(mut st.bcUnd, 0)
+}
+
+// ckPush は ckFn の結果 k の at から 1 関数ぶん（[h1, h2, n, 呼び先…]）を st.ckk へ [段, 関数, h1, h2, n, 呼び先…] で積み、次の位置を返す
+func ckPush(st mut St, stage int, f int, k []int, at int) int {
+    table.Push(mut st.ckk, stage)
+    table.Push(mut st.ckk, f)
+    n := k[at + 2]
+    for q <- iter.Range(at, at + 3 + n) {
+        table.Push(mut st.ckk, k[q])
+    }
+    return at + 3 + n
+}
+
+// ckPut は束の子が返した鍵の列（関数ごとに [h1, h2, n, 呼び先…]）を親の表へ
+func ckPut(st mut St, stage int, fr []int, lo int, ks []int) {
+    mut at := 0
+    mut q := 0
+    while at < len(ks) {
+        at = ckPush(mut st, stage, fr[lo + q], ks, at)
+        q += 1
+    }
+}
+
+// ckStage は st.ckk の段 stage の鍵の索引（関数の記録 → ckk の位置）
+func ckStage(st mut St, stage int) map[int]int {
+    mut m := mut map[int]int{}
+    n := table.Len(mut st.ckk)
+    mut q := 0
+    while q < n {
+        if table.Get(mut st.ckk, q) == stage {
+            m[table.Get(mut st.ckk, q + 1)] = q
+        }
+        q += 5 + table.Get(mut st.ckk, q + 4)
+    }
+    return freeze(m)
+}
+
+// ckCutBits は cutInsert の印（関数 f に検査点を置いたか = 1・自分へ戻る路つき = 2・置かない = 0）
+func ckCutBits(st mut St) map[int]int {
+    mut m := mut map[int]int{}
+    n := table.Len(mut st.ckCut)
+    mut q := 0
+    while q < n {
+        m[table.Get(mut st.ckCut, q)] = 1 + table.Get(mut st.ckCut, q + 1)
+        q += 2
+    }
+    return freeze(m)
+}
+
+// ckHex2 は鍵 [h1, h2] の 32 桁の 16 進を out に
+func ckHex2(out mut []byte, a int, c int) {
+    xHex(mut out, a)
+    xHex(mut out, c)
+}
+
+// ckRtFns は rt の関数の記録（名前が `@rt.` で始まる — 凍結の前）
+func ckRtFns(st mut St) []int {
+    mut out := mut []int{}
+    mut f := st.fhead
+    while f != -1 {
+        nm := xNameBytes(mut st, irFnName(mut st, f))
+        if len(nm) > 4 && nm[1] == 'r' && nm[2] == 't' && nm[3] == '.' {
+            out = append(out, int(f))
+        }
+        f = irFnNext(mut st, f)
+    }
+    return freeze(out)
+}
+
+// ckBeta は β の鍵（凍結の後）: B2 の入力の鍵 ‖ cutInsert の印 ‖ 自分の番地を取られる印 ‖ B2 の歩きで集めた呼び先ごとの番地を取られる印 ‖
+// rt の関数の番地を取られる印の和 ‖ x86 の cfg の正準形（t.c1 / c2）。fr の添字ごとに 2 語（B2 の鍵が無い関数は [0, 0]）。
+// IR を歩き直さない: B2 の子が呼べるのは本体の関数の参照と cfg（rt）だけで、cut が足すのも rt だけ — この約束は `--emit=cachekeys` のときだけ
+// ckBetaCheck が最後の本体の全部の関数の参照で照合する（はみ出せば落ちる）
+func ckBeta(st mut St, t CkTab, fr []int) []int {
+    b2 := ckStage(mut st, 1)
+    cuts := ckCutBits(mut st)
+    mut ra := CK_S1
+    mut rc := CK_S2
+    for r <- st.ckRt {
+        bit := st.xAddr[xIndex(fr, r)]
+        ra = ckM1(ra, bit)
+        rc = ckM2(rc, bit)
+    }
+    mut out := mut []int{}
+    for k <- iter.Range(0, len(fr)) {
+        q := ckIdx(b2, fr[k])
+        if q < 0 {
+            out = append(out, 0)
+            out = append(out, 0)
+        } else {
+            cb := ckIdx(cuts, fr[k]) + 1
+            mut a := ckM1(ckM1(ckM1(ckM1(t.c1, table.Get(mut st.ckk, q + 2)), cb), st.xAddr[k]), ra)
+            mut c := ckM2(ckM2(ckM2(ckM2(t.c2, table.Get(mut st.ckk, q + 3)), cb), st.xAddr[k]), rc)
+            n := table.Get(mut st.ckk, q + 4)
+            for j <- iter.Range(q + 5, q + 5 + n) {
+                bit := st.xAddr[xIndex(fr, table.Get(mut st.ckk, j))]
+                a = ckM1(a, bit)
+                c = ckM2(c, bit)
+            }
+            out = append(out, a)
+            out = append(out, c)
+        }
+    }
+    return freeze(out)
+}
+
+// ckBetaCheck は β の約束の照合（`--emit=cachekeys` だけ — 凍結の後に最後の本体を歩く）: B2 の鍵を持つ関数の本体の関数の参照が、自分・
+// B2 の歩きで集めた呼び先・rt の関数のどれかであること。はみ出せば InvariantBroken
+func ckBetaCheck(st mut St, fr []int) {
+    b2 := ckStage(mut st, 1)
+    mut rt := mut map[int]int{}
+    for r <- st.ckRt {
+        rt[r] = 1
+    }
+    for k <- iter.Range(0, len(fr)) {
+        f := fr[k]
+        q := ckIdx(b2, f)
+        if q >= 0 {
+            mut ok := mut map[int]int{}
+            ok[f] = 1
+            n := table.Get(mut st.ckk, q + 4)
+            for j <- iter.Range(q + 5, q + 5 + n) {
+                ok[table.Get(mut st.ckk, j)] = 1
+            }
+            mut b := xfBHead(mut st, FnRef(f))
+            while int(b) != -1 {
+                mut i := xbIHead(mut st, b)
+                while i != -1 {
+                    mut r := st.opk[xiOp(mut st, i)]
+                    mut w := int(i) + I_A
+                    while r != 0 {
+                        v := xg(mut st, w)
+                        if r & 15 == K_FN && v >= 0 && ok[v] == nil && rt[v] == nil {
+                            panic(InvariantBroken{})
+                        }
+                        r = r >> 4
+                        w += 1
+                    }
+                    i = xiNext(mut st, i)
+                }
+                mut tr := st.tmk[xg(mut st, int(b) + B_TERM)]
+                mut w := int(b) + B_X1
+                while tr != 0 {
+                    v := xg(mut st, w)
+                    if tr & 15 == K_FN && v >= 0 && ok[v] == nil && rt[v] == nil {
+                        panic(InvariantBroken{})
+                    }
+                    tr = tr >> 4
+                    w += 1
+                }
+                b = xbNext(mut st, b)
+            }
+        }
+    }
+}
+
+// ckEmitText は `--emit=cachekeys` の印字: 1 行 `<安定な鍵> a=<α の鍵 32 桁> b=<β の鍵 32 桁>`（関数の鎖の順・無い段は `-`）
+func ckEmitText(st mut St, fr []int, names [][]byte, beta []int) []byte {
+    a1 := ckStage(mut st, 0)
+    mut out := mut []byte{}
+    for k <- iter.Range(0, len(fr)) {
+        for x <- names[k] {
+            out = append(out, x)
+        }
+        out = append(out, ' ')
+        out = append(out, 'a')
+        out = append(out, '=')
+        q := ckIdx(a1, fr[k])
+        if q < 0 {
+            out = append(out, '-')
+        } else {
+            ckHex2(mut out, table.Get(mut st.ckk, q + 2), table.Get(mut st.ckk, q + 3))
+        }
+        out = append(out, ' ')
+        out = append(out, 'b')
+        out = append(out, '=')
+        if beta[2 * k] == 0 && beta[2 * k + 1] == 0 {
+            out = append(out, '-')
+        } else {
+            ckHex2(mut out, beta[2 * k], beta[2 * k + 1])
+        }
+        out = append(out, '\n')
+    }
+    return freeze(out)
+}

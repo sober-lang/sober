@@ -5,8 +5,8 @@ package loader
 //
 //     func f(a int, b string?, c int?)      f(1, c: 2)  →  f(1, nil, 2)      f(1)  →  f(1, nil, nil)
 //
-// 写す相手は func 宣言の直接呼び出し（`f(…)`・`ref.F(…)`・`f[T](…)`）だけ（名前付き関数型の値を通した呼び出しは第 2 便 — 仮引数名を
-// 知るのに局所の型が要るので、型を知る層の desugar/namedval.sober が写す。ここは素通し）。名前付きは宣言の順に限る（並べ替えない — 評価の順 = 字面の順。night-adjudications 6）。名前付きの無い呼び出しは、
+// 写す相手は func 宣言の直接呼び出し（`f(…)`・`ref.F(…)`・`f[T](…)`）だけ（名前付き関数型の値を通した呼び出しは未対応 — 仮引数名を
+// 知るのに局所の型が要るので、型を知る層の desugar/namedval.sober が写す。ここは素通し）。名前付きは宣言の順に限る（並べ替えない — 評価の順 = 字面の順）。名前付きの無い呼び出しは、
 // 位置引数が仮引数より少なく、足りない仮引数が全部 `T?` のときだけ nil を足す（他は今までどおり後段の拒否）。
 // パイプ段（`x |> f(…)`）は穴 `_` で左辺の位置を書いた段だけを写す（穴の無い段は左辺が第 1 引数に入り、多値の左辺もあって位置の数が字面で決まらない）。
 // 写せない形は loader の拒否（diag.NamedArg — 位置 = 名前付きの実引数か呼び出し・理由ごとの文言）
@@ -16,7 +16,7 @@ import "std/iter"
 import "ast"
 import "diag"
 
-// FnTab は func 宣言の表（package と名前で引く — 名前のハッシュの鎖。funcs.sober の FnIndex と同じ形）
+// func 宣言の表（package と名前で引く — 名前のハッシュの鎖。funcs.sober の FnIndex と同じ形）
 type FnTab struct {
     pkg []int
     file []int
@@ -34,7 +34,7 @@ const FN_VALP = 4
 // FN_OPTF = 省略可の匿名関数型 `(func(…) R)?` の仮引数を持つ（optfn.sober — 呼び出し点ごとの有無で写し分ける関数）
 const FN_OPTF = 8
 
-// namedArgsAll は全ファイルの木の名前付き実引数と省略を写す（写せない形は拒否）。η 展開（eta.sober）は finish が省略可の関数型の写し
+// 全ファイルの木の名前付き実引数と省略を写す（写せない形は拒否）。η 展開（eta.sober）は finish が省略可の関数型の写し
 // （optfn.sober — 省略を nil にした後の木を読む）の後に掛ける。
 // 関数表は写す前の木で 1 回（finish が組んで渡す — 写しは節を足すだけなので η 展開・後の段〔fnval・noderules〕も同じ表を引く）
 @errors(diag.NamedArg)
@@ -84,7 +84,7 @@ func fnTab(cx Cx) FnTab {
                 }
                 q += 1
             }
-            // 値の位置の仮引数の判定は呼び先ごとに 1 回（以前は callHits が呼び出しの実引数ごとに型宣言を引き直していた — report-780。
+            // 値の位置の仮引数の判定は呼び先ごとに 1 回（呼び出しの実引数ごとに型宣言を引き直さない。
             // 写しは型式・型宣言の節を動かさず、panic ラベルの宣言の写し〔BStruct〕も named fn type の判定を変えない）
             q = 0
             while q < np {
@@ -119,7 +119,7 @@ func fnTab(cx Cx) FnTab {
     return FnTab{builder.Build(mut pkg), files, nodes, builder.Build(mut flags), freeze(head), builder.Build(mut next), mask}
 }
 
-// dataHash はデータプールの文字列 s のハッシュ（funcs.sober の nameHash と同じ式 — 文字列を作らない）
+// データプールの文字列 s のハッシュ（funcs.sober の nameHash と同じ式 — 文字列を作らない）
 func dataHash(t ast.Tree, s int, mask int) int {
     mut h := 0
     for i <- iter.Range(0, t.data[s]) {
@@ -128,7 +128,7 @@ func dataHash(t ast.Tree, s int, mask int) int {
     return h
 }
 
-// dataEq は 2 つの木のデータプールの文字列が等しいか（文字列を作らない）
+// 2 つの木のデータプールの文字列が等しいか（文字列を作らない）
 func dataEq(a ast.Tree, sa int, b ast.Tree, sb int) bool {
     if a.data[sa] != b.data[sb] {
         return false
@@ -141,7 +141,7 @@ func dataEq(a ast.Tree, sa int, b ast.Tree, sb int) bool {
     return true
 }
 
-// fnFind は package pk の func 宣言（名前 = 木 t の文字列 s）の表の番号（無ければ -1）。only が 0 でなければ印 only〔FN_OPT / FN_FPARAM〕を持つ関数だけを見る
+// package pk の func 宣言（名前 = 木 t の文字列 s）の表の番号（無ければ -1）。only が 0 でなければ印 only〔FN_OPT / FN_FPARAM〕を持つ関数だけを見る
 func fnFind(cx Cx, ft FnTab, pk int, t ast.Tree, s int, only int) int {
     mut h := ft.head[dataHash(t, s, ft.mask)]
     while h >= 0 {
@@ -153,7 +153,7 @@ func fnFind(cx Cx, ft FnTab, pk int, t ast.Tree, s int, only int) int {
     return -1
 }
 
-// calleeFn はファイル f の callee の節 c が指す func 宣言の表の番号（直接呼び出しでなければ -1）。only が 0 でなければ印 only を持つ関数だけ
+// ファイル f の callee の節 c が指す func 宣言の表の番号（直接呼び出しでなければ -1）。only が 0 でなければ印 only を持つ関数だけ
 // （名前付きの無い呼び出しの省略・η 展開 — どの package にも同名の該当が無ければ import を引かずに済ませる）
 func calleeFn(cx Cx, ft FnTab, f int, c int, only int) int {
     t := cx.trees[f]
@@ -172,7 +172,7 @@ func calleeFn(cx Cx, ft FnTab, f int, c int, only int) int {
     return -1
 }
 
-// spawnGiveArgs は呼び出しの実引数 args（位置 2 本 = 札・ラムダ + 名前付き give — 名前付きは末尾にしか書けない文法）が std/task の Spawn（関数表の fi）への
+// 呼び出しの実引数 args（位置 2 本 = 札・ラムダ + 名前付き give — 名前付きは末尾にしか書けない文法）が std/task の Spawn（関数表の fi）への
 // 引き渡しなら give の値の節（でなければ -1）
 func spawnGiveArgs(cx Cx, ft FnTab, t ast.Tree, fi int, args int) int {
     dt := cx.trees[ft.file[fi]]
@@ -182,7 +182,7 @@ func spawnGiveArgs(cx Cx, ft FnTab, t ast.Tree, fi int, args int) int {
     return namedArgOf(t, args, 2, "give")
 }
 
-// namedArgOf は実引数の列 args の from 番目以降の名前付き実引数 name の値の節（無ければ -1）。give: と budget: の組（段 6 P5-3）は give: の写しで
+// 実引数の列 args の from 番目以降の名前付き実引数 name の値の節（無ければ -1）。give: と budget: の組は give: の写しで
 // 並べ直す — 名前付き実引数は give と budget のほかに無いこと（あれば -2 — 普通の写しへ回して名指しの拒否に任せる）
 func namedArgOf(t ast.Tree, args int, from int, name string) int {
     mut r := -1
@@ -202,7 +202,7 @@ func namedArgOf(t ast.Tree, args int, from int, name string) int {
     return r
 }
 
-// recvGen は関数表の fi が std/task の Recv か（for の生成元に置かれた `task.Recv(rx)` は RecvAll へ付け替える — P3b-4 ③: 閉じて空になるまで受ける。
+// 関数表の fi が std/task の Recv か（for の生成元に置かれた `task.Recv(rx)` は RecvAll へ付け替える — P3b-4 ③: 閉じて空になるまで受ける。
 // RecvAll(rx, k) は呼び出し形の生成元〔継続 k を末尾の実引数に足して呼ぶ — iter.Range と同じ〕）
 func recvGen(cx Cx, ft FnTab, fi int) bool {
     dt := cx.trees[ft.file[fi]]
@@ -218,7 +218,7 @@ func isIn(xs []int, v int) bool {
     return false
 }
 
-// NaOut は 1 ファイルの写しの結果（bad != 0 なら拒否 — 理由と字句）
+// 1 ファイルの写しの結果（bad != 0 なら拒否 — 理由と字句）
 type NaOut struct {
     tree ast.Tree
     bad int
@@ -270,7 +270,7 @@ func naPlan(cx Cx, ft FnTab, f int, args int, np int, fi int, ctok int) NaPlan {
     return NaPlan{freeze(out), 0, 0}
 }
 
-// naLeft は写し切れなかった名前付きの実引数 j の理由（仮引数 at まで並べ終えた時点）: 位置で渡した仮引数の名前（4）・既に並べた仮引数の名前 =
+// 写し切れなかった名前付きの実引数 j の理由（仮引数 at まで並べ終えた時点）: 位置で渡した仮引数の名前（4）・既に並べた仮引数の名前 =
 // 順でない / 重複（3）・無い名前（2）。まだ並べていない仮引数の名前なら 0（呼び手が「省略できない仮引数が無い」を言う）
 func naLeft(t ast.Tree, dt ast.Tree, args int, j int, ps int, np int, at int) NaPlan {
     a := t.nodes[ast.ListAt(t, args, j)]
@@ -283,7 +283,7 @@ func naLeft(t ast.Tree, dt ast.Tree, args int, j int, ps int, np int, at int) Na
     return NaPlan{[]int{}, 2, a.tok}
 }
 
-// namedArgs はファイル f の木の呼び出し（ECall の実引数 b・EPipe の実引数 c）を写す
+// ファイル f の木の呼び出し（ECall の実引数 b・EPipe の実引数 c）を写す
 func namedArgs(cx Cx, ft FnTab, f int) NaOut {
     t := cx.trees[f]
     n0 := len(t.nodes)
@@ -322,7 +322,7 @@ func namedArgs(cx Cx, ft FnTab, f int) NaOut {
             if named {
                 return NaOut{t, 6, t.nodes[ast.ListAt(t, args, np)].tok}
             }
-            // 穴の無い段 `xs |> f(a)` = f(xs, a): 末尾の省略した `T?` の仮引数を nil で埋める（段 6 P5-3 — `xs |> task.Map(g)` の budget:）
+            // 穴の無い段 `xs |> f(a)` = f(xs, a): 末尾の省略した `T?` の仮引数を nil で埋める（`xs |> task.Map(g)` の budget: のための形）
             pf := calleeFn(cx, ft, f, x.b, 0)
             mut miss := 0
             if pf >= 0 {
@@ -383,7 +383,7 @@ func namedArgs(cx Cx, ft FnTab, f int) NaOut {
         }
         fi := calleeFn(cx, ft, f, if pipe { x.b } else { x.a }, if named { 0 } else { FN_OPT })
         if fi < 0 {
-            // func 宣言を引けない呼び先（関数の値）: 名前付き関数型を通した呼び出しなら型を知る層が写す（desugar/namedval.sober — 第 2 便）。
+            // func 宣言を引けない呼び先（関数の値）: 名前付き関数型を通した呼び出しなら型を知る層が写す（desugar/namedval.sober）。
             // 写せない形の拒否（kind 1）もそちら
             continue
         }
@@ -392,11 +392,11 @@ func namedArgs(cx Cx, ft FnTab, f int) NaOut {
         if !named && np >= npar {
             continue
         }
-        // `task.Spawn(s, (ep) => …, give: ep)`（段 6 P3b — 端点の引き渡し・language.md 11 節）: give の有無でラムダの仮引数の数が変わるので 1 つの総称の宣言では
+        // `task.Spawn(s, (ep) => …, give: ep)`（端点の引き渡し・language.md 11 節）: give の有無でラムダの仮引数の数が変わるので 1 つの総称の宣言では
         // 型が付かない — 呼び先を std/task の SpawnGive(s, give, g) へ付け替える（実引数 = [s, ep, ラムダ]。以後は普通の呼び出しとして型が付く）
         gv := if named && !pipe && np == 2 && (na == 3 || na == 4) { spawnGiveArgs(cx, ft, t, fi, args) } else { -1 }
         if gv >= 0 {
-            // budget:（段 6 P5-3 — SpawnGive の末尾の仮引数・無ければ nil）
+            // budget:（SpawnGive の末尾の仮引数・無ければ nil）
             bv := namedArgOf(t, args, 2, "budget")
             if !changed {
                 for j <- iter.Range(0, n0) {

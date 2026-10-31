@@ -1,0 +1,87 @@
+package desugar
+
+// std の `@intrinsic("鍵")` の宣言（息継ぎ ③ — loader/intrinsic.sober の表）: 呼び出しの名前を現在の package の宣言で引いて鍵の番号へ。
+// 鍵の実装（コアの近似 — call.sober・結果の型 — infer / typer・rt の呼び出し — lower の ioBuiltin）は番号で分かれる
+
+import "loader"
+import "std/iter"
+
+// SysKey は package pk の中の呼び出しの名前 name の鍵の番号（loader.I* — 宣言が無ければ 0 = 普通の呼び出し）。std の外は常に 0
+// （字面の sys の名前の判定は消した — std は宣言形・鎖の 38 行目から最後の boot が宣言を読める）
+func SysKey(st mut S, pk int, name StrRef) int {
+    if !IsStdPkg(mut st, pk) {
+        return 0
+    }
+    for f <- iter.Range(PkgFlo(mut st, pk), PkgFhi(mut st, pk)) {
+        t := st.trees[f]
+        xs := t.nodes[t.file].f
+        if xs != 0 {
+            for i <- iter.Range(0, t.data[xs]) {
+                x := t.nodes[t.data[xs + 1 + i]]
+                if strEq(mut st, name, StrRef(LBASE + f * FW + x.a)) {
+                    return loader.IntrinsicCode(loader.Name(t, x.b))
+                }
+            }
+        }
+    }
+    return 0
+}
+
+// SysResult は鍵の番号の結果の型の種類（'i' = int・'f' = float・'b' = []byte・'m' = mut []int・'x' = mut []byte — loader.IntrinsicSig の末尾）
+func SysResult(code int) byte {
+    s := bytes(loader.IntrinsicSig(code))
+    return s[len(s) - 1]
+}
+
+// SysArity は鍵の番号の仮引数の数
+func SysArity(code int) int {
+    s := bytes(loader.IntrinsicSig(code))
+    mut n := 0
+    while s[n] != '>' {
+        n += 1
+    }
+    return n
+}
+
+// std/task の呼び出し点の写し（段 6 P3a — language.md 11 節）: package std/task の公開関数 4 つを名前で引く閉じた集合
+// （@intrinsic の宣言形は署名がスカラーと []byte だけで総称・関数型の仮引数を持てないので、宣言は普通の総称関数のまま呼び出し点で写す）
+const PAR_SCOPE = 1
+const PAR_SPAWN = 2
+const PAR_JOIN = 3
+const PAR_TRY = 4
+const PAR_NEWCHAN = 5
+const PAR_SEND = 6
+const PAR_RECV = 7
+const PAR_SPAWNGIVE = 8
+const PAR_CLOSE = 9
+const PAR_SPAWNIN = 10   // task.SpawnIn（段 6 P5-4 — 名前つきプールの天井に入れなければ (nil, Shed{})）
+
+// ParOpenErr は関数 fi の err が開いた集合か（std/task の Scope と、scope を開く Map・子の err を返す gatherE / mapE — analyzer は呼び出しの集合を
+// TOP にし、宣言の照合をしない）
+func ParOpenErr(st mut S, fi int) bool {
+    n := fnName(mut st, fi)
+    return strIs(mut st, PkgPath(mut st, fnPkg(mut st, fi)), "std/task") && (strIs(mut st, n, "Run") || strIs(mut st, n, "Map") || strIs(mut st, n, "mapE") || strIs(mut st, n, "gatherE"))
+}
+
+// ParRtUse は関数 fi が task の rt を要るか（ParKey の口か、名前つきプールの台帳の口 — NewPool / Ledger / Fail。
+// rt.pool_new / rt.ledger の本体は task の rt の大域〔rt.mn〕を読み、task の rt と一緒にしか建たない — F-bm: NewPool だけのプログラムが空の関数で x86 の ICE。
+// 公開の口で見る: 中の組み込み〔newPool / ledgerWord / poolFail — 本体なし〕は ParReach の参照の辺に現れない）
+func ParRtUse(st mut S, fi int) bool {
+    if ParKey(mut st, fi) != 0 {
+        return true
+    }
+    if !strIs(mut st, PkgPath(mut st, fnPkg(mut st, fi)), "std/task") {
+        return false
+    }
+    n := fnName(mut st, fi)
+    return strIs(mut st, n, "NewPool") || strIs(mut st, n, "Ledger") || strIs(mut st, n, "MarkFailed")
+}
+
+// ParKey は関数 fi が std/task の Scope / Spawn / Join / Try ならその番号（違えば 0）
+func ParKey(st mut S, fi int) int {
+    if !strIs(mut st, PkgPath(mut st, fnPkg(mut st, fi)), "std/task") {
+        return 0
+    }
+    n := fnName(mut st, fi)
+    return if strIs(mut st, n, "Run") { PAR_SCOPE } else if strIs(mut st, n, "Spawn") { PAR_SPAWN } else if strIs(mut st, n, "Join") { PAR_JOIN } else if strIs(mut st, n, "Try") { PAR_TRY } else if strIs(mut st, n, "NewChannel") { PAR_NEWCHAN } else if strIs(mut st, n, "Send") { PAR_SEND } else if strIs(mut st, n, "Recv") { PAR_RECV } else if strIs(mut st, n, "SpawnGive") { PAR_SPAWNGIVE } else if strIs(mut st, n, "Close") { PAR_CLOSE } else if strIs(mut st, n, "SpawnIn") { PAR_SPAWNIN } else { 0 }
+}

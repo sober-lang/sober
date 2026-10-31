@@ -1,0 +1,2 @@
+sober: load error at examples/multi_assign.sober:13:5: a multi-value result cannot be assigned to existing names (spec X-6): bind it with `:=` (`a2, b2 := f()`) and copy the values, or discard it whole with `_, _ = f()`
+exit=1

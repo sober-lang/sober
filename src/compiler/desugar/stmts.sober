@@ -12,7 +12,7 @@ import "std/table"
 
 // ── ラベル（st.labels の要素 — 積んだ順の添字で指す。添字 = id）──
 
-// Label は label / jump の行き先 1 つ。used / rtys / ann は後から決まる（setLabel* で丸ごと書き替える）
+// label / jump の行き先 1 つ。used / rtys / ann は後から決まる（setLabel* で丸ごと書き替える）
 type Label struct {
     id int
     kind int      // LRet / LBrk / LCont
@@ -37,7 +37,7 @@ func newLabel(st mut S, kind int, t TyRef) int {
     return at
 }
 
-// lab はラベル lb の記録（非ジェネリックの包み — F-10）
+// ラベル lb の記録（非ジェネリックの包み — F-10）
 func lab(st mut S, lb int) Label {
     return table.Get(mut st.labels, lb)
 }
@@ -74,7 +74,7 @@ func labelNode(st mut S, lb int, body CoreRef, wrap int) CoreRef {
 
 // ── defer ──
 
-// scoped は文列のブロック 1 つを 1 つの defer スコープで脱糖する
+// 文列のブロック 1 つを 1 つの defer スコープで脱糖する
 func scoped(st mut S, l ListRef, eb int, ef int, depth int, ra bool, dis bool, want TyRef) (CoreRef, error?) {
     lset(mut st, st.sstk, st.nscope, -1)
     st.nscope = st.nscope + 1
@@ -83,7 +83,7 @@ func scoped(st mut S, l ListRef, eb int, ef int, depth int, ra bool, dis bool, w
     return r, nil
 }
 
-// withDefers は値 v（深さ depth）を束縛し、scopes[from..] の defer を内側から（各スコープは登録の逆順に）評価してから v を返す
+// 値 v（深さ depth）を束縛し、scopes[from..] の defer を内側から（各スコープは登録の逆順に）評価してから v を返す
 func withDefers(st mut S, v CoreRef, from int, depth int) (CoreRef, error?) {
     mut n := 0
     mut i := st.nscope - 1
@@ -125,7 +125,7 @@ func withDefers(st mut S, v CoreRef, from int, depth int) (CoreRef, error?) {
     return cLet(mut st, v, body), nil
 }
 
-// finish は文列の末尾の値: 最内スコープの defer を展開して締める
+// 文列の末尾の値: 最内スコープの defer を展開して締める
 func finish(st mut S, v CoreRef, depth int) (CoreRef, error?) {
     if st.nscope == 0 {
         return v, nil
@@ -133,7 +133,7 @@ func finish(st mut S, v CoreRef, depth int) (CoreRef, error?) {
     return withDefers(mut st, v, st.nscope - 1, depth)
 }
 
-// loopTarget は break / continue の行き先（床より上で最内のループのラベル）
+// break / continue の行き先（床より上で最内のループのラベル）
 func loopTarget(st mut S, kind int, at NodeRef) (int, error?) {
     mut i := st.nlab
     while i > st.loopFloor {
@@ -145,7 +145,7 @@ func loopTarget(st mut S, kind int, at NodeRef) (int, error?) {
     return 0, diag.Malformed{at: posOf(mut st, at)}
 }
 
-// exitJump は脱出（return / break / continue）の jump。want は位置の期待型
+// 脱出（return / break / continue）の jump。want は位置の期待型
 func exitJump(st mut S, target int, payload CoreRef, depth int, want TyRef) (CoreRef, error?) {
     lb := labelAt(mut st, target)
     setLabelUsed(mut st, lb)
@@ -157,7 +157,7 @@ func exitJump(st mut S, target int, payload CoreRef, depth int, want TyRef) (Cor
     return cJump(mut st, lab(mut st, lb).id, want, v), nil
 }
 
-// yieldCall は `yield(v)` の呼び出し式（for 式を書き換えたラムダの引数 `yield` — forexpand.zig）
+// `yield(v)` の呼び出し式（for 式を書き換えたラムダの引数 `yield` — forexpand.zig）
 func yieldCall(st mut S, v int, at NodeRef) NodeRef {
     callee := rec8(mut st, ast.EIdent, at, int(strLit(mut st, "yield")), 0, 0, 0, 0, 0)
     return NodeRef(rec8(mut st, ast.ECall, at, callee, list1(mut st, v), 0, 0, 0, 0))
@@ -165,9 +165,20 @@ func yieldCall(st mut S, v int, at NodeRef) NodeRef {
 
 // ── 文列 ──
 
-// stmts は文の列 l を脱糖する。ra = 末尾の `return e` を値として受ける（関数本体の最上段）、dis = 値を捨てて unit で終える、
+// 文の列 l を脱糖する。ra = 末尾の `return e` を値として受ける（関数本体の最上段）、dis = 値を捨てて unit で終える、
 // want = 末尾の値の期待型（-1 = 不明）
+// stmts は文の列 l の脱糖（出所の追跡のときは文ごとに今の出所を立て、出口で入口の出所へ戻す — 列の後で組む let の鎖は最後の文の出所）
 func stmts(st mut S, l ListRef, eb0 int, ef int, depth0 int, ra bool, dis bool, want TyRef) (CoreRef, error?) {
+    if !st.track {
+        return stmtsIn(mut st, l, eb0, ef, depth0, ra, dis, want)
+    }
+    saved := st.opos
+    v := stmtsIn(mut st, l, eb0, ef, depth0, ra, dis, want)?
+    st.opos = saved
+    return v, nil
+}
+
+func stmtsIn(st mut S, l ListRef, eb0 int, ef int, depth0 int, ra bool, dis bool, want TyRef) (CoreRef, error?) {
     mut lets := mut []CoreRef{}
     mut eb := eb0
     mut depth := depth0
@@ -184,6 +195,9 @@ func stmts(st mut S, l ListRef, eb0 int, ef int, depth0 int, ra bool, dis bool, 
         k := kindN(mut st, s)
         at := s
         last := i + 1 == n
+        if st.track && PackPos(posOf(mut st, s)) != 0 {
+            st.opos = PackPos(posOf(mut st, s))
+        }
         // seq の値（-1 = この文は seq でない）
         mut sv := CoreRef(-1)
         if k == ast.SBind {
@@ -367,7 +381,7 @@ func stmts(st mut S, l ListRef, eb0 int, ef int, depth0 int, ra bool, dis bool, 
             lset(mut st, st.lstk, st.nlab, brk)
             lset(mut st, st.lstk, st.nlab + 1, cont)
             st.nlab = st.nlab + 2
-            // ループ本体は反復ごとの region（宛先構築レーン M4 — scope-draft 2.2 (A)）: `while c (block (label cont body))`
+            // ループ本体は反復ごとの region（宛先構築レーン M4）: `while c (block (label cont body))`
             st.rdepth = st.rdepth + 1
             body := scoped(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, s)))), eb, ef, depth, false, true, -1)?
             st.rdepth = st.rdepth - 1
@@ -408,14 +422,14 @@ func stmts(st mut S, l ListRef, eb0 int, ef int, depth0 int, ra bool, dis bool, 
     return out, nil
 }
 
-// CalleeRes は多値の分解の右辺の呼び出し先の結果の型式（rtys — 分からなければ -1）・その package・ジェネリックか
+// 多値の分解の右辺の呼び出し先の結果の型式（rtys — 分からなければ -1）・その package・ジェネリックか
 type CalleeRes struct {
     rtys ListRef
     pk int
     generic bool
 }
 
-// calleeRes は右辺 v0e（呼び出し・pipe・`f()?`）の呼び出し先の名前付き関数の結果の型式
+// 右辺 v0e（呼び出し・pipe・`f()?`）の呼び出し先の名前付き関数の結果の型式
 func calleeRes(st mut S, v0e NodeRef, eb int) CalleeRes {
     mut callee0 := NodeRef(-1)
     vk := kindN(mut st, v0e)
@@ -433,8 +447,8 @@ func calleeRes(st mut S, v0e NodeRef, eb int) CalleeRes {
     return CalleeRes{rtys: -1, pk: st.curPkg, generic: false}
 }
 
-// genericResTy は総称の多値の呼び出し v0e の j 番目の結果のコアの型（呼び出しの型引数の束縛のもとで結果の型式を読む — 分からなければ -1。
-// 総称の多値の戻り F-d の束縛側の手当て — 段 6 P3b-5 の `ys, err := task.Map(…)`）
+// 総称の多値の呼び出し v0e の j 番目の結果のコアの型（呼び出しの型引数の束縛のもとで結果の型式を読む — 分からなければ -1。
+// 総称の多値の戻り（`ys, err := task.Map(…)` 等）の束縛側の手当て）
 func genericResTy(st mut S, v0e NodeRef, eb int, ef int, j int, at NodeRef) TyRef {
     vk := kindN(mut st, v0e)
     if vk != ast.ECall && vk != ast.EPipe {
@@ -455,7 +469,7 @@ func genericResTy(st mut S, v0e NodeRef, eb int, ef int, j int, at NodeRef) TyRe
     return if err != nil { TyRef(-1) } else { callResultTop(mut st, rt) }
 }
 
-// scopeValue は `task.Run((s) => 本体)` の呼び出し v の本体の値の式（ブロックなら末尾の式 — Scope の値の宣言を引く: `r, e := task.Run(…)` の
+// `task.Run((s) => 本体)` の呼び出し v の本体の値の式（ブロックなら末尾の式 — Scope の値の宣言を引く: `r, e := task.Run(…)` の
 // `r.vs`。Scope でなければ -1）
 func scopeValue(st mut S, v NodeRef, eb int) NodeRef {
     if kindN(mut st, v) != ast.ECall {
@@ -464,13 +478,13 @@ func scopeValue(st mut S, v NodeRef, eb int) NodeRef {
     c := nA(nodeOf(mut st, v))
     fi := findFn(mut st, if kindN(mut st, c) == ast.EIndex { nA(nodeOf(mut st, c)) } else { c }, eb)
     args := lB(nodeOf(mut st, v))
-    if fi < 0 || ParKey(mut st, fi) != PAR_SCOPE || lenL(mut st, args) != 4 || kindN(mut st, latN(mut st, args, 0)) != ast.ELambda {
+    if fi < 0 || ParKey(mut st, fi) != PAR_SCOPE || lenL(mut st, args) != 5 || kindN(mut st, latN(mut st, args, 0)) != ast.ELambda {
         return -1
     }
     return lamTail(mut st, latN(mut st, args, 0))
 }
 
-// genericResDecl は総称の多値の呼び出し v0e の j 番目の結果の型宣言（elem なら要素の宣言）を、呼び出しの型引数の束縛（callEnv — 型引数の
+// 総称の多値の呼び出し v0e の j 番目の結果の型宣言（elem なら要素の宣言）を、呼び出しの型引数の束縛（callEnv — 型引数の
 // struct 宣言込み）で読む（genericResTy の宣言版 — `rs, e := task.Map(xs, (v) => Row{…})` の `rs[1].key`）
 func genericResDecl(st mut S, v0e NodeRef, eb int, ef int, j int, at NodeRef, elem bool) int {
     vk := kindN(mut st, v0e)
@@ -493,7 +507,7 @@ func genericResDecl(st mut S, v0e NodeRef, eb int, ef int, j int, at NodeRef, el
     return d
 }
 
-// deferReg は defer 文 s の登録（コアには現れない — 出口（末尾・jump）ごとに展開する）: 式・束縛の環境・package・型環境・前の登録を記録に積む
+// defer 文 s の登録（コアには現れない — 出口（末尾・jump）ごとに展開する）: 式・束縛の環境・package・型環境・前の登録を記録に積む
 func deferReg(st mut S, s NodeRef, eb int, ef int) {
     sc := top(mut st)
     put(mut st, nodeOf(mut st, s).a)
@@ -505,7 +519,7 @@ func deferReg(st mut S, s NodeRef, eb int, ef int) {
     lset(mut st, st.sstk, st.nscope - 1, sc)
 }
 
-// retRtys は関数ラベルへの jump になる return（値 nv 個）の行き先の結果の型の列（無ければ -1 — 行き先が無い・値を持てないなら拒否）
+// 関数ラベルへの jump になる return（値 nv 個）の行き先の結果の型の列（無ければ -1 — 行き先が無い・値を持てないなら拒否）
 func retRtys(st mut S, nv int, at NodeRef) (ListRef, error?) {
     if st.retTarget < 0 {
         return -1, diag.CoreFragment{at: posOf(mut st, at)}
@@ -522,7 +536,7 @@ func retRtys(st mut S, nv int, at NodeRef) (ListRef, error?) {
     return rtys, nil
 }
 
-// exitWant は脱出の jump の結果型の注釈: 文位置（続きがある・値を捨てる）は unit、値を使う末尾は want（不明なら断片外）
+// 脱出の jump の結果型の注釈: 文位置（続きがある・値を捨てる）は unit、値を使う末尾は want（不明なら断片外）
 func exitWant(st mut S, last bool, dis bool, want TyRef, at NodeRef) (TyRef, error?) {
     if !last || dis {
         return st.tUnit, nil
@@ -533,7 +547,7 @@ func exitWant(st mut S, last bool, dis bool, want TyRef, at NodeRef) (TyRef, err
     return want, nil
 }
 
-// aliasRegion は束縛の region: 外の mut コンテナを指す場所（`mut c := b.chunks[k]` — 名前・欄・添字の連鎖）で初期化した mut 束縛は、
+// 束縛の region: 外の mut コンテナを指す場所（`mut c := b.chunks[k]` — 名前・欄・添字の連鎖）で初期化した mut 束縛は、
 // 中身の region（根の束縛の region）で持つ（M4 — 反復の region の中の別名の格納の行き先・写し先を外のコンテナにする。セルは最内のまま）
 func aliasRegion(st mut S, mutable bool, ve NodeRef, ty TyRef, eb int) int {
     inner := st.rdepth - 1
@@ -554,7 +568,7 @@ func aliasRegion(st mut S, mutable bool, ve NodeRef, ty TyRef, eb int) int {
     return bnd(mut st, b).region
 }
 
-// mutDestAhead は `mut x := <mut のリテラル>`（文 s）の x が同じ関数の後ろで外の mut 束縛へ出ていくなら、その行き先の region（無ければ -1）
+// `mut x := <mut のリテラル>`（文 s）の x が同じ関数の後ろで外の mut 束縛へ出ていくなら、その行き先の region（無ければ -1）
 // （宛先構築レーン M4 — mut は copyTo で写せないので、宣言の時点で行き先に作る）。拾う形は 2 つ:
 // ①`y = x`（局所で組んだ mut を外の y へ移す）②展開しない mut 関数（再帰する・callM に上げた関数）へ外の mut 束縛 y と一緒に `mut x` で渡す
 // （callM の 1 slot — mut の実引数は全部同じ anchor の region。この形だけ x は反復を越えて外の region に積もる — language.md のループのスコープの但し書き）。
@@ -770,13 +784,13 @@ func assignExpr(st mut S, s NodeRef, eb int, ef int, depth int) (CoreRef, error?
                 st.mutDest = bnd(mut st, rb).region + 1
             }
         }
-        // 裸の nil は束縛の点座標の型で作る（`x = nil` — 宣言の型のままだとセルの型〔点座標〕と一致しない。F-v の catch nil の写しが踏む）
+        // 裸の nil は束縛の点座標の型で作る（`x = nil` — 宣言の型のままだとセルの型〔点座標〕と一致しない。catch nil の写しもこれを踏む）
         wv := if w != -1 && kindN(mut st, latN(mut st, vals, 0)) == ast.ENil && kindN(mut st, root) == ast.EIdent { atBinding(mut st, root, w, eb) } else { w }
         v0 := if wv != -1 { coerceExpr(mut st, latN(mut st, vals, 0), wv, eb, ef, depth, at)? } else { expr(mut st, latN(mut st, vals, 0), eb, ef, depth)? }
         st.mutDest = 0
         v := fieldValueAnn(mut st, target, latN(mut st, vals, 0), v0, eb, ef)
         if kindN(mut st, target) == ast.EIdent {
-            // 名前への代入も欄への代入と同じ読み（束縛点の点座標へ緩める — F-o / formal.md F-36）
+            // 名前への代入も欄への代入と同じ読み（束縛点の点座標へ緩める — formal.md F-36）
             return assignTarget(mut st, target, v, eb, depth, at)
         }
         // フィールドパス: 値を先に束縛してから代入（再構築が値を var 0 で参照する）
@@ -808,7 +822,7 @@ func assignExpr(st mut S, s NodeRef, eb int, ef int, depth int) (CoreRef, error?
     return body, nil
 }
 
-// compoundAssign は複合代入（名前のみ）: `x op= v` → `assign x (op (deref x) v)`
+// 複合代入（名前のみ）: `x op= v` → `assign x (op (deref x) v)`
 func compoundAssign(st mut S, target NodeRef, op int, value NodeRef, eb int, ef int, depth int, at NodeRef) (CoreRef, error?) {
     b := lookup(mut st, eb, sA(nodeOf(mut st, target)))
     if b < 0 {
@@ -823,7 +837,7 @@ func compoundAssign(st mut S, target NodeRef, op int, value NodeRef, eb int, ef 
     return compoundCore(mut st, cVar(mut st, depth - 1 - bnd(mut st, b).level), op, value, eb, ef, depth, at)
 }
 
-// compoundCore は ref lref への複合代入 `assign lref (op (deref lref) v)`
+// ref lref への複合代入 `assign lref (op (deref lref) v)`
 func compoundCore(st mut S, lref CoreRef, op int, value NodeRef, eb int, ef int, depth int, at NodeRef) (CoreRef, error?) {
     cur := c1(mut st, CDeref, lref)
     mut v := expr(mut st, value, eb, ef, depth)?
@@ -848,7 +862,7 @@ func compoundCore(st mut S, lref CoreRef, op int, value NodeRef, eb int, ef int,
     return c2(mut st, CAssign, lref, v), nil
 }
 
-// assignTarget は代入先 1 つ（名前は素の assign、フィールドパスは struct の再構築）
+// 代入先 1 つ（名前は素の assign、フィールドパスは struct の再構築）
 func assignTarget(st mut S, target NodeRef, nv CoreRef, eb int, depth int, at NodeRef) (CoreRef, error?) {
     k := kindN(mut st, target)
     if k == ast.EIdent {
@@ -912,7 +926,7 @@ func assignTarget(st mut S, target NodeRef, nv CoreRef, eb int, depth int, at No
     return 0, diag.CoreFragment{at: posOf(mut st, at)}
 }
 
-// rebuildPath はパス（path の p 番目から）のフィールドだけ nv に置き換えた struct 値を組み直す
+// パス（path の p 番目から）のフィールドだけ nv に置き換えた struct 値を組み直す
 func rebuildPath(st mut S, cur CoreRef, decl int, path ListRef, p int, nv CoreRef, at NodeRef) (CoreRef, error?) {
     if p == lenL(mut st, path) {
         return nv, nil
@@ -942,7 +956,7 @@ func rebuildPath(st mut S, cur CoreRef, decl int, path ListRef, p int, nv CoreRe
     return pairChain(mut st, comps), nil
 }
 
-// allBlank は代入先が全部 `_` か
+// 代入先が全部 `_` か
 func allBlank(st mut S, targets ListRef) bool {
     mut i := 0
     while i < lenL(mut st, targets) {
@@ -955,7 +969,7 @@ func allBlank(st mut S, targets ListRef) bool {
     return true
 }
 
-// discardMany は `_, …, _ = …`（代入先が全部 `_`）: 値の数が合えば全部評価して捨てる
+// `_, …, _ = …`（代入先が全部 `_`）: 値の数が合えば全部評価して捨てる
 func discardMany(st mut S, targets ListRef, s NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     vals := lC(nodeOf(mut st, s))
     nt := lenL(mut st, targets)

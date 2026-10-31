@@ -7,7 +7,7 @@ package lexer
 import "std/builder"
 import "std/iter"
 
-// putStr は s のバイトを積む
+// s のバイトを積む
 func putStr(out mut builder.Builder[byte], s string) {
     b := bytes(s)
     for k <- iter.Range(0, len(b)) {
@@ -15,7 +15,7 @@ func putStr(out mut builder.Builder[byte], s string) {
     }
 }
 
-// putUint は n >= 0 の 10 進表記を積む
+// n >= 0 の 10 進表記を積む
 func putUint(out mut builder.Builder[byte], n int) {
     mut p := 1
     while p <= n / 10 {

@@ -1,6 +1,6 @@
 package main
 
-// http.ServeWith の put:（省略可の匿名関数型 — language.md 25 節 Z・report-1130）: 送りを 2 段にする — 受けた切片 1 つ分の応答を put で積み（送らない）、積んだ分は recv が
+// http.ServeWith の put:（省略可の匿名関数型 — language.md 25 節 Z）: 送りを 2 段にする — 受けた切片 1 つ分の応答を put で積み（送らない）、積んだ分は recv が
 // 次の受けを待つ前に送る約束（tls.Recv は切片 1 つを配り終えるたびに tls.Flush する）。send はその場で送る口で、stream の応答（前の応答と頭・
 // emit ごと）だけが使う。ここでは偽の転送路で、積み・送り・flush の順を印字する
 // （TLS の接続なら `(k) => tls.Recv(c, k)`・`(b) => tls.Send(c, b)`・`put: (b) => tls.Put(c, b)`）
@@ -19,7 +19,7 @@ func twice(emit func(b []byte) error?) error? {
     return emit(bytes("chunk\n"))
 }
 
-// feed は切片 1 つを k に渡し、戻ったら積んだ分を送る（tls.Recv の約束の形）
+// 切片 1 つを k に渡し、戻ったら積んだ分を送る（tls.Recv の約束の形）
 func feed(s string, k func([]byte)) error? {
     k(bytes(s))
     println("flush")

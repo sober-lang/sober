@@ -1,6 +1,6 @@
 package lower
 
-// net の ring の受けと送り（段 4b-1 — language.md 28 節の net N7・N8'・N10〜N13・region-domain-pool.md 4c 節の net の受信の pool・report-665）:
+// net の ring の受けと送り（language.md 28 節の net N7・N8'・N10〜N13・region-domain-pool.md 4c 節の net の受信の pool）:
 // net の ring のワーカー（uring.sober の UR_NET）では、
 // - 受け（std/net の Recv の read_fd RFD_DIRECT → rt.netrecv）: 接続ごとに multishot RECV（BUFFER_SELECT — ワーカーごとの PBUF_RING 1 本・16 KiB × 256）を
 //   最初の Recv で張り、完了（スロット）は fd で引く接続の記録の列へ積む（rt.uring_poll の取り込み）。Recv は列の頭のスロットから region の先端へ写して
@@ -9,7 +9,7 @@ package lower
 // - 送り（rt.netop 1）: IORING_OP_SEND（MSG_NOSIGNAL）を積んで完了を待つ（N8' — task から見て同期）。期限は ASYNC_CANCEL → 完了を待って -110
 // - 閉じ（rt.netop 2 — std/net の生成元の後始末と rt.fd_drain）: RECV が張ってあれば ASYNC_CANCEL（CANCEL_FD）を積んで止まるのを待ち（close では止まらない —
 //   要求がファイルの参照を持つ・止まる前に閉じると後の完了が同じ番号の別の接続の記録に落ちる）、列のスロットを環へ返して記録を消してから close
-// - accept（rt.netop 3 — 段 4b-2・std/net の Accept / Serve）: listener に multishot ACCEPT を最初の accept で張り、受けた fd は listener の記録の列へ
+// - accept（rt.netop 3 — std/net の Accept / Serve）: listener に multishot ACCEPT を最初の accept で張り、受けた fd は listener の記録の列へ
 //   （鎖は受けた fd 自身の記録の NR_LNK — 使われる前なので空き）。列が空なら待つ（期限は待ち手を起こすだけ — ACCEPT は張ったまま）。
 //   listener の閉じ（op 2）は ACCEPT を止めてから列に残った fd を閉じる。表の外の番号（≥ NT_CAP）の fd は受けたその場で閉じる（Serve は今も断る番号）
 // - task の出口の閉じ（rt.fd_drain — Serve の接続）は close も ring へ（IORING_OP_CLOSE — 出口の直後の rt.mn_next の提出に乗る）
@@ -39,7 +39,7 @@ const UR_PBM = 60    // スロットごとの [次, 長さ]（2 語 × PB_N — 
 const UR_PBR = 61    // io_uring_buf_reg（5 語）
 const UR_PBN = 66    // 環のスロットの数（2 の冪 — pbInit が決める・PB_N の注）
 // 環のスロットの数の上限。ワーカーごとの数 = clamp(PB_TOT ÷ W, PB_MIN, PB_N) を 2 の冪へ切り下げ（全ワーカーの和を W に依らず ≈ PB_TOT 本に —
-// report-1092 / 1099: カーネルは環の順に全スロットを巡るので、小さい要求でも各スロットの先頭の頁が常駐する ≈1.1 MiB/ワーカー）。写像は PB_N 本分のまま（触らない VA）
+// カーネルは環の順に全スロットを巡るので、小さい要求でも各スロットの先頭の頁が常駐する ≈1.1 MiB/ワーカー）。写像は PB_N 本分のまま（触らない VA）
 const PB_N = 256
 const PB_TOT = 2048
 const PB_MIN = 32
@@ -52,7 +52,7 @@ const PEND_SEND = -9223372036854775805 // IO_PENDING + 2: 送りの完了待ち�
 const NETF_OP = 7    // ioRec の欄（netpoll.sober の NETF_* の次）
 const NETF_RECV = 8
 
-// needNetOp は rt.netop / rt.netrecv を（初出なら）宣言して rt.netop を返す（cont.sober の net_op から — std/net の Send / 閉じ）
+// rt.netop / rt.netrecv を（初出なら）宣言して rt.netop を返す（cont.sober の net_op から — std/net の Send / 閉じ）
 func needNetOp(st mut St) FnRef {
     lsNeed(mut st, NEED_NETOP, 0)
     if chF(mut st, NETF_OP) == -1 {
@@ -65,7 +65,7 @@ func needNetOp(st mut St) FnRef {
     return chF(mut st, NETF_OP)
 }
 
-// nrRing は今のワーカーの net の ring の記録（net の ring でなければ 0）と、fd の接続の記録の番地（表が無い・fd が表の外なら 0）を返す — 両方 0 でなければ ring の道
+// 今のワーカーの net の ring の記録（net の ring でなければ 0）と、fd の接続の記録の番地（表が無い・fd が表の外なら 0）を返す — 両方 0 でなければ ring の道
 func nrRing(st mut St, fd int) (int, int) {
     zero := iconst(mut st, 0)
     rg := load(mut st, globaladdr(mut st, st.wkG), WK_RING)
@@ -81,7 +81,7 @@ func nrRing(st mut St, fd int) (int, int) {
     return bin(mut st, BMul, use, rg), bin(mut st, BMul, use, nrAt(mut st, tab, fd))
 }
 
-// pbInit は net の ring の記録 rec に PBUF_RING を張る（環・スロット・列の表を mmap して全スロットを積み、REGISTER_PBUF_RING〔22〕で群 0 に登録）。
+// net の ring の記録 rec に PBUF_RING を張る（環・スロット・列の表を mmap して全スロットを積み、REGISTER_PBUF_RING〔22〕で群 0 に登録）。
 // 登録に失敗したら UR_PB = 0（受けは今の read の道）
 func pbInit(st mut St, rec int) {
     rp := itop(mut st, rec)
@@ -121,7 +121,7 @@ func pbInit(st mut St, rec int) {
     store(mut st, rp, UR_PB, bin(mut st, BMul, pr, cmp(mut st, CEq, r, zero)))
 }
 
-// pbPut はスロット bid を環へ返す（環の次の項に [番地, 長さ, bid] を書いてから tail を進める — 最初の項の上位 16 ビットが tail なので、項の 2 語目は
+// スロット bid を環へ返す（環の次の項に [番地, 長さ, bid] を書いてから tail を進める — 最初の項の上位 16 ビットが tail なので、項の 2 語目は
 // その 16 ビットを残して書き、tail は 1 語の store で出す〔カーネルは u16 で読む〕）
 func pbPut(st mut St, rec int, bid int) {
     rp := itop(mut st, rec)
@@ -139,7 +139,7 @@ func pbPut(st mut St, rec int, bid int) {
     store(mut st, rp, UR_PBF, urAdd(mut st, load(mut st, rp, UR_PBF), 1))
 }
 
-// nrWake は記録 nr の待ち手を起こす（rt が直に起こす待ち〔PEND_RT〕のときだけ — 期限で先に起こされていれば何もしない）
+// 記録 nr の待ち手を起こす（rt が直に起こす待ち〔PEND_RT〕のときだけ — 期限で先に起こされていれば何もしない）
 func nrWake(st mut St, nr int) {
     w := load(mut st, itop(mut st, nr), NR_WAIT)
     bW := branchIf(mut st, cmp(mut st, CNe, w, iconst(mut st, 0)))
@@ -151,7 +151,7 @@ func nrWake(st mut St, nr int) {
     setCur(mut st, bW)
 }
 
-// urReapRecv は受けの完了（user_data = fd | TAG_RECV）を記録へ: 届いたスロットは列の末尾へ・0 = FIN・ENOBUFS は印なし・他の負は errno。
+// 受けの完了（user_data = fd | TAG_RECV）を記録へ: 届いたスロットは列の末尾へ・0 = FIN・ENOBUFS は印なし・他の負は errno。
 // F_MORE が無ければ張ってない印。待ち手を起こす（cur は取り込みの腕 — hn へ）
 func urReapRecv(st mut St, rec int, ud int, res int, fl int, hn BlkRef) {
     rp := itop(mut st, rec)
@@ -212,7 +212,7 @@ func urReapRecv(st mut St, rec int, ud int, res int, fl int, hn BlkRef) {
     br(mut st, hn, -1)
 }
 
-// urReapAcc は accept の完了（user_data = listener の fd | TAG_ACC）を listener の記録へ: 受けた fd は列の末尾へ・負は errno（次の accept が 1 回返す）。
+// accept の完了（user_data = listener の fd | TAG_ACC）を listener の記録へ: 受けた fd は列の末尾へ・負は errno（次の accept が 1 回返す）。
 // F_MORE が無ければ張ってない印。待ち手を起こす（cur は取り込みの腕 — hn へ）
 func urReapAcc(st mut St, ud int, res int, fl int, hn BlkRef) {
     zero := iconst(mut st, 0)
@@ -253,12 +253,12 @@ func urReapAcc(st mut St, ud int, res int, fl int, hn BlkRef) {
     br(mut st, hn, -1)
 }
 
-// nrAt は表 tab の fd の接続の記録の番地
+// 表 tab の fd の接続の記録の番地
 func nrAt(st mut St, tab int, fd int) int {
     return bin(mut st, BAdd, tab, bin(mut st, BMul, fd, iconst(mut st, NR_W * 8)))
 }
 
-// nrWaitRt は今の task を記録 nr の待ち手にして rt が起こすまで待つ（dl = 期限の鎖に積む — 受け。閉じは積まない）。結果（0 / -110）を返す
+// 今の task を記録 nr の待ち手にして rt が起こすまで待つ（dl = 期限の鎖に積む — 受け。閉じは積まない）。結果（0 / -110）を返す
 func nrWaitRt(st mut St, rg int, nr int, dl bool) int {
     wk := globaladdr(mut st, st.wkG)
     me := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
@@ -294,7 +294,7 @@ func nrWaitRt(st mut St, rg int, nr int, dl bool) int {
     return r
 }
 
-// buildNetRecv は rt.netrecv(fd, dst, c) → 写したバイト数 / 0 = FIN / 負の errno（-110 = 期限・-11 = 今の道の EAGAIN）: 上の受けの形。
+// rt.netrecv(fd, dst, c) → 写したバイト数 / 0 = FIN / 負の errno（-110 = 期限・-11 = 今の道の EAGAIN）: 上の受けの形。
 // ring の道でなければ read(2)
 func buildNetRecv(st mut St) {
     begin(mut st, chF(mut st, NETF_RECV))
@@ -368,14 +368,14 @@ func buildNetRecv(st mut St) {
     ret(mut st, r)
 }
 
-// buildNetOp は rt.netop(op, fd, a, b): op 1 = 送り（a = 番地・b = 長さ → 送れたバイト数 / 負の errno — ring の道は SEND の完了待ち・でなければ sendto〔EAGAIN は呼び手が待つ〕）・
+// rt.netop(op, fd, a, b): op 1 = 送り（a = 番地・b = 長さ → 送れたバイト数 / 負の errno — ring の道は SEND の完了待ち・でなければ sendto〔EAGAIN は呼び手が待つ〕）・
 // op 2 = 閉じ（a = 1 は task の出口 → 0 / 負の errno — ring の道は RECV / ACCEPT を止めてスロット〔listener なら列の fd〕を始末し記録を消してから close・
 // task の出口なら close も ring へ）・
 // op 3 = accept（fd = listener → 受けた fd / 負の errno — ring の道は multishot ACCEPT の列から・でなければ accept4〔EAGAIN は呼び手が待つ〕）・
 // op 5 = 置き場の印（fd = 行き先 → 0 — 今の task の次の spawn 1 回を、k ≥ 0 なら自分を除いた k 番目のワーカーへ・-1 なら自分の走れる積みへ。
-// rt.task_go_mn が消費・report-709〜711・1172）・
-// op 6 = スロットの大きさの印（fd = バイト → 0 — 今の task の次の spawn 1 回のスロット。rt.task_new_in が消費・report-1077）・
-// op 8 = ワーカーの数（→ rt.mn の MN_N・task の無いプログラムは 1 — Serve の listener の数・report-1172）
+// rt.task_go_mn が消費）・
+// op 6 = スロットの大きさの印（fd = バイト → 0 — 今の task の次の spawn 1 回のスロット。rt.task_new_in が消費）・
+// op 8 = ワーカーの数（→ rt.mn の MN_N・task の無いプログラムは 1 — Serve の listener の数）
 func buildNetOp(st mut St) {
     begin(mut st, chF(mut st, NETF_OP))
     op := 0
@@ -391,7 +391,7 @@ func buildNetOp(st mut St) {
     bPlace := newBlock(mut st)
     condbr(mut st, cmp(mut st, CEq, op, iconst(mut st, 3)), bAcc, -1, bNa, -1)
     setCur(mut st, bNa)
-    // op 6: 次の spawn 1 回のスロットの大きさの印（fd の位置 = バイト — 今の task の TC_NSLOT。rt.task_new_in が消費・report-1077）
+    // op 6: 次の spawn 1 回のスロットの大きさの印（fd の位置 = バイト — 今の task の TC_NSLOT。rt.task_new_in が消費）
     bNb := newBlock(mut st)
     bSlot := newBlock(mut st)
     condbr(mut st, cmp(mut st, CEq, op, iconst(mut st, 6)), bSlot, -1, bNb, -1)
@@ -401,7 +401,7 @@ func buildNetOp(st mut St) {
     }
     ret(mut st, zero)
     setCur(mut st, bNb)
-    // op 7: 次の spawn 1 回の待ちの上限 D の印（fd の位置 = ns — 今の task の TC_NMAXW。rt.task_new_in が消費 — net.Serve の maxWait:・report-1142）
+    // op 7: 次の spawn 1 回の待ちの上限 D の印（fd の位置 = ns — 今の task の TC_NMAXW。rt.task_new_in が消費 — net.Serve の maxWait:）
     bNc := newBlock(mut st)
     bMw := newBlock(mut st)
     condbr(mut st, cmp(mut st, CEq, op, iconst(mut st, 7)), bMw, -1, bNc, -1)
@@ -604,7 +604,7 @@ func buildNetOp(st mut St) {
     ret(mut st, imin(mut st, urSys(mut st, 3, []int{fd}), zero))
 }
 
-// buildNetRing は rt.netop / rt.netrecv の本体（使うプログラムだけ）
+// rt.netop / rt.netrecv の本体（使うプログラムだけ）
 func buildNetRing(st mut St) {
     if chF(mut st, NETF_OP) == -1 {
         return

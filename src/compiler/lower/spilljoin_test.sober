@@ -5,7 +5,7 @@ package lower
 
 import "std/iter"
 
-// sjT は値 nv 個の区間 [s[k], t[k]]（k < nv は値の最初の部分区間・k ≥ nv は pn[k] の値の続き — 鎖は開始の昇順）で、組 (pa, pb) を順に併せた代表を返す（詰めた番号 = 値の番号）
+// 値 nv 個の区間 [s[k], t[k]]（k < nv は値の最初の部分区間・k ≥ nv は pn[k] の値の続き — 鎖は開始の昇順）で、組 (pa, pb) を順に併せた代表を返す（詰めた番号 = 値の番号）
 func sjT(nv int, s []int, t []int, pn []int, pa []int, pb []int) []int {
     mut ivS := mut []int{}
     mut ivE := mut []int{}

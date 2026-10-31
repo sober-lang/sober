@@ -1,0 +1,81 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 20
+              },
+              "args": [
+                {
+                  "k": "int",
+                  "value": 0,
+                  "tok": 22
+                }
+              ],
+              "tok": 21
+            }
+          }
+        ]
+      },
+      "tok": 16,
+      "bodiless": false,
+      "span": {
+        "start": 15,
+        "end": 27
+      },
+      "sig_end": 19
+    }
+  ],
+  "consts": [
+    {
+      "name": "Name",
+      "expr": {
+        "k": "strlit",
+        "value": "sober",
+        "tok": 6
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 8
+      }
+    },
+    {
+      "name": "Full",
+      "expr": {
+        "k": "binary",
+        "op": "+",
+        "lhs": {
+          "k": "ident",
+          "name": "Name",
+          "tok": 11
+        },
+        "rhs": {
+          "k": "strlit",
+          "value": " compiler",
+          "tok": 13
+        },
+        "tok": 12
+      },
+      "tok": 9,
+      "span": {
+        "start": 8,
+        "end": 15
+      }
+    }
+  ]
+}

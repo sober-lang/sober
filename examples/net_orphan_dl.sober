@@ -29,7 +29,7 @@ func run() (string, error?) {
     return "done", nil
 }
 
-// parent は scope を開いて子を生み、子が待ちに入った頃に死ぬ（範囲外の添字）
+// scope を開いて子を生み、子が待ちに入った頃に死ぬ（範囲外の添字）
 func parent(k int, addr string) int {
     _, e := task.Run((s task.Scope) => {
         h := task.Spawn(s, () => child(k, addr))

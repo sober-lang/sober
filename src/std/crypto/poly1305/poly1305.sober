@@ -36,7 +36,7 @@ func SumAead(key []byte, ad []byte, msg []byte, off int, n int) []byte {
     return finish(a, key)
 }
 
-// acc は累算の途中（r = 鍵の前半を締めたもの・s = r × 5・h = 累算 — 各 26 bit × 5 limb）
+// 累算の途中（r = 鍵の前半を締めたもの・s = r × 5・h = 累算 — 各 26 bit × 5 limb）
 type acc struct {
     r0 int
     r1 int
@@ -61,7 +61,7 @@ func start(key []byte) acc {
     }
 }
 
-// absorb は msg[off, off + n) を 16 バイトのブロックずつ畳む。16 バイトに満たない端は、pad なら 0 で埋めた満ちたブロック（AEAD の 0 埋め）・
+// msg[off, off + n) を 16 バイトのブロックずつ畳む。16 バイトに満たない端は、pad なら 0 で埋めた満ちたブロック（AEAD の 0 埋め）・
 // でなければ 0x01 を足して 0 で埋め上のビットを立てない（RFC 8439 2.5 の端）。満ちたブロックは写さずに msg から直に読む
 func absorb(a mut acc, msg []byte, off int, n int, pad bool) {
     r0 := a.r0
@@ -115,7 +115,7 @@ func absorb(a mut acc, msg []byte, off int, n int, pad bool) {
     a.h4 = h4
 }
 
-// tail は msg[at, at + k)（k < 16）の端のブロック: pad なら 0 埋め・でなければ 0x01 を足して 0 埋め
+// msg[at, at + k)（k < 16）の端のブロック: pad なら 0 埋め・でなければ 0x01 を足して 0 埋め
 func tail(msg []byte, at int, k int, pad bool) []byte {
     mut b := mut []byte{}
     for i <- iter.Range(0, 16) {
@@ -124,7 +124,7 @@ func tail(msg []byte, at int, k int, pad bool) []byte {
     return freeze(b)
 }
 
-// finish は累算を締めて s（鍵の後半）を足した tag
+// 累算を締めて s（鍵の後半）を足した tag
 func finish(a acc, key []byte) []byte {
     mut h0 := a.h0
     mut h1 := a.h1
@@ -184,12 +184,12 @@ func finish(a acc, key []byte) []byte {
     return freeze(out)
 }
 
-// le32 は b[p..p+4) の小さい端の 32 bit の語
+// b[p..p+4) の小さい端の 32 bit の語
 func le32(b []byte, p int) int {
     return int(b[p]) | (int(b[p + 1]) << 8) | (int(b[p + 2]) << 16) | (int(b[p + 3]) << 24)
 }
 
-// put32 は語 w を小さい端の 4 バイトで積む
+// 語 w を小さい端の 4 バイトで積む
 func put32(out mut []byte, w int) {
     out = append(out, byte(w & 0xff))
     out = append(out, byte((w >> 8) & 0xff))

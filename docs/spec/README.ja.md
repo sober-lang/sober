@@ -21,7 +21,7 @@ Sober の言語仕様です。何が受理され、何が拒否され、受理�
 2. [型](02-types.ja.md) — 基本型・`T?`・slice・map・struct・union・nominal
 3. [値と束縛](03-values.ja.md) — const 既定・シャドーイングなし・mut 引数・freeze
 4. [式](04-expressions.ja.md) — if / switch は式・多値・パイプと穴・型推論・評価の順・defer
-5. [関数](05-functions.ja.md) — メソッドなし・ラムダと展開・関数値と閉包・借り・ジェネリクス・名前つき引数
+5. [関数](05-functions.ja.md) — メソッドなし・ラムダと展開・関数値とクロージャ・借り・ジェネリクス・名前つき引数
 6. [for](06-for.ja.md) — 生成器と文形の for・生成元
 7. [エラーと panic](07-errors.ja.md) — error 型・`?`・`catch`・`@errors`・網羅・panic の範囲
 8. [package](08-packages.ja.md) — import・可視性・欄の書き・std/internal
@@ -33,7 +33,7 @@ Sober の言語仕様です。何が受理され、何が拒否され、受理�
 
 ## 用語
 
-- 受理 / 拒否 — コンパイラ（`sober check` / `sober build`）がプログラムを通すか、診断を出して止めるか。拒否はコンパイル時に起きる
+- 受理 / 拒否 — コンパイラ（`sober check` / `sober build`）がプログラムを通すか、診断を出して止めるか。拒否はコンパイル時に起きる。check の型の誤りは `type error at <path>:<行>:<列>` の位置つきの 1 行で出る（[language.md 38 節](../language.md)）
 - check / build — `sober check` は型検査・脱糖・analyzer（ラベル集合の導出・網羅・`@errors` の照合など）まで走らせて判定する。`sober build` は実行ファイルを作り、analyzer を走らせない。仕様の「拒否」は check の拒否を指す
 - panic — 実行時の死。終了コード 101（到達 = バグ）か 102（資源の上限）で終わる（[7 章](07-errors.ja.md)）
 - ゼロ値 — `T{}` が作る値（[2 章](02-types.ja.md)）。ゼロ値を持たない型もある

@@ -1,0 +1,6 @@
+src/std/hash/sha256.sober  package hash
+  import "std/crypto/sha256"
+  func Sha256(data []byte) []byte  @effects()  :13-16
+src/std/hash/crc32/crc32.sober  package crc32
+  import "std/internal/crc32"
+  func Sum(data []byte) int  @effects(panic)  :13-16

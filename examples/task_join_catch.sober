@@ -1,7 +1,7 @@
 package main
 
 // language.md 11 節（Join の項）: error を返す task の Join に catch — 失敗は既定値に落ちる（catch で回収した失敗は scope の err に来ない）。
-// Join の結果は字面で T 1 つなので、catch の左辺の判定は loader でなく表層型の後（ParCheck の層）で掛ける（report-583）
+// Join の結果は字面で T 1 つなので、catch の左辺の判定は loader でなく表層型の後（ParCheck の層）で掛ける
 
 import "std/task"
 

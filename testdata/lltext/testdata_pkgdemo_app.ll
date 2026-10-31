@@ -3035,6 +3035,184 @@ b8:
   ret void
 }
 
+define internal i64 @"lambda#0"(i64 %v0, i64 %v1, i64 %v2, i64 %v3) #0 {
+b0:
+  %s0 = alloca [2 x i64], align 8
+  %s0.z0 = getelementptr i64, ptr %s0, i64 0
+  store i64 0, ptr %s0.z0
+  %s0.z1 = getelementptr i64, ptr %s0, i64 1
+  store i64 0, ptr %s0.z1
+  %s1 = alloca [2 x i64], align 8
+  %s1.z0 = getelementptr i64, ptr %s1, i64 0
+  store i64 0, ptr %s1.z0
+  %s1.z1 = getelementptr i64, ptr %s1, i64 1
+  store i64 0, ptr %s1.z1
+  %v4 = getelementptr i64, ptr %s0, i64 0
+  %st0 = getelementptr i64, ptr %v4, i64 0
+  store i64 %v0, ptr %st0
+  %st1 = getelementptr i64, ptr %v4, i64 1
+  store i64 %v1, ptr %st1
+  %v5 = getelementptr i64, ptr %s1, i64 0
+  %st2 = getelementptr i64, ptr %v5, i64 0
+  store i64 %v2, ptr %st2
+  %st3 = getelementptr i64, ptr %v5, i64 1
+  store i64 %v3, ptr %st3
+  %v16 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v6.p = getelementptr i64, ptr %v16, i64 0
+  %v6 = load i64, ptr %v6.p
+  call void @"rt.region_enter"()
+  %v7.p = getelementptr i64, ptr %v4, i64 0
+  %v7 = load i64, ptr %v7.p
+  %v8 = call i64 @"testdata/pkgdemo/geo.hidden"(i64 %v7)
+  %v9.p = getelementptr i64, ptr %v4, i64 1
+  %v9 = load i64, ptr %v9.p
+  %v10 = add i64 %v8, %v9
+  %v11.p = getelementptr i64, ptr %v5, i64 0
+  %v11 = load i64, ptr %v11.p
+  %v12 = call i64 @"testdata/pkgdemo/geo.hidden"(i64 %v11)
+  %v13.p = getelementptr i64, ptr %v5, i64 1
+  %v13 = load i64, ptr %v13.p
+  %v14 = add i64 %v12, %v13
+  %v15.c = icmp slt i64 %v10, %v14
+  %v15 = zext i1 %v15.c to i64
+  %v17 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st4 = getelementptr i64, ptr %v17, i64 0
+  store i64 %v6, ptr %st4
+  ret i64 %v15
+}
+
+define internal i64 @"testdata/pkgdemo/geo.Area"(i64 %v0, i64 %v1) #0 {
+b0:
+  %s0 = alloca [2 x i64], align 8
+  %s0.z0 = getelementptr i64, ptr %s0, i64 0
+  store i64 0, ptr %s0.z0
+  %s0.z1 = getelementptr i64, ptr %s0, i64 1
+  store i64 0, ptr %s0.z1
+  %v2 = getelementptr i64, ptr %s0, i64 0
+  %st0 = getelementptr i64, ptr %v2, i64 0
+  store i64 %v0, ptr %st0
+  %st1 = getelementptr i64, ptr %v2, i64 1
+  store i64 %v1, ptr %st1
+  %v17 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v3.p = getelementptr i64, ptr %v17, i64 0
+  %v3 = load i64, ptr %v3.p
+  call void @"rt.region_enter"()
+  %v4.p = getelementptr i64, ptr %v2, i64 0
+  %v4 = load i64, ptr %v4.p
+  %v5 = add i64 0, 0
+  %v6.c = icmp eq i64 %v4, %v5
+  %v6 = zext i1 %v6.c to i64
+  %c.b0 = icmp ne i64 %v6, 0
+  br i1 %c.b0, label %b0.t3, label %b0.e4
+b0.t3:
+  br label %b2
+b0.e4:
+  br label %b1
+b1:
+  %v11.p = getelementptr i64, ptr %v2, i64 0
+  %v11 = load i64, ptr %v11.p
+  %v12 = add i64 0, 1
+  %v13.c = icmp eq i64 %v11, %v12
+  %v13 = zext i1 %v13.c to i64
+  %c.b1 = icmp ne i64 %v13, 0
+  br i1 %c.b1, label %b1.t5, label %b1.e6
+b1.t5:
+  br label %b4
+b1.e6:
+  br label %b3
+b2:
+  %v7.p = getelementptr i64, ptr %v2, i64 1
+  %v7 = load i64, ptr %v7.p
+  %v8 = mul i64 %v7, %v7
+  %v9 = add i64 0, 3
+  %v10 = mul i64 %v8, %v9
+  br label %b5
+b3:
+  %v15 = add i64 0, 0
+  br label %b5
+b4:
+  %v14 = add i64 0, 0
+  br label %b5
+b5:
+  %v16 = phi i64 [ %v10, %b2 ], [ %v15, %b3 ], [ %v14, %b4 ]
+  %v18 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st6 = getelementptr i64, ptr %v18, i64 0
+  store i64 %v3, ptr %st6
+  ret i64 %v16
+}
+
+define internal i64 @"testdata/pkgdemo/geo.Sum"(i64 %v0, i64 %v1) #0 {
+b0:
+  %s0 = alloca [2 x i64], align 8
+  %s0.z0 = getelementptr i64, ptr %s0, i64 0
+  store i64 0, ptr %s0.z0
+  %s0.z1 = getelementptr i64, ptr %s0, i64 1
+  store i64 0, ptr %s0.z1
+  %v2 = getelementptr i64, ptr %s0, i64 0
+  %st0 = getelementptr i64, ptr %v2, i64 0
+  store i64 %v0, ptr %st0
+  %st1 = getelementptr i64, ptr %v2, i64 1
+  store i64 %v1, ptr %st1
+  %v7 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v3.p = getelementptr i64, ptr %v7, i64 0
+  %v3 = load i64, ptr %v3.p
+  call void @"rt.region_enter"()
+  %v4.p = getelementptr i64, ptr %v2, i64 0
+  %v4 = load i64, ptr %v4.p
+  %v5.p = getelementptr i64, ptr %v2, i64 1
+  %v5 = load i64, ptr %v5.p
+  %v6 = add i64 %v4, %v5
+  %v8 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st2 = getelementptr i64, ptr %v8, i64 0
+  store i64 %v3, ptr %st2
+  ret i64 %v6
+}
+
+define internal i64 @"testdata/pkgdemo/geo.hidden"(i64 %v0) #0 {
+b0:
+  %v4 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v1.p = getelementptr i64, ptr %v4, i64 0
+  %v1 = load i64, ptr %v1.p
+  call void @"rt.region_enter"()
+  %v2 = add i64 0, 2
+  %v3 = mul i64 %v0, %v2
+  %v5 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st0 = getelementptr i64, ptr %v5, i64 0
+  store i64 %v1, ptr %st0
+  ret i64 %v3
+}
+
+define internal i64 @"testdata/pkgdemo/geo.Double"(i64 %v0) #0 {
+b0:
+  %v3 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v1.p = getelementptr i64, ptr %v3, i64 0
+  %v1 = load i64, ptr %v1.p
+  call void @"rt.region_enter"()
+  %v2 = call i64 @"testdata/pkgdemo/geo.hidden"(i64 %v0)
+  %v4 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st0 = getelementptr i64, ptr %v4, i64 0
+  store i64 %v1, ptr %st0
+  ret i64 %v2
+}
+
+define internal void @"rt.sigint"() #0 {
+b0:
+  %v0 = add i64 0, 231
+  %v1 = add i64 0, 130
+  %v2 = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 %v0, i64 %v1)
+  call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 130)
+  unreachable
+}
+
+define internal void @"rt.sigterm"() #0 {
+b0:
+  %v0 = add i64 0, 231
+  %v1 = add i64 0, 143
+  %v2 = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 %v0, i64 %v1)
+  call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 143)
+  unreachable
+}
+
 define void @"sober_entry"(ptr %v0) #0 {
 b0:
   %v1 = getelementptr i64, ptr @"rt.meta", i64 0
@@ -4190,182 +4368,4 @@ b91:
   %v404 = add i64 0, 1
   %v405 = add i64 %v383, %v404
   br label %b85
-}
-
-define internal void @"rt.sigterm"() #0 {
-b0:
-  %v0 = add i64 0, 231
-  %v1 = add i64 0, 143
-  %v2 = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 %v0, i64 %v1)
-  call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 143)
-  unreachable
-}
-
-define internal void @"rt.sigint"() #0 {
-b0:
-  %v0 = add i64 0, 231
-  %v1 = add i64 0, 130
-  %v2 = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 %v0, i64 %v1)
-  call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 130)
-  unreachable
-}
-
-define internal i64 @"testdata/pkgdemo/geo.Area"(i64 %v0, i64 %v1) #0 {
-b0:
-  %s0 = alloca [2 x i64], align 8
-  %s0.z0 = getelementptr i64, ptr %s0, i64 0
-  store i64 0, ptr %s0.z0
-  %s0.z1 = getelementptr i64, ptr %s0, i64 1
-  store i64 0, ptr %s0.z1
-  %v2 = getelementptr i64, ptr %s0, i64 0
-  %st0 = getelementptr i64, ptr %v2, i64 0
-  store i64 %v0, ptr %st0
-  %st1 = getelementptr i64, ptr %v2, i64 1
-  store i64 %v1, ptr %st1
-  %v17 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v3.p = getelementptr i64, ptr %v17, i64 0
-  %v3 = load i64, ptr %v3.p
-  call void @"rt.region_enter"()
-  %v4.p = getelementptr i64, ptr %v2, i64 0
-  %v4 = load i64, ptr %v4.p
-  %v5 = add i64 0, 0
-  %v6.c = icmp eq i64 %v4, %v5
-  %v6 = zext i1 %v6.c to i64
-  %c.b0 = icmp ne i64 %v6, 0
-  br i1 %c.b0, label %b0.t3, label %b0.e4
-b0.t3:
-  br label %b2
-b0.e4:
-  br label %b1
-b1:
-  %v11.p = getelementptr i64, ptr %v2, i64 0
-  %v11 = load i64, ptr %v11.p
-  %v12 = add i64 0, 1
-  %v13.c = icmp eq i64 %v11, %v12
-  %v13 = zext i1 %v13.c to i64
-  %c.b1 = icmp ne i64 %v13, 0
-  br i1 %c.b1, label %b1.t5, label %b1.e6
-b1.t5:
-  br label %b4
-b1.e6:
-  br label %b3
-b2:
-  %v7.p = getelementptr i64, ptr %v2, i64 1
-  %v7 = load i64, ptr %v7.p
-  %v8 = mul i64 %v7, %v7
-  %v9 = add i64 0, 3
-  %v10 = mul i64 %v8, %v9
-  br label %b5
-b3:
-  %v15 = add i64 0, 0
-  br label %b5
-b4:
-  %v14 = add i64 0, 0
-  br label %b5
-b5:
-  %v16 = phi i64 [ %v10, %b2 ], [ %v15, %b3 ], [ %v14, %b4 ]
-  %v18 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st6 = getelementptr i64, ptr %v18, i64 0
-  store i64 %v3, ptr %st6
-  ret i64 %v16
-}
-
-define internal i64 @"testdata/pkgdemo/geo.Sum"(i64 %v0, i64 %v1) #0 {
-b0:
-  %s0 = alloca [2 x i64], align 8
-  %s0.z0 = getelementptr i64, ptr %s0, i64 0
-  store i64 0, ptr %s0.z0
-  %s0.z1 = getelementptr i64, ptr %s0, i64 1
-  store i64 0, ptr %s0.z1
-  %v2 = getelementptr i64, ptr %s0, i64 0
-  %st0 = getelementptr i64, ptr %v2, i64 0
-  store i64 %v0, ptr %st0
-  %st1 = getelementptr i64, ptr %v2, i64 1
-  store i64 %v1, ptr %st1
-  %v7 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v3.p = getelementptr i64, ptr %v7, i64 0
-  %v3 = load i64, ptr %v3.p
-  call void @"rt.region_enter"()
-  %v4.p = getelementptr i64, ptr %v2, i64 0
-  %v4 = load i64, ptr %v4.p
-  %v5.p = getelementptr i64, ptr %v2, i64 1
-  %v5 = load i64, ptr %v5.p
-  %v6 = add i64 %v4, %v5
-  %v8 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st2 = getelementptr i64, ptr %v8, i64 0
-  store i64 %v3, ptr %st2
-  ret i64 %v6
-}
-
-define internal i64 @"testdata/pkgdemo/geo.Double"(i64 %v0) #0 {
-b0:
-  %v3 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v1.p = getelementptr i64, ptr %v3, i64 0
-  %v1 = load i64, ptr %v1.p
-  call void @"rt.region_enter"()
-  %v2 = call i64 @"testdata/pkgdemo/geo.hidden"(i64 %v0)
-  %v4 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st0 = getelementptr i64, ptr %v4, i64 0
-  store i64 %v1, ptr %st0
-  ret i64 %v2
-}
-
-define internal i64 @"lambda#0"(i64 %v0, i64 %v1, i64 %v2, i64 %v3) #0 {
-b0:
-  %s0 = alloca [2 x i64], align 8
-  %s0.z0 = getelementptr i64, ptr %s0, i64 0
-  store i64 0, ptr %s0.z0
-  %s0.z1 = getelementptr i64, ptr %s0, i64 1
-  store i64 0, ptr %s0.z1
-  %s1 = alloca [2 x i64], align 8
-  %s1.z0 = getelementptr i64, ptr %s1, i64 0
-  store i64 0, ptr %s1.z0
-  %s1.z1 = getelementptr i64, ptr %s1, i64 1
-  store i64 0, ptr %s1.z1
-  %v4 = getelementptr i64, ptr %s0, i64 0
-  %st0 = getelementptr i64, ptr %v4, i64 0
-  store i64 %v0, ptr %st0
-  %st1 = getelementptr i64, ptr %v4, i64 1
-  store i64 %v1, ptr %st1
-  %v5 = getelementptr i64, ptr %s1, i64 0
-  %st2 = getelementptr i64, ptr %v5, i64 0
-  store i64 %v2, ptr %st2
-  %st3 = getelementptr i64, ptr %v5, i64 1
-  store i64 %v3, ptr %st3
-  %v16 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v6.p = getelementptr i64, ptr %v16, i64 0
-  %v6 = load i64, ptr %v6.p
-  call void @"rt.region_enter"()
-  %v7.p = getelementptr i64, ptr %v4, i64 0
-  %v7 = load i64, ptr %v7.p
-  %v8 = call i64 @"testdata/pkgdemo/geo.hidden"(i64 %v7)
-  %v9.p = getelementptr i64, ptr %v4, i64 1
-  %v9 = load i64, ptr %v9.p
-  %v10 = add i64 %v8, %v9
-  %v11.p = getelementptr i64, ptr %v5, i64 0
-  %v11 = load i64, ptr %v11.p
-  %v12 = call i64 @"testdata/pkgdemo/geo.hidden"(i64 %v11)
-  %v13.p = getelementptr i64, ptr %v5, i64 1
-  %v13 = load i64, ptr %v13.p
-  %v14 = add i64 %v12, %v13
-  %v15.c = icmp slt i64 %v10, %v14
-  %v15 = zext i1 %v15.c to i64
-  %v17 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st4 = getelementptr i64, ptr %v17, i64 0
-  store i64 %v6, ptr %st4
-  ret i64 %v15
-}
-
-define internal i64 @"testdata/pkgdemo/geo.hidden"(i64 %v0) #0 {
-b0:
-  %v4 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v1.p = getelementptr i64, ptr %v4, i64 0
-  %v1 = load i64, ptr %v1.p
-  call void @"rt.region_enter"()
-  %v2 = add i64 0, 2
-  %v3 = mul i64 %v0, %v2
-  %v5 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st0 = getelementptr i64, ptr %v5, i64 0
-  store i64 %v1, ptr %st0
-  ret i64 %v3
 }

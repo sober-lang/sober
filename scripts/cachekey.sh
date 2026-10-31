@@ -139,7 +139,7 @@ sobicmp() { # $1 = cwd・$2 = entry
 for e in $( (grep -l '^import "[^s]' examples/*.sober; ls -d testdata/*/app) | sort -u ); do sobicmp "$ROOT" "$e"; done
 mkdir -p "$tmp/self"; cp -r src/compiler "$tmp/self/compiler"; cp -r src/std "$tmp/self/compiler/std"
 ulimit -s unlimited
-sobicmp "$tmp/self/compiler" app/main.sober
+sobicmp "$tmp/self/compiler" app
 
 echo "cachekey: $n entries deterministic, $nstd std package keys shared across entries, mutations 6 + hit 1, G-g miss sets 3, G-h $nh .sobi equal to iface, fail=$fail"
 [ "$fail" = 0 ]

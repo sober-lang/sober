@@ -13,14 +13,14 @@ import "loader"
 import "std/iter"
 import "std/table"
 
-// Finding は指摘 1 件: 位置 at と本文 what（fix が差し込む行の提示を含む）
+// 指摘 1 件: 位置 at と本文 what（fix が差し込む行の提示を含む）
 type Finding struct {
     at diag.Pos
     what string
     warn bool  // 警告（性能の lint — 受理は変えない。lease.sober）
 }
 
-// Az は走査の状態（Init 済みの脱糖器の表・今の package・指摘の記録 [種類, 位置の節, 付帯の節]…・規則どおりの位置にある呼び出しの節 — 表（std/table — 成長しても動かない）。数は Acquire / Release の数なので列で足りる）
+// 走査の状態（Init 済みの脱糖器の表・今の package・指摘の記録 [種類, 位置の節, 付帯の節]…・規則どおりの位置にある呼び出しの節 — 表（std/table — 成長しても動かない）。数は Acquire / Release の数なので列で足りる）
 type Az struct {
     d desugar.S
     pk int
@@ -60,18 +60,25 @@ type Az struct {
 }
 
 
-// Run は Program p の全 package の全関数本体と const の式を照合して指摘を返す（空なら受理）
+// Program p の全 package の全関数本体と const の式を照合して指摘を返す（空なら受理）
 func Run(p loader.Program) []Finding {
-    return runAz(p, false)
+    return runAz(p, false, desugar.TyCacheOff())
 }
 
-// runAz は Run の本体（only = freeze の規則〔健全性 — build でも走る〕だけ）。表層型の表（TypeAll）は暗黙の freeze の点を引くのに要る。
-// freeze の規則の作業域（Fz）は Az の外の局所に置き、規則には d を別の引数で通す（build は lower の表の上で FreezeCount — report-489）
-func runAz(p loader.Program, only bool) []Finding {
+// Run に置き場の切り口 γ を掛けた形（check の道）: 全部の型付け（TypeAll）の当たりの package は区画を読み戻す。
+// 当たりの package は freeze の規則も飛ばす（build と同じ — 値は freeze の通った build だけが書く・規則は自分の木と閉包の宣言の相だけを読む。
+// 暗黙の freeze の点の列は区画に入らない）
+func RunC(p loader.Program, c desugar.TyCache) []Finding {
+    return runAz(p, false, c)
+}
+
+// Run の本体（only = freeze の規則〔健全性 — build でも走る〕だけ）。表層型の表（TypeAll）は暗黙の freeze の点を引くのに要る。
+// freeze の規則の作業域（Fz）は Az の外の局所に置き、規則には d を別の引数で通す（build は lower の表の上で FreezeCount する）
+func runAz(p loader.Program, only bool, c desugar.TyCache) []Finding {
     mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, er: Eng{sets: table.Table[int]{}, rhead: table.Table[int]{}, rnode: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0, envChanged: false},
         pbase: table.Table[int]{}, errfn: table.Table[int]{},
         ffield: table.Table[int]{}, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, wins: table.Table[int]{}, winN: 0, winBase: 0, flowBase: 0, cand: table.Table[int]{}, dflow: table.Table[int]{}, exsw: table.Table[int]{}, trySink: 0, lamf: table.Table[int]{}, lamFN: 0, lamBase: 0, lamCand: 0, lamck: table.Table[int]{}, sv: Sv{on: false, rec: false, natom: 0, atoms: table.Table[int]{}, resBase: 0, sinkBase: 0, pbase: table.Table[int]{}, npar: 0, pinBase: 0, secp: table.Table[int]{}, rpos: table.Table[int]{}, nres: 0, mres: table.Table[int]{}, mresN: 0, sinkAt: table.Table[int]{}, sinkK: table.Table[int]{}, fl: table.Table[int]{}, flBase: 0, hk: table.Table[int]{}, cons: table.Table[int]{}, lamIn: LSet{lo: 0, hi: 0}, viol: table.Table[int]{}, walks: 0, touch: table.Table[int]{}, pe: table.Table[int]{}, peN: 0, al: table.Table[int]{}, alN: 0, fmh: table.Table[int]{}, fm: table.Table[int]{}, fbn: table.Table[int]{}, mal: table.Table[int]{}, malN: 0, nodump: false, bind: false, og: false, effBase: 0, effHit: false, catom: -1, shMask: 0, oMask: 0, mountFn: -1, shv: table.Table[int]{}, shf: table.Table[int]{}, ftn: table.Table[int]{}, ov: table.Table[int]{}, credf: table.Table[int]{}}, ef: Ef{n: 0, nk: table.Table[int]{}, nref: table.Table[int]{}, bits: table.Table[int]{}, e: table.Table[int]{}, fnodes: table.Table[int]{}, fn: 0, cur: 0, lp: table.Table[int]{}, lpN: 0, lb: table.Table[int]{}, lbN: 0, addr: table.Table[int]{}, flam: table.Table[int]{}, viol: table.Table[int]{}, anyCalls: 0, ek: table.Table[int]{}, own: table.Table[int]{}, tm: table.Table[int]{}, tdecl: table.Table[int]{}, te: table.Table[int]{}, ekind: 0, tst: table.Table[int]{}}}
-    desugar.Typed(mut az.d, p)
+    desugar.TypedC(mut az.d, p, c)
     if !only {
         efRun(mut az, p)
     }
@@ -183,7 +190,7 @@ func runAz(p loader.Program, only bool) []Finding {
     return zPlain(freeze(fs))
 }
 
-// zPlain は指摘の本文から省略可の関数型の写しの名前の印（`F$z<有無>` の `$z<有無>` — loader/optfn.sober。利用者は `$` を綴れない）を外し、
+// 指摘の本文から省略可の関数型の写しの名前の印（`F$z<有無>` の `$z<有無>` — loader/optfn.sober。利用者は `$` を綴れない）を外し、
 // 外した後で同じになった指摘（同じ本体の写しの組ごとの同じ違反）を 1 つにまとめる
 func zPlain(fs []Finding) []Finding {
     mut out := mut []Finding{}
@@ -217,7 +224,7 @@ func zPlain(fs []Finding) []Finding {
     return freeze(out)
 }
 
-// fieldMessage は欄の書き / 読みの指摘の文面（k = 0 書き・1 mut の中身を持つ欄の読み）
+// 欄の書き / 読みの指摘の文面（k = 0 書き・1 mut の中身を持つ欄の読み）
 func fieldMessage(az mut Az, k int, f desugar.StrRef, decl desugar.NodeRef, pk int) string {
     if k == 2 {
         return "a function without mut parameters cannot return a value with mutable contents (a mut slice / map, or a struct or option holding one — language.md 26 節): build it in the caller with a zero-value literal (`mut t := table.Table[int]{}`) and pass it as a mut argument"
@@ -246,7 +253,7 @@ func kind(az mut Az, n desugar.NodeRef) int {
     return desugar.KindN(mut az.d, n)
 }
 
-// report は指摘を記録する（種類 k・位置の節 at・付帯の節 x — 本文は Run が組む）
+// 指摘を記録する（種類 k・位置の節 at・付帯の節 x — 本文は Run が組む）
 func report(az mut Az, k int, at desugar.NodeRef, x desugar.NodeRef) {
     table.Push(mut az.out, k)
     table.Push(mut az.out, int(at))
@@ -266,7 +273,7 @@ func isOk(az mut Az, n desugar.NodeRef) bool {
     return false
 }
 
-// str は文字列の参照の綴り（名前は ASCII — 不正なら "?"）
+// 文字列の参照の綴り（名前は ASCII — 不正なら "?"）
 func str(az mut Az, s desugar.StrRef) string {
     n := desugar.Dat(mut az.d, int(s))
     mut b := mut []byte{}
@@ -279,7 +286,7 @@ func str(az mut Az, s desugar.StrRef) string {
 
 // ── 走査（Zig 版 Analyzer.stmtList / stmt / expr と同じ順）──
 
-// stmtList は文の列: 先に束縛の Acquire を直後の文と照合し（pool.sober）、それから各文を歩く
+// 文の列: 先に束縛の Acquire を直後の文と照合し（pool.sober）、それから各文を歩く
 func stmtList(az mut Az, l desugar.ListRef) {
     n := desugar.LenL(mut az.d, l)
     for i <- iter.Range(0, n) {
@@ -303,7 +310,7 @@ func exprs(az mut Az, l desugar.ListRef) {
     }
 }
 
-// block はブロックの節（ast.KBlock / ast.EBlock）の文の列を歩く
+// ブロックの節（ast.KBlock / ast.EBlock）の文の列を歩く
 func block(az mut Az, b desugar.NodeRef) {
     if b != -1 {
         if kind(mut az, b) == ast.EBlock {
@@ -449,7 +456,7 @@ func entries(az mut Az, l desugar.ListRef) {
     }
 }
 
-// ErrorsDump は error のラベル集合の導出の結果（開発用 `check --errors-dump` — A2 の影）: error を返す関数ごとの集合・
+// error のラベル集合の導出の結果（開発用 `check --errors-dump`）: error を返す関数ごとの集合・
 // error の switch ごとの S / 覆ったラベル / default の有無、最後に要約（位置の無い 1 行）
 func ErrorsDump(p loader.Program) []Finding {
     mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, er: Eng{sets: table.Table[int]{}, rhead: table.Table[int]{}, rnode: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0, envChanged: false},
@@ -506,7 +513,7 @@ func ErrorsDump(p loader.Program) []Finding {
     return freeze(fs)
 }
 
-// seenBefore は switch の記録 i が前の記録と同じ節か（最後の 1 周でも局所の不動点のために本体を 2 度以上歩く）
+// switch の記録 i が前の記録と同じ節か（最後の 1 周でも局所の不動点のために本体を 2 度以上歩く）
 func seenBefore(az mut Az, i int) bool {
     at := table.Get(mut az.sw, i * SW_W)
     for j <- iter.Range(0, i) {
@@ -517,12 +524,12 @@ func seenBefore(az mut Az, i int) bool {
     return false
 }
 
-// fnName は関数 fi の `<package のパス>.<名前>`
+// 関数 fi の `<package のパス>.<名前>`
 func fnName(az mut Az, fi int) string {
     return "${str(mut az, desugar.PkgPath(mut az.d, desugar.FnAt(mut az.d, fi).pkg))}.${str(mut az, desugar.StrRef(fnDecl(mut az, fi).a))}"
 }
 
-// tagList は集合のタグの列 `0,3,…`（TOP は `T` — scripts/errtrace.sh が読む）
+// 集合のタグの列 `0,3,…`（TOP は `T` — scripts/errtrace.sh が読む）
 func tagList(az mut Az, m LSet) string {
     mut s := ""
     for L <- iter.Range(0, az.nerr) {
@@ -536,7 +543,7 @@ func tagList(az mut Az, m LSet) string {
     return if s == "" { "-" } else { s }
 }
 
-// setStr は集合の綴り `{pkg.L, …}`（TOP を含めば `{…, TOP}`）
+// 集合の綴り `{pkg.L, …}`（TOP を含めば `{…, TOP}`）
 func setStr(az mut Az, m LSet) string {
     mut s := "{"
     mut first := true

@@ -1,8 +1,8 @@
 package main
 
 // 窓の値が slice の lease（region-domain-pool.md 4d 節）: 窓の本体が mut 実引数の関数の呼び出しで、その結果（窓の region に作られた列）を窓の値として
-// 外へ出す素直な形。check も build も受理し、値は窓の出口で外の region へ写る（F-ay の回帰例 — 展開される関数の結果を署名の座標で読んで写しを付けず、
-// check だけが type error だった・report-721）。束縛してから返す形・ブロックの値の形も同じ
+// 外へ出す素直な形。check も build も受理し、値は窓の出口で外の region へ写る（展開される関数の結果は署名の座標で読む際に写しを付ける必要がある —
+// 付けないと check が受理しない式を build だけが受理してしまう）。束縛してから返す形・ブロックの値の形も同じ
 
 import "std/task"
 import "std/pool"
@@ -11,7 +11,7 @@ type Work struct {
     tab pool.Scratch
 }
 
-// enc は b の各バイトに tab の世代の数え（窓のたびに 0 から）を足した列
+// b の各バイトに tab の世代の数え（窓のたびに 0 から）を足した列
 func enc(w mut Work, b []byte) []byte {
     mut out := mut []byte{}
     mut i := 0

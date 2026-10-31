@@ -1,0 +1,95 @@
+package desugar
+
+// 文脈の束（C10）: 関数・展開・ラムダ・辞書 const・switch の入口で、入れ子に積む状態を丸ごと退避して戻す。欄は S に平らに置いたまま
+// （参照は st.tenv 等のまま）、束の取り出し / 書き戻しをここ 1 か所に定義する — 退避の書き忘れ・戻し忘れの欄が構造的に出ない。
+// 文脈の欄は入れ子の規律（内側で変えたら内側で戻す）なので、ある入口で使わない欄も束ごと戻してよい（内側が釣り合っていれば no-op）
+
+// 関数の本体を脱糖する文脈（package・型環境・結果・return / break の行き先・展開の鎖・持ち上げの外側・辞書 const）
+type FnCtx struct {
+    curPkg int
+    tenv int
+    curTparams int
+    curRes ListRef
+    curResPkg int
+    curRtys ListRef
+    retTarget int
+    loopFloor int
+    inlrec int
+    hasOuter int
+    outerB int
+    outerF int
+    inDict int
+}
+
+func fnCtx(st mut S) FnCtx {
+    return FnCtx{curPkg: st.curPkg, tenv: st.tenv, curTparams: st.curTparams, curRes: st.curRes, curResPkg: st.curResPkg, curRtys: st.curRtys, retTarget: st.retTarget, loopFloor: st.loopFloor, inlrec: st.inlrec, hasOuter: st.hasOuter, outerB: st.outerB, outerF: st.outerF, inDict: st.inDict}
+}
+
+func setFnCtx(st mut S, c FnCtx) {
+    st.curPkg = c.curPkg
+    st.tenv = c.tenv
+    st.curTparams = c.curTparams
+    st.curRes = c.curRes
+    st.curResPkg = c.curResPkg
+    st.curRtys = c.curRtys
+    st.retTarget = c.retTarget
+    st.loopFloor = c.loopFloor
+    st.inlrec = c.inlrec
+    st.hasOuter = c.hasOuter
+    st.outerB = c.outerB
+    st.outerF = c.outerF
+    st.inDict = c.inDict
+}
+
+// 型パターンの switch の文脈（腕の束縛名が指す subject・wild の本体）
+type SwCtx struct {
+    swSubj int
+    swSubjDecl int
+    swSubjTy TyRef
+    swSubjSty int
+}
+
+func swCtx(st mut S) SwCtx {
+    return SwCtx{swSubj: st.swSubj, swSubjDecl: st.swSubjDecl, swSubjTy: st.swSubjTy, swSubjSty: st.swSubjSty}
+}
+
+func setSwCtx(st mut S, c SwCtx) {
+    st.swSubj = c.swSubj
+    st.swSubjDecl = c.swSubjDecl
+    st.swSubjTy = c.swSubjTy
+    st.swSubjSty = c.swSubjSty
+}
+
+// error の switch の文脈（腕の `cause` が読む鎖のレベルと型）
+type ErrCtx struct {
+    hasErrSw int
+    errLevel int
+    errTy TyRef
+}
+
+func errCtx(st mut S) ErrCtx {
+    return ErrCtx{hasErrSw: st.hasErrSw, errLevel: st.errLevel, errTy: st.errTy}
+}
+
+func setErrCtx(st mut S, c ErrCtx) {
+    st.hasErrSw = c.hasErrSw
+    st.errLevel = c.errLevel
+    st.errTy = c.errTy
+}
+
+// 表層型検査器の文脈（package・型パラメータ名の列・局所の束縛の鎖 — typer.sober）
+type YCtx struct {
+    ypk int
+    ytps ListRef
+    yenv int
+}
+
+func yCtx(st mut S) YCtx {
+    return YCtx{ypk: st.ypk, ytps: st.ytps, yenv: st.yenv}
+}
+
+func setYCtx(st mut S, c YCtx) {
+    st.ypk = c.ypk
+    st.ytps = c.ytps
+    st.yenv = c.yenv
+}

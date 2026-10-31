@@ -1,6 +1,6 @@
 package main
 
-// 値位置の if の腕の region の合流（F-g — 2026-10-02 まで check が def error・build は受理）: 仮引数の region（呼び手）の string / struct と、
+// 値位置の if の腕の region の合流の検証例: 仮引数の region（呼び手）の string / struct と、
 // 本体のリテラル・呼び出しの結果を同じ if で合流させる。脱糖器は両腕を最内の region の型へ ann で緩める
 
 type Item struct {

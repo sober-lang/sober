@@ -2,7 +2,7 @@ package lower
 
 import "desugar"
 
-// slice の幾何成長（データ構造便）: append の成長で「先端でない」ときの全コピーを、2 度目から余剰容量つき（2 × (長さ + 1)・
+// slice の幾何成長: append の成長で「先端でない」ときの全コピーを、2 度目から余剰容量つき（2 × (長さ + 1)・
 // 最小 4 要素）にし、割り当てごとの水位を rt の側の表（rt.gcache — 直接写像 GC_N 項 × [番地, 深度, 世代, 水位, 容量の終わり]）に持つ。
 // 次の成長は、表の項の番地・深度・世代が一致し、ヘッダの終わり == 水位で容量に空きがあればその場で水位を進める。
 // 排他は先端の判定と同じ形（同じ割り当てを共有するヘッダのうち終わり == 水位なのは先に伸ばした方だけ）なので値の意味論は不変 —
@@ -12,7 +12,7 @@ import "desugar"
 const GC_N = 64
 const GC_W = 5
 
-// needGrowRt は宣言（installRt から — 本体は program の最後に buildGrowRt）
+// 宣言（installRt から — 本体は program の最後に buildGrowRt）
 func needGrowRt(st mut St) {
     lsNeed(mut st, NEED_GROW, 0)
     st.gcache = addWorkerGlobal(mut st, int(strLit(mut st, "rt.gcache")), GC_N * GC_W)
@@ -23,7 +23,7 @@ func needGrowRt(st mut St) {
     st.rtGrowTry = addFunc(mut st, int(strLit(mut st, "rt.grow_try")), desugar.ListRef(list4(mut st, TyI64, TyI64, TyI64, TyI64)), TyI64)
 }
 
-// genBump は深度 d の世代を 1 進める（region の enter の本体から）
+// 深度 d の世代を 1 進める（region の enter の本体から）
 func genBump(st mut St, d int) {
     gp := gepWord(mut st, globaladdr(mut st, st.rgen), d)
     store(mut st, gp, 0, bin(mut st, BAdd, load(mut st, gp, 0), iconst(mut st, 1)))
@@ -36,7 +36,7 @@ func buildGrowRt(st mut St) {
     buildMapGrow(mut st)
 }
 
-// buildGrowTry は rt.grow_try(bs, ln, cellw, d) i64: 水位でその場で 1 要素伸ばせれば伸ばして bs、でなければ 0（map の成長 — 索引を先に作るかを
+// rt.grow_try(bs, ln, cellw, d) i64: 水位でその場で 1 要素伸ばせれば伸ばして bs、でなければ 0（map の成長 — 索引を先に作るかを
 // その場の伸長を試した後で決める）
 func buildGrowTry(st mut St) {
     begin(mut st, st.rtGrowTry)
@@ -57,7 +57,7 @@ func buildGrowTry(st mut St) {
     ret(mut st, iconst(mut st, 0))
 }
 
-// gcHitCheck は表の項 e がその場の伸長を許すか（番地・深度・世代・水位 == 終わり・空き）で miss / hit へ分ける
+// 表の項 e がその場の伸長を許すか（番地・深度・世代・水位 == 終わり・空き）で miss / hit へ分ける
 func gcHitCheck(st mut St, e int, bs int, d int, gen int, end int, cellb int, miss BlkRef, hit BlkRef) {
     c1 := newBlock(mut st)
     c2 := newBlock(mut st)
@@ -74,13 +74,13 @@ func gcHitCheck(st mut St, e int, bs int, d int, gen int, end int, cellb int, mi
     condbr(mut st, cmp(mut st, CGt, bin(mut st, BAdd, end, cellb), load(mut st, e, 4)), miss, -1, hit, -1)
 }
 
-// gcEntry は番地 p の表の項の番地
+// 番地 p の表の項の番地
 func gcEntry(st mut St, p int) int {
     h := bin(mut st, BAnd, bin(mut st, BXor, bin(mut st, BSar, p, iconst(mut st, 4)), bin(mut st, BSar, p, iconst(mut st, 11))), iconst(mut st, GC_N - 1))
     return gepWord(mut st, globaladdr(mut st, st.gcache), bin(mut st, BMul, h, iconst(mut st, GC_W)))
 }
 
-// buildSliceGrow は rt.slice_grow(bs, ln, cellw, d) ptr（語の列 — 要素は cellw 語）/ rt.slice_grow8(bs, ln, d) ptr（byte の列）:
+// rt.slice_grow(bs, ln, cellw, d) ptr（語の列 — 要素は cellw 語）/ rt.slice_grow8(bs, ln, d) ptr（byte の列）:
 // 長さ ln の列（先頭 bs）を 1 要素伸ばした先の列の先頭を返す（呼び手が終わりに書き、ヘッダを付け替える）
 func buildSliceGrow(st mut St, b8 bool) {
     begin(mut st, if b8 { st.rtGrow8 } else { st.rtGrow })
@@ -157,7 +157,7 @@ func buildSliceGrow(st mut St, b8 bool) {
     ret(mut st, p)
 }
 
-// buildMapGrow は rt.map_grow(h, cellw) ptr: map のヘッダ h（[セル列, 長さ, 深度, 索引]）のセル列が先端でないとき 1 セル伸ばした先のセル列の先頭を返す
+// rt.map_grow(h, cellw) ptr: map のヘッダ h（[セル列, 長さ, 深度, 索引]）のセル列が先端でないとき 1 セル伸ばした先のセル列の先頭を返す
 // （呼び手が終わりに書き、ヘッダを付け替える）。水位でその場を試し、だめなら — 先端に居るのが自分の索引（単独の map の索引の作り直し）なら
 // 旧来の道（長さが MAP_IDX_MIN 以上なら索引を先に作り、セル列を長さちょうどで先端へ）、でなければ幾何成長（索引は map_find が作り直す）
 func buildMapGrow(st mut St) {
@@ -221,13 +221,13 @@ func buildMapGrow(st mut St) {
     br(mut st, cl, list1(mut st, bin(mut st, BMul, cap, iconst(mut st, 2))))
     setCur(mut st, alloc)
     words := bin(mut st, BAdd, cap, iconst(mut st, 3))
-    // 先端の索引の巻き戻し（K1a — report-625 / 630）: ここへは ownTip（古い索引 [ix, ixEnd) が深度 d の region の先端 — bump == ixEnd）でだけ来るので、
+    // 先端の索引の巻き戻し（K1a）: ここへは ownTip（古い索引 [ix, ixEnd) が深度 d の region の先端 — bump == ixEnd）でだけ来るので、
     // bump を古い索引の頭へ戻してそこに新しい索引を取る（古い索引の後ろに積まない）。新しい容量は古い容量以上（容量は長さから決まり、長さは減らない）
     // なので、新しい索引は古い索引の場所を覆い、その外の領域を空けない。古い索引を指す旧ヘッダ（22 節）は、持ち主（0 語目 = 新しいセル列）が違えば作り直し、
     // 同じでも候補の位置 < ヘッダの長さで絞る（map_find）ので、新しい中身を権威として読まない。rt.gcache の項（セル列の番地・水位・容量の終わり）と
     // rt.btip（byte の列の終わり）は古い索引より前に確保した列のもので、索引の範囲を指さない
     store(mut st, gepWord(mut st, globaladdr(mut st, st.meta), d), W_BUMP, ix)
-    // 索引の予約（K1b — report-877）: 容量の MAP_IDX_RES 倍（上限 + MAP_IDX_RESMAX 枠）を索引のためだけに取り、0 で埋めるのは今の容量の分だけ
+    // 索引の予約（K1b）: 容量の MAP_IDX_RES 倍（上限 + MAP_IDX_RESMAX 枠）を索引のためだけに取り、0 で埋めるのは今の容量の分だけ
     // （触らない頁は RSS に乗らない）。セル列はこの直後に写すので、以後の索引の作り直し（rt.map_find — 容量の倍化）は予約の中で済み、
     // 索引が先端に出てセル列を塞ぐ（次の挿入でセル列を写し直す — 古いセル列が残る）ことが無い
     rcap := bin(mut st, BMul, cap, iconst(mut st, MAP_IDX_RES))

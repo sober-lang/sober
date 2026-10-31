@@ -3,7 +3,7 @@ package strings
 // Go の strings パッケージが仕様のオラクル。string は不透明なので、中身はバイト列ビュー
 // （bytes(s)）越しに見る。位置はすべて bytes(s) 上のバイトオフセット（Go と同じ）
 
-// hasPrefixAt は b[at:] が p で始まるか（呼び手が at + len(p) <= len(b) を保証）
+// b[at:] が p で始まるか（呼び手が at + len(p) <= len(b) を保証）
 func hasPrefixAt(b []byte, at int, p []byte) bool {
     mut i := 0
     while i < len(p) {
@@ -15,7 +15,7 @@ func hasPrefixAt(b []byte, at int, p []byte) bool {
     return true
 }
 
-// indexAt は b[from:] で p が最初に現れる位置（b 上のオフセット）、無ければ -1
+// b[from:] で p が最初に現れる位置（b 上のオフセット）、無ければ -1
 func indexAt(b []byte, from int, p []byte) int {
     mut i := from
     mut at := -1
@@ -28,7 +28,7 @@ func indexAt(b []byte, from int, p []byte) int {
     return at
 }
 
-// runeCount は UTF-8 のコードポイント数。先頭バイト（継続バイト 10xxxxxx 以外）を数える。
+// UTF-8 のコードポイント数。先頭バイト（継続バイト 10xxxxxx 以外）を数える。
 // 妥当な UTF-8 では Go の utf8.RuneCount と一致する（不正なバイト列では一致しない —
 // Go は不正バイトを 1 つずつ RuneError として数える）
 func runeCount(b []byte) int {
@@ -81,7 +81,7 @@ func Count(s string, substr string) int {
     return if len(p) == 0 { runeCount(b) + 1 } else { countFrom(b, p) }
 }
 
-// countFrom は b 中の p（非空）の重ならない出現数
+// b 中の p（非空）の重ならない出現数
 func countFrom(b []byte, p []byte) int {
     mut n := 0
     mut i := 0
@@ -96,7 +96,7 @@ func countFrom(b []byte, p []byte) int {
     return n
 }
 
-// lastIndexAt は b で p が最後に現れる位置、無ければ -1（p が空なら len(b) — Go の strings.LastIndex と同じ）
+// b で p が最後に現れる位置、無ければ -1（p が空なら len(b) — Go の strings.LastIndex と同じ）
 func lastIndexAt(b []byte, p []byte) int {
     mut i := len(b) - len(p)
     while i >= 0 && !hasPrefixAt(b, i, p) {
@@ -153,17 +153,17 @@ func LastIndex(s string, substr string) int {
     return lastIndexAt(bytes(s), bytes(substr))
 }
 
-// ── 割る・置き換える・空白と大小（追記 2026-10-22 — 0.7.0 便 2。Go の strings が仕様のオラクル〔scripts/strings_oracle.ts〕）。
+// ── 割る・置き換える・空白と大小（Go の strings が仕様のオラクル〔scripts/strings_oracle.ts〕）。
 // 空白と大文字小文字は ASCII だけを見る: 空白 = ' ' '\t' '\n' '\v' '\f' '\r'（Go の Fields / TrimSpace は加えて U+0085・U+00A0 ほか Unicode の空白も見る）、
 // 大小 = 'A'..'Z' ⇄ 'a'..'z'（Go の ToLower / ToUpper / EqualFold は Unicode の case folding — 'É' ⇄ 'é'・K〔U+212A〕≡ k などは対象外）。
 // 非 ASCII のバイトはそのまま写すので、結果は妥当な UTF-8 のまま ──
 
-// isSpace は c が ASCII の空白か（' ' '\t' '\n' '\v' '\f' '\r' — Go の asciiSpace と同じ 6 つ）
+// c が ASCII の空白か（' ' '\t' '\n' '\v' '\f' '\r' — Go の asciiSpace と同じ 6 つ）
 func isSpace(c byte) bool {
     return c == ' ' || (c >= 9 && c <= 13)
 }
 
-// runeEnd は b[i]（文字の頭）から始まる文字の終わりの位置（次の継続バイトでないバイトの位置 — 妥当な UTF-8 を前提）
+// b[i]（文字の頭）から始まる文字の終わりの位置（次の継続バイトでないバイトの位置 — 妥当な UTF-8 を前提）
 func runeEnd(b []byte, i int) int {
     mut j := i + 1
     while j < len(b) && (int(b[j]) & 192) == 128 {
@@ -292,7 +292,7 @@ func ToUpper(s string) string {
     return mapCase(s, 'a', 'z', -32)
 }
 
-// mapCase は s の lo..hi のバイトに d を足した string（変わる所が無ければ s）
+// s の lo..hi のバイトに d を足した string（変わる所が無ければ s）
 func mapCase(s string, lo byte, hi byte, d int) string {
     b := bytes(s)
     mut i := 0
@@ -328,7 +328,7 @@ func EqualFold(s string, t string) bool {
     return i == len(a)
 }
 
-// foldByte は c の ASCII の大文字を小文字にしたもの（他はそのまま）
+// c の ASCII の大文字を小文字にしたもの（他はそのまま）
 func foldByte(c byte) byte {
     return if c >= 'A' && c <= 'Z' { byte(int(c) + 32) } else { c }
 }
@@ -400,7 +400,7 @@ func Join(ps []string, sep string) string {
     return bytesToString(freeze(out))
 }
 
-// ── UTF-8 の妥当性（「文字列の妥当性」は strings の語彙圏 — 2026-10-20 の API 総再審で std/utf8 から移した）。Go の unicode/utf8.Valid が
+// ── UTF-8 の妥当性（「文字列の妥当性」は strings の語彙圏 — std/utf8 ではなくここに置く）。Go の unicode/utf8.Valid が
 // 仕様のオラクル（scripts/utf8_oracle.ts）。`string(b)` の裏方（std/internal/utf8.Parse）と検査済みのビュー（std/utf8.Check）もこの IndexInvalid を使う ──
 
 // 不正な UTF-8（pos = 最初の不正なシーケンスの先頭バイトのオフセット）
@@ -408,12 +408,12 @@ type InvalidUtf8 error {
     pos int
 }
 
-// cont は b[i] が継続バイト lo..hi（範囲は先頭バイトで狭まる — 過長符号化・サロゲート・U+10FFFF 超を弾く）か
+// b[i] が継続バイト lo..hi（範囲は先頭バイトで狭まる — 過長符号化・サロゲート・U+10FFFF 超を弾く）か
 func cont(b []byte, i int, lo int, hi int) bool {
     return i < len(b) && int(b[i]) >= lo && int(b[i]) <= hi
 }
 
-// seqLen は b[i] から始まる妥当なシーケンスの長さ、不正なら 0
+// b[i] から始まる妥当なシーケンスの長さ、不正なら 0
 func seqLen(b []byte, i int) int {
     c := int(b[i])
     if c >= 0 && c < 128 {
@@ -443,7 +443,7 @@ func IndexInvalid(b []byte) int {
     while at < 0 && i < len(b) {
         // 妥当な列の並びを速く読み進める（最適化のバックエンドでは SSE2 の検査器 — 非 ASCII の列もベクトルのまま。他の経路は i のまま）
         i = validPrefix(b, i)
-        // ASCII の区間を先に読み飛ばす（素直な走査のループ — 第三便のベクトル化の対象の形。短い区間でも 1 バイトごとの seqLen の呼び出しが消える）
+        // ASCII の区間を先に読み飛ばす（素直な走査のループ — ベクトル化の対象の形。短い区間でも 1 バイトごとの seqLen の呼び出しが消える）
         while i < len(b) && b[i] < 128 {
             i += 1
         }
@@ -451,7 +451,7 @@ func IndexInvalid(b []byte) int {
             break
         }
         // 2 バイト列（C2..DF + 継続）と 3 バイト列の普通の形（E1..EC / EE..EF + 継続 2 つ — 範囲が狭まる E0 / ED は seqLen）は
-        // seqLen を呼ばずに読む（第三便 M14 — 非 ASCII が多い入力で 1 文字ごとの呼び出しの固定費が検査の大半だった）
+        // seqLen を呼ばずに読む（非 ASCII が多い入力では 1 文字ごとの呼び出しの固定費が検査の大半を占める）
         c := int(b[i])
         if c >= 194 && c <= 223 && i + 1 < len(b) && int(b[i + 1]) & 192 == 128 {
             i += 2
@@ -471,8 +471,8 @@ func IndexInvalid(b []byte) int {
     return at
 }
 
-// validPrefix は j ≥ i で「b[i:j] は妥当な UTF-8 の列の並び・j は列の頭（か末尾）」となる j を返す — i をそのまま返しても契約どおり
-// （UTF-8 の SIMD 速い道便）。最適化のバックエンドはこの呼び出しを SSE2 の検査器に差し替える（compiler/lower/irinl.sober の
+// j ≥ i で「b[i:j] は妥当な UTF-8 の列の並び・j は列の頭（か末尾）」となる j を返す — i をそのまま返しても契約どおり
+// （SIMD の速い道への差し替え口）。最適化のバックエンドはこの呼び出しを SSE2 の検査器に差し替える（compiler/lower/irinl.sober の
 // ilUtf8 — 機構の置き場はコンパイラとランタイムの中）。この本体は他の経路（写しのバックエンド・.ll・照合）の形で、意味は全経路で同じ
 // （IndexInvalid は j から今の走査を続けるので、見つける最初の不正の位置は変わらない）
 func validPrefix(b []byte, i int) int {

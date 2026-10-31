@@ -1,2 +1,3 @@
+sober: type error at examples/mut_init_composite_mutfield.sober:25:13
 {"errors":[{"msg":"type error"}],"ok":false}
 exit=1

@@ -6,7 +6,7 @@ package lower
 import "desugar"
 import "std/iter"
 
-// bcT は仮引数 (y, y2, z) の関数に `uge c2, y`（偽の辺が続き）→ `uge c1, y'` の 2 本の検査を組んで bceFunc を掛け、残った condbr の数を返す。
+// 仮引数 (y, y2, z) の関数に `uge c2, y`（偽の辺が続き）→ `uge c1, y'` の 2 本の検査を組んで bceFunc を掛け、残った condbr の数を返す。
 // kind: 0 = 直列（y' = y）・1 = c2 の検査が c1 の検査を支配しない（z の菱形の片側だけで c2 を検査）・2 = y' = y2（長さが違う）・
 // 3 = c1 の検査を c2 の検査の真の辺（範囲外 — panic の側）に置く・4 = 直列で c1 を定数の式 `(c1 × 1) + 0` に（全展開の写しの添字の形）
 func bcT(kind int, c1 int, c2 int) int {
@@ -77,7 +77,7 @@ func TestBceConst() {
     assert(bcT(4, 6, 5) == 2)
 }
 
-// bvT は仮引数 (y) の関数に定数添字 1..n の検査 `uge k, y'` を直列に組んで bceFunc（⑤ の後に版分け）を掛け、残った condbr の数と、
+// 仮引数 (y) の関数に定数添字 1..n の検査 `uge k, y'` を直列に組んで bceFunc（⑤ の後に版分け）を掛け、残った condbr の数と、
 // 入口のブロックの判定 `ult c, y` の定数 c（判定が無ければ -1）を返す。kind: 0 = y' = y（入口で定まる）・1 = y' は入口の後ろのブロックの仮引数
 func bvT(kind int, n int) (int, int) {
     mut st := St{}

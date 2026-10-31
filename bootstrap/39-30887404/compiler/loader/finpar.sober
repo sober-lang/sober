@@ -1,0 +1,194 @@
+package loader
+
+// finish の検査だけの段の並列: 木を返さない検査（多値の型の置き場・ファイルごとの import・名前・式文・節の規則の束）を
+// ファイルごとの子 task（task.Map）で回し、最初の拒否は親が「段の順 → ファイルの順」で選ぶ（逐次の early return と同じ選び方）。
+// - 子は (cx, 表, f) を imm で受ける関数 — par の捕捉の規則（imm だけ）が「子は同じ段の他のファイルの結果を読まない」を言語で強制する。
+//   どの段も入力は同じ cx（前の段の写しの後の木）なので、段を 1 つの子に束ねても逐次と同じ木を読む（束ねは木を写さない段だけ）
+// - 子が返すのは当たりの字句だけ（無ければ -1）。拒否の値は親が組む — 名前の検査（拒否の種類が多い）は当たりのファイルを親が逐次に検査し直す
+// - 逐次は早い段で拒否すると後の段を走らせないが、子は全段を走らせる — 検査は純なので答えは同じ。子の死（task.Map の err）は直の道で検査し直す
+// - ワーカー 1・ファイル 1 つは直の道（前読みと同じ — task.Map の費用を W1 の線に乗せない）。証人 = SOBER_PAR_STATS=1 で `#finish checks=N fallback=none|died`
+//   （stderr・出力不変）。SOBER_FINISH_DIE=1 = 子が頭で死ぬ（子の死 → 直の道の網 — selfpar）
+
+import "ast"
+import "diag"
+import "std/io"
+import "std/iter"
+import "std/os"
+import "std/task"
+
+// 検査の束の子の結果（ファイル 1 つ — 当たりの字句・無ければ -1。nm = 名前の検査に当たりがある）
+type FinB struct {
+    tup int
+    ni int
+    nm bool
+    es int
+}
+
+// 節の規則の束の子の結果（lhs = catch の左辺の字句・hit = 規則 0〜4 の最初の位置〔noteHit の 3 語ずつ〕）
+type FinR struct {
+    lhs int
+    hit []int
+}
+
+// 環境変数の数（無ければ -1）
+func finEnv(name string) int {
+    v, err := os.Getenv(name)
+    if err != nil || v == nil {
+        return 0 - 1
+    }
+    b := bytes(v)
+    mut n := 0
+    for i <- iter.Range(0, len(b)) {
+        if int(b[i]) >= 48 && int(b[i]) <= 57 {
+            n = n * 10 + int(b[i]) - 48
+        }
+    }
+    return n
+}
+
+// ファイル n 個の検査を子に配るか（ワーカー 1・ファイル 1 つは直の道）
+func finParOn(n int) bool {
+    return n >= 2 && task.Ledger().workers > 1
+}
+
+// 証人（SOBER_PAR_STATS=1 のときだけ stderr へ 1 行）
+func finStat(what string, n int, why string) {
+    if finEnv("SOBER_PAR_STATS") == 1 {
+        _ = io.WriteStderr(bytes("#finish ${what}=${n} fallback=${why}\n"))
+    }
+}
+
+// ファイルの添字の列 0..n
+func finFiles(n int) []int {
+    mut fs := mut []int{}
+    for f <- iter.Range(0, n) {
+        fs = append(fs, f)
+    }
+    return freeze(fs)
+}
+
+// 検査の束（多値の型の置き場 → ファイルごとの import → 名前 → 式文 — finish の段の順）の最初の違反（無ければ file = -1）
+func checksB(cx Cx, pnames []string) NameHit {
+    if finParOn(len(cx.trees)) {
+        h, ok := checksPar(cx, pnames)
+        if ok {
+            return h
+        }
+    }
+    return checksSeq(cx, pnames)
+}
+
+// 検査の束の直の道（段ごとに全ファイル — 拒否はその場で返す）
+func checksSeq(cx Cx, pnames []string) NameHit {
+    tup := tupleTypeAt(cx)
+    if tup.file >= 0 {
+        return NameHit{tup.file, tup.tok, diag.Par{at: tup, kind: PAR_TUPLE}}
+    }
+    ni := notImportedHit(cx)
+    if ni.file >= 0 {
+        return ni
+    }
+    nh := namesHit(cx)
+    if nh.file >= 0 {
+        return nh
+    }
+    return exprStmtHit(cx, pnames)
+}
+
+// 検査の束の子の道（ok = false は子の死 — 呼び手が直の道で検査し直す）
+func checksPar(cx Cx, pnames []string) (NameHit, bool) {
+    pp := pkgOf(cx, "std/task")
+    mut ixb := mut []NameIx{}
+    for pk <- iter.Range(0, len(cx.pkg_path)) {
+        ixb = append(ixb, pkgNames(cx, pk))
+    }
+    ixs := freeze(ixb)
+    die := finEnv("SOBER_FINISH_DIE") == 1
+    n := len(cx.trees)
+    rs, cerr := task.Map(finFiles(n), (f) => checksOne(cx, pp, ixs, pnames, f, die))
+    if cerr != nil {
+        finStat("checks", n, "died")
+        return noHit(), false
+    }
+    finStat("checks", n, "none")
+    for f <- iter.Range(0, n) {
+        if rs[f].tup >= 0 {
+            at := diag.Pos{file: f, tok: rs[f].tup}
+            return NameHit{f, rs[f].tup, diag.Par{at: at, kind: PAR_TUPLE}}, true
+        }
+    }
+    for f <- iter.Range(0, n) {
+        if rs[f].ni >= 0 {
+            return NameHit{f, rs[f].ni, diag.NotImported{at: diag.Pos{f, rs[f].ni}}}, true
+        }
+    }
+    for f <- iter.Range(0, n) {
+        if rs[f].nm {
+            return namesIn(cx, ixs[cx.file_pkg[f]], f), true
+        }
+    }
+    for f <- iter.Range(0, n) {
+        if rs[f].es >= 0 {
+            return NameHit{f, rs[f].es, diag.PureExprStmt{at: diag.Pos{f, rs[f].es}}}, true
+        }
+    }
+    return noHit(), true
+}
+
+// 検査の束の子の本体（ファイル f の全段）
+func checksOne(cx Cx, pp int, ixs []NameIx, pnames []string, f int, die bool) FinB {
+    if die {
+        panic(InvariantBroken{})
+    }
+    return FinB{tupleTypeIn(cx, pp, f), notImportedIn(cx, f), namesIn(cx, ixs[cx.file_pkg[f]], f).file >= 0, exprStmtIn(cx, pnames, f)}
+}
+
+// 節の規則の束の子の道（ok = false は子の死 — 呼び手が直の道で検査し直す）。hold は不動点の後の表（子は読むだけ — 写しを渡す）
+@errors(diag.CatchLhs, diag.MultiBind, diag.ForFallible, diag.Sealed, diag.Identity, diag.MutAlias)
+func rulesPar(cx Cx, ft FnTab, sl []int, es []int, nm []string, hold []int) (error?, bool) {
+    die := finEnv("SOBER_FINISH_DIE") == 1
+    n := len(cx.trees)
+    rs, err := task.Map(finFiles(n), (f) => rulesOne(cx, ft, sl, es, nm, hold, f, die))
+    if err != nil {
+        finStat("rules", n, "died")
+        return nil, false
+    }
+    finStat("rules", n, "none")
+    for f <- iter.Range(0, n) {
+        if rs[f].lhs >= 0 {
+            return diag.CatchLhs{at: diag.Pos{file: f, tok: rs[f].lhs}}, true
+        }
+    }
+    // 規則ごとに最初のファイルの位置（逐次は hit にまだ無い規則だけ書く — ファイルの順に最初のもの）
+    mut hit := mut []int{}
+    for r <- iter.Range(0, 15) {
+        hit = append(hit, 0)
+    }
+    for f <- iter.Range(0, n) {
+        for r <- iter.Range(0, 5) {
+            if hit[r * 3] == 0 && rs[f].hit[r * 3] > 0 {
+                hit[r * 3] = rs[f].hit[r * 3]
+                hit[r * 3 + 1] = rs[f].hit[r * 3 + 1]
+                hit[r * 3 + 2] = rs[f].hit[r * 3 + 2]
+            }
+        }
+    }
+    return nrPick(freeze(hit)), true
+}
+
+// 節の規則の束の子の本体（ファイル f — 空の hit と hold の写しで逐次と同じ走査）
+func rulesOne(cx Cx, ft FnTab, sl []int, es []int, nm []string, hold []int, f int, die bool) FinR {
+    if die {
+        panic(InvariantBroken{})
+    }
+    mut h := mut []int{}
+    for i <- iter.Range(0, len(hold)) {
+        h = append(h, hold[i])
+    }
+    mut hit := mut []int{}
+    for r <- iter.Range(0, 15) {
+        hit = append(hit, 0)
+    }
+    c := nodeRulesIn(cx, ft, sl, es, nm, mut h, f, mut hit)
+    return FinR{c, freeze(hit)}
+}

@@ -1,0 +1,331 @@
+package main
+
+// `sober build` の handler と build だけが使う道（lower・出力の書き分け・ビルドキャッシュの置き場）
+
+import "std/io"
+import "std/iter"
+import "std/os"
+import "std/cli"
+import "loader"
+import "lower"
+import "desugar"
+
+// IR の検証器を段ごとに掛けるか（環境変数 SOBER_VERIFY=each — gates が立てる。既定は最後に 1 回）
+func verifyEach() bool {
+    v, err := os.Getenv("SOBER_VERIFY")
+    if err != nil {
+        return false
+    }
+    if v != nil {
+        return v == "each"
+    }
+    return false
+}
+
+// build のバックエンドの関数を群の子で吐くか（環境変数 SOBER_BUILD_PAR=0 で 1 本の経路: 照合用 — selfpar）
+func buildPar() bool {
+    v, err := os.Getenv("SOBER_BUILD_PAR")
+    if err != nil || v == nil {
+        return true
+    }
+    return v != "0"
+}
+
+// 束の前に全関数の本体を詰めて積み直すか（移し器の網: SOBER_BUILD_PAR=roundtrip。ELF ≡ 移さない経路 — selfpar）
+func buildRoundtrip() bool {
+    v, err := os.Getenv("SOBER_BUILD_PAR")
+    if err != nil || v == nil {
+        return false
+    }
+    return v == "roundtrip"
+}
+
+// 表層型検査器の突き合わせ（lower.TyperDiff の [一致, 不一致, 表に無い, 比べない, n, (ファイル, 字句, 表層型の種類, lower の型の種類)…]）を印字する
+func typerReport(p loader.Program, std map[string]string, r []int) int {
+    mut msg := "typer match=${r[0]} mismatch=${r[1]} absent=${r[2]} skip=${r[3]}\n"
+    for k <- iter.Range(0, 100) {
+        if r[5 + k] > 0 {
+            msg = msg + "  absent kind=${k} n=${r[5 + k]}\n"
+        }
+    }
+    for i <- iter.Range(0, r[4]) {
+        b := 105 + i * 4
+        msg = msg + "  ${srcPos(p, std, r[b], r[b + 1])} y=${r[b + 2]} t=${r[b + 3]}\n"
+    }
+    return writeStdout(bytes(msg))
+}
+
+// lower の結果を path（"" なら標準出力）へ（拒否なら位置つきの診断 — errDiag）
+func emit(p loader.Program, std map[string]string, path string, out []byte, err error?) int {
+    if err != nil {
+        return lowerFail(p, std, err)
+    }
+    if path == "" {
+        return writeStdout(out)
+    }
+    return writeFile(path, out)
+}
+
+// emit の実行ファイル版: 一時ファイル（<path>.tmp）に書いて実行の bit（0o755）を付け、Rename で path へ公開する（標準出力へは付けない）。
+// 直に開いて書かない理由: カーネル 6.18 では、スレッドを複数の CPU で走らせたプロセスの実行ファイルが回収の後もしばらく（数十 ms）書き込みで開けない
+// （ETXTBSY — 素の C の pthread でも出る・rt では直せない）。rename は常に通る。一時ファイルを書けない置き場（/dev 等）は今までどおり直に書く。
+// 帰結: path の inode は毎回新しくなる（ハードリンクは切れる・既存の所有者とモードは引き継がない — go build -o と同じ）
+func emitExe(p loader.Program, std map[string]string, path string, out []byte, err error?) int {
+    if err != nil || path == "" {
+        return emit(p, std, path, out, err)
+    }
+    return writeExe(path, out)
+}
+
+// 実行ファイルを書く（実行の bit つき・tmp + rename。path が空なら標準出力）
+func writeExe(path string, out []byte) int {
+    if path == "" {
+        return writeStdout(out)
+    }
+    tmp := path + ".tmp"
+    if io.WriteFile(tmp, out) == nil {
+        if os.WriteMode(tmp, 493) != nil || os.Rename(tmp, path) != nil {
+            return fail("cannot write ${path}")
+        }
+        return 0
+    }
+    r := writeFile(path, out)
+    if r != 0 {
+        return r
+    }
+    return if os.WriteMode(path, 493) != nil { fail("cannot set the mode of ${path}") } else { 0 }
+}
+
+// `sober build`（表 = Build）。開発の口（計器・変異・差分オラクル）は --emit の無い形も従来どおり（.ll / 標準出力）—
+// 既定の切り替えは素の build（entry・-o・--no-opt・--passes・--test）だけ
+func cmdBuild(cl cli.Parsed) int {
+    em := cli.ChoiceOpt(cl, Emit)
+    e := if em == nil { "" } else { em }
+    emitSet := e != ""
+    ir := e == "ir"
+    mut elfOut := e == "elf"
+    // プロファイルの口: --emit=elf --passes と同じ形で建てた実行ファイルの関数の先頭番地の表（lower.ElfSyms — scripts/prof.ts が perf のサンプルを振る）
+    syms := e == "syms"
+    // 関数ごとの成果物のハッシュ（lower.ElfFnHash — scripts/rebuildbench.sh の stray の判定）
+    fnhash := e == "fnhash"
+    // 関数ごとの後段のキャッシュの鍵（lower.ElfCacheKeys）
+    ckeys := e == "cachekeys"
+    // package の区画の正準形のハッシュ / 鍵（desugar.TyEmit — scripts/rebuildbench.sh --tyhash）・tykeys0 = 型付けの前の鍵（desugar.TyEmitK0）
+    tyEmit := if e == "tyhash" { 1 } else if e == "tykeys" { 2 } else if e == "tykeys0" { 3 } else { 0 }
+    // 計測の口（scripts/passstats.sh）: --emit=elf --passes の経路を段の後で止める（出力は空）
+    sa := cli.StrOpt(cl, StopAfter)
+    stopAt := if sa == nil { 0 } else { lower.StageCode("--stop-after=" + sa) }
+    if stopAt < 0 {
+        return misuse("build: unknown stage for --stop-after")
+    }
+    // 写しのバックエンド（stage1 とのバイト一致の照合 — elfeq・stages の cross）
+    copyBe := cli.ChoiceOpt(cl, Backend) != nil
+    noVfy := cli.Bool(cl, NoVerify)
+    dumpIr := cli.Bool(cl, DumpIr)
+    noVec := cli.Bool(cl, NoVec)
+    noSpec := cli.Bool(cl, NoSpec)
+    noRflow := cli.Bool(cl, NoRflow)
+    noOpt := cli.Bool(cl, NoOpt)
+    mut passes := cli.Bool(cl, Passes)
+    typer := if cli.Bool(cl, TyperDiff) { 2 } else if cli.Bool(cl, Typer) { 1 } else { 0 }
+    trace := cli.Bool(cl, TraceErrors)
+    traceEff := cli.Bool(cl, TraceEffects)
+    // テストのビルド（`sober test` — entry は package のディレクトリ。loader.LoadTestFs が合成の main を足す）
+    test := cli.Bool(cl, BuildTest)
+    // task の罠の単体の例（lower.TrapProbe。入口が main の代わりに trap.probe を呼ぶ — scripts/trapprobe.sh）
+    probe := cli.Bool(cl, TrapProbe)
+    // M:N の rt の変異（番号の意味は compiler/lower の rt の変異の表 — schedfuzz・parbudget・cutstat・maprepr・jcleancheck・starve・httpprobe・flightcheck の自己検査）。
+    // --map-stat = 13（map の成長の計数 — `mapstat <番号> <バイト>` を stderr へ・SOBER_WORKERS=1 で）・--death-trace = 14（task の死を吸収せず印字して終了）
+    mi := cli.IntOpt(cl, Mutant)
+    mutant := if mi == nil { if cli.Bool(cl, MapStat) { 13 } else if cli.Bool(cl, DeathTrace) { 14 } else { 0 } } else { mi }
+    cutStat := cli.Bool(cl, CutStat)
+    // 関数ごと（`callstat <関数名> <回数>` を stderr へ）/ 呼び出し点ごと（`callsite <呼び手> <番号> <callee> <ループの深さ> <回数>`）
+    cs := cli.ChoiceOpt(cl, CallStat)
+    callStat := cs != nil
+    callSite := (if cs == nil { "" } else { cs }) == "site"
+    // UTF-8 の境界の畳み（`ubf <関数> <数>` — scripts/ubfstat.sh）・関数ごとのフレームの内訳（`frame <関数> …` — scripts/framestat.sh）
+    ubfStat := cli.Bool(cl, UbfStat)
+    frStat := cli.Bool(cl, FrameStat)
+    // 配置の計器: v2 = S（関数の前に 64 B の倍数）・v1 = 1000 + S（関数ごとに先頭の整列の後ろへ 0 / 48 B — 比較の連続性のために残す）・
+    // 線の跨ぎの詰め物の網（x86.sober xFitSplice・scripts/fitcheck.sh — --fit-check = 窓を作って本表へ継ぐが詰めない・--fit-off = 窓を作らない。両者の ELF はバイト一致するはず）
+    l2 := cli.IntOpt(cl, Layout)
+    l1 := cli.IntOpt(cl, LayoutV1)
+    lay := if l2 != nil { l2 } else if l1 != nil { 1000 + l1 } else if cli.Bool(cl, FitCheck) { -1 } else if cli.Bool(cl, FitOff) { -2 } else { 0 }
+    o := cli.StrOpt(cl, Out)
+    mut op := if o == nil { "" } else { o }
+    devFlag := typer > 0 || trace || traceEff || probe || cutStat || callStat || ubfStat || frStat || mutant > 0 || lay != 0 || stopAt > 0 || dumpIr || copyBe || noVec || noSpec || noRflow || noVfy
+    if !emitSet && !devFlag {
+        // 既定 = bin/sober の既定と同じ形（--emit=elf + --no-opt でなければ --passes）。-o が無ければ a.out へ（ELF を標準出力へ流さない）
+        if op == "" {
+            op = "a.out"
+        }
+        elfOut = true
+        passes = passes || !noOpt
+    }
+    // 焼き込んだ表は参照点で展開される辞書 const なので、一度束縛して渡す（参照ごとに組み直さない）
+    std := Std
+    loader.Stage("start")
+    // 後段の関数キャッシュ（既定 on・切る口 = SOBER_BUILD_CACHE=0）の置き場は parse の前に 1 回読む: parse のキャッシュと
+    // lower（ElfPassesCache）が同じ表を使う。下の分岐が置き場の道へ行かなければ表は使われないだけ（parse の当たりの木は parse と同じ）
+    bd := if elfOut && passes && !copyBe && !noOpt { buildCacheDir() } else { "" }
+    bv := lower.BcOpen(bd)
+    // 答えの再生（既定の build の ELF を丸ごと覚える — 照合は check の再生と同じ）。検証モードと開発の道は通さない
+    entry := cli.Pos(cl, Entry)
+    rk := if bd != "" && elfOut && passes && !devFlag && !buildRoundtrip() && buildPar() && !verifyEach() && !envIs("SOBER_CHECK_REPLAY", "0") && !envIs("SOBER_CACHE_VERIFY", "1") && !envIs("SOBER_CACHE_VERIFY", "2") {
+        replayKeyOf("build-replay 1", entry, test)
+    } else {
+        ""
+    }
+    if rk != "" {
+        hit := replayGet(bd, rk)
+        replayStatOf("build", if hit.ok { "1/1" } else { "0/1" })
+        if hit.ok {
+            return writeExe(op, hit.res.out)
+        }
+    }
+    p, pcs, lerr := loadNamed(entry, test, std, if bv.on { lower.BcParseView(bv) } else { loader.PcOff() })
+    loader.Stage("nva")
+    if lerr != nil {
+        return fail(loadDiag(p, std, lerr))
+    }
+    if cutStat {
+        // 開発用: 検査点の間引きの表（scripts/cutstat.sh — 変異と組める）
+        out, berr := lower.CutStat(p, mutant, if verifyEach() { lower.VfyEach } else { lower.VfyLast })
+        return emit(p, std, op, out, berr)
+    }
+    if ubfStat {
+        out, berr := lower.UbfStat(p)
+        return emitExe(p, std, op, out, berr)
+    }
+    if frStat {
+        out, berr := lower.FrameStat(p)
+        return emitExe(p, std, op, out, berr)
+    }
+    if callStat {
+        out, berr := lower.CallStat(p, callSite, if verifyEach() { lower.VfyEach } else { lower.VfyLast })
+        return emitExe(p, std, op, out, berr)
+    }
+    if mutant > 0 || lay != 0 {
+        // --emit=syms と組めば、変異 / 配置つきの関数の先頭番地の表（配置ごとのプロファイルの口）
+        out, berr := lower.RtMutantLay(p, mutant, lay, syms, if verifyEach() { lower.VfyEach } else { lower.VfyLast })
+        return if syms { emit(p, std, op, out, berr) } else { emitExe(p, std, op, out, berr) }
+    }
+    if probe {
+        out, berr := lower.TrapProbe(p, passes && !noOpt, ir && !elfOut, if verifyEach() { lower.VfyEach } else { lower.VfyLast })
+        return if elfOut { emitExe(p, std, op, out, berr) } else { emit(p, std, op, out, berr) }
+    }
+    if typer == 2 {
+        out, err := lower.TyperDiff(p)
+        if err != nil {
+            return lowerFail(p, std, err)
+        }
+        return typerReport(p, std, out)
+    }
+    if typer == 1 {
+        out, berr := lower.LlTyper(p)
+        return emit(p, std, op, out, berr)
+    }
+    if traceEff && elfOut {
+        // 開発用: 関数の効果の動的オラクルの計装つき実行ファイル（lower.ElfTraceEffects — scripts/efftrace.sh・W1 で走らせる）
+        out, berr := lower.ElfTraceEffects(p, passes)
+        return emitExe(p, std, op, out, berr)
+    }
+    if trace && elfOut {
+        // 計装つきの実行ファイル（compiler/ 自身の IR が stage1 の語彙を越えたので、errtrace の自己適用は stage1 を通さずここで建てる）
+        out, berr := lower.ElfTraceErrors(p, passes)
+        return emitExe(p, std, op, out, berr)
+    }
+    if trace {
+        // 開発用: error を返す出口の計装つき IR（lower.IrTraceErrors — error 網羅 analyzer の動的オラクル scripts/errtrace.sh）
+        out, berr := lower.IrTraceErrors(p, passes)
+        return emit(p, std, op, out, berr)
+    }
+    if syms {
+        out, berr := lower.ElfSyms(p)
+        return emit(p, std, op, out, berr)
+    }
+    if tyEmit > 0 {
+        return emit(p, std, op, if tyEmit == 3 { desugar.TyEmitK0(p, lower.BcExeKey()) } else { desugar.TyEmit(p, tyEmit == 2, lower.BcExeKey()) }, nil)
+    }
+    if fnhash {
+        out, berr := lower.ElfFnHash(p)
+        return emit(p, std, op, out, berr)
+    }
+    if ckeys {
+        out, berr := lower.ElfCacheKeys(p)
+        return emit(p, std, op, out, berr)
+    }
+    vEach := verifyEach()
+    vm := if noVfy { lower.VfyNone } else if vEach { lower.VfyEach } else { lower.VfyLast }
+    // 照合の経路（roundtrip・1 本の経路）は検証の掛け方を受け取る — gates は SOBER_VERIFY=each を立てるので、下の ElfStats へ先に分岐すると
+    // 照合の経路が黙って既定の経路になっていた
+    if elfOut && passes && !copyBe && !noOpt && stopAt == 0 && !dumpIr && !noVec && !noSpec && !noRflow && buildRoundtrip() {
+        out, berr := lower.ElfPassesRoundtrip(p, vm)
+        return emitExe(p, std, op, out, berr)
+    }
+    if elfOut && passes && !copyBe && !noOpt && stopAt == 0 && !dumpIr && !noVec && !noSpec && !noRflow && !buildPar() {
+        out, berr := lower.ElfPassesSeq(p, vm)
+        return emitExe(p, std, op, out, berr)
+    }
+    if elfOut && passes && !copyBe && !noOpt && (stopAt > 0 || noVfy || vEach) {
+        if dumpIr {
+            out, berr := lower.ElfStatsIr(p, stopAt, vm, noSpec, noRflow)
+            return emit(p, std, op, out, berr)
+        }
+        out, berr := lower.ElfStats(p, stopAt, vm, noSpec, noRflow)
+        return emitExe(p, std, op, out, berr)
+    }
+    if elfOut && copyBe {
+        out, berr := lower.ElfCopy(p, passes && !noOpt, !noOpt)
+        return emitExe(p, std, op, out, berr)
+    }
+    if elfOut && noOpt {
+        out, berr := lower.ElfRaw(p)
+        return emitExe(p, std, op, out, berr)
+    }
+    if elfOut && passes && noRflow {
+        out, berr := lower.ElfPassesNoRflow(p)
+        return emitExe(p, std, op, out, berr)
+    }
+    if elfOut && passes && noSpec {
+        out, berr := lower.ElfPassesNoSpec(p)
+        return emitExe(p, std, op, out, berr)
+    }
+    if elfOut && passes && noVec {
+        out, berr := lower.ElfPassesNoVec(p)
+        return emitExe(p, std, op, out, berr)
+    }
+    if elfOut && passes {
+        // 後段の関数キャッシュ（既定 on・切る口 = SOBER_BUILD_CACHE=0。置き場 = cacheDir()/sober-build-1/<コンパイラの鍵の先頭 16 桁>）
+        if bd != "" {
+            out, berr := lower.ElfPassesCache(p, bd, bv, pcs)
+            loader.Stage("lowered")
+            if rk != "" && berr == nil {
+                replayPut(bd, rk, CheckRes{0, out, []string{}, userFiles(p)})
+            }
+            return emitExe(p, std, op, out, berr)
+        }
+        out, berr := lower.ElfPasses(p)
+        loader.Stage("lowered")
+        return emitExe(p, std, op, out, berr)
+    }
+    if elfOut {
+        out, berr := lower.Elf(p)
+        return emitExe(p, std, op, out, berr)
+    }
+    if ir && passes {
+        out, berr := lower.IrPasses(p)
+        return emit(p, std, op, out, berr)
+    }
+    if ir {
+        out, berr := lower.Ir(p)
+        return emit(p, std, op, out, berr)
+    }
+    if passes {
+        out, berr := lower.LlPasses(p)
+        return emit(p, std, op, out, berr)
+    }
+    out, berr := lower.Ll(p)
+    return emit(p, std, op, out, berr)
+}
+

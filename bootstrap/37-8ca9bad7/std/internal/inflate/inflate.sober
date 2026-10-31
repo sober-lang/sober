@@ -1,0 +1,412 @@
+package inflate
+
+// DEFLATE（RFC 1951）の復号の核（std/compress/flate の Decode と std/compress/gzip の Decode が共有する — 公開の口は flate.Decode / gzip.Decode）
+
+import "std/iter"
+
+// At の結果の印（flate.Bad / flate.TooLarge への振り分けは呼び手）
+const Ok = 0
+const Bad = 1
+const Large = 2
+
+// At は data[at:] から始まる DEFLATE の列を最後のブロックまで復号する: (出力, 列の後の最初のバイトの位置, 印)。lim < 0 = 上限なし。
+// gzip の中身の読み（列の後に CRC-32 と長さの 8 バイトが続く）と flate.Decode の共通の核
+func At(data []byte, at int, lim int) ([]byte, int, int) {
+    mut d := dec{}
+    d.in = data
+    d.pos = at
+    d.lim = lim
+    tables(mut d)
+    mut last := false
+    while !last && d.st == Ok {
+        last = bits(mut d, 1) == 1
+        t := bits(mut d, 2)
+        if d.st != Ok {
+            break
+        }
+        if t == 0 {
+            storedBlock(mut d)
+        } else if t == 1 {
+            fixedBlock(mut d)
+        } else if t == 2 {
+            dynamicBlock(mut d)
+        } else {
+            d.st = Bad
+        }
+    }
+    // 溜めに残った丸ごとのバイトは読み過ぎ（列の外）— 位置を戻す（端数のビットは最後のバイトの使わないビット）
+    used := d.pos - (d.bn >> 3)
+    return freeze(d.out), used, d.st
+}
+
+// dec は復号の状態（mut の欄を持つ struct — 関数から返さず、ゼロ値から inflateAt が整える。flate の符号器の enc と同じ形）
+type dec struct {
+    in []byte
+    // 次に溜めへ入れる in のバイトの位置・溜め bb の下位 bn ビットが未読（LSB から — RFC 1951 3.1.1）
+    pos int
+    bb int
+    bn int
+    out mut []byte
+    lim int
+    st int
+    lbase []int
+    lext []int
+    dbase []int
+    dext []int
+    // 固定 Huffman の符号（RFC 1951 3.2.6 — 最初の固定のブロックで作る）
+    fixed bool
+    flit huff
+    fdist huff
+}
+
+// huff は正準 Huffman の符号の読みの表: count[l] = 長さ l の符号の数・symbol = 長さ順・同じ長さは記号の順（puff の形）・
+// fast[ビット反転した先頭 fastBits ビット] = (記号 << 4) | 長さ（長さ ≤ fastBits の符号だけ — 0 は表の外 = 1 ビットずつの読みへ）
+type huff struct {
+    count []int
+    symbol []int
+    fast []int
+}
+
+const fastBits = 9
+const maxBits = 15
+
+// tables は長さと距離の基数と拡張ビットの表を整える（RFC 1951 3.2.5 — flate の符号器の setup と同じ表）
+func tables(d mut dec) {
+    d.lbase = []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258}
+    d.lext = []int{0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0}
+    d.dbase = []int{1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577}
+    d.dext = []int{0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13}
+}
+
+// refill は溜めを 56 ビット以上まで（入力が尽きるまで）バイトで満たす
+func refill(d mut dec) {
+    while d.bn <= 48 && d.pos < len(d.in) {
+        d.bb = d.bb | (int(d.in[d.pos]) << d.bn)
+        d.pos += 1
+        d.bn += 8
+    }
+}
+
+// bits は次の n ビット（n ≤ 16 — LSB から）。入力が尽きたら d.st = Bad で 0
+func bits(d mut dec, n int) int {
+    if d.bn < n {
+        refill(mut d)
+        if d.bn < n {
+            d.st = Bad
+            return 0
+        }
+    }
+    v := d.bb & ((1 << n) - 1)
+    d.bb = d.bb >> n
+    d.bn -= n
+    return v
+}
+
+// build は記号ごとの符号の長さ lens（0 = 使わない）の正準 Huffman の表と、残り（0 = 完全・> 0 = 不完全・< 0 = 過剰 — puff の construct の戻り）
+func build(lens []int) (huff, int) {
+    mut count := mut []int{}
+    fill(mut count, maxBits + 1, 0)
+    for s <- iter.Range(0, len(lens)) {
+        count[lens[s]] = count[lens[s]] + 1
+    }
+    mut left := 1
+    mut l := 1
+    while l <= maxBits {
+        left = (left << 1) - count[l]
+        if left < 0 {
+            return huff{count: freeze(count), symbol: []int{}, fast: []int{}}, left
+        }
+        l += 1
+    }
+    // 長さごとの symbol の始まり
+    mut offs := mut []int{}
+    fill(mut offs, maxBits + 1, 0)
+    l = 1
+    while l < maxBits {
+        offs[l + 1] = offs[l] + count[l]
+        l += 1
+    }
+    mut symbol := mut []int{}
+    fill(mut symbol, len(lens), 0)
+    for s <- iter.Range(0, len(lens)) {
+        if lens[s] != 0 {
+            symbol[offs[lens[s]]] = s
+            offs[lens[s]] = offs[lens[s]] + 1
+        }
+    }
+    // 速い表: 長さ ≤ fastBits の符号の、ビット反転した符号の上を全部埋める
+    mut fast := mut []int{}
+    fill(mut fast, 1 << fastBits, 0)
+    mut code := 0
+    mut idx := 0
+    l = 1
+    while l <= fastBits {
+        for k <- iter.Range(0, count[l]) {
+            r := rev(code, l)
+            e := (symbol[idx] << 4) | l
+            mut j := r
+            while j < (1 << fastBits) {
+                fast[j] = e
+                j += 1 << l
+            }
+            code += 1
+            idx += 1
+        }
+        code = code << 1
+        l += 1
+    }
+    return huff{count: freeze(count), symbol: freeze(symbol), fast: freeze(fast)}, left
+}
+
+// sym は h の符号 1 つを読んだ記号（読めなければ d.st = Bad で −1）
+func sym(d mut dec, h huff) int {
+    if d.bn < maxBits {
+        refill(mut d)
+    }
+    e := h.fast[d.bb & ((1 << fastBits) - 1)]
+    if e != 0 && (e & 15) <= d.bn {
+        d.bb = d.bb >> (e & 15)
+        d.bn -= e & 15
+        return e >> 4
+    }
+    // 長い符号（> fastBits）か表の外: 1 ビットずつ（puff の decode — 長さ l の符号は first〜first + count[l] − 1）
+    mut code := 0
+    mut first := 0
+    mut index := 0
+    mut l := 1
+    while l <= maxBits {
+        if d.bn == 0 {
+            d.st = Bad
+            return 0 - 1
+        }
+        code = code | (d.bb & 1)
+        d.bb = d.bb >> 1
+        d.bn -= 1
+        cnt := h.count[l]
+        if code - cnt < first {
+            return h.symbol[index + (code - first)]
+        }
+        index += cnt
+        first = (first + cnt) << 1
+        code = code << 1
+        l += 1
+    }
+    d.st = Bad
+    return 0 - 1
+}
+
+// room は出力にあと n バイト書けるか（越えるなら d.st = Large）
+func room(d mut dec, n int) bool {
+    if d.lim >= 0 && len(d.out) + n > d.lim {
+        d.st = Large
+        return false
+    }
+    return true
+}
+
+// storedBlock は stored のブロック（RFC 1951 3.2.4 — バイト境界へ揃え、LEN・NLEN〔LEN の 1 の補数〕の後に LEN バイト）
+func storedBlock(d mut dec) {
+    // 端数のビットを捨ててバイト境界へ
+    _ = bits(mut d, d.bn & 7)
+    n := bits(mut d, 16)
+    nn := bits(mut d, 16)
+    if d.st != Ok {
+        return
+    }
+    if n != (nn ^ 0xffff) {
+        d.st = Bad
+        return
+    }
+    if !room(mut d, n) {
+        return
+    }
+    // 溜めに残った丸ごとのバイトから先に
+    mut k := 0
+    while k < n && d.bn >= 8 {
+        d.out = append(d.out, byte(d.bb & 0xff))
+        d.bb = d.bb >> 8
+        d.bn -= 8
+        k += 1
+    }
+    if d.pos + (n - k) > len(d.in) {
+        d.st = Bad
+        return
+    }
+    for i <- iter.Range(d.pos, d.pos + (n - k)) {
+        d.out = append(d.out, d.in[i])
+    }
+    d.pos += n - k
+}
+
+// fixedBlock は固定 Huffman のブロック（RFC 1951 3.2.6）
+func fixedBlock(d mut dec) {
+    if !d.fixed {
+        mut ll := mut []int{}
+        mut s := 0
+        while s < 288 {
+            ll = append(ll, if s < 144 { 8 } else if s < 256 { 9 } else if s < 280 { 7 } else { 8 })
+            s += 1
+        }
+        mut dl := mut []int{}
+        fill(mut dl, 30, 5)
+        lit, _ := build(freeze(ll))
+        dist, _ := build(freeze(dl))
+        d.flit = lit
+        d.fdist = dist
+        d.fixed = true
+    }
+    codes(mut d, d.flit, d.fdist)
+}
+
+// dynamicBlock は動的 Huffman のブロック（RFC 1951 3.2.7 — 符号の長さの符号で、文字・長さと距離の符号の長さを読む）
+func dynamicBlock(d mut dec) {
+    nlen := bits(mut d, 5) + 257
+    ndist := bits(mut d, 5) + 1
+    ncode := bits(mut d, 4) + 4
+    if d.st != Ok {
+        return
+    }
+    // 286 / 287 と 30 / 31 は使えない記号（zlib・puff と同じく、数え方の時点で拒む）
+    if nlen > 286 || ndist > 30 {
+        d.st = Bad
+        return
+    }
+    order := []int{16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15}
+    mut cl := mut []int{}
+    fill(mut cl, 19, 0)
+    for i <- iter.Range(0, ncode) {
+        cl[order[i]] = bits(mut d, 3)
+    }
+    if d.st != Ok {
+        return
+    }
+    lc, lcl := build(freeze(cl))
+    // 符号の長さの符号は完全でなければならない
+    if lcl != 0 {
+        d.st = Bad
+        return
+    }
+    mut lens := mut []int{}
+    while len(lens) < nlen + ndist && d.st == Ok {
+        s := sym(mut d, lc)
+        if d.st != Ok {
+            return
+        }
+        if s < 16 {
+            lens = append(lens, s)
+        } else {
+            mut v := 0
+            mut rep := 0
+            if s == 16 {
+                if len(lens) == 0 {
+                    d.st = Bad
+                    return
+                }
+                v = lens[len(lens) - 1]
+                rep = 3 + bits(mut d, 2)
+            } else if s == 17 {
+                rep = 3 + bits(mut d, 3)
+            } else {
+                rep = 11 + bits(mut d, 7)
+            }
+            if len(lens) + rep > nlen + ndist {
+                d.st = Bad
+                return
+            }
+            for k <- iter.Range(0, rep) {
+                lens = append(lens, v)
+            }
+        }
+    }
+    if d.st != Ok {
+        return
+    }
+    all := freeze(lens)
+    // ブロックの終わり（256）の符号が無い列は終われない
+    if all[256] == 0 {
+        d.st = Bad
+        return
+    }
+    lit, ll := build(all[0:nlen])
+    // 過剰は拒む・不完全は長さ 1 の符号 1 つだけの形に限る（puff と同じ — zlib も同じ範囲を受ける）
+    if ll < 0 || (ll > 0 && nlen - lit.count[0] != 1) {
+        d.st = Bad
+        return
+    }
+    dist, dl := build(all[nlen:nlen + ndist])
+    if dl < 0 || (dl > 0 && ndist - dist.count[0] != 1) {
+        d.st = Bad
+        return
+    }
+    codes(mut d, lit, dist)
+}
+
+// codes は 1 ブロックの記号を終わり（256）まで読み、文字は書き、長さと距離の組は出力の中から写す（RFC 1951 3.2.5）
+func codes(d mut dec, lit huff, dist huff) {
+    while d.st == Ok {
+        s := sym(mut d, lit)
+        if d.st != Ok {
+            return
+        }
+        if s < 256 {
+            if !room(mut d, 1) {
+                return
+            }
+            d.out = append(d.out, byte(s))
+        } else if s == 256 {
+            return
+        } else {
+            li := s - 257
+            if li >= 29 {
+                d.st = Bad
+                return
+            }
+            n := d.lbase[li] + bits(mut d, d.lext[li])
+            ds := sym(mut d, dist)
+            if d.st != Ok {
+                return
+            }
+            if ds >= 30 {
+                d.st = Bad
+                return
+            }
+            dd := d.dbase[ds] + bits(mut d, d.dext[ds])
+            if d.st != Ok {
+                return
+            }
+            if dd > len(d.out) {
+                d.st = Bad
+                return
+            }
+            if !room(mut d, n) {
+                return
+            }
+            // 重なる写し（距離 < 長さ）も 1 バイトずつ前から — 書いたばかりのバイトを読む
+            mut from := len(d.out) - dd
+            for k <- iter.Range(0, n) {
+                d.out = append(d.out, d.out[from])
+                from += 1
+            }
+        }
+    }
+}
+
+// fill は空の列 xs を長さ n の v にする
+func fill(xs mut []int, n int, v int) {
+    for j <- iter.Range(0, n) {
+        xs = append(xs, v)
+    }
+}
+
+// rev は v の下位 l ビットの反転（Huffman の符号は MSB から詰める — RFC 1951 3.1.1）
+func rev(v int, l int) int {
+    mut r := 0
+    mut x := v
+    mut i := 0
+    while i < l {
+        r = (r << 1) | (x & 1)
+        x = x >> 1
+        i += 1
+    }
+    return r
+}

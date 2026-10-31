@@ -1,0 +1,61 @@
+package main
+
+// std/quick: 真のプロパティは全試行（既定 100）を通って何も印字しない。引いた後の変換（* 2）も同じ選択の列から決まる。
+// 腕の選び分けは Pick と switch で書く（ジェネレータの値の列は持たない）。条件は構成で狭めるのが先で、Assume は最後の手
+
+import "std/quick"
+import "std/strings"
+
+func rev(xs []int) []int {
+    mut out := []int{}
+    mut i := len(xs) - 1
+    while i >= 0 {
+        out = append(out, xs[i])
+        i = i - 1
+    }
+    return out
+}
+
+func same(a []int, b []int) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    mut i := 0
+    while i < len(a) {
+        if a[i] != b[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+func main() {
+    mut q := quick.Seed(1)
+    quick.Check(mut q, () => {
+        xs := quick.Slice(mut q, 10, () => quick.Int(mut q, -50, 50) * 2)
+        same(rev(rev(xs)), xs) && sum(xs) % 2 == 0
+    })
+    quick.Check(mut q, () => {
+        s := switch quick.Pick(mut q, 2) {
+        case 0: quick.String(mut q, 8)
+        case _: quick.Runes(mut q, 8)
+        }
+        strings.Valid(bytes(s))
+    }, trials: 50)
+    // 構成で書きにくい条件は Assume で試行を捨てる（捨てた数は標準エラーの ok の行に出る）
+    quick.Check(mut q, () => {
+        x := quick.Int(mut q, -100, 100)
+        y := quick.Int(mut q, -9, 9)
+        quick.Assume(mut q, y != 0) && x / y * y + x % y == x
+    })
+    println("ok")
+}
+
+func sum(xs []int) int {
+    mut t := 0
+    for x <- xs {
+        t = t + x
+    }
+    return t
+}

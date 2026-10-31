@@ -1,6 +1,6 @@
 package main
 
-// 段 3 の ④: deadline: は budget: と同じ形 — 呼び出し・割り算を含まない整数式（diag.Par kind 23 — check の経路は捨て・build は scope の開きにだけ使う。
+// deadline: は budget: と同じ形 — 呼び出し・割り算を含まない整数式（diag.Par kind 23 — check の経路は捨て・build は scope の開きにだけ使う。
 // 評価の有無で観測が割れない形に限る）
 
 import "std/task"

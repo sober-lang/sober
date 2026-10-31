@@ -18,7 +18,7 @@ func block(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx,
     return node(mut nb, ast.KBlock, 0, l, 0, 0, 0, 0, 0), q + 1
 }
 
-// blockStmts は KBlock b の文の列
+// KBlock b の文の列
 func blockStmts(nb mut builder.Builder[ast.Node], b int) int {
     return nodeAt(mut nb, b).a
 }
@@ -51,7 +51,7 @@ func isAssignOp(t int) bool {
         t == lexer.CaretEqual || t == lexer.ShlEqual || t == lexer.ShrEqual
 }
 
-// bindAhead は位置 p から bind_decl（'mut'? identifier_list ':='）が始まるか。結果は ':=' の位置（無ければ -1）
+// 位置 p から bind_decl（'mut'? identifier_list ':='）が始まるか。結果は ':=' の位置（無ければ -1）
 func bindAhead(cx Cx, p0 int) int {
     mut p := p0
     if tg(cx, p) == lexer.KwMut {

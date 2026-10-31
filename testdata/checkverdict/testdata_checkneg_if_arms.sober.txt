@@ -1,2 +1,3 @@
+sober: type error at testdata/checkneg/if_arms.sober:5:10
 {"errors":[{"msg":"type error"}],"ok":false}
 exit=1

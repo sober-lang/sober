@@ -1697,6 +1697,36 @@ b0:
   ret %2
 }
 
+func @main.find(%0 ptr, %1 i64) {
+  slot s0 [2]
+  slot s1 [2]
+b0:
+  %2 = region.depth
+  region.enter
+  %3 = const 7
+  %4 = eq %1, %3
+  condbr %4, b1, b2
+b1:
+  %5 = const 42
+  %6 = slotaddr s0
+  %7 = const 1
+  store %6[0], %7
+  store %6[1], %5
+  br b3(%6)
+b2:
+  %8 = slotaddr s1
+  %9 = const 0
+  store %8[0], %9
+  br b3(%8)
+b3(%10 ptr):
+  %11 = load.i64 %10[0]
+  store %0[0], %11
+  %12 = load.i64 %10[1]
+  store %0[1], %12
+  region.setdepth %2
+  ret
+}
+
 func @main.main() {
   slot s0 [2]
   slot s1 [2]
@@ -1756,6 +1786,22 @@ b5:
 b6:
   region.setdepth %0
   ret
+}
+
+func @rt.sigint() {
+b0:
+  %0 = const 231
+  %1 = const 130
+  %2 = syscall(%0, %1)
+  exit 130
+}
+
+func @rt.sigterm() {
+b0:
+  %0 = const 231
+  %1 = const 143
+  %2 = syscall(%0, %1)
+  exit 143
 }
 
 export func @sober_entry(%0 ptr) {
@@ -2351,50 +2397,4 @@ b91:
   %404 = const 1
   %405 = add %383, %404
   br b85(%401, %405)
-}
-
-func @rt.sigterm() {
-b0:
-  %0 = const 231
-  %1 = const 143
-  %2 = syscall(%0, %1)
-  exit 143
-}
-
-func @rt.sigint() {
-b0:
-  %0 = const 231
-  %1 = const 130
-  %2 = syscall(%0, %1)
-  exit 130
-}
-
-func @main.find(%0 ptr, %1 i64) {
-  slot s0 [2]
-  slot s1 [2]
-b0:
-  %2 = region.depth
-  region.enter
-  %3 = const 7
-  %4 = eq %1, %3
-  condbr %4, b1, b2
-b1:
-  %5 = const 42
-  %6 = slotaddr s0
-  %7 = const 1
-  store %6[0], %7
-  store %6[1], %5
-  br b3(%6)
-b2:
-  %8 = slotaddr s1
-  %9 = const 0
-  store %8[0], %9
-  br b3(%8)
-b3(%10 ptr):
-  %11 = load.i64 %10[0]
-  store %0[0], %11
-  %12 = load.i64 %10[1]
-  store %0[1], %12
-  region.setdepth %2
-  ret
 }

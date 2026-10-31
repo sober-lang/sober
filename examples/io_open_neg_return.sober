@@ -1,6 +1,6 @@
 package main
 
-// 負例: File は開いたブロックの外へ出せない（return の後で defer が閉じる — 呼び手は閉じた fd を持つ）（diag.FileUse — desugar/filecheck・language.md 28 節「資源とストリーム」— IO 便 段 2）
+// 負例: File は開いたブロックの外へ出せない（return の後で defer が閉じる — 呼び手は閉じた fd を持つ）（diag.FileUse — desugar/filecheck・language.md 28 節「資源とストリーム」）
 
 import "std/io"
 

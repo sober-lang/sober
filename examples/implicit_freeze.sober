@@ -1,7 +1,7 @@
 package main
 
-// 暗黙の freeze（language.md 17 節 — 2026-10-11）: 期待型が imm のコンテナの位置に mut のコンテナの道を置くと freeze(道) と同じ。
-// 位置の全種（実引数・総称の実引数・composite の欄・slice / map のリテラルの要素・append の要素・添字 / map への格納・imm の場所への代入・return・for の生成元〔2026-10-13〕）。
+// 暗黙の freeze（language.md 17 節）: 期待型が imm のコンテナの位置に mut のコンテナの道を置くと freeze(道) と同じ。
+// 位置の全種（実引数・総称の実引数・composite の欄・slice / map のリテラルの要素・append の要素・添字 / map への格納・imm の場所への代入・return・for の生成元）。
 // 明示の freeze を残した同じプログラムは testdata/implicitfreeze/positions.sober（暗黙 ≡ 明示のオラクルの入力）
 
 import "std/iter"

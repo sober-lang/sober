@@ -169,3 +169,31 @@ func At[T](f Frozen[T], i int) T {
     k := if (i | (f.n - 1 - i)) < 0 { -1 } else { i / CHUNK }
     return f.chunks[k][i & (CHUNK - 1)]
 }
+
+// t の [i, i + n) を dst の [0, n) へ写す（Get を n 回呼んで dst に書くのと同じ値 — chunk ごとにまとめて写す）。範囲外（i < 0・n < 0・
+// i + n が Len を越える・n が len(dst) を越える）なら Get と同じく境界検査で panic する。記録 1 つ（数語〜数十語）を局所の列へ一括で読み、
+// 局所で添字で読む形のための口（Get を語ごとに呼ぶと、語ごとに範囲の判定と chunk の二重の境界検査を払う）
+@effects()
+func Read[T](t mut Table[T], i int, n int, dst mut []T) {
+    if (i | n | (t.n - i - n) | (len(dst) - n)) < 0 {
+        // 範囲外は chunk の列の境界検査に落とす（Get と同じ panic）
+        k := if i < 0 { i } else { -1 }
+        _ = t.chunks[k][0]
+    }
+    mut d := 0
+    mut at := i
+    while d < n {
+        k := at / CHUNK
+        j := at & (CHUNK - 1)
+        m := if n - d < CHUNK - j { n - d } else { CHUNK - j }
+        mut c := t.chunks[k]
+        // 写しのループの形（copyloop の添字の写し — lower の --passes の経路）
+        mut q := 0
+        while q < m {
+            dst[d + q] = c[j + q]
+            q += 1
+        }
+        d += m
+        at += m
+    }
+}

@@ -1,6 +1,6 @@
 package main
 
-// std/crypto の定数時間の部品（report-790 / 791）: Eq・NonZero・Select・Wipe・Rand の性質。Rand は値でなく長さと「64 バイトが全部 0 でない」だけを見る
+// std/crypto の定数時間の部品: Eq・NonZero・Select・Wipe・Rand の性質。Rand は値でなく長さと「64 バイトが全部 0 でない」だけを見る
 
 import "std/crypto"
 import "std/iter"

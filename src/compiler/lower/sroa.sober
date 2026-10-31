@@ -1,6 +1,6 @@
 package lower
 
-// SROA（性能投資 M1）: 多語のスロット（slice / string / map のヘッダ・小さい struct・T? — lower の -O0 形の集約の置き場）を、
+// SROA: 多語のスロット（slice / string / map のヘッダ・小さい struct・T? — lower の -O0 形の集約の置き場）を、
 // 語ごとの 1 語スロットに割る IR → IR のパス。割った後の 1 語スロットは既存の mem2reg（m2r.sober — 写し・不変）が SSA 値へ持ち上げる。
 // 対象: スロットのアドレス（slotaddr の結果）の使い道が「定数オフセットの load の番地」「定数オフセットの store の番地」だけのスロット
 // （格納される値・他の命令の引数・辺の引数・ret・gep・ptoi・call の引数になったら逃げている — 対象外。load8 / store8 も逃げ）。
@@ -11,7 +11,7 @@ package lower
 import "desugar"
 import "std/iter"
 
-// sroaModule はモジュールの全関数に SROA を掛ける
+// モジュールの全関数に SROA を掛ける
 func sroaModule(st mut St, cg bool) {
     mut f := st.fhead
     while f != -1 {
@@ -201,7 +201,7 @@ func sroaFunc(st mut St, f FnRef, cg bool) {
     }
 }
 
-// sroaNewSlot は関数 f に 1 語のスロットを鎖の末尾へ足す（記録 = [次, 語数, 番号, 空き鎖の次, 直近の slotaddr の値] — newSlot と同じ形）
+// 関数 f に 1 語のスロットを鎖の末尾へ足す（記録 = [次, 語数, 番号, 空き鎖の次, 直近の slotaddr の値] — newSlot と同じ形）
 func sroaNewSlot(st mut St, f FnRef) {
     n := irFnNSlot(mut st, f)
     s := rec4(mut st, -1, 1, n, -1)
@@ -216,7 +216,7 @@ func sroaNewSlot(st mut St, f FnRef) {
     irSetFnNSlot(mut st, f, n + 1)
 }
 
-// sroaInsAfter はブロック blk の命令 at の直後に命令 [res, op, a, b, c] を差し込み、その記録を返す
+// ブロック blk の命令 at の直後に命令 [res, op, a, b, c] を差し込み、その記録を返す
 func sroaInsAfter(st mut St, blk BlkRef, at InsRef, res int, op int, a int, b int, c int) InsRef {
     r := InsRef(desugar.HeapLen(mut st.d))
     desugar.HeapPush(mut st.d, int(irInsNext(mut st, at)))

@@ -25,7 +25,7 @@ func show(e error?) string {
     }
 }
 
-// echo は接続 1 本の handler: 届いた分を送り返す（"die" を受けたら死ぬ。失敗〔Recv / Send の error〕は Serve が吸収する）
+// 接続 1 本の handler: 届いた分を送り返す（"die" を受けたら死ぬ。失敗〔Recv / Send の error〕は Serve が吸収する）
 func echo(c net.Conn) error? {
     for chunk <- net.Recv(c)? {
         if (string(chunk) catch "") == "die" {
@@ -62,7 +62,7 @@ func run() (string, error?) {
     return out, nil
 }
 
-// client は接続して msg を送り（send = false なら何も送らない）、相手が閉じるか msg の長さ分届くまで受ける
+// 接続して msg を送り（send = false なら何も送らない）、相手が閉じるか msg の長さ分届くまで受ける
 func client(port int, msg string, send bool) string {
     v, e := talk(port, msg, send)
     return if e != nil { show(e) } else if v == "" { "(closed)" } else { v }

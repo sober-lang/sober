@@ -1,6 +1,6 @@
 package lower
 
-// net の待ち（段 4a-2 — language.md 28 節の net・.pair/net-design-draft.md 3.1 / 3.4 節）: std/net の socket は非ブロック。syscall が EAGAIN を
+// net の待ち（language.md 28 節の net）: std/net の socket は非ブロック。syscall が EAGAIN を
 // 返したら std/net が wait_fd(fd, 向き) で rt.fdwait に入り、今の task を待ちに入れる（ワーカーは他の task を回す）。readiness はワーカーごとの
 // epoll（EPOLLONESHOT・data = TCB）で受ける — ring の道（4b）の前の、どのカーネルでも動く段。
 // - 記録（ワーカーの WK_EP — 最初の待ちで作る）: epoll の fd・起こしの eventfd（非ブロック — mnClaim が書く）・期限つきの待ち手の鎖。
@@ -25,7 +25,7 @@ const NETF_WAIT = 5   // ioRec の欄（chunk.sober の CHF_* の次）
 const NETF_POLL = 6
 const RFD_DIRECT = 1099511627776   // read_fd の n の印（1 << 40 — std/net の Recv: ring を通さずその場の read。rt.sober の buildReadFd）
 
-// needNet は rt.fdwait（と std/task のプログラムなら rt.ep_poll）を（初出なら）宣言して rt.fdwait を返す（cont.sober の wait_fd から）
+// rt.fdwait（と std/task のプログラムなら rt.ep_poll）を（初出なら）宣言して rt.fdwait を返す（cont.sober の wait_fd から）
 func needNet(st mut St) FnRef {
     lsNeed(mut st, NEED_NET, 0)
     if chF(mut st, NETF_WAIT) == -1 {
@@ -39,18 +39,18 @@ func needNet(st mut St) FnRef {
     return chF(mut st, NETF_WAIT)
 }
 
-// netOn は net の待ちを rt に組むか（std/task のプログラムで wait_fd を使う）
+// net の待ちを rt に組むか（std/task のプログラムで wait_fd を使う）
 func netOn(st mut St) bool {
     return chF(mut st, NETF_POLL) != -1
 }
 
-// ioBusy はワーカーに完了を待つ io があるか（ring の io・net の待ち手 — rt.mn_next の分岐）
+// ワーカーに完了を待つ io があるか（ring の io・net の待ち手 — rt.mn_next の分岐）
 func ioBusy(st mut St, wk int, zero int) int {
     f := load(mut st, wk, WK_IOFLY)
     return cmp(mut st, CNe, if netOn(mut st) { bin(mut st, BOr, f, load(mut st, wk, WK_NETW)) } else { f }, zero)
 }
 
-// epCtl は epoll_ctl(記録の epoll, op, fd, {ev, ud})
+// epoll_ctl(記録の epoll, op, fd, {ev, ud})
 func epCtl(st mut St, rec int, op int, fd int, ev int, ud int) int {
     rp := itop(mut st, rec)
     a := urAdd(mut st, rec, EP_CTL * 8)
@@ -59,7 +59,7 @@ func epCtl(st mut St, rec int, op int, fd int, ev int, ud int) int {
     return urSys(mut st, 233, []int{load(mut st, rp, EP_FD), iconst(mut st, op), fd, a})
 }
 
-// epWake は待ち手 t を res で起こす（走れる積みへ・待ち手の数 − 1）
+// 待ち手 t を res で起こす（走れる積みへ・待ち手の数 − 1）
 func epWake(st mut St, t int, res int) {
     tk := globaladdr(mut st, st.taskG)
     wk := globaladdr(mut st, st.wkG)
@@ -95,7 +95,7 @@ func buildNetRt(st mut St) {
     }
 }
 
-// buildFdWait は rt.fdwait(fd, ev) → 0（readiness — 呼び手は syscall をやり直す）/ 負の errno（-110 = 期限が待ちを切った）
+// rt.fdwait(fd, ev) → 0（readiness — 呼び手は syscall をやり直す）/ 負の errno（-110 = 期限が待ちを切った）
 func buildFdWait(st mut St) {
     begin(mut st, chF(mut st, NETF_WAIT))
     zero := iconst(mut st, 0)
@@ -108,7 +108,7 @@ func buildFdWait(st mut St) {
     }
     wk := globaladdr(mut st, st.wkG)
     frRecP(mut st, FK_PARK, 0, 1, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
-    // net の ring（uring.sober の UR_NET — 段 4b-0）: POLL_ADD を積んで待つ（提出と完了の取り込みは眠りの enter — epoll を作らない）
+    // net の ring（uring.sober の UR_NET）: POLL_ADD を積んで待つ（提出と完了の取り込みは眠りの enter — epoll を作らない）
     rg := load(mut st, wk, WK_RING)
     bR0 := newBlock(mut st)
     bRw := newBlock(mut st)
@@ -183,7 +183,7 @@ func buildFdWait(st mut St) {
     ret(mut st, r)
 }
 
-// buildEpPoll は rt.ep_poll(wait): 期限の過ぎた待ち手を -110 で起こし、epoll_wait（wait なら残りの最小の期限まで眠る・でなければ 0）で
+// rt.ep_poll(wait): 期限の過ぎた待ち手を -110 で起こし、epoll_wait（wait なら残りの最小の期限まで眠る・でなければ 0）で
 // 届いた readiness の待ち手を 0 で起こす（起こしの eventfd は読んで空にする・ring の fd は印だけ — 完了は rt.uring_poll が次に取り込む）
 func buildEpPoll(st mut St) {
     begin(mut st, chF(mut st, NETF_POLL))
@@ -291,7 +291,7 @@ func buildEpPoll(st mut St) {
     ret(mut st, -1)
 }
 
-// dlWait は今の task（me — TC_IORES = 待ちの値 pend）を、期限があれば記録 rec の鎖（語 q — 負なら積まない）に積み、TC_IORES が pend でなくなるまで task_wait する。期限の値（0 = 無し）を返す
+// 今の task（me — TC_IORES = 待ちの値 pend）を、期限があれば記録 rec の鎖（語 q — 負なら積まない）に積み、TC_IORES が pend でなくなるまで task_wait する。期限の値（0 = 無し）を返す
 func dlWait(st mut St, rec int, q int, me int, pend int) int {
     zero := iconst(mut st, 0)
     tp := itop(mut st, me)
@@ -314,7 +314,7 @@ func dlWait(st mut St, rec int, q int, me int, pend int) int {
     return dlv
 }
 
-// dlUnlink は期限があれば（dlv ≠ 0）鎖（頭の語の番地 head）から me を外す（無ければ何もしない — net の ring の道は期限の走査が先に外す）
+// 期限があれば（dlv ≠ 0）鎖（頭の語の番地 head）から me を外す（無ければ何もしない — net の ring の道は期限の走査が先に外す）
 func dlUnlink(st mut St, head int, me int, dlv int) {
     zero := iconst(mut st, 0)
     bU := branchIf(mut st, cmp(mut st, CNe, dlv, zero))
@@ -337,7 +337,7 @@ func dlUnlink(st mut St, head int, me int, dlv int) {
     setCur(mut st, bU)
 }
 
-// fdWaitRing は rt.fdwait の net の ring の道（引数 0 = fd・1 = 向き）: POLL_ADD（一度きり・user_data = TCB | UDT_POLL）を積んで待ち、完了の結果
+// rt.fdwait の net の ring の道（引数 0 = fd・1 = 向き）: POLL_ADD（一度きり・user_data = TCB | UDT_POLL）を積んで待ち、完了の結果
 // （0 = readiness・-110 = 期限で取り消された・負の errno）を返す。期限があれば ring の記録の鎖 UR_DLQ に積む（期限の走査は uring_poll — urNetGate）
 func fdWaitRing(st mut St, rg int) {
     wk := globaladdr(mut st, st.wkG)
@@ -362,8 +362,8 @@ func fdWaitRing(st mut St, rg int) {
     ret(mut st, r)
 }
 
-// sleepRing は rt.sleep（ms > 0）の net の ring の道（report-690 / 691 — 1 回ごとの timerfd_create / settime / close と fd の生成破棄を消す）:
-// 目標の時刻をワーカーの時計の表（rt.tmr_push — report-ct1: SQE も カーネルの hrtimer も無い。眠りの関門 urNetGate が満了を起こし、次の満了を enter の timeout に）に積んで待つ。
+// rt.sleep（ms > 0）の net の ring の道（1 回ごとの timerfd_create / settime / close と fd の生成破棄を消す）:
+// 目標の時刻をワーカーの時計の表（rt.tmr_push — SQE もカーネルの hrtimer も無い。眠りの関門 urNetGate が満了を起こし、次の満了を enter の timeout に）に積んで待つ。
 // 表が満杯なら IORING_OP_TIMEOUT（ABS・CLOCK_MONOTONIC・count 0 = 純な timer・user_data = TCB | UDT_POLL）を積んで待つ（前の形）。目標 = min(今 + ms, TC_DL) を積む時点で決める
 // — timerfd と同じく呼んだ時点で時計が走る（相対 timeout は提出が次の enter まで遅れる分〔D2〕だけ眠りが伸びる）。期限は timeout が運ぶので期限の鎖
 // （UR_DLQ）に積まず、取り消しも無い（待ち手は自分の CQE 1 つでだけ起きる — TC_DL は待つ間に変わらない）。完了の -ETIME（-62）は uring_poll の
@@ -403,7 +403,7 @@ func sleepRing(st mut St, rg int, ms int) {
     ret(mut st, bin(mut st, BAdd, bin(mut st, BMul, et, bin(mut st, BMul, cut, iconst(mut st, 110))), bin(mut st, BMul, bin(mut st, BSub, iconst(mut st, 1), et), bin(mut st, BSub, zero, r))))
 }
 
-// sleepClock は sleepRing の今の時刻（CLOCK_MONOTONIC の ns）: deadline: を書くプログラムは clockNs（起動で引いた vDSO）。他は rt.vdso（初回の sleep で
+// sleepRing の今の時刻（CLOCK_MONOTONIC の ns）: deadline: を書くプログラムは clockNs（起動で引いた vDSO）。他は rt.vdso（初回の sleep で
 // 初期 rsp〔meta の W_ARGV〕から vdsoWalk で引いて番地 + 1 を置く — ワーカーが同時に引いても同じ値を書くだけ）の vDSO・見つからなければ生の clock_gettime
 func sleepClock(st mut St) int {
     if st.vdsoG == -1 {
@@ -446,12 +446,12 @@ func sleepClock(st mut St) int {
 const WK_TMR = 23
 const TMR_CAP = 1048576 // 表の容量（ワーカーごと — 16 MiB の VA。溢れた sleep は IORING_OP_TIMEOUT の道）
 
-// tmrEnt は表 hp の要素 i の番地（語 2 + 2i）
+// 表 hp の要素 i の番地（語 2 + 2i）
 func tmrEnt(st mut St, hp int, i int) int {
     return gepWord(mut st, hp, bin(mut st, BAdd, bin(mut st, BShl, i, iconst(mut st, 1)), iconst(mut st, 2)))
 }
 
-// buildTmr は rt.tmr_push(目標, TCB) → 0（積んだ）/ 1（満杯）と rt.tmr_fire() → 次の満了までの ns（表が空なら −1）— 満了した待ち手を起こす
+// rt.tmr_push(目標, TCB) → 0（積んだ）/ 1（満杯）と rt.tmr_fire() → 次の満了までの ns（表が空なら −1）— 満了した待ち手を起こす
 func buildTmr(st mut St) {
     if st.rtTmrPush == -1 {
         return

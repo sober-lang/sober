@@ -1,6 +1,6 @@
 package main
 
-// バイトの同じ値の詰め（copyloop の (C) 形・for の (Z) 形 — fillBulk のバイトの枝）の回帰例: 8 バイトの語で詰めて端数をバイトで（report-879 ⑫）。
+// バイトの同じ値の詰め（copyloop の (C) 形・for の (Z) 形 — fillBulk のバイトの枝）の回帰例: 8 バイトの語で詰めて端数をバイトで。
 // 前置きの長さ 0..10 × 詰める数 0..20 の全部で中身を照合（語の境目・端数・先端の伸長と全コピーの両方）+ 16 KiB の 0 埋め
 import "std/convert"
 import "std/os"

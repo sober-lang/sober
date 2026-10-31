@@ -1,6 +1,6 @@
 package main
 
-// 負例: File は同一性を持つ — 写しの束縛は作れない（diag.FileUse — desugar/filecheck・language.md 28 節「資源とストリーム」— IO 便 段 2）
+// 負例: File は同一性を持つ — 写しの束縛は作れない（diag.FileUse — desugar/filecheck・language.md 28 節「資源とストリーム」）
 
 import "std/io"
 

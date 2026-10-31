@@ -1697,6 +1697,51 @@ b0:
   ret %2
 }
 
+func @main.area(%0 i64, %1 i64, %2 i64) i64 {
+  slot s0 [3]
+b0:
+  %3 = slotaddr s0
+  store %3[0], %0
+  store %3[1], %1
+  store %3[2], %2
+  %4 = region.depth
+  region.enter
+  %5 = load.i64 %3[0]
+  %6 = const 0
+  %7 = eq %5, %6
+  condbr %7, b2, b1
+b1:
+  %12 = load.i64 %3[0]
+  %13 = const 1
+  %14 = eq %12, %13
+  condbr %14, b4, b3
+b2:
+  %8 = load.i64 %3[1]
+  %9 = const 3
+  %10 = mul %9, %8
+  %11 = mul %10, %8
+  br b7(%11)
+b3:
+  %18 = load.i64 %3[0]
+  %19 = const 2
+  %20 = eq %18, %19
+  condbr %20, b6, b5
+b4:
+  %15 = load.i64 %3[1]
+  %16 = load.i64 %3[2]
+  %17 = mul %15, %16
+  br b7(%17)
+b5:
+  %22 = const 0
+  br b7(%22)
+b6:
+  %21 = const 0
+  br b7(%21)
+b7(%23 i64):
+  region.setdepth %4
+  ret %23
+}
+
 func @main.main() {
   slot s0 [3]
   slot s1 [3]
@@ -1739,6 +1784,22 @@ b0:
   call @rt.print_char(%19)
   region.setdepth %0
   ret
+}
+
+func @rt.sigint() {
+b0:
+  %0 = const 231
+  %1 = const 130
+  %2 = syscall(%0, %1)
+  exit 130
+}
+
+func @rt.sigterm() {
+b0:
+  %0 = const 231
+  %1 = const 143
+  %2 = syscall(%0, %1)
+  exit 143
 }
 
 export func @sober_entry(%0 ptr) {
@@ -2334,65 +2395,4 @@ b91:
   %404 = const 1
   %405 = add %383, %404
   br b85(%401, %405)
-}
-
-func @rt.sigterm() {
-b0:
-  %0 = const 231
-  %1 = const 143
-  %2 = syscall(%0, %1)
-  exit 143
-}
-
-func @rt.sigint() {
-b0:
-  %0 = const 231
-  %1 = const 130
-  %2 = syscall(%0, %1)
-  exit 130
-}
-
-func @main.area(%0 i64, %1 i64, %2 i64) i64 {
-  slot s0 [3]
-b0:
-  %3 = slotaddr s0
-  store %3[0], %0
-  store %3[1], %1
-  store %3[2], %2
-  %4 = region.depth
-  region.enter
-  %5 = load.i64 %3[0]
-  %6 = const 0
-  %7 = eq %5, %6
-  condbr %7, b2, b1
-b1:
-  %12 = load.i64 %3[0]
-  %13 = const 1
-  %14 = eq %12, %13
-  condbr %14, b4, b3
-b2:
-  %8 = load.i64 %3[1]
-  %9 = const 3
-  %10 = mul %9, %8
-  %11 = mul %10, %8
-  br b7(%11)
-b3:
-  %18 = load.i64 %3[0]
-  %19 = const 2
-  %20 = eq %18, %19
-  condbr %20, b6, b5
-b4:
-  %15 = load.i64 %3[1]
-  %16 = load.i64 %3[2]
-  %17 = mul %15, %16
-  br b7(%17)
-b5:
-  %22 = const 0
-  br b7(%22)
-b6:
-  %21 = const 0
-  br b7(%21)
-b7(%23 i64):
-  region.setdepth %4
-  ret %23
 }

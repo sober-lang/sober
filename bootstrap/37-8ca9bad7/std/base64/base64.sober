@@ -1,0 +1,146 @@
+package base64
+
+// base64（RFC 4648）の符号化と復号: 標準の字母（RFC 4648 4 節 — 詰め '=' つき）の Encode ⇄ Decode と、URL・ファイル名に安全な字母（RFC 4648 5 節 — '-' '_'・詰めなし）の
+// EncodeUrl ⇄ DecodeUrl。復号は厳格（1 つのバイト列に綴りは 1 つ — 字母の外の文字・空白と改行・余計な詰め・最後の文字の使わない bit が 0 でない綴りは Bad）。
+// 表引きと分岐で読むので秘密の値（鍵）の定数時間の道には使わない（std/crypto の規律の外）
+
+import "std/iter"
+
+// Decode / DecodeUrl の入力が綴りの規則に合わない（字母の外の文字・長さ・詰めの位置と数・最後の文字の使わない bit が 0 でない — RFC 4648 3.3・3.5）
+type Bad error
+
+// b の標準の字母の base64（4 文字ずつ・端は '=' で詰める — Go の base64.StdEncoding.EncodeToString と同じ綴り）
+//
+//     base64.Encode(bytes("hello"))   // "aGVsbG8="
+@effects()
+func Encode(b []byte) string {
+    return bytesToString(encode(b, bytes("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"), true))
+}
+
+// b の URL・ファイル名に安全な字母の base64（'+' '/' の代わりに '-' '_'・詰めの '=' を書かない — Go の base64.RawURLEncoding と同じ綴り）
+//
+//     base64.EncodeUrl([]byte{0xfb, 0xff})   // "-_8"
+@effects()
+func EncodeUrl(b []byte) string {
+    return bytesToString(encode(b, bytes("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"), false))
+}
+
+// 標準の字母の base64 の s のバイト列（長さは 4 の倍数・'=' の詰めは端の 1〜2 文字だけ — Encode の綴りだけを受ける）
+@errors(Bad)
+@effects()
+func Decode(s string) ([]byte, error?) {
+    b := bytes(s)
+    if len(b) % 4 != 0 {
+        return []byte{}, Bad{}
+    }
+    mut pad := 0
+    while pad < 2 && pad < len(b) && b[len(b) - 1 - pad] == '=' {
+        pad += 1
+    }
+    n := len(b) - pad
+    // 長さが 4 の倍数なので詰めは足りない文字の数ちょうど（"AA==" は 2・"AAA=" は 1）— 残るのは組の 1 文字だけの形（"A===" — 3 つ目の '=' は decode が弾く）
+    if n % 4 == 1 {
+        return []byte{}, Bad{}
+    }
+    out, ok := decode(b[0:n], false)
+    if !ok {
+        return []byte{}, Bad{}
+    }
+    return out, nil
+}
+
+// URL・ファイル名に安全な字母の base64 の s のバイト列（詰めの '=' は受けない — EncodeUrl の綴りだけを受ける）
+@errors(Bad)
+@effects()
+func DecodeUrl(s string) ([]byte, error?) {
+    b := bytes(s)
+    if len(b) % 4 == 1 {
+        return []byte{}, Bad{}
+    }
+    out, ok := decode(b, true)
+    if !ok {
+        return []byte{}, Bad{}
+    }
+    return out, nil
+}
+
+// encode は b を字母 alpha（64 文字）で 3 バイト → 4 文字に（pad なら端を '=' で 4 文字に揃える）
+func encode(b []byte, alpha []byte, pad bool) []byte {
+    mut out := mut []byte{}
+    full := len(b) / 3
+    for g <- iter.Range(0, full) {
+        v := (int(b[3 * g]) << 16) | (int(b[3 * g + 1]) << 8) | int(b[3 * g + 2])
+        out = append(out, alpha[(v >> 18) & 63])
+        out = append(out, alpha[(v >> 12) & 63])
+        out = append(out, alpha[(v >> 6) & 63])
+        out = append(out, alpha[v & 63])
+    }
+    rest := len(b) - 3 * full
+    if rest == 1 {
+        v := int(b[3 * full]) << 16
+        out = append(out, alpha[(v >> 18) & 63])
+        out = append(out, alpha[(v >> 12) & 63])
+        if pad {
+            out = append(out, '=')
+            out = append(out, '=')
+        }
+    } else if rest == 2 {
+        v := (int(b[3 * full]) << 16) | (int(b[3 * full + 1]) << 8)
+        out = append(out, alpha[(v >> 18) & 63])
+        out = append(out, alpha[(v >> 12) & 63])
+        out = append(out, alpha[(v >> 6) & 63])
+        if pad {
+            out = append(out, '=')
+        }
+    }
+    return freeze(out)
+}
+
+// decode は詰めを除いた s（長さを 4 で割った余りは 0・2・3）の中身（第 2 の値 = 綴りが合う。url なら '-' '_' の字母・でなければ '+' '/'）。
+// 端の 2 文字は 1 バイト・3 文字は 2 バイトで、最後の文字の使わない bit（4 bit / 2 bit）は 0（RFC 4648 3.5 — 綴りを 1 つに）
+func decode(s []byte, url bool) ([]byte, bool) {
+    mut out := mut []byte{}
+    full := len(s) / 4
+    for g <- iter.Range(0, full) {
+        mut v := 0
+        for k <- iter.Range(0, 4) {
+            d := sixBits(int(s[4 * g + k]), url)
+            if d < 0 {
+                return []byte{}, false
+            }
+            v = (v << 6) | d
+        }
+        out = append(out, byte((v >> 16) & 255))
+        out = append(out, byte((v >> 8) & 255))
+        out = append(out, byte(v & 255))
+    }
+    rest := len(s) - 4 * full
+    if rest >= 2 {
+        mut v := 0
+        for k <- iter.Range(0, rest) {
+            d := sixBits(int(s[4 * full + k]), url)
+            if d < 0 {
+                return []byte{}, false
+            }
+            v = (v << 6) | d
+        }
+        if rest == 2 {
+            if v & 15 != 0 {
+                return []byte{}, false
+            }
+            out = append(out, byte((v >> 4) & 255))
+        } else {
+            if v & 3 != 0 {
+                return []byte{}, false
+            }
+            out = append(out, byte((v >> 10) & 255))
+            out = append(out, byte((v >> 2) & 255))
+        }
+    }
+    return freeze(out), true
+}
+
+// sixBits は字母の 1 文字の値（字母の外なら -1 — '=' も外）
+func sixBits(c int, url bool) int {
+    return if c >= 65 && c <= 90 { c - 65 } else if c >= 97 && c <= 122 { c - 71 } else if c >= 48 && c <= 57 { c + 4 } else if c == (if url { 45 } else { 43 }) { 62 } else if c == (if url { 95 } else { 47 }) { 63 } else { -1 }
+}

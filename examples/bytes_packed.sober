@@ -11,7 +11,7 @@ type Rec struct {
     body []byte
 }
 
-// fill は n バイトの列を作る（関数の中で確保 — 戻り値は呼び手の region へ写される）
+// n バイトの列を作る（関数の中で確保 — 戻り値は呼び手の region へ写される）
 func fill(n int, base int) []byte {
     mut b := mut []byte{}
     for i <- iter.Range(0, n) {

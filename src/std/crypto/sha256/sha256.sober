@@ -32,7 +32,7 @@ func New() State {
     return State{h: []int{0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19}, tail: []byte{}, n: 0}
 }
 
-// data を続けて書く（64 バイトのブロックが揃った分だけ畳み、端は tail に残す）（対の Read は実需まで足さない — 34 節 2 の注記・2026-10-20 ④）
+// data を続けて書く（64 バイトのブロックが揃った分だけ畳み、端は tail に残す）（対の Read は実需まで足さない — 34 節 2 の注記）
 @effects()
 func Write(s mut State, data []byte) {
     n := len(data)
@@ -106,7 +106,7 @@ func Sum256(data []byte) []byte {
     return Sum(s)
 }
 
-// cat は a ++ b[from:to]（新しい切片）
+// a ++ b[from:to]（新しい切片）
 func cat(a []byte, b []byte, from int, to int) []byte {
     mut out := mut []byte{}
     for i <- iter.Range(0, len(a)) {
@@ -120,7 +120,7 @@ func cat(a []byte, b []byte, from int, to int) []byte {
 
 const mask32 = 0xffffffff
 
-// load は src[off..off+64) の 16 語（big endian）を w[0..16) に書く
+// src[off..off+64) の 16 語（big endian）を w[0..16) に書く
 func load(w mut []int, src []byte, off int) {
     for i <- iter.Range(0, 16) {
         p := off + 4 * i
@@ -128,7 +128,7 @@ func load(w mut []int, src []byte, off int) {
     }
 }
 
-// compress は 1 ブロック（w[0..16) に読み込み済み）を状態 h に畳み込む。w[16..64) は語の拡張で上書きする
+// 1 ブロック（w[0..16) に読み込み済み）を状態 h に畳み込む。w[16..64) は語の拡張で上書きする
 func compress(h mut []int, w mut []int, k []int) {
     for i <- iter.Range(16, 64) {
         x := w[i - 15]
@@ -171,12 +171,12 @@ func compress(h mut []int, w mut []int, k []int) {
     h[7] = (h[7] + hh) & mask32
 }
 
-// rotr は 32 bit の右回転（x は [0, 2^32)・k は 1..31）
+// 32 bit の右回転（x は [0, 2^32)・k は 1..31）
 func rotr(x int, k int) int {
     return ((x >> k) | (x << (32 - k))) & mask32
 }
 
-// sha256K は丸め定数（最初の 64 個の素数の立方根の小数部の先頭 32 bit — FIPS 180-4 4.2.2）
+// 丸め定数（最初の 64 個の素数の立方根の小数部の先頭 32 bit — FIPS 180-4 4.2.2）
 func sha256K() []int {
     return []int{
         0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,

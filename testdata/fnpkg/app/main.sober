@@ -1,0 +1,29 @@
+package main
+
+// 別 package の名前付き関数型（署名に宣言側の型を含む）を結果・仮引数・欄・ジェネリックの型引数つきで使う — check と build の両方が受理する（scripts/fnpkg.sh）
+
+import "testdata/fnpkg/p"
+
+type H struct {
+    f p.F
+}
+
+func adder(k int) p.F {
+    return (r) => p.N(r) + k
+}
+
+func use(f p.F) int {
+    return f(p.Make(1))
+}
+
+func twice(g p.G[int]) int {
+    return g(p.Make(2), g(p.Make(3), 5))
+}
+
+func main() {
+    println(use(adder(10)))
+    h := H{f: adder(20)}
+    f := h.f
+    println(f(p.Make(2)))
+    println(twice((r, x) => x * p.N(r)))
+}

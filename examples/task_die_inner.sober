@@ -1,7 +1,7 @@
 package main
 
-// 段 6 P4-5: 子の task が、自分の中の scope に生きている孫を残したまま死ぬ（P4-4 の穴 — 死んだ task のスロット〔内側の scope の記録・孫の枠〕が
-// 孫の終わる前にプールへ返り、M:N で孫が返したスロットへ書いた）。巻き戻った task は開いている scope の子を待ってから終わる（drainScopes）
+// 子の task が、自分の中の scope に生きている孫を残したまま死ぬ（死んだ task のスロット〔内側の scope の記録・孫の枠〕が
+// 孫の終わる前にプールへ返り、M:N で孫が返したスロットへ書いてしまう穴があった）。巻き戻った task は開いている scope の子を待ってから終わる（drainScopes）
 import "std/task"
 
 func spin(n int) int {

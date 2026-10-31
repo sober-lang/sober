@@ -1,28 +1,27 @@
 package lower
 
-// UTF-8 の境界の畳み（UTF-8 の検査消去便 段 1 — report-470 の (L)・展開の後の関数ごとの段 lB2Func）: std/utf8.Str の写しの中の
+// UTF-8 の境界の畳み（展開の後の関数ごとの段 lB2Func）: std/utf8.Str の写しの中の
 // std/utf8.boundary の写しの判定 `load8 P[X] & 192 != 128`（X が文字の頭か）を、呼び手で分かっている事実から真と証明できたら br に畳む。
 // 対象の読みは印つき（irinl.sober — boundary の本体の byte の読みの写しにだけ付き、写しを重ねても継ぐ）なので、P は View の中身を指す。
 // 前提（どれも言語の約束から — 新しい仮定は足さない）:
 //   ①不変の読み: View の中身は imm で、freeze の一意性（language.md 17 節 U1〜U3 — 一意でない freeze は検査器が拒否）により凍結の後に書く
-//     別名が静的に存在しない。よって同じ番地・同じ添字の byte の読みは、間に store / call があっても同じ値（2026-10-11 — D0 の前は実行時タグの
-//     未実装で成り立っていなかった — F-al）
+//     別名が静的に存在しない。よって同じ番地・同じ添字の byte の読みは、間に store / call があっても同じ値
 //   ②View の中身は有効な UTF-8（Check だけが作る — 封）。完結した 1 バイト文字（ASCII）の次の位置は文字の頭（補題 — s 側）
 // 証明の形（どれも支配する condbr の辺の事実だけ — bce と同じ骨格）:
 //   i 側: 支配する辺で `load8 P'[X] == K`（K は ASCII の定数・P' と P は同じ番地の値）→ その byte は K で、K & 192 != 128（算術だけ — ②を使わない）
 //   s 側: X = Y + 1 で、支配する辺で `load8 P'[Y] == K`（ASCII）→ ②で X は文字の頭。X がループの頭の仮引数なら、入りの値が全部
 //         「0（boundary の写しは p > 0 の後でしか読まないので読みに届かない）か、その辺で ASCII と分かっている byte の次」
 // Str の写しの View の P が呼び手の b と同じ値になるのは lower の束縛の事実から（lower.sober の ubBind — `v := utf8.Check(b) catch <脱出>` の v を
-// View{b: b のヘッダ} に組み直す — Check の契約〔成功なら View.b = b〕を std の語彙として lower に置く。report-478 の裁定 (A)）。
+// View{b: b のヘッダ} に組み直す — Check の契約〔成功なら View.b = b〕を std の語彙として lower に置く）。
 // 事実の読みの条件: 同じ番地を検査する Check の呼び出し（写さない — irinl.sober）がこの関数にあれば、その点が事実の読みを支配すること
 
 import "desugar"
 import "std/iter"
 
-// UB_MARK は boundary の写しの byte の読みの印（load8 の C 欄 — 他の段は load8 の C を読まない。ubfFunc が消す）
+// boundary の写しの byte の読みの印（load8 の C 欄 — 他の段は load8 の C を読まない。ubfFunc が消す）
 const UB_MARK = 2
 
-// ubfModule は全関数に掛ける（逐次の経路 — 群の子の経路は lB2Func）。--ubf-stat なら畳めた数を `ubf <関数> <数>` で印字
+// 全関数に掛ける（逐次の経路 — 群の子の経路は lB2Func）。--ubf-stat なら畳めた数を `ubf <関数> <数>` で印字
 func ubfModule(st mut St) {
     mut f := st.fhead
     while f != -1 {
@@ -38,12 +37,12 @@ func ubfModule(st mut St) {
     }
 }
 
-// ubMarked は命令 x が boundary の写しの byte の読みか
+// 命令 x が boundary の写しの byte の読みか
 func ubMarked(st mut St, x InsRef) bool {
     return irInsOp(mut st, x) == OpLoad8 && irInsC(mut st, x) == UB_MARK
 }
 
-// UbW は関数の作業域（値 → 定義の命令・定義のブロック・仮引数のブロックと位置 — bce の BceW と同じ形）
+// 関数の作業域（値 → 定義の命令・定義のブロック・仮引数のブロックと位置 — bce の BceW と同じ形）
 type UbW struct {
     defIns mut []int
     defBlk mut []int
@@ -51,7 +50,7 @@ type UbW struct {
     parIx mut []int
 }
 
-// ubfFunc は畳めた判定の数を返す
+// 畳めた判定の数を返す
 func ubfFunc(st mut St, f FnRef) int {
     if st.ubBound == -1 {
         return 0
@@ -142,7 +141,7 @@ func ubfFunc(st mut St, f FnRef) int {
     return folded
 }
 
-// ubBoundaryTrue は条件 c が「印つきの読み L で `and L, 192` != 128」で、番号 bb のブロックの点で真と証明できるか
+// 条件 c が「印つきの読み L で `and L, 192` != 128」で、番号 bb のブロックの点で真と証明できるか
 func ubBoundaryTrue(st mut St, w mut m2rW, uw mut UbW, bb int, c int) bool {
     cd := uw.defIns[c]
     if cd < 0 || irInsOp(mut st, InsRef(cd)) != OpCmp || irInsA(mut st, InsRef(cd)) != CNe || !ubIsConst(mut st, mut uw, irInsC(mut st, InsRef(cd)), 128) {
@@ -188,7 +187,7 @@ func ubBoundaryTrue(st mut St, w mut m2rW, uw mut UbW, bb int, c int) bool {
     return true
 }
 
-// ubEdgeArgOk は前任 pb から頭 hb への辺の ix 番目の実引数が「0」か「pb の点で ASCII と分かっている byte の次」か（辺が複数ある終端は全部見る）
+// 前任 pb から頭 hb への辺の ix 番目の実引数が「0」か「pb の点で ASCII と分かっている byte の次」か（辺が複数ある終端は全部見る）
 func ubEdgeArgOk(st mut St, w mut m2rW, uw mut UbW, pb int, hb int, ix int, p int) bool {
     b := BlkRef(w.blk[pb])
     t := irBlkTerm(mut st, b)
@@ -215,7 +214,7 @@ func ubArgOk(st mut St, w mut m2rW, uw mut UbW, pb int, l int, ix int, p int) bo
     return y >= 0 && ubAsciiAt(mut st, mut w, mut uw, pb, p, y)
 }
 
-// ubPred1 は値 x が `y + 1`（`1 + y`）なら y（でなければ -1）
+// 値 x が `y + 1`（`1 + y`）なら y（でなければ -1）
 func ubPred1(st mut St, uw mut UbW, x int) int {
     d := uw.defIns[x]
     if d < 0 || irInsOp(mut st, InsRef(d)) != OpBin || irInsA(mut st, InsRef(d)) != BAdd {
@@ -240,7 +239,7 @@ func ubIsConst(st mut St, uw mut UbW, v int, n int) bool {
     return d >= 0 && irInsOp(mut st, InsRef(d)) == OpConst && irInsA(mut st, InsRef(d)) == n
 }
 
-// ubAddr は byte の読み L の番地 `gep.byte P, X`（変位 0）の (P, X)
+// byte の読み L の番地 `gep.byte P, X`（変位 0）の (P, X)
 func ubAddr(st mut St, uw mut UbW, l InsRef) (int, int, bool) {
     if irInsB(mut st, l) != 0 {
         return -1, -1, false
@@ -252,13 +251,13 @@ func ubAddr(st mut St, uw mut UbW, l InsRef) (int, int, bool) {
     return irInsA(mut st, InsRef(gd)), irInsB(mut st, InsRef(gd)), true
 }
 
-// ubSameBase は番地の値 a・b が同じ番地か（itop / ptoi の鎖を両側とも剥がした根が同じ値 — 語と番地の行き来はビット列を変えない。Check の実引数は
+// 番地の値 a・b が同じ番地か（itop / ptoi の鎖を両側とも剥がした根が同じ値 — 語と番地の行き来はビット列を変えない。Check の実引数は
 // ヘッダの語〔i64〕・読みの番地はその itop なので、片側だけの鎖も同じと見る — ubFrozenAt が Check の呼び出しを見落とさない）
 func ubSameBase(st mut St, uw mut UbW, a int, b int, fuel int) bool {
     return a >= 0 && b >= 0 && ubRoot(mut st, mut uw, a, fuel) == ubRoot(mut st, mut uw, b, fuel)
 }
 
-// ubRoot は値 v から itop / ptoi の鎖を（fuel 段まで）剥がした値
+// 値 v から itop / ptoi の鎖を（fuel 段まで）剥がした値
 func ubRoot(st mut St, uw mut UbW, v int, fuel int) int {
     mut x := v
     mut k := fuel
@@ -273,7 +272,7 @@ func ubRoot(st mut St, uw mut UbW, v int, fuel int) int {
     return x
 }
 
-// ubAsciiAt は番号 bb のブロックの点で「`load8 P'[X]` が ASCII の定数」（P' と P は同じ番地）と分かっているか（支配する condbr の辺 —
+// 番号 bb のブロックの点で「`load8 P'[X]` が ASCII の定数」（P' と P は同じ番地）と分かっているか（支配する condbr の辺 —
 // `eq L, K` の then の辺・`ne L, K` の else の辺。K は 0〜127 の定数）
 func ubAsciiAt(st mut St, w mut m2rW, uw mut UbW, bb int, p int, x int) bool {
     mut cb := bb
@@ -298,7 +297,7 @@ func ubAsciiAt(st mut St, w mut m2rW, uw mut UbW, bb int, p int, x int) bool {
     return false
 }
 
-// ubFrozenAt は番地の値 p の buffer について、ブロック番号 fb の命令 l の点で中身が凍結済みと言えるか: この関数に p と同じ番地を実引数に取る
+// 番地の値 p の buffer について、ブロック番号 fb の命令 l の点で中身が凍結済みと言えるか: この関数に p と同じ番地を実引数に取る
 // std/utf8.Check の呼び出しがあれば、その呼び出しの点が l の点を支配すること（Check の手前では freeze の前の mut の別名から書けうる — 凍結の後の
 // 書きだけが静的に不在〔17 節 U2〕。同じブロックなら呼び出しが先）。呼び出しが無ければ View は関数の外から来た（作られた時点で凍結済み）— どこでも可
 func ubFrozenAt(st mut St, w mut m2rW, uw mut UbW, p int, fb int, l InsRef) bool {
@@ -325,7 +324,7 @@ func ubFrozenAt(st mut St, w mut m2rW, uw mut UbW, p int, fb int, l InsRef) bool
     return !seen
 }
 
-// ubCallTakes は呼び出し c の実引数に番地 p と同じ番地の値があるか
+// 呼び出し c の実引数に番地 p と同じ番地の値があるか
 func ubCallTakes(st mut St, uw mut UbW, c InsRef, p int) bool {
     args := irInsB(mut st, c)
     for j <- iter.Range(0, if args < 0 { 0 } else { desugar.HeapGet(mut st.d, args) }) {
@@ -337,7 +336,7 @@ func ubCallTakes(st mut St, uw mut UbW, c InsRef, p int) bool {
     return false
 }
 
-// ubBefore は同じブロックの命令 a が命令 b より前か
+// 同じブロックの命令 a が命令 b より前か
 func ubBefore(st mut St, a InsRef, b InsRef) bool {
     mut x := irInsNext(mut st, a)
     while x != -1 {
@@ -349,7 +348,7 @@ func ubBefore(st mut St, a InsRef, b InsRef) bool {
     return false
 }
 
-// ubDominates は番号 a のブロックが番号 b のブロックを支配するか
+// 番号 a のブロックが番号 b のブロックを支配するか
 func ubDominates(w mut m2rW, a int, b int) bool {
     mut x := b
     while x >= 0 {
@@ -364,7 +363,7 @@ func ubDominates(w mut m2rW, a int, b int) bool {
     return false
 }
 
-// ubLoadIsAscii は l が `load8 gep.byte(P', X)`（P' と P が同じ番地）で k が ASCII の定数か
+// l が `load8 gep.byte(P', X)`（P' と P が同じ番地）で k が ASCII の定数か
 func ubLoadIsAscii(st mut St, w mut m2rW, uw mut UbW, l int, k int, p int, x int) bool {
     if l < 0 || k < 0 {
         return false

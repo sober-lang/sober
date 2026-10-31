@@ -1,6 +1,6 @@
 package lower
 
-// 呼び出しの計数（開発用 `sober build --call-stat` — report-453 段 0: 呼び出しの固定費の値札の重み）。パスの後（検査点の後 — 最適化が展開した
+// 呼び出しの計数（開発用 `sober build --call-stat` — 呼び出しの固定費の値札の重み）。パスの後（検査点の後 — 最適化が展開した
 // 関数は数えない・実際に call される関数だけ）に、本体を持つ関数ごとに入口のブロックへ `cnt[k] += 1` を足し、main の後の rt.depth_report の頭で
 // `callstat <関数名> <回数>` を回数が 0 でない関数ごとに stderr へ出す。数え口は普通の load / store（並列の task では数えこぼす — SOBER_WORKERS=1 で使う）。
 // 入口のブロックがループの頭を兼ねる関数は反復ごとに数える（今の IR では入口へ戻る辺を作らない — 作るなら数え口の置き場を変える）
@@ -11,7 +11,7 @@ import "loader"
 import "std/iter"
 import "std/table"
 
-// CallStat は呼び出しの計数つきの実行ファイル（site = 呼び出し点ごと — `--call-stat=site`・展開便の段 0〔report-466〕: 数え口を直の / 間接の
+// 呼び出しの計数つきの実行ファイル（site = 呼び出し点ごと — `--call-stat=site`: 数え口を直の / 間接の
 // call の手前に置き、`callsite <呼び手> <点の通し番号> <callee〔間接は *〕> <ループの深さ> <回数>` を出す。深さは ilLoopDepth — パスの後の IR で）
 @errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen)
 func CallStat(p loader.Program, site bool, vmode int) ([]byte, error?) {
@@ -21,7 +21,7 @@ func CallStat(p loader.Program, site bool, vmode int) ([]byte, error?) {
     return lowerWith(p, k)
 }
 
-// callStatDump は表を stderr へ（rt.depth_report の頭 — 今の cur から続けて組み、印字の fd を 1 に戻して cur を返す）
+// 表を stderr へ（rt.depth_report の頭 — 今の cur から続けて組み、印字の fd を 1 に戻して cur を返す）
 func callStatDump(st mut St, meta int) {
     // 大域は program を組む途中で作る（elfOutSt が St の大域の鎖を作り直すので CallStat の入口では作れない）
     st.csCnt = addGlobalInit(mut st, int(strLit(mut st, "callstat.cnt")), 1, -1)
@@ -61,7 +61,7 @@ func callStatDump(st mut St, meta int) {
     store(mut st, meta, W_FD, iconst(mut st, 1))
 }
 
-// callStatInsert は数え口を足し（関数ごとの入口・site なら呼び出しの手前）、表と名前の大域の初期値を埋める
+// 数え口を足し（関数ごとの入口・site なら呼び出しの手前）、表と名前の大域の初期値を埋める
 func callStatInsert(st mut St) {
     // 名前のバイト列（bytesAll）と項目ごとの [位置, 長さ]（ents）を数え口を足しながら積む
     // 名前は table に積む（mut []int を mut 引数で渡して append すると境界の写しが項目ごとに走る — site の自己 build で 4 GB）
@@ -114,7 +114,7 @@ func callStatInsert(st mut St) {
     desugar.HeapSet(mut st.d, st.csCnt + G_WORDS, n + 1)
 }
 
-// csSites は f の呼び出し（直 / 間接）ごとに手前へ数え口を足し、項目の名前「<呼び手> <通し番号> <callee> <深さ>」を積む
+// f の呼び出し（直 / 間接）ごとに手前へ数え口を足し、項目の名前「<呼び手> <通し番号> <callee> <深さ>」を積む
 func csSites(st mut St, f FnRef, bytesAll mut table.Table[int], ents mut table.Table[int]) {
     depth := ilLoopDepth(mut st, f)
     mut no := 0

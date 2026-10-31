@@ -1,6 +1,6 @@
 package main
 
-// 借りの関数型仮引数（(α-L0) — language.md 25 節「借り」・report-754 4 節の第一顧客の形）: Stream の匿名の関数型の仮引数 emit は借り。
+// 借りの関数型仮引数（(α-L0) — language.md 25 節「借り」）: Stream の匿名の関数型の仮引数 emit は借り。
 // ServeConn の形（serve）が渡す emit は Conn を捕捉してよい借りの閉包・stream 本体の早期脱出は名前付き関数へ（sendBody — 借りの emit を展開の仮引数へ転送 = η）。
 // build は lower の閉包の値形（借りの env = 借りの位置の関数型の構造ごとの閉じた union — lower/closure.sober）
 

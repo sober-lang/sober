@@ -1,6 +1,6 @@
 package http
 
-// 応答の頭（respHead）の旧新照合の網（CPU 効率便 U4 — report-1051）: 書き換え前の respHead を Ref の名前で写した基準と、応答の格子
+// 応答の頭（respHead）の旧新照合の網: 書き換え前の respHead を Ref の名前で写した基準と、応答の格子
 // （status 200 / 他・Content-Type の有無・validators・cache・headers・enc 0〜3・stream・keep / v10・本文の長さの桁の境目）で頭のバイト列が一致することを照合する
 
 import "std/iter"
@@ -138,7 +138,7 @@ func filler(n int) []byte {
     return freeze(b)
 }
 
-// shapeOf は格子の k 番目の形の応答（本文 n バイト）— 列に積まずに 1 つずつ作る（`mut []Response` に積んで回す形は check が def error — report-1051 の F 候補）
+// 格子の k 番目の形の応答（本文 n バイト）— 列に積まずに 1 つずつ作る（`mut []Response` に積んで回す形は check が def error になる）
 func shapeOf(k int, n int) Response {
     return switch k {
     case 0: Response{status: OK, contentType: "text/plain", body: filler(n)}

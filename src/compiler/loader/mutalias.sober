@@ -10,7 +10,7 @@ package loader
 import "std/iter"
 import "ast"
 
-// aliasIn は実引数の列 l（穴は -1）で前の mut 実引数と重なる最初の mut 実引数の節（無ければ -1）
+// 実引数の列 l（穴は -1）で前の mut 実引数と重なる最初の mut 実引数の節（無ければ -1）
 func aliasIn(t ast.Tree, l int) int {
     if l < 0 {
         return 0 - 1
@@ -30,7 +30,7 @@ func aliasIn(t ast.Tree, l int) int {
     return 0 - 1
 }
 
-// pathOverlap は文字列 p・q（t.data の添字 — 長さ + バイト）が同じか、一方が他方の接頭（境目が `.`）か
+// 文字列 p・q（t.data の添字 — 長さ + バイト）が同じか、一方が他方の接頭（境目が `.`）か
 func pathOverlap(t ast.Tree, p int, q int) bool {
     np := t.data[p]
     nq := t.data[q]

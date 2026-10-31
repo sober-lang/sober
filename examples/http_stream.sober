@@ -1,6 +1,6 @@
 package main
 
-// std/http の応答の stream（クロージャの波の第一顧客 — language.md 28 節 w2・report-754 4 節の形）: route が返す Response の stream は要求の path を
+// std/http の応答の stream（language.md 28 節 w2）: route が返す Response の stream は要求の path を
 // 捕捉した閉包で、ServeConn が頭（Content-Length = length）を送ってから呼ぶ。File は閉包に捕捉させず、path を受けて stream の中で開く
 // （sendFile — emit は借り: 文形 for の本体が捕捉して呼ぶ）。loopback で 1 本の task が Dial → 要求を送る → Accept して ServeConn → 応答を受ける（net_echo の形）
 
@@ -51,7 +51,7 @@ func run(dir string) error? {
     return nil
 }
 
-// serveOne は 1 本だけ受けて ServeConn に渡す（Connection: close で返る）
+// 1 本だけ受けて ServeConn に渡す（Connection: close で返る）
 func serveOne(l net.Listener, dir string) (int, error?) {
     for c <- net.Accept(l)? {
         http.ServeConn(c, (r http.Request) => route(dir, r))?

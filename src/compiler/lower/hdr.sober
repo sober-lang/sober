@@ -1,6 +1,6 @@
 package lower
 
-// ヘッダの読みの一本化（1.0× アタック便 ① — mut slice の LICM）: GVN の後の SSA に掛ける。関数の ptr の仮引数 P（mut slice の仮引数は
+// ヘッダの読みの一本化（mut slice の LICM）: GVN の後の SSA に掛ける。関数の ptr の仮引数 P（mut slice の仮引数は
 // 呼び手のセルの番地）について、関数のどこにも P[0..2]（slice のヘッダ — データの番地・長さ・深度）を書きうる命令が無ければ、
 // `load P[k]`（k = 0..2）を入口の 1 本にまとめる。要素の書き込みのたびにヘッダを読み直していた（GVN の load はブロックの中だけ・
 // store で表を空にする — n-body の advance は境界検査の分岐でブロックが切れ、要素ごとに 2 回ヘッダを読んでいた）。
@@ -73,19 +73,19 @@ func hdrFunc(st mut St, f FnRef) {
         optDce(mut st, f)
         optRenumber(mut st, f)
         // 寄せた load で同じ式になった比較（読みと書きの境界検査 `uge i, len` 等）を 1 つの値に — 後の bce の ② が 2 度目を畳む
-        // （nbody のレジスタ昇格便。B2 の bce は展開後の全関数に支配木を組む値札が +1.1 G で棄却）
+        // （nbody のレジスタ昇格 — B2 の bce は展開後の全関数に支配木を組む値札が +1.1 G で棄却）
         gvnFunc(mut st, f)
     }
 }
 
-// hdrMut は値 v が関数 f の mut 仮引数（印 F_MUTP — 利用者の関数の、呼び手のセルを指す仮引数）か
+// 値 v が関数 f の mut 仮引数（印 F_MUTP — 利用者の関数の、呼び手のセルを指す仮引数）か
 func hdrMut(st mut St, f FnRef, v int) bool {
     np := desugar.HeapGet(mut st.d, irFnPtys(mut st, f))
     return v >= 0 && v < np && v < 62 && (irFnMutP(mut st, f) >> v) & 1 == 1
 }
 
-// hdrRoot は番地の値 v の根（P に対して — HDR_SAFE / HDR_SELF / HDR_UNK）。
-// 根が別の mut 仮引数 Q のデータ（`load Q[0]`）で P も mut 仮引数なら SAFE（6.5 第 2 便 ④）: mut 仮引数の指すセルは mut の場所
+// 番地の値 v の根（P に対して — HDR_SAFE / HDR_SELF / HDR_UNK）。
+// 根が別の mut 仮引数 Q のデータ（`load Q[0]`）で P も mut 仮引数なら SAFE: mut 仮引数の指すセルは mut の場所
 // （mut ローカルか、その欄 — 実引数は欄を辿る経路だけで、要素の場所は書けない）で、slice のデータの中には無い。同じ呼び出しの mut 実引数は排他
 // （language.md 26 節 — diag.MutAlias）なので P と Q のセルは重ならず、値はセルの番地を持たない。だから Q の要素への書き込みは P のヘッダに届かない。
 // 印の無い ptr 仮引数（rt の補助・sret）は slice のデータの中のヘッダを指しうるので対象外。region.relocate は据え置き（ext = false — P のデータの根だけ）
@@ -119,7 +119,7 @@ func hdrRoot(st mut St, f FnRef, v0 int, p int, def mut []int, ext bool) int {
     return HDR_UNK
 }
 
-// hdrClean は関数 f の中に仮引数 p のヘッダ（p[0..2]）を書きうる命令が無いか
+// 関数 f の中に仮引数 p のヘッダ（p[0..2]）を書きうる命令が無いか
 func hdrClean(st mut St, f FnRef, p int, def mut []int) bool {
     mut b := irFnBHead(mut st, f)
     while b != -1 {
@@ -151,7 +151,7 @@ func hdrClean(st mut St, f FnRef, p int, def mut []int) bool {
     return true
 }
 
-// hdrHoist は p[k]（k = 0..2）の load をそれぞれ入口のブロックの頭の 1 本にまとめる（真 = まとめた）
+// p[k]（k = 0..2）の load をそれぞれ入口のブロックの頭の 1 本にまとめる（真 = まとめた）
 func hdrHoist(st mut St, f FnRef, p int) bool {
     b0 := irFnBHead(mut st, f)
     mut did := false
@@ -197,7 +197,7 @@ func hdrHoist(st mut St, f FnRef, p int) bool {
     return did
 }
 
-// ── 分岐の条件の比較の複製（1.0× アタック便 ① の続き）──
+// ── 分岐の条件の比較の複製 ──
 // condbr の条件が別のブロックで定義された比較（GVN の共通化・LICM の巻き上げ — 複数の分岐が共有する）なら、
 // 比較をそのブロックの末尾に複製して条件を付け替える。x86 の cmp + jcc の融合（xFuseScan — 最後の命令で
 // 使いが 1 回の比較）に乗り、真偽値の実体化（setcc / movzx / spill / `cmp $0`）が消える。元の比較は使われなくなれば DCE が消す。
@@ -305,7 +305,7 @@ func cmpDupFunc(st mut St, f FnRef) bool {
 }
 
 
-// cdExt は比較を b へ複製したとき被演算子 v の生存区間が延びうるか（1 / 0）。複製は「真偽値 1 本の代わりに被演算子を生かす」交換なので、
+// 比較を b へ複製したとき被演算子 v の生存区間が延びうるか（1 / 0）。複製は「真偽値 1 本の代わりに被演算子を生かす」交換なので、
 // 延びる被演算子が 1 本以下なら割り当ての圧は増えない（n-body の境界検査 = 添字 1 本・rt.map_find の探索 = 2 本で 47% 遅くなった）。
 // 延びない = 定数・関数の中で 4 回以上使われる長命な値（ヘッダの長さ等）・b かその後続でどのみち使う値
 func cdExt(st mut St, b BlkRef, v int, uses mut []int) int {
@@ -315,7 +315,7 @@ func cdExt(st mut St, b BlkRef, v int, uses mut []int) int {
     return if cdLive(mut st, b, v) { 0 } else { 1 }
 }
 
-// cdLive は比較の被演算子 v が、使うブロック b かその後続でどのみち使われるか（複製で生存区間をループの中へ延ばさない — rt.map_find の探索ループで
+// 比較の被演算子 v が、使うブロック b かその後続でどのみち使われるか（複製で生存区間をループの中へ延ばさない — rt.map_find の探索ループで
 // 割り当てが劣化して 47% 遅くなった）。定数は常に真
 func cdLive(st mut St, b BlkRef, v int) bool {
     if cdUses(mut st, b, v) {
@@ -328,7 +328,7 @@ func cdLive(st mut St, b BlkRef, v int) bool {
     return false
 }
 
-// cdUses はブロック b の命令か終端（条件を除く）が v を使うか
+// ブロック b の命令か終端（条件を除く）が v を使うか
 func cdUses(st mut St, b BlkRef, v int) bool {
     mut i := irBlkIHead(mut st, b)
     while i != -1 {

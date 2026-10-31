@@ -2954,6 +2954,55 @@ b0:
   ret void
 }
 
+define internal i64 @"lambda#0"(i64 %v0, i64 %v1) #0 {
+b0:
+  %v2 = inttoptr i64 %v0 to ptr
+  %v3.p = getelementptr i64, ptr %v2, i64 1
+  %v3 = load i64, ptr %v3.p
+  %v6 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v4.p = getelementptr i64, ptr %v6, i64 0
+  %v4 = load i64, ptr %v4.p
+  call void @"rt.region_enter"()
+  %v5 = add i64 %v1, %v3
+  %v7 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st0 = getelementptr i64, ptr %v7, i64 0
+  store i64 %v4, ptr %st0
+  ret i64 %v5
+}
+
+define internal i64 @"lambda#1"(i64 %v0, i64 %v1) #0 {
+b0:
+  %v2 = inttoptr i64 %v0 to ptr
+  %v6 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v3.p = getelementptr i64, ptr %v6, i64 0
+  %v3 = load i64, ptr %v3.p
+  call void @"rt.region_enter"()
+  %v4 = add i64 0, 2
+  %v5 = mul i64 %v1, %v4
+  %v7 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st0 = getelementptr i64, ptr %v7, i64 0
+  store i64 %v3, ptr %st0
+  ret i64 %v5
+}
+
+define internal void @"rt.sigint"() #0 {
+b0:
+  %v0 = add i64 0, 231
+  %v1 = add i64 0, 130
+  %v2 = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 %v0, i64 %v1)
+  call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 130)
+  unreachable
+}
+
+define internal void @"rt.sigterm"() #0 {
+b0:
+  %v0 = add i64 0, 231
+  %v1 = add i64 0, 143
+  %v2 = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 %v0, i64 %v1)
+  call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 143)
+  unreachable
+}
+
 define void @"sober_entry"(ptr %v0) #0 {
 b0:
   %v1 = getelementptr i64, ptr @"rt.meta", i64 0
@@ -4109,53 +4158,4 @@ b91:
   %v404 = add i64 0, 1
   %v405 = add i64 %v383, %v404
   br label %b85
-}
-
-define internal void @"rt.sigterm"() #0 {
-b0:
-  %v0 = add i64 0, 231
-  %v1 = add i64 0, 143
-  %v2 = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 %v0, i64 %v1)
-  call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 143)
-  unreachable
-}
-
-define internal void @"rt.sigint"() #0 {
-b0:
-  %v0 = add i64 0, 231
-  %v1 = add i64 0, 130
-  %v2 = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 %v0, i64 %v1)
-  call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 130)
-  unreachable
-}
-
-define internal i64 @"lambda#0"(i64 %v0, i64 %v1) #0 {
-b0:
-  %v2 = inttoptr i64 %v0 to ptr
-  %v3.p = getelementptr i64, ptr %v2, i64 1
-  %v3 = load i64, ptr %v3.p
-  %v6 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v4.p = getelementptr i64, ptr %v6, i64 0
-  %v4 = load i64, ptr %v4.p
-  call void @"rt.region_enter"()
-  %v5 = add i64 %v1, %v3
-  %v7 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st0 = getelementptr i64, ptr %v7, i64 0
-  store i64 %v4, ptr %st0
-  ret i64 %v5
-}
-
-define internal i64 @"lambda#1"(i64 %v0, i64 %v1) #0 {
-b0:
-  %v2 = inttoptr i64 %v0 to ptr
-  %v6 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v3.p = getelementptr i64, ptr %v6, i64 0
-  %v3 = load i64, ptr %v3.p
-  call void @"rt.region_enter"()
-  %v4 = add i64 0, 2
-  %v5 = mul i64 %v1, %v4
-  %v7 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st0 = getelementptr i64, ptr %v7, i64 0
-  store i64 %v3, ptr %st0
-  ret i64 %v5
 }

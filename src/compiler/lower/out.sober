@@ -1,6 +1,6 @@
 package lower
 
-// 出力の正準順（段 6 P4-2 (O1) — language.md 11 節「P4 の意味の裁定」）: stdout = spawn の木の先行順。
+// 出力の正準順（language.md 11 節「P4 の意味の裁定」）: stdout = spawn の木の先行順。
 // - 区間（segment）の連結リスト = 出力の順そのもの。task は TCB の TC_SEG に今書いている区間を持つ。spawn は親の区間の直後に子の区間と親の続きの区間を
 //   差し込み、親の区間を閉じる（速い道 = 親の区間が頭なら、それを親の続きとしてそのまま使い、子の区間を頭の前に差すだけ — 頭の溜めは常に空）
 // - 頭（フロンティア）の区間の task だけが行バッファから直接 write し、後ろの task は行を自分の区間の溜めへ積む（rt.flush — fd 1 のときだけ・fd 2 は直接）
@@ -26,7 +26,7 @@ const SG_WORDS = 5
 const SG_CHUNK = 256        // 区間の塊（mmap 1 回で SG_CHUNK 個）
 const SG_BUF_MIN = 4096     // 溜めの最初の容量（バイト — 1 頁。倍々に伸びる）
 
-// needOutRt は区間の rt の宣言（needTaskRt から — std/task を使うプログラムだけ）
+// 区間の rt の宣言（needTaskRt から — std/task を使うプログラムだけ）
 func needOutRt(st mut St) {
     lsNeed(mut st, NEED_OUT, 0)
     st.outG = addGlobalInit(mut st, int(strLit(mut st, "rt.out")), OUT_WORDS, -1)
@@ -47,7 +47,7 @@ func buildOutRt(st mut St) {
     buildOutFork(mut st)
 }
 
-// segNew は開いた空の区間（空きの鎖から — 尽きたら rt.out_node が塊を作る）
+// 開いた空の区間（空きの鎖から — 尽きたら rt.out_node が塊を作る）
 func segNew(st mut St) int {
     og := globaladdr(mut st, st.outG)
     f := load(mut st, og, OUT_FREE)
@@ -69,7 +69,7 @@ func segNew(st mut St) int {
     return s
 }
 
-// outInitMain は入口で main の区間を作って頭にする（taskInitMain から）
+// 入口で main の区間を作って頭にする（taskInitMain から）
 func outInitMain(st mut St) {
     s := segNew(mut st)
     store(mut st, s, SG_NEXT, iconst(mut st, 0))
@@ -77,7 +77,7 @@ func outInitMain(st mut St) {
     store(mut st, globaladdr(mut st, st.mainTcb), TC_SEG, ptoi(mut st, s))
 }
 
-// outFork は spawn（親 me・子 tcb）の区間の差し込み（rt.task_go の頭 — 切替の前）。速い道 = 親の区間が頭（溜めは空）: 親の続きはそのまま・
+// spawn（親 me・子 tcb）の区間の差し込み（rt.task_go の頭 — 切替の前）。速い道 = 親の区間が頭（溜めは空）: 親の続きはそのまま・
 // 子の区間を頭の前へ。それ以外は rt.out_fork（冷たい道を外に出す — spawn の切替点の割り当てを軽く保つ）
 func outFork(st mut St, me int, tcb int) {
     og := globaladdr(mut st, st.outG)
@@ -105,14 +105,14 @@ func outFork(st mut St, me int, tcb int) {
     setCur(mut st, bEnd)
 }
 
-// outNoSeg は spawn の子 tcb が区間を持たないか（段 6 P4-6）: TC_CUTOK ≠ 0（純な子 = 1・stdout に書かない子 = 2 — 子孫も・cancel.sober の
-// cutPatch が閉世界で決める — report-994 F4）か、親が区間を持たない（区間を持たない task の子孫・純な子の中の走らせ直し）。区間を持たない task は
+// spawn の子 tcb が区間を持たないか: TC_CUTOK ≠ 0（純な子 = 1・stdout に書かない子 = 2 — 子孫も・cancel.sober の
+// cutPatch が閉世界で決める）か、親が区間を持たない（区間を持たない task の子孫・純な子の中の走らせ直し）。区間を持たない task は
 // stdout に何も書かないので、先行順の列に席が要らない — spawn / 終わりの区間の操作（M:N では全ワーカー共通の鍵 MN_OLOCK）を踏まない
 func outNoSeg(st mut St, me int, tcb int) int {
     return bin(mut st, BOr, cmp(mut st, CNe, load(mut st, tcb, TC_CUTOK), iconst(mut st, 0)), cmp(mut st, CEq, load(mut st, me, TC_SEG), iconst(mut st, 0)))
 }
 
-// buildOutFork は rt.out_fork(me, tcb)（親の区間 S が頭でない）: S → Sc（子）→ S'（親の続き）→ S の元の次・S を閉じる（頭でないので進めない）
+// rt.out_fork(me, tcb)（親の区間 S が頭でない）: S → Sc（子）→ S'（親の続き）→ S の元の次・S を閉じる（頭でないので進めない）
 func buildOutFork(st mut St) {
     begin(mut st, st.rtOutFork)
     s := itop(mut st, load(mut st, 0, TC_SEG))
@@ -127,7 +127,7 @@ func buildOutFork(st mut St) {
     ret(mut st, -1)
 }
 
-// outClose は終わる task（tcb）の区間を閉じる（rt.task_start から）。頭なら進める — 速い道（溜めを持ったことがない区間で、次が開いた空の区間 =
+// 終わる task（tcb）の区間を閉じる（rt.task_start から）。頭なら進める — 速い道（溜めを持ったことがない区間で、次が開いた空の区間 =
 // 子が待たずに走り切った形）はその場で頭を次へ移して解放するだけ・それ以外は rt.out_adv（頭の区間の溜めは常に空 — 出すものは無い）
 func outClose(st mut St, tcb int) {
     og := globaladdr(mut st, st.outG)
@@ -159,9 +159,9 @@ func outClose(st mut St, tcb int) {
     setCur(mut st, bEnd)
 }
 
-// outRoute は rt.flush の頭（std/task を使うプログラムだけ）: fd 1 で今の task の区間が頭でなければ、行を区間の溜めへ積んで返る
+// rt.flush の頭（std/task を使うプログラムだけ）: fd 1 で今の task の区間が頭でなければ、行を区間の溜めへ積んで返る
 func outRoute(st mut St, meta int) {
-    // M:N（段 6 P4-4）: 頭かどうかの判定と溜めへの積みを鍵の中で（頭を進める task が同時に溜めを出して頭を移しうる）
+    // M:N: 頭かどうかの判定と溜めへの積みを鍵の中で（頭を進める task が同時に溜めを出して頭を移しうる）
     // fd 2（死の文面・trace）は鍵を取らない（区間の対象外 — 終わりの drain が鍵を持ったまま stderr へ書く）
     bMn := newBlock(mut st)
     bCo := newBlock(mut st)
@@ -201,7 +201,7 @@ func outRoute(st mut St, meta int) {
     setCur(mut st, bGoAll)
 }
 
-// buildOutNode は rt.out_node() ptr: 区間の塊を mmap して 1 つ目を返し、残りを空きの鎖へ（溜め・容量は 0 — 無名の頁は 0 で始まる）
+// rt.out_node() ptr: 区間の塊を mmap して 1 つ目を返し、残りを空きの鎖へ（溜め・容量は 0 — 無名の頁は 0 で始まる）
 func buildOutNode(st mut St) {
     begin(mut st, st.rtOutNode)
     og := globaladdr(mut st, st.outG)
@@ -226,9 +226,9 @@ func buildOutNode(st mut St) {
     ret(mut st, itop(mut st, a))
 }
 
-// sysMmap は無名・NORESERVE の size バイト（失敗は region の超過と同じ死 102 — 種類 va_exhausted）。写したら madvise(MADV_NOHUGEPAGE)
-// （report-1053 — 透過的 huge page が always の箱では、隣同士で溶け合ったワーカーごとの小さい写像〔PBUF・環の記録・slab ほか〕に
-// 1 頁触るだけで 2 MiB 窓ごと常駐し、ワーカーあたり +5 MB 前後 RSS が膨らんでいた。失敗は無視）
+// 無名・NORESERVE の size バイト（失敗は region の超過と同じ死 102 — 種類 va_exhausted）。写したら madvise(MADV_NOHUGEPAGE)
+// （透過的 huge page が always の箱では、隣同士で溶け合ったワーカーごとの小さい写像〔PBUF・環の記録・slab ほか〕に
+// 1 頁触るだけで 2 MiB 窓ごと常駐し、ワーカーあたり +5 MB 前後 RSS が膨らむ。失敗は無視）
 func sysMmap(st mut St, size int) int {
     args := listN(mut st, 7)
     desugar.HeapSet(mut st.d, args + 1, iconst(mut st, 9))
@@ -249,7 +249,7 @@ func sysMmap(st mut St, size int) int {
     return a
 }
 
-// segDump は区間 s の溜めを出して長さを 0 に
+// 区間 s の溜めを出して長さを 0 に
 func segDump(st mut St, s int) {
     ln := load(mut st, s, SG_LEN)
     bW := newBlock(mut st)
@@ -262,7 +262,7 @@ func segDump(st mut St, s int) {
     setCur(mut st, bEnd)
 }
 
-// buildOutAdv は rt.out_adv(): 頭（閉じている）から、閉じた区間の溜めを出して解放しながら進み、開いた区間の溜めを出してそこを頭にする
+// rt.out_adv(): 頭（閉じている）から、閉じた区間の溜めを出して解放しながら進み、開いた区間の溜めを出してそこを頭にする
 func buildOutAdv(st mut St) {
     begin(mut st, st.rtOutAdv)
     og := globaladdr(mut st, st.outG)
@@ -300,7 +300,7 @@ func buildOutAdv(st mut St) {
     ret(mut st, -1)
 }
 
-// buildOutAppend は rt.out_append(s, p, n): 区間 s の溜めへ n バイト積む（足りなければ倍々に mmap し直す — 書き手を止めない）
+// rt.out_append(s, p, n): 区間 s の溜めへ n バイト積む（足りなければ倍々に mmap し直す — 書き手を止めない）
 func buildOutAppend(st mut St) {
     begin(mut st, st.rtOutAppend)
     s := 0
@@ -336,7 +336,7 @@ func buildOutAppend(st mut St) {
     ret(mut st, -1)
 }
 
-// buildOutWrite は rt.out_write(p, n): fd 1 へ n バイト（短い書き込みは続きから・EINTR は再試行・失敗は捨てる — rt.flush と同じ）
+// rt.out_write(p, n): fd 1 へ n バイト（短い書き込みは続きから・EINTR は再試行・失敗は捨てる — rt.flush と同じ）
 func buildOutWrite(st mut St) {
     begin(mut st, st.rtOutWrite)
     p := 0
@@ -365,7 +365,7 @@ func buildOutWrite(st mut St) {
     ret(mut st, -1)
 }
 
-// buildOutDrain は rt.out_drain(): 行バッファを今の task の区間へ（rt.flush）、頭から全区間の溜めを順に出す（終わりの前 — 開いた区間も）
+// rt.out_drain(): 行バッファを今の task の区間へ（rt.flush）、頭から全区間の溜めを順に出す（終わりの前 — 開いた区間も）
 func buildOutDrain(st mut St) {
     begin(mut st, st.rtOutDrain)
     if st.rtMut == 4 {
@@ -433,7 +433,7 @@ func buildOutDrain(st mut St) {
     ret(mut st, -1)
 }
 
-// imax は max(a, b)（分岐なし — a + (b - a) × (b > a)）
+// max(a, b)（分岐なし — a + (b - a) × (b > a)）
 func imax(st mut St, a int, b int) int {
     return bin(mut st, BAdd, a, bin(mut st, BMul, bin(mut st, BSub, b, a), cmp(mut st, CGt, b, a)))
 }

@@ -1,0 +1,28 @@
+package main
+
+// `sober cache info` / `sober cache gc` の handler
+
+import "std/cli"
+import "lower"
+
+// cmdCache は `sober cache info`（build の後段の関数キャッシュの置き場の一覧）・`sober cache gc`（線を越えた古い世代・古い一時ファイル・隠した世代の残りを消す）
+func cmdCacheInfo(cl cli.Parsed) int {
+    return cmdCache(false)
+}
+
+func cmdCacheGc(cl cli.Parsed) int {
+    return cmdCache(true)
+}
+
+func cmdCache(gc bool) int {
+    root := buildCacheRoot()
+    if root == "" {
+        return fail("sober: cache: no cache directory (SOBER_CACHE is empty and neither XDG_CACHE_HOME nor HOME is set)")
+    }
+    if gc {
+        lower.BcGc(root, buildCacheGen())
+        return 0
+    }
+    lower.BcInfo(root, buildCacheGen())
+    return 0
+}

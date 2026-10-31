@@ -9,7 +9,7 @@ import "desugar"
 import "ast"
 import "std/iter"
 
-// errsInfo はラベルの union の情報（初出で作る。SI_DECL = -1 が印）
+// ラベルの union の情報（初出で作る。SI_DECL = -1 が印）
 func errsInfo(st mut St) int {
     x := st.errs
     if x >= 0 {
@@ -26,7 +26,7 @@ func errsInfo(st mut St) int {
     return info
 }
 
-// layoutErrs はラベルの union のレイアウト（ラベルのフィールド型は宣言側 package で解決する）
+// ラベルの union のレイアウト（ラベルのフィールド型は宣言側 package で解決する）
 func layoutErrs(st mut St, info int) error? {
     desugar.HeapSet(mut st.d, info + SI_STATE, LLaying)
     saved_env := st.tenv
@@ -56,13 +56,13 @@ func layoutErrsBody(st mut St, info int) error? {
     return nil
 }
 
-// errLabelOf は型の名前（"N" か "ref.N"）の error ラベルの添字（無ければ -1）。pk は参照側の package（修飾参照は公開の検査つき — desugar.ResolveVariant）
+// 型の名前（"N" か "ref.N"）の error ラベルの添字（無ければ -1）。pk は参照側の package（修飾参照は公開の検査つき — desugar.ResolveVariant）
 func errLabelOf(st mut St, pk int, name desugar.StrRef) int {
     r := desugar.ResolveVariant(mut st.d, pk, name)
     return if r.kind == desugar.TopVariant && r.idx == desugar.ERRS { r.sub } else { -1 }
 }
 
-// errType は組み込み error の型（初出で作る）
+// 組み込み error の型（初出で作る）
 func errType(st mut St) (int, error?) {
     x := st.errstruct
     if x >= 0 {
@@ -86,7 +86,7 @@ func errType(st mut St) (int, error?) {
     return ty, nil
 }
 
-// isErr は t が組み込み error か
+// t が組み込み error か
 func isErr(st mut St, t int) bool {
     x := st.errstruct
     return x >= 0 && isTag(mut st, t, TStruct) && desugar.HeapGet(mut st.d, t + 1) == x
@@ -96,13 +96,13 @@ func isErrOpt(st mut St, t int) bool {
     return isTag(mut st, t, TOpt) && isErr(mut st, desugar.HeapGet(mut st.d, t + 1))
 }
 
-// isLabel は error ラベルのリテラルの型（全ラベルの union）か
+// error ラベルのリテラルの型（全ラベルの union）か
 func isLabel(st mut St, t int) bool {
     x := st.errs
     return x >= 0 && isTag(mut st, t, TUnion) && desugar.HeapGet(mut st.d, t + 1) == x
 }
 
-// labelToErr はラベルの値 → error: (L, 空の鎖)。空の鎖はゼロのヘッダ（深度 0 — relocate の対象にならない）
+// ラベルの値 → error: (L, 空の鎖)。空の鎖はゼロのヘッダ（深度 0 — relocate の対象にならない）
 func labelToErr(st mut St, t int, v int) (Val, error?) {
     et := errType(mut st)?
     p := newAgg(mut st, et)
@@ -114,7 +114,7 @@ func labelToErr(st mut St, t int, v int) (Val, error?) {
     return Val{t: et, v: p}, nil
 }
 
-// chainPush は error の鎖に内側の error を積む（包み替え）: dst_chain ← append(内側の鎖, 内側の先頭)。
+// error の鎖に内側の error を積む（包み替え）: dst_chain ← append(内側の鎖, 内側の先頭)。
 // 内側の error は src + src_off 語（先頭ラベル lt、その後に鎖のヘッダ）。imm の append なので最内 region へ全コピー + 1 セル
 func chainPush(st mut St, dst_chain int, src int, src_off int, lt int) {
     inner := fieldPtr(mut st, src, src_off)
@@ -128,7 +128,7 @@ func chainPush(st mut St, dst_chain int, src int, src_off int, lt int) {
     store(mut st, dst_chain, 2, d)
 }
 
-// causeOf は error の cause: e（error の値のアドレス）の 1 つ内側の error?。鎖が空なら nil、
+// error の cause: e（error の値のアドレス）の 1 つ内側の error?。鎖が空なら nil、
 // でなければ (鎖の末尾, 鎖の [0 : len-1])（部分列はビュー — 同じセル・同じ深度）
 func causeOf(st mut St, e int, et int, lt int) int {
     ot := optOf(mut st, et)
@@ -157,7 +157,7 @@ func causeOf(st mut St, e int, et int, lt int) int {
     return out
 }
 
-// tryResults は後置 `?`: 呼び出しの最後の結果 error? のタグが非 0 なら、関数の結果へゼロ値 + err（`? L{…}` なら包み替え）を書いて
+// 後置 `?`: 呼び出しの最後の結果 error? のタグが非 0 なら、関数の結果へゼロ値 + err（`? L{…}` なら包み替え）を書いて
 // 出口の後半（defer → relocate → 深度復元 → ret）へ。一致側は残りの結果の列
 func tryResults(st mut St, e desugar.NodeRef) (int, error?) {
     at := e
@@ -240,7 +240,7 @@ func tryResults(st mut St, e desugar.NodeRef) (int, error?) {
     return out, nil
 }
 
-// traceErr は開発用の計装（st.traceErrs — 関数の出口の後半の入口）: 最後の結果が error? で非 nil（error なら常に）なら
+// 開発用の計装（st.traceErrs — 関数の出口の後半の入口）: 最後の結果が error? で非 nil（error なら常に）なら
 // `#errtrace <関数の表の添字> <ラベルのタグ>` を標準出力へ（println と同じ行バッファ）。持ち上げたラムダ・インスタンス（fn = -1）は出さない。
 // error? の値は [opt のタグ, error（先頭ラベルの union: タグ, …）, …] — 結果は error を含むので常に sret
 func traceErr(st mut St) {
@@ -275,7 +275,7 @@ func traceErr(st mut St) {
     setCur(mut st, done)
 }
 
-// traceEff は開発用の計装（st.traceEffs — 関数の本体の頭と出口の後半）: `<w><関数の表の添字> <task>` の行（持ち上げたラムダ・インスタンスは出さない。
+// 開発用の計装（st.traceEffs — 関数の本体の頭と出口の後半）: `<w><関数の表の添字> <task>` の行（持ち上げたラムダ・インスタンスは出さない。
 // task = 今の task の TCB の番地〔std/task を使わないプログラムは 0〕— 判定は task ごとに呼び出しの積みを組み直す）
 func traceEff(st mut St, w string) {
     fx := infoAt(mut st, st.info)
@@ -287,7 +287,7 @@ func traceEff(st mut St, w string) {
     traceTask(mut st)
 }
 
-// traceLeaf は開発用の計装（st.traceEffs）: 効果の葉 b（loader.Eff* のビット — 0 は出さない）の `#effleaf <ビット> <task>` の行
+// 開発用の計装（st.traceEffs）: 効果の葉 b（loader.Eff* のビット — 0 は出さない）の `#effleaf <ビット> <task>` の行
 func traceLeaf(st mut St, b int) {
     if !st.traceEffs || b == 0 {
         return
@@ -297,14 +297,14 @@ func traceLeaf(st mut St, b int) {
     traceTask(mut st)
 }
 
-// traceTask は ` <今の task の TCB の番地>` と改行
+// ` <今の task の TCB の番地>` と改行
 func traceTask(st mut St) {
     printChars(mut st, " ")
     call(mut st, st.rtPint, list1(mut st, if st.taskUse { load(mut st, globaladdr(mut st, st.taskG), TK_CUR) } else { iconst(mut st, 0) }))
     printChars(mut st, "\n")
 }
 
-// traceSwitch は開発用の計装（st.traceErrs）: error の switch の subject（値 v — 先頭ラベルの union のタグが語 0）ごとに
+// 開発用の計装（st.traceErrs）: error の switch の subject（値 v — 先頭ラベルの union のタグが語 0）ごとに
 // `#errsw <ファイル> <字句> <ラベルのタグ>` を標準出力へ（仮引数・cause の集合の照合 — 戻りの計装では見えない）
 func traceSwitch(st mut St, sw desugar.NodeRef, v int) {
     at := posOf(mut st, sw)

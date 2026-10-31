@@ -1,6 +1,6 @@
 package main
 
-// utf8 の型つき証人（第三便 M13）: 全体を 1 回 Check し、文字境界で切った部分列は Str が検査し直さずに string にする。
+// utf8 の型つき証人: 全体を 1 回 Check し、文字境界で切った部分列は Str が検査し直さずに string にする。
 // 境界でない位置で切ると InvalidUtf8（継続バイトの位置）・不正な列は Check が拒否・証人を経ない string() は今までどおり検査
 
 import "std/strings"

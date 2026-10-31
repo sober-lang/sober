@@ -17,7 +17,7 @@ import "ast"
 import "std/iter"
 import "obuf"
 
-// Print は t の根を 1 ファイル分のソースのバイト列にする
+// t の根を 1 ファイル分のソースのバイト列にする
 func Print(t ast.Tree) []byte {
     mut out := mut []byte{}
     file(mut out, t)
@@ -53,7 +53,7 @@ func IntrinsicDeclText(t ast.Tree, n int) []byte {
     return freeze(out)
 }
 
-// Expr は木 t の式の節 n の綴り（1 行 — assert の失敗の印字の式の綴り。loader/assert.sober）
+// 木 t の式の節 n の綴り（1 行 — assert の失敗の印字の式の綴り。loader/assert.sober）
 func Expr(t ast.Tree, n int) []byte {
     mut out := mut []byte{}
     expr(mut out, t, n, 0, true)
@@ -116,7 +116,7 @@ func raw(out mut []byte, t ast.Tree, s int) {
     }
 }
 
-// quoted は文字列 s を文字列リテラルの中身として escape して書く（引用符は書かない）。
+// 文字列 s を文字列リテラルの中身として escape して書く（引用符は書かない）。
 // NUL と改行は字句の規則で生では書けない。`$` は常に `\$`（`${` を穴と読ませない）
 func quoted(out mut []byte, t ast.Tree, s int) {
     n := t.data[s]
@@ -142,7 +142,7 @@ func quoted(out mut []byte, t ast.Tree, s int) {
     }
 }
 
-// names は文字列の列を ", " でつなぐ
+// 文字列の列を ", " でつなぐ
 func names(out mut []byte, t ast.Tree, l int) {
     n := t.data[l]
     for i <- iter.Range(0, n) {
@@ -153,7 +153,7 @@ func names(out mut []byte, t ast.Tree, l int) {
     }
 }
 
-// typeParams は `[T, U]`（空なら何も書かない）
+// `[T, U]`（空なら何も書かない）
 func typeParams(out mut []byte, t ast.Tree, l int) {
     if t.data[l] > 0 {
         out = append(out, '[')
@@ -207,7 +207,7 @@ func file(out mut []byte, t ast.Tree) {
         out = append(out, '\n')
         i += 1
     }
-    // std の本体なしの宣言（KIntrinsic — 息継ぎ ③）は const の後・func の前に
+    // std の本体なしの宣言（KIntrinsic）は const の後・func の前に
     if f.f != 0 {
         i = 0
         while i < t.data[f.f] {
@@ -226,7 +226,7 @@ func file(out mut []byte, t ast.Tree) {
     }
 }
 
-// intrinsicDecl は `@intrinsic("鍵")` + `func 名前(仮引数) 結果`（本体なし・mut 仮引数なし）
+// `@intrinsic("鍵")` + `func 名前(仮引数) 結果`（本体なし・mut 仮引数なし）
 func intrinsicDecl(out mut []byte, t ast.Tree, x ast.Node) {
     obuf.Lit(mut out, "@intrinsic(\"")
     raw(mut out, t, x.b)
@@ -248,7 +248,7 @@ func intrinsicDecl(out mut []byte, t ast.Tree, x ast.Node) {
     results(mut out, t, x.d)
 }
 
-// fields は KField の列。flat なら `x int; y int`（union の variant の中）、そうでなければ 1 行 1 つ（d 段）
+// KField の列。flat なら `x int; y int`（union の variant の中）、そうでなければ 1 行 1 つ（d 段）
 func fields(out mut []byte, t ast.Tree, l int, d int, flat bool) {
     n := t.data[l]
     for i <- iter.Range(0, n) {
@@ -341,19 +341,19 @@ func typeDecl(out mut []byte, t ast.Tree, x ast.Node) {
     }
 }
 
-// errorsAnnot は `@errors(A, ref.B)` の行（ラベル名の列 l — 読めなかった項 "?" もそのまま印字する: 再 parse で同じ "?" に戻る）
+// `@errors(A, ref.B)` の行（ラベル名の列 l — 読めなかった項 "?" もそのまま印字する: 再 parse で同じ "?" に戻る）
 func errorsAnnot(out mut []byte, t ast.Tree, l int) {
     errorsList(mut out, t, l)
     out = append(out, '\n')
 }
 
-// errorsList は `@errors(A, ref.B)`（改行なし — 名前付き関数型の後置にも使う）
+// `@errors(A, ref.B)`（改行なし — 名前付き関数型の後置にも使う）
 func errorsList(out mut []byte, t ast.Tree, l int) {
     obuf.Lit(mut out, "@errors")
     argList(mut out, t, l)
 }
 
-// argList は注釈の括弧の中の名前の列 `(A, ref.B)`（@errors / @secret / @effects）
+// 注釈の括弧の中の名前の列 `(A, ref.B)`（@errors / @secret / @effects）
 func argList(out mut []byte, t ast.Tree, l int) {
     out = append(out, '(')
     for i <- iter.Range(0, t.data[l]) {
@@ -365,7 +365,7 @@ func argList(out mut []byte, t ast.Tree, l int) {
     out = append(out, ')')
 }
 
-// constLine は const 宣言 1 つ（`@embed` の行つき・末尾の改行なし）
+// const 宣言 1 つ（`@embed` の行つき・末尾の改行なし）
 func constLine(out mut []byte, t ast.Tree, c ast.Node) {
     if (c.f & 2) != 0 {
         obuf.Lit(mut out, "@secret\n")
@@ -385,7 +385,7 @@ func funcDecl(out mut []byte, t ast.Tree, x ast.Node) {
     funcDeclX(mut out, t, x, false, false)
 }
 
-// funcDeclX は func 宣言（sig = 署名だけ・expand = `@expand` の行を足す — .sobi の書き出し）
+// func 宣言（sig = 署名だけ・expand = `@expand` の行を足す — .sobi の書き出し）
 func funcDeclX(out mut []byte, t ast.Tree, x ast.Node, sig bool, expand bool) {
     if t.data[x.f] >= 7 && t.data[x.f + 6] >= 0 {
         errorsAnnot(mut out, t, t.data[x.f + 6])
@@ -464,7 +464,7 @@ func typeList(out mut []byte, t ast.Tree, l int) {
     }
 }
 
-// results は signature の result（0 個は何も書かない、1 個は裸、2 個以上は括弧）
+// signature の result（0 個は何も書かない、1 個は裸、2 個以上は括弧）
 func results(out mut []byte, t ast.Tree, l int) {
     n := t.data[l]
     if n == 1 {
@@ -528,7 +528,7 @@ func typeExpr(out mut []byte, t ast.Tree, n int) {
     }
 }
 
-// funcTypeParams は関数型の仮引数（型の列 l・名前の列 pnames — 名前なしは -1 で型だけ）
+// 関数型の仮引数（型の列 l・名前の列 pnames — 名前なしは -1 で型だけ）
 func funcTypeParams(out mut []byte, t ast.Tree, l int, pnames int) {
     if pnames < 0 {
         typeList(mut out, t, l)
@@ -546,7 +546,7 @@ func funcTypeParams(out mut []byte, t ast.Tree, l int, pnames int) {
 
 // ── 文・ブロック ──
 
-// block は文の列 l を `{ … }` で書く（d はブロックの開きの段。flat なら 1 行で `{ a; b; }`）
+// 文の列 l を `{ … }` で書く（d はブロックの開きの段。flat なら 1 行で `{ a; b; }`）
 func block(out mut []byte, t ast.Tree, l int, d int, flat bool) {
     if t.data[l] == 0 {
         obuf.Lit(mut out, "{}")
@@ -562,7 +562,7 @@ func block(out mut []byte, t ast.Tree, l int, d int, flat bool) {
     }
 }
 
-// stmtLines は文の列を 1 行 1 文（d 段）で書く。flat なら ` a; b;`（文の終わりは明示の ';' — case の本体も次の case の前で閉じる）
+// 文の列を 1 行 1 文（d 段）で書く。flat なら ` a; b;`（文の終わりは明示の ';' — case の本体も次の case の前で閉じる）
 func stmtLines(out mut []byte, t ast.Tree, l int, d int, flat bool) {
     n := t.data[l]
     for i <- iter.Range(0, n) {

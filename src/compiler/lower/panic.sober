@@ -1,6 +1,6 @@
 package lower
 
-// panic の観測性 第一便: 閉世界で panic しうる点を lower が全部数え、点の番号 → 種類 + file:line:col の表を
+// panic の観測性: 閉世界で panic しうる点を lower が全部数え、点の番号 → 種類 + file:line:col の表を
 // 実行ファイルに焼く。死ぬときは stderr に 1 行（`panic: index out of range at lexer/token.sober:84:12`）を書いてから exit 101。
 // 点の番号は IR の既存の op で運ぶ（`call @rt.panic(const 番号)` の後に今までどおり `exit 101` — IR のテキスト形式は変えない: stage1 の
 // 正規バックエンドが同じ IR テキストを建てる照合〔elfeq〕を保つ）。表は大域 @rt.psites（1 点 1 語 — 種類 | ファイル << 8 | 行 << 24 | 列 << 48）。
@@ -36,7 +36,7 @@ const PM_DEPTH = 1     // region の入れ子が深度の上限を超えた
 const PM_SLOT = 2      // 1 つの region がスロットの容量を超えた
 const PM_VA = 3        // スロット・task の塊の VA の予約（mmap）が尽きた（4 = PM_STACK — task.sober）
 
-// panicSite は点 at（種類 kind）の panic: 今のブロックを rt.panic(番号) → exit 101 で閉じる（呼び手は cur を次のブロックに置き直す）
+// 点 at（種類 kind）の panic: 今のブロックを rt.panic(番号) → exit 101 で閉じる（呼び手は cur を次のブロックに置き直す）
 func panicSite(st mut St, kind int, at desugar.NodeRef) {
     needPanic(mut st)
     pos := posOf(mut st, at)
@@ -44,13 +44,13 @@ func panicSite(st mut St, kind int, at desugar.NodeRef) {
     table.Push(mut st.psites, kind)
     table.Push(mut st.psites, pos.file)
     table.Push(mut st.psites, pos.tok)
-    pc := iconst(mut st, id)
+    pc := iconstTag(mut st, id + st.numOff, CT_PSITE)
     lsEv(mut st, EV_PSITE, int(irBlkITail(mut st, st.cur)), kind, pos.file, pos.tok)
     call(mut st, st.rtPanic, list1(mut st, pc))
     exit(mut st, PANIC)
 }
 
-// panicCall は `panic(…)`（loader の panicx.sober が写した形 — 実引数は [ラベルの名前の文字列] か [名前, 欄の struct の composite]）:
+// `panic(…)`（loader の panicx.sober が写した形 — 実引数は [ラベルの名前の文字列] か [名前, 欄の struct の composite]）:
 // 欄の値を書いた順に評価してから、標準エラーへ `panic: L{a: 1, s: "x"}` を書き（欄は宣言順・string は引用 + エスケープ）、rt.panic が ` at file:line:col` を足す。
 // 実引数なし = 裸の `panic()`（廃止 — loader が拒否するのでここには来ない）
 func panicCall(st mut St, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
@@ -121,7 +121,7 @@ func needQstr(st mut St) {
     }
 }
 
-// buildPrintQstr は rt.print_qstr(s) の本体: `"` + 中身（`"` と `\` は前に `\`・改行は `\n`）+ `"`
+// rt.print_qstr(s) の本体: `"` + 中身（`"` と `\` は前に `\`・改行は `\n`）+ `"`
 func buildPrintQstr(st mut St) {
     begin(mut st, st.rtPqstr)
     p := itop(mut st, load(mut st, 0, 0))
@@ -168,13 +168,13 @@ func needPanic(st mut St) {
     }
 }
 
-// memPanic は region の超過（種類 kind）の死亡: rt.panic_mem → exit 102
+// region の超過（種類 kind）の死亡: rt.panic_mem → exit 102
 func memPanic(st mut St, kind int) {
     call(mut st, st.rtPanicMem, list1(mut st, iconst(mut st, kind)))
     exit(mut st, PANIC_MEM)
 }
 
-// buildPanicMem は rt.panic_mem(種類) の本体: 種類の 1 行と、今の深度・深度ごとの region の高水位（high_water — スロットの先頭から bump まで・バイト）を
+// rt.panic_mem(種類) の本体: 種類の 1 行と、今の深度・深度ごとの region の高水位（high_water — スロットの先頭から bump まで・バイト）を
 // stderr へ書いて exit 102（region のメタ — madvise の高水位と同じ座標）
 func buildPanicMem(st mut St) {
     begin(mut st, st.rtPanicMem)
@@ -182,7 +182,7 @@ func buildPanicMem(st mut St) {
     trapDie(mut st, PANIC_MEM, kind)
     meta := globaladdr(mut st, st.meta)
     toStderr(mut st, meta)
-    // 綴りは将来の panic のラベル（第二便 — panic(RegionExceeded{…}) の表層）の欄に揃える:
+    // 綴りは panic のラベル（panic(RegionExceeded{…}) の表層）の欄に揃える:
     // `panic: RegionExceeded{cause: <depth_limit | slot_capacity | va_exhausted>, depth: <今の深度>}` + region ごとに `  region{depth: d, high_water: バイト}`
     printLit(mut st, "panic: RegionExceeded{cause: ")
     choose(mut st, kind, []string{"depth_limit", "slot_capacity", "va_exhausted"}, 1)
@@ -231,26 +231,29 @@ func buildPanicMem(st mut St) {
     br(mut st, fin, -1)
     setCur(mut st, fin)
     call(mut st, st.rtFlush, list0(mut st))
+    if st.covG != -1 {
+        coverDump(mut st)
+    }
     exit(mut st, PANIC_MEM)
 }
 
-// map の成長の計器（開発用 `sober build --map-stat` = rt の変異 13 — report-625 K0 / 631: map の常駐の帰属）。meta の後ろ（META_WORDS + 2 から MS_N 語 — META_WORDS / + 1 は W_SLOT_DEF / W_VDSO）に
+// map の成長の計器（開発用 `sober build --map-stat` = rt の変異 13: map の常駐の帰属）。meta の後ろ（META_WORDS + 2 から MS_N 語 — META_WORDS / + 1 は W_SLOT_DEF / W_VDSO）に
 // 索引の作り直し（rt.map_find・rt.map_grow）・セル列の世代（rt.map_grow の中の rt.slice_grow — その場の深度の bump の差）・先端での 1 セル伸長の
 // 総バイトを数え、`mapstat <番号> <バイト>` と印字する（番号 = 下の MS_*）。数え口は普通の load / store（並列の task では数えこぼす — SOBER_WORKERS=1 で使う）。
-// 旗の無い build は不変。回数・最大・持ち主の付け替えの数えは自己 build の値札（+0.061 G）で落とした（report-631 — 要るときは .pair/mapstat-631-full.patch）
+// 旗の無い build は不変。回数・最大・持ち主の付け替えの数えは付けていない（自己 build の命令が増える代償が見合わない）
 const MS_IDXB = 0 // 索引の確保の総バイト（rt.map_find・rt.map_grow）
 const MS_CELLB = 1 // セル列の新しい確保（map_grow の全コピー・幾何成長）の総バイト
 const MS_TIPB = 2 // 先端での 1 セル伸長の総バイト（挿入の点の速い道）
 const MS_GIDXB = 3 // 索引の確保のうち rt.map_grow（索引を先に作る道）の総バイト
 const MS_N = 4
 
-// msAdd は計数 k に v を足す
+// 計数 k に v を足す
 func msAdd(st mut St, k int, v int) {
     g := globaladdr(mut st, st.meta)
     store(mut st, g, META_WORDS + 2 + k, bin(mut st, BAdd, load(mut st, g, META_WORDS + 2 + k), v))
 }
 
-// buildDepthReport は rt.depth_report の本体（宛先構築レーン M5c — 102 の深度の契約〔27 節〕の消費の計測口・死亡ダンプ以外の口）:
+// rt.depth_report の本体（102 の深度の契約〔27 節〕の消費の計測口・死亡ダンプ以外の口）:
 // 旗（W_DREP — 入口が SOBER_DEPTH_REPORT から置く）が立っていれば `region_depth{max: d}` を stderr へ。d = 一度でも入った最深の深度
 // （深度 d の bump は enter〔full・軽い〕でだけ初期化され、出ても 0 に戻らない — 熱い経路に計測の命令を足さずに読める）
 func buildDepthReport(st mut St) {
@@ -258,6 +261,9 @@ func buildDepthReport(st mut St) {
     meta := globaladdr(mut st, st.meta)
     if st.callStat {
         callStatDump(mut st, meta)
+    }
+    if st.covG != -1 {
+        coverDump(mut st)
     }
     if st.rtMut == 13 {
         // map の成長の計数（--map-stat）を stderr へ（印字の fd を 1 に戻す）
@@ -300,7 +306,7 @@ func buildDepthReport(st mut St) {
     ret(mut st, -1)
 }
 
-// buildPanic は点の表の大域と rt.panic の本体を組む（program の最後 — 点が 1 つも無ければ何もしない）。行・列はソースを読み直して出す
+// 点の表の大域と rt.panic の本体を組む（program の最後 — 点が 1 つも無ければ何もしない）。行・列はソースを読み直して出す
 // （loader.SourceFs — 診断の位置と同じ読み方。読めないファイルは行 0・列 = 字句の番号）
 func buildPanic(st mut St, p loader.Program) {
     buildPanicMem(mut st)
@@ -314,13 +320,17 @@ func buildPanic(st mut St, p loader.Program) {
     n := table.Len(mut st.psites) / 3
     // ファイルごとに 1 回だけ字句化して、点の字句の行・列を出す
     ws := listN(mut st, n)
-    // 点のあるファイル（初出の順）
+    // 点のあるファイル（ファイルの添字の順 — 点の番号の初出の順にしない: 番号の付け直し〔ruleord.sober〕で並びが動かない）
     seen := listN(mut st, len(p.file_path))
-    mut files := mut []int{}
     for i <- iter.Range(0, n) {
         f := table.Get(mut st.psites, i * 3 + 1)
-        if f >= 0 && f < len(p.file_path) && desugar.HeapGet(mut st.d, seen + 1 + f) == 0 {
+        if f >= 0 && f < len(p.file_path) {
             desugar.HeapSet(mut st.d, seen + 1 + f, 1)
+        }
+    }
+    mut files := mut []int{}
+    for f <- iter.Range(0, len(p.file_path)) {
+        if desugar.HeapGet(mut st.d, seen + 1 + f) == 1 {
             files = append(files, f)
         }
     }
@@ -370,7 +380,7 @@ func buildPanic(st mut St, p loader.Program) {
         setCur(mut st, bRest)
     }
     toStderr(mut st, meta)
-    // `panic(L{…})` の点（PK_LABEL）は `panic: L{…}` を点で印字済み。分岐はラベルの点があるプログラムにだけ出す（無いプログラムの IR は第一便のまま）
+    // `panic(L{…})` の点（PK_LABEL）は `panic: L{…}` を点で印字済み。分岐はラベルの点があるプログラムにだけ出す
     mut labels := false
     for i <- iter.Range(0, n) {
         labels = labels || table.Get(mut st.psites, i * 3) == PK_LABEL
@@ -403,10 +413,13 @@ func buildPanic(st mut St, p loader.Program) {
     call(mut st, st.rtPint, list1(mut st, col))
     call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\n')))
     call(mut st, st.rtFlush, list0(mut st))
+    if st.covG != -1 {
+        coverDump(mut st)
+    }
     exit(mut st, PANIC)
 }
 
-// taskDiedText は rt.panic の task.Join の死の枝（点の語の位置 fsl / line / col・ファイルの綴り paths）:
+// rt.panic の task.Join の死の枝（点の語の位置 fsl / line / col・ファイルの綴り paths）:
 // `panic: ChildDied{cause: <子の死因>} at <Join の位置>` + 子の死因に位置があれば `  cause at <位置>` の 2 行目 → exit 101。
 // 子の死因 = @rt.trap の [1] 終了コード（101 / 102）・[2] 点（rt.panic の点の番号 / rt.panic_mem の種類・ゼロ除算は -1）
 func taskDiedText(st mut St, g int, meta int, fsl int, line int, col int, paths []string) {
@@ -468,10 +481,13 @@ func taskDiedText(st mut St, g int, meta int, fsl int, line int, col int, paths 
     br(mut st, bEnd, -1)
     setCur(mut st, bEnd)
     call(mut st, st.rtFlush, list0(mut st))
+    if st.covG != -1 {
+        coverDump(mut st)
+    }
     exit(mut st, PANIC)
 }
 
-// printPos は `file:line:col` + 改行（ファイルの番号 fsl → 綴り paths）
+// `file:line:col` + 改行（ファイルの番号 fsl → 綴り paths）
 func printPos(st mut St, fsl int, line int, col int, paths []string) {
     choose(mut st, fsl, paths, 0)
     call(mut st, st.rtPchar, list1(mut st, iconst(mut st, ':')))
@@ -481,7 +497,7 @@ func printPos(st mut St, fsl int, line int, col int, paths []string) {
     call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\n')))
 }
 
-// sitePath は点のファイルの綴り（置き場所に依らない — hermetic: main package のファイルは名前だけ・他は import のパス + "/" + 名前。
+// 点のファイルの綴り（置き場所に依らない — hermetic: main package のファイルは名前だけ・他は import のパス + "/" + 名前。
 // エントリの綴り〔相対 / 絶対〕や cwd を焼かない）
 func sitePath(p loader.Program, f int) string {
     path := p.file_path[f]
@@ -494,12 +510,12 @@ func sitePath(p loader.Program, f int) string {
     return pk + "/" + base
 }
 
-// panicTexts は種類の番号 − 1 の文面
+// 種類の番号 − 1 の文面
 func panicTexts() []string {
     return []string{"index out of range", "slice bounds out of range", "value out of range for byte", "negative shift amount", "integer divide by zero", "explicit panic()", "unreachable code reached"}
 }
 
-// panicTextsFor は文面の表（float → int の点があれば PK_LABEL の空きを挟んで 9 番まで・task.Join の点があれば 10 番まで）
+// 文面の表（float → int の点があれば PK_LABEL の空きを挟んで 9 番まで・task.Join の点があれば 10 番まで）
 func panicTextsFor(ftoi bool, tdied bool) []string {
     if tdied {
         return []string{"index out of range", "slice bounds out of range", "value out of range for byte", "negative shift amount", "integer divide by zero", "explicit panic()", "unreachable code reached", "", "float value out of range for int", "ChildDied", "stale channel endpoint (it was given to a child)", "send on closed channel", "close of closed channel", "budget: is larger than the ceiling of the wait: scope (the child can never be admitted)"}
@@ -510,22 +526,22 @@ func panicTextsFor(ftoi bool, tdied bool) []string {
     return []string{"index out of range", "slice bounds out of range", "value out of range for byte", "negative shift amount", "integer divide by zero", "explicit panic()", "unreachable code reached", "", "float value out of range for int"}
 }
 
-// toStderr は行バッファを今の fd（標準出力）へ吐いてから、以降の印字の fd を 2 にする
+// 行バッファを今の fd（標準出力）へ吐いてから、以降の印字の fd を 2 にする
 func toStderr(st mut St, meta int) {
     call(mut st, st.rtFlush, list0(mut st))
-    // std/task を使うプログラム: 溜めた区間を先行順で全部出す（toStderr を通るのは終わりの前だけ — 段 6 P4-2 (O1)）
+    // std/task を使うプログラム: 溜めた区間を先行順で全部出す（toStderr を通るのは終わりの前だけ）
     if st.taskUse {
         call(mut st, st.rtOutDrain, list0(mut st))
     }
     store(mut st, meta, W_FD, iconst(mut st, 2))
 }
 
-// printLit は文字列 w を印字する（rt.print_str — 大域の文字列）
+// 文字列 w を印字する（rt.print_str — 大域の文字列）
 func printLit(st mut St, w string) {
     call(mut st, st.rtPstr, list1(mut st, strlit(mut st, strLit(mut st, w))))
 }
 
-// choose は v に合う文面を印字する（v = base + k のとき ts[k] — 比較の鎖）
+// v に合う文面を印字する（v = base + k のとき ts[k] — 比較の鎖）
 func choose(st mut St, v int, ts []string, base int) {
     done := newBlock(mut st)
     for k <- iter.Range(0, len(ts)) {
@@ -541,7 +557,7 @@ func choose(st mut St, v int, ts []string, base int) {
     setCur(mut st, done)
 }
 
-// tokLineCols は p のファイル f の各字句の [行, 列]（1 起点 — diag.Where と同じ数え方）の平らな列。ソースが読めなければ空
+// p のファイル f の各字句の [行, 列]（1 起点 — diag.Where と同じ数え方）の平らな列。ソースが読めなければ空
 func tokLineCols(p loader.Program, f int) []int {
     src0, ok := loader.SourceFs(p, f, p.std_src)
     // std の焼き込みの表を持たない Program（Manifest で読む道具 — lldump 等。std はファイルの置き場から）はファイルを直に読む

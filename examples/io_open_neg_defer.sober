@@ -1,6 +1,6 @@
 package main
 
-// 負例: 直後の defer が別の File を閉じている（diag.FileUse — desugar/filecheck・language.md 28 節「資源とストリーム」— IO 便 段 2）
+// 負例: 直後の defer が別の File を閉じている（diag.FileUse — desugar/filecheck・language.md 28 節「資源とストリーム」）
 
 import "std/io"
 

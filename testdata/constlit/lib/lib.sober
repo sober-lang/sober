@@ -1,0 +1,25 @@
+package lib
+
+// 公開の組み立ての const（language.md 25 節）— 別の package から参照する点で組み立てる。.sobi は印字器の綴りで運ぶ（check --split）
+type Flag struct {
+    name string
+    on bool
+}
+
+const Version = "1.2.3"
+
+const Debug = true
+
+const Ratio = 0.75
+
+const Sizes = []int{1, 2, 4}
+
+const Defaults = []Flag{Flag{name: "color", on: true}, Flag{name: "pager"}}
+
+func Count(fs []Flag) int {
+    mut n := 0
+    for f <- fs {
+        n += if f.on { 1 } else { 0 }
+    }
+    return n
+}

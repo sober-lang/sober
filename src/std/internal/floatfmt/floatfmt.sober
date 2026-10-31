@@ -13,7 +13,7 @@ import "std/iter"
 const LIMB = 1073741824 // 2^30
 const HIDDEN = 4503599627370496 // 2^52
 
-// Format は binary64 のビット列 bits の最短の往復表現
+// binary64 のビット列 bits の最短の往復表現
 func Format(bits int) string {
     neg := bits < 0
     ex := (bits >> 52) & 2047
@@ -84,8 +84,8 @@ func Format(bits int) string {
     return bytesToString(freeze(out))
 }
 
-// FormatFixed は binary64 のビット列 bits を小数点以下 prec 桁で（Go の strconv.FormatFloat(f, 'f', prec, 64)・fmt の %.<prec>f と同じ綴り —
-// 正確な値を 10^prec 倍して最近接・偶数へ 1 回だけ丸める。負の 0・負に丸まって 0 になる値も符号を残す）（対の ParseFixed は実需まで足さない — 34 節 2 の注記・2026-10-20 ④）
+// binary64 のビット列 bits を小数点以下 prec 桁で（Go の strconv.FormatFloat(f, 'f', prec, 64)・fmt の %.<prec>f と同じ綴り —
+// 正確な値を 10^prec 倍して最近接・偶数へ 1 回だけ丸める。負の 0・負に丸まって 0 になる値も符号を残す）（対の ParseFixed は実需まで足さない — 34 節 2 の注記）
 func FormatFixed(bits int, prec int) string {
     neg := bits < 0
     ex := (bits >> 52) & 2047
@@ -158,7 +158,7 @@ func FormatFixed(bits int, prec int) string {
 // NoFast は exactShort が速い道を使えない印
 const NoFast = -100000
 
-// exactShort は値（正規化数の ex・mant）の正確な 10 進展開が 15 桁以下なら、その桁を ds に積んで小数点の位置 dp を返す（でなければ NoFast・ds は空のまま）
+// 値（正規化数の ex・mant）の正確な 10 進展開が 15 桁以下なら、その桁を ds に積んで小数点の位置 dp を返す（でなければ NoFast・ds は空のまま）
 func exactShort(ds mut []int, ex int, mant int) int {
     if ex == 0 {
         return NoFast
@@ -330,18 +330,18 @@ func shortest(ds mut []int, ex int, mant int) int {
     return k
 }
 
-// InvalidSyntax は ParseBits の構文の違い
+// ParseBits の構文の違い
 type InvalidSyntax error {
 }
 
-// OutOfRange は ParseBits の溢れ（値は符号つきの ±Inf のビット列 — Go の ErrRange と同じ）
+// ParseBits の溢れ（値は符号つきの ±Inf のビット列 — Go の ErrRange と同じ）
 type OutOfRange error {
 }
 
-// ParseBits は s（[+-]? と 10 進の数字・小数点・指数、または inf / infinity / nan — 大文字小文字を問わない）の値のビット列。
+// s（[+-]? と 10 進の数字・小数点・指数、または inf / infinity / nan — 大文字小文字を問わない）の値のビット列。
 // Go の strconv.ParseFloat の 10 進の部分集合（16 進・_ は受けない）。0 に丸まる小さい値は誤りでない
 @errors(InvalidSyntax, OutOfRange)
-func ParseBits(s []byte) (int, error?) { // 対の FormatBits は実需まで足さない（34 節 2 の注記・2026-10-20 ④）
+func ParseBits(s []byte) (int, error?) { // 対の FormatBits は実需まで足さない（34 節 2 の注記）
     v, st := parseBits(s)
     if st == 1 {
         return 0, InvalidSyntax{}
@@ -352,7 +352,7 @@ func ParseBits(s []byte) (int, error?) { // 対の FormatBits は実需まで足
     return v, nil
 }
 
-// parseBits は ParseBits の中身（状態 0 = ok・1 = 構文が違う・2 = 溢れ〔±Inf を返す〕）
+// ParseBits の中身（状態 0 = ok・1 = 構文が違う・2 = 溢れ〔±Inf を返す〕）
 func parseBits(s []byte) (int, int) {
     mut i := 0
     mut neg := false
@@ -428,7 +428,7 @@ func parseBits(s []byte) (int, int) {
     return sign | v, 0
 }
 
-// wordAt は s の i からが w（小文字）と大文字小文字を問わず一致するか
+// s の i からが w（小文字）と大文字小文字を問わず一致するか
 func wordAt(s []byte, i int, w string) bool {
     wb := bytes(w)
     if i + len(wb) > len(s) {
@@ -444,7 +444,7 @@ func wordAt(s []byte, i int, w string) bool {
     return true
 }
 
-// decimalBits は整数 d1d2…dn（ds — 先頭は 0 でない）× 10^exp10 の正確な値の binary64（溢れは false）
+// 整数 d1d2…dn（ds — 先頭は 0 でない）× 10^exp10 の正確な値の binary64（溢れは false）
 func decimalBits(ds mut []int, exp10 int) (int, bool) {
     if len(ds) == 0 {
         return 0, true
@@ -561,7 +561,7 @@ func bnSet(a mut []int, b mut []int) {
     }
 }
 
-// bnMulAdd は a = a × m + c（m・c は小さい非負）
+// a = a × m + c（m・c は小さい非負）
 func bnMulAdd(a mut []int, m int, c int) {
     mut carry := c
     for k <- iter.Range(0, len(a)) {
@@ -575,7 +575,7 @@ func bnMulAdd(a mut []int, m int, c int) {
     }
 }
 
-// bnAdd は a = a + b
+// a = a + b
 func bnAdd(a mut []int, b mut []int) {
     while len(a) < len(b) {
         a = append(a, 0)
@@ -591,7 +591,7 @@ func bnAdd(a mut []int, b mut []int) {
     }
 }
 
-// bnShl は a = a × 2^n
+// a = a × 2^n
 func bnShl(a mut []int, n int) {
     mut w := n / 30
     bits := n % 30
@@ -619,7 +619,7 @@ func bnShl(a mut []int, n int) {
     }
 }
 
-// bnShr は q = floor(a / 2^n)
+// q = floor(a / 2^n)
 func bnShr(q mut []int, a mut []int, n int) {
     w := n / 30
     bits := n % 30
@@ -636,7 +636,7 @@ func bnShr(q mut []int, a mut []int, n int) {
     }
 }
 
-// bnDivSmall は a = floor(a / m) にして余りを返す（m は小さい正）
+// a = floor(a / m) にして余りを返す（m は小さい正）
 func bnDivSmall(a mut []int, m int) int {
     mut r := 0
     mut k := len(a) - 1
@@ -685,7 +685,7 @@ func bnCmp(a mut []int, b mut []int) int {
     return 0
 }
 
-// bnSub は a = a - b（a ≥ b）
+// a = a - b（a ≥ b）
 func bnSub(a mut []int, b mut []int) {
     mut borrow := 0
     for k <- iter.Range(0, len(a)) {

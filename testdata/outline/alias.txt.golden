@@ -1,0 +1,19 @@
+examples/alias.sober  package main
+  type Point struct { x int; y int }  :6-9
+  type Pt = Point  :11
+  type P2 = Pt  :12
+  type Shape union { Dot { p Point }; Line { a Point; b Point } }  :14-17
+  type Sh = Shape  :19
+  type Meters int  :21
+  type M = Meters  :23
+  const Limit = M(10)  :25
+  type Scale func(int) int  :27
+  type Sc = Scale  :29
+  type Box[T] struct { v T }  :31-33
+  type B = Box  :35
+  type Pair struct { p Pt; m M; f Sc }  :37-41
+  func len2(p Pt) int  :43-45
+  func bump(p mut P2)  :47-49
+  func area(s Sh) int  :51-56
+  func apply(f Scale, x int) int  :58-60
+  func main()  :62-77

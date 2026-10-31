@@ -1,0 +1,55 @@
+package sample
+
+// outline の題材: 宣言の種類・注釈・複数行の署名・doc の段落と 1 文目
+
+import "std/io"
+import s "std/strings"
+
+// Point は平面の点。欄は整数の座標。
+//
+// 2 段落目は 1 文目に入らない。
+type Point struct {
+    x int
+    y int
+}
+
+// Shape is a shape — the doc
+// continues on the next line. And a second sentence.
+type Shape union {
+    Dot { p Point }
+    Line { a Point; b Point }
+}
+
+type Box[T] struct { v T }
+
+type Scale func(int) int
+
+// 読めない
+type Bad error {
+    path string
+}
+
+const Limit = 10
+const Name = "sample"
+
+// Read は path を読む（行の数を返す）。失敗は io の error。
+@errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired)
+@effects(io, nondet)
+func Read(path string) (int, error?) {
+    b := io.ReadFile(path)?
+    return len(b), nil
+}
+
+func first[T](xs []T, def T) T {
+    if len(xs) == 0 {
+        return def
+    }
+    return xs[0]
+}
+
+func trim(x string) string { return s.TrimSpace(x) }
+
+func main() {
+    _ = first([]int{1}, 0)
+    _ = trim(Name)
+}

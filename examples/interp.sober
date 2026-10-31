@@ -1,6 +1,6 @@
 package main
 
-// 文字列補間 `${}`（随時回収 R7）: int / string / bool だけを受け、連結の連鎖に脱糖する。
+// 文字列補間 `${}`: int / string / bool だけを受け、連結の連鎖に脱糖する。
 // int は std/strings.FormatInt（Sober で書いた std — 暗黙に import される）
 
 type Point struct {

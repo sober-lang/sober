@@ -1,0 +1,28 @@
+package main
+
+import "std/http"
+import "std/net"
+
+func hello(r http.Request) http.Response {
+    n := http.Param(r, "name")
+    return http.Text("hello, ${if n != nil { n } else { "world" }}\n")
+}
+
+func app(c net.Conn) error? {
+    rs := []http.Route{http.Route{method: "GET", path: "/hello/:name", handler: hello}}
+    return http.ServeConn(c, (r) => http.Dispatch(rs, r))
+}
+
+func serve() error? {
+    for l <- net.Listen("127.0.0.1:8080")? {
+        net.Serve(l, app)?
+    }
+    return nil
+}
+
+func main() int {
+    if serve() != nil {
+        return 1
+    }
+    return 0
+}

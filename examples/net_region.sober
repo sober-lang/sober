@@ -1,6 +1,6 @@
 package main
 
-// net.Serve の region:（2026-10-23 — report-1076 / 1077）: 接続の task の region 1 つの上限。region: 1 MiB の Serve で、"big" を受けた接続は
+// net.Serve の region: 接続の task の region 1 つの上限。region: 1 MiB の Serve で、"big" を受けた接続は
 // 1 つの region に 2 MiB を積んで死ぬ（RegionExceeded{cause: slot_capacity} — Serve が吸収して接続を閉じ、台帳の died が 1 つ数える）。
 // 後の接続（"small"）は今どおり往復する — 死んだのはその接続の task だけ
 
@@ -23,7 +23,7 @@ func show(e error?) string {
     }
 }
 
-// handle は "big" なら 1 つの region に 2 MiB を積んでから長さを返す（region: 1 MiB を越えて死ぬ）・それ以外は受けたものを返す
+// "big" なら 1 つの region に 2 MiB を積んでから長さを返す（region: 1 MiB を越えて死ぬ）・それ以外は受けたものを返す
 func handle(c net.Conn) error? {
     for chunk <- net.Recv(c)? {
         if string(chunk)? == "big" {
@@ -65,7 +65,7 @@ func client(port int) string {
     return if e == nil { v } else { show(e) }
 }
 
-// both は 1 本目で "big" を送って受けた全部（死んで閉じられる — 空）を、続けて 2 本目で "small" の往復を返す
+// 1 本目で "big" を送って受けた全部（死んで閉じられる — 空）を、続けて 2 本目で "small" の往復を返す
 func both(port int) (string, error?) {
     mut first := mut []byte{}
     mut second := ""

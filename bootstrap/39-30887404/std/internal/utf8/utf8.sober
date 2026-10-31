@@ -1,0 +1,17 @@
+package utf8
+
+// `string(b)` の裏方（std の実装の詳細 — std/internal/…）: parser が `string(b)` を `$utf8.Parse(b)` に書き換え、合成の暗黙 import がこの package を指す
+// （参照名が `$` の合成の import は internal の検問の外 — 20 節）。検査は std/strings の IndexInvalid（language.md 27 節: 検査あり + (string, error?)）
+
+import "std/strings"
+
+// 妥当な UTF-8 だけを string にする（利用者は `string(b)` を書く。名前は変換の族 Parse — std 命名規則）。表現は同じなので、検査の後は恒等（std 専用の bytesToString）
+@errors(strings.InvalidUtf8)
+func Parse(b []byte) (string, error?) {
+    at := strings.IndexInvalid(b)
+    if at >= 0 {
+        return "", strings.InvalidUtf8{pos: at}
+    }
+    s := bytesToString(b)
+    return s, nil
+}

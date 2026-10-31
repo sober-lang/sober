@@ -1,0 +1,527 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/fnpkg/p",
+      "tok": 4
+    }
+  ],
+  "types": [
+    {
+      "name": "H",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "f",
+            "type": {
+              "k": "name",
+              "name": "p.F"
+            },
+            "tok": 10
+          }
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 17
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "adder",
+      "type_params": [],
+      "params": [
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "p.F"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "lambda",
+                "params": [
+                  {
+                    "name": "r",
+                    "type": null
+                  }
+                ],
+                "body": {
+                  "k": "binary",
+                  "op": "+",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "p",
+                        "tok": 32
+                      },
+                      "field": "N",
+                      "tok": 34
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "r",
+                        "tok": 36
+                      }
+                    ],
+                    "tok": 35
+                  },
+                  "rhs": {
+                    "k": "ident",
+                    "name": "k",
+                    "tok": 39
+                  },
+                  "tok": 38
+                },
+                "tok": 31
+              }
+            ],
+            "tok": 27
+          }
+        ]
+      },
+      "tok": 18,
+      "bodiless": false,
+      "span": {
+        "start": 17,
+        "end": 43
+      },
+      "sig_end": 26
+    },
+    {
+      "name": "use",
+      "type_params": [],
+      "params": [
+        {
+          "name": "f",
+          "type": {
+            "k": "name",
+            "name": "p.F"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "f",
+                  "tok": 54
+                },
+                "args": [
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "p",
+                        "tok": 56
+                      },
+                      "field": "Make",
+                      "tok": 58
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 60
+                      }
+                    ],
+                    "tok": 59
+                  }
+                ],
+                "tok": 55
+              }
+            ],
+            "tok": 53
+          }
+        ]
+      },
+      "tok": 44,
+      "bodiless": false,
+      "span": {
+        "start": 43,
+        "end": 66
+      },
+      "sig_end": 52
+    },
+    {
+      "name": "twice",
+      "type_params": [],
+      "params": [
+        {
+          "name": "g",
+          "type": {
+            "k": "generic",
+            "name": "p.G",
+            "args": [
+              {
+                "k": "name",
+                "name": "int"
+              }
+            ]
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "g",
+                  "tok": 80
+                },
+                "args": [
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "p",
+                        "tok": 82
+                      },
+                      "field": "Make",
+                      "tok": 84
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 2,
+                        "tok": 86
+                      }
+                    ],
+                    "tok": 85
+                  },
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "g",
+                      "tok": 89
+                    },
+                    "args": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "p",
+                            "tok": 91
+                          },
+                          "field": "Make",
+                          "tok": 93
+                        },
+                        "args": [
+                          {
+                            "k": "int",
+                            "value": 3,
+                            "tok": 95
+                          }
+                        ],
+                        "tok": 94
+                      },
+                      {
+                        "k": "int",
+                        "value": 5,
+                        "tok": 98
+                      }
+                    ],
+                    "tok": 90
+                  }
+                ],
+                "tok": 81
+              }
+            ],
+            "tok": 79
+          }
+        ]
+      },
+      "tok": 67,
+      "bodiless": false,
+      "span": {
+        "start": 66,
+        "end": 104
+      },
+      "sig_end": 78
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 109
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "use",
+                    "tok": 111
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "adder",
+                        "tok": 113
+                      },
+                      "args": [
+                        {
+                          "k": "int",
+                          "value": 10,
+                          "tok": 115
+                        }
+                      ],
+                      "tok": 114
+                    }
+                  ],
+                  "tok": 112
+                }
+              ],
+              "tok": 110
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "h"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "H",
+                "elems": [
+                  {
+                    "key": "f",
+                    "value": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "adder",
+                        "tok": 126
+                      },
+                      "args": [
+                        {
+                          "k": "int",
+                          "value": 20,
+                          "tok": 128
+                        }
+                      ],
+                      "tok": 127
+                    }
+                  }
+                ],
+                "tok": 122,
+                "type_args": []
+              }
+            ],
+            "tok": 120
+          },
+          {
+            "k": "bind",
+            "names": [
+              "f"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "h",
+                  "tok": 134
+                },
+                "field": "f",
+                "tok": 136
+              }
+            ],
+            "tok": 132
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 138
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "f",
+                    "tok": 140
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "p",
+                          "tok": 142
+                        },
+                        "field": "Make",
+                        "tok": 144
+                      },
+                      "args": [
+                        {
+                          "k": "int",
+                          "value": 2,
+                          "tok": 146
+                        }
+                      ],
+                      "tok": 145
+                    }
+                  ],
+                  "tok": 141
+                }
+              ],
+              "tok": 139
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 151
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "twice",
+                    "tok": 153
+                  },
+                  "args": [
+                    {
+                      "k": "lambda",
+                      "params": [
+                        {
+                          "name": "r",
+                          "type": null
+                        },
+                        {
+                          "name": "x",
+                          "type": null
+                        }
+                      ],
+                      "body": {
+                        "k": "binary",
+                        "op": "*",
+                        "lhs": {
+                          "k": "ident",
+                          "name": "x",
+                          "tok": 161
+                        },
+                        "rhs": {
+                          "k": "call",
+                          "callee": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "p",
+                              "tok": 163
+                            },
+                            "field": "N",
+                            "tok": 165
+                          },
+                          "args": [
+                            {
+                              "k": "ident",
+                              "name": "r",
+                              "tok": 167
+                            }
+                          ],
+                          "tok": 166
+                        },
+                        "tok": 162
+                      },
+                      "tok": 160
+                    }
+                  ],
+                  "tok": 154
+                }
+              ],
+              "tok": 152
+            }
+          }
+        ]
+      },
+      "tok": 105,
+      "bodiless": false,
+      "span": {
+        "start": 104,
+        "end": 174
+      },
+      "sig_end": 108
+    }
+  ],
+  "consts": []
+}

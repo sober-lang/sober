@@ -1,7 +1,7 @@
 package main
 
-// 宛先構築レーン M1（顧客 ② return）: return に流れ着くリテラル・補間・連結は関数の入口の深度（呼び手の region）に作られ、
-// 戻りの境界コピーが消える（意味論は不変 — 寿命が延びるだけ）。main は印を使わない（入口の深度 0 は確保の場所にならない — 印で死んだ実績の回帰）
+// return に流れ着くリテラル・補間・連結は関数の入口の深度（呼び手の region）に作られ、
+// 戻りの境界コピーが消える（意味論は不変 — 寿命が延びるだけ）。main は印を使わない（入口の深度 0 は確保の場所にならない）
 
 import "std/io"
 import "std/iter"
@@ -30,7 +30,7 @@ func pair(n int, name string) Pair {
     return Pair{xs: xs, tag: "${name}#${n}"}
 }
 
-// 関数またぎ（M1c）: 呼び出しの結果が return に流れ着く — 呼び手の宛先の深度をレジスタで渡し、squares のリテラルは outer の呼び手の region に作られる
+// 関数またぎ: 呼び出しの結果が return に流れ着く — 呼び手の宛先の深度をレジスタで渡し、squares のリテラルは outer の呼び手の region に作られる
 func outer(n int) []int {
     return squares(n)
 }

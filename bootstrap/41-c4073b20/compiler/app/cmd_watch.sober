@@ -1,0 +1,411 @@
+package main
+
+// `sober watch` の handler（変更を見張って check の道で検査し直す）
+
+import "std/io"
+import "std/iter"
+import "std/os"
+import "std/cli"
+import "std/strings"
+import "std/hash"
+import "std/hex"
+import "std/builder"
+import "std/json"
+
+// `sober watch <entry>`: 見張っているファイルの更新時刻（os.ModTime）をポーリングし、変わったら一括の check（checkFrontR — 関数単位キャッシュは温・
+// SOBER_CHECK_CACHE=0 で切れる）+ analyzer を
+// 掛け直して、前回との差分の診断だけを標準エラーへ出す（`+ 行` = 新しく出た・`- 行` = 消えた・最後に `watch: …` の 1 行）。見張るのは読んだ利用者の
+// ファイルとそのディレクトリ（ファイルの追加・削除・rename 保存で更新時刻が動く）と entry。std は焼き込みなので見張らない。
+// プロセスは起動したバイナリのまま走り続ける（固定参照 — compiler/ を編集しても watch の検査器は変わらない。正式の判定は gates）。
+// ポーリングの間隔は SOBER_WATCH_MS（既定 200）。終わり方は割り込み（Ctrl-C）だけ
+
+// 1 回の検査の結果: diags = 診断の行（判定 JSON の拒否は `check: <JSON>`）・files = 次に見張るパス
+type WatchRound struct {
+    diags []string
+    files []string
+}
+
+func cmdWatch(cl cli.Parsed) int {
+    entry := cli.Pos(cl, Entry)
+    iv := watchInterval()
+    mut prev := []string{}
+    mut paths := []string{entry}
+    mut first := true
+    mut ws := WatchStatus{round: 0, phase: "checking", verdict: "none", diags: []string{}, warm: WarmState{build: "off", test: "off"}}
+    while true {
+        // 時刻は回の前に採る（検査の最中に入った編集を次の回で拾う — 後で採るとその編集の時刻に吸い込まれて見逃す）
+        pre := watchStamps(paths)
+        // 前の回の温めは古い状態のもの — 列ごと止めて、受理なら最新を温め直す
+        stopWarm(entry)
+        ws.round += 1
+        ws.phase = "checking"
+        ws.warm = warmStopped(ws.warm)
+        writeStatus(entry, ws)
+        r := watchRound(entry)
+        if watchReport(prev, r.diags, first) != 0 {
+            return 1
+        }
+        ws.phase = "idle"
+        ws.verdict = if len(r.diags) == 0 { "ok" } else { "rejected" }
+        ws.diags = r.diags
+        ws.warm = if len(r.diags) == 0 { warmChain(entry, r.files) } else { WarmState{build: "skipped", test: "skipped"} }
+        writeStatus(entry, ws)
+        first = false
+        prev = r.diags
+        next := if len(r.files) > 0 { r.files } else { paths }
+        stamps := watchCarry(next, paths, pre)
+        paths = next
+        while !watchChanged(paths, stamps) {
+            os.Sleep(iv)
+            w := warmProgress(entry, ws.warm)
+            if w.build != ws.warm.build || w.test != ws.warm.test {
+                ws.warm = w
+                writeStatus(entry, ws)
+            }
+        }
+        watchQuiet(paths, quietMs())
+    }
+    return 0
+}
+
+// 編集の静止を待つ（保存の連打・書いて rename する保存を 1 回に畳む）: q ms の間に見張りのパスの時刻が動かなくなるまで
+func watchQuiet(paths []string, q int) {
+    if q <= 0 {
+        return
+    }
+    mut s := watchStamps(paths)
+    mut more := true
+    while more {
+        os.Sleep(q)
+        n := watchStamps(paths)
+        more = watchChanged(paths, s)
+        s = n
+    }
+}
+
+func quietMs() int {
+    v, err := os.Getenv("SOBER_WATCH_QUIET")
+    if err != nil {
+        return 200
+    }
+    if v != nil {
+        return msOf(bytes(v))
+    }
+    return 200
+}
+
+// 受理の回の後の温めの列: L1 = build（素の `sober build` が再生で当たる）→ L2 = 見張っている利用者のファイルのディレクトリのうち *_test.sober を
+// 持つ package のテスト（全部通れば結果の再生に覚えられ、素の `sober test <package>` が当たる — 鍵は package の綴りなので、渡すのは読んだ
+// ファイルのパスのディレクトリの綴り）。テストのビルドは build と同じ後段の関数キャッシュを引くので、build の後に直列で走らせる。
+// 列は 1 本のプロセスグループ（setsid）として切り離して起こし、待たない。列の本体が pid を <置き場>/watch/<id>.pid に書く — 次の回の頭で列ごと止める
+// （stopWarm — 途中で止めた書きは置き場の tmp + rename で原子的なので半端な値は残らない）。同じ id の列は同時に 1 本（flock — 止めた列が
+// 抜けるのを待ってから始める）。子は nice 19・build のワーカー数は nproc / 4（最低 1）。テストのワーカー数は絞らない（SOBER_WORKERS は
+// 再生の鍵に入る — 素の `sober test` と鍵を揃える）。SOBER_WATCH_BUILD=0 / SOBER_WATCH_TEST=0 で層ごとに切れる。build のキャッシュが
+// 切れていれば温めない・SOBER_CHECK_REPLAY=0 ならテストの層は温めない。列の進みは <id>.warm に行で書く（`start <pid>`・層ごとに `build <終了コード>` /
+// `test <終了コード>`・最後に `done <pid>` — 止めた列は done が無い）
+func warmChain(entry string, files []string) WarmState {
+    dir := buildCacheDir()
+    if dir == "" {
+        return WarmState{build: "off", test: "off"}
+    }
+    b := !envIs("SOBER_WATCH_BUILD", "0")
+    toff := envIs("SOBER_WATCH_TEST", "0") || envIs("SOBER_CHECK_REPLAY", "0")
+    pkgs := if toff { []string{} } else { testDirs(realFiles(files)) }
+    tst := if toff { "off" } else if len(pkgs) == 0 { "none" } else if b { "queued" } else { "running" }
+    if !b && len(pkgs) == 0 {
+        return WarmState{build: "off", test: tst}
+    }
+    wd := dir + "/watch"
+    id := watchId(entry)
+    mkdirs(wd + "/" + id + ".work")
+    body := "d=$0; id=$1; e=$2; b=$3; x=$4; shift 4; exec 9> \"$d/$id.lock\"; flock -w 60 9 || exit 0; echo $$ > \"$d/$id.pid\"; g=\"$d/$id.warm\"; echo \"start $$\" > \"$g\"; " +
+        "if [ \"$b\" = 1 ]; then w=$(( $(nproc) / 4 )); [ \"$w\" -ge 1 ] || w=1; env SOBER_WORKERS=\"$w\" nice -n 19 \"$x\" build \"$e\" -o \"$d/$id.out\"; echo \"build $?\" >> \"$g\"; rm -f \"$d/$id.out\"; fi; " +
+        "if [ $# -gt 0 ]; then nice -n 19 \"$x\" test --work \"$d/$id.work\" \"$@\"; echo \"test $?\" >> \"$g\"; fi; echo \"done $$\" >> \"$g\""
+    sh := "d=$0; id=$1; e=$2; b=$3; shift 3; x=$(readlink /proc/$PPID/exe); " +
+        "setsid sh -c '" + body + "' \"$d\" \"$id\" \"$e\" \"$b\" \"$x\" \"$@\" > /dev/null 2>&1 < /dev/null &"
+    mut args := mut []string{"-c", sh, wd, id, entry, if b { "1" } else { "0" }}
+    for i <- iter.Range(0, len(pkgs)) {
+        args = append(args, pkgs[i])
+    }
+    _, _ = os.Run("/bin/sh", freeze(args))
+    return WarmState{build: if b { "running" } else { "off" }, test: tst}
+}
+
+// 走っている温めの列があれば列ごと止める（SIGTERM をプロセスグループへ — 列の本体〔setsid の後の sh — pid = プロセスグループ〕が自分で pid を
+// 書く。そのプロセスの引数に id が無ければ pid が使い回された別のプロセスなので触らない）
+func stopWarm(entry string) {
+    dir := buildCacheDir()
+    if dir == "" {
+        return
+    }
+    pf := "${dir}/watch/${watchId(entry)}.pid"
+    sh := "p=$(cat \"$0\" 2> /dev/null) || exit 0; rm -f \"$0\"; [ -n \"$p\" ] && tr '\\0' ' ' < /proc/$p/cmdline 2> /dev/null | grep -qF \"$1\" && kill -s TERM -- \"-$p\" 2> /dev/null; exit 0"
+    _, _ = os.Run("/bin/sh", []string{"-c", sh, pf, watchId(entry)})
+}
+
+// watch の名前（PWD ‖ entry の綴りのハッシュの先頭 16 桁 — 同じ箱で並ぶ watch の温めの列と状態を分ける）
+func watchId(entry string) string {
+    pwd := os.Getenv("PWD") catch nil
+    mut b := mut []byte{}
+    lenPut(mut b, bytes(if pwd == nil { "" } else { pwd }))
+    lenPut(mut b, bytes(entry))
+    h := hash.Sha256(freeze(b))
+    return hex.Format(h[0:8])
+}
+
+// ファイルの列のディレクトリのうち *_test.sober を持つもの（現れた順・重複なし）
+func testDirs(files []string) []string {
+    ds := replayDirs(files)
+    mut out := mut []string{}
+    for i <- iter.Range(0, len(ds)) {
+        es := io.ReadDir(if ds[i] == "" { "." } else { ds[i] }) catch []io.DirEntry{}
+        mut has := false
+        for k <- iter.Range(0, len(es)) {
+            if strings.HasSuffix(es[k].Name, "_test.sober") {
+                has = true
+            }
+        }
+        if has && ds[i] != "" {
+            out = append(out, ds[i])
+        }
+    }
+    return freeze(out)
+}
+
+// ポーリングの間隔（ms — SOBER_WATCH_MS の 10 進・既定 200・読めなければ既定）
+func watchInterval() int {
+    v, err := os.Getenv("SOBER_WATCH_MS")
+    if err != nil {
+        return 200
+    }
+    if v != nil {
+        return msOf(bytes(v))
+    }
+    return 200
+}
+
+// 10 進の綴りの値（空・数字でない・大きすぎ・0 は既定 200）
+func msOf(b []byte) int {
+    mut n := 0
+    for i <- iter.Range(0, len(b)) {
+        if b[i] < '0' || b[i] > '9' || n > 100000 {
+            return 200
+        }
+        n = n * 10 + int(b[i]) - '0'
+    }
+    return if n > 0 { n } else { 200 }
+}
+
+// 1 回の検査（関数に割る — 検査のヒープの region を周ごとに捨てる。返すのは行とパスだけ）。道 = 一括の check（checkFrontR —
+// 関数単位キャッシュを既定で使う。小分けの checkSplitR は L0 の生成と pkgcheck の照合の役に残す）
+func watchRound(entry string) WatchRound {
+    std := Std
+    r := checkFrontR(entry, false, std, true)
+    // 回の答えを素の `sober check <entry>` と同じ鍵で覚える（問い合わせ側は検査せずに返せる）
+    dir := checkCacheDir(true)
+    if dir != "" {
+        replayPut(dir, replayKey(entry, false), r)
+    }
+    mut ds := mut []string{}
+    for i <- iter.Range(0, len(r.msgs)) {
+        ds = append(ds, r.msgs[i])
+    }
+    if r.code != 0 && len(r.out) > 0 {
+        ds = append(ds, "check: ${trimNl(r.out)}")
+    }
+    return WatchRound{freeze(ds), watchPaths(entry, r.files)}
+}
+
+// 見張るパス: entry・読んだファイル・その親ディレクトリ（重複なし）
+func watchPaths(entry string, files []string) []string {
+    mut out := mut []string{entry}
+    for i <- iter.Range(0, len(files)) {
+        d := parentOf(files[i])
+        if !hasStr(freeze(out), d) {
+            out = append(out, d)
+        }
+    }
+    for i <- iter.Range(0, len(files)) {
+        out = append(out, files[i])
+    }
+    return freeze(out)
+}
+
+// パスごとの更新時刻（読めなければ -1 — 消えたファイルも変化として拾う）
+func watchStamps(paths []string) []int {
+    mut out := mut []int{}
+    for i <- iter.Range(0, len(paths)) {
+        out = append(out, os.ModTime(paths[i]) catch -1)
+    }
+    return freeze(out)
+}
+
+// watchChanged はどれかの更新時刻が stamps から動いたか（関数に割る — ポーリングの確保を周ごとに捨てる）
+// watchCarry は paths の時刻の列: 前の回の列 old にあったパスは回の前に採った時刻 pre を引き継ぎ、新しく見つかったパスだけ今の時刻を採る
+func watchCarry(paths []string, old []string, pre []int) []int {
+    mut out := mut []int{}
+    for i <- iter.Range(0, len(paths)) {
+        mut t := 0 - 2
+        for j <- iter.Range(0, len(old)) {
+            if t == 0 - 2 && old[j] == paths[i] {
+                t = pre[j]
+            }
+        }
+        out = append(out, if t == 0 - 2 { os.ModTime(paths[i]) catch -1 } else { t })
+    }
+    return freeze(out)
+}
+
+func watchChanged(paths []string, stamps []int) bool {
+    for i <- iter.Range(0, len(paths)) {
+        t := os.ModTime(paths[i]) catch -1
+        if t != stamps[i] {
+            return true
+        }
+    }
+    return false
+}
+
+// 前回 prev からの差分を標準エラーへ（消えた行は `- `・新しい行は `+ `・最後に状態の 1 行）
+func watchReport(prev []string, cur []string, first bool) int {
+    mut out := mut []byte{}
+    mut gone := 0
+    mut added := 0
+    for i <- iter.Range(0, len(prev)) {
+        if !hasStr(cur, prev[i]) {
+            appendBytes(mut out, bytes("- ${prev[i]}\n"))
+            gone += 1
+        }
+    }
+    for i <- iter.Range(0, len(cur)) {
+        if !hasStr(prev, cur[i]) {
+            appendBytes(mut out, bytes("+ ${cur[i]}\n"))
+            added += 1
+        }
+    }
+    state := if len(cur) == 0 { "ok" } else { "${len(cur)} diagnostic(s)" }
+    note := if first || gone + added > 0 { "" } else { " (unchanged)" }
+    appendBytes(mut out, bytes("watch: ${state}${note}\n"))
+    return if io.WriteStderr(freeze(out)) != nil { 1 } else { 0 }
+}
+
+
+// ── 状態ファイル（<置き場>/watch/<id>.json — watch が唯一の書き手）──
+//
+// 状態が変わるたびに書き直す（tmp + rename）: {"version":1,"pid":…,"cwd":"…","entry":"…","round":…,"phase":"checking|idle",
+// "verdict":"none|ok|rejected","diags":["…"],"warm":{"build":"…","test":"…"}}。diags は標準エラーへ出す診断の行と同じ文字列。
+// warm の値 = off（切ってある）・none（テストの package が無い）・skipped（拒否の回）・queued（build の後に走る）・running・done・failed・
+// stopped（次の回で止めた）。読み手 = `sober cache info`（pid が生きていなければ stale）・エディタ連携や開発用の前段
+
+// 温めの層ごとの状態
+type WarmState struct {
+    build string
+    test string
+}
+
+// watch の状態ファイルの中身
+type WatchStatus struct {
+    round int
+    phase string
+    verdict string
+    diags []string
+    warm WarmState
+}
+
+// 走っている・待っている層を stopped に（次の回が列を止めた）
+func warmStopped(w WarmState) WarmState {
+    return WarmState{build: stopOf(w.build), test: stopOf(w.test)}
+}
+
+func stopOf(s string) string {
+    return if s == "running" || s == "queued" { "stopped" } else { s }
+}
+
+// 列の進み（<id>.warm）を読んで層の状態へ写す（列の pid のファイルと進みの `start <pid>` が揃っていなければ — 列がまだ始まっていない・
+// 止めた後 — w のまま）
+func warmProgress(entry string, w WarmState) WarmState {
+    dir := buildCacheDir()
+    if dir == "" {
+        return w
+    }
+    base := "${dir}/watch/${watchId(entry)}"
+    pb := io.ReadFile(base + ".pid") catch return w
+    gb := io.ReadFile(base + ".warm") catch return w
+    pid := trimNl(pb)
+    gs := string(gb) catch return w
+    ls := strings.Split(gs, "\n")
+    if len(ls) == 0 || ls[0] != "start " + pid {
+        return w
+    }
+    mut b := w.build
+    mut t := w.test
+    for i <- iter.Range(1, len(ls)) {
+        if strings.HasPrefix(ls[i], "build ") {
+            b = if ls[i] == "build 0" { "done" } else { "failed" }
+            t = if t == "queued" { "running" } else { t }
+        }
+        if strings.HasPrefix(ls[i], "test ") {
+            t = if ls[i] == "test 0" { "done" } else { "failed" }
+        }
+    }
+    return WarmState{build: b, test: t}
+}
+
+// 状態ファイルを書き直す（書けなければ黙る — watch の診断の仕事は続ける）
+func writeStatus(entry string, ws WatchStatus) {
+    dir := buildCacheDir()
+    if dir == "" {
+        return
+    }
+    wd := dir + "/watch"
+    mkdirs(wd)
+    pwd := os.Getenv("PWD") catch nil
+    mut o := builder.Builder[byte]{}
+    json.Put(mut o, "{")
+    json.PutKey(mut o, "version", true)
+    json.PutInt(mut o, 1)
+    json.PutKey(mut o, "pid", false)
+    json.PutInt(mut o, selfPid())
+    json.PutKey(mut o, "cwd", false)
+    json.PutString(mut o, if pwd == nil { "" } else { pwd })
+    json.PutKey(mut o, "entry", false)
+    json.PutString(mut o, entry)
+    json.PutKey(mut o, "round", false)
+    json.PutInt(mut o, ws.round)
+    json.PutKey(mut o, "phase", false)
+    json.PutString(mut o, ws.phase)
+    json.PutKey(mut o, "verdict", false)
+    json.PutString(mut o, ws.verdict)
+    json.PutKey(mut o, "diags", false)
+    json.Put(mut o, "[")
+    for i <- iter.Range(0, len(ws.diags)) {
+        if i > 0 {
+            json.Put(mut o, ",")
+        }
+        json.PutString(mut o, ws.diags[i])
+    }
+    json.Put(mut o, "]")
+    json.PutKey(mut o, "warm", false)
+    json.Put(mut o, "{")
+    json.PutKey(mut o, "build", true)
+    json.PutString(mut o, ws.warm.build)
+    json.PutKey(mut o, "test", false)
+    json.PutString(mut o, ws.warm.test)
+    json.Put(mut o, "}}\n")
+    path := "${wd}/${watchId(entry)}.json"
+    if io.WriteFile(path + ".tmp", builder.Build(mut o)) == nil {
+        _ = os.Rename(path + ".tmp", path)
+    }
+}
+
+// 自分の pid（/proc/self/stat の最初の欄・読めなければ 0）
+func selfPid() int {
+    st := io.ReadFile("/proc/self/stat") catch return 0
+    mut n := 0
+    mut i := 0
+    while i < len(st) && st[i] >= '0' && st[i] <= '9' {
+        n = n * 10 + int(st[i]) - 48
+        i += 1
+    }
+    return n
+}

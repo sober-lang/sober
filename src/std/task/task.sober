@@ -7,7 +7,7 @@ package task
 // Run / Spawn / Join / Try は desugar（check の経路）と lower（build の経路）が呼び出し点で固定のテンプレートに写す
 // （コンパイラが名前で引く閉じた集合 — ユーザーは鋳造できない）。本体は写しが外れたときの柵で、到達しない
 
-// sealed は札・handle・死因の封（非公開 — 外で値を書けないので、外からは作れない）。1 語は build の実装が運ぶ値
+// 札・handle・死因の封（非公開 — 外で値を書けないので、外からは作れない）。1 語は build の実装が運ぶ値
 // （札 = scope の記録・handle = 子の枠・死因 = 終了コードと点 — lower/par.sober。番地は言語から観測できない）
 type sealed struct {
     w int
@@ -56,17 +56,19 @@ type NotLowered panic
 // budget = この scope の天井（バイト・省略可 — 省略なら天井のノードを作らず、外の scope の天井だけが掛かる）。wait = true なら天井に入れない直接の子は縮退せずに入れるまで待つ（宣言 = 本当の上限 —
 // language.md 11 節「wait」。true / false の字面だけ・省略 = 外の scope の方針を継ぐ〔既定 = 縮退〕）。
 // deadline = 開いた時点からの期限（相対・省略可）: 過ぎたら scope の中〔子孫の task も〕の I/O 呼び出しが io.Expired を返す — 走っている仕事は切らない
-// （待ちの上限であって実行時間の上限ではない — language.md 28 節「デッドライン」。入れ子は早い方）
+// （待ちの上限であって実行時間の上限ではない — language.md 28 節「デッドライン」。入れ子は早い方）。
+// backlog = この scope の中で生んだ子のうち、ワーカーの列に積んでおける未着手の本数（1〜255 に丸める・省略 = 外の scope から継ぐ〔既定 255〕）: 越えると
+// 生んだ task は譲って子をその場で先に走らせる（値は変わらない — 生む速さが掃く速さを上回る間の背圧。language.md 11 節「未着手の子の上限」）。子の task も継ぐ
 @errors(ChildDied)
 @effects(block)
-func Run[T](f func(Scope) T, budget int?, wait bool?, deadline int?) (T, error?) {
+func Run[T](f func(Scope) T, budget int?, wait bool?, deadline int?, backlog int?) (T, error?) {
     if fence() {
         return panic(NotLowered{})
     }
     return panic(NotLowered{}), ChildDied{cause: Cause{seal: sealed{}}}
 }
 
-// fence は柵（写しが外れたら panic — 宣言の @errors を本体が書ける形にするための分岐）
+// 柵（写しが外れたら panic — 宣言の @errors を本体が書ける形にするための分岐）
 func fence() bool {
     return true
 }
@@ -120,7 +122,7 @@ func Recv[T](rx Receiver[T]) T? {
     return panic(NotLowered{})
 }
 
-// `for l <- task.Recv(rx) { … }` の写し先（loader が呼び先を付け替える — 閉じて空になるまで受けて k へ渡す）（対の SendAll は実需まで足さない — 34 節 2 の注記・2026-10-20 ④）
+// `for l <- task.Recv(rx) { … }` の写し先（loader が呼び先を付け替える — 閉じて空になるまで受けて k へ渡す）（対の SendAll は実需まで足さない — 34 節 2 の注記）
 @effects(block)
 func RecvAll[T](rx Receiver[T], k func(T)) {
     mut more := true
@@ -161,7 +163,7 @@ func Gather[T](hs []Handle[T]) []T {
     return freeze(out)
 }
 
-// gatherE は error を返す task の handle の列の Gather（P3b 残穴1・決定 2026-10-06 — 呼び手は task.Gather と書く: handle の slice の
+// error を返す task の handle の列の Gather（呼び手は task.Gather と書く: handle の slice の
 // 要素の型が Handle[(T, error?)] なら表層型検査器がここへ振り分ける）。全部を生んだ順で待ち（失敗で止めない）、err は生んだ順で最初の失敗の err・
 // 失敗があれば結果は空。死んだ子があれば呼び手も死ぬ（Join と同じ）。呼び出し点で展開される（handle の slice の仮引数）
 func gatherE[T](hs []Handle[(T, error?)]) ([]T, error?) {
@@ -184,7 +186,7 @@ func gatherE[T](hs []Handle[(T, error?)]) ([]T, error?) {
     return freeze(out), nil
 }
 
-// mapRes は mapE の scope の値（結果の列と、生んだ順で最初の失敗の err）
+// mapE の scope の値（結果の列と、生んだ順で最初の失敗の err）
 type mapRes[U] struct {
     vs []U
     e error?
@@ -218,9 +220,9 @@ func Map[T, U](xs []T, f func(T) U, budget int?) ([]U, error?) {
     })
 }
 
-// mapE は f が error を返す Map（P3b 残穴2 の続き・決定 2026-10-06 — 呼び手は task.Map と書く: ラムダの結果が `(U, error?)` なら
+// f が error を返す Map（呼び手は task.Map と書く: ラムダの結果が `(U, error?)` なら
 // 表層型検査器がここへ振り分ける）。全部を待ち、err は添字の順（= 生んだ順）で最初の失敗の err で結果は空・子が死ねば err = ChildDied（死が先）。
-// 死を見たら残りを Try しない（Map と同じ — 段 6 P4-5）。失敗での打ち切りは未実装（失敗は後ろの子の死に負ける）
+// 死を見たら残りを Try しない（Map と同じ）。失敗での打ち切りは未実装（失敗は後ろの子の死に負ける）
 @errors(ChildDied)
 func mapE[T, U](xs []T, f func(T) (U, error?), budget int?) ([]U, error?) {
     r, se := Run((s Scope) => {
@@ -269,15 +271,15 @@ type Shed error {}
 // プールのノードの表が尽きた（NewPool を POOL_MAX 回より多く呼んだ）
 type PoolLimit panic
 
-// newPool は rt の台帳にプールのノードを 1 つ取る（budget = 天井のバイト・parent = 親のノード〔0 = 無し〕。表が尽きたら負）
+// rt の台帳にプールのノードを 1 つ取る（budget = 天井のバイト・parent = 親のノード〔0 = 無し〕。表が尽きたら負）
 @intrinsic("par_pool")
 func newPool(budget int, parent int) int
 
-// ledgerWord は台帳の 1 語（k — Ledger の読み口。io: 読んだ値は時刻に依る）
+// 台帳の 1 語（k — Ledger の読み口。io: 読んだ値は時刻に依る）
 @intrinsic("par_ledger")
 func ledgerWord(k int) int
 
-// poolFail はプールのノード w の失敗の数を 1 足す（MarkFailed の口）
+// プールのノード w の失敗の数を 1 足す（MarkFailed の口）
 @intrinsic("par_fail")
 func poolFail(w int) int
 
@@ -325,6 +327,8 @@ type LedgerView struct {
     waits int // wait の scope で入場を待った回数（language.md 11 節「wait」）
     maxWait int // 走れるようになってから走るまでの待ちの最大（ns・全ワーカー — 読むと 0 に戻る。language.md 28 節 ring の道「飽和下の待ちの上限」）
     aged int // 待ちの上限が効いて積みの底から取った回数の累計（飽和の印）
+    backlog int // 今の未着手の子の数（全ワーカーの列の和 — ワーカーあたり 255 まで。language.md 11 節「未着手の子の上限」）
+    backlogYield int // 列があふれて子をその場で先に走らせた（生んだ task が譲った）回数の累計（背圧が効いた印）
     pools []PoolView
 }
 
@@ -339,7 +343,7 @@ func Ledger() LedgerView {
         ps = append(ps, PoolView{id: i, parent: ledgerWord(b + 5) - 1, cap: ledgerWord(b), used: ledgerWord(b + 1), tasks: ledgerWord(b + 2), admit: ledgerWord(b + 3), shed: ledgerWord(b + 4), fail: ledgerWord(b + 6), died: ledgerWord(b + 7)})
         i += 1
     }
-    return LedgerView{workers: ledgerWord(8), cap: ledgerWord(1), used: ledgerWord(2), tasks: ledgerWord(3), inline: ledgerWord(4), over: ledgerWord(5), declOver: ledgerWord(6), shed: ledgerWord(7), waits: ledgerWord(9), maxWait: ledgerWord(10), aged: ledgerWord(11), pools: freeze(ps)}
+    return LedgerView{workers: ledgerWord(8), cap: ledgerWord(1), used: ledgerWord(2), tasks: ledgerWord(3), inline: ledgerWord(4), over: ledgerWord(5), declOver: ledgerWord(6), shed: ledgerWord(7), waits: ledgerWord(9), maxWait: ledgerWord(10), aged: ledgerWord(11), backlog: ledgerWord(12), backlogYield: ledgerWord(13), pools: freeze(ps)}
 }
 
 // プール pool の天井に入れれば子の task を生む（handle, nil）・入れなければ (nil, Shed{})（縮退しない — shed を望む境界の API ・
@@ -386,7 +390,7 @@ func Lease[U](lp Local, body func() U) U {
 // ストレージの列の形: [T の指紋, Scratch の欄の数 n, 欄ごとの容量 × n, ワーカーの数 W, ワーカーごとの区画 × W]。区画 = [印, 鎖, 欄ごとに (tag, 語 × 容量)]
 // （印と鎖は rt の lease_op が書く・tag と語は pool.LeaseAttach が付けた窓の Scratch が書く — imm の列の語を rt の口だけが書く）
 
-// leaseOp は rt の口（op 0 = ワーカーの数・1 = 今のワーカーの番号・2 = blk[off] の印を取る〔1 / 0 = 使用中〕・3 = 返す・4 = 生の読み・5 = 生の書き・6 = 今の深度より深い死んだスロットの頁を返す — std/tls の handshake の後）
+// rt の口（op 0 = ワーカーの数・1 = 今のワーカーの番号・2 = blk[off] の印を取る〔1 / 0 = 使用中〕・3 = 返す・4 = 生の読み・5 = 生の書き・6 = 今の深度より深い死んだスロットの頁を返す — std/tls の handshake の後）
 @intrinsic("lease_op")
 func leaseOp(op int, blk []int, off int, v int) int
 

@@ -30,6 +30,7 @@ Sober の唯一の中間表現。`sober build` は AST → IR → 正規バッ�
 ## 3. op
 
 - 値: iconst / bin（add sub mul div rem and or xor shl sar）/ cmp（eq ne lt le gt ge ult uge — 結果は 0 / 1）
+  - iconst の札（2026-10-26 — インクリの波 段 2・docs/incremental.md）: 発見順の番号（panic / spawn の点）を運ぶ定数は記録の欄 b に札を持つ（テキスト形式には出ない — `const n` のまま）。札つきは札なしと GVN で併合されず、正規バックエンドは imm32 を後埋めにする
 - メモリ: load・store（語、ptr + 語オフセット）/ load8・store8（[]byte・string のセルと io のバイトバッファ — byte の段）/ gep（語・バイト）/ ptoi・itop / slotaddr / globaladdr / funcaddr
 - 呼び出し: call / call_indirect / syscall
 - region: region.enter / depth / setdepth / alloc / bump / relocate
@@ -106,7 +107,7 @@ Sober の唯一の中間表現。`sober build` は AST → IR → 正規バッ�
 
 - union / T?: 語 0 がタグ、ペイロードは語 1 から
 - slice / string: 3 語のヘッダ（ptr, len, 深度）。map: 4 語（ptr, len, 深度, 索引の番地 — 0 = 無し。性能投資 M0 2026-10-03: 長さ 8 以上の map は rt.map_find が開番地法の索引をセル列と同じ深度の region に作って引く。索引の持ち主〔セル列の番地〕が違えば作り直し・relocate でセル列が動けば外す。挿入列と順序は不変 — language.md 22 節）。map のセルは [key][tag][value]（tag 0 = 墓石）。[]byte と string のセルは 1 バイト（rodata は 8 バイトを 1 語にリトルエンディアンで詰める — byte の段 B / C、language.md 21 / 33 節）
-- 組み込み error: (先頭ラベル, 鎖) の struct（K1''）。先頭は全ラベルの union、鎖は内側の error を外側から積んだ imm の []ラベル
+- 組み込み error: (先頭ラベル, 鎖) の struct（K1''）。先頭は全ラベルの union、鎖は内側の error を外側から積んだ imm の []ラベル。境界コピーは補助 1 本 `rt.err_relocate(p, floor)`（本体 = 先頭の union の variant ごとの写しと鎖の写し — lower/cont.sober buildErrReloc）を呼ぶ: 先頭は閉世界の全ラベルの union なので、その場に並べると点ごとの費用が「string を持つラベルの欄の数」に比例し、ラベルを 1 つ足すだけで全部の error の境界コピーが膨らむ（自己 build +35% の実発 — report-1285。網 = stages の errnonint）。nil の判定は呼び手に残る
   - 包み替え `f()? W{…}` は (W{…}, append(鎖, 先頭)) を作る
   - `case L{…, cause}` の cause は (鎖の末尾, 鎖[0 : len-1])（空なら nil）
 - 結果: int / bool / 関数値 1 個なら ret、それ以外（多値・アグリゲート）は sret（呼び手が全結果の語数のスロットを取り、第 0 引数で渡す）

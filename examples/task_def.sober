@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P3a: 関数の本体の par（Def の本体の解禁 — Lean の noNewchan を緩めた便）。仮引数（imm）を子へ渡す・
+// 関数の本体の par（Def の本体の解禁 — Lean の noNewchan を緩めて許可）。仮引数（imm）を子へ渡す・
 // mut の仮引数を持つ関数の中で scope を開く（mut は捕獲しない — 結果を親が書く）・再帰の中の scope
 
 import "std/task"

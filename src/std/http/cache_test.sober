@@ -4,7 +4,7 @@ package http
 // 前後の空白・`"` の囲み・名前の大文字小文字・`=` の無い組・2 本の Cookie 行）・Header が認証のヘッダを読まない・Authorization・Dispatch がルートの
 // cache を cache の無い応答にだけ写す
 
-// rq は頭 h（要求行から空行まで）の要求
+// 頭 h（要求行から空行まで）の要求
 func rq(h string) Request {
     b := bytes(h)
     r, e := request(b, frameAt(b, 0, 8192, 8192))
@@ -12,7 +12,7 @@ func rq(h string) Request {
     return r
 }
 
-// is は v が s か（nil は偽）
+// v が s か（nil は偽）
 func is(v string?, s string) bool {
     if v == nil {
         return false

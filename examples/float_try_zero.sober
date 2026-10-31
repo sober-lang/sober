@@ -1,6 +1,6 @@
 package main
 
-// 回帰（float の段 — JSON 第一便で発見）: `?` の脱出と `T{}` が float の欄のゼロ値（0.0）を埋める（以前は lower の requireZero が float を知らず Mismatch）
+// 回帰: `?` の脱出と `T{}` が float の欄のゼロ値（0.0）を埋める（lower の requireZero は float のゼロ値も扱う）
 
 type M struct {
     name string

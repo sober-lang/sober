@@ -60,7 +60,7 @@ func XorKeyStreamAt(key []byte, nonce []byte, counter int, src []byte, at int, n
     return freeze(out)
 }
 
-// initState は状態の 16 語（定数 4・鍵 8・ブロック番号の席 1〔rounds が埋める〕・nonce 3 — 小さい端の語）を s に積む
+// 状態の 16 語（定数 4・鍵 8・ブロック番号の席 1〔rounds が埋める〕・nonce 3 — 小さい端の語）を s に積む
 func initState(s mut []int, key []byte, nonce []byte) {
     s = append(s, 0x61707865)
     s = append(s, 0x3320646e)
@@ -75,7 +75,7 @@ func initState(s mut []int, key []byte, nonce []byte) {
     }
 }
 
-// rounds は x = s（語 12 = ブロック番号 ctr）を 20 段（列 + 対角の 10 回）回して初めの値を足したもの（RFC 8439 2.3）
+// x = s（語 12 = ブロック番号 ctr）を 20 段（列 + 対角の 10 回）回して初めの値を足したもの（RFC 8439 2.3）
 func rounds(x mut []int, s []int, ctr int) {
     for i <- iter.Range(0, 16) {
         x[i] = if i == 12 { ctr } else { s[i] }
@@ -95,7 +95,7 @@ func rounds(x mut []int, s []int, ctr int) {
     }
 }
 
-// qr は quarter round（RFC 8439 2.1）
+// quarter round（RFC 8439 2.1）
 func qr(x mut []int, a int, b int, c int, d int) {
     x[a] = (x[a] + x[b]) & mask32
     x[d] = rotl(x[d] ^ x[a], 16)
@@ -107,17 +107,17 @@ func qr(x mut []int, a int, b int, c int, d int) {
     x[b] = rotl(x[b] ^ x[c], 7)
 }
 
-// rotl は 32 bit の左回転（x は [0, 2^32)・k は 1..31）
+// 32 bit の左回転（x は [0, 2^32)・k は 1..31）
 func rotl(x int, k int) int {
     return ((x << k) | (x >> (32 - k))) & mask32
 }
 
-// le32 は b[p..p+4) の小さい端の 32 bit の語
+// b[p..p+4) の小さい端の 32 bit の語
 func le32(b []byte, p int) int {
     return int(b[p]) | (int(b[p + 1]) << 8) | (int(b[p + 2]) << 16) | (int(b[p + 3]) << 24)
 }
 
-// put32 は語 w を小さい端の 4 バイトで積む
+// 語 w を小さい端の 4 バイトで積む
 func put32(out mut []byte, w int) {
     out = append(out, byte(w & 0xff))
     out = append(out, byte((w >> 8) & 0xff))

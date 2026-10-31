@@ -1,6 +1,6 @@
 package main
 
-// 写しの for の一括化（lower/copyloop.sober の forAppendStmt — report-617）: `for x <- S { D = append(D, x) }` と
+// 写しの for の一括化（lower/copyloop.sober の forAppendStmt）: `for x <- S { D = append(D, x) }` と
 // `for j <- iter.Range(lo, hi) { D = append(D, S[j]) }` を一括の写しに。形の外（積む値が生成元の値でない・要素の型が違う）は普通の for
 
 import "std/iter"

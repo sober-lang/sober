@@ -1,8 +1,7 @@
 package main
 
-// 段 6 P3b-5: task.Map（要素ごとに 1 task・結果は添字の順・`([]U, error?)`）。実引数のラムダの本体は子の本体へ展開される
-// （β 簡約で持ち上げ — 捕獲は Spawn と同じ imm の値）。子が死ねば err = ChildDied で結果は空。結果の型 U はラムダの結果から推論する
-// （P3b 残穴2 — T → U）
+// task.Map（要素ごとに 1 task・結果は添字の順・`([]U, error?)`）。実引数のラムダの本体は子の本体へ展開される
+// （β 簡約で持ち上げ — 捕獲は Spawn と同じ imm の値）。子が死ねば err = ChildDied で結果は空。結果の型 U はラムダの結果から推論する（T → U）
 
 import "std/convert"
 import "std/task"
@@ -27,7 +26,7 @@ func report(e error?) {
     }
 }
 
-// scaled は関数の本体の Map（仮引数を捕獲する）
+// 関数の本体の Map（仮引数を捕獲する）
 func scaled(xs []int, x int) []int {
     ys, e := task.Map(xs, (v) => v * x)
     return ys

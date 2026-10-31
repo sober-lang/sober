@@ -16,7 +16,7 @@ import "desugar"
 import "std/iter"
 import "std/table"
 
-// m2rModule はモジュールの全関数に mem2reg を掛ける
+// モジュールの全関数に mem2reg を掛ける
 func m2rModule(st mut St) {
     mut f := st.fhead
     while f != -1 {
@@ -184,7 +184,7 @@ func m2rFunc(st mut St, f FnRef) {
     xFill(mut acnt, nb + 1, 0)
     mut aci := mut []int{}
     mut aval := mut []int{}
-    // 候補ごとの store のあるブロック（到達するものだけ・番号の昇順・重複なし — 下の候補ごとの作業列の初期値。段 6 P6-5 の入口: 以前は候補ごとに全ブロックの
+    // 候補ごとの store のあるブロック（到達するものだけ・番号の昇順・重複なし — 下の候補ごとの作業列の初期値。以前は候補ごとに全ブロックの
     // 命令を舐めていた〔候補 × 命令の 2 乗 × 2 周 — 自己 build の mem2reg の段 15 G の大半〕。作業列の初期の順は同じ〔番号の昇順〕なので結果は不変）
     mut scnt := mut []int{}
     xFill(mut scnt, nc + 1, 0)
@@ -407,7 +407,7 @@ func m2rEsc(so []int, ok mut []int, v int) {
     }
 }
 
-// m2rCand は v が対象スロットのアドレスならその通し番号（でなければ -1）
+// v が対象スロットのアドレスならその通し番号（でなければ -1）
 func m2rCand(so []int, cd []int, v int) int {
     return if so[v] < 0 { -1 } else { cd[so[v]] }
 }
@@ -424,7 +424,7 @@ func m2rChain(repl mut []int, v int) int {
     return x
 }
 
-// m2rBlock はブロック bi の命令を処理し、出ていく辺に置いた引数ぶんの実引数を足す。積みの新しい高さを返す
+// ブロック bi の命令を処理し、出ていく辺に置いた引数ぶんの実引数を足す。積みの新しい高さを返す
 func m2rBlock(st mut St, w mut m2rW, bi int, live bool, zero int, so []int, cd []int, acnt []int, aci []int, aval []int,
     repl mut []int, sval mut []int, sprev mut []int, sci mut []int, topOf mut []int, h int) int {
     mut n := h
@@ -476,7 +476,7 @@ func m2rBlock(st mut St, w mut m2rW, bi int, live bool, zero int, so []int, cd [
     return n
 }
 
-// m2rExtend は辺（行き先の欄 kt・実引数の欄 ka）の実引数に、行き先に置いた引数ぶんの現在値を足した新しい列を付ける
+// 辺（行き先の欄 kt・実引数の欄 ka）の実引数に、行き先に置いた引数ぶんの現在値を足した新しい列を付ける
 func m2rExtend(st mut St, w mut m2rW, blk BlkRef, kt int, ka int, live bool, zero int, acnt []int, aci []int, sval mut []int, topOf mut []int) {
     to := irBlkId(mut st, BlkRef(desugar.HeapGet(mut st.d, int(blk) + kt)))
     ne := acnt[to + 1] - acnt[to]
@@ -496,7 +496,7 @@ func m2rExtend(st mut St, w mut m2rW, blk BlkRef, kt int, ka int, live bool, zer
     desugar.HeapSet(mut st.d, int(blk) + ka, l)
 }
 
-// m2rCfg は前任・逆後順・直接支配ブロック（ir_cfg.analyze — 後続の順に辿る反復 DFS・Cooper–Harvey–Kennedy）
+// 前任・逆後順・直接支配ブロック（ir_cfg.analyze — 後続の順に辿る反復 DFS・Cooper–Harvey–Kennedy）
 func m2rCfg(st mut St, w mut m2rW, f FnRef) {
     nb := w.nb
     xFill(mut w.blk, nb, -1)
@@ -598,7 +598,7 @@ func m2rIntersect(w mut m2rW, x0 int, y0 int) int {
     return x
 }
 
-// m2rDropSlots は使われなくなったスロットを落として番号を詰める（持ち上げたスロット — 入口のゼロ初期化が要らなくなる）
+// 使われなくなったスロットを落として番号を詰める（持ち上げたスロット — 入口のゼロ初期化が要らなくなる）
 func m2rDropSlots(st mut St, f FnRef) {
     ns := irFnNSlot(mut st, f)
     mut used := mut []int{}

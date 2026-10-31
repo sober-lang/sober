@@ -20,7 +20,7 @@ func newValueIn(st mut St, f FnRef) int {
     return v
 }
 
-// linkInst は命令の記録 r をブロック b の命令の鎖の末尾へつなぐ
+// 命令の記録 r をブロック b の命令の鎖の末尾へつなぐ
 func linkInst(st mut St, b BlkRef, r InsRef) {
     irSetInsNext(mut st, r, -1)
     tail := irBlkITail(mut st, b)
@@ -42,10 +42,10 @@ func mkInst(st mut St, res int, op int, a int, b int, c int) InsRef {
     return r
 }
 
-// metaAddr は globaladdr @rt.meta の命令を b へ足して値を返す
+// globaladdr @rt.meta の命令を b へ足して値を返す
 func metaAddr(st mut St, f FnRef, b BlkRef) int {
     v := newValueIn(mut st, f)
-    // std/task を使うプログラムではワーカーの表（段 6 P4-3 の fsaddr — P4-4 で見つけた穴: ここだけ大域の番地のままで、ワーカー k の深度・bump が
+    // std/task を使うプログラムではワーカーの表（fsaddr の穴: ここだけ大域の番地のままで、ワーカー k の深度・bump が
     // ワーカー 0 の表を読み書きしていた。ワーカー 1 では表 = 大域なので観測に出なかった）
     linkInst(mut st, b, mkInst(mut st, v, if st.taskUse && desugar.HeapGet(mut st.d, st.meta + G_WSLOT) >= 0 { OpFsAddr } else { OpGlobal }, st.meta, 0, 0))
     return v
@@ -96,7 +96,7 @@ func rtlower(st mut St) {
 
 // ── 値の型の表（印字に要る — store の値・呼び出しの引数・ret）──
 
-// valueTypes は関数 f の値の型の列（添字 = 値の番号）
+// 関数 f の値の型の列（添字 = 値の番号）
 func valueTypes(st mut St, f FnRef) int {
     n := irFnNVal(mut st, f)
     vt := listN(mut st, n)
@@ -176,7 +176,7 @@ func llLabel(out mut []byte, bi int, tag int, k int) {
     num(mut out, k)
 }
 
-// divGuarded は div / rem の除数 y にガードが要るか（y が 0 でも -1 でもない定数 — それまでに印字した iconst — ならガードを省く）
+// div / rem の除数 y にガードが要るか（y が 0 でも -1 でもない定数 — それまでに印字した iconst — ならガードを省く）
 func divGuarded(st mut St, cs int, y int) bool {
     return !(desugar.HeapGet(mut st.d, cs + 1 + y * 2) != 0 && desugar.HeapGet(mut st.d, cs + 2 + y * 2) != 0 && desugar.HeapGet(mut st.d, cs + 2 + y * 2) != -1)
 }
@@ -198,7 +198,7 @@ func incomingAdd(st mut St, inc int, to BlkRef, bi int, tag int, k int, args int
     desugar.HeapSet(mut st.d, inc + 1 + id * 2 + 1, e)
 }
 
-// collectIncoming は印字と同じ順にラベルの採番をなぞって、ブロックごとの入り辺（[head, tail] の対の列）を集める
+// 印字と同じ順にラベルの採番をなぞって、ブロックごとの入り辺（[head, tail] の対の列）を集める
 func collectIncoming(st mut St, f FnRef) int {
     nb := irFnNBlk(mut st, f)
     inc := listN(mut st, nb * 2)
@@ -245,7 +245,7 @@ func collectIncoming(st mut St, f FnRef) int {
 
 // ── 印字 ──
 
-// llHead は .ll の冒頭（target triple・_start の module asm・属性 — ir_llvm.emit の固定部）
+// .ll の冒頭（target triple・_start の module asm・属性 — ir_llvm.emit の固定部）
 func llHead(out mut []byte) {
     obuf.Lit(mut out, "; 生成物（sober build --emit=ll）\ntarget triple = \"x86_64-unknown-linux-none\"\n\n")
     obuf.Lit(mut out, "module asm \".globl _start\"\nmodule asm \"_start:\"\nmodule asm \"  movq %rsp, %rdi\"\n")
@@ -263,7 +263,7 @@ func llTy(out mut []byte, t int) {
     }
 }
 
-// llName は `@"name"`（引用は常に — ir_llvm は名前を escape しない）
+// `@"name"`（引用は常に — ir_llvm は名前を escape しない）
 func llName(st mut St, out mut []byte, s int) {
     obuf.Lit(mut out, "@\"")
     mut i := 0
@@ -315,7 +315,7 @@ func regName(out mut []byte, k int) {
     }
 }
 
-// vreg は "%v<N>"
+// "%v<N>"
 func vreg(out mut []byte, v int) {
     obuf.Lit(mut out, "%v")
     num(mut out, v)
@@ -357,7 +357,7 @@ func llBinName(out mut []byte, op int) {
     }
 }
 
-// llFunc は関数 1 つの .ll（入り辺は collectIncoming が先に集めたもの）。ブロックごとに φ・（入口なら）スロット・命令・終端
+// 関数 1 つの .ll（入り辺は collectIncoming が先に集めたもの）。ブロックごとに φ・（入口なら）スロット・命令・終端
 func llFunc(st mut St, out mut []byte, f FnRef) {
     vt := irFnLLVt(mut st, f)
     inc := irFnLLInc(mut st, f)
@@ -397,17 +397,17 @@ func llFunc(st mut St, out mut []byte, f FnRef) {
     obuf.Lit(mut out, "}\n")
 }
 
-// LlCur は llFunc の印字の状態（局所名 lc）: fresh = 次の新しい名前の番号（関数で通し）・ctag / ck = ブロックの直近のラベル
+// llFunc の印字の状態（局所名 lc）: fresh = 次の新しい名前の番号（関数で通し）・ctag / ck = ブロックの直近のラベル
 // （div / rem の検査でブロックが割れたら合流点 LbDj — 終端の分岐はそこから出る）
 type LlCur struct {
     fresh int
     ctag int
     ck int
-    // gb = 値の列（heap — listN）: 1 = gep.byte の結果（その番地からの語の load は揃っていない — std/binary.Load64・report-724 で `align 1`）
+    // gb = 値の列（heap — listN）: 1 = gep.byte の結果（その番地からの語の load は揃っていない — std/binary.Load64 で `align 1`）
     gb int
 }
 
-// llSig は define の行（名前・結果の型・仮引数）
+// define の行（名前・結果の型・仮引数）
 func llSig(st mut St, out mut []byte, f FnRef) {
     obuf.Lit(mut out, if irFnExport(mut st, f) != 0 { "\ndefine " } else { "\ndefine internal " })
     llTy(mut out, irFnRet(mut st, f))
@@ -428,7 +428,7 @@ func llSig(st mut St, out mut []byte, f FnRef) {
     obuf.Lit(mut out, ") #0 {\n")
 }
 
-// llPhis はブロック b（番号 bi）の φ（入り辺の順 = 前任の jump の順）
+// ブロック b（番号 bi）の φ（入り辺の順 = 前任の jump の順）
 func llPhis(st mut St, out mut []byte, b BlkRef, bi int, inc int) {
     mut p := irBlkPHead(mut st, b)
     mut pi := 0
@@ -458,7 +458,7 @@ func llPhis(st mut St, out mut []byte, b BlkRef, bi int, inc int) {
     }
 }
 
-// llSlots はスロットを入口で確保してゼロ初期化（未初期化読みの undef を塞ぐ）
+// スロットを入口で確保してゼロ初期化（未初期化読みの undef を塞ぐ）
 func llSlots(st mut St, out mut []byte, f FnRef) {
     // スロットは入口で確保してゼロ初期化（未初期化読みの undef を塞ぐ）
     mut s := irFnSHead(mut st, f)
@@ -491,7 +491,7 @@ func llSlots(st mut St, out mut []byte, f FnRef) {
     }
 }
 
-// llIns は命令 ins 1 つ（ブロック bi — 腕 1 本 = IR の op 1 つ）
+// 命令 ins 1 つ（ブロック bi — 腕 1 本 = IR の op 1 つ）
 func llIns(st mut St, out mut []byte, lc mut LlCur, ins InsRef, bi int, cs int, vt int) {
     op := irInsOp(mut st, ins)
     r := irInsRes(mut st, ins)
@@ -724,7 +724,7 @@ func llIns(st mut St, out mut []byte, lc mut LlCur, ins InsRef, bi int, cs int, 
         out = append(out, '(')
         llArgs(mut st, mut out, vt, ib)
     case OpTrapI:
-        // .ll の経路は罠を持たない（段 6 P3a-2a — 子をただ呼んで結果 0。中の死は今までどおりプロセスの死。--via=ll は罠のモジュールの照合をしない）
+        // .ll の経路は罠を持たない（子をただ呼んで結果 0。中の死は今までどおりプロセスの死。--via=ll は罠のモジュールの照合をしない）
         n := lc.fresh
         lc.fresh += 1
         obuf.Lit(mut out, "  %fp")
@@ -741,7 +741,7 @@ func llIns(st mut St, out mut []byte, lc mut LlCur, ins InsRef, bi int, cs int, 
     case OpUnwind:
         // .ll の経路は罠を持たない（何もしない — 続く exit がプロセスを終える）
     case OpTSwitch:
-        // .ll の経路は task の切替を持たない（段 6 P3b — 何もしない。子は tstart の呼び出しの中で走り切る・待つ形は .ll では動かない）
+        // .ll の経路は task の切替を持たない（何もしない。子は tstart の呼び出しの中で走り切る・待つ形は .ll では動かない）
     case OpTStart:
         // .ll の経路: 新しいスタックへ移らずに fn(arg) をそのまま呼ぶ（子を先に走らせる既定の方針の 1 本道 — fn は .ll では戻る）
         n := lc.fresh
@@ -755,7 +755,7 @@ func llIns(st mut St, out mut []byte, lc mut LlCur, ins InsRef, bi int, cs int, 
         out = append(out, '(')
         llArgs(mut st, mut out, vt, list1(mut st, xAt(mut st, ib, 2)))
     case OpAtomic:
-        // 原子の op（段 6 P4-4）: LLVM の原子の命令で（.ll の経路は 1 本道だが、値を定義しないと使う側が undefined value になる — report-879）
+        // 原子の op: LLVM の原子の命令で（.ll の経路は 1 本道だが、値を定義しないと使う側が undefined value になる）
         k := ic & 7
         if k == AT_FENCE {
             obuf.Lit(mut out, "  fence seq_cst\n")
@@ -851,7 +851,7 @@ func llIns(st mut St, out mut []byte, lc mut LlCur, ins InsRef, bi int, cs int, 
     }
 }
 
-// llDivChecked は div / rem（除数が 0 でない・-1 でないと示せないもの）: 0 なら panic、-1 なら 0 - x / 0（x86 の #DE と LLVM の UB を塞ぐ）、
+// div / rem（除数が 0 でない・-1 でないと示せないもの）: 0 なら panic、-1 なら 0 - x / 0（x86 の #DE と LLVM の UB を塞ぐ）、
 // それ以外は sdiv / srem。ブロックは合流点 LbDj で続く（cur.ctag / ck）
 func llDivChecked(out mut []byte, lc mut LlCur, bi int, r int, ia int, ib int, ic int, sname string) {
     kz := lc.fresh + 1
@@ -923,7 +923,7 @@ func llDivChecked(out mut []byte, lc mut LlCur, bi int, r int, ia int, ib int, i
     lc.ck = kz + 4
 }
 
-// llTerm はブロック b の終端
+// ブロック b の終端
 func llTerm(st mut St, out mut []byte, lc mut LlCur, b BlkRef, bi int, vt int) {
     t := irBlkTerm(mut st, b)
     x1 := irBlkX1(mut st, b)
@@ -968,7 +968,7 @@ func llTerm(st mut St, out mut []byte, lc mut LlCur, b BlkRef, bi int, vt int) {
     }
 }
 
-// llPrepare は全関数の印字の表（値の型・入り辺・定数の表）を先に作る。印字の間はヒープを伸ばさない —
+// 全関数の印字の表（値の型・入り辺・定数の表）を先に作る。印字の間はヒープを伸ばさない —
 // 出力 out は同じ region にあるので、交互に伸びると先端の伸長が効かず全コピーが続く（F-27 の交錯成長 — 自己適用の大きい入力で exit 102 になった）
 func llPrepare(st mut St) {
     mut f := st.fhead
@@ -980,7 +980,7 @@ func llPrepare(st mut St) {
     }
 }
 
-// llModule はモジュール全体の .ll（冒頭の固定部 → グローバル → 関数）。呼び手が rtlower と llPrepare を先に掛ける
+// モジュール全体の .ll（冒頭の固定部 → グローバル → 関数）。呼び手が rtlower と llPrepare を先に掛ける
 func llModule(st mut St, out mut []byte) {
     llHead(mut out)
     mut g := st.ghead
@@ -1024,7 +1024,7 @@ func llModule(st mut St, out mut []byte) {
     }
 }
 
-// llAsF は %r.<s> = bitcast i64 %v to double（float の段 — 値は i64 のビット列）
+// %r.<s> = bitcast i64 %v to double（float の段 — 値は i64 のビット列）
 func llAsF(out mut []byte, r int, s string, v int) {
     obuf.Lit(mut out, "  ")
     vreg(mut out, r)
@@ -1034,7 +1034,7 @@ func llAsF(out mut []byte, r int, s string, v int) {
     obuf.Lit(mut out, " to double\n")
 }
 
-// llFBin は float の二項・単項（ir.sober の BFAdd〜BFToInt）。toInt は cvttsd2si と同じ生の値（範囲外・NaN は i64 の最小値 —
+// float の二項・単項（ir.sober の BFAdd〜BFToInt）。toInt は cvttsd2si と同じ生の値（範囲外・NaN は i64 の最小値 —
 // fptosi の範囲外は poison なので、範囲内だけを select で選ぶ）
 func llFBin(st mut St, out mut []byte, r int, ia int, ib int, ic int) {
     if ia == BFOfInt {
@@ -1097,7 +1097,7 @@ func llFBin(st mut St, out mut []byte, r int, ia int, ib int, ic int) {
     obuf.Lit(mut out, ".f to i64\n")
 }
 
-// llFCmp は float の比較（ordered — NaN は偽。fne だけ unordered の une）
+// float の比較（ordered — NaN は偽。fne だけ unordered の une）
 func llFCmp(out mut []byte, r int, ia int, ib int, ic int) {
     llAsF(mut out, r, ".a", ib)
     llAsF(mut out, r, ".b", ic)

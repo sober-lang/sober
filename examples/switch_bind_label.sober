@@ -1,8 +1,8 @@
 package main
 
-// 期待型の無い束縛の switch の腕の値がパターンで束ねた欄（`d := switch e { case L{desc}: desc }` — F-bg・2026-10-19）。
+// 期待型の無い束縛の switch の腕の値がパターンで束ねた欄（`d := switch e { case L{desc}: desc }`）。
 // 閉じた世界にラベルが 2 つ以上あると、覆っていないラベルの腕は到達しない項になる。その型は switch の結果型で、腕の欄の束縛を
-// 見て推す（見ないと unit に落ちて関数の Def が型の不一致で拒否されていた — check ≡ build）
+// 見て推す（見ないと unit に落ちて関数の Def が型の不一致で拒否される — check ≡ build）
 
 type Alert error {
     desc int

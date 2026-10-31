@@ -1,0 +1,30 @@
+package shapes
+
+func must(ok bool) {
+    if !ok {
+        none := []int{}
+        println(none[0])
+    }
+}
+
+func TestSquare() {
+    must(Area(0, 3, 0) == 9)
+}
+
+func TestRect() {
+    must(Area(1, 2, 3) == 6)
+}
+
+func TestClampLow() {
+    must(Clamp(-1, 0, 10) == 0)
+}
+
+// 102（region の深度の上限）で死ぬ — 印は終わりの道で書き出される
+func TestDeep() {
+    must(Depth(100000) > 0)
+}
+
+// 101 で死ぬ — Clamp の真ん中の腕を踏んでから
+func TestBroken() {
+    must(Clamp(5, 0, 10) == 6)
+}

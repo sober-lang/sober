@@ -84,7 +84,7 @@ R-7. 結果が `error?` の呼び出し形の生成元（`io.Chunks(f)`）は、
 拒否: [`examples/for_fallible_unmarked.sober`](../../examples/for_fallible_unmarked.sober)・[`examples/for_fallible_result.sober`](../../examples/for_fallible_result.sober)・[`examples/for_fallible_yield.sober`](../../examples/for_fallible_yield.sober)
 決定: [language.md 7 節](../language.md)
 
-R-8. 展開される関数の中では、匿名の関数型の仮引数 `recv func(k func(T)) error?` も呼び出し形の生成元にできる（`for x <- recv()? { … }`）。印 `?` の規則は R-7 と同じ。名前つき関数型の仮引数は値の閉包で展開されないので生成元にならない。
+R-8. 展開される関数の中では、匿名の関数型の仮引数 `recv func(k func(T)) error?` も呼び出し形の生成元にできる（`for x <- recv()? { … }`）。印 `?` の規則は R-7 と同じ。名前つき関数型の仮引数は値のクロージャで展開されないので生成元にならない。
 例: [`examples/for_closure_gen.sober`](../../examples/for_closure_gen.sober)
 拒否: [`examples/for_closure_gen_unmarked.sober`](../../examples/for_closure_gen_unmarked.sober)・[`examples/for_closure_gen_result.sober`](../../examples/for_closure_gen_result.sober)・[`examples/for_closure_gen_named.sober`](../../examples/for_closure_gen_named.sober)
 決定: [language.md 7 節](../language.md)

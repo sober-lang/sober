@@ -94,7 +94,7 @@ func funcDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx 
     return node(mut nb, ast.KFuncDecl, tk(cx, p0 + 1), fname, tps, params, results, body, ext), q2 + 1
 }
 
-// funcExt は付加の列 head（8 個 — 番号 0〜7）に注釈の欄を足した列: `@secret` / `@bless` / `@credential` があれば 12 個・`@effects` があれば 14 個
+// 付加の列 head（8 個 — 番号 0〜7）に注釈の欄を足した列: `@secret` / `@bless` / `@credential` があれば 12 個・`@effects` があれば 14 個
 // （12・13 番 = 項の列・`@` の字句）・`@exhaustive` だけなら 9 個（どれも無ければ head のまま）
 func funcExt(db mut builder.Builder[int], head []int, an Annot) int {
     mut l := mut []int{}
@@ -118,7 +118,7 @@ func funcExt(db mut builder.Builder[int], head []int, an Annot) int {
     return ast.PutList(mut db, freeze(l))
 }
 
-// intrinsicDecl は `@intrinsic("鍵")` の後の `func IDENT parameters result? ';'`（本体・型引数なし — KIntrinsic）
+// `@intrinsic("鍵")` の後の `func IDENT parameters result? ';'`（本体・型引数なし — KIntrinsic）
 func intrinsicDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int, start int, key int) (int, int) {
     if tg(cx, p0 + 1) != lexer.Identifier {
         return -1, p0
@@ -143,7 +143,7 @@ func parameters(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], c
     return l, q
 }
 
-// parametersN は parameters に、関数型（mode 1）の仮引数名の列を足したもの（名前なしの関数型は -1）。
+// parameters に、関数型（mode 1）の仮引数名の列を足したもの（名前なしの関数型は -1）。
 // 関数型の仮引数は名前を全部付けるか全部付けないか（Go と同じ — 混在は拒否）
 func parametersN(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int, mode int) (int, int, int) {
     if tg(cx, p0) != lexer.LParen {
@@ -231,7 +231,7 @@ func parametersN(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], 
     return l, if len(pnames) > 0 { ast.PutList(mut db, freeze(pnames)) } else { -1 }, p + 1
 }
 
-// typeStart は型を始めうる字句か（result? の試し読みの入口）
+// 型を始めうる字句か（result? の試し読みの入口）
 func typeStart(t int) bool {
     return t == lexer.Identifier || t == lexer.KwError || t == lexer.KwMut || t == lexer.LBracket ||
         t == lexer.KwMap || t == lexer.KwFunc || t == lexer.Star || t == lexer.LParen
@@ -505,7 +505,7 @@ func fieldList(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx
     return ast.PutList(mut db, freeze(out)), p
 }
 
-// fieldType は欄の型: `[N]T`（N は整数リテラル — TArray）か普通の型
+// 欄の型: `[N]T`（N は整数リテラル — TArray）か普通の型
 func fieldType(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int) (int, int) {
     if tg(cx, p) == lexer.LBracket && tg(cx, p + 1) == lexer.IntegerLiteral && tg(cx, p + 2) == lexer.RBracket {
         n, np := intLit(mut nb, cx, p + 1)
@@ -615,8 +615,8 @@ func typeDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx 
             return -1, p
         }
         rs, r := resultOpt(mut nb, mut db, cx, q)
-        // 後置の `@errors(…)`（名前付き関数型の契約 — language.md 12 節の面「高階」・effect の波 段 1）: d = ラベル名の列 + 1（0 = 無し）・e = `@` の字句。
-        // 後置の `@effects(…)`（段 5a — 順は問わない）: f = 項の列 + 1（0 = 無し）・節の字句 = その `@`
+        // 後置の `@errors(…)`（名前付き関数型の契約 — language.md 12 節の面「高階」）: d = ラベル名の列 + 1（0 = 無し）・e = `@` の字句。
+        // 後置の `@effects(…)`（順は問わない）: f = 項の列 + 1（0 = 無し）・節の字句 = その `@`
         mut ed := 0
         mut et := 0
         mut fd := 0

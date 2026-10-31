@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P5-4: task.SpawnIn の子の捕獲は task.Spawn と同じ柵（handle を捕獲できない — kind 6）。check と build が同じ名指しで拒否（desugar/parcheck.sober）
+// task.SpawnIn の子の捕獲は task.Spawn と同じ柵（handle を捕獲できない — kind 6）。check と build が同じ名指しで拒否（desugar/parcheck.sober）
 
 import "std/task"
 

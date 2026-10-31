@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P3b-4 1b': error を返す task。Join は (T, error?) の 2 値・Try は Ok / Failed / Died・Join も Try もしなかった失敗は
+// error を返す task。Join は (T, error?) の 2 値・Try は Ok / Failed / Died・Join も Try もしなかった失敗は
 // scope の err へ集約（生んだ順で最初のもの）・死と失敗が両方なら死が先（ChildDied）。err は string を持つ（子の region から写る）
 
 import "std/task"

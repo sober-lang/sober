@@ -1,0 +1,372 @@
+{
+  "package": "calc",
+  "imports": [
+    {
+      "alias": "$testing",
+      "path": "std/testing",
+      "tok": 0
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "TestSum",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 8
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Sum",
+                      "tok": 10
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 4,
+                        "tok": 12
+                      }
+                    ],
+                    "tok": 11
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 6,
+                    "tok": 15
+                  },
+                  "tok": 14
+                }
+              ],
+              "tok": 9
+            }
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 20
+      },
+      "sig_end": 7
+    },
+    {
+      "name": "TestSign",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 25
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Sign",
+                      "tok": 27
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 5,
+                        "tok": 29
+                      }
+                    ],
+                    "tok": 28
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 32
+                  },
+                  "tok": 31
+                }
+              ],
+              "tok": 26
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 35
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Sign",
+                      "tok": 37
+                    },
+                    "args": [
+                      {
+                        "k": "unary",
+                        "op": "-",
+                        "operand": {
+                          "k": "int",
+                          "value": 3,
+                          "tok": 40
+                        },
+                        "tok": 39
+                      }
+                    ],
+                    "tok": 38
+                  },
+                  "rhs": {
+                    "k": "unary",
+                    "op": "-",
+                    "operand": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 44
+                    },
+                    "tok": 43
+                  },
+                  "tok": 42
+                }
+              ],
+              "tok": 36
+            }
+          }
+        ]
+      },
+      "tok": 21,
+      "bodiless": false,
+      "span": {
+        "start": 20,
+        "end": 49
+      },
+      "sig_end": 24
+    },
+    {
+      "name": "TestMix",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 54
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Mix",
+                      "tok": 56
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 5,
+                        "tok": 58
+                      },
+                      {
+                        "k": "int",
+                        "value": 3,
+                        "tok": 60
+                      }
+                    ],
+                    "tok": 57
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 22,
+                    "tok": 63
+                  },
+                  "tok": 62
+                }
+              ],
+              "tok": 55
+            }
+          }
+        ]
+      },
+      "tok": 50,
+      "bodiless": false,
+      "span": {
+        "start": 49,
+        "end": 68
+      },
+      "sig_end": 53
+    },
+    {
+      "name": "TestBoth",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 73
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "Both",
+                    "tok": 75
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "true",
+                      "tok": 77
+                    },
+                    {
+                      "k": "ident",
+                      "name": "false",
+                      "tok": 79
+                    }
+                  ],
+                  "tok": 76
+                }
+              ],
+              "tok": 74
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 83
+              },
+              "args": [
+                {
+                  "k": "unary",
+                  "op": "!",
+                  "operand": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Both",
+                      "tok": 86
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "false",
+                        "tok": 88
+                      },
+                      {
+                        "k": "ident",
+                        "name": "true",
+                        "tok": 90
+                      }
+                    ],
+                    "tok": 87
+                  },
+                  "tok": 85
+                }
+              ],
+              "tok": 84
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 94
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "Both",
+                    "tok": 96
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "true",
+                      "tok": 98
+                    },
+                    {
+                      "k": "ident",
+                      "name": "true",
+                      "tok": 100
+                    }
+                  ],
+                  "tok": 97
+                }
+              ],
+              "tok": 95
+            }
+          }
+        ]
+      },
+      "tok": 69,
+      "bodiless": false,
+      "span": {
+        "start": 68,
+        "end": 106
+      },
+      "sig_end": 72
+    }
+  ],
+  "consts": []
+}

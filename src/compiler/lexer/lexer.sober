@@ -8,7 +8,7 @@ package lexer
 import "std/builder"
 import "std/iter"
 
-// at は b[i]。範囲外は 0（番兵）
+// b[i]。範囲外は 0（番兵）
 func at(b []byte, i int) int {
     return if i < len(b) { int(b[i]) } else { 0 }
 }
@@ -17,7 +17,7 @@ func isIdentStart(c int) bool {
     return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '_'
 }
 
-// RadixOf は n 進リテラルの接頭辞の 2 文字目（`0x` の x 等）の基数（でなければ 10）
+// n 進リテラルの接頭辞の 2 文字目（`0x` の x 等）の基数（でなければ 10）
 func RadixOf(c int) int {
     return switch c {
     case 'x': 16
@@ -27,7 +27,7 @@ func RadixOf(c int) int {
     }
 }
 
-// DigitVal は基数 r の桁 c の値（桁でなければ -1）
+// 基数 r の桁 c の値（桁でなければ -1）
 func DigitVal(c int, r int) int {
     v := if c >= '0' && c <= '9' { c - '0' } else if c >= 'a' && c <= 'f' { c - 'a' + 10 } else if c >= 'A' && c <= 'F' { c - 'A' + 10 } else { 99 }
     return if v < r { v } else { -1 }
@@ -41,7 +41,7 @@ func isDigit(c int) bool {
     return c >= '0' && c <= '9'
 }
 
-// IsDecimalDigit は c が 10 進の桁か（parser の整数リテラルが接頭辞を見分ける）
+// c が 10 進の桁か（parser の整数リテラルが接頭辞を見分ける）
 func IsDecimalDigit(c int) bool {
     return isDigit(c)
 }
@@ -50,7 +50,7 @@ func isIdentCont(c int) bool {
     return isIdentStart(c) || isDigit(c)
 }
 
-// Lex は b 全体を字句に分ける（末尾は必ず Eof）
+// b 全体を字句に分ける（末尾は必ず Eof）
 func Lex(b []byte) []Token {
     mut tb := builder.Builder[Token]{}
     mut i := 0
@@ -66,7 +66,7 @@ func Lex(b []byte) []Token {
     return builder.Build(mut tb)
 }
 
-// LexSynth は loader が合成するソース（@layout の写し — loader/layout.sober）の字句: Lex に加えて、`$` の直後に続く名前を 1 つの名前にする。
+// loader が合成するソース（@layout の写し — loader/layout.sober）の字句: Lex に加えて、`$` の直後に続く名前を 1 つの名前にする。
 // `$` の名前は利用者のソースには書けない（Lex では `$` が Invalid）ので、合成の名前は利用者の名前とぶつからない
 func LexSynth(b []byte) []Token {
     ts := Lex(b)
@@ -85,7 +85,7 @@ func LexSynth(b []byte) []Token {
     return freeze(out)
 }
 
-// lexOne は位置 i から字句を 1 つ読む。last は直前の字句の種類（改行でのセミコロン挿入の判定）。
+// 位置 i から字句を 1 つ読む。last は直前の字句の種類（改行でのセミコロン挿入の判定）。
 // 結果は（字句, 次の読み位置）
 func lexOne(b []byte, i0 int, last int) (Token, int) {
     insert := EndsStatement(last)
@@ -155,7 +155,7 @@ func lexOne(b []byte, i0 int, last int) (Token, int) {
     return lexSymbol(b, i)
 }
 
-// skipTrivia は空白とコメントを飛ばす。セミコロンを挿入すべき改行に当たったらその位置を返す（無ければ -1）。
+// 空白とコメントを飛ばす。セミコロンを挿入すべき改行に当たったらその位置を返す（無ければ -1）。
 // 結果は（次の読み位置, 改行の位置 or -1）
 func skipTrivia(b []byte, i0 int, insert bool) (int, int) {
     mut i := i0
@@ -200,7 +200,7 @@ func skipTrivia(b []byte, i0 int, insert bool) (int, int) {
     return i, -1
 }
 
-// skipString は `"..."` を読み飛ばす（i0 は開きの `"`）。補間 `${ 式 }` は 1 字句のまま中を読み飛ばし、
+// `"..."` を読み飛ばす（i0 は開きの `"`）。補間 `${ 式 }` は 1 字句のまま中を読み飛ばし、
 // 式の中の入れ子の文字列（補間込み）・raw 文字列・`{ }` の対応を追う。改行は補間の中でも不可。
 // 結果は（止まった位置, 閉じたか）— 閉じなければ止まった位置までが Invalid の字句
 func skipString(b []byte, i0 int) (int, bool) {
@@ -233,7 +233,7 @@ func skipString(b []byte, i0 int) (int, bool) {
     return i, false
 }
 
-// skipInterp は `${ ... }` を読み飛ばす（i0 は `{`）。閉じれば位置は閉じの `}` の直後
+// `${ ... }` を読み飛ばす（i0 は `{`）。閉じれば位置は閉じの `}` の直後
 func skipInterp(b []byte, i0 int) (int, bool) {
     mut i := i0 + 1
     mut depth := 1
@@ -285,9 +285,9 @@ func lexRawString(b []byte, start int) (Token, int) {
 }
 
 // 文字リテラル（language.md 33 節・syntax.md 1 節）: ASCII の印字可能文字 1 つ（`'` `\` を除く）か escape 6 種（\n \t \r \0 \\ \'）を
-// `'` で囲む。値はコード（型なし整数定数）。非 ASCII・空・閉じなし・他の escape は字句エラー（Rune の裁定まで）
+// `'` で囲む。値はコード（型なし整数定数）。非 ASCII・空・閉じなし・他の escape は字句エラー（Rune 型が定まるまでの暫定）
 
-// charLen は位置 i（開きの `'`）からの文字リテラルの長さ（3 か 4。字句にならなければ 0）
+// 位置 i（開きの `'`）からの文字リテラルの長さ（3 か 4。字句にならなければ 0）
 func charLen(b []byte, i int) int {
     c := at(b, i + 1)
     if c == '\\' {
@@ -296,7 +296,7 @@ func charLen(b []byte, i int) int {
     return if c >= ' ' && c <= '~' && c != '\'' && at(b, i + 2) == '\'' { 3 } else { 0 }
 }
 
-// escapeValue は escape `\e` の値（6 種以外は -1）
+// escape `\e` の値（6 種以外は -1）
 func escapeValue(e int) int {
     return switch e {
     case 'n': '\n'
@@ -309,12 +309,12 @@ func escapeValue(e int) int {
     }
 }
 
-// CharValue は字句 CharLiteral（b[s:e]）の値
+// 字句 CharLiteral（b[s:e]）の値
 func CharValue(b []byte, s int, e int) int {
     return if e - s == 4 { escapeValue(int(b[s + 2])) } else { int(b[s + 1]) }
 }
 
-// wordIs は b[s:e] が w と同じ綴りか
+// b[s:e] が w と同じ綴りか
 func wordIs(b []byte, s int, e int, w string) bool {
     wb := bytes(w)
     if e - s != len(wb) {
@@ -328,7 +328,7 @@ func wordIs(b []byte, s int, e int, w string) bool {
     return true
 }
 
-// keyword は b[s:e] の単語の種類（キーワードでなければ Identifier）
+// b[s:e] の単語の種類（キーワードでなければ Identifier）
 func keyword(b []byte, s int, e int) int {
     return switch {
     case wordIs(b, s, e, "package"): KwPackage
@@ -363,7 +363,7 @@ func keyword(b []byte, s int, e int) int {
     }
 }
 
-// symAt は b の位置 i から w の綴りが続くか（範囲外は 0 なので、末尾で切れた記号には一致しない）
+// b の位置 i から w の綴りが続くか（範囲外は 0 なので、末尾で切れた記号には一致しない）
 func symAt(b []byte, i int, w string) bool {
     wb := bytes(w)
     for k <- iter.Range(0, len(wb)) {
@@ -440,7 +440,7 @@ func sym1(c int) int {
     }
 }
 
-// lexSymbol は記号を最長一致（3 文字 → 2 文字 → 1 文字）で読む。どれでもなければ 1 バイトの Invalid
+// 記号を最長一致（3 文字 → 2 文字 → 1 文字）で読む。どれでもなければ 1 バイトの Invalid
 func lexSymbol(b []byte, i int) (Token, int) {
     t3 := sym3(b, i)
     if t3 >= 0 {
@@ -457,7 +457,7 @@ func lexSymbol(b []byte, i int) (Token, int) {
     return Token{Invalid, i, i + 1}, i + 1
 }
 
-// InterpEnd は、字句済みの文字列リテラル内の `${` の `{`（位置 pos）に対応する閉じ `}` の直後の位置（閉じなければ -1）。
+// 字句済みの文字列リテラル内の `${` の `{`（位置 pos）に対応する閉じ `}` の直後の位置（閉じなければ -1）。
 // parser が補間の式を切り出すのに使う（字句と同じ読み飛ばし規則を共有する — Zig 版の Lexer.interpEnd）
 func InterpEnd(b []byte, pos int) int {
     j, ok := skipInterp(b, pos)

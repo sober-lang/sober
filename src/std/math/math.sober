@@ -3,7 +3,7 @@ package math
 // float の数学（language.md 37 節）: 基本演算で書けないものだけを組み込みで（sqrtsd・ビット列の読み替え）。超越関数（Sin・Exp・Log 等）は入れない —
 // libm は実装・環境で最後のビットが割れる（決定性）。要るときは std で自前に書き、オラクルとの差分で守る
 
-// 組み込みの宣言（息継ぎ ③ — 本体なし。鍵の実装はコンパイラの表: loader/intrinsic.sober・desugar / lower の SysKey）
+// 組み込みの宣言（本体なし。実装はコンパイラの表: loader/intrinsic.sober・desugar / lower の SysKey）
 @intrinsic("fsqrt")
 func sysFSqrt(x float) float
 

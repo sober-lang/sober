@@ -1,0 +1,1237 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/cli",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/io",
+      "tok": 7
+    },
+    {
+      "alias": null,
+      "path": "std/strings",
+      "tok": 10
+    },
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    },
+    {
+      "alias": "$utf8",
+      "path": "std/internal/utf8",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "count",
+      "type_params": [],
+      "params": [
+        {
+          "name": "r",
+          "type": {
+            "k": "name",
+            "name": "cli.Parsed"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "lines"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "cli",
+                    "tok": 147
+                  },
+                  "field": "Bool",
+                  "tok": 149
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "r",
+                    "tok": 151
+                  },
+                  {
+                    "k": "ident",
+                    "name": "Lines",
+                    "tok": 153
+                  }
+                ],
+                "tok": 150
+              }
+            ],
+            "tok": 145
+          },
+          {
+            "k": "bind",
+            "names": [
+              "words"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "cli",
+                    "tok": 158
+                  },
+                  "field": "Bool",
+                  "tok": 160
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "r",
+                    "tok": 162
+                  },
+                  {
+                    "k": "ident",
+                    "name": "Words",
+                    "tok": 164
+                  }
+                ],
+                "tok": 161
+              }
+            ],
+            "tok": 156
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "path"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "cli",
+                        "tok": 170
+                      },
+                      "field": "PosList",
+                      "tok": 172
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "r",
+                        "tok": 174
+                      },
+                      {
+                        "k": "ident",
+                        "name": "Files",
+                        "tok": 176
+                      }
+                    ],
+                    "tok": 173
+                  },
+                  "guards": [],
+                  "tok": 168
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "bind",
+                    "names": [
+                      "b",
+                      "e"
+                    ],
+                    "mutable": false,
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "io",
+                            "tok": 183
+                          },
+                          "field": "ReadFile",
+                          "tok": 185
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "path",
+                            "tok": 187
+                          }
+                        ],
+                        "tok": 186
+                      }
+                    ],
+                    "tok": 179
+                  },
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "if",
+                      "cond": {
+                        "k": "binary",
+                        "op": "!=",
+                        "lhs": {
+                          "k": "ident",
+                          "name": "e",
+                          "tok": 191
+                        },
+                        "rhs": {
+                          "k": "nil",
+                          "tok": 193
+                        },
+                        "tok": 192
+                      },
+                      "then": {
+                        "stmts": [
+                          {
+                            "k": "expr",
+                            "expr": {
+                              "k": "call",
+                              "callee": {
+                                "k": "ident",
+                                "name": "println",
+                                "tok": 195
+                              },
+                              "args": [
+                                {
+                                  "k": "binary",
+                                  "op": "+",
+                                  "lhs": {
+                                    "k": "strlit",
+                                    "value": "wc: cannot read ",
+                                    "tok": 197
+                                  },
+                                  "rhs": {
+                                    "k": "ident",
+                                    "name": "path",
+                                    "tok": 199
+                                  },
+                                  "tok": 198
+                                }
+                              ],
+                              "tok": 196
+                            }
+                          },
+                          {
+                            "k": "ret",
+                            "values": [
+                              {
+                                "k": "int",
+                                "value": 1,
+                                "tok": 203
+                              }
+                            ],
+                            "tok": 202
+                          }
+                        ]
+                      },
+                      "else": null,
+                      "tok": 190
+                    }
+                  },
+                  {
+                    "k": "bind",
+                    "names": [
+                      "s"
+                    ],
+                    "mutable": false,
+                    "values": [
+                      {
+                        "k": "catch",
+                        "e": {
+                          "k": "call",
+                          "callee": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "$utf8",
+                              "tok": 209
+                            },
+                            "field": "Parse",
+                            "tok": 209
+                          },
+                          "args": [
+                            {
+                              "k": "ident",
+                              "name": "b",
+                              "tok": 211
+                            }
+                          ],
+                          "tok": 210
+                        },
+                        "rhs": {
+                          "k": "strlit",
+                          "value": "",
+                          "tok": 214
+                        },
+                        "tok": 213
+                      }
+                    ],
+                    "tok": 207
+                  },
+                  {
+                    "k": "bind",
+                    "names": [
+                      "nl"
+                    ],
+                    "mutable": false,
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "strings",
+                            "tok": 218
+                          },
+                          "field": "Count",
+                          "tok": 220
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "s",
+                            "tok": 222
+                          },
+                          {
+                            "k": "strlit",
+                            "value": "\n",
+                            "tok": 224
+                          }
+                        ],
+                        "tok": 221
+                      }
+                    ],
+                    "tok": 216
+                  },
+                  {
+                    "k": "bind",
+                    "names": [
+                      "nw"
+                    ],
+                    "mutable": false,
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "len",
+                          "tok": 229
+                        },
+                        "args": [
+                          {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "strings",
+                                "tok": 231
+                              },
+                              "field": "Fields",
+                              "tok": 233
+                            },
+                            "args": [
+                              {
+                                "k": "ident",
+                                "name": "s",
+                                "tok": 235
+                              }
+                            ],
+                            "tok": 234
+                          }
+                        ],
+                        "tok": 230
+                      }
+                    ],
+                    "tok": 227
+                  },
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "if",
+                      "cond": {
+                        "k": "ident",
+                        "name": "lines",
+                        "tok": 240
+                      },
+                      "then": {
+                        "stmts": [
+                          {
+                            "k": "expr",
+                            "expr": {
+                              "k": "call",
+                              "callee": {
+                                "k": "ident",
+                                "name": "println",
+                                "tok": 242
+                              },
+                              "args": [
+                                {
+                                  "k": "binary",
+                                  "op": "+",
+                                  "lhs": {
+                                    "k": "interp",
+                                    "tmpl": {
+                                      "lits": [
+                                        "",
+                                        " "
+                                      ],
+                                      "holes": [
+                                        {
+                                          "k": "ident",
+                                          "name": "nl",
+                                          "tok": 244
+                                        }
+                                      ]
+                                    },
+                                    "tok": 244
+                                  },
+                                  "rhs": {
+                                    "k": "ident",
+                                    "name": "path",
+                                    "tok": 246
+                                  },
+                                  "tok": 245
+                                }
+                              ],
+                              "tok": 243
+                            }
+                          }
+                        ]
+                      },
+                      "else": {
+                        "k": "if",
+                        "cond": {
+                          "k": "ident",
+                          "name": "words",
+                          "tok": 252
+                        },
+                        "then": {
+                          "stmts": [
+                            {
+                              "k": "expr",
+                              "expr": {
+                                "k": "call",
+                                "callee": {
+                                  "k": "ident",
+                                  "name": "println",
+                                  "tok": 254
+                                },
+                                "args": [
+                                  {
+                                    "k": "binary",
+                                    "op": "+",
+                                    "lhs": {
+                                      "k": "interp",
+                                      "tmpl": {
+                                        "lits": [
+                                          "",
+                                          " "
+                                        ],
+                                        "holes": [
+                                          {
+                                            "k": "ident",
+                                            "name": "nw",
+                                            "tok": 256
+                                          }
+                                        ]
+                                      },
+                                      "tok": 256
+                                    },
+                                    "rhs": {
+                                      "k": "ident",
+                                      "name": "path",
+                                      "tok": 258
+                                    },
+                                    "tok": 257
+                                  }
+                                ],
+                                "tok": 255
+                              }
+                            }
+                          ]
+                        },
+                        "else": {
+                          "k": "block",
+                          "stmts": [
+                            {
+                              "k": "expr",
+                              "expr": {
+                                "k": "call",
+                                "callee": {
+                                  "k": "ident",
+                                  "name": "println",
+                                  "tok": 264
+                                },
+                                "args": [
+                                  {
+                                    "k": "binary",
+                                    "op": "+",
+                                    "lhs": {
+                                      "k": "interp",
+                                      "tmpl": {
+                                        "lits": [
+                                          "",
+                                          " ",
+                                          " "
+                                        ],
+                                        "holes": [
+                                          {
+                                            "k": "ident",
+                                            "name": "nl",
+                                            "tok": 266
+                                          },
+                                          {
+                                            "k": "ident",
+                                            "name": "nw",
+                                            "tok": 266
+                                          }
+                                        ]
+                                      },
+                                      "tok": 266
+                                    },
+                                    "rhs": {
+                                      "k": "ident",
+                                      "name": "path",
+                                      "tok": 268
+                                    },
+                                    "tok": 267
+                                  }
+                                ],
+                                "tok": 265
+                              }
+                            }
+                          ]
+                        },
+                        "tok": 251
+                      },
+                      "tok": 239
+                    }
+                  }
+                ]
+              },
+              "tok": 167
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 276
+              }
+            ],
+            "tok": 275
+          }
+        ]
+      },
+      "tok": 136,
+      "bodiless": false,
+      "span": {
+        "start": 135,
+        "end": 280
+      },
+      "sig_end": 144
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 285
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "cli",
+                      "tok": 287
+                    },
+                    "field": "Run",
+                    "tok": 289
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "Wc",
+                      "tok": 291
+                    },
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "string"
+                      },
+                      "elems": [
+                        {
+                          "k": "strlit",
+                          "value": "wc",
+                          "tok": 297
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "testdata/cli/a.txt",
+                          "tok": 299
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "testdata/cli/b.txt",
+                          "tok": 301
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 293
+                    }
+                  ],
+                  "tok": 290
+                }
+              ],
+              "tok": 286
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 306
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "cli",
+                      "tok": 308
+                    },
+                    "field": "Run",
+                    "tok": 310
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "Wc",
+                      "tok": 312
+                    },
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "string"
+                      },
+                      "elems": [
+                        {
+                          "k": "strlit",
+                          "value": "wc",
+                          "tok": 318
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "-l",
+                          "tok": 320
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "testdata/cli/a.txt",
+                          "tok": 322
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 314
+                    }
+                  ],
+                  "tok": 311
+                }
+              ],
+              "tok": 307
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 327
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "cli",
+                      "tok": 329
+                    },
+                    "field": "Run",
+                    "tok": 331
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "Wc",
+                      "tok": 333
+                    },
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "string"
+                      },
+                      "elems": [
+                        {
+                          "k": "strlit",
+                          "value": "wc",
+                          "tok": 339
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "testdata/cli/b.txt",
+                          "tok": 341
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "--words",
+                          "tok": 343
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 335
+                    }
+                  ],
+                  "tok": 332
+                }
+              ],
+              "tok": 328
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 348
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "cli",
+                      "tok": 350
+                    },
+                    "field": "Run",
+                    "tok": 352
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "Wc",
+                      "tok": 354
+                    },
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "string"
+                      },
+                      "elems": [
+                        {
+                          "k": "strlit",
+                          "value": "wc",
+                          "tok": 360
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "--help",
+                          "tok": 362
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 356
+                    }
+                  ],
+                  "tok": 353
+                }
+              ],
+              "tok": 349
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 367
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "cli",
+                      "tok": 369
+                    },
+                    "field": "Run",
+                    "tok": 371
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "Wc",
+                      "tok": 373
+                    },
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "string"
+                      },
+                      "elems": [
+                        {
+                          "k": "strlit",
+                          "value": "wc",
+                          "tok": 379
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "--version",
+                          "tok": 381
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 375
+                    }
+                  ],
+                  "tok": 372
+                }
+              ],
+              "tok": 368
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 386
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "cli",
+                      "tok": 388
+                    },
+                    "field": "Run",
+                    "tok": 390
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "Wc",
+                      "tok": 392
+                    },
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "string"
+                      },
+                      "elems": [
+                        {
+                          "k": "strlit",
+                          "value": "wc",
+                          "tok": 398
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "--line",
+                          "tok": 400
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "testdata/cli/a.txt",
+                          "tok": 402
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 394
+                    }
+                  ],
+                  "tok": 391
+                }
+              ],
+              "tok": 387
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 407
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "cli",
+                      "tok": 409
+                    },
+                    "field": "Run",
+                    "tok": 411
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "Wc",
+                      "tok": 413
+                    },
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "string"
+                      },
+                      "elems": [
+                        {
+                          "k": "strlit",
+                          "value": "wc",
+                          "tok": 419
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 415
+                    }
+                  ],
+                  "tok": 412
+                }
+              ],
+              "tok": 408
+            }
+          }
+        ]
+      },
+      "tok": 281,
+      "bodiless": false,
+      "span": {
+        "start": 280,
+        "end": 426
+      },
+      "sig_end": 284
+    }
+  ],
+  "consts": [
+    {
+      "name": "Lines",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.BoolFlag",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "lines",
+              "tok": 21
+            }
+          },
+          {
+            "key": "short",
+            "value": {
+              "k": "strlit",
+              "value": "l",
+              "tok": 25
+            }
+          },
+          {
+            "key": "help",
+            "value": {
+              "k": "strlit",
+              "value": "print only the line counts",
+              "tok": 29
+            }
+          }
+        ],
+        "tok": 15,
+        "type_args": []
+      },
+      "tok": 13,
+      "span": {
+        "start": 12,
+        "end": 32
+      }
+    },
+    {
+      "name": "Words",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.BoolFlag",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "words",
+              "tok": 41
+            }
+          },
+          {
+            "key": "short",
+            "value": {
+              "k": "strlit",
+              "value": "w",
+              "tok": 45
+            }
+          },
+          {
+            "key": "help",
+            "value": {
+              "k": "strlit",
+              "value": "print only the word counts",
+              "tok": 49
+            }
+          }
+        ],
+        "tok": 35,
+        "type_args": []
+      },
+      "tok": 33,
+      "span": {
+        "start": 32,
+        "end": 52
+      }
+    },
+    {
+      "name": "Files",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.Positional",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "file",
+              "tok": 61
+            }
+          },
+          {
+            "key": "help",
+            "value": {
+              "k": "strlit",
+              "value": "files to count",
+              "tok": 65
+            }
+          },
+          {
+            "key": "many",
+            "value": {
+              "k": "ident",
+              "name": "true",
+              "tok": 69
+            }
+          }
+        ],
+        "tok": 55,
+        "type_args": []
+      },
+      "tok": 53,
+      "span": {
+        "start": 52,
+        "end": 72
+      }
+    },
+    {
+      "name": "Wc",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.App",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "wc",
+              "tok": 81
+            }
+          },
+          {
+            "key": "version",
+            "value": {
+              "k": "strlit",
+              "value": "0.1.0",
+              "tok": 85
+            }
+          },
+          {
+            "key": "summary",
+            "value": {
+              "k": "strlit",
+              "value": "count lines and words",
+              "tok": 89
+            }
+          },
+          {
+            "key": "commands",
+            "value": {
+              "k": "slicelit",
+              "elem": {
+                "k": "name",
+                "name": "cli.Command"
+              },
+              "elems": [
+                {
+                  "k": "composite",
+                  "type_name": "cli.Command",
+                  "elems": [
+                    {
+                      "key": "bools",
+                      "value": {
+                        "k": "slicelit",
+                        "elem": {
+                          "k": "name",
+                          "name": "cli.BoolFlag"
+                        },
+                        "elems": [
+                          {
+                            "k": "ident",
+                            "name": "Lines",
+                            "tok": 111
+                          },
+                          {
+                            "k": "ident",
+                            "name": "Words",
+                            "tok": 113
+                          }
+                        ],
+                        "mut": false,
+                        "tok": 105
+                      }
+                    },
+                    {
+                      "key": "pos",
+                      "value": {
+                        "k": "slicelit",
+                        "elem": {
+                          "k": "name",
+                          "name": "cli.Positional"
+                        },
+                        "elems": [
+                          {
+                            "k": "ident",
+                            "name": "Files",
+                            "tok": 124
+                          }
+                        ],
+                        "mut": false,
+                        "tok": 118
+                      }
+                    },
+                    {
+                      "key": "run",
+                      "value": {
+                        "k": "ident",
+                        "name": "count",
+                        "tok": 129
+                      }
+                    }
+                  ],
+                  "tok": 99,
+                  "type_args": []
+                }
+              ],
+              "mut": false,
+              "tok": 93
+            }
+          }
+        ],
+        "tok": 75,
+        "type_args": []
+      },
+      "tok": 73,
+      "span": {
+        "start": 72,
+        "end": 135
+      }
+    }
+  ]
+}

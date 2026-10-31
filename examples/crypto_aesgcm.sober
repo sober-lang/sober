@@ -1,8 +1,8 @@
 package main
 
-// std/crypto/aesgcm（report-796 — AES-NI + PCLMULQDQ の塊）: NIST の GCM の仕様の例 1〜4（AES-128）・長さ 0〜300 × ad の長さ 3 通りの往復と
+// std/crypto/aesgcm（AES-NI + PCLMULQDQ の塊）: NIST の GCM の仕様の例 1〜4（AES-128）・長さ 0〜300 × ad の長さ 3 通りの往復と
 // Go の crypto/aes + cipher.GCM の値（擬似乱数の鍵・nonce・平文の暗号文 ‖ tag を混ぜた値）・1 ビットの改竄が Auth で落ちること。
-// record 層の口（TLS 便 R1 — report-811）: Prepare した Key 1 つを 301 record に使い回し（nonce = iv ⊕ seq・ad = record の頭 5 バイト）・SealTo の
+// record 層の口: Prepare した Key 1 つを 301 record に使い回し（nonce = iv ⊕ seq・ad = record の頭 5 バイト）・SealTo の
 // head ‖ 暗号文 ‖ tag の値・前後に屑を挟んだ受けの切片からの OpenAt の往復・切片の中の改竄が Auth で落ち切片の外の改竄は効かないこと・長さの検査。
 // Go の双子 = scripts/oracles/crypto_aesgcm.go。塊の無い機械（SOBER_NOAES=1）では NoHardware だけを印字する形（.out は塊ありの機械の値）
 
@@ -92,7 +92,7 @@ func main() {
     record()
 }
 
-// recHead は TLS の record の頭（application_data・0x0303・長さ n）
+// TLS の record の頭（application_data・0x0303・長さ n）
 func recHead(n int) []byte {
     mut h := mut []byte{}
     h = append(h, byte(23))
@@ -103,7 +103,7 @@ func recHead(n int) []byte {
     return freeze(h)
 }
 
-// seqNonce は iv ⊕ seq（seq は 64 ビットの大きい端で iv の後ろ 8 バイトに — RFC 9846 5.3）
+// iv ⊕ seq（seq は 64 ビットの大きい端で iv の後ろ 8 バイトに — RFC 9846 5.3）
 func seqNonce(iv []byte, seq int) []byte {
     mut n := mut []byte{}
     for i <- iter.Range(0, 12) {
@@ -112,7 +112,7 @@ func seqNonce(iv []byte, seq int) []byte {
     return freeze(n)
 }
 
-// wrap は 屑 pre バイト ‖ b[from, len(b)) ‖ 屑 3 バイト（受けの切片の形）
+// 屑 pre バイト ‖ b[from, len(b)) ‖ 屑 3 バイト（受けの切片の形）
 func wrap(b []byte, from int, pre int) []byte {
     mut w := mut []byte{}
     for i <- iter.Range(0, pre) {

@@ -1,0 +1,39 @@
+package shapes
+
+// `sober test --cover` の題材（scripts/cover.sh）: テストごとに別の腕を踏む（印の OR）・どのテストも呼ばない関数（分母の静的列挙）・
+// 101 と 102 で死ぬテスト（終わりの道の書き出し）・計器の対象外の package（unit — --cover-pkg で広げる）
+
+import "testdata/cover/shapes/unit"
+
+func Area(kind int, a int, b int) int {
+    return switch kind {
+    case 0: a * a
+    case 1: a * b
+    default: unit.Half(a * b)
+    }
+}
+
+func Clamp(x int, lo int, hi int) int {
+    if x < lo {
+        return lo
+    }
+    if x > hi && hi >= lo {
+        return hi
+    }
+    return x
+}
+
+func Depth(n int) int {
+    if n == 0 {
+        return 0
+    }
+    return Depth(n - 1) + 1
+}
+
+func never(x int) int {
+    mut s := 0
+    while s < x {
+        s += 1
+    }
+    return s
+}

@@ -1,6 +1,6 @@
 package main
 
-// catch 式（language.md 13 節・syntax.md — 2026-10-02）: 可謬の呼び出しの後置 `f() catch D`。エラーなら D・でなければ値。
+// catch 式（language.md 13 節・syntax.md）: 可謬の呼び出しの後置 `f() catch D`。エラーなら D・でなければ値。
 // D は単項式・`return …`・`panic(L{…})` の閉集合（二項演算子より強い — `f() catch -1 + 1` は `(f() catch -1) + 1`）。
 // loader の固定テンプレート（compiler/loader/catchx.sober）が多値の束縛と if に写す — コア・Lean は無変更
 

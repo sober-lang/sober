@@ -1,6 +1,6 @@
 package main
 
-// 負例（load が拒否 — syntax.md 決定 13 の追加裁定）: ローカル束縛は import の参照名と同名にできない
+// 負例（load が拒否 — syntax.md 決定 13）: ローカル束縛は import の参照名と同名にできない
 
 import "std/strings"
 

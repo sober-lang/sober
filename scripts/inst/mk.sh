@@ -23,10 +23,10 @@ fi
 W=$(mktemp -d)
 cp -r "$T/." "$W/"
 cd "$W"
-"$BOOT" build app/main.sober --emit=elf --passes -o "$W/s2a" && chmod +x "$W/s2a"
+"$BOOT" build app --emit=elf --passes -o "$W/s2a" && chmod +x "$W/s2a"
 e=$W/l0all.sober
 { echo "package main"; echo; for d in $(find std -name '*.sober' ! -name '*_test.sober' ! -path 'std/internal/*' -printf '%h\n' | sort -u); do echo "import \"$d\""; done; echo; echo "func main() {"; echo "}"; } > "$e"
 SOBER_CACHE= SOBER_L0=0 "$W/s2a" check "$e" --split --l0-out "$W/l0" > "$W/l0.out" 2>&1 || { cat "$W/l0.out"; exit 1; }
-"$BOOT" build app/main.sober --emit=elf --passes -o "$D/s2/$tag" && chmod +x "$D/s2/$tag"
+"$BOOT" build app --emit=elf --passes -o "$D/s2/$tag" && chmod +x "$D/s2/$tag"
 cd /; rm -rf "$W"
 echo "built $tag ($src)"

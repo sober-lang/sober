@@ -1,12 +1,12 @@
 package main
 
-// 定数の詰めの一括化（lower/copyloop.sober の (C) と for の (Z) — report-624）: `while i < n { xs = append(xs, 0); i += 1 }` と
+// 定数の詰めの一括化（lower/copyloop.sober の (C) と for の (Z)）: `while i < n { xs = append(xs, 0); i += 1 }` と
 // `for _ <- iter.Range(lo, hi) { xs = append(xs, c) }`（c = 整数の字面・`-字面`・`字面 - 字面`・true / false）を一括の伸長 + 詰めに。
 // 空の区間・逆向きの区間は 1 つも積まない。mut 仮引数への詰め・先端でない列（全コピーの道）・byte / int / bool の要素
 
 import "std/iter"
 
-// zeroFill は std/json の Parse の 0 埋めと同じ形（mut 仮引数）
+// std/json の Parse の 0 埋めと同じ形（mut 仮引数）
 func zeroFill(xs mut []int, n int) {
     mut i := 0
     while i < n {

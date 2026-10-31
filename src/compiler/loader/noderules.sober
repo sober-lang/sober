@@ -1,6 +1,6 @@
 package loader
 
-// 節の規則の束（report-616）: namedargs・panic の写しの後の木の節ごとの規則 6 本 — catch の左辺・値 1 つの束縛に多値（catchx.sober）・
+// 節の規則の束: namedargs・panic の写しの後の木の節ごとの規則 6 本 — catch の左辺・値 1 つの束縛に多値 / 多値の既存の名前への代入（catchx.sober）・
 // 失敗しうる生成元の印（forfallible.sober）・封の型の欄つきリテラル（sealx.sober）・同一性のゼロ値（identityx.sober）・mut 実引数の排他（mutalias.sober）—
 // を全部の木の全節の 1 回の走査で検査する（規則ごとに全節をなめると 1 本 0.02 G 前後 — 関数の表も 1 回だけ作る）。
 // 規則ごとの最初の位置（ファイル順 × 節の順）を覚えて、上の規則の順で最初のものを返す（規則ごとに走査した形と同じ答え）
@@ -10,7 +10,7 @@ import "std/strings"
 import "ast"
 import "diag"
 
-// nodeRules は規則の束の最初の拒否（無ければ nil）
+// 規則の束の最初の拒否（無ければ nil）
 @errors(diag.CatchLhs, diag.MultiBind, diag.ForFallible, diag.Sealed, diag.Identity, diag.MutAlias)
 func nodeRules(cx Cx, ft FnTab) error? {
     sl := sealedTab(cx)
@@ -30,7 +30,7 @@ func nodeRules(cx Cx, ft FnTab) error? {
         }
     }
     idHolds(cx, es, nm, mut hold)
-    // ワーカー 2 以上はファイルごとの子で（finpar.sober — 席 D の D-2）。子の死は下の直の道で検査し直す
+    // ワーカー 2 以上はファイルごとの子で（finpar.sober）。子の死は下の直の道で検査し直す
     if finParOn(len(cx.trees)) {
         pe, ok := rulesPar(cx, ft, sl, es, nm, clone(hold))
         if ok {
@@ -52,11 +52,11 @@ func nodeRules(cx Cx, ft FnTab) error? {
     return nrPick(freeze(hit))
 }
 
-// nrPick は規則 0〜4 の最初の位置の表 hit（noteHit の 3 語ずつ）から、規則の順で最初の拒否（無ければ nil）
+// 規則 0〜4 の最初の位置の表 hit（noteHit の 3 語ずつ）から、規則の順で最初の拒否（無ければ nil）
 @errors(diag.MultiBind, diag.ForFallible, diag.Sealed, diag.Identity, diag.MutAlias)
 func nrPick(hit []int) error? {
     if hit[0] > 0 {
-        return diag.MultiBind{at: diag.Pos{file: hit[0] - 1, tok: hit[1]}}
+        return diag.MultiBind{at: diag.Pos{file: hit[0] - 1, tok: hit[1]}, kind: hit[2]}
     }
     if hit[3] > 0 {
         return diag.ForFallible{at: diag.Pos{file: hit[3] - 1, tok: hit[4]}, kind: hit[5]}
@@ -73,14 +73,14 @@ func nrPick(hit []int) error? {
     return nil
 }
 
-// noteHit は規則 r の最初の位置を hit に書く
+// 規則 r の最初の位置を hit に書く
 func noteHit(hit mut []int, r int, f int, tok int, kind int) {
     hit[r * 3] = f + 1
     hit[r * 3 + 1] = tok
     hit[r * 3 + 2] = kind
 }
 
-// nodeRulesIn はファイル f の全節の 1 回の走査: catch の左辺の拒否はその字句を返す（以降は見ない）。他の規則は hit にまだ無いものだけ書く（無ければ -1。
+// ファイル f の全節の 1 回の走査: catch の左辺の拒否はその字句を返す（以降は見ない）。他の規則は hit にまだ無いものだけ書く（無ければ -1。
 // finpar.sober の子は空の hit で同じ関数を呼ぶ — 規則ごとの最初の位置はファイルの中の節の順なので、ファイルの順に畳めば逐次と同じ）
 func nodeRulesIn(cx Cx, ft FnTab, sl []int, es []int, nm []string, hold mut []int, f int, hit mut []int) int {
     t := cx.trees[f]
@@ -94,6 +94,10 @@ func nodeRulesIn(cx Cx, ft FnTab, sl []int, es []int, nm []string, hold mut []in
                 }
             } else if hit[0] == 0 && multiBindBad(cx, ft, f, x) {
                 noteHit(mut hit, 0, f, x.tok, 0)
+            }
+        } else if x.kind == ast.SAssign {
+            if hit[0] == 0 && multiAssignBad(t, x) {
+                noteHit(mut hit, 0, f, x.tok, 1)
             }
         } else if x.kind == ast.EFor {
             if hit[3] == 0 {

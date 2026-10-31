@@ -1,6 +1,6 @@
 package main
 
-// std/crypto の sha256（逐次）・hmac・hkdf（report-792）: RFC 4231 の HMAC-SHA256 の 7 例・RFC 5869 の HKDF-SHA256 の 3 例・逐次の SHA-256 の
+// std/crypto の sha256（逐次）・hmac・hkdf: RFC 4231 の HMAC-SHA256 の 7 例・RFC 5869 の HKDF-SHA256 の 3 例・逐次の SHA-256 の
 // 切り方の全部（長さ 0〜200 を 1〜70 バイトずつ書いて一回の口と一致）と途中の Sum が状態を変えないこと。Go の双子 = scripts/oracles/crypto_hmac_hkdf.go
 // （crypto/hmac・crypto/hkdf・crypto/sha256 の値 + RFC の期待値の照合）
 
@@ -11,7 +11,7 @@ import "std/crypto/sha256"
 import "std/hex"
 import "std/iter"
 
-// show は鍵から導いた値 got（秘密 — 印字しない）を期待値 want（16 進）と crypto.Equal で照合し、一致なら want・違えば MISMATCH
+// 鍵から導いた値 got（秘密 — 印字しない）を期待値 want（16 進）と crypto.Equal で照合し、一致なら want・違えば MISMATCH
 func show(got []byte, want string) string {
     w, _ := hex.Parse(want)
     return if crypto.Equal(got, w) { want } else { "MISMATCH" }

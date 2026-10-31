@@ -1,7 +1,7 @@
 package analyzer
 
-// freeze の健全性の規則（F-al の修理便① — language.md 17 節 U1・U2・26 節 U3）。健全性の規則なので `sober build` でも走る（FreezeCount）。
-// 規則の関数は作業域 z と表層の表 d の 2 引数（report-489 — build は lower の表を共有し、表層型の表を組み直さない。mut 仮引数が 2 つなので
+// freeze の健全性の規則（language.md 17 節 U1・U2・26 節 U3）。健全性の規則なので `sober build` でも走る（FreezeCount）。
+// 規則の関数は作業域 z と表層の表 d の 2 引数（build は lower の表を共有し、表層型の表を組み直さない。mut 仮引数が 2 つなので
 // check では Def に上げず展開する — formal.md「check の callM の段」の条件 1）。
 // 関数ごとに表層の本体を 1 回歩き、事象（freeze・buffer への書き・return）を出現順の通し番号つきで集め、束縛の名前の間に「持つ」の有向の辺
 // （a → b = a は b の buffer を持ちうる）を張ってから照合する。流れには鈍感（分岐の別の腕も「後」に数える — 保守の側）で、ループ（while・for・
@@ -15,7 +15,7 @@ package analyzer
 // - U3: mut のコンテナの仮引数の中身（ヘッダ・コンテナの要素）が戻り値・別の mut の仮引数へ逃げる。スカラーの欄・要素は除く（仮引数の型から欄・要素の
 //   型を引く。引けない名前〔型引数〕はコンテナとみなす — 保守の側）
 // U1: r を持ちうる束縛に mut の仮引数がある・r を持ちうる別の束縛が freeze の後に書く → 拒否。U2: r そのものが後に書く → 拒否。
-// 暗黙の freeze（便② — desugar/implicit.sober）: 期待型が imm のコンテナの位置に置いた mut のコンテナの式（typer が積んだ点の表 — desugar.IsImplicit）は、
+// 暗黙の freeze（desugar/implicit.sober）: 期待型が imm のコンテナの位置に置いた mut のコンテナの式（typer が積んだ点の表 — desugar.IsImplicit）は、
 // 明示の freeze(式) と同じ事象に積む（印 imp の式は fzValP が freeze の呼び出しの結果と同じく根を張らない）。診断は暗黙の点を注で名指す
 // std の信頼の口（17 節 — 2 例目）: std/table.Freeze と std/strings.Clone の本体は U1（仮引数・別名）と U3 を免除（名前で焼き込む — pool の H1 と同じ形）。U2 は免除しない
 
@@ -43,7 +43,7 @@ const RkHead = 0  // ヘッダ（同じ buffer）
 const RkElem = 1  // 要素（b[k] — b の要素の buffer）
 const RkCall = 2  // mut で渡した実引数（呼び出しの結果はその要素を持ちうる — 呼び先は要素を返してよい。U3 は要素を見ない）
 
-// Fz は関数 1 本の作業域
+// 関数 1 本の作業域
 type Fz struct {
     // 名前 [ref, lo, hi]…（ref の文字列の [lo, hi) — EMutArg の道の根は先頭の区間）
     names table.Table[int]
@@ -92,11 +92,11 @@ type Fz struct {
     nLoops int
     nRoots int
     nSeen int
-    // 今の package（綴りと型の引き）・指摘 [種類, 節, 付帯の節]…（Az の外に持つ — 規則は d を引数で受け、Az に写さない〔report-484 / 489〕）
+    // 今の package（綴りと型の引き）・指摘 [種類, 節, 付帯の節]…（Az の外に持つ — 規則は d を引数で受け、Az に写さない）
     pk int
     out table.Table[int]
     // 暗黙の freeze の点の集合（開番地法 — 鍵 = 節 + 1・imask + 1 本。freezeRules が typer の点の列から 1 回組む。desugar.IsImplicit の yGet は
-    // 型の全項と鎖を共有していて、式ごとに引くと重い — report-598）。点が無ければ imask = 0
+    // 型の全項と鎖を共有していて、式ごとに引くと重い）。点が無ければ imask = 0
     iset table.Table[int]
     imask int
 }
@@ -104,7 +104,7 @@ type Fz struct {
 const FZ_BUCKETS = 4096
 const FZ_DCACHE = 65536
 
-// fzNat・fzStr・fzReport は analyzer.sober の nat・str・report の d / Fz 版
+// 以下の 3 本（fzNat・fzStr・fzReport）は analyzer.sober の nat・str・report の d / Fz 版
 func fzNat(d mut desugar.S, l desugar.ListRef, i int) desugar.NodeRef {
     return desugar.NodeRef(desugar.LatI(mut d, l, i))
 }
@@ -119,7 +119,7 @@ func fzStr(d mut desugar.S, s desugar.StrRef) string {
     return r
 }
 
-// fzPoints は暗黙の freeze の点の集合 z.iset を組む（typer の点の列 — 積んだ順の重複は 1 つに）
+// 暗黙の freeze の点の集合 z.iset を組む（typer の点の列 — 積んだ順の重複は 1 つに）
 func fzPoints(z mut Fz, d mut desugar.S) {
     n := desugar.ImplicitCount(mut d)
     if n == 0 {
@@ -144,7 +144,7 @@ func fzPoints(z mut Fz, d mut desugar.S) {
     }
 }
 
-// fzIsPoint は節 e が暗黙の freeze の点か（desugar.IsImplicit と同じ答え — 集合は fzPoints）
+// 節 e が暗黙の freeze の点か（desugar.IsImplicit と同じ答え — 集合は fzPoints）
 func fzIsPoint(z mut Fz, e desugar.NodeRef) bool {
     if z.imask == 0 || e == -1 {
         return false
@@ -165,7 +165,7 @@ func fzReport(z mut Fz, k int, at desugar.NodeRef, x desugar.NodeRef) {
     table.Push(mut z.out, int(x))
 }
 
-// fzAt は表 t の i 番目に v を置く（今の長さなら積む）
+// 表 t の i 番目に v を置く（今の長さなら積む）
 func fzAt(t mut table.Table[int], i int, v int) {
     if i < table.Len(mut t) {
         table.Set(mut t, i, v)
@@ -174,13 +174,15 @@ func fzAt(t mut table.Table[int], i int, v int) {
     }
 }
 
-// freezeRules は全関数に U1〜U3 を掛ける（指摘は z.out へ）。skipStd = std の package を飛ばす（build — std は stage2 を建てるときの L0 の
+// 全関数に U1〜U3 を掛ける（指摘は z.out へ）。skipStd = std の package を飛ばす（build — std は stage2 を建てるときの L0 の
 // check〔Run — 飛ばさない〕で同じ規則に掛かっていて、stage2 に焼き込んだ std は変わらない）
 func freezeRules(z mut Fz, d mut desugar.S, skipStd bool) {
     fzPoints(mut z, mut d)
     for f <- iter.Range(0, desugar.Nfile(mut d)) {
         z.pk = desugar.FilePkg(mut d, f)
-        if skipStd && desugar.IsStdPkg(mut d, z.pk) {
+        // γ の当たりの package も飛ばす（値は検査の通った build だけが書く・規則は自分の木と閉包の宣言の相だけを読む。check の analyzer も
+        // 同じ。置き場を使わない道は当たりが無い）
+        if (skipStd && desugar.IsStdPkg(mut d, z.pk)) || desugar.CheckSkip(mut d, z.pk) {
             continue
         }
         root := desugar.NodeOf(mut d, desugar.FileRoot(mut d, f))
@@ -234,7 +236,7 @@ func fzFunc(z mut Fz, d mut desugar.S, fd ast.Node) {
 
 // ── 名前 ──
 
-// fzName は名前（ref の [lo, hi)）の番号（無ければ足す）
+// 名前（ref の [lo, hi)）の番号（無ければ足す）
 func fzName(z mut Fz, d mut desugar.S, ref int, lo int, hi int) int {
     n := z.nNames
     // 新しい順に引く（兄弟のスコープで同じ名前を宣言し直すと新しい項 — fzDeclName — になり、以後はそれを指す）。鎖はハッシュの同じ名前だけ
@@ -253,14 +255,14 @@ func fzName(z mut Fz, d mut desugar.S, ref int, lo int, hi int) int {
     return n
 }
 
-// fzDeclName は宣言（束縛・for の変数・パターンの束縛）の名前の番号: 同じ名前の項があっても新しい項を足す（兄弟のスコープの別の束縛）
+// 宣言（束縛・for の変数・パターンの束縛）の名前の番号: 同じ名前の項があっても新しい項を足す（兄弟のスコープの別の束縛）
 func fzDeclName(z mut Fz, d mut desugar.S, ref int) int {
     n := z.nNames
     fzNewName(mut z, mut d, n, ref, 0, desugar.Dat(mut d, ref))
     return n
 }
 
-// fzNewName は名前の項 n を置く（param / ptype / decl は初期値）
+// 名前の項 n を置く（param / ptype / decl は初期値）
 func fzNewName(z mut Fz, d mut desugar.S, n int, ref int, lo int, hi int) {
     fzAt(mut z.names, 3 * n, ref)
     fzAt(mut z.names, 3 * n + 1, lo)
@@ -276,7 +278,7 @@ func fzNewName(z mut Fz, d mut desugar.S, n int, ref int, lo int, hi int) {
     z.nNames = n + 1
 }
 
-// fzHash は名前の綴りのハッシュ（FZ_BUCKETS 未満）
+// 名前の綴りのハッシュ（FZ_BUCKETS 未満）
 func fzHash(z mut Fz, d mut desugar.S, ref int, lo int, hi int) int {
     mut h := hi - lo
     for i <- iter.Range(lo, hi) {
@@ -294,7 +296,7 @@ func fzSame(z mut Fz, d mut desugar.S, a int, alo int, b int, blo int, n int) bo
     return true
 }
 
-// fzMutRoot は `mut p.q` の道の根（先頭の区間）の名前の番号
+// `mut p.q` の道の根（先頭の区間）の名前の番号
 func fzMutRoot(z mut Fz, d mut desugar.S, ref int) int {
     n := desugar.Dat(mut d, ref)
     mut hi := 0
@@ -304,7 +306,7 @@ func fzMutRoot(z mut Fz, d mut desugar.S, ref int) int {
     return fzName(mut z, mut d, ref, 0, hi)
 }
 
-// fzRootOf は道（名前・欄・添字・部分列・括弧の鎖）の根の名前の番号（道でなければ -1）
+// 道（名前・欄・添字・部分列・括弧の鎖）の根の名前の番号（道でなければ -1）
 func fzRootOf(z mut Fz, d mut desugar.S, e desugar.NodeRef) int {
     if e == -1 {
         return -1
@@ -323,7 +325,7 @@ func fzRootOf(z mut Fz, d mut desugar.S, e desugar.NodeRef) int {
     return -1
 }
 
-// fzHasIndex は道 e が添字を通るか（`x[i]`・`x.f[i]` — buffer への書きの的）
+// 道 e が添字を通るか（`x[i]`・`x.f[i]` — buffer への書きの的）
 func fzHasIndex(z mut Fz, d mut desugar.S, e desugar.NodeRef) bool {
     if e == -1 {
         return false
@@ -356,12 +358,12 @@ func fzPushRoot(z mut Fz, d mut desugar.S, r int, rk int, path desugar.NodeRef) 
     z.nRoots = n + 1
 }
 
-// fzVal は式 e の値（ヘッダ）の位置の根を z.roots へ積む
+// 式 e の値（ヘッダ）の位置の根を z.roots へ積む
 func fzVal(z mut Fz, d mut desugar.S, e desugar.NodeRef) {
     fzValP(mut z, mut d, e, RkHead, desugar.NodeRef(-1))
 }
 
-// fzValP は fzVal の本体（rk = 今の種類・top = 欄 / 添字の鎖の外側の式 — 根の名前に届いたとき道の節として積む）
+// fzVal の本体（rk = 今の種類・top = 欄 / 添字の鎖の外側の式 — 根の名前に届いたとき道の節として積む）
 func fzValP(z mut Fz, d mut desugar.S, e desugar.NodeRef, rk int, top desugar.NodeRef) {
     if e == -1 {
         return
@@ -426,7 +428,7 @@ func fzValP(z mut Fz, d mut desugar.S, e desugar.NodeRef, rk int, top desugar.No
     }
 }
 
-// fzTail はブロックの末尾の式文の値の根を積む
+// ブロックの末尾の式文の値の根を積む
 func fzTail(z mut Fz, d mut desugar.S, b desugar.NodeRef) {
     if b == -1 {
         return
@@ -442,7 +444,7 @@ func fzTail(z mut Fz, d mut desugar.S, b desugar.NodeRef) {
     }
 }
 
-// fzCallRoots は値 e が呼び出しそのもの（`x := f(mut a)`・`?` つき）なら、mut で渡した実引数を RkCall の根として積む（呼び先は要素を返してよい —
+// 値 e が呼び出しそのもの（`x := f(mut a)`・`?` つき）なら、mut で渡した実引数を RkCall の根として積む（呼び先は要素を返してよい —
 // 結果は実引数の要素を持ちうる: 実引数 → 結果）。composite の欄の中の呼び出しは見ない（欄の区別が無い辺は無関係な欄まで持つ扱いにする）
 func fzCallRoots(z mut Fz, d mut desugar.S, e desugar.NodeRef) {
     if e == -1 {
@@ -470,7 +472,7 @@ func fzCallRoots(z mut Fz, d mut desugar.S, e desugar.NodeRef) {
     }
 }
 
-// fzElems は値 e の中に要素として格納される式（append の 2 番目以降・slice / map のリテラルの要素）の根を積む
+// 値 e の中に要素として格納される式（append の 2 番目以降・slice / map のリテラルの要素）の根を積む
 func fzElems(z mut Fz, d mut desugar.S, e desugar.NodeRef) {
     if e == -1 {
         return
@@ -503,7 +505,7 @@ func fzElems(z mut Fz, d mut desugar.S, e desugar.NodeRef) {
     }
 }
 
-// fzHoldEdge は a → b（a は b の buffer を持ちうる）を張る
+// a → b（a は b の buffer を持ちうる）を張る
 func fzHoldEdge(z mut Fz, d mut desugar.S, a int, b int, at desugar.NodeRef) {
     if a >= 0 && b >= 0 && a != b {
         n := z.nHold
@@ -514,7 +516,7 @@ func fzHoldEdge(z mut Fz, d mut desugar.S, a int, b int, at desugar.NodeRef) {
     }
 }
 
-// fzLinkHead は受け手 dst の値（ヘッダ）として積んだ根から辺を張る: ヘッダは両向き・要素の読みは 根 → dst
+// 受け手 dst の値（ヘッダ）として積んだ根から辺を張る: ヘッダは両向き・要素の読みは 根 → dst
 func fzLinkHead(z mut Fz, d mut desugar.S, dst int, tgt desugar.NodeRef, at desugar.NodeRef) {
     // 受け手の道がスカラー・imm のコンテナ（型が分かる欄）なら、書ける別名は生まれない
     if tgt != -1 && (!fzPathContainer(mut z, mut d, tgt) || fzPathImm(mut z, mut d, tgt)) {
@@ -541,7 +543,7 @@ func fzLinkHead(z mut Fz, d mut desugar.S, dst int, tgt desugar.NodeRef, at desu
     }
 }
 
-// fzLinkElem は受け手 dst の要素として格納される根から辺を張る（dst → 根）
+// 受け手 dst の要素として格納される根から辺を張る（dst → 根）
 func fzLinkElem(z mut Fz, d mut desugar.S, dst int, tgt desugar.NodeRef, at desugar.NodeRef) {
     n := z.nRoots
     for i <- iter.Range(0, n) {
@@ -555,7 +557,7 @@ func fzLinkElem(z mut Fz, d mut desugar.S, dst int, tgt desugar.NodeRef, at desu
     }
 }
 
-// fzEscEdge は U3 の逃げの辺（受け手と値の両方の道がコンテナのとき）
+// U3 の逃げの辺（受け手と値の両方の道がコンテナのとき）
 func fzEscEdge(z mut Fz, d mut desugar.S, dst int, tgt desugar.NodeRef, r int, path desugar.NodeRef, at desugar.NodeRef) {
     if dst < 0 || dst == r || r < 0 || table.Get(mut z.param, dst) < 0 || table.Get(mut z.param, r) < 0 {
         return
@@ -571,7 +573,7 @@ func fzEscEdge(z mut Fz, d mut desugar.S, dst int, tgt desugar.NodeRef, r int, p
 
 // ── 道の型（U3 でスカラーの欄・要素を除く — 仮引数の型から欄・要素の宣言を引く。引けなければコンテナとみなす = 保守の側）──
 
-// fzPathContainer は道 e の値がコンテナ（書かれうる buffer を持ちうる）か。根が仮引数でなければ true
+// 道 e の値がコンテナ（書かれうる buffer を持ちうる）か。根が仮引数でなければ true
 func fzPathContainer(z mut Fz, d mut desugar.S, e desugar.NodeRef) bool {
     t, pk := fzPathTy(mut z, mut d, e)
     if t == -2 {
@@ -580,7 +582,7 @@ func fzPathContainer(z mut Fz, d mut desugar.S, e desugar.NodeRef) bool {
     return fzTyContainer(mut z, mut d, pk, desugar.NodeRef(t), 8)
 }
 
-// fzPathImm は道 e の型が分かって imm のコンテナ（`[]T`・`map[K]V`・string）か
+// 道 e の型が分かって imm のコンテナ（`[]T`・`map[K]V`・string）か
 func fzPathImm(z mut Fz, d mut desugar.S, e desugar.NodeRef) bool {
     t, _ := fzPathTy(mut z, mut d, e)
     if t < 0 {
@@ -599,7 +601,7 @@ func fzPathImm(z mut Fz, d mut desugar.S, e desugar.NodeRef) bool {
     return x.kind == ast.TName && desugar.StrIs(mut d, desugar.StrRef(x.a), "string")
 }
 
-// fzPathTy は道 e の型の節と、その型を解決する package（分からなければ -2）
+// 道 e の型の節と、その型を解決する package（分からなければ -2）
 func fzPathTy(z mut Fz, d mut desugar.S, e desugar.NodeRef) (int, int) {
     if e == -1 {
         return -2, 0
@@ -644,7 +646,7 @@ func fzPathTy(z mut Fz, d mut desugar.S, e desugar.NodeRef) (int, int) {
     return -2, 0
 }
 
-// fzDecl は型の節 t（名前 / 総称）の宣言の本体の節と package（無ければ -2）。節ごとに引いた結果を表に覚える（解決は package と名前だけで決まる —
+// 型の節 t（名前 / 総称）の宣言の本体の節と package（無ければ -2）。節ごとに引いた結果を表に覚える（解決は package と名前だけで決まる —
 // 同じ節は同じ package から引く）。表は開番地法（FZ_DCACHE 本 — 鍵 = 節 + 1・値 = 本体 * 4096 + package〔無しは -1〕）
 func fzDecl(z mut Fz, d mut desugar.S, pk int, t desugar.NodeRef) (int, int) {
     if table.Len(mut z.dkey) == 0 {
@@ -686,7 +688,7 @@ func fzDeclRaw(z mut Fz, d mut desugar.S, pk int, t desugar.NodeRef) (int, int) 
     return desugar.NodeOf(mut d, desugar.NodeRef(r.idx)).c, r.pkg
 }
 
-// fzFieldTy は型 t の struct の欄 f の型の節と package（分からなければ -2）
+// 型 t の struct の欄 f の型の節と package（分からなければ -2）
 func fzFieldTy(z mut Fz, d mut desugar.S, pk int, t desugar.NodeRef, f desugar.StrRef) (int, int) {
     if desugar.KindN(mut d, t) == ast.TOpt {
         return fzFieldTy(mut z, mut d, pk, desugar.NodeRef(desugar.NodeOf(mut d, t).a), f)
@@ -705,7 +707,7 @@ func fzFieldTy(z mut Fz, d mut desugar.S, pk int, t desugar.NodeRef, f desugar.S
     return -2, 0
 }
 
-// fzTyContainer は型の節 t がコンテナか（スカラー・関数型・スカラーだけの struct は false。分からない名前〔型引数〕は true）
+// 型の節 t がコンテナか（スカラー・関数型・スカラーだけの struct は false。分からない名前〔型引数〕は true）
 func fzTyContainer(z mut Fz, d mut desugar.S, pk int, t desugar.NodeRef, fuel int) bool {
     if t == -1 || fuel == 0 {
         return true
@@ -797,7 +799,7 @@ func fzBlock(z mut Fz, d mut desugar.S, b desugar.NodeRef) {
     }
 }
 
-// fzBindValue は受け手 dst（道 tgt — 束縛なら -1）に値 v が入るときの辺を張る
+// 受け手 dst（道 tgt — 束縛なら -1）に値 v が入るときの辺を張る
 func fzBindValue(z mut Fz, d mut desugar.S, dst int, tgt desugar.NodeRef, v desugar.NodeRef, at desugar.NodeRef) {
     fzClear(mut z, mut d)
     fzCallRoots(mut z, mut d, v)
@@ -914,7 +916,7 @@ func fzExprs(z mut Fz, d mut desugar.S, l desugar.ListRef) {
     }
 }
 
-// fzExpr は式 e を歩いて事象を積む。e が暗黙の freeze の点（typer の点の表を写した集合 — fzIsPoint）なら、歩いた直後に明示の freeze(e) と同じ事象を
+// 式 e を歩いて事象を積む。e が暗黙の freeze の点（typer の点の表を写した集合 — fzIsPoint）なら、歩いた直後に明示の freeze(e) と同じ事象を
 // 積んで印を付ける（印の式は fzValP が freeze の呼び出しの結果と同じく根を張らない）
 func fzExpr(z mut Fz, d mut desugar.S, e desugar.NodeRef) {
     fzExpr0(mut z, mut d, e)
@@ -1083,7 +1085,7 @@ func fzExpr0(z mut Fz, d mut desugar.S, e desugar.NodeRef) {
     }
 }
 
-// fzLamCaps はラムダ e が mut の束縛を捕捉した借りのラムダ（loader の捕捉の表の行 — mut を捕捉できるのは借りの実引数のラムダだけ）なら、
+// ラムダ e が mut の束縛を捕捉した借りのラムダ（loader の捕捉の表の行 — mut を捕捉できるのは借りの実引数のラムダだけ）なら、
 // 捕捉した mut の名前を本体の区間の始め（今の通し番号）とともに積む（終わりは呼び手が埋める）。積む前の数を返す。
 // 作成点では捕捉は呼び出しへの mut 実引数（U2 — 書きの事象。本体の区間の前に置くので、本体の中の freeze の「後」には数えない）
 func fzLamCaps(z mut Fz, d mut desugar.S, e desugar.NodeRef) int {
@@ -1112,7 +1114,7 @@ func fzLamCaps(z mut Fz, d mut desugar.S, e desugar.NodeRef) int {
     return lc0
 }
 
-// fzLamBlock はラムダの本体のブロック（中の return は関数の return ではない — 事象にしない）
+// ラムダの本体のブロック（中の return は関数の return ではない — 事象にしない）
 func fzLamBlock(z mut Fz, d mut desugar.S, b desugar.NodeRef) {
     l := desugar.ListRef(desugar.NodeOf(mut d, b).a)
     for i <- iter.Range(0, desugar.LenL(mut d, l)) {
@@ -1125,8 +1127,8 @@ func fzLamBlock(z mut Fz, d mut desugar.S, b desugar.NodeRef) {
     }
 }
 
-// fzFreezeEvents は freeze(v)（節 at）の事象: v が道なら根 1 つ。if / switch / ブロックの値・append の結果などは値の末尾の道の根ごと
-// （fzVal と同じ歩き — F-ap: 根を取らずに事象を落とすと、`freeze(if c { m } else { n })` の後の m への書きが通った）
+// freeze(v)（節 at）の事象: v が道なら根 1 つ。if / switch / ブロックの値・append の結果などは値の末尾の道の根ごと
+// （fzVal と同じ歩き — 根を取らずに事象を落とすと、`freeze(if c { m } else { n })` の後の m への書きが通ってしまう）
 func fzFreezeEvents(z mut Fz, d mut desugar.S, v desugar.NodeRef, at desugar.NodeRef) {
     r := fzRootOf(mut z, mut d, v)
     if r >= 0 {
@@ -1153,7 +1155,7 @@ func fzFreezeEvents(z mut Fz, d mut desugar.S, v desugar.NodeRef, at desugar.Nod
 
 // ── 暗黙の freeze ──
 
-// fzIsImplicit は節 e が今の関数の暗黙の freeze の点か
+// 節 e が今の関数の暗黙の freeze の点か
 func fzIsImplicit(z mut Fz, d mut desugar.S, e desugar.NodeRef) bool {
     for i <- iter.Range(0, z.nImp) {
         if table.Get(mut z.imp, i) == int(e) {
@@ -1163,14 +1165,14 @@ func fzIsImplicit(z mut Fz, d mut desugar.S, e desugar.NodeRef) bool {
     return false
 }
 
-// fzExplicit は freeze の事象の節 x が明示の `freeze(…)` か（でなければ暗黙の freeze の点）
+// freeze の事象の節 x が明示の `freeze(…)` か（でなければ暗黙の freeze の点）
 func fzExplicit(z mut Fz, d mut desugar.S, x desugar.NodeRef) bool {
     return x != -1 && desugar.KindN(mut d, x) == ast.ECall
 }
 
 // ── 照合 ──
 
-// fzAfter は事象 w（通し番号 ws）が freeze（通し番号 fs・return の中か ft）の後に起こりうるか
+// 事象 w（通し番号 ws）が freeze（通し番号 fs・return の中か ft）の後に起こりうるか
 func fzAfter(z mut Fz, d mut desugar.S, fs int, ft int, ws int, wr int) bool {
     if ft == 1 {
         return false
@@ -1189,7 +1191,7 @@ func fzAfter(z mut Fz, d mut desugar.S, fs int, ft int, ws int, wr int) bool {
     return false
 }
 
-// fzHolders は r を（推移的に）持ちうる名前の印（r 自身を含む — 1 = 持ちうる）
+// r を（推移的に）持ちうる名前の印（r 自身を含む — 1 = 持ちうる）
 func fzHolders(z mut Fz, d mut desugar.S, r int) {
     // 逆向きの隣接（rstart / rlist — fzJudge が関数ごとに 1 回組む）を r から辿る（印 hs と作業の列 work）
     for i <- iter.Range(0, z.nNames) {
@@ -1212,7 +1214,7 @@ func fzHolders(z mut Fz, d mut desugar.S, r int) {
     }
 }
 
-// fzRevAdj は持つの辺 a → b を b ごとの a の列（rstart[b] .. rstart[b + 1] が rlist の区間）に並べる（数え上げの整列）
+// 持つの辺 a → b を b ごとの a の列（rstart[b] .. rstart[b + 1] が rlist の区間）に並べる（数え上げの整列）
 func fzRevAdj(z mut Fz, d mut desugar.S) {
     n := z.nNames
     for i <- iter.Range(0, n + 1) {
@@ -1346,14 +1348,14 @@ func fzJudge(z mut Fz, d mut desugar.S) {
     }
 }
 
-// fzNoteImplicit は freeze の点 x が暗黙なら、その点を注で名指す
+// freeze の点 x が暗黙なら、その点を注で名指す
 func fzNoteImplicit(z mut Fz, d mut desugar.S, x desugar.NodeRef) {
     if !fzExplicit(mut z, mut d, x) {
         fzReport(mut z, MFzImplicitAt, x, x)
     }
 }
 
-// fzEdgeOf は名前 w が持つの辺に入った節（無ければ -1）
+// 名前 w が持つの辺に入った節（無ければ -1）
 func fzEdgeOf(z mut Fz, d mut desugar.S, w int) desugar.NodeRef {
     for i <- iter.Range(0, z.nHold) {
         if table.Get(mut z.hold, 3 * i) == w || table.Get(mut z.hold, 3 * i + 1) == w {
@@ -1388,7 +1390,7 @@ func fzMessage(z mut Fz, d mut desugar.S, k int, at desugar.NodeRef, x desugar.N
     }
 }
 
-// fzMessageImplicit は freeze の点 x が暗黙（期待型が imm の位置に置いた mut の値）のときの文面。for の生成元の点は「渡す」でなく「for で回す」（report-581 5 節）
+// freeze の点 x が暗黙（期待型が imm の位置に置いた mut の値）のときの文面。for の生成元の点は「渡す」でなく「for で回す」
 func fzMessageImplicit(z mut Fz, d mut desugar.S, k int, at desugar.NodeRef, x desugar.NodeRef) string {
     fs := desugar.IsForSource(mut d, if k == MFzParam { at } else { x })
     by := if fs { "iterating over it in a for loop" } else { "passing it where an immutable value is expected" }
@@ -1400,7 +1402,7 @@ func fzMessageImplicit(z mut Fz, d mut desugar.S, k int, at desugar.NodeRef, x d
     }
 }
 
-// fzSpell は節の短い綴り（名前・欄・呼び出しの callee。複雑な式は "…"）
+// 節の短い綴り（名前・欄・呼び出しの callee。複雑な式は "…"）
 func fzSpell(z mut Fz, d mut desugar.S, n desugar.NodeRef) string {
     if n == -1 {
         return "…"
@@ -1426,7 +1428,7 @@ func fzSpell(z mut Fz, d mut desugar.S, n desugar.NodeRef) string {
     return "…"
 }
 
-// fzIsCapNode は節 n が借りのラムダの mut の捕捉の名前の節（作成点の書きの事象 — fzLamCaps）か
+// 節 n が借りのラムダの mut の捕捉の名前の節（作成点の書きの事象 — fzLamCaps）か
 func fzIsCapNode(z mut Fz, n desugar.NodeRef) bool {
     for q <- iter.Range(0, z.nLcap) {
         if table.Get(mut z.lcap, 4 * q + 3) == int(n) {
@@ -1436,7 +1438,7 @@ func fzIsCapNode(z mut Fz, n desugar.NodeRef) bool {
     return false
 }
 
-// fzCapName は捕捉の名前の節（名前・`mut` の道）の根の綴り
+// 捕捉の名前の節（名前・`mut` の道）の根の綴り
 func fzCapName(z mut Fz, d mut desugar.S, n desugar.NodeRef) string {
     s := fzSpell(mut z, mut d, n)
     b := bytes(s)
@@ -1454,14 +1456,14 @@ func fzParamName(z mut Fz, d mut desugar.S, p desugar.NodeRef) string {
     return fzStr(mut d, desugar.StrRef(desugar.NodeOf(mut d, p).a))
 }
 
-// Freeze は U1〜U3 だけを掛ける（拒否の行の引き直し — app の lowerFail。自分で表層型の表を組む）。check は Run の中で同じ規則を掛ける
+// U1〜U3 だけを掛ける（拒否の行の引き直し — app の lowerFail。自分で表層型の表を組む）。check は Run の中で同じ規則を掛ける
 func Freeze(p loader.Program) []Finding {
-    return runAz(p, true)
+    return runAz(p, true, desugar.TyCacheOff())
 }
 
-// FreezeCount は lower の build の表（desugar.Typed の済んだ d）の上で U1〜U3 を掛けて指摘の数を返す（`sober build` の入口 — 表を共有する）。
+// lower の build の表（desugar.Typed の済んだ d）の上で U1〜U3 を掛けて指摘の数を返す（`sober build` の入口 — 表を共有する）。
 // z と d は呼び手の同じ構造体の 2 欄で受ける（lower の St の fz・d — 同じ anchor）。d を構造体の欄へ写す形や、局所の Fz と呼び手の d を
-// 1 つの呼び出しに渡す形は、check で Def に上がらず E2-S の逃げに回る（report-484 / 489）
+// 1 つの呼び出しに渡す形は、check で Def に上がらず E2-S の逃げに回る
 func FreezeCount(z mut Fz, d mut desugar.S) int {
     freezeRules(mut z, mut d, true)
     return table.Len(mut z.out) / 3

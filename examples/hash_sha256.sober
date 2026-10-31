@@ -8,7 +8,7 @@ import "std/hash"
 import "std/hex"
 import "std/iter"
 
-// pattern は長さ n のバイト列（i 番目は (i × 31 + 7) mod 256 — 全バイト値を通る）
+// 長さ n のバイト列（i 番目は (i × 31 + 7) mod 256 — 全バイト値を通る）
 func pattern(n int) []byte {
     mut b := mut []byte{}
     for i <- iter.Range(0, n) {
@@ -17,7 +17,7 @@ func pattern(n int) []byte {
     return b
 }
 
-// repeat は c を n 個並べたバイト列
+// c を n 個並べたバイト列
 func repeat(c byte, n int) []byte {
     mut b := mut []byte{}
     for i <- iter.Range(0, n) {

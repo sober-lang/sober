@@ -1,0 +1,47 @@
+package lower
+
+// カバレッジの計器（std/internal/cover の intrinsic — loader/coverx.sober の写しが足した数え口）: 点 k の印 = 大域 cover.hit の k 番目の
+// バイトに 1（cont.sober の ioBuiltin）。プロセスの終わりに、$cover.Start が置いた fd があればバイト列を 1 回 write する — 終わりの道の全部:
+// main の後（rt.depth_report）・rt.panic（101 — task.Join の死の枝も）・rt.panic_mem（102）・rt.segv（StackExceeded）・rt.deadlock。
+// 停止のシグナル（143 / 130 — 書き出しは async-signal-safe でない）と起動の予約の失敗（main の前）は書かない。数え口を使わないプログラムの IR は不変（大域も書き出しも作らない）
+
+import "desugar"
+import "loader"
+
+// 宣言（数え口の intrinsic から）
+func needCover(st mut St) {
+    lsNeed(mut st, NEED_COVER, 0)
+    if st.covG == -1 {
+        st.covG = addGlobalInit(mut st, int(strLit(mut st, "cover.hit")), 1, -1)
+        st.covFdG = addGlobalInit(mut st, int(strLit(mut st, "cover.fd")), 2, -1)
+    }
+}
+
+// 選ばれた変異の番号の大域（宣言 — 読み口と置き口の intrinsic から。0 = 基線）
+func needCoverMid(st mut St) {
+    lsNeed(mut st, NEED_COVERMID, 0)
+    if st.covMidG == -1 {
+        st.covMidG = addGlobalInit(mut st, int(strLit(mut st, "cover.mid")), 1, -1)
+    }
+}
+
+// 点のバイト列の大きさを Program の点の数で決める（rt の本体〔programRt〕と buildPanic より前 — 書き出しの長さも同じ数）
+func coverSize(st mut St, p loader.Program) {
+    if st.covG == -1 {
+        return
+    }
+    st.covN = len(p.cover_pts) / 3
+    desugar.HeapSet(mut st.d, st.covG + G_WORDS, (st.covN + 7) / 8 + 1)
+}
+
+// fd が置かれていれば点のバイト列を書き出す（今のブロックに続けて組む）
+func coverDump(st mut St) {
+    fd := load(mut st, globaladdr(mut st, st.covFdG), 0)
+    yes := newBlock(mut st)
+    done := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, fd, iconst(mut st, 0)), yes, -1, done, -1)
+    setCur(mut st, yes)
+    _ = syscall(mut st, list4(mut st, iconst(mut st, 1), fd, ptoi(mut st, globaladdr(mut st, st.covG)), iconst(mut st, st.covN)))
+    br(mut st, done, -1)
+    setCur(mut st, done)
+}

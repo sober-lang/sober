@@ -1,2 +1,3 @@
+sober: type error at examples/closure_anon_field_bound.sober:15:19
 {"errors":[{"msg":"type error"}],"ok":false}
 exit=1

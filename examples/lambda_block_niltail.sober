@@ -1,6 +1,6 @@
 package main
 
-// ブロック本体のラムダの末尾 nil（F-bw — 2026-10-22）: 結果が T? の関数型の実引数では、文の後の末尾 nil を期待型の nil に寄せる
+// ブロック本体のラムダの末尾 nil: 結果が T? の関数型の実引数では、文の後の末尾 nil を期待型の nil に寄せる
 // （単独の `{ nil }` と同じ線）。展開待ちの的へ流れるラムダ（借りの位置のラムダの中で呼ぶ send）でも同じ
 
 type Stream func(emit func(b []byte) error?) error?

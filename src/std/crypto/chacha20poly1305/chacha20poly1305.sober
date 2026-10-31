@@ -85,7 +85,7 @@ func SealInto(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byt
 @errors(BadSize)
 @bless
 @effects(!io, !block, !nondet)
-func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte) ([]byte, error?) { // 対の OpenTo は実需まで足さない（34 節 2 の注記・2026-10-20 ④）
+func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte) ([]byte, error?) { // 対の OpenTo は実需まで足さない（34 節 2 の注記）
     if len(nonce) != NonceSize {
         return []byte{}, BadSize{}
     }
@@ -115,7 +115,7 @@ func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte)
     return freeze(out), nil
 }
 
-// ctTail は tail を鍵ストリームの位置 1 × 64 + p（pt の直後）から xor して out に積む（ブロックの途中から始まるので、ブロックの頭から q = p % 64 バイトの 0 を前に置いて xor し、
+// tail を鍵ストリームの位置 1 × 64 + p（pt の直後）から xor して out に積む（ブロックの途中から始まるので、ブロックの頭から q = p % 64 バイトの 0 を前に置いて xor し、
 // 前の q バイト〔捨てる鍵ストリーム〕を飛ばす）
 @secret(key)
 func ctTail(out mut []byte, key []byte, nonce []byte, p int, tail []byte) {
@@ -142,7 +142,7 @@ func ctTail(out mut []byte, key []byte, nonce []byte, p int, tail []byte) {
 // b[off, off + n)（暗号文 ‖ tag）を写さずに tag を照合してから復号した平文。nonce の長さが違う・n が tag より短い・[off, off + n) が b の外なら BadSize
 @errors(BadSize, Auth)
 @effects(!io, !block, !nondet)
-func OpenAt(k Key, nonce []byte, ad []byte, b []byte, off int, n int) ([]byte, error?) { // 対の SealAt は実需まで足さない（34 節 2 の注記・2026-10-20 ④）
+func OpenAt(k Key, nonce []byte, ad []byte, b []byte, off int, n int) ([]byte, error?) { // 対の SealAt は実需まで足さない（34 節 2 の注記）
     if len(nonce) != NonceSize || n < Overhead || off < 0 || off + n > len(b) {
         return []byte{}, BadSize{}
     }
@@ -153,7 +153,7 @@ func OpenAt(k Key, nonce []byte, ad []byte, b []byte, off int, n int) ([]byte, e
     return chacha20.XorKeyStreamAt(k.key, nonce, 1, b, off, m), nil
 }
 
-// polyKey は 1 回きりの Poly1305 の鍵（ブロック 0 の鍵ストリームの先頭 32 バイト — RFC 8439 2.6）
+// 1 回きりの Poly1305 の鍵（ブロック 0 の鍵ストリームの先頭 32 バイト — RFC 8439 2.6）
 func polyKey(key []byte, nonce []byte) []byte {
     b := chacha20.Block(key, nonce, 0)
     mut out := mut []byte{}

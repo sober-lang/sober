@@ -1,0 +1,84 @@
+package kv
+
+import "std/iter"
+import "std/quick"
+
+// 1. assert: one case, written by hand
+
+func TestParse() {
+    ps := Parse("a=1;b=2;") catch []Pair{}
+    assert(len(ps) == 2)
+    assert(ps[1].key == "b" && ps[1].value == "2")
+}
+
+func TestFormat() {
+    ps := []Pair{Pair{key: "a", value: "1"}, Pair{key: "b", value: "2"}}
+    assert(Format(ps) == "a=1;b=2")
+}
+
+// 2. a property: Format then Parse gives the pairs back, for any pairs
+
+func TestRoundTrip() {
+    mut q := quick.New()
+    quick.Check(mut q, () => {
+        ps := quick.Slice(mut q, 4, () => Pair{key: quick.String(mut q, 4), value: quick.String(mut q, 4)})
+        back := Parse(Format(ps)) catch []Pair{}
+        same(back, ps)
+    })
+}
+
+// the same pairs in the same order
+func same(a []Pair, b []Pair) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i].key != b[i].key || a[i].value != b[i].value {
+            return false
+        }
+    }
+    return true
+}
+
+// 3. the arm --cover and --mutate showed no test reached: a piece without `=`
+
+func TestBadPiece() {
+    assert(badAt("a=1;b") == 4 && badAt("a=1") == -1)
+}
+
+// where Parse reports a piece without `=` (-1 if it does not)
+func badAt(s string) int {
+    _, err := Parse(s)
+    if err != nil {
+        switch err {
+        case BadPiece{at}: return at
+        }
+    }
+    return -1
+}
+
+// 4. for sober fuzz: Parse never panics, whatever the line
+
+func TestAnyLine() {
+    mut q := quick.New()
+    quick.Check(mut q, () => {
+        s := quick.String(mut q, 12)
+        n := len(Parse(s) catch []Pair{})
+        n >= 0
+    })
+}
+
+// 5. lines read in parallel count the same as one by one (sober fuzz --sched shuffles the schedule)
+
+func TestCountAll() {
+    mut q := quick.New()
+    quick.Check(mut q, () => {
+        lines := quick.Slice(mut q, 6, () => quick.String(mut q, 8))
+        ns := CountAll(lines)
+        mut ok := len(ns) == len(lines)
+        for i <- iter.Range(0, len(ns)) {
+            ok = ok && ns[i] == count(lines[i])
+        }
+        ok
+    })
+}

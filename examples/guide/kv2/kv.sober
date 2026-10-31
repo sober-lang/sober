@@ -1,0 +1,83 @@
+package kv2
+
+// Reads and writes one line of `key=value;key=value` (the subject of docs/guide/testing.md).
+// `;`, `=` and `\` inside a key or a value are escaped with `\`.
+
+import "std/iter"
+import "std/task"
+
+type Pair struct {
+    key string
+    value string
+}
+
+// a piece without `=` at byte `at`
+type BadPiece error {
+    at int
+}
+
+@errors(BadPiece)
+func Parse(s string) ([]Pair, error?) {
+    b := bytes(s)
+    mut out := mut []Pair{}
+    mut i := 0
+    while i < len(b) {
+        k, j := field(b, i, '=')
+        if j >= len(b) {
+            return []Pair{}, BadPiece{at: i}
+        }
+        v, e := field(b, j + 1, ';')
+        out = append(out, Pair{key: k, value: v})
+        i = e + 1
+    }
+    return freeze(out), nil
+}
+
+// b[i:] up to `sep` or the end, unescaped; also the index of `sep` (or len(b))
+func field(b []byte, i int, sep byte) (string, int) {
+    mut out := mut []byte{}
+    mut j := i
+    while j < len(b) && b[j] != sep {
+        if b[j] == '\\' {
+            j += 1
+        }
+        out = append(out, b[j])
+        j += 1
+    }
+    return string(freeze(out)) catch "", j
+}
+
+func Format(ps []Pair) string {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, len(ps)) {
+        if i > 0 {
+            out = append(out, ';')
+        }
+        escape(mut out, ps[i].key)
+        out = append(out, '=')
+        escape(mut out, ps[i].value)
+    }
+    return string(freeze(out)) catch ""
+}
+
+// appends s to out with `;`, `=` and `\` escaped
+func escape(out mut []byte, s string) {
+    b := bytes(s)
+    for i <- iter.Range(0, len(b)) {
+        if b[i] == ';' || b[i] == '=' || b[i] == '\\' {
+            out = append(out, '\\')
+        }
+        out = append(out, b[i])
+    }
+}
+
+// the number of pairs on each line (-1 for a line that does not parse), the lines read in parallel
+func CountAll(lines []string) []int {
+    ns, err := task.Map(lines, (l string) => count(l), budget: 1 * task.MB)
+    return if err != nil { []int{} } else { ns }
+}
+
+func count(l string) int {
+    ps := Parse(l) catch return -1
+    return len(ps)
+}

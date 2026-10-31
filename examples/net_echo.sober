@@ -33,7 +33,7 @@ func run() (int, error?) {
     return n, nil
 }
 
-// echoOne は 1 本だけ受けて、want バイト届くまで送り返す（送り返したバイト数）
+// 1 本だけ受けて、want バイト届くまで送り返す（送り返したバイト数）
 func echoOne(l net.Listener, want int) (int, error?) {
     mut total := 0
     for c <- net.Accept(l)? {

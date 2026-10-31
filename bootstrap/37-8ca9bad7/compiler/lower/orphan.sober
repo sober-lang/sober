@@ -1,0 +1,264 @@
+package lower
+
+// 孤児の待ち（IO 便 ⑤ — language.md 28 節「キャンセルは協調的」・report-741 / 777）: 親の task が死ぬ（切られる）と、その開いている scope の下で io を
+// 待っている子孫は誰にも起こされない（期限なしの scope では期限の走査も来ない — 永眠）。rt は待ちを起こすだけ: 孤児の待ちは -125 で返り（std が io.Expired に）、
+// 子は普通の道で巻き戻る。読み = 「孤児 = 期限が今来た」（期限の走査と同じ取り消し方・同じラベル）。
+// - 孤児の判定 = 祖先を辿る（rt.orph_walk）: 自分の塊から、生んだ scope の印 SR_CUT = 1（drainScopes — 開いた task が死んだ / 切られた）を見て、scope を
+//   開いた task の塊へ上る。cut_walk と同じ道だが純でない task も越える（兄弟の死の印 = 番号 + 2 は見ない — 持ち主は生きている）
+// - 印 = TC_DL := 1（時刻 1 で期限切れ）: deadline: のあるプログラムでは io の口の sysDeadline がそのまま Expired を返し、spawn の子にも写る。無いプログラムでは
+//   使われていない語を印として読む（task の終わりで 0 に戻す — 塊の再利用）
+// - 登録簿（ワーカーごとの配列 — WK_OREG）: task は最初の待ちで 1 回登録し（TCB の TC_ORG = 番号 + 1・待っている間は種類 << 32）、終わりで返す（空きの鎖）。
+//   待ちごとの値札は TCB の先頭頁の 1 語の読み書きだけ（鎖の積み外しは隣の TCB に触る — report-678 T8 の線）
+// - 発火: drainScopes の印のたびに @rt.orphgen を進め、ring / epoll で眠るワーカーを eventfd で起こす。rt.uring_poll の頭で世代が動いていたら登録簿を歩き
+//   （rt.orph_scan）、待っている孤児を起こす。走っていた孤児（走査の時に待っていなかった）は次の待ちの入口の関門（世代 ≠ 0 のときだけ — 印か祖先）で捕まる
+// - 取り消さない待ち: 閉じの待ち（止まった完了を待つ — 有限）・os.Sleep（有限）・チャネル / Join / scope の出口（io でない）
+
+import "desugar"
+
+const TC_ORG = 36          // 登録簿の番号 + 1（0 = 未登録）| 待ちの種類 << 32（0 = 待っていない）
+const ORG_KIND = 4294967296
+const ORG_LO = 4294967295
+const OK_EP = 1            // epoll の fdwait（IO_PENDING — 直に起こす）
+const OK_POLL = 2          // ring の POLL_ADD（IO_PENDING — ASYNC_CANCEL）
+const OK_RT = 3            // 受け / accept の列（PEND_RT — 直に起こす）
+const OK_SEND = 4          // SEND の完了（PEND_SEND — ASYNC_CANCEL）
+const WK_OREG = 19         // 登録簿の番地（0 = まだ）
+const WK_ON = 20           // 使った数（高水位）
+const WK_OFREE = 21        // 空きの鎖の頭（番号 + 1・0 = 無し — 空きの要素は (次 << 1) | 1）
+const WK_OSEEN = 22        // 最後に走査した @rt.orphgen
+const ORG_CAP = 4194304    // 登録簿の容量（ワーカーごと・NORESERVE 32 MiB — 溢れた task は登録しない = 取り消されない）
+const ORPH_CODE = -125     // 孤児の待ちの結果（ECANCELED — std/net が io.Expired に）
+
+// needOrph は孤児の待ちの部品を宣言する（needNet — std/task のプログラムで wait_fd を使うとき）
+func needOrph(st mut St) {
+    lsNeed(mut st, NEED_ORPH, 0)
+    if st.orphOn {
+        return
+    }
+    st.orphOn = true
+    st.orphGenG = addGlobalInit(mut st, int(strLit(mut st, "rt.orphgen")), 1, -1)
+    st.rtOrphWalk = addFunc(mut st, int(strLit(mut st, "rt.orph_walk")), desugar.ListRef(list1(mut st, TyI64)), TyI64)
+    st.rtOrphGate = addFunc(mut st, int(strLit(mut st, "rt.orph_gate")), desugar.ListRef(list1(mut st, TyI64)), TyI64)
+    st.rtOrphReg = addFunc(mut st, int(strLit(mut st, "rt.orph_reg")), desugar.ListRef(list1(mut st, TyI64)), -1)
+    st.rtOrphScan = addFunc(mut st, int(strLit(mut st, "rt.orph_scan")), desugar.ListRef(list1(mut st, TyI64)), -1)
+}
+
+// orphEnter は待ちの入口（me = 今の task）: 孤児なら ORPH_CODE（待たない）・でなければ登録して種類を書き 0。世代 0（親の死が 1 度も無い）は
+// 世代の load と分岐・TC_ORG の読み書きだけ
+func orphEnter(st mut St, me int, kind int) int {
+    zero := iconst(mut st, 0)
+    tp := itop(mut st, me)
+    bJ := newBlock(mut st)
+    v := param(mut st, bJ, TyI64)
+    bS := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, globaladdr(mut st, st.orphGenG), 0), zero), bS, -1, bJ, list1(mut st, zero))
+    setCur(mut st, bS)
+    br(mut st, bJ, list1(mut st, call(mut st, st.rtOrphGate, list1(mut st, me))))
+    setCur(mut st, bJ)
+    bGo := branchIf(mut st, cmp(mut st, CEq, v, zero))
+    bR := branchIf(mut st, cmp(mut st, CEq, load(mut st, tp, TC_ORG), zero))
+    call(mut st, st.rtOrphReg, list1(mut st, me))
+    br(mut st, bR, -1)
+    setCur(mut st, bR)
+    store(mut st, tp, TC_ORG, bin(mut st, BOr, load(mut st, tp, TC_ORG), iconst(mut st, kind * ORG_KIND)))
+    br(mut st, bGo, -1)
+    setCur(mut st, bGo)
+    return v
+}
+
+// orphLeave は待ちの出口: 種類を消す
+func orphLeave(st mut St, me int) {
+    tp := itop(mut st, me)
+    store(mut st, tp, TC_ORG, bin(mut st, BAnd, load(mut st, tp, TC_ORG), iconst(mut st, ORG_LO)))
+}
+
+// orphEnd は task の終わり（tcb — 自分のワーカーの上・io の後始末の後）: 登録していれば返し、印を消す
+func orphEnd(st mut St, tcb int) {
+    if !st.orphOn {
+        return
+    }
+    zero := iconst(mut st, 0)
+    o := load(mut st, tcb, TC_ORG)
+    bN := branchIf(mut st, cmp(mut st, CNe, o, zero))
+    wk := globaladdr(mut st, st.wkG)
+    i := urAdd(mut st, bin(mut st, BAnd, o, iconst(mut st, ORG_LO)), -1)
+    store(mut st, gepWord(mut st, itop(mut st, load(mut st, wk, WK_OREG)), i), 0, bin(mut st, BOr, bin(mut st, BShl, load(mut st, wk, WK_OFREE), iconst(mut st, 1)), iconst(mut st, 1)))
+    store(mut st, wk, WK_OFREE, urAdd(mut st, i, 1))
+    store(mut st, tcb, TC_ORG, zero)
+    br(mut st, bN, -1)
+    setCur(mut st, bN)
+    store(mut st, tcb, TC_DL, zero)
+}
+
+// orphFire は drainScopes の印の後: 世代を進め、ring / epoll で眠っているワーカー（眠りの語 2）を eventfd で起こす（rt.uring_poll の頭が走査する）
+func orphFire(st mut St) {
+    if !st.orphOn {
+        return
+    }
+    atomicXadd(mut st, globaladdr(mut st, st.orphGenG), 0, iconst(mut st, 1))
+    mn := globaladdr(mut st, st.mnG)
+    wl := newBlock(mut st)
+    wi := param(mut st, wl, TyI64)
+    wb := newBlock(mut st)
+    wn := newBlock(mut st)
+    wd := newBlock(mut st)
+    br(mut st, wl, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, wl)
+    condbr(mut st, cmp(mut st, CLt, wi, load(mut st, mn, MN_N)), wb, -1, wd, -1)
+    setCur(mut st, wb)
+    wp := load(mut st, gepWord(mut st, mn, bin(mut st, BAdd, wi, iconst(mut st, MN_WK))), 0)
+    bZ := branchIf(mut st, cmp(mut st, CNe, wp, iconst(mut st, 0)))
+    wpp := itop(mut st, wp)
+    bS := branchIf(mut st, cmp(mut st, CEq, load(mut st, wpp, WK_SLEEP), iconst(mut st, 2)))
+    mnClaim(mut st, wpp, bS, bS)
+    setCur(mut st, bS)
+    br(mut st, bZ, -1)
+    setCur(mut st, bZ)
+    br(mut st, wn, -1)
+    setCur(mut st, wn)
+    br(mut st, wl, list1(mut st, bin(mut st, BAdd, wi, iconst(mut st, 1))))
+    setCur(mut st, wd)
+}
+
+// orphPoll は rt.uring_poll の頭: 世代が動いていたら登録簿を走査する
+func orphPoll(st mut St) {
+    if !st.orphOn {
+        return
+    }
+    g := load(mut st, globaladdr(mut st, st.orphGenG), 0)
+    bN := branchIf(mut st, cmp(mut st, CNe, g, load(mut st, globaladdr(mut st, st.wkG), WK_OSEEN)))
+    call(mut st, st.rtOrphScan, list1(mut st, g))
+    br(mut st, bN, -1)
+    setCur(mut st, bN)
+}
+
+func buildOrphRt(st mut St) {
+    if !st.orphOn {
+        return
+    }
+    // rt.orph_walk(t) → 1 = 孤児: 生んだ scope の印が 1 か（main = 枠なしで止まる）。辿る塊と記録は生きている（祖先は子孫を待ってから終わる）
+    begin(mut st, st.rtOrphWalk)
+    z0 := iconst(mut st, 0)
+    bL := newBlock(mut st)
+    tp := param(mut st, bL, TyI64)
+    bT := newBlock(mut st)
+    bB := newBlock(mut st)
+    bNo := newBlock(mut st)
+    bYes := newBlock(mut st)
+    br(mut st, bL, list1(mut st, 0))
+    setCur(mut st, bL)
+    condbr(mut st, cmp(mut st, CEq, tp, z0), bNo, -1, bT, -1)
+    setCur(mut st, bT)
+    fr := load(mut st, itop(mut st, tp), TC_FRAME)
+    condbr(mut st, cmp(mut st, CEq, fr, z0), bNo, -1, bB, -1)
+    setCur(mut st, bB)
+    rec := itop(mut st, load(mut st, itop(mut st, fr), FR_SREC))
+    condbr(mut st, cmp(mut st, CEq, load(mut st, rec, SR_CUT), iconst(mut st, 1)), bYes, -1, bL, list1(mut st, load(mut st, rec, SR_OTCB)))
+    setCur(mut st, bYes)
+    ret(mut st, iconst(mut st, 1))
+    setCur(mut st, bNo)
+    ret(mut st, z0)
+    // rt.orph_gate(me) → ORPH_CODE（孤児 — 印を立てる）/ 0
+    begin(mut st, st.rtOrphGate)
+    z1 := iconst(mut st, 0)
+    mp := itop(mut st, 0)
+    bW := branchIf(mut st, cmp(mut st, CEq, load(mut st, mp, TC_DL), iconst(mut st, 1)))
+    ret(mut st, iconst(mut st, ORPH_CODE))
+    setCur(mut st, bW)
+    bO := branchIf(mut st, cmp(mut st, CEq, call(mut st, st.rtOrphWalk, list1(mut st, 0)), z1))
+    ret(mut st, z1)
+    setCur(mut st, bO)
+    store(mut st, mp, TC_DL, iconst(mut st, 1))
+    ret(mut st, iconst(mut st, ORPH_CODE))
+    // rt.orph_reg(me): 登録簿に載せて TC_ORG に番号 + 1（溢れたら載せない）
+    begin(mut st, st.rtOrphReg)
+    z2 := iconst(mut st, 0)
+    wk := globaladdr(mut st, st.wkG)
+    bA := branchIf(mut st, cmp(mut st, CEq, load(mut st, wk, WK_OREG), z2))
+    store(mut st, wk, WK_OREG, sysMmap(mut st, iconst(mut st, ORG_CAP * 8)))
+    br(mut st, bA, -1)
+    setCur(mut st, bA)
+    arr := itop(mut st, load(mut st, wk, WK_OREG))
+    f := load(mut st, wk, WK_OFREE)
+    bPut := newBlock(mut st)
+    ix := param(mut st, bPut, TyI64)
+    bF := newBlock(mut st)
+    bH := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, f, z2), bF, -1, bH, -1)
+    setCur(mut st, bF)
+    fi := urAdd(mut st, f, -1)
+    store(mut st, wk, WK_OFREE, bin(mut st, BSar, load(mut st, gepWord(mut st, arr, fi), 0), iconst(mut st, 1)))
+    br(mut st, bPut, list1(mut st, fi))
+    setCur(mut st, bH)
+    n := load(mut st, wk, WK_ON)
+    bRoom := branchIf(mut st, cmp(mut st, CGe, n, iconst(mut st, ORG_CAP)))
+    ret(mut st, -1)
+    setCur(mut st, bRoom)
+    store(mut st, wk, WK_ON, urAdd(mut st, n, 1))
+    br(mut st, bPut, list1(mut st, n))
+    setCur(mut st, bPut)
+    store(mut st, gepWord(mut st, arr, ix), 0, 0)
+    store(mut st, itop(mut st, 0), TC_ORG, urAdd(mut st, ix, 1))
+    ret(mut st, -1)
+    buildOrphScan(mut st)
+}
+
+// rt.orph_scan(g): 見た世代を g に・登録簿の待っている task（種類 ≠ 0 で結果がまだ）のうち孤児に印を立て、種類ごとに期限の走査と同じ形で起こす
+// （epoll / 受けの列 = 直に ORPH_CODE で起こす・POLL_ADD / SEND = ASYNC_CANCEL — 完了で起きる。UR_DLQ に居れば先に外す — 期限の走査の二重の起こしを防ぐ）
+func buildOrphScan(st mut St) {
+    begin(mut st, st.rtOrphScan)
+    zero := iconst(mut st, 0)
+    wk := globaladdr(mut st, st.wkG)
+    store(mut st, wk, WK_OSEEN, 0)
+    arr := itop(mut st, load(mut st, wk, WK_OREG))
+    n := load(mut st, wk, WK_ON)
+    l := newBlock(mut st)
+    i := param(mut st, l, TyI64)
+    b := newBlock(mut st)
+    nx := newBlock(mut st)
+    d := newBlock(mut st)
+    br(mut st, l, list1(mut st, zero))
+    setCur(mut st, l)
+    condbr(mut st, cmp(mut st, CLt, i, n), b, -1, d, -1)
+    setCur(mut st, b)
+    t := load(mut st, gepWord(mut st, arr, i), 0)
+    tp := itop(mut st, t)
+    // 生きている要素（空きの要素は奇数・0 は書きかけ）で待っている
+    live := bin(mut st, BAnd, cmp(mut st, CNe, t, zero), cmp(mut st, CEq, bin(mut st, BAnd, t, iconst(mut st, 1)), zero))
+    bLv := newBlock(mut st)
+    condbr(mut st, live, bLv, -1, nx, -1)
+    setCur(mut st, bLv)
+    k := bin(mut st, BSar, load(mut st, tp, TC_ORG), iconst(mut st, 32))
+    res := load(mut st, tp, TC_IORES)
+    pw := bin(mut st, BAdd, iconst(mut st, IO_PENDING), bin(mut st, BMul, cmp(mut st, CEq, k, iconst(mut st, OK_RT)), iconst(mut st, 1)))
+    pw2 := bin(mut st, BAdd, pw, bin(mut st, BMul, cmp(mut st, CEq, k, iconst(mut st, OK_SEND)), iconst(mut st, 2)))
+    bPd := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CNe, k, zero), cmp(mut st, CEq, res, pw2)), bPd, -1, nx, -1)
+    setCur(mut st, bPd)
+    bOr := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, call(mut st, st.rtOrphWalk, list1(mut st, t)), zero), bOr, -1, nx, -1)
+    setCur(mut st, bOr)
+    rg := load(mut st, wk, WK_RING)
+    if dlFn(st.rtD3) != 0 {
+        // 期限つきで ring の鎖に居れば外す（epoll の鎖は待ち手が自分で外す — epoll の走査は起こした待ち手を飛ばす）
+        bU := branchIf(mut st, bin(mut st, BAnd, cmp(mut st, CNe, k, iconst(mut st, OK_EP)), cmp(mut st, CNe, rg, zero)))
+        dlUnlink(mut st, urAdd(mut st, rg, UR_DLQ * 8), t, load(mut st, tp, TC_DL))
+        br(mut st, bU, -1)
+        setCur(mut st, bU)
+    }
+    store(mut st, tp, TC_DL, iconst(mut st, 1))
+    bDir := newBlock(mut st)
+    bCn := newBlock(mut st)
+    condbr(mut st, bin(mut st, BOr, cmp(mut st, CEq, k, iconst(mut st, OK_EP)), cmp(mut st, CEq, k, iconst(mut st, OK_RT))), bDir, -1, bCn, -1)
+    setCur(mut st, bDir)
+    epWake(mut st, t, iconst(mut st, ORPH_CODE))
+    br(mut st, nx, -1)
+    setCur(mut st, bCn)
+    tag := bin(mut st, BAdd, iconst(mut st, UDT_POLL), bin(mut st, BMul, cmp(mut st, CEq, k, iconst(mut st, OK_SEND)), iconst(mut st, TAG_SEND - UDT_POLL)))
+    urSqe(mut st, rg, iconst(mut st, 14), bin(mut st, BOr, t, tag), zero, iconst(mut st, UD_CANCEL), zero)
+    br(mut st, nx, -1)
+    setCur(mut st, nx)
+    br(mut st, l, list1(mut st, urAdd(mut st, i, 1)))
+    setCur(mut st, d)
+    ret(mut st, -1)
+}

@@ -17,9 +17,9 @@ const TW_TOP = 0
 const TW_CODE = 1
 const TW_SITE = 2
 
-// trapDie は rt.panic / rt.panic_mem の入口の分岐: 罠が張られていれば死因（終了コード code・点 site）を書いて巻き戻る
+// rt.panic / rt.panic_mem の入口の分岐: 罠が張られていれば死因（終了コード code・点 site）を書いて巻き戻る
 func trapDie(st mut St, code int, site int) {
-    // 開発用 `sober build --death-trace`（rt の変異 14 — 4a-4 / report-653）: task の死を罠で吸収せず、罠の外の死と同じく印字して終了する
+    // 開発用 `sober build --death-trace`（rt の変異 14）: task の死を罠で吸収せず、罠の外の死と同じく印字して終了する
     // （死因の種・panic のラベル・位置が stderr に 1 行。吸収された死が観測に何も残さない形の切り分け用）
     if !st.trapUse || st.rtMut == 14 {
         return
@@ -41,21 +41,21 @@ func trapDie(st mut St, code int, site int) {
 // 入口が main の代わりに trap.probe を呼ぶ。子 = 戻る・index の死（101）・region の死（102）・ゼロ除算（x86 の死の口）・罠の入れ子・
 // 深い再帰の中の死。罠を跨いで生きる値（callee-saved に乗る）の和で巻き戻しの callee-saved の復元を見る。最後に罠の外で死ぬ（今までどおり印字して 101）
 
-// probeLine は文字列 w と値 v を 1 行に印字する
+// 文字列 w と値 v を 1 行に印字する
 func probeLine(st mut St, w string, v int) {
     printLit(mut st, w)
     call(mut st, st.rtPint, list1(mut st, v))
     call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\n')))
 }
 
-// probeKid は子の関数 trap.<name>（引数 1 語・結果なし）を作り、本体の入口に立った状態で返す（引数の値 = 0）
+// 子の関数 trap.<name>（引数 1 語・結果なし）を作り、本体の入口に立った状態で返す（引数の値 = 0）
 func probeKid(st mut St, name string) FnRef {
     f := addFunc(mut st, int(strLit(mut st, name)), desugar.ListRef(list1(mut st, TyI64)), -1)
     begin(mut st, f)
     return f
 }
 
-// buildTrapProbe は子と trap.probe を作って trap.probe を返す（at = 点の位置 — main の宣言）
+// 子と trap.probe を作って trap.probe を返す（at = 点の位置 — main の宣言）
 func buildTrapProbe(st mut St, at desugar.NodeRef) FnRef {
     needPanic(mut st)
     kOk := probeKid(mut st, "trap.ok")

@@ -1,6 +1,6 @@
 package main
 
-// 交互に 2 本を伸ばす append（データ構造便 — rtgrow.sober の幾何成長）と、同じ割り当てを共有するヘッダの排他（値の意味論）
+// 交互に 2 本を伸ばす append（rtgrow.sober の幾何成長）と、同じ割り当てを共有するヘッダの排他（値の意味論）
 
 import "std/iter"
 

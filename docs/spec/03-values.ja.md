@@ -62,9 +62,9 @@ V-2. シャドーイングは無い。ローカルの束縛（`:=`・仮引数�
 拒否: [`examples/shadow_block.sober`](../../examples/shadow_block.sober)・[`examples/shadow_lambda.sober`](../../examples/shadow_lambda.sober)・[`examples/shadow_pattern.sober`](../../examples/shadow_pattern.sober)・[`examples/localname_const.sober`](../../examples/localname_const.sober)・[`examples/localname_import.sober`](../../examples/localname_import.sober)・[`examples/localname_named.sober`](../../examples/localname_named.sober)・[`examples/localname_tparam.sober`](../../examples/localname_tparam.sober)
 決定: [syntax.md 決定 13](../syntax.md)
 
-V-3. トップレベルの束縛は const 式だけ — 関数を呼べず、実行時の初期化（`init()`）も無い。const 式に置けるのは定数・演算・struct のリテラル（欄に閉じたラムダや名前つき関数の参照を持つ辞書を含む — 5 章 F-8）。トップレベルの名前は package の中で一意（種類が違っても重ならない）。
-例: [`examples/constdict.sober`](../../examples/constdict.sober)
-拒否: [`examples/const_neg_call.sober`](../../examples/const_neg_call.sober)・[`examples/top_dup.sober`](../../examples/top_dup.sober)・[`examples/top_dup_kinds.sober`](../../examples/top_dup_kinds.sober)
+V-3. トップレベルの束縛は const 式だけ — 関数を呼べず、実行時の初期化（`init()`）も無い。const は 2 種類: **int の const** は int のリテラル・算術・ビット演算・int の const の参照でできた式で、ビルドの時点で値に畳む。**組み立ての const** は string / float のリテラル（負の float のリテラルを含む）・`true` / `false`・struct のリテラル（部分リテラル可）・imm の slice のリテラルと、その入れ子でできた式で、葉には int の const 式・閉じたラムダ・名前つき関数の参照（5 章 F-8）・他の const の参照・欄の値の位置の `nil` を置ける。組み立ての const は参照する点で組み立てる（5 章 F-8）。演算（`+`・補間・比較・`!` 等）を使えるのは int の const だけで、関数の呼び出し・`mut` のリテラル・map のリテラル（`@embed` を除く — 12 章 A-3）・トップレベルの `nil` は置けない。トップレベルの名前は package の中で一意（種類が違っても重ならない）。
+例: [`examples/constdict.sober`](../../examples/constdict.sober)・[`examples/const_lit.sober`](../../examples/const_lit.sober)・[`examples/const_table.sober`](../../examples/const_table.sober)
+拒否: [`examples/const_neg_call.sober`](../../examples/const_neg_call.sober)・[`examples/const_neg_strop.sober`](../../examples/const_neg_strop.sober)・[`examples/const_neg_mutslice.sober`](../../examples/const_neg_mutslice.sober)・[`examples/const_neg_map.sober`](../../examples/const_neg_map.sober)・[`examples/const_neg_nil.sober`](../../examples/const_neg_nil.sober)・[`examples/top_dup.sober`](../../examples/top_dup.sober)・[`examples/top_dup_kinds.sober`](../../examples/top_dup_kinds.sober)
 決定: [syntax.md 決定 14](../syntax.md)・[language.md 13 節・25 節](../language.md)
 
 ## 3.2 mut 引数

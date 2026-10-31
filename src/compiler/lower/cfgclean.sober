@@ -1,20 +1,20 @@
 package lower
 
-// 制御の流れの掃除（性能投資 第二便 M8 — rtlower / inline の後・最適化のバックエンドの経路だけ。IR テキストと --backend=copy は掛けない形のまま）:
+// 制御の流れの掃除（rtlower / inline の後・最適化のバックエンドの経路だけ。IR テキストと --backend=copy は掛けない形のまま）:
 //   ① 死んだ仮引数の除去（攻撃的な dead phi 除去）: ブロックの仮引数は、命令・条件・戻り値に使われるか、生きた仮引数へ辺で渡るときだけ生きている。
 //      それ以外（仮引数どうしの輪の中を回るだけ — mem2reg がループの外へ持ち越した変数の版）は仮引数ごと消し、辺の実引数も消す。
 //      区間の hull がループの後ろまで延びて latch の合流の mov が残る原因（fannkuch の lo / hi）
 //   ② 直列のブロックの併合: 唯一の後続へ引数なしの br で飛び、その後続の前任がこのブロックだけ・後続が仮引数を持たないなら、後続の命令と終端を
-//      このブロックへ寄せる（bce の後に残る直列の鎖 — gep と load / store が別ブロックに分かれて番地の融合〔M7〕が効かない・jmp が増える）
-//   ②' 短絡（&& / ||）の合流の飛び越し（ccThread — 第三便・部分インライン便で否定 / 辺の実引数 / 中継へ一般化）
+//      このブロックへ寄せる（bce の後に残る直列の鎖 — gep と load / store が別ブロックに分かれて番地の融合が効かない・jmp が増える）
+//   ②' 短絡（&& / ||）の合流の飛び越し（ccThread — 部分インラインで否定 / 辺の実引数 / 中継へ一般化）
 //   ③ 定数の畳み込み（既存の P2 — インラインした本体の定数の実引数）
-//   ③' 前任 1 つの ptr の仮引数の付け替え（F 便 段 2 — report-517 F-b b2 / ccSinglePtr）
+//   ③' 前任 1 つの ptr の仮引数の付け替え（ccSinglePtr）
 // 後始末は既存の P4（到達しないブロックを消して番号を振り直す）・P3（死んだ純粋命令）・値の振り直し
 
 import "desugar"
 import "std/iter"
 
-// cfgCleanModule はモジュールの全関数に掛ける
+// モジュールの全関数に掛ける
 func cfgCleanModule(st mut St) {
     mut f := st.fhead
     while f != -1 {
@@ -64,7 +64,7 @@ func cfgCleanFunc(st mut St, f FnRef) {
     promoteFunc(mut st, f)
 }
 
-// ccDeadParams は死んだ仮引数を消す（消したら true）
+// 死んだ仮引数を消す（消したら true）
 func ccDeadParams(st mut St, f FnRef, nv int, nb int, blk mut []int) bool {
     // 仮引数の値 → (ブロックの番号, 何番目)
     mut pb := mut []int{}
@@ -230,8 +230,8 @@ func ccDeadParamsFrom(st mut St, f FnRef, nv int, nb int, blk mut []int, pb mut 
     return true
 }
 
-// ccThread は短絡（&& / ||）の合流を飛び越す（第三便 — ベクトル化の判定の素直な形と、分岐 1 つ・真偽値の受け渡しの節約。
-// 部分インライン便で一般化: 展開した `!boundary(…)` の鎖が飛び越せず、展開先のループで bool の仮引数が全部退避された）。
+// 短絡（&& / ||）の合流を飛び越す（ベクトル化の判定の素直な形と、分岐 1 つ・真偽値の受け渡しの節約。
+// 部分インラインで一般化: 展開した `!boundary(…)` の鎖が飛び越せず、展開先のループで bool の仮引数が全部退避された）。
 // J = 仮引数 q が 1 つ・ループの頭でない、で次の 3 形（行き先の辺の実引数に q が出てよい — 飛び越した辺では実引数に置き換える）:
 //   ① 命令なし・condbr q, T, E ② `n = xor q, 1` だけ・condbr n, T, E（`!` の否定 — 行き先は入れ替え。q が 0/1 と言える辺だけ）
 //   ③ 命令なし・br T(…)（中継）
@@ -345,7 +345,7 @@ func ccThread(st mut St, f FnRef) bool {
             ub = irBlkNext(mut st, ub)
         }
     }
-    // 前任の表（並列 1.0× 段 4）: 行き先の番号 → 前任の鎖（ph = 頭・[ブロック, 次] の 2 語ずつ）。書き換えで増えた行き先は
+    // 前任の表: 行き先の番号 → 前任の鎖（ph = 頭・[ブロック, 次] の 2 語ずつ）。書き換えで増えた行き先は
     // 前任の鎖へ追記し、鎖の古い項は元と同じ条件で読み直して弾く
     nbk := irFnNBlk(mut st, f)
     mut ph := mut []int{}
@@ -502,7 +502,7 @@ func ccThread(st mut St, f FnRef) bool {
     return any
 }
 
-// ccSubst は辺の実引数の列 l の q を a に置き換えた新しい列（空は -1 のまま）
+// 辺の実引数の列 l の q を a に置き換えた新しい列（空は -1 のまま）
 func ccSubst(st mut St, l int, q int, a int) int {
     if l < 0 {
         return -1
@@ -516,14 +516,14 @@ func ccSubst(st mut St, l int, q int, a int) int {
     return out
 }
 
-// ccPredAdd は行き先の番号 to の前任の鎖の頭へ b を足す
+// 行き先の番号 to の前任の鎖の頭へ b を足す
 func ccPredAdd(ph mut []int, pe mut []int, to int, b int) {
     pe = append(pe, b)
     pe = append(pe, ph[to])
     ph[to] = len(pe) - 2
 }
 
-// ccKeepArgs は行き先 to の仮引数のうち生きたものに対応する実引数だけの新しい列
+// 行き先 to の仮引数のうち生きたものに対応する実引数だけの新しい列
 func ccKeepArgs(st mut St, to BlkRef, args int, live mut []int) int {
     mut n := 0
     mut p := irBlkPHead(mut st, to)
@@ -548,8 +548,7 @@ func ccKeepArgs(st mut St, to BlkRef, args int, live mut []int) int {
     return out
 }
 
-// ccSinglePtr は入る辺が 1 本だけのブロック（入口でない）の ptr の仮引数を、その辺の実引数へ付け替えて消す（F 便 段 2 — report-517 F-b b2。
-// 付け替えたら true）。catch の成功の値は一時スロットの番地を ptr の仮引数で合流へ運ぶ形に下り、腕が発散する（`catch return …`）と合流の前任は
+// 入る辺が 1 本だけのブロック（入口でない）の ptr の仮引数を、その辺の実引数へ付け替えて消す（付け替えたら true）。catch の成功の値は一時スロットの番地を ptr の仮引数で合流へ運ぶ形に下り、腕が発散する（`catch return …`）と合流の前任は
 // 1 つになる。番地が仮引数に流れたままだと SROA が一時スロットを割れない（φ への逃げ）— 付け替えると一時スロットと束縛のスロットが昇格する。
 // 値の付け替えは opt の付け替えの鎖（OW_AL — 呼び手が optReset の後に呼ぶ）で、使う点は opnd の resolve が書き換える。辺は 1 本なので、
 // 実引数は辺の元のブロックで定義され、行き先（その唯一の後続の側）を支配する。ptr だけに絞るのは、整数の仮引数の付け替えが割り当てのヒントを
@@ -595,7 +594,7 @@ func ccSinglePtr(st mut St, f FnRef) bool {
     return any
 }
 
-// ccSinglePtrMark は行き先 to の ptr の仮引数を辺の実引数 args へ付け替え（OW_AL）、live を 0 にする（1 つでも付け替えたら true）
+// 行き先 to の ptr の仮引数を辺の実引数 args へ付け替え（OW_AL）、live を 0 にする（1 つでも付け替えたら true）
 func ccSinglePtrMark(st mut St, to BlkRef, args int, live mut []int) bool {
     mut any := false
     mut k := 0
@@ -614,7 +613,7 @@ func ccSinglePtrMark(st mut St, to BlkRef, args int, live mut []int) bool {
     return any
 }
 
-// ccDropParams は to の仮引数のうち live が 0 のものを鎖から外す
+// to の仮引数のうち live が 0 のものを鎖から外す
 func ccDropParams(st mut St, to BlkRef, live mut []int) {
     mut p := irBlkPHead(mut st, to)
     irSetBlkPHead(mut st, to, -1)
@@ -634,7 +633,7 @@ func ccDropParams(st mut St, to BlkRef, live mut []int) {
     }
 }
 
-// ccMerge は直列のブロックを併合する（併合したら true）。前任の数は B_PREDS（各段の後に正しい — 検証器が見る）
+// 直列のブロックを併合する（併合したら true）。前任の数は B_PREDS（各段の後に正しい — 検証器が見る）
 func ccMerge(st mut St, f FnRef) bool {
     entry := irFnBHead(mut st, f)
     mut any := false
@@ -677,7 +676,7 @@ func ccMerge(st mut St, f FnRef) bool {
     return any
 }
 
-// ccPostM2rModule は直列の経路の展開後の mem2reg と死んだ仮引数の除去（並列の群の経路は move.sober lB2Func — 同じ形）
+// 直列の経路の展開後の mem2reg と死んだ仮引数の除去（並列の群の経路は move.sober lB2Func — 同じ形）
 func ccPostM2rModule(st mut St) {
     mut f := st.fhead
     while f != -1 {
@@ -693,7 +692,7 @@ func ccPostM2rModule(st mut St) {
     }
 }
 
-// ccPostFold は展開後の mem2reg の後の分岐の畳み（段 3' — report-520 3 節・report-524）。展開後の SROA + mem2reg で tag の語が定数になっても、
+// 展開後の mem2reg の後の分岐の畳み。展開後の SROA + mem2reg で tag の語が定数になっても、
 // 畳み（P2）と飛び越し（ccThread）は cfgClean の中（展開後の mem2reg の前）でしか回らず、x86 に `mov rax,0; cmp rax,0; je`（定数の条件の condbr）と
 // `mov rdi,0; jmp X` → `X: cmp rdi,0; jne`（冷たい道からだけ非 0 の仮引数を受けて分岐）が届いていた（logagg main の catch の値の検査）。
 // 飛び越しを 1 回 → 畳み → 定数の条件の condbr を br に（ccConstBr）→ 後始末（P4 は辺が変わったときだけ・P3・振り直し）
@@ -702,7 +701,7 @@ func ccPostFold(st mut St, f FnRef) {
     if threaded {
         recountPreds(mut st, f)
     }
-    // 門: 飛び越さず、条件が定数の命令の結果の condbr も無ければ何もしない（畳み・振り直しを全部の関数に掛けると判定の仕事 +0.24 G — report-524）
+    // 門: 飛び越さず、条件が定数の命令の結果の condbr も無ければ何もしない（畳み・振り直しを全部の関数に掛けると判定の仕事 +0.24 G）
     if !threaded && !ccConstCond(mut st, f) {
         return
     }
@@ -716,7 +715,7 @@ func ccPostFold(st mut St, f FnRef) {
     optRenumber(mut st, f)
 }
 
-// ccConstCond は条件が定数の condbr があるか（ccPostFold の門）: 条件が定数の命令（OpConst）の結果か、両辺が定数の比較の結果。
+// 条件が定数の condbr があるか（ccPostFold の門）: 条件が定数の命令（OpConst）の結果か、両辺が定数の比較の結果。
 // 展開後の mem2reg は tag の load を定数へ置き換えるので、`condbr (cmp ne k, 0)` の形で残る（logagg main の catch の値の検査）
 func ccConstCond(st mut St, f FnRef) bool {
     // 印: 1 = condbr の条件・2 = 定数の命令の結果（両方立つ値もある）
@@ -760,7 +759,7 @@ func ccConstCond(st mut St, f FnRef) bool {
     return false
 }
 
-// ccConstBr は条件が定数の condbr を、取る側への br にする（取らない側の辺と実引数は消える — 到達しなくなった側は P4 が消す。書き換えたら true）。
+// 条件が定数の condbr を、取る側への br にする（取らない側の辺と実引数は消える — 到達しなくなった側は P4 が消す。書き換えたら true）。
 // 畳み（optFold）の後に呼ぶ（条件の定数は畳みの印 OW_K で見る）
 func ccConstBr(st mut St, f FnRef) bool {
     mut any := false
@@ -782,7 +781,7 @@ func ccConstBr(st mut St, f FnRef) bool {
     return any
 }
 
-// ccNParams は関数 f のブロックの仮引数の総数（展開後の mem2reg が仮引数を足したかの門 — 足さなければ新しい死んだ仮引数は無い）
+// 関数 f のブロックの仮引数の総数（展開後の mem2reg が仮引数を足したかの門 — 足さなければ新しい死んだ仮引数は無い）
 func ccNParams(st mut St, f FnRef) int {
     mut n := 0
     mut b := irFnBHead(mut st, f)
@@ -797,7 +796,7 @@ func ccNParams(st mut St, f FnRef) int {
     return n
 }
 
-// ccDeadAfterM2r は展開後の SROA + mem2reg の後の死んだ仮引数の除去（置き場の往復レーン 段 1 — report-497 M1・report-498）。
+// 展開後の SROA + mem2reg の後の死んだ仮引数の除去。
 // ① の除去は cfgClean の頭で掛かるが、展開後の mem2reg（cfgClean の後）がスロットの語ごとに刈り込まない仮引数を置き直し、仮引数どうしの輪を回るだけの
 // 運搬値が x86 に届いていた（routing の split のループの頭で 16 本中 11 本 — spill されて毎周 記憶どうしの写しと load / store。routing の仮引数の 31.7%）。
 // 後始末は cfgClean と同じ（値の詰め直しを省く形は検証器が「定義の無い値」で落とす）。

@@ -1,0 +1,9 @@
+quick: fuzz: panic at trial 802 (seed 0, 133 shrink runs)
+  Slice:
+    Int(0, 20) = 17
+    Int(0, 20) = 0
+    Int(0, 20) = 5
+  (3 items)
+panic: index out of range at fz.sober:22:15
+quick: wrote CORPUS/main/0-fbcc6782e2b496d4
+panic: quick.Crashed{exit: 101} at std/quick

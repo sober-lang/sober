@@ -1,2 +1,3 @@
+sober: type error at testdata/checkneg/freeze_mut_reslice.sober:8:10
 {"errors":[{"msg":"type error"}],"ok":false}
 exit=1

@@ -1,6 +1,6 @@
 package main
 
-// Wycheproof（testdata/wycheproof/README.md）の AES-GCM を std/crypto/aesgcm に通す（report-796 — 鍵 128 bit × nonce 96 bit の 67 件は値の一致・
+// Wycheproof（testdata/wycheproof/README.md）の AES-GCM を std/crypto/aesgcm に通す（鍵 128 bit × nonce 96 bit の 67 件は値の一致・
 // それ以外の鍵 / nonce の長さ〔AES-192 / 256・nonce 長違い — 範囲外〕は BadSize で拒否すること）。valid = Seal の出力が一致し Open が平文を返す・
 // invalid = Open が拒否する。塊の無い機械（SOBER_NOAES=1）では NoHardware だけを印字する形。食い違った tcId を印字する
 

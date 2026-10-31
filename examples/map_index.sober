@@ -1,6 +1,6 @@
 package main
 
-// map の索引（性能投資 M0 — 長い map は rt の開番地法の索引を引く）が意味論（language.md 22 節）を 1 ミリも動かさないことの回帰:
+// map の索引（長い map は rt の開番地法の索引を引く）が意味論（language.md 22 節）を 1 ミリも動かさないことの回帰:
 // 挿入順の keys・墓石の再挿入が元の位置・値のヘッダ（コピーした旧ヘッダは成長の後も旧テーブルを見る — 先端の伸長と全コピーの両方）・
 // int / string のキー・struct の欄の map・関数から返す map（relocate — 索引を外して作り直す）・freeze
 
@@ -18,7 +18,7 @@ func names(n int) []string {
     return out
 }
 
-// fill は関数の region で作った map を返す（呼び手の region へ relocate）
+// 関数の region で作った map を返す（呼び手の region へ relocate）
 func fill(n int) map[int]int {
     mut m := mut map[int]int{}
     for i <- iter.Range(0, n) {
@@ -35,7 +35,7 @@ func get(m map[string]int, k string) int {
     return -1
 }
 
-// getm は mut の map を凍結せずに引く（凍結の後に書き続けない — language.md 17 節 U2。凍結は書き終えてから）
+// mut の map を凍結せずに引く（凍結の後に書き続けない — language.md 17 節 U2。凍結は書き終えてから）
 func getm(m mut map[string]int, k string) int {
     v := m[k]
     if v != nil {
@@ -65,7 +65,7 @@ func main() {
     m["k3"] = 333
     ks := keys(m)
     println(ks[3], ks[4], len(ks))
-    // 値のヘッダ: old は成長の前のコピー（mut の別名 — 2026-10-10 まで freeze した旧ヘッダで試していた形は F-al の穴の上だった）。
+    // 値のヘッダ: old は成長の前のコピー（mut の別名）。
     // 新しいキーの挿入で m は全コピーへ伸びるので、old は旧テーブルを見続ける（新しいキーも、その後の既存のキーの更新も見えない）
     mut old := m
     m["new1"] = 1

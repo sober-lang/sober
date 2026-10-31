@@ -1,0 +1,450 @@
+package lower
+
+import "desugar"
+import "std/iter"
+
+// map の表現の記述子（「map の表現は観測等価な実装詳細」の口）: セルの形（鍵・tag・値の置き場）と引きの関数を、
+// lower の全部の点（引き・挿入・len・keys・delete・再配置・成長）がここを通して読む。今は型だけから決める（string 鍵 / int 鍵）。
+// 観測に出るのは language.md 22 節の約束（挿入順・墓石・旧ヘッダ・keys のスナップショット）だけで、セルの語数・tag の置き場・ハッシュは
+// 実装詳細 — 表現を足すときはこの記述子の欄と下の操作だけを変える（呼び手は変わらない）
+type MapRepr struct {
+    kt int       // 鍵の型
+    vt int       // 値の型
+    rk int       // 表現の種類（MR_BASE = セル [鍵][tag][値]・MR_PRE = string 鍵の前置き — 下）
+    kw int       // 鍵の語数（int 1 語 / string のヘッダ 3 語）
+    tagOff int   // tag の語（MR_BASE: 1 = 生きている・0 = 墓石 / MR_PRE: 鍵の len の語 — 最上位ビットが墓石）
+    valOff int   // 値の先頭の語
+    cellw int    // セルの語数
+    sk int       // string 鍵なら 1
+    hk int       // ハッシュの種類（HK_OLD = rt.map_hash・HK_MUM = mum — 鍵の型 × 表現ごとに選ぶ口）
+}
+
+// MR_BASE = セル [鍵][tag][値…]（int 鍵の表現・string 鍵の旧表現 — 開発用 --rt-mutant=11 で string 鍵もこれに〔表現の差分オラクル〕）
+const MR_BASE = 0
+// MR_PRE = string 鍵のセル [ptr][len | 墓石][深度][pre0][pre1][値…]（ 鍵の先頭 16 バイトを little-endian で詰め、長さを超えた分は 0
+// の正準形。16 バイト以下の鍵は比較もハッシュも鍵のバイトを読まずに閉じる。墓石は len の語の最上位ビット — 生きている鍵のヘッダは普通の string の
+// ヘッダのまま〔keys・再配置が読む〕。鍵のヘッダを残すのは keys の要素のバイト共有と region の型付けの約束のため — 22 節）
+const MR_PRE = 1
+const MR_LENMASK = 9223372036854775807
+// HK_OLD = 旧の rt.map_hash（string: 語 + 端数のバイトずつ FNV・int: w × 黄金比 ^ >> 29 — 旧表現〔--rt-mutant=11〕の差分オラクルの相手だけ）・
+// HK_MUM = mum（wyhash の芯 — string 鍵の前置き 2 語・int 鍵の 1 語。種 rt.hash_seed を xor で混ぜる）
+const HK_OLD = 0
+const HK_MUM = 1
+
+func mapRepr(st mut St, mt int) MapRepr {
+    kt := desugar.HeapGet(mut st.d, mt + 1)
+    vt := desugar.HeapGet(mut st.d, mt + 2)
+    kw := tWords(mut st, kt)
+    vw := tWords(mut st, vt)
+    if isString(mut st, kt) && st.rtMut != 11 {
+        return MapRepr{kt: kt, vt: vt, rk: MR_PRE, kw: kw, tagOff: 1, valOff: kw + 2, cellw: kw + 2 + vw, sk: 1, hk: HK_MUM}
+    }
+    sk := if isString(mut st, kt) { 1 } else { 0 }
+    return MapRepr{kt: kt, vt: vt, rk: MR_BASE, kw: kw, tagOff: kw, valOff: kw + 1, cellw: kw + 1 + vw, sk: sk, hk: if sk == 0 && st.rtMut != 11 { HK_MUM } else { HK_OLD }}
+}
+
+// mrTag はセル cp の生死（i64 の 0 / 1）
+func mrTag(st mut St, r MapRepr, cp int) int {
+    if r.rk == MR_PRE {
+        // 1 + (len の語 >> 63)〔算術 — 墓石なら −1〕
+        return bin(mut st, BAdd, iconst(mut st, 1), bin(mut st, BSar, load(mut st, cp, 1), iconst(mut st, 63)))
+    }
+    return load(mut st, cp, r.tagOff)
+}
+
+// mrSetLive はセル cp を生きている（live）/ 墓石にする
+func mrSetLive(st mut St, r MapRepr, cp int, live bool) {
+    if r.rk == MR_PRE {
+        lw := load(mut st, cp, 1)
+        store(mut st, cp, 1, if live { bin(mut st, BAnd, lw, iconst(mut st, MR_LENMASK)) } else { bin(mut st, BOr, lw, bin(mut st, BShl, iconst(mut st, 1), iconst(mut st, 63))) })
+        return
+    }
+    store(mut st, cp, r.tagOff, iconst(mut st, if live { 1 } else { 0 }))
+}
+
+// mrKeyCopy はセル（か鍵の置き場）src の鍵の語を dst へ写す（keys の要素 — 生きているセルだけ写すので MR_PRE でも普通のヘッダ）
+func mrKeyCopy(st mut St, r MapRepr, dst int, src int) {
+    mut w := 0
+    while w < r.kw {
+        store(mut st, dst, w, load(mut st, src, w))
+        w += 1
+    }
+}
+
+// mrKeyInsert は新しいセル dst に鍵 kq（置き場）を生きている形で書く
+func mrKeyInsert(st mut St, r MapRepr, dst int, kq int) {
+    mrKeyCopy(mut st, r, dst, kq)
+    if r.rk == MR_PRE {
+        // 詰めは共有の rt.map_prefix（挿入の点ごとに詰めの環を展開しない — 自己 build で +0.9 G だった）
+        call(mut st, needMapPrefix(mut st), list2(mut st, dst, kq))
+        return
+    }
+    mrSetLive(mut st, r, dst, true)
+}
+
+// mrRelocKey はセル cp の鍵を深度 floor へ写す（MR_PRE の墓石は len の語のビットを一時に落として普通のヘッダの形で写す —
+// 墓石の鍵も再挿入で生き返り、16 バイトを超える鍵の比較でバイトを読むので写す）
+func mrRelocKey(st mut St, r MapRepr, cp int, floor int) {
+    if r.rk == MR_PRE {
+        lw := load(mut st, cp, 1)
+        store(mut st, cp, 1, bin(mut st, BAnd, lw, iconst(mut st, MR_LENMASK)))
+        relocateTo(mut st, cp, 0, r.kt, floor)
+        store(mut st, cp, 1, lw)
+        return
+    }
+    relocateTo(mut st, cp, 0, r.kt, floor)
+}
+
+// ── MR_PRE の rt の部品（rt.map_find の中で組む — 問い合わせの鍵の詰め・ハッシュ・比較）──
+
+// MQ は問い合わせの鍵の詰めた形（IR の値: 前置き 2 語・長さ・バイトの番地）
+type MQ struct {
+    q0 int
+    q1 int
+    n int
+    p int
+}
+
+// mrPack は string のヘッダ kp の鍵を詰める: 長さ 8〜15 は先頭の語 + 末尾 8 バイトを重ねて読み右へずらす・≥ 16 は 2 語・1〜7 は
+// 末尾で終わる 8 バイトを 1 語で読んで右へずらす（鍵の手前を読む — 先頭がページの頭から 8 バイト以上なら同じページの中なので読める。
+// でなければバイトの環）。範囲の外のバイトは値に入れない（長さを超えた分は 0）
+func mrPack(st mut St, kp int) MQ {
+    pi := load(mut st, kp, 0)
+    p := itop(mut st, pi)
+    n := load(mut st, kp, 1)
+    join := newBlock(mut st)
+    j0 := param(mut st, join, TyI64)
+    j1 := param(mut st, join, TyI64)
+    zero := iconst(mut st, 0)
+    big := branchIf(mut st, cmp(mut st, CLt, n, iconst(mut st, 8)))
+    nz := branchIf(mut st, cmp(mut st, CEq, n, zero))
+    br(mut st, join, list2(mut st, zero, zero))
+    setCur(mut st, nz)
+    // 不変条件: 鍵の手前を読むのは p と同じ 4 KiB のページの中だけ（p が写像済みならそのページも読める）・読んだ余分のバイトは右へずらして捨て値に入れない
+    edge := branchIf(mut st, cmp(mut st, CGe, bin(mut st, BAnd, pi, iconst(mut st, 4095)), iconst(mut st, 8)))
+    tw := load(mut st, gepByte(mut st, p, bin(mut st, BSub, n, iconst(mut st, 8))), 0)
+    ts := bin(mut st, BMul, bin(mut st, BSub, iconst(mut st, 8), n), iconst(mut st, 8))
+    tm := bin(mut st, BSub, bin(mut st, BShl, iconst(mut st, 1), bin(mut st, BMul, n, iconst(mut st, 8))), iconst(mut st, 1))
+    br(mut st, join, list2(mut st, bin(mut st, BAnd, bin(mut st, BSar, tw, ts), tm), zero))
+    // ページの頭の近く: 末尾から先頭へ acc = acc << 8 | b[i]
+    setCur(mut st, edge)
+    bl := newBlock(mut st)
+    bi := param(mut st, bl, TyI64)
+    bacc := param(mut st, bl, TyI64)
+    br(mut st, bl, list2(mut st, bin(mut st, BSub, n, iconst(mut st, 1)), zero))
+    setCur(mut st, bl)
+    body := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGe, bi, zero), body, -1, join, list2(mut st, bacc, zero))
+    setCur(mut st, body)
+    b := load8(mut st, gepByte(mut st, p, bi), 0)
+    br(mut st, bl, list2(mut st, bin(mut st, BSub, bi, iconst(mut st, 1)), bin(mut st, BOr, bin(mut st, BShl, bacc, iconst(mut st, 8)), b)))
+    setCur(mut st, big)
+    w0 := load(mut st, p, 0)
+    mid := branchIf(mut st, cmp(mut st, CGe, n, iconst(mut st, 16)))
+    br(mut st, join, list2(mut st, w0, load(mut st, gepByte(mut st, p, iconst(mut st, 8)), 0)))
+    setCur(mut st, mid)
+    gt8 := branchIf(mut st, cmp(mut st, CEq, n, iconst(mut st, 8)))
+    br(mut st, join, list2(mut st, w0, zero))
+    setCur(mut st, gt8)
+    w := load(mut st, gepByte(mut st, p, bin(mut st, BSub, n, iconst(mut st, 8))), 0)
+    s := bin(mut st, BMul, bin(mut st, BSub, iconst(mut st, 16), n), iconst(mut st, 8))
+    mask := bin(mut st, BSub, bin(mut st, BShl, iconst(mut st, 1), bin(mut st, BMul, bin(mut st, BSub, n, iconst(mut st, 8)), iconst(mut st, 8))), iconst(mut st, 1))
+    br(mut st, join, list2(mut st, w0, bin(mut st, BAnd, bin(mut st, BSar, w, s), mask)))
+    setCur(mut st, join)
+    return MQ{q0: j0, q1: j1, n: n, p: p}
+}
+
+// mrCellQ はセル cp の鍵の詰めた形（墓石のビットを落とした長さ）
+func mrCellQ(st mut St, cp int) MQ {
+    return MQ{q0: load(mut st, cp, 3), q1: load(mut st, cp, 4), n: bin(mut st, BAnd, load(mut st, cp, 1), iconst(mut st, MR_LENMASK)), p: itop(mut st, load(mut st, cp, 0))}
+}
+
+// mrHash は詰めた鍵のハッシュ — mum（wyhash の芯: 64 × 64 → 128 の積の下位 ^ 上位）: 前置き 2 語を定数でずらして 1 回の積
+// （長さは 2 語目に混ぜる）・16 バイトを超える分は語ごとに積を重ねる（端数は末尾 8 バイトを重ねて 1 語）。問い合わせとセル（索引の追いつき）で同じ値 —
+// 値は索引の配置にだけ使う（下位 = 枠・上位 32 ビット = 濾し）。棄てた案（敵対の鍵の集合で病的）: 黄金比の乗算の鎖 + 畳み 29
+// （R1 — 先頭 16 バイトが同じ鍵で探査 1,194 / 操作）・端数のバイトずつ FNV（旧 — 連番の文字列で 94）・FxHash・独立の乗算 2 本
+func mrHash(st mut St, q MQ, sd MSeed) int {
+    x0 := mrMum(mut st, bin(mut st, BXor, q.q0, sd.s0), bin(mut st, BXor, bin(mut st, BXor, q.q1, sd.s1), q.n))
+    k := iconst(mut st, -8161530843051276573)
+    join := newBlock(mut st)
+    jh := param(mut st, join, TyI64)
+    long := branchIf(mut st, cmp(mut st, CLe, q.n, iconst(mut st, 16)))
+    br(mut st, join, list1(mut st, x0))
+    setCur(mut st, long)
+    wl := newBlock(mut st)
+    wi := param(mut st, wl, TyI64)
+    wh := param(mut st, wl, TyI64)
+    br(mut st, wl, list2(mut st, iconst(mut st, 16), x0))
+    setCur(mut st, wl)
+    wb := newBlock(mut st)
+    rest := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLe, bin(mut st, BAdd, wi, iconst(mut st, 8)), q.n), wb, -1, rest, -1)
+    setCur(mut st, wb)
+    br(mut st, wl, list2(mut st, bin(mut st, BAdd, wi, iconst(mut st, 8)), mrMum(mut st, bin(mut st, BXor, wh, load(mut st, gepByte(mut st, q.p, wi), 0)), k)))
+    setCur(mut st, rest)
+    done := branchIf(mut st, cmp(mut st, CLt, wi, q.n))
+    br(mut st, join, list1(mut st, mrMum(mut st, bin(mut st, BXor, wh, load(mut st, gepByte(mut st, q.p, bin(mut st, BSub, q.n, iconst(mut st, 8))), 0)), k)))
+    setCur(mut st, done)
+    br(mut st, join, list1(mut st, wh))
+    setCur(mut st, join)
+    return jh
+}
+
+// MSeed は mum の 2 つのずらしの語（定数 ^ 種 — 引きの関数の入口で 1 回読む）
+type MSeed struct {
+    s0 int
+    s1 int
+}
+
+// mrSeeds は rt.hash_seed の 2 語（初期化で mum の定数と xor 済み — 種 0 なら定数そのもの）。ハッシュの直前で読む（引きの関数の入口で読むと
+// 生存区間が延びて spill が増えた — knuc の命令 +1.2%）
+func mrSeeds(st mut St) MSeed {
+    g := globaladdrRaw(mut st, st.hseed)
+    return MSeed{s0: load(mut st, g, 0), s1: load(mut st, g, 1)}
+}
+
+// mrHashInt は int 鍵（1 語）の mum
+func mrHashInt(st mut St, w int, sd MSeed) int {
+    return mrMum(mut st, bin(mut st, BXor, w, sd.s0), sd.s1)
+}
+
+// mrSeedInit は rt.hash_seed_init(sp) を組み、入口 sober_entry の先頭ブロックの頭へ呼び出しを差し込む（program の最後 — 入口は関数の本体より
+// 先に組まれるので、種が要るか〔mum の引きがあるか〕はそこでは分からない）。種: SOBER_HASH_SEED=<n>（10 進）があれば
+// 種 = (n, n × 黄金比) — 0 なら mum の定数だけ（gates・bench・黄金はこれで固定）。無ければ AT_RANDOM（exec で kernel が置く 16 バイト —
+// auxv の型 25）の 2 語。map の列挙は挿入順なので種は出力に出ない — 揺れるのは探査の長さ（命令数・cycles）だけ（language.md 22 節の注記）
+func mrSeedInit(st mut St) {
+    if st.hseed == -1 || st.entryFn == -1 {
+        return
+    }
+    f := addFunc(mut st, int(strLit(mut st, "rt.hash_seed_init")), desugar.ListRef(list1(mut st, TyPtr)), -1)
+    ent := irFnBHead(mut st, FnRef(st.entryFn))
+    ci := mkInst(mut st, -1, OpCall, int(f), list1(mut st, 0), 0)
+    irSetInsNext(mut st, ci, irBlkIHead(mut st, ent))
+    if irBlkITail(mut st, ent) == -1 {
+        irSetBlkITail(mut st, ent, ci)
+    }
+    irSetBlkIHead(mut st, ent, ci)
+    begin(mut st, f)
+    sp := 0
+    g := globaladdrRaw(mut st, st.hseed)
+    n := envMb(mut st, sp, "SOBER_HASH_SEED=", -1, true)
+    rnd := branchIf(mut st, cmp(mut st, CGe, n, iconst(mut st, 0)))
+    store(mut st, g, 0, bin(mut st, BXor, n, iconst(mut st, -6884282663029611473)))
+    store(mut st, g, 1, bin(mut st, BXor, bin(mut st, BMul, n, iconst(mut st, -7046029254386353131)), iconst(mut st, -1800455987208640293)))
+    done := newBlock(mut st)
+    br(mut st, done, -1)
+    // auxv: envp の NULL の次から (型, 値) の対 — 型 0 で終わり
+    setCur(mut st, rnd)
+    argc := load(mut st, sp, 0)
+    el := newBlock(mut st)
+    e := param(mut st, el, TyPtr)
+    br(mut st, el, list1(mut st, gepWord(mut st, sp, bin(mut st, BAdd, argc, iconst(mut st, 2)))))
+    setCur(mut st, el)
+    enext := newBlock(mut st)
+    aux := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, load(mut st, e, 0), iconst(mut st, 0)), aux, -1, enext, -1)
+    setCur(mut st, enext)
+    br(mut st, el, list1(mut st, gepWord(mut st, e, iconst(mut st, 1))))
+    setCur(mut st, aux)
+    al := newBlock(mut st)
+    a := param(mut st, al, TyPtr)
+    br(mut st, al, list1(mut st, gepWord(mut st, e, iconst(mut st, 1))))
+    setCur(mut st, al)
+    ty := load(mut st, a, 0)
+    notEnd := newBlock(mut st)
+    isRnd := newBlock(mut st)
+    anext := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, ty, iconst(mut st, 0)), done, -1, notEnd, -1)
+    setCur(mut st, notEnd)
+    condbr(mut st, cmp(mut st, CEq, ty, iconst(mut st, 25)), isRnd, -1, anext, -1)
+    setCur(mut st, anext)
+    br(mut st, al, list1(mut st, gepWord(mut st, a, iconst(mut st, 2))))
+    setCur(mut st, isRnd)
+    rp := itop(mut st, load(mut st, a, 1))
+    store(mut st, g, 0, load(mut st, rp, 0))
+    store(mut st, g, 1, load(mut st, rp, 1))
+    br(mut st, done, -1)
+    setCur(mut st, done)
+    ret(mut st, -1)
+}
+
+// mrMum は wyhash の芯（積の下位 ^ 上位 — BMulHi）
+func mrMum(st mut St, a int, b int) int {
+    return bin(mut st, BXor, bin(mut st, BMul, a, b), bin(mut st, BMulHi, a, b))
+}
+
+// mrEq はセル cp の鍵と問い合わせ q の一致（i64 の真偽 — 墓石も一致する）: 長さ・前置き 2 語、16 バイトを超える分だけバイトを読む
+func mrEq(st mut St, cp int, q MQ) int {
+    join := newBlock(mut st)
+    res := param(mut st, join, TyI64)
+    ne := newBlock(mut st)
+    eq := newBlock(mut st)
+    k1 := newBlock(mut st)
+    k2 := newBlock(mut st)
+    k3 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, bin(mut st, BAnd, load(mut st, cp, 1), iconst(mut st, MR_LENMASK)), q.n), ne, -1, k1, -1)
+    setCur(mut st, k1)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, cp, 3), q.q0), ne, -1, k2, -1)
+    setCur(mut st, k2)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, cp, 4), q.q1), ne, -1, k3, -1)
+    setCur(mut st, k3)
+    long := branchIf(mut st, cmp(mut st, CLe, q.n, iconst(mut st, 16)))
+    br(mut st, eq, -1)
+    setCur(mut st, long)
+    cpp := itop(mut st, load(mut st, cp, 0))
+    wl := newBlock(mut st)
+    wi := param(mut st, wl, TyI64)
+    br(mut st, wl, list1(mut st, iconst(mut st, 16)))
+    setCur(mut st, wl)
+    wb := newBlock(mut st)
+    wn := newBlock(mut st)
+    rest := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLe, bin(mut st, BAdd, wi, iconst(mut st, 8)), q.n), wb, -1, rest, -1)
+    setCur(mut st, wb)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, gepByte(mut st, cpp, wi), 0), load(mut st, gepByte(mut st, q.p, wi), 0)), ne, -1, wn, -1)
+    setCur(mut st, wn)
+    br(mut st, wl, list1(mut st, bin(mut st, BAdd, wi, iconst(mut st, 8))))
+    setCur(mut st, rest)
+    nolast := branchIf(mut st, cmp(mut st, CLt, wi, q.n))
+    last := bin(mut st, BSub, q.n, iconst(mut st, 8))
+    condbr(mut st, cmp(mut st, CNe, load(mut st, gepByte(mut st, cpp, last), 0), load(mut st, gepByte(mut st, q.p, last), 0)), ne, -1, eq, -1)
+    setCur(mut st, nolast)
+    br(mut st, eq, -1)
+    setCur(mut st, ne)
+    br(mut st, join, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, eq)
+    br(mut st, join, list1(mut st, iconst(mut st, 1)))
+    setCur(mut st, join)
+    return res
+}
+
+// ── 引きの族（工程 2 — 単相化）: rt.map_find を表現ごとに 1 本ずつ建てる。表 = [数, 鍵, 関数, 鍵, 関数…]（st.mapFinds — ヒープの記録）──
+
+const MF_CAP = 64
+
+// mrKey は表現の鍵（同じ鍵なら同じ引きの関数）
+func mrKey(r MapRepr) int {
+    return r.hk * 100000000 + r.rk * 10000000 + r.sk * 1000000 + r.cellw
+}
+
+// needMapFind は表現 r の引きの関数（初出なら宣言する — 本体は program の最後に buildMapFinds が組む）
+func needMapFind(st mut St, r MapRepr) FnRef {
+    lsNeed(mut st, NEED_MAPFIND, mrKey(r))
+    if st.mapFinds == -1 {
+        st.mapFinds = recN(mut st, 1 + 2 * MF_CAP)
+        desugar.HeapSet(mut st.d, st.mapFinds, 0)
+    }
+    t := st.mapFinds
+    n := desugar.HeapGet(mut st.d, t)
+    k := mrKey(r)
+    for i <- iter.Range(0, n) {
+        if desugar.HeapGet(mut st.d, t + 1 + 2 * i) == k {
+            return FnRef(desugar.HeapGet(mut st.d, t + 2 + 2 * i))
+        }
+    }
+    if n == MF_CAP {
+        panic(Unreachable{})
+    }
+    f := addFunc(mut st, int(strLit(mut st, "rt.map_find.${r.rk}.${r.sk}.${r.cellw}.${r.hk}")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), TyI64)
+    desugar.HeapSet(mut st.d, t + 1 + 2 * n, k)
+    desugar.HeapSet(mut st.d, t + 2 + 2 * n, int(f))
+    desugar.HeapSet(mut st.d, t, n + 1)
+    if r.hk == HK_MUM && st.hseed == -1 {
+        st.hseed = addGlobalInit(mut st, int(strLit(mut st, "rt.hash_seed")), 2, -1)
+    }
+    if st.rtMapfind == -1 {
+        st.rtMapfind = f
+    }
+    return f
+}
+
+// MF_PREFIX は表の rt.map_prefix の鍵（引きの関数でない族の一員 — 名簿の述語 isMapRt は真・mapfuse は戻り値の無い呼び出しを見ない）
+const MF_PREFIX = -1
+
+// needMapPrefix は rt.map_prefix(cell, kp)（MR_PRE のセル cell の前置き 2 語を鍵 kp から詰めて書く — 初出なら宣言・本体は buildMapFinds）
+func needMapPrefix(st mut St) FnRef {
+    lsNeed(mut st, NEED_MAPPRE, 0)
+    if st.mapFinds == -1 {
+        st.mapFinds = recN(mut st, 1 + 2 * MF_CAP)
+        desugar.HeapSet(mut st.d, st.mapFinds, 0)
+    }
+    t := st.mapFinds
+    n := desugar.HeapGet(mut st.d, t)
+    for i <- iter.Range(0, n) {
+        if desugar.HeapGet(mut st.d, t + 1 + 2 * i) == MF_PREFIX {
+            return FnRef(desugar.HeapGet(mut st.d, t + 2 + 2 * i))
+        }
+    }
+    f := addFunc(mut st, int(strLit(mut st, "rt.map_prefix")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), -1)
+    desugar.HeapSet(mut st.d, t + 1 + 2 * n, MF_PREFIX)
+    desugar.HeapSet(mut st.d, t + 2 + 2 * n, int(f))
+    desugar.HeapSet(mut st.d, t, n + 1)
+    return f
+}
+
+// isMapRt は g が map の rt の族（引き・前置きの詰め）の関数か
+func isMapRt(st mut St, g FnRef) bool {
+    t := st.mapFinds
+    if t == -1 {
+        return false
+    }
+    for i <- iter.Range(0, desugar.HeapGet(mut st.d, t)) {
+        if desugar.HeapGet(mut st.d, t + 2 + 2 * i) == int(g) {
+            return true
+        }
+    }
+    return false
+}
+
+// buildMapFinds は宣言した引きの関数の本体を組む（program の最後 — 鍵から表現を戻す）
+func buildMapFinds(st mut St) {
+    t := st.mapFinds
+    if t == -1 {
+        return
+    }
+    mrSeedInit(mut st)
+    for i <- iter.Range(0, desugar.HeapGet(mut st.d, t)) {
+        k := desugar.HeapGet(mut st.d, t + 1 + 2 * i)
+        if k == MF_PREFIX {
+            f := FnRef(desugar.HeapGet(mut st.d, t + 2 + 2 * i))
+            begin(mut st, f)
+            q := mrPack(mut st, 1)
+            store(mut st, 0, 3, q.q0)
+            store(mut st, 0, 4, q.q1)
+            ret(mut st, -1)
+            continue
+        }
+        r := MapRepr{kt: -1, vt: -1, rk: k / 10000000 % 10, kw: 0, tagOff: 0, valOff: 0, cellw: k % 1000000, sk: k / 1000000 % 10, hk: k / 100000000}
+        buildMapFind(mut st, FnRef(desugar.HeapGet(mut st.d, t + 2 + 2 * i)), r)
+    }
+}
+
+// mfCfg は束の子へ写す cfg の末尾に族の関数を足す（[数, 関数…] — 子は isMapRt だけ使う）
+func mfCfg(st mut St, base []int) []int {
+    mut out := mut []int{}
+    for i <- iter.Range(0, len(base)) {
+        out = append(out, base[i])
+    }
+    t := st.mapFinds
+    n := if t == -1 { 0 } else { desugar.HeapGet(mut st.d, t) }
+    out = append(out, n)
+    for i <- iter.Range(0, n) {
+        out = append(out, desugar.HeapGet(mut st.d, t + 2 + 2 * i))
+    }
+    return freeze(out)
+}
+
+// mfCfgSet は子の St に族の表を組む（cfg[at] = 数・続いて関数）
+func mfCfgSet(st mut St, cfg []int, at int) {
+    n := cfg[at]
+    if n == 0 {
+        st.mapFinds = -1
+        return
+    }
+    st.mapFinds = recN(mut st, 1 + 2 * MF_CAP)
+    desugar.HeapSet(mut st.d, st.mapFinds, n)
+    for i <- iter.Range(0, n) {
+        desugar.HeapSet(mut st.d, st.mapFinds + 1 + 2 * i, 0)
+        desugar.HeapSet(mut st.d, st.mapFinds + 2 + 2 * i, cfg[at + 1 + i])
+    }
+}

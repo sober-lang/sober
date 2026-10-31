@@ -18,14 +18,14 @@ const TSl = 9    // a = m, b = r, c = 要素
 const TMp = 10   // a = m, b = r, c = セル型
 const TChan = 11 // a = rc, b = 中身
 const TFn = 12   // a = p, b = r
-// byte の段で足した種類（Lean の Ty.byte — 区域系の述語は int と同じ扱い）
+// byte 用の種類（Lean の Ty.byte — 区域系の述語は int と同じ扱い）
 const TByte = 13
-// float の段で足した種類（Lean の Ty.f64）
+// float 用の種類（Lean の Ty.f64）
 const TF64 = 14
-// 段 6 P1 で足した種類（Lean の Ty.own — 単一 task が所有する能力）: a = 種類（0 scope / 1 task / 2 tx / 3 rx — OwnK の構成子の順）, b = 家の region, c = 中身
+// own 用の種類（Lean の Ty.own — 単一 task が所有する能力）: a = 種類（0 scope / 1 task / 2 tx / 3 rx — OwnK の構成子の順）, b = 家の region, c = 中身
 const TOwn = 15
 
-// Ty は型 1 つ（st.types の要素 — 作ったら変えない）。参照 = TYBASE + 添字（ヒープ st.h の番地と取り違えて読むと範囲外で panic する — 音を立てる）
+// 型 1 つ（st.types の要素 — 作ったら変えない）。参照 = TYBASE + 添字（ヒープ st.h の番地と取り違えて読むと範囲外で panic する — 音を立てる）
 type Ty struct {
     tag int
     a int
@@ -35,7 +35,7 @@ type Ty struct {
 
 const TYBASE = 35184372088832
 
-// tyAt は型 t の記録（非ジェネリックの包み — F-10）
+// 型 t の記録（非ジェネリックの包み — F-10）
 func tyAt(st mut S, t int) Ty {
     return table.Get(mut st.types, t - TYBASE)
 }
@@ -65,7 +65,7 @@ func tOpt(st mut S, t int) int {
     return mk(mut st, TOpt, t, 0, 0)
 }
 
-// isCont は ref / slice / map（m・r・中身の 3 欄を持つ型）
+// ref / slice / map（m・r・中身の 3 欄を持つ型）
 func isCont(k int) bool {
     return k == TRef || k == TSl || k == TMp
 }

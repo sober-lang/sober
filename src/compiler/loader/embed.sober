@@ -12,7 +12,7 @@ import "std/strings"
 import "ast"
 import "diag"
 
-// validPattern は src/stage1/embed.zig の validPattern と同じ拒否（空・先頭 `/`・空セグメント・`.` / `..`・セグメントの一部の `**`・`[` と `\`）
+// src/stage1/embed.zig の validPattern と同じ拒否（空・先頭 `/`・空セグメント・`.` / `..`・セグメントの一部の `**`・`[` と `\`）
 func validPattern(p string) bool {
     pb := bytes(p)
     if len(pb) == 0 || pb[0] == '/' {
@@ -37,7 +37,7 @@ func validPattern(p string) bool {
     return true
 }
 
-// split は `/` で割る
+// `/` で割る
 func split(p string) []string {
     b := bytes(p)
     mut out := mut []string{}
@@ -53,7 +53,7 @@ func split(p string) []string {
     return freeze(out)
 }
 
-// matchSeg はセグメント 1 つの照合（pat[pi:] と name[ni:] — バイトの照合なので bytes(…) のビューで受ける）
+// セグメント 1 つの照合（pat[pi:] と name[ni:] — バイトの照合なので bytes(…) のビューで受ける）
 func matchSeg(pat []byte, pi int, name []byte, ni int) bool {
     if pi == len(pat) {
         return ni == len(name)
@@ -84,7 +84,7 @@ func join(dir string, name string) string {
     return dir + "/" + name
 }
 
-// orDot は dir、空なら "."（ReadDir に渡す名前）。if 式の腕に「リテラル」と「仮引数」を並べると腕の region が合わない（F-35 — 腕の合流は
+// dir、空なら "."（ReadDir に渡す名前）。if 式の腕に「リテラル」と「仮引数」を並べると腕の region が合わない（F-35 — 腕の合流は
 // 直さない側）ので、腕ごとに return する
 func orDot(dir string) string {
     if dir == "" {
@@ -93,7 +93,7 @@ func orDot(dir string) string {
     return dir
 }
 
-// walk は dir（ルート相対、空 = ルート）の中で segs[si:] を照合し、当たったファイルのパスを返す。開けないディレクトリは当たりなし
+// dir（ルート相対、空 = ルート）の中で segs[si:] を照合し、当たったファイルのパスを返す。開けないディレクトリは当たりなし
 func walk(dir string, segs []string, si int) []string {
     mut out := mut []string{}
     if si == len(segs) {
@@ -117,7 +117,7 @@ func walk(dir string, segs []string, si int) []string {
         case io.Dir{}: true
         default: false
         }
-        // 通常のファイル = 下の 3 つ以外（variant の名前 File → Regular〔report-590〕を書かない形 — 鎖の行を足すまで boot の焼き込みの std と今の std の両方で通る）
+        // 通常のファイル = 下の 3 つ以外（variant の名前を直接書かない形 — 焼き込みの std と今の std のどちらでも通る）
         entFile := switch e.Kind {
         case io.Dir{}: false
         case io.Symlink{}: false
@@ -146,7 +146,7 @@ func walk(dir string, segs []string, si int) []string {
     return freeze(out)
 }
 
-// expand は pat に合うファイルのパスをバイト辞書順・重複なしで返す（pat は validPattern 済み）
+// pat に合うファイルのパスをバイト辞書順・重複なしで返す（pat は validPattern 済み）
 func expand(pat string) []string {
     ps := walk("", split(pat), 0)
     // 挿入ソート（件数はパターンの当たりの数 — std 全体で数十）
@@ -174,14 +174,14 @@ func expand(pat string) []string {
     return freeze(out)
 }
 
-// isStringName は型の節 ty が `string` か
+// 型の節 ty が `string` か
 func isStringName(t ast.Tree, ty int) bool {
     n := t.nodes[ty]
     return n.kind == ast.TName && StrIs(t, n.a, "string")
 }
 
-// EmbedInputs は parse した生の木 t の @embed が読む入力の列（const ごとに パターン・一致したパスと中身 — 長さの前置きで連結）。
-// キャッシュの鍵の材料（3'' 第 2 段 C1 — cache-draft 3.1: load の時点で読むファイルとパターンの一致の集合は package のソースの外の入力）。
+// parse した生の木 t の @embed が読む入力の列（const ごとに パターン・一致したパスと中身 — 長さの前置きで連結）。
+// キャッシュの鍵の材料（load の時点で読むファイルとパターンの一致の集合は package のソースの外の入力）。
 // 不正なパターン・読めないファイルは印だけ積む（load がどうせ拒否する — 鍵は違うだけでよい）
 func EmbedInputs(t ast.Tree) []byte {
     mut out := mut []byte{}
@@ -209,7 +209,7 @@ func EmbedInputs(t ast.Tree) []byte {
     return freeze(out)
 }
 
-// lenBytes は b を「10 進の長さ + ':' + b」で out に積む
+// b を「10 進の長さ + ':' + b」で out に積む
 func lenBytes(out mut []byte, b []byte) {
     n := bytes("${len(b)}:")
     for i <- iter.Range(0, len(n)) {
@@ -220,7 +220,7 @@ func lenBytes(out mut []byte, b []byte) {
     }
 }
 
-// embedTree は木 t の @embed の const をすべて畳んだ木（失敗なら拒否 — diag のラベル）
+// 木 t の @embed の const をすべて畳んだ木（失敗なら拒否 — diag のラベル）
 func embedTree(t0 ast.Tree, f int) (ast.Tree, error?) {
     mut t := t0
     cl := t.nodes[t.file].e
@@ -239,7 +239,7 @@ func embedTree(t0 ast.Tree, f int) (ast.Tree, error?) {
     return t, nil
 }
 
-// embedConst はファイル f の const の節 c の受け皿を検査し（拒否の位置 = const の節）、パターンに合うファイルで埋めた map リテラルに差し替えた木を作る
+// ファイル f の const の節 c の受け皿を検査し（拒否の位置 = const の節）、パターンに合うファイルで埋めた map リテラルに差し替えた木を作る
 func embedConst(t ast.Tree, c int, f int) (ast.Tree, error?) {
     x := t.nodes[c]
     at := diag.Pos{file: f, tok: x.tok}
@@ -306,7 +306,7 @@ func embedConst(t ast.Tree, c int, f int) (ast.Tree, error?) {
     return ast.Tree{builder.Build(mut nb), builder.Build(mut db), t.file}, nil
 }
 
-// embedAll は全ファイルの @embed を畳む
+// 全ファイルの @embed を畳む
 func embedAll(ts []ast.Tree) ([]ast.Tree, error?) {
     mut out := mut []ast.Tree{}
     for i <- iter.Range(0, len(ts)) {

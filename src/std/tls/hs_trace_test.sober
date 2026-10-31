@@ -1,6 +1,6 @@
 package tls
 
-// std/internal/hs（TLS 便 R3 — report-811 0 節 C / 828・2026-10-20 に examples/tls_trace から移した — hs は std の内側）: TLS 1.3 のサーバの handshake を
+// std/internal/hs（hs は std の内側）: TLS 1.3 のサーバの handshake を
 // Go の crypto/tls のクライアントと突き合わせる。黄金 = scripts/oracles/tls_trace.go が記録したもの: Go の tls.Client（乱数の源を固定 +
 // `//go:debug cryptocustomrand=1` で走りごとに同じ ClientHello）がこのテストの live の道（TestTraceLive — 127.0.0.1 の TCP で待ち受ける子プロセス）と
 // handshake → "ping" → "echo:ping" → close_notify まで往復し、クライアントが送ったバイト列を testdata/tls/trace-<場合>.hex に、受けたバイト列の
@@ -10,7 +10,7 @@ package tls
 // 好む）・hrr（クライアントの key_share が P-256 だけ → HelloRetryRequest → 2 番目の ClientHello で X25519。Go 1.24 以降の crypto/tls は HRR を
 // 起こせないので openssl s_client を中継して記録 — secret は openssl の -keylogfile と照合済み）。塊の無い機械（SOBER_NOAES=1）では aes / hrr を飛ばす
 //
-//     out/stage2/sober2 test std/tls -run TestTraceLive --work /tmp/tt && (cd scripts/oracles && go run tls_trace.go /tmp/tt/t) > testdata/tls/trace.golden
+//     out/stage2/sober2 test std/tls --run TestTraceLive --work /tmp/tt && (cd scripts/oracles && go run tls_trace.go /tmp/tt/t) > testdata/tls/trace.golden
 //     （黄金の取り直し — live の道。bin/sober は --work を自分の置き場で上書きするので stage2 を直に）
 //
 // このファイルの test* の名前（証明書・記録・設定・連結）は hs_reject_test / hs_fsm_test と共用
@@ -53,7 +53,7 @@ func testZeros(n int) []byte {
     return freeze(o)
 }
 
-// testParams は場合 name のサーバの設定（証明書と鍵は HttpArena の試験用の対・乱数の源は固定の seed）
+// 場合 name のサーバの設定（証明書と鍵は HttpArena の試験用の対・乱数の源は固定の seed）
 func testParams(name string) hs.Params {
     cb, _ := pem.Parse(testFile(testCerts, "testdata/crypto/httparena-server.crt"))
     kb, _ := pem.Parse(testFile(testCerts, "testdata/crypto/httparena-server.key"))
@@ -62,7 +62,7 @@ func testParams(name string) hs.Params {
     return hs.NewParams([][]byte{cb[0].der}, k, []string{"http/1.1"}, suites, bytes("sober-tls-trace-${name}"))
 }
 
-// trServe は 1 接続: record の枠を Feed に通し、送るものを send へ・受けた平文に "echo:" を付けて返す・相手の close_notify で close_notify を返して終わる。
+// 1 接続: record の枠を Feed に通し、送るものを send へ・受けた平文に "echo:" を付けて返す・相手の close_notify で close_notify を返して終わる。
 // 印字の行（secret・受けた平文・閉じ方）を返す
 func trServe(p hs.Params, recv func(k func([]byte)) error?, send func(b []byte) error?) string {
     mut log := ""
@@ -99,7 +99,7 @@ func trLoop(p hs.Params, recv func(k func([]byte)) error?, send func(b []byte) e
     return nil
 }
 
-// trAlertDesc は Feed の誤りの alert の番号（switch を for の本体に直に書くと check だけが def error — F-bg・report-828）
+// Feed の誤りの alert の番号（switch を for の本体に直に書くと check だけが def error になる）
 func trAlertDesc(e error?) int {
     return switch e {
         case nil: -1
@@ -118,7 +118,7 @@ func testCat(a []byte, b []byte) []byte {
     return freeze(o)
 }
 
-// trFeed は s を size バイトずつ k へ渡す偽の受けの口
+// s を size バイトずつ k へ渡す偽の受けの口
 func trFeed(s []byte, size int, k func([]byte)) error? {
     mut at := 0
     while at < len(s) {
@@ -133,7 +133,7 @@ func trFeed(s []byte, size int, k func([]byte)) error? {
     return nil
 }
 
-// trReplay は場合 name の記録を切片の大きさ size で流し直した印字の節（サーバの出力は SHA-256 に畳む — 黄金の節と同じ形）
+// 場合 name の記録を切片の大きさ size で流し直した印字の節（サーバの出力は SHA-256 に畳む — 黄金の節と同じ形）
 func trReplay(name string, size int) string {
     c2s, _ := hex.Parse(testFile(testTraces, "testdata/tls/trace-${name}.hex"))
     mut acc := sha256.New()
@@ -146,7 +146,7 @@ func trPut(acc mut sha256.State, b []byte) error? {
     return nil
 }
 
-// trLive は 127.0.0.1 の TCP の 1 接続（Go の双子が子プロセスとして叩く — 待ち受けの port を標準出力の 1 行目に・印字の行は標準エラーへ）
+// 127.0.0.1 の TCP の 1 接続（Go の双子が子プロセスとして叩く — 待ち受けの port を標準出力の 1 行目に・印字の行は標準エラーへ）
 func trLive(name string) error? {
     for l <- net.Listen("127.0.0.1:0")? {
         io.WriteStdout(bytes("port ${net.Port(l)}\n"))?
@@ -180,7 +180,7 @@ func TestTrace() {
     assert(bad == 0)
 }
 
-// TestTraceLive は黄金の取り直しの live の道（scripts/oracles/tls_trace.go が子プロセスとして叩く — 場合の名前は環境変数 SOBER_TLS_TRACE_LIVE）。
+// 黄金の取り直しの live の道（scripts/oracles/tls_trace.go が子プロセスとして叩く — 場合の名前は環境変数 SOBER_TLS_TRACE_LIVE）。
 // 変数が無ければ何もしない（`sober test` の既定の走りでは空の通過）
 func TestTraceLive() {
     v, _ := os.Getenv("SOBER_TLS_TRACE_LIVE")

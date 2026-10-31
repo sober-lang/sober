@@ -35,7 +35,7 @@ func Update(crc int, data []byte) int {
     return c ^ 0xffffffff
 }
 
-// 組み込みの宣言（息継ぎ ③ — 本体なし。鍵の実装はコンパイラの表: loader/intrinsic.sober・lower/clmul.sober）。sysCrcFold は検査なし — k（64 以上の
+// 組み込みの宣言（本体なし。実装はコンパイラの表: loader/intrinsic.sober・lower/clmul.sober）。sysCrcFold は検査なし — k（64 以上の
 // 16 の倍数 ≤ len(b)）は上の Update が 1 か所で決める
 @intrinsic("cpuclmul")
 func sysCpuClmul() int
@@ -43,7 +43,7 @@ func sysCpuClmul() int
 @intrinsic("crcfold")
 func sysCrcFold(b []byte, k int, crc int) int
 
-// tables8 は slicing-by-8 の表（k × 256 + b = 0 を k 個続けた後のバイト b の剰余 — t8[0 × 256 + b] = t[b]・t8[k × 256 + b] = t8[(k − 1) × 256 + b] を 1 バイト進めた値）
+// slicing-by-8 の表（k × 256 + b = 0 を k 個続けた後のバイト b の剰余 — t8[0 × 256 + b] = t[b]・t8[k × 256 + b] = t8[(k − 1) × 256 + b] を 1 バイト進めた値）
 func tables8(t []int) []int {
     mut t8 := mut []int{}
     for b <- iter.Range(0, 256) {
@@ -56,7 +56,7 @@ func tables8(t []int) []int {
     return freeze(t8)
 }
 
-// table は 1 バイトの剰余の表（t[n] = n を 8 回割った剰余 — 多項式 0xedb88320）
+// 1 バイトの剰余の表（t[n] = n を 8 回割った剰余 — 多項式 0xedb88320）
 func table() []int {
     return []int{
         0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f, 0xe963a535, 0x9e6495a3,

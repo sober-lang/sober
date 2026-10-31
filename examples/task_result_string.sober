@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P3b-4: region を持つ task の結果（境界コピー — 子の region で作った値・捕獲した親の値を scope の region へ写す。formal.md の xfer）。
+// region を持つ task の結果（境界コピー — 子の region で作った値・捕獲した親の値を scope の region へ写す。formal.md の xfer）。
 // 子が待っている間に親が block の region を開いて閉じても、Join が読む結果は scope の region にある
 
 import "std/task"

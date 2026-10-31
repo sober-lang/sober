@@ -1,0 +1,13 @@
+package main
+
+import "testdata/constlit/lib"
+
+const Mine = []lib.Flag{lib.Flag{name: "x", on: true}}
+
+const Tag = lib.Version
+
+func main() {
+    println(lib.Version, Tag, lib.Debug, lib.Ratio)
+    println(len(lib.Sizes), lib.Sizes[2], lib.Defaults[1].name)
+    println(lib.Count(lib.Defaults), lib.Count(Mine))
+}

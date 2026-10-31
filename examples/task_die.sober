@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P3a（language.md 11 節 — A1 (X)）: 子の死の 3 通りの受け方。Try = 死は値（Died）・Scope の err = 完走したが死んだ子・
+// 子の死の 3 通りの受け方（language.md 11 節）: Try = 死は値（Died）・Scope の err = 完走したが死んだ子・
 // Join = この子の死は私の死（最後の Join で main が死ぬ — exit 101・`panic: ChildDied{cause: …} at …` + 死因の位置）。死因 = 範囲外・ゼロ除算・region の深度の超過（102）
 
 import "std/task"

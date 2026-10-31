@@ -2,7 +2,7 @@ package main
 
 // loaderdump: 標準入力の Manifest から Program を load し、loader 黄金の JSON（Zig 版 `sober parse --loader-json` と同じバイト列）を
 // 標準出力に書く。selfhost の loader 差分オラクル（scripts/selfhost_load.sh）の Sober 側。
-// Manifest の形（argv と readdir が無いための代役 — 仮決め R8-2 / R8-3）: 1 行目 = entry、2 行目 = std の置き場（`std/…` を読む根）、
+// Manifest の形（argv と readdir が無いための代役）: 1 行目 = entry、2 行目 = std の置き場（`std/…` を読む根）、
 // 3 行目以降 = ルート（cwd）相対のファイル一覧（ファイル名順。`std/…` は std の置き場の相対）
 
 import "std/io"

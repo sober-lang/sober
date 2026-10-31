@@ -1,6 +1,6 @@
 package main
 
-// refs: リネーム道具の参照検索（読むだけ — report-882 / 883）。対象 = package のトップレベル名（関数・const・型・variant・error ラベル）。
+// refs: リネーム道具の参照検索（読むだけ）。対象 = package のトップレベル名（関数・const・型・variant・error ラベル）。
 // 標準入力のファイル一覧（1 行 1 つ・リポジトリルート相対）の .sober を 1 本ずつ字句 + parse し、名前の綴りが一致する字句を全数
 // 「対象 TARGET / 別物 OTHER（理由つき）/ 未分類 UNCLASSIFIED」に振り分けて TSV で書く（国勢調査 — fail-closed: 未分類が 1 つでもあれば終了コード 2）。
 // 振り分けは 2 系統の突き合わせ: (A) 構文木の名前の欄（tok の字句と綴りを照合）と (B) 字句だけの証明
@@ -27,13 +27,13 @@ import "desugar"
 const Target = 1
 const Other = 2
 
-// Toks は 1 ファイルの字句列（穴の字句を末尾に足した列 — AST の tok の番号）と、穴の字句の囲む文字列リテラル（本文の字句の番号・本文の字句は -1）
+// 1 ファイルの字句列（穴の字句を末尾に足した列 — AST の tok の番号）と、穴の字句の囲む文字列リテラル（本文の字句の番号・本文の字句は -1）
 type Toks struct {
     ts []lexer.Token
     host []int
 }
 
-// Hit は構文木の名前の欄の 1 つ（tok = 名前の字句・穴の中なら囲む文字列の字句）
+// 構文木の名前の欄の 1 つ（tok = 名前の字句・穴の中なら囲む文字列の字句）
 type Hit struct {
     tok int
     cls int
@@ -53,13 +53,13 @@ func lexeme(src []byte, t lexer.Token) string {
     return r
 }
 
-// tokens は字句のビルダーの写し（`builder.Build` の結果の欄を直に読むと check が CoreFragment で拒否する — FLEDGER F-d の族。
+// 字句のビルダーの写し（`builder.Build` の結果の欄を直に読むと check が CoreFragment で拒否する。
 // 型つきの包みで回避 — parser の tokens と同じ形）
 func tokens(b mut builder.Builder[lexer.Token]) []lexer.Token {
     return builder.Build(mut b)
 }
 
-// allTokens は parser の lexHoles と同じ規則で補間の穴の字句を末尾に足した列（入れ子の穴の host は一番外の本文の文字列リテラル）
+// parser の lexHoles と同じ規則で補間の穴の字句を末尾に足した列（入れ子の穴の host は一番外の本文の文字列リテラル）
 func allTokens(src []byte, ts []lexer.Token) Toks {
     mut all := builder.Builder[lexer.Token]{}
     mut host := builder.Builder[int]{}
@@ -106,7 +106,7 @@ func allTokens(src []byte, ts []lexer.Token) Toks {
     return Toks{tokens(mut all), builder.Build(mut host)}
 }
 
-// pkgOf はファイルのパス（ルート相対）の package: std は `std/<dir>`・それ以外は `dir:<dir>`
+// ファイルのパス（ルート相対）の package: std は `std/<dir>`・それ以外は `dir:<dir>`
 func pkgOf(path string) string {
     if strings.HasPrefix(path, "src/std/") {
         d, _, _ := strings.CutLast(strings.TrimPrefix(path, "src/"), "/")
@@ -116,7 +116,7 @@ func pkgOf(path string) string {
     return if ok { "dir:" + d } else { "dir:." }
 }
 
-// impPkg は from（import を書いたファイル）の import のパスの package（pkgOf と同じ綴り）。std 以外は cwd 相対（loader の LoadFs）—
+// from（import を書いたファイル）の import のパスの package（pkgOf と同じ綴り）。std 以外は cwd 相対（loader の LoadFs）—
 // cwd は src/compiler の下なら src/compiler（stage2 の建て方・tools）、それ以外はリポジトリのルート（examples・bench・testdata の entry — loaderjson.list の規約）
 func impPkg(from string, path string) string {
     if strings.HasPrefix(path, "std/") {
@@ -125,7 +125,7 @@ func impPkg(from string, path string) string {
     return if strings.HasPrefix(from, "src/compiler/") { "dir:src/compiler/" + path } else { "dir:" + path }
 }
 
-// lastSeg はパスの最後の区切りの後
+// パスの最後の区切りの後
 func lastSeg(path string) string {
     _, b, ok := strings.CutLast(path, "/")
     return if ok { b } else { path }
@@ -140,7 +140,7 @@ func refPkg(f File, ref string) string {
     return ""
 }
 
-// importsOf は木の import 宣言の参照名とパス（alias なしは package 名 = パスの最後 — loader の PkgName の規則。`iter#` 等の合成の import は除く）
+// 木の import 宣言の参照名とパス（alias なしは package 名 = パスの最後 — loader の PkgName の規則。`iter#` 等の合成の import は除く）
 func importsOf(t ast.Tree) ([]string, []string) {
     mut rs := mut []string{}
     mut ps := mut []string{}
@@ -158,7 +158,7 @@ func importsOf(t ast.Tree) ([]string, []string) {
     return freeze(rs), freeze(ps)
 }
 
-// importsLex は parse できないファイルの import を字句だけで（`import "p"` / `import a "p"`）
+// parse できないファイルの import を字句だけで（`import "p"` / `import a "p"`）
 func importsLex(src []byte, ts []lexer.Token) ([]string, []string) {
     mut rs := mut []string{}
     mut ps := mut []string{}
@@ -192,7 +192,7 @@ func isName(src []byte, ts []lexer.Token, k int, name string) bool {
     return k >= 0 && k < len(ts) && ts[k].tag == lexer.Identifier && lexeme(src, ts[k]) == name
 }
 
-// qualified は名前の欄の文字列 s（`N` か `R.N`）が tok から書かれている形の名前の字句の番号と参照名（裸なら ""・形が合わなければ -1）
+// 名前の欄の文字列 s（`N` か `R.N`）が tok から書かれている形の名前の字句の番号と参照名（裸なら ""・形が合わなければ -1）
 func qualified(f File, ts []lexer.Token, tok0 int, s string, name string) (int, string) {
     // `mut T` の型式の節の tok は `mut` の字句
     tok := if tok0 >= 0 && tok0 + 1 < len(ts) && ts[tok0].tag == lexer.KwMut { tok0 + 1 } else { tok0 }
@@ -214,7 +214,7 @@ func refCls(f File, ref string, q string) int {
     return if refPkg(f, ref) == q { Target } else { Other }
 }
 
-// desc は節の種類ごとの欄の中身（desugar/init.sober の desc の写し + 脱糖器が見ない種類 — 1 = 節・2 = 文字列・3 = 節の列・4 = 文字列の列・
+// 節の種類ごとの欄の中身（desugar/init.sober の desc の写し + 脱糖器が見ない種類 — 1 = 節・2 = 文字列・3 = 節の列・4 = 文字列の列・
 // 0 = 値か無し）。到達できる節だけを辿るのに使う: parser の試し読みの残骸（composite の欄キーを先に式として読んだ EIdent 等）は表に残るが
 // 木から辿れない。表が古くて欄を見落とすと、その下の名前は構文木の欄に出ず字句の証明だけになる（対象の package では未分類 — fail-closed）
 func desc(k int, b int) int {
@@ -267,7 +267,7 @@ func push(st mut []int, sp int, v int) int {
     return sp + 1
 }
 
-// reach は根（KFile）から辿れる節の印
+// 根（KFile）から辿れる節の印
 func reach(t ast.Tree) []bool {
     n := len(t.nodes)
     mut seen := mut []bool{}
@@ -308,7 +308,7 @@ func reach(t ast.Tree) []bool {
     return freeze(seen)
 }
 
-// astHits は構文木の名前の欄のうち綴りが name のもの（tok の字句と照合済み — 合わないものは synth に数える）
+// 構文木の名前の欄のうち綴りが name のもの（tok の字句と照合済み — 合わないものは synth に数える）
 func astHits(f File, tt Toks, t ast.Tree, q string, name string) ([]Hit, int) {
     ts := tt.ts
     mut hs := mut []Hit{}
@@ -383,7 +383,7 @@ func astHits(f File, tt Toks, t ast.Tree, q string, name string) ([]Hit, int) {
     return freeze(hs), synth
 }
 
-// annotHits は `@errors(…)` の列の名前（構文木はラベルの字句を持たない — 字句から読む）
+// `@errors(…)` の列の名前（構文木はラベルの字句を持たない — 字句から読む）
 func annotHits(f File, ts []lexer.Token, q string, name string) []Hit {
     mut hs := mut []Hit{}
     for k <- iter.Range(0, len(ts)) {
@@ -402,7 +402,7 @@ func annotHits(f File, ts []lexer.Token, q string, name string) []Hit {
     return freeze(hs)
 }
 
-// lexCls は字句だけの証明（字句 k は綴り name の識別子）: Target = 対象でありうる（裸で自分の package が対象 / 対象の package の参照名の欄）・
+// 字句だけの証明（字句 k は綴り name の識別子）: Target = 対象でありうる（裸で自分の package が対象 / 対象の package の参照名の欄）・
 // Other = 対象でないことが字句で決まる。理由を添える
 func lexCls(f File, tt Toks, k int, q string) (int, string) {
     ts := tt.ts
@@ -478,7 +478,7 @@ func isIdentByte(c byte) bool {
     return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 }
 
-// textRows は字句でない場所（コメント・文字列リテラル）の綴りの出現（語の境界つき）
+// 字句でない場所（コメント・文字列リテラル）の綴りの出現（語の境界つき）
 func textRows(b mut builder.Builder[byte], f File, tt Toks, name string, cnt mut Count) {
     w := bytes(name)
     src := f.src
@@ -533,7 +533,7 @@ func hitAt(hs []Hit, k int) int {
     return 0 - 1
 }
 
-// scanTop はトップレベル名の 1 ファイルの国勢調査（行を b へ）。tg / ot には TARGET / OTHER の字句の開始バイトを積む（rename が使う）
+// トップレベル名の 1 ファイルの国勢調査（行を b へ）。tg / ot には TARGET / OTHER の字句の開始バイトを積む（rename が使う）
 func scanTop(b mut builder.Builder[byte], path string, q string, name string, cnt mut Count, tg mut []int, ot mut []int) {
     src := io.ReadFile(path) catch {
         cnt.uncl += 1
@@ -683,16 +683,16 @@ func cmdRefs(sym string, typedPath string) int {
     return if cnt.uncl > 0 { 2 } else if cnt.synth > 0 { 3 } else { 0 }
 }
 
-// ── 欄・仮引数（R3 — report-885）──
+// ── 欄・仮引数 ──
 
 const ModeTop = 1
 const ModeMember = 2
 const ModeParam = 3
 
-// NoTok は字句の番号の無し（`catch 0 - 1` は `(… catch 0) - 1` と読まれる — 定数で）
+// 字句の番号の無し（`catch 0 - 1` は `(… catch 0) - 1` と読まれる — 定数で）
 const NoTok = -1
 
-// Sym は対象: トップレベル名 `<pkg>.<Name>`・欄 `<pkg>.<型か variant>.<欄>`・仮引数 `<pkg>.<関数>(<仮引数>)`。
+// 対象: トップレベル名 `<pkg>.<Name>`・欄 `<pkg>.<型か variant>.<欄>`・仮引数 `<pkg>.<関数>(<仮引数>)`。
 // q = package（内部の綴り）・name = 字句で探す綴り（名前 / 欄 / 仮引数）・owner = 欄の持ち主（`<q>.<型か variant>`）・fn = 仮引数の関数
 type Sym struct {
     mode int
@@ -702,7 +702,7 @@ type Sym struct {
     fn string
 }
 
-// THit は表層型検査器の印（tools の `typed` が出す — 欄の selector の基底の型宣言・`$json/` の合成ファイルが参照する型）
+// 表層型検査器の印（tools の `typed` が出す — 欄の selector の基底の型宣言・`$json/` の合成ファイルが参照する型）
 type THit struct {
     path string
     tok int
@@ -742,7 +742,7 @@ func symWith(sy Sym, nn string) Sym {
     return Sym{sy.mode, sy.q, nn, sy.owner, sy.fn}
 }
 
-// loadTyped は `typed` の出力（`SEL\t<path>\t<tok>\t<owner>` / `JSON\t<owner>`）
+// `typed` の出力（`SEL\t<path>\t<tok>\t<owner>` / `JSON\t<owner>`）
 func loadTyped(path string) ([]THit, []string, bool) {
     if path == "" {
         return []THit{}, []string{}, true
@@ -781,7 +781,7 @@ func has(xs []string, x string) bool {
     return false
 }
 
-// typeOwner は型の名前の欄の文字列 s（`X` か `R.X`）の持ち主（`<package>.X` — 解決できなければ ""）
+// 型の名前の欄の文字列 s（`X` か `R.X`）の持ち主（`<package>.X` — 解決できなければ ""）
 func typeOwner(f File, s string) string {
     r, x, dot := strings.CutLast(s, ".")
     if !dot {
@@ -791,7 +791,7 @@ func typeOwner(f File, s string) string {
     return if p == "" { "" } else { p + "." + x }
 }
 
-// matchClose は開き括弧の字句 k に対応する閉じの字句（同じ host の中 — 見つからなければ -1）
+// 開き括弧の字句 k に対応する閉じの字句（同じ host の中 — 見つからなければ -1）
 func matchClose(tt Toks, k int) int {
     ts := tt.ts
     mut d := 0
@@ -811,14 +811,14 @@ func matchClose(tt Toks, k int) int {
     return 0 - 1
 }
 
-// MHit は欄の持ち主つきの位置（構文木から — 欄の宣言・欄パターン・composite の欄キー）
+// 欄の持ち主つきの位置（構文木から — 欄の宣言・欄パターン・composite の欄キー）
 type MHit struct {
     tok int
     owner string
     kind string
 }
 
-// memberHits は欄の綴り name の位置と持ち主（到達できる節だけ）
+// 欄の綴り name の位置と持ち主（到達できる節だけ）
 func memberHits(f File, tt Toks, t ast.Tree, name string) []MHit {
     ts := tt.ts
     live := reach(t)
@@ -914,7 +914,7 @@ func typedOwner(th []THit, path string, k int) string {
     return o
 }
 
-// holeOwner は穴の中の idx 番目（全 n 個）の `.欄` の持ち主: 印の通し番号がちょうど 0..n-1 で揃い、同じ番号の持ち主が entry をまたいで一致するときだけ
+// 穴の中の idx 番目（全 n 個）の `.欄` の持ち主: 印の通し番号がちょうど 0..n-1 で揃い、同じ番号の持ち主が entry をまたいで一致するときだけ
 func holeOwner(th []THit, path string, h int, idx int, n int) string {
     if idx < 0 {
         return ""
@@ -939,7 +939,7 @@ func holeOwner(th []THit, path string, h int, idx int, n int) string {
     return if maxOrd + 1 == n { o } else { "*" }
 }
 
-// isNegPath は意図した負例のファイルか（パスの要素が `_neg` を含むか `neg` で終わる — examples/*_neg*・testdata/loader_neg・analyzer_neg・checkneg）。
+// 意図した負例のファイルか（パスの要素が `_neg` を含むか `neg` で終わる — examples/*_neg*・testdata/loader_neg・analyzer_neg・checkneg）。
 // 負例は loader が拒否するので型も付かない — 未分類の代わりに NEGATIVE（書き換えず一覧を出す — 手の追従用）。負例の形でない読めないファイルは未分類のまま
 func isNegPath(path string) bool {
     mut rest := path
@@ -956,7 +956,7 @@ func isNegPath(path string) bool {
     return false
 }
 
-// negOr は未分類の印を、負例のファイルなら NEGATIVE に
+// 未分類の印を、負例のファイルなら NEGATIVE に
 func negOr(f File, cls string) string {
     return if cls == "UNCLASSIFIED" && isNegPath(f.path) { "NEGATIVE" } else { cls }
 }
@@ -973,7 +973,7 @@ func clsCount(cnt mut Count, cls string) {
     }
 }
 
-// scanMember は欄の 1 ファイルの国勢調査: 欄の宣言・欄パターン・欄キーは構文木の持ち主、`x.欄` は表層型検査器の印（th）、
+// 欄の 1 ファイルの国勢調査: 欄の宣言・欄パターン・欄キーは構文木の持ち主、`x.欄` は表層型検査器の印（th）、
 // 裸の名前は欄でない（局所・トップレベル・仮引数）。`ref.欄` の形で ref が import の参照名なら package の名前で欄でない
 func scanMember(b mut builder.Builder[byte], f File, tt Toks, t ast.Tree, ok bool, sy Sym, th []THit, cnt mut Count, tg mut []int, ot mut []int) {
     ts := tt.ts
@@ -1064,7 +1064,7 @@ func isNamedArgAt(t ast.Tree, k int) bool {
     return false
 }
 
-// calleeIs は呼び出しの callee の節 c が package q の関数 fn か（裸の名前は自分の package・`ref.fn` は参照名の package）
+// 呼び出しの callee の節 c が package q の関数 fn か（裸の名前は自分の package・`ref.fn` は参照名の package）
 func calleeIs(f File, t ast.Tree, c0 int, q string, fn string) bool {
     c := unparen(t, c0)
     if c < 0 {
@@ -1081,7 +1081,7 @@ func calleeIs(f File, t ast.Tree, c0 int, q string, fn string) bool {
     return false
 }
 
-// scanParam は仮引数の 1 ファイルの国勢調査: 関数 fn（package q）の仮引数の宣言・本体の裸の名前（シャドーイング禁止で全部その仮引数）・
+// 仮引数の 1 ファイルの国勢調査: 関数 fn（package q）の仮引数の宣言・本体の裸の名前（シャドーイング禁止で全部その仮引数）・
 // fn を callee とする呼び出しの名前つき実引数が TARGET。他の関数の名前つき実引数・欄・他の場所の裸の名前は OTHER
 func scanParam(b mut builder.Builder[byte], f File, tt Toks, t ast.Tree, ok bool, sy Sym, cnt mut Count, tg mut []int, ot mut []int) {
     ts := tt.ts
@@ -1235,7 +1235,7 @@ func hasInt(xs []int, x int) bool {
     return false
 }
 
-// scanFile は 1 ファイルの国勢調査（類型で振り分け）。tg / ot には TARGET / OTHER の字句の開始バイトを積む（rename が使う）
+// 1 ファイルの国勢調査（類型で振り分け）。tg / ot には TARGET / OTHER の字句の開始バイトを積む（rename が使う）
 func scanFile(b mut builder.Builder[byte], path string, sy Sym, th []THit, cnt mut Count, tg mut []int, ot mut []int) {
     if sy.mode == ModeTop {
         scanTop(mut b, path, sy.q, sy.name, mut cnt, mut tg, mut ot)
@@ -1266,7 +1266,7 @@ func scanFile(b mut builder.Builder[byte], path string, sy Sym, th []THit, cnt m
     textRows(mut b, f, tt, sy.name, mut cnt)
 }
 
-// cmdTyped は entry ごとに表層型検査器を回し、欄 name の selector の基底の型宣言（`SEL\t<path>\t<tok>\t<持ち主>` — 不明は `?`）と、
+// entry ごとに表層型検査器を回し、欄 name の selector の基底の型宣言（`SEL\t<path>\t<tok>\t<持ち主>` — 不明は `?`）と、
 // `$json/` の合成ファイル（std/json の写し — json.Encode / Decode に届く型の閉包）が参照する型（`JSON\t<持ち主>`）を出す。
 // prefix = cwd のルート相対（"" か "src/compiler/"）— パスと持ち主をルート相対に揃える
 func cmdTyped(stdDir string, prefix string, name string, entries []string) int {
@@ -1323,7 +1323,7 @@ func cmdTyped(stdDir string, prefix string, name string, entries []string) int {
     return 0
 }
 
-// mutArgSel は `mut x.欄`（EMutArg — 名前は "x.欄" の 1 語・型検査器は途中の型を記録しない）の欄の字句の印を出す。基底 x の型 =
+// `mut x.欄`（EMutArg — 名前は "x.欄" の 1 語・型検査器は途中の型を記録しない）の欄の字句の印を出す。基底 x の型 =
 // 同じ関数の中の同名の裸の名前の表層型（シャドーイング禁止で一意）か、無ければ仮引数の型の名前。対象は x の直下の欄だけ（`mut x.a.欄` は持ち主 "?" — 未分類）
 func mutArgSel(b mut builder.Builder[byte], p loader.Program, sm map[string]string, prefix string, st mut desugar.S, f int, i int, name string) {
     t := p.trees[f]
@@ -1367,7 +1367,7 @@ func mutArgSel(b mut builder.Builder[byte], p loader.Program, sm map[string]stri
     builder.PushString(mut b, "SEL\t${normPath(prefix, p.file_path[f])}\t${at}\t${owner}\t0\n")
 }
 
-// baseOwner は木 f の字句 tok を含む関数の中の局所 base の型の持ち主（裸の名前の表層型 → 仮引数の型の名前の順）
+// 木 f の字句 tok を含む関数の中の局所 base の型の持ち主（裸の名前の表層型 → 仮引数の型の名前の順）
 func baseOwner(p loader.Program, prefix string, st mut desugar.S, f int, mi int, tok int, base string) string {
     t := p.trees[f]
     mut lo := 0 - 1
@@ -1455,7 +1455,7 @@ func baseOwner(p loader.Program, prefix string, st mut desugar.S, f int, mi int,
     return ""
 }
 
-// typeNameOwner は型の式の節 ty（`T` / `q.T` / `T[…]`）の持ち主（それ以外の形は ""）
+// 型の式の節 ty（`T` / `q.T` / `T[…]`）の持ち主（それ以外の形は ""）
 func typeNameOwner(p loader.Program, prefix string, f int, ty ast.Node) string {
     if ty.kind != ast.TName && ty.kind != ast.TGeneric {
         return ""
@@ -1476,7 +1476,7 @@ func typeNameOwner(p loader.Program, prefix string, f int, ty ast.Node) string {
     return ""
 }
 
-// reachFrom は節 r から辿れる節の印（reach の根を r にした形）
+// 節 r から辿れる節の印（reach の根を r にした形）
 func reachFrom(t ast.Tree, r int) []bool {
     n := len(t.nodes)
     mut seen := mut []bool{}
@@ -1521,12 +1521,12 @@ func isImportRef(p loader.Program, f int, ref string) bool {
     return false
 }
 
-// normPath は loader のファイルのパス（cwd 相対・std は `std/…`）をルート相対に
+// loader のファイルのパス（cwd 相対・std は `std/…`）をルート相対に
 func normPath(prefix string, path string) string {
     return if strings.HasPrefix(path, "std/") { "src/" + path } else { prefix + path }
 }
 
-// ownerOf は表層型 y の型宣言の持ち主（`<package>.<型名>` — T? は中身・不明は ""）
+// 表層型 y の型宣言の持ち主（`<package>.<型名>` — T? は中身・不明は ""）
 func ownerOf(p loader.Program, prefix string, st mut desugar.S, y0 int) string {
     mut y := y0
     while y >= 0 && desugar.YAt(mut st, y).k == desugar.YOpt {
@@ -1545,7 +1545,7 @@ func ownerOf(p loader.Program, prefix string, st mut desugar.S, y0 int) string {
     return pkgOf(normPath(prefix, p.file_path[f])) + "." + loader.Name(t, t.nodes[i].a)
 }
 
-// readList は標準入力のファイル一覧（1 行 1 つ）
+// 標準入力のファイル一覧（1 行 1 つ）
 func readList() ([]string, bool) {
     list := io.ReadStdin() catch return []string{}, false
     text := string(list) catch return []string{}, false
@@ -1563,13 +1563,13 @@ func readList() ([]string, bool) {
     return freeze(out), true
 }
 
-// symOf は `<pkg>.<Name>` を内部の package の綴りと名前に（std/task → std/task・それ以外 → dir:<ディレクトリ>）
+// `<pkg>.<Name>` を内部の package の綴りと名前に（std/task → std/task・それ以外 → dir:<ディレクトリ>）
 func symOf(sym string) (string, string, bool) {
     q0, name, ok := strings.CutLast(sym, ".")
     return if strings.HasPrefix(q0, "std/") { q0 } else { "dir:" + q0 }, name, ok
 }
 
-// census は files 全部の国勢調査の数だけ（行は捨てる）
+// files 全部の国勢調査の数だけ（行は捨てる）
 func census(files []string, sy Sym, th []THit) Count {
     mut b := builder.Builder[byte]{}
     mut cnt := Count{}
@@ -1581,7 +1581,7 @@ func census(files []string, sy Sym, th []THit) Count {
     return cnt
 }
 
-// validName は n が 1 つの識別子の字句か（キーワード・組み込みの綴りでない — 字句の種類で見る）
+// n が 1 つの識別子の字句か（キーワード・組み込みの綴りでない — 字句の種類で見る）
 func validName(n string) bool {
     b := bytes(n)
     if len(b) == 0 || !(b[0] == '_' || (b[0] >= 'a' && b[0] <= 'z') || (b[0] >= 'A' && b[0] <= 'Z')) {
@@ -1596,7 +1596,7 @@ func isUpper(n string) bool {
     return len(b) > 0 && b[0] >= 'A' && b[0] <= 'Z'
 }
 
-// sortInts は昇順（挿入ソート — 1 ファイルの書き換えの数なので素朴でよい）
+// 昇順（挿入ソート — 1 ファイルの書き換えの数なので素朴でよい）
 func sortInts(xs []int) []int {
     mut ys := mut []int{}
     for i <- iter.Range(0, len(xs)) {
@@ -1616,7 +1616,7 @@ func sortInts(xs []int) []int {
     return freeze(ys)
 }
 
-// splice は src[lo:hi] の、ed（昇順・開始バイト）のうち範囲に入る位置の oldLen バイトを rep に差し替えた列（alt 番目の書き換えだけ altRep — 変異の口）
+// src[lo:hi] の、ed（昇順・開始バイト）のうち範囲に入る位置の oldLen バイトを rep に差し替えた列（alt 番目の書き換えだけ altRep — 変異の口）
 func splice(src []byte, lo int, hi int, ed []int, oldLen int, rep []byte, alt int, altRep []byte) []byte {
     mut out := mut []byte{}
     mut j := 0
@@ -1652,7 +1652,7 @@ func bytesEq(a []byte, b []byte) bool {
     return true
 }
 
-// tokensEq は書き換えの前後の字句列が「書き換えた位置だけ old → new」で一致するか（字句の数・種類が同じ・各字句の綴りは
+// 書き換えの前後の字句列が「書き換えた位置だけ old → new」で一致するか（字句の数・種類が同じ・各字句の綴りは
 // 旧の綴りに範囲内の書き換えを当てたものと一致 — 補間の穴の書き換えは囲む文字列リテラルの綴りにも当たる）+ 字句の外（コメント・空白）は不変
 func tokensEq(a []byte, b []byte, ed []int, oldLen int, rep []byte) bool {
     ta := allTokens(a, lexer.Lex(a)).ts
@@ -1679,7 +1679,7 @@ func getenv(k string) string {
     return v
 }
 
-// cmdRename は sym を new へ書き換える（標準入力 = コーパスのファイル一覧）。終了コード: 0 = 済 / 2 = 未分類あり / 3 = 合成の参照あり /
+// sym を new へ書き換える（標準入力 = コーパスのファイル一覧）。終了コード: 0 = 済 / 2 = 未分類あり / 3 = 合成の参照あり /
 // 4 = 拒否（新しい名前が識別子でない・頭の大小が変わる・新しい名前が既に対象の package に在る）/ 5 = 書き換えの後の検査が赤 / 1 = 入出力。
 // dry なら書かずに計画（file・位置）だけ出す。開発の口 REFS_MUTANT（道具の網の検査 — 1 = 多い〔書き換えるファイルの最初の OTHER も書く〕/
 // 2 = 少ない〔最後の TARGET を書かない〕/ 3 = 綴り違い〔最初の書き換えを new + "x"〕/ 4 = 名前つき実引数の callee 取り違え〔別の関数への名前つき実引数も対象〕/ 5 = 欄の別 struct 誤爆〔最初の別の持ち主の欄も対象〕）・REFS_NOPOSTCHECK=1（書き換えの後の検査を飛ばす — 変異を alphacheck へ通す）
@@ -1829,7 +1829,7 @@ func cmdRename(sym string, nn string, dry bool, typedPath string) int {
     return 0
 }
 
-// stdMap は置き場 dir（…/src/std）の .sober を `std/<相対>` の鍵で読む（LoadFs の焼き込みの表の代役）
+// 置き場 dir（…/src/std）の .sober を `std/<相対>` の鍵で読む（LoadFs の焼き込みの表の代役）
 func stdMap(dir string, rel string, m mut map[string]string) bool {
     es := io.ReadDir(dir) catch return false
     for i <- iter.Range(0, len(es)) {
@@ -1852,7 +1852,7 @@ func stdMap(dir string, rel string, m mut map[string]string) bool {
     return true
 }
 
-// cmdLoadcheck は entry を loader で読み、読んだ非 std のファイルの import の表（この道具の規則）≡ loader の package の import の表を照合する
+// entry を loader で読み、読んだ非 std のファイルの import の表（この道具の規則）≡ loader の package の import の表を照合する
 func cmdLoadcheck(stdDir string, entries []string) int {
     mut sm := mut map[string]string{}
     if !stdMap(stdDir, "std", mut sm) {
@@ -1897,14 +1897,14 @@ func cmdLoadcheck(stdDir string, entries []string) int {
 
 // cmdFiles は各 entry が loader で読むファイルのパス（`<entry>\t<path>` — std は `std/…`・読めない entry は `<entry>\t!LOADFAIL`）。
 // alphacheck が書き換えたファイルを読む entry を選ぶのに使う
-// ── 鎖の罠の手掛かりと package 改名（R4 — report-886）──
+// ── 鎖の罠の手掛かりと package 改名 ──
 
 func readFile(path string) ([]byte, bool) {
     b := io.ReadFile(path) catch return []byte{}, false
     return b, true
 }
 
-// strBody は文字列リテラルの字句の中身（引用符を外す — エスケープは解かない: 名前の照合には足りる）
+// 文字列リテラルの字句の中身（引用符を外す — エスケープは解かない: 名前の照合には足りる）
 func strBody(src []byte, t lexer.Token) string {
     if t.end - t.start < 2 {
         return ""
@@ -1913,7 +1913,7 @@ func strBody(src []byte, t lexer.Token) string {
     return r
 }
 
-// qualOf は文字列 c の中の `q.name`（直後が識別子の文字でない形）の修飾子 q（`$jb` 等の合成の参照名も — 無い修飾子は ""）と、その形が在るか
+// 文字列 c の中の `q.name`（直後が識別子の文字でない形）の修飾子 q（`$jb` 等の合成の参照名も — 無い修飾子は ""）と、その形が在るか
 func qualOf(c string, name string) (string, bool) {
     b := bytes(c)
     w := bytes("." + name)
@@ -1944,7 +1944,7 @@ func qualHit(c string, name string, ref string, ctx bool) bool {
     return ok && (q == ref || (ctx && q != ""))
 }
 
-// cmdLits は compiler/ の文字列リテラルのうち名前 name を含むもの（`LIT\t<種類>\t<文脈>\t<path>\t<行:列>\t<リテラル>`）:
+// compiler/ の文字列リテラルのうち名前 name を含むもの（`LIT\t<種類>\t<文脈>\t<path>\t<行:列>\t<リテラル>`）:
 // 種類 = EXACT（name か `x.name`）/ QUAL（文字列の中の `ref.name` か文脈ありの `x.name` — 合成コード・文面）/ SUBSTR（部分一致）/ CONCAT（name の 3 文字以上の断片で `+` に隣る — 連結で組む形）。
 // 文脈 = pkg（同じファイルに package pkg のパスか参照名の文字列・import がある）/ -（無い — 同綴りの別物の見込み）。判定は手
 func cmdLits(name string, pkg string) int {
@@ -1980,7 +1980,7 @@ func cmdLits(name string, pkg string) int {
                 kind = "EXACT"
             } else if qualHit(c, name, ref, ctx) {
                 // 文字列の中の `ref.名前`（修飾子が対象の package の参照名 — 診断の文面）か、package の文脈があるファイルの `x.名前`（loader が合成するコードの呼び出し）
-                // — 同じコミットで直す強い候補（report-895）。修飾子も文脈も違えば同綴りの別物（`layout.Decode`・LLVM の `.h`）で SUBSTR に落とす
+                // — 同じコミットで直す強い候補。修飾子も文脈も違えば同綴りの別物（`layout.Decode`・LLVM の `.h`）で SUBSTR に落とす
                 kind = "QUAL"
             } else if c != "" && strings.Contains(c, name) {
                 kind = "SUBSTR"
@@ -1997,14 +1997,14 @@ func cmdLits(name string, pkg string) int {
     return 0
 }
 
-// Edit は 1 か所の書き換え（バイト [s, e) を rep に）
+// 1 か所の書き換え（バイト [s, e) を rep に）
 type Edit struct {
     s int
     e int
     rep string
 }
 
-// applyEdits は src の [lo, hi) に、範囲に入る書き換え（s の昇順）を当てた列
+// src の [lo, hi) に、範囲に入る書き換え（s の昇順）を当てた列
 func applyEdits(src []byte, lo int, hi int, eds []Edit) []byte {
     mut out := mut []byte{}
     mut i := lo
@@ -2047,7 +2047,7 @@ func sortEdits(xs []Edit) []Edit {
     return freeze(ys)
 }
 
-// editsEq は書き換えの前後の字句列が「書き換えた範囲だけ違う」で一致するか（字句の数・種類が同じ・各字句の綴り = 旧の綴りに範囲内の書き換え・全体も同じ）
+// 書き換えの前後の字句列が「書き換えた範囲だけ違う」で一致するか（字句の数・種類が同じ・各字句の綴り = 旧の綴りに範囲内の書き換え・全体も同じ）
 func editsEq(a []byte, b []byte, eds []Edit) bool {
     ta := allTokens(a, lexer.Lex(a)).ts
     tb := allTokens(b, lexer.Lex(b)).ts
@@ -2062,7 +2062,7 @@ func editsEq(a []byte, b []byte, eds []Edit) bool {
     return bytesEq(applyEdits(a, 0, len(a), eds), b)
 }
 
-// cmdPkgRename は package の改名（パス old → new — std のパスかルート相対のディレクトリ。src/compiler の package は対象外）の字句の書き換え:
+// package の改名（パス old → new — std のパスかルート相対のディレクトリ。src/compiler の package は対象外）の字句の書き換え:
 // import のパスの文字列（参照の書き手から解決して old に当たるもの）・alias なしの import の参照名 `ref.`（参照名が変わるとき）・package の中のファイルの
 // `package 名前`（最後の要素が変わるとき）。ディレクトリの移動は scripts/refs.sh。alias つきの import の参照名は変えない。
 // 新しい参照名が書き換えるファイルに識別子として既に在れば拒否（4）。開発の口 REFS_MUTANT=6（参照名を書かない — import のパスだけ）
@@ -2183,7 +2183,7 @@ func cmdPkgRename(old string, nw string, dry bool) int {
     return 0
 }
 
-// loadAny は entry を読む（`test:<package のディレクトリ>` はテストのビルド — loader.LoadTestFs。合成の main は `$test/…`）
+// entry を読む（`test:<package のディレクトリ>` はテストのビルド — loader.LoadTestFs。合成の main は `$test/…`）
 func loadAny(entry string, sm map[string]string) (loader.Program, error?) {
     if strings.HasPrefix(entry, "test:") {
         return loader.LoadTestFs(strings.TrimPrefix(entry, "test:"), sm)

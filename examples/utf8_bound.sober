@@ -1,6 +1,6 @@
 package main
 
-// UTF-8 の境界の畳み（compiler/lower/ubf.sober — UTF-8 の検査消去便 段 1）の負例: 区切りの事実があっても境界を保証しない形では、Str が境界の
+// UTF-8 の境界の畳み（compiler/lower/ubf.sober）の負例: 区切りの事実があっても境界を保証しない形では、Str が境界の
 // 検査を残して InvalidUtf8 の位置を返すこと。Str の部分インラインはループの中の点だけなので、全部ループの中で呼ぶ（opt / no-opt の出力が同じ — optdiff）。
 // 正例（畳める形 — `;` の位置・ASCII の次）も並べて、畳んだ後の値が検査を残した値と同じことを見る
 
@@ -8,7 +8,7 @@ import "std/iter"
 import "std/strings"
 import "std/utf8"
 
-// code は Str の結果を 1 語に畳む（成功 = 長さ・失敗 = 1000 + 境界でない位置）
+// Str の結果を 1 語に畳む（成功 = 長さ・失敗 = 1000 + 境界でない位置）
 func code(v utf8.View, s int, i int) int {
     x, err := utf8.Str(v, s, i)
     return if err != nil {

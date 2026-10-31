@@ -1697,11 +1697,31 @@ b0:
   ret %2
 }
 
+func @main.reset(%0 ptr) {
+b0:
+  %1 = region.depth
+  %2 = globaladdr @rt.meta
+  %3 = load.i64 %2[2572]
+  %4 = const 0
+  %5 = eq %3, %4
+  %6 = mul %5, %1
+  %7 = add %3, %6
+  %8 = const 1
+  %9 = const 0
+  %10 = sub %9, %8
+  store %0[0], %10
+  %11 = const 0
+  %12 = const 1
+  %13 = gep.word %0, %12
+  store %13[0], %11
+  region.setdepth %1
+  ret
+}
+
 func @main.main() {
   slot s0 [1]
   slot s1 [3]
   slot s2 [3]
-  slot s3 [1]
 b0:
   %0 = region.depth
   region.enter
@@ -1775,80 +1795,89 @@ b3:
   call @rt.print_int(%34)
   %35 = const 10
   call @rt.print_char(%35)
-  %36 = slotaddr s3
-  %37 = region.depth
-  %38 = const 1
-  %39 = const 0
-  %40 = sub %39, %38
-  store %29[0], %40
-  %41 = const 0
-  %42 = const 1
-  %43 = gep.word %29, %42
-  store %43[0], %41
-  br b4
+  %36 = const 1
+  %37 = add %0, %36
+  %38 = globaladdr @rt.meta
+  store %38[2572], %37
+  call @main.reset(%29)
+  %39 = load.i64 %29[0]
+  %40 = const -1
+  %41 = eq %39, %40
+  condbr %41, b4, b5
 b4:
-  %44 = load.i64 %29[0]
-  %45 = const -1
-  %46 = eq %44, %45
-  condbr %46, b5, b6
+  %42 = const 116
+  call @rt.print_char(%42)
+  %43 = const 114
+  call @rt.print_char(%43)
+  %44 = const 117
+  call @rt.print_char(%44)
+  %45 = const 101
+  call @rt.print_char(%45)
+  br b6
 b5:
-  %47 = const 116
+  %46 = const 102
+  call @rt.print_char(%46)
+  %47 = const 97
   call @rt.print_char(%47)
-  %48 = const 114
+  %48 = const 108
   call @rt.print_char(%48)
-  %49 = const 117
+  %49 = const 115
   call @rt.print_char(%49)
   %50 = const 101
   call @rt.print_char(%50)
-  br b7
+  br b6
 b6:
-  %51 = const 102
+  %51 = const 10
   call @rt.print_char(%51)
-  %52 = const 97
-  call @rt.print_char(%52)
-  %53 = const 108
-  call @rt.print_char(%53)
-  %54 = const 115
-  call @rt.print_char(%54)
-  %55 = const 101
-  call @rt.print_char(%55)
-  br b7
+  %52 = load.i64 %29[1]
+  condbr %52, b7, b8
 b7:
-  %56 = const 10
+  %53 = const 116
+  call @rt.print_char(%53)
+  %54 = const 114
+  call @rt.print_char(%54)
+  %55 = const 117
+  call @rt.print_char(%55)
+  %56 = const 101
   call @rt.print_char(%56)
-  %57 = load.i64 %29[1]
-  condbr %57, b8, b9
+  br b9
 b8:
-  %58 = const 116
+  %57 = const 102
+  call @rt.print_char(%57)
+  %58 = const 97
   call @rt.print_char(%58)
-  %59 = const 114
+  %59 = const 108
   call @rt.print_char(%59)
-  %60 = const 117
+  %60 = const 115
   call @rt.print_char(%60)
   %61 = const 101
   call @rt.print_char(%61)
-  br b10
+  br b9
 b9:
-  %62 = const 102
+  %62 = const 10
   call @rt.print_char(%62)
-  %63 = const 97
-  call @rt.print_char(%63)
-  %64 = const 108
+  %63 = load.i64 %29[2]
+  call @rt.print_int(%63)
+  %64 = const 10
   call @rt.print_char(%64)
-  %65 = const 115
-  call @rt.print_char(%65)
-  %66 = const 101
-  call @rt.print_char(%66)
-  br b10
-b10:
-  %67 = const 10
-  call @rt.print_char(%67)
-  %68 = load.i64 %29[2]
-  call @rt.print_int(%68)
-  %69 = const 10
-  call @rt.print_char(%69)
   region.setdepth %0
   ret
+}
+
+func @rt.sigint() {
+b0:
+  %0 = const 231
+  %1 = const 130
+  %2 = syscall(%0, %1)
+  exit 130
+}
+
+func @rt.sigterm() {
+b0:
+  %0 = const 231
+  %1 = const 143
+  %2 = syscall(%0, %1)
+  exit 143
 }
 
 export func @sober_entry(%0 ptr) {
@@ -2444,20 +2473,4 @@ b91:
   %404 = const 1
   %405 = add %383, %404
   br b85(%401, %405)
-}
-
-func @rt.sigterm() {
-b0:
-  %0 = const 231
-  %1 = const 143
-  %2 = syscall(%0, %1)
-  exit 143
-}
-
-func @rt.sigint() {
-b0:
-  %0 = const 231
-  %1 = const 130
-  %2 = syscall(%0, %1)
-  exit 130
 }

@@ -1,0 +1,7 @@
+ok   examples/guide/kv3.TestBadPiece
+ok   examples/guide/kv3.TestFormat
+ok   examples/guide/kv3.TestParse
+ok   examples/guide/kv3.TestRoundTrip
+mutate: examples/guide/kv3 100.0% killed (36 of 36 reached) · 0 unreached · 2 timeout
+4 passed, 0 failed
+(exit 0)

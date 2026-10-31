@@ -1,13 +1,13 @@
 package desugar
 
-// 表層型の解決表（S-b 段 1 — language.md 32 節）。型宣言の型は nominal だが、コアの型は構造型（名前が無い）なので、名前の区別はここで見る。
+// 表層型の解決表（language.md 32 節）。型宣言の型は nominal だが、コアの型は構造型（名前が無い）なので、名前の区別はここで見る。
 // 表層型は int 1 つ:
 // - SUNK（-1）= 分からない（照合しない — 型パラメータ・error・推論できない式）
 // - SFREE（0）= 名前を含まない型（int・bool・string・名前なしの関数型・その slice / map / T?）
 // - SUNTYPED（-2）= 型なしのリテラル（整数リテラル・true / false — Go の untyped constant）。named scalar にも下地にも割り当てられる
 // - 正 = st.stys の記録（STBASE + 添字 — 同じ形は同じ参照に intern）: 型宣言（struct / union / error ラベル / 名前付き関数型 / named scalar）か、
 //   名前を含む slice / map
-// 規則（Assignable / Comparable / Convertible）はこのファイルの 1 か所。check（脱糖器）はここを呼び、build（lower）は同じ区別を型の記録で持つ（段 2 で共有）
+// 規則（Assignable / Comparable / Convertible）はこのファイルの 1 か所。check（脱糖器）はここを呼び、build（lower）は同じ区別を型の記録で持つ
 
 import "ast"
 import "lexer"
@@ -24,7 +24,7 @@ const SKSlice = 2 // a = 要素の表層型
 const SKMap = 3   // a = キー, b = 値
 const SKGen = 4   // ジェネリックの型宣言 decl の型引数の列: a = 最後の型引数, b = それより前までの表層型（型引数 0 個の段は sDecl(decl)）
 
-// STy は表層型の記録
+// 表層型の記録
 type STy struct {
     k int
     decl NodeRef
@@ -83,7 +83,7 @@ func smemoPut(st mut S, x int, y int, v int) {
     table.Set(mut st.smemoBucket, h, table.Len(mut st.smemo) - 1)
 }
 
-// sIntern は記録 {k, decl, a, b} の参照（同じ形があればそれ）。キー: 型宣言は (decl, 0)、slice / map / 型引数の段は (-k, a × 2^20 + b)
+// 記録 {k, decl, a, b} の参照（同じ形があればそれ）。キー: 型宣言は (decl, 0)、slice / map / 型引数の段は (-k, a × 2^20 + b)
 // （型引数の段の b は decl を含む前の段なので decl をキーに入れなくても一意）
 func sIntern(st mut S, k int, decl NodeRef, a int, b int) int {
     kx := if k == SKDecl { int(decl) } else { 0 - k }
@@ -98,7 +98,7 @@ func sIntern(st mut S, k int, decl NodeRef, a int, b int) int {
     return s
 }
 
-// typeDeclOf は型式 te（型名の節）の型宣言を package pk の文脈で引く（メモつき — 型式の節 × package で決まる）
+// 型式 te（型名の節）の型宣言を package pk の文脈で引く（メモつき — 型式の節 × package で決まる）
 func typeDeclOf(st mut S, pk int, te NodeRef) NodeRef {
     m := NodeRef(smemoGet(mut st, int(te), pk))
     if m != NodeRef(SMISS) {
@@ -113,7 +113,7 @@ func sDecl(st mut S, decl NodeRef) int {
     return sIntern(mut st, SKDecl, decl, 0, 0)
 }
 
-// valueSty は型宣言 decl の値の表層型。error ラベルは型として使えず、値は組み込みの error（13 節 — どのラベルも入る受け皿）なので SUNK。
+// 型宣言 decl の値の表層型。error ラベルは型として使えず、値は組み込みの error（13 節 — どのラベルも入る受け皿）なので SUNK。
 // ラベルのリテラルの束縛は declOfExpr が閉じた error の union（ERRS）を返す — これも組み込みの error で SUNK（SurfaceOf の "error" と同じ）
 func valueSty(st mut S, decl NodeRef) int {
     if decl == NodeRef(ERRS) {
@@ -122,12 +122,12 @@ func valueSty(st mut S, decl NodeRef) int {
     return if kindN(mut st, nC(nodeOf(mut st, decl))) == ast.BError { SUNK } else { sDecl(mut st, decl) }
 }
 
-// sGenArg は型宣言 decl の型引数の段 prev に表層型 a の型引数を 1 つ足した表層型（型引数が分からなければ全体も分からない）
+// 型宣言 decl の型引数の段 prev に表層型 a の型引数を 1 つ足した表層型（型引数が分からなければ全体も分からない）
 func sGenArg(st mut S, decl NodeRef, prev int, a int) int {
     return if prev == SUNK || a == SUNK { SUNK } else { sIntern(mut st, SKGen, decl, a, prev) }
 }
 
-// sDeclOf は表層型 s が型宣言（型引数つきを含む）ならその節（でなければ -1）
+// 表層型 s が型宣言（型引数つきを含む）ならその節（でなければ -1）
 func sDeclOf(st mut S, s int) NodeRef {
     if s < STBASE {
         return -1
@@ -136,7 +136,7 @@ func sDeclOf(st mut S, s int) NodeRef {
     return if x.k == SKDecl || x.k == SKGen { x.decl } else { -1 }
 }
 
-// sBodyKind は表層型 s が型宣言なら本体の種類（BStruct / BUnion / BError / BFunc / BDefined — でなければ -1）
+// 表層型 s が型宣言なら本体の種類（BStruct / BUnion / BError / BFunc / BDefined — でなければ -1）
 func sBodyKind(st mut S, s int) int {
     d := sDeclOf(mut st, s)
     return if d == -1 { -1 } else { kindN(mut st, nC(nodeOf(mut st, d))) }
@@ -146,7 +146,7 @@ func isNamedScalar(st mut S, s int) bool {
     return sBodyKind(mut st, s) == ast.BDefined
 }
 
-// namedUnder は named scalar の型宣言 decl の下地（0 = int、1 = bool、-1 = 下地の制限に反する — int / bool 以外）
+// named scalar の型宣言 decl の下地（0 = int、1 = bool、-1 = 下地の制限に反する — int / bool 以外）
 func namedUnder(st mut S, decl NodeRef) int {
     te := nA(nodeOf(mut st, nC(nodeOf(mut st, decl))))
     if kindN(mut st, te) != ast.TName {
@@ -162,7 +162,7 @@ func namedUnder(st mut S, decl NodeRef) int {
     return -1
 }
 
-// noteNamedFn は名前付き関数型 td の展開の結果 te（合成の関数型の節）を覚える（展開で名前が消えるので）
+// 名前付き関数型 td の展開の結果 te（合成の関数型の節）を覚える（展開で名前が消えるので）
 func noteNamedFn(st mut S, te int, td int) {
     if te != td {
         table.Push(mut st.fnNamed, te)
@@ -170,7 +170,7 @@ func noteNamedFn(st mut S, te int, td int) {
     }
 }
 
-// namedFnOf は関数型の節 te が名前付き関数型の展開の結果ならその型宣言（でなければ -1）
+// 関数型の節 te が名前付き関数型の展開の結果ならその型宣言（でなければ -1）
 func namedFnOf(st mut S, te int) NodeRef {
     mut i := 0
     while i < table.Len(mut st.fnNamed) {
@@ -182,7 +182,7 @@ func namedFnOf(st mut S, te int) NodeRef {
     return -1
 }
 
-// SurfaceOf は型式 te（package pk の文脈・今の型環境 st.tenv）の表層型
+// 型式 te（package pk の文脈・今の型環境 st.tenv）の表層型
 func SurfaceOf(st mut S, pk int, te NodeRef) int {
     if te == -1 {
         return SUNK
@@ -235,7 +235,7 @@ func SurfaceOf(st mut S, pk int, te NodeRef) int {
 
 // ── 規則（language.md 32 節）──
 
-// Assignable は表層型 src の値を表層型 dst の場所（引数・代入・戻り・欄・要素）に置けるか（Go の assignability — 片方が名前なしの関数型なら可）
+// 表層型 src の値を表層型 dst の場所（引数・代入・戻り・欄・要素）に置けるか（Go の assignability — 片方が名前なしの関数型なら可）
 func Assignable(st mut S, dst int, src int) bool {
     if dst == SUNK || src == SUNK || dst == src {
         return true
@@ -258,7 +258,7 @@ func Assignable(st mut S, dst int, src int) bool {
     return false
 }
 
-// Comparable は `==` / `!=` の両辺の表層型が比べられるか（struct / union / error ラベルの == は無い — X2。named scalar は同じ型か型なしのリテラルと）
+// `==` / `!=` の両辺の表層型が比べられるか（struct / union / error ラベルの == は無い — X2。named scalar は同じ型か型なしのリテラルと）
 func Comparable(st mut S, l int, r int) bool {
     lk := sBodyKind(mut st, l)
     rk := sBodyKind(mut st, r)
@@ -271,9 +271,9 @@ func Comparable(st mut S, l int, r int) bool {
     return true
 }
 
-// ── 式の表層型（段 1: 脱糖器の型の追跡に沿って求める。lower は自分の型の記録で同じ区別を持つ — 段 2 で共有）──
+// ── 式の表層型（脱糖器の型の追跡に沿って求める。lower は自分の型の記録で同じ区別を持つ）──
 
-// isUntypedConst は式 e が型なしの定数か（整数リテラル・その単項 - / ^・括弧・束縛されていない true / false・const の名前）
+// 式 e が型なしの定数か（整数リテラル・その単項 - / ^・括弧・束縛されていない true / false・const の名前）
 func isUntypedConst(st mut S, e NodeRef, eb int, pk int) bool {
     k := kindN(mut st, e)
     switch k {
@@ -311,7 +311,7 @@ func isUntypedConst(st mut S, e NodeRef, eb int, pk int) bool {
     return false
 }
 
-// untypedInt は型なしの整数定数 e の値（byte の文脈の範囲検査に使う — language.md 33 節）。
+// 型なしの整数定数 e の値（byte の文脈の範囲検査に使う — language.md 33 節）。
 // true / false・辞書 const・畳めない const は ok = false（isUntypedConst と同じ形をなめる）
 func untypedInt(st mut S, e NodeRef, eb int, pk int) (int, bool) {
     k := kindN(mut st, e)
@@ -351,13 +351,13 @@ func untypedInt(st mut S, e NodeRef, eb int, pk int) (int, bool) {
     return ConValue(mut st, c), true
 }
 
-// UntypedByte は型なしの整数定数 e（package pk の文脈）が byte の範囲（0〜255）の値か（lower が読む — 範囲外の定数は build も拒否する）
+// 型なしの整数定数 e（package pk の文脈）が byte の範囲（0〜255）の値か（lower が読む — 範囲外の定数は build も拒否する）
 func UntypedByte(st mut S, e NodeRef, pk int) bool {
     v, ok := untypedInt(mut st, e, -1, pk)
     return ok && v >= 0 && v <= 255
 }
 
-// exprSty は式 e の表層型。型なしの定数の判定（SUNTYPED — 表には無い: 検査器は int / bool にする）は種類ごとの枝に残し、
+// 式 e の表層型。型なしの定数の判定（SUNTYPED — 表には無い: 検査器は int / bool にする）は種類ごとの枝に残し、
 // 他は表層型検査器の表（typer.sober — 節をキー）から写す（C1 B3）。差分オラクルの間は表と突き合わせる（yCompareSty）
 func exprSty(st mut S, e NodeRef, eb int, ef int) int {
     s := exprSty0(mut st, e, eb, ef)
@@ -431,7 +431,7 @@ func exprSty0(st mut S, e NodeRef, eb int, ef int) int {
     return yStyOf(mut st, e)
 }
 
-// constOf は名前の節 e（package pk の文脈）の const の表の添字（無ければ -1 — メモつき）
+// 名前の節 e（package pk の文脈）の const の表の添字（無ければ -1 — メモつき）
 func constOf(st mut S, e NodeRef, pk int) int {
     m := smemoGet(mut st, int(e), pk)
     if m != SMISS {
@@ -454,7 +454,7 @@ const CONV_BOOL = -3
 const CONV_BYTE = -4 // `byte(n)`（language.md 33 節 — 下地の付け替えでなく値の変換: int → byte は範囲検査、コアの tobyte）
 const CONV_FLOAT = -5 // `float(i)`（language.md 37 節 — int → float の値の変換・コアの tofloat。float(f) は恒等）
 
-// convTarget は呼び出しの callee が変換なら行き先（named scalar の型宣言 / CONV_INT / CONV_BOOL — でなければ CONV_NONE）
+// 呼び出しの callee が変換なら行き先（named scalar の型宣言 / CONV_INT / CONV_BOOL — でなければ CONV_NONE）
 func convTarget(st mut S, callee NodeRef, eb int, pk int) int {
     mut name := StrRef(-1)
     k := kindN(mut st, callee)
@@ -488,7 +488,7 @@ func convTarget(st mut S, callee NodeRef, eb int, pk int) int {
     return int(td)
 }
 
-// convOk は変換 cv（convTarget の結果）を、核の型 t・表層型 s の値に掛けられるか（下地が同じ — named ⇄ 下地・同じ下地の named どうし）
+// 変換 cv（convTarget の結果）を、核の型 t・表層型 s の値に掛けられるか（下地が同じ — named ⇄ 下地・同じ下地の named どうし）
 func convOk(st mut S, cv int, t TyRef, s int) bool {
     mut want := -1
     if cv >= 0 {
@@ -520,7 +520,7 @@ func wantAssignable(st mut S, dst int, e NodeRef, eb int, ef int) error? {
     return nil
 }
 
-// notNamed は式 e が named scalar でないこと（算術・順序・論理・条件・添字の被演算子 — 演算は == / != だけ）
+// 式 e が named scalar でないこと（算術・順序・論理・条件・添字の被演算子 — 演算は == / != だけ）
 func notNamed(st mut S, e NodeRef, eb int, ef int) error? {
     if isNamedScalar(mut st, exprSty(mut st, e, eb, ef)) {
         return nomFail(mut st, e)
@@ -528,7 +528,7 @@ func notNamed(st mut S, e NodeRef, eb int, ef int) error? {
     return nil
 }
 
-// notByte は式 e が byte でないこと（単項・複合代入・条件・添字の被演算子 — byte の演算は比較 6 種だけ。language.md 33 節）。
+// 式 e が byte でないこと（単項・複合代入・条件・添字の被演算子 — byte の演算は比較 6 種だけ。language.md 33 節）。
 // Lean も拒否するが、位置つきの TypeMismatch で先に落とす（診断の統一 — 位置なしの type error にしない）
 func notByte(st mut S, e NodeRef, eb int, ef int) error? {
     if isTag(mut st, computeTy(mut st, e, eb, ef), TByte) {
@@ -537,12 +537,12 @@ func notByte(st mut S, e NodeRef, eb int, ef int) error? {
     return nil
 }
 
-// varSty は `:=` で束縛する値の表層型（型なしのリテラルは下地の型になる — `x := 5` の x は int）
+// `:=` で束縛する値の表層型（型なしのリテラルは下地の型になる — `x := 5` の x は int）
 func varSty(s int) int {
     return if s == SUNTYPED { SFREE } else { s }
 }
 
-// elemSty は slice の表層型 s の要素の表層型
+// slice の表層型 s の要素の表層型
 func elemSty(st mut S, s int) int {
     if s == SFREE || s == SUNK {
         return s
@@ -554,7 +554,7 @@ func elemSty(st mut S, s int) int {
     return if x.k == SKSlice { x.a } else { SUNK }
 }
 
-// retSty は今の return の行き先（関数のラベル）の j 番目の結果の表層型（値の数 nv が結果の数と違えば SUNK — 多値の転送は照合しない）
+// 今の return の行き先（関数のラベル）の j 番目の結果の表層型（値の数 nv が結果の数と違えば SUNK — 多値の転送は照合しない）
 func retSty(st mut S, j int, nv int) int {
     if st.retTarget < 0 {
         return SUNK
@@ -566,24 +566,24 @@ func retSty(st mut S, j int, nv int) int {
     return SurfaceOf(mut st, x.resPkg, latN(mut st, x.res, j))
 }
 
-// ── lower（build 経路）が読む公開の口（式の表層型は lower が自分の型の記録で持つ — 段 2 で共有）──
+// ── lower（build 経路）が読む公開の口（式の表層型は lower が自分の型の記録で持つ）──
 
-// NamedUnder は named scalar の型宣言の下地（0 = int、1 = bool、-1 = 制限違反）
+// named scalar の型宣言の下地（0 = int、1 = bool、-1 = 制限違反）
 func NamedUnder(st mut S, decl NodeRef) int {
     return namedUnder(mut st, decl)
 }
 
-// NamedFnOf は関数型の節が名前付き関数型の展開の結果ならその型宣言（でなければ -1）
+// 関数型の節が名前付き関数型の展開の結果ならその型宣言（でなければ -1）
 func NamedFnOf(st mut S, te int) NodeRef {
     return namedFnOf(mut st, te)
 }
 
-// IsUntypedConst は式 e（package pk の文脈）が型なしの定数か（束縛の有無は呼び手が先に見る — lower は自分のスコープで）
+// 式 e（package pk の文脈）が型なしの定数か（束縛の有無は呼び手が先に見る — lower は自分のスコープで）
 func IsUntypedConst(st mut S, e NodeRef, pk int) bool {
     return isUntypedConst(mut st, e, -1, pk)
 }
 
-// ConNamed は const の表の添字 c の const が型つき（値の式が named scalar への変換 `T(…)` — language.md 32 節「型つきの const」）なら
+// const の表の添字 c の const が型つき（値の式が named scalar への変換 `T(…)` — language.md 32 節「型つきの const」）なら
 // その型宣言（でなければ -1）。check（表層型検査器・表層型）と build（lower）が同じ判定を読む
 func ConNamed(st mut S, c int) NodeRef {
     if c < 0 || ConDict(mut st, c) {
@@ -600,12 +600,12 @@ func ConNamed(st mut S, c int) NodeRef {
     return if cv >= 0 { NodeRef(cv) } else { NodeRef(-1) }
 }
 
-// ConvTarget は callee（package pk の文脈、束縛でないことは呼び手が見る）が変換なら行き先（convTarget）
+// callee（package pk の文脈、束縛でないことは呼び手が見る）が変換なら行き先（convTarget）
 func ConvTarget(st mut S, callee NodeRef, pk int) int {
     return convTarget(mut st, callee, -1, pk)
 }
 
-// bindSty は `:=` の束縛の表層型
+// `:=` の束縛の表層型
 func bindSty(st mut S, ve NodeRef, eb int, ef int) int {
     return varSty(exprSty(mut st, ve, eb, ef))
 }

@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P3b-5: Gather は Join の列 — 死んだ子を待った呼び手も死ぬ（この子の死は私の死）
+// Gather は Join の列 — 死んだ子を待った呼び手も死ぬ（この子の死は私の死）
 
 import "std/task"
 

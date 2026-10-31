@@ -82,7 +82,7 @@ func ParseQuery(s string) ([]Pair, error?) {
     return freeze(out), nil
 }
 
-// unescape は b の "%XX" を 1 バイトに戻したもの（plus なら '+' を空白に。第 2 の値 = '%' の後が 16 進の 2 桁）
+// b の "%XX" を 1 バイトに戻したもの（plus なら '+' を空白に。第 2 の値 = '%' の後が 16 進の 2 桁）
 func unescape(b []byte, plus bool) ([]byte, bool) {
     mut out := mut []byte{}
     mut i := 0
@@ -107,12 +107,12 @@ func unescape(b []byte, plus bool) ([]byte, bool) {
     return freeze(out), true
 }
 
-// unreserved は c が RFC 3986 2.3 の unreserved（ALPHA / DIGIT / '-' / '.' / '_' / '~'）か
+// c が RFC 3986 2.3 の unreserved（ALPHA / DIGIT / '-' / '.' / '_' / '~'）か
 func unreserved(c int) bool {
     return (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 45 || c == 46 || c == 95 || c == 126
 }
 
-// nib は 16 進の 1 文字の値（綴りでなければ -1）
+// 16 進の 1 文字の値（綴りでなければ -1）
 func nib(c int) int {
     return if c >= 48 && c <= 57 { c - 48 } else if c >= 97 && c <= 102 { c - 87 } else if c >= 65 && c <= 70 { c - 55 } else { -1 }
 }

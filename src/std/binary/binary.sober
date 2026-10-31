@@ -2,7 +2,7 @@ package binary
 
 // バイト列の語単位の読み（1 バイトずつの読みを 1 回の検査 + 1 回の load に）。書きの対（Store64）は無い — 書くときは 1 バイトずつ積む
 
-// 組み込みの宣言（息継ぎ ③ — 本体なし。鍵の実装はコンパイラの表: loader/intrinsic.sober・lower の ioBuiltin）。検査なしの読み — 境界は下の Load64 の 1 か所だけで見る
+// 組み込みの宣言（本体なし。実装はコンパイラの表: loader/intrinsic.sober・lower の ioBuiltin）。検査なしの読み — 境界は下の Load64 の 1 か所だけで見る
 @intrinsic("load64")
 func sysLoad64(b []byte, i int) int
 
@@ -16,7 +16,7 @@ func Load64(b []byte, i int) int {
     return sysLoad64(b, i)
 }
 
-// outOfRange は Load64 / MatchLen の契約違反の panic（本体を小さく保つ — 呼び出し点に展開される大きさに）
+// Load64 / MatchLen の契約違反の panic（本体を小さく保つ — 呼び出し点に展開される大きさに）
 func outOfRange(i int, n int) {
     panic(OutOfRange{i: i, n: n})
 }

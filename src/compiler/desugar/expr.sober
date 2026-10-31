@@ -7,7 +7,23 @@ import "ast"
 import "lexer"
 import "std/iter"
 
+// 式 e の脱糖（出所の追跡 — st.track — のときは e を今の出所にして exprIn を呼び、出口で戻す）
 func expr(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+    if !st.track {
+        return exprIn(mut st, e, eb, ef, depth)
+    }
+    saved := st.opos
+    // 合成の節（ファイルの無い位置）は外の出所を保つ
+    pk := PackPos(posOf(mut st, e))
+    if pk != 0 {
+        st.opos = pk
+    }
+    v := exprIn(mut st, e, eb, ef, depth)?
+    st.opos = saved
+    return v, nil
+}
+
+func exprIn(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     // 暗黙の freeze の点（typer の表 — desugar/implicit.sober）: 明示の `freeze(e)` と同じコア（CFreeze）。位置は見ない — 点の節はその位置でしか脱糖されない
     if st.nimpl > 0 && e != st.implAt && IsImplicit(mut st, e) {
         saved := st.implAt
@@ -41,7 +57,7 @@ func expr(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
         }
         return r.v, nil
     case ast.ENil:
-        // ブロックの末尾の nil は末尾の期待型（T?）があれば注釈つき nil（F-bw — 展開のラムダの `{ …; nil }`・coerceArm が期待型を渡す）
+        // ブロックの末尾の nil は末尾の期待型（T?）があれば注釈つき nil（展開のラムダの `{ …; nil }`・coerceArm が期待型を渡す）
         if isTag(mut st, want, TOpt) {
             return cNil(mut st, tInner(mut st, want)), nil
         }
@@ -55,7 +71,7 @@ func expr(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
         return cStrlit(mut st, nodeOf(mut st, e).a, st.rdepth - 1), nil
     case ast.ESlicelit:
         elem := tyOf(mut st, st.curPkg, nA(nodeOf(mut st, e)), at, TYFUEL)?
-        // 外の mut 場所へ流れ込む mut のリテラルは行き先の region に作る（M4 — mksliceAt）。型は行き先の点座標
+        // 外の mut 場所へ流れ込む mut のリテラルは行き先の region に作る（mksliceAt）。型は行き先の点座標
         dest := nodeOf(mut st, e).c != 0 && md >= 0 && md < st.rdepth - 1
         saved := st.rdepth
         if dest {
@@ -67,7 +83,7 @@ func expr(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
         els := lB(nodeOf(mut st, e))
         for i <- iter.Range(0, lenL(mut st, els)) {
             v := coerceExpr(mut st, latN(mut st, els, i), elem, eb, ef, depth, at)?
-            // 外側の region の値（仮引数・外の局所）は要素の点座標へ緩める（append の appendValueAnn と同じ規律 — F-u）。
+            // 外側の region の値（仮引数・外の局所）は要素の点座標へ緩める（append の appendValueAnn と同じ規律）。
             // 行き先に作るなら、それより深い要素は行き先へ写す
             vc := if dest { storeCopy(mut st, v, computeTy(mut st, latN(mut st, els, i), eb, ef), et, md) } else { CoreRef(-1) }
             e2 = c2(mut st, CAppend, e2, if vc != -1 { vc } else { looserAnn(mut st, latN(mut st, els, i), v, et, eb, ef) })
@@ -88,14 +104,14 @@ func expr(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
         value := tyOf(mut st, st.curPkg, nB(nodeOf(mut st, e)), at, TYFUEL)?
         vt := pointTy(mut st, value)
         st.rdepth = saved
-        // 空の mut の map リテラルだけ行き先に作る（M4 — mkmapAt。要素つきは最内のまま）
+        // 空の mut の map リテラルだけ行き先に作る（mkmapAt。要素つきは最内のまま）
         mut e2 := if dest { cMkmapAt(mut st, 1, key, vt, md) } else { cMkmap(mut st, 1, key, vt) }
         ens := lC(nodeOf(mut st, e))
         for i <- iter.Range(0, lenL(mut st, ens)) {
             en := latN(mut st, ens, i)
             kv := mapKey(mut st, nA(nodeOf(mut st, en)), key, eb, ef, depth)?
             vv := coerceExpr(mut st, nB(nodeOf(mut st, en)), value, eb, ef, depth, at)?
-            // 値も要素の点座標へ緩める（slice literal と同じ — F-u）
+            // 値も要素の点座標へ緩める（slice literal と同じ）
             e2 = c3(mut st, CSetm, e2, kv, looserAnn(mut st, nB(nodeOf(mut st, en)), vv, vt, eb, ef))
         }
         if nodeOf(mut st, e).d == 0 {
@@ -173,7 +189,7 @@ func expr(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     case ast.EPipe:
         return call(mut st, nB(nodeOf(mut st, e)), pipeArgs(mut st, e), at, eb, ef, depth)
     case ast.EComposite:
-        // 外の mut 場所へ流れ込む struct リテラルは mut のコンテナの欄を行き先の region に作る（F-bb — M4 の行き先構築の struct リテラル版）
+        // 外の mut 場所へ流れ込む struct リテラルは mut のコンテナの欄を行き先の region に作る（行き先構築の struct リテラル版）
         st.compDest = if md >= 0 && md < st.rdepth - 1 { md + 1 } else { 0 }
         return composite(mut st, e, eb, ef, depth)
     case ast.ESelector:
@@ -186,7 +202,7 @@ func expr(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
             }
             return r.v, nil
         }
-        // 割った mut 束縛の中の場所（F-17 案 2α）: 葉は deref、struct の場所は組み直し
+        // 割った mut 束縛の中の場所: 葉は deref、struct の場所は組み直し
         pl := placeOfExpr(mut st, e, eb, depth)
         if pl.ok {
             return readPlace(mut st, pl), nil
@@ -220,7 +236,7 @@ func expr(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
         kk := st.rdepth - 2
         out := if tt != -1 && tyRegionAbove(mut st, tt, kk) {
             // 宛先は期待型の形のまま、親の最内（kk）より下の imm の region を kk へ上げた型（期待型が if の兄弟の腕の型 = 仮引数の r0 のとき、
-            // Def の中で書けない呼び手の region を宛先にしない — F-f のブロック × 合流）
+            // Def の中で書けない呼び手の region を宛先にしない）
             cBlockR(mut st, if want != -1 { upRegion(mut st, want, kk) } else { tyClamp(mut st, tt, kk) }, inner)
         } else {
             CoreRef(-1)
@@ -238,7 +254,7 @@ func expr(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     return 0, diag.CoreFragment{at: posOf(mut st, at)}
 }
 
-// pipeArgs は `lhs |> callee(args)` の実引数の列（穴があれば穴に、無ければ第 1 引数に lhs）
+// `lhs |> callee(args)` の実引数の列（穴があれば穴に、無ければ第 1 引数に lhs）
 func pipeArgs(st mut S, e NodeRef) ListRef {
     lhs := nodeOf(mut st, e).a
     pa := lC(nodeOf(mut st, e))
@@ -263,7 +279,7 @@ func pipeArgs(st mut S, e NodeRef) ListRef {
     return args
 }
 
-// LeafRef は名前の参照の脱糖（identRef / qualRef）: コア式 v か、辞書 const（dict ≥ 0 — package dpk）。辞書 const の展開は再帰（dictExpr → expr）
+// 名前の参照の脱糖（identRef / qualRef）: コア式 v か、辞書 const（dict ≥ 0 — package dpk）。辞書 const の展開は再帰（dictExpr → expr）
 // なので呼び手の expr が行う（再帰の経路に段を足さない — C9 の (a)）
 type LeafRef struct {
     v CoreRef
@@ -275,7 +291,7 @@ func leaf(v CoreRef) LeafRef {
     return LeafRef{v: v, dict: -1, dpk: -1}
 }
 
-// identRef は名前 e（EIdent）の参照: 束縛・const・true / false・名前付き関数の値
+// 名前 e（EIdent）の参照: 束縛・const・true / false・名前付き関数の値
 func identRef(st mut S, e NodeRef, eb int, depth int) (LeafRef, error?) {
     at := e
     name := sA(nodeOf(mut st, e))
@@ -313,7 +329,7 @@ func identRef(st mut S, e NodeRef, eb int, depth int) (LeafRef, error?) {
     return leaf(v), nil
 }
 
-// qualRef は修飾の参照 `pkg.N`（e = ESelector — const か名前付き関数の値）
+// 修飾の参照 `pkg.N`（e = ESelector — const か名前付き関数の値）
 func qualRef(st mut S, e NodeRef, eb int) (LeafRef, error?) {
     at := e
     name := qualName(mut st, e, eb, st.curPkg)
@@ -335,7 +351,7 @@ func qualRef(st mut S, e NodeRef, eb int) (LeafRef, error?) {
     return LeafRef{}, diag.UnknownName{at: posOf(mut st, at)}
 }
 
-// yIsOpt は式 e の表層型（表層型検査器の表）が T? か（表に無ければ false）
+// 式 e の表層型（表層型検査器の表）が T? か（表に無ければ false）
 func yIsOpt(st mut S, e NodeRef) bool {
     y := YTypeOf(mut st, e)
     return y >= 0 && yk(mut st, y) == YOpt
@@ -440,7 +456,7 @@ func binaryExpr(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?
     return cBin(mut st, bk, a, b), nil
 }
 
-// byteLit は byte の文脈の型なし定数 e: tobyte (lit n)。範囲外・整数でない定数（true / false）は型エラー（language.md 33 節 — 定数の範囲外はコンパイルエラー）
+// byte の文脈の型なし定数 e: tobyte (lit n)。範囲外・整数でない定数（true / false）は型エラー（language.md 33 節 — 定数の範囲外はコンパイルエラー）
 func byteLit(st mut S, e NodeRef, eb int) (CoreRef, error?) {
     v, ok := untypedInt(mut st, e, eb, st.curPkg)
     if !ok || v < 0 || v > 255 {
@@ -449,7 +465,7 @@ func byteLit(st mut S, e NodeRef, eb int) (CoreRef, error?) {
     return c1(mut st, CToByte, cLit(mut st, v)), nil
 }
 
-// byteOperand は byte の比較の被演算子を int のコアへ: byte の式は toint、型なしの定数は範囲検査のうえ lit（相手が byte の文脈）。
+// byte の比較の被演算子を int のコアへ: byte の式は toint、型なしの定数は範囲検査のうえ lit（相手が byte の文脈）。
 // byte でない式（int の変数との混在）は型エラー — 暗黙変換は無い
 func byteOperand(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     if isUntypedConst(mut st, e, eb, st.curPkg) {
@@ -466,7 +482,7 @@ func byteOperand(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error
     return c1(mut st, CToInt, v), nil
 }
 
-// fbinKind は float の二項の種類（算術 4 種・比較 6 種 — 他は 0）
+// float の二項の種類（算術 4 種・比較 6 種 — 他は 0）
 func fbinKind(op int) int {
     return switch op {
     case lexer.Plus: FAdd
@@ -503,13 +519,13 @@ func binKind(op int) int {
     }
 }
 
-// boolEq は bool の等値: a == b は `if a { b } else { !b }`、!= は腕を入れ替える
+// bool の等値: a == b は `if a { b } else { !b }`、!= は腕を入れ替える
 func boolEq(st mut S, a CoreRef, b CoreRef, eq bool) CoreRef {
     nb := cIte(mut st, b, cFF(mut st), cTT(mut st))
     return cIte(mut st, a, if eq { b } else { nb }, if eq { nb } else { b })
 }
 
-// ifExpr は if 式（flow typing の nil テストは ifnil）
+// if 式（flow typing の nil テストは ifnil）
 func ifExpr(st mut S, e NodeRef, eb int, ef int, depth int, want TyRef) (CoreRef, error?) {
     stmt := (st.stmtIf != 0)
     st.stmtIf = b2i(false)
@@ -535,7 +551,7 @@ func ifExpr(st mut S, e NodeRef, eb int, ef int, depth int, want TyRef) (CoreRef
             o = expr(mut st, els, eb, ef, depth)?
         }
         if !stmt {
-            // 腕の型が region だけ違う（仮引数の string と本体のリテラル等 — F-g）なら、外側の region の腕を上界（内側の region）の型へ ann で緩める
+            // 腕の型が region だけ違う（仮引数の string と本体のリテラル等）なら、外側の region の腕を上界（内側の region）の型へ ann で緩める
             tt := armTy(mut st, then, eb, ef)
             ot := if kindN(mut st, els) == ast.EBlock { armTy(mut st, lA(nodeOf(mut st, els)), eb, ef) } else { computeTy(mut st, els, eb, ef) }
             // 両腕を今いる最内の region（リテラルの置き場）へ上げた型が一致するなら、両腕をその型へ緩める（推論は string のリテラルの region を仮引数と同じに見るので、
@@ -554,7 +570,7 @@ func ifExpr(st mut S, e NodeRef, eb int, ef int, depth int, want TyRef) (CoreRef
     return cIte(mut st, cond, t, cTriv(mut st)), nil
 }
 
-// nilTest は条件が `x != nil` / `x == nil`（x は束縛された名前）なら (名前, some が then 腕か)。でなければ名前 -1
+// 条件が `x != nil` / `x == nil`（x は束縛された名前）なら (名前, some が then 腕か)。でなければ名前 -1
 func nilTest(st mut S, cond NodeRef, eb int) (StrRef, bool) {
     if kindN(mut st, cond) != ast.EBinary {
         return -1, false
@@ -582,7 +598,7 @@ func nilTest(st mut S, cond NodeRef, eb int) (StrRef, bool) {
     return sA(nodeOf(mut st, side)), op == lexer.BangEqual
 }
 
-// ifnilExpr は `if x != nil { A } else { B }` → `ifnil x B A'`（A' では x が var 0 = ペイロードに再束縛）
+// `if x != nil { A } else { B }` → `ifnil x B A'`（A' では x が var 0 = ペイロードに再束縛）
 func ifnilExpr(st mut S, name StrRef, some_then bool, e NodeRef, eb int, ef int, depth int, want TyRef, stmt bool) (CoreRef, error?) {
     b := lookup(mut st, eb, name)
     sv := cVar(mut st, depth - 1 - bnd(mut st, b).level)
@@ -613,7 +629,7 @@ func ifnilExpr(st mut S, name StrRef, some_then bool, e NodeRef, eb int, ef int,
         ob = cTriv(mut st)
     }
     if !stmt && els != -1 {
-        // 腕の region の合流（ifExpr の F-g と同じ — F-l: 絞った仮引数の T? の中身とリテラル）
+        // 腕の region の合流（ifExpr と同じ: 絞った仮引数の T? の中身とリテラル）
         tt := if some_then { armTy(mut st, then, eb2, ef) } else { armTy(mut st, then, eb, ef) }
         ot := if kindN(mut st, els) == ast.EBlock { armTy(mut st, lA(nodeOf(mut st, els)), eb3, ef) } else { computeTy(mut st, els, eb3, ef) }
         up := upJoin2(mut st, tt, ot)
@@ -628,8 +644,8 @@ func ifnilExpr(st mut S, name StrRef, some_then bool, e NodeRef, eb int, ef int,
     return c3(mut st, CIfnil, subject, tb2, ob), nil
 }
 
-// upJoin2 は 2 つの腕の型を今いる最内の region（リテラルの置き場）へ上げた型が一致し、どちらかが実際に上がるならその型（でなければ -1）。
-// ifExpr の F-g の合流の判定と同じ（ifExpr は既存の形のまま — 黄金を動かさない）
+// 2 つの腕の型を今いる最内の region（リテラルの置き場）へ上げた型が一致し、どちらかが実際に上がるならその型（でなければ -1）。
+// ifExpr の region 合流の判定と同じ
 func upJoin2(st mut S, a TyRef, b TyRef) TyRef {
     if a == -1 || b == -1 {
         return -1
@@ -643,7 +659,7 @@ func upJoin2(st mut S, a TyRef, b TyRef) TyRef {
 
 // ── 期待型への強制 ──
 
-// coerceExpr は期待型 want に向けて式を脱糖する（T? の期待に対して nil は注釈つき nil、ペイロード型の値は some で包む）
+// 期待型 want に向けて式を脱糖する（T? の期待に対して nil は注釈つき nil、ペイロード型の値は some で包む）
 func coerceExpr(st mut S, e NodeRef, want TyRef, eb int, ef int, depth int, at NodeRef) (CoreRef, error?) {
     k := kindN(mut st, e)
     // `panic(L{…})` は期待型の unreach（`return panic(…)`・`f(panic(…))`・欄の値 — 行き先の型が分かる位置。expr の ECall は末尾期待型だけを見る）
@@ -682,8 +698,8 @@ func coerceExpr(st mut S, e NodeRef, want TyRef, eb int, ef int, depth int, at N
             t := coerceArm(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, e)))), want, eb, ef, depth, at)?
             els := nC(nodeOf(mut st, e))
             o := if kindN(mut st, els) == ast.EBlock { coerceArm(mut st, lA(nodeOf(mut st, els)), want, eb, ef, depth, at)? } else { coerceExpr(mut st, els, want, eb, ef, depth, at)? }
-            // 腕の region の合流（ifExpr の F-g と同じ線 — F-bv: `P{f: if c { "x" } else { nil }}` の nil の腕は期待の中身〔欄の region〕・
-            // リテラルの腕は最内の region で、注釈が無いと核の検査器が腕の型の食い違いで拒否した〔build は受理〕）
+            // 腕の region の合流（ifExpr と同じ線: `P{f: if c { "x" } else { nil }}` の nil の腕は期待の中身〔欄の region〕・
+            // リテラルの腕は最内の region で、注釈が無いと核の検査器が腕の型の食い違いで拒否する〔build は受理〕）
             tp := optArmPay(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, e)))), payload, eb, ef)
             op := if kindN(mut st, els) == ast.EBlock { optArmPay(mut st, lA(nodeOf(mut st, els)), payload, eb, ef) } else { optExprPay(mut st, els, payload, eb, ef) }
             up := upJoin2(mut st, tp, op)
@@ -702,7 +718,7 @@ func coerceExpr(st mut S, e NodeRef, want TyRef, eb int, ef int, depth int, at N
     return 0, diag.CoreFragment{at: posOf(mut st, at)}
 }
 
-// optArmPay は T? の期待（中身 payload）の if の腕 l の値の中身の型（nil の腕は payload・T? の値はその中身・分からなければ -1）
+// T? の期待（中身 payload）の if の腕 l の値の中身の型（nil の腕は payload・T? の値はその中身・分からなければ -1）
 func optArmPay(st mut S, l ListRef, payload TyRef, eb int, ef int) TyRef {
     se := singleExpr(mut st, l)
     if se != -1 {
@@ -712,7 +728,7 @@ func optArmPay(st mut S, l ListRef, payload TyRef, eb int, ef int) TyRef {
     return if t != -1 && tg(mut st, t) == TOpt { tInner(mut st, t) } else { t }
 }
 
-// optExprPay は optArmPay の式 1 つの形
+// optArmPay の式 1 つの形
 func optExprPay(st mut S, e NodeRef, payload TyRef, eb int, ef int) TyRef {
     if kindN(mut st, e) == ast.ENil {
         return payload
@@ -721,7 +737,7 @@ func optExprPay(st mut S, e NodeRef, payload TyRef, eb int, ef int) TyRef {
     return if t != -1 && tg(mut st, t) == TOpt { tInner(mut st, t) } else { t }
 }
 
-// wrapSome は型 t の値 core を T?（want、中身 payload）の位置に置く形（一致・緩む形は素のまま、ペイロード型なら some）
+// 型 t の値 core を T?（want、中身 payload）の位置に置く形（一致・緩む形は素のまま、ペイロード型なら some）
 func wrapSome(st mut S, t TyRef, want TyRef, payload TyRef, core CoreRef) CoreRef {
     if tyEql(mut st, t, want) || tyLooser(mut st, t, want) {
         return core
@@ -738,7 +754,7 @@ func wrapSome(st mut S, t TyRef, want TyRef, payload TyRef, core CoreRef) CoreRe
     return core
 }
 
-// coerceArm は if 式の腕（文列）へ期待型を押し込む
+// if 式の腕（文列）へ期待型を押し込む
 func coerceArm(st mut S, l ListRef, want TyRef, eb int, ef int, depth int, at NodeRef) (CoreRef, error?) {
     se := singleExpr(mut st, l)
     if se != -1 {
@@ -751,12 +767,12 @@ func coerceArm(st mut S, l ListRef, want TyRef, eb int, ef int, depth int, at No
         s := latN(mut st, l, n - 1)
         sk := kindN(mut st, s)
         if sk == ast.SExpr {
-            // armTy（末尾が同じ腕で束縛した名前なら束縛の値の型 — F-bv の同席: computeTy だけだと -1 で CoreFragment・build は受理）
+            // armTy（末尾が同じ腕で束縛した名前なら束縛の値の型 — computeTy だけだと -1 で CoreFragment・build は受理）
             t = armTy(mut st, l, eb, ef)
         }
         ends_exit = sk == ast.SRet || sk == ast.SBreak || sk == ast.SContinue
     }
-    // 末尾の式の型が取れない（`{ println(x); nil }` の nil — F-bw）なら末尾の期待型を渡して寄せる（腕の値は want の型で組まれる）
+    // 末尾の式の型が取れない（`{ println(x); nil }` の nil）なら末尾の期待型を渡して寄せる（腕の値は want の型で組まれる）
     tail_want := ends_exit || (n > 0 && t == -1 && kindN(mut st, latN(mut st, l, n - 1)) == ast.SExpr)
     core := scoped(mut st, l, eb, ef, depth, false, false, if tail_want { want } else { TyRef(-1) })?
     if tail_want {
@@ -780,9 +796,9 @@ func coerceArm(st mut S, l ListRef, want TyRef, eb int, ef int, depth int, at No
     return 0, diag.CoreFragment{at: posOf(mut st, at)}
 }
 
-// retValue は return の値: coerceExpr に加え、region だけが結果型と違う値を結果型で ann する
+// return の値: coerceExpr に加え、region だけが結果型と違う値を結果型で ann する
 func retValue(st mut S, e NodeRef, want TyRef, eb int, ef int, depth int, at NodeRef) (CoreRef, error?) {
-    // 結果が値化可能な named fn type の関数（Def）が返すラムダは値の位置（loader の RetFnVal と同じ線 — 工程 4 B1 の同梱）
+    // 結果が値化可能な named fn type の関数（Def）が返すラムダは値の位置（loader の RetFnVal と同じ線）
     // （結果の region への ann は普通の値と同じ下の道 — 捕捉の string は仮引数の座標のまま組まれる）
     fdr := if kindN(mut st, e) == ast.ELambda && st.inlining < 0 && st.curRes != -1 && lenL(mut st, st.curRes) == 1 {
         fieldFnValDecl(mut st, st.curResPkg, st.tenv, latN(mut st, st.curRes, 0))?
@@ -819,11 +835,11 @@ func retValue(st mut S, e NodeRef, want TyRef, eb int, ef int, depth int, at Nod
     return retAnn(mut st, core, want), nil
 }
 
-// retAnn は return の値を戻り型 want へ合わせる ann。反復の region・式ブロックの中（関数のラベルより深い region）からの return は、値が深い region を
-// 指してよいので、ann（部分型だけ — 締めない）でなく関数の最内へ写す copyTo（締め + 部分型 — jump の規則と同じ関係）で合わせる（M4）
+// return の値を戻り型 want へ合わせる ann。反復の region・式ブロックの中（関数のラベルより深い region）からの return は、値が深い region を
+// 指してよいので、ann（部分型だけ — 締めない）でなく関数の最内へ写す copyTo（締め + 部分型 — jump の規則と同じ関係）で合わせる
 func retAnn(st mut S, core CoreRef, want TyRef) CoreRef {
     // 片腕が nil の if 式の値は腕ごとに合わせる（ite は両腕の型の完全一致が要る — `return if c { L{} } else { nil }` の L{} は cause の鎖が最内・
-    // nil は戻り型で、丸ごとの ann / copyTo の手前で腕が食い違っていた: F-bi）
+    // nil は戻り型で、丸ごとの ann / copyTo の手前で腕が食い違う）
     x := coreAt(mut st, core)
     if x.tag == CIte && (coreAt(mut st, CoreRef(x.b)).tag == CNil || coreAt(mut st, CoreRef(x.c)).tag == CNil) {
         return cIte(mut st, CoreRef(x.a), retAnn(mut st, CoreRef(x.b), want), retAnn(mut st, CoreRef(x.c), want))
@@ -837,8 +853,8 @@ func retAnn(st mut S, core CoreRef, want TyRef) CoreRef {
     return cAnn(mut st, core, want)
 }
 
-// storeCopy は外の region k のセル（型 et）へ格納する値 core（型 vt — 不明なら -1）を k へ写す境界コピー式（宛先構築レーン M4 — ループ本体・
-// 式ブロックの region から外の mut 束縛へ格納する値。scope-draft 2 節）。今の最内が k より深いときだけ写す（値の型の読みに頼らない —
+// 外の region k のセル（型 et）へ格納する値 core（型 vt — 不明なら -1）を k へ写す境界コピー式（ループ本体・
+// 式ブロックの region から外の mut 束縛へ格納する値）。今の最内が k より深いときだけ写す（値の型の読みに頼らない —
 // copyTo は k 以下しか指さない値には何もしない）。写さなくてよい・写せない（mut のコンテナは締められない・chan）なら -1
 func storeCopy(st mut S, core CoreRef, vt TyRef, et TyRef, k int) CoreRef {
     if st.rdepth - 1 <= k || !tyRegionAbove(mut st, et, -1) || !tyChanFree(mut st, et) || !tyMutFreeD(mut st, et) {
@@ -850,10 +866,10 @@ func storeCopy(st mut S, core CoreRef, vt TyRef, et TyRef, k int) CoreRef {
     return cCopyTo(mut st, k, et, core)
 }
 
-// appendValueAnn は append の値（subject が名前の mut 束縛の mut slice）を要素型へ緩める ann
+// append の値（subject が名前の mut 束縛の mut slice）を要素型へ緩める ann
 func appendValueAnn(st mut S, subject NodeRef, value NodeRef, core CoreRef, eb int, ef int) CoreRef {
     if kindN(mut st, subject) != ast.EIdent {
-        // 欄・添字の連鎖（`p.slots`）: 根の mut 束縛の region より深い値は写す（M4）
+        // 欄・添字の連鎖（`p.slots`）: 根の mut 束縛の region より深い値は写す
         mut rt := subject
         while kindN(mut st, rt) == ast.ESelector || kindN(mut st, rt) == ast.EIndex {
             rt = nA(nodeOf(mut st, rt))
@@ -899,7 +915,7 @@ func appendValueAnn(st mut S, subject NodeRef, value NodeRef, core CoreRef, eb i
     return cAnn(mut st, core, et)
 }
 
-// fieldValueAnn は mut 束縛の struct のフィールドへの代入の値を、フィールドの宣言型を束縛点の点座標に写した型へ緩める ann（F-14 (3)）
+// mut 束縛の struct のフィールドへの代入の値を、フィールドの宣言型を束縛点の点座標に写した型へ緩める ann
 func fieldValueAnn(st mut S, target NodeRef, value NodeRef, core CoreRef, eb int, ef int) CoreRef {
     mut root := target
     while kindN(mut st, root) == ast.ESelector {
@@ -934,11 +950,11 @@ func fieldValueAnn(st mut S, target NodeRef, value NodeRef, core CoreRef, eb int
     return cAnn(mut st, core, et)
 }
 
-// mutInitAnn は `mut x := y`（y は名前・欄読み `v.f`・添字・struct リテラル）の初期値を束縛点の点座標へ ann で緩める（欄読み = F-q — 仮引数の欄で初期化したセルが
-// r0 のままだと、後の代入が入らない。F-o〔代入側〕と対の初期化側）
+// `mut x := y`（y は名前・欄読み `v.f`・添字・struct リテラル）の初期値を束縛点の点座標へ ann で緩める（仮引数の欄で初期化したセルが
+// r0 のままだと、後の代入が入らない — 代入側と対の初期化側）
 func mutInitAnn(st mut S, value NodeRef, core CoreRef, eb int, ef int) CoreRef {
     vk := kindN(mut st, value)
-    // 名前・欄読み・添字（F-af — `mut p := xs[i]; p = "z"`: 仮引数の slice の要素の初期値もセルを点座標へ緩める）・struct リテラル（F-ba —
+    // 名前・欄読み・添字（`mut p := xs[i]; p = "z"`: 仮引数の slice の要素の初期値もセルを点座標へ緩める）・struct リテラル（
     // `mut w := W{xs: xs}`: 欄が仮引数の region のままのセルは callM の呼び出し点で anchor〔= 束縛点〕の写しと不変の位置で合わない）
     if vk != ast.EIdent && vk != ast.ESelector && vk != ast.EIndex && vk != ast.EComposite {
         return core
@@ -963,7 +979,7 @@ func mutInitAnn(st mut S, value NodeRef, core CoreRef, eb int, ef int) CoreRef {
     return cAnn(mut st, core, pt)
 }
 
-// atBinding は名前 base の mut 束縛のセル型の成分 t を束縛点の点座標で読んだ型（mut 束縛でなければ t のまま — F-26）
+// 名前 base の mut 束縛のセル型の成分 t を束縛点の点座標で読んだ型（mut 束縛でなければ t のまま）
 func atBinding(st mut S, base NodeRef, t TyRef, eb int) TyRef {
     b := lookup(mut st, eb, sA(nodeOf(mut st, base)))
     if b < 0 || !bnd(mut st, b).mutable {
@@ -976,7 +992,7 @@ func atBinding(st mut S, base NodeRef, t TyRef, eb int) TyRef {
     return pt
 }
 
-// mapValueAt は `m[k]` の V（getm の注釈と computeTy の結果）: map の値型をセルが組まれた点の座標で読む（F-34 — F-26 の atBinding と同じ読み）。
+// `m[k]` の V（getm の注釈と computeTy の結果）: map の値型をセルが組まれた点の座標で読む（atBinding と同じ読み）。
 // 名前の束縛はコア上の正確な型（BCore）があればそれ、無ければ束縛点。辞書 const の参照は参照点で展開されるので現在の点。他は宣言の型のまま
 func mapValueAt(st mut S, base NodeRef, bt TyRef, eb int) TyRef {
     if kindN(mut st, base) == ast.EIdent {
@@ -999,7 +1015,7 @@ func mapValueAt(st mut S, base NodeRef, bt TyRef, eb int) TyRef {
     return tVal(mut st, bt)
 }
 
-// looserAnn は値 value（コアは core）の型が行き先の型 et より締まっているときだけ、et へ ann で緩める（appendValueAnn と同じ規律）
+// 値 value（コアは core）の型が行き先の型 et より締まっているときだけ、et へ ann で緩める（appendValueAnn と同じ規律）
 func looserAnn(st mut S, value NodeRef, core CoreRef, et TyRef, eb int, ef int) CoreRef {
     vt := computeTy(mut st, value, eb, ef)
     if vt == -1 || !hasRegion(mut st, et) || tyEql(mut st, vt, et) || !tyLooser(mut st, vt, et) {
@@ -1008,7 +1024,7 @@ func looserAnn(st mut S, value NodeRef, core CoreRef, et TyRef, eb int, ef int) 
     return cAnn(mut st, core, et)
 }
 
-// mapKey は格納するキー（string キーはキー型へ ann で緩める）
+// 格納するキー（string キーはキー型へ ann で緩める）
 func mapKey(st mut S, key NodeRef, kt TyRef, eb int, ef int, depth int) (CoreRef, error?) {
     core := expr(mut st, key, eb, ef, depth)?
     if tg(mut st, kt) == TInt {
@@ -1017,7 +1033,7 @@ func mapKey(st mut S, key NodeRef, kt TyRef, eb int, ef int, depth int) (CoreRef
     return cAnn(mut st, core, kt), nil
 }
 
-// inlineArgTy は展開の値引数を ann する型（既定は展開点の点座標。名前の束縛が締まった正確な型を持てばその型）
+// 展開の値引数を ann する型（既定は展開点の点座標。名前の束縛が締まった正確な型を持てばその型）
 func inlineArgTy(st mut S, arg NodeRef, want TyRef, eb int) TyRef {
     pt := pointTy(mut st, want)
     if kindN(mut st, arg) != ast.EIdent {
@@ -1036,7 +1052,7 @@ func inlineArgTy(st mut S, arg NodeRef, want TyRef, eb int) TyRef {
 
 // ── 補間 ──
 
-// lowerInterp は補間を連結の連鎖に脱糖する（interp.zig の固定テンプレート — 表層 AST の節をヒープに足す）
+// 補間を連結の連鎖に脱糖する（interp.zig の固定テンプレート — 表層 AST の節をヒープに足す）
 func lowerInterp(st mut S, e NodeRef, eb int, ef int) (NodeRef, error?) {
     at := e
     lits := lA(nodeOf(mut st, e))
@@ -1091,7 +1107,7 @@ func textBlock(st mut S, kind int, text string, at NodeRef) int {
     return rec8(mut st, kind, at, list1(mut st, stmt), 0, 0, 0, 0, 0)
 }
 
-// interpKind は補間の穴の型（0 = string, 1 = int, 2 = bool, -1 = 補間できない）
+// 補間の穴の型（0 = string, 1 = int, 2 = bool, -1 = 補間できない）
 func interpKind(st mut S, e NodeRef, eb int, ef int) int {
     // 穴の種類は表層型検査器の表から（種類だけ要る — region の座標は要らない。C1 B3）。named scalar は断片外（build も拒否）
     y := YTypeOf(mut st, e)
@@ -1119,7 +1135,7 @@ func interpKind(st mut S, e NodeRef, eb int, ef int) int {
 
 // ── 辞書 const ──
 
-// dictExpr は辞書 const の参照点での展開
+// 辞書 const の参照点での展開
 func dictExpr(st mut S, c int, pk int, depth int) (CoreRef, error?) {
     r := dictEnter(mut st, pk)
     saved_c := st.dictConst
@@ -1181,12 +1197,12 @@ func composite(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?)
     return labelIn(mut st, e, vr.decl, vr.pkg, vr.idx, venv, eb, ef, depth)
 }
 
-// labelL は union variant / error ラベルのリテラル → inl / inr の鎖
+// union variant / error ラベルのリテラル → inl / inr の鎖
 func labelL(st mut S, e NodeRef, decl NodeRef, pk int, idx int, eb int, ef int, depth int) (CoreRef, error?) {
     return labelIn(mut st, e, decl, pk, idx, st.tenv, eb, ef, depth)
 }
 
-// labelIn は labelL の型環境 venv つき（欄の型と union の木の型をジェネリック union の型引数の束縛で引く — 値の式は呼び手の文脈のまま）
+// labelL の型環境 venv つき（欄の型と union の木の型をジェネリック union の型引数の束縛で引く — 値の式は呼び手の文脈のまま）
 func labelIn(st mut S, e NodeRef, decl NodeRef, pk int, idx int, venv int, eb int, ef int, depth int) (CoreRef, error?) {
     v := vat(mut st, decl, idx)
     at := e
@@ -1201,7 +1217,7 @@ func labelIn(st mut S, e NodeRef, decl NodeRef, pk int, idx int, venv int, eb in
     return letsAround(mut st, lets, r), nil
 }
 
-// encodeVariant は variant（decl の start 番目からの列の idx 番目）のペイロードを右結合の union の入れ子へ包む
+// variant（decl の start 番目からの列の idx 番目）のペイロードを右結合の union の入れ子へ包む
 func encodeVariant(st mut S, pk int, decl NodeRef, start int, idx int, payload CoreRef, at NodeRef) (CoreRef, error?) {
     n := vcount(mut st, decl) - start
     if n == 1 && isErrors(int(decl), start) {
@@ -1219,11 +1235,11 @@ func encodeVariant(st mut S, pk int, decl NodeRef, start int, idx int, payload C
     return cInr(mut st, l, inner), nil
 }
 
-// fieldValuesIn は struct リテラルの値の列（フィールド順。名前つきは位置に並べ替え）。フィールドの期待型は宣言側の束縛 fenv で
-// 値は書いた順に評価する（language.md 27 節 — 2026-09-30 の裁定 (a)、Go と同じ）: 名前つきで欄の順と違う順に書いたときだけ、値を書いた順の
+// struct リテラルの値の列（フィールド順。名前つきは位置に並べ替え）。フィールドの期待型は宣言側の束縛 fenv で
+// 値は書いた順に評価する（language.md 27 節、Go と同じ）: 名前つきで欄の順と違う順に書いたときだけ、値を書いた順の
 // let に束縛して欄の順に組む（戻りの 2 つ目 = let の列 — 呼び手が組んだ値を letsAround で包む。順が同じなら -1 でコアは素の組のまま）
 func fieldValuesIn(st mut S, pk int, fenv int, fs ListRef, elems ListRef, at NodeRef, eb int, ef int, depth int) (ListRef, ListRef, error?) {
-    // 行き先（F-bb — composite が立てる・ここで必ず落とす）: 0 = 最内に作る・k = region k - 1 に作る
+    // 行き先（composite が立てる・ここで必ず落とす）: 0 = 最内に作る・k = region k - 1 に作る
     cd := st.fvDest
     st.fvDest = 0
     n := lenL(mut st, fs)
@@ -1270,7 +1286,7 @@ func fieldValuesIn(st mut S, pk int, fenv int, fs ListRef, elems ListRef, at Nod
         }
         // 値の位置（値化可能な named fn type の欄 + その option — closure.sober）: 値は常に閉包の組
         fvd := fieldFnValDecl(mut st, pk, fenv, ftype)?
-        // 行き先つき（F-bb）: 欄の値の mut のリテラル（slice / map / 入れ子の struct）は行き先に作り（mutDest を 1 欄ずつ渡し直す）、
+        // 行き先つき: 欄の値の mut のリテラル（slice / map / 入れ子の struct）は行き先に作り（mutDest を 1 欄ずつ渡し直す）、
         // 行き先より深い imm の値は行き先へ写す（slice リテラルの要素と同じ — storeCopy）
         vk := kindN(mut st, nB(nodeOf(mut st, el)))
         if cd > 0 && fvd < 0 && (vk == ast.ESlicelit || vk == ast.EMaplit || vk == ast.EComposite) {
@@ -1290,8 +1306,8 @@ func fieldValuesIn(st mut S, pk int, fenv int, fs ListRef, elems ListRef, at Nod
             }
         }
         st.liftHint = -1
-        // F-x: 欄の宣言型で注釈する（組の項は欄の型を持たない — 注釈しないと `L{a: "s"}` の欄の値を使わない限り check が型を見ない。
-        // スカラー（int / bool / byte / unit とその組）だけ — region・型変数・option・union を含む型の注釈は座標や包みの読みが要る〔F-f の層〕ので、
+        // 欄の宣言型で注釈する（組の項は欄の型を持たない — 注釈しないと `L{a: "s"}` の欄の値を使わない限り check が型を見ない。
+        // スカラー（int / bool / byte / unit とその組）だけ — region・型変数・option・union を含む型の注釈は座標や包みの読みが要るので、
         // 使う点の検査に任せる）
         // 値の型が分かって欄の型に合わなければ名指す（文字列・struct 等のスカラーでない型・別のスカラー — 整数リテラルは coerce が byte / float へ寄せる）
         if scalarTy(mut st, w) {
@@ -1301,7 +1317,7 @@ func fieldValuesIn(st mut S, pk int, fenv int, fs ListRef, elems ListRef, at Nod
                 return out, lets, diag.FieldType{at: posOf(mut st, vn)}
             }
         }
-        // F-ad: slice の欄に要素型の違う slice のリテラル（`S{w: []int{1, 2}}`・w は []int?）— coerce は期待の要素型で読み直すので受理してしまう
+        // slice の欄に要素型の違う slice のリテラル（`S{w: []int{1, 2}}`・w は []int?）— coerce は期待の要素型で読み直すので受理してしまう
         // （build は拒否 — check ⊃ build）。書いた要素型の種類が欄の要素型と違えば名指す
         if isTag(mut st, w, TSl) && kindN(mut st, nB(nodeOf(mut st, el))) == ast.ESlicelit {
             ln := nB(nodeOf(mut st, el))
@@ -1338,7 +1354,7 @@ func fieldValuesIn(st mut S, pk int, fenv int, fs ListRef, elems ListRef, at Nod
     return out, lets, nil
 }
 
-// scalarTy は int / bool / byte / unit とその組だけの型か（F-x の欄の注釈の対象）
+// int / bool / byte / unit とその組だけの型か（欄の注釈の対象）
 func scalarTy(st mut S, t TyRef) bool {
     k := tg(mut st, t)
     if k == TPr {
@@ -1347,12 +1363,12 @@ func scalarTy(st mut S, t TyRef) bool {
     return k == TInt || k == TBool || k == TByte || k == TFloat || k == TUnit
 }
 
-// letsAround は fieldValuesIn の let の列（-1 = 無し）で e を包む
+// fieldValuesIn の let の列（-1 = 無し）で e を包む
 func letsAround(st mut S, lets ListRef, e CoreRef) CoreRef {
     return if lets == -1 { e } else { wrapLets(mut st, lets, e) }
 }
 
-// zeroAt は zeroOf の行き先つき（F-bb）: コンテナを region r の点座標で r に作る（外の mut 場所へ流れ込む struct リテラルの省いた欄 —
+// zeroOf の行き先つき: コンテナを region r の点座標で r に作る（外の mut 場所へ流れ込む struct リテラルの省いた欄 —
 // mut のコンテナは写せないので行き先に作る・imm の空も同じ座標に揃える）
 func zeroAt(st mut S, t TyRef, r int, at NodeRef) (CoreRef, error?) {
     saved := st.rdepth
@@ -1377,7 +1393,7 @@ func zeroAt(st mut S, t TyRef, r int, at NodeRef) (CoreRef, error?) {
     return zeroOf(mut st, t, at)
 }
 
-// zeroOf は型のゼロ値（コンテナは点座標の空。imm は mut 構築 + freeze）
+// 型のゼロ値（コンテナは点座標の空。imm は mut 構築 + freeze）
 func zeroOf(st mut S, t TyRef, at NodeRef) (CoreRef, error?) {
     k := tg(mut st, t)
     switch k {
@@ -1408,13 +1424,13 @@ func zeroOf(st mut S, t TyRef, at NodeRef) (CoreRef, error?) {
     return 0, diag.CoreFragment{at: posOf(mut st, at)}
 }
 
-// emptyChain は空の鎖（包んでいない error）: 点座標の空 imm slice
+// 空の鎖（包んでいない error）: 点座標の空 imm slice
 func emptyChain(st mut S, at NodeRef) (CoreRef, error?) {
     l := unionTreeTy(mut st, st.curPkg, NodeRef(ERRS), 0, at, TYFUEL)?
     return c1(mut st, CFreeze, cMkslice(mut st, 1, pointTy(mut st, l))), nil
 }
 
-// panicCore は `panic(…)` の呼び出し e のコア（結果型 want の unreach）。loader（panicx.sober）が写した形 — 実引数は [ラベルの名前の文字列] か
+// `panic(…)` の呼び出し e のコア（結果型 want の unreach）。loader（panicx.sober）が写した形 — 実引数は [ラベルの名前の文字列] か
 // [名前, 欄の struct の composite]: 欄の値は書いた順に評価して捨てる（let — 欄の型の検査は普通の composite と同じ）。実引数なし = 裸の `panic()`（廃止 — loader が拒否するので来ない）
 func panicCore(st mut S, e NodeRef, want TyRef, eb int, ef int, depth int) (CoreRef, error?) {
     args := lB(nodeOf(mut st, e))
@@ -1429,7 +1445,7 @@ func panicCore(st mut S, e NodeRef, want TyRef, eb int, ef int, depth int) (Core
     return cUnreach(mut st, want), nil
 }
 
-// isPanicCall は e が組み込みの `panic(…)` の呼び出しか（名前 panic が局所の束縛・package の関数で上書きされていないとき）
+// e が組み込みの `panic(…)` の呼び出しか（名前 panic が局所の束縛・package の関数で上書きされていないとき）
 func isPanicCall(st mut S, e NodeRef, eb int) bool {
     callee := nA(nodeOf(mut st, e))
     if kindN(mut st, callee) != ast.EIdent || !strIs(mut st, sA(nodeOf(mut st, callee)), "panic") {

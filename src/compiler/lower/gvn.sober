@@ -1,6 +1,6 @@
 package lower
 
-// GVN / CSE（性能投資 M1）: mem2reg の後の SSA に掛ける IR → IR のパス。
+// GVN / CSE: mem2reg の後の SSA に掛ける IR → IR のパス。
 // ①純粋な命令（const・算術・比較・gep・ptoi / itop・slotaddr・globaladdr・funcaddr）は支配木の上で値番号を引き、支配する同じ式があれば付け替えて消す
 //   （辺の順のスコープつきの表 — 支配木を前順で辿り、ブロックを出るときに足した項を戻す）。可換な演算（add / mul / and / or / xor・eq / ne）は被演算子を番号順に並べる。
 //   div / rem も対象（支配する同じ式が先に評価されている — そこで落ちなければここでも落ちない）
@@ -15,7 +15,7 @@ import "std/iter"
 const GV_W = 6   // 表の項: [op, a, b, c, 値, 同じバケツの前の項]
 const GV_LKEEP = 8  // store が残す load の表の項の上限（gvnBlock）
 
-// gvnModule はモジュールの全関数に GVN を掛ける
+// モジュールの全関数に GVN を掛ける
 func gvnModule(st mut St) {
     mut f := st.fhead
     while f != -1 {
@@ -26,7 +26,7 @@ func gvnModule(st mut St) {
     }
 }
 
-// GvnT はスコープつきの表（バケツの頭 head・項 ents〔GV_W 語ずつ〕・項の数 n）
+// スコープつきの表（バケツの頭 head・項 ents〔GV_W 語ずつ〕・項の数 n）
 type GvnT struct {
     head mut []int
     ents mut []int
@@ -38,7 +38,7 @@ func gvnFunc(st mut St, f FnRef) {
     gvnFuncK(mut st, f, false)
 }
 
-// gvnFuncK は gvnFunc に、fold なら分かっている条件の condbr の畳み込みを足したもの（展開の後の cfgclean だけ — 畳むとブロックが
+// gvnFunc に、fold なら分かっている条件の condbr の畳み込みを足したもの（展開の後の cfgclean だけ — 畳むとブロックが
 // 消えて番号が振り直るので、ブロックの番号の表を持ったまま gvnFunc を呼ぶ他のパス〔hdr・unroll 等〕では掛けない）
 func gvnFuncK(st mut St, f FnRef, fold bool) {
     nv := irFnNVal(mut st, f)
@@ -82,7 +82,7 @@ func gvnFuncK(st mut St, f FnRef, fold bool) {
     // 分かっている条件: 前任が 1 つの親の condbr の辺で入ったブロックの部分木では、その条件の値が真 / 偽と決まっている（[値, 真偽] の 2 語ずつ・
     // kn = 使っている語数・stk の 5 語目 = 入ったときの kn）。同じ値で分岐する condbr を br に畳む（bce.sober ② と同じ判定 — 展開の後の cfgclean の
     // GVN でも効くように GVN の中に置く: 展開した本体の検査と呼び手の検査が同じ比較になった形〔flate の insert と Load64〕。bce を展開の後にも
-    // 掛けると自己 build の仕事 +1.55 G — report-999）
+    // 掛けると自己 build の仕事 +1.55 G）
     mut kc := mut []int{}
     mut kn := 0
     mut folded := false
@@ -135,7 +135,7 @@ func gvnFuncK(st mut St, f FnRef, fold bool) {
     }
 }
 
-// gvnMul2 は浮動小数の `x * 2.0` を `x + x` にする（強度低減 — IEEE で厳密に同値: どちらも丸めが起きず、±0・∞・NaN も同じ結果。
+// 浮動小数の `x * 2.0` を `x + x` にする（強度低減 — IEEE で厳密に同値: どちらも丸めが起きず、±0・∞・NaN も同じ結果。
 // 鎖の 1 段が乗算から加算に縮む — mandelbrot の `2.0 * zr * zi` で −1.1%・Go と同じ形）。使われなくなった定数は optDce が消す
 func gvnMul2(st mut St, f FnRef, nv int) {
     mut m2c := mut []int{}
@@ -178,7 +178,7 @@ func gvnMul2(st mut St, f FnRef, nv int) {
     }
 }
 
-// gvnPush5 は stk の sp 語目から [b, 0, n, e, k] を置く（足りなければ伸ばす）
+// stk の sp 語目から [b, 0, n, e, k] を置く（足りなければ伸ばす）
 func gvnPush5(stk mut []int, sp int, b int, n int, e int, k int) {
     while len(stk) < sp + 5 {
         stk = append(stk, 0)
@@ -190,7 +190,7 @@ func gvnPush5(stk mut []int, sp int, b int, n int, e int, k int) {
     stk[sp + 4] = k
 }
 
-// gvnKcPush は分かっている条件の表 kc の kn 語目から [v, x] を置き、新しい kn を返す
+// 分かっている条件の表 kc の kn 語目から [v, x] を置き、新しい kn を返す
 func gvnKcPush(kc mut []int, kn int, v int, x int) int {
     while len(kc) < kn + 2 {
         kc = append(kc, 0)
@@ -200,7 +200,7 @@ func gvnKcPush(kc mut []int, kn int, v int, x int) int {
     return kn + 2
 }
 
-// gvnKcFold は b の condbr の条件が kc（kn 語）で分かっていれば br に畳む（行き先と実引数は分かっている側 — bce.sober と同じ書き換え）
+// b の condbr の条件が kc（kn 語）で分かっていれば br に畳む（行き先と実引数は分かっている側 — bce.sober と同じ書き換え）
 func gvnKcFold(st mut St, b BlkRef, kc mut []int, kn int) bool {
     if irBlkTerm(mut st, b) != TmCondbr {
         return false
@@ -225,7 +225,7 @@ func gvnKcFold(st mut St, b BlkRef, kc mut []int, kn int) bool {
     return false
 }
 
-// gvnExPush は ex の exn 語目から load の表 lt の先頭 ln 語とその語数を積み、新しい exn を返す（足りなければ伸ばす）
+// ex の exn 語目から load の表 lt の先頭 ln 語とその語数を積み、新しい exn を返す（足りなければ伸ばす）
 func gvnExPush(ex mut []int, exn int, lt mut []int, ln int) int {
     while len(ex) < exn + ln + 1 {
         ex = append(ex, 0)
@@ -237,7 +237,7 @@ func gvnExPush(ex mut []int, exn int, lt mut []int, ln int) int {
     return exn + ln + 1
 }
 
-// gvnExTop は ex の [0, exn) の末尾に積まれた表を lt の先頭へ写し、その語数を返す
+// ex の [0, exn) の末尾に積まれた表を lt の先頭へ写し、その語数を返す
 func gvnExTop(ex mut []int, exn int, lt mut []int) int {
     n := ex[exn - 1]
     b := exn - 1 - n
@@ -250,7 +250,7 @@ func gvnExTop(ex mut []int, exn int, lt mut []int) int {
     return n
 }
 
-// gvnPop は表を項の数 n まで戻す（足した逆順にバケツの頭を戻す）
+// 表を項の数 n まで戻す（足した逆順にバケツの頭を戻す）
 func gvnPop(t mut GvnT, n int) {
     while t.n > n {
         t.n = t.n - 1
@@ -268,7 +268,7 @@ func gvnHash(op int, a int, b int, c int) int {
     return h ^ (h >> 29)
 }
 
-// gvnFind は項 [op, a, b, c] の値（無ければ -1）
+// 項 [op, a, b, c] の値（無ければ -1）
 func gvnFind(t mut GvnT, op int, a int, b int, c int) int {
     mut e := t.head[gvnHash(op, a, b, c) & t.mask]
     while e >= 0 {
@@ -296,7 +296,7 @@ func gvnAdd(t mut GvnT, op int, a int, b int, c int, v int) {
     t.n = t.n + 1
 }
 
-// gvnBlock はブロック blk の命令に値番号を引く（load の表はブロックの中だけ — 入口で空・ブロックを出たら捨てる）
+// ブロック blk の命令に値番号を引く（load の表はブロックの中だけ — 入口で空・ブロックを出たら捨てる）
 func gvnBlock(st mut St, t mut GvnT, blk BlkRef, vt int, lt mut []int, ln0 int) int {
     // load の表: [番地, オフセット, 型, 値] の 4 語ずつ（小さい — 線形に引く）・ln = 使っている語数（空にするのは ln = 0）。
     // 入口の表 = lt の先頭 ln0 語（前任 1 つの親から引き継いだ分 — gvnFunc）・返り = 出口の語数
@@ -367,14 +367,14 @@ func gvnBlock(st mut St, t mut GvnT, blk BlkRef, vt int, lt mut []int, ln0 int) 
     return ln
 }
 
-// gvnPure は値番号を引く純粋な命令か（load は別の表・region の読みは対象外）
+// 値番号を引く純粋な命令か（load は別の表・region の読みは対象外）
 func gvnPure(st mut St, ins InsRef) bool {
     op := irInsOp(mut st, ins)
     return irInsRes(mut st, ins) >= 0 && (op == OpConst || op == OpBin || op == OpCmp || op == OpGepW || op == OpGepB ||
         op == OpPtoi || op == OpItop || op == OpSlotaddr || op == OpGlobal || op == OpFsAddr || op == OpFuncaddr)
 }
 
-// gvnComm は可換な演算か（add / mul / and / or / xor・eq / ne）
+// 可換な演算か（add / mul / and / or / xor・eq / ne）
 func gvnComm(op int, k int) bool {
     if op == OpBin {
         return k == BAdd || k == BMul || k == BAnd || k == BOr || k == BXor || k == BMulHi
@@ -393,7 +393,7 @@ func gvnLoadFind(lt mut []int, ln int, p int, off int, ty int) int {
     return -1
 }
 
-// gvnLoadKeep は load の表 lt（ln 語）を番地 p・語のずれが off でない項だけに詰め、詰めた後の語数を返す（p の off への store で他は無効）
+// load の表 lt（ln 語）を番地 p・語のずれが off でない項だけに詰め、詰めた後の語数を返す（p の off への store で他は無効）
 func gvnLoadKeep(lt mut []int, ln int, p int, off int) int {
     mut n := 0
     mut i := 0
@@ -409,7 +409,7 @@ func gvnLoadKeep(lt mut []int, ln int, p int, off int) int {
     return n
 }
 
-// gvnLoadAdd は lt の at 語目から [p, off, ty, v] を置く（足りなければ伸ばす）
+// lt の at 語目から [p, off, ty, v] を置く（足りなければ伸ばす）
 func gvnLoadAdd(lt mut []int, at int, p int, off int, ty int, v int) {
     while len(lt) < at + 4 {
         lt = append(lt, 0)

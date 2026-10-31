@@ -1,6 +1,6 @@
 package main
 
-// string キーの map（随時回収 R3）。キーの比較は長さ + バイト列（Lean の keyEq）。
+// string キーの map。キーの比較は長さ + バイト列（Lean の keyEq）。
 // Examples.lean の ex25s と同じ筋を含む
 func count(m map[string]int, k string) int {
     v := m[k]

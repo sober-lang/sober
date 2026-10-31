@@ -1,0 +1,33 @@
+package loader
+
+// 段の印（report-1183 段 0 — 計器の常設）: SOBER_STAGES=1 のとき build の段の境目で `@<名前>` を標準エラーへ 1 行。読み手 =
+// scripts/stagewall.ts（印の到着時刻と CPU 時間を区間ごとに）。off の値札 = 印 ≈30 点 × 環境変数の引き 1 回（出力は変わらない）
+
+import "std/io"
+import "std/os"
+
+// Flag は環境変数 name が "1" か（開発の口の印）
+func Flag(name string) bool {
+    v, err := os.Getenv(name)
+    if err != nil || v == nil {
+        return false
+    }
+    return v == "1"
+}
+
+// Err はバイト列 b を標準エラーへ（開発の口の出力）
+func Err(b []byte) {
+    _ = io.WriteStderr(b)
+}
+
+// Stage は SOBER_STAGES が "1" なら段の名前 name を印として書く
+func Stage(name string) {
+    v, err := os.Getenv("SOBER_STAGES")
+    if err != nil || v == nil {
+        return
+    }
+    if v != "1" {
+        return
+    }
+    _ = io.WriteStderr(bytes("@${name}\n"))
+}

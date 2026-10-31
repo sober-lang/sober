@@ -2,7 +2,7 @@ package main
 
 import "std/iter"
 
-// 先端一致の concat（息継ぎ ①）: ループの `s = s + x` は外の束縛の先端でその場に伸びる（償却 O(n)）。途中で別の連結を挟んでも値は独立
+// 先端一致の concat: ループの `s = s + x` は外の束縛の先端でその場に伸びる（償却 O(n)）。途中で別の連結を挟んでも値は独立
 func main() int {
     mut s := ""
     mut keep := ""

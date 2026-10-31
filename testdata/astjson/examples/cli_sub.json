@@ -1,0 +1,2805 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/cli",
+      "tok": 4
+    },
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "list",
+      "type_params": [],
+      "params": [
+        {
+          "name": "r",
+          "type": {
+            "k": "name",
+            "name": "cli.Parsed"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "since"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "cli",
+                    "tok": 600
+                  },
+                  "field": "StrOpt",
+                  "tok": 602
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "r",
+                    "tok": 604
+                  },
+                  {
+                    "k": "ident",
+                    "name": "Since",
+                    "tok": 606
+                  }
+                ],
+                "tok": 603
+              }
+            ],
+            "tok": 598
+          },
+          {
+            "k": "bind",
+            "names": [
+              "s"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "if",
+                "cond": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "since",
+                    "tok": 612
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 614
+                  },
+                  "tok": 613
+                },
+                "then": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "strlit",
+                        "value": "-",
+                        "tok": 616
+                      }
+                    }
+                  ]
+                },
+                "else": {
+                  "k": "block",
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "ident",
+                        "name": "since",
+                        "tok": 620
+                      }
+                    }
+                  ]
+                },
+                "tok": 611
+              }
+            ],
+            "tok": 609
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 623
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "+",
+                  "lhs": {
+                    "k": "binary",
+                    "op": "+",
+                    "lhs": {
+                      "k": "binary",
+                      "op": "+",
+                      "lhs": {
+                        "k": "binary",
+                        "op": "+",
+                        "lhs": {
+                          "k": "binary",
+                          "op": "+",
+                          "lhs": {
+                            "k": "binary",
+                            "op": "+",
+                            "lhs": {
+                              "k": "strlit",
+                              "value": "list dir=",
+                              "tok": 625
+                            },
+                            "rhs": {
+                              "k": "call",
+                              "callee": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "cli",
+                                  "tok": 627
+                                },
+                                "field": "Str",
+                                "tok": 629
+                              },
+                              "args": [
+                                {
+                                  "k": "ident",
+                                  "name": "r",
+                                  "tok": 631
+                                },
+                                {
+                                  "k": "ident",
+                                  "name": "Dir",
+                                  "tok": 633
+                                }
+                              ],
+                              "tok": 630
+                            },
+                            "tok": 626
+                          },
+                          "rhs": {
+                            "k": "interp",
+                            "tmpl": {
+                              "lits": [
+                                " limit=",
+                                " since="
+                              ],
+                              "holes": [
+                                {
+                                  "k": "call",
+                                  "callee": {
+                                    "k": "selector",
+                                    "base": {
+                                      "k": "ident",
+                                      "name": "cli",
+                                      "tok": 636
+                                    },
+                                    "field": "Int",
+                                    "tok": 636
+                                  },
+                                  "args": [
+                                    {
+                                      "k": "ident",
+                                      "name": "r",
+                                      "tok": 636
+                                    },
+                                    {
+                                      "k": "ident",
+                                      "name": "Limit",
+                                      "tok": 636
+                                    }
+                                  ],
+                                  "tok": 636
+                                }
+                              ]
+                            },
+                            "tok": 636
+                          },
+                          "tok": 635
+                        },
+                        "rhs": {
+                          "k": "ident",
+                          "name": "s",
+                          "tok": 638
+                        },
+                        "tok": 637
+                      },
+                      "rhs": {
+                        "k": "strlit",
+                        "value": " format=",
+                        "tok": 640
+                      },
+                      "tok": 639
+                    },
+                    "rhs": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "cli",
+                          "tok": 642
+                        },
+                        "field": "Choice",
+                        "tok": 644
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "r",
+                          "tok": 646
+                        },
+                        {
+                          "k": "ident",
+                          "name": "Format",
+                          "tok": 648
+                        }
+                      ],
+                      "tok": 645
+                    },
+                    "tok": 641
+                  },
+                  "rhs": {
+                    "k": "interp",
+                    "tmpl": {
+                      "lits": [
+                        " tags=",
+                        " trace=",
+                        ""
+                      ],
+                      "holes": [
+                        {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "len",
+                            "tok": 651
+                          },
+                          "args": [
+                            {
+                              "k": "call",
+                              "callee": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "cli",
+                                  "tok": 651
+                                },
+                                "field": "List",
+                                "tok": 651
+                              },
+                              "args": [
+                                {
+                                  "k": "ident",
+                                  "name": "r",
+                                  "tok": 651
+                                },
+                                {
+                                  "k": "ident",
+                                  "name": "Tag",
+                                  "tok": 651
+                                }
+                              ],
+                              "tok": 651
+                            }
+                          ],
+                          "tok": 651
+                        },
+                        {
+                          "k": "call",
+                          "callee": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "cli",
+                              "tok": 651
+                            },
+                            "field": "Bool",
+                            "tok": 651
+                          },
+                          "args": [
+                            {
+                              "k": "ident",
+                              "name": "r",
+                              "tok": 651
+                            },
+                            {
+                              "k": "ident",
+                              "name": "Trace",
+                              "tok": 651
+                            }
+                          ],
+                          "tok": 651
+                        }
+                      ]
+                    },
+                    "tok": 651
+                  },
+                  "tok": 650
+                }
+              ],
+              "tok": 624
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "t"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "cli",
+                        "tok": 657
+                      },
+                      "field": "List",
+                      "tok": 659
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "r",
+                        "tok": 661
+                      },
+                      {
+                        "k": "ident",
+                        "name": "Tag",
+                        "tok": 663
+                      }
+                    ],
+                    "tok": 660
+                  },
+                  "guards": [],
+                  "tok": 655
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 666
+                      },
+                      "args": [
+                        {
+                          "k": "binary",
+                          "op": "+",
+                          "lhs": {
+                            "k": "strlit",
+                            "value": "  tag ",
+                            "tok": 668
+                          },
+                          "rhs": {
+                            "k": "ident",
+                            "name": "t",
+                            "tok": 670
+                          },
+                          "tok": 669
+                        }
+                      ],
+                      "tok": 667
+                    }
+                  }
+                ]
+              },
+              "tok": 654
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 676
+              }
+            ],
+            "tok": 675
+          }
+        ]
+      },
+      "tok": 589,
+      "bodiless": false,
+      "span": {
+        "start": 588,
+        "end": 680
+      },
+      "sig_end": 597
+    },
+    {
+      "name": "add",
+      "type_params": [],
+      "params": [
+        {
+          "name": "r",
+          "type": {
+            "k": "name",
+            "name": "cli.Parsed"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 690
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "+",
+                  "lhs": {
+                    "k": "binary",
+                    "op": "+",
+                    "lhs": {
+                      "k": "binary",
+                      "op": "+",
+                      "lhs": {
+                        "k": "strlit",
+                        "value": "add ",
+                        "tok": 692
+                      },
+                      "rhs": {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "cli",
+                            "tok": 694
+                          },
+                          "field": "Pos",
+                          "tok": 696
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "r",
+                            "tok": 698
+                          },
+                          {
+                            "k": "ident",
+                            "name": "Title",
+                            "tok": 700
+                          }
+                        ],
+                        "tok": 697
+                      },
+                      "tok": 693
+                    },
+                    "rhs": {
+                      "k": "interp",
+                      "tmpl": {
+                        "lits": [
+                          " (",
+                          " words) to "
+                        ],
+                        "holes": [
+                          {
+                            "k": "call",
+                            "callee": {
+                              "k": "ident",
+                              "name": "len",
+                              "tok": 703
+                            },
+                            "args": [
+                              {
+                                "k": "call",
+                                "callee": {
+                                  "k": "selector",
+                                  "base": {
+                                    "k": "ident",
+                                    "name": "cli",
+                                    "tok": 703
+                                  },
+                                  "field": "PosList",
+                                  "tok": 703
+                                },
+                                "args": [
+                                  {
+                                    "k": "ident",
+                                    "name": "r",
+                                    "tok": 703
+                                  },
+                                  {
+                                    "k": "ident",
+                                    "name": "Words",
+                                    "tok": 703
+                                  }
+                                ],
+                                "tok": 703
+                              }
+                            ],
+                            "tok": 703
+                          }
+                        ]
+                      },
+                      "tok": 703
+                    },
+                    "tok": 702
+                  },
+                  "rhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "cli",
+                        "tok": 705
+                      },
+                      "field": "Str",
+                      "tok": 707
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "r",
+                        "tok": 709
+                      },
+                      {
+                        "k": "ident",
+                        "name": "Dir",
+                        "tok": 711
+                      }
+                    ],
+                    "tok": 708
+                  },
+                  "tok": 704
+                }
+              ],
+              "tok": 691
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 716
+              }
+            ],
+            "tok": 715
+          }
+        ]
+      },
+      "tok": 681,
+      "bodiless": false,
+      "span": {
+        "start": 680,
+        "end": 720
+      },
+      "sig_end": 689
+    },
+    {
+      "name": "tagAdd",
+      "type_params": [],
+      "params": [
+        {
+          "name": "r",
+          "type": {
+            "k": "name",
+            "name": "cli.Parsed"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 730
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "+",
+                  "lhs": {
+                    "k": "strlit",
+                    "value": "tag add ",
+                    "tok": 732
+                  },
+                  "rhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "cli",
+                        "tok": 734
+                      },
+                      "field": "Pos",
+                      "tok": 736
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "r",
+                        "tok": 738
+                      },
+                      {
+                        "k": "ident",
+                        "name": "Name",
+                        "tok": 740
+                      }
+                    ],
+                    "tok": 737
+                  },
+                  "tok": 733
+                }
+              ],
+              "tok": 731
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 745
+              }
+            ],
+            "tok": 744
+          }
+        ]
+      },
+      "tok": 721,
+      "bodiless": false,
+      "span": {
+        "start": 720,
+        "end": 749
+      },
+      "sig_end": 729
+    },
+    {
+      "name": "exec",
+      "type_params": [],
+      "params": [
+        {
+          "name": "r",
+          "type": {
+            "k": "name",
+            "name": "cli.Parsed"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "a"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "cli",
+                        "tok": 762
+                      },
+                      "field": "PosList",
+                      "tok": 764
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "r",
+                        "tok": 766
+                      },
+                      {
+                        "k": "ident",
+                        "name": "Cmd",
+                        "tok": 768
+                      }
+                    ],
+                    "tok": 765
+                  },
+                  "guards": [],
+                  "tok": 760
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 771
+                      },
+                      "args": [
+                        {
+                          "k": "binary",
+                          "op": "+",
+                          "lhs": {
+                            "k": "strlit",
+                            "value": "exec arg ",
+                            "tok": 773
+                          },
+                          "rhs": {
+                            "k": "ident",
+                            "name": "a",
+                            "tok": 775
+                          },
+                          "tok": 774
+                        }
+                      ],
+                      "tok": 772
+                    }
+                  }
+                ]
+              },
+              "tok": 759
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 781
+              }
+            ],
+            "tok": 780
+          }
+        ]
+      },
+      "tok": 750,
+      "bodiless": false,
+      "span": {
+        "start": 749,
+        "end": 785
+      },
+      "sig_end": 758
+    },
+    {
+      "name": "run",
+      "type_params": [],
+      "params": [
+        {
+          "name": "args",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "string"
+            },
+            "mut": false
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 794
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "+",
+                  "lhs": {
+                    "k": "strlit",
+                    "value": "$ ",
+                    "tok": 796
+                  },
+                  "rhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "join",
+                      "tok": 798
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "args",
+                        "tok": 800
+                      }
+                    ],
+                    "tok": 799
+                  },
+                  "tok": 797
+                }
+              ],
+              "tok": 795
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 804
+              },
+              "args": [
+                {
+                  "k": "interp",
+                  "tmpl": {
+                    "lits": [
+                      "exit ",
+                      ""
+                    ],
+                    "holes": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "cli",
+                            "tok": 806
+                          },
+                          "field": "Run",
+                          "tok": 806
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "Notes",
+                            "tok": 806
+                          },
+                          {
+                            "k": "ident",
+                            "name": "args",
+                            "tok": 806
+                          }
+                        ],
+                        "tok": 806
+                      }
+                    ]
+                  },
+                  "tok": 806
+                }
+              ],
+              "tok": 805
+            }
+          }
+        ]
+      },
+      "tok": 786,
+      "bodiless": false,
+      "span": {
+        "start": 785,
+        "end": 811
+      },
+      "sig_end": 793
+    },
+    {
+      "name": "join",
+      "type_params": [],
+      "params": [
+        {
+          "name": "xs",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "string"
+            },
+            "mut": false
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "string"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "s"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "strlit",
+                "value": "",
+                "tok": 824
+              }
+            ],
+            "tok": 821
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "x"
+                  ],
+                  "src": {
+                    "k": "ident",
+                    "name": "xs",
+                    "tok": 829
+                  },
+                  "guards": [],
+                  "tok": 827
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "assign",
+                    "targets": [
+                      {
+                        "k": "ident",
+                        "name": "s",
+                        "tok": 831
+                      }
+                    ],
+                    "op": "=",
+                    "values": [
+                      {
+                        "k": "if",
+                        "cond": {
+                          "k": "binary",
+                          "op": "==",
+                          "lhs": {
+                            "k": "ident",
+                            "name": "s",
+                            "tok": 834
+                          },
+                          "rhs": {
+                            "k": "strlit",
+                            "value": "",
+                            "tok": 836
+                          },
+                          "tok": 835
+                        },
+                        "then": {
+                          "stmts": [
+                            {
+                              "k": "expr",
+                              "expr": {
+                                "k": "ident",
+                                "name": "x",
+                                "tok": 838
+                              }
+                            }
+                          ]
+                        },
+                        "else": {
+                          "k": "block",
+                          "stmts": [
+                            {
+                              "k": "expr",
+                              "expr": {
+                                "k": "binary",
+                                "op": "+",
+                                "lhs": {
+                                  "k": "binary",
+                                  "op": "+",
+                                  "lhs": {
+                                    "k": "ident",
+                                    "name": "s",
+                                    "tok": 842
+                                  },
+                                  "rhs": {
+                                    "k": "strlit",
+                                    "value": " ",
+                                    "tok": 844
+                                  },
+                                  "tok": 843
+                                },
+                                "rhs": {
+                                  "k": "ident",
+                                  "name": "x",
+                                  "tok": 846
+                                },
+                                "tok": 845
+                              }
+                            }
+                          ]
+                        },
+                        "tok": 833
+                      }
+                    ],
+                    "tok": 831
+                  }
+                ]
+              },
+              "tok": 826
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "s",
+                "tok": 852
+              }
+            ],
+            "tok": 851
+          }
+        ]
+      },
+      "tok": 812,
+      "bodiless": false,
+      "span": {
+        "start": 811,
+        "end": 856
+      },
+      "sig_end": 820
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "run",
+                "tok": 861
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "string"
+                  },
+                  "elems": [
+                    {
+                      "k": "strlit",
+                      "value": "notes",
+                      "tok": 867
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "list",
+                      "tok": 869
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 863
+                }
+              ],
+              "tok": 862
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "run",
+                "tok": 873
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "string"
+                  },
+                  "elems": [
+                    {
+                      "k": "strlit",
+                      "value": "notes",
+                      "tok": 879
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "list",
+                      "tok": 881
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "-n",
+                      "tok": 883
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "3",
+                      "tok": 885
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "--since=2026-01-01",
+                      "tok": 887
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "-t",
+                      "tok": 889
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "work",
+                      "tok": 891
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "--tag",
+                      "tok": 893
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "home",
+                      "tok": 895
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "--format",
+                      "tok": 897
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "json",
+                      "tok": 899
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 875
+                }
+              ],
+              "tok": 874
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "run",
+                "tok": 903
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "string"
+                  },
+                  "elems": [
+                    {
+                      "k": "strlit",
+                      "value": "notes",
+                      "tok": 909
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "list",
+                      "tok": 911
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "--format=debug",
+                      "tok": 913
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "--trace",
+                      "tok": 915
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "--dir",
+                      "tok": 917
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "/tmp/n",
+                      "tok": 919
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 905
+                }
+              ],
+              "tok": 904
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "run",
+                "tok": 923
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "string"
+                  },
+                  "elems": [
+                    {
+                      "k": "strlit",
+                      "value": "notes",
+                      "tok": 929
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "add",
+                      "tok": 931
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "groceries",
+                      "tok": 933
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "milk",
+                      "tok": 935
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "eggs",
+                      "tok": 937
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "--dir=box",
+                      "tok": 939
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 925
+                }
+              ],
+              "tok": 924
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "run",
+                "tok": 943
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "string"
+                  },
+                  "elems": [
+                    {
+                      "k": "strlit",
+                      "value": "notes",
+                      "tok": 949
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "tag",
+                      "tok": 951
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "add",
+                      "tok": 953
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "urgent",
+                      "tok": 955
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 945
+                }
+              ],
+              "tok": 944
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "run",
+                "tok": 959
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "string"
+                  },
+                  "elems": [
+                    {
+                      "k": "strlit",
+                      "value": "notes",
+                      "tok": 965
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "exec",
+                      "tok": 967
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "-d",
+                      "tok": 969
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "box",
+                      "tok": 971
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "grep",
+                      "tok": 973
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "-n",
+                      "tok": 975
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "--",
+                      "tok": 977
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "milk",
+                      "tok": 979
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 961
+                }
+              ],
+              "tok": 960
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "run",
+                "tok": 983
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "string"
+                  },
+                  "elems": [
+                    {
+                      "k": "strlit",
+                      "value": "notes",
+                      "tok": 989
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "--help",
+                      "tok": 991
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 985
+                }
+              ],
+              "tok": 984
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "run",
+                "tok": 995
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "string"
+                  },
+                  "elems": [
+                    {
+                      "k": "strlit",
+                      "value": "notes",
+                      "tok": 1001
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "--help=dev",
+                      "tok": 1003
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 997
+                }
+              ],
+              "tok": 996
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "run",
+                "tok": 1007
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "string"
+                  },
+                  "elems": [
+                    {
+                      "k": "strlit",
+                      "value": "notes",
+                      "tok": 1013
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "tag",
+                      "tok": 1015
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 1009
+                }
+              ],
+              "tok": 1008
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "run",
+                "tok": 1019
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "string"
+                  },
+                  "elems": [
+                    {
+                      "k": "strlit",
+                      "value": "notes",
+                      "tok": 1025
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "help",
+                      "tok": 1027
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "list",
+                      "tok": 1029
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 1021
+                }
+              ],
+              "tok": 1020
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "run",
+                "tok": 1033
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "string"
+                  },
+                  "elems": [
+                    {
+                      "k": "strlit",
+                      "value": "notes",
+                      "tok": 1039
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "list",
+                      "tok": 1041
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "--help=dev",
+                      "tok": 1043
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 1035
+                }
+              ],
+              "tok": 1034
+            }
+          }
+        ]
+      },
+      "tok": 857,
+      "bodiless": false,
+      "span": {
+        "start": 856,
+        "end": 1049
+      },
+      "sig_end": 860
+    }
+  ],
+  "consts": [
+    {
+      "name": "Dir",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.StrFlag",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "dir",
+              "tok": 15
+            }
+          },
+          {
+            "key": "short",
+            "value": {
+              "k": "strlit",
+              "value": "d",
+              "tok": 19
+            }
+          },
+          {
+            "key": "arg",
+            "value": {
+              "k": "strlit",
+              "value": "<dir>",
+              "tok": 23
+            }
+          },
+          {
+            "key": "help",
+            "value": {
+              "k": "strlit",
+              "value": "the notes directory",
+              "tok": 27
+            }
+          },
+          {
+            "key": "def",
+            "value": {
+              "k": "strlit",
+              "value": "notes",
+              "tok": 31
+            }
+          },
+          {
+            "key": "env",
+            "value": {
+              "k": "strlit",
+              "value": "NOTES_DIR_FOR_CLI_SUB_EXAMPLE",
+              "tok": 35
+            }
+          }
+        ],
+        "tok": 9,
+        "type_args": []
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 38
+      }
+    },
+    {
+      "name": "Limit",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.IntFlag",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "limit",
+              "tok": 47
+            }
+          },
+          {
+            "key": "short",
+            "value": {
+              "k": "strlit",
+              "value": "n",
+              "tok": 51
+            }
+          },
+          {
+            "key": "help",
+            "value": {
+              "k": "strlit",
+              "value": "show at most <n> notes",
+              "tok": 55
+            }
+          },
+          {
+            "key": "def",
+            "value": {
+              "k": "int",
+              "value": 10,
+              "tok": 59
+            }
+          },
+          {
+            "key": "min",
+            "value": {
+              "k": "int",
+              "value": 1,
+              "tok": 63
+            }
+          },
+          {
+            "key": "max",
+            "value": {
+              "k": "int",
+              "value": 100,
+              "tok": 67
+            }
+          }
+        ],
+        "tok": 41,
+        "type_args": []
+      },
+      "tok": 39,
+      "span": {
+        "start": 38,
+        "end": 70
+      }
+    },
+    {
+      "name": "Since",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.StrFlag",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "since",
+              "tok": 79
+            }
+          },
+          {
+            "key": "arg",
+            "value": {
+              "k": "strlit",
+              "value": "<date>",
+              "tok": 83
+            }
+          },
+          {
+            "key": "help",
+            "value": {
+              "k": "strlit",
+              "value": "only notes after <date>",
+              "tok": 87
+            }
+          },
+          {
+            "key": "opt",
+            "value": {
+              "k": "ident",
+              "name": "true",
+              "tok": 91
+            }
+          }
+        ],
+        "tok": 73,
+        "type_args": []
+      },
+      "tok": 71,
+      "span": {
+        "start": 70,
+        "end": 94
+      }
+    },
+    {
+      "name": "Format",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.ChoiceFlag",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "format",
+              "tok": 103
+            }
+          },
+          {
+            "key": "help",
+            "value": {
+              "k": "strlit",
+              "value": "output form",
+              "tok": 107
+            }
+          },
+          {
+            "key": "choices",
+            "value": {
+              "k": "slicelit",
+              "elem": {
+                "k": "name",
+                "name": "string"
+              },
+              "elems": [
+                {
+                  "k": "strlit",
+                  "value": "text",
+                  "tok": 115
+                },
+                {
+                  "k": "strlit",
+                  "value": "json",
+                  "tok": 117
+                }
+              ],
+              "mut": false,
+              "tok": 111
+            }
+          },
+          {
+            "key": "def",
+            "value": {
+              "k": "strlit",
+              "value": "text",
+              "tok": 122
+            }
+          },
+          {
+            "key": "dev",
+            "value": {
+              "k": "slicelit",
+              "elem": {
+                "k": "name",
+                "name": "string"
+              },
+              "elems": [
+                {
+                  "k": "strlit",
+                  "value": "debug",
+                  "tok": 130
+                }
+              ],
+              "mut": false,
+              "tok": 126
+            }
+          }
+        ],
+        "tok": 97,
+        "type_args": []
+      },
+      "tok": 95,
+      "span": {
+        "start": 94,
+        "end": 134
+      }
+    },
+    {
+      "name": "Tag",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.ListFlag",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "tag",
+              "tok": 143
+            }
+          },
+          {
+            "key": "short",
+            "value": {
+              "k": "strlit",
+              "value": "t",
+              "tok": 147
+            }
+          },
+          {
+            "key": "arg",
+            "value": {
+              "k": "strlit",
+              "value": "<tag>",
+              "tok": 151
+            }
+          },
+          {
+            "key": "help",
+            "value": {
+              "k": "strlit",
+              "value": "only notes with <tag>",
+              "tok": 155
+            }
+          }
+        ],
+        "tok": 137,
+        "type_args": []
+      },
+      "tok": 135,
+      "span": {
+        "start": 134,
+        "end": 158
+      }
+    },
+    {
+      "name": "Trace",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.BoolFlag",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "trace",
+              "tok": 167
+            }
+          },
+          {
+            "key": "help",
+            "value": {
+              "k": "strlit",
+              "value": "trace the index reads",
+              "tok": 171
+            }
+          },
+          {
+            "key": "dev",
+            "value": {
+              "k": "ident",
+              "name": "true",
+              "tok": 175
+            }
+          }
+        ],
+        "tok": 161,
+        "type_args": []
+      },
+      "tok": 159,
+      "span": {
+        "start": 158,
+        "end": 178
+      }
+    },
+    {
+      "name": "Title",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.Positional",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "title",
+              "tok": 187
+            }
+          },
+          {
+            "key": "help",
+            "value": {
+              "k": "strlit",
+              "value": "the title of the note",
+              "tok": 191
+            }
+          }
+        ],
+        "tok": 181,
+        "type_args": []
+      },
+      "tok": 179,
+      "span": {
+        "start": 178,
+        "end": 194
+      }
+    },
+    {
+      "name": "Words",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.Positional",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "word",
+              "tok": 203
+            }
+          },
+          {
+            "key": "help",
+            "value": {
+              "k": "strlit",
+              "value": "the words of the note",
+              "tok": 207
+            }
+          },
+          {
+            "key": "many",
+            "value": {
+              "k": "ident",
+              "name": "true",
+              "tok": 211
+            }
+          },
+          {
+            "key": "optional",
+            "value": {
+              "k": "ident",
+              "name": "true",
+              "tok": 215
+            }
+          }
+        ],
+        "tok": 197,
+        "type_args": []
+      },
+      "tok": 195,
+      "span": {
+        "start": 194,
+        "end": 218
+      }
+    },
+    {
+      "name": "Name",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.Positional",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "name",
+              "tok": 227
+            }
+          },
+          {
+            "key": "help",
+            "value": {
+              "k": "strlit",
+              "value": "the tag name",
+              "tok": 231
+            }
+          }
+        ],
+        "tok": 221,
+        "type_args": []
+      },
+      "tok": 219,
+      "span": {
+        "start": 218,
+        "end": 234
+      }
+    },
+    {
+      "name": "Cmd",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.Positional",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "args",
+              "tok": 243
+            }
+          },
+          {
+            "key": "help",
+            "value": {
+              "k": "strlit",
+              "value": "the command and its arguments",
+              "tok": 247
+            }
+          },
+          {
+            "key": "many",
+            "value": {
+              "k": "ident",
+              "name": "true",
+              "tok": 251
+            }
+          }
+        ],
+        "tok": 237,
+        "type_args": []
+      },
+      "tok": 235,
+      "span": {
+        "start": 234,
+        "end": 254
+      }
+    },
+    {
+      "name": "EnvEditor",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.Env",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "EDITOR",
+              "tok": 263
+            }
+          },
+          {
+            "key": "help",
+            "value": {
+              "k": "strlit",
+              "value": "the editor for notes edit",
+              "tok": 267
+            }
+          }
+        ],
+        "tok": 257,
+        "type_args": []
+      },
+      "tok": 255,
+      "span": {
+        "start": 254,
+        "end": 270
+      }
+    },
+    {
+      "name": "List",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.Command",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "list",
+              "tok": 279
+            }
+          },
+          {
+            "key": "summary",
+            "value": {
+              "k": "strlit",
+              "value": "list the notes",
+              "tok": 283
+            }
+          },
+          {
+            "key": "help",
+            "value": {
+              "k": "strlit",
+              "value": "list the notes, newest first. With --tag, only the notes that have every given tag",
+              "tok": 287
+            }
+          },
+          {
+            "key": "bools",
+            "value": {
+              "k": "slicelit",
+              "elem": {
+                "k": "name",
+                "name": "cli.BoolFlag"
+              },
+              "elems": [
+                {
+                  "k": "ident",
+                  "name": "Trace",
+                  "tok": 297
+                }
+              ],
+              "mut": false,
+              "tok": 291
+            }
+          },
+          {
+            "key": "strs",
+            "value": {
+              "k": "slicelit",
+              "elem": {
+                "k": "name",
+                "name": "cli.StrFlag"
+              },
+              "elems": [
+                {
+                  "k": "ident",
+                  "name": "Dir",
+                  "tok": 308
+                },
+                {
+                  "k": "ident",
+                  "name": "Since",
+                  "tok": 310
+                }
+              ],
+              "mut": false,
+              "tok": 302
+            }
+          },
+          {
+            "key": "ints",
+            "value": {
+              "k": "slicelit",
+              "elem": {
+                "k": "name",
+                "name": "cli.IntFlag"
+              },
+              "elems": [
+                {
+                  "k": "ident",
+                  "name": "Limit",
+                  "tok": 321
+                }
+              ],
+              "mut": false,
+              "tok": 315
+            }
+          },
+          {
+            "key": "choices",
+            "value": {
+              "k": "slicelit",
+              "elem": {
+                "k": "name",
+                "name": "cli.ChoiceFlag"
+              },
+              "elems": [
+                {
+                  "k": "ident",
+                  "name": "Format",
+                  "tok": 332
+                }
+              ],
+              "mut": false,
+              "tok": 326
+            }
+          },
+          {
+            "key": "lists",
+            "value": {
+              "k": "slicelit",
+              "elem": {
+                "k": "name",
+                "name": "cli.ListFlag"
+              },
+              "elems": [
+                {
+                  "k": "ident",
+                  "name": "Tag",
+                  "tok": 343
+                }
+              ],
+              "mut": false,
+              "tok": 337
+            }
+          },
+          {
+            "key": "run",
+            "value": {
+              "k": "ident",
+              "name": "list",
+              "tok": 348
+            }
+          }
+        ],
+        "tok": 273,
+        "type_args": []
+      },
+      "tok": 271,
+      "span": {
+        "start": 270,
+        "end": 351
+      }
+    },
+    {
+      "name": "Add",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.Command",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "add",
+              "tok": 360
+            }
+          },
+          {
+            "key": "summary",
+            "value": {
+              "k": "strlit",
+              "value": "add a note",
+              "tok": 364
+            }
+          },
+          {
+            "key": "strs",
+            "value": {
+              "k": "slicelit",
+              "elem": {
+                "k": "name",
+                "name": "cli.StrFlag"
+              },
+              "elems": [
+                {
+                  "k": "ident",
+                  "name": "Dir",
+                  "tok": 374
+                }
+              ],
+              "mut": false,
+              "tok": 368
+            }
+          },
+          {
+            "key": "pos",
+            "value": {
+              "k": "slicelit",
+              "elem": {
+                "k": "name",
+                "name": "cli.Positional"
+              },
+              "elems": [
+                {
+                  "k": "ident",
+                  "name": "Title",
+                  "tok": 385
+                },
+                {
+                  "k": "ident",
+                  "name": "Words",
+                  "tok": 387
+                }
+              ],
+              "mut": false,
+              "tok": 379
+            }
+          },
+          {
+            "key": "run",
+            "value": {
+              "k": "ident",
+              "name": "add",
+              "tok": 392
+            }
+          }
+        ],
+        "tok": 354,
+        "type_args": []
+      },
+      "tok": 352,
+      "span": {
+        "start": 351,
+        "end": 395
+      }
+    },
+    {
+      "name": "TagAdd",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.Command",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "tag add",
+              "tok": 404
+            }
+          },
+          {
+            "key": "summary",
+            "value": {
+              "k": "strlit",
+              "value": "create a tag",
+              "tok": 408
+            }
+          },
+          {
+            "key": "pos",
+            "value": {
+              "k": "slicelit",
+              "elem": {
+                "k": "name",
+                "name": "cli.Positional"
+              },
+              "elems": [
+                {
+                  "k": "ident",
+                  "name": "Name",
+                  "tok": 418
+                }
+              ],
+              "mut": false,
+              "tok": 412
+            }
+          },
+          {
+            "key": "run",
+            "value": {
+              "k": "ident",
+              "name": "tagAdd",
+              "tok": 423
+            }
+          }
+        ],
+        "tok": 398,
+        "type_args": []
+      },
+      "tok": 396,
+      "span": {
+        "start": 395,
+        "end": 426
+      }
+    },
+    {
+      "name": "TagRm",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.Command",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "tag rm",
+              "tok": 435
+            }
+          },
+          {
+            "key": "summary",
+            "value": {
+              "k": "strlit",
+              "value": "delete a tag",
+              "tok": 439
+            }
+          },
+          {
+            "key": "pos",
+            "value": {
+              "k": "slicelit",
+              "elem": {
+                "k": "name",
+                "name": "cli.Positional"
+              },
+              "elems": [
+                {
+                  "k": "ident",
+                  "name": "Name",
+                  "tok": 449
+                }
+              ],
+              "mut": false,
+              "tok": 443
+            }
+          },
+          {
+            "key": "run",
+            "value": {
+              "k": "lambda",
+              "params": [
+                {
+                  "name": "r",
+                  "type": null
+                }
+              ],
+              "body": {
+                "k": "int",
+                "value": 0,
+                "tok": 458
+              },
+              "tok": 457
+            }
+          }
+        ],
+        "tok": 429,
+        "type_args": []
+      },
+      "tok": 427,
+      "span": {
+        "start": 426,
+        "end": 461
+      }
+    },
+    {
+      "name": "Exec",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.Command",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "exec",
+              "tok": 470
+            }
+          },
+          {
+            "key": "summary",
+            "value": {
+              "k": "strlit",
+              "value": "run a command in the notes directory",
+              "tok": 474
+            }
+          },
+          {
+            "key": "strs",
+            "value": {
+              "k": "slicelit",
+              "elem": {
+                "k": "name",
+                "name": "cli.StrFlag"
+              },
+              "elems": [
+                {
+                  "k": "ident",
+                  "name": "Dir",
+                  "tok": 484
+                }
+              ],
+              "mut": false,
+              "tok": 478
+            }
+          },
+          {
+            "key": "pos",
+            "value": {
+              "k": "slicelit",
+              "elem": {
+                "k": "name",
+                "name": "cli.Positional"
+              },
+              "elems": [
+                {
+                  "k": "ident",
+                  "name": "Cmd",
+                  "tok": 495
+                }
+              ],
+              "mut": false,
+              "tok": 489
+            }
+          },
+          {
+            "key": "rest",
+            "value": {
+              "k": "ident",
+              "name": "true",
+              "tok": 500
+            }
+          },
+          {
+            "key": "run",
+            "value": {
+              "k": "ident",
+              "name": "exec",
+              "tok": 504
+            }
+          }
+        ],
+        "tok": 464,
+        "type_args": []
+      },
+      "tok": 462,
+      "span": {
+        "start": 461,
+        "end": 507
+      }
+    },
+    {
+      "name": "Fsck",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.Command",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "fsck",
+              "tok": 516
+            }
+          },
+          {
+            "key": "summary",
+            "value": {
+              "k": "strlit",
+              "value": "check the index",
+              "tok": 520
+            }
+          },
+          {
+            "key": "dev",
+            "value": {
+              "k": "ident",
+              "name": "true",
+              "tok": 524
+            }
+          },
+          {
+            "key": "run",
+            "value": {
+              "k": "lambda",
+              "params": [
+                {
+                  "name": "r",
+                  "type": null
+                }
+              ],
+              "body": {
+                "k": "int",
+                "value": 0,
+                "tok": 532
+              },
+              "tok": 531
+            }
+          }
+        ],
+        "tok": 510,
+        "type_args": []
+      },
+      "tok": 508,
+      "span": {
+        "start": 507,
+        "end": 535
+      }
+    },
+    {
+      "name": "Notes",
+      "expr": {
+        "k": "composite",
+        "type_name": "cli.App",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "notes",
+              "tok": 544
+            }
+          },
+          {
+            "key": "version",
+            "value": {
+              "k": "strlit",
+              "value": "1.2.0",
+              "tok": 548
+            }
+          },
+          {
+            "key": "summary",
+            "value": {
+              "k": "strlit",
+              "value": "keep short notes",
+              "tok": 552
+            }
+          },
+          {
+            "key": "commands",
+            "value": {
+              "k": "slicelit",
+              "elem": {
+                "k": "name",
+                "name": "cli.Command"
+              },
+              "elems": [
+                {
+                  "k": "ident",
+                  "name": "List",
+                  "tok": 562
+                },
+                {
+                  "k": "ident",
+                  "name": "Add",
+                  "tok": 564
+                },
+                {
+                  "k": "ident",
+                  "name": "TagAdd",
+                  "tok": 566
+                },
+                {
+                  "k": "ident",
+                  "name": "TagRm",
+                  "tok": 568
+                },
+                {
+                  "k": "ident",
+                  "name": "Exec",
+                  "tok": 570
+                },
+                {
+                  "k": "ident",
+                  "name": "Fsck",
+                  "tok": 572
+                }
+              ],
+              "mut": false,
+              "tok": 556
+            }
+          },
+          {
+            "key": "env",
+            "value": {
+              "k": "slicelit",
+              "elem": {
+                "k": "name",
+                "name": "cli.Env"
+              },
+              "elems": [
+                {
+                  "k": "ident",
+                  "name": "EnvEditor",
+                  "tok": 583
+                }
+              ],
+              "mut": false,
+              "tok": 577
+            }
+          }
+        ],
+        "tok": 538,
+        "type_args": []
+      },
+      "tok": 536,
+      "span": {
+        "start": 535,
+        "end": 588
+      }
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 package analyzer
 
-// `@errors` の宣言と導出の照合（error 網羅 analyzer A4 — language.md 13 節・決定 E5 = M-a）:
+// `@errors` の宣言と導出の照合（language.md 13 節）:
 // - 強制: error を返す公開関数（名前が大文字）は `@errors` を持つ（無ければ拒否 — 指摘に導出集合を示す = fix の代わり。30 節の前例）
 // - 漏れ: 導出 ⊄ 宣言なら拒否（導出が TOP — 関数値の呼び出し等で決まらない — も漏れ）
 // - tightness: 公開関数で宣言 ⊋ 導出なら拒否（古い宣言 — 宣言の更新が diff に出る。内部関数の宣言は上界の検査だけ）
@@ -25,7 +25,7 @@ const MErrFlowStale = 29 // 宣言の仮引数の名前 ⊋ Flow（公開関数�
 
 const SW_W = 6  // error の switch の記録の幅 [節, S.lo, S.hi, 覆った.lo, 覆った.hi, default]
 
-// declPush は関数 fi の @errors の集合を az.declared に積む [有無, lo, hi]（解決できない項は annot.sober が拒否するので落とす）
+// 関数 fi の @errors の集合を az.declared に積む [有無, lo, hi]（解決できない項は annot.sober が拒否するので落とす）
 func declPush(az mut Az, fi int) {
     l := errsOf(mut az, fnDecl(mut az, fi))
     saved := az.pk
@@ -45,12 +45,12 @@ func declPush(az mut Az, fi int) {
     table.Push(mut az.declared, m.hi)
 }
 
-// declHas は関数 fi が @errors を持つか
+// 関数 fi が @errors を持つか
 func declHas(az mut Az, fi int) bool {
     return table.Get(mut az.declared, fi * 3) != 0
 }
 
-// declGet は関数 fi の @errors の集合
+// 関数 fi の @errors の集合
 func declGet(az mut Az, fi int) LSet {
     return LSet{lo: table.Get(mut az.declared, fi * 3 + 1), hi: table.Get(mut az.declared, fi * 3 + 2)}
 }
@@ -64,7 +64,7 @@ func swCov(az mut Az, i int) LSet {
     return LSet{lo: table.Get(mut az.sw, i * SW_W + 3), hi: table.Get(mut az.sw, i * SW_W + 4)}
 }
 
-// declaredFlow は関数 fi の @errors に書いた仮引数の名前の集合（ビット j = 仮引数 j。無ければ 0）
+// 関数 fi の @errors に書いた仮引数の名前の集合（ビット j = 仮引数 j。無ければ 0）
 func declaredFlow(az mut Az, fi int) int {
     l := errsOf(mut az, fnDecl(mut az, fi))
     mut m := 0
@@ -79,7 +79,7 @@ func declaredFlow(az mut Az, fi int) int {
     return m
 }
 
-// checkErrors は error を返す関数ごとに宣言と導出を照合する（本体の無い関数は見ない）
+// error を返す関数ごとに宣言と導出を照合する（本体の無い関数は見ない）
 func checkErrors(az mut Az) {
     for fi <- iter.Range(0, az.nfn) {
         fd := fnDecl(mut az, fi)
@@ -112,7 +112,7 @@ func reportFn(az mut Az, k int, fi int) {
     report(mut az, k, desugar.FnAt(mut az.d, fi).node, desugar.NodeRef(fi))
 }
 
-// errPos は関数 fi の指摘の位置（@errors があればその `@`、無ければ関数宣言）
+// 関数 fi の指摘の位置（@errors があればその `@`、無ければ関数宣言）
 func errPos(az mut Az, fi int) diag.Pos {
     n := desugar.FnAt(mut az.d, fi).node
     pos := desugar.PosOf(mut az.d, n)
@@ -120,7 +120,7 @@ func errPos(az mut Az, fi int) diag.Pos {
     return if l == -1 { pos } else { diag.Pos{file: pos.file, tok: t} }
 }
 
-// errMessage は宣言の指摘の本文（関数 fi）
+// 宣言の指摘の本文（関数 fi）
 func errMessage(az mut Az, k int, fi int) string {
     fd := fnDecl(mut az, fi)
     name := str(mut az, desugar.StrRef(fd.a))
@@ -150,7 +150,7 @@ func errMessage(az mut Az, k int, fi int) string {
     return "@errors of '${name}' lists ${labelNames(mut az, lsMinus(d, r), pk)} which it never returns: write `@errors(${declNames(mut az, r, fl, fi, pk)})`"
 }
 
-// paramNames は関数 fi の仮引数の集合 m（ビット j = 仮引数 j）の名前を並べる（`'recv', 'send'`）
+// 関数 fi の仮引数の集合 m（ビット j = 仮引数 j）の名前を並べる（`'recv', 'send'`）
 func paramNames(az mut Az, m int, fi int) string {
     ps := desugar.ListRef(fnDecl(mut az, fi).c)
     mut s := ""
@@ -163,7 +163,7 @@ func paramNames(az mut Az, m int, fi int) string {
     return s
 }
 
-// declNames は宣言の項の綴り（ラベル集合 r の後に Flow fl の仮引数の名前 — fix の提示）
+// 宣言の項の綴り（ラベル集合 r の後に Flow fl の仮引数の名前 — fix の提示）
 func declNames(az mut Az, r LSet, fl int, fi int, pk int) string {
     mut s := labelNames(mut az, r, pk)
     ps := desugar.ListRef(fnDecl(mut az, fi).c)
@@ -176,7 +176,7 @@ func declNames(az mut Az, r LSet, fl int, fi int, pk int) string {
     return s
 }
 
-// labelNames は集合 m のラベルを package pk から見た綴りで並べる（同じ package は `L`、他は最後のパスの段 + `.L`）
+// 集合 m のラベルを package pk から見た綴りで並べる（同じ package は `L`、他は最後のパスの段 + `.L`）
 func labelNames(az mut Az, m LSet, pk int) string {
     mut s := ""
     for L <- iter.Range(0, az.nerr) {
@@ -190,14 +190,14 @@ func labelNames(az mut Az, m LSet, pk int) string {
     return s
 }
 
-// lastSeg はパスの最後の段（`std/io` → `io` — import の既定の参照名）
+// パスの最後の段（`std/io` → `io` — import の既定の参照名）
 func lastSeg(p string) string {
     _, after, slashed := strings.CutLast(p, "/")
     return if slashed { after } else { p }
 }
 
-// checkSwitches は error の switch（単一の subject — 最後の 1 周の記録）の網羅と到達: 網羅の対象はリンク集合の全ラベルでなく subject の導出集合 S
-// （language.md 13 節 — F-33 の解決）。cause の入れ子のパターン（`case W{cause: A{…}}`）はラベル W の cause の導出集合 C[W]（wrap の地点の内側の合併 —
+// error の switch（単一の subject — 最後の 1 周の記録）の網羅と到達: 網羅の対象はリンク集合の全ラベルでなく subject の導出集合 S
+// （language.md 13 節）。cause の入れ子のパターン（`case W{cause: A{…}}`）はラベル W の cause の導出集合 C[W]（wrap の地点の内側の合併 —
 // 裁定 C-b）+ W のリテラルがあれば nil まで覆うかを見る（パターン行列 — desugar.PmUseful1。desugar・lower と共有）。
 // default が無く覆わなければ拒否（S が TOP も — default を書かせる）。到達しない腕（S の外のラベルの腕・前の腕と導出集合で覆われる腕）と
 // 到達しない default も拒否する（決定 E4-d (ii) — tightness と同じ「到達しない腕は音を立てる」）。S が TOP のときは到達を言えないので見ない
@@ -237,7 +237,7 @@ func checkSwitches(az mut Az) {
     }
 }
 
-// causeDoms はラベルごとの cause の領域の表 [C[L].lo, nil がありうるか, C[L].hi]…（パターン行列の PmErr の欄）
+// ラベルごとの cause の領域の表 [C[L].lo, nil がありうるか, C[L].hi]…（パターン行列の PmErr の欄）
 func causeDoms(az mut Az) desugar.ListRef {
     cz := desugar.PmList(mut az.d, az.nerr * 3)
     for L <- iter.Range(0, az.nerr) {
@@ -249,7 +249,7 @@ func causeDoms(az mut Az) desugar.ListRef {
     return cz
 }
 
-// swPats は switch の節 sw の腕のパターンの列（型パターンはその節、`_` と裸の束縛は全域 -1、他の定数のパターンはその節）
+// switch の節 sw の腕のパターンの列（型パターンはその節、`_` と裸の束縛は全域 -1、他の定数のパターンはその節）
 func swPats(az mut Az, sw desugar.NodeRef) desugar.ListRef {
     cs := desugar.ListRef(node(mut az, sw).b)
     nc := desugar.LenL(mut az.d, cs)
@@ -267,7 +267,7 @@ func swPats(az mut Az, sw desugar.NodeRef) desugar.ListRef {
     return pats
 }
 
-// patAll は定数のパターン p が全域か（`_` か、裸の識別子 1 つ — 未知なら束縛）
+// 定数のパターン p が全域か（`_` か、裸の識別子 1 つ — 未知なら束縛）
 func patAll(az mut Az, p desugar.NodeRef) bool {
     alts := desugar.ListRef(node(mut az, p).a)
     for q <- iter.Range(0, desugar.LenL(mut az.d, alts)) {
@@ -279,7 +279,7 @@ func patAll(az mut Az, p desugar.NodeRef) bool {
     return desugar.LenL(mut az.d, alts) == 1 && kind(mut az, nat(mut az, alts, 0)) == ast.EIdent && !desugar.HasTopName(mut az.d, az.pk, desugar.StrRef(node(mut az, nat(mut az, alts, 0)).a))
 }
 
-// patIndex は腕のパターンの列 pats の中の p の位置
+// 腕のパターンの列 pats の中の p の位置
 func patIndex(az mut Az, pats desugar.ListRef, p desugar.NodeRef) int {
     for i <- iter.Range(0, desugar.LenL(mut az.d, pats)) {
         if desugar.LatI(mut az.d, pats, i) == int(p) {
@@ -289,7 +289,7 @@ func patIndex(az mut Az, pats desugar.ListRef, p desugar.NodeRef) int {
     return 0
 }
 
-// armSeenBefore は腕の記録 j が前の記録と同じ節か（局所の不動点のために本体を 2 度以上歩く）
+// 腕の記録 j が前の記録と同じ節か（局所の不動点のために本体を 2 度以上歩く）
 func armSeenBefore(az mut Az, j int) bool {
     n := table.Get(mut az.swarms, j * 3 + 1)
     for q <- iter.Range(0, j) {
@@ -300,7 +300,7 @@ func armSeenBefore(az mut Az, j int) bool {
     return false
 }
 
-// swMessage は網羅・default の指摘の本文（switch の記録 i — 覆っていないラベル・覆っているラベルを名指す）
+// 網羅・default の指摘の本文（switch の記録 i — 覆っていないラベル・覆っているラベルを名指す）
 func swMessage(az mut Az, k int, i int) string {
     S := swS(mut az, i)
     cov := swCov(mut az, i)
@@ -323,7 +323,7 @@ func swMessage(az mut Az, k int, i int) string {
     return "switch does not cover ${labelNames(mut az, lsMinus(S, cov), pk)} (error labels the subject may carry): add cases or a default"
 }
 
-// causeNames はラベル集合 part の cause の導出の綴り（`the cause may carry: A, B, or none` — none = リテラルの構築で cause が nil）
+// ラベル集合 part の cause の導出の綴り（`the cause may carry: A, B, or none` — none = リテラルの構築で cause が nil）
 func causeNames(az mut Az, part LSet, pk int) string {
     mut m := lsNone()
     mut none := false
@@ -345,7 +345,7 @@ func causeNames(az mut Az, part LSet, pk int) string {
     return "the cause may carry: ${ls}"
 }
 
-// armMessage は到達しない腕の指摘の本文（種類 k・腕の記録 j）
+// 到達しない腕の指摘の本文（種類 k・腕の記録 j）
 func armMessage(az mut Az, k int, j int) string {
     i := table.Get(mut az.swarms, j * 3)
     L := table.Get(mut az.swarms, j * 3 + 2)

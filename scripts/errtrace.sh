@@ -93,10 +93,10 @@ if [ "$self" = 1 ]; then
     mkdir -p "$W/root"
     cp -r src/compiler/* "$W/root/"
     cp -r src/std "$W/root/std"
-    (cd "$W/root" && ulimit -s unlimited && "$S2" check app/main.sober --errors-dump > "$W/self.dump" 2> /dev/null) || { echo "errtrace: self dump FAIL"; exit 1; }
+    (cd "$W/root" && ulimit -s unlimited && "$S2" check app --errors-dump > "$W/self.dump" 2> /dev/null) || { echo "errtrace: self dump FAIL"; exit 1; }
     # 計装つきの compiler/ は stage2 が実行ファイルまで建てる（段 6 P6-1 — compiler/ が std/task を使い、その IR は stage1 の語彙を越えた。以前は
     # IR テキスト → stage1 の build x.ir）
-    (cd "$W/root" && "$S2" build app/main.sober --emit=elf --passes --trace-errors -o "$W/sober2t") > /dev/null 2>&1 || { echo "errtrace: self build FAIL"; exit 1; }
+    (cd "$W/root" && "$S2" build app --emit=elf --passes --trace-errors -o "$W/sober2t") > /dev/null 2>&1 || { echo "errtrace: self build FAIL"; exit 1; }
     chmod +x "$W/sober2t"
     : > "$W/self.trace"
     inputs=()

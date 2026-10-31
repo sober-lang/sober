@@ -22,7 +22,7 @@ type Funcs struct {
     bad_noinline int
 }
 
-// push は x（-1 は無視）をスタックに積み、新しい深さを返す
+// x（-1 は無視）をスタックに積み、新しい深さを返す
 func push(st mut []int, sp int, x int) int {
     if x < 0 {
         return sp
@@ -35,7 +35,7 @@ func push(st mut []int, sp int, x int) int {
     return sp + 1
 }
 
-// pushList は列 l の要素（穴 -1 は無視）を積む
+// 列 l の要素（穴 -1 は無視）を積む
 func pushList(st mut []int, sp0 int, t ast.Tree, l int) int {
     mut sp := sp0
     mut i := 0
@@ -46,7 +46,7 @@ func pushList(st mut []int, sp0 int, t ast.Tree, l int) int {
     return sp
 }
 
-// unparen は括弧を剥がした節（Zig の AST は括弧を持たない）
+// 括弧を剥がした節（Zig の AST は括弧を持たない）
 func unparen(t ast.Tree, n0 int) int {
     mut n := n0
     while n >= 0 && t.nodes[n].kind == ast.EParen {
@@ -55,7 +55,7 @@ func unparen(t ast.Tree, n0 int) int {
     return n
 }
 
-// calleeName は呼び出しの callee の綴り（裸の名前 `F` / `ref.F`。それ以外は空で ok = false — cst_to_ast と同じ判定）
+// 呼び出しの callee の綴り（裸の名前 `F` / `ref.F`。それ以外は空で ok = false — cst_to_ast と同じ判定）
 func calleeName(t ast.Tree, c0 int) (string, bool) {
     c := t.nodes[unparen(t, c0)]
     if c.kind == ast.EIdent {
@@ -73,7 +73,7 @@ func calleeName(t ast.Tree, c0 int) (string, bool) {
     return "", false
 }
 
-// scanBody は本体 body（KBlock — 中のラムダ・補間の穴・パターンを含む）の呼び出しの callee と、後置 `?` の有無
+// 本体 body（KBlock — 中のラムダ・補間の穴・パターンを含む）の呼び出しの callee と、後置 `?` の有無
 func scanBody(t ast.Tree, body int) ([]string, bool) {
     mut names := mut []string{}
     mut tries := false
@@ -158,7 +158,7 @@ func scanBody(t ast.Tree, body int) ([]string, bool) {
     return freeze(names), tries
 }
 
-// namedFunc は型の名前 name（"N" / "ref.N"）が、ファイル f から見て関数型の型宣言か（名前付き関数型 — 展開すると関数型の引数になる）
+// 型の名前 name（"N" / "ref.N"）が、ファイル f から見て関数型の型宣言か（名前付き関数型 — 展開すると関数型の引数になる）
 func namedFunc(cx Cx, f0 int, name string) bool {
     mut from := cx.file_pkg[f0]
     nb := bytes(name)
@@ -192,7 +192,7 @@ func namedFunc(cx Cx, f0 int, name string) bool {
     return false
 }
 
-// scanFuncs は関数の表を組む。表の列は関数ごとに 8 本が交互に伸びるので、std/builder で積む
+// 関数の表を組む。表の列は関数ごとに 8 本が交互に伸びるので、std/builder で積む
 // （mut slice の append だと先端一致にならず、毎回の全コピーで O(n²) — 関数 1,200 個で region の上限を超えた）
 func scanFuncs(cx Cx) Funcs {
     mut ffile := builder.Builder[int]{}
@@ -245,7 +245,7 @@ func scanFuncs(cx Cx) Funcs {
             builder.Push(mut hasFunc, fu)
             builder.Push(mut htry, tr)
             // 本体の無い宣言（.sobi の署名だけ）は呼び先の package で展開しないと決まった関数（再帰する mut 関数・@noinline・非展開）— 本体が無いので
-            // 再帰を辿れない。mut 引数を持てば mut_def に倒す（3'' M3 — 展開の判定が package の中で閉じる: iface-draft 1.3 (b)）
+            // 再帰を辿れない。mut 引数を持てば mut_def に倒す（展開の判定は package の中で閉じる）
             builder.Push(mut noinl, t.data[fd.f] >= 5 && t.data[fd.f + 5] != 0)
             builder.Push(mut nobody, fd.e < 0)
             k += 1
@@ -283,19 +283,19 @@ func scanFuncs(cx Cx) Funcs {
     return Funcs{files, nodes, builder.Build(mut ex), builder.Build(mut md), builder.Build(mut cl), builder.Build(mut htry), lo, hi, cs, bad}
 }
 
-// fnName は関数 i の名前
+// 関数 i の名前
 func fnName(cx Cx, files []int, nodes []int, i int) string {
     t := cx.trees[files[i]]
     return Name(t, t.nodes[nodes[i]].a)
 }
 
-// fnIs は関数 i の名前が name か（コピーしない — onCycle の鎖の比較）
+// 関数 i の名前が name か（コピーしない — onCycle の鎖の比較）
 func fnIs(cx Cx, files []int, nodes []int, i int, name string) bool {
     t := cx.trees[files[i]]
     return StrIs(t, t.nodes[nodes[i]].a, name)
 }
 
-// FnIndex は (package, 名前) → 関数の索引（開番地でなく鎖 — head[バケツ] と next[関数]、hc[呼び出し名] = 名前のハッシュ）。
+// (package, 名前) → 関数の索引（開番地でなく鎖 — head[バケツ] と next[関数]、hc[呼び出し名] = 名前のハッシュ）。
 // 閉路の判定（旧 reachesSelf・今は onCycle）が呼び出し名を関数へ引くたびに全関数と名前を比べていた（関数 × 到達集合 × 呼び出し名 × 全関数 — 自己適用で約 4 s）のを、鎖の数本の比較にする
 type FnIndex struct {
     head []int
@@ -304,7 +304,7 @@ type FnIndex struct {
     mask int
 }
 
-// nameHash は名前のハッシュ（mask 以下 — 幅を抑えて溢れさせない）
+// 名前のハッシュ（mask 以下 — 幅を抑えて溢れさせない）
 func nameHash(name string, mask int) int {
     b := bytes(name)
     mut h := 0
@@ -342,7 +342,7 @@ func indexFns(cx Cx, files []int, nodes []int, cs []string) FnIndex {
     return FnIndex{freeze(head), freeze(next), freeze(hc), mask}
 }
 
-// onCycle は関数ごとに、同じ package の裸の名前の呼び出しを辿って自分へ戻れるか（呼び出しグラフの閉路の上にあるか — 自分を直に呼ぶ辺を含む）。
+// 関数ごとに、同じ package の裸の名前の呼び出しを辿って自分へ戻れるか（呼び出しグラフの閉路の上にあるか — 自分を直に呼ぶ辺を含む）。
 // need の関数から届く範囲だけを Tarjan の強連結成分で 1 回たどる（関数ごとの到達集合の反復は関数 × 到達集合 — 自己適用で 0.1 G 級）。
 // 辺 g → h = g の呼び出し名 c と同じ名前の、g と同じ package の関数 h（同名が複数なら全部 — 索引の鎖を最後まで見る）
 func onCycle(cx Cx, files []int, nodes []int, lo []int, hi []int, cs []string, ix FnIndex, need []bool) []bool {
@@ -443,8 +443,8 @@ func onCycle(cx Cx, files []int, nodes []int, lo []int, hi []int, cs []string, i
     return freeze(cyc)
 }
 
-// parHandles は std/task の仮引数の型 ty が handle の slice（`[]Task[T]`）か — 札・handle は関数の境界を越えないので、それを取る std/task の口
-// （Gather — 段 6 P3b-5）は呼び出し点で展開する（関数型の引数と同じ扱い）
+// std/task の仮引数の型 ty が handle の slice（`[]Task[T]`）か — 札・handle は関数の境界を越えないので、それを取る std/task の口
+// （Gather）は呼び出し点で展開する（関数型の引数と同じ扱い）
 func parHandles(t ast.Tree, ty ast.Node) bool {
     if ty.kind != ast.TSlice {
         return false

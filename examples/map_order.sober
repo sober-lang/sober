@@ -16,7 +16,7 @@ func show(tag string, m map[string]int) {
     println(line)
 }
 
-// showm は mut の map を凍結せずに印字する（凍結の後に書き続けない — language.md 17 節 U2。凍結は書き終えてから）
+// mut の map を凍結せずに印字する（凍結の後に書き続けない — language.md 17 節 U2。凍結は書き終えてから）
 func showm(tag string, m mut map[string]int) {
     mut line := "${tag} ${len(m)}:"
     for k <- keys(m) {
@@ -77,7 +77,7 @@ func main() {
     }
     println(len(g))
 
-    // ③ 旧ヘッダ（成長の前のヘッダの値）は旧テーブルを見る（mut の別名 — 2026-10-10 まで freeze した旧ヘッダで試していた形は F-al の穴の上だった）
+    // ③ 旧ヘッダ（成長の前のヘッダの値）は旧テーブルを見る（mut の別名 — freeze して不変化してはいけない）
     mut c := mut map[string]int{}
     c["x"] = 1
     c["y"] = 2

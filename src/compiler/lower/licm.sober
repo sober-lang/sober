@@ -1,6 +1,6 @@
 package lower
 
-// LICM（性能投資 M3）: ループ不変の純粋な命令をループの手前（前置きのブロック）へ巻き上げる。GVN の後の SSA に掛ける。
+// LICM: ループ不変の純粋な命令をループの手前（前置きのブロック）へ巻き上げる。GVN の後の SSA に掛ける。
 // ループ = 後ろの辺 t → h（h が t を支配）の自然ループ。前置き = h の前任のうちループの外のものがちょうど 1 つで、その終端が h への br のとき。
 // 巻き上げるのは純粋で落ちない命令（算術〔div / rem を除く — ループが回らない経路でゼロ除算を起こさない〕・比較・gep・ptoi / itop・
 // slotaddr・globaladdr・funcaddr）で、被演算子が全部ループの外（か巻き上げ済み）のもの。load は巻き上げない（ループの中の store / call が書きうる）
@@ -8,7 +8,7 @@ package lower
 import "desugar"
 import "std/iter"
 
-// licmModule はモジュールの全関数に LICM を掛ける
+// モジュールの全関数に LICM を掛ける
 func licmModule(st mut St) {
     mut f := st.fhead
     while f != -1 {
@@ -93,7 +93,7 @@ func licmFunc(st mut St, f FnRef) {
     optRenumber(mut st, f)
 }
 
-// loopPre はブロック h が自然ループの頭（後ろの辺 t → h〔h が t を支配〕がある）で、外の前任がちょうど 1 つ・その終端が br なら
+// ブロック h が自然ループの頭（後ろの辺 t → h〔h が t を支配〕がある）で、外の前任がちょうど 1 つ・その終端が br なら
 // その前任（前置き）の番号（違えば -1）— licm と promote が共有
 func loopPre(st mut St, w mut m2rW, h int) int {
     mut outside := -1
@@ -117,7 +117,7 @@ func loopPre(st mut St, w mut m2rW, h int) int {
     return outside
 }
 
-// loopMark は頭 h のループの本体（後ろの辺の前任から h まで逆に辿る）に印 mark を付ける
+// 頭 h のループの本体（後ろの辺の前任から h まで逆に辿る）に印 mark を付ける
 func loopMark(w mut m2rW, inl mut []int, mark int, h int) {
     inl[h] = mark
     mut stack := mut []int{}
@@ -147,7 +147,7 @@ func loopMark(w mut m2rW, inl mut []int, mark int, h int) {
     }
 }
 
-// licmDominates は番号 a のブロックが b を支配するか（idom を辿る）
+// 番号 a のブロックが b を支配するか（idom を辿る）
 func licmDominates(w mut m2rW, a int, b int) bool {
     mut x := b
     while true {

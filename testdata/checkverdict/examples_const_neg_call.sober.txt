@@ -1,2 +1,2 @@
-sober: load error at examples/const_neg_call.sober:9:7: const expression
+sober: load error at examples/const_neg_call.sober:9:14: const expression: a const cannot call a function — call it inside a function instead
 exit=1

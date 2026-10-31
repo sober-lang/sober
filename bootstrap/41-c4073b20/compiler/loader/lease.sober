@@ -1,0 +1,512 @@
+package loader
+
+// ワーカー局所の lease（region-domain-pool.md 4d 節）: `task.NewLocal` / `task.Lease` の呼び出し点を、脱糖の固定テンプレートで
+// 普通の Sober と std の写し先の呼び出しへ写す（namedargs・eta と同じ層: desugar・lower・typer・analyzer は写した後の木だけを読む。コア・Lean は無変更）:
+//
+//     gzw := task.NewLocal((w mut flate.Work) => { pool.NewScratch(mut w.head, 1 << 15); pool.NewScratch(mut w.prev, 16384) })
+//  →  gzw := { mut w := flate.Work{}; pool.NewScratch(mut w.head, 1 << 15); …; $task.LocalNew(<指紋>, []int{$pool.Cap(mut w.head), $pool.Cap(mut w.prev)}) }
+//
+//     z := task.Lease(gzw, (w mut flate.Work) => flate.EncodeWith(mut w, b, 6))
+//  →  z := { $lp0 := gzw; $at0 := $task.LeaseTake($lp0, <指紋>); defer $task.LeaseGive($lp0, $at0); mut w := flate.Work{};
+//            $pool.LeaseAttach(mut w.head, $task.LeaseBlock($lp0), $at0, 0); $pool.LeaseAttach(mut w.prev, $task.LeaseBlock($lp0), $at0, 1); flate.EncodeWith(mut w, b, 6) }
+//
+// 意味の約束「窓のたびに新しい値」はテンプレートの形そのもの（スカラーの欄はゼロ値・Scratch は LeaseAttach が整えた直後の全部 0）。置き場の使い回しは
+// 写し先の実装（LeaseTake が区画を返したとき）だけの最適化で、観測に出ない。task.Local は型引数を持たない（T は mut の列を持つ struct で型引数に置けない —
+// language.md 25 節）ので、T の同一性は型の名前（package の path + 名前）の指紋を字面の整数で焼き、LeaseTake が置き場の指紋と照合する（違えば panic）。parser が窓のあるファイルに std/task と std/pool の暗黙 import（$task・$pool）を足す。
+// 拒否（diag.Par）: 24 = 窓の形（mut 仮引数 1 つ・型を書いたラムダ）・25 = 窓の外のラムダの mut 仮引数・26 = T の形（スカラーと pool.Scratch の欄だけの struct）・
+// 27 = 整えの文（`pool.NewScratch(mut w.f, 定数)` を Scratch の欄ごとにちょうど 1 回）・28 = 写し先の直の呼び出し（std の外）
+
+import "std/builder"
+import "std/iter"
+import "std/strings"
+import "ast"
+import "diag"
+import "lexer"
+
+const PAR_LEASE_FORM = 24
+const PAR_LEASE_MUTLAM = 25
+const PAR_LEASE_SHAPE = 26
+const PAR_LEASE_PREP = 27
+const PAR_LEASE_RESERVED = 28
+
+// 窓の T の形: Scratch の欄の名前（宣言の順）
+type LShape struct {
+    scratch []string
+}
+
+// 全ファイルの task.NewLocal / task.Lease を写す（窓の外のラムダの mut 仮引数・写し先の直の呼び出し・形の違反は拒否）
+@errors(diag.Par)
+func leaseAll(cx Cx) ([]ast.Tree, error?) {
+    ppar := pkgOf(cx, "std/task")
+    ppool := pkgOf(cx, "std/pool")
+    mut out := mut []ast.Tree{}
+    mut k := 0
+    for f <- iter.Range(0, len(cx.trees)) {
+        t := cx.trees[f]
+        // std/task も std/pool も import しないファイルは触る所が無い（窓のラムダは parser が $task / $pool を足すので、ここに入る）— 自己 build の値札
+        if !leaseImports(cx, f, ppar, ppool) {
+            out = append(out, t)
+            continue
+        }
+        std := strings.HasPrefix(cx.pkg_path[cx.file_pkg[f]], "std/")
+        // 写し先の直の呼び出し（std の外 — 写し先は区画の付け外しを信じる口）
+        if !std {
+            for i <- iter.Range(0, len(t.nodes)) {
+                x := t.nodes[i]
+                if x.kind == ast.ESelector && leaseReserved(t, x.b) {
+                    b := t.nodes[x.a]
+                    if b.kind == ast.EIdent {
+                        pk := fileImportOf(cx, f, Name(t, b.a))
+                        if pk >= 0 && (pk == ppar || pk == ppool) {
+                            return []ast.Tree{}, diag.Par{at: diag.Pos{file: f, tok: x.tok}, kind: PAR_LEASE_RESERVED}
+                        }
+                    }
+                }
+            }
+        }
+        // 窓の呼び出し点
+        mut hits := mut []int{}
+        mut lams := mut []int{}
+        for i <- iter.Range(0, len(t.nodes)) {
+            w := leaseWhich(cx, f, ppar, t.nodes[i])
+            if w != 0 {
+                hits = append(hits, i)
+                na := ast.ListLen(t, t.nodes[i].b)
+                if na > 0 {
+                    lams = append(lams, ast.ListAt(t, t.nodes[i].b, na - 1))
+                }
+            }
+        }
+        // 窓の外のラムダの mut 仮引数
+        ls := freeze(lams)
+        for i <- iter.Range(0, len(t.nodes)) {
+            x := t.nodes[i]
+            if x.kind == ast.ELambda && lamHasMut(t, x) && !lsHas(ls, i) {
+                return []ast.Tree{}, diag.Par{at: diag.Pos{file: f, tok: x.tok}, kind: PAR_LEASE_MUTLAM}
+            }
+        }
+        hs := freeze(hits)
+        if len(hs) == 0 {
+            out = append(out, t)
+            continue
+        }
+        nt, k2, rerr := leaseRewrite(cx, f, ppar, ppool, hs, k)
+        if rerr != nil {
+            return []ast.Tree{}, rerr
+        }
+        k = k2
+        out = append(out, nt)
+    }
+    return freeze(out), nil
+}
+
+// 欄の名前 s が写し先の名前か
+func leaseReserved(t ast.Tree, s int) bool {
+    return StrIs(t, s, "LocalNew") || StrIs(t, s, "LeaseTake") || StrIs(t, s, "LeaseGive") || StrIs(t, s, "LeaseBlock") || StrIs(t, s, "LeaseAttach")
+}
+
+// 節 x が std/task の NewLocal（1）/ Lease（2）の呼び出しか（違えば 0）。`task.NewLocal[T](…)` の型引数の形も
+func leaseWhich(cx Cx, f int, ppar int, x ast.Node) int {
+    if x.kind != ast.ECall || ppar < 0 {
+        return 0
+    }
+    t := cx.trees[f]
+    mut c := t.nodes[x.a]
+    if c.kind == ast.EIndex {
+        c = t.nodes[c.a]
+    }
+    if c.kind != ast.ESelector || t.nodes[c.a].kind != ast.EIdent {
+        return 0
+    }
+    w := if StrIs(t, c.b, "NewLocal") { 1 } else if StrIs(t, c.b, "Lease") { 2 } else { 0 }
+    if w == 0 || fileImportOf(cx, f, Name(t, t.nodes[c.a].a)) != ppar {
+        return 0
+    }
+    return w
+}
+
+// ラムダ x の仮引数に mut の印があるか
+func lamHasMut(t ast.Tree, x ast.Node) bool {
+    for j <- iter.Range(0, ast.ListLen(t, x.a)) {
+        if t.nodes[ast.ListAt(t, x.a, j)].c != 0 {
+            return true
+        }
+    }
+    return false
+}
+
+func lsHas(xs []int, v int) bool {
+    for i <- iter.Range(0, len(xs)) {
+        if xs[i] == v {
+            return true
+        }
+    }
+    return false
+}
+
+// ファイル f の窓の呼び出し点 hs を写した木（節は末尾に足し、呼び出しの節をその場でブロックに差し替える）。k = 隠れた名前の通し番号
+@errors(diag.Par)
+func leaseRewrite(cx Cx, f int, ppar int, ppool int, hs []int, k0 int) (ast.Tree, int, error?) {
+    t := cx.trees[f]
+    n0 := len(t.nodes)
+    mut ns := mut []ast.Node{}
+    for i <- iter.Range(0, n0) {
+        ns = append(ns, t.nodes[i])
+    }
+    mut nb := builder.Builder[ast.Node]{}
+    mut db := builder.Builder[int]{}
+    for j <- iter.Range(0, len(t.data)) {
+        builder.Push(mut db, t.data[j])
+    }
+    mut k := k0
+    for h <- iter.Range(0, len(hs)) {
+        i := hs[h]
+        x := t.nodes[i]
+        tok := x.tok
+        which := leaseWhich(cx, f, ppar, x)
+        at := diag.Pos{file: f, tok: tok}
+        // 窓の形: 実引数 2 つ（NewLocal は 1 つ）・最後が仮引数 1 つの mut・型を書いたラムダ
+        na := ast.ListLen(t, x.b)
+        if (which == 1 && na != 1) || (which == 2 && na != 2) {
+            return ast.Tree{}, 0, diag.Par{at: at, kind: PAR_LEASE_FORM}
+        }
+        lam := t.nodes[ast.ListAt(t, x.b, na - 1)]
+        if lam.kind != ast.ELambda || ast.ListLen(t, lam.a) != 1 {
+            return ast.Tree{}, 0, diag.Par{at: at, kind: PAR_LEASE_FORM}
+        }
+        prm := t.nodes[ast.ListAt(t, lam.a, 0)]
+        if prm.c == 0 || prm.b < 0 || t.nodes[prm.b].kind != ast.TName {
+            return ast.Tree{}, 0, diag.Par{at: diag.Pos{file: f, tok: lam.tok}, kind: PAR_LEASE_FORM}
+        }
+        tyName := Name(t, t.nodes[prm.b].a)
+        wName := Name(t, prm.a)
+        sh := leaseShape(cx, f, ppool, tyName)
+        if !sh.ok {
+            return ast.Tree{}, 0, diag.Par{at: diag.Pos{file: f, tok: lam.tok}, kind: PAR_LEASE_SHAPE}
+        }
+        sc := sh.shape.scratch
+        mut stmts := mut []int{}
+        if which == 1 {
+            // 整えの文: Scratch の欄ごとに `pool.NewScratch(mut w.f, 定数)` をちょうど 1 回
+            body := t.nodes[lam.b]
+            mut prep := mut []int{}
+            if body.kind == ast.EBlock {
+                for j <- iter.Range(0, ast.ListLen(t, body.a)) {
+                    prep = append(prep, ast.ListAt(t, body.a, j))
+                }
+            } else {
+                prep = append(prep, 0 - 1 - lam.b)
+            }
+            ps0 := freeze(prep)
+            // T が別の package なら欄は書けない（他の package の欄の書きの規則）— 整えは T の package の関数 1 つ `F(mut w)` を呼ぶ形で、その本体を同じ規則で検査する
+            pf := prepCall(cx, f, t, ps0, wName, sh.pk)
+            ps := if pf.ok { pf.stmts } else { ps0 }
+            pg := if pf.ok { pf.file } else { f }
+            pw := if pf.ok { pf.param } else { wName }
+            mut seen := mut []bool{}
+            for j <- iter.Range(0, len(sc)) {
+                seen = append(seen, false)
+            }
+            for j <- iter.Range(0, len(ps)) {
+                pt := cx.trees[pg]
+                e := if ps[j] < 0 { 0 - 1 - ps[j] } else if pt.nodes[ps[j]].kind == ast.SExpr { pt.nodes[ps[j]].a } else { 0 - 1 }
+                fi := if e >= 0 { prepField(cx, pg, ppool, pt, e, pw, sc) } else { 0 - 1 }
+                if fi < 0 || seen[fi] {
+                    return ast.Tree{}, 0, diag.Par{at: diag.Pos{file: pg, tok: if e >= 0 { pt.nodes[e].tok } else if ps[j] >= 0 { pt.nodes[ps[j]].tok } else { lam.tok }}, kind: PAR_LEASE_PREP}
+                }
+                seen[fi] = true
+            }
+            for j <- iter.Range(0, len(sc)) {
+                if !seen[j] {
+                    return ast.Tree{}, 0, diag.Par{at: diag.Pos{file: f, tok: lam.tok}, kind: PAR_LEASE_PREP}
+                }
+            }
+            // { mut w := T{}; 整えの文; $task.LocalNew[T]([]int{$pool.Cap(mut w.f) …}) }
+            stmts = append(stmts, lsBindW(mut nb, mut db, n0, tok, wName, tyName))
+            for j <- iter.Range(0, len(ps0)) {
+                if ps0[j] < 0 {
+                    stmts = append(stmts, lsPush(mut nb, n0, ast.Node{ast.SExpr, tok, 0 - 1 - ps0[j], 0, 0, 0, 0, 0}))
+                } else {
+                    stmts = append(stmts, ps0[j])
+                }
+            }
+            mut caps := mut []int{}
+            for j <- iter.Range(0, len(sc)) {
+                ma := lsPush(mut nb, n0, ast.Node{ast.EMutArg, tok, ast.PutLit(mut db, "${wName}.${sc[j]}"), 1, 0, 0, 0, 0})
+                caps = append(caps, lsCall(mut nb, mut db, n0, tok, "$pool", "Cap", []int{ma}))
+            }
+            it := lsPush(mut nb, n0, ast.Node{ast.TName, tok, ast.PutLit(mut db, "int"), 0, 0, 0, 0, 0})
+            sl := lsPush(mut nb, n0, ast.Node{ast.ESlicelit, tok, it, ast.PutList(mut db, freeze(caps)), 0, 0, 0, 0})
+            fpx := lsPush(mut nb, n0, ast.Node{ast.EInt, tok, sh.fp, 0, 0, 0, 0, 0})
+            stmts = append(stmts, lsPush(mut nb, n0, ast.Node{ast.SExpr, tok, lsCall(mut nb, mut db, n0, tok, "$task", "LocalNew", []int{fpx, sl}), 0, 0, 0, 0, 0}))
+        } else {
+            // { $lpK := lp; $atK := $task.LeaseTake[T]($lpK); defer $task.LeaseGive($lpK, $atK); mut w := T{}; $pool.LeaseAttach(…) …; 本体 }
+            lpN := "$lp${k}"
+            atN := "$at${k}"
+            k += 1
+            stmts = append(stmts, lsPush(mut nb, n0, ast.Node{ast.SBind, tok, ast.PutList(mut db, []int{ast.PutLit(mut db, lpN)}), 0, ast.PutList(mut db, []int{ast.ListAt(t, x.b, 0)}), 0, 0, 0}))
+            fpx := lsPush(mut nb, n0, ast.Node{ast.EInt, tok, sh.fp, 0, 0, 0, 0, 0})
+            take := lsCall(mut nb, mut db, n0, tok, "$task", "LeaseTake", []int{lsIdent(mut nb, mut db, n0, tok, lpN), fpx})
+            stmts = append(stmts, lsPush(mut nb, n0, ast.Node{ast.SBind, tok, ast.PutList(mut db, []int{ast.PutLit(mut db, atN)}), 0, ast.PutList(mut db, []int{take}), 0, 0, 0}))
+            give := lsCall(mut nb, mut db, n0, tok, "$task", "LeaseGive", []int{lsIdent(mut nb, mut db, n0, tok, lpN), lsIdent(mut nb, mut db, n0, tok, atN)})
+            stmts = append(stmts, lsPush(mut nb, n0, ast.Node{ast.SDefer, tok, give, 0, 0, 0, 0, 0}))
+            stmts = append(stmts, lsBindW(mut nb, mut db, n0, tok, wName, tyName))
+            for j <- iter.Range(0, len(sc)) {
+                ma := lsPush(mut nb, n0, ast.Node{ast.EMutArg, tok, ast.PutLit(mut db, "${wName}.${sc[j]}"), 1, 0, 0, 0, 0})
+                blk := lsCall(mut nb, mut db, n0, tok, "$task", "LeaseBlock", []int{lsIdent(mut nb, mut db, n0, tok, lpN)})
+                ix := lsPush(mut nb, n0, ast.Node{ast.EInt, tok, j, 0, 0, 0, 0, 0})
+                att := lsCall(mut nb, mut db, n0, tok, "$pool", "LeaseAttach", []int{ma, blk, lsIdent(mut nb, mut db, n0, tok, atN), ix})
+                stmts = append(stmts, lsPush(mut nb, n0, ast.Node{ast.SExpr, tok, att, 0, 0, 0, 0, 0}))
+            }
+            stmts = append(stmts, lsPush(mut nb, n0, ast.Node{ast.SExpr, tok, lam.b, 0, 0, 0, 0, 0}))
+        }
+        ns[i] = ast.Node{ast.EBlock, tok, ast.PutList(mut db, freeze(stmts)), 0, 0, 0, 0, 0}
+    }
+    added := builder.Build(mut nb)
+    for i <- iter.Range(0, len(added)) {
+        ns = append(ns, added[i])
+    }
+    return ast.Tree{freeze(ns), builder.Build(mut db), t.file}, k, nil
+}
+
+func lsPush(nb mut builder.Builder[ast.Node], n0 int, x ast.Node) int {
+    at := n0 + builder.Len(mut nb)
+    builder.Push(mut nb, x)
+    return at
+}
+
+func lsIdent(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], n0 int, tok int, nm string) int {
+    return lsPush(mut nb, n0, ast.Node{ast.EIdent, tok, ast.PutLit(mut db, nm), 0, 0, 0, 0, 0})
+}
+
+// `ref.fn(args)`
+func lsCall(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], n0 int, tok int, ref string, fn string, args []int) int {
+    b := lsIdent(mut nb, mut db, n0, tok, ref)
+    callee := lsPush(mut nb, n0, ast.Node{ast.ESelector, tok, b, ast.PutLit(mut db, fn), 0, 0, 0, 0})
+    return lsPush(mut nb, n0, ast.Node{ast.ECall, tok, callee, ast.PutList(mut db, args), 0, 0, 0, 0})
+}
+
+// `mut w := T{}` の文
+func lsBindW(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], n0 int, tok int, w string, ty string) int {
+    z := lsPush(mut nb, n0, ast.Node{ast.EComposite, tok, ast.PutLit(mut db, ty), ast.PutList(mut db, []int{}), ast.PutList(mut db, []int{}), 0, 0, 0})
+    return lsPush(mut nb, n0, ast.Node{ast.SBind, tok, ast.PutList(mut db, []int{ast.PutLit(mut db, w)}), 1, ast.PutList(mut db, []int{z}), 0, 0, 0})
+}
+
+type LShapeOk struct {
+    shape LShape
+    fp int
+    pk int
+    ok bool
+}
+
+// ファイル f に書いた型の名前 n の形（型パラメータの無い struct で、欄がスカラー〔int・byte・bool・float〕か pool.Scratch だけなら ok）
+func leaseShape(cx Cx, f int, ppool int, n string) LShapeOk {
+    pk, base := idResolve(cx, f, n)
+    if pk < 0 {
+        return LShapeOk{}
+    }
+    for g <- iter.Range(cx.pkg_lo[pk], cx.pkg_hi[pk]) {
+        t := cx.trees[g]
+        tys := t.nodes[t.file].c
+        for j <- iter.Range(0, ast.ListLen(t, tys)) {
+            td := t.nodes[ast.ListAt(t, tys, j)]
+            if StrIs(t, td.a, base) {
+                r := leaseFields(cx, g, ppool, t, td)
+                return LShapeOk{r.shape, leaseFp("${cx.pkg_path[pk]}.${base}"), pk, r.ok}
+            }
+        }
+    }
+    return LShapeOk{}
+}
+
+func leaseFields(cx Cx, g int, ppool int, t ast.Tree, td ast.Node) LShapeOk {
+    body := t.nodes[td.c]
+    if body.kind != ast.BStruct || ast.ListLen(t, td.b) != 0 {
+        return LShapeOk{}
+    }
+    mut sc := mut []string{}
+    for j <- iter.Range(0, ast.ListLen(t, body.a)) {
+        fd := t.nodes[ast.ListAt(t, body.a, j)]
+        ty := t.nodes[fd.b]
+        if ty.kind != ast.TName {
+            return LShapeOk{}
+        }
+        nm := Name(t, ty.a)
+        if nm == "int" || nm == "byte" || nm == "bool" || nm == "float" {
+            continue
+        }
+        fpk, fb := idResolve(cx, g, nm)
+        if fpk != ppool || ppool < 0 || fb != "Scratch" {
+            return LShapeOk{}
+        }
+        sc = append(sc, Name(t, fd.a))
+    }
+    return LShapeOk{LShape{freeze(sc)}, 0, 0, true}
+}
+
+// 整えの式 e が `pool.NewScratch(mut w.f, 定数)` なら f の Scratch の欄の番号（違えば −1）
+func prepField(cx Cx, f int, ppool int, t ast.Tree, e int, w string, sc []string) int {
+    x := t.nodes[e]
+    if x.kind != ast.ECall || ast.ListLen(t, x.b) != 2 {
+        return 0 - 1
+    }
+    c := t.nodes[x.a]
+    if c.kind != ast.ESelector || !StrIs(t, c.b, "NewScratch") || t.nodes[c.a].kind != ast.EIdent || fileImportOf(cx, f, Name(t, t.nodes[c.a].a)) != ppool {
+        return 0 - 1
+    }
+    ma := t.nodes[ast.ListAt(t, x.b, 0)]
+    if ma.kind != ast.EMutArg || !leaseConst(cx, f, t, ast.ListAt(t, x.b, 1)) {
+        return 0 - 1
+    }
+    mn := Name(t, ma.a)
+    for j <- iter.Range(0, len(sc)) {
+        if mn == "${w}.${sc[j]}" {
+            return j
+        }
+    }
+    return 0 - 1
+}
+
+// 容量の式 e が定数か（整数の字面・const の名前〔`N` / `pkg.N`〕・括弧・+ - * <<）
+func leaseConst(cx Cx, f int, t ast.Tree, e int) bool {
+    x := t.nodes[e]
+    if x.kind == ast.EInt {
+        return true
+    }
+    if x.kind == ast.EParen {
+        return leaseConst(cx, f, t, x.a)
+    }
+    if x.kind == ast.EBinary {
+        op := x.a == lexer.Plus || x.a == lexer.Minus || x.a == lexer.Star || x.a == lexer.Shl
+        return op && leaseConst(cx, f, t, x.b) && leaseConst(cx, f, t, x.c)
+    }
+    if x.kind == ast.EIdent {
+        return constIn(cx, cx.file_pkg[f], Name(t, x.a))
+    }
+    if x.kind == ast.ESelector && t.nodes[x.a].kind == ast.EIdent {
+        pk := fileImportOf(cx, f, Name(t, t.nodes[x.a].a))
+        return pk >= 0 && constIn(cx, pk, Name(t, x.b))
+    }
+    return false
+}
+
+// package pk に const n があるか
+func constIn(cx Cx, pk int, n string) bool {
+    for g <- iter.Range(cx.pkg_lo[pk], cx.pkg_hi[pk]) {
+        t := cx.trees[g]
+        cs := t.nodes[t.file].e
+        for j <- iter.Range(0, ast.ListLen(t, cs)) {
+            if StrIs(t, t.nodes[ast.ListAt(t, cs, j)].a, n) {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+// 型の名前（package の path と名前）の指紋（FNV-1a 64 を 62 ビットに — 字面の整数で焼くので正）
+func leaseFp(s string) int {
+    mut h := 0 - 3750763034362895579
+    b := bytes(s)
+    for i <- iter.Range(0, len(b)) {
+        h = (h ^ int(b[i])) * 1099511628211
+    }
+    return h & ((1 << 62) - 1)
+}
+
+// 整えの呼び出し `F(mut w)` の先の関数の本体（文の列）・その仮引数の名前・ファイル
+type LPrep struct {
+    stmts []int
+    param string
+    file int
+    ok bool
+}
+
+// 整えの文の列 ps が関数 1 つの呼び出し `F(mut w)` / `pkg.F(mut w)` で、1 文の転送を辿って T の package（tpk）の関数に着くなら、その関数の本体（mut 仮引数 1 つ）を返す
+func prepCall(cx Cx, f int, t ast.Tree, ps []int, w string, tpk int) LPrep {
+    // 1 文の転送 `G(mut p)`（p は呼んだ関数の唯一の mut 仮引数そのもの）は G へ辿る — T の package の関数に着くまで・深さ 4 まで
+    //（公開の package の包みが std/internal の実体の整えを呼ぶ形 — 別名の第一顧客 flate.Prepare → deflate.Prepare。region-domain-pool.md 4d）
+    mut cf := f
+    mut ct := t
+    mut cps := ps
+    mut cw := w
+    mut depth := 0
+    while depth <= 4 {
+        if len(cps) != 1 {
+            return LPrep{}
+        }
+        e := if cps[0] < 0 { 0 - 1 - cps[0] } else if ct.nodes[cps[0]].kind == ast.SExpr { ct.nodes[cps[0]].a } else { 0 - 1 }
+        if e < 0 || ct.nodes[e].kind != ast.ECall || ast.ListLen(ct, ct.nodes[e].b) != 1 {
+            return LPrep{}
+        }
+        a := ct.nodes[ast.ListAt(ct, ct.nodes[e].b, 0)]
+        if a.kind != ast.EMutArg || Name(ct, a.a) != cw {
+            return LPrep{}
+        }
+        c := ct.nodes[ct.nodes[e].a]
+        mut fn := ""
+        mut pk := 0 - 1
+        if c.kind == ast.EIdent {
+            fn = Name(ct, c.a)
+            pk = cx.file_pkg[cf]
+        } else if c.kind == ast.ESelector && ct.nodes[c.a].kind == ast.EIdent {
+            fn = Name(ct, c.b)
+            pk = fileImportOf(cx, cf, Name(ct, ct.nodes[c.a].a))
+        }
+        if pk < 0 {
+            return LPrep{}
+        }
+        r := prepFn(cx, pk, fn)
+        if !r.ok || pk == tpk {
+            return r
+        }
+        cf = r.file
+        ct = cx.trees[cf]
+        cps = r.stmts
+        cw = r.param
+        depth += 1
+    }
+    return LPrep{}
+}
+
+// package pk の関数 fn（型パラメータなし・mut の仮引数 1 つ・本体あり）の本体の文の列と仮引数の名前（無ければ ok = false）
+func prepFn(cx Cx, pk int, fn string) LPrep {
+    for g <- iter.Range(cx.pkg_lo[pk], cx.pkg_hi[pk]) {
+        gt := cx.trees[g]
+        fs := gt.nodes[gt.file].d
+        for j <- iter.Range(0, ast.ListLen(gt, fs)) {
+            fd := gt.nodes[ast.ListAt(gt, fs, j)]
+            if StrIs(gt, fd.a, fn) && ast.ListLen(gt, fd.b) == 0 && ast.ListLen(gt, fd.c) == 1 && fd.e >= 0 {
+                prm := gt.nodes[ast.ListAt(gt, fd.c, 0)]
+                if prm.c == 0 {
+                    return LPrep{}
+                }
+                body := gt.nodes[fd.e]
+                mut ss := mut []int{}
+                for k <- iter.Range(0, ast.ListLen(gt, body.a)) {
+                    // カバレッジの計器の数え口（coverx.sober）は整えの形に数えない
+                    if !IsCoverStmt(gt, ast.ListAt(gt, body.a, k)) {
+                        ss = append(ss, ast.ListAt(gt, body.a, k))
+                    }
+                }
+                return LPrep{freeze(ss), Name(gt, prm.a), g, true}
+            }
+        }
+    }
+    return LPrep{}
+}
+
+// ファイル f が std/task か std/pool を（どの名前でも）import しているか
+func leaseImports(cx Cx, f int, ppar int, ppool int) bool {
+    t := cx.trees[f]
+    imps := t.nodes[t.file].b
+    for k <- iter.Range(0, ast.ListLen(t, imps)) {
+        im := t.nodes[ast.ListAt(t, imps, k)]
+        r := if im.a >= 0 { Name(t, im.a) } else { Basename(Name(t, im.b)) }
+        pk := importOf(cx, cx.file_pkg[f], r)
+        if pk >= 0 && (pk == ppar || pk == ppool) {
+            return true
+        }
+    }
+    return false
+}

@@ -1,0 +1,286 @@
+package lower
+
+import "desugar"
+
+// slice の幾何成長（データ構造便）: append の成長で「先端でない」ときの全コピーを、2 度目から余剰容量つき（2 × (長さ + 1)・
+// 最小 4 要素）にし、割り当てごとの水位を rt の側の表（rt.gcache — 直接写像 GC_N 項 × [番地, 深度, 世代, 水位, 容量の終わり]）に持つ。
+// 次の成長は、表の項の番地・深度・世代が一致し、ヘッダの終わり == 水位で容量に空きがあればその場で水位を進める。
+// 排他は先端の判定と同じ形（同じ割り当てを共有するヘッダのうち終わり == 水位なのは先に伸ばした方だけ）なので値の意味論は不変 —
+// 容量・水位は観測不能。世代（rt.rgen — 深度ごと）は region の enter（full・軽い）が 1 進める（入り直した region で同じ番地が別の割り当てになる）。
+// 表の項の衝突は全コピーに落ちるだけ（正しさは変わらない）。交互に 2 本を伸ばす形の 2 乗（時間・RSS）を償却 O(1) に
+
+const GC_N = 64
+const GC_W = 5
+
+// needGrowRt は宣言（installRt から — 本体は program の最後に buildGrowRt）
+func needGrowRt(st mut St) {
+    lsNeed(mut st, NEED_GROW, 0)
+    st.gcache = addWorkerGlobal(mut st, int(strLit(mut st, "rt.gcache")), GC_N * GC_W)
+    st.rgen = addWorkerGlobal(mut st, int(strLit(mut st, "rt.rgen")), MAX_DEPTH + 1)
+    st.rtGrow = addFunc(mut st, int(strLit(mut st, "rt.slice_grow")), desugar.ListRef(list5(mut st, TyI64, TyI64, TyI64, TyI64, TyI64)), TyPtr)
+    st.rtGrow8 = addFunc(mut st, int(strLit(mut st, "rt.slice_grow8")), desugar.ListRef(list4(mut st, TyI64, TyI64, TyI64, TyI64)), TyPtr)
+    st.rtMapGrow = addFunc(mut st, int(strLit(mut st, "rt.map_grow")), desugar.ListRef(list2(mut st, TyPtr, TyI64)), TyPtr)
+    st.rtGrowTry = addFunc(mut st, int(strLit(mut st, "rt.grow_try")), desugar.ListRef(list4(mut st, TyI64, TyI64, TyI64, TyI64)), TyI64)
+}
+
+// genBump は深度 d の世代を 1 進める（region の enter の本体から）
+func genBump(st mut St, d int) {
+    gp := gepWord(mut st, globaladdr(mut st, st.rgen), d)
+    store(mut st, gp, 0, bin(mut st, BAdd, load(mut st, gp, 0), iconst(mut st, 1)))
+}
+
+func buildGrowRt(st mut St) {
+    buildSliceGrow(mut st, false)
+    buildSliceGrow(mut st, true)
+    buildGrowTry(mut st)
+    buildMapGrow(mut st)
+}
+
+// buildGrowTry は rt.grow_try(bs, ln, cellw, d) i64: 水位でその場で 1 要素伸ばせれば伸ばして bs、でなければ 0（map の成長 — 索引を先に作るかを
+// その場の伸長を試した後で決める）
+func buildGrowTry(st mut St) {
+    begin(mut st, st.rtGrowTry)
+    bs := 0
+    ln := 1
+    cellb := bin(mut st, BMul, 2, iconst(mut st, 8))
+    d := 3
+    end := bin(mut st, BAdd, bs, bin(mut st, BMul, ln, cellb))
+    gen := load(mut st, gepWord(mut st, globaladdr(mut st, st.rgen), d), 0)
+    e := gcEntry(mut st, bs)
+    miss := newBlock(mut st)
+    hit := newBlock(mut st)
+    gcHitCheck(mut st, e, bs, d, gen, end, cellb, miss, hit)
+    setCur(mut st, hit)
+    store(mut st, e, 3, bin(mut st, BAdd, end, cellb))
+    ret(mut st, bs)
+    setCur(mut st, miss)
+    ret(mut st, iconst(mut st, 0))
+}
+
+// gcHitCheck は表の項 e がその場の伸長を許すか（番地・深度・世代・水位 == 終わり・空き）で miss / hit へ分ける
+func gcHitCheck(st mut St, e int, bs int, d int, gen int, end int, cellb int, miss BlkRef, hit BlkRef) {
+    c1 := newBlock(mut st)
+    c2 := newBlock(mut st)
+    c3 := newBlock(mut st)
+    c4 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, e, 0), bs), miss, -1, c1, -1)
+    setCur(mut st, c1)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, e, 1), d), miss, -1, c2, -1)
+    setCur(mut st, c2)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, e, 2), gen), miss, -1, c3, -1)
+    setCur(mut st, c3)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, e, 3), end), miss, -1, c4, -1)
+    setCur(mut st, c4)
+    condbr(mut st, cmp(mut st, CGt, bin(mut st, BAdd, end, cellb), load(mut st, e, 4)), miss, -1, hit, -1)
+}
+
+// gcEntry は番地 p の表の項の番地
+func gcEntry(st mut St, p int) int {
+    h := bin(mut st, BAnd, bin(mut st, BXor, bin(mut st, BSar, p, iconst(mut st, 4)), bin(mut st, BSar, p, iconst(mut st, 11))), iconst(mut st, GC_N - 1))
+    return gepWord(mut st, globaladdr(mut st, st.gcache), bin(mut st, BMul, h, iconst(mut st, GC_W)))
+}
+
+// buildSliceGrow は rt.slice_grow(bs, ln, cellw, d) ptr（語の列 — 要素は cellw 語）/ rt.slice_grow8(bs, ln, d) ptr（byte の列）:
+// 長さ ln の列（先頭 bs）を 1 要素伸ばした先の列の先頭を返す（呼び手が終わりに書き、ヘッダを付け替える）
+func buildSliceGrow(st mut St, b8 bool) {
+    begin(mut st, if b8 { st.rtGrow8 } else { st.rtGrow })
+    bs := 0
+    ln := 1
+    cellw := if b8 { iconst(mut st, 1) } else { 2 }
+    d := if b8 { 2 } else { 3 }
+    // geo = 0 なら表に載っていても余剰容量つきにしない（map の成長で先端に居るのが自分の索引のとき — 競合ではない）
+    geo := if b8 { 3 } else { 4 }
+    cellb := if b8 { iconst(mut st, 1) } else { bin(mut st, BMul, cellw, iconst(mut st, 8)) }
+    end := bin(mut st, BAdd, bs, bin(mut st, BMul, ln, cellb))
+    gen := load(mut st, gepWord(mut st, globaladdr(mut st, st.rgen), d), 0)
+    e := gcEntry(mut st, bs)
+    // その場で伸ばせるか（番地・深度・世代・水位が一致し、容量に空きがある）
+    miss := newBlock(mut st)
+    c1 := newBlock(mut st)
+    c2 := newBlock(mut st)
+    c3 := newBlock(mut st)
+    c4 := newBlock(mut st)
+    hit := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, e, 0), bs), miss, -1, c1, -1)
+    setCur(mut st, c1)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, e, 1), d), miss, -1, c2, -1)
+    setCur(mut st, c2)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, e, 2), gen), miss, -1, c3, -1)
+    setCur(mut st, c3)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, e, 3), end), miss, -1, c4, -1)
+    setCur(mut st, c4)
+    nend := bin(mut st, BAdd, end, cellb)
+    condbr(mut st, cmp(mut st, CGt, nend, load(mut st, e, 4)), miss, -1, hit, -1)
+    setCur(mut st, hit)
+    store(mut st, e, 3, nend)
+    ret(mut st, itop(mut st, bs))
+    // 全コピー: 表に載った列（前にも全コピーされた — 2 本が先端を奪い合っている）なら余剰容量つき（容量 = 2 × (ln + 1)・最小 4）、
+    // 初めてなら長さちょうど（先端に置かれるので、続けて伸ばす 1 本は以後インラインの先端の伸長に戻る — 余剰を持つと先端からずれて毎回 rt を呼ぶ）
+    setCur(mut st, miss)
+    n1 := bin(mut st, BAdd, ln, iconst(mut st, 1))
+    capB := newBlock(mut st)
+    cap := param(mut st, capB, TyI64)
+    seen := newBlock(mut st)
+    s2 := newBlock(mut st)
+    geoB := newBlock(mut st)
+    exact := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, e, 0), bs), exact, -1, seen, -1)
+    setCur(mut st, seen)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, e, 1), d), exact, -1, s2, -1)
+    setCur(mut st, s2)
+    condbr(mut st, bin(mut st, BOr, cmp(mut st, CNe, load(mut st, e, 2), gen), cmp(mut st, CEq, geo, iconst(mut st, 0))), exact, -1, geoB, -1)
+    setCur(mut st, exact)
+    br(mut st, capB, list1(mut st, n1))
+    setCur(mut st, geoB)
+    c0 := bin(mut st, BMul, n1, iconst(mut st, 2))
+    small := newBlock(mut st)
+    big := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, c0, iconst(mut st, 4)), small, -1, big, -1)
+    setCur(mut st, small)
+    br(mut st, capB, list1(mut st, iconst(mut st, 4)))
+    setCur(mut st, big)
+    br(mut st, capB, list1(mut st, c0))
+    setCur(mut st, capB)
+    p := if b8 { call(mut st, st.rtAlloc8, list2(mut st, d, cap)) } else { call(mut st, st.rtRalloc, list2(mut st, d, bin(mut st, BMul, cap, cellw))) }
+    if b8 {
+        call(mut st, st.rtCopy8, list3(mut st, p, itop(mut st, bs), ln))
+    } else {
+        call(mut st, st.rtCopy, list3(mut st, p, itop(mut st, bs), bin(mut st, BMul, ln, cellw)))
+    }
+    pi := ptoi(mut st, p)
+    e2 := gcEntry(mut st, pi)
+    store(mut st, e2, 0, pi)
+    store(mut st, e2, 1, d)
+    store(mut st, e2, 2, gen)
+    store(mut st, e2, 3, bin(mut st, BAdd, pi, bin(mut st, BMul, bin(mut st, BAdd, ln, iconst(mut st, 1)), cellb)))
+    store(mut st, e2, 4, bin(mut st, BAdd, pi, bin(mut st, BMul, cap, cellb)))
+    ret(mut st, p)
+}
+
+// buildMapGrow は rt.map_grow(h, cellw) ptr: map のヘッダ h（[セル列, 長さ, 深度, 索引]）のセル列が先端でないとき 1 セル伸ばした先のセル列の先頭を返す
+// （呼び手が終わりに書き、ヘッダを付け替える）。水位でその場を試し、だめなら — 先端に居るのが自分の索引（単独の map の索引の作り直し）なら
+// 旧来の道（長さが MAP_IDX_MIN 以上なら索引を先に作り、セル列を長さちょうどで先端へ）、でなければ幾何成長（索引は map_find が作り直す）
+func buildMapGrow(st mut St) {
+    begin(mut st, st.rtMapGrow)
+    h := 0
+    cellw := 1
+    bs := load(mut st, h, 0)
+    ln := load(mut st, h, 1)
+    d := load(mut st, h, 2)
+    join := newBlock(mut st)
+    np := param(mut st, join, TyPtr)
+    dst := param(mut st, join, TyPtr)
+    n1 := bin(mut st, BAdd, ln, iconst(mut st, 1))
+    cells := newBlock(mut st)
+    mkIdx := newBlock(mut st)
+    // ①水位でその場を試す ②だめなら、先端に居るのが自分の索引（索引の作り直し — 単独の map の成長の普通の形）なら旧来の道（索引を先に・
+    // 長さちょうど）、でなければ幾何成長（索引は先に作らない — map_find が追いつくか作り直す）
+    // 小さい map（索引を作らない長さ）は rt.slice_grow を直に（その場の試しも中でする）
+    smallM := newBlock(mut st)
+    bigM := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, n1, iconst(mut st, MAP_IDX_MIN)), smallM, -1, bigM, -1)
+    setCur(mut st, smallM)
+    sb0 := if st.rtMut == 13 { ptoi(mut st, regionBump(mut st, d)) } else { 0 }
+    ps := call(mut st, st.rtGrow, list5(mut st, bs, ln, cellw, d, iconst(mut st, 1)))
+    if st.rtMut == 13 {
+        msAdd(mut st, MS_CELLB, bin(mut st, BSub, ptoi(mut st, regionBump(mut st, d)), sb0))
+    }
+    br(mut st, join, list2(mut st, ps, gepWord(mut st, ps, bin(mut st, BMul, ln, cellw))))
+    setCur(mut st, bigM)
+    tried := call(mut st, st.rtGrowTry, list4(mut st, bs, ln, cellw, d))
+    inPlace := newBlock(mut st)
+    notIn := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, tried, iconst(mut st, 0)), inPlace, -1, notIn, -1)
+    setCur(mut st, inPlace)
+    br(mut st, join, list2(mut st, itop(mut st, bs), gepWord(mut st, itop(mut st, bs), bin(mut st, BMul, ln, cellw))))
+    setCur(mut st, notIn)
+    ix := load(mut st, h, 3)
+    sj := newBlock(mut st)
+    ownTip := param(mut st, sj, TyI64)
+    hasIx := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, ix, iconst(mut st, 0)), hasIx, -1, sj, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, hasIx)
+    ixEnd := bin(mut st, BAdd, ix, bin(mut st, BMul, bin(mut st, BAdd, load(mut st, itop(mut st, ix), 2), iconst(mut st, 3)), iconst(mut st, 8)))
+    br(mut st, sj, list1(mut st, cmp(mut st, CEq, ptoi(mut st, regionBump(mut st, d)), ixEnd)))
+    setCur(mut st, sj)
+    geo := bin(mut st, BXor, ownTip, iconst(mut st, 1))
+    idxQ := newBlock(mut st)
+    // 幾何成長の側（geo）は索引を先に作らない
+    condbr(mut st, geo, cells, -1, idxQ, -1)
+    setCur(mut st, idxQ)
+    condbr(mut st, cmp(mut st, CLt, n1, iconst(mut st, MAP_IDX_MIN)), cells, -1, mkIdx, -1)
+    setCur(mut st, mkIdx)
+    cl := newBlock(mut st)
+    cap := param(mut st, cl, TyI64)
+    br(mut st, cl, list1(mut st, iconst(mut st, 16)))
+    setCur(mut st, cl)
+    capUp := newBlock(mut st)
+    alloc := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, cap, bin(mut st, BMul, n1, iconst(mut st, 4))), capUp, -1, alloc, -1)
+    setCur(mut st, capUp)
+    br(mut st, cl, list1(mut st, bin(mut st, BMul, cap, iconst(mut st, 2))))
+    setCur(mut st, alloc)
+    words := bin(mut st, BAdd, cap, iconst(mut st, 3))
+    // 先端の索引の巻き戻し（K1a — report-625 / 630）: ここへは ownTip（古い索引 [ix, ixEnd) が深度 d の region の先端 — bump == ixEnd）でだけ来るので、
+    // bump を古い索引の頭へ戻してそこに新しい索引を取る（古い索引の後ろに積まない）。新しい容量は古い容量以上（容量は長さから決まり、長さは減らない）
+    // なので、新しい索引は古い索引の場所を覆い、その外の領域を空けない。古い索引を指す旧ヘッダ（22 節）は、持ち主（0 語目 = 新しいセル列）が違えば作り直し、
+    // 同じでも候補の位置 < ヘッダの長さで絞る（map_find）ので、新しい中身を権威として読まない。rt.gcache の項（セル列の番地・水位・容量の終わり）と
+    // rt.btip（byte の列の終わり）は古い索引より前に確保した列のもので、索引の範囲を指さない
+    store(mut st, gepWord(mut st, globaladdr(mut st, st.meta), d), W_BUMP, ix)
+    // 索引の予約（K1b — report-877）: 容量の MAP_IDX_RES 倍（上限 + MAP_IDX_RESMAX 枠）を索引のためだけに取り、0 で埋めるのは今の容量の分だけ
+    // （触らない頁は RSS に乗らない）。セル列はこの直後に写すので、以後の索引の作り直し（rt.map_find — 容量の倍化）は予約の中で済み、
+    // 索引が先端に出てセル列を塞ぐ（次の挿入でセル列を写し直す — 古いセル列が残る）ことが無い
+    rcap := bin(mut st, BMul, cap, iconst(mut st, MAP_IDX_RES))
+    rmax := bin(mut st, BAdd, cap, iconst(mut st, MAP_IDX_RESMAX))
+    rw := newBlock(mut st)
+    rv := param(mut st, rw, TyI64)
+    rlo := newBlock(mut st)
+    rhi := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, rcap, rmax), rlo, -1, rhi, -1)
+    setCur(mut st, rlo)
+    br(mut st, rw, list1(mut st, rcap))
+    setCur(mut st, rhi)
+    br(mut st, rw, list1(mut st, rmax))
+    setCur(mut st, rw)
+    ip := regionAlloc(mut st, d, bin(mut st, BAdd, rv, iconst(mut st, 3)))
+    if st.rtMut == 13 {
+        msAdd(mut st, MS_IDXB, bin(mut st, BMul, words, iconst(mut st, 8)))
+        msAdd(mut st, MS_GIDXB, bin(mut st, BMul, words, iconst(mut st, 8)))
+    }
+    zl := newBlock(mut st)
+    zi := param(mut st, zl, TyI64)
+    zb := newBlock(mut st)
+    zd := newBlock(mut st)
+    br(mut st, zl, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, zl)
+    condbr(mut st, cmp(mut st, CLt, zi, words), zb, -1, zd, -1)
+    setCur(mut st, zb)
+    store(mut st, gepWord(mut st, ip, zi), 0, iconst(mut st, 0))
+    br(mut st, zl, list1(mut st, bin(mut st, BAdd, zi, iconst(mut st, 1))))
+    setCur(mut st, zd)
+    store(mut st, ip, 2, cap)
+    store(mut st, h, 3, ptoi(mut st, ip))
+    br(mut st, cells, -1)
+    setCur(mut st, cells)
+    n := bin(mut st, BMul, ln, cellw)
+    // 初回（表に載っていない）は長さちょうどで先端へ写して表に載せる・載っていればその場か余剰容量つき
+    cb0 := if st.rtMut == 13 { ptoi(mut st, regionBump(mut st, d)) } else { 0 }
+    p := call(mut st, st.rtGrow, list5(mut st, bs, ln, cellw, d, geo))
+    if st.rtMut == 13 {
+        msAdd(mut st, MS_CELLB, bin(mut st, BSub, ptoi(mut st, regionBump(mut st, d)), cb0))
+    }
+    // 索引を先に作ったなら持ち主は新しいセル列（作っていなければヘッダの索引は古い持ち主のまま — map_find が作り直す）
+    own := newBlock(mut st)
+    joinOwn := newBlock(mut st)
+    ownQ := newBlock(mut st)
+    condbr(mut st, geo, joinOwn, -1, ownQ, -1)
+    setCur(mut st, ownQ)
+    condbr(mut st, cmp(mut st, CLt, n1, iconst(mut st, MAP_IDX_MIN)), joinOwn, -1, own, -1)
+    setCur(mut st, own)
+    store(mut st, itop(mut st, load(mut st, h, 3)), 0, ptoi(mut st, p))
+    br(mut st, joinOwn, -1)
+    setCur(mut st, joinOwn)
+    br(mut st, join, list2(mut st, p, gepWord(mut st, p, n)))
+    setCur(mut st, join)
+    ret(mut st, np)
+}

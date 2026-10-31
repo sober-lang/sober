@@ -2796,6 +2796,62 @@ b0:
   ret i64 %v2
 }
 
+define internal i64 @"main.pick"(i64 %v0, i64 %v1) #0 {
+b0:
+  %v13 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v2.p = getelementptr i64, ptr %v13, i64 0
+  %v2 = load i64, ptr %v2.p
+  call void @"rt.region_enter"()
+  %c.b0 = icmp ne i64 %v0, 0
+  br i1 %c.b0, label %b0.t1, label %b0.e2
+b0.t1:
+  br label %b1
+b0.e2:
+  br label %b2
+b1:
+  br label %b3
+b2:
+  %v3 = add i64 0, 1
+  %v4 = add i64 0, 0
+  %v5 = sub i64 %v4, %v3
+  br label %b3
+b3:
+  %v6 = phi i64 [ %v1, %b1 ], [ %v5, %b2 ]
+  %c.b3 = icmp ne i64 %v0, 0
+  br i1 %c.b3, label %b3.t3, label %b3.e4
+b3.t3:
+  br label %b4
+b3.e4:
+  br label %b5
+b4:
+  %v7 = add i64 0, -1
+  br label %b6
+b5:
+  br label %b6
+b6:
+  %v8 = phi i64 [ %v7, %b4 ], [ %v1, %b5 ]
+  %v9.c = icmp eq i64 %v6, %v8
+  %v9 = zext i1 %v9.c to i64
+  %c.b6 = icmp ne i64 %v9, 0
+  br i1 %c.b6, label %b6.t5, label %b6.e6
+b6.t5:
+  br label %b7
+b6.e6:
+  br label %b8
+b7:
+  %v10 = add i64 0, 1
+  br label %b9
+b8:
+  %v11 = add i64 0, 0
+  br label %b9
+b9:
+  %v12 = phi i64 [ %v10, %b7 ], [ %v11, %b8 ]
+  %v14 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st6 = getelementptr i64, ptr %v14, i64 0
+  store i64 %v2, ptr %st6
+  ret i64 %v12
+}
+
 define internal void @"main.main"() #0 {
 b0:
   %v46 = getelementptr i64, ptr @"rt.meta", i64 0
@@ -2934,6 +2990,24 @@ b15:
   %st10 = getelementptr i64, ptr %v47, i64 0
   store i64 %v0, ptr %st10
   ret void
+}
+
+define internal void @"rt.sigint"() #0 {
+b0:
+  %v0 = add i64 0, 231
+  %v1 = add i64 0, 130
+  %v2 = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 %v0, i64 %v1)
+  call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 130)
+  unreachable
+}
+
+define internal void @"rt.sigterm"() #0 {
+b0:
+  %v0 = add i64 0, 231
+  %v1 = add i64 0, 143
+  %v2 = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 %v0, i64 %v1)
+  call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 143)
+  unreachable
 }
 
 define void @"sober_entry"(ptr %v0) #0 {
@@ -4091,78 +4165,4 @@ b91:
   %v404 = add i64 0, 1
   %v405 = add i64 %v383, %v404
   br label %b85
-}
-
-define internal void @"rt.sigterm"() #0 {
-b0:
-  %v0 = add i64 0, 231
-  %v1 = add i64 0, 143
-  %v2 = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 %v0, i64 %v1)
-  call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 143)
-  unreachable
-}
-
-define internal void @"rt.sigint"() #0 {
-b0:
-  %v0 = add i64 0, 231
-  %v1 = add i64 0, 130
-  %v2 = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 %v0, i64 %v1)
-  call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 130)
-  unreachable
-}
-
-define internal i64 @"main.pick"(i64 %v0, i64 %v1) #0 {
-b0:
-  %v13 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v2.p = getelementptr i64, ptr %v13, i64 0
-  %v2 = load i64, ptr %v2.p
-  call void @"rt.region_enter"()
-  %c.b0 = icmp ne i64 %v0, 0
-  br i1 %c.b0, label %b0.t1, label %b0.e2
-b0.t1:
-  br label %b1
-b0.e2:
-  br label %b2
-b1:
-  br label %b3
-b2:
-  %v3 = add i64 0, 1
-  %v4 = add i64 0, 0
-  %v5 = sub i64 %v4, %v3
-  br label %b3
-b3:
-  %v6 = phi i64 [ %v1, %b1 ], [ %v5, %b2 ]
-  %c.b3 = icmp ne i64 %v0, 0
-  br i1 %c.b3, label %b3.t3, label %b3.e4
-b3.t3:
-  br label %b4
-b3.e4:
-  br label %b5
-b4:
-  %v7 = add i64 0, -1
-  br label %b6
-b5:
-  br label %b6
-b6:
-  %v8 = phi i64 [ %v7, %b4 ], [ %v1, %b5 ]
-  %v9.c = icmp eq i64 %v6, %v8
-  %v9 = zext i1 %v9.c to i64
-  %c.b6 = icmp ne i64 %v9, 0
-  br i1 %c.b6, label %b6.t5, label %b6.e6
-b6.t5:
-  br label %b7
-b6.e6:
-  br label %b8
-b7:
-  %v10 = add i64 0, 1
-  br label %b9
-b8:
-  %v11 = add i64 0, 0
-  br label %b9
-b9:
-  %v12 = phi i64 [ %v10, %b7 ], [ %v11, %b8 ]
-  %v14 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st6 = getelementptr i64, ptr %v14, i64 0
-  store i64 %v2, ptr %st6
-  ret i64 %v12
 }

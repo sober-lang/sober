@@ -1,0 +1,7 @@
+quick: fuzz: falsified in trials 1..1000 (seed 0)
+  Int(0, 1000) = 500
+  Int(0, 1000) = 1000
+quick: property returned false
+panic: quick.Falsified{} at std/quick
+quick: wrote CORPUS/main/2-c7699d8217e91efc
+panic: quick.Falsified{} at std/quick

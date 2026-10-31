@@ -1,0 +1,56 @@
+ok build=true clean=false
+ok build=false clean=true
+-- UnknownFlag at 3
+tool build: unknown flag --verbos (argument 3)
+  did you mean --verbose?
+run 'tool build --help' for usage
+-- UnknownCommand at 1
+tool: unknown command biuld (argument 1)
+  did you mean build?
+run 'tool --help' for usage
+-- MissingValue at 3
+tool build: flag -o needs a value (argument 3)
+run 'tool build --help' for usage
+-- BadValue at 3
+tool build: invalid value 0 for -j (argument 3)
+  want an integer in 1..64
+run 'tool build --help' for usage
+-- BadValue at 3
+tool build: invalid value fast for --mode (argument 3)
+  want one of debug, release
+run 'tool build --help' for usage
+-- BadValue at 3
+tool build: invalid value two for -j (argument 3)
+  want an integer in 1..64
+run 'tool build --help' for usage
+-- Missing <src>
+tool build: missing <src>
+run 'tool build --help' for usage
+-- Extra at 5
+tool build: unexpected argument extra.src (argument 5)
+run 'tool build --help' for usage
+-- Duplicate at 5 (first 3)
+tool build: flag -o given twice (arguments 3 and 5)
+run 'tool build --help' for usage
+-- BadValue at 5
+tool build: invalid value yes for --verbose (argument 5)
+  want no value
+run 'tool build --help' for usage
+-- UnknownFlag at 3
+tool build: unknown flag -run (argument 3)
+run 'tool build --help' for usage
+-- Request version
+tool 2.0
+-- Request help
+usage: tool build [flags] <src>
+
+build a file
+
+arguments:
+  <src>  the source file
+
+flags:
+  -j, --jobs <n>  parallel jobs (default 1)
+  --mode=<mode>   build mode: debug (default), release
+  -o <file>       write to <file>
+  -v, --verbose   say more

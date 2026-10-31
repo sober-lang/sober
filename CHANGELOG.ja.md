@@ -2,6 +2,63 @@
 
 このファイルは公開リリースごとの利用者向けの変更点を記録する。形式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に倣う。バージョンは [Semantic Versioning](https://semver.org/lang/ja/) に従う（0.x の間は後方互換を約束しない）。
 
+## v0.6.5 — 2026-10-31
+
+テストの版。std/quick のプロパティベーステスト、`sober fuzz`、`sober test --cover`（カバレッジ）、`sober test --mutate`（ミューテーションテスト）の 4 つの検証の道具を足し、テストの書き方のガイドを付けた。`sober check` / `sober build` / `sober test` は前回と同じ問い合わせの答えを覚えて返すようになり、`sober watch` は保存の後に build とテストを裏で温める。CLI は宣言の表（新しい std/cli）に置き換え、使い方の誤りは終了コード 2 になった（**破壊的変更** — `-run` → `--run` ほか）。
+
+### 破壊的変更
+
+- CLI の長い名前のフラグは `--` で始める: `sober test -run <prefix>` は `sober test --run <prefix>`（1 本ダッシュの長い名前は unknown flag の誤りになり、近い綴りを示す）。コマンド行の使い方の誤り（未知のフラグ・値の欠け・組めない組み合わせ）は終了コード 2（今までは 1）
+- 多値を既存の名前へ代入する形（`a, b = f()`・`_, b = f()`・`s.x, b = f()`）を拒否する（今までは build が受理し、check が内部の誤りで落ちていた）。新しい名前で受ける（`a, b := f()`）か、全部捨てる（`_, _ = f()`）。右辺が複数の並べた代入（`a, b = b, a`）は今までどおり
+- build のキャッシュが既定で on になった（下の「ツール」）。キャッシュの置き場を作りたくない環境では `SOBER_BUILD_CACHE=0`
+
+### 言語
+
+- 組み立ての const: トップレベルの `const` に、string / float（負を含む）/ true・false / struct（部分リテラル）/ imm の slice とその入れ子を書ける（int の const は今までどおり畳む・それ以外は参照する点で組み立てる）。葉に書けるのは int の const 式・閉じたラムダ・名前付き関数の参照・他の const の参照・欄の値の位置の nil
+- 別 package の名前付き関数型を、関数の結果・仮引数・struct の欄・ジェネリックの型引数に書けるようになった（今までは check が UnknownName・build が UndefinedType で落ちていた）
+- `sober check` の型の拒否が位置を出す: `sober: type error at <path>:<行>:<列>`（判定の JSON は今までどおり）
+
+### テスト（検証の 4 点セット）
+
+- std/quick — プロパティベーステスト: 選択の源から値を引き（`quick.Int` / `Bool` / `Pick` / `Elem` / `Bytes` / `String` / `Runes` / `Slice`）、`quick.Check` がプロパティを試行ごとに呼ぶ。偽になったら選択の列をシュリンク（縮小）して最小の反例を印字する。シードはテストの名前で決まり、同じコードなら何度走らせても同じ試行・同じ反例になる。`*_test.sober` では、プロパティの最後の式が偽になった反例を `assert` と同じ形（部分式の値つき）で印字する
+- `sober fuzz <package> --run TestXxx`: テストの `quick.Check` を期限（`--time`）まで回し続ける。偽・panic・ハング（`--hang`）を見つけたらシュリンクして報告し、選択の列を `<package>/testdata/fuzz/` に書く — `sober test` はそれを先に再生する。既定でカバレッジに誘導される（新しい分岐を開いた試行の列をミューテーションして使う — 手元の題材で、入れ子の 4 バイトの魔法値を誘導なしでは 1,400 万試行で 0/10、誘導ありでは 9 万試行で 10/10 見つけた）。`--sched` は std/task のスケジュールも試行ごとに振る
+- `sober test --cover`: テストした package の分岐（関数の本体・if の両側・switch の各腕・ループの本体・`&&` / `||` の右辺・catch の腕 — 出力では arm）を、どれかのテストが通ったかで数え、未到達の分岐を位置の順に出す。`--cover-out` でテキストか LCOV
+- `sober test --mutate`: テストした package にミュータント（比較の境界と否定・算術とビットの演算子の入れ替え・`&&` ↔ `||`・`!` の除去・条件の固定・文の削除）を織り込んだテストのビルドを 1 本作り、ミュータントごとにそれに届いたテストだけを並列に走らせて kill / 生き残り / 未到達を数える。`--mutate-out` で 1 行 1 ミュータント・`<package>/testdata/mutate.ignore` で等価ミュータントを除く
+- テストの結果の再生: `sober test` は全部通った package の印字を覚え、ソース・testdata・テストが読む環境変数のどれも変わっていなければ、建てずに走らせずに返す（手元で 4〜15 ms）。`--fresh` で必ず走らせる
+
+### ツール
+
+- 答えの再生: `sober check` / `sober build` は前回と同じ問い合わせ（読んだファイルの中身・ディレクトリの .sober の並び・@embed の入力・効く環境変数が全部同じ）の答えを覚えて返す。コンパイラ自身の `sober check` で冷 4.4 s → 0.05 s
+- 関数単位の check のキャッシュ（既定 on・`SOBER_CHECK_CACHE=0` で切る）と build のキャッシュ（既定 on・`SOBER_BUILD_CACHE=0`）: 編集の後は変わった関数と package だけを検査し直し・作り直す。置き場は worktree の外の共有ストア（複数の worktree で共有）・`sober cache info` / `sober cache gc`
+- `sober watch`: 保存 → check の答えが 0.05 s 前後。受理の回の後に build とテストを裏で温める（`nice 19`・ワーカーの 1/4）ので、続けて打つ素の `sober build` / `sober test` が 1 回目から当たる（手元で build 0.27 s）。編集が 200 ms 静まるのを待ってから回す（`SOBER_WATCH_QUIET`）
+- build の lower を関数単位に分けて並列に（ワーカーが 2 本以上のとき既定 on・出力はバイト一致）
+- `sober doc --cli`: CLI のリファレンスを実行ファイル自身から Markdown で（docs/cli/sober.md はこの生成物）
+- `sober outline <file>`: ソースファイルの宣言の一覧と行の範囲（text / json）
+- `sober --help` / `<command> --help` / `--version` は std/cli から出る（80 桁）
+
+### std
+
+- std/cli（新）: CLI を const の宣言の表（フラグ・位置引数・環境変数・サブコマンド）で書き、`cli.Main` が解析・使い方・誤用の診断（終了 2）・`--help` を出す
+- std/env（新）: 環境変数を const の表で宣言し、`env.Load` が入場で 1 回だけ全部を読んで検査する（Missing・BadValue・InvalidUtf8）
+- std/quick（新）: 上のテストの項
+- std/os: `RunTo`（子の標準出力 / 標準エラーをファイルへ）・`AppendFile`・`Remove` / `RemoveDir`
+- std/table: `Read`
+- std/task: `task.Run(…, backlog: K)`（下のランタイム）・`task.Ledger()` に `backlog` / `backlogYield`
+- std/net: `net.Serve(…, backlog: K)`
+
+### ランタイム
+
+- 未着手の子の上限: spawn した子のうち、まだ走り始めていない子はワーカーあたり 255 本まで。越えると生んだ task が譲り、子をその場で先に走らせる（値・出力は変わらない）。子を生み続けるループ（accept の形）で、生む速さが CPU の取り合いで掃く速さを上回っても peak RSS が伸びない（手元で、4 コアを忙しいループと取り合わせて 200 万 spawn: 47〜77 MB → 1.7 MB）。`task.Run(…, backlog: K)` / `net.Serve(…, backlog: K)` で 1〜255 に下げられ、子の task は継ぐ。観測は `task.Ledger().backlog`（今の未着手の数）・`backlogYield`（譲った回数）
+- 凍らせた map を子の task が引いたとき、番地 0 への書きで落ちる・`task.Map` の結果が黙って 0 になる・値渡しのたびに索引を作り直して region を食い尽くす、の 3 つの不具合を直した
+- 書いた実行ファイルを直後に実行すると、まれに ETXTBSY（Text file busy）で失敗した不具合を直した（std/task を使うプログラムのファイルの書きを同期の write に）
+
+### 文書
+
+- テストの書き方のガイド（docs/guide/testing.ja.md / testing.md）: 小さな題材で、assert → std/quick → `--cover` / `--mutate` → `sober fuzz` の順に進む。出力は全部実物
+- 抽象化のガイド（docs/guide/abstraction.ja.md / abstraction.md）: interface の代わりに — 名前付き関数型とクロージャ・関数の欄の struct（辞書）・union と型パターンの switch・他の言語からの対応表
+- 環境変数のガイド（docs/guide/env.ja.md / env.md）: コンパイラ・ランタイム・std が読む環境変数の表
+- 用語: テストの語を業界の通り名に（プロパティ・シュリンク・ミュータント・分岐・シード・ジェネレータ）・effect の訳を「エフェクト」に
+
 ## v0.6.4 — 2026-10-26
 
 accept をワーカーごとにした版。`net.Serve` はワーカーの数だけ同じ番地の listener を持ち、各ワーカーが自分で accept して、受けた接続をそのワーカーで走らせる。そのため `net.Listen` は SO_REUSEPORT を立てるようになった（性質の変更 — 下の std の項と安全性ガイド）。言語には省略可の匿名関数型の仮引数が入り、`http.ServeFlushed` は `http.ServeWith(…, put:)` に畳んだ（**破壊的変更**）。あわせて、故障の時に rt が何をしていたかを残す飛行記録（既定は off）を足した。

@@ -42,7 +42,7 @@ one() {
 mkdir -p "$W/ca" "$W/cb"
 cp -r src/compiler/. "$W/ca/"; cp -r src/std "$W/ca/std"
 cp -r "$W/ca/." "$W/cb/"
-one "$W/ca" "$W/cb" app/main.sober
+one "$W/ca" "$W/cb" app
 mkdir -p "$W/root"
 cp -r examples bench testdata "$W/root/"
 for s in testdata/implicitfreeze/*.sober examples/*.sober bench/*/main.sober; do

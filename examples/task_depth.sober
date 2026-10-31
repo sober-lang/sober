@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P3a: region の深度の上限で死んだ子（102）の後にも、同じ scope で子を生める（罠の後で深度を戻す — lower/task.sober。
+// region の深度の上限で死んだ子（102）の後にも、同じ scope で子を生める（罠の後で深度を戻す — lower/task.sober。
 // 最適化器は trap を「深度を変えない呼び出し」として扱わない — depth.sober / opt.sober。最適化あり・なしの観測一致が網）
 
 import "std/task"

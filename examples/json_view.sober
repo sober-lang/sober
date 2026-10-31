@@ -7,7 +7,7 @@ import "std/io"
 import "std/iter"
 import "std/json"
 
-// walk は節 n から下を深さ優先で 1 行ずつ印字する（path = そこまでの道）
+// 節 n から下を深さ優先で 1 行ずつ印字する（path = そこまでの道）
 func walk(d json.Doc, n int, path string) {
     switch json.At(d, n) {
     case json.Null{}: println("${path} = null")

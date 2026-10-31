@@ -1710,6 +1710,45 @@ b0:
   ret
 }
 
+func @testdata/named_qual/mid.F(%0 i64) i64 {
+b0:
+  %1 = region.depth
+  region.enter
+  %2 = call @testdata/named_qual/lib.Next(%0)
+  %3 = const 1
+  %4 = add %0, %3
+  %5 = call @testdata/named_qual/lib.Next(%4)
+  %6 = add %2, %5
+  region.setdepth %1
+  ret %6
+}
+
+func @testdata/named_qual/lib.Next(%0 i64) i64 {
+b0:
+  %1 = region.depth
+  region.enter
+  %2 = const 1
+  %3 = add %0, %2
+  region.setdepth %1
+  ret %3
+}
+
+func @rt.sigint() {
+b0:
+  %0 = const 231
+  %1 = const 130
+  %2 = syscall(%0, %1)
+  exit 130
+}
+
+func @rt.sigterm() {
+b0:
+  %0 = const 231
+  %1 = const 143
+  %2 = syscall(%0, %1)
+  exit 143
+}
+
 export func @sober_entry(%0 ptr) {
 b0:
   %1 = globaladdr @rt.meta
@@ -2303,43 +2342,4 @@ b91:
   %404 = const 1
   %405 = add %383, %404
   br b85(%401, %405)
-}
-
-func @rt.sigterm() {
-b0:
-  %0 = const 231
-  %1 = const 143
-  %2 = syscall(%0, %1)
-  exit 143
-}
-
-func @rt.sigint() {
-b0:
-  %0 = const 231
-  %1 = const 130
-  %2 = syscall(%0, %1)
-  exit 130
-}
-
-func @testdata/named_qual/mid.F(%0 i64) i64 {
-b0:
-  %1 = region.depth
-  region.enter
-  %2 = call @testdata/named_qual/lib.Next(%0)
-  %3 = const 1
-  %4 = add %0, %3
-  %5 = call @testdata/named_qual/lib.Next(%4)
-  %6 = add %2, %5
-  region.setdepth %1
-  ret %6
-}
-
-func @testdata/named_qual/lib.Next(%0 i64) i64 {
-b0:
-  %1 = region.depth
-  region.enter
-  %2 = const 1
-  %3 = add %0, %2
-  region.setdepth %1
-  ret %3
 }

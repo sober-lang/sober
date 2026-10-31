@@ -42,7 +42,7 @@ func WithD(n Node, v int) Node {
     return m
 }
 
-// Tree は組み上がった表（Build 済み）。file は根（File 節）の添字
+// 組み上がった表（Build 済み）。file は根（File 節）の添字
 type Tree struct {
     nodes []Node
     data []int
@@ -121,36 +121,36 @@ const KPConst = 68     // a = alts（列）
 const KPType = 69      // a = bind（文字列、-1 可）, b = variant（文字列）, c = fields（KFieldPat の列）
 const KFieldPat = 70   // a = 名前, b = sub（パターン、-1 可）
 const BDefined = 71    // a = 下地の型式（named scalar — `type X int`。language.md 32 節）
-// KNamedArg は名前付き実引数 `name: value`（syntax.md 決定 7）: a = 名前（文字列）, b = 値（式 / EMutArg）。ECall の実引数の列にだけ現れ、
+// 名前付き実引数 `name: value`（syntax.md 決定 7）: a = 名前（文字列）, b = 値（式 / EMutArg）。ECall の実引数の列にだけ現れ、
 // loader が位置引数へ写す（namedargs.sober）— 以降の層は見ない
 const KNamedArg = 72
-// BPanic は panic ラベルの宣言の本体（`type L panic{…}` — language.md 27 節）: a = fields（列）。loader が検査の後に BStruct へ写す（panicx.sober）— 以降の層は見ない
+// panic ラベルの宣言の本体（`type L panic{…}` — language.md 27 節）: a = fields（列）。loader が検査の後に BStruct へ写す（panicx.sober）— 以降の層は見ない
 const BPanic = 73
-// KIntrinsic は std の本体なしの宣言 `@intrinsic("鍵") func 名前(仮引数) 結果`（息継ぎ ③ — sys の組み込みの署名をソースに置く）:
+// std の本体なしの宣言 `@intrinsic("鍵") func 名前(仮引数) 結果`（sys の組み込みの署名をソースに置く）:
 // a = 名前, b = 鍵（文字列）, c = params（KParam の列）, d = results（列）, e = span.start, f = span.end。KFile の f の列にだけ現れ、関数の表には入らない
 // （呼び出しは desugar / lower が名前で引いて鍵の実装へ — desugar の SysKey）
 const KIntrinsic = 74
-// BAlias は型の別名の本体（`type A = B` — language.md 32 節「型の別名」）: a = 右辺の型式（loader が TName だけを受ける）。loader/alias.sober が参照を実体の名前へ写し、
+// 型の別名の本体（`type A = B` — language.md 32 節「型の別名」）: a = 右辺の型式（loader が TName だけを受ける）。loader/alias.sober が参照を実体の名前へ写し、
 // 検査の束の後で宣言を型の列から外す — desugar 以降の層は見ない（生の木を読む fmt・.sobi・docgen は見る）
 const BAlias = 75
-// EVal は lower が合成する評価済みの値の節（木には現れない — pipe の左辺を引数へ渡す。Zig の ArgSrc.val）: a = 型, b = 値。
+// lower が合成する評価済みの値の節（木には現れない — pipe の左辺を引数へ渡す。Zig の ArgSrc.val）: a = 型, b = 値。
 // 番号は木の種類と重ならないように離して置く（desugar の descTable は木の節の欄の付け替えにだけ使い、EVal は引かない）
 const EVal = 90
-// NKinds は種類の番号の上限（descTable の大きさ）
+// 種類の番号の上限（descTable の大きさ）
 const NKinds = 100
 
-// ParamIsMut は仮引数の節（KParam）が mut 仮引数か（c = mutable）
+// 仮引数の節（KParam）が mut 仮引数か（c = mutable）
 func ParamIsMut(x Node) bool {
     return x.c != 0
 }
 
-// Add は節を積んで添字を返す
+// 節を積んで添字を返す
 func Add(nb mut builder.Builder[Node], n Node) int {
     builder.Push(mut nb, n)
     return builder.Len(mut nb) - 1
 }
 
-// PutBytes は b[s:e] を文字列として積む
+// b[s:e] を文字列として積む
 func PutBytes(db mut builder.Builder[int], b []byte, s int, e int) int {
     at := builder.Len(mut db)
     builder.Push(mut db, e - s)
@@ -160,13 +160,13 @@ func PutBytes(db mut builder.Builder[int], b []byte, s int, e int) int {
     return at
 }
 
-// PutLit は綴りをそのまま文字列として積む（合成名）
+// 綴りをそのまま文字列として積む（合成名）
 func PutLit(db mut builder.Builder[int], w string) int {
     b := bytes(w)
     return PutBytes(mut db, b, 0, len(b))
 }
 
-// PutList は xs を列として積む
+// xs を列として積む
 func PutList(db mut builder.Builder[int], xs []int) int {
     at := builder.Len(mut db)
     builder.Push(mut db, len(xs))

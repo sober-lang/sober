@@ -1,0 +1,29 @@
+package main
+
+// 未着手の子の上限（language.md 11 節）: task.Run(…, backlog: 8) の中で子を生み続けても、ワーカーの列に積まれる未着手の子は
+// ワーカーあたり 8 本まで — 越えると生んだ task が譲って子をその場で先に走らせる（値も出力も変わらない）。観測は task.Ledger() の backlog / backlogYield
+
+import "std/task"
+
+func main() {
+    n := 100000
+    w := task.Ledger().workers
+    mut peak := 0
+    r, _ := task.Run((s task.Scope) => {
+        mut i := 0
+        while i < n {
+            k := i
+            _ = task.Spawn(s, () => k % 7)
+            if i % 64 == 0 {
+                b := task.Ledger().backlog
+                if b > peak {
+                    peak = b
+                }
+            }
+            i += 1
+        }
+        i
+    }, backlog: 8)
+    println("spawned ${r}")
+    println("bounded ${peak <= w * 8}")
+}

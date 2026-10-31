@@ -5,7 +5,7 @@ import "std/iter"
 
 // shape[T] の裏方（language.md 16 節 2）: 利用者は `json.Decode[T](d, n)` を書き、loader の固定テンプレート（compiler/loader/jsonshape.sober）が
 // struct T（と欄から届く struct・`[]U`・`U?`）ごとの写しの関数（普通の Sober）を合成してその呼び出しに写す。ここに置くのは写しの関数が呼ぶ
-// 部品（ノードの種類の検査・欄の引き・スカラーの解釈）と失敗のラベルだけ。欄の名前 = JSON のキー（Rename 辞書は第二便）
+// 部品（ノードの種類の検査・欄の引き・スカラーの解釈）と失敗のラベルだけ。欄の名前 = JSON のキー（Rename 辞書は未実装 — 実需まで足さない）
 
 // T? でない欄 field が無い（pos = オブジェクトの位置）
 type Missing error {

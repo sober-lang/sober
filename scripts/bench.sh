@@ -14,6 +14,11 @@
 set -uo pipefail
 # map のハッシュの種を固定（既定は乱数 — 探査の長さが揺れて命令・cycles が揺れる。出力は種に依らない）
 export SOBER_HASH_SEED=${SOBER_HASH_SEED:-0}
+# build のキャッシュ（既定 on）は切の道に固定（線は切の道の値 — 冷 / 温は rebuildbench.sh）
+export SOBER_BUILD_CACHE=${SOBER_BUILD_CACHE:-0}
+export SOBER_CHECK_CACHE=${SOBER_CHECK_CACHE:-0}
+# lower の分割（席 A — 既定は W ≥ 2 で分割）は直の道に固定（W8 の線と黄金を動かさない。既定の道の値は stagewall で）
+export SOBER_LOWER_SPLIT=${SOBER_LOWER_SPLIT:-1}
 cd "$(dirname "$0")/.."
 ROOT=$PWD
 N=3
@@ -162,26 +167,26 @@ cp -r src/std "$T/std"
 for i in $(seq 1 "$N"); do
     # self/build・self/check はワーカー 1（ラチェットの物差し — stages / selfpar と同じ）・-par は W8 + 物理 8 コアに固定
     # （selfw.sh と同じ物差し — 機械のコア数に依らない値にする。既定ワーカー数〔この機は 24〕だと束の子のヒープで RSS が機械依存に）
-    (cd "$T" && meas "self/build" env SOBER_WORKERS=1 "$S2" build app/main.sober --emit=elf --passes -o "$W/self.elf") || exit 1
-    (cd "$T" && meas "self/build-par" env SOBER_WORKERS=8 taskset -c "$CPUS8" "$S2" build app/main.sober --emit=elf --passes -o "$W/self.elf") || exit 1
-    (cd "$T" && meas "self/check" env SOBER_WORKERS=1 "$S2" check app/main.sober) || exit 1
-    (cd "$T" && meas "self/check-par" env SOBER_WORKERS=8 taskset -c "$CPUS8" "$S2" check app/main.sober) || exit 1
+    (cd "$T" && meas "self/build" env SOBER_WORKERS=1 "$S2" build app --emit=elf --passes -o "$W/self.elf") || exit 1
+    (cd "$T" && meas "self/build-par" env SOBER_WORKERS=8 taskset -c "$CPUS8" "$S2" build app --emit=elf --passes -o "$W/self.elf") || exit 1
+    (cd "$T" && meas "self/check" env SOBER_WORKERS=1 "$S2" check app) || exit 1
+    (cd "$T" && meas "self/check-par" env SOBER_WORKERS=8 taskset -c "$CPUS8" "$S2" check app) || exit 1
     rm -rf "$W/cache"
-    (cd "$T" && meas "self/check-split-cold" env SOBER_CACHE="$W/cache" "$S2" check app/main.sober --split) || exit 1
-    (cd "$T" && meas "self/check-split-warm" env SOBER_CACHE="$W/cache" "$S2" check app/main.sober --split) || exit 1
+    (cd "$T" && meas "self/check-split-cold" env SOBER_CACHE="$W/cache" "$S2" check app --split) || exit 1
+    (cd "$T" && meas "self/check-split-warm" env SOBER_CACHE="$W/cache" "$S2" check app --split) || exit 1
 done
 # 自己 build の命令数（instructions:u — 決定的なので 1 回。副ラチェット: wall は時間帯で揺れるので照合は命令数で）
 PERF=${PERF:-$(command -v perf || ls -d /nix/store/*perf-linux*/bin/perf 2>/dev/null | head -n 1)}
 INST=""
 if command -v "$PERF" > /dev/null 2>&1; then
-    (cd "$T" && SOBER_WORKERS=1 "$PERF" stat -x, -e instructions:u -o "$W/inst" "$S2" build app/main.sober --emit=elf --passes -o "$W/self.elf" > /dev/null) || exit 1
+    (cd "$T" && SOBER_WORKERS=1 "$PERF" stat -x, -e instructions:u -o "$W/inst" "$S2" build app --emit=elf --passes -o "$W/self.elf" > /dev/null) || exit 1
     INST=$(awk -F, '/instructions/ { printf "%.3f", $1 / 1e9 }' "$W/inst")
     echo "bench: self/build instructions:u = ${INST} G" >&2
     echo "self/build-inst $INST" >> "$res.inst"
 fi
 
 # 自己 check の核の節の数（check --expansion-report の 1 行目 — 決定的。mut 引数の関数の呼び出し点展開の掛け算を等式で見る副ラチェット — report-510 / 511）
-NODES=$(cd "$T" && SOBER_WORKERS=1 "$S2" check app/main.sober --expansion-report | awk '$1 == "core" && $2 == "nodes" { print $3 }')
+NODES=$(cd "$T" && SOBER_WORKERS=1 "$S2" check app --expansion-report | awk '$1 == "core" && $2 == "nodes" { print $3 }')
 echo "bench: self/check core nodes = ${NODES}" >&2
 
 # ── 中央値の表（wall / user は秒・RSS は MB）──

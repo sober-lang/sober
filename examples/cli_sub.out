@@ -1,0 +1,92 @@
+$ notes list
+list dir=notes limit=10 since=- format=text tags=0 trace=false
+exit 0
+$ notes list -n 3 --since=2026-01-01 -t work --tag home --format json
+list dir=notes limit=3 since=2026-01-01 format=json tags=2 trace=false
+  tag work
+  tag home
+exit 0
+$ notes list --format=debug --trace --dir /tmp/n
+list dir=/tmp/n limit=10 since=- format=debug tags=0 trace=true
+exit 0
+$ notes add groceries milk eggs --dir=box
+add groceries (2 words) to box
+exit 0
+$ notes tag add urgent
+tag add urgent
+exit 0
+$ notes exec -d box grep -n -- milk
+exec arg grep
+exec arg -n
+exec arg --
+exec arg milk
+exit 0
+$ notes --help
+usage: notes <command> [flags] [arguments]
+
+keep short notes
+
+commands:
+  list     list the notes
+  add      add a note
+  tag add  create a tag
+  tag rm   delete a tag
+  exec     run a command in the notes directory
+
+environment:
+  EDITOR  the editor for notes edit
+
+run 'notes <command> --help' for the flags of a command
+run 'notes --help=dev' for the development commands
+exit 0
+$ notes --help=dev
+usage: notes <command> [flags] [arguments]
+
+keep short notes
+
+commands:
+  list     list the notes
+  add      add a note
+  tag add  create a tag
+  tag rm   delete a tag
+  exec     run a command in the notes directory
+  fsck     check the index
+
+environment:
+  EDITOR  the editor for notes edit
+
+run 'notes <command> --help' for the flags of a command
+exit 0
+$ notes tag
+exit 2
+$ notes help list
+usage: notes list [flags]
+
+list the notes, newest first. With --tag, only the notes that have every given
+tag
+
+flags:
+  -d, --dir <dir>    the notes directory (env NOTES_DIR_FOR_CLI_SUB_EXAMPLE)
+                     (default notes)
+  --format=<format>  output form: text (default), json
+  -n, --limit <n>    show at most <n> notes (default 10)
+  --since <date>     only notes after <date>
+  -t, --tag <tag>    only notes with <tag> (repeatable)
+
+run 'notes list --help=dev' for the development flags
+exit 0
+$ notes list --help=dev
+usage: notes list [flags]
+
+list the notes, newest first. With --tag, only the notes that have every given
+tag
+
+flags:
+  -d, --dir <dir>    the notes directory (env NOTES_DIR_FOR_CLI_SUB_EXAMPLE)
+                     (default notes)
+  --format=<format>  output form: text (default), json, debug
+  -n, --limit <n>    show at most <n> notes (default 10)
+  --since <date>     only notes after <date>
+  -t, --tag <tag>    only notes with <tag> (repeatable)
+  --trace            trace the index reads
+exit 0

@@ -1,6 +1,6 @@
 package main
 
-// Server-Sent Events（language.md 28 節の「SSE」— 0.7.0 便 8）: 応答の stream で text/event-stream を送る。長さ不定の stream なので chunked で、
+// Server-Sent Events（language.md 28 節の「SSE」）: 応答の stream で text/event-stream を送る。長さ不定の stream なので chunked で、
 // emit 1 回 = chunk 1 つ = 送り 1 回（std は emit をまたいで溜めない — イベントは組んだ順にすぐ届く）。イベントの行は http.FormatEvent で組む
 // （data の改行は行ごとの `data:` に割る・event / id の改行は panic(BadEvent) — examples/http_sse_bad）。保存させない（cache: NoStore）。
 // text/event-stream は compress: の対象外（ServeWith に compress: を渡しても圧縮しない — 頭に Content-Encoding も Vary も無い）。
@@ -22,7 +22,7 @@ func show(b []byte) error? {
     return nil
 }
 
-// events は from の次から 3 つのイベントを送る（心拍のコメントを 1 つ挟む）
+// from の次から 3 つのイベントを送る（心拍のコメントを 1 つ挟む）
 func events(from int, emit func(b []byte) error?) error? {
     mut i := from + 1
     while i <= from + 3 {

@@ -1,0 +1,2 @@
+sober: load error at examples/const_neg_map.sober:4:15: const expression: a map literal is not allowed in a const (only @embed fills a map const)
+exit=1

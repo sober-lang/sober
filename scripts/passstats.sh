@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # passstats（段 5 の仕上げ便 — 自己 build の時間 / RSS の帰属）: `build --emit=elf --passes` の経路を段ごとに止めて（--stop-after=<段>）、
 # 各段までの累積の wall / user / peak RSS を測り、前の段との差を段の費用として出す。最後の行 = 最後まで（x86 のバックエンド込み）。
-#   scripts/passstats.sh [-n 回数] [--no-verify] [<entry>]   既定 entry = compiler/app/main.sober（std を写した作業木で — bench.sh の self/build と同じ形）
+#   scripts/passstats.sh [-n 回数] [--no-verify] [<entry>]   既定 entry = compiler/app（std を写した作業木で — bench.sh の self/build と同じ形）
 # 回数の中央値（既定 3）。RSS は region の高水位なので段の差 = その段が積んだ量（region を捨てない限り減らない）。--no-verify で IR の検証器を外した形も測れる
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -25,7 +25,7 @@ if [ -z "$entry" ]; then
     mkdir -p "$T"
     cp -r src/compiler/. "$T/"
     cp -r src/std "$T/std"
-    entry=app/main.sober
+    entry=app
 else
     T=$ROOT
 fi

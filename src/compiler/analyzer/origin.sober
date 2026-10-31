@@ -1,6 +1,6 @@
 package analyzer
 
-// 出所の依存（effect の波 段 4b — language.md 12 節「出所の依存」・13 節の補 3）: 値の流れのエンジンの 3 本目。秘密の walker（secret.sober）を
+// 出所の依存（language.md 12 節「出所の依存」・13 節の補 3）: 値の流れのエンジンの 3 本目。秘密の walker（secret.sober）を
 // og のモードで同じ解き手 az.er の 3 区間目に走らせる（秘密の解きの後 — Run が az.sv を作り直す）。モードの差:
 // 値は丸ごと（struct の値は欄の中身の合併を持ち、欄の読みは基底の丸ごと — 道・別名・型 × 名前のスロットは使わない）・分岐 / 番地 / 除算は sink にしない。
 // 原子: O = `@credential` の関数の結果と `@credential` の欄の読み（std の外の package の読みだけ — std の中の読み〔Header・condOf・Dispatch の写し〕は源にしない）・
@@ -26,7 +26,7 @@ const OgMount = 2  // Mount の routes の SH と mw の O / C
 
 // ── 準備（svInit から） ──
 
-// ogInitFn は関数 fi の `@credential` の原子と std 限定の検査・Mount の名指し
+// 関数 fi の `@credential` の原子と std 限定の検査・Mount の名指し
 func ogInitFn(az mut Az, fi int, fd ast.Node) {
     pk := desugar.FnAt(mut az.d, fi).pkg
     std := desugar.IsStdPkg(mut az.d, pk)
@@ -48,7 +48,7 @@ func ogInitFn(az mut Az, fi int, fd ast.Node) {
     }
 }
 
-// ogInitField は欄の項の型の式 ty（SH の欄の判定の材料 — 名前付き関数型の仮引数の項は -1）と std 限定の検査（td = 型宣言・f = ファイル・cred = `@credential` の欄）
+// 欄の項の型の式 ty（SH の欄の判定の材料 — 名前付き関数型の仮引数の項は -1）と std 限定の検査（td = 型宣言・f = ファイル・cred = `@credential` の欄）
 func ogInitField(az mut Az, td desugar.NodeRef, ty desugar.NodeRef, f int, cred bool) {
     pk := desugar.FilePkg(mut az.d, f)
     table.Push(mut az.sv.ftn, int(ty))
@@ -58,7 +58,7 @@ func ogInitField(az mut Az, td desugar.NodeRef, ty desugar.NodeRef, f int, cred 
     }
 }
 
-// ogInitUnion は union の型宣言 td の `@shared` の variant の原子
+// union の型宣言 td の `@shared` の variant の原子
 func ogInitUnion(az mut Az, td desugar.NodeRef, body desugar.NodeRef, f int) {
     vs := desugar.ListRef(node(mut az, body).a)
     for i <- iter.Range(0, desugar.LenL(mut az.d, vs)) {
@@ -75,7 +75,7 @@ func ogInitUnion(az mut Az, td desugar.NodeRef, body desugar.NodeRef, f int) {
     }
 }
 
-// ogInitRest は原子 C と欄の項ごとの SH の欄の印（源が 1 本以上あるときだけ）
+// 原子 C と欄の項ごとの SH の欄の印（源が 1 本以上あるときだけ）
 func ogInitRest(az mut Az) {
     az.sv.catom = az.sv.natom
     az.sv.oMask = az.sv.oMask | (1 << az.sv.natom)
@@ -95,7 +95,7 @@ func ogInitRest(az mut Az) {
     }
 }
 
-// ogSharedType は型の式 tn（package pk の文脈 — option は中身）が `@shared` の variant を持つ union か
+// 型の式 tn（package pk の文脈 — option は中身）が `@shared` の variant を持つ union か
 func ogSharedType(az mut Az, tn desugar.NodeRef, pk int) bool {
     mut t := tn
     while t != -1 && kind(mut az, t) == ast.TOpt {
@@ -118,13 +118,13 @@ func ogSharedType(az mut Az, tn desugar.NodeRef, pk int) bool {
 
 // ── 効果のビット ──
 
-// ogEff は今の関数（と今のラムダ）が源に届いた
+// 今の関数（と今のラムダ）が源に届いた
 func ogEff(az mut Az) {
     addSlot(mut az, az.sv.effBase + az.cur, LSet{lo: 1, hi: 0})
     az.sv.effHit = true
 }
 
-// ogEffOf は関数 fi を呼ぶと源に届きうるか（`@bless(origin)` の関数は届かない側 — 祝福した std の口）
+// 関数 fi を呼ぶと源に届きうるか（`@bless(origin)` の関数は届かない側 — 祝福した std の口）
 func ogEffOf(az mut Az, fi int) bool {
     if desugar.FuncBlessOrigin(mut az.d, fnDecl(mut az, fi)) {
         return false
@@ -132,7 +132,7 @@ func ogEffOf(az mut Az, fi int) bool {
     return table.Get(mut az.sv.credf, fi) != -1 || readSlot(mut az, az.sv.effBase + fi).lo != 0
 }
 
-// ogCall は直の呼び出し e（呼び先 fi・実引数の値 fv）の効果のビットと Mount の出会い
+// 直の呼び出し e（呼び先 fi・実引数の値 fv）の効果のビットと Mount の出会い
 func ogCall(az mut Az, e desugar.NodeRef, fi int, fv []LSet) {
     if ogEffOf(mut az, fi) {
         ogEff(mut az)
@@ -148,7 +148,7 @@ func ogCall(az mut Az, e desugar.NodeRef, fi int, fv []LSet) {
 
 // ── 欄と構築 ──
 
-// ogFieldRead は欄の読み base.name の源（`@credential` の欄 — std の外の package の読みだけ）
+// 欄の読み base.name の源（`@credential` の欄 — std の外の package の読みだけ）
 func ogFieldRead(az mut Az, base desugar.NodeRef, name desugar.StrRef) LSet {
     q := svField(mut az, desugar.ExprDecl(mut az.d, base), name)
     if q == -1 || desugar.IsStdPkg(mut az.d, az.pk) {
@@ -162,7 +162,7 @@ func ogFieldRead(az mut Az, base desugar.NodeRef, name desugar.StrRef) LSet {
     return svAtom(a)
 }
 
-// ogFieldWrite は欄の書き込み t（base.name = m）の出会い（std の外だけ）
+// 欄の書き込み t（base.name = m）の出会い（std の外だけ）
 func ogFieldWrite(az mut Az, t desugar.NodeRef, base desugar.NodeRef, name desugar.StrRef, m LSet) {
     if desugar.IsStdPkg(mut az.d, az.pk) {
         return
@@ -191,7 +191,7 @@ func ogFieldWrite(az mut Az, t desugar.NodeRef, base desugar.NodeRef, name desug
     }
 }
 
-// ogMeetDecl は型宣言 d が SH の欄（印 1）を持つか
+// 型宣言 d が SH の欄（印 1）を持つか
 func ogMeetDecl(az mut Az, d desugar.NodeRef) bool {
     if d == -1 {
         return false
@@ -209,7 +209,7 @@ func ogMeetDecl(az mut Az, d desugar.NodeRef) bool {
     return false
 }
 
-// ogComposite はリテラル e（節 x）: 値は要素の合併（struct の値は欄の中身を持つ）・`@shared` の variant は SH・std の外の struct は出会いを照合する
+// リテラル e（節 x）: 値は要素の合併（struct の値は欄の中身を持つ）・`@shared` の variant は SH・std の外の struct は出会いを照合する
 func ogComposite(az mut Az, e desugar.NodeRef, x ast.Node) LSet {
     els := desugar.ListRef(x.b)
     r := desugar.ResolveType(mut az.d, az.pk, desugar.StrRef(x.a))
@@ -259,7 +259,7 @@ func ogComposite(az mut Az, e desugar.NodeRef, x ast.Node) LSet {
     return v
 }
 
-// ogViol は出会いの違反を記録する（最後の 1 周・同じ節は 1 回 — sh = SH 側の値・o = 源の側の値）
+// 出会いの違反を記録する（最後の 1 周・同じ節は 1 回 — sh = SH 側の値・o = 源の側の値）
 func ogViol(az mut Az, at desugar.NodeRef, k int, sh LSet, o LSet) {
     if !az.sv.rec {
         return
@@ -275,7 +275,7 @@ func ogViol(az mut Az, at desugar.NodeRef, k int, sh LSet, o LSet) {
     table.Push(mut az.sv.ov, ogFirst(o.lo & (az.sv.oMask - (1 << az.sv.catom))))
 }
 
-// ogFirst は lo のビットの最小の原子（無ければ -1）
+// lo のビットの最小の原子（無ければ -1）
 func ogFirst(b int) int {
     for a <- iter.Range(0, 62) {
         if (b & (1 << a)) != 0 {
@@ -287,7 +287,7 @@ func ogFirst(b int) int {
 
 // ── 文面 ──
 
-// ogShName は SH の原子 a の variant の名前
+// SH の原子 a の variant の名前
 func ogShName(az mut Az, a int) string {
     if a < 0 {
         return "a shared cache policy"
@@ -299,7 +299,7 @@ func ogShName(az mut Az, a int) string {
     return "the shared cache policy '${str(mut az, desugar.StrRef(v.a))}'"
 }
 
-// ogSrcName は源の原子 a の綴り（-1 = C だけ — 源の口を呼ぶ関数値）
+// 源の原子 a の綴り（-1 = C だけ — 源の口を呼ぶ関数値）
 func ogSrcName(az mut Az, a int) string {
     if a < 0 {
         return "a handler or middleware that reaches a credential source (http.Authorization / http.Cookie / Request.head)"
@@ -313,7 +313,7 @@ func ogSrcName(az mut Az, a int) string {
     return "the credential field '${str(mut az, desugar.StrRef(td.a))}.${str(mut az, desugar.StrRef(table.Get(mut az.sv.fl, x * 3 + 1)))}'"
 }
 
-// ogMessage は出所の違反の記録 i の本文
+// 出所の違反の記録 i の本文
 func ogMessage(az mut Az, i int) string {
     k := table.Get(mut az.sv.ov, i * 4 + 1)
     sh := ogShName(mut az, table.Get(mut az.sv.ov, i * 4 + 2))
@@ -328,7 +328,7 @@ func ogMessage(az mut Az, i int) string {
     return "${sh} meets ${src} in one route — ${why}; use http.Private / http.NoStore for this route, or move the credential read out of it"
 }
 
-// ogStdMessage は std の外の印の本文
+// std の外の印の本文
 func ogStdMessage(x int) string {
     w := switch x {
     case 0: "@credential (a function)"
@@ -339,7 +339,7 @@ func ogStdMessage(x int) string {
     return "${w} is for std only (credential sources, shared cache policies and their blessings are declared by the standard library — language.md 12 節「出所の依存」)"
 }
 
-// OriginDump は出所の導出（開発用 `check --origin-dump` — 段 4c のオラクル）: 源の口（`@credential` の関数と欄）・`@shared` の variant・SH の欄（route = ルートの行 /
+// 出所の導出（開発用 `check --origin-dump`）: 源の口（`@credential` の関数と欄）・`@shared` の variant・SH の欄（route = ルートの行 /
 // response = 応答 1 件の方針の欄）・出会いの口（Mount）・Eff の関数（呼ぶと源に届きうる — 源の口そのものと `@bless(origin)` を除く）・違反を 1 件 1 行、最後に要約（位置の無い 1 行）。
 // 源の無い木（std/http を import しない — compiler/ 自身）では表は空
 func OriginDump(p loader.Program) []Finding {

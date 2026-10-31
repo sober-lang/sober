@@ -81,7 +81,7 @@ func PutInt(o mut builder.Builder[byte], n int) {
     putDigits(mut o, r % 100000000, 8)
 }
 
-// putDigits は v（< 10^8）の 10 進を積む（w = 0 なら最短・w > 0 なら上を 0 で埋めて w 桁）。桁は下から 1 語に詰める（最上位の桁が最下位のバイト）
+// v（< 10^8）の 10 進を積む（w = 0 なら最短・w > 0 なら上を 0 で埋めて w 桁）。桁は下から 1 語に詰める（最上位の桁が最下位のバイト）
 func putDigits(o mut builder.Builder[byte], v int, w int) {
     mut x := v
     mut acc := 0

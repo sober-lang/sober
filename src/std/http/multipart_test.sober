@@ -7,20 +7,20 @@ package http
 import "std/iter"
 
 
-// mpOf は ct と本文 s の部分の列（読めること — 読めなければテストの失敗）
+// ct と本文 s の部分の列（読めること — 読めなければテストの失敗）
 func mpOf(ct string, s string) []Part {
     ps, e := multipartOf(ct, bytes(s))
     assert(e == nil)
     return ps
 }
 
-// mpBad は ct と本文 s が BadMultipart か
+// ct と本文 s が BadMultipart か
 func mpBad(ct string, s string) bool {
     _, e := multipartOf(ct, bytes(s))
     return e != nil
 }
 
-// mpCat は a と b を繋いだバイト列
+// a と b を繋いだバイト列
 func mpCat(a []byte, b []byte) []byte {
     mut out := mut []byte{}
     for i <- iter.Range(0, len(a)) {
@@ -32,13 +32,13 @@ func mpCat(a []byte, b []byte) []byte {
     return freeze(out)
 }
 
-// mpByte は a + バイト c + b の本文（boundary=x）が BadMultipart か
+// a + バイト c + b の本文（boundary=x）が BadMultipart か
 func mpByte(a string, c int, b string) bool {
     _, e := multipartOf("multipart/form-data; boundary=x", mpCat(mpCat(bytes(a), []byte{byte(c)}), bytes(b)))
     return e != nil
 }
 
-// mpRep は s を n 回繋いだ文字列
+// s を n 回繋いだ文字列
 func mpRep(s string, n int) string {
     mut out := mut []byte{}
     b := bytes(s)
@@ -50,7 +50,7 @@ func mpRep(s string, n int) string {
     return string(freeze(out)) catch ""
 }
 
-// mpIs は部分 p が name / filename（"<nil>" = nil）/ contentType / 本文 body か
+// 部分 p が name / filename（"<nil>" = nil）/ contentType / 本文 body か
 func mpIs(p Part, name string, filename string, ctype string, body string) bool {
     fok := if filename == "<nil>" { p.filename == nil } else { is(p.filename, filename) }
     bs := string(p.body) catch "<bin>"

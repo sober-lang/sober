@@ -1,6 +1,6 @@
 package main
 
-// F-x の修理（欄の宣言型の注釈）の正例: スカラーの欄に型なしの定数・名前つきの並べ替え・入れ子の struct・byte の欄
+// 欄の宣言型の注釈の正例: スカラーの欄に型なしの定数・名前つきの並べ替え・入れ子の struct・byte の欄
 type P struct {
     x int
     y int

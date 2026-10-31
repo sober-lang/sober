@@ -1,6 +1,6 @@
 package main
 
-// F-c の回帰例: if 式の値の型（bytes の実引数・束縛）— check が Malformed で拒否し build は受理していた（check ⊂ build）
+// 回帰例: if 式の値の型（bytes の実引数・束縛）— check が Malformed で拒否し build は受理していた（check ⊂ build）
 
 func pick(c bool) string {
     return if c { "ab" } else { "xyz" }

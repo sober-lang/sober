@@ -1,0 +1,36 @@
+package calc
+
+// `sober test --mutate` の題材（scripts/mutate.sh）: 変異の種類を全部・どのテストも呼ばない関数（未到達）・生き残る変異（Sign の 0 の境界）・
+// ハングする変異（Sum の `i += 1` を消す — 期限で kill）
+
+func Sum(n int) int {
+    mut s := 0
+    mut i := 0
+    while i < n {
+        s += i
+        i += 1
+    }
+    return s
+}
+
+func Sign(x int) int {
+    if x > 0 {
+        return 1
+    }
+    if x < 0 {
+        return -1
+    }
+    return 0
+}
+
+func Mix(a int, b int) int {
+    return (a * 3 - b) / 2 + (a & b | 4) + (a << 2 >> 1) + 1
+}
+
+func Both(a bool, b bool) bool {
+    return a && !b || a == b
+}
+
+func never(x int) int {
+    return x + 1
+}

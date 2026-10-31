@@ -1,6 +1,6 @@
 package main
 
-// float のレジスタクラス（第二便 — opt のバックエンドの xmm8〜15）の回帰例: ①8 本を越える float の運搬値（spill）②ループの辺で値を回す
+// float のレジスタクラス（opt のバックエンドの xmm8〜15）の回帰例: ①8 本を越える float の運搬値（spill）②ループの辺で値を回す
 // （並行コピーの循環 — xmm 同士・r11 の中継）③呼び出しをまたいで生きる float（callee-saved — 呼ばれる側も xmm を使う）④float と int の行き来
 // （ビット列の読み替え・変換）。期待値は Go の双子 scripts/oracles/float_regs.go
 

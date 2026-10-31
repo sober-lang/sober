@@ -1,7 +1,7 @@
 package main
 
 // Wycheproof（testdata/wycheproof/README.md）の RSASSA-PSS 2048・SHA-256・MGF1-SHA256 の検証（salt 32 = 108 件・salt 0）を std/crypto/rsa.VerifyPSS に通す
-// （report-795 — 署名は乱数の salt なので網は検証側で張る。署名後の自己検証も同じ検証器）。valid = 受理・invalid = 拒否。食い違った tcId を印字する
+// （署名は乱数の salt なので網は検証側で張る。署名後の自己検証も同じ検証器）。valid = 受理・invalid = 拒否。食い違った tcId を印字する
 
 import "std/crypto/rsa"
 import "std/hex"

@@ -1,0 +1,13 @@
+ok   testdata/cover/shapes.TestSquare
+ok   testdata/cover/shapes.TestRect
+ok   testdata/cover/shapes.TestClampLow
+FAIL testdata/cover/shapes.TestDeep (exit 102)
+FAIL testdata/cover/shapes.TestBroken (exit 101)
+cover: testdata/cover/shapes 60.0% of 15 arms (fn 3/4)
+  testdata/cover/shapes/shapes.sober:12:5   case   never taken
+  testdata/cover/shapes/shapes.sober:20:5   then   never taken
+  testdata/cover/shapes/shapes.sober:20:21  rhs    never taken
+  testdata/cover/shapes/shapes.sober:27:5   then   never taken
+  testdata/cover/shapes/shapes.sober:33:6   fn     never called  (never)
+  testdata/cover/shapes/shapes.sober:35:5   loop   never taken
+3 passed, 2 failed

@@ -10,6 +10,7 @@ examples/task_chan_fan.sober
 examples/task_chan_hold.sober
 examples/task_chan_regions.sober
 examples/task_chan_regions_seq.sober
+examples/task_frozen_map.sober
 examples/task_chan_string.sober
 examples/task_close_send.sober
 examples/task_close_twice.sober

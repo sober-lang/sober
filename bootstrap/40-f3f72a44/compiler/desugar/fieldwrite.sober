@@ -1,0 +1,151 @@
+package desugar
+
+// 他の package の struct の欄の書きと、mut の中身を持つ欄の読みを拒否する（language.md 20 節）。
+// 規則: 書きの行き先の道（代入の左辺・`mut` の実引数・delete の第 1 実引数）を根へ辿ったとき、欄の選択の基底の型が今の package と別の package で
+// 宣言された struct なら拒否（添字・map の格納を挟んでも — 欄が指す buffer への書き）。読みは、欄の型が mut の中身（mut の slice / map — 入れ子の
+// struct・T? の中も）を持つときだけ拒否（中身の別名が package の外にできると、型の不変条件と信頼の口〔std/table.Freeze〕の前提が崩れる）。
+// 表層型検査器が型付けのついでに表 st.yfa へ積み、analyzer が指摘に・lower の build が拒否の数に使う（check と build が同じ表から — 診断は一致）
+
+import "ast"
+import "std/iter"
+
+// 表層型 t が他の package で宣言された struct（error ラベルの欄も）か
+func yForeignTy(st mut S, t int) bool {
+    if yk(mut st, t) != YDecl || YAt(mut st, t).b == st.ypk {
+        return false
+    }
+    bk := kindN(mut st, nC(nodeOf(mut st, yNa(YAt(mut st, t)))))
+    return bk == ast.BStruct || bk == ast.BError
+}
+
+// 記録を鎖の尾に積む（書きは同じ節の読みの記録を消す — 左辺の道の選択は読みとしても型付けされる）
+func yFieldNote(st mut S, kind int, at NodeRef, field StrRef, t int) {
+    if kind == 0 {
+        mut r := st.yfaHead - 1
+        while r >= 0 {
+            if hget(mut st, r) == 1 && hget(mut st, r + 1) == int(at) {
+                hset(mut st, r, 0 - 1)
+            }
+            r = hget(mut st, r + 4)
+        }
+    }
+    rec := hlen(mut st)
+    hpush(mut st, kind)
+    hpush(mut st, int(at))
+    hpush(mut st, int(field))
+    hpush(mut st, t)
+    hpush(mut st, 0 - 1)
+    if st.yfaTail == 0 {
+        st.yfaHead = rec + 1
+    } else {
+        hset(mut st, st.yfaTail - 1 + 4, rec)
+    }
+    st.yfaTail = rec + 1
+}
+
+// 書きの行き先 target の道の欄の選択を見る（括弧・添字は透過）
+func yFieldWrite(st mut S, target NodeRef) {
+    mut t := target
+    while kindN(mut st, t) == ast.ESelector || kindN(mut st, t) == ast.EIndex || kindN(mut st, t) == ast.EParen {
+        if kindN(mut st, t) == ast.ESelector {
+            bt := YTypeOf(mut st, nA(nodeOf(mut st, t)))
+            if yForeignTy(mut st, bt) {
+                yFieldNote(mut st, 0, t, sB(nodeOf(mut st, t)), bt)
+            }
+        }
+        t = nA(nodeOf(mut st, t))
+    }
+}
+
+// 欄の読み e（型 r）を見る
+func yFieldRead(st mut S, e NodeRef, r int) {
+    // 欄の型が mut の中身を持たない読み（ほとんど全部）は基底の型を引かずに抜ける — 自己 build の値札（全部の欄の読みで表を引くと +0.3 G）
+    if !yHasMut(mut st, r, 8) {
+        return
+    }
+    base := nA(nodeOf(mut st, e))
+    if kindN(mut st, base) == ast.EIdent && yLookup(mut st, sA(nodeOf(mut st, base))) == -2 {
+        // package の修飾（`utf8.Check`）— 欄ではない
+        return
+    }
+    bt := YTypeOf(mut st, base)
+    if yForeignTy(mut st, bt) {
+        yFieldNote(mut st, 1, e, sB(nodeOf(mut st, e)), bt)
+    }
+}
+
+// 表層型 t が mut の中身（mut の slice / map）を持つか（imm のコンテナの中身は mutFree — 型で保証）
+func yHasMut(st mut S, t int, fuel int) bool {
+    if t < 0 || fuel <= 0 {
+        return false
+    }
+    k := yk(mut st, t)
+    if k == YSlice || k == YMap {
+        return yMutTy(mut st, t)
+    }
+    if k == YOpt {
+        return yHasMut(mut st, YAt(mut st, t).a, fuel - 1)
+    }
+    if k != YDecl {
+        return false
+    }
+    return yHasMutDecl(mut st, t, fuel)
+}
+
+func yHasMutDecl(st mut S, t int, fuel int) bool {
+    x := YAt(mut st, t)
+    body := nC(nodeOf(mut st, yNa(x)))
+    bk := kindN(mut st, body)
+    if bk == ast.BStruct || bk == ast.BError {
+        return yFieldsHaveMut(mut st, x, lA(nodeOf(mut st, body)), fuel)
+    }
+    if bk == ast.BUnion {
+        vs := lA(nodeOf(mut st, body))
+        for v <- iter.Range(0, lenL(mut st, vs)) {
+            if yFieldsHaveMut(mut st, x, lB(nodeOf(mut st, latN(mut st, vs, v))), fuel) {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+func yFieldsHaveMut(st mut S, x YT, fs ListRef, fuel int) bool {
+    for i <- iter.Range(0, lenL(mut st, fs)) {
+        ft := ySubst(mut st, yTe(mut st, x.b, lB(nodeOf(mut st, yNa(x))), nB(nodeOf(mut st, latN(mut st, fs, i)))), yLc(x))
+        if yHasMut(mut st, ft, fuel - 1) {
+            return true
+        }
+    }
+    return false
+}
+
+// 記録の数（消した読みは数えない）
+func FieldViolations(st mut S) int {
+    mut n := 0
+    mut r := st.yfaHead - 1
+    while r >= 0 {
+        if hget(mut st, r) >= 0 {
+            n += 1
+        }
+        r = hget(mut st, r + 4)
+    }
+    return n
+}
+
+// 消していない記録の j 番目 [種類, 節, 欄の名前, 型の宣言の節, 型の package]（analyzer が綴りを組む）
+func FieldViolation(st mut S, j int) (int, NodeRef, StrRef, NodeRef, int) {
+    mut n := 0
+    mut r := st.yfaHead - 1
+    while r >= 0 {
+        if hget(mut st, r) >= 0 {
+            if n == j {
+                t := hget(mut st, r + 3)
+                return hget(mut st, r), NodeRef(hget(mut st, r + 1)), StrRef(hget(mut st, r + 2)), yNa(YAt(mut st, t)), YAt(mut st, t).b
+            }
+            n += 1
+        }
+        r = hget(mut st, r + 4)
+    }
+    return 0 - 1, NodeRef(-1), StrRef(-1), NodeRef(-1), 0 - 1
+}

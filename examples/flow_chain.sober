@@ -1,7 +1,7 @@
 package main
 
-// flow typing の連鎖と早期脱出（F-w / F-y・loader/flowx.sober の固定テンプレート）:
-// `&&` の右辺と本体（else の無い if — else つきは F 台帳のピン）・`||` の否定側（then が脱出 1 文のとき）・`if x == nil { return }` の後ろで x は T
+// flow typing の連鎖と早期脱出（loader/flowx.sober の固定テンプレート）:
+// `&&` の右辺と本体（else の無い if）・`||` の否定側（then が脱出 1 文のとき）・`if x == nil { return }` の後ろで x は T
 
 type Bad error {
     n int
@@ -59,7 +59,7 @@ func main() {
     println(size(nil, 1))
     println(code(true))
     println(code(false))
-    // F-v: catch nil の nil は兄弟の T? の型
+    // catch nil の nil は兄弟の T? の型
     s := name(false) catch nil
     println(if s == nil { "nil" } else { s })
     t := name(true) catch nil

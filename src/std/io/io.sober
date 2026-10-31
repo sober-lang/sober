@@ -6,7 +6,7 @@ package io
 
 import "std/strings"
 
-// 組み込みの宣言（息継ぎ ③ — 本体なし。鍵の実装はコンパイラの表: loader/intrinsic.sober・desugar / lower の SysKey）
+// 組み込みの宣言（本体なし。実装はコンパイラの表: loader/intrinsic.sober・desugar / lower の SysKey）
 @intrinsic("read_file")
 func sysReadFile(path string) []byte
 
@@ -103,7 +103,7 @@ type Stream struct {
     seal streamSeal
 }
 
-// streamSeal は Stream の封（非公開 — 外で値を書けない）
+// Stream の封（非公開 — 外で値を書けない）
 type streamSeal struct {
 }
 
@@ -120,7 +120,7 @@ type File struct {
     seal fileSeal
 }
 
-// fileSeal は File の封（非公開 — 外で値を書けない）
+// File の封（非公開 — 外で値を書けない）
 type fileSeal struct {
 }
 
@@ -152,7 +152,7 @@ type Root struct {
     seal rootSeal
 }
 
-// rootSeal は Root の封（非公開 — 外で値を書けない）
+// Root の封（非公開 — 外で値を書けない）
 type rootSeal struct {
 }
 
@@ -240,7 +240,7 @@ func Stat(f File) (FileInfo, error?) {
     return FileInfo{size: le64(sb, 48), modTime: le64(sb, 88) * 1000000000 + le64(sb, 96), kind: kindOf(k)}, nil
 }
 
-// le64 は b[at:at+8) の little endian の 64 ビット
+// b[at:at+8) の little endian の 64 ビット
 func le64(b []byte, at int) int {
     mut n := 0
     mut i := at + 7
@@ -251,7 +251,7 @@ func le64(b []byte, at int) int {
     return n
 }
 
-// cstr は s のバイト + 0（カーネルへ渡す C 文字列 — s が NUL を含めば空）
+// s のバイト + 0（カーネルへ渡す C 文字列 — s が NUL を含めば空）
 func cstr(s string) []byte {
     sb := bytes(s)
     mut b := mut []byte{}
@@ -267,7 +267,7 @@ func cstr(s string) []byte {
     return freeze(b)
 }
 
-// owned は開いた fd（負なら errno のまま返す）を今の task の登録簿に積む（番号が登録簿の上限以上なら閉じて EMFILE — sysOpen と同じ）
+// 開いた fd（負なら errno のまま返す）を今の task の登録簿に積む（番号が登録簿の上限以上なら閉じて EMFILE — sysOpen と同じ）
 func owned(fd int) int {
     if fd < 0 {
         return fd
@@ -283,7 +283,7 @@ func owned(fd int) int {
 // f を今の位置から EOF まで全部読む（ReadFile の開いた File 版）。途中で失敗したら error（読めた分は捨てる）
 @errors(NotFound, Denied, Other, Timeout, Expired)
 @effects(block, io, nondet)
-func ReadAll(f File) ([]byte, error?) { // 対の WriteAll は実需まで足さない（language.md 34 節 2 の注記・2026-10-20 ④）
+func ReadAll(f File) ([]byte, error?) { // 対の WriteAll は実需まで足さない（language.md 34 節 2 の注記）
     if sysDeadline() != 0 {
         return []byte{}, Expired{}
     }
@@ -303,7 +303,7 @@ type Bytes struct {
     seal bytesSeal
 }
 
-// bytesSeal は Bytes の封（非公開 — 外で値を書けない）
+// Bytes の封（非公開 — 外で値を書けない）
 type bytesSeal struct {
 }
 
@@ -313,7 +313,7 @@ func Raw(v Bytes) []byte {
     return v.b
 }
 
-// 切片の大きさと世代の段数（案 P の既定 — 64 KiB × 2 のダブルバッファ。口は後便: Web 波の pool: 引数か、生成元の名前つき引数〔PINS〕とセットで）
+// 切片の大きさと世代の段数（既定は 64 KiB × 2 のダブルバッファ。将来 pool: 引数や生成元側の指定で調律できる余地を残す）
 const chunkSize = 65536
 const chunkGens = 2
 
@@ -336,7 +336,7 @@ func ChunksAt(f File, off int, k func(Bytes)) error? {
     return chunksFrom(f, off, k)
 }
 
-// chunksFrom は Chunks / ChunksAt の本体（off = -1 は今の位置から read — 抜けたら先読みの分を巻き戻す）
+// Chunks / ChunksAt の本体（off = -1 は今の位置から read — 抜けたら先読みの分を巻き戻す）
 @errors(NotFound, Denied, Other, Timeout, Expired)
 func chunksFrom(f File, off int, k func(Bytes)) error? {
     rec := sysChunkOpen(f.fd, chunkSize, chunkGens, off)
@@ -359,7 +359,7 @@ func chunksFrom(f File, off int, k func(Bytes)) error? {
     return nil
 }
 
-// chunkEnd はストリームを閉じる（出した読みの完了を待ってからスロットを返す）
+// ストリームを閉じる（出した読みの完了を待ってからスロットを返す）
 func chunkEnd(rec int) {
     _ = sysChunkClose(rec)
 }
@@ -404,7 +404,7 @@ func Lines(f File, k func(Bytes)) error? {
     return nil
 }
 
-// dropCR は末尾の '\r' を 1 つ落とす
+// 末尾の '\r' を 1 つ落とす
 func dropCR(b []byte) []byte {
     if len(b) > 0 && b[len(b) - 1] == '\r' {
         return b[0:len(b) - 1]
@@ -412,7 +412,7 @@ func dropCR(b []byte) []byte {
     return b
 }
 
-// joined は a + b の新しいバイト列（切片をまたぐ行の写し）
+// a + b の新しいバイト列（切片をまたぐ行の写し）
 func joined(a []byte, b []byte) []byte {
     mut out := mut []byte{}
     for x <- a {
@@ -526,12 +526,12 @@ func kindOf(t int) EntryKind {
     return Irregular{}
 }
 
-// dot は名前が "." か ".." か
+// 名前が "." か ".." か
 func dot(nb []byte) bool {
     return (len(nb) == 1 && nb[0] == '.') || (len(nb) == 2 && nb[0] == '.' && nb[1] == '.')
 }
 
-// less は名前のバイト列の辞書順（LC_ALL=C sort と同じ）
+// 名前のバイト列の辞書順（LC_ALL=C sort と同じ）
 func less(a string, b string) bool {
     x := bytes(a)
     y := bytes(b)
@@ -620,7 +620,7 @@ func WriteByte(w mut Writer, c byte) {
     }
 }
 
-// writerByteSlow は枠に空きを作ってから 1 バイト書く（WriteByte の遅い道 — 展開しない: 速い道を小さく保つ）
+// 枠に空きを作ってから 1 バイト書く（WriteByte の遅い道 — 展開しない: 速い道を小さく保つ）
 @noinline
 func writerByteSlow(w mut Writer, c byte) {
     writerRoom(mut w)
@@ -670,7 +670,7 @@ func Flush(w mut Writer) error? {
     return nil
 }
 
-// writerRoom は枠に空きを作る: 初回は枠を確保し、以後は満杯の枠を書き出して空にする
+// 枠に空きを作る: 初回は枠を確保し、以後は満杯の枠を書き出して空にする
 func writerRoom(w mut Writer) {
     if len(w.buf) == 0 {
         while len(w.buf) < writerSize {
@@ -681,7 +681,7 @@ func writerRoom(w mut Writer) {
     writerSpill(mut w)
 }
 
-// writerSpill は枠の中身を書き出して空にする（失敗を貯めた後は書かない）。満杯の枠はそのまま渡し、端数（Flush）は n バイトを写して渡す
+// 枠の中身を書き出して空にする（失敗を貯めた後は書かない）。満杯の枠はそのまま渡し、端数（Flush）は n バイトを写して渡す
 // （mut の slice は切り出せない — 枠を freeze すると以後の書き込みが use-after-freeze になるので、端数だけ写す。写すのは Flush ごとに 64 KiB まで）
 func writerSpill(w mut Writer) {
     if w.n > 0 && w.err == 0 {

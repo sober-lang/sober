@@ -1,0 +1,57 @@
+package dudect
+
+// 定数時間の統計の網（dudect — Reparaz ら 2017）の駆動: 秘密の入力を 2 クラス（固定 vs 乱数）に分け、
+// クラスを乱数で交互にした多数回の呼び出しの時間（cycles — rdtscp）を記録する。集計（Welch の t・上位の切り）は scripts/dudect.sh。
+// ctcheck（機械語の条件分岐 — 静的）と analyzer（値の流れ — 静的）が見ない「命令の時間が値に依る」クラスの動的な網。
+// 題材は同じ package の _test.sober（std/internal は std の外から import できない — 20 節。`sober test` の経路で建てて 1 本ずつ直列に走る）。
+// 環境変数 SOBER_DUDECT（回数）が無ければ何もしない — gates の unittest では題材のテストは測らずに通る
+
+import "std/convert"
+import "std/iter"
+import "std/os"
+import "std/rand"
+
+@intrinsic("cycles")
+func cycles() int
+
+// 測る回数（環境変数 SOBER_DUDECT — 無い・数でなければ 0 = 測らない）
+func Count() int {
+    v, e := os.Getenv("SOBER_DUDECT")
+    if e != nil || v == nil {
+        return 0
+    }
+    n, pe := convert.ParseInt(v)
+    return if pe != nil || n < 0 { 0 } else { n }
+}
+
+// 重い口の回数（Count を d で割る — 1 回が ms 級の口〔rsa.SignPSS〕は 1e6 回を回せない。0 なら測らない）
+func CountDiv(d int) int {
+    return Count() / d
+}
+
+// n 回の計時。入力は計時の前に全部作る（mk(クラス, i) — クラスを作る費用を計時に混ぜない）・クラスは乱数（種 seed）で交互・
+// 1 回ずつ f の前後の cycles の差を記録し（f の結果の bool は窓の外で列に積む — 結果はクラスで決まるので、窓の中で分岐すると予測の外れがクラスに依る。秘密の値の bool もあるので分岐で畳まない）、最後に「dudect <名前> <クラス> <cycles>」を 1 行ずつ標準出力へ（計時の間は印字しない）
+func Measure(name string, n int, seed int, mk func(int, int) []byte, f func([]byte) bool) {
+    mut r := rand.New(seed)
+    mut cls := mut []int{}
+    mut ins := mut [][]byte{}
+    for i <- iter.Range(0, n) {
+        c := rand.Intn(mut r, 2)
+        cls = append(cls, c)
+        ins = append(ins, mk(c, i))
+    }
+    mut ts := mut []int{}
+    mut rs := mut []bool{}
+    for i <- iter.Range(0, n) {
+        x := ins[i]
+        t0 := cycles()
+        s := f(x)
+        t1 := cycles()
+        ts = append(ts, t1 - t0)
+        rs = append(rs, s)
+    }
+    for i <- iter.Range(0, n) {
+        println("dudect ${name} ${cls[i]} ${ts[i]}")
+    }
+    println("dudect-sink ${name} ${len(rs)} ${if len(rs) > 0 { rs[len(rs) - 1] } else { false }}")
+}

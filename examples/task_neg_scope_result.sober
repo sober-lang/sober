@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P3a-1d: scope の結果が handle を持つ（diag.Par kind 9 — check と build が同じ拒否。desugar/parcheck.sober）
+// scope の結果が handle を持つ（diag.Par kind 9 — check と build が同じ拒否。desugar/parcheck.sober）
 
 import "std/task"
 

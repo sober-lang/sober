@@ -1,0 +1,939 @@
+package lower
+
+// IR インライナー（性能投資 M6）: rtlower の後の IR（region の op は rt の呼び出しと meta の load / store に下りている）で、
+// 小さい関数の呼び出しを本体の写しに置き換える。最適化のバックエンドの経路だけに掛ける（写しのバックエンド `--backend=copy` と IR テキストは
+// 掛けない形のまま — elfeq / cross が stage1 と同じ IR から照合する）。的 = rt.region_enter / rt.region_alloc（binary-trees の 32%）と
+// 読み口の小関数（P0' の一般化 — ブロックが幾つあってもよい・呼び出しを含んでもよい）。
+// 意味: rtlower の後の関数は IR の普通の関数（深度の出入りも明示の load / store）なので、写しは呼び出しと同じ — 呼び出しを
+//   `br 入口の写し` にし、写しの `ret v` を `br 続き(v)` に、続きのブロックが呼び出しの後ろの命令と元の終端を持つ。
+// 対象: 自分以外・入口でない（sober_entry）・スロットなし（スロットのゼロ初期化は関数の入口ごと — 写すと周回で初期化されない）・
+//   入口のブロックが引数なし・命令 IL_MAXINS 以下・ブロック IL_MAXBLK 以下。判定は掛ける前の形で（1 段 — 写しの中の呼び出しは展開しない）。
+//   予算: 命令 IL_TINY 以下の関数は常に（呼び出しの手間と同じ桁 — 縮むか変わらない）。それより大きい関数は、呼ぶ側の元の大きさが
+//   IL_CALLER 以下のときだけ・1 関数あたり IL_GROW 命令まで（小さい関数の中の region の出入り・確保が的 — 大きい関数に一律に写すと
+//   compiler/app の ELF が 5.2 → 8.3 MB・自己 build の RSS 690 → 976 MB に膨らんだ）
+
+import "desugar"
+import "std/iter"
+
+const IL_MAXINS = 40
+const IL_MAXBLK = 12
+const IL_GROW = 400
+const IL_TINY = 8
+const IL_CALLER = 400
+// 部分インライン（部分インライン便）: IL_MAXINS / IL_MAXBLK を超えても、冷たいブロック（exit で終わる panic の点・error を返す return 文の
+// ブロック〔B_LOOP のビット 2 — lower の retStmt が立てる〕・前任が全部冷たいブロック）を除いた熱い命令が IL_HOTINS 以下なら写す。冷たい道も
+// そのまま写す（意味は全部の写しと同じ — 数えないだけ）。予算は熱い命令で IL_GROW から引く（呼ぶ側の大きさは問わない — 的は大きい関数の
+// ループの中の std/utf8.Str: 熱い 70 命令前後・冷たい 45 命令）
+const IL_HOTINS = 80
+// 戻らない利用者の関数の種（730 — report-728 A）: error を返す return 文の印（bit4）を持たない関数も、戻らない利用者の関数
+// （ラベル panic の冷たい関数 binary.outOfRange / pool.badScratch 等 — rt.panic / rt.panic_mem / rt.* は除く）を呼ぶブロックを
+// 冷たい種にして部分インラインの資格を得る（的 = flate.insert: 呼び出しの固定費 ≈ 16 命令 × 8.4K 回/要求）。閾値は種別に分ける —
+// 既存の bit4 の道（IL_HOTINS）は変えない。rt.* を除くのは rt.deadlock を呼ぶ rt.task_wait（眠りの器）が 16 か所に写る巻き添えの実測から。
+// 数えは irinl 入力時点の本体（後段の cfgclean / m2r の掃除前 — insert は判定時 97 命令・熱い 82）
+const IL_PANICHOT = 100
+// 反復の軽い enter の展開（展開の予算の配り直し便 B — report-467 / 468）: rt.region_enter_lloop（ループの反復ごとの軽い region.enter — 熱い
+// 呼び出しの固定費の席。置き場は loopLight が決めるループの体の頭だけ）は、呼ぶ側の大きさ（IL_CALLER）と予算（IL_GROW）を問わず写す。ただし呼ぶ側の元の大きさは
+// IL_LLMAX まで（json.Parse〔3,033 命令〕の 1 点の写しで jsonapi +1.35% — 冷たいループの点の写しが同じ関数の熱いループの割り当てを押す族）。
+// 一般の読み口（std・利用者の関数）への同じ門は、規約レーン後の値札で負け越し（自己 build の定常値 +2.2%）のため入れない（report-466 / 467）
+const IL_LLMAX = 2000
+
+// irInlineModule はモジュールの全関数に掛ける
+func irInlineModule(st mut St) {
+    save := st.fn
+    mut frecs := mut []int{}
+    mut f := st.fhead
+    mut vp := FnRef(-1)
+    while f != -1 {
+        frecs = append(frecs, int(f))
+        if strIs(mut st, desugar.StrRef(irFnName(mut st, f)), "std/strings.validPrefix") {
+            vp = f
+        }
+        if strIs(mut st, desugar.StrRef(irFnName(mut st, f)), "std/utf8.Check") {
+            st.ubCheck = f
+        }
+        if strIs(mut st, desugar.StrRef(irFnName(mut st, f)), "std/utf8.boundary") {
+            st.ubBound = f
+        }
+        f = irFnNext(mut st, f)
+    }
+    if int(vp) != -1 {
+        ilUtf8(mut st, vp)
+    }
+    fr := freeze(frecs)
+    mut ok := mut []int{}
+    mut size := mut []int{}
+    for i <- iter.Range(0, len(fr)) {
+        n := ilSize(mut st, FnRef(fr[i]))
+        size = append(size, n)
+    }
+    for i <- iter.Range(0, len(fr)) {
+        ok = append(ok, ilShape(mut st, FnRef(fr[i]), size[i]))
+    }
+    okf := freeze(ok)
+    // 処理の入力の並び（撹拌の口 SOBER_IRINL_ORDER — 1 = 逆順・2 以上 = その種の乱順。既定 = 関数の鎖の順）。出力は並びに依らない（下の規則
+    // — 根を回す順が変わっても成分と位相の関係は変わらず、輪の中は名前で決まる）。網 = 撹拌して ELF が一致すること
+    inp := ilInputOrder(len(fr))
+    // 規則（report-1185 — 並びに依らない展開。以前は関数の鎖の順に処理し「先に処理済みの呼び先の写し = 展開済みの本体」だったので、並びだけで
+    // 自己の ELF が 14%・自己 build が 6.6% 揺れた — PINS の irinl の順序依存）: 写しの元が処理の前か後かを関数の組で決める。
+    //   組 0 = 極小の候補（全体を写す・IL_TINY 以下）を呼び先が先の順で — 極小の鎖（アクセサの鎖）は畳み切った本体を写す
+    //   組 1 = 部分インラインの候補のうち先に処理するもの（ilFirst）を呼び手が先の順で — 呼び手は展開済みの本体を写す
+    //     （Str の写しに boundary の呼び出しが 2 本残ると 1brc +4.1%・knuc +8.6%）
+    //   組 2 = 残りを呼び手が先の順で — 呼び先は処理の前の本体（1 段）
+    // 棄てた形（report-1185 の値札・自己）: 全部を処理の前から写す（仕事 −12% だがコンパイラ自身 +8.5%）・全部を呼び先が先〔後順〕（出力 +7%・
+    // 仕事 +7% — 552 の棄却と同じ）・小さい候補（≤ 40 命令）を全部畳み切る（後順と同じ）・rt を先の組に（効かない）
+    // hot[i] = 熱い命令の数（-1 = 印が無い・-2 = まだ数えていない）— 呼び手が初めて見たときに数える
+    mut hot := mut []int{}
+    xFill(mut hot, len(fr), -2)
+    // first[i] = 組（0 = 残り・1 = 先に処理する部分インラインの候補・2 = 極小の候補）
+    mut first := mut []int{}
+    xFill(mut first, len(fr), 0)
+    // 先の候補の判定は写す前の形で全部済ませる（処理と混ぜると判定が先に処理した呼び先の本体を見る — 並びに依る）。nrc = 判定のメモ（関数 → 0/1）
+    // 呼び先（1 段）の本体に戻らない利用者の呼び出しがある候補も先に処理する（730 — 種は pool.Load / binary.Load64 の展開の後に
+    // しか候補の本体に現れないのに、呼び手〔greedy / lazy〕が候補より先に処理されると ilHot が種を見ない）
+    mut nrc := mut map[int]int{}
+    for k <- iter.Range(0, len(fr)) {
+        i := inp[k]
+        if okf[i] == 2 && irFnBHead(mut st, FnRef(fr[i])) != -1 {
+            first[i] = ilFirst(mut st, FnRef(fr[i]), mut nrc)
+        }
+    }
+    ord := ilCallersFirst(mut st, fr, inp)
+    for k <- iter.Range(0, len(ord)) {
+        i := ord[len(ord) - 1 - k]
+        if okf[i] == 1 && size[i] <= IL_TINY && irFnBHead(mut st, FnRef(fr[i])) != -1 {
+            ilFunc(mut st, FnRef(fr[i]), fr, okf, mut hot)
+            first[i] = 2
+        }
+    }
+    for k <- iter.Range(0, len(ord)) {
+        i := ord[k]
+        if first[i] == 1 {
+            ilFunc(mut st, FnRef(fr[i]), fr, okf, mut hot)
+        }
+    }
+    // 先に処理した候補の熱い命令の数は処理の後の本体で数え直す（後の呼び手が写すのは処理の後の本体）
+    for i <- iter.Range(0, len(fr)) {
+        if first[i] == 1 {
+            hot[i] = -2
+        }
+    }
+    for k <- iter.Range(0, len(ord)) {
+        i := ord[k]
+        if first[i] == 0 && irFnBHead(mut st, FnRef(fr[i])) != -1 {
+            ilFunc(mut st, FnRef(fr[i]), fr, okf, mut hot)
+        }
+    }
+    st.fn = save
+}
+
+// ilFirst は部分インラインの候補 g を先に処理するか（1 / 0 — 本体の印 4 のブロックか、戻らない利用者の関数を呼ぶ — 730）。nrc = 呼び先の判定のメモ
+func ilFirst(st mut St, g FnRef, nrc mut map[int]int) int {
+    mut b := irFnBHead(mut st, g)
+    while b != -1 {
+        if irBlkLoop(mut st, b) & 4 == 4 {
+            return 1
+        }
+        mut jj := irBlkIHead(mut st, b)
+        while jj != -1 {
+            if irInsOp(mut st, jj) == OpCall {
+                cg := irInsFn(mut st, jj)
+                v := nrc[int(cg)]
+                c := if v != nil { v } else { 0 - 1 }
+                w := if c >= 0 { c } else if ilNonretCallee(mut st, cg) { 1 } else { 0 }
+                if c < 0 {
+                    nrc[int(cg)] = w
+                }
+                if w == 1 {
+                    return 1
+                }
+            }
+            jj = irInsNext(mut st, jj)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return 0
+}
+
+// ilEnvInt は環境変数 name の数（無ければ 0）
+func ilEnvInt(name string) int {
+    n := lsEnvInt(name)
+    return if n < 0 { 0 } else { n }
+}
+
+// ilInputOrder は処理の入力の並び（添字の順列）。SOBER_IRINL_ORDER = 1 で逆順・2 以上でその種の乱順（撹拌の網 — 出力が並びに依らないことの確かめ）
+func ilInputOrder(n int) []int {
+    mut o := mut []int{}
+    for i <- iter.Range(0, n) {
+        o = append(o, i)
+    }
+    m := ilEnvInt("SOBER_IRINL_ORDER")
+    if m == 1 {
+        for i <- iter.Range(0, n / 2) {
+            t := o[i]
+            o[i] = o[n - 1 - i]
+            o[n - 1 - i] = t
+        }
+    } else if m >= 2 {
+        mut x := m
+        mut i := n - 1
+        while i > 0 {
+            x = (x * 1103515245 + 12345) % 2147483648
+            j := x % (i + 1)
+            t := o[i]
+            o[i] = o[j]
+            o[j] = t
+            i -= 1
+        }
+    }
+    return freeze(o)
+}
+
+// ilCallersFirst は fr の添字を呼び手が先の順に並べる（呼び出しグラフの強連結成分を Tarjan で求め、成分は位相順〔呼び手の成分が先〕・
+// 成分の中は関数名の順）。根を回す順は inp（並びが変わっても成分と位相の関係は変わらない — 成分の中の順は名前で決まる）
+func ilCallersFirst(st mut St, fr []int, inp []int) []int {
+    n := len(fr)
+    // 辺（呼び出しの点の順）: dg[i] .. dg[i + 1] が i の呼び先の添字
+    mut dg := mut []int{}
+    mut ad := mut []int{}
+    for i <- iter.Range(0, n) {
+        dg = append(dg, len(ad))
+        mut b := irFnBHead(mut st, FnRef(fr[i]))
+        while b != -1 {
+            mut jj := irBlkIHead(mut st, b)
+            while jj != -1 {
+                if irInsOp(mut st, jj) == OpCall {
+                    gi := xIndex(fr, int(irInsFn(mut st, jj)))
+                    if gi != i {
+                        ad = append(ad, gi)
+                    }
+                }
+                jj = irInsNext(mut st, jj)
+            }
+            b = irBlkNext(mut st, b)
+        }
+    }
+    dg = append(dg, len(ad))
+    mut tIdx := mut []int{}
+    mut tLow := mut []int{}
+    mut tOn := mut []bool{}
+    xFill(mut tIdx, n, -1)
+    xFill(mut tLow, n, 0)
+    for _ <- iter.Range(0, n) {
+        tOn = append(tOn, false)
+    }
+    mut stk := mut []int{}
+    mut ssp := 0
+    mut tWork := mut []int{}
+    mut wsp := 0
+    mut tNext := 0
+    // comps = 成分を閉じた順（呼び先の成分が先）に並べた頂点の列・cst = 各成分の頭の位置
+    mut comps := mut []int{}
+    mut cst := mut []int{}
+    for r <- iter.Range(0, n) {
+        rv := inp[r]
+        if tIdx[rv] < 0 {
+            tIdx[rv] = tNext
+            tLow[rv] = tNext
+            tNext += 1
+            ssp = llPush(mut stk, ssp, rv)
+            tOn[rv] = true
+            wsp = llPush(mut tWork, wsp, rv)
+            wsp = llPush(mut tWork, wsp, 0)
+            while wsp > 0 {
+                wtop := wsp - 2
+                xv := tWork[wtop]
+                ev := tWork[wtop + 1]
+                if ev < dg[xv + 1] - dg[xv] {
+                    tWork[wtop + 1] = ev + 1
+                    wv := ad[dg[xv] + ev]
+                    if tIdx[wv] < 0 {
+                        tIdx[wv] = tNext
+                        tLow[wv] = tNext
+                        tNext += 1
+                        ssp = llPush(mut stk, ssp, wv)
+                        tOn[wv] = true
+                        wsp = llPush(mut tWork, wsp, wv)
+                        wsp = llPush(mut tWork, wsp, 0)
+                    } else if tOn[wv] && tIdx[wv] < tLow[xv] {
+                        tLow[xv] = tIdx[wv]
+                    }
+                } else {
+                    wsp = wtop
+                    if wsp > 0 {
+                        pv := tWork[wsp - 2]
+                        if tLow[xv] < tLow[pv] {
+                            tLow[pv] = tLow[xv]
+                        }
+                    }
+                    if tLow[xv] == tIdx[xv] {
+                        mut fst := ssp - 1
+                        while stk[fst] != xv {
+                            fst -= 1
+                        }
+                        cst = append(cst, len(comps))
+                        for qi <- iter.Range(fst, ssp) {
+                            tOn[stk[qi]] = false
+                            comps = append(comps, stk[qi])
+                        }
+                        ssp = fst
+                    }
+                }
+            }
+        }
+    }
+    cst = append(cst, len(comps))
+    // 成分の閉じた順の逆 = 呼び手の成分が先。成分の中は名前の順（挿入整列 — 輪は小さい）
+    mut ord := mut []int{}
+    mut c := len(cst) - 2
+    while c >= 0 {
+        lo := len(ord)
+        for qi <- iter.Range(cst[c], cst[c + 1]) {
+            ord = append(ord, comps[qi])
+            mut k := len(ord) - 1
+            while k > lo && ilNameLess(mut st, FnRef(fr[ord[k]]), FnRef(fr[ord[k - 1]])) {
+                t := ord[k]
+                ord[k] = ord[k - 1]
+                ord[k - 1] = t
+                k -= 1
+            }
+        }
+        c -= 1
+    }
+    return freeze(ord)
+}
+
+// ilNameLess は関数 a の名前が b の名前よりバイト列の順で前か
+func ilNameLess(st mut St, a FnRef, b FnRef) bool {
+    sa := desugar.StrRef(irFnName(mut st, a))
+    sb := desugar.StrRef(irFnName(mut st, b))
+    la := slen(mut st, sa)
+    lb := slen(mut st, sb)
+    mut i := 0
+    while i < la && i < lb {
+        x := sat(mut st, sa, i)
+        y := sat(mut st, sb, i)
+        if x != y {
+            return x < y
+        }
+        i += 1
+    }
+    return la < lb
+}
+
+// ilIsRt は関数名が "rt." で始まるか（rt の関数は戻らない種にしない — rt.deadlock を呼ぶ rt.task_wait〔眠りの器〕が写る巻き添え防止・730）
+func ilIsRt(st mut St, g FnRef) bool {
+    s := desugar.StrRef(irFnName(mut st, g))
+    return slen(mut st, s) >= 3 && sat(mut st, s, 0) == 'r' && sat(mut st, s, 1) == 't' && sat(mut st, s, 2) == '.'
+}
+
+// ilNonretSeed は呼び先 cg が「戻らない利用者の関数」の種か（rt.panic / rt.panic_mem は exit のブロックが既に冷たいので数えない・rt.* は除外 — 730）
+func ilNonretSeed(st mut St, cg FnRef) bool {
+    return cg != st.rtPanic && cg != st.rtPanicMem && !ilIsRt(mut st, cg) && !llReturns(mut st, cg)
+}
+
+// ilNonretCallee は g の本体（1 段）に戻らない利用者の関数の呼び出しがあるか（第 1 パスの先読み — 730）
+func ilNonretCallee(st mut St, g FnRef) bool {
+    mut b := irFnBHead(mut st, g)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if irInsOp(mut st, i) == OpCall && ilNonretSeed(mut st, irInsFn(mut st, i)) {
+                return true
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return false
+}
+
+// ilHot は g の熱い命令の数（資格が無ければ -1）: 冷たい = exit で終わる・B_LOOP のビット 2（error を返す return 文）・入口でなく前任が全部冷たい。
+// bit4 の印が無い関数は、戻らない利用者の関数を呼ぶブロックを冷たい種にして資格を得る（730 — 戻りは +100000 で種別を符号化・閾値は IL_PANICHOT）
+func ilHot(st mut St, g FnRef) int {
+    nb := irFnNBlk(mut st, g)
+    mut cold := mut []int{}
+    xFill(mut cold, nb, 0)
+    // 対象は error を返す return 文（印）を持つ関数だけ — exit だけの関数（rt の成長の遅い道 rt.slice_grow8 等）を写すと fasta +6.6%
+    mut any := false
+    entry := irFnBHead(mut st, g)
+    mut b := entry
+    while b != -1 {
+        if irBlkTerm(mut st, b) == TmExit || irBlkLoop(mut st, b) & 4 == 4 {
+            cold[irBlkId(mut st, b)] = 1
+        }
+        if irBlkLoop(mut st, b) & 4 == 4 {
+            any = true
+        }
+        b = irBlkNext(mut st, b)
+    }
+    // 戻らない利用者の関数の種（bit4 が無いときだけ — 既存の bit4 の道の数えは変えない）
+    mut kind2 := false
+    if !any {
+        b = entry
+        while b != -1 {
+            mut ii := irBlkIHead(mut st, b)
+            while ii != -1 {
+                if irInsOp(mut st, ii) == OpCall && ilNonretSeed(mut st, irInsFn(mut st, ii)) {
+                    cold[irBlkId(mut st, b)] = 1
+                    kind2 = true
+                }
+                ii = irInsNext(mut st, ii)
+            }
+            b = irBlkNext(mut st, b)
+        }
+    }
+    if !any && !kind2 {
+        return -1
+    }
+    // 前任が全部冷たいブロックへ広げる（変わらなくなるまで）
+    mut np := mut []int{}
+    xFill(mut np, nb, 0)
+    mut nc := mut []int{}
+    xFill(mut nc, nb, 0)
+    mut chg := true
+    while chg {
+        chg = false
+        for i <- iter.Range(0, nb) {
+            np[i] = 0
+            nc[i] = 0
+        }
+        b = entry
+        while b != -1 {
+            for k <- iter.Range(0, xNSucc(mut st, b)) {
+                s := xSucc(mut st, b, k)
+                np[s] = np[s] + 1
+                nc[s] = nc[s] + cold[irBlkId(mut st, b)]
+            }
+            b = irBlkNext(mut st, b)
+        }
+        b = irBlkNext(mut st, entry)
+        while b != -1 {
+            id := irBlkId(mut st, b)
+            if cold[id] == 0 && np[id] > 0 && nc[id] == np[id] {
+                cold[id] = 1
+                chg = true
+            }
+            b = irBlkNext(mut st, b)
+        }
+    }
+    mut n := 0
+    b = entry
+    while b != -1 {
+        if cold[irBlkId(mut st, b)] == 0 {
+            mut i := irBlkIHead(mut st, b)
+            while i != -1 {
+                if irInsOp(mut st, i) != OpDead {
+                    n += 1
+                }
+                i = irInsNext(mut st, i)
+            }
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return if kind2 { n + 100000 } else { n }
+}
+
+// ilSize は関数の命令の数（死んだ命令を除く）
+func ilSize(st mut St, f FnRef) int {
+    mut n := 0
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if irInsOp(mut st, i) != OpDead {
+                n += 1
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return n
+}
+
+// ilLoops は f のブロックの番号ごとにループの体か（1 / 0）: 入口からの深さ優先で後ろの辺（行き先が探索の途中の鎖にある）を見つけ、
+// 辺の元から前任を逆に辿って頭まで（自然ループの体 — 頭が支配しない還流は近似で体に入ることがある。印は予算の判定にだけ使う）
+func ilLoops(st mut St, f FnRef) []int {
+    nb := irFnNBlk(mut st, f)
+    mut blk := mut []int{}
+    xFill(mut blk, nb, -1)
+    mut ph := mut []int{}
+    xFill(mut ph, nb, -1)
+    mut pe := mut []int{}
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        blk[irBlkId(mut st, b)] = int(b)
+        for k <- iter.Range(0, xNSucc(mut st, b)) {
+            ccPredAdd(mut ph, mut pe, xSucc(mut st, b, k), irBlkId(mut st, b))
+        }
+        b = irBlkNext(mut st, b)
+    }
+    mut out := mut []int{}
+    xFill(mut out, nb, 0)
+    // 深さ優先（0 = 未訪問・1 = 鎖の上・2 = 済み）— 明示のスタック（ブロック, 次に見る後続）
+    mut state := mut []int{}
+    xFill(mut state, nb, 0)
+    mut sb := mut []int{}
+    mut sk := mut []int{}
+    mut work := mut []int{}
+    mut wn := 0
+    // vis = 歩きごとの訪問の印（後ろの辺の通し番号 + 1）— 体の印 out と兼ねると、内側のループの体で外側の歩きが止まる
+    mut vis := mut []int{}
+    xFill(mut vis, nb, 0)
+    mut walk := 0
+    e0 := irBlkId(mut st, irFnBHead(mut st, f))
+    sb = append(sb, e0)
+    sk = append(sk, 0)
+    state[e0] = 1
+    mut sp := 1
+    while sp > 0 {
+        u := sb[sp - 1]
+        ub := BlkRef(blk[u])
+        if sk[sp - 1] < xNSucc(mut st, ub) {
+            v := xSucc(mut st, ub, sk[sp - 1])
+            sk[sp - 1] = sk[sp - 1] + 1
+            if state[v] == 0 {
+                state[v] = 1
+                if sp < len(sb) {
+                    sb[sp] = v
+                    sk[sp] = 0
+                } else {
+                    sb = append(sb, v)
+                    sk = append(sk, 0)
+                }
+                sp += 1
+            } else if state[v] == 1 {
+                // 後ろの辺 u → v: u から前任を逆に辿って v まで
+                walk += 1
+                out[v] = 1
+                vis[v] = walk
+                if vis[u] != walk {
+                    vis[u] = walk
+                    out[u] = 1
+                    if wn < len(work) {
+                        work[wn] = u
+                    } else {
+                        work = append(work, u)
+                    }
+                    wn += 1
+                }
+                while wn > 0 {
+                    wn -= 1
+                    w := work[wn]
+                    if w != v {
+                        mut e := ph[w]
+                        while e >= 0 {
+                            pr := pe[e]
+                            e = pe[e + 1]
+                            if vis[pr] != walk {
+                                vis[pr] = walk
+                                out[pr] = 1
+                                if wn < len(work) {
+                                    work[wn] = pr
+                                } else {
+                                    work = append(work, pr)
+                                }
+                                wn += 1
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            state[u] = 2
+            sp -= 1
+        }
+    }
+    return freeze(out)
+}
+
+// ilLoopDepth は f のブロックの番号ごとのループの入れ子の深さ（0 = ループの外）: ilLoops と同じ深さ優先で後ろの辺を集め、頭ごとに 1 回、
+// その頭へ戻る辺の元の全部から前任を逆に辿って頭まで（自然ループの体 — 同じ頭の複数の後ろの辺〔continue〕で二重に数えない）
+func ilLoopDepth(st mut St, f FnRef) []int {
+    nb := irFnNBlk(mut st, f)
+    mut blk := mut []int{}
+    xFill(mut blk, nb, -1)
+    mut ph := mut []int{}
+    xFill(mut ph, nb, -1)
+    mut pe := mut []int{}
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        blk[irBlkId(mut st, b)] = int(b)
+        for k <- iter.Range(0, xNSucc(mut st, b)) {
+            ccPredAdd(mut ph, mut pe, xSucc(mut st, b, k), irBlkId(mut st, b))
+        }
+        b = irBlkNext(mut st, b)
+    }
+    // 後ろの辺（元 eu・頭 ev）を集める
+    mut eu := mut []int{}
+    mut ev := mut []int{}
+    mut state := mut []int{}
+    xFill(mut state, nb, 0)
+    mut sb := mut []int{}
+    mut sk := mut []int{}
+    e0 := irBlkId(mut st, irFnBHead(mut st, f))
+    sb = append(sb, e0)
+    sk = append(sk, 0)
+    state[e0] = 1
+    mut sp := 1
+    while sp > 0 {
+        u := sb[sp - 1]
+        ub := BlkRef(blk[u])
+        if sk[sp - 1] < xNSucc(mut st, ub) {
+            v := xSucc(mut st, ub, sk[sp - 1])
+            sk[sp - 1] = sk[sp - 1] + 1
+            if state[v] == 0 {
+                state[v] = 1
+                if sp < len(sb) {
+                    sb[sp] = v
+                    sk[sp] = 0
+                } else {
+                    sb = append(sb, v)
+                    sk = append(sk, 0)
+                }
+                sp += 1
+            } else if state[v] == 1 {
+                eu = append(eu, u)
+                ev = append(ev, v)
+            }
+        } else {
+            state[u] = 2
+            sp -= 1
+        }
+    }
+    mut out := mut []int{}
+    xFill(mut out, nb, 0)
+    mut vis := mut []int{}
+    xFill(mut vis, nb, 0)
+    mut hdone := mut []int{}
+    xFill(mut hdone, nb, 0)
+    mut work := mut []int{}
+    mut walk := 0
+    for i <- iter.Range(0, len(ev)) {
+        h := ev[i]
+        if hdone[h] == 0 {
+            hdone[h] = 1
+            walk += 1
+            vis[h] = walk
+            out[h] = out[h] + 1
+            mut wn := 0
+            for j <- iter.Range(i, len(ev)) {
+                if ev[j] == h && vis[eu[j]] != walk {
+                    vis[eu[j]] = walk
+                    out[eu[j]] = out[eu[j]] + 1
+                    if wn < len(work) {
+                        work[wn] = eu[j]
+                    } else {
+                        work = append(work, eu[j])
+                    }
+                    wn += 1
+                }
+            }
+            while wn > 0 {
+                wn -= 1
+                w := work[wn]
+                mut e := ph[w]
+                while e >= 0 {
+                    pr := pe[e]
+                    e = pe[e + 1]
+                    if vis[pr] != walk {
+                        vis[pr] = walk
+                        out[pr] = out[pr] + 1
+                        if wn < len(work) {
+                            work[wn] = pr
+                        } else {
+                            work = append(work, pr)
+                        }
+                        wn += 1
+                    }
+                }
+            }
+        }
+    }
+    return freeze(out)
+}
+
+// ilShape は g を写してよいか: 0 = 写さない・1 = 小さい（全部を数えて IL_MAXINS / IL_MAXBLK 以下）・2 = 形は写せるが大きい（部分インラインの候補 — 熱い命令で判定）
+func ilShape(st mut St, g FnRef, n int) int {
+    b := irFnBHead(mut st, g)
+    // rt.copy / rt.copy8 は x86 が rep movs に置き換えるので写さない（1.0× アタック便）。rt.matchlen / rt.jclean も手書きの本体に置き換えるので写さない（SIMD の核 段 1 / 2）。rt.out_node / out_fork / out_adv（出力の区間の冷たい道 — 段 6 P4-2）
+    // （写すと spawn の切替点〔rt.task_go〕の割り当てが増え、退避が全部の spawn に乗る）
+    if b == -1 || irFnSHead(mut st, g) >= 0 || irBlkPHead(mut st, b) >= 0 || xIsEntry(mut st, g) || g == st.rtCopy || g == st.rtCopy8 || g == st.rtMatchLen || g == st.rtJClean || (st.taskUse && (g == st.rtOutNode || g == st.rtOutFork || g == st.rtOutAdv)) {
+        return 0
+    }
+    mut x := b
+    while x != -1 {
+        mut i := irBlkIHead(mut st, x)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpSlotaddr || op == OpREnter || op == OpRDepth || op == OpRSetDepth || op == OpRAlloc || op == OpRBump || op == OpRReloc || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone || op == OpUnwind {
+                return 0
+            }
+            i = irInsNext(mut st, i)
+        }
+        x = irBlkNext(mut st, x)
+    }
+    return if n <= IL_MAXINS && irFnNBlk(mut st, g) <= IL_MAXBLK { 1 } else { 2 }
+}
+
+// ilFunc は関数 f の元のブロックを順に見て、対象の呼び出しを写しに置き換える（続きのブロックも続けて見る）
+func ilFunc(st mut St, f FnRef, fr []int, ok []int, hot mut []int) {
+    st.fn = f
+    mut blks := mut []int{}
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        blks = append(blks, int(b))
+        b = irBlkNext(mut st, b)
+    }
+    mut grown := 0
+    size0 := ilSize(mut st, f)
+    small := size0 <= IL_CALLER
+    // ループの体のブロック（番号ごと — 部分インラインはループの中の呼び出し点だけ。最初の候補で数える）。続きのブロック（ilCall が作る）は
+    // 番号が表の外 — 元の呼び出しのブロックの印を継ぐ（loopOf）
+    mut inLoop := []int{}
+    mut loopOf := 0
+    for k <- iter.Range(0, len(blks)) {
+        mut blk := BlkRef(blks[k])
+        loopOf = if len(inLoop) > 0 && irBlkId(mut st, blk) < len(inLoop) { inLoop[irBlkId(mut st, blk)] } else { -1 }
+        // exit で終わるブロック（panic の点 — 冷たい）の呼び出しは展開しない（割り当ての負担だけ増える）
+        mut ins := if irBlkTerm(mut st, blk) == TmExit { InsRef(-1) } else { irBlkIHead(mut st, blk) }
+        while ins != -1 {
+            nx := irInsNext(mut st, ins)
+            if irInsOp(mut st, ins) == OpCall {
+                g := irInsFn(mut st, ins)
+                gi := xIndex(fr, int(g))
+                // std/utf8.Check は写さない（呼び出しの点が ubf.sober の「中身が凍結済みと分かる点」— 写すと点が消える。1 回だけ走る呼び出し）
+                n := if g != f && g != st.ubCheck && ok[gi] == 1 { ilSize(mut st, g) } else { 0 }
+                if n > 0 && (n <= IL_TINY || (small && grown < IL_GROW)) {
+                    if n > IL_TINY {
+                        grown = grown + n
+                    }
+                    blk = ilCall(mut st, f, blk, ins, g)
+                } else if n > 0 && g == st.rtRenterLL && size0 <= IL_LLMAX {
+                    // 反復の軽い enter（B）
+                    blk = ilCall(mut st, f, blk, ins, g)
+                } else if g != f && g != st.ubCheck && ok[gi] == 2 {
+                    // 部分インライン: ループの中の呼び出し点だけ・冷たい道を除いた熱い命令で判定・予算は熱い命令で
+                    if hot[gi] == -2 {
+                        hot[gi] = ilHot(mut st, g)
+                    }
+                    // +100000 = 戻らない利用者の種の資格（730）— 閾値は IL_PANICHOT・既存の bit4 の道は IL_HOTINS のまま
+                    hc := hot[gi]
+                    h := if hc >= 100000 { hc - 100000 } else { hc }
+                    lim := if hc >= 100000 { IL_PANICHOT } else { IL_HOTINS }
+                    if h >= 0 && h <= lim && len(inLoop) == 0 {
+                        inLoop = ilLoops(mut st, f)
+                        loopOf = if irBlkId(mut st, blk) < len(inLoop) { inLoop[irBlkId(mut st, blk)] } else { -1 }
+                    }
+                    if h >= 0 && h <= lim && grown + h <= IL_GROW && loopOf == 1 {
+                        grown = grown + h
+                        blk = ilCall(mut st, f, blk, ins, g)
+                    }
+                }
+            }
+            ins = nx
+        }
+    }
+}
+
+// ilCall は ブロック b の呼び出し ins（`%r = call @g(args)`）を g の写しに置き換え、続きのブロックを返す
+func ilCall(st mut St, f FnRef, b BlkRef, ins InsRef, g FnRef) BlkRef {
+    args := irInsB(mut st, ins)
+    res := irInsRes(mut st, ins)
+    // 続き: 呼び出しの後ろの命令と元の終端を移す（後続の前任の数は b → c の付け替えなので変わらない）
+    c := newBlock(mut st)
+    irSetBlkLoop(mut st, c, irBlkLoop(mut st, b) & 2)
+    if res >= 0 {
+        p := rec4(mut st, -1, res, irFnRet(mut st, g), 0)
+        irSetBlkPHead(mut st, c, p)
+        irSetBlkPTail(mut st, c, p)
+    }
+    rest := irInsNext(mut st, ins)
+    if rest != -1 {
+        irSetBlkIHead(mut st, c, rest)
+        irSetBlkITail(mut st, c, irBlkITail(mut st, b))
+    }
+    irSetBlkTerm(mut st, c, irBlkTerm(mut st, b))
+    irSetBlkX1(mut st, c, irBlkX1(mut st, b))
+    irSetBlkX2(mut st, c, irBlkX2(mut st, b))
+    irSetBlkX3(mut st, c, irBlkX3(mut st, b))
+    irSetBlkX4(mut st, c, irBlkX4(mut st, b))
+    irSetBlkX5(mut st, c, irBlkX5(mut st, b))
+    // b は呼び出しの手前までで切る（呼び出しの命令は鎖から外れる）
+    mut prev := InsRef(-1)
+    mut i := irBlkIHead(mut st, b)
+    while i != ins {
+        prev = i
+        i = irInsNext(mut st, i)
+    }
+    if prev == -1 {
+        irSetBlkIHead(mut st, b, -1)
+        irSetBlkITail(mut st, b, -1)
+    } else {
+        irSetInsNext(mut st, prev, -1)
+        irSetBlkITail(mut st, b, prev)
+    }
+    // 写し: ブロックと値の対応を先に全部作る（使用が定義より前のブロックに並ぶことがある）
+    nb := irFnNBlk(mut st, g)
+    bmap := listN(mut st, nb)
+    vmap := listN(mut st, irFnNVal(mut st, g))
+    np := lenL(mut st, hgetL(mut st, int(g) + F_PTYS))
+    for k <- iter.Range(0, np) {
+        desugar.HeapSet(mut st.d, vmap + 1 + k, desugar.HeapGet(mut st.d, args + 1 + k))
+    }
+    mut gb := irFnBHead(mut st, g)
+    while gb != -1 {
+        nbk := newBlock(mut st)
+        irSetBlkLoop(mut st, nbk, irBlkLoop(mut st, gb) | (irBlkLoop(mut st, b) & 2))
+        desugar.HeapSet(mut st.d, bmap + 1 + irBlkId(mut st, gb), int(nbk))
+        mut p := irBlkPHead(mut st, gb)
+        while p >= 0 {
+            v := newValueIn(mut st, f)
+            desugar.HeapSet(mut st.d, vmap + 1 + desugar.HeapGet(mut st.d, p + 1), v)
+            q := rec4(mut st, -1, v, desugar.HeapGet(mut st.d, p + 2), 0)
+            if irBlkPHead(mut st, nbk) < 0 {
+                irSetBlkPHead(mut st, nbk, q)
+            } else {
+                desugar.HeapSet(mut st.d, irBlkPTail(mut st, nbk), q)
+            }
+            irSetBlkPTail(mut st, nbk, q)
+            p = desugar.HeapGet(mut st.d, p)
+        }
+        mut x := irBlkIHead(mut st, gb)
+        while x != -1 {
+            r := irInsRes(mut st, x)
+            if r >= 0 && irInsOp(mut st, x) != OpDead {
+                desugar.HeapSet(mut st.d, vmap + 1 + r, newValueIn(mut st, f))
+            }
+            x = irInsNext(mut st, x)
+        }
+        gb = irBlkNext(mut st, gb)
+    }
+    // 命令と終端。g の入口の軽い region.enter（regionLightModule — 自分の深度に何も確保しない関数の深度の契約のためだけの enter）は写さない
+    // （M5c — 写しは呼び手の今の深度で走るだけ。g の呼ぶ関数は自分で enter するか region を使わない〔rlEligible ③〕ので、一段浅く入るだけで
+    // 生きた値は踏まない。出口の深度の復元は同じ値へ戻すだけになる。深度の上限〔27 節〕に届く段数が遅れる方向にしか動かない — M15 と同じ）
+    g0 := irFnBHead(mut st, g)
+    gb = g0
+    while gb != -1 {
+        nbk := BlkRef(desugar.HeapGet(mut st.d, bmap + 1 + irBlkId(mut st, gb)))
+        mut x := irBlkIHead(mut st, gb)
+        while x != -1 {
+            op := irInsOp(mut st, x)
+            if op != OpDead && !(op == OpCall && gb == g0 && st.rtRenterL != -1 && irInsFn(mut st, x) == st.rtRenterL) {
+                ni := ilCopyInst(mut st, nbk, x, vmap)
+                // std/utf8.boundary の本体の byte の読み（View の中身 — 有効な UTF-8・imm）の写しに印（load8 の C 欄 — 写しを重ねても欄ごと継ぐ・
+                // 群の子へ詰めた本体ごと渡る。ubf.sober が読んで消す）
+                if op == OpLoad8 && g == st.ubBound {
+                    irSetInsC(mut st, ni, UB_MARK)
+                }
+            }
+            x = irInsNext(mut st, x)
+        }
+        t := irBlkTerm(mut st, gb)
+        if t == TmBr {
+            to := BlkRef(desugar.HeapGet(mut st.d, bmap + 1 + irBlkId(mut st, irBrTo(mut st, gb))))
+            ilTerm(mut st, nbk, TmBr, int(to), ilList(mut st, irBlkX2(mut st, gb), vmap), 0, 0, 0)
+            irSetBlkPreds(mut st, to, irBlkPreds(mut st, to) + 1)
+        } else if t == TmCondbr {
+            tt := BlkRef(desugar.HeapGet(mut st.d, bmap + 1 + irBlkId(mut st, irCondThen(mut st, gb))))
+            te := BlkRef(desugar.HeapGet(mut st.d, bmap + 1 + irBlkId(mut st, irCondElse(mut st, gb))))
+            ilTerm(mut st, nbk, TmCondbr, ilMap(mut st, irBlkX1(mut st, gb), vmap), int(tt), ilList(mut st, irBlkX3(mut st, gb), vmap), int(te), ilList(mut st, irBlkX5(mut st, gb), vmap))
+            irSetBlkPreds(mut st, tt, irBlkPreds(mut st, tt) + 1)
+            irSetBlkPreds(mut st, te, irBlkPreds(mut st, te) + 1)
+        } else if t == TmRet {
+            v := irBlkX1(mut st, gb)
+            a := if res >= 0 && v >= 0 { list1(mut st, ilMap(mut st, v, vmap)) } else { -1 }
+            ilTerm(mut st, nbk, TmBr, int(c), a, 0, 0, 0)
+            irSetBlkPreds(mut st, c, irBlkPreds(mut st, c) + 1)
+        } else {
+            ilTerm(mut st, nbk, t, irBlkX1(mut st, gb), irBlkX2(mut st, gb), irBlkX3(mut st, gb), irBlkX4(mut st, gb), irBlkX5(mut st, gb))
+        }
+        gb = irBlkNext(mut st, gb)
+    }
+    // b → 入口の写し
+    entry := BlkRef(desugar.HeapGet(mut st.d, bmap + 1 + irBlkId(mut st, irFnBHead(mut st, g))))
+    ilTerm(mut st, b, TmBr, int(entry), -1, 0, 0, 0)
+    irSetBlkPreds(mut st, entry, irBlkPreds(mut st, entry) + 1)
+    return c
+}
+
+func ilTerm(st mut St, b BlkRef, t int, x1 int, x2 int, x3 int, x4 int, x5 int) {
+    irSetBlkTerm(mut st, b, t)
+    irSetBlkX1(mut st, b, x1)
+    irSetBlkX2(mut st, b, x2)
+    irSetBlkX3(mut st, b, x3)
+    irSetBlkX4(mut st, b, x4)
+    irSetBlkX5(mut st, b, x5)
+}
+
+func ilMap(st mut St, v int, vmap int) int {
+    return desugar.HeapGet(mut st.d, vmap + 1 + v)
+}
+
+// ilList は値の列の写し（-1 = 無しはそのまま）
+func ilList(st mut St, l int, vmap int) int {
+    if l < 0 {
+        return -1
+    }
+    n := desugar.HeapGet(mut st.d, l)
+    out := listN(mut st, n)
+    for k <- iter.Range(0, n) {
+        desugar.HeapSet(mut st.d, out + 1 + k, ilMap(mut st, desugar.HeapGet(mut st.d, l + 1 + k), vmap))
+    }
+    return out
+}
+
+// ilField は命令の欄（番地 at・種別 k）の写し（値は付け替え・値の列は写して付け替え・他はそのまま — 欄の種別の表 opRow。スロットの欄
+// 〔関数ごとの番号〕は付け替えられないが、写す本体はスロットを持たない — ilShape）
+func ilField(st mut St, at int, k int, vmap int) int {
+    v := desugar.HeapGet(mut st.d, at)
+    return if k == K_VAL { ilMap(mut st, v, vmap) } else if k == K_VLIST { ilList(mut st, v, vmap) } else { v }
+}
+
+// ilCopyInst は命令 x の写しをブロック b の末尾へ（写せる op は ilShape が決める）
+func ilCopyInst(st mut St, b BlkRef, x InsRef, vmap int) InsRef {
+    r0 := irInsRes(mut st, x)
+    r := if r0 >= 0 { ilMap(mut st, r0, vmap) } else { -1 }
+    op := irInsOp(mut st, x)
+    ks := st.opk[op]
+    a := ilField(mut st, int(x) + I_A, ks & 15, vmap)
+    bb := ilField(mut st, int(x) + I_B, ks >> 4 & 15, vmap)
+    c := ilField(mut st, int(x) + I_C, ks >> 8 & 15, vmap)
+    ni := mkInst(mut st, r, op, a, bb, c)
+    linkInst(mut st, b, ni)
+    return ni
+}
+
+// ilUtf8 は std/utf8.validPrefix(b, i) の呼び出しを SSE2 の UTF-8 の検査器（scanb の記述の列の先頭 = -1 — x86.sober の xUtf8Pre）に差し替える
+// （UTF-8 の SIMD 速い道便 / 396。展開の手前・最適化のバックエンドの経路だけ。他の経路は std の本体〔i をそのまま返す — 契約上正しい〕）。
+// 実引数 = b の 3 語（データの番地・長さ・深さ）と i → scanb([itop(データ), i, 長さ])
+func ilUtf8(st mut St, vp FnRef) {
+    mut f := st.fhead
+    while f != -1 {
+        mut b := irFnBHead(mut st, f)
+        while b != -1 {
+            mut prev := InsRef(-1)
+            mut ins := irBlkIHead(mut st, b)
+            while ins != -1 {
+                if irInsOp(mut st, ins) == OpCall && irInsFn(mut st, ins) == vp && irInsRes(mut st, ins) >= 0 {
+                    args := irInsB(mut st, ins)
+                    pv := newValueIn(mut st, f)
+                    pi := mkInst(mut st, pv, OpItop, xAt(mut st, args, 0), 0, 0)
+                    irSetInsNext(mut st, pi, ins)
+                    if prev == -1 {
+                        irSetBlkIHead(mut st, b, pi)
+                    } else {
+                        irSetInsNext(mut st, prev, pi)
+                    }
+                    irSetInsOp(mut st, ins, OpScanB)
+                    irSetInsA(mut st, ins, list3(mut st, pv, xAt(mut st, args, 3), xAt(mut st, args, 1)))
+                    irSetInsB(mut st, ins, list2(mut st, -1, 0))
+                    irSetInsC(mut st, ins, 0)
+                }
+                prev = ins
+                ins = irInsNext(mut st, ins)
+            }
+            b = irBlkNext(mut st, b)
+        }
+        f = irFnNext(mut st, f)
+    }
+}

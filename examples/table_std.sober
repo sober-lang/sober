@@ -41,7 +41,7 @@ func run(n int, sets int, seed int) {
     }
 }
 
-// getP は非ジェネリックの包み（ジェネリックな Get の結果の struct は欄の型が脱糖器に見えない — selfhost-drafts F-10）
+// 非ジェネリックの包み（ジェネリックな Get の結果の struct は欄の型が脱糖器に見えない — selfhost-drafts F-10）
 func getP(t mut table.Table[P], i int) P {
     return table.Get(mut t, i)
 }

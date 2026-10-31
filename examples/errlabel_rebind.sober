@@ -2,7 +2,7 @@ package main
 
 // 回帰例（language.md 13 / 32 節）: error ラベルは型として使えず、ラベルのリテラルの値は組み込みの error。
 // ラベルのリテラルで束縛した名前には別のラベルも入る（同形の別ラベルも — 区別は型パターンのタグ）。
-// S-b 段 1 の表層型が束縛を閉じた error の union（ERRS）、リテラルをラベルの型宣言と読み違え、同じラベルの再代入まで check が拒否していた
+// 同じラベルへの再代入も通ることを確かめる（束縛を閉じた error の union〔ERRS〕の表層型をラベルの型宣言と読み違えないこと）
 
 type NotFound error { id int }
 type Gone error { id int }

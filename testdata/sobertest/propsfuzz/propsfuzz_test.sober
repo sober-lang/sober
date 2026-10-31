@@ -1,0 +1,24 @@
+package propsfuzz
+
+// `sober test` の std/quick の掛け戻し: 性質の中の panic は駆動役で縮め直した反例の報告に置き換わる・
+// testdata/fuzz/<テスト名>/ のコーパスの列は試行の前に再生される（乱択では引かない値の回帰）
+
+import "std/quick"
+
+func TestPanic() {
+    mut q := quick.New()
+    quick.Check(mut q, () => {
+        xs := quick.Slice(mut q, 6, () => quick.Int(mut q, 0, 9))
+        len(xs) < 3 || At(xs, xs[0]) >= 0
+    })
+}
+
+func TestCorpus() {
+    mut q := quick.New()
+    quick.Check(mut q, () => Accept(quick.Int(mut q, 0, 1000000)))
+}
+
+func TestOk() {
+    mut q := quick.New()
+    quick.Check(mut q, () => len(quick.Bytes(mut q, 4)) <= 4)
+}

@@ -1,0 +1,434 @@
+package loader
+
+// カバレッジの計器（`sober build --cover`）: 利用者の非テストのファイルの分岐の腕の頭に数え口を足す脱糖の固定テンプレート:
+//
+//     func F(…) { 文… }            →  func F(…) { $cover.Hit(k); 文… }                         （fn — ラムダの本体も）
+//     if c { A } else { B }         →  if $cover.Br(c, k, k + 1) { A } else { B }              （then / else — Br が c で片方に印を付けて c を返す・腕に触らない）
+//     if x != nil { A }             →  if x != nil { $cover.Hit(k); A } else { $cover.Hit(k + 1) }  （絞り込みの if — 条件の字面を残す）
+//     switch … { case …: A }        →  switch … { case …: $cover.Hit(k); A }                    （case — default も）
+//     while c { A } / for … { A }   →  while c { $cover.Hit(k); A }                             （loop — 文形の for だけ）
+//     a && b / a || b               →  a && ($cover.On(k) && b)                                 （rhs — On は真を返す）
+//
+// 腕の頭に文を足す写し（絞り込みの if・case・ラムダ）は、末尾が期待の型を受ける形の腕を点にしない（cvCtxTail）。式の本体・mut 仮引数のラムダも点にしない。
+// 点 = [ファイル, 字句, 種類] の 3 語（番号 = 添字 / 3 — 全ファイルの通し）。main package の main の頭に `$cover.Start("<鍵>", <点の数>)`（終わりの書き出し先 — テストのビルドの合成の main は StartTest）。
+// flowx の後に掛ける（else の腕を足すと早期脱出・`&&` の連鎖の絞り込みの写しが外れる）。catch（catchx が写した if）の then の腕は種類 catch・
+// 成功の腕は点にしない。関数の字句の区間の外（const の初期化式）は写さない。同じ腕の節を複数の親が指す形（flowx の複製）は 1 回だけ写す
+
+import "std/builder"
+import "std/iter"
+import "std/strings"
+import "ast"
+import "lexer"
+
+const CvFn = 1
+const CvThen = 2
+const CvElse = 3
+const CvCase = 4
+const CvLoop = 5
+const CvRhs = 6
+const CvCatch = 7
+
+// 点の種類の綴り
+func CoverKindName(k int) string {
+    return switch k {
+    case CvFn: "fn"
+    case CvThen: "then"
+    case CvElse: "else"
+    case CvCase: "case"
+    case CvLoop: "loop"
+    case CvRhs: "rhs"
+    case CvCatch: "catch"
+    default: "?"
+    }
+}
+
+type CoverOut struct {
+    trees []ast.Tree
+    pts []int
+    key string
+}
+
+type coverFile struct {
+    t ast.Tree
+    pts []int
+}
+
+// 全ファイルの写し（cov = 写すファイルのパス・on = 計器の build か — 写すファイルが無くても合成のテストの main に Start を置く）。
+// 点の表の鍵は点の列とファイルのパスの FNV-1a（16 桁）
+func coverAll(ts []ast.Tree, paths []string, pkgs []string, cov []string, on bool) CoverOut {
+    if !on {
+        return CoverOut{ts, []int{}, ""}
+    }
+    mut out := mut []ast.Tree{}
+    mut pts := mut []int{}
+    for i <- iter.Range(0, len(ts)) {
+        if has(cov, paths[i]) {
+            cf := covers(ts[i], i, len(pts) / 3)
+            out = append(out, cf.t)
+            for j <- iter.Range(0, len(cf.pts)) {
+                pts = append(pts, cf.pts[j])
+            }
+        } else {
+            out = append(out, ts[i])
+        }
+    }
+    ps := freeze(pts)
+    key := coverKey(ps, paths)
+    // main package の main の頭に Start（鍵が決まってから — 2 巡目。テストのビルドは合成の main — 計器の import は loader の巡が足した）
+    mut out2 := mut []ast.Tree{}
+    for i <- iter.Range(0, len(out)) {
+        st := pkgs[i] == "main" && (has(cov, paths[i]) || paths[i] == TestMainPath())
+        out2 = append(out2, if st { coverStart(out[i], key, len(ps) / 3, if paths[i] == TestMainPath() { "StartTest" } else { "Start" }) } else { out[i] })
+    }
+    return CoverOut{freeze(out2), ps, key}
+}
+
+// 点の列とファイルのパスの鍵（16 桁の 16 進 — parse のキャッシュの鍵と同じ混ぜ方の前半）
+func coverKey(pts []int, paths []string) string {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, len(pts) / 3) {
+        pb := bytes(paths[pts[i * 3]])
+        for j <- iter.Range(0, len(pb)) {
+            b = append(b, pb[j])
+        }
+        tb := bytes(" ${pts[i * 3 + 1]} ${pts[i * 3 + 2]}\n")
+        for j <- iter.Range(0, len(tb)) {
+            b = append(b, tb[j])
+        }
+    }
+    v := pcKey(freeze(b)).a
+    mut h := mut []byte{}
+    for j <- iter.Range(0, 16) {
+        d := (v >> (4 * (15 - j))) & 15
+        h = append(h, byte(if d < 10 { '0' + d } else { 'a' + d - 10 }))
+    }
+    return string(freeze(h)) catch ""
+}
+
+// 関数の本体から辿れる節（前の段の写しが残した参照されない節・const の初期化式には点を置かない）
+func cvReach(t ast.Tree) []bool {
+    mut r := mut []bool{}
+    for i <- iter.Range(0, len(t.nodes)) {
+        r = append(r, false)
+    }
+    mut stk := mut []int{}
+    fl := t.nodes[t.file].d
+    for i <- iter.Range(0, ast.ListLen(t, fl)) {
+        x := t.nodes[ast.ListAt(t, fl, i)]
+        if x.kind == ast.KFuncDecl && x.e >= 0 {
+            r[ast.ListAt(t, fl, i)] = true
+            stk = append(stk, x.e)
+        }
+    }
+    mut h := 0
+    while h < len(stk) {
+        n := stk[h]
+        h += 1
+        if n < 0 || r[n] {
+            continue
+        }
+        r[n] = true
+        cvPushKids(t, n, mut stk)
+    }
+    return freeze(r)
+}
+
+// 節 n の子を積む（関数の本体から辿る歩き — cvReach と mutx の除外の歩きが共有する）
+func cvPushKids(t ast.Tree, n int, stk mut []int) {
+    x := t.nodes[n]
+    k := x.kind
+    if k == ast.EBinary || k == ast.EIndex {
+        stk = append(append(stk, if k == ast.EIndex { x.a } else { x.b }), if k == ast.EIndex { x.b } else { x.c })
+    } else if k == ast.EUnary || k == ast.ESelector || k == ast.EParen || k == ast.SExpr || k == ast.SDefer || k == ast.SYield {
+        stk = append(stk, if k == ast.EUnary { x.b } else { x.a })
+    } else if k == ast.ECall {
+        stk = append(stk, x.a)
+        cvPushList(t, x.b, mut stk)
+    } else if k == ast.EPipe {
+        stk = append(append(stk, x.a), x.b)
+        cvPushList(t, x.c, mut stk)
+    } else if k == ast.ESlice3 || k == ast.EIf {
+        stk = append(append(append(stk, x.a), x.b), x.c)
+    } else if k == ast.EInterp || k == ast.ESlicelit || k == ast.EComposite {
+        cvPushList(t, x.b, mut stk)
+    } else if k == ast.EMaplit {
+        cvPushList(t, x.c, mut stk)
+    } else if k == ast.KEntry {
+        stk = append(append(stk, x.a), x.b)
+    } else if k == ast.KElem || k == ast.KNamedArg || k == ast.ELambda || k == ast.KCase || k == ast.KGen || k == ast.ETry {
+        stk = append(stk, x.b)
+        if k == ast.KGen {
+            cvPushList(t, x.c, mut stk)
+        } else if k == ast.ETry {
+            stk = append(stk, x.a)
+        }
+    } else if k == ast.ESwitch {
+        cvPushList(t, x.a, mut stk)
+        cvPushList(t, x.b, mut stk)
+        stk = append(stk, x.c)
+    } else if k == ast.EBlock || k == ast.KBlock || k == ast.SRet {
+        cvPushList(t, x.a, mut stk)
+    } else if k == ast.EFor {
+        cvPushList(t, x.a, mut stk)
+        if x.b == 1 {
+            cvPushList(t, x.c, mut stk)
+        } else {
+            stk = append(stk, x.c)
+        }
+    } else if k == ast.SBind {
+        cvPushList(t, x.c, mut stk)
+    } else if k == ast.SAssign {
+        cvPushList(t, x.a, mut stk)
+        cvPushList(t, x.c, mut stk)
+    } else if k == ast.SWhile {
+        stk = append(append(stk, x.a), x.b)
+    }
+}
+
+// 列 l の節を積む（穴 -1 は積まない — 歩きは積んだ順に読む列）
+func cvPushList(t ast.Tree, l int, stk mut []int) {
+    if l < 0 {
+        return
+    }
+    for i <- iter.Range(0, ast.ListLen(t, l)) {
+        v := ast.ListAt(t, l, i)
+        if v >= 0 {
+            stk = append(stk, v)
+        }
+    }
+}
+
+// if の条件が catchx の写しの `$ctKe != nil` か
+func isCatchIf(t ast.Tree, c int) bool {
+    if c < 0 || t.nodes[c].kind != ast.EBinary || t.nodes[c].a != lexer.BangEqual {
+        return false
+    }
+    l := t.nodes[t.nodes[c].b]
+    return l.kind == ast.EIdent && strings.HasPrefix(Name(t, l.a), "$ct")
+}
+
+// 1 ファイルの写し（fi = ファイルの番号・base = このファイルの最初の点の番号）
+func covers(t ast.Tree, fi int, base int) coverFile {
+    n0 := len(t.nodes)
+    reach := cvReach(t)
+    mut ns := mut []ast.Node{}
+    for i <- iter.Range(0, n0) {
+        ns = append(ns, t.nodes[i])
+    }
+    // 写した腕の節（複数の親が同じ腕を指す形で 2 回写さない）
+    mut done := mut []bool{}
+    for i <- iter.Range(0, n0) {
+        done = append(done, false)
+    }
+    mut nb := builder.Builder[ast.Node]{}
+    mut db := builder.Builder[int]{}
+    for j <- iter.Range(0, len(t.data)) {
+        builder.Push(mut db, t.data[j])
+    }
+    mut pts := mut []int{}
+    for i <- iter.Range(0, n0) {
+        x := t.nodes[i]
+        if !reach[i] {
+            continue
+        }
+        if x.kind == ast.KFuncDecl && x.e >= 0 {
+            k := base + len(pts) / 3
+            pts = append(append(append(pts, fi), x.tok), CvFn)
+            ns[x.e] = ast.WithA(ns[x.e], cvPrepend(mut db, ns[x.e].a, cvHit(mut nb, mut db, n0, x.tok, k)))
+        } else if x.kind == ast.ELambda {
+            // 式の本体・末尾が期待の型を受ける形のブロックの本体・mut 仮引数（lease の窓 — 写しの形が決まっている）のラムダは点にしない
+            if t.nodes[x.b].kind == ast.EBlock && !cvCtxTail(t, t.nodes[x.b].a) && !cvMutParam(t, x.a) {
+                k := base + len(pts) / 3
+                pts = append(append(append(pts, fi), x.tok), CvFn)
+                ns[x.b] = ast.WithA(ns[x.b], cvPrepend(mut db, ns[x.b].a, cvHit(mut nb, mut db, n0, x.tok, k)))
+            }
+        } else if x.kind == ast.EIf && nilTestKind(t, x.a) != 0 && !isCatchIf(t, x.a) {
+            // 絞り込みの if（条件の字面を残す — typer が単独の `x != nil` / `x == nil` を読む）: 腕の頭に数え口。末尾が期待の型を受ける形の腕は点にしない
+            if !done[x.b] && !cvCtxTail(t, t.nodes[x.b].a) {
+                done[x.b] = true
+                k := base + len(pts) / 3
+                pts = append(append(append(pts, fi), x.tok), CvThen)
+                ns[x.b] = ast.WithA(ns[x.b], cvPrepend(mut db, ns[x.b].a, cvHit(mut nb, mut db, n0, x.tok, k)))
+            }
+            if x.c < 0 {
+                k := base + len(pts) / 3
+                pts = append(append(append(pts, fi), x.tok), CvElse)
+                h := cvHit(mut nb, mut db, n0, x.tok, k)
+                at := n0 + builder.Len(mut nb)
+                builder.Push(mut nb, ast.Node{ast.EBlock, x.tok, ast.PutList(mut db, []int{h}), 0, 0, 0, 0, 0})
+                ns[i] = ast.WithC(ns[i], at)
+            } else if t.nodes[x.c].kind == ast.EBlock && !done[x.c] && !cvCtxTail(t, t.nodes[x.c].a) {
+                done[x.c] = true
+                k := base + len(pts) / 3
+                pts = append(append(append(pts, fi), x.tok), CvElse)
+                ns[x.c] = ast.WithA(ns[x.c], cvPrepend(mut db, ns[x.c].a, cvHit(mut nb, mut db, n0, x.tok, k)))
+            }
+        } else if x.kind == ast.EIf {
+            // 条件に印を織り込む（腕に触らない — 値の if の腕の期待の型をそのまま保つ）。catch の写しの if は成功の腕を点にしない
+            isCt := isCatchIf(t, x.a)
+            kt := base + len(pts) / 3
+            pts = append(append(append(pts, fi), x.tok), if isCt { CvCatch } else { CvThen })
+            kf := base + len(pts) / 3
+            if !isCt {
+                pts = append(append(append(pts, fi), x.tok), CvElse)
+            }
+            at := n0 + builder.Len(mut nb)
+            builder.Push(mut nb, ast.Node{ast.EIdent, x.tok, ast.PutLit(mut db, "$cover"), 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.ESelector, x.tok, at, ast.PutLit(mut db, if isCt { "Br1" } else { "Br" }), 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EInt, x.tok, kt, 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EInt, x.tok, kf, 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.ECall, x.tok, at + 1, ast.PutList(mut db, if isCt { []int{x.a, at + 2} } else { []int{x.a, at + 2, at + 3} }), 0, 0, 0, 0})
+            ns[i] = ast.WithA(ns[i], at + 4)
+        } else if x.kind == ast.ESwitch {
+            // 末尾が期待の型を受ける形の腕は点にしない
+            for j <- iter.Range(0, ast.ListLen(t, x.b)) {
+                cb := t.nodes[ast.ListAt(t, x.b, j)].b
+                if !done[cb] && !cvCtxTail(t, t.nodes[cb].a) {
+                    done[cb] = true
+                    k := base + len(pts) / 3
+                    pts = append(append(append(pts, fi), t.nodes[ast.ListAt(t, x.b, j)].tok), CvCase)
+                    ns[cb] = ast.WithA(ns[cb], cvPrepend(mut db, ns[cb].a, cvHit(mut nb, mut db, n0, t.nodes[ast.ListAt(t, x.b, j)].tok, k)))
+                }
+            }
+            // default の腕の点は switch の字句に置く（木から `default` の字句を引けない — 位置の表示が字句から引き直す）
+            if x.c >= 0 && !done[x.c] && !cvCtxTail(t, t.nodes[x.c].a) {
+                done[x.c] = true
+                k := base + len(pts) / 3
+                pts = append(append(append(pts, fi), x.tok), CvCase)
+                ns[x.c] = ast.WithA(ns[x.c], cvPrepend(mut db, ns[x.c].a, cvHit(mut nb, mut db, n0, x.tok, k)))
+            }
+        } else if x.kind == ast.SWhile && !done[x.b] {
+            done[x.b] = true
+            k := base + len(pts) / 3
+            pts = append(append(append(pts, fi), x.tok), CvLoop)
+            ns[x.b] = ast.WithA(ns[x.b], cvPrepend(mut db, ns[x.b].a, cvHit(mut nb, mut db, n0, x.tok, k)))
+        } else if x.kind == ast.EFor && x.b == 1 {
+            k := base + len(pts) / 3
+            pts = append(append(append(pts, fi), x.tok), CvLoop)
+            ns[i] = ast.WithC(ns[i], cvPrepend(mut db, x.c, cvHit(mut nb, mut db, n0, x.tok, k)))
+        } else if x.kind == ast.EBinary && (x.a == lexer.AmpersandAmpersand || x.a == lexer.PipePipe) {
+            k := base + len(pts) / 3
+            pts = append(append(append(pts, fi), t.nodes[x.c].tok), CvRhs)
+            at := n0 + builder.Len(mut nb)
+            builder.Push(mut nb, ast.Node{ast.EIdent, x.tok, ast.PutLit(mut db, "$cover"), 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.ESelector, x.tok, at, ast.PutLit(mut db, "On"), 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EInt, x.tok, k, 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.ECall, x.tok, at + 1, ast.PutList(mut db, []int{at + 2}), 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EBinary, x.tok, lexer.AmpersandAmpersand, at + 3, x.c, 0, 0, 0})
+            ns[i] = ast.WithC(ns[i], at + 4)
+        }
+    }
+    added := builder.Build(mut nb)
+    for i <- iter.Range(0, len(added)) {
+        ns = append(ns, added[i])
+    }
+    return coverFile{ast.Tree{freeze(ns), builder.Build(mut db), t.file}, freeze(pts)}
+}
+
+// 文 n が写しの足した数え口 `$cover.Hit(k)` か（形を数える検査 — lease の整え — が飛ばす）
+func IsCoverStmt(t ast.Tree, n int) bool {
+    x := t.nodes[n]
+    if x.kind != ast.SExpr || t.nodes[x.a].kind != ast.ECall {
+        return false
+    }
+    c := t.nodes[t.nodes[x.a].a]
+    return c.kind == ast.ESelector && t.nodes[c.a].kind == ast.EIdent && StrIs(t, t.nodes[c.a].a, "$cover")
+}
+
+// 文の列 l の末尾が期待の型を受ける形の式文か（リテラル・nil・符号つきのリテラル・値の if / switch / ブロック）— 頭に文を足すと
+// 末尾に期待の型が届かず拒否される（`{ g(); 44 }` を byte の位置に置く形 — 写しの前から言語が受けない）ので、その腕は点にしない
+func cvCtxTail(t ast.Tree, l int) bool {
+    n := ast.ListLen(t, l)
+    if n == 0 {
+        return false
+    }
+    last := t.nodes[ast.ListAt(t, l, n - 1)]
+    if last.kind != ast.SExpr {
+        return false
+    }
+    k := t.nodes[unparen(t, last.a)].kind
+    return k == ast.EInt || k == ast.EFloat || k == ast.ENil || k == ast.EUnary || k == ast.EIf || k == ast.ESwitch || k == ast.EBlock
+}
+
+// ラムダの仮引数の列 ps に mut 仮引数があるか
+func cvMutParam(t ast.Tree, ps int) bool {
+    if ps < 0 {
+        return false
+    }
+    for i <- iter.Range(0, ast.ListLen(t, ps)) {
+        if t.nodes[ast.ListAt(t, ps, i)].c != 0 {
+            return true
+        }
+    }
+    return false
+}
+
+// 文 `$cover.Hit(k)` を積んでその節の番号を返す
+func cvHit(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], n0 int, tok int, k int) int {
+    at := n0 + builder.Len(mut nb)
+    builder.Push(mut nb, ast.Node{ast.EIdent, tok, ast.PutLit(mut db, "$cover"), 0, 0, 0, 0, 0})
+    builder.Push(mut nb, ast.Node{ast.ESelector, tok, at, ast.PutLit(mut db, "Hit"), 0, 0, 0, 0})
+    builder.Push(mut nb, ast.Node{ast.EInt, tok, k, 0, 0, 0, 0, 0})
+    builder.Push(mut nb, ast.Node{ast.ECall, tok, at + 1, ast.PutList(mut db, []int{at + 2}), 0, 0, 0, 0})
+    builder.Push(mut nb, ast.Node{ast.SExpr, tok, at + 3, 0, 0, 0, 0, 0})
+    return at + 4
+}
+
+// 列 l の頭に s を足した列
+func cvPrepend(db mut builder.Builder[int], l int, s int) int {
+    n := builder.Get(mut db, l)
+    mut xs := mut []int{s}
+    for i <- iter.Range(0, n) {
+        xs = append(xs, builder.Get(mut db, l + 1 + i))
+    }
+    return ast.PutList(mut db, freeze(xs))
+}
+
+// main の本体の頭に `$cover.<start>("<鍵>", n)`（n = 点の数）
+func coverStart(t ast.Tree, key string, n int, start string) ast.Tree {
+    fl := t.nodes[t.file].d
+    mut ns := mut []ast.Node{}
+    for i <- iter.Range(0, len(t.nodes)) {
+        ns = append(ns, t.nodes[i])
+    }
+    mut db := builder.Builder[int]{}
+    for j <- iter.Range(0, len(t.data)) {
+        builder.Push(mut db, t.data[j])
+    }
+    for i <- iter.Range(0, ast.ListLen(t, fl)) {
+        x := t.nodes[ast.ListAt(t, fl, i)]
+        if x.kind == ast.KFuncDecl && x.e >= 0 && StrIs(t, x.a, "main") {
+            at := len(ns)
+            ns = append(ns, ast.Node{ast.EIdent, x.tok, ast.PutLit(mut db, "$cover"), 0, 0, 0, 0, 0})
+            ns = append(ns, ast.Node{ast.ESelector, x.tok, at, ast.PutLit(mut db, start), 0, 0, 0, 0})
+            ns = append(ns, ast.Node{ast.EStrlit, x.tok, ast.PutLit(mut db, key), 0, 0, 0, 0, 0})
+            ns = append(ns, ast.Node{ast.EInt, x.tok, n, 0, 0, 0, 0, 0})
+            ns = append(ns, ast.Node{ast.ECall, x.tok, at + 1, ast.PutList(mut db, []int{at + 2, at + 3}), 0, 0, 0, 0})
+            ns = append(ns, ast.Node{ast.SExpr, x.tok, at + 4, 0, 0, 0, 0, 0})
+            ns[x.e] = ast.WithA(ns[x.e], cvPrepend(mut db, ns[x.e].a, at + 5))
+        }
+    }
+    return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
+}
+
+// 写すファイルの木に合成の import `$cover` を足す（load の巡が std/internal/cover を読みに行く — 写しの段では import を足せない）
+func coverImport(t ast.Tree) ast.Tree {
+    fx := t.nodes[t.file]
+    mut ns := mut []ast.Node{}
+    for i <- iter.Range(0, len(t.nodes)) {
+        ns = append(ns, t.nodes[i])
+    }
+    mut db := builder.Builder[int]{}
+    for j <- iter.Range(0, len(t.data)) {
+        builder.Push(mut db, t.data[j])
+    }
+    at := len(ns)
+    ns = append(ns, ast.Node{ast.KImport, 0, ast.PutLit(mut db, "$cover"), ast.PutLit(mut db, "std/internal/cover"), 0, 0, 0, 0})
+    mut xs := mut []int{}
+    for i <- iter.Range(0, ast.ListLen(t, fx.b)) {
+        xs = append(xs, ast.ListAt(t, fx.b, i))
+    }
+    xs = append(xs, at)
+    ns[t.file] = ast.WithB(fx, ast.PutList(mut db, freeze(xs)))
+    return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
+}

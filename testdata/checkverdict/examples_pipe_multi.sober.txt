@@ -1,2 +1,3 @@
+sober: type error at examples/pipe_multi.sober:16:26
 {"errors":[{"msg":"type error"}],"ok":false}
 exit=1

@@ -1,7 +1,7 @@
 package main
 
-// ブロック式の中からの値つき return（F-h — 2026-10-02 まで check が def error・build は受理）: ブロックの末尾の値が string のとき。
-// F-f と同じ層（ブロックの末尾の型を点座標で読む — block_region_value）
+// ブロック式の中からの値つき return の例: ブロックの末尾の値が string のとき。
+// block_region_value と同じ層（ブロックの末尾の型を点座標で読む）
 
 func early(v bool) string {
     x := {

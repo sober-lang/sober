@@ -1,0 +1,281 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/constlit/lib",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 41
+              },
+              "args": [
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "lib",
+                    "tok": 43
+                  },
+                  "field": "Version",
+                  "tok": 45
+                },
+                {
+                  "k": "ident",
+                  "name": "Tag",
+                  "tok": 47
+                },
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "lib",
+                    "tok": 49
+                  },
+                  "field": "Debug",
+                  "tok": 51
+                },
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "lib",
+                    "tok": 53
+                  },
+                  "field": "Ratio",
+                  "tok": 55
+                }
+              ],
+              "tok": 42
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 58
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "len",
+                    "tok": 60
+                  },
+                  "args": [
+                    {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "lib",
+                        "tok": 62
+                      },
+                      "field": "Sizes",
+                      "tok": 64
+                    }
+                  ],
+                  "tok": 61
+                },
+                {
+                  "k": "index",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "lib",
+                      "tok": 67
+                    },
+                    "field": "Sizes",
+                    "tok": 69
+                  },
+                  "idx": {
+                    "k": "int",
+                    "value": 2,
+                    "tok": 71
+                  },
+                  "tok": 70
+                },
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "index",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "lib",
+                        "tok": 74
+                      },
+                      "field": "Defaults",
+                      "tok": 76
+                    },
+                    "idx": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 78
+                    },
+                    "tok": 77
+                  },
+                  "field": "name",
+                  "tok": 81
+                }
+              ],
+              "tok": 59
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 84
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "lib",
+                      "tok": 86
+                    },
+                    "field": "Count",
+                    "tok": 88
+                  },
+                  "args": [
+                    {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "lib",
+                        "tok": 90
+                      },
+                      "field": "Defaults",
+                      "tok": 92
+                    }
+                  ],
+                  "tok": 89
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "lib",
+                      "tok": 95
+                    },
+                    "field": "Count",
+                    "tok": 97
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "Mine",
+                      "tok": 99
+                    }
+                  ],
+                  "tok": 98
+                }
+              ],
+              "tok": 85
+            }
+          }
+        ]
+      },
+      "tok": 37,
+      "bodiless": false,
+      "span": {
+        "start": 36,
+        "end": 105
+      },
+      "sig_end": 40
+    }
+  ],
+  "consts": [
+    {
+      "name": "Mine",
+      "expr": {
+        "k": "slicelit",
+        "elem": {
+          "k": "name",
+          "name": "lib.Flag"
+        },
+        "elems": [
+          {
+            "k": "composite",
+            "type_name": "lib.Flag",
+            "elems": [
+              {
+                "key": "name",
+                "value": {
+                  "k": "strlit",
+                  "value": "x",
+                  "tok": 21
+                }
+              },
+              {
+                "key": "on",
+                "value": {
+                  "k": "ident",
+                  "name": "true",
+                  "tok": 25
+                }
+              }
+            ],
+            "tok": 15,
+            "type_args": []
+          }
+        ],
+        "mut": false,
+        "tok": 9
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 29
+      }
+    },
+    {
+      "name": "Tag",
+      "expr": {
+        "k": "selector",
+        "base": {
+          "k": "ident",
+          "name": "lib",
+          "tok": 32
+        },
+        "field": "Version",
+        "tok": 34
+      },
+      "tok": 30,
+      "span": {
+        "start": 29,
+        "end": 36
+      }
+    }
+  ]
+}

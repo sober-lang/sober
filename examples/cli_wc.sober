@@ -1,0 +1,55 @@
+package main
+
+// A small command-line tool with std/cli (a wc look-alike): the flags and the positionals are typed consts, the command is a const table,
+// and the handler reads the values back through the same consts (cli.Bool(r, Lines) — a misspelled name fails to compile).
+// A tool without subcommands is one Command without a name. cli.Main(Wc) would read os.Args; this example feeds argument lists to cli.Run
+// so the output is fixed. --help prints the usage to stdout; a misuse prints a three-line message to stderr and returns 2.
+
+import "std/cli"
+import "std/io"
+import "std/strings"
+
+const Lines = cli.BoolFlag{name: "lines", short: "l", help: "print only the line counts"}
+const Words = cli.BoolFlag{name: "words", short: "w", help: "print only the word counts"}
+const Files = cli.Positional{name: "file", help: "files to count", many: true}
+
+const Wc = cli.App{
+    name: "wc",
+    version: "0.1.0",
+    summary: "count lines and words",
+    commands: []cli.Command{cli.Command{bools: []cli.BoolFlag{Lines, Words}, pos: []cli.Positional{Files}, run: count}},
+}
+
+func count(r cli.Parsed) int {
+    lines := cli.Bool(r, Lines)
+    words := cli.Bool(r, Words)
+    for path <- cli.PosList(r, Files) {
+        b, e := io.ReadFile(path)
+        if e != nil {
+            println("wc: cannot read " + path)
+            return 1
+        }
+        s := string(b) catch ""
+        nl := strings.Count(s, "\n")
+        nw := len(strings.Fields(s))
+        if lines {
+            println("${nl} " + path)
+        } else if words {
+            println("${nw} " + path)
+        } else {
+            println("${nl} ${nw} " + path)
+        }
+    }
+    return 0
+}
+
+func main() {
+    println(cli.Run(Wc, []string{"wc", "testdata/cli/a.txt", "testdata/cli/b.txt"}))
+    println(cli.Run(Wc, []string{"wc", "-l", "testdata/cli/a.txt"}))
+    println(cli.Run(Wc, []string{"wc", "testdata/cli/b.txt", "--words"}))
+    println(cli.Run(Wc, []string{"wc", "--help"}))
+    println(cli.Run(Wc, []string{"wc", "--version"}))
+    // misuse: the message goes to stderr, the exit code is 2
+    println(cli.Run(Wc, []string{"wc", "--line", "testdata/cli/a.txt"}))
+    println(cli.Run(Wc, []string{"wc"}))
+}

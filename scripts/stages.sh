@@ -31,6 +31,11 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
 source scripts/gatelib.sh
+# build のキャッシュ（既定 on）は切の道に固定（単体で回しても inst / RSS の線が温の値に化けない）
+export SOBER_BUILD_CACHE=${SOBER_BUILD_CACHE:-0}
+export SOBER_CHECK_CACHE=${SOBER_CHECK_CACHE:-0}
+# lower の分割（席 A — 既定は W ≥ 2 で分割）は直の道に固定（W8 の線と黄金を動かさない。既定の道の網は selfpar が口を外して試す）
+export SOBER_LOWER_SPLIT=${SOBER_LOWER_SPLIT:-1}
 
 cli=1
 [ "${1:-}" = "--no-cli" ] && cli=0
@@ -59,15 +64,15 @@ echo "stage2: scripts/stage2.sh $(dt "$t" "$(now)")s (ELF $(stat -c %s "$W/stage
 
 # stage3: stage2 が正規バックエンドで ELF に（固定点の左辺）+ .ll（暫定形の固定点の左辺）
 t=$(now)
-(cd "$B" && "$W/stage2" build app/main.sober --emit=elf --passes -o "$W/stage3") || { echo "stages: FAIL stage2 build of src/compiler/app (exit $?)"; exit 1; }
+(cd "$B" && "$W/stage2" build app --emit=elf --passes -o "$W/stage3") || { echo "stages: FAIL stage2 build of src/compiler/app (exit $?)"; exit 1; }
 t1=$(now)
-(cd "$B" && "$W/stage2" build app/main.sober --emit=ll --passes -o "$W/stage3.ll") || { echo "stages: FAIL stage2 build of src/compiler/app (.ll)"; exit 1; }
+(cd "$B" && "$W/stage2" build app --emit=ll --passes -o "$W/stage3.ll") || { echo "stages: FAIL stage2 build of src/compiler/app (.ll)"; exit 1; }
 t2=$(now)
 echo "stage3: stage2 → ELF $(dt "$t" "$t1")s ($(stat -c %s "$W/stage3") bytes), → .ll $(dt "$t1" "$t2")s"
 # 交差照合の相手: stage2 の IR テキスト → stage1 の build x.ir（背景で — 約 5 s）。照合する stage2 の側は写しのバックエンド（--backend=copy —
 # 性能投資 M4 の両持ち。既定の stage3 は最適化のバックエンドで stage1 は追えない）
-( (cd "$B" && "$W/stage2" build app/main.sober --emit=ir --passes -o "$W/stage3.ir") && "$STAGE1" build "$W/stage3.ir" -o "$W/stage3z" \
-    && (cd "$B" && "$W/stage2" build app/main.sober --emit=elf --passes --backend=copy -o "$W/stage3c") ) > "$W/cross.log" 2>&1 &
+( (cd "$B" && "$W/stage2" build app --emit=ir --passes -o "$W/stage3.ir") && "$STAGE1" build "$W/stage3.ir" -o "$W/stage3z" \
+    && (cd "$B" && "$W/stage2" build app --emit=elf --passes --backend=copy -o "$W/stage3c") ) > "$W/cross.log" 2>&1 &
 crosspid=$!
 # 掛けない版（raw — 設計整合パスなし）: 同じ stage2 が掛けた / 掛けないの 2 通りに建てた check の経路の道具（sobercheck・desugardump）の出力の突き合わせ
 # （scripts/rawcheck.sh — 背景で並べる・約 3.5 分）。STAGES_RAW=1（gates --all と単体実行）のときだけ回す
@@ -90,8 +95,8 @@ MREPS="examples/hash_sha256.sober examples/layout_elf.sober examples/os_fs.sober
     tool_bin loaderdump "$W/loaderdump" || exit 1
     tool_bin lldump "$W/lldump" || exit 1
     # Manifest の形（loaderdump と同じ）: 1 行目 entry、2 行目 std の置き場（std/ を含むディレクトリ）、以降 cwd 相対のファイル一覧（ファイル名順）
-    (cd "$B" && { echo app/main.sober; echo .; { find . -name '*.sober' -type f -not -path './std/*' | sed 's|^\./||'; find std -name '*.sober' -type f; } | LC_ALL=C sort; } > "$W/manifest.txt")
-    (cd "$B" && "$W/stage2" parse --loader-json app/main.sober) > "$W/manifest.embed.json" 2> "$W/manifest.err"
+    (cd "$B" && { echo app; echo .; { find . -name '*.sober' -type f -not -path './std/*' | sed 's|^\./||'; find std -name '*.sober' -type f; } | LC_ALL=C sort; } > "$W/manifest.txt")
+    (cd "$B" && "$W/stage2" parse --loader-json app) > "$W/manifest.embed.json" 2> "$W/manifest.err"
     (cd "$B" && "$W/loaderdump" < "$W/manifest.txt") > "$W/manifest.disk.json" 2>> "$W/manifest.err"
     : > "$W/manifest.ll.log"
     # 置き場の根は「std と examples を並べた木」（src/ への移動の後 — 根の名前が panic の位置の表〔rt.psites〕のファイルの番号に入るので、
@@ -111,9 +116,9 @@ manpid=$!
 # コンパイラ自身の型検査（Lean の判定 = stage2 の脱糖したコア AST を sober-check へ・stage2 = Sober 版の検査器 — 同じ判定 JSON で受理）。
 # 鎖の前は stage1 の脱糖 → Lean だったが、compiler/ は stage1 の範囲を越えうるので stage2 の脱糖に替えた
 SOBER_CHECK=${SOBER_CHECK:-$ROOT/lean/.lake/build/bin/sober-check}
-(cd "$B" && "$W/stage2" check app/main.sober --core-json > "$W/core.json" && "$SOBER_CHECK" < "$W/core.json") > "$W/check1" 2> /dev/null
+(cd "$B" && "$W/stage2" check app --core-json > "$W/core.json" && "$SOBER_CHECK" < "$W/core.json") > "$W/check1" 2> /dev/null
 c1=$?
-(cd "$B" && "$W/stage2" check app/main.sober) > "$W/check2" 2> /dev/null
+(cd "$B" && "$W/stage2" check app) > "$W/check2" 2> /dev/null
 c2=$?
 if [ "$c1" = 0 ] && [ "$c2" = 0 ] && cmp -s "$W/check1" "$W/check2"; then
     echo "check: src/compiler/app は Lean でも stage2 の検査器でも受理（$(cat "$W/check2")）"
@@ -145,9 +150,9 @@ if [ -n "$PERF" ] && "$PERF" stat -x, -e instructions:u -o /dev/null true > /dev
     INSTP=("$PERF" stat -x, -e instructions:u -o "$W/stage4.inst")
 fi
 t=$(now)
-(cd "$B" && env -u SOBER_VERIFY SOBER_WORKERS=1 SOBER_HASH_SEED=0 "$W/stage3" build app/main.sober --emit=elf --passes -o "$W/stage4") || { echo "stages: FAIL stage3 build of src/compiler/app"; exit 1; }
+(cd "$B" && env -u SOBER_VERIFY SOBER_WORKERS=1 SOBER_HASH_SEED=0 "$W/stage3" build app --emit=elf --passes -o "$W/stage4") || { echo "stages: FAIL stage3 build of src/compiler/app"; exit 1; }
 t1=$(now)
-(cd "$B" && "$W/stage3" build app/main.sober --emit=ll --passes -o "$W/stage4.ll") || { echo "stages: FAIL stage3 build of src/compiler/app (.ll)"; exit 1; }
+(cd "$B" && "$W/stage3" build app --emit=ll --passes -o "$W/stage4.ll") || { echo "stages: FAIL stage3 build of src/compiler/app (.ll)"; exit 1; }
 echo "stage4: stage3 → ELF $(dt "$t" "$t1")s, → .ll $(dt "$t1" "$(now)")s"
 # ラチェットの物差し（self/build3 inst / rss — ユーザー承認 2026-10-18・report-789）: compiler/app は std の全部を `@embed` で自分に焼き込むので、
 # compiler が使わない std を足すだけで自己 build の仕事が伸びる（≈ 10.7 M 命令 / KB — report-791 3 節）。線の目的（コンパイラの退行の検出）に合わせ、
@@ -156,11 +161,11 @@ echo "stage4: stage3 → ELF $(dt "$t" "$t1")s, → .ll $(dt "$t1" "$(now)")s"
 M=$W/meas
 mkdir -p "$M"
 tar -C "$B" --exclude=./std -cf - . | tar -C "$M" -xf - || { echo "stages: FAIL meas tree"; exit 1; }
-for p in $( (cd "$B" && "$W/stage3" parse --loader-json app/main.sober) | grep -o '"path": "std/[^"]*"' | sed 's/.*"\(std\/[^"]*\)"/\1/' | sort -u); do
+for p in $( (cd "$B" && "$W/stage3" parse --loader-json app) | grep -o '"path": "std/[^"]*"' | sed 's/.*"\(std\/[^"]*\)"/\1/' | sort -u); do
     mkdir -p "$M/$p" && find "$B/$p" -maxdepth 1 -type f -exec cp {} "$M/$p/" \;
 done
 [ -d "$M/std" ] || { echo "stages: FAIL meas tree (no std package in the import closure)"; exit 1; }
-(cd "$M" && env -u SOBER_VERIFY SOBER_WORKERS=1 SOBER_HASH_SEED=0 /usr/bin/time -f %M -o "$W/stage4.rss" "${INSTP[@]}" "$W/stage3" build app/main.sober --emit=elf --passes -o "$W/stage4m") || { echo "stages: FAIL stage3 build of the meas tree"; exit 1; }
+(cd "$M" && env -u SOBER_VERIFY SOBER_WORKERS=1 SOBER_HASH_SEED=0 /usr/bin/time -f %M -o "$W/stage4.rss" "${INSTP[@]}" "$W/stage3" build app --emit=elf --passes -o "$W/stage4m") || { echo "stages: FAIL stage3 build of the meas tree"; exit 1; }
 echo "meas: $(cd "$M" && find std -name '*.sober' | wc -l) std files in the import closure ($(cd "$B" && find std -name '*.sober' | wc -l) in the tree)"
 
 # RSS のラチェット（bench/ratchet.txt の self/build3 rss — 閉包の std だけの木の自己 build の peak RSS〔上の物差し〕。stage3 = 今のソースを今の最適化で建てたコンパイラ。
@@ -242,6 +247,25 @@ if grep -q '^DIFF' "$W/manifest.ll.log" || [ "$(grep -c '^ok' "$W/manifest.ll.lo
     echo "FAIL: manifest — 代表例の raw .ll が焼き込み / 置き場で違う: $(grep -v '^ok' "$W/manifest.ll.log" | tr '\n' ' ')"; fail=1
 else
     echo "manifest: 代表例 $(grep -c '^ok' "$W/manifest.ll.log") 本の raw .ll — stage2（焼き込みの std）≡ lldump（置き場の std）"
+fi
+# 非干渉の網（errnonint — report-1285 / 1286・PINS の「非干渉の網」の最初の実装）: 組み込み error の先頭ラベルは閉世界の全ラベルの union なので、
+# string 欄のラベルを 1 つ足すだけで全部の error の境界コピーがその場で variant ごとに膨らんでいた（自己 build +35% — std/cli の 10 個）。
+# 題材（testdata/errnonint）と、同じ package に string 欄のラベル 1 個（probe.sober.txt）を足した版を stage3 で IR にし、両方にある利用者の関数の
+# 境界コピー（region.relocate / rt.region_relocate8 / rt.err_relocate の呼び出し）の数が一致すること（rt.* は比べない — 補助の本体はラベルで伸びてよい）。
+# 値の幅（union の幅 = 最大の variant）による写しの語数の差は対象外（表現の性質 — report-1286）
+EN=$W/errnonint
+mkdir -p "$EN/a" "$EN/b"
+cp testdata/errnonint/main.sober "$EN/a/" && cp testdata/errnonint/main.sober "$EN/b/" && cp testdata/errnonint/probe.sober.txt "$EN/b/probe.sober"
+encnt() { awk '/^func /{ n = $2; sub(/\(.*/, "", n) } n !~ /^@rt\./ && /region\.relocate |call @rt\.region_relocate8|call @rt\.err_relocate/{ c[n]++ } END { for (k in c) print k, c[k] }' "$1" | sort; }
+if (cd "$EN" && SOBER_WORKERS=1 "$W/stage3" build a --emit=ir --passes -o a.ir && SOBER_WORKERS=1 "$W/stage3" build b --emit=ir --passes -o b.ir); then
+    encnt "$EN/a.ir" > "$EN/a.cnt"; encnt "$EN/b.ir" | grep -v '^@main\.probe ' > "$EN/b.cnt"
+    if [ -s "$EN/a.cnt" ] && cmp -s "$EN/a.cnt" "$EN/b.cnt"; then
+        echo "errnonint: $(wc -l < "$EN/a.cnt") functions — boundary copies unchanged by a string-field error label"
+    else
+        echo "FAIL: errnonint — string 欄の error ラベル 1 個で利用者の関数の境界コピーが変わった: $(diff "$EN/a.cnt" "$EN/b.cnt" | grep '^[<>]' | tr '\n' ' ')"; fail=1
+    fi
+else
+    echo "FAIL: errnonint — 題材が建たない"; fail=1
 fi
 echo "stages: total $(dt "$T0" "$(now)")s"
 

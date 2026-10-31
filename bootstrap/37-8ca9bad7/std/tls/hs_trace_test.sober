@@ -1,0 +1,190 @@
+package tls
+
+// std/internal/hs（TLS 便 R3 — report-811 0 節 C / 828・2026-10-20 に examples/tls_trace から移した — hs は std の内側）: TLS 1.3 のサーバの handshake を
+// Go の crypto/tls のクライアントと突き合わせる。黄金 = scripts/oracles/tls_trace.go が記録したもの: Go の tls.Client（乱数の源を固定 +
+// `//go:debug cryptocustomrand=1` で走りごとに同じ ClientHello）がこのテストの live の道（TestTraceLive — 127.0.0.1 の TCP で待ち受ける子プロセス）と
+// handshake → "ping" → "echo:ping" → close_notify まで往復し、クライアントが送ったバイト列を testdata/tls/trace-<場合>.hex に、受けたバイト列の
+// SHA-256 と KeyLogWriter の 4 つの secret を testdata/tls/trace.golden に書く。TestTrace（再生の道）はクライアントのバイト列を偽の転送路で流し、
+// サーバの出力の SHA-256・4 つの secret・受けた平文が黄金と一致するかを照合する（Go が受理した handshake のバイト列を Sober が決定的に再現できる =
+// Go の検証〔署名・Finished・record の保護〕を通る出力だったことの証人）。場合 = aes（TLS_AES_128_GCM_SHA256）・chacha（サーバが ChaCha20-Poly1305 を
+// 好む）・hrr（クライアントの key_share が P-256 だけ → HelloRetryRequest → 2 番目の ClientHello で X25519。Go 1.24 以降の crypto/tls は HRR を
+// 起こせないので openssl s_client を中継して記録 — secret は openssl の -keylogfile と照合済み）。塊の無い機械（SOBER_NOAES=1）では aes / hrr を飛ばす
+//
+//     out/stage2/sober2 test std/tls -run TestTraceLive --work /tmp/tt && (cd scripts/oracles && go run tls_trace.go /tmp/tt/t) > testdata/tls/trace.golden
+//     （黄金の取り直し — live の道。bin/sober は --work を自分の置き場で上書きするので stage2 を直に）
+//
+// このファイルの test* の名前（証明書・記録・設定・連結）は hs_reject_test / hs_fsm_test と共用
+
+import "std/crypto/aesgcm"
+import "std/crypto/pem"
+import "std/crypto/rsa"
+import "std/crypto/sha256"
+import "std/hex"
+import "std/io"
+import "std/iter"
+import "std/net"
+import "std/os"
+import "std/strings"
+import "std/internal/hs"
+import "std/tls/record"
+
+@embed("testdata/crypto/httparena-server.*")
+const testCerts = map[string]string{}
+
+@embed("testdata/tls/trace-*.hex")
+const testTraces = map[string]string{}
+
+@embed("testdata/tls/trace.golden")
+const testTraceGolden = map[string]string{}
+
+func testFile(fs map[string]string, p string) string {
+    v := fs[p]
+    if v != nil {
+        return v
+    }
+    return ""
+}
+
+func testZeros(n int) []byte {
+    mut o := mut []byte{}
+    for i <- iter.Range(0, n) {
+        o = append(o, byte(0))
+    }
+    return freeze(o)
+}
+
+// testParams は場合 name のサーバの設定（証明書と鍵は HttpArena の試験用の対・乱数の源は固定の seed）
+func testParams(name string) hs.Params {
+    cb, _ := pem.Parse(testFile(testCerts, "testdata/crypto/httparena-server.crt"))
+    kb, _ := pem.Parse(testFile(testCerts, "testdata/crypto/httparena-server.key"))
+    k, _ := rsa.ParsePKCS8(kb[0].der)
+    suites := if name == "chacha" { []int{record.ChaCha, record.AesGcm} } else { []int{record.AesGcm, record.ChaCha} }
+    return hs.NewParams([][]byte{cb[0].der}, k, []string{"http/1.1"}, suites, bytes("sober-tls-trace-${name}"))
+}
+
+// trServe は 1 接続: record の枠を Feed に通し、送るものを send へ・受けた平文に "echo:" を付けて返す・相手の close_notify で close_notify を返して終わる。
+// 印字の行（secret・受けた平文・閉じ方）を返す
+func trServe(p hs.Params, recv func(k func([]byte)) error?, send func(b []byte) error?) string {
+    mut log := ""
+    e := trLoop(p, recv, send, mut log)
+    return if e == nil { log } else { "${log}error transport\n" }
+}
+
+func trLoop(p hs.Params, recv func(k func([]byte)) error?, send func(b []byte) error?, log mut string) error? {
+    mut h := hs.New()
+    for f <- record.Frames(recv)? {
+        o, e := hs.Feed(mut h, p, f)
+        if e != nil {
+            d := trAlertDesc(e)
+            _ = send(hs.AlertRecord(mut h, d))
+            log = "${log}error alert ${d}\n"
+            return nil
+        }
+        send(o.send)?
+        if o.done {
+            log = "${log}secrets ${hs.Secrets(h)}\nalpn ${hs.Alpn(h)} suite ${hs.Suite(h)}\n"
+        }
+        if len(o.app) > 0 {
+            s, _ := string(o.app)
+            log = "${log}app ${s}\n"
+            r, _ := hs.SealApp(mut h, testCat(bytes("echo:"), o.app))
+            send(r)?
+        }
+        if o.closed {
+            log = "${log}closed ${o.peer}\n"
+            send(hs.CloseNotify(mut h))?
+            return nil
+        }
+    }
+    return nil
+}
+
+// trAlertDesc は Feed の誤りの alert の番号（switch を for の本体に直に書くと check だけが def error — F-bg・report-828）
+func trAlertDesc(e error?) int {
+    return switch e {
+        case nil: -1
+        case record.Alert{desc}: desc
+    }
+}
+
+func testCat(a []byte, b []byte) []byte {
+    mut o := mut []byte{}
+    for c <- a {
+        o = append(o, c)
+    }
+    for c <- b {
+        o = append(o, c)
+    }
+    return freeze(o)
+}
+
+// trFeed は s を size バイトずつ k へ渡す偽の受けの口
+func trFeed(s []byte, size int, k func([]byte)) error? {
+    mut at := 0
+    while at < len(s) {
+        e := if at + size < len(s) { at + size } else { len(s) }
+        mut c := mut []byte{}
+        for i <- iter.Range(at, e) {
+            c = append(c, s[i])
+        }
+        k(freeze(c))
+        at = e
+    }
+    return nil
+}
+
+// trReplay は場合 name の記録を切片の大きさ size で流し直した印字の節（サーバの出力は SHA-256 に畳む — 黄金の節と同じ形）
+func trReplay(name string, size int) string {
+    c2s, _ := hex.Parse(testFile(testTraces, "testdata/tls/trace-${name}.hex"))
+    mut acc := sha256.New()
+    log := trServe(testParams(name), (k) => trFeed(c2s, size, k), (b) => trPut(mut acc, b))
+    return "== ${name} (chunk ${size})\n${log}s2c ${hex.Format(sha256.Sum(acc))}\n"
+}
+
+func trPut(acc mut sha256.State, b []byte) error? {
+    sha256.Write(mut acc, b)
+    return nil
+}
+
+// trLive は 127.0.0.1 の TCP の 1 接続（Go の双子が子プロセスとして叩く — 待ち受けの port を標準出力の 1 行目に・印字の行は標準エラーへ）
+func trLive(name string) error? {
+    for l <- net.Listen("127.0.0.1:0")? {
+        io.WriteStdout(bytes("port ${net.Port(l)}\n"))?
+        for c <- net.Accept(l)? {
+            log := trServe(testParams(name), (k) => net.Recv(c, k), (b) => net.Send(c, b))
+            io.WriteStderr(bytes(log))?
+            break
+        }
+    }
+    return nil
+}
+
+func TestTrace() {
+    gold := testFile(testTraceGolden, "testdata/tls/trace.golden")
+    mut bad := 0
+    names := []string{"aes", "chacha", "hrr"}
+    sizes := []int{65536, 7}
+    for name <- names {
+        if name == "chacha" || aesgcm.Available() {
+            for size <- sizes {
+                got := trReplay(name, size)
+                if !strings.Contains(gold, got) {
+                    println("trace ${name} (chunk ${size}) differs from testdata/tls/trace.golden:\n${got}")
+                    bad += 1
+                }
+            }
+        } else {
+            println("trace ${name}: skipped (no hardware)")
+        }
+    }
+    assert(bad == 0)
+}
+
+// TestTraceLive は黄金の取り直しの live の道（scripts/oracles/tls_trace.go が子プロセスとして叩く — 場合の名前は環境変数 SOBER_TLS_TRACE_LIVE）。
+// 変数が無ければ何もしない（`sober test` の既定の走りでは空の通過）
+func TestTraceLive() {
+    v, _ := os.Getenv("SOBER_TLS_TRACE_LIVE")
+    if v != nil {
+        assert(trLive(v) == nil)
+    }
+}

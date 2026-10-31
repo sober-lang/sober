@@ -96,21 +96,21 @@ const Invalid = 78
 // byte の段で足した種類（既存の番号を動かさないため末尾に置く — Zig 版の Tag には無い）
 const CharLiteral = 79
 
-// キーワード（catch 式 — 2026-10-02。番号は末尾に足す — 既存の番号を動かさない）
+// キーワード（catch 式。番号は末尾に足す — 既存の番号を動かさない）
 const KwCatch = 80
 
-// キーワード（panic ラベル — 2026-10-03。language.md 27 節）
+// キーワード（panic ラベル。language.md 27 節。番号は末尾に足す）
 const KwPanic = 81
 
-// 浮動小数のリテラル（float の段 — 2026-10-04。language.md 37 節。番号は末尾）
+// 浮動小数のリテラル（language.md 37 節。番号は末尾に足す）
 const FloatLiteral = 82
 
-// Token は 1 つの字句。[start, end) はソースのバイトオフセット（自動挿入の ';' は幅 0）
+// 1 つの字句。[start, end) はソースのバイトオフセット（自動挿入の ';' は幅 0）
 type Token struct {
     tag, start, end int
 }
 
-// TagName は Zig 版の `sober lex` が印字する種類名（@tagName と同じ綴り）
+// Zig 版の `sober lex` が印字する種類名（@tagName と同じ綴り）
 func TagName(tag int) string {
     return switch tag {
     case Identifier: "identifier"
@@ -199,7 +199,7 @@ func TagName(tag int) string {
     }
 }
 
-// EndsStatement は、行末にこの種類があればセミコロンを自動挿入するか（Go 仕様 + `?`）。
+// 行末にこの種類があればセミコロンを自動挿入するか（Go 仕様 + `?`）。
 // `error` はキーワードだが型名として行末に立つ（`type Timeout error`）。`panic` も同じ（`type Done panic` — panic ラベル）
 func EndsStatement(tag int) bool {
     return tag == Identifier || tag == IntegerLiteral || tag == FloatLiteral || tag == CharLiteral || tag == StringLiteral || tag == RawStringLiteral ||

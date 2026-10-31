@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P3b-4 ③: 閉じた送り端へ送ると定義された panic（send on closed channel）
+// 閉じた送り端へ送ると定義された panic（send on closed channel）
 
 import "std/task"
 

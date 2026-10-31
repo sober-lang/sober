@@ -1,2 +1,3 @@
+sober: type error at testdata/checkneg/ret_ty.sober:4:12
 {"errors":[{"msg":"def error"}],"ok":false}
 exit=1

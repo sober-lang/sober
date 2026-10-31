@@ -1,6 +1,6 @@
 package main
 
-// 部分列の境界が範囲外で panic（exit 101 — language.md 27 節）。stderr に点の位置（panic の観測性 第一便 — scripts/panicmsg.sh が照合）
+// 部分列の境界が範囲外で panic（exit 101 — language.md 27 節）。stderr に点の位置（scripts/panicmsg.sh が照合）
 
 func cut(xs []int, n int) int {
     return len(xs[1:n])

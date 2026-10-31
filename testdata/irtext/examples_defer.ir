@@ -1697,6 +1697,82 @@ b0:
   ret %2
 }
 
+func @main.work() i64 {
+  slot s0 [1]
+b0:
+  %0 = region.depth
+  region.enter
+  %1 = region.depth
+  region.enter
+  %2 = region.depth
+  %3 = const 3
+  call @rt.print_int(%3)
+  %4 = const 10
+  call @rt.print_char(%4)
+  %5 = const 2
+  call @rt.print_int(%5)
+  %6 = const 10
+  call @rt.print_char(%6)
+  region.setdepth %1
+  %7 = const 0
+  %8 = slotaddr s0
+  store %8[0], %7
+  %9 = region.depth
+  br b1
+b1:
+  region.setdepth %9
+  %10 = load.i64 %8[0]
+  %11 = const 2
+  %12 = lt %10, %11
+  condbr %12, b2, b3
+b2:
+  region.enter
+  %13 = region.depth
+  %14 = const 1
+  %15 = load.i64 %8[0]
+  %16 = add %15, %14
+  store %8[0], %16
+  %17 = load.i64 %8[0]
+  %18 = const 1
+  %19 = eq %17, %18
+  condbr %19, b4, b5
+b3:
+  region.setdepth %9
+  %28 = region.depth
+  region.enter
+  %29 = region.depth
+  %30 = const 5
+  %31 = const 4
+  call @rt.print_int(%31)
+  %32 = const 10
+  call @rt.print_char(%32)
+  region.setdepth %28
+  %33 = const 1
+  call @rt.print_int(%33)
+  %34 = const 10
+  call @rt.print_char(%34)
+  region.setdepth %0
+  ret %30
+b4:
+  %20 = const 10
+  %21 = load.i64 %8[0]
+  %22 = add %20, %21
+  call @rt.print_int(%22)
+  %23 = const 10
+  call @rt.print_char(%23)
+  br b1
+b5:
+  br b6
+b6:
+  %24 = const 10
+  %25 = load.i64 %8[0]
+  %26 = add %24, %25
+  call @rt.print_int(%26)
+  %27 = const 10
+  call @rt.print_char(%27)
+  br b1
+}
+
 func @main.main() {
 b0:
   %0 = region.depth
@@ -1707,6 +1783,22 @@ b0:
   call @rt.print_char(%2)
   region.setdepth %0
   ret
+}
+
+func @rt.sigint() {
+b0:
+  %0 = const 231
+  %1 = const 130
+  %2 = syscall(%0, %1)
+  exit 130
+}
+
+func @rt.sigterm() {
+b0:
+  %0 = const 231
+  %1 = const 143
+  %2 = syscall(%0, %1)
+  exit 143
 }
 
 export func @sober_entry(%0 ptr) {
@@ -2302,96 +2394,4 @@ b91:
   %404 = const 1
   %405 = add %383, %404
   br b85(%401, %405)
-}
-
-func @rt.sigterm() {
-b0:
-  %0 = const 231
-  %1 = const 143
-  %2 = syscall(%0, %1)
-  exit 143
-}
-
-func @rt.sigint() {
-b0:
-  %0 = const 231
-  %1 = const 130
-  %2 = syscall(%0, %1)
-  exit 130
-}
-
-func @main.work() i64 {
-  slot s0 [1]
-b0:
-  %0 = region.depth
-  region.enter
-  %1 = region.depth
-  region.enter
-  %2 = region.depth
-  %3 = const 3
-  call @rt.print_int(%3)
-  %4 = const 10
-  call @rt.print_char(%4)
-  %5 = const 2
-  call @rt.print_int(%5)
-  %6 = const 10
-  call @rt.print_char(%6)
-  region.setdepth %1
-  %7 = const 0
-  %8 = slotaddr s0
-  store %8[0], %7
-  %9 = region.depth
-  br b1
-b1:
-  region.setdepth %9
-  %10 = load.i64 %8[0]
-  %11 = const 2
-  %12 = lt %10, %11
-  condbr %12, b2, b3
-b2:
-  region.enter
-  %13 = region.depth
-  %14 = const 1
-  %15 = load.i64 %8[0]
-  %16 = add %15, %14
-  store %8[0], %16
-  %17 = load.i64 %8[0]
-  %18 = const 1
-  %19 = eq %17, %18
-  condbr %19, b4, b5
-b3:
-  region.setdepth %9
-  %28 = region.depth
-  region.enter
-  %29 = region.depth
-  %30 = const 5
-  %31 = const 4
-  call @rt.print_int(%31)
-  %32 = const 10
-  call @rt.print_char(%32)
-  region.setdepth %28
-  %33 = const 1
-  call @rt.print_int(%33)
-  %34 = const 10
-  call @rt.print_char(%34)
-  region.setdepth %0
-  ret %30
-b4:
-  %20 = const 10
-  %21 = load.i64 %8[0]
-  %22 = add %20, %21
-  call @rt.print_int(%22)
-  %23 = const 10
-  call @rt.print_char(%23)
-  br b1
-b5:
-  br b6
-b6:
-  %24 = const 10
-  %25 = load.i64 %8[0]
-  %26 = add %24, %25
-  call @rt.print_int(%26)
-  %27 = const 10
-  call @rt.print_char(%27)
-  br b1
 }

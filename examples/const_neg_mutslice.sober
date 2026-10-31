@@ -1,0 +1,8 @@
+package main
+
+// 負例: const は不変 — mut のリテラルは置けない（language.md 25 節・spec V-3）
+const Xs = mut []int{1, 2}
+
+func main() {
+    println(0)
+}

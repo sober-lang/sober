@@ -125,8 +125,9 @@ C-9. `task.Map(xs, f)`（`xs |> task.Map(f)`）は要素ごとに 1 task を生�
 例: [`examples/task_map.sober`](../../examples/task_map.sober)・[`examples/task_cancel_map.sober`](../../examples/task_cancel_map.sober)
 決定: [language.md 11 節](../language.md)
 
-C-10. handle を捨てた子（`_ = task.Spawn(…)`）の置き場は子の寿命で、子の終わりで返る — 終わらない scope（接続を受け続けるループ）で子を生み続けても scope の region は伸びない。
-例: [`examples/task_spawn_discard.sober`](../../examples/task_spawn_discard.sober)・[`examples/task_spawn_discard_die.sober`](../../examples/task_spawn_discard_die.sober)
+C-10. handle を捨てた子（`_ = task.Spawn(…)`）の置き場は子の寿命で、子の終わりで返る — 終わらない scope（接続を受け続けるループ）で子を生み続けても scope の region は伸びない。未着手の子はワーカーあたり 255 本までで、越えると生んだ task が譲って子をその場で先に走らせる（値・死因・出力は変わらない）— 生む速さが掃く速さを上回っても、未着手の子の数は有界。`task.Run(…, backlog: K)` / `net.Serve(…, backlog: K)` は書いた scope の中の上限を K（1〜255 に丸める）にし、子の task は継ぐ。値は budget: と同じ形の整数式。
+例: [`examples/task_spawn_discard.sober`](../../examples/task_spawn_discard.sober)・[`examples/task_spawn_discard_die.sober`](../../examples/task_spawn_discard_die.sober)・[`examples/task_backlog.sober`](../../examples/task_backlog.sober)
+拒否: [`examples/task_neg_backlog.sober`](../../examples/task_neg_backlog.sober)
 決定: [language.md 11 節](../language.md)
 
 ## 10.4 チャネル
@@ -166,7 +167,7 @@ C-17. `budget:`（Spawn・Map・Run の末尾の名前つき引数 — `budget: 
 拒否: [`examples/task_neg_budget.sober`](../../examples/task_neg_budget.sober)
 決定: [language.md 11 節](../language.md)
 
-C-18. `task.NewPool(budget:, parent:)` は名前つきの天井の節。`task.SpawnIn(s, pool, g)` だけは逐次にせず、入れなければ `(nil, task.Shed{})` を返す（受けられない、という値）。`task.Ledger()` は天井・計上・逐次化・shed・失敗・死の数と、スケジューラの `maxWait`（走れるようになってから走るまでの待ちの最大 — ns・読むと 0 に戻る）・`aged`（待ちの上限が効いた回数）の読み口で、`task.MarkFailed(pool)` は境界の失敗を数える。
+C-18. `task.NewPool(budget:, parent:)` は名前つきの天井の節。`task.SpawnIn(s, pool, g)` だけは逐次にせず、入れなければ `(nil, task.Shed{})` を返す（受けられない、という値）。`task.Ledger()` は天井・計上・逐次化・shed・失敗・死の数と、スケジューラの `maxWait`（走れるようになってから走るまでの待ちの最大 — ns・読むと 0 に戻る）・`aged`（待ちの上限が効いた回数）・`backlog`（今の未着手の子の数）・`backlogYield`（未着手の子の上限で譲った回数）の読み口で、`task.MarkFailed(pool)` は境界の失敗を数える。
 例: [`examples/task_shed.sober`](../../examples/task_shed.sober)・[`examples/task_pool_seq.sober`](../../examples/task_pool_seq.sober)
 決定: [language.md 11 節](../language.md)
 

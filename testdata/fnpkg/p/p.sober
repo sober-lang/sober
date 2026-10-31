@@ -1,0 +1,19 @@
+package p
+
+// 名前付き関数型の署名がこの package の型（R）を含む — 別 package で値の位置（結果・仮引数・欄）とジェネリックに使う題材（scripts/fnpkg.sh）
+
+type R struct {
+    n int
+}
+
+type F func(r R) int
+
+type G[T] func(r R, x T) T
+
+func Make(n int) R {
+    return R{n: n}
+}
+
+func N(r R) int {
+    return r.n
+}

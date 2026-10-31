@@ -1,0 +1,63 @@
+package main
+
+// カバレッジの計器（`sober build --cover`）の題材: 点の種類を全部（fn・then / else・case・loop・rhs・catch）と、
+// 踏まない腕・呼ばれない関数を持つ。網 = scripts/cover.sh（点の表と踏んだ印の黄金 — testdata/cover）
+
+import "std/convert"
+
+func sign(x int) string {
+    if x < 0 {
+        return "neg"
+    }
+    return if x == 0 { "zero" } else { "pos" }
+}
+
+func kind(x int?) string {
+    if x == nil {
+        return "none"
+    }
+    return switch x {
+    case 1: "one"
+    case 2: "two"
+    default: "many"
+    }
+}
+
+func sum(xs []int) int {
+    mut s := 0
+    for x <- xs {
+        if x > 0 && x < 100 {
+            s += x
+        }
+    }
+    mut i := 0
+    while i < 0 {
+        i += 1
+    }
+    return s
+}
+
+func parse(s string) int {
+    return convert.ParseInt(s) catch -1
+}
+
+func apply(f func(int), x int) {
+    f(x)
+}
+
+func unused(x int) int {
+    return x * 2
+}
+
+func main() {
+    println(sign(5))
+    println(sign(0))
+    println(kind(nil))
+    println(kind(2))
+    println(sum([]int{1, 2, 300}))
+    println(parse("12"))
+    println(parse("x"))
+    apply((y) => {
+        println(y + 1)
+    }, 1)
+}

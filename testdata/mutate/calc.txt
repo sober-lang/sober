@@ -1,0 +1,26 @@
+testdata/mutate/calc/calc.sober:9:5	cond → false	killed	TestSum
+testdata/mutate/calc/calc.sober:9:13	< → <=	killed	TestSum
+testdata/mutate/calc/calc.sober:9:13	< → >=	killed	TestSum
+testdata/mutate/calc/calc.sober:10:9	statement deleted	killed	TestSum
+testdata/mutate/calc/calc.sober:11:9	statement deleted	timeout	TestSum
+testdata/mutate/calc/calc.sober:17:5	cond → true	killed	TestSign
+testdata/mutate/calc/calc.sober:17:5	cond → false	killed	TestSign
+testdata/mutate/calc/calc.sober:17:10	> → <=	killed	TestSign
+testdata/mutate/calc/calc.sober:17:10	> → >=	survived	-
+testdata/mutate/calc/calc.sober:20:5	cond → true	survived	-
+testdata/mutate/calc/calc.sober:20:5	cond → false	killed	TestSign
+testdata/mutate/calc/calc.sober:20:10	< → <=	survived	-
+testdata/mutate/calc/calc.sober:20:10	< → >=	killed	TestSign
+testdata/mutate/calc/calc.sober:27:15	* → /	killed	TestMix
+testdata/mutate/calc/calc.sober:27:19	- → +	killed	TestMix
+testdata/mutate/calc/calc.sober:27:24	/ → *	killed	TestMix
+testdata/mutate/calc/calc.sober:27:33	& → |	killed	TestMix
+testdata/mutate/calc/calc.sober:27:37	| → &	killed	TestMix
+testdata/mutate/calc/calc.sober:27:47	<< → >>	killed	TestMix
+testdata/mutate/calc/calc.sober:27:52	>> → <<	killed	TestMix
+testdata/mutate/calc/calc.sober:27:58	+ → -	killed	TestMix
+testdata/mutate/calc/calc.sober:31:14	&& → ||	ignored	-
+testdata/mutate/calc/calc.sober:31:17	! removed	killed	TestBoth
+testdata/mutate/calc/calc.sober:31:20	|| → &&	killed	TestBoth
+testdata/mutate/calc/calc.sober:31:25	== → !=	killed	TestBoth
+testdata/mutate/calc/calc.sober:35:14	+ → -	unreached	-

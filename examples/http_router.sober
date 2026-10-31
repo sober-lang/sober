@@ -1,12 +1,12 @@
 package main
 
-// http のルーター（report-850 / 852）: ルートの表 `[]http.Route`（静的 / :name / *name のパターン）・Mount / Merge の合成・mw の before / after（外→内・内→外）・
+// http のルーター: ルートの表 `[]http.Route`（静的 / :name / *name のパターン）・Mount / Merge の合成・mw の before / after（外→内・内→外）・
 // short-circuit・404 / 405 / HEAD → GET・優先順は表の並びに依らない（静的 > :name > *name）。ネットの代わりに recv が決まった要求の列を 1 切片で渡し、
 // send が応答を印字する（examples/http_servewith の形 — 行末の CR は外して印字）
 
 import "std/http"
 
-// or は nil を "-" に
+// nil を "-" に
 func or(s string?) string {
     return if s != nil { s } else { "-" }
 }
@@ -35,7 +35,7 @@ func health(r http.Request) http.Response {
     return http.Text("ok\n")
 }
 
-// auth は X-Token の無い要求を 401 で止める（short-circuit）
+// X-Token の無い要求を 401 で止める（short-circuit）
 func auth(r http.Request) http.Response? {
     println("  auth before ${r.pattern}")
     if http.Header(r, "x-token") == nil {

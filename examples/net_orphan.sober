@@ -1,7 +1,7 @@
 package main
 
 // 親の task が死ぬと、その開いている scope の下で io を待つ子孫は待ちを切られて io.Expired を受け、普通の道で巻き戻る（language.md 28 節
-// 「キャンセルは協調的」— rt は待ちを起こすだけ）。期限の無い scope でも永眠しない（report-741 の穴 — 直しは lower/orphan.sober）。
+// 「キャンセルは協調的」— rt は待ちを起こすだけ）。期限の無い scope でも永眠しない（lower/orphan.sober が直す）。
 // 待ちの種類ごと: 受け（Recv）・accept・孫（死んだ親の scope の下の、生きている子の scope の下）・切られた後の再試行（次の待ちの入口で即 Expired）・
 // 送りの詰まり（読まない相手への Send）・親の死の時には走っていた子（次の待ちの入口で捕まる）。外の scope は親の死を受ける（died）
 
@@ -31,7 +31,7 @@ func run() (string, error?) {
     return "done", nil
 }
 
-// parent は scope を開いて子を生み、子が待ちに入った頃に死ぬ（範囲外の添字）
+// scope を開いて子を生み、子が待ちに入った頃に死ぬ（範囲外の添字）
 func parent(k int, addr string) int {
     _, e := task.Run((s task.Scope) => {
         h := task.Spawn(s, () => child(k, addr))

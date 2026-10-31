@@ -46,7 +46,7 @@ type Request struct {
 // 返ったら終端の chunk）— HTTP/1.0 の要求には Content-Length も chunked も書かず、stream が返ったら閉じる（閉じで区切る）。stream が誤りを返したら終端を書かずに閉じる。
 // compress: があり・Content-Type が圧縮向き・要求が gzip を受け・coded が無い stream の応答（長さ既知なら length が 1024 以上のとき）は gzip にして chunked で送る
 // （emit 1 回 = deflate の sync flush 1 回 = chunk 1 つ・窓は emit をまたいで持ち越す・HTTP/1.0 は閉じで区切る・Vary は body の応答と同じ）。HEAD では呼ばない（頭は GET と同じ）。
-// stream は要求の値（path など）を捕捉してよい閉包。File は捕捉させず path を捕捉して stream の中で開く:
+// stream は要求の値（path など）を捕捉してよいクロージャ。File は捕捉させず path を捕捉して stream の中で開く:
 //
 //     func handle(r http.Request) http.Response {
 //         return http.Response{status: 200, contentType: "text/plain", length: n, stream: (emit) => sendFile(r.path, emit)}
@@ -91,7 +91,7 @@ type Validators struct {
     seal validSeal
 }
 
-// validSeal は Validators の封（非公開 — 外で値を書けない）
+// Validators の封（非公開 — 外で値を書けない）
 type validSeal struct {
 }
 
@@ -208,7 +208,7 @@ func FormatEvent(e Event) string {
     return string(freeze(out)) catch ""
 }
 
-// eventBad は v に CR・LF・NUL があるか（Event の event / id に書けない文字）
+// v に CR・LF・NUL があるか（Event の event / id に書けない文字）
 func eventBad(v string) bool {
     for x <- bytes(v) {
         if x == '\r' || x == '\n' || x == 0 {
@@ -284,7 +284,7 @@ type BadLevel panic {
 // ServeConn の work: を compress: なしで渡した（作業域は圧縮の符号器のもの — 呼び手の契約違反。panic ラベル）
 type WorkNoCompress panic
 
-// gzMin は圧縮する本文の下限（これ未満は頭と符号の表の分で得が無い — Go の gzhttp の既定と同じ 1024）
+// 圧縮する本文の下限（これ未満は頭と符号の表の分で得が無い — Go の gzhttp の既定と同じ 1024）
 const gzMin = 1024
 
 // r のヘッダ name の値（名前は大文字小文字を区別しない — 最初の一致。無ければ nil）。認証のヘッダ（Authorization・Proxy-Authorization・Cookie）は
@@ -326,7 +326,7 @@ func Cookie(r Request, name string) string? {
     return nil
 }
 
-// cookieIn は head の [s, e)（Cookie の行の値）の中の name の値
+// head の [s, e)（Cookie の行の値）の中の name の値
 func cookieIn(r Request, s int, e int, name string) string? {
     hb := utf8.Bytes(r.head)
     mut p := s
@@ -357,7 +357,7 @@ func cookieIn(r Request, s int, e int, name string) string? {
     return nil
 }
 
-// headerOf は r のヘッダ nb の値（Header の中身 — 認証のヘッダも読む）
+// r のヘッダ nb の値（Header の中身 — 認証のヘッダも読む）
 func headerOf(r Request, nb []byte) string? {
     hb := utf8.Bytes(r.head)
     mut i := 0
@@ -400,7 +400,7 @@ func JsonDoc(r Request) (json.Doc, error?) {
     return json.Parse(r.body)
 }
 
-// isMedia は Content-Type の値 ct の媒体の型（; の前・前後の空白を除く・大小を無視）が m か
+// Content-Type の値 ct の媒体の型（; の前・前後の空白を除く・大小を無視）が m か
 func isMedia(ct string, m string) bool {
     b := bytes(ct)
     k := indexIn(b, 0, len(b), ';')
@@ -408,7 +408,7 @@ func isMedia(ct string, m string) bool {
     return eqFold(b, s, trimOWS(b, s, if k < 0 { len(b) } else { k }), bytes(m))
 }
 
-// pairOf は `k=v&…` の s の key の値（最初の一致・= の無い項目は値 ""・無ければ nil）
+// `k=v&…` の s の key の値（最初の一致・= の無い項目は値 ""・無ければ nil）
 func pairOf(s string, key string) string? {
     mut rest := s
     while rest != "" {
@@ -541,7 +541,7 @@ func Dispatch(routes []Route, r Request) Response {
     return Response{status: w.status, contentType: w.contentType, body: w.body, length: w.length, stream: w.stream, headers: w.headers, coded: w.coded, cache: rc, validators: w.validators}
 }
 
-// allowOf は path に一致する行の method の列（405 の Allow — 表の順・重複なし・GET があれば HEAD も。一致する行が無ければ "" = 404。
+// path に一致する行の method の列（405 の Allow — 表の順・重複なし・GET があれば HEAD も。一致する行が無ければ "" = 404。
 // 一致する行が無いときだけ走る）
 func allowOf(routes []Route, pb []byte) string {
     mut ms := mut []string{}
@@ -563,7 +563,7 @@ func allowOf(routes []Route, pb []byte) string {
     return strings.Join(freeze(ms), ", ")
 }
 
-// chain は middleware のある行 x の before（外→内）・ハンドラ・after（内→外）を r に掛ける
+// middleware のある行 x の before（外→内）・ハンドラ・after（内→外）を r に掛ける
 func chain(x Route, r Request) Response {
     n := len(x.middleware)
     mut i := 0
@@ -610,7 +610,7 @@ func chain(x Route, r Request) Response {
 // Last-Modified・Cache-Control（cache: — 省略は Revalidate）を付け、If-Match / If-Unmodified-Since が偽なら 412・If-None-Match が一致するか、
 // If-None-Match が無く If-Modified-Since が Last-Modified とちょうど等しければ 304（等しいだけ — 古い版へ戻したデプロイで新しい版を使い続けさせない）。
 // 304 の頭は ETag・Cache-Control・（precompressed なら）Vary だけ。開いてから送るまでの間にファイルが差し替わったら（大きさか更新時刻が変われば）接続を閉じる。
-// root を開いた io.Root で受けないのは、行の handler も stream も値の閉包で、同一性の型を捕捉できないから（language.md 28 節「静的ファイル」）
+// root を開いた io.Root で受けないのは、行の handler も stream も値のクロージャで、同一性の型を捕捉できないから（language.md 28 節「静的ファイル」）
 @effects()
 func Static(prefix string, root string, precompressed bool?, cache Cache?) []Route {
     pc := if precompressed != nil { precompressed } else { false }
@@ -636,7 +636,7 @@ type Cache union {
     Private { maxAge int? }
 }
 
-// cacheValue は c の Cache-Control の値（nil = 応答の既定の private）
+// c の Cache-Control の値（nil = 応答の既定の private）
 func cacheValue(c Cache?) string {
     if c == nil {
         return "private"
@@ -650,13 +650,13 @@ func cacheValue(c Cache?) string {
     }
 }
 
-// sharedValue は Shared の Cache-Control の値（`public, max-age=N`・sMaxAge があれば `, s-maxage=M`）
+// Shared の Cache-Control の値（`public, max-age=N`・sMaxAge があれば `, s-maxage=M`）
 func sharedValue(maxAge int, sMaxAge int?) string {
     s := "public, max-age=${if maxAge < 0 { 0 } else { maxAge }}"
     return if sMaxAge == nil { s } else { s + ", s-maxage=${if sMaxAge < 0 { 0 } else { sMaxAge }}" }
 }
 
-// freshValue は Fresh の Cache-Control の値（`max-age=N`・immutable なら `, immutable`）
+// Fresh の Cache-Control の値（`max-age=N`・immutable なら `, immutable`）
 func freshValue(maxAge int, immutable bool?) string {
     mut s := "max-age=${if maxAge < 0 { 0 } else { maxAge }}"
     if immutable != nil && immutable {
@@ -665,7 +665,7 @@ func freshValue(maxAge int, immutable bool?) string {
     return s
 }
 
-// staticGet は Static の行の handler（開いて属性を見てから閉じ、本文は stream の中で開き直す — stream は File を持ち越せない）
+// Static の行の handler（開いて属性を見てから閉じ、本文は stream の中で開き直す — stream は File を持ち越せない）
 func staticGet(root string, pc bool, r Request) Response {
     rel := Param(r, "path")
     if rel == nil || rel == "" {
@@ -694,7 +694,7 @@ func staticGet(root string, pc bool, r Request) Response {
     return staticOf(r, root, rel, st, ct, "", false)
 }
 
-// staticOf は root の下の file（属性 st・符号化 enc・coded = 符号化を選んだ応答〔Vary を付ける〕）の応答 — 条件が偽なら 304 / 412・他は 200
+// root の下の file（属性 st・符号化 enc・coded = 符号化を選んだ応答〔Vary を付ける〕）の応答 — 条件が偽なら 304 / 412・他は 200
 func staticOf(r Request, root string, file string, st io.FileInfo, ct string, enc string, coded bool) Response {
     tag := etagOf(st, enc)
     mt := st.modTime
@@ -717,7 +717,7 @@ func staticOf(r Request, root string, file string, st io.FileInfo, ct string, en
     return Response{status: OK, contentType: ct, length: n, stream: (emit) => sendUnder(root, file, n, mt, emit), validators: vs}
 }
 
-// statUnder は root の下の rel を開いて属性を見て閉じる（通常のファイルでなければ io.Other — EISDIR）
+// root の下の rel を開いて属性を見て閉じる（通常のファイルでなければ io.Other — EISDIR）
 @errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired)
 func statUnder(root string, rel string) (io.FileInfo, error?) {
     d := io.OpenRoot(root)?
@@ -739,7 +739,7 @@ func statUnder(root string, rel string) (io.FileInfo, error?) {
     return st, nil
 }
 
-// sendUnder は root の下の rel の先頭 n バイトを切片ずつ emit へ渡す（開き直した実体の大きさか更新時刻が handler で見た n / mt と違えば
+// root の下の rel の先頭 n バイトを切片ずつ emit へ渡す（開き直した実体の大きさか更新時刻が handler で見た n / mt と違えば
 // 誤り〔ESTALE〕— ServeConn が接続を閉じる。読めた分が n より短くても誤り）
 func sendUnder(root string, rel string, n int, mt int, emit func(b []byte) error?) error? {
     d := io.OpenRoot(root)?
@@ -766,13 +766,13 @@ func sendUnder(root string, rel string, n int, mt int, emit func(b []byte) error
     return nil
 }
 
-// etagOf は属性 st の実体（符号化 enc の変種）の弱い ETag — 変種ごとに印を変える（同じ ETag の 2 つのバイト列は中継のキャッシュの毒）
+// 属性 st の実体（符号化 enc の変種）の弱い ETag — 変種ごとに印を変える（同じ ETag の 2 つのバイト列は中継のキャッシュの毒）
 func etagOf(st io.FileInfo, enc string) string {
     sfx := if enc == "br" { "-br" } else if enc == "gzip" { "-gz" } else { "" }
     return "W/\"${hexOf(st.modTime)}-${hexOf(st.size)}${sfx}\""
 }
 
-// hexOf は n の 16 進（小文字・負なら先頭に '-'）
+// n の 16 進（小文字・負なら先頭に '-'）
 func hexOf(n int) string {
     if n == 0 {
         return "0"
@@ -796,7 +796,7 @@ func hexOf(n int) string {
     return string(freeze(out)) catch ""
 }
 
-// condOf は要求 r の前提条件（RFC 9110 13.2.2 の順）を ETag tag・更新時刻 mt（ns — 0 以下は「無い」）の表現に対して評価する: 0 = 続ける・412・304。
+// 要求 r の前提条件（RFC 9110 13.2.2 の順）を ETag tag・更新時刻 mt（ns — 0 以下は「無い」）の表現に対して評価する: 0 = 続ける・412・304。
 // If-Match（強い比較）→ 無ければ If-Unmodified-Since（≤）→ If-None-Match（弱い比較）→ 無ければ If-Modified-Since（ちょうど等しい — 13.1.3 の exact）。
 // 日付が読めない・If-Modified-Since / If-Unmodified-Since が 2 行以上あるものは無視する（13.1.3 / 13.1.4）。If-Range は Range を持たないので無視（13.1.5）
 func condOf(r Request, tag string, mt int) int {
@@ -854,7 +854,7 @@ func condOf(r Request, tag string, mt int) int {
     return 0
 }
 
-// tagIn は b[s:e)（If-Match / If-None-Match の値 — `*` か entity-tag のコンマ区切り）のどれかが tag に一致するか（weak = 弱い比較〔W/ を見ない〕・
+// b[s:e)（If-Match / If-None-Match の値 — `*` か entity-tag のコンマ区切り）のどれかが tag に一致するか（weak = 弱い比較〔W/ を見ない〕・
 // でなければ強い比較〔両方 W/ でない〕）。`*` は一致（表現がある — 開けたファイルにだけ評価する）。形の崩れた所から先は見ない
 func tagIn(b []byte, s int, e int, tag []byte, weak bool) bool {
     tw := len(tag) > 2 && tag[0] == 'W' && tag[1] == '/'
@@ -897,7 +897,7 @@ func tagIn(b []byte, s int, e int, tag []byte, weak bool) bool {
     return false
 }
 
-// httpDate はエポックからの秒 sec（0 以上）の IMF-fixdate（`Sun, 06 Nov 1994 08:49:37 GMT` — RFC 9110 5.6.7）
+// エポックからの秒 sec（0 以上）の IMF-fixdate（`Sun, 06 Nov 1994 08:49:37 GMT` — RFC 9110 5.6.7）
 func httpDate(sec int) string {
     days := sec / 86400
     t := sec % 86400
@@ -907,7 +907,7 @@ func httpDate(sec int) string {
     return "${wd}, ${pad(d, 2)} ${mn} ${pad(y, 4)} ${pad(t / 3600, 2)}:${pad(t / 60 % 60, 2)}:${pad(t % 60, 2)} GMT"
 }
 
-// pad は n（0 以上）の 10 進を w 桁に 0 で詰めたもの
+// n（0 以上）の 10 進を w 桁に 0 で詰めたもの
 func pad(n int, w int) string {
     mut s := "${n}"
     mut k := len(bytes(s))
@@ -922,7 +922,7 @@ func monthNames() []string {
     return []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
 }
 
-// civilOf はエポックからの日数 z の（年, 月 1〜12, 日 1〜31）— 先発グレゴリオ暦（H. Hinnant の civil_from_days）
+// エポックからの日数 z の（年, 月 1〜12, 日 1〜31）— 先発グレゴリオ暦（H. Hinnant の civil_from_days）
 func civilOf(z int) (int, int, int) {
     zz := z + 719468
     era := (if zz >= 0 { zz } else { zz - 146096 }) / 146097
@@ -935,7 +935,7 @@ func civilOf(z int) (int, int, int) {
     return yoe + era * 400 + (if m <= 2 { 1 } else { 0 }), m, d
 }
 
-// daysOf は（年, 月 1〜12, 日）のエポックからの日数（civilOf の逆 — days_from_civil）
+// （年, 月 1〜12, 日）のエポックからの日数（civilOf の逆 — days_from_civil）
 func daysOf(y int, m int, d int) int {
     yy := y - (if m <= 2 { 1 } else { 0 })
     era := (if yy >= 0 { yy } else { yy - 399 }) / 400
@@ -945,7 +945,7 @@ func daysOf(y int, m int, d int) int {
     return era * 146097 + doe - 719468
 }
 
-// parseDate は b[s:e)（前後の空白は除く）の HTTP-date のエポックからの秒（RFC 9110 5.6.7 の 3 形 — IMF-fixdate・RFC 850・asctime。大小は区別する・
+// b[s:e)（前後の空白は除く）の HTTP-date のエポックからの秒（RFC 9110 5.6.7 の 3 形 — IMF-fixdate・RFC 850・asctime。大小は区別する・
 // 曜日の名前は検査するが日付との一致は見ない・RFC 850 の 2 桁の年は 69〜99 を 19xx・00〜68 を 20xx と読む〔時計を見ない固定の読み〕）。読めなければ (0, false)
 func parseDate(b []byte, s0 int, e0 int) (int, bool) {
     s := skipOWS(b, s0, e0)
@@ -974,7 +974,7 @@ func parseDate(b []byte, s0 int, e0 int) (int, bool) {
     return dateOf(if yy < 0 { -1 } else if yy < 69 { 2000 + yy } else { 1900 + yy }, monthOf(b, c + 5), digits(b, c + 2, c + 4), b, c + 12)
 }
 
-// dateOf は年月日（負 = 読めなかった）と b[t:t+8)（`hh:mm:ss`）のエポックからの秒（日が月の日数を越える・時刻の範囲の外なら (0, false) — 秒は 60〔閏秒〕まで）
+// 年月日（負 = 読めなかった）と b[t:t+8)（`hh:mm:ss`）のエポックからの秒（日が月の日数を越える・時刻の範囲の外なら (0, false) — 秒は 60〔閏秒〕まで）
 func dateOf(y int, m int, d int, b []byte, t int) (int, bool) {
     if b[t + 2] != ':' || b[t + 5] != ':' {
         return 0, false
@@ -993,7 +993,7 @@ func dateOf(y int, m int, d int, b []byte, t int) (int, bool) {
     return daysOf(y, m, d) * 86400 + hh * 3600 + mi * 60 + ss, true
 }
 
-// monthOf は b[s:s+3) の月の名前の番号（1〜12 — でなければ 0）
+// b[s:s+3) の月の名前の番号（1〜12 — でなければ 0）
 func monthOf(b []byte, s int) int {
     mut i := 0
     for n <- monthNames() {
@@ -1005,7 +1005,7 @@ func monthOf(b []byte, s int) int {
     return 0
 }
 
-// isDay は b[s:e) が曜日の名前か（long = RFC 850 の長い名前 `Sunday`・でなければ 3 字の `Sun`）
+// b[s:e) が曜日の名前か（long = RFC 850 の長い名前 `Sunday`・でなければ 3 字の `Sun`）
 func isDay(b []byte, s int, e int, long bool) bool {
     ns := if long {
         []string{"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"}
@@ -1020,7 +1020,7 @@ func isDay(b []byte, s int, e int, long bool) bool {
     return false
 }
 
-// staticCode は開きの誤り e の応答の status（無い・根の外・権限なし・通常のファイルでない・名前の形〔NUL・長すぎ・symlink の段数〕= 404・他 = 500）
+// 開きの誤り e の応答の status（無い・根の外・権限なし・通常のファイルでない・名前の形〔NUL・長すぎ・symlink の段数〕= 404・他 = 500）
 func staticCode(e error) StatusCode {
     return switch e {
     case io.NotFound{}: NotFound
@@ -1030,7 +1030,7 @@ func staticCode(e error) StatusCode {
     }
 }
 
-// mimeOf は名前の拡張子（最後の '.' の後・大小無視）の Content-Type（表に無ければ application/octet-stream）
+// 名前の拡張子（最後の '.' の後・大小無視）の Content-Type（表に無ければ application/octet-stream）
 func mimeOf(name string) string {
     b := bytes(name)
     mut i := len(b) - 1
@@ -1095,7 +1095,7 @@ func Param(r Request, key string) string? {
     return nil
 }
 
-// segEnd は b の i からのセグメントの終わり（次の "/" か末尾）
+// b の i からのセグメントの終わり（次の "/" か末尾）
 func segEnd(b []byte, i int) int {
     mut k := i
     while k < len(b) && b[k] != '/' {
@@ -1104,7 +1104,7 @@ func segEnd(b []byte, i int) int {
     return k
 }
 
-// isSeg は b[s:e) が name とバイト一致するか
+// b[s:e) が name とバイト一致するか
 func isSeg(b []byte, s int, e int, name []byte) bool {
     if e - s != len(name) {
         return false
@@ -1119,12 +1119,12 @@ func isSeg(b []byte, s int, e int, name []byte) bool {
     return true
 }
 
-// segKind はパターン p の i からのセグメントの種類（2 = 静的・1 = :name・0 = *name）
+// パターン p の i からのセグメントの種類（2 = 静的・1 = :name・0 = *name）
 func segKind(p []byte, i int) int {
     return if i < len(p) && p[i] == '*' { 0 } else if i < len(p) && p[i] == ':' { 1 } else { 2 }
 }
 
-// matchKind はパターン p が path s に一致するか（0 = 不一致・1 = 静的のセグメントだけで一致・2 = :name / *name を含んで一致）。
+// パターン p が path s に一致するか（0 = 不一致・1 = 静的のセグメントだけで一致・2 = :name / *name を含んで一致）。
 // 1 バイトずつ並べて歩く（静的な行は最初の違うバイトで抜ける — 表を走査する費用の大半はここ）
 func matchKind(p []byte, s []byte) int {
     np := len(p)
@@ -1165,7 +1165,7 @@ func matchKind(p []byte, s []byte) int {
     return if j == ns { kind } else { 0 }
 }
 
-// moreSpecific はパターン a が b より具体的か（同じ path に一致した 2 つ — 最初に種類の違うセグメントで 静的 > :name > *name。先に尽きた方は
+// パターン a が b より具体的か（同じ path に一致した 2 つ — 最初に種類の違うセグメントで 静的 > :name > *name。先に尽きた方は
 // 相手の残りが *name なので具体的。同じなら false）
 func moreSpecific(a []byte, b []byte) bool {
     mut i := 1
@@ -1262,7 +1262,7 @@ func ServeWith(recv func(k func([]byte)) error?, send func(b []byte) error?, rou
     return nil
 }
 
-// gzLevel は Gzip の level（0 = 既定の 6・1〜9 の外は panic）
+// Gzip の level（0 = 既定の 6・1〜9 の外は panic）
 func gzLevel(g Gzip) int {
     if g.level < 0 || g.level > 9 {
         return panic(BadLevel{level: g.level})
@@ -1270,7 +1270,7 @@ func gzLevel(g Gzip) int {
     return if g.level == 0 { 6 } else { g.level }
 }
 
-// joined は pend の先頭 pn バイトと b を繋いだ写し
+// pend の先頭 pn バイトと b を繋いだ写し
 func joined(pend mut []byte, pn int, b []byte) []byte {
     mut out := mut []byte{}
     mut i := 0
@@ -1284,7 +1284,7 @@ func joined(pend mut []byte, pn int, b []byte) []byte {
     return freeze(out)
 }
 
-// linger は閉じる前に相手の残りを読み捨てる（lingering close — 未読を残して閉じると RST になり、送った応答が相手に届かないことがある。
+// 閉じる前に相手の残りを読み捨てる（lingering close — 未読を残して閉じると RST になり、送った応答が相手に届かないことがある。
 // 誤りの応答の後・close の要求の後ろに続きがあったとき。上限 = 相手の FIN か 64 KiB か 2 秒）
 func linger(recv func(k func([]byte)) error?) {
     _, _ = task.Run((s task.Scope) => {
@@ -1304,13 +1304,13 @@ func drain(recv func(k func([]byte)) error?) error? {
     return nil
 }
 
-// serveBuf は b の頭から揃った要求を順に処理する → (使ったバイト数, 0 = 続ける・1 = 閉じる・2 = 残りを読み捨ててから閉じる, 応答を繋いだ列, 送りの誤り)。
+// b の頭から揃った要求を順に処理する → (使ったバイト数, 0 = 続ける・1 = 閉じる・2 = 残りを読み捨ててから閉じる, 応答を繋いだ列, 送りの誤り)。
 // 未完の要求の手前で止まる。stream の応答はここで前の応答と頭を c へ送ってから stream を呼び、残りの要求へ進む（パイプラインの順序を保つ）。
 // stream の失敗（送りの失敗・ファイルの読みの失敗）は頭を送った後なので応答を直せない — 誤りを返して閉じる（相手は Content-Length に足りない本文で切れを知る）。
-// stream の誤りのラベルは Stream の @errors（emit の失敗 + io の 5 つ — effect の波 段 1・language.md 12 節の面「高階」）。
-// stream を呼ぶ道を ServeConn の側の反復に置くと、stream の無い要求の道が 1 件 ≈ 200 命令・cycles +10% を払った（report-765 — 置き場はここ）。
-// 応答の列は 1 本の mut の列へ一括の写しで積む（for x <- S { out = append(out, x) } — lower の一括化。report-673:
-// 切片ごとの builder〔種の 24 本 + chunk の成長〕と片ごとの PushString で応答 1 件 ≈ 4.5K 命令だった）
+// stream の誤りのラベルは Stream の @errors（emit の失敗 + io の 5 つ — language.md 12 節の面「高階」）。
+// stream を呼ぶ道を ServeConn の側の反復に置くと、stream の無い要求の道が 1 件 ≈ 200 命令・cycles +10% を払う（だからここに置く）。
+// 応答の列は 1 本の mut の列へ一括の写しで積む（for x <- S { out = append(out, x) } — lower の一括化。
+// 切片ごとの builder〔種の 24 本 + chunk の成長〕と片ごとの PushString で積む形は応答 1 件 ≈ 4.5K 命令と遅い）
 func serveBuf(send func(b []byte) error?, b []byte, route func(Request) Response, mh int, mb int, gz int, wk task.Local?) (int, int, []byte, error?) {
     mut out := mut []byte{}
     mut at := 0
@@ -1337,7 +1337,7 @@ func serveBuf(send func(b []byte) error?, b []byte, route func(Request) Response
             } else {
                 resp := route(req)
                 // 長さ不定の stream（圧縮する stream も — 圧縮後の長さは不定）を HTTP/1.0 へ送るときは閉じで区切る（keep-alive を外す — 頭は Connection: close）。
-                // Accept-Encoding は圧縮しうる応答のときだけ読む（wire が ae を使うのは gzWants の条件が全部立つ道だけ — CPU 効率便 U5・report-1052）
+                // Accept-Encoding は圧縮しうる応答のときだけ読む（wire が ae を使うのは gzWants の条件が全部立つ道だけ）
                 st := resp.stream
                 ae := gz > 0 && gzWants(resp) && acceptsGzip(req)
                 zs := ae && st != nil
@@ -1345,7 +1345,7 @@ func serveBuf(send func(b []byte) error?, b []byte, route func(Request) Response
                 ul := st != nil && (ln == nil || zs)
                 kp := f.keep && !(ul && f.v10)
                 // 頭と本文（compress: なら圧縮した本文 — 頭の Content-Length もそれに合わせる。HEAD は本文を書かない〔頭は GET と同じ〕）。
-                // 欄は関数越しに読む（関数型の仮引数の呼び出しの結果の欄の読み `resp.body` は check の脱糖が CoreFragment で断る — build は受理: F-au・report-673）
+                // 欄は関数越しに読む（関数型の仮引数の呼び出しの結果の欄の読み `resp.body` は check の脱糖が CoreFragment で断る — build は受理する）
                 h, bd := wire(resp, kp, f.v10, gz, ae, wk)
                 for x <- h {
                     out = append(out, x)
@@ -1400,7 +1400,7 @@ func serveBuf(send func(b []byte) error?, b []byte, route func(Request) Response
     return at, shut, freeze(out), nil
 }
 
-// frame は 1 件の要求の枠（位置は b の上）。揃った枠は request が要求行とヘッダを読み直さずに組めるよう、要求行の空白の位置とヘッダの位置の表も持つ
+// 1 件の要求の枠（位置は b の上）。揃った枠は request が要求行とヘッダを読み直さずに組めるよう、要求行の空白の位置とヘッダの位置の表も持つ
 type frame struct {
     // st: 0 = 足りない・1 = 揃った・他 = 誤りの status
     st int
@@ -1422,7 +1422,7 @@ func fr(st int, s int) frame {
     return frame{st: st, s: s, he: 0, end: 0, chunked: false, keep: false, v10: false, sp1: 0, sp2: 0, hs: []int{}}
 }
 
-// lineEnd は b[i:] の最初の LF の位置（無ければ -1）
+// b[i:] の最初の LF の位置（無ければ -1）
 func lineEnd(b []byte, i int) int {
     // 8 バイトずつ: 語 x = 8 バイト ^ LF の並び — LF の位置のバイトが 0。(x − 0x01…) & ^x & 0x80… の最下位の立ったバイトが最初の 0 のバイト
     // （上の桁への借りの偽の印は最初の 0 より上にしか出ない）
@@ -1447,12 +1447,12 @@ func lineEnd(b []byte, i int) int {
     return if j < n { j } else { -1 }
 }
 
-// contentEnd は LF の位置 le の行の中身の終わり（直前の CR を除く）
+// LF の位置 le の行の中身の終わり（直前の CR を除く）
 func contentEnd(b []byte, ls int, le int) int {
     return if le > ls && b[le - 1] == '\r' { le - 1 } else { le }
 }
 
-// frameAt は b の at からの要求の枠を読む（頭の形・Content-Length / Transfer-Encoding / Connection・本文の長さと上限）。頭は 1 回だけなめる:
+// b の at からの要求の枠を読む（頭の形・Content-Length / Transfer-Encoding / Connection・本文の長さと上限）。頭は 1 回だけなめる:
 // 行ごとに LF を探し（lineEnd — 8 バイトずつ）、空行で頭の終わり。要求行・ヘッダの誤りは最初の 1 つを覚えて空行まで進む
 // （頭の終わりが無ければ誤りより「足りない / 431」が先 — 誤りの順は要求行 → ヘッダの並び）。ヘッダの位置は request のために表へ
 func frameAt(b []byte, at int, mh int, mb int) frame {
@@ -1594,7 +1594,7 @@ func frameAt(b []byte, at int, mh int, mb int) frame {
     return frame{st: 1, s: s, he: he, end: end, chunked: chunked, keep: keep, v10: v10, sp1: sp1, sp2: sp2, hs: freeze(hs)}
 }
 
-// chunkedEnd は he からの chunked の本文の終わり（trailer の空行の後）。-1 = 足りない・-400 / -413 = 誤り
+// he からの chunked の本文の終わり（trailer の空行の後）。-1 = 足りない・-400 / -413 = 誤り
 func chunkedEnd(b []byte, he int, mb int) int {
     mut p := he
     mut total := 0
@@ -1662,7 +1662,7 @@ func chunkedEnd(b []byte, he int, mb int) int {
     return -1
 }
 
-// request は揃った枠 f の Request（頭が UTF-8 でなければ誤り）
+// 揃った枠 f の Request（頭が UTF-8 でなければ誤り）
 func request(b []byte, f frame) (Request, error?) {
     v := utf8.Check(b[f.s:f.he])?
     hb := utf8.Bytes(v)
@@ -1677,7 +1677,7 @@ func request(b []byte, f frame) (Request, error?) {
     return Request{method: method, path: path, query: query, head: v, headers: f.hs, body: body, pattern: ""}, nil
 }
 
-// unchunk は he からの（検査済みの）chunked の本文を繋いだ写し
+// he からの（検査済みの）chunked の本文を繋いだ写し
 func unchunk(b []byte, he int) []byte {
     mut out := mut []byte{}
     mut p := he
@@ -1704,13 +1704,13 @@ func unchunk(b []byte, he int) []byte {
     return freeze(out)
 }
 
-// gzWants は応答 r が wire の圧縮の道に入りうるか（符号化済みでなく・本文〔stream なら長さ既知の length — 長さ不定は常に〕が gzMin 以上・Content-Type が圧縮向き
+// 応答 r が wire の圧縮の道に入りうるか（符号化済みでなく・本文〔stream なら長さ既知の length — 長さ不定は常に〕が gzMin 以上・Content-Type が圧縮向き
 // — wire の条件と同じ）
 func gzWants(r Response) bool {
     return r.coded == nil && gzSize(r) && compressible(r.contentType)
 }
 
-// gzSize は r の大きさが圧縮の下限を越えるか（stream は length — 長さ不定は常に越える扱い）
+// r の大きさが圧縮の下限を越えるか（stream は length — 長さ不定は常に越える扱い）
 func gzSize(r Response) bool {
     if r.stream != nil {
         ln := r.length
@@ -1719,7 +1719,7 @@ func gzSize(r Response) bool {
     return len(r.body) >= gzMin
 }
 
-// wire は応答 r の頭と本文（gz > 0 = compress: の level・ae = 要求が gzip を受ける・wk = work: の置き場）。圧縮しうる応答（gzip が有効・Content-Type が圧縮向き・
+// 応答 r の頭と本文（gz > 0 = compress: の level・ae = 要求が gzip を受ける・wk = work: の置き場）。圧縮しうる応答（gzip が有効・Content-Type が圧縮向き・
 // 本文が gzMin 以上）には Vary: Accept-Encoding を付け、ae なら本文を gzip にして Content-Encoding: gzip を付ける
 func wire(r Response, keep bool, v10 bool, gz int, ae bool, wk task.Local?) ([]byte, []byte) {
     if r.coded != nil {
@@ -1747,7 +1747,7 @@ func wire(r Response, keep bool, v10 bool, gz int, ae bool, wk task.Local?) ([]b
     return respHead(Response{status: r.status, contentType: r.contentType, body: z, headers: r.headers, cache: r.cache, validators: r.validators}, keep, v10, 2), z
 }
 
-// zState は圧縮する stream の状態（符号器・非圧縮の合計・長さ既知なら length・超えたか）— serveBuf の借りの閉包が mut で捕捉する 1 つの束縛
+// 圧縮する stream の状態（符号器・非圧縮の合計・長さ既知なら length・超えたか）— serveBuf の借りの閉包が mut で捕捉する 1 つの束縛
 type zState struct {
     s deflate.Stream
     n int
@@ -1755,7 +1755,7 @@ type zState struct {
     over bool
 }
 
-// gzFeed は emit 1 回分の p を圧縮して out へ渡す（空の p は何もしない — sync flush の空打ちを送らない）。合計が lim を超えたら以後は送らない
+// emit 1 回分の p を圧縮して out へ渡す（空の p は何もしない — sync flush の空打ちを送らない）。合計が lim を超えたら以後は送らない
 func gzFeed(z mut zState, p []byte, out func(q []byte) error?) error? {
     if len(p) == 0 || z.over {
         return nil
@@ -1771,14 +1771,14 @@ func gzFeed(z mut zState, p []byte, out func(q []byte) error?) error? {
     return out(deflate.Feed(mut z.s, p))
 }
 
-// sCount は長さ既知の stream の送りの合計（lim = length・超えたか）
+// 長さ既知の stream の送りの合計（lim = length・超えたか）
 type sCount struct {
     n int
     lim int
     over bool
 }
 
-// sendCounted は p を数えて out へ渡す（合計が lim を超える emit は送らず、以後も送らない）
+// p を数えて out へ渡す（合計が lim を超える emit は送らず、以後も送らない）
 func sendCounted(c mut sCount, p []byte, out func(q []byte) error?) error? {
     if c.over {
         return nil
@@ -1791,7 +1791,7 @@ func sendCounted(c mut sCount, p []byte, out func(q []byte) error?) error? {
     return out(p)
 }
 
-// chunkEnd は圧縮の最後のバイト列 tl（空でない）の chunk と終端の chunk を繋いだ列（送り 1 回）
+// 圧縮の最後のバイト列 tl（空でない）の chunk と終端の chunk を繋いだ列（送り 1 回）
 func chunkEnd(tl []byte) []byte {
     mut c := mut []byte{}
     for x <- chunkOf(tl) {
@@ -1803,7 +1803,7 @@ func chunkEnd(tl []byte) []byte {
     return freeze(c)
 }
 
-// chunkOf は p（空でない）の chunk 1 つ（長さの 16 進・CRLF・p・CRLF — RFC 9112 7.1）。送りは 1 回（空の p は呼び手が送らない — 長さ 0 の chunk は終端）
+// p（空でない）の chunk 1 つ（長さの 16 進・CRLF・p・CRLF — RFC 9112 7.1）。送りは 1 回（空の p は呼び手が送らない — 長さ 0 の chunk は終端）
 func chunkOf(p []byte) []byte {
     mut c := mut []byte{}
     n := len(p)
@@ -1826,7 +1826,7 @@ func chunkOf(p []byte) []byte {
     return freeze(c)
 }
 
-// compressible は Content-Type が圧縮向きか（text/* と application/json — 媒体の型の大小は無視・; の後の引数は見ない）。text/event-stream は外す
+// Content-Type が圧縮向きか（text/* と application/json — 媒体の型の大小は無視・; の後の引数は見ない）。text/event-stream は外す
 // （SSE — 長命で同時接続が多い流れに応答ごとの符号器の作業域を積まない・中継の溜めで遅延が壊れる・秘密を含む流れの圧縮の長さの漏れ — language.md 28 節の「SSE」）
 func compressible(ct string) bool {
     b := bytes(ct)
@@ -1837,14 +1837,14 @@ func compressible(ct string) bool {
     return (e > 5 && eqFold(b, 0, 5, bytes("text/")) && !eqFold(b, 0, e, bytes("text/event-stream"))) || eqFold(b, 0, e, bytes("application/json"))
 }
 
-// acceptsGzip は要求の Accept-Encoding（複数の行も）が gzip を受けるか（RFC 9110 12.5.3）: 項目をコンマで切り、名前（大小無視）が gzip か x-gzip の項目が
+// 要求の Accept-Encoding（複数の行も）が gzip を受けるか（RFC 9110 12.5.3）: 項目をコンマで切り、名前（大小無視）が gzip か x-gzip の項目が
 // あればその q で決め、無ければ * の項目の q で決める。q は 0（0・0.0・0.00・0.000）だけが拒否・読めない q は受ける（go-stdlib の acceptsGzip と同じ寛容さ）。
 // 同じ名前の項目が 2 つ以上あれば、どれか 1 つが受ければ受ける
 func acceptsGzip(r Request) bool {
     return accepts(r, "gzip", "x-gzip")
 }
 
-// accepts は要求の Accept-Encoding が符号化 a（別名 b — 無ければ a を 2 回）を受けるか（acceptsGzip と同じ読み — 名前の項目が無ければ * の q）
+// 要求の Accept-Encoding が符号化 a（別名 b — 無ければ a を 2 回）を受けるか（acceptsGzip と同じ読み — 名前の項目が無ければ * の q）
 func accepts(r Request, a string, b string) bool {
     hb := utf8.Bytes(r.head)
     an := bytes("accept-encoding")
@@ -1880,7 +1880,7 @@ func accepts(r Request, a string, b string) bool {
     return g == 1 || (g < 0 && st == 1)
 }
 
-// qOf は項目の引数 b[s:e)（`;q=0.5` の形の列 — s は最初の ';' か e）の q が 0 なら 0・他は 1（q が無い・読めないも 1）
+// 項目の引数 b[s:e)（`;q=0.5` の形の列 — s は最初の ';' か e）の q が 0 なら 0・他は 1（q が無い・読めないも 1）
 func qOf(b []byte, s int, e int) int {
     mut p := s
     while p < e {
@@ -1900,7 +1900,7 @@ func qOf(b []byte, s int, e int) int {
     return 1
 }
 
-// zeroQ は b[s:e) が q の 0（"0"・"0."・"0.0"〜"0.000"）か
+// b[s:e) が q の 0（"0"・"0."・"0.0"〜"0.000"）か
 func zeroQ(b []byte, s int, e int) bool {
     if e <= s || b[s] != '0' || e - s > 5 {
         return false
@@ -1921,11 +1921,11 @@ func zeroQ(b []byte, s int, e int) bool {
     return true
 }
 
-// respHead は応答 r の頭（状態行・Content-Type・enc が 2 なら Content-Encoding: gzip・3 なら r.coded の Content-Encoding〔空なら書かない〕・
+// 応答 r の頭（状態行・Content-Type・enc が 2 なら Content-Encoding: gzip・3 なら r.coded の Content-Encoding〔空なら書かない〕・
 // 1〜3 なら Vary: Accept-Encoding・Content-Length〔1xx・204・304 は書かない〕・
 // 閉じるなら Connection: close・HTTP/1.0 の keep-alive は明示・空行）
 func respHead(r Response, keep bool, v10 bool, enc int) []byte {
-    // 早道（CPU 効率便 U4 — report-1051）: 頭の飾りの無い 200 の本文の応答（validators・cache・headers・enc・stream なし）は定型の列を
+    // 早道: 頭の飾りの無い 200 の本文の応答（validators・cache・headers・enc・stream なし）は定型の列を
     // 3 つの塊で書く（状態行 + Content-Type の名前・既定の Cache-Control + Content-Length の名前 — 下の一般の道と同じバイト列）
     if r.status == OK && r.validators == nil && r.cache == nil && r.headers == nil && enc == 0 && r.stream == nil && r.contentType != "" {
         mut g := mut []byte{}
@@ -2065,7 +2065,7 @@ func respHead(r Response, keep bool, v10 bool, enc int) []byte {
     return freeze(h)
 }
 
-// checkField は任意ヘッダ f が書けるか（名前は tchar の 1 文字以上・値に CR / LF / NUL が無い・std/http が書く名前でも保存の方針と検証子の名前でもない
+// 任意ヘッダ f が書けるか（名前は tchar の 1 文字以上・値に CR / LF / NUL が無い・std/http が書く名前でも保存の方針と検証子の名前でもない
 // — でなければ panic(BadHeader)。保存の方針は型の欄 cache だけで書く: 共有キャッシュへの宣言を文字列に書けると analyzer が方針を値として見られない）
 func checkField(f Field) {
     nb := bytes(f.name)
@@ -2083,7 +2083,7 @@ func checkField(f Field) {
     }
 }
 
-// statusLine は status の状態行（RFC 9110 15 節の理由句の綴り — 表は StatusCode の const の全部・知らない番号は理由句を空に）
+// status の状態行（RFC 9110 15 節の理由句の綴り — 表は StatusCode の const の全部・知らない番号は理由句を空に）
 @exhaustive
 func statusLine(code StatusCode) string {
     return switch code {
@@ -2109,7 +2109,7 @@ func statusLine(code StatusCode) string {
     }
 }
 
-// indexIn は b[s:e) の c の最初の位置（無ければ -1）
+// b[s:e) の c の最初の位置（無ければ -1）
 func indexIn(b []byte, s int, e int, c byte) int {
     mut i := s
     while i < e {
@@ -2121,7 +2121,7 @@ func indexIn(b []byte, s int, e int, c byte) int {
     return -1
 }
 
-// isLit は b[s:e) が lit とバイト一致するか
+// b[s:e) が lit とバイト一致するか
 func isLit(b []byte, s int, e int, lit string) bool {
     lb := bytes(lit)
     if e - s != len(lb) {
@@ -2137,12 +2137,12 @@ func isLit(b []byte, s int, e int, lit string) bool {
     return true
 }
 
-// lower は ASCII の大文字を小文字に
+// ASCII の大文字を小文字に
 func lower(c byte) byte {
     return if c >= 'A' && c <= 'Z' { byte(int(c) + 32) } else { c }
 }
 
-// eqFold は b[s:e) が name と ASCII の大文字小文字を無視して一致するか
+// b[s:e) が name と ASCII の大文字小文字を無視して一致するか
 func eqFold(b []byte, s int, e int, name []byte) bool {
     if e - s != len(name) {
         return false
@@ -2157,7 +2157,7 @@ func eqFold(b []byte, s int, e int, name []byte) bool {
     return true
 }
 
-// hasToken は b[s:e) のカンマ区切りの項目に tok（大文字小文字を無視）があるか
+// b[s:e) のカンマ区切りの項目に tok（大文字小文字を無視）があるか
 func hasToken(b []byte, s int, e int, tok []byte) bool {
     mut i := s
     while i < e {
@@ -2174,7 +2174,7 @@ func hasToken(b []byte, s int, e int, tok []byte) bool {
     return false
 }
 
-// tokenRun は b[s:e) がヘッダ名の字（tchar — 空白・制御文字・区切りを含まない）だけか
+// b[s:e) がヘッダ名の字（tchar — 空白・制御文字・区切りを含まない）だけか
 func tokenRun(b []byte, s int, e int) bool {
     mut i := s
     while i < e {
@@ -2186,8 +2186,8 @@ func tokenRun(b []byte, s int, e int) bool {
     return true
 }
 
-// tchar は c がヘッダ名の字か（tokenRun の 1 字分 — RFC 9110 5.6.2 の tchar。字の集合を 128 ビットの表〔0〜63 = tcLo・64〜127 = tcHi〕で引く —
-// 比べの鎖は展開されずに 1 字 ≈ 80 命令だった・report-1050）
+// c がヘッダ名の字か（tokenRun の 1 字分 — RFC 9110 5.6.2 の tchar。字の集合を 128 ビットの表〔0〜63 = tcLo・64〜127 = tcHi〕で引く —
+// 比べの鎖を並べる書き方は展開されず 1 字 ≈ 80 命令と遅い）
 func tchar(c byte) bool {
     x := int(c)
     return if x < 64 { (tcLo >> x) & 1 != 0 } else if x < 128 { (tcHi >> (x - 64)) & 1 != 0 } else { false }
@@ -2196,7 +2196,7 @@ func tchar(c byte) bool {
 const tcLo = 288068722172624896
 const tcHi = 6341068274398134270
 
-// skipOWS は b[s:e) の先頭の空白（SP / HT）の後の位置
+// b[s:e) の先頭の空白（SP / HT）の後の位置
 func skipOWS(b []byte, s int, e int) int {
     mut i := s
     while i < e && (b[i] == ' ' || b[i] == '\t') {
@@ -2205,7 +2205,7 @@ func skipOWS(b []byte, s int, e int) int {
     return i
 }
 
-// trimOWS は b[s:e) の末尾の空白を除いた終わり
+// b[s:e) の末尾の空白を除いた終わり
 func trimOWS(b []byte, s int, e int) int {
     mut i := e
     while i > s && (b[i - 1] == ' ' || b[i - 1] == '\t') {
@@ -2214,7 +2214,7 @@ func trimOWS(b []byte, s int, e int) int {
     return i
 }
 
-// digits は b[s:e) の 10 進の値（空・数字以外・15 桁を超える = -1）
+// b[s:e) の 10 進の値（空・数字以外・15 桁を超える = -1）
 func digits(b []byte, s int, e int) int {
     if e <= s || e - s > 15 {
         return -1
@@ -2231,7 +2231,7 @@ func digits(b []byte, s int, e int) int {
     return v
 }
 
-// hexVal は 16 進の字の値（でなければ -1）
+// 16 進の字の値（でなければ -1）
 func hexVal(c byte) int {
     return if c >= '0' && c <= '9' {
         int(c) - 48

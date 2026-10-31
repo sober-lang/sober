@@ -1,0 +1,5 @@
+quick: falsified in trials 183001..184000 (seed 0)
+  Bytes = 534f4252 (4 bytes)
+quick: property returned false
+panic: quick.Falsified{} at std/quick
+panic: quick.Falsified{} at std/quick

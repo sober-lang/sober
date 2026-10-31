@@ -1,2 +1,2 @@
-panic: ChildDied{cause: index out of range} at std/task/task.sober:172:21
+panic: ChildDied{cause: index out of range} at std/task/task.sober:174:21
   cause at task_gather_err_die.sober:13:14

@@ -1,0 +1,14 @@
+ok   examples/guide/kv2.TestParse
+ok   examples/guide/kv2.TestFormat
+ok   examples/guide/kv2.TestRoundTrip
+cover: examples/guide/kv2 69.2% of 26 arms (fn 4/6)
+  examples/guide/kv2/kv.sober:26:9   then   never taken
+  examples/guide/kv2/kv.sober:47:32  catch  never taken
+  examples/guide/kv2/kv.sober:60:32  catch  never taken
+  examples/guide/kv2/kv.sober:75:6   fn     never called  (CountAll)
+  examples/guide/kv2/kv.sober:77:12  then   never taken
+  examples/guide/kv2/kv.sober:77:12  else   never taken
+  examples/guide/kv2/kv.sober:80:6   fn     never called  (count)
+  examples/guide/kv2/kv.sober:81:20  catch  never taken
+3 passed, 0 failed
+(exit 0)

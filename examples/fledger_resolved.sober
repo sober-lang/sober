@@ -1,8 +1,8 @@
 package main
 
-// F 台帳の古参のうち、今の木で再現しなくなった形の回帰例（掃除枠 E 2026-10-04 の掛け直し）:
-// F-a（error? 仮引数を struct の欄に入れて返す）・F-b（error ラベルの string 欄の束縛を return）・F-c（bytes(if …)）・
-// F-i（Def の中で呼び出し結果の []byte を string(…) にして string 仮引数と比べる）
+// 以前は拒否されていた形の回帰例:
+// ① error? 仮引数を struct の欄に入れて返す ② error ラベルの string 欄の束縛を return ③ bytes(if …)
+// ④ Def の中で呼び出し結果の []byte を string(…) にして string 仮引数と比べる
 
 type Bad error {
     msg string

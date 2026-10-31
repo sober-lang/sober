@@ -1,13 +1,13 @@
 package main
 
-// 反復の region の約束（llight の本体の範囲 — report-620 の L1）の回帰例（routing の形）: 外の while の本体の先頭に内側の while があり、
+// 反復の region の約束（llight の本体の範囲）の回帰例（routing の形）: 外の while の本体の先頭に内側の while があり、
 // 外の反復の確保（split の区間の列）がその後ろにある。外の反復の enter を残さないと、毎行の列が関数の region に積もり、RSS が行数に比例する
 // （HEAD の llLoopBody は内側のループの頭の setdepth で走査を止め、後ろの確保を見落として enter を消していた）。
 // 行数は引数で変えられる（既定 2000 — scripts/iterregion.sh が 10 倍にして RSS が比例しないことを見る）
 
 import "std/os"
 
-// split は b の [s, e) を区切り c で割った区間の長さの列
+// b の [s, e) を区切り c で割った区間の長さの列
 func split(b []byte, s int, e int, c byte) []int {
     mut out := mut []int{}
     mut i := s

@@ -1,0 +1,388 @@
+package outline
+
+// `sober outline` の描き手: ソースファイルの宣言の一覧（package・import・型 / 関数 / const の署名と行の範囲）。
+// 宣言だけを読む — parse のみで load も検査もしない（注釈は書かれた @effects / @errors のまま・導出しない）。
+// 署名は .sobi と同じ印字器（printer）の綴りを 1 行に畳んだもの。前置きの注釈の行（`@effects(…)` 等）は署名の後ろへ空白区切りで回す。
+// 行の範囲は宣言の注釈の行から末尾の字句の行まで。doc は宣言の直前の `//` の行の最初の段落の 1 文目（「。」か「. 」まで — 無ければ段落全体）
+
+import "std/io"
+import "std/iter"
+import "std/json"
+import "std/strings"
+import "std/builder"
+import "lexer"
+import "parser"
+import "ast"
+import "loader"
+import "printer"
+
+// 宣言 1 つ（kind = "type" / "func" / "const" / "intrinsic"・from / to = 1 始まりの行の範囲〔両端を含む〕）
+type Decl struct {
+    kind string
+    name string
+    sig string
+    from int
+    to int
+    doc string
+}
+
+// ファイル 1 つの一覧
+type File struct {
+    path string
+    pkg string
+    imports []string
+    decls []Decl
+}
+
+// path を parse できない
+type ParseFailed error {
+    path string
+}
+
+// ファイル path（中身 src）の一覧。public なら公開の宣言（名前が大文字で始まる）だけ。.sobi は本体の無い関数を許す読み方で
+@errors(ParseFailed)
+func Of(path string, src []byte, public bool) (File, error?) {
+    ts := lexer.Lex(src)
+    t, ok := parse(path, src, ts)
+    if !ok {
+        return File{path: path, pkg: "", imports: []string{}, decls: []Decl{}}, ParseFailed{path: path}
+    }
+    fl := t.nodes[t.file]
+    mut ims := mut []string{}
+    if fl.b != 0 {
+        for k <- iter.Range(0, ast.ListLen(t, fl.b)) {
+            im := t.nodes[ast.ListAt(t, fl.b, k)]
+            if !implicit(t, im) {
+                ims = append(ims, loader.Name(t, im.b))
+            }
+        }
+    }
+    mut ds := mut []Decl{}
+    mut at := mut []int{}
+    pushDecls(mut ds, mut at, src, t, ts, fl.c, 0, public)
+    pushDecls(mut ds, mut at, src, t, ts, fl.d, 1, public)
+    pushDecls(mut ds, mut at, src, t, ts, fl.e, 2, public)
+    pushDecls(mut ds, mut at, src, t, ts, fl.f, 3, public)
+    // 出現順（挿入の並べ替え — 1 ファイルの宣言は高々数百）
+    for i <- iter.Range(1, len(ds)) {
+        mut j := i
+        while j > 0 && at[j - 1] > at[j] {
+            d := ds[j]
+            ds[j] = ds[j - 1]
+            ds[j - 1] = d
+            a := at[j]
+            at[j] = at[j - 1]
+            at[j - 1] = a
+            j -= 1
+        }
+    }
+    return File{path: path, pkg: loader.Name(t, fl.a), imports: freeze(ims), decls: freeze(ds)}, nil
+}
+
+// parser が足した暗黙の import（for → std/iter 等 — 別名が `$…` か `…#`）
+func implicit(t ast.Tree, im ast.Node) bool {
+    if im.a < 0 {
+        return false
+    }
+    a := loader.Name(t, im.a)
+    return strings.HasPrefix(a, "$") || strings.HasSuffix(a, "#")
+}
+
+func parse(path string, src []byte, ts []lexer.Token) (ast.Tree, bool) {
+    if strings.HasSuffix(path, ".sobi") {
+        return parser.ParseIface(src, ts)
+    }
+    return parser.Parse(src, ts)
+}
+
+func pushDecls(out mut []Decl, at mut []int, src []byte, t ast.Tree, ts []lexer.Token, l int, kind int, public bool) {
+    if l == 0 {
+        return
+    }
+    for j <- iter.Range(0, ast.ListLen(t, l)) {
+        n := ast.ListAt(t, l, j)
+        x := t.nodes[n]
+        name := loader.Name(t, x.a)
+        if !public || isPublic(name) {
+            // 宣言の字句の範囲 [a, b)（b の直前は宣言の終わりの `;` — 書かれていなければ改行で入った字句）
+            a, b := span(t, x, kind)
+            last := if b - 2 >= a { b - 2 } else { a }
+            sig := switch kind {
+            case 0: printer.TypeDeclText(t, n)
+            case 1: printer.FuncDeclText(t, n, true, false)
+            case 2: printer.ConstText(t, n)
+            default: printer.IntrinsicDeclText(t, n)
+            }
+            out = append(out, Decl{kind: kindName(kind), name: name, sig: fold(sig), from: lineNo(src, ts[a].start), to: lineNo(src, ts[last].end - 1),
+                doc: firstSentence(docBefore(src, ts[x.tok].start))})
+            at = append(at, a)
+        }
+    }
+}
+
+// 宣言 x の字句の範囲の節の欄（種類ごとに置き場が違う — ast の KTypeDecl / KFuncDecl / KConst / KIntrinsic）
+func span(t ast.Tree, x ast.Node, kind int) (int, int) {
+    if kind == 0 {
+        return x.d, x.e
+    }
+    if kind == 1 {
+        return t.data[x.f + 2], t.data[x.f + 3]
+    }
+    if kind == 2 {
+        return x.c, x.d
+    }
+    return x.e, x.f
+}
+
+func kindName(kind int) string {
+    return switch kind {
+    case 0: "type"
+    case 1: "func"
+    case 2: "const"
+    case _: "intrinsic"
+    }
+}
+
+func isPublic(s string) bool {
+    b := bytes(s)
+    return len(b) > 0 && int(b[0]) >= 65 && int(b[0]) <= 90
+}
+
+// 印字器の綴り（複数行のことがある）を 1 行に畳む。行頭の注釈の行は後ろへ回す。
+// 行の継ぎは `{` `(` `,` の後と `}` `)` の前が空白・他（struct の欄・union の variant の並び）は "; "
+func fold(b []byte) string {
+    lines := strings.Split(string(b) catch "?", "\n")
+    mut head := ""
+    mut annots := ""
+    mut lead := true
+    for i <- iter.Range(0, len(lines)) {
+        l := strings.TrimSpace(lines[i])
+        if l != "" {
+            if lead && strings.HasPrefix(l, "@") {
+                annots = if annots == "" { l } else { annots + " " + l }
+            } else {
+                lead = false
+                head = if head == "" { l } else { head + joint(head, l) + l }
+            }
+        }
+    }
+    return if annots == "" { head } else { head + "  " + annots }
+}
+
+func joint(prev string, next string) string {
+    open := strings.HasSuffix(prev, "{") || strings.HasSuffix(prev, "(") || strings.HasSuffix(prev, ",")
+    close := strings.HasPrefix(next, "}") || strings.HasPrefix(next, ")")
+    return if open || close { " " } else { "; " }
+}
+
+// ── ソースの行 ──
+
+func lineStart(src []byte, at int) int {
+    mut a := at
+    while a > 0 && src[a - 1] != '\n' {
+        a -= 1
+    }
+    return a
+}
+
+func skipSpace(src []byte, a int, b int) int {
+    mut i := a
+    while i < b && (src[i] == ' ' || src[i] == '\t') {
+        i += 1
+    }
+    return i
+}
+
+func lineNo(src []byte, at int) int {
+    mut n := 1
+    for i <- iter.Range(0, at) {
+        if src[i] == '\n' {
+            n += 1
+        }
+    }
+    return n
+}
+
+func isComment(src []byte, a int, b int) bool {
+    return b - a >= 2 && src[a] == '/' && src[a + 1] == '/'
+}
+
+// `//` の行 [a, b)（a は `//` の位置）の中身（`//` と直後の空白 1 つを外し、行末の空白を落とす）
+func commentText(src []byte, a int, b int) string {
+    mut s := a + 2
+    if s < b && src[s] == ' ' {
+        s += 1
+    }
+    mut e := b
+    while e > s && (src[e - 1] == ' ' || src[e - 1] == '\t' || src[e - 1] == '\r') {
+        e -= 1
+    }
+    return string(src[s:e]) catch "?"
+}
+
+// 位置 at の行の直前の `//` の行の最初の段落（注釈の行 `@…` は doc の前に限り飛ばす — doc は注釈の上に書く。
+// 段落の中の行の継ぎは ASCII どうしか「—」の後だけ空白）
+func docBefore(src []byte, at int) string {
+    mut rev := mut []string{}
+    mut ls := lineStart(src, at)
+    mut more := true
+    while more && ls > 0 {
+        pe := ls - 1
+        ps := lineStart(src, pe)
+        a := skipSpace(src, ps, pe)
+        if len(rev) == 0 && a < pe && src[a] == '@' {
+            ls = ps
+        } else if isComment(src, a, pe) {
+            rev = append(rev, commentText(src, a, pe))
+            ls = ps
+        } else {
+            more = false
+        }
+    }
+    mut out := ""
+    mut k := len(rev)
+    mut para := true
+    while k > 0 && para {
+        k -= 1
+        l := rev[k]
+        if l == "" {
+            para = out == ""
+        } else {
+            out = if out == "" { l } else { out + (if (isAsciiEnd(out) && isAsciiStart(l)) || strings.HasSuffix(out, "—") { " " } else { "" }) + l }
+        }
+    }
+    return out
+}
+
+func isAsciiEnd(s string) bool {
+    b := bytes(s)
+    return len(b) > 0 && int(b[len(b) - 1]) < 128
+}
+
+func isAsciiStart(s string) bool {
+    b := bytes(s)
+    return len(b) > 0 && int(b[0]) < 128
+}
+
+// 段落の 1 文目（最初の「。」か「. 」まで — 無ければ段落全体）
+func firstSentence(s string) string {
+    a, _, ja := strings.Cut(s, "。")
+    e, _, en := strings.Cut(s, ". ")
+    if en && (!ja || len(bytes(e)) < len(bytes(a))) {
+        return e + "."
+    }
+    return if ja { a + "。" } else { s }
+}
+
+// ── ファイルの集め ──
+
+// path の一覧の対象のファイル。path が .sober / .sobi ならそれだけ・他はディレクトリとして、その .sober を名前の順に
+// depth 段下まで（1 = そのディレクトリだけ — 浅い段が先）。`.` で始まる名前は飛ばす・noTest なら *_test.sober を飛ばす
+@errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired, strings.InvalidUtf8)
+@effects(io, nondet)
+func Files(path string, depth int, noTest bool) ([]string, error?) {
+    if strings.HasSuffix(path, ".sober") || strings.HasSuffix(path, ".sobi") {
+        return []string{path}, nil
+    }
+    mut out := mut []string{}
+    mut dirs := mut []string{strings.TrimSuffix(path, "/")}
+    mut lv := mut []int{1}
+    mut q := 0
+    while q < len(dirs) {
+        d := dirs[q]
+        es := io.ReadDir(d)?
+        for k <- iter.Range(0, len(es)) {
+            nm := es[k].Name
+            p := d + "/" + nm
+            if strings.HasPrefix(nm, ".") {
+                continue
+            }
+            isDir := switch es[k].Kind {
+            case io.Dir{}: true
+            default: false
+            }
+            if isDir {
+                if lv[q] < depth {
+                    dirs = append(dirs, p)
+                    lv = append(lv, lv[q] + 1)
+                }
+            } else if strings.HasSuffix(nm, ".sober") && !(noTest && strings.HasSuffix(nm, "_test.sober")) {
+                out = append(out, p)
+            }
+        }
+        q += 1
+    }
+    return freeze(out), nil
+}
+
+// ── 書き出し ──
+
+// 一覧の文字の形: ファイルごとに `<path>  package <名前>`・`  import "a" "b"`・宣言ごとに `  <署名>  :<from>-<to>`（1 行なら `:<from>`）
+func Text(fs []File) []byte {
+    mut o := builder.Builder[byte]{}
+    for i <- iter.Range(0, len(fs)) {
+        f := fs[i]
+        builder.PushString(mut o, "${f.path}  package ${f.pkg}\n")
+        if len(f.imports) > 0 {
+            builder.PushString(mut o, "  import")
+            for k <- iter.Range(0, len(f.imports)) {
+                builder.PushString(mut o, " \"${f.imports[k]}\"")
+            }
+            builder.PushString(mut o, "\n")
+        }
+        for k <- iter.Range(0, len(f.decls)) {
+            d := f.decls[k]
+            rg := if d.from == d.to { "${d.from}" } else { "${d.from}-${d.to}" }
+            builder.PushString(mut o, "  ${d.sig}  :${rg}\n")
+        }
+    }
+    return builder.Build(mut o)
+}
+
+// 一覧の JSON の形: ファイル 1 つ 1 オブジェクトの配列
+// `[{"file", "package", "imports": […], "decls": [{"kind", "name", "sig", "lines": [from, to], "doc"}]}]`（doc が無ければ ""）
+func Json(fs []File) []byte {
+    mut o := builder.Builder[byte]{}
+    json.Put(mut o, "[")
+    for i <- iter.Range(0, len(fs)) {
+        f := fs[i]
+        json.Put(mut o, if i == 0 { "\n{" } else { ",\n{" })
+        json.PutKey(mut o, "file", true)
+        json.PutString(mut o, f.path)
+        json.PutKey(mut o, "package", false)
+        json.PutString(mut o, f.pkg)
+        json.PutKey(mut o, "imports", false)
+        json.Put(mut o, "[")
+        for k <- iter.Range(0, len(f.imports)) {
+            if k > 0 {
+                json.Put(mut o, ",")
+            }
+            json.PutString(mut o, f.imports[k])
+        }
+        json.Put(mut o, "]")
+        json.PutKey(mut o, "decls", false)
+        json.Put(mut o, "[")
+        for k <- iter.Range(0, len(f.decls)) {
+            d := f.decls[k]
+            json.Put(mut o, if k == 0 { "\n  {" } else { ",\n  {" })
+            json.PutKey(mut o, "kind", true)
+            json.PutString(mut o, d.kind)
+            json.PutKey(mut o, "name", false)
+            json.PutString(mut o, d.name)
+            json.PutKey(mut o, "sig", false)
+            json.PutString(mut o, d.sig)
+            json.PutKey(mut o, "lines", false)
+            json.Put(mut o, "[")
+            json.PutInt(mut o, d.from)
+            json.Put(mut o, ",")
+            json.PutInt(mut o, d.to)
+            json.Put(mut o, "]")
+            json.PutKey(mut o, "doc", false)
+            json.PutString(mut o, d.doc)
+            json.Put(mut o, "}")
+        }
+        json.Put(mut o, if len(f.decls) > 0 { "\n]}" } else { "]}" })
+    }
+    json.Put(mut o, if len(fs) > 0 { "\n]\n" } else { "]\n" })
+    return builder.Build(mut o)
+}

@@ -1,8 +1,8 @@
 package loader
 
-// interface 視点のロード（check --pkg — 3'' M2・language.md 29 節「interface 視点のローダ」）: <dir>/link.txt（iface -o が書くリンク集合）の順に、
+// interface 視点のロード（check --pkg・language.md 29 節「interface 視点のローダ」）: <dir>/link.txt（iface -o が書くリンク集合）の順に、
 // package target だけソースから・他の package は <dir>/<path>.sobi から読む（parser.ParseIface — 本体の無い func 宣言・@expand）。
-// import を辿る発見ループは回さない（ロード順はリンク表が持つ — V5-5 裁定 M3）。以降の段は load と同じ（finish）
+// import を辿る発見ループは回さない（ロード順はリンク表が持つ）。以降の段は load と同じ（finish）
 
 import "ast"
 import "diag"
@@ -10,7 +10,7 @@ import "lexer"
 import "parser"
 import "std/iter"
 
-// LoadView は entry のプログラムを package target の視点で読む（main package のソースは entry — .sober ファイルか main のディレクトリ）
+// entry のプログラムを package target の視点で読む（main package のソースは entry — .sober ファイルか main のディレクトリ）
 @errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.LeadingZero, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par)
 func LoadView(entry string, target string, dir string, sm map[string]string) (Program, error?) {
     lb, lok := readPath(dir + "/link.txt")
@@ -24,21 +24,21 @@ func LoadView(entry string, target string, dir string, sm map[string]string) (Pr
     return loadView(entry, target, paths, dir, []Sobi{}, sm)
 }
 
-// Sobi は視点の外の package の .sobi（path = package のパス・src = 中身）— 小分けの check（3'' M3）がプロセス内で次の package の視点へ渡す
+// 視点の外の package の .sobi（path = package のパス・src = 中身）— 小分けの check がプロセス内で次の package の視点へ渡す
 type Sobi struct {
     path string
     src []byte
-    tree ast.Tree   // parse 済みの木（MakeSobi — 依存する側の視点ごとに parse し直さない。3'' 第 2 段 (c)）
+    tree ast.Tree   // parse 済みの木（MakeSobi — 依存する側の視点ごとに parse し直さない）
     parsed bool     // tree が使えるか（parse に失敗した値は視点の読み込みが parse し直して同じ拒否を出す）
 }
 
-// MakeSobi は package path の .sobi の中身 src を 1 度だけ parse して持つ（小分けの check の外側の region に置き、依存する全部の視点で共有する）
+// package path の .sobi の中身 src を 1 度だけ parse して持つ（小分けの check の外側の region に置き、依存する全部の視点で共有する）
 func MakeSobi(path string, src []byte) Sobi {
     t, err := parseSobi(src, 0)
     return Sobi{path, src, t, err == nil}
 }
 
-// LoadViewMem は LoadView のプロセス内版: リンク集合 paths の順に、target だけソースから・他は sobis（path で引く）から読む。
+// LoadView のプロセス内版: リンク集合 paths の順に、target だけソースから・他は sobis（path で引く）から読む。
 // 診断の位置のパスは `<path>.sobi`（ファイルは無い — 依存の .sobi の中の位置は引けない）
 @errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.LeadingZero, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par)
 func LoadViewMem(entry string, target string, paths []string, sobis []Sobi, sm map[string]string) (Program, error?) {
@@ -46,8 +46,8 @@ func LoadViewMem(entry string, target string, paths []string, sobis []Sobi, sm m
     return p, err
 }
 
-// LoadViewMemRaw は LoadViewMem に加えて、loader の写しの前の生の木（ファイルごと — target のファイルは parse したまま・他は .sobi の木）を返す
-// （iface.Emit が target の原文の形で .sobi を書くのに使う — 書き出しのたびにソースを読み直して parse し直さない。3'' 第 2 段 (c)）
+// LoadViewMem に加えて、loader の写しの前の生の木（ファイルごと — target のファイルは parse したまま・他は .sobi の木）を返す
+// （iface.Emit が target の原文の形で .sobi を書くのに使う — 書き出しのたびにソースを読み直して parse し直さない）
 @errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.LeadingZero, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par)
 func LoadViewMemRaw(entry string, target string, paths []string, sobis []Sobi, sm map[string]string) (Program, []ast.Tree, error?) {
     return loadViewRaw(entry, target, paths, "", sobis, sm)
@@ -61,8 +61,10 @@ func loadView(entry string, target string, paths []string, dir string, sobis []S
 
 @errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.LeadingZero, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par)
 func loadViewRaw(entry string, target string, paths []string, dir string, sobis []Sobi, sm map[string]string) (Program, []ast.Tree, error?) {
-    m := Manifest{entry, "", []string{}, "", ""}
+    m := Manifest{entry, "", []string{}, "", "", false, []string{}, 0}
     mut trees := mut []ast.Tree{}
+    // 生の木（loader の写しの前 — iface.Emit が原文の形で書く）。trees は写した木（catch の束縛 — 以降の段が読む）
+    mut raws := mut []ast.Tree{}
     mut fpkg := mut []string{}
     mut fpath := mut []string{}
     mut fstd := mut []bool{}
@@ -76,11 +78,12 @@ func loadViewRaw(entry string, target string, paths []string, dir string, sobis 
             for q <- iter.Range(0, len(fs)) {
                 fpath = append(fpath, fs[q])
                 fstd = append(fstd, isStd(l))
-                t, perr := parseFile(m, true, sm, fs[q], isStd(l), len(trees))
+                t, perr := parseFileRaw(m, true, sm, fs[q], isStd(l), len(trees))
                 if perr != nil {
                     return located(freeze(fpath), freeze(fstd)), []ast.Tree{}, perr
                 }
-                trees = append(trees, t)
+                trees = append(trees, catchExprs(t))
+                raws = append(raws, t)
                 fpkg = append(fpkg, l)
             }
         } else {
@@ -88,8 +91,10 @@ func loadViewRaw(entry string, target string, paths []string, dir string, sobis 
             fpath = append(fpath, sp)
             fstd = append(fstd, false)
             pre := sobiPre(l, dir, sobis)
+            // .sobi の本体は原文の形（catch 式のまま — iface.Emit）なので、ソースと同じく写してから以降の段へ
             if pre >= 0 {
-                trees = append(trees, sobis[pre].tree)
+                trees = append(trees, catchExprs(sobis[pre].tree))
+                raws = append(raws, sobis[pre].tree)
             } else {
                 src, sok := sobiSrc(sp, l, dir, sobis)
                 if !sok {
@@ -99,26 +104,28 @@ func loadViewRaw(entry string, target string, paths []string, dir string, sobis 
                 if perr != nil {
                     return located(freeze(fpath), freeze(fstd)), []ast.Tree{}, perr
                 }
-                trees = append(trees, t)
+                trees = append(trees, catchExprs(t))
+                raws = append(raws, t)
             }
             fpkg = append(fpkg, l)
         }
     }
     rt := freeze(trees)
+    rw := freeze(raws)
     rp := freeze(fpath)
-    r, err := finish(rt, freeze(fpkg), rp, freeze(fstd))
+    r, err := finish(rt, freeze(fpkg), rp, freeze(fstd), []string{}, false, 0)
     mut p := r
     p.std_src = sm
     // 生の木を finish の後の Program のファイルの並びにそろえる（finish は並べ替え・合成のファイル〔`$layout/…`〕の追加をする — パスで引く。
     // 合成のファイルは空の木 — iface.Emit は載せない・依存する側の loader が自分で合成する）
     mut raw := mut []ast.Tree{}
     for f <- iter.Range(0, len(p.file_path)) {
-        raw = append(raw, rawOf(rt, rp, p.file_path[f]))
+        raw = append(raw, rawOf(rw, rp, p.file_path[f]))
     }
     return p, freeze(raw), err
 }
 
-// rawOf は parse した木の列 ts（パス ps と同じ並び）の中のパス path の木（無ければ空の木）
+// parse した木の列 ts（パス ps と同じ並び）の中のパス path の木（無ければ空の木）
 func rawOf(ts []ast.Tree, ps []string, path string) ast.Tree {
     for i <- iter.Range(0, len(ps)) {
         if ps[i] == path {
@@ -128,7 +135,7 @@ func rawOf(ts []ast.Tree, ps []string, path string) ast.Tree {
     return ast.Tree{[]ast.Node{}, []int{}, 0 - 1}
 }
 
-// sobiPre は sobis の中の package l の parse 済みの .sobi の添字（ファイルから読む視点・parse に失敗した値なら -1）
+// sobis の中の package l の parse 済みの .sobi の添字（ファイルから読む視点・parse に失敗した値なら -1）
 func sobiPre(l string, dir string, sobis []Sobi) int {
     if dir != "" {
         return -1
@@ -141,7 +148,7 @@ func sobiPre(l string, dir string, sobis []Sobi) int {
     return -1
 }
 
-// sobiSrc は package l の .sobi の中身（dir が空なら sobis から・でなければファイル sp から）
+// package l の .sobi の中身（dir が空なら sobis から・でなければファイル sp から）
 func sobiSrc(sp string, l string, dir string, sobis []Sobi) ([]byte, bool) {
     if dir != "" {
         return readPath(sp)
@@ -154,7 +161,7 @@ func sobiSrc(sp string, l string, dir string, sobis []Sobi) ([]byte, bool) {
     return []byte{}, false
 }
 
-// ExpandMarked は .sobi の `@expand` の付いた関数の添字（E2-S の逃げ — 依存の package の check が決めた判定 D'。付加の列の 7 番）
+// .sobi の `@expand` の付いた関数の添字（E2-S の逃げ — 依存の package の check が決めた判定 D'。付加の列の 7 番）
 func ExpandMarked(p Program) []int {
     mut out := mut []int{}
     for k <- iter.Range(0, len(p.fn_node)) {
@@ -167,7 +174,7 @@ func ExpandMarked(p Program) []int {
     return freeze(out)
 }
 
-// SplitOrder は小分けの check の順（依存の package が先 — import の深さ優先の帰りがけ。同じ深さはロード順）の package の添字
+// 小分けの check の順（依存の package が先 — import の深さ優先の帰りがけ。同じ深さはロード順）の package の添字
 func SplitOrder(p Program) []int {
     mut seen := mut []bool{}
     for k <- iter.Range(0, len(p.pkg_path)) {
@@ -196,9 +203,9 @@ func splitVisit(p Program, k int, seen mut []bool, out mut []int) {
     out = append(out, k)
 }
 
-// SplitLink は package k の視点のリンク集合（k と、k が推移的に import する package）のパス。並びは k から import を辿る帰りがけ順
+// package k の視点のリンク集合（k と、k が推移的に import する package）のパス。並びは k から import を辿る帰りがけ順
 // （依存が先・k が最後 — 各 package の import の宣言順に辿る）。全体のロード順を使わないのは、並びを k と依存のソースだけで決めるため
-// （同じ std の package の視点が entry によって変わらない — キャッシュの鍵の共有の前提。3'' 第 2 段 C1）
+// （同じ std の package の視点が entry によって変わらない — キャッシュの鍵の共有の前提）
 func SplitLink(p Program, k int) []string {
     mut seen := mut []bool{}
     for j <- iter.Range(0, len(p.pkg_path)) {
@@ -214,7 +221,7 @@ func SplitLink(p Program, k int) []string {
 }
 
 
-// viewFiles は視点の package l のソースのファイル（main なら entry — .sober ファイルか main のディレクトリ）
+// 視点の package l のソースのファイル（main なら entry — .sober ファイルか main のディレクトリ）
 func viewFiles(m Manifest, sm map[string]string, entry string, l string) []string {
     if l != "main" {
         return dirFiles(m, true, sm, l)
@@ -225,7 +232,7 @@ func viewFiles(m Manifest, sm map[string]string, entry string, l string) []strin
     return []string{entry}
 }
 
-// parseSobi は .sobi（interface）の中身を parse する（parser.ParseIface）
+// .sobi（interface）の中身を parse する（parser.ParseIface）
 @errors(diag.GrammarMismatch)
 func parseSobi(src []byte, fi int) (ast.Tree, error?) {
     ts := lexer.Lex(src)
@@ -237,7 +244,7 @@ func parseSobi(src []byte, fi int) (ast.Tree, error?) {
     return t, nil
 }
 
-// linesOf は改行で割った空でない行（UTF-8 でなければ false）
+// 改行で割った空でない行（UTF-8 でなければ false）
 func linesOf(b []byte) ([]string, bool) {
     mut ls := mut []string{}
     mut s := 0

@@ -350,6 +350,8 @@ Pool の骨格（acquire / release / 排他 / 待機 / 資源の再利用）は�
 
 ### 型検査器の断片（Phase 2 の一手目。2026-09-18 完了）
 
+（2026-10-28 追記: Sober の写しの拒否の位置〔`sober: type error at …` — language.md 38 節〕は判定の意味の外で、証明の対象に入らない。判定 JSON は Lean と同じバイト列のまま）
+
 `Checker.lean`: 実行可能な型検査器 `typecheck` と、宣言的規則 `HasType` への
 健全性・完全性の証明。「証明済みの型付け規則と型検査器のコードを同じ定義から出す」
 （実装との照合 3 → 2 の 3）の核。sorry なし、公理は propext / Quot.sound のみ。
@@ -1199,6 +1201,10 @@ cmp / lt / eqs → bool、ite / while の条件 bool は形式化の初期から
 - 道中の回収: ジェネリック struct リテラルの declOfExpr が型引数の束縛を運んでいなかった。
   持ち上げたラムダの引数に struct 宣言が付いていなかった（関数型フィールドの宣言から付ける）
 - 突き合わせ: examples/constdict・testdata/pkgdemo（package をまたぐ公開辞書 const）
+- 組み立ての const への拡張（2026-10-29 — language.md 25 節）も**コア・証明・JSON は変更ゼロ**: 広げたのは loader の const の検査
+  （string / float / bool / imm の slice のリテラル）だけで、参照点の展開の後は既存のコアの形（文字列リテラル・tt / ff・slice のリテラル）に消える。
+  脱糖器は slice の要素の宣言の辿り（elemDeclOfExpr）に const の分岐を足しただけ（declOfExpr と同じ形）。
+  突き合わせ: examples/const_lit・const_table・testdata/constlit（package をまたぐ string / slice の const）
 
 ### for-yield の段（2026-09-26 完了）— V3-4
 
@@ -1672,8 +1678,10 @@ Def で下ろしてはいけない理由（健全性）: 自分の region を開
 戻りで region ごと消えて宙吊りになりうる — 展開の型付けはその値を呼び出し点の region のものとして受理している。透過（region を開かない）なら
 値は呼び手の最内 region に置かれ、呼び手の束縛より長くは生きないが短くもない（展開と同じ）。
 
-適用の置き場: `--passes` の側（ELF の build と自己ビルド）。既定の `--emit=ir|ll` は展開の形のまま — 黄金（irtext / lltext）と Zig ≡ Sober の
-照合の相手はそちらで、透過の側は実行照合（passes.sh・obs・stages の固定点）が見張る。
+適用の置き場: lower の全部の道（ELF の build・自己ビルド・raw の `--emit=ir|ll` / `build --no-opt` — raw への拡張 2026-10-29・report-1278 —
+展開の形は呼び出し点の数 × 葉の深さで太り、@std/cli.Spec が 1 関数 110 万行になった）。旧の展開の形は開発の口 `SOBER_RAW_EXPAND=1`（raw だけ）に残し、
+「展開 ≡ 透過」は optdiff の expx が期待値を介した実行の照合で見張る（展開の口で建たない entry — scripts/noopt-excluded.list — は網の限界として外れる）。
+黄金（irtext / lltext）と Zig ≡ Sober の ELF の照合（elfeq）は透過の形が相手（stage1 も同じ IR を食べる）。
 棄てた案: α 全部 Def（上の拒否 28 本 — frame で作った imm を渡す / region の違う mut 実引数 2 本 / R3）、α' 全部 Def + Lean で制約を撤去
 （証明の波及が大きい）、β 呼び出し点ごとに Def / 展開を選ぶ（判定が型と構文に依る実装規則 — 脱糖器と lower の二重実装）、`@noinline` の個別指定
 （利用者に回避を要求する）。
@@ -1744,7 +1752,7 @@ region 1 = 自分のフレーム、Γ = [param]）で型付いている（defsOk
 （逃げは呼び先の本体だけを見る — F-ba・2026-10-17）。(ii) を閉じるのは「mut 束縛のセル型は束縛点の点座標」の不変条件（上の脱糖器の座標精度の段 —
 mutInitAnn・fieldValueAnn・M4 の行き先構築）: anchor = セルの region = 束縛点で、セルの中の imm の region も全部束縛点へ緩めてあるので、仮引数型の写しと
 セル型が一致する。残るのはセルの中の mut の成分（mut は緩められない）が束縛点より古い形だけ（ループの中で `mut w := W{buf: s}`〔s = 外の mut slice〕を
-callM へ — .pair/fx/r767-ba-residual-mutfield）で、language.md 21 節の但し書き (β)（anchor 1 slot）と同じ根 — 拒否のまま記帳（実需なし・裁定 2026-10-17）。
+callM へ）で、language.md 21 節の但し書き (β)（anchor 1 slot）と同じ根 — 拒否のまま記帳（実需なし・裁定 2026-10-17）。
 棄てた案: 呼び手の落ちも逃げの周回で拾う（再帰の呼び先は展開できず救えない）・呼び出し点の静的な門で展開へ倒す（残りに実需が出たら再訪）。
 
 残る義務（後追い — 別段）: (a)(b) の Lean の補題（`ren_typing` の単調な写像への一般化 + 展開の形の型付け）。それまでは上の非形式の論証と

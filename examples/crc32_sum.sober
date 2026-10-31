@@ -1,6 +1,6 @@
 package main
 
-// std/hash/crc32.Sum の全部の道の網（report-774 — 64 バイト以上は PCLMULQDQ の折り畳み〔x86 の最適化のバックエンド・CPUID の判定つき〕・
+// std/hash/crc32.Sum の全部の道の網（64 バイト以上は PCLMULQDQ の折り畳み〔x86 の最適化のバックエンド・CPUID の判定つき〕・
 // 他と倒れ先は slicing-by-8 / 1 バイトずつ）: 長さ 0〜300 の全部 × 番地のずれ 0〜3・1K / 8K / 64K + 1 を 1 ビットずつの割り算（参照の実装）と照合し、
 // 混ぜた値と RFC 1952 の照合値 0xcbf43926 を出す。SOBER_NOCLMUL=1（倒れ先へ強制）でも同じ出力
 
@@ -8,7 +8,7 @@ import "std/convert"
 import "std/hash/crc32"
 import "std/iter"
 
-// ref は 1 ビットずつの CRC-32（反転形の多項式 0xedb88320 — 表も語も使わない参照）
+// 1 ビットずつの CRC-32（反転形の多項式 0xedb88320 — 表も語も使わない参照）
 func ref(b []byte) int {
     mut c := 0xffffffff
     for i <- iter.Range(0, len(b)) {

@@ -1,0 +1,26 @@
+package main
+
+// fuzz のカバレッジの誘導の題材（scripts/quickfuzz.sh — `sober build --cover` で建てる）: 入れ子の 4 バイトの魔法値。
+// 乱数だけの試行では 40 万試行で届かず（1 試行あたり ≈ 2^-32）、誘導（quick:pool）つきは入れ子の if の点を 1 段ずつ開いて届く
+
+import "std/quick"
+
+func ok(b []byte) bool {
+    if len(b) >= 4 {
+        if b[0] == 'S' {
+            if b[1] == 'O' {
+                if b[2] == 'B' {
+                    if b[3] == 'R' {
+                        return false
+                    }
+                }
+            }
+        }
+    }
+    return true
+}
+
+func main() {
+    mut q := quick.Seed(0)
+    quick.Check(mut q, () => ok(quick.Bytes(mut q, 8)))
+}

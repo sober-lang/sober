@@ -9,7 +9,7 @@ import "desugar"
 import "ast"
 import "std/iter"
 
-// envLookup は型環境 env の名前 name の型（無ければ -1）
+// 型環境 env の名前 name の型（無ければ -1）
 func envLookup(st mut St, env int, name desugar.StrRef) int {
     if env < 0 {
         return -1
@@ -24,7 +24,7 @@ func envLookup(st mut St, env int, name desugar.StrRef) int {
     return -1
 }
 
-// bindsOf は型パラメータの名前の列 names（文字列の列）と型引数の列 targs の型環境
+// 型パラメータの名前の列 names（文字列の列）と型引数の列 targs の型環境
 func bindsOf(st mut St, names desugar.ListRef, targs desugar.ListRef) int {
     n := lenL(mut st, names)
     env := recN(mut st, 1 + n * 2)
@@ -36,7 +36,7 @@ func bindsOf(st mut St, names desugar.ListRef, targs desugar.ListRef) int {
     return env
 }
 
-// tyArgOk は Def として呼ぶジェネリックの型引数として許される型（region を持たない）
+// Def として呼ぶジェネリックの型引数として許される型（region を持たない）
 func tyArgOk(st mut St, t int) bool {
     k := desugar.HeapGet(mut st.d, t)
     return switch k {
@@ -47,7 +47,7 @@ func tyArgOk(st mut St, t int) bool {
     }
 }
 
-// tyArgValueOk は展開されるジェネリック・ジェネリック struct の型引数（値を持つ型なら string / slice / map を含んでよい）
+// 展開されるジェネリック・ジェネリック struct の型引数（値を持つ型なら string / slice / map を含んでよい）
 func tyArgValueOk(st mut St, t int) bool {
     k := desugar.HeapGet(mut st.d, t)
     return switch k {
@@ -59,7 +59,7 @@ func tyArgValueOk(st mut St, t int) bool {
     }
 }
 
-// tyArgFields は struct / union のフィールドがすべて型引数として許されるか
+// struct / union のフィールドがすべて型引数として許されるか
 func tyArgFields(st mut St, t int, value bool) bool {
     info := desugar.HeapGet(mut st.d, t + 1)
     fs := hgetL(mut st, info + SI_FIELDS)
@@ -168,7 +168,7 @@ func typeKey(st mut St, t int) {
     desugar.HeapPush(mut st.d, 63)
 }
 
-// instKey は `base[T1,T2]`（base は文字列）の文字列
+// `base[T1,T2]`（base は文字列）の文字列
 func instKey(st mut St, base int, targs desugar.ListRef) desugar.StrRef {
     at := desugar.StrRef(desugar.HeapLen(mut st.d))
     desugar.HeapPush(mut st.d, 0)
@@ -187,7 +187,7 @@ func instKey(st mut St, base int, targs desugar.ListRef) desugar.StrRef {
 
 // ── ジェネリック struct ──
 
-// structByKey は型表のキー（文字列）の struct / union の情報（無ければ -1）
+// 型表のキー（文字列）の struct / union の情報（無ければ -1）
 func structByKey(st mut St, key desugar.StrRef) int {
     mut x := st.types
     while x >= 0 {
@@ -199,7 +199,7 @@ func structByKey(st mut St, key desugar.StrRef) int {
     return -1
 }
 
-// instStruct はジェネリック struct の適用 `Name[args]`（型引数は呼び手の文脈で読む）。レイアウトは呼び手が済ませる
+// ジェネリック struct の適用 `Name[args]`（型引数は呼び手の文脈で読む）。レイアウトは呼び手が済ませる
 func instStruct(st mut St, pk int, name desugar.StrRef, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
     r := desugar.ResolveType(mut st.d, pk, name)
     td := desugar.NodeRef(r.idx)
@@ -221,7 +221,7 @@ func instStruct(st mut St, pk int, name desugar.StrRef, args desugar.ListRef, at
     return instStructTys(mut st, td, r.pkg, targs, at)
 }
 
-// instStructTys はジェネリック struct / union（型宣言 td・宣言側 package dpk）の型引数 targs（型の列）のインスタンスの情報
+// ジェネリック struct / union（型宣言 td・宣言側 package dpk）の型引数 targs（型の列）のインスタンスの情報
 // （union は明示の型引数。レイアウトは layoutBody が型環境 SI_ENV で variant の欄を引く）
 func instStructTys(st mut St, td desugar.NodeRef, dpk int, targs desugar.ListRef, at desugar.NodeRef) (int, error?) {
     for i <- iter.Range(0, lenL(mut st, targs)) {
@@ -256,7 +256,7 @@ func instStructTys(st mut St, td desugar.NodeRef, dpk int, targs desugar.ListRef
 
 // ── ジェネリック関数 ──
 
-// sigIn は関数宣言 decl の署名を package pk・型環境 env で読む
+// 関数宣言 decl の署名を package pk・型環境 env で読む
 func sigIn(st mut St, decl desugar.NodeRef, pk int, env int) (Sig, error?) {
     saved := st.tenv
     st.tenv = env
@@ -267,7 +267,7 @@ func sigIn(st mut St, decl desugar.NodeRef, pk int, env int) (Sig, error?) {
     return sig, nil
 }
 
-// tableTArgs は呼び出し（callee の節 cn）の型引数: 表層型検査器の表（desugar/typer.sober の YTArgsOf — 明示の型引数・実引数との
+// 呼び出し（callee の節 cn）の型引数: 表層型検査器の表（desugar/typer.sober の YTArgsOf — 明示の型引数・実引数との
 // 単一化・型なしの定数の扱いは検査器の規則が正）を lower の型へ写す。決まらないものがあるか、型引数に置けない型なら拒否（C1 B2）
 func tableTArgs(st mut St, cn desugar.NodeRef, at desugar.NodeRef, value_ok bool) (desugar.ListRef, error?) {
     yl := desugar.YTArgsOf(mut st.d, desugar.NodeRef(cn))
@@ -291,7 +291,7 @@ func tableTArgs(st mut St, cn desugar.NodeRef, at desugar.NodeRef, value_ok bool
 // ── 型なしの定数の実引数（language.md 32 節）: 値は今までどおり先に評価し（IR の順は不変）、型引数の推論では一度外す
 // （外して決まらなければ定数の型 = int / bool で推論し直す — 推論は検査器の yNamedCall）。インスタンスの仮引数が named scalar なら値の型だけ付け替える ──
 
-// constArgs は実引数ごとの「型なしの定数なら評価した型、でなければ -1」の列
+// 実引数ごとの「型なしの定数なら評価した型、でなければ -1」の列
 func constArgs(st mut St, n int) desugar.ListRef {
     l := desugar.ListRef(listN(mut st, n))
     for i <- iter.Range(0, n) {
@@ -300,7 +300,7 @@ func constArgs(st mut St, n int) desugar.ListRef {
     return l
 }
 
-// noteConstArg は i 番目の実引数 a が型なしの定数なら型 t を覚える（インスタンスの仮引数の型に合わせて付け替える — retagConsts）
+// i 番目の実引数 a が型なしの定数なら型 t を覚える（インスタンスの仮引数の型に合わせて付け替える — retagConsts）
 // byte の範囲外の定数は -2 - t で覚える（named への付け替えはする・byte へはしない — 範囲外は下の照合で型エラー）
 func noteConstArg(st mut St, cts int, i int, a desugar.NodeRef, t int) {
     if untypedConst(mut st, a) {
@@ -308,7 +308,7 @@ func noteConstArg(st mut St, cts int, i int, a desugar.NodeRef, t int) {
     }
 }
 
-// retagConsts は定数の実引数（評価済みの EVal）の型を、インスタンスの仮引数の型 pts が named scalar なら付け替える
+// 定数の実引数（評価済みの EVal）の型を、インスタンスの仮引数の型 pts が named scalar なら付け替える
 func retagConsts(st mut St, cts desugar.ListRef, srcs desugar.ListRef, pts desugar.ListRef) {
     for i <- iter.Range(0, lenL(mut st, cts)) {
         raw := latI(mut st, cts, i)
@@ -324,7 +324,7 @@ func retagConsts(st mut St, cts desugar.ListRef, srcs desugar.ListRef, pts desug
     }
 }
 
-// instFunc はジェネリック関数のインスタンス（単相コピー）。キー = "pkg.name[型…]"、本体は作業列で下ろす
+// ジェネリック関数のインスタンス（単相コピー）。キー = "pkg.name[型…]"、本体は作業列で下ろす
 func instFunc(st mut St, fidx int, targs desugar.ListRef) (int, error?) {
     pk := fnPkg(mut st, fidx)
     decl := fnNode(mut st, fidx)
@@ -348,7 +348,7 @@ func instFunc(st mut St, fidx int, targs desugar.ListRef) (int, error?) {
     return fi, nil
 }
 
-// genericCall はジェネリック関数の呼び出し: 引数を左から評価して退避 → 型引数（表層型検査器の表）→ インスタンスを呼ぶ
+// ジェネリック関数の呼び出し: 引数を左から評価して退避 → 型引数（表層型検査器の表）→ インスタンスを呼ぶ
 func genericCall(st mut St, fidx int, args desugar.ListRef, at desugar.NodeRef, cn desugar.NodeRef) (int, error?) {
     pk := fnPkg(mut st, fidx)
     decl := fnNode(mut st, fidx)
@@ -386,7 +386,7 @@ func genericCall(st mut St, fidx int, args desugar.ListRef, at desugar.NodeRef, 
     return emitCall(mut st, infoAt(mut st, fi).ir, -1, desugar.ListRef(infoAt(mut st, fi).params), desugar.ListRef(infoAt(mut st, fi).results), vsrcs, at, decl)
 }
 
-// genericInline はジェネリックかつ関数型 / mut の仮引数を持つ関数: 値の引数を先に評価し、閉包は型引数（表層型検査器の表）が決まってから作る。
+// ジェネリックかつ関数型 / mut の仮引数を持つ関数: 値の引数を先に評価し、閉包は型引数（表層型検査器の表）が決まってから作る。
 // 本体は束縛した型環境で展開する
 func genericInline(st mut St, fidx int, args desugar.ListRef, at desugar.NodeRef, cn desugar.NodeRef) (int, error?) {
     pk := fnPkg(mut st, fidx)
@@ -425,7 +425,7 @@ func genericInline(st mut St, fidx int, args desugar.ListRef, at desugar.NodeRef
 
 // ── 辞書 const ──
 
-// ExpCtx は式を別の文脈で下ろすときに入れ替える束（名前の可視範囲・package・型環境・辞書 const の中か — C10）
+// 式を別の文脈で下ろすときに入れ替える束（名前の可視範囲・package・型環境・辞書 const の中か — C10）
 type ExpCtx struct {
     chain int
     curPkg int
@@ -444,7 +444,7 @@ func setExpCtx(st mut St, c ExpCtx) {
     st.inDict = c.inDict
 }
 
-// dictConst は辞書 const の参照点での展開: 宣言側の文脈（package・空の可視範囲・空の型環境）で struct リテラルを作り直す
+// 辞書 const の参照点での展開: 宣言側の文脈（package・空の可視範囲・空の型環境）で struct リテラルを作り直す
 func dictConst(st mut St, c int, pk int) (Val, error?) {
     saved := expCtx(mut st)
     st.chain = list2(mut st, st.nscope, VOPEN)

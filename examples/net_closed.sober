@@ -23,7 +23,7 @@ func main() {
     println(run() catch "listen failed")
 }
 
-// dialGone は listen を閉じた後の port へ Dial する
+// listen を閉じた後の port へ Dial する
 func dialGone() error? {
     mut port := 0
     for l <- net.Listen("127.0.0.1:0")? {

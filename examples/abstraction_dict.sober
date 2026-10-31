@@ -1,0 +1,39 @@
+package main
+
+// Abstraction 2: a struct of function fields (a dictionary) in place of an interface with several
+// methods. Each implementation is a value; state is captured by the closures on the line that
+// builds them, and a field that an implementation may leave out is optional (docs/guide/abstraction.md)
+
+type Note func(qty int) string
+
+type Pricing struct {
+    name string
+    price func(unit int, qty int) int
+    // optional: an implementation without a note leaves it out
+    note Note?
+}
+
+// an implementation with no state, written as a const
+const Flat = Pricing{name: "flat", price: (unit, qty) => unit * qty}
+
+// an implementation with state: `over` and `off` are captured here, in plain sight
+func bulk(over int, off int) Pricing {
+    return Pricing{
+        name: "bulk",
+        price: (unit, qty) => if qty > over { unit * qty * (100 - off) / 100 } else { unit * qty },
+        note: (qty) => if qty > over { "${off}% off over ${over}" } else { "no discount" }}
+}
+
+// takes any implementation: which one is used is written at each call
+func quote(p Pricing, unit int, qty int) {
+    n := p.note
+    extra := if n != nil { " (${n(qty)})" } else { "" }
+    println("${p.name}: ${p.price(unit, qty)}${extra}")
+}
+
+func main() {
+    quote(Flat, 120, 10)
+    b := bulk(5, 20)
+    quote(b, 120, 10)
+    quote(b, 120, 3)
+}

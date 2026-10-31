@@ -1,0 +1,41 @@
+package http
+
+// SSE の組み立ての網（FormatEvent の表 — data の改行〔LF・CRLF・CR・末尾・連続・空〕の割り・欄の並び・空の event / id・retry）と
+// 差し込みの封（eventBad — event / id の CR・LF・NUL。panic(BadEvent) そのものは examples/http_sse_bad）・text/event-stream を compress: の対象から外す
+
+func TestFormatEvent() {
+    assert(FormatEvent(Event{data: "hello"}) == "data: hello\n\n")
+    assert(FormatEvent(Event{data: ""}) == "data: \n\n")
+    assert(FormatEvent(Event{data: "a\nb"}) == "data: a\ndata: b\n\n")
+    assert(FormatEvent(Event{data: "a\r\nb"}) == "data: a\ndata: b\n\n")
+    assert(FormatEvent(Event{data: "a\rb"}) == "data: a\ndata: b\n\n")
+    // 改行の連続・CR の後の LF でない CR・末尾の改行（空の行 = 受け手の本文の末尾の改行）
+    assert(FormatEvent(Event{data: "a\n\nb"}) == "data: a\ndata: \ndata: b\n\n")
+    assert(FormatEvent(Event{data: "a\r\rb"}) == "data: a\ndata: \ndata: b\n\n")
+    assert(FormatEvent(Event{data: "a\n"}) == "data: a\ndata: \n\n")
+    assert(FormatEvent(Event{data: "a\r\n"}) == "data: a\ndata: \n\n")
+    assert(FormatEvent(Event{data: "\n"}) == "data: \ndata: \n\n")
+    // 先頭の空白は保つ（受け手が外すのは `:` の後の空白 1 つ — `data: ` の空白）
+    assert(FormatEvent(Event{data: " x"}) == "data:  x\n\n")
+    assert(FormatEvent(Event{event: "tick", data: "1", id: "7", retry: 3000}) == "event: tick\nid: 7\nretry: 3000\ndata: 1\n\n")
+    assert(FormatEvent(Event{event: "", id: "", data: "x"}) == "event: \nid: \ndata: x\n\n")
+    assert(FormatEvent(Event{data: "日本\n語"}) == "data: 日本\ndata: 語\n\n")
+}
+
+func TestEventBad() {
+    assert(!eventBad("tick"))
+    assert(!eventBad(""))
+    assert(!eventBad("a b:c"))
+    assert(eventBad("a\nb"))
+    assert(eventBad("a\rb"))
+    assert(eventBad("\n"))
+    assert(eventBad("x\0"))
+}
+
+func TestEventStreamNotCompressible() {
+    assert(compressible("text/plain"))
+    assert(compressible("application/json"))
+    assert(!compressible("text/event-stream"))
+    assert(!compressible("Text/Event-Stream; charset=utf-8"))
+    assert(compressible("text/event-streams"))
+}

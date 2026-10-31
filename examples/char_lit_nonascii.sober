@@ -1,6 +1,6 @@
 package main
 
-// 負例: 文字リテラルは ASCII 限定（非 ASCII は Rune の裁定まで字句エラー — language.md 33 節）
+// 負例: 文字リテラルは ASCII 限定（非 ASCII は Rune 対応まで字句エラー — language.md 33 節）
 func main() {
     println('あ')
 }

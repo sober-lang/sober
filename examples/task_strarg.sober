@@ -1,7 +1,7 @@
 package main
 
-// 段 6 P3a: Spawn の子の中で string リテラルを関数の実引数に（コアは呼び手空間の上界〔region 0〕に置くが、子は共有の接頭に確保できない —
-// 子の中は子自前の region へ。desugar の taskFloor — progen --par の fuzz で発見した check の誤拒否の回帰）
+// Spawn の子の中で string リテラルを関数の実引数に（コアは呼び手空間の上界〔region 0〕に置くが、子は共有の接頭に確保できない —
+// 子の中は子自前の region へ。desugar の taskFloor — check の誤拒否の回帰）
 
 import "std/task"
 

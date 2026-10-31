@@ -1697,6 +1697,145 @@ b0:
   ret %2
 }
 
+func @main.f(%0 i64) i64 {
+  slot s0 [1]
+  slot s1 [1]
+b0:
+  %1 = region.depth
+  region.enter
+  %2 = const 5
+  %3 = gt %0, %2
+  condbr %3, b1, b2
+b1:
+  %4 = const 100
+  region.setdepth %1
+  ret %4
+b2:
+  %5 = const 2
+  %6 = mul %0, %5
+  br b3(%6)
+b3(%7 i64):
+  %8 = const 1
+  %9 = eq %0, %8
+  condbr %9, b5, b4
+b4:
+  %11 = const 2
+  %12 = eq %0, %11
+  condbr %12, b7, b6
+b5:
+  %10 = const 7
+  region.setdepth %1
+  ret %10
+b6:
+  br b8(%0)
+b7:
+  %13 = const 20
+  br b8(%13)
+b8(%14 i64):
+  %15 = const 0
+  %16 = slotaddr s0
+  store %16[0], %15
+  %17 = const 0
+  %18 = slotaddr s1
+  store %18[0], %17
+  %19 = region.depth
+  br b9
+b9:
+  region.setdepth %19
+  %20 = load.i64 %18[0]
+  %21 = const 10
+  %22 = lt %20, %21
+  condbr %22, b10, b11
+b10:
+  region.enter
+  %23 = region.depth
+  %24 = load.i64 %18[0]
+  %25 = const 4
+  %26 = eq %24, %25
+  condbr %26, b12, b13
+b11:
+  region.setdepth %19
+  %34 = add %7, %14
+  %35 = load.i64 %16[0]
+  %36 = add %34, %35
+  region.setdepth %1
+  ret %36
+b12:
+  br b11
+b13:
+  %27 = load.i64 %18[0]
+  br b14(%27)
+b14(%28 i64):
+  %29 = load.i64 %16[0]
+  %30 = add %29, %28
+  store %16[0], %30
+  %31 = const 1
+  %32 = load.i64 %18[0]
+  %33 = add %32, %31
+  store %18[0], %33
+  br b9
+}
+
+func @main.g(%0 ptr, %1 i64) {
+  slot s0 [2]
+b0:
+  %2 = region.depth
+  region.enter
+  %3 = const 0
+  %4 = lt %1, %3
+  condbr %4, b1, b2
+b1:
+  %5 = slotaddr s0
+  %6 = const 0
+  store %5[0], %6
+  %7 = load.i64 %5[0]
+  store %0[0], %7
+  %8 = load.i64 %5[1]
+  store %0[1], %8
+  region.setdepth %2
+  ret
+b2:
+  %9 = const 1
+  %10 = add %1, %9
+  %11 = slotaddr s0
+  %12 = const 1
+  store %11[0], %12
+  store %11[1], %10
+  br b3(%11)
+b3(%13 ptr):
+  %14 = load.i64 %13[0]
+  store %0[0], %14
+  %15 = load.i64 %13[1]
+  store %0[1], %15
+  region.setdepth %2
+  ret
+}
+
+func @main.h(%0 i64, %1 i64) i64 {
+  slot s0 [2]
+b0:
+  %2 = slotaddr s0
+  store %2[0], %0
+  store %2[1], %1
+  %3 = region.depth
+  region.enter
+  %4 = load.i64 %2[0]
+  %5 = const 0
+  %6 = ne %4, %5
+  condbr %6, b1, b2
+b1:
+  %7 = load.i64 %2[1]
+  br b3(%7)
+b2:
+  %8 = const 1
+  %9 = const 0
+  %10 = sub %9, %8
+  br b3(%10)
+b3(%11 i64):
+  region.setdepth %3
+  ret %11
+}
+
 func @main.main() {
   slot s0 [2]
   slot s1 [2]
@@ -1745,6 +1884,22 @@ b0:
   call @rt.print_char(%26)
   region.setdepth %0
   ret
+}
+
+func @rt.sigint() {
+b0:
+  %0 = const 231
+  %1 = const 130
+  %2 = syscall(%0, %1)
+  exit 130
+}
+
+func @rt.sigterm() {
+b0:
+  %0 = const 231
+  %1 = const 143
+  %2 = syscall(%0, %1)
+  exit 143
 }
 
 export func @sober_entry(%0 ptr) {
@@ -2340,159 +2495,4 @@ b91:
   %404 = const 1
   %405 = add %383, %404
   br b85(%401, %405)
-}
-
-func @rt.sigterm() {
-b0:
-  %0 = const 231
-  %1 = const 143
-  %2 = syscall(%0, %1)
-  exit 143
-}
-
-func @rt.sigint() {
-b0:
-  %0 = const 231
-  %1 = const 130
-  %2 = syscall(%0, %1)
-  exit 130
-}
-
-func @main.f(%0 i64) i64 {
-  slot s0 [1]
-  slot s1 [1]
-b0:
-  %1 = region.depth
-  region.enter
-  %2 = const 5
-  %3 = gt %0, %2
-  condbr %3, b1, b2
-b1:
-  %4 = const 100
-  region.setdepth %1
-  ret %4
-b2:
-  %5 = const 2
-  %6 = mul %0, %5
-  br b3(%6)
-b3(%7 i64):
-  %8 = const 1
-  %9 = eq %0, %8
-  condbr %9, b5, b4
-b4:
-  %11 = const 2
-  %12 = eq %0, %11
-  condbr %12, b7, b6
-b5:
-  %10 = const 7
-  region.setdepth %1
-  ret %10
-b6:
-  br b8(%0)
-b7:
-  %13 = const 20
-  br b8(%13)
-b8(%14 i64):
-  %15 = const 0
-  %16 = slotaddr s0
-  store %16[0], %15
-  %17 = const 0
-  %18 = slotaddr s1
-  store %18[0], %17
-  %19 = region.depth
-  br b9
-b9:
-  region.setdepth %19
-  %20 = load.i64 %18[0]
-  %21 = const 10
-  %22 = lt %20, %21
-  condbr %22, b10, b11
-b10:
-  region.enter
-  %23 = region.depth
-  %24 = load.i64 %18[0]
-  %25 = const 4
-  %26 = eq %24, %25
-  condbr %26, b12, b13
-b11:
-  region.setdepth %19
-  %34 = add %7, %14
-  %35 = load.i64 %16[0]
-  %36 = add %34, %35
-  region.setdepth %1
-  ret %36
-b12:
-  br b11
-b13:
-  %27 = load.i64 %18[0]
-  br b14(%27)
-b14(%28 i64):
-  %29 = load.i64 %16[0]
-  %30 = add %29, %28
-  store %16[0], %30
-  %31 = const 1
-  %32 = load.i64 %18[0]
-  %33 = add %32, %31
-  store %18[0], %33
-  br b9
-}
-
-func @main.h(%0 i64, %1 i64) i64 {
-  slot s0 [2]
-b0:
-  %2 = slotaddr s0
-  store %2[0], %0
-  store %2[1], %1
-  %3 = region.depth
-  region.enter
-  %4 = load.i64 %2[0]
-  %5 = const 0
-  %6 = ne %4, %5
-  condbr %6, b1, b2
-b1:
-  %7 = load.i64 %2[1]
-  br b3(%7)
-b2:
-  %8 = const 1
-  %9 = const 0
-  %10 = sub %9, %8
-  br b3(%10)
-b3(%11 i64):
-  region.setdepth %3
-  ret %11
-}
-
-func @main.g(%0 ptr, %1 i64) {
-  slot s0 [2]
-b0:
-  %2 = region.depth
-  region.enter
-  %3 = const 0
-  %4 = lt %1, %3
-  condbr %4, b1, b2
-b1:
-  %5 = slotaddr s0
-  %6 = const 0
-  store %5[0], %6
-  %7 = load.i64 %5[0]
-  store %0[0], %7
-  %8 = load.i64 %5[1]
-  store %0[1], %8
-  region.setdepth %2
-  ret
-b2:
-  %9 = const 1
-  %10 = add %1, %9
-  %11 = slotaddr s0
-  %12 = const 1
-  store %11[0], %12
-  store %11[1], %10
-  br b3(%11)
-b3(%13 ptr):
-  %14 = load.i64 %13[0]
-  store %0[0], %14
-  %15 = load.i64 %13[1]
-  store %0[1], %15
-  region.setdepth %2
-  ret
 }

@@ -1,6 +1,6 @@
 package lower
 
-// ヘッダのループ昇格（std の work の席 段 1 — report-531 (B)）: GVN と hdr の後の SSA に掛ける。関数の ptr の仮引数 P（mut slice の仮引数は
+// ヘッダのループ昇格: GVN と hdr の後の SSA に掛ける。関数の ptr の仮引数 P（mut slice の仮引数は
 // 呼び手のセルの番地）について、ループの中の P のメモリの読み書きが全部 `load P[k]` / `store P[k], v`（k は定数の語）で、ほかの読み書きと
 // 呼び出しが P のセルと重ならないと言えるなら、語ごとに 1 語のスロットへ付け替えて前置きで読み込み・ループの出口の辺で書き戻し、その場で
 // mem2reg が SSA にする（mut slice の仮引数へループで append する形 — jsonapi の zeroFill はヘッダ 3 語を毎周 load / store していた）。
@@ -19,7 +19,7 @@ package lower
 import "desugar"
 import "std/iter"
 
-// hloopModule はモジュールの全関数にヘッダのループ昇格を掛ける
+// モジュールの全関数にヘッダのループ昇格を掛ける
 func hloopModule(st mut St) {
     mut f := st.fhead
     while f != -1 {
@@ -30,7 +30,7 @@ func hloopModule(st mut St) {
     }
 }
 
-// hloopFunc は関数 f のループにヘッダの昇格を掛ける（先に安い走査で対象を絞る — ループがあり、仮引数へ直に書く store がある関数だけ）
+// 関数 f のループにヘッダの昇格を掛ける（先に安い走査で対象を絞る — ループがあり、仮引数へ直に書く store がある関数だけ）
 func hloopFunc(st mut St, f FnRef) {
     if !hlCheap(mut st, f) {
         return
@@ -49,7 +49,7 @@ func hloopFunc(st mut St, f FnRef) {
     st.fn = saved
 }
 
-// hlCheap は利用者のループの頭があり、入口の仮引数へ直に書く store がある関数か（作業域を作らない走査）
+// 利用者のループの頭があり、入口の仮引数へ直に書く store がある関数か（作業域を作らない走査）
 func hlCheap(st mut St, f FnRef) bool {
     mut loop := false
     mut b := irFnBHead(mut st, f)
@@ -76,20 +76,20 @@ func hlCheap(st mut St, f FnRef) bool {
     return false
 }
 
-// hlIsParam は値 v が関数の ptr の仮引数か（関数の仮引数は値の番号 0 .. np − 1）
+// 値 v が関数の ptr の仮引数か（関数の仮引数は値の番号 0 .. np − 1）
 func hlIsParam(st mut St, f FnRef, v int) bool {
     pt := irFnPtys(mut st, f)
     np := desugar.HeapGet(mut st.d, pt)
     return v >= 0 && v < np && desugar.HeapGet(mut st.d, pt + 1 + v) == TyPtr
 }
 
-// hlMut は仮引数 v が mut の印のある ptr 仮引数（mut slice の仮引数 — 呼び手のヘッダのセル）か。印の無い ptr 仮引数（rt の補助・sret）は
+// 仮引数 v が mut の印のある ptr 仮引数（mut slice の仮引数 — 呼び手のヘッダのセル）か。印の無い ptr 仮引数（rt の補助・sret）は
 // 別の slice のデータの中を指しうるので昇格しない（hdr.sober の資格の印と同じ門）
 func hlMut(st mut St, f FnRef, v int) bool {
     return v < 62 && (irFnMutP(mut st, f) >> v) & 1 == 1
 }
 
-// hlRound はループを 1 つ昇格したら true（CFG が変わるので呼び手が組み直して次へ）
+// ループを 1 つ昇格したら true（CFG が変わるので呼び手が組み直して次へ）
 func hlRound(st mut St, f FnRef) bool {
     nb := irFnNBlk(mut st, f)
     nv := irFnNVal(mut st, f)
@@ -136,7 +136,7 @@ func hlRound(st mut St, f FnRef) bool {
     return false
 }
 
-// hlLoop はループ（印 pw.mark・前置き pre）の中の読み書きを調べ、昇格できる仮引数があれば書き換えて true
+// ループ（印 pw.mark・前置き pre）の中の読み書きを調べ、昇格できる仮引数があれば書き換えて true
 func hlLoop(st mut St, f FnRef, w mut m2rW, pw mut PrW, pre int) bool {
     // 直に読み書きされる仮引数 P（最初に見つかった 1 つ — ほかの仮引数の直の読み書きがあれば諦める）と、その命令・語
     mut p0 := -1
@@ -201,7 +201,7 @@ func hlLoop(st mut St, f FnRef, w mut m2rW, pw mut PrW, pre int) bool {
     return true
 }
 
-// hlSafe は番地 v（の根）が仮引数 P のセルと重ならないと言えるか（別名の事実 ①〜③ — ファイルの冒頭）。gep は基底へ辿り、ブロックの仮引数は
+// 番地 v（の根）が仮引数 P のセルと重ならないと言えるか（別名の事実 ①〜③ — ファイルの冒頭）。gep は基底へ辿り、ブロックの仮引数は
 // 入りの実引数を全部見る（辿る値は 16 本まで）。再帰でなく作業列で回す（mut 引数の関数の再帰は自己 check の def error — NOTES の地雷）
 func hlSafe(st mut St, f FnRef, w mut m2rW, pw mut PrW, v0 int, p int) bool {
     mut todo := mut []int{}
@@ -270,7 +270,7 @@ func hlSafe(st mut St, f FnRef, w mut m2rW, pw mut PrW, v0 int, p int) bool {
     return true
 }
 
-// hlRewrite は P の語ごとにスロットを作り、前置きで読み込み・ループの中の P[k] の読み書きをスロットへ・出口の辺で書き戻す（書きのある語だけ）
+// P の語ごとにスロットを作り、前置きで読み込み・ループの中の P[k] の読み書きをスロットへ・出口の辺で書き戻す（書きのある語だけ）
 func hlRewrite(st mut St, f FnRef, w mut m2rW, pw mut PrW, pre int, p int, pIns []int, pK []int, pSt []int) {
     // 語の一覧（出現の順）と書きの有無
     mut ks := mut []int{}

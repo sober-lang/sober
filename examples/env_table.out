@@ -1,0 +1,7 @@
+home=/var/lib/app token=(none) port=8080 debug=false
+home=/var/lib/app token=abc port=443 debug=true
+home=/var/lib/app token=(none) port=8080 debug=false
+invalid value 0 for environment variable ENV_TABLE_EXAMPLE_PORT
+  want an integer in 1..65535
+invalid value yes for environment variable ENV_TABLE_EXAMPLE_DEBUG
+  want 1, true, 0 or false

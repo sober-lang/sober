@@ -1,6 +1,6 @@
 package main
 
-// std/http の静的ファイル（language.md 28 節「静的ファイル」— static 便）: http.Static(prefix, root, precompressed:) は `GET <prefix>/*path` の 1 行の表を返し、
+// std/http の静的ファイル（language.md 28 節「静的ファイル」）: http.Static(prefix, root, precompressed:) は `GET <prefix>/*path` の 1 行の表を返し、
 // 要求ごとに root を io.OpenRoot して `*path` を io.OpenUnder で開く（root の外へ出ないのはカーネルの保証 — `..`・外を指す symlink は 404）。
 // precompressed は Accept-Encoding で `.br` / `.gz` を選んで素通しし、Content-Encoding と Vary を付ける。Content-Type は元の名前の拡張子。
 // 条件付き GET: 弱い ETag（送る変種の更新時刻と大きさ + 変種の印）・Last-Modified・Cache-Control（cache: — 省略は no-cache）。If-None-Match の一致・
@@ -15,7 +15,7 @@ import "std/net"
 import "std/os"
 import "std/task"
 
-// mkdir は d を作る（既にあってよい — EEXIST は読み捨てる）
+// d を作る（既にあってよい — EEXIST は読み捨てる）
 @errors(io.NotFound, io.Denied, io.Other)
 func mkdir(d string) error? {
     e := os.Mkdir(d)
@@ -25,7 +25,7 @@ func mkdir(d string) error? {
     return e
 }
 
-// exists は e が EEXIST か
+// e が EEXIST か
 func exists(e error) bool {
     return switch e {
     case io.Other{errno}: errno == 17
@@ -55,7 +55,7 @@ func setup(w string) error? {
     return nil
 }
 
-// touch は path の更新時刻を at（touch -d の形）にする
+// path の更新時刻を at（touch -d の形）にする
 @errors(io.NotFound, io.Denied, io.Other)
 func touch(path string, at string) error? {
     _ = os.Run("/usr/bin/touch", []string{"-d", at, path})?
@@ -130,7 +130,7 @@ func run(w string) error? {
     return nil
 }
 
-// serveOne は 1 本だけ受けて ServeConn に渡す（Connection: close で返る）
+// 1 本だけ受けて ServeConn に渡す（Connection: close で返る）
 func serveOne(l net.Listener, w string) (int, error?) {
     rs := http.Merge(http.Merge(http.Static("/s", w + "/www", precompressed: true), http.Static("/f", w + "/www", cache: http.Fresh{maxAge: 60, immutable: true})),
         http.Merge(http.Static("/n", w + "/www", cache: http.NoStore{}), []http.Route{http.Route{method: "GET", path: "/none", handler: (r) => http.Status(204), middleware: []http.Middleware{}}}))

@@ -9,7 +9,7 @@ import "ast"
 import "diag"
 import "std/iter"
 
-// recTypeAt は最初の再帰の型宣言の位置（無ければ file = -1）
+// 最初の再帰の型宣言の位置（無ければ file = -1）
 func recTypeAt(cx Cx) diag.Pos {
     for p <- iter.Range(0, len(cx.pkg_path)) {
         at := recTypeIn(cx, cx.pkg_lo[p], cx.pkg_hi[p])
@@ -20,7 +20,7 @@ func recTypeAt(cx Cx) diag.Pos {
     return diag.None()
 }
 
-// recTypeIn はファイル [lo, hi)（1 つの package）の型宣言の循環
+// ファイル [lo, hi)（1 つの package）の型宣言の循環
 func recTypeIn(cx Cx, lo int, hi int) diag.Pos {
     // 宣言の表: 名前（variant の名前も持ち主の宣言を指す）・位置
     mut names := mut []string{}
@@ -119,7 +119,7 @@ func recTypeIn(cx Cx, lo int, hi int) diag.Pos {
     return diag.Pos{file: df[cur], tok: t.nodes[dn[cur]].tok}
 }
 
-// typeRefs は型宣言の本体 b の中の修飾なしの型の名前（明示の待ち行列 — 型式の深さに依らない）
+// 型宣言の本体 b の中の修飾なしの型の名前（明示の待ち行列 — 型式の深さに依らない）
 func typeRefs(t ast.Tree, b int) []string {
     mut out := mut []string{}
     mut st := mut []int{}

@@ -1,0 +1,51 @@
+package main
+
+// Abstraction 1 and 2: a named function type (http.Handler) built by closures, and a struct of
+// function fields (http.Middleware) (docs/guide/abstraction.md). The requests are fed from a string
+// instead of the network, and each response is printed (the form of examples/http_router)
+
+import "std/http"
+
+func or(s string?) string {
+    return if s != nil { s } else { "-" }
+}
+
+// stops a request without X-Token (only `before` is given; `after` is left out)
+const Auth = http.Middleware{before: (r) => if http.Header(r, "x-token") == nil { http.Status(401) } else { nil }}
+
+// a Handler that answers with `word`: the closure captures `word` on this line
+func greeter(word string) http.Handler {
+    return (r) => http.Text("${word}, ${or(http.Param(r, "name"))}\n")
+}
+
+func routes() []http.Route {
+    return http.Mount("", []http.Route{
+        http.Route{method: "GET", path: "/hello/:name", handler: greeter("hello")},
+        http.Route{method: "GET", path: "/bye/:name", handler: greeter("see you")}}, []http.Middleware{Auth})
+}
+
+func main() {
+    reqs := "GET /hello/ann HTTP/1.1\r\nX-Token: t\r\n\r\n" +
+        "GET /bye/bob HTTP/1.1\r\nX-Token: t\r\n\r\n" +
+        "GET /hello/eve HTTP/1.1\r\nConnection: close\r\n\r\n"
+    rs := routes()
+    e := http.ServeWith((k) => feed(reqs, k), (b) => show(b), (r) => http.Dispatch(rs, r))
+    println(e == nil)
+}
+
+func feed(s string, k func([]byte)) error? {
+    k(bytes(s))
+    return nil
+}
+
+// prints a response without the CR at the end of each line
+func show(b []byte) error? {
+    mut out := mut []byte{}
+    for x <- b {
+        if x != '\r' {
+            out = append(out, x)
+        }
+    }
+    println(string(freeze(out)) catch "?")
+    return nil
+}

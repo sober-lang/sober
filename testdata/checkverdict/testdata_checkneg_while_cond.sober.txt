@@ -1,2 +1,3 @@
+sober: type error at testdata/checkneg/while_cond.sober:5:5
 {"errors":[{"msg":"type error"}],"ok":false}
 exit=1

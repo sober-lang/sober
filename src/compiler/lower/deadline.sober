@@ -1,6 +1,6 @@
 package lower
 
-// デッドライン（段 3 の ④ — language.md 28 節「デッドライン」・11 節「キャンセル」）: `task.Run(body, deadline: 500 * task.MS)` の scope の中
+// デッドライン（language.md 28 節「デッドライン」・11 節「キャンセル」）: `task.Run(body, deadline: 500 * task.MS)` の scope の中
 // （子孫の task も）では、期限が過ぎた後の io の口が io.Timeout を返す。走っている仕事は切らない（待ちの上限であって実行時間の上限ではない）。
 // 実効の期限 = task の語 TC_DL（CLOCK_MONOTONIC の絶対時刻 ns・0 = 期限なし）: scope の開きで min(今の値, 今 + 宣言) を入れて出口で戻す・
 // spawn の子は生まれるときに親の値を写す（子の寿命は scope の中なので、根までの期限を歩く代わりに min を写しで運ぶ — 同じ値）。
@@ -11,11 +11,12 @@ import "desugar"
 // 期限の語（開いた fd の鎖 TC_FDS・ストリームの鎖 TC_CHS の次 — 記録の先頭の頁・task.sober の TC_SAVE の手前）
 const TC_DL = TC_WORDS + 2
 
-// needDeadline は rt.dl_expired を宣言する（lower の入口で毎回呼ぶ — std/task に届き、deadline: を書いた Scope があるプログラムだけ — ParCheckTyped の印・lower の入口から）
+// rt.dl_expired を宣言する（lower の入口で毎回呼ぶ — std/task に届き、deadline: を書いた Scope があるプログラムだけ — ParCheckTyped の印・lower の入口から）
 func needDeadline(st mut St) {
     lsNeed(mut st, NEED_DEADLINE, 0)
-    // 判定はこの def の中で 1 回（呼び手の build は展開されるので、そこに書くと desugar.DeadlineUse の表の読みが展開の数だけ複製される — report-642）
-    if st.taskUse && desugar.DeadlineUse(mut st.d) {
+    // 判定はこの def の中で 1 回（呼び手の build は展開されるので、そこに書くと desugar.DeadlineUse の表の読みが展開の数だけ複製される）
+    // 席 A の子は ParCheck を走らせないので、親の判定を受け取る（st.ls.dl — 1 = 偽・2 = 真・0 = 自分の表で）
+    if st.taskUse && (if st.ls.dl != 0 { st.ls.dl == 2 } else { desugar.DeadlineUse(mut st.d) }) {
         st.rtD3 = st.rtD3 | int(addFunc(mut st, int(strLit(mut st, "rt.dl_expired")), desugar.ListRef(list0(mut st)), TyI64)) << 32
     }
 }
@@ -29,8 +30,8 @@ func dlFn(x int) FnRef {
     return FnRef(x >> 32)
 }
 
-// clockNs は CLOCK_MONOTONIC の今の時刻（ns — clock_gettime(1, &ts)）。deadline: を書くプログラムは vDSO の __vdso_clock_gettime（起動で引いた番地 —
-// meta の W_VDSO・見つからなければ 0 で生の syscall へ）を呼ぶ（期限の検査は io の口ごと — report-653: 期限つきの echo で clock_gettime 2 / 往復の syscall だった）
+// CLOCK_MONOTONIC の今の時刻（ns — clock_gettime(1, &ts)）。deadline: を書くプログラムは vDSO の __vdso_clock_gettime（起動で引いた番地 —
+// meta の W_VDSO・見つからなければ 0 で生の syscall へ）を呼ぶ（期限の検査は io の口ごと — 期限つきの echo で clock_gettime 2 / 往復の syscall だった）
 func clockNs(st mut St) int {
     ts := newSlotAddr(mut st, 2)
     if dlFn(st.rtD3) != 0 {
@@ -52,12 +53,12 @@ func clockNs(st mut St) int {
     return bin(mut st, BAdd, bin(mut st, BMul, load(mut st, ts, 0), iconst(mut st, 1000000000)), load(mut st, ts, 1))
 }
 
-// vdLd は番地 a + off（i64 の値・バイト）の 8 バイト
+// 番地 a + off（i64 の値・バイト）の 8 バイト
 func vdLd(st mut St, a int, off int) int {
     return load(mut st, itop(mut st, bin(mut st, BAdd, a, off)), 0)
 }
 
-// vdsoInit は起動（taskInitMain — ワーカーの meta の写しより前）で auxv の AT_SYSINFO_EHDR（33）から vDSO の ELF を歩き、__vdso_clock_gettime の番地を
+// 起動（taskInitMain — ワーカーの meta の写しより前）で auxv の AT_SYSINFO_EHDR（33）から vDSO の ELF を歩き、__vdso_clock_gettime の番地を
 // meta の W_VDSO へ（見つからない・DT_HASH が無い等は 0 = 生の syscall）。歩き方: 最初の PT_LOAD で偏り（基底 + p_offset − p_vaddr）・PT_DYNAMIC の
 // DT_HASH（記号の数 = nchain）/ DT_SYMTAB / DT_STRTAB・記号を線形に名前（20 バイト + NUL を 3 語で）照合（定義済み = st_shndx ≠ 0）
 func vdsoInit(st mut St, sp int) {
@@ -65,7 +66,7 @@ func vdsoInit(st mut St, sp int) {
     store(mut st, meta, W_VDSO, vdsoWalk(mut st, sp))
 }
 
-// vdsoWalk は vdsoInit の歩き（sp = _start の初期 rsp）: __vdso_clock_gettime の番地（見つからなければ 0）を返す（sleep の ring の道の遅延の引き — sleepClock も使う）
+// vdsoInit の歩き（sp = _start の初期 rsp）: __vdso_clock_gettime の番地（見つからなければ 0）を返す（sleep の ring の道の遅延の引き — sleepClock も使う）
 func vdsoWalk(st mut St, sp int) int {
     zero := iconst(mut st, 0)
     done := newBlock(mut st)
@@ -161,7 +162,7 @@ func vdsoWalk(st mut St, sp int) int {
     return fn
 }
 
-// dlOpen は scope の開き（parScope）: 今の task tk の期限を min(今の値, 今 + d)（今の値 0 = なし）にし、戻すための元の値を返す
+// scope の開き（parScope）: 今の task tk の期限を min(今の値, 今 + d)（今の値 0 = なし）にし、戻すための元の値を返す
 func dlOpen(st mut St, tk int, d int) int {
     old := load(mut st, tk, TC_DL)
     abs := bin(mut st, BAdd, clockNs(mut st), d)
@@ -171,7 +172,7 @@ func dlOpen(st mut St, tk int, d int) int {
     return old
 }
 
-// buildDeadlineRt は rt.dl_expired(): 今の task の期限が過ぎていれば 1（期限なし = 0）。時刻を読むのは期限があるときだけ
+// rt.dl_expired(): 今の task の期限が過ぎていれば 1（期限なし = 0）。時刻を読むのは期限があるときだけ
 func buildDeadlineRt(st mut St) {
     if dlFn(st.rtD3) == 0 {
         return

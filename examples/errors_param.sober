@@ -23,7 +23,7 @@ func Pump(recv func(k func(n int)) error?, send func(n int) error?) error? {
     return nil
 }
 
-// Frame は recv の失敗を包み替える（Bad の cause へ — 戻りへ漏れないので宣言に recv は要らない）
+// recv の失敗を包み替える（Bad の cause へ — 戻りへ漏れないので宣言に recv は要らない）
 @errors(Bad)
 func Frame(recv func(k func(n int)) error?) (int, error?) {
     mut total := 0

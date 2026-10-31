@@ -1,0 +1,659 @@
+package main
+
+// `sober test` の handler（package の *_test.sober の TestXxx() を集めて走らせる）
+
+import "std/io"
+import "std/iter"
+import "std/os"
+import "std/cli"
+import "std/strings"
+import "std/hash"
+import "std/hex"
+import "std/sort"
+import "ast"
+import "loader"
+import "lower"
+
+// `sober test <package>… [--work <dir>] [--run <接頭辞>] [-v]`（T1・T8）: package ごとに
+// テストのビルド（loader.LoadTestFs — 合成の main）を Sober の正規バックエンド（lower.ElfPasses — B-4）で <work>/t に書き、実行の bit を付けて
+// （os.WriteMode）、TestXxx を 1 つずつ別プロセス（std/os.RunTo）で走らせて終了コードを集計する。子の出力は捕まえて、テストごとに
+// 結果の行の前へ書き出す（-v は受けるが今は常に見せる形と同じ）。--run は名前の接頭辞で絞る。終了コード = 失敗があれば 1。
+// 全部通った package の印字は置き場に覚え、次の同じ問い合わせは建てずに走らせずに同じ印字を返す（結果の再生 — --fresh で走らせ直す）。
+// --cover（--cover-out / --cover-pkg も同じ）: テストのビルドにカバレッジの計器を掛け、子ごとの印を OR で合わせて package ごとに表の下へ報告する
+func cmdTest(cl cli.Parsed) int {
+    pkgs := cli.PosList(cl, Pkgs)
+    wo := cli.StrOpt(cl, TWork)
+    ro := cli.StrOpt(cl, TRun)
+    prefix := if ro == nil { "" } else { ro }
+    fresh := cli.Bool(cl, TFresh)
+    coo := cli.StrOpt(cl, TCoverOut)
+    cpo := cli.StrOpt(cl, TCoverPkg)
+    cv := CovOpt{on: cli.Bool(cl, TCover) || coo != nil || cpo != nil, out: if coo == nil { "" } else { coo }, pats: if cpo == nil { []string{} } else { coverPats(cpo) }, mutate: false}
+    // --work が無ければ置き場を自分で作る（cacheDir()/sober-test/<pid> — 置き場が無ければ /tmp/sober-test/<pid>。同時に走る別のプロセスと
+    // テストの実行ファイルを取り合わない。std に削除の口が無いので後片付けはしない — 中身は最後のテストの実行ファイル 1 本）
+    work := if wo == nil { testWork() } else { wo }
+    if work == "" {
+        return fail("sober: test: cannot make a work directory (pass --work <dir>)")
+    }
+    mo := cli.StrOpt(cl, TMutateOut)
+    if cli.Bool(cl, TMutate) || mo != nil {
+        if cv.on {
+            return fail("sober: test: --mutate cannot be combined with --cover (the coverage arms would count the mutant switches) — run them separately")
+        }
+        return testMutate(pkgs, work, prefix, fresh, if mo == nil { "" } else { mo })
+    }
+    std := Std
+    mut pass := 0
+    mut failn := 0
+    mut covs := mut []CovData{}
+    for k <- iter.Range(0, len(pkgs)) {
+        mut all := mut []byte{}
+        r := testReplayed(pkgs[k], std, work, prefix, fresh, cv, mut all)
+        pass += r.pass
+        failn += r.fail
+        covs = append(covs, r.cover)
+    }
+    println("${pass} passed, ${failn} failed")
+    if cv.out != "" && io.WriteFile(cv.out, coverOut(cv.out, coverMerge(freeze(covs)))) != nil {
+        return fail("sober: test: cannot write ${cv.out}")
+    }
+    return if failn == 0 { 0 } else { 1 }
+}
+
+// `sober test --cover` の指定（out = --cover-out の先・pats = --cover-pkg のパターン — 空なら package ごとにその package）
+type CovOpt struct {
+    on bool
+    out string
+    pats []string
+    // `sober test --mutate`（mutate.sober — 計器とは同時に立たない）
+    mutate bool
+}
+
+// `sober test --mutate`（mutate.sober — 結果の再生は鍵に --mutate を入れて同じ道。SOBER_MUTATE_ONE の照合の道は通さない）。
+// --mutate-out は全部の package の行を 1 本のファイルへ
+func testMutate(pkgs []string, work string, prefix string, fresh bool, outPath string) int {
+    one := mutateOne()
+    mut pass := 0
+    mut failn := 0
+    mut out := mut []byte{}
+    cv := CovOpt{on: false, out: "", pats: []string{}, mutate: true}
+    for k <- iter.Range(0, len(pkgs)) {
+        mut log := mut []byte{}
+        r := if one >= 0 { mutatePkg(pkgs[k], Std, work, prefix, mut log, one) } else { testReplayed(pkgs[k], Std, work, prefix, fresh, cv, mut log) }
+        ls := mutLines(freeze(log))
+        for i <- iter.Range(0, len(ls)) {
+            out = append(out, ls[i])
+        }
+        pass += r.pass
+        failn += r.fail
+    }
+    if one < 0 {
+        println("${pass} passed, ${failn} failed")
+    }
+    if outPath != "" && io.WriteFile(outPath, freeze(out)) != nil {
+        return fail("sober: test: cannot write ${outPath}")
+    }
+    if outPath == "" && one >= 0 {
+        _ = io.WriteStdout(freeze(out))
+    }
+    return if failn == 0 { 0 } else { 1 }
+}
+
+// 環境変数 SOBER_MUTATE_ONE（照合の網 — 変異 n だけの build。無ければ -1）
+func mutateOne() int {
+    v, err := os.Getenv("SOBER_MUTATE_ONE")
+    if err != nil || v == nil {
+        return -1
+    }
+    b := bytes(v)
+    if len(b) == 0 {
+        return -1
+    }
+    mut n := 0
+    for i <- iter.Range(0, len(b)) {
+        if b[i] < '0' || b[i] > '9' {
+            return -1
+        }
+        n = n * 10 + int(b[i]) - 48
+    }
+    return n
+}
+
+// `sober test` の既定の作業場所（--work が無いとき）。pid は /proc/self/stat の最初の欄
+func testWork() string {
+    st := io.ReadFile("/proc/self/stat") catch return ""
+    mut n := 0
+    while n < len(st) && st[n] != ' ' {
+        n += 1
+    }
+    pid := string(st[0:n]) catch return ""
+    cd := cacheDir()
+    base := if cd == "" { "/tmp/sober-test" } else { cd + "/sober-test" }
+    dir := "${base}/${pid}"
+    mkdirs(dir)
+    return dir
+}
+
+// package 1 つ分の集計
+type TestTally struct {
+    pass int
+    fail int
+    files []string // テストのビルドが読んだ利用者のファイル（建たなければ空）
+    envs []string  // テストのコードが読む環境変数の名前（リテラル — 静的に集めた）
+    envOk bool     // 読む環境変数を全部リテラルで集められたか（偽なら結果を覚えない）
+    cover CovData  // --cover の点と踏んだか（計器なしなら空）
+}
+
+// package pkg のテストを建てて走らせる（建たなければ FAIL 1 件として数える）。テストのビルドは build と同じ後段の関数キャッシュの道
+// （SOBER_BUILD_CACHE=0 で切れる）。子の標準出力 / 標準エラーは <work>/o・<work>/e に捕まえ、テストごとに標準出力 → 標準エラーの順で
+// 書き出してから結果の行を印字する（1 本のテストの中の 2 本の流れの前後は保たない）
+// log には書き出した順に（fd, バイト列）を積む（結果の再生の値）
+// cv.on なら計器つきで建て（置き場は使わない）、子ごとの印（<work>/cov）を OR で合わせ、結果の行の後に報告を書く
+func testPkg(pkg string, std map[string]string, work string, prefix string, log mut []byte, cv CovOpt) TestTally {
+    bd := if cv.on { "" } else { buildCacheDir() }
+    bv := lower.BcOpen(bd)
+    p, pcs, lerr := loadTestPkg(pkg, std, bv, cv)
+    if lerr != nil {
+        say(mut log, 1, bytes("FAIL ${pkg} (build)\n"))
+        // 診断は標準エラーへ（書けなくても集計は同じ — 失敗 1 件）
+        say(mut log, 2, bytes("sober: ${loadDiag(p, std, lerr)}\n"))
+        return failTally()
+    }
+    names, nerr := loader.TestNames(p, pkg)
+    exe, berr := testExe(p, bd, bv, pcs)
+    if nerr != nil || berr != nil {
+        say(mut log, 1, bytes("FAIL ${pkg} (build)\n"))
+        // 診断は build と同じ形で標準エラーへ（集計は同じ — 失敗 1 件）
+        _ = if nerr != nil { fail(loadDiag(p, std, nerr)) } else { lowerFail(p, std, berr) }
+        return failTally()
+    }
+    bin := work + "/t"
+    if io.WriteFile(bin, exe) != nil || os.WriteMode(bin, 493) != nil {
+        say(mut log, 1, bytes("FAIL ${pkg} (build)\n"))
+        return failTally()
+    }
+    mut pass := 0
+    mut failn := 0
+    nc := len(p.cover_pts) / 3
+    mut hit := mut []bool{}
+    for i <- iter.Range(0, nc) {
+        hit = append(hit, false)
+    }
+    covf := if cv.on { work + "/cov" } else { "" }
+    for k <- iter.Range(0, len(names)) {
+        if prefix == "" || strings.HasPrefix(names[k], prefix) {
+            corpus := "quick:corpus=${pkg}/testdata/fuzz"
+            mark := work + "/mark"
+            _ = os.Remove(mark)
+            ec, eerr := runTest(bin, []string{names[k], corpus, "quick:mark=${mark}"}, covf, work)
+            if cv.on {
+                coverOr(mut hit, covf, p.cover_key, nc)
+            }
+            // std/quick の性質の中で死んだ（Check の印が残った）なら、そのテストを駆動役で走らせ直して縮めた反例の報告に置き換える
+            m := io.ReadFile(mark) catch []byte{}
+            shrunk := eerr == nil && ec != 0 && len(m) > 0 && rerunQuick(bin, names[k], corpus, m, work)
+            if eerr == nil {
+                showCaught(mut log, if shrunk { work + "/qo" } else { work + "/o" }, 1)
+                showCaught(mut log, if shrunk { work + "/qe" } else { work + "/e" }, 2)
+            }
+            if eerr == nil && ec == 0 {
+                say(mut log, 1, bytes("ok   ${pkg}.${names[k]}\n"))
+                pass += 1
+            } else {
+                say(mut log, 1, bytes("FAIL ${pkg}.${names[k]} (exit ${ec})\n"))
+                failn += 1
+            }
+        }
+    }
+    cd := if cv.on { CovData{pts: coverPoints(p, std), hit: freeze(hit)} } else { noCover() }
+    if cv.on {
+        coverReport(mut log, pkg, cd)
+    }
+    fs := userFiles(p)
+    ev := testEnvNames(realFiles(fs))
+    return TestTally{pass: pass, fail: failn, files: fs, envs: ev.names, envOk: ev.ok, cover: cd}
+}
+
+// テストのビルドを読む（cv.on なら計器つき — 既定の対象 = package pkg）
+func loadTestPkg(pkg string, std map[string]string, bv lower.BcView, cv CovOpt) (loader.Program, []loader.PcPut, error?) {
+    if cv.on {
+        return loadTestCover(pkg, std, if len(cv.pats) == 0 { []string{pkg} } else { cv.pats })
+    }
+    return loadNamed(pkg, true, std, if bv.on { lower.BcParseView(bv) } else { loader.PcOff() })
+}
+
+// テストの実行ファイルを 1 本走らせる（出力は <work>/o・e。covf が空でなければ前の子の印を消してから、子の印の書き出し先を引数 `cover:out=<covf>` で渡す —
+// 合成の main の $cover.StartTest が読む）
+func runTest(bin string, args []string, covf string, work string) (int, error?) {
+    if covf == "" {
+        return os.RunTo(bin, args, work + "/o", work + "/e")
+    }
+    _ = os.Remove(covf)
+    mut a := mut []string{}
+    for i <- iter.Range(0, len(args)) {
+        a = append(a, args[i])
+    }
+    return os.RunTo(bin, freeze(append(a, "cover:out=${covf}")), work + "/o", work + "/e")
+}
+
+// テスト name の Check（番号 = 印 m の中身）を試行の数だけ駆動役で回し直す（期限なし・コーパスの列を先に再生・コーパスには書かない）。
+// 出力は <work>/qo・qe。駆動役が失敗を縮めて報告した（終了コードが 0 でない）なら真
+func rerunQuick(bin string, name string, corpus string, m []byte, work string) bool {
+    idx := strings.TrimSpace(string(m) catch "")
+    ec, err := os.RunTo(bin, []string{name, "quick:fuzz=0", "quick:check=${idx}", corpus, "quick:tmp=${work}/quick"}, work + "/qo", work + "/qe")
+    return err == nil && ec != 0
+}
+
+func failTally() TestTally {
+    return TestTally{pass: 0, fail: 1, files: []string{}, envs: []string{}, envOk: false, cover: noCover()}
+}
+
+// テストのビルドの ELF（置き場 bd があれば後段の関数キャッシュの道）
+func testExe(p loader.Program, bd string, bv lower.BcView, pcs []loader.PcPut) ([]byte, error?) {
+    if bd != "" {
+        return lower.ElfPassesCache(p, bd, bv, pcs)
+    }
+    return lower.ElfPasses(p)
+}
+
+// 捕まえた子の出力を親の fd（1 / 2）へ書き出す（読めないときは黙って飛ばす — 集計は終了コードで決まる）
+func showCaught(log mut []byte, path string, fd int) {
+    b := io.ReadFile(path) catch return
+    say(mut log, fd, b)
+}
+
+// b を fd（1 = 標準出力・2 = 標準エラー）へ書き、log に積む（空なら何もしない。書けなくても集計は同じ）
+func say(log mut []byte, fd int, b []byte) {
+    if len(b) == 0 {
+        return
+    }
+    _ = if fd == 2 { io.WriteStderr(b) } else { io.WriteStdout(b) }
+    lenPut(mut log, bytes("${fd}"))
+    lenPut(mut log, b)
+}
+
+// ── テストの結果の再生（docs/incremental.md）──
+//
+// 全部通った package の印字（書き出した順の標準出力 / 標準エラーの列）を置き場に覚え、次の同じ問い合わせは建てずに走らせずに返す。
+// 鍵 = package の綴り ‖ --run の接頭辞 ‖ --cover の指定 ‖ PWD ‖ 環境の SOBER_* の全部（rt が読む種・ワーカー数等 — 置き場の口と SOBER_COVER は除く）。置き場は build の世代の
+// ディレクトリ（コンパイラが変われば別）。値には印字と一緒に、テストのビルドが読んだ利用者のファイルの中身・そのディレクトリの .sober の名前の列・
+// package の testdata/ の丸ごと（名前と中身 — 再帰）・テストのコードが読む環境変数（os.Getenv のリテラル・env / cli の表の name — 静的に集める）の値を
+// 持ち、引くときに全部を照合する。--cover なら値に点の表と踏んだか（報告は印字に入っている — --cover-out の材料）も持つ。
+// 失敗のある package と、リテラルでない環境変数の読みを持つ package は覚えない
+
+// package 1 つ分を、置き場に覚えた印字があれば返し、無ければ建てて走らせて（全部通ったら）覚える。all へ印字の列（再生した列か走らせた列）を足す
+func testReplayed(pkg string, std map[string]string, work string, prefix string, fresh bool, cv CovOpt, all mut []byte) TestTally {
+    dir := buildCacheDir()
+    mut log := mut []byte{}
+    if dir == "" || envIs("SOBER_CHECK_REPLAY", "0") {
+        mut log0 := mut []byte{}
+        r0 := testRun(pkg, std, work, prefix, mut log0, cv)
+        appendBytes(mut all, freeze(log0))
+        return r0
+    }
+    key := testReplayKey(pkg, prefix, cv)
+    verify := envIs("SOBER_CACHE_VERIFY", "1") || envIs("SOBER_CACHE_VERIFY", "2")
+    hit := if fresh { noTestHit() } else { testReplayGet(dir, key) }
+    if hit.ok && !verify {
+        replayStatOf("test", "1/1")
+        replayLog(hit.log)
+        appendBytes(mut all, hit.log)
+        return TestTally{pass: hit.pass, fail: 0, files: []string{}, envs: []string{}, envOk: true, cover: hit.cover}
+    }
+    r := testRun(pkg, std, work, prefix, mut log, cv)
+    appendBytes(mut all, freeze(log))
+    if hit.ok && (r.fail != 0 || r.pass != hit.pass || !bytesEq(freeze(log), hit.log)) {
+        _ = io.WriteStderr(bytes("cache: stale entry test-replay ${key}\n"))
+        panic(InvariantBroken{})
+    }
+    replayStatOf("test", if hit.ok { "1/1" } else { "0/1" })
+    if r.fail != 0 {
+        replayStatOf("test", "skip (failed)")
+    } else if !r.envOk {
+        replayStatOf("test", "skip (environment read not a literal)")
+    } else if len(r.files) == 0 {
+        replayStatOf("test", "skip (no files)")
+    } else {
+        testReplayPut(dir, key, pkg, r, freeze(log))
+    }
+    return r
+}
+
+// package 1 つ分を建てて走らせる（--mutate なら mutation testing）
+func testRun(pkg string, std map[string]string, work string, prefix string, log mut []byte, cv CovOpt) TestTally {
+    if cv.mutate {
+        return mutatePkg(pkg, std, work, prefix, mut log, -1)
+    }
+    return testPkg(pkg, std, work, prefix, mut log, cv)
+}
+
+func testReplayKey(pkg string, prefix string, cv CovOpt) string {
+    mut b := mut []byte{}
+    lenPut(mut b, bytes("test-replay 2"))
+    lenPut(mut b, bytes(pkg))
+    lenPut(mut b, bytes(prefix))
+    lenPut(mut b, bytes(if cv.on { "cover ${strings.Join(cv.pats, ",")}" } else if cv.mutate { "mutate" } else { "" }))
+    pwd := os.Getenv("PWD") catch nil
+    lenPut(mut b, bytes(if pwd == nil { "" } else { pwd }))
+    es := soberEnv()
+    for i <- iter.Range(0, len(es)) {
+        lenPut(mut b, bytes(es[i]))
+    }
+    return hex.Format(hash.Sha256(freeze(b)))
+}
+
+// 環境の SOBER_* の「NAME=値」の列（名前の順 — 置き場・計測・watch の口〔replayEnvSkip〕は除く。/proc/self/environ が読めなければ空）
+func soberEnv() []string {
+    b := io.ReadFile("/proc/self/environ") catch return []string{}
+    mut out := mut []string{}
+    mut start := 0
+    for i <- iter.Range(0, len(b)) {
+        if b[i] == 0 {
+            mut eq := start
+            while eq < i && b[eq] != '=' {
+                eq += 1
+            }
+            kv := string(b[start:i]) catch ""
+            name := string(b[start:eq]) catch ""
+            start = i + 1
+            if strings.HasPrefix(name, "SOBER_") && eq < i && !hasStr(replayEnvSkip, name) {
+                out = append(out, kv)
+            }
+        }
+    }
+    // 名前の順へ（環境の並びは親に依る）
+    xs := freeze(out)
+    ord := sort.Order(len(xs), (i, j) => bytesLess(bytes(xs[i]), bytes(xs[j])))
+    mut sorted := mut []string{}
+    for i <- iter.Range(0, len(ord)) {
+        sorted = append(sorted, xs[ord[i]])
+    }
+    return freeze(sorted)
+}
+
+// a が b より辞書順で前か（バイトごと）
+func bytesLess(a []byte, b []byte) bool {
+    n := if len(a) < len(b) { len(a) } else { len(b) }
+    for i <- iter.Range(0, n) {
+        if a[i] != b[i] {
+            return a[i] < b[i]
+        }
+    }
+    return len(a) < len(b)
+}
+
+// テストのコードが読む環境変数の名前（ok = 全部リテラルで集められた）
+type EnvNames struct {
+    names []string
+    ok bool
+}
+
+// 利用者のファイルの木から、os.Getenv("名前") のリテラルと env.StrVar / IntVar / BoolVar・cli.Env の表の name: "名前" を集める。
+// リテラルでない Getenv の実引数・表の name は ok = 偽（何を読むか静的に分からない）
+func testEnvNames(files []string) EnvNames {
+    mut out := mut []string{}
+    for i <- iter.Range(0, len(files)) {
+        b := io.ReadFile(files[i]) catch return EnvNames{names: []string{}, ok: false}
+        t, ok := parseFile(files[i], b)
+        if !ok || !envNamesOf(t, mut out) {
+            return EnvNames{names: []string{}, ok: false}
+        }
+    }
+    return EnvNames{names: freeze(out), ok: true}
+}
+
+// 木 t の節を全部見て out へ名前を足す（重複なし）。リテラルでない読みがあれば偽
+func envNamesOf(t ast.Tree, out mut []string) bool {
+    for k <- iter.Range(0, len(t.nodes)) {
+        x := t.nodes[k]
+        if x.kind == ast.ECall && x.a >= 0 && t.nodes[x.a].kind == ast.ESelector && loader.Name(t, t.nodes[x.a].b) == "Getenv" {
+            if x.b < 0 || ast.ListLen(t, x.b) < 1 {
+                return false
+            }
+            if !envLit(t, ast.ListAt(t, x.b, 0), mut out) {
+                return false
+            }
+        }
+        if x.kind == ast.EComposite && envTable(loader.Name(t, x.a)) {
+            for i <- iter.Range(0, ast.ListLen(t, x.b)) {
+                el := t.nodes[ast.ListAt(t, x.b, i)]
+                if el.a >= 0 && loader.Name(t, el.a) == "name" && !envLit(t, el.b, mut out) {
+                    return false
+                }
+            }
+        }
+    }
+    return true
+}
+
+// 節 n が文字列リテラルならその値を out へ足して真
+func envLit(t ast.Tree, n int, out mut []string) bool {
+    if n < 0 || t.nodes[n].kind != ast.EStrlit {
+        return false
+    }
+    v := loader.Name(t, t.nodes[n].a)
+    for i <- iter.Range(0, len(out)) {
+        if out[i] == v {
+            return true
+        }
+    }
+    out = append(out, v)
+    return true
+}
+
+// 型の名前が環境変数の表の行（std/env の StrVar / IntVar / BoolVar・std/cli の Env — import の別名を問わず末尾で見る）か
+func envTable(name string) bool {
+    return strings.HasSuffix(name, ".StrVar") || strings.HasSuffix(name, ".IntVar") || strings.HasSuffix(name, ".BoolVar") || strings.HasSuffix(name, ".Env")
+}
+
+// ディレクトリ d の中身の丸ごとのハッシュ（相対の名前・種類・ファイルの中身 — 名前の順に再帰。無ければ "none"・読めなければ ""）
+func treeSum(d string) string {
+    if !isDir(d) {
+        return "none"
+    }
+    mut b := mut []byte{}
+    if !treeWalk(d, "", mut b) {
+        return ""
+    }
+    return hex.Format(hash.Sha256(freeze(b)))
+}
+
+func treeWalk(d string, rel string, b mut []byte) bool {
+    es := io.ReadDir(d) catch return false
+    for i <- iter.Range(0, len(es)) {
+        name := es[i].Name
+        path := d + "/" + name
+        r := rel + "/" + name
+        switch es[i].Kind {
+        case io.Dir{}:
+            lenPut(mut b, bytes("d" + r))
+            if !treeWalk(path, r, mut b) {
+                return false
+            }
+        default:
+            c := io.ReadFile(path) catch return false
+            lenPut(mut b, bytes("f" + r))
+            lenPut(mut b, bytes(hex.Format(hash.Sha256(c))))
+        }
+    }
+    return true
+}
+
+func isDir(d string) bool {
+    _ = io.ReadDir(d) catch return false
+    return true
+}
+
+// 引き当ての結果（ok = 照合まで通った・pass = 通ったテストの数・log = 書き出した順の (fd, バイト列) の列・cover = --cover の点と踏んだか）
+type TestHit struct {
+    ok bool
+    pass int
+    log []byte
+    cover CovData
+}
+
+func noTestHit() TestHit {
+    return TestHit{ok: false, pass: 0, log: []byte{}, cover: noCover()}
+}
+
+// 覚えた印字 log を同じ順に fd へ書き出す
+func replayLog(log []byte) {
+    fs := lenFields(log)
+    mut q := 0
+    while q + 1 < len(fs.xs) {
+        // fd 3 = --mutate-out の行（印字しない）
+        fd := atoiOf(fs.xs[q])
+        if fd != 3 {
+            _ = if fd == 2 { io.WriteStderr(fs.xs[q + 1]) } else { io.WriteStdout(fs.xs[q + 1]) }
+        }
+        q += 2
+    }
+}
+
+// 結果 r と印字 log を覚える（読んだファイルが読めない・ディレクトリが並べられない・testdata が読めないときは覚えない）
+func testReplayPut(dir string, key string, pkg string, r TestTally, log []byte) {
+    mut v := mut []byte{}
+    fs := realFiles(r.files)
+    ds := replayDirs(fs)
+    lenPut(mut v, bytes("${len(fs)}"))
+    for i <- iter.Range(0, len(fs)) {
+        b := io.ReadFile(fs[i]) catch {
+            replayStatOf("test", "skip (cannot read ${fs[i]})")
+            return
+        }
+        lenPut(mut v, bytes(fs[i]))
+        lenPut(mut v, bytes(hex.Format(hash.Sha256(b))))
+        lenPut(mut v, bytes(embedSum(fs[i], b)))
+    }
+    lenPut(mut v, bytes("${len(ds)}"))
+    for i <- iter.Range(0, len(ds)) {
+        sum := dirSum(ds[i])
+        if sum == "" {
+            replayStatOf("test", "skip (cannot list ${ds[i]})")
+            return
+        }
+        lenPut(mut v, bytes(ds[i]))
+        lenPut(mut v, bytes(sum))
+    }
+    td := pkg + "/testdata"
+    tsum := treeSum(td)
+    if tsum == "" {
+        replayStatOf("test", "skip (cannot read ${td})")
+        return
+    }
+    lenPut(mut v, bytes(td))
+    lenPut(mut v, bytes(tsum))
+    lenPut(mut v, bytes("${len(r.envs)}"))
+    for i <- iter.Range(0, len(r.envs)) {
+        lenPut(mut v, bytes(r.envs[i]))
+        lenPut(mut v, bytes(envVal(r.envs[i])))
+    }
+    covPut(mut v, r.cover)
+    lenPut(mut v, bytes("${r.pass}"))
+    lenPut(mut v, log)
+    cachePut(dir, key, freeze(v))
+}
+
+// 環境変数 name の値の印（無ければ "-"・あれば "=" + 値 — 空の値と無いのを分ける）
+func envVal(name string) string {
+    v := os.Getenv(name) catch return "!"
+    return if v == nil { "-" } else { "=" + v }
+}
+
+// 鍵の値を引き、読んだファイル・ディレクトリ・testdata・環境変数を今と照合する
+func testReplayGet(dir string, key string) TestHit {
+    cv := cacheGet(dir, key)
+    if !cv.ok {
+        return noTestHit()
+    }
+    fs := lenFields(cv.val)
+    if !fs.ok || len(fs.xs) < 1 {
+        return noTestHit()
+    }
+    xs := fs.xs
+    mut q := 0
+    nf := atoiOf(xs[q])
+    q += 1
+    for i <- iter.Range(0, nf) {
+        if q + 2 >= len(xs) {
+            return noTestHit()
+        }
+        path := string(xs[q]) catch return noTestHit()
+        b := io.ReadFile(path) catch return noTestHit()
+        if hex.Format(hash.Sha256(b)) != (string(xs[q + 1]) catch "") || embedSum(path, b) != (string(xs[q + 2]) catch "") {
+            return noTestHit()
+        }
+        q += 3
+    }
+    if q >= len(xs) {
+        return noTestHit()
+    }
+    nd := atoiOf(xs[q])
+    q += 1
+    for i <- iter.Range(0, nd) {
+        if q + 1 >= len(xs) {
+            return noTestHit()
+        }
+        d := string(xs[q]) catch return noTestHit()
+        if dirSum(d) != (string(xs[q + 1]) catch "") {
+            return noTestHit()
+        }
+        q += 2
+    }
+    if q + 2 >= len(xs) {
+        return noTestHit()
+    }
+    td := string(xs[q]) catch return noTestHit()
+    if treeSum(td) != (string(xs[q + 1]) catch "") {
+        return noTestHit()
+    }
+    ne := atoiOf(xs[q + 2])
+    q += 3
+    for i <- iter.Range(0, ne) {
+        if q + 1 >= len(xs) {
+            return noTestHit()
+        }
+        name := string(xs[q]) catch return noTestHit()
+        if envVal(name) != (string(xs[q + 1]) catch "") {
+            return noTestHit()
+        }
+        q += 2
+    }
+    if q >= len(xs) {
+        return noTestHit()
+    }
+    nc := atoiOf(xs[q])
+    q += 1
+    if q + nc * 6 + 1 >= len(xs) {
+        return noTestHit()
+    }
+    cd := covGet(xs, q, nc)
+    q += nc * 6
+    return TestHit{ok: true, pass: atoiOf(xs[q]), log: xs[q + 1], cover: cd}
+}
+
+// 再生の値へ点の表と踏んだか（点の数 + 1 点 6 欄 — パス・行・列・種類・関数の名前・0 / 1）
+func covPut(v mut []byte, d CovData) {
+    lenPut(mut v, bytes("${len(d.pts)}"))
+    for i <- iter.Range(0, len(d.pts)) {
+        c := d.pts[i]
+        lenPut(mut v, bytes(c.path))
+        lenPut(mut v, bytes("${c.line}"))
+        lenPut(mut v, bytes("${c.col}"))
+        lenPut(mut v, bytes("${c.kind}"))
+        lenPut(mut v, bytes(c.fn))
+        lenPut(mut v, bytes(if d.hit[i] { "1" } else { "0" }))
+    }
+}
+
+// covPut の逆（xs の q から nc 点）
+func covGet(xs [][]byte, q int, nc int) CovData {
+    mut ps := mut []CovPt{}
+    mut hs := mut []bool{}
+    for i <- iter.Range(0, nc) {
+        b := q + i * 6
+        ps = append(ps, CovPt{path: string(xs[b]) catch "", line: atoiOf(xs[b + 1]), col: atoiOf(xs[b + 2]), kind: atoiOf(xs[b + 3]), fn: string(xs[b + 4]) catch ""})
+        hs = append(hs, atoiOf(xs[b + 5]) == 1)
+    }
+    return CovData{pts: freeze(ps), hit: freeze(hs)}
+}

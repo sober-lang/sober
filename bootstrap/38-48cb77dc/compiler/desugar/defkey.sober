@@ -1,0 +1,724 @@
+package desugar
+
+// 関数単位の check キャッシュの鍵 K-D（便 2 R1 — report-1258 3.2・report-1261 7 節の裁定 1 / 2）: 検査する Def d の鍵 =
+// 版 ‖ コンパイラの鍵 ‖ trust ‖ d から届く項目の集合の和。項目 = 関数の署名・関数の本体・const・型宣言。辺 = 項目の字句の範囲の中の名前の参照
+// （ResolveTop / ResolveSel — 呼び出し・関数値・const・型名・合成リテラル・variant のパターン）。参照先が関数なら署名へ、さらに展開される関数か
+// ジェネリックなら本体へも（展開の閉包 ∪ インスタンス化する呼び先の本体 — d の脱糖が読む本体）。const は初期化式ごと（辞書 const のラムダを含む）。
+// 項目の中身 = 印字器の綴り（位置・コメントを持たない）‖ ファイルの import の表 ‖ 関数なら印（展開・mut の Def・closed・Def か・逃げ・上げない印）。
+// 名前の解決は束縛の隠しを見ない（多めに辺を張る — 鍵が多めに動くだけ）。型付けの前（PlanDefs と同じ前段）に組む
+
+import "ast"
+import "loader"
+import "printer"
+import "std/iter"
+import "std/table"
+import "obuf"
+import "diag"
+
+const DK_VER = 1
+
+// dkMix / dkMix2 は 2 本の混ぜ（tycanon の tcW と同じ定数）
+func dkMix(a int, w int) int {
+    x := (a ^ w) * TC_M1
+    return x ^ (x >> 29)
+}
+
+func dkMix2(b int, w int) int {
+    x := (b ^ w) * TC_M2
+    return x ^ (x >> 31)
+}
+
+// DkH は 2 本の混ぜの途中の値
+type DkH struct {
+    a int
+    b int
+}
+
+// dkW は h に語 w を混ぜる
+func dkW(h DkH, w int) DkH {
+    return DkH{dkMix(h.a, w), dkMix2(h.b, w)}
+}
+
+// dkBytes は h にバイト列 s を混ぜる
+func dkBytes(h0 DkH, s []byte) DkH {
+    mut a := dkMix(h0.a, len(s))
+    mut b := dkMix2(h0.b, len(s))
+    for i <- iter.Range(0, len(s)) {
+        a = dkMix(a, int(s[i]))
+        b = dkMix2(b, int(s[i]))
+    }
+    return DkH{a, b}
+}
+
+// dkStr は h にヒープの文字列 s を混ぜる（-1 = 無し）
+func dkStr(st mut S, h0 DkH, s StrRef) DkH {
+    if int(s) < 0 {
+        return dkW(h0, -1)
+    }
+    n := slen(mut st, s)
+    mut a := dkMix(h0.a, n)
+    mut b := dkMix2(h0.b, n)
+    for i <- iter.Range(0, n) {
+        a = dkMix(a, sat(mut st, s, i))
+        b = dkMix2(b, sat(mut st, s, i))
+    }
+    return DkH{a, b}
+}
+
+// DkGraph は項目の表と辺: 項目 = 署名 [0, nfn)・本体 [nfn, 2nfn)・const [2nfn, 2nfn + ncon)・型宣言 [2nfn + ncon, …)
+type DkGraph struct {
+    n int
+    h1 []int     // 項目の中身のハッシュ（名前・種類込み）
+    h2 []int
+    head []int   // 辺（CSR — 項目ごと）
+    adj []int
+    tyNode []int // 型宣言の節（項目 2nfn + ncon + k）
+    sf []int     // 項目の字句の範囲（ファイル・[始め, 終わり) — 無ければ -1。R2 の落ちの位置の相対化）
+    slo []int
+    shi []int
+}
+
+// dkTreeRef はファイル f の木の節 n の参照
+func dkTreeRef(f int, n int) NodeRef {
+    return NodeRef(ABASE + f * FW + n)
+}
+
+// dkTypeIdx は型宣言の節 nd の項目の序数（tyNode は昇順 — 無ければ -1）
+func dkTypeIdx(tys []int, nd int) int {
+    mut lo := 0
+    mut hi := len(tys)
+    while lo < hi {
+        m := (lo + hi) / 2
+        if tys[m] < nd {
+            lo = m + 1
+        } else {
+            hi = m
+        }
+    }
+    return if lo < len(tys) && tys[lo] == nd { lo } else { -1 }
+}
+
+// dkSort3 は [項目, 始め, 終わり]… を始めの昇順に（挿入 — ファイルごとの宣言の数）
+func dkSort3(xs mut []int) {
+    for i <- iter.Range(1, len(xs) / 3) {
+        mut j := i
+        while j > 0 && xs[(j - 1) * 3 + 1] > xs[j * 3 + 1] {
+            for k <- iter.Range(0, 3) {
+                t := xs[(j - 1) * 3 + k]
+                xs[(j - 1) * 3 + k] = xs[j * 3 + k]
+                xs[j * 3 + k] = t
+            }
+            j -= 1
+        }
+    }
+}
+
+// dkTarget は参照の解決 r の項目（無ければ -1）
+func dkTarget(st mut S, tys []int, r TopRef) int {
+    if r.kind == TopFn {
+        return r.idx
+    }
+    if r.kind == TopConst {
+        return 2 * st.nfn + r.idx
+    }
+    // error の variant（ERRS）は型宣言そのもの（type X error）
+    nd := if r.kind == TopVariant && !isTreeNode(r.idx) { int(ErrNode(mut st, r.sub)) } else { r.idx }
+    if (r.kind == TopType || r.kind == TopVariant) && isTreeNode(nd) {
+        k := dkTypeIdx(tys, nd)
+        return if k >= 0 { 2 * st.nfn + st.ncon + k } else { -1 }
+    }
+    return -1
+}
+
+// dkRefs はファイル f の節 n（名前を持つ種類）の参照先の項目（無ければ -1）
+func dkRefs(st mut S, tys []int, f int, n int) int {
+    t := st.trees[f]
+    k := t.nodes[n].kind
+    pk := FilePkg(mut st, f)
+    x := nodeOf(mut st, dkTreeRef(f, n))
+    if k == ast.EIdent {
+        return dkTarget(mut st, tys, ResolveTop(mut st, pk, sA(x), false, TopConst | TopFn))
+    }
+    if k == ast.ESelector {
+        if kindN(mut st, NodeRef(x.a)) != ast.EIdent {
+            return -1
+        }
+        return dkTarget(mut st, tys, ResolveSel(mut st, pk, sA(nodeOf(mut st, NodeRef(x.a))), sB(x), TopAll))
+    }
+    if k == ast.TName || k == ast.TGeneric {
+        return dkTarget(mut st, tys, ResolveTop(mut st, pk, sA(x), false, TopType))
+    }
+    if k == ast.EComposite {
+        return dkTarget(mut st, tys, ResolveTop(mut st, pk, sA(x), false, TopType | TopVariant))
+    }
+    if k == ast.KPType {
+        return dkTarget(mut st, tys, ResolveTop(mut st, pk, sB(x), false, TopVariant))
+    }
+    return -1
+}
+
+// dkBucket は要素ごとのファイル fl（-1 = 無し）からファイルごとの要素の束（CSR — 束の中は要素の順）
+func dkBucket(fl []int, nfile int) RefGraph {
+    mut src := mut []int{}
+    mut dst := mut []int{}
+    for i <- iter.Range(0, len(fl)) {
+        if fl[i] >= 0 && fl[i] < nfile {
+            src = append(src, fl[i])
+            dst = append(dst, i)
+        }
+    }
+    return csrN(freeze(src), freeze(dst), nfile)
+}
+
+// 名前の解決の memo（開番地 — 1 つの列に槽ごと DKM_W 語: 鍵のハッシュ〔0 = 空き〕・種類 + 8 × package・綴りの文字列・選択子の基底の名前の
+// 文字列〔無ければ -1〕・項目〔-1 = 無し〕。最後の語 = 積んだ数）。満ちたら積まずに解決するだけ
+const DKM_CAP = 131072
+const DKM_W = 5
+
+// dkSpell は h に文字列 s の綴りを混ぜる
+func dkSpell(st mut S, h0 int, s StrRef) int {
+    mut h := dkMix(h0, slen(mut st, s))
+    for i <- iter.Range(0, slen(mut st, s)) {
+        h = dkMix(h, sat(mut st, s, i))
+    }
+    return h
+}
+
+// dkSame は文字列 a と b の綴りが同じか
+func dkSame(st mut S, a StrRef, b StrRef) bool {
+    n := slen(mut st, a)
+    if slen(mut st, b) != n {
+        return false
+    }
+    for i <- iter.Range(0, n) {
+        if sat(mut st, a, i) != sat(mut st, b, i) {
+            return false
+        }
+    }
+    return true
+}
+
+// dkRefsM は dkRefs の memo つき（同じ種類・package・綴りの参照は解決も項目も同じ — 解決は束縛の隠しを見ない）
+func dkRefsM(st mut S, tys []int, f int, n int, m mut []int) int {
+    k := st.trees[f].nodes[n].kind
+    x := nodeOf(mut st, dkTreeRef(f, n))
+    mut c := -1
+    mut s := StrRef(-1)
+    mut r := StrRef(-1)
+    if k == ast.EIdent {
+        c = 0
+        s = sA(x)
+    } else if k == ast.ESelector {
+        if kindN(mut st, NodeRef(x.a)) != ast.EIdent {
+            return -1
+        }
+        c = 1
+        s = sB(x)
+        r = sA(nodeOf(mut st, NodeRef(x.a)))
+    } else if k == ast.TName || k == ast.TGeneric {
+        c = 2
+        s = sA(x)
+    } else if k == ast.EComposite {
+        c = 3
+        s = sA(x)
+    } else if k == ast.KPType {
+        c = 4
+        s = sB(x)
+    } else {
+        return -1
+    }
+    cl := c + 8 * FilePkg(mut st, f)
+    mut h := dkSpell(mut st, dkMix(TC_S1, cl), s)
+    if int(r) >= 0 {
+        h = dkSpell(mut st, h, r)
+    }
+    if h == 0 {
+        h = 1
+    }
+    mut j := h & (DKM_CAP - 1)
+    while m[j * DKM_W] != 0 {
+        q := j * DKM_W
+        if m[q] == h && m[q + 1] == cl && dkSame(mut st, StrRef(m[q + 2]), s) && (int(r) < 0) == (m[q + 3] < 0) && (int(r) < 0 || dkSame(mut st, StrRef(m[q + 3]), r)) {
+            return m[q + 4]
+        }
+        j = (j + 1) & (DKM_CAP - 1)
+    }
+    g := dkRefs(mut st, tys, f, n)
+    if m[DKM_CAP * DKM_W] * 2 < DKM_CAP {
+        q := j * DKM_W
+        m[q] = h
+        m[q + 1] = cl
+        m[q + 2] = int(s)
+        m[q + 3] = int(r)
+        m[q + 4] = g
+        m[DKM_CAP * DKM_W] = m[DKM_CAP * DKM_W] + 1
+    }
+    return g
+}
+
+// dkImports はファイル f の import の表のハッシュ（別名・パスの綴りの列）
+func dkImports(st mut S, f int) DkH {
+    t := st.trees[f]
+    ims := t.nodes[t.file].b
+    mut h := DkH{TC_S1, TC_S2}
+    for i <- iter.Range(0, ast.ListLen(t, ims)) {
+        x := nodeOf(mut st, dkTreeRef(f, ast.ListAt(t, ims, i)))
+        h = dkStr(mut st, h, sA(x))
+        h = dkStr(mut st, h, sB(x))
+    }
+    return h
+}
+
+// dkGraph は項目の表と辺を組む（前段の後 — fnExpands と上げの印が決まっている）
+func dkGraph(st mut S) DkGraph {
+    nfn := st.nfn
+    // 型宣言の節（ファイル順・宣言順 = 昇順）と字句の範囲
+    mut tys := mut []int{}
+    mut tspan := mut []int{}
+    for f <- iter.Range(0, st.nfile) {
+        t := st.trees[f]
+        tl := t.nodes[t.file].c
+        for i <- iter.Range(0, ast.ListLen(t, tl)) {
+            n := ast.ListAt(t, tl, i)
+            tys = append(tys, int(dkTreeRef(f, n)))
+            tspan = append(tspan, t.nodes[n].d)
+            tspan = append(tspan, t.nodes[n].e)
+        }
+    }
+    ty := freeze(tys)
+    // 最後の項目 = error の表（ERRS — 全部の error 型の合併。error? を返す関数の脱糖が読む大域の表）
+    nent := 2 * nfn + st.ncon + len(ty) + 1
+    errs := nent - 1
+    // ファイルごとの持ち主の範囲 [項目, 始め, 終わり]
+    mut src := mut []int{}
+    mut dst := mut []int{}
+    mut sf := mut []int{}
+    mut slo := mut []int{}
+    mut shi := mut []int{}
+    for e <- iter.Range(0, nent) {
+        sf = append(sf, -1)
+        slo = append(slo, -1)
+        shi = append(shi, -1)
+    }
+    // ファイルごとの関数 / const の束（関数の表の順 — ファイル × 関数の総当たりを 1 回の走査に。便 2 R4）
+    mut ffl := mut []int{}
+    for i <- iter.Range(0, nfn) {
+        ffl = append(ffl, fileOf(mut st, fnNode(mut st, i)))
+    }
+    fb := dkBucket(freeze(ffl), st.nfile)
+    mut cfl := mut []int{}
+    for c <- iter.Range(0, st.ncon) {
+        cfl = append(cfl, fileOf(mut st, ConNode(mut st, c)))
+    }
+    cb := dkBucket(freeze(cfl), st.nfile)
+    // 名前の解決の memo（同じ種類・package・綴りの参照は同じ項目 — dkRefsM）と仮引数の型の判定の memo（関数ごと — dkSiteBody）
+    mut mm := mut []int{}
+    for i <- iter.Range(0, DKM_CAP * DKM_W + 1) {
+        mm = append(mm, 0)
+    }
+    mut sp := mut []int{}
+    for i <- iter.Range(0, nfn) {
+        sp = append(sp, 0)
+    }
+    mut tcur := 0
+    for f <- iter.Range(0, st.nfile) {
+        t := st.trees[f]
+        mut rs := mut []int{}
+        for q <- iter.Range(fb.head[f], fb.head[f + 1]) {
+            i := fb.adj[q]
+            nd := fnNode(mut st, i)
+            ext := nodeOf(mut st, nd).f
+            if ext >= 0 && !ZVariant(mut st, i) {
+                lo := latI(mut st, ListRef(ext), 1)
+                hi := latI(mut st, ListRef(ext), 2)
+                se := latI(mut st, ListRef(ext), 3)
+                mid := if latI(mut st, ListRef(ext), 0) != 0 || se <= lo || se > hi { hi } else { se }
+                rs = append(rs, i)
+                rs = append(rs, lo)
+                rs = append(rs, mid)
+                if mid < hi {
+                    rs = append(rs, nfn + i)
+                    rs = append(rs, mid)
+                    rs = append(rs, hi)
+                }
+            }
+        }
+        for q <- iter.Range(cb.head[f], cb.head[f + 1]) {
+            c := cb.adj[q]
+            x := t.nodes[refIdx(int(ConNode(mut st, c)))]
+            rs = append(rs, 2 * nfn + c)
+            rs = append(rs, x.c)
+            rs = append(rs, x.d)
+        }
+        while tcur < len(ty) && refFile(ty[tcur]) == f {
+            rs = append(rs, 2 * nfn + st.ncon + tcur)
+            rs = append(rs, tspan[tcur * 2])
+            rs = append(rs, tspan[tcur * 2 + 1])
+            tcur += 1
+        }
+        dkSort3(mut rs)
+        rr := freeze(rs)
+        for q <- iter.Range(0, len(rr) / 3) {
+            sf[rr[3 * q]] = f
+            slo[rr[3 * q]] = rr[3 * q + 1]
+            shi[rr[3 * q]] = rr[3 * q + 2]
+        }
+        for n <- iter.Range(0, len(t.nodes)) {
+            k := t.nodes[n].kind
+            // error? の型（仮引数・結果・欄・注釈）を書く項目は error の表を読む
+            if k == ast.TOpt && dkErrorOpt(mut st, f, n) {
+                z := zBlock(mut st, f, n)
+                o := if z >= 0 { nfn + z } else { rangeOfSorted(rr, t.nodes[n].tok) }
+                if o >= 0 {
+                    src = append(src, o)
+                    dst = append(dst, errs)
+                }
+            }
+            // 呼び出し点の文脈で本体を展開しうる呼び出し（e2sSiteInline の dotted な mut 実引数・mutValInline の mut を含みうる値）
+            if k == ast.ECall || k == ast.EPipe {
+                z := zBlock(mut st, f, n)
+                o := if z >= 0 { nfn + z } else { rangeOfSorted(rr, t.nodes[n].tok) }
+                g := if o >= 0 { dkSiteBody(mut st, f, n, mut sp) } else { -1 }
+                if g >= 0 {
+                    src = append(src, o)
+                    dst = append(dst, nfn + g)
+                }
+            }
+            if k == ast.EIdent || k == ast.ESelector || k == ast.TName || k == ast.TGeneric || k == ast.EComposite || k == ast.KPType {
+                z := zBlock(mut st, f, n)
+                o := if z >= 0 { nfn + z } else { rangeOfSorted(rr, t.nodes[n].tok) }
+                g := if o >= 0 { dkRefsM(mut st, ty, f, n, mut mm) } else { -1 }
+                if g >= 0 && g != o {
+                    src = append(src, o)
+                    dst = append(dst, g)
+                    // 展開される関数・ジェネリック（インスタンス化）は本体も読む
+                    if g < nfn && int(fnBody(mut st, g)) >= 0 && (fnExpands(mut st, g) || lenL(mut st, fnTParams(mut st, g)) > 0) {
+                        src = append(src, o)
+                        dst = append(dst, nfn + g)
+                    }
+                }
+            }
+        }
+    }
+    // 本体は自分の署名を読む（署名の項目へ辺）
+    for i <- iter.Range(0, nfn) {
+        src = append(src, nfn + i)
+        dst = append(dst, i)
+    }
+    for k <- iter.Range(0, len(ty)) {
+        if kindN(mut st, nC(nodeOf(mut st, NodeRef(ty[k])))) == ast.BError {
+            src = append(src, errs)
+            dst = append(dst, 2 * nfn + st.ncon + k)
+        }
+    }
+    g := csrN(freeze(src), freeze(dst), nent)
+    // 項目の中身
+    mut h1 := mut []int{}
+    mut h2 := mut []int{}
+    mut fh := mut []DkH{}
+    for f <- iter.Range(0, st.nfile) {
+        fh = append(fh, dkImports(mut st, f))
+    }
+    for e <- iter.Range(0, nent) {
+        mut h := DkH{dkMix(TC_S1, if e < 2 * nfn { e / nfn } else if e < 2 * nfn + st.ncon { 2 } else { 3 }), TC_S2}
+        mut nd := NodeRef(-1)
+        mut txt := []byte{}
+        if e < 2 * nfn {
+            i := e % nfn
+            nd = fnNode(mut st, i)
+            h = dkStr(mut st, h, PkgPath(mut st, fnPkg(mut st, i)))
+            x := FnAt(mut st, i)
+            h = dkW(h, (if x.expands { 1 } else { 0 }) + (if x.mutDef { 2 } else { 0 }) + (if x.closed { 4 } else { 0 }) + (if x.def >= 0 { 8 } else { 0 }) +
+                (if e2sExcluded(st.e2sExcl, i) { 16 } else { 0 }) + (if latI(mut st, st.e2sBad, i) != 0 { 32 } else { 0 }) + (if ZVariant(mut st, i) { 64 } else { 0 }))
+            if isTreeNode(int(nd)) {
+                txt = printer.FuncDeclText(st.trees[refFile(int(nd))], refIdx(int(nd)), e < nfn, false)
+            }
+        } else if e < 2 * nfn + st.ncon {
+            c := e - 2 * nfn
+            nd = ConNode(mut st, c)
+            h = dkStr(mut st, h, PkgPath(mut st, ConPkg(mut st, c)))
+            if isTreeNode(int(nd)) {
+                txt = printer.ConstText(st.trees[refFile(int(nd))], refIdx(int(nd)))
+            }
+        } else if e == errs {
+            h = dkW(h, 4)
+        } else {
+            nd = NodeRef(ty[e - 2 * nfn - st.ncon])
+            h = dkStr(mut st, h, PkgPath(mut st, FilePkg(mut st, refFile(int(nd)))))
+            txt = printer.TypeDeclText(st.trees[refFile(int(nd))], refIdx(int(nd)))
+        }
+        h = dkBytes(h, txt)
+        fl := fileOf(mut st, nd)
+        if fl >= 0 {
+            h = DkH{dkMix(h.a, fh[fl].a), dkMix2(h.b, fh[fl].b)}
+        }
+        h1 = append(h1, h.a)
+        h2 = append(h2, h.b)
+    }
+    return DkGraph{n: nent, h1: freeze(h1), h2: freeze(h2), head: g.head, adj: g.adj, tyNode: ty, sf: freeze(sf), slo: freeze(slo), shi: freeze(shi)}
+}
+
+// dkKey は Def（関数 i）の鍵と届いた項目の数（本体の項目の数）: 署名と本体から辺を辿った集合の (h1, h2) の和
+func dkKey(g DkGraph, nfn int, i int, base DkH, mark mut []int, stk mut []int) (DkH, int, int) {
+    mut s1 := 0
+    mut s2 := 0
+    mut nr := 0
+    mut nb := 0
+    mut sp := 0
+    stamp := i + 1
+    for q <- iter.Range(0, 2) {
+        r := if q == 0 { i } else { nfn + i }
+        if mark[r] != stamp {
+            mark[r] = stamp
+            if sp < len(stk) {
+                stk[sp] = r
+            } else {
+                stk = append(stk, r)
+            }
+            sp += 1
+        }
+    }
+    while sp > 0 {
+        sp -= 1
+        e := stk[sp]
+        s1 = s1 + g.h1[e]
+        s2 = s2 + g.h2[e]
+        nr += 1
+        if e >= nfn && e < 2 * nfn {
+            nb += 1
+        }
+        for k <- iter.Range(g.head[e], g.head[e + 1]) {
+            y := g.adj[k]
+            if mark[y] != stamp {
+                mark[y] = stamp
+                if sp < len(stk) {
+                    stk[sp] = y
+                } else {
+                    stk = append(stk, y)
+                }
+                sp += 1
+            }
+        }
+    }
+    return DkH{dkMix(base.a, s1), dkMix2(base.b, s2)}, nr, nb
+}
+
+// DefKeys は開発の口（`sober check <entry> --emit=defkeys` / `--def-graph`）: 検査する Def ごとに `K 関数 鍵1 鍵2 届いた項目 本体の項目 名前`。
+// graph なら項目 `N 項目 種類 名前`・辺 `G 項目 項目` も（R0 の数え上げの道具 tools-1261/clos.ts が読む）。self = コンパイラの鍵
+@errors(diag.CoreFragment)
+func DefKeys(p loader.Program, excl []int, trust bool, self []byte, graph bool) ([]byte, error?) {
+    mut st := S{}
+    initState(mut st, p)
+    st.e2s = true
+    st.e2sExcl = excl
+    st.trustStd = trust
+    st.planOnly = true
+    prefix(mut st)?
+    g := dkGraph(mut st)
+    nfn := st.nfn
+    base := dkBytes(DkH{dkMix(TC_S1, DK_VER), dkMix2(TC_S2, if trust { 1 } else { 0 })}, self)
+    mut out := mut []byte{}
+    if graph {
+        for e <- iter.Range(0, g.n) {
+            obuf.Lit(mut out, "N ")
+            obuf.Int(mut out, e)
+            if e < 2 * nfn {
+                obuf.Lit(mut out, if e < nfn { " sig " } else { " body " })
+                dkName(mut st, mut out, fnPkg(mut st, e % nfn), fnName(mut st, e % nfn))
+            } else if e < 2 * nfn + st.ncon {
+                obuf.Lit(mut out, " const ")
+                c := e - 2 * nfn
+                dkName(mut st, mut out, ConPkg(mut st, c), sA(nodeOf(mut st, ConNode(mut st, c))))
+            } else if e == g.n - 1 {
+                obuf.Lit(mut out, " errs -")
+            } else {
+                obuf.Lit(mut out, " type ")
+                nd := g.tyNode[e - 2 * nfn - st.ncon]
+                dkName(mut st, mut out, FilePkg(mut st, refFile(nd)), sA(nodeOf(mut st, NodeRef(nd))))
+                out = append(out, ' ')
+                obuf.Int(mut out, nd)
+            }
+            out = append(out, '\n')
+        }
+        for e <- iter.Range(0, g.n) {
+            for k <- iter.Range(g.head[e], g.head[e + 1]) {
+                obuf.Lit(mut out, "G ")
+                obuf.Int(mut out, e)
+                out = append(out, ' ')
+                obuf.Int(mut out, g.adj[k])
+                out = append(out, '\n')
+            }
+        }
+    }
+    mut mark := mut []int{}
+    for e <- iter.Range(0, g.n) {
+        mark = append(mark, 0)
+    }
+    mut stk := mut []int{}
+    for i <- iter.Range(0, nfn) {
+        dx := fnDef(mut st, i)
+        if dx >= 0 && int(fnBody(mut st, i)) >= 0 && !(trust && IsStdPkg(mut st, fnPkg(mut st, i))) {
+            k, nr, nb := dkKey(g, nfn, i, base, mut mark, mut stk)
+            obuf.Lit(mut out, "K ")
+            vs := []int{i, k.a, k.b, nr, nb}
+            for j <- iter.Range(0, len(vs)) {
+                obuf.Int(mut out, vs[j])
+                out = append(out, ' ')
+            }
+            dkName(mut st, mut out, fnPkg(mut st, i), fnName(mut st, i))
+            out = append(out, '\n')
+        }
+    }
+    return freeze(out), nil
+}
+
+// dkName は `論理パス.名前`
+func dkName(st mut S, out mut []byte, pk int, s StrRef) {
+    nameOut(mut st, mut out, PkgPath(mut st, pk))
+    out = append(out, '.')
+    nameOut(mut st, mut out, s)
+}
+
+// ── 扉の監査（R1 — 記録だけ）: SOBER_DKAUDIT=1 のとき、Def の脱糖（run の Def の番）が読んだ項目を積み、区間の子の終わりに
+// `A Def 項目` の行で標準エラーへ（項目の符号 = 署名 fi・本体 nfn + fi・const 2nfn + c・型宣言 = −節・error の variant = −1）。
+// 照合（読んだ項目 ∈ 鍵の届く集合）は `--def-graph` と突き合わせる外の道具（tools-1261/door.ts）
+
+// dkRead は今の Def が項目 code を読んだ印（Def の外・監査の切なら何もしない — 直前と同じ対は積まない）
+func dkRead(st mut S, code int) {
+    if st.dkCur == 0 {
+        return
+    }
+    n := table.Len(mut st.dkAud)
+    if n >= 2 && table.Get(mut st.dkAud, n - 2) == st.dkCur - 1 && table.Get(mut st.dkAud, n - 1) == code {
+        return
+    }
+    table.Push(mut st.dkAud, st.dkCur - 1)
+    table.Push(mut st.dkAud, code)
+}
+
+// dkPairs は積んだ対の列（検証 =2 — 親が鍵の届く集合と照合する）
+func dkPairs(st mut S) []int {
+    mut out := mut []int{}
+    for k <- iter.Range(0, table.Len(mut st.dkAud)) {
+        out = append(out, table.Get(mut st.dkAud, k))
+    }
+    return freeze(out)
+}
+
+// dkFlush は積んだ対を標準エラーへ
+func dkFlush(st mut S) {
+    mut out := mut []byte{}
+    for k <- iter.Range(0, table.Len(mut st.dkAud) / 2) {
+        obuf.Lit(mut out, "A ")
+        obuf.Int(mut out, table.Get(mut st.dkAud, k * 2))
+        out = append(out, ' ')
+        obuf.Int(mut out, table.Get(mut st.dkAud, k * 2 + 1))
+        out = append(out, '\n')
+    }
+    loader.Err(freeze(out))
+}
+
+// dkSiteBody はファイル f の呼び出しの節 n が呼び先の本体を呼び出し点で展開しうるならその関数（でなければ -1）: 上げた関数への dotted な
+// mut 実引数（e2sSiteInline）・mut の Def でない関数へ mut を含みうる値（仮引数の型が組み込みのスカラーでない — mutValInline の型付けの前の上界）
+func dkSiteBody(st mut S, f int, n int, sp mut []int) int {
+    x := nodeOf(mut st, dkTreeRef(f, n))
+    k := st.trees[f].nodes[n].kind
+    callee := if k == ast.ECall { NodeRef(x.a) } else { NodeRef(x.b) }
+    args := if k == ast.ECall { ListRef(x.b) } else { ListRef(x.c) }
+    g := e2sCallee(mut st, FilePkg(mut st, f), callee)
+    if g < 0 || int(fnBody(mut st, g)) < 0 {
+        return -1
+    }
+    if fnPromoted(mut st, g) {
+        for q <- iter.Range(0, lenL(mut st, args)) {
+            a := latN(mut st, args, q)
+            if a != -1 && kindN(mut st, a) == ast.EMutArg && isDotted(mut st, a) {
+                return g
+            }
+        }
+    }
+    if !fnMutDef(mut st, g) {
+        if sp[g] == 0 {
+            sp[g] = if dkScalarParams(mut st, g) { 1 } else { 2 }
+        }
+        if sp[g] == 2 {
+            return g
+        }
+    }
+    return -1
+}
+
+// dkScalarParams は関数 g の仮引数の型が全部、宣言の上で mut を含まない（mutValInline が展開しない — 実引数の型は仮引数の型に従う）か
+func dkScalarParams(st mut S, g int) bool {
+    ps := lC(nodeOf(mut st, fnNode(mut st, g)))
+    pk := fnPkg(mut st, g)
+    for i <- iter.Range(0, lenL(mut st, ps)) {
+        if !dkMutFree(mut st, pk, nB(nodeOf(mut st, latN(mut st, ps, i))), 0) {
+            return false
+        }
+    }
+    return true
+}
+
+// dkMutFree は型の節 t（package pk の文脈）が宣言の上で mut の部分を持たないか（深さ 8 で打ち切り — 打ち切りは持つ側）
+func dkMutFree(st mut S, pk int, t NodeRef, depth int) bool {
+    if depth > 8 || t == -1 {
+        return false
+    }
+    k := kindN(mut st, t)
+    x := nodeOf(mut st, t)
+    if k == ast.TFunc {
+        return true
+    }
+    if k == ast.TOpt {
+        return dkMutFree(mut st, pk, NodeRef(x.a), depth + 1)
+    }
+    if k == ast.TSlice {
+        return x.b == 0 && dkMutFree(mut st, pk, NodeRef(x.a), depth + 1)
+    }
+    if k == ast.TMap {
+        return x.c == 0 && dkMutFree(mut st, pk, NodeRef(x.a), depth + 1) && dkMutFree(mut st, pk, NodeRef(x.b), depth + 1)
+    }
+    if k != ast.TName {
+        return false
+    }
+    s := sA(x)
+    if dkIs(mut st, s, "int") || dkIs(mut st, s, "bool") || dkIs(mut st, s, "byte") || dkIs(mut st, s, "f64") || dkIs(mut st, s, "string") {
+        return true
+    }
+    r := ResolveType(mut st, pk, s)
+    if r.kind != TopType || !isTreeNode(r.idx) {
+        return false
+    }
+    body := nC(nodeOf(mut st, NodeRef(r.idx)))
+    if kindN(mut st, body) != ast.BStruct {
+        return false
+    }
+    fs := lA(nodeOf(mut st, body))
+    for i <- iter.Range(0, lenL(mut st, fs)) {
+        if !dkMutFree(mut st, r.pkg, nB(nodeOf(mut st, latN(mut st, fs, i))), depth + 1) {
+            return false
+        }
+    }
+    return true
+}
+
+// dkIs は文字列 s が w と同じ綴りか
+func dkIs(st mut S, s StrRef, w string) bool {
+    b := bytes(w)
+    if slen(mut st, s) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(b)) {
+        if sat(mut st, s, i) != int(b[i]) {
+            return false
+        }
+    }
+    return true
+}
+
+// dkErrorOpt はファイル f の節 n（TOpt）が error? か
+func dkErrorOpt(st mut S, f int, n int) bool {
+    t := nA(nodeOf(mut st, dkTreeRef(f, n)))
+    return kindN(mut st, t) == ast.TName && dkIs(mut st, sA(nodeOf(mut st, t)), "error")
+}

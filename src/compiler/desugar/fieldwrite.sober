@@ -1,6 +1,6 @@
 package desugar
 
-// 他の package の struct の欄の書きと、mut の中身を持つ欄の読み（F-am / F-ar の修理 — language.md 20 節・report-492 / 493）。
+// 他の package の struct の欄の書きと、mut の中身を持つ欄の読みを拒否する（language.md 20 節）。
 // 規則: 書きの行き先の道（代入の左辺・`mut` の実引数・delete の第 1 実引数）を根へ辿ったとき、欄の選択の基底の型が今の package と別の package で
 // 宣言された struct なら拒否（添字・map の格納を挟んでも — 欄が指す buffer への書き）。読みは、欄の型が mut の中身（mut の slice / map — 入れ子の
 // struct・T? の中も）を持つときだけ拒否（中身の別名が package の外にできると、型の不変条件と信頼の口〔std/table.Freeze〕の前提が崩れる）。
@@ -9,7 +9,7 @@ package desugar
 import "ast"
 import "std/iter"
 
-// yForeignTy は表層型 t が他の package で宣言された struct（error ラベルの欄も）か
+// 表層型 t が他の package で宣言された struct（error ラベルの欄も）か
 func yForeignTy(st mut S, t int) bool {
     if yk(mut st, t) != YDecl || YAt(mut st, t).b == st.ypk {
         return false
@@ -18,7 +18,7 @@ func yForeignTy(st mut S, t int) bool {
     return bk == ast.BStruct || bk == ast.BError
 }
 
-// yFieldNote は記録を鎖の尾に積む（書きは同じ節の読みの記録を消す — 左辺の道の選択は読みとしても型付けされる）
+// 記録を鎖の尾に積む（書きは同じ節の読みの記録を消す — 左辺の道の選択は読みとしても型付けされる）
 func yFieldNote(st mut S, kind int, at NodeRef, field StrRef, t int) {
     if kind == 0 {
         mut r := st.yfaHead - 1
@@ -43,7 +43,7 @@ func yFieldNote(st mut S, kind int, at NodeRef, field StrRef, t int) {
     st.yfaTail = rec + 1
 }
 
-// yFieldWrite は書きの行き先 target の道の欄の選択を見る（括弧・添字は透過）
+// 書きの行き先 target の道の欄の選択を見る（括弧・添字は透過）
 func yFieldWrite(st mut S, target NodeRef) {
     mut t := target
     while kindN(mut st, t) == ast.ESelector || kindN(mut st, t) == ast.EIndex || kindN(mut st, t) == ast.EParen {
@@ -57,7 +57,7 @@ func yFieldWrite(st mut S, target NodeRef) {
     }
 }
 
-// yFieldRead は欄の読み e（型 r）を見る
+// 欄の読み e（型 r）を見る
 func yFieldRead(st mut S, e NodeRef, r int) {
     // 欄の型が mut の中身を持たない読み（ほとんど全部）は基底の型を引かずに抜ける — 自己 build の値札（全部の欄の読みで表を引くと +0.3 G）
     if !yHasMut(mut st, r, 8) {
@@ -74,7 +74,7 @@ func yFieldRead(st mut S, e NodeRef, r int) {
     }
 }
 
-// yHasMut は表層型 t が mut の中身（mut の slice / map）を持つか（imm のコンテナの中身は mutFree — 型で保証）
+// 表層型 t が mut の中身（mut の slice / map）を持つか（imm のコンテナの中身は mutFree — 型で保証）
 func yHasMut(st mut S, t int, fuel int) bool {
     if t < 0 || fuel <= 0 {
         return false
@@ -120,7 +120,7 @@ func yFieldsHaveMut(st mut S, x YT, fs ListRef, fuel int) bool {
     return false
 }
 
-// FieldViolations は記録の数（消した読みは数えない）
+// 記録の数（消した読みは数えない）
 func FieldViolations(st mut S) int {
     mut n := 0
     mut r := st.yfaHead - 1
@@ -133,7 +133,7 @@ func FieldViolations(st mut S) int {
     return n
 }
 
-// FieldViolation は消していない記録の j 番目 [種類, 節, 欄の名前, 型の宣言の節, 型の package]（analyzer が綴りを組む）
+// 消していない記録の j 番目 [種類, 節, 欄の名前, 型の宣言の節, 型の package]（analyzer が綴りを組む）
 func FieldViolation(st mut S, j int) (int, NodeRef, StrRef, NodeRef, int) {
     mut n := 0
     mut r := st.yfaHead - 1

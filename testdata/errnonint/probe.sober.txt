@@ -1,0 +1,14 @@
+package main
+
+// stages の errnonint が main.sober の隣に probe.sober として置く（string 欄の error ラベル — 題材のどの関数も参照しない）
+
+type Probe error {
+    word string
+}
+
+func probe(w string) (int, error?) {
+    if len(bytes(w)) > 3 {
+        return 0, Probe{word: w}
+    }
+    return 1, nil
+}

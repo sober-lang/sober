@@ -1,0 +1,189 @@
+package loader
+
+// 再帰の型宣言の拒否（diag.RecursiveType）: 型宣言どうしの参照（struct の欄・union の variant の欄・error ラベルの欄・named scalar の下地・関数型の
+// 仮引数と結果 — `[]T`・`map[K]V`・`T?`・`[N]T`・型引数の中も）が循環していたら、循環の上の宣言を指して拒否する。コアの型に再帰型（μ / box）が
+// 無い（形式化の箱「ジェネリック union 段 (3) 再帰」）ので、以前は check が CoreFragment・build はコンパイラ自身が型の展開で depth_limit の死だった。
+// 循環は package の中に閉じる（他 package の型への参照は import の向きにしか張れず、循環 import は先に拒否済み）。修飾名は見ない
+
+import "ast"
+import "diag"
+import "std/iter"
+
+// 最初の再帰の型宣言の位置（無ければ file = -1）
+func recTypeAt(cx Cx) diag.Pos {
+    for p <- iter.Range(0, len(cx.pkg_path)) {
+        at := recTypeIn(cx, cx.pkg_lo[p], cx.pkg_hi[p])
+        if at.file >= 0 {
+            return at
+        }
+    }
+    return diag.None()
+}
+
+// ファイル [lo, hi)（1 つの package）の型宣言の循環
+func recTypeIn(cx Cx, lo int, hi int) diag.Pos {
+    // 宣言の表: 名前（variant の名前も持ち主の宣言を指す）・位置
+    mut names := mut []string{}
+    mut owner := mut []int{}
+    mut dfile := mut []int{}
+    mut dnode := mut []int{}
+    for f <- iter.Range(lo, hi) {
+        t := cx.trees[f]
+        tys := t.nodes[t.file].c
+        for k <- iter.Range(0, ast.ListLen(t, tys)) {
+            ti := ast.ListAt(t, tys, k)
+            td := t.nodes[ti]
+            d := len(dfile)
+            dfile = append(dfile, f)
+            dnode = append(dnode, ti)
+            names = append(names, Name(t, td.a))
+            owner = append(owner, d)
+            body := t.nodes[td.c]
+            if body.kind == ast.BUnion {
+                for v <- iter.Range(0, ast.ListLen(t, body.a)) {
+                    names = append(names, Name(t, t.nodes[ast.ListAt(t, body.a, v)].a))
+                    owner = append(owner, d)
+                }
+            }
+        }
+    }
+    nm := freeze(names)
+    ow := freeze(owner)
+    df := freeze(dfile)
+    dn := freeze(dnode)
+    n := len(df)
+    if n == 0 {
+        return diag.None()
+    }
+    // 辺: 宣言 d → 参照する宣言（重複あり — 平らな列 eto・各宣言の範囲 elo[d]..elo[d + 1]）
+    mut eto := mut []int{}
+    mut elo := mut []int{}
+    for d <- iter.Range(0, n) {
+        elo = append(elo, len(eto))
+        t := cx.trees[df[d]]
+        refs := typeRefs(t, t.nodes[dn[d]].c)
+        for r <- iter.Range(0, len(refs)) {
+            for j <- iter.Range(0, len(nm)) {
+                if nm[j] == refs[r] {
+                    eto = append(eto, ow[j])
+                }
+            }
+        }
+    }
+    elo = append(elo, len(eto))
+    es := freeze(eto)
+    el := freeze(elo)
+    // 参照先が全部外れた宣言を外していく — 残れば循環（か循環に届く宣言）
+    mut gone := mut []bool{}
+    for d <- iter.Range(0, n) {
+        gone = append(gone, false)
+    }
+    mut progress := true
+    while progress {
+        progress = false
+        for d <- iter.Range(0, n) {
+            if !gone[d] {
+                mut free := true
+                for e <- iter.Range(el[d], el[d + 1]) {
+                    if !gone[es[e]] {
+                        free = false
+                    }
+                }
+                if free {
+                    gone[d] = true
+                    progress = true
+                }
+            }
+        }
+    }
+    // 残った最初の宣言から残った参照先を n 回辿る — 循環の上に着く
+    mut cur := -1
+    for d <- iter.Range(0, n) {
+        if cur < 0 && !gone[d] {
+            cur = d
+        }
+    }
+    if cur < 0 {
+        return diag.None()
+    }
+    for s <- iter.Range(0, n) {
+        mut nx := -1
+        for e <- iter.Range(el[cur], el[cur + 1]) {
+            if nx < 0 && !gone[es[e]] {
+                nx = es[e]
+            }
+        }
+        cur = nx
+    }
+    t := cx.trees[df[cur]]
+    return diag.Pos{file: df[cur], tok: t.nodes[dn[cur]].tok}
+}
+
+// 型宣言の本体 b の中の修飾なしの型の名前（明示の待ち行列 — 型式の深さに依らない）
+func typeRefs(t ast.Tree, b int) []string {
+    mut out := mut []string{}
+    mut st := mut []int{}
+    body := t.nodes[b]
+    // 根: 欄の列（struct・error ラベル・union の各 variant）の型・named scalar の下地・関数型の仮引数と結果
+    mut lists := mut []int{}
+    mut fieldList := mut []bool{}
+    if body.kind == ast.BStruct || body.kind == ast.BError {
+        lists = append(lists, body.a)
+        fieldList = append(fieldList, true)
+    } else if body.kind == ast.BUnion {
+        for v <- iter.Range(0, ast.ListLen(t, body.a)) {
+            lists = append(lists, t.nodes[ast.ListAt(t, body.a, v)].b)
+            fieldList = append(fieldList, true)
+        }
+    } else if body.kind == ast.BDefined {
+        st = append(st, body.a)
+    } else if body.kind == ast.BFunc {
+        lists = append(lists, body.a)
+        fieldList = append(fieldList, false)
+        lists = append(lists, body.b)
+        fieldList = append(fieldList, false)
+    }
+    for i <- iter.Range(0, len(lists)) {
+        for k <- iter.Range(0, ast.ListLen(t, lists[i])) {
+            e := ast.ListAt(t, lists[i], k)
+            st = append(st, if fieldList[i] { t.nodes[e].b } else { e })
+        }
+    }
+    mut qi := 0
+    while qi < len(st) {
+        x := t.nodes[st[qi]]
+        qi += 1
+        // 子の型式の列（型引数・関数型の仮引数と結果）
+        mut sub := -1
+        mut sub2 := -1
+        if x.kind == ast.TName {
+            out = append(out, Name(t, x.a))
+        } else if x.kind == ast.TGeneric {
+            out = append(out, Name(t, x.a))
+            sub = x.b
+        } else if x.kind == ast.TOpt || x.kind == ast.TSlice {
+            st = append(st, x.a)
+        } else if x.kind == ast.TMap {
+            st = append(st, x.a)
+            st = append(st, x.b)
+        } else if x.kind == ast.TArray {
+            st = append(st, x.b)
+        } else if x.kind == ast.TTuple {
+            sub = x.a
+        } else if x.kind == ast.TFunc {
+            sub = x.a
+            sub2 = x.b
+        }
+        if sub >= 0 {
+            for k <- iter.Range(0, ast.ListLen(t, sub)) {
+                st = append(st, ast.ListAt(t, sub, k))
+            }
+        }
+        if sub2 >= 0 {
+            for k <- iter.Range(0, ast.ListLen(t, sub2)) {
+                st = append(st, ast.ListAt(t, sub2, k))
+            }
+        }
+    }
+    return freeze(out)
+}

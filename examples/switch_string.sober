@@ -1,7 +1,7 @@
 package main
 
 // 負例（check が名指しで拒否 — diag.TypeMismatch kind 1）: string の値の switch は言語に無い（language.md 15 節 — 単値の subject は
-// int〔default 必須〕/ union / error / T?）。文字列の分岐は if / else if で書く。以前は check が位置なしの def error（report-878）
+// int〔default 必須〕/ union / error / T?）。文字列の分岐は if / else if で書く。
 
 func route(p string) int {
     return switch p {

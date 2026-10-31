@@ -1,6 +1,6 @@
 package main
 
-// 展開される関数型の仮引数の呼び出しの結果（struct）から欄を読む（F-au の回帰例 — 2026-10-17 修理）
+// 展開される関数型の仮引数の呼び出しの結果（struct）から欄を読む回帰例
 
 type R struct {
     status int

@@ -1,0 +1,34 @@
+package main
+
+// std/os.RunTo: 子の標準出力と標準エラーを別々のファイルへ捕まえる（どちらも空にしてから書く）・同じ path を渡せば書いた順で 1 本に混ざる・
+// 捕まえる先を開けなければ子を走らせずに error（親の出力は捕まらない — 子の付け替えは子の中だけ）
+import "std/io"
+import "std/os"
+
+func show(path string) {
+    b := io.ReadFile(path) catch return
+    println("[${string(b) catch ""}]")
+}
+
+func main() {
+    _ = os.Mkdir("out")
+    println("before")
+    c, err := os.RunTo("/bin/sh", []string{"-c", "echo out; echo err >&2; exit 3"}, "out/os_runto.o", "out/os_runto.e")
+    if err == nil {
+        println(c)
+    }
+    show("out/os_runto.o")
+    show("out/os_runto.e")
+    m, merr := os.RunTo("/bin/sh", []string{"-c", "echo a; echo b >&2; echo c"}, "out/os_runto.m", "out/os_runto.m")
+    if merr == nil {
+        println(m)
+    }
+    show("out/os_runto.m")
+    _, nerr := os.RunTo("/bin/true", []string{}, "out/no/such/dir/o", "out/os_runto.e")
+    println(switch nerr {
+    case nil: "ran"
+    case io.NotFound{}: "not found"
+    default: "other"
+    })
+    println("after")
+}

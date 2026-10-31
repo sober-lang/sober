@@ -1,0 +1,9 @@
+{
+  "pack and count files": "ファイルをまとめて数える",
+  "pack a file": "ファイルをまとめる",
+  "pack the source file into one archive": "ソースのファイルを 1 つのアーカイブにまとめる",
+  "count the bytes": "バイトを数える",
+  "add a remote": "リモートを足す",
+  "print the plan (no run yet)": "計画を印字する（run はまだ無い）",
+  "the home directory | the default": "ホームディレクトリ | 既定"
+}

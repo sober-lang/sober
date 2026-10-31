@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P3b: 端点を give: でなく捕獲で子へ渡す（diag.Par kind 15 — check と build が同じ拒否。desugar/parcheck.sober）
+// 端点を give: でなく捕獲で子へ渡す（diag.Par kind 15 — check と build が同じ拒否。desugar/parcheck.sober）
 
 import "std/task"
 

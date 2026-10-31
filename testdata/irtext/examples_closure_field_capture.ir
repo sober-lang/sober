@@ -4,8 +4,8 @@ global @rt.gcache [320]
 global @rt.rgen [1025]
 global @rt.iobuf [512]
 global @rt.sigact [4]
-global @str.0 [1] = {6513249}
-global @str.1 [1] = {12658}
+global @str.0 [1] = {12658}
+global @str.1 [1] = {6513249}
 global @str.2 [4] = {5917794109009846640, 7167555147578042213, 7017588315501389157, 138418680693}
 global @str.3 [2] = {7596551573701944676, 7629165}
 global @str.4 [2] = {8097862866615364723, 521644106593}
@@ -1711,7 +1711,7 @@ b0:
   %0 = region.depth
   region.enter
   %1 = const 100
-  %2 = globaladdr @str.0
+  %2 = globaladdr @str.1
   %3 = const 3
   %4 = const 0
   %5 = slotaddr s0
@@ -1726,7 +1726,7 @@ b0:
   store %7[1], %9
   %10 = load.i64 %5[2]
   store %7[2], %10
-  %11 = globaladdr @str.1
+  %11 = globaladdr @str.0
   %12 = const 2
   %13 = const 0
   %14 = slotaddr s0
@@ -1845,6 +1845,48 @@ b0:
   call @rt.print_char(%76)
   region.setdepth %0
   ret
+}
+
+func @lambda#0(%0 i64, %1 i64, %2 i64) i64 {
+  slot s0 [3]
+b0:
+  %3 = itop %0
+  %4 = load.i64 %3[0]
+  %5 = slotaddr s0
+  %6 = const 1
+  %7 = gep.word %3, %6
+  %8 = load.i64 %7[0]
+  store %5[0], %8
+  %9 = load.i64 %7[1]
+  store %5[1], %9
+  %10 = load.i64 %7[2]
+  store %5[2], %10
+  %11 = region.depth
+  region.enter
+  %12 = const 10
+  %13 = mul %1, %12
+  %14 = add %4, %13
+  %15 = add %14, %2
+  %16 = load.i64 %5[1]
+  %17 = add %15, %16
+  region.setdepth %11
+  ret %17
+}
+
+func @rt.sigint() {
+b0:
+  %0 = const 231
+  %1 = const 130
+  %2 = syscall(%0, %1)
+  exit 130
+}
+
+func @rt.sigterm() {
+b0:
+  %0 = const 231
+  %1 = const 143
+  %2 = syscall(%0, %1)
+  exit 143
 }
 
 export func @sober_entry(%0 ptr) {
@@ -2440,46 +2482,4 @@ b91:
   %404 = const 1
   %405 = add %383, %404
   br b85(%401, %405)
-}
-
-func @rt.sigterm() {
-b0:
-  %0 = const 231
-  %1 = const 143
-  %2 = syscall(%0, %1)
-  exit 143
-}
-
-func @rt.sigint() {
-b0:
-  %0 = const 231
-  %1 = const 130
-  %2 = syscall(%0, %1)
-  exit 130
-}
-
-func @lambda#0(%0 i64, %1 i64, %2 i64) i64 {
-  slot s0 [3]
-b0:
-  %3 = itop %0
-  %4 = load.i64 %3[0]
-  %5 = slotaddr s0
-  %6 = const 1
-  %7 = gep.word %3, %6
-  %8 = load.i64 %7[0]
-  store %5[0], %8
-  %9 = load.i64 %7[1]
-  store %5[1], %9
-  %10 = load.i64 %7[2]
-  store %5[2], %10
-  %11 = region.depth
-  region.enter
-  %12 = const 10
-  %13 = mul %1, %12
-  %14 = add %4, %13
-  %15 = add %14, %2
-  %16 = load.i64 %5[1]
-  %17 = add %15, %16
-  region.setdepth %11
-  ret %17
 }

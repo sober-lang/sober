@@ -1,6 +1,6 @@
 package main
 
-// http 段 4c（std/http の最小 — report-670）: HttpArena の baseline / pipelined / async の端点（/baseline11・/pipeline・/delay/{ms}）を
+// std/http の最小の使用例: HttpArena の baseline / pipelined / async の端点（/baseline11・/pipeline・/delay/{ms}）を
 // net.Serve + http.ServeConn で書き、同じバイナリの中のクライアントが生の要求を送る: Content-Length と chunked の本文・切片をまたぐ要求
 // （2 回に割って送る）・パイプライン 16 本・keep-alive の 2 要求・誤り（400 / 431 / 505）。Serve は 500 ms の期限で返る。W1 でも W8 でも同じ出力
 
@@ -11,7 +11,7 @@ import "std/os"
 import "std/task"
 import "std/strings"
 
-// num は数でなければ 0
+// 数でなければ 0
 func num(s string?) int {
     if s == nil {
         return 0
@@ -40,12 +40,12 @@ func app(c net.Conn) error? {
     return http.ServeConn(c, route)
 }
 
-// serve は l で app を回す（Serve の結果を task.Run の本体の値に直に置くと check が def error — build は受理: F-av。名前つきの関数で包む）
+// l で app を回す（Serve の結果を task.Run の本体の値に直に置くと check が拒否するので、名前つきの関数で包む）
 func serve(l net.Listener) error? {
     return net.Serve(l, app, conns: 64)
 }
 
-// talk は parts を順に送り（間に 20 ms — 切片をまたぐ形）、相手が閉じるまでの応答を CR を落として返す
+// parts を順に送り（間に 20 ms — 切片をまたぐ形）、相手が閉じるまでの応答を CR を落として返す
 func talk(port int, parts []string) (string, error?) {
     mut got := mut []byte{}
     for c <- net.Dial("127.0.0.1:${port}")? {
@@ -73,12 +73,12 @@ func client(port int, parts []string) string {
     return if e != nil { "client error" } else { v }
 }
 
-// okCount は応答の列の中の本文 "ok" の数（パイプラインの 16 本）
+// 応答の列の中の本文 "ok" の数（パイプラインの 16 本）
 func okCount(s string) int {
     return strings.Count(s, "\n\nok")
 }
 
-// bigHead は 8 KiB を超える頭の要求（431）
+// 8 KiB を超える頭の要求（431）
 func bigHead() string {
     mut b := mut []byte{}
     for x <- bytes("GET / HTTP/1.1\r\nX-Big: ") {

@@ -1,6 +1,6 @@
 package main
 
-// std/crypto/x25519（report-794）: RFC 7748 5.2 の 2 例・反復（1 回・100 回 — 1000 回は Go の双子が RFC の値と照合〔passes の 10 秒に収めるため〕）・6.1 の Diffie-Hellman の例と、擬似乱数の鍵 16 組の
+// std/crypto/x25519: RFC 7748 5.2 の 2 例・反復（1 回・100 回 — 1000 回は Go の双子が RFC の値と照合〔passes の 10 秒に収めるため〕）・6.1 の Diffie-Hellman の例と、擬似乱数の鍵 16 組の
 // 対称性（a × (b × 9) = b × (a × 9)）と Go の crypto/ecdh の値。Go の双子 = scripts/oracles/crypto_x25519.go
 
 import "std/crypto"
@@ -13,7 +13,7 @@ func unhex(s string) []byte {
     return b
 }
 
-// key は擬似乱数の 32 バイト（i ごとに決まる — Go の双子と同じ式）
+// 擬似乱数の 32 バイト（i ごとに決まる — Go の双子と同じ式）
 func key(i int) []byte {
     mut out := mut []byte{}
     mut x := i * 2654435761 + 12345
@@ -24,12 +24,12 @@ func key(i int) []byte {
     return freeze(out)
 }
 
-// show は共有値 got（秘密 — 印字しない）を期待値 want（16 進）と crypto.Equal で照合し、一致なら want・違えば MISMATCH
+// 共有値 got（秘密 — 印字しない）を期待値 want（16 進）と crypto.Equal で照合し、一致なら want・違えば MISMATCH
 func show(got []byte, want string) string {
     return if crypto.Equal(got, unhex(want)) { want } else { "MISMATCH" }
 }
 
-// pairWant は対称性の組 i（0・4・8・12）の共有値の期待値（Go の crypto/ecdh の値）
+// 対称性の組 i（0・4・8・12）の共有値の期待値（Go の crypto/ecdh の値）
 func pairWant(i int) string {
     return switch i {
     case 0: "ae457b23bba53b72eb68a00177f34b0c08cec5f01984fa8cb1ece1fcadab0354"

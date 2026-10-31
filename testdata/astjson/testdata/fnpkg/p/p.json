@@ -1,0 +1,192 @@
+{
+  "package": "p",
+  "imports": [],
+  "types": [
+    {
+      "name": "R",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 12
+      }
+    },
+    {
+      "name": "F",
+      "type_params": [],
+      "body": {
+        "k": "func",
+        "params": [
+          {
+            "k": "name",
+            "name": "R"
+          }
+        ],
+        "results": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ],
+        "param_names": [
+          "r"
+        ]
+      },
+      "tok": 13,
+      "span": {
+        "start": 12,
+        "end": 21
+      }
+    },
+    {
+      "name": "G",
+      "type_params": [
+        "T"
+      ],
+      "body": {
+        "k": "func",
+        "params": [
+          {
+            "k": "name",
+            "name": "R"
+          },
+          {
+            "k": "name",
+            "name": "T"
+          }
+        ],
+        "results": [
+          {
+            "k": "name",
+            "name": "T"
+          }
+        ],
+        "param_names": [
+          "r",
+          "x"
+        ]
+      },
+      "tok": 22,
+      "span": {
+        "start": 21,
+        "end": 36
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "Make",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "R"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "R",
+                "elems": [
+                  {
+                    "key": "n",
+                    "value": {
+                      "k": "ident",
+                      "name": "n",
+                      "tok": 49
+                    }
+                  }
+                ],
+                "tok": 45,
+                "type_args": []
+              }
+            ],
+            "tok": 44
+          }
+        ]
+      },
+      "tok": 37,
+      "bodiless": false,
+      "span": {
+        "start": 36,
+        "end": 54
+      },
+      "sig_end": 43
+    },
+    {
+      "name": "N",
+      "type_params": [],
+      "params": [
+        {
+          "name": "r",
+          "type": {
+            "k": "name",
+            "name": "R"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "r",
+                  "tok": 63
+                },
+                "field": "n",
+                "tok": 65
+              }
+            ],
+            "tok": 62
+          }
+        ]
+      },
+      "tok": 55,
+      "bodiless": false,
+      "span": {
+        "start": 54,
+        "end": 69
+      },
+      "sig_end": 61
+    }
+  ],
+  "consts": []
+}

@@ -1,13 +1,13 @@
 package lower
 
 // 入口の零初期化の語の判定（zeroinit.sober xZeroNeed）の単体テスト（`cd compiler && ../bin/sober test lower`）: 利用者のプログラムの IR では
-// 0 を観測できる読みが出ない（毒の口の観測でも区別できない — report-488 1.3）ので、判定の誤り（要零を外す方向）は IR を手で組んで直に見る。
+// 0 を観測できる読みが出ない（毒の口の観測でも区別できない）ので、判定の誤り（要零を外す方向）は IR を手で組んで直に見る。
 // スロットは 1 本・2 語（位置 2 = 語 0・位置 1 = 語 1）
 
 import "desugar"
 import "std/iter"
 
-// zT は形 kind の関数を組んで xZeroNeed の [位置 1, 位置 2] を返す
+// 形 kind の関数を組んで xZeroNeed の [位置 1, 位置 2] を返す
 // 0: 同じブロックで store の前の load（語 0 が要零）と store の後の load（語 1 は要らない）
 // 1: 前のブロックで書いて後のブロックで読む（要らない）
 // 2: 菱形の片方の腕だけで書いて合流で読む（要零）
@@ -95,7 +95,7 @@ func TestZeroNeed() {
     assert(h[0] == 1 && h[1] == 1)
 }
 
-// zPlanOk は store の列の計画が区間 [rbp - 8 × ztop, rbp - 8 × (ztop - cnt)) を 1 語ずつ隙間も重なりもなく覆うか
+// store の列の計画が区間 [rbp - 8 × ztop, rbp - 8 × (ztop - cnt)) を 1 語ずつ隙間も重なりもなく覆うか
 func zPlanOk(ztop int, cnt int) bool {
     pl := xZeroPlan(ztop, cnt)
     mut d := -8 * ztop
@@ -108,7 +108,7 @@ func zPlanOk(ztop int, cnt int) bool {
     return d == -8 * (ztop - cnt)
 }
 
-// 段 2 の store の列（x86.sober xZeroPlan）: 区間の頭・語数・区間が rbp - 8 で終わらない形（変異 m3 = 1 語足りない列を殺す）
+// store の列（x86.sober xZeroPlan）: 区間の頭・語数・区間が rbp - 8 で終わらない形（変異 m3 = 1 語足りない列を殺す）
 func TestZeroPlan() {
     for ztop <- iter.Range(1, 20) {
         for cnt <- iter.Range(1, ztop + 1) {
@@ -118,7 +118,7 @@ func TestZeroPlan() {
     assert(len(xZeroPlan(5, 5)) == 5)
 }
 
-// 零初期化の沈めの判定（x86.sober xZeroSinkCalc — 段 4b (b1-z)）: 後続の CSR・ok（区間に重なるスロットの番地を持たない）・ret で前線を見る
+// 零初期化の沈めの判定（x86.sober xZeroSinkCalc）: 後続の CSR・ok（区間に重なるスロットの番地を持たない）・ret で前線を見る
 func TestZeroSink() {
     all := []int{1, 1, 1, 1, 1}
     // 0: 菱形の片方が早期 return（E）・もう片方が区間に触れる → 前線 = 2

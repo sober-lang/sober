@@ -1,6 +1,6 @@
 package lower
 
-// スロットの彩色（F-1 段 2 — report-1002 2.2・report-1003）: 最適化のバックエンドで、生存が重ならない IR スロットどうしにフレームの同じ語を配る。
+// スロットの彩色（F-1 段 2）: 最適化のバックエンドで、生存が重ならない IR スロットどうしにフレームの同じ語を配る。
 // 対象 = 要零が空（zeroinit — 入口の 0 を観測する読みが無い）で番地が逃げないスロット。要零のスロットと逃げるスロットは今まで通り専用の位置で、
 // フレームの頭（rbp の直下）に固めて置く（要零を先・逃げるだけを後 — それぞれ宣言の順）— 入口の零初期化の区間が要零のスロットの中に収まる（ばらけた要零の語を覆う区間が全域になっていた形の副産物）。
 // 共有した語の読みは前の住人の残りを見るが、要零が空のスロットは全部の道で書いてから読むので観測されない（IR の約束「スロットは入口で 0」は 0 を
@@ -28,7 +28,7 @@ const SC_KILL = 3
 // 彩色する最小の候補の語数（xSlotColor の門）
 const SC_MIN = 128
 
-// xSlotColor は関数 f のスロットの新しい置き場を返す: [k] = スロット k の累積の位置 cum（スロット k の語 j は rbp - 8 × (cum - j) — 旧の
+// 関数 f のスロットの新しい置き場を返す: [k] = スロット k の累積の位置 cum（スロット k の語 j は rbp - 8 × (cum - j) — 旧の
 // 並びの cum と同じ意味）・[ns] = スロットの区画の語数。ws = スロットごとの語数（1 未満は 1）・zn = 旧の並びの位置ごとの要零（xZeroNeed）
 func xSlotColor(st mut St, f FnRef, ws []int, zn []int) []int {
     ns := len(ws)
@@ -344,9 +344,9 @@ func xSlotColor(st mut St, f FnRef, ws []int, zn []int) []int {
             }
         }
     }
-    // 置き場: 専用のスロットを頭から — 要零の語を持つものを宣言の順に、続けて逃げるだけのもの（要零 0 語）を宣言の順に（report-1063: 宣言の順の
-    // ままだと逃げるだけのスロットが要零のスロットの間に挟まり、入口の零初期化の区間〔要零の語を覆う最小の区間〕に丸ごと入っていた — 8-5 の
-    // 借りの閉包の捕捉セル 72 語）。彩色するスロットはその下の区画に first-fit（大きさの降順・同じなら番号の順）
+    // 置き場: 専用のスロットを頭から — 要零の語を持つものを宣言の順に、続けて逃げるだけのもの（要零 0 語）を宣言の順に（宣言の順の
+    // ままだと逃げるだけのスロットが要零のスロットの間に挟まり、入口の零初期化の区間〔要零の語を覆う最小の区間〕に丸ごと入ってしまう）。
+    // 彩色するスロットはその下の区画に first-fit（大きさの降順・同じなら番号の順）
     mut base := mut []int{}
     xFill(mut base, ns, 0)
     mut xa := 0
@@ -425,11 +425,11 @@ func xSlotColor(st mut St, f FnRef, ws []int, zn []int) []int {
     return freeze(out)
 }
 
-// xSlotCallEv は call の実引数のうちスロットの番地のものを事象（sret の受け皿 = 全語の書き・mut 仮引数 / rt の写しと relocate = 読み書き）か逃げにする
+// call の実引数のうちスロットの番地のものを事象（sret の受け皿 = 全語の書き・mut 仮引数 / rt の写しと relocate = 読み書き）か逃げにする
 func xSlotCallEv(st mut St, ins InsRef, aslot []int, aoff []int, nv int, excl mut []int, evS mut []int, evK mut []int, evW mut []int) {
     callee := xiA(mut st, ins)
     mb := xg(mut st, callee + F_MUTP)
-    rtrw := callee == int(st.rtCopy) || callee == int(st.rtCopy8) || callee == int(st.rtReloc) || callee == int(st.rtReloc8)
+    rtrw := callee == int(st.rtCopy) || callee == int(st.rtCopy8) || callee == int(st.rtReloc) || callee == int(st.rtReloc8) || callee == int(st.rtErrReloc)
     n := xNOps(mut st, ins)
     // 受け皿は最後に（呼ばれた関数は他の実引数を読んでから受け皿を書く — 後ろ向きでは書きが先に効く）
     mut sret := -1

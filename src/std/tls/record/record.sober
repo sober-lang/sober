@@ -172,7 +172,7 @@ func SealInto(d Dir, ctype int, pt []byte, dst mut []byte, at int) int {
     return chacha20poly1305.SealInto(d.cc, nonce, hd, pt, hd, tail, mut dst, at)
 }
 
-// sealOne は pt[at, at + m) を 1 record に（内側 = 中身 ‖ ctype ‖ 0 × pad・頭 = 23 / 0x0303 / 内側 + tag の長さ）。中身は写さず切り出しで渡し、
+// pt[at, at + m) を 1 record に（内側 = 中身 ‖ ctype ‖ 0 × pad・頭 = 23 / 0x0303 / 内側 + tag の長さ）。中身は写さず切り出しで渡し、
 // ctype と詰め物は SealTo の tail で後ろに繋ぐ（写しは SealTo の宛先への 1 回だけ）
 func sealOne(d mut Dir, ctype int, pt []byte, at int, m int, pad int) []byte {
     mut tl := mut []byte{}
@@ -195,7 +195,7 @@ func sealOne(d mut Dir, ctype int, pt []byte, at int, m int, pad int) []byte {
     return r
 }
 
-// head は暗号化した record の頭（application_data・legacy_record_version 0x0303・本体の長さ n）
+// 暗号化した record の頭（application_data・legacy_record_version 0x0303・本体の長さ n）
 func head(n int) []byte {
     mut h := mut []byte{}
     h = append(h, byte(CtApp))
@@ -206,7 +206,7 @@ func head(n int) []byte {
     return freeze(h)
 }
 
-// nonceOf は iv ⊕ seq（seq は 64 ビットの大きい端を iv の後ろ 8 バイトに — RFC 9846 5.3）
+// iv ⊕ seq（seq は 64 ビットの大きい端を iv の後ろ 8 バイトに — RFC 9846 5.3）
 func nonceOf(iv []byte, seq int) []byte {
     return []byte{iv[0], iv[1], iv[2], iv[3],
         byte(int(iv[4]) ^ ((seq >> 56) & 0xff)), byte(int(iv[5]) ^ ((seq >> 48) & 0xff)), byte(int(iv[6]) ^ ((seq >> 40) & 0xff)), byte(int(iv[7]) ^ ((seq >> 32) & 0xff)),
@@ -252,7 +252,7 @@ func Open(d mut Dir, r Frame) (int, []byte, error?) {
     return ct, p[0:n], nil
 }
 
-// openBody は枠 r の本体を d の鍵で開いた内側の平文（tag の不一致なら ok = false）
+// 枠 r の本体を d の鍵で開いた内側の平文（tag の不一致なら ok = false）
 func openBody(d Dir, nonce []byte, ad []byte, r Frame) (bool, []byte) {
     body := r.n - HeadSize
     if d.suite == AesGcm {
@@ -263,7 +263,7 @@ func openBody(d Dir, nonce []byte, ad []byte, r Frame) (bool, []byte) {
     return e == nil, p
 }
 
-// strip は内側の平文 p の内容の型と中身の長さ（末尾から 0 でない最初のバイト — RFC 9846 5.4。無ければ (0, -1)）。末尾 256 バイトは固定回数で
+// 内側の平文 p の内容の型と中身の長さ（末尾から 0 でない最初のバイト — RFC 9846 5.4。無ければ (0, -1)）。末尾 256 バイトは固定回数で
 // 舐め（stripTail — 0 埋めの長さを時間に出さない）、そこが全部 0 のときだけ前の全部を同じく固定回数で舐める（256 を超える 0 埋めは
 // 「長い」ことだけが時間に出る — 前の探索は早く抜けない。通常の record は末尾で決まるので値札なし）
 func strip(p []byte) (int, int) {
@@ -280,7 +280,7 @@ func strip(p []byte) (int, int) {
     return 0, 0 - 1
 }
 
-// stripTail は p[lo, m) で最後の 0 でないバイトの位置と値（無ければ (-1, 0)）。回数は m - lo（公開の長さ）だけで決まり、選択は mask（定数時間 — ctcheck）
+// p[lo, m) で最後の 0 でないバイトの位置と値（無ければ (-1, 0)）。回数は m - lo（公開の長さ）だけで決まり、選択は mask（定数時間 — ctcheck）
 @bless
 func stripTail(p []byte, lo int, m int) (int, int) {
     mut at := 0 - 1
@@ -365,7 +365,7 @@ func Frames(recv func(k func([]byte)) error?, k func(Frame)) error? {
     return nil
 }
 
-// carry は chunk[at, at + m) を pend[pn, pn + m) へ（添字の写しの形 — copyloop (B)）
+// chunk[at, at + m) を pend[pn, pn + m) へ（添字の写しの形 — copyloop (B)）
 func carry(pend mut []byte, pn int, chunk []byte, at int, m int) {
     mut j := 0
     while j < m {
@@ -374,7 +374,7 @@ func carry(pend mut []byte, pn int, chunk []byte, at int, m int) {
     }
 }
 
-// joined は pend の先頭 n バイトの写し（切片をまたいだ record — 反復の region に）
+// pend の先頭 n バイトの写し（切片をまたいだ record — 反復の region に）
 func joined(pend mut []byte, n int) []byte {
     mut out := mut []byte{}
     mut i := 0
@@ -385,7 +385,7 @@ func joined(pend mut []byte, n int) []byte {
     return freeze(out)
 }
 
-// ── std/tls の口（Conn の置き場 — 接続の状態は値の外の int の列に住む: S2・report-811 0 節 B / 831）──
+// ── std/tls の口（Conn の置き場 — 接続の状態は値の外の int の列に住む）──
 
 // b[off, off + n) を枠に（std/tls の handshake の組み立て — 呼び手が頭の長さを検査した後）
 @effects()
@@ -452,7 +452,7 @@ func packBytes(w mut []int, b []byte) {
     }
 }
 
-// unpackBytes は packBytes の逆。語ごとに直列化のループ（copyloop の形 D — 丸ごとの語は 8 バイトの store 1 回に下りる）
+// packBytes の逆。語ごとに直列化のループ（copyloop の形 D — 丸ごとの語は 8 バイトの store 1 回に下りる）
 func unpackBytes(w []int, at int) ([]byte, int) {
     n := w[at]
     mut b := mut []byte{}

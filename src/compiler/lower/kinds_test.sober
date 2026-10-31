@@ -22,7 +22,7 @@ func kList(st mut St, l int, out mut []int) {
 const K_V0 = 10000000  // 列の中の値の通し番号の起点（番地と重ならない）
 const K_NOP = OP_N     // 照合する op の範囲（語彙の外の op は表の外 — 添字の範囲外で落ちる）
 
-// kMk は長さ 2 の値の列（中身は通し番号 — next を進める）
+// 長さ 2 の値の列（中身は通し番号 — next を進める）
 func kMk(st mut St, next mut []int) int {
     l := listN(mut st, 2)
     desugar.HeapSet(mut st.d, l + 1, next[0])

@@ -1,0 +1,47 @@
+[
+{"file":"src/std/cli/cli.sober","package":"cli","imports":["std/os","std/io","std/iter"],"decls":[
+  {"kind":"type","name":"Handler","sig":"type Handler func(r Parsed) int","lines":[15,15],"doc":"コマンドの本体（Main が解析の後に呼ぶ — 戻り値が終了コード）"},
+  {"kind":"type","name":"BoolFlag","sig":"type BoolFlag struct { name string; short string; help string; dev bool }","lines":[18,23],"doc":"値を取らないフラグ（`--name` が出れば true）。"},
+  {"kind":"type","name":"StrFlag","sig":"type StrFlag struct { name string; short string; arg string; help string; def string?; env string?; opt bool; dev bool }","lines":[27,36],"doc":"文字列の値のフラグ。"},
+  {"kind":"type","name":"IntFlag","sig":"type IntFlag struct { name string; short string; arg string; help string; def int?; min int?; max int?; allow []int; env string?; opt bool; dev bool }","lines":[39,51],"doc":"整数の値のフラグ（10 進）。"},
+  {"kind":"type","name":"ChoiceFlag","sig":"type ChoiceFlag struct { name string; arg string; help string; choices []string; dev []string; def string?; opt bool }","lines":[54,62],"doc":"選択肢のどれかを取るフラグ。"},
+  {"kind":"type","name":"ListFlag","sig":"type ListFlag struct { name string; short string; arg string; help string; dev bool }","lines":[65,71],"doc":"繰り返して出せる文字列の値のフラグ（List は出た順の列 — 出なければ空）"},
+  {"kind":"type","name":"Positional","sig":"type Positional struct { name string; help string; many bool; optional bool }","lines":[74,79],"doc":"位置引数。"},
+  {"kind":"type","name":"Env","sig":"type Env struct { name string; help string; dev bool }","lines":[82,86],"doc":"プログラムが読む環境変数の宣言（文書だけ — 読むのは利用者のコード）"},
+  {"kind":"type","name":"Command","sig":"type Command struct { name string; summary string; help string; bools []BoolFlag; strs []StrFlag; ints []IntFlag; choices []ChoiceFlag; lists []ListFlag; pos []Positional; env []Env; run Handler?; rest bool; dev bool }","lines":[92,106],"doc":"コマンド 1 つ。"},
+  {"kind":"type","name":"App","sig":"type App struct { name string; version string; summary string; help string; commands []Command; env []Env }","lines":[109,116],"doc":"プログラム全体の表（Main の入口）。"},
+  {"kind":"type","name":"Parsed","sig":"type Parsed struct { cmd string; found bool; bn []string; bv []bool; sn []string; sv []string; sh []bool; inames []string; iv []int; ih []bool; cn []string; cv []string; ch []bool; ln []string; lk []int; lv []string; pn []string; pk []int; pv []string; seal sealed }","lines":[119,140],"doc":"解析の結果（当たったコマンドと値の表）。"},
+  {"kind":"type","name":"UnknownFlag","sig":"type UnknownFlag error { arg int; word string; near string? }","lines":[149,153],"doc":"表に無いフラグ（near = 編集距離 2 以内の最寄りの綴り — dev のフラグも含む）"},
+  {"kind":"type","name":"UnknownCommand","sig":"type UnknownCommand error { arg int; word string; near string? }","lines":[156,160],"doc":"表に無いコマンド（near は UnknownFlag と同じ）"},
+  {"kind":"type","name":"MissingValue","sig":"type MissingValue error { arg int; flag string }","lines":[163,166],"doc":"値を取るフラグが末尾にあって値が無い"},
+  {"kind":"type","name":"BadValue","sig":"type BadValue error { arg int; flag string; word string; want string }","lines":[169,174],"doc":"値が受けられない（want = 受ける値の説明 — `an integer`・`one of elf, ll, ir`・`an integer in 1..32` 等）"},
+  {"kind":"type","name":"Missing","sig":"type Missing error { flag string }","lines":[177,179],"doc":"必須のフラグ・位置引数・コマンドが無い（flag = `--name`・`<name>`・`<command>`）"},
+  {"kind":"type","name":"Extra","sig":"type Extra error { arg int; word string }","lines":[182,185],"doc":"位置引数の余り"},
+  {"kind":"type","name":"Duplicate","sig":"type Duplicate error { arg int; flag string; first int }","lines":[188,192],"doc":"繰り返しを受けないフラグが 2 回出た（first = 1 回目の添字）"},
+  {"kind":"type","name":"Request","sig":"type Request error { word string }","lines":[196,198],"doc":"予約の綴りの要求（`--help` `-h` `--help=dev` `--version` `--cli-spec` と `help` コマンド — word は要求の種類 `help` `help=dev` `version` `cli-spec`）。"},
+  {"kind":"type","name":"Undeclared","sig":"type Undeclared panic { flag string; why string }","lines":[203,206],"doc":"引いた把手が当たったコマンドの表に無い・値の無いことがある把手を値の要る引き（Str・Int・Choice・Pos）で引いた"},
+  {"kind":"type","name":"Misdeclared","sig":"type Misdeclared panic { flag string; why string }","lines":[209,212],"doc":"表の宣言の誤り（予約の綴り・同じ綴りの 2 回の宣言・many でない位置引数が many の後・既定のコマンドと名前のあるコマンドの混在）"},
+  {"kind":"func","name":"Main","sig":"func Main(app App) int  @effects(Handler, io, nondet, panic)","lines":[217,225],"doc":"app を os.Args で走らせる（Run と同じ — 引数が不正な UTF-8 なら印字して 2）"},
+  {"kind":"func","name":"Run","sig":"func Run(app App, args []string) int  @effects(Handler, io, nondet, panic)","lines":[229,251],"doc":"app を args（0 番 = プログラム名）で走らせる: Parse → 文書の要求なら Format を標準出力へ書いて 0・使い方の誤りなら Format を標準エラーへ書いて 2・当たったコマンドの run の戻り値（run の無いコマンドは使い方を標準エラーへ書いて 2）"},
+  {"kind":"func","name":"Is","sig":"func Is(r Parsed, c Command) bool  @effects()","lines":[256,259],"doc":"当たったコマンドが c か（Main を使わず Parse を直に呼ぶ人向け — Main は run で振り分ける）"},
+  {"kind":"func","name":"Bool","sig":"func Bool(r Parsed, f BoolFlag) bool  @effects(panic)","lines":[262,265],"doc":"f が出たか"},
+  {"kind":"func","name":"Str","sig":"func Str(r Parsed, f StrFlag) string  @effects(panic)","lines":[268,275],"doc":"f の値（出なければ env・def の順。"},
+  {"kind":"func","name":"StrOpt","sig":"func StrOpt(r Parsed, f StrFlag) string?  @effects(panic)","lines":[278,285],"doc":"f の値（無ければ nil）"},
+  {"kind":"func","name":"Int","sig":"func Int(r Parsed, f IntFlag) int  @effects(panic)","lines":[288,295],"doc":"f の値（Str と同じ規則 — 無い opt のフラグは panic — IntOpt で引く）"},
+  {"kind":"func","name":"IntOpt","sig":"func IntOpt(r Parsed, f IntFlag) int?  @effects(panic)","lines":[298,305],"doc":"f の値（無ければ nil）"},
+  {"kind":"func","name":"Choice","sig":"func Choice(r Parsed, f ChoiceFlag) string  @effects(panic)","lines":[308,315],"doc":"f の値（choices か dev のどれか。"},
+  {"kind":"func","name":"ChoiceOpt","sig":"func ChoiceOpt(r Parsed, f ChoiceFlag) string?  @effects(panic)","lines":[318,325],"doc":"f の値（無ければ nil）"},
+  {"kind":"func","name":"List","sig":"func List(r Parsed, f ListFlag) []string  @effects(panic)","lines":[328,332],"doc":"f の値の列（出た順 — 出なければ空）"},
+  {"kind":"func","name":"Pos","sig":"func Pos(r Parsed, p Positional) string  @effects(panic)","lines":[335,343],"doc":"位置引数 p（many でない — 無い optional は panic — PosOpt で引く）"},
+  {"kind":"func","name":"PosOpt","sig":"func PosOpt(r Parsed, p Positional) string?  @effects(panic)","lines":[346,354],"doc":"位置引数 p（無ければ nil）"},
+  {"kind":"func","name":"PosList","sig":"func PosList(r Parsed, p Positional) []string  @effects(panic)","lines":[357,361],"doc":"many の位置引数 p の列（出た順）"}
+]},
+{"file":"src/std/cli/help.sober","package":"cli","imports":["std/builder","std/convert","std/iter","std/json","std/sort","std/strings"],"decls":[
+  {"kind":"func","name":"Usage","sig":"func Usage(app App, name string, dev bool) string  @effects()","lines":[25,32],"doc":"name のコマンド（空なら App の全体・語の途中ならその下のサブコマンドの一覧）の使い方。"},
+  {"kind":"func","name":"Format","sig":"func Format(app App, r Parsed, e error) string  @effects()","lines":[36,51],"doc":"Parse の誤り e の文面（r = Parse が返した Parsed）。"},
+  {"kind":"func","name":"Spec","sig":"func Spec(app App) string  @effects()","lines":[384,408],"doc":"app の表の JSON（空白なし・宣言の順。"}
+]},
+{"file":"src/std/cli/parse.sober","package":"cli","imports":["std/convert","std/iter","std/os","std/strings"],"decls":[
+  {"kind":"func","name":"Parse","sig":"func Parse(app App, args []string) (Parsed, error?)  @errors(UnknownFlag, UnknownCommand, MissingValue, BadValue, Missing, Extra, Duplicate, Request) @effects(io, panic)","lines":[19,57],"doc":"args（0 番 = プログラム名 — os.Args の並び）を app の表で読む。"}
+]}
+]

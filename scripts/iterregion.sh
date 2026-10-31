@@ -13,7 +13,7 @@
 #      （展開入口に作る形 = 1 本 — 結果を呼び手の return でもう一度写す二重の写し。写しの有無は実行時の深度の比較なので relocate の数には出ない）
 #   ⑥ RSS: task_spawn_discard（handle を捨てた子の枠は子の寿命 — report-696 / 697・net.Serve の accept のループの形）: 返らない scope で子を生み続けても
 #      枠が scope の region に積もらないこと。W1（10N ≤ N + 1 MiB — 壊れると 20000 → 200000 で 3.0 → 31 MB）と W4（盗まれた子の枠が持ち主へ戻る道 —
-#      生きている task の高水位がやや伸びるので 10N ≤ N + 4 MiB。壊れると 3.8 → 32 MB）
+#      生きている task の高水位がやや伸びるので 10N ≤ N + 4 MiB。壊れると 3.8 → 32 MB）。W1 / W4 とも RSS から未着手の子の積み残しを引いた残差で比べる（下の resid）
 #   ⑦ RSS: task_spawn_discard_die（handle を捨てた子の死は枠を残さない — report-704 B / 705）: 返らない scope で捨てた子が死に続けても、記録に残るのは
 #      (番号の最小, 死因) の 2 語だけ。W1 / W4 とも ⑥ と同じ余白（壊れると 20000 → 200000 で 5.0 → 50 MB — 1 死 ≈ 256 B の塊）
 #   ⑧ RSS: lease_iter（ワーカー局所の lease — region-domain-pool.md 4d 節・report-719b）: 窓を n 回借りても置き場の区画は使い回され、窓の値は反復の
@@ -157,14 +157,23 @@ if [ "$m2" -gt $((m1 + 1024)) ]; then
     echo "FAIL: map_dest: RSS grows with the caller's iterations ($m1 KB at 2000 → $m2 KB at 20000)"
     fail=$((fail + 1))
 fi
+# ⑥⑦ の peak RSS は生きている task の数の最大（未着手の子の積み残し — 負荷で決まり上限が無い）に比例して伸びる: peak ≈ 600 KB + 4.3 KB × maxTasks。
+# 線は積み残しを引いた残差（peak − 4.3 KB × maxTasks — 題材が `ledger` の引数で印字）で比べる。残差は負荷・試行数に依らず一定で、枠の取りこぼしだけが伸ばす。
+# 積み残しそのものは未着手の子の上限（ワーカーあたり 255 — language.md 11 節）で頭打ち: maxTasks ≤ W × 256 + 64（走っている task の分の余白）
+resid() { local m; m=$(sed -n 's/^maxTasks //p' "$1.out"); echo $(( $(cat "$1") - ${m:-0} * 43 / 10 )); }
 "$S2" build examples/task_spawn_discard.sober -o "$W/psd" > /dev/null 2>&1 || { echo "FAIL: build task_spawn_discard"; exit 1; }
 for wm in 1:1024 4:4096; do
     w=${wm%%:*}; slack=${wm#*:}
-    SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/p1" "$W/psd" 20000 > /dev/null || fail=$((fail + 1))
-    SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/p2" "$W/psd" 200000 > /dev/null || fail=$((fail + 1))
-    p1=$(cat "$W/p1"); p2=$(cat "$W/p2")
+    SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/p1" "$W/psd" 20000 ledger > "$W/p1.out" || fail=$((fail + 1))
+    SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/p2" "$W/psd" 200000 ledger > "$W/p2.out" || fail=$((fail + 1))
+    p1=$(resid "$W/p1"); p2=$(resid "$W/p2")
+    mt=$(sed -n 's/^maxTasks //p' "$W/p2.out")
+    if [ "${mt:-0}" -gt $((w * 256 + 64)) ]; then
+        echo "FAIL: task_spawn_discard (W$w): unstarted children not bounded (maxTasks $mt > $w × 256 + 64)"
+        fail=$((fail + 1))
+    fi
     if [ "$p2" -gt $((p1 + slack)) ]; then
-        echo "FAIL: task_spawn_discard (W$w): RSS grows with the discarded children ($p1 KB at 20000 → $p2 KB at 200000)"
+        echo "FAIL: task_spawn_discard (W$w): RSS grows with the discarded children (residual $p1 KB at 20000 → $p2 KB at 200000 — $(cat "$W/p1") / $(cat "$W/p2") KB peak)"
         fail=$((fail + 1))
     fi
     eval "pd$w=\"$p1 → $p2\""
@@ -172,11 +181,16 @@ done
 "$S2" build examples/task_spawn_discard_die.sober -o "$W/psdd" > /dev/null 2>&1 || { echo "FAIL: build task_spawn_discard_die"; exit 1; }
 for wm in 1:1024 4:4096; do
     w=${wm%%:*}; slack=${wm#*:}
-    SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/q1" "$W/psdd" 20000 > /dev/null || fail=$((fail + 1))
-    SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/q2" "$W/psdd" 200000 > /dev/null || fail=$((fail + 1))
-    q1=$(cat "$W/q1"); q2=$(cat "$W/q2")
+    SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/q1" "$W/psdd" 20000 ledger > "$W/q1.out" || fail=$((fail + 1))
+    SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/q2" "$W/psdd" 200000 ledger > "$W/q2.out" || fail=$((fail + 1))
+    q1=$(resid "$W/q1"); q2=$(resid "$W/q2")
+    mt=$(sed -n 's/^maxTasks //p' "$W/q2.out")
+    if [ "${mt:-0}" -gt $((w * 256 + 64)) ]; then
+        echo "FAIL: task_spawn_discard_die (W$w): unstarted children not bounded (maxTasks $mt > $w × 256 + 64)"
+        fail=$((fail + 1))
+    fi
     if [ "$q2" -gt $((q1 + slack)) ]; then
-        echo "FAIL: task_spawn_discard_die (W$w): RSS grows with the deaths of discarded children ($q1 KB at 20000 → $q2 KB at 200000)"
+        echo "FAIL: task_spawn_discard_die (W$w): RSS grows with the deaths of discarded children (residual $q1 KB at 20000 → $q2 KB at 200000 — $(cat "$W/q1") / $(cat "$W/q2") KB peak)"
         fail=$((fail + 1))
     fi
     eval "pe$w=\"$q1 → $q2\""
@@ -192,5 +206,5 @@ for w in 1 4; do
     fi
     eval "pl$w=\"$l1 → $l2\""
 done
-echo "iterregion: 4 loop shapes (enters kept/removed after llight) + inline dest direct (entry-depth allocs ${got}) + RSS $r1 → $r2 KB at 10x iterations + nonret RSS $n1 → $n2 KB + writer RSS $w1 → $w2 KB + map dest RSS $m1 → $m2 KB + region cell RSS $c1 → $c2 KB + inline dest RSS $d1 → $d2 KB + dest reg RSS $g1 → $g2 KB + fnval dest RSS $v1 → $v2 KB + discarded spawn RSS W1 $pd1 / W4 $pd4 KB + discarded deaths RSS W1 $pe1 / W4 $pe4 KB + lease RSS W1 $pl1 / W4 $pl4 KB, fail=$fail"
+echo "iterregion: 4 loop shapes (enters kept/removed after llight) + inline dest direct (entry-depth allocs ${got}) + RSS $r1 → $r2 KB at 10x iterations + nonret RSS $n1 → $n2 KB + writer RSS $w1 → $w2 KB + map dest RSS $m1 → $m2 KB + region cell RSS $c1 → $c2 KB + inline dest RSS $d1 → $d2 KB + dest reg RSS $g1 → $g2 KB + fnval dest RSS $v1 → $v2 KB + discarded spawn residual RSS W1 $pd1 / W4 $pd4 KB + discarded deaths residual RSS W1 $pe1 / W4 $pe4 KB + lease RSS W1 $pl1 / W4 $pl4 KB, fail=$fail"
 [ "$fail" = 0 ]

@@ -32,9 +32,9 @@ X-5. switch の中の `break` / `continue` は、switch を囲むループ（whi
 
 ## 4.2 多値
 
-X-6. 関数は複数の結果を返せる（`func divmod(a, b int) (int, int)`）。多値は分解する点までしか生きない — `a, b := f()` の束縛・`return f()`・switch の subject・パイプの穴。丸ごと 1 つの名前に保存すること・`.0` で取り出すこと・`f(g())` と実引数へ流すことはできない。名前を持つべき組は struct で書く。
+X-6. 関数は複数の結果を返せる（`func divmod(a, b int) (int, int)`）。多値は分解する点までしか生きない — `a, b := f()` の束縛・`return f()`・switch の subject・パイプの穴。丸ごと 1 つの名前に保存すること・`.0` で取り出すこと・`f(g())` と実引数へ流すこと・既存の名前へ代入すること（`a, b = f()` — 代入で受けるのは X-7 の全部 `_` の捨てだけ）はできない。名前を持つべき組は struct で書く。
 例: [`examples/multi.sober`](../../examples/multi.sober)・[`examples/switch_multi.sober`](../../examples/switch_multi.sober)
-拒否: [`examples/multibind.sober`](../../examples/multibind.sober)
+拒否: [`examples/multibind.sober`](../../examples/multibind.sober)・[`examples/multi_assign.sober`](../../examples/multi_assign.sober)
 決定: [language.md 2 節](../language.md)
 
 X-7. 値を明示して捨てるときは `_ = e` と書く（捨てた事実が字面に残る）。多値は結果の数だけ `_` を並べる（`_, _ = f()`）。

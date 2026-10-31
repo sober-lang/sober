@@ -1,0 +1,20 @@
+package calc
+
+func TestSum() {
+    assert(Sum(4) == 6)
+}
+
+func TestSign() {
+    assert(Sign(5) == 1)
+    assert(Sign(-3) == -1)
+}
+
+func TestMix() {
+    assert(Mix(5, 3) == 22)
+}
+
+func TestBoth() {
+    assert(Both(true, false))
+    assert(!Both(false, true))
+    assert(Both(true, true))
+}

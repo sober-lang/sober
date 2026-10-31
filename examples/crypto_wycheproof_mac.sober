@@ -1,6 +1,6 @@
 package main
 
-// Wycheproof（C2SP/wycheproof — testdata/wycheproof/README.md）の HMAC-SHA256 174 件・HKDF-SHA256 86 件を std/crypto に通す（report-792）。
+// Wycheproof（C2SP/wycheproof — testdata/wycheproof/README.md）の HMAC-SHA256 174 件・HKDF-SHA256 86 件を std/crypto に通す。
 // valid = 値が一致・invalid = 拒否（HMAC は改竄した tag が crypto.Equal で食い違う・HKDF は長さの上限で TooLong）。食い違った tcId を印字する
 
 import "std/crypto"

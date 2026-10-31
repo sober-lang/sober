@@ -23,7 +23,7 @@ for t in sobercheck desugardump; do
 done
 ulimit -s unlimited
 # ① コンパイラ自身（compiler/app — Manifest は stages の manifest の段と同じ形）
-(cd "$B" && { echo app/main.sober; echo .; { find . -name '*.sober' -type f -not -path './std/*' | sed 's|^\./||'; find std -name '*.sober' -type f; } | LC_ALL=C sort; }) > "$W/app.m"
+(cd "$B" && { echo app; echo .; { find . -name '*.sober' -type f -not -path './std/*' | sed 's|^\./||'; find std -name '*.sober' -type f; } | LC_ALL=C sort; }) > "$W/app.m"
 (cd "$B" && SOBER_WORKERS=1 "$W/sobercheck.opt" < "$W/app.m" > "$W/app.opt" 2> /dev/null)
 (cd "$B" && SOBER_WORKERS=1 "$W/sobercheck.raw" < "$W/app.m" > "$W/app.raw" 2> /dev/null)
 [ -s "$W/app.opt" ] && cmp -s "$W/app.opt" "$W/app.raw" || fail "compiler/app: sobercheck の掛けた / 掛けないの判定が違う（$(head -c 100 "$W/app.opt") / $(head -c 100 "$W/app.raw")）"

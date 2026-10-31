@@ -1,6 +1,6 @@
 package main
 
-// io.Lines の専用の網（IO 便 — report-739 3 節）: 切片（64 KiB）の境界をまたぐ行の縫い直し・空行・CRLF・LF の無い末尾の行。
+// io.Lines の確認: 切片（64 KiB）の境界をまたぐ行の縫い直し・空行・CRLF・LF の無い末尾の行。
 // 行の設計: alpha / 空行 / crlf(CRLF) / 'x' × 70,000（切片 1 と 2 をまたぐ — またいだ行だけ std の中で写す）/ tail（LF なし）。
 // リポジトリのルートを cwd にして実行する。書き込み先は out/ の下
 import "std/io"
@@ -8,7 +8,7 @@ import "std/iter"
 
 const longLen = 70000
 
-// allx は b が 'x' × longLen か
+// b が 'x' × longLen か
 func allx(b []byte) bool {
     mut ok := len(b) == longLen
     for i <- iter.Range(0, len(b)) {

@@ -31,10 +31,10 @@ jobs:
         run: cd src/stage1 && zig build
 
       - name: Stamp the version
-        # the only place the version is baked in: the `return "dev" // sober-version` line of src/compiler/app/main.sober
+        # the only place the version is baked in: the `version: "dev", // sober-version` line of src/compiler/app/main.sober
         run: |
-          sed -i 's|return "dev" // sober-version$|return "${{ github.ref_name }}" // sober-version|' src/compiler/app/main.sober
-          grep -q 'return "${{ github.ref_name }}" // sober-version$' src/compiler/app/main.sober
+          sed -i 's|version: "dev", // sober-version$|version: "${{ github.ref_name }}", // sober-version|' src/compiler/app/main.sober
+          grep -q 'version: "${{ github.ref_name }}", // sober-version$' src/compiler/app/main.sober
 
       - name: Build stage2 (bootstrap chain)
         run: scripts/stage2.sh

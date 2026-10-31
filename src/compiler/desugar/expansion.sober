@@ -11,7 +11,7 @@ import "loader"
 import "obuf"
 import "diag"
 
-// expBegin は計測の区間の入口
+// 計測の区間の入口
 func expBegin(st mut S) {
     if st.expRep == 0 {
         return
@@ -22,7 +22,7 @@ func expBegin(st mut S) {
     st.expChild = 0
 }
 
-// expPut は積み（Table は縮まない — 使い終わった段は上書きで使い回す）の i 番目に x
+// 積み（Table は縮まない — 使い終わった段は上書きで使い回す）の i 番目に x
 func expPut(st mut S, i int, x int) {
     if i < table.Len(mut st.expStk) {
         table.Set(mut st.expStk, i, x)
@@ -31,7 +31,7 @@ func expPut(st mut S, i int, x int) {
     }
 }
 
-// expEnd は区間の出口: 関数 fi（kind 0 = 呼び出し点展開・1 = Def の本体）の寄与を足す
+// 区間の出口: 関数 fi（kind 0 = 呼び出し点展開・1 = Def の本体）の寄与を足す
 func expEnd(st mut S, fi int, kind int) {
     if st.expRep == 0 {
         return
@@ -48,7 +48,7 @@ func expEnd(st mut S, fi int, kind int) {
     table.Set(mut st.expExcl, k, table.Get(mut st.expExcl, k) + excl)
 }
 
-// ExpansionReport は p を脱糖して寄与（自分だけ）の多い順に上位 ntop 件の表（テキスト）
+// p を脱糖して寄与（自分だけ）の多い順に上位 ntop 件の表（テキスト）
 @errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
 func ExpansionReport(p loader.Program, ntop int) ([]byte, error?) {
     mut st := S{}
@@ -105,7 +105,7 @@ func ExpansionReport(p loader.Program, ntop int) ([]byte, error?) {
     return freeze(out), nil
 }
 
-// pad は n を幅 w の右寄せで（permille なら千分率を小数 1 桁の百分率で）
+// n を幅 w の右寄せで（permille なら千分率を小数 1 桁の百分率で）
 func pad(out mut []byte, n int, w int, permille bool) {
     mut d := mut []byte{}
     obuf.Int(mut d, if permille { n / 10 } else { n })
@@ -121,9 +121,72 @@ func pad(out mut []byte, n int, w int, permille bool) {
     }
 }
 
-// nameOut はヒープの文字列 s のバイトを out へ
+// ヒープの文字列 s のバイトを out へ
 func nameOut(st mut S, out mut []byte, s StrRef) {
     for i <- iter.Range(0, slen(mut st, s)) {
         out = append(out, byte(sat(mut st, s, i)))
     }
+}
+
+// 開発用（`sober check --def-cost` — 関数単位の check キャッシュの費用を見る計器）: p を脱糖して関数ごとの行
+// `F 関数 package Def か 展開されるか std か Def の本体の寄与（含む） 展開の回数 展開の寄与（含む） 区間の費用の代理 名前` と、展開の辺 `E 呼び手 呼び先`
+// （呼び出し点ごと — expEdges）・参照の辺 `R 呼び手 呼び先`（refGraph）を出す。excl = E2-S の逃げの集合（判定の経路の 1 周目と同じなら loader.ExpandMarked）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
+func DefCostDump(p loader.Program, excl []int) ([]byte, error?) {
+    mut st := S{}
+    initState(mut st, p)
+    st.e2s = true
+    st.e2sExcl = excl
+    st.expRep = 1
+    for i <- iter.Range(0, st.nfn * 2) {
+        table.Push(mut st.expCnt, 0)
+        table.Push(mut st.expIncl, 0)
+        table.Push(mut st.expExcl, 0)
+    }
+    loadShapes(mut st, shapesFor(p, true, excl, -1, false))
+    run(mut st)?
+    // 区間の費用の代理（PlanDefs と同じ — 自分の節の数 = 同じファイルの前の関数の宣言との添字の差・展開込み）
+    mut own := mut []int{}
+    for i <- iter.Range(0, st.nfn) {
+        fl := p.fn_file[i]
+        prev := if i > 0 && p.fn_file[i - 1] == fl { p.fn_node[i - 1] } else { 0 }
+        c := p.fn_node[i] - prev
+        own = append(own, if c > 0 { c } else { 1 })
+    }
+    ex := ExpCost(mut st, freeze(own))
+    mut out := mut []byte{}
+    for i <- iter.Range(0, st.nfn) {
+        obuf.Lit(mut out, "F ")
+        vs := []int{i, fnPkg(mut st, i), if fnDef(mut st, i) >= 0 { 1 } else { 0 }, if fnExpands(mut st, i) { 1 } else { 0 },
+            if IsStdPkg(mut st, fnPkg(mut st, i)) { 1 } else { 0 }, table.Get(mut st.expIncl, i * 2 + 1), table.Get(mut st.expCnt, i * 2),
+            table.Get(mut st.expIncl, i * 2), ex[i]}
+        for k <- iter.Range(0, len(vs)) {
+            obuf.Int(mut out, vs[k])
+            out = append(out, ' ')
+        }
+        nameOut(mut st, mut out, PkgPath(mut st, fnPkg(mut st, i)))
+        out = append(out, '.')
+        nameOut(mut st, mut out, fnName(mut st, i))
+        out = append(out, '\n')
+    }
+    edges := expEdges(mut st)
+    for e <- iter.Range(0, len(edges) / 2) {
+        obuf.Lit(mut out, "E ")
+        obuf.Int(mut out, edges[e * 2])
+        out = append(out, ' ')
+        obuf.Int(mut out, edges[e * 2 + 1])
+        out = append(out, '\n')
+    }
+    // 参照の辺（refGraph — 呼び出しと関数値。呼び手 -1 = 関数の外）
+    rg := refGraph(mut st)
+    for c <- iter.Range(0, len(rg.head) - 1) {
+        for e <- iter.Range(rg.head[c], rg.head[c + 1]) {
+            obuf.Lit(mut out, "R ")
+            obuf.Int(mut out, c - 1)
+            out = append(out, ' ')
+            obuf.Int(mut out, rg.adj[e])
+            out = append(out, '\n')
+        }
+    }
+    return freeze(out), nil
 }

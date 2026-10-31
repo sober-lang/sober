@@ -10,14 +10,14 @@ import "desugar"
 import "std/iter"
 import "std/table"
 
-// InvalidIR は IR の検証器の違反（after = どの段の後か・fn = 関数の名前・msg = 違反の文面）
+// IR の検証器の違反（after = どの段の後か・fn = 関数の名前・msg = 違反の文面）
 type InvalidIR panic {
     after string
     fn string
     msg string
 }
 
-// vfyModule はモジュールの全関数を検査する（after = どの段の後か — 診断の文言）
+// モジュールの全関数を検査する（after = どの段の後か — 診断の文言）
 // vfyModule は段の後の検証（vfyLast のときは掛けない — 最後の vfyFinal がまとめて見る）
 func vfyModule(st mut St, after string) {
     if !st.noVfy && !st.vfyLast {
@@ -25,7 +25,7 @@ func vfyModule(st mut St, after string) {
     }
 }
 
-// vfyFinal はバックエンドの手前の検証（vfyLast でも掛ける — 違反の検出は保ち、どの段で崩れたかの局所化は SOBER_VERIFY=each の段ごとの検証に任せる）
+// バックエンドの手前の検証（vfyLast でも掛ける — 違反の検出は保ち、どの段で崩れたかの局所化は SOBER_VERIFY=each の段ごとの検証に任せる）
 func vfyFinal(st mut St, after string) {
     if !st.noVfy {
         vfyRun(mut st, after)
@@ -36,8 +36,9 @@ func vfyRun(st mut St, after string) {
     nf := xCountFuncs(mut st)
     mut f := st.fhead
     while f != -1 {
-        if irFnBHead(mut st, f) != -1 {
-            // 他のパスと違い式ブロックで包まない（既定の build は最後に 1 回なので積もりは 1 周分 — 包みの得が小さい。仕上げ便）
+        // β1 の当たりで B2 を飛ばした関数は B2 の入力のまま（当たりは作ったときに検証済み — bcache.sober）
+        if irFnBHead(mut st, f) != -1 && !bcSkipped(mut st, int(f)) {
+            // 他のパスと違い式ブロックで包まない（既定の build は最後に 1 回なので積もりは 1 周分 — 包みの得が小さい）
             m0 := vfyFunc(mut st, f, nf)
             // 全展開した直線の長さ（キャンセルの検査点の距離 K の約束を最終 IR で照合 — 段ごとの検証〔SOBER_VERIFY=each — gates〕の最後の段だけ。
             // 既定の build では掛けない — 近似の外れで利用者の build を内部エラーにしない。vfyRun に引数を足すと自己 check の RSS が +40 MB）
@@ -154,7 +155,7 @@ func vfyFunc(st mut St, f FnRef, nf int) string {
     return if v.np > 0 { vfyV128(mut st, mut v, mut w) } else { "" }
 }
 
-// vfyV128 は v128 の値の約束（段 4②a — ir.sober の OpPMem の注）: 使うのは packed の op だけ・定義と同じブロックの中だけ（終端の欄に現れない）・
+// v128 の値の約束（ir.sober の OpPMem の注）: 使うのは packed の op だけ・定義と同じブロックの中だけ（終端の欄に現れない）・
 // 定義から使用までの間に呼び出し系の op（call・間接 call・罠・切替・開始・原子・clone）が無い。packed の op を含む関数だけ走る（vfyFunc の 2 周目）
 func vfyV128(st mut St, v mut vfyS, w mut m2rW) string {
     for bi <- iter.Range(0, w.nb) {
@@ -249,7 +250,7 @@ func vfyDominates(w mut m2rW, a int, b int) bool {
     return res
 }
 
-// vfyUse は x の使用（wantTy = 型、-1 なら問わない）: 範囲・型・到達するブロックなら支配
+// x の使用（wantTy = 型、-1 なら問わない）: 範囲・型・到達するブロックなら支配
 func vfyUse(st mut St, v mut vfyS, w mut m2rW, x int, wantTy int, what string) string {
     if x < 0 || x >= v.nv {
         return "${what} uses undefined %${x}"
@@ -276,7 +277,7 @@ func vfyList(st mut St, v mut vfyS, w mut m2rW, l int, wantTy int, what string) 
     return ""
 }
 
-// vfyOperands は欄の種別の表（opRow）が値・値の列・スロットとする欄の範囲を見る（型・個数・支配は vfyInst の op ごとの場合分け — 表が欄を
+// 欄の種別の表（opRow）が値・値の列・スロットとする欄の範囲を見る（型・個数・支配は vfyInst の op ごとの場合分け — 表が欄を
 // 取り違えれば、値でない数〔番地・記述・定数〕を値として読むのでここで割れる）。段ごとの検証（SOBER_VERIFY=each — gates）でだけ掛ける
 // （既定の最後に 1 回の検証で掛けると自己 build で +0.5 G 命令。表の正しさは単体テストと全ての走査の照合〔ELF の一致〕が見る）
 func vfyOperands(st mut St, v mut vfyS, f FnRef, ins InsRef) string {
@@ -295,7 +296,7 @@ func vfyOperands(st mut St, v mut vfyS, f FnRef, ins InsRef) string {
     return ""
 }
 
-// vfyTermOperands は終端の値・値の列の欄（termRow）の範囲を見る
+// 終端の値・値の列の欄（termRow）の範囲を見る
 func vfyTermOperands(st mut St, v mut vfyS, b BlkRef) string {
     mut r := st.tmk[irBlkTerm(mut st, b)]
     mut at := int(b) + B_X1

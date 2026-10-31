@@ -1,13 +1,13 @@
 package lower
 
-// hdr の資格の印の網（6.5 第 2 便 ④）: 印の無い ptr 仮引数は、別の仮引数のデータへの store が自分のヘッダを書きうる（rt の補助は
+// hdr の資格の印の網: 印の無い ptr 仮引数は、別の仮引数のデータへの store が自分のヘッダを書きうる（rt の補助は
 // slice のデータの中のヘッダを指しうる）ので、ヘッダの読みをまとめてはいけない。利用者のプログラムには印の無い ptr 仮引数で hdr に掛かるもの
 // （sret はヘッダの語を必ず書く）が無く、印を見ない変異は例・題材の全部でバイト一致になる — IR を手で組んで直に見る（`cd compiler && ../bin/sober test lower`）
 
 import "desugar"
 import "std/iter"
 
-// hdrT は `a = load P[1]; store itop(load Q[0])[0] ← a; c = load P[1]; store itop(load Q[0])[1] ← c` の関数に印 mask で hdr を掛け、
+// `a = load P[1]; store itop(load Q[0])[0] ← a; c = load P[1]; store itop(load Q[0])[1] ← c` の関数に印 mask で hdr を掛け、
 // 残った `load P[1]` の数を返す（2 = まとめなかった・1 = まとめた）
 func hdrT(mask int) int {
     mut st := St{}

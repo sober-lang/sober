@@ -1,6 +1,6 @@
 package main
 
-// 仮引数（呼び手の region）の値を mut 局所の名前へそのまま代入する（F-o = formal.md F-36 — 2026-10-02 まで check が def error・build は受理）。
+// 仮引数（呼び手の region）の値を mut 局所の名前へそのまま代入する。
 // 脱糖器は欄への代入（fieldValueAnn — field_param_ann）と同じく、値を束縛点の点座標へ ann で緩める
 
 type Item struct {

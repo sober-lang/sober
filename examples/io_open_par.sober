@@ -1,6 +1,6 @@
 package main
 
-// IO 便 段 2: task の死と開いた fd（language.md 28 節「後始末」・11 節）。死ぬ task では defer が走らないので、Open は fd を開いた task の
+// task の死と開いた fd（language.md 28 節「後始末」・11 節）。死ぬ task では defer が走らないので、Open は fd を開いた task の
 // 登録簿に積み、子の出口（死・切られた子も通る）で rt が閉じる。File は give: で渡せないので、子は path を受けて自分で開く。
 // 開いている fd の数は ring・eventfd（ワーカーごと — 数は機械の CPU の数に依る）も数えるので、scope を 200 回まわした伸びで見る:
 // 死んだ子の fd が残れば 1 周 2 本ずつ（400）伸びる。リポジトリのルートを cwd にして実行する
@@ -15,7 +15,7 @@ func fds() int {
     return len(es)
 }
 
-// read は p を開いて読んだ長さ。die > 0 なら開いた後に死ぬ（defer は走らない — 登録簿が閉じる）
+// p を開いて読んだ長さ。die > 0 なら開いた後に死ぬ（defer は走らない — 登録簿が閉じる）
 func read(p string, die int) int {
     f := io.Open(p) catch return -1
     defer io.Close(f)
@@ -26,7 +26,7 @@ func read(p string, die int) int {
     return len(b)
 }
 
-// round は子 3 本（ふつう 1・開いた後に死ぬ 2）の scope — 死んだ子は scope の err（ChildDied）になる
+// 子 3 本（ふつう 1・開いた後に死ぬ 2）の scope — 死んだ子は scope の err（ChildDied）になる
 func round(p string) error? {
     r, err := task.Run((s task.Scope) => {
         a := task.Spawn(s, () => read(p, 0))

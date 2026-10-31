@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P3b-5: handle を imm の slice に積む（diag.Par kind 16 — handle の slice は mut slice だけ）
+// handle を imm の slice に積む（diag.Par kind 16 — handle の slice は mut slice だけ）
 
 import "std/task"
 

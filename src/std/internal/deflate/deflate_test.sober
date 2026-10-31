@@ -11,7 +11,7 @@ import "std/io"
 import "std/iter"
 import "std/os"
 
-// text は n バイトの圧縮の効く列（語の繰り返しに乱数のバイトを混ぜる — seed で形を変える）
+// n バイトの圧縮の効く列（語の繰り返しに乱数のバイトを混ぜる — seed で形を変える）
 func text(n int, seed int) []byte {
     w := bytes("sober deflate stream window sync flush huffman lazy greedy ")
     mut b := mut []byte{}
@@ -23,7 +23,7 @@ func text(n int, seed int) []byte {
     return freeze(b)
 }
 
-// cuts は data の切れ目（emit の終わりの位置の列 — 最後は len(data)）。mode 0 = 1 つ・1 = 1 バイトずつ・2 = 1 B〜64 KiB の無作為（seed）・3 = 空の emit を挟む
+// data の切れ目（emit の終わりの位置の列 — 最後は len(data)）。mode 0 = 1 つ・1 = 1 バイトずつ・2 = 1 B〜64 KiB の無作為（seed）・3 = 空の emit を挟む
 func cuts(n int, mode int, seed int) []int {
     mut c := mut []int{}
     if mode == 0 {
@@ -91,13 +91,13 @@ func le32(d []byte, q int) int {
     return int(d[q]) | (int(d[q + 1]) << 8) | (int(d[q + 2]) << 16) | (int(d[q + 3]) << 24)
 }
 
-// raw は生の DEFLATE の z を復号した列（形が違えば印 "<bad>"）
+// 生の DEFLATE の z を復号した列（形が違えば印 "<bad>"）
 func raw(z []byte) []byte {
     out, end, st := inflate.At(z, 0, 0 - 1)
     return if st == inflate.Ok && end == len(z) { out } else { bytes("<bad>") }
 }
 
-// unzip は gzip の 1 メンバの z を頭（10 バイト）・中身・CRC-32 と長さを照合して復号した列
+// gzip の 1 メンバの z を頭（10 バイト）・中身・CRC-32 と長さを照合して復号した列
 func unzip(z []byte) []byte {
     if len(z) < 18 || z[0] != byte(0x1f) || z[1] != byte(0x8b) || z[2] != byte(8) || z[3] != byte(0) {
         return bytes("<bad head>")
@@ -109,7 +109,7 @@ func unzip(z []byte) []byte {
     return out
 }
 
-// run は data を切れ目 cs で Feed して End まで回し、(繋いだ出力, 各 Feed の返りの終わりの位置) を返す。生の DEFLATE なら各接頭辞 ‖ 03 00 の復号も照合する
+// data を切れ目 cs で Feed して End まで回し、(繋いだ出力, 各 Feed の返りの終わりの位置) を返す。生の DEFLATE なら各接頭辞 ‖ 03 00 の復号も照合する
 func run(data []byte, level int, gz bool, cs []int) ([]byte, []int) {
     mut s := Stream{}
     Begin(mut s, level, gz)
@@ -296,7 +296,7 @@ func TestStreamBench() {
     println("bench cut ${cut} reps ${reps} level ${lv} out ${total / (if reps > 0 { reps } else { 1 })}")
 }
 
-// setup の lcode / dcode（表のまま書いた値）を RFC 1951 3.2.5 の範囲からの組み立て（report-1139 E1 の前の setup の式）と照合する
+// setup の lcode / dcode（表のまま書いた値）を RFC 1951 3.2.5 の範囲からの組み立てと照合する
 func TestCodeTables() {
     mut e := enc{}
     setup(mut e)
@@ -332,7 +332,7 @@ func TestCodeTables() {
     assert(e.dcode[0] == 0 && e.dcode[256 + (32767 >> 7)] == 29)
 }
 
-// lengthsRef は report-1139 E2 の前の lengths（頻度の鍵の挿入ソート）の写し — 数え上げのソートに換えた lengths と出力の一致を照合する
+// 旧 lengths（頻度の鍵の挿入ソート）の写し — 数え上げのソートに換えた lengths と出力の一致を照合する
 func lengthsRef(f []int, maxBits int) []int {
     n := len(f)
     mut fq := mut []int{}
@@ -354,7 +354,7 @@ func lengthsRef(f []int, maxBits int) []int {
         z += 1
     }
     // 使う記号を頻度の昇順（同じなら番号順 — 決定的）に: 鍵 ks = 頻度 × 512 + 番号（一意）の挿入ソート（記号は 286 個まで。
-    // sort.Order は閉包を取る形の check が通らないので使わない — FLEDGER の sort.Order の候補〔report-651〕と同じ症状）
+    // sort.Order は閉包を取る形の check が通らないので使わない）
     mut ks := mut []int{}
     for i <- iter.Range(0, n) {
         if fq[i] > 0 {
@@ -519,7 +519,7 @@ func TestLengthsRef() {
     assert(cases == 3 * 7 * 40 * 2)
 }
 
-// shapeFreq は TestLengthsRef の頻度の形 sh の i 番目の頻度（x は乱数・fa は Fibonacci の項）
+// TestLengthsRef の頻度の形 sh の i 番目の頻度（x は乱数・fa は Fibonacci の項）
 func shapeFreq(sh int, x int, i int, r int, n int, fa int) int {
     if sh == 0 {
         return if x % 4 == 0 { x % 50 } else { 0 }

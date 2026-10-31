@@ -1,2 +1,3 @@
+sober: type error at examples/func_neg_noreturn.sober:6:12
 {"errors":[{"msg":"def error"}],"ok":false}
 exit=1

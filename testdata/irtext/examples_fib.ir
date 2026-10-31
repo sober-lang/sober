@@ -1697,6 +1697,29 @@ b0:
   ret %2
 }
 
+func @main.fib(%0 i64) i64 {
+b0:
+  %1 = region.depth
+  region.enter
+  %2 = const 2
+  %3 = lt %0, %2
+  condbr %3, b1, b2
+b1:
+  br b3(%0)
+b2:
+  %4 = const 1
+  %5 = sub %0, %4
+  %6 = call @main.fib(%5)
+  %7 = const 2
+  %8 = sub %0, %7
+  %9 = call @main.fib(%8)
+  %10 = add %6, %9
+  br b3(%10)
+b3(%11 i64):
+  region.setdepth %1
+  ret %11
+}
+
 func @main.main() {
 b0:
   %0 = region.depth
@@ -1708,6 +1731,22 @@ b0:
   call @rt.print_char(%3)
   region.setdepth %0
   ret
+}
+
+func @rt.sigint() {
+b0:
+  %0 = const 231
+  %1 = const 130
+  %2 = syscall(%0, %1)
+  exit 130
+}
+
+func @rt.sigterm() {
+b0:
+  %0 = const 231
+  %1 = const 143
+  %2 = syscall(%0, %1)
+  exit 143
 }
 
 export func @sober_entry(%0 ptr) {
@@ -2303,43 +2342,4 @@ b91:
   %404 = const 1
   %405 = add %383, %404
   br b85(%401, %405)
-}
-
-func @rt.sigterm() {
-b0:
-  %0 = const 231
-  %1 = const 143
-  %2 = syscall(%0, %1)
-  exit 143
-}
-
-func @rt.sigint() {
-b0:
-  %0 = const 231
-  %1 = const 130
-  %2 = syscall(%0, %1)
-  exit 130
-}
-
-func @main.fib(%0 i64) i64 {
-b0:
-  %1 = region.depth
-  region.enter
-  %2 = const 2
-  %3 = lt %0, %2
-  condbr %3, b1, b2
-b1:
-  br b3(%0)
-b2:
-  %4 = const 1
-  %5 = sub %0, %4
-  %6 = call @main.fib(%5)
-  %7 = const 2
-  %8 = sub %0, %7
-  %9 = call @main.fib(%8)
-  %10 = add %6, %9
-  br b3(%10)
-b3(%11 i64):
-  region.setdepth %1
-  ret %11
 }

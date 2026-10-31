@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# iouring（IO 便 段 0 — src/compiler/lower/uring.sober・.pair/io-design-draft.md 2.1 / 2.2 節）: M:N の rt のワーカーごとの io_uring の probe と ring。
+# iouring（IO 便 段 0 — src/compiler/lower/uring.sober）: M:N の rt のワーカーごとの io_uring の probe と ring。
 # examples/collatz_par（std/task を使う）を SOBER_IO ∈ {0〔自動〕, 1〔今の経路に固定〕, 2〔setup が -ENOSYS を返した形の模造 — seccomp で塞がれた環境の再現〕}
 # × ワーカー {1, 2, 8} で走らせ、
 #   ① 観測（stdout・終了コード）がワーカー 1・SOBER_IO 無しの黄金と同じ（ring の有無で振る舞いが変わらない）

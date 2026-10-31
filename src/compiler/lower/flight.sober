@@ -1,6 +1,6 @@
 package lower
 
-// 飛行記録（report-1175 / 1176 — 実行時 opt-in: SOBER_FLIGHT=<path>）: ワーカーごとの環に rt の出来事を固定長 4 語で書く。環の置き場は
+// 飛行記録（実行時 opt-in: SOBER_FLIGHT=<path>）: ワーカーごとの環に rt の出来事を固定長 4 語で書く。環の置き場は
 // <path> の共有写像（open + ftruncate + mmap MAP_SHARED）なので、panic・外の網が止めた・ハング・SIGKILL のどれでもファイルが残る
 // （rt は「吐く」コードを持たない）。正常終了（main が返った）では unlink する。整形は読み手（scripts/flight.ts）。
 // - ファイル = 頭の FR_HDR バイト [印 FR_MAGIC・版・ワーカー数・log2（環のイベント数）・TSC・CLOCK_MONOTONIC（起動時の組）・pid] + ワーカー k の環
@@ -8,7 +8,7 @@ package lower
 // - イベント = [TSC（柵なしの rdtsc）・通し番号 << 8 | 種別・引数 a・引数 b]。通し番号はワーカーごと（読み手は番号で並べ、環の折り返しを切る）
 // - ワーカーの表の WK_HOT の行（持ち主だけが書く）に 3 語: WK_FRB = 環の基底（0 = off — 点ごとの値札は読み 1 + 分岐 1）・WK_FRI = 次の番号・WK_FRM = 環のマスク
 // - 書き点の値札（on）: rdtsc + 読み 3 + 書き 5 + 算術数個。柵・鍵なし（書くのは持ち主だけ・外の読み手はプロセスの外で後から読む）
-// 棄てた案: 常時 on の小さい環（report-1175 1.3 の A — on の値札の実測の後に再裁定）・匿名の写像 + panic で write(2)（ハング・SIGKILL を取れない）・
+// 棄てた案: 常時 on の小さい環（値札の実測が on のコストに見合わなかった）・匿名の写像 + panic で write(2)（ハング・SIGKILL を取れない）・
 // シグナルで吐く（他のワーカーが書いている環をハンドラの中で写す）
 import "std/iter"
 
@@ -35,12 +35,12 @@ const FK_END = 12    // a = 終わった TCB・b = 罠の結果（0 = 戻った�
 const FK_PANIC = 13  // a = panic の点の番号・b = 今の TCB
 const FK_READY = 14  // a = epoll が readiness を返した待ち手の TCB・b = 1 なら待ち中（起こす — 対の WAKE が続くはず）
 
-// frOn は記録が on のときだけ通る区画を開く（ワーカーの環の基底 ≠ 0）。返り = 続きの区画（呼び手が区画の終わりで br → setCur する）
+// 記録が on のときだけ通る区画を開く（ワーカーの環の基底 ≠ 0）。返り = 続きの区画（呼び手が区画の終わりで br → setCur する）
 func frOn(st mut St) BlkRef {
     return branchIf(mut st, cmp(mut st, CNe, load(mut st, globaladdr(mut st, st.wkG), WK_FRB), iconst(mut st, 0)))
 }
 
-// frPut は 1 件を書く（frOn の区画の中から）
+// 1 件を書く（frOn の区画の中から）
 func frPut(st mut St, kind int, a int, b int) {
     wk := globaladdr(mut st, st.wkG)
     i := load(mut st, wk, WK_FRI)
@@ -52,7 +52,7 @@ func frPut(st mut St, kind int, a int, b int) {
     store(mut st, wk, WK_FRI, bin(mut st, BAdd, i, iconst(mut st, 1)))
 }
 
-// frRec は on なら 1 件を書く（a / b は呼び手が作った値 — off の道で作られても安い値だけを渡す）
+// on なら 1 件を書く（a / b は呼び手が作った値 — off の道で作られても安い値だけを渡す）
 func frRec(st mut St, kind int, a int, b int) {
     if !st.taskUse {
         return
@@ -63,7 +63,7 @@ func frRec(st mut St, kind int, a int, b int) {
     setCur(mut st, bE)
 }
 
-// frRecP は on なら a = lo | hi << 32 の 1 件を書く（詰めは on の区画の中 — off の道に算術を足さない）
+// on なら a = lo | hi << 32 の 1 件を書く（詰めは on の区画の中 — off の道に算術を足さない）
 func frRecP(st mut St, kind int, lo int, hi int, b int) {
     if !st.taskUse {
         return
@@ -74,12 +74,12 @@ func frRecP(st mut St, kind int, lo int, hi int, b int) {
     setCur(mut st, bE)
 }
 
-// frPack は a | b << 32（fd と長さ・向き等の 2 欄を 1 語に）
+// a | b << 32（fd と長さ・向き等の 2 欄を 1 語に）
 func frPack(st mut St, a int, b int) int {
     return bin(mut st, BOr, bin(mut st, BAnd, a, iconst(mut st, 4294967295)), bin(mut st, BShl, b, iconst(mut st, 32)))
 }
 
-// frAccept は ACCEPT の 1 件（on のときだけ、受けた fd の相手の port を getpeername で読む）
+// ACCEPT の 1 件（on のときだけ、受けた fd の相手の port を getpeername で読む）
 func frAccept(st mut St, lfd int, fd int) {
     if !st.taskUse {
         return
@@ -99,7 +99,7 @@ func frAccept(st mut St, lfd int, fd int) {
     setCur(mut st, bE)
 }
 
-// frClock は CLOCK の 1 件（on のときだけ CLOCK_MONOTONIC を読む — 眠りの前の点から）
+// CLOCK の 1 件（on のときだけ CLOCK_MONOTONIC を読む — 眠りの前の点から）
 func frClock(st mut St) {
     if !st.taskUse {
         return
@@ -110,7 +110,7 @@ func frClock(st mut St) {
     setCur(mut st, bE)
 }
 
-// envPtr は環境変数 keyS（"NAME=" の形）の値の番地（無ければ 0）
+// 環境変数 keyS（"NAME=" の形）の値の番地（無ければ 0）
 func envPtr(st mut St, sp int, keyS string) int {
     argc := load(mut st, sp, 0)
     envp := gepWord(mut st, sp, bin(mut st, BAdd, argc, iconst(mut st, 2)))
@@ -140,7 +140,7 @@ func envPtr(st mut St, sp int, keyS string) int {
     return res
 }
 
-// frInit は入口の記録の用意（mnInit から — n = ワーカー数）: SOBER_FLIGHT が空でなければファイルを作って写し、頭とワーカー 0 の環を置く。
+// 入口の記録の用意（mnInit から — n = ワーカー数）: SOBER_FLIGHT が空でなければファイルを作って写し、頭とワーカー 0 の環を置く。
 // 失敗（open / mmap）は黙って off のまま
 func frInit(st mut St, sp int, n int) {
     mn := globaladdr(mut st, st.mnG)
@@ -181,7 +181,7 @@ func frInit(st mut St, sp int, n int) {
     setCur(mut st, bN)
 }
 
-// frWorker はワーカー k（≥ 1）の表 a に環を置く（rt.mn_start が表を組むとき — 記録が off なら何もしない）
+// ワーカー k（≥ 1）の表 a に環を置く（rt.mn_start が表を組むとき — 記録が off なら何もしない）
 func frWorker(st mut St, a int, k int) {
     fb := load(mut st, globaladdr(mut st, st.mnG), MN_FLB)
     bE := branchIf(mut st, cmp(mut st, CNe, fb, iconst(mut st, 0)))
@@ -193,7 +193,7 @@ func frWorker(st mut St, a int, k int) {
     setCur(mut st, bE)
 }
 
-// frUnlink は正常終了（main が返った）でファイルを消す（kill・panic で死んだときは残る — 網が拾う）
+// 正常終了（main が返った）でファイルを消す（kill・panic で死んだときは残る — 網が拾う）
 func frUnlink(st mut St) {
     p := load(mut st, globaladdr(mut st, st.mnG), MN_FLP)
     bE := branchIf(mut st, cmp(mut st, CNe, p, iconst(mut st, 0)))

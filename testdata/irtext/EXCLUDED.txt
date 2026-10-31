@@ -1,3 +1,4 @@
+examples/abstraction_union_neg.sober: sober: error at examples/abstraction_union_neg.sober:12:12 (NonExhaustive): switch does not cover every variant of the union — add the missing cases or a default (missing: Points)
 examples/alias_neg_builtin.sober: sober: load error at examples/alias_neg_builtin.sober:5:6: an alias names a type declaration (N or pkg.N — a struct, union, named function type, named scalar or another alias): not a builtin, composite, instantiated or error / panic label type
 examples/alias_neg_compound.sober: sober: load error at examples/alias_neg_compound.sober:5:6: an alias names a type declaration (N or pkg.N — a struct, union, named function type, named scalar or another alias): not a builtin, composite, instantiated or error / panic label type
 examples/alias_neg_cycle.sober: sober: load error at examples/alias_neg_cycle.sober:5:6: an alias refers back to itself through other aliases
@@ -63,6 +64,10 @@ examples/composite_field_ty.sober: sober: lower error at examples/composite_fiel
 examples/composite_mixed.sober: sober: lower error at examples/composite_mixed.sober:11:10 (Unsupported)
 examples/composite_slice_elem_ty.sober: sober: lower error at examples/composite_slice_elem_ty.sober:10:15 (Mismatch)
 examples/const_neg_call.sober: sober: load error at examples/const_neg_call.sober:9:7: const expression
+examples/const_neg_map.sober: sober: load error at examples/const_neg_map.sober:4:15: const expression: a map literal is not allowed in a const (only @embed fills a map const)
+examples/const_neg_mutslice.sober: sober: load error at examples/const_neg_mutslice.sober:4:16: const expression: a const is immutable — `mut` literals are not allowed
+examples/const_neg_nil.sober: sober: load error at examples/const_neg_nil.sober:4:30: const expression: nil is allowed only as a field value
+examples/const_neg_strop.sober: sober: load error at examples/const_neg_strop.sober:6:19: const expression: operators work only on int consts — string, bool, float, struct and slice consts are written as literals
 examples/defined_neg_struct.sober: sober: load error at examples/defined_neg_struct.sober:9:6: the underlying type of a defined type is int or bool — to give another type a second name, write an alias: type V = W
 examples/effects_neg_target.sober: sober: load error: source does not match the grammar
 examples/embed_neg_nomatch.sober: sober: load error at examples/embed_neg_nomatch.sober:6:7: @embed pattern matches no file
@@ -144,6 +149,7 @@ examples/localname_const.sober: sober: load error at examples/localname_const.so
 examples/localname_import.sober: sober: load error at examples/localname_import.sober:8:5: a local binding cannot reuse an import reference name
 examples/localname_named.sober: sober: load error at examples/localname_named.sober:12:5: a local binding cannot reuse a top-level name (const, func or type)
 examples/localname_tparam.sober: sober: load error at examples/localname_tparam.sober:9:6: a type parameter cannot reuse a top-level type name
+examples/multi_assign.sober: sober: load error at examples/multi_assign.sober:13:5: a multi-value result cannot be assigned to existing names (spec X-6): bind it with `:=` (`a2, b2 := f()`) and copy the values, or discard it whole with `_, _ = f()`
 examples/multibind.sober: sober: load error at examples/multibind.sober:9:5: this call returns several values: bind them all (`v, err := f()`), or handle the error with `?` or `catch` (`v := f()?`)
 examples/mutarg_decl_mismatch.sober: sober: lower error 3 at token 63
 examples/mutarg_neg_alias.sober: sober: load error at examples/mutarg_neg_alias.sober:13:21: mut arguments overlap: this mut argument names the same place as an earlier one in the call (the same name, or a field of it) — mut arguments are exclusive for the duration of the call
@@ -241,6 +247,7 @@ examples/switch_nonexh_union.sober: sober: error at examples/switch_nonexh_union
 examples/switch_string.sober: sober: lower error at examples/switch_string.sober:8:10 (Mismatch)
 examples/task_join_catch_infallible.sober: sober: lower error at examples/task_join_catch_infallible.sober:11:22 (Mismatch)
 examples/task_join_multibind.sober: sober: lower error at examples/task_join_multibind.sober:17:23 (Mismatch)
+examples/task_neg_backlog.sober: sober: load error at examples/task_neg_backlog.sober:12:57: backlog: is a count written without calls or division (a literal, a name, + - *) — the bound on unstarted children per worker, 1 to 255
 examples/task_neg_budget.sober: sober: load error at examples/task_neg_budget.sober:12:85: budget: is a size written without calls or division (a literal, a name, task.MB, + - *) — it is read for the admission only
 examples/task_neg_cap.sober: sober: load error at examples/task_neg_cap.sober:10:39: task.NewChannel takes its capacity as an integer literal of 1 or more (cap: 16)
 examples/task_neg_chan_endpoint.sober: sober: load error at examples/task_neg_chan_endpoint.sober:14:37: a channel payload cannot hold task.Scope, task.Handle or a channel endpoint (also inside struct fields or T?) — they stay with the task that owns them

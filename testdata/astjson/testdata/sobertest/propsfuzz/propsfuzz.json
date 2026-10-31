@@ -1,0 +1,123 @@
+{
+  "package": "propsfuzz",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "At",
+      "type_params": [],
+      "params": [
+        {
+          "name": "xs",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "int"
+            },
+            "mut": false
+          },
+          "mutable": false
+        },
+        {
+          "name": "i",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "index",
+                "base": {
+                  "k": "ident",
+                  "name": "xs",
+                  "tok": 17
+                },
+                "idx": {
+                  "k": "ident",
+                  "name": "i",
+                  "tok": 19
+                },
+                "tok": 18
+              }
+            ],
+            "tok": 16
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 24
+      },
+      "sig_end": 15
+    },
+    {
+      "name": "Accept",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "bool"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "n",
+                  "tok": 33
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 777777,
+                  "tok": 35
+                },
+                "tok": 34
+              }
+            ],
+            "tok": 32
+          }
+        ]
+      },
+      "tok": 25,
+      "bodiless": false,
+      "span": {
+        "start": 24,
+        "end": 39
+      },
+      "sig_end": 31
+    }
+  ],
+  "consts": []
+}

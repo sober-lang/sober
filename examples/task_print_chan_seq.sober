@@ -1,6 +1,6 @@
 package main
 
-// task_print_chan の逐次の双子（seq ≡ par — 段 6 P4-2 (O1)）: 子の流れ全体が spawn の位置に入る = 子の仕事を先に全部書く
+// task_print_chan の逐次の双子（seq ≡ par）: 子の流れ全体が spawn の位置に入る = 子の仕事を先に全部書く
 
 func kid(vs []int) int {
     println("kid waits")

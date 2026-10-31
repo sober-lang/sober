@@ -1,0 +1,252 @@
+package analyzer
+
+// `@exhaustive` — 表の網羅（language.md 13 節「表の網羅」・決定 2026-10-21 — report-964 / 966）: 注釈を付けた関数の中の switch のうち、subject が閉じた集合のものは
+// その集合の全員を case に名指す。閉じた集合 = union の全 variant / error は case に書いたラベルの宣言元の package が 1 つならその package の全ラベル
+// （2 つ以上に跨る switch は素通し）/ 下地 int の named scalar は型つきの const（`const OK = Status(200)` — 32 節）のうち型の宣言の package の全部。
+// default（と `_` の腕）は集合の外の値を受けるだけ: union には外が無いので、全 variant を名指した union の switch の default は到達しないとして拒否する。
+// error の switch の「到達しない腕」（S の外のラベルの腕 — 13 節 E4-d (ii)）は、閉じた集合のラベルの腕に限って拒否から外す（表は導出でなく宣言の集合の上の表）。
+// 層は analyzer（check だけ — build は走らせない）。名指しは腕のパターンの名前の集合の差だけを見る（入れ子の欄のパターンは見ない — 表は平ら）
+
+import "ast"
+import "desugar"
+import "std/iter"
+import "std/table"
+
+const MExhMissing = 30     // @exhaustive の関数の switch が閉じた集合の member を名指していない（付帯 = 記録の添字）
+const MExhDeadDefault = 31 // @exhaustive の関数の union の switch が全 variant を名指していて default / `_` が到達しない（付帯 = 記録の添字）
+
+// 閉じた集合の種類
+const exhNone = 0
+const exhUnion = 1
+const exhErr = 2
+const exhScalar = 3
+
+// exhNote は switch の節 e を記録する（最後の 1 周で、今の関数が @exhaustive のときだけ。本体は不動点まで何度も歩くので節で重ねない）— [節, package]…
+func exhNote(az mut Az, e desugar.NodeRef) {
+    if !desugar.FuncExhaustive(mut az.d, fnDecl(mut az, az.cur)) {
+        return
+    }
+    for i <- iter.Range(0, table.Len(mut az.exsw) / 2) {
+        if table.Get(mut az.exsw, i * 2) == int(e) {
+            return
+        }
+    }
+    table.Push(mut az.exsw, int(e))
+    table.Push(mut az.exsw, az.pk)
+}
+
+// checkExhaustive は記録した switch の名指しを照合する
+func checkExhaustive(az mut Az) {
+    for i <- iter.Range(0, table.Len(mut az.exsw) / 2) {
+        at := desugar.NodeRef(table.Get(mut az.exsw, i * 2))
+        if exhMissing(mut az, i) != "" {
+            report(mut az, MExhMissing, at, desugar.NodeRef(i))
+        } else if exhKind(mut az, i) == exhUnion && exhHasDefault(mut az, i) {
+            report(mut az, MExhDeadDefault, at, desugar.NodeRef(i))
+        }
+    }
+}
+
+// exhSubject は記録 i の switch の subject の表層型（option は中身）の記録 — 単一の subject でなければ -1
+func exhSubject(az mut Az, i int) int {
+    x := node(mut az, desugar.NodeRef(table.Get(mut az.exsw, i * 2)))
+    subs := desugar.ListRef(x.a)
+    if desugar.LenL(mut az.d, subs) != 1 {
+        return -1
+    }
+    y := desugar.YTypeOf(mut az.d, nat(mut az, subs, 0))
+    if y < 0 {
+        return -1
+    }
+    return if desugar.YAt(mut az.d, y).k == desugar.YOpt { desugar.YAt(mut az.d, y).a } else { y }
+}
+
+// exhKind は記録 i の switch の閉じた集合の種類
+func exhKind(az mut Az, i int) int {
+    y := exhSubject(mut az, i)
+    if y < 0 {
+        return exhNone
+    }
+    yt := desugar.YAt(mut az.d, y)
+    if yt.k == desugar.YErr {
+        return exhErr
+    }
+    if yt.k != desugar.YDecl {
+        return exhNone
+    }
+    bk := kind(mut az, desugar.NodeRef(node(mut az, desugar.NodeRef(yt.a)).c))
+    if bk == ast.BUnion {
+        return exhUnion
+    }
+    return if bk == ast.BDefined && desugar.NamedUnder(mut az.d, desugar.NodeRef(yt.a)) == 0 { exhScalar } else { exhNone }
+}
+
+// exhDecl は記録 i の subject の型宣言の節（union / named scalar）
+func exhDecl(az mut Az, i int) desugar.NodeRef {
+    return desugar.NodeRef(desugar.YAt(mut az.d, exhSubject(mut az, i)).a)
+}
+
+// exhAlts は記録 i の switch の腕のパターンを [種類, 値]… の列で返す: 型パターン = [1, variant の解決の表の位置（decl・添字）] は
+// table に [1, decl, 添字] / 定数パターンの const = [2, const の添字, 0] / `_` = [3, 0, 0] として積む
+func exhAlts(az mut Az, i int, out mut table.Table[int]) {
+    x := node(mut az, desugar.NodeRef(table.Get(mut az.exsw, i * 2)))
+    pk := table.Get(mut az.exsw, i * 2 + 1)
+    cs := desugar.ListRef(x.b)
+    for ci <- iter.Range(0, desugar.LenL(mut az.d, cs)) {
+        ps := desugar.ListRef(node(mut az, nat(mut az, cs, ci)).a)
+        for j <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
+            p := node(mut az, nat(mut az, ps, j))
+            if p.kind == ast.KPType {
+                r := desugar.ResolveVariant(mut az.d, pk, desugar.StrRef(p.b))
+                if r.kind == desugar.TopVariant {
+                    exhPush(mut out, 1, r.idx, r.sub)
+                }
+            } else if p.kind == ast.KPConst {
+                alts := desugar.ListRef(p.a)
+                for q <- iter.Range(0, desugar.LenL(mut az.d, alts)) {
+                    a := node(mut az, nat(mut az, alts, q))
+                    if a.kind == ast.EIdent {
+                        if desugar.StrIs(mut az.d, desugar.StrRef(a.a), "_") {
+                            exhPush(mut out, 3, 0, 0)
+                        } else {
+                            r := desugar.ResolveTop(mut az.d, pk, desugar.StrRef(a.a), false, desugar.TopConst)
+                            if r.kind == desugar.TopConst {
+                                exhPush(mut out, 2, r.idx, 0)
+                            }
+                        }
+                    } else if a.kind == ast.ESelector && kind(mut az, desugar.NodeRef(a.a)) == ast.EIdent {
+                        r := desugar.ResolveSel(mut az.d, pk, desugar.StrRef(node(mut az, desugar.NodeRef(a.a)).a), desugar.StrRef(a.b), desugar.TopConst)
+                        if r.kind == desugar.TopConst {
+                            exhPush(mut out, 2, r.idx, 0)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+func exhPush(out mut table.Table[int], k int, a int, b int) {
+    table.Push(mut out, k)
+    table.Push(mut out, a)
+    table.Push(mut out, b)
+}
+
+// exhHasDefault は記録 i の switch に default か `_` の腕があるか
+func exhHasDefault(az mut Az, i int) bool {
+    if node(mut az, desugar.NodeRef(table.Get(mut az.exsw, i * 2))).c != -1 {
+        return true
+    }
+    mut alts := table.Table[int]{}
+    exhAlts(mut az, i, mut alts)
+    for j <- iter.Range(0, table.Len(mut alts) / 3) {
+        if table.Get(mut alts, j * 3) == 3 {
+            return true
+        }
+    }
+    return false
+}
+
+// exhErrPkg は記録 i の error の switch の腕に書いたラベルの宣言元の package（1 つなら — 無いか 2 つ以上なら -1）
+func exhErrPkg(az mut Az, i int) int {
+    mut alts := table.Table[int]{}
+    exhAlts(mut az, i, mut alts)
+    mut pk := -1
+    for j <- iter.Range(0, table.Len(mut alts) / 3) {
+        if table.Get(mut alts, j * 3) == 1 && table.Get(mut alts, j * 3 + 1) == desugar.ERRS {
+            lp := desugar.ErrPkg(mut az.d, table.Get(mut alts, j * 3 + 2))
+            if pk == -1 {
+                pk = lp
+            } else if pk != lp {
+                return -1
+            }
+        }
+    }
+    return pk
+}
+
+// exhNamed は腕の列 alts に種類 k・値 (a, b) の名指しがあるか
+func exhNamed(alts mut table.Table[int], k int, a int, b int) bool {
+    for j <- iter.Range(0, table.Len(mut alts) / 3) {
+        if table.Get(mut alts, j * 3) == k && table.Get(mut alts, j * 3 + 1) == a && table.Get(mut alts, j * 3 + 2) == b {
+            return true
+        }
+    }
+    return false
+}
+
+// exhMissing は記録 i の switch が名指していない閉じた集合の member の綴り（`A, B` — 全部名指していれば ""）
+func exhMissing(az mut Az, i int) string {
+    kd := exhKind(mut az, i)
+    if kd == exhNone {
+        return ""
+    }
+    pk := table.Get(mut az.exsw, i * 2 + 1)
+    mut alts := table.Table[int]{}
+    exhAlts(mut az, i, mut alts)
+    mut s := ""
+    if kd == exhUnion {
+        decl := exhDecl(mut az, i)
+        vs := desugar.ListRef(node(mut az, desugar.NodeRef(node(mut az, decl).c)).a)
+        for v <- iter.Range(0, desugar.LenL(mut az.d, vs)) {
+            if !exhNamed(mut alts, 1, int(decl), v) {
+                s = exhJoin(s, str(mut az, desugar.StrRef(node(mut az, nat(mut az, vs, v)).a)))
+            }
+        }
+    } else if kd == exhErr {
+        ep := exhErrPkg(mut az, i)
+        if ep == -1 {
+            return ""
+        }
+        for L <- iter.Range(0, az.nerr) {
+            if desugar.ErrPkg(mut az.d, L) == ep && !exhNamed(mut alts, 1, desugar.ERRS, L) {
+                s = exhJoin(s, exhQual(mut az, ep, pk, str(mut az, desugar.StrRef(node(mut az, desugar.ErrNode(mut az.d, L)).a))))
+            }
+        }
+    } else {
+        decl := exhDecl(mut az, i)
+        dp := desugar.FilePkg(mut az.d, desugar.PosOf(mut az.d, decl).file)
+        for c <- iter.Range(0, desugar.Ncon(mut az.d)) {
+            if desugar.ConNamed(mut az.d, c) == decl && desugar.ConPkg(mut az.d, c) == dp && !exhNamed(mut alts, 2, c, 0) {
+                s = exhJoin(s, exhQual(mut az, dp, pk, str(mut az, desugar.StrRef(node(mut az, desugar.ConNode(mut az.d, c)).a))))
+            }
+        }
+    }
+    return s
+}
+
+func exhJoin(s string, n string) string {
+    return if s == "" { n } else { s + ", " + n }
+}
+
+// exhQual は package dp の名前 n を package pk から見た綴り（別の package なら `p.n`）
+func exhQual(az mut Az, dp int, pk int, n string) string {
+    return if dp == pk { n } else { "${lastSeg(str(mut az, desugar.PkgPath(mut az.d, dp)))}.${n}" }
+}
+
+// exhExempt は error の switch の節 sw の腕のラベル L が、@exhaustive の閉じた集合の一員として「到達しない腕」の拒否から外れるか
+func exhExempt(az mut Az, sw desugar.NodeRef, L int) bool {
+    for i <- iter.Range(0, table.Len(mut az.exsw) / 2) {
+        if table.Get(mut az.exsw, i * 2) == int(sw) {
+            ep := exhErrPkg(mut az, i)
+            return ep != -1 && desugar.ErrPkg(mut az.d, L) == ep
+        }
+    }
+    return false
+}
+
+// exhMessage は表の網羅の指摘の本文（種類 k・記録 i）
+func exhMessage(az mut Az, k int, i int) string {
+    kd := exhKind(mut az, i)
+    what := if kd == exhUnion {
+        "variant of the union ${str(mut az, desugar.StrRef(node(mut az, exhDecl(mut az, i)).a))}"
+    } else if kd == exhErr {
+        "error label of package ${str(mut az, desugar.PkgPath(mut az.d, exhErrPkg(mut az, i)))}"
+    } else {
+        "const of the type ${str(mut az, desugar.StrRef(node(mut az, exhDecl(mut az, i)).a))}"
+    }
+    if k == MExhDeadDefault {
+        return "@exhaustive: the cases name every ${what}, so the default is unreachable — remove it (a default covers only values outside the closed set)"
+    }
+    return "@exhaustive: switch does not name every ${what}: missing ${exhMissing(mut az, i)} — add the cases (a default covers only values outside the closed set)"
+}

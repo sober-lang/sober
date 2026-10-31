@@ -14,7 +14,7 @@ type Work struct {
     tab pool.Scratch
 }
 
-// touch は tab の 64 語を書いて読み、窓の値（小さな列）を返す
+// tab の 64 語を書いて読み、窓の値（小さな列）を返す
 func touch(w mut Work, k int) []int {
     mut s := 0
     mut i := 0

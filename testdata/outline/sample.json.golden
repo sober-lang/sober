@@ -1,0 +1,15 @@
+[
+{"file":"testdata/outline/sample.sober","package":"sample","imports":["std/io","std/strings"],"decls":[
+  {"kind":"type","name":"Point","sig":"type Point struct { x int; y int }","lines":[11,14],"doc":"Point は平面の点。"},
+  {"kind":"type","name":"Shape","sig":"type Shape union { Dot { p Point }; Line { a Point; b Point } }","lines":[18,21],"doc":"Shape is a shape — the doc continues on the next line."},
+  {"kind":"type","name":"Box","sig":"type Box[T] struct { v T }","lines":[23,23],"doc":""},
+  {"kind":"type","name":"Scale","sig":"type Scale func(int) int","lines":[25,25],"doc":""},
+  {"kind":"type","name":"Bad","sig":"type Bad error { path string }","lines":[28,30],"doc":"読めない"},
+  {"kind":"const","name":"Limit","sig":"const Limit = 10","lines":[32,32],"doc":""},
+  {"kind":"const","name":"Name","sig":"const Name = \"sample\"","lines":[33,33],"doc":""},
+  {"kind":"func","name":"Read","sig":"func Read(path string) (int, error?)  @errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired) @effects(io, nondet)","lines":[36,41],"doc":"Read は path を読む（行の数を返す）。"},
+  {"kind":"func","name":"first","sig":"func first[T](xs []T, def T) T","lines":[43,48],"doc":""},
+  {"kind":"func","name":"trim","sig":"func trim(x string) string","lines":[50,50],"doc":""},
+  {"kind":"func","name":"main","sig":"func main()","lines":[52,55],"doc":""}
+]}
+]

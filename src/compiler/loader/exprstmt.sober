@@ -1,6 +1,6 @@
 package loader
 
-// 式文の検査（src/stage1/exprstmt.zig の写し — syntax.md ブロックの行、裁定 C 2026-09-27、Go 同型）。
+// 式文の検査（src/stage1/exprstmt.zig の写し — syntax.md ブロックの行、Go 同型）。
 // 文位置（値を捨てる位置）に置けるのは、呼び出し（`f(x)`・`x |> f()`・`f()?`）と、腕がまた文位置になる if / switch / ブロックだけ。
 // 純粋な式（`x + 1`・名前・リテラル・`xs[i]` 等）の値を捨てる文は拒否する — 書いた意味が無いか、代入の書き忘れ。
 // 文位置 = 関数本体・while 本体・文形 for の本体・defer の式・文位置の if / switch / ブロックの腕の全文、
@@ -31,12 +31,12 @@ func push2(st mut []int, sp int, x int, m int) int {
     return s
 }
 
-// blockStmts はブロックの節（KBlock / EBlock）の文の列
+// ブロックの節（KBlock / EBlock）の文の列
 func blockStmts(t ast.Tree, b int) int {
     return t.nodes[b].a
 }
 
-// pushBlock はブロック b の文を位置つきで積む（値位置なら末尾の文だけ XStmtVal）
+// ブロック b の文を位置つきで積む（値位置なら末尾の文だけ XStmtVal）
 func pushBlock(st mut []int, sp0 int, t ast.Tree, b int, val bool) int {
     if b < 0 {
         return sp0
@@ -58,7 +58,7 @@ func pushExprs(st mut []int, sp0 int, t ast.Tree, l int) int {
     return sp
 }
 
-// pushElse は if の else（ブロックか else-if）を積む
+// if の else（ブロックか else-if）を積む
 func pushElse(st mut []int, sp int, t ast.Tree, e int, disc bool) int {
     if e < 0 {
         return sp
@@ -70,7 +70,7 @@ func pushElse(st mut []int, sp int, t ast.Tree, e int, disc bool) int {
     return push2(mut st, sp, e, if disc { XDisc } else { XExpr })
 }
 
-// pushSwitch は switch の subject・パターン・腕を積む（腕は disc なら文位置）
+// switch の subject・パターン・腕を積む（腕は disc なら文位置）
 func pushSwitch(st mut []int, sp0 int, t ast.Tree, x ast.Node, disc bool) int {
     mut sp := pushExprs(mut st, sp0, t, x.a)
     for i <- iter.Range(0, ast.ListLen(t, x.b)) {
@@ -81,21 +81,21 @@ func pushSwitch(st mut []int, sp0 int, t ast.Tree, x ast.Node, disc bool) int {
     return pushBlock(mut st, sp, t, x.c, !disc)
 }
 
-// stmtHit はブロック b（val = 値位置か）の最初の違反の字句の番号（無ければ -1。最も前の位置）
+// ブロック b（val = 値位置か）の最初の違反の字句の番号（無ければ -1。最も前の位置）
 func stmtHit(t ast.Tree, b int, val bool) int {
     mut st := mut []int{}
     sp := pushBlock(mut st, 0, t, b, val)
     return run(t, mut st, sp)
 }
 
-// constHit は const の式 e の中（ラムダの本体等）の違反
+// const の式 e の中（ラムダの本体等）の違反
 func constHit(t ast.Tree, e int) int {
     mut st := mut []int{}
     sp := push2(mut st, 0, e, XExpr)
     return run(t, mut st, sp)
 }
 
-// run はスタックに積んだ (節, 位置の種類) を全部回し、最初の違反の字句の番号を返す（無ければ -1）
+// スタックに積んだ (節, 位置の種類) を全部回し、最初の違反の字句の番号を返す（無ければ -1）
 func run(t ast.Tree, st mut []int, sp0 int) int {
     mut hit := 0 - 1
     mut sp := sp0
@@ -146,7 +146,7 @@ func run(t ast.Tree, st mut []int, sp0 int) int {
     return hit
 }
 
-// pushExprKids は値として読まれる式 x の子を積む
+// 値として読まれる式 x の子を積む
 func pushExprKids(st mut []int, sp0 int, t ast.Tree, n int) int {
     mut sp := sp0
     x := t.nodes[n]
@@ -223,7 +223,7 @@ func pushExprKids(st mut []int, sp0 int, t ast.Tree, n int) int {
     return sp
 }
 
-// exprStmtHit は全 package の式文の検査の最初の違反（違反なしは file = -1）
+// 全 package の式文の検査の最初の違反（違反なしは file = -1）
 func exprStmtHit(cx Cx, pnames []string) NameHit {
     for f <- iter.Range(0, len(cx.trees)) {
         hit := exprStmtIn(cx, pnames, f)
@@ -234,7 +234,7 @@ func exprStmtHit(cx Cx, pnames []string) NameHit {
     return noHit()
 }
 
-// exprStmtIn はファイル f の式文の検査の最も前の違反の字句（無ければ -1 — finpar.sober の子も同じ関数を呼ぶ）
+// ファイル f の式文の検査の最も前の違反の字句（無ければ -1 — finpar.sober の子も同じ関数を呼ぶ）
 func exprStmtIn(cx Cx, pnames []string, f int) int {
     t := cx.trees[f]
     root := t.nodes[t.file]

@@ -44,7 +44,7 @@ func desc(k int) int {
     }
 }
 
-// identsUnder は根の節（-1 は無視）の部分木の識別子の文字列（欄の選択 `x.f` の f・文字列リテラル・補間の文字列の断片は数えない）
+// 根の節（-1 は無視）の部分木の識別子の文字列（欄の選択 `x.f` の f・文字列リテラル・補間の文字列の断片は数えない）
 func identsUnder(t ast.Tree, roots []int) []string {
     mut out := mut []string{}
     mut stack := mut []int{}

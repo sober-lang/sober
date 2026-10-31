@@ -10,16 +10,34 @@ import "std/strings"
 import "ast"
 import "diag"
 
-// TestMainPath は合成の main の置き場（実在しないパスの予約 — `$` は識別子にもパスにも書けない）
+// 合成の main の置き場（実在しないパスの予約 — `$` は識別子にもパスにも書けない）
 func TestMainPath() string {
     return "$test/main.sober"
 }
 
-// LoadTestFs は package pkg のテストのビルドの Program（LoadFs と同じく std は焼き込んだ表 sm から）
+// package pkg のテストのビルドの Program（LoadFs と同じく std は焼き込んだ表 sm から）
 @errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.TestSignature, diag.Par)
 func LoadTestFs(pkg string, sm map[string]string) (Program, error?) {
+    return loadTest(pkg, sm, false, []string{}, 0)
+}
+
+// LoadTestFs のカバレッジの計器つき（pats = 写す package のパターン — coverPkgIs。名前を知る 1 回目の読みは写さない）
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.TestSignature, diag.Par)
+func LoadTestFsCover(pkg string, sm map[string]string, pats []string) (Program, error?) {
+    return loadTest(pkg, sm, true, pats, 0)
+}
+
+// LoadTestFs の mutation testing の写しつき（mutx.sober — 対象 = package pkg の非テストのファイル。one = 1 体だけの build の変異の番号・-1 = schemata）
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.TestSignature, diag.Par)
+func LoadTestFsMutate(pkg string, sm map[string]string, one int) (Program, error?) {
+    return loadTest(pkg, sm, false, []string{pkg}, if one >= 0 { one + 2 } else { 1 })
+}
+
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.TestSignature, diag.Par)
+func loadTest(pkg string, sm map[string]string, cover bool, pats []string, mutate int) (Program, error?) {
     // 1 回目: 名前を知るために、何も呼ばない main で読む（対象の package の _test.sober も読まれる）
-    p0, err0 := load(Manifest{TestMainPath(), "", []string{}, pkg, testMain(pkg, []string{})}, true, sm)
+    mut sink := PcSink{}
+    p0, err0 := load(Manifest{TestMainPath(), "", []string{}, pkg, testMain(pkg, []string{}), false, []string{}, 0}, true, sm, PcOff(), mut sink)
     if err0 != nil {
         return p0, err0
     }
@@ -27,10 +45,10 @@ func LoadTestFs(pkg string, sm map[string]string) (Program, error?) {
     if nerr != nil {
         return located(p0.file_path, p0.file_std), nerr
     }
-    return load(Manifest{TestMainPath(), "", []string{}, pkg, testMain(pkg, names)}, true, sm)
+    return load(Manifest{TestMainPath(), "", []string{}, pkg, testMain(pkg, names), cover || mutate != 0, pats, mutate}, true, sm, PcOff(), mut sink)
 }
 
-// TestNames は p の package pkg の `_test.sober` にある `TestXxx()`（Test の後が小文字でない）の名前（宣言順）。
+// p の package pkg の `_test.sober` にある `TestXxx()`（Test の後が小文字でない）の名前（宣言順）。
 // 型パラメータ・引数・戻りを持つものは拒否（黙って飛ばすと走っていないことに気づけない — T3）
 @errors(diag.TestSignature)
 func TestNames(p Program, pkg string) ([]string, error?) {
@@ -52,13 +70,13 @@ func TestNames(p Program, pkg string) ([]string, error?) {
     return freeze(out), nil
 }
 
-// isTestName は `Test` か `Test` + 小文字でない文字で始まる名前か（Go の TestXxx と同じ規則）
+// `Test` か `Test` + 小文字でない文字で始まる名前か（Go の TestXxx と同じ規則）
 func isTestName(nm string) bool {
     b := bytes(nm)
     return strings.HasPrefix(nm, "Test") && (len(b) == 4 || !(b[4] >= 'a' && b[4] <= 'z'))
 }
 
-// testMain は合成の main のソース（参照名 tp / tos は合成の main の中だけの名前）
+// 合成の main のソース（参照名 tp / tos は合成の main の中だけの名前）
 func testMain(pkg string, names []string) string {
     mut s := "package main\n\nimport tp \"${pkg}\"\nimport tos \"std/os\"\n\nfunc main() {\n"
     s = s + "    args, err := tos.Args()\n    if err != nil {\n        return\n    }\n    if len(args) < 2 {\n"

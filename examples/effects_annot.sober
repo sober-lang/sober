@@ -1,6 +1,6 @@
 package main
 
-// 関数の効果の宣言（language.md 12 節の関数の効果 — effect の波 段 5a）: 語彙は block・io・panic・nondet。
+// 関数の効果の宣言（language.md 12 節の関数の効果）: 語彙は block・io・panic・nondet。
 // `@effects(…)` は「導出 ⊆ 許容」の主張 — 正の列挙は許容そのもの、否定形は全部から除いたもの（混ぜない）。
 // 名前付き関数型の後置 `@effects(…)` は F の値の契約（F の値になるラムダはこれと照合される）。型の名前の項 `@effects(io, F)` は「io と F の値の効果」
 

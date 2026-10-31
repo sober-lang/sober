@@ -1,6 +1,6 @@
 package main
 
-// Writer への写しの一括化（report-618）: ① std/io の WriteBytes の中の添字の写し（宛先が欄の経路 `w.buf` の (B) の形）と
+// Writer への写しの一括化: ① std/io の WriteBytes の中の添字の写し（宛先が欄の経路 `w.buf` の (B) の形）と
 // ② `for j <- iter.Range(lo, hi) { io.WriteByte(mut w, S[j]) }` — 区間が枠の空きにまるごと収まれば一括・枠の境目を跨ぐ回は元の for
 
 import "std/io"

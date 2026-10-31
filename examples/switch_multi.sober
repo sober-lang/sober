@@ -1,6 +1,6 @@
 package main
 
-// 多値呼び出しを subject に置く switch（随時回収 R4）。呼び出しは 1 回だけ評価し、
+// 多値呼び出しを subject に置く switch。呼び出しは 1 回だけ評価し、
 // 各成分を位置ごとのパターンに照合する（分解 bind `q, r := divmod(a, b)` と同じ形）
 func divmod(a, b int) (int, int) {
     println(a)

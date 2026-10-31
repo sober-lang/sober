@@ -1,0 +1,126 @@
+package json
+
+import "std/builder"
+import "std/convert"
+
+// T→JSON の裏方（shape[T] の逆向き — language.md 16 節 2）: 利用者は `json.Encode[T](v)`（欄名の対応つきは `json.EncodeWith[T](v, map[string]string{"欄": "キー"})`）を書き、
+// loader の固定テンプレート（compiler/loader/jsonshape.sober）が型ごとの写しの関数（mut の builder に書く普通の Sober）を合成する。ここは部品だけ。
+// 綴り: 空白なし・欄は宣言の順・`U?` の nil は null・数は int の 10 進と float の最短の往復表現（convert.FormatFloat）・文字列は Format と同じエスケープ
+// （`"` `\` と制御文字だけ — Go の Marshal と違い < > & は素のまま）。NaN / ±Inf は JSON に無いので panic（NotFinite）
+
+// JSON に書けない float（NaN・±Inf）を Encode に渡した
+type NotFinite panic {
+    field string
+}
+
+// 欄 field の JSON のキー（rename の対応が無ければ欄名のまま。rename は省略可能な引数〔map[K]V?〕にしない — map の T? は
+// 実引数に map を渡すと build が拒否・絞って使うと check が拒否する言語の穴がある。対応なしは空の map）
+@effects()
+func KeyOf(rename map[string]string, field string) string {
+    // 対応なし（Decode / Encode — 空の辞書）は引かない（欄ごとの map の引きがデコードの +3% だった）
+    if len(rename) == 0 {
+        return field
+    }
+    k := rename[field]
+    if k != nil {
+        return k
+    }
+    return field
+}
+
+// s のバイト列をそのまま積む（Put… / Done で JSON を手で組み立てる例: examples/json_put.sober）
+@effects()
+func Put(o mut builder.Builder[byte], s string) {
+    builder.PushString(mut o, s)
+}
+
+// 欄の頭（2 つ目以降は ','・キーの文字列・':'）
+@effects()
+func PutKey(o mut builder.Builder[byte], key string, first bool) {
+    if !first {
+        builder.Push(mut o, ',')
+    }
+    quote(mut o, bytes(key))
+    builder.Push(mut o, ':')
+}
+
+// s を JSON の文字列（引用符つき — `"` `\` と制御文字だけをエスケープ）として積む
+@effects()
+func PutString(o mut builder.Builder[byte], s string) {
+    quote(mut o, bytes(s))
+}
+
+// n の 10 進を builder へ直に積む（FormatInt の string を経ない）。割るのは定数だけ（10・10^8・10^16 — 乗算に下りる）: 8 桁ずつの塊を
+// 下の桁から 1 語に詰めて（1 バイト / 桁）上の桁から積む（棄てた形: 桁の数の 10 の冪 p で n / p — 割る数が変数で桁ごとに idiv）
+@effects()
+func PutInt(o mut builder.Builder[byte], n int) {
+    if n < 0 {
+        builder.Push(mut o, '-')
+        if n == -9223372036854775807 - 1 {
+            builder.PushString(mut o, "9223372036854775808")
+            return
+        }
+    }
+    v := if n < 0 { 0 - n } else { n }
+    if v < 10 {
+        builder.Push(mut o, byte(48 + v))
+        return
+    }
+    if v < 100000000 {
+        putDigits(mut o, v, 0)
+        return
+    }
+    if v < 10000000000000000 {
+        putDigits(mut o, v / 100000000, 0)
+        putDigits(mut o, v % 100000000, 8)
+        return
+    }
+    r := v % 10000000000000000
+    putDigits(mut o, v / 10000000000000000, 0)
+    putDigits(mut o, r / 100000000, 8)
+    putDigits(mut o, r % 100000000, 8)
+}
+
+// putDigits は v（< 10^8）の 10 進を積む（w = 0 なら最短・w > 0 なら上を 0 で埋めて w 桁）。桁は下から 1 語に詰める（最上位の桁が最下位のバイト）
+func putDigits(o mut builder.Builder[byte], v int, w int) {
+    mut x := v
+    mut acc := 0
+    mut k := 0
+    while x > 0 || k < w {
+        q := x / 10
+        acc = (acc << 8) | (48 + x - q * 10)
+        x = q
+        k += 1
+    }
+    builder.PushWord(mut o, acc, k)
+}
+
+// b を true / false の綴りで積む
+@effects()
+func PutBool(o mut builder.Builder[byte], b bool) {
+    Put(mut o, if b { "true" } else { "false" })
+}
+
+// f の最短の往復表現（NaN・±Inf は panic — field = 欄名）
+@effects(panic)
+func PutFloat(o mut builder.Builder[byte], f float, field string) {
+    if f != f || f - f != 0.0 {
+        panic(NotFinite{field: field})
+    }
+    Put(mut o, convert.FormatFloat(f))
+}
+
+// 積んだバイト列の string
+@effects()
+func Done(o mut builder.Builder[byte]) string {
+    return bytesToString(builder.Build(mut o))
+}
+
+// 以下は loader が合成する口（std に実体は無い — 呼び出しは型ごとの写しの関数へ写る）
+
+// 合成: func Encode[T](v T) string
+// v の JSON（空白なし・欄は宣言の順・`U?` の nil は null）。T の範囲は Decode と同じ。float の NaN / ±Inf は panic(NotFinite)
+// 例: examples/json_encode.sober
+
+// 合成: func EncodeWith[T](v T, rename map[string]string) string
+// Encode の欄名の対応つき版（rename は DecodeWith と同じ辞書 — 同じ辞書で両方向に使える）

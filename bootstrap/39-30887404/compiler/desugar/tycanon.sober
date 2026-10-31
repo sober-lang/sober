@@ -1,0 +1,885 @@
+package desugar
+
+// 区画の正準形と鍵: package の区画（st.ty.preg の境）を、ロード順・
+// 関数表の添字・package 番号・ヒープの番地に依らない語の列へ直列化してハッシュにする（置き場が書く形。店の中の表現は変えない）。
+// - 他の区画の記録 = （参照表の番号, 持ち主の区画の中の序数）。参照表 = 直列化の走査で最初に出会った package の順（0 番 = 自分 — 走査が正準なので
+//   順も正準）。前置きの記録（TypeAll の頭の基本の型）は添字のまま
+// - 型宣言・関数 = （参照表の番号, 名前）— 依存の本体の編集で節の添字がずれても変わらない。自分の節（節 → 型の表の鍵・ラムダ）は
+//   （ファイルの package の中の序数, 添字）・Init の合成の節は持ち主の区画の中の序数
+// - 列は中身をその場で（参照の番地は持たない）・文字列は綴り
+// 鍵（tykeys）= 版 ‖ コンパイラの鍵 ‖ 論理パス ‖ ソースの要約（package のファイルの木の節と data）‖ 参照表の各 package の論理パスと宣言の要約
+// （宣言の相の記録・関数の署名と結果の型・const の型・関数の印）。絶対パスは入れない
+// 扉の監査（TyAudit の door）: 区画が推移の import の外の package を指す（door）・依存の区画の本体の相の記録を指す（body）・自分の外の節を
+// 節 → 型の表の鍵に持つ（ents）を数える — どれも 0 でないと、区画を置き場から読んだとき依存の外の変化を見落とす
+
+import "ast"
+import "loader"
+import "std/iter"
+import "std/table"
+
+const TY_VER = 2
+const TC_PRE = 1
+const TC_REC = 2
+const TC_DECL = 3
+const TC_NODE = 4
+const TC_SYN = 5
+const TC_STR = 6
+const TC_FN = 7
+const TC_LIST = 8
+const TC_M1 = -7046029254386353131 // 0x9E3779B97F4A7C15（ckey.sober と同じ混ぜ）
+const TC_M2 = -4417276706812531889
+const TC_S1 = 1609587929392839161
+const TC_S2 = -8796714831421723037
+
+func tcW(st mut S, w int) {
+    if st.ty.kst < 0 {
+        // 値の写し取りの間（tyValue — 塊の頭を負にして印にする: 語ごとの読みを足さない）
+        tcCap(mut st, w)
+    }
+    a := (st.ty.ch1 ^ w) * TC_M1
+    st.ty.ch1 = a ^ (a >> 29)
+    b := (st.ty.ch2 ^ w) * TC_M2
+    st.ty.ch2 = b ^ (b >> 31)
+}
+
+// package k の直列化を始める（参照表は空 — 自分を 0 番に）
+func tcReset(st mut S, k int) {
+    st.ty.ch1 = TC_S1
+    st.ty.ch2 = TC_S2
+    st.ty.ck = k
+    // 参照表は 1 度だけ確保して使い回す（消すのは前回の参照表の分だけ — 値の写し取りはヒープへ積むので、その間に確保しない）
+    if st.ty.cri == 0 {
+        st.ty.cri = listN(mut st, st.npkg)
+        st.ty.crl = listN(mut st, st.npkg)
+    } else {
+        for r <- iter.Range(0, st.ty.crn) {
+            hset(mut st, st.ty.cri + 1 + hget(mut st, st.ty.crl + 1 + r), 0)
+        }
+    }
+    st.ty.crn = 0
+    _ = tcPkg(mut st, k)
+}
+
+// package p の参照表の番号（初めてなら足す — 推移の import の外なら扉の外）
+func tcPkg(st mut S, p int) int {
+    v := hget(mut st, st.ty.cri + 1 + p)
+    if v != 0 {
+        return v - 1
+    }
+    hset(mut st, st.ty.cri + 1 + p, st.ty.crn + 1)
+    hset(mut st, st.ty.crl + 1 + st.ty.crn, p)
+    st.ty.crn += 1
+    if p != st.ty.ck && hget(mut st, st.ty.cclo + 1 + st.ty.ck * st.npkg + p) == 0 {
+        st.ty.cdoor += 1
+    }
+    return st.ty.crn - 1
+}
+
+// 推移の import の表（npkg × npkg — 依存の後順に回して依存の表を足し込む）
+func tcClosure(st mut S) {
+    np := st.npkg
+    st.ty.cclo = listN(mut st, np * np)
+    for q <- iter.Range(0, np) {
+        k := hget(mut st, st.ty.pord + 1 + q)
+        im := hget(mut st, st.pkgs + k * PKSZ + 4)
+        for i <- iter.Range(0, hget(mut st, im) / 2) {
+            j := hget(mut st, im + 2 + i * 2)
+            if j >= 0 && j != k {
+                hset(mut st, st.ty.cclo + 1 + k * np + j, 1)
+                for p <- iter.Range(0, np) {
+                    if hget(mut st, st.ty.cclo + 1 + j * np + p) != 0 {
+                        hset(mut st, st.ty.cclo + 1 + k * np + p, 1)
+                    }
+                }
+            }
+        }
+    }
+}
+
+func tcStr(st mut S, s StrRef) {
+    if s == -1 {
+        tcW(mut st, -1)
+        return
+    }
+    n := slen(mut st, s)
+    tcW(mut st, TC_STR)
+    tcW(mut st, n)
+    for i <- iter.Range(0, n) {
+        tcW(mut st, sat(mut st, s, i))
+    }
+}
+
+// 記録 y を積んだ区画の package（区画の外 = -1）
+func tcOwner(st mut S, y int, at int) int {
+    // 自分の区画を先に（区画は互いに素 — 先に見ても答えは同じ。参照の大半は自分の記録）
+    olo, ohi := PkgRegion(mut st, st.ty.ck, at)
+    if y >= olo && y < ohi {
+        return st.ty.ck
+    }
+    if at == PRTYS {
+        // 記録の区画は package の順（pord）に積まれる — 型付け済みの頭の区間は lo が増える順・まだの package は [0, 0)（無限大と読む）。
+        // 前置き（TypeAll の頭の基本の型 YInt〜YErr・byte・float の 9 つ）は区画の外。どちらも線形に歩かない（節 → 型の記録の型の大半が
+        // 前置きで、全 package を歩くと値の直列化のコストが大きい）
+        if y < YErr + 2 {
+            return -1
+        }
+        mut a := 0
+        mut b := st.npkg - 1
+        mut f := -1
+        while a <= b {
+            m := (a + b) / 2
+            lo, hi := PkgRegion(mut st, hget(mut st, st.ty.pord + 1 + m), at)
+            if (lo != 0 || hi != 0) && lo <= y {
+                f = m
+                a = m + 1
+            } else {
+                b = m - 1
+            }
+        }
+        if f >= 0 {
+            pk := hget(mut st, st.ty.pord + 1 + f)
+            lo, hi := PkgRegion(mut st, pk, at)
+            if y >= lo && y < hi {
+                return pk
+            }
+        }
+        return -1
+    }
+    for q <- iter.Range(0, st.npkg) {
+        pk := hget(mut st, st.ty.pord + 1 + q)
+        lo, hi := PkgRegion(mut st, pk, at)
+        if y >= lo && y < hi {
+            return pk
+        }
+    }
+    return -1
+}
+
+func tcRec(st mut S, y int) {
+    if y < 0 {
+        // 負の値はそのまま（-1 = 無し・-2 = まだ — 読み戻しで区別する）
+        tcW(mut st, y)
+        return
+    }
+    o := tcOwner(mut st, y, PRTYS)
+    if o < 0 {
+        // 前置き（TypeAll の頭の基本の型）は添字のまま。TypeAll の後の記録は区画の外
+        if y >= st.ty.n0tys {
+            st.ty.cdoor += 1
+        }
+        tcW(mut st, TC_PRE)
+        tcW(mut st, y)
+        return
+    }
+    lo, _ := PkgRegion(mut st, o, PRTYS)
+    if o != st.ty.ck {
+        _, de := PkgRegion(mut st, o, PRDECL)
+        if y >= de {
+            st.ty.cbody += 1
+        }
+    }
+    tcW(mut st, TC_REC)
+    tcW(mut st, tcPkg(mut st, o))
+    tcW(mut st, y - lo)
+}
+
+func tcList(st mut S, l ListRef) {
+    if l == -1 {
+        tcW(mut st, -1)
+        return
+    }
+    n := lenL(mut st, l)
+    tcW(mut st, TC_LIST)
+    tcW(mut st, n)
+    for i <- iter.Range(0, n) {
+        tcRec(mut st, latI(mut st, l, i))
+    }
+}
+
+// 型宣言の節 n を（package, 名前）で
+func tcDecl(st mut S, n NodeRef) {
+    if n == -1 {
+        tcW(mut st, -1)
+        return
+    }
+    tcW(mut st, TC_DECL)
+    tcW(mut st, tcPkg(mut st, FilePkg(mut st, fileOf(mut st, n))))
+    tcStr(mut st, sA(nodeOf(mut st, n)))
+}
+
+func tcFn(st mut S, fi int) {
+    tcW(mut st, TC_FN)
+    tcW(mut st, tcPkg(mut st, fnPkg(mut st, fi)))
+    tcStr(mut st, sA(nodeOf(mut st, fnNode(mut st, fi))))
+}
+
+// 節 n を位置で（木の節 = ファイルの package の中の序数と添字・合成の節 = 持ち主の区画の中の序数）
+func tcNode(st mut S, n NodeRef) {
+    if n == -1 {
+        tcW(mut st, -1)
+        return
+    }
+    if isTreeNode(int(n)) {
+        f := refFile(int(n))
+        p := FilePkg(mut st, f)
+        tcW(mut st, TC_NODE)
+        tcW(mut st, tcPkg(mut st, p))
+        tcW(mut st, f - PkgFlo(mut st, p))
+        tcW(mut st, refIdx(int(n)))
+        return
+    }
+    i := int(n) - SBASE
+    o := tcOwner(mut st, i, PRSYN)
+    tcW(mut st, TC_SYN)
+    if o < 0 {
+        st.ty.cdoor += 1
+        tcW(mut st, -1)
+        tcW(mut st, i)
+        return
+    }
+    lo, _ := PkgRegion(mut st, o, PRSYN)
+    tcW(mut st, tcPkg(mut st, o))
+    tcW(mut st, i - lo)
+}
+
+// 自分の節か（節 → 型の表の鍵・ラムダ — 外なら ents）
+func tcOwnNode(st mut S, n NodeRef) {
+    if fileOf(mut st, n) < 0 || FilePkg(mut st, fileOf(mut st, n)) != st.ty.ck {
+        st.ty.cents += 1
+    }
+    tcNode(mut st, n)
+}
+
+// 節 → 型の表の記録（鍵は節か別キー — 0 - 1 - 節 = 型引数の組・PREDIR = 振り分け先の関数・IMPLKEY = 暗黙の freeze の期待型・
+// FORSRCKEY = for の生成元の印〔値は印の数〕）。頭に札（0 = 節・1〜4 = 別キー）— 値を読み戻すときに節の参照の札〔TC_NODE〕と取り違えない
+func tcEnt(st mut S, e YEnt) {
+    if e.key >= 0 {
+        tcW(mut st, 0)
+        tcOwnNode(mut st, NodeRef(e.key))
+        tcRec(mut st, e.ty)
+        return
+    }
+    k := 0 - e.key
+    if k >= FORSRCKEY {
+        tcW(mut st, 4)
+        tcOwnNode(mut st, NodeRef(k - FORSRCKEY))
+        tcW(mut st, e.ty)
+    } else if k >= IMPLKEY {
+        tcW(mut st, 3)
+        tcOwnNode(mut st, NodeRef(k - IMPLKEY))
+        tcRec(mut st, e.ty)
+    } else if k >= PREDIR {
+        tcW(mut st, 2)
+        tcOwnNode(mut st, NodeRef(k - PREDIR))
+        if e.ty >= 0 {
+            tcFn(mut st, e.ty)
+        } else {
+            tcW(mut st, -1)
+        }
+    } else {
+        tcW(mut st, 1)
+        tcOwnNode(mut st, NodeRef(k - 1))
+        tcRec(mut st, e.ty)
+    }
+}
+
+func tcRecord(st mut S, x YT) {
+    tcW(mut st, x.k)
+    switch x.k {
+    case YSlice | YOpt:
+        tcRec(mut st, x.a)
+        tcW(mut st, x.b)
+    case YMap:
+        tcRec(mut st, x.a)
+        tcRec(mut st, x.b)
+        tcW(mut st, x.c)
+    case YDecl:
+        tcDecl(mut st, NodeRef(x.a))
+        tcList(mut st, ListRef(x.c))
+    case YFn:
+        tcList(mut st, ListRef(x.a))
+        tcList(mut st, ListRef(x.b))
+        if x.c > 0 {
+            tcDecl(mut st, NodeRef(x.c - 1))
+        } else {
+            tcW(mut st, 0)
+        }
+    case YTuple:
+        tcList(mut st, ListRef(x.a))
+    case YVar:
+        tcW(mut st, x.a)
+        tcStr(mut st, StrRef(x.b))
+    default:
+        tcW(mut st, x.a)
+        tcW(mut st, x.b)
+        tcW(mut st, x.c)
+    }
+}
+
+// Init の合成の節（欄は desc の種類どおり）
+func tcSynNode(st mut S, x ast.Node) {
+    tcW(mut st, x.kind)
+    tcW(mut st, x.tok)
+    d := st.descs[x.kind]
+    vs := []int{x.a, x.b, x.c, x.d, x.e, x.f}
+    for j <- iter.Range(0, 6) {
+        v := vs[j]
+        c := (d >> (3 * j)) & 7
+        if v == -1 || c == 0 {
+            tcW(mut st, v)
+        } else if c == 1 {
+            tcNode(mut st, NodeRef(v))
+        } else if c == 2 {
+            tcStr(mut st, StrRef(v))
+        } else {
+            n := lenL(mut st, ListRef(v))
+            tcW(mut st, n)
+            for i <- iter.Range(0, n) {
+                e := latI(mut st, ListRef(v), i)
+                if c == 3 {
+                    tcNode(mut st, NodeRef(e))
+                } else if c == 4 {
+                    tcStr(mut st, StrRef(e))
+                } else {
+                    tcW(mut st, e)
+                }
+            }
+        }
+    }
+}
+
+// package k の区画の直列化（decl = 宣言の要約だけ — 宣言の相の記録・署名・結果の型・const の型・関数の印）
+func tcRegion(st mut S, k int, decl bool) {
+    tcReset(mut st, k)
+    lo, hi := PkgRegion(mut st, k, PRTYS)
+    _, de := PkgRegion(mut st, k, PRDECL)
+    for y <- iter.Range(lo, if decl { de } else { hi }) {
+        tcRecord(mut st, YAt(mut st, y))
+    }
+    // 関数・const は package の区間（tyPlan の fo / ford・co / cord — 既定の順は表の順。全関数を舐めて package で振り分ける形は鍵の口で
+    // package ごとに払うコストになる）
+    for j <- iter.Range(hget(mut st, st.ty.fo + 1 + k), hget(mut st, st.ty.fo + 2 + k)) {
+        fi := hget(mut st, st.ty.ford + 1 + j)
+        tcFn(mut st, fi)
+        tcRec(mut st, table.Get(mut st.ty.yfnsig, fi))
+        tcRec(mut st, table.Get(mut st.ty.yfnres, fi))
+        tcW(mut st, latI(mut st, ListRef(st.ty.ymark), fi))
+    }
+    for j <- iter.Range(hget(mut st, st.ty.co + 1 + k), hget(mut st, st.ty.co + 2 + k)) {
+        c := hget(mut st, st.ty.cord + 1 + j)
+        tcStr(mut st, sA(nodeOf(mut st, ConNode(mut st, c))))
+        tcRec(mut st, table.Get(mut st.ty.yconty, c))
+    }
+    if decl {
+        return
+    }
+    elo, ehi := PkgRegion(mut st, k, PRENT)
+    for i <- iter.Range(elo, ehi) {
+        tcEnt(mut st, yentAt(mut st, i))
+    }
+    mlo, mhi := PkgRegion(mut st, k, PRLAM)
+    for i <- iter.Range(mlo, mhi) {
+        tcOwnNode(mut st, NodeRef(table.Get(mut st.ty.ylamN, i)))
+        tcDecl(mut st, NodeRef(table.Get(mut st.ty.ylamK, i)))
+        tcRec(mut st, table.Get(mut st.ty.ylamY, i))
+    }
+    g, stop := PkgRegion(mut st, k, PREDGE)
+    mut r := g
+    while r != stop && r != -1 {
+        tcFn(mut st, ylAt(mut st, r, 0))
+        tcFn(mut st, ylAt(mut st, r, 1))
+        r = ylAt(mut st, r, 2)
+    }
+    slo, shi := PkgRegion(mut st, k, PRSYN)
+    for i <- iter.Range(slo, shi) {
+        tcSynNode(mut st, synAt(mut st, i))
+    }
+}
+
+// package k のソースの要約（ファイルの木の節と data — ファイル内の添字だけで閉じる）。鍵の口が型付けの番ごとに全節を歩くので
+// 混ぜは局所の 2 語で回す（tcW を語ごとに呼ぶ形はコストが大きい）
+func tcSrc(st mut S, k int) {
+    mut a := TC_S1
+    mut b := TC_S2
+    for f <- iter.Range(PkgFlo(mut st, k), PkgFhi(mut st, k)) {
+        t := st.trees[f]
+        a = (a ^ len(t.nodes)) * TC_M1
+        a = a ^ (a >> 29)
+        for x <- t.nodes {
+            a = (a ^ x.kind ^ (x.tok << 8)) * TC_M1
+            a = a ^ (a >> 29)
+            a = (a ^ x.a) * TC_M1
+            a = a ^ (a >> 29)
+            a = (a ^ x.b) * TC_M1
+            a = a ^ (a >> 29)
+            a = (a ^ x.c) * TC_M1
+            a = a ^ (a >> 29)
+            b = (b ^ x.d) * TC_M2
+            b = b ^ (b >> 31)
+            b = (b ^ x.e) * TC_M2
+            b = b ^ (b >> 31)
+            b = (b ^ x.f ^ (x.tok << 13)) * TC_M2
+            b = b ^ (b >> 31)
+        }
+        b = (b ^ len(t.data)) * TC_M2
+        b = b ^ (b >> 31)
+        for v <- t.data {
+            b = (b ^ v) * TC_M2
+            b = b ^ (b >> 31)
+        }
+    }
+    st.ty.ch1 = a
+    st.ty.ch2 = b
+}
+
+// 全区画の扉の監査（door・body・ents の和 — TyAudit）
+func tyDoors(st mut S) (int, int, int) {
+    st.ty.cdoor = 0
+    st.ty.cbody = 0
+    st.ty.cents = 0
+    tcClosure(mut st)
+    for k <- iter.Range(0, st.npkg) {
+        tcRegion(mut st, k, false)
+    }
+    return st.ty.cdoor, st.ty.cbody, st.ty.cents
+}
+
+func tcPath(st mut S, pk int) string {
+    s := PkgPath(mut st, pk)
+    mut b := mut []byte{}
+    for i <- iter.Range(0, slen(mut st, s)) {
+        b = append(b, byte(sat(mut st, s, i)))
+    }
+    return string(freeze(b)) catch "?"
+}
+
+func tcBytes(st mut S, b []byte) {
+    tcW(mut st, len(b))
+    for x <- b {
+        tcW(mut st, int(x))
+    }
+}
+
+// `sober build --emit=tyhash|tykeys`（wantKeys）: 1 行 1 package（ロード順）`<論理パス> <ハッシュ> refs=<参照表の数> door= body= xents=`。
+// exe = コンパイラの鍵（鍵だけが読む）。Init + TypeAll は build の前段と同じ形で走らせる
+func TyEmit(p loader.Program, wantKeys bool, exe string) []byte {
+    mut st := S{}
+    Init(mut st, p)
+    TypeAll(mut st)
+    tcClosure(mut st)
+    np := st.npkg
+    // 宣言の要約・ソースの要約（鍵の材料 — package ごとに 1 回）
+    dd := listN(mut st, np * 4)
+    if wantKeys {
+        for k <- iter.Range(0, np) {
+            tcRegion(mut st, k, true)
+            hset(mut st, dd + 1 + k * 4, st.ty.ch1)
+            hset(mut st, dd + 2 + k * 4, st.ty.ch2)
+            tcSrc(mut st, k)
+            hset(mut st, dd + 3 + k * 4, st.ty.ch1)
+            hset(mut st, dd + 4 + k * 4, st.ty.ch2)
+        }
+    }
+    mut out := ""
+    for k <- iter.Range(0, np) {
+        st.ty.cdoor = 0
+        st.ty.cbody = 0
+        st.ty.cents = 0
+        tcRegion(mut st, k, false)
+        h1 := st.ty.ch1
+        h2 := st.ty.ch2
+        nr := st.ty.crn
+        rl := st.ty.crl
+        door := st.ty.cdoor
+        body := st.ty.cbody
+        ents := st.ty.cents
+        if wantKeys {
+            tcReset(mut st, k)
+            tcW(mut st, TY_VER)
+            tcBytes(mut st, bytes(exe))
+            tcBytes(mut st, bytes(tcPath(mut st, k)))
+            tcW(mut st, hget(mut st, dd + 3 + k * 4))
+            tcW(mut st, hget(mut st, dd + 4 + k * 4))
+            for r <- iter.Range(1, nr) {
+                j := hget(mut st, rl + 1 + r)
+                tcBytes(mut st, bytes(tcPath(mut st, j)))
+                tcW(mut st, hget(mut st, dd + 1 + j * 4))
+                tcW(mut st, hget(mut st, dd + 2 + j * 4))
+            }
+            out = out + "${tcPath(mut st, k)} ${st.ty.ch1}:${st.ty.ch2} refs=${nr}\n"
+        } else {
+            out = out + "${tcPath(mut st, k)} ${h1}:${h2} refs=${nr} door=${door} body=${body} xents=${ents}\n"
+        }
+    }
+    return bytes(out)
+}
+
+// ── 型付けの前の鍵 K1 と区画の値 ──
+// key(k) = 版 ‖ コンパイラの鍵 ‖ 論理パス(k) ‖ tcSrc(k) ‖ 推移の import の閉包の各 d（論理パスの順）: 論理パス(d) ‖ decl(d)。
+// TypeAll が package k の番の頭で組む（依存の d は後順で先に済み、decl(d) は d の番の終わりに控えてある — tyKeyPost）。参照表（tykeys）の代わりに
+// 閉包を使うので型付けの前に引ける — 扉の監査 door = 0（区画は推移の import の外を指さない）が「閉包 ⊇ 参照表」の根拠。
+// 状態はヒープの塊（st.ty.kst — 0 = 切）: 欄を S に足すと S を持つフレームの零初期化と写しが自己 build 全体に掛かる
+const KSX1 = 1    // コンパイラの鍵の要約
+const KSX2 = 2
+const KSKK = 3    // package → 鍵（2 語）
+const KSKD = 4    // package → 宣言の要約（2 語 — 番の終わりに控える）
+const KSST = 5    // package → 区画の外へ出る状態（KSN 語 — 番の頭に控え、終わりに差にする）
+const KSPO = 6    // 論理パスの順の package の列
+const KSCV = 7    // （空き — 旧: 値の写し取りの形。写し取りの間は st.ty.kst が負）
+const KSCP = 8    // （空き — 旧: 写し取りの位置。今はヒープの長さから — tcCapAt）
+const KSCB = 9    // 写し取りの先（listN の列）
+const KSKS = 10   // package → ソースの要約（2 語）
+const KSVB = 11   // （空き — 旧: 写し取りの語の可変長のバイト数。今は tykeys0 が写した語から数える — tcVarBytes）
+const KSYF = 12   // package → 番の頭と終わりの yFieldAt の memo の長さ（2 語 — 値の memo の節の区間）
+const KSGC = 13   // package → 検査の飛ばし（tycache.sober の GC_*: 当たりで検査を飛ばす・deadline: を書いた Scope がある）
+const KSCD = 14   // fileCheck の外読みの数（監査の証人 — tycache.sober の gcDoor）
+const KSZ = 14
+const KSN = 4     // 暗黙の freeze の点の数（nimpl）・借りの位置の鍵の数（bkSig）・欄の書きの鎖が伸びたか（yfa）・点の列（ypts）
+
+// 鍵の口を開く（Init の後・TypeAll の前 — 閉包と論理パスの順を組む）。exe = コンパイラの鍵
+func TyKeyOn(st mut S, exe string) {
+    np := st.npkg
+    b := listN(mut st, KSZ)
+    st.ty.kst = b
+    tcClosure(mut st)
+    st.ty.ch1 = TC_S1
+    st.ty.ch2 = TC_S2
+    tcBytes(mut st, bytes(exe))
+    // package の中の順の撹拌（SOBER_TYORDER=rev / shuf — 開発の口）は区画の記録の序数を動かす = 別のコンパイラ。package の順だけの撹拌（pkgrev）は
+    // 区画を変えない（tyhash の網）ので入れない
+    mode, seed := tyOrderMode()
+    if mode == 1 || mode == 3 {
+        tcW(mut st, mode)
+        tcW(mut st, seed)
+    }
+    hset(mut st, b + KSX1, st.ty.ch1)
+    hset(mut st, b + KSX2, st.ty.ch2)
+    hset(mut st, b + KSKK, listN(mut st, np * 2))
+    hset(mut st, b + KSKD, listN(mut st, np * 2))
+    hset(mut st, b + KSST, listN(mut st, np * KSN))
+    hset(mut st, b + KSKS, listN(mut st, np * 2))
+    hset(mut st, b + KSYF, listN(mut st, np * 2))
+    hset(mut st, b + KSGC, listN(mut st, np))
+    // 論理パスの順（挿入の整列 — package の数は数百まで）
+    po := listN(mut st, np)
+    for k <- iter.Range(0, np) {
+        mut j := k
+        while j > 0 && tcPathLess(mut st, k, hget(mut st, po + j)) {
+            hset(mut st, po + 1 + j, hget(mut st, po + j))
+            j -= 1
+        }
+        hset(mut st, po + 1 + j, k)
+    }
+    hset(mut st, b + KSPO, po)
+}
+
+func tcPathLess(st mut S, a int, b int) bool {
+    sa := PkgPath(mut st, a)
+    sb := PkgPath(mut st, b)
+    na := slen(mut st, sa)
+    nb := slen(mut st, sb)
+    for i <- iter.Range(0, if na < nb { na } else { nb }) {
+        x := sat(mut st, sa, i)
+        y := sat(mut st, sb, i)
+        if x != y {
+            return x < y
+        }
+    }
+    return na < nb
+}
+
+// 鍵の状態の塊の頭（写し取りの間は負で持つ）
+func ksB(st mut S) int {
+    return if st.ty.kst < 0 { 0 - st.ty.kst } else { st.ty.kst }
+}
+
+func ksAt(st mut S, at int, i int) int {
+    return hget(mut st, hget(mut st, ksB(mut st) + at) + 1 + i)
+}
+
+func ksSet(st mut S, at int, i int, v int) {
+    hset(mut st, hget(mut st, ksB(mut st) + at) + 1 + i, v)
+}
+
+// package p の論理パス（綴り — 絶対パスは入れない）
+func tcStrPath(st mut S, p int) {
+    s := PkgPath(mut st, p)
+    n := slen(mut st, s)
+    tcW(mut st, n)
+    for i <- iter.Range(0, n) {
+        tcW(mut st, sat(mut st, s, i))
+    }
+}
+
+// package k の鍵（s1 / s2 = ソースの要約・dl = 宣言の要約の列 [np × 2]）
+func tyK1(st mut S, k int, s1 int, s2 int, dl int) (int, int) {
+    np := st.npkg
+    st.ty.ch1 = TC_S1
+    st.ty.ch2 = TC_S2
+    tcW(mut st, TY_VER)
+    tcW(mut st, hget(mut st, ksB(mut st) + KSX1))
+    tcW(mut st, hget(mut st, ksB(mut st) + KSX2))
+    tcStrPath(mut st, k)
+    tcW(mut st, s1)
+    tcW(mut st, s2)
+    if st.ty.frev != 0 {
+        // package の中の並びを動かす撹拌の口（開発の口 rev / shuf — shuf は全体の乱数の列で決まり、他の package の編集で動く）: package の中の
+        // 関数・const の並びを名前の列で混ぜる（既定の順と pkgrev は package のソースで決まり tcSrc に入っている — 鍵は既定と同じ・切の道と既定の道は
+        // 払わない）
+        for j <- iter.Range(hget(mut st, st.ty.fo + 1 + k), hget(mut st, st.ty.fo + 2 + k)) {
+            tcStr(mut st, sA(nodeOf(mut st, fnNode(mut st, hget(mut st, st.ty.ford + 1 + j)))))
+        }
+        for j <- iter.Range(hget(mut st, st.ty.co + 1 + k), hget(mut st, st.ty.co + 2 + k)) {
+            tcW(mut st, hget(mut st, st.ty.cord + 1 + j) - hget(mut st, st.ty.cord + 1 + hget(mut st, st.ty.co + 1 + k)))
+        }
+    }
+    po := hget(mut st, ksB(mut st) + KSPO)
+    for q <- iter.Range(0, np) {
+        d := hget(mut st, po + 1 + q)
+        if d != k && hget(mut st, st.ty.cclo + 1 + k * np + d) != 0 {
+            tcStrPath(mut st, d)
+            tcW(mut st, hget(mut st, dl + 1 + d * 2))
+            tcW(mut st, hget(mut st, dl + 2 + d * 2))
+        }
+    }
+    return st.ty.ch1, st.ty.ch2
+}
+
+// TypeAll の package k の番の頭（型付けの前）: 鍵を組み、区画の外へ出る状態を控える
+func tyKeyPre(st mut S, k int) {
+    tcSrc(mut st, k)
+    s1 := st.ty.ch1
+    s2 := st.ty.ch2
+    ksSet(mut st, KSKS, k * 2, s1)
+    ksSet(mut st, KSKS, k * 2 + 1, s2)
+    h1, h2 := tyK1(mut st, k, s1, s2, hget(mut st, ksB(mut st) + KSKD))
+    ksSet(mut st, KSKK, k * 2, h1)
+    ksSet(mut st, KSKK, k * 2 + 1, h2)
+    ksSet(mut st, KSST, k * KSN, st.nimpl)
+    ksSet(mut st, KSST, k * KSN + 1, table.Len(mut st.bkSig))
+    ksSet(mut st, KSST, k * KSN + 2, st.yfaTail)
+    ksSet(mut st, KSST, k * KSN + 3, table.Len(mut st.ypts))
+    ksSet(mut st, KSYF, k * 2, table.Len(mut st.ty.yfm))
+}
+
+// package k の番の終わり: 宣言の要約を控え、区画の外へ出る状態を差にする
+func tyKeyPost(st mut S, k int) {
+    tcRegion(mut st, k, true)
+    ksSet(mut st, KSKD, k * 2, st.ty.ch1)
+    ksSet(mut st, KSKD, k * 2 + 1, st.ty.ch2)
+    ksSet(mut st, KSST, k * KSN, st.nimpl - ksAt(mut st, KSST, k * KSN))
+    ksSet(mut st, KSST, k * KSN + 1, table.Len(mut st.bkSig) - ksAt(mut st, KSST, k * KSN + 1))
+    ksSet(mut st, KSST, k * KSN + 2, if st.yfaTail != ksAt(mut st, KSST, k * KSN + 2) { 1 } else { 0 })
+    ksSet(mut st, KSST, k * KSN + 3, table.Len(mut st.ypts) - ksAt(mut st, KSST, k * KSN + 3))
+    ksSet(mut st, KSYF, k * 2 + 1, table.Len(mut st.ty.yfm))
+}
+
+// 値の写し取り（tcW から — 写し取りの先〔ヒープの末尾の列〕へ積むだけ。位置はヒープの長さから — tcCapAt。
+// 語ごとに状態の塊を読み書きしない）
+func tcCap(st mut S, w int) {
+    hpush(mut st, w)
+}
+
+// 写し取りの位置（写し取りの先の列に積んだ語の数）
+func tcCapAt(st mut S) int {
+    return hlen(mut st) - hget(mut st, ksB(mut st) + KSCB) - 1
+}
+
+// 写し取りの先の語 n 個を可変長（zigzag + 7 ビットずつ）にしたときのバイト数（置き場の量の見積もり — tykeys0 の vb）
+func tcVarBytes(st mut S, buf int, n int) int {
+    mut t := 0
+    for i <- iter.Range(0, n) {
+        w := hget(mut st, buf + 1 + i)
+        mut z := if w < 0 { (0 - w) * 2 - 1 } else { w * 2 }
+        mut nb := 1
+        while z >= 128 || z < 0 {
+            z = z >> 7
+            nb += 1
+            if nb >= 10 {
+                z = 0
+            }
+        }
+        t += nb
+    }
+    return t
+}
+
+// package k の区画の値（置き場の切り口 γ が書く語の列 — 長さを返す。write なら写し取りの先〔KSCB〕へ書く）:
+// 区画の直列化（tcRegion(k, false) の語 — ns 語）‖ yFieldAt の memo の節（番の間に足した項目 — 鍵・欄の数・値）‖ 参照表（数・番号の順の論理パス）‖
+// 宣言の要約 2 語 ‖ 区画の外へ出る状態 KSN 語 ‖ 数 9 語（記録・宣言の相の記録・関数・const・節 → 型・ラムダ・辺・合成の節・memo の項目）‖
+// memo の節の語数 ‖ ns。読む側（tycache.sober の tyRead）は尾から読む。値は写し取りの先（KSCB — ヒープの末尾の [n, 語…]）に残る
+func tyValue(st mut S, k int) int {
+    b := ksB(mut st)
+    // 1 回の直列化でヒープの末尾へ積む（[n, 語…] — listN の形。写し取りの間はヒープに確保しない — tcReset の参照表は使い回し）
+    tcReset(mut st, k)
+    hset(mut st, b + KSCB, hlen(mut st))
+    hpush(mut st, 0)
+    st.ty.kst = 0 - b
+    tcRegion(mut st, k, false)
+    ns := tcCapAt(mut st)
+    // memo の節（参照表に足しうる — 参照表より先に書く）
+    mut ny := 0
+    mut q := ksAt(mut st, KSYF, k * 2)
+    qe := ksAt(mut st, KSYF, k * 2 + 1)
+    while q < qe {
+        key := table.Get(mut st.ty.yfm, q)
+        nf := table.Get(mut st.ty.yfm, q + 2)
+        if key >= 0 {
+            tcW(mut st, 0)
+            tcDecl(mut st, NodeRef(key))
+        } else {
+            tcW(mut st, 1)
+            tcRec(mut st, (-1 - key) / 65536)
+        }
+        tcW(mut st, nf)
+        for i <- iter.Range(0, nf) {
+            v := table.Get(mut st.ty.yfm, q + 3 + i)
+            if v == 0 {
+                tcW(mut st, 0)
+            } else {
+                tcW(mut st, 1)
+                tcRec(mut st, v - 2)
+            }
+        }
+        ny += 1
+        q += 3 + nf
+    }
+    nyw := tcCapAt(mut st) - ns
+    tcW(mut st, st.ty.crn)
+    for r <- iter.Range(0, st.ty.crn) {
+        tcStrPath(mut st, hget(mut st, st.ty.crl + 1 + r))
+    }
+    tcW(mut st, ksAt(mut st, KSKD, k * 2))
+    tcW(mut st, ksAt(mut st, KSKD, k * 2 + 1))
+    for i <- iter.Range(0, KSN) {
+        tcW(mut st, ksAt(mut st, KSST, k * KSN + i))
+    }
+    lo, hi := PkgRegion(mut st, k, PRTYS)
+    tcW(mut st, hi - lo)
+    _, de := PkgRegion(mut st, k, PRDECL)
+    tcW(mut st, de - lo)
+    tcW(mut st, hget(mut st, st.ty.fo + 2 + k) - hget(mut st, st.ty.fo + 1 + k))
+    tcW(mut st, hget(mut st, st.ty.co + 2 + k) - hget(mut st, st.ty.co + 1 + k))
+    elo, ehi := PkgRegion(mut st, k, PRENT)
+    tcW(mut st, ehi - elo)
+    mlo, mhi := PkgRegion(mut st, k, PRLAM)
+    tcW(mut st, mhi - mlo)
+    g, stop := PkgRegion(mut st, k, PREDGE)
+    mut ne := 0
+    mut r := g
+    while r != stop && r != -1 {
+        ne += 1
+        r = ylAt(mut st, r, 2)
+    }
+    tcW(mut st, ne)
+    slo, shi := PkgRegion(mut st, k, PRSYN)
+    tcW(mut st, shi - slo)
+    tcW(mut st, ny)
+    tcW(mut st, nyw)
+    tcW(mut st, ns)
+    n := tcCapAt(mut st)
+    st.ty.kst = b
+    hset(mut st, hget(mut st, b + KSCB), n)
+    return n
+}
+
+// package k の区画の値をバイトへ（語ごとに zigzag + 7 ビットずつの可変長 — 符号化の口 loader.Varints）
+func tyValEnc(st mut S, k int) []byte {
+    n := tyValue(mut st, k)
+    buf := hget(mut st, ksB(mut st) + KSCB)
+    mut ws := mut []int{}
+    for _ <- iter.Range(0, n) {
+        ws = append(ws, 0)
+    }
+    for i <- iter.Range(0, n) {
+        ws[i] = hget(mut st, buf + 1 + i)
+    }
+    return loader.Varints(freeze(ws))
+}
+
+// package k の関数で名前が重なる組の数（値の関数の参照は〔参照表の番号, 名前〕— 重なると読み戻しで引けない）
+func tyDupFns(st mut S, k int) int {
+    mut xs := mut []int{}
+    for fi <- iter.Range(0, st.nfn) {
+        if fnPkg(mut st, fi) == k {
+            xs = append(xs, int(sA(nodeOf(mut st, fnNode(mut st, fi)))))
+        }
+    }
+    mut d := 0
+    for i <- iter.Range(0, len(xs)) {
+        for j <- iter.Range(i + 1, len(xs)) {
+            if tcStrEq(mut st, StrRef(xs[i]), StrRef(xs[j])) {
+                d += 1
+            }
+        }
+    }
+    return d
+}
+
+func tcStrEq(st mut S, a StrRef, b StrRef) bool {
+    n := slen(mut st, a)
+    if n != slen(mut st, b) {
+        return false
+    }
+    for i <- iter.Range(0, n) {
+        if sat(mut st, a, i) != sat(mut st, b, i) {
+            return false
+        }
+    }
+    return true
+}
+
+// `sober build --emit=tykeys0`: 型付けの前の鍵（K1）の 1 行 1 package（ロード順）
+// `<論理パス> <鍵> clo=<閉包の数> refs=<参照表の数> post=<事後の鍵との食い違い> dmis=<宣言の要約の食い違い> door= yfa= vh= vw=<値の語数> vb=<可変長のバイト数> nimpl= bk= pts= dup=`。
+// 事後 = TypeAll の後で宣言の要約・ソースの要約を取り直して組んだ鍵（後の package の型付けが前の区画の宣言を動かさない・型付けが木を動かさないことの網）。
+// door = 参照表の閉包の外（扉の監査）・yfa = 欄の書きの鎖が伸びた（受理する package では 0 — 当たりの区画の鎖は空）・vh = 値を書く道で写した
+// 直列化の語を混ぜ直して区画のハッシュに戻らない
+func TyEmitK0(p loader.Program, exe string) []byte {
+    mut st := S{}
+    Init(mut st, p)
+    TyKeyOn(mut st, exe)
+    TypeAll(mut st)
+    np := st.npkg
+    dl := listN(mut st, np * 2)
+    for k <- iter.Range(0, np) {
+        tcRegion(mut st, k, true)
+        hset(mut st, dl + 1 + k * 2, st.ty.ch1)
+        hset(mut st, dl + 2 + k * 2, st.ty.ch2)
+    }
+    mut out := ""
+    for k <- iter.Range(0, np) {
+        k1 := ksAt(mut st, KSKK, k * 2)
+        k2 := ksAt(mut st, KSKK, k * 2 + 1)
+        dmis := if hget(mut st, dl + 1 + k * 2) != ksAt(mut st, KSKD, k * 2) || hget(mut st, dl + 2 + k * 2) != ksAt(mut st, KSKD, k * 2 + 1) { 1 } else { 0 }
+        tcSrc(mut st, k)
+        s1 := st.ty.ch1
+        s2 := st.ty.ch2
+        p1, p2 := tyK1(mut st, k, s1, s2, dl)
+        post := if p1 != k1 || p2 != k2 { 1 } else { 0 }
+        mut ncl := 0
+        for d <- iter.Range(0, np) {
+            if d != k && hget(mut st, st.ty.cclo + 1 + k * np + d) != 0 {
+                ncl += 1
+            }
+        }
+        st.ty.cdoor = 0
+        tcRegion(mut st, k, false)
+        refs := st.ty.crn - 1
+        door := st.ty.cdoor
+        h1 := st.ty.ch1
+        h2 := st.ty.ch2
+        // 値の写し: 尾の直列化の語数 ns の分を混ぜ直すと区画のハッシュ（tyhash）に戻る
+        vw := tyValue(mut st, k)
+        buf := hget(mut st, ksB(mut st) + KSCB)
+        vb := tcVarBytes(mut st, buf, vw)
+        ns := hget(mut st, buf + vw)
+        st.ty.ch1 = TC_S1
+        st.ty.ch2 = TC_S2
+        for i <- iter.Range(0, ns) {
+            tcW(mut st, hget(mut st, buf + 1 + i))
+        }
+        vh := if st.ty.ch1 != h1 || st.ty.ch2 != h2 || hget(mut st, buf) != vw { 1 } else { 0 }
+        out = out + "${tcPath(mut st, k)} ${k1}:${k2} clo=${ncl} refs=${refs} post=${post} dmis=${dmis} door=${door} yfa=${ksAt(mut st, KSST, k * KSN + 2)} vh=${vh} vw=${vw} vb=${vb} nimpl=${ksAt(mut st, KSST, k * KSN)} bk=${ksAt(mut st, KSST, k * KSN + 1)} pts=${ksAt(mut st, KSST, k * KSN + 3)} dup=${tyDupFns(mut st, k)}\n"
+    }
+    return bytes(out)
+}

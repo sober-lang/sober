@@ -1,0 +1,421 @@
+package lower
+
+// GVN / CSE（性能投資 M1）: mem2reg の後の SSA に掛ける IR → IR のパス。
+// ①純粋な命令（const・算術・比較・gep・ptoi / itop・slotaddr・globaladdr・funcaddr）は支配木の上で値番号を引き、支配する同じ式があれば付け替えて消す
+//   （辺の順のスコープつきの表 — 支配木を前順で辿り、ブロックを出るときに足した項を戻す）。可換な演算（add / mul / and / or / xor・eq / ne）は被演算子を番号順に並べる。
+//   div / rem も対象（支配する同じ式が先に評価されている — そこで落ちなければここでも落ちない）
+// ②load はブロックの中だけで同じ番地・同じオフセット・同じ型の先の load / store の値に付け替える（store の値の転送）。メモリを書きうる命令
+//   （store・store8・call・call.indirect・syscall・region の op）で表を空にする（store は同じ番地の別の語の項だけを残して自分の値を入れる — 語のずれが違えば重ならない）
+// region.depth / region.bump は対象外（深度と先端は region の op で変わる）。付け替えた命令は消し（OpDead — opt.sober の aliasTo）、
+// 使われなくなった純粋な命令は P3（optDce）が消し、最後に値の番号を詰める（optRenumber — mem2reg の後と同じ形の IR）
+
+import "desugar"
+import "std/iter"
+
+const GV_W = 6   // 表の項: [op, a, b, c, 値, 同じバケツの前の項]
+const GV_LKEEP = 8  // store が残す load の表の項の上限（gvnBlock）
+
+// gvnModule はモジュールの全関数に GVN を掛ける
+func gvnModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            gvnFunc(mut st, f)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// GvnT はスコープつきの表（バケツの頭 head・項 ents〔GV_W 語ずつ〕・項の数 n）
+type GvnT struct {
+    head mut []int
+    ents mut []int
+    n int
+    mask int
+}
+
+func gvnFunc(st mut St, f FnRef) {
+    gvnFuncK(mut st, f, false)
+}
+
+// gvnFuncK は gvnFunc に、fold なら分かっている条件の condbr の畳み込みを足したもの（展開の後の cfgclean だけ — 畳むとブロックが
+// 消えて番号が振り直るので、ブロックの番号の表を持ったまま gvnFunc を呼ぶ他のパス〔hdr・unroll 等〕では掛けない）
+func gvnFuncK(st mut St, f FnRef, fold bool) {
+    nv := irFnNVal(mut st, f)
+    nb := irFnNBlk(mut st, f)
+    optReset(mut st, nv, nb)
+    gvnMul2(mut st, f, nv)
+    vt := valueTypes(mut st, f)
+    mut w := m2rW{nb: nb, blk: mut []int{}, rpoIx: mut []int{}, rpo: mut []int{}, nrpo: 0, pcnt: mut []int{}, preds: mut []int{}, idom: mut []int{}}
+    m2rCfg(mut st, mut w, f)
+    // 支配木の子（CSR）
+    mut ccnt := mut []int{}
+    xFill(mut ccnt, nb + 1, 0)
+    for k <- iter.Range(1, w.nrpo) {
+        bb := w.rpo[k]
+        ccnt[w.idom[bb] + 1] = ccnt[w.idom[bb] + 1] + 1
+    }
+    for i <- iter.Range(0, nb) {
+        ccnt[i + 1] = ccnt[i + 1] + ccnt[i]
+    }
+    mut kids := mut []int{}
+    xFill(mut kids, ccnt[nb], 0)
+    mut kf := mut []int{}
+    xFill(mut kf, nb, 0)
+    for k <- iter.Range(1, w.nrpo) {
+        bb := w.rpo[k]
+        d := w.idom[bb]
+        kids[ccnt[d] + kf[d]] = bb
+        kf[d] = kf[d] + 1
+    }
+    mut cap := 64
+    while cap < nv * 2 {
+        cap = cap * 2
+    }
+    mut t := GvnT{head: mut []int{}, ents: mut []int{}, n: 0, mask: cap - 1}
+    xFill(mut t.head, cap, -1)
+    // 支配木の前順（明示のスタック: [ブロック, 次の子, 入ったときの項の数, 入ったときの ex の語数, 入ったときの kn] の 5 語ずつ・sp = 使っている語数）
+    // load の表は前任が 1 つで、それが支配木の親のブロックへ親の出口の表を引き継ぐ（拡張基本ブロック — 境界検査の condbr で切れた
+    // ブロックの鎖でヘッダや欄の読み直しが消える）。親の出口の表は ex に積み、子を全部回って親を出るときに捨てる（stk の 4 語目 = ex の長さ）
+    mut ex := mut []int{}
+    mut exn := 0
+    // 分かっている条件: 前任が 1 つの親の condbr の辺で入ったブロックの部分木では、その条件の値が真 / 偽と決まっている（[値, 真偽] の 2 語ずつ・
+    // kn = 使っている語数・stk の 5 語目 = 入ったときの kn）。同じ値で分岐する condbr を br に畳む（bce.sober ② と同じ判定 — 展開の後の cfgclean の
+    // GVN でも効くように GVN の中に置く: 展開した本体の検査と呼び手の検査が同じ比較になった形〔flate の insert と Load64〕。bce を展開の後にも
+    // 掛けると自己 build の仕事 +1.55 G — report-999）
+    mut kc := mut []int{}
+    mut kn := 0
+    mut folded := false
+    mut lt := mut []int{}
+    mut stk := mut []int{0, 0, 0, 0, 0}
+    mut sp := 5
+    mut ln := gvnBlock(mut st, mut t, BlkRef(w.blk[0]), vt, mut lt, 0)
+    exn = gvnExPush(mut ex, exn, mut lt, ln)
+    while sp > 0 {
+        tp := sp - 5
+        bb := stk[tp]
+        ci := stk[tp + 1]
+        if ccnt[bb] + ci < ccnt[bb + 1] {
+            stk[tp + 1] = ci + 1
+            c := kids[ccnt[bb] + ci]
+            // 親の出口の表は ex の [0, exn) の末尾の 1 本（親が積んだ — 語数の語が末尾。子の部分木は出るときに exn を戻す）
+            mut ln0 := 0
+            kn0 := kn
+            if w.pcnt[c + 1] - w.pcnt[c] == 1 && w.preds[w.pcnt[c]] == bb {
+                ln0 = gvnExTop(mut ex, exn, mut lt)
+                pb := BlkRef(w.blk[bb])
+                if irBlkTerm(mut st, pb) == TmCondbr && irBlkX2(mut st, pb) != irBlkX4(mut st, pb) {
+                    kn = gvnKcPush(mut kc, kn, resolve(mut st, irBlkX1(mut st, pb)), if irBlkX2(mut st, pb) == w.blk[c] { 1 } else { 0 })
+                }
+            }
+            gvnPush5(mut stk, sp, c, t.n, exn, kn0)
+            sp += 5
+            ln = gvnBlock(mut st, mut t, BlkRef(w.blk[c]), vt, mut lt, ln0)
+            exn = gvnExPush(mut ex, exn, mut lt, ln)
+            if fold && gvnKcFold(mut st, BlkRef(w.blk[c]), mut kc, kn) {
+                folded = true
+            }
+        } else {
+            gvnPop(mut t, stk[tp + 2])
+            exn = stk[tp + 3]
+            kn = stk[tp + 4]
+            sp = tp
+        }
+    }
+    optDce(mut st, f)
+    optRenumber(mut st, f)
+    // 畳んだ condbr の後始末（到達しなくなったブロック — bce.sober と同じ列。付け替えの表を使う optDce / optRenumber の後に置く: optReset が表を空にする）
+    if folded {
+        recountPreds(mut st, f)
+        optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+        optBlocks(mut st, f)
+        optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+        optDce(mut st, f)
+        optRenumber(mut st, f)
+    }
+}
+
+// gvnMul2 は浮動小数の `x * 2.0` を `x + x` にする（強度低減 — IEEE で厳密に同値: どちらも丸めが起きず、±0・∞・NaN も同じ結果。
+// 鎖の 1 段が乗算から加算に縮む — mandelbrot の `2.0 * zr * zi` で −1.1%・Go と同じ形）。使われなくなった定数は optDce が消す
+func gvnMul2(st mut St, f FnRef, nv int) {
+    mut m2c := mut []int{}
+    xFill(mut m2c, nv, 0)
+    mut found := false
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            r := irInsRes(mut st, i)
+            if irInsOp(mut st, i) == OpConst && irInsA(mut st, i) == 4611686018427387904 && r >= 0 && r < nv {
+                m2c[r] = 1
+                found = true
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    if !found {
+        return
+    }
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if irInsOp(mut st, i) == OpBin && irInsA(mut st, i) == BFMul {
+                x := irInsB(mut st, i)
+                y := irInsC(mut st, i)
+                if y >= 0 && y < nv && m2c[y] == 1 {
+                    irSetInsA(mut st, i, BFAdd)
+                    irSetInsC(mut st, i, x)
+                } else if x >= 0 && x < nv && m2c[x] == 1 {
+                    irSetInsA(mut st, i, BFAdd)
+                    irSetInsB(mut st, i, y)
+                }
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+}
+
+// gvnPush5 は stk の sp 語目から [b, 0, n, e, k] を置く（足りなければ伸ばす）
+func gvnPush5(stk mut []int, sp int, b int, n int, e int, k int) {
+    while len(stk) < sp + 5 {
+        stk = append(stk, 0)
+    }
+    stk[sp] = b
+    stk[sp + 1] = 0
+    stk[sp + 2] = n
+    stk[sp + 3] = e
+    stk[sp + 4] = k
+}
+
+// gvnKcPush は分かっている条件の表 kc の kn 語目から [v, x] を置き、新しい kn を返す
+func gvnKcPush(kc mut []int, kn int, v int, x int) int {
+    while len(kc) < kn + 2 {
+        kc = append(kc, 0)
+    }
+    kc[kn] = v
+    kc[kn + 1] = x
+    return kn + 2
+}
+
+// gvnKcFold は b の condbr の条件が kc（kn 語）で分かっていれば br に畳む（行き先と実引数は分かっている側 — bce.sober と同じ書き換え）
+func gvnKcFold(st mut St, b BlkRef, kc mut []int, kn int) bool {
+    if irBlkTerm(mut st, b) != TmCondbr {
+        return false
+    }
+    c := resolve(mut st, irBlkX1(mut st, b))
+    mut i := kn - 2
+    while i >= 0 {
+        if kc[i] == c {
+            kv := kc[i + 1]
+            to := if kv == 1 { irBlkX2(mut st, b) } else { irBlkX4(mut st, b) }
+            args := if kv == 1 { irBlkX3(mut st, b) } else { irBlkX5(mut st, b) }
+            irSetBlkTerm(mut st, b, TmBr)
+            irSetBlkX1(mut st, b, to)
+            irSetBlkX2(mut st, b, args)
+            irSetBlkX3(mut st, b, -1)
+            irSetBlkX4(mut st, b, -1)
+            irSetBlkX5(mut st, b, -1)
+            return true
+        }
+        i -= 2
+    }
+    return false
+}
+
+// gvnExPush は ex の exn 語目から load の表 lt の先頭 ln 語とその語数を積み、新しい exn を返す（足りなければ伸ばす）
+func gvnExPush(ex mut []int, exn int, lt mut []int, ln int) int {
+    while len(ex) < exn + ln + 1 {
+        ex = append(ex, 0)
+    }
+    for i <- iter.Range(0, ln) {
+        ex[exn + i] = lt[i]
+    }
+    ex[exn + ln] = ln
+    return exn + ln + 1
+}
+
+// gvnExTop は ex の [0, exn) の末尾に積まれた表を lt の先頭へ写し、その語数を返す
+func gvnExTop(ex mut []int, exn int, lt mut []int) int {
+    n := ex[exn - 1]
+    b := exn - 1 - n
+    while len(lt) < n {
+        lt = append(lt, 0)
+    }
+    for i <- iter.Range(0, n) {
+        lt[i] = ex[b + i]
+    }
+    return n
+}
+
+// gvnPop は表を項の数 n まで戻す（足した逆順にバケツの頭を戻す）
+func gvnPop(t mut GvnT, n int) {
+    while t.n > n {
+        t.n = t.n - 1
+        e := t.n * GV_W
+        h := gvnHash(t.ents[e], t.ents[e + 1], t.ents[e + 2], t.ents[e + 3]) & t.mask
+        t.head[h] = t.ents[e + 5]
+    }
+}
+
+func gvnHash(op int, a int, b int, c int) int {
+    mut h := op * 1000003
+    h = (h ^ a) * 1099511628211
+    h = (h ^ b) * 1099511628211
+    h = (h ^ c) * 1099511628211
+    return h ^ (h >> 29)
+}
+
+// gvnFind は項 [op, a, b, c] の値（無ければ -1）
+func gvnFind(t mut GvnT, op int, a int, b int, c int) int {
+    mut e := t.head[gvnHash(op, a, b, c) & t.mask]
+    while e >= 0 {
+        x := e * GV_W
+        if t.ents[x] == op && t.ents[x + 1] == a && t.ents[x + 2] == b && t.ents[x + 3] == c {
+            return t.ents[x + 4]
+        }
+        e = t.ents[x + 5]
+    }
+    return -1
+}
+
+func gvnAdd(t mut GvnT, op int, a int, b int, c int, v int) {
+    h := gvnHash(op, a, b, c) & t.mask
+    x := t.n * GV_W
+    ev := []int{op, a, b, c, v, t.head[h]}
+    for k <- iter.Range(0, GV_W) {
+        if x + k < len(t.ents) {
+            t.ents[x + k] = ev[k]
+        } else {
+            t.ents = append(t.ents, ev[k])
+        }
+    }
+    t.head[h] = t.n
+    t.n = t.n + 1
+}
+
+// gvnBlock はブロック blk の命令に値番号を引く（load の表はブロックの中だけ — 入口で空・ブロックを出たら捨てる）
+func gvnBlock(st mut St, t mut GvnT, blk BlkRef, vt int, lt mut []int, ln0 int) int {
+    // load の表: [番地, オフセット, 型, 値] の 4 語ずつ（小さい — 線形に引く）・ln = 使っている語数（空にするのは ln = 0）。
+    // 入口の表 = lt の先頭 ln0 語（前任 1 つの親から引き継いだ分 — gvnFunc）・返り = 出口の語数
+    mut ln := ln0
+    mut ins := irBlkIHead(mut st, blk)
+    while ins != -1 {
+        op := irInsOp(mut st, ins)
+        r := irInsRes(mut st, ins)
+        if op == OpLoad {
+            p := resolve(mut st, irInsA(mut st, ins))
+            irSetInsA(mut st, ins, p)
+            off := irInsB(mut st, ins)
+            ty := irInsC(mut st, ins)
+            v := gvnLoadFind(mut lt, ln, p, off, ty)
+            if v >= 0 {
+                aliasTo(mut st, ins, r, v)
+            } else {
+                gvnLoadAdd(mut lt, ln, p, off, ty, r)
+                ln += 4
+            }
+        } else if op == OpStore {
+            p := resolve(mut st, irInsA(mut st, ins))
+            v := resolve(mut st, irInsC(mut st, ins))
+            irSetInsA(mut st, ins, p)
+            irSetInsC(mut st, ins, v)
+            ty := desugar.HeapGet(mut st.d, vt + 1 + v)
+            // 同じ番地の別の語の項は残す（語のずれが違えば重ならない — 多語のヘッダを語ごとに書いた直後の読みも転送する）。表が GV_LKEEP 項を
+            // 超えていたら従来どおり空に（大きい struct の欄を続けて書くブロックで、store ごとの詰め直しと load の線形の引きが二乗になる — 判定の仕事 +0.8 G）
+            off := irInsB(mut st, ins)
+            ln = if ln <= 4 * GV_LKEEP { gvnLoadKeep(mut lt, ln, p, off) } else { 0 }
+            gvnLoadAdd(mut lt, ln, p, off, ty, v)
+            ln += 4
+        } else if gvnPure(mut st, ins) {
+            mut a := irInsA(mut st, ins)
+            mut b := irInsB(mut st, ins)
+            mut c := irInsC(mut st, ins)
+            if op == OpBin || op == OpCmp {
+                b = resolve(mut st, b)
+                c = resolve(mut st, c)
+                irSetInsB(mut st, ins, b)
+                irSetInsC(mut st, ins, c)
+                if gvnComm(op, a) && c < b {
+                    tmp := b
+                    b = c
+                    c = tmp
+                }
+            } else if op == OpGepW || op == OpGepB {
+                a = resolve(mut st, a)
+                b = resolve(mut st, b)
+                irSetInsA(mut st, ins, a)
+                irSetInsB(mut st, ins, b)
+            } else if op == OpPtoi || op == OpItop {
+                a = resolve(mut st, a)
+                irSetInsA(mut st, ins, a)
+            }
+            v := gvnFind(mut t, op, a, b, c)
+            if v >= 0 {
+                aliasTo(mut st, ins, r, v)
+            } else {
+                gvnAdd(mut t, op, a, b, c, r)
+            }
+        } else if op != OpDead && op != OpRDepth && op != OpRBump {
+            // メモリを書きうる命令: load の表を空に
+            ln = 0
+        }
+        ins = irInsNext(mut st, ins)
+    }
+    return ln
+}
+
+// gvnPure は値番号を引く純粋な命令か（load は別の表・region の読みは対象外）
+func gvnPure(st mut St, ins InsRef) bool {
+    op := irInsOp(mut st, ins)
+    return irInsRes(mut st, ins) >= 0 && (op == OpConst || op == OpBin || op == OpCmp || op == OpGepW || op == OpGepB ||
+        op == OpPtoi || op == OpItop || op == OpSlotaddr || op == OpGlobal || op == OpFsAddr || op == OpFuncaddr)
+}
+
+// gvnComm は可換な演算か（add / mul / and / or / xor・eq / ne）
+func gvnComm(op int, k int) bool {
+    if op == OpBin {
+        return k == BAdd || k == BMul || k == BAnd || k == BOr || k == BXor || k == BMulHi
+    }
+    return k == CEq || k == CNe
+}
+
+func gvnLoadFind(lt mut []int, ln int, p int, off int, ty int) int {
+    mut i := 0
+    while i < ln {
+        if lt[i] == p && lt[i + 1] == off && lt[i + 2] == ty {
+            return lt[i + 3]
+        }
+        i += 4
+    }
+    return -1
+}
+
+// gvnLoadKeep は load の表 lt（ln 語）を番地 p・語のずれが off でない項だけに詰め、詰めた後の語数を返す（p の off への store で他は無効）
+func gvnLoadKeep(lt mut []int, ln int, p int, off int) int {
+    mut n := 0
+    mut i := 0
+    while i < ln {
+        if lt[i] == p && lt[i + 1] != off {
+            for k <- iter.Range(0, 4) {
+                lt[n + k] = lt[i + k]
+            }
+            n += 4
+        }
+        i += 4
+    }
+    return n
+}
+
+// gvnLoadAdd は lt の at 語目から [p, off, ty, v] を置く（足りなければ伸ばす）
+func gvnLoadAdd(lt mut []int, at int, p int, off int, ty int, v int) {
+    while len(lt) < at + 4 {
+        lt = append(lt, 0)
+    }
+    lt[at] = p
+    lt[at + 1] = off
+    lt[at + 2] = ty
+    lt[at + 3] = v
+}

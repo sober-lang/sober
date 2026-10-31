@@ -27,7 +27,7 @@ func run() (string, error?) {
     return out, nil
 }
 
-// serve は n 本の接続を順に受け、相手が閉じるまで届いた分を送り返す（受けた本数）
+// n 本の接続を順に受け、相手が閉じるまで届いた分を送り返す（受けた本数）
 func serve(l net.Listener, n int) (int, error?) {
     mut k := 0
     for c <- net.Accept(l)? {
@@ -46,7 +46,7 @@ func client(port int, msg string) string {
     return talk(port, msg) catch "error"
 }
 
-// talk は接続して msg を送り、同じ長さの戻りを受けて閉じる
+// 接続して msg を送り、同じ長さの戻りを受けて閉じる
 func talk(port int, msg string) (string, error?) {
     want := len(bytes(msg))
     mut got := mut []byte{}

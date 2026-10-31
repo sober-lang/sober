@@ -37,7 +37,7 @@ fi
 grep -q ' violations=0 ' "$W/std.txt" || { echo "FAIL std: violations"; grep -m3 violation "$W/std.txt"; fail=1; }
 # 自己: compiler/ の木（std を写した — checkverdict の自己適用と同じ形）の要約の行
 mkdir -p "$W/self" && cp -r src/compiler "$W/self/compiler" && cp -r src/std "$W/self/compiler/std"
-(cd "$W/self/compiler" && ulimit -s unlimited && "$S2" check app/main.sober --secret-dump 2>&1 | tail -1) > "$W/self.txt"
+(cd "$W/self/compiler" && ulimit -s unlimited && "$S2" check app --secret-dump 2>&1 | tail -1) > "$W/self.txt"
 if [ $regen = 1 ]; then
     cp "$W/self.txt" "$G/self.txt"
 else
@@ -54,7 +54,7 @@ for e in examples/http_origin.sober examples/origin_*.sober; do
     diff -q "$W/$k.txt" "$G/$k.txt" > /dev/null 2>&1 || { echo "FAIL $e (origin):"; diff "$W/$k.txt" "$G/$k.txt" | head -5; fail=1; }
 done
 (cd "$W/std" && "$S2" check app/main.sober --origin-dump 2>&1) > "$W/origin_std.txt"
-(cd "$W/self/compiler" && ulimit -s unlimited && "$S2" check app/main.sober --origin-dump 2>&1 | tail -1) > "$W/origin_self.txt"
+(cd "$W/self/compiler" && ulimit -s unlimited && "$S2" check app --origin-dump 2>&1 | tail -1) > "$W/origin_self.txt"
 for k in origin_std origin_self; do
     if [ $regen = 1 ]; then cp "$W/$k.txt" "$G/$k.txt"; continue; fi
     diff -q "$W/$k.txt" "$G/$k.txt" > /dev/null 2>&1 || { echo "FAIL $k:"; diff "$W/$k.txt" "$G/$k.txt" | head -5; fail=1; }

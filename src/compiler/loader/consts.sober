@@ -1,7 +1,8 @@
 package loader
 
 // トップレベル const の確定（language.md 14 / 25 節 — src/stage1/loader.zig の resolveConst / foldConst / checkDict の写し）:
-// struct リテラルなら辞書 const として検査し（value 無し・dict）、他は int の const 式として畳む。
+// 組み立ての const（struct / slice / string / float のリテラル・true / false・それらの const の別名 — 参照する点で組み立てる。表の dict）は
+// 要素を検査し（value 無し）、他は int の const として畳む。
 // 畳み込みは純関数の再帰（覚えておく表を持たず、参照のたびに畳み直す）。燃料は Zig 版と同じく const の参照 1 段で 1 減り、尽きれば循環として拒否
 
 import "std/builder"
@@ -16,13 +17,21 @@ type Consts struct {
     has []bool
     dict []bool
     ok bool
-    // 畳めなかった最初の const の位置（ok のときは file = -1）
+    // 畳めなかった最初の const の拒否した部分式の位置と理由 CE_*（ok のときは file = -1）
     bad diag.Pos
+    why int
 }
 
 const fuel0 = 32
 
-// foldConsts は const の表を組む（列は std/builder で積む — scanFuncs と同じく 5 本が交互に伸びるため）
+// 拒否の理由（diag.ConstExpr の kind — 0 は添えなし）
+const CE_CALL = 1
+const CE_MUT = 2
+const CE_MAP = 3
+const CE_OP = 4
+const CE_NIL = 5
+
+// const の表を組む（列は std/builder で積む — scanFuncs と同じく 5 本が交互に伸びるため）
 func foldConsts(cx Cx, fs Funcs) Consts {
     mut cfile := builder.Builder[int]{}
     mut cnode := builder.Builder[int]{}
@@ -36,10 +45,11 @@ func foldConsts(cx Cx, fs Funcs) Consts {
         mut k := 0
         while k < ast.ListLen(t, cl) {
             c := ast.ListAt(t, cl, k)
-            d := isDict(t, c)
+            d := isDictC(cx, f, c, fuel0)
             v, ok := resolveConst(cx, fs, f, c, fuel0)
             if !ok {
-                return Consts{[]int{}, []int{}, []int{}, []bool{}, []bool{}, false, diag.Pos{file: f, tok: t.nodes[c].tok}}
+                bn, why := constBad(cx, fs, f, c)
+                return Consts{[]int{}, []int{}, []int{}, []bool{}, []bool{}, false, diag.Pos{file: f, tok: t.nodes[bn].tok}, why}
             }
             builder.Push(mut cfile, f)
             builder.Push(mut cnode, c)
@@ -50,15 +60,55 @@ func foldConsts(cx Cx, fs Funcs) Consts {
         }
         f += 1
     }
-    return Consts{builder.Build(mut cfile), builder.Build(mut cnode), builder.Build(mut cval), builder.Build(mut chas), builder.Build(mut cdict), true, diag.None()}
+    return Consts{builder.Build(mut cfile), builder.Build(mut cnode), builder.Build(mut cval), builder.Build(mut chas), builder.Build(mut cdict), true, diag.None(), 0}
 }
 
-// isDict は const 宣言 c の式が struct リテラルか、`@embed` で畳んだ map リテラルか
-func isDict(t ast.Tree, c int) bool {
-    return t.nodes[unparen(t, t.nodes[c].b)].kind == ast.EComposite || (t.nodes[c].f & 1) != 0
+// const（ファイル f の宣言 c）が組み立ての const か: 式が組み立てのリテラル・`@embed` で畳んだ map リテラル・組み立ての const の別名（`const A = B`）
+func isDictC(cx Cx, f int, c int, fuel int) bool {
+    t := cx.trees[f]
+    e := unparen(t, t.nodes[c].b)
+    if expandLit(t, e) || (t.nodes[c].f & 1) != 0 {
+        return true
+    }
+    cf, cn := constRef(cx, f, e)
+    return cf >= 0 && fuel > 0 && isDictC(cx, cf, cn, fuel - 1)
 }
 
-// lookupConst は package pk の const name（(ファイル, 宣言の節)。無ければファイル -1）
+// 式 e が組み立てのリテラルの形か（struct / slice / string / float のリテラル・負の float のリテラル・true / false）
+func expandLit(t ast.Tree, e int) bool {
+    x := t.nodes[e]
+    k := x.kind
+    if k == ast.EComposite || k == ast.ESlicelit || k == ast.EStrlit || k == ast.EFloat {
+        return true
+    }
+    if k == ast.EUnary {
+        return x.a == lexer.Minus && t.nodes[unparen(t, x.b)].kind == ast.EFloat
+    }
+    return k == ast.EIdent && boolLit(t, e)
+}
+
+// 識別子 e が true / false か
+func boolLit(t ast.Tree, e int) bool {
+    return StrIs(t, t.nodes[e].a, "true") || StrIs(t, t.nodes[e].a, "false")
+}
+
+// 式 e が const の参照（`N` / `pkg.N`）ならその宣言（(ファイル, 宣言の節)。でなければファイル -1）
+func constRef(cx Cx, f int, e int) (int, int) {
+    t := cx.trees[f]
+    x := t.nodes[e]
+    if x.kind == ast.EIdent {
+        return lookupConst(cx, cx.file_pkg[f], Name(t, x.a))
+    }
+    if x.kind == ast.ESelector {
+        dep := qualified(cx, f, x)
+        if dep >= 0 {
+            return lookupConst(cx, dep, Name(t, x.b))
+        }
+    }
+    return 0 - 1, 0
+}
+
+// package pk の const name（(ファイル, 宣言の節)。無ければファイル -1）
 func lookupConst(cx Cx, pk int, name string) (int, int) {
     mut f := cx.pkg_lo[pk]
     while f < cx.pkg_hi[pk] {
@@ -77,7 +127,7 @@ func lookupConst(cx Cx, pk int, name string) (int, int) {
     return 0 - 1, 0
 }
 
-// lookupFunc は package pk の関数 name の関数表の番号（無ければ -1）
+// package pk の関数 name の関数表の番号（無ければ -1）
 func lookupFunc(cx Cx, fs Funcs, pk int, name string) int {
     mut i := 0
     while i < len(fs.file) {
@@ -89,19 +139,19 @@ func lookupFunc(cx Cx, fs Funcs, pk int, name string) int {
     return 0 - 1
 }
 
-// funcRefOk は辞書に置ける関数参照か（単相かつ非 inline — 関数値になれるもの）
+// 辞書に置ける関数参照か（単相かつ非 inline — 関数値になれるもの）
 func funcRefOk(cx Cx, fs Funcs, i int) bool {
     t := cx.trees[fs.file[i]]
     return ast.ListLen(t, t.nodes[fs.node[i]].b) == 0 && !fs.expands[i]
 }
 
-// isUpper は先頭が ASCII の大文字か（公開名）
+// 先頭が ASCII の大文字か（公開名）
 func isUpper(name string) bool {
     b := bytes(name)
     return len(b) > 0 && b[0] >= 'A' && b[0] <= 'Z'
 }
 
-// resolveConst は const（ファイル f の宣言 c）の確定: 辞書なら検査だけ（値は 0）、他は畳む
+// const（ファイル f の宣言 c）の確定: 辞書なら検査だけ（値は 0）、他は畳む
 func resolveConst(cx Cx, fs Funcs, f int, c int, fuel int) (int, bool) {
     if fuel == 0 {
         return 0, false
@@ -112,20 +162,21 @@ func resolveConst(cx Cx, fs Funcs, f int, c int, fuel int) (int, bool) {
         return 0, true
     }
     e := unparen(t, t.nodes[c].b)
-    if t.nodes[e].kind == ast.EComposite {
-        return 0, checkDict(cx, fs, f, e, fuel)
+    if isDictC(cx, f, c, fuel) {
+        bn, _ := dictElem(cx, fs, f, e, fuel, false)
+        return 0, bn < 0
     }
     return foldTop(cx, fs, f, e, fuel)
 }
 
-// foldTop は const の値の式 e を畳む: 型つきの const（`T(定数式)` — T は下地 int の named scalar。language.md 32 節「型つきの const」）は中の定数式の値、
+// const の値の式 e を畳む: 型つきの const（`T(定数式)` — T は下地 int の named scalar。language.md 32 節「型つきの const」）は中の定数式の値、
 // 他は foldExpr。変換は値の式の一番外にだけ置ける（定数式の中の変換・型つきの const の参照は foldExpr が拒否 — 型つきの値の算術は無い）
 func foldTop(cx Cx, fs Funcs, f int, e int, fuel int) (int, bool) {
     a := namedConvArg(cx, f, e)
     return foldExpr(cx, fs, f, if a >= 0 { a } else { e }, fuel)
 }
 
-// namedConvArg は式 e が下地 int の named scalar への変換 `T(x)` / `ref.T(x)` なら実引数 x の節（でなければ -1）
+// 式 e が下地 int の named scalar への変換 `T(x)` / `ref.T(x)` なら実引数 x の節（でなければ -1）
 func namedConvArg(cx Cx, f int, e int) int {
     t := cx.trees[f]
     x := t.nodes[e]
@@ -157,26 +208,26 @@ func namedConvArg(cx Cx, f int, e int) int {
     return ast.ListAt(t, x.b, 0)
 }
 
-// typedConst は const（ファイル f の宣言 c）が型つきか（値の式が named scalar への変換）
+// const（ファイル f の宣言 c）が型つきか（値の式が named scalar への変換）
 func typedConst(cx Cx, f int, c int) bool {
     t := cx.trees[f]
     return namedConvArg(cx, f, unparen(t, t.nodes[c].b)) >= 0
 }
 
-// foldConst は int const の値（定数式の中の参照 — 辞書 const と型つきの const は拒否）
+// int const の値（定数式の中の参照 — 辞書 const と型つきの const は拒否）
 func foldConst(cx Cx, fs Funcs, f int, c int, fuel int) (int, bool) {
     if fuel == 0 {
         return 0, false
     }
     t := cx.trees[f]
     e := unparen(t, t.nodes[c].b)
-    if t.nodes[e].kind == ast.EComposite || typedConst(cx, f, c) {
+    if isDictC(cx, f, c, fuel) || typedConst(cx, f, c) {
         return 0, false
     }
     return foldExpr(cx, fs, f, e, fuel)
 }
 
-// qualified は selector `ref.Name` の参照先 package（base が import の参照名の裸の名前で、Name が公開名のとき。他は -1）
+// selector `ref.Name` の参照先 package（base が import の参照名の裸の名前で、Name が公開名のとき。他は -1）
 func qualified(cx Cx, f int, x ast.Node) int {
     t := cx.trees[f]
     b := t.nodes[unparen(t, x.a)]
@@ -190,22 +241,25 @@ func qualified(cx Cx, f int, x ast.Node) int {
     return dep
 }
 
-// checkDict は辞書 const の struct リテラル e の要素を検査する
-func checkDict(cx Cx, fs Funcs, f int, e int, fuel int) bool {
+// 組み立ての const の struct リテラル e の要素（欄の値）を検査する。拒否した部分式の節と理由（通れば -1）
+func checkDict(cx Cx, fs Funcs, f int, e int, fuel int) (int, int) {
     t := cx.trees[f]
     els := t.nodes[e].b
     mut i := 0
     while i < ast.ListLen(t, els) {
-        if !dictElem(cx, fs, f, t.nodes[ast.ListAt(t, els, i)].b, fuel) {
-            return false
+        bn, why := dictElem(cx, fs, f, t.nodes[ast.ListAt(t, els, i)].b, fuel, true)
+        if bn >= 0 {
+            return bn, why
         }
         i += 1
     }
-    return true
+    return 0 - 1, 0
 }
 
-// dictElem: 許すのは int const 式・閉じたラムダ・名前付き関数の参照・他の辞書 const・入れ子の struct リテラルだけ（呼び出しは拒否）
-func dictElem(cx Cx, fs Funcs, f int, e0 int, fuel int) bool {
+// 組み立ての const の部分式 e の検査（field = 欄の値の位置）。拒否した部分式の節と理由 CE_*（通れば -1）。
+// 許すのは: 組み立てのリテラル（struct・imm の slice・string・float・負の float・true / false）・int の const 式・閉じたラムダ・
+// 名前付き関数の参照（単相・非 inline）・他の const の参照・欄の値の位置の nil
+func dictElem(cx Cx, fs Funcs, f int, e0 int, fuel int, field bool) (int, int) {
     t := cx.trees[f]
     e := unparen(t, e0)
     x := t.nodes[e]
@@ -213,37 +267,132 @@ func dictElem(cx Cx, fs Funcs, f int, e0 int, fuel int) bool {
     switch k {
     case ast.EComposite:
         return checkDict(cx, fs, f, e, fuel)
-    case ast.ELambda:
-        return true
+    case ast.ESlicelit:
+        if x.c != 0 {
+            return e, CE_MUT
+        }
+        vs := x.b
+        mut i := 0
+        while i < ast.ListLen(t, vs) {
+            bn, why := dictElem(cx, fs, f, ast.ListAt(t, vs, i), fuel, false)
+            if bn >= 0 {
+                return bn, why
+            }
+            i += 1
+        }
+        return 0 - 1, 0
+    case ast.ELambda | ast.EStrlit | ast.EFloat:
+        return 0 - 1, 0
+    case ast.ENil:
+        return if field { 0 - 1 } else { e }, if field { 0 } else { CE_NIL }
+    case ast.EMaplit:
+        return e, CE_MAP
+    case ast.ECall:
+        return e, CE_CALL
     case ast.EIdent:
+        if boolLit(t, e) {
+            return 0 - 1, 0
+        }
         pk := cx.file_pkg[f]
         cf, cn := lookupConst(cx, pk, Name(t, x.a))
         if cf >= 0 {
             v, ok := resolveConst(cx, fs, cf, cn, fuel - 1)
-            return ok
+            return if ok { 0 - 1 } else { e }, 0
         }
         fi := lookupFunc(cx, fs, pk, Name(t, x.a))
-        return fi >= 0 && funcRefOk(cx, fs, fi)
+        return if fi >= 0 && funcRefOk(cx, fs, fi) { 0 - 1 } else { e }, 0
     case ast.ESelector:
         dep := qualified(cx, f, x)
         if dep < 0 {
-            return false
+            return e, 0
         }
         cf, cn := lookupConst(cx, dep, Name(t, x.b))
         if cf >= 0 {
             v, ok := resolveConst(cx, fs, cf, cn, fuel - 1)
-            return ok
+            return if ok { 0 - 1 } else { e }, 0
         }
         fi := lookupFunc(cx, fs, dep, Name(t, x.b))
-        return fi >= 0 && funcRefOk(cx, fs, fi)
-    case ast.EInt | ast.EUnary | ast.EBinary:
+        return if fi >= 0 && funcRefOk(cx, fs, fi) { 0 - 1 } else { e }, 0
+    case ast.EUnary:
+        if expandLit(t, e) {
+            return 0 - 1, 0
+        }
         v, ok := foldExpr(cx, fs, f, e, fuel)
-        return ok
+        if ok {
+            return 0 - 1, 0
+        }
+        return opBad(cx, f, e)
+    case ast.EInt | ast.EBinary | ast.EInterp:
+        v, ok := foldExpr(cx, fs, f, e, fuel)
+        if ok {
+            return 0 - 1, 0
+        }
+        return opBad(cx, f, e)
     }
-    return false
+    return e, 0
 }
 
-// foldExpr は int の const 式（リテラル・算術・単項・const 参照）を畳む。算術は 2 の補数の wrap（Zig の +% 等と同じ）
+// 畳めなかった const（ファイル f の宣言 c）の拒否した部分式の節と理由（拒否の診断の位置 — 失敗の道だけが呼ぶ）
+func constBad(cx Cx, fs Funcs, f int, c int) (int, int) {
+    t := cx.trees[f]
+    e := unparen(t, t.nodes[c].b)
+    if isDictC(cx, f, c, fuel0) {
+        bn, why := dictElem(cx, fs, f, e, fuel0, false)
+        return if bn >= 0 { bn } else { c }, why
+    }
+    k := t.nodes[e].kind
+    if k == ast.ENil {
+        return e, CE_NIL
+    }
+    if k == ast.EMaplit {
+        return e, CE_MAP
+    }
+    if k == ast.ECall && namedConvArg(cx, f, e) < 0 {
+        return e, CE_CALL
+    }
+    bn, why := opBad(cx, f, e)
+    return if why == 0 { c } else { bn }, why
+}
+
+// 畳めなかった int の const 式 e の中の拒否の理由: 関数の呼び出しはその節と CE_CALL・演算に int でない値（string / float / bool の
+// リテラル・補間・組み立ての const の参照）を使っていれば e と CE_OP・他は (e, 0)
+func opBad(cx Cx, f int, e0 int) (int, int) {
+    t := cx.trees[f]
+    e := unparen(t, e0)
+    x := t.nodes[e]
+    k := x.kind
+    switch k {
+    case ast.ECall:
+        return e, CE_CALL
+    case ast.EStrlit | ast.EFloat | ast.EInterp:
+        return e, CE_OP
+    case ast.EIdent | ast.ESelector:
+        if k == ast.EIdent && boolLit(t, e) {
+            return e, CE_OP
+        }
+        cf, cn := constRef(cx, f, e)
+        return e, if cf >= 0 && isDictC(cx, cf, cn, fuel0) { CE_OP } else { 0 }
+    case ast.EUnary:
+        bn, why := opBad(cx, f, x.b)
+        return if why == CE_CALL { bn } else { e }, why
+    case ast.EBinary:
+        lb, lw := opBad(cx, f, x.b)
+        if lw == CE_CALL {
+            return lb, lw
+        }
+        rb, rw := opBad(cx, f, x.c)
+        if rw == CE_CALL {
+            return rb, rw
+        }
+        // 比較と論理（値が bool — 畳むのは int の演算だけ）
+        op := x.a
+        cmp := op == lexer.EqualEqual || op == lexer.BangEqual || op == lexer.Less || op == lexer.LessEqual || op == lexer.Greater || op == lexer.GreaterEqual
+        return e, if lw != 0 { lw } else if rw != 0 { rw } else if cmp || op == lexer.AmpersandAmpersand || op == lexer.PipePipe { CE_OP } else { 0 }
+    }
+    return e, 0
+}
+
+// int の const 式（リテラル・算術・単項・const 参照）を畳む。算術は 2 の補数の wrap（Zig の +% 等と同じ）
 func foldExpr(cx Cx, fs Funcs, f int, e0 int, fuel int) (int, bool) {
     t := cx.trees[f]
     e := unparen(t, e0)

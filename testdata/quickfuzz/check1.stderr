@@ -1,0 +1,4 @@
+quick: fuzz: hang (over 1000 ms) at trial 9 (seed 0, 12 shrink runs)
+  Int(0, 50) = 41
+quick: wrote CORPUS/main/1-59b5bf311b74275f
+panic: quick.Crashed{exit: 142} at std/quick

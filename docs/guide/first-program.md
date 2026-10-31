@@ -106,6 +106,8 @@ sober build app/main.sober -o gcd && ./gcd    # 12
 sober check app/main.sober                     # type checking and the analyzer only — the result is one line of JSON
 ```
 
+When there is a type error, a line with its position, such as `sober: type error at app/main.sober:4:14`, goes to standard error before the JSON line (`"ok":false`).
+
 ## Write tests
 
 Each `func TestXxx()` in a `*_test.sober` file inside a package is a test. `assert` can be used only in test files.

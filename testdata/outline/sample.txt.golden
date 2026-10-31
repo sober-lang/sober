@@ -1,0 +1,13 @@
+testdata/outline/sample.sober  package sample
+  import "std/io" "std/strings"
+  type Point struct { x int; y int }  :11-14
+  type Shape union { Dot { p Point }; Line { a Point; b Point } }  :18-21
+  type Box[T] struct { v T }  :23
+  type Scale func(int) int  :25
+  type Bad error { path string }  :28-30
+  const Limit = 10  :32
+  const Name = "sample"  :33
+  func Read(path string) (int, error?)  @errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired) @effects(io, nondet)  :36-41
+  func first[T](xs []T, def T) T  :43-48
+  func trim(x string) string  :50
+  func main()  :52-55

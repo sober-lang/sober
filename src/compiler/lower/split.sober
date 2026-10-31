@@ -1,15 +1,16 @@
 package lower
 
-// 席 A（report-801 / 802）: lower の頭（program の本体の作業列）の関数単位化。
-// - 子は自前の St で build の前段（buildPre + programTypes）を走らせ直し（複製 — check の P6-3 の形）、受け持ちの関数を下ろして、関数ごとに
+// 席 A: lower の頭（program の本体の作業列）の関数単位化。
+// - 子は自前の St で Init を走らせ、親が凍らせた表層型の店を受け取って（型付けと検査は親が済ませた — desugar.TyAdopt）前段の後半
+//   （buildInit + programTypes）だけを走らせ、受け持ちの関数を下ろして、関数ごとに
 //   「署名・詰めた本体（mvPack）・事象の列」を返す。事象 = 大域の番号・並びに効く操作（関数の初出〔ヒットも〕・インスタンス・ラムダ・子の関数・
 //   rt の need*・文字列の rodata・panic の点・spawn の点・チャネルの印・打ち切りの印）。型は子の外へ出さない（IR は lower の型を持たない）
 // - 親は今の LIFO の作業列を事象の上で模擬して記録を作り（番号・名前・並びが今の直の道と同じになる）、本体の関数・グローバルの参照（K_FN・K_GLOB）を
 //   子の番地から親の番地へ付け替えて積む。出力は直の道とバイト一致（網）・群の割り方にも W にも依らない
 // - 計画（desugar.PlanMarks — 参照の辺の閉包）は割り振りだけ: 漏れは見つけた子が派生として下ろし（重複は模擬が 1 つ採る）、余分は模擬が取り出さない
-// - 子は task.Map の群の子（A-2）: 分割は SOBER_LOWER_SPLIT の口があるときだけ（既定は直の道 — 今の子は前段と型付けを子ごとに走らせ直す税で
-//   W8 の wall が直の道より遅い〔report-813〕。A-3 で子の型付けを絞って得を確かめてから既定を切り替える）。子の死は直の道で下ろし直す
-// 開発の口: SOBER_LOWER_SPLIT=k（群の数 — 0 / 1 = 直の道・W1 でも逐次の子で回る）・SOBER_LOWER_REV=1（子が受け持ちを逆順に下ろす — 事象の列の純性の網）・
+// - 子は task.Map の群の子（A-2）: 既定はワーカーが 2 本以上のときだけ分割（群の数 = ワーカー数・W1 は直の道 — 大規模の lower で
+//   直列の頭が床になるのを防ぐための必須部品なので既定で通し、小規模の損〔命令〕は許容 — docs/incremental.md「段 6 R3」）。子の死は直の道で下ろし直す
+// 口: SOBER_LOWER_SPLIT=k（群の数 — 0 / 1 = 直の道〔opt-out〕・W1 でも逐次の子で回る）・SOBER_LOWER_REV=1（子が受け持ちを逆順に下ろす — 事象の列の純性の網）・
 //   SOBER_LOWER_DIE=g（g 番の群の子が頭で死ぬ — 子の死 → 直の道の網）。証人 = SOBER_PAR_STATS=1 で `#lower split groups=k fallback=none|died|rejected`
 
 import "desugar"
@@ -20,12 +21,14 @@ import "std/os"
 import "std/task"
 import "std/table"
 
-// LSplit は席 A の子の状態（St の欄 1 つ）
+// 席 A の子の状態（St の欄 1 つ）
 type LSplit struct {
     on bool                // 子: 下ろし中の関数の事象を記録する
     ev table.Table[int]    // 事象 [種類, a, b, c, d]…
     dict int               // 次の liftLambdaFn が辞書 const のラムダか（ラムダの節 + 1・0 = 違う — liftLambda が立てる）
     groups int             // 群の数（0 = まだ読んでいない — lsGroups）
+    dl int                 // 子: 親の DeadlineUse（1 = 偽・2 = 真 — 子は ParCheck を走らせない。0 = 自分の表で判定）
+    par int                // 子: 親の std/task の判定 taskUse（1 = 偽・2 = 真 — buildInit の参照の辺の判定を走らせない。0 = 自分で判定）
 }
 
 const EV_FN = 1      // a = 関数表の添字, b = 子の記録
@@ -75,9 +78,50 @@ const NEED_MAPFIND = 30
 const NEED_ADMITW = 31
 const NEED_MATCHLEN = 32
 const NEED_JCLEAN = 33
+const NEED_ERRRELOC = 34
+const NEED_RUNFD = 35
+const NEED_RUNFDENV = 36
+const NEED_COVER = 37
+const NEED_COVERMID = 38
 
-// lsEv は事象を 1 つ記録する（子が関数を下ろしている間だけ）
+// 安定な鍵の材料: 発見順の番号で名前が付く関数・番号を、持ち主（下ろしていた関数の記録）と持ち主の中の序数で
+// 引けるように st.sk へ積む（[種類, 語数, 中身…]）。直の道は lsEv の鉤（事象と同じ点）・模擬の道は lsReplay の 1 周目（持ち主 = 積み戻す記録）・
+// spec の複製は spClone。序数は積んだ順（持ち主ごとに数える — x86.sober の xFnKeys）
+const SK_LAM = 1    // [記録, 持ち主]
+const SK_KID = 2    // [記録, 持ち主]
+const SK_PSITE = 3  // [持ち主]（panic の点の番号 = SK_PSITE の積んだ順）
+const SK_SITE = 4   // [持ち主]（spawn の点の番号 = SK_SITE の積んだ順 + 1）
+const SK_SPEC = 5   // [複製, spec の鍵 [callee, n, (位置, 種類, 値) × n]…]
+
+func skAdd(st mut St, kind int, a int, b int) {
+    table.Push(mut st.sk, kind)
+    table.Push(mut st.sk, if kind == SK_LAM || kind == SK_KID { 2 } else { 1 })
+    table.Push(mut st.sk, a)
+    if kind == SK_LAM || kind == SK_KID {
+        table.Push(mut st.sk, b)
+    }
+}
+
+// 事象を 1 つ記録する（子が関数を下ろしている間だけ）。安定な鍵の材料は直の道でも積む（子の分は子の St ごと捨てる）
 func lsEv(st mut St, code int, a int, b int, c int, d int) {
+    if code == EV_LAM {
+        skAdd(mut st, SK_LAM, a, int(st.fn))
+    } else if code == EV_KID {
+        skAdd(mut st, SK_KID, a, int(st.fn))
+    } else if code == EV_PSITE {
+        skAdd(mut st, SK_PSITE, int(st.fn), 0)
+        ptSet(mut st.ptIns, table.Len(mut st.psites) / 3 - 1, a)
+    } else if code == EV_SITEN {
+        skAdd(mut st, SK_SITE, int(st.fn), 0)
+    } else if code == EV_SITE {
+        ptSet(mut st.stIns, st.nsite, a)
+    }
+    lsPush(mut st, code, a, b, c, d)
+}
+
+// 事象だけを記録する（安定な鍵の材料は積まない — 辞書 const のラムダの 2 回目以降の参照: 持ち主は作った関数のまま。
+// 積み直すと直の道だけ持ち主が最後に参照した関数へ上書きされ、模擬〔作ったときだけ積む〕と規則順が割れる）
+func lsPush(st mut St, code int, a int, b int, c int, d int) {
     if st.ls.on {
         table.Push(mut st.ls.ev, code)
         table.Push(mut st.ls.ev, a)
@@ -91,11 +135,12 @@ func lsNeed(st mut St, id int, arg int) {
     lsEv(mut st, EV_NEED, id, arg, 0, 0)
 }
 
-// lsGroups は群の数（SOBER_LOWER_SPLIT の口 — 無ければ 1 = 直の道。罠の試し・表層型の突き合わせも直の道）
+// 群の数（SOBER_LOWER_SPLIT の口 — 無ければワーカー数・W1 なら 1 = 直の道。罠の試し・表層型の突き合わせも直の道）
 func lsGroups(st mut St) int {
     if st.ls.groups == 0 {
         k := lsEnvInt("SOBER_LOWER_SPLIT")
-        st.ls.groups = if st.trapProbe || st.ymode != 0 { 1 } else if k >= 0 { k } else { 1 }
+        w := task.Ledger().workers
+        st.ls.groups = if st.trapProbe || st.ymode != 0 { 1 } else if k >= 0 { k } else if w >= 2 { w } else { 1 }
         if st.ls.groups < 1 {
             st.ls.groups = 1
         }
@@ -103,7 +148,7 @@ func lsGroups(st mut St) int {
     return st.ls.groups
 }
 
-// lsEnvInt は環境変数の数（無ければ -1）
+// 環境変数の数（無ければ -1）
 func lsEnvInt(name string) int {
     v, err := os.Getenv(name)
     if err != nil || v == nil {
@@ -119,7 +164,7 @@ func lsEnvInt(name string) int {
     return n
 }
 
-// lsCfg は子の St に写す口（lowerWith が立てる欄のうち program の下ろし方に効くもの）
+// 子の St に写す口（lowerWith が立てる欄のうち program の下ろし方に効くもの）
 func lsCfg(st mut St) []int {
     return []int{if st.transparent { 1 } else { 0 }, if st.traceErrs { 1 } else { 0 }, st.rtMut, if st.csSite { 1 } else { 0 }, if st.callStat { 1 } else { 0 }, if st.hwFold { 1 } else { 0 }, if st.cutStat { 1 } else { 0 }, if st.noVec { 1 } else { 0 }, if st.noSpec { 1 } else { 0 }, if st.slotPoison { 1 } else { 0 }, if st.traceEffs { 1 } else { 0 }}
 }
@@ -141,18 +186,21 @@ func lsCfgSet(st mut St, c []int) {
 
 // ── 子 ──
 
-// lsChild は群の子: 前段を走らせ直し、受け持ち own（関数表の添字）と見つけた派生を下ろして、関数ごとの記録と記号の表（最後の要素）を返す。
+// 群の子: 親の凍らせた店 fz を受け取って前段の後半（buildInit）だけを走らせ、受け持ち own（関数表の添字）と見つけた派生を下ろして、
+// 関数ごとの記録と記号の表（最後の要素）を返す。型付け（TypeAll）と検査（ParCheck / Freeze）は親が済ませている — 子は Init（節の表と合成の節 —
+// 決定的なので親と同じ）の上に親の店を載せる。dl = 親の DeadlineUse（ParCheck の印）・par = 親の taskUse（buildInit の判定）。
 // role = 関数表の添字ごと（0 = 派生・1 = この子・2 = 他の子）。失敗（拒否）は空を返す — 親は直の道へ戻る
-func lsChild(p loader.Program, cfg []int, role []int, own []int, rev bool, die bool) [][]int {
+func lsChild(p loader.Program, fz desugar.TyFrozen, dl bool, par bool, cfg []int, role []int, own []int, rev bool, die bool) [][]int {
     if die {
         panic(InvariantBroken{})
     }
     mut st := St{}
     lsCfgSet(mut st, cfg)
-    e0 := buildPre(mut st, p)
-    if e0 != nil {
-        return [][]int{}
-    }
+    st.ls.dl = if dl { 2 } else { 1 }
+    st.ls.par = if par { 2 } else { 1 }
+    desugar.Init(mut st.d, p)
+    desugar.TyAdopt(mut st.d, fz)
+    buildInit(mut st)
     e1 := programTypes(mut st)
     if e1 != nil {
         return [][]int{}
@@ -184,7 +232,7 @@ func lsChild(p loader.Program, cfg []int, role []int, own []int, rev bool, die b
     return freeze(out)
 }
 
-// lsEntry は下ろした関数 1 つの記録: [関数表の添字, 子の記録, 名前の長さ, 名前…, 引数の型の数, 型…, 戻り, mut の印, 事象の数, 事象…, 詰めた本体…]
+// 下ろした関数 1 つの記録: [関数表の添字, 子の記録, 名前の長さ, 名前…, 引数の型の数, 型…, 戻り, mut の印, 事象の数, 事象…, 詰めた本体…]
 // （事象の命令の番地は詰めた本体の中の番地へ）
 func lsEntry(st mut St, fi int, s0 int) []int {
     x := infoAt(mut st, fi)
@@ -228,7 +276,7 @@ func lsPutStr(st mut St, o mut []int, s desugar.StrRef) {
     }
 }
 
-// lsSyms は子の記号の表: [番地, 種類（0 = 関数・1 = グローバル・2 = 文字列の rodata）, 長さ, 名前か綴り…]…
+// 子の記号の表: [番地, 種類（0 = 関数・1 = グローバル・2 = 文字列の rodata）, 長さ, 名前か綴り…]…
 func lsSyms(st mut St) []int {
     mut o := mut []int{}
     mut f := st.fhead
@@ -258,24 +306,25 @@ func lsSyms(st mut St) []int {
 
 // ── 親 ──
 
-// LsOut は子の結果（handle の型引数・関数の結果に [][]int を直に書けない綴りの都合で包む）
+// 子の結果（handle の型引数・関数の結果に [][]int を直に書けない綴りの都合で包む）
 type LsOut struct {
     es [][]int
 }
 
 const LS_C = 4294967296  // 子の番号の桁（子 × LS_C + 子の中の番地 / 記録の添字）
 
-// LsIn は群の子の入力（role = 関数表の添字ごと〔0 = 派生・1 = この子・2 = 他の子〕・own = 受け持ち・die = 頭で死ぬ〔SOBER_LOWER_DIE の網〕）
+// 群の子の入力（role = 関数表の添字ごと〔0 = 派生・1 = この子・2 = 他の子〕・own = 受け持ち・die = 頭で死ぬ〔SOBER_LOWER_DIE の網〕）
 type LsIn struct {
     role []int
     own []int
     die bool
 }
 
-// lsProgram は program の席 A の形: 計画 → 群の子（task.Map — 全部 Join）→ LIFO の模擬で積み戻す（模擬は任意の子の記録を任意の順で引く）。
+// program の席 A の形: 計画 → 群の子（task.Map — 全部 Join）→ LIFO の模擬で積み戻す（模擬は任意の子の記録を任意の順で引く）。
 // false = 分けない・子の失敗（拒否・死）— 呼び手（build）が直の道（program）で下ろす。子は親の状態に触らない — 親は計画の辺を読んだだけなので、
-// 拒否の診断は直の道と同じものが出る。program の呼び出しを build の 1 か所に置く（--passes の無い build は呼び出し点ごとに展開する — report-891）
+// 拒否の診断は直の道と同じものが出る。program の呼び出しを build の 1 か所に置く（--passes の無い build は呼び出し点ごとに展開する）
 func lsProgram(st mut St, p loader.Program) (bool, error?) {
+    loader.Stage("lsplan")
     marks := desugar.PlanMarks(mut st.d)
     mut plan := mut []int{}
     for i <- iter.Range(0, nfn(mut st)) {
@@ -310,9 +359,13 @@ func lsProgram(st mut St, p loader.Program) (bool, error?) {
         }
         ins = append(ins, LsIn{role: freeze(role), own: freeze(own), die: g == die})
     }
-    // budget: = 子の固定 + 下ろした取り分 / k（校正: 自己 build の子の peak ≈ 40 MB + 270 MB / k — 前段の作業域を含む・report-805）
+    // budget: = 子の固定 + 下ろした取り分 / k（校正: 自己 build の子の peak ≈ 40 MB + 270 MB / k — 前段の作業域を含む）
     bud := 48 * task.MB + 320 * task.MB / k
-    outs, serr := task.Map(freeze(ins), (x) => LsOut{es: lsChild(p, cfg, x.role, x.own, rev, x.die)}, budget: bud)
+    // 店の写しを凍らせて子へ（親の店はそのまま — 子の死・拒否で直の道へ戻っても同じ店）
+    dl := desugar.DeadlineUse(mut st.d)
+    par := st.taskUse
+    fz := desugar.TyFreeze(mut st.d)
+    outs, serr := task.Map(freeze(ins), (x) => LsOut{es: lsChild(p, fz, dl, par, cfg, x.role, x.own, rev, x.die)}, budget: bud)
     if serr != nil {
         lsStat(k, "died")
         return false, nil
@@ -324,18 +377,19 @@ func lsProgram(st mut St, p loader.Program) (bool, error?) {
         }
     }
     lsStat(k, "none")
+    loader.Stage("lsjoin")
     lsReplay(mut st, outs)?
     return true, nil
 }
 
-// lsStat は分割の道の証人（SOBER_PAR_STATS=1 のときだけ stderr へ 1 行 — #par の行と同じ扱い・ELF に出ない）
+// 分割の道の証人（SOBER_PAR_STATS=1 のときだけ stderr へ 1 行 — #par の行と同じ扱い・ELF に出ない）
 func lsStat(k int, why string) {
     if lsEnvInt("SOBER_PAR_STATS") == 1 {
         _ = io.WriteStderr(bytes("#lower split groups=${k} fallback=${why}\n"))
     }
 }
 
-// lsReplay は子の記録の上で今の LIFO の作業列を模擬する
+// 子の記録の上で今の LIFO の作業列を模擬する
 func lsReplay(st mut St, outs []LsOut) error? {
     // 子 × 記録の番地 → 記録の添字・関数表の添字 → 下ろした記録（最初の子）・名前 → 記録（インスタンス）
     mut byRec := mut map[int]int{}
@@ -446,6 +500,7 @@ func lsReplay(st mut St, outs []LsOut) error? {
                     n := st.nlambda
                     st.nlambda = n + 1
                     r := lsMkFn(mut st, int(strCat(mut st, strLit(mut st, "lambda#"), decimal(mut st, n))), outs, byRecF, c, a)
+                    skAdd(mut st, SK_LAM, r, prec)
                     if b >= 0 {
                         dl[b] = r
                     }
@@ -464,6 +519,7 @@ func lsReplay(st mut St, outs []LsOut) error? {
                 n := st.nkid
                 st.nkid = n + 1
                 r := lsMkFn(mut st, int(strCat(mut st, strLit(mut st, "kid#"), decimal(mut st, n))), outs, byRecF, c, a)
+                skAdd(mut st, SK_KID, r, prec)
                 fmap[c * LS_C + a] = r
                 bo := lsBody(byRecF, byFnF, c, a, -1)
                 if sp == len(stk) {
@@ -477,15 +533,20 @@ func lsReplay(st mut St, outs []LsOut) error? {
             case EV_NEED:
                 lsReplayNeed(mut st, a, b)
             case EV_STR:
-                gp := strGlobal(mut st, desugar.StrRef(lsStrOf(mut st, sy, symF, c, a, 1)))
-                gmap[c * LS_C + a] = gp
+                // 子の strGlobal が子の中で畳んでいるので、同じ子の同じグローバルは同じ綴り — 2 回目からは写さない（綴りを参照の数だけ
+                // 写すと模擬の命令が大きく増える。棄てた案: 子を跨いだ重複も写す前に親の索引で引く — 効きなし〔残りは親に無い綴りの写し〕）
+                if gmap[c * LS_C + a] == nil {
+                    gmap[c * LS_C + a] = strGlobal(mut st, desugar.StrRef(lsStrOf(mut st, sy, symF, c, a, 1)))
+                }
             case EV_PSITE:
+                skAdd(mut st, SK_PSITE, prec, 0)
                 table.Push(mut st.psites, b)
                 table.Push(mut st.psites, en[x + 3])
                 table.Push(mut st.psites, en[x + 4])
             case EV_PLAB:
                 st.plabs = rec4(mut st, st.plabs, table.Len(mut st.psites) / 3, a, 0)
             case EV_SITEN:
+                skAdd(mut st, SK_SITE, prec, 0)
                 st.nsite += 1
             case EV_CHAN:
                 st.chanFns = rec4(mut st, st.chanFns, prec, 0, 0)
@@ -559,12 +620,14 @@ func lsReplay(st mut St, outs []LsOut) error? {
             ins := InsRef(base + en[x + 1])
             switch code {
             case EV_PSITE:
-                irSetInsA(mut st, ins, pn)
+                irSetInsA(mut st, ins, pn + st.numOff)
+                ptSet(mut st.ptIns, pn, int(ins))
                 pn += 1
             case EV_SITEN:
                 site += 1
             case EV_SITE:
-                irSetInsA(mut st, ins, site * 4 + (irInsA(mut st, ins) & 3))
+                irSetInsA(mut st, ins, (site + st.numOff) * 4 + (irInsA(mut st, ins) & 3))
+                ptSet(mut st.stIns, site, int(ins))
             case EV_CUT:
                 kr := fmap[c * LS_C + en[x + 2]]
                 if kr == nil {
@@ -577,7 +640,7 @@ func lsReplay(st mut St, outs []LsOut) error? {
     return nil
 }
 
-// lsBody は子 c の記録 crec を本体に持つ記録（無ければ関数表の添字 fn の受け持ちの子の記録）
+// 子 c の記録 crec を本体に持つ記録（無ければ関数表の添字 fn の受け持ちの子の記録）
 func lsBody(byRec map[int]int, byFn map[int]int, c int, crec int, fn int) int {
     e := byRec[c * LS_C + crec]
     if e != nil {
@@ -592,7 +655,7 @@ func lsBody(byRec map[int]int, byFn map[int]int, c int, crec int, fn int) int {
     return panic(InvariantBroken{})
 }
 
-// lsMkFn は子 c の記録 crec の署名で親の関数の記録を足す（名前 name）
+// 子 c の記録 crec の署名で親の関数の記録を足す（名前 name）
 func lsMkFn(st mut St, name int, outs []LsOut, byRec map[int]int, c int, crec int) int {
     e := byRec[c * LS_C + crec]
     if e == nil {
@@ -611,7 +674,7 @@ func lsMkFn(st mut St, name int, outs []LsOut, byRec map[int]int, c int, crec in
     return int(f)
 }
 
-// lsName は子 c の記号（番地 a・関数 = 0 / グローバル = 1）の名前（綴り）
+// 子 c の記号（番地 a・関数 = 0 / グローバル = 1）の名前（綴り）
 func lsName(sy []int, symAt map[int]int, c int, a int, g int) string {
     q := symAt[(c * LS_C + a) * 2 + g]
     if q == nil {
@@ -624,7 +687,7 @@ func lsName(sy []int, symAt map[int]int, c int, a int, g int) string {
     return string(freeze(b)) catch panic(InvariantBroken{})
 }
 
-// lsStrOf は子 c の記号の名前（綴り）を親のヒープの文字列にする
+// 子 c の記号の名前（綴り）を親のヒープの文字列にする
 func lsStrOf(st mut St, sy []int, symAt map[int]int, c int, a int, g int) int {
     q := symAt[(c * LS_C + a) * 2 + g]
     if q == nil {
@@ -639,7 +702,7 @@ func lsStrOf(st mut St, sy []int, symAt map[int]int, c int, a int, g int) int {
     return at
 }
 
-// lsScanFns は親の関数の鎖の cur の後ろを名前の表へ足す（最後の記録を返す）
+// 親の関数の鎖の cur の後ろを名前の表へ足す（最後の記録を返す）
 func lsScanFns(st mut St, m mut map[string]int, from int) int {
     mut f := if from == -1 { st.fhead } else { irFnNext(mut st, FnRef(from)) }
     mut last := from
@@ -670,7 +733,7 @@ func lsHeapName(st mut St, s int) string {
     return string(freeze(b)) catch panic(InvariantBroken{})
 }
 
-// lsReplayNeed は子の need* を親で同じ順に呼ぶ
+// 子の need* を親で同じ順に呼ぶ
 func lsReplayNeed(st mut St, id int, arg int) {
     switch id {
     case NEED_ADMIT: needAdmitRt(mut st)
@@ -693,6 +756,10 @@ func lsReplayNeed(st mut St, id int, arg int) {
     case NEED_TASK: needTaskRt(mut st)
     case NEED_FRAME: needFrameRt(mut st)
     case NEED_RUN: needRun(mut st)
+    case NEED_RUNFD: needRunFd(mut st)
+    case NEED_RUNFDENV: needRunFdEnv(mut st)
+    case NEED_COVER: needCover(mut st)
+    case NEED_COVERMID: needCoverMid(mut st)
     case NEED_WMODE: needWriteMode(mut st)
     case NEED_MKDIR: needMkdir(mut st)
     case NEED_RENAME: needRename(mut st)
@@ -706,5 +773,6 @@ func lsReplayNeed(st mut St, id int, arg int) {
     case NEED_ADMITW: needAdmitWake(mut st)
     case NEED_MATCHLEN: needMatchLen(mut st)
     case NEED_JCLEAN: needJClean(mut st)
+    case NEED_ERRRELOC: _ = needErrReloc(mut st)
     }
 }

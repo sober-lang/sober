@@ -1,6 +1,6 @@
 package loader
 
-// shape[T] の loader の層（language.md 16 節 2 — 第一便・第二便〔Encode・rename〕）— 脱糖の固定テンプレート（@layout の合成ファイル方式 — layout.sober と同じ形）:
+// shape[T] の loader の層（language.md 16 節 2）— 脱糖の固定テンプレート（@layout の合成ファイル方式 — layout.sober と同じ形）:
 //
 //     u := json.Decode[User](d, n)?          // → $jsonDecodeTop_<f>_<k>_0(d, n)?
 //     s := json.Encode[User](u)              // → $jsonEncodeTop_<f>_<k>_0(u)
@@ -8,8 +8,8 @@ package loader
 //
 // struct T と、その欄から届く型（int・float・bool・string・`U?`・`[]U`・入れ子の struct）ごとに写しの関数（普通の Sober）を、呼び出すファイル f ごとの
 // 合成ファイル `$json/<f のパス>`（同じ package）に書いて package の末尾に足す。写しの関数は std/json の部品（NeedObject・Need・Get・Items・DecInt …）を呼ぶ。
-// 欄の名前 = JSON のキー（Rename 辞書は第二便）・`U?` の欄だけ欠けと null を nil で受ける・余った欄は無視・欠けた欄は json.Missing。
-// 範囲外（第二便以降）: 総称の struct・union の欄・map の欄・named scalar の欄 — 写す前に diag.JsonShape で名指して拒否。
+// 欄の名前 = JSON のキー（Rename 辞書は未実装）・`U?` の欄だけ欠けと null を nil で受ける・余った欄は無視・欠けた欄は json.Missing。
+// 範囲外（未対応）: 総称の struct・union の欄・map の欄・named scalar の欄 — 写す前に diag.JsonShape で名指して拒否。
 // 以降の層（脱糖器・検査器・lower）は写した後の木だけを読む — コア / Lean は無変更
 
 import "std/builder"
@@ -29,7 +29,7 @@ const jStruct = 5
 const jSlice = 6
 const jOpt = 7
 
-// JReq は写しの要求（canon = 型の正準の綴り — 重複除き・file / node = struct の宣言・elem = []U / U? の中身の要求）
+// 写しの要求（canon = 型の正準の綴り — 重複除き・file / node = struct の宣言・elem = []U / U? の中身の要求）
 type JReq struct {
     kind int
     canon string
@@ -40,12 +40,12 @@ type JReq struct {
     elem int
 }
 
-// JsonPrefix は合成ファイルのパスの接頭辞
+// 合成ファイルのパスの接頭辞
 func JsonPrefix() string {
     return "$json/"
 }
 
-// jsonAll は全ファイルの `json.Decode[T](…)` を写し、合成ファイルを package の末尾に足す（layoutAll の 3 段目と同じ並べ方）
+// 全ファイルの `json.Decode[T](…)` を写し、合成ファイルを package の末尾に足す（layoutAll の 3 段目と同じ並べ方）
 @errors(diag.JsonShape, diag.GrammarMismatch)
 func jsonAll(ts []ast.Tree, fpkg []string, fpath []string, fstd []bool) (LOut, error?) {
     mut outT := mut []ast.Tree{}
@@ -90,17 +90,17 @@ func jsonAll(ts []ast.Tree, fpkg []string, fpath []string, fstd []bool) (LOut, e
     return LOut{trees: freeze(nt), pkg: freeze(np), path: freeze(npath), std: freeze(nstd)}, nil
 }
 
-// isJsonDecode は節 x が `json.Decode` か `json.Encode`（std/json の参照名の写しの口）か
+// 節 x が `json.Decode` か `json.Encode`（std/json の参照名の写しの口）か
 func isJsonDecode(t ast.Tree, x ast.Node) bool {
     return x.kind == ast.ESelector && t.nodes[x.a].kind == ast.EIdent && importPath(t, Name(t, t.nodes[x.a].a)) == "std/json" && isJsonOp(Name(t, x.b))
 }
 
-// isJsonOp は名前 op が std/json の写しの口か（With つきは欄名の対応の辞書を最後の実引数に取る）
+// 名前 op が std/json の写しの口か（With つきは欄名の対応の辞書を最後の実引数に取る）
 func isJsonOp(op string) bool {
     return op == "Decode" || op == "Encode" || op == "DecodeWith" || op == "EncodeWith"
 }
 
-// jsonFile はファイル f の `json.Decode[T](…)` を写しの関数の呼び出しへ（結果は（写した木, 合成ソース — 要らなければ ""））
+// ファイル f の `json.Decode[T](…)` を写しの関数の呼び出しへ（結果は（写した木, 合成ソース — 要らなければ ""））
 @errors(diag.JsonShape)
 func jsonFile(ts []ast.Tree, fpkg []string, f int) (ast.Tree, string, error?) {
     t := ts[f]
@@ -199,7 +199,7 @@ func jsonFile(ts []ast.Tree, fpkg []string, f int) (ast.Tree, string, error?) {
     return ast.Tree{nodes: freeze(ns), data: builder.Build(mut db), file: t.file}, src, nil
 }
 
-// reqIndex は正準の綴り canon の要求の添字（無ければ -1）
+// 正準の綴り canon の要求の添字（無ければ -1）
 func reqIndex(rs []JReq, canon string) int {
     for i <- iter.Range(0, len(rs)) {
         if rs[i].canon == canon {
@@ -209,7 +209,7 @@ func reqIndex(rs []JReq, canon string) int {
     return -1
 }
 
-// jsonType はファイル f（package fpkg[f]）の型の式の節 e の要求（範囲外の型なら 2 つ目にその字句 — 範囲内は -1）。
+// ファイル f（package fpkg[f]）の型の式の節 e の要求（範囲外の型なら 2 つ目にその字句 — 範囲内は -1）。
 // []U / U? の node は中身の型の式の節を指し、中身の要求は待ち行列で作る（jsonSource が canon で引く）。包み（[] と ?）は外から剥がすループで読む（再帰しない）
 func jsonType(ts []ast.Tree, fpkg []string, f int, e int) (JReq, int) {
     t := ts[f]
@@ -241,7 +241,7 @@ func jsonType(ts []ast.Tree, fpkg []string, f int, e int) (JReq, int) {
     return JReq{kind: k, canon: c, pkg: "", name: "", file: f, node: t.nodes[e].a, elem: -1}, -1
 }
 
-// jsonBase は包みを剥がした後の型の名前の節 e の要求（スカラーか struct）
+// 包みを剥がした後の型の名前の節 e の要求（スカラーか struct）
 func jsonBase(ts []ast.Tree, fpkg []string, f int, e int) (JReq, int) {
     t := ts[f]
     x := t.nodes[e]
@@ -253,7 +253,7 @@ func jsonBase(ts []ast.Tree, fpkg []string, f int, e int) (JReq, int) {
         k := if nm == "int" { jInt } else if nm == "float" { jFloat } else if nm == "bool" { jBool } else { jString }
         return JReq{kind: k, canon: nm, pkg: "", name: "", file: -1, node: -1, elem: -1}, -1
     }
-    // 名前の型: 同じ package か `q.Name`（mut 局所を仮引数の slice の要素で初期化して後から代入すると check が拒否 — F-af。空で初期化して両方の枝で代入）
+    // 名前の型: 同じ package か `q.Name`（mut 局所を仮引数の slice の要素で初期化して後から代入すると check が拒否するため、空で初期化して両方の枝で代入する）
     mut pkg := ""
     mut name := nm
     ref, n2, dotted := strings.Cut(nm, ".")
@@ -270,7 +270,7 @@ func jsonBase(ts []ast.Tree, fpkg []string, f int, e int) (JReq, int) {
     return JReq{kind: jStruct, canon: "${pkg}.${name}", pkg: pkg, name: name, file: df, node: dn, elem: -1}, -1
 }
 
-// jsonRoot は `json.Decode[T]` の型引数の式 e（`T` か `q.T` — 式として読まれている）の struct の要求（struct でなければ kind 0）
+// `json.Decode[T]` の型引数の式 e（`T` か `q.T` — 式として読まれている）の struct の要求（struct でなければ kind 0）
 func jsonRoot(ts []ast.Tree, fpkg []string, f int, e int) JReq {
     t := ts[f]
     x := t.nodes[e]
@@ -290,7 +290,7 @@ func jsonRoot(ts []ast.Tree, fpkg []string, f int, e int) JReq {
     return JReq{kind: jStruct, canon: "${pkg}.${name}", pkg: pkg, name: name, file: df, node: dn, elem: -1}
 }
 
-// findStruct は package pkg の型パラメータなしの struct の宣言 name の（ファイル, 節）（無ければ -1）
+// package pkg の型パラメータなしの struct の宣言 name の（ファイル, 節）（無ければ -1）
 func findStruct(ts []ast.Tree, fpkg []string, pkg string, name string) (int, int) {
     for f <- iter.Range(0, len(ts)) {
         if fpkg[f] == pkg {
@@ -308,7 +308,7 @@ func findStruct(ts []ast.Tree, fpkg []string, pkg string, name string) (int, int
     return -1, -1
 }
 
-// jsonSource はファイル f の写しの関数の合成ソース
+// ファイル f の写しの関数の合成ソース
 func jsonSource(ts []ast.Tree, fpkg []string, f int, rs []JReq) string {
     t := ts[f]
     pkg := fpkg[f]
@@ -339,7 +339,7 @@ func jsonSource(ts []ast.Tree, fpkg []string, f int, rs []JReq) string {
                 if e.kind == jOpt {
                     s = s + "    $f${j} := $jsonField_${f}_${reqIndex(rs, e.canon)}($d, $jj.GetAt($d, $o, $jj.KeyOf(rename, \"${fname2}\"), ${j}), rename)?\n"
                 } else {
-                    // `?` は束縛ごとに 1 つ（実引数の中の `?` は lower が拒否 — F-ae）
+                    // `?` は束縛ごとに 1 つ（実引数の中の `?` は lower が拒否する）
                     s = s + "    $k${j} := $jj.NeedAt($d, $o, $jj.KeyOf(rename, \"${fname2}\"), ${j})?\n    $f${j} := ${decCall(rs, f, e)}($d, $k${j}${decTail(e)})?\n"
                 }
                 lit = if j == 0 { "${fname2}: $f${j}" } else { lit + ", ${fname2}: $f${j}" }
@@ -360,7 +360,7 @@ func jsonSource(ts []ast.Tree, fpkg []string, f int, rs []JReq) string {
             s = s + "\nfunc ${fname}($d $jj.Doc, $n int, rename map[string]string) (${sp}, error?) {\n    if $jj.IsNull($d, $n) {\n        return nil, nil\n    }\n"
             s = s + "    $v := ${decCall(rs, f, e)}($d, $n${decTail(e)})?\n    return $v, nil\n}\n"
             // 欄の位置（欠けも nil）
-            // 絞りは肯定の形で（早期 return の後の絞り込みは check が拒否 — F-y の層）
+            // 絞りは肯定の形で書く（早期 return の後の絞り込みは check が拒否する）
             s = s + "\nfunc $jsonField_${f}_${k}($d $jj.Doc, $m int?, rename map[string]string) (${sp}, error?) {\n    if $m != nil {\n        return ${fname}($d, $m, rename)\n    }\n"
             s = s + "    return nil, nil\n}\n"
         }
@@ -369,12 +369,12 @@ func jsonSource(ts []ast.Tree, fpkg []string, f int, rs []JReq) string {
     return s
 }
 
-// decTail は写しの関数（スカラー以外）の呼び出しの末尾の実引数（rename を引き回す）
+// 写しの関数（スカラー以外）の呼び出しの末尾の実引数（rename を引き回す）
 func decTail(e JReq) string {
     return if e.kind >= jStruct { ", rename" } else { "" }
 }
 
-// jsonEncodeFn は要求 k の書きの写しの関数（mut の builder に積む — struct は根の口 $jsonEncodeTop も）。2 系統を合成する:
+// 要求 k の書きの写しの関数（mut の builder に積む — struct は根の口 $jsonEncodeTop も）。2 系統を合成する:
 // rn = 偽 — rename なし（Encode）: 欄の頭は定数の断片（`{"name":` / `,"name":` — キーのエスケープは合成時に jsonKeyLit）を 1 回の PushString・
 // 根の口 _0 は空の rename の map を作らずに直に呼ぶ。rn = 真 — rename つき（EncodeWith の根の口 _1 から）: 欄ごとに KeyOf で引いて PutKey（旧の形）。
 // 系統どうしは呼び合わない（rename つきの値の中の struct も rename つきで書く）。lower は届く関数しか下ろさないので、使わない系統は ELF に入らない
@@ -420,12 +420,12 @@ func jsonEncodeFn(ts []ast.Tree, fpkg []string, rs []JReq, ps []string, pkg stri
     return s
 }
 
-// encName は要求 k の書きの写しの関数の名前（rn = rename つきの系統）
+// 要求 k の書きの写しの関数の名前（rn = rename つきの系統）
 func encName(f int, k int, rn bool) string {
     return if rn { "$jsonEncodeR_${f}_${k}" } else { "$jsonEncode_${f}_${k}" }
 }
 
-// jsonKeyLit は欄名 nm の JSON の文字列（'"' 込み・std/json の quote と同じエスケープ — '"' '\\' と制御文字）を、合成ファイルの string の字面の
+// 欄名 nm の JSON の文字列（'"' 込み・std/json の quote と同じエスケープ — '"' '\\' と制御文字）を、合成ファイルの string の字面の
 // 中身として綴る（字面のエスケープを重ねる）。欄名は識別子なので普通はそのまま
 func jsonKeyLit(nm string) string {
     h := bytes("0123456789abcdef")
@@ -454,7 +454,7 @@ func jsonKeyLit(nm string) string {
     return "\\\"" + body + "\\\""
 }
 
-// encCall は値 x（綴り）を要求 e で $o に書く文（nm = 欄名 — float の panic の名指し・rn = rename つきの系統）
+// 値 x（綴り）を要求 e で $o に書く文（nm = 欄名 — float の panic の名指し・rn = rename つきの系統）
 func encCall(rs []JReq, f int, e JReq, x string, nm string, rn bool) string {
     return switch e.kind {
     case jInt: "$jj.PutInt(mut $o, ${x})"
@@ -465,7 +465,7 @@ func encCall(rs []JReq, f int, e JReq, x string, nm string, rn bool) string {
     }
 }
 
-// decCall は要求 e（スカラーなら std/json の部品・それ以外は写しの関数）を節から読む関数の名前
+// 要求 e（スカラーなら std/json の部品・それ以外は写しの関数）を節から読む関数の名前
 func decCall(rs []JReq, f int, e JReq) string {
     return switch e.kind {
     case jInt: "$jj.ParseInt"
@@ -476,7 +476,7 @@ func decCall(rs []JReq, f int, e JReq) string {
     }
 }
 
-// spell は要求 k の型の綴り（合成ファイルの中で — 他 package の struct は参照名 $jt<i>）
+// 要求 k の型の綴り（合成ファイルの中で — 他 package の struct は参照名 $jt<i>）
 func spell(ts []ast.Tree, fpkg []string, rs []JReq, ps []string, pkg string, k0 int) string {
     // 包み（[] と ?）を外から辿って記録し、芯（struct かスカラー）の綴りに内から被せる（再帰しない）
     mut wraps := mut []int{}

@@ -1,6 +1,6 @@
 package http
 
-// 要求の枠と頭の読み（frameAt / request）の旧新照合の網（CPU 効率便 U1 — report-1049 / 1050）: 書き換え前の frameAt / request と補助の関数を Ref の名前で
+// 要求の枠と頭の読み（frameAt / request）の旧新照合の網: 書き換え前の frameAt / request と補助の関数を Ref の名前で
 // そのまま写して基準（オラクル）にし、手で組んだ要求の種（CRLF / LF・先頭の空行・HTTP/1.0・Content-Length / chunked・食い違う Content-Length・
 // 非 chunked の Transfer-Encoding・Connection の token・obs-fold・裸の CR・505・パイプライン・未完）に 1 バイトの置き換え・削除・重複と全部の切り詰めを掛け、
 // mh / mb の境目（431 / 413）も含めて、新しい frameAt の枠（st・s・he・end・chunked・keep・v10）と、揃った要求の request の結果
@@ -411,7 +411,7 @@ func sameInts(a []int, b []int) bool {
     return true
 }
 
-// agree は b の at からの枠と要求が基準と一致するか（違えば 1 行出して偽）
+// b の at からの枠と要求が基準と一致するか（違えば 1 行出して偽）
 func agree(b []byte, at int, mh int, mb int) bool {
     o := frameAtRef(b, at, mh, mb)
     f := frameAt(b, at, mh, mb)
@@ -438,7 +438,7 @@ func agree(b []byte, at int, mh int, mb int) bool {
     return true
 }
 
-// seeds は要求の種（"|" で区切った 1 本の文字列 — 種の中に | は使わない）
+// 要求の種（"|" で区切った 1 本の文字列 — 種の中に | は使わない）
 func seeds() []string {
     return []string{
         "GET /baseline11?a=1&b=2 HTTP/1.1\r\nHost: localhost:8080\r\nUser-Agent: zrk\r\nConnection: keep-alive\r\n\r\n",
@@ -471,12 +471,12 @@ func seeds() []string {
     }
 }
 
-// muts は置き換えに使うバイト
+// 置き換えに使うバイト
 func muts() []byte {
     return []byte{'\r', '\n', ' ', '\t', ':', ',', 'a', 'K', '0', '(', '/', byte(0), byte(0x80), byte(0xff)}
 }
 
-// each は種 s のどの位置でも置き換え・削除・重複した列と、全部の切り詰めを k に渡す
+// 種 s のどの位置でも置き換え・削除・重複した列と、全部の切り詰めを k に渡す
 func each(s string, k func([]byte) bool) bool {
     b := bytes(s)
     mut ok := true

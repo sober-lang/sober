@@ -1,8 +1,8 @@
 package main
 
-// std/crypto の chacha20・poly1305・chacha20poly1305（report-793）: RFC 8439 の 2.3.2（ブロック関数）・2.4.2（暗号化）・2.5.2（Poly1305）・
+// std/crypto の chacha20・poly1305・chacha20poly1305: RFC 8439 の 2.3.2（ブロック関数）・2.4.2（暗号化）・2.5.2（Poly1305）・
 // 2.8.2（AEAD）の例の値と、Seal → Open の往復・1 ビットの改竄が Auth で落ちること。期待値は RFC 8439 の本文の値（.out のコメントでなく
-// 下の want で照合 — 食い違えば "MISMATCH"）。record 層の口（TLS 便 R1 — report-811）: 2.8.2 を SealTo（頭 5 バイトつき）で・前後に屑を挟んだ
+// 下の want で照合 — 食い違えば "MISMATCH"）。record 層の口: 2.8.2 を SealTo（頭 5 バイトつき）で・前後に屑を挟んだ
 // 受けの切片からの OpenAt・切片の中の改竄は Auth で外は効かない・Key の使い回しで Seal と同じ値・長さの検査
 
 import "std/crypto"
@@ -25,7 +25,7 @@ func seq(from int, to int) []byte {
     return freeze(out)
 }
 
-// check は got（秘密の鍵から導いた値もある — 印字しない）を期待値 want（16 進）と crypto.Equal で照合し、一致なら want を印字する
+// got（秘密の鍵から導いた値もある — 印字しない）を期待値 want（16 進）と crypto.Equal で照合し、一致なら want を印字する
 func check(name string, got []byte, want string) {
     ok := crypto.Equal(got, unhex(want))
     println(name, if ok { want } else { "MISMATCH" }, if ok { "ok" } else { "MISMATCH" })

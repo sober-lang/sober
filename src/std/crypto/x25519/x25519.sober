@@ -111,7 +111,7 @@ func Shared(k []byte, u []byte) []byte {
     return pack(w, fR)
 }
 
-// cswap は m = -1 なら区画 x と y を入れ替え、0 なら何もしない（mask の xor — 分岐なし）
+// m = -1 なら区画 x と y を入れ替え、0 なら何もしない（mask の xor — 分岐なし）
 func cswap(w mut []int, x int, y int, m int) {
     for i <- iter.Range(0, 5) {
         t := (w[x + i] ^ w[y + i]) & m
@@ -120,7 +120,7 @@ func cswap(w mut []int, x int, y int, m int) {
     }
 }
 
-// carry は r0〜r4（各 2^63 未満の非負）を 51 bit に繰り上げて区画 d に書く（r4 の溢れは 19 倍して r0 へ — 2^255 ≡ 19。最後に r0 → r1 をもう 1 回 —
+// r0〜r4（各 2^63 未満の非負）を 51 bit に繰り上げて区画 d に書く（r4 の溢れは 19 倍して r0 へ — 2^255 ≡ 19。最後に r0 → r1 をもう 1 回 —
 // 書いた limb は r1 だけ 2^51 + 2^13 未満・他は 2^51 未満）
 func carry(w mut []int, d int, r0 int, r1 int, r2 int, r3 int, r4 int) {
     c0 := r0 >> 51
@@ -140,17 +140,17 @@ func carry(w mut []int, d int, r0 int, r1 int, r2 int, r3 int, r4 int) {
     w[d + 4] = s4 & mask51
 }
 
-// fadd は区画 d = a + b（limb の和は 2^53 未満）
+// 区画 d = a + b（limb の和は 2^53 未満）
 func fadd(w mut []int, d int, a int, b int) {
     carry(mut w, d, w[a] + w[b], w[a + 1] + w[b + 1], w[a + 2] + w[b + 2], w[a + 3] + w[b + 3], w[a + 4] + w[b + 4])
 }
 
-// fsub は区画 d = a - b（2p を足して非負に保つ — 2p の limb は 2^52 - 38 / 2^52 - 2 で、b の limb〔< 2^51 + 2^13〕より大きい）
+// 区画 d = a - b（2p を足して非負に保つ — 2p の limb は 2^52 - 38 / 2^52 - 2 で、b の limb〔< 2^51 + 2^13〕より大きい）
 func fsub(w mut []int, d int, a int, b int) {
     carry(mut w, d, w[a] + 0xfffffffffffda - w[b], w[a + 1] + 0xffffffffffffe - w[b + 1], w[a + 2] + 0xffffffffffffe - w[b + 2], w[a + 3] + 0xffffffffffffe - w[b + 3], w[a + 4] + 0xffffffffffffe - w[b + 4])
 }
 
-// fmul は区画 d = a × b mod p（d は a / b と同じでよい — 入力を全部読んでから書く）。limb < 2^52 の前提で、乗数 x = a × 2^12 < 2^64・
+// 区画 d = a × b mod p（d は a / b と同じでよい — 入力を全部読んでから書く）。limb < 2^52 の前提で、乗数 x = a × 2^12 < 2^64・
 // 相手 y = b か 19b < 2^57: 積 < 2^109 → 上 < 2^57。列 k の和 = l_k + h_k × 2^52（5 項 — l < 2^55・h < 2^60）。h_k × 2 を列 k + 1 へ、
 // h_4 × 2 は 19 倍して列 0 へ（2^61 × 19 は溢れるので 51 bit で割って列 0 と列 1 に分ける）。どの列の和も 2^62 未満で carry に渡せる
 func fmul(w mut []int, d int, a int, b int) {
@@ -182,7 +182,7 @@ func fmul(w mut []int, d int, a int, b int) {
     carry(mut w, d, l0 + 19 * (g & mask51), l1 + 2 * h0 + 19 * (g >> 51), l2 + 2 * h1, l3 + 2 * h2, l4 + 2 * h3)
 }
 
-// invert は区画 d = z^(p-2)（p - 2 = 2^255 - 21 — 指数は公開の値なので普通の二乗と掛け算。d と z は別の区画）
+// 区画 d = z^(p-2)（p - 2 = 2^255 - 21 — 指数は公開の値なので普通の二乗と掛け算。d と z は別の区画）
 func invert(w mut []int, d int, z int) {
     for i <- iter.Range(0, 5) {
         w[d + i] = 0
@@ -198,7 +198,7 @@ func invert(w mut []int, d int, z int) {
     }
 }
 
-// unpack は 32 バイト（小さい端・最上位のビットは捨てる）の元を区画 d へ
+// 32 バイト（小さい端・最上位のビットは捨てる）の元を区画 d へ
 func unpack(w mut []int, d int, b []byte) {
     for i <- iter.Range(0, 5) {
         w[d + i] = 0
@@ -209,7 +209,7 @@ func unpack(w mut []int, d int, b []byte) {
     }
 }
 
-// pack は区画 d を完全に mod p に縮めた 32 バイト（小さい端 — ref10 の fe_tobytes の形）。q = ⌊(h + 19) / 2^255⌋（h < 2p なので 0 か 1 —
+// 区画 d を完全に mod p に縮めた 32 バイト（小さい端 — ref10 の fe_tobytes の形）。q = ⌊(h + 19) / 2^255⌋（h < 2p なので 0 か 1 —
 // 繰り上げの鎖だけで分岐なしに出る）を出して h + 19q を繰り上げ、2^255 の位を捨てると h - qp
 func pack(w []int, d int) []byte {
     mut q := (w[d] + 19) >> 51

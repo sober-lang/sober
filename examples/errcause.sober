@@ -1,8 +1,8 @@
 package main
 
-// R4b（region 多相の裁定 — cause K1''）の検証例: 包み替え `f()? L{...}` は内側の error を捨てず鎖に積み、
+// 検証例: 包み替え `f()? L{...}` は内側の error を捨てず鎖に積み、
 // `case L{..., cause}` で 1 段ずつ辿れる。error = 先頭ラベル + 鎖（imm []L）。ラベルの string は
-// 呼び手の引数・callee で構築したものが混ざり、`?` の脱出（jump の境界コピー — R4b α）と戻りの深い relocate（R4a）で
+// 呼び手の引数・callee で構築したものが混ざり、`?` の脱出（jump の境界コピー）と戻りの深い relocate で
 // 鎖ごと呼び手の region へ写る
 
 type NotFound error {

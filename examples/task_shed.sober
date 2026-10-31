@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P5-4（language.md 11 節「shed」・「天井の木」）: task.SpawnIn は名前つきプールの天井に入れなければ縮退せず (nil, Shed{}) を返す
+// language.md 11 節「shed」・「天井の木」: task.SpawnIn は名前つきプールの天井に入れなければ縮退せず (nil, Shed{}) を返す
 // （受けられない、という値 — io の入力）。shed の単位 = プールの節（親のプールの天井も見る）。子と子の中の Spawn はプールの天井の下に計上される。
 // 天井 0 のプールは常に shed・天井の大きいプールは常に入場（ワーカーの数・スケジュールに依らない）
 
@@ -10,7 +10,7 @@ func fib(n int) int {
     return if n < 2 { n } else { fib(n - 1) + fib(n - 2) }
 }
 
-// serve はプール p で n 件の仕事を受け、(受けた件の結果の和, shed の件数)
+// プール p で n 件の仕事を受け、(受けた件の結果の和, shed の件数)
 func serve(p task.Pool, n int) (int, int) {
     r, e := task.Run((s task.Scope) => {
         mut hs := mut []task.Handle[int]{}

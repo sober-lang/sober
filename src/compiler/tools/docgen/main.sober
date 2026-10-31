@@ -1,6 +1,6 @@
 package main
 
-// docgen: std リファレンスの生成器（docs 補完 B-1 — report-903 の 3〜4 節）。合成の entry（std の全 package を import する main — scripts/stdref.sh が
+// docgen: std リファレンスの生成器。合成の entry（std の全 package を import する main — scripts/stdref.sh が
 // stage2.sh の L0 と同じ列挙で書く）を loader で読み、std/internal を除く各 package の公開の宣言を、ソースの出現順に docs/std/<package>.ja.md へ書く。
 // 署名は .sobi と同じ印字器（printer.FuncDeclText の署名だけの形・TypeDeclText・ConstText — 畳める const は畳んだ値）で印字する。
 // doc コメントはパーサの木に無いので、宣言の名前の字句の位置からソースのバイト列を直前へ遡って取る（注釈の行を飛ばし、連続した `//` 行）。
@@ -20,7 +20,7 @@ import "ast"
 import "loader"
 import "printer"
 
-// Src は package の 1 ファイル（生のソースを parse し直した木 — loader の写しの前）
+// package の 1 ファイル（生のソースを parse し直した木 — loader の写しの前）
 type Src struct {
     path string
     src []byte
@@ -28,13 +28,13 @@ type Src struct {
     ts []lexer.Token
 }
 
-// Member は型の欄か variant 1 つ（doc は直前の `//` 行か行末のコメント — 無ければ ""）
+// 型の欄か variant 1 つ（doc は直前の `//` 行か行末のコメント — 無ければ ""）
 type Member struct {
     name string
     doc string
 }
 
-// Decl は公開の宣言 1 つ（kind 0 = 型・1 = 関数・2 = const・3 = std の @intrinsic・4 = loader が合成する口〔`// 合成:` の塊 — synthDecls〕）
+// 公開の宣言 1 つ（kind 0 = 型・1 = 関数・2 = const・3 = std の @intrinsic・4 = loader が合成する口〔`// 合成:` の塊 — synthDecls〕）
 type Decl struct {
     name string
     kind int
@@ -49,7 +49,7 @@ type Decl struct {
     members []Member
 }
 
-// Cfg は生成の置き場（root = リポジトリの根 — examples/ と docs/language.md を引く・en = 英訳表の置き場・out = 書き出し先）
+// 生成の置き場（root = リポジトリの根 — examples/ と docs/language.md を引く・en = 英訳表の置き場・out = 書き出し先）
 type Cfg struct {
     root string
     en string
@@ -57,7 +57,7 @@ type Cfg struct {
     head string
 }
 
-// Stat は lint と欄の doc の数え上げ
+// lint と欄の doc の数え上げ
 type Stat struct {
     decls int
     warns int
@@ -110,7 +110,7 @@ func lineNo(src []byte, at int) int {
     return n
 }
 
-// commentText は `//` の行 [a, b)（a は `//` の位置）の中身（`//` と直後の空白 1 つを外し、行末の空白を落とす）
+// `//` の行 [a, b)（a は `//` の位置）の中身（`//` と直後の空白 1 つを外し、行末の空白を落とす）
 func commentText(src []byte, a int, b int) string {
     mut s := a + 2
     if s < b && src[s] == ' ' {
@@ -127,7 +127,7 @@ func isComment(src []byte, a int, b int) bool {
     return b - a >= 2 && src[a] == '/' && src[a + 1] == '/'
 }
 
-// docBefore は位置 at の行の直前の doc コメント（注釈の行 `@…` は doc の前に限り飛ばす — doc は注釈の上に書く）
+// 位置 at の行の直前の doc コメント（注釈の行 `@…` は doc の前に限り飛ばす — doc は注釈の上に書く）
 func docBefore(src []byte, at int) []string {
     mut rev := mut []string{}
     mut ls := lineStart(src, at)
@@ -154,7 +154,7 @@ func docBefore(src []byte, at int) []string {
     return freeze(out)
 }
 
-// tailComment は位置 at の行の末尾のコメント（at より後の ` //` — 引用符を越えた先は見ない。無ければ ""）
+// 位置 at の行の末尾のコメント（at より後の ` //` — 引用符を越えた先は見ない。無ければ ""）
 func tailComment(src []byte, at int) string {
     e := lineEnd(src, at)
     mut i := at
@@ -170,7 +170,7 @@ func tailComment(src []byte, at int) string {
     return ""
 }
 
-// pkgDoc は `package x` の行の後の塊（空行を飛ばした最初の `//` の連続 — 塊の次が空行か import か終わりのときだけ。宣言に付いていれば宣言の doc）
+// `package x` の行の後の塊（空行を飛ばした最初の `//` の連続 — 塊の次が空行か import か終わりのときだけ。宣言に付いていれば宣言の doc）
 func pkgDoc(src []byte) []string {
     mut i := 0
     while i < len(src) && !(lineStart(src, i) == i && strings.HasPrefix(str(src[i:lineEnd(src, i)]), "package ")) {
@@ -204,7 +204,7 @@ func isPublic(s string) bool {
     return len(b) > 0 && int(b[0]) >= 65 && int(b[0]) <= 90
 }
 
-// memberDoc は欄・variant の名前の字句 at の doc（直前の `//` 行 — 同じ行に前の欄が無いとき — か行末のコメント）
+// 欄・variant の名前の字句 at の doc（直前の `//` 行 — 同じ行に前の欄が無いとき — か行末のコメント）
 func memberDoc(src []byte, at int) string {
     ls := lineStart(src, at)
     if skipSpace(src, ls, at) == at {
@@ -237,7 +237,7 @@ func members(s Src, body ast.Node) []Member {
     return freeze(out)
 }
 
-// labelsOf は関数の `@errors(…)` のラベル名（無ければ空）
+// 関数の `@errors(…)` のラベル名（無ければ空）
 func labelsOf(t ast.Tree, x ast.Node) []string {
     mut out := mut []string{}
     if t.data[x.f] >= 6 && t.data[x.f + 6] >= 0 {
@@ -260,7 +260,7 @@ func constIndex(p loader.Program, f int, n int) int {
 
 const minInt = -9223372036854775807 - 1
 
-// constSig は const の印字（.sobi と同じ — 畳める const は畳んだ値・他は原文の宣言）
+// const の印字（.sobi と同じ — 畳める const は畳んだ値・他は原文の宣言）
 func constSig(p loader.Program, f int, t ast.Tree, n int, name string) string {
     ci := constIndex(p, f, n)
     if ci >= 0 && !p.c_dict[ci] && p.c_has[ci] {
@@ -291,7 +291,7 @@ func mkDecl(p loader.Program, fi int, s Src, k int, n int, kind int) Decl {
         tail: tailComment(s.src, at), lead: if grouped { constName(s.src, top) } else { name }, labels: lb, members: ls}
 }
 
-// groupTop は位置 at の const の行から、空行を挟まず上に続く `const` の行の先頭（群の先頭の行の始まり）
+// 位置 at の const の行から、空行を挟まず上に続く `const` の行の先頭（群の先頭の行の始まり）
 func groupTop(src []byte, at int) int {
     mut ls := lineStart(src, at)
     mut more := true
@@ -306,7 +306,7 @@ func groupTop(src []byte, at int) int {
     return ls
 }
 
-// constName は `const 名前 = …` の行（行の始まり ls）の名前
+// `const 名前 = …` の行（行の始まり ls）の名前
 func constName(src []byte, ls int) string {
     mut a := ls + 6
     mut b := a
@@ -329,7 +329,7 @@ func pushDecls(out mut []Decl, p loader.Program, fi int, s Src, k int, l int, ki
     }
 }
 
-// synthName は合成の口の印字（`func Decode[T](…) …` / `const Size[T] int`）の名前
+// 合成の口の印字（`func Decode[T](…) …` / `const Size[T] int`）の名前
 func synthName(sig string) string {
     rest := strings.TrimPrefix(strings.TrimPrefix(sig, "func "), "const ")
     b := bytes(rest)
@@ -340,7 +340,7 @@ func synthName(sig string) string {
     return str(b[0:e])
 }
 
-// pushSynth はファイル s の `// 合成: <印字>` で始まる塊（前後が空行のコメントの塊 — 宣言に付かない）を合成の口の宣言として足す。
+// ファイル s の `// 合成: <印字>` で始まる塊（前後が空行のコメントの塊 — 宣言に付かない）を合成の口の宣言として足す。
 // std に実体が無く loader の固定テンプレートが呼び出しを写す口（layout.Decode[T]・json.Decode[T] 等）の doc の置き場 — 印字は手書き（language.md の該当節が正）
 func pushSynth(out mut []Decl, s Src, k int) {
     src := s.src
@@ -379,7 +379,7 @@ func pushSynth(out mut []Decl, s Src, k int) {
     }
 }
 
-// declsOf は package の公開の宣言（ファイル順 × ファイルの中の出現順）
+// package の公開の宣言（ファイル順 × ファイルの中の出現順）
 func declsOf(p loader.Program, fis []int, srcs []Src) []Decl {
     mut out := mut []Decl{}
     for k <- iter.Range(0, len(srcs)) {
@@ -410,7 +410,7 @@ func declsOf(p loader.Program, fis []int, srcs []Src) []Decl {
 
 // ── doc の本文 ──
 
-// Body は doc コメントを読んだ結果（段落・例のパス・対の注記の語）
+// doc コメントを読んだ結果（段落・例のパス・対の注記の語）
 type Body struct {
     paras []string
     examples []string
@@ -427,7 +427,7 @@ func isAsciiStart(s string) bool {
     return len(b) > 0 && int(b[0]) < 128
 }
 
-// pairNote は段落から「（対の X は実需まで足さない …）」を抜いた残りと X（無ければ ""）
+// 段落から「（対の X は実需まで足さない …）」を抜いた残りと X（無ければ ""）
 func pairNote(s string) (string, string) {
     before, after, found := strings.Cut(s, "（対の ")
     if !found {
@@ -441,12 +441,12 @@ func pairNote(s string) (string, string) {
     return before + rest, x
 }
 
-// joinLine は段落の中の行の継ぎ（ASCII どうしか「—」の後だけ空白 — 日本語の行の折り返しは詰める）
+// 段落の中の行の継ぎ（ASCII どうしか「—」の後だけ空白 — 日本語の行の折り返しは詰める）
 func joinLine(cur string, l string) string {
     return cur + (if (isAsciiEnd(cur) && isAsciiStart(l)) || strings.HasSuffix(cur, "—") { " " } else { "" }) + l
 }
 
-// hasStr は xs に s があるか
+// xs に s があるか
 func hasStr(xs []string, s string) bool {
     for i <- iter.Range(0, len(xs)) {
         if xs[i] == s {
@@ -456,7 +456,7 @@ func hasStr(xs []string, s string) bool {
     return false
 }
 
-// readBody は doc の行（と宣言の行末のコメント）を段落に組む。空の行で段落を切り、段落の中の行は joinLine で継ぐ。
+// doc の行（と宣言の行末のコメント）を段落に組む。空の行で段落を切り、段落の中の行は joinLine で継ぐ。
 // `- ` で始まる行は箇条（行を保つ — 2 字下げの行は前の項目の続き）・4 字下げの行はコードの塊（段落を ```sober で包む）
 func readBody(lines []string, tail string) Body {
     mut paras := mut []string{}
@@ -524,7 +524,7 @@ func isCode(p string) bool {
     return strings.HasPrefix(p, "```")
 }
 
-// escape は markdown の記号（`<`・`*`・`_`）をコードの区間 `…` の外でだけ逃がす（HTML のタグ・強調に読まれないように）
+// markdown の記号（`<`・`*`・`_`）をコードの区間 `…` の外でだけ逃がす（HTML のタグ・強調に読まれないように）
 func escape(s string) string {
     b := bytes(s)
     mut o := builder.Builder[byte]{}
@@ -542,7 +542,7 @@ func escape(s string) string {
     return str(builder.Build(mut o))
 }
 
-// bareSecs は段落の中の裸の `N 節`（`language.md N 節` でない節の参照 — 他の文書 `x.md N 節` と `RFC NNNN N 節` は数えない）の N の列。
+// 段落の中の裸の `N 節`（`language.md N 節` でない節の参照 — 他の文書 `x.md N 節` と `RFC NNNN N 節` は数えない）の N の列。
 // `2・4 節` の列挙は先頭の数の前を見る
 func bareSecs(s string) []int {
     b := bytes(outsideCode(s))
@@ -582,7 +582,7 @@ func bareSecs(s string) []int {
     return freeze(out)
 }
 
-// rfcBefore は位置 h の直前が `RFC <数> ` か
+// 位置 h の直前が `RFC <数> ` か
 func rfcBefore(b []byte, h int) bool {
     if h < 2 || b[h - 1] != ' ' {
         return false
@@ -594,7 +594,7 @@ func rfcBefore(b []byte, h int) bool {
     return a < h - 1 && strings.HasSuffix(str(b[0:a]), "RFC ")
 }
 
-// outsideCode はコードの区間 `…` を除いた文字列（強調の記号の検査用 — `xoshiro128**` のような綴りは区間の中なら太字にならない）
+// コードの区間 `…` を除いた文字列（強調の記号の検査用 — `xoshiro128**` のような綴りは区間の中なら太字にならない）
 func outsideCode(s string) string {
     b := bytes(s)
     mut o := builder.Builder[byte]{}
@@ -609,7 +609,7 @@ func outsideCode(s string) string {
     return str(builder.Build(mut o))
 }
 
-// secRefs は段落の中の `language.md N 節` の N の列
+// 段落の中の `language.md N 節` の N の列
 func secRefs(s string) []int {
     mut out := mut []int{}
     mut rest := s
@@ -639,7 +639,7 @@ func leadingInt(s string) (int, int) {
     return n, i
 }
 
-// linkSecs は `language.md N 節` を決定の記録へのリンクに（節の中の位置への錨は振らない — 見出しの錨は経緯の文を含むので不安定）
+// `language.md N 節` を決定の記録へのリンクに（節の中の位置への錨は振らない — 見出しの錨は経緯の文を含むので不安定）
 func linkSecs(s string) string {
     mut o := ""
     mut rest := s
@@ -696,7 +696,7 @@ func isDigit(c byte) bool {
     return c >= '0' && c <= '9'
 }
 
-// hasDate は `dddd-dd-dd` を含むか
+// `dddd-dd-dd` を含むか
 func hasDate(s string) bool {
     b := bytes(s)
     mut i := 0
@@ -710,7 +710,7 @@ func hasDate(s string) bool {
     return false
 }
 
-// hasPhase は作業の段の符丁（`P3a`・`P5-3` — 英数字の後でない P の直後に数字）を含むか
+// 作業の段の符丁（`P3a`・`P5-3` — 英数字の後でない P の直後に数字）を含むか
 func hasPhase(s string) bool {
     b := bytes(s)
     for i <- iter.Range(0, len(b) - 1) {
@@ -721,7 +721,7 @@ func hasPhase(s string) bool {
     return false
 }
 
-// jargon は内部の符丁の種類の列（report-N・便・段 N・日付・P3a 形）
+// 内部の符丁の種類の列（report-N・便・段 N・日付・P3a 形）
 func jargon(s string) []string {
     mut out := mut []string{}
     if hasDigitAfter(s, "report-") {
@@ -742,12 +742,12 @@ func jargon(s string) []string {
     return freeze(out)
 }
 
-// isIdentByte は識別子の字か
+// 識別子の字か
 func isIdentByte(c byte) bool {
     return c == '_' || isDigit(c) || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
 
-// skipTo は b の i から閉じの字 c の直後へ（無ければ len(b)）
+// b の i から閉じの字 c の直後へ（無ければ len(b)）
 func skipTo(b []byte, i int, c byte) int {
     mut k := i
     while k < len(b) && b[k] != c {
@@ -756,7 +756,7 @@ func skipTo(b []byte, i int, c byte) int {
     return if k < len(b) { k + 1 } else { k }
 }
 
-// namedLead は doc の 1 文目が「<名前> は」で始まるか（規約違反 — 宣言の直下で読むので名前の繰り返しは要らない）。
+// doc の 1 文目が「<名前> は」で始まるか（規約違反 — 宣言の直下で読むので名前の繰り返しは要らない）。
 // 名前の後の `[T]`・`(a, b)`・`・名前`・`.名前` の続きも同じ形として見る
 func namedLead(doc string, name string) bool {
     if name == "" || !strings.HasPrefix(doc, name) {
@@ -789,7 +789,7 @@ func namedLead(doc string, name string) bool {
     return strings.HasPrefix(str(b[k:len(b)]), "は")
 }
 
-// lintText は doc の文字列 1 本（段落か欄の doc）の符丁・節の実在・強調を見る
+// doc の文字列 1 本（段落か欄の doc）の符丁・節の実在・強調を見る
 func lintText(o mut builder.Builder[byte], st mut Stat, secs []bool, at string, name string, s string) {
     if isCode(s) {
         return
@@ -864,18 +864,18 @@ func isTypeIn(ds []Decl, name string) bool {
     return false
 }
 
-// firstSentence は段落の 1 文目（最初の「。」まで — 無ければ段落全体）
+// 段落の 1 文目（最初の「。」まで — 無ければ段落全体）
 func firstSentence(s string) string {
     a, _, found := strings.Cut(s, "。")
     return if found { a + "。" } else { s }
 }
 
-// docHash は英訳表の照合に使う原文の印（doc の行と行末のコメントの crc32）
+// 英訳表の照合に使う原文の印（doc の行と行末のコメントの crc32）
 func docHash(lines []string, tail string) string {
     return convert.FormatInt(crc32.Sum(bytes(strings.Join(lines, "\n") + "\n" + tail)))
 }
 
-// enCheck は英訳表 docs/std/en/<package>.json（{"<名前>": {"hash": "…", "doc": "…"}, "": パッケージの doc}）の古さを見る（B-1 は機構だけ — 表が無ければ 1 本の警告）
+// 英訳表 docs/std/en/<package>.json（{"<名前>": {"hash": "…", "doc": "…"}, "": パッケージの doc}）の古さを見る（B-1 は機構だけ — 表が無ければ 1 本の警告）
 func enCheck(o mut builder.Builder[byte], st mut Stat, cfg Cfg, path string, names []string, hashes []string) {
     jp := "${cfg.en}/${flat(path)}.json"
     src := io.ReadFile(jp) catch {
@@ -911,7 +911,7 @@ func readExample(cfg Cfg, ex string) string {
     return str(b)
 }
 
-// genPkg は package 1 つのページ（戻りは README の一覧の 1 文目と索引の行）
+// package 1 つのページ（戻りは README の一覧の 1 文目と索引の行）
 func genPkg(o mut builder.Builder[byte], st mut Stat, cfg Cfg, secs []bool, path string, srcs []Src, ds []Decl) (string, []string) {
     mut pg := builder.Builder[byte]{}
     builder.PushString(mut pg, "# ${path}\n\n日本語\n\n`import \"${path}\"`\n\n")
@@ -1018,7 +1018,7 @@ func genPkg(o mut builder.Builder[byte], st mut Stat, cfg Cfg, secs []bool, path
     return summary, freeze(index)
 }
 
-// trimEnd は末尾の空行を 1 つの改行に
+// 末尾の空行を 1 つの改行に
 func trimEnd(b []byte) []byte {
     mut e := len(b)
     while e > 0 && b[e - 1] == '\n' {
@@ -1032,7 +1032,7 @@ func trimEnd(b []byte) []byte {
     return freeze(o)
 }
 
-// sections は language.md の節の番号の表（`### N.` の見出し — 添字 N が true）
+// language.md の節の番号の表（`### N.` の見出し — 添字 N が true）
 func sections(root string) []bool {
     mut out := mut []bool{}
     src := io.ReadFile("${root}/docs/language.md") catch return freeze(out)
@@ -1124,7 +1124,7 @@ func cmdGen(stdDir string, entry string, cfg Cfg) int {
     return 0
 }
 
-// less はバイト列の辞書順
+// バイト列の辞書順
 func less(a string, b string) bool {
     x := bytes(a)
     y := bytes(b)
@@ -1155,7 +1155,7 @@ func sortStrings(xs []string) []string {
     return freeze(ys)
 }
 
-// readme は docs/std/README.ja.md（前文 = cfg.head の写し + package の一覧 + 名前の索引）
+// docs/std/README.ja.md（前文 = cfg.head の写し + package の一覧 + 名前の索引）
 func readme(cfg Cfg, rows []string, index []string) {
     mut b := builder.Builder[byte]{}
     head := io.ReadFile(cfg.head) catch []byte{}

@@ -21,7 +21,7 @@ stat() {   # stat <題材> → $W/<鍵>.txt
     [ -f "$W/$key.txt" ] && { echo "$W/$key.txt"; return; }
     if [ "$src" = @self ]; then
         mkdir -p "$W/tree"; cp -r src/compiler/. "$W/tree/"; cp -r src/std "$W/tree/std"
-        (cd "$W/tree" && SOBER_WORKERS=1 "$S2" build app/main.sober --frame-stat -o "$W/x" > "$W/$key.txt" 2> "$W/err") || { echo "FAIL build $src" >&2; cat "$W/err" >&2; return 1; }
+        (cd "$W/tree" && SOBER_WORKERS=1 "$S2" build app --frame-stat -o "$W/x" > "$W/$key.txt" 2> "$W/err") || { echo "FAIL build $src" >&2; cat "$W/err" >&2; return 1; }
     else
         "$S2" build "$src" --frame-stat -o "$W/x" > "$W/$key.txt" 2> "$W/err" || { echo "FAIL build $src" >&2; cat "$W/err" >&2; return 1; }
     fi

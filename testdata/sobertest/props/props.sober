@@ -1,0 +1,35 @@
+package props
+
+// sober test の std/quick の網の題材（和・逆順）
+
+func Sum(xs []int) int {
+    mut t := 0
+    for x <- xs {
+        t = t + x
+    }
+    return t
+}
+
+func Rev(xs []int) []int {
+    mut out := []int{}
+    mut i := len(xs) - 1
+    while i >= 0 {
+        out = append(out, xs[i])
+        i = i - 1
+    }
+    return out
+}
+
+func Same(a []int, b []int) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    mut i := 0
+    while i < len(a) {
+        if a[i] != b[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}

@@ -1719,6 +1719,22 @@ b0:
   ret %7
 }
 
+func @rt.sigint() {
+b0:
+  %0 = const 231
+  %1 = const 130
+  %2 = syscall(%0, %1)
+  exit 130
+}
+
+func @rt.sigterm() {
+b0:
+  %0 = const 231
+  %1 = const 143
+  %2 = syscall(%0, %1)
+  exit 143
+}
+
 export func @sober_entry(%0 ptr) {
 b0:
   %1 = globaladdr @rt.meta
@@ -2320,20 +2336,4 @@ b93:
   %409 = const 231
   %410 = syscall(%409, %406)
   exit 0
-}
-
-func @rt.sigterm() {
-b0:
-  %0 = const 231
-  %1 = const 143
-  %2 = syscall(%0, %1)
-  exit 143
-}
-
-func @rt.sigint() {
-b0:
-  %0 = const 231
-  %1 = const 130
-  %2 = syscall(%0, %1)
-  exit 130
 }

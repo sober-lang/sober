@@ -31,6 +31,6 @@ for src in "${entries[@]}"; do
     one . "$src" "$src"
 done
 mkdir -p "$W/tree"; cp -r src/compiler/. "$W/tree/"; cp -r src/std "$W/tree/std"
-one "$W/tree" app/main.sober src/compiler/app
+one "$W/tree" app src/compiler/app
 echo "fitcheck: $n entries — ELF with windows spliced (no padding) ≡ ELF without windows, fail=$fail"
 [ "$fail" = 0 ]

@@ -106,6 +106,8 @@ sober build app/main.sober -o gcd && ./gcd    # 12
 sober check app/main.sober                     # 型検査と解析器だけ — 結果は JSON の 1 行
 ```
 
+型の誤りがあると、JSON の行（`"ok":false`）の前に、標準エラーへ `sober: type error at app/main.sober:4:14` の形で位置を 1 行出します。
+
 ## テストを書く
 
 package の中の `*_test.sober` の `func TestXxx()` がテストです。`assert` はテストのファイルの中だけで使えます。

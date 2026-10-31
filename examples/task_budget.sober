@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P5-3（language.md 11 節「予算と admission」）: budget: の宣言 — Spawn / Map / Scope の末尾の名前付き引数（省略可・値に出ない）。
+// budget: の宣言（language.md 11 節「予算と admission」）— Spawn / Map / Scope の末尾の名前付き引数（省略可・値に出ない）。
 // Scope の budget: は天井の節（入れ子 — 各段が上限）・Spawn / Map の budget: はその子を逐次で走らせたときの上界（入場の見積もりの代わり）。
 // 天井を超える子はその場で縮退する（値・出力の順は子を先にのスケジュールと同じ）。give: の子は常に入場（超過を記帳）
 

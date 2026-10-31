@@ -1,0 +1,318 @@
+package loader
+
+// `assert(e)`（power assert。`_test.sober` だけの語彙）を脱糖の固定テンプレートで写す:
+//
+//     assert(f(x) == m + 1)
+//  →  { $aK0 := f(x); $aK1 := m + 1; if !($aK0 == $aK1) { $testing.Fail("f(x) == m + 1", []string{"f(x) = ${$aK0}", "m + 1 = ${$aK1}"}) } }
+//
+// 割る深さ: 最上位が比較（== != < <= > >=）なら両辺・呼び出しなら各実引数（と呼び出しの値）・`!x` なら x・それ以外は式全体を 1 つ。
+// `&&` / `||` は短絡を保つため割らない（全体を 1 つ）。部分式は書いた順に 1 回だけ評価する。値の印字は補間（int / bool / string — T6）。
+// リテラルの部分式（整数・文字列）は値の行を出さない
+// 失敗は std/testing.Fail（標準エラーへ印字して panic — exit 101）。式の綴りは printer.Expr。
+// parser が `assert(…)` を持つファイルに std/testing と std/strings の暗黙 import（$testing・$strings）を足す。`_test.sober` の外の assert は拒否
+
+import "std/builder"
+import "std/iter"
+import "std/strings"
+import "ast"
+import "lexer"
+import "printer"
+import "diag"
+
+// 全ファイルの assert を写す（`_test.sober` の外の assert は拒否）
+@errors(diag.AssertOutsideTest)
+func assertsAll(ts []ast.Tree, paths []string) ([]ast.Tree, error?) {
+    mut out := mut []ast.Tree{}
+    for i <- iter.Range(0, len(ts)) {
+        t := ts[i]
+        test := strings.HasSuffix(paths[i], "_test.sober")
+        if !test {
+            for n <- iter.Range(0, len(t.nodes)) {
+                if isAssert(t, t.nodes[n]) {
+                    return []ast.Tree{}, diag.AssertOutsideTest{at: diag.Pos{file: i, tok: t.nodes[t.nodes[n].a].tok}}
+                }
+            }
+        }
+        out = append(out, if test { asserts(t) } else { t })
+    }
+    return freeze(out), nil
+}
+
+// 節 x が `assert(e)` か `$qassert(g, e)`（quickx.sober の写し — 偽で g が真のときだけ落ち、e の真偽を値にする）か
+func isAssertLike(t ast.Tree, x ast.Node) bool {
+    return isAssert(t, x) || isQAssert(t, x)
+}
+
+func isQAssert(t ast.Tree, x ast.Node) bool {
+    if x.kind != ast.ECall || ast.ListLen(t, x.b) != 2 {
+        return false
+    }
+    c := t.nodes[x.a]
+    return c.kind == ast.EIdent && StrIs(t, c.a, "$qassert")
+}
+
+// 節 x が `assert(e)`（実引数 1 つ）か
+func isAssert(t ast.Tree, x ast.Node) bool {
+    if x.kind != ast.ECall || ast.ListLen(t, x.b) != 1 {
+        return false
+    }
+    c := t.nodes[x.a]
+    return c.kind == ast.EIdent && StrIs(t, c.a, "assert")
+}
+
+// 演算子 op が比較か
+func isCmp(op int) bool {
+    return op == lexer.EqualEqual || op == lexer.BangEqual || op == lexer.Less || op == lexer.LessEqual || op == lexer.Greater || op == lexer.GreaterEqual
+}
+
+// 木 t の assert を写した木（節は末尾に足し、assert の呼び出しの節をその場でブロックに差し替える）
+func asserts(t ast.Tree) ast.Tree {
+    n0 := len(t.nodes)
+    mut found := false
+    for i <- iter.Range(0, n0) {
+        if isAssertLike(t, t.nodes[i]) {
+            found = true
+        }
+    }
+    if !found {
+        return t
+    }
+    mut ns := mut []ast.Node{}
+    for i <- iter.Range(0, n0) {
+        ns = append(ns, t.nodes[i])
+    }
+    mut nb := builder.Builder[ast.Node]{}
+    mut db := builder.Builder[int]{}
+    for j <- iter.Range(0, len(t.data)) {
+        builder.Push(mut db, t.data[j])
+    }
+    mut k := 0
+    for i <- iter.Range(0, n0) {
+        x := t.nodes[i]
+        if isAssertLike(t, x) {
+            tok := x.tok
+            qa := isQAssert(t, x)
+            e := ast.ListAt(t, x.b, if qa { 1 } else { 0 })
+            ex := t.nodes[e]
+            // 割る部分式の列と、束縛の名前で組み直した条件（cond は後で節を足す）
+            mut parts := mut []int{}
+            mut kind := 0
+            if ex.kind == ast.EBinary && isCmp(ex.a) {
+                parts = append(parts, ex.b)
+                parts = append(parts, ex.c)
+                kind = 1
+            } else if ex.kind == ast.ECall {
+                for j <- iter.Range(0, ast.ListLen(t, ex.b)) {
+                    parts = append(parts, ast.ListAt(t, ex.b, j))
+                }
+                kind = 2
+            } else if ex.kind == ast.EUnary && ex.a == lexer.Bang {
+                parts = append(parts, ex.b)
+                kind = 3
+            } else {
+                parts = append(parts, e)
+            }
+            ps := freeze(parts)
+            // 束縛と名前の節
+            mut stmts := mut []int{}
+            mut ids := mut []int{}
+            mut lines := mut []int{}
+            for j <- iter.Range(0, len(ps)) {
+                pk0 := t.nodes[ps[j]].kind
+                if pk0 == ast.ENil || pk0 == ast.EInt || pk0 == ast.EStrlit {
+                    // リテラル（nil・整数・文字列）は束縛しない — 条件にそのまま残す（nil は型が無いので束縛できない）。綴りが値そのものなので行も出さない
+                    ids = append(ids, ps[j])
+                    continue
+                }
+                nm := ast.PutLit(mut db, "$a${k}p${j}")
+                at := n0 + builder.Len(mut nb)
+                builder.Push(mut nb, ast.Node{ast.SBind, tok, ast.PutList(mut db, []int{nm}), 0, ast.PutList(mut db, []int{ps[j]}), 0, 0, 0})
+                stmts = append(stmts, at)
+                builder.Push(mut nb, ast.Node{ast.EIdent, tok, nm, 0, 0, 0, 0, 0})
+                ids = append(ids, at + 1)
+                // 印字の行 "<綴り> = ${名前}"（リテラルの部分式は綴りが値そのものなので出さない）
+                pk := t.nodes[ps[j]].kind
+                if pk == ast.EInt || pk == ast.EStrlit || (ps[j] == e && pk != ast.EIdent) {
+                    // リテラルは綴りが値そのもの・式全体（割らない形 — `&&` 等）は見出しと同じなので行を出さない
+                    continue
+                }
+                txt := printer.Expr(t, ps[j])
+                l0 := ast.PutBytes(mut db, txt, 0, len(txt))
+                eq := ast.PutLit(mut db, " = ")
+                lit := concat2(mut db, l0, eq)
+                hole := n0 + builder.Len(mut nb)
+                builder.Push(mut nb, ast.Node{ast.EIdent, tok, nm, 0, 0, 0, 0, 0})
+                builder.Push(mut nb, ast.Node{ast.EInterp, tok, ast.PutList(mut db, []int{lit, ast.PutLit(mut db, "")}), ast.PutList(mut db, []int{hole}), 1, 0, 0, 0})
+                lines = append(lines, hole + 1)
+            }
+            // 式の中の名前（変数の参照）の値の行 — 名前は副作用がないので束縛せずに参照する。書いた順・同じ名前は 1 回・
+            // 辺として印字済みの名前は飛ばす。呼び出しの関数名・selector の基（package / struct）・true / false は除く
+            mut seen := mut []int{}
+            for j <- iter.Range(0, len(ps)) {
+                if t.nodes[ps[j]].kind == ast.EIdent {
+                    seen = append(seen, t.nodes[ps[j]].a)
+                }
+            }
+            names := identsOf(t, e)
+            for j <- iter.Range(0, len(names)) {
+                nm := t.nodes[names[j]].a
+                if !hasName(t, mut seen, nm) {
+                    seen = append(seen, nm)
+                    txt := printer.Expr(t, names[j])
+                    l0 := ast.PutBytes(mut db, txt, 0, len(txt))
+                    lit := concat2(mut db, l0, ast.PutLit(mut db, " = "))
+                    hole := n0 + builder.Len(mut nb)
+                    builder.Push(mut nb, ast.Node{ast.EIdent, tok, nm, 0, 0, 0, 0, 0})
+                    builder.Push(mut nb, ast.Node{ast.EInterp, tok, ast.PutList(mut db, []int{lit, ast.PutLit(mut db, "")}), ast.PutList(mut db, []int{hole}), 1, 0, 0, 0})
+                    lines = append(lines, hole + 1)
+                }
+            }
+            is := freeze(ids)
+            // 条件（割った名前で組み直す）
+            mut cond := e
+            c0 := n0 + builder.Len(mut nb)
+            if kind == 1 {
+                builder.Push(mut nb, ast.Node{ast.EBinary, ex.tok, ex.a, is[0], is[1], 0, 0, 0})
+                cond = c0
+            } else if kind == 2 {
+                builder.Push(mut nb, ast.Node{ast.ECall, ex.tok, ex.a, ast.PutList(mut db, is), 0, 0, 0, 0})
+                cond = c0
+            } else if kind == 3 {
+                builder.Push(mut nb, ast.Node{ast.EUnary, ex.tok, lexer.Bang, is[0], 0, 0, 0, 0})
+                cond = c0
+            } else {
+                cond = is[0]
+            }
+            // if !(cond) { $testing.Fail("<式>", []string{…}) }・$qassert は { $aKc := cond; if !$aKc && g { Fail(…) }; $aKc }
+            et := printer.Expr(t, e)
+            cv := if qa { ast.PutLit(mut db, "$a${k}c") } else { -1 }
+            if qa {
+                cb := n0 + builder.Len(mut nb)
+                builder.Push(mut nb, ast.Node{ast.SBind, tok, ast.PutList(mut db, []int{cv}), 0, ast.PutList(mut db, []int{cond}), 0, 0, 0})
+                stmts = append(stmts, cb)
+                builder.Push(mut nb, ast.Node{ast.EIdent, tok, cv, 0, 0, 0, 0, 0})
+                cond = cb + 1
+            }
+            b := n0 + builder.Len(mut nb)
+            builder.Push(mut nb, ast.Node{ast.EParen, tok, cond, 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EUnary, tok, lexer.Bang, b, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EIdent, tok, ast.PutLit(mut db, "$testing"), 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.ESelector, tok, b + 2, ast.PutLit(mut db, "Fail"), 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EStrlit, tok, ast.PutBytes(mut db, et, 0, len(et)), 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.TName, tok, ast.PutLit(mut db, "string"), 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.ESlicelit, tok, b + 5, ast.PutList(mut db, freeze(lines)), 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.ECall, tok, b + 3, ast.PutList(mut db, []int{b + 4, b + 6}), 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.SExpr, tok, b + 7, 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.KBlock, tok, ast.PutList(mut db, []int{b + 8}), 0, 0, 0, 0, 0})
+            mut guard := b + 1
+            if qa {
+                guard = n0 + builder.Len(mut nb)
+                builder.Push(mut nb, ast.Node{ast.EBinary, tok, lexer.AmpersandAmpersand, b + 1, ast.ListAt(t, x.b, 0), 0, 0, 0})
+            }
+            ifn := n0 + builder.Len(mut nb)
+            builder.Push(mut nb, ast.Node{ast.EIf, tok, guard, b + 9, 0 - 1, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.SExpr, tok, ifn, 0, 0, 0, 0, 0})
+            stmts = append(stmts, ifn + 1)
+            if qa {
+                // ブロックの値 = 条件の真偽
+                vn := n0 + builder.Len(mut nb)
+                builder.Push(mut nb, ast.Node{ast.EIdent, tok, cv, 0, 0, 0, 0, 0})
+                builder.Push(mut nb, ast.Node{ast.SExpr, tok, vn, 0, 0, 0, 0, 0})
+                stmts = append(stmts, vn + 1)
+            }
+            ns[i] = ast.Node{ast.EBlock, tok, ast.PutList(mut db, freeze(stmts)), 0, 0, 0, 0, 0}
+            k += 1
+        }
+    }
+    added := builder.Build(mut nb)
+    for i <- iter.Range(0, len(added)) {
+        ns = append(ns, added[i])
+    }
+    return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
+}
+
+// プールの文字列 a と b をつないだ文字列（[n, バイト…]）
+func concat2(db mut builder.Builder[int], a int, b int) int {
+    at := builder.Len(mut db)
+    na := builder.Get(mut db, a)
+    nb := builder.Get(mut db, b)
+    builder.Push(mut db, na + nb)
+    for i <- iter.Range(0, na) {
+        builder.Push(mut db, builder.Get(mut db, a + 1 + i))
+    }
+    for i <- iter.Range(0, nb) {
+        builder.Push(mut db, builder.Get(mut db, b + 1 + i))
+    }
+    return at
+}
+
+// 式 e の中の名前（変数の参照）の節を書いた順に（呼び出しの関数名・selector の基・true / false は除く）
+func identsOf(t ast.Tree, e int) []int {
+    mut out := mut []int{}
+    mut stack := mut []int{e}
+    mut sp := 1
+    while sp > 0 {
+        sp -= 1
+        n := stack[sp]
+        x := t.nodes[n]
+        // 子は右から積む（左から取り出す = 書いた順）
+        if x.kind == ast.EIdent {
+            if !StrIs(t, x.a, "true") && !StrIs(t, x.a, "false") && !StrIs(t, x.a, "_") {
+                out = append(out, n)
+            }
+        } else if x.kind == ast.EBinary {
+            sp = spPush(mut stack, sp, x.c)
+            sp = spPush(mut stack, sp, x.b)
+        } else if x.kind == ast.EIndex {
+            sp = spPush(mut stack, sp, x.b)
+            sp = spPush(mut stack, sp, x.a)
+        } else if x.kind == ast.EUnary {
+            sp = spPush(mut stack, sp, x.b)
+        } else if x.kind == ast.EParen {
+            sp = spPush(mut stack, sp, x.a)
+        } else if x.kind == ast.ECall {
+            mut j := ast.ListLen(t, x.b) - 1
+            while j >= 0 {
+                sp = spPush(mut stack, sp, ast.ListAt(t, x.b, j))
+                j -= 1
+            }
+            if t.nodes[x.a].kind != ast.EIdent && t.nodes[x.a].kind != ast.ESelector {
+                sp = spPush(mut stack, sp, x.a)
+            }
+        }
+    }
+    return freeze(out)
+}
+
+// 積み stack の深さ sp に x を置いて新しい深さを返す
+func spPush(stack mut []int, sp int, x int) int {
+    if sp < len(stack) {
+        stack[sp] = x
+    } else {
+        stack = append(stack, x)
+    }
+    return sp + 1
+}
+
+// 名前の列 xs に名前 nm（プールの文字列）があるか
+func hasName(t ast.Tree, xs mut []int, nm int) bool {
+    for i <- iter.Range(0, len(xs)) {
+        if strEqPool(t, xs[i], nm) {
+            return true
+        }
+    }
+    return false
+}
+
+// プールの文字列 a と b が同じ綴りか
+func strEqPool(t ast.Tree, a int, b int) bool {
+    if t.data[a] != t.data[b] {
+        return false
+    }
+    for i <- iter.Range(0, t.data[a]) {
+        if t.data[a + 1 + i] != t.data[b + 1 + i] {
+            return false
+        }
+    }
+    return true
+}

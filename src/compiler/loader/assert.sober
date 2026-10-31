@@ -1,14 +1,14 @@
 package loader
 
-// `assert(e)`（テスト基盤 T5 — power assert。`_test.sober` だけの語彙 — T7）を脱糖の固定テンプレートで写す:
+// `assert(e)`（power assert。`_test.sober` だけの語彙）を脱糖の固定テンプレートで写す:
 //
 //     assert(f(x) == m + 1)
 //  →  { $aK0 := f(x); $aK1 := m + 1; if !($aK0 == $aK1) { $testing.Fail("f(x) == m + 1", []string{"f(x) = ${$aK0}", "m + 1 = ${$aK1}"}) } }
 //
-// 割る深さ（裁定 A1）: 最上位が比較（== != < <= > >=）なら両辺・呼び出しなら各実引数（と呼び出しの値）・`!x` なら x・それ以外は式全体を 1 つ（A5）。
+// 割る深さ: 最上位が比較（== != < <= > >=）なら両辺・呼び出しなら各実引数（と呼び出しの値）・`!x` なら x・それ以外は式全体を 1 つ。
 // `&&` / `||` は短絡を保つため割らない（全体を 1 つ）。部分式は書いた順に 1 回だけ評価する。値の印字は補間（int / bool / string — T6）。
 // リテラルの部分式（整数・文字列）は値の行を出さない
-// 失敗は std/testing.Fail（標準エラーへ印字して panic — exit 101。A3 / A4）。式の綴りは printer.Expr。
+// 失敗は std/testing.Fail（標準エラーへ印字して panic — exit 101）。式の綴りは printer.Expr。
 // parser が `assert(…)` を持つファイルに std/testing と std/strings の暗黙 import（$testing・$strings）を足す。`_test.sober` の外の assert は拒否
 
 import "std/builder"
@@ -19,7 +19,7 @@ import "lexer"
 import "printer"
 import "diag"
 
-// assertsAll は全ファイルの assert を写す（`_test.sober` の外の assert は拒否）
+// 全ファイルの assert を写す（`_test.sober` の外の assert は拒否）
 @errors(diag.AssertOutsideTest)
 func assertsAll(ts []ast.Tree, paths []string) ([]ast.Tree, error?) {
     mut out := mut []ast.Tree{}
@@ -38,7 +38,20 @@ func assertsAll(ts []ast.Tree, paths []string) ([]ast.Tree, error?) {
     return freeze(out), nil
 }
 
-// isAssert は節 x が `assert(e)`（実引数 1 つ）か
+// 節 x が `assert(e)` か `$qassert(g, e)`（quickx.sober の写し — 偽で g が真のときだけ落ち、e の真偽を値にする）か
+func isAssertLike(t ast.Tree, x ast.Node) bool {
+    return isAssert(t, x) || isQAssert(t, x)
+}
+
+func isQAssert(t ast.Tree, x ast.Node) bool {
+    if x.kind != ast.ECall || ast.ListLen(t, x.b) != 2 {
+        return false
+    }
+    c := t.nodes[x.a]
+    return c.kind == ast.EIdent && StrIs(t, c.a, "$qassert")
+}
+
+// 節 x が `assert(e)`（実引数 1 つ）か
 func isAssert(t ast.Tree, x ast.Node) bool {
     if x.kind != ast.ECall || ast.ListLen(t, x.b) != 1 {
         return false
@@ -47,17 +60,17 @@ func isAssert(t ast.Tree, x ast.Node) bool {
     return c.kind == ast.EIdent && StrIs(t, c.a, "assert")
 }
 
-// isCmp は演算子 op が比較か
+// 演算子 op が比較か
 func isCmp(op int) bool {
     return op == lexer.EqualEqual || op == lexer.BangEqual || op == lexer.Less || op == lexer.LessEqual || op == lexer.Greater || op == lexer.GreaterEqual
 }
 
-// asserts は木 t の assert を写した木（節は末尾に足し、assert の呼び出しの節をその場でブロックに差し替える）
+// 木 t の assert を写した木（節は末尾に足し、assert の呼び出しの節をその場でブロックに差し替える）
 func asserts(t ast.Tree) ast.Tree {
     n0 := len(t.nodes)
     mut found := false
     for i <- iter.Range(0, n0) {
-        if isAssert(t, t.nodes[i]) {
+        if isAssertLike(t, t.nodes[i]) {
             found = true
         }
     }
@@ -76,9 +89,10 @@ func asserts(t ast.Tree) ast.Tree {
     mut k := 0
     for i <- iter.Range(0, n0) {
         x := t.nodes[i]
-        if isAssert(t, x) {
+        if isAssertLike(t, x) {
             tok := x.tok
-            e := ast.ListAt(t, x.b, 0)
+            qa := isQAssert(t, x)
+            e := ast.ListAt(t, x.b, if qa { 1 } else { 0 })
             ex := t.nodes[e]
             // 割る部分式の列と、束縛の名前で組み直した条件（cond は後で節を足す）
             mut parts := mut []int{}
@@ -132,7 +146,7 @@ func asserts(t ast.Tree) ast.Tree {
                 lines = append(lines, hole + 1)
             }
             // 式の中の名前（変数の参照）の値の行 — 名前は副作用がないので束縛せずに参照する。書いた順・同じ名前は 1 回・
-            // 辺として印字済みの名前は飛ばす。呼び出しの関数名・selector の基（package / struct）・true / false は除く（ナビ追補 2026-10-02）
+            // 辺として印字済みの名前は飛ばす。呼び出しの関数名・selector の基（package / struct）・true / false は除く
             mut seen := mut []int{}
             for j <- iter.Range(0, len(ps)) {
                 if t.nodes[ps[j]].kind == ast.EIdent {
@@ -169,8 +183,16 @@ func asserts(t ast.Tree) ast.Tree {
             } else {
                 cond = is[0]
             }
-            // if !(cond) { $testing.Fail("<式>", []string{…}) }
+            // if !(cond) { $testing.Fail("<式>", []string{…}) }・$qassert は { $aKc := cond; if !$aKc && g { Fail(…) }; $aKc }
             et := printer.Expr(t, e)
+            cv := if qa { ast.PutLit(mut db, "$a${k}c") } else { -1 }
+            if qa {
+                cb := n0 + builder.Len(mut nb)
+                builder.Push(mut nb, ast.Node{ast.SBind, tok, ast.PutList(mut db, []int{cv}), 0, ast.PutList(mut db, []int{cond}), 0, 0, 0})
+                stmts = append(stmts, cb)
+                builder.Push(mut nb, ast.Node{ast.EIdent, tok, cv, 0, 0, 0, 0, 0})
+                cond = cb + 1
+            }
             b := n0 + builder.Len(mut nb)
             builder.Push(mut nb, ast.Node{ast.EParen, tok, cond, 0, 0, 0, 0, 0})
             builder.Push(mut nb, ast.Node{ast.EUnary, tok, lexer.Bang, b, 0, 0, 0, 0})
@@ -182,9 +204,22 @@ func asserts(t ast.Tree) ast.Tree {
             builder.Push(mut nb, ast.Node{ast.ECall, tok, b + 3, ast.PutList(mut db, []int{b + 4, b + 6}), 0, 0, 0, 0})
             builder.Push(mut nb, ast.Node{ast.SExpr, tok, b + 7, 0, 0, 0, 0, 0})
             builder.Push(mut nb, ast.Node{ast.KBlock, tok, ast.PutList(mut db, []int{b + 8}), 0, 0, 0, 0, 0})
-            builder.Push(mut nb, ast.Node{ast.EIf, tok, b + 1, b + 9, 0 - 1, 0, 0, 0})
-            builder.Push(mut nb, ast.Node{ast.SExpr, tok, b + 10, 0, 0, 0, 0, 0})
-            stmts = append(stmts, b + 11)
+            mut guard := b + 1
+            if qa {
+                guard = n0 + builder.Len(mut nb)
+                builder.Push(mut nb, ast.Node{ast.EBinary, tok, lexer.AmpersandAmpersand, b + 1, ast.ListAt(t, x.b, 0), 0, 0, 0})
+            }
+            ifn := n0 + builder.Len(mut nb)
+            builder.Push(mut nb, ast.Node{ast.EIf, tok, guard, b + 9, 0 - 1, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.SExpr, tok, ifn, 0, 0, 0, 0, 0})
+            stmts = append(stmts, ifn + 1)
+            if qa {
+                // ブロックの値 = 条件の真偽
+                vn := n0 + builder.Len(mut nb)
+                builder.Push(mut nb, ast.Node{ast.EIdent, tok, cv, 0, 0, 0, 0, 0})
+                builder.Push(mut nb, ast.Node{ast.SExpr, tok, vn, 0, 0, 0, 0, 0})
+                stmts = append(stmts, vn + 1)
+            }
             ns[i] = ast.Node{ast.EBlock, tok, ast.PutList(mut db, freeze(stmts)), 0, 0, 0, 0, 0}
             k += 1
         }
@@ -196,7 +231,7 @@ func asserts(t ast.Tree) ast.Tree {
     return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
 }
 
-// concat2 はプールの文字列 a と b をつないだ文字列（[n, バイト…]）
+// プールの文字列 a と b をつないだ文字列（[n, バイト…]）
 func concat2(db mut builder.Builder[int], a int, b int) int {
     at := builder.Len(mut db)
     na := builder.Get(mut db, a)
@@ -211,7 +246,7 @@ func concat2(db mut builder.Builder[int], a int, b int) int {
     return at
 }
 
-// identsOf は式 e の中の名前（変数の参照）の節を書いた順に（呼び出しの関数名・selector の基・true / false は除く）
+// 式 e の中の名前（変数の参照）の節を書いた順に（呼び出しの関数名・selector の基・true / false は除く）
 func identsOf(t ast.Tree, e int) []int {
     mut out := mut []int{}
     mut stack := mut []int{e}
@@ -249,7 +284,7 @@ func identsOf(t ast.Tree, e int) []int {
     return freeze(out)
 }
 
-// spPush は積み stack の深さ sp に x を置いて新しい深さを返す
+// 積み stack の深さ sp に x を置いて新しい深さを返す
 func spPush(stack mut []int, sp int, x int) int {
     if sp < len(stack) {
         stack[sp] = x
@@ -259,7 +294,7 @@ func spPush(stack mut []int, sp int, x int) int {
     return sp + 1
 }
 
-// hasName は名前の列 xs に名前 nm（プールの文字列）があるか
+// 名前の列 xs に名前 nm（プールの文字列）があるか
 func hasName(t ast.Tree, xs mut []int, nm int) bool {
     for i <- iter.Range(0, len(xs)) {
         if strEqPool(t, xs[i], nm) {
@@ -269,7 +304,7 @@ func hasName(t ast.Tree, xs mut []int, nm int) bool {
     return false
 }
 
-// strEqPool はプールの文字列 a と b が同じ綴りか
+// プールの文字列 a と b が同じ綴りか
 func strEqPool(t ast.Tree, a int, b int) bool {
     if t.data[a] != t.data[b] {
         return false

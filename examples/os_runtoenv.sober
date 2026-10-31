@@ -1,0 +1,25 @@
+package main
+
+// std/os.RunToEnv: 子の環境を「足した `NAME=値` の列 → 親の環境のうち同名の無いもの」にする（同名は足した側が勝つ — 親の同名は渡さないので、
+// 子がシェルでも getenv(3) でも同じ値を読む。足した列の中の同名は先の 1 つ）。os.Monotonic: 単調時計（同じプロセスの 2 点の差だけに意味がある）
+import "std/io"
+import "std/os"
+
+func show(path string) {
+    b := io.ReadFile(path) catch return
+    _ = io.WriteStdout(b)
+}
+
+func main() {
+    _ = os.Mkdir("out")
+    sh := "echo \"X=[$SOBER_EX_X] Y=[$SOBER_EX_Y]\""
+    a, _ := os.RunToEnv("/bin/sh", []string{"-c", sh}, []string{"SOBER_EX_X=one", "SOBER_EX_X=two", "SOBER_EX_Y=three"}, "out/os_runtoenv.o", "out/os_runtoenv.o")
+    println(a)
+    show("out/os_runtoenv.o")
+    // 足す列が空なら親の環境のまま（RunTo と同じ）
+    b, _ := os.RunToEnv("/bin/sh", []string{"-c", sh}, []string{}, "out/os_runtoenv.o", "out/os_runtoenv.o")
+    println(b)
+    show("out/os_runtoenv.o")
+    t0 := os.Monotonic()
+    println(os.Monotonic() >= t0)
+}

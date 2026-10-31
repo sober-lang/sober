@@ -1,6 +1,6 @@
 package lower
 
-// CRC-32 の PCLMULQDQ の折り畳み（report-774 — std/hash/crc32.Sum の 64 バイト以上の本文）: 組み込みの鍵 2 つ。
+// CRC-32 の PCLMULQDQ の折り畳み（std/hash/crc32.Sum の 64 バイト以上の本文）: 組み込みの鍵 2 つ。
 // cpuclmul = この機械で折り畳みの道を使えるか（0 / 1）・crcfold(b, k, crc) = b[0:k]（k は 64 以上の 16 の倍数 — 境界は std が見る）を反転済みの crc に畳んだ値。
 // 道は x86 の最適化のバックエンドの ELF だけ（st.hwFold）: IR テキスト・.ll・写しのバックエンドでは cpuclmul = 定数 0 で、crcfold は std の分岐で呼ばれない。
 // 判定は CPUID.1:ECX（bit 1 = PCLMULQDQ — 最後の 32 ビットの取り出しは SSE2 の範囲で済ませるので SSE4.1 は要らない）を初回の cpuclmul / cpuaes で
@@ -15,7 +15,7 @@ const CF_FOLD = 0    // a = [p, k, crc] → 畳んだ crc
 const CF_PCLMUL = 1  // a = [] → CPUID.1:ECX（32 ビット全部 — rt.cpu_probe の中だけ）
 const CF_CPUID7 = 2  // a = [] → CPUID.7.0:EBX（32 ビット全部 — bit 8 = BMI2〔MULX〕・bit 19 = ADX〔ADCX / ADOX〕・rt.cpu_probe の中だけ — mulx.sober）
 
-// cpuClmul は cpuclmul の値（hw の道: rt.cpu の印の bit 0）
+// cpuclmul の値（hw の道: rt.cpu の印の bit 0）
 func cpuClmul(st mut St) int {
     if !st.hwFold {
         return iconst(mut st, 0)
@@ -23,7 +23,7 @@ func cpuClmul(st mut St) int {
     return bin(mut st, BAnd, cpuMarks(mut st), iconst(mut st, 1))
 }
 
-// cpuMarks は rt.cpu の印（rt.cpu を読み、0 なら rt.cpu_probe で判定して置く — 印 = 値 - 1）
+// rt.cpu の印（rt.cpu を読み、0 なら rt.cpu_probe で判定して置く — 印 = 値 - 1）
 func cpuMarks(st mut St) int {
     needCpu(mut st)
     zero := iconst(mut st, 0)
@@ -38,7 +38,7 @@ func cpuMarks(st mut St) int {
     return bin(mut st, BSub, v, iconst(mut st, 1))
 }
 
-// crcFold は crcfold(p, k, crc) の値（p = バイト列の先頭の番地。hw の道でない出力では std の分岐が呼ばない — 0）
+// crcfold(p, k, crc) の値（p = バイト列の先頭の番地。hw の道でない出力では std の分岐が呼ばない — 0）
 func crcFold(st mut St, p int, k int, crc int) int {
     if !st.hwFold {
         return iconst(mut st, 0)
@@ -46,7 +46,7 @@ func crcFold(st mut St, p int, k int, crc int) int {
     return push(mut st, true, OpCrcFold, list3(mut st, p, k, crc), 0, CF_FOLD)
 }
 
-// needCpu は rt.cpu と rt.cpu_probe を（初出なら）宣言する
+// rt.cpu と rt.cpu_probe を（初出なら）宣言する
 func needCpu(st mut St) {
     lsNeed(mut st, NEED_CPU, 0)
     if st.cpuG == -1 {
@@ -55,7 +55,7 @@ func needCpu(st mut St) {
     }
 }
 
-// buildCpuProbe は rt.cpu_probe() → 印 + 1 を rt.cpu に置いて返す（印の bit 0 = PCLMULQDQ かつ SOBER_NOCLMUL でない・bit 1 = AES-NI・SSSE3・
+// rt.cpu_probe() → 印 + 1 を rt.cpu に置いて返す（印の bit 0 = PCLMULQDQ かつ SOBER_NOCLMUL でない・bit 1 = AES-NI・SSSE3・
 // PCLMULQDQ が揃い SOBER_NOAES でない・bit 2 = BMI2・bit 3 = BMI2 かつ ADX — bit 2 / 3 は SOBER_NOMULX で 0）
 func buildCpuProbe(st mut St) {
     if st.cpuG == -1 {

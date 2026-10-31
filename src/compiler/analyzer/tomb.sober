@@ -1,6 +1,6 @@
 package analyzer
 
-// 墓標 lint（宛先構築レーン M6）: `_ = { …; 0 }`（値を捨てるブロック式の末尾がダミーの定数）を名指す。
+// 墓標 lint: `_ = { …; 0 }`（値を捨てるブロック式の末尾がダミーの定数）を名指す。
 // ループ本体・関数の本体は自分の region を持つ（language.md「ループ本体はスコープ」）ので、作業域を捨てるための包みは何もしていない —
 // 旧 region 透過の回避術の folklore の再輸入を防ぐ。値を使うブロック式は無関係に正当のまま
 
@@ -9,7 +9,7 @@ import "desugar"
 
 const MTomb = 6 // `_ = { …; 定数 }`（at = 代入の文）
 
-// tombCheck は代入の文 s が墓標の形なら指摘を積む
+// 代入の文 s が墓標の形なら指摘を積む
 func tombCheck(az mut Az, s desugar.NodeRef) {
     x := node(mut az, s)
     ts := desugar.ListRef(x.a)

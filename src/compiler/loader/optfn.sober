@@ -1,6 +1,6 @@
 package loader
 
-// 省略可の匿名関数型の仮引数（language.md 25 節 Z — 2026-10-25）: func 宣言の仮引数 `p (func(…) R)?` は「有る / 無い」が呼び出し点ごとに字面で決まる
+// 省略可の匿名関数型の仮引数（language.md 25 節）: func 宣言の仮引数 `p (func(…) R)?` は「有る / 無い」が呼び出し点ごとに字面で決まる
 // （実引数 = nil・省略〔namedargs が nil を補う〕・ラムダ・関数の名前・囲む関数の同じ種類の仮引数の転送）。ここで関数を有無の組ごとに写し分け、
 // 本体の `if p != nil { … } else { … }` を畳む — 脱糖の固定テンプレート（namedargs・η と同じ層: 以降の段〔desugar・lower・typer・analyzer〕は
 // 省略可の関数型を見ず、写した後の普通の関数だけを読む。check と build が同じ木を読むので割れない。コア・Lean は無変更 — 8 節「生成方式は意味に触れない」の 7 例目）:
@@ -22,7 +22,7 @@ import "ast"
 import "diag"
 import "lexer"
 
-// OzZ は省略可の関数型の仮引数を持つ func 宣言（Z）の表: 宣言の場所・関数表の番号・省略可の仮引数の位置と名前（[lo, hi)）
+// 省略可の関数型の仮引数を持つ func 宣言（Z）の表: 宣言の場所・関数表の番号・省略可の仮引数の位置と名前（[lo, hi)）
 type OzZ struct {
     file []int
     node []int
@@ -35,15 +35,15 @@ type OzZ struct {
     ofz []int
 }
 
-// OZ_MAXOPT は 1 つの関数の省略可の関数型の仮引数の上限（有無のビットの幅）
+// 1 つの関数の省略可の関数型の仮引数の上限（有無のビットの幅）
 const OZ_MAXOPT = 16
 
-// ozIsOptFn は型の節 ty が省略可の匿名関数型か
+// 型の節 ty が省略可の匿名関数型か
 func ozIsOptFn(t ast.Tree, ty int) bool {
     return ty >= 0 && t.nodes[ty].kind == ast.TOpt && t.nodes[t.nodes[ty].a].kind == ast.TFunc
 }
 
-// optFnAll は全ファイルの木の省略可の関数型の仮引数を写し分ける。写しが無ければ木をそのまま返す（changed = false — 関数表も組み直さない）
+// 全ファイルの木の省略可の関数型の仮引数を写し分ける。写しが無ければ木をそのまま返す（changed = false — 関数表も組み直さない）
 @errors(diag.FnOpt)
 func optFnAll(cx Cx, ft FnTab) ([]ast.Tree, bool, []int, error?) {
     // 省略可の関数型がどこにも無ければ何もしない（大半のプログラム — 走査 1 回だけ）
@@ -136,14 +136,14 @@ func optFnAll(cx Cx, ft FnTab) ([]ast.Tree, bool, []int, error?) {
     return freeze(out), true, freeze(zd), nil
 }
 
-// OzStep は optEtaAll の結果: 写した木・関数表（写しがあれば組み直したもの）・写しの宣言（[ファイル, 宣言の節, 節の区間の始め, 終わり] の 4 語ずつ — Program.z_decl）
+// optEtaAll の結果: 写した木・関数表（写しがあれば組み直したもの）・写しの宣言（[ファイル, 宣言の節, 節の区間の始め, 終わり] の 4 語ずつ — Program.z_decl）
 type OzStep struct {
     trees []ast.Tree
     ft FnTab
     zdecl []int
 }
 
-// optEtaAll は名前付き実引数の写し（namedargs.sober）・省略可の関数型の写し分け（optFnAll — 省略を nil にした後の木を読む）・η 展開（eta.sober —
+// 名前付き実引数の写し（namedargs.sober）・省略可の関数型の写し分け（optFnAll — 省略を nil にした後の木を読む）・η 展開（eta.sober —
 // 写した後の木と関数表で）を続けて掛ける（finish の段 — 局所を finish の枠に積まないために分けた）
 @errors(diag.NamedArg, diag.FnOpt, diag.FnArg)
 func optEtaAll(cx0 Cx, ft0 FnTab) (OzStep, error?) {
@@ -165,7 +165,7 @@ func optEtaAll(cx0 Cx, ft0 FnTab) (OzStep, error?) {
     return OzStep{ets, ft, zd}, nil
 }
 
-// ozTable は関数表の FN_OPTF の印の宣言を Z の表にする
+// 関数表の FN_OPTF の印の宣言を Z の表にする
 func ozTable(cx Cx, ft FnTab) OzZ {
     mut file := mut []int{}
     mut node := mut []int{}
@@ -199,7 +199,7 @@ func ozTable(cx Cx, ft FnTab) OzZ {
     return OzZ{freeze(file), freeze(node), freeze(fis), freeze(lo), freeze(hi), freeze(opos), freeze(oname), freeze(ofz)}
 }
 
-// ozAllowed は木 f の型の節 i が Z（本体のある func 宣言）の省略可の仮引数の型か
+// 木 f の型の節 i が Z（本体のある func 宣言）の省略可の仮引数の型か
 func ozAllowed(cx Cx, zz OzZ, f int, i int) bool {
     for z <- iter.Range(0, len(zz.file)) {
         if zz.file[z] == f {
@@ -217,7 +217,7 @@ func ozAllowed(cx Cx, zz OzZ, f int, i int) bool {
     return false
 }
 
-// ozZOf は木 f の宣言の節 d が Z ならその番号（でなければ -1）
+// 木 f の宣言の節 d が Z ならその番号（でなければ -1）
 func ozZOf(cx Cx, ft FnTab, zz OzZ, f int, d int) int {
     for z <- iter.Range(0, len(zz.file)) {
         if zz.file[z] == f && zz.node[z] == d {
@@ -227,7 +227,7 @@ func ozZOf(cx Cx, ft FnTab, zz OzZ, f int, d int) int {
     return -1
 }
 
-// ozOptK は Z の z の省略可の仮引数のうち名前が木 t の文字列 s のものの番号 k（0 起点 — 無ければ -1。t は z の宣言の木）
+// Z の z の省略可の仮引数のうち名前が木 t の文字列 s のものの番号 k（0 起点 — 無ければ -1。t は z の宣言の木）
 func ozOptK(zz OzZ, z int, t ast.Tree, s int) int {
     if z < 0 {
         return -1
@@ -240,7 +240,7 @@ func ozOptK(zz OzZ, z int, t ast.Tree, s int) int {
     return -1
 }
 
-// ozOptAt は Z の z の仮引数の位置 p が省略可の関数型ならその番号 k（でなければ -1）
+// Z の z の仮引数の位置 p が省略可の関数型ならその番号 k（でなければ -1）
 func ozOptAt(zz OzZ, z int, p int) int {
     for k <- iter.Range(0, zz.hi[z] - zz.lo[z]) {
         if zz.opos[zz.lo[z] + k] == p {
@@ -250,7 +250,7 @@ func ozOptAt(zz OzZ, z int, p int) int {
     return -1
 }
 
-// ozNilTest は節 n（括弧は剥がす）が Z の z の省略可の仮引数 p と nil の比較ならば k × 2 + (`!=` なら 1)（でなければ -1）
+// 節 n（括弧は剥がす）が Z の z の省略可の仮引数 p と nil の比較ならば k × 2 + (`!=` なら 1)（でなければ -1）
 func ozNilTest(zz OzZ, z int, t ast.Tree, n0 int) int {
     n := unparen(t, n0)
     if z < 0 || n < 0 || t.nodes[n].kind != ast.EBinary {
@@ -273,7 +273,7 @@ func ozNilTest(zz OzZ, z int, t ast.Tree, n0 int) int {
     return k * 2 + if x.a == lexer.BangEqual { 1 } else { 0 }
 }
 
-// ozFold は if の節 n の畳み（-1 = 畳まない・0 = 条件が偽・1 = 真）— 有無 m の組で
+// if の節 n の畳み（-1 = 畳まない・0 = 条件が偽・1 = 真）— 有無 m の組で
 func ozFold(zz OzZ, z int, m int, t ast.Tree, n int) int {
     x := t.nodes[n]
     if x.kind != ast.EIf {
@@ -287,7 +287,7 @@ func ozFold(zz OzZ, z int, m int, t ast.Tree, n int) int {
     return if present == (nt % 2 == 1) { 1 } else { 0 }
 }
 
-// ozCallZ は呼び出しの節 n（ECall / EPipe）の呼び先が Z ならその番号（でなければ -1）
+// 呼び出しの節 n（ECall / EPipe）の呼び先が Z ならその番号（でなければ -1）
 func ozCallZ(cx Cx, ft FnTab, zz OzZ, f int, n int) int {
     t := cx.trees[f]
     x := t.nodes[n]
@@ -299,7 +299,7 @@ func ozCallZ(cx Cx, ft FnTab, zz OzZ, f int, n int) int {
     return if fi < 0 { -1 } else { zz.ofz[fi] }
 }
 
-// ozArgPos は呼び出しの節 x の実引数の列の i 番目が呼び先の何番目の仮引数か（穴の無いパイプ段は左辺が 0 番 — 実引数 i は i + 1 番）
+// 呼び出しの節 x の実引数の列の i 番目が呼び先の何番目の仮引数か（穴の無いパイプ段は左辺が 0 番 — 実引数 i は i + 1 番）
 func ozArgPos(t ast.Tree, x ast.Node, i int) int {
     if x.kind == ast.EPipe && !ozHasHole(t, x) {
         return i + 1
@@ -316,7 +316,7 @@ func ozHasHole(t ast.Tree, x ast.Node) bool {
     return false
 }
 
-// ozArgAt は呼び出しの節 x の仮引数の位置 p の実引数の節（無ければ -1。パイプ段の左辺の位置は左辺）
+// 呼び出しの節 x の仮引数の位置 p の実引数の節（無ければ -1。パイプ段の左辺の位置は左辺）
 func ozArgAt(t ast.Tree, x ast.Node, p int) int {
     if x.kind == ast.ECall {
         return if p < ast.ListLen(t, x.b) { ast.ListAt(t, x.b, p) } else { -1 }
@@ -331,13 +331,13 @@ func ozArgAt(t ast.Tree, x ast.Node, p int) int {
     return if a < 0 { x.a } else { a }
 }
 
-// ozArgOk は省略可の関数型の仮引数への実引数の形（nil・ラムダ・名前・pkg.名前・名前[T]）か
+// 省略可の関数型の仮引数への実引数の形（nil・ラムダ・名前・pkg.名前・名前[T]）か
 func ozArgOk(t ast.Tree, a int) bool {
     k := t.nodes[unparen(t, a)].kind
     return k == ast.ENil || k == ast.ELambda || k == ast.EIdent || k == ast.ESelector || k == ast.EIndex
 }
 
-// ozArgBit は実引数 a（省略可の仮引数へ — -1 = 無い）が有る（1）か無い（0）か。囲む Z の z の省略可の仮引数の転送は組 m のビット
+// 実引数 a（省略可の仮引数へ — -1 = 無い）が有る（1）か無い（0）か。囲む Z の z の省略可の仮引数の転送は組 m のビット
 func ozArgBit(zz OzZ, z int, m int, t ast.Tree, a int) int {
     if a < 0 {
         return 0
@@ -355,7 +355,7 @@ func ozArgBit(zz OzZ, z int, m int, t ast.Tree, a int) int {
     return 1
 }
 
-// ozCallMask は Z の zj を呼ぶ節 x（木 t — 囲む Z は z・組 m）の有無の組
+// Z の zj を呼ぶ節 x（木 t — 囲む Z は z・組 m）の有無の組
 func ozCallMask(zz OzZ, zj int, z int, m int, t ast.Tree, x ast.Node) int {
     mut cm := 0
     for k <- iter.Range(0, zz.hi[zj] - zz.lo[zj]) {
@@ -364,7 +364,7 @@ func ozCallMask(zz OzZ, zj int, z int, m int, t ast.Tree, x ast.Node) int {
     return cm
 }
 
-// ozFence は Z の z の元の本体（全部の腕）の柵: 最初の違反の（字句, kind）— kind 0 = 違反なし。
+// Z の z の元の本体（全部の腕）の柵: 最初の違反の（字句, kind）— kind 0 = 違反なし。
 // 役: 0 = 他・1 = 呼ぶ（callee）・2 = 実引数・3 = nil との比較・4 = 省略可の仮引数への実引数。g = 有ると分かっている仮引数のビット
 func ozFence(cx Cx, ft FnTab, zz OzZ, z int) (int, int) {
     f := zz.file[z]
@@ -444,7 +444,7 @@ func ozFence(cx Cx, ft FnTab, zz OzZ, z int) (int, int) {
     return 0, 0
 }
 
-// ozHolePos は穴のあるパイプ段の穴の位置
+// 穴のあるパイプ段の穴の位置
 func ozHolePos(t ast.Tree, x ast.Node) int {
     for i <- iter.Range(0, ast.ListLen(t, x.c)) {
         if ast.ListAt(t, x.c, i) < 0 {
@@ -454,7 +454,7 @@ func ozHolePos(t ast.Tree, x ast.Node) int {
     return 0
 }
 
-// OzReq は要る組（Z, 有無）の列（発見の順 — 写しの順もこれ）
+// 要る組（Z, 有無）の列（発見の順 — 写しの順もこれ）
 type OzReq struct {
     z table.Table[int]
     m table.Table[int]
@@ -470,7 +470,7 @@ func ozRequest(rq mut OzReq, z int, m int) {
     table.Push(mut rq.m, m)
 }
 
-// ozScan は木 f の本体 root（囲む Z は z・組 m — Z でない関数は z = -1）の生きた腕の Z の呼び出しを要る組に足す。z = -1 のときは
+// 木 f の本体 root（囲む Z は z・組 m — Z でない関数は z = -1）の生きた腕の Z の呼び出しを要る組に足す。z = -1 のときは
 // 呼び出しを calls に [ファイル, 節, Z, 有無] で積む。実引数の形の違反はその字句（無ければ -1）
 func ozScan(cx Cx, ft FnTab, zz OzZ, f int, root int, z int, m int, rq mut OzReq, calls mut builder.Builder[int]) int {
     t := cx.trees[f]
@@ -519,7 +519,7 @@ func ozScan(cx Cx, ft FnTab, zz OzZ, f int, root int, z int, m int, rq mut OzReq
 
 // ── 写し ──
 
-// OzG は 1 ファイルの写しの作業域: 出力の節（ns — 元の節の写しから始めて足す・差し替える）・データ（db）・元の節 → 写しの節（mp — 組ごとに戻す）・後順の積み
+// 1 ファイルの写しの作業域: 出力の節（ns — 元の節の写しから始めて足す・差し替える）・データ（db）・元の節 → 写しの節（mp — 組ごとに戻す）・後順の積み
 type OzG struct {
     ns table.Table[ast.Node]
     db builder.Builder[int]
@@ -532,7 +532,7 @@ type OzG struct {
     blo int
 }
 
-// ozDesc は節 x の欄の種類（3 ビット × 6 — desugar/init.sober の desc と同じ符号: 1 = 節・2 = 文字列・3 = 節の列・4 = 文字列の列・5 = 生の列）
+// 節 x の欄の種類（3 ビット × 6 — desugar/init.sober の desc と同じ符号: 1 = 節・2 = 文字列・3 = 節の列・4 = 文字列の列・5 = 生の列）
 func ozDesc(x ast.Node) int {
     k := x.kind
     return switch k {
@@ -570,7 +570,7 @@ func ozDesc(x ast.Node) int {
     }
 }
 
-// ozField は節 x の j 番目の欄（a〜f）
+// 節 x の j 番目の欄（a〜f）
 func ozField(x ast.Node, j int) int {
     return switch j {
     case 0: x.a
@@ -582,7 +582,7 @@ func ozField(x ast.Node, j int) int {
     }
 }
 
-// ozCode は欄の種類の表 c の j 番目
+// 欄の種類の表 c の j 番目
 func ozCode(c int, j int) int {
     mut v := c
     for i <- iter.Range(0, j) {
@@ -591,12 +591,12 @@ func ozCode(c int, j int) int {
     return v % 8
 }
 
-// ozStmtList は節 x の j 番目の欄が文の列か（ブロックの文・文形 for の本体 — 畳む if の腕を差し込む所）
+// 節 x の j 番目の欄が文の列か（ブロックの文・文形 for の本体 — 畳む if の腕を差し込む所）
 func ozStmtList(x ast.Node, j int) bool {
     return (j == 0 && (x.kind == ast.KBlock || x.kind == ast.EBlock)) || (j == 2 && x.kind == ast.EFor && x.b == 1)
 }
 
-// ozReach は木の根から届く節の印
+// 木の根から届く節の印
 func ozReach(t ast.Tree) []bool {
     mut seen := mut []bool{}
     for i <- iter.Range(0, len(t.nodes)) {
@@ -624,7 +624,7 @@ func ozReach(t ast.Tree) []bool {
     return freeze(seen)
 }
 
-// ozElems は文の列 l の写しの要素（組 m で畳む if の腕を差し込んだ後）: 元の節の番号 × 2（そのまま写す）か、番号 × 2 + 1（その節を文 SExpr で包む —
+// 文の列 l の写しの要素（組 m で畳む if の腕を差し込んだ後）: 元の節の番号 × 2（そのまま写す）か、番号 × 2 + 1（その節を文 SExpr で包む —
 // 畳んだ if の else if の腕）。差し込むのは else のある if か、列の最後でない if（else の無い最後の if は値 unit の if のまま残す — 式の畳みで）
 func ozElems(zz OzZ, z int, m int, t ast.Tree, l int) []int {
     mut out := mut []int{}
@@ -669,7 +669,7 @@ func ozElems(zz OzZ, z int, m int, t ast.Tree, l int) []int {
     return freeze(out)
 }
 
-// ozKids は元の節 n の写しの子（後順で先に写す元の節 — 組 m の畳み・Z の呼び出しの差し替えと同じ判断）
+// 元の節 n の写しの子（後順で先に写す元の節 — 組 m の畳み・Z の呼び出しの差し替えと同じ判断）
 func ozKids(cx Cx, ft FnTab, zz OzZ, f int, z int, m int, n int) []int {
     t := cx.trees[f]
     x := t.nodes[n]
@@ -732,13 +732,13 @@ func ozKids(cx Cx, ft FnTab, zz OzZ, f int, z int, m int, n int) []int {
     return freeze(out)
 }
 
-// ozKeepArg は Z の zj を組 cm で呼ぶとき仮引数の位置 p の実引数を残すか（無い省略可の仮引数の実引数は落とす）
+// Z の zj を組 cm で呼ぶとき仮引数の位置 p の実引数を残すか（無い省略可の仮引数の実引数は落とす）
 func ozKeepArg(zz OzZ, zj int, cm int, p int) bool {
     k := ozOptAt(zz, zj, p)
     return k < 0 || (cm & (1 << k)) != 0
 }
 
-// ozName は Z の z の組 m の名前（無い組は元の名前・他は `F$z<m>`）
+// Z の z の組 m の名前（無い組は元の名前・他は `F$z<m>`）
 func ozName(cx Cx, zz OzZ, z int, m int) string {
     t := cx.trees[zz.file[z]]
     base := Name(t, t.nodes[zz.node[z]].a)
@@ -765,7 +765,7 @@ func ozIdent(g mut OzG, tok int, w string) int {
     return ozAdd(mut g, ast.Node{ast.EIdent, tok, ast.PutLit(mut g.db, w), 0, 0, 0, 0, 0})
 }
 
-// ozItems は ozElems の要素を写しの節の列にする（包む要素は SExpr を足す）
+// ozElems の要素を写しの節の列にする（包む要素は SExpr を足す）
 func ozItems(g mut OzG, t ast.Tree, es []int) int {
     mut out := mut []int{}
     for e <- es {
@@ -778,7 +778,7 @@ func ozItems(g mut OzG, t ast.Tree, es []int) int {
     return ast.PutList(mut g.db, freeze(out))
 }
 
-// ozBuild は元の節 n の写しを作る（子は写し済み）
+// 元の節 n の写しを作る（子は写し済み）
 func ozBuild(g mut OzG, cx Cx, ft FnTab, zz OzZ, f int, z int, m int, n int) {
     t := cx.trees[f]
     x := t.nodes[n]
@@ -834,7 +834,7 @@ func ozBuild(g mut OzG, cx Cx, ft FnTab, zz OzZ, f int, z int, m int, n int) {
     ozSetMap(mut g, n, ozAdd(mut g, ast.Node{x.kind, x.tok, fs[0], fs[1], fs[2], fs[3], fs[4], fs[5]}))
 }
 
-// ozCallNode は Z の zj を組 cm で呼ぶ節 x の差し替え（callee を組の名前へ・無い省略可の仮引数の実引数を落とす）。
+// Z の zj を組 cm で呼ぶ節 x の差し替え（callee を組の名前へ・無い省略可の仮引数の実引数を落とす）。
 // mapped = 実引数・callee の土台を写しの節で引くか（Z の写しの中）・元の節のまま使うか（Z でない関数のその場の差し替え）
 func ozCallNode(g mut OzG, cx Cx, zz OzZ, t ast.Tree, x ast.Node, zj int, cm int, mapped bool) ast.Node {
     nm := ozName(cx, zz, zj, cm)
@@ -863,7 +863,7 @@ func ozCallNode(g mut OzG, cx Cx, zz OzZ, t ast.Tree, x ast.Node, zj int, cm int
     return ast.Node{ast.EPipe, x.tok, if mapped { ozMap(mut g, x.a) } else { x.a }, callee, l, x.d, x.e, x.f}
 }
 
-// ozCopy は元の節 roots を組 m（囲む Z は z）で後順に写す（写しの番号は mp）
+// 元の節 roots を組 m（囲む Z は z）で後順に写す（写しの番号は mp）
 func ozCopy(g mut OzG, cx Cx, ft FnTab, zz OzZ, f int, z int, m int, roots []int) {
     g.sp = 0
     for r <- roots {
@@ -898,7 +898,7 @@ func ozPushNode(g mut OzG, n int) {
     g.sp += 1
 }
 
-// ozVariant は Z の z の組 m の宣言を写して足し、その節の番号を返す
+// Z の z の組 m の宣言を写して足し、その節の番号を返す
 func ozVariant(g mut OzG, cx Cx, ft FnTab, zz OzZ, z int, m int) int {
     f := zz.file[z]
     t := cx.trees[f]
@@ -946,7 +946,7 @@ func ozVariant(g mut OzG, cx Cx, ft FnTab, zz OzZ, z int, m int) int {
     return out
 }
 
-// ozExt は宣言の付加の列 ext の写し: 無い省略可の仮引数の名前を `@errors` の項（5 番）から外す
+// 宣言の付加の列 ext の写し: 無い省略可の仮引数の名前を `@errors` の項（5 番）から外す
 func ozExt(g mut OzG, zz OzZ, z int, m int, t ast.Tree, ext int) int {
     if ext < 0 || ast.ListLen(t, ext) < 7 || ast.ListAt(t, ext, 5) < 0 {
         return ext
@@ -974,7 +974,7 @@ func ozExt(g mut OzG, zz OzZ, z int, m int, t ast.Tree, ext int) int {
     return ast.PutList(mut g.db, freeze(l))
 }
 
-// ozFile は木 f の写し: Z でない関数の中の Z の呼び出しをその場で差し替え、Z の宣言を要る組の写しの列に置き換え、届かなくなった元の節を葉に潰す
+// 木 f の写し: Z でない関数の中の Z の呼び出しをその場で差し替え、Z の宣言を要る組の写しの列に置き換え、届かなくなった元の節を葉に潰す
 func ozFile(cx Cx, ft FnTab, zz OzZ, rz []int, rm []int, cs []int, f int) (ast.Tree, []int) {
     t := cx.trees[f]
     mut hit := false

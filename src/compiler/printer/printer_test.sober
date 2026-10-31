@@ -6,7 +6,7 @@ import "lexer"
 import "parser"
 import "std/iter"
 
-// roundTrip は src を読んで印字した綴りが src と同じか
+// src を読んで印字した綴りが src と同じか
 func roundTrip(src string) bool {
     b := bytes(src)
     t, ok := parser.Parse(b, lexer.Lex(b))

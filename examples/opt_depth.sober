@@ -1,6 +1,6 @@
 package main
 
-// 深度の流れ（性能投資 M2 — depth.sober）の回帰例: ループの中で式ブロックが region を開き、その中のループの頭に setdepth が立つ。
+// 深度の流れ（depth.sober）の回帰例: ループの中で式ブロックが region を開き、その中のループの頭に setdepth が立つ。
 // 内のループの中でもう一段の式ブロックが region を開き、出口の setdepth が内の深度へ戻す。式ブロックを出た後の append は外の region に積まれる — 内の region の深度を外の深度と取り違えると、次の周回の式ブロックが
 // out の中身を上書きする
 

@@ -1,0 +1,265 @@
+package checker
+
+import "std/table"
+
+// typecheck（Checker.lean）の実行形 = 汎用の駆動部（手書き — このファイル）+ 1 フレームの遷移 tcStep（抽出物 — tc_gen.sober。
+// 元 = lean/FeatherweightSober/TcStep.lean・定理 typecheck_eq_evalRule で typecheck と結ぶ — 段 6 P2b）。
+// 駆動部は TcStep.lean の evalRule の燃料なし版を明示スタックで回す（式の入れ子の深さで再帰の実効上限を踏まない — 仮決め R11-3）:
+// フレームの段 ph で tcStep を呼び、Act.sub なら子のフレームを積む・Act.ret なら降ろして親の r_{ph+1} に置き、親の段を 1 進める。
+// 段 3 で Act.sub が来たら none（evalRule と同じ）。
+//
+// 引数は Lean と同じ (Δ, f, b, d, Γ, Λ, e)。Ξ / Ψ はソース項の検査では常に [] なので持たない（chanV / loc は境界の語彙に無い）。
+
+// 作業の枠: [式, 段, b, d, Γ, Λ, r1, r2, r3]（r = 評価し終えた子の結果。まだのもの・none は -1）
+const CF = 9
+
+// ── 読み口（TcStep.lean の ctxGet / ctxCons / lctxTy … の手書きの shim — 表現に依存する）──
+// 文脈 Γ = cons [ty, next]、ラベル文脈 Λ = cons [ty, k, next]（末尾 -1）・関数表 Δ = st.defs
+
+// cons は Γ のセル [ty, next]
+func cons(st mut S, t int, g int) int {
+    at := table.Len(mut st.h)
+    table.Push(mut st.h, t)
+    table.Push(mut st.h, g)
+    return at
+}
+
+func ctxCons(st mut S, t int, g int) int {
+    return cons(mut st, t, g)
+}
+
+// ctxGet は Γ[i]?（無ければ -1）
+func ctxGet(st mut S, g0 int, i0 int) int {
+    mut g := g0
+    mut i := i0
+    while g >= 0 && i > 0 {
+        g = table.Get(mut st.h, g + 1)
+        i -= 1
+    }
+    return if g < 0 { -1 } else { table.Get(mut st.h, g) }
+}
+
+func ctxAllMutFree(st mut S, g0 int) bool {
+    mut g := g0
+    while g >= 0 {
+        if !mutFree(mut st, table.Get(mut st.h, g)) {
+            return false
+        }
+        g = table.Get(mut st.h, g + 1)
+    }
+    return true
+}
+
+// lnth は Λ[n]? のセル [ty, k, next]（無ければ -1）
+func lnth(st mut S, l0 int, i0 int) int {
+    mut l := l0
+    mut i := i0
+    while l >= 0 && i > 0 {
+        l = table.Get(mut st.h, l + 2)
+        i -= 1
+    }
+    return l
+}
+
+// lctxTy は (Λ[n]?).map Prod.fst・lctxK は ((Λ[n]?).map Prod.snd).getD 0
+func lctxTy(st mut S, l int, n int) int {
+    c := lnth(mut st, l, n)
+    return if c < 0 { -1 } else { table.Get(mut st.h, c) }
+}
+
+func lctxK(st mut S, l int, n int) int {
+    c := lnth(mut st, l, n)
+    return if c < 0 { 0 } else { table.Get(mut st.h, c + 1) }
+}
+
+func lctxCons(st mut S, t int, k int, l int) int {
+    at := table.Len(mut st.h)
+    table.Push(mut st.h, t)
+    table.Push(mut st.h, k)
+    table.Push(mut st.h, l)
+    return at
+}
+
+// defGet は Δ[fn]? の記録 [param, ret, body, tparams, mask]（無ければ -1）
+func defGet(st mut S, fn int) int {
+    ds := st.defs
+    return if fn < table.Get(mut st.h, ds) { table.Get(mut st.h, ds + 1 + fn) } else { -1 }
+}
+
+// defParam / defRet は (dfn.inst ts).param / .ret・defTps は dfn.tparams（tsLen は ty.sober）
+func defParam(st mut S, df int, ts int) int {
+    return tsubst(mut st, ts, table.Get(mut st.h, df))
+}
+
+func defRet(st mut S, df int, ts int) int {
+    return tsubst(mut st, ts, table.Get(mut st.h, df + 1))
+}
+
+func defTps(st mut S, df int) int {
+    return table.Get(mut st.h, df + 3)
+}
+
+// 式の節 [kind, nc, a, b, c] の読み出し（Config.lean の nodeTable が使う）
+func nK(st mut S, e int) int {
+    return table.Get(mut st.h, e)
+}
+
+func nA(st mut S, e int) int {
+    return table.Get(mut st.h, e + 2)
+}
+
+func nB(st mut S, e int) int {
+    return table.Get(mut st.h, e + 3)
+}
+
+func nC(st mut S, e int) int {
+    return table.Get(mut st.h, e + 4)
+}
+
+// Act（遷移の結果）: actSub は子と文脈を st に置いて 1・actRet は結果を st に置いて 0
+func actSub(st mut S, e int, b int, d int, g int, l int) int {
+    st.aE = e
+    st.aB = b
+    st.aD = d
+    st.aG = g
+    st.aL = l
+    return 1
+}
+
+func actRet(st mut S, r int) int {
+    st.aR = r
+    return 0
+}
+
+// tcRun は typecheck Δ [] [] f b0 d0 Γ0 Λ0 e0（f は st.f）= evalRule の燃料なし版。結果の型、none は -1
+func tcRun(st mut S, e0 int, b0 int, d0 int, g0 int, l0 int) int {
+    base := st.cstk
+    tcPush(mut st, base, e0, b0, d0, g0, l0)
+    mut sp := 1
+    while true {
+        fr := base + (sp - 1) * CF
+        ph := table.Get(mut st.h, fr + 1)
+        a := tcStep(mut st, st.f, table.Get(mut st.h, fr + 2), table.Get(mut st.h, fr + 3), table.Get(mut st.h, fr + 4),
+            table.Get(mut st.h, fr + 5), table.Get(mut st.h, fr + 6), table.Get(mut st.h, fr + 7), table.Get(mut st.h, fr + 8),
+            table.Get(mut st.h, fr), ph)
+        if a != 0 && ph < 3 {
+            tcPush(mut st, fr + CF, st.aE, st.aB, st.aD, st.aG, st.aL)
+            sp += 1
+            continue
+        }
+        r := if a != 0 { -1 } else { st.aR }
+        if r < 0 && st.failE == 0 {
+            st.failE = table.Get(mut st.h, fr)
+        }
+        sp -= 1
+        if sp == 0 {
+            return r
+        }
+        pf := base + (sp - 1) * CF
+        pph := table.Get(mut st.h, pf + 1)
+        table.Set(mut st.h, pf + 6 + pph, r)
+        table.Set(mut st.h, pf + 1, pph + 1)
+    }
+    return -1
+}
+
+// tcPush はフレーム fr を (e, 段 0, b, d, Γ, Λ, r1〜r3 = none) で初期化する
+func tcPush(st mut S, fr int, e int, b int, d int, g int, l int) {
+    table.Set(mut st.h, fr, e)
+    table.Set(mut st.h, fr + 1, 0)
+    table.Set(mut st.h, fr + 2, b)
+    table.Set(mut st.h, fr + 3, d)
+    table.Set(mut st.h, fr + 4, g)
+    table.Set(mut st.h, fr + 5, l)
+    table.Set(mut st.h, fr + 6, -1)
+    table.Set(mut st.h, fr + 7, -1)
+    table.Set(mut st.h, fr + 8, -1)
+}
+
+// 判定（checkAll の結果）: 0 以上 = 根の式の型、R_TYPE = type error、R_DEF = def error、R_NOTY = 根の式の無い部分検査の受理
+const R_TYPE = -1
+const R_DEF = -2
+const R_NOTY = -3
+
+// checkAll は checkDefs（部分検査なら checkDefsAt — mask の立つ Def だけ）→ 根の式の typecheck（Json.lean の checkToJson /
+// checkPartsToJson）。root = -1 は根の式が無い（部分検査）
+func checkAll(st mut S, root int) int {
+    ds := st.defs
+    n := table.Get(mut st.h, ds)
+    mut j := 0
+    while j <= n {
+        mut e0 := root
+        mut d0 := 0
+        mut g0 := -1
+        mut df := -1
+        if j < n {
+            df = table.Get(mut st.h, ds + 1 + j)
+            if table.Get(mut st.h, df + 4) == 0 {
+                j += 1
+                continue
+            }
+            p := table.Get(mut st.h, df)
+            rt := table.Get(mut st.h, df + 1)
+            tp := table.Get(mut st.h, df + 3)
+            e0 = table.Get(mut st.h, df + 2)
+            if !(paramOk(mut st, p) && retOk(mut st, rt) && nc(mut st, e0) == 0 && tvarsBelow(mut st, tp, p) && tvarsBelow(mut st, tp, rt)) {
+                if st.perDef {
+                    fposPush(mut st, j, e0)
+                }
+                if st.failE == 0 {
+                    st.failE = e0
+                }
+                st.defFail = j
+                if !st.collect {
+                    return R_DEF
+                }
+                table.Push(mut st.fails, j)
+                j += 1
+                continue
+            }
+            // Def 本体の世界: f = 1、b = 0、d = 2、Γ = [param]
+            d0 = 2
+            g0 = cons(mut st, p, -1)
+            st.f = 1
+        } else {
+            if root < 0 {
+                // 集めた Def の失敗（collect — E2-S の周回）は根の式の無い部分検査でも def error（3'' M3 で修理 — M2 の部分検査は main 以外の
+                // package の def error を受理にしていた。testdata/iface/app の lib.Decode が G-e で露出）
+                return if st.collect && table.Len(mut st.fails) > 0 { R_DEF } else { R_NOTY }
+            }
+            st.f = 0
+        }
+        f0 := st.failE
+        if st.perDef {
+            st.failE = 0
+        }
+        r := tcRun(mut st, e0, 0, d0, g0, -1)
+        if st.perDef {
+            if j < n && (r < 0 || !tyEq(mut st, r, table.Get(mut st.h, df + 1))) {
+                fposPush(mut st, j, if st.failE != 0 { st.failE } else { e0 })
+            }
+            if f0 != 0 {
+                st.failE = f0
+            }
+        }
+        if j < n {
+            if r < 0 || !tyEq(mut st, r, table.Get(mut st.h, df + 1)) {
+                if st.failE == 0 {
+                    st.failE = e0
+                }
+                st.defFail = j
+                if !st.collect {
+                    return R_DEF
+                }
+                table.Push(mut st.fails, j)
+            }
+        } else {
+            if st.collect && table.Len(mut st.fails) > 0 {
+                return R_DEF
+            }
+            return if r < 0 { R_TYPE } else { r }
+        }
+        j += 1
+    }
+    return R_TYPE
+}

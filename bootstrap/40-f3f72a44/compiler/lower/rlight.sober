@@ -1,0 +1,1442 @@
+package lower
+
+// 軽い region.enter（M9 — 最適化のバックエンドの経路だけ・rtlower の手前。IR テキストと --backend=copy は掛けない形のまま）:
+// 自分の深度で何も確保しないと構造で示せる関数の `region.enter` を `call @rt.region_enter_light()`（深度 +1・上限の検査〔exit 102〕・深度と
+// その深度の bump の初期化だけ — 深い region の返却〔madvise〕のループと W_MAXD の更新を省く）に置き換える。
+// 的 = 再帰で深度の契約（1023 段 — 27 節）のためだけに region を開く関数（binary-trees の bottomUp / check — P0 は再帰の輪を外す）。
+// 観測は同じ: 深度と上限の検査は同じ・bump を初期化するので exit 102 の高水位の印字も同じ。返却は次の full の enter まで遅れるだけ（RSS の振る舞い）
+// 自分の深度で確保しないことの構造の条件（保守的）:
+//   ① region.enter がちょうど 1 つで入口のブロックにあり、region.depth は enter より前（呼び手の深度 — 出口の setdepth 用）にしか無い
+//   ② スロットなし（呼び出しの結果の集約の置き場 = 自分の深度のヘッダを受け取る口が無い）・ptr を返す呼び出しなし・間接呼び出しなし・region.relocate なし
+//   ③ 直に呼ぶ関数は入口で region.enter（か軽い enter）をするか、P0 の region を使わない関数（region 透過の関数は呼び手の今の深度 = 自分の深度で確保しうる）
+// ①②から、確保の深度の被演算子は仮引数か呼び手のメモリから読んだヘッダの深度だけ（どちらも呼び手以下の深度）
+
+import "std/iter"
+import "desugar"
+
+// 条件を満たす関数の region.enter を軽い enter に置き換える
+func regionLightModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 && rlEligible(mut st, f) {
+            rlRewrite(mut st, f)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// 関数の入口のブロック以外の region.enter（ループ本体の反復の region — 宛先構築 M5・式ブロック）を軽くする:
+// 本体（enter のブロックから、`region.setdepth` で始まるブロック = ループの頭 / 出口の手前まで）が自分の深度で何も確保しないなら消し、
+// 確保しうるなら軽い enter（深度 +1・上限の検査・bump の初期化 — madvise の返却のループを省く）に置き換える。
+// 反復ごとの full の enter が熱いループの支配項になった（stage3 の自己 build で rt.region_enter 8% — 実測）。
+// 消しても観測は同じ（確保しない region は空のまま捨てられるだけ・段の深度は enter の直後の region.depth で読む）。返却は関数の入口の full の enter で
+// 前提: ヘッダの深度の印 X の値は深度 X の region 以上に生きる（消すと深度 X が外の region と合流する — region の外の領域〔子の結果の預かり・
+// チャネルの小アリーナ〕は印 = MAX_DEPTH で、この前提の外に置く）
+func loopLightModule(st mut St, dirty mut map[int]int) {
+    // 関数の要約: 呼び手の今の深度で確保しうるか（固定点 — 偽から真へ単調。鍵は関数の記録）。関数ごとの局所の事実（自前の確保・
+    // 直に呼ぶ関数の列）を 1 回だけ集め、固定点は呼び出しグラフの上で回す
+    mut ma := mut map[int]int{}
+    mut cs := mut []int{}
+    mut f := st.fhead
+    while f != -1 {
+        // [関数, 呼ぶ関数の数, 呼ぶ関数…] を cs に並べる（1 本の slice に続けて積む — map への挿入とも交互にしない）
+        llCallees(mut st, f, mut cs)
+        f = irFnNext(mut st, f)
+    }
+    // mx = 呼び手の今の深度でない、呼び手が指す深度へも確保しうるか（mut 実引数の行き先への relocate・中身の分からない呼び出し — llFnEscape）。
+    // 入口で region を開く関数の自分の深度での呼び出し（llCallees が負の印で積む）は、呼ぶ関数の ma を伝えない — 今の深度 = 自分の region への確保で、
+    // 戻れば捨てられる（io.Writer の遅い道 writerByteSlow が枠の空け〔writerSpill の端数の写し〕を数えて反復の region を開く形の網）。
+    // mx は伝える（行き先が呼び手の束縛の region でありうる — 旧来どおり ma にも）。mx ⊆ ma（下の vx）
+    // 関数の密な番号（cs の並び）と、呼ばれる側から呼ぶ側への逆の辺（CSR — 呼ぶ側の番号 * 2 + 負の印〔自分の深度での呼び出し〕）
+    mut idx := mut map[int]int{}
+    mut fs := mut []int{}
+    mut at := 0
+    while at < len(cs) {
+        idx[cs[at]] = len(fs)
+        fs = append(fs, cs[at])
+        at += 2 + cs[at + 1]
+    }
+    nf := len(fs)
+    mut deg := mut []int{}
+    mut va := mut []bool{}
+    mut vx := mut []bool{}
+    for k <- iter.Range(0, nf + 1) {
+        deg = append(deg, 0)
+        va = append(va, false)
+        vx = append(vx, false)
+    }
+    at = 0
+    while at < len(cs) {
+        for k <- iter.Range(0, cs[at + 1]) {
+            c := cs[at + 2 + k]
+            j := idx[if c >= 0 { c } else { 0 - c - 2 }]
+            if j != nil {
+                deg[j + 1] = deg[j + 1] + 1
+            }
+        }
+        at += 2 + cs[at + 1]
+    }
+    for k <- iter.Range(0, nf) {
+        deg[k + 1] = deg[k + 1] + deg[k]
+    }
+    mut fill := mut []int{}
+    mut rev := mut []int{}
+    for k <- iter.Range(0, nf) {
+        fill = append(fill, deg[k])
+    }
+    for k <- iter.Range(0, deg[nf]) {
+        rev = append(rev, 0)
+    }
+    at = 0
+    mut gi := 0
+    while at < len(cs) {
+        for k <- iter.Range(0, cs[at + 1]) {
+            c := cs[at + 2 + k]
+            j := idx[if c >= 0 { c } else { 0 - c - 2 }]
+            if j != nil {
+                rev[fill[j]] = gi * 2 + if c >= 0 { 0 } else { 1 }
+                fill[j] = fill[j] + 1
+            }
+        }
+        gi += 1
+        at += 2 + cs[at + 1]
+    }
+    // 種まき（戻らない関数は llCallees が呼び先の列を空にしてあり、llFnOwnAlloc も偽 — #8）
+    mut wl := mut []int{}
+    mut sp := 0
+    for k <- iter.Range(0, nf) {
+        g := FnRef(fs[k])
+        if llFnOwnAlloc(mut st, g) {
+            va[k] = true
+            if llFnEscape(mut st, g) {
+                vx[k] = true
+                sp = llPush(mut wl, sp, k)
+            }
+        }
+    }
+    // 固定点は 2 本の作業列: mx（どの辺でも伝える — ma にも）→ ma（正の辺〔呼び手の深度での呼び出し〕だけで伝える）
+    while sp > 0 {
+        sp -= 1
+        j := wl[sp]
+        for e <- iter.Range(deg[j], deg[j + 1]) {
+            g := rev[e] / 2
+            if !vx[g] {
+                vx[g] = true
+                va[g] = true
+                sp = llPush(mut wl, sp, g)
+            }
+        }
+    }
+    for k <- iter.Range(0, nf) {
+        if va[k] {
+            sp = llPush(mut wl, sp, k)
+        }
+    }
+    while sp > 0 {
+        sp -= 1
+        j := wl[sp]
+        for e <- iter.Range(deg[j], deg[j + 1]) {
+            if rev[e] % 2 == 0 && !va[rev[e] / 2] {
+                va[rev[e] / 2] = true
+                sp = llPush(mut wl, sp, rev[e] / 2)
+            }
+        }
+    }
+    for k <- iter.Range(0, nf) {
+        if va[k] {
+            ma[fs[k]] = 1
+        }
+    }
+    f = st.fhead
+    while f != -1 {
+        b0 := irFnBHead(mut st, f)
+        if b0 != -1 {
+            mut dead := false
+            mut b := irBlkNext(mut st, b0)
+            while b != -1 {
+                mut i := irBlkIHead(mut st, b)
+                while i != -1 {
+                    if irInsOp(mut st, i) == OpREnter {
+                        if llAllocContinues(mut st, f, b, mut ma) {
+                            rlNeedLoop(mut st)
+                            irSetInsOp(mut st, i, OpCall)
+                            irSetInsRes(mut st, i, -1)
+                            irSetInsA(mut st, i, int(st.rtRenterLL))
+                            irSetInsB(mut st, i, list0(mut st))
+                            irSetInsC(mut st, i, 0)
+                        } else {
+                            irSetInsOp(mut st, i, OpDead)
+                            dead = true
+                        }
+                    }
+                    i = irInsNext(mut st, i)
+                }
+                b = irBlkNext(mut st, b)
+            }
+            if dead {
+                // 後始末は rlCleanModule（anchorPruneModule と 1 回にまとめる）。消した enter の反復の頭 / 出口の setdepth と退避の region.depth は
+                // 深度の流れが消す（M5c — 確保しないループの頭ごとの `mov [rt.meta], …` がコンパイラ自身の全段に散っていた）
+                dirty[int(f)] = 2
+            }
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// 積み（先頭 sp 個が生きている）に x を積んで新しい sp
+func llPush(stack mut []int, sp int, x int) int {
+    if sp < len(stack) {
+        stack[sp] = x
+    } else {
+        stack = append(stack, x)
+    }
+    return sp + 1
+}
+
+// mut 実引数の行き先の深度のレジスタ（W_ANCHOR — M5）の書き込みのうち、呼ぶ関数がそれを要らないものを消す。
+// 「要る」は呼び出しグラフの固定点（M5c）: 入口で読んだ W_ANCHOR の値（とその算術の結果）を、格納点の写しの floor 等に実際に使うか、
+// 要る関数の呼び出しの直前に W_ANCHOR へ書いて転送する関数だけが要る。読んで次の mut 引数の呼び出しへ転送するだけの連鎖
+// （irInsOp → hget → table.Get の類 — 入口の読み・正規化・書き戻しが小関数の命令の半分を占めた）は丸ごと要らない。
+// 書き込みの値の計算と入口の読みは DCE が後で消す
+func anchorPruneModule(st mut St, dirty mut map[int]int) {
+    // 関数ごとの事実: own = 読んだ値を転送以外に使う・fw = 読んだ値を転送する呼び先の列（-1 = 呼び先の分からない転送 — 保守的に要る）
+    mut rd := mut map[int]int{}
+    mut fw := mut []int{}
+    mut f := st.fhead
+    while f != -1 {
+        at := len(fw)
+        fw = append(fw, int(f))
+        fw = append(fw, 0)
+        if apTaint(mut st, f, mut fw, at) {
+            rd[int(f)] = 1
+        }
+        f = irFnNext(mut st, f)
+    }
+    mut going := true
+    while going {
+        going = false
+        mut at := 0
+        while at < len(fw) {
+            g := FnRef(fw[at])
+            n := fw[at + 1]
+            if !llMa(mut rd, g) {
+                mut hit := false
+                for k <- iter.Range(0, n) {
+                    c := fw[at + 2 + k]
+                    if c < 0 || llMa(mut rd, FnRef(c)) {
+                        hit = true
+                    }
+                }
+                if hit {
+                    rd[int(g)] = 1
+                    going = true
+                }
+            }
+            at += 2 + n
+        }
+    }
+    f = st.fhead
+    while f != -1 {
+        if apScan(mut st, f, mut rd, true) {
+            dirty[int(f)] = 1
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// anchorPruneModule / loopLightModule が命令を消した関数の後始末（DCE と番号詰めを関数ごとに 1 回・
+// 反復の enter を消した関数は深度の流れも — M5c）
+func rlCleanModule(st mut St, dirty mut map[int]int) {
+    mut f := st.fhead
+    while f != -1 {
+        d := dirty[int(f)]
+        if d != nil {
+            optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+            optDce(mut st, f)
+            optRenumber(mut st, f)
+            if d == 2 {
+                depthFlowFunc(mut st, f)
+            }
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// 関数 f の W_ANCHOR の読みの値の行き先を追う（値の集合の固定点 — 算術・ブロックの引数を通す）。真 = 転送以外に使う。
+// 転送（W_ANCHOR への書き込みの値）は直後の呼び先を fw の [f, n, …] に積む
+func apTaint(st mut St, f FnRef, fw mut []int, at int) bool {
+    nv := irFnNVal(mut st, f)
+    mut tv := mut []bool{}
+    for k <- iter.Range(0, nv + 1) {
+        tv = append(tv, false)
+    }
+    mut metas := mut []int{}
+    mut any := false
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if (op == OpGlobal || op == OpFsAddr) && irInsA(mut st, i) == st.meta {
+                metas = append(metas, irInsRes(mut st, i))
+            }
+            if op == OpLoad && irInsB(mut st, i) == W_ANCHOR && apIn(mut metas, irInsA(mut st, i)) {
+                apMark(mut tv, irInsRes(mut st, i))
+                any = true
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    if !any {
+        return false
+    }
+    // 伝播（算術とブロックの引数）。並びの順に 1 周 — 後ろの辺（並びで先のブロックへの引数）で印が増えたときだけもう 1 周
+    mut pos := mut []int{}
+    for k <- iter.Range(0, irFnNBlk(mut st, f) + 1) {
+        pos = append(pos, 0)
+    }
+    mut np := 0
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        id := irBlkId(mut st, b)
+        if id >= 0 && id < len(pos) {
+            pos[id] = np
+        }
+        np += 1
+        b = irBlkNext(mut st, b)
+    }
+    mut going := true
+    while going {
+        going = false
+        mut here := 0
+        b = irFnBHead(mut st, f)
+        while b != -1 {
+            mut i := irBlkIHead(mut st, b)
+            while i != -1 {
+                op := irInsOp(mut st, i)
+                if (op == OpBin || op == OpCmp) && !apT(mut tv, irInsRes(mut st, i)) && (apT(mut tv, irInsB(mut st, i)) || apT(mut tv, irInsC(mut st, i))) {
+                    apMark(mut tv, irInsRes(mut st, i))
+                    going = true
+                }
+                i = irInsNext(mut st, i)
+            }
+            t := irBlkTerm(mut st, b)
+            if t == TmBr {
+                if apArgs(mut st, mut tv, irBlkX2(mut st, b), irBrTo(mut st, b)) && apBack(mut st, mut pos, irBrTo(mut st, b), here) {
+                    going = true
+                }
+            } else if t == TmCondbr {
+                if apArgs(mut st, mut tv, irBlkX3(mut st, b), irCondThen(mut st, b)) && apBack(mut st, mut pos, irCondThen(mut st, b), here) {
+                    going = true
+                }
+                if apArgs(mut st, mut tv, irBlkX5(mut st, b), irCondElse(mut st, b)) && apBack(mut st, mut pos, irCondElse(mut st, b), here) {
+                    going = true
+                }
+            }
+            here += 1
+            b = irBlkNext(mut st, b)
+        }
+    }
+    // 使い道: 算術は伝播済み・W_ANCHOR への書き込みは転送・他は全部「使う」
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpStore && irInsB(mut st, i) == W_ANCHOR && apIn(mut metas, irInsA(mut st, i)) {
+                if apT(mut tv, irInsC(mut st, i)) {
+                    c := apNextCall(mut st, irInsNext(mut st, i))
+                    fw = append(fw, c)
+                    fw[at + 1] = fw[at + 1] + 1
+                }
+            } else if op == OpLoad || op == OpLoad8 || op == OpPtoi || op == OpItop || op == OpRSetDepth || op == OpRBump {
+                if apT(mut tv, irInsA(mut st, i)) {
+                    return true
+                }
+            } else if op == OpStore || op == OpStore8 || op == OpRReloc {
+                if apT(mut tv, irInsA(mut st, i)) || apT(mut tv, irInsC(mut st, i)) {
+                    return true
+                }
+            } else if op == OpGepW || op == OpGepB || op == OpRAlloc {
+                if apT(mut tv, irInsA(mut st, i)) || apT(mut tv, irInsB(mut st, i)) {
+                    return true
+                }
+            } else if op == OpCall {
+                if apList(mut st, mut tv, irInsB(mut st, i)) {
+                    return true
+                }
+            } else if (op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone) {
+                if apT(mut tv, irInsA(mut st, i)) || apList(mut st, mut tv, irInsB(mut st, i)) {
+                    return true
+                }
+            } else if op == OpSyscall || op == OpCrcFold {
+                if apList(mut st, mut tv, irInsA(mut st, i)) {
+                    return true
+                }
+            } else if op != OpBin && op != OpCmp && op != OpDead && op != OpConst && op != OpGlobal && op != OpFsAddr && op != OpSlotaddr && op != OpFuncaddr && op != OpRDepth && op != OpREnter {
+                // 知らない命令は保守的に使う扱い
+                return true
+            }
+            i = irInsNext(mut st, i)
+        }
+        t := irBlkTerm(mut st, b)
+        if (t == TmCondbr || t == TmRet) && irBlkX1(mut st, b) >= 0 && apT(mut tv, irBlkX1(mut st, b)) {
+            return true
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return false
+}
+
+// 分岐先 t が並びで今のブロック（here 番目）以前か（後ろの辺 — 写した印を同じ周で読み損ねうる）
+func apBack(st mut St, pos mut []int, t BlkRef, here int) bool {
+    id := irBlkId(mut st, t)
+    return id < 0 || id >= len(pos) || pos[id] <= here
+}
+
+func apT(tv mut []bool, v int) bool {
+    return v >= 0 && v < len(tv) && tv[v]
+}
+
+func apMark(tv mut []bool, v int) {
+    if v >= 0 && v < len(tv) {
+        tv[v] = true
+    }
+}
+
+// 値の列 l に印の値があるか
+func apList(st mut St, tv mut []bool, l int) bool {
+    if l < 0 {
+        return false
+    }
+    n := desugar.HeapGet(mut st.d, l)
+    for k <- iter.Range(0, n) {
+        if apT(mut tv, desugar.HeapGet(mut st.d, l + 1 + k)) {
+            return true
+        }
+    }
+    return false
+}
+
+// 分岐の実引数の列 l の印をブロック t の仮引数へ写す（真 = 増えた）
+func apArgs(st mut St, tv mut []bool, l int, t BlkRef) bool {
+    if l < 0 {
+        return false
+    }
+    n := desugar.HeapGet(mut st.d, l)
+    mut grew := false
+    mut p := irBlkPHead(mut st, t)
+    mut k := 0
+    while p >= 0 && k < n {
+        v := desugar.HeapGet(mut st.d, p + 1)
+        if apT(mut tv, desugar.HeapGet(mut st.d, l + 1 + k)) && !apT(mut tv, v) {
+            apMark(mut tv, v)
+            grew = true
+        }
+        p = desugar.HeapGet(mut st.d, p)
+        k += 1
+    }
+    return grew
+}
+
+// 命令 i0 から先（同じブロック）の最初の直の呼び出しの呼び先（間接・無しは -1）
+func apNextCall(st mut St, i0 InsRef) int {
+    mut i := i0
+    while i != -1 {
+        op := irInsOp(mut st, i)
+        if (op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone) {
+            return -1
+        }
+        if op == OpCall {
+            return int(irInsFn(mut st, i))
+        }
+        i = irInsNext(mut st, i)
+    }
+    return -1
+}
+
+// 関数 f の meta の globaladdr の値（関数全体 — 入口のブロックで取ったアドレスを後のブロックで使う）を追う。prune = false: W_ANCHOR を読むか（真 = 読む）。
+// prune = true: 要らない関数を呼ぶ直前の W_ANCHOR への store を消す（真 = 消した）
+func apScan(st mut St, f FnRef, rd mut map[int]int, prune bool) bool {
+    mut hit := false
+    mut metas := mut []int{}
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if (irInsOp(mut st, i) == OpGlobal || irInsOp(mut st, i) == OpFsAddr) && irInsA(mut st, i) == st.meta {
+                metas = append(metas, irInsRes(mut st, i))
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if (op == OpLoad || op == OpStore) && irInsB(mut st, i) == W_ANCHOR && apIn(mut metas, irInsA(mut st, i)) {
+                if op == OpLoad && !prune {
+                    return true
+                }
+                if op == OpStore && prune && !apNeeded(mut st, irInsNext(mut st, i), mut metas, mut rd) {
+                    irSetInsOp(mut st, i, OpDead)
+                    hit = true
+                }
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return hit
+}
+
+func apIn(xs mut []int, v int) bool {
+    for k <- iter.Range(0, len(xs)) {
+        if xs[k] == v {
+            return true
+        }
+    }
+    return false
+}
+
+// 命令 i から先（同じブロック）で、W_ANCHOR の書き込みが読まれうるか: 先に W_ANCHOR の読み（展開済みの本体）があれば真・
+// 先に呼び出しがあればその関数が読むか（間接は真）・ブロックの終わりまで何も無ければ真（保守的）
+func apNeeded(st mut St, i0 InsRef, metas mut []int, rd mut map[int]int) bool {
+    mut i := i0
+    while i != -1 {
+        op := irInsOp(mut st, i)
+        if op == OpLoad && irInsB(mut st, i) == W_ANCHOR {
+            return true
+        }
+        if (op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone) {
+            return true
+        }
+        if op == OpCall {
+            g := irInsFn(mut st, i)
+            return llMa(mut rd, g)
+        }
+        i = irInsNext(mut st, i)
+    }
+    return true
+}
+
+// 関数 f が戻りうるか（TmRet のブロックがあるか — 本体の無い宣言は保守的に真）。戻らない関数（exit / 巻き戻りで終わる —
+// ラベル panic の冷たい関数等）の呼び出しの後には呼び手の反復も関数の残りも続かないので、固定点は「確保しうる」に数えない（#8）:
+// 消した反復の region に確保されうるのは死ぬ道の panic の印字だけで、罠で巻き戻る task の死でも残るのは死の 1 回分。
+// f の中の反復の enter の判定（llAllocContinues）は ma でなく命令を直接見るので、f 自身の内側のループの確保はこの除外に影響されない
+func llReturns(st mut St, f FnRef) bool {
+    mut b := irFnBHead(mut st, f)
+    if b == -1 {
+        return true
+    }
+    while b != -1 {
+        if irBlkTerm(mut st, b) == TmRet {
+            return true
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return false
+}
+
+// 関数 g の要約（呼び手の深度で確保しうるか）
+func llMa(ma mut map[int]int, g FnRef) bool {
+    v := ma[int(g)]
+    if v != nil {
+        return v == 1
+    }
+    return false
+}
+
+// rt の関数 g の呼び出しが呼び手の深度で確保しうるか（確保しないと分かっている rt だけ偽 — 他の rt は真）。
+// rt.chunk_open / chunk_next（chunk.sober）も真: 記録を今の深度に取り、切片の View の印は今の深度（反復の region — View の寿命は次の chunk_next まで）。
+// 反復の region を消すと印が外の変数の床と合流し、外への代入が写さずにスロットを指したままになる（上の前提「印 X の値は深度 X の region 以上に生きる」）
+func llRtAlloc(st mut St, g FnRef) bool {
+    if g == st.rtCopy || g == st.rtCopy8 || g == st.rtStreq || g == st.rtMatchLen || g == st.rtJClean || isMapRt(mut st, g) || g == st.rtMaphash || g == st.rtPchar || g == st.rtPint || g == st.rtPstr || g == st.rtPqstr || g == st.rtFlush || g == st.rtPanic || g == st.rtPanicMem || g == st.rtWrite || g == st.rtWfd || g == st.rtRenter || g == st.rtRenterL || g == st.rtRenterLL || g == st.rtTip8 || g == st.rtTipN8 || g == st.rtGrowTry || g == st.rtCpuProbe {
+        return false
+    }
+    return g == st.rtAlloc8 || g == st.rtCat8 || g == st.rtRalloc || g == st.rtGrow || g == st.rtGrow8 || g == st.rtMapGrow || g == st.rtReloc || g == st.rtReloc8 || g == st.rtErrReloc || g == st.rtExtend8 || g == st.rtArgs || g == st.rtDir || g == st.rtEnv || g == st.rtRead || g == st.rtRfd || g == st.rtRun || g == st.rtRunFd || g == st.rtStat || g == st.rtMkdir || g == st.rtMode || g == st.rtRename || g == st.rtSleep || (chF(mut st, CHF_OPEN) != -1 && (g == chF(mut st, CHF_OPEN) || g == chF(mut st, CHF_NEXT)))
+}
+
+// 関数 f の region.depth の結果の値の集合（今の深度の確保の目印 — 確保の深度の被演算子がこれでなければ、ヘッダの深度・
+// 外の floor 等の別の深度への確保で、ループの region を省いても積もらない）
+func llDepths(st mut St, f FnRef) map[int]int {
+    mut m := mut map[int]int{}
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if irInsOp(mut st, i) == OpRDepth {
+                m[irInsRes(mut st, i)] = 1
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return freeze(m)
+}
+
+// 値 v が集合 ds にあるか
+func llIn(ds map[int]int, v int) bool {
+    x := ds[v]
+    return x != nil
+}
+
+// 命令 i が今の深度で確保しうるか（ds = 関数の region.depth の値・関数の要約 ma で呼び先を見る）
+func llInsAllocs(st mut St, i InsRef, ma mut map[int]int, ds map[int]int) bool {
+    op := irInsOp(mut st, i)
+    if op == OpRAlloc || op == OpRBump {
+        return llIn(ds, irInsA(mut st, i))
+    }
+    if op == OpRReloc {
+        return llIn(ds, irInsC(mut st, i))
+    }
+    if (op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone) {
+        return true
+    }
+    if op == OpCall {
+        g := irInsFn(mut st, i)
+        args := irInsB(mut st, i)
+        if g == st.rtAlloc8 || g == st.rtRalloc {
+            return lenL(mut st, desugar.ListRef(args)) < 1 || llIn(ds, latI(mut st, desugar.ListRef(args), 0))
+        }
+        // rt.cat8（連結の頭）: 確保は 4 番目の深度へ（その場の伸長は確保しない）
+        if g == st.rtCat8 {
+            return lenL(mut st, desugar.ListRef(args)) < 4 || llIn(ds, latI(mut st, desugar.ListRef(args), 3))
+        }
+        if g == st.rtReloc || g == st.rtReloc8 || g == st.rtErrReloc {
+            k := if g == st.rtReloc { 2 } else { 1 }
+            return lenL(mut st, desugar.ListRef(args)) <= k || llIn(ds, latI(mut st, desugar.ListRef(args), k))
+        }
+        // rt.map_grow（rtgrow.sober）の確保は map 自身の深度（ヘッダの深度 — 今の深度の map なら、その map を作った確保が既に数えられている）
+        if g == st.rtMapGrow {
+            return false
+        }
+        // 幾何成長（rtgrow.sober）: 深度は rt.slice_grow = 4 番目・rt.slice_grow8 = 3 番目
+        if g == st.rtGrow || g == st.rtGrow8 {
+            k := if g == st.rtGrow { 3 } else { 2 }
+            return lenL(mut st, desugar.ListRef(args)) <= k || llIn(ds, latI(mut st, desugar.ListRef(args), k))
+        }
+        return llRtAlloc(mut st, g) || llMa(mut ma, g)
+    }
+    return false
+}
+
+// 関数 f の呼び出しが、呼ぶ関数を見ずに、呼び手の今の深度で確保しうるか: 入口で region を開かない関数は本体のどこかで
+// 今の深度へ確保すれば真・開く関数は relocate（戻り値・mut 実引数の行き先 — 呼び手以下の深度へ書く）か確保しうる rt / 間接の呼び出しがあれば真（保守的）
+func llFnOwnAlloc(st mut St, f FnRef) bool {
+    if llRtAlloc(mut st, f) {
+        return true
+    }
+    // 戻らない関数は数えない（#8 — llReturns のコメント）。種まきと伝播（llCallees）の両方で外すので、ma に入らない =
+    // llAllocContinues の呼び出しの判定（llMa）でも確保と数えられない
+    if !llReturns(mut st, f) {
+        return false
+    }
+    ds := llDepths(mut st, f)
+    enters := rlEnters(mut st, f)
+    mut none := mut map[int]int{}
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpCall && !llRtKnown(mut st, irInsFn(mut st, i)) {
+                // 利用者の関数の呼び出しは固定点で見る
+            } else if enters && (op == OpRAlloc || op == OpRBump) {
+                // enter する関数の確保は自分の深度が普通だが、宛先構築（M1 の印 — 呼び手の深度・W_DEST）は呼び手の深度へ作る（見落とすと
+                // binary-trees の one() の木が呼び手の深度に作られ、呼ぶループの反復の region を消していたので反復ごとの木が main に積もる — 1 GB 級）
+                if llCallerDepth(mut st, f, irInsA(mut st, i)) {
+                    return true
+                }
+            } else if llInsAllocs(mut st, i, mut none, ds) {
+                return true
+            } else if enters && op == OpRReloc {
+                return true
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return false
+}
+
+// enter する関数 f の確保の深度の値 v が呼び手の深度でありうるか: 入口のブロックの enter より前の region.depth（呼び手の深度）・
+// 宛先の深度のレジスタ（W_DEST）の読み・それらの算術・ブロックの引数は真（保守的）。enter の後の region.depth（自分の深度か深い）と
+// メモリのヘッダの深度の読み（既存の値の深度 — 持ち主の region）は偽
+func llCallerDepth(st mut St, f FnRef, v0 int) bool {
+    b0 := irFnBHead(mut st, f)
+    mut v := v0
+    mut steps := 0
+    while steps < 32 {
+        mut def := InsRef(-1)
+        mut inEntry := false
+        mut beforeEnter := false
+        mut b := b0
+        while b != -1 && def == -1 {
+            mut seenEnter := false
+            mut i := irBlkIHead(mut st, b)
+            while i != -1 && def == -1 {
+                op := irInsOp(mut st, i)
+                if op == OpREnter || rlEnterCall(mut st, i) {
+                    seenEnter = true
+                }
+                if irInsRes(mut st, i) == v {
+                    def = i
+                    inEntry = b == b0
+                    beforeEnter = !seenEnter
+                }
+                i = irInsNext(mut st, i)
+            }
+            b = irBlkNext(mut st, b)
+        }
+        if def == -1 {
+            // 仮引数・ブロックの引数（保守的）
+            return true
+        }
+        op := irInsOp(mut st, def)
+        if op == OpRDepth {
+            return inEntry && beforeEnter
+        }
+        if op == OpLoad {
+            return irInsB(mut st, def) == W_DEST
+        }
+        if op == OpBin {
+            // 算術（宛先の深度の選び）: どちらかが呼び手の深度なら真
+            if llCallerDepth(mut st, f, irInsB(mut st, def)) {
+                return true
+            }
+            v = irInsC(mut st, def)
+        } else {
+            return true
+        }
+        steps += 1
+    }
+    return true
+}
+
+// rt の関数か（要約の固定点の外 — llRtAlloc が答える）
+func llRtKnown(st mut St, g FnRef) bool {
+    return llRtAlloc(mut st, g) || g == st.rtCopy || g == st.rtCopy8 || g == st.rtStreq || g == st.rtMatchLen || g == st.rtJClean || isMapRt(mut st, g) || g == st.rtMaphash || g == st.rtPchar || g == st.rtPint || g == st.rtPstr || g == st.rtPqstr || g == st.rtFlush || g == st.rtPanic || g == st.rtPanicMem || g == st.rtWrite || g == st.rtWfd || g == st.rtRenter || g == st.rtRenterL || g == st.rtRenterLL || g == st.rtTip8 || g == st.rtTipN8 || g == st.rtGrowTry
+}
+
+// cs の後ろに [f, 呼ぶ利用者の関数の数, 関数…] を積む
+func llCallees(st mut St, f FnRef, cs mut []int) {
+    at := len(cs)
+    cs = append(cs, int(f))
+    cs = append(cs, 0)
+    // 戻らない関数は伝播でも ma に入れない（#8 — 呼び先の列を空に。llReturns のコメント）
+    if !llReturns(mut st, f) {
+        return
+    }
+    // 入口で region を開かない関数は、自分のループの残る enter の下の呼び出しを数えない（llInLoop — G'）
+    enters := rlEnters(mut st, f)
+    inl := if enters { []bool{} } else { llInLoop(mut st, f) }
+    // 入口で region を開く関数は、今の深度が自分の深度（以深）の点の呼び出しを負の印（-g - 2）で積む（loopLightModule の mx — 今の深度への確保は伝えない）。
+    // 宛先の深度のレジスタ（W_DEST）へ書く関数は呼び先が呼び手の深度へ作りうるので全部を正で（保守的）
+    own := enters && !llStoresDest(mut st, f)
+    mut dv := mut map[int]int{}
+    cdb := if own { llCallerBlocks(mut st, f, mut dv) } else { []bool{} }
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        bid := irBlkId(mut st, b)
+        skip := bid >= 0 && bid < len(inl) && inl[bid]
+        mut cd := !own || (bid >= 0 && bid < len(cdb) && cdb[bid])
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if !skip && irInsOp(mut st, i) == OpCall && !llRtKnown(mut st, irInsFn(mut st, i)) {
+                g := int(irInsFn(mut st, i))
+                cs = append(cs, if cd { g } else { 0 - g - 2 })
+                cs[at + 1] = cs[at + 1] + 1
+            }
+            if own {
+                cd = llCdStep(mut st, f, i, cd, mut dv)
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+}
+
+// 関数 f（llFnOwnAlloc が真のもの）の確保が、呼び手の今の深度でない呼び手の指す深度へも行きうるか: 入口で region を開く関数の
+// relocate（戻り値は呼び手の今の深度だが、mut 実引数の行き先〔W_ANCHOR — 呼び手の束縛の region〕と区別しない — 保守的）と中身の分からない呼び出し
+func llFnEscape(st mut St, f FnRef) bool {
+    enters := rlEnters(mut st, f)
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone || (enters && op == OpRReloc) {
+                return true
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return false
+}
+
+// 関数 f が宛先の深度のレジスタ（W_DEST）へ書くか（呼び先がその深度 — 呼び手の深度 — へ作りうる）
+func llStoresDest(st mut St, f FnRef) bool {
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if irInsOp(mut st, i) == OpStore && irInsB(mut st, i) == W_DEST {
+                return true
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return false
+}
+
+// 命令 i の後に今の深度が呼び手の深度でありうるか（cd = 前）: enter で偽・呼び手の深度でありうる値への setdepth で真（dv = llCallerBlocks の分類）
+func llCdStep(st mut St, f FnRef, i InsRef, cd bool, dv mut map[int]int) bool {
+    op := irInsOp(mut st, i)
+    if op == OpREnter || rlEnterCall(mut st, i) {
+        return false
+    }
+    if op == OpRSetDepth {
+        return llSetCaller(mut st, f, irInsA(mut st, i), mut dv)
+    }
+    return cd
+}
+
+// setdepth の値 v が呼び手の深度でありうるか（dv の分類: 1 = 呼び手の深度・2 = 自分の深度以深。無ければ llCallerDepth — 仮引数・
+// ブロックの引数は保守的に真 — で決めて dv に残す）
+func llSetCaller(st mut St, f FnRef, v int, dv mut map[int]int) bool {
+    k := dv[v]
+    if k != nil {
+        return k == 1
+    }
+    c := llCallerDepth(mut st, f, v)
+    dv[v] = if c { 1 } else { 2 }
+    return c
+}
+
+// 入口で region を開く関数 f のブロックごとに、入口で今の深度が呼び手の深度でありうるか（前方の固定点 — 偽から真へ単調。
+// 入口のブロックは真から始まり、入口の enter で偽になる）。setdepth の値の判定はブロックごとに 1 回（出口の状態の写像を先に作る）
+func llCallerBlocks(st mut St, f FnRef, dv mut map[int]int) []bool {
+    nb := irFnNBlk(mut st, f)
+    mut cd := mut []bool{}
+    // 出口の写像: 0 = 入口の状態のまま・1 = 偽・2 = 真
+    mut tr := mut []int{}
+    for k <- iter.Range(0, nb + 1) {
+        cd = append(cd, false)
+        tr = append(tr, 0)
+    }
+    e := irFnBHead(mut st, f)
+    if e == -1 {
+        return freeze(cd)
+    }
+    // region.depth の値の分類（1 = 入口のブロックの enter より前 — 呼び手の深度・2 = それ以外 — 自分の深度以深）。setdepth の値がどちらでもない
+    // ときだけ llCallerDepth（関数を走査する — setdepth ごとに掛けると大きい関数で 2 乗）。dv は呼び手（llCallees の命令ごとの歩み）と共有
+    mut seenEnter := false
+    mut b := e
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpREnter || rlEnterCall(mut st, i) {
+                seenEnter = true
+            } else if op == OpRDepth {
+                dv[irInsRes(mut st, i)] = if b == e && !seenEnter { 1 } else { 2 }
+            }
+            i = irInsNext(mut st, i)
+        }
+        seenEnter = true
+        b = irBlkNext(mut st, b)
+    }
+    b = e
+    while b != -1 {
+        id := irBlkId(mut st, b)
+        if id >= 0 && id <= nb {
+            mut i := irBlkIHead(mut st, b)
+            while i != -1 {
+                op := irInsOp(mut st, i)
+                if op == OpREnter || rlEnterCall(mut st, i) {
+                    tr[id] = 1
+                } else if op == OpRSetDepth {
+                    tr[id] = if llSetCaller(mut st, f, irInsA(mut st, i), mut dv) { 2 } else { 1 }
+                }
+                i = irInsNext(mut st, i)
+            }
+        }
+        b = irBlkNext(mut st, b)
+    }
+    e0 := irBlkId(mut st, e)
+    if e0 >= 0 && e0 <= nb {
+        cd[e0] = true
+    }
+    mut stack := mut []int{}
+    mut going := true
+    while going {
+        going = false
+        b = e
+        while b != -1 {
+            id := irBlkId(mut st, b)
+            if id >= 0 && id <= nb && (tr[id] == 2 || (tr[id] == 0 && cd[id])) {
+                sp := llSuccs(mut st, b, mut stack, 0)
+                for k <- iter.Range(0, sp) {
+                    s := irBlkId(mut st, BlkRef(stack[k]))
+                    if s >= 0 && s <= nb && !cd[s] {
+                        cd[s] = true
+                        going = true
+                    }
+                }
+            }
+            b = irBlkNext(mut st, b)
+        }
+    }
+    return freeze(cd)
+}
+
+// ループ本体（llLoopBody の範囲）の確保のうち、次の反復へ戻りうるもの
+// （確保のブロックから b0 へ CFG で到達できる）があるか（M5c）。戻れない経路（return・全部のループの外へ抜ける break）だけの確保は
+// 反復ごとには積もらない — 抜けた先で 1 回きり（外のループへ戻れるなら b0 にも戻れる — 外のループが内のループを再び回すので真）。
+// fannkuch の「次の順列」の `while true`（確保は return の手前の println の補間だけ）が反復ごとに軽い enter を払っていた
+// 確保と数えるのは、本体の中で読んだ深度（b0 の enter の後と内側のループのもの）への確保と、呼び手の今の深度で確保しうる呼び出しだけ。本体の外で読んだ深度
+// （本体を支配する — 外の反復・関数の深度）への確保は、enter を消しても行き先が同じ region なので数えない（logagg の語のループで
+// 行の反復の変数への写しを語ごとの確保と数えると、enter と熱いループのレジスタの崩れで命令が目立って増える）。本体の範囲（llLoopBody）が欠けると中の深度を外と誤るので、範囲の正しさが前提
+func llAllocContinues(st mut St, f FnRef, b0 BlkRef, ma mut map[int]int) bool {
+    nb := irFnNBlk(mut st, f)
+    body := llLoopBody(mut st, b0, nb)
+    // 今の深度 = 本体の中で読んだ region.depth
+    mut own := mut map[int]int{}
+    for k <- iter.Range(0, len(body)) {
+        mut i := irBlkIHead(mut st, BlkRef(body[k]))
+        while i != -1 {
+            if irInsOp(mut st, i) == OpRDepth {
+                own[irInsRes(mut st, i)] = 1
+            }
+            i = irInsNext(mut st, i)
+        }
+    }
+    mut allocs := mut []int{}
+    for k <- iter.Range(0, len(body)) {
+        mut i := irBlkIHead(mut st, BlkRef(body[k]))
+        mut hit := false
+        while i != -1 && !hit {
+            if llInsAllocs(mut st, i, mut ma, own) {
+                hit = true
+            }
+            i = irInsNext(mut st, i)
+        }
+        if hit {
+            allocs = append(allocs, body[k])
+        }
+    }
+    mut stack := mut []int{}
+    mut sp := 0
+    // 確保のブロックから b0 へ（CFG 全体 — setdepth のブロックも越える。訪問済みは「b0 へ届かない」と分かったブロック）
+    mut dead := mut []bool{}
+    for k <- iter.Range(0, nb + 1) {
+        dead = append(dead, false)
+    }
+    for a <- iter.Range(0, len(allocs)) {
+        // 確保のブロック自身が b0 なら、その確保より後ろを通って次の反復へ戻るかは CFG で見る（b0 の後続から）
+        sp = 0
+        sp = llSuccs(mut st, BlkRef(allocs[a]), mut stack, sp)
+        while sp > 0 {
+            sp -= 1
+            b := BlkRef(stack[sp])
+            if b == b0 {
+                return true
+            }
+            id := irBlkId(mut st, b)
+            if id >= 0 && id <= nb && !dead[id] {
+                dead[id] = true
+                sp = llSuccs(mut st, b, mut stack, sp)
+            }
+        }
+    }
+    return false
+}
+
+// ブロック b の後続を積みに積んで新しい sp
+func llSuccs(st mut St, b BlkRef, stack mut []int, sp0 int) int {
+    mut sp := sp0
+    t := irBlkTerm(mut st, b)
+    if t == TmBr {
+        sp = llPush(mut stack, sp, int(irBrTo(mut st, b)))
+    } else if t == TmCondbr {
+        sp = llPush(mut stack, sp, int(irCondThen(mut st, b)))
+        sp = llPush(mut stack, sp, int(irCondElse(mut st, b)))
+    }
+    return sp
+}
+
+// ループ本体（ブロック b0 から、外の深度へ戻す `region.setdepth` で始まるブロックの手前まで — b0 を含む）のブロックの列（訪問済みはブロック番号の表・積みは 1 本の slice）。
+// 本体の中で読んだ深度へ戻す setdepth（内側のループの頭・出口）は越える — そこで止めると内側のループより後ろの確保を見落とし、外の反復の enter を誤って消す
+// （誤ると routing の行ごとの列が関数の region に積もって RSS が行数に比例する — 反復の region の約束の破れ）
+func llLoopBody(st mut St, b0 BlkRef, nb int) []int {
+    mut seen := mut []bool{}
+    for k <- iter.Range(0, nb + 1) {
+        seen = append(seen, false)
+    }
+    mut body := mut []int{}
+    mut stack := mut []int{}
+    // 本体の中で読んだ深度（b0 の enter より後の region.depth の値）— setdepth がそこへ戻すブロックは内側のループの頭・出口で、本体の続き
+    mut inner := mut map[int]int{}
+    mut sp := llPush(mut stack, 0, int(b0))
+    while sp > 0 {
+        sp -= 1
+        b := BlkRef(stack[sp])
+        id := irBlkId(mut st, b)
+        h := irBlkIHead(mut st, b)
+        if id >= 0 && id <= nb && !seen[id] && !(b != b0 && h != -1 && irInsOp(mut st, h) == OpRSetDepth && inner[irInsA(mut st, h)] == nil) {
+            seen[id] = true
+            body = append(body, int(b))
+            mut i := h
+            mut after := b != b0
+            while i != -1 {
+                if irInsOp(mut st, i) == OpREnter {
+                    after = true
+                } else if after && irInsOp(mut st, i) == OpRDepth {
+                    inner[irInsRes(mut st, i)] = 1
+                }
+                i = irInsNext(mut st, i)
+            }
+            sp = llSuccs(mut st, b, mut stack, sp)
+        }
+    }
+    return freeze(body)
+}
+
+// 入口で region を開かない関数 f のブロック番号ごとに、そこの呼び出しを f の要約（呼び手の今の深度で確保しうるか）から除けるか（G'）:
+// 入口以外の region.enter のブロック b0 の本体にあり、本体が b0 だけから入られ、本体の途中に setdepth が無く、b0 へ戻れる。そこで呼ぶ関数が確保しうるなら b0 の enter は
+// llAllocContinues で残る（消えも軽くもならない enter の下）ので、確保は f の入口の深度より深い — 呼び手の深度には届かない
+func llInLoop(st mut St, f FnRef) []bool {
+    nb := irFnNBlk(mut st, f)
+    mut inl := mut []bool{}
+    mut mark := mut []int{}
+    mut rch := mut []int{}
+    mut indeg := mut []int{}
+    mut cnt := mut []int{}
+    for k <- iter.Range(0, nb + 1) {
+        inl = append(inl, false)
+        mark = append(mark, 0)
+        rch = append(rch, 0)
+        indeg = append(indeg, 0)
+        cnt = append(cnt, 0)
+    }
+    e := irFnBHead(mut st, f)
+    if e == -1 {
+        return freeze(inl)
+    }
+    mut stack := mut []int{}
+    // 入る辺の数（関数ごとに 1 回 — 入口以外の enter が無ければ組まない）
+    mut b0 := irBlkNext(mut st, e)
+    mut any := false
+    while b0 != -1 && !any {
+        any = llHasEnter(mut st, b0)
+        b0 = irBlkNext(mut st, b0)
+    }
+    if !any {
+        return freeze(inl)
+    }
+    mut b := e
+    while b != -1 {
+        sp := llSuccs(mut st, b, mut stack, 0)
+        for j <- iter.Range(0, sp) {
+            sid := irBlkId(mut st, BlkRef(stack[j]))
+            indeg[sid] = indeg[sid] + 1
+        }
+        b = irBlkNext(mut st, b)
+    }
+    mut stamp := 0
+    b0 = irBlkNext(mut st, e)
+    while b0 != -1 {
+        if llHasEnter(mut st, b0) {
+            // 本体（llLoopBody と同じ走査 — 印は版の番号で使い回す）
+            stamp += 1
+            mut body := mut []int{}
+            mut calls := false
+            mut mixed := false
+            mut sp0 := llPush(mut stack, 0, int(b0))
+            while sp0 > 0 {
+                sp0 -= 1
+                x := BlkRef(stack[sp0])
+                id := irBlkId(mut st, x)
+                h := irBlkIHead(mut st, x)
+                if mark[id] != stamp && !(x != b0 && h != -1 && irInsOp(mut st, h) == OpRSetDepth) {
+                    mark[id] = stamp
+                    cnt[id] = 0
+                    body = append(body, int(x))
+                    k := llBlkScan(mut st, x)
+                    if (k & 1) != 0 {
+                        calls = true
+                    }
+                    if (k & 2) != 0 {
+                        mixed = true
+                    }
+                    sp0 = llSuccs(mut st, x, mut stack, sp0)
+                }
+            }
+            // 本体の途中の setdepth（戻る手前・呼び出しの後の深度の戻し）の後ろは入口の深度でありうる — その本体は諦める
+            if calls && !mixed {
+                // 本体が b0 だけから入られるか（本体の b0 以外のブロックの入る辺が全部本体から）・b0 へ直に戻るか本体の外の近くから b0 に着く後続を持つ種
+                for k <- iter.Range(0, len(body)) {
+                    x := BlkRef(body[k])
+                    sp := llSuccs(mut st, x, mut stack, 0)
+                    for j <- iter.Range(0, sp) {
+                        s := BlkRef(stack[j])
+                        sid := irBlkId(mut st, s)
+                        if mark[sid] == stamp {
+                            cnt[sid] = cnt[sid] + 1
+                        }
+                        if s == b0 || (mark[sid] != stamp && llNear(mut st, s, b0)) {
+                            rch[irBlkId(mut st, x)] = stamp
+                        }
+                    }
+                }
+                mut single := true
+                for k <- iter.Range(0, len(body)) {
+                    id := irBlkId(mut st, BlkRef(body[k]))
+                    if BlkRef(body[k]) != b0 && cnt[id] != indeg[id] {
+                        single = false
+                    }
+                }
+                // b0 へ戻れる本体のブロック（種から本体の中で逆に — 固定点）
+                mut going := single
+                while going {
+                    going = false
+                    for k <- iter.Range(0, len(body)) {
+                        x := BlkRef(body[len(body) - 1 - k])
+                        if rch[irBlkId(mut st, x)] != stamp {
+                            sp := llSuccs(mut st, x, mut stack, 0)
+                            for j <- iter.Range(0, sp) {
+                                sid := irBlkId(mut st, BlkRef(stack[j]))
+                                if mark[sid] == stamp && rch[sid] == stamp && rch[irBlkId(mut st, x)] != stamp {
+                                    rch[irBlkId(mut st, x)] = stamp
+                                    going = true
+                                }
+                            }
+                        }
+                    }
+                }
+                for k <- iter.Range(0, len(body)) {
+                    id := irBlkId(mut st, BlkRef(body[k]))
+                    if single && rch[id] == stamp {
+                        inl[id] = true
+                    }
+                }
+            }
+        }
+        b0 = irBlkNext(mut st, b0)
+    }
+    return freeze(inl)
+}
+
+// ブロック s から 16 ブロック以内の前向きの探索で b0 に着くか（ループの頭 → 条件 → b0 の短い鎖 — 長い道は偽〔保守的〕）
+func llNear(st mut St, s BlkRef, b0 BlkRef) bool {
+    mut stack := mut []int{}
+    mut sp := llPush(mut stack, 0, int(s))
+    mut n := 0
+    while sp > 0 && n < 16 {
+        sp -= 1
+        b := BlkRef(stack[sp])
+        if b == b0 {
+            return true
+        }
+        n += 1
+        sp = llSuccs(mut st, b, mut stack, sp)
+    }
+    return false
+}
+
+// ブロック b に region.enter があるか
+func llHasEnter(st mut St, b BlkRef) bool {
+    mut i := irBlkIHead(mut st, b)
+    while i != -1 {
+        if irInsOp(mut st, i) == OpREnter {
+            return true
+        }
+        i = irInsNext(mut st, i)
+    }
+    return false
+}
+
+// ブロック b の命令の印: 1 = 利用者の関数の直の呼び出しがある・2 = region.setdepth がある
+func llBlkScan(st mut St, b BlkRef) int {
+    mut k := 0
+    mut i := irBlkIHead(mut st, b)
+    while i != -1 {
+        op := irInsOp(mut st, i)
+        if op == OpCall && !llRtKnown(mut st, irInsFn(mut st, i)) {
+            k = k | 1
+        } else if op == OpRSetDepth {
+            k = k | 2
+        }
+        i = irInsNext(mut st, i)
+    }
+    return k
+}
+
+// 入口で region に入る関数か（region.enter か、置き換え済みの軽い enter の呼び出しが入口のブロックにある）
+func rlEnters(st mut St, g FnRef) bool {
+    b := irFnBHead(mut st, g)
+    if b == -1 {
+        return false
+    }
+    mut i := irBlkIHead(mut st, b)
+    while i != -1 {
+        op := irInsOp(mut st, i)
+        if op == OpREnter || rlEnterCall(mut st, i) {
+            return true
+        }
+        i = irInsNext(mut st, i)
+    }
+    return false
+}
+
+func rlEligible(st mut St, f FnRef) bool {
+    if irFnSHead(mut st, f) >= 0 {
+        return false
+    }
+    entry := irFnBHead(mut st, f)
+    mut enters := 0
+    mut b := entry
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        mut seenEnter := false
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpREnter {
+                if b != entry {
+                    return false
+                }
+                enters += 1
+                seenEnter = true
+            } else if op == OpRDepth {
+                // 呼び手の深度（enter より前・入口のブロック）だけ
+                if b != entry || seenEnter {
+                    return false
+                }
+            } else if op == OpRReloc || (op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone) || op == OpSlotaddr {
+                return false
+            } else if op == OpCall && (irInsFn(mut st, i) == st.rtGrow || irInsFn(mut st, i) == st.rtGrow8) {
+                // 幾何成長（rtgrow.sober）は確保の op と同じ扱い — 深度は引数（ヘッダの深度・呼び手以下）
+            } else if op == OpCall {
+                g := irInsFn(mut st, i)
+                if irFnRet(mut st, g) == TyPtr {
+                    return false
+                }
+                r := irFnRFree(mut st, g)
+                // rt.panic / rt.panic_mem は戻らない（P0 の rfCallees と同じ — std/task のプログラムでは P0 を満たさない）。
+                // 戻らない利用者の関数（ラベル panic の冷たい関数 — task のプログラムでは印字の道が region を使うので P0 を満たさない）も
+                // 同じ特例（#8 の原理 — llReturns のコメント。この判定が無いと Load64 の入口の enter が task のプログラムでだけ light のまま残り、
+                // 展開先の insert / longest が ≈ 20 命令 / 呼び出しを払う）。llReturns は最後（短絡 — 落ちる呼び出しだけ走査）
+                free := (r >= 0 && desugar.HeapGet(mut st.d, r) == 1) || g == st.rtPanic || g == st.rtPanicMem
+                if !free && !rlEnters(mut st, g) && llReturns(mut st, g) {
+                    return false
+                }
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return enters == 1 && !reDepthArith(mut st, f)
+}
+
+// f の region.enter を軽い enter の呼び出しに置き換える
+func rlRewrite(st mut St, f FnRef) {
+    rlNeed(mut st)
+    mut i := irBlkIHead(mut st, irFnBHead(mut st, f))
+    while i != -1 {
+        if irInsOp(mut st, i) == OpREnter {
+            irSetInsOp(mut st, i, OpCall)
+            irSetInsRes(mut st, i, -1)
+            irSetInsA(mut st, i, int(st.rtRenterL))
+            irSetInsB(mut st, i, list0(mut st))
+            irSetInsC(mut st, i, 0)
+        }
+        i = irInsNext(mut st, i)
+    }
+}
+
+// rt.region_enter_light（関数の入口の軽い enter — 自分の深度に何も確保しないので幾何成長の世代を進めない）を（初出なら）宣言して本体を組む
+func rlNeed(st mut St) {
+    if st.rtRenterL != -1 {
+        return
+    }
+    st.rtRenterL = addFunc(mut st, int(strLit(mut st, "rt.region_enter_light")), desugar.ListRef(list0(mut st)), -1)
+    rlBuild(mut st, st.rtRenterL, false)
+}
+
+// rt.region_enter_lloop（ループの反復の軽い enter — その深度に確保しうるので幾何成長の世代を進める — rtgrow.sober）
+func rlNeedLoop(st mut St) {
+    if st.rtRenterLL != -1 {
+        return
+    }
+    st.rtRenterLL = addFunc(mut st, int(strLit(mut st, "rt.region_enter_lloop")), desugar.ListRef(list0(mut st)), -1)
+    rlBuild(mut st, st.rtRenterLL, true)
+}
+
+// 軽い enter（2 種のどちらか）の呼び出しか
+func rlEnterCall(st mut St, i InsRef) bool {
+    if irInsOp(mut st, i) != OpCall {
+        return false
+    }
+    g := irInsFn(mut st, i)
+    return (st.rtRenterL != -1 && g == st.rtRenterL) || (st.rtRenterLL != -1 && g == st.rtRenterLL)
+}
+
+func rlBuild(st mut St, fnr FnRef, gen bool) {
+    saved := st.fn
+    savedCur := st.cur
+    begin(mut st, fnr)
+    meta := globaladdr(mut st, st.meta)
+    d := bin(mut st, BAdd, load(mut st, meta, W_DEPTH), iconst(mut st, 1))
+    over := newBlock(mut st)
+    ok := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGe, d, iconst(mut st, MAX_DEPTH)), over, -1, ok, -1)
+    setCur(mut st, over)
+    memPanic(mut st, PM_DEPTH)
+    setCur(mut st, ok)
+    store(mut st, meta, W_DEPTH, d)
+    bump := slotEnter(mut st, meta, d)
+    if !gen {
+        // 関数の入口の軽い enter は、bump が既に基底なら書かない。自分の深度に何も確保しない関数の再帰では
+        // ほぼ毎回同じ値で、書くと番地の決まるのが遅い store（深度のロードの後 — 並列モードは %fs の記録の後）が後続のロードを待たせていた
+        // （btpar W1 の cycles +17% の全部・逐次の binary-trees でも 6%）。書いた後の値は同じ — 観測は不変
+        bp := gepWord(mut st, meta, d)
+        bW := newBlock(mut st)
+        bS := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CNe, load(mut st, bp, W_BUMP), bump), bW, -1, bS, -1)
+        setCur(mut st, bW)
+        store(mut st, bp, W_BUMP, bump)
+        br(mut st, bS, -1)
+        setCur(mut st, bS)
+    } else {
+        store(mut st, gepWord(mut st, meta, d), W_BUMP, bump)
+    }
+    if gen {
+        // 世代（rtgrow.sober — 入り直した region で幾何成長の表の項を無効に）
+        genBump(mut st, d)
+    }
+    ret(mut st, -1)
+    st.fn = saved
+    st.cur = savedCur
+}
+
+// 葉の region の省略（M15 — 最適化のバックエンドの経路だけ・regionLightModule の手前）: 自分の深度で何も確保しない葉の関数の
+// `region.enter` を消す（深度を進めない）。的 = 可謬の葉（utf8.Str 等 — 結果の集約の置き場〔スロット〕と出口の relocate があるので M9 の軽い enter の対象外）。
+// 条件（保守的）:
+//   ① region.enter がちょうど 1 つで入口のブロックにあり、region.depth は enter より前（呼び手の深度）にしか無い — 確保の深度の被演算子は呼び手以下だけ
+//   ② 直に呼ぶのは P0 の region を使わない関数と、今の深度に確保しない rt（panic・relocate・str_eq）だけ・間接呼び出しなし
+//      — region を使わない関数は region を使う関数を呼ばないので f へ戻る路が無い（再帰に関与しない・深度の加算は静的に 0 段で有界）。
+//      戻らない利用者の関数（ラベル panic の冷たい関数 — 727）も可: 戻らないので f へ戻る路が無く、region を使っても死ぬ道の 1 回分だけ
+// 書き換え = enter を消し、relocate（宛先 = 呼び手の深度 = 省略後の今の深度。値は全部それ以下に住むので空振り）と出口の setdepth（同じ深度へ戻すだけ）も消す。
+// 観測: 深度の上限（27 節 — 実装の限界であって意味ではない）に届く段数が葉の分だけ遅れる方向にしか動かない（再帰の資源の有界性は再帰の輪の中の enter が守る）
+func regionElideModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 && reEligible(mut st, f) {
+            reRewrite(mut st, f)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// 今の深度に確保しない rt の関数か
+func reRtOk(st mut St, g FnRef) bool {
+    return g == st.rtPanic || g == st.rtPanicMem || g == st.rtReloc || g == st.rtReloc8 || g == st.rtErrReloc || g == st.rtStreq || g == st.rtMatchLen || g == st.rtJClean || g == st.rtGrow || g == st.rtGrow8 || g == st.rtGrowTry || g == st.rtMapGrow
+}
+
+// f が入口の enter より前に読んだ深度（呼び手の深度）から算術で深度を作るか。
+// `add <enter 前の region.depth>, k` は呼び手より深い = 自分の region（宛先構築 mksliceAt の行き先 — ループの外の mut 束縛の region）で、
+// 条件 ①「確保の深度の被演算子は呼び手以下だけ」の外。周回の enter を loopLight が消した後の形で、ループの外の mut 束縛へ作る mut の
+// 新しいリテラルがこの形になり、enter を消すと自分の深度の bump を初期化しないまま確保していた（SEGV — .pair/fx/r767-loop-reassign-mutslice-segv）
+func reDepthArith(st mut St, f FnRef) bool {
+    entry := irFnBHead(mut st, f)
+    mut ds := mut []int{}
+    mut i := irBlkIHead(mut st, entry)
+    while i != -1 && irInsOp(mut st, i) != OpREnter {
+        if irInsOp(mut st, i) == OpRDepth {
+            ds = append(ds, irInsRes(mut st, i))
+        }
+        i = irInsNext(mut st, i)
+    }
+    if len(ds) == 0 {
+        return false
+    }
+    mut b := entry
+    while b != -1 {
+        mut j := irBlkIHead(mut st, b)
+        while j != -1 {
+            if irInsOp(mut st, j) == OpBin {
+                for k <- iter.Range(0, len(ds)) {
+                    if irInsB(mut st, j) == ds[k] || irInsC(mut st, j) == ds[k] {
+                        return true
+                    }
+                }
+            }
+            j = irInsNext(mut st, j)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return false
+}
+
+func reEligible(st mut St, f FnRef) bool {
+    entry := irFnBHead(mut st, f)
+    mut enters := 0
+    mut b := entry
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        mut seenEnter := false
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpREnter {
+                if b != entry {
+                    return false
+                }
+                enters += 1
+                seenEnter = true
+            } else if op == OpRDepth {
+                if b != entry || seenEnter {
+                    return false
+                }
+            } else if (op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone) {
+                return false
+            } else if op == OpCall {
+                g := irInsFn(mut st, i)
+                r := irFnRFree(mut st, g)
+                free := r >= 0 && desugar.HeapGet(mut st.d, r) == 1
+                // 戻らない利用者の関数も可（rlEligible と同じ特例 — 727。戻らないので f へ戻る路が無く、深度の加算は死ぬ道の 1 回分だけ）
+                if !free && !reRtOk(mut st, g) && llReturns(mut st, g) {
+                    return false
+                }
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return enters == 1 && !reDepthArith(mut st, f)
+}
+
+// f の region.enter と relocate を消す
+func reRewrite(st mut St, f FnRef) {
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpREnter || op == OpRSetDepth || op == OpRReloc || (op == OpCall && (irInsFn(mut st, i) == st.rtReloc || irInsFn(mut st, i) == st.rtReloc8 || irInsFn(mut st, i) == st.rtErrReloc)) {
+                irSetInsOp(mut st, i, OpDead)
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    // 消した命令を鎖から外して番号を詰める（depth.sober と同じ後始末）
+    optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+    optDce(mut st, f)
+    optRenumber(mut st, f)
+}

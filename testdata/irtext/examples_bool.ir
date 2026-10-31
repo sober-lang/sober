@@ -1697,6 +1697,18 @@ b0:
   ret %2
 }
 
+func @main.isEven(%0 i64) i64 {
+b0:
+  %1 = region.depth
+  region.enter
+  %2 = const 2
+  %3 = rem %0, %2
+  %4 = const 0
+  %5 = eq %3, %4
+  region.setdepth %1
+  ret %5
+}
+
 func @main.main() {
   slot s0 [1]
   slot s1 [1]
@@ -1989,6 +2001,22 @@ b41(%122 i64):
   call @rt.print_char(%123)
   region.setdepth %0
   ret
+}
+
+func @rt.sigint() {
+b0:
+  %0 = const 231
+  %1 = const 130
+  %2 = syscall(%0, %1)
+  exit 130
+}
+
+func @rt.sigterm() {
+b0:
+  %0 = const 231
+  %1 = const 143
+  %2 = syscall(%0, %1)
+  exit 143
 }
 
 export func @sober_entry(%0 ptr) {
@@ -2584,32 +2612,4 @@ b91:
   %404 = const 1
   %405 = add %383, %404
   br b85(%401, %405)
-}
-
-func @rt.sigterm() {
-b0:
-  %0 = const 231
-  %1 = const 143
-  %2 = syscall(%0, %1)
-  exit 143
-}
-
-func @rt.sigint() {
-b0:
-  %0 = const 231
-  %1 = const 130
-  %2 = syscall(%0, %1)
-  exit 130
-}
-
-func @main.isEven(%0 i64) i64 {
-b0:
-  %1 = region.depth
-  region.enter
-  %2 = const 2
-  %3 = rem %0, %2
-  %4 = const 0
-  %5 = eq %3, %4
-  region.setdepth %1
-  ret %5
 }

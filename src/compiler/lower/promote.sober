@@ -1,6 +1,6 @@
 package lower
 
-// ループの中のメモリの積算のレジスタ昇格（nbody のレジスタ昇格便）: B2（cfgCleanFunc の末尾）。ループ不変の
+// ループの中のメモリの積算のレジスタ昇格: cfgCleanFunc の末尾で走る。ループ不変の
 // 語の番地 L（基底 B・添字の形 c·X + D）について、ループの中のメモリ操作が全部 L そのものか L と重ならない（添字の算術で言える）なら、
 // 1 語のスロットに付け替えて前置きで読み込み・正常の出口で書き戻し、その場で mem2reg が SSA にする。範囲外を読み書きしないよう前置き・出口は
 // 範囲の判定で守る。panic の出口では書き戻さない（死んだ task のメモリは誰も観測しない — mut は spawn に捕獲できない）。
@@ -11,7 +11,7 @@ package lower
 import "desugar"
 import "std/iter"
 
-// promoteFunc は関数 f のループに昇格を掛ける（先に安い走査で対象を絞る — 支配木を組むのは利用者のループがあって同じ番地の load と store がある関数だけ）
+// 関数 f のループに昇格を掛ける（先に安い走査で対象を絞る — 支配木を組むのは利用者のループがあって同じ番地の load と store がある関数だけ）
 func promoteFunc(st mut St, f FnRef) {
     if !prCheap(mut st, f) {
         return
@@ -31,7 +31,7 @@ func promoteFunc(st mut St, f FnRef) {
     st.fn = saved
 }
 
-// prClean は死んだ仮引数を消して後始末する（cfgclean ① と同じ — 作業域は cfgCleanFunc と同じ形）
+// 死んだ仮引数を消して後始末する（cfgclean ① と同じ — 作業域は cfgCleanFunc と同じ形）
 func prClean(st mut St, f FnRef) {
     nb := irFnNBlk(mut st, f)
     nv := irFnNVal(mut st, f)
@@ -51,7 +51,7 @@ func prClean(st mut St, f FnRef) {
     }
 }
 
-// prCheap は利用者のループの頭があり、同じ番地の値を load と store の両方が使う関数か（作業域を作らない走査）
+// 利用者のループの頭があり、同じ番地の値を load と store の両方が使う関数か（作業域を作らない走査）
 func prCheap(st mut St, f FnRef) bool {
     mut loop := false
     mut b := irFnBHead(mut st, f)
@@ -98,7 +98,7 @@ func prCheap(st mut St, f FnRef) bool {
     return false
 }
 
-// PrW は 1 回の作業域: 値 → 定義の命令（-1 = 命令でない）・値 → 定義のブロック番号（関数の仮引数は入口 = 0）・ブロック → ループの印
+// 1 回の作業域: 値 → 定義の命令（-1 = 命令でない）・値 → 定義のブロック番号（関数の仮引数は入口 = 0）・ブロック → ループの印
 type PrW struct {
     def mut []int
     dblk mut []int
@@ -106,7 +106,7 @@ type PrW struct {
     mark int
 }
 
-// prRound はループを 1 つ昇格したら true（CFG が変わるので呼び手が組み直して次へ）
+// ループを 1 つ昇格したら true（CFG が変わるので呼び手が組み直して次へ）
 func prRound(st mut St, f FnRef) bool {
     nb := irFnNBlk(mut st, f)
     nv := irFnNVal(mut st, f)
@@ -152,12 +152,12 @@ func prRound(st mut St, f FnRef) bool {
     return false
 }
 
-// prIn は値 v がループ（印 pw.mark）の中で定義されているか
+// 値 v がループ（印 pw.mark）の中で定義されているか
 func prIn(pw mut PrW, v int) bool {
     return pw.inl[pw.dblk[v]] == pw.mark
 }
 
-// prLoop は頭 h（前置きの番号 pre）のループを判定し、昇格できる番地があれば書き換えて true
+// 頭 h（前置きの番号 pre）のループを判定し、昇格できる番地があれば書き換えて true
 func prLoop(st mut St, f FnRef, w mut m2rW, pw mut PrW, h int, pre int) bool {
     // ループの中のメモリ操作（基底 B の語の番地だけ — 命令・添字・欄・store か・ブロック）
     mut mIns := mut []int{}
@@ -305,13 +305,13 @@ func prLoop(st mut St, f FnRef, w mut m2rW, pw mut PrW, h int, pre int) bool {
     return true
 }
 
-// prQuiet はメモリを書かず、ループの中にあっても昇格を妨げない命令か（load / store は呼び手が見る）
+// メモリを書かず、ループの中にあっても昇格を妨げない命令か（load / store は呼び手が見る）
 func prQuiet(op int) bool {
     return op == OpConst || op == OpBin || op == OpCmp || op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop || op == OpSlotaddr ||
         op == OpGlobal || op == OpFsAddr || op == OpFuncaddr || op == OpRDepth
 }
 
-// prLen は前置き pre を支配する `load hp[1]`（B と同じヘッダの長さ）の値（無ければ -1）
+// 前置き pre を支配する `load hp[1]`（B と同じヘッダの長さ）の値（無ければ -1）
 func prLen(st mut St, w mut m2rW, pw mut PrW, hp int, pre int) int {
     for bi <- iter.Range(0, w.nb) {
         if w.blk[bi] < 0 || w.rpoIx[bi] < 0 || !licmDominates(mut w, bi, pre) {
@@ -331,7 +331,7 @@ func prLen(st mut St, w mut m2rW, pw mut PrW, hp int, pre int) int {
 const PR_C = 1048576          // 係数・倍率の上限（2^20）
 const PR_D = 1099511627776    // 定数の項の上限（2^40）
 
-// prConst は値 v が定数ならその値と true
+// 値 v が定数ならその値と true
 func prConst(st mut St, pw mut PrW, v int) (int, bool) {
     d := pw.def[v]
     if d >= 0 && irInsOp(mut st, InsRef(d)) == OpConst {
@@ -340,7 +340,7 @@ func prConst(st mut St, pw mut PrW, v int) (int, bool) {
     return 0, false
 }
 
-// prAff は添字 v のアフィン形 (X, c, d)（v = c·X + d。X = -1 は定数 d）— 畳めない値はそれ自身を X に (v, 1, 0)。
+// 添字 v のアフィン形 (X, c, d)（v = c·X + d。X = -1 は定数 d）— 畳めない値はそれ自身を X に (v, 1, 0)。
 // 再帰でなくループで剥く（v = mul · 残り + add の形を保つ — 再帰は mut 引数の関数の展開の閉包で検査に掛からない:）
 func prAff(st mut St, pw mut PrW, v0 int) (int, int, int) {
     mut v := v0
@@ -397,7 +397,7 @@ func prAff(st mut St, pw mut PrW, v0 int) (int, int, int) {
     return v, mul, add
 }
 
-// prDisjoint は番地の語の添字 ca·xa + da（不変の L）と cm·xm + dm（ブロック mb の操作）が重ならないと言えるか
+// 番地の語の添字 ca·xa + da（不変の L）と cm·xm + dm（ブロック mb の操作）が重ならないと言えるか
 func prDisjoint(st mut St, w mut m2rW, pw mut PrW, h int, mb int, xa int, ca int, da int, xm int, cm int, dm int) bool {
     if xa == xm && ca == cm {
         return da != dm
@@ -420,7 +420,7 @@ func prDisjoint(st mut St, w mut m2rW, pw mut PrW, h int, mb int, xa int, ca int
     return mn > 0 && mx < 4611686018427387904
 }
 
-// prGap は x − y の区間（x は頭 h の帰納変数〔入り = y + k・後ろの辺 = x + 1・`lt x, U` の真の側〕・y は非負の下限を持つ帰納変数）。
+// x − y の区間（x は頭 h の帰納変数〔入り = y + k・後ろの辺 = x + 1・`lt x, U` の真の側〕・y は非負の下限を持つ帰納変数）。
 // 操作のブロック mb が `lt x, U` の真の側に支配されていること（そこで x ≤ U − 1）
 func prGap(st mut St, w mut m2rW, pw mut PrW, h int, mb int, x int, y int) (int, int, bool) {
     if pw.def[x] >= 0 || pw.dblk[x] != h || prIn(mut pw, y) {
@@ -483,7 +483,7 @@ func prGap(st mut St, w mut m2rW, pw mut PrW, h int, mb int, x int, y int) (int,
     return kmin, u - 1 - ylo, true
 }
 
-// prLow は帰納変数 y の下限（入りが全部「非負の定数」か「y + 1〔`lt y, _` の真の側の中〕」— 下限 = 定数の最小）
+// 帰納変数 y の下限（入りが全部「非負の定数」か「y + 1〔`lt y, _` の真の側の中〕」— 下限 = 定数の最小）
 func prLow(st mut St, w mut m2rW, pw mut PrW, y int) (int, bool) {
     if pw.def[y] >= 0 {
         return 0, false
@@ -528,7 +528,7 @@ func prLow(st mut St, w mut m2rW, pw mut PrW, y int) (int, bool) {
     return lo, lo >= 0
 }
 
-// prRewrite は群（形 c·X + D — 全群で X と c は同じ）ごとにスロットを作り、前置きで読み込み・ループの中を付け替え・正常の出口で書き戻す。
+// 群（形 c·X + D — 全群で X と c は同じ）ごとにスロットを作り、前置きで読み込み・ループの中を付け替え・正常の出口で書き戻す。
 // 前置き・出口の費用を小さく保つ（nbody の j ループは平均 2 反復）: 基準 m = c·X から D の最小・最大の 2 本の判定で「全部範囲内」なら
 // 速い道（gep 1 本 + 欄のオフセットつきの load / store）・そうでなければ群ごとに守った遅い道。ループの中に残る群と同じ形の境界検査
 // （`uge 添字, LEN`）は前置きの旗 any で判定し、any が立つときだけ本物の検査をやり直す（不変の添字を 7 本ループの間生かさない）
@@ -669,7 +669,7 @@ func prRewrite(st mut St, f FnRef, w mut m2rW, pw mut PrW, h int, pre int, base 
     }
 }
 
-// prBase は b の末尾で基準 c·X の値を作る（X = -1 は 0）
+// b の末尾で基準 c·X の値を作る（X = -1 は 0）
 func prBase(st mut St, f FnRef, b BlkRef, x int, c int) int {
     if x >= 0 && c == 1 {
         return x
@@ -684,7 +684,7 @@ func prBase(st mut St, f FnRef, b BlkRef, x int, c int) int {
     return m
 }
 
-// prAny は b の末尾で「m + D のどれかが範囲外」の旗（m + dmin と m + dmax の 2 本の uge の or — 両端が [0, LEN) なら間も入る: 差は小さく巡回しない）
+// b の末尾で「m + D のどれかが範囲外」の旗（m + dmin と m + dmax の 2 本の uge の or — 両端が [0, LEN) なら間も入る: 差は小さく巡回しない）
 func prAny(st mut St, f FnRef, b BlkRef, m int, dmin int, dmax int, ln int) int {
     lo := prAdd(mut st, f, b, m, dmin)
     c1 := newValueIn(mut st, f)
@@ -700,7 +700,7 @@ func prAny(st mut St, f FnRef, b BlkRef, m int, dmin int, dmax int, ln int) int 
     return o
 }
 
-// prAdd は b の末尾で m + d（d = 0 は m のまま）
+// b の末尾で m + d（d = 0 は m のまま）
 func prAdd(st mut St, f FnRef, b BlkRef, m int, d int) int {
     if d == 0 {
         return m
@@ -712,7 +712,7 @@ func prAdd(st mut St, f FnRef, b BlkRef, m int, d int) int {
     return a
 }
 
-// prMatAll は b の末尾で群ごとの語の添字 c·X + D の値を作る（c·X は (X, c) ごとに 1 回）
+// b の末尾で群ごとの語の添字 c·X + D の値を作る（c·X は (X, c) ごとに 1 回）
 func prMatAll(st mut St, f FnRef, b BlkRef, gX []int, gC []int, gD []int) []int {
     mut mX := mut []int{}
     mut mC := mut []int{}
@@ -755,7 +755,7 @@ func prMatAll(st mut St, f FnRef, b BlkRef, gX []int, gC []int, gD []int) []int 
     return freeze(out)
 }
 
-// prCond はブロック b の終端を `condbr c, 真 → th, 偽 → el`（引数なし）に
+// ブロック b の終端を `condbr c, 真 → th, 偽 → el`（引数なし）に
 func prCond(st mut St, b BlkRef, c int, th BlkRef, el BlkRef) {
     irSetBlkTerm(mut st, b, TmCondbr)
     irSetBlkX1(mut st, b, c)
@@ -765,7 +765,7 @@ func prCond(st mut St, b BlkRef, c int, th BlkRef, el BlkRef) {
     irSetBlkX5(mut st, b, -1)
 }
 
-// prBr はブロック b の終端を `br to(args)` に
+// ブロック b の終端を `br to(args)` に
 func prBr(st mut St, b BlkRef, to BlkRef, args int) {
     irSetBlkTerm(mut st, b, TmBr)
     irSetBlkX1(mut st, b, int(to))
@@ -775,7 +775,7 @@ func prBr(st mut St, b BlkRef, to BlkRef, args int) {
     irSetBlkX5(mut st, b, -1)
 }
 
-// prFast は速い道の写し（gep B, m 1 本 + 欄のオフセット D ごとの load / store — toSlot は B → スロット）を b の末尾へ
+// 速い道の写し（gep B, m 1 本 + 欄のオフセット D ごとの load / store — toSlot は B → スロット）を b の末尾へ
 func prFast(st mut St, f FnRef, b BlkRef, base int, m int, gD []int, sl []int, toSlot bool) {
     a := newValueIn(mut st, f)
     linkInst(mut st, b, mkInst(mut st, a, OpGepW, base, m, 0))
@@ -786,7 +786,7 @@ func prFast(st mut St, f FnRef, b BlkRef, base int, m int, gD []int, sl []int, t
     }
 }
 
-// prSlow は遅い道の鎖（群ごとに [condbr (uge 添字, LEN), 次, 写す → 次]）を b から組み、最後のブロックを返す（toSlot = B → スロットの読み込み・
+// 遅い道の鎖（群ごとに [condbr (uge 添字, LEN), 次, 写す → 次]）を b から組み、最後のブロックを返す（toSlot = B → スロットの読み込み・
 // そうでなければスロット → B の書き戻し）
 func prSlow(st mut St, f FnRef, b BlkRef, base int, ln int, gX []int, gC []int, gD []int, sl []int, toSlot bool) BlkRef {
     gI := prMatAll(mut st, f, b, gX, gC, gD)

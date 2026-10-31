@@ -40,7 +40,7 @@ func show(e error?) string {
     }
 }
 
-// sum は関数の本体の fallible な Gather
+// 関数の本体の fallible な Gather
 func sum(ns []int) (int, error?) {
     r, e := task.Run((s task.Scope) => {
         mut hs := mut []task.Handle[(int, error?)]{}

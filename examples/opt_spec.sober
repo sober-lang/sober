@@ -1,6 +1,6 @@
 package main
 
-// 定数引数の特化（展開便 段 1 — spec.sober）の回帰例: 定数の引数で呼ぶ点（文字列リテラル・整数）を、同じ関数を実行時の値（列から引いた引数 —
+// 定数引数の特化（spec.sober）の回帰例: 定数の引数で呼ぶ点（文字列リテラル・整数）を、同じ関数を実行時の値（列から引いた引数 —
 // 特化に乗らない）で呼んだ参照と突き合わせる。形 = 2 段 / 3 段の連鎖（hp3 → hp → pfx）・同じ callee に違う定数・同じ定数で 2 点・2 つの定数の
 // 仮引数（入れ替えると答えが変わる）・片方の仮引数だけが定数で位置が違う 2 点（同じ値 — 複製の鍵が位置を見ないと取り違える）・定数の上限の
 // ループ・再帰する callee・std の HasPrefix / TrimPrefix / Cut。食い違いの数（0）と和を印字
@@ -8,7 +8,7 @@ package main
 import "std/iter"
 import "std/strings"
 
-// pfx は b[at:] が p で始まるか（std の hasPrefixAt と同じ形）
+// b[at:] が p で始まるか（std の hasPrefixAt と同じ形）
 func pfx(b []byte, at int, p []byte) bool {
     mut i := 0
     while i < len(p) {
@@ -20,29 +20,29 @@ func pfx(b []byte, at int, p []byte) bool {
     return true
 }
 
-// hp は 2 段の連鎖（hp → pfx）
+// 2 段の連鎖（hp → pfx）
 func hp(s string, p string) bool {
     b := bytes(s)
     q := bytes(p)
     return len(b) >= len(q) && pfx(b, 0, q)
 }
 
-// hp3 は 3 段（hp3 → hp → pfx）
+// 3 段（hp3 → hp → pfx）
 func hp3(s string, p string) bool {
     return hp(s, p)
 }
 
-// pick は 2 つの定数の仮引数（a と b を入れ替えると答えが変わる）
+// 2 つの定数の仮引数（a と b を入れ替えると答えが変わる）
 func pick(x int, a int, b int) int {
     return if x < a { x * 3 + b } else { x - a * b }
 }
 
-// tri は 1 つだけ定数の仮引数（位置 1 か 2 — 同じ値 4 で）
+// 1 つだけ定数の仮引数（位置 1 か 2 — 同じ値 4 で）
 func tri(x int, a int, b int) int {
     return if a < b { x + a * 10 - b } else { x * 2 - a + b * 3 }
 }
 
-// steps は定数の上限のループ
+// 定数の上限のループ
 func steps(x int, n int) int {
     mut s := x
     for k <- iter.Range(0, n) {

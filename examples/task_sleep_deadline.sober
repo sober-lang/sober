@@ -1,8 +1,8 @@
 package main
 
-// os.Sleep の載せ替え（net 4a — ユーザー裁定 2026-10-14 (a)・language.md 28 節「デッドライン」）: std/task のプログラムの Sleep は rt の期限つき待ち
+// os.Sleep の載せ替え（language.md 28 節「デッドライン」）: std/task のプログラムの Sleep は rt の期限つき待ち
 // （timerfd を rt.fdwait で待つ — 眠る間はワーカーを譲る）。期限つきの scope の中の Sleep は期限が来たらエラーなしで早く返り（SleepExpired = true）、
-// 期限より短い Sleep・期限の無い Sleep は満了まで眠る（false）。眠る子が 8 本でもワーカー 1 本で並んで眠る（旧 nanosleep はワーカーごと塞いだ）。
+// 期限より短い Sleep・期限の無い Sleep は満了まで眠る（false）。眠る子が 8 本でもワーカー 1 本で並んで眠る（ワーカーを塞がない）。
 // W1（協調形）でも W8 でも同じ出力
 
 import "std/os"

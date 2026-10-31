@@ -124,7 +124,7 @@ func VerifyPSS(pub PublicKey, msg []byte, sig []byte, sLen int) bool {
     return pssVerify(sha256.Sum256(msg), freeze(em), emBits, sLen)
 }
 
-// sameTail は back（k バイト）が em（k - (k - emLen) バイト）を右寄せにした値か
+// back（k バイト）が em（k - (k - emLen) バイト）を右寄せにした値か
 func sameTail(back []byte, em []byte) bool {
     off := len(back) - len(em)
     mut d := 0
@@ -137,7 +137,7 @@ func sameTail(back []byte, em []byte) bool {
     return d == 0
 }
 
-// mgf1 は MGF1-SHA256(seed) の先頭 n バイト（RFC 8017 B.2.1）
+// MGF1-SHA256(seed) の先頭 n バイト（RFC 8017 B.2.1）
 func mgf1(seed []byte, n int) []byte {
     mut out := mut []byte{}
     mut c := 0
@@ -156,7 +156,7 @@ func mgf1(seed []byte, n int) []byte {
     return freeze(out)
 }
 
-// pssEncode は EMSA-PSS-ENCODE（RFC 8017 9.1.1 — mHash は SHA-256 の値・emBits = modBits - 1）
+// EMSA-PSS-ENCODE（RFC 8017 9.1.1 — mHash は SHA-256 の値・emBits = modBits - 1）
 @errors(BadSize)
 func pssEncode(mHash []byte, salt []byte, emBits int) ([]byte, error?) {
     emLen := (emBits + 7) / 8
@@ -186,7 +186,7 @@ func pssEncode(mHash []byte, salt []byte, emBits int) ([]byte, error?) {
     return freeze(em), nil
 }
 
-// pssVerify は EMSA-PSS-VERIFY（RFC 8017 9.1.2 — 公開の値だけを扱うので分岐してよい）
+// EMSA-PSS-VERIFY（RFC 8017 9.1.2 — 公開の値だけを扱うので分岐してよい）
 func pssVerify(mHash []byte, em []byte, emBits int, sLen int) bool {
     emLen := (emBits + 7) / 8
     hLen := 32

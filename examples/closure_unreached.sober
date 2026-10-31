@@ -1,6 +1,6 @@
 package main
 
-// 値の位置の閉包の env の閉じた union（language.md 25 節 B1）は main から届く関数の中の閉包だけで閉じる（report-957）: 届かない関数 unused の閉包
+// 値の位置の閉包の env の閉じた union（language.md 25 節 B1）は main から届く関数の中の閉包だけで閉じる: 届かない関数 unused の閉包
 // （string を捕捉）は K の env の形に入らず、K の値は届く閉包の形（int 1 つ）のまま — import しただけで呼ばない std の閉包（http.Static の stream）が
 // プログラムの全部の値の型を太らせない形の最小の網。届く判定は名前の参照の辺（呼び出しに限らず関数値として渡す形も — viaValue は apply に値で渡すので届く）。
 // 届かない関数の本体も今どおり検査する（作成点は実行されない unreach）

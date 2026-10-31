@@ -1,0 +1,145 @@
+package cover
+
+// カバレッジの計器の数え口（std の実装の詳細）: `sober build --cover` の loader の写し（loader/coverx.sober）が利用者の分岐・if の条件・
+// 短絡の右辺に数え口（Hit / Br / Br1 / On — 小さい包みで、lower の irinl が呼ぶ側の大きさを問わず写す）・main の頭に `$cover.Start(鍵)` を足す（参照名が `$` の合成の import — 20 節）。
+// 点 k の印は rt の大域のバイト列の k 番目に 1 を書くだけ（冪等 — 並行の task が同じ点を踏んでも数えこぼさない）。
+// 書き出しは rt がプロセスの終わり（main の後・panic ほか終わりの道の全部）に、Start が渡した fd へバイト列を 1 回 write する
+
+import "std/iter"
+import "std/os"
+import "std/strings"
+
+@intrinsic("cover")
+func hit(k int) int
+
+@intrinsic("cover_fd")
+func setFd(fd int, n int) int
+
+@intrinsic("cover_get")
+func get(k int) int
+
+@intrinsic("cover_n")
+func count() int
+
+@intrinsic("cover_mid")
+func mid() int
+
+@intrinsic("cover_setmid")
+func setMid(v int) int
+
+@intrinsic("syscall")
+func sysCall(nr int, a int, b int, c int, d int, e int, f int) int
+
+@intrinsic("addr")
+func sysAddr(b []byte) int
+
+// 点 k を踏んだ印
+func Hit(k int) {
+    _ = hit(k)
+}
+
+// 点 k を踏んだ印を付けて真（短絡の右辺の頭 — `a && b` → `a && ($cover.On(k) && b)`）
+func On(k int) bool {
+    return hit(k) == 0
+}
+
+// if の条件の包み: c の真偽で then の点 kt / else の点 kf に印を付けて c を返す
+func Br(c bool, kt int, kf int) bool {
+    _ = hit(if c { kt } else { kf })
+    return c
+}
+
+// catch の写しの if の条件の包み（成功の腕は点にしない）
+func Br1(c bool, kt int) bool {
+    if c {
+        _ = hit(kt)
+    }
+    return c
+}
+
+// ミュータント k が選ばれているか（`sober test --mutate` の schemata — loader/mutx.sober の写し）。点 k の印も付ける — 基線の 1 周の印が
+// テストごとの「届いたミュータント」になる
+func Sel(k int) bool {
+    _ = hit(k)
+    return mid() == k + 1
+}
+
+// 点の数（計器なしのビルドは 0 — Start が置く）
+func N() int {
+    return count()
+}
+
+// 点 k を踏んだか（k < N()）
+func Got(k int) bool {
+    return get(k) != 0
+}
+
+// 点の数 n を rt に置き、環境変数 SOBER_COVER のファイルを作り直して見出し `sober cover v1 <鍵>` の行を書き、終わりのバイト列の書き出し先にする
+// （無ければ書き出さない）
+@effects(io)
+func Start(key string, n int) {
+    _ = setFd(0, n)
+    v, e := os.Getenv("SOBER_COVER")
+    if e != nil || v == nil {
+        return
+    }
+    open(v, key, n)
+}
+
+// テストのビルドの合成の main の頭: 引数に `cover:out=<path>` があればそこへ（`sober test --cover` が子ごとに渡す）・無ければ Start と同じ。
+// `mut:id=<k>` はミュータント k を選び・`mut:hang=<ms>` は期限を張る（`sober test --mutate`）
+@effects(io)
+func StartTest(key string, n int) {
+    args, err := os.Args()
+    if err == nil {
+        mut out := false
+        for i <- iter.Range(1, len(args)) {
+            a := args[i]
+            if strings.HasPrefix(a, "cover:out=") {
+                _ = setFd(0, n)
+                open(strings.TrimPrefix(a, "cover:out="), key, n)
+                out = true
+            } else if strings.HasPrefix(a, "mut:id=") {
+                _ = setMid(decimal(strings.TrimPrefix(a, "mut:id=")) + 1)
+            } else if strings.HasPrefix(a, "mut:hang=") {
+                // ミュータントが作る無限ループの防護（期限で SIGALRM — 子は既定の動作で死ぬ・親は殺された子を kill と数える）
+                os.Alarm(decimal(strings.TrimPrefix(a, "mut:hang=")))
+            }
+        }
+        if out {
+            return
+        }
+    }
+    Start(key, n)
+}
+
+@effects(io)
+func open(path string, key string, n int) {
+    mut pb := mut []byte{}
+    sb := bytes(path)
+    for i <- iter.Range(0, len(sb)) {
+        pb = append(pb, sb[i])
+    }
+    pb = append(pb, 0)
+    p := freeze(pb)
+    // 0x80241 = O_CLOEXEC | O_TRUNC | O_CREAT | O_WRONLY・0644 = 420
+    fd := sysCall(2, sysAddr(p), 524865, 420, 0, 0, 0)
+    if fd < 0 {
+        return
+    }
+    h := bytes("sober cover v1 ${key}\n")
+    _ = sysCall(1, fd, sysAddr(h), len(h), 0, 0, 0)
+    _ = setFd(fd, n)
+}
+
+// 10 進の非負の整数（数字の外は 0 として読む）
+func decimal(s string) int {
+    b := bytes(s)
+    mut v := 0
+    for i <- iter.Range(0, len(b)) {
+        if b[i] >= '0' && b[i] <= '9' {
+            v = v * 10 + int(b[i]) - 48
+        }
+    }
+    return v
+}

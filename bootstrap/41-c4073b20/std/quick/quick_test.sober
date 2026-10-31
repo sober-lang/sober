@@ -1,0 +1,187 @@
+package quick
+
+// white-box の網: 真の性質は全試行を通る・縮めは最小形に届く（和の制約・0 の側への寄せ・範囲の端）・
+// 縮めは止まる（いつも偽の性質・単調でない性質でも再実行の上限の内）・同じ種なら同じ列
+
+import "std/strings"
+
+func sum(xs []int) int {
+    mut t := 0
+    for x <- xs {
+        t = t + x
+    }
+    return t
+}
+
+func rev(xs []int) []int {
+    mut out := []int{}
+    mut i := len(xs) - 1
+    while i >= 0 {
+        out = append(out, xs[i])
+        i = i - 1
+    }
+    return out
+}
+
+func same(a []int, b []int) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    mut i := 0
+    while i < len(a) {
+        if a[i] != b[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+func TestTrueProperties() {
+    mut q := Seed(7)
+    Check(mut q, () => {
+        xs := Slice(mut q, 20, () => Int(mut q, -1000, 1000))
+        same(rev(rev(xs)), xs)
+    })
+    Check(mut q, () => {
+        a := Int(mut q, -5, 5)
+        b := Int(mut q, 3, 9)
+        c := Int(mut q, -9, -3)
+        a >= -5 && a <= 5 && b >= 3 && b <= 9 && c >= -9 && c <= -3
+    })
+    Check(mut q, () => {
+        n := Pick(mut q, 3)
+        e := Elem(mut q, []string{"x", "y"})
+        n >= 0 && n < 3 && (e == "x" || e == "y")
+    })
+    Check(mut q, () => len(Bytes(mut q, 16)) <= 16, trials: 200)
+    Check(mut q, () => {
+        s := String(mut q, 12)
+        mut ok := len(bytes(s)) <= 12
+        for c <- bytes(s) {
+            ok = ok && c >= 0x20 && c < 0x7f
+        }
+        ok
+    })
+    Check(mut q, () => strings.Valid(bytes(Runes(mut q, 6))) && len(bytes(Runes(mut q, 6))) <= 24)
+}
+
+// prop の最小の反例を探して縮め、最小の列で prop をもう一度呼ぶ（捕捉した値は最小の反例の値になる・q.log = 最小の列）。再実行の回数を返す
+func minimal(q mut Src, prop func() bool) int {
+    seed := q.seed
+    k, _ := search(mut q, prop, seed, 0, 100, false, 0)
+    assert(k < 100)
+    bad, runs := shrink(q.log, (c []int, b []int) => tryHere(mut q, prop, c, b, 0, ""))
+    replayList(mut q, bad)
+    assert(!prop())
+    assert(runs <= shrinkRuns)
+    return runs
+}
+
+func TestShrinkSum() {
+    mut q := Seed(0)
+    mut last := []int{}
+    _ = minimal(mut q, () => {
+        xs := Slice(mut q, 8, () => Int(mut q, 0, 9))
+        last = xs
+        sum(xs) < 30
+    })
+    assert(len(last) == 4)
+    assert(sum(last) == 30)
+    assert(last[0] == 3)
+}
+
+func TestShrinkTowardZero() {
+    mut q := Seed(1)
+    mut x := 0
+    _ = minimal(mut q, () => {
+        x = Int(mut q, -100, 100)
+        x > -5
+    })
+    assert(x == -5)
+    _ = minimal(mut q, () => {
+        x = Int(mut q, 10, 1000)
+        x < 500
+    })
+    assert(x == 500)
+    _ = minimal(mut q, () => {
+        x = Int(mut q, -1000, -10)
+        x > -700
+    })
+    assert(x == -700)
+}
+
+func TestShrinkStops() {
+    mut q := Seed(2)
+    _ = minimal(mut q, () => {
+        _ = Bytes(mut q, 1000)
+        _ = Int(mut q, -(1 << 61), (1 << 61) - 1)
+        false
+    })
+    // 最小の列 = バイト列を止める選択 0 と、整数の 0
+    assert(len(q.log) == 2)
+    assert(q.log[0] == 0 && q.log[1] == 0)
+    // 単調でない性質（和の偶奇）でも上限の内で止まる
+    _ = minimal(mut q, () => {
+        xs := Slice(mut q, 50, () => Int(mut q, 0, 1 << 40))
+        sum(xs) % 2 == 0
+    })
+}
+
+func TestDeterministic() {
+    mut a := Named("TestA")
+    mut b := Named("TestA")
+    c := Named("TestB")
+    assert(a.seed == b.seed)
+    assert(a.seed != c.seed)
+    sa := a.seed
+    sb := b.seed
+    ka, _ := search(mut a, () => len(Slice(mut a, 30, () => Int(mut a, 0, 1 << 30))) < 4, sa, 0, 100, false, 0)
+    kb, _ := search(mut b, () => len(Slice(mut b, 30, () => Int(mut b, 0, 1 << 30))) < 4, sb, 0, 100, false, 0)
+    assert(ka == kb)
+    assert(same(a.log, b.log))
+}
+
+func TestTowardZero() {
+    // 0, 1, −1, 2, −2, … と、片側が尽きた後は長い側へ
+    assert(towardZero(0, 3, 1) == 0)
+    assert(towardZero(1, 3, 1) == 1)
+    assert(towardZero(2, 3, 1) == -1)
+    assert(towardZero(3, 3, 1) == 2)
+    assert(towardZero(4, 3, 1) == 3)
+    assert(towardZero(3, 1, 3) == -2)
+    assert(towardZero(4, 1, 3) == -3)
+}
+
+func TestTooWide() {
+    assert(!tooWide(0, (1 << 62) - 1))
+    assert(tooWide(0, 1 << 62))
+    assert(!tooWide(-(1 << 61), (1 << 61) - 1))
+    assert(tooWide(-(1 << 61), 1 << 61))
+    assert(!tooWide(-(1 << 62), -1))
+    assert(tooWide(-(1 << 62) - 1, -1))
+    assert(tooWide(-(1 << 62), (1 << 62)))
+}
+
+func TestAssume() {
+    mut q := Seed(3)
+    // 捨てた試行は数えない — 成立 100 件を集めきる
+    k, dropped := search(mut q, () => {
+        x := Int(mut q, 0, 100)
+        Assume(mut q, x % 2 == 0) && x % 2 == 0
+    }, 3, 0, 100, false, 0)
+    assert(k == 100)
+    assert(dropped > 0)
+    assert(dropped <= discardRatio * 100)
+    // 構成で狭めない条件は捨てすぎで止まる
+    k2, d2 := search(mut q, () => Assume(mut q, String(mut q, 8) == "hello"), 3, 0, 100, false, 0)
+    assert(k2 == 0)
+    assert(d2 > discardRatio * 100)
+    // 縮めは捨てる列を採らない — 0 の側の x < 10 は不成立なので最小の反例は 50
+    mut x := 0
+    _ = minimal(mut q, () => {
+        x = Int(mut q, 0, 100)
+        Assume(mut q, x >= 10) && x < 50
+    })
+    assert(x == 50)
+}

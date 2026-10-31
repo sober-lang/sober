@@ -1,7 +1,7 @@
 package main
 
-// T? の欄・実引数の位置の if 式で、腕の一方が nil・他方がリテラル / 別の region の値（F-bv — report-1023: nil の腕は欄の型の region・
-// リテラルの腕は最内の region で、核の検査器が腕の型の食い違いで拒否し build だけが受理していた）。腕の region を合流させて両方が受理する
+// T? の欄・実引数の位置の if 式で、腕の一方が nil・他方がリテラル / 別の region の値（nil の腕は欄の型の region・
+// リテラルの腕は最内の region — 腕の region を合流させて両方を受理する）
 
 type P struct {
     f string?

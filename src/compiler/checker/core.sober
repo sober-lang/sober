@@ -19,9 +19,9 @@ const XSTK = 262144
 const XLAB = 16384
 const R_DEEP = -4
 
-// ctyOf は脱糖器の型 t（desugar の Ty の表の参照 — TBASE + 添字）をこの検査器の型へ写す
+// 脱糖器の型 t（desugar の Ty の表の参照 — TBASE + 添字）をこの検査器の型へ写す
 func ctyOf(st mut S, tys []desugar.Ty, t int) int {
-    // 添字ごとのメモ（段 6 P6-1 — 区間ごとに全 Def の署名を写すので。脱糖器の型は添字の純関数・検査器の型は作ったら変えない）
+    // 添字ごとのメモ（区間ごとに全 Def の署名を写すので。脱糖器の型は添字の純関数・検査器の型は作ったら変えない）
     if table.Len(mut st.cty) > 0 {
         m := table.Get(mut st.cty, t - desugar.TBASE)
         if m != 0 {
@@ -76,7 +76,7 @@ func ctyOf0(st mut S, tys []desugar.Ty, t int) int {
     return mk(mut st, TChan, x.a, y, 0)
 }
 
-// ctsOf は型引数の列（desugar の [n, t…]、-1 = 無し）。空は -1（json.sober の tsOf と同じ）
+// 型引数の列（desugar の [n, t…]、-1 = 無し）。空は -1（json.sober の tsOf と同じ）
 func ctsOf(st mut S, h []int, tys []desugar.Ty, l int) int {
     if l < 0 || h[l] == 0 {
         return -1
@@ -91,7 +91,7 @@ func ctsOf(st mut S, h []int, tys []desugar.Ty, l int) int {
     return at
 }
 
-// binWord は arith / cmp の種類（desugar の B*）を語の番号へ
+// arith / cmp の種類（desugar の B*）を語の番号へ
 func binWord(b int) int {
     return switch b {
     case desugar.BSub: W_SUB
@@ -111,7 +111,7 @@ func binWord(b int) int {
     }
 }
 
-// kids は写し終えてから組む前に要る子の数（葉は 0）
+// 写し終えてから組む前に要る子の数（葉は 0）
 func kids(k int) int {
     return switch k {
     case desugar.CLet | desugar.CAdd | desugar.CLt | desugar.CPair | desugar.CAssign | desugar.CWhile | desugar.CAppend | desugar.CEqs | desugar.CConcat | desugar.CCallv | desugar.CCallMv | desugar.CBin | desugar.CFBin | desugar.CIndex | desugar.CGetm | desugar.CDelm | desugar.CSend: 2
@@ -122,12 +122,12 @@ func kids(k int) int {
     }
 }
 
-// cfield はコア式 e の j 番目の欄（1 = a … 4 = d）
+// コア式 e の j 番目の欄（1 = a … 4 = d）
 func cfield(e desugar.CoreExpr, j int) int {
     return if j == 1 { e.a } else if j == 2 { e.b } else if j == 3 { e.c } else { e.d }
 }
 
-// kidAt は i 番目の子（写す順）
+// i 番目の子（写す順）
 func kidAt(cs []desugar.CoreExpr, x int, i int) int {
     e := cs[x - desugar.CBASE]
     k := e.tag
@@ -143,7 +143,7 @@ func minI(a int, b int) int {
     return if a < b { a } else { b }
 }
 
-// convExpr は脱糖器の式 e0 を写す（明示スタック）。結果は記録、深すぎれば -1。st.maxDepth を入れ子の深さの最大で更新する
+// 脱糖器の式 e0 を写す（明示スタック）。結果は記録、深すぎれば -1。st.maxDepth を入れ子の深さの最大で更新する
 func convExpr(st mut S, h []int, labs []desugar.Label, tys []desugar.Ty, cs []desugar.CoreExpr, e0 int, fs int, vs int, ls int) int {
     mut fsp := 0
     mut vsp := 0
@@ -310,7 +310,7 @@ func convExpr(st mut S, h []int, labs []desugar.Label, tys []desugar.Ty, cs []de
             t := ctyOf(mut st, tys, a)
             r = node(mut st, if k == desugar.CGetm { W_GETM } else { W_DELM }, 0, t, v0, v1)
         }
-        // 段 6（nc は子の論理和 — 下の共通の規則・json.sober の buildExpr と同じ）
+        // nc は子の論理和（下の共通の規則・json.sober の buildExpr と同じ）
         if k == desugar.CScope || k == desugar.CTry || k == desugar.CJoin {
             t := ctyOf(mut st, tys, a)
             r = node(mut st, if k == desugar.CScope { W_SCOPE } else if k == desugar.CTry { W_TRY } else { W_JOIN }, 0, t, v0, if k == desugar.CScope { ctyOf(mut st, tys, c) } else { 0 })
@@ -342,6 +342,10 @@ func convExpr(st mut S, h []int, labs []desugar.Label, tys []desugar.Ty, cs []de
                 inner = node(mut st, W_ANN, 0, v0, t, 0)
                 dep += 1
             }
+            if inner != v0 && len(st.org) > 0 {
+                table.Push(mut st.onode, inner)
+                table.Push(mut st.onode, st.org[x - desugar.CBASE])
+            }
             r = node(mut st, W_LABEL, 0, t, inner, 0)
         }
         if k == desugar.CJump {
@@ -358,6 +362,10 @@ func convExpr(st mut S, h []int, labs []desugar.Label, tys []desugar.Ty, cs []de
         if r >= 0 && table.Get(mut st.h, r + 1) == 0 && ((v0 >= 0 && nc(mut st, v0) != 0) || (v1 >= 0 && nc(mut st, v1) != 0) || (v2 >= 0 && nc(mut st, v2) != 0)) {
             table.Set(mut st.h, r + 1, 1)
         }
+        if r >= 0 && len(st.org) > 0 {
+            table.Push(mut st.onode, r)
+            table.Push(mut st.onode, st.org[x - desugar.CBASE])
+        }
         if dep > st.maxDepth {
             st.maxDepth = dep
         }
@@ -372,38 +380,41 @@ func convExpr(st mut S, h []int, labs []desugar.Label, tys []desugar.Ty, cs []de
     return -1
 }
 
-// CheckCore は脱糖の結果 c を検査し、判定 JSON（checkdump と同じバイト列。深すぎて写せなければ checker: too deep）を返す
+// 脱糖の結果 c を検査し、判定 JSON（checkdump と同じバイト列。深すぎて写せなければ checker: too deep）を返す
 func CheckCore(c desugar.Core) []byte {
     out, _ := checkCore(c, false)
     return out
 }
 
-// DefFail は開発用（`sober check --def-index`）: c の検査が def error なら [何番目の Def か]、でなければ [-1]（深すぎれば [-2]）
+// 開発用（`sober check --def-index`）: c の検査が def error なら [何番目の Def か]、でなければ [-1]（深すぎれば [-2]）
 func DefFail(c desugar.Core) []int {
     _, j := checkCore(c, true)
     return []int{j}
 }
 
-// checkCore は判定 JSON（idx なら空）と def error の Def の添字（idx でなければ -1。深すぎれば両方とも — too deep / -2）
+// 判定 JSON（idx なら空）と def error の Def の添字（idx でなければ -1。深すぎれば両方とも — too deep / -2）
 func checkCore(c desugar.Core, idx bool) ([]byte, int) {
     r := checkCoreX(c, idx, false)
     return r.out, r.def
 }
 
-// CkOut は検査の結果: out = 判定 JSON（idx なら空）・def = 最初の def error の Def の添字（無ければ -1・深すぎれば -2）・fails = 落ちた Def の添字の全部（collect のとき）
+// 検査の結果: out = 判定 JSON（idx なら空）・def = 最初の def error の Def の添字（無ければ -1・深すぎれば -2）・fails = 落ちた Def の添字の全部（collect のとき）
 type CkOut struct {
     out []byte
     def int
     fails []int
+    at int    // 最初に落ちた節の位置（PackPos — 0 = 無し・追跡なし）
+    fpos []int // 落ちた Def ごとの [Def, PackPos]（perDef のとき）
 }
 
-// checkCoreR は c の Def のうち [lo, hi) の本体と（withRoot なら）根の式だけを写して検査する（区間の外の Def は署名だけ — 部分検査の視点の外と
+// c の Def のうち [lo, hi) の本体と（withRoot なら）根の式だけを写して検査する（区間の外の Def は署名だけ — 部分検査の視点の外と
 // 同じ形・mask 0）。srcs = Def の記録（defSrcs）・size = 写しの訪問の数の上界（作業域の大きさ — 逐次の形は式の数）
-func checkCoreR(c desugar.Core, srcs []int, idx bool, collect bool, lo int, hi int, withRoot bool, size int) CkOut {
+func checkCoreR(c desugar.Core, srcs []int, idx bool, collect bool, lo int, hi int, withRoot bool, size int, pd bool) CkOut {
     h := c.H
     tys := c.Types
     mut st := S{}
     table.Push(mut st.h, 0)
+    st.org = c.Orig
     st.tInt = mk(mut st, TInt, 0, 0, 0)
     st.tBool = mk(mut st, TBool, 0, 0, 0)
     st.tUnit = mk(mut st, TUnit, 0, 0, 0)
@@ -412,8 +423,8 @@ func checkCoreR(c desugar.Core, srcs []int, idx bool, collect bool, lo int, hi i
     for k <- iter.Range(0, len(tys)) {
         table.Push(mut st.cty, 0)
     }
-    // 作業域はコアの大きさで決まる上界まで（3'' 第 2 段 (c) — 以前は毎回 XSTK × 4 + XLAB ≈ 106 万語を 0 埋めしていて、小さい視点の検査の
-    // 固定費の大半だった）。枠と値の段数は「子への辺の総数」（子は高々 3 — kids）+ 根を越えないので、min(XSTK, 3 × 式の数 + 2) で溢れの判定は以前と同じ
+    // 作業域はコアの大きさで決まる上界まで（毎回 XSTK × 4 + XLAB ≈ 106 万語を 0 埋めすると、小さい視点の検査では固定費が大半を占める）。
+    // 枠と値の段数は「子への辺の総数」（子は高々 3 — kids）+ 根を越えないので、min(XSTK, 3 × 式の数 + 2) で溢れの判定は変わらない
     cap := minI(XSTK, 3 * size + 2)
     fs := block(mut st, cap * 2)
     vs := block(mut st, cap * 2)
@@ -434,7 +445,7 @@ func checkCoreR(c desugar.Core, srcs []int, idx bool, collect bool, lo int, hi i
         // 本体の無い Def（部分検査の視点の外 — 署名だけ・mask 0）と根の式の無い Core（main 以外の package の部分検査）は写さない
         r := if e0 < 0 { node(mut st, W_TRIV, 0, 0, 0, 0) } else { convExpr(mut st, h, c.Labels, c.Types, c.Exprs, e0, fs, vs, ls) }
         if r < 0 {
-            return CkOut{bytes("checker: too deep\n"), -2, []int{}}
+            return CkOut{bytes("checker: too deep\n"), -2, []int{}, 0, []int{}}
         }
         if j < nd {
             p := ctyOf(mut st, tys, h[src])
@@ -448,12 +459,55 @@ func checkCoreR(c desugar.Core, srcs []int, idx bool, collect bool, lo int, hi i
     st.cstk = block(mut st, (st.maxDepth + 4) * CF)
     st.collect = collect
     st.defFail = -1
+    st.perDef = pd
     if idx {
         r := checkAll(mut st, root)
-        return CkOut{[]byte{}, if r == R_DEF { st.defFail } else { -1 }, failsOf(mut st)}
+        return CkOut{[]byte{}, if r == R_DEF { st.defFail } else { -1 }, failsOf(mut st), failPos(mut st), fposOut(mut st)}
     }
     out := verdict(mut st, root)
-    return CkOut{out, st.defFail, failsOf(mut st)}
+    return CkOut{out, st.defFail, failsOf(mut st), failPos(mut st), fposOut(mut st)}
+}
+
+// 落ちた Def j の落ちた節 e の出所を積む（perDef）
+func fposPush(st mut S, j int, e int) {
+    table.Push(mut st.fpos, j)
+    table.Push(mut st.fpos, posOfNode(mut st, e))
+}
+
+// 積んだ [Def, PackPos]… の列
+func fposOut(st mut S) []int {
+    mut out := mut []int{}
+    for k <- iter.Range(0, table.Len(mut st.fpos)) {
+        out = append(out, table.Get(mut st.fpos, k))
+    }
+    return freeze(out)
+}
+
+// 写した節の番地 e の出所（PackPos — 0 = 無し）
+func posOfNode(st mut S, e int) int {
+    mut i := 0
+    while i + 1 < table.Len(mut st.onode) {
+        if table.Get(mut st.onode, i) == e {
+            return table.Get(mut st.onode, i + 1)
+        }
+        i += 2
+    }
+    return 0
+}
+
+// 最初に落ちた節の出所（PackPos — 0 = 無し）。onode は番地の昇順の組なので線形に引く（拒否のときだけ）
+func failPos(st mut S) int {
+    if st.failE == 0 {
+        return 0
+    }
+    mut i := 0
+    while i + 1 < table.Len(mut st.onode) {
+        if table.Get(mut st.onode, i) == st.failE {
+            return table.Get(mut st.onode, i + 1)
+        }
+        i += 2
+    }
+    return 0
 }
 
 func failsOf(st mut S) []int {
@@ -464,29 +518,29 @@ func failsOf(st mut S) []int {
     return freeze(fl)
 }
 
-// ── Def の区間の並列（段 6 P6-1）──
+// ── Def の区間の並列 ──
 // 検査は Def ごとに独立（判定は Def ごとの成否の合流 + 根の式の型）なので、Def を写しの訪問の数でおよそ等しい連続区間に割り、区間ごとに子 task が
 // 自前の S を作って「全 Def の署名 + 自分の区間の Def の本体」だけを写して検査する（区間の外の Def は部分検査の視点の外と同じ形 — 本体なし・mask 0）。
 // 合流は task.Map の添字の順（= Def の順）で親が畳む: 深すぎ（写しの溢れ）はどこかの区間で起きれば全体が too deep・失敗の Def は区間の順に連結
 // （collect なら全部で、最後の失敗が def — 逐次の st.defFail の上書きと同じ / でなければ最初の失敗）・失敗が無ければ根の式だけを親が検査する。
 // 出力は区間の切り方・ワーカー数・スケジュールに依らず逐次の形とバイト一致（区間の切り方は訪問の数だけで決まる — ワーカー数を読まない）
 
-// P_CHUNK は区間 1 つの目標の訪問の数（費用の代理）。区間が 1 つに収まるコアは逐次の形のまま（task を生まない）
+// 区間 1 つの目標の訪問の数（費用の代理）。区間が 1 つに収まるコアは逐次の形のまま（task を生まない）
 const P_CHUNK = 20000
 
-// P_BYTE は区間の宣言の上界の係数（訪問 1 つあたりのバイト — 写しの記録・作業域・型の表）と固定分（S の表の前置き等）。
+// 区間の宣言の上界の係数（訪問 1 つあたりのバイト — 写しの記録・作業域・型の表）と固定分（S の表の前置き等）。
 // 校正（P6-1 — 自己 check）: 実測は訪問 1 つあたり ≈ 155 バイト（最大の区間 ≈ 35 万訪問で 54 MB）— 1.6 倍の余裕で 256
 const P_BYTE = 256
 const P_BASE = 4194304
 
-// DefRange は区間（Def の添字の [lo, hi)・本体の訪問の数の和 size）
+// 区間（Def の添字の [lo, hi)・本体の訪問の数の和 size）
 type DefRange struct {
     lo int
     hi int
     size int
 }
 
-// bodySize は式 e0 の写しの訪問の数（convExpr と同じ子の辿り方 — 共有された部分式は辿るたびに数える。e0 < 0 は 0）。
+// 式 e0 の写しの訪問の数（convExpr と同じ子の辿り方 — 共有された部分式は辿るたびに数える。e0 < 0 は 0）。
 // 写しの枠の段数・ラベルの段数は訪問の数 + 1 を越えないので、作業域の上界にも使う
 func bodySize(cs []desugar.CoreExpr, e0 int) int {
     if e0 < 0 {
@@ -518,7 +572,7 @@ func bodySize(cs []desugar.CoreExpr, e0 int) int {
     return n
 }
 
-// defSrcs は Def の記録の列（名前付き関数〔宣言順〕→ 持ち上げたラムダ〔持ち上げ順〕— defJson の順・checkAll の Def の添字）
+// Def の記録の列（名前付き関数〔宣言順〕→ 持ち上げたラムダ〔持ち上げ順〕— defJson の順・checkAll の Def の添字）
 func defSrcs(c desugar.Core) []int {
     h := c.H
     nn := h[c.Defs]
@@ -534,7 +588,7 @@ func defSrcs(c desugar.Core) []int {
     return freeze(out)
 }
 
-// defRanges は Def を訪問の数でおよそ P_CHUNK ずつの連続区間に割る（区間は空でない・最後の区間は残り全部）
+// Def を訪問の数でおよそ P_CHUNK ずつの連続区間に割る（区間は空でない・最後の区間は残り全部）
 func defRanges(c desugar.Core, srcs []int) []DefRange {
     h := c.H
     mut out := mut []DefRange{}
@@ -554,13 +608,13 @@ func defRanges(c desugar.Core, srcs []int) []DefRange {
     return freeze(out)
 }
 
-// checkCoreX は c を検査する（判定 JSON・def error の Def・collect なら落ちた Def の全部）。Def の区間が 2 つ以上なら区間ごとに子 task で検査して
+// c を検査する（判定 JSON・def error の Def・collect なら落ちた Def の全部）。Def の区間が 2 つ以上なら区間ごとに子 task で検査して
 // 合流し、根の式は親が検査する（上の節）。区間が 1 つなら逐次の形（checkCoreR — 作業域の上界も以前と同じ式の数から）
 func checkCoreX(c desugar.Core, idx bool, collect bool) CkOut {
     srcs := defSrcs(c)
     rs := defRanges(c, srcs)
     if len(rs) <= 1 {
-        return checkCoreR(c, srcs, idx, collect, 0, len(srcs), true, len(c.Exprs))
+        return checkCoreR(c, srcs, idx, collect, 0, len(srcs), true, len(c.Exprs), false)
     }
     mut most := 0
     for k <- iter.Range(0, len(rs)) {
@@ -572,7 +626,7 @@ func checkCoreX(c desugar.Core, idx bool, collect bool) CkOut {
     bud := most * P_BYTE + P_BASE
     outs := checkRanges(c, srcs, collect, rs, bud)
     // 根の式（失敗があっても写す — 逐次は全部を写してから検査するので、根の写しの溢れは失敗より先に too deep になる）
-    rt := checkCoreR(c, srcs, idx, collect, 0, 0, true, bodySize(c.Exprs, c.Root))
+    rt := checkCoreR(c, srcs, idx, collect, 0, 0, true, bodySize(c.Exprs, c.Root), false)
     mut fails := mut []int{}
     mut def := -1
     mut deep := rt.def == -2
@@ -590,22 +644,29 @@ func checkCoreX(c desugar.Core, idx bool, collect bool) CkOut {
         }
     }
     if deep {
-        return CkOut{bytes("checker: too deep\n"), -2, []int{}}
+        return CkOut{bytes("checker: too deep\n"), -2, []int{}, 0, []int{}}
     }
     if collect && len(fails) > 0 {
         def = fails[len(fails) - 1]
     }
     if def >= 0 {
-        return CkOut{if idx { []byte{} } else { defErrorOut() }, def, freeze(fails)}
+        // 位置は区間の順で最初に落ちた区間の（逐次の Def の順で最初の落ち — checkAll と同じ）
+        mut at := 0
+        for k <- iter.Range(0, len(outs)) {
+            if at == 0 && outs[k].def != -1 {
+                at = outs[k].at
+            }
+        }
+        return CkOut{if idx { []byte{} } else { defErrorOut() }, def, freeze(fails), at, []int{}}
     }
     return rt
 }
 
-// checkRanges は区間ごとに子 task で検査した結果（区間の順 — task.Map の添字の順）。子の死（逐次なら同じ死 — 写しの溢れは死でなく too deep の値）は
+// 区間ごとに子 task で検査した結果（区間の順 — task.Map の添字の順）。子の死（逐次なら同じ死 — 写しの溢れは死でなく too deep の値）は
 // Map の err（ChildDied）で来るので、親の死にする。Scope + Gather で書かないのは、Def の本体の task.Gather を check の検査器が def error にするため
 // （main の本体と build は受理 — F 台帳候補）
 func checkRanges(c desugar.Core, srcs []int, collect bool, rs []DefRange, bud int) []CkOut {
-    outs, serr := task.Map(rs, (r) => checkCoreR(c, srcs, true, collect, r.lo, r.hi, false, r.size), budget: bud)
+    outs, serr := task.Map(rs, (r) => checkCoreR(c, srcs, true, collect, r.lo, r.hi, false, r.size, false), budget: bud)
     if serr != nil {
         return panic(InvariantBroken{})
     }

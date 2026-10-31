@@ -1,0 +1,569 @@
+package cli
+
+// 印字: 使い方（Usage — `--help` の本文）・誤用の文面（Format）・表の JSON（Spec — `--cli-spec`）。幅は 80 桁固定（端末の幅は見ない —
+// 出力が環境で変わらないので黄金にできる）
+
+import "std/builder"
+import "std/convert"
+import "std/iter"
+import "std/json"
+import "std/sort"
+import "std/strings"
+
+// 折り返しの幅と、左の欄の幅の上限（長い左の欄は説明を次の行へ送る）
+const width = 80
+const leftMax = 24
+
+// 一覧の 1 行（左の欄・説明・並べ替えの鍵）
+type row struct {
+    left string
+    text string
+    key string
+}
+
+// name のコマンド（空なら App の全体・語の途中ならその下のサブコマンドの一覧）の使い方。dev なら dev の宣言も出す
+@effects()
+func Usage(app App, name string, dev bool) string {
+    k := cmdIndex(app, name)
+    if k >= 0 {
+        return cmdUsage(app, app.commands[k], dev)
+    }
+    return appUsage(app, name, dev)
+}
+
+// Parse の誤り e の文面（r = Parse が返した Parsed）。Request は要求された文書（使い方・版・表の JSON）、それ以外は
+// 「何が・どこが」の 1〜2 行と `--help` への誘導の 1 行
+@effects()
+func Format(app App, r Parsed, e error) string {
+    head := progOf(app, r.cmd) + ": "
+    tail := "run '" + progOf(app, r.cmd) + " --help' for usage\n"
+    return switch e {
+    case Request{word}: request(app, r, word)
+    case UnknownFlag{arg, word, near}: head + "unknown flag " + word + argAt(arg) + "\n" + nearLine(near) + tail
+    case UnknownCommand{arg, word, near}: head + "unknown command " + word + argAt(arg) + "\n" + nearLine(near) + tail
+    case MissingValue{arg, flag}: head + "flag " + flag + " needs a value" + argAt(arg) + "\n" + tail
+    case BadValue{arg, flag, word, want}: head + "invalid value " + quote(word) + " for " + flag + argAt(arg) + "\n  want " + want + "\n" + tail
+    case Missing{flag}: if flag == "<command>" { head + "missing <command>\n\n" + Usage(app, r.cmd, false) } else { head + "missing " + flag + "\n" + tail }
+    case Extra{arg, word}: head + "unexpected argument " + word + argAt(arg) + "\n" + tail
+    case Duplicate{arg, flag, first}: head + "flag " + flag + " given twice (arguments " + convert.FormatInt(first) + " and " + convert.FormatInt(arg) + ")\n" + tail
+    case _: head + "invalid arguments\n" + tail
+    }
+}
+
+// 予約の綴りの要求の文書
+func request(app App, r Parsed, word string) string {
+    if word == "version" {
+        return app.name + " " + app.version + "\n"
+    }
+    if word == "cli-spec" {
+        return Spec(app) + "\n"
+    }
+    return Usage(app, r.cmd, word == "help=dev")
+}
+
+func progOf(app App, cmd string) string {
+    return if cmd == "" { app.name } else { app.name + " " + cmd }
+}
+
+// argv の添字の添え（-1 = 環境変数の値）
+func argAt(arg int) string {
+    return if arg < 0 { " (environment)" } else { " (argument " + convert.FormatInt(arg) + ")" }
+}
+
+func nearLine(near string?) string {
+    if near == nil {
+        return ""
+    }
+    return "  did you mean " + near + "?\n"
+}
+
+// 値の綴り（空なら ""）
+func quote(w string) string {
+    return if w == "" { "\"\"" } else { w }
+}
+
+// ── 使い方 ──
+
+func cmdUsage(app App, c Command, dev bool) string {
+    mut o := builder.Builder[byte]{}
+    flags := flagRows(c, dev)
+    mut line := "usage: " + progOf(app, c.name)
+    if len(flags) > 0 {
+        line = line + " [flags]"
+    }
+    for p <- c.pos {
+        line = line + " " + posSpell(p, c.rest)
+    }
+    para(mut o, line)
+    cdesc := if c.help != "" { c.help } else { c.summary }
+    adesc := if app.help != "" { app.help } else { app.summary }
+    // コマンドの無いツールの既定のコマンドは App の説明を借りる
+    desc := if cdesc == "" && c.name == "" { adesc } else { cdesc }
+    if desc != "" {
+        blank(mut o)
+        para(mut o, desc)
+    }
+    mut ps := mut []row{}
+    for p <- c.pos {
+        ps = append(ps, row{left: posLeft(p), text: p.help, key: ""})
+    }
+    section(mut o, "arguments", freeze(ps))
+    section(mut o, "flags", flags)
+    section(mut o, "environment", envRows(c.env, dev))
+    if !dev && hidden(c) {
+        blank(mut o)
+        para(mut o, "run '" + progOf(app, c.name) + " --help=dev' for the development flags")
+    }
+    return json.Done(mut o)
+}
+
+func appUsage(app App, group string, dev bool) string {
+    mut o := builder.Builder[byte]{}
+    para(mut o, "usage: " + progOf(app, group) + " <command> [flags] [arguments]")
+    desc := if app.help != "" { app.help } else { app.summary }
+    if group == "" && desc != "" {
+        blank(mut o)
+        para(mut o, desc)
+    }
+    mut cs := mut []row{}
+    mut hid := false
+    for ix <- iter.Range(0, len(app.commands)) {
+        c := app.commands[ix]
+        if group == "" || strings.HasPrefix(c.name, group + " ") {
+            if c.dev && !dev {
+                hid = true
+            } else {
+                left := if group == "" { c.name } else { strings.TrimPrefix(c.name, group + " ") }
+                cs = append(cs, row{left: left, text: c.summary, key: ""})
+            }
+        }
+    }
+    section(mut o, "commands", freeze(cs))
+    if group == "" {
+        ers := envRows(app.env, dev)
+        section(mut o, "environment", ers)
+        hid = hid || (!dev && len(envRows(app.env, true)) > len(ers))
+    }
+    blank(mut o)
+    sub := if group == "" { "<command>" } else { group + " <command>" }
+    para(mut o, "run '" + progOf(app, sub) + " --help' for the flags of a command")
+    if hid {
+        para(mut o, "run '" + progOf(app, group) + " --help=dev' for the development commands")
+    }
+    return json.Done(mut o)
+}
+
+// c に dev の宣言（フラグ・選択肢・環境変数）があるか
+func hidden(c Command) bool {
+    return len(flagRows(c, true)) > len(flagRows(c, false)) || len(envRows(c.env, true)) > len(envRows(c.env, false)) || devChoices(c)
+}
+
+func devChoices(c Command) bool {
+    for ix <- iter.Range(0, len(c.choices)) {
+        f := c.choices[ix]
+        if len(f.choices) > 0 && len(f.dev) > 0 {
+            return true
+        }
+    }
+    return false
+}
+
+// usage の行の位置引数の綴り（`<p>`・`[<p>]`・`<p>...`・`[<p>...]` — rest なら `[--]` を添える）
+func posSpell(p Positional, rest bool) string {
+    mut s := "<" + p.name + ">"
+    if p.many {
+        s = s + "..."
+        if rest {
+            s = "[--] " + s
+        }
+    }
+    return if p.optional { "[" + s + "]" } else { s }
+}
+
+func posLeft(p Positional) string {
+    return if p.many { "<" + p.name + ">..." } else { "<" + p.name + ">" }
+}
+
+// c のフラグの行（名前の辞書順 — 宣言の並びに意味を持たせない）
+func flagRows(c Command, dev bool) []row {
+    mut rs := mut []row{}
+    for f <- c.bools {
+        if dev || !f.dev {
+            rs = append(rs, row{left: flagLeft(f.name, f.short, ""), text: f.help, key: f.name})
+        }
+    }
+    for ix <- iter.Range(0, len(c.strs)) {
+        f := c.strs[ix]
+        if dev || !f.dev {
+            mut t := f.help
+            ev := f.env
+            if ev != nil {
+                t = t + " (env " + ev + ")"
+            }
+            d := f.def
+            if d != nil {
+                t = t + " (default " + quote(d) + ")"
+            }
+            rs = append(rs, row{left: flagLeft(f.name, f.short, argOr(f.arg, "<value>")), text: t, key: f.name})
+        }
+    }
+    for ix <- iter.Range(0, len(c.ints)) {
+        f := c.ints[ix]
+        if dev || !f.dev {
+            mut t := f.help
+            ev := f.env
+            if ev != nil {
+                t = t + " (env " + ev + ")"
+            }
+            d := f.def
+            if d != nil {
+                t = t + " (default " + convert.FormatInt(d) + ")"
+            }
+            rs = append(rs, row{left: flagLeft(f.name, f.short, argOr(f.arg, "<n>")), text: t, key: f.name})
+        }
+    }
+    for ix <- iter.Range(0, len(c.choices)) {
+        f := c.choices[ix]
+        if dev || len(f.choices) > 0 {
+            rs = append(rs, row{left: spell(f.name) + "=" + argOr(f.arg, "<" + f.name + ">"), text: choiceText(f, dev), key: f.name})
+        }
+    }
+    for f <- c.lists {
+        if dev || !f.dev {
+            rs = append(rs, row{left: flagLeft(f.name, f.short, argOr(f.arg, "<value>")), text: f.help + " (repeatable)", key: f.name})
+        }
+    }
+    return byKey(freeze(rs))
+}
+
+// 選択肢の添え（`help: a (default), b, c`）
+func choiceText(f ChoiceFlag, dev bool) string {
+    mut ws := mut []string{}
+    for ix <- iter.Range(0, len(f.choices)) {
+        v := f.choices[ix]
+        ws = append(ws, defMark(f, v))
+    }
+    if dev {
+        for v <- f.dev {
+            ws = append(ws, defMark(f, v))
+        }
+    }
+    cs := strings.Join(freeze(ws), ", ")
+    return if f.help == "" { cs } else { f.help + ": " + cs }
+}
+
+func defMark(f ChoiceFlag, v string) string {
+    d := f.def
+    if d == nil {
+        return v
+    }
+    return if d == v { v + " (default)" } else { v }
+}
+
+func argOr(arg string, dflt string) string {
+    return if arg == "" { dflt } else { arg }
+}
+
+// 一覧の左の欄（`-s, --name <arg>`・`-n <arg>`）
+func flagLeft(name string, short string, arg string) string {
+    mut s := spell(name)
+    if short != "" {
+        s = "-" + short + ", " + s
+    }
+    return if arg == "" { s } else { s + " " + arg }
+}
+
+func envRows(es []Env, dev bool) []row {
+    mut rs := mut []row{}
+    for e <- es {
+        if dev || !e.dev {
+            rs = append(rs, row{left: e.name, text: e.help, key: ""})
+        }
+    }
+    return freeze(rs)
+}
+
+// rs を key の辞書順に並べ替えた列（安定）
+func byKey(rs []row) []row {
+    ord := sort.Order(len(rs), (i, j) => less(rs[i].key, rs[j].key))
+    mut out := mut []row{}
+    for k <- ord {
+        out = append(out, rs[k])
+    }
+    return freeze(out)
+}
+
+// a < b（バイトの辞書順）
+func less(a string, b string) bool {
+    x := bytes(a)
+    y := bytes(b)
+    mut i := 0
+    while i < len(x) && i < len(y) {
+        if x[i] != y[i] {
+            return x[i] < y[i]
+        }
+        i += 1
+    }
+    return len(x) < len(y)
+}
+
+// 見出しと 2 列の一覧（空なら何も書かない）
+func section(o mut builder.Builder[byte], title string, rs []row) {
+    if len(rs) == 0 {
+        return
+    }
+    blank(mut o)
+    builder.PushString(mut o, title + ":\n")
+    mut w := 0
+    for r <- rs {
+        n := len(bytes(r.left))
+        if n <= leftMax && n > w {
+            w = n
+        }
+    }
+    col := 2 + w + 2
+    for r <- rs {
+        n := len(bytes(r.left))
+        builder.PushString(mut o, "  " + r.left)
+        if r.text == "" {
+            builder.PushString(mut o, "\n")
+        } else if n > leftMax {
+            builder.PushString(mut o, "\n")
+            wrap(mut o, r.text, col, col)
+        } else {
+            wrap(mut o, r.text, 2 + n, col)
+        }
+    }
+}
+
+// 折り返した段落（左の余白なし）
+func para(o mut builder.Builder[byte], s string) {
+    if s != "" {
+        wrap(mut o, s, 0, 0)
+    }
+}
+
+func blank(o mut builder.Builder[byte]) {
+    builder.PushString(mut o, "\n")
+}
+
+// s を語で折って書く（今の桁 from・続きの行の字下げ ind。最初の語は from から ind まで空白で寄せる）
+func wrap(o mut builder.Builder[byte], s string, from int, ind int) {
+    mut x := from
+    while x < ind {
+        builder.PushString(mut o, " ")
+        x += 1
+    }
+    mut first := true
+    for w <- strings.Fields(s) {
+        n := len(bytes(w))
+        if !first && x + 1 + n > width {
+            builder.PushString(mut o, "\n")
+            mut k := 0
+            while k < ind {
+                builder.PushString(mut o, " ")
+                k += 1
+            }
+            x = ind
+            first = true
+        }
+        if !first {
+            builder.PushString(mut o, " ")
+            x += 1
+        }
+        builder.PushString(mut o, w)
+        x += n
+        first = false
+    }
+    builder.PushString(mut o, "\n")
+}
+
+// ── 表の JSON（`--cli-spec` — 文書の生成器が実行ファイル自身から表を引く口）──
+
+// app の表の JSON（空白なし・宣言の順。フラグは種類つきの 1 本の列 — kind = bool / string / int / choice / list）
+@effects()
+func Spec(app App) string {
+    mut o := builder.Builder[byte]{}
+    json.Put(mut o, "{")
+    json.PutKey(mut o, "name", true)
+    json.PutString(mut o, app.name)
+    json.PutKey(mut o, "version", false)
+    json.PutString(mut o, app.version)
+    json.PutKey(mut o, "summary", false)
+    json.PutString(mut o, app.summary)
+    json.PutKey(mut o, "help", false)
+    json.PutString(mut o, app.help)
+    json.PutKey(mut o, "env", false)
+    putEnv(mut o, app.env)
+    json.PutKey(mut o, "commands", false)
+    json.Put(mut o, "[")
+    for k <- iter.Range(0, len(app.commands)) {
+        if k > 0 {
+            json.Put(mut o, ",")
+        }
+        putCmd(mut o, app, k)
+    }
+    json.Put(mut o, "]}")
+    return json.Done(mut o)
+}
+
+// ci 番のコマンドの項（コマンドを値で渡さず添字で渡す — 値で渡すと check が c.strs[i] の添字で type error になる・build は受理）
+func putCmd(o mut builder.Builder[byte], app App, ci int) {
+    c := app.commands[ci]
+    json.Put(mut o, "{")
+    json.PutKey(mut o, "name", true)
+    json.PutString(mut o, c.name)
+    json.PutKey(mut o, "summary", false)
+    json.PutString(mut o, c.summary)
+    json.PutKey(mut o, "help", false)
+    json.PutString(mut o, c.help)
+    json.PutKey(mut o, "dev", false)
+    json.PutBool(mut o, c.dev)
+    json.PutKey(mut o, "rest", false)
+    json.PutBool(mut o, c.rest)
+    json.PutKey(mut o, "usage", false)
+    json.PutString(mut o, Usage(app, c.name, false))
+    json.PutKey(mut o, "flags", false)
+    json.Put(mut o, "[")
+    mut first := true
+    for fb <- c.bools {
+        first = flagHead(mut o, first, "bool", fb.name, fb.short, "", fb.help, fb.dev)
+        json.Put(mut o, "}")
+    }
+    for ix <- iter.Range(0, len(c.strs)) {
+        fs := c.strs[ix]
+        first = flagHead(mut o, first, "string", fs.name, fs.short, fs.arg, fs.help, fs.dev)
+        putOptStr(mut o, "default", fs.def)
+        putOptStr(mut o, "env", fs.env)
+        json.PutKey(mut o, "optional", false)
+        json.PutBool(mut o, fs.opt)
+        json.Put(mut o, "}")
+    }
+    for ix <- iter.Range(0, len(c.ints)) {
+        fi := c.ints[ix]
+        first = flagHead(mut o, first, "int", fi.name, fi.short, fi.arg, fi.help, fi.dev)
+        putOptInt(mut o, "default", fi.def)
+        putOptInt(mut o, "min", fi.min)
+        putOptInt(mut o, "max", fi.max)
+        json.PutKey(mut o, "allow", false)
+        json.Put(mut o, "[")
+        for k <- iter.Range(0, len(fi.allow)) {
+            if k > 0 {
+                json.Put(mut o, ",")
+            }
+            json.PutInt(mut o, fi.allow[k])
+        }
+        json.Put(mut o, "]")
+        putOptStr(mut o, "env", fi.env)
+        json.PutKey(mut o, "optional", false)
+        json.PutBool(mut o, fi.opt)
+        json.Put(mut o, "}")
+    }
+    for ix <- iter.Range(0, len(c.choices)) {
+        fc := c.choices[ix]
+        first = flagHead(mut o, first, "choice", fc.name, "", fc.arg, fc.help, len(fc.choices) == 0)
+        json.PutKey(mut o, "choices", false)
+        putStrs(mut o, fc.choices)
+        json.PutKey(mut o, "dev_choices", false)
+        putStrs(mut o, fc.dev)
+        putOptStr(mut o, "default", fc.def)
+        json.PutKey(mut o, "optional", false)
+        json.PutBool(mut o, fc.opt)
+        json.Put(mut o, "}")
+    }
+    for fl <- c.lists {
+        first = flagHead(mut o, first, "list", fl.name, fl.short, fl.arg, fl.help, fl.dev)
+        json.Put(mut o, "}")
+    }
+    json.Put(mut o, "]")
+    json.PutKey(mut o, "pos", false)
+    json.Put(mut o, "[")
+    for k <- iter.Range(0, len(c.pos)) {
+        p := c.pos[k]
+        if k > 0 {
+            json.Put(mut o, ",")
+        }
+        json.Put(mut o, "{")
+        json.PutKey(mut o, "name", true)
+        json.PutString(mut o, p.name)
+        json.PutKey(mut o, "help", false)
+        json.PutString(mut o, p.help)
+        json.PutKey(mut o, "many", false)
+        json.PutBool(mut o, p.many)
+        json.PutKey(mut o, "optional", false)
+        json.PutBool(mut o, p.optional)
+        json.Put(mut o, "}")
+    }
+    json.Put(mut o, "]")
+    json.PutKey(mut o, "env", false)
+    putEnv(mut o, c.env)
+    json.Put(mut o, "}")
+}
+
+// フラグの項の頭（`{"kind":…,"name":…,"short":…,"arg":…,"help":…,"dev":…` — 閉じは呼び手）。戻りは次の項が先頭でないこと
+func flagHead(o mut builder.Builder[byte], first bool, kind string, name string, short string, arg string, help string, dev bool) bool {
+    if !first {
+        json.Put(mut o, ",")
+    }
+    json.Put(mut o, "{")
+    json.PutKey(mut o, "kind", true)
+    json.PutString(mut o, kind)
+    json.PutKey(mut o, "name", false)
+    json.PutString(mut o, name)
+    json.PutKey(mut o, "short", false)
+    json.PutString(mut o, short)
+    json.PutKey(mut o, "arg", false)
+    json.PutString(mut o, arg)
+    json.PutKey(mut o, "help", false)
+    json.PutString(mut o, help)
+    json.PutKey(mut o, "dev", false)
+    json.PutBool(mut o, dev)
+    return false
+}
+
+func putOptStr(o mut builder.Builder[byte], key string, v string?) {
+    json.PutKey(mut o, key, false)
+    if v == nil {
+        json.Put(mut o, "null")
+    } else {
+        json.PutString(mut o, v)
+    }
+}
+
+func putOptInt(o mut builder.Builder[byte], key string, v int?) {
+    json.PutKey(mut o, key, false)
+    if v == nil {
+        json.Put(mut o, "null")
+    } else {
+        json.PutInt(mut o, v)
+    }
+}
+
+func putStrs(o mut builder.Builder[byte], xs []string) {
+    json.Put(mut o, "[")
+    for k <- iter.Range(0, len(xs)) {
+        if k > 0 {
+            json.Put(mut o, ",")
+        }
+        json.PutString(mut o, xs[k])
+    }
+    json.Put(mut o, "]")
+}
+
+func putEnv(o mut builder.Builder[byte], es []Env) {
+    json.Put(mut o, "[")
+    for k <- iter.Range(0, len(es)) {
+        if k > 0 {
+            json.Put(mut o, ",")
+        }
+        json.Put(mut o, "{")
+        json.PutKey(mut o, "name", true)
+        json.PutString(mut o, es[k].name)
+        json.PutKey(mut o, "help", false)
+        json.PutString(mut o, es[k].help)
+        json.PutKey(mut o, "dev", false)
+        json.PutBool(mut o, es[k].dev)
+        json.Put(mut o, "}")
+    }
+    json.Put(mut o, "]")
+}

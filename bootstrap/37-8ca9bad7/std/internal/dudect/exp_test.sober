@@ -1,0 +1,133 @@
+package dudect
+
+// dudect の対照実験（report-1025 / 1026 — poly1305_sum が GHA の EPYC 7763〔Zen 3・Azure VM〕でだけ |t| 4.7〜18.9 と出る件の白黒）。
+// 題材の名前は exp_ で始まる — scripts/dudect.ts は判定を印字するが失敗にしない（漏れと出ることが実験の結果になりうる）。読み方:
+// exp_poly_aa（乱数どうし — A/A）が漏れ = ハーネスの偏り / aa は ok で exp_poly_ff（固定 A 対 固定 B）が漏れ = 値に依る効果（同じ値の繰り返しの効果は否定）/
+// exp_poly_zero・exp_poly_ones（ビットの重みの両端の固定鍵 対 乱数）の |t| が桁で跳ねる = 消費電力から周波数の形（Hertzbleed の類）/
+// ff は ok で固定 対 乱数だけ漏れ = 同じ値の繰り返しの効果。msg と種は poly1305_sum_otk（ports_test）と同じ。
+// GHA の 4M の 2 本（report-1027）: A/A は白・ff は Zen 4（EPYC 9V74）で漏れ（今の呼び出しの鍵にだけ付く・鍵ごとに決まる 0.1 cycle 級のずれ）・zero / ones は白・Zen 5 は全部白。
+// 第 2 便（report-1028）: exp_poly_fixed（旧 poly1305_sum の固定 対 乱数 — 判定の口は 1 回限りの鍵の形に移した）・exp_imul_chain（下）・
+// Sum の段割り（std/crypto/poly1305 の poly1305_dudect_test.sober — start / absorb / finish を white-box で）
+
+import "std/crypto/poly1305"
+import "std/iter"
+
+// fill は全部 v の n バイト
+func fill(n int, v int) []byte {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, n) {
+        b = append(b, byte(v))
+    }
+    return freeze(b)
+}
+
+func TestExpPolyZero() {
+    n := Count()
+    if n == 0 {
+        return
+    }
+    msg := pat(64, 7)
+    // クラス 0 = 全 0 の鍵（r = 0 — 積が全部 0）・クラス 1 = 乱数
+    Measure("exp_poly_zero", n, 8, (c, i) => if c == 0 { fill(32, 0) } else { rnd(32, i) }, (x) => len(poly1305.Sum(x, msg)) == 16)
+}
+
+func TestExpPolyOnes() {
+    n := Count()
+    if n == 0 {
+        return
+    }
+    msg := pat(64, 7)
+    // クラス 0 = 全 0xff の鍵（r は締めの mask の全ビット）・クラス 1 = 乱数
+    Measure("exp_poly_ones", n, 8, (c, i) => if c == 0 { fill(32, 255) } else { rnd(32, i) }, (x) => len(poly1305.Sum(x, msg)) == 16)
+}
+
+func TestExpPolyAa() {
+    n := Count()
+    if n == 0 {
+        return
+    }
+    msg := pat(64, 7)
+    // 両クラスとも乱数（A/A — クラスは名札だけ）
+    Measure("exp_poly_aa", n, 8, (c, i) => rnd(32, i), (x) => len(poly1305.Sum(x, msg)) == 16)
+}
+
+func TestExpPolyFf() {
+    n := Count()
+    if n == 0 {
+        return
+    }
+    msg := pat(64, 7)
+    // クラス 0 = poly1305_sum の固定鍵・クラス 1 = 別の固定鍵
+    Measure("exp_poly_ff", n, 8, (c, i) => pat(32, if c == 0 { 1 } else { 2 }), (x) => len(poly1305.Sum(x, msg)) == 16)
+}
+
+func TestExpPolyFixed() {
+    n := Count()
+    if n == 0 {
+        return
+    }
+    msg := pat(64, 7)
+    // 旧 poly1305_sum（固定 対 乱数 — dudect の古典の形）。bench/data/dudect.tsv の poly1305_sum の行はこの形
+    Measure("exp_poly_fixed", n, 8, (c, i) => sec(c, i, 32), (x) => len(poly1305.Sum(x, msg)) == 16)
+}
+
+// lw は b[p..p+4) の小さい端の 32 bit の語
+func lw(b []byte, p int) int {
+    return int(b[p]) | (int(b[p + 1]) << 8) | (int(b[p + 2]) << 16) | (int(b[p + 3]) << 24)
+}
+
+// chain は Poly1305 の absorb と同じ形の積と加算の鎖（26 bit × 5 limb の 5 × 5 の積・× 5 の畳み・繰り上がり）を、鍵から作った limb に 4 周掛ける。
+// 暗号の関数でなく、メモリの読み書き（le32 の切片の読み・put32 の書き・結果の写し）を鎖の外に出した形 — 入力の読みは頭の 1 回だけ・結果は bool 1 つ。
+// これに ff のずれが出れば、ずれは Zen 3 / 4 の積と加算の鎖そのものの性質（ソフトウェアの外）
+func chain(k []byte) bool {
+    r0 := lw(k, 0) & 0x3ffffff
+    r1 := (lw(k, 3) >> 2) & 0x3ffff03
+    r2 := (lw(k, 6) >> 4) & 0x3ffc0ff
+    r3 := (lw(k, 9) >> 6) & 0x3f03fff
+    r4 := (lw(k, 12) >> 8) & 0x00fffff
+    s1 := r1 * 5
+    s2 := r2 * 5
+    s3 := r3 * 5
+    s4 := r4 * 5
+    mut h0 := 0
+    mut h1 := 0
+    mut h2 := 0
+    mut h3 := 0
+    mut h4 := 0
+    for j <- iter.Range(0, 4) {
+        // msg の limb の代わりの定数（pat(64, 7) の形の値 — 周ごとに変える）
+        h0 = h0 + ((0x1234567 + j * 0x10101) & 0x3ffffff)
+        h1 = h1 + ((0x2345678 + j * 0x20202) & 0x3ffffff)
+        h2 = h2 + ((0x3456789 + j * 0x30303) & 0x3ffffff)
+        h3 = h3 + ((0x0567890 + j * 0x40404) & 0x3ffffff)
+        h4 = h4 + (((0x0678901 + j * 0x50505) & 0xffffff) | (1 << 24))
+        d0 := h0 * r0 + h1 * s4 + h2 * s3 + h3 * s2 + h4 * s1
+        mut d1 := h0 * r1 + h1 * r0 + h2 * s4 + h3 * s3 + h4 * s2
+        mut d2 := h0 * r2 + h1 * r1 + h2 * r0 + h3 * s4 + h4 * s3
+        mut d3 := h0 * r3 + h1 * r2 + h2 * r1 + h3 * r0 + h4 * s4
+        mut d4 := h0 * r4 + h1 * r3 + h2 * r2 + h3 * r1 + h4 * r0
+        h0 = d0 & 0x3ffffff
+        d1 = d1 + (d0 >> 26)
+        h1 = d1 & 0x3ffffff
+        d2 = d2 + (d1 >> 26)
+        h2 = d2 & 0x3ffffff
+        d3 = d3 + (d2 >> 26)
+        h3 = d3 & 0x3ffffff
+        d4 = d4 + (d3 >> 26)
+        h4 = d4 & 0x3ffffff
+        h0 = h0 + (d4 >> 26) * 5
+        h1 = h1 + (h0 >> 26)
+        h0 = h0 & 0x3ffffff
+    }
+    // 結果は bool 1 つ（秘密の値の bool — Measure は窓の外で列に積むだけ）
+    return ((h0 ^ h1 ^ h2 ^ h3 ^ h4) & 1) == 1
+}
+
+func TestExpImulChain() {
+    n := Count()
+    if n == 0 {
+        return
+    }
+    // ff の形（exp_poly_ff と同じ固定鍵 2 つ）
+    Measure("exp_imul_chain", n, 8, (c, i) => pat(32, if c == 0 { 1 } else { 2 }), (x) => chain(x))
+}

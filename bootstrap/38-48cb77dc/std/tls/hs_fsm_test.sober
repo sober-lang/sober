@@ -1,0 +1,332 @@
+package tls
+
+// std/internal/hs の状態機械 ≡ Lean のモデル（TLS 便 R6 — report-838 / 839・2026-10-20 に examples/tls_fsm から移した — hs は std の内側）: 抽象の状態
+// （lean/FeatherweightSober/Tls.lean の states）ごとに具体の Hs を記録したクライアントのバイト列（testdata/tls/trace-*.hex — 互換の CCS は飛ばして、
+// 要る状態だけ 1 枚足す）で作り、抽象の事象（Tls.lean の events）ごとに具体の record を 1 枚組んで hs.Feed に通し、「状態 事象 -> 状態' app done closed
+// upd err」の行を Lean の遷移表（sober-gen --tlsfsm ≡ testdata/tls/fsm.golden — scripts/tlsfsm.sh が照合）と 1 行ずつ突き合わせる。
+// 暗号化した事象はクライアントの traffic secret（hs.Secrets）から客側の鍵を作って封じる（FinOk だけは記録の Finished）。
+// TestFsmNonce は nonce の動的の証人（定理 3 の Sober 側）: Connected から KeyUpdate を挟んで送りを重ね、各 record の (鍵の指紋, seq) に重なりが無いことを見る。
+// h0 の状態は ChaCha20-Poly1305 の記録（塊なしで走る）・h1 の状態は HRR の記録（AES-128-GCM — 塊の無い機械〔SOBER_NOAES=1〕では行が変わるので照合を飛ばす）
+
+import "std/crypto/aesgcm"
+import "std/crypto/pem"
+import "std/crypto/rsa"
+import "std/crypto/sha256"
+import "std/hex"
+import "std/internal/bless"
+import "std/iter"
+import "std/strings"
+import "std/internal/hs"
+import "std/tls/record"
+
+@embed("testdata/tls/fsm.golden")
+const fmGolden = map[string]string{}
+
+// fmFrames は記録 name のクライアントの record の列（互換の CCS〔内容の型 20〕は除く）
+func fmFrames(name string) [][]byte {
+    b, _ := hex.Parse(testFile(testTraces, "testdata/tls/trace-${name}.hex"))
+    mut out := mut [][]byte{}
+    mut at := 0
+    while at + 5 <= len(b) {
+        n := 5 + (int(b[at + 3]) << 8 | int(b[at + 4]))
+        if int(b[at]) != record.CtCcs {
+            out = append(out, b[at:at + n])
+        }
+        at += n
+    }
+    return freeze(out)
+}
+
+// fmFed は h に枠 r を 1 つ Feed した写しと結果（mut なしの入口 — hs.Feed〔mut の仮引数の関数は呼び出し点ごとに展開される〕の展開をこの 1 か所に）
+func fmFed(h hs.Hs, p hs.Params, r []byte) (hs.Hs, hs.Out, error?) {
+    mut x := h
+    o, e := hs.Feed(mut x, p, record.At(r, 0, len(r)))
+    return x, o, e
+}
+
+// fmFeed は状態を作る途中の Feed（結果は捨てる）
+func fmFeed(h hs.Hs, p hs.Params, r []byte) hs.Hs {
+    x, _, _ := fmFed(h, p, r)
+    return x
+}
+
+// fmPlainRec は暗号化しない record
+func fmPlainRec(ct int, body []byte) []byte {
+    mut o := mut []byte{}
+    o = append(o, byte(ct))
+    o = append(o, byte(3))
+    o = append(o, byte(3))
+    o = append(o, byte(len(body) >> 8))
+    o = append(o, byte(len(body) & 0xff))
+    for c <- body {
+        o = append(o, c)
+    }
+    return freeze(o)
+}
+
+// fmClientSecret は h のクライアントの traffic secret（i = 0 → handshake・2 → application — hs.Secrets の i 番目の 16 進。鍵の前の段は 0 の 32 バイト）
+func fmClientSecret(h hs.Hs, i int) []byte {
+    t := bytes(hs.Secrets(h))
+    if len(t) < i * 65 + 64 {
+        return testZeros(32)
+    }
+    s, _ := string(t[i * 65:i * 65 + 64])
+    b, _ := hex.Parse(s)
+    return b
+}
+
+// fmSealRec は客側の鍵（suite・secret の最初の世代）で内容の型 ct の pt を封じた record 1 つ
+func fmSealRec(suite int, secret []byte, ct int, pt []byte) []byte {
+    mut d, _ := record.NewDir(suite, secret)
+    return record.Seal(mut d, ct, pt, 0)
+}
+
+func fmMsg(t int, body []byte) []byte {
+    mut o := mut []byte{}
+    o = append(o, byte(t))
+    o = append(o, byte(0))
+    o = append(o, byte(len(body) >> 8))
+    o = append(o, byte(len(body) & 0xff))
+    for c <- body {
+        o = append(o, c)
+    }
+    return freeze(o)
+}
+
+// fmBase は抽象の状態 1 つの具体（h = Hs・p = その記録の設定・hrr = HRR の記録か）
+type fmBase struct {
+    h hs.Hs
+    p hs.Params
+    hrr bool
+}
+
+// fmBases は Tls.lean の states と同じ順の具体の状態
+func fmBases() []fmBase {
+    pc := testParams("chacha")
+    ph := testParams("hrr")
+    fc := fmFrames("chacha")
+    fh := fmFrames("hrr")
+    ccs := fmPlainRec(record.CtCcs, []byte{1})
+    mut out := mut []fmBase{}
+    s0 := hs.New()
+    out = append(out, fmBase{h: s0, p: pc, hrr: false})
+    out = append(out, fmBase{h: fmFeed(s0, pc, ccs), p: pc, hrr: false})
+    s2 := fmFeed(hs.New(), ph, fh[0])
+    out = append(out, fmBase{h: s2, p: ph, hrr: true})
+    out = append(out, fmBase{h: fmFeed(s2, ph, ccs), p: ph, hrr: true})
+    s4 := fmFeed(hs.New(), pc, fc[0])
+    out = append(out, fmBase{h: s4, p: pc, hrr: false})
+    s5 := fmFeed(s4, pc, ccs)
+    out = append(out, fmBase{h: s5, p: pc, hrr: false})
+    s6 := fmFeed(s2, ph, fh[1])
+    out = append(out, fmBase{h: s6, p: ph, hrr: true})
+    out = append(out, fmBase{h: fmFeed(s6, ph, ccs), p: ph, hrr: true})
+    out = append(out, fmBase{h: fmFeed(s4, pc, fc[1]), p: pc, hrr: false})
+    out = append(out, fmBase{h: fmFeed(s5, pc, fc[1]), p: pc, hrr: false})
+    out = append(out, fmBase{h: fmFeed(hs.New(), pc, fmPlainRec(record.CtHandshake, []byte{1, 0, 0, 2, 3, 3})), p: pc, hrr: false})
+    return freeze(out)
+}
+
+func fmEvents() []string {
+    return []string{"ch", "chRetry", "chBad", "ccs", "plainOther", "forged", "finOk", "finBad", "app", "keyUpd0", "keyUpd1", "alertClose",
+        "alertOther", "sealedOther"}
+}
+
+// fmRecOf は状態 b の上の事象 ev の具体の record（暗号化した事象の鍵 = WaitFin なら client の handshake の secret・Connected なら application の
+// secret・暗号化前の段では鍵を見ない〔外側の内容の型で弾かれる〕ので application の secret のまま）
+func fmRecOf(b fmBase, ev string) []byte {
+    st := hs.Probe(b.h)
+    waitFin := st == "waitFin/c0/h0" || st == "waitFin/c1/h0" || st == "waitFin/c0/h1" || st == "waitFin/c1/h1"
+    sec := fmClientSecret(b.h, if waitFin { 0 } else { 2 })
+    suite := if hs.Suite(b.h) == 0 { record.ChaCha } else { hs.Suite(b.h) }
+    fc := fmFrames("chacha")
+    fh := fmFrames("hrr")
+    if ev == "ch" {
+        return if b.hrr { fh[1] } else { fc[0] }
+    }
+    if ev == "chRetry" {
+        return fh[0]
+    }
+    if ev == "chBad" {
+        return fmPlainRec(record.CtHandshake, []byte{1, 0, 0, 2, 3, 3})
+    }
+    if ev == "ccs" {
+        return fmPlainRec(record.CtCcs, []byte{1})
+    }
+    if ev == "plainOther" {
+        return fmPlainRec(record.CtAlert, []byte{2, 10})
+    }
+    if ev == "forged" {
+        r := fmSealRec(suite, sec, record.CtApp, bytes("x"))
+        mut f := mut []byte{}
+        for c <- r {
+            f = append(f, c)
+        }
+        f[len(f) - 1] = byte(int(f[len(f) - 1]) ^ 1)
+        return freeze(f)
+    }
+    if ev == "finOk" {
+        if waitFin {
+            return if b.hrr { fh[2] } else { fc[1] }
+        }
+        return fmSealRec(suite, sec, record.CtHandshake, fmMsg(20, testZeros(32)))
+    }
+    if ev == "finBad" {
+        return fmSealRec(suite, sec, record.CtHandshake, fmMsg(20, testZeros(32)))
+    }
+    if ev == "app" {
+        return fmSealRec(suite, sec, record.CtApp, bytes("hi"))
+    }
+    if ev == "keyUpd0" {
+        return fmSealRec(suite, sec, record.CtHandshake, fmMsg(24, []byte{0}))
+    }
+    if ev == "keyUpd1" {
+        return fmSealRec(suite, sec, record.CtHandshake, fmMsg(24, []byte{1}))
+    }
+    if ev == "alertClose" {
+        return fmSealRec(suite, sec, record.CtAlert, []byte{1, 0})
+    }
+    if ev == "alertOther" {
+        return fmSealRec(suite, sec, record.CtAlert, []byte{2, 40})
+    }
+    return fmSealRec(suite, sec, record.CtHandshake, fmMsg(4, []byte{}))
+}
+
+func fmBit(b bool) int {
+    return if b { 1 } else { 0 }
+}
+
+func fmErrOf(e error?) string {
+    return switch e {
+        case nil: "-"
+        case record.Alert{desc}: "${desc}"
+    }
+}
+
+// fmRow は状態 b に事象 ev を 1 枚通した印字の行（b の写しの上で — b 自身は変えない）。Connected / Closed の状態では std/tls の Recv の入口
+// hs.Step（mut なし — 表は Feed と共有）にも同じ枠を通し、Feed と食い違えば行を足す（黄金に無い行 = gate の赤）
+func fmRow(b fmBase, ev string) string {
+    r := fmRecOf(b, ev)
+    h, o, e := fmFed(b.h, b.p, r)
+    line := fmShow(b.h, ev, h, o, e)
+    st := hs.Probe(b.h)
+    if st == "connected/c0/h0" || st == "connected/c1/h0" || st == "closed" {
+        h2, o2, e2 := hs.Step(b.h, record.At(r, 0, len(r)))
+        l2 := fmShow(b.h, ev, h2, o2, e2)
+        if l2 != line {
+            return "${line}\nstep differs: ${l2}"
+        }
+    }
+    return line
+}
+
+func fmShow(h0 hs.Hs, ev string, h hs.Hs, o hs.Out, e error?) string {
+    return "${hs.Probe(h0)} ${ev} -> ${hs.Probe(h)} app=${fmBit(len(o.app) > 0)} done=${fmBit(o.done)} closed=${fmBit(o.closed)} upd=${fmBit(o.upd)} err=${fmErrOf(e)}"
+}
+
+// ── nonce の証人 ──
+
+// fmKeyOf は送りの方向の鍵の指紋（Pack の seq の語を除いた語の列の SHA-256 の先頭 8 バイト）と seq
+func fmKeyOf(h hs.Hs) (string, int) {
+    _, wr := hs.Dirs(h)
+    w := record.Pack(wr)
+    mut acc := sha256.New()
+    for i <- iter.Range(0, len(w)) {
+        if i != 1 {
+            v := w[i]
+            mut b := mut []byte{}
+            for j <- iter.Range(0, 8) {
+                b = append(b, byte((v >> (j * 8)) & 0xff))
+            }
+            sha256.Write(mut acc, freeze(b))
+        }
+    }
+    // 鍵の指紋はテストの観測口（故意の開示）— 祝福してから 16 進にする
+    s := bless.Bytes(sha256.Sum(acc))
+    return hex.Format(s[0:8]), record.Seq(wr)
+}
+
+// fmUsed は送り 1 回（前 = (k0, s0)・後 = (k1, s1)）が使った (鍵, seq) の列（鍵が進めば〔指紋が変わるか seq が戻る〕前の鍵の s0 と後の鍵の 0〜s1−1）
+func fmUsed(out mut []string, k0 string, s0 int, k1 string, s1 int) {
+    if k0 != k1 || s1 <= s0 {
+        out = append(out, "${k0}:${s0}")
+        for i <- iter.Range(0, s1) {
+            out = append(out, "${k1}:${i}")
+        }
+    } else {
+        for i <- iter.Range(s0, s1) {
+            out = append(out, "${k0}:${i}")
+        }
+    }
+}
+
+// fmNonces は Connected（ChaCha20-Poly1305）から、送り・相手の KeyUpdate（要求あり / なし）・大きい送り（2 record）を重ね、最後に close_notify を送る
+func fmNonces() string {
+    bs := fmBases()
+    b := bs[8]
+    mut h := b.h
+    mut cd, _ := record.NewDir(record.ChaCha, fmClientSecret(b.h, 2))
+    mut out := mut []string{}
+    ops := "aKaakaKKaBaKa"
+    mut kset := mut []string{}
+    for op <- bytes(ops) {
+        if op == byte(75) || op == byte(107) {
+            r := record.Seal(mut cd, record.CtHandshake, fmMsg(24, []byte{byte(if op == byte(75) { 1 } else { 0 })}), 0)
+            h2 := fmFeed(h, b.p, r)
+            h = h2
+            _ = record.Update(mut cd)
+        } else {
+            k0, s0 := fmKeyOf(h)
+            pt := if op == byte(66) { testZeros(record.MaxPlain + 10) } else { bytes("p") }
+            _, _ = hs.SealApp(mut h, pt)
+            k1, s1 := fmKeyOf(h)
+            fmUsed(mut out, k0, s0, k1, s1)
+            mut seen := false
+            for k <- kset {
+                if k == k1 {
+                    seen = true
+                }
+            }
+            if !seen {
+                kset = append(kset, k1)
+            }
+        }
+    }
+    k0, s0 := fmKeyOf(h)
+    _ = hs.CloseNotify(mut h)
+    k1, s1 := fmKeyOf(h)
+    fmUsed(mut out, k0, s0, k1, s1)
+    mut dup := 0
+    for i <- iter.Range(0, len(out)) {
+        for j <- iter.Range(i + 1, len(out)) {
+            if out[i] == out[j] {
+                dup += 1
+            }
+        }
+    }
+    return "nonce records=${len(out)} keys=${len(kset)} dup=${dup}"
+}
+
+func TestFsm() {
+    if !aesgcm.Available() {
+        println("fsm: transition rows skipped (no AES-NI / PCLMULQDQ / SSSE3 — the h1 states replay an AES-128-GCM trace)")
+        return
+    }
+    mut got := ""
+    for b <- fmBases() {
+        for ev <- fmEvents() {
+            got = "${got}${fmRow(b, ev)}\n"
+        }
+    }
+    gold := testFile(fmGolden, "testdata/tls/fsm.golden")
+    if got != gold {
+        println("fsm: the transitions differ from the Lean table (testdata/tls/fsm.golden):\n${got}")
+    }
+    assert(got == gold)
+}
+
+func TestFsmNonce() {
+    n := fmNonces()
+    println(n)
+    assert(strings.HasSuffix(n, " dup=0"))
+}

@@ -69,13 +69,16 @@ expect_exit() { # $1 = 期待の exit、残り = 引数
     if [ "$got" != "$want" ]; then echo "FAIL edge: stage2 $* → exit $got (want $want)"; fail=$((fail + 1)); fi
     edge=$((edge + 1))
 }
-expect_exit 1
-expect_exit 1 frobnicate
-expect_exit 1 build
-expect_exit 1 build examples/fib.sober -o
-expect_exit 1 build examples/fib.sober examples/fib.sober
+# 使い方の誤りは 2（std/cli — CLI C3）・処理の失敗は 1
+expect_exit 2
+expect_exit 2 frobnicate
+expect_exit 2 build
+expect_exit 2 build examples/fib.sober -o
+expect_exit 2 build examples/fib.sober examples/fib.sober
+expect_exit 2 test testdata/sobertest/calc -run TestH
+expect_exit 2 check examples/fib.sober --core-json --def-index
 expect_exit 1 build no/such/file.sober
-expect_exit 1 check
+expect_exit 2 check
 expect_exit 1 check no/such/file.sober
 expect_exit 1 check testdata/checkneg/add_bool.sober
 expect_exit 0 check examples/fib.sober

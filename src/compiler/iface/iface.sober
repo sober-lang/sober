@@ -21,7 +21,7 @@ import "printer"
 import "std/iter"
 import "std/strings"
 
-// Item は package のトップレベルの宣言 1 つ（kind 0 = 型・1 = 関数・2 = const・3 = std の @intrinsic の宣言）
+// package のトップレベルの宣言 1 つ（kind 0 = 型・1 = 関数・2 = const・3 = std の @intrinsic の宣言）
 type Item struct {
     file int
     node int
@@ -29,7 +29,7 @@ type Item struct {
     name string
 }
 
-// Emit は package pk の .sobi の本文（excl = E2-S の逃げの関数の表の添字）。raw = ファイルごとのソースを読み直した生の木（loader の写しの前 —
+// package pk の .sobi の本文（excl = E2-S の逃げの関数の表の添字）。raw = ファイルごとのソースを読み直した生の木（loader の写しの前 —
 // @layout の欄の幅の型・@embed の受け皿・catch を原文のまま書くため。loader の写しは節を末尾に足すか同じ添字で差し替えるだけなので、宣言の節の添字は
 // p の表〔fn_node / c_node〕とそろう）。読み直せないファイル（loader が合成した `$layout/…` — file = -1）は載せない（依存する側の loader が自分の
 // 呼び出しのぶんを合成し直す）
@@ -100,7 +100,7 @@ func Emit(p loader.Program, pk int, excl []int, raw []ast.Tree) []byte {
 
 const minInt = -9223372036854775807 - 1
 
-// Link はリンク集合（package のパスをロード順に 1 行ずつ — link.txt）
+// リンク集合（package のパスをロード順に 1 行ずつ — link.txt）
 func Link(p loader.Program) []byte {
     mut out := mut []byte{}
     for k <- iter.Range(0, len(p.pkg_path)) {
@@ -125,7 +125,7 @@ func contains(xs []int, x int) bool {
     return false
 }
 
-// pkgItems は package pk の宣言（ファイル順 × 種類ごとの宣言順）
+// package pk の宣言（ファイル順 × 種類ごとの宣言順）
 func pkgItems(p loader.Program, pk int) []Item {
     mut out := mut []Item{}
     for f <- iter.Range(p.pkg_lo[pk], p.pkg_hi[pk]) {
@@ -156,7 +156,7 @@ func pkgItems(p loader.Program, pk int) []Item {
     return freeze(out)
 }
 
-// nameIndex はトップレベル名 → 項目（union の variant 名はその union の項目）
+// トップレベル名 → 項目（union の variant 名はその union の項目）
 func nameIndex(p loader.Program, items []Item) map[string]int {
     mut m := mut map[string]int{}
     for i <- iter.Range(0, len(items)) {
@@ -193,14 +193,14 @@ func constIndex(p loader.Program, it Item) int {
     return -1
 }
 
-// wholeFn は関数を宣言ごと載せるか（展開される・総称・省略可の匿名関数型の仮引数を持つ — 依存する側の loader が呼び出し点の有無で写し分ける。
+// 関数を宣言ごと載せるか（展開される・総称・省略可の匿名関数型の仮引数を持つ — 依存する側の loader が呼び出し点の有無で写し分ける。
 // loader の写しの後の関数表に元の宣言は載らないので、生の木の仮引数で見る — loader/optfn.sober）
 func wholeFn(p loader.Program, it Item, fi int) bool {
     t := p.trees[it.file]
     return (fi >= 0 && p.fn_expands[fi]) || ast.ListLen(t, t.nodes[it.node].b) > 0 || optFnDecl(t, it.node)
 }
 
-// optFnDecl は宣言 d が省略可の匿名関数型 `(func(…) R)?` の仮引数を持つか
+// 宣言 d が省略可の匿名関数型 `(func(…) R)?` の仮引数を持つか
 func optFnDecl(t ast.Tree, d int) bool {
     ps := t.nodes[d].c
     for q <- iter.Range(0, ast.ListLen(t, ps)) {
@@ -212,25 +212,25 @@ func optFnDecl(t ast.Tree, d int) bool {
     return false
 }
 
-// isPublic は名前が公開か（大文字で始まる）
+// 名前が公開か（大文字で始まる）
 func isPublic(s string) bool {
     b := bytes(s)
     return len(b) > 0 && int(b[0]) >= 65 && int(b[0]) <= 90
 }
 
-// isLabel は型宣言が error ラベルか
+// 型宣言が error ラベルか
 func isLabel(p loader.Program, it Item) bool {
     t := p.trees[it.file]
     return it.kind == 0 && t.nodes[t.nodes[it.node].c].kind == ast.BError
 }
 
-// isParRedirect は std/task の非公開の振り分け先（gatherE / mapE — 表層型検査器が task.Gather / task.Map の呼び出しをここへ振り分ける。
+// std/task の非公開の振り分け先（gatherE / mapE — 表層型検査器が task.Gather / task.Map の呼び出しをここへ振り分ける。
 // 公開の本体からは参照されないので根に入れる — desugar/task.sober の PREDIR）
 func isParRedirect(p loader.Program, it Item) bool {
     return p.pkg_path[p.file_pkg[it.file]] == "std/task" && (it.name == "gatherE" || it.name == "mapE")
 }
 
-// closure は載せる項目の印（根 = 公開 + error ラベル・リンク可視の閉包）
+// 載せる項目の印（根 = 公開 + error ラベル・リンク可視の閉包）
 func closure(p loader.Program, items []Item, names map[string]int) []bool {
     mut inc := mut []bool{}
     for i <- iter.Range(0, len(items)) {
@@ -261,7 +261,7 @@ func closure(p loader.Program, items []Item, names map[string]int) []bool {
     return freeze(inc)
 }
 
-// itemRefs は項目の載せる範囲の識別子（形ごと: 型 = 本体と型パラメータ・関数 = 署名〔宣言ごとなら本体も〕・const = 値〔畳むなら無し〕）
+// 項目の載せる範囲の識別子（形ごと: 型 = 本体と型パラメータ・関数 = 署名〔宣言ごとなら本体も〕・const = 値〔畳むなら無し〕）
 func itemRefs(p loader.Program, it Item) []string {
     t := p.trees[it.file]
     x := t.nodes[it.node]
@@ -300,7 +300,7 @@ func itemRefs(p loader.Program, it Item) []string {
     return freeze(out)
 }
 
-// imports は載せた範囲が参照した import の行（印字器の file と同じ形 — ファイル順 × 宣言順・パスの重複は 1 行。暗黙の import〔字句 0〕は落とす）。
+// 載せた範囲が参照した import の行（印字器の file と同じ形 — ファイル順 × 宣言順・パスの重複は 1 行。暗黙の import〔字句 0〕は落とす）。
 // 参照名は loader の import 表（imp_ref）から引く。参照したか = 載せた範囲の識別子が参照名か、修飾名 `ref.X` の頭が参照名か
 func imports(out mut []byte, p loader.Program, pk int, items []Item, inc []bool) {
     mut refs := mut []string{}
@@ -345,7 +345,7 @@ func imports(out mut []byte, p loader.Program, pk int, items []Item, inc []bool)
     }
 }
 
-// refOf は package pk の import 表のパス path の参照名（無ければ ""）
+// package pk の import 表のパス path の参照名（無ければ ""）
 func refOf(p loader.Program, pk int, path string) string {
     for i <- iter.Range(0, len(p.imp_pkg)) {
         if p.imp_pkg[i] == pk && p.imp_path[i] == path {
@@ -355,7 +355,7 @@ func refOf(p loader.Program, pk int, path string) string {
     return ""
 }
 
-// usesRef は識別子の列が参照名 ref を使うか（そのものか、修飾名 `ref.X`）
+// 識別子の列が参照名 ref を使うか（そのものか、修飾名 `ref.X`）
 func usesRef(refs []string, ref string) bool {
     if ref == "" {
         return false
@@ -368,7 +368,7 @@ func usesRef(refs []string, ref string) bool {
     return false
 }
 
-// Sigs は関数の署名表（`<package>.<名前>` + タブ + 署名の綴り〔注釈込み・1 行〕— 関数表の順）。scripts/sobi.sh の G-d が、package 単位の視点
+// 関数の署名表（`<package>.<名前>` + タブ + 署名の綴り〔注釈込み・1 行〕— 関数表の順）。scripts/sobi.sh の G-d が、package 単位の視点
 // （check --pkg P --iface D --sigs）の表が全体の表に含まれることを見る（合成定理の hmap — formal.md V5-6。stage1 の toSigsJson の表層版）
 func Sigs(p loader.Program) []byte {
     mut out := mut []byte{}

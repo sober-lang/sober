@@ -47,7 +47,7 @@ type Conn struct {
 // handshake の済んだ接続 1 本の処理（名前つきの関数型 — 値として接続の task へ渡る。language.md 14 節: 公開境界の関数型は名前つき）
 type Handler func(c Conn) error?
 
-// tlsSeal は封（非公開 — 外で値を書けない）
+// 封（非公開 — 外で値を書けない）
 type tlsSeal struct {
 }
 
@@ -63,7 +63,7 @@ const fBytes = 2 + 64 + 64 + 1 + sendW
 
 // 送りの束（application の record 1 つ丸ごと = 頭 5 + 平文 2^14 + 内容の型 1 + tag 16 バイト）: Put は record を接続の寿命の置き場へ Seal して積み、
 // Flush が送る — 呼び手は平文の region を閉じてから Flush で待てる（送りの完了待ち〔park〕の間、要求の作業の region を空にしておく。rt が空のスロットを
-// 手放す — report-1126〜1130）
+// 手放す）
 const sendCap = 5 + 16384 + 1 + 16
 const sendW = (sendCap + 7) / 8
 
@@ -128,13 +128,13 @@ func Serve(addr string, cfg Config, k Handler, region int?, maxWait int?) error?
     return nil
 }
 
-// accept は 1 接続の handshake（handshake）の後に k を呼ぶ。handshake の作業域（受けの溜め・Hs・署名の作業）は handshake の region に置き、
-// k を呼ぶ前に返す — 接続の寿命いっぱい（k の間）抱えない（report-1004 — 置き場の列だけが外へ写る）
+// 1 接続の handshake（handshake）の後に k を呼ぶ。handshake の作業域（受けの溜め・Hs・署名の作業）は handshake の region に置き、
+// k を呼ぶ前に返す — 接続の寿命いっぱい（k の間）抱えない（置き場の列だけが外へ写る）
 func accept(nc net.Conn, cfg Config, k Handler) error? {
     blk := handshake(nc, cfg)?
     // handshake の深い作業（署名・鍵の導出 — 1 回きり）の頁を返す: スロットの頁は task の寿命いっぱい残るので、要求の道より深い高水位が接続の常駐になる
     _ = leaseOp(6, []int{}, 0, 0)
-    // 送りの方向は handshake の鍵のまま展開して持つ（Send のたびに置き場の列から鍵の素材を写し直さない — 変わるのは seq の語だけ。report-1118）
+    // 送りの方向は handshake の鍵のまま展開して持つ（Send のたびに置き場の列から鍵の素材を写し直さない — 変わるのは seq の語だけ）
     c := Conn{c: nc, blk: blk, wr: record.Unpack(freeze(leaseView(blk, fWr, dirW)), 0), seal: tlsSeal{}}
     ke := k(c)
     // 積み残し（Put の後に Flush しないで k が返った）を送ってから close_notify
@@ -143,7 +143,7 @@ func accept(nc net.Conn, cfg Config, k Handler) error? {
     return ke
 }
 
-// handshake は 1 接続の handshake（handshake の record は小さいので、切片を写して溜める）→ 置き場の列（newBlk）。Connected になった切片の残り
+// 1 接続の handshake（handshake の record は小さいので、切片を写して溜める）→ 置き場の列（newBlk）。Connected になった切片の残り
 // （クライアントは Finished と最初の要求を同じ flight で送るのが普通）は置き場に置く — k の中の tls.Recv が同じ fd の続きを読む
 @errors(HandshakeFailed, Closed)
 func handshake(nc net.Conn, cfg Config) ([]int, error?) {
@@ -182,7 +182,7 @@ func handshake(nc net.Conn, cfg Config) ([]int, error?) {
     return []int{}, Closed{}
 }
 
-// frameLen は acc[at:] の先頭の record の長さ（頭込み — 0 = まだ揃わない・−1 = 本体が上限を超える）
+// acc[at:] の先頭の record の長さ（頭込み — 0 = まだ揃わない・−1 = 本体が上限を超える）
 func frameLen(acc []byte, at int) int {
     if len(acc) - at < record.HeadSize {
         return 0
@@ -194,7 +194,7 @@ func frameLen(acc []byte, at int) int {
     return if len(acc) - at < record.HeadSize + body { 0 } else { record.HeadSize + body }
 }
 
-// alertOf は handshake の誤りの alert の番号
+// handshake の誤りの alert の番号
 func alertOf(e error?) int {
     return switch e {
         case nil: record.AlertInternal
@@ -202,7 +202,7 @@ func alertOf(e error?) int {
     }
 }
 
-// newBlk は handshake の済んだ hs の置き場（送り / 受けの方向・残りのバイト）
+// handshake の済んだ hs の置き場（送り / 受けの方向・残りのバイト）
 func newBlk(h hs.Hs, left []byte) []int {
     rd, wr := hs.Dirs(h)
     mut b := mut []int{}
@@ -229,7 +229,7 @@ func newBlk(h hs.Hs, left []byte) []int {
     return freeze(b)
 }
 
-// putDir は方向の語の列を dirW 語の席に（余りは 0）
+// 方向の語の列を dirW 語の席に（余りは 0）
 func putDir(b mut []int, w []int) {
     if len(w) > dirW {
         panic(Overflow{})
@@ -285,11 +285,11 @@ func Recv(c Conn, k func([]byte)) error? {
     return nil
 }
 
-// pump は handshake の残りのバイトを先に渡してから net.Recv の続き（record.Frames の受けの口）。
+// handshake の残りのバイトを先に渡してから net.Recv の続き（record.Frames の受けの口）。
 // 残りは net.Recv と同じ入れ子（反復の region + 式ブロックの region）の中で k へ渡す — 直に k(left) と呼ぶと最初の要求の道だけが
-// 2 段浅い深度を通り、その深度のスロットに本文の大きさの頁を一度だけ付けて接続の寿命いっぱい残した（report-1013 3 節）。
+// 2 段浅い深度を通り、その深度のスロットに本文の大きさの頁を一度だけ付けて接続の寿命いっぱい残してしまう。
 // 切片 1 つを k へ渡し終えるたびに、Recv の k が Put で積んだ応答を送る（Flush — k の反復の region が閉じた後なので、送りの完了待ちの間に
-// 応答の作業の頁を抱えない。report-1130）
+// 応答の作業の頁を抱えない）
 func pump(c Conn, left []byte, k func([]byte)) error? {
     mut once := len(left) > 0
     while once {
@@ -356,7 +356,7 @@ func Flush(c Conn) error? {
     return nil
 }
 
-// sendNow は b の record をこの関数の region に作ってその場で送る（束に入らない b・鍵を進める前後 — 束の前の形）
+// b の record をこの関数の region に作ってその場で送る（束に入らない b・鍵を進める前後 — 束の前の形）
 func sendNow(c Conn, b []byte, fl int) error? {
     mut wr := if (fl & bRekey) != 0 { record.Unpack(view(c, fWr, dirW), 0) } else { record.WithSeq(c.wr, leaseOp(4, c.blk, fWr + 1, 0)) }
     mut pre := []byte{}
@@ -372,8 +372,8 @@ func sendNow(c Conn, b []byte, fl int) error? {
     return nil
 }
 
-// sealPut は b を送りの束の at から Seal した record 1 つのバイト数（束に入らない・鍵の使用上限の手前なら −1）。作業の列（頭・nonce・AEAD の ctx の写し）は
-// この関数の region に積もって戻れば捨てられる（ループでない式ブロックで包む形は、最適化の道で region が消えて呼び手に合流する — report-1129 1.1）
+// b を送りの束の at から Seal した record 1 つのバイト数（束に入らない・鍵の使用上限の手前なら −1）。作業の列（頭・nonce・AEAD の ctx の写し）は
+// この関数の region に積もって戻れば捨てられる（ループでない式ブロックで包む形は、最適化の道で region が消えて呼び手に合流するので使わない）
 func sealPut(c Conn, b []byte, seq int, at int) int {
     wr := record.WithSeq(c.wr, seq)
     if record.NeedUpdate(wr) {
@@ -383,7 +383,7 @@ func sealPut(c Conn, b []byte, seq int, at int) int {
     return record.SealInto(wr, record.CtApp, b, mut w, at)
 }
 
-// closeRecord は close_notify の record（送りの鍵で — Serve が k の後に送る）
+// close_notify の record（送りの鍵で — Serve が k の後に送る）
 func closeRecord(c Conn) []byte {
     mut wr := record.Unpack(view(c, fWr, dirW), 0)
     r := record.Seal(mut wr, record.CtAlert, []byte{1, 0}, 0)
@@ -392,7 +392,7 @@ func closeRecord(c Conn) []byte {
     return r
 }
 
-// die は fatal の alert desc を送って閉じる（送りの失敗は見ない — 閉じる途中）
+// fatal の alert desc を送って閉じる（送りの失敗は見ない — 閉じる途中）
 func die(c Conn, desc int) {
     if (flags(c) & bDead) == 0 {
         _ = Flush(c)
@@ -414,12 +414,12 @@ func setFlags(c Conn, v int) {
     _ = leaseOp(5, c.blk, fFlags, v)
 }
 
-// setSeq は送りの方向の seq の語（Pack の 2 語目）だけを書き戻す
+// 送りの方向の seq の語（Pack の 2 語目）だけを書き戻す
 func setSeq(c Conn, seq int) {
     _ = leaseOp(5, c.blk, fWr + 1, seq)
 }
 
-// putWr は送りの方向の語の列を席に書き戻す（KeyUpdate の後）
+// 送りの方向の語の列を席に書き戻す（KeyUpdate の後）
 func putWr(c Conn, w []int) {
     v := leaseView(c.blk, fWr, dirW)
     mut i := 0
@@ -429,13 +429,13 @@ func putWr(c Conn, w []int) {
     }
 }
 
-// view は置き場の [off, off + n) の語（写さない — 読みはこの列から）
+// 置き場の [off, off + n) の語（写さない — 読みはこの列から）
 func view(c Conn, off int, n int) []int {
     v := leaseView(c.blk, off, n)
     return freeze(v)
 }
 
-// leftBytes は handshake の残りのバイト
+// handshake の残りのバイト
 func leftBytes(c Conn) []byte {
     n := leaseOp(4, c.blk, fLeft, 0)
     mut b := mut []byte{}
@@ -459,7 +459,7 @@ func cat(a []byte, b []byte) []byte {
     return freeze(o)
 }
 
-// rest は a[at:] の写し
+// a[at:] の写し
 func rest(a []byte, at int) []byte {
     mut o := mut []byte{}
     mut i := at

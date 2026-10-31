@@ -1,7 +1,7 @@
 package main
 
-// V4-4e: 検証例 errparse — ミニ lexer + 再帰下降 parser を位置つきエラーで書く。
-// 位置は入力のバイトオフセット 1 語で運び、表示するときに line:col へ解決する（R5 の 1 語設計と同じ形）
+// 検証例 errparse — ミニ lexer + 再帰下降 parser を位置つきエラーで書く。
+// 位置は入力のバイトオフセット 1 語で運び、表示するときに line:col へ解決する
 
 type UnexpectedChar error {
     pos int

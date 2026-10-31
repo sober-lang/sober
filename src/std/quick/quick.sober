@@ -1,0 +1,702 @@
+package quick
+
+// プロパティベーステスト: 選択の源 Src から値を引き（Int・Bool・Pick・Elem・Bytes・String・Runes・Slice）、Check がプロパティを試行ごとに呼ぶ。
+// 値の条件は引き方（変換・Pick / Elem・部品から組む）で満たすのが先で、構成で書きにくい条件だけ Assume で試行を捨てる。
+// プロパティが偽になったら、その試行が使った選択の列をシュリンク（縮小）して最小の反例を探し、引いた値を標準エラーへ印字して panic(Falsified{}) する。
+//
+//     mut q := quick.New()
+//     quick.Check(mut q, () => {
+//         xs := quick.Slice(mut q, 8, () => quick.Int(mut q, 0, 9))
+//         sum(xs) < 30
+//     })
+//
+// シュリンクは値の型を知らない — 引き出しは全部 [0, n) の選択の列の上に建ち、0 が最も単純な値になるように写す。
+// 引いた後の変換（`quick.Int(mut q, 0, 9) * 2`）も同じ列から決まるので一緒にシュリンクされる。
+// シードは固定（SOBER_QUICK_SEED で変える）なので、同じ木なら同じ試行・同じ反例になる。シュリンクは再実行の回数で切り、時間では切らない。
+// 例: examples/quick_shrink.sober・examples/quick_props.sober
+//
+// fuzz（期限まで試行を回し続ける）は、テストの実行ファイルが自分を子として走らせ直す形（引数の `quick:` の指示で役を分ける — fuzz.sober）。
+// 駆動役（`quick:fuzz=<ms>`）が試行の束を回す子を起こし続け、子がプロパティの中の panic かハング（試行ごとの期限 `quick:hang=<ms>` — SIGALRM）で
+// 死んだら、束を二分探索して最初に死ぬ試行を決め、その試行の選択の列を記録し、列を 1 つずつ再生する子で同じ死に方か確かめながらシュリンクする。
+// プロパティの偽は束の子の中でシュリンクする。試行はシードと番号で決まるので、走らせ直せば同じ所で同じ死に方をする
+
+import "std/rand"
+import "std/os"
+import "std/io"
+import "std/iter"
+import "std/convert"
+import "std/hex"
+
+// 選択の源（引き出しの状態 — 利用者は New / Seed で作り、mut で Check と引き出しに渡す）
+type Src struct {
+    r rand.Rand
+    seed int
+    pre []int
+    replay bool
+    at int
+    log []int
+    show bool
+    rejected bool
+    depth int
+    nth int
+    logTo string
+    // 再生の列が尽きたら乱数で続ける（fuzz の誘導のミューテーションの列 — 頭だけ読む）
+    tail bool
+}
+
+// プロパティが偽になった（反例は panic の前に標準エラーへ印字済み）
+type Falsified panic
+
+// 引き出しの範囲が空（Int の lo > hi・Pick の n < 1・Elem の空の列・Slice の負の max）
+type BadRange panic {
+    lo int
+    hi int
+}
+
+// Assume が捨てた試行が多すぎる（成立 trials 件に対して 10 倍を超えた — 引く値の範囲が条件に比べて広すぎる）
+type TooManyDiscards panic {
+    trials int
+    discarded int
+}
+
+// fuzz がプロパティの中の panic（exit = 101）かハング（142 — 試行の期限の SIGALRM）を見つけた（シュリンクした列は panic の前に標準エラーへ印字済み）
+type Crashed panic {
+    exit int
+}
+
+// `quick:` の指示の引数の形が違う
+type BadArg panic {
+    arg string
+}
+
+// SOBER_QUICK_SEED / SOBER_QUICK_TRIALS の値が整数でない（trials は 1 以上）
+type BadEnv panic {
+    name string
+    value string
+}
+
+const seedVar = "SOBER_QUICK_SEED"
+const trialsVar = "SOBER_QUICK_TRIALS"
+
+// 捨ててよい試行の数（成立の試行の数に対する倍率）
+const discardRatio = 10
+
+// 1 つの反例をシュリンクする再実行の上限
+const shrinkRuns = 1000
+
+// 既定の試行の数
+const defaultTrials = 100
+
+// fuzz の束の子が 1 本で回す試行の数
+const fuzzBatch = 1000
+
+// fuzz の試行ごとの期限の既定（ms）
+const defaultHang = 1000
+
+// 選択の列のファイルの 1 行目
+const listHead = "sober quick v1"
+
+// 選択の源（シード = SOBER_QUICK_SEED — 無ければ 0）
+@effects(io, panic)
+func New() Src {
+    return Named("")
+}
+
+// 名前 name のハッシュと SOBER_QUICK_SEED を混ぜたシードの源（テストごとに別の列にする口）
+@effects(io, panic)
+func Named(name string) Src {
+    return Seed(nameHash(name) ^ envInt(seedVar, 0))
+}
+
+// シード seed そのままの源（環境変数を読まない）
+@effects()
+func Seed(seed int) Src {
+    return Src{r: rand.New(seed), seed: seed, pre: []int{}, replay: false, at: 0, log: []int{}, show: false, rejected: false, depth: 0, nth: 0, logTo: "", tail: false}
+}
+
+// prop を trials 回（既定 100・SOBER_QUICK_TRIALS で上書き）試す。試行 k の選択はシードと k から決まる。
+// 偽になった試行があれば選択の列をシュリンクし、最小の列で引いた値を印字して panic(Falsified{})。
+// Assume で捨てた試行は数えずに次の試行へ進み（シュリンクでも捨てた列は採らない）、捨てた数が trials の 10 倍を超えたら panic(TooManyDiscards{…})。
+// prop の中の panic はシュリンクせずにそのまま死ぬ（試行は決定的なので、走らせ直せば同じ所で死ぬ — シュリンクするのは fuzz の駆動役）。
+// 引数に `quick:` の指示があれば fuzz の役で動く（パッケージの先頭の注釈）
+@effects(block, io, panic, nondet)
+func Check(q mut Src, prop func() bool, trials int?) {
+    // Check を呼んだ順の通し番号（fuzz の子が対象の Check を見分ける）
+    idx := q.nth
+    q.nth = q.nth + 1
+    r := readRole()
+    if r.kind == roleFuzz {
+        if r.check < 0 || r.check == idx {
+            drive(q.seed, r, idx, envInt(trialsVar, if trials != nil { trials } else { defaultTrials }))
+        }
+        return
+    }
+    if r.kind != roleNone && r.check != idx {
+        return
+    }
+    if r.kind == roleRecord || r.kind == roleReplay {
+        once(mut q, prop, r)
+        return
+    }
+    // 束の試行の役は試行 [from, to) を Assume で捨てた試行も数えて回す（駆動役の二分探索が番号で切る）
+    work := r.kind == roleWork
+    n := if work { r.to - r.from } else { envInt(trialsVar, if trials != nil { trials } else { defaultTrials }) }
+    if n < 1 {
+        if work {
+            return
+        }
+        panic(BadEnv{name: trialsVar, value: convert.FormatInt(n)})
+    }
+    seed := if work { r.seed } else { q.seed }
+    // 偽になったコーパスの列（あれば試行は回さずにその列をシュリンクする）
+    mut from := ""
+    if !work {
+        if r.mark != "" {
+            _ = io.WriteFile(r.mark, bytes("${idx}\n"))
+        }
+        from = corpus(mut q, prop, r, idx)
+    }
+    k, dropped := runTrials(mut q, prop, r, seed, if from == "" { n } else { 0 }, work || from != "")
+    // プロパティの中の死でなく Check が報告して落ちる道（と通る道）は印を消す
+    unmark(r)
+    if work && k + dropped == n {
+        return
+    }
+    if from == "" && !work && dropped > discardRatio * n {
+        say("quick: gave up after ${k} trials: ${dropped} discarded by Assume (narrow the drawn values by construction — transform them, Pick / Elem, build from parts — and keep Assume for the conditions that are hard to construct)\n")
+        panic(TooManyDiscards{trials: k, discarded: dropped})
+    }
+    if from == "" && !work && k == n {
+        if dropped > 0 {
+            say("quick: ok, ${n} trials (${dropped} discarded)\n")
+        }
+        return
+    }
+    if work && r.out == "" {
+        // 二分探索・スケジュールの軸の子: シュリンクは駆動役が子の再生で（同じ子の中でシュリンクするとスケジューラの状態を持ち越す）
+        panic(Falsified{})
+    }
+    if r.out != "" {
+        writeList(r.out, q.log)
+    }
+    bad, runs := shrink(q.log, (c []int, b []int) => tryHere(mut q, prop, c, b, r.hang, r.out))
+    head := if from != "" { "the corpus case ${from}" } else if work { "trial ${r.from + k + dropped + 1}" } else { "trial ${k + 1} of ${n}" }
+    falsified(mut q, prop, bad, "quick: falsified at ${head} (seed ${seed}, ${runs} shrink runs${discards(dropped)})\n")
+}
+
+// コーパスの列を名前の順に再生し（試行の前 — 前に見つけた失敗の回帰）、最初に偽になった列のファイル（無ければ ""）。
+// その列で実際に引いた選択は q.log に残る。死ぬ列はその場で死ぬ（ハングは期限 defaultHang の SIGALRM で）。`sched` の行を持つ列は
+// そのスケジュールの子で再生する（schedCase）
+func corpus(q mut Src, prop func() bool, r role, idx int) string {
+    for path <- corpusFiles(r, idx) {
+        if schedOf(path) != 0 {
+            schedCase(r, idx, path)
+        } else {
+            replayList(mut q, readList(path))
+            if !run(prop, defaultHang) && !q.rejected {
+                return path
+            }
+        }
+    }
+    return ""
+}
+
+func unmark(r role) {
+    if r.mark != "" {
+        _ = os.Remove(r.mark)
+    }
+}
+
+// シュリンクした列 bad を印字して panic(Falsified{})（head = 最初の行）
+func falsified(q mut Src, prop func() bool, bad []int, head string) {
+    say(head)
+    replayList(mut q, bad)
+    q.show = true
+    held := prop()
+    q.show = false
+    // `_test.sober` ではプロパティの値の式が power assert に包まれていて、偽ならこの再生の中で部分式を印字して落ちる（ここへは来ない）
+    if held {
+        // シュリンクした列の再生でプロパティが真に戻った — prop が選択の列の外（時刻・環境など）に依っている
+        say("quick: the property does not depend only on the drawn values (the shrunk case passed on replay)\n")
+    } else {
+        say("quick: property returned false\n")
+    }
+    panic(Falsified{})
+}
+
+// 試行 a0, a0 + 1, … を回し、成立した数と Assume が捨てた数を返す（最初に偽になった試行で止める — その選択の列は q.log に残る）。
+// all なら捨てた試行も数えて n 回で止め、そうでなければ成立が n 件か捨てた数が n の discardRatio 倍を超えるまで
+func search(q mut Src, prop func() bool, seed int, a0 int, n int, all bool, hang int) (int, int) {
+    mut k := 0
+    mut dropped := 0
+    while if all { k + dropped < n } else { k < n && dropped <= discardRatio * n } {
+        begin(mut q, trial(seed, a0 + k + dropped))
+        held := run(prop, hang)
+        if q.rejected {
+            dropped = dropped + 1
+        } else if !held {
+            return k, dropped
+        } else {
+            k = k + 1
+        }
+    }
+    return k, dropped
+}
+
+// Check の試行（束の子でシードの置き場があればカバレッジの誘導つき — searchGuided）
+func runTrials(q mut Src, prop func() bool, r role, seed int, n int, all bool) (int, int) {
+    if r.kind == roleWork && r.pool != "" {
+        return searchGuided(mut q, prop, r, r.from, n)
+    }
+    return search(mut q, prop, seed, r.from, n, all, r.hang)
+}
+
+// prop を 1 回呼ぶ（hang > 0 なら期限 hang ms の SIGALRM を張って、戻ったら解く）
+func run(prop func() bool, hang int) bool {
+    if hang > 0 {
+        os.Alarm(hang)
+    }
+    held := prop()
+    if hang > 0 {
+        os.Alarm(0)
+    }
+    return held
+}
+
+// 試行を捨てる条件: cond が偽ならこの試行は不成立（失敗とは数えない）。cond をそのまま返す — 後ろを `&&` で守る:
+// `quick.Assume(mut q, y != 0) && x / y * y + x % y == x`。条件は構成（変換・Pick / Elem・部品から組む）で狭めるのが先で、
+// Assume は構成で書きにくい条件の最後の手（捨てすぎは TooManyDiscards で落ちる）
+@effects(io, nondet)
+func Assume(q mut Src, cond bool) bool {
+    if !cond {
+        q.rejected = true
+        if q.show {
+            line(q, "Assume = false")
+        }
+    }
+    return cond
+}
+
+func discards(n int) string {
+    return if n > 0 { ", ${n} discarded" } else { "" }
+}
+
+// 候補の列を 1 本試した結果（better = 同じ失敗で、かつ今の最良の列より厳密に小さい・log = 実際に引いた選択の列）
+type tried struct {
+    better bool
+    log []int
+}
+
+// 失敗する列 bad0 をシュリンクした列と、使った再実行の回数（上限 shrinkRuns）。try(候補, 今の最良) が候補を走らせて同じ失敗か・小さいかを決める
+// （in-process の再生と、fuzz の駆動役の子の再生の両方がこの段を使う）
+func shrink(bad0 []int, try func([]int, []int) tried) ([]int, int) {
+    mut bad := bad0
+    mut runs := 0
+    mut changed := true
+    while changed && runs < shrinkRuns {
+        changed = false
+        // 1. 塊を消す（要素ごとの「続けるか」の選択と一緒に消えれば要素が消える）
+        mut w := 8
+        while w >= 1 && runs < shrinkRuns {
+            mut a := 0
+            while a + w <= len(bad) && runs < shrinkRuns {
+                t := try(cut(bad, a, w), bad)
+                runs = runs + 1
+                if t.better {
+                    bad = t.log
+                    changed = true
+                } else {
+                    a = a + 1
+                }
+            }
+            w = w / 2
+        }
+        // 2. 選択を 1 つずつ 0 の側へ（二分探索）
+        mut i := 0
+        while i < len(bad) && runs < shrinkRuns {
+            mut lo := 0
+            mut hi := bad[i]
+            while lo < hi && runs < shrinkRuns {
+                mid := lo + (hi - lo) / 2
+                t := try(set(bad, i, mid), bad)
+                runs = runs + 1
+                if t.better {
+                    bad = t.log
+                    changed = true
+                    hi = if i < len(bad) { min(mid, bad[i]) } else { 0 }
+                } else {
+                    lo = mid + 1
+                }
+            }
+            i = i + 1
+        }
+        // 3. 前の選択から後ろの選択へ量を移す（和の制約の反例を短い形へ寄せる — 移した後の 0 を 1. が消す）
+        mut a := 0
+        while a < len(bad) && runs < shrinkRuns {
+            mut b := a + 1
+            while b < len(bad) && b <= a + 8 && runs < shrinkRuns {
+                if bad[a] > 0 {
+                    mut lo := 1
+                    mut hi := bad[a]
+                    mut best := 0
+                    while lo <= hi && runs < shrinkRuns {
+                        d := lo + (hi - lo) / 2
+                        t := try(set(set(bad, a, bad[a] - d), b, bad[b] + d), bad)
+                        runs = runs + 1
+                        if t.better {
+                            best = d
+                            lo = d + 1
+                        } else {
+                            hi = d - 1
+                        }
+                    }
+                    if best > 0 {
+                        t := try(set(set(bad, a, bad[a] - best), b, bad[b] + best), bad)
+                        runs = runs + 1
+                        if t.better {
+                            bad = t.log
+                            changed = true
+                        }
+                    }
+                }
+                b = b + 1
+            }
+            a = a + 1
+        }
+    }
+    return bad, runs
+}
+
+// 列 c をこのプロセスの中で再生する（hang > 0 なら期限を張る・out が空でなく最良を更新したら列を out へ書く — シュリンクの途中で死んでも最良が残る）
+func tryHere(q mut Src, prop func() bool, c []int, best []int, hang int, out string) tried {
+    replayList(mut q, c)
+    held := run(prop, hang)
+    l := copyList(q.log)
+    better := !held && !q.rejected && shorter(l, best)
+    if better && out != "" {
+        writeList(out, l)
+    }
+    return tried{better: better, log: l}
+}
+
+// シュリンクした列を再生して報告している回か（`_test.sober` の Check の写し先 — プロパティの偽をこの回だけ部分式で印字する。利用者は呼ばない）
+@effects()
+func Reporting(q Src) bool {
+    return q.show
+}
+
+// [lo, hi] の整数（両端を含む — 値の数は 2^62 まで）。シュリンクは 0 の側へ — 範囲が 0 を含めば 0、全部正なら lo、全部負なら hi へ
+@effects(io, panic, nondet)
+func Int(q mut Src, lo int, hi int) int {
+    if lo > hi || tooWide(lo, hi) {
+        return panic(BadRange{lo: lo, hi: hi})
+    }
+    c := choose(mut q, hi - lo + 1)
+    v := if lo > 0 {
+        lo + c
+    } else if hi < 0 {
+        hi - c
+    } else {
+        towardZero(c, hi, -lo)
+    }
+    if q.show {
+        line(q, "Int(${lo}, ${hi}) = ${v}")
+    }
+    return v
+}
+
+// 真偽（シュリンクは偽の側へ）
+@effects(io, panic, nondet)
+func Bool(q mut Src) bool {
+    v := choose(mut q, 2) == 1
+    if q.show {
+        line(q, "Bool = ${v}")
+    }
+    return v
+}
+
+// [0, n) の添字（シュリンクは 0 へ）— 腕を選ぶ口: `switch quick.Pick(mut q, 3) { case 0: … }`
+@effects(io, panic, nondet)
+func Pick(q mut Src, n int) int {
+    if n < 1 {
+        return panic(BadRange{lo: 0, hi: n - 1})
+    }
+    v := choose(mut q, n)
+    if q.show {
+        line(q, "Pick(${n}) = ${v}")
+    }
+    return v
+}
+
+// xs の要素の 1 つ（シュリンクは先頭へ）
+@effects(io, panic, nondet)
+func Elem[T](q mut Src, xs []T) T {
+    if len(xs) == 0 {
+        return panic(BadRange{lo: 0, hi: -1})
+    }
+    i := choose(mut q, len(xs))
+    if q.show {
+        line(q, "Elem = xs[${i}]")
+    }
+    return xs[i]
+}
+
+// 長さ max 以下のバイト列（シュリンクは短く・0 のバイトへ）
+@effects(io, panic, nondet)
+func Bytes(q mut Src, max int) []byte {
+    if max < 0 {
+        return panic(BadRange{lo: 0, hi: max})
+    }
+    mut out := []byte{}
+    while len(out) < max && more(mut q) {
+        out = append(out, byte(choose(mut q, 256)))
+    }
+    if q.show {
+        line(q, "Bytes = ${hex.Format(out)} (${len(out)} bytes)")
+    }
+    return out
+}
+
+// 長さ max 文字以下の印字可能な ASCII の文字列（シュリンクは短く・'a' へ）
+@effects(io, panic, nondet)
+func String(q mut Src, max int) string {
+    if max < 0 {
+        return panic(BadRange{lo: 0, hi: max})
+    }
+    mut out := []byte{}
+    while len(out) < max && more(mut q) {
+        out = append(out, byte(0x20 + (choose(mut q, 95) + 0x41) % 95))
+    }
+    s := bytesToString(out)
+    if q.show {
+        line(q, "String = ${quote(out)}")
+    }
+    return s
+}
+
+// 長さ max 文字以下の文字列（Unicode のスカラー値全部から — 妥当な UTF-8 だけ。シュリンクは短く・'a' へ）
+@effects(io, panic, nondet)
+func Runes(q mut Src, max int) string {
+    if max < 0 {
+        return panic(BadRange{lo: 0, hi: max})
+    }
+    mut out := []byte{}
+    mut k := 0
+    while k < max && more(mut q) {
+        i := (choose(mut q, 0x10f800) + 0x61) % 0x10f800
+        out = utf8(out, if i < 0xd800 { i } else { i + 0x800 })
+        k = k + 1
+    }
+    s := bytesToString(out)
+    if q.show {
+        line(q, "Runes = ${quote(out)}")
+    }
+    return s
+}
+
+// 長さ max 以下の列（要素は g が引く — g の中で同じ源から引く）。要素ごとに「続けるか」の選択を挟む（シュリンクで塊が消えると要素が消える）
+@effects(io, panic, nondet)
+func Slice[T](q mut Src, max int, g func() T) []T {
+    if max < 0 {
+        return panic(BadRange{lo: 0, hi: max})
+    }
+    if q.show {
+        line(q, "Slice:")
+    }
+    q.depth = q.depth + 1
+    mut out := []T{}
+    while len(out) < max && more(mut q) {
+        out = append(out, g())
+    }
+    q.depth = q.depth - 1
+    if q.show {
+        line(q, "(${len(out)} items)")
+    }
+    return out
+}
+
+// 試行 a（Assume が捨てた試行も数えた通し番号）の乱数の列
+func trial(seed int, a int) rand.Rand {
+    return rand.New(seed ^ (a * 0x9e3779b9))
+}
+
+// 試行の頭: 乱数の列から引く
+func begin(q mut Src, r rand.Rand) {
+    q.r = r
+    q.replay = false
+    q.pre = []int{}
+    q.at = 0
+    q.log = []int{}
+    q.depth = 0
+    q.rejected = false
+    q.tail = false
+}
+
+// シュリンクの再実行の頭: 列 pre を読む（尽きたら 0）
+func replayList(q mut Src, pre []int) {
+    q.pre = pre
+    q.replay = true
+    q.at = 0
+    q.log = []int{}
+    q.depth = 0
+    q.rejected = false
+    q.tail = false
+}
+
+// 選択 1 つ（[0, n)）。再生中は列を読み、範囲外は n − 1 に丸め・尽きたら 0。乱数のときは 1/16 ずつ両端（0 と n − 1）に寄せる
+func choose(q mut Src, n int) int {
+    v := if q.replay && (q.at < len(q.pre) || !q.tail) {
+        if q.at < len(q.pre) { min(q.pre[q.at], n - 1) } else { 0 }
+    } else {
+        edge := rand.Intn(mut q.r, 16)
+        if edge == 0 { 0 } else if edge == 1 { n - 1 } else { rand.Intn(mut q.r, n) }
+    }
+    q.at = q.at + 1
+    q.log = append(q.log, v)
+    // fuzz の記録・再生の役: 1 つずつ書き足す（プロパティの中で死んでも死ぬ手前までの列が残る）
+    if q.logTo != "" {
+        _ = os.AppendFile(q.logTo, bytes("${v}\n"))
+    }
+    return v
+}
+
+// 列の「続けるか」の選択（0 = 止める — 平均の長さ 3）
+func more(q mut Src) bool {
+    return choose(mut q, 4) != 0
+}
+
+// 選択 c を 0 から近い順の値へ（0, 1, −1, 2, −2, … — 正の側は pos まで・負の側は neg まで）
+func towardZero(c int, pos int, neg int) int {
+    m := min(pos, neg)
+    if c <= 2 * m {
+        return if c % 2 == 1 { (c + 1) / 2 } else { -(c / 2) }
+    }
+    k := c - 2 * m
+    return if pos > neg { m + k } else { -(m + k) }
+}
+
+// a が b より短いか、同じ長さで辞書順に小さい（シュリンクが採るのは厳密に小さい列だけ — 同じ大きさの列を採ると止まらない）
+func shorter(a []int, b []int) bool {
+    if len(a) != len(b) {
+        return len(a) < len(b)
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return a[i] < b[i]
+        }
+    }
+    return false
+}
+
+// xs から [a, a + w) を除いた列
+func cut(xs []int, a int, w int) []int {
+    mut out := []int{}
+    for i <- iter.Range(0, len(xs)) {
+        if i < a || i >= a + w {
+            out = append(out, xs[i])
+        }
+    }
+    return out
+}
+
+func copyList(xs []int) []int {
+    mut out := []int{}
+    for x <- xs {
+        out = append(out, x)
+    }
+    return out
+}
+
+// xs の i 番を v にした列
+func set(xs []int, i int, v int) []int {
+    mut out := []int{}
+    for j <- iter.Range(0, len(xs)) {
+        out = append(out, if j == i { v } else { xs[j] })
+    }
+    return out
+}
+
+// [lo, hi] の値の数が 2^62 を超える（引き算の溢れを避けて比べる）
+func tooWide(lo int, hi int) bool {
+    return if lo >= 0 || hi < 0 { hi - lo > (1 << 62) - 1 } else { hi > lo + ((1 << 62) - 1) }
+}
+
+func min(a int, b int) int {
+    return if a < b { a } else { b }
+}
+
+// 名前のハッシュ（30 bit に保って 64 bit の溢れに触れない）
+func nameHash(name string) int {
+    mut h := 0
+    for c <- bytes(name) {
+        h = ((h << 5) ^ (h >> 25) ^ int(c)) & 0x3fffffff
+    }
+    return h
+}
+
+// 環境変数 name の整数（無ければ def・整数でなければ panic(BadEnv)）
+func envInt(name string, def int) int {
+    v := os.Getenv(name) catch nil
+    if v == nil || v == "" {
+        return def
+    }
+    n := convert.ParseInt(v) catch panic(BadEnv{name: name, value: v})
+    return n
+}
+
+// 引き出しの印字の 1 行（入れ子の深さで字下げ）
+func line(q Src, s string) {
+    mut pad := "  "
+    for _ <- iter.Range(0, q.depth) {
+        pad = pad + "  "
+    }
+    say(pad + s + "\n")
+}
+
+func say(s string) {
+    _ = io.WriteStderr(bytes(s))
+}
+
+// 二重引用符で囲んだ印字（`"` `\` と制御文字・非 ASCII のバイトは \xNN）
+func quote(b []byte) string {
+    mut out := []byte{'"'}
+    for c <- b {
+        if c == '"' || c == '\\' {
+            out = append(out, '\\')
+            out = append(out, c)
+        } else if c < 0x20 || c >= 0x7f {
+            for d <- bytes("\\x${hexByte(int(c))}") {
+                out = append(out, d)
+            }
+        } else {
+            out = append(out, c)
+        }
+    }
+    out = append(out, '"')
+    return bytesToString(out)
+}
+
+func hexByte(c int) string {
+    return hex.Format([]byte{byte(c)})
+}
+
+// 符号位置 cp の UTF-8 を out に足す
+func utf8(out []byte, cp int) []byte {
+    mut o := out
+    if cp < 0x80 {
+        o = append(o, byte(cp))
+    } else if cp < 0x800 {
+        o = append(o, byte(0xc0 | (cp >> 6)))
+        o = append(o, byte(0x80 | (cp & 0x3f)))
+    } else if cp < 0x10000 {
+        o = append(o, byte(0xe0 | (cp >> 12)))
+        o = append(o, byte(0x80 | ((cp >> 6) & 0x3f)))
+        o = append(o, byte(0x80 | (cp & 0x3f)))
+    } else {
+        o = append(o, byte(0xf0 | (cp >> 18)))
+        o = append(o, byte(0x80 | ((cp >> 12) & 0x3f)))
+        o = append(o, byte(0x80 | ((cp >> 6) & 0x3f)))
+        o = append(o, byte(0x80 | (cp & 0x3f)))
+    }
+    return o
+}

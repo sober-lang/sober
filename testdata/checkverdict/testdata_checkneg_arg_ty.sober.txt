@@ -1,2 +1,3 @@
+sober: type error at testdata/checkneg/arg_ty.sober:8:14
 {"errors":[{"msg":"type error"}],"ok":false}
 exit=1

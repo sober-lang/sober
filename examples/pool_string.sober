@@ -1,6 +1,6 @@
 package main
 
-// R1（region 多相の裁定 ①s + S）の検証例: Pool[string]。
+// region 多相の検証例: Pool[string]。
 // Pool の関数は mut 引数なので展開され、コアに届く型は具体型（string を型引数にできる）。
 // 深いブロックで作った string は strings.Clone で Arena（= Pool と同じ region）へ置き直してから入れる —
 // Clone を外すと check が escape で拒否する（コピーはソースに見える: 境界コピー = 明示イディオム）

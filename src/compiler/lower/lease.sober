@@ -13,7 +13,7 @@ import "diag"
 
 const TC_LEASE = TC_DL + 1
 
-// needLease は rt.lease_op（と task のあるプログラムなら rt.lease_drain）を（初出なら）宣言する
+// rt.lease_op（と task のあるプログラムなら rt.lease_drain）を（初出なら）宣言する
 func needLease(st mut St) {
     lsNeed(mut st, NEED_LEASE, 0)
     if st.rtLeaseOp == -1 {
@@ -24,7 +24,7 @@ func needLease(st mut St) {
     }
 }
 
-// leaseBuiltin は鍵 lease_op（k = 29 — (op, blk, off, v) → int）・lease_view（30 — (blk, off, n) → mut []int）・lease_bytes（44 — (blk, off, n) → mut []byte）の呼び出し（cont.sober の ioBuiltin から）
+// 鍵 lease_op（k = 29 — (op, blk, off, v) → int）・lease_view（30 — (blk, off, n) → mut []int）・lease_bytes（44 — (blk, off, n) → mut []byte）の呼び出し（cont.sober の ioBuiltin から）
 func leaseBuiltin(st mut St, k int, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
     n := lenL(mut st, args)
     vs := listN(mut st, n)
@@ -58,12 +58,12 @@ func leaseBuiltin(st mut St, k int, args desugar.ListRef, at desugar.NodeRef) (i
     return one1(mut st, t, out), nil
 }
 
-// leaseArg は値の列 vs の i 番目
+// 値の列 vs の i 番目
 func leaseArg(st mut St, vs int, i int) int {
     return desugar.HeapGet(mut st.d, vs + 1 + i)
 }
 
-// buildLeaseRt は rt.lease_op(op, p, off, v)・rt.lease_drain(tcb, stop)（使うプログラムだけ — lower の最後）
+// rt.lease_op(op, p, off, v)・rt.lease_drain(tcb, stop)（使うプログラムだけ — lower の最後）
 func buildLeaseRt(st mut St) {
     if st.rtLeaseOp == -1 {
         return
@@ -80,7 +80,7 @@ func buildLeaseRt(st mut St) {
     b1 := branchIf(mut st, cmp(mut st, CEq, op, one))
     ret(mut st, if st.taskUse { load(mut st, globaladdr(mut st, st.wkG), WK_ID) } else { zero })
     setCur(mut st, b1)
-    // op 6: 今の深度より深い自前のスロット（死んだ region — 前の命の高水位が残る）の頁を OS へ返す（1 回きりの深い作業の後 — tls の handshake の後〔report-1012〕）。
+    // op 6: 今の深度より深い自前のスロット（死んだ region — 前の命の高水位が残る）の頁を OS へ返す（1 回きりの深い作業の後 — tls の handshake の後）。
     // 返すのは [スロットの基底, bump) の全部（W_MADV の残しを使わない — 次の命は最初の頁から触り直す）。bump は書き換えない（slotRelease の used は
     // admission の観測 — admitEnd — に流れるので、命の高水位のまま残す）。task の無いプログラムは何もしない
     b6 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 6)))
@@ -141,14 +141,14 @@ func buildLeaseRt(st mut St) {
     ret(mut st, -1)
 }
 
-// leaseDrainCall は子の入口の出口で task の鎖に残った lease の印を外す（fdDrainCall から — 死・切られた子は窓の defer が走らない）
+// 子の入口の出口で task の鎖に残った lease の印を外す（fdDrainCall から — 死・切られた子は窓の defer が走らない）
 func leaseDrainCall(st mut St) {
     if st.rtLeaseDrain != -1 {
         call(mut st, st.rtLeaseDrain, list2(mut st, 0, iconst(mut st, 0)))
     }
 }
 
-// leaseTrim は op 6 の本体: 深度 k（今の深度 < k ≤ 自前の最深 SLOT_OWN）のスロットの [基底, bump) を madvise(MADV_DONTNEED)。
+// op 6 の本体: 深度 k（今の深度 < k ≤ 自前の最深 SLOT_OWN）のスロットの [基底, bump) を madvise(MADV_DONTNEED)。
 // bump は task の切り替えで自前の範囲ごと退避・復元される（slotRange）ので、この task の命の高水位 — 範囲の外の値（0 か大きさ超え）は飛ばす
 func leaseTrim(st mut St) {
     meta := globaladdr(mut st, st.meta)

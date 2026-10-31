@@ -1,6 +1,6 @@
 package main
 
-// map の操作列の fuzz（map の表現の便）: 決定的な乱数の操作列（set / 引き / delete / keys / len）を string 鍵の map と
+// map の操作列の fuzz: 決定的な乱数の操作列（set / 引き / delete / keys / len）を string 鍵の map と
 // 挿入順の連想リスト（参照の実装 — 同じ列を素朴に解く）の両方に掛け、毎回突き合わせる。鍵は反復の region で作り直す（毎回別の番地 —
 // 格納点の写しの道）。鍵の長さは表現の境目（7・8・9・15・16・17・24・25）を跨ぎ、`\0` と非 ASCII のバイト・先頭 16 バイトが同じで
 // 後ろだけ違う鍵・"a" と "a\0" を含む。表現の差分オラクル（scripts/maprepr.sh）でも新旧の表現の出力を照合する
@@ -8,7 +8,7 @@ package main
 import "std/iter"
 import "std/utf8"
 
-// mkKey は鍵の種 i の鍵（同じ i なら同じ鍵 — 毎回作り直す）
+// 鍵の種 i の鍵（同じ i なら同じ鍵 — 毎回作り直す）
 func mkKey(i int) string {
     lens := []int{0, 1, 2, 7, 8, 9, 15, 16, 17, 23, 24, 25, 40}
     n := lens[i % len(lens)]

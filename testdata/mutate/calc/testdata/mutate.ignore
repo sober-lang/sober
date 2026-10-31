@@ -1,0 +1,3 @@
+# --mutate-out の行の頭 2 欄（位置・変異）で抑止する。当たらない行は警告
+testdata/mutate/calc/calc.sober:31:14	&& → ||	survived	-
+testdata/mutate/calc/calc.sober:99:1	< → <=

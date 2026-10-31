@@ -1,6 +1,6 @@
 package main
 
-// http.ServeWith に同一性の型（net.Conn / tls.Conn）を捕捉したラムダを渡す形（report-841 / 842 の受理例）: recv / send は ServeWith の借りの位置
+// http.ServeWith に同一性の型（net.Conn / tls.Conn）を捕捉したラムダを渡す形（受理例）: recv / send は ServeWith の借りの位置
 // （本体の中で別の関数〔serveBuf / linger〕へ渡すのも借りの位置 — その名前は std/http の中で引く）。check / build だけを見る例（走らせない）
 
 import "std/http"

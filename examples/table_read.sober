@@ -1,0 +1,39 @@
+package main
+
+// std/table.Read: 表の範囲を局所の列へ一括で写す。chunk（8192 要素）を跨ぐ範囲も Get を並べたのと同じ値。n = 0 は何も写さない
+
+import "std/iter"
+import "std/table"
+
+func main() {
+    mut t := table.Table[int]{}
+    mut i := 0
+    while i < 20000 {
+        table.Push(mut t, i * 3)
+        i += 1
+    }
+    mut dst := mut []int{0, 0, 0, 0, 0, 0}
+    // 最初の chunk の中
+    table.Read(mut t, 10, 4, mut dst)
+    println("${dst[0]} ${dst[1]} ${dst[2]} ${dst[3]} ${dst[4]}")
+    // chunk の境（8190 .. 8195）を跨ぐ
+    table.Read(mut t, 8190, 6, mut dst)
+    println("${dst[0]} ${dst[1]} ${dst[2]} ${dst[3]} ${dst[4]} ${dst[5]}")
+    // 末尾まで
+    table.Read(mut t, 19998, 2, mut dst)
+    println("${dst[0]} ${dst[1]}")
+    table.Read(mut t, 20000, 0, mut dst)
+    // 長い範囲（3 chunk に跨る）は Get と同じ和
+    mut big := mut []int{}
+    for _ <- iter.Range(0, 19000) {
+        big = append(big, 0)
+    }
+    table.Read(mut t, 500, 19000, mut big)
+    mut s := 0
+    mut g := 0
+    for k <- iter.Range(0, 19000) {
+        s += big[k]
+        g += table.Get(mut t, 500 + k)
+    }
+    println("${s} ${g}")
+}

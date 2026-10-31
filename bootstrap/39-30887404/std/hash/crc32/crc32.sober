@@ -1,0 +1,16 @@
+package crc32
+
+// CRC-32（IEEE 802.3 の多項式）の検査和
+
+import "std/internal/crc32"
+
+// data の CRC-32（IEEE 802.3 の多項式 — 反転形 0xedb88320・初期値と終わりの反転 0xffffffff。gzip・zlib・PNG と同じ値）。
+// 値は [0, 2^32) の int:
+//
+//     c := crc32.Sum(bytes("123456789"))   // 0xcbf43926（RFC 1952 の照合値）
+//
+// 核は std/internal/crc32 の Update（PCLMULQDQ の畳み・倒れ先の slicing-by-8 — gzip の逐次の符号器と共有）
+@effects(panic)
+func Sum(data []byte) int {
+    return crc32.Update(0, data)
+}

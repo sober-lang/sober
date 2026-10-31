@@ -66,7 +66,7 @@ func show(s Shape) {
     showOrigin(s.origin)
 }
 
-// T? の欄は仮引数で受けて絞る（欄から束縛した struct の T? の絞り込みは check が拒否 — F-ac）
+// T? の欄は仮引数で受けて絞る（欄から束縛した struct の T? の絞り込みは check が拒否する）
 func showOrigin(o Point?) {
     if o != nil {
         println("  origin: (${o.x}, ${o.y})")
@@ -259,7 +259,7 @@ v の JSON（空白なし・欄は宣言の順・`U?` の nil は null）。T �
 // examples/json_encode.sober
 package main
 
-// shape[T] の逆向き（language.md 16 節 2 — 第二便）: json.Encode[T](v) が struct を JSON に書く（空白なし・欄は宣言の順・U? の nil は null）。
+// shape[T] の逆向き（language.md 16 節 2）: json.Encode[T](v) が struct を JSON に書く（空白なし・欄は宣言の順・U? の nil は null）。
 // EncodeWith / DecodeWith は欄名 → JSON のキーの対応の辞書つき（同じ辞書で両方向）。Encode → Parse → Decode の往復で元に戻る
 
 import "std/json"

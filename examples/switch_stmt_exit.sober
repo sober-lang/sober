@@ -1,6 +1,6 @@
 package main
 
-// 文位置の switch の腕の脱出（return / continue）— 文位置の if と同じく腕の値を捨てて合流する（2026-10-02 まで check が CoreFragment で拒否・build は受理）
+// 文位置の switch の腕の脱出（return / continue）— 文位置の if と同じく腕の値を捨てて合流する
 import "std/iter"
 
 func classify(x int) int {

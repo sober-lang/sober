@@ -12,7 +12,7 @@ type BadDigit error {
 
 type Empty error
 
-// Unused はこのプログラムのどこからも返らないラベル（union には入るが導出集合には入らない）
+// このプログラムのどこからも返らないラベル（union には入るが導出集合には入らない）
 type Unused error
 
 func parse(s []byte) (int, error?) {

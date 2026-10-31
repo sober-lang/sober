@@ -2,6 +2,63 @@
 
 This file records user-facing changes per public release. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/) (no backward-compatibility promise while on 0.x).
 
+## v0.6.5 — 2026-10-31
+
+A testing release. It adds four verification tools — property-based testing with std/quick, `sober fuzz`, `sober test --cover` (coverage) and `sober test --mutate` (mutation testing) — with a guide on writing tests. `sober check` / `sober build` / `sober test` now remember the answer to a query and return it when the same query comes again, and `sober watch` warms build and tests in the background after each save. The CLI is now declared as a table (the new std/cli), and usage errors exit with code 2 (**breaking change** — `-run` → `--run` and others).
+
+### Breaking changes
+
+- Long CLI flags start with `--`: `sober test -run <prefix>` becomes `sober test --run <prefix>` (a long name with a single dash is an unknown-flag error that suggests the close spelling). Command-line usage errors (unknown flag, missing value, combinations that don't go together) exit with code 2 (was 1).
+- Assigning multiple values to existing names (`a, b = f()`, `_, b = f()`, `s.x, b = f()`) is rejected (build used to accept it, and check failed with an internal error). Bind new names (`a, b := f()`) or discard all of them (`_, _ = f()`). Parallel assignment with several right-hand values (`a, b = b, a`) is unchanged.
+- The build cache is on by default (see Tools). Set `SOBER_BUILD_CACHE=0` where you don't want a cache directory created.
+
+### Language
+
+- Composite consts: a top-level `const` can hold a string, a float (including negative), true / false, a struct (partial literal), an imm slice, and nestings of these (int consts still fold; the others are built at each point of reference). Leaves are int const expressions, closed lambdas, references to named functions, references to other consts, and nil in a field's value position.
+- A named function type from another package can now appear in a function's results and parameters, in struct fields and as a generic type argument (check used to fail with UnknownName and build with UndefinedType).
+- Type rejections from `sober check` carry a position: `sober: type error at <path>:<line>:<col>` (the verdict JSON is unchanged).
+
+### Testing (the four verification tools)
+
+- std/quick — property-based testing: draw values from a choice source (`quick.Int` / `Bool` / `Pick` / `Elem` / `Bytes` / `String` / `Runes` / `Slice`), and `quick.Check` calls the property once per trial. When it turns false, the sequence of choices is shrunk to a minimal counterexample, which is printed. The seed comes from the test's name, so the same code gives the same trials and the same counterexample on every run. In `*_test.sober`, a counterexample where the property's last expression is false is printed in the same form as `assert` (with the values of subexpressions).
+- `sober fuzz <package> --run TestXxx`: keeps running a test's `quick.Check` until a deadline (`--time`). A false property, a panic or a hang (`--hang`) is shrunk, reported and written as a choice sequence under `<package>/testdata/fuzz/` — which `sober test` replays first. It is coverage-guided by default (choice sequences of trials that opened a new branch are mutated and reused — on a local example, a nested 4-byte magic value was found 0/10 times in 14 million trials without guidance and 10/10 times in 90 thousand trials with it). `--sched` also varies the std/task schedule per trial.
+- `sober test --cover`: counts the branches of the tested package (function bodies, both sides of an if, each switch case, loop bodies, the right side of `&&` / `||`, catch arms — "arm" in the output) by whether any test passed through them, and lists unreached branches in position order. `--cover-out` writes text or LCOV.
+- `sober test --mutate`: builds one test binary with mutants woven into the tested package (comparison boundaries and negation, swapped arithmetic and bit operators, `&&` ↔ `||`, removal of `!`, fixed conditions, deleted statements), then for each mutant runs only the tests that reach it, in parallel, and counts killed / survived / unreached. `--mutate-out` writes one line per mutant; `<package>/testdata/mutate.ignore` excludes equivalent mutants.
+- Replaying test results: `sober test` remembers the output of a package whose tests all passed, and returns it without building or running when none of the sources, testdata or environment variables the tests read have changed (4–15 ms locally). `--fresh` always runs.
+
+### Tools
+
+- Replaying answers: `sober check` / `sober build` remember the answer to a query and return it when the same query comes again (the contents of the files read, the list of .sober files in the directory, @embed inputs and the relevant environment variables all equal). `sober check` of the compiler itself: 4.4 s cold → 0.05 s.
+- Per-function check cache (on by default — `SOBER_CHECK_CACHE=0` turns it off) and build cache (on by default — `SOBER_BUILD_CACHE=0`): after an edit only the changed functions and packages are checked and rebuilt. The store lives outside the worktree and is shared by several worktrees; `sober cache info` / `sober cache gc`.
+- `sober watch`: about 0.05 s from save to the check answer. After an accepted round it warms build and tests in the background (`nice 19`, a quarter of the workers), so a plain `sober build` / `sober test` typed next hits from the first time (build 0.27 s locally). It waits until edits have been quiet for 200 ms before a round (`SOBER_WATCH_QUIET`).
+- The build splits lower into function groups and runs them in parallel (on by default with 2 or more workers — byte-identical output).
+- `sober doc --cli`: the CLI reference as Markdown, from the executable itself (docs/cli/sober.md is its output).
+- `sober outline <file>`: the declarations of a source file and their line ranges (text / json).
+- `sober --help` / `<command> --help` / `--version` come from std/cli (80 columns).
+
+### Standard library
+
+- std/cli (new): write a CLI as a const table of flags, positional arguments, environment variables and subcommands; `cli.Main` parses, prints usage, diagnoses misuse (exit 2) and handles `--help`.
+- std/env (new): declare environment variables in a const table; `env.Load` reads and checks all of them once at startup (Missing, BadValue, InvalidUtf8).
+- std/quick (new): see Testing above.
+- std/os: `RunTo` (a child's stdout / stderr into files), `AppendFile`, `Remove` / `RemoveDir`.
+- std/table: `Read`.
+- std/task: `task.Run(…, backlog: K)` (see Runtime); `task.Ledger()` gains `backlog` / `backlogYield`.
+- std/net: `net.Serve(…, backlog: K)`.
+
+### Runtime
+
+- A bound on unstarted children: of the children a task spawns, at most 255 per worker wait without having started. Beyond that the spawning task yields and the child runs right away (values and output are unchanged). In a loop that keeps spawning (the accept shape), peak RSS no longer grows when the spawner outpaces the workers because of CPU contention (locally, 2 million spawns on 4 cores shared with busy loops: 47–77 MB → 1.7 MB). `task.Run(…, backlog: K)` / `net.Serve(…, backlog: K)` lower it to 1–255, and child tasks inherit it. Observe it with `task.Ledger().backlog` (unstarted now) and `backlogYield` (times the spawner yielded).
+- Fixed three bugs when a child task looked up a frozen map: a write to address 0, `task.Map` results silently becoming 0, and rebuilding the index on every by-value pass until the region ran out.
+- Fixed a rare ETXTBSY (Text file busy) when running an executable right after writing it (programs using std/task now write files with a synchronous write).
+
+### Documentation
+
+- A guide to writing tests (docs/guide/testing.md / testing.ja.md): on a small example, from assert to std/quick, `--cover` / `--mutate` and `sober fuzz`. All output is real.
+- A guide to abstraction (docs/guide/abstraction.md / abstraction.ja.md): instead of interfaces — named function types and closures, structs of function fields (dictionaries), unions with type-pattern switch, and a table for readers coming from other languages.
+- A guide to environment variables (docs/guide/env.md / env.ja.md): the variables the compiler, the runtime and std read.
+- Terms: the Japanese documents now use the common names for testing terms (プロパティ, シュリンク, ミュータント, 分岐, シード, ジェネレータ) and エフェクト for effect.
+
 ## v0.6.4 — 2026-10-26
 
 A release that moves accept onto every worker. `net.Serve` now holds one listener per worker on the same address, and each worker accepts on its own listener and runs the connection itself. For that, `net.Listen` now sets SO_REUSEPORT (a change in behavior — see Standard library and the security guide). The language gains optional anonymous function-typed parameters, and `http.ServeFlushed` is folded into `http.ServeWith(…, put:)` (**breaking change**). The runtime also gains a flight recorder (off by default) that keeps what it was doing when something fails.

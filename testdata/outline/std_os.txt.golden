@@ -1,0 +1,40 @@
+src/std/os/os.sober  package os
+  import "std/strings" "std/io" "std/iter"
+  func sysArgs() []byte  @intrinsic("args")  :10-11
+  func sysRun(argv []byte) int  @intrinsic("run")  :13-14
+  func sysRunFd(argv []byte, ofd int, efd int) int  @intrinsic("run_fd")  :16-17
+  func sysRunFdEnv(argv []byte, envz []byte, ofd int, efd int) int  @intrinsic("run_fd_env")  :19-20
+  func sysWriteMode(path string, mode int) int  @intrinsic("write_mode")  :22-23
+  func sysMkdir(path string) int  @intrinsic("mkdir")  :25-26
+  func sysRename(from string, to string) int  @intrinsic("rename")  :28-29
+  func sysStat(path string) int  @intrinsic("stat")  :31-32
+  func sysSleep(ms int) int  @intrinsic("sleep")  :34-35
+  func sysEnviron() []byte  @intrinsic("environ")  :37-38
+  func sysCall(nr int, a int, b int, c int, d int, e int, f int) int  @intrinsic("syscall")  :41-42
+  func sysAddr(b []byte) int  @intrinsic("addr")  :44-45
+  func Args() ([]string, error?)  @errors(strings.InvalidUtf8) @effects(io)  :51-68
+  func Run(path string, args []string) (int, error?)  @errors(io.NotFound, io.Denied, io.Other) @effects(block, io)  :74-91
+  func RunTo(path string, args []string, out string, errOut string) (int, error?)  @errors(io.NotFound, io.Denied, io.Other) @effects(block, io)  :96-108
+  func RunToEnv(path string, args []string, env []string, out string, errOut string) (int, error?)  @errors(io.NotFound, io.Denied, io.Other) @effects(block, io)  :113-126
+  func argvz(path string, args []string) []byte  :129-140
+  func openOut(out string, errOut string) (int, int, error?)  :143-154
+  func ranTo(r int, ofd int, efd int) (int, error?)  :157-166
+  func envz(b mut []byte, env []string) bool  :169-193
+  func envName(b []byte, start int, end int) string  :196-202
+  func openTrunc(path string) int  :205-213
+  func WriteMode(path string, mode int) error?  @errors(io.NotFound, io.Denied, io.Other) @effects(io)  :217-225
+  func Mkdir(path string) error?  @errors(io.NotFound, io.Denied, io.Other) @effects(io)  :229-237
+  func Rename(from string, to string) error?  @errors(io.NotFound, io.Denied, io.Other) @effects(io)  :241-249
+  func Remove(path string) error?  @errors(io.NotFound, io.Denied, io.Other) @effects(io)  :253-266
+  func RemoveDir(path string) error?  @errors(io.NotFound, io.Denied, io.Other) @effects(io)  :270-283
+  func ModTime(path string) (int, error?)  @errors(io.NotFound, io.Denied, io.Other) @effects(io)  :287-295
+  func Sleep(ms int)  @effects(block)  :299-302
+  func SleepExpired(ms int) bool  @effects(block)  :305-308
+  func Alarm(ms int)  @effects(io)  :312-323
+  func Monotonic() int  @effects(io)  :326-335
+  func word(b []byte, at int) int  :338-344
+  func Getenv(name string) (string?, error?)  @errors(strings.InvalidUtf8) @effects(io)  :348-366
+  func keyIs(b []byte, start int, end int, nb []byte) bool  :369-379
+  func argz(b mut []byte, s string) bool  :382-392
+  func errOf(e int) error  :395-403
+  func AppendFile(path string, b []byte) error?  @errors(io.NotFound, io.Denied, io.Other) @effects(io)  :408-437

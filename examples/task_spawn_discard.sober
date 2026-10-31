@@ -1,6 +1,6 @@
 package main
 
-// handle を捨てた子の枠は子の寿命（language.md 11 節 — report-696 / 697）の回帰例: 返らない scope（net.Serve の accept のループの形）の中で子を生み続けても、
+// handle を捨てた子の枠は子の寿命（language.md 11 節）の回帰例: 返らない scope（net.Serve の accept のループの形）の中で子を生み続けても、
 // handle を `_` に捨てた子の枠は scope の region に積もらない（子の終わりで返る）。`_ = task.Spawn(…)` と `_, e := task.SpawnIn(…)` の 2 形を
 // n 回ずつ（既定 20000 — scripts/iterregion.sh が 10 倍にして RSS が比例しないことを見る。壊れると 1 子 ≈ 70〜80 B で 20000 → 200000 回で +25 MB）
 
@@ -11,10 +11,13 @@ import "std/task"
 func main() {
     args := os.Args() catch return
     mut n := 20000
-    if len(args) == 2 {
+    if len(args) >= 2 {
         v, _ := convert.ParseInt(args[1])
         n = v
     }
+    // 2 つ目の引数 ledger: 生きている task の数の最大を印字する（iterregion の線が RSS をこの数で正規化する）
+    probe := len(args) == 3 && args[2] == "ledger"
+    mut maxTasks := 0
     pool := task.NewPool(64 * task.KB * 1000, nil)
     mut shed := 0
     mut i := 0
@@ -26,9 +29,18 @@ func main() {
             if e != nil {
                 shed += 1
             }
+            if probe && i % 256 == 0 {
+                t := task.Ledger().tasks
+                if t > maxTasks {
+                    maxTasks = t
+                }
+            }
             i += 1
         }
         i
     })
+    if probe {
+        println("maxTasks ${maxTasks}")
+    }
     println("spawned ${r * 2 - shed}")
 }

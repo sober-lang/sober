@@ -1,6 +1,6 @@
 package main
 
-// デッドライン（段 3 の ④ — language.md 28 節「デッドライン」）: `task.Run(body, deadline: d)` の中（子孫の task も）では、期限の後に開いた
+// デッドライン（language.md 28 節「デッドライン」）: `task.Run(body, deadline: d)` の中（子孫の task も）では、期限の後に開いた
 // io の口が io.Expired を返す。走っている仕事は切らない（待ちの上限であって実行時間の上限ではない）・入れ子は早い方・scope の外には効かない。
 // 網は時刻に依らない両端だけ: 期限 0（必ず来る）・1 時間（必ず来ない）・1 ms + 20 ms 眠ってから（必ず来る）
 
@@ -22,13 +22,13 @@ func show(e error?) string {
     }
 }
 
-// probe は io の口を 1 回開く（読めれば ok）
+// io の口を 1 回開く（読めれば ok）
 func probe() string {
     _, e := io.ReadFile("testdata/io/hello.txt")
     return show(e)
 }
 
-// spin は純な仕事（期限の後も切られずに最後まで走る）
+// 純な仕事（期限の後も切られずに最後まで走る）
 func spin(n int) int {
     mut s := 0
     for i <- iter.Range(0, n) {

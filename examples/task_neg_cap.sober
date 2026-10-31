@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P3b: NewChannel の容量が字面でない（diag.Par kind 13 — 容量は 1 以上の整数の字面）
+// NewChannel の容量が字面でない（diag.Par kind 13 — 容量は 1 以上の整数の字面）
 
 import "std/task"
 

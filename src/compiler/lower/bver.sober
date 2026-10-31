@@ -1,10 +1,10 @@
 package lower
 
-// 定数添字の検査の版分け（検査の資格つき消去 段 2 (c2) — report-545）: bce の後に掛ける。関数の入口のブロックの後ろに、同じ長さ y に対する
+// 定数添字の検査の版分け（bce の後に掛ける）: 関数の入口のブロックの後ろに、同じ長さ y に対する
 // 定数添字（定数か定数の式 — bceCv）の境界検査 `uge c, y` が BV_N 本以上残っていれば、入口の終わりで `cmax <u y`（cmax = それらの最大）を 1 回だけ判定し、
 // 真なら入口の後ろの全ブロックの写し（それらの検査を偽の辺へ畳んだもの）へ、偽なら元の本体へ進む。
 // 論拠: 写しの中の検査はどれも c ≤ cmax <u y なので偽（panic の点へ行かない）。偽の側は元の本体をそのまま走るので、panic の点・印字・それまでの
-// 副作用は変わらない — 観測は不変（入口で panic を早める形は採らない — report-545 2 節）。
+// 副作用は変わらない — 観測は不変（入口で panic を早める形は採らない）。
 // y は入口のブロックで定まる値（入口の命令か関数の仮引数）だけ。入口のブロックの中の検査は対象外（判定より前に走る）。
 // 対象: nbody の advance（全展開した組のループの定数添字 — bce の ⑤ が畳んだ後にその時点の最大を更新する検査が 17 本残る）
 
@@ -15,7 +15,7 @@ const BV_N = 8
 // 写すのは関数の IR 命令が BV_MAXINS 以下のときだけ（コードの膨らみと判定の仕事の上限）
 const BV_MAXINS = 4000
 
-// bverFunc は関数 f に版分けを掛ける（先に安い走査 — `uge` の比較が BV_N 本以上で、命令が BV_MAXINS 以下で、panic の点〔exit のブロック〕の外に
+// 関数 f に版分けを掛ける（先に安い走査 — `uge` の比較が BV_N 本以上で、命令が BV_MAXINS 以下で、panic の点〔exit のブロック〕の外に
 // 呼び出しが無い関数だけ作業域を作る。呼び出しのある関数では検査の分岐の費用は呼び出しに埋もれ、写しの大きさ〔自己 build の lParGroup 等 —
 // 判定の仕事 +0.2 G〕だけを払う）
 func bverFunc(st mut St, f FnRef) {
@@ -50,7 +50,7 @@ func bverFunc(st mut St, f FnRef) {
     st.fn = saved
 }
 
-// bverRun は候補を数え、足りれば写す
+// 候補を数え、足りれば写す
 func bverRun(st mut St, f FnRef) {
     nv := irFnNVal(mut st, f)
     b0 := irFnBHead(mut st, f)
@@ -130,7 +130,7 @@ func bverRun(st mut St, f FnRef) {
     optRenumber(mut st, f)
 }
 
-// bverTargets はブロック b の終端の行き先に to があるか
+// ブロック b の終端の行き先に to があるか
 func bverTargets(st mut St, b BlkRef, to BlkRef) bool {
     t := irBlkTerm(mut st, b)
     if t == TmBr {
@@ -142,7 +142,7 @@ func bverTargets(st mut St, b BlkRef, to BlkRef) bool {
     return false
 }
 
-// bverClone は入口の後ろの全ブロックを写し、入口の終わりに `cmax <u y` の判定を置く（真 = 写し・偽 = 元）。写しの中の `uge c, y`
+// 入口の後ろの全ブロックを写し、入口の終わりに `cmax <u y` の判定を置く（真 = 写し・偽 = 元）。写しの中の `uge c, y`
 // （c は定数の式で c ≤ cmax）の condbr は偽の辺への br に畳む
 func bverClone(st mut St, f FnRef, bw mut BceW, y int, cmax int) {
     nv0 := irFnNVal(mut st, f)
@@ -215,7 +215,7 @@ func bverClone(st mut St, f FnRef, bw mut BceW, y int, cmax int) {
     ilTerm(mut st, b0, TmCondbr, kt, int(fast), -1, int(slow), -1)
 }
 
-// bverFolds は条件 c が `uge x, y`（x は定数の式で x ≤ cmax）か
+// 条件 c が `uge x, y`（x は定数の式で x ≤ cmax）か
 func bverFolds(st mut St, bw mut BceW, c int, y int, cmax int) bool {
     d := bw.defIns[c]
     if d < 0 || irInsOp(mut st, InsRef(d)) != OpCmp || irInsA(mut st, InsRef(d)) != CUge || irInsC(mut st, InsRef(d)) != y {
@@ -225,7 +225,7 @@ func bverFolds(st mut St, bw mut BceW, c int, y int, cmax int) bool {
     return cv >= 0 && cv <= cmax
 }
 
-// bverTerm はブロック ob の終端を、行き先と値を写しへ付け替えて nb に置く（欄の種別は termRow）
+// ブロック ob の終端を、行き先と値を写しへ付け替えて nb に置く（欄の種別は termRow）
 func bverTerm(st mut St, ob BlkRef, nb BlkRef, bm mut []int, vm int) {
     t := irBlkTerm(mut st, ob)
     tk := termRow(t)
@@ -238,7 +238,7 @@ func bverTerm(st mut St, ob BlkRef, nb BlkRef, bm mut []int, vm int) {
     ilTerm(mut st, nb, t, xs[0], xs[1], xs[2], xs[3], xs[4])
 }
 
-// bverTo は行き先 to の写し（写しが無ければそのまま）
+// 行き先 to の写し（写しが無ければそのまま）
 func bverTo(st mut St, to int, bm mut []int) int {
     if to < 0 {
         return to

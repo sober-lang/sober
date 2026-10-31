@@ -1,6 +1,6 @@
 package lower
 
-// 孤児の待ち（IO 便 ⑤ — language.md 28 節「キャンセルは協調的」・report-741 / 777）: 親の task が死ぬ（切られる）と、その開いている scope の下で io を
+// 孤児の待ち（language.md 28 節「キャンセルは協調的」）: 親の task が死ぬ（切られる）と、その開いている scope の下で io を
 // 待っている子孫は誰にも起こされない（期限なしの scope では期限の走査も来ない — 永眠）。rt は待ちを起こすだけ: 孤児の待ちは -125 で返り（std が io.Expired に）、
 // 子は普通の道で巻き戻る。読み = 「孤児 = 期限が今来た」（期限の走査と同じ取り消し方・同じラベル）。
 // - 孤児の判定 = 祖先を辿る（rt.orph_walk）: 自分の塊から、生んだ scope の印 SR_CUT = 1（drainScopes — 開いた task が死んだ / 切られた）を見て、scope を
@@ -8,7 +8,7 @@ package lower
 // - 印 = TC_DL := 1（時刻 1 で期限切れ）: deadline: のあるプログラムでは io の口の sysDeadline がそのまま Expired を返し、spawn の子にも写る。無いプログラムでは
 //   使われていない語を印として読む（task の終わりで 0 に戻す — 塊の再利用）
 // - 登録簿（ワーカーごとの配列 — WK_OREG）: task は最初の待ちで 1 回登録し（TCB の TC_ORG = 番号 + 1・待っている間は種類 << 32）、終わりで返す（空きの鎖）。
-//   待ちごとの値札は TCB の先頭頁の 1 語の読み書きだけ（鎖の積み外しは隣の TCB に触る — report-678 T8 の線）
+//   待ちごとの値札は TCB の先頭頁の 1 語の読み書きだけ（鎖の積み外しは隣の TCB に触る）
 // - 発火: drainScopes の印のたびに @rt.orphgen を進め、ring / epoll で眠るワーカーを eventfd で起こす。rt.uring_poll の頭で世代が動いていたら登録簿を歩き
 //   （rt.orph_scan）、待っている孤児を起こす。走っていた孤児（走査の時に待っていなかった）は次の待ちの入口の関門（世代 ≠ 0 のときだけ — 印か祖先）で捕まる
 // - 取り消さない待ち: 閉じの待ち（止まった完了を待つ — 有限）・os.Sleep（有限）・チャネル / Join / scope の出口（io でない）
@@ -29,7 +29,7 @@ const WK_OSEEN = 22        // 最後に走査した @rt.orphgen
 const ORG_CAP = 4194304    // 登録簿の容量（ワーカーごと・NORESERVE 32 MiB — 溢れた task は登録しない = 取り消されない）
 const ORPH_CODE = -125     // 孤児の待ちの結果（ECANCELED — std/net が io.Expired に）
 
-// needOrph は孤児の待ちの部品を宣言する（needNet — std/task のプログラムで wait_fd を使うとき）
+// 孤児の待ちの部品を宣言する（needNet — std/task のプログラムで wait_fd を使うとき）
 func needOrph(st mut St) {
     lsNeed(mut st, NEED_ORPH, 0)
     if st.orphOn {
@@ -43,7 +43,7 @@ func needOrph(st mut St) {
     st.rtOrphScan = addFunc(mut st, int(strLit(mut st, "rt.orph_scan")), desugar.ListRef(list1(mut st, TyI64)), -1)
 }
 
-// orphEnter は待ちの入口（me = 今の task）: 孤児なら ORPH_CODE（待たない）・でなければ登録して種類を書き 0。世代 0（親の死が 1 度も無い）は
+// 待ちの入口（me = 今の task）: 孤児なら ORPH_CODE（待たない）・でなければ登録して種類を書き 0。世代 0（親の死が 1 度も無い）は
 // 世代の load と分岐・TC_ORG の読み書きだけ
 func orphEnter(st mut St, me int, kind int) int {
     zero := iconst(mut st, 0)
@@ -66,13 +66,13 @@ func orphEnter(st mut St, me int, kind int) int {
     return v
 }
 
-// orphLeave は待ちの出口: 種類を消す
+// 待ちの出口: 種類を消す
 func orphLeave(st mut St, me int) {
     tp := itop(mut st, me)
     store(mut st, tp, TC_ORG, bin(mut st, BAnd, load(mut st, tp, TC_ORG), iconst(mut st, ORG_LO)))
 }
 
-// orphEnd は task の終わり（tcb — 自分のワーカーの上・io の後始末の後）: 登録していれば返し、印を消す
+// task の終わり（tcb — 自分のワーカーの上・io の後始末の後）: 登録していれば返し、印を消す
 func orphEnd(st mut St, tcb int) {
     if !st.orphOn {
         return
@@ -90,7 +90,7 @@ func orphEnd(st mut St, tcb int) {
     store(mut st, tcb, TC_DL, zero)
 }
 
-// orphFire は drainScopes の印の後: 世代を進め、ring / epoll で眠っているワーカー（眠りの語 2）を eventfd で起こす（rt.uring_poll の頭が走査する）
+// drainScopes の印の後: 世代を進め、ring / epoll で眠っているワーカー（眠りの語 2）を eventfd で起こす（rt.uring_poll の頭が走査する）
 func orphFire(st mut St) {
     if !st.orphOn {
         return
@@ -120,7 +120,7 @@ func orphFire(st mut St) {
     setCur(mut st, wd)
 }
 
-// orphPoll は rt.uring_poll の頭: 世代が動いていたら登録簿を走査する
+// rt.uring_poll の頭: 世代が動いていたら登録簿を走査する
 func orphPoll(st mut St) {
     if !st.orphOn {
         return

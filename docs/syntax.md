@@ -63,7 +63,7 @@ Go と同じ: 識別子、整数 / 浮動小数 / 文字リテラル（n 進は 
 | 名前付き戻り値 `(n int, err error)`、naked `return` | 持たない。`return` は必ず値を伴う | 決定 11 |
 | if / switch の初期化文 `if v, ok := m[k]; ok {` | 持たない。1 行前に `:=`。`v, ok` イディオムは `T?` + flow typing で消える | 決定 12 |
 | シャドーイング、`:=` の宣言 / 再代入混在 | シャドーイング禁止（コンパイルエラー。トップレベル名と同名のローカルも含む）。`:=` は左辺全部を新規宣言 | 決定 13 |
-| `init()`、副作用 import `import _ "p"`、dot import `import . "p"` | 持たない。トップレベルの束縛は const 式のみ（実行時初期化なし） | 決定 14、design-dev.md 第 2 の審査基準 |
+| `init()`、副作用 import `import _ "p"`、dot import `import . "p"` | 持たない。トップレベルの束縛は const 式のみ（実行時初期化なし — int の const と組み立ての const。language.md 25 節） | 決定 14、design-dev.md 第 2 の審査基準 |
 | 組み込み識別子の再束縛 `len := 3` | `len` `shape` `println` `await` `freeze` `keys` `bytes` `true` `false` `append` `delete` は予約語扱いで再束縛不可（ローカル束縛・型パラメータ・トップレベルの宣言の名前のすべて。検査は loader — 決定 13 と同じ置き場） | 決定 16・22・language.md 22・23・24 |
 | `defer` の「引数は defer 時、本体は出口」の二段階評価 | 式全体を出口で評価（Zig） | 決定 17 |
 | 旧 8 進リテラル `0755` | `0o755` のみ | 決定 18 |

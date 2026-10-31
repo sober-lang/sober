@@ -1,6 +1,6 @@
 package main
 
-// 標準ライブラリの効果の宣言（language.md 12 節の関数の効果 — effect の波 段 5b）: std の本体のある公開関数は `@effects` を必ず持ち、正の列挙は正規形
+// 標準ライブラリの効果の宣言（language.md 12 節の関数の効果）: std の本体のある公開関数は `@effects` を必ず持ち、正の列挙は正規形
 // （本体と名前の呼び出しから来る語 + 値を呼ぶ名前付き関数型の名前）と等しい。例えば std/hex の Format は `@effects()`・std/strings の ToUpper も `@effects()`、
 // std/http の Dispatch は `@effects(Handler, Before, After)`（ハンドラの値の効果は型の名前の項が受け持つ — 宣言は利用者のハンドラに依らない）。
 // 利用者の package の宣言は任意で、正の列挙は上界の主張（ここでは std の正規形と同じ形で書いてみる）

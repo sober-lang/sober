@@ -1,0 +1,709 @@
+package io
+
+// ファイル・標準ストリーム・ディレクトリの読み書き（language.md 28 節）と根の下の開き（OpenRoot / OpenUnder）。どの関数も同期の形で、バイト列は []byte で受け渡す。
+// 失敗は errno を写したラベル（NotFound・Denied・Timeout・Other）か、囲む task.Run の期限が尽きた後の Expired で返る。
+// text として読むなら `s := string(io.ReadFile(p)?)?`（UTF-8 の検査つき）
+
+import "std/strings"
+
+// 組み込みの宣言（息継ぎ ③ — 本体なし。鍵の実装はコンパイラの表: loader/intrinsic.sober・desugar / lower の SysKey）
+@intrinsic("read_file")
+func sysReadFile(path string) []byte
+
+@intrinsic("errno")
+func sysErrno() int
+
+@intrinsic("write_file")
+func sysWriteFile(path string, b []byte) int
+
+@intrinsic("write_fd")
+func sysWriteFd(fd int, b []byte) int
+
+@intrinsic("read_fd")
+func sysReadFd(fd int, n int) []byte
+
+@intrinsic("read_dir")
+func sysReadDir(path string) []byte
+
+@intrinsic("open")
+func sysOpen(path string) int
+
+@intrinsic("close")
+func sysClose(fd int) int
+
+@intrinsic("chunk_open")
+func sysChunkOpen(fd int, size int, gens int, off int) int
+
+@intrinsic("chunk_next")
+func sysChunkNext(rec int) []byte
+
+@intrinsic("chunk_close")
+func sysChunkClose(rec int) int
+
+// 今の task の期限（task.Run の deadline: — 子孫の task も継ぐ）が過ぎていれば 1。I/O 呼び出しの頭で見る（過ぎたら syscall を出さずに Timeout）。
+// deadline: を書かないプログラムでは定数 0（判定ごと畳まれる）
+@intrinsic("deadline")
+func sysDeadline() int
+
+// std 専用の生の syscall（language.md 28 節「生の syscall の囲い」— std/net と同じ信頼の島。根の下の開き OpenRoot / OpenUnder / Size が使う）
+@intrinsic("syscall")
+func sysCall(nr int, a int, b int, c int, d int, e int, f int) int
+
+@intrinsic("addr")
+func sysAddr(b []byte) int
+
+// fd を今の task の登録簿に積む（std/task のプログラムで task が死んでも出口で閉じる — sysOpen の積み方と同じ。逐次のプログラムでは何もしない）
+@intrinsic("fd_own")
+func sysFdOwn(fd int) int
+
+// ファイルの読み書きは同期 syscall の直呼び（Executor・block 効果は持ち込まない）
+
+// ファイルかディレクトリが無い（errno の ENOENT / ENOTDIR）
+type NotFound error
+
+// 許可が無い（errno の EACCES / EPERM / EROFS）
+type Denied error
+
+// 相手の事情のタイムアウト（errno の ETIMEDOUT〔110〕— connect の不達・TCP の再送の尽き）: リトライの余地がある側。
+// 自分の期限（deadline:）が尽きたのは Expired — 呼び手の行動が違うのでラベルを分ける（language.md 28 節「壊れ方の規律」）
+type Timeout error
+
+// 自分の期限が尽きた（language.md 28 節「デッドライン」）: 囲む task.Run の deadline: が過ぎた後に I/O 呼び出しを行った。走っていた io は完了まで待つ —
+// 期限の後に「次に呼んだ」I/O 関数がこれを返す（待ちの上限であって実行時間の上限ではない）。同じ期限の中でリトライしても無駄 — 上へ抜けるのが正
+type Expired error
+
+// 相手がもういない（language.md 28 節の net — 送信の EPIPE / ECONNRESET・受信の RST・接続の拒否を 1 本で。受信の FIN は失敗でなく列の終わり）
+type Closed error
+
+// 上のラベルに当たらない errno の開いたバケツ（language.md 13 節「正直な宣言」）。EISDIR・EINVAL（path に NUL）・ENAMETOOLONG など
+type Other error {
+    errno int
+}
+
+// errno → ラベル（Linux x86_64 の番号）
+func errOf(e int) error {
+    if e == 2 || e == 20 {
+        return NotFound{}
+    }
+    if e == 13 || e == 1 || e == 30 {
+        return Denied{}
+    }
+    if e == 110 {
+        return Timeout{}
+    }
+    return Other{errno: e}
+}
+
+// 標準ストリーム（language.md 28 節「標準ストリーム」— Stdin / Stdout / Stderr の 3 つだけ）。プロセスの寿命で開いていて Close が無く、
+// コピーしても害が無い値の型（同一性なし — Open が返す同一性の型 io.File とは別の型）。fd の番号は値にしない —
+// 非公開の型の封の欄 seal があるので外からは欄つきで書けず（utf8.View と同じ形）、int と Stream の間の変換の関数は無い。番号は std と rt の中にだけある。
+// ゼロ値 `io.Stream{}` は番号 0（Writer の欄としては標準出力へ読み替える — 下の Writer）
+type Stream struct {
+    fd int
+    seal streamSeal
+}
+
+// streamSeal は Stream の封（非公開 — 外で値を書けない）
+type streamSeal struct {
+}
+
+// 標準ストリーム（開いている fd 0 / 1 / 2）
+const Stdin = Stream{fd: 0, seal: streamSeal{}}
+const Stdout = Stream{fd: 1, seal: streamSeal{}}
+const Stderr = Stream{fd: 2, seal: streamSeal{}}
+
+// Open で開いたファイル（language.md 28 節「資源とストリーム」— 同一性を持つ型: 作る関数は Open だけ・後始末は同じブロックの
+// `defer io.Close(f)`・写せない・外へ出せない・give: では渡せない — 子は path から自分で開く。desugar/filecheck の規則）。fd の番号は封の欄の中で、std と rt の外に出ない。
+// 標準ストリームの Stream とは別の型（Stream はプロセスの寿命・Close なし・写して害なし）
+type File struct {
+    fd int
+    seal fileSeal
+}
+
+// fileSeal は File の封（非公開 — 外で値を書けない）
+type fileSeal struct {
+}
+
+// path のファイルを読むために開く（O_RDONLY）。開いたら同じブロックの直後の文で `defer io.Close(f)` を書く
+@errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(io, nondet)
+func Open(path string) (File, error?) {
+    if sysDeadline() != 0 {
+        return File{fd: -1, seal: fileSeal{}}, Expired{}
+    }
+    fd := sysOpen(path)
+    if fd < 0 {
+        return File{fd: -1, seal: fileSeal{}}, errOf(0 - fd)
+    }
+    return File{fd: fd, seal: fileSeal{}}, nil
+}
+
+// f を閉じる（Open の直後の defer でだけ書ける — desugar/filecheck。閉じる失敗は返さない: 読むためだけに開いた fd の close の失敗に打つ手は無い）
+@effects(io)
+func Close(f File) {
+    _ = sysClose(f.fd)
+}
+
+// 根として開いたディレクトリ（language.md 28 節「根の下の開き」— File と同じ同一性の型: 作る関数は OpenRoot だけ・後始末は同じブロックの
+// `defer io.CloseRoot(r)`・写せない・外へ出せない・give: では渡せない）。OpenUnder の根になる capability で、中身は O_PATH の fd（読み書きの口は無い）。
+// ディレクトリの項目の種類 EntryKind の Dir とは別物
+type Root struct {
+    fd int
+    seal rootSeal
+}
+
+// rootSeal は Root の封（非公開 — 外で値を書けない）
+type rootSeal struct {
+}
+
+// path のディレクトリを OpenUnder の根として開く（openat の O_PATH | O_DIRECTORY）。開いたら同じブロックの直後の文で `defer io.CloseRoot(r)` を書く。
+// ディレクトリでなければ NotFound（ENOTDIR）
+@errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(io, nondet)
+func OpenRoot(path string) (Root, error?) {
+    if sysDeadline() != 0 {
+        return Root{fd: -1, seal: rootSeal{}}, Expired{}
+    }
+    p := cstr(path)
+    if len(p) == 0 {
+        return Root{fd: -1, seal: rootSeal{}}, Other{errno: 22}
+    }
+    // 2686976 = O_PATH | O_DIRECTORY | O_CLOEXEC・-100 = AT_FDCWD
+    fd := owned(sysCall(257, -100, sysAddr(p), 2686976, 0, 0, 0))
+    if fd < 0 {
+        return Root{fd: -1, seal: rootSeal{}}, errOf(0 - fd)
+    }
+    return Root{fd: fd, seal: rootSeal{}}, nil
+}
+
+// r を閉じる（OpenRoot の直後の defer でだけ書ける — desugar/filecheck）
+@effects(io)
+func CloseRoot(r Root) {
+    _ = sysClose(r.fd)
+}
+
+// r の下の rel のファイルを読むために開く（openat2 の RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS）。開いたら同じブロックの直後の文で `defer io.Close(f)` を書く。
+// r の外へ出ないのはカーネルの保証: `..`・絶対パス・r の外を指す symlink は解決の途中で拒否されて Denied（EXDEV）— rel を文字列として検査しない。
+// r の中を指す symlink は辿る。fifo などを開いても塞がない（O_NONBLOCK — 通常のファイルの読みには効かない）。openat2 の無いカーネルでは
+// Other{errno: 38}（openat へ倒れない — 倒れると根の外へ出ない保証が消える）
+@errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(io, nondet)
+func OpenUnder(r Root, rel string) (File, error?) {
+    if sysDeadline() != 0 {
+        return File{fd: -1, seal: fileSeal{}}, Expired{}
+    }
+    p := cstr(rel)
+    if len(p) == 0 {
+        return File{fd: -1, seal: fileSeal{}}, Other{errno: 22}
+    }
+    // struct open_how（24 B）: flags = O_RDONLY | O_NONBLOCK | O_CLOEXEC（526336）・mode = 0・resolve = RESOLVE_NO_MAGICLINKS | RESOLVE_BENEATH（10）
+    mut how := mut []byte{0, 8, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0}
+    fd := owned(sysCall(437, r.fd, sysAddr(p), sysAddr(how), 24, 0, 0))
+    if fd == -18 {
+        return File{fd: -1, seal: fileSeal{}}, Denied{}
+    }
+    if fd < 0 {
+        return File{fd: -1, seal: fileSeal{}}, errOf(0 - fd)
+    }
+    return File{fd: fd, seal: fileSeal{}}, nil
+}
+
+// Stat が返す開いた File の属性（fstat 1 回 — 開いたその実体を見て path を引き直さない。kind に Symlink は来ない — 開くときに辿る）
+type FileInfo struct {
+    // 大きさ（バイト — st_size。通常のファイル以外は意味を持たない）
+    size int
+    // 更新時刻（st_mtim — Unix エポック〔1970 年 1 月 1 日 UTC〕からの ns。std/os の ModTime と同じ値）
+    modTime int
+    // 種類（Regular・Dir・Irregular〔fifo・socket・デバイス〕— Stat は必ず入れる。option にしてあるのは FileInfo にゼロ値を持たせるため
+    // 〔union はゼロ値を持たない — `(FileInfo, error?)` を返す関数の `?` の早期 return が FileInfo{} を要る〕）
+    kind EntryKind?
+}
+
+// f の属性（fstat(2) の大きさ・更新時刻・種類 — 通常のファイルでなくても誤りにしない: 判定は kind で呼び手が）
+@errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(io, nondet)
+func Stat(f File) (FileInfo, error?) {
+    if sysDeadline() != 0 {
+        return FileInfo{}, Expired{}
+    }
+    // struct stat（144 B — x86-64）: st_mode は 24 B 目の 4 B・st_size は 48 B 目の 8 B・st_mtim は 88 B 目（秒 8 B + ns 8 B）
+    mut sb := mut []byte{}
+    while len(sb) < 144 {
+        sb = append(sb, byte(0))
+    }
+    r := sysCall(5, f.fd, sysAddr(sb), 0, 0, 0, 0)
+    if r < 0 {
+        return FileInfo{}, errOf(0 - r)
+    }
+    mode := (int(sb[25]) * 256 + int(sb[24])) & 61440
+    k := if mode == 32768 { 8 } else if mode == 16384 { 4 } else { 0 }
+    return FileInfo{size: le64(sb, 48), modTime: le64(sb, 88) * 1000000000 + le64(sb, 96), kind: kindOf(k)}, nil
+}
+
+// le64 は b[at:at+8) の little endian の 64 ビット
+func le64(b []byte, at int) int {
+    mut n := 0
+    mut i := at + 7
+    while i >= at {
+        n = n * 256 + int(b[i])
+        i -= 1
+    }
+    return n
+}
+
+// cstr は s のバイト + 0（カーネルへ渡す C 文字列 — s が NUL を含めば空）
+func cstr(s string) []byte {
+    sb := bytes(s)
+    mut b := mut []byte{}
+    mut i := 0
+    while i < len(sb) {
+        if sb[i] == 0 {
+            return []byte{}
+        }
+        b = append(b, sb[i])
+        i += 1
+    }
+    b = append(b, 0)
+    return freeze(b)
+}
+
+// owned は開いた fd（負なら errno のまま返す）を今の task の登録簿に積む（番号が登録簿の上限以上なら閉じて EMFILE — sysOpen と同じ）
+func owned(fd int) int {
+    if fd < 0 {
+        return fd
+    }
+    if fd >= 65536 {
+        _ = sysCall(3, fd, 0, 0, 0, 0, 0)
+        return -24
+    }
+    _ = sysFdOwn(fd)
+    return fd
+}
+
+// f を今の位置から EOF まで全部読む（ReadFile の開いた File 版）。途中で失敗したら error（読めた分は捨てる）
+@errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(block, io, nondet)
+func ReadAll(f File) ([]byte, error?) { // 対の WriteAll は実需まで足さない（language.md 34 節 2 の注記・2026-10-20 ④）
+    if sysDeadline() != 0 {
+        return []byte{}, Expired{}
+    }
+    b := sysReadFd(f.fd, -1)
+    e := sysErrno()
+    if e != 0 {
+        return []byte{}, errOf(e)
+    }
+    return b, nil
+}
+
+// 読むだけのバイト列の View（Chunks / Lines の切片 — language.md 28 節「読みのストリーム」）。作れるのは std/io だけ（封 — utf8.View と同じ形）。
+// 中身は rt のスロット（貸出中の pool — region-domain-pool.md 4c 節）を指し、for の 1 反復の間だけ有効: 反復の外の変数への代入・return・送りは
+// 境界の写しになる（region の規則 — 外へは写してしか出せない）。書きの関数は無い
+type Bytes struct {
+    b []byte
+    seal bytesSeal
+}
+
+// bytesSeal は Bytes の封（非公開 — 外で値を書けない）
+type bytesSeal struct {
+}
+
+// v のバイト列（読むだけ — 同じ反復の中の View）
+@effects()
+func Raw(v Bytes) []byte {
+    return v.b
+}
+
+// 切片の大きさと世代の段数（案 P の既定 — 64 KiB × 2 のダブルバッファ。口は後便: Web 波の pool: 引数か、生成元の名前つき引数〔PINS〕とセットで）
+const chunkSize = 65536
+const chunkGens = 2
+
+// f を今の位置から EOF まで切片ずつ k へ渡す（失敗しうる生成元 — `for c <- io.Chunks(f)? { … }`）。切片は 1 回の読みの分
+// （通常のファイルは最後以外 64 KiB）。次の切片の読みは前の切片を渡している間に先に出す（ダブルバッファ）。読みの失敗は errno のラベル
+@errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(block, io, nondet)
+func Chunks(f File, k func(Bytes)) error? {
+    return chunksFrom(f, -1, k)
+}
+
+// f の off バイト目から EOF まで切片ずつ k へ渡す（Chunks と同じ切片・先読み — 読みは pread の形で f の位置を動かさない。
+// off が EOF 以上なら空の列・off < 0 は Other{errno: 22}）
+@errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(block, io, nondet)
+func ChunksAt(f File, off int, k func(Bytes)) error? {
+    if off < 0 {
+        return Other{errno: 22}
+    }
+    return chunksFrom(f, off, k)
+}
+
+// chunksFrom は Chunks / ChunksAt の本体（off = -1 は今の位置から read — 抜けたら先読みの分を巻き戻す）
+@errors(NotFound, Denied, Other, Timeout, Expired)
+func chunksFrom(f File, off int, k func(Bytes)) error? {
+    rec := sysChunkOpen(f.fd, chunkSize, chunkGens, off)
+    defer chunkEnd(rec)
+    while true {
+        // 切片ごとに期限を見る（先に出した読みは chunkEnd が完了を待つ — 打ち切らない）
+        if sysDeadline() != 0 {
+            return Expired{}
+        }
+        b := sysChunkNext(rec)
+        if len(b) == 0 {
+            e := sysErrno()
+            if e != 0 {
+                return errOf(e)
+            }
+            return nil
+        }
+        k(Bytes{b: b, seal: bytesSeal{}})
+    }
+    return nil
+}
+
+// chunkEnd はストリームを閉じる（出した読みの完了を待ってからスロットを返す）
+func chunkEnd(rec int) {
+    _ = sysChunkClose(rec)
+}
+
+// f の行を順に k へ渡す（区切り = '\n'・行末の '\r' は落とす・最後の行は改行が無くても渡す — Go の bufio.ScanLines と同じ）。
+// 行は切片の部分 View で、切片をまたぐ行だけ std の中で写す
+@errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(block, io, nondet)
+func Lines(f File, k func(Bytes)) error? {
+    mut carry := mut []byte{}
+    for c <- Chunks(f)? {
+        b := c.b
+        mut s := 0
+        while s < len(b) {
+            // 区切りを探す内側のループは呼び出しを持たない（反復ごとの region を開かない — 行の受け渡しは行ごとに 1 回）
+            mut i := s
+            while i < len(b) && b[i] != '\n' {
+                i += 1
+            }
+            if i == len(b) {
+                // 切片の終わりまで区切りが無い: 次の切片へ持ち越す
+                mut j := s
+                while j < len(b) {
+                    carry = append(carry, b[j])
+                    j += 1
+                }
+                s = len(b)
+            } else {
+                if len(carry) == 0 {
+                    k(Bytes{b: dropCR(b[s:i]), seal: bytesSeal{}})
+                } else {
+                    k(Bytes{b: dropCR(joined(carry, b[s:i])), seal: bytesSeal{}})
+                    carry = mut []byte{}
+                }
+                s = i + 1
+            }
+        }
+    }
+    if len(carry) > 0 {
+        k(Bytes{b: dropCR(joined(carry, []byte{})), seal: bytesSeal{}})
+    }
+    return nil
+}
+
+// dropCR は末尾の '\r' を 1 つ落とす
+func dropCR(b []byte) []byte {
+    if len(b) > 0 && b[len(b) - 1] == '\r' {
+        return b[0:len(b) - 1]
+    }
+    return b
+}
+
+// joined は a + b の新しいバイト列（切片をまたぐ行の写し）
+func joined(a []byte, b []byte) []byte {
+    mut out := mut []byte{}
+    for x <- a {
+        out = append(out, x)
+    }
+    for x <- b {
+        out = append(out, x)
+    }
+    return freeze(out)
+}
+
+// path のファイルを全部読む
+@errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(io, nondet)
+func ReadFile(path string) ([]byte, error?) {
+    if sysDeadline() != 0 {
+        return []byte{}, Expired{}
+    }
+    b := sysReadFile(path)
+    e := sysErrno()
+    if e != 0 {
+        return []byte{}, errOf(e)
+    }
+    return b, nil
+}
+
+// path に b を書く（作成 / 切り詰め、0644）。/dev/stdout への追記には使わない（切り詰める）— WriteStdout を使う
+@errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(io, nondet)
+func WriteFile(path string, b []byte) error? {
+    if sysDeadline() != 0 {
+        return Expired{}
+    }
+    e := sysWriteFile(path, b)
+    if e != 0 {
+        return errOf(e)
+    }
+    return nil
+}
+
+// 開いている標準出力（fd 1）へ b を書く（open しないので切り詰めない）。println の行バッファに残りがあれば先に出す
+// （出る順 = 呼んだ順。ただし std/task の task の中では println の行は spawn の木の先行順で出る〔溜まりうる〕ので、直書きとの順は約束しない —
+// language.md 11 節）
+@errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(io, nondet)
+func WriteStdout(b []byte) error? {
+    if sysDeadline() != 0 {
+        return Expired{}
+    }
+    e := sysWriteFd(1, b)
+    if e != 0 {
+        return errOf(e)
+    }
+    return nil
+}
+
+// 標準入力（fd 0）を EOF まで全部読む（同期 — Unix フィルタの入口。text なら `string(io.ReadStdin()?)?`）。
+// 途中で失敗したら error（読めた分は捨てる）
+@errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(block, io, nondet)
+func ReadStdin() ([]byte, error?) {
+    if sysDeadline() != 0 {
+        return []byte{}, Expired{}
+    }
+    b := sysReadFd(0, -1)
+    e := sysErrno()
+    if e != 0 {
+        return []byte{}, errOf(e)
+    }
+    return b, nil
+}
+
+// 開いている標準エラー（fd 2）へ b を書く（WriteStdout と同じ規則）
+@errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(io, nondet)
+func WriteStderr(b []byte) error? {
+    if sysDeadline() != 0 {
+        return Expired{}
+    }
+    e := sysWriteFd(2, b)
+    if e != 0 {
+        return errOf(e)
+    }
+    return nil
+}
+
+// ディレクトリの項目の種類（getdents64 の d_type）。Regular = 通常のファイル・Irregular = 上の 3 つ以外（fifo・socket・デバイス・DT_UNKNOWN）
+type EntryKind union {
+    Regular {}
+    Dir {}
+    Symlink {}
+    Irregular {}
+}
+
+// ReadDir が返すディレクトリの項目 1 つ（名前と種類）
+type DirEntry struct {
+    Name string
+    Kind EntryKind
+}
+
+func kindOf(t int) EntryKind {
+    if t == 8 {
+        return Regular{}
+    }
+    if t == 4 {
+        return Dir{}
+    }
+    if t == 10 {
+        return Symlink{}
+    }
+    return Irregular{}
+}
+
+// dot は名前が "." か ".." か
+func dot(nb []byte) bool {
+    return (len(nb) == 1 && nb[0] == '.') || (len(nb) == 2 && nb[0] == '.' && nb[1] == '.')
+}
+
+// less は名前のバイト列の辞書順（LC_ALL=C sort と同じ）
+func less(a string, b string) bool {
+    x := bytes(a)
+    y := bytes(b)
+    mut i := 0
+    while i < len(x) && i < len(y) && x[i] == y[i] {
+        i += 1
+    }
+    return if i < len(x) && i < len(y) { x[i] < y[i] } else { len(x) < len(y) }
+}
+
+// path の項目を名前のバイト順で返す（`.` / `..` は含めない — Go の os.ReadDir と同じ）。
+// 並びはファイルシステムの列挙順に依らない（loader の決定性 — language.md 29 節）。名前が 1 つでも不正な UTF-8 なら全体が strings.InvalidUtf8
+@errors(NotFound, Denied, Other, Timeout, Expired, strings.InvalidUtf8)
+@effects(io, nondet)
+func ReadDir(path string) ([]DirEntry, error?) {
+    // 「d_type + 名前のバイト + 0」の連結（getdents64 の順のまま）
+    if sysDeadline() != 0 {
+        return []DirEntry{}, Expired{}
+    }
+    b := sysReadDir(path)
+    e := sysErrno()
+    if e != 0 {
+        return []DirEntry{}, errOf(e)
+    }
+    mut es := mut []DirEntry{}
+    mut i := 0
+    while i < len(b) {
+        mut j := i + 1
+        while b[j] != 0 {
+            j += 1
+        }
+        nb := b[i + 1:j]
+        if !dot(nb) {
+            name := string(nb)?
+            es = append(es, DirEntry{Name: name, Kind: kindOf(int(b[i]))})
+        }
+        i = j + 1
+    }
+    // 挿入ソート（1 ディレクトリの項目数なので素朴でよい — 並べ替えは es の中だけで、region を伸ばさない）
+    mut k := 1
+    while k < len(es) {
+        x := es[k]
+        mut m := k
+        while m > 0 && less(x.Name, es[m - 1].Name) {
+            es[m] = es[m - 1]
+            m -= 1
+        }
+        es[m] = x
+        k += 1
+    }
+    return freeze(es), nil
+}
+
+// 書きバッファ（定常メモリで流す — 64 KiB のバッファを添字で使い回し、満杯で書き出す。溜め込んで最後に 1 回書く形の RSS の回避）:
+//
+//     mut w := io.Writer{}            // ゼロ値は標準出力へ書く（欄 to のゼロ値 = 番号 0 は標準出力へ読み替える — 標準入力へは書かない）。標準エラーへは io.SetFile(mut w, io.Stderr)
+//     io.WriteString(mut w, "hello\n")
+//     io.WriteByte(mut w, 'x')
+//     err := io.Flush(mut w)          // 残りを書き出す — 最後に Flush しないとバッファに残った分は書かれない
+//
+// 書き出しの失敗は err に貯め（以後の書き出しはしない — 失敗の後に書いたバイトは捨てられる）、Flush が返す（bufio と同じ「後で返す」）。Flush が失敗を返すと貯めた失敗は消え、次の書き出しから再び書く。
+// 構築の関数（WriterOf）を持たないのは、mut の欄を持つ struct を関数から返す形を check が受けないため（language.md 26 節 G3）— ゼロ値 + SetFile の形にした
+type Writer struct {
+    to Stream
+    buf mut []byte
+    n int
+    err int
+}
+
+const writerSize = 65536
+
+// 書き出す先を f に変える（io.Stdout / io.Stderr — 番号は Stream の中に閉じる）
+@effects()
+func SetFile(w mut Writer, f Stream) {
+    w.to = f
+}
+
+// 1 バイト書く（速い道 = 空きがあれば書いて進めるだけ — 呼び手に展開される大きさに保つ。満杯・初回は writerByteSlow）
+@effects(io, nondet)
+func WriteByte(w mut Writer, c byte) {
+    if w.n < len(w.buf) {
+        w.buf[w.n] = c
+        w.n += 1
+    } else {
+        writerByteSlow(mut w, c)
+    }
+}
+
+// writerByteSlow は枠に空きを作ってから 1 バイト書く（WriteByte の遅い道 — 展開しない: 速い道を小さく保つ）
+@noinline
+func writerByteSlow(w mut Writer, c byte) {
+    writerRoom(mut w)
+    w.buf[w.n] = c
+    w.n += 1
+}
+
+// バイト列を書く（バッファの空きの分ずつ — 内側は添字の写しの形で、最適化のバックエンドが一括の写しにする）
+@effects(io, nondet)
+func WriteBytes(w mut Writer, b []byte) {
+    mut i := 0
+    while i < len(b) {
+        if w.n == len(w.buf) {
+            writerRoom(mut w)
+        }
+        at := w.n
+        k := if len(b) - i < len(w.buf) - at { len(b) - i } else { len(w.buf) - at }
+        mut j := 0
+        while j < k {
+            w.buf[at + j] = b[i + j]
+            j += 1
+        }
+        w.n = at + k
+        i += k
+    }
+}
+
+// 文字列を書く
+@effects(io, nondet)
+func WriteString(w mut Writer, s string) {
+    WriteBytes(mut w, bytes(s))
+}
+
+// バッファに残った分を書き出し、それまでの書き出しの失敗を返す（返したら失敗は消える）
+@errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(io, nondet)
+func Flush(w mut Writer) error? {
+    writerSpill(mut w)
+    if w.err != 0 {
+        e := w.err
+        w.err = 0
+        if e < 0 {
+            return Expired{}
+        }
+        return errOf(e)
+    }
+    return nil
+}
+
+// writerRoom は枠に空きを作る: 初回は枠を確保し、以後は満杯の枠を書き出して空にする
+func writerRoom(w mut Writer) {
+    if len(w.buf) == 0 {
+        while len(w.buf) < writerSize {
+            w.buf = append(w.buf, byte(0))
+        }
+        return
+    }
+    writerSpill(mut w)
+}
+
+// writerSpill は枠の中身を書き出して空にする（失敗を貯めた後は書かない）。満杯の枠はそのまま渡し、端数（Flush）は n バイトを写して渡す
+// （mut の slice は切り出せない — 枠を freeze すると以後の書き込みが use-after-freeze になるので、端数だけ写す。写すのは Flush ごとに 64 KiB まで）
+func writerSpill(w mut Writer) {
+    if w.n > 0 && w.err == 0 {
+        fd := if w.to.fd == 0 { 1 } else { w.to.fd }
+        mut e := 0
+        if sysDeadline() != 0 {
+            // 期限切れ（負の印 — Flush が Expired で返す。正の値は errno）: 書かずに失敗を貯める
+            e = 0 - 110
+        } else if w.n == len(w.buf) {
+            e = sysWriteFd(fd, w.buf)
+        } else {
+            mut part := mut []byte{}
+            mut i := 0
+            while i < w.n {
+                part = append(part, w.buf[i])
+                i += 1
+            }
+            e = sysWriteFd(fd, freeze(part))
+        }
+        if e != 0 {
+            w.err = e
+        }
+    }
+    w.n = 0
+}

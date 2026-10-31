@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P3a-1d: handle（task.Handle）の捕獲（diag.Par kind 6 — check と build が同じ拒否。desugar/parcheck.sober）
+// handle（task.Handle）の捕獲（diag.Par kind 6 — check と build が同じ拒否。desugar/parcheck.sober）
 
 import "std/task"
 

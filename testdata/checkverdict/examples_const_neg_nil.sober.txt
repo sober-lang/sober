@@ -1,0 +1,2 @@
+sober: load error at examples/const_neg_nil.sober:4:30: const expression: nil is allowed only as a field value
+exit=1

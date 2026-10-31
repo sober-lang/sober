@@ -1,6 +1,6 @@
 package tls
 
-// std/internal/hs の拒否の網（TLS 便 R3 — report-811 4 節 / 828・2026-10-20 に examples/tls_reject から移した — hs は std の内側）: ClientHello を組み立てて
+// std/internal/hs の拒否の網（hs は std の内側）: ClientHello を組み立てて
 // （偽の転送路で）Feed に通し、サーバが返す alert の番号を照合する。TLS 1.2 だけの ClientHello = protocol_version（70）・X25519 も PSS も共通の suite も
 // 無い = handshake_failure（40）・圧縮・重複の拡張・短い / ゼロの key_share・HRR の後も X25519 が無い = illegal_parameter（47）・ALPN の不一致 =
 // no_application_protocol（120）・読めない = decode_error（50）・最初に application_data / CCS 2 枚 = unexpected_message（10）・改竄した record =
@@ -22,7 +22,7 @@ func rjParams() hs.Params {
     return hs.NewParams([][]byte{cb[0].der}, k, []string{"http/1.1"}, []int{record.AesGcm, record.ChaCha}, bytes("sober-tls-reject"))
 }
 
-// rjHello は組み立てる ClientHello の形
+// 組み立てる ClientHello の形
 type rjHello struct {
     versions []int      // supported_versions（空 = 拡張なし）
     groups []int        // supported_groups
@@ -63,7 +63,7 @@ func rjPb(o mut []byte, b []byte) {
     }
 }
 
-// rjExt は拡張 1 つ（型 ‖ 長さ ‖ 中身）
+// 拡張 1 つ（型 ‖ 長さ ‖ 中身）
 func rjExt(o mut []byte, t int, body []byte) {
     rjP16(mut o, t)
     rjP16(mut o, len(body))
@@ -83,7 +83,7 @@ func rjU16list(xs []int, w1 bool) []byte {
     return freeze(b)
 }
 
-// rjClientHello は h の ClientHello の record（平文 — 頭 5 バイト込み）。cut > 0 なら本体を cut バイトで打ち切る
+// h の ClientHello の record（平文 — 頭 5 バイト込み）。cut > 0 なら本体を cut バイトで打ち切る
 func rjClientHello(h rjHello, cut int) []byte {
     mut x := mut []byte{}
     if len(h.versions) > 0 {
@@ -140,7 +140,7 @@ func rjClientHello(h rjHello, cut int) []byte {
     return rjRec(22, freeze(m))
 }
 
-// rjRec は平文の record
+// 平文の record
 func rjRec(ct int, body []byte) []byte {
     mut o := mut []byte{}
     rjP8(mut o, ct)
@@ -163,7 +163,7 @@ func rjDesc(e error?) int {
     }
 }
 
-// rjRun は s を 1 切片で流して、最初の誤りの alert の番号（無ければ 0）と送ったバイト数と接続の状態を返す
+// s を 1 切片で流して、最初の誤りの alert の番号（無ければ 0）と送ったバイト数と接続の状態を返す
 func rjRun(s []byte) (int, int, bool) {
     mut h := hs.New()
     mut sent := 0
@@ -188,7 +188,7 @@ func rjFrames(s []byte, h mut hs.Hs, sent mut int, d mut int) error? {
     return nil
 }
 
-// rjBadFin は正しい ClientHello の後の、client handshake traffic secret の鍵で封じた Finished（verify_data = vd）
+// 正しい ClientHello の後の、client handshake traffic secret の鍵で封じた Finished（verify_data = vd）
 func rjBadFin(ch []byte) []byte {
     mut h := hs.New()
     mut sent := 0
@@ -214,7 +214,7 @@ func rjFirstWord(s string) string {
     return w
 }
 
-// rjCase は拒否の場合 1 つ（名前・流すバイト列・期待する alert の番号）
+// 拒否の場合 1 つ（名前・流すバイト列・期待する alert の番号）
 type rjCase struct {
     name string
     s []byte

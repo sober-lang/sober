@@ -1,6 +1,6 @@
 package main
 
-// http.ServeWith（TLS 便 R5 — report-811 3 節）: 転送路の受けの口 recv と送りの口 send を渡す形。ここではネットの代わりに、recv は決まった
+// http.ServeWith: 転送路の受けの口 recv と送りの口 send を渡す形。ここではネットの代わりに、recv は決まった
 // 要求の列を 1 切片で渡す偽の転送路・send は送られた応答のバイト列を印字する（net の接続なら ServeConn = `ServeWith((k) => net.Recv(c, k), (b) => net.Send(c, b), …)`・
 // TLS なら `(k) => tls.Recv(c, k)` / `(b) => tls.Send(c, b)`）。stream の応答の emit も send を通る（展開待ちの捕捉 — language.md 25 節 (α-L0)）
 

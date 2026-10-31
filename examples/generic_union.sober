@@ -1,6 +1,6 @@
 package main
 
-// ジェネリック union（language.md 25 節 — 2026-09-30 の段 (1): 明示の型引数）: 型式 Opt[int]・variant のリテラル Some[int]{…} / None[int]{}・
+// ジェネリック union（language.md 25 節 — 明示の型引数）: 型式 Opt[int]・variant のリテラル Some[int]{…} / None[int]{}・
 // switch の型パターン（欄の型は subject の型引数で代入）・2 引数の Pair[A, B]・struct の欄・ジェネリック関数の仮引数 Opt[T]
 
 type Opt[T] union {

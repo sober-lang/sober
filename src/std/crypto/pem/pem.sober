@@ -55,7 +55,7 @@ func Parse(text string) ([]Block, error?) {
     return freeze(out), nil
 }
 
-// splitLines は改行で切った行（行末の CR と前後の空白は落とす）
+// 改行で切った行（行末の CR と前後の空白は落とす）
 func splitLines(b []byte) [][]byte {
     mut out := mut [][]byte{}
     mut cur := mut []byte{}
@@ -86,7 +86,7 @@ func trim(b []byte) []byte {
     return freeze(out)
 }
 
-// between は l が pre で始まり post で終わるならその間（でなければ nil）
+// l が pre で始まり post で終わるならその間（でなければ nil）
 func between(l []byte, pre string, post string) string? {
     p := bytes(pre)
     q := bytes(post)
@@ -110,7 +110,7 @@ func between(l []byte, pre string, post string) string? {
     return bytesToString(freeze(mid))
 }
 
-// base64 は標準の字母の base64 の中身（第 2 の値 = 綴りが違う）
+// 標準の字母の base64 の中身（第 2 の値 = 綴りが違う）
 func base64(s []byte) ([]byte, bool) {
     if len(s) % 4 != 0 {
         return []byte{}, true

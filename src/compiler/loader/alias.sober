@@ -1,6 +1,6 @@
 package loader
 
-// 型の別名 `type A = B`（language.md 32 節「型の別名」— report-1043）と定義型の下地の検査（同 32 節 — 宣言の位置）。
+// 型の別名 `type A = B`（language.md 32 節「型の別名」）と定義型の下地の検査（同 32 節 — 宣言の位置）。
 // 別名は透過: finish の最初の段（intrinsic・layout・jsonshape の前 — どれも型を名前で引く）で、別名を指す名前を全部実体の名前へ書き換える。
 // 実体の package を import していないファイルには合成の import `$a<k>`（k = 実体の package のパスごとに全体で 1 つ — 同じ参照名に別のパスが来ない）を足す
 // — 参照名が `$` なので internal の検問とファイルごとの import の検査の外（補間の裏方の `$utf8` と同じ線）。
@@ -24,7 +24,7 @@ const TD_TPARAMS = 3
 const TD_HIDDEN = 4
 const TD_LEFT = 5
 
-// AliasTab は別名の表: 別名（宣言の package のパス + " " + 名前）→ 番号・実体（パスと名前）・合成の import のパスの列
+// 別名の表: 別名（宣言の package のパス + " " + 名前）→ 番号・実体（パスと名前）・合成の import のパスの列
 type AliasTab struct {
     idx map[string]int
     // 別名の名前（package を問わない — 節ごとの引きの前の篩）
@@ -42,7 +42,7 @@ func aliasKey(path string, name string) string {
     return "${path} ${name}"
 }
 
-// aliasDeclOf は package path の型宣言 name の（ファイル, 節）— 無ければ（-1, -1）
+// package path の型宣言 name の（ファイル, 節）— 無ければ（-1, -1）
 func aliasDeclOf(ts []ast.Tree, fpkg []string, path string, name string) (int, int) {
     for f <- iter.Range(0, len(ts)) {
         if fpkg[f] == path {
@@ -63,7 +63,7 @@ func builtinTypeName(n string) bool {
     return n == "int" || n == "bool" || n == "byte" || n == "float" || n == "string" || n == "error"
 }
 
-// aliasAll は別名を解決して参照を書き換え、定義型の下地を検査する（別名も定義型も無いプログラムは木を写さない）
+// 別名を解決して参照を書き換え、定義型の下地を検査する（別名も定義型も無いプログラムは木を写さない）
 @errors(diag.TypeDecl)
 func aliasAll(ts []ast.Tree, fpkg []string) ([]ast.Tree, AliasTab, error?) {
     // 1. 定義型の下地（int / bool だけ — 32 節）と別名の宣言の列
@@ -126,7 +126,7 @@ func aliasAll(ts []ast.Tree, fpkg []string) ([]ast.Tree, AliasTab, error?) {
     return freeze(out), tab, nil
 }
 
-// aliasTarget はファイル f の別名の宣言の節 d の実体（パス, 名前, -1）— 拒否なら kind（3 番目 — TD_*）。鎖は別名の数 n を越えたら循環
+// ファイル f の別名の宣言の節 d の実体（パス, 名前, -1）— 拒否なら kind（3 番目 — TD_*）。鎖は別名の数 n を越えたら循環
 func aliasTarget(ts []ast.Tree, fpkg []string, f0 int, d0 int, n int) (string, string, int) {
     mut f := f0
     mut d := d0
@@ -169,7 +169,7 @@ func aliasTarget(ts []ast.Tree, fpkg []string, f0 int, d0 int, n int) (string, s
     return "", "", TD_CYCLE
 }
 
-// aliasRef は名前 s（`N` か `ref.N` — ファイル t・package pkg に書いた）が別名を指すなら実体の綴り（ok = true）。
+// 名前 s（`N` か `ref.N` — ファイル t・package pkg に書いた）が別名を指すなら実体の綴り（ok = true）。
 // 綴りは、実体が同じ package なら裸の名前・ファイルが実体の package を import していればその参照名・でなければ合成の参照名 `$a<k>`（syn = k — 呼び手が import を足す）
 func aliasRef(t ast.Tree, pkg string, tab AliasTab, s string) (string, int, bool) {
     ref, base, dotted := strings.Cut(s, ".")
@@ -201,7 +201,7 @@ func aliasRef(t ast.Tree, pkg string, tab AliasTab, s string) (string, int, bool
     return "$a${k}.${tn}", k, true
 }
 
-// refOfPath はファイル t が path を import する参照名（無ければ ""）
+// ファイル t が path を import する参照名（無ければ ""）
 func refOfPath(t ast.Tree, path string) string {
     imps := t.nodes[t.file].b
     for k <- iter.Range(0, ast.ListLen(t, imps)) {
@@ -213,7 +213,7 @@ func refOfPath(t ast.Tree, path string) string {
     return ""
 }
 
-// aliasSite は節 x が別名を指す名前を持つなら（新しい綴り, 合成の参照名の番号 — 無ければ -1）。選択子 `ref.N` は基の EIdent の名前と欄の名前を繋いで読む
+// 節 x が別名を指す名前を持つなら（新しい綴り, 合成の参照名の番号 — 無ければ -1）。選択子 `ref.N` は基の EIdent の名前と欄の名前を繋いで読む
 func aliasSite(t ast.Tree, pkg string, tab AliasTab, x ast.Node) (string, int, bool) {
     if x.kind == ast.TName || x.kind == ast.TGeneric || x.kind == ast.EComposite || x.kind == ast.EIdent {
         return aliasRef(t, pkg, tab, Name(t, x.a))
@@ -227,7 +227,7 @@ func aliasSite(t ast.Tree, pkg string, tab AliasTab, x ast.Node) (string, int, b
     return "", 0 - 1, false
 }
 
-// aliasFile はファイル t の別名の参照を実体の綴りへ写す（参照が無ければ t のまま）
+// ファイル t の別名の参照を実体の綴りへ写す（参照が無ければ t のまま）
 func aliasFile(t ast.Tree, pkg string, tab AliasTab) ast.Tree {
     n0 := len(t.nodes)
     mut hit := false
@@ -286,7 +286,7 @@ func aliasFile(t ast.Tree, pkg string, tab AliasTab) ast.Tree {
     return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
 }
 
-// aliasStripCx は cx の木から別名の宣言を剥がす（別名の無いプログラムは cx のまま — finish の段。finish を太らせないよう関数に出す）
+// cx の木から別名の宣言を剥がす（別名の無いプログラムは cx のまま — finish の段。finish を太らせないよう関数に出す）
 func aliasStripCx(cx Cx, tab AliasTab) Cx {
     if len(tab.tname) == 0 {
         return cx
@@ -294,7 +294,7 @@ func aliasStripCx(cx Cx, tab AliasTab) Cx {
     return Cx{aliasStrip(cx.trees), cx.file_pkg, cx.pkg_path, cx.pkg_lo, cx.pkg_hi, cx.imp_pkg, cx.imp_ref, cx.imp_path, cx.tys}
 }
 
-// aliasLeftCx は finish の最後の fail-closed の検査（aliasLeft — ファイルの package のパスは cx の表から）
+// finish の最後の fail-closed の検査（aliasLeft — ファイルの package のパスは cx の表から）
 func aliasLeftCx(cx Cx, tab AliasTab) diag.Pos {
     if len(tab.tname) == 0 {
         return diag.None()
@@ -306,7 +306,7 @@ func aliasLeftCx(cx Cx, tab AliasTab) diag.Pos {
     return aliasLeft(cx.trees, freeze(fps), tab)
 }
 
-// aliasStrip は別名の宣言を型宣言の列から外す（別名の無いファイルは写さない）
+// 別名の宣言を型宣言の列から外す（別名の無いファイルは写さない）
 func aliasStrip(ts []ast.Tree) []ast.Tree {
     mut out := mut []ast.Tree{}
     for f <- iter.Range(0, len(ts)) {
@@ -339,7 +339,7 @@ func aliasStrip(ts []ast.Tree) []ast.Tree {
     return freeze(out)
 }
 
-// aliasLeft は書き換えの後の木（finish の最後 — loader の全部の段の後）に、別名を指す名前か剥がし残りの別名の宣言があれば最初の位置（無ければ file = -1）。
+// 書き換えの後の木（finish の最後 — loader の全部の段の後）に、別名を指す名前か剥がし残りの別名の宣言があれば最初の位置（無ければ file = -1）。
 // fail-closed の網: 名前を持つ節の種類の列は書き換えの列（aliasSite）と独立に持つ（片方の漏れをもう片方が拾う）— 型パターンの variant の名前も見る
 func aliasLeft(ts []ast.Tree, fpkg []string, tab AliasTab) diag.Pos {
     if len(tab.tname) == 0 {

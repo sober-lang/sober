@@ -1,0 +1,12 @@
+package propsbad
+
+import "std/quick"
+
+func TestAssertInProperty() {
+    mut q := quick.New()
+    quick.Check(mut q, () => {
+        x := quick.Int(mut q, 0, 9)
+        assert(x >= 0)
+        true
+    })
+}

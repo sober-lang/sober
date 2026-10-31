@@ -1,7 +1,7 @@
 package main
 
-// 段 6 P3a（language.md 11 節 — A1 (X)）: 死の扱いの 3 通り。task.Try は子の死を値（Outcome.Died）で見る・scope の err は
-// 完走したが死んだ子（ChildDied）。build は即時形（P3a-2b — 子は Spawn の時点で走る）
+// language.md 11 節: 死の扱いの 3 通り。task.Try は子の死を値（Outcome.Died）で見る・scope の err は
+// 完走したが死んだ子（ChildDied）。build は即時形（子は Spawn の時点で走る）
 
 import "std/task"
 

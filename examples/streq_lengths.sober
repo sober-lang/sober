@@ -2,7 +2,7 @@ package main
 
 import "std/iter"
 
-// 短い等値の速い道の網（report-450 / 451）: 長さ 0〜20 の文字列を、同じ長さで 1 バイトだけ違う相手（位置 0〜n−1 × 違いのビット 0x01 / 0x40）・
+// 短い文字列の等値比較を広く検査する: 長さ 0〜20 の文字列を、同じ長さで 1 バイトだけ違う相手（位置 0〜n−1 × 違いのビット 0x01 / 0x40）・
 // 長さだけ違う相手・同じ中身の別のセル列と == / != で比べて、外れた数を出す。リテラルとの比較（呼び出し点で閉じる道 — 長さ 0〜9 のリテラル）も同じ表で。
 // 期待は全部 0（下位 n バイトだけ比べるシフトの量・長さの先比べ・リテラルの語の詰め方のどれかがずれると数が出る）
 
@@ -15,17 +15,17 @@ func mk(n int, at int, bit int) string {
     return string(freeze(b)) catch ""
 }
 
-// lit は長さ n のリテラル（mk(n, -1, 0) と同じ中身）
+// 長さ n のリテラル（mk(n, -1, 0) と同じ中身）
 func lit(n int) string {
     return if n == 0 { "" } else if n == 1 { "a" } else if n == 2 { "ab" } else if n == 3 { "abc" } else if n == 4 { "abcd" } else if n == 5 { "abcde" } else if n == 6 { "abcdef" } else if n == 7 { "abcdefg" } else if n == 8 { "abcdefgh" } else { "abcdefghi" }
 }
 
-// litEq は x を長さ n のリテラルと == で比べる（リテラルが右辺 — 呼び出し点で閉じる形）
+// x を長さ n のリテラルと == で比べる（リテラルが右辺 — 呼び出し点で閉じる形）
 func litEq(x string, n int) bool {
     return if n == 0 { x == "" } else if n == 1 { x == "a" } else if n == 2 { x == "ab" } else if n == 3 { x == "abc" } else if n == 4 { x == "abcd" } else if n == 5 { x == "abcde" } else if n == 6 { x == "abcdef" } else if n == 7 { x == "abcdefg" } else if n == 8 { x == "abcdefgh" } else { x == "abcdefghi" }
 }
 
-// litNe は x を長さ n のリテラルと != で比べる（リテラルが左辺）
+// x を長さ n のリテラルと != で比べる（リテラルが左辺）
 func litNe(x string, n int) bool {
     return if n == 0 { "" != x } else if n == 1 { "a" != x } else if n == 2 { "ab" != x } else if n == 3 { "abc" != x } else if n == 4 { "abcd" != x } else if n == 5 { "abcde" != x } else if n == 6 { "abcdef" != x } else if n == 7 { "abcdefg" != x } else if n == 8 { "abcdefgh" != x } else { "abcdefghi" != x }
 }

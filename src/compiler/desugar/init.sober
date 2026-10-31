@@ -8,7 +8,7 @@ import "loader"
 import "std/iter"
 import "std/table"
 
-// desc は節の種類 k の 6 欄の付け替え（d6 の符号）
+// 節の種類 k の 6 欄の付け替え（d6 の符号）
 func desc(k int) int {
     return switch k {
     case ast.EIdent | ast.EStrlit | ast.EMutArg | ast.TName: d6(2, 0, 0, 0, 0, 0)
@@ -45,14 +45,14 @@ func desc(k int) int {
     }
 }
 
-// initState は Program p からヒープと表を組む
+// Program p からヒープと表を組む
 func initState(st mut S, p loader.Program) {
     // 0 番地は使わない（無し = -1 と取り違えないための詰め物）
     put(mut st, 0)
     // 表層 AST（astref.sober）: loader の木を imm のまま持ち、写さない（節 = ABASE + ファイル × FW + 添字）
     checkTrees(p.trees)
     st.trees = p.trees
-    // 値の位置の判定の口と捕捉の表（closure.sober — クロージャの波 工程 3b）
+    // 値の位置の判定の口と捕捉の表（closure.sober）
     st.fvcx = loader.ProgCx(p)
     st.capFile = p.cap_file
     afs := loader.FnValAnonFields(st.fvcx)
@@ -75,8 +75,8 @@ func initState(st mut S, p loader.Program) {
         zd = append(zd, p.z_decl[i * 4 + 3])
     }
     st.zdecl = freeze(zd)
-    // ハッシュ表の頭の数（型の intern・表層型の表）は木の大きさから（3'' 第 2 段 (c) — 以前は脱糖のたびに 65536 × 2 語を 0 埋め。
-    // 鎖の頭の数は引き当ての速さだけを変え、記録の順・出力は変えない）
+    // ハッシュ表の頭の数（型の intern・表層型の表）は木の大きさから決める（固定サイズで毎回 0 埋めする無駄を避ける）。
+    // 鎖の頭の数は引き当ての速さだけを変え、記録の順・出力は変えない
     st.hbuckets = bucketsFor(p.trees)
     st.descs = descTable()
     st.utf8 = int(strLit(mut st, "$utf8"))
@@ -172,18 +172,23 @@ func initState(st mut S, p loader.Program) {
     }
     // 名前付き関数型の展開（関数の引数・結果、型宣言のフィールド）。木は imm なので、変わった節だけ合成の表に作り直す（案 B —
     // 関数は KParam・KFuncDecl を作り直して関数表の節を差し替え、型宣言は KField から KFile までを作り直してファイルの根を差し替える）
-    k = 0
-    while k < st.nfn {
-        expandFunc(mut st, k)
-        k += 1
-    }
-    f = 0
-    while f < st.nfile {
-        expandFileTypes(mut st, f)
-        f += 1
+    // package ごとに依存の後順（tyPlan — TypeAll と同じ順）: 作り直した節は package の区画（合成の節の [lo, hi)）に積まれる
+    tyPlan(mut st)
+    for q <- iter.Range(0, st.npkg) {
+        pk := hget(mut st, st.ty.pord + 1 + q)
+        s0 := table.Len(mut st.syn)
+        for j <- iter.Range(hget(mut st, st.ty.fo + 1 + pk), hget(mut st, st.ty.fo + 2 + pk)) {
+            expandFunc(mut st, hget(mut st, st.ty.ford + 1 + j))
+        }
+        flo := PkgFlo(mut st, pk)
+        fhi := PkgFhi(mut st, pk)
+        for i <- iter.Range(flo, fhi) {
+            expandFileTypes(mut st, if st.ty.frev != 0 { fhi - 1 - (i - flo) } else { i })
+        }
+        prSet(mut st, pk, PRSYN, s0, table.Len(mut st.syn))
     }
     // 型の索引は expandFunc の途中（仮引数の型の展開の LookupTypeDecl）に展開前の根から組まれうる — 展開後の型宣言の節へ差し替える
-    // （lower の型表は展開後の根から組むので、古い節のままだと infoOf が引けない — 14 節の UndefinedType の不整合の正体・report-757）
+    // （lower の型表は展開後の根から組むので、古い節のままだと infoOf が引けず UndefinedType になる — 14 節）
     refreshTypeIndex(mut st)
     // 組み込み error の variant: [n, (型宣言, package)…]（ロード順 × ファイル順 × 宣言順 — 型宣言は展開後の節）
     mut ne := 0
@@ -233,7 +238,7 @@ func initState(st mut S, p loader.Program) {
     st.errTy = TyRef(-1)
 }
 
-// pathPkg は path の package の番号（無ければ -1）
+// path の package の番号（無ければ -1）
 func pathPkg(p loader.Program, path string) int {
     mut i := 0
     while i < len(p.pkg_path) {
@@ -245,7 +250,7 @@ func pathPkg(p loader.Program, path string) int {
     return -1
 }
 
-// expandFunc は関数 k の仮引数・結果の型式を展開する（変わったときだけ KParam と KFuncDecl を作り直し、関数表の節を差し替える）
+// 関数 k の仮引数・結果の型式を展開する（変わったときだけ KParam と KFuncDecl を作り直し、関数表の節を差し替える）
 func expandFunc(st mut S, k int) {
     pk := fnPkg(mut st, k)
     decl := fnNode(mut st, k)
@@ -279,7 +284,7 @@ func expandFunc(st mut S, k int) {
     table.Set(mut st.fns, k, fi)
 }
 
-// valFTE は型式 te（package pk）が値化可能な named fn type かその option か — 展開せず値の位置に残す（check の脱糖と lower が同じ形を読む）
+// 型式 te（package pk）が値化可能な named fn type かその option か — 展開せず値の位置に残す（check の脱糖と lower が同じ形を読む）
 func valFTE(st mut S, pk int, te NodeRef) bool {
     if te == -1 {
         return false
@@ -291,7 +296,7 @@ func valFTE(st mut S, pk int, te NodeRef) bool {
     return fnValDeclNode(mut st, LookupTypeDecl(mut st, pk, sA(nodeOf(mut st, n))))
 }
 
-// expandFieldList は欄の列 fs の型式を展開する（変わらなければ fs、変われば作り直した KField の列）。val = struct の欄（値化可能な
+// 欄の列 fs の型式を展開する（変わらなければ fs、変われば作り直した KField の列）。val = struct の欄（値化可能な
 // named fn type とその option は値の位置なので展開しない）
 func expandFieldList(st mut S, pk int, fs ListRef, val bool) ListRef {
     n := lenL(mut st, fs)
@@ -311,7 +316,7 @@ func expandFieldList(st mut S, pk int, fs ListRef, val bool) ListRef {
     return if changed { out } else { fs }
 }
 
-// expandBody は型宣言の本体 body の欄を展開する（変わらなければ body、変われば作り直した本体）
+// 型宣言の本体 body の欄を展開する（変わらなければ body、変われば作り直した本体）
 func expandBody(st mut S, pk int, body NodeRef) NodeRef {
     bk := kindN(mut st, body)
     if bk == ast.BStruct || bk == ast.BError {
@@ -349,7 +354,7 @@ func expandBody(st mut S, pk int, body NodeRef) NodeRef {
     return body
 }
 
-// expandFileTypes はファイル f の型宣言の欄を展開する（変わった型宣言があれば types の列と KFile を作り直し、ファイルの根を差し替える）
+// ファイル f の型宣言の欄を展開する（変わった型宣言があれば types の列と KFile を作り直し、ファイルの根を差し替える）
 func expandFileTypes(st mut S, f int) {
     pk := FilePkg(mut st, f)
     root := FileRoot(mut st, f)
@@ -377,17 +382,17 @@ func expandFileTypes(st mut S, f int) {
     hset(mut st, st.files + f * 2, hv_root)
 }
 
-// LookupTypeDecl は型式の名前（文字列 — "N" か "ref.N"）の型宣言（無ければ -1。修飾参照は公開の検査つき — ResolveType）
+// 型式の名前（文字列 — "N" か "ref.N"）の型宣言（無ければ -1。修飾参照は公開の検査つき — ResolveType）
 func LookupTypeDecl(st mut S, pk int, name StrRef) NodeRef {
     return NodeRef(ResolveType(mut st, pk, name).idx)
 }
 
-// NamedFnTE は値の位置に残した named fn type の型式 te（package pk）を関数型の節へ展開する（lower が関数値の型を読む口 — 工程 5）
+// 値の位置に残した named fn type の型式 te（package pk）を関数型の節へ展開する（lower が関数値の型を読む口 — 工程 5）
 func NamedFnTE(st mut S, pk int, te NodeRef) NodeRef {
     return expandTE(mut st, pk, te, EXPANDFUEL)
 }
 
-// EXPANDFUEL は名前付き関数型の展開（expandTE / expandList）の燃料 = 入れ子の深さの上限
+// 名前付き関数型の展開（expandTE / expandList）の燃料 = 入れ子の深さの上限
 const EXPANDFUEL = 16
 
 // newList はヒープの列 l と同じ長さの列を作り、要素を f で写す — 写しの本体は呼び手（expandTE / substTE）が埋める
@@ -403,7 +408,7 @@ func expandTE(st mut S, pk int, te NodeRef, fuel int) NodeRef {
         if td == -1 || kindN(mut st, nC(nodeOf(mut st, td))) != ast.BFunc {
             return te
         }
-        r := expandTE(mut st, pk, substFunc(mut st, td, -1, te), fuel - 1)
+        r := expandTE(mut st, pk, substFunc(mut st, td, -1, te, declPkg(mut st, pk, sA(nodeOf(mut st, te)))), fuel - 1)
         noteNamedFn(mut st, int(r), int(td))
         return r
     case ast.TGeneric:
@@ -422,7 +427,7 @@ func expandTE(st mut S, pk int, te NodeRef, fuel int) NodeRef {
         if td == -1 || kindN(mut st, nC(nodeOf(mut st, td))) != ast.BFunc {
             return if changed { NodeRef(rec8(mut st, ast.TGeneric, te, nodeOf(mut st, te).a, int(args), 0, 0, 0, 0)) } else { te }
         }
-        r := expandTE(mut st, pk, substFunc(mut st, td, args, te), fuel - 1)
+        r := expandTE(mut st, pk, substFunc(mut st, td, args, te, declPkg(mut st, pk, sA(nodeOf(mut st, te)))), fuel - 1)
         noteNamedFn(mut st, int(r), int(td))
         return r
     case ast.TFunc:
@@ -449,7 +454,7 @@ func expandTE(st mut S, pk int, te NodeRef, fuel int) NodeRef {
     return te
 }
 
-// expandList は型の列の各要素を展開する（変わらなければ元の列を返す）
+// 型の列の各要素を展開する（変わらなければ元の列を返す）
 func expandList(st mut S, pk int, l ListRef, fuel int) ListRef {
     n := lenL(mut st, l)
     out := ListRef(listN(mut st, n))
@@ -464,24 +469,32 @@ func expandList(st mut S, pk int, l ListRef, fuel int) ListRef {
     return if changed { out } else { l }
 }
 
-// substFunc は名前付き関数型 td の本体に型引数 args（型の列、無ければ -1）を代入した関数型
-func substFunc(st mut S, td NodeRef, args ListRef, at NodeRef) NodeRef {
+// 名前付き関数型 td の本体に型引数 args（型の列、無ければ -1）を代入した関数型
+// 名前付き関数型 te（参照側 package pk）の宣言が別 package にあればその番号（同じ package なら -1 — 署名の型名の書き換えは要らない）
+func declPkg(st mut S, pk int, name StrRef) int {
+    dpk := ResolveType(mut st, pk, name).pkg
+    return if dpk >= 0 && dpk != pk { dpk } else { -1 }
+}
+
+// 宣言 td の署名に型引数 args を代入した関数型の節。qual ≥ 0（宣言が別 package）なら、型引数でない型名を宣言側 package qual で解決した
+// 内部の修飾名 `$<package>.<名前>` に書き換える（参照側の文脈で引いても宣言側の型になる — resolveIn。型引数は参照側の名前のまま）
+func substFunc(st mut S, td NodeRef, args ListRef, at NodeRef, qual int) NodeRef {
     ft := nC(nodeOf(mut st, td))
-    ps := substList(mut st, td, lA(nodeOf(mut st, ft)), args)
-    rs := substList(mut st, td, lB(nodeOf(mut st, ft)), args)
+    ps := substList(mut st, td, lA(nodeOf(mut st, ft)), args, qual)
+    rs := substList(mut st, td, lB(nodeOf(mut st, ft)), args, qual)
     return NodeRef(rec8(mut st, ast.TFunc, at, ps, rs, 0, 0, 0, 0))
 }
 
-func substList(st mut S, td NodeRef, l ListRef, args ListRef) int {
+func substList(st mut S, td NodeRef, l ListRef, args ListRef, qual int) int {
     n := lenL(mut st, l)
     out := listN(mut st, n)
     for i <- iter.Range(0, n) {
-        hset(mut st, out + 1 + i, substTE(mut st, td, latN(mut st, l, i), args))
+        hset(mut st, out + 1 + i, substTE(mut st, td, latN(mut st, l, i), args, qual))
     }
     return out
 }
 
-func substTE(st mut S, td NodeRef, te NodeRef, args ListRef) int {
+func substTE(st mut S, td NodeRef, te NodeRef, args ListRef, qual int) int {
     k := kindN(mut st, te)
     switch k {
     case ast.TName:
@@ -491,13 +504,37 @@ func substTE(st mut S, td NodeRef, te NodeRef, args ListRef) int {
                 return latI(mut st, args, i)
             }
         }
-        return int(te)
+        return if qual >= 0 { rec8(mut st, ast.TName, te, int(declName(mut st, qual, sA(nodeOf(mut st, te)))), nodeOf(mut st, te).b, 0, 0, 0, 0) } else { int(te) }
+    case ast.TGeneric:
+        nm := if qual >= 0 { declName(mut st, qual, sA(nodeOf(mut st, te))) } else { sA(nodeOf(mut st, te)) }
+        return rec8(mut st, ast.TGeneric, te, int(nm), substList(mut st, td, lB(nodeOf(mut st, te)), args, qual), 0, 0, 0, 0)
     case ast.TFunc:
-        ps := substList(mut st, td, lA(nodeOf(mut st, te)), args)
-        rs := substList(mut st, td, lB(nodeOf(mut st, te)), args)
+        ps := substList(mut st, td, lA(nodeOf(mut st, te)), args, qual)
+        rs := substList(mut st, td, lB(nodeOf(mut st, te)), args, qual)
         return rec8(mut st, ast.TFunc, te, ps, rs, 0, 0, 0, 0)
     case ast.TOpt | ast.TSlice:
-        return rec8(mut st, k, te, substTE(mut st, td, nA(nodeOf(mut st, te)), args), nodeOf(mut st, te).b, 0, 0, 0, 0)
+        return rec8(mut st, k, te, substTE(mut st, td, nA(nodeOf(mut st, te)), args, qual), nodeOf(mut st, te).b, 0, 0, 0, 0)
+    case ast.TMap:
+        return rec8(mut st, k, te, substTE(mut st, td, nA(nodeOf(mut st, te)), args, qual), substTE(mut st, td, nB(nodeOf(mut st, te)), args, qual), nodeOf(mut st, te).c, 0, 0, 0)
     }
     return int(te)
+}
+
+// 型名 name（宣言側 package qual の文脈）の内部の修飾名 `$<package>.<名前>`（組み込みの型・解決できない名前・修飾済みはそのまま）
+func declName(st mut S, qual int, name StrRef) StrRef {
+    if strIs(mut st, name, "int") || strIs(mut st, name, "bool") || strIs(mut st, name, "byte") || strIs(mut st, name, "float") || strIs(mut st, name, "string") || strIs(mut st, name, "error") || strHasPrefix(mut st, name, "$") {
+        return name
+    }
+    pk, lo := resolveIn(mut st, qual, name)
+    if pk < 0 {
+        return name
+    }
+    mut b := mut []byte{}
+    for c <- bytes("$${pk}.") {
+        b = append(b, c)
+    }
+    for i <- iter.Range(lo, slen(mut st, name)) {
+        b = append(b, byte(sat(mut st, name, i)))
+    }
+    return strOf(mut st, freeze(b))
 }

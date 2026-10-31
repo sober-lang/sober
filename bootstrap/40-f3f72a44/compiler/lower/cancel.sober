@@ -1,0 +1,1004 @@
+package lower
+
+// キャンセル（language.md 11 節「キャンセル = 印 + 決定的セーフポイント」）:
+// - 発火 = scope の子の死（task_start が scope の印 SR_CUT を「番号 i + 2」へ cas で下げる: 番号が i + 1 以上の子を切ってよい）。巻き戻った task
+//   （死んだ / 切られた）の開いている scope には印 1（全部の子 — drainScopes・task.sober）。印を立てたら打ち切りの世代 @rt.cutgen を進める
+// - 切ってよい子 = **純な子だけ**（子の関数から io も チャネルも 間接呼び出しも届かない — 閉世界の呼び出しグラフで build の最後に決める・cutPatch）。
+//   保守側（11 節の「端点を一度も持たなかった task」より狭い）: 切られた子は観測に何も残さない（出力なし・チャネルなし）ので、打ち切りの位置が
+//   時刻で揺れても stdout は動かない。Join / Try が切られた子の値を求めたら切らない形で走らせ直す（rt.task_rerun — 純なので観測は同じ）
+// - 切られる側の判定 = 祖先を辿る（rt.cut_walk）: 自分の塊から、生んだ scope の印と自分の番号を比べ、scope を開いた task の塊へ上る（純な task の間だけ —
+//   純でない task は切られず子の値を使いうるので、その下へは届けない）。遅延の連鎖を「検査点で辿る」形にした（待っている親を起こす口が要らない）
+// - 検査点 = 純な子から届く関数（rt を除く）のループの後ろの辺の手前・再帰する関数の入口のブロックの末尾（+ Join / Try が切られた子に当たったとき）。
+//   速い道 = ワーカーの見直しの印 WK_CUT の load と分岐 1 つ（印を立てたら全ワーカーの WK_CUT = 1・切替で「@rt.cutgen ≠ 0」）。遅い道 =
+//   rt.cancel_check（WK_CUT を xchg で 0 にしてから辿って切るか戻る）。置くのは最適化の後（cutInsert — どの経路でも同じ点・遅い道の呼び出しが最適化を妨げない）。純な子の無いプログラムは IR 不変
+// - 間引き（language.md 11 節）: 最内で呼び出しの無い利用者のループ（本体が非巡回・命令が全部 cutLight）は戻り辺 N 回に 1 回だけ検査する。
+//   N = K / 本体の IR 命令数 B を 2 の冪に切り下げ（K = CUT_K = 1,024）— 約束 = 2 つの検査の間の IR 命令は N × B ≤ K（外側のループは毎反復なので、
+//   内側は入るたびに数え直しても合成して有界）。形 = 頭の仮引数の数え口（P1 — 入りで N。帰納変数の mask〔P3〕は分岐予測を外すので棄てた）。網 = scripts/cutstat.sh
+// - 切られた task の枠の状態 = 3（scope の値に出ない・死の数に数えない — 出口の死因 / 未回収の失敗の走査は状態 2 / 1 しか見ない）。
+//   切られる側の task が検査点を通らずに戻った・死んだ（子が切られた後の値・死かもしれない）ときも状態 3（rt.cut_end が辿る）
+
+import "diag"
+import "desugar"
+import "loader"
+import "obuf"
+import "std/iter"
+import "std/table"
+
+// 罠の死因の終了コードの代わりに書く印（死 = 101 / 102 — task_start が巻き戻りの理由を読み分ける）
+const CUT_CODE = 1
+
+// 下ろしている関数がチャネルに触る印（NewChannel / Send / Recv / Close / give: の Spawn — 純でない）
+func cutMarkChan(st mut St) {
+    st.chanFns = rec4(mut st, st.chanFns, int(st.fn), 0, 0)
+    lsEv(mut st, EV_CHAN, 0, 0, 0, 0)
+}
+
+// spawn の「純な子か」の定数（cutPatch が 1〔純な子〕か 2〔stdout に書かない子〕に書き換える）
+func cutFlag(st mut St, kid FnRef) int {
+    flag := iconst(mut st, 0)
+    st.cutSites = rec4(mut st, st.cutSites, int(irBlkITail(mut st, st.cur)), int(kid), 0)
+    lsEv(mut st, EV_CUT, int(irBlkITail(mut st, st.cur)), int(kid), 0, 0)
+    return flag
+}
+
+// task_start の終わり方の判定（r = 1 なら罠へ戻った）: 切られたなら 1。速い道 = 普通に戻り、打ち切りの印が 1 度も立っていない（世代 0）。
+// それ以外は rt.cut_end（判定・本物の死なら後ろの兄弟の印・罠へ戻ったなら開いている scope の子を待つ）
+func cutEnd(st mut St, tcb int, frame int, r int) int {
+    gen := load(mut st, globaladdr(mut st, st.cutGenG), 0)
+    bS := newBlock(mut st)
+    bJ := newBlock(mut st)
+    cut := param(mut st, bJ, TyI64)
+    condbr(mut st, cmp(mut st, CNe, bin(mut st, BOr, r, gen), iconst(mut st, 0)), bS, -1, bJ, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, bS)
+    br(mut st, bJ, list1(mut st, call(mut st, st.rtCutEnd, list2(mut st, tcb, r))))
+    setCur(mut st, bJ)
+    return cut
+}
+
+// rt.cut_walk（祖先を辿って切られる側か）・rt.cut_end（task の終わり方の遅い道）・rt.cancel_check（検査点の遅い道）・
+// rt.task_rerun（切られた子を切らない形で走らせ直す）の本体
+func buildCancelRt(st mut St) {
+    // rt.cut_walk(tcb) → 1 = 切られる側: 純な子の塊から、生んだ scope の印（c > 0 かつ 番号 + 1 ≥ c）を見て、その scope を開いた task の塊へ上る。
+    // 純でない task（切られない — 子の値を使いうる）・main・走らせ直しで止まる。辿る塊と記録は生きている（祖先は子孫を待ってから終わる）
+    begin(mut st, st.rtCutWalk)
+    zero := iconst(mut st, 0)
+    bNo := newBlock(mut st)
+    bL := newBlock(mut st)
+    tp := param(mut st, bL, TyI64)
+    bL2 := newBlock(mut st)
+    bL3 := newBlock(mut st)
+    bYes := newBlock(mut st)
+    br(mut st, bL, list1(mut st, ptoi(mut st, 0)))
+    setCur(mut st, bL)
+    condbr(mut st, cmp(mut st, CEq, tp, zero), bNo, -1, bL2, -1)
+    setCur(mut st, bL2)
+    t := itop(mut st, tp)
+    condbr(mut st, cmp(mut st, CEq, bin(mut st, BAnd, load(mut st, t, TC_CUTOK), iconst(mut st, 1)), zero), bNo, -1, bL3, -1)
+    setCur(mut st, bL3)
+    rec := itop(mut st, load(mut st, itop(mut st, load(mut st, t, TC_FRAME)), FR_SREC))
+    c := load(mut st, rec, SR_CUT)
+    hit := bin(mut st, BAnd, cmp(mut st, CNe, c, zero), cmp(mut st, CGe, bin(mut st, BAdd, load(mut st, t, TC_IDX), iconst(mut st, 1)), c))
+    condbr(mut st, hit, bYes, -1, bL, list1(mut st, load(mut st, rec, SR_OTCB)))
+    setCur(mut st, bYes)
+    ret(mut st, iconst(mut st, 1))
+    setCur(mut st, bNo)
+    ret(mut st, zero)
+    buildCutEnd(mut st)
+    buildCancelCheck(mut st)
+    buildTaskRerun(mut st)
+}
+
+func buildCutEnd(st mut St) {
+    // rt.cut_end(tcb, r) → 1 = 切られた: 罠へ戻った理由が CUT_CODE か、切られる側（純な子で世代 ≠ 0、祖先を辿ると切られる）。切られる側は普通に
+    // 戻っても死んでも「切られた」にする（子孫が切られた後の値・死は本物と限らない — 値を求める Join / Try は走らせ直す。本物の死はそこで出る）。
+    // 切られたら死因の語に走らせ直しの材料（子の関数 | 預かりの欄の位置 << 32）。本物の死なら scope の印を「番号 + 2」まで下げる（cas — 子は並行に死ぬ）。
+    // 罠へ戻ったなら開いている scope の子を待つ（drainScopes — 死因は呼び手が読み済み）
+    begin(mut st, st.rtCutEnd)
+    z0 := iconst(mut st, 0)
+    tcb0 := 0
+    r := 1
+    cs := newSlotAddr(mut st, 1)
+    store(mut st, cs, 0, bin(mut st, BAnd, r, cmp(mut st, CEq, load(mut st, globaladdr(mut st, st.trapG), TW_CODE), iconst(mut st, CUT_CODE))))
+    bW := newBlock(mut st)
+    bW2 := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CNe, bin(mut st, BAnd, load(mut st, tcb0, TC_CUTOK), iconst(mut st, 1)), z0), cmp(mut st, CNe, load(mut st, globaladdr(mut st, st.cutGenG), 0), z0)), bW, -1, bW2, -1)
+    setCur(mut st, bW)
+    store(mut st, cs, 0, bin(mut st, BOr, load(mut st, cs, 0), call(mut st, st.rtCutWalk, list1(mut st, tcb0))))
+    br(mut st, bW2, -1)
+    setCur(mut st, bW2)
+    cut := load(mut st, cs, 0)
+    fr0 := itop(mut st, load(mut st, tcb0, TC_FRAME))
+    bC := newBlock(mut st)
+    bC2 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, cut, z0), bC, -1, bC2, -1)
+    setCur(mut st, bC)
+    store(mut st, fr0, FR_CAUSE, bin(mut st, BOr, load(mut st, tcb0, TC_KID), bin(mut st, BShl, load(mut st, tcb0, TC_KOFF), iconst(mut st, 32))))
+    br(mut st, bC2, -1)
+    setCur(mut st, bC2)
+    bD := newBlock(mut st)
+    bLoop := newBlock(mut st)
+    bTry := newBlock(mut st)
+    bHit := newBlock(mut st)
+    bDone := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, bin(mut st, BSub, r, cut), z0), bD, -1, bDone, -1)
+    setCur(mut st, bD)
+    rec0 := itop(mut st, load(mut st, fr0, FR_SREC))
+    cwant := bin(mut st, BAdd, load(mut st, tcb0, TC_IDX), iconst(mut st, 2))
+    br(mut st, bLoop, -1)
+    setCur(mut st, bLoop)
+    c0 := load(mut st, rec0, SR_CUT)
+    keep := bin(mut st, BAnd, cmp(mut st, CNe, c0, z0), cmp(mut st, CLe, c0, cwant))
+    condbr(mut st, keep, bDone, -1, bTry, -1)
+    setCur(mut st, bTry)
+    o := atomicCas(mut st, rec0, SR_CUT, c0, cwant)
+    condbr(mut st, cmp(mut st, CEq, o, c0), bHit, -1, bLoop, -1)
+    setCur(mut st, bHit)
+    cutRaise(mut st)
+    br(mut st, bDone, -1)
+    setCur(mut st, bDone)
+    bR := newBlock(mut st)
+    bR2 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, r, z0), bR, -1, bR2, -1)
+    setCur(mut st, bR)
+    drainScopes(mut st, tcb0)
+    br(mut st, bR2, -1)
+    setCur(mut st, bR2)
+    ret(mut st, cut)
+}
+
+func buildCancelCheck(st mut St) {
+    // rt.cancel_check(): 見直しの印を xchg で下ろしてから辿る（辿る間に立った印は次の検査点で見る — 柵なので下ろしが辿りの読みを追い越さない）。
+    // 切られる側なら罠へ巻き戻る（TW_CODE = CUT_CODE）
+    begin(mut st, st.rtCancel)
+    atomicXchg(mut st, globaladdr(mut st, st.wkG), WK_CUT, iconst(mut st, 0))
+    tcb := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+    bCut := newBlock(mut st)
+    bKeep := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, call(mut st, st.rtCutWalk, list1(mut st, tcb)), iconst(mut st, 0)), bCut, -1, bKeep, -1)
+    setCur(mut st, bKeep)
+    ret(mut st, -1)
+    setCur(mut st, bCut)
+    tg := globaladdr(mut st, st.trapG)
+    store(mut st, tg, TW_CODE, iconst(mut st, CUT_CODE))
+    store(mut st, tg, TW_SITE, iconst(mut st, 0))
+    unwind(mut st)
+    ret(mut st, -1)
+}
+
+func buildTaskRerun(st mut St) {
+    begin(mut st, st.rtTaskRerun)
+    frame := 0
+    t := call(mut st, st.rtTaskNew, list2(mut st, iconst(mut st, 0), iconst(mut st, 0)))
+    me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+    d := load(mut st, globaladdr(mut st, st.meta), W_DEPTH)
+    z := iconst(mut st, 0)
+    store(mut st, t, TC_DEPTH, d)
+    store(mut st, t, TC_BASE, d)
+    store(mut st, t, TC_OWN, d)
+    store(mut st, t, TC_DEST, z)
+    store(mut st, t, TC_ANCHOR, z)
+    store(mut st, t, TC_TRAP, z)
+    store(mut st, t, TC_WAKER, ptoi(mut st, me))
+    store(mut st, t, TC_FRAME, ptoi(mut st, frame))
+    fc := load(mut st, frame, FR_CAUSE)
+    store(mut st, t, TC_KID, bin(mut st, BAnd, fc, iconst(mut st, 4294967295)))
+    store(mut st, t, TC_KOFF, bin(mut st, BSar, fc, iconst(mut st, 32)))
+    // 走らせ直しは切らない（値を求められた）— 子孫が辿る祖先の打ち切りもここで止まる（TC_CUTOK = 0）
+    store(mut st, t, TC_CUTOK, z)
+    store(mut st, frame, FR_STATE, z)
+    atomicXadd(mut st, itop(mut st, load(mut st, frame, FR_SREC)), SR_LIVE, iconst(mut st, 2))
+    store(mut st, t, TC_STARTED, z)
+    call(mut st, st.rtTaskGo, list2(mut st, me, t))
+    ret(mut st, -1)
+}
+
+// rt の関数か（名前が "rt." で始まる）
+func cutIsRt(st mut St, f FnRef) bool {
+    s := desugar.StrRef(irFnName(mut st, f))
+    return slen(mut st, s) >= 3 && sat(mut st, s, 0) == 114 && sat(mut st, s, 1) == 116 && sat(mut st, s, 2) == 46
+}
+
+// 純な子から呼んでよい rt の関数か（確保・写し・map・task の器・死・遅延注入の口 — 観測に出る io とチャネルの rt は含まない）
+func cutRtPure(st mut St, g FnRef) bool {
+    return g == st.rtAlloc8 || g == st.rtCat8 || g == st.rtCopy || g == st.rtCopy8 || g == st.rtExtend8 || g == st.rtGrow || g == st.rtGrow8 || g == st.rtGrowTry ||
+        g == st.rtKidKeep || g == st.rtMapGrow || isMapRt(mut st, g) || g == st.rtMaphash || g == st.rtPanic || g == st.rtPanicMem || g == st.rtRalloc || g == st.rtReloc ||
+        g == st.rtReloc8 || g == st.rtErrReloc || g == st.rtRenter || g == st.rtRenterL || g == st.rtRenterLL || g == st.rtSlotNew || g == st.rtDpGive || g == st.rtDpTake || g == st.rtSlotTake || g == st.rtSlotGive || g == st.rtSlotTrim || g == st.rtStreq || g == st.rtMatchLen || g == st.rtJClean ||
+        g == st.rtTaskGo || g == st.rtTaskNew || g == st.rtTaskInline || g == st.rtTaskWait || g == st.rtTip8 || g == st.rtTipN8 || g == st.rtUnmap || g == st.rtTaskRerun || g == st.rtCancel || g == st.rtCutWalk || g == st.rtCutEnd || g == st.rtMnDelay
+}
+
+// spawn の置き場の定数を書く（純な子 = 1・純でないが stdout に書かない子 = 2）: 純でない関数 = チャネルに触る・syscall / 間接呼び出し /
+// 罠 / 切替 / clone を持つ・純でない rt を呼ぶ・純でない関数を呼ぶか番地を取る（固定点）。stdout に書く関数は outSolve（下）
+func cutPatch(st mut St) {
+    if st.cutSites == -1 {
+        return
+    }
+    mut bad := mut map[int]int{}
+    mut k := st.chanFns
+    while k != -1 {
+        bad[desugar.HeapGet(mut st.d, k + 1)] = 1
+        k = desugar.HeapGet(mut st.d, k)
+    }
+    // [関数, 呼ぶ利用者の関数の数, 関数…]
+    mut cs := mut []int{}
+    // stdout に書く関数の導出（outSolve）の材料 — 同じ歩きで集める: 葉・間接呼び出しを持つ関数・番地を取られた関数
+    mut leaf := mut []int{}
+    mut ind := mut []int{}
+    mut taken := mut []int{}
+    // 置き場の印（rt.netop 5 — Serve）を使うか: Serve のプログラムの印（mnInit の即値 — CPU の固定の既定）
+    mut place := false
+    mut f := st.fhead
+    while f != -1 {
+        if !cutIsRt(mut st, f) {
+            at := len(cs)
+            cs = append(cs, int(f))
+            cs = append(cs, 0)
+            mut b := irFnBHead(mut st, f)
+            while b != -1 {
+                // 死の文面（panic.sober の toStderr — rt.out_drain を呼んでから fd 2 に切り替える）の後の印字は stderr: 同じブロックの中だけ見る
+                // （ブロックをまたいだ印字は stdout に数える — 保守側）
+                mut err := false
+                mut i := irBlkIHead(mut st, b)
+                while i != -1 {
+                    op := irInsOp(mut st, i)
+                    if op == OpSyscall || op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpClone {
+                        bad[int(f)] = 1
+                    }
+                    if op == OpCallI {
+                        ind = append(ind, int(f))
+                    }
+                    if op == OpCall || op == OpFuncaddr {
+                        g := irInsFn(mut st, i)
+                        if cutIsRt(mut st, g) {
+                            if !cutRtPure(mut st, g) {
+                                bad[int(f)] = 1
+                            }
+                            if op == OpCall && g == chF(mut st, NETF_OP) && cutConstArg0(mut st, f, i) == 5 {
+                                place = true
+                            }
+                            if g == st.rtOutDrain {
+                                err = true
+                            }
+                            if !err && (g == st.rtPchar || g == st.rtPint || g == st.rtPstr || g == st.rtPqstr) {
+                                leaf = append(leaf, int(f))
+                            }
+                        } else {
+                            if op == OpFuncaddr {
+                                taken = append(taken, int(g))
+                            }
+                            cs = append(cs, int(g))
+                            cs[at + 1] = cs[at + 1] + 1
+                        }
+                    }
+                    i = irInsNext(mut st, i)
+                }
+                b = irBlkNext(mut st, b)
+            }
+        }
+        f = irFnNext(mut st, f)
+    }
+    mut going := true
+    while going {
+        going = false
+        mut at := 0
+        while at < len(cs) {
+            g := cs[at]
+            n := cs[at + 1]
+            if bad[g] == nil {
+                for q <- iter.Range(0, n) {
+                    if bad[cs[at + 2 + q]] != nil && bad[g] == nil {
+                        bad[g] = 1
+                        going = true
+                    }
+                }
+            }
+            at += 2 + n
+        }
+    }
+    if place && st.mnExtra >= 0 {
+        irSetInsA(mut st, InsRef(st.mnExtra), 1)
+    }
+    out := outSolve(mut st, cs, leaf, ind, taken)
+    k = st.cutSites
+    while k != -1 {
+        kid := desugar.HeapGet(mut st.d, k + 2)
+        if bad[kid] == nil {
+            irSetInsA(mut st, InsRef(desugar.HeapGet(mut st.d, k + 1)), 1)
+            desugar.HeapSet(mut st.d, k + 3, 1)
+            st.cutKids = st.cutKids + 1
+        } else if out[kid] == nil {
+            irSetInsA(mut st, InsRef(desugar.HeapGet(mut st.d, k + 1)), 2)
+        }
+        k = desugar.HeapGet(mut st.d, k)
+    }
+}
+
+// 関数 f の呼び出しの命令 ci の最初の引数が即値ならその値（でなければ -1）
+func cutConstArg0(st mut St, f FnRef, ci InsRef) int {
+    v := desugar.HeapGet(mut st.d, irInsB(mut st, ci) + 1)
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if irInsRes(mut st, i) == v {
+                return if irInsOp(mut st, i) == OpConst { irInsA(mut st, i) } else { -1 }
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return -1
+}
+
+// stdout に書きうる利用者の関数の集合（出力の正準順の区間〔out.sober〕が要る子）: 葉 = println / print の rt の口
+// （rt.print_char / print_int / print_str / print_qstr — 行バッファに積む口。死・計測・trace の印字は fd 2 に切り替えてから書く）を本体から呼ぶ関数。
+// 呼ぶ・番地を取る（spawn の子・関数値）利用者の関数へ伝える（cs = cutPatch の [関数, 数, 呼び先…] — 逆辺の作業列）。間接呼び出しは
+// 「全部書く」に倒さず、番地を取られた全関数の合併（閉じた世界 — 番地を取られた関数のどれかが書くなら、間接呼び出しを持つ関数は全部書く側。
+// spawn の子の入口は番地を取られるが OpTStart で始まり、間接呼び出しの先にならないので除く）。直の io の書き込み（WriteFd・syscall）は区間の
+// 対象外（11 節 — 行バッファを通らない）なので葉にしない
+func outSolve(st mut St, cs []int, leaf []int, ind []int, taken []int) map[int]int {
+    // 逆辺: 呼び先 g → 呼び手の鎖（rhead[g] = 辺の番号・rnext / rfrom = 辺の列）
+    mut rhead := mut map[int]int{}
+    mut rnext := mut []int{}
+    mut rfrom := mut []int{}
+    mut at := 0
+    while at < len(cs) {
+        g := cs[at]
+        n := cs[at + 1]
+        for q <- iter.Range(0, n) {
+            h := cs[at + 2 + q]
+            p := rhead[h]
+            rnext = append(rnext, if p != nil { p } else { -1 })
+            rfrom = append(rfrom, g)
+            rhead[h] = len(rfrom) - 1
+        }
+        at += 2 + n
+    }
+    mut kids := mut map[int]int{}
+    mut k := st.cutSites
+    while k != -1 {
+        kids[desugar.HeapGet(mut st.d, k + 2)] = 1
+        k = desugar.HeapGet(mut st.d, k)
+    }
+    mut tk := mut map[int]int{}
+    for g <- taken {
+        if kids[g] == nil {
+            tk[g] = 1
+        }
+    }
+    mut out := mut map[int]int{}
+    mut work := mut []int{}
+    for g <- leaf {
+        if out[g] == nil {
+            out[g] = 1
+            work = append(work, g)
+        }
+    }
+    mut anyInd := false
+    mut wi := 0
+    while wi < len(work) {
+        g := work[wi]
+        wi += 1
+        if !anyInd && tk[g] != nil {
+            anyInd = true
+            for h <- ind {
+                if out[h] == nil {
+                    out[h] = 1
+                    work = append(work, h)
+                }
+            }
+        }
+        r := rhead[g]
+        mut e := if r != nil { r } else { -1 }
+        while e != -1 {
+            c := rfrom[e]
+            if out[c] == nil {
+                out[c] = 1
+                work = append(work, c)
+            }
+            e = rnext[e]
+        }
+    }
+    return out
+}
+
+// ブロック b の後続（0〜2 個）を積みに足す
+func cutSuccs(st mut St, b BlkRef, out mut []int) {
+    t := irBlkTerm(mut st, b)
+    if t == TmBr {
+        out = append(out, irBlkX1(mut st, b))
+    } else if t == TmCondbr {
+        out = append(out, irBlkX2(mut st, b))
+        out = append(out, irBlkX4(mut st, b))
+    }
+}
+
+// 関数 f が直に呼ぶ / 番地を取る利用者の関数（rt を除く）
+func cutCallees(st mut St, f FnRef, out mut []int) {
+    // β1 の当たりで B2 を飛ばした関数（本体は B2 の入力のまま）は置き場の相手の列から（bcache.sober）
+    if bcSkipped(mut st, int(f)) {
+        cs := bcSkCalls(st.bcSk, st.bcInf, int(f))
+        mut j := 0
+        while j + 1 < len(cs) {
+            if !cutIsRt(mut st, FnRef(cs[j + 1])) {
+                out = append(out, cs[j + 1])
+            }
+            j += 2
+        }
+        return
+    }
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if (op == OpCall || op == OpFuncaddr) && !cutIsRt(mut st, irInsFn(mut st, i)) {
+                out = append(out, int(irInsFn(mut st, i)))
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+}
+
+// 検査点を置く（最適化の後・バックエンドの前）: 純な子から届く利用者の関数のループの後ろの辺の手前と、再帰する関数の入口のブロックの末尾
+func cutInsert(st mut St) {
+    mut inR := mut map[int]int{}
+    mut work := mut []int{}
+    mut k := st.cutSites
+    while k != -1 {
+        if desugar.HeapGet(mut st.d, k + 3) == 1 {
+            work = append(work, desugar.HeapGet(mut st.d, k + 2))
+        }
+        k = desugar.HeapGet(mut st.d, k)
+    }
+    mut wi := 0
+    while wi < len(work) {
+        f := work[wi]
+        wi += 1
+        if inR[f] == nil {
+            inR[f] = 1
+            cutCallees(mut st, FnRef(f), mut work)
+        }
+    }
+    mut f := st.fhead
+    while f != -1 {
+        if inR[int(f)] != nil && irFnBHead(mut st, f) != -1 {
+            rec := cutRecursive(mut st, f, mut inR)
+            // β の鍵の 2 bit（ckey.sober — 到達性はモジュールの事実なので鍵に入れる）
+            if st.ckOn {
+                table.Push(mut st.ckCut, int(f))
+                table.Push(mut st.ckCut, if rec { 1 } else { 0 })
+            }
+            // B2 を飛ばした関数は β2 が外れたときだけ遅れて置く（bcache.sober の bcLate）
+            if bcSkipped(mut st, int(f)) {
+                table.Push(mut st.bcCutD, int(f))
+                table.Push(mut st.bcCutD, if rec { 1 } else { 0 })
+            } else {
+                cutFunc(mut st, f, rec)
+            }
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// f が自分へ戻る呼び出しの路を持つか（届く関数の集合 inR の中で）
+func cutRecursive(st mut St, f FnRef, inR mut map[int]int) bool {
+    mut seen := mut map[int]int{}
+    mut work := mut []int{}
+    cutCallees(mut st, f, mut work)
+    mut wi := 0
+    while wi < len(work) {
+        g := work[wi]
+        wi += 1
+        if g == int(f) {
+            return true
+        }
+        if seen[g] == nil && inR[g] != nil {
+            seen[g] = 1
+            cutCallees(mut st, FnRef(g), mut work)
+        }
+    }
+    return false
+}
+
+// f の検査点を置く: 後ろの辺の出どころのブロック（深さ優先 — 積みの上にいるブロックへの辺）と、rec なら入口のブロック。
+// 最内で呼び出しの無い利用者のループは戻り辺 N 回に 1 回へ間引く（cutThin — 頭の冒頭の規則と約束）。それ以外は毎反復（cutPoint）
+func cutFunc(st mut St, f FnRef, rec bool) {
+    b0 := irFnBHead(mut st, f)
+    mut color := mut map[int]int{}
+    // 利用者のループの頭へ戻る辺 [出どころ, 頭] の組（mb / ms）と、全部の戻る辺の行き先（rs — rt の展開のループも。最内の判定）
+    mut mb := mut []int{}
+    mut ms := mut []int{}
+    mut rs := mut []int{}
+    // 積み = [ブロック, 次に見る後続の添字]
+    mut stack := mut []int{}
+    mut sp := llPush(mut stack, 0, int(b0))
+    sp = llPush(mut stack, sp, 0)
+    color[int(b0)] = 1
+    while sp > 0 {
+        b := BlkRef(stack[sp - 2])
+        si := stack[sp - 1]
+        mut ss := mut []int{}
+        cutSuccs(mut st, b, mut ss)
+        if si < len(ss) {
+            stack[sp - 1] = si + 1
+            s := ss[si]
+            c := color[s]
+            if c == nil {
+                color[s] = 1
+                sp = llPush(mut stack, sp, s)
+                sp = llPush(mut stack, sp, 0)
+            } else if c == 1 {
+                rs = append(rs, s)
+                if irBlkLoop(mut st, BlkRef(s)) & 1 == 1 {
+                    // 利用者のループの頭へ戻る辺（rt の展開のループ — 待ち・スロット・region の入口 — の途中では切らない: 手順の半ばの状態を残す）
+                    mb = append(mb, int(b))
+                    ms = append(ms, s)
+                }
+            }
+        } else {
+            color[int(b)] = 2
+            sp -= 2
+        }
+    }
+    if rec && irBlkPHead(mut st, b0) < 0 {
+        cutEntry(mut st, f, b0)
+    }
+    if len(mb) == 0 {
+        return
+    }
+    st.fn = f
+    // 頭ごとに間引けるか（N ≥ 2）を決める（表はブロックの番号で引く — ここから足すブロックは番号が nb 以上で引かない）。間引かない頭の出どころは毎反復の検査点
+    nb := irFnNBlk(mut st, f)
+    mut thinN := mut []int{}
+    xFill(mut thinN, nb, 0)
+    mut thinB := mut []int{}
+    xFill(mut thinB, nb, 0)
+    mut preds := mut []int{}
+    mut pnext := mut []int{}
+    mut pfrom := mut []int{}
+    cutPreds(mut st, f, nb, mut preds, mut pnext, mut pfrom)
+    for i <- iter.Range(0, len(ms)) {
+        h := irBlkId(mut st, BlkRef(ms[i]))
+        if thinN[h] == 0 {
+            n, wt := cutThinN(mut st, f, BlkRef(ms[i]), mut mb, mut ms, mut rs, mut preds, mut pnext, mut pfrom)
+            thinN[h] = n
+            thinB[h] = wt
+        }
+    }
+    mut wkp := -1
+    mut done := mut []int{}
+    xFill(mut done, nb, 0)
+    for i <- iter.Range(0, len(mb)) {
+        if thinN[irBlkId(mut st, BlkRef(ms[i]))] < 2 && done[irBlkId(mut st, BlkRef(mb[i]))] == 0 {
+            done[irBlkId(mut st, BlkRef(mb[i]))] = 1
+            if wkp < 0 {
+                // ワーカーの表の番地は task の間は変わらない（task は走り始めたワーカーに固定）— 入口のブロックで 1 回取り、後ろの辺の検査点で使う
+                setCur(mut st, irFnBHead(mut st, f))
+                wkp = globaladdr(mut st, st.wkG)
+            }
+            cutPoint(mut st, f, BlkRef(mb[i]), wkp)
+        }
+    }
+    mut hdone := mut []int{}
+    xFill(mut hdone, nb, 0)
+    for i <- iter.Range(0, len(ms)) {
+        s := BlkRef(ms[i])
+        h := irBlkId(mut st, s)
+        if hdone[h] == 0 {
+            hdone[h] = 1
+            n := thinN[h]
+            form := if n >= 2 { cutThin(mut st, f, s, n, mut mb, mut ms) } else { 0 }
+            if st.cutStat {
+                st.cutRecs = rec4(mut st, st.cutRecs, int(f), h, (thinB[h] + 8) | (n << 20) | (form << 50))
+            }
+        }
+    }
+}
+
+// 間引きの約束: 2 つの検査の間に実行される IR 命令は K 以下（ループの本体が非巡回なので 1 反復は本体の重み B 以下 — N × B ≤ K）
+const CUT_K = 1024
+// 間引きの N の上限: 数え口の抜け（N 回に 1 回）を分岐予測が当てられる周期に抑える。短いループ（B ≤ 8 — 葉）で N = 128 だと
+// 抜けのたびに予測を外し（予測ミス 0.55 → 4.5 M・gran の cycles 中央 +12%）、64 以下なら当たる（Zen 5 で実測 — 32 / 64 とも 0.53〜0.58 M）。
+// 32 は 64 より gran の中央で −3%（layvar 8 配置）・1BRC 並列は中立。約束 K は上限で強まるだけ
+const CUT_NMAX = 32
+
+// 頭 s のループの間引きの N（2 の冪。1 = 間引かない — 毎反復）と本体の重み B（間引けない理由のときは負: −1 = 最内でない・
+// −2 = 呼び出し等の重みの抑えられない命令・−3 = 辺の形〔出どころが他の頭へも戻る・同じ頭へ 2 本・本体の中から戻る辺でない入り・頭が入口〕）。
+// 間引く = 最内（本体に他の戻る辺の行き先が無い — 本体は s を除いて非巡回）で、本体の命令が全部 cutLight（重みが機械語の定数個で抑えられる）
+func cutThinN(st mut St, f FnRef, s BlkRef, mb mut []int, ms mut []int, rs mut []int, preds mut []int, pnext mut []int, pfrom mut []int) (int, int) {
+    if s == irFnBHead(mut st, f) {
+        return 1, -3
+    }
+    nb := len(preds)
+    // 出どころ（s へ戻る辺の元）: どれも s 以外の頭へ戻らず、s へ 1 本だけ
+    mut src := mut []int{}
+    xFill(mut src, nb, 0)
+    mut work := mut []int{}
+    for i <- iter.Range(0, len(mb)) {
+        if ms[i] == int(s) {
+            src[irBlkId(mut st, BlkRef(mb[i]))] = 1
+            work = append(work, mb[i])
+        }
+    }
+    for i <- iter.Range(0, len(mb)) {
+        if src[irBlkId(mut st, BlkRef(mb[i]))] == 1 && (ms[i] != int(s) || cutEdgesTo(mut st, BlkRef(mb[i]), s) != 1) {
+            return 1, -3
+        }
+    }
+    // 自然なループの本体 = s + 出どころから s を通らずに逆に辿れるブロック
+    mut body := mut []int{}
+    xFill(mut body, nb, 0)
+    body[irBlkId(mut st, s)] = 1
+    mut wi := 0
+    while wi < len(work) {
+        x := work[wi]
+        wi += 1
+        xi := irBlkId(mut st, BlkRef(x))
+        if body[xi] == 0 {
+            body[xi] = 1
+            mut q := preds[xi]
+            while q >= 0 {
+                work = append(work, pfrom[q])
+                q = pnext[q]
+            }
+        }
+    }
+    // s への入りは本体の外からか、出どころから（本体の中の別の入りは無い）
+    mut q := preds[irBlkId(mut st, s)]
+    while q >= 0 {
+        pi := irBlkId(mut st, BlkRef(pfrom[q]))
+        if (body[pi] == 1 && src[pi] == 0) || cutEdgesTo(mut st, BlkRef(pfrom[q]), s) != 1 {
+            return 1, -3
+        }
+        q = pnext[q]
+    }
+    for k <- iter.Range(0, len(rs)) {
+        if rs[k] != int(s) && body[irBlkId(mut st, BlkRef(rs[k]))] == 1 {
+            return 1, -1
+        }
+    }
+    mut w := 0
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        if body[irBlkId(mut st, b)] == 1 {
+            mut i := irBlkIHead(mut st, b)
+            while i != -1 {
+                op := irInsOp(mut st, i)
+                if op != OpDead {
+                    if !cutLight(op) {
+                        return 1, -2
+                    }
+                    w += 1
+                }
+                i = irInsNext(mut st, i)
+            }
+            w += 1
+        }
+        b = irBlkNext(mut st, b)
+    }
+    mut n := 1
+    // 変異 10（開発用 — 網の自己検査）: 間引かない（N = 1 — 間引きの表が食い違う）
+    while n * 2 * w <= CUT_K && n < CUT_NMAX && st.rtMut != 10 {
+        n *= 2
+    }
+    return n, w
+}
+
+// 間引きの表（開発用 `sober build --cut-stat` — 網 scripts/cutstat.sh）: 検査点を置いた利用者のループの頭ごとに 1 行
+// 「関数 b<頭> B=<本体の重み> N=<間引き> <形>」（形 = count〔数え口〕/ every〔毎反復〕・B の負は間引けない理由 — cutThinN）
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen)
+func CutStat(p loader.Program, n int, vmode int) ([]byte, error?) {
+    mut k := knob(KElf, true, true, false, false, 0, vmode)
+    k.rtMut = n
+    k.cutStat = true
+    return lowerWith(p, k)
+}
+
+// 間引きの表のテキスト（elfOutSt が cutInsert の直後に — x86 の段がヒープを凍らせる前に読む）
+func cutStatText(st mut St) []byte {
+    mut lines := mut []int{}
+    mut r := st.cutRecs
+    while r >= 0 {
+        lines = append(lines, r)
+        r = desugar.HeapGet(mut st.d, r)
+    }
+    mut out := mut []byte{}
+    mut i := len(lines) - 1
+    while i >= 0 {
+        x := lines[i]
+        printName(mut st, mut out, irFnName(mut st, FnRef(desugar.HeapGet(mut st.d, x + 1))))
+        obuf.Lit(mut out, " b")
+        num(mut out, desugar.HeapGet(mut st.d, x + 2))
+        v := desugar.HeapGet(mut st.d, x + 3)
+        obuf.Lit(mut out, " B=")
+        num(mut out, (v & 1048575) - 8)
+        obuf.Lit(mut out, " N=")
+        num(mut out, (v >> 20) & 1073741823)
+        form := v >> 50
+        obuf.Lit(mut out, if form == 2 { " count\n" } else { " every\n" })
+        i -= 1
+    }
+    return freeze(out)
+}
+
+// f の前任の鎖（preds[ブロックの番号] = 先頭の節・節 q = [pnext[q], pfrom[q]] — -1 = 終わり）
+func cutPreds(st mut St, f FnRef, nb int, preds mut []int, pnext mut []int, pfrom mut []int) {
+    xFill(mut preds, nb, -1)
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut ss := mut []int{}
+        cutSuccs(mut st, b, mut ss)
+        for k <- iter.Range(0, len(ss)) {
+            t := irBlkId(mut st, BlkRef(ss[k]))
+            pnext = append(pnext, preds[t])
+            pfrom = append(pfrom, int(b))
+            preds[t] = len(pfrom) - 1
+        }
+        b = irBlkNext(mut st, b)
+    }
+}
+
+// 1 命令の重みが機械語の定数個で抑えられる op か（呼び出し・syscall・データの長さに比例する展開・罠・切替・原子は外す）
+func cutLight(op int) bool {
+    return op == OpConst || op == OpBin || op == OpCmp || op == OpLoad || op == OpStore || op == OpLoad8 || op == OpStore8 || op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop || op == OpSlotaddr || op == OpGlobal || op == OpFsAddr || op == OpFuncaddr || op == OpRDepth || op == OpRSetDepth || op == OpRBump
+}
+
+// b の終端から s への辺の本数
+func cutEdgesTo(st mut St, b BlkRef, s BlkRef) int {
+    mut ss := mut []int{}
+    cutSuccs(mut st, b, mut ss)
+    mut n := 0
+    for k <- iter.Range(0, len(ss)) {
+        if ss[k] == int(s) {
+            n += 1
+        }
+    }
+    return n
+}
+
+// b の終端の s への辺の実引数の列（番地 — -1 = 無し）
+func cutArgsTo(st mut St, b BlkRef, s BlkRef) int {
+    t := irBlkTerm(mut st, b)
+    return if t == TmBr { irBlkX2(mut st, b) } else if irBlkX2(mut st, b) == int(s) { irBlkX3(mut st, b) } else { irBlkX5(mut st, b) }
+}
+
+// b の終端の s への辺の実引数の列を l に
+func cutSetArgsTo(st mut St, b BlkRef, s BlkRef, l int) {
+    t := irBlkTerm(mut st, b)
+    if t == TmBr {
+        irSetBlkX2(mut st, b, l)
+    } else if irBlkX2(mut st, b) == int(s) {
+        irSetBlkX3(mut st, b, l)
+    } else {
+        irSetBlkX5(mut st, b, l)
+    }
+}
+
+// 頭 s のループを N 回に 1 回の検査へ間引く（形 = 頭の仮引数の数え口〔P1〕— 入りで N・戻り辺で −1。返す形の番号は 2 = count）。
+// 熱い道は 2 命令（sub + jcc — x86 の xFuseScan が手前の演算の flags を読む）。ワーカーの表の番地は冷たい検査の中で作り直す
+// （関数全体に生かさない — 入口の圧で spill して毎反復読み直す形を作らない）。
+// 帰納変数の mask（P3 — `test 値, N − 1`）は棄てた: 発火の位置が帰納変数の始まりに依るデータ依存になり、短く何度も入るループで分岐予測を外す
+// （1BRC 並列で予測ミス +1.2 M・cycles +1.3〜1.5%）。数え口なら N より短いループでは一度も発火しない
+func cutThin(st mut St, f FnRef, s BlkRef, n int, mb mut []int, ms mut []int) int {
+    // 変異 9（開発用 — 網の自己検査）: 数え口が 0 に戻らない（数え口を 2^40 に）— 切れなくなる
+    mut2 := st.rtMut == 9
+    // 並べ方: 検査のブロック（と遅い道）は元の終端の写しで終わる — 続き cont へ合流させると吐く順（逆後順）で検査のブロックが b と cont の間に入り、
+    // 熱い道に飛びが 1 つ増える（葉のループで cycles +40%）。cutPoint の遅い道と同じ形
+    // P1: 頭に数え口の仮引数 c を足す — 外からの入りは N、戻る辺は c − 1（0 になったら検査して N へ戻す）
+    nn := if mut2 { 1 << 40 } else { n }
+    c := param(mut st, s, TyI64)
+    mut b := irFnBHead(mut st, f)
+    mut srcs := mut []int{}
+    for i <- iter.Range(0, len(mb)) {
+        if ms[i] == int(s) {
+            srcs = append(srcs, mb[i])
+        }
+    }
+    while b != -1 {
+        if cutEdgesTo(mut st, b, s) == 1 && !cutHas(mut srcs, int(b)) {
+            setCur(mut st, b)
+            cutSetArgsTo(mut st, b, s, cutArgsPlus(mut st, cutArgsTo(mut st, b, s), iconst(mut st, nn)))
+        }
+        b = irBlkNext(mut st, b)
+    }
+    for i <- iter.Range(0, len(srcs)) {
+        bb := BlkRef(srcs[i])
+        cont := cutSplit(mut st, f, bb)
+        setCur(mut st, bb)
+        one := iconst(mut st, 1)
+        z := iconst(mut st, 0)
+        c1 := bin(mut st, BSub, c, one)
+        cutSetArgsTo(mut st, cont, s, cutArgsPlus(mut st, cutArgsTo(mut st, cont, s), c1))
+        chk := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CNe, c1, z), cont, -1, chk, -1)
+        setCur(mut st, chk)
+        cutSlowCheck(mut st, chk, cont, s, iconst(mut st, nn))
+    }
+    return 2
+}
+
+// 冷たい検査のブロック chk の中身: ワーカーの表の番地を作り直して印を読み、立っていなければ元の終端の写し・立っていれば
+// rt.cancel_check を呼んでから元の終端の写し（cont の終端 — rv ≥ 0 なら s への辺の実引数の最後を rv に差し替える〔P1 の数え口を N へ〕）
+func cutSlowCheck(st mut St, chk BlkRef, cont BlkRef, s BlkRef, rv int) {
+    setCur(mut st, chk)
+    v := load(mut st, globaladdr(mut st, st.wkG), WK_CUT)
+    fast := newBlock(mut st)
+    slow := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, v, iconst(mut st, 0)), fast, -1, slow, -1)
+    setCur(mut st, fast)
+    cutTermCopy(mut st, cont, s, rv)
+    setCur(mut st, slow)
+    call(mut st, st.rtCancel, list0(mut st))
+    cutTermCopy(mut st, cont, s, rv)
+}
+
+// 今のブロックを cont の終端の写しで終える（rv ≥ 0 なら s への辺の実引数の最後を rv に）
+func cutTermCopy(st mut St, cont BlkRef, s BlkRef, rv int) {
+    t := irBlkTerm(mut st, cont)
+    if t == TmBr {
+        br(mut st, BlkRef(irBlkX1(mut st, cont)), cutArgsRv(mut st, irBlkX2(mut st, cont), irBlkX1(mut st, cont) == int(s), rv))
+    } else {
+        x2 := irBlkX2(mut st, cont)
+        x4 := irBlkX4(mut st, cont)
+        condbr(mut st, irBlkX1(mut st, cont), BlkRef(x2), cutArgsRv(mut st, irBlkX3(mut st, cont), x2 == int(s), rv), BlkRef(x4), cutArgsRv(mut st, irBlkX5(mut st, cont), x4 == int(s), rv))
+    }
+}
+
+// 実引数の列の写し（toS かつ rv ≥ 0 なら最後を rv に）
+func cutArgsRv(st mut St, l int, toS bool, rv int) int {
+    c := cutArgs(mut st, l)
+    if toS && rv >= 0 {
+        desugar.HeapSet(mut st.d, c + desugar.HeapGet(mut st.d, c), rv)
+    }
+    return c
+}
+
+func cutHas(xs mut []int, x int) bool {
+    for i <- iter.Range(0, len(xs)) {
+        if xs[i] == x {
+            return true
+        }
+    }
+    return false
+}
+
+// 値の列 l（-1 = 空）の後ろに v を足した新しい列
+func cutArgsPlus(st mut St, l int, v int) int {
+    n := if l < 0 { 0 } else { desugar.HeapGet(mut st.d, l) }
+    c := listN(mut st, n + 1)
+    for i <- iter.Range(0, n) {
+        desugar.HeapSet(mut st.d, c + 1 + i, desugar.HeapGet(mut st.d, l + 1 + i))
+    }
+    desugar.HeapSet(mut st.d, c + 1 + n, v)
+    return c
+}
+
+// b の終端を新しいブロック cont（b の直後に並べる）へ移す（b は終端の無いまま — 呼び手が検査の分岐で終える）。cont を返す
+func cutSplit(st mut St, f FnRef, b BlkRef) BlkRef {
+    st.fn = f
+    t := irBlkTerm(mut st, b)
+    x1 := irBlkX1(mut st, b)
+    x2 := irBlkX2(mut st, b)
+    x3 := irBlkX3(mut st, b)
+    x4 := irBlkX4(mut st, b)
+    x5 := irBlkX5(mut st, b)
+    oldTail := irFnBTail(mut st, f)
+    cont := newBlock(mut st)
+    if oldTail != b {
+        irSetBlkNext(mut st, oldTail, -1)
+        irSetFnBTail(mut st, f, oldTail)
+        irSetBlkNext(mut st, cont, irBlkNext(mut st, b))
+        irSetBlkNext(mut st, b, cont)
+    }
+    setCur(mut st, cont)
+    terminate(mut st, t, x1, x2, x3, x4, x5)
+    return cont
+}
+
+// 入口のブロック b0 の頭に検査点を置く（再帰する関数 — 何も始めていない点）: b0 の命令と終端を新しいブロック rest へ移し、
+// b0 = 検査 + 分岐にする
+func cutEntry(st mut St, f FnRef, b0 BlkRef) {
+    st.fn = f
+    oldTail := irFnBTail(mut st, f)
+    rest := newBlock(mut st)
+    if oldTail != b0 {
+        irSetBlkNext(mut st, oldTail, -1)
+        irSetFnBTail(mut st, f, oldTail)
+        irSetBlkNext(mut st, rest, irBlkNext(mut st, b0))
+        irSetBlkNext(mut st, b0, rest)
+    }
+    irSetBlkIHead(mut st, rest, irBlkIHead(mut st, b0))
+    irSetBlkITail(mut st, rest, irBlkITail(mut st, b0))
+    irSetBlkIHead(mut st, b0, -1)
+    irSetBlkITail(mut st, b0, -1)
+    setCur(mut st, rest)
+    terminate(mut st, irBlkTerm(mut st, b0), irBlkX1(mut st, b0), irBlkX2(mut st, b0), irBlkX3(mut st, b0), irBlkX4(mut st, b0), irBlkX5(mut st, b0))
+    setCur(mut st, b0)
+    cutCheck(mut st, rest, globaladdr(mut st, st.wkG))
+}
+
+// ブロック b の末尾（終端の手前）に検査点を置く: b の終端を新しいブロック cont（b の直後に並べる）へ移し、b = 検査 + 分岐・
+// 遅い道 = rt.cancel_check の呼び出し（関数の最後に並べる — 冷たい）。速い道 = WK_CUT の load と分岐
+func cutPoint(st mut St, f FnRef, b BlkRef, wkp int) {
+    st.fn = f
+    t := irBlkTerm(mut st, b)
+    x1 := irBlkX1(mut st, b)
+    x2 := irBlkX2(mut st, b)
+    x3 := irBlkX3(mut st, b)
+    x4 := irBlkX4(mut st, b)
+    x5 := irBlkX5(mut st, b)
+    oldTail := irFnBTail(mut st, f)
+    cont := newBlock(mut st)
+    // cont を b の直後へ（oldTail の後ろから外す）
+    if oldTail != b {
+        irSetBlkNext(mut st, oldTail, -1)
+        irSetFnBTail(mut st, f, oldTail)
+        irSetBlkNext(mut st, cont, irBlkNext(mut st, b))
+        irSetBlkNext(mut st, b, cont)
+    }
+    setCur(mut st, cont)
+    terminate(mut st, t, x1, x2, x3, x4, x5)
+    setCur(mut st, b)
+    // 遅い道は元の終端の写しで終わる（続きへ飛ぶと吐く順〔逆後順〕で遅い道が続きの手前に来て、熱い道に飛びが 1 つ増える）
+    v := load(mut st, wkp, WK_CUT)
+    slow := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, v, iconst(mut st, 0)), cont, -1, slow, -1)
+    setCur(mut st, slow)
+    call(mut st, st.rtCancel, list0(mut st))
+    if t == TmBr {
+        br(mut st, BlkRef(x1), cutArgs(mut st, x2))
+    } else if t == TmCondbr {
+        condbr(mut st, x1, BlkRef(x2), cutArgs(mut st, x3), BlkRef(x4), cutArgs(mut st, x5))
+    } else {
+        br(mut st, cont, -1)
+    }
+}
+
+// 分岐の実引数の列の写し（-1 = 無し）
+func cutArgs(st mut St, l int) int {
+    if l < 0 {
+        return l
+    }
+    n := desugar.HeapGet(mut st.d, l)
+    c := listN(mut st, n)
+    for i <- iter.Range(0, n) {
+        desugar.HeapSet(mut st.d, c + 1 + i, desugar.HeapGet(mut st.d, l + 1 + i))
+    }
+    return c
+}
+
+// 今のブロックの末尾に検査と分岐を足す（wkp = ワーカーの表・続き = cont・遅い道 = 関数の最後に並べたブロックの rt.cancel_check）
+func cutCheck(st mut St, cont BlkRef, wkp int) {
+    v := load(mut st, wkp, WK_CUT)
+    slow := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, v, iconst(mut st, 0)), cont, -1, slow, -1)
+    setCur(mut st, slow)
+    call(mut st, st.rtCancel, list0(mut st))
+    br(mut st, cont, -1)
+}
+
+// 打ち切りの印を立てた後: 世代を進め（切替の見直しの判定）、起きている全ワーカーの WK_CUT を 1 に（素の store — 下ろすのは xchg）
+func cutRaise(st mut St) {
+    atomicXadd(mut st, globaladdr(mut st, st.cutGenG), 0, iconst(mut st, 1))
+    mn := globaladdr(mut st, st.mnG)
+    n := load(mut st, mn, MN_N)
+    wl := newBlock(mut st)
+    wi := param(mut st, wl, TyI64)
+    wb := newBlock(mut st)
+    ws := newBlock(mut st)
+    wn := newBlock(mut st)
+    wd := newBlock(mut st)
+    br(mut st, wl, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, wl)
+    condbr(mut st, cmp(mut st, CLt, wi, n), wb, -1, wd, -1)
+    setCur(mut st, wb)
+    wp := load(mut st, gepWord(mut st, mn, bin(mut st, BAdd, wi, iconst(mut st, MN_WK))), 0)
+    condbr(mut st, cmp(mut st, CNe, wp, iconst(mut st, 0)), ws, -1, wn, -1)
+    setCur(mut st, ws)
+    store(mut st, itop(mut st, wp), WK_CUT, iconst(mut st, 1))
+    br(mut st, wn, -1)
+    setCur(mut st, wn)
+    br(mut st, wl, list1(mut st, bin(mut st, BAdd, wi, iconst(mut st, 1))))
+    setCur(mut st, wd)
+}

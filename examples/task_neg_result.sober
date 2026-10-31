@@ -1,7 +1,7 @@
 package main
 
-// 段 6 P3a-1d / P3b-4: task の結果が写せない（関数値 — diag.Par kind 8 — check と build が同じ拒否。desugar/parcheck.sober）。
-// string・slice・map・error は P3b-4 から scope の region へ写せる（examples/task_result_string）
+// task の結果が写せない（関数値 — diag.Par kind 8 — check と build が同じ拒否。desugar/parcheck.sober）。
+// string・slice・map・error は scope の region へ写せる（examples/task_result_string）
 
 import "std/task"
 

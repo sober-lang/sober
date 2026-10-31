@@ -1,0 +1,11 @@
+package propsfuzz
+
+// sober test の std/quick の fuzz の掛け戻しの網の題材（xs[i] を範囲の検査なしで引く・特定の値だけ拒む）
+
+func At(xs []int, i int) int {
+    return xs[i]
+}
+
+func Accept(n int) bool {
+    return n != 777777
+}

@@ -8,6 +8,9 @@
 #     （既定の側は obs と panicmsg が同じ期待値と照合している — 推移で opt ≟ no-opt。同じビルドを二重に払わない）
 #   progen の固定シード（size 3 / 4 × 既定 20 本・--full は 60 本）と bench の 3 題材（小さい規模）— 期待値が無いので両方を建てて突き合わせる
 #     （参照の側は --no-opt --backend=copy — 写しのバックエンド。既定の側の最適化のバックエンド〔性能投資 M4〜〕も照合に入る）
+#   展開の口（SOBER_RAW_EXPAND=1 の --no-opt — mut 引数だけの関数を呼び出し点ごとに展開する旧の raw の形）の obs の entry も期待値と照合する（種類 expx — --mut では回さない）:
+#     raw の既定は透過の実体関数（report-1278）なので、既定の照合は透過 ↔ 透過。expx が「展開 ≡ 透過」の実行の照合を受け持つ（期待値を介した推移）。
+#     scripts/noopt-excluded.list の entry（展開の口で肥大して建たない — std/cli の例題）は expx から外す — 照合の網の限界（展開 ≡ 透過は照合されない）
 # 規律: 1 件で足りる検証（変異・負例）と全数が要る検証（受理集合の照合）を同じ形で回さない — --mut は前者の形
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -50,6 +53,10 @@ if [ "$MUT" = 1 ]; then
 else
     for f in examples/*.out; do n=$(basename "$f" .out); list+=("exp ex_$n examples/$n.sober"); done
     for f in testdata/*/app.out; do d=${f%/app.out}; list+=("exp td_$(basename "$d") $d/app"); done
+    # 展開 ≡ 透過（expx）: 同じ obs の entry を展開の口で（scripts/noopt-excluded.list の entry を除く — 理由はリストの中）
+    excl=$(sed 's/#.*//; s/^ *//; s/ *$//' scripts/noopt-excluded.list | grep -v '^$') || true
+    for f in examples/*.out; do n=$(basename "$f" .out); grep -qxF -e "examples/$n.sober" <<< "$excl" || list+=("expx xex_$n examples/$n.sober"); done
+    for f in testdata/*/app.out; do d=${f%/app.out}; grep -qxF -e "$d/app" <<< "$excl" || list+=("expx xtd_$(basename "$d") $d/app"); done
 fi
 list+=("pair bench_fannkuch bench/fannkuch/main.sober 8" "pair bench_binarytrees bench/binarytrees/main.sober 10" "pair bench_1brc bench/1brc/main.sober testdata/bench1brc.txt")
 for z in 3 4; do
@@ -67,12 +74,13 @@ run() { # run <実行ファイル> <出力の前置き> <引数…> → 前置�
 one() { # 結果は $W/r/<名前>（空 = 一致・.skip = 両方とも建たない）
     local kind=$1 n=$2 src=$3
     shift 3
-    if [ "$kind" = exp ]; then
+    if [ "$kind" = exp ] || [ "$kind" = expx ]; then
         local exp=${src%.sober}
-        # 通常は最適化なしの側（既定の側は obs / panicmsg が見る）。--mut は壊した最適化を見るので既定の側
-        local fl=--no-opt
+        # 通常は最適化なしの側（既定の側は obs / panicmsg が見る）。--mut は壊した最適化を見るので既定の側。expx = 展開の口の最適化なし
+        local fl=--no-opt ex=0
         [ "$MUT" = 1 ] && fl=
-        if ! timeout "$BTO" "$SOBER" build "$src" $fl -o "$W/$n.raw" > /dev/null 2>&1; then echo "BUILD FAIL $n" > "$W/r/$n"; return; fi
+        [ "$kind" = expx ] && ex=1
+        if ! SOBER_RAW_EXPAND=$ex timeout "$BTO" "$SOBER" build "$src" $fl -o "$W/$n.raw" > /dev/null 2>&1; then echo "BUILD FAIL $n" > "$W/r/$n"; return; fi
         local RUNIN=/dev/null
         [ -f "$exp.in" ] && RUNIN=$exp.in
         run "$W/$n.raw" "$W/$n.1" "$@"
@@ -134,5 +142,5 @@ for f in "$W"/r/*; do
 done
 ran=$(ls "$W"/r | grep -vc '\.skip$')
 skipped=$(ls "$W"/r | grep -c '\.skip$')
-echo "optdiff: $ran programs no-opt ≟ opt (obs entries vs expectations, the rest pairwise; skipped $skipped that neither build), fail=$fail"
+echo "optdiff: $ran programs no-opt ≟ opt (obs entries vs expectations — transparent and expanded ($(ls "$W"/r | grep -c '^x')), the rest pairwise; skipped $skipped that neither build), fail=$fail"
 [ "$fail" = 0 ]

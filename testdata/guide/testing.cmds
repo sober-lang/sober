@@ -1,0 +1,12 @@
+# docs/guide/testing{,.ja}.md の `$ sober …` の塊（1 行 = 名前 + 空白 + コマンド。上から順に同じ作業場所で走らせる — s4-replay は s4-fuzz が書いたコーパスを読む）
+s1-ok sober test examples/guide/kv2 --run TestParse
+s1-fail sober test examples/guide/kvbug --run TestParse
+s2-fail sober test examples/guide/kvbug --run TestRoundTrip
+s2-ok sober test examples/guide/kv2
+s3-cover sober test examples/guide/kv2 --cover
+s3-mutate sober test examples/guide/kv2 --mutate
+s3-after sober test examples/guide/kv3 --mutate
+s4-fuzz sober fuzz examples/guide/kvbug --run TestAnyLine --time 5s
+s4-replay sober test examples/guide/kvbug --run TestAnyLine
+s4-after sober test examples/guide/kv --mutate
+s5-sched sober fuzz examples/guide/kv --run TestCountAll --sched --time 2s

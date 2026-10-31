@@ -1,0 +1,36 @@
+package props
+
+// std/quick の写し（loader の quickx）: 性質の値の式は縮めた反例の再生でだけ power assert の形で印字される・
+// quick.New() の種はテストの名前で変わる・Assume の捨てた数は ok の行に出る
+
+import "std/quick"
+
+func TestRevRev() {
+    mut q := quick.New()
+    quick.Check(mut q, () => {
+        xs := quick.Slice(mut q, 10, () => quick.Int(mut q, -50, 50))
+        Same(Rev(Rev(xs)), xs)
+    })
+}
+
+func TestSumSmall() {
+    mut q := quick.New()
+    quick.Check(mut q, () => {
+        xs := quick.Slice(mut q, 8, () => quick.Int(mut q, 0, 9))
+        Sum(xs) < 30
+    })
+}
+
+func TestRevIsSame() {
+    mut q := quick.New()
+    quick.Check(mut q, () => Same(Rev(quick.Slice(mut q, 5, () => quick.Int(mut q, 0, 3))), quick.Slice(mut q, 5, () => quick.Int(mut q, 0, 3))))
+}
+
+func TestDivMod() {
+    mut q := quick.New()
+    quick.Check(mut q, () => {
+        x := quick.Int(mut q, -100, 100)
+        y := quick.Int(mut q, -9, 9)
+        quick.Assume(mut q, y != 0) && x / y * y + x % y == x
+    })
+}

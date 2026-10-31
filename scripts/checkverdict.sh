@@ -27,15 +27,22 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 [ $regen = 1 ] && mkdir -p "$G" && find "$G" -name "*.txt" -delete
 
+# CV_BUILD=1（incrcheck の gamma の相 — 便 2 R4）: check の前に同じ entry を置き場へ build する（γ と parse の木を書く — 結果は見ない）。
+# src/compiler の題材（自己・tools）は build しない（重い — 自己は incrcheck の鎖の bld が覆う）
+pre() {
+    [ "${CV_BUILD:-0}" = 1 ] && "$STAGE2" build "$1" -o "$2/cvb.out" > /dev/null 2>&1
+    return 0
+}
+
 one() {
     local w=${PAR_W:-$tmp} e=$1 key out ec=0
     key=$(echo "$e" | tr '/' '_')
     case "$e" in
         # 自己適用は std を compiler/std に写した木で（@embed の std の焼き込み — typerdiff と同じ）
-        src/compiler/app/*) mkdir -p "$w/self" && cp -r src/compiler "$w/self/compiler" && cp -r src/std "$w/self/compiler/std" &&
+        src/compiler/app) mkdir -p "$w/self" && cp -r src/compiler "$w/self/compiler" && cp -r src/std "$w/self/compiler/std" &&
             ( cd "$w/self/compiler" && ulimit -s unlimited && "$STAGE2" check "${e#src/compiler/}" "${split[@]}" ) > "$w/o" 2>&1 || ec=$? ;;
         src/compiler/*) ( cd "$ROOT/src/compiler" && ulimit -s unlimited && "$STAGE2" check "${e#src/compiler/}" "${split[@]}" ) > "$w/o" 2>&1 || ec=$? ;;
-        *) "$STAGE2" check "$e" "${split[@]}" > "$w/o" 2>&1 || ec=$? ;;
+        *) pre "$e" "$w"; "$STAGE2" check "$e" "${split[@]}" > "$w/o" 2>&1 || ec=$? ;;
     esac
     echo "exit=$ec" >> "$w/o"
     if [ $regen = 1 ]; then
@@ -53,7 +60,33 @@ one() {
 }
 
 list() {
-    ( scripts/irtext.sh --list; ls examples/*.sober; ls -d testdata/checkneg/* 2>/dev/null; ls -d src/compiler/tools/*/main.sober; echo src/compiler/app/main.sober ) | sort -u
+    ( scripts/irtext.sh --list; ls examples/*.sober; ls -d testdata/checkneg/* 2>/dev/null; ls -d src/compiler/tools/*/main.sober; echo src/compiler/app ) | sort -u | sample
+}
+
+# CV_SAMPLE = 抜き取り（呼び手の別の相が全数を覆うときだけ）: eighth = 8 本に 1 本 + compiler の題材・
+# std = std の package を 3 つ以上 import する題材・まだ覆っていない std の package を直に import する題材 + compiler の題材
+# （std の焼き込みを外した道の照合 — 全数の題材が引く std の package を全部覆う）
+sample() {
+    local e n i new
+    local -A seen=()
+    case "${CV_SAMPLE:-}" in
+        "") cat ;;
+        eighth) awk '/^src\/compiler\// || NR % 8 == 0' ;;
+        std)
+            while IFS= read -r e; do
+                case "$e" in src/compiler/*) echo "$e"; continue ;; esac
+                if [ -d "$e" ]; then mapfile -t is < <(find "$e" -name '*.sober' -exec cat {} + | grep -o '^import "std/[^"]*"' | sort -u)
+                else mapfile -t is < <(grep -o '^import "std/[^"]*"' "$e" | sort -u); fi
+                n=${#is[@]}
+                new=0
+                for i in "${is[@]}"; do [ -n "${seen[$i]:-}" ] || new=1; done
+                if [ "$n" -ge 3 ] || [ $new = 1 ]; then
+                    echo "$e"
+                    for i in "${is[@]}"; do seen[$i]=1; done
+                fi
+            done ;;
+        *) echo "checkverdict: unknown CV_SAMPLE=$CV_SAMPLE" >&2; exit 2 ;;
+    esac
 }
 
 par_init "$tmp"
@@ -62,5 +95,5 @@ par_wait > "$tmp/list"
 grep -v '^@@ ' "$tmp/list" || true
 ok=$(par_count ok "$tmp/list")
 fail=$(par_count fail "$tmp/list")
-echo "checkverdict${split:+ --split (G-e)}: $ok entries match testdata/checkverdict, fail=$fail"
+echo "checkverdict${split:+ --split (G-e)}${CV_SAMPLE:+ (sample $CV_SAMPLE)}: $ok entries match testdata/checkverdict, fail=$fail"
 [ "$fail" = 0 ]

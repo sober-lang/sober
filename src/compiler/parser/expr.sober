@@ -8,7 +8,7 @@ import "ast"
 import "lexer"
 import "std/iter"
 
-// isOp は階層 lv の演算子か
+// 階層 lv の演算子か
 func isOp(lv int, t int) bool {
     return switch lv {
     case 0: t == lexer.PipePipe
@@ -19,7 +19,7 @@ func isOp(lv int, t int) bool {
     }
 }
 
-// matchParen は位置 p の '(' に対応する ')' の位置（無ければ -1）
+// 位置 p の '(' に対応する ')' の位置（無ければ -1）
 func matchParen(cx Cx, p0 int) int {
     mut depth := 0
     mut p := p0
@@ -38,7 +38,7 @@ func matchParen(cx Cx, p0 int) int {
     return -1
 }
 
-// lambdaAhead は位置 p から lambda（lambda_params '=>'）が始まるか。結果は '=>' の位置（無ければ -1）
+// 位置 p から lambda（lambda_params '=>'）が始まるか。結果は '=>' の位置（無ければ -1）
 func lambdaAhead(cx Cx, p int) int {
     if tg(cx, p) == lexer.Identifier && tg(cx, p + 1) == lexer.FatArrow {
         return p + 1
@@ -134,7 +134,7 @@ func pipeStage(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx
     return node(mut nb, ast.EPipe, tk(cx, at), lhs, callee, args, 0, 0, 0), p
 }
 
-// parseBin は階層 lv の二項式（operand (op operand)* を左結合で畳む。tok は演算子）
+// 階層 lv の二項式（operand (op operand)* を左結合で畳む。tok は演算子）
 func parseBin(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int, c bool, lv int) (int, int) {
     if lv == 5 {
         return unary(mut nb, mut db, cx, p, c)
@@ -146,7 +146,7 @@ func parseBin(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx 
     return binRest(mut nb, mut db, cx, l, q, c, lv)
 }
 
-// binRest は lhs に続く階層 lv の (op operand)* を畳む（右項が読めなければ演算子の手前で止まる — PEG の * と同じ）
+// lhs に続く階層 lv の (op operand)* を畳む（右項が読めなければ演算子の手前で止まる — PEG の * と同じ）
 func binRest(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, l0 int, p0 int, c bool, lv int) (int, int) {
     mut l := l0
     mut p := p0
@@ -245,7 +245,7 @@ func postfix(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx C
     }
     mut e := e0
     mut p := q0
-    // `string(b)` → `$utf8.Parse(b)`（cst_to_ast の固定テンプレート — 裁定 C1。凍結した Zig 版は旧名 FromBytes を合成する — 構文の照合は綴りを揃えて比べる）
+    // `string(b)` → `$utf8.Parse(b)`（cst_to_ast の固定テンプレート。凍結した Zig 版は旧名 FromBytes を合成する — 構文の照合は綴りを揃えて比べる）
     mut bare_string := q0 == p0 + 1 && tg(cx, p0) == lexer.Identifier && textIs(cx, p0, "string")
     mut going := true
     mut lastCall := false
@@ -323,8 +323,8 @@ func postfix(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx C
     return e, p
 }
 
-// compositeAhead は位置 p から composite_lit（'mut'? literal_type literal_value）が始まるか。
-// literal_type <- type_name type_args? / slice_type / map_type。type_args は型として試し読みする（R5-2 — 失敗した試しの節は
+// 位置 p から composite_lit（'mut'? literal_type literal_value）が始まるか。
+// literal_type <- type_name type_args? / slice_type / map_type。type_args は型として試し読みする（失敗した試しの節は
 // 根から辿れないので出力に出ない）
 func compositeAhead(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int) bool {
     mut p := p0
@@ -352,7 +352,7 @@ func compositeAhead(nb mut builder.Builder[ast.Node], db mut builder.Builder[int
     return t == lexer.KwMap
 }
 
-// Elem は literal の要素 1 つ（keyed_element）: キーの式（無しは -1）・キーの字句位置（キー無しは -1、キーが裸の識別子 1 字句でなければ -2）・値の式
+// literal の要素 1 つ（keyed_element）: キーの式（無しは -1）・キーの字句位置（キー無しは -1、キーが裸の識別子 1 字句でなければ -2）・値の式
 type Elem struct {
     key int
     ktok int
@@ -545,7 +545,7 @@ func primary(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx C
     return -1, p
 }
 
-// intLit は整数リテラル（10 進・`0x` / `0o` / `0b` — i64 に収まらなければ拒否）。n 進の綴りは EInt の b に基数で印を付ける
+// 整数リテラル（10 進・`0x` / `0o` / `0b` — i64 に収まらなければ拒否）。n 進の綴りは EInt の b に基数で印を付ける
 // （printer と AST JSON だけが見る — 文字リテラルの b = 1 と同じ扱い）
 func intLit(nb mut builder.Builder[ast.Node], cx Cx, p int) (int, int) {
     t := cx.ts[p]
@@ -563,7 +563,7 @@ func intLit(nb mut builder.Builder[ast.Node], cx Cx, p int) (int, int) {
     return node(mut nb, ast.EInt, tk(cx, p), v, if r == 10 { 0 } else { r }, 0, 0, 0, 0), p + 1
 }
 
-// floatLit は浮動小数のリテラル（language.md 37 節）: 正確な 10 進の値を 1 回だけ binary64 へ丸めたビット列と綴り。
+// 浮動小数のリテラル（language.md 37 節）: 正確な 10 進の値を 1 回だけ binary64 へ丸めたビット列と綴り。
 // 整数部の先頭の 0 は 10 進の int と同じ規則（`0.5` は可・`01.5` は拒否）・float に丸めて溢れる（Inf になる）リテラルは拒否
 func floatLit(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int) (int, int) {
     t := cx.ts[p]
@@ -666,7 +666,7 @@ func switchExpr(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], c
     return node(mut nb, ast.ESwitch, tk(cx, p), subjects, ast.PutList(mut db, freeze(cases)), dflt, 0, 0, 0), q + 1
 }
 
-// typePatAhead は位置 p から type_pattern（type_name '{'）が始まるか
+// 位置 p から type_pattern（type_name '{'）が始まるか
 func typePatAhead(cx Cx, p int) bool {
     if tg(cx, p) == lexer.KwError {
         return tg(cx, p + 1) == lexer.LBrace
@@ -723,7 +723,7 @@ func typePattern(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], 
     return node(mut nb, ast.KPType, tk(cx, p), bind, tn, ast.PutList(mut db, freeze(fs)), 0, 0, 0), q + 1
 }
 
-// fold は operands を ops で左結合に畳む（ops[i] は operands[i] と operands[i+1] の間。opat は演算子の位置）
+// operands を ops で左結合に畳む（ops[i] は operands[i] と operands[i+1] の間。opat は演算子の位置）
 func fold(nb mut builder.Builder[ast.Node], cx Cx, operands []int, ops []int, opat []int, n int) int {
     mut l := operands[0]
     for i <- iter.Range(1, n) {
@@ -786,7 +786,7 @@ func constPattern(nb mut builder.Builder[ast.Node], db mut builder.Builder[int],
     return node(mut nb, ast.KPConst, 0, ast.PutList(mut db, freeze(alts)), 0, 0, 0, 0, 0), q
 }
 
-// genAhead は位置 p から generator（identifier_list '<-'）が始まるか
+// 位置 p から generator（identifier_list '<-'）が始まるか
 func genAhead(cx Cx, p0 int) bool {
     mut p := p0
     if tg(cx, p) != lexer.Identifier {
@@ -911,7 +911,7 @@ func stringLit(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx
     return node(mut nb, ast.EInterp, tk(cx, p), ast.PutList(mut db, freeze(lits)), ast.PutList(mut db, freeze(holes)), 0, 0, 0, 0), p + 1
 }
 
-// interpHole は字句 h から始まる穴の字句列を 1 つの式として読む（全節の tok は文字列リテラル p の位置）
+// 字句 h から始まる穴の字句列を 1 つの式として読む（全節の tok は文字列リテラル p の位置）
 func interpHole(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int, h int) int {
     hx := Cx{cx.src, cx.ts, cx.first, cx.holes, tk(cx, p), cx.iface}
     e, q := parseExpr(mut nb, mut db, hx, h, false)

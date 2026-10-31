@@ -58,7 +58,7 @@ type Doc struct {
     seal sealed
 }
 
-// sealed は Doc の封（非公開 — 外で値を書けない）
+// Doc の封（非公開 — 外で値を書けない）
 type sealed struct {
 }
 
@@ -90,7 +90,7 @@ func At(d Doc, n int) Value {
     a := d.a[n]
     b := d.b[n]
     k := d.kind[n]
-    // 文の if + return で書く（値の位置の switch だと、[]string を持つ variant の腕の合流を check が拒否する — F-ab）
+    // 文の if + return で書く（値の位置の switch だと、[]string を持つ variant の腕の合流を check が拒否する）
     if k == kObj {
         return Object{names: keysOf(d, a, b), vals: d.kids[a + b:a + b + b]}
     }
@@ -105,7 +105,7 @@ func At(d Doc, n int) Value {
     }
 }
 
-// keysOf はオブジェクトのキーのノード kids[a, a + n) の文字列の列
+// オブジェクトのキーのノード kids[a, a + n) の文字列の列
 func keysOf(d Doc, a int, n int) []string {
     mut ks := mut []string{}
     for i <- iter.Range(0, n) {
@@ -114,7 +114,7 @@ func keysOf(d Doc, a int, n int) []string {
     return ks
 }
 
-// text は文字列のノード k の中身
+// 文字列のノード k の中身
 func text(d Doc, k int) string {
     return if d.kind[k] == kStr { bytesToString(d.src[d.a[k]:d.b[k]]) } else { bytesToString(d.esc[d.a[k]:d.b[k]]) }
 }
@@ -168,7 +168,7 @@ func GetAt(d Doc, n int, key string, hint int) int? {
     return nil
 }
 
-// isWs は JSON の空白（space・\t・\n・\r）
+// JSON の空白（space・\t・\n・\r）
 func isWs(c byte) bool {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r'
 }
@@ -185,7 +185,7 @@ func isDigit(c byte) bool {
     return c >= '0' && c <= '9'
 }
 
-// numEnd は b[i] から始まる数の字句の終わり（文法に合わなければ -1 — 「-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?」）
+// b[i] から始まる数の字句の終わり（文法に合わなければ -1 — 「-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?」）
 func numEnd(b []byte, i int) int {
     mut j := i
     if j < len(b) && b[j] == '-' {
@@ -225,7 +225,7 @@ func numEnd(b []byte, i int) int {
     return j
 }
 
-// hexVal は 16 進の 1 桁の値（16 進でなければ -1）
+// 16 進の 1 桁の値（16 進でなければ -1）
 func hexVal(c byte) int {
     return if c >= '0' && c <= '9' {
         int(c) - 48
@@ -238,7 +238,7 @@ func hexVal(c byte) int {
     }
 }
 
-// hex4 は b[i:i + 4] の 16 進 4 桁の値（足りない・16 進でなければ -1）
+// b[i:i + 4] の 16 進 4 桁の値（足りない・16 進でなければ -1）
 func hex4(b []byte, i int) int {
     if i + 4 > len(b) {
         return -1
@@ -254,7 +254,7 @@ func hex4(b []byte, i int) int {
     return v
 }
 
-// strScan は b[i] = '"' から始まる文字列の字句を読む: (閉じの '"' の位置, エスケープを含むか) — 不正なら位置 -1 と不正の位置を 2 つ目の int に
+// b[i] = '"' から始まる文字列の字句を読む: (閉じの '"' の位置, エスケープを含むか) — 不正なら位置 -1 と不正の位置を 2 つ目の int に
 func strScan(b []byte, i int) (int, bool, int) {
     mut j := i + 1
     mut esc := false
@@ -301,7 +301,7 @@ func strScan(b []byte, i int) (int, bool, int) {
     return -1, false, j
 }
 
-// unescape は検査済みの字句 b(i, e)（両端の '"' の内側）のエスケープを解いて out に積む
+// 検査済みの字句 b(i, e)（両端の '"' の内側）のエスケープを解いて out に積む
 func unescape(out mut builder.Builder[byte], b []byte, i int, e int) {
     mut j := i
     while j < e {
@@ -327,7 +327,7 @@ func unescape(out mut builder.Builder[byte], b []byte, i int, e int) {
     }
 }
 
-// putRune はコードポイント cp（サロゲートでない）の UTF-8 を out に積む
+// コードポイント cp（サロゲートでない）の UTF-8 を out に積む
 func putRune(out mut builder.Builder[byte], cp int) {
     if cp < 128 {
         builder.Push(mut out, byte(cp))
@@ -346,7 +346,7 @@ func putRune(out mut builder.Builder[byte], cp int) {
     }
 }
 
-// litAt は b[i:] が綴り w で始まるか
+// b[i:] が綴り w で始まるか
 func litAt(b []byte, i int, w string) bool {
     p := bytes(w)
     if i + len(p) > len(b) {
@@ -360,7 +360,7 @@ func litAt(b []byte, i int, w string) bool {
     return true
 }
 
-// put は明示のスタック st の sp 番目に x を置く（伸ばすのは末尾だけ — 1 本のスタックなので先端の append）
+// 明示のスタック st の sp 番目に x を置く（伸ばすのは末尾だけ — 1 本のスタックなので先端の append）
 func put(st mut []int, sp int, x int) {
     if sp < len(st) {
         st[sp] = x
@@ -369,7 +369,7 @@ func put(st mut []int, sp int, x int) {
     }
 }
 
-// nodes はノードの表の組み立て（Parse の作業域）: 4 本の列と子の列 kids を、入力から数えた上界の長さで先に確保して添字で書く
+// ノードの表の組み立て（Parse の作業域）: 4 本の列と子の列 kids を、入力から数えた上界の長さで先に確保して添字で書く
 // （Builder に積んで Build で写す形は chunk の倍々の余りと写しで RSS が表の 3 倍だった）。n = ノードの数・nk = 子の数
 type nodes struct {
     kind mut []int
@@ -381,7 +381,7 @@ type nodes struct {
     nk int
 }
 
-// node はノードを足してその番号を返す
+// ノードを足してその番号を返す
 func node(ns mut nodes, k int, a int, b int, p int) int {
     i := ns.n
     ns.kind[i] = k
@@ -392,7 +392,7 @@ func node(ns mut nodes, k int, a int, b int, p int) int {
     return i
 }
 
-// bound はノードの数の上界（根 1 つ + 値と鍵の前に来る区切り `{` `[` `,` `:` の数 — 文字列の中のものも数えるので多めになる）
+// ノードの数の上界（根 1 つ + 値と鍵の前に来る区切り `{` `[` `,` `:` の数 — 文字列の中のものも数えるので多めになる）
 func bound(b []byte) int {
     mut n := 1
     mut i := 0
@@ -406,7 +406,7 @@ func bound(b []byte) int {
     return n
 }
 
-// zeroFill は空の列 xs を長さ n の 0 にする（先端に続けて伸ばす）
+// 空の列 xs を長さ n の 0 にする（先端に続けて伸ばす）
 func zeroFill(xs mut []int, n int) {
     mut i := 0
     while i < n {
@@ -555,7 +555,7 @@ func Parse(b []byte) (Doc, error?) {
     return d, nil
 }
 
-// readKey は b[i] から オブジェクトのキーの文字列と ':' を読む: (キーのノード, ':' の後の位置)
+// b[i] から オブジェクトのキーの文字列と ':' を読む: (キーのノード, ':' の後の位置)
 @errors(InvalidJson)
 func readKey(ns mut nodes, esc mut builder.Builder[byte], b []byte, i int) (int, int, error?) {
     if i >= len(b) || b[i] != '"' {
@@ -573,7 +573,7 @@ func readKey(ns mut nodes, esc mut builder.Builder[byte], b []byte, i int) (int,
     return k, skipWs(b, j + 1), nil
 }
 
-// strNode は検査済みの文字列の字句 b[i..e]（両端の '"' 込み）のノード
+// 検査済みの文字列の字句 b[i..e]（両端の '"' 込み）のノード
 func strNode(ns mut nodes, esc mut builder.Builder[byte], b []byte, i int, e int, hasEsc bool) int {
     if !hasEsc {
         return node(mut ns, kStr, i + 1, e, i)
@@ -583,7 +583,7 @@ func strNode(ns mut nodes, esc mut builder.Builder[byte], b []byte, i int, e int
     return node(mut ns, kStrEsc, s, builder.Len(mut esc), i)
 }
 
-// closeFrame は枠 ft（子は st[ft + 3, sp)）を閉じた入れ物のノード
+// 枠 ft（子は st[ft + 3, sp)）を閉じた入れ物のノード
 func closeFrame(ns mut nodes, st mut []int, ft int, sp int) int {
     k := st[ft]
     a := ns.nk
@@ -605,7 +605,7 @@ func closeFrame(ns mut nodes, st mut []int, ft int, sp int) int {
     return node(mut ns, kObj, a, m, st[ft + 2])
 }
 
-// dupKey は重複したキーのうち src で最も前の 2 つ目のキーの位置（無ければ -1）
+// 重複したキーのうち src で最も前の 2 つ目のキーの位置（無ければ -1）
 func dupKey(d Doc) int {
     mut best := -1
     for n <- iter.Range(0, len(d.kind)) {
@@ -621,9 +621,9 @@ func dupKey(d Doc) int {
     return best
 }
 
-// dupSmall は欄の少ないオブジェクトの総当たり: 長さの違うキーは比べない（安い前判定 — 総当たりの比較の大半がここで落ちる）。長さの等しい組は
+// 欄の少ないオブジェクトの総当たり: 長さの違うキーは比べない（安い前判定 — 総当たりの比較の大半がここで落ちる）。長さの等しい組は
 // 中身をバイトで比べる（Doc の欄を局所に取ってから回す — GetAt と同じ・旧 keyEq の展開）。署名（長さ + 先頭 7 バイトの 1 語）を先に作る形は、作る費用が
-// 前判定の後に残る比較より高く棄てた（jsonapi 命令 +0.14 G — report-628）
+// 前判定の後に残る比較より高く棄てた（jsonapi 命令 +0.14 G の値札）
 func dupSmall(d Doc, a int, m int) int {
     kind := d.kind
     ka := d.a
@@ -716,7 +716,7 @@ func Format(d Doc, n int) string {
     return bytesToString(builder.Build(mut out))
 }
 
-// scalar は入れ物でないノード n を out に書く
+// 入れ物でないノード n を out に書く
 func scalar(out mut builder.Builder[byte], d Doc, n int) {
     k := d.kind[n]
     if k == kNull {
@@ -741,7 +741,7 @@ func putLit(out mut builder.Builder[byte], s string) {
 @intrinsic("jclean")
 func sysClean(b []byte) int
 
-// quote は s を JSON の文字列として書く（エスケープの要らない区間はまとめて積む — 区間の終わりは sysClean で探す。全部が要らない文字列は
+// s を JSON の文字列として書く（エスケープの要らない区間はまとめて積む — 区間の終わりは sysClean で探す。全部が要らない文字列は
 // 引用符と一緒に 1 回で積む — 速い道を呼び出し点に展開される大きさに保ち、エスケープのある文字列は quoteEsc）
 func quote(out mut builder.Builder[byte], s []byte) {
     i := sysClean(s)
@@ -752,7 +752,7 @@ func quote(out mut builder.Builder[byte], s []byte) {
     }
 }
 
-// quoteEsc は quote の遅い道（i = 最初のエスケープの要るバイトの位置）
+// quote の遅い道（i = 最初のエスケープの要るバイトの位置）
 func quoteEsc(out mut builder.Builder[byte], s []byte, i0 int) {
     mut i := i0
     builder.Push(mut out, '"')
@@ -797,7 +797,7 @@ func shut(k int) byte {
     return '}'
 }
 
-// unesc は 1 字のエスケープ（\ の後の字 x — u 以外）の値
+// 1 字のエスケープ（\ の後の字 x — u 以外）の値
 func unesc(x byte) byte {
     if x == 'b' {
         return byte(8)

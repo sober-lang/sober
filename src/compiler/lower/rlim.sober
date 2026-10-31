@@ -1,11 +1,11 @@
 package lower
 
-// 展開後の上限の巻き上げ（std の work の席 段 2 — report-531 (C)）: IR の展開（irInline）の後の SSA に掛ける軽い LICM。region.alloc は rtlower で
+// 展開後の上限の巻き上げ: IR の展開（irInline）の後の SSA に掛ける軽い LICM。region.alloc は rtlower で
 // rt.region_alloc の呼び出しになり、展開で関数の中に開く — 上限（W_SLOTS + (d+1) × W_SLOT_SIZE）の load と算術は optimizeSsa の LICM より後に
 // 現れるのでループに残っていた（jsonapi の zeroFill — append 1 回ごとに 5〜7 命令）。
 // 巻き上げる load（種）: `load G[W_SLOTS]` / `load G[W_SLOT_SIZE]` で G が `globaladdr @rt.meta` の結果そのもの（gep を挟まない — taskUse の
 // スロットの先頭はワーカーの記録から来るので種にならない）。この 2 語を書くのは rt の起動（rt.sober buildEntry）と、W_SLOT_SIZE は task の切替
-// （taskHandover — task の op の中）・チャネルの送りの写し（chanSendCopy — relocate と同じ並び）だけ（report-655）なので、ループの中の呼び出しが
+// （taskHandover — task の op の中）・チャネルの送りの写し（chanSendCopy — relocate と同じ並び）だけなので、ループの中の呼び出しが
 // 既知の rt（rt.slice_grow / slice_grow8 / region_alloc / region_alloc8 — 書くのは新しい列と W_BUMP の語・rt.panic / panic_mem — 戻らない）
 // だけなら、ループの間に値は変わらない（別名の事実 — docs/ir.md 6 節。hloop.sober と同じ型の論証）。
 // 種を持つループだけ、種と割り算以外の算術・比較（rmMovable）で被演算子が全部ループの外のものを前置きへ移す。被演算子の扱いを 2 つ足す:
@@ -16,7 +16,7 @@ package lower
 import "desugar"
 import "std/iter"
 
-// rlimModule はモジュールの全関数に展開後の上限の巻き上げを掛ける
+// モジュールの全関数に展開後の上限の巻き上げを掛ける
 func rlimModule(st mut St) {
     mut f := st.fhead
     while f != -1 {
@@ -27,12 +27,12 @@ func rlimModule(st mut St) {
     }
 }
 
-// rmSeedOff は load / store の語 k が種の 2 語か
+// load / store の語 k が種の 2 語か
 func rmSeedOff(k int) bool {
     return k == W_SLOTS || k == W_SLOT_SIZE
 }
 
-// rmCheap は利用者のループの頭があり（展開した先のループの印も写る — irinl）、種の 2 語の語を読む load がある関数か（作業域を作らない走査 —
+// 利用者のループの頭があり（展開した先のループの印も写る — irinl）、種の 2 語の語を読む load がある関数か（作業域を作らない走査 —
 // 番地の出所は見ない。ループの無い関数で CFG を組まない — 展開した region.alloc の上限の load は自己 build のほとんどの関数にある）
 func rmCheap(st mut St, f FnRef) bool {
     mut loop := false
@@ -60,12 +60,12 @@ func rmCheap(st mut St, f FnRef) bool {
     return false
 }
 
-// rmMeta は値 v が `globaladdr @rt.meta` の結果か（def = 値 → 定義の命令）
+// 値 v が `globaladdr @rt.meta` の結果か（def = 値 → 定義の命令）
 func rmMeta(st mut St, def mut []int, v int) bool {
     return v >= 0 && v < len(def) && def[v] >= 0 && irInsOp(mut st, InsRef(def[v])) == OpGlobal && irInsA(mut st, InsRef(def[v])) == st.meta
 }
 
-// rmSeed は命令が種（`load G[W_SLOTS | W_SLOT_SIZE]`・G = globaladdr @rt.meta）か
+// 命令が種（`load G[W_SLOTS | W_SLOT_SIZE]`・G = globaladdr @rt.meta）か
 func rmSeed(st mut St, def mut []int, ins InsRef) bool {
     return irInsOp(mut st, ins) == OpLoad && irInsC(mut st, ins) == 0 && rmSeedOff(irInsB(mut st, ins)) && rmMeta(mut st, mut def, irInsA(mut st, ins))
 }
@@ -149,7 +149,7 @@ func rlimFunc(st mut St, f FnRef) {
     }
 }
 
-// rmDefs は値 → 定義の命令・定義のブロック番号（ブロックの仮引数も — 関数の仮引数は -1 = 外）を組む
+// 値 → 定義の命令・定義のブロック番号（ブロックの仮引数も — 関数の仮引数は -1 = 外）を組む
 func rmDefs(st mut St, w mut m2rW, pw mut PrW, nv int) {
     xFill(mut pw.def, nv, -1)
     xFill(mut pw.dblk, nv, -1)
@@ -174,7 +174,7 @@ func rmDefs(st mut St, w mut m2rW, pw mut PrW, nv int) {
     }
 }
 
-// rmHasSeed はループ（印 pw.mark）に種（番地が globaladdr @rt.meta 直の load）があるか
+// ループ（印 pw.mark）に種（番地が globaladdr @rt.meta 直の load）があるか
 func rmHasSeed(st mut St, w mut m2rW, pw mut PrW) bool {
     for bi <- iter.Range(0, w.nb) {
         if pw.inl[bi] == pw.mark && w.blk[bi] >= 0 {
@@ -190,7 +190,7 @@ func rmHasSeed(st mut St, w mut m2rW, pw mut PrW) bool {
     return false
 }
 
-// rmLoopOk はループ（印 pw.mark）が種の 2 語の語を読む load を持ち、種の 2 語を書きうる命令が無いか（ファイルの冒頭の「諦める形」— 作業域を使わない
+// ループ（印 pw.mark）が種の 2 語の語を読む load を持ち、種の 2 語を書きうる命令が無いか（ファイルの冒頭の「諦める形」— 作業域を使わない
 // 門。種の 2 語の語への store は番地を問わず諦める）
 func rmLoopOk(st mut St, w mut m2rW, pw mut PrW) bool {
     mut seed := false
@@ -219,7 +219,7 @@ func rmLoopOk(st mut St, w mut m2rW, pw mut PrW) bool {
     return seed
 }
 
-// rmTrivial は頭 h の自明な仮引数（ループの中から入る辺の実引数が全部自分自身）を前置き pre の br の実引数へ付け替える印を付ける
+// 頭 h の自明な仮引数（ループの中から入る辺の実引数が全部自分自身）を前置き pre の br の実引数へ付け替える印を付ける
 func rmTrivial(st mut St, w mut m2rW, pw mut PrW, h int, pre BlkRef, sub mut []int, smark mut []int) {
     hb := BlkRef(w.blk[h])
     pargs := irBlkX2(mut st, pre)
@@ -254,7 +254,7 @@ func rmTrivial(st mut St, w mut m2rW, pw mut PrW, h int, pre BlkRef, sub mut []i
     }
 }
 
-// rmMovable は前置きへ移す命令か: 種と、割り算以外の算術・比較（gep・globaladdr は移さない — x86 は gep を load の番地に融合するので、移すと
+// 前置きへ移す命令か: 種と、割り算以外の算術・比較（gep・globaladdr は移さない — x86 は gep を load の番地に融合するので、移すと
 // 基底と添字の 2 本がループを跨いで生きる〔初版 — zeroFill で meta の番地と深度が両方 spill した〕。globaladdr は即値なので使う点で作り直す）
 func rmMovable(st mut St, def mut []int, ins InsRef) bool {
     op := irInsOp(mut st, ins)
@@ -268,12 +268,12 @@ func rmMovable(st mut St, def mut []int, ins InsRef) bool {
     return op == OpCmp || rmSeed(mut st, mut def, ins)
 }
 
-// rmCopyable はループの中の値 v が前置きに写せる命令（定数・globaladdr — 被演算子なし）の結果か
+// ループの中の値 v が前置きに写せる命令（定数・globaladdr — 被演算子なし）の結果か
 func rmCopyable(st mut St, def mut []int, v int) bool {
     return def[v] >= 0 && (irInsOp(mut st, InsRef(def[v])) == OpConst || irInsOp(mut st, InsRef(def[v])) == OpGlobal)
 }
 
-// rmOutside は命令の被演算子が全部ループ（印 pw.mark）の外か、付け替えられる値（頭の自明な仮引数・ループの中の定数）か
+// 命令の被演算子が全部ループ（印 pw.mark）の外か、付け替えられる値（頭の自明な仮引数・ループの中の定数）か
 func rmOutside(st mut St, f FnRef, pw mut PrW, ins InsRef, sub mut []int, smark mut []int) bool {
     for k <- iter.Range(0, xNOps(mut st, ins)) {
         v := xOpnd(mut st, ins, k)
@@ -285,7 +285,7 @@ func rmOutside(st mut St, f FnRef, pw mut PrW, ins InsRef, sub mut []int, smark 
     return true
 }
 
-// rmRewrite は前置き pre へ移す命令の被演算子を付け替える（自明な仮引数 → 前置きの実引数・ループの中の定数 → 前置きに作った写し）
+// 前置き pre へ移す命令の被演算子を付け替える（自明な仮引数 → 前置きの実引数・ループの中の定数 → 前置きに作った写し）
 func rmRewrite(st mut St, f FnRef, pw mut PrW, ins InsRef, pre BlkRef, sub mut []int, smark mut []int) {
     ks := st.opk[irInsOp(mut st, ins)]
     for fl <- iter.Range(0, 3) {

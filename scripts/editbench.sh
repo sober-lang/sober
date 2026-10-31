@@ -21,7 +21,7 @@ cp -r src/compiler "$W/base/compiler"
 cp -r src/std "$W/base/compiler/std"
 ulimit -s unlimited
 # 温めた置き場（編集前の木）
-( cd "$W/base/compiler" && SOBER_CACHE=$W/warm "$STAGE2" check app/main.sober --split > /dev/null 2>&1 )
+( cd "$W/base/compiler" && SOBER_CACHE=$W/warm "$STAGE2" check app --split > /dev/null 2>&1 )
 edit() { # $1 = 編集・$2 = 木の compiler/
     case "$1" in
         none) ;;
@@ -34,9 +34,9 @@ edit() { # $1 = 編集・$2 = 木の compiler/
 meas() { # $1 = 編集・$2 = 種類（whole / warm / cold）
     local t=$W/t.txt tr=$W/tr.txt c miss=-
     case "$2" in
-        whole) ( cd "$W/tree/compiler" && SOBER_CACHE= /usr/bin/time -o "$t" -f '%e %M' "$STAGE2" check app/main.sober > /dev/null 2>&1 ) ;;
-        warm) rm -rf "$W/c"; cp -r "$W/warm" "$W/c"; ( cd "$W/tree/compiler" && SOBER_CACHE=$W/c /usr/bin/time -o "$t" -f '%e %M' "$STAGE2" check app/main.sober --split --cache-trace > /dev/null 2> "$tr" ); miss=$(grep -c ' miss$' "$tr") ;;
-        cold) rm -rf "$W/c"; ( cd "$W/tree/compiler" && SOBER_CACHE=$W/c /usr/bin/time -o "$t" -f '%e %M' "$STAGE2" check app/main.sober --split > /dev/null 2>&1 ) ;;
+        whole) ( cd "$W/tree/compiler" && SOBER_CACHE= /usr/bin/time -o "$t" -f '%e %M' "$STAGE2" check app > /dev/null 2>&1 ) ;;
+        warm) rm -rf "$W/c"; cp -r "$W/warm" "$W/c"; ( cd "$W/tree/compiler" && SOBER_CACHE=$W/c /usr/bin/time -o "$t" -f '%e %M' "$STAGE2" check app --split --cache-trace > /dev/null 2> "$tr" ); miss=$(grep -c ' miss$' "$tr") ;;
+        cold) rm -rf "$W/c"; ( cd "$W/tree/compiler" && SOBER_CACHE=$W/c /usr/bin/time -o "$t" -f '%e %M' "$STAGE2" check app --split > /dev/null 2>&1 ) ;;
     esac
     echo "$1 $2 $(tail -1 "$t") $miss"
 }

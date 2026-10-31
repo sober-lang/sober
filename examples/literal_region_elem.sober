@@ -1,6 +1,6 @@
 package main
 
-// slice literal / map literal の要素に外側の region の値（仮引数・外の局所）を入れる（F-u の修理 — 要素を点座標へ緩める ann。
+// slice literal / map literal の要素に外側の region の値（仮引数・外の局所）を入れる（要素を点座標へ緩める ann —
 // append の appendValueAnn と同じ規律）。対照: 局所で作った値・region を持たない値・struct literal・map のキーは前から通る
 
 type S struct {

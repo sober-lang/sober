@@ -1,12 +1,12 @@
 package analyzer
 
-// 名前付き関数型の後置 `@errors`（effect の波 段 1 — language.md 12 節の面「高階」・13 節）: F の宣言は上界の契約（tightness なし・公開の F への強制なし）。
+// 名前付き関数型の後置 `@errors`（language.md 12 節の面「高階」・13 節）: F の宣言は上界の契約（tightness なし・公開の F への強制なし）。
 // - F の値を通した呼び出し（関数値の呼び出しで callee の表層型が宣言つきの F）の集合 = 宣言のラベル ∪ 宣言の仮引数の名前の項の位置の実引数の失敗
 //   （名前付き関数の Flow と同じ合流 — callVal）
 // - F の値になる値の位置のラムダ（表層型検査器の記録 — desugar.LamKey）は本体の集合を宣言と照合する（漏れはラムダの位置で拒否 — 最後の 1 周の記録）。
 //   ラムダの仮引数のうち F の Flow の対象（匿名の関数型で結果が error?）は、呼ぶか名前付き関数の Flow の位置へ渡すと「失敗が漏れうる」と記し（過大近似 —
 //   握りつぶしも数える）集合には足さない。囲む関数の Flow の仮引数を呼ぶ形は F の契約で言えないので導出できない側（拒否）
-// - 宣言の無い F を通した呼び出しは従来どおり TOP（閉じた世界の導出は段 1b — report-971 4 節）
+// - 宣言の無い F を通した呼び出しは従来どおり TOP（閉じた世界の導出として扱う）
 
 import "ast"
 import "desugar"
@@ -17,18 +17,18 @@ const MFnLeak = 32     // F の値のラムダが宣言の外のラベルを返�
 const MFnFlowLeak = 33 // F の値のラムダが宣言に書いていない仮引数の失敗を返しうる（at = ラムダ, 付帯 = 記録の添字）
 const MFnAnn = 34      // F の @errors の項が読めない（at = 型宣言, 付帯 = 項の添字）
 
-// fnBody は名前付き関数型の型宣言 decl の BFunc
+// 名前付き関数型の型宣言 decl の BFunc
 func fnBody(az mut Az, decl int) ast.Node {
     return node(mut az, desugar.NodeRef(node(mut az, desugar.NodeRef(decl)).c))
 }
 
-// fnErrs は型宣言 decl の後置 `@errors` の項の列（無ければ -1）
+// 型宣言 decl の後置 `@errors` の項の列（無ければ -1）
 func fnErrs(az mut Az, decl int) desugar.ListRef {
     l, t, pk := desugar.FnTypeErrors(mut az.d, desugar.NodeRef(decl))
     return l
 }
 
-// fnParamOf は型宣言 decl の仮引数の名前 name の添字（名前なしの関数型・無ければ -1）
+// 型宣言 decl の仮引数の名前 name の添字（名前なしの関数型・無ければ -1）
 func fnParamOf(az mut Az, decl int, name desugar.StrRef) int {
     ns := desugar.ListRef(fnBody(mut az, decl).c)
     if ns == -1 {
@@ -42,7 +42,7 @@ func fnParamOf(az mut Az, decl int, name desugar.StrRef) int {
     return -1
 }
 
-// fnFlowParam は型宣言 decl の仮引数 j が匿名の関数型で結果に error を持つか（Flow の対象）
+// 型宣言 decl の仮引数 j が匿名の関数型で結果に error を持つか（Flow の対象）
 func fnFlowParam(az mut Az, decl int, j int) bool {
     t := nat(mut az, desugar.ListRef(fnBody(mut az, decl).a), j)
     if j >= PBITS || kind(mut az, t) != ast.TFunc {
@@ -57,7 +57,7 @@ func fnFlowParam(az mut Az, decl int, j int) bool {
     return false
 }
 
-// fnSet は型宣言 decl の @errors のラベルの集合（宣言の package で引く — 仮引数の名前の項と読めない項は落とす）
+// 型宣言 decl の @errors のラベルの集合（宣言の package で引く — 仮引数の名前の項と読めない項は落とす）
 func fnSet(az mut Az, decl int) LSet {
     l, t, pk := desugar.FnTypeErrors(mut az.d, desugar.NodeRef(decl))
     saved := az.pk
@@ -76,7 +76,7 @@ func fnSet(az mut Az, decl int) LSet {
     return m
 }
 
-// fnDeclFlow は型宣言 decl の @errors に書いた仮引数の名前の集合（ビット j = 仮引数 j）
+// 型宣言 decl の @errors に書いた仮引数の名前の集合（ビット j = 仮引数 j）
 func fnDeclFlow(az mut Az, decl int) int {
     l := fnErrs(mut az, decl)
     mut m := 0
@@ -89,13 +89,13 @@ func fnDeclFlow(az mut Az, decl int) int {
     return m
 }
 
-// fnCallDecl は関数値の呼び出しの callee の表層型が宣言つきの名前付き関数型ならその型宣言（でなければ -1）
+// 関数値の呼び出しの callee の表層型が宣言つきの名前付き関数型ならその型宣言（でなければ -1）
 func fnCallDecl(az mut Az, callee desugar.NodeRef) int {
     d := desugar.FnTypeOf(mut az.d, callee)
     return if d != -1 && fnErrs(mut az, d) != -1 { d } else { -1 }
 }
 
-// lamFlowIdx は式 e が、いま歩いている F の値のラムダの Flow の対象の仮引数の名前ならその添字（でなければ -1）
+// 式 e が、いま歩いている F の値のラムダの Flow の対象の仮引数の名前ならその添字（でなければ -1）
 func lamFlowIdx(az mut Az, e desugar.NodeRef) int {
     if az.lamFN == az.lamBase || kind(mut az, e) != ast.EIdent {
         return -1
@@ -109,7 +109,7 @@ func lamFlowIdx(az mut Az, e desugar.NodeRef) int {
     return -1
 }
 
-// lamPush は F の値のラムダの Flow の対象の仮引数 j（名前 name）を積む
+// F の値のラムダの Flow の対象の仮引数 j（名前 name）を積む
 func lamPush(az mut Az, name desugar.StrRef, j int) {
     if table.Len(mut az.lamf) <= az.lamFN * 2 {
         table.Push(mut az.lamf, int(name))
@@ -123,7 +123,7 @@ func lamPush(az mut Az, name desugar.StrRef, j int) {
 
 const LAM_W = 5  // F の値のラムダの記録の幅 [ラムダ, 型宣言, 集合.lo, 集合.hi, 呼んだ仮引数]
 
-// lamRecord は最後の 1 周で F の値のラムダの本体の集合 v と呼んだ仮引数 cand を記録する
+// 最後の 1 周で F の値のラムダの本体の集合 v と呼んだ仮引数 cand を記録する
 func lamRecord(az mut Az, lam desugar.NodeRef, decl int, v LSet, cand int) {
     if !az.rec {
         return
@@ -135,12 +135,12 @@ func lamRecord(az mut Az, lam desugar.NodeRef, decl int, v LSet, cand int) {
     table.Push(mut az.lamck, cand)
 }
 
-// lamSet は記録 i の集合
+// 記録 i の集合
 func lamSet(az mut Az, i int) LSet {
     return LSet{lo: table.Get(mut az.lamck, i * LAM_W + 2), hi: table.Get(mut az.lamck, i * LAM_W + 3)}
 }
 
-// checkFnTypes は F の値のラムダの記録を宣言と照合する（同じラムダの記録は合併 — 局所の不動点で本体を 2 度以上歩く）
+// F の値のラムダの記録を宣言と照合する（同じラムダの記録は合併 — 局所の不動点で本体を 2 度以上歩く）
 func checkFnTypes(az mut Az) {
     n := table.Len(mut az.lamck) / LAM_W
     for i <- iter.Range(0, n) {
@@ -178,7 +178,7 @@ func fnTyName(az mut Az, decl int) string {
     return str(mut az, desugar.StrRef(node(mut az, desugar.NodeRef(decl)).a))
 }
 
-// fnMessage は F の値のラムダの指摘の本文（記録の添字 i）
+// F の値のラムダの指摘の本文（記録の添字 i）
 func fnMessage(az mut Az, k int, i int) string {
     decl := table.Get(mut az.lamck, i * LAM_W + 1)
     v := lamSet(mut az, i)
@@ -194,7 +194,7 @@ func fnMessage(az mut Az, k int, i int) string {
     return "this function value of type '${name}' may return ${labelNames(mut az, lsMinus(v, fnSet(mut az, decl)), pk)} not listed in the @errors of '${name}'"
 }
 
-// fnParamNames は型宣言 decl の仮引数の集合 m の名前を並べる（`'emit'`）
+// 型宣言 decl の仮引数の集合 m の名前を並べる（`'emit'`）
 func fnParamNames(az mut Az, decl int, m int) string {
     ns := desugar.ListRef(fnBody(mut az, decl).c)
     mut s := ""
@@ -207,7 +207,7 @@ func fnParamNames(az mut Az, decl int, m int) string {
     return s
 }
 
-// checkFnAnnots は名前付き関数型の @errors の項を照合する（項は宣言の package のラベルか、Flow の対象の仮引数の名前）
+// 名前付き関数型の @errors の項を照合する（項は宣言の package のラベルか、Flow の対象の仮引数の名前）
 func checkFnAnnots(az mut Az) {
     for f <- iter.Range(0, desugar.Nfile(mut az.d)) {
         root := desugar.NodeOf(mut az.d, desugar.FileRoot(mut az.d, f))
@@ -221,7 +221,7 @@ func checkFnAnnots(az mut Az) {
     }
 }
 
-// fnAnnots は型宣言 td（名前付き関数型）の @errors の項を照合する
+// 型宣言 td（名前付き関数型）の @errors の項を照合する
 func fnAnnots(az mut Az, td desugar.NodeRef) {
     l, t, pk := desugar.FnTypeErrors(mut az.d, td)
     if l == -1 {
@@ -239,7 +239,7 @@ func fnAnnots(az mut Az, td desugar.NodeRef) {
     }
 }
 
-// fnAnnMessage は名前付き関数型の @errors の項の指摘の本文
+// 名前付き関数型の @errors の項の指摘の本文
 func fnAnnMessage(az mut Az, td desugar.NodeRef, j int) string {
     l, t, pk := desugar.FnTypeErrors(mut az.d, td)
     s := desugar.StrRef(desugar.LatI(mut az.d, l, j))

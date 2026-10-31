@@ -1,0 +1,8 @@
+package main
+
+import "testdata/splitcatch/lib"
+
+func main() {
+    mut a := lib.Acc{n: 1}
+    println(lib.Add(mut a, "/nonexistent/splitcatch"))
+}

@@ -1,0 +1,98 @@
+package analyzer
+
+// 宣言の書き換え器（`sober fix` — language.md 12 節の 4 点組の「正の列挙は fix が書き tightness を見る」）: 導出から宣言の行を作る。
+// 書くのは std の外のファイルの本体のある公開関数（std = true なら std の強制の掛かる公開関数にも正規形）:
+//   --effects: `@effects` の無い関数に導出の正の列挙を前置で足す・語だけの正の列挙が導出より広ければ縮める（否定形・型の名前の項を持つ列挙・漏れは触らない —
+//              漏れは人の裁定: 宣言を広げるか、コードを直すか）
+//   --errors:  `@errors` の無い error を返す関数（MErrMissing）に導出の列挙を足す・古い宣言（MErrStale / MErrFlowStale）を導出に縮める（漏れは触らない）
+// 編集は [ファイル, 字句, 置き換え（0 = 字句の行の頭に行を足す・1 = 字句の `@` から閉じ括弧までを置き換え）, 本文] の列で返し、ファイルへの書き込みは呼び手（app）
+
+import "desugar"
+import "loader"
+import "std/iter"
+import "std/table"
+
+// 書き換え 1 件
+type Fix struct {
+    file int
+    tok int
+    replace bool
+    text string
+}
+
+// 効果のビットの正の列挙の中身（`block, io` — 空は空文字）
+func efWordsStr(b int) string {
+    return if b == 0 { "" } else { efBitsStr(b) }
+}
+
+// Program p の書き換えの列（effects / errors = どちらの宣言を書くか）
+func FixPlan(p loader.Program, effects bool, errors bool, std bool) []Fix {
+    mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, er: Eng{sets: table.Table[int]{}, rhead: table.Table[int]{}, rnode: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0, envChanged: false},
+        pbase: table.Table[int]{}, errfn: table.Table[int]{},
+        ffield: table.Table[int]{}, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, wins: table.Table[int]{}, winN: 0, winBase: 0, flowBase: 0, cand: table.Table[int]{}, dflow: table.Table[int]{}, trySink: 0, lamf: table.Table[int]{}, lamFN: 0, lamBase: 0, lamCand: 0, lamck: table.Table[int]{}, sv: Sv{on: false, rec: false, natom: 0, atoms: table.Table[int]{}, resBase: 0, sinkBase: 0, pbase: table.Table[int]{}, npar: 0, pinBase: 0, secp: table.Table[int]{}, rpos: table.Table[int]{}, nres: 0, mres: table.Table[int]{}, mresN: 0, sinkAt: table.Table[int]{}, sinkK: table.Table[int]{}, fl: table.Table[int]{}, flBase: 0, hk: table.Table[int]{}, cons: table.Table[int]{}, lamIn: LSet{lo: 0, hi: 0}, viol: table.Table[int]{}, walks: 0, touch: table.Table[int]{}, pe: table.Table[int]{}, peN: 0, al: table.Table[int]{}, alN: 0, fmh: table.Table[int]{}, fm: table.Table[int]{}, fbn: table.Table[int]{}, mal: table.Table[int]{}, malN: 0, nodump: false, bind: false, og: false, effBase: 0, effHit: false, catom: -1, shMask: 0, oMask: 0, mountFn: -1, shv: table.Table[int]{}, shf: table.Table[int]{}, ftn: table.Table[int]{}, ov: table.Table[int]{}, credf: table.Table[int]{}}, ef: Ef{n: 0, nk: table.Table[int]{}, nref: table.Table[int]{}, bits: table.Table[int]{}, e: table.Table[int]{}, fnodes: table.Table[int]{}, fn: 0, cur: 0, lp: table.Table[int]{}, lpN: 0, lb: table.Table[int]{}, lbN: 0, addr: table.Table[int]{}, flam: table.Table[int]{}, viol: table.Table[int]{}, anyCalls: 0, ek: table.Table[int]{}, own: table.Table[int]{}, tm: table.Table[int]{}, tdecl: table.Table[int]{}, te: table.Table[int]{}, ekind: 0, tst: table.Table[int]{}}}
+    desugar.Typed(mut az.d, p)
+    efRun(mut az, p)
+    errInit(mut az)
+    errSolve(mut az)
+    mut out := mut []Fix{}
+    for fi <- iter.Range(0, az.nfn) {
+        fd := fnDecl(mut az, fi)
+        pk := desugar.FnAt(mut az.d, fi).pkg
+        if std && effects && efEnforced(mut az, fi) {
+            // std の公開関数（強制が掛かる）: 正規形（自前の語 + 届く型の名前の項）を書く — 無ければ足し、正の列挙が正規形と違えば置き換える（否定形は触らない）
+            c := efCanon(mut az, fi)
+            l, t := desugar.FuncEffects(mut az.d, fd)
+            pos := desugar.PosOf(mut az.d, desugar.FnAt(mut az.d, fi).node)
+            if c != "" && l == -1 {
+                out = append(out, Fix{file: pos.file, tok: pos.tok - 1, replace: false, text: c})
+            } else if c != "" && efBad(mut az, pk, l) == -1 && !efNeg(mut az, l) && (efWords(mut az, l) != table.Get(mut az.ef.own, fi) || !efTermsEq(mut az, pk, l, table.Get(mut az.ef.tm, fi))) {
+                out = append(out, Fix{file: pos.file, tok: t, replace: true, text: c})
+            }
+            continue
+        }
+        if desugar.NodeRef(fd.e) == -1 || desugar.IsStdPkg(mut az.d, pk) || !isPublic(mut az, desugar.StrRef(fd.a)) {
+            continue
+        }
+        pos := desugar.PosOf(mut az.d, desugar.FnAt(mut az.d, fi).node)
+        // 関数宣言の `func` の字句（節の字句は名前 — その 1 つ前）
+        ftok := pos.tok - 1
+        if errors && table.Get(mut az.errfn, fi) != 0 && !desugar.ParOpenErr(mut az.d, fi) {
+            r := lsNoFlow(slotGet(mut az, fi))
+            fl := slotGet(mut az, az.flowBase + fi).lo
+            df := table.Get(mut az.dflow, fi)
+            if !lsIsTop(r) {
+                line := "@errors(${declNames(mut az, r, fl, fi, pk)})"
+                l, t := desugar.FuncErrors(mut az.d, fd)
+                if !declHas(mut az, fi) {
+                    out = append(out, Fix{file: pos.file, tok: ftok, replace: false, text: line})
+                } else if lsSub(r, declGet(mut az, fi)) && (fl | df) == df && (!lsEq(r, declGet(mut az, fi)) || fl != df) {
+                    out = append(out, Fix{file: pos.file, tok: t, replace: true, text: line})
+                }
+            }
+        }
+        if effects {
+            b := table.Get(mut az.ef.bits, fi)
+            line := "@effects(${efWordsStr(b)})"
+            l, t := desugar.FuncEffects(mut az.d, fd)
+            if l == -1 {
+                out = append(out, Fix{file: pos.file, tok: ftok, replace: false, text: line})
+            } else if efBad(mut az, pk, l) == -1 && !efNeg(mut az, l) && efWordsOnly(mut az, pk, l) {
+                w := efWords(mut az, l)
+                if (b & ^w) == 0 && b != w {
+                    out = append(out, Fix{file: pos.file, tok: t, replace: true, text: line})
+                }
+            }
+        }
+    }
+    return freeze(out)
+}
+
+// 項の列が語だけか（型の名前の項を持たない）
+func efWordsOnly(az mut Az, pk int, l desugar.ListRef) bool {
+    for j <- iter.Range(0, desugar.LenL(mut az.d, l)) {
+        if efWord(mut az, desugar.StrRef(desugar.LatI(mut az.d, l, j))) == 0 {
+            return false
+        }
+    }
+    return true
+}

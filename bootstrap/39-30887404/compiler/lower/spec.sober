@@ -1,0 +1,619 @@
+package lower
+
+// 定数引数の特化: 呼び出し点の引数が定数（const・globaladdr とその ptoi / itop）なら、小さい callee を
+// 「その仮引数を定数に置き換えた複製」に差し替える。複製は普通の関数なので、optimizeSsa の関数ごとのパス（opt の畳み・gvn・unroll・bce・licm）を
+// 掛け直せば畳める（`HasPrefix(p, ":")` → hasPrefixAt のループが 1 周に・比較が定数に）。畳んで小さくなった複製は rtlower の後の irinl の
+// TINY の規則がそのまま写す。写しでなく複製なので region の op を持つ callee でも意味は元の関数と同じ（同じ関数を 1 つの引数を固定して呼ぶだけ）。
+// 置き場 = optimizeSsa の後（定数は gvn の store の転送で初めて呼び出しの引数に届く）・最適化のバックエンドの経路だけ（`--no-spec` で外す）。
+// 規則: callee は自分でない・入口でない・rt. と UTF-8 の境界の口（validPrefix / Check / boundary — 名前で引く後段の印）でない・task / 罠の op を
+// 持たない・命令 SP_MAX 以下。定数の仮引数は比較・算術・gep・itop・load・呼び出しの引数のどれかで使われる。(callee, 定数の組) ごとに複製 1 つ
+// （表で引く）。複製を畳んだ後の大きさが元より小さくなければ捨てる（呼び出しは元のまま）。複製の中の呼び出しにも同じ規則（深さ SP_DEPTH まで）。
+// 複製は呼び手の関数の直前に置く — irinl は関数の鎖の順に写すので、深い複製が先に呼び手の複製へ写され、写した本体ごと呼び手へ写る
+
+import "desugar"
+import "std/iter"
+import "std/table"
+
+const SP_MAX = 32
+const SP_DEPTH = 3
+// 畳んだ複製を spec の中で呼び手へ写す大きさの上限（熱い命令 — panic の点〔exit で終わるブロック〕を数えない）
+const SP_INL = 12
+// 内側の複製を写した後の複製を残す・呼び手へ写す大きさの上限（熱い命令）
+const SP_KEEP = 24
+// 同じ callee の複製の数の上限（違う定数の組）
+const SP_PER = 4
+// 表の記録: [callee, 定数の数 n, (仮引数の位置, 種類〔0 = 整数・1 = globaladdr〕, 値) × n, 複製〔-1 = 捨てた〕]
+const SP_K_INT = 0
+const SP_K_GLOB = 1
+
+// モジュールの呼び出し点を特化する（作った複製の数を返す）
+func specModule(st mut St) int {
+    save := st.fn
+    mut tab := mut []int{}
+    mut work := mut []int{}
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            work = append(work, int(f))
+            work = append(work, 0)
+        }
+        f = irFnNext(mut st, f)
+    }
+    // 資格の表（元の関数 — 番地の昇順〔spFind が二分探索で引く。鎖の順とは限らないので fnIds で並べる — 鎖の順で集めると規則順の鎖で
+    // 引きが外れ、全呼び出し点が資格を歩き直して引き金の印なしで複製を試すことになる〕。複製は呼ぶたびに数える）
+    fl := fnIds(mut st)
+    mut fi0 := mut []int{}
+    for k <- iter.Range(0, len(fl)) {
+        fi0 = append(fi0, spInfo(mut st, FnRef(fl[k])))
+    }
+    finfo := freeze(fi0)
+    // 引き金の印（比較に効く仮引数 — 直に・算術 1 段を経て・比較に効く callee の仮引数へ渡る〔小さい関数の間の不動点 3 周〕）。複製は
+    // 定数の引数がこの印に当たるときだけ作る（使い道の印 finfo だけで作ると、定数を受けても畳めない関数の複製を作って捨てる費用が判定の仕事 +1.4 G）
+    mut fs0 := mut []int{}
+    for k <- iter.Range(0, len(fl)) {
+        fs0 = append(fs0, if finfo[k] > 0 { spSens(mut st, FnRef(fl[k])) } else { 0 })
+    }
+    mut fsens := freeze(fs0)
+    for r <- iter.Range(0, 3) {
+        mut nx := mut []int{}
+        for k <- iter.Range(0, len(fl)) {
+            nx = append(nx, if finfo[k] > 0 { fsens[k] | spRelayMask(mut st, FnRef(fl[k]), fl, fsens) } else { 0 })
+        }
+        fsens = freeze(nx)
+    }
+    mut made := 0
+    mut clones := mut []int{}
+    mut origs := mut []int{}
+    mut callers := mut []int{}
+    mut w := 0
+    while w < len(work) {
+        cf := FnRef(work[w])
+        depth := work[w + 1]
+        w += 2
+        st.fn = cf
+        // 定義の表は最初の候補の呼び出しで作る（候補の無い関数で値の表を組まない）
+        mut defs := []int{}
+        mut touched := false
+        mut b := irFnBHead(mut st, cf)
+        while b != -1 {
+            mut ins := if irBlkTerm(mut st, b) == TmExit { InsRef(-1) } else { irBlkIHead(mut st, b) }
+            while ins != -1 {
+                g := if irInsOp(mut st, ins) == OpCall { irInsFn(mut st, ins) } else { FnRef(-1) }
+                gi := if int(g) >= 0 && g != cf { spFind(fl, int(g)) } else { -1 }
+                mask := if int(g) < 0 || g == cf { -1 } else if gi >= 0 { finfo[gi] } else { spInfo(mut st, g) }
+                sens := if gi >= 0 { fsens[gi] } else { mask }
+                if mask > 0 && sens > 0 {
+                    if len(defs) == 0 {
+                        defs = spDefs(mut st, cf)
+                    }
+                    key := spKey(mut st, defs, g, ins, mask)
+                    if len(key) > 2 && spTrig(key, sens) {
+                        // 表を引く（同じ callee・同じ定数の組）
+                        mut found := -2
+                        mut per := 0
+                        mut t := 0
+                        while t < len(tab) && found == -2 {
+                            n := tab[t + 1]
+                            if tab[t] == key[0] {
+                                per += 1
+                            }
+                            mut same := tab[t] == key[0] && n == key[1]
+                            for k <- iter.Range(0, 3 * n) {
+                                if same && tab[t + 2 + k] != key[2 + k] {
+                                    same = false
+                                }
+                            }
+                            if same {
+                                found = tab[t + 2 + 3 * n]
+                            }
+                            t += 3 + 3 * n
+                        }
+                        if found == -2 && (per >= SP_PER || spHopeless(tab, key)) {
+                            // 同じ callee の違う定数の組は SP_PER まで（strLit・iconst のように多くの定数で呼ばれる関数を複製で増やさない）
+                            found = -1
+                        }
+                        if found == -2 {
+                            c := spClone(mut st, g, cf, key)
+                            for k <- iter.Range(0, len(key)) {
+                                tab = append(tab, key[k])
+                            }
+                            tab = append(tab, int(c))
+                            found = int(c)
+                            if int(c) != -1 {
+                                made += 1
+                                clones = append(clones, int(c))
+                                origs = append(origs, int(g))
+                                if depth + 1 < SP_DEPTH {
+                                    work = append(work, int(c))
+                                    work = append(work, depth + 1)
+                                }
+                            }
+                            st.fn = cf
+                        }
+                        if found >= 0 {
+                            irSetInsA(mut st, ins, found)
+                            if !touched {
+                                touched = true
+                                callers = append(callers, int(cf))
+                            }
+                        }
+                    }
+                }
+                ins = irInsNext(mut st, ins)
+            }
+            b = irBlkNext(mut st, b)
+        }
+    }
+    // 畳んで小さくなった複製（熱い命令 SP_INL 以下・写せる形）は呼び手へ写す: 後に作った（深い）複製から — 2 段の連鎖（HasPrefix → hasPrefixAt）の
+    // 内側を先に外側の複製へ写し、写した後の外側を呼び手へ写す（rtlower の後の irinl は写しの中の呼び出しを写さない — 1 段）
+    cl := freeze(clones)
+    mut ci := len(cl) - 1
+    while ci >= 0 {
+        spInline(mut st, FnRef(cl[ci]), cl)
+        ci -= 1
+    }
+    // 残すのは写せる大きさまで畳めた複製だけ（中継ぎの複製も、内側を写した後で小さくなっていれば残る）。残さない複製の呼び出しは元の callee へ
+    // 戻し、関数の鎖から外す（定数を受けても畳めない関数〔strLit・iconst …〕の複製で自己 build の IR が +30%・判定の仕事 +14 G だった）
+    mut keep0 := mut []int{}
+    for k <- iter.Range(0, len(cl)) {
+        c := FnRef(cl[k])
+        keep0 = append(keep0, if spHot(mut st, c) <= SP_KEEP && ilShape(mut st, c, ilSize(mut st, c)) == 1 { 1 } else { 0 })
+    }
+    keep := freeze(keep0)
+    og := freeze(origs)
+    mut f3 := st.fhead
+    mut prev := FnRef(-1)
+    while f3 != -1 {
+        nx := irFnNext(mut st, f3)
+        x := spFind(cl, int(f3))
+        if x >= 0 && keep[x] == 0 {
+            // 鎖から外す
+            if int(prev) == -1 {
+                st.fhead = nx
+            } else {
+                irSetFnNext(mut st, prev, nx)
+            }
+            if st.ftail == f3 {
+                st.ftail = prev
+            }
+        } else {
+            prev = f3
+        }
+        f3 = nx
+    }
+    // 呼び出しを書き換えた関数だけを戻し・写しの対象に（全関数の IR を歩かない）
+    // 残した複製も（内側の複製の写しを受けている — 写しの中に残さない複製の呼び出しがありうる）
+    cs := freeze(callers)
+    for k <- iter.Range(0, len(cs)) {
+        if spFind(cl, cs[k]) < 0 {
+            spRedirect(mut st, FnRef(cs[k]), cl, keep, og)
+        }
+    }
+    for k <- iter.Range(0, len(cl)) {
+        if keep[k] == 1 {
+            spRedirect(mut st, FnRef(cl[k]), cl, keep, og)
+        }
+    }
+    // 残した複製を元の関数の呼び出し点へ写す
+    for k <- iter.Range(0, len(cs)) {
+        if spFind(cl, cs[k]) < 0 {
+            spInline(mut st, FnRef(cs[k]), cl)
+        }
+    }
+    st.fn = save
+    return made
+}
+
+// f の中の残さない複製の呼び出しを元の callee へ戻す
+func spRedirect(st mut St, f FnRef, cl []int, keep []int, og []int) {
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if irInsOp(mut st, i) == OpCall {
+                x := spFind(cl, irInsA(mut st, i))
+                if x >= 0 && keep[x] == 0 {
+                    irSetInsA(mut st, i, og[x])
+                }
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+}
+
+// f の中の複製（clones）の呼び出しのうち、複製が SP_INL 以下で写せる形（irinl の ilShape = 1）なら写す
+func spInline(st mut St, f FnRef, clones []int) {
+    st.fn = f
+    mut blks := mut []int{}
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        blks = append(blks, int(b))
+        b = irBlkNext(mut st, b)
+    }
+    mut any := false
+    for k <- iter.Range(0, len(blks)) {
+        mut blk := BlkRef(blks[k])
+        mut ins := if irBlkTerm(mut st, blk) == TmExit { InsRef(-1) } else { irBlkIHead(mut st, blk) }
+        while ins != -1 {
+            nx := irInsNext(mut st, ins)
+            if irInsOp(mut st, ins) == OpCall {
+                g := irInsFn(mut st, ins)
+                if g != f && spFind(clones, int(g)) >= 0 {
+                    n := ilSize(mut st, g)
+                    if spHot(mut st, g) <= SP_KEEP && ilShape(mut st, g, n) == 1 {
+                        blk = ilCall(mut st, f, blk, ins, g)
+                        any = true
+                    }
+                }
+            }
+            ins = nx
+        }
+    }
+    if any {
+        optFunc(mut st, f)
+    }
+}
+
+// f の値 → 定義の命令の表
+func spDefs(st mut St, f FnRef) []int {
+    mut d := mut []int{}
+    xFill(mut d, irFnNVal(mut st, f), -1)
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            r := irInsRes(mut st, i)
+            if r >= 0 && r < len(d) {
+                d[r] = int(i)
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return freeze(d)
+}
+
+// g の特化の資格: -1 = 対象外（形・大きさ）・他 = 定数が効く仮引数の印（ビット k = 仮引数 k が比較・算術・gep・itop / ptoi・load・
+// 呼び出しの引数のどれかで使われる — k < 62）。1 回の走査で、命令が SP_MAX を超えたら打ち切る（大きい callee を呼び出し点ごとに歩かない）
+func spInfo(st mut St, g FnRef) int {
+    if irFnBHead(mut st, g) == -1 || xIsEntry(mut st, g) {
+        return -1
+    }
+    nm := desugar.StrRef(irFnName(mut st, g))
+    if (slen(mut st, nm) > 3 && sat(mut st, nm, 0) == 114 && sat(mut st, nm, 1) == 116 && sat(mut st, nm, 2) == 46) || strIs(mut st, nm, "std/strings.validPrefix") || strIs(mut st, nm, "std/utf8.Check") || strIs(mut st, nm, "std/utf8.boundary") {
+        return -1
+    }
+    np := lenL(mut st, desugar.ListRef(irFnPtys(mut st, g)))
+    mut n := 0
+    mut mask := 0
+    mut b := irFnBHead(mut st, g)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op != OpDead {
+                n += 1
+                if n > SP_MAX {
+                    return -1
+                }
+            }
+            if op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone || op == OpUnwind || op == OpScanB || op == OpCrcFold || op == OpPMem || op == OpPArith || op == OpCallI {
+                return -1
+            }
+            if op == OpCmp || op == OpBin {
+                mask = mask | spBit(irInsB(mut st, i), np) | spBit(irInsC(mut st, i), np)
+            } else if op == OpGepW || op == OpGepB {
+                mask = mask | spBit(irInsA(mut st, i), np) | spBit(irInsB(mut st, i), np)
+            } else if op == OpItop || op == OpPtoi || op == OpLoad || op == OpLoad8 {
+                mask = mask | spBit(irInsA(mut st, i), np)
+            } else if op == OpCall {
+                args := irInsB(mut st, i)
+                for a <- iter.Range(0, xLen(mut st, args)) {
+                    mask = mask | spBit(xAt(mut st, args, a), np)
+                }
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return mask
+}
+
+// 鍵 key と同じ callee・同じ定数の位置の組の複製が一度捨てられたか（表の記録の複製の欄が -1 — 定数の値が違っても畳み方は同じ
+// 見込み・試す費用を払わない。位置の組が違えば別 — hasPrefixAt の at だけの定数と p まで定数とは畳め方が違う）
+func spHopeless(tab []int, key []int) bool {
+    mut t := 0
+    while t < len(tab) {
+        n := tab[t + 1]
+        if tab[t] == key[0] && n == key[1] && tab[t + 2 + 3 * n] == -1 {
+            mut same := true
+            for j <- iter.Range(0, n) {
+                if tab[t + 2 + 3 * j] != key[2 + 3 * j] {
+                    same = false
+                }
+            }
+            if same {
+                return true
+            }
+        }
+        t += 3 + 3 * n
+    }
+    return false
+}
+
+// 鍵の定数の仮引数のどれかが引き金の印 sens に当たるか
+func spTrig(key []int, sens int) bool {
+    for j <- iter.Range(0, key[1]) {
+        k := key[2 + 3 * j]
+        if k < 62 && (sens >> k) & 1 == 1 {
+            return true
+        }
+    }
+    return false
+}
+
+// g の仮引数のうち比較に効くものの印（比較の被演算子・比較の被演算子を作る算術の被演算子）
+func spSens(st mut St, g FnRef) int {
+    np := lenL(mut st, desugar.ListRef(irFnPtys(mut st, g)))
+    mut mk := mut []int{}
+    xFill(mut mk, irFnNVal(mut st, g), 0)
+    for r <- iter.Range(0, 2) {
+        mut b := irFnBHead(mut st, g)
+        while b != -1 {
+            mut i := irBlkIHead(mut st, b)
+            while i != -1 {
+                op := irInsOp(mut st, i)
+                x := irInsB(mut st, i)
+                y := irInsC(mut st, i)
+                if op == OpCmp || (op == OpBin && irInsRes(mut st, i) >= 0 && mk[irInsRes(mut st, i)] == 1) {
+                    if x >= 0 && x < len(mk) {
+                        mk[x] = 1
+                    }
+                    if y >= 0 && y < len(mk) {
+                        mk[y] = 1
+                    }
+                }
+                i = irInsNext(mut st, i)
+            }
+            b = irBlkNext(mut st, b)
+        }
+    }
+    mut m := 0
+    for k <- iter.Range(0, np) {
+        if k < 62 && k < len(mk) && mk[k] == 1 {
+            m = m | (1 << k)
+        }
+    }
+    return m
+}
+
+// g の仮引数のうち、比較に効く callee の仮引数（fs — fl と同じ並びの印）へそのまま渡るものの印
+func spRelayMask(st mut St, g FnRef, fl []int, fs []int) int {
+    np := lenL(mut st, desugar.ListRef(irFnPtys(mut st, g)))
+    mut m := 0
+    mut b := irFnBHead(mut st, g)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if irInsOp(mut st, i) == OpCall {
+                h := spFind(fl, irInsA(mut st, i))
+                if h >= 0 && fs[h] > 0 {
+                    args := irInsB(mut st, i)
+                    for a <- iter.Range(0, xLen(mut st, args)) {
+                        if a < 62 && (fs[h] >> a) & 1 == 1 {
+                            m = m | spBit(xAt(mut st, args, a), np)
+                        }
+                    }
+                }
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return m
+}
+
+// 値 v が仮引数（v < np・62 未満）ならその印
+func spBit(v int, np int) int {
+    return if v >= 0 && v < np && v < 62 { 1 << v } else { 0 }
+}
+
+// 昇順の列 xs の x の位置（無ければ -1）
+func spFind(xs []int, x int) int {
+    mut lo := 0
+    mut hi := len(xs)
+    while lo < hi {
+        m := (lo + hi) / 2
+        if xs[m] < x {
+            lo = m + 1
+        } else {
+            hi = m
+        }
+    }
+    return if lo < len(xs) && xs[lo] == x { lo } else { -1 }
+}
+
+// 呼び手の値 v の定数の形: (種類, 値)・種類 -1 = 定数でない。ptoi / itop は透かす
+func spConst(st mut St, defs []int, v int) (int, int) {
+    mut x := v
+    mut k := 0
+    while k < 3 {
+        if x < 0 || x >= len(defs) || defs[x] < 0 {
+            return -1, 0
+        }
+        i := InsRef(defs[x])
+        op := irInsOp(mut st, i)
+        if op == OpConst {
+            return SP_K_INT, irInsA(mut st, i)
+        }
+        if op == OpGlobal {
+            return SP_K_GLOB, irInsA(mut st, i)
+        }
+        if op != OpPtoi && op != OpItop {
+            return -1, 0
+        }
+        x = irInsA(mut st, i)
+        k += 1
+    }
+    return -1, 0
+}
+
+// 呼び出し ins（callee g・資格の印 mask）の特化の鍵 [g, n, (位置, 種類, 値) × n]（定数の効く仮引数が無ければ長さ 2）
+func spKey(st mut St, defs []int, g FnRef, ins InsRef, mask int) []int {
+    mut key := mut []int{}
+    key = append(key, int(g))
+    key = append(key, 0)
+    args := irInsB(mut st, ins)
+    na := xLen(mut st, args)
+    for k <- iter.Range(0, na) {
+        if k < 62 && (mask >> k) & 1 == 1 {
+            ck, cv := spConst(mut st, defs, xAt(mut st, args, k))
+            if ck >= 0 {
+                key = append(key, k)
+                key = append(key, ck)
+                key = append(key, cv)
+                key[1] = key[1] + 1
+            }
+        }
+    }
+    return freeze(key)
+}
+
+// g の複製を作り、key の仮引数を定数に置き換えて畳む。畳んだ後が元より小さくなければ捨てて -1。複製は関数の鎖の末尾に積む
+func spClone(st mut St, g FnRef, cf FnRef, key []int) FnRef {
+    size0 := ilSize(mut st, g)
+    // 本体の写し: 詰めて（元の本体は転送の印で潰れる）元へも複製へも積み直す
+    pk := mvPack(mut st, g, false)
+    mvUnpack(mut st, g, pk)
+    c := FnRef(recN(mut st, FSZ))
+    for k <- iter.Range(0, FSZ) {
+        desugar.HeapSet(mut st.d, int(c) + k, desugar.HeapGet(mut st.d, int(g) + k))
+    }
+    irSetFnName(mut st, c, int(strCat(mut st, strCat(mut st, desugar.StrRef(irFnName(mut st, g)), strLit(mut st, "$s")), decimal(mut st, int(c)))))
+    irSetFnExport(mut st, c, 0)
+    // 安定な鍵の材料: 複製 = (callee, 定数の組) — 名前の `$s<番地>` はヒープの並びに依る
+    table.Push(mut st.sk, SK_SPEC)
+    table.Push(mut st.sk, 1 + len(key))
+    table.Push(mut st.sk, int(c))
+    for w <- key {
+        table.Push(mut st.sk, w)
+    }
+    mvUnpack(mut st, c, pk)
+    // 入口の頭に定数を足し、仮引数の値をそれへ付け替える（opt の別名 → 番号の詰め直しで被演算子を書き換える）
+    st.fn = c
+    entry := irFnBHead(mut st, c)
+    n := key[1]
+    mut vs := mut []int{}
+    for j <- iter.Range(0, n) {
+        ck := key[3 + 3 * j]
+        cv := key[4 + 3 * j]
+        r := newValueIn(mut st, c)
+        if ck == SP_K_INT {
+            spLinkHead(mut st, entry, mkInst(mut st, r, OpConst, cv, 0, 0))
+            vs = append(vs, r)
+        } else {
+            ga := newValueIn(mut st, c)
+            // 鎖の頭へ逆順に足す（globaladdr → ptoi の順に並ぶ）
+            spLinkHead(mut st, entry, mkInst(mut st, r, OpPtoi, ga, 0, 0))
+            spLinkHead(mut st, entry, mkInst(mut st, ga, OpGlobal, cv, 0, 0))
+            vs = append(vs, r)
+        }
+    }
+    optReset(mut st, irFnNVal(mut st, c), irFnNBlk(mut st, c))
+    for j <- iter.Range(0, n) {
+        owSet(mut st, key[2 + 3 * j], OW_AL, vs[j])
+    }
+    optRenumber(mut st, c)
+    // 畳む（optimizeSsa の関数ごとの列の gvn 以降 + 前後に opt の畳み）
+    optFunc(mut st, c)
+    gvnFunc(mut st, c)
+    hdrFunc(mut st, c)
+    unrollFunc(mut st, c)
+    bceFunc(mut st, c)
+    licmFunc(mut st, c)
+    depthFlowFunc(mut st, c)
+    if spFoldRo(mut st, c) {
+        bceFunc(mut st, c)
+    }
+    optFunc(mut st, c)
+    // 残す = 写せる大きさ（熱い命令 SP_INL 以下）まで畳めたもの。HasPrefix のように畳める中身が callee の側にある中継ぎの複製も、それ自身が小さければ
+    // 残る（内側の複製を写した後の大きさは SP_KEEP で見る）
+    if spHot(mut st, c) > SP_INL {
+        return -1
+    }
+    // 鎖の末尾へ（関数の記録は番地の昇順 — x86 の xIndex が二分探索で引く）
+    irSetFnNext(mut st, c, -1)
+    irSetFnNext(mut st, st.ftail, c)
+    st.ftail = c
+    return c
+}
+
+// f の熱い命令の数（exit で終わるブロックを数えない）
+func spHot(st mut St, f FnRef) int {
+    mut n := 0
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        if irBlkTerm(mut st, b) != TmExit {
+            mut i := irBlkIHead(mut st, b)
+            while i != -1 {
+                if irInsOp(mut st, i) != OpDead {
+                    n += 1
+                }
+                i = irInsNext(mut st, i)
+            }
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return n
+}
+
+// 文字列リテラル（str.N — rodata・書かれない）の定数の位置の load8 を定数のバイトに畳む（特化で番地と添字が定数になった読み —
+// `p[0]` の ':'）。番地 = gep.byte(リテラルの番地, 定数)・リテラルの番地 = globaladdr か ptoi / itop を通したもの。畳んだら true
+func spFoldRo(st mut St, c FnRef) bool {
+    defs := spDefs(mut st, c)
+    mut any := false
+    mut b := irFnBHead(mut st, c)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if irInsOp(mut st, i) == OpLoad8 {
+                a := irInsA(mut st, i)
+                d := if a >= 0 && a < len(defs) { defs[a] } else { -1 }
+                if d >= 0 && irInsOp(mut st, InsRef(d)) == OpGepB {
+                    gk, gv := spConst(mut st, defs, irInsA(mut st, InsRef(d)))
+                    ik, iv := spConst(mut st, defs, irInsB(mut st, InsRef(d)))
+                    at := iv + irInsB(mut st, i)
+                    if gk == SP_K_GLOB && ik == SP_K_INT && at >= 0 && spStrGlobal(mut st, gv) && at < 8 * desugar.HeapGet(mut st.d, gv + G_WORDS) {
+                        ws := desugar.HeapGet(mut st.d, gv + G_INIT)
+                        word := desugar.HeapGet(mut st.d, ws + 1 + at / 8)
+                        irSetInsOp(mut st, i, OpConst)
+                        irSetInsA(mut st, i, (word >> (8 * (at % 8))) & 255)
+                        irSetInsB(mut st, i, 0)
+                        irSetInsC(mut st, i, 0)
+                        any = true
+                    }
+                }
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return any
+}
+
+// グローバル g が文字列リテラルの rodata（名前 str.N・初期値あり）か
+func spStrGlobal(st mut St, g int) bool {
+    nm := desugar.StrRef(desugar.HeapGet(mut st.d, g + G_NAME))
+    return desugar.HeapGet(mut st.d, g + G_INIT) >= 0 && slen(mut st, nm) > 4 && sat(mut st, nm, 0) == 115 && sat(mut st, nm, 1) == 116 && sat(mut st, nm, 2) == 114 && sat(mut st, nm, 3) == 46
+}
+
+// 命令 r をブロック b の命令の鎖の頭へつなぐ
+func spLinkHead(st mut St, b BlkRef, r InsRef) {
+    h := irBlkIHead(mut st, b)
+    irSetInsNext(mut st, r, h)
+    irSetBlkIHead(mut st, b, r)
+    if h == -1 {
+        irSetBlkITail(mut st, b, r)
+    }
+}

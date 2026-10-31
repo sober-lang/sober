@@ -1,26 +1,26 @@
 package main
 
-// region を持つ値（string・string の欄を持つ struct）のブロック式（F-f — 2026-10-02 まで check が拒否・build は受理）:
+// region を持つ値（string・string の欄を持つ struct）のブロック式の例:
 // 脱糖器の型の読み（computeTy）が、リテラル・struct リテラル・欄読み・if / switch の合流を「値が実際に置かれた座標」で読むので、
-// ブロックの出口の付け替え（R5）が正しく発火する
+// ブロックの出口の付け替えが正しく発火する
 
 type S struct {
     a int
     s string
 }
 
-// 素の形（main の中 — 旧: type error）と演算子の右
+// 素の形（main の中）と演算子の右
 func plain() string {
     x := { "abc" }
     return x + { "d" }
 }
 
-// Def の中の return（旧: def error）
+// Def の中の return
 func ret() string {
     return { "ret" }
 }
 
-// struct 版（旧: type error）と、struct リテラルの欄読み版
+// struct 版と、struct リテラルの欄読み版
 func structs() int {
     x := { S{a: 3, s: "z"} }
     y := { S{a: 7, s: "yy"}.s }

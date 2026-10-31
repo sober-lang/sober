@@ -12,7 +12,7 @@ type Work struct {
     tab pool.Scratch
 }
 
-// fill は tab を v から埋め、まっさらだった数を返す
+// tab を v から埋め、まっさらだった数を返す
 func fill(w mut Work, v int) int {
     mut fresh := 0
     for i <- iter.Range(0, 64) {
@@ -24,7 +24,7 @@ func fill(w mut Work, v int) int {
     return fresh
 }
 
-// kept は tab に v から埋めた値が残っている数
+// tab に v から埋めた値が残っている数
 func kept(w mut Work, v int) int {
     mut ok := 0
     for i <- iter.Range(0, 64) {

@@ -43,7 +43,7 @@ func mapRepr(st mut St, mt int) MapRepr {
     return MapRepr{kt: kt, vt: vt, rk: MR_BASE, kw: kw, tagOff: kw, valOff: kw + 1, cellw: kw + 1 + vw, sk: sk, hk: if sk == 0 && st.rtMut != 11 { HK_MUM } else { HK_OLD }}
 }
 
-// mrTag はセル cp の生死（i64 の 0 / 1）
+// セル cp の生死（i64 の 0 / 1）
 func mrTag(st mut St, r MapRepr, cp int) int {
     if r.rk == MR_PRE {
         // 1 + (len の語 >> 63)〔算術 — 墓石なら −1〕
@@ -52,7 +52,7 @@ func mrTag(st mut St, r MapRepr, cp int) int {
     return load(mut st, cp, r.tagOff)
 }
 
-// mrSetLive はセル cp を生きている（live）/ 墓石にする
+// セル cp を生きている（live）/ 墓石にする
 func mrSetLive(st mut St, r MapRepr, cp int, live bool) {
     if r.rk == MR_PRE {
         lw := load(mut st, cp, 1)
@@ -62,7 +62,7 @@ func mrSetLive(st mut St, r MapRepr, cp int, live bool) {
     store(mut st, cp, r.tagOff, iconst(mut st, if live { 1 } else { 0 }))
 }
 
-// mrKeyCopy はセル（か鍵の置き場）src の鍵の語を dst へ写す（keys の要素 — 生きているセルだけ写すので MR_PRE でも普通のヘッダ）
+// セル（か鍵の置き場）src の鍵の語を dst へ写す（keys の要素 — 生きているセルだけ写すので MR_PRE でも普通のヘッダ）
 func mrKeyCopy(st mut St, r MapRepr, dst int, src int) {
     mut w := 0
     while w < r.kw {
@@ -71,7 +71,7 @@ func mrKeyCopy(st mut St, r MapRepr, dst int, src int) {
     }
 }
 
-// mrKeyInsert は新しいセル dst に鍵 kq（置き場）を生きている形で書く
+// 新しいセル dst に鍵 kq（置き場）を生きている形で書く
 func mrKeyInsert(st mut St, r MapRepr, dst int, kq int) {
     mrKeyCopy(mut st, r, dst, kq)
     if r.rk == MR_PRE {
@@ -82,7 +82,7 @@ func mrKeyInsert(st mut St, r MapRepr, dst int, kq int) {
     mrSetLive(mut st, r, dst, true)
 }
 
-// mrRelocKey はセル cp の鍵を深度 floor へ写す（MR_PRE の墓石は len の語のビットを一時に落として普通のヘッダの形で写す —
+// セル cp の鍵を深度 floor へ写す（MR_PRE の墓石は len の語のビットを一時に落として普通のヘッダの形で写す —
 // 墓石の鍵も再挿入で生き返り、16 バイトを超える鍵の比較でバイトを読むので写す）
 func mrRelocKey(st mut St, r MapRepr, cp int, floor int) {
     if r.rk == MR_PRE {
@@ -97,7 +97,7 @@ func mrRelocKey(st mut St, r MapRepr, cp int, floor int) {
 
 // ── MR_PRE の rt の部品（rt.map_find の中で組む — 問い合わせの鍵の詰め・ハッシュ・比較）──
 
-// MQ は問い合わせの鍵の詰めた形（IR の値: 前置き 2 語・長さ・バイトの番地）
+// 問い合わせの鍵の詰めた形（IR の値: 前置き 2 語・長さ・バイトの番地）
 type MQ struct {
     q0 int
     q1 int
@@ -105,7 +105,7 @@ type MQ struct {
     p int
 }
 
-// mrPack は string のヘッダ kp の鍵を詰める: 長さ 8〜15 は先頭の語 + 末尾 8 バイトを重ねて読み右へずらす・≥ 16 は 2 語・1〜7 は
+// string のヘッダ kp の鍵を詰める: 長さ 8〜15 は先頭の語 + 末尾 8 バイトを重ねて読み右へずらす・≥ 16 は 2 語・1〜7 は
 // 末尾で終わる 8 バイトを 1 語で読んで右へずらす（鍵の手前を読む — 先頭がページの頭から 8 バイト以上なら同じページの中なので読める。
 // でなければバイトの環）。範囲の外のバイトは値に入れない（長さを超えた分は 0）
 func mrPack(st mut St, kp int) MQ {
@@ -154,15 +154,15 @@ func mrPack(st mut St, kp int) MQ {
     return MQ{q0: j0, q1: j1, n: n, p: p}
 }
 
-// mrCellQ はセル cp の鍵の詰めた形（墓石のビットを落とした長さ）
+// セル cp の鍵の詰めた形（墓石のビットを落とした長さ）
 func mrCellQ(st mut St, cp int) MQ {
     return MQ{q0: load(mut st, cp, 3), q1: load(mut st, cp, 4), n: bin(mut st, BAnd, load(mut st, cp, 1), iconst(mut st, MR_LENMASK)), p: itop(mut st, load(mut st, cp, 0))}
 }
 
-// mrHash は詰めた鍵のハッシュ — mum（wyhash の芯: 64 × 64 → 128 の積の下位 ^ 上位）: 前置き 2 語を定数でずらして 1 回の積
+// 詰めた鍵のハッシュ — mum（wyhash の芯: 64 × 64 → 128 の積の下位 ^ 上位）: 前置き 2 語を定数でずらして 1 回の積
 // （長さは 2 語目に混ぜる）・16 バイトを超える分は語ごとに積を重ねる（端数は末尾 8 バイトを重ねて 1 語）。問い合わせとセル（索引の追いつき）で同じ値 —
 // 値は索引の配置にだけ使う（下位 = 枠・上位 32 ビット = 濾し）。棄てた案（敵対の鍵の集合で病的）: 黄金比の乗算の鎖 + 畳み 29
-// （R1 — 先頭 16 バイトが同じ鍵で探査 1,194 / 操作）・端数のバイトずつ FNV（旧 — 連番の文字列で 94）・FxHash・独立の乗算 2 本
+// （先頭 16 バイトが同じ鍵で探査 1,194 / 操作）・端数のバイトずつ FNV（旧 — 連番の文字列で 94）・FxHash・独立の乗算 2 本
 func mrHash(st mut St, q MQ, sd MSeed) int {
     x0 := mrMum(mut st, bin(mut st, BXor, q.q0, sd.s0), bin(mut st, BXor, bin(mut st, BXor, q.q1, sd.s1), q.n))
     k := iconst(mut st, -8161530843051276573)
@@ -190,25 +190,25 @@ func mrHash(st mut St, q MQ, sd MSeed) int {
     return jh
 }
 
-// MSeed は mum の 2 つのずらしの語（定数 ^ 種 — 引きの関数の入口で 1 回読む）
+// mum の 2 つのずらしの語（定数 ^ 種 — 引きの関数の入口で 1 回読む）
 type MSeed struct {
     s0 int
     s1 int
 }
 
-// mrSeeds は rt.hash_seed の 2 語（初期化で mum の定数と xor 済み — 種 0 なら定数そのもの）。ハッシュの直前で読む（引きの関数の入口で読むと
+// rt.hash_seed の 2 語（初期化で mum の定数と xor 済み — 種 0 なら定数そのもの）。ハッシュの直前で読む（引きの関数の入口で読むと
 // 生存区間が延びて spill が増えた — knuc の命令 +1.2%）
 func mrSeeds(st mut St) MSeed {
     g := globaladdrRaw(mut st, st.hseed)
     return MSeed{s0: load(mut st, g, 0), s1: load(mut st, g, 1)}
 }
 
-// mrHashInt は int 鍵（1 語）の mum
+// int 鍵（1 語）の mum
 func mrHashInt(st mut St, w int, sd MSeed) int {
     return mrMum(mut st, bin(mut st, BXor, w, sd.s0), sd.s1)
 }
 
-// mrSeedInit は rt.hash_seed_init(sp) を組み、入口 sober_entry の先頭ブロックの頭へ呼び出しを差し込む（program の最後 — 入口は関数の本体より
+// rt.hash_seed_init(sp) を組み、入口 sober_entry の先頭ブロックの頭へ呼び出しを差し込む（program の最後 — 入口は関数の本体より
 // 先に組まれるので、種が要るか〔mum の引きがあるか〕はそこでは分からない）。種: SOBER_HASH_SEED=<n>（10 進）があれば
 // 種 = (n, n × 黄金比) — 0 なら mum の定数だけ（gates・bench・黄金はこれで固定）。無ければ AT_RANDOM（exec で kernel が置く 16 バイト —
 // auxv の型 25）の 2 語。map の列挙は挿入順なので種は出力に出ない — 揺れるのは探査の長さ（命令数・cycles）だけ（language.md 22 節の注記）
@@ -268,12 +268,12 @@ func mrSeedInit(st mut St) {
     ret(mut st, -1)
 }
 
-// mrMum は wyhash の芯（積の下位 ^ 上位 — BMulHi）
+// wyhash の芯（積の下位 ^ 上位 — BMulHi）
 func mrMum(st mut St, a int, b int) int {
     return bin(mut st, BXor, bin(mut st, BMul, a, b), bin(mut st, BMulHi, a, b))
 }
 
-// mrEq はセル cp の鍵と問い合わせ q の一致（i64 の真偽 — 墓石も一致する）: 長さ・前置き 2 語、16 バイトを超える分だけバイトを読む
+// セル cp の鍵と問い合わせ q の一致（i64 の真偽 — 墓石も一致する）: 長さ・前置き 2 語、16 バイトを超える分だけバイトを読む
 func mrEq(st mut St, cp int, q MQ) int {
     join := newBlock(mut st)
     res := param(mut st, join, TyI64)
@@ -322,12 +322,12 @@ func mrEq(st mut St, cp int, q MQ) int {
 
 const MF_CAP = 64
 
-// mrKey は表現の鍵（同じ鍵なら同じ引きの関数）
+// 表現の鍵（同じ鍵なら同じ引きの関数）
 func mrKey(r MapRepr) int {
     return r.hk * 100000000 + r.rk * 10000000 + r.sk * 1000000 + r.cellw
 }
 
-// needMapFind は表現 r の引きの関数（初出なら宣言する — 本体は program の最後に buildMapFinds が組む）
+// 表現 r の引きの関数（初出なら宣言する — 本体は program の最後に buildMapFinds が組む）
 func needMapFind(st mut St, r MapRepr) FnRef {
     lsNeed(mut st, NEED_MAPFIND, mrKey(r))
     if st.mapFinds == -1 {
@@ -358,10 +358,10 @@ func needMapFind(st mut St, r MapRepr) FnRef {
     return f
 }
 
-// MF_PREFIX は表の rt.map_prefix の鍵（引きの関数でない族の一員 — 名簿の述語 isMapRt は真・mapfuse は戻り値の無い呼び出しを見ない）
+// 表の rt.map_prefix の鍵（引きの関数でない族の一員 — 名簿の述語 isMapRt は真・mapfuse は戻り値の無い呼び出しを見ない）
 const MF_PREFIX = -1
 
-// needMapPrefix は rt.map_prefix(cell, kp)（MR_PRE のセル cell の前置き 2 語を鍵 kp から詰めて書く — 初出なら宣言・本体は buildMapFinds）
+// rt.map_prefix(cell, kp)（MR_PRE のセル cell の前置き 2 語を鍵 kp から詰めて書く — 初出なら宣言・本体は buildMapFinds）
 func needMapPrefix(st mut St) FnRef {
     lsNeed(mut st, NEED_MAPPRE, 0)
     if st.mapFinds == -1 {
@@ -382,7 +382,7 @@ func needMapPrefix(st mut St) FnRef {
     return f
 }
 
-// isMapRt は g が map の rt の族（引き・前置きの詰め）の関数か
+// g が map の rt の族（引き・前置きの詰め）の関数か
 func isMapRt(st mut St, g FnRef) bool {
     t := st.mapFinds
     if t == -1 {
@@ -396,7 +396,7 @@ func isMapRt(st mut St, g FnRef) bool {
     return false
 }
 
-// buildMapFinds は宣言した引きの関数の本体を組む（program の最後 — 鍵から表現を戻す）
+// 宣言した引きの関数の本体を組む（program の最後 — 鍵から表現を戻す）
 func buildMapFinds(st mut St) {
     t := st.mapFinds
     if t == -1 {
@@ -419,7 +419,7 @@ func buildMapFinds(st mut St) {
     }
 }
 
-// mfCfg は束の子へ写す cfg の末尾に族の関数を足す（[数, 関数…] — 子は isMapRt だけ使う）
+// 束の子へ写す cfg の末尾に族の関数を足す（[数, 関数…] — 子は isMapRt だけ使う）
 func mfCfg(st mut St, base []int) []int {
     mut out := mut []int{}
     for i <- iter.Range(0, len(base)) {
@@ -434,7 +434,7 @@ func mfCfg(st mut St, base []int) []int {
     return freeze(out)
 }
 
-// mfCfgSet は子の St に族の表を組む（cfg[at] = 数・続いて関数）
+// 子の St に族の表を組む（cfg[at] = 数・続いて関数）
 func mfCfgSet(st mut St, cfg []int, at int) {
     n := cfg[at]
     if n == 0 {

@@ -1,2 +1,3 @@
+sober: type error at testdata/iface/lib/a.sober:21:21
 {"errors":[{"msg":"def error"}],"ok":false}
 exit=1

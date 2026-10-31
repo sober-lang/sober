@@ -1,9 +1,9 @@
 package lower
 
-// 並列の台帳の器（段 6 P5-1・language.md 11 節「予算と admission」）: 挙動を変えない計測だけ。
+// 並列の台帳の器（language.md 11 節「予算と admission」）: 挙動を変えない計測だけ。
 // - プロセスの天井の読み（入口で 1 度 — rt.pcap_init）: cgroup v2 の cpu.max / memory.max（/proc/self/cgroup の `0::<経路>` から
 //   /sys/fs/cgroup/<経路>/…）・/proc/meminfo の MemTotal・/proc/self/statm の入口の RSS。ワーカー数 = min(affinity, ⌈cpu.max⌉)（mnInit）・
-//   根の天井 = min(memory.max, MemTotal) − 入口の RSS − PCAP_SLACK（試験の口 SOBER_BUDGET_MB があればそれ）。天井はまだ入場に使わない（P5-2）
+//   根の天井 = min(memory.max, MemTotal) − 入口の RSS − PCAP_SLACK（試験の口 SOBER_BUDGET_MB があればそれ）。天井はまだ入場に使わない
 // - task ごとの使用量の計測（SOBER_PAR_STATS=1 のときだけ — 印の load + 分岐 1 つ）: spawn で生きている数 + 1（高水位）・終わりで自前のスロットの
 //   使った量の和（終わりの時点の bump — 入り直した深度は最後の命の量）を spawn の点（TC_SITE）ごとの最大へ・スロットの VA の予約の本数
 // - 終わりに標準エラーへ `#par …` の行（rt.pstat_dump — 網と運用の口。stdout は動かない）
@@ -51,12 +51,12 @@ func buildPstatRt(st mut St) {
     buildPcapInit(mut st)
 }
 
-// pstatOn は計測の印（SOBER_PAR_STATS — rt.mn の読むだけの語）が立っているか（値 0 / 1）
+// 計測の印（SOBER_PAR_STATS — rt.mn の読むだけの語）が立っているか（値 0 / 1）
 func pstatOn(st mut St) int {
     return cmp(mut st, CNe, load(mut st, globaladdr(mut st, st.mnG), MN_STATS), iconst(mut st, 0))
 }
 
-// pstatCall は印が立っていれば f(args) を呼ぶ
+// 印が立っていれば f(args) を呼ぶ
 func pstatCall(st mut St, f FnRef, args int) {
     bY := newBlock(mut st)
     bN := newBlock(mut st)
@@ -67,7 +67,7 @@ func pstatCall(st mut St, f FnRef, args int) {
     setCur(mut st, bN)
 }
 
-// atomicMax は p[off] = max(p[off], v)（CAS の繰り返し）
+// p[off] = max(p[off], v)（CAS の繰り返し）
 func atomicMax(st mut St, p int, off int, v int) {
     loop := newBlock(mut st)
     bTry := newBlock(mut st)
@@ -82,7 +82,7 @@ func atomicMax(st mut St, p int, off int, v int) {
     setCur(mut st, done)
 }
 
-// buildPstatSpawn は rt.pstat_spawn()（rt.task_go の頭から — 印のときだけ）: 生きている数 + 1 とその高水位
+// rt.pstat_spawn()（rt.task_go の頭から — 印のときだけ）: 生きている数 + 1 とその高水位
 func buildPstatSpawn(st mut St) {
     begin(mut st, st.rtPstatSpawn)
     ps := globaladdr(mut st, st.pstatG)
@@ -91,7 +91,7 @@ func buildPstatSpawn(st mut St) {
     ret(mut st, -1)
 }
 
-// buildPstatEnd は rt.pstat_end(tcb)（task の終わり — スロットを返す前・印のときだけ）: 自前のスロット（深度 TC_BASE + 1 〜 own）の使った量の和を
+// rt.pstat_end(tcb)（task の終わり — スロットを返す前・印のときだけ）: 自前のスロット（深度 TC_BASE + 1 〜 own）の使った量の和を
 // 全体と spawn の点ごとの最大へ
 func buildPstatEnd(st mut St) {
     begin(mut st, st.rtPstatEnd)
@@ -123,7 +123,7 @@ func buildPstatEnd(st mut St) {
     ret(mut st, -1)
 }
 
-// pstatVa はスロットを n 本予約した印（slotRefill の mmap の道 — 印のときだけ）
+// スロットを n 本予約した印（slotRefill の mmap の道 — 印のときだけ）
 func pstatVa(st mut St, n int) {
     bY := newBlock(mut st)
     bN := newBlock(mut st)
@@ -134,13 +134,13 @@ func pstatVa(st mut St, n int) {
     setCur(mut st, bN)
 }
 
-// pfield は ` 名前=値`（rt の印字 — 今の出力先へ）
+// ` 名前=値`（rt の印字 — 今の出力先へ）
 func pfield(st mut St, name string, v int) {
     printLit(mut st, " " + name + "=")
     call(mut st, st.rtPint, list1(mut st, v))
 }
 
-// buildPstatDump は rt.pstat_dump()（終わり — main の後・出力の区間を全部出した後）: 印が立っていれば標準エラーへ
+// rt.pstat_dump()（終わり — main の後・出力の区間を全部出した後）: 印が立っていれば標準エラーへ
 //   #par root workers=… affinity=… cpuq=… cap=… capsrc=… rss0=…
 //   #par tasks live_peak=… ended=… bytes_max=… bytes_sum=… va_slots=… slot_bytes=…
 //   #par site k tasks=… peak=…（task のあった点だけ）
@@ -174,7 +174,7 @@ func buildPstatDump(st mut St) {
     pfield(mut st, "slot_bytes", load(mut st, meta, W_SLOT_DEF))
     pfield(mut st, "tcb_mmaps", load(mut st, ps, PS_TCBMAP))
     call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\n')))
-    // 入場の台帳（段 6 P5-2）: 入場・縮退・超過の数・計上の高水位・task の数の天井・終わりの計上（全部返れば 0）
+    // 入場の台帳: 入場・縮退・超過の数・計上の高水位・task の数の天井・終わりの計上（全部返れば 0）
     printLit(mut st, "#par admit")
     pfield(mut st, "inline", load(mut st, mn, MN_LINL))
     pfield(mut st, "over", load(mut st, mn, MN_LOVER))
@@ -225,7 +225,7 @@ func buildPstatDump(st mut St) {
     ret(mut st, -1)
 }
 
-// putPath は rt.pbuf の経路の組み立て域のバイト位置 at（値）から定数の文字列 s を書き、次の位置（値）を返す（nul = true なら最後に NUL も）
+// rt.pbuf の経路の組み立て域のバイト位置 at（値）から定数の文字列 s を書き、次の位置（値）を返す（nul = true なら最後に NUL も）
 func putPath(st mut St, at int, s string, nul bool) int {
     pb := globaladdr(mut st, st.pbufG)
     b := bytes(s)
@@ -239,7 +239,7 @@ func putPath(st mut St, at int, s string, nul bool) int {
     return end
 }
 
-// buildPread は rt.pread() i64: rt.pbuf の組み立て域（PB_PATH — NUL 終わり）の経路のファイルを作業域（PB_DATA から PB_CAP バイトまで）へ読み、
+// rt.pread() i64: rt.pbuf の組み立て域（PB_PATH — NUL 終わり）の経路のファイルを作業域（PB_DATA から PB_CAP バイトまで）へ読み、
 // 読んだバイト数（失敗は負）。読んだ後ろに NUL
 func buildPread(st mut St) {
     begin(mut st, st.rtPread)
@@ -260,7 +260,7 @@ func buildPread(st mut St) {
     ret(mut st, n0)
 }
 
-// buildPnum は rt.pnum(i) i64: 作業域のバイト位置 i（PB_DATA からの相対）から数字でないバイトを飛ばし、続く 10 進を読む（NUL まで数字が無ければ -1）。
+// rt.pnum(i) i64: 作業域のバイト位置 i（PB_DATA からの相対）から数字でないバイトを飛ばし、続く 10 進を読む（NUL まで数字が無ければ -1）。
 // 読み終えた位置を rt.pbuf[PB_END] へ
 func buildPnum(st mut St) {
     begin(mut st, st.rtPnum)
@@ -298,12 +298,12 @@ func buildPnum(st mut St) {
     ret(mut st, dv)
 }
 
-// pbyte は作業域のバイト位置 i（値）のバイト
+// 作業域のバイト位置 i（値）のバイト
 func pbyte(st mut St, i int) int {
     return load8(mut st, gepByte(mut st, globaladdr(mut st, st.pbufG), bin(mut st, BAdd, i, iconst(mut st, PB_DATA))), 0)
 }
 
-// buildPcapInit は rt.pcap_init(budget_mb)（入口 — mnInit から・ワーカー数を決める前）: rt.mn の MN_CPUQ / MN_CAP / MN_CAPSRC / MN_RSS0 を書く
+// rt.pcap_init(budget_mb)（入口 — mnInit から・ワーカー数を決める前）: rt.mn の MN_CPUQ / MN_CAP / MN_CAPSRC / MN_RSS0 を書く
 func buildPcapInit(st mut St) {
     begin(mut st, st.rtPcapInit)
     mn := globaladdr(mut st, st.mnG)
@@ -406,7 +406,7 @@ func buildPcapInit(st mut St) {
     setCur(mut st, bSet)
     store(mut st, mn, MN_CAP, cv)
     store(mut st, mn, MN_CAPSRC, cs)
-    // task の数の天井（VA の上界 — 段 6 P5-2 admit.sober）: VA_BUDGET ÷ スロットの大きさ ÷ 2（1 task が 2 本のスロットを持つ見込み）・下限 16
+    // task の数の天井（VA の上界 — admit.sober）: VA_BUDGET ÷ スロットの大きさ ÷ 2（1 task が 2 本のスロットを持つ見込み）・下限 16
     ss := imax(mut st, load(mut st, globaladdr(mut st, st.meta), W_SLOT_DEF), iconst(mut st, 1))
     tcap := imax(mut st, bin(mut st, BDiv, bin(mut st, BDiv, iconst(mut st, VA_BUDGET), ss), iconst(mut st, 2)), iconst(mut st, 16))
     store(mut st, mn, MN_TCAP, tcap)
@@ -415,7 +415,7 @@ func buildPcapInit(st mut St) {
     ret(mut st, -1)
 }
 
-// pstatPools は名前つきプールの節ごとに 1 行（段 6 P5-4 — `#par pool <id> parent=… cap=… used=… tasks=… admit=… shed=…`。終わりの used / tasks は全部返れば 0）
+// 名前つきプールの節ごとに 1 行（`#par pool <id> parent=… cap=… used=… tasks=… admit=… shed=…`。終わりの used / tasks は全部返れば 0）
 func pstatPools(st mut St) {
     pg := globaladdr(mut st, st.poolG)
     cnt := imin(mut st, load(mut st, pg, 0), iconst(mut st, POOL_MAX))

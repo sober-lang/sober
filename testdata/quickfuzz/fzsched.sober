@@ -1,0 +1,45 @@
+package main
+
+// std/quick の fuzz のスケジュールの軸の網（scripts/quickfuzz.sh）: 2 つの task が同じファイルへ書き足す順は既定のスケジュール（ワーカー 1 では
+// 子を先に）では a が全部先で性質が成り立ち、乱択のスケジュール（SOBER_SCHED_SEED — quick:sched）で b が先に走ると偽になる
+
+import "std/io"
+import "std/os"
+import "std/quick"
+import "std/task"
+
+const path = "fzsched.txt"
+
+func put(tag string, n int) int {
+    mut i := 0
+    while i < n {
+        _ = os.AppendFile(path, bytes(tag))
+        i += 1
+    }
+    return n
+}
+
+func rep(tag string, n int) string {
+    mut s := ""
+    mut i := 0
+    while i < n {
+        s = s + tag
+        i += 1
+    }
+    return s
+}
+
+func main() {
+    mut q := quick.Seed(0)
+    quick.Check(mut q, () => {
+        n := quick.Int(mut q, 1, 3)
+        _ = os.Remove(path)
+        r, e := task.Run((s task.Scope) => {
+            a := task.Spawn(s, () => put("a", n))
+            b := task.Spawn(s, () => put("b", n))
+            task.Join(a) + task.Join(b)
+        })
+        got := io.ReadFile(path) catch []byte{}
+        (string(got) catch "") == rep("a", n) + rep("b", n)
+    })
+}

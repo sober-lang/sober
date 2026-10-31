@@ -1,6 +1,6 @@
 package sort
 
-// 並べ替え（language.md 34 節「並べ替え」の族）。値の列でなく添字を並べる: 比べ方は呼び手の閉包が持ち（行の開始位置の列とバイト列・struct の欄 …）、
+// 並べ替え（language.md 34 節「並べ替え」の族）。値の列でなく添字を並べる: 比べ方は呼び手のクロージャが持ち（行の開始位置の列とバイト列・struct の欄 …）、
 // 並べた結果は添字の列で返す — 呼び手は元の列を写さずに、その順で読むか組み直す。
 // less(a, b) は「添字 a の要素が添字 b の要素より前」で、狭義の弱順序であること（そうでなければ順は決まらないが、添字の列であることは保ち、範囲の外で落ちない —
 // ループは全部境界で止まる）。どちらの関数も決定的（同じ入力・同じ less なら常に同じ列 — 乱択の pivot を使わない）
@@ -338,7 +338,7 @@ func OrderUnstable(n int, less func(int, int) bool) []int {
     return freeze(ab)
 }
 
-// triple は 3 点 a, b, c を並べる比べの対（a, b）・（b, c）・（a, b）を prs の np 語目から書き、書いた後の語数を返す
+// 3 点 a, b, c を並べる比べの対（a, b）・（b, c）・（a, b）を prs の np 語目から書き、書いた後の語数を返す
 func triple(prs mut []int, np int, a int, b int, c int) int {
     prs[np] = a
     prs[np + 1] = b
@@ -349,7 +349,7 @@ func triple(prs mut []int, np int, a int, b int, c int) int {
     return np + 6
 }
 
-// insertion は ab[lo, hi) を挿入ソートで並べる（等しいものの後ろへ入れる）。動かした要素の数が limit を超えたら諦めて false（部分挿入ソート — 並んでいない区間を早く見切る）
+// ab[lo, hi) を挿入ソートで並べる（等しいものの後ろへ入れる）。動かした要素の数が limit を超えたら諦めて false（部分挿入ソート — 並んでいない区間を早く見切る）
 func insertion(ab mut []int, lo int, hi int, limit int, less func(int, int) bool) bool {
     mut moved := 0
     mut i := lo + 1
@@ -372,7 +372,7 @@ func insertion(ab mut []int, lo int, hi int, limit int, less func(int, int) bool
     return true
 }
 
-// heapsort は ab[lo, hi) を heapsort で並べる（不安定版の最悪の場合の逃げ道 — O(n log n)）。山を組む周と、根を末尾へ移して縮める周を 1 つのループで回す
+// ab[lo, hi) を heapsort で並べる（不安定版の最悪の場合の逃げ道 — O(n log n)）。山を組む周と、根を末尾へ移して縮める周を 1 つのループで回す
 func heapsort(ab mut []int, lo int, hi int, less func(int, int) bool) {
     m := hi - lo
     mut k := m / 2
@@ -411,7 +411,7 @@ func heapsort(ab mut []int, lo int, hi int, less func(int, int) bool) {
     }
 }
 
-// breakPattern は偏った分割の後の区間 ab[lo, hi)（長さ m）の決まった位置を入れ替える（pdqsort の並びの癖の崩し — 乱択しない）
+// 偏った分割の後の区間 ab[lo, hi)（長さ m）の決まった位置を入れ替える（pdqsort の並びの癖の崩し — 乱択しない）
 func breakPattern(ab mut []int, lo int, hi int, m int) {
     if m >= small {
         q := m / 4

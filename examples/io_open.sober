@@ -1,6 +1,6 @@
 package main
 
-// IO 便 段 2: 開いたファイル io.File（language.md 28 節「資源とストリーム」）。`f := io.Open(p)?`（か catch）の直後の文が `defer io.Close(f)`・
+// 開いたファイル io.File（language.md 28 節「資源とストリーム」）。`f := io.Open(p)?`（か catch）の直後の文が `defer io.Close(f)`・
 // 読みは io.ReadAll(f)・File は利用者の関数の実引数に渡せる（受けた側も写せない・外へ出せない）。後始末が抜けないことは開いている fd の数
 // （/proc/self/fd の項目の数）の差で見る。リポジトリのルートを cwd にして実行する
 
@@ -11,14 +11,14 @@ func fds() int {
     return len(es)
 }
 
-// size は開いた File を今の位置から全部読んだ長さ（File を実引数で受ける helper）
+// 開いた File を今の位置から全部読んだ長さ（File を実引数で受ける helper）
 @errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired)
 func size(f io.File) (int, error?) {
     b := io.ReadAll(f)?
     return len(b), nil
 }
 
-// sizeOf は path を開いて読む（`?` の形 — 失敗は呼び手へ）
+// path を開いて読む（`?` の形 — 失敗は呼び手へ）
 @errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired)
 func sizeOf(p string) (int, error?) {
     f := io.Open(p)?
@@ -26,7 +26,7 @@ func sizeOf(p string) (int, error?) {
     return size(f)
 }
 
-// firstLine は path の先頭の行（catch の形 — 開けなければ "(none)"）
+// path の先頭の行（catch の形 — 開けなければ "(none)"）
 func firstLine(p string) string {
     f := io.Open(p) catch return "(none)"
     defer io.Close(f)

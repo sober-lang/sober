@@ -1,12 +1,12 @@
 package main
 
-// task.SpawnIn の実引数の式の中の task.Spawn（report-692）: pool の式が展開される関数（関数型の仮引数）の呼び出しで、渡したラムダの中で
+// task.SpawnIn の実引数の式の中の task.Spawn: pool の式が展開される関数（関数型の仮引数）の呼び出しで、渡したラムダの中で
 // task.Spawn する形。SpawnIn の形の印（lower の st.parIn）が pool の式を下ろす間も立ったままだと、入れ子の Spawn が SpawnIn の形
-// （実引数 4 つ）と取り違えられて build だけが拒否していた（check は受理 — check ⊃ build の食い違い）
+// （実引数 4 つ）と取り違えられて build だけが拒否する（check は受理する）ことがないかの回帰
 
 import "std/task"
 
-// pick は関数型の仮引数を持つので呼び出し点に展開される
+// 関数型の仮引数を持つので呼び出し点に展開される
 func pick(p task.Pool, f func() int) task.Pool {
     _ = f()
     return p

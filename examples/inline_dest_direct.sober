@@ -1,9 +1,8 @@
 package main
 
-// 展開の宛先の直結（report-693 / 694）: 関数型の仮引数を持つ関数は呼び出し点に展開される。展開の呼び出し点そのものに呼び手の宛先の印がある
+// 展開の宛先の直結: 関数型の仮引数を持つ関数は呼び出し点に展開される。展開の呼び出し点そのものに呼び手の宛先の印がある
 // （ループ・ラムダの外で呼び手の return へ流れ着く — `return order(n, f)`）なら、本体の印つきの確保（`mut ab := mut []int{}`）は呼び手の宛先へ
-// 直に作る。展開入口の深度に作ると、呼び手の return が結果を呼び手の呼び手の region へ写す（extsort の lineOrder の形 — 二重の写し）。
-// scripts/iterregion.sh が `--stop-after=<段> --dump-ir` で ranks の中の結果の写し（rt.region_relocate の呼び出し）を数える
+// 直に作る。展開入口の深度に作ると、呼び手の return が結果を呼び手の呼び手の region へ写してしまう（二重の写し）
 
 func order(n int, key func(int) int) []int {
     mut ab := mut []int{}
@@ -19,7 +18,7 @@ func neg(x int) int {
     return 100 - x
 }
 
-// ranks は展開の呼び出し点が印つき（return の式）
+// 展開の呼び出し点が印つき（return の式）
 func ranks(n int) []int {
     return order(n, neg)
 }

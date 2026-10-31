@@ -6,6 +6,7 @@
 //   - `例:` / `拒否:` の examples/ の参照が 1 本以上・ファイルが実在・`例:` は check が受理（黄金の exit=0）・`拒否:` は check が拒否（exit≠0）
 //   - `決定:` の行のリンクの `language.md N 節` が language.md の `### N.` に・`syntax.md 決定 N` が syntax.md の `N. ` の行に実在する
 //   - 規則の番号が章の中で重複しない・接頭辞が章で 1 つ・参照の行（例 / 拒否 / 決定）を持つ段落は規則番号で始まる
+// テスティングガイドの package の題材と `$ sober …` の出力の照合は下の節（網 guidetest の黄金と）
 //   node --experimental-strip-types scripts/docsync.ts
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 const md = (dir: string) => (existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".md")).sort().map((f) => `${dir}/${f}`) : []);
@@ -35,6 +36,30 @@ for (const d of docs) {
       const v = verdict(m[1].slice("examples/".length));
       if (v === undefined || v.ok || v.text !== m[4]) bad(`${d}: the rejection block for ${m[1]} differs from its checkverdict golden`);
     }
+  }
+}
+// package の題材（examples/guide/<package>/<ファイル>.sober — テスティングガイド）: 1 行目の末尾が `（抜粋）` / ` (excerpt)` の塊はファイルの連続した行の抜粋、
+// 他はファイルの全体と一致。`$ sober …` の 1 行だけの ```sh の塊の直後の「出力:」/「Output:」の塊は、testdata/guide/testing.cmds の同じコマンドの黄金
+// （testdata/guide/testing/<名前>.out — 網 guidetest が走らせた実物）から終了コードの行を除いたものと一致。一覧に無いコマンドは名指す
+const cmds = existsSync("testdata/guide/testing.cmds")
+  ? new Map(readFileSync("testdata/guide/testing.cmds", "utf8").split("\n").filter((l) => l !== "" && !l.startsWith("#")).map((l) => [l.slice(l.indexOf(" ") + 1), l.slice(0, l.indexOf(" "))]))
+  : new Map<string, string>();
+for (const d of docs) {
+  const s = readFileSync(d, "utf8");
+  for (const m of s.matchAll(/```sober\n\/\/ (examples\/guide\/[A-Za-z0-9_\/]+\.sober)(（抜粋）| \(excerpt\))?\n([\s\S]*?)\n```/g)) {
+    n++;
+    if (!existsSync(m[1])) { bad(`${d}: ${m[1]} does not exist`); continue; }
+    const src = readFileSync(m[1], "utf8").replace(/\n$/, "");
+    if (m[2] === undefined ? src !== m[3] : !`\n${src}\n`.includes(`\n${m[3]}\n`)) bad(`${d}: the code block for ${m[1]} ${m[2] === undefined ? "differs from the file" : "is not an excerpt of the file"}`);
+  }
+  for (const m of s.matchAll(/```sh\n\$ (sober [^\n]+)\n```(?:\n\n(出力|Output):\n\n```\n([\s\S]*?)\n```)?/g)) {
+    const name = cmds.get(m[1]);
+    if (name === undefined) { bad(`${d}: \`${m[1]}\` is not in testdata/guide/testing.cmds`); continue; }
+    n++;
+    if (m[2] === undefined) continue;
+    const g = `testdata/guide/testing/${name}.out`;
+    const out = existsSync(g) ? readFileSync(g, "utf8").replace(/\n$/, "").replace(/\n?\(exit \d+\)$/, "") : "";
+    if (out !== m[3]) bad(`${d}: the output block for \`${m[1]}\` differs from ${g}`);
   }
 }
 // 仕様の規則の段落

@@ -5,7 +5,7 @@ package utf8
 
 import "std/strings"
 
-// Parse は妥当な UTF-8 だけを string にする（利用者は `string(b)` を書く。名前は変換の族 Parse — std 命名規則・裁定 N1）。表現は同じなので、検査の後は恒等（std 専用の bytesToString）
+// 妥当な UTF-8 だけを string にする（利用者は `string(b)` を書く。名前は変換の族 Parse — std 命名規則）。表現は同じなので、検査の後は恒等（std 専用の bytesToString）
 @errors(strings.InvalidUtf8)
 func Parse(b []byte) (string, error?) {
     at := strings.IndexInvalid(b)

@@ -11,7 +11,7 @@ trap 'rm -rf "$W"' EXIT
 reps=${1:-20}; rounds=${2:-3}; lv=${3:-6}; shift $(( $# < 3 ? $# : 3 ))
 cuts=${*:-1048576 65536 4096 256}
 S2=${STAGE2:-out/stage2/sober2}
-"$S2" test std/internal/deflate --work "$W" -run TestStreamBench > /dev/null || { echo "streambench: FAIL build"; exit 1; }
+"$S2" test std/internal/deflate --work "$W" --run TestStreamBench > /dev/null || { echo "streambench: FAIL build"; exit 1; }
 (cd testdata/flatecheck/go && go build -o "$W/g" stream.go) || { echo "streambench: FAIL go build"; exit 1; }
 # one <名前> <切片> <回数> → "命令 cycles"（単一コア・GOMAXPROCS=1 — Go の GC の助手も同じコアに）
 one() {

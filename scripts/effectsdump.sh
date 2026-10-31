@@ -30,7 +30,7 @@ mkdir -p "$W/std/app" && cp -r src/std "$W/std/std"
 (cd "$W/std" && "$S2" check app/main.sober --effects-dump 2>&1) > "$W/std.txt"
 # 自己: compiler/ の木（std を写した — checkverdict の自己適用と同じ形）の要約の行
 mkdir -p "$W/self" && cp -r src/compiler "$W/self/compiler" && cp -r src/std "$W/self/compiler/std"
-(cd "$W/self/compiler" && ulimit -s unlimited && "$S2" check app/main.sober --effects-dump 2>&1 | tail -1) > "$W/self.txt"
+(cd "$W/self/compiler" && ulimit -s unlimited && "$S2" check app --effects-dump 2>&1 | tail -1) > "$W/self.txt"
 for k in std self; do
     if [ $regen = 1 ]; then cp "$W/$k.txt" "$G/$k.txt"; continue; fi
     diff -q "$W/$k.txt" "$G/$k.txt" > /dev/null 2>&1 || { echo "FAIL $k:"; diff "$W/$k.txt" "$G/$k.txt" | head -5; fail=1; }

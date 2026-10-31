@@ -56,7 +56,7 @@ func acceptOne(l net.Listener) error? {
     return nil
 }
 
-// recvOne は 1 回分の切片を文字列で（失敗はラベル）
+// 1 回分の切片を文字列で（失敗はラベル）
 func recvOne(c net.Conn) string {
     v, e := recv1(c)
     return if e == nil { v } else { show(e) }

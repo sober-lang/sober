@@ -67,7 +67,7 @@ typed_for() {
     # compiler/app は `@embed("std/**")` が cwd の std/ を要る — stage2.sh と同じく compiler/* と std/ を並べた作業木で読む（パスは src/compiler/ 相対のまま）
     local ct
     ct=$(make_ctree)
-    (cd "$ct" && "$OLDPWD/$BIN" typed "$OLDPWD/src/std" src/compiler/ "$1" app/main.sober) >> "$2"
+    (cd "$ct" && "$OLDPWD/$BIN" typed "$OLDPWD/src/std" src/compiler/ "$1" app) >> "$2"
     rm -rf "$ct"
 }
 
@@ -104,7 +104,7 @@ chain() {
     echo "chain: $sym（類型 $mode・package $pkg・綴り $name）"
     # stage2 の閉包（app/main が読むファイル — 作業木で）
     ct=$(make_ctree)
-    (cd "$ct" && "$OLDPWD/$BIN" files "$OLDPWD/src/std" app/main.sober) | cut -f2 > "$T/closure"
+    (cd "$ct" && "$OLDPWD/$BIN" files "$OLDPWD/src/std" app) | cut -f2 > "$T/closure"
     rm -rf "$ct"
     grep '^std/' "$T/closure" | xargs -r -n1 dirname | sort -u > "$T/stdpkgs"
     grep -v '^std/\|^\$' "$T/closure" | sed 's#^#src/compiler/#' | sort -u > "$T/cfiles"

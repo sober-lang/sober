@@ -4,8 +4,8 @@
 // Finished・record の保護）を通った往復だけを黄金にする: クライアントが送ったバイト列を testdata/tls/trace-<場合>.hex に、受けたバイト列の SHA-256・
 // KeyLogWriter の 4 つの secret・受けた平文を標準出力（= testdata/tls/trace.golden の形）に書く。InsecureSkipVerify は証明書の鎖の検証だけを外す
 // （HttpArena の自己署名の試験用の対 — CertificateVerify の署名は Go が葉の公開鍵で検証する）。再生成:
-//   out/stage2/sober2 test std/tls -run TestTraceLive --work /tmp/tt && (cd scripts/oracles && go run tls_trace.go /tmp/tt/t) > testdata/tls/trace.golden
-//   （記録が変わったら `sober test std/tls -run TestTrace` で照合 — trace-*.hex と黄金はテストに @embed で焼き込まれる）。hrr の場合は openssl s_client の中継（viaOpenSSL）
+//   out/stage2/sober2 test std/tls --run TestTraceLive --work /tmp/tt && (cd scripts/oracles && go run tls_trace.go /tmp/tt/t) > testdata/tls/trace.golden
+//   （記録が変わったら `sober test std/tls --run TestTrace` で照合 — trace-*.hex と黄金はテストに @embed で焼き込まれる）。hrr の場合は openssl s_client の中継（viaOpenSSL）
 //
 //go:debug cryptocustomrand=1
 package main

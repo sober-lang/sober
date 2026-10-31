@@ -1,0 +1,8 @@
+package main
+
+// 負例: map のリテラルは const に置けない（map の const を埋めるのは @embed だけ — language.md 25 節・spec V-3）
+const Ports = map[string]int{"http": 80}
+
+func main() {
+    println(0)
+}

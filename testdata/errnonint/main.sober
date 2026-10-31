@@ -1,0 +1,48 @@
+package main
+
+// 非干渉の網の題材（stages の errnonint — report-1285 / 1286）: error を返す・写す・積む関数の並び。stages は同じ package に
+// string 欄の error ラベル 1 個（probe.sober.txt）を足した版と、両方にある関数の境界コピー（region.relocate / rt.region_relocate8 /
+// rt.err_relocate の呼び出し）の数を突き合わせる — ラベルを足しても、それを参照しない関数の境界コピーは変わらない
+
+type TooBig error {
+    n int
+}
+
+type Neg error {}
+
+func check(n int) (int, error?) {
+    if n < 0 {
+        return 0, Neg{}
+    }
+    if n > 100 {
+        return 0, TooBig{n: n}
+    }
+    return n * 2, nil
+}
+
+func wrap(n int) (int, error?) {
+    v, err := check(n)
+    if err != nil {
+        return 0, err
+    }
+    return v + 1, nil
+}
+
+func collect(ns []int) ([]int, []error) {
+    mut vs := mut []int{}
+    mut es := mut []error{}
+    for n <- ns {
+        v, err := wrap(n)
+        if err != nil {
+            es = append(es, err)
+        } else {
+            vs = append(vs, v)
+        }
+    }
+    return freeze(vs), freeze(es)
+}
+
+func main() {
+    vs, es := collect([]int{1, -2, 300, 4})
+    println("ok ${len(vs)} err ${len(es)}")
+}

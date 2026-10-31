@@ -125,8 +125,8 @@ func NewScratch(s mut Scratch, n int) {
     zeros(mut s.words, n)
 }
 
-// zeros は空の列 xs を長さ n の 0 にする（0 の chunk min(n, 256) 個を 1 つ作り、chunk ごとに一括の写しの形で足す — flate の fill と同じ。欄を mut の実引数で渡して
-// 仮引数へ append する形でないと一括の写し〔copyloop〕に乗らず 1 語ずつ〔欄へ直に append〕か、局所の列を欄へ代入する写しが 1 回増える — report-720）
+// 空の列 xs を長さ n の 0 にする（0 の chunk min(n, 256) 個を 1 つ作り、chunk ごとに一括の写しの形で足す — flate の fill と同じ。欄を mut の実引数で渡して
+// 仮引数へ append する形でないと一括の写し〔copyloop〕に乗らず 1 語ずつ〔欄へ直に append〕か、局所の列を欄へ代入する写しが 1 回増える）
 func zeros(xs mut []int, n int) {
     bn := if n < 256 { n } else { 256 }
     mut b := mut []int{}
@@ -168,7 +168,7 @@ func Store(s mut Scratch, i int, v int) {
     s.words[i] = s.tag | v
 }
 
-// badScratch は Store の契約違反の panic（Store の本体を小さく保つ — 呼び出し点に展開される大きさに。panic の値の組み立ては冷たい道のここだけ）
+// Store の契約違反の panic（Store の本体を小さく保つ — 呼び出し点に展開される大きさに。panic の値の組み立ては冷たい道のここだけ）
 func badScratch(v int) {
     panic(BadScratch{v: v})
 }

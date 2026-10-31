@@ -1,6 +1,6 @@
 package lower
 
-// 定数上限のループの全展開（展開の便）: B1 の gvn / hdr の後に掛け（見積もりは重複の畳まれた大きさで）、展開した関数は
+// 定数上限のループの全展開: gvn / hdr の後に掛け（見積もりは重複の畳まれた大きさで）、展開した関数は
 // gvn を掛け直して後段の bce / licm へ渡す（写しどうしの同じ定数の添字の検査が 1 つの値になり bce の ② が畳む）。
 // 対象 = 利用者のループで、頭の終端が `condbr (lt X, U), 本体, 出口`（X は頭の仮引数・U は定数）・入りの X が定数・後ろの辺がちょうど 1 本で X + 1。
 // 回数 T = U − 入り（≤ T_MAX）で、展開後の IR 命令が入れ子ごとに UR_BUDGET（2 × CUT_K — 展開の時点の IR での近似）以下（キャンセルの検査点の約束 — 2 つの検査の間の IR 命令 ≤ K — を
@@ -13,14 +13,14 @@ import "desugar"
 import "std/iter"
 
 const UR_TMAX = 16
-// 展開の時点の IR での予算（2 × CUT_K — 決定 2026-10-09）: 展開の時点の IR は後段（bce・rtlower・併合・巻き上げ）で縮む
+// 展開の時点の IR での予算（2 × CUT_K）: 展開の時点の IR は後段（bce・rtlower・併合・巻き上げ）で縮む
 // （nbody の advance で 1,500 → 844 — 約 0.56 倍）ので、最終の直線が K 前後になる見積もり。近似が外れたら urCheckRuns が最終 IR で鳴る
 const UR_BUDGET = 2048
 // 呼び出しの重み: B1 の呼び出しは後段（rtlower の展開・インライン）で伸びる — 1 と数えると最終の直線が K を超えた（examples/task_chan_hold の
 // 15 回の Recv / Send のループ — 最終 1,213 IR 命令。検証器の網が鳴った実例）
 const UR_CALLW = 32
 
-// unrollModule はモジュールの全関数に全展開を掛ける
+// モジュールの全関数に全展開を掛ける
 func unrollModule(st mut St) {
     mut f := st.fhead
     while f != -1 {
@@ -31,7 +31,7 @@ func unrollModule(st mut St) {
     }
 }
 
-// unrollFunc は関数 f の定数上限のループを全展開する（先に安い走査 — 利用者のループの頭に lt の比較がある関数だけ）
+// 関数 f の定数上限のループを全展開する（先に安い走査 — 利用者のループの頭に lt の比較がある関数だけ）
 func unrollFunc(st mut St, f FnRef) {
     if !urCheap(mut st, f) {
         return
@@ -55,7 +55,7 @@ func unrollFunc(st mut St, f FnRef) {
     st.fn = saved
 }
 
-// urCheap は利用者のループの頭の終端の条件が同じブロックの `lt x, c` で、c が入口のブロックか頭の中の定数（1〜T_MAX × 4）か
+// 利用者のループの頭の終端の条件が同じブロックの `lt x, c` で、c が入口のブロックか頭の中の定数（1〜T_MAX × 4）か
 // （作業域を作らない走査 — 上限が len などの値のループの関数で CFG を組まない。自己 build の判定の費用 +0.10 G）
 func urCheap(st mut St, f FnRef) bool {
     entry := irFnBHead(mut st, f)
@@ -76,7 +76,7 @@ func urCheap(st mut St, f FnRef) bool {
     return false
 }
 
-// urSmallConst は値 v がブロック b の中の小さい正の定数か
+// 値 v がブロック b の中の小さい正の定数か
 func urSmallConst(st mut St, b BlkRef, v int) bool {
     mut i := irBlkIHead(mut st, b)
     while i != -1 {
@@ -88,7 +88,7 @@ func urSmallConst(st mut St, b BlkRef, v int) bool {
     return false
 }
 
-// UrW は 1 回の作業域: 値 → 定義の命令・値 → 定義のブロック番号（関数の仮引数は入口 = 0）・ブロック → ループの印（外側 / 内側の 2 本）
+// 1 回の作業域: 値 → 定義の命令・値 → 定義のブロック番号（関数の仮引数は入口 = 0）・ブロック → ループの印（外側 / 内側の 2 本）
 type UrW struct {
     def mut []int
     dblk mut []int
@@ -97,7 +97,7 @@ type UrW struct {
     mark int
 }
 
-// UrL はループの形（頭・前置き・後ろの辺の前任・X の仮引数の位置・入り・上限）
+// ループの形（頭・前置き・後ろの辺の前任・X の仮引数の位置・入り・上限）
 type UrL struct {
     h int
     pre int
@@ -107,7 +107,7 @@ type UrL struct {
     u int
 }
 
-// urRound はループを 1 つ展開したら true（外側から — 逆後順の前から）
+// ループを 1 つ展開したら true（外側から — 逆後順の前から）
 func urRound(st mut St, f FnRef) bool {
     nb := irFnNBlk(mut st, f)
     nv := irFnNVal(mut st, f)
@@ -156,7 +156,7 @@ func urRound(st mut St, f FnRef) bool {
     return false
 }
 
-// urShape は頭 h のループの形（合わなければ h = -1）。xo ≥ 0 なら入りは「定数」の代わりに「xo + k」も受け、c0 = k − OFS（印 — 呼び手が外側の値を足す）
+// 頭 h のループの形（合わなければ h = -1）。xo ≥ 0 なら入りは「定数」の代わりに「xo + k」も受け、c0 = k − OFS（印 — 呼び手が外側の値を足す）
 func urShape(st mut St, w mut m2rW, uw mut UrW, h int, xo int, ofs int) UrL {
     bad := UrL{h: -1, pre: -1, latch: -1, ix: -1, c0: 0, u: 0}
     pre := loopPre(mut st, mut w, h)
@@ -223,13 +223,13 @@ func urShape(st mut St, w mut m2rW, uw mut UrW, h int, xo int, ofs int) UrL {
     return UrL{h: h, pre: pre, latch: latch, ix: ix, c0: c0, u: u}
 }
 
-// urConst は値 v が定数か（小さい — 足し算の畳みで溢れない範囲）
+// 値 v が定数か（小さい — 足し算の畳みで溢れない範囲）
 func urConst(st mut St, uw mut UrW, v int) bool {
     d := uw.def[v]
     return d >= 0 && irInsOp(mut st, InsRef(d)) == OpConst && irInsA(mut st, InsRef(d)) >= -65536 && irInsA(mut st, InsRef(d)) <= 65536
 }
 
-// urPlus は値 v が `x + k`（k は定数）か
+// 値 v が `x + k`（k は定数）か
 func urPlus(st mut St, uw mut UrW, v int, x int, k int) bool {
     d := uw.def[v]
     if d < 0 || irInsOp(mut st, InsRef(d)) != OpBin || irInsA(mut st, InsRef(d)) != BAdd {
@@ -241,7 +241,7 @@ func urPlus(st mut St, uw mut UrW, v int, x int, k int) bool {
     return o >= 0 && urConst(mut st, mut uw, o) && irInsA(mut st, InsRef(uw.def[o])) == k
 }
 
-// urCount は印 mark の付いたブロックの命令の数（終端を 1・呼び出しを UR_CALLW と数える）
+// 印 mark の付いたブロックの命令の数（終端を 1・呼び出しを UR_CALLW と数える）
 func urCount(st mut St, w mut m2rW, in mut []int, mark int) int {
     mut n := 0
     for bi <- iter.Range(0, w.nb) {
@@ -258,7 +258,7 @@ func urCount(st mut St, w mut m2rW, in mut []int, mark int) int {
     return n
 }
 
-// urFits はループ l（印 uw.mark）の展開後の大きさが予算（UR_BUDGET）以内か。中の内側のループは「入りが定数か l の X + k・上限が定数」で回数が
+// ループ l（印 uw.mark）の展開後の大きさが予算（UR_BUDGET）以内か。中の内側のループは「入りが定数か l の X + k・上限が定数」で回数が
 // l の各回で決まるときだけ数え、決まらない内側があれば展開しない（外側だけ写してもコードが増えるだけ）。3 段以上の入れ子は展開しない
 func urFits(st mut St, w mut m2rW, uw mut UrW, l UrL) bool {
     t := l.u - l.c0
@@ -313,7 +313,7 @@ func urFits(st mut St, w mut m2rW, uw mut UrW, l UrL) bool {
     return t * (total - innerSz) + extra + total <= UR_BUDGET
 }
 
-// urExitsOk はループの外がループの中の値を使う形を確かめる: 頭の値（仮引数・命令）だけが外で使われうる（最後の頭の写しへ付け替える）。
+// ループの外がループの中の値を使う形を確かめる: 頭の値（仮引数・命令）だけが外で使われうる（最後の頭の写しへ付け替える）。
 // 頭以外の値が外で使われる・頭の値が外で使われるのに頭以外からの出口がある（出口の合流が要る）なら展開しない
 func urExitsOk(st mut St, w mut m2rW, uw mut UrW, l UrL) bool {
     mut otherExit := false
@@ -357,7 +357,7 @@ func urExitsOk(st mut St, w mut m2rW, uw mut UrW, l UrL) bool {
     return true
 }
 
-// urSatellite はループの外の exit のブロック（panic の点）で、ループの中の値を使い、前任が全部ループの本体（頭以外）のものか — 写しごとに一緒に写す
+// ループの外の exit のブロック（panic の点）で、ループの中の値を使い、前任が全部ループの本体（頭以外）のものか — 写しごとに一緒に写す
 // （B1 では検査の panic の点が添字・シフト量などの値を引数に取る — 共有できない。仮引数・頭からの辺のあるものは対象外）
 func urSatellite(st mut St, w mut m2rW, uw mut UrW, l UrL, bi int) bool {
     b := BlkRef(w.blk[bi])
@@ -387,7 +387,7 @@ func urSatellite(st mut St, w mut m2rW, uw mut UrW, l UrL, bi int) bool {
     return true
 }
 
-// urUseOk はループの外の使い道 v が許されるか（ループの外の値・頭の値〔頭以外の出口が無いとき〕）
+// ループの外の使い道 v が許されるか（ループの外の値・頭の値〔頭以外の出口が無いとき〕）
 func urUseOk(uw mut UrW, h int, v int, otherExit bool) bool {
     if v < 0 || uw.inl[uw.dblk[v]] != uw.mark {
         return true
@@ -395,7 +395,7 @@ func urUseOk(uw mut UrW, h int, v int, otherExit bool) bool {
     return uw.dblk[v] == h && !otherExit
 }
 
-// urUnroll はループ l を T 回の本体の写しと T + 1 回の頭の写しに置き換える
+// ループ l を T 回の本体の写しと T + 1 回の頭の写しに置き換える
 func urUnroll(st mut St, f FnRef, w mut m2rW, uw mut UrW, l UrL) {
     t := l.u - l.c0
     nv0 := len(uw.def)
@@ -510,13 +510,13 @@ func urUnroll(st mut St, f FnRef, w mut m2rW, uw mut UrW, l UrL) {
     }
 }
 
-// urTo は行き先 to の写し（本体のブロックなら写し・外ならそのまま）
+// 行き先 to の写し（本体のブロックなら写し・外ならそのまま）
 func urTo(st mut St, to BlkRef, bm mut []int) int {
     id := irBlkId(mut st, to)
     return if id < len(bm) && bm[id] >= 0 { bm[id] } else { int(to) }
 }
 
-// urRename はループの外の頭の値の使い道を最後の頭の写しの値（表 vm）に付け替える
+// ループの外の頭の値の使い道を最後の頭の写しの値（表 vm）に付け替える
 func urRename(st mut St, w mut m2rW, uw mut UrW, h int, vm int) {
     for bi <- iter.Range(0, w.nb) {
         if uw.inl[bi] == uw.mark || w.blk[bi] < 0 {
@@ -538,7 +538,7 @@ func urRename(st mut St, w mut m2rW, uw mut UrW, h int, vm int) {
     }
 }
 
-// urFix は欄 at（種別 k）の頭の値を付け替える（値の列はその場で — 外の辺どうしで共有していても付け替えは同じ）
+// 欄 at（種別 k）の頭の値を付け替える（値の列はその場で — 外の辺どうしで共有していても付け替えは同じ）
 func urFix(st mut St, uw mut UrW, h int, at int, k int, vm int) {
     if k == K_VAL || k == K_VOPT {
         v := desugar.HeapGet(mut st.d, at)
@@ -562,7 +562,7 @@ func urFix(st mut St, uw mut UrW, h int, at int, k int, vm int) {
 // （後ろの辺を除いた有向非巡回の道 — 終端を 1 と数える）がキャンセルの検査点の距離 K（CUT_K）以下か（展開の予算は展開の時点の IR での近似 —
 // 外れたら内部エラーで鳴る。language.md 11 節の注記）
 
-// urRunMsg は関数 f の全展開の直線が K を超えていれば違反の文面（超えていなければ "" — 段ごとの検証の最後の段〔st.vfyRuns〕だけで測る）
+// 関数 f の全展開の直線が K を超えていれば違反の文面（超えていなければ "" — 段ごとの検証の最後の段〔st.vfyRuns〕だけで測る）
 func urRunMsg(st mut St, f FnRef) string {
     if !st.vfyRuns || !urHasRun(mut st, f) {
         return ""
@@ -571,7 +571,7 @@ func urRunMsg(st mut St, f FnRef) string {
     return if n > CUT_K { "an unrolled straight run of ${n} IR instructions exceeds the cancellation check distance K = ${CUT_K}" } else { "" }
 }
 
-// urHasRun は関数に全展開の写しのブロックがあるか
+// 関数に全展開の写しのブロックがあるか
 func urHasRun(st mut St, f FnRef) bool {
     mut b := irFnBHead(mut st, f)
     while b != -1 {
@@ -583,7 +583,7 @@ func urHasRun(st mut St, f FnRef) bool {
     return false
 }
 
-// urLongest は写しのブロックだけが続く道の、中断点の間の最長の命令数。後ろの辺を除くため深さ優先の後順の逆で辿り、順で前の前任からの辺だけを数える
+// 写しのブロックだけが続く道の、中断点の間の最長の命令数。後ろの辺を除くため深さ優先の後順の逆で辿り、順で前の前任からの辺だけを数える
 // （作業域の構造体を組まない — 検証器から届く関数で mut []int の欄の構造体を組むと自己 check の RSS が跳ねる:）
 func urLongest(st mut St, f FnRef) int {
     nb := irFnNBlk(mut st, f)

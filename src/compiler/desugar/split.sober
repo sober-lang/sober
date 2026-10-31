@@ -14,12 +14,12 @@ package desugar
 import "ast"
 import "std/iter"
 
-// isSplitB は束縛 b が割った mut 束縛か
+// 束縛 b が割った mut 束縛か
 func isSplitB(st mut S, b int) bool {
     return b >= 0 && bnd(mut st, b).mutable && bnd(mut st, b).split
 }
 
-// teSplits は型式 te（package pk・型環境 env）が割る struct を名指すか（型パラメータ・`T?`・その他は割らない）
+// 型式 te（package pk・型環境 env）が割る struct を名指すか（型パラメータ・`T?`・その他は割らない）
 func teSplits(st mut S, pk int, env int, te NodeRef) bool {
     k := kindN(mut st, te)
     if k == ast.TName {
@@ -32,7 +32,7 @@ func teSplits(st mut S, pk int, env int, te NodeRef) bool {
     return structFields(mut st, teDecl(mut st, pk, env, te)) != -1
 }
 
-// teDecl は型式 te の宣言（型環境 env の下で）
+// 型式 te の宣言（型環境 env の下で）
 func teDecl(st mut S, pk int, env int, te NodeRef) int {
     saved := st.tenv
     st.tenv = env
@@ -54,7 +54,7 @@ func fieldDecl(st mut S, dr int, i int) int {
     return teDecl(mut st, hget(mut st, dr + 1), hget(mut st, dr + 2), fieldTe(mut st, dr, i))
 }
 
-// fieldTy は i 番目の欄のコアの型（宣言の型環境で）
+// i 番目の欄のコアの型（宣言の型環境で）
 func fieldTy(st mut S, dr int, i int, at NodeRef) (TyRef, error?) {
     saved := st.tenv
     st.tenv = hget(mut st, dr + 2)
@@ -63,7 +63,7 @@ func fieldTy(st mut S, dr int, i int, at NodeRef) (TyRef, error?) {
     return t, err
 }
 
-// cellsOf は struct の値 v（純粋な式 — 変数か射影）から、葉ごとに alloc した ref の木を組む
+// struct の値 v（純粋な式 — 変数か射影）から、葉ごとに alloc した ref の木を組む
 func cellsOf(st mut S, v CoreRef, dr int) CoreRef {
     n := lenL(mut st, structFields(mut st, dr))
     comps := ListRef(listN(mut st, n))
@@ -74,7 +74,7 @@ func cellsOf(st mut S, v CoreRef, dr int) CoreRef {
     return pairChain(mut st, comps)
 }
 
-// valueOf は ref の木 refs（純粋な式）から struct の値を組み直す（葉を deref して pair 鎖に）
+// ref の木 refs（純粋な式）から struct の値を組み直す（葉を deref して pair 鎖に）
 func valueOf(st mut S, refs CoreRef, dr int) CoreRef {
     n := lenL(mut st, structFields(mut st, dr))
     comps := ListRef(listN(mut st, n))
@@ -85,7 +85,7 @@ func valueOf(st mut S, refs CoreRef, dr int) CoreRef {
     return pairChain(mut st, comps)
 }
 
-// assignAll は ref の木 refs の葉へ struct の値 v（純粋な式）の成分を書く — `pair(assign …, pair(…))` の 1 式（左から右に評価。値は捨てる）
+// ref の木 refs の葉へ struct の値 v（純粋な式）の成分を書く — `pair(assign …, pair(…))` の 1 式（左から右に評価。値は捨てる）
 func assignAll(st mut S, refs CoreRef, v CoreRef, dr int) CoreRef {
     n := lenL(mut st, structFields(mut st, dr))
     comps := ListRef(listN(mut st, n))
@@ -97,7 +97,7 @@ func assignAll(st mut S, refs CoreRef, v CoreRef, dr int) CoreRef {
     return pairChain(mut st, comps)
 }
 
-// splitTy は ref の木の型（葉 = ref true r（欄の型を束縛点の点座標で読む）、struct の欄 = 入れ子の木）。
+// ref の木の型（葉 = ref true r（欄の型を束縛点の点座標で読む）、struct の欄 = 入れ子の木）。
 // point = false なら欄の型をそのまま（Def の仮引数の型 — 座標は Def の base）
 func splitTy(st mut S, dr int, r int, point bool, at NodeRef) (TyRef, error?) {
     n := lenL(mut st, structFields(mut st, dr))
@@ -123,7 +123,7 @@ func splitTy(st mut S, dr int, r int, point bool, at NodeRef) (TyRef, error?) {
 
 // ── 場所 ──
 
-// DotParts は点つきの経路の文字列（`st.nodes` — mut 実引数の EMutArg の名前）を部分の文字列の列 [n, 文字列…] に割る
+// 点つきの経路の文字列（`st.nodes` — mut 実引数の EMutArg の名前）を部分の文字列の列 [n, 文字列…] に割る
 func DotParts(st mut S, name int) ListRef {
     n := dat(mut st, name)
     mut k := 1
@@ -156,7 +156,7 @@ func DotParts(st mut S, name int) ListRef {
     return out
 }
 
-// Place は割った束縛の中の場所: refs = ref（葉）か ref の木（struct の場所）、dr = 木なら struct の宣言（葉は -1）、
+// 割った束縛の中の場所: refs = ref（葉）か ref の木（struct の場所）、dr = 木なら struct の宣言（葉は -1）、
 // b = 根の束縛、ok = false なら割った場所でない（根が割った束縛でない・葉を越えて選ぶ等 — 呼び手は従来の経路へ）
 type Place struct {
     refs CoreRef
@@ -165,7 +165,7 @@ type Place struct {
     ok bool
 }
 
-// placeAt は根の名前 root と欄の名前の列 names（[n, 文字列…]、先頭 from から）の場所（深さ depth の変数で）
+// 根の名前 root と欄の名前の列 names（[n, 文字列…]、先頭 from から）の場所（深さ depth の変数で）
 func placeAt(st mut S, root StrRef, names ListRef, from int, eb int, depth int) Place {
     b := lookup(mut st, eb, root)
     if !isSplitB(mut st, b) {
@@ -188,7 +188,7 @@ func placeAt(st mut S, root StrRef, names ListRef, from int, eb int, depth int) 
     return Place{refs: refs, dr: dr, b: b, ok: true}
 }
 
-// placeOfExpr は表層の式（名前か selector の鎖）の場所
+// 表層の式（名前か selector の鎖）の場所
 func placeOfExpr(st mut S, e NodeRef, eb int, depth int) Place {
     mut cnt := 0
     mut cur := e
@@ -210,18 +210,18 @@ func placeOfExpr(st mut S, e NodeRef, eb int, depth int) Place {
     return placeAt(mut st, sA(nodeOf(mut st, cur)), names, 0, eb, depth)
 }
 
-// placeOfMutArg は mut 実引数 `mut x` / `mut x.f.g` の場所（割っていない束縛の `mut x` は ok = false）
+// mut 実引数 `mut x` / `mut x.f.g` の場所（割っていない束縛の `mut x` は ok = false）
 func placeOfMutArg(st mut S, arg NodeRef, eb int, depth int) Place {
     parts := DotParts(mut st, nodeOf(mut st, arg).a)
     return placeAt(mut st, latS(mut st, parts, 0), parts, 1, eb, depth)
 }
 
-// readPlace は場所の値（葉は deref、木は組み直し）
+// 場所の値（葉は deref、木は組み直し）
 func readPlace(st mut S, p Place) CoreRef {
     return if p.dr >= 0 { valueOf(mut st, p.refs, p.dr) } else { c1(mut st, CDeref, p.refs) }
 }
 
-// placeTy は場所を mut 実引数として渡すときの ann の型（葉 = ref true r（欄の型を束縛点で）、木 = splitTy — 木は mutParamArg では組まない）。
+// 場所を mut 実引数として渡すときの ann の型（葉 = ref true r（欄の型を束縛点で）、木 = splitTy — 木は mutParamArg では組まない）。
 // 葉の欄の型は呼び手が知る（w — mut 仮引数の型）
 func placeTy(st mut S, p Place, w TyRef, at NodeRef) (TyRef, error?) {
     r := bnd(mut st, p.b).region
@@ -235,7 +235,7 @@ func placeTy(st mut S, p Place, w TyRef, at NodeRef) (TyRef, error?) {
     return tRefOf(mut st, 1, r, inner), nil
 }
 
-// isOptValue は式の値が `T?` か（`mut x := e` を割るかの判定 — 宣言が struct でも `S?` の値は割らない）
+// 式の値が `T?` か（`mut x := e` を割るかの判定 — 宣言が struct でも `S?` の値は割らない）
 func isOptValue(st mut S, e NodeRef, eb int, ef int) bool {
     t := computeTy(mut st, e, eb, ef)
     if t != -1 {
@@ -251,7 +251,7 @@ func isOptValue(st mut S, e NodeRef, eb int, ef int) bool {
     return false
 }
 
-// mutArgExpr は mut 実引数 `mut x.f.g` を同じ場所を読む表層の式（名前か selector の鎖）へ（型・宣言の追跡用）
+// mut 実引数 `mut x.f.g` を同じ場所を読む表層の式（名前か selector の鎖）へ（型・宣言の追跡用）
 func mutArgExpr(st mut S, arg NodeRef) NodeRef {
     parts := DotParts(mut st, nodeOf(mut st, arg).a)
     at := arg
@@ -262,7 +262,7 @@ func mutArgExpr(st mut S, arg NodeRef) NodeRef {
     return e
 }
 
-// isDotted は mut 実引数が欄の経路か（`mut x.f`）
+// mut 実引数が欄の経路か（`mut x.f`）
 func isDotted(st mut S, arg NodeRef) bool {
     return lenL(mut st, DotParts(mut st, nodeOf(mut st, arg).a)) > 1
 }

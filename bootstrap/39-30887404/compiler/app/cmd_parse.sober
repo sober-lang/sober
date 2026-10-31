@@ -1,0 +1,60 @@
+package main
+
+// `sober lex` / `sober fmt` / `sober parse` の handler（前段の dump）
+
+import "std/cli"
+import "lexer"
+import "ast"
+import "printer"
+import "loader"
+
+func cmdLex(cl cli.Parsed) int {
+    path := cli.Pos(cl, File)
+    src, ok := readSrc(path)
+    if !ok {
+        return fail("cannot read ${path}")
+    }
+    return writeStdout(lexer.Dump(src))
+}
+
+func cmdFmt(cl cli.Parsed) int {
+    return cmdTree(cli.Pos(cl, File), true)
+}
+
+// path を parse して、AST から整形したソース（pr）か AST JSON（!pr）を書く
+func cmdTree(path string, pr bool) int {
+    src, ok := readSrc(path)
+    if !ok {
+        return fail("cannot read ${path}")
+    }
+    // .sobi（interface — language.md 29 節）は本体の無い func 宣言と `@expand` を許す読み方で
+    t, pok := parseFile(path, src)
+    if !pok {
+        return fail("parse error")
+    }
+    if pr {
+        return writeStdout(printer.Print(t))
+    }
+    return writeStdout(ast.Json(t))
+}
+
+func cmdLoaderJson(entry string) int {
+    std := Std
+    p, lerr := loader.LoadFs(entry, std)
+    if lerr != nil {
+        return fail(loadDiag(p, std, lerr))
+    }
+    return writeStdout(loader.Json(p))
+}
+
+func cmdParse(cl cli.Parsed) int {
+    aj := cli.StrOpt(cl, AstJson)
+    lj := cli.StrOpt(cl, LoaderJson)
+    if aj != nil && lj == nil {
+        return cmdTree(aj, false)
+    }
+    if lj != nil && aj == nil {
+        return cmdLoaderJson(lj)
+    }
+    return misuse("parse takes one of --ast-json <file> and --loader-json <entry>")
+}

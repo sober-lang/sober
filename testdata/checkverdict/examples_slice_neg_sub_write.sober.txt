@@ -1,2 +1,3 @@
+sober: type error at examples/slice_neg_sub_write.sober:7:11
 {"errors":[{"msg":"type error"}],"ok":false}
 exit=1

@@ -1,0 +1,332 @@
+package main
+
+// `sober test --mutate`（mutation testing）: package のテストのビルドに全部の変異を入れた 1 本（loader/mutx.sober の schemata）を建て、
+// 基線（変異なし）で各テストを 1 回ずつ走らせて「届いた変異」の印を集め、変異ごとに届いたテストだけを名前の順に走らせて最初に落ちたところで
+// kill と数える。どのテストも届かない変異は走らせずに未到達。期限は基線のそのテストの時間 × 10 + 0.5 s（子が自分で SIGALRM）。
+// スコア = kill / 到達（未到達は分母に入れない — 「テストが無い」と「テストが弱い」を分ける）
+
+import "std/io"
+import "std/iter"
+import "std/task"
+import "std/os"
+import "std/sort"
+import "std/strings"
+import "loader"
+import "lower"
+import "desugar"
+
+// 変異 1 体の結果（res = survived / unreached / ignored / killed / mem / timeout / crash・by = 殺したテスト）
+type MutRes struct {
+    at string
+    desc string
+    res string
+    by string
+    reach []string
+}
+
+// package 1 つ分の mutation testing（log = 印字の列〔結果の再生の値 — --mutate-out の行は fd 3 の項として積み、印字しない〕・
+// one ≥ 0 なら変異 one だけの build で全部のテストを走らせて 1 行 — 照合の網）。変異の実行は task.Map で並べる（子プロセスは /dev/null へ）
+func mutatePkg(pkg string, std map[string]string, work string, prefix string, log mut []byte, one int) TestTally {
+    p, lerr := loadTestMutate(pkg, std, one)
+    if lerr != nil {
+        say(mut log, 1, bytes("FAIL ${pkg} (build)\n"))
+        say(mut log, 2, bytes("sober: ${loadDiag(p, std, lerr)}\n"))
+        return failTally()
+    }
+    names0, nerr := loader.TestNames(p, pkg)
+    exe, berr := testExe(p, "", lower.BcOpen(""), []loader.PcPut{})
+    if nerr != nil || berr != nil {
+        say(mut log, 1, bytes("FAIL ${pkg} (build)\n"))
+        _ = if nerr != nil { fail(loadDiag(p, std, nerr)) } else { lowerFail(p, std, berr) }
+        return failTally()
+    }
+    bin := work + "/t"
+    if io.WriteFile(bin, exe) != nil || os.WriteMode(bin, 493) != nil {
+        say(mut log, 1, bytes("FAIL ${pkg} (build)\n"))
+        return failTally()
+    }
+    names := testOrder(names0, prefix)
+    corpus := "quick:corpus=${pkg}/testdata/fuzz"
+    pts := coverPoints(p, std)
+    n := len(pts)
+    fs := userFiles(p)
+    ev := testEnvNames(realFiles(fs))
+    if one >= 0 {
+        // 1 体だけの build: 全部のテストを名前の順に（届かないテストは落ちない — schemata の結果と同じになるはず）
+        mut res := "survived"
+        mut by := "-"
+        for t <- iter.Range(0, len(names)) {
+            ec, eerr := os.RunTo(bin, []string{names[t], corpus, "mut:hang=2000"}, work + "/o", work + "/e")
+            if eerr != nil || ec != 0 {
+                res = killClass(if eerr != nil { -1 } else { ec })
+                by = names[t]
+                break
+            }
+        }
+        if one < n {
+            mutLine(mut log, MutRes{at: covAt(pts[one]), desc: loader.MutKindText(pts[one].kind), res: res, by: by, reach: []string{}})
+        }
+        return TestTally{pass: 0, fail: 0, files: fs, envs: ev.names, envOk: false, cover: noCover()}
+    }
+    // 基線: 各テストを 1 回ずつ（届いた変異の印と時間）
+    mut pass := 0
+    mut failn := 0
+    mut reach0 := mut [][]bool{}
+    mut hang0 := mut []int{}
+    covf := work + "/cov"
+    for t <- iter.Range(0, len(names)) {
+        t0 := uptimeMs()
+        ec, eerr := runTest(bin, []string{names[t], corpus}, covf, work)
+        hang0 = append(hang0, (uptimeMs() - t0) * 10 + 500)
+        mut hit := mut []bool{}
+        for i <- iter.Range(0, n) {
+            hit = append(hit, false)
+        }
+        coverOr(mut hit, covf, p.cover_key, n)
+        reach0 = append(reach0, freeze(hit))
+        if eerr == nil && ec == 0 {
+            say(mut log, 1, bytes("ok   ${pkg}.${names[t]}\n"))
+            pass += 1
+        } else {
+            showCaught(mut log, work + "/o", 1)
+            showCaught(mut log, work + "/e", 2)
+            say(mut log, 1, bytes("FAIL ${pkg}.${names[t]} (exit ${ec})\n"))
+            failn += 1
+        }
+    }
+    if failn > 0 {
+        say(mut log, 1, bytes("mutate: ${pkg} not run — the tests fail without mutations\n"))
+        return TestTally{pass: pass, fail: failn, files: fs, envs: ev.names, envOk: ev.ok, cover: noCover()}
+    }
+    reach := freeze(reach0)
+    hang := freeze(hang0)
+    ign := mutIgnore(pkg)
+    ord := covOrder(pts)
+    // 走らせる変異（位置の順・届いて抑止されていないもの）
+    mut todo := mut []int{}
+    mut used := mut []bool{}
+    for i <- iter.Range(0, len(ign)) {
+        used = append(used, false)
+    }
+    for oi <- iter.Range(0, n) {
+        k := ord[oi]
+        ig := mutIgnored(ign, covAt(pts[k]), loader.MutKindText(pts[k].kind))
+        if ig >= 0 {
+            used[ig] = true
+        }
+        if loader.IsMutKind(pts[k].kind) && ig < 0 && mutReached(reach, k) {
+            todo = append(todo, k)
+        }
+    }
+    vs, merr := task.Map(freeze(todo), (k int) => mutRun(bin, names, reach, hang, corpus, k), budget: 4 * task.MB)
+    mut verdict := mut []string{}
+    for k <- iter.Range(0, n) {
+        verdict = append(verdict, "")
+    }
+    for i <- iter.Range(0, len(todo)) {
+        verdict[todo[i]] = if merr != nil { mutRun(bin, names, reach, hang, corpus, todo[i]) } else { vs[i] }
+    }
+    mut rs := mut []MutRes{}
+    for oi <- iter.Range(0, n) {
+        k := ord[oi]
+        if !loader.IsMutKind(pts[k].kind) {
+            continue
+        }
+        mut by := mut []string{}
+        for t <- iter.Range(0, len(names)) {
+            if reach[t][k] {
+                by = append(by, names[t])
+            }
+        }
+        v := verdict[k]
+        f := strings.Split(v, "\t")
+        ran := len(f) == 2
+        res := if ran { f[0] } else if mutIgnored(ign, covAt(pts[k]), loader.MutKindText(pts[k].kind)) >= 0 { "ignored" } else { "unreached" }
+        killer := if ran { f[1] } else { "-" }
+        r := MutRes{at: covAt(pts[k]), desc: loader.MutKindText(pts[k].kind), res: res, by: killer, reach: freeze(by)}
+        rs = append(rs, r)
+        mutLine(mut log, r)
+    }
+    mutReport(mut log, pkg, freeze(rs))
+    for i <- iter.Range(0, len(ign)) {
+        if !used[i] {
+            say(mut log, 1, bytes("mutate: ${pkg}/testdata/mutate.ignore: no mutant at ${strings.Replace(ign[i], "\t", " ", -1)}\n"))
+        }
+    }
+    return TestTally{pass: pass, fail: failn, files: fs, envs: ev.names, envOk: ev.ok, cover: noCover()}
+}
+
+// 変異 k を、k に届いたテストで名前の順に走らせる（最初に落ちたところで打ち切り）。結果 = `<結果>\t<殺したテスト>`
+func mutRun(bin string, names []string, reach [][]bool, hang []int, corpus string, k int) string {
+    for t <- iter.Range(0, len(names)) {
+        if reach[t][k] {
+            ec, eerr := os.RunTo(bin, []string{names[t], corpus, "mut:id=${k}", "mut:hang=${hang[t]}"}, "/dev/null", "/dev/null")
+            if eerr != nil || ec != 0 {
+                return "${killClass(if eerr != nil { -1 } else { ec })}\t${names[t]}"
+            }
+        }
+    }
+    return "survived\t-"
+}
+
+// どれかのテストが変異 k に届いたか
+func mutReached(reach [][]bool, k int) bool {
+    for t <- iter.Range(0, len(reach)) {
+        if reach[t][k] {
+            return true
+        }
+    }
+    return false
+}
+
+// package の testdata/mutate.ignore の行（`<位置>\t<変異>` — --mutate-out の行の頭 2 欄。後ろの欄・空行・`#` の行は捨てる。無ければ空）
+func mutIgnore(pkg string) []string {
+    b := io.ReadFile("${pkg}/testdata/mutate.ignore") catch return []string{}
+    src := string(b) catch return []string{}
+    ls := strings.Split(src, "\n")
+    mut out := mut []string{}
+    for i <- iter.Range(0, len(ls)) {
+        l := ls[i]
+        if l == "" || strings.HasPrefix(l, "#") {
+            continue
+        }
+        f := strings.Split(l, "\t")
+        out = append(out, if len(f) >= 2 { "${f[0]}\t${f[1]}" } else { l })
+    }
+    return freeze(out)
+}
+
+// 抑止の行の番号（当たらなければ -1）
+func mutIgnored(ign []string, at string, desc string) int {
+    key := "${at}\t${desc}"
+    for i <- iter.Range(0, len(ign)) {
+        if ign[i] == key {
+            return i
+        }
+    }
+    return -1
+}
+
+// テストのビルドの mutation testing の写しつき（parse のキャッシュは使わない）
+func loadTestMutate(pkg string, std map[string]string, one int) (loader.Program, error?) {
+    p, lerr := loader.LoadTestFsMutate(pkg, std, one)
+    if lerr != nil {
+        return p, lerr
+    }
+    return desugar.NamedValueArgs(p)
+}
+
+// --run の接頭辞に当たるテストを名前の順に（kill のテストを決定的にする）
+func testOrder(names []string, prefix string) []string {
+    mut xs := mut []string{}
+    for i <- iter.Range(0, len(names)) {
+        if prefix == "" || strings.HasPrefix(names[i], prefix) {
+            xs = append(xs, names[i])
+        }
+    }
+    ys := freeze(xs)
+    ord := sort.Order(len(ys), (i, j) => bytesLess(bytes(ys[i]), bytes(ys[j])))
+    mut out := mut []string{}
+    for i <- iter.Range(0, len(ord)) {
+        out = append(out, ys[ord[i]])
+    }
+    return freeze(out)
+}
+
+// 子の終了コードの kill の分類（1 / 101 = テストの失敗か panic〔assert の失敗も panic〕・102 = region の超過・142 = 期限の SIGALRM・他 = crash）
+func killClass(ec int) string {
+    return switch ec {
+    case 1: "killed"
+    case 101: "killed"
+    case 102: "mem"
+    case 142: "timeout"
+    default: "crash"
+    }
+}
+
+// --mutate-out の 1 行（`<位置>\t<変異>\t<結果>\t<殺したテスト>`）を印字の列 log へ fd 3 の項として積む（印字しない — 結果の再生が一緒に覚える）
+func mutLine(log mut []byte, r MutRes) {
+    lenPut(mut log, bytes("3"))
+    lenPut(mut log, bytes("${r.at}\t${r.desc}\t${r.res}\t${r.by}\n"))
+}
+
+// 印字の列 log の fd 3 の項（--mutate-out の行）をつなげる
+func mutLines(log []byte) []byte {
+    fs := lenFields(log)
+    mut out := mut []byte{}
+    mut q := 0
+    while q + 1 < len(fs.xs) {
+        if atoiOf(fs.xs[q]) == 3 {
+            b := fs.xs[q + 1]
+            for i <- iter.Range(0, len(b)) {
+                out = append(out, b[i])
+            }
+        }
+        q += 2
+    }
+    return freeze(out)
+}
+
+// 生存の表示の打ち切り
+const MutShow = 20
+
+// package pkg の報告（`mutate: <pkg> 84.2% killed (421 of 500 reached) · 63 unreached · 4 timeout` + 生存を位置の順に MutShow 本まで）
+func mutReport(log mut []byte, pkg string, rs []MutRes) {
+    if len(rs) == 0 {
+        say(mut log, 1, bytes("mutate: ${pkg} no mutants\n"))
+        return
+    }
+    mut reached := 0
+    mut killed := 0
+    mut timeout := 0
+    mut ignored := 0
+    for i <- iter.Range(0, len(rs)) {
+        if rs[i].res == "ignored" {
+            ignored += 1
+            continue
+        }
+        if rs[i].res != "unreached" {
+            reached += 1
+        }
+        if rs[i].res != "unreached" && rs[i].res != "survived" {
+            killed += 1
+        }
+        if rs[i].res == "timeout" {
+            timeout += 1
+        }
+    }
+    pm := if reached == 0 { 0 } else { killed * 1000 / reached }
+    to := if timeout > 0 { " · ${timeout} timeout" } else { "" }
+    ig := if ignored > 0 { " · ${ignored} ignored" } else { "" }
+    say(mut log, 1, bytes("mutate: ${pkg} ${pm / 10}.${pm % 10}% killed (${killed} of ${reached} reached) · ${len(rs) - reached - ignored} unreached${to}${ig}\n"))
+    mut shown := 0
+    mut more := 0
+    for i <- iter.Range(0, len(rs)) {
+        if rs[i].res == "survived" {
+            if shown < MutShow {
+                say(mut log, 1, bytes("  ${padTo(rs[i].at, 24)} ${padTo(rs[i].desc, 20)} survived  (reached by ${strings.Join(rs[i].reach, ", ")})\n"))
+                shown += 1
+            } else {
+                more += 1
+            }
+        }
+    }
+    if more > 0 {
+        say(mut log, 1, bytes("  … ${more} more (--mutate-out)\n"))
+    }
+}
+
+// /proc/uptime の経過（ms — 0.01 s 刻み。読めなければ 0 — 期限の基線の時間）
+func uptimeMs() int {
+    b := io.ReadFile("/proc/uptime") catch return 0
+    mut v := 0
+    for i <- iter.Range(0, len(b)) {
+        if b[i] == ' ' {
+            break
+        }
+        if b[i] >= '0' && b[i] <= '9' {
+            v = v * 10 + int(b[i]) - 48
+        }
+    }
+    return v * 10
+}

@@ -1,0 +1,46 @@
+package main
+
+// Environment variables declared as a table (std/env): each variable is a typed const, env.Load reads them all once at the entry
+// and checks them, and the values come back through the same consts — env.Int(e, Port) is an int, env.StrOpt(e, Token) is a string?.
+// An empty value (NAME=) counts as unset; a bool is true for 1 / true and false for 0 / false / unset. env.Parse takes the
+// NAME=value pairs directly (the same check as Load — for tests); env.Format turns an error into its message.
+
+import "std/env"
+import "std/io"
+
+const Home = env.StrVar{name: "ENV_TABLE_EXAMPLE_HOME", help: "the data directory", def: "/var/lib/app"}
+const Token = env.StrVar{name: "ENV_TABLE_EXAMPLE_TOKEN", help: "the API token", opt: true}
+const Port = env.IntVar{name: "ENV_TABLE_EXAMPLE_PORT", help: "the listen port", def: 8080, min: 1, max: 65535}
+const Debug = env.BoolVar{name: "ENV_TABLE_EXAMPLE_DEBUG", help: "print the requests"}
+
+const Vars = env.Table{strs: []env.StrVar{Home, Token}, ints: []env.IntVar{Port}, bools: []env.BoolVar{Debug}}
+
+func show(e env.Values) {
+    tok := env.StrOpt(e, Token)
+    t := if tok == nil { "(none)" } else { tok }
+    println("home=" + env.Str(e, Home) + " token=" + t + " port=${env.Int(e, Port)} debug=${env.Bool(e, Debug)}")
+}
+
+func try(pairs []string) {
+    e, err := env.Parse(Vars, pairs)
+    if err != nil {
+        _ = io.WriteStdout(bytes(env.Format(err)))
+        return
+    }
+    show(e)
+}
+
+func main() int {
+    // the process environment (none of these are set when the example runs)
+    e, err := env.Load(Vars)
+    if err != nil {
+        _ = io.WriteStdout(bytes(env.Format(err)))
+        return 1
+    }
+    show(e)
+    try([]string{"ENV_TABLE_EXAMPLE_PORT=443", "ENV_TABLE_EXAMPLE_TOKEN=abc", "ENV_TABLE_EXAMPLE_DEBUG=1"})
+    try([]string{"ENV_TABLE_EXAMPLE_TOKEN="})
+    try([]string{"ENV_TABLE_EXAMPLE_PORT=0"})
+    try([]string{"ENV_TABLE_EXAMPLE_DEBUG=yes"})
+    return 0
+}

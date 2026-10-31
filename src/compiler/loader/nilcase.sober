@@ -19,7 +19,7 @@ import "ast"
 import "lexer"
 import "diag"
 
-// nilCasesAll は全ファイルの木の `case nil:` を写す（写せない形は拒否）
+// 全ファイルの木の `case nil:` を写す（写せない形は拒否）
 @errors(diag.NilCase)
 func nilCasesAll(ts []ast.Tree) ([]ast.Tree, error?) {
     mut out := mut []ast.Tree{}
@@ -46,7 +46,7 @@ func nilCasesAll(ts []ast.Tree) ([]ast.Tree, error?) {
     return freeze(out), nil
 }
 
-// multiPat は switch 節 x がパターン 2 つ以上の腕を持つか（多値の subject — `case v, nil:`（13 節）。nil は単値の nil の腕ではない）
+// switch 節 x がパターン 2 つ以上の腕を持つか（多値の subject — `case v, nil:`（13 節）。nil は単値の nil の腕ではない）
 func multiPat(t ast.Tree, x ast.Node) bool {
     for i <- iter.Range(0, ast.ListLen(t, x.b)) {
         if ast.ListLen(t, t.nodes[ast.ListAt(t, x.b, i)].a) > 1 {
@@ -56,7 +56,7 @@ func multiPat(t ast.Tree, x ast.Node) bool {
     return false
 }
 
-// nilCaseBad は単値 subject の switch 節 x の nil の腕が写せない理由（0 = 写せるか nil の腕が無い・1 = 2 つ以上・2 = `nil | …` / 他のパターンと並ぶ・
+// 単値 subject の switch 節 x の nil の腕が写せない理由（0 = 写せるか nil の腕が無い・1 = 2 つ以上・2 = `nil | …` / 他のパターンと並ぶ・
 // 3 = 前に名前のパターン・4 = nil の腕しか無い）と位置（nil の腕の字句）。パターン 2 つ以上の腕がある switch（多値の subject）は見ない
 func nilCaseBad(t ast.Tree, x ast.Node) (int, int) {
     if ast.ListLen(t, x.a) != 1 || multiPat(t, x) {
@@ -96,7 +96,7 @@ func nilCaseBad(t ast.Tree, x ast.Node) (int, int) {
     return 0, 0
 }
 
-// nilCaseAt は switch の節 x の nil の腕の添字（写せなければ -1）
+// switch の節 x の nil の腕の添字（写せなければ -1）
 func nilCaseAt(t ast.Tree, x ast.Node) int {
     if ast.ListLen(t, x.a) != 1 || multiPat(t, x) {
         return -1
@@ -129,7 +129,7 @@ func nilCaseAt(t ast.Tree, x ast.Node) int {
     return at
 }
 
-// nilCases は木 t の `case nil:` を写した木（節は末尾に足し、switch の節をその場で差し替える — 既存の添字は動かない）
+// 木 t の `case nil:` を写した木（節は末尾に足し、switch の節をその場で差し替える — 既存の添字は動かない）
 func nilCases(t ast.Tree) ast.Tree {
     n0 := len(t.nodes)
     mut found := false

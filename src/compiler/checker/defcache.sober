@@ -1,0 +1,475 @@
+package checker
+
+// check の関数単位キャッシュの checker の側: 一括の道（checkRoundPar）の 1 周を、鍵の当たりの Def を
+// 区間から外して回す（checkRoundCk）。値 = Def の判定（受理 / 名前付きの本体の落ち / 使う持ち上げの落ち / 上げた関数としての落ち）と落ちの位置
+// （項目の頭からの相対 — desugar.CkRel）。合流は関数表の順で逐次の意味を再現する: 最初に落ちた名前付きの Def → 無ければ最初に持ち上げの落ちを
+// 使う Def → 根の持ち上げ → 根の判定（逐次の checkAll は名前付きの Def → 持ち上げ〔作った順 = 最初に使った Def の順〕→ 根の順に検査する）。
+// 深すぎの値は書かない。脱糖の拒否は帰す先の Def の値（印 CF_REJ・種類・kind・位置）にして当たりで再生する — 逐次の脱糖は Def の順に
+// 進んで最初の拒否で止まるので、最初に拒否を持つ Def（それより前の Def は全部脱糖が通ったと分かっている）の拒否が逐次の拒否。
+// 帰す先は子の脱糖器が立てる（S.rejDef — 持ち上げ〔インスタンス・ラムダ〕の本体の拒否は、それを最初に触った Def の脱糖の中で起きる）
+
+import "desugar"
+import "diag"
+import "loader"
+import "std/iter"
+
+const CKV_VER = 1
+
+// 値の印
+const CF_NAMED = 1 // 名前付きの本体が落ちた
+const CF_LIFT = 2  // 使う持ち上げが落ちた
+const CF_BACK = 4  // 上げた関数として落ちた（逃げへ戻す）
+const CF_NPOS = 8  // 名前付きの落ちの位置あり
+const CF_LPOS = 16 // 持ち上げの落ちの位置あり
+const CF_REJ = 32   // 脱糖の拒否（値 = [種類, kind, 位置, 2 つ目の位置] — diag.WordsOf）
+const CF_RMISS = 64 // 拒否の 2 つ目の位置（NonExhaustive の missing）あり
+
+// 置き場の切り口 D の読みの表（loader.PCache の形 — lower.BcCheckView が組む）とコンパイラの鍵
+type CkCache struct {
+    on bool
+    view loader.PCache
+    self []byte
+    aud bool     // 検証 =2（扉の監査 — 外れの子の Def の脱糖が読んだ項目 ∈ 鍵の届く集合。外は名指しして落とす）
+}
+
+// キャッシュを使わない check
+func CkOff() CkCache {
+    return CkCache{on: false, view: loader.PcOff(), self: []byte{}, aud: false}
+}
+
+// 読みの表 view とコンパイラの鍵 self の check のキャッシュ
+func CkWith(view loader.PCache, self []byte, aud bool) CkCache {
+    return CkCache{on: true, view: view, self: self, aud: aud}
+}
+
+// 区間の子の落ちの記録 [関数, 印, 名前付きの位置, 持ち上げの位置]…（関数 = nfn は根・-1 は帰す先の無い持ち上げの落ち・
+// -2 は扉の監査の対 [-2, 関数, 読んだ項目, 0] — 検証 =2）。
+// fp = 検査器の Def ごとの落ち [Def, PackPos]…・m = Def → 上げた関数
+func childRecs(c desugar.Core, m []int, fp []int, nfn int, nsrc int) []int {
+    nd := c.H[c.Defs]
+    nl := nsrc - nd
+    mut recs := mut []int{}
+    mut lfail := mut []bool{}
+    mut lpos := mut []int{}
+    for k <- iter.Range(0, nl) {
+        lfail = append(lfail, false)
+        lpos = append(lpos, 0)
+    }
+    for q <- iter.Range(0, len(c.Aud) / 2) {
+        recs = append(recs, -2)
+        recs = append(recs, c.Aud[2 * q])
+        recs = append(recs, c.Aud[2 * q + 1])
+        recs = append(recs, 0)
+    }
+    mut anyLift := false
+    for q <- iter.Range(0, len(fp) / 2) {
+        j := fp[2 * q]
+        pos := fp[2 * q + 1]
+        if j < nd {
+            fl := CF_NAMED + (if pos > 0 { CF_NPOS } else { 0 }) + (if j < len(m) && m[j] >= 0 { CF_BACK } else { 0 })
+            recs = append(recs, c.DefFn[j])
+            recs = append(recs, fl)
+            recs = append(recs, pos)
+            recs = append(recs, 0)
+        } else if j - nd < nl && !lfail[j - nd] {
+            lfail[j - nd] = true
+            lpos[j - nd] = pos
+            anyLift = true
+        }
+    }
+    if !anyLift {
+        return freeze(recs)
+    }
+    // 使いの辺の CSR（節 = 関数 [0, nfn)・根 nfn・持ち上げ nfn + 1 + k）
+    nn := nfn + 1 + nl
+    us := c.Use
+    mut deg := mut []int{}
+    for v <- iter.Range(0, nn + 1) {
+        deg = append(deg, 0)
+    }
+    for q <- iter.Range(0, len(us) / 2) {
+        if us[2 * q] >= 0 && us[2 * q] < nn {
+            deg[us[2 * q] + 1] = deg[us[2 * q] + 1] + 1
+        }
+    }
+    for v <- iter.Range(0, nn) {
+        deg[v + 1] = deg[v + 1] + deg[v]
+    }
+    mut fill := mut []int{}
+    mut adj := mut []int{}
+    for v <- iter.Range(0, nn) {
+        fill = append(fill, deg[v])
+    }
+    for q <- iter.Range(0, len(us)) {
+        adj = append(adj, 0)
+    }
+    for q <- iter.Range(0, len(us) / 2) {
+        s := us[2 * q]
+        if s >= 0 && s < nn {
+            adj[fill[s]] = us[2 * q + 1]
+            fill[s] = fill[s] + 1
+        }
+    }
+    mut mark := mut []int{}
+    mut seen := mut []bool{}
+    for v <- iter.Range(0, nl) {
+        mark = append(mark, -1)
+        seen = append(seen, false)
+    }
+    mut stk := mut []int{}
+    for ctx <- iter.Range(0, nfn + 1) {
+        if deg[ctx + 1] > deg[ctx] {
+            mut best := -1
+            mut sp := 0
+            if len(stk) == 0 {
+                stk = append(stk, ctx)
+            } else {
+                stk[0] = ctx
+            }
+            sp = 1
+            while sp > 0 {
+                sp -= 1
+                v := stk[sp]
+                for a <- iter.Range(deg[v], deg[v + 1]) {
+                    k := adj[a]
+                    if k >= 0 && k < nl && mark[k] != ctx {
+                        mark[k] = ctx
+                        seen[k] = true
+                        if lfail[k] && (best < 0 || k < best) {
+                            best = k
+                        }
+                        if sp < len(stk) {
+                            stk[sp] = nfn + 1 + k
+                        } else {
+                            stk = append(stk, nfn + 1 + k)
+                        }
+                        sp += 1
+                    }
+                }
+            }
+            if best >= 0 {
+                recs = append(recs, ctx)
+                recs = append(recs, CF_LIFT + (if lpos[best] > 0 { CF_LPOS } else { 0 }))
+                recs = append(recs, 0)
+                recs = append(recs, lpos[best])
+            }
+        }
+    }
+    for k <- iter.Range(0, nl) {
+        if lfail[k] && !seen[k] {
+            recs = append(recs, -1)
+            recs = append(recs, CF_LIFT)
+            recs = append(recs, 0)
+            recs = append(recs, lpos[k])
+        }
+    }
+    return freeze(recs)
+}
+
+// 値のバイト列（位置を項目の相対に直せなければ空 — 書かない）
+// 拒否（CF_REJ）なら np / lp = 拒否の位置 / 2 つ目の位置・tag / kind = 種類 / kind
+func ckEnc(plan desugar.DefPlan, fl int, np int, lp int, tag int, kind int) []byte {
+    rej := (fl & CF_REJ) != 0
+    if rej && (tag == 0 || np == 0) {
+        return []byte{}
+    }
+    mut ws := if rej { mut []int{CKV_VER, fl, tag, kind} } else { mut []int{CKV_VER, fl} }
+    for q <- iter.Range(0, 2) {
+        hp := if rej { q == 0 || (fl & CF_RMISS) != 0 } else if q == 0 { (fl & CF_NPOS) != 0 } else { (fl & CF_LPOS) != 0 }
+        if hp {
+            r := desugar.CkRel(plan, if q == 0 { np } else { lp })
+            if len(r) != 3 {
+                return []byte{}
+            }
+            for x <- r {
+                ws = append(ws, x)
+            }
+        }
+    }
+    return loader.Varints(freeze(ws))
+}
+
+// CkDec は値の読み（[印, 名前付きの位置, 持ち上げの位置, 種類, kind] — 拒否なら位置 = 拒否の位置 / 2 つ目の位置。読めない・項目が今の build に
+// 無ければ空 = 外れ扱い）
+func ckDec(plan desugar.DefPlan, ws []int) []int {
+    if len(ws) < 2 || ws[0] != CKV_VER {
+        return []int{}
+    }
+    fl := ws[1]
+    rej := (fl & CF_REJ) != 0
+    if rej && len(ws) < 4 {
+        return []int{}
+    }
+    mut at := if rej { 4 } else { 2 }
+    mut ps := mut []int{0, 0}
+    for q <- iter.Range(0, 2) {
+        hp := if rej { q == 0 || (fl & CF_RMISS) != 0 } else if q == 0 { (fl & CF_NPOS) != 0 } else { (fl & CF_LPOS) != 0 }
+        if hp {
+            if at + 3 > len(ws) {
+                return []int{}
+            }
+            a := desugar.CkAbs(plan, ws[at], ws[at + 1], ws[at + 2])
+            if a == 0 {
+                return []int{}
+            }
+            ps[q] = a
+            at += 3
+        }
+    }
+    if at != len(ws) {
+        return []int{}
+    }
+    return []int{fl, ps[0], ps[1], if rej { ws[2] } else { 0 }, if rej { ws[3] } else { 0 }}
+}
+
+// 当たりを外した費用 cost で区間を切る（費用 0 の区間は作らない — 子の前段を払わない）。根の区間を先頭に
+func ckRanges(plan desugar.DefPlan, cost []int, skip []bool, aud bool) []desugar.DefRng {
+    mut out := mut []desugar.DefRng{}
+    out = append(out, desugar.RangeCk(plan, len(cost), len(cost), true, skip, aud))
+    mut lo := 0
+    mut acc := 0
+    for j <- iter.Range(0, len(cost)) {
+        acc += cost[j]
+        if acc >= PD_CHUNK {
+            out = append(out, desugar.RangeCk(plan, lo, j + 1, false, skip, aud))
+            lo = j + 1
+            acc = 0
+        }
+    }
+    if lo < len(cost) && acc > 0 {
+        out = append(out, desugar.RangeCk(plan, lo, len(cost), false, skip, aud))
+    }
+    return freeze(out)
+}
+
+// キャッシュの道の 1 周（checkRoundPar から — 鍵の計画のある plan）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
+func checkRoundCk(p loader.Program, excl []int, trust bool, plan desugar.DefPlan, cc CkCache) (Round, error?) {
+    cost0 := desugar.PlanCost(plan)
+    nfn := len(cost0)
+    vfy := loader.PcVfy(cc.view)
+    mut stt := mut []int{}   // 0 = 鍵なし / 書かない・1 = 当たり・2 = 外れ（子が検査する — 書く）
+    mut fl := mut []int{}
+    mut np := mut []int{}
+    mut lp := mut []int{}
+    mut rt := mut []int{}
+    mut rk := mut []int{}
+    mut ve := mut []int{}
+    mut skip := mut []bool{}
+    mut cost := mut []int{}
+    mut nhit := 0
+    mut nmiss := 0
+    for i <- iter.Range(0, nfn) {
+        mut s := 0
+        mut f := 0
+        mut a := 0
+        mut b := 0
+        mut t := 0
+        mut q := 0
+        mut e := -1
+        if desugar.CkHas(plan, i) {
+            s = 2
+            e = loader.PcFind(cc.view, desugar.CkK1(plan, i), desugar.CkK2(plan, i))
+            if e >= 0 && !vfy {
+                ws, ok := loader.PcWords(cc.view, e)
+                d := if ok { ckDec(plan, ws) } else { []int{} }
+                if len(d) == 5 {
+                    s = 1
+                    f = d[0]
+                    a = d[1]
+                    b = d[2]
+                    t = d[3]
+                    q = d[4]
+                }
+            }
+        }
+        stt = append(stt, s)
+        fl = append(fl, f)
+        np = append(np, a)
+        lp = append(lp, b)
+        rt = append(rt, t)
+        rk = append(rk, q)
+        ve = append(ve, if vfy { e } else { -1 })
+        skip = append(skip, s == 1)
+        cost = append(cost, if s == 1 { 0 } else { cost0[i] })
+        if s == 1 {
+            nhit += 1
+        } else if s == 2 {
+            nmiss += 1
+        }
+    }
+    sk := freeze(skip)
+    cf := freeze(cost)
+    rs := ckRanges(plan, cf, sk, cc.aud)
+    bud := desugar.PlanHeap(plan) * PD_HEAP + maxCost(cf, rs) * PD_BYTE + P_BASE
+    outs := rangeRounds(p, excl, -1, trust, 0, rs, bud)
+    loader.Stage("ck-ranges")
+    // 脱糖の拒否: 子の拒否は帰す先の Def へ（区間の中のそれより前の外れは脱糖が通った — 検査はしていないので書かない・後ろは不明）。
+    // dsk = 1 脱糖が通った（か当たりの受理）・2 拒否・0 不明
+    mut dsk := mut []int{}
+    for i <- iter.Range(0, nfn) {
+        dsk = append(dsk, if stt[i] == 1 && (fl[i] & CF_REJ) != 0 { 2 } else { 1 })
+    }
+    mut rootRej := -1
+    mut lost := false
+    for k <- iter.Range(0, len(outs)) {
+        o := outs[k]
+        if o.def == R_REJ {
+            rd := o.recs[0]
+            lo := desugar.RngLo(rs[k])
+            hi := desugar.RngHi(rs[k])
+            for i <- iter.Range(lo, hi) {
+                if i > rd && stt[i] != 1 {
+                    dsk[i] = 0
+                }
+                if stt[i] == 2 && i != rd {
+                    stt[i] = 0
+                }
+            }
+            if rd >= lo && rd < hi {
+                dsk[rd] = 2
+                fl[rd] = CF_REJ | (if o.recs[4] != 0 { CF_RMISS } else { 0 })
+                rt[rd] = o.recs[1]
+                rk[rd] = o.recs[2]
+                np[rd] = o.recs[3]
+                lp[rd] = o.recs[4]
+            } else if rd == nfn && lo == nfn {
+                rootRej = k
+            } else {
+                // 帰す先の無い拒否（後回しの署名 — 署名の持ち主の Def の区間か値が同じ拒否を持つはず）
+                lost = true
+            }
+        }
+    }
+    mut first := -1
+    mut unk := false
+    for i <- iter.Range(0, nfn) {
+        if first < 0 && dsk[i] == 0 {
+            unk = true
+        }
+        if first < 0 && dsk[i] == 2 {
+            first = i
+        }
+    }
+    if unk || (first < 0 && lost) {
+        return checkRound(p, excl, false, -1, trust, 0, desugar.WholeRng())
+    }
+    mut deep := false
+    mut rootFl := 0
+    mut rootLp := 0
+    mut door := mut []int{}
+    mut dmark := mut []int{}
+    mut dstk := mut []int{}
+    mut dq := 0
+    for k <- iter.Range(0, len(outs)) {
+        o := outs[k]
+        if o.def == R_REJ {
+            // 上で畳んだ
+        } else if o.def == -2 {
+            deep = true
+            // 深すぎた子の外れは書かない（子の記録は途中まで）
+            for i <- iter.Range(desugar.RngLo(rs[k]), desugar.RngHi(rs[k])) {
+                if stt[i] == 2 {
+                    stt[i] = 0
+                }
+            }
+        } else {
+            rc := o.recs
+            for q <- iter.Range(0, len(rc) / 4) {
+                i := rc[4 * q]
+                if i == -2 {
+                    // 扉の監査（検証 =2）: 鍵を持つ Def が鍵の届く集合の外の項目を読んだら名指し
+                    fi := rc[4 * q + 1]
+                    dq += 1
+                    if fi >= 0 && fi < nfn && desugar.CkHas(plan, fi) && !desugar.CkDoor(plan, fi, rc[4 * q + 2], mut dmark, mut dstk, dq) {
+                        loader.Err(bytes("cache: door outside check-def ${fi} item ${rc[4 * q + 2]}\n"))
+                        door = append(door, fi)
+                    }
+                } else if i < 0 {
+                    return checkRound(p, excl, false, -1, trust, 0, desugar.WholeRng())
+                } else if i >= nfn {
+                    rootFl = rootFl | rc[4 * q + 1]
+                    if rootLp == 0 {
+                        rootLp = rc[4 * q + 3]
+                    }
+                } else {
+                    fl[i] = fl[i] | rc[4 * q + 1]
+                    if rc[4 * q + 2] != 0 {
+                        np[i] = rc[4 * q + 2]
+                    }
+                    if rc[4 * q + 3] != 0 {
+                        lp[i] = rc[4 * q + 3]
+                    }
+                }
+            }
+        }
+    }
+    mut puts := mut []loader.PcPut{}
+    mut stale := mut []int{}
+    for x <- door {
+        stale = append(stale, x)
+    }
+    for i <- iter.Range(0, nfn) {
+        if stt[i] == 2 {
+            v := ckEnc(plan, fl[i], np[i], lp[i], rt[i], rk[i])
+            if len(v) > 0 {
+                if ve[i] >= 0 {
+                    if !loader.PcSame(cc.view, ve[i], v) {
+                        stale = append(stale, i)
+                    }
+                } else {
+                    puts = append(puts, loader.PcPut{st: 2, k1: desugar.CkK1(plan, i), k2: desugar.CkK2(plan, i), v: v, path: ""})
+                }
+            }
+        }
+    }
+    cnt := []int{nhit, nmiss, len(rs)}
+    if first >= 0 {
+        return Round{[]byte{}, R_REJ, []int{}, []int{}, 0, []int{first, rt[first], rk[first], np[first], lp[first]}, freeze(puts), cnt, freeze(stale)}, nil
+    }
+    if rootRej >= 0 {
+        r := outs[rootRej].recs
+        return Round{[]byte{}, R_REJ, []int{}, []int{}, 0, []int{r[0], r[1], r[2], r[3], r[4]}, freeze(puts), cnt, freeze(stale)}, nil
+    }
+    if deep {
+        return Round{bytes("checker: too deep\n"), -2, []int{}, []int{}, 0, []int{}, freeze(puts), cnt, freeze(stale)}, nil
+    }
+    mut at := 0
+    mut failed := rootFl != 0
+    for i <- iter.Range(0, nfn) {
+        if (fl[i] & (CF_NAMED + CF_LIFT)) != 0 {
+            failed = true
+        }
+        if at == 0 && (fl[i] & CF_NAMED) != 0 {
+            at = np[i]
+            if at == 0 {
+                at = -1
+            }
+        }
+    }
+    for i <- iter.Range(0, nfn) {
+        if at == 0 && (fl[i] & CF_LIFT) != 0 {
+            at = lp[i]
+            if at == 0 {
+                at = -1
+            }
+        }
+    }
+    if at == 0 && rootFl != 0 {
+        at = rootLp
+    }
+    if at < 0 {
+        at = 0
+    }
+    if failed {
+        mut back := mut []int{}
+        for i <- iter.Range(0, nfn) {
+            if (fl[i] & CF_BACK) != 0 {
+                back = append(back, i)
+            }
+        }
+        return Round{defErrorOut(), -1, freeze(back), []int{}, at, []int{}, freeze(puts), cnt, freeze(stale)}, nil
+    }
+    r := outs[0]
+    return Round{r.out, r.def, r.back, r.all, r.at, []int{}, freeze(puts), cnt, freeze(stale)}, nil
+}

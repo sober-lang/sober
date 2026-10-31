@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P3b-5: handle の slice と task.Gather（正準順 = 生んだ順で待つ fan-in）。handle は mut slice に積む
+// handle の slice と task.Gather（正準順 = 生んだ順で待つ fan-in）。handle は mut slice に積む
 // （`mut hs := mut []task.Handle[T]{}` — 要素の型は囲む scope の region の handle）。Gather は Join の列（死んだ子があれば呼び手も死ぬ）
 
 import "std/task"
@@ -13,7 +13,7 @@ func label(n int) string {
     return "t${n}"
 }
 
-// sumSquares は関数の本体の scope で Gather する
+// 関数の本体の scope で Gather する
 func sumSquares(n int) int {
     r, e := task.Run((s task.Scope) => {
         mut hs := mut []task.Handle[int]{}

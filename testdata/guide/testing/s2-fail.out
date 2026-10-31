@@ -1,0 +1,10 @@
+quick: falsified at trial 49 of 100 (seed 392200337, 92 shrink runs)
+  Slice:
+    String = ""
+    String = ";"
+  (1 items)
+assert failed: same(back, ps)
+panic: testing.AssertFailed{} at std/testing/testing.sober:25:10
+FAIL examples/guide/kvbug.TestRoundTrip (exit 101)
+0 passed, 1 failed
+(exit 1)

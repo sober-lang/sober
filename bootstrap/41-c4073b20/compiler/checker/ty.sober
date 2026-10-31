@@ -1,0 +1,154 @@
+package checker
+
+import "std/table"
+import "obuf"
+
+// コアの型（Lean の Ty — Syntax.lean）の表現と印字。型 = 記録 {tag, a, b, c}（st.types — reaudit 第 2 弾 C7。以前はヒープ st.h の 4 語）。
+// 型の関数（Syntax.lean / Typing.lean の regionsBelow・sub・relocR … と tyEq）は抽出器の生成物 ty_gen.sober（抽出器 E2 — 手書きの写しは退役）
+
+const TInt = 1
+const TVar = 2   // a = 添字
+const TBool = 3
+const TUnit = 4
+const TOpt = 5   // a = 中身
+const TUn = 6    // a = l, b = r
+const TPr = 7    // a = l, b = r
+const TRef = 8   // a = m（0 / 1）, b = r, c = 中身
+const TSl = 9    // a = m, b = r, c = 要素
+const TMp = 10   // a = m, b = r, c = セル型
+const TChan = 11 // a = rc, b = 中身
+const TFn = 12   // a = p, b = r
+// byte 用の種類（Lean の Ty.byte — 区域系の述語は int と同じ扱い）
+const TByte = 13
+// float 用の種類（Lean の Ty.f64）
+const TF64 = 14
+// own 用の種類（Lean の Ty.own — 単一 task が所有する能力）: a = 種類（0 scope / 1 task / 2 tx / 3 rx — OwnK の構成子の順）, b = 家の region, c = 中身
+const TOwn = 15
+
+// 型 1 つ（st.types の要素 — 作ったら変えない）。参照 = TYBASE + 添字（ヒープ st.h の番地と取り違えて読むと範囲外で panic する — 音を立てる）
+type Ty struct {
+    tag int
+    a int
+    b int
+    c int
+}
+
+const TYBASE = 35184372088832
+
+// 型 t の記録（非ジェネリックの包み — F-10）
+func tyAt(st mut S, t int) Ty {
+    return table.Get(mut st.types, t - TYBASE)
+}
+
+func tg(st mut S, t int) int {
+    return tyAt(mut st, t).tag
+}
+
+func tA(st mut S, t int) int {
+    return tyAt(mut st, t).a
+}
+
+func tB(st mut S, t int) int {
+    return tyAt(mut st, t).b
+}
+
+func tC(st mut S, t int) int {
+    return tyAt(mut st, t).c
+}
+
+func mk(st mut S, k int, a int, b int, c int) int {
+    table.Push(mut st.types, Ty{tag: k, a: a, b: b, c: c})
+    return TYBASE + table.Len(mut st.types) - 1
+}
+
+func tOpt(st mut S, t int) int {
+    return mk(mut st, TOpt, t, 0, 0)
+}
+
+// ref / slice / map（m・r・中身の 3 欄を持つ型）
+func isCont(k int) bool {
+    return k == TRef || k == TSl || k == TMp
+}
+
+// Lean の Ty にない補助（check.sober / tc_gen.sober が使う）
+
+// tsLen: ts は型の列 [n, t…]（-1 = 空）の長さ
+func tsLen(st mut S, ts int) int {
+    return if ts < 0 { 0 } else { table.Get(mut st.h, ts) }
+}
+
+// ── 型の印字（Json.lean の tyToJson + Lean の Json.compress — object のキーは辞書順）──
+
+func tyJson(st mut S, out mut []byte, t int) {
+    k := tg(mut st, t)
+    if k == TInt {
+        obuf.Lit(mut out, "{\"k\":\"int\"}")
+    } else if k == TVar {
+        obuf.Lit(mut out, "{\"i\":")
+        obuf.Int(mut out, tA(mut st, t))
+        obuf.Lit(mut out, ",\"k\":\"tvar\"}")
+    } else if k == TBool {
+        obuf.Lit(mut out, "{\"k\":\"bool\"}")
+    } else if k == TF64 {
+        obuf.Lit(mut out, "{\"k\":\"f64\"}")
+    } else if k == TByte {
+        obuf.Lit(mut out, "{\"k\":\"byte\"}")
+    } else if k == TUnit {
+        obuf.Lit(mut out, "{\"k\":\"unit\"}")
+    } else if k == TOpt {
+        obuf.Lit(mut out, "{\"k\":\"opt\",\"t\":")
+        tyJson(mut st, mut out, tA(mut st, t))
+        out = append(out, '}')
+    } else if k == TUn || k == TPr || k == TFn {
+        obuf.Lit(mut out, if k == TUn { "{\"k\":\"union\",\"l\":" } else if k == TPr { "{\"k\":\"prod\",\"l\":" } else { "{\"k\":\"fn\",\"p\":" })
+        tyJson(mut st, mut out, tA(mut st, t))
+        obuf.Lit(mut out, ",\"r\":")
+        tyJson(mut st, mut out, tB(mut st, t))
+        out = append(out, '}')
+    } else if k == TRef || k == TSl {
+        obuf.Lit(mut out, if k == TRef { "{\"k\":\"ref\",\"m\":" } else { "{\"k\":\"slice\",\"m\":" })
+        obuf.Bool(mut out, tA(mut st, t) != 0)
+        obuf.Lit(mut out, ",\"r\":")
+        obuf.Int(mut out, tB(mut st, t))
+        obuf.Lit(mut out, ",\"t\":")
+        tyJson(mut st, mut out, tC(mut st, t))
+        out = append(out, '}')
+    } else if k == TMp {
+        c := tC(mut st, t)
+        if tg(mut st, c) == TPr && tg(mut st, tB(mut st, c)) == TOpt {
+            // セル型 prod k (opt v) は key / t に分けて出す
+            obuf.Lit(mut out, "{\"k\":\"map\",\"key\":")
+            tyJson(mut st, mut out, tA(mut st, c))
+            obuf.Lit(mut out, ",\"m\":")
+            obuf.Bool(mut out, tA(mut st, t) != 0)
+            obuf.Lit(mut out, ",\"r\":")
+            obuf.Int(mut out, tB(mut st, t))
+            obuf.Lit(mut out, ",\"t\":")
+            tyJson(mut st, mut out, tA(mut st, tB(mut st, c)))
+            out = append(out, '}')
+        } else {
+            obuf.Lit(mut out, "{\"cell\":")
+            tyJson(mut st, mut out, c)
+            obuf.Lit(mut out, ",\"k\":\"map\",\"m\":")
+            obuf.Bool(mut out, tA(mut st, t) != 0)
+            obuf.Lit(mut out, ",\"r\":")
+            obuf.Int(mut out, tB(mut st, t))
+            out = append(out, '}')
+        }
+    } else if k == TChan {
+        obuf.Lit(mut out, "{\"k\":\"chan\",\"rc\":")
+        obuf.Int(mut out, tA(mut st, t))
+        obuf.Lit(mut out, ",\"t\":")
+        tyJson(mut st, mut out, tB(mut st, t))
+        out = append(out, '}')
+    } else if k == TOwn {
+        o := tA(mut st, t)
+        obuf.Lit(mut out, "{\"k\":\"own\",\"o\":")
+        obuf.Lit(mut out, if o == 0 { "\"scope\"" } else if o == 1 { "\"task\"" } else if o == 2 { "\"tx\"" } else { "\"rx\"" })
+        obuf.Lit(mut out, ",\"r\":")
+        obuf.Int(mut out, tB(mut st, t))
+        obuf.Lit(mut out, ",\"t\":")
+        tyJson(mut st, mut out, tC(mut st, t))
+        out = append(out, '}')
+    }
+}

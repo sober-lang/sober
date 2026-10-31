@@ -1,0 +1,328 @@
+package desugar
+
+// 名前付き関数型を通した呼び出しの名前付き実引数（syntax.md 決定 7）を位置引数へ写す。脱糖の固定テンプレートで、形は loader/namedargs.sober と同じ:
+//
+//     type Fetch func(url string, timeout int?, retries int?) Body
+//     get("x", retries: 3)  →  get("x", nil, 3)      get("x")  →  get("x", nil, nil)
+//
+// 名前は呼び先の式の静的な型（表層型検査器の YFn が指す名前付き関数型の宣言）から取り、値の実体の仮引数名は見ない
+// （関数型の仮引数名は型の同一性に入らない — language.md 14 節）。loader は func 宣言を引けない名前付きの呼び出しを素通しにし、ここで写すか
+// 拒否する（diag.NamedArg — 規則と種類は loader/namedargs.sober と同じ）。写した後の木は位置引数だけで、check・build・analyzer が同じ木を読む。
+// 名前付きの無い呼び出しも、呼び先が名前付き関数型の値で、足りない仮引数が全部 `T?` なら nil を足す。
+// 写す相手の候補が無いプログラム（名前付きの実引数を持つ呼び出しが残っていない・`T?` の仮引数を持つ名前付き関数型が無い）では表層型検査器を走らせない。
+// `T?` の仮引数を持つ名前付き関数型が無ければ、名前付きの無い呼び出しは写らない（足りない仮引数が全部 `T?` にならない）ので、表層型は
+// 名前付きの実引数を含む関数にだけ付ける（nvReach — 写しが読むのは名前付きの呼び出しの呼び先の式の型だけ。式の型は囲む関数の本体と
+// 宣言された署名・const の型で決まり、他の関数の本体の型付けに依らない。const の初期化式は TypeAll の頭で全部付く）。
+// 棄てた案: 写しを lower の buildPre の Typed の後へ移す（check・analyzer も同じ写した木を読む — 層の順が変わる）
+
+import "ast"
+import "diag"
+import "loader"
+import "std/builder"
+import "std/io"
+import "std/iter"
+import "std/os"
+
+// p の名前付き関数型を通した呼び出しを写した Program（写せない形は拒否 — 位置を引けるように p を返す）
+@errors(diag.NamedArg)
+func NamedValueArgs(p loader.Program) (loader.Program, error?) {
+    named := nvHasNamed(p)
+    if !named && !nvHasOptFnType(p) {
+        nvStatOut(0)
+        return p, nil
+    }
+    mut st := S{}
+    Init(mut st, p)
+    opt := nvHasOptFnType(p)
+    if !opt {
+        st.nvMark = nvReach(mut st, p)
+        st.nvSet = true
+    }
+    TypeAll(mut st)
+    nvStat(mut st)
+    mut out := mut []ast.Tree{}
+    for f <- iter.Range(0, len(p.trees)) {
+        r := nvFile(mut st, p, f, opt)
+        if r.bad != 0 {
+            return p, diag.NamedArg{at: diag.Pos{file: f, tok: r.tok}, kind: r.bad}
+        }
+        out = append(out, r.tree)
+    }
+    return loader.WithTrees(p, freeze(out)), nil
+}
+
+// 名前付きの実引数が残っている呼び出しがあるか（loader が写せなかった — func 宣言を引けない呼び先）。
+// 節の列を素で見ない: loader の写し（namedargs）は呼び出しの節の実引数の列を差し替えるだけで、元の KNamedArg の節は宙に浮いて残る
+// （これを混同すると宙に浮いた節だけを数えて、写せていない呼び出しが無いのに TypeAll を余分に走らせることになる）
+func nvHasNamed(p loader.Program) bool {
+    for f <- iter.Range(0, len(p.trees)) {
+        t := p.trees[f]
+        for i <- iter.Range(0, len(t.nodes)) {
+            if nvLive(t, i) {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+// 節 i が名前付きの実引数を持つ呼び出し（ECall の実引数 b・EPipe の実引数 c）か
+func nvLive(t ast.Tree, i int) bool {
+    x := t.nodes[i]
+    if x.kind != ast.ECall && x.kind != ast.EPipe {
+        return false
+    }
+    args := if x.kind == ast.EPipe { x.c } else { x.b }
+    for k <- iter.Range(0, ast.ListLen(t, args)) {
+        a := ast.ListAt(t, args, k)
+        if a >= 0 && t.nodes[a].kind == ast.KNamedArg {
+            return true
+        }
+    }
+    return false
+}
+
+// 末尾の仮引数が `T?` の名前付き関数型の宣言があるか（名前付きの無い呼び出しの nil 埋めの候補）
+func nvHasOptFnType(p loader.Program) bool {
+    for f <- iter.Range(0, len(p.trees)) {
+        t := p.trees[f]
+        for i <- iter.Range(0, len(t.nodes)) {
+            x := t.nodes[i]
+            if x.kind == ast.BFunc {
+                n := ast.ListLen(t, x.a)
+                if n > 0 && t.nodes[ast.ListAt(t, x.a, n - 1)].kind == ast.TOpt {
+                    return true
+                }
+            }
+        }
+    }
+    return false
+}
+
+// 1 ファイルの写しの結果（bad != 0 なら拒否 — diag.NamedArg の種類と字句）
+type NvOut struct {
+    tree ast.Tree
+    bad int
+    tok int
+}
+
+// ファイル f の呼び出しの節 i の呼び先の式の静的な型が名前付き関数型なら、その型宣言の参照（でなければ -1）
+func nvDecl(st mut S, f int, i int, pipe bool) int {
+    x := nodeOf(mut st, NodeRef(ABASE + f * FW + i))
+    callee := if pipe { NodeRef(x.b) } else { NodeRef(x.a) }
+    y0 := YTypeOf(mut st, callee)
+    // 関数の仮引数・局所は関数型（YFn — c = 型宣言 + 1。値の位置に残った named fn type の仮引数・局所は YDecl なので yFnView で読む）。
+    // struct の欄（辞書 const の欄 — 型宣言のまま YDecl で読める）は拾わない: 決定 7 の「辞書の欄の関数値は位置だけ」
+    y := if kindN(mut st, callee) == ast.EIdent { yFnView(mut st, y0) } else { y0 }
+    td := if yk(mut st, y) == YFn { YAt(mut st, y).c - 1 } else { 0 - 1 }
+    return if isTreeNode(td) { td } else { -1 }
+}
+
+// ファイル f の木の呼び出し（ECall の実引数 b・EPipe の実引数 c）を写す
+func nvFile(st mut S, p loader.Program, f int, opt bool) NvOut {
+    t := p.trees[f]
+    n0 := len(t.nodes)
+    mut ns := mut []ast.Node{}
+    mut db := builder.Builder[int]{}
+    mut nb := builder.Builder[ast.Node]{}
+    mut changed := false
+    for i <- iter.Range(0, n0) {
+        if t.nodes[i].kind != ast.ECall && t.nodes[i].kind != ast.EPipe {
+            continue
+        }
+        x := t.nodes[i]
+        pipe := x.kind == ast.EPipe
+        args := if pipe { x.c } else { x.b }
+        na := ast.ListLen(t, args)
+        mut np := 0
+        while np < na && !(ast.ListAt(t, args, np) >= 0 && t.nodes[ast.ListAt(t, args, np)].kind == ast.KNamedArg) {
+            np += 1
+        }
+        named := np < na
+        if !named && !opt {
+            // `T?` の仮引数を持つ名前付き関数型が無い: 名前付きの無い呼び出しは写らない（囲む関数に表層型が付いていないこともある — nvReach）
+            continue
+        }
+        td := nvDecl(mut st, f, i, pipe)
+        if td < 0 {
+            if named {
+                return NvOut{t, 1, t.nodes[ast.ListAt(t, args, np)].tok}
+            }
+            continue
+        }
+        dt := p.trees[refFile(td)]
+        body := dt.nodes[dt.nodes[refIdx(td)].c]
+        if named && body.c < 0 {
+            // 名前付き関数型だが仮引数名が無い
+            return NvOut{t, 1, t.nodes[ast.ListAt(t, args, np)].tok}
+        }
+        npar := ast.ListLen(dt, body.a)
+        if !named && np >= npar {
+            continue
+        }
+        plan := nvPlan(t, dt, args, np, body, x.tok)
+        if plan.bad != 0 {
+            if !named && plan.bad == 5 {
+                // 名前付きの無い呼び出しで足りない仮引数が `T?` でない: 後段（実引数の数の拒否）に任せる
+                continue
+            }
+            return NvOut{t, plan.bad, plan.tok}
+        }
+        if !changed {
+            for j <- iter.Range(0, n0) {
+                ns = append(ns, t.nodes[j])
+            }
+            for j <- iter.Range(0, len(t.data)) {
+                builder.Push(mut db, t.data[j])
+            }
+            changed = true
+        }
+        mut out := mut []int{}
+        for k <- iter.Range(0, len(plan.args)) {
+            if plan.args[k] == -2 {
+                out = append(out, n0 + builder.Len(mut nb))
+                builder.Push(mut nb, ast.Node{ast.ENil, x.tok, 0, 0, 0, 0, 0, 0})
+            } else {
+                out = append(out, plan.args[k])
+            }
+        }
+        l := ast.PutList(mut db, freeze(out))
+        ns[i] = if pipe { ast.Node{x.kind, x.tok, x.a, x.b, l, x.d, x.e, x.f} } else { ast.Node{x.kind, x.tok, x.a, l, x.c, x.d, x.e, x.f} }
+    }
+    if !changed {
+        return NvOut{t, 0, 0}
+    }
+    added := builder.Build(mut nb)
+    for i <- iter.Range(0, len(added)) {
+        ns = append(ns, added[i])
+    }
+    return NvOut{ast.Tree{freeze(ns), builder.Build(mut db), t.file}, 0, 0}
+}
+
+// 並べ替えた実引数の節の列（足りない `T?` の nil は -2 で印す — 呼び手が節を合成する）か拒否の理由
+type NvPlan struct {
+    args []int
+    bad int
+    tok int
+}
+
+// 実引数の列 args（位置 np 本 + 名前付き）を関数型の宣言の本体 body（木 dt の BFunc）の仮引数へ並べる。理由の種類は namedargs の naPlan と同じ
+func nvPlan(t ast.Tree, dt ast.Tree, args int, np int, body ast.Node, ctok int) NvPlan {
+    ps := body.a
+    npar := ast.ListLen(dt, ps)
+    na := ast.ListLen(t, args)
+    mut out := mut []int{}
+    for k <- iter.Range(0, if np < npar { np } else { npar }) {
+        out = append(out, ast.ListAt(t, args, k))
+    }
+    mut j := np
+    for k <- iter.Range(np, npar) {
+        if j < na && body.c >= 0 && loader.Name(t, t.nodes[ast.ListAt(t, args, j)].a) == loader.Name(dt, ast.ListAt(dt, body.c, k)) {
+            out = append(out, t.nodes[ast.ListAt(t, args, j)].b)
+            j += 1
+        } else if dt.nodes[ast.ListAt(dt, ps, k)].kind == ast.TOpt {
+            out = append(out, -2)
+        } else {
+            // 省略できない仮引数 k が無い。k を後ろの名前付きで渡していれば順でない（3）。残りの名前付きが他の理由を持つなら先に言う
+            if body.c >= 0 {
+                pname := loader.Name(dt, ast.ListAt(dt, body.c, k))
+                for q <- iter.Range(j + 1, na) {
+                    if loader.Name(t, t.nodes[ast.ListAt(t, args, q)].a) == pname {
+                        return NvPlan{[]int{}, 3, t.nodes[ast.ListAt(t, args, q)].tok}
+                    }
+                }
+            }
+            l := if j < na { nvLeft(t, dt, args, j, body, np, k) } else { NvPlan{[]int{}, 0, 0} }
+            return if l.bad != 0 { l } else { NvPlan{[]int{}, 5, ctok} }
+        }
+    }
+    if j < na {
+        return nvLeft(t, dt, args, j, body, np, npar)
+    }
+    return NvPlan{freeze(out), 0, 0}
+}
+
+// 並べきれなかった名前付きの実引数 j の理由（仮引数 at まで並べ終えた時点）: 位置で渡した仮引数の名前（4）・既に並べた仮引数の名前
+// = 順でない / 重複（3）・無い名前（2）。まだ並べていない仮引数の名前なら 0（呼び手が「省略できない仮引数が無い」を言う）
+func nvLeft(t ast.Tree, dt ast.Tree, args int, j int, body ast.Node, np int, at int) NvPlan {
+    a := t.nodes[ast.ListAt(t, args, j)]
+    name := loader.Name(t, a.a)
+    if body.c >= 0 {
+        for k <- iter.Range(0, ast.ListLen(dt, body.c)) {
+            if loader.Name(dt, ast.ListAt(dt, body.c, k)) == name {
+                return NvPlan{[]int{}, if k < np { 4 } else if k < at { 3 } else { 0 }, a.tok}
+            }
+        }
+    }
+    return NvPlan{[]int{}, 2, a.tok}
+}
+
+// 名前付きの実引数を持つ呼び出しを含む関数の印（関数の本体の字句の範囲で引く — yReach と同じ表）
+func nvReach(st mut S, p loader.Program) ListRef {
+    mark := ListRef(listN(mut st, st.nfn))
+    for f <- iter.Range(0, st.nfile) {
+        t := st.trees[f]
+        mut hit := false
+        for n <- iter.Range(0, len(t.nodes)) {
+            if nvLive(t, n) {
+                hit = true
+            }
+        }
+        if hit {
+            mut rs := mut []int{}
+            for i <- iter.Range(0, st.nfn) {
+                nd := fnNode(mut st, i)
+                if fileOf(mut st, nd) == f {
+                    ext := nodeOf(mut st, nd).f
+                    if ext >= 0 && !ZVariant(mut st, i) {
+                        rs = append(rs, i)
+                        rs = append(rs, latI(mut st, ListRef(ext), 1))
+                        rs = append(rs, latI(mut st, ListRef(ext), 2))
+                    }
+                }
+            }
+            rr := freeze(rs)
+            for n <- iter.Range(0, len(t.nodes)) {
+                if nvLive(t, n) {
+                    fi := zOr(mut st, f, n, rangeOfSorted(rr, t.nodes[n].tok))
+                    if fi >= 0 {
+                        lput(mut st, mark, fi, 1)
+                    }
+                }
+            }
+        }
+    }
+    return mark
+}
+
+// 型付けの証人（SOBER_PAR_STATS=1 のときだけ stderr へ 1 行 — 表層型を付けた関数の数。写す候補が無ければ typed=0）
+func nvStat(st mut S) {
+    if !nvStatOn() {
+        return
+    }
+    mut typed := 0
+    mut bodies := 0
+    for fi <- iter.Range(0, st.nfn) {
+        if fnBody(mut st, fi) != -1 {
+            bodies += 1
+            if !st.nvSet || latI(mut st, st.nvMark, fi) != 0 {
+                typed += 1
+            }
+        }
+    }
+    _ = io.WriteStderr(bytes("#namedval typed=${typed} bodies=${bodies}\n"))
+}
+
+func nvStatOut(typed int) {
+    if nvStatOn() {
+        _ = io.WriteStderr(bytes("#namedval typed=${typed}\n"))
+    }
+}
+
+func nvStatOn() bool {
+    v, err := os.Getenv("SOBER_PAR_STATS")
+    if err != nil || v == nil {
+        return false
+    }
+    return v == "1"
+}

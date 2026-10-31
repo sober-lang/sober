@@ -1697,6 +1697,39 @@ b0:
   ret %2
 }
 
+func @main.pick(%0 i64, %1 i64) i64 {
+b0:
+  %2 = region.depth
+  region.enter
+  condbr %0, b1, b2
+b1:
+  br b3(%1)
+b2:
+  %3 = const 1
+  %4 = const 0
+  %5 = sub %4, %3
+  br b3(%5)
+b3(%6 i64):
+  condbr %0, b4, b5
+b4:
+  %7 = const -1
+  br b6(%7)
+b5:
+  br b6(%1)
+b6(%8 i64):
+  %9 = eq %6, %8
+  condbr %9, b7, b8
+b7:
+  %10 = const 1
+  br b9(%10)
+b8:
+  %11 = const 0
+  br b9(%11)
+b9(%12 i64):
+  region.setdepth %2
+  ret %12
+}
+
 func @main.main() {
 b0:
   %0 = region.depth
@@ -1801,6 +1834,22 @@ b15:
   call @rt.print_char(%45)
   region.setdepth %0
   ret
+}
+
+func @rt.sigint() {
+b0:
+  %0 = const 231
+  %1 = const 130
+  %2 = syscall(%0, %1)
+  exit 130
+}
+
+func @rt.sigterm() {
+b0:
+  %0 = const 231
+  %1 = const 143
+  %2 = syscall(%0, %1)
+  exit 143
 }
 
 export func @sober_entry(%0 ptr) {
@@ -2396,53 +2445,4 @@ b91:
   %404 = const 1
   %405 = add %383, %404
   br b85(%401, %405)
-}
-
-func @rt.sigterm() {
-b0:
-  %0 = const 231
-  %1 = const 143
-  %2 = syscall(%0, %1)
-  exit 143
-}
-
-func @rt.sigint() {
-b0:
-  %0 = const 231
-  %1 = const 130
-  %2 = syscall(%0, %1)
-  exit 130
-}
-
-func @main.pick(%0 i64, %1 i64) i64 {
-b0:
-  %2 = region.depth
-  region.enter
-  condbr %0, b1, b2
-b1:
-  br b3(%1)
-b2:
-  %3 = const 1
-  %4 = const 0
-  %5 = sub %4, %3
-  br b3(%5)
-b3(%6 i64):
-  condbr %0, b4, b5
-b4:
-  %7 = const -1
-  br b6(%7)
-b5:
-  br b6(%1)
-b6(%8 i64):
-  %9 = eq %6, %8
-  condbr %9, b7, b8
-b7:
-  %10 = const 1
-  br b9(%10)
-b8:
-  %11 = const 0
-  br b9(%11)
-b9(%12 i64):
-  region.setdepth %2
-  ret %12
 }

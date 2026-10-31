@@ -1,0 +1,359 @@
+package analyzer
+
+// `@errors` の宣言と導出の照合（error 網羅 analyzer A4 — language.md 13 節・決定 E5 = M-a）:
+// - 強制: error を返す公開関数（名前が大文字）は `@errors` を持つ（無ければ拒否 — 指摘に導出集合を示す = fix の代わり。30 節の前例）
+// - 漏れ: 導出 ⊄ 宣言なら拒否（導出が TOP — 関数値の呼び出し等で決まらない — も漏れ）
+// - tightness: 公開関数で宣言 ⊋ 導出なら拒否（古い宣言 — 宣言の更新が diff に出る。内部関数の宣言は上界の検査だけ）
+// - 仮引数の名前の項（展開される関数の匿名の関数型の仮引数 — language.md 13 節）は Flow と同じ 3 つ（漏れ・tightness）を自分のラベルと別に照合する
+
+import "ast"
+import "desugar"
+import "diag"
+import "std/iter"
+import "std/table"
+import "std/strings"
+
+const MErrMissing = 21   // 公開関数に @errors が無い（付帯 = 関数の添字）
+const MErrLeak = 22      // 導出 ⊄ 宣言
+const MErrStale = 23     // 宣言 ⊋ 導出（公開関数）
+const MSwGap = 24        // error の switch が導出集合を覆わない（付帯 = switch の記録の添字）
+const MSwDeadDefault = 25 // default が到達しない — 腕が導出集合を全部覆っている（付帯 = switch の記録の添字）
+const MSwDeadArm = 26    // 腕が到達しない — subject がそのラベルを持ちえない（付帯 = 腕の記録の添字）
+const MSwDeadCase = 27   // 腕が到達しない — 前の腕と導出集合（cause 込み）で覆われている（付帯 = 腕の記録の添字）
+const MErrFlowLeak = 28  // Flow ⊄ 宣言の仮引数の名前（付帯 = 関数の添字）
+const MErrFlowStale = 29 // 宣言の仮引数の名前 ⊋ Flow（公開関数）
+
+const SW_W = 6  // error の switch の記録の幅 [節, S.lo, S.hi, 覆った.lo, 覆った.hi, default]
+
+// declPush は関数 fi の @errors の集合を az.declared に積む [有無, lo, hi]（解決できない項は annot.sober が拒否するので落とす）
+func declPush(az mut Az, fi int) {
+    l := errsOf(mut az, fnDecl(mut az, fi))
+    saved := az.pk
+    az.pk = desugar.FnAt(mut az.d, fi).pkg
+    mut m := lsNone()
+    if l != -1 {
+        for i <- iter.Range(0, desugar.LenL(mut az.d, l)) {
+            L := labelOf(mut az, desugar.StrRef(desugar.LatI(mut az.d, l, i)))
+            if L != -1 {
+                m = lsOr(m, lsBit(L))
+            }
+        }
+    }
+    az.pk = saved
+    table.Push(mut az.declared, if l == -1 { 0 } else { 1 })
+    table.Push(mut az.declared, m.lo)
+    table.Push(mut az.declared, m.hi)
+}
+
+// declHas は関数 fi が @errors を持つか
+func declHas(az mut Az, fi int) bool {
+    return table.Get(mut az.declared, fi * 3) != 0
+}
+
+// declGet は関数 fi の @errors の集合
+func declGet(az mut Az, fi int) LSet {
+    return LSet{lo: table.Get(mut az.declared, fi * 3 + 1), hi: table.Get(mut az.declared, fi * 3 + 2)}
+}
+
+// swS / swCov は error の switch の記録 i の subject の集合・覆ったラベル
+func swS(az mut Az, i int) LSet {
+    return LSet{lo: table.Get(mut az.sw, i * SW_W + 1), hi: table.Get(mut az.sw, i * SW_W + 2)}
+}
+
+func swCov(az mut Az, i int) LSet {
+    return LSet{lo: table.Get(mut az.sw, i * SW_W + 3), hi: table.Get(mut az.sw, i * SW_W + 4)}
+}
+
+// declaredFlow は関数 fi の @errors に書いた仮引数の名前の集合（ビット j = 仮引数 j。無ければ 0）
+func declaredFlow(az mut Az, fi int) int {
+    l := errsOf(mut az, fnDecl(mut az, fi))
+    mut m := 0
+    if l != -1 {
+        for i <- iter.Range(0, desugar.LenL(mut az.d, l)) {
+            j := paramOf(mut az, fi, desugar.StrRef(desugar.LatI(mut az.d, l, i)))
+            if j != -1 && flowParam(mut az, fi, j) {
+                m = m | (1 << j)
+            }
+        }
+    }
+    return m
+}
+
+// checkErrors は error を返す関数ごとに宣言と導出を照合する（本体の無い関数は見ない）
+func checkErrors(az mut Az) {
+    for fi <- iter.Range(0, az.nfn) {
+        fd := fnDecl(mut az, fi)
+        if table.Get(mut az.errfn, fi) != 0 && fd.e != -1 && !desugar.ParOpenErr(mut az.d, fi) {
+            d := declGet(mut az, fi)
+            r := lsNoFlow(slotGet(mut az, fi))
+            fl := slotGet(mut az, az.flowBase + fi).lo
+            df := table.Get(mut az.dflow, fi)
+            // 省略可の匿名関数型の仮引数を持つ関数の写しには tightness を掛けない（どの組の写しも全部の腕を持たない — 漏れは組ごとに照合する。language.md 13 節）
+            pub := isPublic(mut az, desugar.StrRef(fd.a))
+            tight := pub && !desugar.ZVariant(mut az.d, fi)
+            if !declHas(mut az, fi) {
+                if pub {
+                    reportFn(mut az, MErrMissing, fi)
+                }
+            } else if !lsSub(r, d) {
+                reportFn(mut az, MErrLeak, fi)
+            } else if (fl | df) != df {
+                reportFn(mut az, MErrFlowLeak, fi)
+            } else if tight && !lsEq(r, d) {
+                reportFn(mut az, MErrStale, fi)
+            } else if tight && fl != df {
+                reportFn(mut az, MErrFlowStale, fi)
+            }
+        }
+    }
+}
+
+func reportFn(az mut Az, k int, fi int) {
+    report(mut az, k, desugar.FnAt(mut az.d, fi).node, desugar.NodeRef(fi))
+}
+
+// errPos は関数 fi の指摘の位置（@errors があればその `@`、無ければ関数宣言）
+func errPos(az mut Az, fi int) diag.Pos {
+    n := desugar.FnAt(mut az.d, fi).node
+    pos := desugar.PosOf(mut az.d, n)
+    l, t := desugar.FuncErrors(mut az.d, node(mut az, n))
+    return if l == -1 { pos } else { diag.Pos{file: pos.file, tok: t} }
+}
+
+// errMessage は宣言の指摘の本文（関数 fi）
+func errMessage(az mut Az, k int, fi int) string {
+    fd := fnDecl(mut az, fi)
+    name := str(mut az, desugar.StrRef(fd.a))
+    d := declGet(mut az, fi)
+    r := lsNoFlow(slotGet(mut az, fi))
+    pk := desugar.FnAt(mut az.d, fi).pkg
+    fl := slotGet(mut az, az.flowBase + fi).lo
+    df := table.Get(mut az.dflow, fi)
+    if k == MErrMissing {
+        if lsIsTop(r) {
+            return "public function '${name}' returns an error but has no @errors (its labels cannot be derived — a call through a function value)"
+        }
+        return "public function '${name}' returns an error but has no @errors: add `@errors(${declNames(mut az, r, fl, fi, pk)})`"
+    }
+    if k == MErrFlowLeak {
+        return "'${name}' may return the errors of its parameter ${paramNames(mut az, fl & ^df, fi)} not listed in its @errors"
+    }
+    if k == MErrFlowStale {
+        return "@errors of '${name}' lists the parameter ${paramNames(mut az, df & ^fl, fi)} whose errors it never returns: write `@errors(${declNames(mut az, r, fl, fi, pk)})`"
+    }
+    if k == MErrLeak {
+        if lsIsTop(r) {
+            return "'${name}' may return errors its @errors does not list: its labels cannot be derived (a call through a function value)"
+        }
+        return "'${name}' may return ${labelNames(mut az, lsMinus(r, d), pk)} not listed in its @errors"
+    }
+    return "@errors of '${name}' lists ${labelNames(mut az, lsMinus(d, r), pk)} which it never returns: write `@errors(${declNames(mut az, r, fl, fi, pk)})`"
+}
+
+// paramNames は関数 fi の仮引数の集合 m（ビット j = 仮引数 j）の名前を並べる（`'recv', 'send'`）
+func paramNames(az mut Az, m int, fi int) string {
+    ps := desugar.ListRef(fnDecl(mut az, fi).c)
+    mut s := ""
+    for j <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
+        if j < PBITS && (m & (1 << j)) != 0 {
+            q := "'${str(mut az, desugar.StrRef(node(mut az, nat(mut az, ps, j)).a))}'"
+            s = if s == "" { q } else { s + ", " + q }
+        }
+    }
+    return s
+}
+
+// declNames は宣言の項の綴り（ラベル集合 r の後に Flow fl の仮引数の名前 — fix の提示）
+func declNames(az mut Az, r LSet, fl int, fi int, pk int) string {
+    mut s := labelNames(mut az, r, pk)
+    ps := desugar.ListRef(fnDecl(mut az, fi).c)
+    for j <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
+        if j < PBITS && (fl & (1 << j)) != 0 {
+            q := str(mut az, desugar.StrRef(node(mut az, nat(mut az, ps, j)).a))
+            s = if s == "" { q } else { s + ", " + q }
+        }
+    }
+    return s
+}
+
+// labelNames は集合 m のラベルを package pk から見た綴りで並べる（同じ package は `L`、他は最後のパスの段 + `.L`）
+func labelNames(az mut Az, m LSet, pk int) string {
+    mut s := ""
+    for L <- iter.Range(0, az.nerr) {
+        if lsHas(m, L) {
+            lp := desugar.ErrPkg(mut az.d, L)
+            nm := str(mut az, desugar.StrRef(node(mut az, desugar.ErrNode(mut az.d, L)).a))
+            q := if lp == pk { nm } else { "${lastSeg(str(mut az, desugar.PkgPath(mut az.d, lp)))}.${nm}" }
+            s = if s == "" { q } else { s + ", " + q }
+        }
+    }
+    return s
+}
+
+// lastSeg はパスの最後の段（`std/io` → `io` — import の既定の参照名）
+func lastSeg(p string) string {
+    _, after, slashed := strings.CutLast(p, "/")
+    return if slashed { after } else { p }
+}
+
+// checkSwitches は error の switch（単一の subject — 最後の 1 周の記録）の網羅と到達: 網羅の対象はリンク集合の全ラベルでなく subject の導出集合 S
+// （language.md 13 節 — F-33 の解決）。cause の入れ子のパターン（`case W{cause: A{…}}`）はラベル W の cause の導出集合 C[W]（wrap の地点の内側の合併 —
+// 裁定 C-b）+ W のリテラルがあれば nil まで覆うかを見る（パターン行列 — desugar.PmUseful1。desugar・lower と共有）。
+// default が無く覆わなければ拒否（S が TOP も — default を書かせる）。到達しない腕（S の外のラベルの腕・前の腕と導出集合で覆われる腕）と
+// 到達しない default も拒否する（決定 E4-d (ii) — tightness と同じ「到達しない腕は音を立てる」）。S が TOP のときは到達を言えないので見ない
+func checkSwitches(az mut Az) {
+    cz := causeDoms(mut az)
+    for i <- iter.Range(0, table.Len(mut az.sw) / SW_W) {
+        if !seenBefore(mut az, i) {
+            at := desugar.NodeRef(table.Get(mut az.sw, i * SW_W))
+            S := swS(mut az, i)
+            def := table.Get(mut az.sw, i * SW_W + 5) != 0
+            pk := table.Get(mut az.swpk, i)
+            pats := swPats(mut az, at)
+            n := desugar.LenL(mut az.d, pats)
+            dom := desugar.PmCol{kind: desugar.PmErr, a: S.lo, b: 0, h: S.hi}
+            if !def && desugar.PmUseful1(mut az.d, pk, pats, n, desugar.NodeRef(-1), dom, cz) {
+                report(mut az, MSwGap, at, desugar.NodeRef(i))
+            }
+            if !lsIsTop(S) {
+                for j <- iter.Range(0, table.Len(mut az.swarms) / 3) {
+                    if table.Get(mut az.swarms, j * 3) == i && !armSeenBefore(mut az, j) {
+                        p := desugar.NodeRef(table.Get(mut az.swarms, j * 3 + 1))
+                        if !lsHas(S, table.Get(mut az.swarms, j * 3 + 2)) {
+                            // @exhaustive の閉じた集合のラベルの腕は外す（表は宣言の集合の上の表 — exhaustive.sober）
+                            if !exhExempt(mut az, at, table.Get(mut az.swarms, j * 3 + 2)) {
+                                report(mut az, MSwDeadArm, p, desugar.NodeRef(j))
+                            }
+                        } else if !desugar.PmUseful1(mut az.d, pk, pats, patIndex(mut az, pats, p), p, dom, cz) {
+                            report(mut az, MSwDeadCase, p, desugar.NodeRef(j))
+                        }
+                    }
+                }
+                if def && !desugar.PmUseful1(mut az.d, pk, pats, n, desugar.NodeRef(-1), dom, cz) {
+                    report(mut az, MSwDeadDefault, at, desugar.NodeRef(i))
+                }
+            }
+        }
+    }
+}
+
+// causeDoms はラベルごとの cause の領域の表 [C[L].lo, nil がありうるか, C[L].hi]…（パターン行列の PmErr の欄）
+func causeDoms(az mut Az) desugar.ListRef {
+    cz := desugar.PmList(mut az.d, az.nerr * 3)
+    for L <- iter.Range(0, az.nerr) {
+        c := slotGet(mut az, az.nfn + L)
+        desugar.PmSet(mut az.d, cz, L * 3, c.lo)
+        desugar.PmSet(mut az.d, cz, L * 3 + 1, table.Get(mut az.lit, L))
+        desugar.PmSet(mut az.d, cz, L * 3 + 2, c.hi)
+    }
+    return cz
+}
+
+// swPats は switch の節 sw の腕のパターンの列（型パターンはその節、`_` と裸の束縛は全域 -1、他の定数のパターンはその節）
+func swPats(az mut Az, sw desugar.NodeRef) desugar.ListRef {
+    cs := desugar.ListRef(node(mut az, sw).b)
+    nc := desugar.LenL(mut az.d, cs)
+    pats := desugar.PmList(mut az.d, nc)
+    for i <- iter.Range(0, nc) {
+        ps := desugar.ListRef(node(mut az, nat(mut az, cs, i)).a)
+        p := if desugar.LenL(mut az.d, ps) == 1 {
+            q := nat(mut az, ps, 0)
+            if kind(mut az, q) == ast.KPConst && patAll(mut az, q) { desugar.NodeRef(-1) } else { q }
+        } else {
+            desugar.NodeRef(-1)
+        }
+        desugar.PmSet(mut az.d, pats, i, int(p))
+    }
+    return pats
+}
+
+// patAll は定数のパターン p が全域か（`_` か、裸の識別子 1 つ — 未知なら束縛）
+func patAll(az mut Az, p desugar.NodeRef) bool {
+    alts := desugar.ListRef(node(mut az, p).a)
+    for q <- iter.Range(0, desugar.LenL(mut az.d, alts)) {
+        a := nat(mut az, alts, q)
+        if kind(mut az, a) == ast.EIdent && desugar.StrIs(mut az.d, desugar.StrRef(node(mut az, a).a), "_") {
+            return true
+        }
+    }
+    return desugar.LenL(mut az.d, alts) == 1 && kind(mut az, nat(mut az, alts, 0)) == ast.EIdent && !desugar.HasTopName(mut az.d, az.pk, desugar.StrRef(node(mut az, nat(mut az, alts, 0)).a))
+}
+
+// patIndex は腕のパターンの列 pats の中の p の位置
+func patIndex(az mut Az, pats desugar.ListRef, p desugar.NodeRef) int {
+    for i <- iter.Range(0, desugar.LenL(mut az.d, pats)) {
+        if desugar.LatI(mut az.d, pats, i) == int(p) {
+            return i
+        }
+    }
+    return 0
+}
+
+// armSeenBefore は腕の記録 j が前の記録と同じ節か（局所の不動点のために本体を 2 度以上歩く）
+func armSeenBefore(az mut Az, j int) bool {
+    n := table.Get(mut az.swarms, j * 3 + 1)
+    for q <- iter.Range(0, j) {
+        if table.Get(mut az.swarms, q * 3 + 1) == n {
+            return true
+        }
+    }
+    return false
+}
+
+// swMessage は網羅・default の指摘の本文（switch の記録 i — 覆っていないラベル・覆っているラベルを名指す）
+func swMessage(az mut Az, k int, i int) string {
+    S := swS(mut az, i)
+    cov := swCov(mut az, i)
+    pk := table.Get(mut az.swpk, i)
+    if k == MSwDeadDefault {
+        return "the default of this switch is unreachable: its cases cover every error label the subject may carry (${labelNames(mut az, S, pk)}) — remove the default"
+    }
+    if lsIsTop(S) {
+        return "the error labels this switch may see cannot be derived (a call through a function value or an element read): add a default"
+    }
+    // 入れ子の cause で覆い切れていないラベル（腕はあるが、cause の導出集合 C[L] か nil を覆わない）
+    pats := swPats(mut az, desugar.NodeRef(table.Get(mut az.sw, i * SW_W)))
+    glo, ghi := desugar.PmGapLabels(mut az.d, pk, pats, desugar.LenL(mut az.d, pats), desugar.PmCol{kind: desugar.PmErr, a: S.lo, b: 0, h: S.hi}, causeDoms(mut az))
+    g := LSet{lo: glo, hi: ghi}
+    part := lsAnd(g, cov)
+    if !lsEmpty(part) {
+        rest := if !lsEmpty(lsMinus(g, cov)) { " nor ${labelNames(mut az, lsMinus(g, cov), pk)}" } else { "" }
+        return "switch does not cover every ${labelNames(mut az, part, pk)}{cause: …} (${causeNames(mut az, part, pk)} — not all matched)${rest}: add cases or a default"
+    }
+    return "switch does not cover ${labelNames(mut az, lsMinus(S, cov), pk)} (error labels the subject may carry): add cases or a default"
+}
+
+// causeNames はラベル集合 part の cause の導出の綴り（`the cause may carry: A, B, or none` — none = リテラルの構築で cause が nil）
+func causeNames(az mut Az, part LSet, pk int) string {
+    mut m := lsNone()
+    mut none := false
+    for L <- iter.Range(0, az.nerr) {
+        if lsHas(part, L) {
+            m = lsOr(m, slotGet(mut az, az.nfn + L))
+            if table.Get(mut az.lit, L) != 0 {
+                none = true
+            }
+        }
+    }
+    if lsIsTop(m) {
+        return "the cause cannot be derived"
+    }
+    ls := if lsEmpty(m) { "" } else { labelNames(mut az, m, pk) }
+    if none {
+        return if lsEmpty(m) { "the cause may carry: none" } else { "the cause may carry: ${ls}, or none" }
+    }
+    return "the cause may carry: ${ls}"
+}
+
+// armMessage は到達しない腕の指摘の本文（種類 k・腕の記録 j）
+func armMessage(az mut Az, k int, j int) string {
+    i := table.Get(mut az.swarms, j * 3)
+    L := table.Get(mut az.swarms, j * 3 + 2)
+    S := swS(mut az, i)
+    pk := table.Get(mut az.swpk, i)
+    if k == MSwDeadCase {
+        return "case ${labelNames(mut az, lsBit(L), pk)} is unreachable: the cases before it, with the causes the subject may carry, leave nothing for it — remove the case"
+    }
+    derived := if lsEmpty(S) { "none" } else { labelNames(mut az, S, pk) }
+    return "case ${labelNames(mut az, lsBit(L), pk)} is unreachable: the subject never carries it (it may carry: ${derived}) — remove the case"
+}

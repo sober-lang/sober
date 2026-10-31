@@ -1,0 +1,66 @@
+package builder
+
+// chunk の表現の網（white-box — 頭打ちの境目〔minBase = 1016・maxChunk = 1024〕と頭の列の伸び〔seeds = 16 本を使い切った後〕）:
+// 長さ 0〜5000 の各長さで Get が積んだ順の値・Build が同じ列・chunk の容量の和が積んだ量 + maxChunk 未満
+
+// b に 0, 1, …, n − 1（を 251 で割った余り）を積む
+func fill(b mut Builder[int], n int) {
+    mut i := 0
+    while i < n {
+        Push(mut b, i % 251)
+        i += 1
+    }
+}
+
+func TestGetBuild() {
+    ns := []int{0, 1, 7, 8, 9, 1015, 1016, 1017, 2039, 2040, 2041, 5000, 30000}
+    mut t := 0
+    while t < len(ns) {
+        n := ns[t]
+        t += 1
+        mut b := Builder[int]{}
+        fill(mut b, n)
+        assert(Len(mut b) == n)
+        xs := Build(mut b)
+        assert(len(xs) == n)
+        mut i := 0
+        while i < n {
+            assert(xs[i] == i % 251)
+            assert(Get(mut b, i) == i % 251)
+            i += 1
+        }
+        // 容量の和（確保して埋めた量）は積んだ量 + maxChunk 未満
+        mut sum := 0
+        mut k := 0
+        while k <= b.cur && n > 0 {
+            sum = sum + len(b.chunks[k])
+            k += 1
+        }
+        assert(sum < n + maxChunk)
+    }
+}
+
+func TestPushAllAcross() {
+    mut b := Builder[byte]{}
+    mut want := mut []byte{}
+    mut r := 0
+    while r < 300 {
+        mut s := mut []byte{}
+        mut j := 0
+        while j < r % 97 {
+            s = append(s, byte((r + j) % 256))
+            want = append(want, byte((r + j) % 256))
+            j += 1
+        }
+        PushAll(mut b, freeze(s))
+        r += 1
+    }
+    got := Build(mut b)
+    w := freeze(want)
+    assert(len(got) == len(w))
+    mut i := 0
+    while i < len(w) {
+        assert(got[i] == w[i])
+        i += 1
+    }
+}

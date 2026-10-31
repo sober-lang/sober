@@ -3,7 +3,7 @@ package main
 // 閉包の名前の呼び出し形の生成元（language.md 7 節 L-for）: 展開される関数の匿名の関数型の仮引数 `recv func(k func(T)) error?` を
 // 文形 for の生成元に置ける — `for x <- recv()? { … }`。脱糖は呼び出し形の生成元と同じ（継続 `(x) => { … }` を末尾の実引数に足す — 展開で
 // recv が実引数のラムダに置き換わってから文形 for の脱糖に乗る）。本体の `?`・break・continue・非局所 return は普通の文形 for と同じ。
-// 第一顧客 = 転送路の抽象（http.ServeWith(recv, send, …) — report-811 3 節）の形
+// 使用例 = 転送路の抽象（http.ServeWith(recv, send, …)）の形
 
 type Short error {
     v int
@@ -13,7 +13,7 @@ type Gone error {
     at int
 }
 
-// gen は 0..n-1 を k へ渡す。stopAt に来たら Gone（受け側の失敗）
+// 0..n-1 を k へ渡す。stopAt に来たら Gone（受け側の失敗）
 @errors(Gone)
 func gen(n int, stopAt int, k func(int)) error? {
     defer println("  (gen done)")
@@ -28,7 +28,7 @@ func gen(n int, stopAt int, k func(int)) error? {
     return nil
 }
 
-// sendv は v を印字する。limit を超えたら Short（送り側の失敗）
+// v を印字する。limit を超えたら Short（送り側の失敗）
 @errors(Short)
 func sendv(v int, limit int) error? {
     if v > limit {
@@ -38,7 +38,7 @@ func sendv(v int, limit int) error? {
     return nil
 }
 
-// relay は受けの閉包から回して送りの閉包へ（1 は飛ばす・stop で打ち切り・ret で非局所 return）
+// 受けの閉包から回して送りの閉包へ（1 は飛ばす・stop で打ち切り・ret で非局所 return）
 func relay(recv func(k func(int)) error?, send func(v int) error?, stop int, ret int) error? {
     for x <- recv()? {
         if x == 1 {
@@ -64,7 +64,7 @@ func count(n int, k func(int)) {
     }
 }
 
-// sum は失敗しない閉包の呼び出し形（印なし・実引数つき）
+// 失敗しない閉包の呼び出し形（印なし・実引数つき）
 func sum(src func(n int, k func(int)), n int) int {
     mut s := 0
     for x <- src(n) {
@@ -82,7 +82,7 @@ func pieces(k func([]byte)) {
     k(bytes("cde"))
 }
 
-// heads は要素の型がジェネリックの推論に効くこと（[]byte の要素を first[T] へ）
+// 要素の型がジェネリックの推論に効くこと（[]byte の要素を first[T] へ）
 func heads(src func(k func([]byte))) int {
     mut n := 0
     for w <- src() {

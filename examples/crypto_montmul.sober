@@ -1,6 +1,6 @@
 package main
 
-// std/crypto/rsa の多倍長の塊（MULX — RSA の続き report-864）の照合: 塊の montMul と Sober の montMulS を、limb の数 1〜40 の乱数の法・2 乗・最大値寄りで
+// std/crypto/rsa の多倍長の塊（MULX）の照合: 塊の montMul と Sober の montMulS を、limb の数 1〜40 の乱数の法・2 乗・最大値寄りで
 // 突き合わせる（塊の無い出力・SOBER_NOMULX=1 では両方 Sober — 同じ出力になる）
 
 import "std/crypto/rsa"

@@ -56,7 +56,7 @@ func Multipart(r Request) ([]Part, error?) {
     return multipartOf(ct, r.body)
 }
 
-// multipartOf は Content-Type の値 ct と本文 body の部分の列（Multipart の中身）
+// Content-Type の値 ct と本文 body の部分の列（Multipart の中身）
 @errors(BadMultipart)
 func multipartOf(ct string, body []byte) ([]Part, error?) {
     cb := bytes(ct)
@@ -174,7 +174,7 @@ func multipartOf(ct string, body []byte) ([]Part, error?) {
     return []Part{}, BadMultipart{}
 }
 
-// startsDash は b[p:] が "--" + bd で始まるか
+// b[p:] が "--" + bd で始まるか
 func startsDash(b []byte, p int, bd []byte) bool {
     if p + 2 + len(bd) > len(b) || b[p] != '-' || b[p + 1] != '-' {
         return false
@@ -189,7 +189,7 @@ func startsDash(b []byte, p int, bd []byte) bool {
     return true
 }
 
-// delimAt は b[s:] の最初の「CRLF + "--" + bd」の位置（CR の位置・無ければ -1）
+// b[s:] の最初の「CRLF + "--" + bd」の位置（CR の位置・無ければ -1）
 func delimAt(b []byte, s int, bd []byte) int {
     mut i := s
     while i + 4 + len(bd) <= len(b) {
@@ -201,7 +201,7 @@ func delimAt(b []byte, s int, bd []byte) int {
     return -1
 }
 
-// crlfAt は b[s:min(e, len(b))) の最初の CRLF の位置（無ければ -1）
+// b[s:min(e, len(b))) の最初の CRLF の位置（無ければ -1）
 func crlfAt(b []byte, s int, e int) int {
     lim := if e < len(b) { e } else { len(b) }
     mut i := s
@@ -214,7 +214,7 @@ func crlfAt(b []byte, s int, e int) int {
     return -1
 }
 
-// lineClean は b[s:e) に CR・LF・NUL が無いか
+// b[s:e) に CR・LF・NUL が無いか
 func lineClean(b []byte, s int, e int) bool {
     mut i := s
     while i < e {
@@ -226,7 +226,7 @@ func lineClean(b []byte, s int, e int) bool {
     return true
 }
 
-// boundaryOk は bd が RFC 2046 5.1.1 の boundary（1〜70 字の bchars — 英数字と ' ( ) + _ , - . / : = ? と空白・最後は空白でない）か
+// bd が RFC 2046 5.1.1 の boundary（1〜70 字の bchars — 英数字と ' ( ) + _ , - . / : = ? と空白・最後は空白でない）か
 func boundaryOk(bd []byte) bool {
     if len(bd) < 1 || len(bd) > 70 || bd[len(bd) - 1] == ' ' {
         return false
@@ -243,7 +243,7 @@ func boundaryOk(bd []byte) bool {
     return true
 }
 
-// paramOf は b[s:e)（`; 名前=値` の並び — 媒体の型の後ろ）の引数 key（大小を無視）の値。第 2 の値 = 1 見つかった・0 無い・-1 並びの形の誤りか
+// b[s:e)（`; 名前=値` の並び — 媒体の型の後ろ）の引数 key（大小を無視）の値。第 2 の値 = 1 見つかった・0 無い・-1 並びの形の誤りか
 // key が 2 つ。値は token か quoted-string（'\' は後ろが区切りの字のときだけ外す）
 func paramOf(b []byte, s int, e int, key []byte) ([]byte, int) {
     mut found := mut []byte{}
@@ -313,7 +313,7 @@ func paramOf(b []byte, s int, e int, key []byte) ([]byte, int) {
     return freeze(found), st
 }
 
-// tspecial は c が RFC 2045 の tspecials（引数の値を quoted-string にする字）か
+// c が RFC 2045 の tspecials（引数の値を quoted-string にする字）か
 func tspecial(c byte) bool {
     return c == '(' || c == ')' || c == '<' || c == '>' || c == '@' || c == ',' || c == ';' || c == ':' || c == '\\' || c == '"' || c == '/' || c == '[' || c == ']' || c == '?' || c == '='
 }

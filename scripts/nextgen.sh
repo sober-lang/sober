@@ -21,17 +21,17 @@ mkdir -p "$W/tree"
 cp -r src/compiler/. "$W/tree/"
 cp -r src/std "$W/tree/std"
 T=$W/tree
-(cd "$T" && SOBER_WORKERS=1 "$S2" build app/main.sober --emit=elf --passes -o "$W/B") > "$W/b.log" 2>&1 || { echo "FAIL: nextgen — stage2 で今の木が建たない: $(head -c 300 "$W/b.log")"; exit 1; }
+(cd "$T" && SOBER_WORKERS=1 "$S2" build app --emit=elf --passes -o "$W/B") > "$W/b.log" 2>&1 || { echo "FAIL: nextgen — stage2 で今の木が建たない: $(head -c 300 "$W/b.log")"; exit 1; }
 chmod +x "$W/B"
 gen() { # gen <名前> [変異の番号]: B で今の木を（変異つきで）建てる
-    (cd "$T" && SOBER_WORKERS=1 "$W/B" build app/main.sober ${2:+"--rt-mutant=$2"} -o "$W/$1") > "$W/$1.log" 2>&1 || { echo "FAIL: nextgen — B で $1 が建たない: $(head -c 300 "$W/$1.log")"; return 1; }
+    (cd "$T" && SOBER_WORKERS=1 "$W/B" build app ${2:+"--rt-mutant=$2"} -o "$W/$1") > "$W/$1.log" 2>&1 || { echo "FAIL: nextgen — B で $1 が建たない: $(head -c 300 "$W/$1.log")"; return 1; }
     chmod +x "$W/$1"
 }
 gen B2 || exit 1
 self() { # self <バイナリ> <出力の名前> <環境…>: 自己 build（rc を返す）
     local b=$1 o=$2
     shift 2
-    (cd "$T" && env "$@" "$b" build app/main.sober --emit=elf --passes -o "$W/$o") > "$W/$o.log" 2>&1
+    (cd "$T" && env "$@" "$b" build app --emit=elf --passes -o "$W/$o") > "$W/$o.log" 2>&1
 }
 self "$W/B2" e1 SOBER_WORKERS=1 || { echo "FAIL: nextgen — B2 の自己 build（W1）rc=$?: $(head -c 300 "$W/e1.log")"; exit 1; }
 for v in "e2p SOBER_WORKERS=2 SOBER_BUILD_PAR=0" "e8 SOBER_WORKERS=8" "e8p SOBER_WORKERS=8 SOBER_BUILD_PAR=0"; do
@@ -44,8 +44,8 @@ for v in "e2p SOBER_WORKERS=2 SOBER_BUILD_PAR=0" "e8 SOBER_WORKERS=8" "e8p SOBER
         echo "FAIL: nextgen — B2 の自己 build（$*）の ELF が W1 と食い違う"; fail=$((fail + 1))
     fi
 done
-(cd "$T" && SOBER_WORKERS=1 "$W/B2" check app/main.sober > "$W/c1" 2>&1)
-(cd "$T" && SOBER_WORKERS=8 "$W/B2" check app/main.sober > "$W/c8" 2>&1)
+(cd "$T" && SOBER_WORKERS=1 "$W/B2" check app > "$W/c1" 2>&1)
+(cd "$T" && SOBER_WORKERS=8 "$W/B2" check app > "$W/c8" 2>&1)
 grep -q '"ok":true' "$W/c1" || { echo "FAIL: nextgen — B2 の自己 check（W1）が通らない: $(head -c 200 "$W/c1")"; fail=$((fail + 1)); }
 cmp -s "$W/c1" "$W/c8" || { echo "FAIL: nextgen — B2 の自己 check の判定が W1 と W8 で食い違う"; fail=$((fail + 1)); }
 # 網の自己検査（変異は割れなければならない）

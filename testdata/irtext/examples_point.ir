@@ -1697,6 +1697,84 @@ b0:
   ret %2
 }
 
+func @main.length2(%0 i64, %1 i64, %2 i64, %3 i64) i64 {
+  slot s0 [4]
+b0:
+  %4 = slotaddr s0
+  store %4[0], %0
+  store %4[1], %1
+  store %4[2], %2
+  store %4[3], %3
+  %5 = region.depth
+  region.enter
+  %6 = const 2
+  %7 = gep.word %4, %6
+  %8 = load.i64 %7[0]
+  %9 = load.i64 %4[0]
+  %10 = sub %8, %9
+  %11 = const 2
+  %12 = gep.word %4, %11
+  %13 = load.i64 %12[1]
+  %14 = load.i64 %4[1]
+  %15 = sub %13, %14
+  %16 = mul %10, %10
+  %17 = mul %15, %15
+  %18 = add %16, %17
+  region.setdepth %5
+  ret %18
+}
+
+func @main.shift(%0 ptr, %1 i64, %2 i64, %3 i64) {
+  slot s0 [2]
+  slot s1 [2]
+b0:
+  %4 = slotaddr s0
+  store %4[0], %1
+  store %4[1], %2
+  %5 = region.depth
+  region.enter
+  %6 = load.i64 %4[0]
+  %7 = add %6, %3
+  %8 = load.i64 %4[1]
+  %9 = add %8, %3
+  %10 = slotaddr s1
+  %11 = const 0
+  store %10[0], %11
+  store %10[1], %11
+  store %10[0], %7
+  store %10[1], %9
+  %12 = load.i64 %10[0]
+  store %0[0], %12
+  %13 = load.i64 %10[1]
+  store %0[1], %13
+  region.setdepth %5
+  ret
+}
+
+func @main.ends(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64) {
+  slot s0 [4]
+b0:
+  %5 = slotaddr s0
+  store %5[0], %1
+  store %5[1], %2
+  store %5[2], %3
+  store %5[3], %4
+  %6 = region.depth
+  region.enter
+  %7 = const 2
+  %8 = gep.word %5, %7
+  %9 = load.i64 %5[0]
+  store %0[0], %9
+  %10 = load.i64 %5[1]
+  store %0[1], %10
+  %11 = load.i64 %8[0]
+  store %0[2], %11
+  %12 = load.i64 %8[1]
+  store %0[3], %12
+  region.setdepth %6
+  ret
+}
+
 func @main.main() {
   slot s0 [2]
   slot s1 [2]
@@ -1872,6 +1950,22 @@ b0:
   call @rt.print_char(%90)
   region.setdepth %0
   ret
+}
+
+func @rt.sigint() {
+b0:
+  %0 = const 231
+  %1 = const 130
+  %2 = syscall(%0, %1)
+  exit 130
+}
+
+func @rt.sigterm() {
+b0:
+  %0 = const 231
+  %1 = const 143
+  %2 = syscall(%0, %1)
+  exit 143
 }
 
 export func @sober_entry(%0 ptr) {
@@ -2467,98 +2561,4 @@ b91:
   %404 = const 1
   %405 = add %383, %404
   br b85(%401, %405)
-}
-
-func @rt.sigterm() {
-b0:
-  %0 = const 231
-  %1 = const 143
-  %2 = syscall(%0, %1)
-  exit 143
-}
-
-func @rt.sigint() {
-b0:
-  %0 = const 231
-  %1 = const 130
-  %2 = syscall(%0, %1)
-  exit 130
-}
-
-func @main.shift(%0 ptr, %1 i64, %2 i64, %3 i64) {
-  slot s0 [2]
-  slot s1 [2]
-b0:
-  %4 = slotaddr s0
-  store %4[0], %1
-  store %4[1], %2
-  %5 = region.depth
-  region.enter
-  %6 = load.i64 %4[0]
-  %7 = add %6, %3
-  %8 = load.i64 %4[1]
-  %9 = add %8, %3
-  %10 = slotaddr s1
-  %11 = const 0
-  store %10[0], %11
-  store %10[1], %11
-  store %10[0], %7
-  store %10[1], %9
-  %12 = load.i64 %10[0]
-  store %0[0], %12
-  %13 = load.i64 %10[1]
-  store %0[1], %13
-  region.setdepth %5
-  ret
-}
-
-func @main.ends(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64) {
-  slot s0 [4]
-b0:
-  %5 = slotaddr s0
-  store %5[0], %1
-  store %5[1], %2
-  store %5[2], %3
-  store %5[3], %4
-  %6 = region.depth
-  region.enter
-  %7 = const 2
-  %8 = gep.word %5, %7
-  %9 = load.i64 %5[0]
-  store %0[0], %9
-  %10 = load.i64 %5[1]
-  store %0[1], %10
-  %11 = load.i64 %8[0]
-  store %0[2], %11
-  %12 = load.i64 %8[1]
-  store %0[3], %12
-  region.setdepth %6
-  ret
-}
-
-func @main.length2(%0 i64, %1 i64, %2 i64, %3 i64) i64 {
-  slot s0 [4]
-b0:
-  %4 = slotaddr s0
-  store %4[0], %0
-  store %4[1], %1
-  store %4[2], %2
-  store %4[3], %3
-  %5 = region.depth
-  region.enter
-  %6 = const 2
-  %7 = gep.word %4, %6
-  %8 = load.i64 %7[0]
-  %9 = load.i64 %4[0]
-  %10 = sub %8, %9
-  %11 = const 2
-  %12 = gep.word %4, %11
-  %13 = load.i64 %12[1]
-  %14 = load.i64 %4[1]
-  %15 = sub %13, %14
-  %16 = mul %10, %10
-  %17 = mul %15, %15
-  %18 = add %16, %17
-  region.setdepth %5
-  ret %18
 }

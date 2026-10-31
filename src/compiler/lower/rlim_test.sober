@@ -1,11 +1,11 @@
 package lower
 
-// 展開後の上限の巻き上げ（rlim.sober — std の work の席 段 2）の網: IR を手で組んで直に見る（`cd src/compiler && ../../bin/sober test lower`）。
+// 展開後の上限の巻き上げ（rlim.sober）の網: IR を手で組んで直に見る（`cd src/compiler && ../../bin/sober test lower`）。
 // 巻き上げは観測を変えない変換なので、門を緩めすぎる変異は例・題材の出力では鳴りにくい — 巻き上げる / 巻き上げない形をここで固定する
 
 import "desugar"
 
-// rmT は `for i < n { lim = meta[W_SLOTS] + (dd + 1) × meta[W_SLOT_SIZE]; c = i > lim; [kind の形] }`（dd = 頭の自明な仮引数 — 入りは仮引数 d）
+// `for i < n { lim = meta[W_SLOTS] + (dd + 1) × meta[W_SLOT_SIZE]; c = i > lim; [kind の形] }`（dd = 頭の自明な仮引数 — 入りは仮引数 d）
 // の関数に巻き上げを掛け、本体のブロックに残った種の load の数と、入口のブロックに仮引数 d を被演算子に持つ算術があるか（自明な仮引数の付け替え）を返す。
 // kind: 0 = 何も足さない・1 = 未知の関数の呼び出し・2 = 番地が gep を挟む（globaladdr 直でない）・3 = meta[W_SLOTS] への store・4 = 既知の rt（slice_grow）の呼び出し
 func rmT(kind int) (int, bool) {

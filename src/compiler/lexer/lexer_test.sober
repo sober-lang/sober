@@ -4,7 +4,7 @@ package lexer
 
 import "std/iter"
 
-// kinds は src の字句の種類の名前を空白でつないだもの（Eof まで）
+// src の字句の種類の名前を空白でつないだもの（Eof まで）
 func kinds(src string) string {
     ts := Lex(bytes(src))
     mut s := ""
@@ -78,7 +78,7 @@ func TestInterpEnd() {
     assert(InterpEnd(bytes("\"\${a\""), 2) == 0 - 1)
 }
 
-// synthKinds は LexSynth の字句の種類（kinds の合成ソース版）
+// LexSynth の字句の種類（kinds の合成ソース版）
 func synthKinds(src string) string {
     ts := LexSynth(bytes(src))
     mut s := ""

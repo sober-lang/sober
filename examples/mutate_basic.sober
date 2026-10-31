@@ -1,0 +1,40 @@
+package main
+
+// mutation testing の schemata（`sober build --mutate` — `sober test --mutate` がテストのビルドに掛ける写し）の題材: ミュータントの種類を全部
+// （比較の境界と否定・算術とビット・`&&` ↔ `||`・`!` の除去・条件の固定・文の削除）と、ミューテーションの点を含む被演算子（束縛される）を持つ。
+// ミュータントを選ばない実行（基線）は写しの無い build と同じ出力。網 = scripts/mutate.sh
+
+func clamp(x int, lo int, hi int) int {
+    if x < lo {
+        return lo
+    }
+    if x > hi {
+        return hi
+    }
+    return x
+}
+
+func sum(n int) int {
+    mut s := 0
+    mut i := 0
+    while i < n {
+        s += i * 2 - 1
+        i += 1
+    }
+    return s
+}
+
+func bits(a int, b int) int {
+    return (a & b | 8) + (a << 2 >> 1)
+}
+
+func both(a bool, b bool) bool {
+    return a && !b || a == b
+}
+
+func main() {
+    println(clamp(-3, 0, 10), clamp(5, 0, 10), clamp(42, 0, 10))
+    println(sum(5))
+    println(bits(6, 3))
+    println(both(true, false), both(false, true))
+}

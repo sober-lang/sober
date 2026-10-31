@@ -1,6 +1,6 @@
 package analyzer
 
-// lease の窓の性能 lint（region-domain-pool.md 4d 節・report-717 2(c)）— 警告（受理は変えない）。窓 = loader が写した
+// lease の窓の性能 lint（region-domain-pool.md 4d 節）— 警告（受理は変えない）。窓 = loader が写した
 // `{ $lp := lp; $at := $task.LeaseTake($lp, 指紋); defer …; mut w := T{}; …; 本体 }`（loader/lease.sober）。どちらも「倒れる」= 新しい割り当てに
 // 黙って倒れる（意味は同じ・遅いだけ）を見せる:
 //   MLeaseBlock — 窓の中に block 効果の届く呼び出し（関数の効果の導出 — effects.sober・language.md 12 節「関数の効果の宣言」）: 待つ間に同じワーカーの別の task が同じ置き場を借りに来ると倒れる
@@ -16,7 +16,7 @@ import "std/table"
 const MLeaseBlock = 40 // 窓の中の待ち（at = 呼び出しの節, 付帯 = 呼び先の関数の添字・名前付き関数型の値なら −型宣言 − 2）
 const MLeaseNest = 41  // 同じ Local の入れ子の窓（at = 内側の窓, 付帯 = 内側の窓）
 
-// leaseOf はブロック e が窓ならその Local の名前（字面の名前でなければ -1）、窓でなければ -2
+// ブロック e が窓ならその Local の名前（字面の名前でなければ -1）、窓でなければ -2
 func leaseOf(az mut Az, e desugar.NodeRef) int {
     l := desugar.ListRef(node(mut az, e).a)
     if desugar.LenL(mut az.d, l) < 3 {
@@ -43,7 +43,7 @@ func leaseOf(az mut Az, e desugar.NodeRef) int {
     return if lp.kind == ast.EIdent { lp.a } else { -1 }
 }
 
-// leaseBlock はブロックの式 e（ast.EBlock）の文の列を歩く（窓なら入れ子を照合し、窓の列に積んで歩く）
+// ブロックの式 e（ast.EBlock）の文の列を歩く（窓なら入れ子を照合し、窓の列に積んで歩く）
 func leaseBlock(az mut Az, e desugar.NodeRef) {
     l := desugar.ListRef(node(mut az, e).a)
     w := leaseOf(mut az, e)
@@ -70,7 +70,7 @@ func leaseBlock(az mut Az, e desugar.NodeRef) {
     az.winN -= 1
 }
 
-// leaseCall は窓の中の呼び出し（callee）を照合する: 待ちうる関数（関数の効果の導出の block — effects.sober）か、待ちうる名前付き関数型の値
+// 窓の中の呼び出し（callee）を照合する: 待ちうる関数（関数の効果の導出の block — effects.sober）か、待ちうる名前付き関数型の値
 // （契約か合併）の呼び出しなら、最内の窓につき 1 回だけ指摘する。匿名の関数型の値は数えない（仮引数は透過 — 渡した側の窓で数える）
 func leaseCall(az mut Az, e desugar.NodeRef, callee desugar.NodeRef) {
     if az.winN <= az.winBase || table.Get(mut az.wins, (az.winN - 1) * 2 + 1) == 1 {
@@ -94,7 +94,7 @@ func leaseCall(az mut Az, e desugar.NodeRef, callee desugar.NodeRef) {
     }
 }
 
-// leaseCallee は呼び出しの callee の関数の表の添字（字面の名前だけ — 関数値・組み込みは -1）
+// 呼び出しの callee の関数の表の添字（字面の名前だけ — 関数値・組み込みは -1）
 func leaseCallee(az mut Az, callee desugar.NodeRef) int {
     c := if kind(mut az, callee) == ast.EIndex { desugar.NodeRef(node(mut az, callee).a) } else { callee }
     x := node(mut az, c)
@@ -107,7 +107,7 @@ func leaseCallee(az mut Az, callee desugar.NodeRef) int {
     return -1
 }
 
-// spawnsChild は呼び出しの callee が std/task の Spawn / SpawnGive / SpawnIn か（実引数のラムダは子の task — 窓の外）
+// 呼び出しの callee が std/task の Spawn / SpawnGive / SpawnIn か（実引数のラムダは子の task — 窓の外）
 func spawnsChild(az mut Az, callee desugar.NodeRef) bool {
     fi := leaseCallee(mut az, callee)
     if fi < 0 {

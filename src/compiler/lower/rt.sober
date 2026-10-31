@@ -5,7 +5,7 @@ package lower
 // メタ領域 @rt.meta の配置（語）: [0] 深度、[1 + d] 深度 d の bump、FD、ERRNO、LINE_LEN、SLOTS、SLOT_SIZE、LINE（行バッファ）、ACC + d、ARGV（入口の初期 rsp）。
 // --mem-trace（rt.memtrace）は写していない（Zig 版の既定の出力と同じ形だけ）。
 // builder の小道具（ir.sober の push / newBlock 等）は以前 @noinline だった — 呼び出し点ごとに展開されると、このファイルだけで lowerdump のビルドが
-// 3 分・4GB を超えた（F-29）。今は --passes の build が δ（region 透過の実体関数）で、check が E2-S（callM の Def）で下ろすので外した（2026-10-02）
+// 3 分・4GB を超えた。今は --passes の build が δ（region 透過の実体関数）で、check が E2-S（callM の Def）で下ろすので外した
 
 import "desugar"
 import "std/iter"
@@ -13,16 +13,16 @@ import "std/iter"
 const MAX_DEPTH = 1024
 const DEFAULT_SLOT_MB = 4096
 const MAX_SLOT_MB = 65536
-// 子 task の region のスロットの既定（MiB — net 4a-4 の直し 案 C・report-655）: 宣言（budget:）の無い子の深度ごとの region 1 つの上限。
+// 子 task の region のスロットの既定（MiB）: 宣言（budget:）の無い子の深度ごとの region 1 つの上限。
 // 宣言があればそれ以上の 2 の冪（既定より小さくはしない — 宣言の超過は記帳だけの約束〔11 節〕を変えない）。main は SOBER_REGION_MB（4 GiB）のまま。
-// 512 = 自己 check-par の子の region の高水位 217 MB の 2.4 倍（64 MiB ではコンパイラ自身が死ぬ・256 は余白 1.23 倍で薄い — ユーザー裁定 2026-10-14）・
-// std/net の Serve の接続の task は region:（既定 128 MiB）の小さいスロット — 既定のスロットを割った小さいスロットを深度ごとに 1 本（task.sober の slot_new・report-1076〜1078）。
-// VA の実測（2026-10-23）: 接続あたり ≈6 本 — 既定 512 MiB のままだと 32000 接続で 93〜101 TiB・48000 接続で va_exhausted（旧の前提「16k × 5 深度 = 40 TiB」は外れ）。
+// 512 = 自己 check-par の子の region の高水位 217 MB の 2.4 倍（64 MiB ではコンパイラ自身が死ぬ・256 は余白 1.23 倍で薄い）・
+// std/net の Serve の接続の task は region:（既定 128 MiB）の小さいスロット — 既定のスロットを割った小さいスロットを深度ごとに 1 本（task.sober の slot_new）。
+// VA の実測: 接続あたり ≈6 本 — 既定 512 MiB のままだと 32000 接続で 93〜101 TiB・48000 接続で va_exhausted（旧の前提「16k × 5 深度 = 40 TiB」は外れ）。
 // 環境変数 SOBER_TASK_REGION_MB で上書き（main のスロットより大きくはしない）
 const DEFAULT_TASK_SLOT_MB = 512
 // 捨てた region のページを OS へ返す閾値（MiB — スロットの先頭からこの量は触れたまま残す。環境変数 SOBER_MADV_MB で上書き・0 = 全部返す）。
-// 既定は自己適用の check の計測で決めた→ huge page を止めた後に 4 → 1 MiB（RSS 回収便 自己 build の RSS 232 → 216 MB・
-// wall / sys は揺れの範囲。0 = 全部返すは 203 MB。題材の peak は閾値に依らず同じ — 全部が生きたデータ）。コンパイラ導出は要否の材料待ち（同 report）
+// 既定は自己適用の check の計測で決めた→ huge page を止めた後に 4 → 1 MiB（自己 build の RSS 232 → 216 MB・
+// wall / sys は揺れの範囲。0 = 全部返すは 203 MB。題材の peak は閾値に依らず同じ — 全部が生きたデータ）
 const DEFAULT_MADV_MB = 1
 const LINE_CAP = 4096
 // メタ領域の語の番地（上の配置を const 式で — bump と ACC は深度 0..MAX_DEPTH の 1 語ずつ、LINE は LINE_CAP バイト）
@@ -55,9 +55,9 @@ const W_VDSO = META_WORDS + 1
 const PANIC = 101
 const PANIC_MEM = 102
 const IO_BUF = 4096
-const READ_CHUNK = 1048576 // read_file が 1 回の read(2) で region の先端へ直に読む上限（第三便 M12）
+const READ_CHUNK = 1048576 // read_file が 1 回の read(2) で region の先端へ直に読む上限（M12）
 
-// installRt はランタイムのグローバルと関数を足して本体を組む（ir_rt.install と同じ順）
+// ランタイムのグローバルと関数を足して本体を組む（ir_rt.install と同じ順）
 func installRt(st mut St) {
     // 変異 13（--map-stat）は meta の後ろに map の成長の計数を置く（panic.sober の msAdd）
     st.meta = addWorkerGlobal(mut st, int(strLit(mut st, "rt.meta")), META_WORDS + (if st.rtMut == 13 { 2 + MS_N } else if dlFn(st.rtD3) != 0 { 2 } else if st.taskUse { 1 } else { 0 }))
@@ -97,14 +97,14 @@ func installRt(st mut St) {
     installIo(mut st)
 }
 
-// buildEntry は入口 sober_entry(sp): アリーナを予約し、深度 0・出力 fd 1 で main を呼び、exit(0)（ir_rt.buildEntry）。
+// 入口 sober_entry(sp): アリーナを予約し、深度 0・出力 fd 1 で main を呼び、exit(0)（ir_rt.buildEntry）。
 // main_int（`func main() int`）なら戻り値が終了コード（0〜255 の外は panic 101 — exit_group(code)）。
 // sp は _start の初期 rsp — 環境変数 SOBER_REGION_MB を読み、W_ARGV に置く（read_args が読む）。予約の失敗（1MiB でも断られる）は exit 102
 func buildEntry(st mut St, main_fn FnRef, main_int bool) {
     f := addFunc(mut st, int(strLit(mut st, "sober_entry")), desugar.ListRef(list1(mut st, TyPtr)), -1)
     irSetFnExport(mut st, f, 1)
     st.entryFn = int(f)
-    // PID 1 の停止の口（language.md 27 節「終了コード」— report-959 / 960）: rt.sigterm / rt.sigint と sigaction の置き場（本体は入口の後で組む）
+    // PID 1 の停止の口（language.md 27 節「終了コード」）: rt.sigterm / rt.sigint と sigaction の置き場（本体は入口の後で組む）
     fTerm := addFunc(mut st, int(strLit(mut st, "rt.sigterm")), desugar.ListRef(list0(mut st)), -1)
     fInt := addFunc(mut st, int(strLit(mut st, "rt.sigint")), desugar.ListRef(list0(mut st)), -1)
     actG := addGlobalInit(mut st, int(strLit(mut st, "rt.sigact")), 4, -1)
@@ -148,7 +148,7 @@ func buildEntry(st mut St, main_fn FnRef, main_int bool) {
     setCur(mut st, fail)
     exit(mut st, PANIC_MEM)
     setCur(mut st, ok)
-    // madvise(アリーナ, スロット × MAX_DEPTH, MADV_NOHUGEPAGE)（RSS 回収便）: 透過的 huge page だと深度のスロットに 1 バイト触るだけで 2 MB が
+    // madvise(アリーナ, スロット × MAX_DEPTH, MADV_NOHUGEPAGE): 透過的 huge page だと深度のスロットに 1 バイト触るだけで 2 MB が
     // RSS に乗る（小さいプログラムでも 4〜6 MB・触った深度ごとに 2 MB）。題材の cycles は揺れの範囲だった。失敗は無視
     syscall(mut st, list4(mut st, iconst(mut st, 28), bs, a2, iconst(mut st, 15)))
     // PID 1（コンテナの init）ではカーネルが既定の動作のシグナルを届けない — SIGTERM / SIGINT で止まらない。PID 1 のときだけ両方にハンドラを張り、
@@ -208,7 +208,7 @@ func buildEntry(st mut St, main_fn FnRef, main_int bool) {
     exit(mut st, 130)
 }
 
-// envMb は環境変数 key（`NAME=` の形）の値（MiB の 10 進 — 無い・空・数字以外・MAX_SLOT_MB 超なら既定 dflt。0 は zeroOk のときだけ採る）。
+// 環境変数 key（`NAME=` の形）の値（MiB の 10 進 — 無い・空・数字以外・MAX_SLOT_MB 超なら既定 dflt。0 は zeroOk のときだけ採る）。
 // 戻ると cur は値が決まったブロック
 func envMb(st mut St, sp int, keyS string, dflt0 int, zeroOk bool) int {
     argc := load(mut st, sp, 0)
@@ -273,7 +273,7 @@ func envMb(st mut St, sp int, keyS string, dflt0 int, zeroOk bool) int {
     return res
 }
 
-// buildFlush は write(fd, LINE, len)。短い書き込みは続きから、EINTR は再試行、失敗は捨てる。最後に len = 0
+// write(fd, LINE, len)。短い書き込みは続きから、EINTR は再試行、失敗は捨てる。最後に len = 0
 func buildFlush(st mut St) {
     begin(mut st, st.rtFlush)
     meta := globaladdr(mut st, st.meta)
@@ -283,7 +283,7 @@ func buildFlush(st mut St) {
     setCur(mut st, e1ret)
     ret(mut st, -1)
     setCur(mut st, e1go)
-    // std/task を使うプログラム: フロンティアの task でなければ行を区間の溜めへ（段 6 P4-2 (O1) — out.sober）
+    // std/task を使うプログラム: フロンティアの task でなければ行を区間の溜めへ（out.sober）
     if st.taskUse {
         outRoute(mut st, meta)
     }
@@ -316,7 +316,7 @@ func buildFlush(st mut St) {
     ret(mut st, -1)
 }
 
-// buildPrintChar は行バッファへ 1 バイト積む。改行か満杯で flush
+// 行バッファへ 1 バイト積む。改行か満杯で flush
 func buildPrintChar(st mut St) {
     begin(mut st, st.rtPchar)
     c := 0
@@ -339,7 +339,7 @@ func buildPrintChar(st mut St) {
     ret(mut st, -1)
 }
 
-// buildPrintInt は 10 進で書く。負数は剰余を負のまま扱う（|最小値| を作らない）
+// 10 進で書く。負数は剰余を負のまま扱う（|最小値| を作らない）
 func buildPrintInt(st mut St) {
     begin(mut st, st.rtPint)
     v := 0
@@ -380,7 +380,7 @@ func buildPrintInt(st mut St) {
     ret(mut st, -1)
 }
 
-// buildRegionEnter は深度 + 1（上限で exit 102）、その深度の bump をスロット先頭へ。あわせて、捨てた region のページを OS へ返す:
+// 深度 + 1（上限で exit 102）、その深度の bump をスロット先頭へ。あわせて、捨てた region のページを OS へ返す:
 // 入る深度 d 以上のスロットは死んでいる（d は新しい命・それより深いのは前の命の残り）。前回の enter 以降に入った最深 W_MAXD までの各スロット k について、
 // 前の命の高水位（leave の後もメタに残る bump — 命の間は増えるだけ）がスロット先頭 + W_MADV を超えていれば、その超えた範囲を madvise(MADV_DONTNEED)。
 // 返したスロットは W_MAXD を d に下げて二度見ない。leave（region.setdepth）は IR の op のまま触らない — 返すのは次の enter まで遅れる
@@ -427,7 +427,7 @@ func buildRegionEnter(st mut St) {
     ret(mut st, -1)
 }
 
-// buildRegionAlloc は region_alloc(d, n): 深度 d の bump を n 語進め、旧 bump を返す。スロット末尾を超えたら exit 102
+// region_alloc(d, n): 深度 d の bump を n 語進め、旧 bump を返す。スロット末尾を超えたら exit 102
 func buildRegionAlloc(st mut St) {
     begin(mut st, st.rtRalloc)
     d := 0
@@ -464,7 +464,7 @@ func buildCopy(st mut St) {
     ret(mut st, -1)
 }
 
-// buildRelocate は region_relocate(hdr, cellw, floor): ヘッダの depth が floor より深ければ、len * cellw 語を深度 floor の先端へ写して付け替える
+// region_relocate(hdr, cellw, floor): ヘッダの depth が floor より深ければ、len * cellw 語を深度 floor の先端へ写して付け替える
 func buildRelocate(st mut St) {
     begin(mut st, st.rtReloc)
     hdr := 0
@@ -494,7 +494,7 @@ func buildStrEq(st mut St) {
     condbr(mut st, cmp(mut st, CNe, n, load(mut st, 1, 1)), ne, -1, loop, list1(mut st, iconst(mut st, 0)))
     setCur(mut st, ne)
     ret(mut st, iconst(mut st, 0))
-    // 語の環（1.0× アタック便 — map のキーの比較が 1 バイトずつで 1BRC の map_find の半分だった）: i + 8 ≤ n の間 8 バイトずつ比べ、
+    // 語の環（バイトずつの比較だと 1BRC の map_find の半分の時間を占めていた）: i + 8 ≤ n の間 8 バイトずつ比べ、
     // 端数（n ≥ 8 なら最後の 8 バイトを重ねて 1 語・n < 8 ならバイトの環）
     setCur(mut st, loop)
     wbody := newBlock(mut st)
@@ -551,18 +551,18 @@ func buildStrEq(st mut St) {
 
 // map の索引（M0）: 挿入列（セル [key][tag][value] の並び — language.md 22 節の挿入順・墓石はそのまま）は変えず、
 // 長さ MAP_IDX_MIN 以上の map にだけ開番地法の索引を横に置く。ヘッダの 4 語目が索引の番地（0 = 無し）。索引 = [持ち主のセル列の番地, 索引済みの数, 容量, 枠…]
-// （枠 = 下位 32 ビットがセルの位置 + 1〔0 = 空き〕・上位 32 ビットがキーのハッシュの上位 32 ビット — 第三便 M14: 候補のハッシュの上位が違えばセルとキーを読まずに飛ばす）。索引はセル列と同じ深度の region に確保する（セル列が生きている間は索引も生きている）。
+// （枠 = 下位 32 ビットがセルの位置 + 1〔0 = 空き〕・上位 32 ビットがキーのハッシュの上位 32 ビット — M14: 候補のハッシュの上位が違えばセルとキーを読まずに飛ばす）。索引はセル列と同じ深度の region に確保する（セル列が生きている間は索引も生きている）。
 // 妥当性: 索引の持ち主 ≠ ヘッダの ptr（全コピーの成長・relocate の後）なら作り直す。同じ ptr を共有するヘッダは長さだけが違い、ある位置のキーは
 // ptr ごとに 1 つに決まる（先端の伸長は先端に接したヘッダだけ — 2 つ目は全コピーになる）ので、索引は共有してよい — 候補の位置 < ヘッダの長さで絞り、
 // キーを比べて当てる。値の在り方（ヘッダは値・旧ヘッダは旧テーブルを見る — 22 節）は変わらない
 const MAP_IDX_MIN = 8
-// 索引の予約（rtgrow.sober の rt.map_grow — K1b report-877）: 容量の 16 倍・上限は容量 + 2^21 枠（16 MiB — 大きい map で region の容量を食わない）
+// 索引の予約（rtgrow.sober の rt.map_grow — K1b）: 容量の 16 倍・上限は容量 + 2^21 枠（16 MiB — 大きい map で region の容量を食わない）
 const MAP_IDX_RES = 16
 const MAP_IDX_RESMAX = 2097152
 const MAP_SLOT_HI = -4294967296
 const MAP_SLOT_LO = 4294967295
 
-// buildMapFind は map_find(hdr, key) → 一致するセルの番地（不在は 0）: 短い map は挿入列を先頭から走査、長い map は索引を引く
+// map_find(hdr, key) → 一致するセルの番地（不在は 0）: 短い map は挿入列を先頭から走査、長い map は索引を引く
 // （墓石のセルも一致する。値の有無はタグで見る）。表現（maprepr.sober）ごとに単相化 — セルの語数と string 鍵かは定数
 func buildMapFind(st mut St, f FnRef, r MapRepr) {
     begin(mut st, f)
@@ -583,7 +583,7 @@ func buildMapFind(st mut St, f FnRef, r MapRepr) {
     look := newBlock(mut st)
     lip := param(mut st, look, TyPtr)
     lmask := param(mut st, look, TyI64)
-    // 速い道（第三便 M13 — 妥当性の検査の償却）: 索引があって持ち主が同じで、索引済みの数がちょうど長さなら（書き換えの後の最初の引きが
+    // 速い道（M13 — 妥当性の検査の償却）: 索引があって持ち主が同じで、索引済みの数がちょうど長さなら（書き換えの後の最初の引きが
     // 下の遅い道で作り直し・追いつきを済ませている — 容量はそのとき確かめた）そのまま引く。比べるのは 2 語だけ
     slow := newBlock(mut st)
     f1 := newBlock(mut st)
@@ -620,7 +620,7 @@ func buildMapFind(st mut St, f FnRef, r MapRepr) {
     br(mut st, cl, list1(mut st, bin(mut st, BMul, cap, iconst(mut st, 2))))
     setCur(mut st, alloc)
     words := bin(mut st, BAdd, cap, iconst(mut st, 3))
-    // 置き場（K1b — report-877）: 索引の記憶は索引にだけ使い回す（旧ヘッダ〔22 節〕は持ち主の照合で古い索引を読む — 0 語目に索引以外の値が来ると
+    // 置き場（K1b）: 索引の記憶は索引にだけ使い回す（旧ヘッダ〔22 節〕は持ち主の照合で古い索引を読む — 0 語目に索引以外の値が来ると
     // 偶然の一致がありうる）。① 予約の中で作り直す: 持ち主が今のセル列で索引がセル列より前なら [索引, セル列の頭) は rt.map_grow が索引のために
     // 取った予約（その並びを作るのは map_grow の索引を先に作る道だけ — セル列はその直後に写す）② 先端に居る自分の索引は巻き戻してその場に
     // ③ どちらでもなければ先端に新しく
@@ -738,7 +738,7 @@ func buildMapFind(st mut St, f FnRef, r MapRepr) {
     br(mut st, ll, list1(mut st, bin(mut st, BAnd, bin(mut st, BAdd, lj, iconst(mut st, 1)), lmask)))
 }
 
-// mapKeyEq はセル cp のキーと key の一致（sk = 1 なら string — rt.str_eq・でなければ 1 語の比較）。i64 の真偽
+// セル cp のキーと key の一致（sk = 1 なら string — rt.str_eq・でなければ 1 語の比較）。i64 の真偽
 func mapKeyEq(st mut St, cp int, key int, sk int) int {
     str_b := newBlock(mut st)
     int_b := newBlock(mut st)
@@ -753,7 +753,7 @@ func mapKeyEq(st mut St, cp int, key int, sk int) int {
     return hit
 }
 
-// mapKeyEqR は表現ごとの鍵の一致（MR_PRE は詰めた形 q と比べる）
+// 表現ごとの鍵の一致（MR_PRE は詰めた形 q と比べる）
 func mapKeyEqR(st mut St, cp int, key int, sk int, r MapRepr, q MQ) int {
     if r.rk == MR_PRE {
         return mrEq(mut st, cp, q)
@@ -761,7 +761,7 @@ func mapKeyEqR(st mut St, cp int, key int, sk int, r MapRepr, q MQ) int {
     return mapKeyEq(mut st, cp, key, sk)
 }
 
-// mapScan は挿入列を先頭から走査する（短い map — 索引を作らない）
+// 挿入列を先頭から走査する（短い map — 索引を作らない）
 func mapScan(st mut St, hdr int, key int, cellw int, sk int, r MapRepr, q MQ) {
     bs := load(mut st, hdr, 0)
     step := bin(mut st, BMul, cellw, iconst(mut st, 8))
@@ -783,8 +783,8 @@ func mapScan(st mut St, hdr int, key int, cellw int, sk int, r MapRepr, q MQ) {
     ret(mut st, c)
 }
 
-// buildMapHash は map_hash(kp, sk) → キーのハッシュ（sk = 1 なら string のバイト列・でなければ 1 語に黄金比の乗算と上位の畳み込み）。
-// string は 8 バイトの語ずつ（h = (h ^ 語) * 黄金比 — 第三便 M12。バイトずつの FNV-1a は 1BRC の map_find の 27% だった）・端数はバイトずつ FNV-1a。
+// map_hash(kp, sk) → キーのハッシュ（sk = 1 なら string のバイト列・でなければ 1 語に黄金比の乗算と上位の畳み込み）。
+// string は 8 バイトの語ずつ（h = (h ^ 語) * 黄金比 — M12。バイトずつの FNV-1a は 1BRC の map_find の 27% だった）・端数はバイトずつ FNV-1a。
 // 値は索引の配置にだけ使う（keys の順は挿入順 — 観測に出ない）
 func buildMapHash(st mut St) {
     begin(mut st, st.rtMaphash)
@@ -845,30 +845,24 @@ func installIo(st mut St) {
     st.iobuf = addWorkerGlobal(mut st, int(strLit(mut st, "rt.iobuf")), IO_BUF / 8)
     cstr := addFunc(mut st, int(strLit(mut st, "rt.cstr")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), TyI64)
     st.rtCstr = cstr
+    // write_file は std/task を使うプログラムでも ring を通さない（同期の write(2)）: ring に出した書きの要求はファイルの参照を close の後まで
+    // 握りうる — 書いた実行ファイルを直後に execve すると ETXTBSY（丸ごとの書きは「返ったら閉じている」の約束を守る）
     wall := addFunc(mut st, int(strLit(mut st, "rt.write_all")), desugar.ListRef(list2(mut st, TyI64, TyPtr)), TyI64)
-    // std/task を使うプログラムの write_file は ring を通る写し（IO 便 段 1 — write_fd〔標準出力・標準エラー〕は同期のまま）
-    mut wallF := wall
-    if st.taskUse {
-        wallF = addFunc(mut st, int(strLit(mut st, "rt.write_all_u")), desugar.ListRef(list2(mut st, TyI64, TyPtr)), TyI64)
-    }
     st.rtRead = addFunc(mut st, int(strLit(mut st, "rt.read_file")), desugar.ListRef(list3(mut st, TyPtr, TyPtr, TyI64)), -1)
     st.rtWrite = addFunc(mut st, int(strLit(mut st, "rt.write_file")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), TyI64)
     st.rtArgs = addFunc(mut st, int(strLit(mut st, "rt.read_args")), desugar.ListRef(list1(mut st, TyPtr)), -1)
     st.rtDir = addFunc(mut st, int(strLit(mut st, "rt.read_dir")), desugar.ListRef(list3(mut st, TyPtr, TyPtr, TyI64)), -1)
     st.rtWfd = addFunc(mut st, int(strLit(mut st, "rt.write_fd")), desugar.ListRef(list2(mut st, TyI64, TyPtr)), TyI64)
     buildCstr(mut st, cstr)
-    buildWriteAll(mut st, wall, false)
-    if st.taskUse {
-        buildWriteAll(mut st, wallF, true)
-    }
+    buildWriteAll(mut st, wall)
     buildReadFile(mut st, cstr)
-    buildWriteFile(mut st, cstr, wallF)
+    buildWriteFile(mut st, cstr, wall)
     buildReadArgs(mut st)
     buildReadDir(mut st, cstr)
     buildWriteFd(mut st, wall)
 }
 
-// needRun は rt.run を（初出なら）宣言する — sysRun を使うプログラムでだけ足す（他の出力はバイト不変）。本体は program の最後（buildRun）
+// rt.run を（初出なら）宣言する — sysRun を使うプログラムでだけ足す（他の出力はバイト不変）。本体は program の最後（buildRun）
 func needRun(st mut St) {
     lsNeed(mut st, NEED_RUN, 0)
     if st.rtRun == -1 {
@@ -876,7 +870,23 @@ func needRun(st mut St) {
     }
 }
 
-// needWriteMode は rt.write_mode を（初出なら）宣言する — sysWriteMode を使うプログラムでだけ足す（他の出力はバイト不変 — needRun と同じ）
+// rt.run_fd を（初出なら）宣言する — sysRunFd を使うプログラムでだけ足す（needRun と同じ）
+func needRunFd(st mut St) {
+    lsNeed(mut st, NEED_RUNFD, 0)
+    if st.rtRunFd == -1 {
+        st.rtRunFd = addFunc(mut st, int(strLit(mut st, "rt.run_fd")), desugar.ListRef(list3(mut st, TyPtr, TyI64, TyI64)), TyI64)
+    }
+}
+
+// rt.run_fd_env を（初出なら）宣言する — sysRunFdEnv を使うプログラムでだけ足す（needRun と同じ）
+func needRunFdEnv(st mut St) {
+    lsNeed(mut st, NEED_RUNFDENV, 0)
+    if st.rtRunFdEnv == -1 {
+        st.rtRunFdEnv = addFunc(mut st, int(strLit(mut st, "rt.run_fd_env")), desugar.ListRef(list4(mut st, TyPtr, TyPtr, TyI64, TyI64)), TyI64)
+    }
+}
+
+// rt.write_mode を（初出なら）宣言する — sysWriteMode を使うプログラムでだけ足す（他の出力はバイト不変 — needRun と同じ）
 func needWriteMode(st mut St) {
     lsNeed(mut st, NEED_WMODE, 0)
     if st.rtMode == -1 {
@@ -884,7 +894,7 @@ func needWriteMode(st mut St) {
     }
 }
 
-// buildWriteMode は write_mode(path, mode) → errno（std/os の sysWriteMode）: path を C 文字列にして chmod（90）。本体は program の最後
+// write_mode(path, mode) → errno（std/os の sysWriteMode）: path を C 文字列にして chmod（90）。本体は program の最後
 func buildWriteMode(st mut St) {
     if st.rtMode == -1 {
         return
@@ -941,7 +951,7 @@ func needStat(st mut St) {
     }
 }
 
-// needReadFd は rt.read_fd を（初出なら）宣言する — sysReadFd を使うプログラムでだけ足す
+// rt.read_fd を（初出なら）宣言する — sysReadFd を使うプログラムでだけ足す
 func needReadFd(st mut St) {
     lsNeed(mut st, NEED_READFD, 0)
     if st.rtRfd == -1 {
@@ -949,7 +959,7 @@ func needReadFd(st mut St) {
     }
 }
 
-// buildReadFd は read_fd(fd, n, out): fd から読んだバイト列を out に置く（現在深度の region 先端から — read_file と同じ置き方）。
+// read_fd(fd, n, out): fd から読んだバイト列を out に置く（現在深度の region 先端から — read_file と同じ置き方）。
 // n ≥ 0 = read(2) 1 回分（min(n, IO_BUF) バイトまで — 短い読みあり・空 = EOF か n = 0）・n < 0 = EOF まで全量。失敗は errno（読めた分は残す）。
 // 先に println の行バッファを flush（プロンプトを出してから読む形の順を保つ）。EINTR は再試行
 func buildReadFd(st mut St) {
@@ -1015,7 +1025,7 @@ func buildReadFd(st mut St) {
     ret(mut st, -1)
 }
 
-// rfdDirect は read_fd の 1 回の読み（std/task を使うプログラム）: 先端 end を c バイト仮に伸ばして rt.uio で読み、読めた分（失敗・EOF は 0）に詰め直す
+// read_fd の 1 回の読み（std/task を使うプログラム）: 先端 end を c バイト仮に伸ばして rt.uio で読み、読めた分（失敗・EOF は 0）に詰め直す
 func rfdDirect(st mut St, depth int, end int, fd int, c int, direct int) int {
     call(mut st, st.rtExtend8, list3(mut st, depth, end, c))
     mut r := 0
@@ -1058,7 +1068,7 @@ func needSleep(st mut St) {
     }
 }
 
-// buildStat は stat(path) → 更新時刻（ns — st_mtim の秒 × 10^9 + ns）/ 負の errno（std/os の sysStat）: path を C 文字列にして stat（4）。
+// stat(path) → 更新時刻（ns — st_mtim の秒 × 10^9 + ns）/ 負の errno（std/os の sysStat）: path を C 文字列にして stat（4）。
 // struct stat（x86_64）の st_mtim は 88 バイト目（秒）・96 バイト目（ns）
 func buildStat(st mut St) {
     if st.rtStat == -1 {
@@ -1081,8 +1091,8 @@ func buildStat(st mut St) {
     ret(mut st, bin(mut st, BAdd, bin(mut st, BMul, load(mut st, sb, 11), iconst(mut st, 1000000000)), load(mut st, sb, 12)))
 }
 
-// buildSleep は sleep(ms) → errno（std/os の sysSleep）。std/task のプログラム（net 4a — ユーザー裁定 2026-10-14 (a)）: net の ring のワーカーは IORING_OP_TIMEOUT
-// （netpoll.sober の sleepRing — report-691）・他（epoll の道）は timerfd（283 — 非ブロック）に ms を仕掛けて rt.fdwait で待つ — 眠る間はワーカーを譲り（旧 nanosleep はワーカーごと塞いだ — report-645）、期限つき scope の中なら期限が待ちを切って
+// sleep(ms) → errno（std/os の sysSleep）。std/task のプログラム: net の ring のワーカーは IORING_OP_TIMEOUT
+// （netpoll.sober の sleepRing）・他（epoll の道）は timerfd（283 — 非ブロック）に ms を仕掛けて rt.fdwait で待つ — 眠る間はワーカーを譲り（旧 nanosleep はワーカーごと塞いでいた）、期限つき scope の中なら期限が待ちを切って
 // 早く返る（110 = 期限で切れた・エラーではない — std/os は見ない。起きた時刻は io の入力）。ms ≤ 0 は待たない（timerfd の 0 は止めるの意味）。
 // std/task を使わないプログラムは nanosleep（35 — 期限も他の task も無い）。時間指定は 2 語 / itimerspec 4 語（スタックの一時スロット）
 func buildSleep(st mut St) {
@@ -1130,13 +1140,13 @@ func buildSleep(st mut St) {
     retErrno(mut st, syscall(mut st, list3(mut st, iconst(mut st, 35), ptoi(mut st, ts), iconst(mut st, 0))))
 }
 
-// 開いた fd の登録簿（IO 便 段 2 — language.md 28 節「後始末」・裁定 Q4 = task ごと）: std/task のプログラムでは rt.open が開いた fd を今の task の
+// 開いた fd の登録簿（language.md 28 節「後始末」・Q4 = task ごと）: std/task のプログラムでは rt.open が開いた fd を今の task の
 // 鎖に積み、rt.close が外す。task が死ぬと defer が走らない（11 節）ので、子の入口の出口（rt.task_start — 死も切られた子も通る）が rt.fd_drain で
 // 鎖に残った fd を閉じる。鎖の頭 = TCB の TC_FDS（fd + 1・0 = 空）・次 = @rt.fdreg[fd]（fd ごとに 1 語 — 別の fd の語は別の task しか書かないので
 // ワーカーの間で鍵が要らない）。逐次のプログラムは使わない（defer が必ず走る — 鎖も表も足さない）
 const FD_CAP = 65536
 
-// needOpen は rt.open / rt.close（と std/task のプログラムなら登録簿の表と rt.fd_drain）を（初出なら）宣言する — 使うプログラムでだけ足す
+// rt.open / rt.close（と std/task のプログラムなら登録簿の表と rt.fd_drain）を（初出なら）宣言する — 使うプログラムでだけ足す
 func needOpen(st mut St) {
     lsNeed(mut st, NEED_OPEN, 0)
     if st.rtOpen == -1 {
@@ -1149,7 +1159,7 @@ func needOpen(st mut St) {
     }
 }
 
-// buildOpen は open(path) → fd / 負の errno（std/io の sysOpen）: path を C 文字列にして openat（257 — AT_FDCWD・O_RDONLY | O_CLOEXEC）。
+// open(path) → fd / 負の errno（std/io の sysOpen）: path を C 文字列にして openat（257 — AT_FDCWD・O_RDONLY | O_CLOEXEC）。
 // std/task のプログラムは今の task の鎖に積む（番号が FD_CAP 以上なら閉じて EMFILE — 登録簿に載らない fd を作らない）
 func buildOpen(st mut St) {
     if st.rtOpen == -1 {
@@ -1192,7 +1202,7 @@ func buildOpen(st mut St) {
     ret(mut st, fd)
 }
 
-// buildClose は close(fd) → errno（std/io の sysClose）: std/task のプログラムは今の task の鎖から外してから close（3 — EINTR でも再試行しない:
+// close(fd) → errno（std/io の sysClose）: std/task のプログラムは今の task の鎖から外してから close（3 — EINTR でも再試行しない:
 // Linux は fd を既に解放している）。鎖は Open と defer Close の対で積んだ順の逆に外れるので、ふつうは頭で当たる
 func buildClose(st mut St) {
     if st.rtClose == -1 {
@@ -1223,7 +1233,7 @@ func buildClose(st mut St) {
     retErrno(mut st, syscall(mut st, list2(mut st, iconst(mut st, 3), fd)))
 }
 
-// buildFdDrain は fd_drain(tcb, stop, exit): task の鎖の頭が stop になるまで fd を閉じて外す（exit = 1 は task の出口 — net の ring の close を ring へ積める）（子の入口の出口 — 死・切られた子は stop = 0 で全部。
+// fd_drain(tcb, stop, exit): task の鎖の頭が stop になるまで fd を閉じて外す（exit = 1 は task の出口 — net の ring の close を ring へ積める）（子の入口の出口 — 死・切られた子は stop = 0 で全部。
 // ふつうに終わった子の鎖は空。縮退して親の中で走った子〔admit.sober の rt.task_inline〕は、子に入る前の頭を stop に渡して子が開いた分だけ）
 func buildFdDrain(st mut St) {
     if st.rtFdDrain == -1 {
@@ -1256,7 +1266,7 @@ func buildFdDrain(st mut St) {
     ret(mut st, -1)
 }
 
-// retErrno は syscall の結果 r（負 = -errno）を errno（成功 0）にして W_ERRNO にも置いて返す（関数の出口）
+// syscall の結果 r（負 = -errno）を errno（成功 0）にして W_ERRNO にも置いて返す（関数の出口）
 func retErrno(st mut St, r int) {
     bad := branchIf(mut st, cmp(mut st, CLt, r, iconst(mut st, 0)))
     re := bin(mut st, BSub, iconst(mut st, 0), r)
@@ -1268,7 +1278,7 @@ func retErrno(st mut St, r int) {
     ret(mut st, ok)
 }
 
-// buildMkdir は mkdir(path) → errno（std/os の sysMkdir）: path を C 文字列にして mkdir（83 — mode 0o755）。本体は program の最後
+// mkdir(path) → errno（std/os の sysMkdir）: path を C 文字列にして mkdir（83 — mode 0o755）。本体は program の最後
 func buildMkdir(st mut St) {
     if st.rtMkdir == -1 {
         return
@@ -1283,7 +1293,7 @@ func buildMkdir(st mut St) {
     retErrno(mut st, syscall(mut st, list3(mut st, iconst(mut st, 83), ptoi(mut st, buf), iconst(mut st, 493))))
 }
 
-// buildRename は rename(from, to) → errno（std/os の sysRename）: 2 つの path を C 文字列にして rename（82 — 同じファイルシステムの中で原子的）
+// rename(from, to) → errno（std/os の sysRename）: 2 つの path を C 文字列にして rename（82 — 同じファイルシステムの中で原子的）
 func buildRename(st mut St) {
     if st.rtRename == -1 {
         return
@@ -1304,7 +1314,7 @@ func buildRename(st mut St) {
     retErrno(mut st, syscall(mut st, list3(mut st, iconst(mut st, 82), ptoi(mut st, b1), ptoi(mut st, b2))))
 }
 
-// buildEnviron は environ(out): 環境変数を「NAME=値のバイト + 0」の連結で out に置く（入口の初期 rsp の envp — read_args と同じ形）
+// environ(out): 環境変数を「NAME=値のバイト + 0」の連結で out に置く（入口の初期 rsp の envp — read_args と同じ形）
 func buildEnviron(st mut St) {
     if st.rtEnv == -1 {
         return
@@ -1337,7 +1347,7 @@ func buildEnviron(st mut St) {
     ret(mut st, -1)
 }
 
-// ioRw は read(2)（nr 0）/ write(2)（nr 1）の 1 回: std/task を使うプログラムは rt.uio（ワーカーの ring があれば SQE を積んで待つ — IO 便 段 1）・他は syscall
+// read(2)（nr 0）/ write(2)（nr 1）の 1 回: std/task を使うプログラムは rt.uio（ワーカーの ring があれば SQE を積んで待つ）・他は syscall
 func ioRw(st mut St, nr int, fd int, p int, n int) int {
     if st.taskUse {
         return call(mut st, st.rtUio, list4(mut st, iconst(mut st, 22 + nr), fd, p, n))
@@ -1345,7 +1355,7 @@ func ioRw(st mut St, nr int, fd int, p int, n int) int {
     return syscall(mut st, list4(mut st, iconst(mut st, nr), fd, p, n))
 }
 
-// branchIf は条件 c が真なら新しいブロックへ分岐して cur にし、偽側のブロックを返す
+// 条件 c が真なら新しいブロックへ分岐して cur にし、偽側のブロックを返す
 func branchIf(st mut St, c int) BlkRef {
     t := newBlock(mut st)
     e := newBlock(mut st)
@@ -1354,7 +1364,7 @@ func branchIf(st mut St, c int) BlkRef {
     return e
 }
 
-// buildCstr は cstr(hdr, buf) → 0 / ENAMETOOLONG / EINVAL: string ヘッダのバイト列を NUL 終端で buf へ写す
+// cstr(hdr, buf) → 0 / ENAMETOOLONG / EINVAL: string ヘッダのバイト列を NUL 終端で buf へ写す
 func buildCstr(st mut St, f FnRef) {
     begin(mut st, f)
     hdr := 0
@@ -1384,9 +1394,9 @@ func setErrno(st mut St, e int) {
     store(mut st, globaladdr(mut st, st.meta), W_ERRNO, e)
 }
 
-// buildReadFile は read_file(path, out, depth): out に深度 depth（今の深度か宛先構築の宛先 — 呼び手が渡す）の region 先端から積んだ中身
+// read_file(path, out, depth): out に深度 depth（今の深度か宛先構築の宛先 — 呼び手が渡す）の region 先端から積んだ中身
 // （[]byte — rt.extend8 で伸ばす）を置く（失敗は空）。深度は実引数で受ける — 今の深度のレジスタを宛先へ書き換えて呼ぶと、読みの待ち（rt.uio の park）が
-// 今の深度より深い生きた region を死んだ深度として手放す（report-1086 — L1-R の park は今の深度のレジスタを最内の生きた深度と読む）
+// 今の深度より深い生きた region を死んだ深度として手放す（L1-R の park は今の深度のレジスタを最内の生きた深度と読む）
 func buildReadFile(st mut St, cstr FnRef) {
     begin(mut st, st.rtRead)
     path := 0
@@ -1415,7 +1425,7 @@ func buildReadFile(st mut St, cstr FnRef) {
     setErrno(mut st, bin(mut st, BSub, iconst(mut st, 0), fd))
     ret(mut st, -1)
     setCur(mut st, opened)
-    // region の先端（out の終わり）へ直に読む（第三便 M12 — 以前は iobuf 4096 バイト → region の写し）: 先端を READ_CHUNK（スロットの残りが
+    // region の先端（out の終わり）へ直に読む（M12 — 以前は iobuf 4096 バイト → region の写し）: 先端を READ_CHUNK（スロットの残りが
     // それより少なければ残り）まで仮に伸ばして read(2) し、読めた分に詰め直す。out は先端にいる（initOut が今の bump から始め、伸ばすのは自分だけ）
     loop := newBlock(mut st)
     close := newBlock(mut st)
@@ -1466,9 +1476,9 @@ func buildReadFile(st mut St, cstr FnRef) {
     ret(mut st, -1)
 }
 
-// buildWriteAll は write_all(fd, data) → errno（0 = 成功）: data のバイト列をそのまま書く（[]byte — 段 C で詰め直しのループは消えた）。
+// write_all(fd, data) → errno（0 = 成功）: data のバイト列をそのまま書く（[]byte — 段 C で詰め直しのループは消えた）。
 // 短い書き込みは続きから、EINTR は再試行
-func buildWriteAll(st mut St, f FnRef, ring bool) {
+func buildWriteAll(st mut St, f FnRef) {
     begin(mut st, f)
     fd := 0
     data := 1
@@ -1482,7 +1492,7 @@ func buildWriteAll(st mut St, f FnRef, ring bool) {
     has := branchIf(mut st, cmp(mut st, CEq, left, iconst(mut st, 0)))
     ret(mut st, iconst(mut st, 0))
     setCur(mut st, has)
-    r := if ring { call(mut st, st.rtUio, list4(mut st, iconst(mut st, 23), fd, ptoi(mut st, gepByte(mut st, src, pos)), left)) } else { syscall(mut st, list4(mut st, iconst(mut st, 1), fd, ptoi(mut st, gepByte(mut st, src, pos)), left)) }
+    r := syscall(mut st, list4(mut st, iconst(mut st, 1), fd, ptoi(mut st, gepByte(mut st, src, pos)), left))
     not_intr := branchIf(mut st, cmp(mut st, CEq, r, iconst(mut st, -4)))
     br(mut st, xl, list1(mut st, pos))
     setCur(mut st, not_intr)
@@ -1492,7 +1502,7 @@ func buildWriteAll(st mut St, f FnRef, ring bool) {
     br(mut st, xl, list1(mut st, bin(mut st, BAdd, pos, r)))
 }
 
-// buildWriteFile は write_file(path, data) → errno: 作成 / 切り詰めで開いて write_all。close のエラーは返す（先のエラーが優先）
+// write_file(path, data) → errno: 作成 / 切り詰めで開いて write_all。close のエラーは返す（先のエラーが優先）
 func buildWriteFile(st mut St, cstr FnRef, wall FnRef) {
     begin(mut st, st.rtWrite)
     path := 0
@@ -1538,12 +1548,12 @@ func buildWriteFile(st mut St, cstr FnRef, wall FnRef) {
     ret(mut st, fe)
 }
 
-// initOut は out（3 語ヘッダ）を現在深度の region 先端・長さ 0 で初期化し、深度を返す（read_args / read_dir の共通の冒頭）
+// out（3 語ヘッダ）を現在深度の region 先端・長さ 0 で初期化し、深度を返す（read_args / read_dir の共通の冒頭）
 func initOut(st mut St, out int) int {
     return initOutAt(mut st, out, load(mut st, globaladdr(mut st, st.meta), W_DEPTH))
 }
 
-// initOutAt は initOut の深度 depth 版（out を深度 depth の region の先端から始める空の列にして depth を返す）
+// initOut の深度 depth 版（out を深度 depth の region の先端から始める空の列にして depth を返す）
 func initOutAt(st mut St, out int, depth int) int {
     store(mut st, out, 0, ptoi(mut st, regionBump(mut st, depth)))
     store(mut st, out, 1, iconst(mut st, 0))
@@ -1551,7 +1561,7 @@ func initOutAt(st mut St, out int, depth int) int {
     return depth
 }
 
-// strLen は C 文字列 s（NUL 終端）の長さ
+// C 文字列 s（NUL 終端）の長さ
 func strLen(st mut St, s int) int {
     loop := newBlock(mut st)
     j := param(mut st, loop, TyI64)
@@ -1567,7 +1577,7 @@ func strLen(st mut St, s int) int {
     return res
 }
 
-// buildReadArgs は read_args(out): argv を「各引数のバイト + 0」の連結で out に置く（原本は W_ARGV の初期 rsp — [argc, argv…]）
+// read_args(out): argv を「各引数のバイト + 0」の連結で out に置く（原本は W_ARGV の初期 rsp — [argc, argv…]）
 func buildReadArgs(st mut St) {
     begin(mut st, st.rtArgs)
     out := 0
@@ -1595,7 +1605,7 @@ func buildReadArgs(st mut St) {
     ret(mut st, -1)
 }
 
-// buildReadDir は read_dir(path, out, depth): 深度 depth の region に（read_file と同じ — 深度は実引数）項目を「d_type 1 バイト + 名前のバイト + 0」の連結で out に置く（失敗は空 + errno。getdents64 の順のまま・
+// read_dir(path, out, depth): 深度 depth の region に（read_file と同じ — 深度は実引数）項目を「d_type 1 バイト + 名前のバイト + 0」の連結で out に置く（失敗は空 + errno。getdents64 の順のまま・
 // `.` / `..` も含む — 除外・ソート・種類の解釈は std/io）。linux_dirent64: d_reclen @16（2B LE）・d_type @18・d_name @19
 func buildReadDir(st mut St, cstr FnRef) {
     begin(mut st, st.rtDir)
@@ -1665,7 +1675,7 @@ func buildReadDir(st mut St, cstr FnRef) {
     ret(mut st, -1)
 }
 
-// buildWriteFd は write_fd(fd, data) → errno: 開いている fd へ直接書く（open しない — 切り詰めない）。先に println の行バッファを flush
+// write_fd(fd, data) → errno: 開いている fd へ直接書く（open しない — 切り詰めない）。先に println の行バッファを flush
 func buildWriteFd(st mut St, wall FnRef) {
     begin(mut st, st.rtWfd)
     call(mut st, st.rtFlush, list0(mut st))
@@ -1674,63 +1684,56 @@ func buildWriteFd(st mut St, wall FnRef) {
     ret(mut st, e)
 }
 
-// buildRun は run(argv) → 終了コード / 負の errno（std/os の sysRun — テスト基盤 T1）: argv は「各引数のバイト + 0」の連結（[]byte — argv[0] = 実行する
+// run(argv) → 終了コード / 負の errno（std/os の sysRun — テスト基盤 T1）: argv は「各引数のバイト + 0」の連結（[]byte — argv[0] = 実行する
 // パス）。fork（57）→ 子は execve（59 — 環境変数は親のまま）、失敗なら exit_group（231）で 127。親は wait4（61）で待ち、正常終了なら終了コード、
 // シグナルで死んだら 128 + 番号（シェルと同じ）。引数の指す先（char* の列）は rt.iobuf に置く（511 本まで — 超えれば -E2BIG）。先に println の行バッファを flush
 func buildRun(st mut St) {
     if st.rtRun == -1 {
         return
     }
-    begin(mut st, st.rtRun)
+    buildRunBody(mut st, st.rtRun, 0)
+}
+
+// run_fd(argv, ofd, efd)（std/os の sysRunFd）: run と同じで、子が execve の前に dup2（33）で ofd → 1・efd → 2 を付け替える（負の fd はそのまま継ぐ）。
+// fd を開く・閉じるのは呼び手（親）
+func buildRunFd(st mut St) {
+    if st.rtRunFd == -1 {
+        return
+    }
+    buildRunBody(mut st, st.rtRunFd, 1)
+}
+
+// run_fd_env(argv, envz, ofd, efd)（std/os の sysRunFdEnv）: run_fd と同じで、子の環境を envz の各項目だけにする（親の環境との合成は呼び手）。
+// 環境の指しの列は argv の列の NULL の後ろへ続けて積む
+func buildRunFdEnv(st mut St) {
+    if st.rtRunFdEnv == -1 {
+        return
+    }
+    buildRunBody(mut st, st.rtRunFdEnv, 2)
+}
+
+// run / run_fd / run_fd_env の本体（fd0 = 子の標準出力 / 標準エラーの fd の引数の番号〔0 = 付け替えない〕。fd0 = 2 なら引数 1 が子の環境）
+func buildRunBody(st mut St, fn FnRef, fd0 int) {
+    begin(mut st, fn)
     call(mut st, st.rtFlush, list0(mut st))
-    hdr := 0
-    p := itop(mut st, load(mut st, hdr, 0))
-    n := load(mut st, hdr, 1)
-    buf := globaladdr(mut st, st.iobuf)
-    // 各引数の先頭（i = 0 か、直前のバイトが 0）を buf[k] に
-    loop := newBlock(mut st)
-    i := param(mut st, loop, TyI64)
-    k := param(mut st, loop, TyI64)
-    s := param(mut st, loop, TyI64)
-    body := newBlock(mut st)
-    done := newBlock(mut st)
-    kd := param(mut st, done, TyI64)
-    br(mut st, loop, list3(mut st, iconst(mut st, 0), iconst(mut st, 0), iconst(mut st, 1)))
-    setCur(mut st, loop)
-    condbr(mut st, cmp(mut st, CLt, i, n), body, -1, done, list1(mut st, k))
-    setCur(mut st, body)
-    cont := newBlock(mut st)
-    k2 := param(mut st, cont, TyI64)
-    mark := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CNe, s, iconst(mut st, 0)), mark, -1, cont, list1(mut st, k))
-    setCur(mut st, mark)
-    room := branchIf(mut st, cmp(mut st, CGe, k, iconst(mut st, IO_BUF / 8 - 1)))
-    ret(mut st, iconst(mut st, -7))
-    setCur(mut st, room)
-    store(mut st, gepWord(mut st, buf, k), 0, ptoi(mut st, gepByte(mut st, p, i)))
-    br(mut st, cont, list1(mut st, bin(mut st, BAdd, k, iconst(mut st, 1))))
-    setCur(mut st, cont)
-    i1 := bin(mut st, BAdd, i, iconst(mut st, 1))
-    z := newBlock(mut st)
-    nz := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CEq, load8(mut st, gepByte(mut st, p, i), 0), iconst(mut st, 0)), z, -1, nz, -1)
-    setCur(mut st, z)
-    br(mut st, loop, list3(mut st, i1, k2, iconst(mut st, 1)))
-    setCur(mut st, nz)
-    br(mut st, loop, list3(mut st, i1, k2, iconst(mut st, 0)))
-    setCur(mut st, done)
+    kd, buf := zList(mut st, 0, -1)
     store(mut st, gepWord(mut st, buf, kd), 0, iconst(mut st, 0))
     some := branchIf(mut st, cmp(mut st, CEq, kd, iconst(mut st, 0)))
     ret(mut st, iconst(mut st, -22))
     setCur(mut st, some)
     // envp = 初期 rsp の [argc, argv…, NULL, envp…]
     sp := itop(mut st, load(mut st, globaladdr(mut st, st.meta), W_ARGV))
-    envp := gepWord(mut st, sp, bin(mut st, BAdd, load(mut st, sp, 0), iconst(mut st, 2)))
+    envp0 := gepWord(mut st, sp, bin(mut st, BAdd, load(mut st, sp, 0), iconst(mut st, 2)))
+    envp := if fd0 == 2 { envList(mut st, buf, kd) } else { envp0 }
     pid := syscall(mut st, list1(mut st, iconst(mut st, 57)))
     forked := branchIf(mut st, cmp(mut st, CLt, pid, iconst(mut st, 0)))
     ret(mut st, pid)
     setCur(mut st, forked)
     parent := branchIf(mut st, cmp(mut st, CEq, pid, iconst(mut st, 0)))
+    if fd0 > 0 {
+        dupFd(mut st, fd0, 1)
+        dupFd(mut st, fd0 + 1, 2)
+    }
     eargs := listN(mut st, 4)
     desugar.HeapSet(mut st.d, eargs + 1, iconst(mut st, 59))
     desugar.HeapSet(mut st.d, eargs + 2, load(mut st, buf, 0))
@@ -1760,7 +1763,68 @@ func buildRun(st mut St) {
     ret(mut st, bin(mut st, BAnd, bin(mut st, BDiv, status, iconst(mut st, 256)), iconst(mut st, 255)))
 }
 
-// relocLabel は写した先のヘッダの深度の印（std/task を使うプログラムではワーカーの WK_RLAB が 0 でなければそれ — チャネルの小アリーナへの写しは
+// argv の列（buf[0..kd)・buf[kd] = NULL）の後ろに子の環境の指しの列（引数 1 の「NAME=値 + 0」の連結の各項目 → NULL）を積んで、その先頭を返す
+// （buf の上限を超えたら関数から -7 で戻る）
+func envList(st mut St, buf int, kd int) int {
+    k1 := bin(mut st, BAdd, kd, iconst(mut st, 1))
+    ke, _ := zList(mut st, 1, k1)
+    store(mut st, gepWord(mut st, buf, ke), 0, iconst(mut st, 0))
+    return gepWord(mut st, buf, k1)
+}
+
+// 引数 arg の「バイト + 0」の連結の各項目の先頭（i = 0 か、直前のバイトが 0）を rt.iobuf の k0 番から積み、積み終えた番号と iobuf の番地を返す
+// （k0 = -1 は 0 から。上限を超えたら関数から -7 で戻る）。戻ると cur は積み終えたブロック
+func zList(st mut St, arg int, k0 int) (int, int) {
+    p := itop(mut st, load(mut st, arg, 0))
+    n := load(mut st, arg, 1)
+    buf := globaladdr(mut st, st.iobuf)
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    k := param(mut st, loop, TyI64)
+    s := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    kd := param(mut st, done, TyI64)
+    br(mut st, loop, list3(mut st, iconst(mut st, 0), if k0 == -1 { iconst(mut st, 0) } else { k0 }, iconst(mut st, 1)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, i, n), body, -1, done, list1(mut st, k))
+    setCur(mut st, body)
+    cont := newBlock(mut st)
+    k2 := param(mut st, cont, TyI64)
+    mark := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, s, iconst(mut st, 0)), mark, -1, cont, list1(mut st, k))
+    setCur(mut st, mark)
+    room := branchIf(mut st, cmp(mut st, CGe, k, iconst(mut st, IO_BUF / 8 - 1)))
+    ret(mut st, iconst(mut st, -7))
+    setCur(mut st, room)
+    store(mut st, gepWord(mut st, buf, k), 0, ptoi(mut st, gepByte(mut st, p, i)))
+    br(mut st, cont, list1(mut st, bin(mut st, BAdd, k, iconst(mut st, 1))))
+    setCur(mut st, cont)
+    i1 := bin(mut st, BAdd, i, iconst(mut st, 1))
+    z := newBlock(mut st)
+    nz := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, load8(mut st, gepByte(mut st, p, i), 0), iconst(mut st, 0)), z, -1, nz, -1)
+    setCur(mut st, z)
+    br(mut st, loop, list3(mut st, i1, k2, iconst(mut st, 1)))
+    setCur(mut st, nz)
+    br(mut st, loop, list3(mut st, i1, k2, iconst(mut st, 0)))
+    setCur(mut st, done)
+    return kd, buf
+}
+
+// 引数 arg の fd が負でなければ dup2(fd, to)（run_fd の子の付け替え — 失敗は execve の前なので無視して進む）
+func dupFd(st mut St, arg int, to int) {
+    fd := arg
+    skip := newBlock(mut st)
+    dup := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, fd, iconst(mut st, 0)), skip, -1, dup, -1)
+    setCur(mut st, dup)
+    syscall(mut st, list3(mut st, iconst(mut st, 33), fd, iconst(mut st, to)))
+    br(mut st, skip, -1)
+    setCur(mut st, skip)
+}
+
+// 写した先のヘッダの深度の印（std/task を使うプログラムではワーカーの WK_RLAB が 0 でなければそれ — チャネルの小アリーナへの写しは
 // 印 = MAX_DEPTH にして受け手が必ず自分の region へ写す〔段 6 P4-4 (B4)〕。それ以外は floor — IR 不変）
 func relocLabel(st mut St, floor int) int {
     if !st.taskUse {

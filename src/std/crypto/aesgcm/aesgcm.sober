@@ -107,7 +107,7 @@ func Open(key []byte, nonce []byte, ad []byte, sealed []byte) ([]byte, error?) {
 @errors(BadSize)
 @bless
 @effects(!io, !block, !nondet)
-func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte) ([]byte, error?) { // 対の OpenTo は実需まで足さない（34 節 2 の注記・2026-10-20 ④）
+func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte) ([]byte, error?) { // 対の OpenTo は実需まで足さない（34 節 2 の注記）
     if len(nonce) != NonceSize {
         return []byte{}, BadSize{}
     }
@@ -206,7 +206,7 @@ func SealInto(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byt
 // b[off, off + n)（暗号文 ‖ tag）を写さずに tag を照合してから復号した平文。nonce の長さが違う・n が tag より短い・[off, off + n) が b の外なら BadSize
 @errors(BadSize, Auth)
 @effects(!io, !block, !nondet)
-func OpenAt(k Key, nonce []byte, ad []byte, b []byte, off int, n int) ([]byte, error?) { // 対の SealAt は実需まで足さない（34 節 2 の注記・2026-10-20 ④）
+func OpenAt(k Key, nonce []byte, ad []byte, b []byte, off int, n int) ([]byte, error?) { // 対の SealAt は実需まで足さない（34 節 2 の注記）
     if len(nonce) != NonceSize || n < Overhead || off < 0 || off + n > len(b) {
         return []byte{}, BadSize{}
     }
@@ -235,7 +235,7 @@ func OpenAt(k Key, nonce []byte, ad []byte, b []byte, off int, n int) ([]byte, e
     return p[0:m], nil
 }
 
-// recCtx は record 1 つの作業域: テンプレート kc の鍵と H と定数を写し、計数器 = nonce ‖ 大きい端の c（J0 = 1・本文 = 2 から）・Y = 0
+// record 1 つの作業域: テンプレート kc の鍵と H と定数を写し、計数器 = nonce ‖ 大きい端の c（J0 = 1・本文 = 2 から）・Y = 0
 func recCtx(kc []byte, nonce []byte, c int) []byte {
     mut x := mut []byte{}
     mut j := 0
@@ -275,7 +275,7 @@ func zeros(n int) []byte {
     return freeze(z)
 }
 
-// padded は b[from, to)（16 バイト未満）を 0 で 16 バイトに埋めた写し
+// b[from, to)（16 バイト未満）を 0 で 16 バイトに埋めた写し
 func padded(b []byte, from int, to int) []byte {
     mut t := mut []byte{}
     for i <- iter.Range(from, to) {
@@ -287,7 +287,7 @@ func padded(b []byte, from int, to int) []byte {
     return freeze(t)
 }
 
-// ghashAt は b[off, off + n) を 16 の倍数に 0 で埋めて GHASH に畳む（16 の倍数の部分は写さずに番地で）
+// b[off, off + n) を 16 の倍数に 0 で埋めて GHASH に畳む（16 の倍数の部分は写さずに番地で）
 func ghashAt(ctx []byte, b []byte, off int, n int) {
     full := n - n % 16
     if full > 0 {
@@ -298,7 +298,7 @@ func ghashAt(ctx []byte, b []byte, off int, n int) {
     }
 }
 
-// ghashLens は GHASH の最後のブロック（ad と暗号文のビット長 — 各 64 ビットの大きい端）
+// GHASH の最後のブロック（ad と暗号文のビット長 — 各 64 ビットの大きい端）
 func ghashLens(ctx []byte, adLen int, ctLen int) {
     mut lens := mut []byte{}
     be64(mut lens, 8 * adLen)

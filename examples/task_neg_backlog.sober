@@ -1,0 +1,14 @@
+package main
+
+// backlog: は budget: と同じ形 — 呼び出し・割り算を含まない整数式（diag.Par kind 29 — rt へ渡すだけ。評価の有無で観測が割れない形に限る）
+
+import "std/task"
+
+func eight() int {
+    return 8
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => 1, backlog: eight())
+    println(r)
+}

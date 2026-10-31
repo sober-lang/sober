@@ -2,7 +2,7 @@
 
 English | [日本語](DESIGN.ja.md)
 
-This document gathers Sober's main design decisions into five pillars. Each pillar is written in the order "what was chosen, what was rejected, what it gives the user". The finer "why Y rather than X" decisions are in the [design notes](docs/design-notes/), the exact definition of the language is in the [language specification](docs/language.md), and the record in the order the decisions were made is in the [design record](docs/design-dev.md) (for developers). All three are in Japanese.
+This document gathers Sober's main design decisions into five pillars. Each pillar is written in the order "what was chosen, what was rejected, what it gives the user". The finer "why Y rather than X" decisions are in the [design notes](docs/design-notes/), the exact definition of the language is in the [language specification](docs/spec/README.ja.md), and the record in the order the decisions were made is in the [design record](docs/design-dev.md) (for developers). All three are in Japanese.
 
 There is one criterion for review: what a program does is what it says. A feature that cannot be written straightforwardly does not go into the language; it is handed to the analyzer or dropped.
 
@@ -38,11 +38,11 @@ What it gives the user: rejection of unhandled errors, deterministic parallelism
 
 ## 4. The verification net — the density of oracles sets the pace of development
 
-Chosen: a change to the compiler goes in only after passing all of the following: the self-compilation fixed point, golden tests, agreement of observations with and without optimization, comparison against the frozen Zig version, independent oracles (Go, GNU as), and comparison against the formal model in Lean (`scripts/gates.sh --full` — 54 checks). The bootstrap has no seed binary and is built from Zig and source alone.
+Chosen: a change to the compiler goes in only after passing all of the following: the self-compilation fixed point, golden tests, agreement of observations with and without optimization, comparison against the frozen Zig version, independent oracles (Go, GNU as), and comparison against the formal model in Lean (`scripts/gates.sh --full`). The bootstrap has no seed binary and is built from Zig and source alone.
 
 Rejected: an ad hoc net of "write as many tests as you can". Each kind of check in the net has its own independent oracle, and any one of them going off stops the change.
 
-What it gives the user: a compiler kept small (the core is under 100,000 lines) that can be boldly reworked without breaking. The net itself is public, and anyone can run the same checks.
+What it gives the user: a compiler kept small (the target-independent core is under 100,000 lines) that can be boldly reworked without breaking. The net itself is public, and anyone can run the same checks.
 
 → Design notes: [minimal](docs/design-notes/minimal.md)
 
@@ -52,7 +52,7 @@ Chosen: the mechanisms for speed (optimization, data representation, the schedul
 
 Rejected: annotations for speed, tuning knobs visible to the user, and collections of "fast idioms".
 
-What it gives the user: straightforward code is the fastest form, and there is no performance folklore to memorize. Comparisons against straightforward Go / Rust with the same algorithms are published in cycles, instructions and peak RSS.
+What it gives the user: straightforward code is the fastest form, and there is no performance folklore to memorize. Comparisons against straightforward Go / Rust with the same algorithms are published in CPU time (task-clock) and peak RSS.
 
 → Design notes: [fast](docs/design-notes/fast.md)
 

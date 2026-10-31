@@ -92,7 +92,7 @@ func Decode(data []byte, maxSize int?) ([]byte, error?) {
     return freeze(out), nil
 }
 
-// header は data[p:] の gzip のメンバの頭（RFC 1952 2.3）の後の位置（形が違えば −1）
+// data[p:] の gzip のメンバの頭（RFC 1952 2.3）の後の位置（形が違えば −1）
 func header(data []byte, p int) int {
     if p + 10 > len(data) || data[p] != byte(0x1f) || data[p + 1] != byte(0x8b) || data[p + 2] != byte(8) {
         return 0 - 1
@@ -132,7 +132,7 @@ func header(data []byte, p int) int {
     return q
 }
 
-// zeroEnd は data[q:] の最初の 0 の次の位置（無ければ −1）
+// data[q:] の最初の 0 の次の位置（無ければ −1）
 func zeroEnd(data []byte, q int) int {
     mut i := q
     while i < len(data) {
@@ -144,7 +144,7 @@ func zeroEnd(data []byte, q int) int {
     return 0 - 1
 }
 
-// le32 は data[q:q + 4] の little endian の値
+// data[q:q + 4] の little endian の値
 func le32(data []byte, q int) int {
     return int(data[q]) | (int(data[q + 1]) << 8) | (int(data[q + 2]) << 16) | (int(data[q + 3]) << 24)
 }

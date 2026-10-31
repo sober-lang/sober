@@ -21,7 +21,7 @@ if [ "${1:-}" = "--regen" ]; then cp "$W/lean.txt" "$G"; echo "tlsfsm: regenerat
 fail=0
 if ! cmp -s "$W/lean.txt" "$G"; then echo "FAIL: the Lean table (sober-gen --tlsfsm) differs from $G"; diff "$G" "$W/lean.txt" | head -20; fail=1; fi
 mkdir -p "$W/work"
-"$S2" test std/tls -run TestFsm --work "$W/work" > "$W/out" 2>&1 || { cat "$W/out"; echo "FAIL: sober test std/tls -run TestFsm"; fail=1; }
+"$S2" test std/tls --run TestFsm --work "$W/work" > "$W/out" 2>&1 || { cat "$W/out"; echo "FAIL: sober test std/tls --run TestFsm"; fail=1; }
 grep -q '^ok   std/tls.TestFsm$' "$W/out" || { echo "FAIL: TestFsm did not pass"; fail=1; }
 grep -q 'transition rows skipped' "$W/out" && echo "SKIP: transition rows (no AES-NI / PCLMULQDQ / SSSE3 — the h1 states replay an AES-128-GCM trace)"
 nl=$(grep '^nonce ' "$W/out")

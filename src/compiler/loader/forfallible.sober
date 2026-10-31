@@ -1,17 +1,17 @@
 package loader
 
-// 失敗しうる生成元の印（language.md 7 節「失敗しうる生成元」— IO 便 段 2）: 呼び出し形の生成元（仮引数が実引数より 1 つ多く、最後が関数型）で
+// 失敗しうる生成元の印（language.md 7 節「失敗しうる生成元」）: 呼び出し形の生成元（仮引数が実引数より 1 つ多く、最後が関数型）で
 // 結果が `error?` 1 つのものは、for に印 `?` を付けて書く — `for x <- g(a)? { … }`（脱糖 = `g(a, (x) => { … })?` — desugar の forGen が `?` の節で包む）。
 // 判定は宣言の署名だけ（固定テンプレート — 呼び出し形の生成元と同じ）。呼び出し形でない `f()?`（slice を返す `([]T, error?)` の呼び出し）は普通の `?` のまま。
 // 拒否（diag.ForFallible の kind）: 1 = 印が無い（結果の `error?` を黙って捨てる — 11 節「defer 内のエラー」の暗黙の drop の拒否と同じ線）・
 // 2 = 式の位置の for（yield 形 — Iter[T] は失敗の通り道を持たない）・3 = 印つきだが生成元の結果が `error?` 1 つでない。check と build が同じ層（loader）。
-// 閉包の名前の呼び出し形（L-for — `for x <- recv(a)? { … }`・recv は囲む関数の匿名の関数型の仮引数）も同じテンプレートを仮引数の型の字面で掛ける。
+// 閉包の名前の呼び出し形（`for x <- recv(a)? { … }`・recv は囲む関数の匿名の関数型の仮引数）も同じテンプレートを仮引数の型の字面で掛ける。
 // 4 = 生成元の呼び先が名前付き関数型の仮引数（値の位置の閉包は展開されないので生成元にならない）
 
 import "std/iter"
 import "ast"
 
-// forHit はファイル f の for x の生成元の最初の印の誤りの kind と生成元の字句（無ければ kind 0 — noderules.sober の走査から）
+// ファイル f の for x の生成元の最初の印の誤りの kind と生成元の字句（無ければ kind 0 — noderules.sober の走査から）
 func forHit(cx Cx, ft FnTab, f int, x ast.Node) (int, int) {
     t := cx.trees[f]
     for j <- iter.Range(0, ast.ListLen(t, x.a)) {
@@ -24,7 +24,7 @@ func forHit(cx Cx, ft FnTab, f int, x ast.Node) (int, int) {
     return 0, 0
 }
 
-// forGenHit は生成元の節 g（文形の for なら stmt）の印の誤りの kind（無ければ 0）
+// 生成元の節 g（文形の for なら stmt）の印の誤りの kind（無ければ 0）
 func forGenHit(cx Cx, ft FnTab, f int, g int, stmt bool) int {
     t := cx.trees[f]
     src := t.nodes[g].b
@@ -76,7 +76,7 @@ func forGenHit(cx Cx, ft FnTab, f int, g int, stmt bool) int {
     return if fallible { 0 } else { 3 }
 }
 
-// closureParam は生成元の callee（節 callee）が囲む関数（生成元の節 g を含む同じファイルの func 宣言 — 字句の位置で決める）の仮引数の名前なら
+// 生成元の callee（節 callee）が囲む関数（生成元の節 g を含む同じファイルの func 宣言 — 字句の位置で決める）の仮引数の名前なら
 // その仮引数の節（でなければ -1）。シャドーイング禁止（決定 13）なので名前は関数の中で一意
 func closureParam(cx Cx, ft FnTab, f int, g int, callee int) int {
     t := cx.trees[f]
@@ -104,12 +104,12 @@ func closureParam(cx Cx, ft FnTab, f int, g int, callee int) int {
     return 0 - 1
 }
 
-// errOptOnly は func 宣言 d の結果が `error?` 1 つか
+// func 宣言 d の結果が `error?` 1 つか
 func errOptOnly(t ast.Tree, d int) bool {
     return errOptList(t, t.nodes[d].d)
 }
 
-// errOptList は結果の型の列 rs が `error?` 1 つか
+// 結果の型の列 rs が `error?` 1 つか
 func errOptList(t ast.Tree, rs int) bool {
     if ast.ListLen(t, rs) != 1 {
         return false

@@ -1,6 +1,6 @@
 package lower
 
-// 写しの転送（G 便 — report-536 (D)）: GVN の後の SSA に掛ける。スロット S が「番地 A からの語ごとの写し（`v_j = load A[j]; store S[j], v_j`
+// 写しの転送: GVN の後の SSA に掛ける。スロット S が「番地 A からの語ごとの写し（`v_j = load A[j]; store S[j], v_j`
 // — j = 0 .. n − 1 をちょうど 1 回ずつ・同じブロック）」でだけ書かれ、S のほかの使い道が `load S[j]` と rt.str_eq の引数だけなら、写しから
 // 使い道までの道に A の指す先を書きうるものが無い限り、使い道を A へ付け替えて（`load S[j]` → `load A[j]`・str_eq(S) → str_eq(A)）写しを消す
 // （routing の照合のループ — `r := routes[ri]` の Route 6 語を毎周スロットへ写し、r.method を str_eq に番地で渡すのでスロットが SROA に掛からなかった）。
@@ -13,7 +13,7 @@ package lower
 import "desugar"
 import "std/iter"
 
-// cpfwdModule はモジュールの全関数に写しの転送を掛ける
+// モジュールの全関数に写しの転送を掛ける
 func cpfwdModule(st mut St) {
     mut f := st.fhead
     while f != -1 {
@@ -24,7 +24,7 @@ func cpfwdModule(st mut St) {
     }
 }
 
-// cfCheap は rt.str_eq の引数にスロットの番地（slotaddr の結果）を渡す呼び出しがある関数か（作業域を作らない — slotaddr の結果と str_eq の引数の
+// rt.str_eq の引数にスロットの番地（slotaddr の結果）を渡す呼び出しがある関数か（作業域を作らない — slotaddr の結果と str_eq の引数の
 // 小さい列を突き合わせる）
 func cfCheap(st mut St, f FnRef) bool {
     if st.rtStreq == -1 {
@@ -131,7 +131,7 @@ func cpfwdFunc(st mut St, f FnRef) {
     }
 }
 
-// CfC は候補のスロット 1 つの写し（複数 — 同じスロットを別の場所の写しが使い回す: routing の照合の while と 404 の for）と使い道
+// 候補のスロット 1 つの写し（複数 — 同じスロットを別の場所の写しが使い回す: routing の照合の while と 404 の for）と使い道
 type CfC struct {
     cb mut []int     // 写しごと: ブロックの番号
     ca mut []int     // 写しごと: 写し元の番地の値
@@ -145,12 +145,12 @@ type CfC struct {
     own mut []int    // 使い道ごと（loads → calls の順）: 持ち主の写し（cfSafe が埋める）
 }
 
-// cfIsS は値 v がスロット s の番地（slotaddr s の結果）か
+// 値 v がスロット s の番地（slotaddr s の結果）か
 func cfIsS(st mut St, def mut []int, v int, s int) bool {
     return v >= 0 && v < len(def) && def[v] >= 0 && irInsOp(mut st, InsRef(def[v])) == OpSlotaddr && irInsA(mut st, InsRef(def[v])) == s
 }
 
-// cfClassify はスロット s の使い道を全部見て、書き込みが全部ブロックごとの語の写しで、ほかの使い道が load と str_eq だけなら c を埋めて true
+// スロット s の使い道を全部見て、書き込みが全部ブロックごとの語の写しで、ほかの使い道が load と str_eq だけなら c を埋めて true
 func cfClassify(st mut St, f FnRef, pw mut PrW, s int, c mut CfC) bool {
     mut b := irFnBHead(mut st, f)
     while b != -1 {
@@ -239,7 +239,7 @@ func cfClassify(st mut St, f FnRef, pw mut PrW, s int, c mut CfC) bool {
     return true
 }
 
-// cfRoot は番地 v の根（gep を基底へ辿った値 — 16 段まで）
+// 番地 v の根（gep を基底へ辿った値 — 16 段まで）
 func cfRoot(st mut St, def mut []int, v0 int) int {
     mut v := v0
     mut k := 0
@@ -250,13 +250,13 @@ func cfRoot(st mut St, def mut []int, v0 int) int {
     return v
 }
 
-// cfRootSlot は番地 v の根がスロットならその番号（でなければ -1）
+// 番地 v の根がスロットならその番号（でなければ -1）
 func cfRootSlot(st mut St, def mut []int, v int) int {
     r := cfRoot(mut st, mut def, v)
     return if r >= 0 && r < len(def) && def[r] >= 0 && irInsOp(mut st, InsRef(def[r])) == OpSlotaddr { irInsA(mut st, InsRef(def[r])) } else { -1 }
 }
 
-// cfDanger は命令 i が写し元 A（根のスロット aslot — スロットでなければ -1）の指す先か、スロット s（ほかの写しの store）を書きうるか
+// 命令 i が写し元 A（根のスロット aslot — スロットでなければ -1）の指す先か、スロット s（ほかの写しの store）を書きうるか
 func cfDanger(st mut St, def mut []int, i InsRef, aslot int, s int) bool {
     op := irInsOp(mut st, i)
     if op == OpStore || op == OpStore8 {
@@ -271,7 +271,7 @@ func cfDanger(st mut St, def mut []int, i InsRef, aslot int, s int) bool {
         op == OpREnter || op == OpRSetDepth || op == OpUnwind
 }
 
-// cfPos は命令 x のブロック b の中の位置（無ければ -1）
+// 命令 x のブロック b の中の位置（無ければ -1）
 func cfPos(st mut St, b BlkRef, x int) int {
     mut k := 0
     mut i := irBlkIHead(mut st, b)
@@ -285,12 +285,12 @@ func cfPos(st mut St, b BlkRef, x int) int {
     return -1
 }
 
-// cfUse は使い道の番目 u（loads → calls の順）の命令
+// 使い道の番目 u（loads → calls の順）の命令
 func cfUse(c mut CfC, u int) int {
     return if u < len(c.loads) { c.loads[u] } else { c.calls[u - len(c.loads)] }
 }
 
-// cfSafe は使い道ごとに持ち主の写し（使い道を支配する写しのうち一番近いもの — 同じブロックなら写しの後ろの使い道だけ）を決め、写しごとに、写しの
+// 使い道ごとに持ち主の写し（使い道を支配する写しのうち一番近いもの — 同じブロックなら写しの後ろの使い道だけ）を決め、写しごとに、写しの
 // 最初の読みから持ち物の使い道までの道に危うい命令（ほかの写しの store を含む）が無いかを見る
 func cfSafe(st mut St, w mut m2rW, pw mut PrW, s int, c mut CfC) bool {
     nb := w.nb
@@ -434,7 +434,7 @@ func cfSafe(st mut St, w mut m2rW, pw mut PrW, s int, c mut CfC) bool {
     return true
 }
 
-// cfOwnStore は命令 x が写し k の store か
+// 命令 x が写し k の store か
 func cfOwnStore(c mut CfC, x int, k int) bool {
     for q <- iter.Range(0, len(c.stores)) {
         if c.stores[q] == x && c.scp[q] == k {
@@ -444,7 +444,7 @@ func cfOwnStore(c mut CfC, x int, k int) bool {
     return false
 }
 
-// cfRewrite は使い道を持ち主の写し元へ付け替え、写しの store を全部と（ほかに使い道の無い）写しの load を消す
+// 使い道を持ち主の写し元へ付け替え、写しの store を全部と（ほかに使い道の無い）写しの load を消す
 func cfRewrite(st mut St, f FnRef, pw mut PrW, c mut CfC) {
     for u <- iter.Range(0, len(c.loads)) {
         irSetInsA(mut st, InsRef(c.loads[u]), c.ca[c.own[u]])
@@ -510,7 +510,7 @@ func cfRewrite(st mut St, f FnRef, pw mut PrW, c mut CfC) {
     }
 }
 
-// cfIsStore は命令 x が写しの store か
+// 命令 x が写しの store か
 func cfIsStore(c mut CfC, x int) bool {
     for q <- iter.Range(0, len(c.stores)) {
         if c.stores[q] == x {
@@ -520,7 +520,7 @@ func cfIsStore(c mut CfC, x int) bool {
     return false
 }
 
-// cfCount は被演算子 v が写しの load の結果なら数える
+// 被演算子 v が写しの load の結果なら数える
 func cfCount(st mut St, def mut []int, v int, c mut CfC, cnt mut []int) {
     if v < 0 || v >= len(def) || def[v] < 0 {
         return

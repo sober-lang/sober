@@ -1,0 +1,324 @@
+{
+  "package": "lib",
+  "imports": [
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    },
+    {
+      "alias": "$float",
+      "path": "std/internal/floatfmt",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "Flag",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "name",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 7
+          },
+          {
+            "name": "on",
+            "type": {
+              "k": "name",
+              "name": "bool"
+            },
+            "tok": 10
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 15
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "Count",
+      "type_params": [],
+      "params": [
+        {
+          "name": "fs",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "Flag"
+            },
+            "mut": false
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "n"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 83
+              }
+            ],
+            "tok": 80
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "f"
+                  ],
+                  "src": {
+                    "k": "ident",
+                    "name": "fs",
+                    "tok": 88
+                  },
+                  "guards": [],
+                  "tok": 86
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "assign",
+                    "targets": [
+                      {
+                        "k": "ident",
+                        "name": "n",
+                        "tok": 90
+                      }
+                    ],
+                    "op": "+=",
+                    "values": [
+                      {
+                        "k": "if",
+                        "cond": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "f",
+                            "tok": 93
+                          },
+                          "field": "on",
+                          "tok": 95
+                        },
+                        "then": {
+                          "stmts": [
+                            {
+                              "k": "expr",
+                              "expr": {
+                                "k": "int",
+                                "value": 1,
+                                "tok": 97
+                              }
+                            }
+                          ]
+                        },
+                        "else": {
+                          "k": "block",
+                          "stmts": [
+                            {
+                              "k": "expr",
+                              "expr": {
+                                "k": "int",
+                                "value": 0,
+                                "tok": 101
+                              }
+                            }
+                          ]
+                        },
+                        "tok": 92
+                      }
+                    ],
+                    "tok": 90
+                  }
+                ]
+              },
+              "tok": 85
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "n",
+                "tok": 107
+              }
+            ],
+            "tok": 106
+          }
+        ]
+      },
+      "tok": 71,
+      "bodiless": false,
+      "span": {
+        "start": 70,
+        "end": 111
+      },
+      "sig_end": 79
+    }
+  ],
+  "consts": [
+    {
+      "name": "Version",
+      "expr": {
+        "k": "strlit",
+        "value": "1.2.3",
+        "tok": 18
+      },
+      "tok": 16,
+      "span": {
+        "start": 15,
+        "end": 20
+      }
+    },
+    {
+      "name": "Debug",
+      "expr": {
+        "k": "ident",
+        "name": "true",
+        "tok": 23
+      },
+      "tok": 21,
+      "span": {
+        "start": 20,
+        "end": 25
+      }
+    },
+    {
+      "name": "Ratio",
+      "expr": {
+        "k": "float",
+        "bits": 4604930618986332160,
+        "text": "0.75",
+        "tok": 28
+      },
+      "tok": 26,
+      "span": {
+        "start": 25,
+        "end": 30
+      }
+    },
+    {
+      "name": "Sizes",
+      "expr": {
+        "k": "slicelit",
+        "elem": {
+          "k": "name",
+          "name": "int"
+        },
+        "elems": [
+          {
+            "k": "int",
+            "value": 1,
+            "tok": 37
+          },
+          {
+            "k": "int",
+            "value": 2,
+            "tok": 39
+          },
+          {
+            "k": "int",
+            "value": 4,
+            "tok": 41
+          }
+        ],
+        "mut": false,
+        "tok": 33
+      },
+      "tok": 31,
+      "span": {
+        "start": 30,
+        "end": 44
+      }
+    },
+    {
+      "name": "Defaults",
+      "expr": {
+        "k": "slicelit",
+        "elem": {
+          "k": "name",
+          "name": "Flag"
+        },
+        "elems": [
+          {
+            "k": "composite",
+            "type_name": "Flag",
+            "elems": [
+              {
+                "key": "name",
+                "value": {
+                  "k": "strlit",
+                  "value": "color",
+                  "tok": 55
+                }
+              },
+              {
+                "key": "on",
+                "value": {
+                  "k": "ident",
+                  "name": "true",
+                  "tok": 59
+                }
+              }
+            ],
+            "tok": 51,
+            "type_args": []
+          },
+          {
+            "k": "composite",
+            "type_name": "Flag",
+            "elems": [
+              {
+                "key": "name",
+                "value": {
+                  "k": "strlit",
+                  "value": "pager",
+                  "tok": 66
+                }
+              }
+            ],
+            "tok": 62,
+            "type_args": []
+          }
+        ],
+        "mut": false,
+        "tok": 47
+      },
+      "tok": 45,
+      "span": {
+        "start": 44,
+        "end": 70
+      }
+    }
+  ]
+}

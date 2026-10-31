@@ -1,0 +1,365 @@
+package loader
+
+// 宛先構築の印（return の値を呼び手の region に直接置くための印）: 呼び出し（ECall）にも立てる — lower は印のある呼び出しの
+// 直前に自分の宛先の深度をレジスタ（rt の W_DEST）に書き、呼ばれた側の印のある確保がそこを使う（関数をまたいで伝える）。関数ごとに「return に流れ着く名前」を構文で逆向きに閉包し
+// （return の式の名前・その名前を束縛 / 代入する式の名前…）、return の式とその名前の初期値 / 代入の式の中の、コンテナのリテラル（ESlicelit / EMaplit）と
+// string の補間・連結（EInterp / EBinary の +）の節の欄 e に 1 を立てる。lower は印のある節の確保を関数の入口の深度（= 戻り値の境界コピーの floor —
+// 呼び手の最内 region）に置き、戻りの写しを消す。意味論は変えない（寿命が呼び手の region まで延びるだけ — 観測等価）。
+// lower は要素が参照を持たない型（スカラー・string のバイト）にだけ印を使う（外側を浅く作ると relocate が中身に降りない）。
+// ループ（while・for）とラムダの中の節には立てない（呼び手の region に反復ごとのゴミを積まない）。名前の遮蔽は見ない（保守側 — 余分に立っても寿命が延びるだけ）
+
+import "std/iter"
+import "ast"
+import "lexer"
+
+// 全ファイルの関数に印を立てた木
+func destMarksAll(ts []ast.Tree) []ast.Tree {
+    vf := valueFns(ts)
+    mut out := mut []ast.Tree{}
+    mut base := 0
+    for i <- iter.Range(0, len(ts)) {
+        out = append(out, destFile(ts[i], vf, base))
+        base += ast.ListLen(ts[i], ts[i].nodes[ts[i].file].d)
+    }
+    return freeze(out)
+}
+
+// 関数値として使われうる関数の印（ファイルごとの関数宣言の並びを全ファイルで通した番号 → 1 = 使われうる:
+// 関数値の呼び出しは呼び手が宛先の深度のレジスタを書くので、関数値の呼び先は全部入口で読んで 0 に戻す形に揃える〔読まない呼び先に残った値を、
+// その中のループの印の無い呼び出しが拾ってしまう〕）。数えるのは呼び出しの callee 以外の位置の名前: 裸の EIdent はそのファイルの package の関数
+// （ローカルの束縛は同じ package のトップレベル名を遮れない — language.md 6 節・spec V-2）、`x.f`（ESelector の base が裸の名前）は package 名 x の関数 f
+// （x が import の参照名でなければ欄の読みで、同名の package の同名の関数が余分に入るだけ）。package は名前で見る — 同じ名前の別の package の同じ名前の
+// 関数も印が付く（保守側 — 余分に付いても入口の読み 1 組が増えるだけ）。文字列は作らない（データプールの上で hash と照合 — fnval.sober の tyTab の形）
+func valueFns(ts []ast.Tree) []int {
+    // 表: [mask, 鎖の頭 × (mask + 1), 関数ごとに 3 語 = ファイル・宣言の節・鎖の次]
+    mut n := 0
+    for f <- iter.Range(0, len(ts)) {
+        n += ast.ListLen(ts[f], ts[f].nodes[ts[f].file].d)
+    }
+    mut mask := 1023
+    while mask < n * 2 {
+        mask = mask * 2 + 1
+    }
+    mut tab := mut []int{}
+    for i <- iter.Range(0, mask + 1) {
+        tab = append(tab, -1)
+    }
+    mut ent := mut []int{}
+    mut id := 0
+    for f <- iter.Range(0, len(ts)) {
+        t := ts[f]
+        ds := t.nodes[t.file].d
+        for k <- iter.Range(0, ast.ListLen(t, ds)) {
+            d := ast.ListAt(t, ds, k)
+            h := dataHash(t, t.nodes[d].a, mask)
+            ent = append(ent, f)
+            ent = append(ent, d)
+            ent = append(ent, tab[h])
+            tab[h] = id
+            id += 1
+        }
+    }
+    tb := freeze(tab)
+    es := freeze(ent)
+    mut out := mut []int{}
+    for i <- iter.Range(0, n) {
+        out = append(out, 0)
+    }
+    for f <- iter.Range(0, len(ts)) {
+        t := ts[f]
+        pn := t.nodes[t.file].a
+        mut callee := mut []bool{}
+        for i <- iter.Range(0, len(t.nodes)) {
+            callee = append(callee, false)
+        }
+        for i <- iter.Range(0, len(t.nodes)) {
+            x := t.nodes[i]
+            if x.kind == ast.ECall && x.a >= 0 {
+                callee[x.a] = true
+            }
+        }
+        for i <- iter.Range(0, len(t.nodes)) {
+            x := t.nodes[i]
+            if !callee[i] && x.kind == ast.EIdent {
+                valueMark(ts, tb, es, mut out, mask, t, x.a, t, pn)
+            } else if !callee[i] && x.kind == ast.ESelector && x.a >= 0 && t.nodes[x.a].kind == ast.EIdent {
+                valueMark(ts, tb, es, mut out, mask, t, x.b, t, t.nodes[x.a].a)
+            }
+        }
+    }
+    return freeze(out)
+}
+
+// 名前 nm（木 nt のデータプール）・package 名 pk（木 pt）の関数に印を付ける（無ければ何もしない）
+func valueMark(ts []ast.Tree, tab []int, ent []int, out mut []int, mask int, nt ast.Tree, nm int, pt ast.Tree, pk int) {
+    mut e := tab[dataHash(nt, nm, mask)]
+    while e >= 0 {
+        df := ts[ent[3 * e]]
+        if dataEq(df, df.nodes[ent[3 * e + 1]].a, nt, nm) && dataEq(df, df.nodes[df.file].a, pt, pk) {
+            out[e] = 1
+        }
+        e = ent[3 * e + 2]
+    }
+}
+
+// ファイル t の関数ごとの印（立てる節が無ければ t のまま）
+func destFile(t ast.Tree, vf []int, base int) ast.Tree {
+    mut marks := mut []int{}
+    fns := t.nodes[t.file].d
+    sc := scalarFns(t)
+    for k <- iter.Range(0, ast.ListLen(t, fns)) {
+        fd := t.nodes[ast.ListAt(t, fns, k)]
+        if fd.e >= 0 {
+            ms := destFunc(t, fd.e, sc, -1)
+            for j <- iter.Range(0, len(ms)) {
+                marks = append(marks, ms[j])
+            }
+            // 印を持つ関数は本体の KBlock にも印（lower が入口で宛先の深度のレジスタを読む）。関数値として使われうる関数も
+            // （関数値の呼び出しの宛先の書きを受けて 0 に戻す。lower は結果が slice を持つ関数でだけ読む）
+            if len(ms) > 0 || vf[base + k] != 0 {
+                marks = append(marks, fd.e)
+            }
+        }
+    }
+    lm := destLambdas(t, sc)
+    if len(marks) == 0 && len(lm) == 0 {
+        return t
+    }
+    mut ns := mut []ast.Node{}
+    for i <- iter.Range(0, len(t.nodes)) {
+        ns = append(ns, t.nodes[i])
+    }
+    for j <- iter.Range(0, len(marks)) {
+        x := ns[marks[j]]
+        ns[marks[j]] = ast.Node{x.kind, x.tok, x.a, x.b, x.c, x.d, 1, x.f}
+    }
+    // ラムダの本体の印は 2（そのラムダ自身の値へ流れ着く — lower は持ち上げたラムダの本体を下ろすときだけ使う。展開されるラムダの本体では使わない:
+    // 展開の宛先は定義した関数の宛先で、ループの中の展開の結果が反復ごとに外の region へ積もるので別扱いにする）
+    for j <- iter.Range(0, len(lm)) {
+        x := ns[lm[j]]
+        ns[lm[j]] = ast.Node{x.kind, x.tok, x.a, x.b, x.c, x.d, 2, x.f}
+    }
+    return ast.Tree{nodes: freeze(ns), data: t.data, file: t.file}
+}
+
+// ファイル t のラムダごとの本体の印: 本体の値（式の本体ならその式・ブロックなら末尾の式の文）へ流れ着く
+// リテラル・補間・連結・呼び出し（destFunc と同じ規則 — ループと入れ子のラムダの中へは降りない・本体の中の return は外の関数の return なので見ない）。
+// 値の位置か展開の位置かはここでは分からない（fnval の判定は後段）— lower が持ち上げたラムダの本体でだけ使う
+func destLambdas(t ast.Tree, sc []string) []int {
+    mut out := mut []int{}
+    for i <- iter.Range(0, len(t.nodes)) {
+        x := t.nodes[i]
+        if x.kind == ast.ELambda && x.b >= 0 {
+            b := t.nodes[x.b]
+            mut tail := x.b
+            if b.kind == ast.EBlock {
+                n := ast.ListLen(t, b.a)
+                tail = -1
+                if n > 0 {
+                    s := t.nodes[ast.ListAt(t, b.a, n - 1)]
+                    if s.kind == ast.SExpr && s.a >= 0 {
+                        tail = s.a
+                    }
+                }
+            }
+            if tail >= 0 {
+                ms := destFunc(t, x.b, sc, tail)
+                for j <- iter.Range(0, len(ms)) {
+                    out = append(out, ms[j])
+                }
+            }
+        }
+    }
+    return freeze(out)
+}
+
+// 本体 body（KBlock）の印を立てる節の列。tail >= 0 はラムダの本体（destLambdas — return の式の代わりに値の式 tail・本体の中の
+// return はラムダの外の関数の return なので見ない）
+func destFunc(t ast.Tree, body int, sc []string, tail int) []int {
+    // 1. ループ・ラムダの外の SRet / SBind / SAssign を集める（節と、ループ・ラムダの中か）
+    mut st := mut []int{}
+    mut sp := push2(mut st, 0, body, 0)
+    mut rets := mut []int{}
+    mut binds := mut []int{}
+    // 子の積みは節ごとに作らず使い回す（pushKids は先頭から上書きする）
+    mut tmp := mut []int{}
+    while sp > 0 {
+        sp -= 2
+        n := st[sp]
+        loop := st[sp + 1]
+        x := t.nodes[n]
+        // 節の番号に「ループ・ラムダの中」の印を負で畳む（-1 - n）— 列を 1 本ずつに保つ
+        if x.kind == ast.SRet && tail < 0 {
+            rets = append(rets, if loop == 0 { n } else { -1 - n })
+        } else if x.kind == ast.SBind || x.kind == ast.SAssign {
+            binds = append(binds, if loop == 0 { n } else { -1 - n })
+        }
+        inner := if x.kind == ast.SWhile || x.kind == ast.EFor || x.kind == ast.ELambda { 1 } else { loop }
+        m := pushKids(mut tmp, 0, t, x)
+        for i <- iter.Range(0, m) {
+            sp = push2(mut st, sp, tmp[i], inner)
+        }
+    }
+    rs := freeze(rets)
+    bs := freeze(binds)
+    // 2. return に流れ着く名前の閉包（return の式の名前 → それを束縛 / 代入する式の名前 …）
+    mut names := mut []string{}
+    for i <- iter.Range(0, len(rs)) {
+        addIdents(t, t.nodes[unloop(rs[i])].a, -1, mut names, sc)
+    }
+    if tail >= 0 {
+        addIdents(t, -1, tail, mut names, sc)
+    }
+    mut changed := true
+    while changed {
+        changed = false
+        for i <- iter.Range(0, len(bs)) {
+            x := t.nodes[unloop(bs[i])]
+            if bindsAny(t, x, mut names) {
+                before := len(names)
+                addIdents(t, x.c, -1, mut names, sc)
+                if len(names) != before {
+                    changed = true
+                }
+            }
+        }
+    }
+    // 3. 印: ループの外の return の式と、流れ着く名前の束縛 / 代入の式の中のリテラル・補間・連結（ループ・ラムダの中へは降りない）
+    mut marks := mut []int{}
+    for i <- iter.Range(0, len(rs)) {
+        if rs[i] >= 0 {
+            markIn(t, t.nodes[rs[i]].a, -1, mut marks, sc)
+        }
+    }
+    if tail >= 0 {
+        markIn(t, -1, tail, mut marks, sc)
+    }
+    for i <- iter.Range(0, len(bs)) {
+        if bs[i] >= 0 && bindsAny(t, t.nodes[bs[i]], mut names) {
+            markIn(t, t.nodes[bs[i]].c, -1, mut marks, sc)
+        }
+    }
+    return freeze(marks)
+}
+
+// 印を畳んだ節の番号を戻す
+func unloop(n int) int {
+    return if n >= 0 { n } else { -1 - n }
+}
+
+// 束縛 / 代入の文 x が名前の集合 ns のどれかを束縛するか（代入は先頭の名前 — `x = …`・`x.f = …`・`x[i] = …`）
+func bindsAny(t ast.Tree, x ast.Node, ns mut []string) bool {
+    if x.kind == ast.SBind {
+        for i <- iter.Range(0, ast.ListLen(t, x.a)) {
+            if destHas(mut ns, Name(t, ast.ListAt(t, x.a, i))) {
+                return true
+            }
+        }
+        return false
+    }
+    for i <- iter.Range(0, ast.ListLen(t, x.a)) {
+        r := rootIdent(t, ast.ListAt(t, x.a, i))
+        if r >= 0 && destHas(mut ns, Name(t, t.nodes[r].a)) {
+            return true
+        }
+    }
+    return false
+}
+
+// 代入の行き先 e の根の名前の節（`x`・`x.f.g`・`x[i]` の x — 無ければ -1）
+func rootIdent(t ast.Tree, e0 int) int {
+    mut e := e0
+    while e >= 0 && (t.nodes[e].kind == ast.ESelector || t.nodes[e].kind == ast.EIndex || t.nodes[e].kind == ast.EParen) {
+        e = t.nodes[e].a
+    }
+    return if e >= 0 && t.nodes[e].kind == ast.EIdent { e } else { -1 }
+}
+
+func destHas(ns mut []string, n string) bool {
+    for i <- iter.Range(0, len(ns)) {
+        if ns[i] == n {
+            return true
+        }
+    }
+    return false
+}
+
+// 式の列 l の中の名前（EIdent）を ns に足す（重複は足さない — ラムダの中も見る: 閉包が捕まえた名前も流れ着きうる）
+// 結果がスカラーだけの関数（sc — scalarFns）の呼び出しの実引数へは降りない（その値は結果に流れ着かない — 降りると
+// `return check(freeze(a), r)` の a まで印が付き、木が呼び手の深度に作られてしまう）
+func addIdents(t ast.Tree, l int, one int, ns mut []string, sc []string) {
+    mut st := mut []int{}
+    mut sp := if one >= 0 { push(mut st, 0, one) } else { pushList(mut st, 0, t, l) }
+    while sp > 0 {
+        sp -= 1
+        x := t.nodes[st[sp]]
+        if x.kind == ast.EIdent {
+            nm := Name(t, x.a)
+            if !destHas(mut ns, nm) {
+                ns = append(ns, nm)
+            }
+        }
+        if !scalarCall(t, x, sc) {
+            sp = pushKids(mut st, sp, t, x)
+        }
+    }
+}
+
+// ファイル t の関数のうち、型引数が無く結果の型が全部スカラーの名前（int / bool / byte / float）と字面で分かるものの名前
+func scalarFns(t ast.Tree) []string {
+    mut out := mut []string{}
+    fns := t.nodes[t.file].d
+    for k <- iter.Range(0, ast.ListLen(t, fns)) {
+        fd := t.nodes[ast.ListAt(t, fns, k)]
+        if ast.ListLen(t, fd.b) == 0 && ast.ListLen(t, fd.d) > 0 {
+            mut ok := true
+            for j <- iter.Range(0, ast.ListLen(t, fd.d)) {
+                r := t.nodes[ast.ListAt(t, fd.d, j)]
+                if r.kind != ast.TName {
+                    ok = false
+                } else {
+                    nm := Name(t, r.a)
+                    if nm != "int" && nm != "bool" && nm != "byte" && nm != "float" {
+                        ok = false
+                    }
+                }
+            }
+            if ok {
+                out = append(out, Name(t, fd.a))
+            }
+        }
+    }
+    return freeze(out)
+}
+
+// x が結果がスカラーだけの関数の呼び出し（名前の呼び出し `f(…)`）か
+func scalarCall(t ast.Tree, x ast.Node, sc []string) bool {
+    if x.kind != ast.ECall || x.a < 0 || t.nodes[x.a].kind != ast.EIdent {
+        return false
+    }
+    nm := Name(t, t.nodes[x.a].a)
+    for i <- iter.Range(0, len(sc)) {
+        if sc[i] == nm {
+            return true
+        }
+    }
+    return false
+}
+
+// 式の列 l の中のリテラル・補間・連結の節を marks に足す（ループ・ラムダの中へは降りない）
+func markIn(t ast.Tree, l int, one int, marks mut []int, sc []string) {
+    mut st := mut []int{}
+    mut sp := if one >= 0 { push(mut st, 0, one) } else { pushList(mut st, 0, t, l) }
+    while sp > 0 {
+        sp -= 1
+        n := st[sp]
+        x := t.nodes[n]
+        sx := scalarCall(t, x, sc)
+        if !sx && (x.kind == ast.ESlicelit || x.kind == ast.EMaplit || x.kind == ast.EInterp || x.kind == ast.ECall || (x.kind == ast.EBinary && x.a == lexer.Plus)) {
+            marks = append(marks, n)
+        }
+        if !sx && x.kind != ast.SWhile && x.kind != ast.EFor && x.kind != ast.ELambda {
+            sp = pushKids(mut st, sp, t, x)
+        }
+    }
+}

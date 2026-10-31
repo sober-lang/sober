@@ -1,0 +1,257 @@
+package loader
+
+// loader 黄金（testdata/loaderjson/）の JSON（src/stage1/loader_json.zig と同じバイト列）。
+// 形は固定の深さなので再帰しない。import 表は参照名のバイト順、callees は重複を除いたバイト順
+
+import "ast"
+import "std/iter"
+import "obuf"
+
+func hex(n int) byte {
+    return byte(if n < 10 { n + 48 } else { n + 87 })
+}
+
+// バイト列を JSON 文字列として書く（C4 と同じ escape）
+func str(out mut []byte, s []byte) {
+    out = append(out, '"')
+    for i <- iter.Range(0, len(s)) {
+        c := s[i]
+        if c == '"' {
+            obuf.Lit(mut out, "\\\"")
+        } else if c == '\\' {
+            obuf.Lit(mut out, "\\\\")
+        } else if c == '\n' {
+            obuf.Lit(mut out, "\\n")
+        } else if c == '\t' {
+            obuf.Lit(mut out, "\\t")
+        } else if c == '\r' {
+            obuf.Lit(mut out, "\\r")
+        } else if c < ' ' {
+            obuf.Lit(mut out, "\\u00")
+            out = append(out, hex(int(c) / 16))
+            out = append(out, hex(int(c) % 16))
+        } else {
+            out = append(out, c)
+        }
+    }
+    out = append(out, '"')
+}
+
+func boolv(out mut []byte, v bool) {
+    obuf.Lit(mut out, if v { "true" } else { "false" })
+}
+
+// open / close は配列・オブジェクトの開き（要素の前の改行は呼び手の key / 要素側）
+func elem(out mut []byte, d int, first bool) {
+    if !first {
+        out = append(out, ',')
+    }
+    obuf.Nl(mut out, d)
+}
+
+// xs[lo:hi] の添字をバイト順に並べ、重複（dedup = true のとき）を除いたもの
+func sortedIdx(xs []string, lo int, hi int, dedup bool) []int {
+    mut ix := mut []int{}
+    for i <- iter.Range(lo, hi) {
+        // 挿入ソート
+        ix = append(ix, i)
+        mut j := len(ix) - 1
+        while j > 0 && ByteLess(xs[ix[j]], xs[ix[j - 1]]) {
+            tmp := ix[j]
+            ix[j] = ix[j - 1]
+            ix[j - 1] = tmp
+            j -= 1
+        }
+    }
+    if !dedup {
+        return freeze(ix)
+    }
+    mut out := mut []int{}
+    mut k := 0
+    while k < len(ix) {
+        if k == 0 || xs[ix[k]] != xs[ix[k - 1]] {
+            out = append(out, ix[k])
+        }
+        k += 1
+    }
+    return freeze(out)
+}
+
+// Program を loader 黄金の JSON にする
+func Json(p Program) []byte {
+    mut out := mut []byte{}
+    out = append(out, '{')
+    obuf.Key(mut out, 1, true, "main")
+    obuf.Lit(mut out, "\"main\"")
+    obuf.Key(mut out, 1, false, "pkgs")
+    out = append(out, '[')
+    mut pk := 0
+    while pk < len(p.pkg_path) {
+        elem(mut out, 2, pk == 0)
+        out = append(out, '{')
+        obuf.Key(mut out, 3, true, "path")
+        str(mut out, bytes(p.pkg_path[pk]))
+        obuf.Key(mut out, 3, false, "name")
+        str(mut out, bytes(p.pkg_name[pk]))
+        // import 表（この package の分を参照名のバイト順に）
+        mut refs := mut []string{}
+        mut rpath := mut []string{}
+        mut e := 0
+        while e < len(p.imp_pkg) {
+            if p.imp_pkg[e] == pk {
+                refs = append(refs, p.imp_ref[e])
+                rpath = append(rpath, p.imp_path[e])
+            }
+            e += 1
+        }
+        rs := freeze(refs)
+        rp := freeze(rpath)
+        obuf.Key(mut out, 3, false, "imports")
+        if len(rs) == 0 {
+            obuf.Lit(mut out, "[]")
+        } else {
+            out = append(out, '[')
+            ord := sortedIdx(rs, 0, len(rs), false)
+            mut i := 0
+            while i < len(ord) {
+                elem(mut out, 4, i == 0)
+                out = append(out, '{')
+                obuf.Key(mut out, 5, true, "ref")
+                str(mut out, bytes(rs[ord[i]]))
+                obuf.Key(mut out, 5, false, "path")
+                str(mut out, bytes(rp[ord[i]]))
+                obuf.Nl(mut out, 4)
+                out = append(out, '}')
+                i += 1
+            }
+            obuf.Nl(mut out, 3)
+            out = append(out, ']')
+        }
+        // 関数
+        obuf.Key(mut out, 3, false, "funcs")
+        mut nf := 0
+        mut i := 0
+        while i < len(p.fn_file) {
+            if p.file_pkg[p.fn_file[i]] == pk {
+                if nf == 0 {
+                    out = append(out, '[')
+                }
+                elem(mut out, 4, nf == 0)
+                out = append(out, '{')
+                t := p.trees[p.fn_file[i]]
+                obuf.Key(mut out, 5, true, "name")
+                str(mut out, Bytes(t, t.nodes[p.fn_node[i]].a))
+                obuf.Key(mut out, 5, false, "expands")
+                boolv(mut out, p.fn_expands[i])
+                obuf.Key(mut out, 5, false, "mut_def")
+                boolv(mut out, p.fn_mut_def[i])
+                obuf.Key(mut out, 5, false, "has_try")
+                boolv(mut out, p.fn_has_try[i])
+                obuf.Key(mut out, 5, false, "callees")
+                ord := sortedIdx(p.callees, p.fn_clo[i], p.fn_chi[i], true)
+                if len(ord) == 0 {
+                    obuf.Lit(mut out, "[]")
+                } else {
+                    out = append(out, '[')
+                    mut c := 0
+                    while c < len(ord) {
+                        elem(mut out, 6, c == 0)
+                        str(mut out, bytes(p.callees[ord[c]]))
+                        c += 1
+                    }
+                    obuf.Nl(mut out, 5)
+                    out = append(out, ']')
+                }
+                obuf.Nl(mut out, 4)
+                out = append(out, '}')
+                nf += 1
+            }
+            i += 1
+        }
+        if nf == 0 {
+            obuf.Lit(mut out, "[]")
+        } else {
+            obuf.Nl(mut out, 3)
+            out = append(out, ']')
+        }
+        // const
+        obuf.Key(mut out, 3, false, "consts")
+        mut nc := 0
+        i = 0
+        while i < len(p.c_file) {
+            if p.file_pkg[p.c_file[i]] == pk {
+                if nc == 0 {
+                    out = append(out, '[')
+                }
+                elem(mut out, 4, nc == 0)
+                out = append(out, '{')
+                t := p.trees[p.c_file[i]]
+                obuf.Key(mut out, 5, true, "name")
+                str(mut out, Bytes(t, t.nodes[p.c_node[i]].a))
+                obuf.Key(mut out, 5, false, "value")
+                if p.c_has[i] {
+                    obuf.Int(mut out, p.c_value[i])
+                } else {
+                    obuf.Lit(mut out, "null")
+                }
+                obuf.Key(mut out, 5, false, "dict")
+                boolv(mut out, p.c_dict[i])
+                // `@embed` の const だけ: 埋めたファイルのパスの列（畳んだ map リテラルのキー = バイト辞書順）
+                cn := t.nodes[p.c_node[i]]
+                if cn.f == 1 {
+                    obuf.Key(mut out, 5, false, "embed")
+                    es := t.nodes[cn.b].c
+                    out = append(out, '[')
+                    mut c := 0
+                    while c < ast.ListLen(t, es) {
+                        elem(mut out, 6, c == 0)
+                        str(mut out, Bytes(t, t.nodes[t.nodes[ast.ListAt(t, es, c)].a].a))
+                        c += 1
+                    }
+                    obuf.Nl(mut out, 5)
+                    out = append(out, ']')
+                }
+                obuf.Nl(mut out, 4)
+                out = append(out, '}')
+                nc += 1
+            }
+            i += 1
+        }
+        if nc == 0 {
+            obuf.Lit(mut out, "[]")
+        } else {
+            obuf.Nl(mut out, 3)
+            out = append(out, ']')
+        }
+        obuf.Nl(mut out, 2)
+        out = append(out, '}')
+        pk += 1
+    }
+    obuf.Nl(mut out, 1)
+    out = append(out, ']')
+    obuf.Key(mut out, 1, false, "errors")
+    if len(p.err_name) == 0 {
+        obuf.Lit(mut out, "[]")
+    } else {
+        out = append(out, '[')
+        mut i := 0
+        while i < len(p.err_name) {
+            elem(mut out, 2, i == 0)
+            out = append(out, '{')
+            obuf.Key(mut out, 3, true, "name")
+            str(mut out, bytes(p.err_name[i]))
+            obuf.Key(mut out, 3, false, "pkg")
+            str(mut out, bytes(p.pkg_path[p.err_pkg[i]]))
+            obuf.Nl(mut out, 2)
+            out = append(out, '}')
+            i += 1
+        }
+        obuf.Nl(mut out, 1)
+        out = append(out, ']')
+    }
+    obuf.Nl(mut out, 0)
+    out = append(out, '}')
+    out = append(out, '\n')
+    return freeze(out)
+}
+

@@ -1,6 +1,6 @@
 package analyzer
 
-// `@exhaustive` — 表の網羅（language.md 13 節「表の網羅」・決定 2026-10-21 — report-964 / 966）: 注釈を付けた関数の中の switch のうち、subject が閉じた集合のものは
+// `@exhaustive` — 表の網羅（language.md 13 節「表の網羅」）: 注釈を付けた関数の中の switch のうち、subject が閉じた集合のものは
 // その集合の全員を case に名指す。閉じた集合 = union の全 variant / error は case に書いたラベルの宣言元の package が 1 つならその package の全ラベル
 // （2 つ以上に跨る switch は素通し）/ 下地 int の named scalar は型つきの const（`const OK = Status(200)` — 32 節）のうち型の宣言の package の全部。
 // default（と `_` の腕）は集合の外の値を受けるだけ: union には外が無いので、全 variant を名指した union の switch の default は到達しないとして拒否する。
@@ -21,7 +21,7 @@ const exhUnion = 1
 const exhErr = 2
 const exhScalar = 3
 
-// exhNote は switch の節 e を記録する（最後の 1 周で、今の関数が @exhaustive のときだけ。本体は不動点まで何度も歩くので節で重ねない）— [節, package]…
+// switch の節 e を記録する（最後の 1 周で、今の関数が @exhaustive のときだけ。本体は不動点まで何度も歩くので節で重ねない）— [節, package]…
 func exhNote(az mut Az, e desugar.NodeRef) {
     if !desugar.FuncExhaustive(mut az.d, fnDecl(mut az, az.cur)) {
         return
@@ -35,7 +35,7 @@ func exhNote(az mut Az, e desugar.NodeRef) {
     table.Push(mut az.exsw, az.pk)
 }
 
-// checkExhaustive は記録した switch の名指しを照合する
+// 記録した switch の名指しを照合する
 func checkExhaustive(az mut Az) {
     for i <- iter.Range(0, table.Len(mut az.exsw) / 2) {
         at := desugar.NodeRef(table.Get(mut az.exsw, i * 2))
@@ -47,7 +47,7 @@ func checkExhaustive(az mut Az) {
     }
 }
 
-// exhSubject は記録 i の switch の subject の表層型（option は中身）の記録 — 単一の subject でなければ -1
+// 記録 i の switch の subject の表層型（option は中身）の記録 — 単一の subject でなければ -1
 func exhSubject(az mut Az, i int) int {
     x := node(mut az, desugar.NodeRef(table.Get(mut az.exsw, i * 2)))
     subs := desugar.ListRef(x.a)
@@ -61,7 +61,7 @@ func exhSubject(az mut Az, i int) int {
     return if desugar.YAt(mut az.d, y).k == desugar.YOpt { desugar.YAt(mut az.d, y).a } else { y }
 }
 
-// exhKind は記録 i の switch の閉じた集合の種類
+// 記録 i の switch の閉じた集合の種類
 func exhKind(az mut Az, i int) int {
     y := exhSubject(mut az, i)
     if y < 0 {
@@ -81,12 +81,12 @@ func exhKind(az mut Az, i int) int {
     return if bk == ast.BDefined && desugar.NamedUnder(mut az.d, desugar.NodeRef(yt.a)) == 0 { exhScalar } else { exhNone }
 }
 
-// exhDecl は記録 i の subject の型宣言の節（union / named scalar）
+// 記録 i の subject の型宣言の節（union / named scalar）
 func exhDecl(az mut Az, i int) desugar.NodeRef {
     return desugar.NodeRef(desugar.YAt(mut az.d, exhSubject(mut az, i)).a)
 }
 
-// exhAlts は記録 i の switch の腕のパターンを [種類, 値]… の列で返す: 型パターン = [1, variant の解決の表の位置（decl・添字）] は
+// 記録 i の switch の腕のパターンを [種類, 値]… の列で返す: 型パターン = [1, variant の解決の表の位置（decl・添字）] は
 // table に [1, decl, 添字] / 定数パターンの const = [2, const の添字, 0] / `_` = [3, 0, 0] として積む
 func exhAlts(az mut Az, i int, out mut table.Table[int]) {
     x := node(mut az, desugar.NodeRef(table.Get(mut az.exsw, i * 2)))
@@ -132,7 +132,7 @@ func exhPush(out mut table.Table[int], k int, a int, b int) {
     table.Push(mut out, b)
 }
 
-// exhHasDefault は記録 i の switch に default か `_` の腕があるか
+// 記録 i の switch に default か `_` の腕があるか
 func exhHasDefault(az mut Az, i int) bool {
     if node(mut az, desugar.NodeRef(table.Get(mut az.exsw, i * 2))).c != -1 {
         return true
@@ -147,7 +147,7 @@ func exhHasDefault(az mut Az, i int) bool {
     return false
 }
 
-// exhErrPkg は記録 i の error の switch の腕に書いたラベルの宣言元の package（1 つなら — 無いか 2 つ以上なら -1）
+// 記録 i の error の switch の腕に書いたラベルの宣言元の package（1 つなら — 無いか 2 つ以上なら -1）
 func exhErrPkg(az mut Az, i int) int {
     mut alts := table.Table[int]{}
     exhAlts(mut az, i, mut alts)
@@ -165,7 +165,7 @@ func exhErrPkg(az mut Az, i int) int {
     return pk
 }
 
-// exhNamed は腕の列 alts に種類 k・値 (a, b) の名指しがあるか
+// 腕の列 alts に種類 k・値 (a, b) の名指しがあるか
 func exhNamed(alts mut table.Table[int], k int, a int, b int) bool {
     for j <- iter.Range(0, table.Len(mut alts) / 3) {
         if table.Get(mut alts, j * 3) == k && table.Get(mut alts, j * 3 + 1) == a && table.Get(mut alts, j * 3 + 2) == b {
@@ -175,7 +175,7 @@ func exhNamed(alts mut table.Table[int], k int, a int, b int) bool {
     return false
 }
 
-// exhMissing は記録 i の switch が名指していない閉じた集合の member の綴り（`A, B` — 全部名指していれば ""）
+// 記録 i の switch が名指していない閉じた集合の member の綴り（`A, B` — 全部名指していれば ""）
 func exhMissing(az mut Az, i int) string {
     kd := exhKind(mut az, i)
     if kd == exhNone {
@@ -219,12 +219,12 @@ func exhJoin(s string, n string) string {
     return if s == "" { n } else { s + ", " + n }
 }
 
-// exhQual は package dp の名前 n を package pk から見た綴り（別の package なら `p.n`）
+// package dp の名前 n を package pk から見た綴り（別の package なら `p.n`）
 func exhQual(az mut Az, dp int, pk int, n string) string {
     return if dp == pk { n } else { "${lastSeg(str(mut az, desugar.PkgPath(mut az.d, dp)))}.${n}" }
 }
 
-// exhExempt は error の switch の節 sw の腕のラベル L が、@exhaustive の閉じた集合の一員として「到達しない腕」の拒否から外れるか
+// error の switch の節 sw の腕のラベル L が、@exhaustive の閉じた集合の一員として「到達しない腕」の拒否から外れるか
 func exhExempt(az mut Az, sw desugar.NodeRef, L int) bool {
     for i <- iter.Range(0, table.Len(mut az.exsw) / 2) {
         if table.Get(mut az.exsw, i * 2) == int(sw) {
@@ -235,7 +235,7 @@ func exhExempt(az mut Az, sw desugar.NodeRef, L int) bool {
     return false
 }
 
-// exhMessage は表の網羅の指摘の本文（種類 k・記録 i）
+// 表の網羅の指摘の本文（種類 k・記録 i）
 func exhMessage(az mut Az, k int, i int) string {
     kd := exhKind(mut az, i)
     what := if kd == exhUnion {

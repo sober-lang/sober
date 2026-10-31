@@ -1,6 +1,6 @@
 package main
 
-// 負例: File は give: で子へ渡せない — scope の本体の defer Close は子の合流より先に走る（11 節）ので、子は閉じた fd か再利用された番号を読む。子へは path を渡して子で開く（diag.FileUse — desugar/filecheck・language.md 28 節「資源とストリーム」— IO 便 段 2）
+// 負例: File は give: で子へ渡せない — scope の本体の defer Close は子の合流より先に走る（11 節）ので、子は閉じた fd か再利用された番号を読む。子へは path を渡して子で開く（diag.FileUse — desugar/filecheck・language.md 28 節「資源とストリーム」）
 
 import "std/io"
 import "std/task"

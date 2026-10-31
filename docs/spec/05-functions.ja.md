@@ -35,18 +35,18 @@ F-6. 匿名の関数型の仮引数には名前つきの関数も渡せる（同
 拒否: [`examples/fnarg_arity.sober`](../../examples/fnarg_arity.sober)・[`examples/fnarg_mut.sober`](../../examples/fnarg_mut.sober)
 決定: [language.md 25 節](../language.md)
 
-## 5.2 関数値と閉包
+## 5.2 関数値とクロージャ
 
 F-7. 関数型の欄を持つ struct は辞書で、欄の関数値を `d.f(x)` と呼ぶ（間接呼び出し）。欄には名前つきの関数もラムダも置ける。
 例: [`examples/fnvalue.sober`](../../examples/fnvalue.sober)
 決定: [language.md 3 節・25 節](../language.md)
 
-F-8. トップレベルの const に辞書を置ける（`const IntOrd = Ord[int]{less: (a, b) => a < b}`）。欄には閉じたラムダと名前つきの関数の参照・入れ子の辞書を置ける。const 式の中で関数は呼べない（ラムダの本体は呼ばれたときに走るので呼べる）。辞書は参照するたびに作り直す — 同一性（アドレスの比較）は保証しない。
+F-8. トップレベルの const に辞書を置ける（`const IntOrd = Ord[int]{less: (a, b) => a < b}`）。欄には閉じたラムダと名前つきの関数の参照・入れ子の辞書を置ける。const 式の中で関数は呼べない（ラムダの本体は呼ばれたときに走るので呼べる）。辞書を含む組み立ての const（3 章 V-3）は参照するたびに組み立て直す — 同一性（アドレスの比較）は保証せず、struct・slice は参照のたびに大きさに比例する費用を払う（熱いループでは一度束縛して使う）。
 例: [`examples/constdict.sober`](../../examples/constdict.sober)・[`examples/closure_const_field.sober`](../../examples/closure_const_field.sober)
 拒否: [`examples/const_neg_call.sober`](../../examples/const_neg_call.sober)
 決定: [language.md 25 節](../language.md)
 
-F-9. 値の位置 — 名前つき関数型の仮引数・結果、struct の関数型の欄、その option（`F?`）の欄 — に置いたラムダは閉包になる。匿名の関数型の欄の閉包を値の呼び出しの借りの実引数へそのまま渡すと、ラムダ `(…) => x.f(…)` に写して渡す。閉包は作成点の imm の値を写して捕捉する（後で元の変数が変わっても見えない）。閉包は仮引数・結果・欄として関数の境界を越えられる。
+F-9. 値の位置 — 名前つき関数型の仮引数・結果、struct の関数型の欄、その option（`F?`）の欄 — に置いたラムダはクロージャになる。匿名の関数型の欄のクロージャを値の呼び出しの借りの実引数へそのまま渡すと、ラムダ `(…) => x.f(…)` に写して渡す。クロージャは作成点の imm の値を写して捕捉する（後で元の変数が変わっても見えない）。クロージャは仮引数・結果・欄として関数の境界を越えられる。
 例: [`examples/closure_field_capture.sober`](../../examples/closure_field_capture.sober)・[`examples/closure_param.sober`](../../examples/closure_param.sober)・[`examples/closure_result.sober`](../../examples/closure_result.sober)・[`examples/closure_field_opt.sober`](../../examples/closure_field_opt.sober)・[`examples/closure_def_capture.sober`](../../examples/closure_def_capture.sober)・[`examples/closure_anon_field.sober`](../../examples/closure_anon_field.sober)・[`examples/borrow_anon_field_eta.sober`](../../examples/borrow_anon_field_eta.sober)
 決定: [language.md 25 節](../language.md)
 
@@ -54,7 +54,7 @@ F-10. 値の位置のラムダは mut の束縛と同一性の型（task の Sco
 拒否: [`examples/closure_field_cap_mut.sober`](../../examples/closure_field_cap_mut.sober)・[`examples/closure_field_cap_identity.sober`](../../examples/closure_field_cap_identity.sober)・[`examples/closure_field_return.sober`](../../examples/closure_field_return.sober)
 決定: [language.md 8 節・25 節](../language.md)
 
-F-11. 値の位置に置けるのは、ラムダ・名前つきの関数・同じ型の閉包の値だけ。局所に束縛した名前つきの関数（`f := dbl; R{g: f}`）は置けない。
+F-11. 値の位置に置けるのは、ラムダ・名前つきの関数・同じ型のクロージャの値だけ。局所に束縛した名前つきの関数（`f := dbl; R{g: f}`）は置けない。
 例: [`examples/closure_param.sober`](../../examples/closure_param.sober)
 拒否: [`examples/closure_bound_named_fn.sober`](../../examples/closure_bound_named_fn.sober)・[`examples/closure_bound_named_fn_nocap.sober`](../../examples/closure_bound_named_fn_nocap.sober)・[`examples/closure_anon_field_bound.sober`](../../examples/closure_anon_field_bound.sober)
 決定: [language.md 25 節](../language.md)
@@ -75,12 +75,12 @@ F-14. 借りの位置のラムダは同一性の型を捕捉してよい（寿�
 拒否: [`examples/borrow_neg_spawn_callee.sober`](../../examples/borrow_neg_spawn_callee.sober)・[`examples/borrow_pkg_neg.sober`](../../examples/borrow_pkg_neg.sober)
 決定: [language.md 25 節](../language.md)
 
-F-15. 借りの位置のラムダの中では、囲む展開される関数の匿名の関数型の仮引数を呼べる。流れてくる実引数はラムダ（名前つきの関数を含む）か、囲む関数の同じ種類の仮引数の転送に限り、その実引数のラムダが mut を捕捉していれば拒否する。値の位置の閉包の中では呼べない。
+F-15. 借りの位置のラムダの中では、囲む展開される関数の匿名の関数型の仮引数を呼べる。流れてくる実引数はラムダ（名前つきの関数を含む）か、囲む関数の同じ種類の仮引数の転送に限り、その実引数のラムダが mut を捕捉していれば拒否する。値の位置のクロージャの中では呼べない。
 例: [`examples/borrow_pend.sober`](../../examples/borrow_pend.sober)
 拒否: [`examples/borrow_pend_mut.sober`](../../examples/borrow_pend_mut.sober)・[`examples/borrow_pend_value.sober`](../../examples/borrow_pend_value.sober)
 決定: [language.md 25 節](../language.md)
 
-F-16. 値の呼び出しの借りの実引数のラムダ（とその本体の中の展開されるラムダ・文形 for）は、mut の束縛（mut ローカル・mut 仮引数）を捕捉できる。捕捉は作成点の写しでなく束縛そのもので、借りの呼び出しをまたいだ更新が呼び手に見える。1 つの値の呼び出しの借りの実引数のラムダが捕捉する mut の束縛は合わせて 1 つまで（同じ束縛を複数のラムダで捕捉するのは可 — 2 つ要るなら 1 つの struct にまとめる）。値の位置のラムダと、展開待ちの的へ流れるラムダ（F-15）の mut の捕捉は拒否し、借りの値をそのまま実引数に渡す呼び出しの借りのラムダの mut の捕捉も拒否する。借りの実引数のラムダは関数値（閉包）を持つ値も捕捉できる。freeze の規則（3 章 V-8・V-9）では、捕捉は作成点の呼び出しへの mut 実引数に数え、ラムダの本体の中では捕捉した束縛の中身を freeze できない。
+F-16. 値の呼び出しの借りの実引数のラムダ（とその本体の中の展開されるラムダ・文形 for）は、mut の束縛（mut ローカル・mut 仮引数）を捕捉できる。捕捉は作成点の写しでなく束縛そのもので、借りの呼び出しをまたいだ更新が呼び手に見える。1 つの値の呼び出しの借りの実引数のラムダが捕捉する mut の束縛は合わせて 1 つまで（同じ束縛を複数のラムダで捕捉するのは可 — 2 つ要るなら 1 つの struct にまとめる）。値の位置のラムダと、展開待ちの的へ流れるラムダ（F-15）の mut の捕捉は拒否し、借りの値をそのまま実引数に渡す呼び出しの借りのラムダの mut の捕捉も拒否する。借りの実引数のラムダは関数値（クロージャ）を持つ値も捕捉できる。freeze の規則（3 章 V-8・V-9）では、捕捉は作成点の呼び出しへの mut 実引数に数え、ラムダの本体の中では捕捉した束縛の中身を freeze できない。
 例: [`examples/borrow_mut_count.sober`](../../examples/borrow_mut_count.sober)・[`examples/borrow_mut_state.sober`](../../examples/borrow_mut_state.sober)・[`examples/borrow_mut_deep.sober`](../../examples/borrow_mut_deep.sober)・[`examples/borrow_mut_union.sober`](../../examples/borrow_mut_union.sober)・[`examples/borrow_mut_param.sober`](../../examples/borrow_mut_param.sober)・[`examples/borrow_mut_shared.sober`](../../examples/borrow_mut_shared.sober)・[`examples/borrow_mut_store.sober`](../../examples/borrow_mut_store.sober)・[`examples/borrow_mut_anon_field.sober`](../../examples/borrow_mut_anon_field.sober)
 拒否: [`examples/borrow_mut_neg_value.sober`](../../examples/borrow_mut_neg_value.sober)・[`examples/borrow_mut_neg_two.sober`](../../examples/borrow_mut_neg_two.sober)・[`examples/borrow_mut_neg_two_args.sober`](../../examples/borrow_mut_neg_two_args.sober)・[`examples/borrow_mut_neg_frozen.sober`](../../examples/borrow_mut_neg_frozen.sober)・[`examples/borrow_mut_neg_freeze_body.sober`](../../examples/borrow_mut_neg_freeze_body.sober)・[`examples/borrow_mut_neg_forward.sober`](../../examples/borrow_mut_neg_forward.sober)
 決定: [language.md 17 節・25 節](../language.md)

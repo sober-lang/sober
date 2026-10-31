@@ -1,0 +1,2 @@
+sober: error at examples/abstraction_union_neg.sober:12:12 (NonExhaustive): switch does not cover every variant of the union — add the missing cases or a default (missing: Points)
+exit=1

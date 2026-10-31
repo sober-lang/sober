@@ -1,0 +1,62 @@
+package lower
+
+// 一段目の予約（x86.sober xPrioAlloc / xPrioPick — 区間の便 段 1 R1）の単体テスト（`cd src/compiler && ../../bin/sober test lower`）:
+// 戻り辺の実引数（運搬値の更新値 — 重い）が行き先の仮引数より先に置かれたとき、ヒントの無い別の部分区間がそのレジスタを先取りすると、
+// 仮引数がヒント（入りの実引数）のレジスタを取れず、戻り辺の並行コピーが環になる（mandelbrot の xmm の φ 4 本 — report-522 2.2 (S-a)）。
+// 部分区間を手で組み、どれを置くかを直に見る（IR は組まない）
+
+import "std/iter"
+
+// rsT は値 4 個を割り当て、置き場の表を返す: 0 = 更新値 [50, 60)・重み 300（戻り辺の実引数 → 仮引数 2）・1 = ヒントの無い区間 [0, 40)・重み 200・
+// 2 = 仮引数 [0, 45)・重み 100（入りの実引数 = 0）・3 = ヒントの無い区間 [70, 80)・重み 50。どれも汎用の組。hd = 仮引数 2 が運搬値（ループの頭の仮引数）か
+func rsT(hd bool) []int {
+    n := 4
+    mut e := xF{}
+    e.opt = true
+    e.nv = n
+    e.npc = n
+    e.nx = xNXmm
+    e.ng = xNAlloc
+    for k <- iter.Range(0, n) {
+        e.ivS = append(e.ivS, if k == 0 { 50 } else if k == 3 { 70 } else { 0 })
+        e.ivE = append(e.ivE, if k == 0 { 60 } else if k == 1 { 40 } else if k == 2 { 45 } else { 80 })
+        e.pv = append(e.pv, k)
+        e.pnx = append(e.pnx, -1)
+        e.pwt = append(e.pwt, if k == 0 { 300 } else if k == 1 { 200 } else if k == 2 { 100 } else { 50 })
+    }
+    xFill(mut e.hdB, n, -1)
+    if hd {
+        e.hdB[2] = 0
+    }
+    xFill(mut e.fcls, n, 0)
+    xFill(mut e.hR, n, -1)
+    xFill(mut e.hP, n, -1)
+    xFill(mut e.hA1, n, -1)
+    xFill(mut e.hA2, n, -1)
+    xFill(mut e.hOp, n, -1)
+    e.hP[0] = 2
+    e.hA2[2] = 0
+    xFill(mut e.loc, n, xSpill)
+    mut ivs := mut []int{}
+    for k <- iter.Range(0, n) {
+        ivs = append(ivs, k)
+    }
+    mut used := mut []int{}
+    xFill(mut used, 32, 0)
+    mut spills := mut []int{}
+    xFill(mut spills, n, 0)
+    mut st := St{}
+    _ = xPrioAlloc(mut st, mut e, mut ivs, n, mut used, mut spills)
+    return freeze(e.loc)
+}
+
+func TestReserve() {
+    // 0: 運搬値の仮引数は、先に置かれた戻り辺の実引数のレジスタを取る — ヒントの無い区間 1 はそのレジスタを後回しにする
+    a := rsT(true)
+    assert(xIsReg(a[0]) && a[2] == a[0] && a[1] != a[0])
+    // 1: 仮引数を置いた後は予約が解ける（区間 3 は空きの最初 = 更新値と同じレジスタ）
+    assert(a[3] == a[0])
+    // 2: 運搬値でない仮引数（合流の仮引数）は予約しない — 区間 1 が空きの最初を取り、仮引数は別のレジスタ
+    b := rsT(false)
+    assert(b[1] == b[0] && b[2] != b[0])
+}

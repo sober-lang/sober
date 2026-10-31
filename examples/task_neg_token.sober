@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P3a-1d: 札（task.Scope）の捕獲（diag.Par kind 5 — check と build が同じ拒否。desugar/parcheck.sober）
+// 札（task.Scope）の捕獲（diag.Par kind 5 — check と build が同じ拒否。desugar/parcheck.sober）
 
 import "std/task"
 

@@ -1,7 +1,7 @@
 package analyzer
 
-// 宣言の書き換え器（`sober fix` — effect の波 段 5a-3・language.md 12 節の 4 点組の「正の列挙は fix が書き tightness を見る」）: 導出から宣言の行を作る。
-// 書くのは std の外のファイルの本体のある公開関数（std = true なら std の強制の掛かる公開関数にも正規形 — 段 5b）:
+// 宣言の書き換え器（`sober fix` — language.md 12 節の 4 点組の「正の列挙は fix が書き tightness を見る」）: 導出から宣言の行を作る。
+// 書くのは std の外のファイルの本体のある公開関数（std = true なら std の強制の掛かる公開関数にも正規形）:
 //   --effects: `@effects` の無い関数に導出の正の列挙を前置で足す・語だけの正の列挙が導出より広ければ縮める（否定形・型の名前の項を持つ列挙・漏れは触らない —
 //              漏れは人の裁定: 宣言を広げるか、コードを直すか）
 //   --errors:  `@errors` の無い error を返す関数（MErrMissing）に導出の列挙を足す・古い宣言（MErrStale / MErrFlowStale）を導出に縮める（漏れは触らない）
@@ -12,7 +12,7 @@ import "loader"
 import "std/iter"
 import "std/table"
 
-// Fix は書き換え 1 件
+// 書き換え 1 件
 type Fix struct {
     file int
     tok int
@@ -20,12 +20,12 @@ type Fix struct {
     text string
 }
 
-// efWordsStr は効果のビットの正の列挙の中身（`block, io` — 空は空文字）
+// 効果のビットの正の列挙の中身（`block, io` — 空は空文字）
 func efWordsStr(b int) string {
     return if b == 0 { "" } else { efBitsStr(b) }
 }
 
-// FixPlan は Program p の書き換えの列（effects / errors = どちらの宣言を書くか）
+// Program p の書き換えの列（effects / errors = どちらの宣言を書くか）
 func FixPlan(p loader.Program, effects bool, errors bool, std bool) []Fix {
     mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, er: Eng{sets: table.Table[int]{}, rhead: table.Table[int]{}, rnode: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0, envChanged: false},
         pbase: table.Table[int]{}, errfn: table.Table[int]{},
@@ -39,7 +39,7 @@ func FixPlan(p loader.Program, effects bool, errors bool, std bool) []Fix {
         fd := fnDecl(mut az, fi)
         pk := desugar.FnAt(mut az.d, fi).pkg
         if std && effects && efEnforced(mut az, fi) {
-            // std の公開関数（段 5b の強制）: 正規形（自前の語 + 届く型の名前の項）を書く — 無ければ足し、正の列挙が正規形と違えば置き換える（否定形は触らない）
+            // std の公開関数（強制が掛かる）: 正規形（自前の語 + 届く型の名前の項）を書く — 無ければ足し、正の列挙が正規形と違えば置き換える（否定形は触らない）
             c := efCanon(mut az, fi)
             l, t := desugar.FuncEffects(mut az.d, fd)
             pos := desugar.PosOf(mut az.d, desugar.FnAt(mut az.d, fi).node)
@@ -87,7 +87,7 @@ func FixPlan(p loader.Program, effects bool, errors bool, std bool) []Fix {
     return freeze(out)
 }
 
-// efWordsOnly は項の列が語だけか（型の名前の項を持たない）
+// 項の列が語だけか（型の名前の項を持たない）
 func efWordsOnly(az mut Az, pk int, l desugar.ListRef) bool {
     for j <- iter.Range(0, desugar.LenL(mut az.d, l)) {
         if efWord(mut az, desugar.StrRef(desugar.LatI(mut az.d, l, j))) == 0 {

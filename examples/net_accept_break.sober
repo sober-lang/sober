@@ -26,7 +26,7 @@ func main() {
     println(if e == nil { r } else { "scope failed" })
 }
 
-// freePort は空いている port（listen して読んで閉じる）
+// 空いている port（listen して読んで閉じる）
 func freePort() (int, error?) {
     mut p := 0
     for l <- net.Listen("127.0.0.1:0")? {
@@ -35,7 +35,7 @@ func freePort() (int, error?) {
     return p, nil
 }
 
-// listenServe は port で listen して 1 本受け、listener を閉じて返す（受けた本数）
+// port で listen して 1 本受け、listener を閉じて返す（受けた本数）
 func listenServe(port int) (int, error?) {
     mut k := 0
     for l <- net.Listen("127.0.0.1:${port}")? {
@@ -49,7 +49,7 @@ func listenServe(port int) (int, error?) {
     return k, nil
 }
 
-// client は接続できるまで 5 ms おきに試し（100 回まで）、相手が閉じるまで受ける（切られても黙る — 期限で切れたときだけ言う）
+// 接続できるまで 5 ms おきに試し（100 回まで）、相手が閉じるまで受ける（切られても黙る — 期限で切れたときだけ言う）
 func client(port int) int {
     mut i := 0
     while i < 100 {
@@ -67,7 +67,7 @@ func client(port int) int {
     return 0
 }
 
-// talk は接続して相手が閉じるまで受けたバイト数（失敗は接続の前の失敗と期限 — 接続の後に切られたのは受けた分で終わる）
+// 接続して相手が閉じるまで受けたバイト数（失敗は接続の前の失敗と期限 — 接続の後に切られたのは受けた分で終わる）
 func talk(port int) (int, error?) {
     mut n := 0
     for c <- net.Dial("127.0.0.1:${port}")? {

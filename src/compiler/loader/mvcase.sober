@@ -16,7 +16,7 @@ import "std/iter"
 import "ast"
 import "lexer"
 
-// mvApplies は switch 節 x が対象か: subject が 1 つか 2 つ・全部の腕のパターンが 2 つ・1 番目に型パターンが無い・2 番目に nil の腕がある
+// switch 節 x が対象か: subject が 1 つか 2 つ・全部の腕のパターンが 2 つ・1 番目に型パターンが無い・2 番目に nil の腕がある
 func mvApplies(t ast.Tree, x ast.Node) bool {
     ns := ast.ListLen(t, x.a)
     if ns != 1 && ns != 2 {
@@ -39,13 +39,13 @@ func mvApplies(t ast.Tree, x ast.Node) bool {
     return hasNil
 }
 
-// patNil はパターン p が `nil`（選択なし）か
+// パターン p が `nil`（選択なし）か
 func patNil(t ast.Tree, p int) bool {
     x := t.nodes[p]
     return x.kind == ast.KPConst && ast.ListLen(t, x.a) == 1 && t.nodes[ast.ListAt(t, x.a, 0)].kind == ast.ENil
 }
 
-// patHasNil はパターン p の選択に nil を含むか
+// パターン p の選択に nil を含むか
 func patHasNil(t ast.Tree, p int) bool {
     x := t.nodes[p]
     if x.kind != ast.KPConst {
@@ -59,18 +59,18 @@ func patHasNil(t ast.Tree, p int) bool {
     return false
 }
 
-// patName はパターン p が名前（`_`・束縛・const の綴り — どれも nil にも当たりうる）か
+// パターン p が名前（`_`・束縛・const の綴り — どれも nil にも当たりうる）か
 func patName(t ast.Tree, p int) bool {
     x := t.nodes[p]
     return x.kind == ast.KPConst && ast.ListLen(t, x.a) == 1 && t.nodes[ast.ListAt(t, x.a, 0)].kind == ast.EIdent
 }
 
-// patWild はパターン p が `_` か
+// パターン p が `_` か
 func patWild(t ast.Tree, p int) bool {
     return patName(t, p) && StrIs(t, t.nodes[ast.ListAt(t, t.nodes[p].a, 0)].a, "_")
 }
 
-// mvBad は写せない理由（0 = 写せる・2 = `nil | …`・3 = nil の腕より前に `_, e`（nil にも当たる）・5 = エラーの腕の 1 番目が `_` でない・
+// 写せない理由（0 = 写せる・2 = `nil | …`・3 = nil の腕より前に `_, e`（nil にも当たる）・5 = エラーの腕の 1 番目が `_` でない・
 // 6 = `_, e` があるのに nil の腕が値を全部は覆わない・7 = default が nil の側にも要る・8 = nil でないエラーの行き先が無い）と位置
 func mvBad(t ast.Tree, x ast.Node) (int, int) {
     mut nilCatch := false
@@ -114,9 +114,9 @@ func mvBad(t ast.Tree, x ast.Node) (int, int) {
     return 0, 0
 }
 
-// mvCases は木 t の対象の switch を写した木（節は末尾に足し、switch の節をその場で差し替える）。
+// 木 t の対象の switch を写した木（節は末尾に足し、switch の節をその場で差し替える）。
 // switch が文の値そのもの（式文・束縛 / 代入の唯一の値・return の先頭の値）なら、subject の束縛をその文の直前に文として置く（`$v, $e := S` — 評価の順は同じ）。
-// それ以外の位置はブロック `{ $v, $e := S; if … }` に包む（ブロック式の中からの return は check が拒否する既知の穴 — F-h）
+// それ以外の位置はブロック `{ $v, $e := S; if … }` に包む（ブロック式の中からの return は check が拒否するため）
 func mvCases(t ast.Tree) ast.Tree {
     n0 := len(t.nodes)
     mut found := false
@@ -275,7 +275,7 @@ func mvCases(t ast.Tree) ast.Tree {
     return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
 }
 
-// stmtList は節 x が持つ文の列（KBlock・ブロック式・文形 for の本体。無ければ -1）
+// 節 x が持つ文の列（KBlock・ブロック式・文形 for の本体。無ければ -1）
 func stmtList(x ast.Node) int {
     if x.kind == ast.KBlock || x.kind == ast.EBlock {
         return x.a
@@ -286,7 +286,7 @@ func stmtList(x ast.Node) int {
     return 0 - 1
 }
 
-// directValue は文 sn の値そのもの（式文の式・値 1 つの束縛 / 代入の値・return の先頭の値。無ければ -1）
+// 文 sn の値そのもの（式文の式・値 1 つの束縛 / 代入の値・return の先頭の値。無ければ -1）
 func directValue(t ast.Tree, sn int) int {
     s := t.nodes[sn]
     if s.kind == ast.SExpr {
@@ -301,7 +301,7 @@ func directValue(t ast.Tree, sn int) int {
     return 0 - 1
 }
 
-// rebind は文の列 body の前に `name := src` を置いた列（腕の名前を合成の束縛から束縛し直す）
+// 文の列 body の前に `name := src` を置いた列（腕の名前を合成の束縛から束縛し直す）
 func rebind(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], n0 int, tok int, name int, src int, body int, t ast.Tree) int {
     at := n0 + builder.Len(mut nb)
     builder.Push(mut nb, ast.Node{ast.EIdent, tok, src, 0, 0, 0, 0, 0})
@@ -313,7 +313,7 @@ func rebind(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], n0 in
     return ast.PutList(mut db, freeze(l))
 }
 
-// oneNames は慣用句の形の束縛名: nil の腕が 1 本でその値のパターンが `_` 以外の名前なら (その名前, …)、エラーの腕が 1 本でそのパターンが `_` 以外の名前で
+// 慣用句の形の束縛名: nil の腕が 1 本でその値のパターンが `_` 以外の名前なら (その名前, …)、エラーの腕が 1 本でそのパターンが `_` 以外の名前で
 // default が無ければ (…, その名前)。当たらなければ -1（`_` は合成の名前で束縛する）
 func oneNames(t ast.Tree, x ast.Node) (int, int) {
     mut nv := 0 - 1

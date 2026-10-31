@@ -1,0 +1,15 @@
+package main
+
+// 負例（load が拒否 — diag.MultiBind・check と build が同じ文面）: 多値を既存の名前へ代入する（spec X-6 — 多値は `:=` の束縛か全部 `_` の捨てで
+// だけ受ける）。受けるなら `a2, b2 := divmod(7, 2)` と束縛して写す
+
+func divmod(a int, b int) (int, int) {
+    return a / b, a % b
+}
+
+func main() {
+    mut q := 0
+    mut r := 0
+    q, r = divmod(7, 2)
+    println(q + r)
+}

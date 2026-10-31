@@ -1,9 +1,8 @@
 package analyzer
 
-// 値の流れのエンジンの核（effect の波 段 2 — language.md 12 節「2 つのエンジン」の値の流れ）: 格子の値 LSet と、名前空間ごとの解き手 Eng
-// （スロット・読み手・作業の列・局所の名前の表）。今の名前空間は error のラベル（az.er — errors.sober が転送関数）だけ。
-// 転送関数（式ごとに集合を作る規則・源・包み替え・`?`・スロットの母集団・関数値の呼び出し・消費者の記録）は名前空間の側に置く —
-// 差し替えの口は 2 つ目の名前空間（@secret — 段 3）の起案で切る。
+// 値の流れのエンジンの核（language.md 12 節「2 つのエンジン」の値の流れ）: 格子の値 LSet と、名前空間ごとの解き手 Eng
+// （スロット・読み手・作業の列・局所の名前の表）。今の名前空間は error のラベル（az.er — errors.sober が転送関数）と秘密の値（secret.sober）の 2 つ。
+// 転送関数（式ごとに集合を作る規則・源・包み替え・`?`・スロットの母集団・関数値の呼び出し・消費者の記録）は名前空間の側に置く。
 // LSet = ラベルの 2 語の集合: ラベル 0〜63 = lo のビット・64〜125 = hi のビット 0〜61・hi のビット 62 = TOP（不明）・63 = 擬ラベル FLOW
 
 import "desugar"
@@ -15,7 +14,7 @@ type LSet struct {
     hi int
 }
 
-// Eng は 1 つの名前空間の解き手（スロット s の集合 = sets の [2s, 2s+1]・局所 [名前, lo, hi]… の envN 個が有効）
+// 1 つの名前空間の解き手（スロット s の集合 = sets の [2s, 2s+1]・局所 [名前, lo, hi]… の envN 個が有効）
 type Eng struct {
     sets table.Table[int]    // スロットの集合（2 語ずつ）
     rhead table.Table[int]   // スロットの読み手の鎖の頭（-1 = 無し）
@@ -41,17 +40,17 @@ func lsTop() LSet {
     return LSet{lo: 0, hi: TOPH}
 }
 
-// lsFlow は擬ラベル FLOW（hi の 1 << 63 — 符号のビット。const にすると .sobi が `-9223372036854775808` と印字して読み戻せない）
+// 擬ラベル FLOW（hi の 1 << 63 — 符号のビット。const にすると .sobi が `-9223372036854775808` と印字して読み戻せない）
 func lsFlow() LSet {
     return LSet{lo: 0, hi: TOPH << 1}
 }
 
-// lsBit はラベル L の集合
+// ラベル L の集合
 func lsBit(L int) LSet {
     return if L >= 0 && L < 64 { LSet{lo: 1 << L, hi: 0} } else if L >= 64 && L < NBITS { LSet{lo: 0, hi: 1 << (L - 64)} } else { lsTop() }
 }
 
-// lsHas はラベル L を含むか
+// ラベル L を含むか
 func lsHas(m LSet, L int) bool {
     return if L >= 0 && L < 64 { (m.lo & (1 << L)) != 0 } else if L >= 64 && L < NBITS { (m.hi & (1 << (L - 64))) != 0 } else { false }
 }
@@ -64,7 +63,7 @@ func lsAnd(a LSet, b LSet) LSet {
     return LSet{lo: a.lo & b.lo, hi: a.hi & b.hi}
 }
 
-// lsMinus は a から b を除いた集合
+// a から b を除いた集合
 func lsMinus(a LSet, b LSet) LSet {
     return LSet{lo: a.lo & ^b.lo, hi: a.hi & ^b.hi}
 }
@@ -77,7 +76,7 @@ func lsEmpty(m LSet) bool {
     return m.lo == 0 && m.hi == 0
 }
 
-// lsSub は a ⊆ b
+// a ⊆ b
 func lsSub(a LSet, b LSet) bool {
     return (a.lo | b.lo) == b.lo && (a.hi | b.hi) == b.hi
 }
@@ -90,7 +89,7 @@ func lsIsFlow(m LSet) bool {
     return (m.hi & (TOPH << 1)) != 0
 }
 
-// lsNoFlow は FLOW を除いた集合
+// FLOW を除いた集合
 func lsNoFlow(m LSet) LSet {
     return LSet{lo: m.lo, hi: m.hi & ^(TOPH << 1)}
 }
@@ -104,12 +103,12 @@ func newSlot(az mut Az, v LSet) int {
     return table.Len(mut az.er.rhead) - 1
 }
 
-// slotGet はスロット s の集合（読み手に登録しない — 照合と印字）
+// スロット s の集合（読み手に登録しない — 照合と印字）
 func slotGet(az mut Az, s int) LSet {
     return LSet{lo: table.Get(mut az.er.sets, s * 2), hi: table.Get(mut az.er.sets, s * 2 + 1)}
 }
 
-// readSlot はスロット s の集合（今歩いている関数を読み手に登録する）
+// スロット s の集合（今歩いている関数を読み手に登録する）
 func readSlot(az mut Az, s int) LSet {
     mut r := table.Get(mut az.er.rhead, s)
     mut seen := false
@@ -127,7 +126,7 @@ func readSlot(az mut Az, s int) LSet {
     return slotGet(mut az, s)
 }
 
-// addSlot はスロット s に集合 m を合併する（広がったら読み手を作業の列へ）
+// スロット s に集合 m を合併する（広がったら読み手を作業の列へ）
 func addSlot(az mut Az, s int, m LSet) {
     if s == -1 || lsEmpty(m) {
         return

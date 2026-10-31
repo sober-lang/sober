@@ -1,6 +1,6 @@
 package lower
 
-// 自動ベクトル化のスパイク（性能投資 第三便 — DESIGN の収穫仮説 5 本・rtlower / inline / cfgclean の後・最適化のバックエンドの経路だけ）:
+// 自動ベクトル化のスパイク（rtlower / inline / cfgclean の後・最適化のバックエンドの経路だけ）:
 // バイトの走査のループ（`while b[i] != ';' { i += 1 }` の形 — 帰納変数 1 本の +1・境界の検査・load8 と定数の比較だけ・副作用なし）の前置きに
 // `j = scanb(p, i0, 上限…)` を挿し、前置きの辺の i0 を j に差し替える。scanb は「継続の条件が 16 レーン全部で成り立つ塊」を上限の手前まで読み飛ばし、
 // 出口のレーンがあればそこへ進める（SSE2 — x86.sober の xScanB）。その後は元のスカラーのループがそのまま走るので、出口・境界検査の panic・端数は
@@ -20,7 +20,7 @@ const VK_NE = 1  // 出口 = x != K
 const VK_LT = 2  // 出口 = x <u K
 const VK_GE = 3  // 出口 = x >=u K
 
-// vecModule はモジュールの全関数に掛ける（掛けた数を返す）
+// モジュールの全関数に掛ける（掛けた数を返す）
 func vecModule(st mut St) int {
     mut n := 0
     mut f := st.fhead
@@ -50,7 +50,7 @@ func vecFunc(st mut St, f FnRef) int {
     return n
 }
 
-// vecDef は値 v を定義する命令（ブロックの列 blks の中で — 無ければ -1）
+// 値 v を定義する命令（ブロックの列 blks の中で — 無ければ -1）
 func vecDef(st mut St, blks mut []int, nb int, v int) InsRef {
     for k <- iter.Range(0, nb) {
         mut i := irBlkIHead(mut st, BlkRef(blks[k]))
@@ -64,7 +64,7 @@ func vecDef(st mut St, blks mut []int, nb int, v int) InsRef {
     return -1
 }
 
-// vecParamIdx は v が H の何番目の仮引数か（-1 = 違う）
+// v が H の何番目の仮引数か（-1 = 違う）
 func vecParamIdx(st mut St, h BlkRef, v int) int {
     mut k := 0
     mut p := irBlkPHead(mut st, h)
@@ -78,12 +78,12 @@ func vecParamIdx(st mut St, h BlkRef, v int) int {
     return -1
 }
 
-// vecIsExit は b が panic の点（exit で終わる）か
+// b が panic の点（exit で終わる）か
 func vecIsExit(st mut St, b BlkRef) bool {
     return irBlkTerm(mut st, b) == TmExit
 }
 
-// vecLoop は頭 h のループを判定し、合えば前置きに scanb を挿す
+// 頭 h のループを判定し、合えば前置きに scanb を挿す
 func vecLoop(st mut St, f FnRef, h BlkRef) bool {
     // 鎖: h から継続の側を辿り latch（br h）まで
     mut blks := mut []int{}
@@ -276,7 +276,7 @@ func vecLoop(st mut St, f FnRef, h BlkRef) bool {
     return true
 }
 
-// 数え上げ（文字列 SIMD 便 段 3 — report-557 (E3)）: `while i < X { if b[i] == K1 || … || b[i] == Km { n += 1 }; i += 1 }`（json.bound の形 — 等値の
+// 数え上げ: `while i < X { if b[i] == K1 || … || b[i] == Km { n += 1 }; i += 1 }`（json.bound の形 — 等値の
 // 鎖・当たりのブロックで n + 1・合流の latch で i + 1。m ≤ 4・K は 0〜255 の定数）の前置きに、i0 から上限までの 16 バイトの塊の数だけの区間
 // [i0, j)（j = i0 + (max(X − i0, 0) & −16)）を数える scanb（記述の列の先頭 = -2 — x86 の xCountB）を挿し、ループへは (n0 + 数, j) を渡す。
 // 端数はスカラーのループがそのまま数える。論証: 読み飛ばす反復はどれも i < j ≤ X で、効果は「b[i] が K のどれかなら n + 1・i + 1」だけ
@@ -486,7 +486,7 @@ func vecCount(st mut St, f FnRef, h BlkRef) bool {
     return true
 }
 
-// vecDefIn は値 v を定義するブロック b の中の命令（無ければ -1）
+// 値 v を定義するブロック b の中の命令（無ければ -1）
 func vecDefIn(st mut St, b BlkRef, v int) InsRef {
     mut i := irBlkIHead(mut st, b)
     while i != -1 {
@@ -498,7 +498,7 @@ func vecDefIn(st mut St, b BlkRef, v int) InsRef {
     return -1
 }
 
-// vecOnlyCmp は b の命令が const と比較だけか
+// b の命令が const と比較だけか
 func vecOnlyCmp(st mut St, b BlkRef) bool {
     mut i := irBlkIHead(mut st, b)
     while i != -1 {
@@ -511,7 +511,7 @@ func vecOnlyCmp(st mut St, b BlkRef) bool {
     return true
 }
 
-// vecOnlyIns は b の命令が x と const だけか
+// b の命令が x と const だけか
 func vecOnlyIns(st mut St, b BlkRef, x InsRef) bool {
     mut i := irBlkIHead(mut st, b)
     while i != -1 {
@@ -541,7 +541,7 @@ func vecBin(st mut St, f FnRef, b BlkRef, kind int, x int, y int) int {
     return r
 }
 
-// vecNorm は x co K（x = 0〜255 のバイト）を「x < T」かその否定に揃える: (T, less〔true = x < T の形〕, ok)。符号なしの比較で K が負は扱わない
+// x co K（x = 0〜255 のバイト）を「x < T」かその否定に揃える: (T, less〔true = x < T の形〕, ok)。符号なしの比較で K が負は扱わない
 func vecNorm(co int, kv int) (int, bool, bool) {
     if (co == CUlt || co == CUge) && kv < 0 {
         return 0, false, false
@@ -561,7 +561,7 @@ func vecNorm(co int, kv int) (int, bool, bool) {
     return 0, false, false
 }
 
-// vecKind は「比較 co x, K の結果が contTrue なら継続」を出口の種類と K に: (種類, K)。種類 -1 = 扱えない・4 = 常に継続（述語を落とす）
+// 「比較 co x, K の結果が contTrue なら継続」を出口の種類と K に: (種類, K)。種類 -1 = 扱えない・4 = 常に継続（述語を落とす）
 func vecKind(co int, kv int, contTrue bool) (int, int) {
     if co == CEq || co == CNe {
         if kv < 0 || kv > 255 {
@@ -599,12 +599,12 @@ func vecParamAt(st mut St, h BlkRef, k int) int {
     return -1
 }
 
-// vecInvariant は v がループの中で変わらないか（鎖の命令の結果でない・h の仮引数ならその位置が latch でそのまま渡る — vecLoop が帰納変数以外は確かめ済み）
+// v がループの中で変わらないか（鎖の命令の結果でない・h の仮引数ならその位置が latch でそのまま渡る — vecLoop が帰納変数以外は確かめ済み）
 func vecInvariant(st mut St, blks mut []int, nb int, h BlkRef, v int) bool {
     return int(vecDef(mut st, mut blks, nb, v)) == -1
 }
 
-// vecOuter は不変の値 v の前置きでの値（h の仮引数なら前置きの実引数）
+// 不変の値 v の前置きでの値（h の仮引数なら前置きの実引数）
 func vecOuter(st mut St, h BlkRef, pargs int, v int) int {
     k := vecParamIdx(mut st, h, v)
     return if k >= 0 { xAt(mut st, pargs, k) } else { v }
@@ -628,7 +628,7 @@ func vecConstIs(st mut St, blks mut []int, nb int, v int, n int) bool {
     return vecConstOf(mut st, mut blks, nb, v) && vecConstVal(mut st, mut blks, nb, v) == n
 }
 
-// vecDefFn は今の関数（st.fn）の中で v を定義する命令
+// 今の関数（st.fn）の中で v を定義する命令
 func vecDefFn(st mut St, v int) InsRef {
     mut b := irFnBHead(mut st, st.fn)
     while b != -1 {
@@ -644,7 +644,7 @@ func vecDefFn(st mut St, v int) InsRef {
     return -1
 }
 
-// vecReaches は b から前任 1 つのブロックだけを通って（深さ 7 まで — panic の点の側は辿らない）h へ戻れるか（継続の側の判定）
+// b から前任 1 つのブロックだけを通って（深さ 7 まで — panic の点の側は辿らない）h へ戻れるか（継続の側の判定）
 func vecReaches(st mut St, b BlkRef, h BlkRef) bool {
     return vecReachesD(mut st, b, h, 7)
 }
@@ -664,7 +664,7 @@ func vecReachesD(st mut St, b BlkRef, h BlkRef, d int) bool {
     return false
 }
 
-// vecPreheader は h の前任のうち latch 以外の 1 つ（無ければ -1）と、h へ入る辺の実引数の欄（2 = br の X2・3 = condbr の then・5 = condbr の else）。
+// h の前任のうち latch 以外の 1 つ（無ければ -1）と、h へ入る辺の実引数の欄（2 = br の X2・3 = condbr の then・5 = condbr の else）。
 // condbr の片側でもよい — scanb は純粋（上限の内側だけを読む）なので、もう片側の経路では結果が捨てられるだけ
 func vecPreheader(st mut St, f FnRef, h BlkRef, latch BlkRef) (BlkRef, int) {
     mut found := BlkRef(-1)

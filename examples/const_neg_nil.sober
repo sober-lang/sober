@@ -1,0 +1,8 @@
+package main
+
+// 負例: nil は欄の値の位置だけ（トップレベルや slice の要素には置けない — language.md 25 節・spec V-3）
+const Names = []string?{"a", nil}
+
+func main() {
+    println(0)
+}

@@ -1,8 +1,7 @@
 package main
 
 // 負例: チャネルの端点 task.Sender は同一性を持つ型 — task.NewChannel だけが作る。ゼロ値 `task.Sender[int]{}` は何のチャネルも指さない偽物
-// （std の外では拒否 — diag.Identity・language.md 28 節 / 11 節。2026-10-13 まで check は名指しなしの type error・build は受理して Send が
-// 実行時に StackExceeded で落ちていた — report-592 0 節の食い違い）
+// （std の外では拒否 — diag.Identity・language.md 28 節 / 11 節。check がこのゼロ値を見逃すと、実行時に Send が StackExceeded で落ちる）
 
 import "std/task"
 

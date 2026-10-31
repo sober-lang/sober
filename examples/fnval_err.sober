@@ -1,6 +1,6 @@
 package main
 
-// 関数型の結果の error?（language.md 25 節 — 2026-10-14）: `func(int) error?` / `func(int) (int, error?)` の仮引数に、失敗を値として返すラムダか
+// 関数型の結果の error?（language.md 25 節）: `func(int) error?` / `func(int) (int, error?)` の仮引数に、失敗を値として返すラムダか
 // 名前付き関数を渡せる。呼び先の `f(x)?` は閉包の失敗をそのまま上へ流し、`return f(x)` は値として返す。ラムダの本体の値は期待型で寄せる
 // （ラベル・nil・if の腕）。ラムダの本体の `?` / return は従来どおり定義した関数へ（非局所 — 8 節）。
 // η 展開（同じ節）: 関数型の仮引数に名前付き関数をそのまま渡すと、loader が同じ数の仮引数のラムダに写す（`app(3, dbl)` = `app(3, (a) => dbl(a))`）
@@ -15,7 +15,7 @@ type TooBig error {
     n int
 }
 
-// half は偶数の半分（奇数で Odd）
+// 偶数の半分（奇数で Odd）
 func half(v int) (int, error?) {
     if v % 2 == 1 {
         return 0, Odd{n: v}
@@ -23,7 +23,7 @@ func half(v int) (int, error?) {
     return v / 2, nil
 }
 
-// small は 10 未満か（でなければ TooBig）
+// 10 未満か（でなければ TooBig）
 func small(v int) error? {
     if v >= 10 {
         return TooBig{n: v}
@@ -31,7 +31,7 @@ func small(v int) error? {
     return nil
 }
 
-// each は xs を順に f に通し、最初の失敗で止まる（閉包の `?`）
+// xs を順に f に通し、最初の失敗で止まる（閉包の `?`）
 func each(xs []int, f func(int) error?) error? {
     for x <- xs {
         f(x)?
@@ -39,12 +39,12 @@ func each(xs []int, f func(int) error?) error? {
     return nil
 }
 
-// first は f(x) をそのまま返す（閉包の結果を値として）
+// f(x) をそのまま返す（閉包の結果を値として）
 func first(x int, f func(int) error?) error? {
     return f(x)
 }
 
-// sumE は f の成功値を足す（多値の結果の閉包への `?`）
+// f の成功値を足す（多値の結果の閉包への `?`）
 func sumE(xs []int, f func(int) (int, error?)) (int, error?) {
     mut s := 0
     for x <- xs {

@@ -12,7 +12,7 @@ import "desugar"
 // 棄てた案: region_alloc を語の確保の前に 8 へ切り上げる（草案 P1 の字面）— 空の語の列のヘッダが切り上げ前の bump を base に持つと、
 // 先端の伸長（grow）で確保したセルが base とずれる。直すには全 append 点の IR が変わる
 
-// needByteRt は byte の列のランタイムを（初出なら）宣言する
+// byte の列のランタイムを（初出なら）宣言する
 func needByteRt(st mut St) {
     lsNeed(mut st, NEED_BYTE, 0)
     if st.rtByte != 0 {
@@ -29,7 +29,7 @@ func needByteRt(st mut St) {
     st.rtExtend8 = addFunc(mut st, int(strLit(mut st, "rt.extend8")), desugar.ListRef(list3(mut st, TyI64, TyI64, TyI64)), -1)
 }
 
-// buildByteRt は宣言済みなら本体を組む（program の最後 — 関数の組み立ての途中で begin しない）
+// 宣言済みなら本体を組む（program の最後 — 関数の組み立ての途中で begin しない）
 func buildByteRt(st mut St) {
     if st.rtByte == 0 {
         return
@@ -43,12 +43,12 @@ func buildByteRt(st mut St) {
     buildExtend8(mut st)
 }
 
-// slotLimit は深度 d のスロットの末尾（バイト番地）
+// 深度 d のスロットの末尾（バイト番地）
 func slotLimit(st mut St, meta int, d int) int {
     return if st.taskUse { bin(mut st, BAdd, slotBase(mut st, meta, d), load(mut st, meta, W_SLOT_SIZE)) } else { bin(mut st, BAdd, load(mut st, meta, W_SLOTS), bin(mut st, BMul, bin(mut st, BAdd, d, iconst(mut st, 1)), load(mut st, meta, W_SLOT_SIZE))) }
 }
 
-// buildAlloc8 は region_alloc8(d, n): 深度 d に n バイトの byte の列を確保する（bump は 8 の粒で進める）。btip = 先頭 + n。スロット超過は exit 102
+// region_alloc8(d, n): 深度 d に n バイトの byte の列を確保する（bump は 8 の粒で進める）。btip = 先頭 + n。スロット超過は exit 102
 func buildAlloc8(st mut St) {
     begin(mut st, st.rtAlloc8)
     d := 0
@@ -68,7 +68,7 @@ func buildAlloc8(st mut St) {
     ret(mut st, itop(mut st, old))
 }
 
-// buildTip8 は tip8(d, end): 終わりが end の byte の列を深度 d でその場に 1 バイト伸ばせれば伸ばして 1（btip を進める）、でなければ 0
+// tip8(d, end): 終わりが end の byte の列を深度 d でその場に 1 バイト伸ばせれば伸ばして 1（btip を進める）、でなければ 0
 func buildTip8(st mut St) {
     begin(mut st, st.rtTip8)
     d := 0
@@ -108,7 +108,7 @@ func buildTip8(st mut St) {
     ret(mut st, iconst(mut st, 1))
 }
 
-// buildTipN8 は tipn8(d, end, n): 終わりが end の byte の列を深度 d でその場に n バイト伸ばせれば伸ばして 1（btip を進める）、でなければ 0。
+// tipn8(d, end, n): 終わりが end の byte の列を深度 d でその場に n バイト伸ばせれば伸ばして 1（btip を進める）、でなければ 0。
 // tip8 の n バイト版（先端一致の concat — `s = s + x` を償却 O(n) に）: 粒の余りに収まれば btip だけ・はみ出すなら bump が粒の終わりと一致するとき
 // （粒の後ろに語の確保が無い）bump を新しい終わりの粒まで進める（スロット超過は exit 102）
 func buildTipN8(st mut St) {
@@ -153,7 +153,7 @@ func buildTipN8(st mut St) {
     ret(mut st, iconst(mut st, 1))
 }
 
-// buildCat8 は cat8(bs, l1, dh, d, rest) ptr: 連結の結果のセル列（左の片 = 番地 bs・長さ l1・ヘッダの深度 dh を先頭に写した・残り rest バイトを
+// cat8(bs, l1, dh, d, rest) ptr: 連結の結果のセル列（左の片 = 番地 bs・長さ l1・ヘッダの深度 dh を先頭に写した・残り rest バイトを
 // 書ける — 深度 d）。dh == d で左の片の終わりが d の先端ならその場で伸ばして bs（rt.tipn8）、でなければ確保して左の片を写す。
 // 連結の点ごとの IR を呼び出し 1 本にする（判定を点ごとに展開すると自己 build のコンパイルの仕事が +1.1% — 連結の点が多い）
 func buildCat8(st mut St) {
@@ -178,7 +178,7 @@ func buildCat8(st mut St) {
     ret(mut st, q)
 }
 
-// buildCopy8 は copy8(dst, src, n): n バイトを写す
+// copy8(dst, src, n): n バイトを写す
 func buildCopy8(st mut St) {
     begin(mut st, st.rtCopy8)
     loop := newBlock(mut st)
@@ -195,7 +195,7 @@ func buildCopy8(st mut St) {
     ret(mut st, -1)
 }
 
-// needMatchLen は rt.matchlen(p, q, n) を（初出なら）宣言する（SIMD の核 段 1 — std/binary.MatchLen の @intrinsic("matchlen") が呼ぶ）
+// rt.matchlen(p, q, n) を（初出なら）宣言する（std/binary.MatchLen の @intrinsic("matchlen") が呼ぶ）
 func needMatchLen(st mut St) {
     lsNeed(mut st, NEED_MATCHLEN, 0)
     if st.rtMatchLen == -1 {
@@ -203,7 +203,7 @@ func needMatchLen(st mut St) {
     }
 }
 
-// buildMatchLen は matchlen(p, q, n): p[0:n] と q[0:n] の先頭からの一致の長さ（0〜n — 最初に食い違うバイトの位置・全部一致なら n）。
+// matchlen(p, q, n): p[0:n] と q[0:n] の先頭からの一致の長さ（0〜n — 最初に食い違うバイトの位置・全部一致なら n）。
 // この本体が意味の正（--no-opt・--via=stage1・.ll が走らせる）で、x86 の最適化のバックエンドは手書きの本体（xMatchLenBody — SSE2）に置き換える
 // （docs/ir.md 7 節の手書きの本体の約束 — rt.copy8 と同じ型）。区間は重なってよい（読むだけ）
 func buildMatchLen(st mut St) {
@@ -228,7 +228,7 @@ func buildMatchLen(st mut St) {
     ret(mut st, k)
 }
 
-// needJClean は rt.jclean(p, n) を（初出なら）宣言する（SIMD の核 段 2 — std/json の @intrinsic("jclean") が呼ぶ）
+// rt.jclean(p, n) を（初出なら）宣言する（std/json の @intrinsic("jclean") が呼ぶ）
 func needJClean(st mut St) {
     lsNeed(mut st, NEED_JCLEAN, 0)
     if st.rtJClean == -1 {
@@ -236,7 +236,7 @@ func needJClean(st mut St) {
     }
 }
 
-// buildJClean は jclean(p, n): p[0:n] の中で最初に JSON の文字列のエスケープが要るバイト（'"'・'\\'・0x20 未満）の位置（0〜n — 無ければ n）。
+// jclean(p, n): p[0:n] の中で最初に JSON の文字列のエスケープが要るバイト（'"'・'\\'・0x20 未満）の位置（0〜n — 無ければ n）。
 // この本体が意味の正（--no-opt・--via=stage1・.ll が走らせる）で、x86 の最適化のバックエンドは手書きの本体（xJCleanBody — SSE2）に置き換える
 // （docs/ir.md 7 節の手書きの本体の約束 — rt.matchlen と同じ型）
 func buildJClean(st mut St) {
@@ -268,7 +268,7 @@ func buildJClean(st mut St) {
     ret(mut st, k)
 }
 
-// buildReloc8 は region_relocate8(hdr, floor): byte の列のヘッダの depth が floor より深ければ、len バイトを深度 floor へ写して付け替える
+// region_relocate8(hdr, floor): byte の列のヘッダの depth が floor より深ければ、len バイトを深度 floor へ写して付け替える
 func buildReloc8(st mut St) {
     begin(mut st, st.rtReloc8)
     hdr := 0
@@ -287,7 +287,7 @@ func buildReloc8(st mut St) {
     ret(mut st, -1)
 }
 
-// buildExtend8 は extend8(d, end, n): 深度 d の先端にある byte の列（終わり = end — 作りかけの io の結果のように、先端から積んでいる列）を n バイト伸ばす。
+// extend8(d, end, n): 深度 d の先端にある byte の列（終わり = end — 作りかけの io の結果のように、先端から積んでいる列）を n バイト伸ばす。
 // bump = 新しい終わりを 8 へ切り上げ・btip = 新しい終わり。スロット超過は exit 102（呼び手が先端にいることを保証する — read_file / read_args / read_dir）
 func buildExtend8(st mut St) {
     begin(mut st, st.rtExtend8)

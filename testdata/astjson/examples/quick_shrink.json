@@ -1,0 +1,328 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/quick",
+      "tok": 4
+    },
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    },
+    {
+      "alias": "$testing",
+      "path": "std/testing",
+      "tok": 0
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "sum",
+      "type_params": [],
+      "params": [
+        {
+          "name": "xs",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "int"
+            },
+            "mut": false
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "t"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 19
+              }
+            ],
+            "tok": 16
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "x"
+                  ],
+                  "src": {
+                    "k": "ident",
+                    "name": "xs",
+                    "tok": 24
+                  },
+                  "guards": [],
+                  "tok": 22
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "assign",
+                    "targets": [
+                      {
+                        "k": "ident",
+                        "name": "t",
+                        "tok": 26
+                      }
+                    ],
+                    "op": "=",
+                    "values": [
+                      {
+                        "k": "binary",
+                        "op": "+",
+                        "lhs": {
+                          "k": "ident",
+                          "name": "t",
+                          "tok": 28
+                        },
+                        "rhs": {
+                          "k": "ident",
+                          "name": "x",
+                          "tok": 30
+                        },
+                        "tok": 29
+                      }
+                    ],
+                    "tok": 26
+                  }
+                ]
+              },
+              "tok": 21
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "t",
+                "tok": 35
+              }
+            ],
+            "tok": 34
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 39
+      },
+      "sig_end": 15
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "q"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "quick",
+                    "tok": 47
+                  },
+                  "field": "Seed",
+                  "tok": 49
+                },
+                "args": [
+                  {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 51
+                  }
+                ],
+                "tok": 50
+              }
+            ],
+            "tok": 44
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "quick",
+                  "tok": 54
+                },
+                "field": "Check",
+                "tok": 56
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "q",
+                  "tok": 59
+                },
+                {
+                  "k": "lambda",
+                  "params": [],
+                  "body": {
+                    "k": "block",
+                    "stmts": [
+                      {
+                        "k": "bind",
+                        "names": [
+                          "xs"
+                        ],
+                        "mutable": false,
+                        "values": [
+                          {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "quick",
+                                "tok": 67
+                              },
+                              "field": "Slice",
+                              "tok": 69
+                            },
+                            "args": [
+                              {
+                                "k": "mut_arg",
+                                "name": "q",
+                                "tok": 72
+                              },
+                              {
+                                "k": "int",
+                                "value": 8,
+                                "tok": 74
+                              },
+                              {
+                                "k": "lambda",
+                                "params": [],
+                                "body": {
+                                  "k": "call",
+                                  "callee": {
+                                    "k": "selector",
+                                    "base": {
+                                      "k": "ident",
+                                      "name": "quick",
+                                      "tok": 79
+                                    },
+                                    "field": "Int",
+                                    "tok": 81
+                                  },
+                                  "args": [
+                                    {
+                                      "k": "mut_arg",
+                                      "name": "q",
+                                      "tok": 84
+                                    },
+                                    {
+                                      "k": "int",
+                                      "value": 0,
+                                      "tok": 86
+                                    },
+                                    {
+                                      "k": "int",
+                                      "value": 9,
+                                      "tok": 88
+                                    }
+                                  ],
+                                  "tok": 82
+                                },
+                                "tok": 78
+                              }
+                            ],
+                            "tok": 70
+                          }
+                        ],
+                        "tok": 65
+                      },
+                      {
+                        "k": "expr",
+                        "expr": {
+                          "k": "binary",
+                          "op": "<",
+                          "lhs": {
+                            "k": "call",
+                            "callee": {
+                              "k": "ident",
+                              "name": "sum",
+                              "tok": 92
+                            },
+                            "args": [
+                              {
+                                "k": "ident",
+                                "name": "xs",
+                                "tok": 94
+                              }
+                            ],
+                            "tok": 93
+                          },
+                          "rhs": {
+                            "k": "int",
+                            "value": 30,
+                            "tok": 97
+                          },
+                          "tok": 96
+                        }
+                      }
+                    ]
+                  },
+                  "tok": 63
+                }
+              ],
+              "tok": 57
+            }
+          }
+        ]
+      },
+      "tok": 40,
+      "bodiless": false,
+      "span": {
+        "start": 39,
+        "end": 104
+      },
+      "sig_end": 43
+    }
+  ],
+  "consts": []
+}

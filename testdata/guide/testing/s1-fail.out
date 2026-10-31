@@ -1,0 +1,6 @@
+assert failed: len(ps) == 2
+  len(ps) = 0
+panic: testing.AssertFailed{} at std/testing/testing.sober:25:10
+FAIL examples/guide/kvbug.TestParse (exit 101)
+0 passed, 1 failed
+(exit 1)

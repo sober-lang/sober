@@ -1,0 +1,309 @@
+package lower
+
+// 展開後の上限の巻き上げ: IR の展開（irInline）の後の SSA に掛ける軽い LICM。region.alloc は rtlower で
+// rt.region_alloc の呼び出しになり、展開で関数の中に開く — 上限（W_SLOTS + (d+1) × W_SLOT_SIZE）の load と算術は optimizeSsa の LICM より後に
+// 現れるのでループに残っていた（jsonapi の zeroFill — append 1 回ごとに 5〜7 命令）。
+// 巻き上げる load（種）: `load G[W_SLOTS]` / `load G[W_SLOT_SIZE]` で G が `globaladdr @rt.meta` の結果そのもの（gep を挟まない — taskUse の
+// スロットの先頭はワーカーの記録から来るので種にならない）。この 2 語を書くのは rt の起動（rt.sober buildEntry）と、W_SLOT_SIZE は task の切替
+// （taskHandover — task の op の中）・チャネルの送りの写し（chanSendCopy — relocate と同じ並び）だけなので、ループの中の呼び出しが
+// 既知の rt（rt.slice_grow / slice_grow8 / region_alloc / region_alloc8 — 書くのは新しい列と W_BUMP の語・rt.panic / panic_mem — 戻らない）
+// だけなら、ループの間に値は変わらない（別名の事実 — docs/ir.md 6 節。hloop.sober と同じ型の論証）。
+// 種を持つループだけ、種と割り算以外の算術・比較（rmMovable）で被演算子が全部ループの外のものを前置きへ移す。被演算子の扱いを 2 つ足す:
+//   ・ループの中の定数・globaladdr — 前置きに同じ命令の写しを作って付け替える（optimizeSsa の LICM は定数を巻き上げないので、`add d, 1` が残っていた）
+//   ・頭の自明な仮引数（ループの中から入る辺の実引数が全部自分自身 — hloop の後の深度）— 不変。前置きへ移す命令では前置きの実引数に付け替える
+// 諦める形: 既知の rt 以外の呼び出し・間接呼び出し・syscall・原子・罠・task の op・relocate・種の 2 語への store がループにある
+
+import "desugar"
+import "std/iter"
+
+// モジュールの全関数に展開後の上限の巻き上げを掛ける
+func rlimModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            rlimFunc(mut st, f)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// load / store の語 k が種の 2 語か
+func rmSeedOff(k int) bool {
+    return k == W_SLOTS || k == W_SLOT_SIZE
+}
+
+// 利用者のループの頭があり（展開した先のループの印も写る — irinl）、種の 2 語の語を読む load がある関数か（作業域を作らない走査 —
+// 番地の出所は見ない。ループの無い関数で CFG を組まない — 展開した region.alloc の上限の load は自己 build のほとんどの関数にある）
+func rmCheap(st mut St, f FnRef) bool {
+    mut loop := false
+    mut b := irFnBHead(mut st, f)
+    while b != -1 && !loop {
+        if irBlkLoop(mut st, b) & 1 == 1 {
+            loop = true
+        }
+        b = irBlkNext(mut st, b)
+    }
+    if !loop {
+        return false
+    }
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if irInsOp(mut st, i) == OpLoad && rmSeedOff(irInsB(mut st, i)) {
+                return true
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return false
+}
+
+// 値 v が `globaladdr @rt.meta` の結果か（def = 値 → 定義の命令）
+func rmMeta(st mut St, def mut []int, v int) bool {
+    return v >= 0 && v < len(def) && def[v] >= 0 && irInsOp(mut st, InsRef(def[v])) == OpGlobal && irInsA(mut st, InsRef(def[v])) == st.meta
+}
+
+// 命令が種（`load G[W_SLOTS | W_SLOT_SIZE]`・G = globaladdr @rt.meta）か
+func rmSeed(st mut St, def mut []int, ins InsRef) bool {
+    return irInsOp(mut st, ins) == OpLoad && irInsC(mut st, ins) == 0 && rmSeedOff(irInsB(mut st, ins)) && rmMeta(mut st, mut def, irInsA(mut st, ins))
+}
+
+func rlimFunc(st mut St, f FnRef) {
+    if !rmCheap(mut st, f) {
+        return
+    }
+    nb := irFnNBlk(mut st, f)
+    nv := irFnNVal(mut st, f)
+    mut w := m2rW{nb: nb, blk: mut []int{}, rpoIx: mut []int{}, rpo: mut []int{}, nrpo: 0, pcnt: mut []int{}, preds: mut []int{}, idom: mut []int{}}
+    m2rCfg(mut st, mut w, f)
+    mut pw := PrW{def: mut []int{}, dblk: mut []int{}, inl: mut []int{}, mark: 0}
+    xFill(mut pw.inl, nb, 0)
+    // 値ごとの作業域（定義の命令・ブロック・付け替え）は呼び出しの門を通ったループが出てから組む（自己 build のループのほとんどは未知の呼び出しを
+    // 持つ — 値の数ぶんの 4 本を全関数で組むと判定の仕事 +0.14 G だった）
+    mut ready := false
+    mut sub := mut []int{}
+    mut smark := mut []int{}
+    mut moved := false
+    // ループの頭ごとに（逆後順で外側から — licm と同じ。利用者のループの印のある頭だけ — 全ブロックで支配を辿ると判定の仕事 +0.05 G）
+    for k <- iter.Range(0, w.nrpo) {
+        h := w.rpo[k]
+        if irBlkLoop(mut st, BlkRef(w.blk[h])) & 1 == 0 {
+            continue
+        }
+        outside := loopPre(mut st, mut w, h)
+        if outside < 0 {
+            continue
+        }
+        pw.mark += 1
+        loopMark(mut w, mut pw.inl, pw.mark, h)
+        if !rmLoopOk(mut st, mut w, mut pw) {
+            continue
+        }
+        if !ready {
+            rmDefs(mut st, mut w, mut pw, nv)
+            xFill(mut sub, nv, -1)
+            xFill(mut smark, nv, 0)
+            ready = true
+        }
+        if !rmHasSeed(mut st, mut w, mut pw) {
+            continue
+        }
+        pre := BlkRef(w.blk[outside])
+        rmTrivial(mut st, mut w, mut pw, h, pre, mut sub, mut smark)
+        for kk <- iter.Range(k, w.nrpo) {
+            bi := w.rpo[kk]
+            if pw.inl[bi] != pw.mark {
+                continue
+            }
+            b := BlkRef(w.blk[bi])
+            mut prev := InsRef(-1)
+            mut ins := irBlkIHead(mut st, b)
+            while ins != -1 {
+                nx := irInsNext(mut st, ins)
+                if rmMovable(mut st, mut pw.def, ins) && rmOutside(mut st, f, mut pw, ins, mut sub, mut smark) {
+                    rmRewrite(mut st, f, mut pw, ins, pre, mut sub, mut smark)
+                    if prev == -1 {
+                        irSetBlkIHead(mut st, b, nx)
+                    } else {
+                        irSetInsNext(mut st, prev, nx)
+                    }
+                    if irBlkITail(mut st, b) == ins {
+                        irSetBlkITail(mut st, b, prev)
+                    }
+                    irSetInsNext(mut st, ins, -1)
+                    linkInst(mut st, pre, ins)
+                    pw.dblk[irInsRes(mut st, ins)] = outside
+                    moved = true
+                } else {
+                    prev = ins
+                }
+                ins = nx
+            }
+        }
+    }
+    if moved {
+        optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+        optRenumber(mut st, f)
+    }
+}
+
+// 値 → 定義の命令・定義のブロック番号（ブロックの仮引数も — 関数の仮引数は -1 = 外）を組む
+func rmDefs(st mut St, w mut m2rW, pw mut PrW, nv int) {
+    xFill(mut pw.def, nv, -1)
+    xFill(mut pw.dblk, nv, -1)
+    for bi <- iter.Range(0, w.nb) {
+        b := BlkRef(w.blk[bi])
+        if int(b) >= 0 {
+            mut p := irBlkPHead(mut st, b)
+            while p >= 0 {
+                pw.dblk[desugar.HeapGet(mut st.d, p + 1)] = bi
+                p = desugar.HeapGet(mut st.d, p)
+            }
+            mut ins := irBlkIHead(mut st, b)
+            while ins != -1 {
+                r := irInsRes(mut st, ins)
+                if r >= 0 {
+                    pw.def[r] = int(ins)
+                    pw.dblk[r] = bi
+                }
+                ins = irInsNext(mut st, ins)
+            }
+        }
+    }
+}
+
+// ループ（印 pw.mark）に種（番地が globaladdr @rt.meta 直の load）があるか
+func rmHasSeed(st mut St, w mut m2rW, pw mut PrW) bool {
+    for bi <- iter.Range(0, w.nb) {
+        if pw.inl[bi] == pw.mark && w.blk[bi] >= 0 {
+            mut ins := irBlkIHead(mut st, BlkRef(w.blk[bi]))
+            while ins != -1 {
+                if rmSeed(mut st, mut pw.def, ins) {
+                    return true
+                }
+                ins = irInsNext(mut st, ins)
+            }
+        }
+    }
+    return false
+}
+
+// ループ（印 pw.mark）が種の 2 語の語を読む load を持ち、種の 2 語を書きうる命令が無いか（ファイルの冒頭の「諦める形」— 作業域を使わない
+// 門。種の 2 語の語への store は番地を問わず諦める）
+func rmLoopOk(st mut St, w mut m2rW, pw mut PrW) bool {
+    mut seed := false
+    for bi <- iter.Range(0, w.nb) {
+        if pw.inl[bi] != pw.mark || w.blk[bi] < 0 {
+            continue
+        }
+        mut ins := irBlkIHead(mut st, BlkRef(w.blk[bi]))
+        while ins != -1 {
+            op := irInsOp(mut st, ins)
+            if op == OpCall {
+                g := irInsFn(mut st, ins)
+                if g != st.rtGrow && g != st.rtGrow8 && g != st.rtRalloc && g != st.rtAlloc8 && g != st.rtPanic && g != st.rtPanicMem {
+                    return false
+                }
+            } else if op == OpCallI || op == OpSyscall || op == OpAtomic || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpClone || op == OpRReloc {
+                return false
+            } else if op == OpStore && rmSeedOff(irInsB(mut st, ins)) {
+                return false
+            } else if op == OpLoad && rmSeedOff(irInsB(mut st, ins)) {
+                seed = true
+            }
+            ins = irInsNext(mut st, ins)
+        }
+    }
+    return seed
+}
+
+// 頭 h の自明な仮引数（ループの中から入る辺の実引数が全部自分自身）を前置き pre の br の実引数へ付け替える印を付ける
+func rmTrivial(st mut St, w mut m2rW, pw mut PrW, h int, pre BlkRef, sub mut []int, smark mut []int) {
+    hb := BlkRef(w.blk[h])
+    pargs := irBlkX2(mut st, pre)
+    mut n := 0
+    mut p := irBlkPHead(mut st, hb)
+    while p >= 0 {
+        v := desugar.HeapGet(mut st.d, p + 1)
+        mut triv := true
+        for j <- iter.Range(w.pcnt[h], w.pcnt[h + 1]) {
+            q := w.preds[j]
+            if w.rpoIx[q] < 0 || pw.inl[q] != pw.mark {
+                continue
+            }
+            b := BlkRef(w.blk[q])
+            t := irBlkTerm(mut st, b)
+            for e <- iter.Range(0, if t == TmBr { 1 } else if t == TmCondbr { 2 } else { 0 }) {
+                to := if t == TmBr { irBrTo(mut st, b) } else if e == 0 { irCondThen(mut st, b) } else { irCondElse(mut st, b) }
+                if to == hb {
+                    args := if t == TmBr { irBlkX2(mut st, b) } else if e == 0 { irBlkX3(mut st, b) } else { irBlkX5(mut st, b) }
+                    if latI(mut st, desugar.ListRef(args), n) != v {
+                        triv = false
+                    }
+                }
+            }
+        }
+        if triv {
+            sub[v] = latI(mut st, desugar.ListRef(pargs), n)
+            smark[v] = pw.mark
+        }
+        n += 1
+        p = desugar.HeapGet(mut st.d, p)
+    }
+}
+
+// 前置きへ移す命令か: 種と、割り算以外の算術・比較（gep・globaladdr は移さない — x86 は gep を load の番地に融合するので、移すと
+// 基底と添字の 2 本がループを跨いで生きる〔初版 — zeroFill で meta の番地と深度が両方 spill した〕。globaladdr は即値なので使う点で作り直す）
+func rmMovable(st mut St, def mut []int, ins InsRef) bool {
+    op := irInsOp(mut st, ins)
+    if irInsRes(mut st, ins) < 0 {
+        return false
+    }
+    if op == OpBin {
+        k := irInsA(mut st, ins)
+        return k != BDiv && k != BRem
+    }
+    return op == OpCmp || rmSeed(mut st, mut def, ins)
+}
+
+// ループの中の値 v が前置きに写せる命令（定数・globaladdr — 被演算子なし）の結果か
+func rmCopyable(st mut St, def mut []int, v int) bool {
+    return def[v] >= 0 && (irInsOp(mut st, InsRef(def[v])) == OpConst || irInsOp(mut st, InsRef(def[v])) == OpGlobal)
+}
+
+// 命令の被演算子が全部ループ（印 pw.mark）の外か、付け替えられる値（頭の自明な仮引数・ループの中の定数）か
+func rmOutside(st mut St, f FnRef, pw mut PrW, ins InsRef, sub mut []int, smark mut []int) bool {
+    for k <- iter.Range(0, xNOps(mut st, ins)) {
+        v := xOpnd(mut st, ins, k)
+        d := pw.dblk[v]
+        if d >= 0 && pw.inl[d] == pw.mark && smark[v] != pw.mark && !rmCopyable(mut st, mut pw.def, v) {
+            return false
+        }
+    }
+    return true
+}
+
+// 前置き pre へ移す命令の被演算子を付け替える（自明な仮引数 → 前置きの実引数・ループの中の定数 → 前置きに作った写し）
+func rmRewrite(st mut St, f FnRef, pw mut PrW, ins InsRef, pre BlkRef, sub mut []int, smark mut []int) {
+    ks := st.opk[irInsOp(mut st, ins)]
+    for fl <- iter.Range(0, 3) {
+        if ks >> (fl * 4) & 15 == K_VAL {
+            at := int(ins) + I_A + fl
+            v := desugar.HeapGet(mut st.d, at)
+            d := pw.dblk[v]
+            if d >= 0 && pw.inl[d] == pw.mark {
+                if smark[v] != pw.mark {
+                    // ループの中の定数・globaladdr: 前置きに写しを作る（同じループの 2 回目からは写しを使う）
+                    dv := InsRef(pw.def[v])
+                    c := newValueIn(mut st, f)
+                    linkInst(mut st, pre, mkInst(mut st, c, irInsOp(mut st, dv), irInsA(mut st, dv), 0, 0))
+                    sub[v] = c
+                    smark[v] = pw.mark
+                }
+                desugar.HeapSet(mut st.d, at, sub[v])
+            }
+        }
+    }
+}

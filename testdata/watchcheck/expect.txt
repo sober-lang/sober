@@ -1,0 +1,14 @@
+watch: ok
++ sober: desugar error at main.sober:4:15 (LenString): len is not defined on string — use len(bytes(s)) for the byte count
+watch: 1 diagnostic(s)
+- sober: desugar error at main.sober:4:15 (LenString): len is not defined on string — use len(bytes(s)) for the byte count
++ sober: type error at main.sober:4:14
++ check: {"errors":[{"msg":"def error"}],"ok":false}
+watch: 2 diagnostic(s)
+- sober: type error at main.sober:4:14
+- check: {"errors":[{"msg":"def error"}],"ok":false}
+watch: ok
++ sober: desugar error at main.sober:4:15 (LenString): len is not defined on string — use len(bytes(s)) for the byte count
+watch: 1 diagnostic(s)
+- sober: desugar error at main.sober:4:15 (LenString): len is not defined on string — use len(bytes(s)) for the byte count
+watch: ok

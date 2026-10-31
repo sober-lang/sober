@@ -1,6 +1,6 @@
 package main
 
-// 反復の region（while の本体）からの `return if c { nil } else { L{} }`（F-bi — 2026-10-19）。ラベルの値は cause の鎖が最内の region に、
+// 反復の region（while の本体）からの `return if c { nil } else { L{} }`。ラベルの値は cause の鎖が最内の region に、
 // nil は戻り型で作られるので、ite の両腕の型が食い違っていた — return の写し（copyTo / ann）は if の腕ごとに掛ける（check ≡ build）
 
 type Closed error

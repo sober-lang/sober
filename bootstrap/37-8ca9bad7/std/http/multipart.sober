@@ -1,0 +1,319 @@
+package http
+
+// multipart/form-data の受け（RFC 7578 — 本文の切り方は RFC 2046 5.1.1）。本文は ServeConn が maxBody で切った r.body に全部載っているので、
+// ここは r.body の上の位置を読むだけ（部分の本文は r.body の切り出し — 写さない）。読むのは芯だけ: Content-Type の boundary・部分ごとの
+// Content-Disposition（form-data の name / filename）と Content-Type・CRLF の規律・閉じの境界。読まないもの: filename*=（RFC 5987 の符号化 —
+// 他の引数と同じく読み飛ばす）・入れ子の multipart（部分の本文のまま返す）・Content-Transfer-Encoding（解釈しない — RFC 7578 4.7 で非推奨）・
+// name / filename の % の復号（ブラウザが '"' CR LF を %22 %0D %0A にする — WHATWG HTML — のは戻さない。生のまま）
+
+// Multipart が読めない本文（Content-Type が multipart/form-data でない・boundary が無いか形が違う・境界の行や部分の頭の形の誤り・閉じの境界が無い・
+// 部分の数か部分の頭の大きさが上限を超える）。応答はふつう 400
+type BadMultipart error
+
+// multipart/form-data の部分 1 つ（Multipart の結果 — 本文の順）
+type Part struct {
+    // Content-Disposition の name（フォームの欄の名前）
+    name string
+    // Content-Disposition の filename（ファイルの欄 — 中身はブラウザが送った名前のまま。パスとして使うなら検査は呼び手。ファイルを選ばなかった欄は
+    // ブラウザが "" を送る）。filename の無い部分（テキストの欄）は nil
+    filename string?
+    // 部分の Content-Type（前後の空白を除いた値・無ければ "" — RFC 7578 4.4 の既定は text/plain）
+    contentType string
+    // 部分の本文（r.body の切り出し — 区切りの前の CRLF は含まない）
+    body []byte
+}
+
+// 部分の数の上限（Go の mime/multipart の既定と同じ 1000 — 小さい部分を並べた本文で結果の列が本文より大きく育つのを止める）
+const multipartMaxParts = 1000
+
+// 部分の頭（ヘッダの行の並び + 空行）の大きさの上限（要求の頭の既定の上限と同じ 8 KiB）
+const multipartMaxHead = 8192
+
+// r の本文（Content-Type が multipart/form-data — boundary つき）の部分の列（本文の順）。前置き（最初の境界の前）と後置き（閉じの境界の後）は読み飛ばす。
+// 境界の行の後の空白（transport-padding）は許し、行の終わりは CRLF だけ（LF だけは誤り）。部分の頭は `名前: 値` の行の並び（折り返しは誤り）で、
+// Content-Disposition（form-data・name 必須）はちょうど 1 本・Content-Type は 0 か 1 本・他の行は読み飛ばす。引数の値は token か quoted-string
+// （'\' は後ろが区切りの字〔'"' '\' など〕のときだけ外す — Windows のパスをそのまま送る古いブラウザの形を壊さない）・引数の名前は大小を無視・
+// 同じ引数が 2 つは誤り。name / filename は UTF-8 であること。部分の本文は次の「CRLF + "--" + boundary」の手前まで — その後ろが "--"（閉じ）か
+// 空白 + CRLF でなければ誤り（boundary が本文に出ている）。閉じの境界が無い・部分が 1000 を超える・部分の頭が 8 KiB を超える = 誤り。部分 0 個
+// （閉じの境界だけ）は空の列:
+//
+//     func upload(r http.Request) http.Response {
+//         parts := http.Multipart(r) catch return http.Status(http.BadRequest)
+//         for i <- iter.Range(0, len(parts)) {
+//             p := parts[i]
+//             f := p.filename
+//             if p.name == "file" && f != nil { save(f, p.body) }
+//         }
+//         return http.Text("ok")
+//     }
+@errors(BadMultipart)
+@effects()
+func Multipart(r Request) ([]Part, error?) {
+    ct := Header(r, "content-type")
+    if ct == nil {
+        return []Part{}, BadMultipart{}
+    }
+    return multipartOf(ct, r.body)
+}
+
+// multipartOf は Content-Type の値 ct と本文 body の部分の列（Multipart の中身）
+@errors(BadMultipart)
+func multipartOf(ct string, body []byte) ([]Part, error?) {
+    cb := bytes(ct)
+    k0 := indexIn(cb, 0, len(cb), ';')
+    k := if k0 < 0 { len(cb) } else { k0 }
+    ms := skipOWS(cb, 0, k)
+    if !eqFold(cb, ms, trimOWS(cb, ms, k), bytes("multipart/form-data")) {
+        return []Part{}, BadMultipart{}
+    }
+    bd, st := paramOf(cb, k, len(cb), bytes("boundary"))
+    if st != 1 || !boundaryOk(bd) {
+        return []Part{}, BadMultipart{}
+    }
+    // 最初の境界: 本文の頭か、前置きの後の CRLF の直後
+    mut p := 0
+    if !startsDash(body, 0, bd) {
+        d0 := delimAt(body, 0, bd)
+        if d0 < 0 {
+            return []Part{}, BadMultipart{}
+        }
+        p = d0 + 2
+    }
+    mut out := mut []Part{}
+    while true {
+        // p = 境界（"--" + boundary）の始め。後ろは "--"（閉じ）か 空白 + CRLF
+        mut q := p + 2 + len(bd)
+        if q + 2 <= len(body) && body[q] == '-' && body[q + 1] == '-' {
+            // 閉じの境界 — 後置きは読み飛ばす
+            return freeze(out), nil
+        }
+        while q < len(body) && (body[q] == ' ' || body[q] == '\t') {
+            q += 1
+        }
+        if q + 2 > len(body) || body[q] != '\r' || body[q + 1] != '\n' {
+            return []Part{}, BadMultipart{}
+        }
+        if len(out) >= multipartMaxParts {
+            return []Part{}, BadMultipart{}
+        }
+        ps := q + 2
+        // 部分の頭
+        mut name := ""
+        mut hasName := false
+        mut filename := ""
+        mut hasFile := false
+        mut ctype := ""
+        mut nDisp := 0
+        mut nType := 0
+        mut ls := ps
+        while true {
+            // 行の終わりの CRLF を ps + 上限 + 2 の手前までで探す — 頭（空行の CRLF を除く）が上限を超えると見つからない
+            le := crlfAt(body, ls, ps + multipartMaxHead + 2)
+            if le < 0 {
+                return []Part{}, BadMultipart{}
+            }
+            if le == ls {
+                break
+            }
+            // 行 [ls, le) — 折り返し・LF / CR だけ・NUL は誤り
+            if body[ls] == ' ' || body[ls] == '\t' || !lineClean(body, ls, le) {
+                return []Part{}, BadMultipart{}
+            }
+            colon := indexIn(body, ls, le, ':')
+            if colon <= ls || !tokenRun(body, ls, colon) {
+                return []Part{}, BadMultipart{}
+            }
+            vs := skipOWS(body, colon + 1, le)
+            ve := trimOWS(body, vs, le)
+            if eqFold(body, ls, colon, bytes("content-disposition")) {
+                nDisp += 1
+                ts0 := indexIn(body, vs, ve, ';')
+                te := if ts0 < 0 { ve } else { ts0 }
+                if !eqFold(body, vs, trimOWS(body, vs, te), bytes("form-data")) {
+                    return []Part{}, BadMultipart{}
+                }
+                nb, ns := paramOf(body, te, ve, bytes("name"))
+                fb, fs := paramOf(body, te, ve, bytes("filename"))
+                if ns < 0 || fs < 0 {
+                    return []Part{}, BadMultipart{}
+                }
+                if ns == 1 {
+                    nv := string(nb) catch return []Part{}, BadMultipart{}
+                    name = nv
+                    hasName = true
+                }
+                if fs == 1 {
+                    fv := string(fb) catch return []Part{}, BadMultipart{}
+                    filename = fv
+                    hasFile = true
+                }
+            } else if eqFold(body, ls, colon, bytes("content-type")) {
+                nType += 1
+                cv := string(body[vs:ve]) catch return []Part{}, BadMultipart{}
+                ctype = cv
+            }
+            ls = le + 2
+        }
+        if nDisp != 1 || nType > 1 || !hasName {
+            return []Part{}, BadMultipart{}
+        }
+        bs := ls + 2
+        // 部分の本文 = 次の区切り（CRLF + "--" + boundary）の手前まで
+        d := delimAt(body, bs, bd)
+        if d < 0 {
+            return []Part{}, BadMultipart{}
+        }
+        if hasFile {
+            out = append(out, Part{name: name, filename: filename, contentType: ctype, body: body[bs:d]})
+        } else {
+            out = append(out, Part{name: name, filename: nil, contentType: ctype, body: body[bs:d]})
+        }
+        // 次の境界の後ろ（"--" か 空白 + CRLF — それ以外 = boundary が本文に出ている）は繰り返しの頭で見る
+        p = d + 2
+    }
+    return []Part{}, BadMultipart{}
+}
+
+// startsDash は b[p:] が "--" + bd で始まるか
+func startsDash(b []byte, p int, bd []byte) bool {
+    if p + 2 + len(bd) > len(b) || b[p] != '-' || b[p + 1] != '-' {
+        return false
+    }
+    mut i := 0
+    while i < len(bd) {
+        if b[p + 2 + i] != bd[i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// delimAt は b[s:] の最初の「CRLF + "--" + bd」の位置（CR の位置・無ければ -1）
+func delimAt(b []byte, s int, bd []byte) int {
+    mut i := s
+    while i + 4 + len(bd) <= len(b) {
+        if b[i] == '\r' && b[i + 1] == '\n' && startsDash(b, i + 2, bd) {
+            return i
+        }
+        i += 1
+    }
+    return -1
+}
+
+// crlfAt は b[s:min(e, len(b))) の最初の CRLF の位置（無ければ -1）
+func crlfAt(b []byte, s int, e int) int {
+    lim := if e < len(b) { e } else { len(b) }
+    mut i := s
+    while i + 1 < lim {
+        if b[i] == '\r' && b[i + 1] == '\n' {
+            return i
+        }
+        i += 1
+    }
+    return -1
+}
+
+// lineClean は b[s:e) に CR・LF・NUL が無いか
+func lineClean(b []byte, s int, e int) bool {
+    mut i := s
+    while i < e {
+        if b[i] == '\r' || b[i] == '\n' || b[i] == 0 {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// boundaryOk は bd が RFC 2046 5.1.1 の boundary（1〜70 字の bchars — 英数字と ' ( ) + _ , - . / : = ? と空白・最後は空白でない）か
+func boundaryOk(bd []byte) bool {
+    if len(bd) < 1 || len(bd) > 70 || bd[len(bd) - 1] == ' ' {
+        return false
+    }
+    mut i := 0
+    while i < len(bd) {
+        c := bd[i]
+        ok := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '\'' || c == '(' || c == ')' || c == '+' || c == '_' || c == ',' || c == '-' || c == '.' || c == '/' || c == ':' || c == '=' || c == '?' || c == ' '
+        if !ok {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// paramOf は b[s:e)（`; 名前=値` の並び — 媒体の型の後ろ）の引数 key（大小を無視）の値。第 2 の値 = 1 見つかった・0 無い・-1 並びの形の誤りか
+// key が 2 つ。値は token か quoted-string（'\' は後ろが区切りの字のときだけ外す）
+func paramOf(b []byte, s int, e int, key []byte) ([]byte, int) {
+    mut found := mut []byte{}
+    mut st := 0
+    mut i := skipOWS(b, s, e)
+    while i < e {
+        if b[i] != ';' {
+            return []byte{}, -1
+        }
+        ns := skipOWS(b, i + 1, e)
+        if ns == e {
+            // 末尾の ';' は許す
+            break
+        }
+        eq := indexIn(b, ns, e, '=')
+        if eq < 0 {
+            return []byte{}, -1
+        }
+        ne := trimOWS(b, ns, eq)
+        if ne == ns || !tokenRun(b, ns, ne) {
+            return []byte{}, -1
+        }
+        hit := eqFold(b, ns, ne, key)
+        if hit && st == 1 {
+            return []byte{}, -1
+        }
+        mut v := skipOWS(b, eq + 1, e)
+        mut val := mut []byte{}
+        if v < e && b[v] == '"' {
+            v += 1
+            mut closed := false
+            while v < e && !closed {
+                c := b[v]
+                if c == '"' {
+                    closed = true
+                } else if c == '\\' && v + 1 < e && tspecial(b[v + 1]) {
+                    val = append(val, b[v + 1])
+                    v += 1
+                } else {
+                    val = append(val, c)
+                }
+                v += 1
+            }
+            if !closed {
+                return []byte{}, -1
+            }
+        } else {
+            vs := v
+            while v < e && b[v] != ';' && b[v] != ' ' && b[v] != '\t' {
+                v += 1
+            }
+            if v == vs || !tokenRun(b, vs, v) {
+                return []byte{}, -1
+            }
+            mut j := vs
+            while j < v {
+                val = append(val, b[j])
+                j += 1
+            }
+        }
+        if hit {
+            found = val
+            st = 1
+        }
+        i = skipOWS(b, v, e)
+    }
+    return freeze(found), st
+}
+
+// tspecial は c が RFC 2045 の tspecials（引数の値を quoted-string にする字）か
+func tspecial(c byte) bool {
+    return c == '(' || c == ')' || c == '<' || c == '>' || c == '@' || c == ',' || c == ';' || c == ':' || c == '\\' || c == '"' || c == '/' || c == '[' || c == ']' || c == '?' || c == '='
+}

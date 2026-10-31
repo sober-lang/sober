@@ -63,7 +63,7 @@ func emitFrag(out mut []byte, c int) {
     }
 }
 
-// tyJson は型 t を印字する
+// 型 t を印字する
 func tyJson(st mut S, out mut []byte, t TyRef) {
     k := tg(mut st, t)
     if k == TInt {
@@ -130,7 +130,7 @@ func tyJson(st mut S, out mut []byte, t TyRef) {
     }
 }
 
-// tsJson は型引数の列（-1 か空なら何も書かない）
+// 型引数の列（-1 か空なら何も書かない）
 func tsJson(st mut S, out mut []byte, l ListRef) {
     if l == -1 || lenL(mut st, l) == 0 {
         return
@@ -145,7 +145,7 @@ func tsJson(st mut S, out mut []byte, l ListRef) {
     out = append(out, ']')
 }
 
-// fbinName は float の二項の種類の綴り（Lean の Json — fadd… / feq…）
+// float の二項の種類の綴り（Lean の Json — fadd… / feq…）
 func fbinName(out mut []byte, k int) {
     obuf.Lit(mut out, switch k {
     case FAdd: "fadd"
@@ -161,7 +161,7 @@ func fbinName(out mut []byte, k int) {
     })
 }
 
-// fconvName は float の単項の写しの綴り
+// float の単項の写しの綴り
 func fconvName(out mut []byte, k int) {
     obuf.Lit(mut out, switch k {
     case FCNeg: "fneg"
@@ -205,7 +205,7 @@ func binName(out mut []byte, k int) {
     }
 }
 
-// spush は作業スタック（ヒープの st.jstk から (op, arg) の対 — 先頭 sp 対が生きている）に 1 対積み、新しい深さを返す。
+// 作業スタック（ヒープの st.jstk から (op, arg) の対 — 先頭 sp 対が生きている）に 1 対積み、新しい深さを返す。
 // スタックを印字の関数の frame の mut slice に置くと、この関数は呼び手へ展開されるので出力 out と同じ region で交互に伸び、
 // 伸びるたびにコピーが走る（region の上限 64MB で exit 102 — selfhost-drafts F-16）
 func spush(st mut S, sp int, op int, x int) int {
@@ -214,7 +214,7 @@ func spush(st mut S, sp int, op int, x int) int {
     return sp + 1
 }
 
-// exprJson は式 e0 を印字する（明示スタック）
+// 式 e0 を印字する（明示スタック）
 func exprJson(st mut S, out mut []byte, e0 CoreRef) {
     mut nl := 0
     mut sp := spush(mut st, 0, OE, int(e0))
@@ -376,7 +376,7 @@ func exprJson(st mut S, out mut []byte, e0 CoreRef) {
             sp = spush(mut st, sp, OS, J_CLOSE)
             sp = spush(mut st, sp, OE, b)
         } else if k == CNewch {
-            // {"k":"newch","r":r,"cap":n,"t":T}（段 6 P3b）
+            // {"k":"newch","r":r,"cap":n,"t":T}
             obuf.Lit(mut out, "{\"k\":\"newch\",\"r\":")
             obuf.Int(mut out, a)
             obuf.Lit(mut out, ",\"cap\":")
@@ -548,7 +548,7 @@ func exprJson(st mut S, out mut []byte, e0 CoreRef) {
     }
 }
 
-// defJson は Def 1 つ（[param, ret, body, tparams]）を印字する（trust = std の信頼の口の Def — trustDefs）
+// Def 1 つ（[param, ret, body, tparams]）を印字する（trust = std の信頼の口の Def — trustDefs）
 func defJson(st mut S, out mut []byte, d int, trust bool) {
     out = append(out, '{')
     if trust {

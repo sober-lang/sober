@@ -1,7 +1,7 @@
 package main
 
-// 匿名の関数型の欄の env の鍵は借りの位置と別（language.md 25 節 5d — 2026-10-22 report-1038 (c) 案 A）: 同じ構造の借り（count）が mut を捕捉しても、
-// 欄を持つ struct（Sink）の型は変わらない — slice に積んで freeze し、子 task へ渡せる（旧「借りと同じ寄せ方」では check だけが拒否した遠隔作用の割れ）
+// 匿名の関数型の欄の env の鍵は借りの位置と別（language.md 25 節 5d）: 同じ構造の借り（count）が mut を捕捉しても、
+// 欄を持つ struct（Sink）の型は変わらない — slice に積んで freeze し、子 task へ渡せる（借りと同じ寄せ方だと check だけが拒否する遠隔作用の割れが出る）
 
 import "std/task"
 

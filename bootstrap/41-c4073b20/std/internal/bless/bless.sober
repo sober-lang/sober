@@ -1,0 +1,11 @@
+package bless
+
+// 値の祝福の口（language.md 12 節「秘密の値の宣言」— std の実装の詳細 std/internal/…・std の中からだけ import できる）: 恒等の関数に `@bless` を付けたもの。
+// 関数単位の祝福（`@bless` の関数の結果は公開）では言えない「この値はここで公開してよい」を、値を通す 1 か所に書く
+// （署名の自己検証の比較・key log の書き出しのような意図した開示）。通した値の秘密の流れは analyzer の網から外れるので、置くたびに理由を添える
+
+// b をそのまま返す（結果は公開の値）
+@bless
+func Bytes(b []byte) []byte {
+    return b
+}

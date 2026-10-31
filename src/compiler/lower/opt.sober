@@ -43,19 +43,19 @@ const OB_VIS = 4  // 深さ優先の訪問の印
 
 const OpDead = 0
 
-// optimize はモジュールの全関数に設計整合パスを掛ける
+// モジュールの全関数に設計整合パスを掛ける
 func optimize(st mut St) {
     optPre(mut st)
     optFuncAll(mut st)
 }
 
-// optPre は設計整合パスのモジュールの段（region を使わない関数の不動点・P0 の展開）— 関数ごとの段（optFunc）の前
+// 設計整合パスのモジュールの段（region を使わない関数の不動点・P0 の展開）— 関数ごとの段（optFunc）の前
 func optPre(st mut St) {
     optRegionFree(mut st)
     optInline(mut st)
 }
 
-// optFuncAll は設計整合パスの関数ごとの段を全関数に（optFunc は関数の本体と kindsInit の表・作業域だけを読む — 束 B1 の子の頭でも掛けられる・lParBatch）
+// 設計整合パスの関数ごとの段を全関数に（optFunc は関数の本体と kindsInit の表・作業域だけを読む — 束 B1 の子の頭でも掛けられる・lParBatch）
 func optFuncAll(st mut St) {
     mut f := st.fhead
     while f != -1 {
@@ -82,7 +82,7 @@ func obSet(st mut St, b BlkRef, k int, x int) {
     table.Set(mut st.optb, irBlkId(mut st, b) * OB + k, x)
 }
 
-// optReset は作業域を n 値・nb ブロック分だけ初期化する（足りなければ伸ばす）
+// 作業域を n 値・nb ブロック分だけ初期化する（足りなければ伸ばす）
 func optReset(st mut St, n int, nb int) {
     while table.Len(mut st.optw) < n * OW {
         table.Push(mut st.optw, 0)
@@ -106,7 +106,7 @@ func optReset(st mut St, n int, nb int) {
     }
 }
 
-// resolve は付け替えの鎖の終点
+// 付け替えの鎖の終点
 func resolve(st mut St, v int) int {
     mut x := v
     while owGet(mut st, x, OW_AL) >= 0 {
@@ -126,7 +126,7 @@ func optFunc(st mut St, f FnRef) {
 
 // ── P0 ──
 
-// optRegionFree は region を使わない関数を悲観的な不動点で求め、その region.enter / region.setdepth を消す
+// region を使わない関数を悲観的な不動点で求め、その region.enter / region.setdepth を消す
 func optRegionFree(st mut St) {
     mut f := st.fhead
     while f != -1 {
@@ -169,7 +169,7 @@ func optRegionFree(st mut St) {
     }
 }
 
-// rfCallees は呼ぶ関数の列 l がすべて region を使わないと分かっているか。rt.panic / rt.panic_mem は戻らないので数えない
+// 呼ぶ関数の列 l がすべて region を使わないと分かっているか。rt.panic / rt.panic_mem は戻らないので数えない
 // （std/task を使うプログラムでは罠の巻き戻しと out_drain を持ち P0 を満たさない — それを呼ぶ添字検査つきの小関数が全部 P0 から外れていた・
 // 巻き戻しは罠までの関数の epilogue を飛ばすので、罠を張る側は深度を任意の値から戻す。enter を消すと巻き戻りの時の深度が浅くなるだけ）
 func rfCallees(st mut St, l int) bool {
@@ -185,7 +185,7 @@ func rfCallees(st mut St, l int) bool {
     return true
 }
 
-// rfLocal は関数 f の中だけで判定できる条件を見て、満たせば F_RFREE に [0, 呼ぶ関数の列] を置く
+// 関数 f の中だけで判定できる条件を見て、満たせば F_RFREE に [0, 呼ぶ関数の列] を置く
 func rfLocal(st mut St, f FnRef) {
     optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
     mut ncall := 0
@@ -238,7 +238,7 @@ func rfLocal(st mut St, f FnRef) {
 
 // ── P0' ──
 
-// inlineOk は関数 f が P0' の対象か（F_RFREE の記録の 3 語目に覚える: -1 = 未判定、0 / 1）
+// 関数 f が P0' の対象か（F_RFREE の記録の 3 語目に覚える: -1 = 未判定、0 / 1）
 func inlineOk(st mut St, f FnRef) bool {
     r := irFnRFree(mut st, f)
     if r < 0 || desugar.HeapGet(mut st.d, r) != 1 {
@@ -250,7 +250,7 @@ func inlineOk(st mut St, f FnRef) bool {
     return desugar.HeapGet(mut st.d, r + 2) == 1
 }
 
-// inlineShape はブロック 1 つ・引数のないブロック・スロットなし・終端が ret・命令が写せるものだけか
+// ブロック 1 つ・引数のないブロック・スロットなし・終端が ret・命令が写せるものだけか
 func inlineShape(st mut St, f FnRef) bool {
     b := irFnBHead(mut st, f)
     if b == -1 || irBlkNext(mut st, b) != -1 || irBlkPHead(mut st, b) >= 0 || irFnSHead(mut st, f) >= 0 || irBlkTerm(mut st, b) != TmRet {
@@ -268,7 +268,7 @@ func inlineShape(st mut St, f FnRef) bool {
     return true
 }
 
-// optInline はモジュールの全関数で、P0' の対象の関数の呼び出しを展開する
+// モジュールの全関数で、P0' の対象の関数の呼び出しを展開する
 func optInline(st mut St) {
     mut f := st.fhead
     while f != -1 {
@@ -294,7 +294,7 @@ func blockHasInline(st mut St, b BlkRef) bool {
     return false
 }
 
-// inlineBlock はブロック b（関数 f）の命令の鎖を組み直し、対象の呼び出しを本体の写しに置き換える
+// ブロック b（関数 f）の命令の鎖を組み直し、対象の呼び出しを本体の写しに置き換える
 func inlineBlock(st mut St, f FnRef, b BlkRef) {
     mut ins := irBlkIHead(mut st, b)
     irSetBlkIHead(mut st, b, -1)
@@ -310,7 +310,7 @@ func inlineBlock(st mut St, f FnRef, b BlkRef) {
     }
 }
 
-// inlineCallAt は呼び出し ins（`%r = call @g(args)`）を g の本体の写しにしてブロック b の末尾へつなぐ
+// 呼び出し ins（`%r = call @g(args)`）を g の本体の写しにしてブロック b の末尾へつなぐ
 func inlineCallAt(st mut St, f FnRef, b BlkRef, ins InsRef) {
     g := irInsFn(mut st, ins)
     args := irInsB(mut st, ins)
@@ -367,7 +367,7 @@ func inlineCallAt(st mut St, f FnRef, b BlkRef, ins InsRef) {
 
 // ── P1 ──
 
-// succN は b の後続の数、succAt は k 番目
+// b の後続の数、succAt は k 番目
 func succN(st mut St, b BlkRef) int {
     t := irBlkTerm(mut st, b)
     return if t == TmBr { 1 } else if t == TmCondbr { 2 } else { 0 }
@@ -380,7 +380,7 @@ func succAt(st mut St, b BlkRef, k int) BlkRef {
     return if k == 0 { irCondThen(mut st, b) } else { irCondElse(mut st, b) }
 }
 
-// rpo は入口からの逆後順の列（[n, ブロック…]）を作り、各ブロックに位置を記す（反復の深さ優先 — 積み = st.optw の後ろを使わず列で持つ）
+// 入口からの逆後順の列（[n, ブロック…]）を作り、各ブロックに位置を記す（反復の深さ優先 — 積み = st.optw の後ろを使わず列で持つ）
 func rpo(st mut St, f FnRef) int {
     nb := irFnNBlk(mut st, f)
     post := listN(mut st, nb)
@@ -422,7 +422,7 @@ func rpo(st mut St, f FnRef) int {
     return order
 }
 
-// edgeIn は b → to の前向きの辺を入口の版に合流させる（後ろの辺は OB_LATE — 先に数えてある）
+// b → to の前向きの辺を入口の版に合流させる（後ろの辺は OB_LATE — 先に数えてある）
 func edgeIn(st mut St, b BlkRef, to BlkRef, ver int) {
     if obGet(mut st, to, OB_RPO) <= obGet(mut st, b, OB_RPO) {
         return
@@ -600,12 +600,12 @@ func opnd(st mut St, v int, mode int) int {
     return owGet(mut st, x, OW_VER)
 }
 
-// opField は記録 r の欄 k の値を走査する
+// 記録 r の欄 k の値を走査する
 func opField(st mut St, r int, k int, mode int) {
     desugar.HeapSet(mut st.d, r + k, opnd(mut st, desugar.HeapGet(mut st.d, r + k), mode))
 }
 
-// vlist は値の列 l を走査する。書き換え（mode 2）は同じ列を 2 度書かないよう長さを負にして印を付ける（listUnmark が戻す）
+// 値の列 l を走査する。書き換え（mode 2）は同じ列を 2 度書かないよう長さを負にして印を付ける（listUnmark が戻す）
 func vlist(st mut St, l int, mode int) {
     if l < 0 {
         return
@@ -736,7 +736,7 @@ func optDce(st mut St, f FnRef) {
     }
 }
 
-// dcePush は optDce の作業列に値 x を積む
+// optDce の作業列に値 x を積む
 func dcePush(st mut St, x int) {
     if st.dceN < table.Len(mut st.dcew) {
         table.Set(mut st.dcew, st.dceN, x)
@@ -788,7 +788,7 @@ func optBlocks(st mut St, f FnRef) {
         obSet(mut st, b, OB_IN, 0)
         b = irBlkNext(mut st, b)
     }
-    // 作業列で（段 6 P6-5 の入口: 以前は変わらなくなるまで全ブロックを掃いた — 鎖の順に逆向きの辺が多い展開の後の関数で O(B²)。到達の集合は同じ）
+    // 作業列で到達集合を求める（全ブロックを変わらなくなるまで掃く形は、鎖の順に逆向きの辺が多い展開後の関数で O(B²) になる）
     obSet(mut st, entry, OB_IN, 1)
     mut stk := mut []int{}
     xFill(mut stk, irFnNBlk(mut st, f), 0)
@@ -826,7 +826,7 @@ func optBlocks(st mut St, f FnRef) {
     recountPreds(mut st, f)
 }
 
-// recountPreds は関数 f の全ブロックの前任数（B_PREDS）を辺から数え直す。P4 は辺を付け替えてブロックを消すので、出口で数え直して
+// 関数 f の全ブロックの前任数（B_PREDS）を辺から数え直す。P4 は辺を付け替えてブロックを消すので、出口で数え直して
 // 「各段の後の IR は正しい」を保つ（付け替えごとの増減で保つ形は誤りやすく、読む者もいないので採らない）
 func recountPreds(st mut St, f FnRef) {
     mut b := irFnBHead(mut st, f)
@@ -850,7 +850,7 @@ func recountPreds(st mut St, f FnRef) {
     }
 }
 
-// reachPush は b に初めて届いたら印を付けて作業列に積む（積んだ後の深さを返す）
+// b に初めて届いたら印を付けて作業列に積む（積んだ後の深さを返す）
 func reachPush(st mut St, stk mut []int, sp int, b BlkRef) int {
     if reach(mut st, b) {
         stk[sp] = int(b)

@@ -11,7 +11,7 @@ func hex(n int) byte {
     return byte(if n < 10 { n + 48 } else { n + 87 })
 }
 
-// str はバイト列を JSON 文字列として書く（C4 と同じ escape）
+// バイト列を JSON 文字列として書く（C4 と同じ escape）
 func str(out mut []byte, s []byte) {
     out = append(out, '"')
     for i <- iter.Range(0, len(s)) {
@@ -49,7 +49,7 @@ func elem(out mut []byte, d int, first bool) {
     obuf.Nl(mut out, d)
 }
 
-// sortedIdx は xs[lo:hi] の添字をバイト順に並べ、重複（dedup = true のとき）を除いたもの
+// xs[lo:hi] の添字をバイト順に並べ、重複（dedup = true のとき）を除いたもの
 func sortedIdx(xs []string, lo int, hi int, dedup bool) []int {
     mut ix := mut []int{}
     for i <- iter.Range(lo, hi) {
@@ -77,7 +77,7 @@ func sortedIdx(xs []string, lo int, hi int, dedup bool) []int {
     return freeze(out)
 }
 
-// Json は Program を loader 黄金の JSON にする
+// Program を loader 黄金の JSON にする
 func Json(p Program) []byte {
     mut out := mut []byte{}
     out = append(out, '{')

@@ -1,6 +1,6 @@
 package loader
 
-// η 展開（language.md 25 節「名前付き関数を関数型の引数に渡す」— 2026-10-14）: 関数型リテラル（`func(…)`）の仮引数に名前付き関数（`f` / `pkg.F`）を
+// η 展開（language.md 25 節「名前付き関数を関数型の引数に渡す」）: 関数型リテラル（`func(…)`）の仮引数に名前付き関数（`f` / `pkg.F`）を
 // 渡した実引数を、同じ数の仮引数のラムダに写す — 脱糖の固定テンプレート（namedargs と同じ層: desugar・lower・typer・analyzer は写した後の木だけを読む。
 // コア・Lean は無変更）:
 //
@@ -14,7 +14,7 @@ import "std/builder"
 import "ast"
 import "diag"
 
-// etaAll は全ファイルの木の関数型の実引数に置かれた名前付き関数をラムダへ写す（写せない形は拒否）。ft = namedArgsAll と同じ関数表
+// 全ファイルの木の関数型の実引数に置かれた名前付き関数をラムダへ写す（写せない形は拒否）。ft = namedArgsAll と同じ関数表
 @errors(diag.FnArg)
 func etaAll(cx Cx, ft FnTab) ([]ast.Tree, error?) {
     mut out := mut []ast.Tree{}
@@ -39,7 +39,7 @@ func etaAll(cx Cx, ft FnTab) ([]ast.Tree, error?) {
     return freeze(out), nil
 }
 
-// etaScan は呼び出しの節 i の関数型の位置の名前付き関数を hits に [呼び出しの節, 実引数の位置, 仮引数の数] の 3 語ずつ積む
+// 呼び出しの節 i の関数型の位置の名前付き関数を hits に [呼び出しの節, 実引数の位置, 仮引数の数] の 3 語ずつ積む
 // （拒否なら kind + 実引数の字句 × 4）
 func etaScan(cx Cx, ft FnTab, f int, i int, hits mut builder.Builder[int]) int {
     t := cx.trees[f]
@@ -93,7 +93,7 @@ func etaScan(cx Cx, ft FnTab, f int, i int, hits mut builder.Builder[int]) int {
     return 0
 }
 
-// etaRewrite は hits（[呼び出しの節, 実引数の位置, 仮引数の数] — 節の順）の実引数を `($e<節>_0, …) => f($e<節>_0, …)` に写した木
+// hits（[呼び出しの節, 実引数の位置, 仮引数の数] — 節の順）の実引数を `($e<節>_0, …) => f($e<節>_0, …)` に写した木
 // （仮引数の名前は利用者が綴れない合成名 — catch の `$v` と同じ。節の字句は実引数の名前 = 診断の位置）
 func etaRewrite(t ast.Tree, hs []int) ast.Tree {
     mut ns := mut []ast.Node{}

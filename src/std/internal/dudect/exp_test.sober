@@ -1,18 +1,18 @@
 package dudect
 
-// dudect の対照実験（report-1025 / 1026 — poly1305_sum が GHA の EPYC 7763〔Zen 3・Azure VM〕でだけ |t| 4.7〜18.9 と出る件の白黒）。
+// dudect の対照実験（poly1305_sum が GHA の EPYC 7763〔Zen 3・Azure VM〕でだけ |t| 4.7〜18.9 と出る件の白黒）。
 // 題材の名前は exp_ で始まる — scripts/dudect.ts は判定を印字するが失敗にしない（漏れと出ることが実験の結果になりうる）。読み方:
 // exp_poly_aa（乱数どうし — A/A）が漏れ = ハーネスの偏り / aa は ok で exp_poly_ff（固定 A 対 固定 B）が漏れ = 値に依る効果（同じ値の繰り返しの効果は否定）/
 // exp_poly_zero・exp_poly_ones（ビットの重みの両端の固定鍵 対 乱数）の |t| が桁で跳ねる = 消費電力から周波数の形（Hertzbleed の類）/
 // ff は ok で固定 対 乱数だけ漏れ = 同じ値の繰り返しの効果。msg と種は poly1305_sum_otk（ports_test）と同じ。
-// GHA の 4M の 2 本（report-1027）: A/A は白・ff は Zen 4（EPYC 9V74）で漏れ（今の呼び出しの鍵にだけ付く・鍵ごとに決まる 0.1 cycle 級のずれ）・zero / ones は白・Zen 5 は全部白。
-// 第 2 便（report-1028）: exp_poly_fixed（旧 poly1305_sum の固定 対 乱数 — 判定の口は 1 回限りの鍵の形に移した）・exp_imul_chain（下）・
-// Sum の段割り（std/crypto/poly1305 の poly1305_dudect_test.sober — start / absorb / finish を white-box で）
+// 実測: A/A は白・ff は Zen 4（EPYC 9V74）で漏れ（今の呼び出しの鍵にだけ付く・鍵ごとに決まる 0.1 cycle 級のずれ）・zero / ones は白・Zen 5 は全部白。
+// exp_poly_fixed（旧 poly1305_sum の固定 対 乱数 — 判定の口は 1 回限りの鍵の形に移した）・exp_imul_chain（下）・
+// Sum の段割り（std/crypto/poly1305 の poly1305_dudect_test.sober — start / absorb / finish を white-box で）も同じ網で測る
 
 import "std/crypto/poly1305"
 import "std/iter"
 
-// fill は全部 v の n バイト
+// 全部 v の n バイト
 func fill(n int, v int) []byte {
     mut b := mut []byte{}
     for i <- iter.Range(0, n) {
@@ -71,12 +71,12 @@ func TestExpPolyFixed() {
     Measure("exp_poly_fixed", n, 8, (c, i) => sec(c, i, 32), (x) => len(poly1305.Sum(x, msg)) == 16)
 }
 
-// lw は b[p..p+4) の小さい端の 32 bit の語
+// b[p..p+4) の小さい端の 32 bit の語
 func lw(b []byte, p int) int {
     return int(b[p]) | (int(b[p + 1]) << 8) | (int(b[p + 2]) << 16) | (int(b[p + 3]) << 24)
 }
 
-// chain は Poly1305 の absorb と同じ形の積と加算の鎖（26 bit × 5 limb の 5 × 5 の積・× 5 の畳み・繰り上がり）を、鍵から作った limb に 4 周掛ける。
+// Poly1305 の absorb と同じ形の積と加算の鎖（26 bit × 5 limb の 5 × 5 の積・× 5 の畳み・繰り上がり）を、鍵から作った limb に 4 周掛ける。
 // 暗号の関数でなく、メモリの読み書き（le32 の切片の読み・put32 の書き・結果の写し）を鎖の外に出した形 — 入力の読みは頭の 1 回だけ・結果は bool 1 つ。
 // これに ff のずれが出れば、ずれは Zen 3 / 4 の積と加算の鎖そのものの性質（ソフトウェアの外）
 func chain(k []byte) bool {

@@ -1,0 +1,130 @@
+package http
+
+// 条件付き GET の部品の網（white-box — 非公開の httpDate / parseDate / tagIn / etagOf / cacheValue）: HTTP の日付の書きと読み（RFC 9110 5.6.7 の 3 形・
+// 閏年・世紀・範囲の外・壊れた形）・書いて読むの往復・entity-tag のリストの比較（弱い / 強い・`*`・空白とコンマ・崩れた形）・ETag の変種の印・Cache-Control の値
+
+import "std/io"
+
+// s 全体の parseDate（読めなければ -999）
+func pd(s string) int {
+    b := bytes(s)
+    v, ok := parseDate(b, 0, len(b))
+    return if ok { v } else { -999 }
+}
+
+func ti(list string, tag string, weak bool) bool {
+    b := bytes(list)
+    return tagIn(b, 0, len(b), bytes(tag), weak)
+}
+
+func TestHttpDate() {
+    assert(httpDate(0) == "Thu, 01 Jan 1970 00:00:00 GMT")
+    assert(httpDate(784111777) == "Sun, 06 Nov 1994 08:49:37 GMT")
+    assert(httpDate(951782400) == "Tue, 29 Feb 2000 00:00:00 GMT")
+    assert(httpDate(4107542400) == "Mon, 01 Mar 2100 00:00:00 GMT")
+    // 書いて読むの往復（1970〜2106 を素数の幅で掃く）
+    mut s := 0
+    mut bad := 0
+    while s < 4300000000 {
+        if pd(httpDate(s)) != s {
+            bad += 1
+        }
+        s += 9999991
+    }
+    assert(bad == 0)
+}
+
+func TestParseDate() {
+    // 3 形が同じ時刻
+    assert(pd("Sun, 06 Nov 1994 08:49:37 GMT") == 784111777)
+    assert(pd("Sunday, 06-Nov-94 08:49:37 GMT") == 784111777)
+    assert(pd("Sun Nov  6 08:49:37 1994") == 784111777)
+    assert(pd("Sun Nov 06 08:49:37 1994") == 784111777)
+    // 前後の空白は除く・曜日と日付の一致は見ない
+    assert(pd("  Sun, 06 Nov 1994 08:49:37 GMT ") == 784111777)
+    assert(pd("Mon, 06 Nov 1994 08:49:37 GMT") == 784111777)
+    // 1970 より前・閏秒・RFC 850 の 2 桁の年（69〜99 = 19xx・00〜68 = 20xx）
+    assert(pd("Wed, 31 Dec 1969 23:59:59 GMT") == -1)
+    assert(pd("Wed, 01 Mar 1600 00:00:00 GMT") == -11670912000)
+    assert(pd("Sun, 06 Nov 1994 08:49:60 GMT") == 784111800)
+    assert(pd("Sunday, 01-Jan-68 00:00:00 GMT") == 3092601600)
+    assert(pd("Wednesday, 31-Dec-69 23:59:59 GMT") == -1)
+    // 壊れた形（大小・月の日数・2100 は閏年でない・時刻の範囲・字数・後ろの余り・曜日の名前・空）
+    assert(pd("Sun, 06 Nov 1994 08:49:37 gmt") == -999)
+    assert(pd("sun, 06 Nov 1994 08:49:37 GMT") == -999)
+    assert(pd("Sun, 06 nov 1994 08:49:37 GMT") == -999)
+    assert(pd("Sun, 31 Feb 1994 08:49:37 GMT") == -999)
+    assert(pd("Mon, 29 Feb 2100 00:00:00 GMT") == -999)
+    assert(pd("Tue, 29 Feb 2000 00:00:00 GMT") == 951782400)
+    assert(pd("Sun, 06 Nov 1994 24:00:00 GMT") == -999)
+    assert(pd("Sun, 06 Nov 1994 08:60:00 GMT") == -999)
+    assert(pd("Sun, 6 Nov 1994 08:49:37 GMT") == -999)
+    assert(pd("Sun, 06 Nov 1994 08:49:37 GMT, Mon, 07 Nov 1994 08:49:37 GMT") == -999)
+    assert(pd("Xyz, 06 Nov 1994 08:49:37 GMT") == -999)
+    assert(pd("Sun, 00 Nov 1994 08:49:37 GMT") == -999)
+    assert(pd("Sun, 06 Nov 1994 08-49-37 GMT") == -999)
+    assert(pd("") == -999)
+    assert(pd("yesterday") == -999)
+}
+
+func TestTagIn() {
+    t := "W/\"abc-1\""
+    // 弱い比較（If-None-Match）: W/ の有無を見ない・リストのどれか・`*`
+    assert(ti("W/\"abc-1\"", t, true))
+    assert(ti("\"abc-1\"", t, true))
+    assert(ti("\"x\", W/\"y\" ,W/\"abc-1\"", t, true))
+    assert(ti("*", t, true))
+    assert(ti(" , ,W/\"abc-1\"", t, true))
+    assert(!ti("W/\"abc-2\"", t, true))
+    assert(!ti("W/\"abc-1-br\"", t, true))
+    assert(!ti("abc-1", t, true))
+    assert(!ti("\"abc-1", t, true))
+    assert(!ti("", t, true))
+    // 強い比較（If-Match）: 弱い tag は `*` 以外に一致しない・強い tag 同士は一致
+    assert(!ti("W/\"abc-1\"", t, false))
+    assert(!ti("\"abc-1\"", t, false))
+    assert(ti("*", t, false))
+    assert(ti("\"abc-1\"", "\"abc-1\"", false))
+    assert(!ti("W/\"abc-1\"", "\"abc-1\"", false))
+}
+
+func TestEtag() {
+    st := io.FileInfo{size: 9, modTime: 1700000000500000000}
+    assert(etagOf(st, "") == "W/\"17979cfe53f76500-9\"")
+    assert(etagOf(st, "br") == "W/\"17979cfe53f76500-9-br\"")
+    assert(etagOf(st, "gzip") == "W/\"17979cfe53f76500-9-gz\"")
+    assert(etagOf(io.FileInfo{}, "") == "W/\"0-0\"")
+    assert(hexOf(-255) == "-ff")
+}
+
+func TestCacheValue() {
+    assert(cacheValue(nil) == "private")
+    assert(cacheValue(Revalidate{}) == "no-cache")
+    assert(cacheValue(Fresh{maxAge: 3600}) == "max-age=3600")
+    assert(cacheValue(Fresh{maxAge: 31536000, immutable: true}) == "max-age=31536000, immutable")
+    assert(cacheValue(Fresh{maxAge: -5, immutable: false}) == "max-age=0")
+    assert(cacheValue(NoStore{}) == "no-store")
+}
+
+// sendUnder は開き直した実体の大きさか更新時刻が handler で見た値と違えば ESTALE（差し替えの窓 — 古い ETag に新しいバイト列を載せない）
+func TestSendUnderStale() {
+    w := "out/http_cond_test"
+    _ = io.WriteFile(w + ".txt", bytes("abc"))
+    st, e := statUnder("out", "http_cond_test.txt")
+    assert(e == nil && st.size == 3)
+    e1 := sendUnder("out", "http_cond_test.txt", 3, st.modTime, (b) => nil)
+    assert(e1 == nil)
+    e2 := sendUnder("out", "http_cond_test.txt", 3, st.modTime + 1, (b) => nil)
+    e3 := sendUnder("out", "http_cond_test.txt", 2, st.modTime, (b) => nil)
+    assert(isStale(e2) && isStale(e3))
+}
+
+func isStale(x error?) bool {
+    if x == nil {
+        return false
+    }
+    return switch x {
+    case io.Other{errno}: errno == 116
+    default: false
+    }
+}

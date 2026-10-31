@@ -1,7 +1,7 @@
 package main
 
 // 負例（language.md 15 節 ② — 同一性の型のゼロ値）: io.Root のゼロ値リテラルは拒否（ゼロ値 = fd 0 を根に開く偽物になる — io.OpenRoot だけが作る）。
-// 2026-10-21 まで io.Root は族の列に無く check を通っていた（report-964 (A)）
+// io.Root は同一性を持つ型の族に含める（含めないと check がこのゼロ値を素通りさせてしまう）
 
 import "std/io"
 

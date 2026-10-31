@@ -1,6 +1,6 @@
 package lower
 
-// SLP の束ね（SIMD 段 4②b — report-551 4 節）: ブロックの中の直線で、同じ根の隣り合う語 k, k + 1 への float の値の store の対（種）から、
+// SLP の束ね: ブロックの中の直線で、同じ根の隣り合う語 k, k + 1 への float の値の store の対（種）から、
 // 2 本の値の木を同時に下って packed f64（OpPMem / OpPArith — ir.sober）の 1 本に束ねる。B2 の最後（vec の隣・cmpDup の手前）・最適化の
 // バックエンドの経路だけ・`--no-vec` で外れる（網 = 束ねた ≟ 束ねない）。
 //   対の下り方: 同じ float の演算（add〜div・sqrt）→ packed の演算・同じ根の k, k + 1 の load → 16 B の load・同じ値（同じ値の番号か、間に
@@ -52,7 +52,7 @@ type SlpW struct {
     last int     // slpRun の結果の節
 }
 
-// slpFunc は関数 f に掛ける（先に安い走査 — float の演算の値を書く store が 2 本以上ある関数だけ作業域を作る）
+// 関数 f に掛ける（先に安い走査 — float の演算の値を書く store が 2 本以上ある関数だけ作業域を作る）
 func slpFunc(st mut St, f FnRef) {
     if st.taskUse || irFnBHead(mut st, f) == -1 {
         return
@@ -115,7 +115,7 @@ func slpFunc(st mut St, f FnRef) {
     }
 }
 
-// slpBlock はブロック b を束ねる（書き換えたら真）
+// ブロック b を束ねる（書き換えたら真）
 func slpBlock(st mut St, w mut SlpW, f FnRef, b BlkRef) bool {
     mut n := 0
     mut i := irBlkIHead(mut st, b)
@@ -231,7 +231,7 @@ func slpBlock(st mut St, w mut SlpW, f FnRef, b BlkRef) bool {
     return okb
 }
 
-// slpStoreF は位置 e が消していない store で、値がこのブロックの float の演算か（a >= 0 なら a の相手 — 同じ根・語 + 1）
+// 位置 e が消していない store で、値がこのブロックの float の演算か（a >= 0 なら a の相手 — 同じ根・語 + 1）
 func slpStoreF(st mut St, w mut SlpW, e int, a int) bool {
     if w.p[e * PS + 1] != 2 || w.p[e * PS + 4] != 0 || (a >= 0 && (w.p[e * PS + 2] != w.p[a * PS + 2] || w.p[e * PS + 3] != w.p[a * PS + 3] + 1)) {
         return false
@@ -240,7 +240,7 @@ func slpStoreF(st mut St, w mut SlpW, e int, a int) bool {
     return dv >= 0 && w.v[irInsC(mut st, InsRef(w.p[e * PS])) * VS + V_ISC] == 2
 }
 
-// slpNode は節を足す（x の鎖に繋ぐ — store は鎖に入れない）
+// 節を足す（x の鎖に繋ぐ — store は鎖に入れない）
 func slpNode(w mut SlpW, k int, at int, x int, y int, c1 int, c2 int, op int, wd int) int {
     id := w.nn
     o := id * NS
@@ -262,7 +262,7 @@ func slpNode(w mut SlpW, k int, at int, x int, y int, c1 int, c2 int, op int, wd
     return id
 }
 
-// slpRollback は n0 より後ろの節を捨てる（鎖の頭を戻す — 作った逆順に）
+// n0 より後ろの節を捨てる（鎖の頭を戻す — 作った逆順に）
 func slpRollback(w mut SlpW, n0 int) {
     while w.nn > n0 {
         w.nn = w.nn - 1
@@ -273,7 +273,7 @@ func slpRollback(w mut SlpW, n0 int) {
     }
 }
 
-// slpRun は対 (x0, y0) を作業列で後順に節にする（結果の節 = w.last）。返り値 = 作った節の費用の和 + 1（16 B の store の分）。節の上限を超えたら負
+// 対 (x0, y0) を作業列で後順に節にする（結果の節 = w.last）。返り値 = 作った節の費用の和 + 1（16 B の store の分）。節の上限を超えたら負
 func slpRun(st mut St, w mut SlpW, x0 int, y0 int, at0 int) int {
     mut gain := 1
     // 作業列（4 語の枠 [x, y, 置き場, 状態]）と結果の列（先に確保 — 深さは節の数で抑えられる）
@@ -360,7 +360,7 @@ func slpRun(st mut St, w mut SlpW, x0 int, y0 int, at0 int) int {
     return gain
 }
 
-// slpSame は x, y が同じ値か（同じ番号か、間に重なりうる書き込みの無い同じ番地の load）— 同じなら早い側の値・違えば -1
+// x, y が同じ値か（同じ番号か、間に重なりうる書き込みの無い同じ番地の load）— 同じなら早い側の値・違えば -1
 func slpSame(w mut SlpW, x int, y int, dx int, dy int) int {
     if x == y {
         return x
@@ -379,7 +379,7 @@ func slpSame(w mut SlpW, x int, y int, dx int, dy int) int {
     return if dx < dy { x } else { y }
 }
 
-// slpLoad は x, y が同じ根の語 k, k + 1 の load なら 16 B の load の節（前の位置 — 間に遅い側の語への書き込みが無ければ — か遅い位置）・違えば -1
+// x, y が同じ根の語 k, k + 1 の load なら 16 B の load の節（前の位置 — 間に遅い側の語への書き込みが無ければ — か遅い位置）・違えば -1
 func slpLoad(st mut St, w mut SlpW, x int, y int, dx int, dy int) int {
     if w.p[dx * PS + 1] != 1 || w.p[dy * PS + 1] != 1 || w.p[dx * PS + 2] < 0 || w.p[dx * PS + 2] != w.p[dy * PS + 2] || w.p[dy * PS + 3] != w.p[dx * PS + 3] + 1 ||
         irInsC(mut st, InsRef(w.p[dx * PS])) == 1 || irInsC(mut st, InsRef(w.p[dy * PS])) == 1 {
@@ -402,7 +402,7 @@ func slpLoad(st mut St, w mut SlpW, x int, y int, dx int, dy int) int {
     return if okLo || okHi { slpNode(mut w, SK_LD, if okLo { lo } else { hi }, x, y, -1, -1, w.p[dx * PS + 2], w.p[dx * PS + 3]) } else { -1 }
 }
 
-// slpOrderOk は新しい並び（slpOrder）で、メモリの読み書きの元の順が入れ替わった組に重なりうる書き込みが無いか（16 B の load / store は
+// 新しい並び（slpOrder）で、メモリの読み書きの元の順が入れ替わった組に重なりうる書き込みが無いか（16 B の load / store は
 // 2 語の読み書き — 元の位置はレーンの命令の位置）
 func slpOrderOk(w mut SlpW, n int) bool {
     mut ord := mut []int{}
@@ -438,7 +438,7 @@ func slpOrderOk(w mut SlpW, n int) bool {
     return true
 }
 
-// slpOrder は新しい並び（e < n = 位置 e の命令・n + k = 節 k）を out へ: 位置ごとに置き場がその位置の節（作った順）→ 命令
+// 新しい並び（e < n = 位置 e の命令・n + k = 節 k）を out へ: 位置ごとに置き場がその位置の節（作った順）→ 命令
 func slpOrder(w mut SlpW, n int, out mut []int) {
     mut cnt := mut []int{}
     xFill(mut cnt, n + 1, 0)
@@ -469,7 +469,7 @@ func slpOrder(w mut SlpW, n int, out mut []int) {
     }
 }
 
-// slpEmit は節を命令にしてブロックを並べ直す（取り出しの lo / hi と置き換えも）
+// 節を命令にしてブロックを並べ直す（取り出しの lo / hi と置き換えも）
 func slpEmit(st mut St, w mut SlpW, f FnRef, b BlkRef, n int) {
     // このブロックの命令の使用（消す store を除く）と最小の位置・消す store での使用は関数全体の数から引く
     for e <- iter.Range(0, n) {
@@ -556,7 +556,7 @@ func slpEmit(st mut St, w mut SlpW, f FnRef, b BlkRef, n int) {
     }
 }
 
-// slpRep は取り出しの置き換え先（無ければそのまま）
+// 取り出しの置き換え先（無ければそのまま）
 func slpRep(w mut SlpW, v int) int {
     return if v >= 0 && v < w.nv && w.v[v * VS + V_REP] >= 0 { w.v[v * VS + V_REP] } else { v }
 }

@@ -1,6 +1,6 @@
 package main
 
-// 負例: Open の直後の文が defer io.Close でない — 文面が入れる行を示す（diag.FileUse — desugar/filecheck・language.md 28 節「資源とストリーム」— IO 便 段 2）
+// 負例: Open の直後の文が defer io.Close でない — 文面が入れる行を示す（diag.FileUse — desugar/filecheck・language.md 28 節「資源とストリーム」）
 
 import "std/io"
 

@@ -1,2 +1,3 @@
+sober: type error at examples/closure_bound_named_fn_nocap.sober:17:16
 {"errors":[{"msg":"type error"}],"ok":false}
 exit=1

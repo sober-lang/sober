@@ -1,0 +1,15 @@
+testdata/cover/shapes/shapes.sober:8:6 fn 1
+testdata/cover/shapes/shapes.sober:10:5 case 1
+testdata/cover/shapes/shapes.sober:11:5 case 1
+testdata/cover/shapes/shapes.sober:12:5 case 0
+testdata/cover/shapes/shapes.sober:16:6 fn 1
+testdata/cover/shapes/shapes.sober:17:5 then 1
+testdata/cover/shapes/shapes.sober:17:5 else 1
+testdata/cover/shapes/shapes.sober:20:5 then 0
+testdata/cover/shapes/shapes.sober:20:5 else 1
+testdata/cover/shapes/shapes.sober:20:21 rhs 0
+testdata/cover/shapes/shapes.sober:26:6 fn 1
+testdata/cover/shapes/shapes.sober:27:5 then 0
+testdata/cover/shapes/shapes.sober:27:5 else 1
+testdata/cover/shapes/shapes.sober:33:6 fn 0
+testdata/cover/shapes/shapes.sober:35:5 loop 0

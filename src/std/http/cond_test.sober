@@ -5,7 +5,7 @@ package http
 
 import "std/io"
 
-// pd は s 全体の parseDate（読めなければ -999）
+// s 全体の parseDate（読めなければ -999）
 func pd(s string) int {
     b := bytes(s)
     v, ok := parseDate(b, 0, len(b))

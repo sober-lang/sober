@@ -1,0 +1,361 @@
+package checker
+
+// E2-S の逃げ（docs/formal.md「check の callM の段」の条件 6）: 脱糖器が callM へ上げた関数のうち、本体が Def として型付かなかったものを
+// 検査器の判定で集め、展開へ戻して脱糖し直す（周回）。展開へ戻すのは型付けを緩めるだけなので単調に収束する。最後の周回の判定をそのまま使う
+// （落ちた上げた関数が無い周回 = 判定が確定した周回）。周回 1 回は 1 つの関数（Def）に割る — 脱糖器のヒープの region を周回ごとに捨てるため
+
+import "desugar"
+import "diag"
+import "loader"
+import "std/iter"
+import "std/task"
+
+// Round は 1 周の結果: out = 判定 JSON・def = 最初の def error の Def の添字・back = 展開へ戻す関数（上げた関数のうち Def として落ちたもの）
+type Round struct {
+    out []byte
+    def int
+    back []int
+    all []int // 落ちた Def の添字の全部（開発用 — `--def-index` が全件を印字する）
+    at int    // 拒否の位置（最初に落ちた節の出所 — PackPos・0 = 無し）
+    // check の関数単位キャッシュ（便 2 R2 — defcache.sober）: recs = 区間の子の落ちの記録（childRecs）・puts = 書く値・cnt = [当たり, 外れ, 区間]・
+    // stale = 検証モードで値が食い違った関数
+    recs []int
+    puts []loader.PcPut
+    cnt []int
+    stale []int
+}
+
+func roundOf(c desugar.Core, m []int, idx bool, stop int, rng desugar.DefRng) Round {
+    // 計測の口（段 6 P6-0 — SOBER_CHECK_STOP=desugar）: 脱糖して検査器へ渡すところで止める（判定は空・周回は 1 回で終わる）
+    if stop != 0 {
+        return Round{[]byte{}, -1, []int{}, []int{}, 0, []int{}, []loader.PcPut{}, []int{}, []int{}}
+    }
+    // Def の区間の子（段 6 P6-3）: 子が脱糖した Core の本体のある Def 全部（区間の Def + 子の中の持ち上げ）と、根の区間なら根の式を検査する
+    // （区間の外の Def は脱糖器が署名だけにしている）。判定は根の区間だけが使う（他は idx の形 — 判定 JSON を作らない）
+    lu := desugar.RngLu(rng)
+    r := if rng.set {
+        checkCoreR(c, defSrcs(c), !rng.root, true, 0, len(defSrcs(c)), rng.root, len(c.Exprs), lu)
+    } else {
+        checkCoreX(c, idx, true)
+    }
+    loader.Stage("ck-core")
+    mut back := mut []int{}
+    for k <- iter.Range(0, len(r.fails)) {
+        j := r.fails[k]
+        if j >= 0 && j < len(m) && m[j] >= 0 {
+            back = append(back, m[j])
+        }
+    }
+    recs := if lu { childRecs(c, m, r.fpos, desugar.PlanNfn(desugar.RngPlan(rng)), len(defSrcs(c))) } else { []int{} }
+    return Round{r.out, r.def, freeze(back), r.fails, r.at, recs, []loader.PcPut{}, []int{}, []int{}}
+}
+
+func checkRound(p loader.Program, excl []int, idx bool, only int, trust bool, stop int, rng desugar.DefRng) (Round, error?) {
+    return desugar.WithCoreOpt(p, excl, only, trust, stop, desugar.Tracked(rng), (d) => Round{[]byte{}, -1, []int{}, []int{}, 0, []int{d}, []loader.PcPut{}, []int{}, []int{}}, (c, m) => roundOf(c, m, idx, stop, rng))
+}
+
+// ── 脱糖 + 検査の Def の区間の並列（段 6 P6-3）──
+// 判定の経路（idx でない）は、親が前段（desugar.PlanDefs）を 1 回走らせて Def の費用の代理で区間を切り、区間ごとに子 task が自前の脱糖器と
+// 検査器で「前段 → 区間の本体の脱糖 → 検査」を行う（checkRound の rng）。根の式は最後の区間（Def なし + 根）。Core は合流しない（持ち上げ・
+// インスタンスは子の中で自己完結 — 子ごとの番号は外へ出ない）。合流（区間の順）は逐次の意味の再現: 脱糖の拒否 = 区間の順で最初（mapE の err —
+// 逐次は Def の順で最初 → 根）・深すぎがどこかにあれば too deep・落ちた Def があれば def error（戻し = 名前付き Def の落ちを区間の順に連結 —
+// 逐次の Def の順と同じ）・無ければ根の区間の判定。区間の切り方は費用の代理だけで決まる（ワーカー数を読まない）
+
+// PD_CHUNK は区間 1 つの目標の費用（関数宣言の節の数の和）。区間が 1 つに収まるなら 1 本の経路（checkRound の WholeRng — task なし）
+const PD_CHUNK = 60000
+
+// 区間の宣言の上界（budget:）= 前段のヒープの語数 × PD_HEAP + 区間の費用 × PD_BYTE + P_BASE（係数は校正）
+const PD_HEAP = 16
+const PD_BYTE = 1536
+
+func planRanges(plan desugar.DefPlan, cost []int) []desugar.DefRng {
+    mut out := mut []desugar.DefRng{}
+    // 根の区間（Def なし — 根の式が無い部分検査では空の検査になるだけ）を先頭に: 全部の署名を作るので最も長い子になりやすく、
+    // 先に生めば先に走り出す（合流の順は区間の順のまま — 根は合流の最後に読む）
+    out = append(out, desugar.RangeOf(plan, len(cost), len(cost), true))
+    mut lo := 0
+    mut acc := 0
+    for j <- iter.Range(0, len(cost)) {
+        acc += cost[j]
+        if acc >= PD_CHUNK {
+            out = append(out, desugar.RangeOf(plan, lo, j + 1, false))
+            lo = j + 1
+            acc = 0
+        }
+    }
+    if lo < len(cost) {
+        out = append(out, desugar.RangeOf(plan, lo, len(cost), false))
+    }
+    return freeze(out)
+}
+
+func maxCost(cost []int, rs []desugar.DefRng) int {
+    mut most := 0
+    for k <- iter.Range(0, len(rs)) {
+        mut acc := 0
+        for j <- iter.Range(rs[k].lo, rs[k].hi) {
+            acc += cost[j]
+        }
+        if acc > most {
+            most = acc
+        }
+    }
+    return most
+}
+
+// checkRoundPar は判定の経路の 1 周（idx でない・止めない）。区間が 1 つなら checkRound の 1 本の経路
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
+func checkRoundPar(p loader.Program, excl []int, only int, trust bool, stop int, cc CkCache) (Round, error?) {
+    plan := desugar.PlanDefs(p, excl, only, trust, if cc.on && stop == 0 && only < 0 { cc.self } else { []byte{} })?
+    loader.Stage("ck-plan")
+    if desugar.CkOn(plan) {
+        return checkRoundCk(p, excl, trust, plan, cc)
+    }
+    cost := desugar.PlanCost(plan)
+    rs := planRanges(plan, cost)
+    if len(rs) <= 2 {
+        return checkRound(p, excl, false, only, trust, stop, desugar.WholeRng())
+    }
+    bud := desugar.PlanHeap(plan) * PD_HEAP + maxCost(cost, rs) * PD_BYTE + P_BASE
+    outs := rangeRounds(p, excl, only, trust, stop, rs, bud)
+    loader.Stage("ck-ranges")
+    if stop != 0 {
+        return Round{[]byte{}, -1, []int{}, []int{}, 0, []int{}, []loader.PcPut{}, []int{}, []int{}}, nil
+    }
+    for k <- iter.Range(0, len(outs)) {
+        if outs[k].def == R_REJ {
+            return checkRound(p, excl, false, only, trust, 0, desugar.WholeRng())
+        }
+    }
+    mut back := mut []int{}
+    mut deep := false
+    mut failed := false
+    mut at := 0
+    // 区間の順（1 から）→ 根（0）の順に畳む（逐次の Def の順 → 根の順）
+    for k <- iter.Range(0, len(outs)) {
+        o := outs[(k + 1) % len(outs)]
+        if o.def == -2 {
+            deep = true
+        }
+        if len(o.all) > 0 {
+            failed = true
+            if at == 0 {
+                at = o.at
+            }
+        }
+        for i <- iter.Range(0, len(o.back)) {
+            back = append(back, o.back[i])
+        }
+    }
+    if deep {
+        return Round{bytes("checker: too deep\n"), -2, []int{}, []int{}, 0, []int{}, []loader.PcPut{}, []int{}, []int{}}, nil
+    }
+    if failed {
+        // def / all は子の番号（持ち上げは子ごと）なので外へ出さない（idx の経路 — --def-index — は 1 本の経路）
+        return Round{defErrorOut(), -1, freeze(back), []int{}, at, []int{}, []loader.PcPut{}, []int{}, []int{}}, nil
+    }
+    return outs[0], nil
+}
+
+// rangeRounds は区間ごとの子 task の 1 周（区間の順 — task.Map の添字の順）。子の脱糖の拒否は値（def = R_REJ）にして返す — 親は 1 本の経路で
+// 走らせ直して逐次と同じ最初の拒否を出す（拒否は稀・診断の位置ごと逐次と一致する。子の err を Map で運ぶと @errors が導けない）。子の死は親の死
+func rangeRounds(p loader.Program, excl []int, only int, trust bool, stop int, rs []desugar.DefRng, bud int) []Round {
+    outs, serr := task.Map(rs, (r) => rangeRound(p, excl, only, trust, stop, r), budget: bud)
+    if serr != nil {
+        return panic(InvariantBroken{})
+    }
+    return outs
+}
+
+// R_REJ は脱糖の拒否の印（Round.def）: 区間の子の拒否と、check の関数単位キャッシュの道の拒否の判定（便 2 R3 — checkRoundCk）。
+// recs = [帰す先の Def〔関数 i・根 nfn・どれでもない −1〕, 種類, kind, 位置, 2 つ目の位置]（diag.WordsOf・位置は PackPos）
+const R_REJ = -3
+
+func rangeRound(p loader.Program, excl []int, only int, trust bool, stop int, r desugar.DefRng) Round {
+    o, err := checkRound(p, excl, false, only, trust, stop, r)
+    if err != nil {
+        return rejRound(if len(o.recs) == 1 { o.recs[0] } else { -1 }, diag.WordsOf(err), []loader.PcPut{}, []int{}, []int{})
+    }
+    return o
+}
+
+func rejRound(rd int, w diag.Words, puts []loader.PcPut, cnt []int, stale []int) Round {
+    return Round{[]byte{}, R_REJ, []int{}, []int{}, 0, []int{rd, diag.WTag(w), diag.WKind(w), desugar.PackPos(diag.WAt(w)), desugar.PackPos(diag.WMissing(w))}, puts, cnt, stale}
+}
+
+// E2Out は周回の最後の結果と逃げの集合
+type E2Out struct {
+    round Round
+    excl []int
+    rounds int
+    puts []loader.PcPut // check の関数単位キャッシュの書く値（全周回）・cnt = [当たり, 外れ, 区間の子]（全周回の和）・stale = 検証の食い違い
+    cnt []int
+    stale []int
+}
+
+func runE2(p loader.Program, idx bool, dpar bool) (E2Out, error?) {
+    return runE2X(p, idx, -1, false, []int{}, 0, dpar)
+}
+
+func runE2Pkg(p loader.Program, idx bool, only int, dpar bool) (E2Out, error?) {
+    return runE2X(p, idx, only, false, []int{}, 0, dpar)
+}
+
+// runE2Pkg は runE2 の部分検査版（only = package の添字 — 逃げの周回は only の Def の判定だけで回る。-1 = 全体）
+// 逃げの初期集合 = 視点の .sobi の `@expand`（依存の package の check が確定した逃げ — 判定 D'。ソースだけの全体の check では空）
+// trust = std の Def を署名だけで（L0）・excl0 = 焼き込みの .sobi の `@expand`（std の逃げ — std の Def を検査しないので周回では見つけられない）
+func runE2X(p loader.Program, idx bool, only int, trust bool, excl0 []int, stop int, dpar bool) (E2Out, error?) {
+    return runE2C(p, idx, only, trust, excl0, stop, dpar, CkOff())
+}
+
+// runE2C は runE2X に check の関数単位キャッシュ cc を足したもの（便 2 R2 — 判定の経路の区間の並列のときだけ使う）
+func runE2C(p loader.Program, idx bool, only int, trust bool, excl0 []int, stop int, dpar bool, cc CkCache) (E2Out, error?) {
+    mut excl := mut []int{}
+    for k <- iter.Range(0, len(excl0)) {
+        excl = append(excl, excl0[k])
+    }
+    marked := loader.ExpandMarked(p)
+    for k <- iter.Range(0, len(marked)) {
+        excl = append(excl, marked[k])
+    }
+    mut going := true
+    mut last := Round{[]byte{}, -1, []int{}, []int{}, 0, []int{}, []loader.PcPut{}, []int{}, []int{}}
+    mut n := 0
+    mut puts := mut []loader.PcPut{}
+    mut cnt := mut []int{0, 0, 0}
+    mut stale := mut []int{}
+    while going {
+        n += 1
+        r := if dpar && !idx && stop != 3 { checkRoundPar(p, freeze(excl), only, trust, stop, cc)? } else { checkRound(p, freeze(excl), idx, only, trust, stop, desugar.WholeRng())? }
+        for x <- r.puts {
+            puts = append(puts, x)
+        }
+        for k <- iter.Range(0, len(r.cnt)) {
+            cnt[k] = cnt[k] + r.cnt[k]
+        }
+        for x <- r.stale {
+            stale = append(stale, x)
+        }
+        for k <- iter.Range(0, len(r.back)) {
+            excl = append(excl, r.back[k])
+        }
+        going = len(r.back) > 0
+        last = r
+        loader.Stage("ck-round")
+    }
+    return E2Out{last, freeze(excl), n, freeze(puts), freeze(cnt), freeze(stale)}, nil
+}
+
+// CheckE2 は p を（E2-S の逃げの周回込みで）脱糖して検査した判定 JSON（`sober check`）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
+func CheckE2(p loader.Program, dpar bool) ([]byte, error?) {
+    r := runE2(p, false, dpar)?
+    return r.round.out, nil
+}
+
+// CheckE2Trust は CheckE2 の L0 版（std の受理印が焼き込まれているとき — std の Def は検査しない。excl0 = 焼き込みの std の逃げ）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
+func CheckE2Trust(p loader.Program, excl0 []int, dpar bool) ([]byte, error?) {
+    r := runE2X(p, false, -1, true, excl0, 0, dpar)?
+    return r.round.out, nil
+}
+
+// CheckStop は計測の口（段 6 P6-0 — SOBER_CHECK_STOP=desugar）: 判定の経路（一括 = only -1・trust / excl0 は CheckE2Trust と同じ・package = only）を
+// 脱糖まで走らせて検査器を呼ばずに止める（lvl = 3 脱糖の後・4 表層型検査器の後・5 Def の脱糖の後で写しの前 — WithCoreOpt の stopAt。出力は空 — 脱糖と検査の費用の帰属を perf の命令数の差で取る）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
+func CheckStop(p loader.Program, only int, trust bool, excl0 []int, lvl int, dpar bool) ([]byte, error?) {
+    r := runE2X(p, false, only, trust, excl0, lvl, dpar)?
+    return r.round.out, nil
+}
+
+// CheckPkgE2 は package only の部分検査（`sober check <entry> --pkg P --iface D` — 3'' M2）の判定 JSON:
+// p は LoadView の視点（P はソース・他は .sobi）。P の Def は本体つき・他は署名だけ（合成定理 defsOk_of_linked の hchk — formal.md V5-6）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
+func CheckPkgE2(p loader.Program, only int, dpar bool) ([]byte, error?) {
+    r := runE2Pkg(p, false, only, dpar)?
+    return r.round.out, nil
+}
+
+// PkgE2 は CheckPkgE2 の判定と逃げの集合（小分けの check — 3'' M3。逃げは iface.Emit が `@expand` に書く）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
+func PkgE2(p loader.Program, only int, dpar bool) (E2Out, error?) {
+    return runE2Pkg(p, false, only, dpar)
+}
+
+// Out は E2Out の確定した周回の判定 JSON
+func Out(r E2Out) []byte {
+    return r.round.out
+}
+
+// DefFailE2 は開発用（`sober check --def-index`）: 逃げの集合と、確定した周回の最初の def error の Def の添字（無ければ -1）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
+func DefFailE2(p loader.Program) (E2Out, error?) {
+    return runE2(p, true, false)
+}
+
+// ExclE2 は逃げの集合（`sober check --core-json` — 判定と同じコアを出すため）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
+func ExclE2(p loader.Program, dpar bool) ([]int, error?) {
+    r := runE2(p, false, dpar)?
+    return r.excl, nil
+}
+
+// At は E2Out の確定した周回の拒否の位置（最初に落ちた節の出所 — desugar.UnpackPos で位置に戻す・0 = 無し）
+func At(r E2Out) int {
+    return r.round.at
+}
+
+// RunE2 は判定の経路の周回（`sober check` — trust / excl0 は CheckE2Trust と同じ・dpar は区間の並列）の結果（判定 JSON は Out・拒否の位置は At）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
+func RunE2(p loader.Program, trust bool, excl0 []int, dpar bool) (E2Out, error?) {
+    return runE2X(p, false, -1, trust, excl0, 0, dpar)
+}
+
+// RunE2C は RunE2 に check の関数単位キャッシュ cc を足したもの（便 2 R2 — opt-in SOBER_CHECK_CACHE=1。書く値は Puts）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
+func RunE2C(p loader.Program, trust bool, excl0 []int, dpar bool, cc CkCache) (E2Out, error?) {
+    return runE2C(p, false, -1, trust, excl0, 0, dpar, cc)
+}
+
+// Puts / CkCount / Stale は E2Out のキャッシュの欄の読み口
+func Puts(r E2Out) []loader.PcPut {
+    return r.puts
+}
+
+func CkCount(r E2Out) []int {
+    return r.cnt
+}
+
+// RejErr は E2Out の確定した周回が脱糖の拒否（check の関数単位キャッシュの道 — 便 2 R3。値の書きの後に返す）ならその拒否（でなければ nil）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
+func RejErr(r E2Out) error? {
+    if r.round.def != R_REJ {
+        return nil
+    }
+    w := r.round.recs
+    return diag.FromWords(w[1], w[2], desugar.UnpackPos(w[3]), desugar.UnpackPos(w[4]))
+}
+
+func Stale(r E2Out) []int {
+    return r.stale
+}
+
+// Def は E2Out の確定した周回の最初の def error の Def の添字
+func Def(r E2Out) int {
+    return r.round.def
+}
+
+// Fails は E2Out の確定した周回で落ちた Def の添字の全部（開発用）
+func Fails(r E2Out) []int {
+    return r.round.all
+}
+
+// Excl は E2Out の逃げの集合
+func Excl(r E2Out) []int {
+    return r.excl
+}
+
+// Rounds は E2Out の周回の数（開発用 — `--def-index` が印字する）
+func Rounds(r E2Out) int {
+    return r.rounds
+}

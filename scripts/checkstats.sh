@@ -2,7 +2,7 @@
 # checkstats（段 6 P6-0 — 自己 check の費用の帰属）: `sober check` を段ごとに止めて（SOBER_CHECK_STOP = load / analyzer / desugar / 最後まで）、
 # （typer = 脱糖の表層型検査器まで・defs = Def の脱糖まで〔検査器への写しの前〕— 段 6 P6-3）
 # perf の命令数（instructions:u — 決定的）と peak RSS を測り、前の段との差を段の費用として出す。
-#   scripts/checkstats.sh [--pkg <path>]… [<entry>]   既定 entry = compiler/app/main.sober（std を写した作業木で — passstats と同じ形）
+#   scripts/checkstats.sh [--pkg <path>]… [<entry>]   既定 entry = compiler/app（std を写した作業木で — passstats と同じ形）
 # --pkg を付けると一括でなく package ごとの部分検査（check --pkg — iface は先に 1 回書く）を、付けた package ごとに測る（analyzer の段は無い）。
 # PERF で perf の実行ファイルを指す（無ければ PATH → /nix/store を探す）。SOBER_WORKERS は呼び手の環境のまま（P6 の W 軸はこれで振る）
 set -uo pipefail
@@ -27,7 +27,7 @@ if [ -z "$entry" ]; then
     mkdir -p "$T"
     cp -r src/compiler/. "$T/"
     cp -r src/std "$T/std"
-    entry=app/main.sober
+    entry=app
 else
     T=$ROOT
 fi
@@ -67,7 +67,7 @@ if [ ${#pkgs[@]} -eq 0 ]; then
     # 核の節の数（展開の掛け算 — 決定的。bench/ratchet.txt の self/check nodes と照合 — report-511）
     nodes=$(cd "$T" && "$S2" check "$entry" --expansion-report | awk '$1 == "core" && $2 == "nodes" { print $3 }')
     nlim=$(awk '$1 == "self/check" && $2 == "nodes" { print $3 }' bench/ratchet.txt)
-    if [ "$entry" = app/main.sober ] && [ -n "$nlim" ] && [ "$nodes" -gt "$nlim" ]; then
+    if [ "$entry" = app ] && [ -n "$nlim" ] && [ "$nodes" -gt "$nlim" ]; then
         echo "核の節 $nodes > $nlim（bench/ratchet.txt の self/check nodes — RATCHET FAIL）"
         exit 1
     fi

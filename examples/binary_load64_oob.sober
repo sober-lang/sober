@@ -1,6 +1,6 @@
 package main
 
-// std/binary の Load64 の範囲外（report-723）: i + 8 > len(b) は panic(binary.OutOfRange{i, n})（exit 101 — 読みが b の外の 1 バイトに掛かる形）
+// std/binary の Load64 の範囲外: i + 8 > len(b) は panic(binary.OutOfRange{i, n})（exit 101 — 読みが b の外の 1 バイトに掛かる形）
 
 import "std/binary"
 

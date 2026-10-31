@@ -1,0 +1,59 @@
+package main
+
+// 組み立ての const（language.md 25 節・spec V-3）: string / bool / float のリテラル・imm の slice のリテラル・struct のリテラル（部分リテラル）・
+// それらの入れ子と const の参照。参照する点で組み立てる（同一性は保証しない — 熱いループでは一度束縛して使う）
+type Flag struct {
+    name string
+    help string
+    def string?
+    dev bool
+}
+
+const Greeting = "hello"
+
+const Verbose = false
+
+const Pi = 3.25
+
+const Below = -0.5
+
+const Base = 10
+
+const Primes = []int{2, 3, 5, Base - 3}
+
+const Words = []string{Greeting, "world"}
+
+const Out = Flag{name: "o", help: "write to <file>", def: "a.out"}
+
+const NoOpt = Flag{name: "no-opt", help: "skip the passes", def: nil, dev: true}
+
+const Flags = []Flag{Out, NoOpt, Flag{name: "v"}}
+
+const Grid = [][]int{[]int{1}, []int{2, 3}}
+
+// 組み立ての const の別名
+const Hello = Greeting
+
+func orNone(s string?) string {
+    return if s == nil { "none" } else { s }
+}
+
+func main() {
+    println(Greeting + ", " + Words[1], Hello == Greeting)
+    println(if Verbose { "verbose" } else { "quiet" }, Pi, Below)
+    println(len(Primes), Primes[3])
+    // 要素の欄を直に
+    println(Flags[0].name, Flags[1].dev, Flags[2].help == "")
+    println(orNone(Out.def), orNone(NoOpt.def))
+    println(len(Grid[1]), Grid[1][1])
+    // 一度束縛して使う（参照のたびに組み立てない）
+    fs := Flags
+    mut n := 0
+    for f <- fs {
+        n += if f.dev { 1 } else { 0 }
+    }
+    println(n)
+    // imm の値: append は新しい slice を返す
+    more := append(Primes, 11)
+    println(len(more), len(Primes))
+}

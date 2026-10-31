@@ -1,0 +1,433 @@
+package sort
+
+// 並べ替え（language.md 34 節「並べ替え」の族）。値の列でなく添字を並べる: 比べ方は呼び手のクロージャが持ち（行の開始位置の列とバイト列・struct の欄 …）、
+// 並べた結果は添字の列で返す — 呼び手は元の列を写さずに、その順で読むか組み直す。
+// less(a, b) は「添字 a の要素が添字 b の要素より前」で、狭義の弱順序であること（そうでなければ順は決まらないが、添字の列であることは保ち、範囲の外で落ちない —
+// ループは全部境界で止まる）。どちらの関数も決定的（同じ入力・同じ less なら常に同じ列 — 乱択の pivot を使わない）
+
+import "std/iter"
+
+// 安定版の短い列を二分挿入で伸ばす長さ（マージの最初の幅の下限）
+const base = 16
+
+// 不安定版の挿入ソートに任せる区間の長さ・pivot を 9 点の中央値（ninther）で選ぶ区間の長さ・部分挿入ソートが諦める動かしの回数
+const small = 24
+const ninther = 128
+const partialLimit = 8
+
+// 0..n−1 を less の順に並べた添字の列を返す（安定 — less で前後の付かない添字は小さい順のまま）。
+// 実装 = 自然な列のマージソート: 昇順の列と狭義の降順の列（反転する — 等しいものを含まないので安定のまま）を拾い、base より短い列は二分挿入で伸ばして、
+// 隣どうしを対でマージする周を列が 1 本になるまで繰り返す（既に並んでいる対は写すだけ・右が丸ごと前なら右・左の順に写す）。比べる回数は O(n log n)・並んだ入力と逆順の入力は O(n)・作業域は添字 2n 語
+// 例: examples/sort_order.sober
+@effects(!io, !block, !nondet)
+func Order(n int, less func(int, int) bool) []int {
+    mut ab := mut []int{}
+    for i <- iter.Range(0, n) {
+        ab = append(ab, i)
+    }
+    // 1. 列の境目（bs[0] = 0・bs[k] = k 本目の列の終わり）
+    mut bs := mut []int{0}
+    mut lo := 0
+    while lo < n {
+        mut hi := lo + 1
+        if hi < n {
+            desc := less(ab[hi], ab[lo])
+            hi += 1
+            while hi < n && less(ab[hi], ab[hi - 1]) == desc {
+                hi += 1
+            }
+            if desc {
+                mut a := lo
+                mut b := hi - 1
+                while a < b {
+                    t := ab[a]
+                    ab[a] = ab[b]
+                    ab[b] = t
+                    a += 1
+                    b -= 1
+                }
+            }
+        }
+        if hi - lo < base && hi < n {
+            // 短い列: 二分挿入で base まで伸ばす（等しいものの後ろへ入れて安定に）
+            end := if lo + base < n { lo + base } else { n }
+            while hi < end {
+                x := ab[hi]
+                mut l := lo
+                mut r := hi
+                while l < r {
+                    m := (l + r) / 2
+                    if less(x, ab[m]) {
+                        r = m
+                    } else {
+                        l = m + 1
+                    }
+                }
+                mut j := hi
+                while j > l {
+                    ab[j] = ab[j - 1]
+                    j -= 1
+                }
+                ab[l] = x
+                hi += 1
+            }
+        }
+        bs = append(bs, hi)
+        lo = hi
+    }
+    if len(bs) <= 2 {
+        return freeze(ab)
+    }
+    // 2. 対のマージの周（後半 = 作業域 — 前半と後半を交互に読み書きする。境目の列はその場で詰める）
+    for i <- iter.Range(0, n) {
+        ab = append(ab, 0)
+    }
+    mut runs := len(bs) - 1
+    mut from := 0
+    while runs > 1 {
+        to := n - from
+        mut k := 0
+        mut nr := 0
+        while k < runs {
+            l := bs[k]
+            if k + 1 < runs {
+                m := bs[k + 1]
+                h := bs[k + 2]
+                if !less(ab[from + m], ab[from + m - 1]) {
+                    // 既に並んでいる: 写すだけ
+                    mut t := l
+                    while t < h {
+                        ab[to + t] = ab[from + t]
+                        t += 1
+                    }
+                } else if less(ab[from + h - 1], ab[from + l]) {
+                    // 右が丸ごと左より前（狭義 — 安定のまま）: 右・左の順に写す
+                    mut t := l
+                    mut s := m
+                    while s < h {
+                        ab[to + t] = ab[from + s]
+                        t += 1
+                        s += 1
+                    }
+                    s = l
+                    while s < m {
+                        ab[to + t] = ab[from + s]
+                        t += 1
+                        s += 1
+                    }
+                } else {
+                    // 両側の頭の値を持ち回る（1 歩 = 比べ 1 回・書き 1 回・読み 1 回）
+                    mut a := l
+                    mut b := m
+                    mut t := l
+                    mut va := ab[from + a]
+                    mut vb := ab[from + b]
+                    mut going := true
+                    while going {
+                        if less(vb, va) {
+                            ab[to + t] = vb
+                            t += 1
+                            b += 1
+                            if b < h {
+                                vb = ab[from + b]
+                            } else {
+                                going = false
+                            }
+                        } else {
+                            ab[to + t] = va
+                            t += 1
+                            a += 1
+                            if a < m {
+                                va = ab[from + a]
+                            } else {
+                                going = false
+                            }
+                        }
+                    }
+                    while a < m {
+                        ab[to + t] = ab[from + a]
+                        a += 1
+                        t += 1
+                    }
+                    while b < h {
+                        ab[to + t] = ab[from + b]
+                        b += 1
+                        t += 1
+                    }
+                }
+                bs[nr + 1] = h
+                k += 2
+            } else {
+                // 対の無い最後の列: 写すだけ
+                h := bs[k + 1]
+                mut t := l
+                while t < h {
+                    ab[to + t] = ab[from + t]
+                    t += 1
+                }
+                bs[nr + 1] = h
+                k += 1
+            }
+            nr += 1
+        }
+        runs = nr
+        from = to
+    }
+    mut out := mut []int{}
+    for i <- iter.Range(from, from + n) {
+        out = append(out, ab[i])
+    }
+    return freeze(out)
+}
+
+// 0..n−1 を less の順に並べた添字の列を返す（不安定 — less で前後の付かない添字の順は約束しない。ただし決定的: 同じ入力・同じ less なら
+// 常に同じ列）。Order より速い（写しの作業域が要らず、要素の動きが少ない）。外部ソートの run の組み立てのように、行の全体で比べて同値の順が観測できない形に。
+// 実装 = pattern-defeating quicksort（pdqsort）: pivot = 3 点（長い区間は 9 点）の中央値・pivot と等しい要素が多い区間は等しいものを左へ寄せて飛ばす・
+// 分割が既に済んでいた区間は部分挿入ソートで仕上げを試す・偏った分割が log₂ n 回続いた区間は heapsort（最悪 O(n log n)）・偏った分割の後は決まった位置を入れ替えて並びの癖を崩す（乱択しない）。短い区間は挿入ソート。再帰しない（区間を積む）。作業域は区間の積み（O(log n) 語）
+// 例: examples/sort_order.sober
+@effects(!io, !block, !nondet)
+func OrderUnstable(n int, less func(int, int) bool) []int {
+    mut ab := mut []int{}
+    for i <- iter.Range(0, n) {
+        ab = append(ab, i)
+    }
+    mut lg := 0
+    while (1 << lg) < n {
+        lg += 1
+    }
+    // 区間の積み: [lo, hi, 偏った分割の残り, 左端か] の 4 語ずつ（sp = 積んだ語の数）
+    mut stk := mut []int{0, n, lg + 1, 1}
+    mut sp := 4
+    // 3 点の並べの対（pivot の選び — 1 つの比べの口で回す）
+    mut prs := mut []int{}
+    for i <- iter.Range(0, 24) {
+        prs = append(prs, 0)
+    }
+    while sp > 0 {
+        sp -= 4
+        mut lo := stk[sp]
+        hi := stk[sp + 1]
+        mut bad := stk[sp + 2]
+        mut leftmost := stk[sp + 3] == 1
+        mut going := true
+        while going {
+            size := hi - lo
+            if size <= small {
+                insertion(mut ab, lo, hi, size, less)
+                going = false
+            } else {
+                // pivot を ab[lo] へ: 3 点の並べ（a, b, c）= 対 (a, b)・(b, c)・(a, b)
+                s2 := lo + size / 2
+                mut np := 0
+                if size > ninther {
+                    np = triple(mut prs, np, lo, s2, hi - 1)
+                    np = triple(mut prs, np, lo + 1, s2 - 1, hi - 2)
+                    np = triple(mut prs, np, lo + 2, s2 + 1, hi - 3)
+                    np = triple(mut prs, np, s2 - 1, s2, s2 + 1)
+                } else {
+                    np = triple(mut prs, np, s2, lo, hi - 1)
+                }
+                mut q := 0
+                while q < np {
+                    x := prs[q]
+                    y := prs[q + 1]
+                    if less(ab[y], ab[x]) {
+                        t := ab[x]
+                        ab[x] = ab[y]
+                        ab[y] = t
+                    }
+                    q += 2
+                }
+                if size > ninther {
+                    t := ab[lo]
+                    ab[lo] = ab[s2]
+                    ab[s2] = t
+                }
+                pivot := ab[lo]
+                if !leftmost && !less(ab[lo - 1], pivot) {
+                    // pivot が左の区間の pivot と等しい: 等しいものを左へ寄せて、右（pivot より後ろのもの）だけを続ける
+                    mut last := hi - 1
+                    while last > lo && less(pivot, ab[last]) {
+                        last -= 1
+                    }
+                    mut first := lo + 1
+                    while first < last && !less(pivot, ab[first]) {
+                        first += 1
+                    }
+                    while first < last {
+                        t := ab[first]
+                        ab[first] = ab[last]
+                        ab[last] = t
+                        last -= 1
+                        while last > lo && less(pivot, ab[last]) {
+                            last -= 1
+                        }
+                        first += 1
+                        while first < last && !less(pivot, ab[first]) {
+                            first += 1
+                        }
+                    }
+                    ab[lo] = ab[last]
+                    ab[last] = pivot
+                    lo = last + 1
+                } else {
+                    // 分割: [lo + 1, pp) は pivot より前・[pp + 1, hi) は前でない
+                    mut first := lo + 1
+                    while first < hi && less(ab[first], pivot) {
+                        first += 1
+                    }
+                    mut last := hi - 1
+                    while last > first && !less(ab[last], pivot) {
+                        last -= 1
+                    }
+                    done := first >= last
+                    while first < last {
+                        t := ab[first]
+                        ab[first] = ab[last]
+                        ab[last] = t
+                        first += 1
+                        while first < hi && less(ab[first], pivot) {
+                            first += 1
+                        }
+                        last -= 1
+                        while last > first && !less(ab[last], pivot) {
+                            last -= 1
+                        }
+                    }
+                    pp := first - 1
+                    ab[lo] = ab[pp]
+                    ab[pp] = pivot
+                    ls := pp - lo
+                    rs := hi - pp - 1
+                    mut finished := false
+                    if ls < size / 8 || rs < size / 8 {
+                        bad -= 1
+                        if bad == 0 {
+                            heapsort(mut ab, lo, hi, less)
+                            finished = true
+                        } else {
+                            // 並びの癖を崩す（決まった位置の入れ替え）
+                            breakPattern(mut ab, lo, pp, ls)
+                            breakPattern(mut ab, pp + 1, hi, rs)
+                        }
+                    } else if done {
+                        // 分割が既に済んでいた: 両側を部分挿入ソートで仕上げられれば終わり
+                        finished = insertion(mut ab, lo, pp, partialLimit, less) && insertion(mut ab, pp + 1, hi, partialLimit, less)
+                    }
+                    if finished {
+                        going = false
+                    } else {
+                        // 左を積み、右を続ける
+                        if sp + 4 > len(stk) {
+                            for w <- iter.Range(0, 4) {
+                                stk = append(stk, 0)
+                            }
+                        }
+                        stk[sp] = lo
+                        stk[sp + 1] = pp
+                        stk[sp + 2] = bad
+                        stk[sp + 3] = if leftmost { 1 } else { 0 }
+                        sp += 4
+                        lo = pp + 1
+                        leftmost = false
+                    }
+                }
+            }
+        }
+    }
+    return freeze(ab)
+}
+
+// 3 点 a, b, c を並べる比べの対（a, b）・（b, c）・（a, b）を prs の np 語目から書き、書いた後の語数を返す
+func triple(prs mut []int, np int, a int, b int, c int) int {
+    prs[np] = a
+    prs[np + 1] = b
+    prs[np + 2] = b
+    prs[np + 3] = c
+    prs[np + 4] = a
+    prs[np + 5] = b
+    return np + 6
+}
+
+// ab[lo, hi) を挿入ソートで並べる（等しいものの後ろへ入れる）。動かした要素の数が limit を超えたら諦めて false（部分挿入ソート — 並んでいない区間を早く見切る）
+func insertion(ab mut []int, lo int, hi int, limit int, less func(int, int) bool) bool {
+    mut moved := 0
+    mut i := lo + 1
+    while i < hi {
+        x := ab[i]
+        mut j := i
+        while j > lo && less(x, ab[j - 1]) {
+            ab[j] = ab[j - 1]
+            j -= 1
+        }
+        ab[j] = x
+        if j != i {
+            moved += 1
+            if moved > limit && i + 1 < hi {
+                return false
+            }
+        }
+        i += 1
+    }
+    return true
+}
+
+// ab[lo, hi) を heapsort で並べる（不安定版の最悪の場合の逃げ道 — O(n log n)）。山を組む周と、根を末尾へ移して縮める周を 1 つのループで回す
+func heapsort(ab mut []int, lo int, hi int, less func(int, int) bool) {
+    m := hi - lo
+    mut k := m / 2
+    mut e := m
+    while k > 0 || e > 1 {
+        mut r := 0
+        if k > 0 {
+            k -= 1
+            r = k
+        } else {
+            e -= 1
+            t := ab[lo]
+            ab[lo] = ab[lo + e]
+            ab[lo + e] = t
+        }
+        // 篩い落とし（[0, e) の中）
+        mut going := true
+        while going {
+            mut c := 2 * r + 1
+            if c >= e {
+                going = false
+            } else {
+                if c + 1 < e && less(ab[lo + c], ab[lo + c + 1]) {
+                    c += 1
+                }
+                if less(ab[lo + r], ab[lo + c]) {
+                    t := ab[lo + r]
+                    ab[lo + r] = ab[lo + c]
+                    ab[lo + c] = t
+                    r = c
+                } else {
+                    going = false
+                }
+            }
+        }
+    }
+}
+
+// 偏った分割の後の区間 ab[lo, hi)（長さ m）の決まった位置を入れ替える（pdqsort の並びの癖の崩し — 乱択しない）
+func breakPattern(ab mut []int, lo int, hi int, m int) {
+    if m >= small {
+        q := m / 4
+        swapAt(mut ab, lo, lo + q)
+        swapAt(mut ab, hi - 1, hi - q)
+        if m > ninther {
+            swapAt(mut ab, lo + 1, lo + q + 1)
+            swapAt(mut ab, lo + 2, lo + q + 2)
+            swapAt(mut ab, hi - 2, hi - q - 1)
+            swapAt(mut ab, hi - 3, hi - q - 2)
+        }
+    }
+}
+
+func swapAt(ab mut []int, a int, b int) {
+    t := ab[a]
+    ab[a] = ab[b]
+    ab[b] = t
+}

@@ -1,0 +1,44 @@
+package lower
+
+// SROA の定数 gep.word の透かし（sroa.sober — 展開後の SROA だけ・置き場の往復レーン 段 3 M2）の単体テスト（`cd compiler && ../bin/sober test lower`）:
+// 値渡しの struct を入口でスロットへ丸写しし、欄を `gep.word スロット, 定数` 越しに読む形（std/json.keyIs の Doc）を IR で組み、
+// 語のずれ（gep の定数 + load の語）が仮引数の語に当たること・範囲外のずれでは割らないことを直に見る
+
+import "desugar"
+
+// srT は仮引数 3 本を 3 語のスロットへ写し、`load (gep.word スロット, off)[k]` を返す関数に SROA（cg）+ mem2reg を掛け、ret の値を返す
+// （割って持ち上がれば仮引数の番号 off + k・割らなければ load の結果 — 3 以上）
+func srT(off int, k int, cg bool) int {
+    mut st := St{}
+    initScalars(mut st)
+    kindsInit(mut st)
+    desugar.HeapPush(mut st.d, 0)
+    pt := listN(mut st, 3)
+    desugar.HeapSet(mut st.d, pt + 1, TyI64)
+    desugar.HeapSet(mut st.d, pt + 2, TyI64)
+    desugar.HeapSet(mut st.d, pt + 3, TyI64)
+    f := addFunc(mut st, 0, desugar.ListRef(pt), TyI64)
+    begin(mut st, f)
+    b0 := st.cur
+    sa := newSlotAddr(mut st, 3)
+    store(mut st, sa, 0, 0)
+    store(mut st, sa, 1, 1)
+    store(mut st, sa, 2, 2)
+    g := gepWord(mut st, sa, iconst(mut st, off))
+    ret(mut st, load(mut st, g, k))
+    sroaFunc(mut st, f, cg)
+    m2rFunc(mut st, f)
+    return irBlkX1(mut st, b0)
+}
+
+func TestSroaGep() {
+    // 語 1 + 1 = 仮引数 2・語 0 + 2 = 仮引数 2・語 2 + 0 = 仮引数 2・語 1 + 0 = 仮引数 1
+    assert(srT(1, 1, true) == 2)
+    assert(srT(0, 2, true) == 2)
+    assert(srT(2, 0, true) == 2)
+    assert(srT(1, 0, true) == 1)
+    // 範囲外（語 2 + 1 = 3 ≥ 3 語）は割らない — ret は load の結果のまま
+    assert(srT(2, 1, true) >= 3)
+    // 最初の SROA（cg = false — elfeq の照合する形）は透かさない
+    assert(srT(1, 1, false) >= 3)
+}

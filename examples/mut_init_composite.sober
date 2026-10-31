@@ -1,7 +1,7 @@
 package main
 
-// struct リテラルで初期化した mut 局所のセルは束縛点の座標へ緩める（F-ba — 2026-10-17）。仮引数の slice を欄に持つ mut 局所を、
-// callM の Def に上がる関数（mut 仮引数 1 つ・他は region を持たない — E2-S）へ mut で渡す形。旧は check が呼び手の Def で def error（build は正しく走る）
+// struct リテラルで初期化した mut 局所のセルは束縛点の座標へ緩める。仮引数の slice を欄に持つ mut 局所を、
+// callM の Def に上がる関数（mut 仮引数 1 つ・他は region を持たない — E2-S）へ mut で渡す形
 
 type W struct {
     xs []string

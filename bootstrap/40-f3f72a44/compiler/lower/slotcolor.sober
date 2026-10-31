@@ -1,0 +1,455 @@
+package lower
+
+// スロットの彩色（F-1 段 2）: 最適化のバックエンドで、生存が重ならない IR スロットどうしにフレームの同じ語を配る。
+// 対象 = 要零が空（zeroinit — 入口の 0 を観測する読みが無い）で番地が逃げないスロット。要零のスロットと逃げるスロットは今まで通り専用の位置で、
+// フレームの頭（rbp の直下）に固めて置く（要零を先・逃げるだけを後 — それぞれ宣言の順）— 入口の零初期化の区間が要零のスロットの中に収まる（ばらけた要零の語を覆う区間が全域になっていた形の副産物）。
+// 共有した語の読みは前の住人の残りを見るが、要零が空のスロットは全部の道で書いてから読むので観測されない（IR の約束「スロットは入口で 0」は 0 を
+// 観測できる語にだけ要る — zeroinit と同じ読み）。
+//
+// 番地の使い道（zeroinit の分類の写し）: load / store の番地（定数の変位・スロットの中）・gep.word の基底（定数の変位 — 結果も同じスロットの番地）・
+// call の実引数のうち ① sret の受け皿（呼ぶ関数の F_SRET_BIT・スロットの頭 — 全語を書く）② 呼ぶ関数の mut 仮引数（F_MUTP のビット k — 呼び手のセルの
+// 番地 1 語。呼ばれた関数は呼び出しの間だけ読み書きし、番地を残す語彙が無い — docs/ir.md の引数の節）③ rt の写し / relocate（rt.copy / copy8 /
+// region_relocate / relocate8 — 呼び出しの間だけ読み書き）。それ以外（汎用の被演算子・辺の引数・ret・格納される値・定数でない gep・印の無い call の
+// 引数・task / 罠の口）は逃げ — そのスロットは専用。
+//
+// 生存 = スロット単位の後ろ向きのデータフロー: 事象（命令の並びの順）= 読み（load）・部分の書き（store）・読み書き（② ③）・全語の書き（① と、読みを
+// 挟まずにスロットの全語を覆う store の列 — 列の最初の store を書き始めの点にする）。全語の書きの点でスロットは死ぬ（その手前では生きていない）。
+// 干渉 = 書きの点で生きている別のスロット（Chaitin の形）と、入口で生きているスロットどうし。彩色 = 大きさの降順（同じなら番号の順）の first-fit —
+// 決定的。ブロックの番号は IR の番号（到達しないブロックも数える — 安全側）
+
+import "std/iter"
+
+// 事象の種類
+const SC_READ = 0
+const SC_WRITE = 1
+const SC_RW = 2
+const SC_KILL = 3
+
+// 彩色する最小の候補の語数（xSlotColor の門）
+const SC_MIN = 128
+
+// 関数 f のスロットの新しい置き場を返す: [k] = スロット k の累積の位置 cum（スロット k の語 j は rbp - 8 × (cum - j) — 旧の
+// 並びの cum と同じ意味）・[ns] = スロットの区画の語数。ws = スロットごとの語数（1 未満は 1）・zn = 旧の並びの位置ごとの要零（xZeroNeed）
+func xSlotColor(st mut St, f FnRef, ws []int, zn []int) []int {
+    ns := len(ws)
+    nv := xfNVal(mut st, f)
+    nb := xfNBlk(mut st, f)
+    mut start := mut []int{}
+    mut total := 0
+    for k <- iter.Range(0, ns) {
+        start = append(start, total)
+        total += ws[k]
+    }
+    // 専用のスロット（要零の語を持つ・番地が逃げる）。zk = 要零の語を持つ（置き場で逃げるだけのスロットより先に固める）
+    mut excl := mut []int{}
+    xFill(mut excl, ns, 0)
+    mut zk := mut []int{}
+    xFill(mut zk, ns, 0)
+    for k <- iter.Range(0, ns) {
+        for j <- iter.Range(0, ws[k]) {
+            if zn[start[k] + ws[k] - j] == 1 {
+                excl[k] = 1
+                zk[k] = 1
+            }
+        }
+    }
+    // 門: 彩色の候補（要零でないスロット）が SC_MIN 語未満なら並びを変えない（解析の仕事は関数の命令に比例し、小さい区画の得は小さい — 自己 build の値札）
+    mut cw := 0
+    for k <- iter.Range(0, ns) {
+        if excl[k] == 0 {
+            cw += ws[k]
+        }
+    }
+    if cw < SC_MIN {
+        mut id := mut []int{}
+        for k <- iter.Range(0, ns) {
+            id = append(id, start[k] + ws[k])
+        }
+        id = append(id, total)
+        return freeze(id)
+    }
+    // 値 → スロット（aslot）と語の変位（aoff）。定数の表と gep の後解き（定義は使う点を支配するが並びの順とは限らない）
+    mut aslot := mut []int{}
+    xFill(mut aslot, nv, -1)
+    mut aoff := mut []int{}
+    xFill(mut aoff, nv, 0)
+    mut isc := mut []int{}
+    xFill(mut isc, nv, 0)
+    mut cval := mut []int{}
+    xFill(mut cval, nv, 0)
+    mut pg := mut []int{}
+    mut b := xfBHead(mut st, f)
+    while b != -1 {
+        mut ins := xbIHead(mut st, b)
+        while ins != -1 {
+            op := xiOp(mut st, ins)
+            r := xiRes(mut st, ins)
+            if op == OpConst && r >= 0 {
+                isc[r] = 1
+                cval[r] = xiA(mut st, ins)
+            } else if op == OpSlotaddr && r >= 0 {
+                k := xiA(mut st, ins)
+                if k >= 0 && k < ns {
+                    aslot[r] = k
+                    aoff[r] = 0
+                }
+            } else if op == OpGepW && r >= 0 {
+                pg = append(pg, int(ins))
+            }
+            ins = xiNext(mut st, ins)
+        }
+        b = xbNext(mut st, b)
+    }
+    mut changed := len(pg) > 0
+    while changed {
+        changed = false
+        for q <- iter.Range(0, len(pg)) {
+            i := InsRef(pg[q])
+            r := xiRes(mut st, i)
+            p := xiA(mut st, i)
+            ix := xiB(mut st, i)
+            if aslot[r] < 0 && p >= 0 && p < nv && aslot[p] >= 0 && ix >= 0 && ix < nv && isc[ix] == 1 {
+                o := aoff[p] + cval[ix]
+                if o >= 0 && o < ws[aslot[p]] {
+                    aslot[r] = aslot[p]
+                    aoff[r] = o
+                    changed = true
+                }
+            }
+        }
+    }
+    // 事象の列（ブロックごと — evAt[id] から evAt[id + 1] まで）と逃げ
+    mut evS := mut []int{}
+    mut evK := mut []int{}
+    mut evW := mut []int{}
+    mut evAt := mut []int{}
+    xFill(mut evAt, nb + 1, 0)
+    mut bref := mut []int{}
+    xFill(mut bref, nb, -1)
+    mut bs := xfBHead(mut st, f)
+    while bs != -1 {
+        bref[xbId(mut st, bs)] = int(bs)
+        bs = xbNext(mut st, bs)
+    }
+    for id <- iter.Range(0, nb) {
+        evAt[id] = len(evS)
+        if bref[id] >= 0 {
+            bb := BlkRef(bref[id])
+            mut ins := xbIHead(mut st, bb)
+            while ins != -1 {
+                op := xiOp(mut st, ins)
+                if op == OpLoad {
+                    p := xiA(mut st, ins)
+                    if p >= 0 && p < nv && aslot[p] >= 0 {
+                        k := aslot[p]
+                        o := aoff[p] + xiB(mut st, ins)
+                        if o >= 0 && o < ws[k] {
+                            evS = append(evS, k)
+                            evK = append(evK, SC_READ)
+                            evW = append(evW, o)
+                        } else {
+                            excl[k] = 1
+                        }
+                    }
+                } else if op == OpStore {
+                    v := xiC(mut st, ins)
+                    if v >= 0 && v < nv && aslot[v] >= 0 {
+                        excl[aslot[v]] = 1
+                    }
+                    p := xiA(mut st, ins)
+                    if p >= 0 && p < nv && aslot[p] >= 0 {
+                        k := aslot[p]
+                        o := aoff[p] + xiB(mut st, ins)
+                        if o >= 0 && o < ws[k] {
+                            evS = append(evS, k)
+                            evK = append(evK, SC_WRITE)
+                            evW = append(evW, o)
+                        } else {
+                            excl[k] = 1
+                        }
+                    }
+                } else if op == OpGepW {
+                    r := xiRes(mut st, ins)
+                    p := xiA(mut st, ins)
+                    ix := xiB(mut st, ins)
+                    if ix >= 0 && ix < nv && aslot[ix] >= 0 {
+                        excl[aslot[ix]] = 1
+                    }
+                    // 解けなかった gep（定数でない変位・スロットの外）の基底は逃げ
+                    if p >= 0 && p < nv && aslot[p] >= 0 && (r < 0 || aslot[r] < 0) {
+                        excl[aslot[p]] = 1
+                    }
+                } else if op == OpCall {
+                    xSlotCallEv(mut st, ins, aslot, aoff, nv, mut excl, mut evS, mut evK, mut evW)
+                } else if op == OpCallI && xiC(mut st, ins) == CALLI_SRET {
+                    // 間接の sret（ir.sober CALLI_SRET）: 受け皿（被演算子 1 = 引数 0・スロットの頭）は全語の書き・他は逃げ（直接の sret と同じ読み）
+                    mut sr := -1
+                    for k <- iter.Range(0, xNOps(mut st, ins)) {
+                        o := xOpnd(mut st, ins, k)
+                        if o >= 0 && o < nv && aslot[o] >= 0 {
+                            if k == 1 && aoff[o] == 0 {
+                                sr = aslot[o]
+                            } else {
+                                excl[aslot[o]] = 1
+                            }
+                        }
+                    }
+                    if sr >= 0 {
+                        evS = append(evS, sr)
+                        evK = append(evK, SC_KILL)
+                        evW = append(evW, 0)
+                    }
+                } else if op != OpSlotaddr {
+                    for k <- iter.Range(0, xNOps(mut st, ins)) {
+                        o := xOpnd(mut st, ins, k)
+                        if o >= 0 && o < nv && aslot[o] >= 0 {
+                            excl[aslot[o]] = 1
+                        }
+                    }
+                }
+                ins = xiNext(mut st, ins)
+            }
+            for k <- iter.Range(0, xNTermOps(mut st, bb)) {
+                o := xTermOpnd(mut st, bb, k)
+                if o >= 0 && o < nv && aslot[o] >= 0 {
+                    excl[aslot[o]] = 1
+                }
+            }
+        }
+    }
+    evAt[nb] = len(evS)
+    // 全語を覆う store の列（読みを挟まない）の最初の store を書き始め（SC_KILL）に。語の印は列ごとの通し番号（wst）
+    mut wst := mut []int{}
+    xFill(mut wst, total, -1)
+    mut runAt := mut []int{}
+    xFill(mut runAt, ns, -1)
+    mut runId := mut []int{}
+    xFill(mut runId, ns, -1)
+    mut runN := mut []int{}
+    xFill(mut runN, ns, 0)
+    mut nrun := 0
+    for id <- iter.Range(0, nb) {
+        for q <- iter.Range(evAt[id], evAt[id + 1]) {
+            k := evS[q]
+            if evK[q] == SC_WRITE {
+                if runAt[k] < 0 {
+                    runAt[k] = q
+                    runId[k] = nrun
+                    runN[k] = 0
+                    nrun += 1
+                }
+                g := start[k] + evW[q]
+                if wst[g] != runId[k] {
+                    wst[g] = runId[k]
+                    runN[k] = runN[k] + 1
+                    if runN[k] == ws[k] {
+                        evK[runAt[k]] = SC_KILL
+                        runAt[k] = -1
+                    }
+                }
+            } else {
+                runAt[k] = -1
+            }
+        }
+        // 列はブロックを跨がない
+        for q <- iter.Range(evAt[id], evAt[id + 1]) {
+            runAt[evS[q]] = -1
+        }
+    }
+    // ブロックの gen / kill（最初の事象が全語の書きなら kill・それ以外なら gen — 専用のスロットは数えない）
+    nw := (ns + 63) / 64
+    mut gen := mut []int{}
+    xFill(mut gen, nb * nw, 0)
+    mut kil := mut []int{}
+    xFill(mut kil, nb * nw, 0)
+    for id <- iter.Range(0, nb) {
+        for q <- iter.Range(evAt[id], evAt[id + 1]) {
+            k := evS[q]
+            if excl[k] == 0 && ((gen[id * nw + (k >> 6)] >> (k & 63)) & 1) == 0 && ((kil[id * nw + (k >> 6)] >> (k & 63)) & 1) == 0 {
+                if evK[q] == SC_KILL {
+                    kil[id * nw + (k >> 6)] = kil[id * nw + (k >> 6)] | (1 << (k & 63))
+                } else {
+                    gen[id * nw + (k >> 6)] = gen[id * nw + (k >> 6)] | (1 << (k & 63))
+                }
+            }
+        }
+    }
+    // 後ろ向きの不動点（入り = gen ∪ (出 − kill)・出 = 後続の入りの和）
+    mut lin := mut []int{}
+    xFill(mut lin, nb * nw, 0)
+    mut lout := mut []int{}
+    xFill(mut lout, nb * nw, 0)
+    mut again := true
+    while again {
+        again = false
+        mut id := nb - 1
+        while id >= 0 {
+            if bref[id] >= 0 {
+                bb := BlkRef(bref[id])
+                for w <- iter.Range(0, nw) {
+                    mut o := 0
+                    for k <- iter.Range(0, xNSucc(mut st, bb)) {
+                        o = o | lin[xSucc(mut st, bb, k) * nw + w]
+                    }
+                    lout[id * nw + w] = o
+                    x := gen[id * nw + w] | (o & (-1 ^ kil[id * nw + w]))
+                    if x != lin[id * nw + w] {
+                        lin[id * nw + w] = x
+                        again = true
+                    }
+                }
+            }
+            id -= 1
+        }
+    }
+    // 干渉（行 m[k] = k と重なるスロットのビット集合 — 書きの点で生きている集合を足し、最後に対称に）
+    mut m := mut []int{}
+    xFill(mut m, ns * nw, 0)
+    mut live := mut []int{}
+    xFill(mut live, nw, 0)
+    for id <- iter.Range(0, nb) {
+        for w <- iter.Range(0, nw) {
+            live[w] = lout[id * nw + w]
+        }
+        mut q := evAt[id + 1] - 1
+        while q >= evAt[id] {
+            k := evS[q]
+            if excl[k] == 0 {
+                if evK[q] != SC_READ {
+                    for w <- iter.Range(0, nw) {
+                        m[k * nw + w] = m[k * nw + w] | live[w]
+                    }
+                }
+                if evK[q] == SC_KILL {
+                    live[k >> 6] = live[k >> 6] & (-1 ^ (1 << (k & 63)))
+                } else {
+                    live[k >> 6] = live[k >> 6] | (1 << (k & 63))
+                }
+            }
+            q -= 1
+        }
+    }
+    entry := xbId(mut st, xfBHead(mut st, f))
+    for k <- iter.Range(0, ns) {
+        if ((lin[entry * nw + (k >> 6)] >> (k & 63)) & 1) == 1 {
+            for w <- iter.Range(0, nw) {
+                m[k * nw + w] = m[k * nw + w] | lin[entry * nw + w]
+            }
+        }
+    }
+    for a <- iter.Range(0, ns) {
+        for c <- iter.Range(0, ns) {
+            if ((m[a * nw + (c >> 6)] >> (c & 63)) & 1) == 1 {
+                m[c * nw + (a >> 6)] = m[c * nw + (a >> 6)] | (1 << (a & 63))
+            }
+        }
+    }
+    // 置き場: 専用のスロットを頭から — 要零の語を持つものを宣言の順に、続けて逃げるだけのもの（要零 0 語）を宣言の順に（宣言の順の
+    // ままだと逃げるだけのスロットが要零のスロットの間に挟まり、入口の零初期化の区間〔要零の語を覆う最小の区間〕に丸ごと入ってしまう）。
+    // 彩色するスロットはその下の区画に first-fit（大きさの降順・同じなら番号の順）
+    mut base := mut []int{}
+    xFill(mut base, ns, 0)
+    mut xa := 0
+    for k <- iter.Range(0, ns) {
+        if zk[k] == 1 {
+            base[k] = xa
+            xa += ws[k]
+        }
+    }
+    for k <- iter.Range(0, ns) {
+        if excl[k] == 1 && zk[k] == 0 {
+            base[k] = xa
+            xa += ws[k]
+        }
+    }
+    mut ord := mut []int{}
+    for k <- iter.Range(0, ns) {
+        if excl[k] == 0 {
+            ord = append(ord, k)
+        }
+    }
+    // 挿入で並べる（大きさの降順・番号の昇順 — スロットの数は小さい）
+    for i <- iter.Range(1, len(ord)) {
+        x := ord[i]
+        mut j := i
+        while j > 0 && (ws[ord[j - 1]] < ws[x] || (ws[ord[j - 1]] == ws[x] && ord[j - 1] > x)) {
+            ord[j] = ord[j - 1]
+            j -= 1
+        }
+        ord[j] = x
+    }
+    mut off := mut []int{}
+    xFill(mut off, ns, -1)
+    mut area := 0
+    for i <- iter.Range(0, len(ord)) {
+        k := ord[i]
+        // 置いた干渉相手の区間を始まりの順に
+        mut cs := mut []int{}
+        mut ce := mut []int{}
+        for j <- iter.Range(0, i) {
+            t := ord[j]
+            if ((m[k * nw + (t >> 6)] >> (t & 63)) & 1) == 1 {
+                cs = append(cs, off[t])
+                ce = append(ce, off[t] + ws[t])
+            }
+        }
+        for a <- iter.Range(1, len(cs)) {
+            x := cs[a]
+            y := ce[a]
+            mut j := a
+            while j > 0 && cs[j - 1] > x {
+                cs[j] = cs[j - 1]
+                ce[j] = ce[j - 1]
+                j -= 1
+            }
+            cs[j] = x
+            ce[j] = y
+        }
+        mut o := 0
+        for a <- iter.Range(0, len(cs)) {
+            if o + ws[k] > cs[a] && o < ce[a] {
+                o = ce[a]
+            }
+        }
+        off[k] = o
+        if o + ws[k] > area {
+            area = o + ws[k]
+        }
+    }
+    mut out := mut []int{}
+    for k <- iter.Range(0, ns) {
+        b0 := if excl[k] == 1 { base[k] } else { xa + off[k] }
+        out = append(out, b0 + ws[k])
+    }
+    out = append(out, xa + area)
+    return freeze(out)
+}
+
+// call の実引数のうちスロットの番地のものを事象（sret の受け皿 = 全語の書き・mut 仮引数 / rt の写しと relocate = 読み書き）か逃げにする
+func xSlotCallEv(st mut St, ins InsRef, aslot []int, aoff []int, nv int, excl mut []int, evS mut []int, evK mut []int, evW mut []int) {
+    callee := xiA(mut st, ins)
+    mb := xg(mut st, callee + F_MUTP)
+    rtrw := callee == int(st.rtCopy) || callee == int(st.rtCopy8) || callee == int(st.rtReloc) || callee == int(st.rtReloc8) || callee == int(st.rtErrReloc)
+    n := xNOps(mut st, ins)
+    // 受け皿は最後に（呼ばれた関数は他の実引数を読んでから受け皿を書く — 後ろ向きでは書きが先に効く）
+    mut sret := -1
+    for k <- iter.Range(0, n) {
+        o := xOpnd(mut st, ins, k)
+        if o >= 0 && o < nv && aslot[o] >= 0 {
+            if k == 0 && mb >= 0 && (mb >> F_SRET_BIT) & 1 == 1 && aoff[o] == 0 {
+                sret = aslot[o]
+            } else if rtrw || (k < F_SRET_BIT && mb >= 0 && (mb >> k) & 1 == 1) {
+                evS = append(evS, aslot[o])
+                evK = append(evK, SC_RW)
+                evW = append(evW, aoff[o])
+            } else {
+                excl[aslot[o]] = 1
+            }
+        }
+    }
+    if sret >= 0 {
+        evS = append(evS, sret)
+        evK = append(evK, SC_KILL)
+        evW = append(evW, 0)
+    }
+}

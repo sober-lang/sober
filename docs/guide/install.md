@@ -43,6 +43,10 @@ Main commands:
 | `sober check <file.sober>` | Run only type checking and the analyzer (no executable) |
 | `sober test <package>` | Run the tests in the package's `*_test.sober` files |
 
+`sober --help` lists the commands and flags, and `sober <command> --help` shows the flags of one command. A usage error (an unknown flag, a bad value) exits with 2.
+
+`sober build` caches intermediate results in `~/.cache/sober` (or under `SOBER_CACHE` / `XDG_CACHE_HOME` when set), and later builds redo only what changed. The output executable is the same with or without the cache. Set `SOBER_BUILD_CACHE=0` to turn it off; `sober cache info` / `sober cache gc` list and clean the cache.
+
 ## Running servers
 
 Programs that use std/net (and so std/http and std/tls) need three things from the environment:
@@ -55,7 +59,7 @@ Run as a container's init (PID 1), a Sober program still stops on SIGTERM / SIGI
 
 ## For developers: running the verification net
 
-When you work on the compiler itself, `scripts/gates.sh --full` runs every check. The net additionally needs:
+When you work on the compiler itself, `scripts/gates.sh --full` runs every check. A check whose inputs are the same as when it last passed reuses that record (`--no-cache` runs everything). The net additionally needs:
 [Lean 4](https://lean-lang.org/) (the version in `lean/lean-toolchain` — `cd lean && lake build`), Go (independent oracles and the benchmark twins), Rust (the benchmark twins), Node.js (some tools), `perf` (benchmarks), and GNU as (checking the instruction encoder).
 
 Next: [Your first program](first-program.md)

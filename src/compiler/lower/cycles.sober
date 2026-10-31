@@ -1,12 +1,12 @@
 package lower
 
-// 計時の組み込み（effect の波 段 3d — 定数時間の統計の網 dudect・report-981 3 節 / 985）: cycles() = 時刻の計数器（rdtscp）。IR は OpSyscall の b = CY_B
+// 計時の組み込み（定数時間の統計の網 dudect）: cycles() = 時刻の計数器（rdtscp）。IR は OpSyscall の b = CY_B
 // （引数なし — 効果の扱いは syscall と同じ不透明な op で、前後の計算と並べ替えない）。x86 の最適化のバックエンドの ELF の道でだけ命令になり
 // （x86.sober xCycles — lfence + rdtscp + lfence・rax / rcx / rdx は作業のレジスタ）、他の出力では 0（std/internal/dudect の計時が 0 を返すだけ）
 
 const CY_B = 5
 
-// tscOp は柵なしの時刻の計数器（rdtsc — rt のスケジューラの粗い時計: 飽和下の待ちの上限〔mn.sober〕。順序は要らない）。x86 の正規バックエンドの ELF の道でだけ命令・他の出力では 0
+// 柵なしの時刻の計数器（rdtsc — rt のスケジューラの粗い時計: 飽和下の待ちの上限〔mn.sober〕。順序は要らない）。x86 の正規バックエンドの ELF の道でだけ命令・他の出力では 0
 func tscOp(st mut St) int {
     if !st.hwFold {
         return iconst(mut st, 0)
@@ -14,7 +14,7 @@ func tscOp(st mut St) int {
     return push(mut st, true, OpSyscall, list0(mut st), CY_B, 1)
 }
 
-// cyclesOp は cycles() の値
+// cycles() の値
 func cyclesOp(st mut St) int {
     if !st.hwFold {
         return iconst(mut st, 0)

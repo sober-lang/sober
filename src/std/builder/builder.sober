@@ -48,7 +48,7 @@ func Push[T](b mut Builder[T], x T) {
     }
 }
 
-// pushSlow は Push の遅い道（今の chunk が満ちている — 初回の Push は cap = fill = 0 でここへ来る）: 初回なら seed の写しを積み、新しい chunk を確保して x を先頭に置く
+// Push の遅い道（今の chunk が満ちている — 初回の Push は cap = fill = 0 でここへ来る）: 初回なら seed の写しを積み、新しい chunk を確保して x を先頭に置く
 func pushSlow[T](b mut Builder[T], x T) {
     if len(b.chunks) == 0 {
         b.cur = 0 - 1
@@ -95,7 +95,7 @@ func PushAll[T](b mut Builder[T], xs []T) {
     }
 }
 
-// pushAllSlow は PushAll の遅い道（chunk をまたぐ — chunk の空きへまとめて写し、満ちたら Push が新しい chunk を作る）
+// PushAll の遅い道（chunk をまたぐ — chunk の空きへまとめて写し、満ちたら Push が新しい chunk を作る）
 func pushAllSlow[T](b mut Builder[T], xs []T) {
     mut i := 0
     while i < len(xs) {
@@ -147,7 +147,7 @@ func PushWord(b mut Builder[byte], w int, k int) {
     }
 }
 
-// pushWordSlow は PushWord の遅い道（今の chunk に k バイトの空きが無い — 1 バイトずつ Push。速い道を呼び出し点に展開される大きさに保つ）
+// PushWord の遅い道（今の chunk に k バイトの空きが無い — 1 バイトずつ Push。速い道を呼び出し点に展開される大きさに保つ）
 func pushWordSlow(b mut Builder[byte], w int, k int) {
     mut x := w
     mut j := 0
@@ -236,7 +236,7 @@ func PushBetween[T](b mut Builder[T], open T, xs []T, close T) {
     }
 }
 
-// pushBetweenSlow は PushBetween の遅い道（今の chunk に収まらない — 速い道を呼び出し点に展開される大きさに保つ）
+// PushBetween の遅い道（今の chunk に収まらない — 速い道を呼び出し点に展開される大きさに保つ）
 func pushBetweenSlow[T](b mut Builder[T], open T, xs []T, close T) {
     Push(mut b, open)
     PushAll(mut b, xs)

@@ -1,6 +1,6 @@
 package main
 
-// std/binary の Load64（report-723）: b[i]〜b[i + 7] を little-endian で読んだ int — b[i] が最下位のバイト・最上位のバイトの 0x80 以上は負の int。
+// std/binary の Load64: b[i]〜b[i + 7] を little-endian で読んだ int — b[i] が最下位のバイト・最上位のバイトの 0x80 以上は負の int。
 // 端の i = len(b) − 8 まで読める（その先は binary_load64_oob / _neg の panic）
 
 import "std/binary"

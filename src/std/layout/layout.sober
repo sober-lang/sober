@@ -4,7 +4,7 @@ package layout
 // loader の固定テンプレート（compiler/loader/layout.sober）が @layout の struct ごとの写しの関数（普通の Sober）を合成してその呼び出しに写す。
 // ここに置くのは写しの関数が呼ぶ失敗の関数だけ（panic ラベル WidthOverflow / LengthMismatch — exit 101・死亡時に欄が標準エラーへ。language.md 27 節の panic の契約）
 
-// 撤去条件: R3（region を持つ型引数の実体 Def）が入ったら、Decode / Encode を std の総称関数 + コンパイラが出す `layout[T]` 静的辞書に移す
+// 撤去条件: region を持つ型引数の実体 Def が言語に入ったら、Decode / Encode を std の総称関数 + コンパイラが出す `layout[T]` 静的辞書に移す
 
 // std/builder は合成の写しの関数が使う（Encode の仮引数 Builder[byte] — この package を読めば std/builder も読み込まれる）
 import "std/builder"

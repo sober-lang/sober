@@ -1,6 +1,6 @@
 package main
 
-// 負例（load が拒否 — syntax.md 決定 16）: delete は組み込みの名前でトップレベルの宣言の名前にもできない（2026-09-30 に追加）
+// 負例（load が拒否 — syntax.md 決定 16）: delete は組み込みの名前でトップレベルの宣言の名前にもできない
 
 func delete(x int) int {
     return x

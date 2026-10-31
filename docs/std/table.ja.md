@@ -135,3 +135,12 @@ func At[T](f Frozen[T], i int) T
 ```
 
 凍った表の i 番目（0 起点）の要素。範囲外なら Get と同じく panic する（形も Get と同じ）
+
+## Read
+
+```sober
+@effects()
+func Read[T](t mut Table[T], i int, n int, dst mut []T)
+```
+
+t の [i, i + n) を dst の [0, n) へ写す（Get を n 回呼んで dst に書くのと同じ値 — chunk ごとにまとめて写す）。範囲外（i \< 0・n \< 0・i + n が Len を越える・n が len(dst) を越える）なら Get と同じく境界検査で panic する。記録 1 つ（数語〜数十語）を局所の列へ一括で読み、局所で添字で読む形のための口（Get を語ごとに呼ぶと、語ごとに範囲の判定と chunk の二重の境界検査を払う）

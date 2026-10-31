@@ -1697,6 +1697,91 @@ b0:
   ret %2
 }
 
+func @main.push(%0 ptr, %1 i64) {
+  slot s0 [3]
+  slot s1 [3]
+b0:
+  %2 = region.depth
+  %3 = globaladdr @rt.meta
+  %4 = load.i64 %3[2572]
+  %5 = const 0
+  %6 = eq %4, %5
+  %7 = mul %6, %2
+  %8 = add %4, %7
+  region.enter
+  %9 = slotaddr s0
+  %10 = load.i64 %0[0]
+  store %9[0], %10
+  %11 = load.i64 %0[1]
+  store %9[1], %11
+  %12 = load.i64 %0[2]
+  store %9[2], %12
+  %13 = load.i64 %9[2]
+  %14 = load.i64 %9[0]
+  %15 = load.i64 %9[1]
+  %18 = const 8
+  %19 = mul %15, %18
+  %20 = add %14, %19
+  %21 = region.bump %13
+  %22 = ptoi %21
+  %23 = eq %22, %20
+  condbr %23, b3, b2
+b1(%16 ptr, %17 ptr):
+  store %17[0], %1
+  %33 = load.i64 %9[1]
+  %34 = const 1
+  %35 = add %33, %34
+  %36 = slotaddr s1
+  %37 = ptoi %16
+  store %36[0], %37
+  store %36[1], %35
+  store %36[2], %13
+  %38 = load.i64 %36[0]
+  store %0[0], %38
+  %39 = load.i64 %36[1]
+  store %0[1], %39
+  %40 = load.i64 %36[2]
+  store %0[2], %40
+  %41 = load.i64 %0[3]
+  %42 = add %41, %1
+  %43 = const 3
+  %44 = gep.word %0, %43
+  store %44[0], %42
+  region.setdepth %2
+  ret
+b2:
+  %27 = const 1
+  %28 = mul %15, %27
+  %29 = const 1
+  %30 = const 1
+  %31 = call @rt.slice_grow(%14, %15, %29, %13, %30)
+  %32 = gep.word %31, %28
+  br b1(%31, %32)
+b3:
+  %24 = const 1
+  %25 = region.alloc %13, %24
+  %26 = itop %14
+  br b1(%26, %25)
+}
+
+func @main.bump(%0 ptr, %1 i64) i64 {
+b0:
+  %2 = region.depth
+  %3 = globaladdr @rt.meta
+  %4 = load.i64 %3[2572]
+  %5 = const 0
+  %6 = eq %4, %5
+  %7 = mul %6, %2
+  %8 = add %4, %7
+  region.enter
+  %9 = load.i64 %0[0]
+  %10 = add %9, %1
+  store %0[0], %10
+  %11 = load.i64 %0[0]
+  region.setdepth %2
+  ret %11
+}
+
 func @main.main() {
   slot s0 [4]
   slot s1 [4]
@@ -1770,6 +1855,22 @@ b0:
   call @rt.print_char(%37)
   region.setdepth %0
   ret
+}
+
+func @rt.sigint() {
+b0:
+  %0 = const 231
+  %1 = const 130
+  %2 = syscall(%0, %1)
+  exit 130
+}
+
+func @rt.sigterm() {
+b0:
+  %0 = const 231
+  %1 = const 143
+  %2 = syscall(%0, %1)
+  exit 143
 }
 
 export func @sober_entry(%0 ptr) {
@@ -2365,105 +2466,4 @@ b91:
   %404 = const 1
   %405 = add %383, %404
   br b85(%401, %405)
-}
-
-func @rt.sigterm() {
-b0:
-  %0 = const 231
-  %1 = const 143
-  %2 = syscall(%0, %1)
-  exit 143
-}
-
-func @rt.sigint() {
-b0:
-  %0 = const 231
-  %1 = const 130
-  %2 = syscall(%0, %1)
-  exit 130
-}
-
-func @main.push(%0 ptr, %1 i64) {
-  slot s0 [3]
-  slot s1 [3]
-b0:
-  %2 = region.depth
-  %3 = globaladdr @rt.meta
-  %4 = load.i64 %3[2572]
-  %5 = const 0
-  %6 = eq %4, %5
-  %7 = mul %6, %2
-  %8 = add %4, %7
-  region.enter
-  %9 = slotaddr s0
-  %10 = load.i64 %0[0]
-  store %9[0], %10
-  %11 = load.i64 %0[1]
-  store %9[1], %11
-  %12 = load.i64 %0[2]
-  store %9[2], %12
-  %13 = load.i64 %9[2]
-  %14 = load.i64 %9[0]
-  %15 = load.i64 %9[1]
-  %18 = const 8
-  %19 = mul %15, %18
-  %20 = add %14, %19
-  %21 = region.bump %13
-  %22 = ptoi %21
-  %23 = eq %22, %20
-  condbr %23, b3, b2
-b1(%16 ptr, %17 ptr):
-  store %17[0], %1
-  %33 = load.i64 %9[1]
-  %34 = const 1
-  %35 = add %33, %34
-  %36 = slotaddr s1
-  %37 = ptoi %16
-  store %36[0], %37
-  store %36[1], %35
-  store %36[2], %13
-  %38 = load.i64 %36[0]
-  store %0[0], %38
-  %39 = load.i64 %36[1]
-  store %0[1], %39
-  %40 = load.i64 %36[2]
-  store %0[2], %40
-  %41 = load.i64 %0[3]
-  %42 = add %41, %1
-  %43 = const 3
-  %44 = gep.word %0, %43
-  store %44[0], %42
-  region.setdepth %2
-  ret
-b2:
-  %27 = const 1
-  %28 = mul %15, %27
-  %29 = const 1
-  %30 = const 1
-  %31 = call @rt.slice_grow(%14, %15, %29, %13, %30)
-  %32 = gep.word %31, %28
-  br b1(%31, %32)
-b3:
-  %24 = const 1
-  %25 = region.alloc %13, %24
-  %26 = itop %14
-  br b1(%26, %25)
-}
-
-func @main.bump(%0 ptr, %1 i64) i64 {
-b0:
-  %2 = region.depth
-  %3 = globaladdr @rt.meta
-  %4 = load.i64 %3[2572]
-  %5 = const 0
-  %6 = eq %4, %5
-  %7 = mul %6, %2
-  %8 = add %4, %7
-  region.enter
-  %9 = load.i64 %0[0]
-  %10 = add %9, %1
-  store %0[0], %10
-  %11 = load.i64 %0[0]
-  region.setdepth %2
-  ret %11
 }

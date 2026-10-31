@@ -1,6 +1,6 @@
 package main
 
-// R0 の突き合わせの対（Lean 側: Examples.lean の v48）。errlabel.sober から出力を抜き、結果を 1 語に畳み込む形。
+// errlabel.sober との突き合わせの対（Lean 側: Examples.lean の v48）。errlabel.sober から出力を抜き、結果を 1 語に畳み込む形。
 // main の末尾の値 r を codegen は println で、Lean は脱糖したコアを機械で走らせて照合する。
 // 以下は errlabel.sober と同じ:
 // 呼び手の string・callee で構築した string・slice がラベルに乗り、`?` で伝播し、戻り値の境界コピーで

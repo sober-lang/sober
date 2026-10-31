@@ -37,7 +37,7 @@ func mem(base int, disp int) string {
     return if disp == 0 { "[${regName(base)}]" } else if disp < 0 { "[${regName(base)}-${0 - disp}]" } else { "[${regName(base)}+${disp}]" }
 }
 
-// sibMem は [base+index*倍率±disp] の Intel 構文
+// [base+index*倍率±disp] の Intel 構文
 func sibMem(base int, index int, f int, disp int) string {
     d := if disp == 0 { "" } else if disp < 0 { "-${0 - disp}" } else { "+${disp}" }
     return "[${regName(base)}+${regName(index)}*${f}${d}]"
@@ -47,7 +47,7 @@ func hexDigit(n int) byte {
     return byte(if n < 10 { 48 + n } else { 87 + n })
 }
 
-// line は c の [from, 末尾) の hex と asm を 1 行に印字する
+// c の [from, 末尾) の hex と asm を 1 行に印字する
 func line(c mut table.Table[byte], from int, asm string) {
     mut out := mut []byte{}
     for i <- iter.Range(from, table.Len(mut c)) {
@@ -93,7 +93,7 @@ func main() {
             x86.ShrRegImm(mut c, a, sh)
             line(mut c, at, "shr ${regName(a)}, ${sh}")
         }
-        // mulx（RSA の続き — report-864）: hi × lo × src の全組（hi ≠ lo）
+        // mulx（多倍長算術向け）: hi × lo × src の全組（hi ≠ lo）
         for b2 <- iter.Range(0, 16) {
             for s2 <- iter.Range(0, 16) {
                 if b2 != a {
@@ -103,7 +103,7 @@ func main() {
                 }
             }
         }
-        // adcx / adox / sbb（RSA の続き (イ-b) — report-866）: 全組
+        // adcx / adox / sbb（多倍長算術向け）: 全組
         for s2 <- iter.Range(0, 16) {
             at = x86.Here(mut c)
             x86.AdcxRR(mut c, a, s2)
@@ -242,7 +242,7 @@ func main() {
                 }
             }
         }
-        // SIB の load / store（性能投資 第二便 M7）: reg × base × index（rsp を除く）× 倍率 1 / 8 × disp 0 / -8 / 4096
+        // SIB の load / store: reg × base × index（rsp を除く）× 倍率 1 / 8 × disp 0 / -8 / 4096
         for b <- iter.Range(0, 16) {
             for ix <- iter.Range(0, 16) {
                 if ix != x86.Rsp {
@@ -287,7 +287,7 @@ func main() {
             line(mut c, at, "mov qword ptr ${mem(a, disps[k])}, -5")
         }
     }
-    // fs 相対の読み（段 6 P4-3 — ワーカーの記録の表: mov r, fs:[disp32]）: 16 レジスタ × disp の境界値
+    // fs 相対の読み（ワーカーの記録の表: mov r, fs:[disp32]）: 16 レジスタ × disp の境界値
     fsDisps := []int{0, 8, 127, 128, 4096, 2147483640}
     for a <- iter.Range(0, 16) {
         for k <- iter.Range(0, len(fsDisps)) {
@@ -296,7 +296,7 @@ func main() {
             line(mut c, at, "mov ${regName(a)}, qword ptr fs:[${fsDisps[k]}]")
         }
     }
-    // 原子の op（段 6 P4-4 — rt の中だけ）: lock xadd / xchg / lock cmpxchg × 16 レジスタ × base 16 × disp の境界値・mfence・pause
+    // 原子の op（rt の中だけ）: lock xadd / xchg / lock cmpxchg × 16 レジスタ × base 16 × disp の境界値・mfence・pause
     atDisps := []int{0, 8, -8, 127, 128, 4096}
     for a <- iter.Range(0, 16) {
         for b <- iter.Range(0, 16) {
@@ -329,7 +329,7 @@ func main() {
     atC := x86.Here(mut c)
     x86.Cpuid(mut c)
     line(mut c, atC, "cpuid")
-    // SSE2（第三便のベクトル化スパイク）: xmm × xmm の 6 形・pmovmskb / movq の xmm × 汎用・movdqu の [base + index]・bsf
+    // SSE2（ベクトル化向け）: xmm × xmm の 6 形・pmovmskb / movq の xmm × 汎用・movdqu の [base + index]・bsf
     for a <- iter.Range(0, 16) {
         for b <- iter.Range(0, 16) {
             mut at := x86.Here(mut c)
@@ -353,7 +353,7 @@ func main() {
             at = x86.Here(mut c)
             x86.PandnXX(mut c, a, b)
             line(mut c, at, "pandn xmm${a}, xmm${b}")
-            // CRC-32 の折り畳み（report-774）: pand・pclmulqdq の imm の 4 形
+            // CRC-32 の折り畳み: pand・pclmulqdq の imm の 4 形
             at = x86.Here(mut c)
             x86.PandXX(mut c, a, b)
             line(mut c, at, "pand xmm${a}, xmm${b}")
@@ -363,7 +363,7 @@ func main() {
                 x86.PclmulqdqXXI(mut c, a, b, imm)
                 line(mut c, at, "pclmulqdq xmm${a}, xmm${b}, ${imm}")
             }
-            // AES-GCM（report-796）: aesenc / aesenclast / pshufb・aeskeygenassist と pshufd の imm・32 ビットのレーンのずらし
+            // AES-GCM: aesenc / aesenclast / pshufb・aeskeygenassist と pshufd の imm・32 ビットのレーンのずらし
             at = x86.Here(mut c)
             x86.AesencXX(mut c, a, b)
             line(mut c, at, "aesenc xmm${a}, xmm${b}")
@@ -429,7 +429,7 @@ func main() {
             at = x86.Here(mut c)
             x86.Cvttsd2siRX(mut c, a, b)
             line(mut c, at, "cvttsd2si ${regName(a)}, xmm${b}")
-            // packed double（段 4②a）
+            // packed double
             at = x86.Here(mut c)
             x86.AddpdXX(mut c, a, b)
             line(mut c, at, "addpd xmm${a}, xmm${b}")
@@ -539,7 +539,7 @@ func main() {
             line(mut c, at, "mov byte ptr ${mem(b, d)}, ch")
         }
     }
-    // float の load / store を xmm へ直に（1.0× アタック便）: movsd の [base + disp] と SIB
+    // float の load / store を xmm へ直に: movsd の [base + disp] と SIB
     for a <- iter.Range(0, 16) {
         for b <- iter.Range(0, 16) {
             for k <- iter.Range(0, len(disps)) {

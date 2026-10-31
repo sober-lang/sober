@@ -11,7 +11,7 @@ import "std/iter"
 
 // ── 多値 ──
 
-// evalMulti は多値を許す評価。呼び出しは結果の並び、他の式は 1 値（値なしは空）。到達しないなら -1
+// 多値を許す評価。呼び出しは結果の並び、他の式は 1 値（値なしは空）。到達しないなら -1
 func evalMulti(st mut St, e desugar.NodeRef) (int, error?) {
     k := kindN(mut st, e)
     switch k {
@@ -41,7 +41,7 @@ func evalMulti(st mut St, e desugar.NodeRef) (int, error?) {
     return r, nil
 }
 
-// multiValue は `a, b := e` の右辺: 1 つの多値の式で、結果の個数が want_n
+// `a, b := e` の右辺: 1 つの多値の式で、結果の個数が want_n
 func multiValue(st mut St, values desugar.ListRef, want_n int, at desugar.NodeRef) (int, error?) {
     if lenL(mut st, values) != 1 {
         return 0, diag.Mismatch{at: posOf(mut st, at)}
@@ -56,7 +56,7 @@ func multiValue(st mut St, values desugar.ListRef, want_n int, at desugar.NodeRe
     return r, nil
 }
 
-// pipe は `lhs |> f(args)`: 左辺（多値可）を 1 回評価し、穴 `_` へ順に、穴が無ければ第 1 引数へ渡す
+// `lhs |> f(args)`: 左辺（多値可）を 1 回評価し、穴 `_` へ順に、穴が無ければ第 1 引数へ渡す
 func pipe(st mut St, e desugar.NodeRef) (int, error?) {
     at := e
     lhs := nA(nodeOf(mut st, e))
@@ -128,7 +128,7 @@ func pipe(st mut St, e desugar.NodeRef) (int, error?) {
     return callArgs(mut st, nB(nodeOf(mut st, e)), srcs, at)
 }
 
-// interpExpr は補間（src/stage1/interp.zig の固定テンプレート）: 穴を左から順に合成名へ束縛して型を得てから、その名前を参照する
+// 補間（src/stage1/interp.zig の固定テンプレート）: 穴を左から順に合成名へ束縛して型を得てから、その名前を参照する
 // 連結の連鎖を組んで下ろす（int は std/convert.FormatInt（予約参照名 $convert）、bool は if）
 func interpExpr(st mut St, e desugar.NodeRef) (Val, error?) {
     at := e
@@ -194,8 +194,8 @@ func interpExpr(st mut St, e desugar.NodeRef) (Val, error?) {
     if acc == -1 {
         acc = desugar.NodeRef(node(mut st, ast.EStrlit, at, int(strLit(mut st, "")), 0, 0, 0))
     }
-    // 外の束縛への代入の右辺の最上段（forceDest — M5b）は片の数・--passes の有無によらず行き先の深度に作る: relocFree が「補間は行き先に直に作る」
-    // として格納点の写しを省くので、`+` の連鎖（最上段の節が forceDest と別の番号）や穴 1 つ（穴の値そのもの）で返すと反復の region に置き去りになる（F-bf）
+    // 外の束縛への代入の右辺の最上段（forceDest）は片の数・--passes の有無によらず行き先の深度に作る: relocFree が「補間は行き先に直に作る」
+    // として格納点の写しを省くので、`+` の連鎖（最上段の節が forceDest と別の番号）や穴 1 つ（穴の値そのもの）で返すと反復の region に置き去りになる
     fd := int(e) == st.forceDest && st.forceDest >= 0 && (np >= 2 || nh > 0)
     if (np < 2 || !st.transparent) && !fd {
         // 片が 1 つ以下・既定の --emit（照合の相手の形）は今までどおり
@@ -208,7 +208,7 @@ func interpExpr(st mut St, e desugar.NodeRef) (Val, error?) {
     return r, nil
 }
 
-// concatN は string の片 pieces[0, np) を全部評価してから、合計の長さを 1 回で確保して順に写す（dest = 宛先構築の印 — 入口の深度に作る）
+// string の片 pieces[0, np) を全部評価してから、合計の長さを 1 回で確保して順に写す（dest = 宛先構築の印 — 入口の深度に作る）
 func concatN(st mut St, pieces desugar.ListRef, np int, dest bool, at desugar.NodeRef) (Val, error?) {
     needByteRt(mut st)
     vs := listN(mut st, np)
@@ -243,7 +243,7 @@ func concatN(st mut St, pieces desugar.ListRef, np int, dest bool, at desugar.No
     return Val{t: st0, v: newHeader(mut st, st0, p, n, d)}, nil
 }
 
-// interpAppend は連鎖の末尾に 1 片足す
+// 連鎖の末尾に 1 片足す
 func interpAppend(st mut St, acc int, piece desugar.NodeRef, at desugar.NodeRef) desugar.NodeRef {
     if acc < 0 {
         return piece
@@ -348,7 +348,7 @@ func callArgs(st mut St, callee0 desugar.NodeRef, args desugar.ListRef, at desug
     return emitCall(mut st, infoAt(mut st, info).ir, -1, desugar.ListRef(infoAt(mut st, info).params), desugar.ListRef(infoAt(mut st, info).results), args, at, fnNode(mut st, fi))
 }
 
-// callIndirect0 は関数値（callee の値）の間接呼び出し。呼び出し規約は直接呼び出しと同じ。関数値を先に評価する
+// 関数値（callee の値）の間接呼び出し。呼び出し規約は直接呼び出しと同じ。関数値を先に評価する
 func callIndirect0(st mut St, callee desugar.NodeRef, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
     mut cv := expr(mut st, callee)?
     if isTag(mut st, cv.t, TNever) {
@@ -382,7 +382,7 @@ func callIndirect0(st mut St, callee desugar.NodeRef, args desugar.ListRef, at d
     return emitCall(mut st, -1, cv.v, hgetL(mut st, ft), hgetL(mut st, ft + 1), args, at, -1)
 }
 
-// emitCall は呼び出し（irf >= 0 は直接、でなければ関数値 fv の間接）。decl: 直接呼び出しの宣言の節（mut 仮引数の位置 — 関数値は -1）
+// 呼び出し（irf >= 0 は直接、でなければ関数値 fv の間接）。decl: 直接呼び出しの宣言の節（mut 仮引数の位置 — 関数値は -1）
 func emitCall(st mut St, irf FnRef, fv int, params desugar.ListRef, results desugar.ListRef, args desugar.ListRef, at desugar.NodeRef, fi desugar.NodeRef) (int, error?) {
     // 閉包の呼び出しの env の番地（callIndirect0 が直前に置く — 実引数の評価の中の呼び出しに届かないよう入口で消費する）
     env := st.callEnv - 1
@@ -421,7 +421,7 @@ func emitCall(st mut St, irf FnRef, fv int, params desugar.ListRef, results desu
         if isMutParam(mut st, fi, i) {
             // 呼び手のセルのアドレス（mut 仮引数を転送するときは受け取ったアドレスそのもの — 同じセル）
             l := mutArgCell(mut st, latN(mut st, args, i), at)?
-            // mut 実引数の行き先の深度（M5 — 最も外の束縛の深度を W_ANCHOR へ）
+            // mut 実引数の行き先の深度（最も外の束縛の深度を W_ANCHOR へ）
             af := relocFloor(mut st, l)
             anchor = if anchor < 0 { af } else { bin(mut st, BAdd, af, bin(mut st, BMul, cmp(mut st, CLt, anchor, af), bin(mut st, BSub, anchor, af))) }
             if !tEql(mut st, desugar.HeapGet(mut st.d, l + 3), pt) {
@@ -458,10 +458,10 @@ func emitCall(st mut St, irf FnRef, fv int, params desugar.ListRef, results desu
     if anchor >= 0 {
         store(mut st, globaladdr(mut st, st.meta), W_ANCHOR, anchor)
     }
-    // 宛先構築（M1c）: 印のある呼び出し（結果が return に流れ着く）は直前に自分の宛先の深度をレジスタへ — 呼ばれた側の印のある確保がそこに作る。
+    // 宛先構築: 印のある呼び出し（結果が return に流れ着く）は直前に自分の宛先の深度をレジスタへ — 呼ばれた側の印のある確保がそこに作る。
     // 書くのは呼ばれた側が入口で読んで 0 に戻す関数（destReads）のときだけ — 読まない関数（印の無い本体・関数値）へ書くと値が残り、後の印の無い
-    // 呼び出し（ループの中）の入口が拾って結果を外の region に作る（反復ごとに積もる — report-692）
-    // 関数値の呼び出し（report-1006 a1）: 呼び先は結果が slice を持てば全部入口で読んで 0 に戻す（持ち上げたラムダ・関数値として使われうる名前付き関数 —
+    // 呼び出し（ループの中）の入口が拾って結果を外の region に作る（反復ごとに積もる）
+    // 関数値の呼び出し: 呼び先は結果が slice を持てば全部入口で読んで 0 に戻す（持ち上げたラムダ・関数値として使われうる名前付き関数 —
     // loader/dest.sober の valueFnNames と liftLambdaFn の印）ので、印のある呼び出しは書いてよい
     ind := irf == -1 && st.transparent && resultsHoldSlice(mut st, results)
     if int(at) >= 0 && kindN(mut st, at) == ast.ECall && destHere(mut st, at) && (ind || int(fi) >= 0 && destReads(mut st, fi, results)) {
@@ -573,7 +573,7 @@ func want(st mut St, t int, w int, at desugar.NodeRef) error? {
     return nil
 }
 
-// coerce は値を期待型 w に合わせる: T? の期待に対して nil はタグ 0 の実体化、ペイロード型の値はタグ 1 で包む（暗黙 some）。他は型一致
+// 値を期待型 w に合わせる: T? の期待に対して nil はタグ 0 の実体化、ペイロード型の値はタグ 1 で包む（暗黙 some）。他は型一致
 func coerce(st mut St, t int, v int, w int, at desugar.NodeRef) (Val, error?) {
     if tEql(mut st, t, w) || isTag(mut st, t, TNever) {
         return Val{t: t, v: v}, nil
@@ -604,7 +604,7 @@ func coerce(st mut St, t int, v int, w int, at desugar.NodeRef) (Val, error?) {
     return Val{}, diag.Mismatch{at: posOf(mut st, at)}
 }
 
-// exprExpecting は期待型つきの式評価（sink: return・引数・フィールド・代入）。T? を期待する if 式は腕ごとに合わせる
+// 期待型つきの式評価（sink: return・引数・フィールド・代入）。T? を期待する if 式は腕ごとに合わせる
 func exprExpecting(st mut St, e desugar.NodeRef, w int, at desugar.NodeRef) (Val, error?) {
     k := kindN(mut st, e)
     if k == ast.ELambda {
@@ -618,7 +618,7 @@ func exprExpecting(st mut St, e desugar.NodeRef, w int, at desugar.NodeRef) (Val
                 }
                 return Val{}, diag.Mismatch{at: posOf(mut st, at)}
             }
-            // 持ち上げた値は期待型 w のまま（名前付き関数型の印つき — 展開の束縛に残る型が素の関数値だと、次の値の位置への転送が bareFnInto で落ちる: F-bk）
+            // 持ち上げた値は期待型 w のまま（名前付き関数型の印つき — 展開の束縛に残る型が素の関数値だと、次の値の位置への転送が bareFnInto で落ちる）
             x := liftLambda(mut st, e, desugar.HeapGet(mut st.d, w + 1), at)?
             return Val{t: w, v: x.v}, nil
         }
@@ -641,7 +641,7 @@ func exprExpecting(st mut St, e desugar.NodeRef, w int, at desugar.NodeRef) (Val
     }
     r := expr(mut st, e)?
     // 値の位置（named fn type・匿名の関数型の欄 — 印つき）へ素の関数値（局所に束縛した名前付き関数）は入れない（check の核と同じ線 —
-    // 値の位置へ入れられるのはラムダ・η 済みの名前・同じ鍵の値だけ。report-761 ①）
+    // 値の位置へ入れられるのはラムダ・η 済みの名前・同じ鍵の値だけ）
     if bareFnInto(mut st, r.t, w) {
         return Val{}, diag.Mismatch{at: posOf(mut st, at)}
     }
@@ -653,7 +653,7 @@ func exprExpecting(st mut St, e desugar.NodeRef, w int, at desugar.NodeRef) (Val
     return coerce(mut st, r.t, r.v, w, at)
 }
 
-// bareFnInto は型 t の値が値の位置の型 w（かその option）へ入れられない素の関数値か（印も名前も無い関数値 → 印か名前のある関数値）
+// 型 t の値が値の位置の型 w（かその option）へ入れられない素の関数値か（印も名前も無い関数値 → 印か名前のある関数値）
 func bareFnInto(st mut St, t int, w int) bool {
     pw := if isTag(mut st, w, TOpt) { desugar.HeapGet(mut st.d, w + 1) } else { w }
     if !isTag(mut st, t, TFnv) || !isTag(mut st, pw, TFnv) {
@@ -663,7 +663,7 @@ func bareFnInto(st mut St, t int, w int) bool {
     return bare && (desugar.HeapGet(mut st.d, pw + 2) != 0 || desugar.HeapGet(mut st.d, pw + 3) != 0)
 }
 
-// etaTarget はラムダ e が loader の値の位置の η（`($f…) => g($f…)` — fnval.sober）なら呼び先 g の節（でなければ -1）
+// ラムダ e が loader の値の位置の η（`($f…) => g($f…)` — fnval.sober）なら呼び先 g の節（でなければ -1）
 func etaTarget(st mut St, e desugar.NodeRef) desugar.NodeRef {
     ps := lA(nodeOf(mut st, e))
     body := nB(nodeOf(mut st, e))
@@ -693,7 +693,7 @@ func etaTarget(st mut St, e desugar.NodeRef) desugar.NodeRef {
     return g
 }
 
-// untypedConst は式 e が型なしの定数か（束縛された名前は違う — 判定の本体は desugar.IsUntypedConst）
+// 式 e が型なしの定数か（束縛された名前は違う — 判定の本体は desugar.IsUntypedConst）
 func untypedConst(st mut St, e desugar.NodeRef) bool {
     if kindN(mut st, e) == ast.EIdent && lookup(mut st, sA(nodeOf(mut st, e))) >= 0 {
         return false
@@ -701,7 +701,7 @@ func untypedConst(st mut St, e desugar.NodeRef) bool {
     return desugar.IsUntypedConst(mut st.d, e, st.curPkg)
 }
 
-// convOf は呼び出し e が変換（`X(e)` / `int(x)` / `bool(x)`）なら行き先（desugar.ConvTarget — でなければ CONV_NONE）
+// 呼び出し e が変換（`X(e)` / `int(x)` / `bool(x)`）なら行き先（desugar.ConvTarget — でなければ CONV_NONE）
 func convOf(st mut St, e desugar.NodeRef) int {
     callee := nA(nodeOf(mut st, e))
     if kindN(mut st, callee) == ast.EIdent && lookup(mut st, sA(nodeOf(mut st, callee))) >= 0 {
@@ -710,7 +710,7 @@ func convOf(st mut St, e desugar.NodeRef) int {
     return desugar.ConvTarget(mut st.d, callee, st.curPkg)
 }
 
-// convExpr は変換（値は変えない — 型だけ付け替える。下地が同じでなければ拒否）
+// 変換（値は変えない — 型だけ付け替える。下地が同じでなければ拒否）
 func convExpr(st mut St, e desugar.NodeRef, cv int) (Val, error?) {
     at := e
     args := lB(nodeOf(mut st, e))
@@ -767,14 +767,17 @@ func expr(st mut St, e desugar.NodeRef) (Val, error?) {
     if st.ymode == 2 {
         yCompare(mut st, e, v.t)
     }
-    // 暗黙の freeze の点（typer の表 — desugar/implicit.sober）: 明示の `freeze(e)` と同じく型の付け替えだけ（命令は出さない）
+    // 暗黙の freeze の点（typer の表 — desugar/implicit.sober）: 明示の `freeze(e)` と同じく型の付け替え + map の封（par.sober の sealHdr）
     if st.d.nimpl > 0 && desugar.IsImplicit(mut st.d, e) {
+        if isTag(mut st, v.t, TMap) {
+            sealHdr(mut st, v.v, v.t)
+        }
         return Val{t: freezeTy(mut st, v.t), v: v.v}, nil
     }
     return v, nil
 }
 
-// freezeTy は組み込みの freeze の結果の型（slice / map の外側の mut を落とす — string はそのまま。他は変えない）
+// 組み込みの freeze の結果の型（slice / map の外側の mut を落とす — string はそのまま。他は変えない）
 func freezeTy(st mut St, t int) int {
     if isTag(mut st, t, TSlice) {
         return if isString(mut st, t) { t } else { mkSlice(mut st, desugar.HeapGet(mut st.d, t + 1), false) }
@@ -879,7 +882,7 @@ func ident(st mut St, e desugar.NodeRef) (Val, error?) {
     return constOrFn(mut st, desugar.ResolveTop(mut st.d, st.curPkg, name, false, desugar.TopConst | desugar.TopFn), at)
 }
 
-// constOrFn はトップレベル const（int はロード時に畳み込み済み）か名前付き関数の参照（関数値）— r は名前の解決（const か関数に絞ったもの）
+// トップレベル const（int はロード時に畳み込み済み）か名前付き関数の参照（関数値）— r は名前の解決（const か関数に絞ったもの）
 func constOrFn(st mut St, r desugar.TopRef, at desugar.NodeRef) (Val, error?) {
     if r.kind == desugar.TopConst {
         c := r.idx
@@ -907,7 +910,7 @@ func constOrFn(st mut St, r desugar.TopRef, at desugar.NodeRef) (Val, error?) {
     return Val{}, diag.UndefinedName{at: posOf(mut st, at)}
 }
 
-// selector は `x.f`（struct のフィールド）/ `pkg.N`（修飾 const）
+// `x.f`（struct のフィールド）/ `pkg.N`（修飾 const）
 func selector(st mut St, e desugar.NodeRef) (Val, error?) {
     base := nA(nodeOf(mut st, e))
     field := sB(nodeOf(mut st, e))
@@ -928,7 +931,7 @@ func selector(st mut St, e desugar.NodeRef) (Val, error?) {
     return Val{t: t, v: loadVal(mut st, bx.v, desugar.HeapGet(mut st.d, f + 2), t)}, nil
 }
 
-// variantOf は型の名前（"N" か "ref.N"）の union の variant (UnionInfo, 添字)。無ければ (-1, 0)。修飾参照は公開の検査つき（desugar.ResolveVariant）
+// 型の名前（"N" か "ref.N"）の union の variant (UnionInfo, 添字)。無ければ (-1, 0)。修飾参照は公開の検査つき（desugar.ResolveVariant）
 func variantOf(st mut St, pk int, name desugar.StrRef) (int, int) {
     r := desugar.ResolveVariant(mut st.d, pk, name)
     if r.kind != desugar.TopVariant {
@@ -948,7 +951,7 @@ func variantOf(st mut St, pk int, name desugar.StrRef) (int, int) {
     return u, r.sub
 }
 
-// variantInst はジェネリック union の variant の名前 name と明示の型引数（型式の列 args — 呼び手の文脈で読む）のインスタンス (UnionInfo, 添字)
+// ジェネリック union の variant の名前 name と明示の型引数（型式の列 args — 呼び手の文脈で読む）のインスタンス (UnionInfo, 添字)
 func variantInst(st mut St, pk int, name desugar.StrRef, args desugar.ListRef, at desugar.NodeRef) (int, int, error?) {
     r := desugar.ResolveVariant(mut st.d, pk, name)
     if r.kind != desugar.TopVariant || r.idx == desugar.ERRS {
@@ -967,7 +970,7 @@ func variantInst(st mut St, pk int, name desugar.StrRef, args desugar.ListRef, a
     return u, r.sub, nil
 }
 
-// composite はリテラル: 新しいスロットに位置か名前でフィールドを埋める（名前つきは一部の欄だけでよい — 省いた欄はゼロ値）。
+// リテラル: 新しいスロットに位置か名前でフィールドを埋める（名前つきは一部の欄だけでよい — 省いた欄はゼロ値）。
 // 型名が variant なら union 値（語 0 にタグ、ペイロードは語 1 から）。`T{}` はゼロ値
 func composite(st mut St, e desugar.NodeRef) (Val, error?) {
     at := e
@@ -1111,7 +1114,7 @@ func composite(st mut St, e desugar.NodeRef) (Val, error?) {
     return Val{t: t, v: p}, nil
 }
 
-// requireZero はゼロ値を持つ型か（float のゼロ値 = 0.0 — ビット列 0）
+// ゼロ値を持つ型か（float のゼロ値 = 0.0 — ビット列 0）
 func requireZero(st mut St, t int, at desugar.NodeRef) error? {
     k := desugar.HeapGet(mut st.d, t)
     if k == TInt || k == TBool || k == TOpt || k == TSlice || k == TMap || k == TNamed || k == TByte || k == TFloat {
@@ -1209,7 +1212,7 @@ func binary(st mut St, e desugar.NodeRef) (Val, error?) {
     return Val{t: tInt(mut st), v: v}, nil
 }
 
-// farith は float の二項演算（二項式と複合代入の共通部 — 算術 4 種だけ）
+// float の二項演算（二項式と複合代入の共通部 — 算術 4 種だけ）
 func farith(st mut St, op int, x int, y int, at desugar.NodeRef) (int, error?) {
     b := if op == lexer.Plus { BFAdd } else if op == lexer.Minus { BFSub } else if op == lexer.Star { BFMul } else if op == lexer.Slash { BFDiv } else { -1 }
     if b < 0 {
@@ -1218,7 +1221,7 @@ func farith(st mut St, op int, x int, y int, at desugar.NodeRef) (int, error?) {
     return bin(mut st, b, x, y), nil
 }
 
-// ftoint は float → int（0 方向の切り捨て）: cvttsd2si の生の値が i64 の最小値なのに入力がちょうど -2^63 でなければ NaN・範囲外 → panic
+// float → int（0 方向の切り捨て）: cvttsd2si の生の値が i64 の最小値なのに入力がちょうど -2^63 でなければ NaN・範囲外 → panic
 func ftoint(st mut St, x int, at desugar.NodeRef) int {
     raw := bin(mut st, BFToInt, x, x)
     bad := bin(mut st, BAnd, cmp(mut st, CEq, raw, iconst(mut st, 0 - 9223372036854775807 - 1)), cmp(mut st, CNe, x, iconst(mut st, -4332462841530417152)))
@@ -1226,7 +1229,7 @@ func ftoint(st mut St, x int, at desugar.NodeRef) int {
     return raw
 }
 
-// arith は int の二項演算（二項式と複合代入の共通部）
+// int の二項演算（二項式と複合代入の共通部）
 func arith(st mut St, op int, x int, y int, at desugar.NodeRef) (int, error?) {
     mut b := -1
     if op == lexer.Plus {
@@ -1280,7 +1283,7 @@ func shift(st mut St, left bool, x int, n int, at desugar.NodeRef) int {
     return res
 }
 
-// shortCircuit は a && b / a || b: 右辺は左辺で決まらないときだけ評価する
+// a && b / a || b: 右辺は左辺で決まらないときだけ評価する
 func shortCircuit(st mut St, e desugar.NodeRef) (Val, error?) {
     op := nodeOf(mut st, e).a
     at := e
@@ -1345,7 +1348,7 @@ func armFits(st mut St, t int, ct int, a desugar.NodeRef) bool {
     return constFits(mut st, t, ct, x)
 }
 
-// armUntyped は if 式の腕 a（then の KBlock・else の EBlock か式）がちょうど型なしの定数 1 つか
+// if 式の腕 a（then の KBlock・else の EBlock か式）がちょうど型なしの定数 1 つか
 func armUntyped(st mut St, a desugar.NodeRef) bool {
     if a == -1 {
         return false
@@ -1392,7 +1395,7 @@ func endsAdd(st mut St, l int, blk BlkRef, t int, v int) {
     desugar.HeapSet(mut st.d, l, n + 1)
 }
 
-// joinArms は腕の末尾を合流させる。値のある型ならブロック引数で受ける（アグリゲートはアドレス）
+// 腕の末尾を合流させる。値のある型ならブロック引数で受ける（アグリゲートはアドレス）
 func joinArms(st mut St, ends int, t int) (int, int) {
     n := desugar.HeapGet(mut st.d, ends)
     if isTag(mut st, t, TNever) || n == 0 {
@@ -1417,7 +1420,7 @@ func joinArms(st mut St, ends int, t int) (int, int) {
     return tNone(mut st), 0
 }
 
-// nilTest は条件が `x != nil` / `x == nil`（x は T? の名前）なら (名前, then 側が値ありか)。でなければ (-1, false)
+// 条件が `x != nil` / `x == nil`（x は T? の名前）なら (名前, then 側が値ありか)。でなければ (-1, false)
 func nilTest(st mut St, c desugar.NodeRef) (desugar.StrRef, bool) {
     if kindN(mut st, c) != ast.EBinary {
         return -1, false
@@ -1439,7 +1442,7 @@ func nilTest(st mut St, c desugar.NodeRef) (desugar.StrRef, bool) {
     return sA(nodeOf(mut st, side)), op == lexer.BangEqual
 }
 
-// narrowedArm は絞り込みつきの腕: name（T?）のペイロードのコピーを同名で再束縛して本体を実行する
+// 絞り込みつきの腕: name（T?）のペイロードのコピーを同名で再束縛して本体を実行する
 func narrowedArm(st mut St, name desugar.StrRef, l desugar.ListRef) (Val, error?) {
     en := lookup(mut st, name)
     o := desugar.HeapGet(mut st.d, en + 3)
@@ -1452,7 +1455,7 @@ func narrowedArm(st mut St, name desugar.StrRef, l desugar.ListRef) (Val, error?
     return x, nil
 }
 
-// narrowedElse は絞り込みつきの else if（`if x == nil { … } else if … { x }` — else 側は x が値あり。desugar の ifnil と同じ）:
+// 絞り込みつきの else if（`if x == nil { … } else if … { x }` — else 側は x が値あり。desugar の ifnil と同じ）:
 // name（T?）のペイロードのコピーを同名で再束縛して式 el（else if の if 式）を評価する
 func narrowedElse(st mut St, name desugar.StrRef, el desugar.NodeRef, w int, at desugar.NodeRef) (Val, error?) {
     en := lookup(mut st, name)
@@ -1466,7 +1469,7 @@ func narrowedElse(st mut St, name desugar.StrRef, el desugar.NodeRef, w int, at 
     return x, nil
 }
 
-// ifExpr は if 式 / 文。then は腕（region 透過）、else はブロックなら腕・else if なら式。else 無しは none。
+// if 式 / 文。then は腕（region 透過）、else はブロックなら腕・else if なら式。else 無しは none。
 // w（T? の期待、無ければ -1）があれば腕ごとに合わせてから合流する
 func ifExpr(st mut St, e desugar.NodeRef, w int) (Val, error?) {
     at := e

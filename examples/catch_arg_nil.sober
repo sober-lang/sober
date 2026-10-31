@@ -1,6 +1,6 @@
 package main
 
-// catch の実引数の直書き・式位置の塊の mut の束縛（2026-10-19 — r848 の F 候補）。式位置の `f() catch nil` は
+// catch の実引数の直書き・式位置の塊の mut の束縛。式位置の `f() catch nil` は
 // `{ $v, $e := f(); mut $r := $v; if $e != nil { $r = nil }; $r }` に写り、mut のセルは束縛点（塊の region）の座標に緩むので、
 // 塊の末尾の型の推定も同じ座標で読んで出口の写しを付ける（check ≡ build）
 

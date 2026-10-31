@@ -6,7 +6,7 @@ package convert
 
 import "std/internal/floatfmt"
 
-// 組み込みの宣言（息継ぎ ③ — 本体なし。鍵の実装はコンパイラの表: loader/intrinsic.sober・desugar / lower の SysKey）
+// 組み込みの宣言（本体なし。実装はコンパイラの表: loader/intrinsic.sober・desugar / lower の SysKey）
 @intrinsic("fbits")
 func sysFBits(x float) int
 
@@ -19,7 +19,7 @@ func FormatFloat(f float) string {
     return floatfmt.Format(sysFBits(f))
 }
 
-// f を小数点以下 prec 桁で（Go の strconv.FormatFloat(f, 'f', prec, 64)・fmt の %.<prec>f と同じ綴り — 正確な値を最近接・偶数へ丸める）（対の ParseFixed は実需まで足さない — language.md 34 節 2 の注記・2026-10-20 ④）
+// f を小数点以下 prec 桁で（Go の strconv.FormatFloat(f, 'f', prec, 64)・fmt の %.<prec>f と同じ綴り — 正確な値を最近接・偶数へ丸める）（対の ParseFixed は実需まで足さない — language.md 34 節 2 の注記）
 @effects()
 func FormatFixed(f float, prec int) string {
     return floatfmt.FormatFixed(sysFBits(f), prec)
@@ -58,7 +58,7 @@ func ParseFloat(s string) (float, error?) {
     return sysFFromBits(bits), nil
 }
 
-// fastFloat は Clinger の速い道（受けるのは `[+-]? 数字+ ('.' 数字+)? ([eE] [+-]? 数字+)?` で仮数 ≤ 2^53・|指数| ≤ 22 の形だけ — 他は (false, _) で多倍長へ）
+// Clinger の速い道（受けるのは `[+-]? 数字+ ('.' 数字+)? ([eE] [+-]? 数字+)?` で仮数 ≤ 2^53・|指数| ≤ 22 の形だけ — 他は (false, _) で多倍長へ）
 func fastFloat(b []byte) (bool, float) {
     mut i := 0
     neg := len(b) > 0 && b[0] == '-'
@@ -184,7 +184,7 @@ func FormatInt(n int) string {
     }
 }
 
-// formatUint は 0 以上の n の 10 進表記
+// 0 以上の n の 10 進表記
 func formatUint(n int) string {
     mut rev := mut []byte{}
     mut m := n

@@ -88,4 +88,4 @@ func Bool(r mut Rand) bool
 func Split(r mut Rand) Rand
 ```
 
-r から独立した列の Rand を作る（r も 1 歩進む — 生成器の部分木に別のシードを配る用途）
+r から独立した列の Rand を作る（r も 1 歩進む — ジェネレータの部分木に別のシードを配る用途）

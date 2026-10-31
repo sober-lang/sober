@@ -1,0 +1,5 @@
+package unit
+
+func Half(n int) int {
+    return if n % 2 == 0 { n / 2 } else { (n + 1) / 2 }
+}

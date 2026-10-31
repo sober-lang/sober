@@ -1,6 +1,6 @@
 package main
 
-// std/crypto/rsa + std/crypto/pem（report-795）: PKCS#8 の PEM の秘密鍵（testdata/crypto — 試験用の RSA-2048 と HttpArena の harness の鍵〔公開済み〕）を読み、
+// std/crypto/rsa + std/crypto/pem: PKCS#8 の PEM の秘密鍵（testdata/crypto — 試験用の RSA-2048 と HttpArena の harness の鍵〔公開済み〕）を読み、
 // RSASSA-PSS（SHA-256・MGF1-SHA256・salt 32）で決定的な salt の署名を出して、自分の検証器で受理・改竄で拒否を見る。
 // Go の双子 = scripts/oracles/crypto_rsa.go（同じ salt の EMSA-PSS を big.Int の m^d mod n で作った署名とバイト一致 + crypto/rsa.VerifyPSS で受理）
 
@@ -66,7 +66,7 @@ func one(fs map[string]string, name string) {
     }
 }
 
-// pems は PEM の読みの境目: 証明書・2 つ続きの塊（鎖の形）・END の欠け・base64 の綴りの誤り・'=' の位置の誤り
+// PEM の読みの境目: 証明書・2 つ続きの塊（鎖の形）・END の欠け・base64 の綴りの誤り・'=' の位置の誤り
 func pems(cs map[string]string) {
     crt := file(cs, "testdata/crypto/httparena-server.crt")
     b1, e1 := pem.Parse(crt)

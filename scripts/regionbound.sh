@@ -17,7 +17,8 @@ trap 'rm -rf "$tmp"' EXIT
 one() {
     local w=${PAR_W:-$tmp} e=$1 cb ir
     "$STAGE2" check "$e" --core-json-expanded > "$w/c.json" 2> /dev/null || { echo "@@ skip"; return; }
-    "$STAGE2" build "$e" --emit=ir -o "$w/p.ir" 2> /dev/null || { echo "@@ lskip"; return; }   # check ⊃ build の形は F 台帳と他のゲートが見る
+    # IR は展開の口（SOBER_RAW_EXPAND=1 — raw の既定は透過の実体関数で、透過の関数の本体の block は呼び出し点の数だけ数えられない。report-1278）
+    SOBER_RAW_EXPAND=1 "$STAGE2" build "$e" --emit=ir -o "$w/p.ir" 2> /dev/null || { echo "@@ lskip"; return; }   # check ⊃ build の形は F 台帳と他のゲートが見る
     # ループ本体の反復の region（宛先構築レーン M4 / M5）は両側から除く — 総称関数の単相化で IR 側だけループが複製されるので数が合わない。
     # コア = while の本体の block・IR = ラベルの直後の region.enter（式ブロックと関数の入口の enter は必ず直前に region.depth がある）
     # 段 6 P3a: コアの scope は block と同じく region を 1 段開く（lower = task.Run の enter）。spawn の子の region は子の関数の入口（lower/task.sober の kid#N）
@@ -44,7 +45,9 @@ par_init "$tmp"
 if [ $# -gt 0 ]; then
     for e in "$@"; do par_run one "$e"; done
 else
-    while IFS= read -r e; do par_run one "$e"; done < <(scripts/irtext.sh --list)
+    # scripts/noopt-excluded.list の entry（展開の口で肥大して建たない entry — 理由はリストの中）は外す
+    excl=$(sed 's/#.*//; s/^ *//; s/ *$//' scripts/noopt-excluded.list | grep -v '^$') || true
+    while IFS= read -r e; do par_run one "$e"; done < <(scripts/irtext.sh --list | grep -vxF -e "${excl:-//}")
 fi
 par_wait > "$tmp/list"
 grep -v '^@@ ' "$tmp/list" || true

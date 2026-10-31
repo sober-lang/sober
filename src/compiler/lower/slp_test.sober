@@ -1,12 +1,12 @@
 package lower
 
-// SLP の束ね（slp.sober — SIMD 段 4②b）の網: IR を手で組んで直に見る（`cd src/compiler && ../../bin/sober test lower`）。
+// SLP の束ね（slp.sober）の網: IR を手で組んで直に見る（`cd src/compiler && ../../bin/sober test lower`）。
 // 出力の網（examples/opt_slp）で見えない形 — 16 B の store を遅い側へ寄せる間に早い側の語を読む load がある形（Sober のプログラムでは
 // 直線の中の読み直しが store の値に転送されて残らない）— をここで固定する
 
 import "desugar"
 
-// slT は `f(p ptr, a, c)` の 1 ブロックに `p[0] = p[2] + a * c; [kind 1: t = load p[0]]; p[1] = p[3] + (t か a) * c` を組んで SLP を掛け、
+// `f(p ptr, a, c)` の 1 ブロックに `p[0] = p[2] + a * c; [kind 1: t = load p[0]]; p[1] = p[3] + (t か a) * c` を組んで SLP を掛け、
 // 残った 16 B の store の数を返す（1 = 束ねた・0 = 束ねない）
 func slT(kind int) int {
     mut st := St{}

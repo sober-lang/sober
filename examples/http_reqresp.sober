@@ -1,6 +1,6 @@
 package main
 
-// http の要求と応答の補完（report-850 5 節 / 854）: Form（application/x-www-form-urlencoded の本文）・JsonDoc（JSON の本文 → std/json の Doc → Decode）・
+// http の要求と応答の補完: Form（application/x-www-form-urlencoded の本文）・JsonDoc（JSON の本文 → std/json の Doc → Decode）・
 // 任意ヘッダ（Response の headers）・ルートの行の保存の方針（Route.cache）・405 の Allow・static の *rest（".." を拒んでファイルを返す — 書き込み先は out/ の下・リポジトリのルートを cwd にして実行）。
 // ネットの代わりに recv が決まった要求の列を 1 切片で渡し、send が応答を印字する（examples/http_router の形 — 行末の CR は外して印字）
 

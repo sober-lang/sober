@@ -11,7 +11,7 @@ import "lexer"
 import "std/iter"
 import "obuf"
 
-// Json は t の根を 1 ファイル分の JSON バイト列にする
+// t の根を 1 ファイル分の JSON バイト列にする
 func Json(t Tree) []byte {
     mut out := mut []byte{}
     emit(mut out, t, t.file, 0)
@@ -25,7 +25,7 @@ func hex(n int) byte {
     return byte(if n < 10 { n + 48 } else { n + 87 })
 }
 
-// str は文字列 s（データプールの添字）を escape して書く
+// 文字列 s（データプールの添字）を escape して書く
 func str(out mut []byte, t Tree, s int) {
     out = append(out, '"')
     n := t.data[s]
@@ -82,7 +82,7 @@ func tag(out mut []byte, d int, k string) {
     kLit(mut out, d, true, "k", k)
 }
 
-// strs は文字列の列
+// 文字列の列
 func strs(out mut []byte, t Tree, d int, first bool, name string, l int) {
     obuf.Key(mut out, d, first, name)
     n := t.data[l]
@@ -114,7 +114,7 @@ func kNode(out mut []byte, t Tree, d int, first bool, name string, n int) {
     emit(mut out, t, n, d)
 }
 
-// list は節の列（穴 -1 は null）
+// 節の列（穴 -1 は null）
 func list(out mut []byte, t Tree, d int, l int) {
     n := t.data[l]
     if n == 0 {
@@ -137,7 +137,7 @@ func kTok(out mut []byte, d int, x Node) {
     kInt(mut out, d, "tok", x.tok)
 }
 
-// OpName は演算子の綴り（F1）
+// 演算子の綴り（F1）
 func OpName(op int) string {
     return switch op {
     case lexer.Plus: "+"
@@ -174,7 +174,7 @@ func OpName(op int) string {
     }
 }
 
-// compositeBody は composite の中身（"k" を除いた欄）。Try.wrap は k なしでこれだけを書く
+// composite の中身（"k" を除いた欄）。Try.wrap は k なしでこれだけを書く
 func compositeBody(out mut []byte, t Tree, d int, first bool, x Node) {
     kStr(mut out, t, d, first, "type_name", x.a)
     obuf.Key(mut out, d, false, "elems")
@@ -202,7 +202,7 @@ func compositeBody(out mut []byte, t Tree, d int, first bool, x Node) {
     kList(mut out, t, d, false, "type_args", x.c)
 }
 
-// emit は節 n を 1 つ書く（-1 は null、括弧は透過）
+// 節 n を 1 つ書く（-1 は null、括弧は透過）
 func emit(out mut []byte, t Tree, n0 int, d int) {
     mut n := n0
     while n >= 0 && t.nodes[n].kind == EParen {

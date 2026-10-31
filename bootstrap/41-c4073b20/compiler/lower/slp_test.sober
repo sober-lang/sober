@@ -1,0 +1,46 @@
+package lower
+
+// SLP の束ね（slp.sober）の網: IR を手で組んで直に見る（`cd src/compiler && ../../bin/sober test lower`）。
+// 出力の網（examples/opt_slp）で見えない形 — 16 B の store を遅い側へ寄せる間に早い側の語を読む load がある形（Sober のプログラムでは
+// 直線の中の読み直しが store の値に転送されて残らない）— をここで固定する
+
+import "desugar"
+
+// `f(p ptr, a, c)` の 1 ブロックに `p[0] = p[2] + a * c; [kind 1: t = load p[0]]; p[1] = p[3] + (t か a) * c` を組んで SLP を掛け、
+// 残った 16 B の store の数を返す（1 = 束ねた・0 = 束ねない）
+func slT(kind int) int {
+    mut st := St{}
+    initScalars(mut st)
+    desugar.HeapPush(mut st.d, 0)
+    pt := listN(mut st, 3)
+    desugar.HeapSet(mut st.d, pt + 1, TyPtr)
+    desugar.HeapSet(mut st.d, pt + 2, TyI64)
+    desugar.HeapSet(mut st.d, pt + 3, TyI64)
+    f := addFunc(mut st, 0, desugar.ListRef(pt), -1)
+    st.fn = f
+    entry := newBlock(mut st)
+    st.cur = entry
+    v0 := push(mut st, true, OpBin, BFAdd, load(mut st, 0, 2), push(mut st, true, OpBin, BFMul, 1, 2))
+    store(mut st, 0, 0, v0)
+    t := if kind == 1 { load(mut st, 0, 0) } else { 1 }
+    v1 := push(mut st, true, OpBin, BFAdd, load(mut st, 0, 3), push(mut st, true, OpBin, BFMul, t, 2))
+    store(mut st, 0, 1, v1)
+    ret(mut st, -1)
+    slpFunc(mut st, f)
+    mut n := 0
+    mut k := irBlkIHead(mut st, entry)
+    while k != -1 {
+        if irInsOp(mut st, k) == OpPMem && irInsRes(mut st, k) < 0 {
+            n += 1
+        }
+        k = irInsNext(mut st, k)
+    }
+    return n
+}
+
+func TestSlpPairRead() {
+    // 0: 間に読みが無ければ束ねる（16 B の load p[2..3]・pack (a, a) でなく splat a・pmul・padd・16 B の store）
+    assert(slT(0) == 1)
+    // 1: 間に早い側の語 p[0] の読みがあれば束ねない（局所の検査と並びの照合の両方が止める — 変異は両方を外すとここで落ちる）
+    assert(slT(1) == 0)
+}

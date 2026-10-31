@@ -1,0 +1,7 @@
+quick: panic in the corpus case examples/guide/kvbug/testdata/fuzz/TestAnyLine/0-6285beb84c4f3dee (seed 516221799, 20 shrink runs)
+  String = "\\"
+panic: index out of range at examples/guide/kvbug/kv.sober:44:28
+panic: quick.Crashed{exit: 101} at std/quick/fuzz.sober:232:10
+FAIL examples/guide/kvbug.TestAnyLine (exit 101)
+0 passed, 1 failed
+(exit 1)

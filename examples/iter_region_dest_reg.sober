@@ -1,19 +1,19 @@
 package main
 
-// 反復の region の約束と宛先の深度のレジスタ（M1c の W_DEST — report-692）の回帰例: 印のある呼び出し（結果が return に流れ着く）は直前に
+// 反復の region の約束と宛先の深度のレジスタ（W_DEST）の回帰例: 印のある呼び出し（結果が return に流れ着く）は直前に
 // 呼び手の宛先の深度をレジスタへ書き、印を持つ関数が入口で読んで 0 に戻す。読まない関数（keep — 本体に印が無い）へ書くと値が残り、
-// 後のループの中の印の無い呼び出し（tag）の入口が拾って、結果を外の region（run の宛先）に作る。tag 自身も keep の前に同じ値を書き直すので、
+// 後のループの中の印の無い呼び出し（tag）の入口が拾って、結果を外の region（run の宛先）に作ってしまう。tag 自身も keep の前に同じ値を書き直すので、
 // 反復ごとに外の region へ積もる（1 反復 4 KiB — 壊れると 2000 → 20000 回で RSS が比例）。回数は引数で変えられる（既定 2000 —
 // scripts/iterregion.sh が 10 倍にして RSS が比例しないことを見る）
 
 import "std/os"
 
-// keep は印を持たない（return の式に確保も呼び出しも無い）— 宛先のレジスタを読まない
+// 印を持たない（return の式に確保も呼び出しも無い）— 宛先のレジスタを読まない
 func keep(s string) string {
     return s
 }
 
-// tag は印つき（return の連結）— 入口で宛先のレジスタを読む。連結の左の keep(s) も印のある呼び出し
+// 印つき（return の連結）— 入口で宛先のレジスタを読む。連結の左の keep(s) も印のある呼び出し
 func tag(s string, big string) string {
     return keep(s) + big + "."
 }
@@ -35,7 +35,7 @@ func run(s string, n int) string {
     return x + "${t}"
 }
 
-// wrap は run を印のある呼び出しで呼ぶ（run の宛先が wrap の呼び手の深度 = ループの外になる）
+// run を印のある呼び出しで呼ぶ（run の宛先が wrap の呼び手の深度 = ループの外になる）
 func wrap(n int) string {
     r := run("ab", n)
     return r

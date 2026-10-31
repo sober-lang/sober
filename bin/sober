@@ -66,6 +66,7 @@ cmd_build() {
             --no-opt) noopt=--no-opt; passes="" ;;
             --backend=copy) backend=--backend=copy ;;
             --no-vec) backend="$backend --no-vec" ;;
+            --cover) backend="$backend --cover" ;;   # カバレッジの計器（点の表 = <出力>.pts・走らせると $SOBER_COVER へ印）
             --no-spec) backend="$backend --no-spec" ;;   # 定数引数の特化（展開便 段 1）を外す — 網の 特化 ≟ なし   # ベクトル化（第三便のスパイク）を外す — 網の vectorized ≟ scalar
             --passes) epasses=--passes ;;
             --mem-trace) to_stage1 "build --mem-trace" build "${all[@]}" ;;
@@ -135,7 +136,7 @@ cmd_check() {
     exec "$S2" check "$entry"
 }
 
-# sober test <package>… [-run <接頭辞>] [-v]: package の _test.sober の TestXxx() を 1 テスト 1 サブプロセスで（stage2 の `test` — Sober 製のランナー。
+# sober test <package>… [--run <接頭辞>] [-v]: package の _test.sober の TestXxx() を 1 テスト 1 サブプロセスで（stage2 の `test` — Sober 製のランナー。
 # テストのビルドは Sober の正規バックエンド。作業場所をここが渡す）
 cmd_test() {
     tmpdir
@@ -188,6 +189,8 @@ case "$sub" in
     build) cmd_build "$@" ;;
     check) cmd_check "$@" ;;
     test) cmd_test "$@"; exit $? ;;
+    # sober fuzz <package> --run <TestXxx>: テストの std/quick の性質を期限まで回す（見つけた列は <package>/testdata/fuzz へ）
+    fuzz) exec "$S2" fuzz "$@" ;;
     watch) cmd_watch "$@" ;;
     # sober run <entry> [--] [<args>…]: build して走らせる（子の終了コードを透過。実行ファイルは置き場に鍵で残り、同じ鍵なら build を飛ばす —
     # 鍵の材料のコンパイラの鍵 = stage2 の .key）
@@ -205,7 +208,14 @@ case "$sub" in
             *) echo "sober: parse takes --ast-json <file> or --loader-json <entry>" >&2; exit 1 ;;
         esac ;;
     iface) cmd_iface "$@" ;;
+    # sober cache info / gc: build の後段の関数キャッシュの置き場の一覧（世代の鍵は build と同じく実行ファイルの混ぜ — SOBER_SELF_KEY は渡さない）
+    cache) exec "$S2" cache "$@" ;;
+    # sober doc --cli <entry>: プログラムの std/cli の表の Markdown（生成物 docs/cli/ と照合は scripts/clidoc.sh）
+    doc) exec "$S2" doc "$@" ;;
+    # sober outline <file|dir>: 宣言の一覧と行の範囲（parse だけ — 注釈は書かれたまま）
+    outline) exec "$S2" outline "$@" ;;
+    --cli-spec) exec "$S2" --cli-spec ;;
     help|--help|-h) exec "$S2" help ;;
-    version|--version) exec "$S2" version ;;
+    version|--version) exec "$S2" --version ;;
     *) echo "sober: unknown subcommand '$sub'" >&2; exit 1 ;;
 esac

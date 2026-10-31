@@ -1,2 +1,3 @@
+sober: type error at examples/if_neg_noelse_value.sober:7:5
 {"errors":[{"msg":"def error"}],"ok":false}
 exit=1

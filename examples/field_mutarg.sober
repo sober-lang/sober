@@ -1,7 +1,7 @@
 package main
 
-// フィールドの mut 実引数（language.md 26 節 — F-17 案 2α で解禁）と、欄ごとのセルに割った mut struct の読み・代入・値としての使用・
-// 丸ごとの代入・再帰する mut 引数の Def（R2）の中の欄の別名渡し（struct の欄 = Builder / Pt、int の欄）
+// フィールドの mut 実引数（language.md 26 節）と、欄ごとのセルに割った mut struct の読み・代入・値としての使用・
+// 丸ごとの代入・再帰する mut 引数の Def の中の欄の別名渡し（struct の欄 = Builder / Pt、int の欄）
 
 import "std/builder"
 

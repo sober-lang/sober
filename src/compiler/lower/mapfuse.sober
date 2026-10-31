@@ -3,7 +3,7 @@ package lower
 import "desugar"
 import "std/iter"
 
-// map の引きの融合（M16 ② — イディオムギャップ「map 更新」・最適化のバックエンドの経路だけ・cfgclean の後）:
+// map の引きの融合（イディオムギャップ「map 更新」・最適化のバックエンドの経路だけ・cfgclean の後）:
 // `c := m[k]; m[k] = <c の式>` は lower で rt.map_find を 2 回呼ぶ（読みの index と set の mapSet）。同じ実引数の map_find が 2 回目を支配し、
 // その間に map を変えうる命令が無ければ 2 回目は 1 回目と同じセルを返す（map_find の副作用は索引の作成・追いつきだけで冪等）ので、
 // 2 回目の結果を 1 回目の結果に付け替えて呼び出しを消す。構文は足さない（綴りは今のまま速くする）。
@@ -125,7 +125,7 @@ func mfFunc(st mut St, f FnRef) {
     }
 }
 
-// mfSameArgs は 2 つの map_find の実引数が同じ値か
+// 2 つの map_find の実引数が同じ値か
 func mfSameArgs(st mut St, a InsRef, b InsRef) bool {
     la := irInsB(mut st, a)
     lb := irInsB(mut st, b)
@@ -140,7 +140,7 @@ func mfSameArgs(st mut St, a InsRef, b InsRef) bool {
     return true
 }
 
-// mfClear は c1 が c2 を支配し、c1 から c2 への全経路の命令が map を変えないか
+// c1 が c2 を支配し、c1 から c2 への全経路の命令が map を変えないか
 func mfClear(st mut St, blk mut []int, def mut []int, pc mut []int, pl mut []int, mark mut []int, stack mut []int, epoch int, entry int,
     c1 InsRef, b1 int, c2 InsRef, b2 int) bool {
     args := irInsB(mut st, c1)
@@ -208,7 +208,7 @@ func mfClear(st mut St, blk mut []int, def mut []int, pc mut []int, pl mut []int
     return true
 }
 
-// mfHarmless は命令 i が map（ヘッダ h のスロット・セル・キー kp）を変えないか
+// 命令 i が map（ヘッダ h のスロット・セル・キー kp）を変えないか
 func mfHarmless(st mut St, def mut []int, i InsRef, h int, kp int, c1 InsRef, b1 int, blk mut []int) bool {
     op := irInsOp(mut st, i)
     if op == OpDead || op == OpConst || op == OpBin || op == OpCmp || op == OpLoad || op == OpLoad8 || op == OpGepW || op == OpGepB ||

@@ -1,8 +1,7 @@
 package main
 
-// 段 6 P4-1 → P4-2: 子と親が両方 stdout へ書く。P4-1 では行バッファが task で共有だったので出力の順はスケジュールで決まった（schedfuzz の
-// 自己検査の証人だった）。P4-2 の (O1)「spawn の木の先行順」でスケジュールに依らない — 親の "parent" は 2 つの子の流れの後
-// （証人の役は直書きの examples/task_print_direct へ）
+// 子と親が両方 stdout へ書く。出力の順は「spawn の木の先行順」で決まりスケジュールに依らない — 親の "parent" は 2 つの子の流れの後
+// （スケジュール依存の証人の役は直書きの examples/task_print_direct へ）
 
 import "std/task"
 

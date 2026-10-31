@@ -1,6 +1,6 @@
 package main
 
-// 交互に 2 本の map へ挿入する（データ構造便の続編 — rt.map_grow の幾何成長）と、同じセル列を共有する map の写しの独立（値の意味論）
+// 交互に 2 本の map へ挿入する（rt.map_grow の幾何成長）と、同じセル列を共有する map の写しの独立（値の意味論）
 
 import "std/iter"
 

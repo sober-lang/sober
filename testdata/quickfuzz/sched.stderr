@@ -1,0 +1,6 @@
+quick: fuzz: falsified at trial 3 (seed 0, sched 3, 1 shrink runs)
+  Int(1, 3) = 1
+quick: property returned false
+panic: quick.Falsified{} at std/quick
+quick: wrote CORPUS/main/0-ae120bf04fce78a2
+panic: quick.Falsified{} at std/quick

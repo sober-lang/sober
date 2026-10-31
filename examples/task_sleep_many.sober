@@ -40,7 +40,7 @@ func main() {
     println("long sleepers cut: ${n % 100}")
 }
 
-// quick は期限 300 ms の scope の中で 10 回眠る（1 回 1〜13 ms — 子ごとに目標が散らばる）。期限に切られずに眠り終えたら true
+// 期限 300 ms の scope の中で 10 回眠る（1 回 1〜13 ms — 子ごとに目標が散らばる）。期限に切られずに眠り終えたら true
 func quick(k int) bool {
     r, _ := task.Run((s task.Scope) => {
         mut j := 0

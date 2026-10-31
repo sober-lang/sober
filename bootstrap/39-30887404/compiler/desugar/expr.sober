@@ -1,0 +1,1455 @@
+package desugar
+
+// 式の脱糖（src/stage1/desugar.zig の expr / coerceExpr / composite 一族の写し）
+
+import "diag"
+import "ast"
+import "lexer"
+import "std/iter"
+
+// 式 e の脱糖（出所の追跡 — st.track — のときは e を今の出所にして exprIn を呼び、出口で戻す）
+func expr(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+    if !st.track {
+        return exprIn(mut st, e, eb, ef, depth)
+    }
+    saved := st.opos
+    // 合成の節（ファイルの無い位置）は外の出所を保つ
+    pk := PackPos(posOf(mut st, e))
+    if pk != 0 {
+        st.opos = pk
+    }
+    v := exprIn(mut st, e, eb, ef, depth)?
+    st.opos = saved
+    return v, nil
+}
+
+func exprIn(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+    // 暗黙の freeze の点（typer の表 — desugar/implicit.sober）: 明示の `freeze(e)` と同じコア（CFreeze）。位置は見ない — 点の節はその位置でしか脱糖されない
+    if st.nimpl > 0 && e != st.implAt && IsImplicit(mut st, e) {
+        saved := st.implAt
+        st.implAt = e
+        v := expr(mut st, e, eb, ef, depth)?
+        st.implAt = saved
+        return c1(mut st, CFreeze, v), nil
+    }
+    // 末尾期待型は直下の式（if / ブロック）だけが使う。部分式へ漏らさない
+    want := st.tailWant
+    st.tailWant = TyRef(-1)
+    md := st.mutDest - 1
+    st.mutDest = 0
+    k := kindN(mut st, e)
+    at := e
+    // byte の末尾期待（if 式・ブロックの腕の末尾）の型なし定数（language.md 33 節）
+    if isTag(mut st, want, TByte) && isUntypedConst(mut st, e, eb, st.curPkg) {
+        return byteLit(mut st, e, eb)
+    }
+    switch k {
+    case ast.EInt:
+        return cLit(mut st, nodeOf(mut st, e).a), nil
+    case ast.EFloat:
+        return cFlit(mut st, nodeOf(mut st, e).a), nil
+    case ast.ETry:
+        return tryExpr(mut st, e, eb, ef, depth)
+    case ast.EIdent:
+        r := identRef(mut st, e, eb, depth)?
+        if r.dict >= 0 {
+            return dictExpr(mut st, r.dict, r.dpk, depth)
+        }
+        return r.v, nil
+    case ast.ENil:
+        // ブロックの末尾の nil は末尾の期待型（T?）があれば注釈つき nil（展開のラムダの `{ …; nil }`・coerceArm が期待型を渡す）
+        if isTag(mut st, want, TOpt) {
+            return cNil(mut st, tInner(mut st, want)), nil
+        }
+        return 0, diag.UntypedNil{at: posOf(mut st, at)}
+    case ast.EInterp:
+        lowered := lowerInterp(mut st, e, eb, ef)?
+        return expr(mut st, lowered, eb, ef, depth)
+    case ast.EStrlit:
+        // 文字列リテラル: コアの strlit（既定の region は書かれた点の最内 — 旧テンプレート freeze(append 連鎖) と同じ型。
+        // Def 呼び出しの実引数の位置だけ region 0 — call.sober。src/stage1/desugar.zig の .strlit と同じ）
+        return cStrlit(mut st, nodeOf(mut st, e).a, st.rdepth - 1), nil
+    case ast.ESlicelit:
+        elem := tyOf(mut st, st.curPkg, nA(nodeOf(mut st, e)), at, TYFUEL)?
+        // 外の mut 場所へ流れ込む mut のリテラルは行き先の region に作る（mksliceAt）。型は行き先の点座標
+        dest := nodeOf(mut st, e).c != 0 && md >= 0 && md < st.rdepth - 1
+        saved := st.rdepth
+        if dest {
+            st.rdepth = md + 1
+        }
+        et := pointTy(mut st, elem)
+        st.rdepth = saved
+        mut e2 := if dest { cMksliceAt(mut st, 1, et, md) } else { cMkslice(mut st, 1, et) }
+        els := lB(nodeOf(mut st, e))
+        for i <- iter.Range(0, lenL(mut st, els)) {
+            v := coerceExpr(mut st, latN(mut st, els, i), elem, eb, ef, depth, at)?
+            // 外側の region の値（仮引数・外の局所）は要素の点座標へ緩める（append の appendValueAnn と同じ規律）。
+            // 行き先に作るなら、それより深い要素は行き先へ写す
+            vc := if dest { storeCopy(mut st, v, computeTy(mut st, latN(mut st, els, i), eb, ef), et, md) } else { CoreRef(-1) }
+            e2 = c2(mut st, CAppend, e2, if vc != -1 { vc } else { looserAnn(mut st, latN(mut st, els, i), v, et, eb, ef) })
+        }
+        if nodeOf(mut st, e).c == 0 {
+            return c1(mut st, CFreeze, e2), nil
+        }
+        return e2, nil
+    case ast.EMaplit:
+        k0 := tyOf(mut st, st.curPkg, nA(nodeOf(mut st, e)), at, TYFUEL)?
+        k1 := mapKeyTy(mut st, k0, at)?
+        dest := nodeOf(mut st, e).d != 0 && md >= 0 && md < st.rdepth - 1 && lenL(mut st, lC(nodeOf(mut st, e))) == 0
+        saved := st.rdepth
+        if dest {
+            st.rdepth = md + 1
+        }
+        key := pointTy(mut st, k1)
+        value := tyOf(mut st, st.curPkg, nB(nodeOf(mut st, e)), at, TYFUEL)?
+        vt := pointTy(mut st, value)
+        st.rdepth = saved
+        // 空の mut の map リテラルだけ行き先に作る（mkmapAt。要素つきは最内のまま）
+        mut e2 := if dest { cMkmapAt(mut st, 1, key, vt, md) } else { cMkmap(mut st, 1, key, vt) }
+        ens := lC(nodeOf(mut st, e))
+        for i <- iter.Range(0, lenL(mut st, ens)) {
+            en := latN(mut st, ens, i)
+            kv := mapKey(mut st, nA(nodeOf(mut st, en)), key, eb, ef, depth)?
+            vv := coerceExpr(mut st, nB(nodeOf(mut st, en)), value, eb, ef, depth, at)?
+            // 値も要素の点座標へ緩める（slice literal と同じ）
+            e2 = c3(mut st, CSetm, e2, kv, looserAnn(mut st, nB(nodeOf(mut st, en)), vv, vt, eb, ef))
+        }
+        if nodeOf(mut st, e).d == 0 {
+            return c1(mut st, CFreeze, e2), nil
+        }
+        return e2, nil
+    case ast.EIndex:
+        base0 := nA(nodeOf(mut st, e))
+        bt := computeTy(mut st, base0, eb, ef)
+        if isTag(mut st, bt, TMp) {
+            ms := exprSty(mut st, base0, eb, ef)
+            if ms >= STBASE && styAt(mut st, ms).k == SKMap {
+                wantAssignable(mut st, styAt(mut st, ms).a, nB(nodeOf(mut st, e)), eb, ef)?
+            }
+            base := expr(mut st, base0, eb, ef, depth)?
+            idx := expr(mut st, nB(nodeOf(mut st, e)), eb, ef, depth)?
+            return cGetm(mut st, mapValueAt(mut st, base0, bt, eb), base, idx), nil
+        }
+        if isStringTy(mut st, computeTy(mut st, base0, eb, ef)) {
+            return 0, diag.Malformed{at: posOf(mut st, at)}
+        }
+        notNamed(mut st, nB(nodeOf(mut st, e)), eb, ef)?
+        notByte(mut st, nB(nodeOf(mut st, e)), eb, ef)?
+        base := expr(mut st, base0, eb, ef, depth)?
+        idx := expr(mut st, nB(nodeOf(mut st, e)), eb, ef, depth)?
+        return cIndex(mut st, base, idx, readAnn(mut st, computeTy(mut st, base0, eb, ef))), nil
+    case ast.ESlice3:
+        if isStringTy(mut st, computeTy(mut st, nA(nodeOf(mut st, e)), eb, ef)) {
+            return 0, diag.Malformed{at: posOf(mut st, at)}
+        }
+        base := expr(mut st, nA(nodeOf(mut st, e)), eb, ef, depth)?
+        lo := expr(mut st, nB(nodeOf(mut st, e)), eb, ef, depth)?
+        hi := expr(mut st, nC(nodeOf(mut st, e)), eb, ef, depth)?
+        return c3(mut st, CSubslice, base, lo, hi), nil
+    case ast.EBinary:
+        return binaryExpr(mut st, e, eb, ef, depth)
+    case ast.EUnary:
+        op := nodeOf(mut st, e).a
+        x := nB(nodeOf(mut st, e))
+        notNamed(mut st, x, eb, ef)?
+        notByte(mut st, x, eb, ef)?
+        // float（language.md 37 節）: 単項は符号の反転だけ（リテラルは符号ビットを反転して畳む — -0.0 も同じ・neg は正確なので観測等価）
+        if isTag(mut st, computeTy(mut st, x, eb, ef), TFloat) {
+            if op != lexer.Minus {
+                nomFail(mut st, at)?
+            }
+            if kindN(mut st, x) == ast.EFloat {
+                return cFlit(mut st, nodeOf(mut st, x).a ^ (0 - 9223372036854775807 - 1)), nil
+            }
+            v := expr(mut st, x, eb, ef, depth)?
+            return cFConv(mut st, FCNeg, v), nil
+        }
+        switch op {
+        case lexer.Minus:
+            if kindN(mut st, x) == ast.EInt {
+                return cLit(mut st, 0 - nodeOf(mut st, x).a), nil
+            }
+            v := expr(mut st, x, eb, ef, depth)?
+            return cBin(mut st, BSub, cLit(mut st, 0), v), nil
+        case lexer.Bang:
+            v := expr(mut st, x, eb, ef, depth)?
+            return cIte(mut st, v, cFF(mut st), cTT(mut st)), nil
+        case lexer.Caret:
+            v := expr(mut st, x, eb, ef, depth)?
+            return cBin(mut st, BXor, v, cLit(mut st, -1)), nil
+        }
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    case ast.ECall:
+        if isPanicCall(mut st, e, eb) {
+            // `panic(L{…})`（language.md 27 節）: コアの unreach（評価に来たら panic・結果型は注釈 — 腕の位置では末尾期待型、
+            // 文の位置では unit）。error 網羅の覆っていない腕と同じ終端
+            return panicCore(mut st, e, if want != -1 { want } else { st.tUnit }, eb, ef, depth)
+        }
+        return call(mut st, nA(nodeOf(mut st, e)), lB(nodeOf(mut st, e)), at, eb, ef, depth)
+    case ast.EPipe:
+        return call(mut st, nB(nodeOf(mut st, e)), pipeArgs(mut st, e), at, eb, ef, depth)
+    case ast.EComposite:
+        // 外の mut 場所へ流れ込む struct リテラルは mut のコンテナの欄を行き先の region に作る（行き先構築の struct リテラル版）
+        st.compDest = if md >= 0 && md < st.rdepth - 1 { md + 1 } else { 0 }
+        return composite(mut st, e, eb, ef, depth)
+    case ast.ESelector:
+        base0 := nA(nodeOf(mut st, e))
+        // 修飾 const 参照 `pkg.N`
+        if kindN(mut st, base0) == ast.EIdent && lookup(mut st, eb, sA(nodeOf(mut st, base0))) < 0 && importRef(mut st, st.curPkg, sA(nodeOf(mut st, base0))) {
+            r := qualRef(mut st, e, eb)?
+            if r.dict >= 0 {
+                return dictExpr(mut st, r.dict, r.dpk, depth)
+            }
+            return r.v, nil
+        }
+        // 割った mut 束縛の中の場所: 葉は deref、struct の場所は組み直し
+        pl := placeOfExpr(mut st, e, eb, depth)
+        if pl.ok {
+            return readPlace(mut st, pl), nil
+        }
+        bd := declOfExpr(mut st, base0, eb, ef)
+        if bd < 0 {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+        fs := structFields(mut st, bd)
+        if fs == -1 {
+            return 0, diag.Malformed{at: posOf(mut st, at)}
+        }
+        idx := fieldIndex(mut st, fs, sB(nodeOf(mut st, e)))
+        if idx == -1 {
+            return 0, diag.UnknownName{at: posOf(mut st, at)}
+        }
+        base := expr(mut st, base0, eb, ef, depth)?
+        return projection(mut st, base, idx, lenL(mut st, fs)), nil
+    case ast.ELambda:
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    case ast.EIf:
+        return ifExpr(mut st, e, eb, ef, depth, want)
+    case ast.ESwitch:
+        return switchExpr(mut st, e, eb, ef, depth, want)
+    case ast.EBlock:
+        st.rdepth = st.rdepth + 1
+        l := lA(nodeOf(mut st, e))
+        inner := scoped(mut st, l, eb, ef, depth, false, false, want)?
+        // R5: 末尾値がブロックの region（最内）のコンテナを持つなら、出口で親の最内へ写す
+        tt := blockTailTy(mut st, l, eb, ef)
+        kk := st.rdepth - 2
+        out := if tt != -1 && tyRegionAbove(mut st, tt, kk) {
+            // 宛先は期待型の形のまま、親の最内（kk）より下の imm の region を kk へ上げた型（期待型が if の兄弟の腕の型 = 仮引数の r0 のとき、
+            // Def の中で書けない呼び手の region を宛先にしない）
+            cBlockR(mut st, if want != -1 { upRegion(mut st, want, kk) } else { tyClamp(mut st, tt, kk) }, inner)
+        } else {
+            CoreRef(-1)
+        }
+        st.rdepth = st.rdepth - 1
+        if out != -1 {
+            return out, nil
+        }
+        return c1(mut st, CBlock, inner), nil
+    case ast.EFor:
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    case ast.EMutArg:
+        return 0, diag.Malformed{at: posOf(mut st, at)}
+    }
+    return 0, diag.CoreFragment{at: posOf(mut st, at)}
+}
+
+// `lhs |> callee(args)` の実引数の列（穴があれば穴に、無ければ第 1 引数に lhs）
+func pipeArgs(st mut S, e NodeRef) ListRef {
+    lhs := nodeOf(mut st, e).a
+    pa := lC(nodeOf(mut st, e))
+    n := lenL(mut st, pa)
+    mut hole := false
+    for i <- iter.Range(0, n) {
+        if latI(mut st, pa, i) < 0 {
+            hole = true
+        }
+    }
+    args := ListRef(listN(mut st, if hole { n } else { n + 1 }))
+    mut j := 0
+    if !hole {
+        hset(mut st, int(args) + 1, lhs)
+        j = 1
+    }
+    for i <- iter.Range(0, n) {
+        a := latI(mut st, pa, i)
+        lput(mut st, args, j, if a < 0 { lhs } else { a })
+        j += 1
+    }
+    return args
+}
+
+// 名前の参照の脱糖（identRef / qualRef）: コア式 v か、辞書 const（dict ≥ 0 — package dpk）。辞書 const の展開は再帰（dictExpr → expr）
+// なので呼び手の expr が行う（再帰の経路に段を足さない — C9 の (a)）
+type LeafRef struct {
+    v CoreRef
+    dict int
+    dpk int
+}
+
+func leaf(v CoreRef) LeafRef {
+    return LeafRef{v: v, dict: -1, dpk: -1}
+}
+
+// 名前 e（EIdent）の参照: 束縛・const・true / false・名前付き関数の値
+func identRef(st mut S, e NodeRef, eb int, depth int) (LeafRef, error?) {
+    at := e
+    name := sA(nodeOf(mut st, e))
+    b := lookup(mut st, eb, name)
+    if b < 0 {
+        c := lookupConst(mut st, st.curPkg, name, 0)
+        if c >= 0 {
+            if ConDict(mut st, c) {
+                return LeafRef{v: 0, dict: c, dpk: st.curPkg}, nil
+            }
+            return leaf(cLit(mut st, ConValue(mut st, c))), nil
+        }
+        if strIs(mut st, name, "true") {
+            return leaf(cTT(mut st)), nil
+        }
+        if strIs(mut st, name, "false") {
+            return leaf(cFF(mut st)), nil
+        }
+        fi := findFn(mut st, e, eb)
+        if fi >= 0 {
+            return leaf(fnRef(mut st, fi, at)?), nil
+        }
+        if (st.hasOuter != 0) && lookup(mut st, st.outerB, name) >= 0 {
+            return LeafRef{}, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+        return LeafRef{}, diag.UnknownName{at: posOf(mut st, at)}
+    }
+    v := cVar(mut st, depth - 1 - bnd(mut st, b).level)
+    if isSplitB(mut st, b) {
+        return leaf(valueOf(mut st, v, bnd(mut st, b).decl)), nil
+    }
+    if bnd(mut st, b).mutable {
+        return leaf(c1(mut st, CDeref, v)), nil
+    }
+    return leaf(v), nil
+}
+
+// 修飾の参照 `pkg.N`（e = ESelector — const か名前付き関数の値）
+func qualRef(st mut S, e NodeRef, eb int) (LeafRef, error?) {
+    at := e
+    name := qualName(mut st, e, eb, st.curPkg)
+    pk, lo := resolveIn(mut st, st.curPkg, name)
+    if pk < 0 {
+        return LeafRef{}, diag.UnknownName{at: posOf(mut st, at)}
+    }
+    c := lookupConst(mut st, pk, name, lo)
+    if c >= 0 {
+        if ConDict(mut st, c) {
+            return LeafRef{v: 0, dict: c, dpk: pk}, nil
+        }
+        return leaf(cLit(mut st, ConValue(mut st, c))), nil
+    }
+    fi := findFn(mut st, e, eb)
+    if fi >= 0 {
+        return leaf(fnRef(mut st, fi, at)?), nil
+    }
+    return LeafRef{}, diag.UnknownName{at: posOf(mut st, at)}
+}
+
+// 式 e の表層型（表層型検査器の表）が T? か（表に無ければ false）
+func yIsOpt(st mut S, e NodeRef) bool {
+    y := YTypeOf(mut st, e)
+    return y >= 0 && yk(mut st, y) == YOpt
+}
+
+func binaryExpr(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+    op := nodeOf(mut st, e).a
+    l := nB(nodeOf(mut st, e))
+    r := nC(nodeOf(mut st, e))
+    at := e
+    // 表層型の照合（language.md 32 節）: == / != は Comparable（`x == nil` は T? のタグ検査なので除く）、他の演算は named scalar を取らない
+    if op == lexer.EqualEqual || op == lexer.BangEqual {
+        if kindN(mut st, l) != ast.ENil && kindN(mut st, r) != ast.ENil && !Comparable(mut st, exprSty(mut st, l, eb, ef), exprSty(mut st, r, eb, ef)) {
+            nomFail(mut st, at)?
+        }
+    } else {
+        notNamed(mut st, l, eb, ef)?
+        notNamed(mut st, r, eb, ef)?
+    }
+    // byte（language.md 33 節）: 比較 6 種は両辺を int へ戻してコアの cmp（コアに byte の cmp は無い — formal.md「byte の段」）。
+    // 算術・ビット演算・論理は型エラー（`int(b)` を書く）
+    if isTag(mut st, computeTy(mut st, l, eb, ef), TByte) || isTag(mut st, computeTy(mut st, r, eb, ef), TByte) {
+        if !cmpOp(op) {
+            nomFail(mut st, at)?
+        }
+        a := byteOperand(mut st, l, eb, ef, depth)?
+        b := byteOperand(mut st, r, eb, ef, depth)?
+        return if op == lexer.Less { c2(mut st, CLt, a, b) } else { cBin(mut st, binKind(op), a, b) }, nil
+    }
+    // float（language.md 37 節）: 算術 4 種と比較 6 種だけ・両辺とも float（暗黙の変換は無い — 整数リテラルも不可）
+    lf := isTag(mut st, computeTy(mut st, l, eb, ef), TFloat)
+    rf := isTag(mut st, computeTy(mut st, r, eb, ef), TFloat)
+    if lf || rf {
+        fk := fbinKind(op)
+        if !lf || !rf || fk == 0 {
+            nomFail(mut st, at)?
+        }
+        a := expr(mut st, l, eb, ef, depth)?
+        b := expr(mut st, r, eb, ef, depth)?
+        return cFBin(mut st, fk, a, b), nil
+    }
+    // string の == / != / + は eqs / concat
+    if op == lexer.EqualEqual || op == lexer.BangEqual || op == lexer.Plus {
+        ls := isStringTy(mut st, computeTy(mut st, l, eb, ef))
+        rs := isStringTy(mut st, computeTy(mut st, r, eb, ef))
+        if ls || rs {
+            a := expr(mut st, l, eb, ef, depth)?
+            b := expr(mut st, r, eb, ef, depth)?
+            if op == lexer.Plus {
+                return c2(mut st, CConcat, a, b), nil
+            }
+            if op == lexer.EqualEqual {
+                return c2(mut st, CEqs, a, b), nil
+            }
+            return cIte(mut st, c2(mut st, CEqs, a, b), cFF(mut st), cTT(mut st)), nil
+        }
+    }
+    // `x == nil` / `x != nil`: ifnil の tt / ff
+    ln := kindN(mut st, l) == ast.ENil
+    rn := kindN(mut st, r) == ast.ENil
+    if (op == lexer.EqualEqual || op == lexer.BangEqual) && (ln || rn) {
+        if ln && rn {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+        subject := expr(mut st, if ln { r } else { l }, eb, ef, depth)?
+        eq := op == lexer.EqualEqual
+        return c3(mut st, CIfnil, subject, if eq { cTT(mut st) } else { cFF(mut st) }, if eq { cFF(mut st) } else { cTT(mut st) }), nil
+    }
+    // T? と値の == / != は言語に無い（15 節 — 絞り込んでから比べる）: 名指しで拒否（`v == nil || v != j` の右辺など — 以前は check が def error だけ）。
+    // 型は表層型検査器の表で読む（computeTy は if / switch の腕の絞り込みを見ない — `c := if v != nil { v } else { -1 }` の c を T? と読む）
+    if (op == lexer.EqualEqual || op == lexer.BangEqual) && (yIsOpt(mut st, l) || yIsOpt(mut st, r)) {
+        return 0, diag.TypeMismatch{at: posOf(mut st, at), kind: 2}
+    }
+    if op == lexer.AmpersandAmpersand {
+        a := expr(mut st, l, eb, ef, depth)?
+        b := expr(mut st, r, eb, ef, depth)?
+        return cIte(mut st, a, b, cFF(mut st)), nil
+    }
+    if op == lexer.PipePipe {
+        a := expr(mut st, l, eb, ef, depth)?
+        b := expr(mut st, r, eb, ef, depth)?
+        return cIte(mut st, a, cTT(mut st), b), nil
+    }
+    // bool の == / != は ite の形に落とす
+    if (op == lexer.EqualEqual || op == lexer.BangEqual) && isTag(mut st, computeTy(mut st, l, eb, ef), TBool) {
+        a := expr(mut st, l, eb, ef, depth)?
+        b := expr(mut st, r, eb, ef, depth)?
+        return boolEq(mut st, a, b, op == lexer.EqualEqual), nil
+    }
+    a := expr(mut st, l, eb, ef, depth)?
+    b := expr(mut st, r, eb, ef, depth)?
+    if op == lexer.Plus {
+        return c2(mut st, CAdd, a, b), nil
+    }
+    if op == lexer.Less {
+        return c2(mut st, CLt, a, b), nil
+    }
+    bk := binKind(op)
+    if bk == 0 {
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    return cBin(mut st, bk, a, b), nil
+}
+
+// byte の文脈の型なし定数 e: tobyte (lit n)。範囲外・整数でない定数（true / false）は型エラー（language.md 33 節 — 定数の範囲外はコンパイルエラー）
+func byteLit(st mut S, e NodeRef, eb int) (CoreRef, error?) {
+    v, ok := untypedInt(mut st, e, eb, st.curPkg)
+    if !ok || v < 0 || v > 255 {
+        nomFail(mut st, e)?
+    }
+    return c1(mut st, CToByte, cLit(mut st, v)), nil
+}
+
+// byte の比較の被演算子を int のコアへ: byte の式は toint、型なしの定数は範囲検査のうえ lit（相手が byte の文脈）。
+// byte でない式（int の変数との混在）は型エラー — 暗黙変換は無い
+func byteOperand(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+    if isUntypedConst(mut st, e, eb, st.curPkg) {
+        v, ok := untypedInt(mut st, e, eb, st.curPkg)
+        if !ok || v < 0 || v > 255 {
+            nomFail(mut st, e)?
+        }
+        return cLit(mut st, v), nil
+    }
+    if !isTag(mut st, computeTy(mut st, e, eb, ef), TByte) {
+        nomFail(mut st, e)?
+    }
+    v := expr(mut st, e, eb, ef, depth)?
+    return c1(mut st, CToInt, v), nil
+}
+
+// float の二項の種類（算術 4 種・比較 6 種 — 他は 0）
+func fbinKind(op int) int {
+    return switch op {
+    case lexer.Plus: FAdd
+    case lexer.Minus: FSub
+    case lexer.Star: FMul
+    case lexer.Slash: FDiv
+    case lexer.EqualEqual: FEq
+    case lexer.BangEqual: FNe
+    case lexer.Less: FLt
+    case lexer.LessEqual: FLe
+    case lexer.Greater: FGt
+    case lexer.GreaterEqual: FGe
+    default: 0
+    }
+}
+
+func binKind(op int) int {
+    return switch op {
+    case lexer.Minus: BSub
+    case lexer.Star: BMul
+    case lexer.Slash: BDiv
+    case lexer.Percent: BMod
+    case lexer.EqualEqual: BEq
+    case lexer.BangEqual: BNe
+    case lexer.LessEqual: BLe
+    case lexer.Greater: BGt
+    case lexer.GreaterEqual: BGe
+    case lexer.Ampersand: BAnd
+    case lexer.Pipe: BOr
+    case lexer.Caret: BXor
+    case lexer.Shl: BShl
+    case lexer.Shr: BShr
+    default: 0
+    }
+}
+
+// bool の等値: a == b は `if a { b } else { !b }`、!= は腕を入れ替える
+func boolEq(st mut S, a CoreRef, b CoreRef, eq bool) CoreRef {
+    nb := cIte(mut st, b, cFF(mut st), cTT(mut st))
+    return cIte(mut st, a, if eq { b } else { nb }, if eq { nb } else { b })
+}
+
+// if 式（flow typing の nil テストは ifnil）
+func ifExpr(st mut S, e NodeRef, eb int, ef int, depth int, want TyRef) (CoreRef, error?) {
+    stmt := (st.stmtIf != 0)
+    st.stmtIf = b2i(false)
+    arm_want := if stmt { TyRef(-1) } else if want != -1 { want } else { ifTy(mut st, e, eb, ef) }
+    cond0 := nA(nodeOf(mut st, e))
+    notNamed(mut st, cond0, eb, ef)?
+    notByte(mut st, cond0, eb, ef)?
+    then := lA(nodeOf(mut st, nB(nodeOf(mut st, e))))
+    els := nC(nodeOf(mut st, e))
+    nt, some_then := nilTest(mut st, cond0, eb)
+    if nt != -1 {
+        return ifnilExpr(mut st, nt, some_then, e, eb, ef, depth, arm_want, stmt)
+    }
+    cond := expr(mut st, cond0, eb, ef, depth)?
+    if els != -1 {
+        mut t := scoped(mut st, then, eb, ef, depth, false, stmt, arm_want)?
+        mut o := CoreRef(-1)
+        if kindN(mut st, els) == ast.EBlock {
+            o = scoped(mut st, lA(nodeOf(mut st, els)), eb, ef, depth, false, stmt, arm_want)?
+        } else {
+            st.tailWant = arm_want
+            st.stmtIf = b2i(stmt && kindN(mut st, els) == ast.EIf)
+            o = expr(mut st, els, eb, ef, depth)?
+        }
+        if !stmt {
+            // 腕の型が region だけ違う（仮引数の string と本体のリテラル等）なら、外側の region の腕を上界（内側の region）の型へ ann で緩める
+            tt := armTy(mut st, then, eb, ef)
+            ot := if kindN(mut st, els) == ast.EBlock { armTy(mut st, lA(nodeOf(mut st, els)), eb, ef) } else { computeTy(mut st, els, eb, ef) }
+            // 両腕を今いる最内の region（リテラルの置き場）へ上げた型が一致するなら、両腕をその型へ緩める（推論は string のリテラルの region を仮引数と同じに見るので、
+            // 型が同じでも上げる — 実際のコアではリテラルは最内の region にある）
+            if tt != -1 && ot != -1 {
+                up := upRegion(mut st, tt, st.rdepth - 1)
+                if up == upRegion(mut st, ot, st.rdepth - 1) && (up != tt || up != ot) {
+                    t = cAnn(mut st, t, up)
+                    o = cAnn(mut st, o, up)
+                }
+            }
+        }
+        return cIte(mut st, cond, t, o), nil
+    }
+    t := scoped(mut st, then, eb, ef, depth, false, true, -1)?
+    return cIte(mut st, cond, t, cTriv(mut st)), nil
+}
+
+// 条件が `x != nil` / `x == nil`（x は束縛された名前）なら (名前, some が then 腕か)。でなければ名前 -1
+func nilTest(st mut S, cond NodeRef, eb int) (StrRef, bool) {
+    if kindN(mut st, cond) != ast.EBinary {
+        return -1, false
+    }
+    op := nodeOf(mut st, cond).a
+    if op != lexer.EqualEqual && op != lexer.BangEqual {
+        return -1, false
+    }
+    l := nB(nodeOf(mut st, cond))
+    r := nC(nodeOf(mut st, cond))
+    mut side := NodeRef(-1)
+    if kindN(mut st, l) == ast.ENil {
+        side = r
+    } else if kindN(mut st, r) == ast.ENil {
+        side = l
+    } else {
+        return -1, false
+    }
+    if kindN(mut st, side) != ast.EIdent {
+        return -1, false
+    }
+    if lookup(mut st, eb, sA(nodeOf(mut st, side))) < 0 {
+        return -1, false
+    }
+    return sA(nodeOf(mut st, side)), op == lexer.BangEqual
+}
+
+// `if x != nil { A } else { B }` → `ifnil x B A'`（A' では x が var 0 = ペイロードに再束縛）
+func ifnilExpr(st mut S, name StrRef, some_then bool, e NodeRef, eb int, ef int, depth int, want TyRef, stmt bool) (CoreRef, error?) {
+    b := lookup(mut st, eb, name)
+    sv := cVar(mut st, depth - 1 - bnd(mut st, b).level)
+    subject := if bnd(mut st, b).mutable { c1(mut st, CDeref, sv) } else { sv }
+    bt := bnd(mut st, b).ty
+    pty := if isTag(mut st, bt, TOpt) { tInner(mut st, bt) } else { TyRef(-1) }
+    eb2 := bind(mut st, eb, name, depth, false, bnd(mut st, b).decl, pty, -1, 0, -1, false, bnd(mut st, b).sty)
+    then := lA(nodeOf(mut st, nB(nodeOf(mut st, e))))
+    els := nC(nodeOf(mut st, e))
+    then_dis := stmt || els == -1
+    mut tb2 := if some_then { scoped(mut st, then, eb2, ef, depth + 1, false, then_dis, want)? } else { scoped(mut st, then, eb, ef, depth, false, then_dis, want)? }
+    mut eb3 := eb
+    mut d3 := depth
+    if !some_then {
+        eb3 = eb2
+        d3 = depth + 1
+    }
+    mut ob := CoreRef(-1)
+    if els != -1 {
+        if kindN(mut st, els) == ast.EBlock {
+            ob = scoped(mut st, lA(nodeOf(mut st, els)), eb3, ef, d3, false, stmt, want)?
+        } else {
+            st.tailWant = want
+            st.stmtIf = b2i(stmt && kindN(mut st, els) == ast.EIf)
+            ob = expr(mut st, els, eb3, ef, d3)?
+        }
+    } else {
+        ob = cTriv(mut st)
+    }
+    if !stmt && els != -1 {
+        // 腕の region の合流（ifExpr と同じ: 絞った仮引数の T? の中身とリテラル）
+        tt := if some_then { armTy(mut st, then, eb2, ef) } else { armTy(mut st, then, eb, ef) }
+        ot := if kindN(mut st, els) == ast.EBlock { armTy(mut st, lA(nodeOf(mut st, els)), eb3, ef) } else { computeTy(mut st, els, eb3, ef) }
+        up := upJoin2(mut st, tt, ot)
+        if up != -1 {
+            tb2 = cAnn(mut st, tb2, up)
+            ob = cAnn(mut st, ob, up)
+        }
+    }
+    if some_then {
+        return c3(mut st, CIfnil, subject, ob, tb2), nil
+    }
+    return c3(mut st, CIfnil, subject, tb2, ob), nil
+}
+
+// 2 つの腕の型を今いる最内の region（リテラルの置き場）へ上げた型が一致し、どちらかが実際に上がるならその型（でなければ -1）。
+// ifExpr の region 合流の判定と同じ
+func upJoin2(st mut S, a TyRef, b TyRef) TyRef {
+    if a == -1 || b == -1 {
+        return -1
+    }
+    up := upRegion(mut st, a, st.rdepth - 1)
+    if up == upRegion(mut st, b, st.rdepth - 1) && (up != a || up != b) {
+        return up
+    }
+    return -1
+}
+
+// ── 期待型への強制 ──
+
+// 期待型 want に向けて式を脱糖する（T? の期待に対して nil は注釈つき nil、ペイロード型の値は some で包む）
+func coerceExpr(st mut S, e NodeRef, want TyRef, eb int, ef int, depth int, at NodeRef) (CoreRef, error?) {
+    k := kindN(mut st, e)
+    // `panic(L{…})` は期待型の unreach（`return panic(…)`・`f(panic(…))`・欄の値 — 行き先の型が分かる位置。expr の ECall は末尾期待型だけを見る）
+    if k == ast.ECall && want != -1 && isPanicCall(mut st, e, eb) {
+        return panicCore(mut st, e, want, eb, ef, depth)
+    }
+    if k == ast.ELambda && tg(mut st, want) == TFn {
+        return liftLambda(mut st, e, want, eb, ef, at)
+    }
+    if tg(mut st, want) == TByte {
+        // byte の文脈（language.md 33 節）: 型なしの定数は範囲検査して tobyte。if 式・ブロックは腕の末尾へ期待を押す（兄弟の腕の定数）
+        if isUntypedConst(mut st, e, eb, st.curPkg) {
+            return byteLit(mut st, e, eb)
+        }
+        st.tailWant = want
+        return expr(mut st, e, eb, ef, depth)
+    }
+    if tg(mut st, want) != TOpt {
+        if k == ast.ESwitch {
+            // 到達しない腕（error の switch の覆っていないラベル）の型の手がかり — 腕の型付けには使わない（コアの出方を変えない）
+            st.swHint = want
+        }
+        return expr(mut st, e, eb, ef, depth)
+    }
+    payload := tInner(mut st, want)
+    if k == ast.ENil {
+        return cNil(mut st, payload), nil
+    }
+    if isTag(mut st, payload, TByte) && isUntypedConst(mut st, e, eb, st.curPkg) {
+        return c1(mut st, CSome, byteLit(mut st, e, eb)?), nil
+    }
+    if k == ast.EIf && nodeOf(mut st, e).c >= 0 {
+        nt, _ := nilTest(mut st, nA(nodeOf(mut st, e)), eb)
+        if nt == -1 {
+            cond := expr(mut st, nA(nodeOf(mut st, e)), eb, ef, depth)?
+            t := coerceArm(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, e)))), want, eb, ef, depth, at)?
+            els := nC(nodeOf(mut st, e))
+            o := if kindN(mut st, els) == ast.EBlock { coerceArm(mut st, lA(nodeOf(mut st, els)), want, eb, ef, depth, at)? } else { coerceExpr(mut st, els, want, eb, ef, depth, at)? }
+            // 腕の region の合流（ifExpr と同じ線: `P{f: if c { "x" } else { nil }}` の nil の腕は期待の中身〔欄の region〕・
+            // リテラルの腕は最内の region で、注釈が無いと核の検査器が腕の型の食い違いで拒否する〔build は受理〕）
+            tp := optArmPay(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, e)))), payload, eb, ef)
+            op := if kindN(mut st, els) == ast.EBlock { optArmPay(mut st, lA(nodeOf(mut st, els)), payload, eb, ef) } else { optExprPay(mut st, els, payload, eb, ef) }
+            up := upJoin2(mut st, tp, op)
+            if up != -1 {
+                return cIte(mut st, cond, cAnn(mut st, t, tOpt(mut st, up)), cAnn(mut st, o, tOpt(mut st, up))), nil
+            }
+            return cIte(mut st, cond, t, o), nil
+        }
+    }
+    t0 := computeTy(mut st, e, eb, ef)
+    t := if t0 == -1 && k == ast.ECall { cloResTy(mut st, nA(nodeOf(mut st, e)), eb, ef) } else { t0 }
+    core := expr(mut st, e, eb, ef, depth)?
+    if t != -1 {
+        return wrapSome(mut st, t, want, payload, core), nil
+    }
+    return 0, diag.CoreFragment{at: posOf(mut st, at)}
+}
+
+// T? の期待（中身 payload）の if の腕 l の値の中身の型（nil の腕は payload・T? の値はその中身・分からなければ -1）
+func optArmPay(st mut S, l ListRef, payload TyRef, eb int, ef int) TyRef {
+    se := singleExpr(mut st, l)
+    if se != -1 {
+        return optExprPay(mut st, se, payload, eb, ef)
+    }
+    t := armTy(mut st, l, eb, ef)
+    return if t != -1 && tg(mut st, t) == TOpt { tInner(mut st, t) } else { t }
+}
+
+// optArmPay の式 1 つの形
+func optExprPay(st mut S, e NodeRef, payload TyRef, eb int, ef int) TyRef {
+    if kindN(mut st, e) == ast.ENil {
+        return payload
+    }
+    t := computeTy(mut st, e, eb, ef)
+    return if t != -1 && tg(mut st, t) == TOpt { tInner(mut st, t) } else { t }
+}
+
+// 型 t の値 core を T?（want、中身 payload）の位置に置く形（一致・緩む形は素のまま、ペイロード型なら some）
+func wrapSome(st mut S, t TyRef, want TyRef, payload TyRef, core CoreRef) CoreRef {
+    if tyEql(mut st, t, want) || tyLooser(mut st, t, want) {
+        return core
+    }
+    if tyEql(mut st, t, payload) || tyLooser(mut st, t, payload) {
+        return c1(mut st, CSome, core)
+    }
+    if tyEqlLoose(mut st, t, want) {
+        return core
+    }
+    if tyEqlLoose(mut st, t, payload) {
+        return c1(mut st, CSome, core)
+    }
+    return core
+}
+
+// if 式の腕（文列）へ期待型を押し込む
+func coerceArm(st mut S, l ListRef, want TyRef, eb int, ef int, depth int, at NodeRef) (CoreRef, error?) {
+    se := singleExpr(mut st, l)
+    if se != -1 {
+        return coerceExpr(mut st, se, want, eb, ef, depth, at)
+    }
+    n := lenL(mut st, l)
+    mut t := TyRef(-1)
+    mut ends_exit := false
+    if n > 0 {
+        s := latN(mut st, l, n - 1)
+        sk := kindN(mut st, s)
+        if sk == ast.SExpr {
+            // armTy（末尾が同じ腕で束縛した名前なら束縛の値の型 — computeTy だけだと -1 で CoreFragment・build は受理）
+            t = armTy(mut st, l, eb, ef)
+        }
+        ends_exit = sk == ast.SRet || sk == ast.SBreak || sk == ast.SContinue
+    }
+    // 末尾の式の型が取れない（`{ println(x); nil }` の nil）なら末尾の期待型を渡して寄せる（腕の値は want の型で組まれる）
+    tail_want := ends_exit || (n > 0 && t == -1 && kindN(mut st, latN(mut st, l, n - 1)) == ast.SExpr)
+    core := scoped(mut st, l, eb, ef, depth, false, false, if tail_want { want } else { TyRef(-1) })?
+    if tail_want {
+        return core, nil
+    }
+    if t != -1 {
+        payload := tInner(mut st, want)
+        if tyEql(mut st, t, want) || tyLooser(mut st, t, want) {
+            return core, nil
+        }
+        if tyEql(mut st, t, payload) || tyLooser(mut st, t, payload) {
+            return c1(mut st, CSome, core), nil
+        }
+        if tyEqlLoose(mut st, t, want) {
+            return core, nil
+        }
+        if tyEqlLoose(mut st, t, payload) {
+            return c1(mut st, CSome, core), nil
+        }
+    }
+    return 0, diag.CoreFragment{at: posOf(mut st, at)}
+}
+
+// return の値: coerceExpr に加え、region だけが結果型と違う値を結果型で ann する
+func retValue(st mut S, e NodeRef, want TyRef, eb int, ef int, depth int, at NodeRef) (CoreRef, error?) {
+    // 結果が値化可能な named fn type の関数（Def）が返すラムダは値の位置（loader の RetFnVal と同じ線）
+    // （結果の region への ann は普通の値と同じ下の道 — 捕捉の string は仮引数の座標のまま組まれる）
+    fdr := if kindN(mut st, e) == ast.ELambda && st.inlining < 0 && st.curRes != -1 && lenL(mut st, st.curRes) == 1 {
+        fieldFnValDecl(mut st, st.curResPkg, st.tenv, latN(mut st, st.curRes, 0))?
+    } else {
+        -1
+    }
+    core := if fdr >= 0 { closureValue(mut st, e, want, fdr, eb, ef, depth, at)? } else { coerceExpr(mut st, e, want, eb, ef, depth, at)? }
+    wk := tg(mut st, want)
+    if (wk == TOpt || wk == TUn || wk == TPr) && wrapsContainer(mut st, want) {
+        return retAnn(mut st, core, want), nil
+    }
+    if wk == TOpt {
+        return core, nil
+    }
+    // 暗黙の freeze の点は明示の `freeze(e)`（呼び出し）と同じ道へ（ann の付け方を揃える — 暗黙 ≡ 明示のオラクル）
+    if kindN(mut st, e) == ast.EIdent && !IsImplicit(mut st, e) {
+        b := lookup(mut st, eb, sA(nodeOf(mut st, e)))
+        if b < 0 {
+            return core, nil
+        }
+        t := bnd(mut st, b).ty
+        if t == -1 || bnd(mut st, b).mutable || tyEql(mut st, t, want) || !tyLooser(mut st, t, want) {
+            return core, nil
+        }
+        return retAnn(mut st, core, want), nil
+    }
+    if st.inlining >= 0 {
+        return core, nil
+    }
+    t := retExprTy(mut st, e, eb, ef)
+    if t == -1 || !hasRegion(mut st, want) || tyEql(mut st, t, want) || !tyLooser(mut st, t, want) {
+        return core, nil
+    }
+    return retAnn(mut st, core, want), nil
+}
+
+// return の値を戻り型 want へ合わせる ann。反復の region・式ブロックの中（関数のラベルより深い region）からの return は、値が深い region を
+// 指してよいので、ann（部分型だけ — 締めない）でなく関数の最内へ写す copyTo（締め + 部分型 — jump の規則と同じ関係）で合わせる
+func retAnn(st mut S, core CoreRef, want TyRef) CoreRef {
+    // 片腕が nil の if 式の値は腕ごとに合わせる（ite は両腕の型の完全一致が要る — `return if c { L{} } else { nil }` の L{} は cause の鎖が最内・
+    // nil は戻り型で、丸ごとの ann / copyTo の手前で腕が食い違う）
+    x := coreAt(mut st, core)
+    if x.tag == CIte && (coreAt(mut st, CoreRef(x.b)).tag == CNil || coreAt(mut st, CoreRef(x.c)).tag == CNil) {
+        return cIte(mut st, CoreRef(x.a), retAnn(mut st, CoreRef(x.b), want), retAnn(mut st, CoreRef(x.c), want))
+    }
+    if st.retTarget >= 0 && tyChanFree(mut st, want) {
+        lr := lab(mut st, labelAt(mut st, st.retTarget)).rdepth
+        if st.rdepth > lr {
+            return cCopyTo(mut st, lr - 1, want, core)
+        }
+    }
+    return cAnn(mut st, core, want)
+}
+
+// 外の region k のセル（型 et）へ格納する値 core（型 vt — 不明なら -1）を k へ写す境界コピー式（ループ本体・
+// 式ブロックの region から外の mut 束縛へ格納する値）。今の最内が k より深いときだけ写す（値の型の読みに頼らない —
+// copyTo は k 以下しか指さない値には何もしない）。写さなくてよい・写せない（mut のコンテナは締められない・chan）なら -1
+func storeCopy(st mut S, core CoreRef, vt TyRef, et TyRef, k int) CoreRef {
+    if st.rdepth - 1 <= k || !tyRegionAbove(mut st, et, -1) || !tyChanFree(mut st, et) || !tyMutFreeD(mut st, et) {
+        return CoreRef(-1)
+    }
+    if vt != -1 && tyRegionAbove(mut st, tyClamp(mut st, vt, k), k) {
+        return CoreRef(-1)
+    }
+    return cCopyTo(mut st, k, et, core)
+}
+
+// append の値（subject が名前の mut 束縛の mut slice）を要素型へ緩める ann
+func appendValueAnn(st mut S, subject NodeRef, value NodeRef, core CoreRef, eb int, ef int) CoreRef {
+    if kindN(mut st, subject) != ast.EIdent {
+        // 欄・添字の連鎖（`p.slots`）: 根の mut 束縛の region より深い値は写す
+        mut rt := subject
+        while kindN(mut st, rt) == ast.ESelector || kindN(mut st, rt) == ast.EIndex {
+            rt = nA(nodeOf(mut st, rt))
+        }
+        if kindN(mut st, rt) != ast.EIdent {
+            return core
+        }
+        rb := lookup(mut st, eb, sA(nodeOf(mut st, rt)))
+        st0 := computeTy(mut st, subject, eb, ef)
+        if rb < 0 || !bnd(mut st, rb).mutable || st0 == -1 || !isTag(mut st, st0, TSl) {
+            return core
+        }
+        ssaved := st.rdepth
+        st.rdepth = bnd(mut st, rb).region + 1
+        et := pointTy(mut st, tElem(mut st, st0))
+        st.rdepth = ssaved
+        c := storeCopy(mut st, core, computeTy(mut st, value, eb, ef), et, bnd(mut st, rb).region)
+        return if c != -1 { c } else { core }
+    }
+    b := lookup(mut st, eb, sA(nodeOf(mut st, subject)))
+    if b < 0 || !bnd(mut st, b).mutable {
+        return core
+    }
+    t := bnd(mut st, b).ty
+    if !isTag(mut st, t, TSl) || tMutBit(mut st, t) == 0 {
+        return core
+    }
+    vt := computeTy(mut st, value, eb, ef)
+    if vt == -1 {
+        return core
+    }
+    saved := st.rdepth
+    st.rdepth = bnd(mut st, b).region + 1
+    et := pointTy(mut st, tElem(mut st, t))
+    st.rdepth = saved
+    c := storeCopy(mut st, core, vt, et, bnd(mut st, b).region)
+    if c != -1 {
+        return c
+    }
+    if !hasRegion(mut st, et) || tyEql(mut st, vt, et) || !tyLooser(mut st, vt, et) {
+        return core
+    }
+    return cAnn(mut st, core, et)
+}
+
+// mut 束縛の struct のフィールドへの代入の値を、フィールドの宣言型を束縛点の点座標に写した型へ緩める ann
+func fieldValueAnn(st mut S, target NodeRef, value NodeRef, core CoreRef, eb int, ef int) CoreRef {
+    mut root := target
+    while kindN(mut st, root) == ast.ESelector {
+        root = nA(nodeOf(mut st, root))
+    }
+    if kindN(mut st, root) != ast.EIdent {
+        return core
+    }
+    b := lookup(mut st, eb, sA(nodeOf(mut st, root)))
+    if b < 0 || !bnd(mut st, b).mutable {
+        return core
+    }
+    w := targetTy(mut st, target, eb, ef)
+    if w == -1 {
+        return core
+    }
+    vt := computeTy(mut st, value, eb, ef)
+    if vt == -1 {
+        return core
+    }
+    saved := st.rdepth
+    st.rdepth = bnd(mut st, b).region + 1
+    et := pointTy(mut st, w)
+    st.rdepth = saved
+    c := storeCopy(mut st, core, vt, et, bnd(mut st, b).region)
+    if c != -1 {
+        return c
+    }
+    if !hasRegion(mut st, et) || tyEql(mut st, vt, et) || !tyLooser(mut st, vt, et) {
+        return core
+    }
+    return cAnn(mut st, core, et)
+}
+
+// `mut x := y`（y は名前・欄読み `v.f`・添字・struct リテラル）の初期値を束縛点の点座標へ ann で緩める（仮引数の欄で初期化したセルが
+// r0 のままだと、後の代入が入らない — 代入側と対の初期化側）
+func mutInitAnn(st mut S, value NodeRef, core CoreRef, eb int, ef int) CoreRef {
+    vk := kindN(mut st, value)
+    // 名前・欄読み・添字（`mut p := xs[i]; p = "z"`: 仮引数の slice の要素の初期値もセルを点座標へ緩める）・struct リテラル（
+    // `mut w := W{xs: xs}`: 欄が仮引数の region のままのセルは callM の呼び出し点で anchor〔= 束縛点〕の写しと不変の位置で合わない）
+    if vk != ast.EIdent && vk != ast.ESelector && vk != ast.EIndex && vk != ast.EComposite {
+        return core
+    }
+    mut t := TyRef(-1)
+    if vk == ast.EIdent {
+        b := lookup(mut st, eb, sA(nodeOf(mut st, value)))
+        if b < 0 {
+            return core
+        }
+        t = bnd(mut st, b).ty
+    } else {
+        t = computeTy(mut st, value, eb, ef)
+    }
+    if t == -1 || (!hasRegion(mut st, t) && !wrapsContainer(mut st, t)) {
+        return core
+    }
+    pt := pointTy(mut st, t)
+    if tyEql(mut st, t, pt) || !tyLooser(mut st, t, pt) {
+        return core
+    }
+    return cAnn(mut st, core, pt)
+}
+
+// 名前 base の mut 束縛のセル型の成分 t を束縛点の点座標で読んだ型（mut 束縛でなければ t のまま）
+func atBinding(st mut S, base NodeRef, t TyRef, eb int) TyRef {
+    b := lookup(mut st, eb, sA(nodeOf(mut st, base)))
+    if b < 0 || !bnd(mut st, b).mutable {
+        return t
+    }
+    saved := st.rdepth
+    st.rdepth = bnd(mut st, b).region + 1
+    pt := pointTy(mut st, t)
+    st.rdepth = saved
+    return pt
+}
+
+// `m[k]` の V（getm の注釈と computeTy の結果）: map の値型をセルが組まれた点の座標で読む（atBinding と同じ読み）。
+// 名前の束縛はコア上の正確な型（BCore）があればそれ、無ければ束縛点。辞書 const の参照は参照点で展開されるので現在の点。他は宣言の型のまま
+func mapValueAt(st mut S, base NodeRef, bt TyRef, eb int) TyRef {
+    if kindN(mut st, base) == ast.EIdent {
+        b := lookup(mut st, eb, sA(nodeOf(mut st, base)))
+        if b >= 0 {
+            ct := bnd(mut st, b).core
+            if ct != -1 {
+                return if isTag(mut st, ct, TMp) { tVal(mut st, ct) } else { tVal(mut st, bt) }
+            }
+            saved := st.rdepth
+            st.rdepth = bnd(mut st, b).region + 1
+            pt := pointTy(mut st, tVal(mut st, bt))
+            st.rdepth = saved
+            return pt
+        }
+    }
+    if dictConstOf(mut st, base, eb) >= 0 {
+        return pointTy(mut st, tVal(mut st, bt))
+    }
+    return tVal(mut st, bt)
+}
+
+// 値 value（コアは core）の型が行き先の型 et より締まっているときだけ、et へ ann で緩める（appendValueAnn と同じ規律）
+func looserAnn(st mut S, value NodeRef, core CoreRef, et TyRef, eb int, ef int) CoreRef {
+    vt := computeTy(mut st, value, eb, ef)
+    if vt == -1 || !hasRegion(mut st, et) || tyEql(mut st, vt, et) || !tyLooser(mut st, vt, et) {
+        return core
+    }
+    return cAnn(mut st, core, et)
+}
+
+// 格納するキー（string キーはキー型へ ann で緩める）
+func mapKey(st mut S, key NodeRef, kt TyRef, eb int, ef int, depth int) (CoreRef, error?) {
+    core := expr(mut st, key, eb, ef, depth)?
+    if tg(mut st, kt) == TInt {
+        return core, nil
+    }
+    return cAnn(mut st, core, kt), nil
+}
+
+// 展開の値引数を ann する型（既定は展開点の点座標。名前の束縛が締まった正確な型を持てばその型）
+func inlineArgTy(st mut S, arg NodeRef, want TyRef, eb int) TyRef {
+    pt := pointTy(mut st, want)
+    if kindN(mut st, arg) != ast.EIdent {
+        return pt
+    }
+    b := lookup(mut st, eb, sA(nodeOf(mut st, arg)))
+    if b < 0 {
+        return pt
+    }
+    t := bnd(mut st, b).core
+    if t == -1 || bnd(mut st, b).mutable || tyEql(mut st, t, pt) || !tyLooser(mut st, t, pt) {
+        return pt
+    }
+    return t
+}
+
+// ── 補間 ──
+
+// 補間を連結の連鎖に脱糖する（interp.zig の固定テンプレート — 表層 AST の節をヒープに足す）
+func lowerInterp(st mut S, e NodeRef, eb int, ef int) (NodeRef, error?) {
+    at := e
+    lits := lA(nodeOf(mut st, e))
+    holes := lB(nodeOf(mut st, e))
+    mut acc := NodeRef(-1)
+    for k <- iter.Range(0, lenL(mut st, lits)) {
+        text := latI(mut st, lits, k)
+        if dat(mut st, text) > 0 {
+            acc = plusNode(mut st, int(acc), NodeRef(rec8(mut st, ast.EStrlit, at, text, 0, 0, 0, 0, 0)), at)
+        }
+        if k == lenL(mut st, holes) {
+            break
+        }
+        h := latN(mut st, holes, k)
+        kind := interpKind(mut st, h, eb, ef)
+        if kind < 0 && nodeOf(mut st, e).c == 1 {
+            // 印字できない型の穴（assert の値の行 — 印字を諦めて空文字。std/testing.Fail は空の行を出さない）
+            return NodeRef(rec8(mut st, ast.EStrlit, at, int(strLit(mut st, "")), 0, 0, 0, 0, 0)), nil
+        }
+        if kind < 0 {
+            return 0, diag.CoreFragment{at: posOf(mut st, h)}
+        }
+        mut piece := h
+        if kind == 1 {
+            base := rec8(mut st, ast.EIdent, at, int(strLit(mut st, "$convert")), 0, 0, 0, 0, 0)
+            callee := rec8(mut st, ast.ESelector, at, base, int(strLit(mut st, "FormatInt")), 0, 0, 0, 0)
+            piece = NodeRef(rec8(mut st, ast.ECall, at, callee, list1(mut st, int(h)), 0, 0, 0, 0))
+            yNoteSyn(mut st, piece, YString)
+        } else if kind == 2 {
+            t := textBlock(mut st, ast.KBlock, "true", at)
+            f := textBlock(mut st, ast.EBlock, "false", at)
+            piece = NodeRef(rec8(mut st, ast.EIf, at, int(h), t, f, 0, 0, 0))
+        }
+        acc = plusNode(mut st, int(acc), piece, at)
+    }
+    if acc == -1 {
+        return NodeRef(rec8(mut st, ast.EStrlit, at, int(strLit(mut st, "")), 0, 0, 0, 0, 0)), nil
+    }
+    return acc, nil
+}
+
+func plusNode(st mut S, acc int, piece NodeRef, at NodeRef) NodeRef {
+    if acc < 0 {
+        return piece
+    }
+    return NodeRef(rec8(mut st, ast.EBinary, at, lexer.Plus, acc, int(piece), 0, 0, 0))
+}
+
+func textBlock(st mut S, kind int, text string, at NodeRef) int {
+    s := rec8(mut st, ast.EStrlit, at, int(strLit(mut st, text)), 0, 0, 0, 0, 0)
+    stmt := rec8(mut st, ast.SExpr, at, s, 0, 0, 0, 0, 0)
+    return rec8(mut st, kind, at, list1(mut st, stmt), 0, 0, 0, 0, 0)
+}
+
+// 補間の穴の型（0 = string, 1 = int, 2 = bool, -1 = 補間できない）
+func interpKind(st mut S, e NodeRef, eb int, ef int) int {
+    // 穴の種類は表層型検査器の表から（種類だけ要る — region の座標は要らない。C1 B3）。named scalar は断片外（build も拒否）
+    y := YTypeOf(mut st, e)
+    k := yk(mut st, y)
+    switch k {
+    case YString:
+        return 0
+    case YInt:
+        return 1
+    case YBool:
+        return 2
+    }
+    if k == YVar {
+        // 型パラメータ型の穴: 今の型環境がインスタンスのもの（ジェネリック Def のインスタンス・展開）なら、その表層型の型引数で決める
+        // （named scalar の型引数は YDecl — 断片外のまま。build も拒否）。抽象の本体（型変数の環境）では決まらない
+        ya := instYArgs(mut st, st.tenv)
+        i := YAt(mut st, y).a
+        if ya != -1 && i < lenL(mut st, ya) {
+            k2 := yk(mut st, latI(mut st, ya, i))
+            return if k2 == YString { 0 } else if k2 == YInt { 1 } else if k2 == YBool { 2 } else { -1 }
+        }
+    }
+    return -1
+}
+
+// ── 辞書 const ──
+
+// 辞書 const の参照点での展開
+func dictExpr(st mut S, c int, pk int, depth int) (CoreRef, error?) {
+    r := dictEnter(mut st, pk)
+    saved_c := st.dictConst
+    st.dictConst = c
+    v := expr(mut st, nB(nodeOf(mut st, ConNode(mut st, c))), -1, -1, depth)?
+    st.dictConst = saved_c
+    dictLeave(mut st, r)
+    return v, nil
+}
+
+// ── struct / union の構築 ──
+
+func composite(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+    cd := st.compDest
+    st.compDest = 0
+    name := sA(nodeOf(mut st, e))
+    at := e
+    elems := lB(nodeOf(mut st, e))
+    dr := lookupType(mut st, st.curPkg, name)
+    if dr >= 0 && declKind(mut st, hgetN(mut st, dr)) == ast.BStruct {
+        targs := lC(nodeOf(mut st, e))
+        mut tenv := -1
+        if lenL(mut st, targs) > 0 {
+            tenv = genericEnv(mut st, st.curPkg, dr, targs, at)?
+        } else if lenL(mut st, lB(nodeOf(mut st, hgetN(mut st, dr)))) > 0 {
+            return 0, diag.Malformed{at: posOf(mut st, at)}
+        }
+        st.fvDest = cd
+        vs, lets := fieldValuesIn(mut st, hget(mut st, dr + 1), tenv, lA(nodeOf(mut st, nC(nodeOf(mut st, hgetN(mut st, dr))))), elems, at, eb, ef, depth)?
+        return letsAround(mut st, lets, pairChain(mut st, vs)), nil
+    }
+    vr := findVariant(mut st, st.curPkg, name)
+    if vr.decl == -1 {
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    if vr.decl == NodeRef(ERRS) {
+        for i <- iter.Range(0, lenL(mut st, elems)) {
+            key := sA(nodeOf(mut st, latN(mut st, elems, i)))
+            if key != -1 && strIs(mut st, key, "cause") {
+                return 0, diag.Malformed{at: posOf(mut st, at)}
+            }
+        }
+        topv := labelL(mut st, e, vr.decl, vr.pkg, vr.idx, eb, ef, depth)?
+        ch := emptyChain(mut st, at)?
+        return c2(mut st, CPair, topv, ch), nil
+    }
+    // ジェネリック union の variant: 型引数は明示だけ（`Some[int]{…}` — 期待型からの推論は後の段）
+    targs := lC(nodeOf(mut st, e))
+    ntp := lenL(mut st, lB(nodeOf(mut st, vr.decl)))
+    mut venv := st.tenv
+    if lenL(mut st, targs) > 0 {
+        if ntp == 0 {
+            return 0, diag.Malformed{at: posOf(mut st, at)}
+        }
+        venv = genericEnv(mut st, st.curPkg, declRef(mut st, int(vr.decl), vr.pkg, -1), targs, at)?
+    } else if ntp > 0 {
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    return labelIn(mut st, e, vr.decl, vr.pkg, vr.idx, venv, eb, ef, depth)
+}
+
+// union variant / error ラベルのリテラル → inl / inr の鎖
+func labelL(st mut S, e NodeRef, decl NodeRef, pk int, idx int, eb int, ef int, depth int) (CoreRef, error?) {
+    return labelIn(mut st, e, decl, pk, idx, st.tenv, eb, ef, depth)
+}
+
+// labelL の型環境 venv つき（欄の型と union の木の型をジェネリック union の型引数の束縛で引く — 値の式は呼び手の文脈のまま）
+func labelIn(st mut S, e NodeRef, decl NodeRef, pk int, idx int, venv int, eb int, ef int, depth int) (CoreRef, error?) {
+    v := vat(mut st, decl, idx)
+    at := e
+    vs, lets := fieldValuesIn(mut st, pk, venv, vfields(mut st, v), lB(nodeOf(mut st, e)), at, eb, ef, depth)?
+    payload := pairChain(mut st, vs)
+    saved := st.tenv
+    st.tenv = venv
+    defer {
+        st.tenv = saved
+    }
+    r := encodeVariant(mut st, pk, decl, 0, idx, payload, at)?
+    return letsAround(mut st, lets, r), nil
+}
+
+// variant（decl の start 番目からの列の idx 番目）のペイロードを右結合の union の入れ子へ包む
+func encodeVariant(st mut S, pk int, decl NodeRef, start int, idx int, payload CoreRef, at NodeRef) (CoreRef, error?) {
+    n := vcount(mut st, decl) - start
+    if n == 1 && isErrors(int(decl), start) {
+        return payload, nil
+    }
+    if n < 2 {
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    if idx == 0 {
+        r := if n == 2 { payloadTy(mut st, pk, vat(mut st, decl, start + 1), TYFUEL)? } else { unionTreeTy(mut st, pk, decl, start + 1, at, TYFUEL)? }
+        return cInl(mut st, r, payload), nil
+    }
+    l := payloadTy(mut st, pk, vat(mut st, decl, start), TYFUEL)?
+    inner := if n == 2 { payload } else { encodeVariant(mut st, pk, decl, start + 1, idx - 1, payload, at)? }
+    return cInr(mut st, l, inner), nil
+}
+
+// struct リテラルの値の列（フィールド順。名前つきは位置に並べ替え）。フィールドの期待型は宣言側の束縛 fenv で
+// 値は書いた順に評価する（language.md 27 節、Go と同じ）: 名前つきで欄の順と違う順に書いたときだけ、値を書いた順の
+// let に束縛して欄の順に組む（戻りの 2 つ目 = let の列 — 呼び手が組んだ値を letsAround で包む。順が同じなら -1 でコアは素の組のまま）
+func fieldValuesIn(st mut S, pk int, fenv int, fs ListRef, elems ListRef, at NodeRef, eb int, ef int, depth int) (ListRef, ListRef, error?) {
+    // 行き先（composite が立てる・ここで必ず落とす）: 0 = 最内に作る・k = region k - 1 に作る
+    cd := st.fvDest
+    st.fvDest = 0
+    n := lenL(mut st, fs)
+    out := ListRef(listN(mut st, n))
+    ne := lenL(mut st, elems)
+    if ne == 0 && n > 0 {
+        // ゼロ値リテラル `T{}`
+        for i <- iter.Range(0, n) {
+            w := tyIn(mut st, pk, fenv, nB(nodeOf(mut st, latN(mut st, fs, i))), at) catch return 0, 0, diag.CoreFragment{at: posOf(mut st, at)}
+            zv := if cd > 0 { zeroAt(mut st, w, cd - 1, at)? } else { zeroOf(mut st, w, at)? }
+            hsetCore(mut st, int(out) + 1 + i, zv)
+        }
+        return out, -1, nil
+    }
+    // 欄の照合は lower と共有（resolve.sober の CompositeFields）。値は欄の順に並べる
+    fof, cm := CompositeFields(mut st, fieldNames(mut st, fs), elems)
+    if cm != CMOk {
+        return 0, 0, diag.Malformed{at: posOf(mut st, at)}
+    }
+    // 書いた順が欄の順と違うときだけ let で包む（部分リテラルで欄を飛ばしても、順が増える向きなら素の組のまま）
+    mut perm := false
+    for j <- iter.Range(1, ne) {
+        if latI(mut st, fof, j) <= latI(mut st, fof, j - 1) {
+            perm = true
+        }
+    }
+    lets := if perm { ListRef(listN(mut st, ne)) } else { -1 }
+    for j <- iter.Range(0, ne) {
+        i := latI(mut st, fof, j)
+        fd := latN(mut st, fs, i)
+        el := latN(mut st, elems, j)
+        // 並べ替えるときは j 番目の値を j 個の let の内側（深さ depth + j）で脱糖し、組の中では添字 ne - 1 - j で指す
+        d := if perm { depth + j } else { depth }
+        ftype := nB(nodeOf(mut st, fd))
+        fsaved := st.tenv
+        st.tenv = fenv
+        fsty := SurfaceOf(mut st, pk, ftype)
+        st.tenv = fsaved
+        wantAssignable(mut st, fsty, nB(nodeOf(mut st, el)), eb, ef)?
+        w := tyIn(mut st, pk, fenv, ftype, at)?
+        st.liftHint = -1
+        if kindN(mut st, ftype) == ast.TFunc {
+            st.liftHint = rec5(mut st, pk, fenv, int(ftype), 0, 0)
+        }
+        // 値の位置（値化可能な named fn type の欄 + その option — closure.sober）: 値は常に閉包の組
+        fvd := fieldFnValDecl(mut st, pk, fenv, ftype)?
+        // 行き先つき: 欄の値の mut のリテラル（slice / map / 入れ子の struct）は行き先に作り（mutDest を 1 欄ずつ渡し直す）、
+        // 行き先より深い imm の値は行き先へ写す（slice リテラルの要素と同じ — storeCopy）
+        vk := kindN(mut st, nB(nodeOf(mut st, el)))
+        if cd > 0 && fvd < 0 && (vk == ast.ESlicelit || vk == ast.EMaplit || vk == ast.EComposite) {
+            st.mutDest = cd
+        }
+        v00 := if fvd >= 0 { closureValue(mut st, nB(nodeOf(mut st, el)), w, fvd, eb, ef, d, at)? } else { coerceExpr(mut st, nB(nodeOf(mut st, el)), w, eb, ef, d, at)? }
+        st.mutDest = 0
+        mut v0 := v00
+        if cd > 0 && fvd < 0 && vk != ast.ESlicelit && vk != ast.EMaplit && vk != ast.EComposite {
+            dsaved := st.rdepth
+            st.rdepth = cd
+            et := pointTy(mut st, w)
+            st.rdepth = dsaved
+            vc := storeCopy(mut st, v00, computeTy(mut st, nB(nodeOf(mut st, el)), eb, ef), et, cd - 1)
+            if vc != -1 {
+                v0 = vc
+            }
+        }
+        st.liftHint = -1
+        // 欄の宣言型で注釈する（組の項は欄の型を持たない — 注釈しないと `L{a: "s"}` の欄の値を使わない限り check が型を見ない。
+        // スカラー（int / bool / byte / unit とその組）だけ — region・型変数・option・union を含む型の注釈は座標や包みの読みが要るので、
+        // 使う点の検査に任せる）
+        // 値の型が分かって欄の型に合わなければ名指す（文字列・struct 等のスカラーでない型・別のスカラー — 整数リテラルは coerce が byte / float へ寄せる）
+        if scalarTy(mut st, w) {
+            vn := nB(nodeOf(mut st, el))
+            vt := computeTy(mut st, vn, eb, ef)
+            if vt != TyRef(-1) && kindN(mut st, vn) != ast.EInt && (!scalarTy(mut st, vt) || tg(mut st, vt) != tg(mut st, w)) {
+                return out, lets, diag.FieldType{at: posOf(mut st, vn)}
+            }
+        }
+        // slice の欄に要素型の違う slice のリテラル（`S{w: []int{1, 2}}`・w は []int?）— coerce は期待の要素型で読み直すので受理してしまう
+        // （build は拒否 — check ⊃ build）。書いた要素型の種類が欄の要素型と違えば名指す
+        if isTag(mut st, w, TSl) && kindN(mut st, nB(nodeOf(mut st, el))) == ast.ESlicelit {
+            ln := nB(nodeOf(mut st, el))
+            le := tyOf(mut st, st.curPkg, nA(nodeOf(mut st, ln)), at, TYFUEL)?
+            if tg(mut st, le) != tg(mut st, tElem(mut st, w)) {
+                return out, lets, diag.FieldType{at: posOf(mut st, ln)}
+            }
+        }
+        v := if scalarTy(mut st, w) { cAnn(mut st, v0, w) } else { v0 }
+        if perm {
+            hsetCore(mut st, int(lets) + 1 + j, v)
+            hsetCore(mut st, int(out) + 1 + i, cVar(mut st, ne - 1 - j))
+        } else {
+            hsetCore(mut st, int(out) + 1 + i, v)
+        }
+    }
+    // 部分リテラル: 書かなかった欄はゼロ値（`T{}` と同じ — 欄の宣言型の zeroOf）
+    if ne < n {
+        mut given := mut []bool{}
+        for i <- iter.Range(0, n) {
+            given = append(given, false)
+        }
+        for j <- iter.Range(0, ne) {
+            given[latI(mut st, fof, j)] = true
+        }
+        for i <- iter.Range(0, n) {
+            if !given[i] {
+                w := tyIn(mut st, pk, fenv, nB(nodeOf(mut st, latN(mut st, fs, i))), at) catch return 0, 0, diag.CoreFragment{at: posOf(mut st, at)}
+                zv := if cd > 0 { zeroAt(mut st, w, cd - 1, at)? } else { zeroOf(mut st, w, at)? }
+                hsetCore(mut st, int(out) + 1 + i, zv)
+            }
+        }
+    }
+    return out, lets, nil
+}
+
+// int / bool / byte / unit とその組だけの型か（欄の注釈の対象）
+func scalarTy(st mut S, t TyRef) bool {
+    k := tg(mut st, t)
+    if k == TPr {
+        return scalarTy(mut st, tLeft(mut st, t)) && scalarTy(mut st, tRight(mut st, t))
+    }
+    return k == TInt || k == TBool || k == TByte || k == TFloat || k == TUnit
+}
+
+// fieldValuesIn の let の列（-1 = 無し）で e を包む
+func letsAround(st mut S, lets ListRef, e CoreRef) CoreRef {
+    return if lets == -1 { e } else { wrapLets(mut st, lets, e) }
+}
+
+// zeroOf の行き先つき: コンテナを region r の点座標で r に作る（外の mut 場所へ流れ込む struct リテラルの省いた欄 —
+// mut のコンテナは写せないので行き先に作る・imm の空も同じ座標に揃える）
+func zeroAt(st mut S, t TyRef, r int, at NodeRef) (CoreRef, error?) {
+    saved := st.rdepth
+    st.rdepth = r + 1
+    defer {
+        st.rdepth = saved
+    }
+    k := tg(mut st, t)
+    switch k {
+    case TSl:
+        e := cMksliceAt(mut st, 1, pointTy(mut st, tElem(mut st, t)), r)
+        return if tMutBit(mut st, t) != 0 { e } else { c1(mut st, CFreeze, e) }, nil
+    case TMp:
+        kk := pointTy(mut st, tKey(mut st, t))
+        e := cMkmapAt(mut st, 1, kk, pointTy(mut st, tVal(mut st, t)), r)
+        return if tMutBit(mut st, t) != 0 { e } else { c1(mut st, CFreeze, e) }, nil
+    case TPr:
+        a := zeroAt(mut st, tLeft(mut st, t), r, at)?
+        b := zeroAt(mut st, tRight(mut st, t), r, at)?
+        return c2(mut st, CPair, a, b), nil
+    }
+    return zeroOf(mut st, t, at)
+}
+
+// 型のゼロ値（コンテナは点座標の空。imm は mut 構築 + freeze）
+func zeroOf(st mut S, t TyRef, at NodeRef) (CoreRef, error?) {
+    k := tg(mut st, t)
+    switch k {
+    case TInt:
+        return cLit(mut st, 0), nil
+    case TBool:
+        return cFF(mut st), nil
+    case TByte:
+        return c1(mut st, CToByte, cLit(mut st, 0)), nil
+    case TFloat:
+        return cFlit(mut st, 0), nil
+    case TUnit:
+        return cTriv(mut st), nil
+    case TOpt:
+        return cNil(mut st, pointTy(mut st, tInner(mut st, t))), nil
+    case TSl:
+        e := cMkslice(mut st, 1, pointTy(mut st, tElem(mut st, t)))
+        return if tMutBit(mut st, t) != 0 { e } else { c1(mut st, CFreeze, e) }, nil
+    case TMp:
+        kk := pointTy(mut st, tKey(mut st, t))
+        e := cMkmap(mut st, 1, kk, pointTy(mut st, tVal(mut st, t)))
+        return if tMutBit(mut st, t) != 0 { e } else { c1(mut st, CFreeze, e) }, nil
+    case TPr:
+        a := zeroOf(mut st, tLeft(mut st, t), at)?
+        b := zeroOf(mut st, tRight(mut st, t), at)?
+        return c2(mut st, CPair, a, b), nil
+    }
+    return 0, diag.CoreFragment{at: posOf(mut st, at)}
+}
+
+// 空の鎖（包んでいない error）: 点座標の空 imm slice
+func emptyChain(st mut S, at NodeRef) (CoreRef, error?) {
+    l := unionTreeTy(mut st, st.curPkg, NodeRef(ERRS), 0, at, TYFUEL)?
+    return c1(mut st, CFreeze, cMkslice(mut st, 1, pointTy(mut st, l))), nil
+}
+
+// `panic(…)` の呼び出し e のコア（結果型 want の unreach）。loader（panicx.sober）が写した形 — 実引数は [ラベルの名前の文字列] か
+// [名前, 欄の struct の composite]: 欄の値は書いた順に評価して捨てる（let — 欄の型の検査は普通の composite と同じ）。実引数なし = 裸の `panic()`（廃止 — loader が拒否するので来ない）
+func panicCore(st mut S, e NodeRef, want TyRef, eb int, ef int, depth int) (CoreRef, error?) {
+    args := lB(nodeOf(mut st, e))
+    n := lenL(mut st, args)
+    if n == 2 {
+        v := expr(mut st, latN(mut st, args, 1), eb, ef, depth)?
+        return cLet(mut st, v, cUnreach(mut st, want)), nil
+    }
+    if n > 2 {
+        return 0, diag.Malformed{at: posOf(mut st, e)}
+    }
+    return cUnreach(mut st, want), nil
+}
+
+// e が組み込みの `panic(…)` の呼び出しか（名前 panic が局所の束縛・package の関数で上書きされていないとき）
+func isPanicCall(st mut S, e NodeRef, eb int) bool {
+    callee := nA(nodeOf(mut st, e))
+    if kindN(mut st, callee) != ast.EIdent || !strIs(mut st, sA(nodeOf(mut st, callee)), "panic") {
+        return false
+    }
+    return lookup(mut st, eb, sA(nodeOf(mut st, callee))) < 0 && findFn(mut st, callee, eb) < 0
+}

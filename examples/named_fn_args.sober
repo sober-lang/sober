@@ -1,6 +1,6 @@
 package main
 
-// 名前付き関数型を通した呼び出しの名前付き実引数（syntax.md 決定 7 の第 2 便 — desugar/namedval.sober が位置へ写す）。
+// 名前付き関数型を通した呼び出しの名前付き実引数（syntax.md 決定 7 — desugar/namedval.sober が位置へ写す）。
 // 名前は呼び先の静的な型（名前付き関数型の宣言）から取る — 値の実体（ラムダ）の仮引数名とは照合しない（名前は型の同一性に入らない — language.md 14 節）
 
 type Fetch func(url int, timeout int?, retries int?) int

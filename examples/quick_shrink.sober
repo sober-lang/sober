@@ -1,0 +1,22 @@
+package main
+
+// std/quick: 偽になるプロパティ（「8 個までの 0..9 の和は 30 未満」）の反例を探し、選択の列をシュリンク（縮小）して最小の反例（4 個 — 3, 9, 9, 9）を印字して
+// panic(quick.Falsified{}) で落ちる（exit 101）。シュリンクは引いた値の型を知らない — 列の塊を消すと要素が消え、選択を 0 の側へ寄せると値が小さくなる
+
+import "std/quick"
+
+func sum(xs []int) int {
+    mut t := 0
+    for x <- xs {
+        t = t + x
+    }
+    return t
+}
+
+func main() {
+    mut q := quick.Seed(0)
+    quick.Check(mut q, () => {
+        xs := quick.Slice(mut q, 8, () => quick.Int(mut q, 0, 9))
+        sum(xs) < 30
+    })
+}

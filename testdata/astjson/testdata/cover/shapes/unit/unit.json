@@ -1,0 +1,129 @@
+{
+  "package": "unit",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "Half",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "if",
+                "cond": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "binary",
+                    "op": "%",
+                    "lhs": {
+                      "k": "ident",
+                      "name": "n",
+                      "tok": 13
+                    },
+                    "rhs": {
+                      "k": "int",
+                      "value": 2,
+                      "tok": 15
+                    },
+                    "tok": 14
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 17
+                  },
+                  "tok": 16
+                },
+                "then": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "binary",
+                        "op": "/",
+                        "lhs": {
+                          "k": "ident",
+                          "name": "n",
+                          "tok": 19
+                        },
+                        "rhs": {
+                          "k": "int",
+                          "value": 2,
+                          "tok": 21
+                        },
+                        "tok": 20
+                      }
+                    }
+                  ]
+                },
+                "else": {
+                  "k": "block",
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "binary",
+                        "op": "/",
+                        "lhs": {
+                          "k": "binary",
+                          "op": "+",
+                          "lhs": {
+                            "k": "ident",
+                            "name": "n",
+                            "tok": 26
+                          },
+                          "rhs": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 28
+                          },
+                          "tok": 27
+                        },
+                        "rhs": {
+                          "k": "int",
+                          "value": 2,
+                          "tok": 31
+                        },
+                        "tok": 30
+                      }
+                    }
+                  ]
+                },
+                "tok": 12
+              }
+            ],
+            "tok": 11
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 36
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

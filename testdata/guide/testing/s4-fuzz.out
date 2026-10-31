@@ -1,0 +1,6 @@
+quick: fuzz: panic at trial 122 (seed 516221799, 43 shrink runs)
+  String = "\\"
+panic: index out of range at examples/guide/kvbug/kv.sober:44:28
+quick: wrote examples/guide/kvbug/testdata/fuzz/TestAnyLine/0-6285beb84c4f3dee
+panic: quick.Crashed{exit: 101} at std/quick/fuzz.sober:232:10
+(exit 1)

@@ -15,7 +15,7 @@ import "std/iter"
 import "ast"
 import "lexer"
 
-// catchExprs は木 t の catch 式を写した木（節は末尾に足し、catch の節をその場で差し替える）
+// 木 t の catch 式を写した木（節は末尾に足し、catch の節をその場で差し替える）
 func catchExprs(t ast.Tree) ast.Tree {
     n0 := len(t.nodes)
     mut found := false
@@ -88,7 +88,7 @@ func catchExprs(t ast.Tree) ast.Tree {
             builder.Push(mut nb, ast.Node{ast.SBind, tok, ast.PutList(mut db, []int{vn, en}), 0, ast.PutList(mut db, []int{x.a}), 0, 0, 0})
             mut ifn := ast.Node{ast.EIf, tok, base + 7, base + 1, base + 4, 0, 0, 0}
             if t.nodes[x.b].kind == ast.ENil {
-                // `f() catch nil`（F-v）: nil の腕の型を兄弟の $ctKv の T? から取る —
+                // `f() catch nil`: nil の腕の型を兄弟の $ctKv の T? から取る —
                 // `{ mut $ctKr := $ctKv; if $ctKe != nil { $ctKr = nil }; $ctKr }`（代入の nil は束縛の型 T? が期待型を与える）
                 rn := ast.PutLit(mut db, "$ct${k}r")
                 q := n0 + builder.Len(mut nb)
@@ -159,10 +159,10 @@ func catchExprs(t ast.Tree) ast.Tree {
     return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
 }
 
-// catchLhsBad はファイル f の catchExprs の写した束縛 x（`$ctKv, $ctKe := f()`）の左辺が func 宣言の直接呼び出しで、その結果が `(T, error?)` でないか
+// ファイル f の catchExprs の写した束縛 x（`$ctKv, $ctKe := f()`）の左辺が func 宣言の直接呼び出しで、その結果が `(T, error?)` でないか
 // （noderules.sober の走査から — 写した後の束縛の数の照合より先に名指す）。func 宣言を引けない呼び出し（関数型の値を通した呼び出し等）は
 // 後段の束縛の数の照合に任せる。std/task の Join（結果は字面で型パラメータ 1 つ — fallible な task の T = `(U, error?)` は呼び出し点の型引数で決まる）は
-// 判定を保留し、表層型の後の desugar.ParCheckTyped が同じ CatchLhs を名指す（check と build が同じ層 — report-582 2 節）
+// 判定を保留し、表層型の後の desugar.ParCheckTyped が同じ CatchLhs を名指す（check と build が同じ層を見る）
 func catchLhsBad(cx Cx, ft FnTab, f int, x ast.Node) bool {
     t := cx.trees[f]
     c := t.nodes[ast.ListAt(t, x.c, 0)]
@@ -173,13 +173,13 @@ func catchLhsBad(cx Cx, ft FnTab, f int, x ast.Node) bool {
     return fi >= 0 && !parJoin(cx, ft, fi) && !fallibleResults(cx.trees[ft.file[fi]], ft.node[fi])
 }
 
-// parJoin は関数表の fi が std/task の Join か
+// 関数表の fi が std/task の Join か
 func parJoin(cx Cx, ft FnTab, fi int) bool {
     dt := cx.trees[ft.file[fi]]
     return cx.pkg_path[ft.pkg[fi]] == "std/task" && Name(dt, dt.nodes[ft.node[fi]].a) == "Join"
 }
 
-// isCatchBind は節 i が catchExprs の写した束縛（名前の先頭が `$ct`）か
+// 節 i が catchExprs の写した束縛（名前の先頭が `$ct`）か
 func isCatchBind(t ast.Tree, i int) bool {
     x := t.nodes[i]
     if x.kind != ast.SBind || ast.ListLen(t, x.a) != 2 || ast.ListLen(t, x.c) != 1 {
@@ -190,7 +190,7 @@ func isCatchBind(t ast.Tree, i int) bool {
     return t.data[s] >= 3 && t.data[s + 1] == 36 && t.data[s + 2] == 99 && t.data[s + 3] == 116
 }
 
-// fallibleResults は func 宣言 d の結果が `(T, error?)` か
+// func 宣言 d の結果が `(T, error?)` か
 func fallibleResults(t ast.Tree, d int) bool {
     rs := t.nodes[d].d
     if ast.ListLen(t, rs) != 2 {
@@ -200,8 +200,24 @@ func fallibleResults(t ast.Tree, d int) bool {
     return e.kind == ast.TOpt && t.nodes[e.a].kind == ast.TName && Name(t, t.nodes[e.a].a) == "error"
 }
 
-// multiBindBad はファイル f の値 1 つの束縛 x（`d := f()`・`mut d := f()`）の値が 2 つ以上の結果を返す関数の呼び出しか（noderules.sober の走査から）。
-// 以前は check が型の不一致（位置なし）・build が lower の Mismatch で落ちていた（`d := io.ReadStdin()` — 掃除便 D）。呼び先が引けない呼び出し（関数値・組み込み）は見ない
+// 代入 x が多値を既存の名前へ入れる形（`a, b = f()` — 左辺が 2 つ以上・右辺が 1 つ・左辺が全部 `_` ではない）か。
+// 多値は分解する点（`:=` の束縛・return・switch の subject・パイプの穴）までしか生きず、代入の形は全部 `_` の捨て（`_, _ = f()`）だけ（spec X-6 / X-7）。
+// check と build で同じ形を拒否するためここで名指す。右辺が複数の並べた代入（`a, b = b, a`）は別の形で、見ない
+func multiAssignBad(t ast.Tree, x ast.Node) bool {
+    if x.b != lexer.Equal || ast.ListLen(t, x.a) < 2 || ast.ListLen(t, x.c) != 1 {
+        return false
+    }
+    for j <- iter.Range(0, ast.ListLen(t, x.a)) {
+        e := t.nodes[ast.ListAt(t, x.a, j)]
+        if e.kind != ast.EIdent || !StrIs(t, e.a, "_") {
+            return true
+        }
+    }
+    return false
+}
+
+// ファイル f の値 1 つの束縛 x（`d := f()`・`mut d := f()`）の値が 2 つ以上の結果を返す関数の呼び出しか（noderules.sober の走査から）。
+// check と build で同じ形を拒否するためここで名指す（例: `d := io.ReadStdin()`）。呼び先が引けない呼び出し（関数値・組み込み）は見ない
 func multiBindBad(cx Cx, ft FnTab, f int, x ast.Node) bool {
     t := cx.trees[f]
     if ast.ListLen(t, x.a) != 1 || ast.ListLen(t, x.c) != 1 {

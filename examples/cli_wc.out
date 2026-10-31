@@ -1,0 +1,22 @@
+2 5 testdata/cli/a.txt
+1 1 testdata/cli/b.txt
+0
+2 testdata/cli/a.txt
+0
+1 testdata/cli/b.txt
+0
+usage: wc [flags] <file>...
+
+count lines and words
+
+arguments:
+  <file>...  files to count
+
+flags:
+  -l, --lines  print only the line counts
+  -w, --words  print only the word counts
+0
+wc 0.1.0
+0
+2
+2

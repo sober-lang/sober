@@ -99,7 +99,7 @@ measure() { # $1 = 置き場
         true'
 }
 
-"$SOBER" version > /dev/null 2>&1 || { echo "alphacheck: bin/sober が動かない"; exit 1; } # stage2 を先に（std が変わると作り直し — 測りの中で並列に建てない）
+"$SOBER" --version > /dev/null 2>&1 || { echo "alphacheck: bin/sober が動かない"; exit 1; } # stage2 を先に（std が変わると作り直し — 測りの中で並列に建てない）
 measure "$W/before"
 # 基準の健全性: 書き換えの前に check が通る entry が 1 つも無ければ測りが壊れている（全部同じ失敗なら V1〜V3 は素通りする）
 okb=$(grep -l 'exit=0$' "$W"/before/*.core 2> /dev/null | wc -l) # check の JSON は末尾に改行が無い — exit= は同じ行に付く
@@ -117,7 +117,7 @@ elif [ -n "${ALPHA_POST:-}" ]; then
     echo "alphacheck: 手の追従（ALPHA_POST）: $ALPHA_POST"
     bash -c "$ALPHA_POST" || { echo "alphacheck: ALPHA_POST が落ちた"; red=1; }
 fi
-"$SOBER" version > /dev/null 2>&1 || echo "alphacheck: 書き換えの後の bin/sober が動かない（stage2 の作り直しが落ちた — std の書き換えが壊した）"
+"$SOBER" --version > /dev/null 2>&1 || echo "alphacheck: 書き換えの後の bin/sober が動かない（stage2 の作り直しが落ちた — std の書き換えが壊した）"
 measure "$W/after"
 
 v1=0; v2=0; v3=0; v3run=0

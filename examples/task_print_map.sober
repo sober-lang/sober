@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P4-2 (O1): task.Map の子の印字 — 要素の順（= 生んだ順）に子の流れが並ぶ
+// task.Map の子の印字 — 要素の順（= 生んだ順）に子の流れが並ぶ
 
 import "std/task"
 

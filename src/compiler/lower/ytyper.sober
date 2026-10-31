@@ -10,7 +10,7 @@ import "std/table"
 
 const YLOGMAX = 40
 
-// yCompare は式 e の lower の型 t を表層型の表と突き合わせる
+// 式 e の lower の型 t を表層型の表と突き合わせる
 func yCompare(st mut St, e desugar.NodeRef, t int) {
     if int(e) >= desugar.SBASE && int(e) < desugar.LBASE {
         // 合成の節（脱糖器の書き換え・lower の持ち上げ — 表層 AST に無い）は比べない
@@ -58,7 +58,7 @@ func yCompare(st mut St, e desugar.NodeRef, t int) {
     }
 }
 
-// yMatch は表層型 y と lower の型 t が同じ型か（1 = 同じ・0 = 違う・-1 = 比べない）
+// 表層型 y と lower の型 t が同じ型か（1 = 同じ・0 = 違う・-1 = 比べない）
 func yMatch(st mut St, y int, t int) int {
     x := desugar.YAt(mut st.d, y)
     k := x.k
@@ -143,7 +143,7 @@ func yMatchList(st mut St, yl desugar.ListRef, tl desugar.ListRef) int {
     return r
 }
 
-// yAnd は突き合わせの結果の積（どれかが違えば違う・でなくどれかを比べなければ比べない）
+// 突き合わせの結果の積（どれかが違えば違う・でなくどれかを比べなければ比べない）
 func yAnd(a int, b int) int {
     if a == 0 || b == 0 {
         return 0
@@ -155,7 +155,7 @@ func b2i(b bool) int {
     return if b { 1 } else { 0 }
 }
 
-// yReport は突き合わせの報告: [一致, 不一致, 表に無い, 比べない, 記録の数 n, 表に無い式の種類ごとの数（100 語）, (ファイル, 字句, 表層型の種類, lower の型の種類) × n]
+// 突き合わせの報告: [一致, 不一致, 表に無い, 比べない, 記録の数 n, 表に無い式の種類ごとの数（100 語）, (ファイル, 字句, 表層型の種類, lower の型の種類) × n]
 func yReport(st mut St, out mut []int) {
     out = append(out, st.ymatch)
     out = append(out, st.ymis)
@@ -172,7 +172,7 @@ func yReport(st mut St, out mut []int) {
     }
 }
 
-// yLower は表層型 y（desugar/typer.sober の表）の lower の型（写せなければ -1 — 多値・名前付き関数型・不明の成分）。
+// 表層型 y（desugar/typer.sober の表）の lower の型（写せなければ -1 — 多値・名前付き関数型・不明の成分）。
 // 型パラメータは今の型環境から名前で引く
 func yLower(st mut St, y int, at desugar.NodeRef) (int, error?) {
     if y < 0 {

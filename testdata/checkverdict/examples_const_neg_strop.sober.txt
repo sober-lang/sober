@@ -1,0 +1,2 @@
+sober: load error at examples/const_neg_strop.sober:6:19: const expression: operators work only on int consts — string, bool, float, struct and slice consts are written as literals
+exit=1

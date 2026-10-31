@@ -6,17 +6,17 @@ import "lexer"
 import "desugar"
 import "diag"
 
-// 写しのループの一括化（宛先構築レーン M1b: シリアライザ・パーサ・Builder の Build / PushAll・strings.Join の 1 要素ずつの写しが
+// 写しのループの一括化（宛先構築: シリアライザ・パーサ・Builder の Build / PushAll・strings.Join の 1 要素ずつの写しが
 // 合成の写しの帰属の 70% だった）。最適化のバックエンドの経路（--passes）だけ・Lean 無変更・意味論は不変（観測等価 — optdiff が網）。
 // 形を構文で見分ける（while の本体がちょうど 2 文）:
 //   (A) `while j < E { dst = append(dst, src[j]); j += 1 }`    — append の写し（dst は mut slice の束縛・src は別の名前）
 //   (B) `while j < E { D[a + j] = S[b + j]; j += 1 }`           — 添字の写し（a・b は無くてもよい・D は mut slice の束縛か欄の経路・S は別の名前）
 //   (C) `while j < E { dst = append(dst, x); j += 1 }`          — 同じ値の詰め（x は名前 — Builder.Push の chunk の確保がこれ — か整数の字面 —
-//       定数〔constFill〕— 0 埋めの初期化のループ〔std/json の zeroFill〕がこれ・ラウンド 9 — report-624）
+//       定数〔constFill〕— 0 埋めの初期化のループ〔std/json の zeroFill〕がこれ）
 // E は名前（本体で代入しない）・整数・欄読み（根の名前が本体で代入されない）・`len(X)`（X は本体で代入しない名前）。範囲の検査を先に 1 回（j0 ≥ 0・終わり ≤ len）して、通れば
 // まとめて写して j = E。通らなければ元のループ（panic の点も同じ — 写しの途中で落ちる入力は元の形で落とす）。前向きの写しなので重なりの意味も元と同じ
 
-// CopyLoop は見分けた形: kind（0 = 違う・1 = A・2 = B）と節（j・E・dst / D・src / S・a・b — 無ければ -1）
+// 見分けた形: kind（0 = 違う・1 = A・2 = B）と節（j・E・dst / D・src / S・a・b — 無ければ -1）
 type CopyLoop struct {
     kind int
     j desugar.NodeRef
@@ -27,7 +27,7 @@ type CopyLoop struct {
     b desugar.NodeRef
 }
 
-// matchCopyLoop は while の節 s が写しのループの形か
+// while の節 s が写しのループの形か
 func matchCopyLoop(st mut St, s desugar.NodeRef) CopyLoop {
     no := CopyLoop{kind: 0, j: -1, e: -1, dst: -1, src: -1, a: -1, b: -1}
     c := nA(nodeOf(mut st, s))
@@ -85,7 +85,7 @@ func matchCopyLoop(st mut St, s desugar.NodeRef) CopyLoop {
     }
     d := nA(nodeOf(mut st, t1))
     sv := nA(nodeOf(mut st, v1))
-    // D は名前か欄の経路（`w.buf` — 根の名前が S・j でない。Writer の枠への写し — ラウンド 3・report-618）
+    // D は名前か欄の経路（`w.buf` — 根の名前が S・j でない。Writer の枠への写し）
     mut dr := d
     while kindN(mut st, dr) == ast.ESelector {
         dr = nA(nodeOf(mut st, dr))
@@ -104,7 +104,7 @@ func matchCopyLoop(st mut St, s desugar.NodeRef) CopyLoop {
     return CopyLoop{kind: 2, j: j, e: e, dst: d, src: sv, a: da, b: sb}
 }
 
-// offsetOf は添字の式 x が `j`（-1）か `a + j`（a = 名前か整数の節）か — 違えば -2
+// 添字の式 x が `j`（-1）か `a + j`（a = 名前か整数の節）か — 違えば -2
 func offsetOf(st mut St, x desugar.NodeRef, j desugar.NodeRef) desugar.NodeRef {
     if sameName(mut st, x, j) {
         return -1
@@ -118,7 +118,7 @@ func offsetOf(st mut St, x desugar.NodeRef, j desugar.NodeRef) desugar.NodeRef {
     return -2
 }
 
-// invariantBound は E が本体で変わらない形か（整数・名前〔dst / j でない〕・`len(X)`〔X は dst / j でない名前〕）
+// E が本体で変わらない形か（整数・名前〔dst / j でない〕・`len(X)`〔X は dst / j でない名前〕）
 func invariantBound(st mut St, e desugar.NodeRef, dst desugar.NodeRef, j desugar.NodeRef) bool {
     k := kindN(mut st, e)
     if k == ast.EInt {
@@ -149,7 +149,7 @@ func sameName(st mut St, x desugar.NodeRef, y desugar.NodeRef) bool {
     return kindN(mut st, x) == ast.EIdent && kindN(mut st, y) == ast.EIdent && strEq(mut st, sA(nodeOf(mut st, x)), sA(nodeOf(mut st, y)))
 }
 
-// copyLoopStmt は見分けた写しのループ m を下ろす: 範囲が通れば一括・でなければ元のループ（whileLoop）。下ろせない形（束縛が引けない・型が合わない）は false
+// 見分けた写しのループ m を下ろす: 範囲が通れば一括・でなければ元のループ（whileLoop）。下ろせない形（束縛が引けない・型が合わない）は false
 func copyLoopStmt(st mut St, s desugar.NodeRef, m CopyLoop) (bool, error?) {
     lj := lookup(mut st, sA(nodeOf(mut st, m.j)))
     if lj < 0 || desugar.HeapGet(mut st.d, lj + 2) != LCell || !isTag(mut st, desugar.HeapGet(mut st.d, lj + 3), TInt) {
@@ -246,7 +246,7 @@ func copyLoopStmt(st mut St, s desugar.NodeRef, m CopyLoop) (bool, error?) {
     return true, nil
 }
 
-// appendBulk は mut slice の束縛（セルの番地 haddr・型 dt）の末尾へ、同じ要素の型の slice の値 sv の [s0, s0 + n) を一括で積む
+// mut slice の束縛（セルの番地 haddr・型 dt）の末尾へ、同じ要素の型の slice の値 sv の [s0, s0 + n) を一括で積む
 // （n > 0・範囲は検査済み — while の形 (A) と for の形が共有）
 func appendBulk(st mut St, dt int, haddr int, sv int, s0 int, n int) {
     cellw := tWords(mut st, desugar.HeapGet(mut st.d, dt + 1))
@@ -268,11 +268,11 @@ func appendBulk(st mut St, dt int, haddr int, sv int, s0 int, n int) {
     }
 }
 
-// forAppendStmt は文形の for の写しの形を一括で下ろす（ラウンド 2 — report-617。下ろせない形は false で、呼び手が普通の for で下ろす）:
+// 文形の for の写しの形を一括で下ろす（下ろせない形は false で、呼び手が普通の for で下ろす）:
 //   (S) `for x <- S { D = append(D, x) }`                      — S は slice の式（評価は 1 回 — iter.Slice と同じ）
 //   (R) `for j <- iter.Range(lo, hi) { D = append(D, S[j]) }`  — S は名前・lo / hi は呼び出し（len を除く）を持たない整数式（pureInt）。
 //       範囲の検査を先に 1 回（lo ≥ 0・hi ≤ len(S)）して、通らなければ元の for（panic の点も同じ）
-//   (Z) `for _ <- iter.Range(lo, hi) { D = append(D, c) }`     — c は定数（constFill — 0 / -1 / false の初期化 — ラウンド 9・report-624）。hi − lo > 0 なら n 個の詰め
+//   (Z) `for _ <- iter.Range(lo, hi) { D = append(D, c) }`     — c は定数（constFill — 0 / -1 / false の初期化）。hi − lo > 0 なら n 個の詰め
 //       （添字が無いので範囲の検査は要らない・Range の実引数の評価は元と同じく 1 回）
 // D は mut slice の束縛の名前。要素は表層型で byte か int（同じ型 — 写しに変換が挟まらない — (Z) は bool も）
 func forAppendStmt(st mut St, e desugar.NodeRef) (bool, error?) {
@@ -399,7 +399,7 @@ func forAppendStmt(st mut St, e desugar.NodeRef) (bool, error?) {
     return true, nil
 }
 
-// constFill は詰める値 x が定数か: 整数の字面・`-字面`・`字面 - 字面`（あふれない形だけ）・true / false（組み込みの名前 — 束縛し直せない）・括弧
+// 詰める値 x が定数か: 整数の字面・`-字面`・`字面 - 字面`（あふれない形だけ）・true / false（組み込みの名前 — 束縛し直せない）・括弧
 func constFill(st mut St, x0 desugar.NodeRef) bool {
     mut x := x0
     while kindN(mut st, x) == ast.EParen {
@@ -421,7 +421,7 @@ func constFill(st mut St, x0 desugar.NodeRef) bool {
     return false
 }
 
-// forWriteStmt は Writer への写しの for を一括で下ろす（ラウンド 3 — report-618。下ろせない形は false）:
+// Writer への写しの for を一括で下ろす（下ろせない形は false）:
 //   `for j <- iter.Range(lo, hi) { io.WriteByte(mut w, S[j]) }`（std/io の WriteByte・w は名前・S は byte の slice の名前・lo / hi は pureInt）
 // 区間が S の範囲の中で、w の枠の空き（len(w.buf) − w.n）にまるごと収まるなら、枠へ一括で写して w.n を進める（WriteByte の速い道を hi − lo 回と同じ）。
 // 収まらない（枠の境目を跨ぐ — 書き出しの遅い道が要る）か範囲の外なら元の for
@@ -523,7 +523,7 @@ func forWriteStmt(st mut St, e desugar.NodeRef) (bool, error?) {
     return true, nil
 }
 
-// pureInt は x が呼び出し（len(名前) を除く）・割り算を持たない整数の式か（字面・名前・欄読み・名前の添字読み・len(名前)・+ / − / *・括弧 — 2 回下ろしても同じ値）
+// x が呼び出し（len(名前) を除く）・割り算を持たない整数の式か（字面・名前・欄読み・名前の添字読み・len(名前)・+ / − / *・括弧 — 2 回下ろしても同じ値）
 func pureInt(st mut St, x desugar.NodeRef) bool {
     k := kindN(mut st, x)
     if k == ast.EInt || k == ast.EIdent {
@@ -555,7 +555,7 @@ func pureInt(st mut St, x desugar.NodeRef) bool {
     return false
 }
 
-// fillLoopStmt は (C) 同じ値の詰め: n = E - j0 > 0 なら n セル伸ばして値で埋め、j = E（範囲の検査は要らない — 添字が無い）
+// (C) 同じ値の詰め: n = E - j0 > 0 なら n セル伸ばして値で埋め、j = E（範囲の検査は要らない — 添字が無い）
 func fillLoopStmt(st mut St, s desugar.NodeRef, m CopyLoop, lj int, ld int, dt int) (bool, error?) {
     elem := desugar.HeapGet(mut st.d, dt + 1)
     xv := exprExpecting(mut st, m.src, elem, m.src)?
@@ -582,7 +582,7 @@ func fillLoopStmt(st mut St, s desugar.NodeRef, m CopyLoop, lj int, ld int, dt i
     return true, nil
 }
 
-// fillBulk は mut slice の束縛（セルの番地 haddr・型 dt）の末尾へ、値 v（型 xt — 要素の型）を n 個積む（n > 0 — (C) と for の (Z) が共有）
+// mut slice の束縛（セルの番地 haddr・型 dt）の末尾へ、値 v（型 xt — 要素の型）を n 個積む（n > 0 — (C) と for の (Z) が共有）
 func fillBulk(st mut St, dt int, haddr int, xt int, v int, n int) {
     elem := desugar.HeapGet(mut st.d, dt + 1)
     h := copyVal(mut st, dt, haddr)
@@ -630,8 +630,8 @@ func fillBulk(st mut St, dt int, haddr int, xt int, v int, n int) {
     }
 }
 
-// fillBytes はバイトの番地 gd から n バイトを値 v で詰める: 8 バイトの語（v を 8 つ並べた語 — 揃いを問わない store・.ll は align 1）で
-// n / 8 語、残りをバイトで（1 バイトずつの store8 は 5 命令 / B — 16 KiB の 0 埋めで 16.4M 命令だった・report-824 の記帳 / report-879 ⑫）
+// バイトの番地 gd から n バイトを値 v で詰める: 8 バイトの語（v を 8 つ並べた語 — 揃いを問わない store・.ll は align 1）で
+// n / 8 語、残りをバイトで（1 バイトずつの store8 は 5 命令 / B — 16 KiB の 0 埋めで 16.4M 命令だった）
 func fillBytes(st mut St, gd int, v int, n int) {
     pat := bin(mut st, BMul, bin(mut st, BAnd, v, iconst(mut st, 255)), iconst(mut st, 72340172838076673))
     nw := bin(mut st, BSar, n, iconst(mut st, 3))
@@ -659,7 +659,7 @@ func fillBytes(st mut St, gd int, v int, n int) {
     setCur(mut st, bd)
 }
 
-// growN はヘッダ h（cellw 語のセル）を n セル伸ばす先を取る: 先端に接していればその場で伸長・でなければ全コピー（grow の n 版）。（新しいセル列の先頭, 伸ばした先の最初のセル）
+// ヘッダ h（cellw 語のセル）を n セル伸ばす先を取る: 先端に接していればその場で伸長・でなければ全コピー（grow の n 版）。（新しいセル列の先頭, 伸ばした先の最初のセル）
 func growN(st mut St, h int, cellw int, d int, n int) (int, int) {
     bs := load(mut st, h, 0)
     ln := load(mut st, h, 1)
@@ -683,7 +683,7 @@ func growN(st mut St, h int, cellw int, d int, n int) (int, int) {
     return np, dst
 }
 
-// growN8 は byte の列 h を n バイト伸ばす先を取る（tip8 の n 版 — 粒の中か、粒の境目で bump が終わりならその場で伸ばし btip と bump を進める・
+// byte の列 h を n バイト伸ばす先を取る（tip8 の n 版 — 粒の中か、粒の境目で bump が終わりならその場で伸ばし btip と bump を進める・
 // でなければ全コピー）。（新しい列の先頭, 伸ばした先の最初のバイト）
 func growN8(st mut St, h int, d int, n int) (int, int) {
     needByteRt(mut st)
@@ -737,7 +737,7 @@ func growN8(st mut St, h int, d int, n int) (int, int) {
     return np, dst
 }
 
-// ── 語 → バイト列の直列化のループ (D)（731 — report-730 729 節の裁定 (B)）──
+// ── 語 → バイト列の直列化のループ (D) ──
 //   `while x >= 8 { dst = append(dst, byte(b & 0xff)); b = b >> 8; x = x - 8 }`
 // （x・b は int の束縛・dst は mut []byte の束縛か欄の経路・`b >>= 8` / `x -= 8` の形も受ける — flate.put の溜めの書き切り）。
 // x ≥ 64 の間は 8 バイトずつ語の store（growN8 + 語の store — バイト列は little-endian で元と同一・b の進みは算術シフト 64 ≡ sar 8 × 8）、
@@ -750,7 +750,7 @@ type DrainLoop struct {
     dst desugar.NodeRef
 }
 
-// drainAsn は `t ◇= 字面 k` か `t = t ◇ 字面 k`（◇ = op の lexer の種類・opEq = 複合代入の種類）の形なら t を返す（違えば -1）
+// `t ◇= 字面 k` か `t = t ◇ 字面 k`（◇ = op の lexer の種類・opEq = 複合代入の種類）の形なら t を返す（違えば -1）
 func drainAsn(st mut St, s desugar.NodeRef, op int, opEq int, k int) desugar.NodeRef {
     if kindN(mut st, s) != ast.SAssign || lenL(mut st, lA(nodeOf(mut st, s))) != 1 || lenL(mut st, lC(nodeOf(mut st, s))) != 1 {
         return desugar.NodeRef(-1)
@@ -770,7 +770,7 @@ func drainAsn(st mut St, s desugar.NodeRef, op int, opEq int, k int) desugar.Nod
     return if ok { t } else { desugar.NodeRef(-1) }
 }
 
-// matchDrainLoop は while の節 s が直列化のループ (D) の形か
+// while の節 s が直列化のループ (D) の形か
 func matchDrainLoop(st mut St, s desugar.NodeRef) DrainLoop {
     no := DrainLoop{ok: false, x: -1, b: -1, dst: -1}
     c := nA(nodeOf(mut st, s))
@@ -827,7 +827,7 @@ func matchDrainLoop(st mut St, s desugar.NodeRef) DrainLoop {
     return DrainLoop{ok: true, x: x, b: b, dst: dst}
 }
 
-// drainLoopStmt は (D) を下ろす（下ろせない形は false — 元の while へ）。頭で x を読み、x ≥ 64 なら 8 バイトの語・8 ≤ x < 64 なら 1 バイト、
+// (D) を下ろす（下ろせない形は false — 元の while へ）。頭で x を読み、x ≥ 64 なら 8 バイトの語・8 ≤ x < 64 なら 1 バイト、
 // どちらも頭へ戻る（x は単調減少なので止まる）。語の進み: b の 8 バイト（(b >> 8k) & 0xff の列 = little-endian の語そのもの）を
 // growN8 の先へ 1 本の store・b = sar(sar(b, 32), 32)・x = x − 64
 func drainLoopStmt(st mut St, s desugar.NodeRef, m DrainLoop) (bool, error?) {

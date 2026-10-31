@@ -1,16 +1,16 @@
 package loader
 
-// flow typing の連鎖と早期脱出（language.md 427 行の flow typing の改訂 — F-w / F-y）を脱糖の固定テンプレートで if の入れ子に写す。
+// flow typing の連鎖と早期脱出（language.md 427 行の flow typing の改訂）を脱糖の固定テンプレートで if の入れ子に写す。
 // 以降の層（desugar・lower・typer・analyzer）は写した後の木（単独の `x != nil` / `x == nil` を条件に持つ if）だけを読む — コア・Lean は無変更。
 //
-// ① `&&` の連鎖の中の `x != nil`（F-w — 右辺と本体で x は T）— else の無い if だけ:
+// ① `&&` の連鎖の中の `x != nil`（右辺と本体で x は T）— else の無い if だけ:
 //        if A && x != nil && B { T }   →   if A { if x != nil { if B { T } } }
 //     （else のある形は else の腕の複製が lower の展開で膨らむので写さない — 自己 build の RSS 479 → 2248 MB を実測。需要が出たら旗の変数で再訪）
 // ② `||` の連鎖の中の `x == nil` で、then が脱出（return / break / continue）1 文だけ（否定側 = else で x は T）:
 //        if A || x == nil || B { T } else { E }
 //     →  if A { T } else { if x == nil { T } else { if B { T } else { E } } }
 //     （then は脱出なので複製しても x を絞った形で値として読まれない — 脱出で終わらない then は写さない）
-// ③ 早期脱出（F-y）: 文の列の中の else の無い `if C { …; return }`（C は `x == nil` か ② の連鎖）の後ろの文を else に入れる:
+// ③ 早期脱出: 文の列の中の else の無い `if C { …; return }`（C は `x == nil` か ② の連鎖）の後ろの文を else に入れる:
 //        if x == nil { return … }  rest…   →   if x == nil { return … } else { rest… }
 //     （rest の中で x は T。defer・束縛の見える範囲は列の終わりと同じ — else の腕は region 境界ではない）
 // 写しは固定点まで回す（写した後の入れ子にまた連鎖が残る）。名前の判定は字面だけ（x の型は見ない — 型が T? でなくても写しは意味を変えない）
@@ -20,7 +20,7 @@ import "std/iter"
 import "ast"
 import "lexer"
 
-// flowAll は全ファイルの木の flow typing の連鎖と早期脱出を写す
+// 全ファイルの木の flow typing の連鎖と早期脱出を写す
 func flowAll(ts []ast.Tree) []ast.Tree {
     mut out := mut []ast.Tree{}
     for i <- iter.Range(0, len(ts)) {
@@ -38,7 +38,7 @@ func flowAll(ts []ast.Tree) []ast.Tree {
     return freeze(out)
 }
 
-// nilTestKind は節 n が `x != nil`（1）/ `x == nil`（2）/ どちらでもない（0）か（x は名前）
+// 節 n が `x != nil`（1）/ `x == nil`（2）/ どちらでもない（0）か（x は名前）
 func nilTestKind(t ast.Tree, n0 int) int {
     n := unparen(t, n0)
     if n < 0 || t.nodes[n].kind != ast.EBinary {
@@ -54,7 +54,7 @@ func nilTestKind(t ast.Tree, n0 int) int {
     return if x.a == lexer.BangEqual { 1 } else if x.a == lexer.EqualEqual { 2 } else { 0 }
 }
 
-// chainOf は op（&& / ||）の連鎖を左から平らにした項の列
+// op（&& / ||）の連鎖を左から平らにした項の列
 func chainOf(t ast.Tree, n0 int, op int) []int {
     n := unparen(t, n0)
     if t.nodes[n].kind == ast.EBinary && t.nodes[n].a == op {
@@ -72,7 +72,7 @@ func chainOf(t ast.Tree, n0 int, op int) []int {
     return []int{n0}
 }
 
-// diverges は KBlock の文の列が脱出（return / break / continue）で終わるか
+// KBlock の文の列が脱出（return / break / continue）で終わるか
 func diverges(t ast.Tree, blk int) bool {
     l := t.nodes[blk].a
     k := ast.ListLen(t, l)
@@ -83,21 +83,21 @@ func diverges(t ast.Tree, blk int) bool {
     return s == ast.SRet || s == ast.SBreak || s == ast.SContinue
 }
 
-// Fx は写しの作業場（足す節・データ）
+// 写しの作業場（足す節・データ）
 type Fx struct {
     n0 int
     nb builder.Builder[ast.Node]
     db builder.Builder[int]
 }
 
-// fxNode は節を足してその添字
+// 節を足してその添字
 func fxNode(x mut Fx, n ast.Node) int {
     at := x.n0 + builder.Len(mut x.nb)
     builder.Push(mut x.nb, n)
     return at
 }
 
-// fxJoin は項の列 cs[lo:hi] を op の左結合の連鎖に（1 項ならその項）
+// 項の列 cs[lo:hi] を op の左結合の連鎖に（1 項ならその項）
 func fxJoin(x mut Fx, cs []int, lo int, hi int, op int, tok int) int {
     mut acc := cs[lo]
     for i <- iter.Range(lo + 1, hi) {
@@ -106,13 +106,13 @@ func fxJoin(x mut Fx, cs []int, lo int, hi int, op int, tok int) int {
     return acc
 }
 
-// fxBlock は式 e を唯一の文に持つ KBlock
+// 式 e を唯一の文に持つ KBlock
 func fxBlock(x mut Fx, e int, tok int) int {
     s := fxNode(mut x, ast.Node{ast.SExpr, tok, e, 0, 0, 0, 0, 0})
     return fxNode(mut x, ast.Node{ast.KBlock, tok, ast.PutList(mut x.db, []int{s}), 0, 0, 0, 0, 0})
 }
 
-// nilIn は節 n の op の連鎖（multi なら 2 項以上）に nilTestKind が want の項があるか
+// 節 n の op の連鎖（multi なら 2 項以上）に nilTestKind が want の項があるか
 func nilIn(t ast.Tree, n int, op int, want int, multi bool) bool {
     cs := chainOf(t, n, op)
     if multi && len(cs) < 2 {
@@ -126,7 +126,7 @@ func nilIn(t ast.Tree, n int, op int, want int, multi bool) bool {
     return false
 }
 
-// flowAt は節 nd を flowRound が写すか（下の ①〜③ の条件と同じ — 写す節が 1 つも無い周は節の表とデータの写しを作らずに返す）
+// 節 nd を flowRound が写すか（下の ①〜③ の条件と同じ — 写す節が 1 つも無い周は節の表とデータの写しを作らずに返す）
 func flowAt(t ast.Tree, nd ast.Node) bool {
     if nd.kind == ast.EIf {
         return nd.c < 0 && nilIn(t, nd.a, lexer.AmpersandAmpersand, 1, true) ||
@@ -144,7 +144,7 @@ func flowAt(t ast.Tree, nd ast.Node) bool {
     return false
 }
 
-// flowRound は木を 1 周写す（写したら changed）
+// 木を 1 周写す（写したら changed）
 func flowRound(t ast.Tree) (ast.Tree, bool) {
     n0 := len(t.nodes)
     mut any := false

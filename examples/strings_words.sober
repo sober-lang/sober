@@ -1,6 +1,6 @@
 package main
 
-// std/strings の語彙（0.7.0 便 2）と convert.ParseBool の実物: ヘッダ風の行を割って名前を大小を無視して比べる・
+// std/strings の語彙と convert.ParseBool の実物: ヘッダ風の行を割って名前を大小を無視して比べる・
 // クエリの真偽の旗・空白で割った語・拡張子の付け替え。空白と大小は ASCII だけを見る（Unicode の case folding は対象外）
 
 import "std/convert"

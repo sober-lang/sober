@@ -23,6 +23,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 | [std/base64](base64.ja.md) | base64（RFC 4648）の符号化と復号: 標準の字母（RFC 4648 4 節 — 詰め '=' つき）の Encode ⇄ Decode と、URL・ファイル名に安全な字母（RFC 4648 5 節 — '-' '\_'・詰めなし）のEncodeUrl ⇄ DecodeUrl。 |
 | [std/binary](binary.ja.md) | バイト列の語単位の読み（1 バイトずつの読みを 1 回の検査 + 1 回の load に）。 |
 | [std/builder](builder.ja.md) | コピーせずに成長する可変長の列 Builder[T]（積んでから Build で 1 本の slice にする — 添字で読み書きする大きな表なら std/table） |
+| [std/cli](cli.ja.md) | コマンド行の解析と使い方の文書: フラグ・位置引数・環境変数・コマンドを const の表で宣言し（BoolFlag・StrFlag・IntFlag・ChoiceFlag・ListFlag・Positional・Env・Command・App）、Main が引数の解析・`--help`・`--version`・誤用の印字・コマンドへの振り分けを持つ。 |
 | [std/compress/flate](compress-flate.ja.md) | DEFLATE（RFC 1951）の符号化（Encode）と復号（Decode — inflate.sober） |
 | [std/compress/gzip](compress-gzip.ja.md) | gzip（RFC 1952）の符号化と復号（中身は std/compress/flate） |
 | [std/convert](convert.ja.md) | 数値と文字列の変換（[language.md 37 節](../language.md)・[language.md 34 節](../language.md)の Format… / Parse…）。 |
@@ -37,6 +38,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 | [std/crypto/rsa](crypto-rsa.ja.md) | RSA の秘密鍵の読み（PKCS#8 の DER）と RSASSA-PSS（RFC 8017 8.1 — SHA-256・MGF1-SHA256）の署名と検証。 |
 | [std/crypto/sha256](crypto-sha256.ja.md) | SHA-256（FIPS 180-4）のインクリメンタル API。 |
 | [std/crypto/x25519](crypto-x25519.ja.md) | X25519（RFC 7748 5 節 — Curve25519 の Montgomery ladder）。 |
+| [std/env](env.ja.md) | 環境変数の宣言の表: プログラムが読む環境変数を const の表で宣言し（StrVar・IntVar・BoolVar・Table）、Load が入場で 1 回だけ全部を読んで検査し、凍った値の表（Values）を返す。 |
 | [std/hash](hash.ja.md) | ワンショット API のハッシュ（Sha256）。 |
 | [std/hash/crc32](hash-crc32.ja.md) | CRC-32（IEEE 802.3 の多項式）の検査和 |
 | [std/hex](hex.ja.md) | バイト列の小文字の 16 進表記（Format）と、その逆向きの読み（Parse） |
@@ -47,8 +49,9 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 | [std/layout](layout.ja.md) | @layout（[language.md 36 節](../language.md)）の裏方: 利用者は `layout.Decode[T](b, off)`・`layout.DecodeAt[T](b, off, i)`・`layout.Encode[T](mut out, v)`・`layout.Size[T]` を書き、loader の固定テンプレート（compiler/loader/layout.sober）が @layout の struct ごとの写しの関数（普通の Sober）を合成してその呼び出しに写す。 |
 | [std/math](math.ja.md) | float の数学（[language.md 37 節](../language.md)）: 基本演算で書けないものだけを組み込みで（sqrtsd・ビット列の読み替え）。 |
 | [std/net](net.ja.md) | TCP のリスナーと接続（[language.md 28 節](../language.md)の net）: 寿命は for の本体で言う（閉じる関数は無い）。 |
-| [std/os](os.ja.md) | プロセスと OS の API: 引数（Args）・子プロセス（Run）・環境変数（Getenv）・ファイルの属性と名前（WriteMode・Mkdir・Rename・ModTime）・眠り（Sleep） |
+| [std/os](os.ja.md) | プロセスと OS の API: 引数（Args）・子プロセス（Run・RunTo・RunToEnv）・環境変数（Getenv）・ファイルの属性と名前（WriteMode・Mkdir・Rename・Remove・RemoveDir・ModTime）・眠り（Sleep）・期限（Alarm）・単調時計（Monotonic） |
 | [std/pool](pool.ja.md) | スロットを使い回す資源のプール Pool[T]（region-domain-pool.md 2・4 節の最小形）。 |
+| [std/quick](quick.ja.md) | プロパティベーステスト: 選択の源 Src から値を引き（Int・Bool・Pick・Elem・Bytes・String・Runes・Slice）、Check がプロパティを試行ごとに呼ぶ。 |
 | [std/rand](rand.ja.md) | シードを明示する決定的な擬似乱数 Rand（暗号用途には使わない — 鍵は crypto.Rand） |
 | [std/sort](sort.ja.md) | 並べ替え（[language.md 34 節](../language.md)「並べ替え」の族）。 |
 | [std/strings](strings.ja.md) | Go の strings パッケージが仕様のオラクル。 |
@@ -108,6 +111,45 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`chacha20poly1305.Seal`](crypto-chacha20poly1305.ja.md#seal) — pt を暗号化して tag を付けたもの（暗号文 ‖ tag）。
 - [`chacha20poly1305.SealInto`](crypto-chacha20poly1305.ja.md#sealinto) — SealTo の宛先を呼び手の列 dst[at:] にした形（aesgcm.SealInto と同じ口 — 書いたバイト数・入らなければ / nonce の長さが違えば −1）。
 - [`chacha20poly1305.SealTo`](crypto-chacha20poly1305.ja.md#sealto) — head ‖ 暗号文 ‖ tag（平文 = pt ‖ tail — tail は呼び手が pt に繋いで写さずに渡す後ろの数バイト。
+- [`cli.App`](cli.ja.md#app) — プログラム全体の表（Main の入口）。
+- [`cli.BadValue`](cli.ja.md#badvalue) — 値が受けられない（want = 受ける値の説明 — `an integer`・`one of elf, ll, ir`・`an integer in 1..32` 等）
+- [`cli.Bool`](cli.ja.md#bool) — f が出たか
+- [`cli.BoolFlag`](cli.ja.md#boolflag) — 値を取らないフラグ（`--name` が出れば true）。
+- [`cli.Choice`](cli.ja.md#choice) — f の値（choices か dev のどれか。
+- [`cli.ChoiceFlag`](cli.ja.md#choiceflag) — 選択肢のどれかを取るフラグ。
+- [`cli.ChoiceOpt`](cli.ja.md#choiceopt) — f の値（無ければ nil）
+- [`cli.Command`](cli.ja.md#command) — コマンド 1 つ。
+- [`cli.Duplicate`](cli.ja.md#duplicate) — 繰り返しを受けないフラグが 2 回出た（first = 1 回目の添字）
+- [`cli.Env`](cli.ja.md#env) — プログラムが読む環境変数の宣言（文書だけ — 読むのは利用者のコード）
+- [`cli.Extra`](cli.ja.md#extra) — 位置引数の余り
+- [`cli.Format`](cli.ja.md#format) — Parse の誤り e の文面（r = Parse が返した Parsed）。
+- [`cli.Handler`](cli.ja.md#handler) — コマンドの本体（Main が解析の後に呼ぶ — 戻り値が終了コード）
+- [`cli.Int`](cli.ja.md#int) — f の値（Str と同じ規則 — 無い opt のフラグは panic — IntOpt で引く）
+- [`cli.IntFlag`](cli.ja.md#intflag) — 整数の値のフラグ（10 進）。
+- [`cli.IntOpt`](cli.ja.md#intopt) — f の値（無ければ nil）
+- [`cli.Is`](cli.ja.md#is) — 当たったコマンドが c か（Main を使わず Parse を直に呼ぶ人向け — Main は run で振り分ける）
+- [`cli.List`](cli.ja.md#list) — f の値の列（出た順 — 出なければ空）
+- [`cli.ListFlag`](cli.ja.md#listflag) — 繰り返して出せる文字列の値のフラグ（List は出た順の列 — 出なければ空）
+- [`cli.Main`](cli.ja.md#main) — app を os.Args で走らせる（Run と同じ — 引数が不正な UTF-8 なら印字して 2）
+- [`cli.Misdeclared`](cli.ja.md#misdeclared) — 表の宣言の誤り（予約の綴り・同じ綴りの 2 回の宣言・many でない位置引数が many の後・既定のコマンドと名前のあるコマンドの混在）
+- [`cli.Missing`](cli.ja.md#missing) — 必須のフラグ・位置引数・コマンドが無い（flag = `--name`・`<name>`・`<command>`）
+- [`cli.MissingValue`](cli.ja.md#missingvalue) — 値を取るフラグが末尾にあって値が無い
+- [`cli.Parse`](cli.ja.md#parse) — args（0 番 = プログラム名 — os.Args の並び）を app の表で読む。
+- [`cli.Parsed`](cli.ja.md#parsed) — 解析の結果（当たったコマンドと値の表）。
+- [`cli.Pos`](cli.ja.md#pos) — 位置引数 p（many でない — 無い optional は panic — PosOpt で引く）
+- [`cli.PosList`](cli.ja.md#poslist) — many の位置引数 p の列（出た順）
+- [`cli.PosOpt`](cli.ja.md#posopt) — 位置引数 p（無ければ nil）
+- [`cli.Positional`](cli.ja.md#positional) — 位置引数。
+- [`cli.Request`](cli.ja.md#request) — 予約の綴りの要求（`--help` `-h` `--help=dev` `--version` `--cli-spec` と `help` コマンド — word は要求の種類 `help` `help=dev` `version` `cli-spec`）。
+- [`cli.Run`](cli.ja.md#run) — app を args（0 番 = プログラム名）で走らせる: Parse → 文書の要求なら Format を標準出力へ書いて 0・使い方の誤りなら Format を標準エラーへ書いて 2・当たったコマンドの run の戻り値（run の無いコマンドは使い方を標準エラーへ書いて 2）
+- [`cli.Spec`](cli.ja.md#spec) — app の表の JSON（空白なし・宣言の順。
+- [`cli.Str`](cli.ja.md#str) — f の値（出なければ env・def の順。
+- [`cli.StrFlag`](cli.ja.md#strflag) — 文字列の値のフラグ。
+- [`cli.StrOpt`](cli.ja.md#stropt) — f の値（無ければ nil）
+- [`cli.Undeclared`](cli.ja.md#undeclared) — 引いた把手が当たったコマンドの表に無い・値の無いことがある把手を値の要る引き（Str・Int・Choice・Pos）で引いた
+- [`cli.UnknownCommand`](cli.ja.md#unknowncommand) — 表に無いコマンド（near は UnknownFlag と同じ）
+- [`cli.UnknownFlag`](cli.ja.md#unknownflag) — 表に無いフラグ（near = 編集距離 2 以内の最寄りの綴り — dev のフラグも含む）
+- [`cli.Usage`](cli.ja.md#usage) — name のコマンド（空なら App の全体・語の途中ならその下のサブコマンドの一覧）の使い方。
 - [`convert.FloatOutOfRange`](convert.ja.md#floatoutofrange) — ParseFloat の溢れ（値は ±Inf — Go の ErrRange と同じ）
 - [`convert.FormatBool`](convert.ja.md#formatbool) — b の綴り "true" / "false"（Go の strconv.FormatBool と同じ — ParseBool の対・補間 `${b}` と同じ綴り）
 - [`convert.FormatFixed`](convert.ja.md#formatfixed) — f を小数点以下 prec 桁で（Go の strconv.FormatFloat(f, 'f', prec, 64)・fmt の %.\<prec>f と同じ綴り — 正確な値を最近接・偶数へ丸める）
@@ -127,6 +169,25 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`crypto.Rand`](crypto.ja.md#rand) — OS の暗号論的な乱数 n バイト（getrandom — 呼ぶのはこの 1 か所だけ。
 - [`crypto.Select`](crypto.ja.md#select) — m が -1 なら a、0 なら b（m は NonZero などで作った mask だけ — 他の値は契約違反で結果は不定）
 - [`crypto.Wipe`](crypto.ja.md#wipe) — b の全バイトを 0 にする（用済みの鍵の後始末）
+- [`env.BadValue`](env.ja.md#badvalue) — 値が受けられない（want = 受ける値の説明 — `an integer`・`an integer in 1..65535`・`1, true, 0 or false`）
+- [`env.Bool`](env.ja.md#bool) — v の値
+- [`env.BoolVar`](env.ja.md#boolvar) — 真偽の環境変数（無ければ偽）
+- [`env.Format`](env.ja.md#format) — Load / Parse の誤り e の文面（1〜2 行 — 最後は改行）
+- [`env.Int`](env.ja.md#int) — v の値（Str と同じ規則 — 無い opt の変数は panic — IntOpt で引く）
+- [`env.IntOpt`](env.ja.md#intopt) — v の値（無ければ nil）
+- [`env.IntVar`](env.ja.md#intvar) — 整数の環境変数（10 進）。
+- [`env.InvalidUtf8`](env.ja.md#invalidutf8) — 値が不正な UTF-8
+- [`env.Load`](env.ja.md#load) — t の変数を全部プロセスの環境から読んで検査する（誤りは宣言の順で最初の 1 つ）。
+- [`env.Misdeclared`](env.ja.md#misdeclared) — 表の宣言の誤り（同じ名前の 2 回の宣言・def と opt の併記・空の名前）
+- [`env.Missing`](env.ja.md#missing) — opt でも def つきでもない変数が無い
+- [`env.Parse`](env.ja.md#parse) — t の変数を pairs（`NAME=value` の列 — environ と同じ形・同名は最初の 1 つ）から読んで検査する（Load の中身 — テストと再現の口）
+- [`env.Spec`](env.ja.md#spec) — t の表の JSON（空白なし・宣言の順。
+- [`env.Str`](env.ja.md#str) — v の値（値・def のどちらも無い opt の変数は panic — StrOpt で引く）
+- [`env.StrOpt`](env.ja.md#stropt) — v の値（無ければ nil）
+- [`env.StrVar`](env.ja.md#strvar) — 文字列の環境変数。
+- [`env.Table`](env.ja.md#table) — プログラムが読む環境変数の表（Load の入口）
+- [`env.Undeclared`](env.ja.md#undeclared) — 引いた把手が表に無い・値の無いことがある把手を値の要る引き（Str・Int）で引いた
+- [`env.Values`](env.ja.md#values) — 読んだ値の表。
 - [`flate.Bad`](compress-flate.ja.md#bad) — Decode の入力が DEFLATE の列でない（ブロックの型 3・stored の LEN と NLEN の不一致・Huffman の符号の長さの表が過剰 / 不完全・使えない記号〔長さ 286 / 287・距離 30 / 31〕・出力の頭より前を指す距離・最後のブロックの前で入力が尽きた〔切り詰め〕・最後のブロックの後に余りのバイト）
 - [`flate.BadLevel`](compress-flate.ja.md#badlevel) — Encode の level が 0〜9 の外（呼び手の契約違反 — panic ラベル。
 - [`flate.Decode`](compress-flate.ja.md#decode) — DEFLATE（RFC 1951 — 頭も検査和もない生の圧縮列。
@@ -312,12 +373,19 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`net.Recv`](net.ja.md#recv) — c の受信を切片ずつ k へ渡す（失敗しうる生成元 — `for chunk <- net.Recv(c)? { … }`）。
 - [`net.Send`](net.ja.md#send) — b を全部 c へ送る（同期 — 短い書きは続きから・MSG\_NOSIGNAL で相手が閉じた後の書きは io.Closed）
 - [`net.Serve`](net.ja.md#serve) — l の接続を受けるたびに接続 1 本 = task 1 本で h を走らせる（accept の輪は std が持つ — ワーカーごとに 1 本・l と同じ番地に SO\_REUSEPORT で足した listener で受ける）。
+- [`os.Alarm`](os.ja.md#alarm) — ms ミリ秒後に SIGALRM でプロセスを終わらせる（既定の動作のまま — 親から見た終了コードは 128 + 14 = 142。
+- [`os.AppendFile`](os.ja.md#appendfile) — path の末尾に b を書き足す（open(2) の O\_WRONLY | O\_CREAT | O\_APPEND | O\_CLOEXEC — 無ければ 0644 で作る）。
 - [`os.Args`](os.ja.md#args) — プログラムの引数（0 番 = プログラム名 — Go の os.Args と同じ並び）。
 - [`os.Getenv`](os.ja.md#getenv) — 環境変数 name の値（無ければ nil — 空の値 `NAME=` は "" で、無いのと区別する）。
 - [`os.Mkdir`](os.ja.md#mkdir) — path のディレクトリを作る（mkdir(2) — 許可の bit は 0o755。
 - [`os.ModTime`](os.ja.md#modtime) — path の更新時刻（stat(2) の st\_mtim — Unix エポック〔1970 年 1 月 1 日 UTC〕からの ns。
+- [`os.Monotonic`](os.ja.md#monotonic) — 単調時計の値（ns — 起点は不定で、同じプロセスの中の 2 点の差だけに意味がある。
+- [`os.Remove`](os.ja.md#remove) — path のファイルを消す（unlink(2) — ディレクトリは消さない: io.Other{errno: 21}〔EISDIR〕。
+- [`os.RemoveDir`](os.ja.md#removedir) — path の空のディレクトリを消す（rmdir(2) — 中身があれば io.Other{errno: 39}〔ENOTEMPTY〕。
 - [`os.Rename`](os.ja.md#rename) — from を to へ付け替える（rename(2) — 同じファイルシステムの中では原子的で、to が既にあれば置き換える）。
 - [`os.Run`](os.ja.md#run) — path のプログラムを args（argv[1:] — argv[0] は path）で子プロセスとして走らせ、終了を待って終了コードを返す（シグナルで死んだら 128 + 番号 — シェルと同じ）。
+- [`os.RunTo`](os.ja.md#runto) — Run と同じで、子の標準出力を out・標準エラーを errOut のファイルへ書く（どちらも無ければ 0644 で作り、あれば空にしてから — 同じ path を渡せば 2 本の流れが 1 つのファイルに書いた順で混ざる）。
+- [`os.RunToEnv`](os.ja.md#runtoenv) — RunTo と同じで、子の環境を「env（`NAME=値` の列）→ 親の環境のうち env に無い名前」にする（同名は env が勝つ。
 - [`os.Sleep`](os.ja.md#sleep) — ms ミリ秒眠る（負の値は 0 と同じ）。
 - [`os.SleepExpired`](os.ja.md#sleepexpired) — Sleep と同じで、期限で早く起きたら true（どの待ちが期限で切れたかを観測する関数）
 - [`os.WriteMode`](os.ja.md#writemode) — path のファイルの許可の bit（mode — chmod(2) の 12 bit: 0o755 = 493 等）を書く。
@@ -345,6 +413,27 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`pool.Set`](pool.ja.md#set) — h のスロットを v で置き換える。
 - [`pool.Store`](pool.ja.md#store) — s の i 番目を v にする。
 - [`pool.StoreRaw`](pool.ja.md#storeraw) — s の i 番目を v にする（生のアクセサ — 世代に触れず、値の範囲の制限も無い。
+- [`quick.Assume`](quick.ja.md#assume) — 試行を捨てる条件: cond が偽ならこの試行は不成立（失敗とは数えない）。
+- [`quick.BadArg`](quick.ja.md#badarg) — `quick:` の指示の引数の形が違う
+- [`quick.BadEnv`](quick.ja.md#badenv) — SOBER\_QUICK\_SEED / SOBER\_QUICK\_TRIALS の値が整数でない（trials は 1 以上）
+- [`quick.BadRange`](quick.ja.md#badrange) — 引き出しの範囲が空（Int の lo > hi・Pick の n \< 1・Elem の空の列・Slice の負の max）
+- [`quick.Bool`](quick.ja.md#bool) — 真偽（シュリンクは偽の側へ）
+- [`quick.Bytes`](quick.ja.md#bytes) — 長さ max 以下のバイト列（シュリンクは短く・0 のバイトへ）
+- [`quick.Check`](quick.ja.md#check) — prop を trials 回（既定 100・SOBER\_QUICK\_TRIALS で上書き）試す。
+- [`quick.Crashed`](quick.ja.md#crashed) — fuzz がプロパティの中の panic（exit = 101）かハング（142 — 試行の期限の SIGALRM）を見つけた（シュリンクした列は panic の前に標準エラーへ印字済み）
+- [`quick.Elem`](quick.ja.md#elem) — xs の要素の 1 つ（シュリンクは先頭へ）
+- [`quick.Falsified`](quick.ja.md#falsified) — プロパティが偽になった（反例は panic の前に標準エラーへ印字済み）
+- [`quick.Int`](quick.ja.md#int) — [lo, hi] の整数（両端を含む — 値の数は 2^62 まで）。
+- [`quick.Named`](quick.ja.md#named) — 名前 name のハッシュと SOBER\_QUICK\_SEED を混ぜたシードの源（テストごとに別の列にする口）
+- [`quick.New`](quick.ja.md#new) — 選択の源（シード = SOBER\_QUICK\_SEED — 無ければ 0）
+- [`quick.Pick`](quick.ja.md#pick) — [0, n) の添字（シュリンクは 0 へ）— 腕を選ぶ口: `switch quick.Pick(mut q, 3) { case 0: … }`
+- [`quick.Reporting`](quick.ja.md#reporting) — シュリンクした列を再生して報告している回か（`_test.sober` の Check の写し先 — プロパティの偽をこの回だけ部分式で印字する。
+- [`quick.Runes`](quick.ja.md#runes) — 長さ max 文字以下の文字列（Unicode のスカラー値全部から — 妥当な UTF-8 だけ。
+- [`quick.Seed`](quick.ja.md#seed) — シード seed そのままの源（環境変数を読まない）
+- [`quick.Slice`](quick.ja.md#slice) — 長さ max 以下の列（要素は g が引く — g の中で同じ源から引く）。
+- [`quick.Src`](quick.ja.md#src) — 選択の源（引き出しの状態 — 利用者は New / Seed で作り、mut で Check と引き出しに渡す）
+- [`quick.String`](quick.ja.md#string) — 長さ max 文字以下の印字可能な ASCII の文字列（シュリンクは短く・'a' へ）
+- [`quick.TooManyDiscards`](quick.ja.md#toomanydiscards) — Assume が捨てた試行が多すぎる（成立 trials 件に対して 10 倍を超えた — 引く値の範囲が条件に比べて広すぎる）
 - [`rand.Bool`](rand.ja.md#bool) — 真偽を 1 つ
 - [`rand.Int62`](rand.ja.md#int62) — [0, 2^62) の値（Next 2 回 — 上位 30 bit + 下位 32 bit）
 - [`rand.Intn`](rand.ja.md#intn) — [0, n) の値（n は 1 以上 — 0 以下は panic(NonPositiveBound{n})）。
@@ -352,7 +441,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`rand.Next`](rand.ja.md#next) — 次の 32 bit の値（[0, 2^32)）
 - [`rand.NonPositiveBound`](rand.ja.md#nonpositivebound) — Intn の上限 n が 1 未満（呼び手の契約違反 — panic ラベル。
 - [`rand.Rand`](rand.ja.md#rand) — シードを明示する決定的な擬似乱数（`xoshiro128**` — Blackman / Vigna。
-- [`rand.Split`](rand.ja.md#split) — r から独立した列の Rand を作る（r も 1 歩進む — 生成器の部分木に別のシードを配る用途）
+- [`rand.Split`](rand.ja.md#split) — r から独立した列の Rand を作る（r も 1 歩進む — ジェネレータの部分木に別のシードを配る用途）
 - [`record.AesGcm`](tls-record.ja.md#aesgcm) — cipher suite の番号（RFC 9846 B.4 — v1 は 2 つ・どちらも SHA-256）
 - [`record.Alert`](tls-record.ja.md#alert) — record 層の誤り（desc = 相手へ送る alert の番号）
 - [`record.AlertBadMac`](tls-record.ja.md#alertbadmac) — alert の番号（RFC 9846 6）
@@ -441,6 +530,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`table.Len`](table.ja.md#len) — 積んだ要素の個数
 - [`table.Push`](table.ja.md#push) — x を末尾に積む
 - [`table.PushAll`](table.ja.md#pushall) — xs を順に末尾に積む（Push を要素ごとに呼ぶのと同じ結果 — chunk ごとにまとめて書く）
+- [`table.Read`](table.ja.md#read) — t の [i, i + n) を dst の [0, n) へ写す（Get を n 回呼んで dst に書くのと同じ値 — chunk ごとにまとめて写す）。
 - [`table.Set`](table.ja.md#set) — i 番目（0 起点）の要素を x にする。
 - [`table.Table`](table.ja.md#table) — 添字で読み書きできる可変長の列（[language.md 21 節](../language.md)の緩和策 2 の添字版）。
 - [`task.Cause`](task.ja.md#cause) — 子の死因（不透明 — 中身は実装が運ぶ実行時の値。

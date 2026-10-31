@@ -1,0 +1,10 @@
+ok   testdata/mutate/calc.TestBoth
+ok   testdata/mutate/calc.TestMix
+ok   testdata/mutate/calc.TestSign
+ok   testdata/mutate/calc.TestSum
+mutate: testdata/mutate/calc 87.5% killed (21 of 24 reached) · 1 unreached · 1 timeout · 1 ignored
+  testdata/mutate/calc/calc.sober:17:10 > → >=             survived  (reached by TestSign)
+  testdata/mutate/calc/calc.sober:20:5 cond → true        survived  (reached by TestSign)
+  testdata/mutate/calc/calc.sober:20:10 < → <=             survived  (reached by TestSign)
+mutate: testdata/mutate/calc/testdata/mutate.ignore: no mutant at testdata/mutate/calc/calc.sober:99:1 < → <=
+4 passed, 0 failed

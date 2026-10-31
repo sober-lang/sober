@@ -1,6 +1,6 @@
 package main
 
-// 出力しない子の導出（report-994 F4 — lower/cancel.sober の outBad）の網: 子は関数値（struct の関数型の欄 — 間接呼び出し）を通してだけ印字する。
+// 出力しない子の導出（lower/cancel.sober の outBad）の網: 子は関数値（struct の関数型の欄 — 間接呼び出し）を通してだけ印字する。
 // 導出は間接呼び出しを「番地を取られた全関数の合併」で読むので、印字する関数値が 1 つでもあれば子は区間を持ち、stdout は spawn の木の先行順のまま。
 // 子 i は (4 - i) × 5 ms 眠ってから書く（区間を落とすと書き終わりの順 = 逆順に崩れる — 逐次の双子 task_print_indirect_seq と seqpar が照合）
 

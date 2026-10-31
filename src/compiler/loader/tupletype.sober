@@ -10,7 +10,7 @@ import "std/iter"
 
 const PAR_TUPLE = 18
 
-// tupleTypeAt は置き場の外の多値の型の最初の位置（無ければ None）
+// 置き場の外の多値の型の最初の位置（無ければ None）
 func tupleTypeAt(cx Cx) diag.Pos {
     pp := pkgOf(cx, "std/task")
     for f <- iter.Range(0, len(cx.trees)) {
@@ -22,7 +22,7 @@ func tupleTypeAt(cx Cx) diag.Pos {
     return diag.None()
 }
 
-// tupleTypeIn はファイル f の置き場の外の多値の型の最初の字句（無ければ -1。pp = std/task の package 番号 — finpar.sober の子も同じ関数を呼ぶ）
+// ファイル f の置き場の外の多値の型の最初の字句（無ければ -1。pp = std/task の package 番号 — finpar.sober の子も同じ関数を呼ぶ）
 func tupleTypeIn(cx Cx, pp int, f int) int {
     t := cx.trees[f]
     mut ok := mut []bool{}
@@ -52,7 +52,7 @@ func tupleTypeIn(cx Cx, pp int, f int) int {
     return 0 - 1
 }
 
-// isParTask は型名 n（"Handle" か "ref.Task"）がファイル f から見て std/task（package 番号 pp）の Task か
+// 型名 n（"Handle" か "ref.Task"）がファイル f から見て std/task（package 番号 pp）の Task か
 func isParTask(cx Cx, f int, pp int, n string) bool {
     b := bytes(n)
     mut dot := -1
@@ -67,7 +67,7 @@ func isParTask(cx Cx, f int, pp int, n string) bool {
     return cut(n, dot + 1, len(b)) == "Handle" && fileImportOf(cx, f, cut(n, 0, dot)) == pp
 }
 
-// fallibleShape は組の節 a が `(T, error?)` の形（2 つ・2 つ目が `error?`）か
+// 組の節 a が `(T, error?)` の形（2 つ・2 つ目が `error?`）か
 func fallibleShape(t ast.Tree, a int) bool {
     l := t.nodes[a].a
     if ast.ListLen(t, l) != 2 {

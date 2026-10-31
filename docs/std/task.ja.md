@@ -103,10 +103,10 @@ type NotLowered panic
 ```sober
 @errors(ChildDied)
 @effects(block)
-func Run[T](f func(Scope) T, budget int?, wait bool?, deadline int?) (T, error?)
+func Run[T](f func(Scope) T, budget int?, wait bool?, deadline int?, backlog int?) (T, error?)
 ```
 
-region を 1 段開き、本体 f をハンドルで走らせる。子が全部決着してから戻り、死んだ子がいれば err = ChildDied、無くて Join も Try もしなかった失敗があれば（生んだ順で最初のもの）err = その子の err。budget = この scope の天井（バイト・省略可 — 省略なら天井のノードを作らず、外の scope の天井だけが掛かる）。wait = true なら天井に入れない直接の子は縮退せずに入れるまで待つ（宣言 = 本当の上限 — [language.md 11 節](../language.md)「wait」。true / false の字面だけ・省略 = 外の scope の方針を継ぐ〔既定 = 縮退〕）。deadline = 開いた時点からの期限（相対・省略可）: 過ぎたら scope の中〔子孫の task も〕の I/O 呼び出しが io.Expired を返す — 走っている仕事は切らない（待ちの上限であって実行時間の上限ではない — [language.md 28 節](../language.md)「デッドライン」。入れ子は早い方）
+region を 1 段開き、本体 f をハンドルで走らせる。子が全部決着してから戻り、死んだ子がいれば err = ChildDied、無くて Join も Try もしなかった失敗があれば（生んだ順で最初のもの）err = その子の err。budget = この scope の天井（バイト・省略可 — 省略なら天井のノードを作らず、外の scope の天井だけが掛かる）。wait = true なら天井に入れない直接の子は縮退せずに入れるまで待つ（宣言 = 本当の上限 — [language.md 11 節](../language.md)「wait」。true / false の字面だけ・省略 = 外の scope の方針を継ぐ〔既定 = 縮退〕）。deadline = 開いた時点からの期限（相対・省略可）: 過ぎたら scope の中〔子孫の task も〕の I/O 呼び出しが io.Expired を返す — 走っている仕事は切らない（待ちの上限であって実行時間の上限ではない — [language.md 28 節](../language.md)「デッドライン」。入れ子は早い方）。backlog = この scope の中で生んだ子のうち、ワーカーの列に積んでおける未着手の本数（1〜255 に丸める・省略 = 外の scope から継ぐ〔既定 255〕）: 越えると生んだ task は譲って子をその場で先に走らせる（値は変わらない — 生む速さが掃く速さを上回る間の背圧。[language.md 11 節](../language.md)「未着手の子の上限」）。子の task も継ぐ
 
 失敗のラベル: [`ChildDied`](#childdied)
 
@@ -316,6 +316,8 @@ type LedgerView struct {
     waits int
     maxWait int
     aged int
+    backlog int
+    backlogYield int
     pools []PoolView
 }
 ```
@@ -327,6 +329,8 @@ type LedgerView struct {
 - `waits` — wait の scope で入場を待った回数（[language.md 11 節](../language.md)「wait」）
 - `maxWait` — 走れるようになってから走るまでの待ちの最大（ns・全ワーカー — 読むと 0 に戻る。[language.md 28 節](../language.md) ring の道「飽和下の待ちの上限」）
 - `aged` — 待ちの上限が効いて積みの底から取った回数の累計（飽和の印）
+- `backlog` — 今の未着手の子の数（全ワーカーの列の和 — ワーカーあたり 255 まで。[language.md 11 節](../language.md)「未着手の子の上限」）
+- `backlogYield` — 列があふれて子をその場で先に走らせた（生んだ task が譲った）回数の累計（背圧が効いた印）
 
 ## Ledger
 

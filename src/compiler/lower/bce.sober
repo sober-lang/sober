@@ -1,6 +1,6 @@
 package lower
 
-// 分岐の畳み込みと境界検査の消去（性能投資 M3）: GVN の後の SSA に掛ける。
+// 分岐の畳み込みと境界検査の消去: GVN の後の SSA に掛ける。
 // condbr の条件が「その点で分かっている」なら br に畳む（到達しなくなったブロックは P4 の optBlocks が消す）。分かっている = 証明級だけ:
 //   ①条件が定数 ②条件の値そのものが、支配木の上の condbr の then / else の辺（行き先の前任がその condbr だけ）で真 / 偽と決まっている
 //     （GVN が同じ比較を 1 つの値にまとめるので、`xs[i]` を 2 度引く検査の 2 度目はここで消える）
@@ -14,7 +14,7 @@ package lower
 import "desugar"
 import "std/iter"
 
-// bceModule はモジュールの全関数に分岐の畳み込みを掛ける
+// モジュールの全関数に分岐の畳み込みを掛ける
 func bceModule(st mut St) {
     mut f := st.fhead
     while f != -1 {
@@ -25,7 +25,7 @@ func bceModule(st mut St) {
     }
 }
 
-// BceW は関数の作業域: 値 → 定義の命令（-1 = 命令でない）・値 → 引数のブロック番号と位置（-1 = 引数でない）
+// 関数の作業域: 値 → 定義の命令（-1 = 命令でない）・値 → 引数のブロック番号と位置（-1 = 引数でない）
 type BceW struct {
     defIns mut []int
     defBlk mut []int
@@ -93,11 +93,11 @@ func bceFunc(st mut St, f FnRef) {
         optDce(mut st, f)
         optRenumber(mut st, f)
     }
-    // 残った定数添字の検査の版分け（段 2 — bver.sober）
+    // 残った定数添字の検査の版分け（bver.sober）
     bverFunc(mut st, f)
 }
 
-// bceKnown は番号 bb のブロックの点で値 c（条件）が分かっていれば 1 / 0（分からなければ -1）
+// 番号 bb のブロックの点で値 c（条件）が分かっていれば 1 / 0（分からなければ -1）
 func bceKnown(st mut St, w mut m2rW, bw mut BceW, bb int, c int) int {
     d := bw.defIns[c]
     if d >= 0 && irInsOp(mut st, InsRef(d)) == OpConst {
@@ -146,7 +146,7 @@ func bceKnown(st mut St, w mut m2rW, bw mut BceW, bb int, c int) int {
     return -1
 }
 
-// bceFromLt は fc が真と分かっているとき、c の値（分からなければ -1）: fc = `lt x, y`・c = `uge x, y` → 0・`ult x, y` → 1（x ≥ 0）
+// fc が真と分かっているとき、c の値（分からなければ -1）: fc = `lt x, y`・c = `uge x, y` → 0・`ult x, y` → 1（x ≥ 0）
 func bceFromLt(st mut St, w mut m2rW, bw mut BceW, fc int, c int) int {
     fd := bw.defIns[fc]
     cd := bw.defIns[c]
@@ -165,7 +165,7 @@ func bceFromLt(st mut St, w mut m2rW, bw mut BceW, fc int, c int) int {
     return if k == CUge { 0 } else if k == CUlt { 1 } else { -1 }
 }
 
-// bceFromAdd は fc が side（1 = 真・0 = 偽）と分かっているとき、c の値（分からなければ -1）: fc が `x + k <u y` を言っていて（`uge a, y` が偽か
+// fc が side（1 = 真・0 = 偽）と分かっているとき、c の値（分からなければ -1）: fc が `x + k <u y` を言っていて（`uge a, y` が偽か
 // `ult a, y` が真・a = `add x, k`・k は非負の定数）、c = `uge x, y` → 0・`ult x, y` → 1（x ≥ 0）。論拠: x と k は 2^63 未満なので符号なしの
 // x + k は桁あふれせず、x ≤ x + k <u y（回転の `perm1[i] = perm1[i + 1]`）
 func bceFromAdd(st mut St, w mut m2rW, bw mut BceW, fc int, side int, c int) int {
@@ -201,7 +201,7 @@ func bceFromAdd(st mut St, w mut m2rW, bw mut BceW, fc int, side int, c int) int
     return if k == CUge { 0 } else if k == CUlt { 1 } else { -1 }
 }
 
-// bceFromConst は fc が side（1 = 真・0 = 偽）と分かっているとき、c の値（分からなければ -1）: fc が `c2 <u y` を言っていて（`uge c2, y` が偽か
+// fc が side（1 = 真・0 = 偽）と分かっているとき、c の値（分からなければ -1）: fc が `c2 <u y` を言っていて（`uge c2, y` が偽か
 // `ult c2, y` が真・c2 は定数）、c = `uge c1, y` → 0・`ult c1, y` → 1（c1 は c の第 1 被演算子の定数 — 0 ≤ c1 ≤ c2）。論拠: c1 ≤u c2 <u y
 func bceFromConst(st mut St, bw mut BceW, fc int, side int, c int, c1 int) int {
     fd := bw.defIns[fc]
@@ -223,7 +223,7 @@ func bceFromConst(st mut St, bw mut BceW, fc int, side int, c int, c1 int) int {
     return if k == CUge { 0 } else { 1 }
 }
 
-// bceCv は値 v が定数の式（定数と、定数どうしの add / mul — 全展開の写しの添字 `o + k` は gvn が畳まないのでこの形で残る）なら
+// 値 v が定数の式（定数と、定数どうしの add / mul — 全展開の写しの添字 `o + k` は gvn が畳まないのでこの形で残る）なら
 // その値（0 以上 BCE_CMAX 以下だけ — 途中も同じ範囲で桁あふれしない）、そうでなければ -1。式の木は幅優先で BCE_CNODES 個まで集めて後ろから畳む
 // （mut 引数の関数の再帰は並列の束の閉包で自己 check が def error になるので作業列で）
 func bceCv(st mut St, bw mut BceW, v int) int {
@@ -287,7 +287,7 @@ func bceCv(st mut St, bw mut BceW, v int) int {
 const BCE_CNODES = 15
 const BCE_CMAX = 1 << 30
 
-// bceNonneg は値 x が常に 0 以上か（非負の定数・ループの頭の帰納変数 — 入りの値が全部「非負の定数か自分 + 正の定数」）
+// 値 x が常に 0 以上か（非負の定数・ループの頭の帰納変数 — 入りの値が全部「非負の定数か自分 + 正の定数」）
 func bceNonneg(st mut St, w mut m2rW, bw mut BceW, x int, depth int) bool {
     d := bw.defIns[x]
     if d >= 0 {
@@ -328,7 +328,7 @@ func bceNonneg(st mut St, w mut m2rW, bw mut BceW, x int, depth int) bool {
     return seen > 0
 }
 
-// bceArgOk は辺の実引数の列 l の ix 番目が「非負の定数」か「x + 正の定数」か
+// 辺の実引数の列 l の ix 番目が「非負の定数」か「x + 正の定数」か
 func bceArgOk(st mut St, w mut m2rW, bw mut BceW, l int, ix int, x int, depth int) bool {
     if l < 0 || ix >= desugar.HeapGet(mut st.d, l) {
         return false
@@ -358,7 +358,7 @@ func bceArgOk(st mut St, w mut m2rW, bw mut BceW, l int, ix int, x int, depth in
     return false
 }
 
-// bceGuarded は番号 bb のブロックが「`lt x, _` が真の辺」に支配されているか（行き先の前任がその condbr だけの then の辺 — 値 → 定義の命令の表 def。promote も使う）
+// 番号 bb のブロックが「`lt x, _` が真の辺」に支配されているか（行き先の前任がその condbr だけの then の辺 — 値 → 定義の命令の表 def。promote も使う）
 func bceGuarded(st mut St, w mut m2rW, def mut []int, bb int, x int) bool {
     mut cb := bb
     while cb > 0 && w.idom[cb] >= 0 && w.idom[cb] != cb {

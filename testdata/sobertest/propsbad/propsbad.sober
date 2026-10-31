@@ -1,0 +1,5 @@
+package propsbad
+
+func One() int {
+    return 1
+}

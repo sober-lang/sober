@@ -1,0 +1,40 @@
+package main
+
+// std/quick の fuzz の駆動役の網（scripts/quickfuzz.sh）: Check 0 = 稀な panic（束の二分探索）・1 = ハング（試行の期限）・2 = 性質の偽（束の子の中で縮める）・
+// 3 = 失敗しない（期限まで回って exit 0）。引数なしでは走らせない（Check 1 のハングに期限が無い）
+
+import "std/quick"
+
+func spin(n int) int {
+    mut i := 0
+    while i >= 0 {
+        i = (i + n) % 1000
+    }
+    return i
+}
+
+func main() {
+    mut q := quick.Seed(0)
+    quick.Check(mut q, () => {
+        xs := quick.Slice(mut q, 8, () => quick.Int(mut q, 0, 20))
+        if len(xs) >= 3 && xs[0] == 17 && xs[2] == 5 {
+            ys := []int{1}
+            ys[xs[1] + 5] == 1
+        } else {
+            true
+        }
+    })
+    quick.Check(mut q, () => {
+        n := quick.Int(mut q, 0, 50)
+        if n > 40 { spin(n) == 0 } else { true }
+    })
+    quick.Check(mut q, () => {
+        a := quick.Int(mut q, 0, 1000)
+        b := quick.Int(mut q, 0, 1000)
+        a + b < 1500
+    })
+    quick.Check(mut q, () => {
+        xs := quick.Bytes(mut q, 16)
+        len(xs) <= 16
+    })
+}

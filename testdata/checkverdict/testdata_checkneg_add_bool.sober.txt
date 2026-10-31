@@ -1,2 +1,3 @@
+sober: type error at testdata/checkneg/add_bool.sober:5:15
 {"errors":[{"msg":"type error"}],"ok":false}
 exit=1

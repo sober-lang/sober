@@ -1,0 +1,244 @@
+package builder
+
+// コピーせずに成長する可変長の列 Builder[T]（積んでから Build で 1 本の slice にする — 添字で読み書きする大きな表なら std/table）
+
+// コピーせずに成長する可変長の列（language.md 21 節の緩和策 2）。
+// 固定長チャンクの鎖に積み、Build で連続 slice へ 1 回だけコピーする — 同じ region で
+// 他の割り当てと交錯して成長しても、成長のコピーによるゴミが出ない（総コスト O(n)）。
+//
+//     mut nb := builder.Builder[Node]{}
+//     builder.Push(mut nb, n)
+//     nodes := builder.Build(mut nb)
+//
+// 表現:
+// - chunks は chunk ヘッダの列。初回の Push で空ヘッダ seed の写しを seeds 本まとめて積み、使い切ったら同じ本数を足す（倍々）
+// - chunk k の容量は 8 << k を maxChunk で頭打ち（8, 16, …, 512, 1024, 1024, …）。新しい chunk は seed へ容量ぶん連続 append して確保し
+//   （seed は Builder の region にあるので、確保先は Push を呼んだ深さに依らない）、以降は添字で書く
+// - 頭打ちは最後の chunk の空き（倍々のままだと最大で積んだ量と同じだけ）を maxChunk 未満に抑える — 確保は書いて埋めるので、空きもそのまま頁を触る
+//   （json.Encode の作業域: 8.4 KB の本文で 16 KB → 9 KB）
+type Builder[T] struct {
+    chunks mut []mut []T
+    // 空の mut ヘッダ。ゼロ値リテラル `Builder[T]{}` が束縛の region に作る — chunk の seed はこの写しなので、
+    // Push を束縛より深い位置（再帰の中・式ブロックの中）から呼んでも seed は Builder の region に乗る
+    // （mut slice の append はヘッダの region へ書く。同じ空ヘッダからの 2 回目以降の append は必ずコピー — 21 節）
+
+    seed mut []T
+    cur int
+    fill int
+    cap int
+    n int
+}
+
+const seeds = 16
+
+// chunk の容量の頭打ち（要素の数）。8 << k の倍々はここで止まり、以降の chunk はこの大きさ（先頭の 7 本の容量の和は minBase）
+const maxChunk = 1024
+const minBase = 1016
+
+// x を末尾に積む（速い道 = 今の chunk に空きがある — 呼び出し点に展開される大きさに保つ。初期化と新しい chunk は pushSlow）
+@effects()
+func Push[T](b mut Builder[T], x T) {
+    if b.fill < b.cap {
+        mut c := b.chunks[b.cur]
+        c[b.fill] = x
+        b.fill = b.fill + 1
+        b.n = b.n + 1
+    } else {
+        pushSlow(mut b, x)
+    }
+}
+
+// pushSlow は Push の遅い道（今の chunk が満ちている — 初回の Push は cap = fill = 0 でここへ来る）: 初回なら seed の写しを積み、新しい chunk を確保して x を先頭に置く
+func pushSlow[T](b mut Builder[T], x T) {
+    if len(b.chunks) == 0 {
+        b.cur = 0 - 1
+    }
+    if b.cur + 1 >= len(b.chunks) {
+        m := if len(b.chunks) == 0 { seeds } else { len(b.chunks) }
+        mut i := 0
+        while i < m {
+            b.chunks = append(b.chunks, b.seed)
+            i += 1
+        }
+    }
+    b.cur = b.cur + 1
+    b.cap = if b.cap == 0 { 8 } else if b.cap >= maxChunk { maxChunk } else { b.cap * 2 }
+    mut c := b.chunks[b.cur]
+    mut j := 0
+    while j < b.cap {
+        c = append(c, x)
+        j += 1
+    }
+    b.chunks[b.cur] = c
+    b.fill = 1
+    b.n = b.n + 1
+}
+
+// xs の要素を順に末尾に積む（Push を要素ごとに呼ぶのと同じ結果 — chunk の空きへまとめて写す: 呼び出しと chunk の出し入れが
+// 要素ごとでなく chunk ごと。シリアライザ・パーサの積みの絶対値の的）
+@effects()
+func PushAll[T](b mut Builder[T], xs []T) {
+    n := len(xs)
+    // 速い道 = 今の chunk に全部収まる（JSON の欄名・短い文字列 — 呼び出し点に展開される大きさに。収まらない分は pushAllSlow）
+    if n > 0 && n <= b.cap - b.fill {
+        mut c := b.chunks[b.cur]
+        f := b.fill
+        mut j := 0
+        while j < n {
+            c[f + j] = xs[j]
+            j += 1
+        }
+        b.fill = f + n
+        b.n = b.n + n
+    } else if n > 0 {
+        pushAllSlow(mut b, xs)
+    }
+}
+
+// pushAllSlow は PushAll の遅い道（chunk をまたぐ — chunk の空きへまとめて写し、満ちたら Push が新しい chunk を作る）
+func pushAllSlow[T](b mut Builder[T], xs []T) {
+    mut i := 0
+    while i < len(xs) {
+        if len(b.chunks) == 0 || b.fill == b.cap {
+            // 新しい chunk は Push が作る（最初の 1 要素ごと）
+            Push(mut b, xs[i])
+            i += 1
+        } else {
+            mut c := b.chunks[b.cur]
+            m := if b.cap - b.fill < len(xs) - i { b.cap - b.fill } else { len(xs) - i }
+            f := b.fill
+            mut j := 0
+            while j < m {
+                c[f + j] = xs[i + j]
+                j += 1
+            }
+            b.fill = f + m
+            b.n = b.n + m
+            i += m
+        }
+    }
+}
+
+// s のバイト列を末尾に積む（PushAll(b, bytes(s))）
+@effects()
+func PushString(b mut Builder[byte], s string) {
+    PushAll(mut b, bytes(s))
+}
+
+// w の下の k バイトを下のバイトから順に末尾に積む（Push(b, byte(w & 255)) と w = w >> 8 を k 回くり返すのと同じ結果）。k ≤ 0 なら何もしない。
+// k > 8 なら 9 バイト目からは算術右シフトの埋め（w が負なら 255・でなければ 0）。今の chunk に k バイトの空きがあれば、chunk の出し入れと
+// 空きの検査は 1 回だけ（10 進の桁や短い字面を 1 語に詰めてから積む形 — json の数の書き出し）
+@effects()
+func PushWord(b mut Builder[byte], w int, k int) {
+    if k > 0 && k <= b.cap - b.fill {
+        mut c := b.chunks[b.cur]
+        f := b.fill
+        mut x := w
+        mut j := 0
+        while j < k {
+            c[f + j] = byte(x & 255)
+            x = x >> 8
+            j += 1
+        }
+        b.fill = f + k
+        b.n = b.n + k
+    } else {
+        pushWordSlow(mut b, w, k)
+    }
+}
+
+// pushWordSlow は PushWord の遅い道（今の chunk に k バイトの空きが無い — 1 バイトずつ Push。速い道を呼び出し点に展開される大きさに保つ）
+func pushWordSlow(b mut Builder[byte], w int, k int) {
+    mut x := w
+    mut j := 0
+    while j < k {
+        Push(mut b, byte(x & 255))
+        x = x >> 8
+        j += 1
+    }
+}
+
+// 積んだ要素の個数
+@effects()
+func Len[T](b mut Builder[T]) int {
+    return b.n
+}
+
+// i 番目（0 起点）に積んだ要素。i が範囲外（i < 0 か Len 以上）なら添字の境界検査で panic する
+@effects()
+func Get[T](b mut Builder[T], i int) T {
+    ok := i >= 0 && i < b.n
+    // 範囲外は探索を 0 番で回し（巨大な i で容量の倍々が溢れないように）、chunk の列の外を指させて境界検査に落とす
+    // （chunk の中身は確保時の写しで埋まっているので、fill 以降も読めてしまう）
+    j := if ok { i } else { 0 }
+    // chunk k は容量 8 << k（k < 7 — 先頭の通し番号は 8 × (2^k − 1)）・k ≥ 7 は容量 maxChunk（先頭の通し番号は minBase + (k − 7) × maxChunk）
+    mut k := 0
+    mut base := 0
+    if j >= minBase {
+        k = 7 + (j - minBase) / maxChunk
+        base = minBase + (k - 7) * maxChunk
+    } else {
+        mut cap := 8
+        while base + cap <= j {
+            base = base + cap
+            cap = cap * 2
+            k += 1
+        }
+    }
+    c := b.chunks[if ok { k } else { len(b.chunks) }]
+    return c[j - base]
+}
+
+// 積んだ要素を連続した imm slice にして返す（現在の最内 region へ 1 回コピー）。
+// Builder 自体は変えない（続けて Push できる）
+@effects()
+func Build[T](b mut Builder[T]) []T {
+    mut out := mut []T{}
+    mut k := 0
+    mut cap := 8
+    // 一度も Push していない Builder は cur がゼロ値の 0 のまま（初期化は初回の Push）— n で空を見る
+    last := if b.n == 0 { 0 - 1 } else { b.cur }
+    while k <= last {
+        c := b.chunks[k]
+        m := if k == last { b.fill } else { cap }
+        mut j := 0
+        while j < m {
+            out = append(out, c[j])
+            j += 1
+        }
+        cap = if cap >= maxChunk { maxChunk } else { cap * 2 }
+        k += 1
+    }
+    return freeze(out)
+}
+
+// xs を open と close で挟んで末尾に積む（Push(b, open)・PushAll(b, xs)・Push(b, close) と同じ結果 — 今の chunk に len(xs) + 2 の空きがあれば
+// 空きの検査と chunk の出し入れは 1 回だけ。JSON の文字列の引用符の対の形）
+@effects()
+func PushBetween[T](b mut Builder[T], open T, xs []T, close T) {
+    n := len(xs)
+    if n + 2 <= b.cap - b.fill {
+        mut c := b.chunks[b.cur]
+        f := b.fill
+        c[f] = open
+        // 写しのループは PushAll と同じ形（`c[g + j] = xs[j]` — copyloop が rt.copy8 の 1 本に下ろす）
+        g := f + 1
+        mut j := 0
+        while j < n {
+            c[g + j] = xs[j]
+            j += 1
+        }
+        c[g + n] = close
+        b.fill = f + n + 2
+        b.n = b.n + n + 2
+    } else {
+        pushBetweenSlow(mut b, open, xs, close)
+    }
+}
+
+// pushBetweenSlow は PushBetween の遅い道（今の chunk に収まらない — 速い道を呼び出し点に展開される大きさに保つ）
+func pushBetweenSlow[T](b mut Builder[T], open T, xs []T, close T) {
+    Push(mut b, open)
+    PushAll(mut b, xs)
+    Push(mut b, close)
+}

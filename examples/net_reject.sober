@@ -22,7 +22,7 @@ func show(e error?) string {
     }
 }
 
-// echo は接続 1 本の handler（失敗は Serve が吸収する）
+// 接続 1 本の handler（失敗は Serve が吸収する）
 func echo(c net.Conn) error? {
     for chunk <- net.Recv(c)? {
         net.Send(c, chunk)?
@@ -54,7 +54,7 @@ func client(port int) string {
     return if e == nil { v } else { show(e) }
 }
 
-// both は 1 本目で "a" を往復させてから（handler の中にいる間に）2 本目を Dial し、2 本目が受けた全部を返す
+// 1 本目で "a" を往復させてから（handler の中にいる間に）2 本目を Dial し、2 本目が受けた全部を返す
 func both(port int) (string, error?) {
     mut first := ""
     mut second := mut []byte{}

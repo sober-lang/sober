@@ -1,6 +1,6 @@
 package lower
 
-// 移し器（段 4 後半 ラウンド 9）: 関数 1 つの本体の IR を番地 0 起点の詰めた []int へ移し（mvPack）、
+// 移し器: 関数 1 つの本体の IR を番地 0 起点の詰めた []int へ移し（mvPack）、
 // 詰めた形を今のヒープの末尾へ積んで関数の記録の頭を付け替える（mvUnpack）。束（B1 = optimizeSsa・B2 = 展開の後の cfgClean〜cmpDup）を
 // 群の子へ配る前提の形 — 子は詰めた形を自前のヒープに積んで束を回し、同じ形で詰め直して返す。
 // - 動かすもの = 関数の本体: スロット [next, 語数, 番号, 空きの鎖, 値]・ブロック [B_*]・ブロックの引数 [next, 値, 型, 0]・命令 [I_*]・値の列 [n, …]
@@ -15,6 +15,7 @@ package lower
 
 import "desugar"
 import "std/iter"
+import "std/table"
 import "std/task"
 
 const MV_SLOT = 5
@@ -27,7 +28,7 @@ const MV_NI = 3
 const MV_FN = 4  // 関数の記録の本体の欄の写し（F_NVAL〜F_NSLOT の 7 語 — MV_FN + k = 下の mvFnField(k)）
 const MV_HDR = 11
 
-// mvFnField は頭に写す関数の記録の欄（k = 0〜6）
+// 頭に写す関数の記録の欄（k = 0〜6）
 func mvFnField(k int) int {
     return switch k {
     case 0: F_NVAL
@@ -40,22 +41,22 @@ func mvFnField(k int) int {
     }
 }
 
-// mvFnRef は頭の関数の欄 k が記録を指すか（鎖の頭・尾 — 付け替える）
+// 頭の関数の欄 k が記録を指すか（鎖の頭・尾 — 付け替える）
 func mvFnRef(k int) bool { return k == 1 || k == 2 || k == 4 || k == 5 }
 
-// MV_OWN は転送先の符号の持ち主の桁（詰めた番地 < 2^24 語）
+// 転送先の符号の持ち主の桁（詰めた番地 < 2^24 語）
 const MV_OWN = 16777216
 
-// mvCode は関数 f の詰めた番地 off への転送先の符号（≤ -2 — 鎖の -1〔無し〕・列の長さ〔≥ 0〕と重ならない）
+// 関数 f の詰めた番地 off への転送先の符号（≤ -2 — 鎖の -1〔無し〕・列の長さ〔≥ 0〕と重ならない）
 func mvCode(f FnRef, off int) int { return -(2 + off + int(f) * MV_OWN) }
 
-// mvOwn は旧い番地 x の先頭の語が関数 f の転送先の符号か
+// 旧い番地 x の先頭の語が関数 f の転送先の符号か
 func mvOwn(st mut St, f FnRef, x int) bool {
     c := desugar.HeapGet(mut st.d, x)
     return c <= -2 && (-c - 2) / MV_OWN == int(f)
 }
 
-// mvFwd は旧い番地 x の詰めた番地（-1 = 無しはそのまま）。転送先の符号が無ければ詰めの抜け（本体の外を指す鎖・列 — roundtrip の網が落とす形）
+// 旧い番地 x の詰めた番地（-1 = 無しはそのまま）。転送先の符号が無ければ詰めの抜け（本体の外を指す鎖・列 — roundtrip の網が落とす形）
 func mvFwd(st mut St, f FnRef, x int) int {
     if x < 0 {
         return x
@@ -66,7 +67,7 @@ func mvFwd(st mut St, f FnRef, x int) int {
     return -desugar.HeapGet(mut st.d, x) - 2 - int(f) * MV_OWN
 }
 
-// mvListMove は値の列 l を（初出なら）out の末尾へ写して詰めた番地を返す（旧い列の頭に転送先を書く・毒のために [番地, 長さ] を残す）
+// 値の列 l を（初出なら）out の末尾へ写して詰めた番地を返す（旧い列の頭に転送先を書く・毒のために [番地, 長さ] を残す）
 func mvListMove(st mut St, f FnRef, out mut []int, lists mut []int, l int) int {
     if l < 0 {
         return l
@@ -83,8 +84,8 @@ func mvListMove(st mut St, f FnRef, out mut []int, lists mut []int, l int) int {
     return off
 }
 
-// mvCopy は旧い記録 x の n 語を out の末尾へ。語ごとにヒープの口（desugar.HeapGet）で読む — Table の chunk を直に読む速い道
-// （copyloop.sober が一括の写しにしていた形）は、他の package の mut の中身を持つ欄の読みなので外した（language.md 20 節・report-493）。
+// 旧い記録 x の n 語を out の末尾へ。語ごとにヒープの口（desugar.HeapGet）で読む — Table の chunk を直に読む速い道
+// （copyloop.sober が一括の写しにしていた形）は、他の package の mut の中身を持つ欄の読みなので外した（language.md 20 節）。
 // 一括の読み口（std/table に chunk 単位の写し）は鎖の行が要る — 積み
 func mvCopy(st mut St, out mut []int, x int, n int) {
     mut a := x
@@ -95,7 +96,7 @@ func mvCopy(st mut St, out mut []int, x int, n int) {
     }
 }
 
-// mvPack は関数 f の本体を詰めた形にする。旧い本体の記録の先頭の語は転送先の符号で潰れる（poison なら記録と列の全部を毒で — roundtrip）
+// 関数 f の本体を詰めた形にする。旧い本体の記録の先頭の語は転送先の符号で潰れる（poison なら記録と列の全部を毒で — roundtrip）
 func mvPack(st mut St, f FnRef, poison bool) []int {
     mut ss := mut []int{}
     mut bs := mut []int{}
@@ -225,7 +226,7 @@ func mvPack(st mut St, f FnRef, poison bool) []int {
     return freeze(out)
 }
 
-// mvUnpack は詰めた形 p を内側の参照を + 基底で付け替えた写しにして今のヒープの末尾へ塊で積み、関数 f の記録の本体の欄を書き換える
+// 詰めた形 p を内側の参照を + 基底で付け替えた写しにして今のヒープの末尾へ塊で積み、関数 f の記録の本体の欄を書き換える
 // （旧い本体の記録はヒープにゴミとして残る）
 func mvUnpack(st mut St, f FnRef, p []int) {
     base := desugar.HeapLen(mut st.d)
@@ -285,14 +286,14 @@ func mvUnpack(st mut St, f FnRef, p []int) {
     }
 }
 
-// mvRel は q[at] が詰めた番地なら + base（-1 = 無しはそのまま）
+// q[at] が詰めた番地なら + base（-1 = 無しはそのまま）
 func mvRel(q mut []int, at int, base int) {
     if q[at] >= 0 {
         q[at] = q[at] + base
     }
 }
 
-// MV_POISON は roundtrip が旧い本体の記録に書く毒（ヒープの外の番地 — 付け替え忘れの参照を読めば添字の範囲外で落ちる・値として使えば ELF が変わる）
+// roundtrip が旧い本体の記録に書く毒（ヒープの外の番地 — 付け替え忘れの参照を読めば添字の範囲外で落ちる・値として使えば ELF が変わる）
 const MV_POISON = 1125899906842624
 
 func mvFillAll(st mut St, xs mut []int, n int) {
@@ -307,7 +308,7 @@ func mvFill(st mut St, at int, n int) {
     }
 }
 
-// mvRoundtripModule は全関数の本体を詰め、旧い本体を毒で潰して積み直す（束を回さない — 移し器の網: SOBER_BUILD_PAR=roundtrip で、
+// 全関数の本体を詰め、旧い本体を毒で潰して積み直す（束を回さない — 移し器の網: SOBER_BUILD_PAR=roundtrip で、
 // ELF ≡ 移さない経路。毒は付け替え忘れの欄・本体の外から本体の記録を番地で持ち越す表を落とす）
 func mvRoundtripModule(st mut St) {
     mut f := st.fhead
@@ -320,7 +321,7 @@ func mvRoundtripModule(st mut St) {
     }
 }
 
-// ── 束の群の子（段 4 後半 ラウンド 10）──
+// ── 束の群の子 ──
 // 束（B1 = optimizeSsa の sroa〜depth・B2 = 展開の後の cfgClean〜cmpDup）の関数ごとのパスを、関数を命令の数で群に分けて群の子で回す:
 // 親が関数の本体を詰め（mvPack — 旧い本体は死ぬ）、子は自前の St のヒープに関数の記録を新しく組んで積み（mvUnpack）、束のパスを関数ごとに
 // 全部掛けて詰め直して返す。親は群の順に積み直す。束の各 Module は関数ごとのループだけ（パスの順 × 関数の順を、関数の順 × パスの順に
@@ -330,7 +331,7 @@ func mvRoundtripModule(st mut St) {
 
 const LG_COST = 25000  // 群の目標の太さ（命令の数 — x86 の群と同じ物差し。W で割らない）
 
-// LGroup は 1 つの群（親の関数の記録・詰めた本体・引数の型の列・戻りの型）
+// 1 つの群（親の関数の記録・詰めた本体・引数の型の列・戻りの型）
 type LGroup struct {
     fns []int
     bodies [][]int
@@ -339,31 +340,28 @@ type LGroup struct {
     mutp []int
 }
 
-// lParCfg は子の St に写す欄（scripts/lparcfg.ts の許しの表の cfg）
+// 子の St に写す欄（scripts/lparcfg.ts の許しの表の cfg）
 func lParCfg(st mut St, b2 bool) []int {
     return mfCfg(mut st, []int{int(st.rtPanic), int(st.rtPanicMem), int(st.rtMapfind), int(st.rtRenterL), int(st.rtRenterLL), (if st.noVec { 1 } else { 0 }) | (if st.taskUse { 2 } else { 0 }), if b2 { 1 } else if st.optInB1 { 2 } else { 0 }, int(st.ubCheck), int(st.ubBound), int(st.rtGrow), int(st.rtGrow8), int(st.rtRalloc), int(st.rtAlloc8), st.meta, int(st.rtStreq), int(st.rtMatchLen), int(st.rtJClean)})
 }
 
-// lRets は呼び先の戻りの型の表 [関数の記録, F_RET]…（記録の番地の昇順 — lFnRet が二分探索で引く）
+// 呼び先の戻りの型の表 [関数の記録, F_RET]…（記録の番地の昇順 — lFnRet が二分探索で引く。鎖の順とは限らないので fnIds で並べる）
 func lRets(st mut St) []int {
     mut out := mut []int{}
-    mut f := st.fhead
-    mut last := -1
-    while f != -1 {
-        if int(f) <= last {
-            panic(Unreachable{}) // 関数の鎖は記録の番地の昇順（追加順）
-        }
-        last = int(f)
-        out = append(out, int(f))
-        out = append(out, irFnRet(mut st, f))
-        f = irFnNext(mut st, f)
+    ids := fnIds(mut st)
+    for k <- iter.Range(0, len(ids)) {
+        out = append(out, ids[k])
+        out = append(out, irFnRet(mut st, FnRef(ids[k])))
     }
     return freeze(out)
 }
 
-// lFnRet は関数 g の戻りの型（群の子は親の表 st.lret から・他はヒープの記録から）
+// 関数 g の戻りの型（群の子は親の表 st.lret から・他はヒープの記録から）
 func lFnRet(st mut St, g FnRef) int {
     if !st.lkid {
+        if st.bcAud {
+            bcAudRet(mut st, int(g))
+        }
         return irFnRet(mut st, g)
     }
     mut lo := 0
@@ -383,12 +381,12 @@ func lFnRet(st mut St, g FnRef) int {
     panic(Unreachable{})
 }
 
-// lParOn は束を群の子で回す形か（ワーカー 1・1 本の経路・roundtrip でない）
+// 束を群の子で回す形か（ワーカー 1・1 本の経路・roundtrip でない）
 func lParOn(st mut St) bool {
-    return !st.xseq && !st.mvRound && task.Ledger().workers > 1
+    return !st.xseq && !st.mvRound && !st.bcAud && task.Ledger().workers > 1
 }
 
-// lParBatch は束 b2（偽 = B1・真 = B2）を群の子で回す。回さない形（ワーカー 1・群 1 つ以下・1 本の経路・roundtrip）なら何もせず false
+// 束 b2（偽 = B1・真 = B2）を群の子で回す。回さない形（ワーカー 1・群 1 つ以下・1 本の経路・roundtrip）なら何もせず false
 func lParBatch(st mut St, b2 bool) bool {
     if !lParOn(mut st) {
         return false
@@ -416,19 +414,24 @@ func lParBatch(st mut St, b2 bool) bool {
     }
     lret := lRets(mut st)
     cfg := lParCfg(mut st, b2)
+    ckt := if st.ckOn { ckTab(mut st, cfg) } else { ckNone() }
+    // 親が後で読む表も同じもの（置き場の β1 の書き / 読み戻し — bcB1Collect）
+    if st.ckOn {
+        st.ckt = ckt
+    }
     frz := freeze(fr)
     ct := freeze(cut)
-    // 流し込み（report-783 4.2 / 785）: 群ごとに詰めて、チャネルを作り give: で子を起こしてから送る — 親の詰めが先に起こした子の走りに重なる。
+    // 流し込み: 群ごとに詰めて、チャネルを作り give: で子を起こしてから送る — 親の詰めが先に起こした子の走りに重なる。
     // 積み戻しは起こした順（= 群の順 — 終わった順でなく）に Join して 1 群ずつ — 尻の子の走りに重なる。群の割り方と積み戻しの順は全部を詰めてから
     // task.Map で回していた形と同じなので出力は変わらない（ワーカー数に依らない）
-    if !lStream(mut st, frz, ct, cfg, lret) {
+    if !lStream(mut st, frz, ct, cfg, lret, ckt, st.bcv) {
         return panic(InvariantBroken{})
     }
     return true
 }
 
-// lStream は流し込みの scope（切り出し — lParBatch の本体を展開の重複から離す・report-787）。子が死ねば false
-func lStream(st mut St, frz []int, ct []int, cfg []int, lret []int) bool {
+// 流し込みの scope（切り出し — lParBatch の本体を展開の重複から離す）。子が死ねば false
+func lStream(st mut St, frz []int, ct []int, cfg []int, lret []int, ckt CkTab, bv BcView) bool {
     _, serr := task.Run((s task.Scope) => {
         mut hs := mut []task.Handle[LOut]{}
         mut k := 0
@@ -439,7 +442,7 @@ func lStream(st mut St, frz []int, ct []int, cfg []int, lret []int) bool {
             tx, rx := task.NewChannel[LGroup](cap: 1)
             h := task.Spawn(s, (inp) => {
                 gi := task.Recv(inp)
-                if gi != nil { LOut{bodies: lParGroup(gi, cfg, lret)} } else { LOut{bodies: [][]int{}} }
+                if gi != nil { lParGroup(gi, cfg, lret, ckt, bv) } else { LOut{bodies: [][]int{}, ks: []int{}, hit: []int{}, av: []byte{}, al: []int{}} }
             }, give: rx, budget: bud)
             hs = append(hs, h)
             task.Send(tx, g)
@@ -448,7 +451,7 @@ func lStream(st mut St, frz []int, ct []int, cfg []int, lret []int) bool {
         mut j := 0
         while j < len(hs) {
             o := task.Join(hs[j])
-            lUnpack(mut st, frz, ct[j], o)
+            lUnpack(mut st, frz, ct[j], o, if cfg[6] == 1 { 1 } else { 0 })
             j += 1
         }
         0
@@ -456,20 +459,31 @@ func lStream(st mut St, frz []int, ct []int, cfg []int, lret []int) bool {
     return serr == nil
 }
 
-// LOut は群の子の結果（群の中の関数の順の詰めた本体 — handle の型引数に [][]int を直に書けない綴りの都合で包む）
+// 群の子の結果（群の中の関数の順の詰めた本体 — handle の型引数に [][]int を直に書けない綴りの都合で包む）
 type LOut struct {
     bodies [][]int
+    ks []int   // 段 3 の鍵（関数ごとに [h1, h2, 呼び先の数, 呼び先…] — 鍵を計算しない道は空）
+    hit []int  // 段 3 の置き場（R2）: 関数ごとの当たりの項目（-1 = 外れ）・α の値の並び・関数ごとの α の値の長さ（置き場を使わない道は空）
+    av []byte
+    al []int
 }
 
-// lUnpack は群の子の結果 o（fr の添字 lo から続く関数の詰めた本体）を積み戻す（scope の本体で Join の結果の欄を直に読む形は check の
+// 群の子の結果 o（fr の添字 lo から続く関数の詰めた本体）を積み戻す（scope の本体で Join の結果の欄を直に読む形は check の
 // コアの範囲の外 — struct ごと渡す）
-func lUnpack(st mut St, fr []int, lo int, o LOut) {
+func lUnpack(st mut St, fr []int, lo int, o LOut, stage int) {
     for q <- iter.Range(0, len(o.bodies)) {
         mvUnpack(mut st, FnRef(fr[lo + q]), o.bodies[q])
     }
+    // 段 3 の鍵（鍵を計算しない道は空）— stage = 0 = α・1 = B2
+    if len(o.ks) > 0 {
+        ckPut(mut st, stage, fr, lo, o.ks)
+    }
+    if len(o.hit) > 0 {
+        bcKidPut(mut st, fr, lo, o, stage)
+    }
 }
 
-// lPack は fr の添字 [lo, hi) の関数を詰めた群（署名の型の列・戻り・mut 仮引数の印と本体）
+// fr の添字 [lo, hi) の関数を詰めた群（署名の型の列・戻り・mut 仮引数の印と本体）
 func lPack(st mut St, fr []int, lo int, hi int) LGroup {
     mut fns := mut []int{}
     mut bodies := mut [][]int{}
@@ -492,7 +506,7 @@ func lPack(st mut St, fr []int, lo int, hi int) LGroup {
     return LGroup{fns: freeze(fns), bodies: freeze(bodies), ptys: freeze(ptys), rets: freeze(rets), mutp: freeze(mutp)}
 }
 
-// lWords は群の詰めた語数
+// 群の詰めた語数
 func lWords(g LGroup) int {
     mut w := 0
     for b <- g.bodies {
@@ -501,8 +515,8 @@ func lWords(g LGroup) int {
     return w
 }
 
-// lParGroup は子の本体: 自前の St のヒープに群の関数を積み、束のパスを関数ごとに掛けて詰め直す
-func lParGroup(g LGroup, cfg []int, lret []int) [][]int {
+// 子の本体: 自前の St のヒープに群の関数を積み、束のパスを関数ごとに掛けて詰め直す
+func lParGroup(g LGroup, cfg []int, lret []int, ckt CkTab, bv BcView) LOut {
     mut st := St{}
     kindsInit(mut st)
     st.rtPanic = FnRef(cfg[0])
@@ -531,7 +545,13 @@ func lParGroup(g LGroup, cfg []int, lret []int) [][]int {
     st.rtMatchLen = FnRef(cfg[15])
     st.rtJClean = FnRef(cfg[16])
     mfCfgSet(mut st, cfg, 17)
+    st.ckt = ckt
     mut out := mut [][]int{}
+    mut ks := mut []int{}
+    mut hit := mut []int{}
+    mut av := table.Table[byte]{}
+    mut al := mut []int{}
+    stage := if cfg[6] == 1 { 1 } else { 0 }
     for j <- iter.Range(0, len(g.fns)) {
         cf := FnRef(recN(mut st, FSZ))
         pl := listN(mut st, len(g.ptys[j]))
@@ -542,21 +562,57 @@ func lParGroup(g LGroup, cfg []int, lret []int) [][]int {
         desugar.HeapSet(mut st.d, int(cf) + F_RET, g.rets[j])
         desugar.HeapSet(mut st.d, int(cf) + F_MUTP, g.mutp[j])
         mvUnpack(mut st, cf, g.bodies[j])
-        if cfg[6] == 1 {
-            lB2Func(mut st, cf)
-        } else {
-            // 2 = 設計整合パスの関数ごとの段を頭で（elfOutSt が optPre だけを済ませた形）
-            if cfg[6] == 2 {
-                optFunc(mut st, cf)
+        // 段 3 の鍵（ckey.sober — 積み戻した記録を全体の道と同じ歩きで）
+        mut e := -1
+        if ckt.on {
+            k := ckFn(mut st, cf, stage)
+            for x <- k {
+                ks = append(ks, x)
             }
-            lB1Func(mut st, cf)
+            // 段 3 の置き場（bcache.sober）: α の当たりは値を読み戻して B1 を飛ばす・β1 の当たりは B2 を飛ばして入力のまま返す
+            if bv.on {
+                e = bcKid(bv, stage, k[0], k[1])
+                if e >= 0 && stage == 0 {
+                    mut r := bcRdOf(bv, e)
+                    p := bcAlphaDec(mut r, st.opk, st.tmk, ckt)
+                    if r.bad || r.at != r.end {
+                        e = -1
+                    } else {
+                        out = append(out, p)
+                    }
+                } else if e >= 0 {
+                    out = append(out, g.bodies[j])
+                }
+                hit = append(hit, e)
+            }
         }
-        out = append(out, mvPack(mut st, cf, false))
+        if e < 0 {
+            if cfg[6] == 1 {
+                lB2Func(mut st, cf)
+            } else {
+                // 2 = 設計整合パスの関数ごとの段を頭で（elfOutSt が optPre だけを済ませた形）
+                if cfg[6] == 2 {
+                    optFunc(mut st, cf)
+                }
+                lB1Func(mut st, cf)
+            }
+            p := mvPack(mut st, cf, false)
+            out = append(out, p)
+            if bv.on && stage == 0 {
+                a0 := table.Len(mut av)
+                bcAlphaEnc(mut av, p, st.opk, st.tmk, ckt)
+                al = append(al, table.Len(mut av) - a0)
+            } else {
+                al = append(al, 0)
+            }
+        } else {
+            al = append(al, 0)
+        }
     }
-    return freeze(out)
+    return LOut{bodies: freeze(out), ks: freeze(ks), hit: freeze(hit), av: bcCat(table.Freeze(mut av)), al: freeze(al)}
 }
 
-// lB1Func は B1（optimizeSsa）の関数ごとのパスの列
+// B1（optimizeSsa）の関数ごとのパスの列
 func lB1Func(st mut St, f FnRef) {
     sroaFunc(mut st, f, false)
     m2rFunc(mut st, f)
@@ -570,7 +626,7 @@ func lB1Func(st mut St, f FnRef) {
     depthFlowFunc(mut st, f)
 }
 
-// lB2Func は B2（展開の後の cfgClean〜cmpDup）の関数ごとのパスの列
+// B2（展開の後の cfgClean〜cmpDup）の関数ごとのパスの列
 func lB2Func(st mut St, f FnRef) {
     cfgCleanFunc(mut st, f)
     if st.rtMapfind != -1 {

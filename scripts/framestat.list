@@ -20,10 +20,31 @@ bench/httparena/main.sober @sum 106543
 # 2026-10-26 飛行記録（rt.netop の ACCEPT の getpeername の受け皿・clockNs の時計の受け皿 — on の区画の中の枠・report-1176・実測 × 1.01・標準運用の引き直し — ユーザーへは事後追認）: bench/httparena @zero 2088（線 2029 を越えた）→ 2109
 bench/httparena/main.sober @zero 2109
 # 2026-10-25 Z レーン ラウンド 2（finish に optEtaAll の結果〔OzStep〕— namedargs・optfn・η を 1 つの関数へ寄せた後の残り +48 B・report-1157・実測 × 1.01・標準運用の引き直し — ユーザーへは事後追認）: @self loader.finish 2016（HEAD 1968）→ 2036
-@self loader.finish 2036
+# 2026-10-27 凍った map の封（finish の freeze の点に封の鍵のスロット 4 語 + 32 B — 関数ごとに 1 本・report-1209・実測 × 1.01・標準運用の引き直し — ユーザーへは事後追認）: @self loader.finish 2048（線 2036 を越えた）→ 2068
+# 2026-10-31 カバレッジの計器（finish に coverAll の結果〔CoverOut — 点の列と鍵が Program まで生きる〕・report-cov-2・実測 × 1.01・標準運用の引き直し — 事後追認）: @self loader.finish 2144（線 2068 を越えた）→ 2166
+# 2026-10-31 mutation testing（finish の写しの分岐に mutAll の結果・report-mut-3・実測 × 1.01・標準運用の引き直し — 事後追認）: @self loader.finish 2288（線 2166 を越えた）→ 2311
+@self loader.finish 2311
 # 2026-10-23 effect の波 段 5a-1（analyzer/effects.sober の歩きと解き — report-1084・実測 × 1.01 の標準運用）: @self @sum 861456
 # 2026-10-23 effect の波 段 5a-2 / 5a-3（trace の計装・sober fix — report-1084・実測 × 1.01 の標準運用）: @self @sum 876496
 # 2026-10-25 S レーン（tls の送りの束 — Put / Flush・pump の受けの反復ごとの Flush・http.ServeFlushed の展開・report-1128〜1131・実測 × 1.01・標準運用の引き直し — ユーザーへは事後追認）: bench/httparena @sum 103632（線 103198 を越えた）→ 104668
 # 2026-10-25 P3（同上 — コンパイラ自身の rt の関数の枠・report-1142 / 1143・実測 × 1.01・標準運用の引き直し — ユーザーへは事後追認）: @self @sum 885376（線 885261 を越えた）→ 894230
 # 2026-10-25 Z レーン ラウンド 2（loader/optfn.sober ほかの新しい関数の枠・report-1157・実測 × 1.01・標準運用の引き直し — ユーザーへは事後追認）: @self @sum 896512（線 894230 を越えた）→ 905477
-@self @sum 905477
+# 2026-10-26 インクリ + 並列の波 段 3 R1（lower/ckey.sober の新しい関数の枠・report-1195・実測 × 1.01・標準運用の引き直し — ユーザーへは事後追認）: @self @sum 905808（線 905477 を越えた）→ 914866
+# 2026-10-27 段 3 R2（lower/bcache.sober の新しい関数の枠・report-1197・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 928128（線 914866 を越えた）→ 937410
+# 2026-10-27 段 3 R4-b（lower/bcache.sober の併合・掃除の関数の枠・report-1206・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 942016（線 937410 を越えた）→ 951436
+# 2026-10-27 インクリ + 並列の波 段 4 R2（desugar/typer.sober の tyPlan・tyBucket・yDeclPre ほか / tystore.sober の新しい関数の枠・report-1225・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 955616（線 951436 を越えた）→ 965172
+# 2026-10-27 段 4 R3（desugar/tycanon.sober の新しい関数の枠・report-1226・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 966368（線 965172 を越えた）→ 976032
+# 2026-10-28 段 5 R1（desugar/tycanon.sober の鍵 K1・区画の値の新しい関数の枠・report-1230・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 978496（線 976032 を越えた）→ 988281
+# 2026-10-28 段 5 R4（loader/pcache.sober・lower/bcache.sober の P0 の新しい関数の枠・report-1234・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 994864（線 988281 を越えた）→ 1004813
+# 2026-10-28 便 1a（検査器の拒否の位置 — desugar の expr / stmts の出所の包み・checker の出所の写し・app の rejLines の新しい関数の枠・report-1260・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1007888（線 1004813 を越えた）→ 1017967
+# 2026-10-28 夜 便 2 R0 / R1（desugar/defkey.sober・expansion.sober の DefCostDump の新しい関数の枠・report-1261 / 1262・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1027088（線 1017967 を越えた）→ 1037359
+# 2026-10-29 便 2 R2（desugar / checker の defcache.sober・bcache の切り口 D・app の口の新しい関数の枠・report-1263・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1054320（線 1037359 を越えた）→ 1064864
+# 2026-10-29 便 2 R4（desugar/defkey.sober の memo・desugar.TypedC・bcache の BcParseCheck / BcGammaCache・app の loadCk の新しい関数の枠・report-1268・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1070416（線 1064864 を越えた）→ 1081120
+# 2026-10-30 CLI C3（std/cli + json + sort の関数の枠・app の handler・report-1286・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1122944（線 1081120 を越えた）→ 1134174
+# 2026-10-30 CLI C4（clidoc package・app の cmdDoc / runFns / runExe・analyzer の efTable を EffectsDump / EffectsOf で共有〔複製すると Az の枠 11 KB がもう 1 本〕・report-1287・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1136672（線 1134174 を越えた）→ 1148039
+# 2026-10-30 watch 温め係 R1a（答えの再生の関数群・report-watch-3・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1153136（線 1148039 を越えた）→ 1164667
+# 2026-10-30 検証の四点セット T1 + exit 127 の修理 + watch R2（テストの再生・RunTo・温めの列と状態ファイル・cache info の watch の行・report-test-2 / report-etxt-1 / report-watch-5・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1168880（線 1164667 を越えた）→ 1180569
+# 2026-10-31 検証の四点セット T3.5 R1（loader/coverx.sober・lower/cover.sober・irinl の ilCoverSweep の新しい関数の枠・report-cov-2・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1193024（線 1180569 を越えた）→ 1204955
+# 2026-10-31 T3.5 R2（app/cover.sober・cmd_tests の計器の道の新しい関数の枠・report-cov-3・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1206384（線 1204955 を越えた）→ 1218448
+# 2026-10-31 T4 R1（loader/mutx.sober・app/mutate.sober の新しい関数の枠・report-mut-3・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1228720（線 1218448 を越えた）→ 1241008
+@self @sum 1241008

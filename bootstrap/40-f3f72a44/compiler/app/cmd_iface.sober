@@ -1,0 +1,97 @@
+package main
+
+// `sober iface` の handler（package の interface — .sobi）
+
+import "std/iter"
+import "std/cli"
+import "ast"
+import "loader"
+import "checker"
+import "iface"
+
+// cmdIface は `sober iface <entry> [--pkg <path> | --no-expand]`: package の interface（.sobi — compiler/iface）。--pkg なら その package の .sobi を、
+// 無ければ全 package を束で（`== <path>.sobi` の行 + 本文・最後に `== link.txt` + リンク集合 — bin/sober の -o が書き分ける。std に mkdir の口が無いため）。
+// E2-S の逃げ（`@expand` の印）は check の周回で決める（checker.ExclE2 — 脱糖の拒否ならその診断で失敗）
+// rawTrees はファイルごとのソースを読み直して parse した生の木（loader の写しの前 — iface.Emit が原文の形で書く）。読み直せないファイル
+// （loader が合成した `$layout/…`）は file = -1 の空の木
+func rawTrees(p loader.Program, std map[string]string) []ast.Tree {
+    mut out := mut []ast.Tree{}
+    for f <- iter.Range(0, len(p.file_path)) {
+        out = append(out, rawTree(p, f, std))
+    }
+    return freeze(out)
+}
+
+// `sober iface <entry> --view <path> <dir>`（scripts/sobi.sh の G-a — .sobi の不動点）: <dir> の視点（package <path> だけソース・他は .sobi）で
+// 読んだプログラムから、<path> 以外の全 package の .sobi を束で書く（`@expand` は読んだ .sobi の印のまま — E2-S は回さない）
+func cmdIfaceView(entry string, pkg string, dir string) int {
+    std := Std
+    p, lerr := loader.LoadView(entry, pkg, dir, std)
+    if lerr != nil {
+        return fail(loadDiag(p, std, lerr))
+    }
+    raws := rawTrees(p, std)
+    mut out := mut []byte{}
+    for k <- iter.Range(0, len(p.pkg_path)) {
+        if p.pkg_path[k] != pkg {
+            appendBytes(mut out, bytes("== ${p.pkg_path[k]}.sobi\n"))
+            appendBytes(mut out, iface.Emit(p, k, []int{}, raws))
+        }
+    }
+    return writeStdout(freeze(out))
+}
+
+func cmdIface(cl cli.Parsed) int {
+    entry := cli.Pos(cl, Entry)
+    vw := cli.StrOpt(cl, View)
+    dir := cli.PosOpt(cl, IDir)
+    ip := cli.StrOpt(cl, IPkg)
+    // --no-expand = E2-S の周回を走らせない（`@expand` の印なし — stage1 の .sobi との照合 scripts/sobi.sh が凍結コーパスに掛ける。
+    // 凍結した例には今の脱糖器が拒否するものがある）
+    noexp := cli.Bool(cl, NoExpand)
+    if vw != nil {
+        if dir == nil || ip != nil || noexp {
+            return misuse("iface: --view <path> takes <dir> and no other flag")
+        }
+        return cmdIfaceView(entry, vw, dir)
+    }
+    if dir != nil {
+        return misuse("iface: <dir> goes with --view")
+    }
+    if ip != nil && noexp {
+        return misuse("iface: --pkg and --no-expand do not combine")
+    }
+    pkgOnly := ip != nil
+    pkg := if ip == nil { "" } else { ip }
+    std := Std
+    p, lerr := loadEntry(entry, false, std)
+    if lerr != nil {
+        return fail(loadDiag(p, std, lerr))
+    }
+    mut excl := []int{}
+    if !noexp {
+        x, xerr := checker.ExclE2(p, desugarPar())
+        if xerr != nil {
+            return fail(errDiag(p, std, xerr))
+        }
+        excl = x
+    }
+    raws := rawTrees(p, std)
+    mut out := mut []byte{}
+    for k <- iter.Range(0, len(p.pkg_path)) {
+        if pkgOnly {
+            if p.pkg_path[k] == pkg {
+                return writeStdout(iface.Emit(p, k, excl, rawTrees(p, std)))
+            }
+        } else {
+            appendBytes(mut out, bytes("== ${p.pkg_path[k]}.sobi\n"))
+            appendBytes(mut out, iface.Emit(p, k, excl, raws))
+        }
+    }
+    if pkgOnly {
+        return fail("no package ${pkg} in the program")
+    }
+    appendBytes(mut out, bytes("== link.txt\n"))
+    appendBytes(mut out, iface.Link(p))
+    return writeStdout(freeze(out))
+}

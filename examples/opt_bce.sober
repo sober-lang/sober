@@ -1,6 +1,6 @@
 package main
 
-// 境界検査の消去（性能投資 M3 — bce.sober）の網: 帰納変数が負から始まるループの `xs[i]` は `i < len(xs)` だけでは範囲内と言えない（i ≥ 0 が要る）—
+// 境界検査の消去（bce.sober）の網: 帰納変数が負から始まるループの `xs[i]` は `i < len(xs)` だけでは範囲内と言えない（i ≥ 0 が要る）—
 // 検査を消すと範囲外を黙って読む。正しくは i = -1 で添字の範囲外の panic（scripts/optdiff.sh --mut の代表）
 
 func sum(xs []int, from int) int {

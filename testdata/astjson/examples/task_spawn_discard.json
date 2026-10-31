@@ -86,7 +86,7 @@
               "k": "if",
               "cond": {
                 "k": "binary",
-                "op": "==",
+                "op": ">=",
                 "lhs": {
                   "k": "call",
                   "callee": {
@@ -181,6 +181,86 @@
           {
             "k": "bind",
             "names": [
+              "probe"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "binary",
+                "op": "&&",
+                "lhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "len",
+                      "tok": 62
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "args",
+                        "tok": 64
+                      }
+                    ],
+                    "tok": 63
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 3,
+                    "tok": 67
+                  },
+                  "tok": 66
+                },
+                "rhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "index",
+                    "base": {
+                      "k": "ident",
+                      "name": "args",
+                      "tok": 69
+                    },
+                    "idx": {
+                      "k": "int",
+                      "value": 2,
+                      "tok": 71
+                    },
+                    "tok": 70
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "ledger",
+                    "tok": 74
+                  },
+                  "tok": 73
+                },
+                "tok": 68
+              }
+            ],
+            "tok": 60
+          },
+          {
+            "k": "bind",
+            "names": [
+              "maxTasks"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 79
+              }
+            ],
+            "tok": 76
+          },
+          {
+            "k": "bind",
+            "names": [
               "pool"
             ],
             "mutable": false,
@@ -192,10 +272,10 @@
                   "base": {
                     "k": "ident",
                     "name": "task",
-                    "tok": 62
+                    "tok": 83
                   },
                   "field": "NewPool",
-                  "tok": 64
+                  "tok": 85
                 },
                 "args": [
                   {
@@ -207,36 +287,36 @@
                       "lhs": {
                         "k": "int",
                         "value": 64,
-                        "tok": 66
+                        "tok": 87
                       },
                       "rhs": {
                         "k": "selector",
                         "base": {
                           "k": "ident",
                           "name": "task",
-                          "tok": 68
+                          "tok": 89
                         },
                         "field": "KB",
-                        "tok": 70
+                        "tok": 91
                       },
-                      "tok": 67
+                      "tok": 88
                     },
                     "rhs": {
                       "k": "int",
                       "value": 1000,
-                      "tok": 72
+                      "tok": 93
                     },
-                    "tok": 71
+                    "tok": 92
                   },
                   {
                     "k": "nil",
-                    "tok": 74
+                    "tok": 95
                   }
                 ],
-                "tok": 65
+                "tok": 86
               }
             ],
-            "tok": 60
+            "tok": 81
           },
           {
             "k": "bind",
@@ -248,10 +328,10 @@
               {
                 "k": "int",
                 "value": 0,
-                "tok": 80
+                "tok": 101
               }
             ],
-            "tok": 77
+            "tok": 98
           },
           {
             "k": "bind",
@@ -263,10 +343,10 @@
               {
                 "k": "int",
                 "value": 0,
-                "tok": 85
+                "tok": 106
               }
             ],
-            "tok": 82
+            "tok": 103
           },
           {
             "k": "bind",
@@ -283,10 +363,10 @@
                   "base": {
                     "k": "ident",
                     "name": "task",
-                    "tok": 91
+                    "tok": 112
                   },
                   "field": "Run",
-                  "tok": 93
+                  "tok": 114
                 },
                 "args": [
                   {
@@ -311,14 +391,14 @@
                             "lhs": {
                               "k": "ident",
                               "name": "i",
-                              "tok": 104
+                              "tok": 125
                             },
                             "rhs": {
                               "k": "ident",
                               "name": "n",
-                              "tok": 106
+                              "tok": 127
                             },
-                            "tok": 105
+                            "tok": 126
                           },
                           "body": {
                             "stmts": [
@@ -332,10 +412,10 @@
                                   {
                                     "k": "ident",
                                     "name": "i",
-                                    "tok": 110
+                                    "tok": 131
                                   }
                                 ],
-                                "tok": 108
+                                "tok": 129
                               },
                               {
                                 "k": "assign",
@@ -343,7 +423,7 @@
                                   {
                                     "k": "ident",
                                     "name": "_",
-                                    "tok": 112
+                                    "tok": 133
                                   }
                                 ],
                                 "op": "=",
@@ -355,16 +435,16 @@
                                       "base": {
                                         "k": "ident",
                                         "name": "task",
-                                        "tok": 114
+                                        "tok": 135
                                       },
                                       "field": "Spawn",
-                                      "tok": 116
+                                      "tok": 137
                                     },
                                     "args": [
                                       {
                                         "k": "ident",
                                         "name": "s",
-                                        "tok": 118
+                                        "tok": 139
                                       },
                                       {
                                         "k": "lambda",
@@ -375,22 +455,22 @@
                                           "lhs": {
                                             "k": "ident",
                                             "name": "k",
-                                            "tok": 123
+                                            "tok": 144
                                           },
                                           "rhs": {
                                             "k": "int",
                                             "value": 2,
-                                            "tok": 125
+                                            "tok": 146
                                           },
-                                          "tok": 124
+                                          "tok": 145
                                         },
-                                        "tok": 122
+                                        "tok": 143
                                       }
                                     ],
-                                    "tok": 117
+                                    "tok": 138
                                   }
                                 ],
-                                "tok": 112
+                                "tok": 133
                               },
                               {
                                 "k": "bind",
@@ -407,21 +487,21 @@
                                       "base": {
                                         "k": "ident",
                                         "name": "task",
-                                        "tok": 132
+                                        "tok": 153
                                       },
                                       "field": "SpawnIn",
-                                      "tok": 134
+                                      "tok": 155
                                     },
                                     "args": [
                                       {
                                         "k": "ident",
                                         "name": "s",
-                                        "tok": 136
+                                        "tok": 157
                                       },
                                       {
                                         "k": "ident",
                                         "name": "pool",
-                                        "tok": 138
+                                        "tok": 159
                                       },
                                       {
                                         "k": "lambda",
@@ -432,16 +512,16 @@
                                           "lhs": {
                                             "k": "ident",
                                             "name": "k",
-                                            "tok": 143
+                                            "tok": 164
                                           },
                                           "rhs": {
                                             "k": "int",
                                             "value": 1,
-                                            "tok": 145
+                                            "tok": 166
                                           },
-                                          "tok": 144
+                                          "tok": 165
                                         },
-                                        "tok": 142
+                                        "tok": 163
                                       },
                                       {
                                         "k": "named_arg",
@@ -452,27 +532,27 @@
                                           "lhs": {
                                             "k": "int",
                                             "value": 64,
-                                            "tok": 149
+                                            "tok": 170
                                           },
                                           "rhs": {
                                             "k": "selector",
                                             "base": {
                                               "k": "ident",
                                               "name": "task",
-                                              "tok": 151
+                                              "tok": 172
                                             },
                                             "field": "KB",
-                                            "tok": 153
+                                            "tok": 174
                                           },
-                                          "tok": 150
+                                          "tok": 171
                                         },
-                                        "tok": 147
+                                        "tok": 168
                                       }
                                     ],
-                                    "tok": 135
+                                    "tok": 156
                                   }
                                 ],
-                                "tok": 128
+                                "tok": 149
                               },
                               {
                                 "k": "expr",
@@ -484,13 +564,13 @@
                                     "lhs": {
                                       "k": "ident",
                                       "name": "e",
-                                      "tok": 157
+                                      "tok": 178
                                     },
                                     "rhs": {
                                       "k": "nil",
-                                      "tok": 159
+                                      "tok": 180
                                     },
-                                    "tok": 158
+                                    "tok": 179
                                   },
                                   "then": {
                                     "stmts": [
@@ -500,7 +580,7 @@
                                           {
                                             "k": "ident",
                                             "name": "shed",
-                                            "tok": 161
+                                            "tok": 182
                                           }
                                         ],
                                         "op": "+=",
@@ -508,15 +588,138 @@
                                           {
                                             "k": "int",
                                             "value": 1,
-                                            "tok": 163
+                                            "tok": 184
                                           }
                                         ],
-                                        "tok": 161
+                                        "tok": 182
                                       }
                                     ]
                                   },
                                   "else": null,
-                                  "tok": 156
+                                  "tok": 177
+                                }
+                              },
+                              {
+                                "k": "expr",
+                                "expr": {
+                                  "k": "if",
+                                  "cond": {
+                                    "k": "binary",
+                                    "op": "&&",
+                                    "lhs": {
+                                      "k": "ident",
+                                      "name": "probe",
+                                      "tok": 189
+                                    },
+                                    "rhs": {
+                                      "k": "binary",
+                                      "op": "==",
+                                      "lhs": {
+                                        "k": "binary",
+                                        "op": "%",
+                                        "lhs": {
+                                          "k": "ident",
+                                          "name": "i",
+                                          "tok": 191
+                                        },
+                                        "rhs": {
+                                          "k": "int",
+                                          "value": 256,
+                                          "tok": 193
+                                        },
+                                        "tok": 192
+                                      },
+                                      "rhs": {
+                                        "k": "int",
+                                        "value": 0,
+                                        "tok": 195
+                                      },
+                                      "tok": 194
+                                    },
+                                    "tok": 190
+                                  },
+                                  "then": {
+                                    "stmts": [
+                                      {
+                                        "k": "bind",
+                                        "names": [
+                                          "t"
+                                        ],
+                                        "mutable": false,
+                                        "values": [
+                                          {
+                                            "k": "selector",
+                                            "base": {
+                                              "k": "call",
+                                              "callee": {
+                                                "k": "selector",
+                                                "base": {
+                                                  "k": "ident",
+                                                  "name": "task",
+                                                  "tok": 199
+                                                },
+                                                "field": "Ledger",
+                                                "tok": 201
+                                              },
+                                              "args": [],
+                                              "tok": 202
+                                            },
+                                            "field": "tasks",
+                                            "tok": 205
+                                          }
+                                        ],
+                                        "tok": 197
+                                      },
+                                      {
+                                        "k": "expr",
+                                        "expr": {
+                                          "k": "if",
+                                          "cond": {
+                                            "k": "binary",
+                                            "op": ">",
+                                            "lhs": {
+                                              "k": "ident",
+                                              "name": "t",
+                                              "tok": 208
+                                            },
+                                            "rhs": {
+                                              "k": "ident",
+                                              "name": "maxTasks",
+                                              "tok": 210
+                                            },
+                                            "tok": 209
+                                          },
+                                          "then": {
+                                            "stmts": [
+                                              {
+                                                "k": "assign",
+                                                "targets": [
+                                                  {
+                                                    "k": "ident",
+                                                    "name": "maxTasks",
+                                                    "tok": 212
+                                                  }
+                                                ],
+                                                "op": "=",
+                                                "values": [
+                                                  {
+                                                    "k": "ident",
+                                                    "name": "t",
+                                                    "tok": 214
+                                                  }
+                                                ],
+                                                "tok": 212
+                                              }
+                                            ]
+                                          },
+                                          "else": null,
+                                          "tok": 207
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "else": null,
+                                  "tok": 188
                                 }
                               },
                               {
@@ -525,7 +728,7 @@
                                   {
                                     "k": "ident",
                                     "name": "i",
-                                    "tok": 167
+                                    "tok": 220
                                   }
                                 ],
                                 "op": "+=",
@@ -533,32 +736,80 @@
                                   {
                                     "k": "int",
                                     "value": 1,
-                                    "tok": 169
+                                    "tok": 222
                                   }
                                 ],
-                                "tok": 167
+                                "tok": 220
                               }
                             ]
                           },
-                          "tok": 103
+                          "tok": 124
                         },
                         {
                           "k": "expr",
                           "expr": {
                             "k": "ident",
                             "name": "i",
-                            "tok": 173
+                            "tok": 226
                           }
                         }
                       ]
                     },
-                    "tok": 101
+                    "tok": 122
                   }
                 ],
-                "tok": 94
+                "tok": 115
               }
             ],
-            "tok": 87
+            "tok": 108
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "ident",
+                "name": "probe",
+                "tok": 232
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 234
+                      },
+                      "args": [
+                        {
+                          "k": "interp",
+                          "tmpl": {
+                            "lits": [
+                              "maxTasks ",
+                              ""
+                            ],
+                            "holes": [
+                              {
+                                "k": "ident",
+                                "name": "maxTasks",
+                                "tok": 236
+                              }
+                            ]
+                          },
+                          "tok": 236
+                        }
+                      ],
+                      "tok": 235
+                    }
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 231
+            }
           },
           {
             "k": "expr",
@@ -567,7 +818,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 178
+                "tok": 241
               },
               "args": [
                 {
@@ -587,28 +838,28 @@
                           "lhs": {
                             "k": "ident",
                             "name": "r",
-                            "tok": 180
+                            "tok": 243
                           },
                           "rhs": {
                             "k": "int",
                             "value": 2,
-                            "tok": 180
+                            "tok": 243
                           },
-                          "tok": 180
+                          "tok": 243
                         },
                         "rhs": {
                           "k": "ident",
                           "name": "shed",
-                          "tok": 180
+                          "tok": 243
                         },
-                        "tok": 180
+                        "tok": 243
                       }
                     ]
                   },
-                  "tok": 180
+                  "tok": 243
                 }
               ],
-              "tok": 179
+              "tok": 242
             }
           }
         ]
@@ -617,7 +868,7 @@
       "bodiless": false,
       "span": {
         "start": 12,
-        "end": 185
+        "end": 248
       },
       "sig_end": 16
     }

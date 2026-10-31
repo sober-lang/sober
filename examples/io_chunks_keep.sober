@@ -1,24 +1,24 @@
 package main
 
-// IO 便 ②（design-dev.md）の確認の網: 文形 for の k の引数（切片の View）を反復の外へ逃がす形 — 外の mut 変数・struct の欄・
+// 切片の View を反復の外へ逃がす形の確認（design-dev.md）: 文形 for の k の引数（切片の View）を反復の外へ逃がす形 — 外の mut 変数・struct の欄・
 // Bytes の値ごと — は check が拒否するのでなく、region の境界コピーで写しになる（language.md 28 節「外へ持ち出した View は写しになる」）。
 // ストリームが先へ進んでスロットが使い回された後も、逃がした写しは最初の切片の中身のまま（写しが無ければ後の切片の中身に化ける）。
 // リポジトリのルートを cwd にして実行する。書き込み先は out/ の下
 import "std/io"
 import "std/iter"
 
-// Keep は切片を欄に逃がす先（b = 切片の写し・c = Bytes の値ごと）
+// 切片を欄に逃がす先（b = 切片の写し・c = Bytes の値ごと）
 type Keep struct {
     b []byte
     n int
 }
 
-// pat は位置 i の既知のパターン（切片 1 つ目と 2 つ目で必ず違う値になる — 251 は 65536 と互いに素）
+// 位置 i の既知のパターン（切片 1 つ目と 2 つ目で必ず違う値になる — 251 は 65536 と互いに素）
 func pat(i int) byte {
     return byte(i % 251)
 }
 
-// check は b が先頭からパターンどおりの 65536 バイトか
+// b が先頭からパターンどおりの 65536 バイトか
 func check(b []byte) bool {
     mut ok := len(b) == 65536
     for i <- iter.Range(0, len(b)) {

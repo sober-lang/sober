@@ -1,0 +1,9 @@
+ok   examples/guide/kv.TestAnyLine
+ok   examples/guide/kv.TestBadPiece
+ok   examples/guide/kv.TestCountAll
+ok   examples/guide/kv.TestFormat
+ok   examples/guide/kv.TestParse
+ok   examples/guide/kv.TestRoundTrip
+mutate: examples/guide/kv 100.0% killed (40 of 40 reached) · 0 unreached · 3 timeout
+6 passed, 0 failed
+(exit 0)

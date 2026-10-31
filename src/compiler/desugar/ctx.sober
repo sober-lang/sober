@@ -4,7 +4,7 @@ package desugar
 // （参照は st.tenv 等のまま）、束の取り出し / 書き戻しをここ 1 か所に定義する — 退避の書き忘れ・戻し忘れの欄が構造的に出ない。
 // 文脈の欄は入れ子の規律（内側で変えたら内側で戻す）なので、ある入口で使わない欄も束ごと戻してよい（内側が釣り合っていれば no-op）
 
-// FnCtx は関数の本体を脱糖する文脈（package・型環境・結果・return / break の行き先・展開の鎖・持ち上げの外側・辞書 const）
+// 関数の本体を脱糖する文脈（package・型環境・結果・return / break の行き先・展開の鎖・持ち上げの外側・辞書 const）
 type FnCtx struct {
     curPkg int
     tenv int
@@ -41,7 +41,7 @@ func setFnCtx(st mut S, c FnCtx) {
     st.inDict = c.inDict
 }
 
-// SwCtx は型パターンの switch の文脈（腕の束縛名が指す subject・wild の本体）
+// 型パターンの switch の文脈（腕の束縛名が指す subject・wild の本体）
 type SwCtx struct {
     swSubj int
     swSubjDecl int
@@ -60,7 +60,7 @@ func setSwCtx(st mut S, c SwCtx) {
     st.swSubjSty = c.swSubjSty
 }
 
-// ErrCtx は error の switch の文脈（腕の `cause` が読む鎖のレベルと型）
+// error の switch の文脈（腕の `cause` が読む鎖のレベルと型）
 type ErrCtx struct {
     hasErrSw int
     errLevel int
@@ -77,7 +77,7 @@ func setErrCtx(st mut S, c ErrCtx) {
     st.errTy = c.errTy
 }
 
-// YCtx は表層型検査器の文脈（package・型パラメータ名の列・局所の束縛の鎖 — typer.sober）
+// 表層型検査器の文脈（package・型パラメータ名の列・局所の束縛の鎖 — typer.sober）
 type YCtx struct {
     ypk int
     ytps ListRef

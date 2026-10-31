@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P4-2: stdout の直書き（io.WriteStdout — fd 1 へ直に write）は (O1) の先行順の対象外（io の順はタイミング — language.md 11 節 P4 の裁定）。
+// stdout の直書き（io.WriteStdout — fd 1 へ直に write）は先行順の対象外（io の順はタイミングで決まる — language.md 11 節）。
 // 子と親が直書きするので出力の順はスケジュールで決まる（既定のスケジュール = 子を先に — この黄金）。scripts/schedfuzz.list の自己検査の証人
 // （split — 乱択のスケジュールで割れること = 網がスケジュールを動かしていること）
 

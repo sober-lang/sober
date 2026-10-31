@@ -1,12 +1,12 @@
 package lower
 
-// packed f64 の語彙（段 4②a — ir.sober の OpPMem / OpPArith）の検証器の網: v128 の約束（packed の op だけが使う・ブロックの中で閉じる・
+// packed f64 の語彙（ir.sober の OpPMem / OpPArith）の検証器の網: v128 の約束（packed の op だけが使う・ブロックの中で閉じる・
 // 呼び出しを跨がない）と欄の型を、IR を手で組んで vfyFunc に掛けて見る（`cd src/compiler && ../../bin/sober test lower`）。
-// x86 まで通す網は開発の口（.pair/packed-552.patch の pdev — 出力の一致・report-552 3 節）。生成器（SLP）が入れば出力一致の網に
+// x86 まで通す網は開発の口（出力の一致）。生成器（SLP）が入れば出力一致の網に
 
 import "desugar"
 
-// pvT は `f(p ptr) i64` に kind の形の本体を組んで検証器の文面を返す（"" = 通る）。
+// `f(p ptr) i64` に kind の形の本体を組んで検証器の文面を返す（"" = 通る）。
 // 0 = load2 → addpd → store2（通る）・1 = load2 と store2 の間に call・2 = load2 と store2 が別のブロック・3 = v128 を素の store で書く・
 // 4 = v128 を ret・5 = pack の被演算子に v128・6 = lo の被演算子に i64・7 = splat → sqrt → hi・lo → pack（通る）・8 = load2 の c が a でない
 func pvT(kind int) string {

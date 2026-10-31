@@ -1,0 +1,2505 @@
+package lower
+
+import "desugar"
+import "loader"
+import "elf"
+import "std/binary"
+import "std/io"
+import "std/iter"
+import "std/os"
+import "std/table"
+import "x86"
+
+// ── 後段の関数キャッシュの置き場と値（インクリ + 並列の波 段 3 R2 — report-1194 5 節・report-1197）──
+//
+// 置き場 = 世代のディレクトリ（`<cacheDir>/sober-build-1/<コンパイラの鍵の先頭 16 桁>/` — main が組んで Knob.bcDir で渡す）に build ごとに 1 つの
+// パック（`<pid>-<乱数>-<バイト数>.pack` — tmp + rename で公開・書いたら変えない・大きさは一覧〔bcGens〕が stat せずに数えるため）。パック = 値の並び + 索引（varint の [切り口, 鍵 h1, h2, 位置, 長さ,
+// 値の検査和]…）+ 尾（印 8 B・索引の長さ 8 B・索引の検査和 8 B）。読みは世代の全部のパックの索引を表にして、当たりの値だけを検査和で確かめて使う。
+// 切り口は 3 つ: α（BC_A — B1 の後の本体）・β1（BC_B1 — B2 の後の呼び出し / 番地取りの相手の列。鍵 = B2 の入力の鍵）・β2（BC_B2 — 機械語・
+// 後埋めの列・xmm の組。鍵 = ckBeta）。値の外を指す語は段 2 の安定な鍵のハッシュ（正準形）で、読み戻しで今の build の記録・番号へ戻す。
+// 検証モード（SOBER_CACHE_VERIFY=1）は当たりでも作り直し、作った値と置き場の値をバイトで比べる（違えば `cache: stale entry` で落ちる）
+
+const BC_A = 0
+const BC_B1 = 1
+const BC_B2 = 2
+const BC_P = 4   // P0 — parse のファイル単位の木（段 5 R4 — loader/pcache.sober。鍵 = ソースの中身のハッシュ 2 本）
+const BC_G = 3   // γ — TypeAll の package の区画（段 5 R2 — desugar/tycache.sober。鍵 = K1・値 = tyValEnc の語の可変長）
+const BC_MAGIC = 3550277445330518355 // "SBCPACK1"（LE）
+const BC_LOW63 = 9223372036854775807
+const BC_LOW57 = 144115188075855871
+
+// BcView は読みの表（子へ渡す — 凍った値だけ）: 切り口ごとの鍵 h1 → 項目（bcProbe の開番地の表）・項目の h2 / パック / 位置 / 長さ / 検査和・
+// パックの中身。切り口の表は map にしない: 親の凍らせた map を束の子が引くと表の番地が 0 で落ちる実発（report-1202 3 節 — 別便で rt の口を
+// 追う・再現 .pair/tools-1202/）。slice だけの表なら子の読みは ckt の slice と同じ口
+type BcView struct {
+    on bool
+    vfy bool
+    am []int
+    bm []int
+    cm []int
+    gm []int
+    pm []int   // P0 の鍵 h1 → 項目
+    pe []int   // P0 の項目の列（[項目, 鍵 h1] の組 — loader へ全部渡す）
+    ge []int   // γ の項目の列（[項目, 鍵 h1] の組 — desugar へ全部渡す。package の数 × 版の数）
+    ek2 []int
+    ef []int
+    eo []int
+    el []int
+    eh []int
+    fs [][]byte
+}
+
+func bcNone() BcView {
+    return BcView{on: false, vfy: false, am: []int{}, bm: []int{}, cm: []int{}, gm: []int{}, pm: []int{}, pe: []int{}, ge: []int{}, ek2: []int{}, ef: []int{}, eo: []int{}, el: []int{}, eh: []int{}, fs: [][]byte{}}
+}
+
+// bcSum はバイト列 b の [lo, hi) の検査和（語単位の混ぜ — 64 bit）
+func bcSum(b []byte, lo int, hi int) int {
+    mut h := CK_S1 ^ (hi - lo)
+    mut i := lo
+    while i + 8 <= hi {
+        h = (h ^ binary.Load64(b, i)) * CK_M1
+        h = h ^ (h >> 29)
+        i += 8
+    }
+    while i < hi {
+        h = (h ^ int(b[i])) * CK_M2
+        h = h ^ (h >> 31)
+        i += 1
+    }
+    return h
+}
+
+// ── varint（zigzag）──
+
+// bcPut は語 w を zigzag の varint で out へ
+func bcPut(out mut table.Table[byte], w int) {
+    mut z := (w << 1) ^ (w >> 63)
+    while z < 0 || z >= 128 {
+        table.Push(mut out, byte((z & 127) | 128))
+        z = (z >> 7) & BC_LOW57
+    }
+    table.Push(mut out, byte(z))
+}
+
+// BcRd は varint の読み手（b の [at, end) — 範囲を出たら bad）
+type BcRd struct {
+    b []byte
+    at int
+    end int
+    bad bool
+}
+
+// bcGet は次の語（読めなければ 0 で bad を立てる）
+func bcGet(r mut BcRd) int {
+    mut z := 0
+    mut s := 0
+    mut more := true
+    while more {
+        if r.at >= r.end || s > 63 {
+            r.bad = true
+            return 0
+        }
+        x := int(r.b[r.at])
+        r.at += 1
+        z = z | ((x & 127) << s)
+        s += 7
+        more = x >= 128
+    }
+    return ((z >> 1) & BC_LOW63) ^ -(z & 1)
+}
+
+// ── 外を指す語の正準形 ──
+
+// bcRef は外を指す語 v（関数・大域の記録 — v < 0 は無し）を out へ: [0, v] か [1, 安定な鍵の h1, h2]
+func bcRef(out mut table.Table[byte], t CkTab, v int) {
+    if v < 0 {
+        bcPut(mut out, 0)
+        bcPut(mut out, v)
+        return
+    }
+    i := ckIdx(t.ix, v)
+    if i < 0 {
+        panic(InvariantBroken{})
+    }
+    bcPut(mut out, 1)
+    bcPut(mut out, t.hs[2 * i])
+    bcPut(mut out, t.hs[2 * i + 1])
+}
+
+// bcRefGet は bcRef の読み戻し（今の build の記録 — 無ければ bad）
+func bcRefGet(r mut BcRd, t CkTab) int {
+    if bcGet(mut r) == 0 {
+        return bcGet(mut r)
+    }
+    h1 := bcGet(mut r)
+    h2 := bcGet(mut r)
+    i := ckIdx(t.rv, h1)
+    if i < 0 || t.hs[2 * i + 1] != h2 {
+        r.bad = true
+        return -1
+    }
+    return t.rec[i]
+}
+
+// bcNum は札 tag の番号の定数の値 v を out へ: 点の安定な鍵 [h1, h2] + spawn の下 2 bit（値は捨てる — ckNumAt と同じ添字）
+func bcNum(out mut table.Table[byte], t CkTab, tag int, v int) {
+    k := if tag == CT_PSITE { v - t.off } else { (v >> 2) - t.off - 1 }
+    xs := if tag == CT_PSITE { t.ps } else { t.ss }
+    if k < 0 || 2 * k + 1 >= len(xs) {
+        panic(InvariantBroken{})
+    }
+    bcPut(mut out, xs[2 * k])
+    bcPut(mut out, xs[2 * k + 1])
+    bcPut(mut out, if tag == CT_SITE { v & 3 } else { 0 })
+}
+
+// bcNumGet は bcNum の読み戻し（今の build の番号 — 点が無ければ bad）
+func bcNumGet(r mut BcRd, t CkTab, tag int) int {
+    h1 := bcGet(mut r)
+    h2 := bcGet(mut r)
+    low := bcGet(mut r)
+    m := if tag == CT_PSITE { t.pv } else { t.sv }
+    xs := if tag == CT_PSITE { t.ps } else { t.ss }
+    k := ckIdx(m, h1)
+    if k < 0 || xs[2 * k + 1] != h2 {
+        r.bad = true
+        return 0
+    }
+    return if tag == CT_PSITE { k + t.off } else { ((k + t.off + 1) << 2) | low }
+}
+
+// ── α の値 ──
+
+// bcAlphaEnc は詰めた本体 p の正準形を out へ（語の数 + 語の並び。命令の欄と終端の欄の K_FN / K_GLOB は安定な鍵・OpConst は欄 b〔札〕を
+// 先に書き、札つきなら a は点の安定な鍵 — 読み戻しは b を見てから a を読む）。語の列を作ってから 1 本のループで varint にする（語ごとの呼び出しを挟まない）
+func bcAlphaEnc(out mut table.Table[byte], p []int, opk []int, tmk []int, t CkTab) {
+    mut ws := mut []int{}
+    ws = append(ws, len(p))
+    bOff := MV_HDR + p[MV_NS] * MV_SLOT
+    pOff := bOff + p[MV_NB] * BSZ
+    iOff := pOff + p[MV_NP] * MV_PAR
+    iEnd := iOff + p[MV_NI] * ISZ
+    mut w := 0
+    while w < bOff {
+        ws = append(ws, p[w])
+        w += 1
+    }
+    // ブロック: 終端の欄の K_FN / K_GLOB だけ置き換える
+    while w < pOff {
+        r := tmk[p[w + B_TERM]]
+        for k <- iter.Range(0, BSZ) {
+            kind := if k >= B_X1 && k <= B_X5 { (r >> (4 * (k - B_X1))) & 15 } else { 0 }
+            if kind == K_FN || kind == K_GLOB {
+                rv := p[w + k]
+                if rv < 0 {
+                    ws = append(ws, 0)
+                    ws = append(ws, rv)
+                } else {
+                    ri := bcRi(t, rv)
+                    ws = append(ws, 1)
+                    ws = append(ws, t.hs[2 * ri])
+                    ws = append(ws, t.hs[2 * ri + 1])
+                }
+            } else {
+                ws = append(ws, p[w + k])
+            }
+        }
+        w += BSZ
+    }
+    while w < iOff {
+        ws = append(ws, p[w])
+        w += 1
+    }
+    while w < iEnd {
+        ws = append(ws, p[w + I_NEXT])
+        ws = append(ws, p[w + I_RES])
+        op := p[w + I_OP]
+        ws = append(ws, op)
+        if op == OpConst {
+            tag := p[w + I_B]
+            ws = append(ws, tag)
+            if tag == CT_PSITE || tag == CT_SITE {
+                ntag := tag
+                nv := p[w + I_A]
+                nk := bcNk(t, ntag, nv)
+                ws = append(ws, if ntag == CT_PSITE { t.ps[2 * nk] } else { t.ss[2 * nk] })
+                ws = append(ws, if ntag == CT_PSITE { t.ps[2 * nk + 1] } else { t.ss[2 * nk + 1] })
+                ws = append(ws, if ntag == CT_SITE { nv & 3 } else { 0 })
+            } else {
+                ws = append(ws, p[w + I_A])
+            }
+            ws = append(ws, p[w + I_C])
+        } else {
+            mut r := opk[op]
+            for k <- iter.Range(I_A, ISZ) {
+                kind := r & 15
+                r = r >> 4
+                if kind == K_FN || kind == K_GLOB {
+                    rv := p[w + k]
+                if rv < 0 {
+                    ws = append(ws, 0)
+                    ws = append(ws, rv)
+                } else {
+                    ri := bcRi(t, rv)
+                    ws = append(ws, 1)
+                    ws = append(ws, t.hs[2 * ri])
+                    ws = append(ws, t.hs[2 * ri + 1])
+                }
+                } else {
+                    ws = append(ws, p[w + k])
+                }
+            }
+        }
+        w += ISZ
+    }
+    while w < len(p) {
+        ws = append(ws, p[w])
+        w += 1
+    }
+    table.PushAll(mut out, bcVarints(freeze(ws)))
+}
+
+// bcAlphaHeap は bcAlphaEnc(mvPack(f)) と同じバイト列を、本体を壊さずにヒープから直に作る（W1 の α の書き — 詰めて積み戻す費用を払わない）。
+// 鎖の欄は歩く順の序数から・ブロック / スロットの参照は関数の中の索引から・列は初出の順（命令の順 → 終端の順 — mvPack と同じ）に置く。
+// 末尾の欄（B_PTAIL / B_ITAIL・F_BTAIL / F_STAIL）が鎖の最後でない形は空を返す（呼び手が詰める道に落ちる）
+func bcAlphaHeap(st mut St, f FnRef, t CkTab) []byte {
+    mut ss := mut []int{}
+    mut sm := mut map[int]int{}
+    mut s0 := irFnSHead(mut st, f)
+    while s0 >= 0 {
+        sm[s0] = len(ss)
+        ss = append(ss, s0)
+        s0 = desugar.HeapGet(mut st.d, s0)
+    }
+    mut bs := mut []int{}
+    mut bm := mut map[int]int{}
+    mut b0 := irFnBHead(mut st, f)
+    while b0 != -1 {
+        bm[int(b0)] = len(bs)
+        bs = append(bs, int(b0))
+        b0 = irBlkNext(mut st, b0)
+    }
+    nb := len(bs)
+    // ブロックごとの引数・命令の序数の範囲 [頭, 数]
+    mut pa := mut []int{}
+    mut ia := mut []int{}
+    mut ps := mut []int{}
+    mut is := mut []int{}
+    for k <- iter.Range(0, nb) {
+        pa = append(pa, len(ps))
+        mut q := irBlkPHead(mut st, BlkRef(bs[k]))
+        while q >= 0 {
+            ps = append(ps, q)
+            q = desugar.HeapGet(mut st.d, q)
+        }
+        pa = append(pa, len(ps) - pa[2 * k])
+        ia = append(ia, len(is))
+        mut i := irBlkIHead(mut st, BlkRef(bs[k]))
+        while i != -1 {
+            is = append(is, int(i))
+            i = irInsNext(mut st, i)
+        }
+        ia = append(ia, len(is) - ia[2 * k])
+    }
+    ns := len(ss)
+    np := len(ps)
+    ni := len(is)
+    sOff := MV_HDR
+    bOff := sOff + ns * MV_SLOT
+    pOff := bOff + nb * BSZ
+    iOff := pOff + np * MV_PAR
+    // 列の置き場（初出の順）— 中身は wl に写しておく（最後に ws へ続ける）
+    mut lm := mut map[int]int{}
+    mut wl := mut []int{}
+    lb := iOff + ni * ISZ
+    for k <- iter.Range(0, ni) {
+        x := is[k]
+        mut r := st.opk[desugar.HeapGet(mut st.d, x + I_OP)]
+        mut w := x + I_A
+        while r != 0 {
+            kind := r & 15
+            if kind == K_VLIST || kind == K_OLIST {
+                l := desugar.HeapGet(mut st.d, w)
+                if l >= 0 && lm[l] == nil {
+                    lm[l] = lb + len(wl)
+                    e := l + 1 + desugar.HeapGet(mut st.d, l)
+                    mut q := l
+                    while q < e {
+                        wl = append(wl, desugar.HeapGet(mut st.d, q))
+                        q += 1
+                    }
+                }
+            }
+            r = r >> 4
+            w += 1
+        }
+    }
+    for k <- iter.Range(0, nb) {
+        x := bs[k]
+        mut r := st.tmk[desugar.HeapGet(mut st.d, x + B_TERM)]
+        mut w := x + B_X1
+        while r != 0 {
+            if r & 15 == K_VLIST {
+                l := desugar.HeapGet(mut st.d, w)
+                if l >= 0 && lm[l] == nil {
+                    lm[l] = lb + len(wl)
+                    e := l + 1 + desugar.HeapGet(mut st.d, l)
+                    mut q := l
+                    while q < e {
+                        wl = append(wl, desugar.HeapGet(mut st.d, q))
+                        q += 1
+                    }
+                }
+            }
+            r = r >> 4
+            w += 1
+        }
+    }
+    lend := lb + len(wl)
+    // 末尾の欄の確かめ（鎖の最後を指すこと）
+    fb := desugar.HeapGet(mut st.d, int(f) + F_BTAIL)
+    fs := desugar.HeapGet(mut st.d, int(f) + F_STAIL)
+    mut ok := (if nb == 0 { fb < 0 } else { fb == bs[nb - 1] }) && (if ns == 0 { fs < 0 } else { fs == ss[ns - 1] })
+    for k <- iter.Range(0, nb) {
+        pt := desugar.HeapGet(mut st.d, bs[k] + B_PTAIL)
+        it := desugar.HeapGet(mut st.d, bs[k] + B_ITAIL)
+        n1 := pa[2 * k + 1]
+        n2 := ia[2 * k + 1]
+        ok = ok && (if n1 == 0 { pt < 0 } else { pt == ps[pa[2 * k] + n1 - 1] }) && (if n2 == 0 { it < 0 } else { it == is[ia[2 * k] + n2 - 1] })
+    }
+    if !ok {
+        return []byte{}
+    }
+    mut ws := mut []int{}
+    ws = append(ws, lend)
+    ws = append(ws, ns)
+    ws = append(ws, nb)
+    ws = append(ws, np)
+    ws = append(ws, ni)
+    ws = append(ws, desugar.HeapGet(mut st.d, int(f) + F_NVAL))
+    ws = append(ws, if nb == 0 { -1 } else { bOff })
+    ws = append(ws, if nb == 0 { -1 } else { bOff + (nb - 1) * BSZ })
+    ws = append(ws, desugar.HeapGet(mut st.d, int(f) + F_NBLK))
+    ws = append(ws, if ns == 0 { -1 } else { sOff })
+    ws = append(ws, if ns == 0 { -1 } else { sOff + (ns - 1) * MV_SLOT })
+    ws = append(ws, desugar.HeapGet(mut st.d, int(f) + F_NSLOT))
+    for k <- iter.Range(0, ns) {
+        x := ss[k]
+        ws = append(ws, if k + 1 < ns { sOff + (k + 1) * MV_SLOT } else { -1 })
+        ws = append(ws, desugar.HeapGet(mut st.d, x + 1))
+        ws = append(ws, desugar.HeapGet(mut st.d, x + 2))
+        fr := desugar.HeapGet(mut st.d, x + 3)
+        mut fo := -1
+        if fr >= 0 {
+            o := sm[fr]
+            if o != nil {
+                fo = sOff + o * MV_SLOT
+            }
+        }
+        ws = append(ws, fo)
+        ws = append(ws, desugar.HeapGet(mut st.d, x + 4))
+    }
+    for k <- iter.Range(0, nb) {
+        x := bs[k]
+        p0 := pa[2 * k]
+        n1 := pa[2 * k + 1]
+        i0 := ia[2 * k]
+        n2 := ia[2 * k + 1]
+        ws = append(ws, if k + 1 < nb { bOff + (k + 1) * BSZ } else { -1 })
+        ws = append(ws, desugar.HeapGet(mut st.d, x + B_ID))
+        ws = append(ws, if n1 == 0 { -1 } else { pOff + p0 * MV_PAR })
+        ws = append(ws, if n1 == 0 { -1 } else { pOff + (p0 + n1 - 1) * MV_PAR })
+        ws = append(ws, if n2 == 0 { -1 } else { iOff + i0 * ISZ })
+        ws = append(ws, if n2 == 0 { -1 } else { iOff + (i0 + n2 - 1) * ISZ })
+        tm := desugar.HeapGet(mut st.d, x + B_TERM)
+        ws = append(ws, tm)
+        r := st.tmk[tm]
+        for j <- iter.Range(B_X1, BSZ) {
+            v := desugar.HeapGet(mut st.d, x + j)
+            kind := if j <= B_X5 { (r >> (4 * (j - B_X1))) & 15 } else { 0 }
+            if kind == K_BLK && v >= 0 {
+                o := bm[v]
+                if o == nil {
+                    return []byte{}
+                }
+                ws = append(ws, bOff + o * BSZ)
+            } else if kind == K_VLIST && v >= 0 {
+                o := lm[v]
+                ws = append(ws, if o != nil { o } else { -1 })
+            } else if kind == K_FN || kind == K_GLOB {
+                rv := v
+                if rv < 0 {
+                    ws = append(ws, 0)
+                    ws = append(ws, rv)
+                } else {
+                    ri := bcRi(t, rv)
+                    ws = append(ws, 1)
+                    ws = append(ws, t.hs[2 * ri])
+                    ws = append(ws, t.hs[2 * ri + 1])
+                }
+            } else {
+                ws = append(ws, v)
+            }
+        }
+    }
+    for k <- iter.Range(0, nb) {
+        p0 := pa[2 * k]
+        n1 := pa[2 * k + 1]
+        for q <- iter.Range(p0, p0 + n1) {
+            x := ps[q]
+            ws = append(ws, if q + 1 < p0 + n1 { pOff + (q + 1) * MV_PAR } else { -1 })
+            ws = append(ws, desugar.HeapGet(mut st.d, x + 1))
+            ws = append(ws, desugar.HeapGet(mut st.d, x + 2))
+            ws = append(ws, desugar.HeapGet(mut st.d, x + 3))
+        }
+    }
+    for k <- iter.Range(0, nb) {
+        i0 := ia[2 * k]
+        n2 := ia[2 * k + 1]
+        for q <- iter.Range(i0, i0 + n2) {
+            x := is[q]
+            ws = append(ws, if q + 1 < i0 + n2 { iOff + (q + 1) * ISZ } else { -1 })
+            ws = append(ws, desugar.HeapGet(mut st.d, x + I_RES))
+            op := desugar.HeapGet(mut st.d, x + I_OP)
+            ws = append(ws, op)
+            if op == OpConst {
+                tag := desugar.HeapGet(mut st.d, x + I_B)
+                ws = append(ws, tag)
+                a := desugar.HeapGet(mut st.d, x + I_A)
+                if tag == CT_PSITE || tag == CT_SITE {
+                    ntag := tag
+                    nv := a
+                    nk := bcNk(t, ntag, nv)
+                    ws = append(ws, if ntag == CT_PSITE { t.ps[2 * nk] } else { t.ss[2 * nk] })
+                    ws = append(ws, if ntag == CT_PSITE { t.ps[2 * nk + 1] } else { t.ss[2 * nk + 1] })
+                    ws = append(ws, if ntag == CT_SITE { nv & 3 } else { 0 })
+                } else {
+                    ws = append(ws, a)
+                }
+                ws = append(ws, desugar.HeapGet(mut st.d, x + I_C))
+            } else {
+                mut r := st.opk[op]
+                for j <- iter.Range(I_A, ISZ) {
+                    kind := r & 15
+                    r = r >> 4
+                    v := desugar.HeapGet(mut st.d, x + j)
+                    if (kind == K_VLIST || kind == K_OLIST) && v >= 0 {
+                        o := lm[v]
+                        ws = append(ws, if o != nil { o } else { -1 })
+                    } else if kind == K_FN || kind == K_GLOB {
+                        rv := v
+                        if rv < 0 {
+                            ws = append(ws, 0)
+                            ws = append(ws, rv)
+                        } else {
+                            ri := bcRi(t, rv)
+                            ws = append(ws, 1)
+                            ws = append(ws, t.hs[2 * ri])
+                            ws = append(ws, t.hs[2 * ri + 1])
+                        }
+                    } else {
+                        ws = append(ws, v)
+                    }
+                }
+            }
+        }
+    }
+    for x <- wl {
+        ws = append(ws, x)
+    }
+    return bcVarints(freeze(ws))
+}
+
+// bcVarints は語の列 ws の zigzag の varint の並び（bcPut を語ごとに呼ぶのと同じバイト — 符号化の口 loader.Varints）
+func bcVarints(ws []int) []byte {
+    return loader.Varints(ws)
+}
+
+// bcRi は外を指す語 v（記録）の安定な鍵の添字（表に無ければ鍵が閉じない — 落とす）
+func bcRi(t CkTab, v int) int {
+    i := ckIdx(t.ix, v)
+    if i < 0 {
+        panic(InvariantBroken{})
+    }
+    return i
+}
+
+// bcNk は札 tag の番号の定数の値 v の点の添字（ckNumAt と同じ）
+func bcNk(t CkTab, tag int, v int) int {
+    k := if tag == CT_PSITE { v - t.off } else { (v >> 2) - t.off - 1 }
+    n := if tag == CT_PSITE { len(t.ps) } else { len(t.ss) }
+    if k < 0 || 2 * k + 1 >= n {
+        panic(InvariantBroken{})
+    }
+    return k
+}
+
+// bcAlphaDec は bcAlphaEnc の読み戻し（今の build の記録・番号の詰めた本体 — 読めなければ r.bad）。値を一括で語の列に戻し（loader.Unvarints）、
+// 語の列を添字で読む（1 語ずつ読み手の欄を出し入れする bcGet を挟まない — 段 3' R2）。読めたら r.at = r.end
+func bcAlphaDec(r mut BcRd, opk []int, tmk []int, t CkTab) []int {
+    ws, wok := loader.Unvarints(r.b, r.at, r.end)
+    nw := len(ws)
+    n := if nw > 0 { ws[0] } else { -1 }
+    if !wok || n < MV_HDR || n > nw {
+        r.bad = true
+        return []int{}
+    }
+    mut p := mut []int{}
+    for _ <- iter.Range(0, n) {
+        p = append(p, 0)
+    }
+    mut q := 1
+    mut bad := false
+    for k <- iter.Range(0, MV_HDR) {
+        p[k] = ws[q + k]
+    }
+    q += MV_HDR
+    bOff := MV_HDR + p[MV_NS] * MV_SLOT
+    pOff := bOff + p[MV_NB] * BSZ
+    iOff := pOff + p[MV_NP] * MV_PAR
+    iEnd := iOff + p[MV_NI] * ISZ
+    if p[MV_NS] < 0 || p[MV_NB] < 0 || p[MV_NP] < 0 || p[MV_NI] < 0 || iEnd > n || q + (bOff - MV_HDR) > nw {
+        r.bad = true
+        return []int{}
+    }
+    mut w := MV_HDR
+    while w < bOff {
+        p[w] = ws[q]
+        q += 1
+        w += 1
+    }
+    while w < pOff && !bad {
+        for k <- iter.Range(0, BSZ) {
+            term := if k > B_TERM { p[w - k + B_TERM] } else { 0 }
+            rr := if term >= 0 && term < len(tmk) { tmk[term] } else { 0 }
+            kind := if k >= B_X1 && k <= B_X5 { (rr >> (4 * (k - B_X1))) & 15 } else { 0 }
+            if q >= nw {
+                bad = true
+            } else if kind == K_FN || kind == K_GLOB {
+                v, q1, b1 := bcRefW(ws, q, t)
+                p[w] = v
+                q = q1
+                bad = bad || b1
+            } else {
+                p[w] = ws[q]
+                q += 1
+            }
+            w += 1
+        }
+    }
+    while w < iOff && !bad && q < nw {
+        p[w] = ws[q]
+        q += 1
+        w += 1
+    }
+    while w < iEnd && !bad {
+        if q + 3 > nw {
+            bad = true
+        } else {
+            p[w] = ws[q]
+            p[w + 1] = ws[q + 1]
+            op := ws[q + 2]
+            p[w + 2] = op
+            q += 3
+            w += 3
+            if op == OpConst {
+                if q + 1 > nw {
+                    bad = true
+                } else {
+                    tag := ws[q]
+                    q += 1
+                    if tag == CT_PSITE || tag == CT_SITE {
+                        v, q1, b1 := bcNumW(ws, q, t, tag)
+                        p[w] = v
+                        q = q1
+                        bad = bad || b1
+                    } else if q < nw {
+                        p[w] = ws[q]
+                        q += 1
+                    } else {
+                        bad = true
+                    }
+                    p[w + 1] = tag
+                    if q < nw {
+                        p[w + 2] = ws[q]
+                        q += 1
+                    } else {
+                        bad = true
+                    }
+                    w += 3
+                }
+            } else {
+                mut rr := if op >= 0 && op < len(opk) { opk[op] } else { 0 }
+                for k <- iter.Range(I_A, ISZ) {
+                    kind := rr & 15
+                    rr = rr >> 4
+                    if q >= nw {
+                        bad = true
+                    } else if kind == K_FN || kind == K_GLOB {
+                        v, q1, b1 := bcRefW(ws, q, t)
+                        p[w] = v
+                        q = q1
+                        bad = bad || b1
+                    } else {
+                        p[w] = ws[q]
+                        q += 1
+                    }
+                    w += 1
+                }
+            }
+        }
+    }
+    while w < n && !bad && q < nw {
+        p[w] = ws[q]
+        q += 1
+        w += 1
+    }
+    if bad || w != n || q != nw {
+        r.bad = true
+        return []int{}
+    }
+    r.at = r.end
+    return freeze(p)
+}
+
+// bcRefW は語の列 ws の q からの外を指す語（bcRef の形 [0, v] / [1, h1, h2]）の読み戻し: (記録, 次の位置, 読めない)
+func bcRefW(ws []int, q int, t CkTab) (int, int, bool) {
+    if q >= len(ws) {
+        return -1, q, true
+    }
+    if ws[q] == 0 {
+        if q + 1 >= len(ws) {
+            return -1, q + 1, true
+        }
+        return ws[q + 1], q + 2, false
+    }
+    if q + 2 >= len(ws) {
+        return -1, q + 3, true
+    }
+    i := ckIdx(t.rv, ws[q + 1])
+    if i < 0 || t.hs[2 * i + 1] != ws[q + 2] {
+        return -1, q + 3, true
+    }
+    return t.rec[i], q + 3, false
+}
+
+// bcNumW は語の列 ws の q からの番号の定数（bcNum の形 [h1, h2, 下 2 bit]）の読み戻し: (今の build の番号, 次の位置, 読めない)
+func bcNumW(ws []int, q int, t CkTab, tag int) (int, int, bool) {
+    if q + 2 >= len(ws) {
+        return 0, q + 3, true
+    }
+    m := if tag == CT_PSITE { t.pv } else { t.sv }
+    xs := if tag == CT_PSITE { t.ps } else { t.ss }
+    k := ckIdx(m, ws[q])
+    if k < 0 || xs[2 * k + 1] != ws[q + 1] {
+        return 0, q + 3, true
+    }
+    low := ws[q + 2]
+    return if tag == CT_PSITE { k + t.off } else { ((k + t.off + 1) << 2) | low }, q + 3, false
+}
+
+// ── 置き場の読み ──
+
+// bcLoad は世代のディレクトリ dir の全部のパックを読んで表にする（読めないパック・壊れたパックは飛ばす — キャッシュは速さのためだけ）
+func bcLoad(dir string, vfy bool) BcView {
+    mut am := mut map[int]int{}
+    mut bm := mut map[int]int{}
+    mut cm := mut map[int]int{}
+    mut gm := mut map[int]int{}
+    mut pm := mut map[int]int{}
+    mut ge := mut []int{}
+    mut pe := mut []int{}
+    mut ec := mut []int{}
+    mut ek1 := mut []int{}
+    mut ek2 := mut []int{}
+    mut ef := mut []int{}
+    mut eo := mut []int{}
+    mut el := mut []int{}
+    mut eh := mut []int{}
+    mut fs := mut [][]byte{}
+    es := io.ReadDir(dir) catch []io.DirEntry{}
+    for e <- es {
+        nb := bytes(e.Name)
+        n0 := len(nb)
+        if n0 > 5 && nb[n0 - 5] == '.' && nb[n0 - 4] == 'p' && nb[n0 - 3] == 'a' && nb[n0 - 2] == 'c' && nb[n0 - 1] == 'k' {
+            b := io.ReadFile("${dir}/${e.Name}") catch []byte{}
+            nb2 := len(b)
+            il := if nb2 >= 24 && binary.Load64(b, nb2 - 24) == BC_MAGIC { binary.Load64(b, nb2 - 16) } else { -1 }
+            if il >= 0 && il <= nb2 - 24 && bcSum(b, nb2 - 24 - il, nb2 - 24) == binary.Load64(b, nb2 - 8) {
+                fi := len(fs)
+                fs = append(fs, b)
+                base := 0
+                vend := nb2 - 24 - il
+                mut r := BcRd{b: b, at: vend, end: nb2 - 24, bad: false}
+                while r.at < r.end && !r.bad {
+                    cut := bcGet(mut r)
+                    k1 := bcGet(mut r)
+                    k2 := bcGet(mut r)
+                    off := bcGet(mut r)
+                    n := bcGet(mut r)
+                    h := bcGet(mut r)
+                    seen := if cut == BC_A { am[k1] != nil } else if cut == BC_B1 { bm[k1] != nil } else if cut == BC_G { gm[k1] != nil } else if cut == BC_P { pm[k1] != nil } else { cm[k1] != nil }
+                    if !r.bad && !seen && cut >= BC_A && cut <= BC_P && off >= 0 && n >= 0 && base + off + n <= vend {
+                        ei := len(ek2)
+                        if cut == BC_A {
+                            am[k1] = ei
+                        } else if cut == BC_B1 {
+                            bm[k1] = ei
+                        } else if cut == BC_G {
+                            gm[k1] = ei
+                            ge = append(ge, ei)
+                            ge = append(ge, k1)
+                        } else if cut == BC_P {
+                            pm[k1] = ei
+                            pe = append(pe, ei)
+                            pe = append(pe, k1)
+                        } else {
+                            cm[k1] = ei
+                        }
+                        ec = append(ec, cut)
+                        ek1 = append(ek1, k1)
+                        ek2 = append(ek2, k2)
+                        ef = append(ef, fi)
+                        eo = append(eo, base + off)
+                        el = append(el, n)
+                        eh = append(eh, h)
+                    }
+                }
+            }
+        }
+    }
+    fc := freeze(ec)
+    fk := freeze(ek1)
+    return BcView{on: true, vfy: vfy, am: bcProbe(fc, fk, BC_A), bm: bcProbe(fc, fk, BC_B1), cm: bcProbe(fc, fk, BC_B2), gm: bcProbe(fc, fk, BC_G), pm: bcProbe(fc, fk, BC_P), pe: freeze(pe), ge: freeze(ge), ek2: freeze(ek2), ef: freeze(ef), eo: freeze(eo), el: freeze(el), eh: freeze(eh), fs: freeze(fs)}
+}
+
+// bcFind は切り口 cut の鍵 [k1, k2] の項目（無い・検査和が合わない = -1）
+func bcFind(v BcView, cut int, k1 int, k2 int) int {
+    if !v.on {
+        return -1
+    }
+    m := if cut == BC_A { v.am } else if cut == BC_B1 { v.bm } else if cut == BC_G { v.gm } else if cut == BC_P { v.pm } else { v.cm }
+    e := bcProbeGet(m, k1)
+    if e < 0 || v.ek2[e] != k2 {
+        return -1
+    }
+    if bcSum(v.fs[v.ef[e]], v.eo[e], v.eo[e] + v.el[e]) != v.eh[e] {
+        return -1
+    }
+    return e
+}
+
+// bcRdOf は項目 e の値の読み手
+func bcRdOf(v BcView, e int) BcRd {
+    return BcRd{b: v.fs[v.ef[e]], at: v.eo[e], end: v.eo[e] + v.el[e], bad: false}
+}
+
+// bcSame は項目 e の値が b（作り直した値）とバイトで同じか（検証モード）
+func bcSame(v BcView, e int, b []byte) bool {
+    if v.el[e] != len(b) {
+        return false
+    }
+    f := v.fs[v.ef[e]]
+    o := v.eo[e]
+    for k <- iter.Range(0, len(b)) {
+        if f[o + k] != b[k] {
+            return false
+        }
+    }
+    return true
+}
+
+// ── 置き場の書き ──
+
+// bcAdd は作った値 vb（切り口 cut・鍵 [k1, k2]）を書きの束へ。置き場に同じ鍵があれば書かない — 検証モードではそこで比べる（違えば stale に積む）
+func bcAdd(st mut St, cut int, k1 int, k2 int, vb []byte) {
+    e := bcFind(st.bcv, cut, k1, k2)
+    if e >= 0 {
+        if st.bcv.vfy && !bcSame(st.bcv, e, vb) {
+            table.Push(mut st.bcStale, cut)
+            table.Push(mut st.bcStale, k1)
+            table.Push(mut st.bcStale, k2)
+        }
+        return
+    }
+    bcPutV(mut st, cut, k1, k2, vb)
+}
+
+// bcCount は当否の数（cut の当たり = hit・外れ = !hit）
+func bcCount(st mut St, cut int, hit bool) {
+    table.Set(mut st.bcCnt, 2 * cut + (if hit { 0 } else { 1 }), table.Get(mut st.bcCnt, 2 * cut + (if hit { 0 } else { 1 })) + 1)
+}
+
+// bcEq はバイト列の一致
+func bcEq(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for k <- iter.Range(0, len(a)) {
+        if a[k] != b[k] {
+            return false
+        }
+    }
+    return true
+}
+
+// bcCat は凍らせた表 f の中身の連結（chunk ごとの写し — 写しのループの形）
+func bcCat(f table.Frozen[byte]) []byte {
+    mut out := mut []byte{}
+    mut k := 0
+    while k * table.CHUNK < f.n {
+        c := f.chunks[k]
+        e := if f.n - k * table.CHUNK < table.CHUNK { f.n - k * table.CHUNK } else { table.CHUNK }
+        mut q := 0
+        while q < e {
+            out = append(out, c[q])
+            q += 1
+        }
+        k += 1
+    }
+    return freeze(out)
+}
+
+// bcFlush は書きの束をパックにして世代のディレクトリへ（tmp + rename）・stale があれば落とす・SOBER_CACHE_STAT=1 なら当否を標準エラーへ
+func bcFlush(st mut St) {
+    if st.bcAud {
+        bcAudReport(mut st)
+    }
+    ns := table.Len(mut st.bcStale) / 3
+    if ns > 0 {
+        mut msg := mut []byte{}
+        for k <- iter.Range(0, ns) {
+            cut := table.Get(mut st.bcStale, 3 * k)
+            nm := if cut == BC_A { "alpha" } else if cut == BC_B1 { "beta1" } else if cut == BC_G { "gamma" } else if cut == BC_P { "parse" } else { "beta2" }
+            for x <- bytes("cache: stale entry ${nm} ") {
+                msg = append(msg, x)
+            }
+            ckHex2(mut msg, table.Get(mut st.bcStale, 3 * k + 1), table.Get(mut st.bcStale, 3 * k + 2))
+            msg = append(msg, ' ')
+            for x <- bcStaleName(mut st, cut, table.Get(mut st.bcStale, 3 * k + 1), table.Get(mut st.bcStale, 3 * k + 2)) {
+                msg = append(msg, x)
+            }
+            msg = append(msg, '\n')
+        }
+        _ = io.WriteStderr(freeze(msg))
+        panic(InvariantBroken{})
+    }
+    ni := table.Len(mut st.bcWi) / 6
+    if lsEnvInt("SOBER_CACHE_STAT") == 1 {
+        mut c := mut []int{}
+        for k <- iter.Range(0, 6) {
+            c = append(c, table.Get(mut st.bcCnt, k))
+        }
+        for k <- iter.Range(9, 13) {
+            c = append(c, table.Get(mut st.bcCnt, k))
+        }
+        mut z := mut []int{0, 0, 0, 0, 0}
+        for k <- iter.Range(0, ni) {
+            cut := table.Get(mut st.bcWi, 6 * k)
+            z[cut] = z[cut] + table.Get(mut st.bcWi, 6 * k + 4)
+        }
+        _ = io.WriteStderr(bytes("cache: alpha ${c[0]}/${c[0] + c[1]} beta1 ${c[2]}/${c[2] + c[3]} beta2 ${c[4]}/${c[4] + c[5]} gamma ${c[6]}/${c[6] + c[7]} parse ${c[8]}/${c[8] + c[9]} put=${ni} bytes=${table.Len(mut st.bcW)} (${z[0]} / ${z[1]} / ${z[2]} / ${z[3]} / ${z[4]})\n"))
+    }
+    hits := table.Get(mut st.bcCnt, 0) + table.Get(mut st.bcCnt, 2) + table.Get(mut st.bcCnt, 4) + table.Get(mut st.bcCnt, 9)
+    if ni == 0 {
+        bcAfter(st.bcDir, 0, hits == 0)
+        return
+    }
+    // 値の並び → 索引 → 尾（印・索引の長さ・索引の検査和 — 24 B）の順に 1 本の列へ（値の束を 1 回だけ写す）
+    f := table.Freeze(mut st.bcW)
+    mut out := mut []byte{}
+    mut k0 := 0
+    while k0 * table.CHUNK < f.n {
+        c := f.chunks[k0]
+        e := if f.n - k0 * table.CHUNK < table.CHUNK { f.n - k0 * table.CHUNK } else { table.CHUNK }
+        mut q := 0
+        while q < e {
+            out = append(out, c[q])
+            q += 1
+        }
+        k0 += 1
+    }
+    nv := len(out)
+    mut ix := mut []int{}
+    for k <- iter.Range(0, ni) {
+        off := table.Get(mut st.bcWi, 6 * k + 3)
+        n := table.Get(mut st.bcWi, 6 * k + 4)
+        ix = append(ix, table.Get(mut st.bcWi, 6 * k))
+        ix = append(ix, table.Get(mut st.bcWi, 6 * k + 1))
+        ix = append(ix, table.Get(mut st.bcWi, 6 * k + 2))
+        ix = append(ix, off)
+        ix = append(ix, n)
+        ix = append(ix, table.Get(mut st.bcWi, 6 * k + 5))
+    }
+    ib := bcVarints(freeze(ix))
+    il := len(ib)
+    mut q := 0
+    while q < il {
+        out = append(out, ib[q])
+        q += 1
+    }
+    bcLe(mut out, BC_MAGIC)
+    bcLe(mut out, il)
+    bcLe(mut out, bcSum(ib, 0, il))
+    _ = nv
+    bcMkdirs(st.bcDir)
+    p := "${st.bcDir}/${TmpTag()}-${len(out)}.pack"
+    tmp := p + ".tmp"
+    if io.WriteFile(tmp, freeze(out)) != nil {
+        return
+    }
+    _ = os.Rename(tmp, p)
+    bcAfter(st.bcDir, len(out), hits == 0)
+}
+
+// bcLe は語 w を 8 B（LE）で out へ
+func bcLe(out mut []byte, w int) {
+    for j <- iter.Range(0, 8) {
+        out = append(out, byte((w >> (8 * j)) & 255))
+    }
+}
+
+// bcMkdirs は path のディレクトリを親から順に作る（mkdir -p — 失敗は無視。作れなければ書きが失敗するだけ）
+func bcMkdirs(path string) {
+    b := bytes(path)
+    for i <- iter.Range(1, len(b) + 1) {
+        if i == len(b) || b[i] == '/' {
+            d := string(b[0:i]) catch return
+            _ = os.Mkdir(d)
+        }
+    }
+}
+
+// TmpTag は一時ファイルの名前の印 `<pid>-<乱数>`（pid = /proc/self/stat の最初の欄・乱数 = /proc/sys/kernel/random/uuid の 32 桁）。
+// 同じ置き場に同時に書く 2 つのプロセスが同じ一時ファイルを奪い合わない（check の置き場 cachePut も使う — report-1194 0 節 7）
+func TmpTag() string {
+    sb := io.ReadFile("/proc/self/stat") catch []byte{}
+    ub := io.ReadFile("/proc/sys/kernel/random/uuid") catch []byte{}
+    mut out := mut []byte{}
+    mut i := 0
+    while i < len(sb) && sb[i] != ' ' {
+        out = append(out, sb[i])
+        i += 1
+    }
+    out = append(out, '-')
+    for x <- ub {
+        if (x >= '0' && x <= '9') || (x >= 'a' && x <= 'f') {
+            out = append(out, x)
+        }
+    }
+    return string(freeze(out)) catch "0"
+}
+
+// bcPutV は値 vb を書きの束の末尾へ積み、索引 [切り口, h1, h2, 位置, 長さ, 検査和] を足す（置き場に無いと分かっている鍵）
+func bcPutV(st mut St, cut int, k1 int, k2 int, vb []byte) {
+    table.Push(mut st.bcWi, cut)
+    table.Push(mut st.bcWi, k1)
+    table.Push(mut st.bcWi, k2)
+    table.Push(mut st.bcWi, table.Len(mut st.bcW))
+    table.Push(mut st.bcWi, len(vb))
+    table.Push(mut st.bcWi, bcSum(vb, 0, len(vb)))
+    table.PushAll(mut st.bcW, vb)
+}
+
+// ── γ（TypeAll の package の区画 — 段 5 R2）──
+
+// bcGammaView は置き場の γ の項目を desugar の TyCache へ（検査和の合う項目だけ）。コンパイラの鍵 = 世代のディレクトリの名前（コンパイラの鍵の
+// 先頭 16 桁 — 置き場の根のパスは入れない）
+func bcGammaView(st mut St) desugar.TyCache {
+    v := st.bcv
+    mut k1 := mut []int{}
+    mut k2 := mut []int{}
+    mut vs := mut [][]byte{}
+    for gi <- iter.Range(0, len(v.ge) / 2) {
+        e := v.ge[2 * gi]
+        f := v.fs[v.ef[e]]
+        o := v.eo[e]
+        n := v.el[e]
+        if bcSum(f, o, o + n) == v.eh[e] {
+            mut b := mut []byte{}
+            for q <- iter.Range(0, n) {
+                b = append(b, f[o + q])
+            }
+            k1 = append(k1, v.ge[2 * gi + 1])
+            k2 = append(k2, v.ek2[e])
+            vs = append(vs, freeze(b))
+        }
+    }
+    _, gen := bcSplit(st.bcDir)
+    vm := lsEnvInt("SOBER_CACHE_VERIFY")
+    return desugar.TyCache{on: true, vfy: if vm == 1 { 1 } else if vm == 2 { 2 } else { 0 }, exe: gen, k1: freeze(k1), k2: freeze(k2), vs: freeze(vs)}
+}
+
+// bcGammaPut は TypeAllC の書きの側を検査の後で書きの束へ（値の末尾に検査の語 — desugar.TyValSeal・bcAdd — 置き場に同じ鍵があれば検証モードで
+// 比べる）・当否の数（bcCnt 9 / 10）・読み戻しの照合の食い違い（SOBER_CACHE_VERIFY=2）は名指しして落ちる
+func bcGammaPut(st mut St, p desugar.TyPut) {
+    for i <- iter.Range(0, len(p.k1)) {
+        bcAdd(mut st, BC_G, p.k1[i], p.k2[i], desugar.TyValSeal(mut st.d, p.pk[i], p.vs[i]))
+    }
+    table.Set(mut st.bcCnt, 9, table.Get(mut st.bcCnt, 9) + p.hit)
+    table.Set(mut st.bcCnt, 10, table.Get(mut st.bcCnt, 10) + p.miss)
+    if len(p.bad) > 0 {
+        for nm <- p.bad {
+            _ = io.WriteStderr(bytes("cache: gamma readback mismatch "))
+            _ = io.WriteStderr(nm)
+            _ = io.WriteStderr(bytes("\n"))
+        }
+        panic(InvariantBroken{})
+    }
+}
+
+// ── P0（parse のファイル単位の木 — 段 5 R4）──
+
+// BcOpen は世代のディレクトリ dir の置き場の読み（bcLoad — 検証モードは SOBER_CACHE_VERIFY=1 / 2・dir = "" は置き場を使わない build の空の表）。
+// app が parse の前に 1 回読み、parse のキャッシュ（BcParseView）と lower（ElfPassesCache）が同じ表を使う
+func BcOpen(dir string) BcView {
+    if dir == "" {
+        return bcNone()
+    }
+    vm := lsEnvInt("SOBER_CACHE_VERIFY")
+    v := bcLoad(dir, vm == 1 || vm == 2)
+    loader.Stage("bcload")
+    return v
+}
+
+// BcParseView は置き場の P0 の項目を loader の読みの表へ（検査和の合う項目だけ — 値は写さずパックの中身を指す）
+func BcParseView(v BcView) loader.PCache {
+    mut k1 := mut []int{}
+    mut k2 := mut []int{}
+    mut ef := mut []int{}
+    mut eo := mut []int{}
+    mut el := mut []int{}
+    for pi <- iter.Range(0, len(v.pe) / 2) {
+        e := v.pe[2 * pi]
+        if bcSum(v.fs[v.ef[e]], v.eo[e], v.eo[e] + v.el[e]) == v.eh[e] {
+            k1 = append(k1, v.pe[2 * pi + 1])
+            k2 = append(k2, v.ek2[e])
+            ef = append(ef, v.ef[e])
+            eo = append(eo, v.eo[e])
+            el = append(el, v.el[e])
+        }
+    }
+    return loader.PCache{on: v.on, vfy: v.vfy, pt: loader.PcTable(freeze(k1)), k2: freeze(k2), ef: freeze(ef), eo: freeze(eo), el: freeze(el), fs: v.fs}
+}
+
+// bcParsePut は loader の読みの結果を書きの束へ（外れと検証モードの値 — bcAdd・置き場に同じ鍵があれば検証モードで比べる）・当否の数（bcCnt 11 / 12）・
+// 読み戻しの照合の食い違い（検証モード）は名指しして落ちる
+func bcParsePut(st mut St, ps []loader.PcPut) {
+    st.pcPut = ps
+    mut bad := 0
+    for pp <- ps {
+        if pp.st == 1 || pp.st == 3 {
+            table.Set(mut st.bcCnt, 11, table.Get(mut st.bcCnt, 11) + 1)
+        } else if pp.st == 2 {
+            table.Set(mut st.bcCnt, 12, table.Get(mut st.bcCnt, 12) + 1)
+        }
+        if pp.st == 2 || pp.st == 3 {
+            bcAdd(mut st, BC_P, pp.k1, pp.k2, pp.v)
+        }
+        if pp.st == 4 {
+            _ = io.WriteStderr(bytes("cache: parse readback mismatch ${pp.path}\n"))
+            bad += 1
+        }
+    }
+    if bad > 0 {
+        panic(InvariantBroken{})
+    }
+}
+
+// ── α（B1）──
+
+// bcAlphaW1 は束を回さない道（W1）の B1: 関数ごとに α の鍵を引き、当たりは値を読み戻して積み、外れは optFunc + lB1Func（束の子と同じ列）を掛けて
+// 値を書く（詰めて積み戻す — 詰めた形が値の素）。ckAll(0) の後に呼ぶ
+func bcAlphaW1(st mut St) {
+    a0 := ckStage(mut st, 0)
+    ab := if st.bcAud { bcAudBase(st.ckt, lParCfg(mut st, false), 1) } else { []int{} }
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            bcAlphaFn(mut st, f, ckIdx(a0, int(f)), ab)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// bcAlphaFn は bcAlphaW1 の 1 関数（q = st.ckk の位置）
+func bcAlphaFn(st mut St, f FnRef, q int, ab []int) {
+    k1 := table.Get(mut st.ckk, q + 2)
+    k2 := table.Get(mut st.ckk, q + 3)
+    e := if st.bcv.vfy { -1 } else { bcFind(st.bcv, BC_A, k1, k2) }
+    if e >= 0 {
+        mut r := bcRdOf(st.bcv, e)
+        p := bcAlphaDec(mut r, st.opk, st.tmk, st.ckt)
+        if !r.bad && r.at == r.end {
+            mvUnpack(mut st, f, p)
+            bcCount(mut st, BC_A, true)
+            return
+        }
+    }
+    bcCount(mut st, BC_A, false)
+    if st.bcAud {
+        bcAudBegin(mut st, BC_A, int(f), q, ab)
+    }
+    optFunc(mut st, f)
+    lB1Func(mut st, f)
+    if st.bcAud {
+        bcAudEnd(mut st)
+    }
+    // 値は本体を壊さずに直に（形が合わなければ詰めて積み戻す道 — 検証モードは両方を作って照合）
+    vh := bcAlphaHeap(mut st, f, st.ckt)
+    if len(vh) > 0 && !st.bcv.vfy {
+        bcPutV(mut st, BC_A, k1, k2, vh)
+        return
+    }
+    p := mvPack(mut st, f, false)
+    mvUnpack(mut st, f, p)
+    mut out := table.Table[byte]{}
+    bcAlphaEnc(mut out, p, st.opk, st.tmk, st.ckt)
+    vp := bcCat(table.Freeze(mut out))
+    if len(vh) > 0 && !bcEq(vh, vp) {
+        panic(InvariantBroken{})
+    }
+    bcAdd(mut st, BC_A, k1, k2, vp)
+}
+
+// bcKid は束の子の 1 関数の置き場の段（stage 0 = α・1 = B2 の入力 — β1）: 当たりの項目（-1 = 外れ・検証モードは常に外れ）
+func bcKid(bv BcView, stage int, k1 int, k2 int) int {
+    return if bv.vfy { -1 } else { bcFind(bv, if stage == 1 { BC_B1 } else { BC_A }, k1, k2) }
+}
+
+// bcKidPut は束の子が積み戻した結果 o の置き場の分を親へ（α の値の書き / 比べ・β1 の当たりの関数の印）。fr[lo..] が o の関数の順
+func bcKidPut(st mut St, fr []int, lo int, o LOut, stage int) {
+    mut at := 0
+    mut va := 0
+    for q <- iter.Range(0, len(o.hit)) {
+        k1 := o.ks[at]
+        k2 := o.ks[at + 1]
+        at += 3 + o.ks[at + 2]
+        if o.hit[q] >= 0 {
+            bcCount(mut st, if stage == 1 { BC_B1 } else { BC_A }, true)
+            if stage == 1 {
+                table.Push(mut st.bcSkL, fr[lo + q])
+                table.Push(mut st.bcSkL, o.hit[q])
+            }
+        } else {
+            bcCount(mut st, if stage == 1 { BC_B1 } else { BC_A }, false)
+        }
+        n := o.al[q]
+        if n > 0 {
+            if st.bcv.vfy {
+                bcAdd(mut st, BC_A, k1, k2, o.av[va:va + n])
+            } else {
+                bcPutV(mut st, BC_A, k1, k2, o.av[va:va + n])
+            }
+            va += n
+        }
+    }
+}
+
+// ── β1（B2 の後の呼び出し・番地取りの相手）──
+
+// bcB2W1 は束を回さない道（W1）の B2: 関数ごとに β1 の鍵（B2 の入力の鍵）を引き、当たりは B2 を飛ばし（本体は入力のまま — β2 が外れたら
+// bcPreX86 が遅れて掛ける）、外れは lB2Func（束の子と同じ列）。ckAll(1) の後に呼ぶ
+func bcB2W1(st mut St) {
+    b1 := ckStage(mut st, 1)
+    ab := if st.bcAud { bcAudBase(st.ckt, lParCfg(mut st, true), 1) } else { []int{} }
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            q := ckIdx(b1, int(f))
+            e := if st.bcv.vfy { -1 } else { bcFind(st.bcv, BC_B1, table.Get(mut st.ckk, q + 2), table.Get(mut st.ckk, q + 3)) }
+            if e >= 0 {
+                table.Push(mut st.bcSkL, int(f))
+                table.Push(mut st.bcSkL, e)
+                bcCount(mut st, BC_B1, true)
+            } else {
+                bcCount(mut st, BC_B1, false)
+                if st.bcAud {
+                    bcAudBegin(mut st, BC_B1, int(f), q, ab)
+                }
+                lB2Func(mut st, f)
+                if st.bcAud {
+                    bcAudEnd(mut st)
+                }
+            }
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// bcCalls は関数 f の本体の [印, 相手]…（印 0 = OpCall・1 = OpFuncaddr — cutCallees と xAddrTaken が読む相手）と、切替 / 罠を持つか（末尾の 1 語）
+func bcCalls(st mut St, f FnRef) []int {
+    mut out := mut []int{}
+    mut ctx := 0
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpCall || op == OpFuncaddr {
+                out = append(out, if op == OpFuncaddr { 1 } else { 0 })
+                out = append(out, int(irInsFn(mut st, i)))
+            } else if op == OpTSwitch || op == OpTStart || op == OpTrapI {
+                ctx = 1
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    out = append(out, ctx)
+    return freeze(out)
+}
+
+// bcB1Collect は B2 の後（cutInsert の前）: β1 の当たりの関数の値を読み戻して bcSk / bcInf に・外れの関数の値を書く（切替 / 罠を持つ関数は書かない
+// — 当たらないので B2 も x86 も毎回）。読み戻せない当たりはその場で B2 を掛けて外れに回す
+func bcB1Collect(st mut St) {
+    b1 := ckStage(mut st, 1)
+    mut sk := mut map[int]int{}
+    // 相手の列は表に積む（関数ごとの作業の値と交互に伸ばす slice は伸ばすたびに丸ごと写る — RSS +770 MB の実発）
+    mut inf := table.Table[int]{}
+    n := table.Len(mut st.bcSkL) / 2
+    for k <- iter.Range(0, n) {
+        f := table.Get(mut st.bcSkL, 2 * k)
+        mut r := bcRdOf(st.bcv, table.Get(mut st.bcSkL, 2 * k + 1))
+        m := bcGet(mut r)
+        at := table.Len(mut inf)
+        table.Push(mut inf, m)
+        for j <- iter.Range(0, if r.bad || m < 0 || m > r.end { 0 } else { m }) {
+            table.Push(mut inf, bcGet(mut r))
+            table.Push(mut inf, bcRefGet(mut r, st.ckt))
+        }
+        if r.bad || r.at != r.end {
+            // 読み戻せない — 遅れて B2 を掛け、外れとして下で値を書く
+            lB2Func(mut st, FnRef(f))
+        } else {
+            sk[f] = at
+        }
+    }
+    // 全部の関数の相手の列（bcAddr が本体を歩き直さない — 検査点は rt の呼び出ししか足さないので番地取りの相手は B2 の後のまま）
+    mut cl := mut map[int]int{}
+    for k <- iter.Range(0, n) {
+        f1 := table.Get(mut st.bcSkL, 2 * k)
+        a1 := sk[f1]
+        if a1 != nil {
+            cl[f1] = a1
+        }
+    }
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 && sk[int(f)] == nil {
+            q := ckIdx(b1, int(f))
+            cs := bcCalls(mut st, f)
+            cl[int(f)] = table.Len(mut inf)
+            table.Push(mut inf, (len(cs) - 1) / 2)
+            table.PushAll(mut inf, cs[0:len(cs) - 1])
+            if q >= 0 {
+                if cs[len(cs) - 1] == 0 {
+                    mut ws := mut []int{(len(cs) - 1) / 2}
+                    mut j := 0
+                    while j + 1 < len(cs) {
+                        ws = append(ws, cs[j])
+                        rv := cs[j + 1]
+                        if rv < 0 {
+                            ws = append(ws, 0)
+                            ws = append(ws, rv)
+                        } else {
+                            ri := bcRi(st.ckt, rv)
+                            ws = append(ws, 1)
+                            ws = append(ws, st.ckt.hs[2 * ri])
+                            ws = append(ws, st.ckt.hs[2 * ri + 1])
+                        }
+                        j += 2
+                    }
+                    bcAdd(mut st, BC_B1, table.Get(mut st.ckk, q + 2), table.Get(mut st.ckk, q + 3), bcVarints(freeze(ws)))
+                }
+            }
+        }
+        f = irFnNext(mut st, f)
+    }
+    st.bcSk = freeze(sk)
+    st.bcCl = freeze(cl)
+    st.bcInf = table.Freeze(mut inf)
+}
+
+// bcSkipped は f が β1 の当たりで B2 を飛ばした関数か（本体は B2 の入力のまま）
+func bcSkipped(st mut St, f int) bool {
+    return st.bcv.on && st.bcSk[f] != nil
+}
+
+// bcSkCalls は飛ばした関数 f の呼び出し・番地取りの相手（cutCallees の形 — rt を除くのは呼び手）を [印, 相手]… で
+func bcSkCalls(sk map[int]int, inf table.Frozen[int], f int) []int {
+    at := sk[f]
+    if at == nil {
+        return []int{}
+    }
+    m := table.At(inf, at)
+    mut out := mut []int{}
+    for k <- iter.Range(at + 1, at + 1 + 2 * m) {
+        out = append(out, table.At(inf, k))
+    }
+    return freeze(out)
+}
+
+// ── β2（機械語・後埋め・xmm）──
+
+// bcAddr は xAddrTaken の置き場の版（凍結の前・本体のある関数は bcB1Collect が集めた相手の列から — 飛ばした関数は β1 の値）
+func bcAddr(st mut St, fr []int, entryRec int) []int {
+    mut out := mut []int{}
+    xFill(mut out, len(fr), 0)
+    out[xIndex(fr, entryRec)] = 1
+    for k <- iter.Range(0, len(fr)) {
+        at := st.bcCl[fr[k]]
+        if at != nil {
+            m := table.At(st.bcInf, at)
+            for j <- iter.Range(0, m) {
+                if table.At(st.bcInf, at + 1 + 2 * j) == 1 {
+                    out[xIndex(fr, table.At(st.bcInf, at + 2 + 2 * j))] = 1
+                }
+            }
+        } else {
+            mut b := irFnBHead(mut st, FnRef(fr[k]))
+            while b != -1 {
+                mut i := irBlkIHead(mut st, b)
+                while i != -1 {
+                    if irInsOp(mut st, i) == OpFuncaddr {
+                        out[xIndex(fr, int(irInsFn(mut st, i)))] = 1
+                    }
+                    i = irInsNext(mut st, i)
+                }
+                b = irBlkNext(mut st, b)
+            }
+        }
+    }
+    return freeze(out)
+}
+
+// bcPreX86 は凍結の前の β2 の段: 番地を取られる印（bcAddr）と β2 の鍵（ckBeta）を組み、関数ごとに β2 を引いて当たりの値を読み戻す
+// （bcDp / bcDf / bcDo）。B2 を飛ばした関数で β2 が外れたものは、ここで B2 と置くはずだった検査点を遅れて掛けて検証する（x86 は今までどおり吐く）
+func bcPreX86(st mut St, entryRec int, t CkTab) {
+    mut fr0 := mut []int{}
+    mut f := st.fhead
+    while f != -1 {
+        fr0 = append(fr0, int(f))
+        f = irFnNext(mut st, f)
+    }
+    fr := freeze(fr0)
+    mut gr0 := mut []int{}
+    mut g := st.ghead
+    while g >= 0 {
+        gr0 = append(gr0, g)
+        g = xGlobNext(mut st, g)
+    }
+    gr := freeze(gr0)
+    st.xAddr = bcAddr(mut st, fr, entryRec)
+    beta := ckBeta(mut st, t, fr)
+    st.bcBk = beta
+    mut cd := mut map[int]int{}
+    for k <- iter.Range(0, table.Len(mut st.bcCutD) / 2) {
+        cd[table.Get(mut st.bcCutD, 2 * k)] = table.Get(mut st.bcCutD, 2 * k + 1)
+    }
+    mut hx := mut []int{}
+    for i <- iter.Range(0, len(fr)) {
+        mut e := -1
+        if !st.bcv.vfy && (beta[2 * i] != 0 || beta[2 * i + 1] != 0) {
+            e = bcFind(st.bcv, BC_B2, beta[2 * i], beta[2 * i + 1])
+        }
+        if e >= 0 && !bcDecB2(mut st, e, t, fr, gr) {
+            e = -1
+        }
+        if beta[2 * i] != 0 || beta[2 * i + 1] != 0 {
+            bcCount(mut st, BC_B2, e >= 0)
+        }
+        if e < 0 && bcSkipped(mut st, fr[i]) {
+            bcLate(mut st, FnRef(fr[i]), cd[fr[i]])
+        }
+        hx = append(hx, if e >= 0 { table.Len(mut st.bcDo) / 5 - 1 } else { -1 })
+    }
+    st.bcHx = freeze(hx)
+    // 遅れて B2 を掛けた関数はもう飛ばした関数ではない（xCtxFn・xFnCost が本体を読む）
+    mut sk := mut map[int]int{}
+    for i <- iter.Range(0, len(fr)) {
+        at := st.bcSk[fr[i]]
+        if at != nil && hx[i] >= 0 {
+            sk[fr[i]] = at
+        }
+    }
+    st.bcSk = freeze(sk)
+}
+
+// bcLate は B2 を飛ばしたのに β2 が外れた関数 f に B2 と検査点（c = cutInsert が記録した [自分へ戻る路つき] — nil なら置かない）を掛けて検証する
+func bcLate(st mut St, f FnRef, c int?) {
+    lB2Func(mut st, f)
+    if c != nil {
+        cutFunc(mut st, f, c == 1)
+    }
+    if !st.noVfy {
+        msg := vfyFunc(mut st, f, xCountFuncs(mut st))
+        if msg != "" {
+            mut out := mut []byte{}
+            printName(mut st, mut out, irFnName(mut st, f))
+            panic(InvalidIR{after: "cache (late)", fn: string(freeze(out)) catch "?", msg: msg})
+        }
+    }
+}
+
+// bcDecB2 は β2 の項目 e を読み戻して bcDp（機械語のパック — 写さずに指す）/ bcDf（後埋め [関数の頭からの位置, 種類, 相手の番号]…）/ bcDo（[機械語のパックの中の位置, 長さ,
+// 後埋めの位置, 数, xmm]）に積む。読み戻せなければ何も積まずに false
+func bcDecB2(st mut St, e int, t CkTab, fr []int, gr []int) bool {
+    mut r := bcRdOf(st.bcv, e)
+    n := bcGet(mut r)
+    if r.bad || n < 0 || n > r.end - r.at {
+        return false
+    }
+    cAt := r.at
+    r.at += n
+    en := bcGet(mut r)
+    m := bcGet(mut r)
+    mut fxs := mut []int{}
+    mut ok := !r.bad && m >= 0 && m <= r.end - r.at
+    mut j := 0
+    while ok && j < m {
+        pos := bcGet(mut r)
+        kind := bcGet(mut r)
+        mut id := 0
+        if kind == 3 || kind == 4 {
+            id = bcNumGet(mut r, t, if kind == 3 { CT_PSITE } else { CT_SITE })
+        } else {
+            rec := bcRefGet(mut r, t)
+            gl := kind == 2 || kind == 5
+            id = if r.bad || rec < 0 { -1 } else if gl { xIndex(gr, rec) } else { xIndex(fr, rec) }
+            ok = id >= 0 && (if gl { gr[id] == rec } else { fr[id] == rec })
+        }
+        fxs = append(fxs, pos)
+        fxs = append(fxs, kind)
+        fxs = append(fxs, id)
+        ok = ok && !r.bad && pos >= 0 && pos + 4 <= n && kind >= 0 && kind <= 5
+        j += 1
+    }
+    xmm := bcGet(mut r)
+    if !ok || r.bad || r.at != r.end || en < 0 || en > n {
+        return false
+    }
+    table.Push(mut st.bcDf0, en)
+    table.Push(mut st.bcDp, st.bcv.ef[e])
+    table.Push(mut st.bcDo, cAt)
+    table.Push(mut st.bcDo, n)
+    table.Push(mut st.bcDo, table.Len(mut st.bcDf))
+    table.Push(mut st.bcDo, m)
+    table.Push(mut st.bcDo, xmm)
+    for x <- fxs {
+        table.Push(mut st.bcDf, x)
+    }
+    return true
+}
+
+// bcHave は x86 の関数の添字 i の機械語が手元にあるか（β2 の当たり・群の子で吐いた外れ）
+func bcHave(st mut St, i int) bool {
+    return st.bcHx[i] >= 0 || (len(st.bcXi) > 0 && st.bcXi[2 * i] >= 0)
+}
+
+// bcSplice は手元の機械語（bcHave）を c の末尾へ積み、後埋めを fx へ・xmm の組を st.xXmm へ足す（関数の入口の位置を返す — xFunc と同じ。
+// 機械語は吐き始め〔整列の後〕からで、入口は線の跨ぎの詰め物の分だけ後ろでありうる）
+func bcSplice(st mut St, c mut table.Table[byte], fx mut table.Table[int], i int) int {
+    s := x86.Here(mut c)
+    h := st.bcHx[i]
+    if h >= 0 {
+        co := table.Get(mut st.bcDo, 5 * h)
+        n := table.Get(mut st.bcDo, 5 * h + 1)
+        fo := table.Get(mut st.bcDo, 5 * h + 2)
+        m := table.Get(mut st.bcDo, 5 * h + 3)
+        // 機械語はパックの中身から一括で（1 バイトずつの Get / Push を挟まない — 段 3' R2）
+        pb := st.bcv.fs[table.Get(mut st.bcDp, h)]
+        table.PushAll(mut c, pb[co:co + n])
+        for j <- iter.Range(fo, fo + 3 * m) {
+            if (j - fo) % 3 == 0 {
+                xFixAdd(mut fx, s + table.Get(mut st.bcDf, j), table.Get(mut st.bcDf, j + 1), table.Get(mut st.bcDf, j + 2))
+            }
+        }
+        st.xXmm = st.xXmm | table.Get(mut st.bcDo, 5 * h + 4)
+        return s + table.Get(mut st.bcDf0, h)
+    }
+    o := st.bcXp[st.bcXi[2 * i]]
+    l := st.bcXi[2 * i + 1]
+    a := o.begs[l]
+    b := o.ends[l]
+    table.PushAll(mut c, o.code[a:b])
+    // 群の後埋めは位置の昇順（吐いた順）— a 以上の最初を二分探索
+    mut lo := 0
+    mut hi := len(o.fix) / 3
+    while lo < hi {
+        mid := (lo + hi) / 2
+        if o.fix[3 * mid] < a {
+            lo = mid + 1
+        } else {
+            hi = mid
+        }
+    }
+    while 3 * lo < len(o.fix) && o.fix[3 * lo] < b {
+        xFixAdd(mut fx, s + o.fix[3 * lo] - a, o.fix[3 * lo + 1], o.fix[3 * lo + 2])
+        lo += 1
+    }
+    st.xXmm = st.xXmm | o.xmms[l]
+    return s + o.starts[l] - a
+}
+
+// bcNote は吐いた関数 i（c の [s, e)・入口 en・後埋め fx の [f0, f1)・xmm の組 xmm）を β2 の書きの候補に積む（β2 の当たり・鍵の無い関数は積まない）
+func bcNote(st mut St, i int, s int, en int, e int, f0 int, f1 int, xmm int) {
+    if st.bcHx[i] >= 0 || (st.bcBk[2 * i] == 0 && st.bcBk[2 * i + 1] == 0) {
+        return
+    }
+    xs := []int{i, s, en, e, f0, f1, xmm}
+    table.PushAll(mut st.bcCr, xs)
+}
+
+// bcCaptureAll は bcNote の候補の β2 の値を書く: 機械語は後埋めの後の ELF exe から切り出し、後埋めの欄（4 B）を 0 に戻す（後埋めは毎回全部を
+// 上書きするので、値の欄は 0 で正準）。値 = [長さ, 機械語…, 入口 − s, 後埋めの数, [位置 − s, 種類, 相手]…, xmm]
+func bcCaptureAll(st mut St, exe []byte, fx mut table.Table[int], fr []int, gr []int, t CkTab) {
+    n := table.Len(mut st.bcCr) / 7
+    for k <- iter.Range(0, n) {
+        at := 7 * k
+        i := table.Get(mut st.bcCr, at)
+        s := table.Get(mut st.bcCr, at + 1)
+        en := table.Get(mut st.bcCr, at + 2)
+        e := table.Get(mut st.bcCr, at + 3)
+        f0 := table.Get(mut st.bcCr, at + 4)
+        f1 := table.Get(mut st.bcCr, at + 5)
+        // 表を関数ごとに作らない（最初の Push の chunk の確保が関数の数だけ掛かる — report の xFitShift の地雷と同じ形）
+        mut out := mut []byte{}
+        for x <- bcVarints([]int{e - s}) {
+            out = append(out, x)
+        }
+        c0 := len(out)
+        lo := elf.CodeOffset + s
+        hi := elf.CodeOffset + e
+        mut q := lo
+        while q < hi {
+            out = append(out, exe[q])
+            q += 1
+        }
+        mut ws := mut []int{en - s, (f1 - f0) / 3}
+        mut j := f0
+        while j < f1 {
+            pos := table.Get(mut fx, j) - s
+            kind := table.Get(mut fx, j + 1)
+            id := table.Get(mut fx, j + 2)
+            for b <- iter.Range(0, 4) {
+                out[c0 + pos + b] = 0
+            }
+            ws = append(ws, pos)
+            ws = append(ws, kind)
+            if kind == 3 || kind == 4 {
+                ntag := if kind == 3 { CT_PSITE } else { CT_SITE }
+                nv := id
+                nk := bcNk(t, ntag, nv)
+                ws = append(ws, if ntag == CT_PSITE { t.ps[2 * nk] } else { t.ss[2 * nk] })
+                ws = append(ws, if ntag == CT_PSITE { t.ps[2 * nk + 1] } else { t.ss[2 * nk + 1] })
+                ws = append(ws, if ntag == CT_SITE { nv & 3 } else { 0 })
+            } else {
+                ri := ckIdx(t.ix, if kind == 2 || kind == 5 { gr[id] } else { fr[id] })
+                if ri < 0 {
+                    panic(InvariantBroken{})
+                }
+                ws = append(ws, 1)
+                ws = append(ws, t.hs[2 * ri])
+                ws = append(ws, t.hs[2 * ri + 1])
+            }
+            j += 3
+        }
+        ws = append(ws, table.Get(mut st.bcCr, at + 6))
+        for x <- bcVarints(freeze(ws)) {
+            out = append(out, x)
+        }
+        bcAdd(mut st, BC_B2, st.bcBk[2 * i], st.bcBk[2 * i + 1], freeze(out))
+    }
+}
+
+// BcExeKey は実行中のコンパイラ（/proc/self/exe）の鍵の 32 桁（build の置き場の世代 — SHA-256 の selfKey より安い語単位の混ぜ 2 本。読めなければ ""）
+func BcExeKey() string {
+    b := io.ReadFile("/proc/self/exe") catch return ""
+    mut out := mut []byte{}
+    ckHex2(mut out, bcSum(b, 0, len(b)), bcSum(b, 1, len(b)) ^ CK_S2)
+    return string(freeze(out)) catch ""
+}
+
+// ── 扉の監査（SOBER_CACHE_VERIFY=2 — report-1194 4 節 3・段 3 R3）──
+//
+// 関数ごとの作り直し（α = optFunc + lB1Func・β1 = lB2Func・β2 = xFunc）が鍵の外の事実を読んでいないかを、外の事実を読む扉で記録して確かめる:
+// lFnRet（呼び先の戻りの型 — α / β1）・xRegCc（番地を取られる印 — β2）・x86 の読み口 xg（ヒープの読み全部 — β2）。鍵に入れた相手 = 自分 +
+// 入力の本体の関数の参照（ckFn が歩いた列 — 監査のときは α の段も st.ckk に積む）+ 束の cfg の関数（β2 は x86 の cfg も・rt の関数は番地取りの
+// 印だけ — 鍵は rt の印の和を持つ）。β2 は関数の外のヒープの読みを全部記録する: 許しは鍵に入れた相手の記録の事実の欄（ckFact — 関数の
+// F_RET / F_MUTP・大域の G_WSLOT）と自分の引数の型の列（spec の複製と共有されうる）だけで、他の関数の記録の他の欄・本体・引数の型の列・大域の
+// 記録の他の欄と初期値・持ち主の無い語ははみ出し。はみ出しは build の終わり（bcFlush）に `cache: undeclared read <切り口> <関数> → <相手>` で
+// 印字して落ちる。監査は検証モード（=1）を含み、束・群の子を外し（親で関数ごとに回す — 扉の記録を親に置く）、x86 はヒープを凍らせずに読む
+// （xg の遅い道）。xg の記録（bcAudHeap）は木の xg には書かない: 遅い道は凍結の前のパスで熱く、分岐 1 つで自己 build の off の命令が +0.49 G
+// （report-1200）— 監査の網（scripts/cacheaudit.sh）が xg の遅い道に `if st.bcAud { bcAudHeap(mut st, i) }` を差し込んだ監査用のコンパイラを
+// 建てる。差し込みの無いコンパイラの =2 は β2 のヒープの読みを見ていないと印字する（bcAudReport）
+
+const BA_RET = 1    // lFnRet の相手（α / β1）
+const BA_ADDR = 2   // 番地を取られる印の相手（β2 — xRegCc）
+const BA_FREC = 10  // 他の関数の記録の欄（欄 = 記録の中の位置）
+const BA_FBODY = 11 // 他の関数の本体
+const BA_FSIG = 12  // 他の関数の引数の型の列
+const BA_NONE = 20  // 持ち主の無い語
+const BA_GREC = 30  // 大域の記録の欄
+const BA_GINIT = 31 // 大域の初期値の列
+
+// bcAudBase は cfg の列の関数の記録 [記録, 値]…（値 1 = 戻りの型と番地取りの印・2 = 番地取りの印だけ）
+func bcAudBase(t CkTab, cfg []int, v int) []int {
+    mut out := mut []int{}
+    for w <- cfg {
+        if ckIsFn(t, w) {
+            out = append(out, w)
+            out = append(out, v)
+        }
+    }
+    return freeze(out)
+}
+
+// bcAudBegin は関数 f の切り口 cut の監査を始める（q = st.ckk の f の鍵の位置 — 呼び先の列つき・-1 = 鍵なし・base = bcAudBase の和）
+func bcAudBegin(st mut St, cut int, f int, q int, base []int) {
+    mut m := mut map[int]int{}
+    for k <- iter.Range(0, len(base) / 2) {
+        if m[base[2 * k]] == nil {
+            m[base[2 * k]] = base[2 * k + 1]
+        }
+    }
+    if q >= 0 {
+        n := table.Get(mut st.ckk, q + 4)
+        for j <- iter.Range(q + 5, q + 5 + n) {
+            m[table.Get(mut st.ckk, j)] = 1
+        }
+    }
+    m[f] = 1
+    st.bcDecl = freeze(m)
+    st.bcAc = cut
+    st.bcAf = f
+    st.bcUt = table.Table[int]{}
+}
+
+// bcAudEnd は監査中の関数のはみ出しを重複を除いて st.bcUnd へ移し、関数の外に戻る
+func bcAudEnd(st mut St) {
+    n := table.Len(mut st.bcUt) / 4
+    mut seen := mut map[int]int{}
+    for k <- iter.Range(0, n) {
+        kind := table.Get(mut st.bcUt, 4 * k)
+        g := table.Get(mut st.bcUt, 4 * k + 1)
+        fl := table.Get(mut st.bcUt, 4 * k + 2)
+        h := ckM1(ckM1(ckM1(CK_S1, kind), g), fl)
+        if seen[h] == nil {
+            seen[h] = 1
+            table.Push(mut st.bcUnd, st.bcAc)
+            table.Push(mut st.bcUnd, st.bcAf)
+            table.Push(mut st.bcUnd, kind)
+            table.Push(mut st.bcUnd, g)
+            table.Push(mut st.bcUnd, fl)
+            table.Push(mut st.bcUnd, table.Get(mut st.bcUt, 4 * k + 3))
+        }
+    }
+    table.Set(mut st.bcCnt, 6 + st.bcAc, table.Get(mut st.bcCnt, 6 + st.bcAc) + 1)
+    st.bcAf = -1
+}
+
+// bcAudRec は監査中の関数のはみ出し 1 つ（同じ相手の続く読みは 1 つに畳む）
+func bcAudRec(st mut St, kind int, g int, fl int, at int) {
+    n := table.Len(mut st.bcUt)
+    if n >= 4 && table.Get(mut st.bcUt, n - 4) == kind && table.Get(mut st.bcUt, n - 3) == g && table.Get(mut st.bcUt, n - 2) == fl {
+        return
+    }
+    table.Push(mut st.bcUt, kind)
+    table.Push(mut st.bcUt, g)
+    table.Push(mut st.bcUt, fl)
+    table.Push(mut st.bcUt, at)
+}
+
+// bcAudDecl は相手 g が鍵に入っているか（need 1 = 戻りの型も・2 = 番地取りの印だけで足りる）
+func bcAudDecl(st mut St, g int, need int) bool {
+    d := st.bcDecl[g]
+    if d == nil {
+        return false
+    }
+    return d <= need
+}
+
+// bcAudRet は扉 lFnRet の記録（α / β1 — 呼び先 g の戻りの型）
+func bcAudRet(st mut St, g int) {
+    if st.bcAf >= 0 && !bcAudDecl(mut st, g, 1) {
+        bcAudRec(mut st, BA_RET, g, 0, 0)
+    }
+}
+
+// bcAudAddr は扉 xRegCc の記録（β2 — g が番地を取られるか）
+func bcAudAddr(st mut St, g int) {
+    if st.bcAf >= 0 && !bcAudDecl(mut st, g, 2) {
+        bcAudRec(mut st, BA_ADDR, g, 0, 0)
+    }
+}
+
+// bcAudHeap は扉 xg の記録（β2 — ヒープの i 語目の読み。持ち主の符号は bcAudOwn）
+func bcAudHeap(st mut St, i int) {
+    if st.bcAf < 0 || st.bcAc != BC_B2 {
+        return
+    }
+    st.bcAh = 1
+    o := if i >= 0 && i < table.Len(mut st.bcOwn) { table.Get(mut st.bcOwn, i) } else { -1 }
+    if o >= 0 {
+        g := o >> 2
+        k := o & 3
+        if g == st.bcAf {
+            return
+        }
+        if k == 0 {
+            // 鍵の記録の事実（ckFact）に入れた欄
+            if (i - g == F_RET || i - g == F_MUTP) && bcAudDecl(mut st, g, 1) {
+                return
+            }
+            bcAudRec(mut st, BA_FREC, g, i - g, i)
+        } else if k == 2 {
+            // 引数の型の列は spec の複製と元で共有されうる — 自分の列の中なら自分の読み
+            p := desugar.HeapGet(mut st.d, st.bcAf + F_PTYS)
+            if p >= 0 && i >= p && i <= p + desugar.HeapGet(mut st.d, p) {
+                return
+            }
+            bcAudRec(mut st, BA_FSIG, g, 0, i)
+        } else {
+            bcAudRec(mut st, BA_FBODY, g, 0, i)
+        }
+    } else if o == -1 {
+        bcAudRec(mut st, BA_NONE, -1, 0, i)
+    } else {
+        c := -o - 2
+        gr := c >> 1
+        if (c & 1) == 0 {
+            if i - gr == G_WSLOT && bcAudDecl(mut st, gr, 1) {
+                return
+            }
+            bcAudRec(mut st, BA_GREC, gr, i - gr, i)
+        } else {
+            bcAudRec(mut st, BA_GINIT, gr, 0, i)
+        }
+    }
+}
+
+// bcOwnSet はヒープの [at, at + n) の持ち主を v に（範囲の外は飛ばす）
+func bcOwnSet(st mut St, at int, n int, v int) {
+    if at < 0 || at + n > table.Len(mut st.bcOwn) {
+        return
+    }
+    for k <- iter.Range(at, at + n) {
+        table.Set(mut st.bcOwn, k, v)
+    }
+}
+
+// bcOwnList は値の列 l（[n, 要素…]）の持ち主を v に
+func bcOwnList(st mut St, l int, v int) {
+    if l >= 0 && l < desugar.HeapLen(mut st.d) {
+        bcOwnSet(mut st, l, 1 + desugar.HeapGet(mut st.d, l), v)
+    }
+}
+
+// bcAudOwn はヒープの語の持ち主の表（x86 の監査 — 凍結の代わりに xModule が組む）: 関数 g の記録 = 4g・本体（スロット・ブロック・引数・命令・
+// 命令と終端の値の列 — mvPack が詰める範囲）= 4g + 1・引数の型の列 = 4g + 2・大域 gr の記録 = -(2 + 2gr)・初期値の列 = -(3 + 2gr)・他 = -1。
+// β2 の鍵に入れた cfg の相手（B2 の cfg + x86 の cfg + rt の関数の番地取りの印 — ckBeta）も st.bcXab に
+func bcAudOwn(st mut St, ckt CkTab) {
+    st.bcXab = bcAudJoin(bcAudJoin(bcAudBase(ckt, lParCfg(mut st, true), 1), bcAudBase(ckt, xParCfg(mut st), 1)), bcAudBase(ckt, st.ckRt, 2))
+    n := desugar.HeapLen(mut st.d)
+    st.bcOwn = table.Table[int]{}
+    for k <- iter.Range(0, n) {
+        table.Push(mut st.bcOwn, -1)
+    }
+    mut f := st.fhead
+    while f != -1 {
+        fi := int(f)
+        bcOwnSet(mut st, fi, FSZ, 4 * fi)
+        bcOwnList(mut st, irFnPtys(mut st, f), 4 * fi + 2)
+        mut s := irFnSHead(mut st, f)
+        while s >= 0 {
+            bcOwnSet(mut st, s, MV_SLOT, 4 * fi + 1)
+            s = desugar.HeapGet(mut st.d, s)
+        }
+        mut b := irFnBHead(mut st, f)
+        while b != -1 {
+            bi := int(b)
+            bcOwnSet(mut st, bi, BSZ, 4 * fi + 1)
+            mut p := irBlkPHead(mut st, b)
+            while p >= 0 {
+                bcOwnSet(mut st, p, MV_PAR, 4 * fi + 1)
+                p = desugar.HeapGet(mut st.d, p)
+            }
+            mut i := irBlkIHead(mut st, b)
+            while i != -1 {
+                ii := int(i)
+                bcOwnSet(mut st, ii, ISZ, 4 * fi + 1)
+                mut r := st.opk[desugar.HeapGet(mut st.d, ii + I_OP)]
+                mut w := ii + I_A
+                while r != 0 {
+                    kind := r & 15
+                    if kind == K_VLIST || kind == K_OLIST {
+                        bcOwnList(mut st, desugar.HeapGet(mut st.d, w), 4 * fi + 1)
+                    }
+                    r = r >> 4
+                    w += 1
+                }
+                i = irInsNext(mut st, i)
+            }
+            mut r := st.tmk[desugar.HeapGet(mut st.d, bi + B_TERM)]
+            mut w := bi + B_X1
+            while r != 0 {
+                if (r & 15) == K_VLIST {
+                    bcOwnList(mut st, desugar.HeapGet(mut st.d, w), 4 * fi + 1)
+                }
+                r = r >> 4
+                w += 1
+            }
+            b = irBlkNext(mut st, b)
+        }
+        f = irFnNext(mut st, f)
+    }
+    mut g := st.ghead
+    while g >= 0 {
+        bcOwnSet(mut st, g, GSZ, -(2 + 2 * g))
+        bcOwnList(mut st, desugar.HeapGet(mut st.d, g + G_INIT), -(3 + 2 * g))
+        g = desugar.HeapGet(mut st.d, g + G_NEXT)
+    }
+}
+
+// bcAudReport は監査の結果（bcFlush — はみ出しがあれば印字して落ちる・無ければ SOBER_CACHE_STAT=1 で監査した関数の数）
+func bcAudReport(st mut St) {
+    nu := table.Len(mut st.bcUnd) / 6
+    if st.bcAh == 0 && table.Get(mut st.bcCnt, 8) > 0 {
+        _ = io.WriteStderr(bytes("cache: audit: beta2 heap reads are not instrumented (build the audit compiler — scripts/cacheaudit.sh)\n"))
+    }
+    if nu == 0 {
+        if lsEnvInt("SOBER_CACHE_STAT") == 1 {
+            _ = io.WriteStderr(bytes("cache: audit ok alpha=${table.Get(mut st.bcCnt, 6)} beta1=${table.Get(mut st.bcCnt, 7)} beta2=${table.Get(mut st.bcCnt, 8)} heap=${if st.bcAh == 1 { "on" } else { "off" }}\n"))
+        }
+        return
+    }
+    mut msg := mut []byte{}
+    for k <- iter.Range(0, nu) {
+        cut := table.Get(mut st.bcUnd, 6 * k)
+        f := table.Get(mut st.bcUnd, 6 * k + 1)
+        kind := table.Get(mut st.bcUnd, 6 * k + 2)
+        g := table.Get(mut st.bcUnd, 6 * k + 3)
+        fl := table.Get(mut st.bcUnd, 6 * k + 4)
+        at := table.Get(mut st.bcUnd, 6 * k + 5)
+        nm := if cut == BC_A { "alpha" } else if cut == BC_B1 { "beta1" } else { "beta2" }
+        if kind >= 40 {
+            // 鍵の感度の検査（ckSens）— 多ければ先頭の 50 行だけ
+            if k < 50 {
+                for x <- bytes("cache: insensitive key ${nm} ") {
+                    msg = append(msg, x)
+                }
+                printName(mut st, mut msg, irFnName(mut st, FnRef(f)))
+                for x <- bytes(if kind == 40 { " (record facts of the callees do not change the key)\n" } else { " (the cfg does not change the key)\n" }) {
+                    msg = append(msg, x)
+                }
+            }
+            continue
+        }
+        for x <- bytes("cache: undeclared read ${nm} ") {
+            msg = append(msg, x)
+        }
+        printName(mut st, mut msg, irFnName(mut st, FnRef(f)))
+        for x <- bytes(" → ") {
+            msg = append(msg, x)
+        }
+        if kind == BA_GREC || kind == BA_GINIT {
+            for x <- xGlobKey(mut st, g) {
+                msg = append(msg, x)
+            }
+        } else if kind != BA_NONE {
+            printName(mut st, mut msg, irFnName(mut st, FnRef(g)))
+        }
+        d := if kind == BA_RET { " ret" } else if kind == BA_ADDR { " addr" } else if kind == BA_FREC { " field ${fl}" } else if kind == BA_FBODY { " body @${at}" } else if kind == BA_FSIG { " ptys" } else if kind == BA_NONE { "heap @${at}" } else if kind == BA_GREC { " field ${fl}" } else { " init" }
+        for x <- bytes(d) {
+            msg = append(msg, x)
+        }
+        msg = append(msg, '\n')
+    }
+    for x <- bytes("cache: undeclared reads ${nu}\n") {
+        msg = append(msg, x)
+    }
+    _ = io.WriteStderr(freeze(msg))
+    panic(InvariantBroken{})
+}
+
+// bcAudJoin は bcAudBase の列の連結（先に出た記録の値が勝つ — bcAudBegin）
+func bcAudJoin(a []int, b []int) []int {
+    mut out := mut []int{}
+    for w <- a {
+        out = append(out, w)
+    }
+    for w <- b {
+        out = append(out, w)
+    }
+    return freeze(out)
+}
+
+// bcNamesOf は関数の鎖の順の名前（検証モードの stale の名指し — 凍結の前に xModule が組む）
+func bcNamesOf(st mut St) [][]byte {
+    mut out := mut [][]byte{}
+    mut f := st.fhead
+    while f != -1 {
+        mut nm := mut []byte{}
+        printName(mut st, mut nm, irFnName(mut st, f))
+        out = append(out, freeze(nm))
+        f = irFnNext(mut st, f)
+    }
+    return freeze(out)
+}
+
+// bcStaleName は stale の鍵 [k1, k2]（切り口 cut）の関数の名前（α / β1 = st.ckk の段 0 / 1・β2 = st.bcBk — 関数の鎖の順の添字。引けなければ `?`）
+func bcStaleName(st mut St, cut int, k1 int, k2 int) []byte {
+    if cut == BC_P {
+        for pp <- st.pcPut {
+            if pp.k1 == k1 && pp.k2 == k2 {
+                return bytes(pp.path)
+            }
+        }
+        return bytes("?")
+    }
+    mut ix := -1
+    if cut == BC_B2 {
+        for i <- iter.Range(0, len(st.bcBk) / 2) {
+            if ix < 0 && st.bcBk[2 * i] == k1 && st.bcBk[2 * i + 1] == k2 {
+                ix = i
+            }
+        }
+    } else {
+        n := table.Len(mut st.ckk)
+        mut q := 0
+        mut fr := -1
+        while q < n && fr < 0 {
+            if table.Get(mut st.ckk, q) == cut && table.Get(mut st.ckk, q + 2) == k1 && table.Get(mut st.ckk, q + 3) == k2 {
+                fr = table.Get(mut st.ckk, q + 1)
+            }
+            q += 5 + table.Get(mut st.ckk, q + 4)
+        }
+        mut f := st.fhead
+        mut i := 0
+        while int(f) != -1 && fr >= 0 && ix < 0 {
+            if int(f) == fr {
+                ix = i
+            }
+            f = xfNext(mut st, f)
+            i += 1
+        }
+    }
+    return if ix >= 0 && ix < len(st.bcNames) { st.bcNames[ix] } else { bytes("?") }
+}
+
+// bcFsck は世代のディレクトリ dir の検査（開発の口 SOBER_CACHE_FSCK=1 — 2 プロセスの網）: 全部のパックの尾・索引の検査和・全項目の値の
+// 検査和を確かめ、`cache: fsck packs=… bad-packs=… entries=… bad-entries=… tmp=…` を標準エラーへ（tmp = 書きの途中で止まった一時ファイルの数 —
+// 読みは見ない名前なので壊れではない）。読み（bcLoad）は壊れたパック・項目を飛ばすだけなので、壊れはここで数える
+func bcFsck(dir string) {
+    mut np := 0
+    mut bp := 0
+    mut ne := 0
+    mut be := 0
+    mut nt := 0
+    es := io.ReadDir(dir) catch []io.DirEntry{}
+    for e <- es {
+        nb := bytes(e.Name)
+        n0 := len(nb)
+        if n0 > 4 && nb[n0 - 4] == '.' && nb[n0 - 3] == 't' && nb[n0 - 2] == 'm' && nb[n0 - 1] == 'p' {
+            nt += 1
+        } else if n0 > 5 && nb[n0 - 5] == '.' && nb[n0 - 4] == 'p' && nb[n0 - 3] == 'a' && nb[n0 - 2] == 'c' && nb[n0 - 1] == 'k' {
+            np += 1
+            b := io.ReadFile("${dir}/${e.Name}") catch []byte{}
+            nb2 := len(b)
+            il := if nb2 >= 24 && binary.Load64(b, nb2 - 24) == BC_MAGIC { binary.Load64(b, nb2 - 16) } else { -1 }
+            if il >= 0 && il <= nb2 - 24 && bcSum(b, nb2 - 24 - il, nb2 - 24) == binary.Load64(b, nb2 - 8) {
+                vend := nb2 - 24 - il
+                mut r := BcRd{b: b, at: vend, end: nb2 - 24, bad: false}
+                while r.at < r.end && !r.bad {
+                    cut := bcGet(mut r)
+                    _ = bcGet(mut r)
+                    _ = bcGet(mut r)
+                    off := bcGet(mut r)
+                    n := bcGet(mut r)
+                    h := bcGet(mut r)
+                    if r.bad {
+                        be += 1
+                    } else {
+                        ne += 1
+                        if cut < BC_A || cut > BC_P || off < 0 || n < 0 || off + n > vend || bcSum(b, off, off + n) != h {
+                            be += 1
+                        }
+                    }
+                }
+            } else {
+                bp += 1
+            }
+        }
+    }
+    _ = io.WriteStderr(bytes("cache: fsck packs=${np} bad-packs=${bp} entries=${ne} bad-entries=${be} tmp=${nt}\n"))
+}
+
+// bcProbe は切り口 cut の項目の鍵 h1 → 項目の開番地の表（[鍵, 項目 + 1]… — 大きさは 2 の冪で項目の数の 2 倍以上・空きの欄 = 0。cs / ks は項目ごとの
+// 切り口と鍵 h1・bcLoad が同じ鍵を 2 度積まない）
+func bcProbe(cs []int, ks []int, cut int) []int {
+    mut n := 0
+    for c <- cs {
+        if c == cut {
+            n += 1
+        }
+    }
+    mut cap := 16
+    while cap < 2 * n {
+        cap = cap * 2
+    }
+    mut t := mut []int{}
+    xFill(mut t, 2 * cap, 0)
+    for q <- iter.Range(0, len(cs)) {
+        if cs[q] == cut {
+            mut h := (ckM1(CK_S1, ks[q]) >> 3) & (cap - 1)
+            while t[2 * h + 1] != 0 {
+                h = (h + 1) & (cap - 1)
+            }
+            t[2 * h] = ks[q]
+            t[2 * h + 1] = q + 1
+        }
+    }
+    return freeze(t)
+}
+
+// bcProbeGet は bcProbe の表 t の鍵 k の項目（無ければ -1）
+func bcProbeGet(t []int, k int) int {
+    cap := len(t) / 2
+    if cap == 0 {
+        return -1
+    }
+    mut h := (ckM1(CK_S1, k) >> 3) & (cap - 1)
+    while t[2 * h + 1] != 0 {
+        if t[2 * h] == k {
+            return t[2 * h + 1] - 1
+        }
+        h = (h + 1) & (cap - 1)
+    }
+    return -1
+}
+
+// ── 置き場の一覧と世代の LRU の印（段 3 R4 — report-1194 5.3・report-1204）──
+//
+// 置き場の根 = `<cacheDir>/sober-build-1`・世代 = 根の下の 16 桁の名前のディレクトリ。LRU の時刻 = 世代の印 `.used` の mtime（build の終わりに
+// bcTouch が tmp + rename で置き直す。ディレクトリの mtime は使わない — 掃除が他の世代の一時ファイルを消すと進んでしまう）
+
+// BcGen は世代 1 つの数（名前・mtime〔ns〕・パック / 一時ファイルの数・大きさの和〔バイト — パックだけ・一時ファイルは数だけ〕・最初の満杯の大きさ〔無ければ -1〕）
+type BcGen struct {
+    name string
+    mt int
+    packs int
+    tmp int
+    bytes int
+    full int
+}
+
+// bcEnds は名前 nb が s で終わるか
+func bcEnds(nb []byte, s string) bool {
+    sb := bytes(s)
+    if len(nb) <= len(sb) {
+        return false
+    }
+    for k <- iter.Range(0, len(sb)) {
+        if nb[len(nb) - len(sb) + k] != sb[k] {
+            return false
+        }
+    }
+    return true
+}
+
+// bcIsGen は根の下の項目の名前が世代か（16 桁の 16 進 — 隠した世代 `.<名前>.dead-…` や他の項目は数えない）
+func bcIsGen(nb []byte) bool {
+    if len(nb) != 16 {
+        return false
+    }
+    for x <- nb {
+        if !((x >= '0' && x <= '9') || (x >= 'a' && x <= 'f')) {
+            return false
+        }
+    }
+    return true
+}
+
+// bcPackSize はパックの名前 `<pid>-<乱数>-<バイト数>.pack` の大きさ（名前に大きさが無い古い形・読めない名前は中身を読んで数える）。大きさを名前に
+// 持たせるのは、io.Open + io.Stat を compiler の閉包で使うと自己 build の仕事が +2.15 G 増えるため（report-1204 — 一覧は build ごとに走る）
+func bcPackSize(dir string, nb []byte) int {
+    mut e := len(nb) - 5
+    mut v := 0
+    mut m := 1
+    while e > 0 && nb[e - 1] >= '0' && nb[e - 1] <= '9' {
+        v += m * (int(nb[e - 1]) - 48)
+        m = m * 10
+        e -= 1
+    }
+    if e > 0 && e < len(nb) - 5 && nb[e - 1] == '-' && e - 1 > 0 && bcHasDash(nb, e - 1) {
+        return v
+    }
+    n := string(nb) catch return 0
+    b := io.ReadFile("${dir}/${n}") catch return 0
+    return len(b)
+}
+
+// bcHasDash は nb[0:e] に '-' があるか（`<pid>-<乱数>` の区切り — 大きさの無い古い名前 `<pid>-<乱数>.pack` の乱数の桁を大きさと読まない）
+func bcHasDash(nb []byte, e int) bool {
+    for k <- iter.Range(0, e) {
+        if nb[k] == '-' {
+            return true
+        }
+    }
+    return false
+}
+
+// bcGenOf は世代のディレクトリ `<root>/<name>` の数
+func bcGenOf(root string, name string) BcGen {
+    dir := "${root}/${name}"
+    // LRU の時刻 = 印 `.used` の mtime（ディレクトリの mtime は掃除が中の一時ファイルを消しても進む — 印の無い古い世代だけディレクトリで）
+    d0 := os.ModTime(dir) catch 0
+    mt := os.ModTime("${dir}/.used") catch d0
+    mut np := 0
+    mut nt := 0
+    mut nb := 0
+    mut full := -1
+    es := io.ReadDir(dir) catch []io.DirEntry{}
+    for e <- es {
+        b := bytes(e.Name)
+        if bcEnds(b, ".tmp") {
+            nt += 1
+        } else if bcEnds(b, ".pack") {
+            np += 1
+            nb += bcPackSize(dir, b)
+        } else if e.Name == ".full" {
+            fb := io.ReadFile("${dir}/.full") catch []byte{}
+            full = if len(fb) == 8 { binary.Load64(fb, 0) } else { -1 }
+        }
+    }
+    return BcGen{name: name, mt: mt, packs: np, tmp: nt, bytes: nb, full: full}
+}
+
+// bcGens は根 root の世代の全部（新しい順 — mtime の降順・同じ mtime は名前の順）
+func bcGens(root string) []BcGen {
+    mut gs := mut []BcGen{}
+    es := io.ReadDir(root) catch []io.DirEntry{}
+    for e <- es {
+        if bcIsGen(bytes(e.Name)) {
+            gs = append(gs, bcGenOf(root, e.Name))
+        }
+    }
+    // 挿入の整列（世代の数は数個〜十数個）
+    mut i := 1
+    while i < len(gs) {
+        mut j := i
+        while j > 0 && gs[j - 1].mt < gs[j].mt {
+            g := gs[j - 1]
+            gs[j - 1] = gs[j]
+            gs[j] = g
+            j -= 1
+        }
+        i += 1
+    }
+    return freeze(gs)
+}
+
+// bcMaxGens は世代の数の上限（SOBER_CACHE_GENS — 既定 8・最低 1）
+func bcMaxGens() int {
+    n := lsEnvInt("SOBER_CACHE_GENS")
+    return if n < 1 { 8 } else { n }
+}
+
+// bcMaxBytes は置き場全体の大きさの線（SOBER_CACHE_MAX — MiB・既定 4096 = 4 GiB）
+func bcMaxBytes() int {
+    n := lsEnvInt("SOBER_CACHE_MAX")
+    return (if n < 1 { 4096 } else { n }) * 1048576
+}
+
+// bcGenFloor は世代の中のゴミの線の床（SOBER_CACHE_FLOOR — MiB・既定 64。網が小さい置き場で線を越えさせる口）
+func bcGenFloor() int {
+    n := lsEnvInt("SOBER_CACHE_FLOOR")
+    return (if n < 1 { 64 } else { n }) * 1048576
+}
+
+// bcTouch は世代のディレクトリ dir の LRU の印を置き直す（`<pid>-<乱数>.used.tmp` に書いて `.used` へ rename — 印の mtime = 今）
+func bcTouch(dir string) {
+    bcMkdirs(dir)
+    tmp := "${dir}/${TmpTag()}.used.tmp"
+    if io.WriteFile(tmp, []byte{}) != nil {
+        return
+    }
+    _ = os.Rename(tmp, "${dir}/.used")
+}
+
+// BcInfo は `sober cache info`: 置き場の根 root の世代の一覧（新しい順 — LRU の順位・パック・一時ファイル・大きさ・最初の満杯）と合計・線を
+// 標準出力へ。now = 今のコンパイラの世代の名前（印 `*`）
+func BcInfo(root string, now string) {
+    gs := bcGens(root)
+    println("cache: ${root}")
+    mut tot := 0
+    for k <- iter.Range(0, len(gs)) {
+        g := gs[k]
+        tot += g.bytes
+        mk := if g.name == now { "*" } else { " " }
+        fl := if g.full < 0 { "-" } else { "${g.full}" }
+        println("${mk} ${g.name}  lru=${k + 1}  packs=${g.packs}  tmp=${g.tmp}  bytes=${g.bytes}  full=${fl}")
+    }
+    println("total: gens=${len(gs)} bytes=${tot}  limits: gens=${bcMaxGens()} bytes=${bcMaxBytes()} (SOBER_CACHE_GENS / SOBER_CACHE_MAX in MiB)")
+}
+
+// ── 置き場の併合と掃除（段 3 R4-b — report-1194 5.3・report-1205）──
+//
+// build の終わり（bcFlush）に bcAfter が 1 回走る: ① 世代の LRU の印 ② 満杯の記録（`.full` — 当たりが 0 の build〔冷〕が書いた大きさの最大）
+// ③ 世代の中のゴミの線（世代の大きさ > max(満杯 × 4, 床 — SOBER_CACHE_FLOOR MiB・既定 64) なら世代ごと捨てる — 次は冷）④ 世代のパックが BC_MERGE 個を超えたら 1 つに
+// 併合 ⑤ 根の掃除（世代の数・置き場の大きさの線・古い一時ファイル・隠した世代の残り）。錠は使わない: 消すのは rename で隠してから（世代）か、
+// 一覧の後に消えても読み手が外れとして扱うもの（パック — bcLoad は読めないパックを飛ばす）だけ。時刻はファイルシステムの時計（今置いた印の mtime）
+// と比べる。③ の満杯を「最初の build の大きさ」にしない: 1 つの世代を小さいプログラムが多数共有すると（例題・std の作業）最初の 1 本の 4 倍を
+// すぐ越えて捨て続ける — 冷の最大と床で、自己の世代では最初の冷（28 MB）の 4 倍・小さいプログラムの群では床で止まる（report-1205）
+
+const BC_MERGE = 32
+const BC_TMP_AGE = 600000000000 // 一時ファイルを書きかけの残りとみなす年齢（ns — 10 分。書きは build の終わりの一瞬）
+
+// bcAfter は build の終わりの印・満杯の記録・ゴミの線・併合・掃除（dir = 今の世代のディレクトリ・wrote = この build が書いたパックの大きさ・
+// cold = 当たりが 0 だったか）
+func bcAfter(dir string, wrote int, cold bool) {
+    bcTouch(dir)
+    root, gen := bcSplit(dir)
+    if root == "" {
+        return
+    }
+    g := bcGenOf(root, gen)
+    if cold && wrote > g.full {
+        bcSetFull(dir, wrote)
+    }
+    full := if cold && wrote > g.full { wrote } else { g.full }
+    fl := bcGenFloor()
+    lim := if 4 * full > fl { 4 * full } else { fl }
+    if g.bytes > lim {
+        bcDropGen(root, gen)
+    } else if g.packs > BC_MERGE {
+        bcMerge(dir)
+    }
+    _ = bcGc(root, gen, false)
+}
+
+// bcSplit は世代のディレクトリ `<根>/<世代>` を根と世代の名前に割る（割れなければ ""）
+func bcSplit(dir string) (string, string) {
+    b := bytes(dir)
+    mut i := len(b) - 1
+    while i > 0 && b[i] != '/' {
+        i -= 1
+    }
+    if i <= 0 {
+        return "", ""
+    }
+    r := string(b[0:i]) catch return "", ""
+    n := string(b[i + 1:len(b)]) catch return "", ""
+    return r, n
+}
+
+// bcSetFull は最初の満杯の大きさ n を世代の `.full` に書く（8 B・tmp + rename）
+func bcSetFull(dir string, n int) {
+    mut b := mut []byte{}
+    bcLe(mut b, n)
+    tmp := "${dir}/${TmpTag()}.full.tmp"
+    if io.WriteFile(tmp, freeze(b)) != nil {
+        return
+    }
+    _ = os.Rename(tmp, "${dir}/.full")
+}
+
+// bcNow はファイルシステムの時計の今（世代のディレクトリの印 `.used` の mtime — bcTouch の直後に読む。読めなければ 0 = 年齢で消さない）
+func bcNow(dir string) int {
+    return os.ModTime("${dir}/.used") catch 0
+}
+
+// bcMerge は世代 dir のパックを全部 1 つにまとめて書き（tmp + rename）、読めた元のパックを消す。同じ鍵は先に読んだ方（値は決定的で同じ）・
+// 検査和の合わない項目と壊れたパックは捨てる（壊れたパックも消す — 読みは飛ばしていた）
+func bcMerge(dir string) {
+    mut am := mut map[int]int{}
+    mut bm := mut map[int]int{}
+    mut cm := mut map[int]int{}
+    mut pm := mut map[int]int{}
+    mut out := mut []byte{}
+    mut ix := mut []int{}
+    mut srcs := mut []string{}
+    es := io.ReadDir(dir) catch []io.DirEntry{}
+    for e <- es {
+        if bcEnds(bytes(e.Name), ".pack") {
+            path := "${dir}/${e.Name}"
+            b := io.ReadFile(path) catch []byte{}
+            nb2 := len(b)
+            if nb2 > 0 {
+                srcs = append(srcs, path)
+            }
+            il := if nb2 >= 24 && binary.Load64(b, nb2 - 24) == BC_MAGIC { binary.Load64(b, nb2 - 16) } else { -1 }
+            if il >= 0 && il <= nb2 - 24 && bcSum(b, nb2 - 24 - il, nb2 - 24) == binary.Load64(b, nb2 - 8) {
+                vend := nb2 - 24 - il
+                mut r := BcRd{b: b, at: vend, end: nb2 - 24, bad: false}
+                while r.at < r.end && !r.bad {
+                    cut := bcGet(mut r)
+                    k1 := bcGet(mut r)
+                    k2 := bcGet(mut r)
+                    off := bcGet(mut r)
+                    n := bcGet(mut r)
+                    h := bcGet(mut r)
+                    ok := !r.bad && cut >= BC_A && cut <= BC_P && off >= 0 && n >= 0 && off + n <= vend
+                    seen := if cut == BC_A { am[k1] != nil } else if cut == BC_B1 { bm[k1] != nil } else if cut == BC_P { pm[k1] != nil } else { cm[k1] != nil }
+                    if ok && !seen && bcSum(b, off, off + n) == h {
+                        if cut == BC_A {
+                            am[k1] = 1
+                        } else if cut == BC_B1 {
+                            bm[k1] = 1
+                        } else if cut == BC_P {
+                            pm[k1] = 1
+                        } else {
+                            cm[k1] = 1
+                        }
+                        ix = append(ix, cut)
+                        ix = append(ix, k1)
+                        ix = append(ix, k2)
+                        ix = append(ix, len(out))
+                        ix = append(ix, n)
+                        ix = append(ix, h)
+                        mut q := off
+                        while q < off + n {
+                            out = append(out, b[q])
+                            q += 1
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if len(srcs) < 2 {
+        return
+    }
+    ib := bcVarints(freeze(ix))
+    il := len(ib)
+    mut q := 0
+    while q < il {
+        out = append(out, ib[q])
+        q += 1
+    }
+    bcLe(mut out, BC_MAGIC)
+    bcLe(mut out, il)
+    bcLe(mut out, bcSum(ib, 0, il))
+    p := "${dir}/${TmpTag()}-${len(out)}.pack"
+    tmp := p + ".tmp"
+    if io.WriteFile(tmp, freeze(out)) != nil {
+        return
+    }
+    if os.Rename(tmp, p) != nil {
+        return
+    }
+    for s <- srcs {
+        _ = os.Remove(s)
+    }
+}
+
+// bcDropGen は世代 `<root>/<gen>` を捨てる: 隠す名前 `.<gen>.dead-<pid>-<乱数>` へ rename してから中身を消す（隠した後は読み手も書き手も
+// 見ない — 走っている build の読みは外れになり、書きは世代のディレクトリを作り直す）
+func bcDropGen(root string, gen string) {
+    hid := "${root}/.${gen}.dead-${TmpTag()}"
+    if os.Rename("${root}/${gen}", hid) != nil {
+        return
+    }
+    bcRmDir(hid)
+}
+
+// bcRmDir は隠したディレクトリ dir の中のファイルを 1 つずつ名指しで消してから dir を消す（世代の中に下のディレクトリは作らない）
+func bcRmDir(dir string) {
+    es := io.ReadDir(dir) catch []io.DirEntry{}
+    for e <- es {
+        _ = os.Remove("${dir}/${e.Name}")
+    }
+    _ = os.RemoveDir(dir)
+}
+
+// bcIsDead は根の下の項目の名前が隠した世代 `.<16 桁>.dead-…` か
+func bcIsDead(nb []byte) bool {
+    if len(nb) < 23 || nb[0] != '.' || !bcIsGen(nb[1:17]) {
+        return false
+    }
+    return nb[17] == '.' && nb[18] == 'd' && nb[19] == 'e' && nb[20] == 'a' && nb[21] == 'd' && nb[22] == '-'
+}
+
+// bcGc は根 root の掃除（keep = 消さない世代 — 今の build の世代・"" なら無し）: ① 隠した世代の残り（掃除の途中で止まった分）を消す
+// ② 各世代の古い一時ファイル（年齢 > BC_TMP_AGE — 書きの途中で死んだ build の残り）を消す ③ 世代の数 > 上限か大きさの和 > 線なら、古い世代から
+// 捨てる（keep は捨てない）。消した世代の数を返す
+func bcGc(root string, keep string, verbose bool) int {
+    es := io.ReadDir(root) catch []io.DirEntry{}
+    for e <- es {
+        if bcIsDead(bytes(e.Name)) {
+            bcRmDir("${root}/${e.Name}")
+        }
+    }
+    gs := bcGens(root)
+    for g <- gs {
+        dir := "${root}/${g.name}"
+        if g.tmp > 0 {
+            now := if g.name == keep { bcNow(dir) } else { bcClock(root) }
+            bcTmpSweep(dir, now, verbose)
+        }
+    }
+    mut n := len(gs)
+    mut tot := 0
+    for g <- gs {
+        tot += g.bytes
+    }
+    mg := bcMaxGens()
+    mb := bcMaxBytes()
+    mut dropped := 0
+    mut k := len(gs) - 1
+    while k >= 0 && (n > mg || tot > mb) {
+        if gs[k].name != keep {
+            if verbose {
+                println("cache: drop ${gs[k].name} (lru=${k + 1} bytes=${gs[k].bytes})")
+            }
+            bcDropGen(root, gs[k].name)
+            n -= 1
+            tot -= gs[k].bytes
+            dropped += 1
+        }
+        k -= 1
+    }
+    return dropped
+}
+
+// bcClock はファイルシステムの時計の今（根に印 `.now` を tmp + rename で置いてその mtime — `sober cache gc` と今の世代でない世代の掃除用）
+func bcClock(root string) int {
+    tmp := "${root}/${TmpTag()}.now.tmp"
+    if io.WriteFile(tmp, []byte{}) != nil {
+        return 0
+    }
+    if os.Rename(tmp, "${root}/.now") != nil {
+        return 0
+    }
+    return os.ModTime("${root}/.now") catch 0
+}
+
+// bcTmpSweep は世代 dir の一時ファイルのうち now より BC_TMP_AGE 以上古いものを消す（now = 0 なら何もしない）
+func bcTmpSweep(dir string, now int, verbose bool) {
+    if now == 0 {
+        return
+    }
+    es := io.ReadDir(dir) catch []io.DirEntry{}
+    for e <- es {
+        if bcEnds(bytes(e.Name), ".tmp") {
+            path := "${dir}/${e.Name}"
+            mt := os.ModTime(path) catch now
+            if now - mt > BC_TMP_AGE {
+                if verbose {
+                    println("cache: remove stale ${path}")
+                }
+                _ = os.Remove(path)
+            }
+        }
+    }
+}
+
+// BcGc は `sober cache gc`: 根 root の掃除（線を越えていれば古い世代から捨てる・古い一時ファイル・隠した世代の残り）。今のコンパイラの世代 now は
+// 捨てない
+func BcGc(root string, now string) {
+    d := bcGc(root, now, true)
+    println("cache: gc dropped ${d} generation(s)")
+    BcInfo(root, now)
+}

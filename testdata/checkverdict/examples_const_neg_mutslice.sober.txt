@@ -1,0 +1,2 @@
+sober: load error at examples/const_neg_mutslice.sober:4:16: const expression: a const is immutable — `mut` literals are not allowed
+exit=1

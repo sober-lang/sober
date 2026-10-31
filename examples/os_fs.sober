@@ -1,7 +1,8 @@
 package main
 
-// std/os.Mkdir / Rename / Getenv（3'' 第 2 段 C0 — キャッシュの置き場の口）: ディレクトリを作り（2 度目は EEXIST = io.Other{errno: 17}）、
-// 一時ファイルに書いて Rename で公開し（既にある to は置き換わる）、読み戻す。Getenv は無い名前で nil・値に `=` を含む名前は最初の `=` の後ろ全部 —
+// std/os.Mkdir / Rename / AppendFile / Remove / RemoveDir / Getenv: ディレクトリを作り（2 度目は EEXIST =
+// io.Other{errno: 17}）、一時ファイルに書いて Rename で公開し（既にある to は置き換わる）、読み戻す。AppendFile は末尾に書き足す（親の無いパスは io.NotFound）。Remove はディレクトリを消さず（EISDIR = 21）、
+// RemoveDir は中身があれば消さない（ENOTEMPTY = 39）— ファイルを消してから空のディレクトリを消す（2 度目は無い = io.NotFound）。Getenv は無い名前で nil・値に `=` を含む名前は最初の `=` の後ろ全部 —
 // 正の場合は自分を /usr/bin/env 経由で子として走らせて確かめる（子は環境変数を印字して終わる）
 
 import "std/io"
@@ -51,7 +52,18 @@ func main() int {
     println(code(os.Rename(t, v)))
     b := io.ReadFile(v) catch return 1
     println(string(b) catch "?")
+    println(code(os.AppendFile(v, bytes("+a"))))
+    println(code(os.AppendFile(v, bytes("+b"))))
+    b2 := io.ReadFile(v) catch return 1
+    println(string(b2) catch "?")
+    println(code(os.AppendFile("out/no/such/parent/x", bytes("x"))))
     println(code(os.Rename(t, v)))
+    println(code(os.Remove(d)))
+    println(code(os.RemoveDir(d)))
+    println(code(os.Remove(v)))
+    println(code(os.Remove(v)))
+    println(code(os.RemoveDir(d)))
+    println(code(os.RemoveDir(d)))
     n := os.Getenv("SOBER_OS_FS_NO_SUCH_VARIABLE") catch return 1
     println(n == nil)
     args := os.Args() catch return 1

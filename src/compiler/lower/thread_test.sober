@@ -1,6 +1,6 @@
 package lower
 
-// 短絡の合流の飛び越し（ccThread — 部分インライン便で否定 / 辺の実引数 / 中継へ一般化）の負例の網: 利用者のプログラムの `!` は
+// 短絡の合流の飛び越し（ccThread — 否定 / 辺の実引数 / 中継を扱う）の負例の網: 利用者のプログラムの `!` は
 // 0/1 にしか掛からず、0/1 でない値への `xor q, 1` や、行き先の実引数に出る xor の結果は例・題材から作れない — IR を手で組んで直に見る
 // （`cd compiler && ../bin/sober test lower`）
 
@@ -12,7 +12,7 @@ const THR_C2 = 2     // 入る値 = 定数 2（xor 2, 1 = 3 ≠ 0 → T）
 const THR_C1 = 3     // 入る値 = 定数 1（xor 1, 1 = 0 → E）
 const THR_NARG = 4   // 入る値 = 比較の結果だが、J の xor の結果が行き先の実引数に出る
 
-// thrT は `b0: br J(a)`・`J(q): n = xor q, 1; condbr n, T, E`・`T: ret %0`・`E: ret %1` の関数に ccThread を 1 回掛け、
+// `b0: br J(a)`・`J(q): n = xor q, 1; condbr n, T, E`・`T: ret %0`・`E: ret %1` の関数に ccThread を 1 回掛け、
 // 入口の終端を返す: 0 = br J のまま・1 = condbr a, E, T（入れ替え）・2 = br T・3 = br E・-1 = それ以外
 func thrT(kind int) int {
     mut st := St{}
@@ -64,7 +64,7 @@ func TestThreadNeg() {
     assert(thrT(THR_NARG) == 0)
 }
 
-// thrChain は自己 build の xSplitMoves の壊れの形: `b0: br X(c)`・`X(p): n = xor p, 1; br J(n)`・`J(q): condbr q, T, E(q)`・`E(r): ret r`。
+// 自己 build の xSplitMoves の壊れの形: `b0: br X(c)`・`X(p): n = xor p, 1; br J(n)`・`J(q): condbr q, T, E(q)`・`E(r): ret r`。
 // J を飛び越すと X の終端が `condbr n, T, E(n)` になり X が否定の J の形に見えるが、使用の数は周の頭の数え方のまま（n = 1）— 同じ周で
 // 書き換えた X を J にすると E(n) が消えた n を指す。入口の終端の行き先を返す（X のまま = 0・それ以外 = 1）
 func thrChain() int {

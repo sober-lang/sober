@@ -30,7 +30,7 @@
 | package | 用途 | 主なもの |
 |---|---|---|
 | [`std/iter`](../std/iter.ja.md) | 遅延の列 `Iter[T]` | `Range`・`Slice`・`Each`・`Count`・`Sum`（`for … yield` の結果をパイプで消費する） |
-| [`std/sort`](../std/sort.ja.md) | 並べ替え | `Order`（0..n−1 を比較の閉包 `less(a, b)` の順に並べた添字の列 — 安定。比べ方と元の列は呼び手が持つ）・`OrderUnstable`（同じ形で等しい要素の順を約束しない代わりに速い — 決定的） |
+| [`std/sort`](../std/sort.ja.md) | 並べ替え | `Order`（0..n−1 を比較のクロージャ `less(a, b)` の順に並べた添字の列 — 安定。比べ方と元の列は呼び手が持つ）・`OrderUnstable`（同じ形で等しい要素の順を約束しない代わりに速い — 決定的） |
 | [`std/table`](../std/table.ja.md) | 大きな表（固定長の塊の列 — 伸ばしても写しが起きない） | `Table[T]` に `Push`・`Get`・`Set`・`Len`、`Freeze` で不変の `Frozen[T]` に |
 | [`std/pool`](../std/pool.ja.md) | ハンドルで引く貸し借りの溜め | `Acquire`・`Release`・`Get`・`Set` |
 | [`std/json`](../std/json.ja.md) | JSON の読み書き | `Parse` で文書 `Doc` を得て `At`（1 段開くビュー `Value`）/ `Get` / `Items` / `Need*` / `ParseString`・`ParseInt`・`ParseFloat`・`ParseBool` で読む・`Put*` で書く・型への写しは `json.Decode[T]` / `json.Encode[T]` |

@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P5-2 入口: struct の欄に包んだ札の捕獲（kind 5） — check と build が同じ名指しで拒否（desugar/parcheck.sober）。縮退の前提「縮退した子が待てるのは自分の子孫だけ」の柵
+// struct の欄に包んだ札の捕獲（kind 5） — check と build が同じ名指しで拒否（desugar/parcheck.sober）。縮退の前提「縮退した子が待てるのは自分の子孫だけ」の柵
 
 import "std/task"
 

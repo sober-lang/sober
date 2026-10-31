@@ -1,0 +1,223 @@
+package http
+
+// multipart/form-data の受けの網（white-box — 非公開の multipartOf / paramOf）: RFC 7578 / HTML 4 の例・Chrome と Firefox の実物の形（境界の綴り・
+// 空のファイル欄・%22 の名前・本文に CR LF と "--" を含む部分）・前置きと後置き・境界の後の空白・引数の綴り（token / quoted-string / '\' / 大小）と、
+// 負例（閉じの境界なし・境界が本文に出る・LF だけの行・頭の形・媒体の型と boundary の形・上限〔部分の数・部分の頭の大きさ〕）・全部の切り詰め
+
+import "std/iter"
+
+
+// ct と本文 s の部分の列（読めること — 読めなければテストの失敗）
+func mpOf(ct string, s string) []Part {
+    ps, e := multipartOf(ct, bytes(s))
+    assert(e == nil)
+    return ps
+}
+
+// ct と本文 s が BadMultipart か
+func mpBad(ct string, s string) bool {
+    _, e := multipartOf(ct, bytes(s))
+    return e != nil
+}
+
+// a と b を繋いだバイト列
+func mpCat(a []byte, b []byte) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, len(a)) {
+        out = append(out, a[i])
+    }
+    for i <- iter.Range(0, len(b)) {
+        out = append(out, b[i])
+    }
+    return freeze(out)
+}
+
+// a + バイト c + b の本文（boundary=x）が BadMultipart か
+func mpByte(a string, c int, b string) bool {
+    _, e := multipartOf("multipart/form-data; boundary=x", mpCat(mpCat(bytes(a), []byte{byte(c)}), bytes(b)))
+    return e != nil
+}
+
+// s を n 回繋いだ文字列
+func mpRep(s string, n int) string {
+    mut out := mut []byte{}
+    b := bytes(s)
+    for k <- iter.Range(0, n) {
+        for i <- iter.Range(0, len(b)) {
+            out = append(out, b[i])
+        }
+    }
+    return string(freeze(out)) catch ""
+}
+
+// 部分 p が name / filename（"<nil>" = nil）/ contentType / 本文 body か
+func mpIs(p Part, name string, filename string, ctype string, body string) bool {
+    fok := if filename == "<nil>" { p.filename == nil } else { is(p.filename, filename) }
+    bs := string(p.body) catch "<bin>"
+    return p.name == name && fok && p.contentType == ctype && bs == body
+}
+
+func TestMultipartRfc() {
+    // HTML 4.01 17.13.4 / RFC 2388 の例（テキストの欄 + ファイル 1 つ）
+    ps := mpOf("multipart/form-data; boundary=AaB03x", "--AaB03x\r\nContent-Disposition: form-data; name=\"submit-name\"\r\n\r\nLarry\r\n--AaB03x\r\nContent-Disposition: form-data; name=\"files\"; filename=\"file1.txt\"\r\nContent-Type: text/plain\r\n\r\n... contents of file1.txt ...\r\n--AaB03x--\r\n")
+    assert(len(ps) == 2)
+    assert(mpIs(ps[0], "submit-name", "<nil>", "", "Larry"))
+    assert(mpIs(ps[1], "files", "file1.txt", "text/plain", "... contents of file1.txt ..."))
+    // RFC 7578 4.5 の形（小文字のヘッダ名・Content-Type の引数・Content-Transfer-Encoding は解釈しない — 本文はそのまま）
+    q := mpOf("multipart/form-data; boundary=AaB03x", "--AaB03x\r\ncontent-disposition: form-data; name=\"field1\"\r\ncontent-type: text/plain;charset=UTF-8\r\ncontent-transfer-encoding: quoted-printable\r\n\r\nJoe owes =E2=82=AC100.\r\n--AaB03x--")
+    assert(len(q) == 1)
+    assert(mpIs(q[0], "field1", "<nil>", "text/plain;charset=UTF-8", "Joe owes =E2=82=AC100."))
+}
+
+func TestMultipartBrowsers() {
+    // Chrome（WebKitFormBoundary + 16 字）: テキスト・空のファイル欄（filename="" と application/octet-stream・空の本文）・%22 の名前（戻さない）
+    cb := "----WebKitFormBoundary7MA4YWxkTrZu0gW"
+    ch := mpOf("multipart/form-data; boundary=" + cb, "--" + cb + "\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nこんにちは\r\n--" + cb + "\r\nContent-Disposition: form-data; name=\"upload\"; filename=\"\"\r\nContent-Type: application/octet-stream\r\n\r\n\r\n--" + cb + "\r\nContent-Disposition: form-data; name=\"doc\"; filename=\"a%22b.txt\"\r\nContent-Type: text/plain\r\n\r\nline1\r\nline2\r\n\r\n--" + cb + "--\r\n")
+    assert(len(ch) == 3)
+    assert(mpIs(ch[0], "title", "<nil>", "", "こんにちは"))
+    assert(mpIs(ch[1], "upload", "", "application/octet-stream", ""))
+    assert(mpIs(ch[2], "doc", "a%22b.txt", "text/plain", "line1\r\nline2\r\n"))
+    // Firefox（新: ----geckoformboundary + 16 進 / 旧: ダッシュ 27 個 + 数字）。本文に CR LF・"--"・境界に似た列（ダッシュの数が違う）を含む
+    fb := "----geckoformboundary9a1f0c3e5b7d2f4c6e8a0b1c3d5e7f90"
+    ff := mpOf("multipart/form-data; boundary=" + fb, "--" + fb + "\r\nContent-Disposition: form-data; name=\"f\"; filename=\"x.bin\"\r\nContent-Type: application/octet-stream\r\n\r\n--\r\n---" + fb + "\r\n-\r\n--" + fb + "--\r\n")
+    assert(len(ff) == 1)
+    assert(mpIs(ff[0], "f", "x.bin", "application/octet-stream", "--\r\n---" + fb + "\r\n-"))
+    ob := "---------------------------9051914041544843365972754266"
+    old := mpOf("multipart/form-data; boundary=" + ob, "--" + ob + "\r\nContent-Disposition: form-data; name=\"text\"\r\n\r\ntext default\r\n--" + ob + "\r\nContent-Disposition: form-data; name=\"file1\"; filename=\"a.txt\"\r\nContent-Type: text/plain\r\n\r\nContent of a.txt.\r\n\r\n--" + ob + "--\r\n")
+    assert(len(old) == 2)
+    assert(mpIs(old[1], "file1", "a.txt", "text/plain", "Content of a.txt.\r\n"))
+    // 本文の全バイト（0〜255 — NUL・CR・LF も）がそのまま切り出される
+    mut all := mut []byte{}
+    for i <- iter.Range(0, 256) {
+        all = append(all, byte(i))
+    }
+    raw := mpCat(mpCat(bytes("--b\r\nContent-Disposition: form-data; name=\"z\"; filename=\"z\"\r\n\r\n"), freeze(all)), bytes("\r\n--b--"))
+    zs, ze := multipartOf("multipart/form-data; boundary=b", raw)
+    assert(ze == nil)
+    assert(len(zs) == 1)
+    assert(len(zs[0].body) == 256)
+    mut same := true
+    for i <- iter.Range(0, 256) {
+        if int(zs[0].body[i]) != i {
+            same = false
+        }
+    }
+    assert(same)
+}
+
+func TestMultipartShapes() {
+    one := "Content-Disposition: form-data; name=\"a\"\r\n\r\nv\r\n"
+    // 前置き・後置き・境界の後の空白（transport-padding）・閉じの後に何も無い
+    _ = mpOf("multipart/form-data; boundary=x", "preamble\r\nignored\r\n--x\r\n" + one + "--x-- \r\nepilogue\r\n--x\r\n")
+    _ = mpOf("multipart/form-data; boundary=x", "--x \t\r\n" + one + "--x--")
+    // 部分 0 個（閉じの境界だけ）
+    z := mpOf("multipart/form-data; boundary=x", "--x--\r\n")
+    assert(len(z) == 0)
+    // 媒体の型と引数: 大小・空白・boundary の quoted-string・他の引数・末尾の ';'
+    _ = mpOf("Multipart/Form-Data ; charset=utf-8; BOUNDARY=\"x\";", "--x\r\n" + one + "--x--")
+    sp := mpOf("multipart/form-data; boundary=\"a b'()+_,-./:=?\"", "--a b'()+_,-./:=?\r\n" + one + "--a b'()+_,-./:=?--")
+    assert(len(sp) == 1)
+    // 引数の綴り: token の値・quoted-pair（'\' + 区切りの字は外す・他の字の前の '\' は残す — Windows のパス）・名前の大小・filename* は読まない
+    pp := mpOf("multipart/form-data; boundary=x", "--x\r\nCONTENT-DISPOSITION: FORM-DATA; NAME=tok; Filename=\"C:\\dev\\a\\\"q\\\\.txt\"; filename*=UTF-8''%E3%81%82\r\nContent-Type:  image/png  \r\nX-Other: 1\r\n\r\nP\r\n--x--")
+    assert(mpIs(pp[0], "tok", "C:\\dev\\a\"q\\.txt", "image/png", "P"))
+    // ヘッダ名の後の空白の無い値・空の name
+    e := mpOf("multipart/form-data; boundary=x", "--x\r\nContent-Disposition:form-data;name=\"\"\r\n\r\n\r\n--x--")
+    assert(mpIs(e[0], "", "<nil>", "", ""))
+}
+
+func TestMultipartRejects() {
+    one := "Content-Disposition: form-data; name=\"a\"\r\n\r\nv\r\n"
+    ct := "multipart/form-data; boundary=x"
+    // 閉じの境界なし・最初の境界なし・空
+    assert(mpBad(ct, "--x\r\n" + one))
+    assert(mpBad(ct, "--x\r\n" + one + "--x"))
+    assert(mpBad(ct, "--x\r\n" + one + "--x\r\n"))
+    assert(mpBad(ct, "preamble only"))
+    // 前置きの中の CRLF + 閉じの境界は部分 0 個（誤りでない）
+    assert(len(mpOf(ct, one + "--x--")) == 0)
+    assert(mpBad(ct, ""))
+    // 境界が本文に出る（後ろが "--" でも空白 + CRLF でもない）
+    assert(mpBad(ct, "--x\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nv\r\n--xy\r\n--x--"))
+    assert(mpBad(ct, "--xx\r\n" + one + "--x--"))
+    assert(mpBad(ct, "--x\r\n" + one + "--x-\r\n"))
+    assert(mpBad(ct, "--x\r\n" + one + "--xZZ" + one + "--x--"))
+    assert(mpBad(ct, "--xZZ" + one + "--x--"))
+    // CRLF の規律: LF だけの行・境界の後の LF・頭の行の中の CR / LF / NUL・折り返し
+    assert(mpBad(ct, "--x\nContent-Disposition: form-data; name=\"a\"\n\nv\n--x--"))
+    assert(mpBad(ct, "--x\nContent-Disposition: form-data; name=\"a\"\r\n\r\nv\r\n--x--"))
+    assert(mpBad(ct, "--x\r\nContent-Disposition: form-data; name=\"a\"\nX: 1\r\n\r\nv\r\n--x--"))
+    assert(mpBad(ct, "--x\r\nContent-Disposition: form-data; name=\"a\"\rX: 1\r\n\r\nv\r\n--x--"))
+    assert(mpBad(ct, "--x\r\nContent-Disposition: form-data;\r\n name=\"a\"\r\n\r\nv\r\n--x--"))
+    assert(mpBad(ct, "--x\r\nX-Other: a\nb\r\n" + one + "--x--"))
+    assert(mpBad(ct, "--x\r\nX-Other: a\rb\r\n" + one + "--x--"))
+    assert(mpByte("--x\r\nContent-Disposition: form-data; name=\"a", 0, "\"\r\n\r\nv\r\n--x--"))
+    // 頭: Content-Disposition なし・2 本・form-data でない・name なし・同じ引数 2 つ・閉じない引用・値なし・名前の無い行・Content-Type 2 本・UTF-8 でない名前
+    assert(mpBad(ct, "--x\r\nContent-Type: text/plain\r\n\r\nv\r\n--x--"))
+    assert(mpBad(ct, "--x\r\n" + "Content-Disposition: form-data; name=\"a\"\r\n" + one + "--x--"))
+    assert(mpBad(ct, "--x\r\nContent-Disposition: attachment; name=\"a\"\r\n\r\nv\r\n--x--"))
+    assert(mpBad(ct, "--x\r\nContent-Disposition: form-data; filename=\"a\"\r\n\r\nv\r\n--x--"))
+    assert(mpBad(ct, "--x\r\nContent-Disposition: form-data; name=\"a\"; NAME=\"b\"\r\n\r\nv\r\n--x--"))
+    assert(mpBad(ct, "--x\r\nContent-Disposition: form-data; name=\"a\r\n\r\nv\r\n--x--"))
+    assert(mpBad(ct, "--x\r\nContent-Disposition: form-data; name=\r\n\r\nv\r\n--x--"))
+    assert(mpBad(ct, "--x\r\nContent-Disposition: form-data; name=\"a\" junk\r\n\r\nv\r\n--x--"))
+    assert(mpBad(ct, "--x\r\n: v\r\n" + one + "--x--"))
+    assert(mpBad(ct, "--x\r\nContent-Type: a\r\nContent-Type: b\r\n" + one + "--x--"))
+    assert(mpByte("--x\r\nContent-Disposition: form-data; name=\"", 255, "\"\r\n\r\nv\r\n--x--"))
+    // 部分の頭が空行で終わらない
+    assert(mpBad(ct, "--x\r\nContent-Disposition: form-data; name=\"a\"\r\n--x--"))
+    // 媒体の型と boundary: Content-Type が違う・boundary なし / 空 / 71 字 / 最後が空白 / 字の外・2 つ
+    assert(mpBad("multipart/mixed; boundary=x", "--x\r\n" + one + "--x--"))
+    assert(mpBad("application/x-www-form-urlencoded", "--x\r\n" + one + "--x--"))
+    assert(mpBad("multipart/form-data", "--x\r\n" + one + "--x--"))
+    assert(mpBad("multipart/form-data; boundary=\"\"", "--\r\n" + one + "----"))
+    b71 := mpRep("a", 71)
+    assert(mpBad("multipart/form-data; boundary=" + b71, "--" + b71 + "\r\n" + one + "--" + b71 + "--"))
+    b70 := mpRep("a", 70)
+    assert(!mpBad("multipart/form-data; boundary=" + b70, "--" + b70 + "\r\n" + one + "--" + b70 + "--"))
+    assert(mpBad("multipart/form-data; boundary=\"x \"", "--x \r\n" + one + "--x --"))
+    assert(mpBad("multipart/form-data; boundary=\"x@\"", "--x@\r\n" + one + "--x@--"))
+    assert(mpBad("multipart/form-data; boundary=x; boundary=y", "--x\r\n" + one + "--x--"))
+}
+
+func TestMultipartLimits() {
+    one := "Content-Disposition: form-data; name=\"a\"\r\n\r\nv\r\n"
+    ct := "multipart/form-data; boundary=x"
+    // 部分の数: 1000 は通り 1001 は誤り
+    k := mpRep("--x\r\n" + one, 1000)
+    ok := mpOf(ct, k + "--x--")
+    assert(len(ok) == 1000)
+    assert(mpBad(ct, k + "--x\r\n" + one + "--x--"))
+    // 部分の頭の大きさ: 8192 バイト（行の並び — 空行の CRLF を除く）は通り、超えると誤り
+    disp := "Content-Disposition: form-data; name=\"a\"\r\n"
+    fill := 8192 - len(bytes(disp)) - 5
+    h := disp + "X: " + mpRep("p", fill) + "\r\n"
+    assert(len(bytes(h)) == 8192)
+    _ = mpOf(ct, "--x\r\n" + h + "\r\nv\r\n--x--")
+    h2 := disp + "X: " + mpRep("p", fill + 1) + "\r\n"
+    assert(mpBad(ct, "--x\r\n" + h2 + "\r\nv\r\n--x--"))
+}
+
+func TestMultipartTruncated() {
+    // 正しい本文の閉じの境界より前で切った接頭辞は全部誤り（落ちない）
+    s := "--x\r\nContent-Disposition: form-data; name=\"a\"; filename=\"f\"\r\nContent-Type: text/plain\r\n\r\nhello\r\n--x\r\nContent-Disposition: form-data; name=\"b\"\r\n\r\n\r\n--x--"
+    b := bytes(s)
+    mut wrong := 0
+    for n <- iter.Range(0, len(b)) {
+        _, e := multipartOf("multipart/form-data; boundary=x", b[0:n])
+        if e == nil {
+            wrong += 1
+        }
+    }
+    assert(wrong == 0)
+    _ = mpOf("multipart/form-data; boundary=x", s)
+}
+
+func TestMultipartRequest() {
+    // Multipart は要求の Content-Type を読む（無い = 誤り）
+    r := rq("POST /up HTTP/1.1\r\nHost: x\r\nContent-Type: multipart/form-data; boundary=x\r\n\r\n")
+    rb := Request{method: r.method, path: r.path, query: r.query, head: r.head, headers: r.headers, body: bytes("--x\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nv\r\n--x--"), pattern: ""}
+    ps := Multipart(rb) catch []Part{}
+    assert(len(ps) == 1 && mpIs(ps[0], "a", "<nil>", "", "v"))
+    n := rq("POST /up HTTP/1.1\r\nHost: x\r\n\r\n")
+    _, e := Multipart(n)
+}

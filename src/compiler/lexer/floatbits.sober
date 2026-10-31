@@ -1,13 +1,13 @@
 package lexer
 
-// 10 進の浮動小数リテラル → IEEE 754 binary64 のビット列（float の段 — language.md 37 節）。公開の口 convert.ParseFloat（正確な値を 1 回だけ
+// 10 進の浮動小数リテラル → IEEE 754 binary64 のビット列（language.md 37 節）。公開の口 convert.ParseFloat（正確な値を 1 回だけ
 // 最近接・偶数へ丸める — 実行時の解析と同じ算法なので、リテラルと実行時の解析は同じビット）+ math.Bits。算法の本体は std/internal/floatfmt で、
-// compiler/ は std の外なので internal を直に import できない（20 節の検問）— 公開の口を通す（総再審 便 3 の第 2 相・2026-10-20）
+// compiler/ は std の外なので internal を直に import できない（20 節の検問）— 公開の口を通す
 
 import "std/convert"
 import "std/math"
 
-// FloatBits は字句 FloatLiteral（b[s:e] — `数字+ ("." 数字+)? ([eE] [+-]? 数字+)?`）の値のビット列。溢れ（Inf に丸まる）は false
+// 字句 FloatLiteral（b[s:e] — `数字+ ("." 数字+)? ([eE] [+-]? 数字+)?`）の値のビット列。溢れ（Inf に丸まる）は false
 func FloatBits(b []byte, s int, e int) (int, bool) {
     t := string(b[s:e]) catch return 0, false
     f, err := convert.ParseFloat(t)

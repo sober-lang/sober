@@ -1,7 +1,7 @@
 package main
 
 // 窓の中の pool.Renew（region-domain-pool.md 4d 節）: Renew が進めた世代は置き場へ書き戻す — 次の窓は必ずまっさら（書き戻さないと次の窓の
-// LeaseAttach が同じ世代を配り、前の窓の Renew の後の書きが見えた — report-720）
+// LeaseAttach が同じ世代を配ってしまい、前の窓の Renew の後の書きが見えてしまう）
 
 import "std/task"
 import "std/pool"

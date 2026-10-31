@@ -43,10 +43,10 @@ type phdr struct {
 const base = 0x400000
 const page = 4096
 
-// CodeOffset はコードの始まるファイル内の位置（= ELF ヘッダ + phdr 2 本 = 0xB0）
+// コードの始まるファイル内の位置（= ELF ヘッダ + phdr 2 本 = 0xB0）
 const CodeOffset = layout.Size[header] + 2 * layout.Size[phdr]
 
-// Layout は各部の番地（コードの後埋めの前に決める）
+// 各部の番地（コードの後埋めの前に決める）
 type Layout struct {
     Code int
     Rodata int
@@ -59,14 +59,14 @@ func align(n int, a int) int {
     return (n + a - 1) / a * a
 }
 
-// LayoutOf は code と rodata の大きさ（バイト）から各部の番地を決める
+// code と rodata の大きさ（バイト）から各部の番地を決める
 func LayoutOf(codeLen int, rodataLen int) Layout {
     rodataOff := align(CodeOffset + codeLen, 8)
     fileSize := rodataOff + rodataLen
     return Layout{Code: base + CodeOffset, Rodata: base + rodataOff, Bss: align(base + fileSize, page), FileSize: fileSize}
 }
 
-// ident は e_ident（ELFCLASS64・ELFDATA2LSB・EV_CURRENT・残りは 0）
+// e_ident（ELFCLASS64・ELFDATA2LSB・EV_CURRENT・残りは 0）
 func ident() []byte {
     mut b := builder.Builder[byte]{}
     builder.Push(mut b, 127)
@@ -82,10 +82,9 @@ func ident() []byte {
     return builder.Build(mut b)
 }
 
-// Executable は実行ファイルのバイト列（code の全部・rodata・.bss の大きさ bssBytes）
-// ヘッダ（176 B）だけ Builder で組み、本体は 1 本の slice へ直に append する（region の先端で伸びるので途中の写しは出ない）。旧 = 全部を
-// Builder に積んで Build で連続の slice へ写した — 機械語の表・Builder・連続の slice の 3 つが同時に生きて、自己 build の RSS の高水位がここだった
-// （+15 MB・report-661）
+// 実行ファイルのバイト列（code の全部・rodata・.bss の大きさ bssBytes）
+// ヘッダ（176 B）だけ Builder で組み、本体は 1 本の slice へ直に append する（region の先端で伸びるので途中の写しは出ない）。
+// 全部を Builder に積んで Build で連続の slice へ写す形は取らない — 機械語の表・Builder・連続の slice の 3 つが同時に生きて、自己 build の RSS の高水位（+15 MB）になる
 func Executable(code mut table.Table[byte], rodata []byte, bssBytes int) []byte {
     n := table.Len(mut code)
     lay := LayoutOf(n, len(rodata))

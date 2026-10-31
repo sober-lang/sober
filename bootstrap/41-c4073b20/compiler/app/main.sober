@@ -1,0 +1,632 @@
+package main
+
+// stage2 の CLI: Sober で書いたコンパイラの単体の入口。コマンド・フラグ・環境変数は下の const の表（std/cli）が
+// 正で、`sober --help` / `sober <command> --help`（開発の口は `--help=dev`）・`sober --cli-spec`（表の JSON）はそこから出る。
+// entry は .sober ファイルか main package のディレクトリ（cwd 相対 — import もルート = cwd 相対）。
+// 終了コード: 成功 0・処理の失敗（load / parse / 脱糖 / lower の拒否・型エラー・読み書きの失敗）1・使い方の誤り 2（std/cli — フラグの組の誤りも handler が 2 で返す）。
+// 診断は 1 行（`sober: load error` 等）。
+// std はコンパイラの一部（language.md 20 節）: `@embed` で自分に焼き込み、`std/…` の import はここから読む
+
+import "std/io"
+import "std/hex"
+import "std/hash"
+import "std/iter"
+import "std/os"
+import "std/cli"
+import "std/strings"
+import "lexer"
+import "parser"
+import "ast"
+import "loader"
+import "lower"
+import "desugar"
+import "diag"
+import "analyzer"
+
+@embed("std/**/*.sober")
+const Std = map[string]string{}
+
+// L0（std のプリビルド焼き込み）: std の各 package の .sobi（小分けの check の 1 周の値 —
+// `l0/<path>.sobi`）。stage2.sh が 2 段で建てる（L0 なしの仮の stage2 に `check <std 全部> --split --l0-out` で書かせ、それを焼き込んで本番を建てる —
+// 同じコードが計算した値）。中身はこのコンパイラ自身と std の焼き込み（Std）だけで決まるので鍵は要らず、stale は定義から起きない（パスで引く）。
+// 木の l0/ には仮の 1 ファイル（l0/placeholder.sobi — @embed は一致 0 を拒否するため）だけ — stages の stage3 等、stage2.sh の外で建てたものは L0 が空
+@embed("l0/**/*.sobi")
+const L0 = map[string]string{}
+
+// ── コマンド行の表（std/cli）: 宣言の const を把手にして handler が値を引く。相互の組（`--pkg` と `--iface`・`--split` と `--l0-out` /
+// `--cache-trace`・`--ast-json` と `--loader-json`・iface の `--view` と <dir>・check の開発の口の排他）は handler が見る（misuse — 2）
+
+// 共通の環境変数（文書だけ — 読むのは各所の os.Getenv）
+const EBuildCache = cli.Env{name: "SOBER_BUILD_CACHE", help: "0 turns the build cache off (default on)"}
+const ECache = cli.Env{name: "SOBER_CACHE", help: "the cache directory (default $XDG_CACHE_HOME/sober)"}
+const ECacheMax = cli.Env{name: "SOBER_CACHE_MAX", help: "the size limit of the cache in MiB"}
+const ECacheGens = cli.Env{name: "SOBER_CACHE_GENS", help: "the number of cache generations to keep"}
+const ECacheFloor = cli.Env{name: "SOBER_CACHE_FLOOR", help: "the garbage floor of the cache in MiB", dev: true}
+const EWatchMs = cli.Env{name: "SOBER_WATCH_MS", help: "the polling interval of watch in milliseconds"}
+const EWatchQuiet = cli.Env{name: "SOBER_WATCH_QUIET", help: "how long watch waits for the edits to settle, in milliseconds (default 200)"}
+const EWatchBuild = cli.Env{name: "SOBER_WATCH_BUILD", help: "0 stops watch from warming the build cache"}
+const EWatchTest = cli.Env{name: "SOBER_WATCH_TEST", help: "0 stops watch from running the tests of the watched packages in the background (to replay their results)"}
+const ELowerSplit = cli.Env{name: "SOBER_LOWER_SPLIT", help: "0 turns the parallel lowering off"}
+const ECheckCache = cli.Env{name: "SOBER_CHECK_CACHE", help: "0 turns the check cache off (default on)"}
+const ECheckReplay = cli.Env{name: "SOBER_CHECK_REPLAY", help: "0 turns the replay of whole check / build answers off (the nets of the function caches)", dev: true}
+const EVerify = cli.Env{name: "SOBER_VERIFY", help: "IR verifier: each = after every pass", dev: true}
+const ECacheVerify = cli.Env{name: "SOBER_CACHE_VERIFY", help: "1 rebuilds hits and compares, 2 also audits outside reads", dev: true}
+const EStages = cli.Env{name: "SOBER_STAGES", help: "print the time of each stage", dev: true}
+const EBuildPar = cli.Env{name: "SOBER_BUILD_PAR", help: "0 lowers the functions on one path, roundtrip repacks the bodies (selfpar)", dev: true}
+const EDesugarPar = cli.Env{name: "SOBER_DESUGAR_PAR", help: "0 desugars and checks on one path (selfpar)", dev: true}
+const ECheckStop = cli.Env{name: "SOBER_CHECK_STOP", help: "stop check after the numbered stage", dev: true}
+const EL0 = cli.Env{name: "SOBER_L0", help: "0 turns the baked L0 table off", dev: true}
+const ESelfKey = cli.Env{name: "SOBER_SELF_KEY", help: "the compiler key of the caches (default the hash of the running executable)", dev: true}
+const ECacheStat = cli.Env{name: "SOBER_CACHE_STAT", help: "1 prints the hits and misses of the caches", dev: true}
+const ECacheFsck = cli.Env{name: "SOBER_CACHE_FSCK", help: "1 checks every pack of the build cache", dev: true}
+const EDkAudit = cli.Env{name: "SOBER_DKAUDIT", help: "audit the def keys of the check cache", dev: true}
+const ETyAudit = cli.Env{name: "SOBER_TYAUDIT", help: "audit the type store", dev: true}
+const ETyOrder = cli.Env{name: "SOBER_TYORDER", help: "stir the typing order (1 rev, 2 pkgrev, 3 shuf)", dev: true}
+const ETyPadA = cli.Env{name: "SOBER_TYPADA", help: "pad the heap after Init (the tyorder net)", dev: true}
+const ETyPadB = cli.Env{name: "SOBER_TYPADB", help: "pad the heap after TypeAll (the tyorder net)", dev: true}
+const EFinishDie = cli.Env{name: "SOBER_FINISH_DIE", help: "1 kills the children of the parallel rule finish (the fallback net)", dev: true}
+const ELowerDie = cli.Env{name: "SOBER_LOWER_DIE", help: "kill a child of the split lowering (the fallback net)", dev: true}
+const ELowerRev = cli.Env{name: "SOBER_LOWER_REV", help: "1 reverses the groups of the split lowering", dev: true}
+const EParStats = cli.Env{name: "SOBER_PAR_STATS", help: "1 prints the witnesses of the parallel paths", dev: true}
+const EIrinlOrder = cli.Env{name: "SOBER_IRINL_ORDER", help: "the order of the IR inliner", dev: true}
+const EIrTags = cli.Env{name: "SOBER_IR_TAGS", help: "1 tags the IR text and the .ll with the origins", dev: true}
+const ENoRflow = cli.Env{name: "SOBER_NO_RFLOW", help: "skip the region elision of returned values", dev: true}
+const ERflowMeter = cli.Env{name: "SOBER_RFLOW_METER", help: "count the garbage of the region elision", dev: true}
+const ERawExpand = cli.Env{name: "SOBER_RAW_EXPAND", help: "1 expands at every call site without the passes (optdiff, regionbound)", dev: true}
+const EChainRev = cli.Env{name: "SOBER_CHAINREV", help: "reverse the chains of functions and globals (1 both, 2 functions, 3 globals)", dev: true}
+const ERuleordOff = cli.Env{name: "SOBER_RULEORD_OFF", help: "1 keeps the discovery order of the chains", dev: true}
+const ERuleordNorenum = cli.Env{name: "SOBER_RULEORD_NORENUM", help: "1 sorts the chains without renumbering", dev: true}
+const ERuleordStats = cli.Env{name: "SOBER_RULEORD_STATS", help: "1 prints the rule order statistics", dev: true}
+const ECover = cli.Env{name: "SOBER_COVER", help: "the file a coverage-instrumented executable (build --cover) writes its marks to", dev: true}
+const EMutateOne = cli.Env{name: "SOBER_MUTATE_ONE", help: "test --mutate builds only mutant <n> without the switches and runs every test (the schemata net)", dev: true}
+const ENumOff = cli.Env{name: "SOBER_NUMOFF", help: "offset the late numbers (the numpert net)", dev: true}
+const ENumNoPatch = cli.Env{name: "SOBER_NUMNOPATCH", help: "1 leaves the late numbers unpatched (the numpert net)", dev: true}
+const ESlotPoison = cli.Env{name: "SOBER_SLOT_POISON", help: "poison the slots of the generated code", dev: true}
+const EStrix = cli.Env{name: "SOBER_STRIX", help: "the mode of the string index of the lowering", dev: true}
+
+// build（--emit も開発の口も無ければ `--emit=elf --passes` と同じ実行ファイルを -o〔既定 a.out〕へ。--emit か開発の口があれば -o が無いとき標準出力へ）
+const Entry = cli.Positional{name: "entry", help: "a .sober file or a main package directory"}
+const Out = cli.StrFlag{name: "o", arg: "<file>", help: "write the output to <file> (default a.out for an executable, else the standard output)", opt: true}
+const NoOpt = cli.BoolFlag{name: "no-opt", help: "skip the IR passes"}
+const Passes = cli.BoolFlag{name: "passes", help: "run the IR passes on --emit=ll / ir"}
+const Emit = cli.ChoiceFlag{name: "emit", arg: "<form>", help: "output form (default an executable)", choices: []string{"elf", "ll", "ir"},
+    dev: []string{"syms", "fnhash", "cachekeys", "tyhash", "tykeys", "tykeys0"}, opt: true}
+const StopAfter = cli.StrFlag{name: "stop-after", arg: "<stage>", help: "stop after the named lowering stage (output is empty)", opt: true, dev: true}
+const DumpIr = cli.BoolFlag{name: "dump-ir", help: "with --stop-after: print the IR of the stage", dev: true}
+const NoVec = cli.BoolFlag{name: "no-vec", help: "skip vectorization", dev: true}
+const NoRflow = cli.BoolFlag{name: "no-rflow", help: "skip the region elision of returned values", dev: true}
+const NoSpec = cli.BoolFlag{name: "no-spec", help: "skip the constant-argument specialization", dev: true}
+const NoVerify = cli.BoolFlag{name: "no-verify", help: "skip the IR verifier", dev: true}
+const Backend = cli.ChoiceFlag{name: "backend", help: "the copy backend (byte comparison with stage1)", dev: []string{"copy"}, opt: true}
+const Typer = cli.BoolFlag{name: "typer", help: "use the surface typer", dev: true}
+const TyperDiff = cli.BoolFlag{name: "typer-diff", help: "compare the typers", dev: true}
+const CutStat = cli.BoolFlag{name: "cut-stat", help: "print the check-point thinning table", dev: true}
+const CallStat = cli.ChoiceFlag{name: "call-stat", help: "count calls per function / per call site", dev: []string{"fn", "site"}, opt: true}
+const UbfStat = cli.BoolFlag{name: "ubf-stat", help: "print the folded UTF-8 boundary checks", dev: true}
+const FrameStat = cli.BoolFlag{name: "frame-stat", help: "print the frame of each function", dev: true}
+const MapStat = cli.BoolFlag{name: "map-stat", help: "count map growth (rt mutant 13)", dev: true}
+const DeathTrace = cli.BoolFlag{name: "death-trace", help: "print task deaths and exit (rt mutant 14)", dev: true}
+const TrapProbe = cli.BoolFlag{name: "trap-probe", help: "the task trap probe instead of main", dev: true}
+const TraceErrors = cli.BoolFlag{name: "trace-errors", help: "instrument the error exits", dev: true}
+const TraceEffects = cli.BoolFlag{name: "trace-effects", help: "instrument the function effects", dev: true}
+const Mutant = cli.IntFlag{name: "rt-mutant", help: "build with an rt mutant (self-tests of the nets)", opt: true, dev: true,
+    allow: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}}
+const Layout = cli.IntFlag{name: "layout", arg: "<seed>", help: "permute the code layout (v2)", min: 1, max: 999, opt: true, dev: true}
+const LayoutV1 = cli.IntFlag{name: "layout-v1", arg: "<seed>", help: "permute the code layout (v1)", min: 1, max: 999, opt: true, dev: true}
+const FitCheck = cli.BoolFlag{name: "fit-check", help: "make the line-crossing windows but do not pad", dev: true}
+const FitOff = cli.BoolFlag{name: "fit-off", help: "make no line-crossing windows", dev: true}
+const BuildTest = cli.BoolFlag{name: "test", help: "build the test runner of a package", dev: true}
+const Cover = cli.BoolFlag{name: "cover", help: "instrument branch coverage (writes <out>.pts; the run writes $SOBER_COVER)", dev: true}
+const MutateB = cli.BoolFlag{name: "mutate", help: "weave every mutant of the program into the build (the mutant schemata of test --mutate; checks that they type)", dev: true}
+
+const Build = cli.Command{
+    name: "build",
+    summary: "build an executable",
+    bools: []cli.BoolFlag{NoOpt, Passes, DumpIr, NoVec, NoRflow, NoSpec, NoVerify, Typer, TyperDiff, CutStat, UbfStat, FrameStat, MapStat,
+        DeathTrace, TrapProbe, TraceErrors, TraceEffects, FitCheck, FitOff, BuildTest, Cover, MutateB},
+    strs: []cli.StrFlag{Out, StopAfter},
+    ints: []cli.IntFlag{Mutant, Layout, LayoutV1},
+    choices: []cli.ChoiceFlag{Emit, Backend, CallStat},
+    pos: []cli.Positional{Entry},
+    env: []cli.Env{EBuildCache, ECache, ELowerSplit, EVerify, EStages},
+    run: cmdBuild,
+}
+
+// run
+const Exe = cli.BoolFlag{name: "exe", help: "print the path of the built executable instead of running it", dev: true}
+const RunArgs = cli.Positional{name: "args", help: "arguments for the program", many: true, optional: true}
+const Run = cli.Command{name: "run", summary: "build and run", bools: []cli.BoolFlag{Exe}, pos: []cli.Positional{Entry, RunArgs},
+    rest: true, env: []cli.Env{EBuildCache, ECache}, run: cmdRun}
+
+// check
+const CTest = cli.BoolFlag{name: "test", help: "include the *_test.sober files"}
+const CoreJson = cli.BoolFlag{name: "core-json", help: "print the desugared core as JSON"}
+const CoreJsonX = cli.BoolFlag{name: "core-json-expanded", help: "print the fully expanded core as JSON", dev: true}
+const NominalAll = cli.BoolFlag{name: "nominal-all", help: "print every surface-type rejection", dev: true}
+const DefIndex = cli.BoolFlag{name: "def-index", help: "print the index of the failing def", dev: true}
+const ErrorsDump = cli.BoolFlag{name: "errors-dump", help: "print the derived errors", dev: true}
+const SecretDump = cli.BoolFlag{name: "secret-dump", help: "print the secret flow", dev: true}
+const OriginDump = cli.BoolFlag{name: "origin-dump", help: "print the origins", dev: true}
+const EffectsDump = cli.BoolFlag{name: "effects-dump", help: "print the derived effects", dev: true}
+const ExpReport = cli.BoolFlag{name: "expansion-report", help: "print the expansion report", dev: true}
+const DefCost = cli.BoolFlag{name: "def-cost", help: "print the cost of each def", dev: true}
+const DefGraph = cli.BoolFlag{name: "def-graph", help: "print the def keys with the items and edges", dev: true}
+const FreezeSites = cli.BoolFlag{name: "freeze-sites", help: "print the explicit freezes that would be implicit", dev: true}
+const ImplicitPts = cli.BoolFlag{name: "implicit-points", help: "print the implicit freeze points", dev: true}
+const CEmit = cli.ChoiceFlag{name: "emit", arg: "<form>", help: "dump form", dev: []string{"defkeys"}, opt: true}
+const Pkg = cli.StrFlag{name: "pkg", arg: "<path>", help: "with --iface: check one package against interfaces", opt: true, dev: true}
+const IfaceDir = cli.StrFlag{name: "iface", arg: "<dir>", help: "the interface directory for --pkg", opt: true, dev: true}
+const Sigs = cli.BoolFlag{name: "sigs", help: "print the signatures (with --pkg: of the view)", dev: true}
+const Split = cli.BoolFlag{name: "split", help: "check package by package", dev: true}
+const L0Out = cli.StrFlag{name: "l0-out", arg: "<file>", help: "with --split: write the L0 table", opt: true, dev: true}
+const CacheTrace = cli.BoolFlag{name: "cache-trace", help: "with --split: trace the cache", dev: true}
+const Check = cli.Command{
+    name: "check",
+    summary: "type-check and analyze without building",
+    bools: []cli.BoolFlag{CTest, CoreJson, CoreJsonX, TyperDiff, NominalAll, DefIndex, ErrorsDump, SecretDump, OriginDump, EffectsDump,
+        ExpReport, DefCost, DefGraph, FreezeSites, ImplicitPts, Sigs, Split, CacheTrace},
+    strs: []cli.StrFlag{Pkg, IfaceDir, L0Out},
+    choices: []cli.ChoiceFlag{CEmit},
+    pos: []cli.Positional{Entry},
+    env: []cli.Env{ECheckCache, ECache, ECacheVerify},
+    run: cmdCheck,
+}
+
+// test
+const TRun = cli.StrFlag{name: "run", arg: "<prefix>", help: "run only the tests whose names start with <prefix>", opt: true}
+const TVerbose = cli.BoolFlag{name: "v", help: "print every test"}
+const TFresh = cli.BoolFlag{name: "fresh", help: "run the tests again instead of replaying the remembered result of a package that passed"}
+const TWork = cli.StrFlag{name: "work", arg: "<dir>", help: "build the runner in <dir> (default a directory in the cache)", opt: true}
+const TCover = cli.BoolFlag{name: "cover", help: "measure branch coverage of the tested package and report the arms no test took"}
+const TCoverOut = cli.StrFlag{name: "cover-out", arg: "<file>", help: "write every coverage point to <file> (LCOV if it ends in .lcov, else one `file:line:col kind hit` line per point); implies --cover", opt: true}
+const TCoverPkg = cli.StrFlag{name: "cover-pkg", arg: "<patterns>", help: "measure these packages instead of the tested one (comma-separated; p/... = p and the packages below it; std is never measured); implies --cover", opt: true}
+const TMutate = cli.BoolFlag{name: "mutate", help: "mutation testing: run the tests against every mutant of the tested package and report the mutants no test killed (<package>/testdata/mutate.ignore lists mutants to skip, as the first two columns of --mutate-out lines; cannot be combined with --cover)"}
+const TMutateOut = cli.StrFlag{name: "mutate-out", arg: "<file>", help: "write every mutant to <file> (one `file:line:col<TAB>mutation<TAB>result<TAB>killing test` line per mutant); implies --mutate", opt: true}
+const Pkgs = cli.Positional{name: "package", help: "package directories", many: true}
+const Test = cli.Command{name: "test", summary: "run the TestXxx() functions in the packages' *_test.sober",
+    bools: []cli.BoolFlag{TVerbose, TFresh, TCover, TMutate}, strs: []cli.StrFlag{TRun, TWork, TCoverOut, TCoverPkg, TMutateOut}, pos: []cli.Positional{Pkgs}, run: cmdTest}
+
+// fuzz
+const FzPkg = cli.Positional{name: "package", help: "the package directory"}
+const FzRun = cli.StrFlag{name: "run", arg: "<TestXxx>", help: "the test whose std/quick properties to fuzz"}
+const FzTime = cli.StrFlag{name: "time", arg: "<dur>", help: "how long to fuzz each property (500ms, 30s, 2m)", def: "30s"}
+const FzHang = cli.StrFlag{name: "hang", arg: "<dur>", help: "a trial running longer than this is a hang", def: "1s"}
+const FzCheck = cli.IntFlag{name: "check", help: "fuzz only the n-th quick.Check of the test (0 = the first; default all in turn)", min: 0, opt: true}
+const FzNoGuide = cli.BoolFlag{name: "no-guide", help: "do not guide the trials by coverage (the test build is not instrumented)"}
+const FzSched = cli.BoolFlag{name: "sched", help: "also vary the std/task schedule: one trial per process with its own SOBER_SCHED_SEED (one worker)"}
+const Fuzz = cli.Command{name: "fuzz", summary: "run the std/quick properties of a test until a deadline",
+    help: "run the std/quick properties of a test until a deadline: a failure (a false property, a panic or a hang) is shrunk, reported and written to <package>/testdata/fuzz/<TestXxx>/, which `sober test` replays first (exit 1 = found, 0 = none found)",
+    bools: []cli.BoolFlag{FzSched, FzNoGuide}, strs: []cli.StrFlag{FzRun, FzTime, FzHang}, ints: []cli.IntFlag{FzCheck}, pos: []cli.Positional{FzPkg}, run: cmdFuzz}
+
+// 小さいコマンド
+const File = cli.Positional{name: "file", help: "a .sober file"}
+const Watch = cli.Command{name: "watch", summary: "re-check on every change", pos: []cli.Positional{Entry}, env: []cli.Env{EWatchMs, EWatchQuiet, EWatchBuild, EWatchTest, ECheckCache},
+    run: cmdWatch}
+const Fmt = cli.Command{name: "fmt", summary: "print the formatted source", pos: []cli.Positional{File}, run: cmdFmt}
+const IPkg = cli.StrFlag{name: "pkg", arg: "<path>", help: "print only this package", opt: true}
+const View = cli.StrFlag{name: "view", arg: "<path>", help: "with <dir>: the bundle of the view of <path> over the interfaces in <dir>", opt: true, dev: true}
+const IDir = cli.Positional{name: "dir", help: "with --view: the interface directory", optional: true}
+const NoExpand = cli.BoolFlag{name: "no-expand", help: "do not run the E2-S rounds (no @expand marks)", dev: true}
+const Iface = cli.Command{name: "iface", summary: "print package interfaces (.sobi)", bools: []cli.BoolFlag{NoExpand},
+    strs: []cli.StrFlag{IPkg, View}, pos: []cli.Positional{Entry, IDir}, run: cmdIface}
+const FEffects = cli.BoolFlag{name: "effects", help: "write @effects"}
+const FErrors = cli.BoolFlag{name: "errors", help: "write @errors"}
+const FStd = cli.StrFlag{name: "std", arg: "<dir>", help: "also write the std files under <dir>", opt: true}
+const Fix = cli.Command{name: "fix", summary: "write derived @effects / @errors declarations",
+    help: "write derived @effects / @errors declarations to the public functions outside std (both when neither flag is given)",
+    bools: []cli.BoolFlag{FEffects, FErrors}, strs: []cli.StrFlag{FStd}, pos: []cli.Positional{Entry}, run: cmdFix}
+const CacheInfo = cli.Command{name: "cache info", summary: "list the build cache", env: []cli.Env{ECache}, run: cmdCacheInfo}
+const CacheGc = cli.Command{name: "cache gc", summary: "drop old generations over the limits", env: []cli.Env{ECache, ECacheMax, ECacheGens, ECacheFloor},
+    run: cmdCacheGc}
+const Lex = cli.Command{name: "lex", summary: "print the tokens", pos: []cli.Positional{File}, dev: true, run: cmdLex}
+const AstJson = cli.StrFlag{name: "ast-json", arg: "<file>", help: "print the AST of <file> as JSON", opt: true}
+const LoaderJson = cli.StrFlag{name: "loader-json", arg: "<entry>", help: "print the loaded program as JSON", opt: true}
+const Parse = cli.Command{name: "parse", summary: "front-end dumps", strs: []cli.StrFlag{AstJson, LoaderJson}, dev: true, run: cmdParse}
+
+const DocCli = cli.BoolFlag{name: "cli", help: "the page of the command line of the program (its std/cli table)"}
+const DocOut = cli.StrFlag{name: "o", arg: "<file>", help: "write the page to <file> (default the standard output)", opt: true}
+const DocJa = cli.StrFlag{name: "ja", arg: "<table>", help: "write the Japanese page with the translation table <table> (JSON)", opt: true}
+const DocExe = cli.StrFlag{name: "exe", arg: "<file>", help: "take the table from the executable <file> instead of building <entry>", opt: true, dev: true}
+const Doc = cli.Command{name: "doc", summary: "generate documents of a program",
+    help: "generate documents of a program: with --cli, the Markdown page of its command line (std/cli) — the usage of each command and the effects of its run function",
+    bools: []cli.BoolFlag{DocCli}, strs: []cli.StrFlag{DocOut, DocJa, DocExe}, pos: []cli.Positional{Entry}, run: cmdDoc}
+
+const OPath = cli.Positional{name: "path", help: "a .sober file or a directory"}
+const ODepth = cli.IntFlag{name: "depth", help: "with a directory: how many levels to read (1 = the directory itself)", def: 1, min: 1, max: 99}
+const ONoTest = cli.BoolFlag{name: "no-test", help: "skip the *_test.sober files"}
+const OPublic = cli.BoolFlag{name: "public", help: "only the public declarations"}
+const OFormat = cli.ChoiceFlag{name: "format", arg: "<form>", help: "output form", choices: []string{"text", "json"}, def: "text"}
+const Outline = cli.Command{name: "outline", summary: "print the declarations of source files with their line ranges",
+    help: "print the package, the imports and the declarations (types, functions, constants) of source files with their line ranges — read from the source only, with the annotations as written",
+    bools: []cli.BoolFlag{ONoTest, OPublic}, ints: []cli.IntFlag{ODepth}, choices: []cli.ChoiceFlag{OFormat}, pos: []cli.Positional{OPath}, run: cmdOutline}
+
+// version は `sober --version` の版。リポジトリでは "dev"。Release（.github/workflows/release.yml）はタグの名前で version の行を
+// 書き換えてから stage2 を建てる（版を焼き込む口はこの 1 行だけ — 言語機能も鎖も増やさない）
+const Sober = cli.App{
+    name: "sober",
+    version: "dev", // sober-version
+    summary: "the Sober compiler",
+    commands: []cli.Command{Build, Run, Check, Test, Fuzz, Watch, Fmt, Iface, Fix, Doc, Outline, CacheInfo, CacheGc, Lex, Parse},
+    env: []cli.Env{EBuildCache, ECache, ECacheMax, ECacheGens, EWatchMs, EWatchQuiet, EWatchBuild, EWatchTest, ELowerSplit, ECheckCache, ECheckReplay, EVerify, EStages,
+        EBuildPar, EDesugarPar, ECheckStop, EL0, ESelfKey, ECacheStat, ECacheFsck, EDkAudit, ETyAudit, ETyOrder, ETyPadA, ETyPadB, EFinishDie,
+        ELowerDie, ELowerRev, EParStats, EIrinlOrder, EIrTags, ENoRflow, ERflowMeter, ERawExpand, EChainRev, ERuleordOff, ERuleordNorenum,
+        ERuleordStats, ENumOff, ENumNoPatch, ESlotPoison, EStrix, ECover, EMutateOne},
+}
+
+func fail(msg string) int {
+    _ = io.WriteStderr(bytes("sober: ${msg}\n"))
+    return 1
+}
+
+// handler が見るフラグの組の誤り（表の解析を通った後 — std/cli の誤用と同じく使い方の誤りの終了コード 2）
+func misuse(msg string) int {
+    _ = io.WriteStderr(bytes("sober: ${msg} (run 'sober <command> --help')\n"))
+    return 2
+}
+
+func writeStdout(out []byte) int {
+    werr := io.WriteStdout(out)
+    return if werr != nil { fail("cannot write the standard output") } else { 0 }
+}
+
+func writeFile(path string, out []byte) int {
+    werr := io.WriteFile(path, out)
+    return if werr != nil { fail("cannot write ${path}") } else { 0 }
+}
+
+// 判定の経路の脱糖 + 検査を Def の区間ごとに子 task で行うか（環境変数 SOBER_DESUGAR_PAR=0 で 1 本の経路:
+// 照合用 — selfpar）
+func desugarPar() bool {
+    v, err := os.Getenv("SOBER_DESUGAR_PAR")
+    if err != nil || v == nil {
+        return true
+    }
+    return v != "0"
+}
+
+// lower の拒否を出して 1（健全性の規則の拒否〔diag.Frozen — lower の build が表層型の表の上で掛ける〕は analyzer.Freeze で
+// 行を引き直して analyzeAll と同じ形で全部・他は errDiag の 1 行）
+func lowerFail(p loader.Program, std map[string]string, err error?) int {
+    return if diag.IsFrozen(err) { frozenLines(p, std) } else { fail(errDiag(p, std, err)) }
+}
+
+// 健全性の規則の指摘の行を全部出して 1
+func frozenLines(p loader.Program, std map[string]string) int {
+    fs := analyzer.Freeze(p)
+    for i <- iter.Range(0, len(fs)) {
+        if io.WriteStderr(bytes("${where(p, std, fs[i].at)}: error: ${fs[i].what} (Analyzer)\n")) != nil {
+            return 1
+        }
+    }
+    return 1
+}
+
+// load の拒否の診断（diag.Format — `load error: <理由>`、位置があれば `load error at <path>:<行>:<列>: <理由>`）
+func loadDiag(p loader.Program, std map[string]string, err error?) string {
+    return diag.Format(err, where(p, std, diag.At(err)))
+}
+
+// 脱糖 / lower の拒否の診断（diag.Format — `desugar error at <path>:<行>:<列> (<種類>)` / `lower error at … (<種類>)`。
+// 種類の綴りは Zig 版の error 名）
+func errDiag(p loader.Program, std map[string]string, err error?) string {
+    s := diag.Format(err, where(p, std, diag.At(err)))
+    // 2 つ目の位置（NonExhaustive の落ちている variant）の綴りを添える
+    n := diag.Note(err)
+    if n.file >= 0 {
+        src, ok := loader.SourceFs(p, n.file, std)
+        if ok {
+            return "${s} (missing: ${diag.Spell(src, n.tok)})"
+        }
+    }
+    return s
+}
+
+// ファイル file の字句の位置 tok の `<path>:<行>:<列>`（ファイルが引けなければ `token <tok>`）
+func srcPos(p loader.Program, std map[string]string, file int, tok int) string {
+    return where(p, std, diag.Pos{file: file, tok: tok})
+}
+
+// 位置 at の `<path>:<行>:<列>`（diag.Where — ファイルが引けなければ `token <tok>`）
+func where(p loader.Program, std map[string]string, at diag.Pos) string {
+    if at.file >= 0 {
+        src, ok := loader.SourceFs(p, at.file, std)
+        if ok {
+            return diag.Where(p.file_path[at.file], src, at.tok)
+        }
+    }
+    return "token ${at.tok}"
+}
+
+// build の entry を読む（test なら package のテストのビルド — loader.LoadTestFs）。名前付き関数型を通した呼び出しの名前付き実引数は
+// ここで位置へ写す（desugar.NamedValueArgs — 型を知る層の写し。check・build・analyzer が同じ木を読む）
+func loadEntry(entry string, test bool, std map[string]string) (loader.Program, error?) {
+    p, lerr := loadRaw(entry, test, std)
+    if lerr != nil {
+        return p, lerr
+    }
+    return surface(p)
+}
+
+// lower へ渡す entry を読む（名前付き実引数の写しまで — std/task の呼び出し点の形の検査〔ParCheck〕は lower の build が自分の表の上で掛ける。
+// TypeAll は 1 回が重い — 自己 build で 1.9 G 命令）。pc = parse のキャッシュの読みの表（build の置き場を使う道だけ — 他は loader.PcOff()）・
+// 2 つ目の戻り = ファイルごとの読みの結果（lower が書きの束へ）。積み先 sink はここで持つ: 読みは mut 引数の鎖で region 透過になるので、
+// 持ち主を build の頭（cmdBuild）に置くと読みの作業域が build の間ずっと残る（自己 build の RSS +35 MB の実測）
+func loadNamed(entry string, test bool, std map[string]string, pc loader.PCache) (loader.Program, []loader.PcPut, error?) {
+    mut sink := loader.PcSink{}
+    p, lerr := loader.LoadFsC(entry, std, pc, test, mut sink)
+    loader.Stage("loadraw")
+    if lerr != nil {
+        return p, []loader.PcPut{}, lerr
+    }
+    q, nerr := desugar.NamedValueArgs(p)
+    return q, loader.PcList(mut sink), nerr
+}
+
+// 読んだ木を check・build・analyzer が共有する形へ（名前付き関数型を通した名前付き実引数の写し・std/task の呼び出し点の形の検査 —
+// 両方とも型を知る層。check と build が同じ拒否をする）
+func surface(p0 loader.Program) (loader.Program, error?) {
+    p, nerr := desugar.NamedValueArgs(p0)
+    loader.Stage("ck-nva")
+    if nerr != nil {
+        return p, nerr
+    }
+    perr := desugar.ParCheck(p)
+    loader.Stage("ck-parcheck")
+    return p, perr
+}
+
+func loadRaw(entry string, test bool, std map[string]string) (loader.Program, error?) {
+    if test {
+        return loader.LoadTestFs(entry, std)
+    }
+    return loader.LoadFs(entry, std)
+}
+
+// path のファイルの中身（読めなければ ok = false）
+func readSrc(path string) ([]byte, bool) {
+    src := io.ReadFile(path) catch return []byte{}, false
+    return src, true
+}
+
+// path の拡張子で読み方を選ぶ（.sobi は parser.ParseIface）
+func parseFile(path string, src []byte) (ast.Tree, bool) {
+    if strings.HasSuffix(path, ".sobi") {
+        return parser.ParseIface(src, lexer.Lex(src))
+    }
+    return parser.Parse(src, lexer.Lex(src))
+}
+
+func rawTree(p loader.Program, f int, std map[string]string) ast.Tree {
+    src, ok := loader.SourceFs(p, f, std)
+    if !ok {
+        return ast.Tree{[]ast.Node{}, []int{}, 0 - 1}
+    }
+    t, pok := parseFile(p.file_path[f], src)
+    return if pok { t } else { ast.Tree{[]ast.Node{}, []int{}, 0 - 1} }
+}
+
+func appendBytes(out mut []byte, b []byte) {
+    for i <- iter.Range(0, len(b)) {
+        out = append(out, b[i])
+    }
+}
+
+func main() int {
+    return cli.Main(Sober)
+}
+
+// コンパイラ自身の鍵: 環境変数 SOBER_SELF_KEY（bin/sober が stage2 の .key を渡す — compiler/ + std/ + boot の内容ハッシュ。
+// 決定的ビルドなので同じ .key は同じバイナリ）。無ければ実行中のバイナリ（/proc/self/exe）の SHA-256。どちらも取れなければ空（鍵の材料が欠けた印 —
+// 呼び手は当否を出さない）
+func selfKey() []byte {
+    v, err := os.Getenv("SOBER_SELF_KEY")
+    if err == nil {
+        if v != nil {
+            if len(bytes(v)) > 0 {
+                return bytes(v)
+            }
+        }
+    }
+    return bytes(exeMemo("sha256"))
+}
+
+// 実行ファイルから作る鍵の memo: /proc/self/exe の（大きさ, 更新時刻）が前と同じなら置き場の `exekey-<kind>` から引き、違えば作って
+// 書き直す（16 MB のハッシュ ≈ 40 ms を起動ごとに払わない）。kind = "sha256"（selfKey）か "bc"（置き場の世代 — lower.BcExeKey）。
+// 置き場が無ければ毎回作る
+func exeMemo(kind string) string {
+    root := buildCacheRoot()
+    if root == "" {
+        return exeKeyOf(kind)
+    }
+    f := io.Open("/proc/self/exe") catch return exeKeyOf(kind)
+    defer io.Close(f)
+    st, serr := io.Stat(f)
+    if serr != nil {
+        return exeKeyOf(kind)
+    }
+    stamp := "${st.size} ${st.modTime} "
+    path := "${root}/exekey-${kind}"
+    old := io.ReadFile(path) catch []byte{}
+    s := string(old) catch ""
+    if strings.HasPrefix(s, stamp) {
+        k := strings.TrimSuffix(strings.TrimPrefix(s, stamp), "\n")
+        if k != "" {
+            return k
+        }
+    }
+    k := exeKeyOf(kind)
+    if k != "" {
+        mkdirs(root)
+        tmp := "${path}.${k}.tmp"
+        if io.WriteFile(tmp, bytes("${stamp}${k}\n")) == nil {
+            _ = os.Rename(tmp, path)
+        }
+    }
+    return k
+}
+
+// package k の入力の要約（ソースのファイルの列と @embed の入力 — 全体の Program p から。ファイルの順は load の順 = パスの順）
+func pkgDigest(p loader.Program, k int, std map[string]string) []byte {
+    mut out := mut []byte{}
+    for f <- iter.Range(0, len(p.file_path)) {
+        if p.file_pkg[f] == k {
+            src, ok := loader.SourceFs(p, f, std)
+            lenPut(mut out, bytes(p.file_path[f]))
+            lenPut(mut out, if ok { hash.Sha256(src) } else { bytes("!read") })
+            // @embed の入力は字面に `@embed` を含むファイルだけ parse して取る（全ファイルの parse し直しは自己適用で約 2 s — 鍵の計算の上乗せの大半だった）
+            if ok && hasEmbed(src) {
+                t, pok := parseFile(p.file_path[f], src)
+                lenPut(mut out, if pok { hash.Sha256(loader.EmbedInputs(t)) } else { bytes("!parse") })
+            }
+        }
+    }
+    return hash.Sha256(freeze(out))
+}
+
+// src が字面 `@embed` を含むか（コメント・文字列の中も当たる — 余分に parse するだけで鍵は正しい）
+func hasEmbed(src []byte) bool {
+    w := bytes("@embed")
+    mut i := 0
+    while i + len(w) <= len(src) {
+        mut k := 0
+        while k < len(w) && src[i + k] == w[k] {
+            k += 1
+        }
+        if k == len(w) {
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+// build の後段の関数キャッシュの根（cacheDir()/sober-build-1 — 置き場が無ければ ""）
+func exeKeyOf(kind string) string {
+    if kind == "bc" {
+        return lower.BcExeKey()
+    }
+    b := io.ReadFile("/proc/self/exe") catch return ""
+    return hex.Format(hash.Sha256(b))
+}
+
+// build の後段の関数キャッシュの世代のディレクトリ（既定 on — SOBER_BUILD_CACHE=0 で切る。置き場かコンパイラの鍵が無ければ ""）
+func buildCacheDir() string {
+    v, err := os.Getenv("SOBER_BUILD_CACHE")
+    if err != nil {
+        return ""
+    }
+    if v != nil {
+        if v == "0" {
+            return ""
+        }
+    }
+    root := buildCacheRoot()
+    gen := buildCacheGen()
+    if root == "" || gen == "" {
+        return ""
+    }
+    return "${root}/${gen}"
+}
+
+func buildCacheRoot() string {
+    d := cacheDir()
+    if d == "" {
+        return ""
+    }
+    return "${d}/sober-build-1"
+}
+
+// 今のコンパイラの世代の名前 = コンパイラの鍵の先頭 16 桁（bin/sober が渡す SOBER_SELF_KEY・無ければ実行ファイルの語単位の混ぜ —
+// SHA-256 の selfKey は 10 MB で約 0.8 G 命令。鍵が短ければ ""）
+func buildCacheGen() string {
+    mut k := []byte{}
+    sk, serr := os.Getenv("SOBER_SELF_KEY")
+    if serr == nil {
+        if sk != nil {
+            k = bytes(sk)
+        }
+    }
+    if len(k) == 0 {
+        k = bytes(exeMemo("bc"))
+    }
+    if len(k) < 16 {
+        return ""
+    }
+    gen := string(k[0:16]) catch return ""
+    return gen
+}
+
+// path のディレクトリを親から順に作る（mkdir -p — 既にあるのは errno 17 で、どの失敗も無視する。作れなければ書き込みが失敗するだけ）
+func mkdirs(path string) {
+    b := bytes(path)
+    for i <- iter.Range(1, len(b) + 1) {
+        if i == len(b) || b[i] == '/' {
+            d := string(b[0:i]) catch return
+            _ = os.Mkdir(d)
+        }
+    }
+}
+
+// path の最後の `/` より前（無ければ "."）
+func parentOf(path string) string {
+    dir, _, slashed := strings.CutLast(path, "/")
+    return if !slashed || dir == "" { "." } else { dir }
+}
+
+// 置き場: 環境変数 SOBER_CACHE（空文字なら無効 = ""）。無ければ $XDG_CACHE_HOME/sober・$HOME/.cache/sober（どれも無ければ無効）
+func cacheDir() string {
+    v, err := os.Getenv("SOBER_CACHE")
+    if err != nil {
+        return ""
+    }
+    // if 式の腕に「値」と「リテラル」を並べると腕の region が合わない（F-35 — loader の orDot と同じ）ので腕ごとに return する
+    if v != nil {
+        return v
+    }
+    x, xerr := os.Getenv("XDG_CACHE_HOME")
+    if xerr == nil {
+        if x != nil {
+            if len(bytes(x)) > 0 {
+                return x + "/sober"
+            }
+        }
+    }
+    h, herr := os.Getenv("HOME")
+    if herr == nil {
+        if h != nil {
+            if len(bytes(h)) > 0 {
+                return h + "/.cache/sober"
+            }
+        }
+    }
+    return ""
+}
+
+// b を「10 進の長さ + ':' + b」で out に積む
+func lenPut(out mut []byte, b []byte) {
+    n := bytes("${len(b)}:")
+    for i <- iter.Range(0, len(n)) {
+        out = append(out, n[i])
+    }
+    for i <- iter.Range(0, len(b)) {
+        out = append(out, b[i])
+    }
+}
+
+func hasStr(xs []string, x string) bool {
+    for i <- iter.Range(0, len(xs)) {
+        if xs[i] == x {
+            return true
+        }
+    }
+    return false
+}
+
+// 末尾の改行を落とした string
+func trimNl(b []byte) string {
+    mut n := len(b)
+    while n > 0 && b[n - 1] == '\n' {
+        n -= 1
+    }
+    return string(b[0:n]) catch ""
+}

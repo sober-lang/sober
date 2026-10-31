@@ -1,0 +1,1046 @@
+package loader
+
+// 省略可の匿名関数型の仮引数（language.md 25 節 Z — 2026-10-25）: func 宣言の仮引数 `p (func(…) R)?` は「有る / 無い」が呼び出し点ごとに字面で決まる
+// （実引数 = nil・省略〔namedargs が nil を補う〕・ラムダ・関数の名前・囲む関数の同じ種類の仮引数の転送）。ここで関数を有無の組ごとに写し分け、
+// 本体の `if p != nil { … } else { … }` を畳む — 脱糖の固定テンプレート（namedargs・η と同じ層: 以降の段〔desugar・lower・typer・analyzer〕は
+// 省略可の関数型を見ず、写した後の普通の関数だけを読む。check と build が同じ木を読むので割れない。コア・Lean は無変更 — 8 節「生成方式は意味に触れない」の 7 例目）:
+//
+//     func run(n int, put (func(b []byte) error?)?) …       run(1)          →  run(1)            （無い組 = 元の名前・put の仮引数なし）
+//         if put != nil { put(out)? } else { send(out)? }   run(1, put: L)  →  run$z1(1, L)      （有る組 = `F$z<有無のビット>`・put の型は中の関数型）
+//
+// 畳み: 有無の決まった `p != nil` / `p == nil` を条件に持つ if は選んだ腕だけを残す（文の列の中は腕の文を差し込む — 余計なブロックを作らない。
+// 「渡さない呼び出し点のコードは仮引数が無い関数と同じ」の約束）。他の位置の `p != nil` は true / false。無い組の @errors から p の項を外す。
+// 柵（diag.FnOpt — どの呼び出し点の組にも依らず元の本体で照合）: 裸の `func(…)?`（1 — 括弧の形へ誘導）・func 宣言の仮引数の外（2）・実引数の形（3）・
+// `if p != nil` の外での呼び出し / 省略可でない仮引数への転送（4）・呼ぶ / 渡す / nil と比べる以外の使用（5 — 束縛・格納・return など）。
+// 有る組の中の p は普通の匿名の関数型の仮引数（借り — 値の位置の捕捉・子 task への捕捉は今の規則がそのまま拒否する）。
+// 写しの後に届かなくなった元の節（元の宣言の本体・差し替えた callee）は葉に潰す（木を走査する後段の段に古い本体を見せない）
+
+import "std/builder"
+import "std/iter"
+import "std/table"
+import "ast"
+import "diag"
+import "lexer"
+
+// OzZ は省略可の関数型の仮引数を持つ func 宣言（Z）の表: 宣言の場所・関数表の番号・省略可の仮引数の位置と名前（[lo, hi)）
+type OzZ struct {
+    file []int
+    node []int
+    fi []int
+    lo []int
+    hi []int
+    opos []int
+    oname []int
+    // 関数表の番号 → Z の番号（-1）
+    ofz []int
+}
+
+// OZ_MAXOPT は 1 つの関数の省略可の関数型の仮引数の上限（有無のビットの幅）
+const OZ_MAXOPT = 16
+
+// ozIsOptFn は型の節 ty が省略可の匿名関数型か
+func ozIsOptFn(t ast.Tree, ty int) bool {
+    return ty >= 0 && t.nodes[ty].kind == ast.TOpt && t.nodes[t.nodes[ty].a].kind == ast.TFunc
+}
+
+// optFnAll は全ファイルの木の省略可の関数型の仮引数を写し分ける。写しが無ければ木をそのまま返す（changed = false — 関数表も組み直さない）
+@errors(diag.FnOpt)
+func optFnAll(cx Cx, ft FnTab) ([]ast.Tree, bool, []int, error?) {
+    // 省略可の関数型がどこにも無ければ何もしない（大半のプログラム — 走査 1 回だけ）
+    mut any := false
+    for f <- iter.Range(0, len(cx.trees)) {
+        t := cx.trees[f]
+        for i <- iter.Range(0, len(t.nodes)) {
+            any = any || ozIsOptFn(t, i)
+        }
+    }
+    if !any {
+        return cx.trees, false, []int{}, nil
+    }
+    zz := ozTable(cx, ft)
+    // 位置の柵: 裸の形（1）・func 宣言の仮引数の外（2）
+    for f <- iter.Range(0, len(cx.trees)) {
+        t := cx.trees[f]
+        for i <- iter.Range(0, len(t.nodes)) {
+            if ozIsOptFn(t, i) {
+                if t.nodes[i].b == 0 {
+                    return cx.trees, false, []int{}, diag.FnOpt{at: diag.Pos{file: f, tok: t.nodes[i].tok}, kind: 1}
+                }
+                if !ozAllowed(cx, zz, f, i) {
+                    return cx.trees, false, []int{}, diag.FnOpt{at: diag.Pos{file: f, tok: t.nodes[i].tok}, kind: 2}
+                }
+            }
+        }
+    }
+    // 本体の柵（3・4・5 — 元の本体の全部の腕で）
+    for z <- iter.Range(0, len(zz.file)) {
+        bt, bk := ozFence(cx, ft, zz, z)
+        if bk != 0 {
+            return cx.trees, false, []int{}, diag.FnOpt{at: diag.Pos{file: zz.file[z], tok: bt}, kind: bk}
+        }
+    }
+    // 要る組（Z, 有無）の閉包: 全部の Z の無い組 + Z でない関数の呼び出し点 + 写す組の本体の呼び出し点（固定点）
+    mut rq := OzReq{}
+    for z <- iter.Range(0, len(zz.file)) {
+        ozRequest(mut rq, z, 0)
+    }
+    // Z でない関数の中の Z の呼び出し（[ファイル, 節, Z, 有無] の 4 語ずつ — 写しの段で差し替える）
+    mut calls := builder.Builder[int]{}
+    for f <- iter.Range(0, len(cx.trees)) {
+        t := cx.trees[f]
+        fs := t.nodes[t.file].d
+        for k <- iter.Range(0, ast.ListLen(t, fs)) {
+            d := ast.ListAt(t, fs, k)
+            if ozZOf(cx, ft, zz, f, d) < 0 && t.nodes[d].e >= 0 {
+                bt := ozScan(cx, ft, zz, f, t.nodes[d].e, -1, 0, mut rq, mut calls)
+                if bt >= 0 {
+                    return cx.trees, false, []int{}, diag.FnOpt{at: diag.Pos{file: f, tok: bt}, kind: 3}
+                }
+            }
+        }
+    }
+    mut qi := 0
+    while qi < table.Len(mut rq.z) {
+        z := table.Get(mut rq.z, qi)
+        m := table.Get(mut rq.m, qi)
+        mut none := builder.Builder[int]{}
+        bt := ozScan(cx, ft, zz, zz.file[z], cx.trees[zz.file[z]].nodes[zz.node[z]].e, z, m, mut rq, mut none)
+        if bt >= 0 {
+            return cx.trees, false, []int{}, diag.FnOpt{at: diag.Pos{file: zz.file[z], tok: bt}, kind: 3}
+        }
+        qi += 1
+    }
+    cs := builder.Build(mut calls)
+    mut rz := mut []int{}
+    mut rm := mut []int{}
+    for i <- iter.Range(0, table.Len(mut rq.z)) {
+        rz = append(rz, table.Get(mut rq.z, i))
+        rm = append(rm, table.Get(mut rq.m, i))
+    }
+    rzs := freeze(rz)
+    rms := freeze(rm)
+    mut out := mut []ast.Tree{}
+    mut zd := mut []int{}
+    for f <- iter.Range(0, len(cx.trees)) {
+        t1, vs := ozFile(cx, ft, zz, rzs, rms, cs, f)
+        out = append(out, t1)
+        mut i := 0
+        while i < len(vs) {
+            zd = append(zd, f)
+            zd = append(zd, vs[i])
+            zd = append(zd, vs[i + 1])
+            zd = append(zd, vs[i] + 1)
+            i += 2
+        }
+    }
+    return freeze(out), true, freeze(zd), nil
+}
+
+// OzStep は optEtaAll の結果: 写した木・関数表（写しがあれば組み直したもの）・写しの宣言（[ファイル, 宣言の節, 節の区間の始め, 終わり] の 4 語ずつ — Program.z_decl）
+type OzStep struct {
+    trees []ast.Tree
+    ft FnTab
+    zdecl []int
+}
+
+// optEtaAll は名前付き実引数の写し（namedargs.sober）・省略可の関数型の写し分け（optFnAll — 省略を nil にした後の木を読む）・η 展開（eta.sober —
+// 写した後の木と関数表で）を続けて掛ける（finish の段 — 局所を finish の枠に積まないために分けた）
+@errors(diag.NamedArg, diag.FnOpt, diag.FnArg)
+func optEtaAll(cx0 Cx, ft0 FnTab) (OzStep, error?) {
+    nts, naerr := namedArgsAll(cx0, ft0)
+    if naerr != nil {
+        return OzStep{}, naerr
+    }
+    cx := Cx{nts, cx0.file_pkg, cx0.pkg_path, cx0.pkg_lo, cx0.pkg_hi, cx0.imp_pkg, cx0.imp_ref, cx0.imp_path, cx0.tys}
+    ots, changed, zd, oerr := optFnAll(cx, ft0)
+    if oerr != nil {
+        return OzStep{}, oerr
+    }
+    cx1 := Cx{ots, cx.file_pkg, cx.pkg_path, cx.pkg_lo, cx.pkg_hi, cx.imp_pkg, cx.imp_ref, cx.imp_path, cx.tys}
+    ft := if changed { fnTab(cx1) } else { ft0 }
+    ets, eerr := etaAll(cx1, ft)
+    if eerr != nil {
+        return OzStep{}, eerr
+    }
+    return OzStep{ets, ft, zd}, nil
+}
+
+// ozTable は関数表の FN_OPTF の印の宣言を Z の表にする
+func ozTable(cx Cx, ft FnTab) OzZ {
+    mut file := mut []int{}
+    mut node := mut []int{}
+    mut fis := mut []int{}
+    mut lo := mut []int{}
+    mut hi := mut []int{}
+    mut opos := mut []int{}
+    mut oname := mut []int{}
+    mut ofz := mut []int{}
+    for fi <- iter.Range(0, len(ft.file)) {
+        if (ft.flags[fi] & FN_OPTF) != 0 {
+            ofz = append(ofz, len(file))
+            t := cx.trees[ft.file[fi]]
+            d := t.nodes[ft.node[fi]]
+            file = append(file, ft.file[fi])
+            node = append(node, ft.node[fi])
+            fis = append(fis, fi)
+            lo = append(lo, len(opos))
+            for q <- iter.Range(0, ast.ListLen(t, d.c)) {
+                prm := t.nodes[ast.ListAt(t, d.c, q)]
+                if ozIsOptFn(t, prm.b) && len(opos) - lo[len(lo) - 1] < OZ_MAXOPT {
+                    opos = append(opos, q)
+                    oname = append(oname, prm.a)
+                }
+            }
+            hi = append(hi, len(opos))
+        } else {
+            ofz = append(ofz, -1)
+        }
+    }
+    return OzZ{freeze(file), freeze(node), freeze(fis), freeze(lo), freeze(hi), freeze(opos), freeze(oname), freeze(ofz)}
+}
+
+// ozAllowed は木 f の型の節 i が Z（本体のある func 宣言）の省略可の仮引数の型か
+func ozAllowed(cx Cx, zz OzZ, f int, i int) bool {
+    for z <- iter.Range(0, len(zz.file)) {
+        if zz.file[z] == f {
+            t := cx.trees[f]
+            d := t.nodes[zz.node[z]]
+            if d.e >= 0 {
+                for q <- iter.Range(0, ast.ListLen(t, d.c)) {
+                    if t.nodes[ast.ListAt(t, d.c, q)].b == i {
+                        return true
+                    }
+                }
+            }
+        }
+    }
+    return false
+}
+
+// ozZOf は木 f の宣言の節 d が Z ならその番号（でなければ -1）
+func ozZOf(cx Cx, ft FnTab, zz OzZ, f int, d int) int {
+    for z <- iter.Range(0, len(zz.file)) {
+        if zz.file[z] == f && zz.node[z] == d {
+            return z
+        }
+    }
+    return -1
+}
+
+// ozOptK は Z の z の省略可の仮引数のうち名前が木 t の文字列 s のものの番号 k（0 起点 — 無ければ -1。t は z の宣言の木）
+func ozOptK(zz OzZ, z int, t ast.Tree, s int) int {
+    if z < 0 {
+        return -1
+    }
+    for k <- iter.Range(0, zz.hi[z] - zz.lo[z]) {
+        if poolEq(t, zz.oname[zz.lo[z] + k], s) {
+            return k
+        }
+    }
+    return -1
+}
+
+// ozOptAt は Z の z の仮引数の位置 p が省略可の関数型ならその番号 k（でなければ -1）
+func ozOptAt(zz OzZ, z int, p int) int {
+    for k <- iter.Range(0, zz.hi[z] - zz.lo[z]) {
+        if zz.opos[zz.lo[z] + k] == p {
+            return k
+        }
+    }
+    return -1
+}
+
+// ozNilTest は節 n（括弧は剥がす）が Z の z の省略可の仮引数 p と nil の比較ならば k × 2 + (`!=` なら 1)（でなければ -1）
+func ozNilTest(zz OzZ, z int, t ast.Tree, n0 int) int {
+    n := unparen(t, n0)
+    if z < 0 || n < 0 || t.nodes[n].kind != ast.EBinary {
+        return -1
+    }
+    x := t.nodes[n]
+    if x.a != lexer.EqualEqual && x.a != lexer.BangEqual {
+        return -1
+    }
+    l := unparen(t, x.b)
+    r := unparen(t, x.c)
+    id := if t.nodes[l].kind == ast.ENil { r } else if t.nodes[r].kind == ast.ENil { l } else { -1 }
+    if id < 0 || t.nodes[id].kind != ast.EIdent {
+        return -1
+    }
+    k := ozOptK(zz, z, t, t.nodes[id].a)
+    if k < 0 {
+        return -1
+    }
+    return k * 2 + if x.a == lexer.BangEqual { 1 } else { 0 }
+}
+
+// ozFold は if の節 n の畳み（-1 = 畳まない・0 = 条件が偽・1 = 真）— 有無 m の組で
+func ozFold(zz OzZ, z int, m int, t ast.Tree, n int) int {
+    x := t.nodes[n]
+    if x.kind != ast.EIf {
+        return -1
+    }
+    nt := ozNilTest(zz, z, t, x.a)
+    if nt < 0 {
+        return -1
+    }
+    present := (m & (1 << (nt / 2))) != 0
+    return if present == (nt % 2 == 1) { 1 } else { 0 }
+}
+
+// ozCallZ は呼び出しの節 n（ECall / EPipe）の呼び先が Z ならその番号（でなければ -1）
+func ozCallZ(cx Cx, ft FnTab, zz OzZ, f int, n int) int {
+    t := cx.trees[f]
+    x := t.nodes[n]
+    c := if x.kind == ast.ECall { x.a } else if x.kind == ast.EPipe { x.b } else { -1 }
+    if c < 0 {
+        return -1
+    }
+    fi := calleeFn(cx, ft, f, unparen(t, c), FN_OPTF)
+    return if fi < 0 { -1 } else { zz.ofz[fi] }
+}
+
+// ozArgPos は呼び出しの節 x の実引数の列の i 番目が呼び先の何番目の仮引数か（穴の無いパイプ段は左辺が 0 番 — 実引数 i は i + 1 番）
+func ozArgPos(t ast.Tree, x ast.Node, i int) int {
+    if x.kind == ast.EPipe && !ozHasHole(t, x) {
+        return i + 1
+    }
+    return i
+}
+
+func ozHasHole(t ast.Tree, x ast.Node) bool {
+    for i <- iter.Range(0, ast.ListLen(t, x.c)) {
+        if ast.ListAt(t, x.c, i) < 0 {
+            return true
+        }
+    }
+    return false
+}
+
+// ozArgAt は呼び出しの節 x の仮引数の位置 p の実引数の節（無ければ -1。パイプ段の左辺の位置は左辺）
+func ozArgAt(t ast.Tree, x ast.Node, p int) int {
+    if x.kind == ast.ECall {
+        return if p < ast.ListLen(t, x.b) { ast.ListAt(t, x.b, p) } else { -1 }
+    }
+    if !ozHasHole(t, x) {
+        return if p == 0 { x.a } else if p - 1 < ast.ListLen(t, x.c) { ast.ListAt(t, x.c, p - 1) } else { -1 }
+    }
+    if p >= ast.ListLen(t, x.c) {
+        return -1
+    }
+    a := ast.ListAt(t, x.c, p)
+    return if a < 0 { x.a } else { a }
+}
+
+// ozArgOk は省略可の関数型の仮引数への実引数の形（nil・ラムダ・名前・pkg.名前・名前[T]）か
+func ozArgOk(t ast.Tree, a int) bool {
+    k := t.nodes[unparen(t, a)].kind
+    return k == ast.ENil || k == ast.ELambda || k == ast.EIdent || k == ast.ESelector || k == ast.EIndex
+}
+
+// ozArgBit は実引数 a（省略可の仮引数へ — -1 = 無い）が有る（1）か無い（0）か。囲む Z の z の省略可の仮引数の転送は組 m のビット
+func ozArgBit(zz OzZ, z int, m int, t ast.Tree, a int) int {
+    if a < 0 {
+        return 0
+    }
+    u := t.nodes[unparen(t, a)]
+    if u.kind == ast.ENil {
+        return 0
+    }
+    if u.kind == ast.EIdent {
+        k := ozOptK(zz, z, t, u.a)
+        if k >= 0 {
+            return if (m & (1 << k)) != 0 { 1 } else { 0 }
+        }
+    }
+    return 1
+}
+
+// ozCallMask は Z の zj を呼ぶ節 x（木 t — 囲む Z は z・組 m）の有無の組
+func ozCallMask(zz OzZ, zj int, z int, m int, t ast.Tree, x ast.Node) int {
+    mut cm := 0
+    for k <- iter.Range(0, zz.hi[zj] - zz.lo[zj]) {
+        cm = cm | (ozArgBit(zz, z, m, t, ozArgAt(t, x, zz.opos[zz.lo[zj] + k])) << k)
+    }
+    return cm
+}
+
+// ozFence は Z の z の元の本体（全部の腕）の柵: 最初の違反の（字句, kind）— kind 0 = 違反なし。
+// 役: 0 = 他・1 = 呼ぶ（callee）・2 = 実引数・3 = nil との比較・4 = 省略可の仮引数への実引数。g = 有ると分かっている仮引数のビット
+func ozFence(cx Cx, ft FnTab, zz OzZ, z int) (int, int) {
+    f := zz.file[z]
+    t := cx.trees[f]
+    mut st := mut []int{}
+    mut rl := mut []int{}
+    mut gd := mut []int{}
+    mut sp := push(mut st, 0, t.nodes[zz.node[z]].e)
+    _ = push(mut rl, 0, 0)
+    _ = push(mut gd, 0, 0)
+    while sp > 0 {
+        sp -= 1
+        n := st[sp]
+        r := rl[sp]
+        g := gd[sp]
+        x := t.nodes[n]
+        k := x.kind
+        nt := if k == ast.EIf { ozNilTest(zz, z, t, x.a) } else if k == ast.EBinary { ozNilTest(zz, z, t, n) } else { -1 }
+        if k == ast.EIdent {
+            kk := ozOptK(zz, z, t, x.a)
+            if kk >= 0 && r == 0 {
+                return x.tok, 5
+            }
+            if kk >= 0 && (r == 1 || r == 2) && (g & (1 << kk)) == 0 {
+                return x.tok, 4
+            }
+        } else if k == ast.EParen {
+            _ = push(mut rl, sp, r)
+            _ = push(mut gd, sp, g)
+            sp = push(mut st, sp, x.a)
+        } else if k == ast.EIf && nt >= 0 {
+            bit := 1 << (nt / 2)
+            ne := nt % 2 == 1
+            _ = push(mut rl, sp, 0)
+            _ = push(mut gd, sp, if ne { g | bit } else { g })
+            sp = push(mut st, sp, x.b)
+            if x.c >= 0 {
+                _ = push(mut rl, sp, 0)
+                _ = push(mut gd, sp, if ne { g } else { g | bit })
+                sp = push(mut st, sp, x.c)
+            }
+        } else if k == ast.EBinary && nt >= 0 {
+            // nil との比較の被演算子は使用に数えない
+        } else if k == ast.ECall || k == ast.EPipe {
+            zj := ozCallZ(cx, ft, zz, f, n)
+            args := if k == ast.ECall { x.b } else { x.c }
+            _ = push(mut rl, sp, 1)
+            _ = push(mut gd, sp, g)
+            sp = push(mut st, sp, if k == ast.ECall { x.a } else { x.b })
+            if k == ast.EPipe {
+                lp := if ozHasHole(t, x) { ozHolePos(t, x) } else { 0 }
+                _ = push(mut rl, sp, if zj >= 0 && ozOptAt(zz, zj, lp) >= 0 { 4 } else { 2 })
+                _ = push(mut gd, sp, g)
+                sp = push(mut st, sp, x.a)
+            }
+            for i <- iter.Range(0, ast.ListLen(t, args)) {
+                a := ast.ListAt(t, args, i)
+                if a >= 0 {
+                    opt := zj >= 0 && ozOptAt(zz, zj, ozArgPos(t, x, i)) >= 0
+                    if opt && !ozArgOk(t, a) {
+                        return t.nodes[a].tok, 3
+                    }
+                    _ = push(mut rl, sp, if opt { 4 } else { 2 })
+                    _ = push(mut gd, sp, g)
+                    sp = push(mut st, sp, a)
+                }
+            }
+        } else {
+            sp0 := sp
+            sp = pushKids(mut st, sp, t, x)
+            for j <- iter.Range(sp0, sp) {
+                _ = push(mut rl, j, 0)
+                _ = push(mut gd, j, g)
+            }
+        }
+    }
+    return 0, 0
+}
+
+// ozHolePos は穴のあるパイプ段の穴の位置
+func ozHolePos(t ast.Tree, x ast.Node) int {
+    for i <- iter.Range(0, ast.ListLen(t, x.c)) {
+        if ast.ListAt(t, x.c, i) < 0 {
+            return i
+        }
+    }
+    return 0
+}
+
+// OzReq は要る組（Z, 有無）の列（発見の順 — 写しの順もこれ）
+type OzReq struct {
+    z table.Table[int]
+    m table.Table[int]
+}
+
+func ozRequest(rq mut OzReq, z int, m int) {
+    for i <- iter.Range(0, table.Len(mut rq.z)) {
+        if table.Get(mut rq.z, i) == z && table.Get(mut rq.m, i) == m {
+            return
+        }
+    }
+    table.Push(mut rq.z, z)
+    table.Push(mut rq.m, m)
+}
+
+// ozScan は木 f の本体 root（囲む Z は z・組 m — Z でない関数は z = -1）の生きた腕の Z の呼び出しを要る組に足す。z = -1 のときは
+// 呼び出しを calls に [ファイル, 節, Z, 有無] で積む。実引数の形の違反はその字句（無ければ -1）
+func ozScan(cx Cx, ft FnTab, zz OzZ, f int, root int, z int, m int, rq mut OzReq, calls mut builder.Builder[int]) int {
+    t := cx.trees[f]
+    mut st := mut []int{}
+    mut sp := push(mut st, 0, root)
+    while sp > 0 {
+        sp -= 1
+        n := st[sp]
+        x := t.nodes[n]
+        k := x.kind
+        fd := ozFold(zz, z, m, t, n)
+        if fd == 1 {
+            sp = push(mut st, sp, x.b)
+        } else if fd == 0 {
+            sp = push(mut st, sp, x.c)
+        } else if k == ast.EBinary && ozNilTest(zz, z, t, n) >= 0 {
+            // 畳まれる比較
+        } else if (k == ast.ECall || k == ast.EPipe) && ozCallZ(cx, ft, zz, f, n) >= 0 {
+            zj := ozCallZ(cx, ft, zz, f, n)
+            args := if k == ast.ECall { x.b } else { x.c }
+            for i <- iter.Range(0, ast.ListLen(t, args)) {
+                a := ast.ListAt(t, args, i)
+                if a >= 0 && ozOptAt(zz, zj, ozArgPos(t, x, i)) >= 0 && !ozArgOk(t, a) {
+                    return t.nodes[a].tok
+                }
+            }
+            cm := ozCallMask(zz, zj, z, m, t, x)
+            ozRequest(mut rq, zj, cm)
+            if z < 0 {
+                builder.Push(mut calls, f)
+                builder.Push(mut calls, n)
+                builder.Push(mut calls, zj)
+                builder.Push(mut calls, cm)
+            }
+            // 実引数（ラムダの本体にも呼び出しがありうる）と、パイプ段の左辺
+            sp = pushList(mut st, sp, t, args)
+            if k == ast.EPipe {
+                sp = push(mut st, sp, x.a)
+            }
+        } else {
+            sp = pushKids(mut st, sp, t, x)
+        }
+    }
+    return -1
+}
+
+// ── 写し ──
+
+// OzG は 1 ファイルの写しの作業域: 出力の節（ns — 元の節の写しから始めて足す・差し替える）・データ（db）・元の節 → 写しの節（mp — 組ごとに戻す）・後順の積み
+type OzG struct {
+    ns table.Table[ast.Node]
+    db builder.Builder[int]
+    mp table.Table[int]
+    touched builder.Builder[int]
+    sn table.Table[int]
+    ss table.Table[int]
+    sp int
+    // いま写している組の節の区間の始め（ozVariant — 写しの節は [blo, 宣言の節] に連続する）
+    blo int
+}
+
+// ozDesc は節 x の欄の種類（3 ビット × 6 — desugar/init.sober の desc と同じ符号: 1 = 節・2 = 文字列・3 = 節の列・4 = 文字列の列・5 = 生の列）
+func ozDesc(x ast.Node) int {
+    k := x.kind
+    return switch k {
+    case ast.EIdent | ast.EStrlit | ast.EMutArg | ast.TName: 2
+    case ast.EFloat: 2 * 8
+    case ast.EBinary: 8 + 64
+    case ast.EUnary: 8
+    case ast.ECall: 1 + 3 * 8
+    case ast.EPipe: 1 + 8 + 3 * 64
+    case ast.EIndex | ast.ETry | ast.SWhile | ast.KEntry | ast.TMap: 1 + 8
+    case ast.ESlice3 | ast.EIf: 1 + 8 + 64
+    case ast.EInterp: 4 + 3 * 8
+    case ast.ESlicelit: 1 + 3 * 8
+    case ast.EMaplit: 1 + 8 + 3 * 64
+    case ast.EComposite: 2 + 3 * 8 + 3 * 64
+    case ast.ESelector: 1 + 2 * 8
+    case ast.ELambda | ast.KCase: 3 + 8
+    case ast.ESwitch: 3 + 3 * 8 + 64
+    case ast.EBlock | ast.SRet | ast.KBlock | ast.BStruct | ast.BUnion | ast.BError | ast.KPConst | ast.TTuple: 3
+    case ast.EFor: if x.b == 1 { 3 + 3 * 64 } else { 3 + 64 }
+    case ast.SBind: 4 + 3 * 64
+    case ast.SAssign: 3 + 3 * 64
+    case ast.SExpr | ast.SDefer | ast.SYield | ast.TOpt | ast.EParen | ast.TSlice | ast.BDefined | ast.BAlias: 1
+    case ast.TFunc | ast.BFunc: 3 + 3 * 8 + 4 * 64
+    case ast.TGeneric | ast.KVariant: 2 + 3 * 8
+    case ast.TArray: 8
+    case ast.KFile: 2 + 3 * 8 + 3 * 64 + 3 * 512 + 3 * 4096
+    case ast.KImport: 2 + 2 * 8
+    case ast.KPType: 2 + 2 * 8 + 3 * 64
+    case ast.KTypeDecl: 2 + 4 * 8 + 64
+    case ast.KField | ast.KParam | ast.KConst | ast.KElem | ast.KLParam | ast.KFieldPat: 2 + 8
+    case ast.KFuncDecl: 2 + 4 * 8 + 3 * 64 + 3 * 512 + 4096 + 5 * 32768
+    case ast.KGen: 4 + 8 + 3 * 64
+    default: 0
+    }
+}
+
+// ozField は節 x の j 番目の欄（a〜f）
+func ozField(x ast.Node, j int) int {
+    return switch j {
+    case 0: x.a
+    case 1: x.b
+    case 2: x.c
+    case 3: x.d
+    case 4: x.e
+    case _: x.f
+    }
+}
+
+// ozCode は欄の種類の表 c の j 番目
+func ozCode(c int, j int) int {
+    mut v := c
+    for i <- iter.Range(0, j) {
+        v = v / 8
+    }
+    return v % 8
+}
+
+// ozStmtList は節 x の j 番目の欄が文の列か（ブロックの文・文形 for の本体 — 畳む if の腕を差し込む所）
+func ozStmtList(x ast.Node, j int) bool {
+    return (j == 0 && (x.kind == ast.KBlock || x.kind == ast.EBlock)) || (j == 2 && x.kind == ast.EFor && x.b == 1)
+}
+
+// ozReach は木の根から届く節の印
+func ozReach(t ast.Tree) []bool {
+    mut seen := mut []bool{}
+    for i <- iter.Range(0, len(t.nodes)) {
+        seen = append(seen, false)
+    }
+    mut st := mut []int{}
+    mut sp := push(mut st, 0, t.file)
+    while sp > 0 {
+        sp -= 1
+        n := st[sp]
+        if !seen[n] {
+            seen[n] = true
+            x := t.nodes[n]
+            c := ozDesc(x)
+            for j <- iter.Range(0, 6) {
+                v := ozField(x, j)
+                if v >= 0 && ozCode(c, j) == 1 {
+                    sp = push(mut st, sp, v)
+                } else if v >= 0 && ozCode(c, j) == 3 {
+                    sp = pushList(mut st, sp, t, v)
+                }
+            }
+        }
+    }
+    return freeze(seen)
+}
+
+// ozElems は文の列 l の写しの要素（組 m で畳む if の腕を差し込んだ後）: 元の節の番号 × 2（そのまま写す）か、番号 × 2 + 1（その節を文 SExpr で包む —
+// 畳んだ if の else if の腕）。差し込むのは else のある if か、列の最後でない if（else の無い最後の if は値 unit の if のまま残す — 式の畳みで）
+func ozElems(zz OzZ, z int, m int, t ast.Tree, l int) []int {
+    mut out := mut []int{}
+    mut st := mut []int{}
+    mut sp := 0
+    n := ast.ListLen(t, l)
+    mut i := n - 1
+    while i >= 0 {
+        sp = push(mut st, sp, (ast.ListAt(t, l, i) * 2 + if i == n - 1 { 1 } else { 0 }) * 2)
+        i -= 1
+    }
+    while sp > 0 {
+        sp -= 1
+        w := st[sp]
+        if w % 2 == 1 {
+            out = append(out, w)
+        } else {
+            e := w / 4
+            last := (w / 2) % 2 == 1
+            x := t.nodes[e]
+            ifn := if x.kind == ast.SExpr { unparen(t, x.a) } else { -1 }
+            fd := if ifn >= 0 { ozFold(zz, z, m, t, ifn) } else { -1 }
+            y := if ifn >= 0 { t.nodes[ifn] } else { x }
+            if fd >= 0 && (y.c >= 0 || !last) {
+                br := if fd == 1 { y.b } else { y.c }
+                if br >= 0 && t.nodes[br].kind == ast.EIf {
+                    sp = push(mut st, sp, br * 2 + 1)
+                } else if br >= 0 {
+                    bl := t.nodes[br].a
+                    bn := ast.ListLen(t, bl)
+                    mut j := bn - 1
+                    while j >= 0 {
+                        sp = push(mut st, sp, (ast.ListAt(t, bl, j) * 2 + if last && j == bn - 1 { 1 } else { 0 }) * 2)
+                        j -= 1
+                    }
+                }
+            } else {
+                out = append(out, e * 2)
+            }
+        }
+    }
+    return freeze(out)
+}
+
+// ozKids は元の節 n の写しの子（後順で先に写す元の節 — 組 m の畳み・Z の呼び出しの差し替えと同じ判断）
+func ozKids(cx Cx, ft FnTab, zz OzZ, f int, z int, m int, n int) []int {
+    t := cx.trees[f]
+    x := t.nodes[n]
+    mut out := mut []int{}
+    fd := ozFold(zz, z, m, t, n)
+    if fd >= 0 {
+        br := if fd == 1 { x.b } else { x.c }
+        if br >= 0 && t.nodes[br].kind == ast.EIf {
+            out = append(out, br)
+        } else if br >= 0 && x.c >= 0 {
+            for e <- ozElems(zz, z, m, t, t.nodes[br].a) {
+                out = append(out, e / 2)
+            }
+        } else if br >= 0 {
+            out = append(out, br)
+        }
+        return freeze(out)
+    }
+    if x.kind == ast.EBinary && ozNilTest(zz, z, t, n) >= 0 {
+        return freeze(out)
+    }
+    zj := if x.kind == ast.ECall || x.kind == ast.EPipe { ozCallZ(cx, ft, zz, f, n) } else { -1 }
+    if zj >= 0 {
+        cm := ozCallMask(zz, zj, z, m, t, x)
+        c := t.nodes[unparen(t, if x.kind == ast.ECall { x.a } else { x.b })]
+        if c.kind == ast.ESelector {
+            out = append(out, c.a)
+        } else if c.kind == ast.EIndex {
+            out = append(out, c.b)
+        }
+        if x.kind == ast.EPipe {
+            out = append(out, x.a)
+        }
+        args := if x.kind == ast.ECall { x.b } else { x.c }
+        for i <- iter.Range(0, ast.ListLen(t, args)) {
+            a := ast.ListAt(t, args, i)
+            if a >= 0 && ozKeepArg(zz, zj, cm, ozArgPos(t, x, i)) {
+                out = append(out, a)
+            }
+        }
+        return freeze(out)
+    }
+    c := ozDesc(x)
+    for j <- iter.Range(0, 6) {
+        v := ozField(x, j)
+        if v >= 0 && ozCode(c, j) == 1 {
+            out = append(out, v)
+        } else if v >= 0 && ozCode(c, j) == 3 && ozStmtList(x, j) {
+            for e <- ozElems(zz, z, m, t, v) {
+                out = append(out, e / 2)
+            }
+        } else if v >= 0 && ozCode(c, j) == 3 {
+            for i <- iter.Range(0, ast.ListLen(t, v)) {
+                if ast.ListAt(t, v, i) >= 0 {
+                    out = append(out, ast.ListAt(t, v, i))
+                }
+            }
+        }
+    }
+    return freeze(out)
+}
+
+// ozKeepArg は Z の zj を組 cm で呼ぶとき仮引数の位置 p の実引数を残すか（無い省略可の仮引数の実引数は落とす）
+func ozKeepArg(zz OzZ, zj int, cm int, p int) bool {
+    k := ozOptAt(zz, zj, p)
+    return k < 0 || (cm & (1 << k)) != 0
+}
+
+// ozName は Z の z の組 m の名前（無い組は元の名前・他は `F$z<m>`）
+func ozName(cx Cx, zz OzZ, z int, m int) string {
+    t := cx.trees[zz.file[z]]
+    base := Name(t, t.nodes[zz.node[z]].a)
+    return if m == 0 { base } else { "${base}$z${m}" }
+}
+
+func ozAdd(g mut OzG, x ast.Node) int {
+    table.Push(mut g.ns, x)
+    return table.Len(mut g.ns) - 1
+}
+
+func ozMap(g mut OzG, n int) int {
+    return if n < 0 { n } else { table.Get(mut g.mp, n) }
+}
+
+func ozSetMap(g mut OzG, n int, v int) {
+    if table.Get(mut g.mp, n) == -1 {
+        builder.Push(mut g.touched, n)
+    }
+    table.Set(mut g.mp, n, v)
+}
+
+func ozIdent(g mut OzG, tok int, w string) int {
+    return ozAdd(mut g, ast.Node{ast.EIdent, tok, ast.PutLit(mut g.db, w), 0, 0, 0, 0, 0})
+}
+
+// ozItems は ozElems の要素を写しの節の列にする（包む要素は SExpr を足す）
+func ozItems(g mut OzG, t ast.Tree, es []int) int {
+    mut out := mut []int{}
+    for e <- es {
+        if e % 2 == 1 {
+            out = append(out, ozAdd(mut g, ast.Node{ast.SExpr, t.nodes[e / 2].tok, ozMap(mut g, e / 2), 0, 0, 0, 0, 0}))
+        } else {
+            out = append(out, ozMap(mut g, e / 2))
+        }
+    }
+    return ast.PutList(mut g.db, freeze(out))
+}
+
+// ozBuild は元の節 n の写しを作る（子は写し済み）
+func ozBuild(g mut OzG, cx Cx, ft FnTab, zz OzZ, f int, z int, m int, n int) {
+    t := cx.trees[f]
+    x := t.nodes[n]
+    fd := ozFold(zz, z, m, t, n)
+    if fd >= 0 {
+        br := if fd == 1 { x.b } else { x.c }
+        if br >= 0 && t.nodes[br].kind == ast.EIf {
+            ozSetMap(mut g, n, ozMap(mut g, br))
+        } else if br >= 0 && x.c >= 0 {
+            ozSetMap(mut g, n, ozAdd(mut g, ast.Node{ast.EBlock, x.tok, ozItems(mut g, t, ozElems(zz, z, m, t, t.nodes[br].a)), 0, 0, 0, 0, 0}))
+        } else if br >= 0 {
+            ozSetMap(mut g, n, ozAdd(mut g, ast.Node{ast.EIf, x.tok, ozIdent(mut g, x.tok, "true"), ozMap(mut g, br), -1, 0, 0, 0}))
+        } else {
+            kb := ozAdd(mut g, ast.Node{ast.KBlock, x.tok, ast.PutList(mut g.db, []int{}), 0, 0, 0, 0, 0})
+            ozSetMap(mut g, n, ozAdd(mut g, ast.Node{ast.EIf, x.tok, ozIdent(mut g, x.tok, "false"), kb, -1, 0, 0, 0}))
+        }
+        return
+    }
+    nt := if x.kind == ast.EBinary { ozNilTest(zz, z, t, n) } else { -1 }
+    if nt >= 0 {
+        present := (m & (1 << (nt / 2))) != 0
+        ozSetMap(mut g, n, ozIdent(mut g, x.tok, if present == (nt % 2 == 1) { "true" } else { "false" }))
+        return
+    }
+    zj := if x.kind == ast.ECall || x.kind == ast.EPipe { ozCallZ(cx, ft, zz, f, n) } else { -1 }
+    if zj >= 0 {
+        cm := ozCallMask(zz, zj, z, m, t, x)
+        ozSetMap(mut g, n, ozAdd(mut g, ozCallNode(mut g, cx, zz, t, x, zj, cm, true)))
+        return
+    }
+    c := ozDesc(x)
+    mut fs := mut []int{}
+    for j <- iter.Range(0, 6) {
+        v := ozField(x, j)
+        cj := ozCode(c, j)
+        if v >= 0 && cj == 1 {
+            fs = append(fs, ozMap(mut g, v))
+        } else if v >= 0 && cj == 3 && ozStmtList(x, j) {
+            fs = append(fs, ozItems(mut g, t, ozElems(zz, z, m, t, v)))
+        } else if v >= 0 && cj == 3 {
+            mut es := mut []int{}
+            for i <- iter.Range(0, ast.ListLen(t, v)) {
+                es = append(es, ozMap(mut g, ast.ListAt(t, v, i)))
+            }
+            fs = append(fs, ast.PutList(mut g.db, freeze(es)))
+        } else if v >= 0 && (cj == 2 || cj == 4 || cj == 5) {
+            // 文字列・文字列の列・生の列はデータの番地のまま（写しの木のデータは元のデータの写しから始まる）
+            fs = append(fs, v)
+        } else {
+            fs = append(fs, v)
+        }
+    }
+    ozSetMap(mut g, n, ozAdd(mut g, ast.Node{x.kind, x.tok, fs[0], fs[1], fs[2], fs[3], fs[4], fs[5]}))
+}
+
+// ozCallNode は Z の zj を組 cm で呼ぶ節 x の差し替え（callee を組の名前へ・無い省略可の仮引数の実引数を落とす）。
+// mapped = 実引数・callee の土台を写しの節で引くか（Z の写しの中）・元の節のまま使うか（Z でない関数のその場の差し替え）
+func ozCallNode(g mut OzG, cx Cx, zz OzZ, t ast.Tree, x ast.Node, zj int, cm int, mapped bool) ast.Node {
+    nm := ozName(cx, zz, zj, cm)
+    c0 := if x.kind == ast.ECall { x.a } else { x.b }
+    c := t.nodes[unparen(t, c0)]
+    callee := if c.kind == ast.ESelector {
+        ozAdd(mut g, ast.Node{ast.ESelector, c.tok, if mapped { ozMap(mut g, c.a) } else { c.a }, ast.PutLit(mut g.db, nm), 0, 0, 0, 0})
+    } else if c.kind == ast.EIndex {
+        id := ozAdd(mut g, ast.Node{ast.EIdent, t.nodes[c.a].tok, ast.PutLit(mut g.db, nm), 0, 0, 0, 0, 0})
+        ozAdd(mut g, ast.Node{ast.EIndex, c.tok, id, if mapped { ozMap(mut g, c.b) } else { c.b }, 0, 0, 0, 0})
+    } else {
+        ozAdd(mut g, ast.Node{ast.EIdent, c.tok, ast.PutLit(mut g.db, nm), 0, 0, 0, 0, 0})
+    }
+    args := if x.kind == ast.ECall { x.b } else { x.c }
+    mut es := mut []int{}
+    for i <- iter.Range(0, ast.ListLen(t, args)) {
+        a := ast.ListAt(t, args, i)
+        if a < 0 || ozKeepArg(zz, zj, cm, ozArgPos(t, x, i)) {
+            es = append(es, if mapped { ozMap(mut g, a) } else { a })
+        }
+    }
+    l := ast.PutList(mut g.db, freeze(es))
+    if x.kind == ast.ECall {
+        return ast.Node{ast.ECall, x.tok, callee, l, x.c, x.d, x.e, x.f}
+    }
+    return ast.Node{ast.EPipe, x.tok, if mapped { ozMap(mut g, x.a) } else { x.a }, callee, l, x.d, x.e, x.f}
+}
+
+// ozCopy は元の節 roots を組 m（囲む Z は z）で後順に写す（写しの番号は mp）
+func ozCopy(g mut OzG, cx Cx, ft FnTab, zz OzZ, f int, z int, m int, roots []int) {
+    g.sp = 0
+    for r <- roots {
+        ozPushNode(mut g, r)
+    }
+    while g.sp > 0 {
+        n := table.Get(mut g.sn, g.sp - 1)
+        if table.Get(mut g.ss, g.sp - 1) == 0 {
+            table.Set(mut g.ss, g.sp - 1, 1)
+            for k <- ozKids(cx, ft, zz, f, z, m, n) {
+                if table.Get(mut g.mp, k) == -1 {
+                    ozPushNode(mut g, k)
+                }
+            }
+        } else {
+            g.sp -= 1
+            if table.Get(mut g.mp, n) == -1 {
+                ozBuild(mut g, cx, ft, zz, f, z, m, n)
+            }
+        }
+    }
+}
+
+func ozPushNode(g mut OzG, n int) {
+    if g.sp < table.Len(mut g.sn) {
+        table.Set(mut g.sn, g.sp, n)
+        table.Set(mut g.ss, g.sp, 0)
+    } else {
+        table.Push(mut g.sn, n)
+        table.Push(mut g.ss, 0)
+    }
+    g.sp += 1
+}
+
+// ozVariant は Z の z の組 m の宣言を写して足し、その節の番号を返す
+func ozVariant(g mut OzG, cx Cx, ft FnTab, zz OzZ, z int, m int) int {
+    f := zz.file[z]
+    t := cx.trees[f]
+    d := t.nodes[zz.node[z]]
+    // 写す根: 残る仮引数（有る省略可の仮引数は中の関数型）・結果・本体
+    mut roots := mut []int{}
+    for q <- iter.Range(0, ast.ListLen(t, d.c)) {
+        pi := ast.ListAt(t, d.c, q)
+        k := ozOptAt(zz, z, q)
+        if k < 0 {
+            roots = append(roots, pi)
+        } else if (m & (1 << k)) != 0 {
+            roots = append(roots, t.nodes[t.nodes[pi].b].a)
+        }
+    }
+    for i <- iter.Range(0, ast.ListLen(t, d.d)) {
+        roots = append(roots, ast.ListAt(t, d.d, i))
+    }
+    roots = append(roots, d.e)
+    g.blo = table.Len(mut g.ns)
+    ozCopy(mut g, cx, ft, zz, f, z, m, freeze(roots))
+    mut ps := mut []int{}
+    for q <- iter.Range(0, ast.ListLen(t, d.c)) {
+        pi := ast.ListAt(t, d.c, q)
+        p := t.nodes[pi]
+        k := ozOptAt(zz, z, q)
+        if k < 0 {
+            ps = append(ps, ozMap(mut g, pi))
+        } else if (m & (1 << k)) != 0 {
+            ps = append(ps, ozAdd(mut g, ast.Node{ast.KParam, p.tok, p.a, ozMap(mut g, t.nodes[p.b].a), p.c, 0, 0, 0}))
+        }
+    }
+    mut rs := mut []int{}
+    for i <- iter.Range(0, ast.ListLen(t, d.d)) {
+        rs = append(rs, ozMap(mut g, ast.ListAt(t, d.d, i)))
+    }
+    nm := if m == 0 { d.a } else { ast.PutLit(mut g.db, ozName(cx, zz, z, m)) }
+    fd := ast.Node{ast.KFuncDecl, d.tok, nm, d.b, ast.PutList(mut g.db, freeze(ps)), ast.PutList(mut g.db, freeze(rs)), ozMap(mut g, d.e), ozExt(mut g, zz, z, m, t, d.f)}
+    out := ozAdd(mut g, fd)
+    // 組ごとに写しの対応を戻す
+    for i <- iter.Range(0, builder.Len(mut g.touched)) {
+        table.Set(mut g.mp, builder.Get(mut g.touched, i), -1)
+    }
+    g.touched = builder.Builder[int]{}
+    return out
+}
+
+// ozExt は宣言の付加の列 ext の写し: 無い省略可の仮引数の名前を `@errors` の項（5 番）から外す
+func ozExt(g mut OzG, zz OzZ, z int, m int, t ast.Tree, ext int) int {
+    if ext < 0 || ast.ListLen(t, ext) < 7 || ast.ListAt(t, ext, 5) < 0 {
+        return ext
+    }
+    errs := ast.ListAt(t, ext, 5)
+    mut kept := mut []int{}
+    mut dropped := false
+    for i <- iter.Range(0, ast.ListLen(t, errs)) {
+        s := ast.ListAt(t, errs, i)
+        k := ozOptK(zz, z, t, s)
+        if k >= 0 && (m & (1 << k)) == 0 {
+            dropped = true
+        } else {
+            kept = append(kept, s)
+        }
+    }
+    if !dropped {
+        return ext
+    }
+    mut l := mut []int{}
+    for i <- iter.Range(0, ast.ListLen(t, ext)) {
+        l = append(l, ast.ListAt(t, ext, i))
+    }
+    l[5] = ast.PutList(mut g.db, freeze(kept))
+    return ast.PutList(mut g.db, freeze(l))
+}
+
+// ozFile は木 f の写し: Z でない関数の中の Z の呼び出しをその場で差し替え、Z の宣言を要る組の写しの列に置き換え、届かなくなった元の節を葉に潰す
+func ozFile(cx Cx, ft FnTab, zz OzZ, rz []int, rm []int, cs []int, f int) (ast.Tree, []int) {
+    t := cx.trees[f]
+    mut hit := false
+    for z <- iter.Range(0, len(zz.file)) {
+        hit = hit || zz.file[z] == f
+    }
+    mut i := 0
+    while i < len(cs) {
+        hit = hit || cs[i] == f
+        i += 4
+    }
+    if !hit {
+        return t, []int{}
+    }
+    mut g := OzG{}
+    for x <- t.nodes {
+        table.Push(mut g.ns, x)
+        table.Push(mut g.mp, -1)
+    }
+    for w <- t.data {
+        builder.Push(mut g.db, w)
+    }
+    // Z でない関数の中の呼び出し
+    i = 0
+    while i < len(cs) {
+        if cs[i] == f {
+            n := cs[i + 1]
+            table.Set(mut g.ns, n, ozCallNode(mut g, cx, zz, t, t.nodes[n], cs[i + 2], cs[i + 3], false))
+        }
+        i += 4
+    }
+    // Z の宣言 → 要る組の写し（発見の順）
+    fs := t.nodes[t.file].d
+    mut nfs := mut []int{}
+    mut vs := mut []int{}
+    for k <- iter.Range(0, ast.ListLen(t, fs)) {
+        d := ast.ListAt(t, fs, k)
+        z := ozZOf(cx, ft, zz, f, d)
+        if z < 0 {
+            nfs = append(nfs, d)
+        } else {
+            for r <- iter.Range(0, len(rz)) {
+                if rz[r] == z {
+                    v := ozVariant(mut g, cx, ft, zz, z, rm[r])
+                    nfs = append(nfs, v)
+                    vs = append(vs, v)
+                    vs = append(vs, g.blo)
+                }
+            }
+        }
+    }
+    root := t.nodes[t.file]
+    table.Set(mut g.ns, t.file, ast.Node{root.kind, root.tok, root.a, root.b, root.c, ast.PutList(mut g.db, freeze(nfs)), root.e, root.f})
+    mut nb := builder.Builder[ast.Node]{}
+    for j <- iter.Range(0, table.Len(mut g.ns)) {
+        builder.Push(mut nb, table.Get(mut g.ns, j))
+    }
+    data := builder.Build(mut g.db)
+    t1 := ast.Tree{builder.Build(mut nb), data, t.file}
+    // 元の木で届き、写しの後に届かない節を葉に潰す
+    r0 := ozReach(t)
+    r1 := ozReach(t1)
+    mut ns := mut []ast.Node{}
+    for j <- iter.Range(0, len(t1.nodes)) {
+        x := t1.nodes[j]
+        ns = append(ns, if j < len(r0) && r0[j] && !r1[j] { ast.Node{ast.EInt, x.tok, 0, 0, 0, 0, 0, 0} } else { x })
+    }
+    return ast.Tree{freeze(ns), data, t.file}, freeze(vs)
+}

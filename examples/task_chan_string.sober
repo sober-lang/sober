@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P3b-4b: region を持つペイロード（string・[]int と string の欄の struct）のチャネル。送りは値を記録の region へ写し（梱包 — formal.md の packV）、
+// region を持つペイロード（string・[]int と string の欄の struct）のチャネル。送りは値を記録の region へ写し（梱包 — formal.md の packV）、
 // 受け手はそこを読む。送り手は子（自前の region で作って送る — 作った task は親）・受け手は親。容量 1 で交互に待ちながら、
 // 子は送るたびに自分の region を開いて閉じ、親は受けるたびに確保する
 

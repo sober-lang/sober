@@ -1,0 +1,198 @@
+package poly1305
+
+// Poly1305 の一回の MAC（RFC 8439 2.5 — 鍵 32 バイト = r ‖ s・tag 16 バイト）。累算は 26 bit × 5 limb（poly1305-donna-32 の形）: limb の積は 2^52 級・5 項の和は
+// 2^57 未満で int（符号つき 64 bit）に収まる。データに依る分岐・添字は無い — 最後の「h ≥ p なら p を引く」も mask の選択（定数時間）。
+// tag の照合は crypto.Equal で
+
+import "std/iter"
+
+const mask26 = 0x3ffffff
+const mask32 = 0xffffffff
+
+// key（32 バイト — 1 回だけ使う鍵。同じ鍵で 2 つのメッセージに tag を付けると鍵が解けて tag を偽造できる）で msg の tag（16 バイト）。key が 32 バイトより短ければ添字の境界の panic（長い分は読まない — SumAead も同じ）
+@secret(key)
+@bless
+@effects(!io, !block, !nondet)
+func Sum(key []byte, msg []byte) []byte {
+    mut a := start(key)
+    absorb(mut a, msg, 0, len(msg), false)
+    return finish(a, key)
+}
+
+// AEAD の MAC の入力（ad ‖ 0 埋め ‖ msg[off, off + n) ‖ 0 埋め ‖ len(ad) ‖ n — 長さは各 64 bit の小さい端・RFC 8439 2.8）の tag。
+// 入力を繋いだ写しを作らない（record 層向けの API — msg は受けの切片のまま）
+@secret(key)
+@effects(!io, !block, !nondet)
+func SumAead(key []byte, ad []byte, msg []byte, off int, n int) []byte {
+    mut a := start(key)
+    absorb(mut a, ad, 0, len(ad), true)
+    absorb(mut a, msg, off, n, true)
+    mut lens := mut []byte{}
+    put32(mut lens, len(ad) & mask32)
+    put32(mut lens, (len(ad) >> 32) & mask32)
+    put32(mut lens, n & mask32)
+    put32(mut lens, (n >> 32) & mask32)
+    absorb(mut a, freeze(lens), 0, 16, true)
+    return finish(a, key)
+}
+
+// 累算の途中（r = 鍵の前半を締めたもの・s = r × 5・h = 累算 — 各 26 bit × 5 limb）
+type acc struct {
+    r0 int
+    r1 int
+    r2 int
+    r3 int
+    r4 int
+    h0 int
+    h1 int
+    h2 int
+    h3 int
+    h4 int
+}
+
+func start(key []byte) acc {
+    return acc{
+        r0: le32(key, 0) & 0x3ffffff,
+        r1: (le32(key, 3) >> 2) & 0x3ffff03,
+        r2: (le32(key, 6) >> 4) & 0x3ffc0ff,
+        r3: (le32(key, 9) >> 6) & 0x3f03fff,
+        r4: (le32(key, 12) >> 8) & 0x00fffff,
+        h0: 0, h1: 0, h2: 0, h3: 0, h4: 0,
+    }
+}
+
+// msg[off, off + n) を 16 バイトのブロックずつ畳む。16 バイトに満たない端は、pad なら 0 で埋めた満ちたブロック（AEAD の 0 埋め）・
+// でなければ 0x01 を足して 0 で埋め上のビットを立てない（RFC 8439 2.5 の端）。満ちたブロックは写さずに msg から直に読む
+func absorb(a mut acc, msg []byte, off int, n int, pad bool) {
+    r0 := a.r0
+    r1 := a.r1
+    r2 := a.r2
+    r3 := a.r3
+    r4 := a.r4
+    s1 := r1 * 5
+    s2 := r2 * 5
+    s3 := r3 * 5
+    s4 := r4 * 5
+    mut h0 := a.h0
+    mut h1 := a.h1
+    mut h2 := a.h2
+    mut h3 := a.h3
+    mut h4 := a.h4
+    mut p := 0
+    while p < n {
+        whole := n - p >= 16
+        m := if whole { msg } else { tail(msg, off + p, n - p, pad) }
+        q := if whole { off + p } else { 0 }
+        hibit := if whole || pad { 1 << 24 } else { 0 }
+        h0 = h0 + (le32(m, q) & mask26)
+        h1 = h1 + ((le32(m, q + 3) >> 2) & mask26)
+        h2 = h2 + ((le32(m, q + 6) >> 4) & mask26)
+        h3 = h3 + ((le32(m, q + 9) >> 6) & mask26)
+        h4 = h4 + ((le32(m, q + 12) >> 8) | hibit)
+        d0 := h0 * r0 + h1 * s4 + h2 * s3 + h3 * s2 + h4 * s1
+        mut d1 := h0 * r1 + h1 * r0 + h2 * s4 + h3 * s3 + h4 * s2
+        mut d2 := h0 * r2 + h1 * r1 + h2 * r0 + h3 * s4 + h4 * s3
+        mut d3 := h0 * r3 + h1 * r2 + h2 * r1 + h3 * r0 + h4 * s4
+        mut d4 := h0 * r4 + h1 * r3 + h2 * r2 + h3 * r1 + h4 * r0
+        h0 = d0 & mask26
+        d1 = d1 + (d0 >> 26)
+        h1 = d1 & mask26
+        d2 = d2 + (d1 >> 26)
+        h2 = d2 & mask26
+        d3 = d3 + (d2 >> 26)
+        h3 = d3 & mask26
+        d4 = d4 + (d3 >> 26)
+        h4 = d4 & mask26
+        h0 = h0 + (d4 >> 26) * 5
+        h1 = h1 + (h0 >> 26)
+        h0 = h0 & mask26
+        p = p + 16
+    }
+    a.h0 = h0
+    a.h1 = h1
+    a.h2 = h2
+    a.h3 = h3
+    a.h4 = h4
+}
+
+// msg[at, at + k)（k < 16）の端のブロック: pad なら 0 埋め・でなければ 0x01 を足して 0 埋め
+func tail(msg []byte, at int, k int, pad bool) []byte {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, 16) {
+        b = append(b, if i < k { msg[at + i] } else if i == k && !pad { byte(1) } else { byte(0) })
+    }
+    return freeze(b)
+}
+
+// 累算を締めて s（鍵の後半）を足した tag
+func finish(a acc, key []byte) []byte {
+    mut h0 := a.h0
+    mut h1 := a.h1
+    mut h2 := a.h2
+    mut h3 := a.h3
+    mut h4 := a.h4
+    // 繰り上がりを最後まで
+    mut c := h1 >> 26
+    h1 = h1 & mask26
+    h2 = h2 + c
+    c = h2 >> 26
+    h2 = h2 & mask26
+    h3 = h3 + c
+    c = h3 >> 26
+    h3 = h3 & mask26
+    h4 = h4 + c
+    c = h4 >> 26
+    h4 = h4 & mask26
+    h0 = h0 + c * 5
+    c = h0 >> 26
+    h0 = h0 & mask26
+    h1 = h1 + c
+    // g = h + 5 - 2^130。g が負（h < p）なら h を、そうでなければ g を取る（mask の選択）
+    mut g0 := h0 + 5
+    c = g0 >> 26
+    g0 = g0 & mask26
+    mut g1 := h1 + c
+    c = g1 >> 26
+    g1 = g1 & mask26
+    mut g2 := h2 + c
+    c = g2 >> 26
+    g2 = g2 & mask26
+    mut g3 := h3 + c
+    c = g3 >> 26
+    g3 = g3 & mask26
+    g4 := h4 + c - (1 << 26)
+    keep := g4 >> 63
+    h0 = (h0 & keep) | (g0 & ^keep)
+    h1 = (h1 & keep) | (g1 & ^keep)
+    h2 = (h2 & keep) | (g2 & ^keep)
+    h3 = (h3 & keep) | (g3 & ^keep)
+    h4 = (h4 & keep) | ((g4 & mask26) & ^keep)
+    // 128 bit に詰めて s を足す（mod 2^128）
+    w0 := (h0 | (h1 << 26)) & mask32
+    w1 := ((h1 >> 6) | (h2 << 20)) & mask32
+    w2 := ((h2 >> 12) | (h3 << 14)) & mask32
+    w3 := ((h3 >> 18) | (h4 << 8)) & mask32
+    mut f := w0 + le32(key, 16)
+    mut out := mut []byte{}
+    put32(mut out, f & mask32)
+    f = w1 + le32(key, 20) + (f >> 32)
+    put32(mut out, f & mask32)
+    f = w2 + le32(key, 24) + (f >> 32)
+    put32(mut out, f & mask32)
+    f = w3 + le32(key, 28) + (f >> 32)
+    put32(mut out, f & mask32)
+    return freeze(out)
+}
+
+// b[p..p+4) の小さい端の 32 bit の語
+func le32(b []byte, p int) int {
+    return int(b[p]) | (int(b[p + 1]) << 8) | (int(b[p + 2]) << 16) | (int(b[p + 3]) << 24)
+}
+
+// 語 w を小さい端の 4 バイトで積む
+func put32(out mut []byte, w int) {
+    out = append(out, byte(w & 0xff))
+    out = append(out, byte((w >> 8) & 0xff))
+    out = append(out, byte((w >> 16) & 0xff))
+    out = append(out, byte((w >> 24) & 0xff))
+}

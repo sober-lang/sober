@@ -29,7 +29,7 @@ func why(e error) string {
     }
 }
 
-// show は r の下の rel を開いて属性を印字する（size は通常のファイルだけ・modTime は os.ModTime と照合）
+// r の下の rel を開いて属性を印字する（size は通常のファイルだけ・modTime は os.ModTime と照合）
 @errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired)
 func show(w string, r io.Root, rel string) error? {
     f := io.OpenUnder(r, rel)?

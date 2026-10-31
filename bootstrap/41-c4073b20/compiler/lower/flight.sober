@@ -1,0 +1,203 @@
+package lower
+
+// 飛行記録（実行時 opt-in: SOBER_FLIGHT=<path>）: ワーカーごとの環に rt の出来事を固定長 4 語で書く。環の置き場は
+// <path> の共有写像（open + ftruncate + mmap MAP_SHARED）なので、panic・外の網が止めた・ハング・SIGKILL のどれでもファイルが残る
+// （rt は「吐く」コードを持たない）。正常終了（main が返った）では unlink する。整形は読み手（scripts/flight.ts）。
+// - ファイル = 頭の FR_HDR バイト [印 FR_MAGIC・版・ワーカー数・log2（環のイベント数）・TSC・CLOCK_MONOTONIC（起動時の組）・pid] + ワーカー k の環
+//   （FR_HDR + k × 32 × 2^log2 から）。環の大きさは SOBER_FLIGHT_EV（log2・8〜24・既定 16 = 65,536 イベント = 2 MiB/ワーカー）
+// - イベント = [TSC（柵なしの rdtsc）・通し番号 << 8 | 種別・引数 a・引数 b]。通し番号はワーカーごと（読み手は番号で並べ、環の折り返しを切る）
+// - ワーカーの表の WK_HOT の行（持ち主だけが書く）に 3 語: WK_FRB = 環の基底（0 = off — 点ごとの値札は読み 1 + 分岐 1）・WK_FRI = 次の番号・WK_FRM = 環のマスク
+// - 書き点の値札（on）: rdtsc + 読み 3 + 書き 5 + 算術数個。柵・鍵なし（書くのは持ち主だけ・外の読み手はプロセスの外で後から読む）
+// 棄てた案: 常時 on の小さい環（値札の実測が on のコストに見合わなかった）・匿名の写像 + panic で write(2)（ハング・SIGKILL を取れない）・
+// シグナルで吐く（他のワーカーが書いている環をハンドラの中で写す）
+import "std/iter"
+
+const WK_FRB = WK_HOT + 4
+const WK_FRI = WK_HOT + 5
+const WK_FRM = WK_HOT + 6
+const MN_FLP = 20   // SOBER_FLIGHT の値（パスの C 文字列 — 環境の中をそのまま指す・0 = off）
+const MN_FLB = 21   // 写像の基底
+const FR_HDR = 4096
+const FR_MAGIC = 6074307316579192659 // "SOBERFLT"
+// 種別（scripts/flight.ts の表と同じ）
+const FK_ACCEPT = 1  // a = listener の fd | 受けた fd（負 = errno）<< 32・b = 相手の port（getpeername — on のときだけ）
+const FK_SPAWN = 2   // a = 子の TCB・b = 親の TCB
+const FK_RUN = 3     // a = 走らせる TCB
+const FK_PARK = 4    // a = fd | 向き << 32（1 = IN・4 = OUT）・b = 待つ TCB（rt.fdwait の入口 — EAGAIN の後）
+const FK_WAKE = 5    // a = 起こす TCB・b = 結果（0 = readiness・-110 = 期限）（epoll の道の epWake）
+const FK_SEND = 6    // a = fd | 頼んだ長さ << 32・b = 結果（送れた数 / 負の errno）
+const FK_RECV = 7    // a = fd | 頼んだ長さ << 32・b = 結果（読めた数・0 = FIN / 負の errno）
+const FK_CLOSE = 8   // a = fd・b = 1 なら task の出口
+const FK_ENTER = 9   // a = 提出数 | 眠った（GETEVENTS）<< 32・b = io_uring_enter の結果
+const FK_EPWAIT = 10 // a = 返った数・b = timeout（ms）
+const FK_CLOCK = 11  // a = CLOCK_MONOTONIC（ns — 眠りの前だけ読む: 眠る道は syscall を払う道）
+const FK_END = 12    // a = 終わった TCB・b = 罠の結果（0 = 戻った・1 = 死んだ）
+const FK_PANIC = 13  // a = panic の点の番号・b = 今の TCB
+const FK_READY = 14  // a = epoll が readiness を返した待ち手の TCB・b = 1 なら待ち中（起こす — 対の WAKE が続くはず）
+
+// 記録が on のときだけ通る区画を開く（ワーカーの環の基底 ≠ 0）。返り = 続きの区画（呼び手が区画の終わりで br → setCur する）
+func frOn(st mut St) BlkRef {
+    return branchIf(mut st, cmp(mut st, CNe, load(mut st, globaladdr(mut st, st.wkG), WK_FRB), iconst(mut st, 0)))
+}
+
+// 1 件を書く（frOn の区画の中から）
+func frPut(st mut St, kind int, a int, b int) {
+    wk := globaladdr(mut st, st.wkG)
+    i := load(mut st, wk, WK_FRI)
+    p := itop(mut st, bin(mut st, BAdd, load(mut st, wk, WK_FRB), bin(mut st, BShl, bin(mut st, BAnd, i, load(mut st, wk, WK_FRM)), iconst(mut st, 5))))
+    store(mut st, p, 0, tscOp(mut st))
+    store(mut st, p, 1, bin(mut st, BOr, bin(mut st, BShl, i, iconst(mut st, 8)), iconst(mut st, kind)))
+    store(mut st, p, 2, a)
+    store(mut st, p, 3, b)
+    store(mut st, wk, WK_FRI, bin(mut st, BAdd, i, iconst(mut st, 1)))
+}
+
+// on なら 1 件を書く（a / b は呼び手が作った値 — off の道で作られても安い値だけを渡す）
+func frRec(st mut St, kind int, a int, b int) {
+    if !st.taskUse {
+        return
+    }
+    bE := frOn(mut st)
+    frPut(mut st, kind, a, b)
+    br(mut st, bE, -1)
+    setCur(mut st, bE)
+}
+
+// on なら a = lo | hi << 32 の 1 件を書く（詰めは on の区画の中 — off の道に算術を足さない）
+func frRecP(st mut St, kind int, lo int, hi int, b int) {
+    if !st.taskUse {
+        return
+    }
+    bE := frOn(mut st)
+    frPut(mut st, kind, frPack(mut st, lo, hi), b)
+    br(mut st, bE, -1)
+    setCur(mut st, bE)
+}
+
+// a | b << 32（fd と長さ・向き等の 2 欄を 1 語に）
+func frPack(st mut St, a int, b int) int {
+    return bin(mut st, BOr, bin(mut st, BAnd, a, iconst(mut st, 4294967295)), bin(mut st, BShl, b, iconst(mut st, 32)))
+}
+
+// ACCEPT の 1 件（on のときだけ、受けた fd の相手の port を getpeername で読む）
+func frAccept(st mut St, lfd int, fd int) {
+    if !st.taskUse {
+        return
+    }
+    bE := frOn(mut st)
+    sa := newSlotAddr(mut st, 3)
+    store(mut st, sa, 0, iconst(mut st, 0))
+    store(mut st, sa, 2, iconst(mut st, 16))
+    bP := branchIf(mut st, cmp(mut st, CGe, fd, iconst(mut st, 0)))
+    syscall(mut st, list4(mut st, iconst(mut st, 52), fd, ptoi(mut st, sa), ptoi(mut st, gepWord(mut st, sa, iconst(mut st, 2)))))
+    br(mut st, bP, -1)
+    setCur(mut st, bP)
+    w := load(mut st, sa, 0)
+    port := bin(mut st, BOr, bin(mut st, BShl, bin(mut st, BAnd, bin(mut st, BSar, w, iconst(mut st, 16)), iconst(mut st, 255)), iconst(mut st, 8)), bin(mut st, BAnd, bin(mut st, BSar, w, iconst(mut st, 24)), iconst(mut st, 255)))
+    frPut(mut st, FK_ACCEPT, frPack(mut st, lfd, fd), port)
+    br(mut st, bE, -1)
+    setCur(mut st, bE)
+}
+
+// CLOCK の 1 件（on のときだけ CLOCK_MONOTONIC を読む — 眠りの前の点から）
+func frClock(st mut St) {
+    if !st.taskUse {
+        return
+    }
+    bE := frOn(mut st)
+    frPut(mut st, FK_CLOCK, clockNs(mut st), iconst(mut st, 0))
+    br(mut st, bE, -1)
+    setCur(mut st, bE)
+}
+
+// 環境変数 keyS（"NAME=" の形）の値の番地（無ければ 0）
+func envPtr(st mut St, sp int, keyS string) int {
+    argc := load(mut st, sp, 0)
+    envp := gepWord(mut st, sp, bin(mut st, BAdd, argc, iconst(mut st, 2)))
+    scan := newBlock(mut st)
+    e := param(mut st, scan, TyPtr)
+    done := newBlock(mut st)
+    res := param(mut st, done, TyI64)
+    next := newBlock(mut st)
+    br(mut st, scan, list1(mut st, envp))
+    setCur(mut st, scan)
+    sv := load(mut st, e, 0)
+    chk := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, sv, iconst(mut st, 0)), done, list1(mut st, iconst(mut st, 0)), chk, -1)
+    setCur(mut st, chk)
+    s := itop(mut st, sv)
+    key := bytes(keyS)
+    for i <- iter.Range(0, len(key)) {
+        c_ok := newBlock(mut st)
+        ch := load8(mut st, gepByte(mut st, s, iconst(mut st, i)), 0)
+        condbr(mut st, cmp(mut st, CEq, ch, iconst(mut st, int(key[i]))), c_ok, -1, next, -1)
+        setCur(mut st, c_ok)
+    }
+    br(mut st, done, list1(mut st, bin(mut st, BAdd, sv, iconst(mut st, len(key)))))
+    setCur(mut st, next)
+    br(mut st, scan, list1(mut st, gepWord(mut st, e, iconst(mut st, 1))))
+    setCur(mut st, done)
+    return res
+}
+
+// 入口の記録の用意（mnInit から — n = ワーカー数）: SOBER_FLIGHT が空でなければファイルを作って写し、頭とワーカー 0 の環を置く。
+// 失敗（open / mmap）は黙って off のまま
+func frInit(st mut St, sp int, n int) {
+    mn := globaladdr(mut st, st.mnG)
+    wk := globaladdr(mut st, st.wkG)
+    p := envPtr(mut st, sp, "SOBER_FLIGHT=")
+    bN := branchIf(mut st, cmp(mut st, CNe, p, iconst(mut st, 0)))
+    bN2 := branchIf(mut st, cmp(mut st, CNe, load8(mut st, gepByte(mut st, itop(mut st, p), iconst(mut st, 0)), 0), iconst(mut st, 0)))
+    lg0 := envMb(mut st, sp, "SOBER_FLIGHT_EV=", 16, false)
+    lg := imin(mut st, imax(mut st, lg0, iconst(mut st, 8)), iconst(mut st, 24))
+    size := bin(mut st, BAdd, iconst(mut st, FR_HDR), bin(mut st, BMul, n, bin(mut st, BShl, iconst(mut st, 32), lg)))
+    // open(p, O_RDWR | O_CREAT | O_TRUNC | O_CLOEXEC, 0600)
+    fd := syscall(mut st, list4(mut st, iconst(mut st, 2), p, iconst(mut st, 524866), iconst(mut st, 384)))
+    bF := branchIf(mut st, cmp(mut st, CGe, fd, iconst(mut st, 0)))
+    syscall(mut st, list3(mut st, iconst(mut st, 77), fd, size))
+    m := urSys(mut st, 9, []int{iconst(mut st, 0), size, iconst(mut st, 3), iconst(mut st, 1), fd, iconst(mut st, 0)})
+    syscall(mut st, list2(mut st, iconst(mut st, 3), fd))
+    bM := branchIf(mut st, cmp(mut st, CGt, m, iconst(mut st, 0)))
+    mp := itop(mut st, m)
+    store(mut st, mp, 0, iconst(mut st, FR_MAGIC))
+    store(mut st, mp, 1, iconst(mut st, 1))
+    store(mut st, mp, 2, n)
+    store(mut st, mp, 3, lg)
+    store(mut st, mp, 4, tscOp(mut st))
+    store(mut st, mp, 5, clockNs(mut st))
+    store(mut st, mp, 6, syscall(mut st, list1(mut st, iconst(mut st, 39))))
+    store(mut st, mn, MN_FLP, p)
+    store(mut st, mn, MN_FLB, m)
+    store(mut st, wk, WK_FRI, iconst(mut st, 0))
+    store(mut st, wk, WK_FRM, bin(mut st, BSub, bin(mut st, BShl, iconst(mut st, 1), lg), iconst(mut st, 1)))
+    store(mut st, wk, WK_FRB, bin(mut st, BAdd, m, iconst(mut st, FR_HDR)))
+    br(mut st, bM, -1)
+    setCur(mut st, bM)
+    br(mut st, bF, -1)
+    setCur(mut st, bF)
+    br(mut st, bN2, -1)
+    setCur(mut st, bN2)
+    br(mut st, bN, -1)
+    setCur(mut st, bN)
+}
+
+// ワーカー k（≥ 1）の表 a に環を置く（rt.mn_start が表を組むとき — 記録が off なら何もしない）
+func frWorker(st mut St, a int, k int) {
+    fb := load(mut st, globaladdr(mut st, st.mnG), MN_FLB)
+    bE := branchIf(mut st, cmp(mut st, CNe, fb, iconst(mut st, 0)))
+    lg := load(mut st, itop(mut st, fb), 3)
+    store(mut st, a, WK_FRI, iconst(mut st, 0))
+    store(mut st, a, WK_FRM, bin(mut st, BSub, bin(mut st, BShl, iconst(mut st, 1), lg), iconst(mut st, 1)))
+    store(mut st, a, WK_FRB, bin(mut st, BAdd, bin(mut st, BAdd, fb, iconst(mut st, FR_HDR)), bin(mut st, BMul, k, bin(mut st, BShl, iconst(mut st, 32), lg))))
+    br(mut st, bE, -1)
+    setCur(mut st, bE)
+}
+
+// 正常終了（main が返った）でファイルを消す（kill・panic で死んだときは残る — 網が拾う）
+func frUnlink(st mut St) {
+    p := load(mut st, globaladdr(mut st, st.mnG), MN_FLP)
+    bE := branchIf(mut st, cmp(mut st, CNe, p, iconst(mut st, 0)))
+    syscall(mut st, list2(mut st, iconst(mut st, 87), p))
+    br(mut st, bE, -1)
+    setCur(mut st, bE)
+}

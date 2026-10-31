@@ -5,11 +5,13 @@ package desugar
 import "diag"
 import "ast"
 import "loader"
+import "std/io"
+import "std/os"
 import "std/iter"
 import "std/table"
 import "obuf"
 
-// defOf は展開されない関数 fi → コアの Def（[param, ret, body, tparams, next]）。ienv = インスタンスの型環境（型引数を代入したもの —
+// 展開されない関数 fi → コアの Def（[param, ret, body, tparams, next]）。ienv = インスタンスの型環境（型引数を代入したもの —
 // 型パラメータを持たない Def になる。call.sober の instDef）か -1（抽象の型変数）
 func defOf(st mut S, fi int, ienv int) (int, error?) {
     saved_rd := st.rdepth
@@ -19,9 +21,15 @@ func defOf(st mut S, fi int, ienv int) (int, error?) {
     st.taskFloor = 0
     saved_ps := st.parScope1
     st.parScope1 = 0
+    // 出所の追跡: Def の本体の根（戻りのラベル・仮引数の let）の出所は関数の頭（戻りの型の食い違いは関数の頭で名指す — build の Missing と同じ点）
+    saved_op := st.opos
+    if st.track {
+        st.opos = PackPos(posOf(mut st, fnNode(mut st, fi)))
+    }
     defer {
         st.taskFloor = saved_tf
         st.parScope1 = saved_ps
+        st.opos = saved_op
     }
     pk := fnPkg(mut st, fi)
     st.curPkg = pk
@@ -92,7 +100,7 @@ func defOf(st mut S, fi int, ienv int) (int, error?) {
     setLabelRtys(mut st, rl, rtys)
     st.retTarget = pushLabel(mut st, rl)
     st.loopFloor = st.nlab
-    // 戻り値の無い関数の本体は末尾の式文の値を捨てる（決定 9 — func 本体は文位置。F-e: 末尾の `f(k)` を本体の値にしていた）
+    // 戻り値の無い関数の本体は末尾の式文の値を捨てる（決定 9 — func 本体は文位置。末尾の `f(k)` のような式文を本体の値にしない）
     inner := scoped(mut st, lA(nodeOf(mut st, fnBody(mut st, fi))), eb, -1, d, true, nr == 0, ret)?
     st.nlab = st.nlab - 1
     mut body := labelNode(mut st, rl, inner, WNone)
@@ -102,12 +110,12 @@ func defOf(st mut S, fi int, ienv int) (int, error?) {
     return rec5(mut st, int(param), int(ret), int(body), ntp, -1), nil
 }
 
-// outsideOnly は関数 i が部分検査の視点の外か（check --pkg — st.only の package 以外）
+// 関数 i が部分検査の視点の外か（check --pkg — st.only の package 以外）
 func outsideOnly(st mut S, i int) bool {
     return st.onlySet && fnPkg(mut st, i) != st.only
 }
 
-// renumberDefs は本体に型パラメータ型の補間の穴があるジェネリック Def（typer の YInstNeeded）を抽象の Def の列から外し
+// 本体に型パラメータ型の補間の穴があるジェネリック Def（typer の YInstNeeded）を抽象の Def の列から外し
 // （Def の添字 = DINST — 呼び出しごとのインスタンスを call.sober の instDef が足す）、残りの Def の添字を宣言順に詰め直す。
 // 印の付いた関数が無ければ何もしない（添字は init の振り方のまま）
 func renumberDefs(st mut S) {
@@ -137,12 +145,12 @@ func renumberDefs(st mut S) {
     st.ndef = nd
 }
 
-// sigOnlyAt は関数 i の Def を署名だけにするか（部分検査の視点の外・L0 の std・区間〔関数表の添字〕の外 — 段 6 P6-3 の rangeSet）
+// 関数 i の Def を署名だけにするか（部分検査の視点の外・L0 の std・区間〔関数表の添字〕の外 — rangeSet）
 func sigOnlyAt(st mut S, i int, dx int) bool {
     return outsideOnly(mut st, i) || (st.trustStd && IsStdPkg(mut st, fnPkg(mut st, i))) || (st.rangeSet && (i < st.rlo || i >= st.rhi))
 }
 
-// prefix は run の前段（Def の脱糖の手前まで — 本体なし宣言の検査・表層型検査器・E2-S の上げ・Def の添字の確定）。決定的（段 6 P6-3 の子は
+// run の前段（Def の脱糖の手前まで — 本体なし宣言の検査・表層型検査器・E2-S の上げ・Def の添字の確定）。決定的（区間の子は
 // 親と同じ前段を走らせ直す — 同じ結果）
 func prefix(st mut S) error? {
     // 本体なし宣言（.sobi）は脱糖できない（部分検査の視点の外なら署名だけで足りる）
@@ -159,7 +167,7 @@ func prefix(st mut S) error? {
     if st.e2s {
         e2sPrepare(mut st)
     }
-    // 区間の計画（段 6 P6-3 — PlanDefs）は型付けしない: 区間は関数表の添字で切り、費用は E2-S の上げの後の展開の有無だけで決まる
+    // 区間の計画（PlanDefs）は型付けしない: 区間は関数表の添字で切り、費用は E2-S の上げの後の展開の有無だけで決まる
     // （上げの判定は型付けを読まない — e2sScanCalls と署名）。Def の添字の振り直し（印を読む）もしない
     if st.planOnly {
         if st.e2s {
@@ -169,6 +177,7 @@ func prefix(st mut S) error? {
     }
     // 表層型検査器（関数本体ごとに 1 回 — exprSty が表を読む）
     TypeAll(mut st)
+    loader.Stage("ds-typeall")
     if st.stopAt == 7 {
         return nil
     }
@@ -179,7 +188,7 @@ func prefix(st mut S) error? {
     return nil
 }
 
-// lazySigs は Def の区間の子（根を持たない — 段 6 P6-3）の後回しにした区間の外の Def の署名を作る: コア式が呼ぶ（call / fnref の関数の添字）
+// Def の区間の子（根を持たない）の後回しにした区間の外の Def の署名を作る: コア式が呼ぶ（call / fnref の関数の添字）
 // Def だけ本当の署名（defOf の署名だけの形）・他は使われないので unit → unit の詰め物（本体なし — 検査器は検査しない・呼ばれないので型も読まれない）。
 // 署名の拒否を見落とさないために、根の区間の子は全部の署名を作る（rangeRoot — 後回しにしない）。拒否があれば親は 1 本の経路で走らせ直す
 func lazySigs(st mut S, defs ListRef) error? {
@@ -214,9 +223,11 @@ func lazySigs(st mut S, defs ListRef) error? {
     return nil
 }
 
-// run は関数表と main 本体を脱糖する（(Def の列の先頭の添字, main 本体)）
+// 関数表と main 本体を脱糖する（(Def の列の先頭の添字, main 本体)）
 func run(st mut S) (ListRef, CoreRef, error?) {
+    st.rejDef = -1
     perr := prefix(mut st)
+    loader.Stage("ds-prefix")
     if perr != nil {
         return 0, 0, perr
     }
@@ -225,11 +236,11 @@ func run(st mut S) (ListRef, CoreRef, error?) {
     }
     defs := ListRef(listN(mut st, st.ndef))
     mut i := 0
-    // 根を持たない Def の区間（段 6 P6-3）: 区間の外の Def の署名は後回し（区間の本体が呼ぶものだけ後で作る — lazySigs）
-    lazy := st.rangeSet && !st.rangeRoot
+    // 根を持たない Def の区間: 区間の外の Def の署名は後回し（区間の本体が呼ぶものだけ後で作る — lazySigs）
+    lazy := st.rangeSet && (!st.rangeRoot || st.lazyRoot)
     while i < st.nfn {
         dx := fnDef(mut st, i)
-        if dx >= 0 && lazy && (i < st.rlo || i >= st.rhi) {
+        if dx >= 0 && lazy && (i < st.rlo || i >= st.rhi || (len(st.rskip) > 0 && st.rskip[i])) {
             lput(mut st, defs, dx, -1)
         } else if dx >= 0 {
             expBegin(mut st)
@@ -237,22 +248,30 @@ func run(st mut S) (ListRef, CoreRef, error?) {
                 expEnd(mut st, i, 1)
             }
             // trustStd（L0 — std の受理印が焼き込まれている一括の check）: std の Def は署名だけ（検査器は検査しない — std の package の視点で
-            // 検査済み。合成定理 defsOk_of_linked の hchk を焼き込みが運ぶ。3'' 第 1.5 段）
+            // 検査済み。合成定理 defsOk_of_linked の hchk を焼き込みが運ぶ）
             st.sigOnly = sigOnlyAt(mut st, i, dx)
+            st.dkCur = if st.dkOn { i + 1 } else { 0 }
+            st.lctx = i
+            st.rejDef = i
             dv := defOf(mut st, i, -1)?
+            st.dkCur = 0
             st.sigOnly = false
             lput(mut st, defs, dx, dv)
         }
         i += 1
     }
-    if lazy {
+    st.rejDef = -1
+    // 根の区間の後回し（check の関数単位キャッシュ — lazyRoot）は根の本体の脱糖の後に（根が呼ぶ署名を拾う）
+    if lazy && !st.rangeRoot {
         lazySigs(mut st, defs)?
     }
+    loader.Stage("ds-defs")
     if (st.onlySet && st.only != st.mainPkg) || (st.rangeSet && !st.rangeRoot) {
-        // 部分検査（main 以外の package）・根を持たない Def の区間（段 6 P6-3）: 根の式なし
+        // 部分検査（main 以外の package）・根を持たない Def の区間: 根の式なし
         return defs, CoreRef(-1), nil
     }
     // main
+    st.rejDef = st.nfn
     mut mf := -1
     i = 0
     while i < st.nfn {
@@ -294,13 +313,18 @@ func run(st mut S) (ListRef, CoreRef, error?) {
     }
     st.retTarget = pushLabel(mut st, rl)
     st.loopFloor = st.nlab
+    st.lctx = st.nfn
     body := scoped(mut st, lA(nodeOf(mut st, fnBody(mut st, mf))), -1, -1, 0, true, !main_int, if main_int { st.tInt } else { TyRef(-1) })?
     st.nlab = st.nlab - 1
     root := c1(mut st, CBlock, labelNode(mut st, rl, body, if main_int { WAnn } else { WDiscard }))
+    st.rejDef = -1
+    if lazy {
+        lazySigs(mut st, defs)?
+    }
     return defs, root, nil
 }
 
-// trustDefs は Def の添字ごとの「std の信頼の口」の印（1 = std/table.Freeze・std/strings.Clone の Def — language.md 17 節。コア JSON の Def の
+// Def の添字ごとの「std の信頼の口」の印（1 = std/table.Freeze・std/strings.Clone の Def — language.md 17 節。コア JSON の Def の
 // `"trust":true` — Lean の述語 uniqFreeze〔UniqFreeze.lean〕がその Def の本体の U1 / U3 を見ない。analyzer の freeze.sober と同じ 2 関数を名前で焼き込む）
 func trustDefs(st mut S) []int {
     mut out := mut []int{}
@@ -320,7 +344,7 @@ func trustDefs(st mut S) []int {
     return freeze(out)
 }
 
-// Json は Program p のコア AST の JSON（失敗なら拒否 — diag のラベル）
+// Program p のコア AST の JSON（失敗なら拒否 — diag のラベル）
 @errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
 func Json(p loader.Program, e2s bool, excl []int) ([]byte, error?) {
     mut st := S{}
@@ -330,8 +354,7 @@ func Json(p loader.Program, e2s bool, excl []int) ([]byte, error?) {
     loadShapes(mut st, shapesFor(p, e2s, excl, -1, false))
     defs, root := run(mut st)?
     // 印字の作業領域（出力 out より先にヒープへ取る — 以降ヒープは伸びない）。スタックは (op, arg) の対で 32,768 対 —
-    // 実測の最大は約 200 対（compiler/tools の大きいもの、2026-09-28）。旧 1,048,576 語（8MB）は同じ region に積む出力
-    // （1 バイト 1 語）の取り分を削っていた
+    // 実測の最大は約 200 対（compiler/tools の大きいもの）
     st.jstk = listN(mut st, 65536)
     st.jlab = listN(mut st, 4096)
     mut out := mut []byte{}
@@ -365,7 +388,7 @@ func Json(p loader.Program, e2s bool, excl []int) ([]byte, error?) {
     return freeze(out), nil
 }
 
-// TyperDiff は check の経路の差分オラクル（`sober check --typer-diff`）: 表層型検査器を走らせてから脱糖し、exprSty との突き合わせの数を返す
+// check の経路の差分オラクル（`sober check --typer-diff`）: 表層型検査器を走らせてから脱糖し、exprSty との突き合わせの数を返す
 // [一致, 表だけ分かる, exprSty だけ分かる, 食い違い, 比べない, 型引数の一致, 型引数の食い違い, 記録の数 n,
 //  (ファイル, 字句, 種類 0 = exprSty だけ / 1 = 食い違い / 2 = 型引数, 表層型の種類（型引数なら inferTs が決まったか 1 / 0）) × n]
 @errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
@@ -391,7 +414,7 @@ func TyperDiff(p loader.Program) ([]int, error?) {
     return freeze(out), nil
 }
 
-// NominalAll は開発用（`sober check --nominal-all`）: 表層型の照合の拒否を止めずに全部集めて返す [ファイル, 字句の位置] × n
+// 開発用（`sober check --nominal-all`）: 表層型の照合の拒否を止めずに全部集めて返す [ファイル, 字句の位置] × n
 // （他の拒否は diag のラベル）
 @errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
 func NominalAll(p loader.Program) ([]int, error?) {
@@ -407,7 +430,7 @@ func NominalAll(p loader.Program) ([]int, error?) {
     return freeze(out), nil
 }
 
-// DefAt は開発用（`sober check --def-index`）: 脱糖し直して、検査器の Def の列の j 番目（名前付き関数 → 持ち上げた Def の順 — defJson と同じ）
+// 開発用（`sober check --def-index`）: 脱糖し直して、検査器の Def の列の j 番目（名前付き関数 → 持ち上げた Def の順 — defJson と同じ）
 // の出所の位置（名前付き関数・インスタンスは関数宣言、持ち上げたラムダはラムダの節）
 @errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
 func DefAt(p loader.Program, excl []int, j int) (diag.Pos, error?) {
@@ -435,15 +458,70 @@ func DefAt(p loader.Program, excl []int, j int) (diag.Pos, error?) {
     return diag.None(), nil
 }
 
-// Init は Program p から表層 AST のヒープと表（package・関数・const・error）を組む（initState — 名前付き関数型の展開込み）。
+// Program p から表層 AST のヒープと表（package・関数・const・error）を組む（initState — 名前付き関数型の展開込み）。
 // Sober 版 lower（compiler/lower）が同じ層を読む — 「解決済み AST 層を desugar と共有する」（docs/ir.md 1 節）の最初の形。
 // 表現は state.sober の冒頭（表層 AST は loader の木を参照で指す・表と記録は S の欄とヒープの添字）
 func Init(st mut S, p loader.Program) {
     initState(mut st, p)
+    st.ty.h0 = hlen(mut st)
 }
 
-// Typed は Init と表層型検査器（TypeAll）を済ませた表（lower の build は ParCheck と同じ表を使う — TypeAll は 1 回が重い）
+// Init と表層型検査器（TypeAll）を済ませた表（lower の build は ParCheck と同じ表を使う — TypeAll は 1 回が重い）
 func Typed(st mut S, p loader.Program) {
     Init(mut st, p)
     TypeAll(mut st)
+}
+
+// Typed に置き場の切り口 γ を掛けた形（check の analyzer）: 当たりの package は区画を読み戻す・外れの値は捨てる（γ を書くのは
+// 検査の通った build だけ — 値の検査の語 GC_OK）。検証 =1 は当たりでも型付けした値を置き場の値（末尾の検査の語 1 バイトを除く — build の検査の
+// 歩きの印は check では組まない）とバイトで比べ、=2 は読み戻しの照合 — 食い違いは名指しして落ちる
+func TypedC(st mut S, p loader.Program, c TyCache) {
+    Init(mut st, p)
+    tp := TypeAllC(mut st, c)
+    mut bad := 0
+    for nm <- tp.bad {
+        _ = io.WriteStderr(bytes("cache: gamma readback mismatch "))
+        _ = io.WriteStderr(nm)
+        _ = io.WriteStderr(bytes("\n"))
+        bad += 1
+    }
+    if c.on && c.vfy == 1 {
+        for i <- iter.Range(0, len(tp.k1)) {
+            e := tyFind(c, tp.k1[i], tp.k2[i])
+            if e >= 0 && !tyValSame(c.vs[e], tp.vs[i]) {
+                _ = io.WriteStderr(bytes("cache: stale entry gamma "))
+                _ = io.WriteStderr(tcPathB(mut st, tp.pk[i]))
+                _ = io.WriteStderr(bytes("\n"))
+                bad += 1
+            }
+        }
+    }
+    if bad > 0 {
+        panic(InvariantBroken{})
+    }
+    if c.on && statOn() {
+        _ = io.WriteStderr(bytes("cache: check-gamma ${tp.hit}/${tp.hit + tp.miss}\n"))
+    }
+}
+
+// 当否の記録の口（SOBER_CACHE_STAT=1）
+func statOn() bool {
+    v, err := os.Getenv("SOBER_CACHE_STAT")
+    if err != nil || v == nil {
+        return false
+    }
+    return v == "1"
+}
+
+// 置き場の値 sv（末尾 1 バイト = 検査の語 — TyValSeal）の中身が型付けした値 v とバイトで同じか
+func tyValSame(sv []byte, v []byte) bool {
+    if len(sv) != len(v) + 1 {
+        return false
+    }
+    for i <- iter.Range(0, len(v)) {
+        if sv[i] != v[i] {
+            return false
+        }
+    }
+    return true
 }

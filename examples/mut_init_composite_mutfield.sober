@@ -1,6 +1,6 @@
 package main
 
-// 拒否のまま（F-ba の残り — formal.md「check の callM の段」の (ii)）: 外の mut slice を欄に持つ mut 局所をループの中で組み、callM の Def へ渡す。
+// 拒否のまま（formal.md「check の callM の段」の (ii)）: 外の mut slice を欄に持つ mut 局所をループの中で組み、callM の Def へ渡す。
 // セルの中の mut の成分は束縛点の region へ緩められず、anchor（= 束縛点）の写しと合わない — language.md 21 節 (β) と同じ根。build は受理して走る
 
 type W struct {

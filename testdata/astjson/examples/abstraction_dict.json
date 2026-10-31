@@ -1,0 +1,748 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "Note",
+      "type_params": [],
+      "body": {
+        "k": "func",
+        "params": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ],
+        "results": [
+          {
+            "k": "name",
+            "name": "string"
+          }
+        ],
+        "param_names": [
+          "qty"
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 12
+      }
+    },
+    {
+      "name": "Pricing",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "name",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 16
+          },
+          {
+            "name": "price",
+            "type": {
+              "k": "func",
+              "params": [
+                {
+                  "k": "name",
+                  "name": "int"
+                },
+                {
+                  "k": "name",
+                  "name": "int"
+                }
+              ],
+              "results": [
+                {
+                  "k": "name",
+                  "name": "int"
+                }
+              ],
+              "param_names": [
+                "unit",
+                "qty"
+              ]
+            },
+            "tok": 19
+          },
+          {
+            "name": "note",
+            "type": {
+              "k": "opt",
+              "type": {
+                "k": "name",
+                "name": "Note"
+              }
+            },
+            "tok": 30
+          }
+        ]
+      },
+      "tok": 13,
+      "span": {
+        "start": 12,
+        "end": 36
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "bulk",
+      "type_params": [],
+      "params": [
+        {
+          "name": "over",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        },
+        {
+          "name": "off",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "Pricing"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Pricing",
+                "elems": [
+                  {
+                    "key": "name",
+                    "value": {
+                      "k": "strlit",
+                      "value": "bulk",
+                      "tok": 74
+                    }
+                  },
+                  {
+                    "key": "price",
+                    "value": {
+                      "k": "lambda",
+                      "params": [
+                        {
+                          "name": "unit",
+                          "type": null
+                        },
+                        {
+                          "name": "qty",
+                          "type": null
+                        }
+                      ],
+                      "body": {
+                        "k": "if",
+                        "cond": {
+                          "k": "binary",
+                          "op": ">",
+                          "lhs": {
+                            "k": "ident",
+                            "name": "qty",
+                            "tok": 85
+                          },
+                          "rhs": {
+                            "k": "ident",
+                            "name": "over",
+                            "tok": 87
+                          },
+                          "tok": 86
+                        },
+                        "then": {
+                          "stmts": [
+                            {
+                              "k": "expr",
+                              "expr": {
+                                "k": "binary",
+                                "op": "/",
+                                "lhs": {
+                                  "k": "binary",
+                                  "op": "*",
+                                  "lhs": {
+                                    "k": "binary",
+                                    "op": "*",
+                                    "lhs": {
+                                      "k": "ident",
+                                      "name": "unit",
+                                      "tok": 89
+                                    },
+                                    "rhs": {
+                                      "k": "ident",
+                                      "name": "qty",
+                                      "tok": 91
+                                    },
+                                    "tok": 90
+                                  },
+                                  "rhs": {
+                                    "k": "binary",
+                                    "op": "-",
+                                    "lhs": {
+                                      "k": "int",
+                                      "value": 100,
+                                      "tok": 94
+                                    },
+                                    "rhs": {
+                                      "k": "ident",
+                                      "name": "off",
+                                      "tok": 96
+                                    },
+                                    "tok": 95
+                                  },
+                                  "tok": 92
+                                },
+                                "rhs": {
+                                  "k": "int",
+                                  "value": 100,
+                                  "tok": 99
+                                },
+                                "tok": 98
+                              }
+                            }
+                          ]
+                        },
+                        "else": {
+                          "k": "block",
+                          "stmts": [
+                            {
+                              "k": "expr",
+                              "expr": {
+                                "k": "binary",
+                                "op": "*",
+                                "lhs": {
+                                  "k": "ident",
+                                  "name": "unit",
+                                  "tok": 103
+                                },
+                                "rhs": {
+                                  "k": "ident",
+                                  "name": "qty",
+                                  "tok": 105
+                                },
+                                "tok": 104
+                              }
+                            }
+                          ]
+                        },
+                        "tok": 84
+                      },
+                      "tok": 83
+                    }
+                  },
+                  {
+                    "key": "note",
+                    "value": {
+                      "k": "lambda",
+                      "params": [
+                        {
+                          "name": "qty",
+                          "type": null
+                        }
+                      ],
+                      "body": {
+                        "k": "if",
+                        "cond": {
+                          "k": "binary",
+                          "op": ">",
+                          "lhs": {
+                            "k": "ident",
+                            "name": "qty",
+                            "tok": 115
+                          },
+                          "rhs": {
+                            "k": "ident",
+                            "name": "over",
+                            "tok": 117
+                          },
+                          "tok": 116
+                        },
+                        "then": {
+                          "stmts": [
+                            {
+                              "k": "expr",
+                              "expr": {
+                                "k": "interp",
+                                "tmpl": {
+                                  "lits": [
+                                    "",
+                                    "% off over ",
+                                    ""
+                                  ],
+                                  "holes": [
+                                    {
+                                      "k": "ident",
+                                      "name": "off",
+                                      "tok": 119
+                                    },
+                                    {
+                                      "k": "ident",
+                                      "name": "over",
+                                      "tok": 119
+                                    }
+                                  ]
+                                },
+                                "tok": 119
+                              }
+                            }
+                          ]
+                        },
+                        "else": {
+                          "k": "block",
+                          "stmts": [
+                            {
+                              "k": "expr",
+                              "expr": {
+                                "k": "strlit",
+                                "value": "no discount",
+                                "tok": 123
+                              }
+                            }
+                          ]
+                        },
+                        "tok": 114
+                      },
+                      "tok": 113
+                    }
+                  }
+                ],
+                "tok": 70,
+                "type_args": []
+              }
+            ],
+            "tok": 69
+          }
+        ]
+      },
+      "tok": 59,
+      "bodiless": false,
+      "span": {
+        "start": 58,
+        "end": 129
+      },
+      "sig_end": 68
+    },
+    {
+      "name": "quote",
+      "type_params": [],
+      "params": [
+        {
+          "name": "p",
+          "type": {
+            "k": "name",
+            "name": "Pricing"
+          },
+          "mutable": false
+        },
+        {
+          "name": "unit",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        },
+        {
+          "name": "qty",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "n"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "p",
+                  "tok": 144
+                },
+                "field": "note",
+                "tok": 146
+              }
+            ],
+            "tok": 142
+          },
+          {
+            "k": "bind",
+            "names": [
+              "extra"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "if",
+                "cond": {
+                  "k": "binary",
+                  "op": "!=",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "n",
+                    "tok": 151
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 153
+                  },
+                  "tok": 152
+                },
+                "then": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "interp",
+                        "tmpl": {
+                          "lits": [
+                            " (",
+                            ")"
+                          ],
+                          "holes": [
+                            {
+                              "k": "call",
+                              "callee": {
+                                "k": "ident",
+                                "name": "n",
+                                "tok": 155
+                              },
+                              "args": [
+                                {
+                                  "k": "ident",
+                                  "name": "qty",
+                                  "tok": 155
+                                }
+                              ],
+                              "tok": 155
+                            }
+                          ]
+                        },
+                        "tok": 155
+                      }
+                    }
+                  ]
+                },
+                "else": {
+                  "k": "block",
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "strlit",
+                        "value": "",
+                        "tok": 159
+                      }
+                    }
+                  ]
+                },
+                "tok": 150
+              }
+            ],
+            "tok": 148
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 162
+              },
+              "args": [
+                {
+                  "k": "interp",
+                  "tmpl": {
+                    "lits": [
+                      "",
+                      ": ",
+                      "",
+                      ""
+                    ],
+                    "holes": [
+                      {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "p",
+                          "tok": 164
+                        },
+                        "field": "name",
+                        "tok": 164
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "p",
+                            "tok": 164
+                          },
+                          "field": "price",
+                          "tok": 164
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "unit",
+                            "tok": 164
+                          },
+                          {
+                            "k": "ident",
+                            "name": "qty",
+                            "tok": 164
+                          }
+                        ],
+                        "tok": 164
+                      },
+                      {
+                        "k": "ident",
+                        "name": "extra",
+                        "tok": 164
+                      }
+                    ]
+                  },
+                  "tok": 164
+                }
+              ],
+              "tok": 163
+            }
+          }
+        ]
+      },
+      "tok": 130,
+      "bodiless": false,
+      "span": {
+        "start": 129,
+        "end": 169
+      },
+      "sig_end": 141
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "quote",
+                "tok": 174
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "Flat",
+                  "tok": 176
+                },
+                {
+                  "k": "int",
+                  "value": 120,
+                  "tok": 178
+                },
+                {
+                  "k": "int",
+                  "value": 10,
+                  "tok": 180
+                }
+              ],
+              "tok": 175
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "b"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "bulk",
+                  "tok": 185
+                },
+                "args": [
+                  {
+                    "k": "int",
+                    "value": 5,
+                    "tok": 187
+                  },
+                  {
+                    "k": "int",
+                    "value": 20,
+                    "tok": 189
+                  }
+                ],
+                "tok": 186
+              }
+            ],
+            "tok": 183
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "quote",
+                "tok": 192
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "b",
+                  "tok": 194
+                },
+                {
+                  "k": "int",
+                  "value": 120,
+                  "tok": 196
+                },
+                {
+                  "k": "int",
+                  "value": 10,
+                  "tok": 198
+                }
+              ],
+              "tok": 193
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "quote",
+                "tok": 201
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "b",
+                  "tok": 203
+                },
+                {
+                  "k": "int",
+                  "value": 120,
+                  "tok": 205
+                },
+                {
+                  "k": "int",
+                  "value": 3,
+                  "tok": 207
+                }
+              ],
+              "tok": 202
+            }
+          }
+        ]
+      },
+      "tok": 170,
+      "bodiless": false,
+      "span": {
+        "start": 169,
+        "end": 212
+      },
+      "sig_end": 173
+    }
+  ],
+  "consts": [
+    {
+      "name": "Flat",
+      "expr": {
+        "k": "composite",
+        "type_name": "Pricing",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "flat",
+              "tok": 43
+            }
+          },
+          {
+            "key": "price",
+            "value": {
+              "k": "lambda",
+              "params": [
+                {
+                  "name": "unit",
+                  "type": null
+                },
+                {
+                  "name": "qty",
+                  "type": null
+                }
+              ],
+              "body": {
+                "k": "binary",
+                "op": "*",
+                "lhs": {
+                  "k": "ident",
+                  "name": "unit",
+                  "tok": 53
+                },
+                "rhs": {
+                  "k": "ident",
+                  "name": "qty",
+                  "tok": 55
+                },
+                "tok": 54
+              },
+              "tok": 52
+            }
+          }
+        ],
+        "tok": 39,
+        "type_args": []
+      },
+      "tok": 37,
+      "span": {
+        "start": 36,
+        "end": 58
+      }
+    }
+  ]
+}

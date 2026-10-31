@@ -1,0 +1,8 @@
+[
+{"file":"examples/http_hello.sober","package":"main","imports":["std/http","std/net"],"decls":[
+  {"kind":"func","name":"hello","sig":"func hello(r http.Request) http.Response","lines":[6,9],"doc":""},
+  {"kind":"func","name":"app","sig":"func app(c net.Conn) error?","lines":[11,14],"doc":""},
+  {"kind":"func","name":"serve","sig":"func serve() error?","lines":[16,21],"doc":""},
+  {"kind":"func","name":"main","sig":"func main() int","lines":[23,28],"doc":""}
+]}
+]

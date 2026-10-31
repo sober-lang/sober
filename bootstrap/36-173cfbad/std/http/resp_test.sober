@@ -1,0 +1,175 @@
+package http
+
+// 応答の頭（respHead）の旧新照合の網（CPU 効率便 U4 — report-1051）: 書き換え前の respHead を Ref の名前で写した基準と、応答の格子
+// （status 200 / 他・Content-Type の有無・validators・cache・headers・enc 0〜3・stream・keep / v10・本文の長さの桁の境目）で頭のバイト列が一致することを照合する
+
+import "std/iter"
+
+func respHeadRef(r Response, keep bool, v10 bool, enc int) []byte {
+    mut h := mut []byte{}
+    for x <- bytes(statusLine(r.status)) {
+        h = append(h, x)
+    }
+    if r.contentType != "" {
+        for x <- bytes("Content-Type: ") {
+            h = append(h, x)
+        }
+        for x <- bytes(r.contentType) {
+            h = append(h, x)
+        }
+        for x <- bytes("\r\n") {
+            h = append(h, x)
+        }
+    }
+    vs := r.validators
+    if vs != nil {
+        for x <- bytes("ETag: ${vs.etag}\r\n") {
+            h = append(h, x)
+        }
+        if vs.modified > 0 {
+            for x <- bytes("Last-Modified: ${httpDate(vs.modified)}\r\n") {
+                h = append(h, x)
+            }
+        }
+    }
+    // 既定の private は定数のまま（応答ごとに文字列を組まない）
+    cv := if r.cache == nil { "Cache-Control: private\r\n" } else { "Cache-Control: ${cacheValue(r.cache)}\r\n" }
+    for x <- bytes(cv) {
+        h = append(h, x)
+    }
+    fs := r.headers
+    if fs != nil {
+        for f <- fs.list {
+            checkField(f)
+            for x <- bytes(f.name) {
+                h = append(h, x)
+            }
+            for x <- bytes(": ") {
+                h = append(h, x)
+            }
+            for x <- bytes(f.value) {
+                h = append(h, x)
+            }
+            for x <- bytes("\r\n") {
+                h = append(h, x)
+            }
+        }
+    }
+    if enc == 2 {
+        for x <- bytes("Content-Encoding: gzip\r\n") {
+            h = append(h, x)
+        }
+    }
+    cd := r.coded
+    if enc == 3 && cd != nil && cd.encoding != "" {
+        for x <- bytes("Content-Encoding: ") {
+            h = append(h, x)
+        }
+        for x <- bytes(cd.encoding) {
+            h = append(h, x)
+        }
+        for x <- bytes("\r\n") {
+            h = append(h, x)
+        }
+    }
+    if enc > 0 {
+        for x <- bytes("Vary: Accept-Encoding\r\n") {
+            h = append(h, x)
+        }
+    }
+    // 1xx・204・304 には Content-Length を書かない（RFC 9110 8.6 — 1xx / 204 は MUST NOT・304 は 200 の長さと等しいときだけ書ける — 書かない側に倒す。
+    // どれも本文を持たない）
+    if int(r.status) < 200 || r.status == NoContent || r.status == NotModified {
+        tail := if !keep { "Connection: close\r\n\r\n" } else if v10 { "Connection: keep-alive\r\n\r\n" } else { "\r\n" }
+        for x <- bytes(tail) {
+            h = append(h, x)
+        }
+        return freeze(h)
+    }
+    ln := r.length
+    if r.stream != nil && ln == nil {
+        // 長さ不定の stream: HTTP/1.1 は chunked・HTTP/1.0 は閉じで区切る（呼び手が keep を外してある — Connection: close だけ）
+        te := if v10 { "Connection: close\r\n\r\n" } else if !keep { "Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n" } else { "Transfer-Encoding: chunked\r\n\r\n" }
+        for x <- bytes(te) {
+            h = append(h, x)
+        }
+        return freeze(h)
+    }
+    for x <- bytes("Content-Length: ") {
+        h = append(h, x)
+    }
+    // 長さの 10 進（上の桁から — 写しの列を作らない）。stream の応答は length
+    mut n := len(r.body)
+    if ln != nil && r.stream != nil {
+        n = ln
+    }
+    mut p := 1
+    while p * 10 <= n {
+        p = p * 10
+    }
+    while p > 0 {
+        h = append(h, byte(48 + n / p % 10))
+        p = p / 10
+    }
+    tail := if !keep { "\r\nConnection: close\r\n\r\n" } else if v10 { "\r\nConnection: keep-alive\r\n\r\n" } else { "\r\n\r\n" }
+    for x <- bytes(tail) {
+        h = append(h, x)
+    }
+    return freeze(h)
+}
+
+func sameHead(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+func filler(n int) []byte {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, n) {
+        b = append(b, 'x')
+    }
+    return freeze(b)
+}
+
+// shapeOf は格子の k 番目の形の応答（本文 n バイト）— 列に積まずに 1 つずつ作る（`mut []Response` に積んで回す形は check が def error — report-1051 の F 候補）
+func shapeOf(k int, n int) Response {
+    return switch k {
+    case 0: Response{status: OK, contentType: "text/plain", body: filler(n)}
+    case 1: Response{status: OK, contentType: "", body: filler(n)}
+    case 2: Response{status: NotFound, contentType: "text/plain", body: filler(n)}
+    case 3: Response{status: OK, contentType: "application/json", body: filler(n), cache: NoStore{}}
+    case 4: Response{status: OK, contentType: "text/plain", body: filler(n), validators: Validators{etag: "\"e\"", modified: 0}}
+    case 5: Response{status: OK, contentType: "text/plain", body: filler(n), headers: Headers{list: []Field{Field{name: "X-A", value: "b"}}}}
+    case 6: Response{status: NoContent, contentType: "text/plain", body: filler(n)}
+    default: Response{status: OK, contentType: "text/plain", body: filler(n), coded: Coded{encoding: "br"}}
+    }
+}
+
+func TestRespHeadAgrees() {
+    ns := []int{0, 1, 9, 10, 99, 100, 12345}
+    bs := []bool{true, false}
+    mut ok := true
+    for n <- ns {
+        for k <- iter.Range(0, 8) {
+            r := shapeOf(k, n)
+            for enc <- iter.Range(0, 4) {
+                for keep <- bs {
+                    for v10 <- bs {
+                        if !sameHead(respHeadRef(r, keep, v10, enc), respHead(r, keep, v10, enc)) {
+                            println("respHead differs: shape ${k} enc ${enc} keep ${keep} v10 ${v10} n ${n}")
+                            ok = false
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert(ok)
+}

@@ -4,9 +4,9 @@ global @rt.gcache [320]
 global @rt.rgen [1025]
 global @rt.iobuf [512]
 global @rt.sigact [4]
-global @str.0 [1] = {111516199315811}
-global @str.1 [1] = {1952671090}
-global @str.2 [1] = {491327616111}
+global @str.0 [1] = {1952671090}
+global @str.1 [1] = {491327616111}
+global @str.2 [1] = {111516199315811}
 global @str.3 [4] = {5917794109009846640, 7167555147578042213, 7017588315501389157, 138418680693}
 global @str.4 [2] = {7596551573701944676, 7629165}
 global @str.5 [2] = {8097862866615364723, 521644106593}
@@ -1700,6 +1700,69 @@ b0:
   ret %2
 }
 
+func @main.name(%0 ptr, %1 i64, %2 i64, %3 i64) {
+  slot s0 [3]
+  slot s1 [3]
+  slot s2 [3]
+  slot s3 [3]
+b0:
+  %4 = slotaddr s0
+  store %4[0], %1
+  store %4[1], %2
+  store %4[2], %3
+  %5 = region.depth
+  region.enter
+  %6 = load.i64 %4[0]
+  %7 = const 0
+  %8 = eq %6, %7
+  condbr %8, b2, b1
+b1:
+  %14 = load.i64 %4[0]
+  %15 = const 1
+  %16 = eq %14, %15
+  condbr %16, b4, b3
+b2:
+  %9 = globaladdr @str.2
+  %10 = const 6
+  %11 = const 0
+  %12 = slotaddr s1
+  %13 = ptoi %9
+  store %12[0], %13
+  store %12[1], %10
+  store %12[2], %11
+  br b5(%12)
+b3:
+  %22 = globaladdr @str.1
+  %23 = const 5
+  %24 = const 0
+  %25 = slotaddr s3
+  %26 = ptoi %22
+  store %25[0], %26
+  store %25[1], %23
+  store %25[2], %24
+  br b5(%25)
+b4:
+  %17 = globaladdr @str.0
+  %18 = const 4
+  %19 = const 0
+  %20 = slotaddr s2
+  %21 = ptoi %17
+  store %20[0], %21
+  store %20[1], %18
+  store %20[2], %19
+  br b5(%20)
+b5(%27 ptr):
+  %28 = load.i64 %27[0]
+  store %0[0], %28
+  %29 = load.i64 %27[1]
+  store %0[1], %29
+  %30 = load.i64 %27[2]
+  store %0[2], %30
+  call @rt.region_relocate8(%0, %5)
+  region.setdepth %5
+  ret
+}
+
 func @main.main() {
   slot s0 [3]
   slot s1 [3]
@@ -1723,6 +1786,22 @@ b0:
   call @rt.print_char(%8)
   region.setdepth %0
   ret
+}
+
+func @rt.sigint() {
+b0:
+  %0 = const 231
+  %1 = const 130
+  %2 = syscall(%0, %1)
+  exit 130
+}
+
+func @rt.sigterm() {
+b0:
+  %0 = const 231
+  %1 = const 143
+  %2 = syscall(%0, %1)
+  exit 143
 }
 
 export func @sober_entry(%0 ptr) {
@@ -2318,83 +2397,4 @@ b91:
   %404 = const 1
   %405 = add %383, %404
   br b85(%401, %405)
-}
-
-func @rt.sigterm() {
-b0:
-  %0 = const 231
-  %1 = const 143
-  %2 = syscall(%0, %1)
-  exit 143
-}
-
-func @rt.sigint() {
-b0:
-  %0 = const 231
-  %1 = const 130
-  %2 = syscall(%0, %1)
-  exit 130
-}
-
-func @main.name(%0 ptr, %1 i64, %2 i64, %3 i64) {
-  slot s0 [3]
-  slot s1 [3]
-  slot s2 [3]
-  slot s3 [3]
-b0:
-  %4 = slotaddr s0
-  store %4[0], %1
-  store %4[1], %2
-  store %4[2], %3
-  %5 = region.depth
-  region.enter
-  %6 = load.i64 %4[0]
-  %7 = const 0
-  %8 = eq %6, %7
-  condbr %8, b2, b1
-b1:
-  %14 = load.i64 %4[0]
-  %15 = const 1
-  %16 = eq %14, %15
-  condbr %16, b4, b3
-b2:
-  %9 = globaladdr @str.0
-  %10 = const 6
-  %11 = const 0
-  %12 = slotaddr s1
-  %13 = ptoi %9
-  store %12[0], %13
-  store %12[1], %10
-  store %12[2], %11
-  br b5(%12)
-b3:
-  %22 = globaladdr @str.2
-  %23 = const 5
-  %24 = const 0
-  %25 = slotaddr s3
-  %26 = ptoi %22
-  store %25[0], %26
-  store %25[1], %23
-  store %25[2], %24
-  br b5(%25)
-b4:
-  %17 = globaladdr @str.1
-  %18 = const 4
-  %19 = const 0
-  %20 = slotaddr s2
-  %21 = ptoi %17
-  store %20[0], %21
-  store %20[1], %18
-  store %20[2], %19
-  br b5(%20)
-b5(%27 ptr):
-  %28 = load.i64 %27[0]
-  store %0[0], %28
-  %29 = load.i64 %27[1]
-  store %0[1], %29
-  %30 = load.i64 %27[2]
-  store %0[2], %30
-  call @rt.region_relocate8(%0, %5)
-  region.setdepth %5
-  ret
 }

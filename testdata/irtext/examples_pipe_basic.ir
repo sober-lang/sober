@@ -1697,6 +1697,34 @@ b0:
   ret %2
 }
 
+func @main.add(%0 i64, %1 i64) i64 {
+b0:
+  %2 = region.depth
+  region.enter
+  %3 = add %0, %1
+  region.setdepth %2
+  ret %3
+}
+
+func @main.sub(%0 i64, %1 i64) i64 {
+b0:
+  %2 = region.depth
+  region.enter
+  %3 = sub %0, %1
+  region.setdepth %2
+  ret %3
+}
+
+func @main.dbl(%0 i64) i64 {
+b0:
+  %1 = region.depth
+  region.enter
+  %2 = const 2
+  %3 = mul %0, %2
+  region.setdepth %1
+  ret %3
+}
+
 func @main.main() {
 b0:
   %0 = region.depth
@@ -1727,6 +1755,22 @@ b0:
   call @rt.print_char(%16)
   region.setdepth %0
   ret
+}
+
+func @rt.sigint() {
+b0:
+  %0 = const 231
+  %1 = const 130
+  %2 = syscall(%0, %1)
+  exit 130
+}
+
+func @rt.sigterm() {
+b0:
+  %0 = const 231
+  %1 = const 143
+  %2 = syscall(%0, %1)
+  exit 143
 }
 
 export func @sober_entry(%0 ptr) {
@@ -2322,48 +2366,4 @@ b91:
   %404 = const 1
   %405 = add %383, %404
   br b85(%401, %405)
-}
-
-func @rt.sigterm() {
-b0:
-  %0 = const 231
-  %1 = const 143
-  %2 = syscall(%0, %1)
-  exit 143
-}
-
-func @rt.sigint() {
-b0:
-  %0 = const 231
-  %1 = const 130
-  %2 = syscall(%0, %1)
-  exit 130
-}
-
-func @main.dbl(%0 i64) i64 {
-b0:
-  %1 = region.depth
-  region.enter
-  %2 = const 2
-  %3 = mul %0, %2
-  region.setdepth %1
-  ret %3
-}
-
-func @main.sub(%0 i64, %1 i64) i64 {
-b0:
-  %2 = region.depth
-  region.enter
-  %3 = sub %0, %1
-  region.setdepth %2
-  ret %3
-}
-
-func @main.add(%0 i64, %1 i64) i64 {
-b0:
-  %2 = region.depth
-  region.enter
-  %3 = add %0, %1
-  region.setdepth %2
-  ret %3
 }

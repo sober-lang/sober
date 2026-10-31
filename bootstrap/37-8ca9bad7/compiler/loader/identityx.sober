@@ -1,0 +1,228 @@
+package loader
+
+// 同一性を持つ型のゼロ値（language.md 28 節「資源とストリーム」・11 節 — 2026-10-13 の裁定 Qa1・report-592 / 601）: 同一性の型の値は生成の口
+// （task.Run の札・task.Spawn の handle・task.NewChannel の端点・task.NewPool・io.Open）が作った 1 個で、ゼロ値は何の資源も指さない偽物。std の外では
+// ① 同一性の型そのもののリテラル `T{}`（欄つきは封の規則 — sealx.sober — が先に拒否する）と ② 同一性の型を（欄・総称の型引数を通して推移的に）持つ欄を
+// 省いた composite（`W{}`・部分リテラル `W{a: 1}` — 省いた欄はゼロ値）を拒否する。`T?` の欄（ゼロ値 = nil）・slice / map の欄（ゼロ値 = 空）は偽物を作らない。
+// 同一性の族は名前で閉じた集合（std の型宣言に印〔@identity〕を書くと鎖の最後の boot の parser が読めないので、freeze の信頼の口・pool の H1 と同じく
+// 名前の焼き込み）。check と build が同じ層
+
+import "std/builder"
+import "std/iter"
+import "std/strings"
+import "ast"
+
+// idBase は package の path と型の名前が同一性の族か（族の番号 — 違えば 0）
+func idBase(path string, base string) int {
+    if path == "std/task" {
+        return if base == "Scope" { 1 } else if base == "Handle" { 2 } else if base == "Sender" { 3 } else if base == "Receiver" { 4 } else if base == "Pool" { 5 } else if base == "Local" { 7 } else { 0 }
+    }
+    if path == "std/io" {
+        return if base == "File" { 6 } else if base == "Root" { 8 } else { 0 }
+    }
+    if path == "std/net" {
+        return if base == "Listener" { 9 } else if base == "Conn" { 10 } else { 0 }
+    }
+    if path == "std/tls" && base == "Conn" {
+        return 11
+    }
+    return 0
+}
+
+// idResolve はファイル f に書いた型の名前 n（`ref.X` か `X`）の package と基の名前（package が引けなければ -1）
+func idResolve(cx Cx, f int, n string) (int, string) {
+    ref, base, dotted := strings.CutLast(n, ".")
+    if dotted {
+        return fileImportOf(cx, f, ref), base
+    }
+    return cx.file_pkg[f], n
+}
+
+// idEntries は型宣言と variant の表（7 語ずつ: [package, ファイル, 名前の節の文字列, 欄の列, 型パラメータの列, 欄に裸の型パラメータがあるか, 0]）
+func idEntries(cx Cx) []int {
+    mut eb := builder.Builder[int]{}
+    for f <- iter.Range(0, len(cx.trees)) {
+        t := cx.trees[f]
+        tys := t.nodes[t.file].c
+        for k <- iter.Range(0, ast.ListLen(t, tys)) {
+            td := t.nodes[ast.ListAt(t, tys, k)]
+            body := t.nodes[td.c]
+            if body.kind == ast.BStruct || body.kind == ast.BError {
+                idPush(mut eb, cx, f, td.a, body.a, td.b)
+            } else if body.kind == ast.BUnion {
+                for j <- iter.Range(0, ast.ListLen(t, body.a)) {
+                    v := t.nodes[ast.ListAt(t, body.a, j)]
+                    idPush(mut eb, cx, f, v.a, v.b, td.b)
+                }
+            }
+        }
+    }
+    return builder.Build(mut eb)
+}
+
+func idPush(eb mut builder.Builder[int], cx Cx, f int, name int, fields int, tps int) {
+    t := cx.trees[f]
+    mut bare := 0
+    for j <- iter.Range(0, ast.ListLen(t, fields)) {
+        if idTParam(t, tps, t.nodes[t.nodes[ast.ListAt(t, fields, j)].b]) >= 0 {
+            bare = 1
+        }
+    }
+    builder.Push(mut eb, cx.file_pkg[f])
+    builder.Push(mut eb, f)
+    builder.Push(mut eb, name)
+    builder.Push(mut eb, fields)
+    builder.Push(mut eb, tps)
+    builder.Push(mut eb, bare)
+    builder.Push(mut eb, 0)
+}
+
+// idTParam は型式 ty が型パラメータの列 tps の裸の名前なら、その番号（違えば -1）
+func idTParam(t ast.Tree, tps int, ty ast.Node) int {
+    if ty.kind != ast.TName || tps < 0 {
+        return 0 - 1
+    }
+    n := Name(t, ty.a)
+    for i <- iter.Range(0, ast.ListLen(t, tps)) {
+        if Name(t, ast.ListAt(t, tps, i)) == n {
+            return i
+        }
+    }
+    return 0 - 1
+}
+
+// idFind は候補の列（hold の n 番目以降 — 同一性の型を持つ項と、裸の型パラメータの欄を持つ総称の項）で package pk の名前 base の項の番号（無ければ -1）。
+// 全部の型宣言を引くと自己 build で +0.19 G（型宣言の数 × 欄の数の 2 乗 — report-601）
+func idFind(es []int, nm []string, hold mut []int, pk int, base string) int {
+    n := len(es) / 7
+    for i <- iter.Range(n, len(hold)) {
+        e := hold[i]
+        if es[e * 7] == pk && nm[e] == base {
+            return e
+        }
+    }
+    return 0 - 1
+}
+
+// idTy はファイル f の型式 ty（型パラメータの列 tps の中で）が持つ同一性の族の番号（hold = 項ごとの今の答え・持たなければ 0）
+func idTy(cx Cx, es []int, nm []string, hold mut []int, f int, tps int, ty int) int {
+    t := cx.trees[f]
+    x := t.nodes[ty]
+    if x.kind != ast.TName && x.kind != ast.TGeneric {
+        return 0
+    }
+    if idTParam(t, tps, x) >= 0 {
+        return 0
+    }
+    pk, base := idResolve(cx, f, Name(t, x.a))
+    if pk < 0 {
+        return 0
+    }
+    k := idBase(cx.pkg_path[pk], base)
+    if k > 0 {
+        return k
+    }
+    e := idFind(es, nm, mut hold, pk, base)
+    if e < 0 {
+        return 0
+    }
+    if hold[e] > 0 {
+        return hold[e]
+    }
+    // 総称の型の型引数: 裸の型パラメータの欄を持つ宣言に、同一性の型を持つ型引数を渡すと、その欄が持つ
+    if x.kind == ast.TGeneric && es[e * 7 + 5] == 1 {
+        for i <- iter.Range(0, ast.ListLen(t, x.b)) {
+            ak := idTy(cx, es, nm, mut hold, f, tps, ast.ListAt(t, x.b, i))
+            if ak > 0 {
+                return ak
+            }
+        }
+    }
+    return 0
+}
+
+// idHolds は項ごとの「持つ同一性の族」（hold の先頭 n 語）の不動点（欄の型を推移的に — 項の数の周回で止まる）。持つと分かった項は候補の列（hold の n 番目以降）へ積む
+func idHolds(cx Cx, es []int, nm []string, hold mut []int) {
+    n := len(es) / 7
+    mut changed := true
+    mut round := 0
+    while changed && round <= n {
+        changed = false
+        round += 1
+        for e <- iter.Range(0, n) {
+            if hold[e] == 0 {
+                f := es[e * 7 + 1]
+                t := cx.trees[f]
+                fs := es[e * 7 + 3]
+                for j <- iter.Range(0, ast.ListLen(t, fs)) {
+                    if hold[e] == 0 {
+                        k := idTy(cx, es, nm, mut hold, f, es[e * 7 + 4], t.nodes[ast.ListAt(t, fs, j)].b)
+                        if k > 0 {
+                            hold[e] = k
+                            changed = true
+                            if es[e * 7 + 5] == 0 {
+                                hold = append(hold, e)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// idComposite はファイル f の composite x が作るゼロ値の同一性の族（1〜11 = 型そのもの・101〜111 = 省いた欄 — 無ければ 0）
+func idComposite(cx Cx, es []int, nm []string, hold mut []int, f int, x ast.Node) int {
+    t := cx.trees[f]
+    pk, base := idResolve(cx, f, Name(t, x.a))
+    if pk < 0 {
+        return 0
+    }
+    k := idBase(cx.pkg_path[pk], base)
+    if k > 0 {
+        return if ast.ListLen(t, x.b) == 0 { k } else { 0 }
+    }
+    e := idFind(es, nm, mut hold, pk, base)
+    if e < 0 {
+        return 0
+    }
+    // 位置の並び（欄の名前なし）は欄の数ちょうど — 省いた欄は無い
+    for j <- iter.Range(0, ast.ListLen(t, x.b)) {
+        if t.nodes[ast.ListAt(t, x.b, j)].a < 0 {
+            return 0
+        }
+    }
+    fe := es[e * 7 + 1]
+    te := cx.trees[fe]
+    fs := es[e * 7 + 3]
+    tps := es[e * 7 + 4]
+    for j <- iter.Range(0, ast.ListLen(te, fs)) {
+        fd := te.nodes[ast.ListAt(te, fs, j)]
+        if !idGiven(t, x.b, Name(te, fd.a)) {
+            fk := idTy(cx, es, nm, mut hold, fe, tps, fd.b)
+            if fk > 0 {
+                return 100 + fk
+            }
+            // 裸の型パラメータの欄: composite の型引数（x.c — 書いたファイルの型式）が同一性の型を持つか
+            ti := idTParam(te, tps, te.nodes[fd.b])
+            if ti >= 0 && x.c >= 0 && ti < ast.ListLen(t, x.c) {
+                ak := idTy(cx, es, nm, mut hold, f, 0 - 1, ast.ListAt(t, x.c, ti))
+                if ak > 0 {
+                    return 100 + ak
+                }
+            }
+        }
+    }
+    return 0
+}
+
+// idGiven は composite の欄の並び elems に名前 n の欄があるか
+func idGiven(t ast.Tree, elems int, n string) bool {
+    for j <- iter.Range(0, ast.ListLen(t, elems)) {
+        el := t.nodes[ast.ListAt(t, elems, j)]
+        if el.a >= 0 && Name(t, el.a) == n {
+            return true
+        }
+    }
+    return false
+}

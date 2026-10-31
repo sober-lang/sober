@@ -1,0 +1,36 @@
+package main
+
+// std/quick の fuzz の仕組み（sober fuzz — language.md 35 節）: quick.Check を持つ実行ファイルは、引数の `quick:` の指示で自分を子として走らせ直す。
+// ここでは main が自分を駆動役（quick:fuzz=<ms>）で走らせる — 100 試行では出ない稀な panic（試行 802）を束の二分探索で見つけ、シュリンクした反例を
+// 子の標準エラーへ報告して終了コード 101 で終わる。引数なしの回は試行 100 で通る
+
+import "std/io"
+import "std/os"
+import "std/strings"
+import "std/quick"
+
+func main() {
+    args := os.Args() catch panic(Unreachable{})
+    mut q := quick.Seed(0)
+    quick.Check(mut q, () => {
+        xs := quick.Slice(mut q, 8, () => quick.Int(mut q, 0, 20))
+        if len(xs) >= 3 && xs[0] == 17 && xs[2] == 5 {
+            ys := []int{1}
+            ys[xs[1] + 5] == 1
+        } else {
+            true
+        }
+    })
+    if len(args) == 1 {
+        println("100 trials passed")
+        _ = os.Mkdir("out")
+        ec := os.RunTo(args[0], []string{"quick:fuzz=60000", "quick:tmp=out/quick_fuzz"}, "out/quick_fuzz.o", "out/quick_fuzz.e") catch -1
+        println("fuzz: exit ${ec}")
+        e := io.ReadFile("out/quick_fuzz.e") catch []byte{}
+        for ln <- strings.Split(string(e) catch "", "\n") {
+            if strings.HasPrefix(ln, "quick:") || strings.HasPrefix(ln, "    Int") {
+                println(ln)
+            }
+        }
+    }
+}

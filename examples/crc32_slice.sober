@@ -1,6 +1,6 @@
 package main
 
-// std/hash/crc32 の slicing-by-8（report-725）: 長さ 0〜599 の擬似乱数列の CRC-32 を混ぜた値（期待値は zlib.crc32 で同じ列を作って計算 — 256 未満は
+// std/hash/crc32 の slicing-by-8: 長さ 0〜599 の擬似乱数列の CRC-32 を混ぜた値（期待値は zlib.crc32 で同じ列を作って計算 — 256 未満は
 // 1 バイトずつの道・256 以上は 8 バイトの語の道 + 端の 7 バイトまで）と RFC 1952 の照合値 0xcbf43926
 
 import "std/convert"

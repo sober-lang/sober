@@ -1,0 +1,702 @@
+package desugar
+
+// switch（src/stage1/desugar.zig の switchExpr / constSwitch / unionSwitch / caseTree / caseArm の写し）
+
+import "diag"
+import "ast"
+import "std/iter"
+import "std/table"
+
+func switchExpr(st mut S, sw NodeRef, eb int, ef int, depth int, want TyRef) (CoreRef, error?) {
+    saved := st.swWant
+    savedU := st.swUnreach
+    savedS := st.swStmt
+    // 文位置の switch（stmts が印を立てる — 文位置の if と同じ）: 腕の値を捨てる。腕に脱出（return 等）があっても合流の型が要らない
+    st.swStmt = st.stmtIf
+    st.stmtIf = b2i(false)
+    hint := st.swHint
+    st.swHint = TyRef(-1)
+    st.swWant = if st.swStmt != 0 { TyRef(-1) } else if want != -1 { want } else { switchTy(mut st, sw, eb, ef) }
+    // 到達しない腕の型: return の結果型（呼び手の座標どおり — region を持つ型でも腕と一致する）→ 腕から推した型 → 文の switch の unit
+    st.swUnreach = if hint != -1 { hint } else if st.swWant != -1 { st.swWant } else { st.tUnit }
+    cs := lB(nodeOf(mut st, sw))
+    mut typed := false
+    for i <- iter.Range(0, lenL(mut st, cs)) {
+        ps := lA(nodeOf(mut st, latN(mut st, cs, i)))
+        for j <- iter.Range(0, lenL(mut st, ps)) {
+            if kindN(mut st, latN(mut st, ps, j)) == ast.KPType {
+                typed = true
+            }
+        }
+    }
+    r := if typed { unionSwitch(mut st, sw, eb, ef, depth)? } else { constSwitch(mut st, sw, eb, ef, depth)? }
+    st.swWant = saved
+    st.swUnreach = savedU
+    st.swStmt = savedS
+    return r, nil
+}
+
+// 選択肢の列に `_` があるか
+func hasWildcard(st mut S, alts ListRef) bool {
+    for i <- iter.Range(0, lenL(mut st, alts)) {
+        a := latN(mut st, alts, i)
+        if kindN(mut st, a) == ast.EIdent && strIs(mut st, sA(nodeOf(mut st, a)), "_") {
+            return true
+        }
+    }
+    return false
+}
+
+// package pk のトップレベル名（const・関数・型・union の variant・error ラベル）か（name は裸の名前）
+func HasTopName(st mut S, pk int, name StrRef) bool {
+    return lookupConst(mut st, pk, name, 0) >= 0 || fnIn(mut st, pk, name, 0) >= 0 || typeIn(mut st, pk, name, 0) != -1 || variantIn(mut st, pk, name, 0).decl != -1
+}
+
+// パターン位置の裸の識別子が束縛か（未知なら束縛）
+func isBindingPattern(st mut S, eb int, name StrRef) bool {
+    return lookup(mut st, eb, name) < 0 && !strIs(mut st, name, "true") && !strIs(mut st, name, "false") && !HasTopName(mut st, st.curPkg, name)
+}
+
+// subject が結果 2 個以上の名前付き関数の呼び出しならその関数（でなければ -1）
+func multiResults(st mut S, subj NodeRef, eb int) int {
+    k := kindN(mut st, subj)
+    mut callee := NodeRef(-1)
+    if k == ast.ECall {
+        callee = nA(nodeOf(mut st, subj))
+    } else if k == ast.EPipe {
+        callee = nB(nodeOf(mut st, subj))
+    } else {
+        return -1
+    }
+    fi := findFn(mut st, callee, eb)
+    if fi < 0 || lenL(mut st, fnResults(mut st, fi)) < 2 {
+        return -1
+    }
+    return fi
+}
+
+// default の腕の型 d と腕の 3 つ組（cond, body, 型）の列から、全腕を最内の region へ上げた型が一致し、どれかが実際に上がるならその型（でなければ -1 — expr.sober の upJoin2 の n 腕版）
+func upJoinN(st mut S, d TyRef, arms mut []int) TyRef {
+    if d == -1 {
+        return -1
+    }
+    up := upRegion(mut st, d, st.rdepth - 1)
+    mut moved := up != d
+    mut k := 0
+    while k < len(arms) {
+        t := TyRef(arms[k + 2])
+        if t == -1 || upRegion(mut st, t, st.rdepth - 1) != up {
+            return -1
+        }
+        moved = moved || up != t
+        k += 3
+    }
+    return if moved { up } else { TyRef(-1) }
+}
+
+// 定数パターン / subject 無し / 複数 subject の switch を eq + ite に脱糖する
+func constSwitch(st mut S, sw NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+    subs := lA(nodeOf(mut st, sw))
+    at := sw
+    mut n := lenL(mut st, subs)
+    mut sb := depth
+    mut tuple := CoreRef(-1)
+    mut subjects := mut []CoreRef{}
+    mut sbool := mut []bool{}
+    // byte の subject（language.md 33 節）は int へ戻して束ね、定数パターンは範囲検査のうえ lit（byteOperand — コアの cmp は int × int）
+    mut sbyte := mut []bool{}
+    if n == 1 {
+        fi := multiResults(mut st, latN(mut st, subs, 0), eb)
+        if fi >= 0 {
+            rs := fnResults(mut st, fi)
+            kk := lenL(mut st, rs)
+            tuple = expr(mut st, latN(mut st, subs, 0), eb, ef, depth)?
+            sb = depth + 1
+            mut i := 0
+            while i < kk {
+                rt := tyOf(mut st, fnPkg(mut st, fi), latN(mut st, rs, i), at, TYFUEL)?
+                pj := projection(mut st, cVar(mut st, i), i, kk)
+                subjects = append(subjects, if tg(mut st, rt) == TByte { c1(mut st, CToInt, pj) } else { pj })
+                sbool = append(sbool, tg(mut st, rt) == TBool)
+                sbyte = append(sbyte, tg(mut st, rt) == TByte)
+                i += 1
+            }
+            n = kk
+        }
+    }
+    if tuple == -1 {
+        mut i := 0
+        while i < lenL(mut st, subs) {
+            // float の subject の定数パターンは無い（language.md 37 節 — 等値が IEEE なので網羅と一致の意味が曖昧。if の比較で書く）
+            if isTag(mut st, computeTy(mut st, latN(mut st, subs, i), eb, ef), TFloat) {
+                nomFail(mut st, latN(mut st, subs, i))?
+            }
+            // string の値の switch は言語に無い（15 節 — 単値の subject は int / union / error / T?）: 名指しで拒否（以前は check が def error だけ）
+            if isStringTy(mut st, computeTy(mut st, latN(mut st, subs, i), eb, ef)) {
+                return 0, diag.TypeMismatch{at: posOf(mut st, latN(mut st, subs, i)), kind: 1}
+            }
+            sx := expr(mut st, latN(mut st, subs, i), eb, ef, depth + i)?
+            isb := isTag(mut st, computeTy(mut st, latN(mut st, subs, i), eb, ef), TByte)
+            subjects = append(subjects, if isb { c1(mut st, CToInt, sx) } else { sx })
+            sbyte = append(sbyte, isb)
+            i += 1
+        }
+        i = 0
+        while i < lenL(mut st, subs) {
+            sbool = append(sbool, isTag(mut st, computeTy(mut st, latN(mut st, subs, i), eb, ef), TBool))
+            i += 1
+        }
+    }
+    d2 := sb + n
+    dflt := nC(nodeOf(mut st, sw))
+    dbody := if dflt != -1 { scoped(mut st, lA(nodeOf(mut st, dflt)), eb, ef, d2, false, st.swStmt != 0, st.swWant)? } else { cTriv(mut st) }
+    // 値位置の switch は腕の region を合流させる（ifExpr と同じ）: 腕を (cond, body, 腕の型) の 3 つ組で 1 本の slice に積み、
+    // 全腕を最内の region へ上げた型が一致するなら各腕をその型へ ann してから畳む
+    joining := st.swStmt == 0 && dflt != -1
+    mut up := if joining { armTy(mut st, lA(nodeOf(mut st, dflt)), eb, ef) } else { TyRef(-1) }
+    mut arms := mut []int{}
+    cs := lB(nodeOf(mut st, sw))
+    mut ci := lenL(mut st, cs) - 1
+    while ci >= 0 {
+        c := latN(mut st, cs, ci)
+        pats := lA(nodeOf(mut st, c))
+        if lenL(mut st, pats) != (if n > 1 { n } else { 1 }) {
+            return 0, diag.CoreFragment{at: posOf(mut st, c)}
+        }
+        mut eb2 := eb
+        mut cond := CoreRef(-1)
+        mut i := 0
+        while i < lenL(mut st, pats) {
+            alts := lA(nodeOf(mut st, latN(mut st, pats, i)))
+            if hasWildcard(mut st, alts) {
+                i += 1
+                continue
+            }
+            if n > 0 && lenL(mut st, alts) == 1 && kindN(mut st, latN(mut st, alts, 0)) == ast.EIdent && isBindingPattern(mut st, eb, sA(nodeOf(mut st, latN(mut st, alts, 0)))) {
+                eb2 = bind(mut st, eb2, sA(nodeOf(mut st, latN(mut st, alts, 0))), sb + i, false, -1, -1, -1, 0, -1, false, SUNK)
+                i += 1
+                continue
+            }
+            // 選択肢の or 連鎖（ite 脱糖 = 短絡）
+            mut pcond := CoreRef(-1)
+            for j <- iter.Range(0, lenL(mut st, alts)) {
+                alt := latN(mut st, alts, j)
+                one := if n > 0 {
+                    subj := cVar(mut st, d2 - 1 - (sb + i))
+                    pv := if sbyte[i] { byteOperand(mut st, alt, eb, ef, d2)? } else { expr(mut st, alt, eb, ef, d2)? }
+                    if sbool[i] { boolEq(mut st, subj, pv, true) } else { cBin(mut st, BEq, subj, pv) }
+                } else {
+                    expr(mut st, alt, eb, ef, d2)?
+                }
+                pcond = if pcond != -1 { cIte(mut st, pcond, cTT(mut st), one) } else { one }
+            }
+            if pcond != -1 {
+                cond = if cond != -1 { cIte(mut st, cond, pcond, cFF(mut st)) } else { pcond }
+            }
+            i += 1
+        }
+        body := scoped(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, c)))), eb2, ef, d2, false, st.swStmt != 0, st.swWant)?
+        bt := if joining { armTy(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, c)))), eb2, ef) } else { TyRef(-1) }
+        arms = append(arms, int(cond))
+        arms = append(arms, int(body))
+        arms = append(arms, int(bt))
+        ci -= 1
+    }
+    if joining {
+        up = upJoinN(mut st, up, mut arms)
+    }
+    mut acc := if up != -1 { cAnn(mut st, dbody, up) } else { dbody }
+    mut k := 0
+    while k < len(arms) {
+        cond := CoreRef(arms[k])
+        body := if up != -1 { cAnn(mut st, CoreRef(arms[k + 1]), up) } else { CoreRef(arms[k + 1]) }
+        acc = if cond != -1 { cIte(mut st, cond, body, acc) } else { body }
+        k += 3
+    }
+    mut i := len(subjects) - 1
+    while i >= 0 {
+        acc = cLet(mut st, subjects[i], acc)
+        i -= 1
+    }
+    if tuple != -1 {
+        return cLet(mut st, tuple, acc), nil
+    }
+    return acc, nil
+}
+
+// 腕の表 arms（型パターンの switch — listN(行数 × 3)）: 行 = [型パターン（-1 = `_` / default）, 本体, variant の添字（-1 = 全域）]。
+// 行はソースの順（default は末尾）。variant ごとに、その variant か全域の行を上から照合する（入れ子が外れたら次の行 —
+// lower の逐次照合と同じ最初に一致した腕）。行の網羅と到達はパターン行列（patmat.sober — lower・analyzer と共有）で判定する
+
+// 型パターンの switch
+func unionSwitch(st mut S, sw NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+    subs := lA(nodeOf(mut st, sw))
+    at := sw
+    if lenL(mut st, subs) != 1 {
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    mut decl := NodeRef(-1)
+    mut dpk := 0
+    dflt := nC(nodeOf(mut st, sw))
+    mut wild := dflt
+    mut hasBind := false
+    cs := lB(nodeOf(mut st, sw))
+    nc := lenL(mut st, cs)
+    nrow := if dflt != -1 { nc + 1 } else { nc }
+    arms := listN(mut st, nrow * 3)
+    for ci <- iter.Range(0, nc) {
+        c := latN(mut st, cs, ci)
+        pats := lA(nodeOf(mut st, c))
+        if lenL(mut st, pats) != 1 {
+            return 0, diag.Malformed{at: posOf(mut st, c)}
+        }
+        p := latN(mut st, pats, 0)
+        if kindN(mut st, p) == ast.KPConst {
+            if !hasWildcard(mut st, lA(nodeOf(mut st, p))) || wild != -1 {
+                return 0, diag.Malformed{at: posOf(mut st, c)}
+            }
+            wild = nB(nodeOf(mut st, c))
+            armSet(mut st, arms, ci, -1, wild, -1)
+        } else {
+            if nodeOf(mut st, p).a >= 0 {
+                hasBind = true
+            }
+            vr := findVariant(mut st, st.curPkg, sB(nodeOf(mut st, p)))
+            if vr.decl == -1 {
+                return 0, diag.UnknownName{at: posOf(mut st, p)}
+            }
+            if decl != -1 {
+                if decl != vr.decl {
+                    return 0, diag.Malformed{at: posOf(mut st, p)}
+                }
+            } else {
+                decl = vr.decl
+                dpk = vr.pkg
+            }
+            armSet(mut st, arms, ci, p, nB(nodeOf(mut st, c)), vr.idx)
+        }
+    }
+    if dflt != -1 {
+        armSet(mut st, arms, nc, -1, dflt, -1)
+    }
+    if decl == -1 {
+        return 0, diag.Malformed{at: posOf(mut st, at)}
+    }
+    // 到達しない腕（前の腕で覆われる — 同じ variant の腕の重複・`_` の後の腕）と網羅（union は全 variant を入れ子の欄まで — error は要求しない:
+    // 網羅は analyzer が導出集合で判定し、覆っていない値の行き先はコアの到達しない項 — formal.md「到達しない項の段」）
+    sdom := if decl == NodeRef(ERRS) { PmAllErr(mut st, 0) } else { PmCol{kind: PmSum, a: int(decl), b: dpk, h: 0} }
+    pats := PmList(mut st, nrow)
+    for r <- iter.Range(0, nrow) {
+        PmSet(mut st, pats, r, hget(mut st, arms + 1 + r * 3))
+    }
+    for r <- iter.Range(0, nrow) {
+        p := hgetN(mut st, arms + 1 + r * 3)
+        if p != -1 && !PmUseful1(mut st, st.curPkg, pats, r, p, sdom, ListRef(-1)) {
+            return 0, diag.Malformed{at: posOf(mut st, p)}
+        }
+    }
+    if decl != NodeRef(ERRS) && PmUseful1(mut st, st.curPkg, pats, nrow, NodeRef(-1), sdom, ListRef(-1)) {
+        mut ps := mut []int{}
+        for r <- iter.Range(0, nrow) {
+            p := hgetN(mut st, arms + 1 + r * 3)
+            if p != -1 {
+                ps = append(ps, int(p))
+            }
+        }
+        // 名指すのは同じ package の union だけ（別 package の宣言は小分けの検査〔--split〕でソースが引けない — 文面を一括と揃える）
+        mv := if dpk == st.curPkg { MissingVariant(mut st, st.curPkg, decl, freeze(ps)) } else { NodeRef(-1) }
+        return 0, diag.NonExhaustive{at: posOf(mut st, at), missing: if mv == -1 { diag.None() } else { posOf(mut st, mv) }}
+    }
+    s0 := latN(mut st, subs, 0)
+    subject := expr(mut st, s0, eb, ef, depth)?
+    // 型パターンの束縛（`case e V{…}:` — syntax.md 決定 3）: subject を let で束縛し、腕の束縛名はそのレベルを指す（error は下で let 済み）
+    saved_sw := swCtx(mut st)
+    if hasBind {
+        st.swSubj = depth
+        st.swSubjDecl = declOfExpr(mut st, s0, eb, ef)
+        st.swSubjTy = computeTy(mut st, s0, eb, ef)
+        st.swSubjSty = exprSty(mut st, s0, eb, ef)
+    }
+    defer {
+        setSwCtx(mut st, saved_sw)
+    }
+    tree := unionTree(mut st, subject, s0, dpk, decl, arms, eb, ef, depth, hasBind)?
+    return tree, nil
+}
+
+// union の宣言 decl の variant のうち、型パターンの節の列 ps に名前で一度も現れない最初のものの節（全部現れていれば -1 —
+// 入れ子の欄の網羅だけ漏れている）。網羅漏れの名指し（diag.NonExhaustive）— check と lower が共有
+func MissingVariant(st mut S, from int, decl NodeRef, ps []int) NodeRef {
+    vs := lA(nodeOf(mut st, nC(nodeOf(mut st, decl))))
+    for v <- iter.Range(0, lenL(mut st, vs)) {
+        mut seen := false
+        for i <- iter.Range(0, len(ps)) {
+            if kindN(mut st, NodeRef(ps[i])) == ast.KPType {
+                vr := findVariant(mut st, from, sB(nodeOf(mut st, NodeRef(ps[i]))))
+                if vr.decl == decl && vr.idx == v {
+                    seen = true
+                }
+            }
+        }
+        if !seen {
+            return latN(mut st, vs, v)
+        }
+    }
+    return NodeRef(-1)
+}
+
+// 腕の表の行 r
+func armSet(st mut S, arms int, r int, p NodeRef, blk NodeRef, vi int) {
+    hset(mut st, arms + 1 + r * 3, int(p))
+    hset(mut st, arms + 2 + r * 3, int(blk))
+    hset(mut st, arms + 3 + r * 3, vi)
+}
+
+// 行 k から先で variant vi に照合する最初の行（vi の型パターンか全域 — 無ければ -1）
+func armNext(st mut S, arms int, vi int, k int) int {
+    mut r := k
+    while r < hget(mut st, arms) / 3 {
+        w := hget(mut st, arms + 3 + r * 3)
+        if w == -1 || w == vi {
+            return r
+        }
+        r += 1
+    }
+    return -1
+}
+
+// subject の値 subject（式 s0）の case の木（hasBind なら subject を let で束縛してから — 腕の束縛名が指す）
+func unionTree(st mut S, subject CoreRef, s0 NodeRef, dpk int, decl NodeRef, arms int, eb int, ef int, depth int, hasBind bool) (CoreRef, error?) {
+    if decl == NodeRef(ERRS) {
+        // error（R4b K1''）: subject（先頭 + 鎖）を束縛し、先頭で分岐する。鎖は腕の `cause` が読む
+        saved_err := errCtx(mut st)
+        st.hasErrSw = b2i(true)
+        st.errLevel = depth
+        st.errTy = computeTy(mut st, s0, eb, ef)
+        topv := c1(mut st, CFst, cVar(mut st, 0))
+        tree := caseTree(mut st, topv, dpk, decl, 0, arms, eb, ef, depth + 1)?
+        setErrCtx(mut st, saved_err)
+        return cLet(mut st, subject, tree), nil
+    }
+    if hasBind {
+        tree := caseTree(mut st, cVar(mut st, 0), dpk, decl, 0, arms, eb, ef, depth + 1)?
+        return cLet(mut st, subject, tree), nil
+    }
+    return caseTree(mut st, subject, dpk, decl, 0, arms, eb, ef, depth)
+}
+
+// 右結合の union の入れ子に沿った case の入れ子（variant の列は decl の start 番目から）
+func caseTree(st mut S, subject CoreRef, pk int, decl NodeRef, start int, arms int, eb int, ef int, depth int) (CoreRef, error?) {
+    n := vcount(mut st, decl) - start
+    if n == 1 {
+        a := caseArm(mut st, arms, start, pk, vat(mut st, decl, start), eb, ef, depth)?
+        return cLet(mut st, subject, a), nil
+    }
+    l := caseArm(mut st, arms, start, pk, vat(mut st, decl, start), eb, ef, depth)?
+    r := if n == 2 { caseArm(mut st, arms, start + 1, pk, vat(mut st, decl, start + 1), eb, ef, depth)? } else { caseTree(mut st, cVar(mut st, 0), pk, decl, start + 1, arms, eb, ef, depth + 1)? }
+    return c3(mut st, CCase, subject, l, r), nil
+}
+
+// case の腕（variant ai — ペイロード（フィールドの pair 鎖）がレベル depth、本体は depth + 1 から）
+func caseArm(st mut S, arms int, ai int, union_pkg int, v NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+    return armGen(mut st, ArmCont{arms: arms, vi: ai, k: 0, pk0: union_pkg, v: v, eb: eb, pl: depth}, ef, depth + 1)
+}
+
+// variant の腕の照合の続き: 腕の表 arms の行 k から、variant vi（節 v・宣言側 package pk0）のペイロード（レベル pl）を照合する（環境 eb）
+type ArmCont struct {
+    arms int
+    vi int
+    k int
+    pk0 int
+    v NodeRef
+    eb int
+    pl int
+}
+
+// 続き c を今の深さ d で下ろす: 照合する行が尽きたら到達しない項（union は網羅を行列で確かめ済み・error は analyzer の判定 —
+// 型は switch の結果型、分からなければ return の結果型 → 文の switch の unit。違えば Lean の検査が型の不一致で拒否する — 黙らない）
+func armGen(st mut S, c ArmCont, ef int, d0 int) (CoreRef, error?) {
+    r := armNext(mut st, c.arms, c.vi, c.k)
+    if r == -1 {
+        return cUnreach(mut st, st.swUnreach), nil
+    }
+    tp := hgetN(mut st, c.arms + 1 + r * 3)
+    blk := hgetN(mut st, c.arms + 2 + r * 3)
+    v := c.v
+    pk := vpkgOr(mut st, v, c.pk0)
+    vfs := vfields(mut st, v)
+    nf := lenL(mut st, vfs)
+    mut eb2 := c.eb
+    mut d := d0
+    mut exs := mut []CoreRef{}
+    if tp != -1 && hasNestedPat(mut st, tp) {
+        return nestedArm(mut st, ArmCont{arms: c.arms, vi: c.vi, k: r, pk0: c.pk0, v: v, eb: c.eb, pl: c.pl}, tp, blk, pk, ef, d0)
+    }
+    if tp != -1 && nodeOf(mut st, tp).a >= 0 {
+        eb2 = bind(mut st, eb2, sA(nodeOf(mut st, tp)), st.swSubj, false, st.swSubjDecl, st.swSubjTy, -1, 0, -1, false, st.swSubjSty)
+    }
+    if tp != -1 {
+        fps := lC(nodeOf(mut st, tp))
+        mut i := 0
+        while i < lenL(mut st, fps) {
+            fp := latN(mut st, fps, i)
+            if nodeOf(mut st, fp).b >= 0 {
+                // 欄の `_`（`c: _` — 束縛しない）。入れ子の型パターンは nestedArm
+                sub := nB(nodeOf(mut st, fp))
+                if kindN(mut st, sub) == ast.KPConst && lenL(mut st, lA(nodeOf(mut st, sub))) == 1 && hasWildcard(mut st, lA(nodeOf(mut st, sub))) {
+                    i += 1
+                    continue
+                }
+                return 0, diag.CoreFragment{at: posOf(mut st, fp)}
+            }
+            fname := sA(nodeOf(mut st, fp))
+            idx := fieldIndex(mut st, vfs, fname)
+            if idx < 0 {
+                // error ラベルの自動フィールド cause（R4b K1''）: 鎖が空なら nil、でなければ (鎖の末尾, 鎖の残り)
+                if strIs(mut st, fname, "cause") && (st.hasErrSw != 0) {
+                    if st.errTy == -1 {
+                        return 0, diag.CoreFragment{at: posOf(mut st, fp)}
+                    }
+                    exs = append(exs, causeValue(mut st, st.errLevel, d))
+                    eb2 = bind(mut st, eb2, fname, d, false, -1, tOpt(mut st, st.errTy), -1, 0, -1, false, SUNK)
+                    d += 1
+                    i += 1
+                    continue
+                }
+                return 0, diag.Malformed{at: posOf(mut st, fp)}
+            }
+            ft := nB(nodeOf(mut st, latN(mut st, vfs, idx)))
+            if nf == 1 {
+                // 射影が恒等なので case の束縛（ペイロードのレベル）にそのまま名前を付ける
+                dd := declOfTypeExpr(mut st, pk, ft)
+                eb2 = bind(mut st, eb2, fname, c.pl, false, dd, patFieldTy(mut st, pk, ft, fp), -1, 0, -1, false, SurfaceOf(mut st, pk, ft))
+                i += 1
+                continue
+            }
+            payload := cVar(mut st, d - 1 - c.pl)
+            exs = append(exs, projection(mut st, payload, idx, nf))
+            dd := declOfTypeExpr(mut st, pk, ft)
+            eb2 = bind(mut st, eb2, fname, d, false, dd, patFieldTy(mut st, pk, ft, fp), -1, 0, -1, false, SurfaceOf(mut st, pk, ft))
+            d += 1
+            i += 1
+        }
+    }
+    mut body := scoped(mut st, lA(nodeOf(mut st, blk)), eb2, ef, d, false, st.swStmt != 0, st.swWant)?
+    mut i := len(exs) - 1
+    while i >= 0 {
+        body = cLet(mut st, exs[i], body)
+        i -= 1
+    }
+    return body, nil
+}
+
+// error 値（先頭 + 鎖 — レベル lv）の cause（今の深さ d の式）: 鎖が空なら nil、でなければ (鎖の末尾, 鎖の残り)
+func causeValue(st mut S, lv int, d int) CoreRef {
+    et := st.errTy
+    chain := c1(mut st, CSnd, cVar(mut st, d - 1 - lv))
+    ln := c1(mut st, CLen, chain)
+    last := cBin(mut st, BSub, ln, cLit(mut st, 1))
+    ix := cIndex(mut st, chain, last, if tg(mut st, et) == TPr { tLeft(mut st, et) } else { TyRef(-1) })
+    cause := c2(mut st, CPair, ix, c3(mut st, CSubslice, chain, cLit(mut st, 0), last))
+    empty := cBin(mut st, BEq, ln, cLit(mut st, 0))
+    return cIte(mut st, empty, cNil(mut st, et), c1(mut st, CSome, cause))
+}
+
+// ── 入れ子の型パターン（`case O1{x: I1{v}}:`・`case W{cause: A{n}}:` — syntax.md の FieldPattern = identifier [":" Pattern]）──
+// 欄の値をさらに内側の union（error ラベルの cause なら 1 つ内側の error）で照合する。平たくした手（前順）を st.psteps に積み、
+// 手を 1 つずつ let / case / ifnil に下ろす。内側の型パターンの束縛（`x: e I1{…}`）は欄の値の束縛の手を照合の手の前に積む
+// （cause の `cause: e A{…}` は照合の後 — e は nil でない内側の error）。
+// 内側の照合が外れたら、同じ variant の次の行（ArmCont — 尽きたら到達しない項）: 上から順の照合と同値
+
+// 平たくした手: k = 0 は欄の束縛、k = 1 は欄の値の内側の union での照合（照合の本体のペイロードは枠 slot）、
+// k = 2 は error（先頭 + 鎖 — 枠 es）の cause の束縛、k = 3 は cause の照合（nil でない内側の error が枠 eslot・そのラベルのペイロードが枠 slot）、
+// k = 4 は名前を枠 slot のレベルにそのまま付ける束縛（`cause: e A{…}` の e — 型は error）
+type PatStep struct {
+    k int
+    src int     // 元の値（ペイロード）の枠（st.pslots の添字）
+    idx int     // 欄の添字
+    nf int      // 欄の数（射影の形）
+    name StrRef    // 束縛名（k = 0 / 2 / 4）
+    ft NodeRef      // 欄の型式
+    pk int      // 欄の型式の package
+    decl NodeRef    // 内側の union の型宣言（k = 1 / 3）
+    vi int      // 内側の variant の添字（k = 1 / 3）
+    slot int    // 内側のペイロードの枠（k = 1 / 3）・束縛のレベルの枠（k = 4）
+    es int      // cause を読む error 値の枠（k = 2 / 3）
+    eslot int   // 内側の error 値の枠（k = 3）
+    at NodeRef  // 欄のパターンの節（拒否の位置）
+}
+
+// 手 i の記録（非ジェネリックの包み）
+func pstep(st mut S, i int) PatStep {
+    return table.Get(mut st.psteps, i)
+}
+
+// 型パターン tp の欄に型パターンがあるか
+func hasNestedPat(st mut S, tp NodeRef) bool {
+    fps := lC(nodeOf(mut st, tp))
+    for i <- iter.Range(0, lenL(mut st, fps)) {
+        sub := nB(nodeOf(mut st, latN(mut st, fps, i)))
+        if sub != -1 && kindN(mut st, sub) == ast.KPType {
+            return true
+        }
+    }
+    return false
+}
+
+// 入れ子の型パターンの腕（行 c.k — ペイロードはレベル c.pl・本体は d0 から）
+func nestedArm(st mut S, c ArmCont, tp NodeRef, blk NodeRef, pk int, ef int, d0 int) (CoreRef, error?) {
+    eb2 := if nodeOf(mut st, tp).a >= 0 {
+        bind(mut st, c.eb, sA(nodeOf(mut st, tp)), st.swSubj, false, st.swSubjDecl, st.swSubjTy, -1, 0, -1, false, st.swSubjSty)
+    } else {
+        c.eb
+    }
+    lo := table.Len(mut st.psteps)
+    slot := table.Len(mut st.pslots)
+    table.Push(mut st.pslots, c.pl)
+    // error ラベルの腕（ラベルの型宣言）なら cause を読む error 値は subject（先頭 + 鎖）
+    mut es := -1
+    if kindN(mut st, c.v) == ast.KTypeDecl && st.hasErrSw != 0 {
+        es = table.Len(mut st.pslots)
+        table.Push(mut st.pslots, st.errLevel)
+    }
+    patFlat(mut st, tp, slot, es, vfields(mut st, c.v), pk)?
+    return patGen(mut st, lo, table.Len(mut st.psteps), eb2, ef, d0, blk, c)
+}
+
+// 型パターン tp の欄を前順に平たくして st.psteps に積む（src = ペイロードの枠・es = cause を読む error 値の枠（-1 = ラベルでない）・
+// vfs = variant の欄・pk = 宣言側 package）
+func patFlat(st mut S, tp NodeRef, src int, es int, vfs ListRef, pk int) error? {
+    nf := lenL(mut st, vfs)
+    fps := lC(nodeOf(mut st, tp))
+    for i <- iter.Range(0, lenL(mut st, fps)) {
+        fp := latN(mut st, fps, i)
+        sub := nB(nodeOf(mut st, fp))
+        if sub != -1 && kindN(mut st, sub) == ast.KPConst && lenL(mut st, lA(nodeOf(mut st, sub))) == 1 && hasWildcard(mut st, lA(nodeOf(mut st, sub))) {
+            continue
+        }
+        if sub != -1 && kindN(mut st, sub) != ast.KPType {
+            return diag.CoreFragment{at: posOf(mut st, fp)}
+        }
+        fname := sA(nodeOf(mut st, fp))
+        idx := fieldIndex(mut st, vfs, fname)
+        if idx < 0 {
+            if es == -1 || !strIs(mut st, fname, "cause") {
+                return diag.Malformed{at: posOf(mut st, fp)}
+            }
+            if sub == -1 {
+                table.Push(mut st.psteps, PatStep{k: 2, src: src, idx: 0, nf: nf, name: fname, ft: -1, pk: pk, decl: -1, vi: 0, slot: -1, es: es, eslot: -1, at: fp})
+                continue
+            }
+            // cause の照合（1 つ内側の error の先頭ラベル）
+            vr := findVariant(mut st, st.curPkg, sB(nodeOf(mut st, sub)))
+            if vr.decl == -1 {
+                return diag.UnknownName{at: posOf(mut st, sub)}
+            }
+            if vr.decl != NodeRef(ERRS) {
+                return diag.Malformed{at: posOf(mut st, sub)}
+            }
+            eslot := table.Len(mut st.pslots)
+            table.Push(mut st.pslots, -1)
+            lslot := table.Len(mut st.pslots)
+            table.Push(mut st.pslots, -1)
+            table.Push(mut st.psteps, PatStep{k: 3, src: src, idx: 0, nf: nf, name: -1, ft: -1, pk: pk, decl: vr.decl, vi: vr.idx, slot: lslot, es: es, eslot: eslot, at: sub})
+            if nodeOf(mut st, sub).a >= 0 {
+                table.Push(mut st.psteps, PatStep{k: 4, src: src, idx: 0, nf: nf, name: sA(nodeOf(mut st, sub)), ft: -1, pk: pk, decl: -1, vi: 0, slot: eslot, es: -1, eslot: -1, at: sub})
+            }
+            iv := ErrNode(mut st, vr.idx)
+            patFlat(mut st, sub, lslot, eslot, vfields(mut st, iv), ErrPkg(mut st, vr.idx))?
+            continue
+        }
+        ft := nB(nodeOf(mut st, latN(mut st, vfs, idx)))
+        if sub == -1 {
+            table.Push(mut st.psteps, PatStep{k: 0, src: src, idx: idx, nf: nf, name: fname, ft: ft, pk: pk, decl: -1, vi: 0, slot: -1, es: -1, eslot: -1, at: fp})
+            continue
+        }
+        vr := findVariant(mut st, st.curPkg, sB(nodeOf(mut st, sub)))
+        if vr.decl == -1 {
+            return diag.UnknownName{at: posOf(mut st, sub)}
+        }
+        if vr.decl == NodeRef(ERRS) || kindN(mut st, ft) != ast.TName {
+            return diag.CoreFragment{at: posOf(mut st, sub)}
+        }
+        rec := declOfTypeExpr(mut st, pk, ft)
+        if rec < 0 || hgetN(mut st, rec) != vr.decl {
+            return diag.Malformed{at: posOf(mut st, sub)}
+        }
+        if nodeOf(mut st, sub).a >= 0 {
+            // 束縛つきの内側の型パターン（`x: e I1{…}` — e は欄の値。syntax.md 決定 3 の型パターンの束縛と同じ）
+            table.Push(mut st.psteps, PatStep{k: 0, src: src, idx: idx, nf: nf, name: sA(nodeOf(mut st, sub)), ft: ft, pk: pk, decl: -1, vi: 0, slot: -1, es: -1, eslot: -1, at: sub})
+        }
+        slot := table.Len(mut st.pslots)
+        table.Push(mut st.pslots, -1)
+        table.Push(mut st.psteps, PatStep{k: 1, src: src, idx: idx, nf: nf, name: -1, ft: ft, pk: pk, decl: vr.decl, vi: vr.idx, slot: slot, es: -1, eslot: -1, at: sub})
+        iv := vat(mut st, vr.decl, vr.idx)
+        patFlat(mut st, sub, slot, -1, vfields(mut st, iv), vpkgOr(mut st, iv, vr.pkg))?
+    }
+    return nil
+}
+
+// 手 [i, hi) を今の深さ d で下ろす。尽きたら腕の本体（外れの行き先は続き c — 同じ variant の次の行）
+func patGen(st mut S, i int, hi int, eb2 int, ef int, d int, blk NodeRef, c ArmCont) (CoreRef, error?) {
+    if i == hi {
+        return scoped(mut st, lA(nodeOf(mut st, blk)), eb2, ef, d, false, st.swStmt != 0, st.swWant)
+    }
+    s := pstep(mut st, i)
+    if s.k == 2 || s.k == 3 {
+        if st.errTy == -1 {
+            return 0, diag.CoreFragment{at: posOf(mut st, s.at)}
+        }
+        value := causeValue(mut st, table.Get(mut st.pslots, s.es), d)
+        if s.k == 2 {
+            eb3 := bind(mut st, eb2, s.name, d, false, -1, tOpt(mut st, st.errTy), -1, 0, -1, false, SUNK)
+            body := patGen(mut st, i + 1, hi, eb3, ef, d + 1, blk, c)?
+            return cLet(mut st, value, body), nil
+        }
+        // nil なら外れ、でなければ内側の error（レベル d）の先頭で分岐する
+        miss := armGen(mut st, ArmCont{arms: c.arms, vi: c.vi, k: c.k + 1, pk0: c.pk0, v: c.v, eb: c.eb, pl: c.pl}, ef, d)?
+        table.Set(mut st.pslots, s.eslot, d)
+        some := patTree(mut st, c1(mut st, CFst, cVar(mut st, 0)), i, hi, s.decl, 0, eb2, ef, d + 1, blk, c)?
+        return c3(mut st, CIfnil, value, miss, some), nil
+    }
+    if s.k == 4 {
+        eb3 := bind(mut st, eb2, s.name, table.Get(mut st.pslots, s.slot), false, -1, st.errTy, -1, 0, -1, false, SUNK)
+        return patGen(mut st, i + 1, hi, eb3, ef, d, blk, c)
+    }
+    lv := table.Get(mut st.pslots, s.src)
+    val := if s.nf == 1 { cVar(mut st, d - 1 - lv) } else { projection(mut st, cVar(mut st, d - 1 - lv), s.idx, s.nf) }
+    if s.k == 1 {
+        return patTree(mut st, val, i, hi, s.decl, 0, eb2, ef, d, blk, c)
+    }
+    dd := declOfTypeExpr(mut st, s.pk, s.ft)
+    if s.nf == 1 {
+        // 射影が恒等なのでペイロードのレベルにそのまま名前を付ける
+        eb3 := bind(mut st, eb2, s.name, lv, false, dd, patFieldTy(mut st, s.pk, s.ft, s.at), -1, 0, -1, false, SurfaceOf(mut st, s.pk, s.ft))
+        return patGen(mut st, i + 1, hi, eb3, ef, d, blk, c)
+    }
+    eb3 := bind(mut st, eb2, s.name, d, false, dd, patFieldTy(mut st, s.pk, s.ft, s.at), -1, 0, -1, false, SurfaceOf(mut st, s.pk, s.ft))
+    body := patGen(mut st, i + 1, hi, eb3, ef, d + 1, blk, c)?
+    return cLet(mut st, val, body), nil
+}
+
+// 手 i（照合）の case の木（caseTree と同じ右結合の入れ子 — variant の列は decl の start 番目から）
+func patTree(st mut S, subject CoreRef, i int, hi int, decl NodeRef, start int, eb2 int, ef int, d int, blk NodeRef, c ArmCont) (CoreRef, error?) {
+    n := vcount(mut st, decl) - start
+    if n == 1 {
+        a := patArm(mut st, i, hi, start, eb2, ef, d, blk, c)?
+        return cLet(mut st, subject, a), nil
+    }
+    l := patArm(mut st, i, hi, start, eb2, ef, d, blk, c)?
+    r := if n == 2 { patArm(mut st, i, hi, start + 1, eb2, ef, d, blk, c)? } else { patTree(mut st, cVar(mut st, 0), i, hi, decl, start + 1, eb2, ef, d + 1, blk, c)? }
+    return c3(mut st, CCase, subject, l, r), nil
+}
+
+// 照合の腕（ペイロードはレベル d）: 手 i の variant なら残りの手へ、でなければ続き（同じ variant の次の行）
+func patArm(st mut S, i int, hi int, vi int, eb2 int, ef int, d int, blk NodeRef, c ArmCont) (CoreRef, error?) {
+    s := pstep(mut st, i)
+    if vi == s.vi {
+        table.Set(mut st.pslots, s.slot, d)
+        return patGen(mut st, i + 1, hi, eb2, ef, d + 1, blk, c)
+    }
+    return armGen(mut st, ArmCont{arms: c.arms, vi: c.vi, k: c.k + 1, pk0: c.pk0, v: c.v, eb: c.eb, pl: c.pl}, ef, d + 1)
+}

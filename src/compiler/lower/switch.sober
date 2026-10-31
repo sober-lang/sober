@@ -7,12 +7,12 @@ import "desugar"
 import "ast"
 import "std/iter"
 
-// hasTopName は package pk のトップレベル名（const・関数・型・union の variant）か
+// package pk のトップレベル名（const・関数・型・union の variant）か
 func hasTopName(st mut St, pk int, name desugar.StrRef) bool {
     return desugar.HasTopName(mut st.d, pk, name)
 }
 
-// isBindingPattern はパターン位置の裸の識別子が束縛か
+// パターン位置の裸の識別子が束縛か
 func isBindingPattern(st mut St, name desugar.StrRef) bool {
     return lookup(mut st, name) < 0 && !strIs(mut st, name, "true") && !strIs(mut st, name, "false") && !hasTopName(mut st, st.curPkg, name)
 }
@@ -27,7 +27,7 @@ func hasWildcard(st mut St, alts desugar.ListRef) bool {
     return false
 }
 
-// isBindAlt はパターンの選択が裸の束縛 1 つか
+// パターンの選択が裸の束縛 1 つか
 func isBindAlt(st mut St, alts desugar.ListRef) bool {
     if lenL(mut st, alts) != 1 {
         return false
@@ -36,7 +36,7 @@ func isBindAlt(st mut St, alts desugar.ListRef) bool {
     return kindN(mut st, a) == ast.EIdent && isBindingPattern(mut st, sA(nodeOf(mut st, a)))
 }
 
-// patVariant は型パターンの名前 pn（"V" か "ref.V"）が union の型 ut の何番目の variant か（でなければ -1）。名前は desugar.ResolveVariant
+// 型パターンの名前 pn（"V" か "ref.V"）が union の型 ut の何番目の variant か（でなければ -1）。名前は desugar.ResolveVariant
 // （check と同じ解決 — 修飾・公開の検査つき）で引き、ut の宣言（error なら全ラベルの union）の variant であることを確かめる
 func patVariant(st mut St, pn desugar.StrRef, ut int) int {
     if !isTag(mut st, ut, TUnion) {
@@ -62,7 +62,7 @@ func bindAdd(st mut St, bs int, name int, t int, v int) {
     desugar.HeapSet(mut st.d, bs + 1, en)
 }
 
-// switchExpr は subject を 1 回だけ評価し、case を上から順に照合する（不一致は次の case へ）。default 無しで全部外れたら値はゼロ
+// subject を 1 回だけ評価し、case を上から順に照合する（不一致は次の case へ）。default 無しで全部外れたら値はゼロ
 func switchExpr(st mut St, sw desugar.NodeRef) (Val, error?) {
     at := sw
     subjects := lA(nodeOf(mut st, sw))
@@ -172,7 +172,7 @@ func switchExpr(st mut St, sw desugar.NodeRef) (Val, error?) {
     return Val{t: jt, v: jv}, nil
 }
 
-// checkCover は網羅の規則（check に揃える）: union の型パターンの switch は全 variant を覆うか `_` / default を持つ。
+// 網羅の規則（check に揃える）: union の型パターンの switch は全 variant を覆うか `_` / default を持つ。
 // それ以外で default も全域の case（`_`・束縛）も無い switch は、値が unit でなければ拒否
 func checkCover(st mut St, sw desugar.NodeRef, sty int, t int) error? {
     if switchCovers(mut st, sw, sty) {
@@ -205,7 +205,7 @@ func checkCover(st mut St, sw desugar.NodeRef, sty int, t int) error? {
     return nil
 }
 
-// typePatRows は型パターン 1 つだけの腕の数
+// 型パターン 1 つだけの腕の数
 func typePatRows(st mut St, sw desugar.NodeRef) int {
     cases := lB(nodeOf(mut st, sw))
     mut n := 0
@@ -218,7 +218,7 @@ func typePatRows(st mut St, sw desugar.NodeRef) int {
     return n
 }
 
-// switchCovers は default なしの switch の腕が値を全部覆うか（全域の case — `_`・束縛 — があるか、subject sty が union で型パターンの腕が
+// default なしの switch の腕が値を全部覆うか（全域の case — `_`・束縛 — があるか、subject sty が union で型パターンの腕が
 // 全 variant を入れ子の欄まで覆う）
 func switchCovers(st mut St, sw desugar.NodeRef, sty int) bool {
     cases := lB(nodeOf(mut st, sw))
@@ -260,7 +260,7 @@ func switchCovers(st mut St, sw desugar.NodeRef, sty int) bool {
     return false
 }
 
-// matchPattern はパターン 1 つを値 (sty, sv) に照合する（sty = -1 は subject 無し switch の bool 条件）。
+// パターン 1 つを値 (sty, sv) に照合する（sty = -1 は subject 無し switch の bool 条件）。
 // 不一致なら nx へ跳び、一致なら続きのブロックを cur にする
 func matchPattern(st mut St, p desugar.NodeRef, sty int, sv int, nx BlkRef, bs int) error? {
     if kindN(mut st, p) == ast.KPConst {

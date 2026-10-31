@@ -1697,6 +1697,356 @@ b0:
   ret %2
 }
 
+func @main.w0() i64 {
+b0:
+  %0 = region.depth
+  region.enter
+  %1 = const 7
+  region.setdepth %0
+  ret %1
+}
+
+func @main.w1(%0 i64) i64 {
+b0:
+  %1 = region.depth
+  region.enter
+  %2 = const 3
+  %3 = mul %0, %2
+  %4 = const 1
+  %5 = add %3, %4
+  region.setdepth %1
+  ret %5
+}
+
+func @main.w2(%0 i64, %1 i64) i64 {
+b0:
+  %2 = region.depth
+  region.enter
+  %3 = const 3
+  %4 = mul %0, %3
+  %5 = const 5
+  %6 = mul %1, %5
+  %7 = add %4, %6
+  region.setdepth %2
+  ret %7
+}
+
+func @main.w3(%0 i64, %1 i64, %2 i64) i64 {
+b0:
+  %3 = region.depth
+  region.enter
+  %4 = const 3
+  %5 = mul %0, %4
+  %6 = const 5
+  %7 = mul %1, %6
+  %8 = add %5, %7
+  %9 = const 7
+  %10 = mul %2, %9
+  %11 = add %8, %10
+  region.setdepth %3
+  ret %11
+}
+
+func @main.w4(%0 i64, %1 i64, %2 i64, %3 i64) i64 {
+b0:
+  %4 = region.depth
+  region.enter
+  %5 = const 3
+  %6 = mul %0, %5
+  %7 = const 5
+  %8 = mul %1, %7
+  %9 = add %6, %8
+  %10 = const 7
+  %11 = mul %2, %10
+  %12 = add %9, %11
+  %13 = const 11
+  %14 = mul %3, %13
+  %15 = add %12, %14
+  region.setdepth %4
+  ret %15
+}
+
+func @main.w5(%0 i64, %1 i64, %2 i64, %3 i64, %4 i64) i64 {
+b0:
+  %5 = region.depth
+  region.enter
+  %6 = const 3
+  %7 = mul %0, %6
+  %8 = const 5
+  %9 = mul %1, %8
+  %10 = add %7, %9
+  %11 = const 7
+  %12 = mul %2, %11
+  %13 = add %10, %12
+  %14 = const 11
+  %15 = mul %3, %14
+  %16 = add %13, %15
+  %17 = const 13
+  %18 = mul %4, %17
+  %19 = add %16, %18
+  region.setdepth %5
+  ret %19
+}
+
+func @main.w6(%0 i64, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64) i64 {
+b0:
+  %6 = region.depth
+  region.enter
+  %7 = const 3
+  %8 = mul %0, %7
+  %9 = const 5
+  %10 = mul %1, %9
+  %11 = add %8, %10
+  %12 = const 7
+  %13 = mul %2, %12
+  %14 = add %11, %13
+  %15 = const 11
+  %16 = mul %3, %15
+  %17 = add %14, %16
+  %18 = const 13
+  %19 = mul %4, %18
+  %20 = add %17, %19
+  %21 = const 17
+  %22 = mul %5, %21
+  %23 = add %20, %22
+  region.setdepth %6
+  ret %23
+}
+
+func @main.w8(%0 i64, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64, %7 i64) i64 {
+b0:
+  %8 = region.depth
+  region.enter
+  %9 = const 3
+  %10 = mul %0, %9
+  %11 = const 5
+  %12 = mul %1, %11
+  %13 = add %10, %12
+  %14 = const 7
+  %15 = mul %2, %14
+  %16 = add %13, %15
+  %17 = const 11
+  %18 = mul %3, %17
+  %19 = add %16, %18
+  %20 = const 13
+  %21 = mul %4, %20
+  %22 = add %19, %21
+  %23 = const 17
+  %24 = mul %5, %23
+  %25 = add %22, %24
+  %26 = const 19
+  %27 = mul %6, %26
+  %28 = add %25, %27
+  %29 = const 23
+  %30 = mul %7, %29
+  %31 = add %28, %30
+  region.setdepth %8
+  ret %31
+}
+
+func @main.cross3(%0 i64, %1 i64, %2 i64) i64 {
+b0:
+  %3 = region.depth
+  region.enter
+  %4 = call @main.w2(%2, %0)
+  %5 = const 1000
+  %6 = mul %0, %5
+  %7 = add %4, %6
+  %8 = const 100
+  %9 = mul %1, %8
+  %10 = add %7, %9
+  %11 = const 10
+  %12 = mul %2, %11
+  %13 = add %10, %12
+  region.setdepth %3
+  ret %13
+}
+
+func @main.cross8(%0 i64, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64, %7 i64) i64 {
+b0:
+  %8 = region.depth
+  region.enter
+  %9 = call @main.w8(%7, %6, %5, %4, %3, %2, %1, %0)
+  %10 = call @main.w4(%3, %2, %1, %0)
+  %11 = const 7
+  %12 = mul %9, %11
+  %13 = add %12, %10
+  %14 = add %13, %0
+  %15 = const 2
+  %16 = mul %1, %15
+  %17 = add %14, %16
+  %18 = const 3
+  %19 = mul %2, %18
+  %20 = add %17, %19
+  %21 = const 4
+  %22 = mul %3, %21
+  %23 = add %20, %22
+  %24 = const 5
+  %25 = mul %4, %24
+  %26 = add %23, %25
+  %27 = const 6
+  %28 = mul %5, %27
+  %29 = add %26, %28
+  %30 = const 7
+  %31 = mul %6, %30
+  %32 = add %29, %31
+  %33 = const 8
+  %34 = mul %7, %33
+  %35 = add %32, %34
+  region.setdepth %8
+  ret %35
+}
+
+func @main.perm4(%0 i64, %1 i64, %2 i64, %3 i64) i64 {
+b0:
+  %4 = region.depth
+  region.enter
+  %5 = call @main.w4(%1, %0, %3, %2)
+  %6 = call @main.w4(%3, %2, %1, %0)
+  %7 = add %5, %6
+  region.setdepth %4
+  ret %7
+}
+
+func @main.perm6(%0 i64, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64) i64 {
+b0:
+  %6 = region.depth
+  region.enter
+  %7 = call @main.w6(%5, %4, %3, %2, %1, %0)
+  %8 = call @main.w6(%1, %0, %2, %3, %5, %4)
+  %9 = sub %7, %8
+  region.setdepth %6
+  ret %9
+}
+
+func @main.push(%0 ptr, %1 i64) {
+b0:
+  %2 = region.depth
+  %3 = globaladdr @rt.meta
+  %4 = load.i64 %3[2572]
+  %5 = const 0
+  %6 = eq %4, %5
+  %7 = mul %6, %2
+  %8 = add %4, %7
+  %9 = load.i64 %0[0]
+  %10 = const 31
+  %11 = mul %9, %10
+  %12 = add %11, %1
+  store %0[0], %12
+  %13 = const 1
+  %14 = const 1
+  %15 = gep.word %0, %14
+  %16 = load.i64 %15[0]
+  %17 = add %16, %13
+  store %15[0], %17
+  region.setdepth %2
+  ret
+}
+
+func @main.slots(%0 i64, %1 i64, %2 i64, %3 i64, %4 i64) i64 {
+  slot s0 [2]
+  slot s1 [2]
+b0:
+  %5 = region.depth
+  region.enter
+  %6 = const 0
+  %7 = const 0
+  %8 = slotaddr s0
+  %9 = const 0
+  store %8[0], %9
+  store %8[1], %9
+  store %8[0], %6
+  store %8[1], %7
+  %10 = slotaddr s1
+  %11 = load.i64 %8[0]
+  store %10[0], %11
+  %12 = load.i64 %8[1]
+  store %10[1], %12
+  %13 = const 1
+  %14 = add %5, %13
+  %15 = globaladdr @rt.meta
+  store %15[2572], %14
+  call @main.push(%10, %0)
+  %16 = const 1
+  %17 = add %5, %16
+  %18 = globaladdr @rt.meta
+  store %18[2572], %17
+  call @main.push(%10, %1)
+  %19 = const 1
+  %20 = add %5, %19
+  %21 = globaladdr @rt.meta
+  store %21[2572], %20
+  call @main.push(%10, %2)
+  %22 = const 1
+  %23 = add %5, %22
+  %24 = globaladdr @rt.meta
+  store %24[2572], %23
+  call @main.push(%10, %3)
+  %25 = const 1
+  %26 = add %5, %25
+  %27 = globaladdr @rt.meta
+  store %27[2572], %26
+  call @main.push(%10, %4)
+  %28 = load.i64 %10[0]
+  %29 = const 10
+  %30 = mul %28, %29
+  %31 = load.i64 %10[1]
+  %32 = add %30, %31
+  region.setdepth %5
+  ret %32
+}
+
+func @main.rec(%0 i64, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64) i64 {
+b0:
+  %6 = region.depth
+  region.enter
+  %7 = const 0
+  %8 = eq %0, %7
+  condbr %8, b1, b2
+b1:
+  %9 = call @main.w5(%1, %2, %3, %4, %5)
+  br b3(%9)
+b2:
+  %10 = const 1
+  %11 = sub %0, %10
+  %12 = call @main.rec(%11, %2, %3, %4, %5, %1)
+  %13 = add %12, %0
+  br b3(%13)
+b3(%14 i64):
+  region.setdepth %6
+  ret %14
+}
+
+func @main.taken5(%0 i64, %1 i64, %2 i64, %3 i64, %4 i64) i64 {
+b0:
+  %5 = region.depth
+  region.enter
+  %6 = call @main.w5(%4, %3, %2, %1, %0)
+  region.setdepth %5
+  ret %6
+}
+
+func @main.viaValue(%0 i64, %1 i64) i64 {
+  slot s0 [1]
+b0:
+  %2 = slotaddr s0
+  store %2[0], %0
+  %3 = region.depth
+  region.enter
+  %4 = load.i64 %2[0]
+  %5 = const 1
+  %6 = add %1, %5
+  %7 = const 2
+  %8 = add %1, %7
+  %9 = const 3
+  %10 = add %1, %9
+  %11 = const 4
+  %12 = add %1, %11
+  %13 = call.indirect.i64 %4(%1, %6, %8, %10, %12)
+  region.setdepth %3
+  ret %13
+}
+
 func @main.main() {
   slot s0 [1]
   slot s1 [1]
@@ -1941,6 +2291,22 @@ b6:
   %168 = add %167, %166
   store %132[0], %168
   br b3
+}
+
+func @rt.sigint() {
+b0:
+  %0 = const 231
+  %1 = const 130
+  %2 = syscall(%0, %1)
+  exit 130
+}
+
+func @rt.sigterm() {
+b0:
+  %0 = const 231
+  %1 = const 143
+  %2 = syscall(%0, %1)
+  exit 143
 }
 
 export func @sober_entry(%0 ptr) {
@@ -2536,397 +2902,4 @@ b91:
   %404 = const 1
   %405 = add %383, %404
   br b85(%401, %405)
-}
-
-func @rt.sigterm() {
-b0:
-  %0 = const 231
-  %1 = const 143
-  %2 = syscall(%0, %1)
-  exit 143
-}
-
-func @rt.sigint() {
-b0:
-  %0 = const 231
-  %1 = const 130
-  %2 = syscall(%0, %1)
-  exit 130
-}
-
-func @main.w0() i64 {
-b0:
-  %0 = region.depth
-  region.enter
-  %1 = const 7
-  region.setdepth %0
-  ret %1
-}
-
-func @main.w1(%0 i64) i64 {
-b0:
-  %1 = region.depth
-  region.enter
-  %2 = const 3
-  %3 = mul %0, %2
-  %4 = const 1
-  %5 = add %3, %4
-  region.setdepth %1
-  ret %5
-}
-
-func @main.w2(%0 i64, %1 i64) i64 {
-b0:
-  %2 = region.depth
-  region.enter
-  %3 = const 3
-  %4 = mul %0, %3
-  %5 = const 5
-  %6 = mul %1, %5
-  %7 = add %4, %6
-  region.setdepth %2
-  ret %7
-}
-
-func @main.w3(%0 i64, %1 i64, %2 i64) i64 {
-b0:
-  %3 = region.depth
-  region.enter
-  %4 = const 3
-  %5 = mul %0, %4
-  %6 = const 5
-  %7 = mul %1, %6
-  %8 = add %5, %7
-  %9 = const 7
-  %10 = mul %2, %9
-  %11 = add %8, %10
-  region.setdepth %3
-  ret %11
-}
-
-func @main.w4(%0 i64, %1 i64, %2 i64, %3 i64) i64 {
-b0:
-  %4 = region.depth
-  region.enter
-  %5 = const 3
-  %6 = mul %0, %5
-  %7 = const 5
-  %8 = mul %1, %7
-  %9 = add %6, %8
-  %10 = const 7
-  %11 = mul %2, %10
-  %12 = add %9, %11
-  %13 = const 11
-  %14 = mul %3, %13
-  %15 = add %12, %14
-  region.setdepth %4
-  ret %15
-}
-
-func @main.w5(%0 i64, %1 i64, %2 i64, %3 i64, %4 i64) i64 {
-b0:
-  %5 = region.depth
-  region.enter
-  %6 = const 3
-  %7 = mul %0, %6
-  %8 = const 5
-  %9 = mul %1, %8
-  %10 = add %7, %9
-  %11 = const 7
-  %12 = mul %2, %11
-  %13 = add %10, %12
-  %14 = const 11
-  %15 = mul %3, %14
-  %16 = add %13, %15
-  %17 = const 13
-  %18 = mul %4, %17
-  %19 = add %16, %18
-  region.setdepth %5
-  ret %19
-}
-
-func @main.w6(%0 i64, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64) i64 {
-b0:
-  %6 = region.depth
-  region.enter
-  %7 = const 3
-  %8 = mul %0, %7
-  %9 = const 5
-  %10 = mul %1, %9
-  %11 = add %8, %10
-  %12 = const 7
-  %13 = mul %2, %12
-  %14 = add %11, %13
-  %15 = const 11
-  %16 = mul %3, %15
-  %17 = add %14, %16
-  %18 = const 13
-  %19 = mul %4, %18
-  %20 = add %17, %19
-  %21 = const 17
-  %22 = mul %5, %21
-  %23 = add %20, %22
-  region.setdepth %6
-  ret %23
-}
-
-func @main.w8(%0 i64, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64, %7 i64) i64 {
-b0:
-  %8 = region.depth
-  region.enter
-  %9 = const 3
-  %10 = mul %0, %9
-  %11 = const 5
-  %12 = mul %1, %11
-  %13 = add %10, %12
-  %14 = const 7
-  %15 = mul %2, %14
-  %16 = add %13, %15
-  %17 = const 11
-  %18 = mul %3, %17
-  %19 = add %16, %18
-  %20 = const 13
-  %21 = mul %4, %20
-  %22 = add %19, %21
-  %23 = const 17
-  %24 = mul %5, %23
-  %25 = add %22, %24
-  %26 = const 19
-  %27 = mul %6, %26
-  %28 = add %25, %27
-  %29 = const 23
-  %30 = mul %7, %29
-  %31 = add %28, %30
-  region.setdepth %8
-  ret %31
-}
-
-func @main.cross3(%0 i64, %1 i64, %2 i64) i64 {
-b0:
-  %3 = region.depth
-  region.enter
-  %4 = call @main.w2(%2, %0)
-  %5 = const 1000
-  %6 = mul %0, %5
-  %7 = add %4, %6
-  %8 = const 100
-  %9 = mul %1, %8
-  %10 = add %7, %9
-  %11 = const 10
-  %12 = mul %2, %11
-  %13 = add %10, %12
-  region.setdepth %3
-  ret %13
-}
-
-func @main.cross8(%0 i64, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64, %7 i64) i64 {
-b0:
-  %8 = region.depth
-  region.enter
-  %9 = call @main.w8(%7, %6, %5, %4, %3, %2, %1, %0)
-  %10 = call @main.w4(%3, %2, %1, %0)
-  %11 = const 7
-  %12 = mul %9, %11
-  %13 = add %12, %10
-  %14 = add %13, %0
-  %15 = const 2
-  %16 = mul %1, %15
-  %17 = add %14, %16
-  %18 = const 3
-  %19 = mul %2, %18
-  %20 = add %17, %19
-  %21 = const 4
-  %22 = mul %3, %21
-  %23 = add %20, %22
-  %24 = const 5
-  %25 = mul %4, %24
-  %26 = add %23, %25
-  %27 = const 6
-  %28 = mul %5, %27
-  %29 = add %26, %28
-  %30 = const 7
-  %31 = mul %6, %30
-  %32 = add %29, %31
-  %33 = const 8
-  %34 = mul %7, %33
-  %35 = add %32, %34
-  region.setdepth %8
-  ret %35
-}
-
-func @main.perm4(%0 i64, %1 i64, %2 i64, %3 i64) i64 {
-b0:
-  %4 = region.depth
-  region.enter
-  %5 = call @main.w4(%1, %0, %3, %2)
-  %6 = call @main.w4(%3, %2, %1, %0)
-  %7 = add %5, %6
-  region.setdepth %4
-  ret %7
-}
-
-func @main.perm6(%0 i64, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64) i64 {
-b0:
-  %6 = region.depth
-  region.enter
-  %7 = call @main.w6(%5, %4, %3, %2, %1, %0)
-  %8 = call @main.w6(%1, %0, %2, %3, %5, %4)
-  %9 = sub %7, %8
-  region.setdepth %6
-  ret %9
-}
-
-func @main.slots(%0 i64, %1 i64, %2 i64, %3 i64, %4 i64) i64 {
-  slot s0 [2]
-  slot s1 [2]
-  slot s2 [1]
-b0:
-  %5 = region.depth
-  region.enter
-  %6 = const 0
-  %7 = const 0
-  %8 = slotaddr s0
-  %9 = const 0
-  store %8[0], %9
-  store %8[1], %9
-  store %8[0], %6
-  store %8[1], %7
-  %10 = slotaddr s1
-  %11 = load.i64 %8[0]
-  store %10[0], %11
-  %12 = load.i64 %8[1]
-  store %10[1], %12
-  %13 = slotaddr s2
-  %14 = region.depth
-  %15 = load.i64 %10[0]
-  %16 = const 31
-  %17 = mul %15, %16
-  %18 = add %17, %0
-  store %10[0], %18
-  %19 = const 1
-  %20 = const 1
-  %21 = gep.word %10, %20
-  %22 = load.i64 %21[0]
-  %23 = add %22, %19
-  store %21[0], %23
-  br b1
-b1:
-  %24 = slotaddr s2
-  %25 = region.depth
-  %26 = load.i64 %10[0]
-  %27 = const 31
-  %28 = mul %26, %27
-  %29 = add %28, %1
-  store %10[0], %29
-  %30 = const 1
-  %31 = const 1
-  %32 = gep.word %10, %31
-  %33 = load.i64 %32[0]
-  %34 = add %33, %30
-  store %32[0], %34
-  br b2
-b2:
-  %35 = slotaddr s2
-  %36 = region.depth
-  %37 = load.i64 %10[0]
-  %38 = const 31
-  %39 = mul %37, %38
-  %40 = add %39, %2
-  store %10[0], %40
-  %41 = const 1
-  %42 = const 1
-  %43 = gep.word %10, %42
-  %44 = load.i64 %43[0]
-  %45 = add %44, %41
-  store %43[0], %45
-  br b3
-b3:
-  %46 = slotaddr s2
-  %47 = region.depth
-  %48 = load.i64 %10[0]
-  %49 = const 31
-  %50 = mul %48, %49
-  %51 = add %50, %3
-  store %10[0], %51
-  %52 = const 1
-  %53 = const 1
-  %54 = gep.word %10, %53
-  %55 = load.i64 %54[0]
-  %56 = add %55, %52
-  store %54[0], %56
-  br b4
-b4:
-  %57 = slotaddr s2
-  %58 = region.depth
-  %59 = load.i64 %10[0]
-  %60 = const 31
-  %61 = mul %59, %60
-  %62 = add %61, %4
-  store %10[0], %62
-  %63 = const 1
-  %64 = const 1
-  %65 = gep.word %10, %64
-  %66 = load.i64 %65[0]
-  %67 = add %66, %63
-  store %65[0], %67
-  br b5
-b5:
-  %68 = load.i64 %10[0]
-  %69 = const 10
-  %70 = mul %68, %69
-  %71 = load.i64 %10[1]
-  %72 = add %70, %71
-  region.setdepth %5
-  ret %72
-}
-
-func @main.rec(%0 i64, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64) i64 {
-b0:
-  %6 = region.depth
-  region.enter
-  %7 = const 0
-  %8 = eq %0, %7
-  condbr %8, b1, b2
-b1:
-  %9 = call @main.w5(%1, %2, %3, %4, %5)
-  br b3(%9)
-b2:
-  %10 = const 1
-  %11 = sub %0, %10
-  %12 = call @main.rec(%11, %2, %3, %4, %5, %1)
-  %13 = add %12, %0
-  br b3(%13)
-b3(%14 i64):
-  region.setdepth %6
-  ret %14
-}
-
-func @main.taken5(%0 i64, %1 i64, %2 i64, %3 i64, %4 i64) i64 {
-b0:
-  %5 = region.depth
-  region.enter
-  %6 = call @main.w5(%4, %3, %2, %1, %0)
-  region.setdepth %5
-  ret %6
-}
-
-func @main.viaValue(%0 i64, %1 i64) i64 {
-  slot s0 [1]
-b0:
-  %2 = slotaddr s0
-  store %2[0], %0
-  %3 = region.depth
-  region.enter
-  %4 = load.i64 %2[0]
-  %5 = const 1
-  %6 = add %1, %5
-  %7 = const 2
-  %8 = add %1, %7
-  %9 = const 3
-  %10 = add %1, %9
-  %11 = const 4
-  %12 = add %1, %11
-  %13 = call.indirect.i64 %4(%1, %6, %8, %10, %12)
-  region.setdepth %3
-  ret %13
 }

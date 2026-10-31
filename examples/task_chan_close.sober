@@ -1,6 +1,6 @@
 package main
 
-// 段 6 P3b-4 ③: Close と `T?` の nil と for-Recv。生産者の子は語を送って閉じ、消費者の子は for-Recv で閉じるまで受ける（continue つき）。
+// Close と `T?` の nil と for-Recv。生産者の子は語を送って閉じ、消費者の子は for-Recv で閉じるまで受ける（continue つき）。
 // 親 → 子の向きも同じ（親が送って閉じ、子は for-Recv の途中で break）。閉じた後の受けは何度でも nil
 
 import "std/task"

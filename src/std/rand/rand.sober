@@ -78,13 +78,13 @@ func Bool(r mut Rand) bool {
     return Next(mut r) & 1 == 1
 }
 
-// r から独立した列の Rand を作る（r も 1 歩進む — 生成器の部分木に別のシードを配る用途）
+// r から独立した列の Rand を作る（r も 1 歩進む — ジェネレータの部分木に別のシードを配る用途）
 @effects()
 func Split(r mut Rand) Rand {
     return New((Next(mut r) << 30) ^ Next(mut r))
 }
 
-// mul32 は a × b mod 2^32（a, b は [0, 2^32) — 16 bit の桁に割って、部分積を 2^49 未満に保つ）
+// a × b mod 2^32（a, b は [0, 2^32) — 16 bit の桁に割って、部分積を 2^49 未満に保つ）
 func mul32(a int, b int) int {
     al := a & 0xffff
     ah := a >> 16
@@ -93,12 +93,12 @@ func mul32(a int, b int) int {
     return (al * bl + (((ah * bl + al * bh) & 0xffff) << 16)) & mask32
 }
 
-// rotl32 は 32 bit の左回転（x は [0, 2^32)・k は 1..31）
+// 32 bit の左回転（x は [0, 2^32)・k は 1..31）
 func rotl32(x int, k int) int {
     return ((x << k) | (x >> (32 - k))) & mask32
 }
 
-// fmix32 は SplitMix32 の出力の撹拌（Murmur3 の fmix32 と同じ定数）
+// SplitMix32 の出力の撹拌（Murmur3 の fmix32 と同じ定数）
 func fmix32(x0 int) int {
     mut x := x0
     x = mul32(x ^ (x >> 16), 0x85ebca6b)

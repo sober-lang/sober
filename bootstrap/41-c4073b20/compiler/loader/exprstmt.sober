@@ -1,0 +1,260 @@
+package loader
+
+// 式文の検査（src/stage1/exprstmt.zig の写し — syntax.md ブロックの行、Go 同型）。
+// 文位置（値を捨てる位置）に置けるのは、呼び出し（`f(x)`・`x |> f()`・`f()?`）と、腕がまた文位置になる if / switch / ブロックだけ。
+// 純粋な式（`x + 1`・名前・リテラル・`xs[i]` 等）の値を捨てる文は拒否する — 書いた意味が無いか、代入の書き忘れ。
+// 文位置 = 関数本体・while 本体・文形 for の本体・defer の式・文位置の if / switch / ブロックの腕の全文、
+// 値位置のブロック（式の if の腕・ブロック式・ラムダ本体）の末尾以外の文。
+// 例外: main package の `main` の本体の末尾は値位置（check の検査単位は main 本体の式 — formal.md「型検査器の断片」）。
+// 括弧は透過（Zig の AST は括弧を持たない）。走査は明示のスタック: 積むのは (節, 位置の種類) の対
+
+import "ast"
+import "diag"
+import "std/iter"
+
+const XExpr = 0     // 値として読まれる式
+const XDisc = 1     // 値を捨てる位置の式
+const XStmtAt = 2   // 文位置の文
+const XStmtVal = 3  // 値位置の文（値位置のブロックの末尾）
+
+func push2(st mut []int, sp int, x int, m int) int {
+    if x < 0 {
+        return sp
+    }
+    mut s := push(mut st, sp, x)
+    if s < len(st) {
+        st[s] = m
+    } else {
+        st = append(st, m)
+    }
+    s += 1
+    return s
+}
+
+// ブロックの節（KBlock / EBlock）の文の列
+func blockStmts(t ast.Tree, b int) int {
+    return t.nodes[b].a
+}
+
+// ブロック b の文を位置つきで積む（値位置なら末尾の文だけ XStmtVal）
+func pushBlock(st mut []int, sp0 int, t ast.Tree, b int, val bool) int {
+    if b < 0 {
+        return sp0
+    }
+    mut sp := sp0
+    l := blockStmts(t, b)
+    n := ast.ListLen(t, l)
+    for i <- iter.Range(0, n) {
+        sp = push2(mut st, sp, ast.ListAt(t, l, i), if val && i + 1 == n { XStmtVal } else { XStmtAt })
+    }
+    return sp
+}
+
+func pushExprs(st mut []int, sp0 int, t ast.Tree, l int) int {
+    mut sp := sp0
+    for i <- iter.Range(0, ast.ListLen(t, l)) {
+        sp = push2(mut st, sp, ast.ListAt(t, l, i), XExpr)
+    }
+    return sp
+}
+
+// if の else（ブロックか else-if）を積む
+func pushElse(st mut []int, sp int, t ast.Tree, e int, disc bool) int {
+    if e < 0 {
+        return sp
+    }
+    k := t.nodes[e].kind
+    if k == ast.EBlock || k == ast.KBlock {
+        return pushBlock(mut st, sp, t, e, !disc)
+    }
+    return push2(mut st, sp, e, if disc { XDisc } else { XExpr })
+}
+
+// switch の subject・パターン・腕を積む（腕は disc なら文位置）
+func pushSwitch(st mut []int, sp0 int, t ast.Tree, x ast.Node, disc bool) int {
+    mut sp := pushExprs(mut st, sp0, t, x.a)
+    for i <- iter.Range(0, ast.ListLen(t, x.b)) {
+        c := t.nodes[ast.ListAt(t, x.b, i)]
+        sp = pushExprs(mut st, sp, t, c.a)
+        sp = pushBlock(mut st, sp, t, c.b, !disc)
+    }
+    return pushBlock(mut st, sp, t, x.c, !disc)
+}
+
+// ブロック b（val = 値位置か）の最初の違反の字句の番号（無ければ -1。最も前の位置）
+func stmtHit(t ast.Tree, b int, val bool) int {
+    mut st := mut []int{}
+    sp := pushBlock(mut st, 0, t, b, val)
+    return run(t, mut st, sp)
+}
+
+// const の式 e の中（ラムダの本体等）の違反
+func constHit(t ast.Tree, e int) int {
+    mut st := mut []int{}
+    sp := push2(mut st, 0, e, XExpr)
+    return run(t, mut st, sp)
+}
+
+// スタックに積んだ (節, 位置の種類) を全部回し、最初の違反の字句の番号を返す（無ければ -1）
+func run(t ast.Tree, st mut []int, sp0 int) int {
+    mut hit := 0 - 1
+    mut sp := sp0
+    while sp > 0 {
+        sp -= 2
+        n := st[sp]
+        m := st[sp + 1]
+        x := t.nodes[n]
+        k := x.kind
+        if m == XStmtAt || m == XStmtVal {
+            if k == ast.SBind {
+                sp = pushExprs(mut st, sp, t, x.c)
+            } else if k == ast.SAssign {
+                sp = pushExprs(mut st, sp, t, x.a)
+                sp = pushExprs(mut st, sp, t, x.c)
+            } else if k == ast.SRet {
+                sp = pushExprs(mut st, sp, t, x.a)
+            } else if k == ast.SExpr {
+                sp = push2(mut st, sp, x.a, if m == XStmtAt { XDisc } else { XExpr })
+            } else if k == ast.SWhile {
+                sp = push2(mut st, sp, x.a, XExpr)
+                sp = pushBlock(mut st, sp, t, x.b, false)
+            } else if k == ast.SDefer {
+                sp = push2(mut st, sp, x.a, XDisc)
+            } else if k == ast.SYield {
+                sp = push2(mut st, sp, x.a, XExpr)
+            }
+        } else if m == XDisc {
+            if k == ast.EParen {
+                sp = push2(mut st, sp, x.a, XDisc)
+            } else if k == ast.ECall || k == ast.EPipe || k == ast.ETry || k == ast.EFor && x.b == 1 {
+                sp = push2(mut st, sp, n, XExpr)
+            } else if k == ast.EIf {
+                sp = push2(mut st, sp, x.a, XExpr)
+                sp = pushBlock(mut st, sp, t, x.b, false)
+                sp = pushElse(mut st, sp, t, x.c, true)
+            } else if k == ast.ESwitch {
+                sp = pushSwitch(mut st, sp, t, x, true)
+            } else if k == ast.EBlock {
+                sp = pushBlock(mut st, sp, t, n, false)
+            } else if hit < 0 || x.tok < hit {
+                hit = x.tok
+            }
+        } else {
+            sp = pushExprKids(mut st, sp, t, n)
+        }
+    }
+    return hit
+}
+
+// 値として読まれる式 x の子を積む
+func pushExprKids(st mut []int, sp0 int, t ast.Tree, n int) int {
+    mut sp := sp0
+    x := t.nodes[n]
+    k := x.kind
+    if k == ast.EBinary {
+        sp = push2(mut st, sp, x.b, XExpr)
+        sp = push2(mut st, sp, x.c, XExpr)
+    } else if k == ast.EUnary {
+        sp = push2(mut st, sp, x.b, XExpr)
+    } else if k == ast.ECall {
+        sp = push2(mut st, sp, x.a, XExpr)
+        sp = pushExprs(mut st, sp, t, x.b)
+    } else if k == ast.EPipe {
+        sp = push2(mut st, sp, x.a, XExpr)
+        sp = push2(mut st, sp, x.b, XExpr)
+        sp = pushExprs(mut st, sp, t, x.c)
+    } else if k == ast.EIndex {
+        sp = push2(mut st, sp, x.a, XExpr)
+        sp = push2(mut st, sp, x.b, XExpr)
+    } else if k == ast.ESlice3 {
+        sp = push2(mut st, sp, x.a, XExpr)
+        sp = push2(mut st, sp, x.b, XExpr)
+        sp = push2(mut st, sp, x.c, XExpr)
+    } else if k == ast.EInterp || k == ast.ESlicelit || k == ast.EComposite {
+        sp = pushExprs(mut st, sp, t, x.b)
+    } else if k == ast.EMaplit {
+        sp = pushExprs(mut st, sp, t, x.c)
+    } else if k == ast.KElem || k == ast.KFieldPat {
+        sp = push2(mut st, sp, x.b, XExpr)
+    } else if k == ast.KEntry {
+        sp = push2(mut st, sp, x.a, XExpr)
+        sp = push2(mut st, sp, x.b, XExpr)
+    } else if k == ast.ESelector || k == ast.EParen {
+        sp = push2(mut st, sp, x.a, XExpr)
+    } else if k == ast.ETry {
+        sp = push2(mut st, sp, x.a, XExpr)
+        sp = push2(mut st, sp, x.b, XExpr)
+    } else if k == ast.ELambda {
+        bk := t.nodes[x.b].kind
+        if bk == ast.EBlock || bk == ast.KBlock {
+            sp = pushBlock(mut st, sp, t, x.b, true)
+        } else {
+            sp = push2(mut st, sp, x.b, XExpr)
+        }
+    } else if k == ast.EIf {
+        sp = push2(mut st, sp, x.a, XExpr)
+        sp = pushBlock(mut st, sp, t, x.b, true)
+        sp = pushElse(mut st, sp, t, x.c, false)
+    } else if k == ast.ESwitch {
+        sp = pushSwitch(mut st, sp, t, x, false)
+    } else if k == ast.EBlock {
+        sp = pushBlock(mut st, sp, t, n, true)
+    } else if k == ast.EFor {
+        for i <- iter.Range(0, ast.ListLen(t, x.a)) {
+            g := t.nodes[ast.ListAt(t, x.a, i)]
+            sp = push2(mut st, sp, g.b, XExpr)
+            sp = pushExprs(mut st, sp, t, g.c)
+        }
+        if x.b == 0 {
+            sp = push2(mut st, sp, x.c, XExpr)
+        } else {
+            l := x.c
+            for i <- iter.Range(0, ast.ListLen(t, l)) {
+                sp = push2(mut st, sp, ast.ListAt(t, l, i), XStmtAt)
+            }
+        }
+    } else if k == ast.KCase {
+        sp = pushExprs(mut st, sp, t, x.a)
+    } else if k == ast.KPConst {
+        sp = pushExprs(mut st, sp, t, x.a)
+    } else if k == ast.KPType {
+        sp = pushExprs(mut st, sp, t, x.c)
+    }
+    return sp
+}
+
+// 全 package の式文の検査の最初の違反（違反なしは file = -1）
+func exprStmtHit(cx Cx, pnames []string) NameHit {
+    for f <- iter.Range(0, len(cx.trees)) {
+        hit := exprStmtIn(cx, pnames, f)
+        if hit >= 0 {
+            return NameHit{f, hit, diag.PureExprStmt{at: diag.Pos{f, hit}}}
+        }
+    }
+    return noHit()
+}
+
+// ファイル f の式文の検査の最も前の違反の字句（無ければ -1 — finpar.sober の子も同じ関数を呼ぶ）
+func exprStmtIn(cx Cx, pnames []string, f int) int {
+    t := cx.trees[f]
+    root := t.nodes[t.file]
+    isMain := pnames[cx.file_pkg[f]] == "main"
+    mut hit := 0 - 1
+    for i <- iter.Range(0, ast.ListLen(t, root.d)) {
+        fd := t.nodes[ast.ListAt(t, root.d, i)]
+        if fd.e >= 0 {
+            h := stmtHit(t, fd.e, isMain && StrIs(t, fd.a, "main"))
+            if h >= 0 && (hit < 0 || h < hit) {
+                hit = h
+            }
+        }
+    }
+    for i <- iter.Range(0, ast.ListLen(t, root.e)) {
+        c := t.nodes[ast.ListAt(t, root.e, i)]
+        h := constHit(t, c.b)
+        if h >= 0 && (hit < 0 || h < hit) {
+            hit = h
+        }
+    }
+    return hit
+}

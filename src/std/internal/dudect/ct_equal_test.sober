@@ -1,6 +1,6 @@
 package dudect
 
-// dudect の題材（report-985）: crypto.Equal（32 バイト — 固定の参照と比べる）。クラス 0 = 参照と同じ値・クラス 1 = 乱数。
+// dudect の題材: crypto.Equal（32 バイト — 固定の参照と比べる）。クラス 0 = 参照と同じ値・クラス 1 = 乱数。
 // 負例 = 食い違いで早く抜ける比較（ctcheck の negEqEarly と同じ形）— 同じハーネスで |t| が閾値を越える（網が鳴ることの証明）
 
 import "std/crypto"
@@ -15,7 +15,7 @@ func ref() []byte {
     return freeze(b)
 }
 
-// input はクラス c の i 回目の入力（0 = 参照の写し・1 = 乱数）
+// クラス c の i 回目の入力（0 = 参照の写し・1 = 乱数）
 func input(c int, i int) []byte {
     if c == 0 {
         return ref()

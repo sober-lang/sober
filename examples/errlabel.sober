@@ -1,6 +1,6 @@
 package main
 
-// R0（region 多相の裁定 — 系統 R）の検証例: error ラベルに string / slice のフィールドを持たせる。
+// 検証例: error ラベルに string / slice のフィールドを持たせる。
 // 呼び手の string・callee で構築した string・slice がラベルに乗り、`?` で伝播し、戻り値の境界コピーで
 // 呼び手の region へ写る（opt / union の中の relocate — codegen はタグで分岐、Lean は relocR が値ラッパの中まで締める）
 

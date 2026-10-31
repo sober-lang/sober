@@ -42,7 +42,7 @@ func noretFunc(st mut St, f FnRef) {
     }
 }
 
-// noretClose は b の行き先の前任の数を減らし、b を TmExit（PANIC）で閉じる
+// b の行き先の前任の数を減らし、b を TmExit（PANIC）で閉じる
 func noretClose(st mut St, b BlkRef) {
     t := irBlkTerm(mut st, b)
     if t == TmBr {
@@ -63,7 +63,7 @@ func noretDec(st mut St, to BlkRef) {
     irSetBlkPreds(mut st, to, irBlkPreds(mut st, to) - 1)
 }
 
-// noretSweep は入口から届かなくなったブロックの中身を消して TmExit に（行き先の前任の数も減らす）
+// 入口から届かなくなったブロックの中身を消して TmExit に（行き先の前任の数も減らす）
 func noretSweep(st mut St, f FnRef) {
     nb := irFnNBlk(mut st, f)
     mut seen := mut []int{}

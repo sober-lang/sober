@@ -1,0 +1,33 @@
+package diag
+
+// diag の単体テスト: 位置（Where — 字句の番号 → 行:列）と 1 行の文言（Format — 種類ごと）
+
+func TestWhere() {
+    src := bytes("package p\n\nfunc f() {\n    x := 1\n}\n")
+    // 字句: package(0) p(1) ;(2) func(3) f(4) ((5) )(6) {(7) x(8)
+    assert(Where("a.sober", src, 0) == "a.sober:1:1")
+    assert(Where("a.sober", src, 3) == "a.sober:3:1")
+    assert(Where("a.sober", src, 8) == "a.sober:4:5")
+    assert(Where("a.sober", src, 999) == "token 999")
+    assert(Where("a.sober", src, 0 - 1) == "token -1")
+}
+
+func TestAt() {
+    p := Pos{file: 2, tok: 7}
+    at := At(Shadow{at: p})
+    assert(at.file == 2 && at.tok == 7)
+    assert(At(nil).file == 0 - 1)
+}
+
+func TestFormatLoad() {
+    assert(Format(Shadow{at: Pos{file: 0, tok: 1}}, "a.sober:1:2") == "load error at a.sober:1:2: a local binding cannot shadow or redeclare another local binding")
+    assert(Format(NilCase{at: Pos{file: 0, tok: 1}, kind: 1}, "w") == "load error at w: case nil appears more than once in the switch")
+    assert(Format(AssertOutsideTest{at: None()}, "w") == "load error: assert is only available in _test.sober files")
+    assert(Format(Layout{at: Pos{file: 0, tok: 1}, kind: 1}, "w") == "load error at w: a fixed-length array field ([N]T) is only allowed in a @layout struct")
+    assert(Format(Layout{at: Pos{file: 0, tok: 1}, kind: 2}, "w") == "load error at w: @layout applies only to a struct type declaration")
+}
+
+func TestFormatDesugar() {
+    assert(Format(CoreFragment{at: Pos{file: 0, tok: 1}}, "a.sober:3:4") == "desugar error at a.sober:3:4 (CoreFragment)")
+    assert(Format(Mismatch{at: Pos{file: 0, tok: 1}}, "a.sober:3:4") == "lower error at a.sober:3:4 (Mismatch)")
+}

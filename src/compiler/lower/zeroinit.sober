@@ -1,8 +1,8 @@
 package lower
 
-// 入口の零初期化の語の判定（rep stosq 便 段 1 — report-488 (a-local)・report-494）。IR の約束「スロットは入口で 0」（docs/ir.md 2 節）は、
+// 入口の零初期化の語の判定。IR の約束「スロットは入口で 0」（docs/ir.md 2 節）は、
 // 0 を観測できる読みがある語にだけ要る: 入口からのどれかの道で書かれていない語の load（前向きの must 解析 — 書き済みに数えるのは自分の store と、
-// sret の受け皿を渡す call〔呼ぶ関数の F_SRET_BIT — 受け皿の全語を書き、書く前に読まない約束・F 便 段 1 — report-519〕）と、
+// sret の受け皿を渡す call〔呼ぶ関数の F_SRET_BIT — 受け皿の全語を書き、書く前に読まない約束〕）と、
 // 番地が load / store の番地以外へ逃げる点（call の引数・辺の引数・ret・格納される値・定数でない gep・バイトの読み書き — 印の無い call の
 // 受け皿は逃げのまま）でまだ書かれていない語。x86 の段の中で呼ぶので、IR は凍結した表の読み口（xi* / xb* / xf*）で読む。それ以外の語は入口の値が観測されないので 0 にしない。
 // 最適化のバックエンド（e.opt）だけが使う — 写しのバックエンド〔--backend=copy / --no-opt — elfeq が stage1 と照合する〕は全語を 0 にしたまま
@@ -10,7 +10,7 @@ package lower
 import "std/iter"
 import "std/os"
 
-// xZeroNeed は関数 f のスロットの語ごとの要零をフレームの位置の列で返す（[P] = 1 なら入口で 0 にする。P = 1 は rbp - 8、slotWords は最も下 —
+// 関数 f のスロットの語ごとの要零をフレームの位置の列で返す（[P] = 1 なら入口で 0 にする。P = 1 は rbp - 8、slotWords は最も下 —
 // スロット k の語 j は rbp - 8 × (cum[k] - j)。ws[k] = スロット k の語数〔1 語未満は 1〕）
 func xZeroNeed(st mut St, f FnRef, ws []int) []int {
     ns := len(ws)
@@ -39,7 +39,7 @@ func xZeroNeed(st mut St, f FnRef, ws []int) []int {
     nw := (total + 63) / 64
     // 走査 1 回目: 定数・番地（addr[v] = 値 v が指すスロットの語の通し番号・-1 = スロットの番地でない）・gen（ブロックの中の store の語 —
     // 書き済みの集合は語のビット集合〔64 語 / int〕・nb × nw の平らな表）。並びの順で定義が先に来ない gep / store は後で解く（pg / ps）。
-    // 命令を読む走査はこれと最後の印の 2 回だけ — 全語の列で毎周ブロックを歩き直す初版は自己 build の命令 +3.9 G（report-494）
+    // 命令を読む走査はこれと最後の印の 2 回だけ（全語の列で毎周ブロックを歩き直すと自己 build の命令が大きく増える）
     mut cval := mut []int{}
     xFill(mut cval, nv, 0)
     mut isc := mut []int{}
@@ -176,7 +176,7 @@ func xZeroNeed(st mut St, f FnRef, ws []int) []int {
     return xZeroByPos(freeze(need), ws)
 }
 
-// zeroGep は gep.word の結果 r の番地を解く（基底がスロットの番地・変位が定数・同じスロットの中のとき）。解けなければ false
+// gep.word の結果 r の番地を解く（基底がスロットの番地・変位が定数・同じスロットの中のとき）。解けなければ false
 func zeroGep(addr mut []int, isc mut []int, cval mut []int, ws []int, start []int, slotOfG []int, r int, p int, ix int) bool {
     if r < 0 || addr[p] < 0 || isc[ix] != 1 {
         return false
@@ -190,7 +190,7 @@ func zeroGep(addr mut []int, isc mut []int, cval mut []int, ws []int, start []in
     return false
 }
 
-// zeroGen は store（番地 p・語の変位 off）の語をブロック id の gen へ。番地がまだ解けていなければ false（範囲の外の store は書きに数えないので true）
+// store（番地 p・語の変位 off）の語をブロック id の gen へ。番地がまだ解けていなければ false（範囲の外の store は書きに数えないので true）
 func zeroGen(gen mut []int, addr mut []int, ws []int, start []int, slotOfG []int, nw int, id int, p int, off int) bool {
     if addr[p] < 0 {
         return false
@@ -203,7 +203,7 @@ func zeroGen(gen mut []int, addr mut []int, ws []int, start []int, slotOfG []int
     return true
 }
 
-// xZeroByPos は語の通し番号の列 need をフレームの位置の列へ（[P] — P = cum[k] - j・[0] は使わない）
+// 語の通し番号の列 need をフレームの位置の列へ（[P] — P = cum[k] - j・[0] は使わない）
 func xZeroByPos(need []int, ws []int) []int {
     mut cum := 0
     mut total := 0
@@ -225,7 +225,7 @@ func xZeroByPos(need []int, ws []int) []int {
     return freeze(out)
 }
 
-// slotPoisonEnv は毒の口の環境変数 SOBER_SLOT_POISON が立っているか（値は問わない）
+// 毒の口の環境変数 SOBER_SLOT_POISON が立っているか（値は問わない）
 func slotPoisonEnv() bool {
     v, err := os.Getenv("SOBER_SLOT_POISON")
     if err != nil {
@@ -234,7 +234,7 @@ func slotPoisonEnv() bool {
     return v != nil
 }
 
-// zeroInto はブロック id の入り（ビット集合 nw 語）を inw へ（前任の出の積集合 — 入口は全部 0・前任の無いブロックは到達しないので全部 1）
+// ブロック id の入り（ビット集合 nw 語）を inw へ（前任の出の積集合 — 入口は全部 0・前任の無いブロックは到達しないので全部 1）
 func zeroInto(inw mut []int, outw mut []int, preds []int, pcnt []int, id int, entry int, nw int) {
     for w <- iter.Range(0, nw) {
         inw[w] = if id == entry { 0 } else { -1 }
@@ -250,7 +250,7 @@ func zeroInto(inw mut []int, outw mut []int, preds []int, pcnt []int, id int, en
     }
 }
 
-// zeroSretP は命令 ins が sret の受け皿を渡す call（呼ぶ関数の F_MUTP の F_SRET_BIT・間接なら c = CALLI_SRET）なら受け皿の値（引数 0）、それ以外は -1
+// 命令 ins が sret の受け皿を渡す call（呼ぶ関数の F_MUTP の F_SRET_BIT・間接なら c = CALLI_SRET）なら受け皿の値（引数 0）、それ以外は -1
 func zeroSretP(st mut St, ins InsRef) int {
     if xiOp(mut st, ins) == OpCallI && xiC(mut st, ins) == CALLI_SRET && xLen(mut st, xiB(mut st, ins)) > 0 {
         return xAt(mut st, xiB(mut st, ins), 0)
@@ -262,7 +262,7 @@ func zeroSretP(st mut St, ins InsRef) int {
     return if m >= 0 && (m >> F_SRET_BIT) & 1 == 1 { xAt(mut st, xiB(mut st, ins), 0) } else { -1 }
 }
 
-// zeroGenSret は受け皿 p（スロットの頭の番地のときだけ）の全語をブロック id の gen へ。番地がまだ解けていなければ false
+// 受け皿 p（スロットの頭の番地のときだけ）の全語をブロック id の gen へ。番地がまだ解けていなければ false
 func zeroGenSret(gen mut []int, addr mut []int, ws []int, start []int, slotOfG []int, nw int, id int, p int) bool {
     if p >= len(addr) {
         return true
@@ -279,7 +279,7 @@ func zeroGenSret(gen mut []int, addr mut []int, ws []int, start []int, slotOfG [
     return true
 }
 
-// zwHas は語 g が書き済みか・zwSet は書き済みにする（ビット集合 wb）
+// 語 g が書き済みか・zwSet は書き済みにする（ビット集合 wb）
 func zwHas(wb mut []int, g int) bool {
     return ((wb[g >> 6] >> (g & 63)) & 1) == 1
 }
@@ -288,7 +288,7 @@ func zwSet(wb mut []int, g int) {
     wb[g >> 6] = wb[g >> 6] | (1 << (g & 63))
 }
 
-// zeroScan はブロック b を歩いて wb（書き済みのビット集合）を進め、要零を立てる（書き済みでない語の load・逃げる点で書き済みでない語）
+// ブロック b を歩いて wb（書き済みのビット集合）を進め、要零を立てる（書き済みでない語の load・逃げる点で書き済みでない語）
 func zeroScan(st mut St, b BlkRef, wb mut []int, addr []int, slotOfG []int, start []int, ws []int, nv int, need mut []int) {
     mut ins := xbIHead(mut st, b)
     while ins != -1 {
@@ -367,7 +367,7 @@ func zeroScan(st mut St, b BlkRef, wb mut []int, addr []int, slotOfG []int, star
     }
 }
 
-// zeroEscape はスロット k の番地が逃げる点: 書き済みでない語を要零に（逃げた先が読みうる）。逃げた先の書きは書き済みに数えない
+// スロット k の番地が逃げる点: 書き済みでない語を要零に（逃げた先が読みうる）。逃げた先の書きは書き済みに数えない
 // （例外は印のある sret の受け皿だけ — zeroScan の call の腕・zeroGenSret）
 func zeroEscape(wb mut []int, k int, start []int, ws []int, need mut []int) {
     for g <- iter.Range(start[k], start[k] + ws[k]) {

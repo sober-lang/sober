@@ -1697,6 +1697,87 @@ b0:
   ret %2
 }
 
+func @main.walk(%0 ptr, %1 i64) {
+  slot s0 [3]
+  slot s1 [3]
+b0:
+  %2 = region.depth
+  %3 = globaladdr @rt.meta
+  %4 = load.i64 %3[2572]
+  %5 = const 0
+  %6 = eq %4, %5
+  %7 = mul %6, %2
+  %8 = add %4, %7
+  region.enter
+  %9 = const 0
+  %10 = gt %1, %9
+  condbr %10, b1, b2
+b1:
+  %11 = slotaddr s0
+  %12 = load.i64 %0[0]
+  store %11[0], %12
+  %13 = load.i64 %0[1]
+  store %11[1], %13
+  %14 = load.i64 %0[2]
+  store %11[2], %14
+  %15 = load.i64 %11[2]
+  %16 = load.i64 %11[0]
+  %17 = load.i64 %11[1]
+  %20 = const 8
+  %21 = mul %17, %20
+  %22 = add %16, %21
+  %23 = region.bump %15
+  %24 = ptoi %23
+  %25 = eq %24, %22
+  condbr %25, b5, b4
+b2:
+  br b6
+b3(%18 ptr, %19 ptr):
+  store %19[0], %1
+  %35 = load.i64 %11[1]
+  %36 = const 1
+  %37 = add %35, %36
+  %38 = slotaddr s1
+  %39 = ptoi %18
+  store %38[0], %39
+  store %38[1], %37
+  store %38[2], %15
+  %40 = load.i64 %38[0]
+  store %0[0], %40
+  %41 = load.i64 %38[1]
+  store %0[1], %41
+  %42 = load.i64 %38[2]
+  store %0[2], %42
+  %43 = load.i64 %0[3]
+  %44 = const 1
+  %45 = add %43, %44
+  %46 = const 3
+  %47 = gep.word %0, %46
+  store %47[0], %45
+  %48 = const 1
+  %49 = sub %1, %48
+  %50 = globaladdr @rt.meta
+  store %50[2572], %8
+  call @main.walk(%0, %49)
+  br b6
+b4:
+  %29 = const 1
+  %30 = mul %17, %29
+  %31 = const 1
+  %32 = const 1
+  %33 = call @rt.slice_grow(%16, %17, %31, %15, %32)
+  %34 = gep.word %33, %30
+  br b3(%33, %34)
+b5:
+  %26 = const 1
+  %27 = region.alloc %15, %26
+  %28 = itop %16
+  br b3(%28, %27)
+b6:
+  region.setdepth %2
+  ret
+}
+
 func @main.main() {
   slot s0 [3]
   slot s1 [3]
@@ -1781,6 +1862,22 @@ b3:
   region.setdepth %13
   region.setdepth %0
   ret
+}
+
+func @rt.sigint() {
+b0:
+  %0 = const 231
+  %1 = const 130
+  %2 = syscall(%0, %1)
+  exit 130
+}
+
+func @rt.sigterm() {
+b0:
+  %0 = const 231
+  %1 = const 143
+  %2 = syscall(%0, %1)
+  exit 143
 }
 
 export func @sober_entry(%0 ptr) {
@@ -2376,101 +2473,4 @@ b91:
   %404 = const 1
   %405 = add %383, %404
   br b85(%401, %405)
-}
-
-func @rt.sigterm() {
-b0:
-  %0 = const 231
-  %1 = const 143
-  %2 = syscall(%0, %1)
-  exit 143
-}
-
-func @rt.sigint() {
-b0:
-  %0 = const 231
-  %1 = const 130
-  %2 = syscall(%0, %1)
-  exit 130
-}
-
-func @main.walk(%0 ptr, %1 i64) {
-  slot s0 [3]
-  slot s1 [3]
-b0:
-  %2 = region.depth
-  %3 = globaladdr @rt.meta
-  %4 = load.i64 %3[2572]
-  %5 = const 0
-  %6 = eq %4, %5
-  %7 = mul %6, %2
-  %8 = add %4, %7
-  region.enter
-  %9 = const 0
-  %10 = gt %1, %9
-  condbr %10, b1, b2
-b1:
-  %11 = slotaddr s0
-  %12 = load.i64 %0[0]
-  store %11[0], %12
-  %13 = load.i64 %0[1]
-  store %11[1], %13
-  %14 = load.i64 %0[2]
-  store %11[2], %14
-  %15 = load.i64 %11[2]
-  %16 = load.i64 %11[0]
-  %17 = load.i64 %11[1]
-  %20 = const 8
-  %21 = mul %17, %20
-  %22 = add %16, %21
-  %23 = region.bump %15
-  %24 = ptoi %23
-  %25 = eq %24, %22
-  condbr %25, b5, b4
-b2:
-  br b6
-b3(%18 ptr, %19 ptr):
-  store %19[0], %1
-  %35 = load.i64 %11[1]
-  %36 = const 1
-  %37 = add %35, %36
-  %38 = slotaddr s1
-  %39 = ptoi %18
-  store %38[0], %39
-  store %38[1], %37
-  store %38[2], %15
-  %40 = load.i64 %38[0]
-  store %0[0], %40
-  %41 = load.i64 %38[1]
-  store %0[1], %41
-  %42 = load.i64 %38[2]
-  store %0[2], %42
-  %43 = load.i64 %0[3]
-  %44 = const 1
-  %45 = add %43, %44
-  %46 = const 3
-  %47 = gep.word %0, %46
-  store %47[0], %45
-  %48 = const 1
-  %49 = sub %1, %48
-  %50 = globaladdr @rt.meta
-  store %50[2572], %8
-  call @main.walk(%0, %49)
-  br b6
-b4:
-  %29 = const 1
-  %30 = mul %17, %29
-  %31 = const 1
-  %32 = const 1
-  %33 = call @rt.slice_grow(%16, %17, %31, %15, %32)
-  %34 = gep.word %33, %30
-  br b3(%33, %34)
-b5:
-  %26 = const 1
-  %27 = region.alloc %15, %26
-  %28 = itop %16
-  br b3(%28, %27)
-b6:
-  region.setdepth %2
-  ret
 }

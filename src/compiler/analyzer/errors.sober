@@ -1,6 +1,6 @@
 package analyzer
 
-// error のラベル集合の導出（error 網羅 analyzer A2 — language.md 13 節。今は影: 消費者は開発用の `check --errors-dump` だけ）。
+// error のラベル集合の導出（language.md 13 節。今は影: 消費者は開発用の `check --errors-dump` だけ）。
 // 抽象値 = ラベル集合（2 語のビット集合 LSet — flow.sober。添字 = リンク時のタグ = loader のラベル表の順。TOP = 不明）。値は「その式の error の成分」だけを見る:
 // error の成分を持たない式の集合は、error の位置（戻りの error の成分・error の仮引数・error の欄）へ流れないので、過大（TOP）でも結果を汚さない —
 // 分からない名前・添字の読み・関数値の呼び出しは TOP に倒す（健全の側）。
@@ -22,13 +22,13 @@ import "std/table"
 
 // ── 型式・名前の小道具 ──
 
-// isErrTy は型式 te が error か error?
+// 型式 te が error か error?
 func isErrTy(az mut Az, te desugar.NodeRef) bool {
     t := if te != -1 && kind(mut az, te) == ast.TOpt { desugar.NodeRef(node(mut az, te).a) } else { te }
     return t != -1 && kind(mut az, t) == ast.TName && desugar.StrIs(mut az.d, desugar.StrRef(node(mut az, t).a), "error")
 }
 
-// isPublic は名前が大文字で始まるか
+// 名前が大文字で始まるか
 func isPublic(az mut Az, s desugar.StrRef) bool {
     c := desugar.Dat(mut az.d, int(s) + 1)
     return desugar.Dat(mut az.d, int(s)) > 0 && c >= 'A' && c <= 'Z'
@@ -38,13 +38,13 @@ func fnDecl(az mut Az, fi int) ast.Node {
     return node(mut az, desugar.FnAt(mut az.d, fi).node)
 }
 
-// labelOf は型パターン / リテラルの名前（"N" か "ref.N"）の error ラベルのタグ（無ければ -1）
+// 型パターン / リテラルの名前（"N" か "ref.N"）の error ラベルのタグ（無ければ -1）
 func labelOf(az mut Az, name desugar.StrRef) int {
     r := desugar.ResolveVariant(mut az.d, az.pk, name)
     return if r.kind == desugar.TopVariant && r.idx == desugar.ERRS { r.sub } else { -1 }
 }
 
-// fieldSlot は error 型の欄の名前 name のスロット（無ければ -1）
+// error 型の欄の名前 name のスロット（無ければ -1）
 func fieldSlot(az mut Az, name desugar.StrRef) int {
     for i <- iter.Range(0, table.Len(mut az.ffield) / 2) {
         if desugar.StrEq(mut az.d, desugar.StrRef(table.Get(mut az.ffield, i * 2)), name) {
@@ -54,7 +54,7 @@ func fieldSlot(az mut Az, name desugar.StrRef) int {
     return -1
 }
 
-// paramIdx は今の関数の仮引数 name の添字（無ければ -1）
+// 今の関数の仮引数 name の添字（無ければ -1）
 func paramIdx(az mut Az, name desugar.StrRef) int {
     ps := desugar.ListRef(fnDecl(mut az, az.cur).c)
     for j <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
@@ -65,7 +65,7 @@ func paramIdx(az mut Az, name desugar.StrRef) int {
     return -1
 }
 
-// ident は名前の集合: 局所 → 仮引数（error 型なら P のスロット）→ トップレベル（関数・const — error の値でない）
+// 名前の集合: 局所 → 仮引数（error 型なら P のスロット）→ トップレベル（関数・const — error の値でない）
 func ident(az mut Az, name desugar.StrRef) LSet {
     i := envFind(mut az, name)
     if i != -1 {
@@ -79,7 +79,7 @@ func ident(az mut Az, name desugar.StrRef) LSet {
     return lsNone()
 }
 
-// paramOf は関数 fi の仮引数 name の添字（無ければ -1）
+// 関数 fi の仮引数 name の添字（無ければ -1）
 func paramOf(az mut Az, fi int, name desugar.StrRef) int {
     ps := desugar.ListRef(fnDecl(mut az, fi).c)
     for j <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
@@ -90,7 +90,7 @@ func paramOf(az mut Az, fi int, name desugar.StrRef) int {
     return -1
 }
 
-// flowParam は関数 fi の仮引数 j が匿名の関数型で結果に error を持つか（Flow の対象 — 名前つき関数型の仮引数は対象外）
+// 関数 fi の仮引数 j が匿名の関数型で結果に error を持つか（Flow の対象 — 名前つき関数型の仮引数は対象外）
 func flowParam(az mut Az, fi int, j int) bool {
     t := desugar.NodeRef(node(mut az, nat(mut az, desugar.ListRef(fnDecl(mut az, fi).c), j)).b)
     if j >= PBITS || t == -1 || kind(mut az, t) != ast.TFunc {
@@ -105,7 +105,7 @@ func flowParam(az mut Az, fi int, j int) bool {
     return false
 }
 
-// curFlowParam は式 e が今の関数の Flow の対象の仮引数の名前ならその添字（でなければ -1）
+// 式 e が今の関数の Flow の対象の仮引数の名前ならその添字（でなければ -1）
 func curFlowParam(az mut Az, e desugar.NodeRef) int {
     if kind(mut az, e) != ast.EIdent {
         return -1
@@ -115,14 +115,14 @@ func curFlowParam(az mut Az, e desugar.NodeRef) int {
     return if j != -1 && flowParam(mut az, az.cur, j) { j } else { -1 }
 }
 
-// isLocal は名前が局所か仮引数か（関数値の呼び出しの判定）
+// 名前が局所か仮引数か（関数値の呼び出しの判定）
 func isLocal(az mut Az, name desugar.StrRef) bool {
     return envFind(mut az, name) != -1 || paramIdx(mut az, name) != -1
 }
 
 // ── 準備と不動点 ──
 
-// errInit は表を立てる（スロット R・C・P と error 型の欄の名前）
+// 表を立てる（スロット R・C・P と error 型の欄の名前）
 func errInit(az mut Az) {
     az.nfn = desugar.Nfn(mut az.d)
     az.nerr = desugar.NErr(mut az.d)
@@ -180,7 +180,7 @@ func errInit(az mut Az) {
     }
 }
 
-// errSolve は全関数を作業の列に積み、スロットが広がらなくなるまで歩く。最後に 1 周、switch を記録しながら歩く
+// 全関数を作業の列に積み、スロットが広がらなくなるまで歩く。最後に 1 周、switch を記録しながら歩く
 func errSolve(az mut Az) {
     for fi <- iter.Range(0, az.nfn) {
         enqueue(mut az, fi)
@@ -200,7 +200,7 @@ func errSolve(az mut Az) {
     az.rec = false
 }
 
-// walkFn は関数 fi の本体を、局所が広がらなくなるまで歩く
+// 関数 fi の本体を、局所が広がらなくなるまで歩く
 func walkFn(az mut Az, fi int) {
     body := desugar.NodeRef(fnDecl(mut az, fi).e)
     if body == -1 {
@@ -224,7 +224,7 @@ func walkFn(az mut Az, fi int) {
 
 // ── 式と文（集合 = その式の error の成分）──
 
-// blockVal はブロックの節（KBlock / EBlock）の文を歩き、値（末尾の式文）の集合を返す
+// ブロックの節（KBlock / EBlock）の文を歩き、値（末尾の式文）の集合を返す
 func blockVal(az mut Az, b desugar.NodeRef) LSet {
     if b == -1 {
         return lsNone()
@@ -243,7 +243,7 @@ func blockVal(az mut Az, b desugar.NodeRef) LSet {
     return v
 }
 
-// elseVal は if の else（ブロックか else-if）の集合
+// if の else（ブロックか else-if）の集合
 func elseVal(az mut Az, e desugar.NodeRef) LSet {
     if e == -1 {
         return lsNone()
@@ -263,7 +263,7 @@ func evList(az mut Az, l desugar.ListRef) LSet {
     return v
 }
 
-// est は文 1 つ
+// 文 1 つ
 func est(az mut Az, s desugar.NodeRef) {
     x := node(mut az, s)
     k := x.kind
@@ -305,7 +305,7 @@ func est(az mut Az, s desugar.NodeRef) {
     return
 }
 
-// assignTo は代入の行き先 t へ集合 m（名前 → 局所・欄 → error 型の欄のスロット・添字 → 歩くだけ）
+// 代入の行き先 t へ集合 m（名前 → 局所・欄 → error 型の欄のスロット・添字 → 歩くだけ）
 func assignTo(az mut Az, t desugar.NodeRef, m LSet) {
     x := node(mut az, t)
     if x.kind == ast.EIdent {
@@ -320,7 +320,7 @@ func assignTo(az mut Az, t desugar.NodeRef, m LSet) {
     return
 }
 
-// retVals は return の値: 今の関数の結果の error の位置の集合を R へ（ラムダの本体の return も囲みの関数から — 10 節）
+// return の値: 今の関数の結果の error の位置の集合を R へ（ラムダの本体の return も囲みの関数から — 10 節）
 func retVals(az mut Az, vals desugar.ListRef) {
     rs := desugar.ListRef(fnDecl(mut az, az.cur).d)
     nw := desugar.LenL(mut az.d, rs)
@@ -341,7 +341,7 @@ func retVals(az mut Az, vals desugar.ListRef) {
     }
 }
 
-// ev は式を歩いて error の成分の集合を返す
+// 式を歩いて error の成分の集合を返す
 func ev(az mut Az, e desugar.NodeRef) LSet {
     if e == -1 {
         return lsNone()
@@ -475,7 +475,7 @@ func evElems(az mut Az, l desugar.ListRef) {
     }
 }
 
-// composite はリテラル: error ラベルなら {L}。struct なら error 型の欄へ値の集合を流す（位置指定の欄は宣言の順で名前を引く）
+// リテラル: error ラベルなら {L}。struct なら error 型の欄へ値の集合を流す（位置指定の欄は宣言の順で名前を引く）
 func composite(az mut Az, x ast.Node) LSet {
     name := desugar.StrRef(x.a)
     els := desugar.ListRef(x.b)
@@ -502,7 +502,7 @@ func composite(az mut Az, x ast.Node) LSet {
     return lsNone()
 }
 
-// calleeFn は呼び出しの callee の関数の表の添字（-1 = 関数でない — 組み込み・変換・型の構築。-2 = 関数値 — 中が見えない）
+// 呼び出しの callee の関数の表の添字（-1 = 関数でない — 組み込み・変換・型の構築。-2 = 関数値 — 中が見えない）
 func calleeFn(az mut Az, callee desugar.NodeRef) int {
     c := if kind(mut az, callee) == ast.EIndex { desugar.NodeRef(node(mut az, callee).a) } else { callee }
     x := node(mut az, c)
@@ -524,7 +524,7 @@ func calleeFn(az mut Az, callee desugar.NodeRef) int {
     return -2
 }
 
-// callVal は呼び出し callee(args)（pipe なら左辺 lhs — 穴 -1 の位置か先頭 — の集合 lm）の集合。実引数の集合は呼び先の error の仮引数の P へ
+// 呼び出し callee(args)（pipe なら左辺 lhs — 穴 -1 の位置か先頭 — の集合 lm）の集合。実引数の集合は呼び先の error の仮引数の P へ
 func callVal(az mut Az, callee desugar.NodeRef, args desugar.ListRef, lhs desugar.NodeRef, lm LSet) LSet {
     fi := calleeFn(mut az, callee)
     fp := if fi == -2 { curFlowParam(mut az, callee) } else { -1 }
@@ -597,7 +597,7 @@ func callVal(az mut Az, callee desugar.NodeRef, args desugar.ListRef, lhs desuga
     return lsOr(fnLabels(mut az, fi), extra)
 }
 
-// fnLabels は関数 fi（error を返す）の集合
+// 関数 fi（error を返す）の集合
 func fnLabels(az mut Az, fi int) LSet {
     if declHas(mut az, fi) && desugar.FnAt(mut az.d, fi).pkg != desugar.FnAt(mut az.d, az.cur).pkg {
         // package をまたぐ呼び出しは宣言を読む（裁定 E2 — 依存 package の中を解析しない 29 節の合成と同じ答えになる。宣言と導出の食い違いは宣言側の package で拒否する）
@@ -606,7 +606,7 @@ func fnLabels(az mut Az, fi int) LSet {
     return lsNoFlow(readSlot(mut az, fi))
 }
 
-// flowOf は関数 fi の Flow（package をまたぐ宣言つきの呼び先は宣言の仮引数の名前 — 裁定 E2 と同じ）
+// 関数 fi の Flow（package をまたぐ宣言つきの呼び先は宣言の仮引数の名前 — 裁定 E2 と同じ）
 func flowOf(az mut Az, fi int) int {
     if declHas(mut az, fi) && desugar.FnAt(mut az.d, fi).pkg != desugar.FnAt(mut az.d, az.cur).pkg {
         return table.Get(mut az.dflow, fi)
@@ -614,7 +614,7 @@ func flowOf(az mut Az, fi int) int {
     return readSlot(mut az, az.flowBase + fi).lo
 }
 
-// flowArg は Flow の位置の実引数 a（集合 m — ラムダなら本体の値）の失敗のラベル: ラムダは本体の値・名前つき関数はその集合・
+// Flow の位置の実引数 a（集合 m — ラムダなら本体の値）の失敗のラベル: ラムダは本体の値・名前つき関数はその集合・
 // 呼び手自身の Flow の対象の仮引数は呼び手の FLOW（推移）・他（局所の関数値など）は TOP
 func flowArg(az mut Az, a desugar.NodeRef, m LSet) LSet {
     k := kind(mut az, a)
@@ -640,7 +640,7 @@ func flowArg(az mut Az, a desugar.NodeRef, m LSet) LSet {
     return lsTop()
 }
 
-// argTo は関数 fi の j 番目の仮引数が error 型なら、実引数の集合 m を P へ
+// 関数 fi の j 番目の仮引数が error 型なら、実引数の集合 m を P へ
 func argTo(az mut Az, fi int, j int, m LSet) {
     if fi < 0 || lsEmpty(m) {
         return
@@ -651,8 +651,8 @@ func argTo(az mut Az, fi int, j int, m LSet) {
     }
 }
 
-// switchVal は switch: subject の集合 S、腕の束縛（ラベルの型パターンは {L}・その cause は C[L]・他の束縛は TOP）、腕の値の合併。
-// error ラベルの型パターンを持つ単一の subject の switch は最後の 1 周で記録する（S・覆ったラベル・default の有無 — A5 の裁定材料）
+// switch: subject の集合 S、腕の束縛（ラベルの型パターンは {L}・その cause は C[L]・他の束縛は TOP）、腕の値の合併。
+// error ラベルの型パターンを持つ単一の subject の switch は最後の 1 周で記録する（S・覆ったラベル・default の有無）
 func switchVal(az mut Az, e desugar.NodeRef, x ast.Node) LSet {
     subs := desugar.ListRef(x.a)
     S0 := evList(mut az, subs)
@@ -728,7 +728,7 @@ func switchVal(az mut Az, e desugar.NodeRef, x ast.Node) LSet {
     return v
 }
 
-// labelFields はラベル L の型パターンの欄: `cause` は C[L]、cause の入れ子のラベルの型パターン（`cause: e A{…}`）は e が {A} でその欄を同じく、
+// ラベル L の型パターンの欄: `cause` は C[L]、cause の入れ子のラベルの型パターン（`cause: e A{…}`）は e が {A} でその欄を同じく、
 // 他の欄（ラベルは error を持てない）と入れ子の束縛は TOP
 func labelFields(az mut Az, L int, fps desugar.ListRef) {
     if fps == -1 {
@@ -751,7 +751,7 @@ func labelFields(az mut Az, L int, fps desugar.ListRef) {
     }
 }
 
-// bindTop はパターン p の中の束縛の名前を全部 TOP に（ラベルでない型パターン・入れ子）
+// パターン p の中の束縛の名前を全部 TOP に（ラベルでない型パターン・入れ子）
 func bindTop(az mut Az, p desugar.NodeRef) {
     if p == -1 {
         return

@@ -64,7 +64,7 @@ func DecodeUrl(s string) ([]byte, error?) {
     return out, nil
 }
 
-// encode は b を字母 alpha（64 文字）で 3 バイト → 4 文字に（pad なら端を '=' で 4 文字に揃える）
+// b を字母 alpha（64 文字）で 3 バイト → 4 文字に（pad なら端を '=' で 4 文字に揃える）
 func encode(b []byte, alpha []byte, pad bool) []byte {
     mut out := mut []byte{}
     full := len(b) / 3
@@ -96,7 +96,7 @@ func encode(b []byte, alpha []byte, pad bool) []byte {
     return freeze(out)
 }
 
-// decode は詰めを除いた s（長さを 4 で割った余りは 0・2・3）の中身（第 2 の値 = 綴りが合う。url なら '-' '_' の字母・でなければ '+' '/'）。
+// 詰めを除いた s（長さを 4 で割った余りは 0・2・3）の中身（第 2 の値 = 綴りが合う。url なら '-' '_' の字母・でなければ '+' '/'）。
 // 端の 2 文字は 1 バイト・3 文字は 2 バイトで、最後の文字の使わない bit（4 bit / 2 bit）は 0（RFC 4648 3.5 — 綴りを 1 つに）
 func decode(s []byte, url bool) ([]byte, bool) {
     mut out := mut []byte{}
@@ -140,7 +140,7 @@ func decode(s []byte, url bool) ([]byte, bool) {
     return freeze(out), true
 }
 
-// sixBits は字母の 1 文字の値（字母の外なら -1 — '=' も外）
+// 字母の 1 文字の値（字母の外なら -1 — '=' も外）
 func sixBits(c int, url bool) int {
     return if c >= 65 && c <= 90 { c - 65 } else if c >= 97 && c <= 122 { c - 71 } else if c >= 48 && c <= 57 { c + 4 } else if c == (if url { 45 } else { 43 }) { 62 } else if c == (if url { 95 } else { 47 }) { 63 } else { -1 }
 }

@@ -1,0 +1,10 @@
+package main
+
+// 負例: 演算を畳むのは int の const だけ — string / bool / float の const はリテラルで書く（language.md 25 節・spec V-3）
+const Name = "sober"
+
+const Full = Name + " compiler"
+
+func main() {
+    println(0)
+}

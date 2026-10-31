@@ -11,7 +11,7 @@ type BadLine error {
     line int
 }
 
-// digits は s の数字を順に k へ渡す。数字でない文字で BadDigit（走査の途中の失敗）
+// s の数字を順に k へ渡す。数字でない文字で BadDigit（走査の途中の失敗）
 @errors(BadDigit)
 func digits(s string, k func(int)) error? {
     defer println("  (digits done)")

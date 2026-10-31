@@ -1,12 +1,12 @@
 package lower
 
-// SROA の定数 gep.word の透かし（sroa.sober — 展開後の SROA だけ・置き場の往復レーン 段 3 M2）の単体テスト（`cd compiler && ../bin/sober test lower`）:
+// SROA の定数 gep.word の透かし（sroa.sober — 展開後の SROA だけ・置き場の往復レーン 段 3）の単体テスト（`cd compiler && ../bin/sober test lower`）:
 // 値渡しの struct を入口でスロットへ丸写しし、欄を `gep.word スロット, 定数` 越しに読む形（std/json.keyIs の Doc）を IR で組み、
 // 語のずれ（gep の定数 + load の語）が仮引数の語に当たること・範囲外のずれでは割らないことを直に見る
 
 import "desugar"
 
-// srT は仮引数 3 本を 3 語のスロットへ写し、`load (gep.word スロット, off)[k]` を返す関数に SROA（cg）+ mem2reg を掛け、ret の値を返す
+// 仮引数 3 本を 3 語のスロットへ写し、`load (gep.word スロット, off)[k]` を返す関数に SROA（cg）+ mem2reg を掛け、ret の値を返す
 // （割って持ち上がれば仮引数の番号 off + k・割らなければ load の結果 — 3 以上）
 func srT(off int, k int, cg bool) int {
     mut st := St{}

@@ -1,6 +1,6 @@
 package loader
 
-// ワーカー局所の lease（region-domain-pool.md 4d 節 — 決定 2026-10-16・report-717 / 719）: `task.NewLocal` / `task.Lease` の呼び出し点を、脱糖の固定テンプレートで
+// ワーカー局所の lease（region-domain-pool.md 4d 節）: `task.NewLocal` / `task.Lease` の呼び出し点を、脱糖の固定テンプレートで
 // 普通の Sober と std の写し先の呼び出しへ写す（namedargs・eta と同じ層: desugar・lower・typer・analyzer は写した後の木だけを読む。コア・Lean は無変更）:
 //
 //     gzw := task.NewLocal((w mut flate.Work) => { pool.NewScratch(mut w.head, 1 << 15); pool.NewScratch(mut w.prev, 16384) })
@@ -29,12 +29,12 @@ const PAR_LEASE_SHAPE = 26
 const PAR_LEASE_PREP = 27
 const PAR_LEASE_RESERVED = 28
 
-// LShape は窓の T の形: Scratch の欄の名前（宣言の順）
+// 窓の T の形: Scratch の欄の名前（宣言の順）
 type LShape struct {
     scratch []string
 }
 
-// leaseAll は全ファイルの task.NewLocal / task.Lease を写す（窓の外のラムダの mut 仮引数・写し先の直の呼び出し・形の違反は拒否）
+// 全ファイルの task.NewLocal / task.Lease を写す（窓の外のラムダの mut 仮引数・写し先の直の呼び出し・形の違反は拒否）
 @errors(diag.Par)
 func leaseAll(cx Cx) ([]ast.Tree, error?) {
     ppar := pkgOf(cx, "std/task")
@@ -100,12 +100,12 @@ func leaseAll(cx Cx) ([]ast.Tree, error?) {
     return freeze(out), nil
 }
 
-// leaseReserved は欄の名前 s が写し先の名前か
+// 欄の名前 s が写し先の名前か
 func leaseReserved(t ast.Tree, s int) bool {
     return StrIs(t, s, "LocalNew") || StrIs(t, s, "LeaseTake") || StrIs(t, s, "LeaseGive") || StrIs(t, s, "LeaseBlock") || StrIs(t, s, "LeaseAttach")
 }
 
-// leaseWhich は節 x が std/task の NewLocal（1）/ Lease（2）の呼び出しか（違えば 0）。`task.NewLocal[T](…)` の型引数の形も
+// 節 x が std/task の NewLocal（1）/ Lease（2）の呼び出しか（違えば 0）。`task.NewLocal[T](…)` の型引数の形も
 func leaseWhich(cx Cx, f int, ppar int, x ast.Node) int {
     if x.kind != ast.ECall || ppar < 0 {
         return 0
@@ -125,7 +125,7 @@ func leaseWhich(cx Cx, f int, ppar int, x ast.Node) int {
     return w
 }
 
-// lamHasMut はラムダ x の仮引数に mut の印があるか
+// ラムダ x の仮引数に mut の印があるか
 func lamHasMut(t ast.Tree, x ast.Node) bool {
     for j <- iter.Range(0, ast.ListLen(t, x.a)) {
         if t.nodes[ast.ListAt(t, x.a, j)].c != 0 {
@@ -144,7 +144,7 @@ func lsHas(xs []int, v int) bool {
     return false
 }
 
-// leaseRewrite はファイル f の窓の呼び出し点 hs を写した木（節は末尾に足し、呼び出しの節をその場でブロックに差し替える）。k = 隠れた名前の通し番号
+// ファイル f の窓の呼び出し点 hs を写した木（節は末尾に足し、呼び出しの節をその場でブロックに差し替える）。k = 隠れた名前の通し番号
 @errors(diag.Par)
 func leaseRewrite(cx Cx, f int, ppar int, ppool int, hs []int, k0 int) (ast.Tree, int, error?) {
     t := cx.trees[f]
@@ -279,14 +279,14 @@ func lsIdent(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], n0 i
     return lsPush(mut nb, n0, ast.Node{ast.EIdent, tok, ast.PutLit(mut db, nm), 0, 0, 0, 0, 0})
 }
 
-// lsCall は `ref.fn(args)`
+// `ref.fn(args)`
 func lsCall(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], n0 int, tok int, ref string, fn string, args []int) int {
     b := lsIdent(mut nb, mut db, n0, tok, ref)
     callee := lsPush(mut nb, n0, ast.Node{ast.ESelector, tok, b, ast.PutLit(mut db, fn), 0, 0, 0, 0})
     return lsPush(mut nb, n0, ast.Node{ast.ECall, tok, callee, ast.PutList(mut db, args), 0, 0, 0, 0})
 }
 
-// lsBindW は `mut w := T{}` の文
+// `mut w := T{}` の文
 func lsBindW(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], n0 int, tok int, w string, ty string) int {
     z := lsPush(mut nb, n0, ast.Node{ast.EComposite, tok, ast.PutLit(mut db, ty), ast.PutList(mut db, []int{}), ast.PutList(mut db, []int{}), 0, 0, 0})
     return lsPush(mut nb, n0, ast.Node{ast.SBind, tok, ast.PutList(mut db, []int{ast.PutLit(mut db, w)}), 1, ast.PutList(mut db, []int{z}), 0, 0, 0})
@@ -299,7 +299,7 @@ type LShapeOk struct {
     ok bool
 }
 
-// leaseShape はファイル f に書いた型の名前 n の形（型パラメータの無い struct で、欄がスカラー〔int・byte・bool・float〕か pool.Scratch だけなら ok）
+// ファイル f に書いた型の名前 n の形（型パラメータの無い struct で、欄がスカラー〔int・byte・bool・float〕か pool.Scratch だけなら ok）
 func leaseShape(cx Cx, f int, ppool int, n string) LShapeOk {
     pk, base := idResolve(cx, f, n)
     if pk < 0 {
@@ -344,7 +344,7 @@ func leaseFields(cx Cx, g int, ppool int, t ast.Tree, td ast.Node) LShapeOk {
     return LShapeOk{LShape{freeze(sc)}, 0, 0, true}
 }
 
-// prepField は整えの式 e が `pool.NewScratch(mut w.f, 定数)` なら f の Scratch の欄の番号（違えば −1）
+// 整えの式 e が `pool.NewScratch(mut w.f, 定数)` なら f の Scratch の欄の番号（違えば −1）
 func prepField(cx Cx, f int, ppool int, t ast.Tree, e int, w string, sc []string) int {
     x := t.nodes[e]
     if x.kind != ast.ECall || ast.ListLen(t, x.b) != 2 {
@@ -367,7 +367,7 @@ func prepField(cx Cx, f int, ppool int, t ast.Tree, e int, w string, sc []string
     return 0 - 1
 }
 
-// leaseConst は容量の式 e が定数か（整数の字面・const の名前〔`N` / `pkg.N`〕・括弧・+ - * <<）
+// 容量の式 e が定数か（整数の字面・const の名前〔`N` / `pkg.N`〕・括弧・+ - * <<）
 func leaseConst(cx Cx, f int, t ast.Tree, e int) bool {
     x := t.nodes[e]
     if x.kind == ast.EInt {
@@ -390,7 +390,7 @@ func leaseConst(cx Cx, f int, t ast.Tree, e int) bool {
     return false
 }
 
-// constIn は package pk に const n があるか
+// package pk に const n があるか
 func constIn(cx Cx, pk int, n string) bool {
     for g <- iter.Range(cx.pkg_lo[pk], cx.pkg_hi[pk]) {
         t := cx.trees[g]
@@ -404,7 +404,7 @@ func constIn(cx Cx, pk int, n string) bool {
     return false
 }
 
-// leaseFp は型の名前（package の path と名前）の指紋（FNV-1a 64 を 62 ビットに — 字面の整数で焼くので正）
+// 型の名前（package の path と名前）の指紋（FNV-1a 64 を 62 ビットに — 字面の整数で焼くので正）
 func leaseFp(s string) int {
     mut h := 0 - 3750763034362895579
     b := bytes(s)
@@ -414,7 +414,7 @@ func leaseFp(s string) int {
     return h & ((1 << 62) - 1)
 }
 
-// LPrep は整えの呼び出し `F(mut w)` の先の関数の本体（文の列）・その仮引数の名前・ファイル
+// 整えの呼び出し `F(mut w)` の先の関数の本体（文の列）・その仮引数の名前・ファイル
 type LPrep struct {
     stmts []int
     param string
@@ -422,7 +422,7 @@ type LPrep struct {
     ok bool
 }
 
-// prepCall は整えの文の列 ps が関数 1 つの呼び出し `F(mut w)` / `pkg.F(mut w)` で、1 文の転送を辿って T の package（tpk）の関数に着くなら、その関数の本体（mut 仮引数 1 つ）を返す
+// 整えの文の列 ps が関数 1 つの呼び出し `F(mut w)` / `pkg.F(mut w)` で、1 文の転送を辿って T の package（tpk）の関数に着くなら、その関数の本体（mut 仮引数 1 つ）を返す
 func prepCall(cx Cx, f int, t ast.Tree, ps []int, w string, tpk int) LPrep {
     // 1 文の転送 `G(mut p)`（p は呼んだ関数の唯一の mut 仮引数そのもの）は G へ辿る — T の package の関数に着くまで・深さ 4 まで
     //（公開の package の包みが std/internal の実体の整えを呼ぶ形 — 別名の第一顧客 flate.Prepare → deflate.Prepare。region-domain-pool.md 4d）
@@ -469,7 +469,7 @@ func prepCall(cx Cx, f int, t ast.Tree, ps []int, w string, tpk int) LPrep {
     return LPrep{}
 }
 
-// prepFn は package pk の関数 fn（型パラメータなし・mut の仮引数 1 つ・本体あり）の本体の文の列と仮引数の名前（無ければ ok = false）
+// package pk の関数 fn（型パラメータなし・mut の仮引数 1 つ・本体あり）の本体の文の列と仮引数の名前（無ければ ok = false）
 func prepFn(cx Cx, pk int, fn string) LPrep {
     for g <- iter.Range(cx.pkg_lo[pk], cx.pkg_hi[pk]) {
         gt := cx.trees[g]
@@ -484,7 +484,10 @@ func prepFn(cx Cx, pk int, fn string) LPrep {
                 body := gt.nodes[fd.e]
                 mut ss := mut []int{}
                 for k <- iter.Range(0, ast.ListLen(gt, body.a)) {
-                    ss = append(ss, ast.ListAt(gt, body.a, k))
+                    // カバレッジの計器の数え口（coverx.sober）は整えの形に数えない
+                    if !IsCoverStmt(gt, ast.ListAt(gt, body.a, k)) {
+                        ss = append(ss, ast.ListAt(gt, body.a, k))
+                    }
                 }
                 return LPrep{freeze(ss), Name(gt, prm.a), g, true}
             }
@@ -493,7 +496,7 @@ func prepFn(cx Cx, pk int, fn string) LPrep {
     return LPrep{}
 }
 
-// leaseImports はファイル f が std/task か std/pool を（どの名前でも）import しているか
+// ファイル f が std/task か std/pool を（どの名前でも）import しているか
 func leaseImports(cx Cx, f int, ppar int, ppool int) bool {
     t := cx.trees[f]
     imps := t.nodes[t.file].b

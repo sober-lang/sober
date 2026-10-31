@@ -2,11 +2,11 @@ package lower
 
 // ループの region の省略の判定（rlight.sober llInsAllocs）の単体テスト（`cd compiler && ../bin/sober test lower`）: rt.region_relocate（ptr, i64, 深度）と
 // rt.region_relocate8（ptr, 深度）は深度の実引数の位置が違う。relocate8 を relocate と同じ位置で読むと、2 引数の呼び出しはいつも「確保しうる」の
-// 保守の側に倒れて周回の region が残っていた（report-499 H1）。今の深度 / 外の深度の 2 形を IR で組んで直に見る
+// 保守の側に倒れて周回の region が残っていた。今の深度 / 外の深度の 2 形を IR で組んで直に見る
 
 import "desugar"
 
-// llT は relocate（r8 = false）か relocate8（r8 = true）を、行き先の深度 = 今の深度（here = true — region.depth の値）か外の深度（関数の引数）で
+// relocate（r8 = false）か relocate8（r8 = true）を、行き先の深度 = 今の深度（here = true — region.depth の値）か外の深度（関数の引数）で
 // 1 回呼ぶ関数を組み、その呼び出しに llInsAllocs を当てる
 func llT(r8 bool, here bool) bool {
     mut st := St{}
@@ -39,8 +39,8 @@ func TestLlInsAllocsReloc() {
     assert(!llT(true, false))
 }
 
-// llcT は入口で region を開かない関数 g（仮引数 0 = 条件）に、頭 H（setdepth）・本体の入口 B0（region.enter）・呼び出しのブロック C の
-// ループを組み、llCallees が C の呼び出し（確保しうる関数 a）を g の要約の呼び先に数えた数を返す（0 = 除いた — G' report-541）。
+// 入口で region を開かない関数 g（仮引数 0 = 条件）に、頭 H（setdepth）・本体の入口 B0（region.enter）・呼び出しのブロック C の
+// ループを組み、llCallees が C の呼び出し（確保しうる関数 a）を g の要約の呼び先に数えた数を返す（0 = 除いた — G'）。
 // kind: 0 = C は B0 の後で H へ戻る（除く）・1 = C は break の側（ループの外の出口へ — 次の周へ戻れない）・2 = 入口から C へ直に入る辺がある
 // （本体が B0 だけから入られない）・3 = 呼び出しがループの外（出口のブロック）・4 = C の呼び出しの前に setdepth（本体の途中の深度の戻し）
 func llcT(kind int) int {

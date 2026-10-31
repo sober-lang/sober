@@ -1,0 +1,145 @@
+package main
+
+// 凍った map を task の境界の向こうで引く（language.md 17 節の map の封）: map の索引は読みが遅延で作るので、
+// 凍らせた時点で索引が古い map（長さ 8 = 索引を作る長さちょうど・513 = 予約の尽きる長さ）を子が引くと、子が親の region の深度へ確保して
+// 番地 0 に書いてしまう不具合があった（StackExceeded の顔）・task.Map の形は落ちずに結果が 0 に化けていた。凍った map は封じた形（索引が確定）で渡る —
+// 子の引きは確保も書きもしない。ワーカー 1 と M:N の出力一致を schedfuzz が照合する
+
+import "std/task"
+import "std/iter"
+
+type V struct {
+    on bool
+    a map[int]int
+    b map[int]int
+}
+
+type W struct {
+    m map[int]int
+}
+
+func mk(n int) map[int]int {
+    mut m := mut map[int]int{}
+    for i <- iter.Range(0, n) {
+        m[i] = i * 2
+    }
+    return freeze(m)
+}
+
+func look(m map[int]int, n int) int {
+    mut s := 0
+    for i <- iter.Range(0, n) {
+        x := m[i]
+        if x != nil {
+            s += x
+        }
+    }
+    return s
+}
+
+func direct(n int) int {
+    mut m0 := mut map[int]int{}
+    for i <- iter.Range(0, n) {
+        m0[i] = i * 2
+    }
+    m := freeze(m0)
+    r, e := task.Run((s task.Scope) => task.Join(task.Spawn(s, () => look(m, n))))
+    return r
+}
+
+func fields() int {
+    v := V{on: true, a: mk(8), b: mk(513)}
+    r, e := task.Run((s task.Scope) => task.Join(task.Spawn(s, () => look(v.a, 8) + look(v.b, 513))))
+    return r
+}
+
+func elems() int {
+    mut ms0 := mut []map[int]int{}
+    ms0 = append(ms0, mk(8))
+    ms0 = append(ms0, mk(513))
+    ms := freeze(ms0)
+    r, e := task.Run((s task.Scope) => task.Join(task.Spawn(s, () => {
+        mut t := 0
+        for m <- ms {
+            t += look(m, 513)
+        }
+        t
+    })))
+    return r
+}
+
+func nested() int {
+    mut mm0 := mut map[int]map[int]int{}
+    mm0[0] = mk(8)
+    mm0[1] = mk(513)
+    mm := freeze(mm0)
+    r, e := task.Run((s task.Scope) => task.Join(task.Spawn(s, () => {
+        mut t := 0
+        for k <- iter.Range(0, 2) {
+            m := mm[k]
+            if m != nil {
+                t += look(m, 513)
+            }
+        }
+        t
+    })))
+    return r
+}
+
+func strs(n int) int {
+    mut m0 := mut map[string]int{}
+    for i <- iter.Range(0, n) {
+        m0["k${i}"] = i * 2
+    }
+    m := freeze(m0)
+    r, e := task.Run((s task.Scope) => task.Join(task.Spawn(s, () => {
+        mut t := 0
+        for i <- iter.Range(0, n) {
+            x := m["k${i}"]
+            if x != nil {
+                t += x
+            }
+        }
+        t
+    })))
+    return r
+}
+
+func mapped(n int) int {
+    m := mk(n)
+    xs := []int{0, 1, 2, 3, 4, 5, 6, 7}
+    ys, e := task.Map(xs, (x int) => look(m, n) + x)
+    mut t := 0
+    for y <- ys {
+        t += y
+    }
+    return t
+}
+
+func chan(n int) int {
+    r, e := task.Run((s task.Scope) => {
+        tx, rx := task.NewChannel[W](1)
+        h := task.Spawn(s, (r1) => {
+            w := task.Recv(r1)
+            if w != nil { look(w.m, n) } else { -1 }
+        }, give: rx)
+        task.Send(tx, W{m: mk(n)})
+        task.Close(tx)
+        task.Join(h)
+    })
+    return r
+}
+
+func main() {
+    println(direct(8))
+    println(direct(513))
+    println(fields())
+    println(elems())
+    println(nested())
+    println(strs(8))
+    println(strs(513))
+    println(mapped(8))
+    println(mapped(513))
+    println(chan(8))
+    println(chan(513))
+}

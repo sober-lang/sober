@@ -1,0 +1,328 @@
+package loader
+
+// parse のファイル単位のキャッシュ（P0 — インクリ + 並列の波 段 5 R4・report-1234）: parseFile の結果の木（字句 + 構文 + catchExprs）は
+// ソースのバイト列だけの純関数なので、鍵 = ソースの中身のハッシュ 2 本（パス・std の印・ファイルの番号は入れない — 木に出ない）で
+// 置き場（lower/bcache.sober の切り口 BC_P）から引く。世代のディレクトリ = コンパイラの鍵なので、parser の変更は世代ごと外れる。
+// 読みの表は lower が置き場の読み（bcLoad）から組んで渡す（PCache — 検査和の合う項目だけ）・書きは呼び手の PcSink（mut 引数）に積んで
+// app が lower へ渡し、build の終わりの書きの束（bcFlush）に乗る（Program には載せない — Program の欄を 1 つ足すだけで自己 build の
+// 切の道が +0.03 G: Program の写しが熱い道にある）。拒否の木（parse の失敗）は積まない — 当たりは「前回その中身で parse が通った」
+//
+// 値 = [版, file, 節の数, data の数] ‖ 節ごとに 8 欄（kind はそのまま・他の 7 欄は前の節の同じ欄との差）‖ data（前の語との差）— zigzag の varint。
+// 自己 build（201 ファイル）で ≈ 10 MB / 世代
+//
+// 検証モード（SOBER_CACHE_VERIFY=1 / 2）: 当たりでも parse し、作った値を置き場の値とバイトで比べる（lower の bcAdd — 違えば stale = 鍵の穴）。
+// 値が同じなら、置き場の値を読み戻した木が parse した木と節・data・根まで同じか（読み戻しの照合 — 符号の欠け・読みの誤りを名指し）
+
+import "ast"
+import "std/binary"
+import "std/builder"
+import "std/iter"
+import "std/table"
+
+const PC_VER = 1
+const PC_M1 = -7046029254386353131 // 0x9E3779B97F4A7C15
+const PC_M2 = -4417276706812531889 // 0xC2B2AE3D27D4EB4F
+const PC_S1 = 1609587929392839161
+const PC_S2 = -8796714831421723037
+const PC_LOW57 = 144115188075855871
+const PC_LOW63 = 9223372036854775807
+
+// PCache は読みの表（凍った slice だけ — 前読みの子 task へそのまま渡す）: 鍵 h1 → 項目の開番地の表 pt（[鍵, 項目 + 1]…）・
+// 項目ごとの h2 / パック / 位置 / 長さ・パックの中身。vfy = 検証モード
+type PCache struct {
+    on bool
+    vfy bool
+    pt []int
+    k2 []int
+    ef []int
+    eo []int
+    el []int
+    fs [][]byte
+}
+
+// PcPut は 1 ファイルの読みの結果: st = 0（置き場なし）/ 1（当たり）/ 2（外れ — v を書く）/ 3（検証モード — v を書いて置き場と比べる）/
+// 4（検証モードの読み戻しの照合の食い違い）。path は stale の名指し用
+type PcPut struct {
+    st int
+    k1 int
+    k2 int
+    v []byte
+    path string
+}
+
+// PcSink は読みの結果の積み先（load が mut 引数で受ける — 置き場を使わない読みでも空のまま渡す）
+type PcSink struct {
+    t table.Table[PcPut]
+}
+
+// PcList は積んだ読みの結果の列
+func PcList(k mut PcSink) []PcPut {
+    mut out := mut []PcPut{}
+    for i <- iter.Range(0, table.Len(mut k.t)) {
+        out = append(out, table.Get(mut k.t, i))
+    }
+    return freeze(out)
+}
+
+func PcOff() PCache {
+    return PCache{on: false, vfy: false, pt: []int{}, k2: []int{}, ef: []int{}, eo: []int{}, el: []int{}, fs: [][]byte{}}
+}
+
+// PcTable は項目ごとの鍵 h1 の列 ks から開番地の表（大きさは 2 の冪で項目の数の 2 倍以上・空きの欄 = 0。鍵はハッシュなので混ぜない）
+func PcTable(ks []int) []int {
+    mut cap := 16
+    while cap < 2 * len(ks) {
+        cap = cap * 2
+    }
+    mut t := mut []int{}
+    for q <- iter.Range(0, 2 * cap) {
+        t = append(t, 0)
+    }
+    for q <- iter.Range(0, len(ks)) {
+        mut h := (ks[q] >> 7) & (cap - 1)
+        while t[2 * h + 1] != 0 {
+            h = (h + 1) & (cap - 1)
+        }
+        t[2 * h] = ks[q]
+        t[2 * h + 1] = q + 1
+    }
+    return freeze(t)
+}
+
+// pcFind は鍵 [k1, k2] の項目（無ければ -1）
+func pcFind(pc PCache, k1 int, k2 int) int {
+    cap := len(pc.pt) / 2
+    if cap == 0 {
+        return -1
+    }
+    mut h := (k1 >> 7) & (cap - 1)
+    while pc.pt[2 * h + 1] != 0 {
+        if pc.pt[2 * h] == k1 {
+            e := pc.pt[2 * h + 1] - 1
+            return if pc.k2[e] == k2 { e } else { -1 }
+        }
+        h = (h + 1) & (cap - 1)
+    }
+    return -1
+}
+
+// PcKey は鍵 2 本
+type PcKey struct {
+    a int
+    b int
+}
+
+// pcKey はソース src の鍵 2 本（語単位の混ぜ 2 系統 + 長さと版）
+func pcKey(src []byte) PcKey {
+    n := len(src)
+    mut a := PC_S1 ^ n
+    mut b := PC_S2 ^ (n * 31 + PC_VER)
+    mut i := 0
+    while i + 8 <= n {
+        w := binary.Load64(src, i)
+        a = (a ^ w) * PC_M1
+        a = a ^ (a >> 29)
+        b = (b ^ w) * PC_M2
+        b = b ^ (b >> 31)
+        i += 8
+    }
+    while i < n {
+        w := int(src[i])
+        a = (a ^ w) * PC_M1
+        a = a ^ (a >> 29)
+        b = (b ^ w) * PC_M2
+        b = b ^ (b >> 31)
+        i += 1
+    }
+    a = (a ^ PC_VER) * PC_M2
+    return PcKey{a ^ (a >> 31), b}
+}
+
+// Varints は語の列 ws の zigzag の varint の並び（段 3' R1 — report-1236。置き場の値の符号化の口 — lower の bcVarints・desugar の tyValEnc も
+// これを通す）: 上限の大きさ（1 語 10 バイト）を 0 で一括に詰め（copyloop の定数の詰め）、添字で書き、実長だけ一括で写して返す（上限の
+// 作業域を呼び手へ残さない）。1 バイトずつの append / table.Push（1 バイト 15〜80 命令 — report-1235 2 節）を避ける形
+func Varints(ws []int) []byte {
+    mut b := mut []byte{}
+    for _ <- iter.Range(0, 10 * len(ws)) {
+        b = append(b, 0)
+    }
+    mut p := 0
+    for x <- ws {
+        mut z := (x << 1) ^ (x >> 63)
+        while z < 0 || z >= 128 {
+            b[p] = byte((z & 127) | 128)
+            p += 1
+            z = (z >> 7) & PC_LOW57
+        }
+        b[p] = byte(z)
+        p += 1
+    }
+    mut out := mut []byte{}
+    mut j := 0
+    while j < p {
+        out = append(out, b[j])
+        j += 1
+    }
+    return freeze(out)
+}
+
+// Unvarints は b の [at, end) の zigzag の varint の並びを語の列へ一括で戻す（Varints の逆 — 読みの口。段 3' R2）: (語の列, 読めた)。
+// 上限（1 バイト = 1 語）を 0 で詰めて添字で書き、実長の窓を返す（呼び手はすぐ読み捨てる — 写さない）
+func Unvarints(b []byte, at int, end int) ([]int, bool) {
+    if at < 0 || end > len(b) || at > end {
+        return []int{}, false
+    }
+    mut ws := mut []int{}
+    for _ <- iter.Range(0, end - at) {
+        ws = append(ws, 0)
+    }
+    mut k := 0
+    mut i := at
+    mut ok := true
+    while i < end && ok {
+        mut z := 0
+        mut s := 0
+        mut x := 128
+        while x >= 128 && ok {
+            if i >= end || s > 63 {
+                ok = false
+            } else {
+                x = int(b[i])
+                i += 1
+                z = z | ((x & 127) << s)
+                s += 7
+            }
+        }
+        ws[k] = ((z >> 1) & PC_LOW63) ^ (0 - (z & 1))
+        k += 1
+    }
+    return freeze(ws)[0:k], ok
+}
+
+// pcEnc は木 t の値（語の列を添字で組んでから Varints）
+func pcEnc(t ast.Tree) []byte {
+    nn := len(t.nodes)
+    mut ws := mut []int{}
+    for _ <- iter.Range(0, 4 + 8 * nn + len(t.data)) {
+        ws = append(ws, 0)
+    }
+    ws[0] = PC_VER
+    ws[1] = t.file
+    ws[2] = nn
+    ws[3] = len(t.data)
+    mut q := 4
+    mut p := ast.Node{0, 0, 0, 0, 0, 0, 0, 0}
+    for x <- t.nodes {
+        ws[q] = x.kind
+        ws[q + 1] = x.tok - p.tok
+        ws[q + 2] = x.a - p.a
+        ws[q + 3] = x.b - p.b
+        ws[q + 4] = x.c - p.c
+        ws[q + 5] = x.d - p.d
+        ws[q + 6] = x.e - p.e
+        ws[q + 7] = x.f - p.f
+        q += 8
+        p = x
+    }
+    mut pw := 0
+    for w <- t.data {
+        ws[q] = w - pw
+        q += 1
+        pw = w
+    }
+    return Varints(freeze(ws))
+}
+
+// pcDec は項目 e の値の木（読めなければ ok = false — 呼び手は parse へ落ちる）。値を一括で語の列に戻して（Unvarints）添字で読む
+func pcDec(pc PCache, e int) (ast.Tree, bool) {
+    bad := ast.Tree{[]ast.Node{}, []int{}, 0 - 1}
+    ws, ok := Unvarints(pc.fs[pc.ef[e]], pc.eo[e], pc.eo[e] + pc.el[e])
+    if !ok || len(ws) < 4 {
+        return bad, false
+    }
+    file := ws[1]
+    nn := ws[2]
+    nd := ws[3]
+    if ws[0] != PC_VER || nn < 0 || nd < 0 || 4 + 8 * nn + nd != len(ws) {
+        return bad, false
+    }
+    mut nb := builder.Builder[ast.Node]{}
+    mut p := ast.Node{0, 0, 0, 0, 0, 0, 0, 0}
+    mut q := 4
+    for _ <- iter.Range(0, nn) {
+        p = ast.Node{ws[q], p.tok + ws[q + 1], p.a + ws[q + 2], p.b + ws[q + 3], p.c + ws[q + 4], p.d + ws[q + 5], p.e + ws[q + 6], p.f + ws[q + 7]}
+        builder.Push(mut nb, p)
+        q += 8
+    }
+    mut ds := mut []int{}
+    for _ <- iter.Range(0, nd) {
+        ds = append(ds, 0)
+    }
+    mut pw := 0
+    for j <- iter.Range(0, nd) {
+        pw = pw + ws[q + j]
+        ds[j] = pw
+    }
+    return ast.Tree{builder.Build(mut nb), freeze(ds), file}, true
+}
+
+// pcSame は項目 e の値が b とバイトで同じか
+func pcSame(pc PCache, e int, b []byte) bool {
+    if pc.el[e] != len(b) {
+        return false
+    }
+    f := pc.fs[pc.ef[e]]
+    o := pc.eo[e]
+    for k <- iter.Range(0, len(b)) {
+        if f[o + k] != b[k] {
+            return false
+        }
+    }
+    return true
+}
+
+// pcTreeEq は木 x と y が節・data・根まで同じか（検証モードの読み戻しの照合）
+func pcTreeEq(x ast.Tree, y ast.Tree) bool {
+    if x.file != y.file || len(x.nodes) != len(y.nodes) || len(x.data) != len(y.data) {
+        return false
+    }
+    for i <- iter.Range(0, len(x.nodes)) {
+        a := x.nodes[i]
+        b := y.nodes[i]
+        if a.kind != b.kind || a.tok != b.tok || a.a != b.a || a.b != b.b || a.c != b.c || a.d != b.d || a.e != b.e || a.f != b.f {
+            return false
+        }
+    }
+    for j <- iter.Range(0, len(x.data)) {
+        if x.data[j] != y.data[j] {
+            return false
+        }
+    }
+    return true
+}
+
+func pcNone() PcPut {
+    return PcPut{st: 0, k1: 0, k2: 0, v: []byte{}, path: ""}
+}
+
+// PcFind / PcSame / PcWords は読みの表の口（check の関数単位キャッシュ — 便 2 R2 が同じ形の表を切り口 D で使う）: 項目 e の値を語の列へ（読めなければ空・false）
+func PcFind(pc PCache, k1 int, k2 int) int {
+    return pcFind(pc, k1, k2)
+}
+
+func PcSame(pc PCache, e int, b []byte) bool {
+    return pcSame(pc, e, b)
+}
+
+func PcWords(pc PCache, e int) ([]int, bool) {
+    return Unvarints(pc.fs[pc.ef[e]], pc.eo[e], pc.eo[e] + pc.el[e])
+}
+
+// PcOn / PcVfy は表の印の読み口
+func PcOn(pc PCache) bool {
+    return pc.on
+}
+
+func PcVfy(pc PCache) bool {
+    return pc.vfy
+}

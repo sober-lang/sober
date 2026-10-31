@@ -1,0 +1,467 @@
+package rsa
+
+import "std/iter"
+
+// 多倍長の部品（package rsa の中 — 64 bit の limb・小さい端から。int を符号なしの 64 bit の語として扱う: 積の下位語は * 〔折り返し〕・上位語は
+// 組み込み mulhi〔x86 の MUL 1 命令 — 符号なし〕・和 / 差の繰り上がり / 借りは最上位 bit の式〔cy / bw — Hacker's Delight 2-13〕。
+// Sober の形は内側の 1 周が重い — 熱い道の montMul は x86 の専用命令の実装（MULX + ADCX / ADOX）が受け持ち、ここは倒れ先と照合の相手）。
+// どれも長さ（limb の数 — 法の大きさ = 公開の値）だけで回り、値に依る分岐・添字は無い（定数時間）。
+// 熱い道（montMul・condSub・addMod・subMod）は確保しない — 宛先と作業域は呼び手が渡す（expMont / toMont が呼び出しごとに 1 回だけ作る）
+
+// 組み込みの宣言（本体なし — loader/intrinsic.sober の IMulHi・IR の BMulHi）
+@intrinsic("mulhi")
+func mulhi(a int, b int) int
+
+// 多倍長の塊（compiler/lower/mulx.sober）: cpumulx = この機械で塊を使えるか（BMI2 の MULX・x86 の最適化のバックエンドの ELF だけ —
+// 他の出力と SOBER_NOMULX=1 は 0）・montmul(d, a, b, m, m0i, n) = montMul の 1 回まるごと（番地で — 書くのは d の n + 1 語だけ）。
+// 作業域は imm の []int（blk）に住み、Sober は lease_view の窓（mut []int — 同じ語）で書き、塊には addrn(blk) の番地を渡す（mut の切片を組み込みに
+// 渡せない壁を、std/tls の置き場と同じ 2 つの口の組み合わせで越える）。倒れ先 = Sober の montMulS（塊の照合の相手）
+@intrinsic("cpumulx")
+func cpumulx() int
+
+@intrinsic("montmul")
+func montmul(d int, a int, b int, m int, m0i int, n int) int
+
+@intrinsic("addrn")
+func addrn(b []int) int
+
+@intrinsic("lease_view")
+func leaseView(blk []int, off int, n int) mut []int
+
+// 奇数の法 m の Montgomery の文脈（n = len(m) limb・R = 2^(64n)・m0i = -m^-1 mod 2^64・r2 = R^2 mod m — 鍵を読むときに 1 回作る）
+type mont struct {
+    m []int
+    m0i int
+    r2 []int
+}
+
+// s = a + b（+ 繰り上がりの入り 0 / 1）の繰り上がりの出（0 / 1）
+func cy(a int, b int, s int) int {
+    return (((a & b) | ((a | b) & ^s)) >> 63) & 1
+}
+
+// s = a - b（- 借りの入り 0 / 1）の借りの出（0 / 1）
+func bw(a int, b int, s int) int {
+    return (((^a & b) | (^(a ^ b) & s)) >> 63) & 1
+}
+
+// n 個の 0
+func zeros(n int) []int {
+    mut out := mut []int{}
+    for i <- iter.Range(0, n) {
+        out = append(out, 0)
+    }
+    return freeze(out)
+}
+
+// 大きい端のバイト列 b を limb の数 n の数にする（溢れる上位は捨てる — 呼び手が n を十分に取る）
+func bnFromBytes(b []byte, n int) []int {
+    mut out := mut []int{}
+    for i <- iter.Range(0, n) {
+        out = append(out, 0)
+    }
+    for i <- iter.Range(0, len(b)) {
+        pos := 8 * (len(b) - 1 - i)
+        li := pos / 64
+        if li < n {
+            out[li] = out[li] | (int(b[i]) << (pos % 64))
+        }
+    }
+    return freeze(out)
+}
+
+// a を k バイトの大きい端のバイト列にする（a の limb に収まらない上位は 0）
+func bnToBytes(a []int, k int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, k) {
+        pos := 8 * (k - 1 - i)
+        li := pos / 64
+        v := if li < len(a) { a[li] >> (pos % 64) } else { 0 }
+        out = append(out, byte(v & 0xff))
+    }
+    return freeze(out)
+}
+
+// m の実ビット長（公開の値にだけ使う — 値に依る分岐を持つ）
+func bnBits(m []int) int {
+    mut i := len(m) - 1
+    while i > 0 && m[i] == 0 {
+        i = i - 1
+    }
+    mut b := 0
+    mut t := m[i]
+    while t != 0 {
+        b = b + 1
+        t = (t >> 1) & 0x7fffffffffffffff
+    }
+    return 64 * i + b
+}
+
+// a の下から n limb（足りなければ 0 で埋める）
+func bnTrim(a []int, n int) []int {
+    mut out := mut []int{}
+    for i <- iter.Range(0, n) {
+        out = append(out, if i < len(a) { a[i] } else { 0 })
+    }
+    return freeze(out)
+}
+
+// 奇数の法 m の文脈（m0i は Newton の反復 — m0 が奇数なら y = m0 で下の 3 bit が合い、1 回ごとに倍になる〔5 回で 96 bit ≥ 64〕。r2 は 1 を 128n 回 2 倍して毎回縮める）
+func newMont(m []int) mont {
+    n := len(m)
+    mut y := m[0]
+    for i <- iter.Range(0, 5) {
+        y = y * (2 - m[0] * y)
+    }
+    mut x := mut []int{1}
+    for i <- iter.Range(0, n) {
+        x = append(x, 0)
+    }
+    for i <- iter.Range(0, 128 * n) {
+        mut c := 0
+        for j <- iter.Range(0, n) {
+            v := (x[j] << 1) | c
+            c = (x[j] >> 63) & 1
+            x[j] = v
+        }
+        x[n] = c
+        condSub(mut x, 0, m)
+    }
+    return mont{m: m, m0i: -y, r2: freeze(x)}
+}
+
+// 熱い道の作業域は 1 本の mut []int（w）を n + 1 語の区画に割って番地（区画の先頭の添字）で指す — 区画どうしを別の切片にすると、読むために渡した
+// 切片が暗黙の freeze で書けなくなる（language.md の implicit freeze）。区画の番地・長さは公開の値
+
+// w[d..d+n]（w[d+n] は上の溢れ）が m 以上なら m を引く（< 2m の前提）。w[d+n] は 0 に戻す。
+// 1 周目で借りだけを数えて引くかを mask に決め、2 周目で mask した m を引く（分岐なし・確保なし）
+func condSub(w mut []int, d int, m []int) {
+    n := len(m)
+    mut br := 0
+    for i <- iter.Range(0, n) {
+        x := w[d + i]
+        v := x - m[i] - br
+        br = bw(x, m[i], v)
+    }
+    // 溢れ - br が負なら値 < m（引かない）
+    sub := ^((w[d + n] - br) >> 63)
+    br = 0
+    for i <- iter.Range(0, n) {
+        x := w[d + i]
+        y := m[i] & sub
+        v := x - y - br
+        br = bw(x, y, v)
+        w[d + i] = v
+    }
+    w[d + n] = 0
+}
+
+// w[d..] = w[a..] × w[b..] × R^-1 mod m（wa = 作業域の語の番地 — addrn(blk)・w = 同じ語の窓）（d は n + 1 語の区画で a, b と重ならない・a = b は可 — 2 乗。a × b < m × R の前提で結果は m 未満）。
+// CIOS: 外の段ごとに a[i] × b と f × m を 1 周で足す（2 つの積の和は別の繰り上がり c1 / c2 で運ぶ — 語 + 語 × 語 + 語 < 2^128 なので c は 1 語に収まる）
+func montMul(w mut []int, wa int, d int, a int, b int, mt mont) {
+    if cpumulx() == 1 {
+        _ = montmul(wa + 8 * d, wa + 8 * a, wa + 8 * b, addrn(mt.m), mt.m0i, len(mt.m))
+        return
+    }
+    montMulS(mut w, d, a, b, mt)
+}
+
+// montMul の Sober の形（塊の無い出力の道・塊の照合の相手）
+func montMulS(w mut []int, d int, a int, b int, mt mont) {
+    m := mt.m
+    n := len(m)
+    for i <- iter.Range(0, n + 1) {
+        w[d + i] = 0
+    }
+    b0 := w[b]
+    m0 := m[0]
+    for i <- iter.Range(0, n) {
+        ai := w[a + i]
+        // j = 0: d[0] + ai × b[0] + f × m[0] の下の語は 0（f の選び方）— 繰り上がりだけ運ぶ
+        l0 := ai * b0
+        x0 := w[d]
+        z0 := x0 + l0
+        mut c1 := mulhi(ai, b0) + cy(x0, l0, z0)
+        f := z0 * mt.m0i
+        l1 := f * m0
+        v0 := z0 + l1
+        mut c2 := mulhi(f, m0) + cy(z0, l1, v0)
+        for j <- iter.Range(1, n) {
+            bj := w[b + j]
+            mj := m[j]
+            x := w[d + j]
+            p := ai * bj
+            y := x + p
+            z := y + c1
+            c1 = mulhi(ai, bj) + cy(x, p, y) + cy(y, c1, z)
+            q := f * mj
+            u := z + q
+            v := u + c2
+            c2 = mulhi(f, mj) + cy(z, q, u) + cy(u, c2, v)
+            w[d + j - 1] = v
+        }
+        x := w[d + n]
+        t := x + c1
+        t2 := t + c2
+        w[d + n - 1] = t2
+        w[d + n] = cy(x, c1, t) + cy(t, c2, t2)
+    }
+    condSub(mut w, d, m)
+}
+
+// w[d..] = w[a..] + w[b..] mod m（a, b < m）
+func addMod(w mut []int, d int, a int, b int, m []int) {
+    n := len(m)
+    mut c := 0
+    for i <- iter.Range(0, n) {
+        x := w[a + i]
+        y := w[b + i]
+        v := x + y + c
+        c = cy(x, y, v)
+        w[d + i] = v
+    }
+    w[d + n] = c
+    condSub(mut w, d, m)
+}
+
+// w[d..] = w[a..] - w[b..] mod m（a, b < m — 借りが出たら m を足す。mask の選択）
+func subMod(w mut []int, d int, a int, b int, m []int) {
+    n := len(m)
+    mut br := 0
+    for i <- iter.Range(0, n) {
+        x := w[a + i]
+        y := w[b + i]
+        v := x - y - br
+        br = bw(x, y, v)
+        w[d + i] = v
+    }
+    add := -br
+    mut c := 0
+    for i <- iter.Range(0, n) {
+        x := w[d + i]
+        y := m[i] & add
+        v := x + y + c
+        c = cy(x, y, v)
+        w[d + i] = v
+    }
+    w[d + n] = 0
+}
+
+
+// w[d..d+n+1) = x の下から n limb（足りなければ 0）+ 溢れの 0
+func put(w mut []int, d int, x []int, n int) {
+    for i <- iter.Range(0, n + 1) {
+        w[d + i] = if i < len(x) && i < n { x[i] } else { 0 }
+    }
+}
+
+// x（limb の数は任意）の Montgomery の形 x × R mod m（n + 1 limb）。上の n limb の塊から Horner で
+// r = r × R + 塊 を Montgomery の形のまま進める: (r × R)_M = montMul(r_M, R^2)・塊_M = montMul(塊, R^2)（塊 < R・R^2 < m で前提を満たす）
+func toMont(x []int, mt mont) []int {
+    n := len(mt.m)
+    l := n + 1
+    // 区画: 0 = R^2・1 = r・2 = t・3 = u・4 = 塊
+    blk := zeros(5 * l)
+    mut w := leaseView(blk, 0, 5 * l)
+    wa := addrn(blk)
+    put(mut w, 0, mt.r2, n)
+    nc := (len(x) + n - 1) / n
+    for ci <- iter.Range(0, nc) {
+        base := n * (nc - 1 - ci)
+        for j <- iter.Range(0, n) {
+            w[4 * l + j] = if base + j < len(x) { x[base + j] } else { 0 }
+        }
+        montMul(mut w, wa, 2 * l, l, 0, mt)
+        montMul(mut w, wa, 3 * l, 4 * l, 0, mt)
+        addMod(mut w, l, 2 * l, 3 * l, mt.m)
+    }
+    mut out := mut []int{}
+    for i <- iter.Range(0, l) {
+        out = append(out, w[l + i])
+    }
+    return freeze(out)
+}
+
+// xm^e（xm は Montgomery の形・e は limb の列・nb = 舐める e の下からのビット数 — 公開の値: 秘密の指数は法のビット長・公開の指数は e の実ビット長）を
+// 普通の形で（n + 1 limb）。4 ビットの固定窓 — 表引きは 16 個全部を読んで mask で選び、窓の数は nb だけで決まる。作業域（表 16 本・溜め・選び）はここで 1 回だけ作り、montMul は確保しない
+func expMont(xm []int, e []int, nb int, mt mont) []int {
+    n := len(mt.m)
+    l := n + 1
+    // 区画: 0 = R^2・1 = 1・2 = xm・3 = 溜め・4 = t・5 = 選び・6〜21 = 表（xm^0〜xm^15 の Montgomery の形）
+    blk := zeros(22 * l)
+    mut w := leaseView(blk, 0, 22 * l)
+    wa := addrn(blk)
+    put(mut w, 0, mt.r2, n)
+    w[l] = 1
+    put(mut w, 2 * l, xm, n)
+    // 表[0] = R mod m = montMul(1, R^2)
+    montMul(mut w, wa, 6 * l, l, 0, mt)
+    for i <- iter.Range(1, 16) {
+        montMul(mut w, wa, (6 + i) * l, (5 + i) * l, 2 * l, mt)
+    }
+    for j <- iter.Range(0, l) {
+        w[3 * l + j] = w[6 * l + j]
+    }
+    nw := (nb + 3) / 4
+    for k <- iter.Range(0, nw) {
+        top := 4 * (nw - 1 - k)
+        // 4 回の 2 乗（溜め → t → 溜めの行き来）
+        montMul(mut w, wa, 4 * l, 3 * l, 3 * l, mt)
+        montMul(mut w, wa, 3 * l, 4 * l, 4 * l, mt)
+        montMul(mut w, wa, 4 * l, 3 * l, 3 * l, mt)
+        montMul(mut w, wa, 3 * l, 4 * l, 4 * l, mt)
+        mut idx := 0
+        for q <- iter.Range(0, 4) {
+            pos := top + 3 - q
+            bit := if pos < nb && pos / 64 < len(e) { (e[pos / 64] >> (pos % 64)) & 1 } else { 0 }
+            idx = (idx << 1) | bit
+        }
+        for j <- iter.Range(0, n) {
+            w[5 * l + j] = 0
+        }
+        for t <- iter.Range(0, 16) {
+            hit := ((idx ^ t) - 1) >> 63
+            base := (6 + t) * l
+            for j <- iter.Range(0, n) {
+                w[5 * l + j] = w[5 * l + j] | (w[base + j] & hit)
+            }
+        }
+        montMul(mut w, wa, 4 * l, 3 * l, 5 * l, mt)
+        for j <- iter.Range(0, n) {
+            w[3 * l + j] = w[4 * l + j]
+        }
+    }
+    // 普通の形へ: 溜め × 1 × R^-1
+    montMul(mut w, wa, 4 * l, 3 * l, l, mt)
+    mut out := mut []int{}
+    for i <- iter.Range(0, l) {
+        out = append(out, w[4 * l + i])
+    }
+    return freeze(out)
+}
+
+// xm^e（xm は Montgomery の形・e は**公開の**指数・nb = e の実ビット長）を普通の形で（n + 1 limb）。表を作らない 2 進の square-and-multiply —
+// e のビットが時間に出てよい（公開鍵の操作 = 検証・署名の自己検証の側だけ。Go の ExpShortVarTime と同じ形 — 65537 なら 2 乗 16 回 + 掛け 1 回で、
+// expMont の 4 ビット窓〔表 16 本 + 窓 5 つ ≈ 41 回〕より軽い）。**秘密の指数には使わない**（定数時間でない — ctcheck の対象外）
+func expPub(xm []int, e []int, nb int, mt mont) []int {
+    if nb < 1 {
+        return expMont(xm, e, nb, mt)
+    }
+    n := len(mt.m)
+    l := n + 1
+    // 区画: 0 = xm・1 = 溜め・2 = t・3 = 1
+    blk := zeros(4 * l)
+    mut w := leaseView(blk, 0, 4 * l)
+    wa := addrn(blk)
+    put(mut w, 0, xm, n)
+    put(mut w, l, xm, n)
+    w[3 * l] = 1
+    // 最上位のビット（1）は溜めの初期値 — 残りを上から
+    for k <- iter.Range(1, nb) {
+        pos := nb - 1 - k
+        montMul(mut w, wa, 2 * l, l, l, mt)
+        if (e[pos / 64] >> (pos % 64)) & 1 == 1 {
+            montMul(mut w, wa, l, 2 * l, 0, mt)
+        } else {
+            for j <- iter.Range(0, l) {
+                w[l + j] = w[2 * l + j]
+            }
+        }
+    }
+    // 普通の形へ: 溜め × 1 × R^-1
+    montMul(mut w, wa, 2 * l, l, 3 * l, mt)
+    mut out := mut []int{}
+    for i <- iter.Range(0, l) {
+        out = append(out, w[2 * l + i])
+    }
+    return freeze(out)
+}
+
+// 専用命令の montMul と Sober の montMulS の照合（検証の網の API — 利用者は使わない: examples/crypto_montmul と cryptocheck の格子が叩く）。
+// 種 seed の擬似乱数で limb の数 1〜maxN の奇数の法 m（最上位の limb は 0 でない）と m 未満の a・b を rounds 組ずつ作り、montMul（専用命令 — 専用命令の無い出力では
+// montMulS そのもの）と montMulS の結果を比べる。2 乗（a = b）と最大値寄り（m − 1）も混ぜる。食い違いの数を返す
+@effects(!io, !block, !nondet)
+func MontSelfCheck(seed int, maxN int, rounds int) int {
+    mut x := seed
+    mut bad := 0
+    for n <- iter.Range(1, maxN + 1) {
+        for r <- iter.Range(0, rounds) {
+            mut m := mut []int{}
+            mut av := mut []int{}
+            mut bv := mut []int{}
+            for i <- iter.Range(0, n) {
+                x = x * 6364136223846793005 + 1442695040888963407
+                m = append(m, x)
+                x = x * 6364136223846793005 + 1442695040888963407
+                av = append(av, x)
+                x = x * 6364136223846793005 + 1442695040888963407
+                bv = append(bv, x)
+            }
+            m[0] = m[0] | 1
+            m[n - 1] = m[n - 1] | (1 << 63)
+            // a, b < m: 最上位の limb を m の最上位より小さく（m の最上位は 2^63 以上 — 最上位 bit を落とせば足りる。r % 4 == 1 は a の最上位 = m の最上位 − 1・
+            // r % 4 == 3 は a = b = m − 1 — 最大値寄り・r % 4 == 2 は 2 乗）
+            av[n - 1] = av[n - 1] & 0x7fffffffffffffff
+            bv[n - 1] = bv[n - 1] & 0x7fffffffffffffff
+            if r % 4 == 1 {
+                av[n - 1] = m[n - 1] - 1
+            }
+            if r % 4 == 3 {
+                for i <- iter.Range(0, n) {
+                    av[i] = m[i]
+                    bv[i] = m[i]
+                }
+                av[0] = av[0] - 1
+                bv[0] = bv[0] - 1
+            }
+            mt := newMont(freeze(m))
+            l := n + 1
+            // 区画: 0 = a・1 = b・2 = 塊の結果・3 = Sober の結果
+            blk := zeros(4 * l)
+            mut w := leaseView(blk, 0, 4 * l)
+            wa := addrn(blk)
+            put(mut w, 0, freeze(av), n)
+            put(mut w, l, if r % 4 == 2 { freeze(av) } else { freeze(bv) }, n)
+            montMul(mut w, wa, 2 * l, 0, if r % 4 == 2 { 0 } else { l }, mt)
+            montMulS(mut w, 3 * l, 0, if r % 4 == 2 { 0 } else { l }, mt)
+            for i <- iter.Range(0, l) {
+                if w[2 * l + i] != w[3 * l + i] {
+                    bad += 1
+                }
+            }
+        }
+    }
+    return bad
+}
+
+// a + b × c を n limb で（溢れは捨てる — 呼び手は結果が n limb に収まる形でだけ呼ぶ）
+func bnAddMul(a []int, b []int, c []int, n int) []int {
+    mut r := mut []int{}
+    for i <- iter.Range(0, n) {
+        r = append(r, if i < len(a) { a[i] } else { 0 })
+    }
+    for i <- iter.Range(0, len(b)) {
+        bi := b[i]
+        mut carry := 0
+        for j <- iter.Range(0, n - i) {
+            cj := if j < len(c) { c[j] } else { 0 }
+            x := r[i + j]
+            p := bi * cj
+            y := x + p
+            t := y + carry
+            carry = mulhi(bi, cj) + cy(x, p, y) + cy(y, carry, t)
+            r[i + j] = t
+        }
+    }
+    return freeze(r)
+}
+
+// a < m（a は m と同じ limb 数 — 公開の値の検査にだけ使う）
+func bnLess(a []int, m []int) bool {
+    mut br := 0
+    for i <- iter.Range(0, len(m)) {
+        v := a[i] - m[i] - br
+        br = bw(a[i], m[i], v)
+    }
+    return br == 1
+}

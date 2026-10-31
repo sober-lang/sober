@@ -1,6 +1,6 @@
 package main
 
-// F-ad（負例 — check も build も拒否）: `[]int?` の欄に要素型の違う slice のリテラル `[]int{…}` を書く。
+// 負例（check も build も拒否）: `[]int?` の欄に要素型の違う slice のリテラル `[]int{…}` を書く。
 // 型の文法で `?` は直前の名前に付くので `[]int?` は「int? の slice」— `[]int` とは別の型（暗黙の変換は無い）。check は名指す（diag.FieldType）
 type S struct {
     w []int?

@@ -1,0 +1,96 @@
+package main
+
+// A tool with subcommands (std/cli): a space in a command name separates the words (`notes tag add`), and `notes tag` alone
+// lists the commands under it. Every flag kind is here — bool, string (with a default, an env fallback and an optional one),
+// int (with a range and a default), choice (with a hidden dev choice), list (repeatable) — plus a command whose trailing
+// arguments pass through untouched (rest). dev declarations only show in --help=dev; they are accepted the same way.
+// The values come back through the same consts, typed: cli.Int(r, Limit) is an int, cli.StrOpt(r, Since) is a string?.
+
+import "std/cli"
+
+const Dir = cli.StrFlag{name: "dir", short: "d", arg: "<dir>", help: "the notes directory", def: "notes", env: "NOTES_DIR_FOR_CLI_SUB_EXAMPLE"}
+const Limit = cli.IntFlag{name: "limit", short: "n", help: "show at most <n> notes", def: 10, min: 1, max: 100}
+const Since = cli.StrFlag{name: "since", arg: "<date>", help: "only notes after <date>", opt: true}
+const Format = cli.ChoiceFlag{name: "format", help: "output form", choices: []string{"text", "json"}, def: "text", dev: []string{"debug"}}
+const Tag = cli.ListFlag{name: "tag", short: "t", arg: "<tag>", help: "only notes with <tag>"}
+const Trace = cli.BoolFlag{name: "trace", help: "trace the index reads", dev: true}
+const Title = cli.Positional{name: "title", help: "the title of the note"}
+const Words = cli.Positional{name: "word", help: "the words of the note", many: true, optional: true}
+const Name = cli.Positional{name: "name", help: "the tag name"}
+const Cmd = cli.Positional{name: "args", help: "the command and its arguments", many: true}
+
+const EnvEditor = cli.Env{name: "EDITOR", help: "the editor for notes edit"}
+
+const List = cli.Command{name: "list", summary: "list the notes",
+    help: "list the notes, newest first. With --tag, only the notes that have every given tag",
+    bools: []cli.BoolFlag{Trace}, strs: []cli.StrFlag{Dir, Since}, ints: []cli.IntFlag{Limit}, choices: []cli.ChoiceFlag{Format},
+    lists: []cli.ListFlag{Tag}, run: list}
+const Add = cli.Command{name: "add", summary: "add a note", strs: []cli.StrFlag{Dir}, pos: []cli.Positional{Title, Words}, run: add}
+const TagAdd = cli.Command{name: "tag add", summary: "create a tag", pos: []cli.Positional{Name}, run: tagAdd}
+const TagRm = cli.Command{name: "tag rm", summary: "delete a tag", pos: []cli.Positional{Name}, run: (r) => 0}
+const Exec = cli.Command{name: "exec", summary: "run a command in the notes directory", strs: []cli.StrFlag{Dir}, pos: []cli.Positional{Cmd},
+    rest: true, run: exec}
+const Fsck = cli.Command{name: "fsck", summary: "check the index", dev: true, run: (r) => 0}
+
+const Notes = cli.App{
+    name: "notes",
+    version: "1.2.0",
+    summary: "keep short notes",
+    commands: []cli.Command{List, Add, TagAdd, TagRm, Exec, Fsck},
+    env: []cli.Env{EnvEditor},
+}
+
+func list(r cli.Parsed) int {
+    since := cli.StrOpt(r, Since)
+    s := if since == nil { "-" } else { since }
+    println("list dir=" + cli.Str(r, Dir) + " limit=${cli.Int(r, Limit)} since=" + s + " format=" + cli.Choice(r, Format) +
+        " tags=${len(cli.List(r, Tag))} trace=${cli.Bool(r, Trace)}")
+    for t <- cli.List(r, Tag) {
+        println("  tag " + t)
+    }
+    return 0
+}
+
+func add(r cli.Parsed) int {
+    println("add " + cli.Pos(r, Title) + " (${len(cli.PosList(r, Words))} words) to " + cli.Str(r, Dir))
+    return 0
+}
+
+func tagAdd(r cli.Parsed) int {
+    println("tag add " + cli.Pos(r, Name))
+    return 0
+}
+
+func exec(r cli.Parsed) int {
+    for a <- cli.PosList(r, Cmd) {
+        println("exec arg " + a)
+    }
+    return 0
+}
+
+func run(args []string) {
+    println("$ " + join(args))
+    println("exit ${cli.Run(Notes, args)}")
+}
+
+func join(xs []string) string {
+    mut s := ""
+    for x <- xs {
+        s = if s == "" { x } else { s + " " + x }
+    }
+    return s
+}
+
+func main() {
+    run([]string{"notes", "list"})
+    run([]string{"notes", "list", "-n", "3", "--since=2026-01-01", "-t", "work", "--tag", "home", "--format", "json"})
+    run([]string{"notes", "list", "--format=debug", "--trace", "--dir", "/tmp/n"})
+    run([]string{"notes", "add", "groceries", "milk", "eggs", "--dir=box"})
+    run([]string{"notes", "tag", "add", "urgent"})
+    run([]string{"notes", "exec", "-d", "box", "grep", "-n", "--", "milk"})
+    run([]string{"notes", "--help"})
+    run([]string{"notes", "--help=dev"})
+    run([]string{"notes", "tag"})
+    run([]string{"notes", "help", "list"})
+    run([]string{"notes", "list", "--help=dev"})
+}

@@ -2,7 +2,7 @@ package main
 
 import "std/iter"
 
-// 冷たい呼び出しの局所 caller-save の網（report-462 (c)）: 成長の rt（rt.slice_grow・rt.map_grow）は跨ぎの集合に入らず、それだけを
+// 冷たい呼び出しの局所 caller-save の網: 成長の rt（rt.slice_grow・rt.map_grow）は跨ぎの集合に入らず、それだけを
 // 跨ぐ値は caller-saved にも置ける — 呼び手が呼び出しの前後で退避・復元する。退避が働く形を毎反復走らせる:
 // 2 本の slice を交互に伸ばす（先端でない側の append が毎回 rt.slice_grow を呼ぶ）・反復ごとに map を作って育てる（rt.map_grow）。
 // どちらもループの運搬値 8 本以上をその呼び出しに跨がせ、各値に別の重みを掛けて取り違えが値に出るようにする

@@ -1,0 +1,562 @@
+package lower
+
+// SLP の束ね: ブロックの中の直線で、同じ根の隣り合う語 k, k + 1 への float の値の store の対（種）から、
+// 2 本の値の木を同時に下って packed f64（OpPMem / OpPArith — ir.sober）の 1 本に束ねる。B2 の最後（vec の隣・cmpDup の手前）・最適化の
+// バックエンドの経路だけ・`--no-vec` で外れる（網 = 束ねた ≟ 束ねない）。
+//   対の下り方: 同じ float の演算（add〜div・sqrt）→ packed の演算・同じ根の k, k + 1 の load → 16 B の load・同じ値（同じ値の番号か、間に
+//   書き込みの無い同じ番地の load）→ splat・それ以外 → pack（スカラーの 2 本を詰める）。木の形をそのまま写すので結合則は変わらない
+//   （(dx × b[p+6]) × mag は pmul(pmul(dxy, splat b[p+6]), splat mag)）— レーンごとに addsd 等と同じ丸めで、出力はバイト一致のまま。
+//   費用の模型: 束ねた演算・load・store を +1（2 本 → 1 本）、splat を −1・pack を −2 と数え、種ごとの和が正のときだけ採る。
+//   束ねた演算のレーンの値（dx, dy）のスカラーの使い手（dsq）が全部このブロックの中で束ねた点より後ろなら lo / hi で取り出す（スカラーの鎖が死ぬ）。
+// 置き場: 束ねた演算はレーンの遅い側の位置・16 B の load はどちらかのレーンの位置（間に相手の語へ書く store が無い側 — 前を優先）・16 B の store は
+//   遅い側の store の位置。最後に、新しい並びでメモリの読み書きの元の順が入れ替わった組（片方が書き込み・同じ根の別の語でない）が無いことを
+//   確かめ、あればそのブロックは書き換えない（根の違う番地は重なりうるとみなす）。
+// STLF の規律: 16 B で書いた対は、次に読む側も同じ対の 16 B の load に束ねる（同じ鍵）。
+// v128 の約束（検証器 vfyV128）: 呼び出し系の op のあるブロックは対象外・束ねた値はブロックの中で閉じる。task を使うプログラムには掛けない
+// （B2 の後のキャンセルの検査点〔cutInsert — call〕が全展開の直線の途中に入り、v128 の区間を跨ぎうる）。
+// 表は stride の平らな列（値 VS・位置 PS・節 NS 語）で、先に確保する（append の点を増やすと判定の仕事が大きさに比例して増える）
+
+import "desugar"
+import "std/iter"
+
+const SK_OP = 1   // packed の演算（op = BFAdd〜BFDiv・BFSqrt）
+const SK_LD = 2   // 16 B の load（op = 根・wd = 語）
+const SK_SPL = 3  // splat（x）
+const SK_PK = 4   // pack（x, y）
+const SK_ST = 5   // 16 B の store（op = 根・wd = 語・c1 = 子）
+
+// 値の表（VS 語）: 定数か（1 — 2 = float の演算の値）・定数の値・このブロックの位置（-1 = 外）・関数全体の使用の数・ブロックの使用の数（消す store を
+// 除く）・その最小の位置・取り出しの置き換え（-1 = 無し・-2 - 2k - l = 節 k のレーン l の予約・≥ 0 = 値）・対の表の頭
+const VS = 8
+const V_ISC = 0
+const V_CV = 1
+const V_DIX = 2
+const V_TOT = 3
+const V_INB = 4
+const V_MNU = 5
+const V_REP = 6
+const V_MH = 7
+// 位置の表（PS 語）: 命令・メモリの種類（0 = 触れない・1 = load・2 = store・3 = 障壁）・根（-1 = 不明）・語・消す store か
+const PS = 5
+// 節（NS 語）: 種類・置き場（この位置の命令の手前）・x・y・子 1・子 2・op・語・同じ x の鎖の次・値
+const NS = 10
+
+type SlpW struct {
+    nv int
+    v mut []int
+    p mut []int
+    d mut []int
+    gi []int     // 値 → 定数の添字の gep.word の命令（-1 = 無し）
+    nn int       // 節の数
+    cap int      // 節の上限（超えたら種を捨てる）
+    last int     // slpRun の結果の節
+}
+
+// 関数 f に掛ける（先に安い走査 — float の演算の値を書く store が 2 本以上ある関数だけ作業域を作る）
+func slpFunc(st mut St, f FnRef) {
+    if st.taskUse || irFnBHead(mut st, f) == -1 {
+        return
+    }
+    nv := irFnNVal(mut st, f)
+    mut w := SlpW{nv: nv, v: mut []int{}, p: mut []int{}, d: mut []int{}, gi: []int{}, nn: 0, cap: 0, last: -1}
+    xFill(mut w.v, nv * VS, 0)
+    mut gi := mut []int{}
+    xFill(mut gi, nv, -1)
+    mut ns := 0
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            r := irInsRes(mut st, i)
+            if op == OpBin && irInsA(mut st, i) >= BFAdd && irInsA(mut st, i) <= BFSqrt {
+                w.v[r * VS + V_ISC] = 2
+            } else if op == OpStore && w.v[irInsC(mut st, i) * VS + V_ISC] == 2 {
+                ns += 1
+            } else if op == OpConst {
+                w.v[r * VS + V_ISC] = 1
+                w.v[r * VS + V_CV] = irInsA(mut st, i)
+            } else if op == OpGepW && r >= 0 {
+                gi[r] = int(i)
+            }
+            for k <- iter.Range(0, xNOps(mut st, i)) {
+                x := xOpnd(mut st, i, k)
+                w.v[x * VS + V_TOT] = w.v[x * VS + V_TOT] + 1
+            }
+            i = irInsNext(mut st, i)
+        }
+        for k <- iter.Range(0, xNTermOps(mut st, b)) {
+            x := xTermOpnd(mut st, b, k)
+            w.v[x * VS + V_TOT] = w.v[x * VS + V_TOT] + 1
+        }
+        b = irBlkNext(mut st, b)
+    }
+    if ns < 2 {
+        return
+    }
+    w.gi = freeze(gi)
+    for x <- iter.Range(0, nv) {
+        w.v[x * VS + V_DIX] = -1
+        w.v[x * VS + V_REP] = -1
+        w.v[x * VS + V_MH] = -1
+    }
+    mut any := false
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        if slpBlock(mut st, mut w, f, b) {
+            any = true
+        }
+        b = irBlkNext(mut st, b)
+    }
+    if any {
+        optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+        optDce(mut st, f)
+        optRenumber(mut st, f)
+    }
+}
+
+// ブロック b を束ねる（書き換えたら真）
+func slpBlock(st mut St, w mut SlpW, f FnRef, b BlkRef) bool {
+    mut n := 0
+    mut i := irBlkIHead(mut st, b)
+    while i != -1 {
+        op := irInsOp(mut st, i)
+        if op == OpCall || op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone || op == OpPMem || op == OpPArith {
+            return false
+        }
+        n += 1
+        i = irInsNext(mut st, i)
+    }
+    w.p = mut []int{}
+    xFill(mut w.p, n * PS, 0)
+    w.cap = 2 * n + 16
+    w.d = mut []int{}
+    xFill(mut w.d, w.cap * NS, 0)
+    w.nn = 0
+    i = irBlkIHead(mut st, b)
+    mut q := 0
+    while i != -1 {
+        op := irInsOp(mut st, i)
+        r := irInsRes(mut st, i)
+        if r >= 0 {
+            w.v[r * VS + V_DIX] = q
+        }
+        w.p[q * PS] = int(i)
+        if op == OpLoad || op == OpStore {
+            // (根, 語): 定数の添字の gep.word を根まで辿る
+            mut rt := irInsA(mut st, i)
+            mut wd := irInsB(mut st, i)
+            while w.gi[rt] >= 0 && w.v[irInsB(mut st, InsRef(w.gi[rt])) * VS + V_ISC] == 1 {
+                wd += w.v[irInsB(mut st, InsRef(w.gi[rt])) * VS + V_CV]
+                rt = irInsA(mut st, InsRef(w.gi[rt]))
+            }
+            w.p[q * PS + 1] = if op == OpLoad { 1 } else { 2 }
+            w.p[q * PS + 2] = rt
+            w.p[q * PS + 3] = wd
+        } else if op == OpStore8 || op == OpSyscall || op == OpUnwind || op == OpRReloc || op == OpScanB || op == OpCrcFold || op == OpLoad8 {
+            w.p[q * PS + 1] = 3
+            w.p[q * PS + 2] = -1
+        }
+        q += 1
+        i = irInsNext(mut st, i)
+    }
+    // 種: lane 0 = 語 k の store・lane 1 = 前後で最も近い語 k + 1 の store（どちらも float の演算の値）
+    mut seeds := 0
+    for a <- iter.Range(0, n) {
+        if slpStoreF(mut st, mut w, a, -1) {
+            mut c := -1
+            mut d := 1
+            while c < 0 && d < n {
+                if a + d < n && slpStoreF(mut st, mut w, a + d, a) {
+                    c = a + d
+                } else if a - d >= 0 && slpStoreF(mut st, mut w, a - d, a) {
+                    c = a - d
+                }
+                d += 1
+            }
+            lo := if c < a { c } else { a }
+            hi := if c < a { a } else { c }
+            // 間に同じ根の 2 語への store・根の違う読み書き・障壁・早い側の語の load が無い（16 B の store を遅い側へ寄せる）
+            mut ok := c >= 0
+            for e <- iter.Range(lo + 1, if ok { hi } else { lo + 1 }) {
+                k := w.p[e * PS + 1]
+                wd := w.p[e * PS + 3]
+                if k == 3 || (k != 0 && w.p[e * PS + 2] != w.p[a * PS + 2]) || (k == 2 && (wd == w.p[a * PS + 3] || wd == w.p[a * PS + 3] + 1)) || (k == 1 && wd == w.p[lo * PS + 3]) {
+                    ok = false
+                }
+            }
+            if ok {
+                n0 := w.nn
+                gain := slpRun(mut st, mut w, irInsC(mut st, InsRef(w.p[a * PS])), irInsC(mut st, InsRef(w.p[c * PS])), hi)
+                if gain > 0 && w.nn < w.cap {
+                    _ = slpNode(mut w, SK_ST, hi, -1, -1, w.last, -1, w.p[a * PS + 2], w.p[a * PS + 3])
+                    w.p[a * PS + 4] = 1
+                    w.p[c * PS + 4] = 1
+                    seeds += 1
+                } else {
+                    slpRollback(mut w, n0)
+                }
+            }
+        }
+    }
+    okb := seeds > 0 && slpOrderOk(mut w, n)
+    if okb {
+        slpEmit(mut st, mut w, f, b, n)
+    }
+    // 後始末（値の表のうちこのブロックで書いた欄）
+    for k <- iter.Range(0, w.nn) {
+        x := w.d[k * NS + 2]
+        y := w.d[k * NS + 3]
+        if x >= 0 {
+            w.v[x * VS + V_MH] = -1
+            w.v[x * VS + V_REP] = -1
+        }
+        if y >= 0 {
+            w.v[y * VS + V_REP] = -1
+        }
+    }
+    for e <- iter.Range(0, n) {
+        x := InsRef(w.p[e * PS])
+        r := irInsRes(mut st, x)
+        if r >= 0 && r < w.nv {
+            w.v[r * VS + V_DIX] = -1
+        }
+        for k <- iter.Range(0, xNOps(mut st, x)) {
+            v := xOpnd(mut st, x, k)
+            if v < w.nv {
+                w.v[v * VS + V_INB] = 0
+            }
+        }
+    }
+    return okb
+}
+
+// 位置 e が消していない store で、値がこのブロックの float の演算か（a >= 0 なら a の相手 — 同じ根・語 + 1）
+func slpStoreF(st mut St, w mut SlpW, e int, a int) bool {
+    if w.p[e * PS + 1] != 2 || w.p[e * PS + 4] != 0 || (a >= 0 && (w.p[e * PS + 2] != w.p[a * PS + 2] || w.p[e * PS + 3] != w.p[a * PS + 3] + 1)) {
+        return false
+    }
+    dv := w.v[irInsC(mut st, InsRef(w.p[e * PS])) * VS + V_DIX]
+    return dv >= 0 && w.v[irInsC(mut st, InsRef(w.p[e * PS])) * VS + V_ISC] == 2
+}
+
+// 節を足す（x の鎖に繋ぐ — store は鎖に入れない）
+func slpNode(w mut SlpW, k int, at int, x int, y int, c1 int, c2 int, op int, wd int) int {
+    id := w.nn
+    o := id * NS
+    w.d[o] = k
+    w.d[o + 1] = at
+    w.d[o + 2] = x
+    w.d[o + 3] = y
+    w.d[o + 4] = c1
+    w.d[o + 5] = c2
+    w.d[o + 6] = op
+    w.d[o + 7] = wd
+    w.d[o + 8] = -1
+    w.d[o + 9] = -1
+    if x >= 0 && k != SK_ST {
+        w.d[o + 8] = w.v[x * VS + V_MH]
+        w.v[x * VS + V_MH] = id
+    }
+    w.nn = id + 1
+    return id
+}
+
+// n0 より後ろの節を捨てる（鎖の頭を戻す — 作った逆順に）
+func slpRollback(w mut SlpW, n0 int) {
+    while w.nn > n0 {
+        w.nn = w.nn - 1
+        x := w.d[w.nn * NS + 2]
+        if x >= 0 && w.d[w.nn * NS] != SK_ST {
+            w.v[x * VS + V_MH] = w.d[w.nn * NS + 8]
+        }
+    }
+}
+
+// 対 (x0, y0) を作業列で後順に節にする（結果の節 = w.last）。返り値 = 作った節の費用の和 + 1（16 B の store の分）。節の上限を超えたら負
+func slpRun(st mut St, w mut SlpW, x0 int, y0 int, at0 int) int {
+    mut gain := 1
+    // 作業列（4 語の枠 [x, y, 置き場, 状態]）と結果の列（先に確保 — 深さは節の数で抑えられる）
+    mut fr := mut []int{}
+    xFill(mut fr, 4 * w.cap + 16, 0)
+    mut rs := mut []int{}
+    xFill(mut rs, w.cap + 2, 0)
+    fr[0] = x0
+    fr[1] = y0
+    fr[2] = at0
+    mut ft := 1
+    mut rt := 0
+    while ft > 0 && w.nn < w.cap - 1 && 4 * ft + 12 < len(fr) {
+        ft -= 1
+        x := fr[4 * ft]
+        y := fr[4 * ft + 1]
+        at := fr[4 * ft + 2]
+        dx := if x < w.nv { w.v[x * VS + V_DIX] } else { -1 }
+        dy := if y < w.nv { w.v[y * VS + V_DIX] } else { -1 }
+        mut res := -1
+        mut pushed := false
+        if fr[4 * ft + 3] == 1 {
+            // 子の結果から演算の節を（sqrt は子 1 つ）
+            k := irInsA(mut st, InsRef(w.p[dx * PS]))
+            nc := if k == BFSqrt { 1 } else { 2 }
+            rt -= nc
+            res = slpNode(mut w, SK_OP, if dx > dy { dx } else { dy }, x, y, rs[rt], if nc == 2 { rs[rt + 1] } else { -1 }, k, 0)
+            gain += 1
+        } else {
+            sm := slpSame(mut w, x, y, dx, dy)
+            kx := if sm >= 0 { sm } else { x }
+            ky := if sm >= 0 { sm } else { y }
+            // 同じ対の節（置き場が at 以前）
+            mut m := w.v[kx * VS + V_MH]
+            while m >= 0 && !(w.d[m * NS + 3] == ky && w.d[m * NS + 1] <= at) {
+                m = w.d[m * NS + 8]
+            }
+            if m >= 0 {
+                res = m
+            } else if sm >= 0 {
+                res = slpNode(mut w, SK_SPL, at, sm, sm, -1, -1, 0, 0)
+                gain -= 1
+            } else if dx >= 0 && dy >= 0 {
+                ix := InsRef(w.p[dx * PS])
+                iy := InsRef(w.p[dy * PS])
+                kx2 := irInsA(mut st, ix)
+                if irInsOp(mut st, ix) == OpBin && irInsOp(mut st, iy) == OpBin && kx2 == irInsA(mut st, iy) && kx2 >= BFAdd && kx2 <= BFSqrt {
+                    // 枠: 仕上げ（状態 1）→ c → b の順に積む（b から解く — 結果の列には b, c の順）
+                    a := if dx > dy { dx } else { dy }
+                    fr[4 * ft + 3] = 1
+                    ft += 1
+                    if kx2 != BFSqrt {
+                        fr[4 * ft] = irInsC(mut st, ix)
+                        fr[4 * ft + 1] = irInsC(mut st, iy)
+                        fr[4 * ft + 2] = a
+                        fr[4 * ft + 3] = 0
+                        ft += 1
+                    }
+                    fr[4 * ft] = irInsB(mut st, ix)
+                    fr[4 * ft + 1] = irInsB(mut st, iy)
+                    fr[4 * ft + 2] = a
+                    fr[4 * ft + 3] = 0
+                    ft += 1
+                    pushed = true
+                } else {
+                    res = slpLoad(mut st, mut w, x, y, dx, dy)
+                    gain += if res >= 0 { 1 } else { 0 }
+                }
+            }
+            if res < 0 && !pushed {
+                res = slpNode(mut w, SK_PK, at, x, y, -1, -1, 0, 0)
+                gain -= 2
+            }
+        }
+        if res >= 0 {
+            rs[rt] = res
+            rt += 1
+        }
+    }
+    if ft > 0 || rt != 1 {
+        return -1000
+    }
+    w.last = rs[0]
+    return gain
+}
+
+// x, y が同じ値か（同じ番号か、間に重なりうる書き込みの無い同じ番地の load）— 同じなら早い側の値・違えば -1
+func slpSame(w mut SlpW, x int, y int, dx int, dy int) int {
+    if x == y {
+        return x
+    }
+    if dx < 0 || dy < 0 || w.p[dx * PS + 1] != 1 || w.p[dy * PS + 1] != 1 || w.p[dx * PS + 2] != w.p[dy * PS + 2] || w.p[dx * PS + 3] != w.p[dy * PS + 3] || w.p[dx * PS + 2] < 0 {
+        return -1
+    }
+    lo := if dx < dy { dx } else { dy }
+    hi := if dx < dy { dy } else { dx }
+    for c <- iter.Range(lo + 1, hi) {
+        k := w.p[c * PS + 1]
+        if k == 3 || (k == 2 && (w.p[c * PS + 2] != w.p[dx * PS + 2] || w.p[c * PS + 3] == w.p[dx * PS + 3])) {
+            return -1
+        }
+    }
+    return if dx < dy { x } else { y }
+}
+
+// x, y が同じ根の語 k, k + 1 の load なら 16 B の load の節（前の位置 — 間に遅い側の語への書き込みが無ければ — か遅い位置）・違えば -1
+func slpLoad(st mut St, w mut SlpW, x int, y int, dx int, dy int) int {
+    if w.p[dx * PS + 1] != 1 || w.p[dy * PS + 1] != 1 || w.p[dx * PS + 2] < 0 || w.p[dx * PS + 2] != w.p[dy * PS + 2] || w.p[dy * PS + 3] != w.p[dx * PS + 3] + 1 ||
+        irInsC(mut st, InsRef(w.p[dx * PS])) == 1 || irInsC(mut st, InsRef(w.p[dy * PS])) == 1 {
+        return -1
+    }
+    lo := if dx < dy { dx } else { dy }
+    hi := if dx < dy { dy } else { dx }
+    mut okLo := true
+    mut okHi := true
+    for c <- iter.Range(lo + 1, hi) {
+        k := w.p[c * PS + 1]
+        bad := k == 3 || (k == 2 && w.p[c * PS + 2] != w.p[dx * PS + 2])
+        if bad || (k == 2 && w.p[c * PS + 3] == w.p[hi * PS + 3]) {
+            okLo = false
+        }
+        if bad || (k == 2 && w.p[c * PS + 3] == w.p[lo * PS + 3]) {
+            okHi = false
+        }
+    }
+    return if okLo || okHi { slpNode(mut w, SK_LD, if okLo { lo } else { hi }, x, y, -1, -1, w.p[dx * PS + 2], w.p[dx * PS + 3]) } else { -1 }
+}
+
+// 新しい並び（slpOrder）で、メモリの読み書きの元の順が入れ替わった組に重なりうる書き込みが無いか（16 B の load / store は
+// 2 語の読み書き — 元の位置はレーンの命令の位置）
+func slpOrderOk(w mut SlpW, n int) bool {
+    mut ord := mut []int{}
+    slpOrder(mut w, n, mut ord)
+    // 読み書きの列 [元の位置, 根, 語, 書き込みか]
+    mut ac := mut []int{}
+    xFill(mut ac, 4 * (n + 2 * w.nn), 0)
+    mut m := 0
+    for j <- iter.Range(0, len(ord)) {
+        e := ord[j]
+        k := e - n
+        kd := if e < n { 0 } else { w.d[k * NS] }
+        for l <- iter.Range(0, if e < n { (if w.p[e * PS + 1] != 0 && w.p[e * PS + 4] == 0 { 1 } else { 0 }) } else if kd == SK_LD || kd == SK_ST { 2 } else { 0 }) {
+            // 命令はその位置・16 B の load はレーンの load の位置・store は置き場以前で最も近い同じ根・語の消す store
+            mut o := if e < n { e } else if kd == SK_LD { w.v[w.d[k * NS + 2 + l] * VS + V_DIX] } else { w.d[k * NS + 1] }
+            while kd == SK_ST && o > 0 && !(w.p[o * PS + 4] == 1 && w.p[o * PS + 2] == w.d[k * NS + 6] && w.p[o * PS + 3] == w.d[k * NS + 7] + l) {
+                o -= 1
+            }
+            ac[4 * m] = o
+            ac[4 * m + 1] = if e < n { w.p[e * PS + 2] } else { w.d[k * NS + 6] }
+            ac[4 * m + 2] = if e < n { w.p[e * PS + 3] } else { w.d[k * NS + 7] + l }
+            ac[4 * m + 3] = if e < n { (if w.p[e * PS + 1] == 1 { 0 } else { 1 }) } else if kd == SK_ST { 1 } else { 0 }
+            m += 1
+        }
+    }
+    for a <- iter.Range(0, m) {
+        for c <- iter.Range(a + 1, m) {
+            if ac[4 * a] > ac[4 * c] && (ac[4 * a + 3] == 1 || ac[4 * c + 3] == 1) && !(ac[4 * a + 1] >= 0 && ac[4 * a + 1] == ac[4 * c + 1] && ac[4 * a + 2] != ac[4 * c + 2]) {
+                return false
+            }
+        }
+    }
+    return true
+}
+
+// 新しい並び（e < n = 位置 e の命令・n + k = 節 k）を out へ: 位置ごとに置き場がその位置の節（作った順）→ 命令
+func slpOrder(w mut SlpW, n int, out mut []int) {
+    mut cnt := mut []int{}
+    xFill(mut cnt, n + 1, 0)
+    for k <- iter.Range(0, w.nn) {
+        cnt[w.d[k * NS + 1] + 1] = cnt[w.d[k * NS + 1] + 1] + 1
+    }
+    for e <- iter.Range(0, n) {
+        cnt[e + 1] = cnt[e + 1] + cnt[e]
+    }
+    mut nd := mut []int{}
+    xFill(mut nd, w.nn, 0)
+    for k <- iter.Range(0, w.nn) {
+        a := w.d[k * NS + 1]
+        nd[cnt[a]] = k
+        cnt[a] = cnt[a] + 1
+    }
+    xFill(mut out, n + w.nn, 0)
+    mut j := 0
+    mut s := 0
+    for e <- iter.Range(0, n) {
+        while s < w.nn && w.d[nd[s] * NS + 1] == e {
+            out[j] = n + nd[s]
+            j += 1
+            s += 1
+        }
+        out[j] = e
+        j += 1
+    }
+}
+
+// 節を命令にしてブロックを並べ直す（取り出しの lo / hi と置き換えも）
+func slpEmit(st mut St, w mut SlpW, f FnRef, b BlkRef, n int) {
+    // このブロックの命令の使用（消す store を除く）と最小の位置・消す store での使用は関数全体の数から引く
+    for e <- iter.Range(0, n) {
+        x := InsRef(w.p[e * PS])
+        for k <- iter.Range(0, xNOps(mut st, x)) {
+            v := xOpnd(mut st, x, k)
+            if w.p[e * PS + 4] == 1 {
+                w.v[v * VS + V_TOT] = w.v[v * VS + V_TOT] - 1
+            } else {
+                if w.v[v * VS + V_INB] == 0 {
+                    w.v[v * VS + V_MNU] = e
+                }
+                w.v[v * VS + V_INB] = w.v[v * VS + V_INB] + 1
+            }
+        }
+    }
+    mut ord := mut []int{}
+    slpOrder(mut w, n, mut ord)
+    // 節の並びの順（取り出しの判定 — pack / splat の使い手が演算の節より前なら取り出さない）
+    mut seq := mut []int{}
+    xFill(mut seq, w.nn, 0)
+    for j <- iter.Range(0, len(ord)) {
+        if ord[j] >= n {
+            seq[ord[j] - n] = j
+        }
+    }
+    for k <- iter.Range(0, w.nn) {
+        for l <- iter.Range(0, if w.d[k * NS] == SK_OP { 2 } else { 0 }) {
+            v := w.d[k * NS + 2 + l]
+            mut ok := w.v[v * VS + V_REP] == -1 && w.v[v * VS + V_INB] > 0 && w.v[v * VS + V_INB] == w.v[v * VS + V_TOT] && w.v[v * VS + V_MNU] >= w.d[k * NS + 1]
+            for j <- iter.Range(0, w.nn) {
+                kj := w.d[j * NS]
+                if (kj == SK_SPL || kj == SK_PK) && (w.d[j * NS + 2] == v || w.d[j * NS + 3] == v) && seq[j] < seq[k] {
+                    ok = false
+                }
+            }
+            if ok {
+                w.v[v * VS + V_REP] = -2 - k * 2 - l
+            }
+        }
+    }
+    irSetBlkIHead(mut st, b, InsRef(-1))
+    irSetBlkITail(mut st, b, InsRef(-1))
+    for j <- iter.Range(0, len(ord)) {
+        e := ord[j]
+        if e >= n {
+            k := e - n
+            kd := w.d[k * NS]
+            op := w.d[k * NS + 6]
+            r := if kd == SK_ST { -1 } else { newValueIn(mut st, f) }
+            w.d[k * NS + 9] = r
+            c1 := if w.d[k * NS + 4] >= 0 { w.d[w.d[k * NS + 4] * NS + 9] } else { -1 }
+            c2 := if w.d[k * NS + 5] >= 0 { w.d[w.d[k * NS + 5] * NS + 9] } else { c1 }
+            // 種類ごとの欄: store / load = (根, 語, 値 / 根)・演算 = (op, 子 1, 子 2)・splat / pack = (種類, x, y)
+            linkInst(mut st, b, if kd == SK_ST || kd == SK_LD { mkInst(mut st, r, OpPMem, op, w.d[k * NS + 7], if kd == SK_ST { c1 } else { op }) } else if kd == SK_OP { mkInst(mut st, r, OpPArith, op, c1, c2) } else { mkInst(mut st, r, OpPArith, if kd == SK_SPL { PK_SPLAT } else { PK_PACK }, slpRep(mut w, w.d[k * NS + 2]), slpRep(mut w, w.d[k * NS + 3])) })
+            for l <- iter.Range(0, if kd == SK_OP { 2 } else { 0 }) {
+                v := w.d[k * NS + 2 + l]
+                if w.v[v * VS + V_REP] == -2 - k * 2 - l {
+                    lv := newValueIn(mut st, f)
+                    linkInst(mut st, b, mkInst(mut st, lv, OpPArith, if l == 0 { PK_LO } else { PK_HI }, r, r))
+                    w.v[v * VS + V_REP] = lv
+                }
+            }
+        } else if w.p[e * PS + 4] == 0 {
+            x := InsRef(w.p[e * PS])
+            // 被演算子の置き換え（取り出した値）
+            mut rk := st.opk[irInsOp(mut st, x)]
+            mut at := int(x) + I_A
+            while rk != 0 {
+                kind := rk & 15
+                l := desugar.HeapGet(mut st.d, at)
+                if kind == K_VAL {
+                    desugar.HeapSet(mut st.d, at, slpRep(mut w, l))
+                } else if kind == K_VLIST {
+                    for q <- iter.Range(0, xLen(mut st, l)) {
+                        desugar.HeapSet(mut st.d, l + 1 + q, slpRep(mut w, desugar.HeapGet(mut st.d, l + 1 + q)))
+                    }
+                }
+                rk = rk >> 4
+                at += 1
+            }
+            linkInst(mut st, b, x)
+        }
+    }
+}
+
+// 取り出しの置き換え先（無ければそのまま）
+func slpRep(w mut SlpW, v int) int {
+    return if v >= 0 && v < w.nv && w.v[v * VS + V_REP] >= 0 { w.v[v * VS + V_REP] } else { v }
+}

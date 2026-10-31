@@ -1,6 +1,6 @@
 package loader
 
-// 封の型の外での欄つきリテラル（language.md 15 節「部分リテラル」・report-594 の裁定 A）: 欄の型に、宣言した package の非公開の型（小文字で始まる
+// 封の型の外での欄つきリテラル（language.md 15 節「部分リテラル」）: 欄の型に、宣言した package の非公開の型（小文字で始まる
 // 型宣言 — utf8.View・json.Doc・par の札の `seal`）を持つ struct は「封の型」— その package の検査の口だけが作る証人。部分リテラル（省いた欄はゼロ値）を
 // 解禁したので、外で `utf8.View{b: …}` と書くと封の欄をゼロ値にした偽の証人が組めてしまう。外では欄つきのリテラルを全部拒否する（ゼロ値 `T{}` は
 // 無害なので今どおり — 封の欄を持つ型を欄に持つ封の無い struct の部分リテラルも、封の型の値がゼロ値になるだけなので受理）。check と build が同じ層
@@ -10,7 +10,7 @@ import "std/iter"
 import "std/strings"
 import "ast"
 
-// sealedTab は封の型の表（[package, ファイル, 型宣言の節] の 3 語ずつ — 無ければ空）
+// 封の型の表（[package, ファイル, 型宣言の節] の 3 語ずつ — 無ければ空）
 func sealedTab(cx Cx) []int {
     // 非公開の型の表（[package, ファイル, 型宣言の節] の 3 語ずつ — 1 回だけ作る。封の判定は欄ごとにこの短い表を引く）
     mut pb := builder.Builder[int]{}
@@ -48,7 +48,7 @@ func sealedTab(cx Cx) []int {
     return builder.Build(mut sb)
 }
 
-// sealedLit はファイル f の composite x が外での封の型（表 st）の欄つきリテラルか（noderules.sober の走査から）
+// ファイル f の composite x が外での封の型（表 st）の欄つきリテラルか（noderules.sober の走査から）
 func sealedLit(cx Cx, st []int, f int, x ast.Node) bool {
     t := cx.trees[f]
     if ast.ListLen(t, x.b) == 0 {
@@ -62,7 +62,7 @@ func sealedLit(cx Cx, st []int, f int, x ast.Node) bool {
     return pk >= 0 && pk != cx.file_pkg[f] && sealedIn(cx, st, pk, base)
 }
 
-// sealedDecl はファイル f の型宣言 tdi が封の型か（struct で、欄の型が同じ package の非公開の型宣言の名前）
+// ファイル f の型宣言 tdi が封の型か（struct で、欄の型が同じ package の非公開の型宣言の名前）
 func sealedDecl(cx Cx, pt []int, f int, tdi int) bool {
     t := cx.trees[f]
     body := t.nodes[t.nodes[tdi].c]
@@ -80,7 +80,7 @@ func sealedDecl(cx Cx, pt []int, f int, tdi int) bool {
     return false
 }
 
-// sealedIn は型宣言の表 st（非公開の型の表・封の型の表）に package pk の名前 base があるか
+// 型宣言の表 st（非公開の型の表・封の型の表）に package pk の名前 base があるか
 func sealedIn(cx Cx, st []int, pk int, base string) bool {
     for e <- iter.Range(0, len(st) / 3) {
         if st[e * 3] == pk {

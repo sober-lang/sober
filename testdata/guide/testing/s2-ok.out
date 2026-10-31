@@ -1,0 +1,5 @@
+ok   examples/guide/kv2.TestParse
+ok   examples/guide/kv2.TestFormat
+ok   examples/guide/kv2.TestRoundTrip
+3 passed, 0 failed
+(exit 0)

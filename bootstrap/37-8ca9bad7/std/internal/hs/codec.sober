@@ -1,0 +1,129 @@
+package hs
+
+// codec（TLS 便 R3 — report-811 2 節 / 828）: handshake のメッセージの読み書きの部品。読みは粘着する失敗の印つきのカーソル（Cur — 読む範囲 [at, end) だけを
+// 持ち、切片は読みのたびに渡す。範囲の外を読んだら bad が立って以後 0 を返す・呼び手は区切りごとに 1 回だけ見る — decode_error）。
+// 書きは mut []byte への積み（u8 / u16 / u24 と長さ前置きの塊）
+
+import "std/iter"
+
+// Cur は切片の [at, end) を読むカーソル（bad = 範囲の外を読もうとした）
+type Cur struct {
+    at int
+    end int
+    bad bool
+}
+
+func cur(at int, end int) Cur {
+    return Cur{at: at, end: end, bad: false}
+}
+
+func u8(b []byte, c mut Cur) int {
+    if c.at + 1 > c.end {
+        c.bad = true
+        return 0
+    }
+    v := int(b[c.at])
+    c.at += 1
+    return v
+}
+
+func u16(b []byte, c mut Cur) int {
+    if c.at + 2 > c.end {
+        c.bad = true
+        return 0
+    }
+    v := int(b[c.at]) << 8 | int(b[c.at + 1])
+    c.at += 2
+    return v
+}
+
+func u24(b []byte, c mut Cur) int {
+    if c.at + 3 > c.end {
+        c.bad = true
+        return 0
+    }
+    v := int(b[c.at]) << 16 | int(b[c.at + 1]) << 8 | int(b[c.at + 2])
+    c.at += 3
+    return v
+}
+
+// sub は今の位置から n バイトの内側のカーソル（外側はその後ろへ進む）
+func sub(c mut Cur, n int) Cur {
+    if n < 0 || c.at + n > c.end {
+        c.bad = true
+        return Cur{at: c.end, end: c.end, bad: true}
+    }
+    s := Cur{at: c.at, end: c.at + n, bad: false}
+    c.at += n
+    return s
+}
+
+// take は今の位置から n バイトの写し
+func take(b []byte, c mut Cur, n int) []byte {
+    if n < 0 || c.at + n > c.end {
+        c.bad = true
+        return []byte{}
+    }
+    mut out := mut []byte{}
+    e := c.at + n
+    mut j := c.at
+    while j < e {
+        out = append(out, b[j])
+        j += 1
+    }
+    c.at = e
+    return freeze(out)
+}
+
+func rest(c Cur) int {
+    return c.end - c.at
+}
+
+func put8(o mut []byte, v int) {
+    o = append(o, byte(v & 0xff))
+}
+
+func put16(o mut []byte, v int) {
+    o = append(o, byte((v >> 8) & 0xff))
+    o = append(o, byte(v & 0xff))
+}
+
+func put24(o mut []byte, v int) {
+    o = append(o, byte((v >> 16) & 0xff))
+    o = append(o, byte((v >> 8) & 0xff))
+    o = append(o, byte(v & 0xff))
+}
+
+func putBytes(o mut []byte, b []byte) {
+    mut j := 0
+    while j < len(b) {
+        o = append(o, b[j])
+        j += 1
+    }
+}
+
+// msg は handshake のメッセージ（型 1 バイト ‖ 長さ 3 バイト ‖ 本体）
+func msg(t int, body []byte) []byte {
+    mut o := mut []byte{}
+    put8(mut o, t)
+    put24(mut o, len(body))
+    putBytes(mut o, body)
+    return freeze(o)
+}
+
+// cat は a ‖ b
+func cat(a []byte, b []byte) []byte {
+    mut o := mut []byte{}
+    putBytes(mut o, a)
+    putBytes(mut o, b)
+    return freeze(o)
+}
+
+// sliceOf は b[at, at + n) の写し
+func sliceOf(b []byte, at int, n int) []byte {
+    mut o := mut []byte{}
+    for i <- iter.Range(at, at + n) {
+        o = append(o, b[i])
+    }
+    return freeze(o)
+}

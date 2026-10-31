@@ -10,7 +10,7 @@ import "loader"
 import "checker"
 
 
-// check は p を脱糖して検査する（判定 JSON。脱糖の拒否なら diag のラベル）。
+// p を脱糖して検査する（判定 JSON。脱糖の拒否なら diag のラベル）。
 // 関数に割るのは region を分けるため: WithCore は展開される（関数型引数）ので、脱糖器のヒープは呼んだ関数の region に積まれる —
 // main で呼ぶと、長寿命の Program（表層 AST）とヒープ（AST の写し + コア）が同じ region に並んで上限を分け合う
 func check(p loader.Program) ([]byte, error?) {

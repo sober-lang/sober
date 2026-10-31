@@ -1,6 +1,6 @@
 package main
 
-// 最適化の網（性能投資 M1 — SROA / GVN の観測の固定）: 同じ式・逆順の非可換な式・同じ番地の load と store の挟み込み・
+// 最適化の網（SROA / GVN の観測の固定）: 同じ式・逆順の非可換な式・同じ番地の load と store の挟み込み・
 // 集約（slice のヘッダ・struct）のコピーとその後の書き換え・ゼロ除算の panic の点を、最適化あり / なしで同じ観測にする（scripts/optdiff.sh --mut の代表）
 
 import "std/iter"
@@ -21,7 +21,7 @@ func sub2(a int, b int) int {
     return d1 * 1000 + d2 * 100 + q1 + q2 + s1 - s2
 }
 
-// bump は xs[0] を読み、mut の仮引数を通して書き換えてから同じ添字をもう一度読む（store を跨いだ load は付け替えない）
+// xs[0] を読み、mut の仮引数を通して書き換えてから同じ添字をもう一度読む（store を跨いだ load は付け替えない）
 func bump(xs mut []int) int {
     a := xs[0]
     xs[0] = a + 10

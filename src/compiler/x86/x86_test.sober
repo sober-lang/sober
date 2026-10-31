@@ -6,7 +6,7 @@ package x86
 import "std/iter"
 import "std/table"
 
-// hex は c の中身の 16 進（小文字）
+// c の中身の 16 進（小文字）
 func hex(c mut table.Table[byte]) string {
     mut out := mut []byte{}
     for i <- iter.Range(0, table.Len(mut c)) {

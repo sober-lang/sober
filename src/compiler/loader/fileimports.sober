@@ -1,6 +1,6 @@
 package loader
 
-// import はファイルごと（language.md 20 節 — Go と同じ。決定 2026-10-01）: ファイルに書いた修飾名 `ref.N`（式の選択子・型名・
+// import はファイルごと（language.md 20 節 — Go と同じ）: ファイルに書いた修飾名 `ref.N`（式の選択子・型名・
 // 型パターン・composite の型名・@errors のラベル名）の参照名 ref は、そのファイル自身の import 宣言に要る（同じ package の別ファイルの
 // import は見えない — そのファイルを読むだけで参照名が分かる）。解決（desugar.ImportOf・fileImportOf）もファイル単位で、ここは
 // 拒否の位置と文言を 1 か所で出すための検査。同じ package で同じ参照名に別の path（RefCollide）と、局所名と別ファイルの import 名の
@@ -10,8 +10,8 @@ import "ast"
 import "diag"
 import "std/iter"
 
-// notImportedHit は最初の違反（ファイル・字句 — 無ければ file = -1）。ファイルごとに「package の参照名のうちこのファイルが import しないもの」を先に引き、
-// 修飾名の参照名はその短い列とデータプールのまま照合する（節ごとに名前の string を作って import 表を引くと自己 build で 0.18 G — report-616）
+// 最初の違反（ファイル・字句 — 無ければ file = -1）。ファイルごとに「package の参照名のうちこのファイルが import しないもの」を先に引き、
+// 修飾名の参照名はその短い列とデータプールのまま照合する（節ごとに名前の string を作って import 表を引くと自己 build が重くなる）
 func notImportedHit(cx Cx) NameHit {
     for f <- iter.Range(0, len(cx.trees)) {
         tok := notImportedIn(cx, f)
@@ -22,7 +22,7 @@ func notImportedHit(cx Cx) NameHit {
     return noHit()
 }
 
-// notImportedIn はファイル f の最初の違反の字句（無ければ -1 — finpar.sober の子も同じ関数を呼ぶ）
+// ファイル f の最初の違反の字句（無ければ -1 — finpar.sober の子も同じ関数を呼ぶ）
 func notImportedIn(cx Cx, f int) int {
     t := cx.trees[f]
     mut miss := mut []string{}
@@ -61,12 +61,12 @@ func notImportedIn(cx Cx, f int) int {
     return 0 - 1
 }
 
-// missing は参照名 ref が package の import の参照名なのに、ファイル f 自身は import していないか
+// 参照名 ref が package の import の参照名なのに、ファイル f 自身は import していないか
 func missing(cx Cx, f int, ref string) bool {
     return importOf(cx, cx.file_pkg[f], ref) >= 0 && fileImportOf(cx, f, ref) < 0
 }
 
-// missIn はデータプールの名前 s（dotted = 修飾名 `ref.N` — 最初の '.' の前が参照名。でなければ名前そのもの）の参照名が miss のどれかか
+// データプールの名前 s（dotted = 修飾名 `ref.N` — 最初の '.' の前が参照名。でなければ名前そのもの）の参照名が miss のどれかか
 func missIn(t ast.Tree, s int, miss []string, dotted bool) bool {
     for k <- iter.Range(0, len(miss)) {
         b := bytes(miss[k])

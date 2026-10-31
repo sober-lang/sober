@@ -1,0 +1,45 @@
+package main
+
+// clidoc の網の題材（scripts/clidoc.sh — `sober doc --cli` の生成物 ≡ tool.md / tool.ja.md）: 名前の参照の run（効果が違う 2 本）・ラムダの run・
+// run の無いコマンド・dev のコマンドと環境変数（頁に出ない）・`|` を含む文（表の升の逃がし）・サブコマンドの名前の空白（錨）
+
+import "std/cli"
+import "std/io"
+
+const Verbose = cli.BoolFlag{name: "verbose", short: "v", help: "print every step"}
+const Out = cli.StrFlag{name: "o", arg: "<file>", help: "write to <file>", def: "out.txt"}
+const Src = cli.Positional{name: "src", help: "the source file"}
+const EHome = cli.Env{name: "TOOL_HOME", help: "the home directory | the default"}
+const ETrace = cli.Env{name: "TOOL_TRACE", help: "trace the steps", dev: true}
+
+const Pack = cli.Command{name: "pack", summary: "pack a file", help: "pack the source file into one archive",
+    bools: []cli.BoolFlag{Verbose}, strs: []cli.StrFlag{Out}, pos: []cli.Positional{Src}, env: []cli.Env{EHome}, run: pack}
+const Count = cli.Command{name: "count", summary: "count the bytes", pos: []cli.Positional{Src}, run: count}
+const RemoteAdd = cli.Command{name: "remote add", summary: "add a remote", run: (r) => 0}
+const Plan = cli.Command{name: "plan", summary: "print the plan (no run yet)"}
+const Debug = cli.Command{name: "debug", summary: "dump the state", dev: true, run: count}
+
+const Tool = cli.App{
+    name: "tool",
+    version: "0.1.0",
+    summary: "pack and count files",
+    commands: []cli.Command{Pack, Count, RemoteAdd, Plan, Debug},
+    env: []cli.Env{EHome, ETrace},
+}
+
+func pack(r cli.Parsed) int {
+    b := io.ReadFile(cli.Pos(r, Src)) catch {
+        return 1
+    }
+    werr := io.WriteFile(cli.Str(r, Out), b)
+    return if werr != nil { 1 } else { 0 }
+}
+
+func count(r cli.Parsed) int {
+    src := cli.Pos(r, Src)
+    return len(bytes(src))
+}
+
+func main() int {
+    return cli.Main(Tool)
+}

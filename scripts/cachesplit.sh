@@ -3,7 +3,7 @@
 # 検証（SOBER_CACHE_VERIFY=1 — 当たりでも検査し直して値をバイト比較・違えば stale と名指して落ちる）— 回し、3 回とも G-e の黄金
 # （testdata/checkverdict — 一括の判定）と一致すること。温で当たりが実際に出ていること（置き場の値の数 > 0・温の run の外れ 0）も見る。
 # L0（std の焼き込み — 3'' 第 2 段の 1.5）: ①std の全 package を import する entry を検証モードで小分けに通し、焼き込みの値 ≡ 計算し直し（13 package）
-# ②L0 を切った（SOBER_L0=0）一括と小分けも黄金と一致（焼き込みの経路と焼き込み無しの経路の判定が同じ）
+# ②L0 を切った（SOBER_L0=0）一括と小分けも黄金と一致（焼き込みの経路と焼き込み無しの経路の判定が同じ — std の閉包の大きい題材 + compiler の題材の抜き取り）
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
@@ -21,7 +21,7 @@ SOBER_CACHE= SOBER_CACHE_VERIFY=1 "$STAGE2" check "$tmp/l0/all.sober" --split > 
 [ "$nl0" -ge 1 ] || { echo "FAIL: L0 is empty (no std package hit — stage2 built without the L0 bake?)"; fail=$((fail + 1)); }
 # L0 ②
 for m in whole split; do
-    out=$(SOBER_L0=0 SOBER_CACHE= scripts/checkverdict.sh $( [ $m = split ] && echo --split ) 2>&1)
+    out=$(SOBER_L0=0 SOBER_CACHE= CV_SAMPLE=std scripts/checkverdict.sh $( [ $m = split ] && echo --split ) 2>&1)
     echo "$out" | grep '^FAIL' | head -3
     echo "$out" | tail -1 | grep -q 'fail=0$' || { echo "FAIL: SOBER_L0=0 $m: $(echo "$out" | tail -1)"; fail=$((fail + 1)); }
 done
@@ -34,9 +34,16 @@ for phase in cold warm verify; do
     [ $phase = cold ] && n=$(find "$SOBER_CACHE" -type f -not -name '*.tmp' | wc -l)
 done
 unset SOBER_CACHE_VERIFY
+# 利用者の package の .sobi（F-s ② — report-1242）: 例題は 1 ファイルなので小分けの check は std の .sobi しか書かない。2 package の題材
+# （展開される関数の本体に catch）を別の置き場で冷・温（書いた .sobi の読み戻し）・検証の 3 回 — 一括の check と同じ判定
+want=$(SOBER_CACHE= "$STAGE2" check testdata/splitcatch/app 2>&1)
+for phase in cold warm verify; do
+    got=$(SOBER_CACHE=$tmp/cache_pkg SOBER_CACHE_VERIFY=$([ $phase = verify ] && echo 1 || echo 0) "$STAGE2" check testdata/splitcatch/app --split 2>&1)
+    [ "$got" = "$want" ] || { echo "FAIL: splitcatch $phase: $(echo "$got" | head -2)"; fail=$((fail + 1)); }
+done
 [ "${n:-0}" -gt 0 ] || { echo "FAIL: the cold run wrote no entries"; fail=$((fail + 1)); }
 # 温の外れ 0: 置き場の値の数が温・検証の後も増えていない（外れて受理なら書くので、外れがあれば増える）
 m=$(find "$SOBER_CACHE" -type f -not -name '*.tmp' | wc -l)
 [ "$m" = "$n" ] || { echo "FAIL: warm / verify runs missed ($n entries after cold, $m after)"; fail=$((fail + 1)); }
-echo "cachesplit: cold / warm / verify match testdata/checkverdict, $n cache entries, L0 $nl0 std packages verified + L0-off whole / split match, fail=$fail"
+echo "cachesplit: cold / warm / verify match testdata/checkverdict, $n cache entries, L0 $nl0 std packages verified + L0-off whole / split match + user-package .sobi (testdata/splitcatch) cold / warm / verify, fail=$fail"
 [ "$fail" = 0 ]

@@ -1,12 +1,12 @@
 package main
 
-// 数え上げ（文字列 SIMD 便 段 3 — vec.sober の vecCount・x86.sober の xCountB）の回帰例: `if b[i] == K1 || … { n += 1 }` のループを、長さ 0〜40
+// 数え上げ（vec.sober の vecCount・x86.sober の xCountB）の回帰例: `if b[i] == K1 || … { n += 1 }` のループを、長さ 0〜40
 // （16 バイトの塊の境目の前後）× 当たりの位置 × 始点、重なる K（同じ K を 2 度書く）、当たりが 255 塊（4,080 B）を超えて続く長い列（バイトの積算を
 // 畳む間隔を外すと溢れる）で回し、認識に乗らない表引きの参照と突き合わせる。食い違いの数（0）と和を印字
 
 import "std/iter"
 
-// count4 は json.bound と同じ形（構造の文字の数）
+// json.bound と同じ形（構造の文字の数）
 func count4(b []byte, i0 int) int {
     mut c := 0
     mut i := i0
@@ -20,7 +20,7 @@ func count4(b []byte, i0 int) int {
     return c
 }
 
-// countDup は同じ K を 2 度書いた形（K は重ねずに数える）
+// 同じ K を 2 度書いた形（K は重ねずに数える）
 func countDup(b []byte) int {
     mut c := 0
     mut i := 0
@@ -34,7 +34,7 @@ func countDup(b []byte) int {
     return c
 }
 
-// ref は表引きの参照（等値の鎖でないので認識に乗らない）
+// 表引きの参照（等値の鎖でないので認識に乗らない）
 func ref(b []byte, i0 int, n int, t []int) int {
     mut c := 0
     for i <- iter.Range(i0, n) {

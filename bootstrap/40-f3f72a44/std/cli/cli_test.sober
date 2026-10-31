@@ -1,0 +1,223 @@
+package cli
+
+// 受理 / 拒否の表駆動の網（white-box — 非公開の dist・closest・wrap も見る）: 綴りの全形（`--name=v`・`--name v`・`-x v`・short・`--`・rest・
+// 混在）・誤用のラベル 7 種と argv の添字・near・既定値と env・サブコマンド・予約の綴り・使い方の折り返しの幅
+
+import "std/builder"
+import "std/iter"
+import "std/json"
+import "std/strings"
+
+const tOut = StrFlag{name: "o", arg: "<file>", help: "write to <file>", def: "a.out"}
+const tTag = StrFlag{name: "tag", help: "a tag", opt: true}
+const tNeed = StrFlag{name: "need", help: "a required value"}
+const tJobs = IntFlag{name: "jobs", short: "j", help: "jobs", def: 1, min: 1, max: 8}
+const tMut = IntFlag{name: "mutant", help: "a mutant", opt: true, dev: true, allow: []int{1, 2, 3, 5, 7, 8}}
+const tEmit = ChoiceFlag{name: "emit", help: "form", choices: []string{"elf", "ll"}, dev: []string{"syms"}, def: "elf"}
+const tCopy = ChoiceFlag{name: "backend", dev: []string{"copy"}, opt: true}
+const tVerbose = BoolFlag{name: "verbose", short: "v", help: "say more"}
+const tQuiet = BoolFlag{name: "q", help: "say less"}
+const tInc = ListFlag{name: "inc", short: "I", help: "include dir"}
+const tEntry = Positional{name: "entry", help: "the entry"}
+const tMore = Positional{name: "more", help: "more files", many: true, optional: true}
+const tArgs = Positional{name: "args", help: "program arguments", many: true, optional: true}
+
+const tBuild = Command{name: "build", summary: "build", bools: []BoolFlag{tVerbose, tQuiet}, strs: []StrFlag{tOut, tTag},
+    ints: []IntFlag{tJobs, tMut}, choices: []ChoiceFlag{tEmit, tCopy}, lists: []ListFlag{tInc}, pos: []Positional{tEntry, tMore}}
+const tRun = Command{name: "run", summary: "run", bools: []BoolFlag{tVerbose}, pos: []Positional{tEntry, tArgs}, rest: true}
+const tNeedy = Command{name: "needy", summary: "needs a flag", strs: []StrFlag{tNeed}}
+const tGc = Command{name: "cache gc", summary: "collect"}
+const tInfo = Command{name: "cache info", summary: "list"}
+
+const tApp = App{name: "t", version: "9", summary: "a test tool", commands: []Command{tBuild, tRun, tNeedy, tGc, tInfo}}
+
+type pcase struct {
+    args []string
+    want string
+}
+
+// Parse の結果の 1 行（受理 = `ok <コマンド>`・誤り = ラベルと欄）
+func verdict(app App, args []string) string {
+    r, e := Parse(app, args)
+    if e == nil {
+        return "ok " + r.cmd
+    }
+    return switch e {
+    case UnknownFlag{arg, word, near}: "UnknownFlag ${arg} " + word + " " + optS(near)
+    case UnknownCommand{arg, word, near}: "UnknownCommand ${arg} " + word + " " + optS(near)
+    case MissingValue{arg, flag}: "MissingValue ${arg} " + flag
+    case BadValue{arg, flag, word, want}: "BadValue ${arg} " + flag + " " + word + " / " + want
+    case Missing{flag}: "Missing " + flag
+    case Extra{arg, word}: "Extra ${arg} " + word
+    case Duplicate{arg, flag, first}: "Duplicate ${arg} " + flag + " ${first}"
+    case Request{word}: "Request " + word + " [" + r.cmd + "]"
+    case _: "?"
+    }
+}
+
+func optS(s string?) string {
+    return if s == nil { "-" } else { s }
+}
+
+func argv(s string) []string {
+    return strings.Fields("t " + s)
+}
+
+func TestParseTable() {
+    cases := []pcase{
+        // 受理
+        pcase{args: argv("build x"), want: "ok build"},
+        pcase{args: argv("build -o out x --jobs=3 -v --emit ll -I a --inc=b y z"), want: "ok build"},
+        pcase{args: argv("build x --emit=syms --backend=copy --mutant 7"), want: "ok build"},
+        pcase{args: argv("build -- -x"), want: "ok build"},
+        pcase{args: argv("build x - -q"), want: "ok build"},
+        pcase{args: argv("run x -v --foo -- bar"), want: "ok run"},
+        pcase{args: argv("cache gc"), want: "ok cache gc"},
+        pcase{args: argv("cache info"), want: "ok cache info"},
+        // 誤用
+        pcase{args: argv("build x --verbos"), want: "UnknownFlag 3 --verbos --verbose"},
+        pcase{args: argv("build x --zzzzzz"), want: "UnknownFlag 3 --zzzzzz -"},
+        pcase{args: argv("build x -verbose"), want: "UnknownFlag 3 -verbose --verbose"},
+        pcase{args: argv("build x --verbos=1"), want: "UnknownFlag 3 --verbos=1 --verbose"},
+        pcase{args: argv("biuld x"), want: "UnknownCommand 1 biuld build"},
+        pcase{args: argv("cache gx"), want: "UnknownCommand 2 gx gc"},
+        pcase{args: argv("--frob"), want: "UnknownFlag 1 --frob -"},
+        pcase{args: argv("build x -o"), want: "MissingValue 3 -o"},
+        pcase{args: argv("build x --jobs=9"), want: "BadValue 3 --jobs 9 / an integer in 1..8"},
+        pcase{args: argv("build x -j two"), want: "BadValue 3 -j two / an integer in 1..8"},
+        pcase{args: argv("build x --mutant=4"), want: "BadValue 3 --mutant 4 / one of 1..3, 5, 7, 8"},
+        pcase{args: argv("build x --emit=wasm"), want: "BadValue 3 --emit wasm / one of elf, ll"},
+        pcase{args: argv("build x --backend=llvm"), want: "BadValue 3 --backend llvm / one of copy"},
+        pcase{args: argv("build x -v=1"), want: "BadValue 3 -v 1 / no value"},
+        pcase{args: argv("build"), want: "Missing <entry>"},
+        pcase{args: argv("needy"), want: "Missing --need"},
+        pcase{args: argv(""), want: "Missing <command>"},
+        pcase{args: argv("cache"), want: "Missing <command>"},
+        pcase{args: argv("run"), want: "Missing <entry>"},
+        pcase{args: argv("needy extra --need=a"), want: "Extra 2 extra"},
+        pcase{args: argv("build x -o a --tag t -o b"), want: "Duplicate 7 -o 3"},
+        pcase{args: argv("build x -v --verbose"), want: "Duplicate 4 --verbose 3"},
+        // 予約の綴り
+        pcase{args: argv("--help"), want: "Request help []"},
+        pcase{args: argv("--version"), want: "Request version []"},
+        pcase{args: argv("build -h"), want: "Request help [build]"},
+        pcase{args: argv("build x --help=dev"), want: "Request help=dev [build]"},
+        pcase{args: argv("build --cli-spec"), want: "Request cli-spec [build]"},
+        pcase{args: argv("help build"), want: "Request help [build]"},
+        pcase{args: argv("help cache"), want: "Request help [cache]"},
+        pcase{args: argv("help cash"), want: "UnknownCommand 2 cash cache"},
+        pcase{args: argv("cache --help"), want: "Request help [cache]"},
+        pcase{args: argv("run x --help"), want: "ok run"},
+    }
+    mut bad := 0
+    for i <- iter.Range(0, len(cases)) {
+        c := cases[i]
+        got := verdict(tApp, c.args)
+        if got != c.want {
+            println("case ${i}: got [" + got + "] want [" + c.want + "]")
+            bad += 1
+        }
+    }
+    assert(bad == 0)
+}
+
+func TestValues() {
+    r, e := Parse(tApp, argv("build -o out x --jobs=3 -v --emit ll -I a --inc=b y z"))
+    assert(e == nil)
+    assert(Is(r, tBuild))
+    assert(!Is(r, tRun))
+    assert(Str(r, tOut) == "out")
+    assert(StrOpt(r, tTag) == nil)
+    assert(Int(r, tJobs) == 3)
+    assert(IntOpt(r, tMut) == nil)
+    assert(Bool(r, tVerbose))
+    assert(!Bool(r, tQuiet))
+    assert(Choice(r, tEmit) == "ll")
+    assert(ChoiceOpt(r, tCopy) == nil)
+    assert(strings.Join(List(r, tInc), ",") == "a,b")
+    assert(Pos(r, tEntry) == "x")
+    assert(strings.Join(PosList(r, tMore), ",") == "y,z")
+    // 既定値
+    d, de := Parse(tApp, argv("build x"))
+    assert(de == nil)
+    assert(Str(d, tOut) == "a.out")
+    assert(Int(d, tJobs) == 1)
+    assert(Choice(d, tEmit) == "elf")
+    assert(len(List(d, tInc)) == 0)
+    assert(len(PosList(d, tMore)) == 0)
+    // `--` の後は位置引数・`-` 1 文字は位置引数
+    w, we := Parse(tApp, argv("build -- -x -v"))
+    assert(we == nil)
+    assert(Pos(w, tEntry) == "-x")
+    assert(strings.Join(PosList(w, tMore), ",") == "-v")
+    assert(!Bool(w, tVerbose))
+    // rest: entry の後は素通し（直後の `--` だけ除く）・entry の前のフラグは読む
+    x, xe := Parse(tApp, argv("run -v x -- --foo -- bar"))
+    assert(xe == nil)
+    assert(Bool(x, tVerbose))
+    assert(strings.Join(PosList(x, tArgs), ",") == "--foo,--,bar")
+    y, ye := Parse(tApp, argv("run x --help"))
+    assert(ye == nil)
+    assert(strings.Join(PosList(y, tArgs), ",") == "--help")
+}
+
+func TestDist() {
+    assert(dist(bytes(""), bytes("")) == 0)
+    assert(dist(bytes("abc"), bytes("")) == 3)
+    assert(dist(bytes("kitten"), bytes("sitting")) == 3)
+    assert(dist(bytes("--no-opts"), bytes("--no-opt")) == 1)
+    assert(dist(bytes("-run"), bytes("--run")) == 1)
+    assert(optS(closest("--verbos", []string{"--help", "-h", "--verbose"})) == "--verbose")
+    assert(closest("--xyz", []string{"--help", "-h"}) == nil)
+    // 同じ距離なら先の候補
+    assert(optS(closest("ab", []string{"aa", "bb"})) == "aa")
+}
+
+func TestUsage() {
+    u := Usage(tApp, "build", false)
+    assert(strings.HasPrefix(u, "usage: t build [flags] <entry> [<more>...]\n"))
+    // 左の欄は最長の左の欄に揃う（名前の辞書順）
+    assert(strings.Contains(u, "\nflags:\n  --emit=<emit>      form: elf (default), ll\n  -I, --inc <value>  include dir (repeatable)\n  -j, --jobs <n>     jobs (default 1)\n"))
+    assert(!strings.Contains(u, "--mutant"))
+    assert(!strings.Contains(u, "syms"))
+    assert(strings.HasSuffix(u, "run 't build --help=dev' for the development flags\n"))
+    v := Usage(tApp, "build", true)
+    assert(strings.Contains(v, "--mutant <n>"))
+    assert(strings.Contains(v, "elf (default), ll, syms"))
+    assert(strings.Contains(v, "--backend=<backend>"))
+    assert(!strings.Contains(v, "--help=dev"))
+    a := Usage(tApp, "", false)
+    assert(strings.Contains(a, "  cache gc    collect\n"))
+    g := Usage(tApp, "cache", false)
+    assert(strings.Contains(g, "usage: t cache <command>"))
+    assert(strings.Contains(g, "  gc    collect\n"))
+    // 行は 80 桁を越えない（語が 80 桁より長いときだけ越える）
+    mut o := builder.Builder[byte]{}
+    wrap(mut o, "aaaa bbbb cccc dddd eeee ffff gggg hhhh iiii jjjj kkkk llll mmmm nnnn oooo pppp qqqq rrrr ssss", 10, 30)
+    s := json.Done(mut o)
+    for line <- strings.Split(s, "\n") {
+        assert(len(bytes(line)) <= 80)
+    }
+    assert(strings.HasPrefix(s, "                    aaaa"))
+    assert(strings.Contains(s, "\n                              "))
+}
+
+// args の誤りの文面（受理なら ""）
+func formatOf(s string) string {
+    r, e := Parse(tApp, argv(s))
+    if e == nil {
+        return ""
+    }
+    return Format(tApp, r, e)
+}
+
+func TestFormat() {
+    assert(formatOf("build x --verbos") == "t build: unknown flag --verbos (argument 3)\n  did you mean --verbose?\nrun 't build --help' for usage\n")
+    assert(formatOf("build x -o a -o b") == "t build: flag -o given twice (arguments 3 and 5)\nrun 't build --help' for usage\n")
+    assert(formatOf("build x --jobs=0") == "t build: invalid value 0 for --jobs (argument 3)\n  want an integer in 1..8\nrun 't build --help' for usage\n")
+    assert(formatOf("build x") == "")
+    assert(formatOf("--version") == "t 9\n")
+    sp := formatOf("--cli-spec")
+    assert(strings.HasPrefix(sp, "{\"name\":\"t\",\"version\":\"9\""))
+    assert(strings.Contains(sp, "{\"kind\":\"int\",\"name\":\"mutant\",\"short\":\"\",\"arg\":\"\",\"help\":\"a mutant\",\"dev\":true,\"default\":null,\"min\":null,\"max\":null,\"allow\":[1,2,3,5,7,8]"))
+}

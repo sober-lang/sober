@@ -1,0 +1,2 @@
+sober: desugar error at examples/task_frozen_map.sober:124:34 (CoreFragment)
+exit=1

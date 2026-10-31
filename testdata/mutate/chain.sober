@@ -1,0 +1,11 @@
+package main
+
+// `sober build --mutate` の太り方の網（scripts/mutate.sh）: 左結合の 16 項の連鎖 — 変異点を含む被演算子を束縛しないと ELF が項の数の指数で太る
+
+func chain(x int, y int) int {
+    return x - y - x - y - x - y - x - y - x - y - x - y - x - y - x - y
+}
+
+func main() {
+    println(chain(3, 1))
+}
