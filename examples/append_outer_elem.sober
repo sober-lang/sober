@@ -1,0 +1,65 @@
+package main
+
+// 外の region の値（仮引数・外の局所・反復の中で作った値）を、局所で作ったコンテナへ足す・写す形。
+// 空のリテラルで始めた slice / map の要素の型は、作られた region の座標で読む（素の宣言型で読むと緩めの ann も写しも付かない）
+
+import "std/iter"
+
+// 仮引数の string を局所の imm slice へ
+func add(k string) int {
+    rs := []string{}
+    xs := append(rs, k)
+    return len(xs)
+}
+
+// imm の空 slice で始めた mut の束縛へ、反復の中で作った string を
+func names(xs []int) int {
+    mut ns := []string{}
+    for n <- xs {
+        ns = append(ns, "n${n}")
+    }
+    return len(ns)
+}
+
+// 反復で作った map を外の map へ（キーは反復の中のリテラル）
+func lastMap() int {
+    mut b := mut map[string]int{}
+    for i <- iter.Range(0, 3) {
+        mut t := mut map[string]int{}
+        t["s${i}"] = i
+        b = t
+    }
+    return len(freeze(b))
+}
+
+// 外の mut slice を、反復の中で組んだ別の mut slice で置き換える
+func replace(xs []int) int {
+    mut trees := mut []string{}
+    trees = append(trees, "a")
+    for x <- xs {
+        if x > 1 {
+            mut nt := mut []string{}
+            nt = append(nt, "b${x}")
+            nt = append(nt, "c")
+            trees = nt
+        }
+    }
+    return len(trees)
+}
+
+// 展開されるラムダの仮引数（呼び手の最内の座標で受ける）へ外の値を足す
+func upd(f func([]string) []string) int {
+    return len(f([]string{"z"}))
+}
+
+func record(msg string) int {
+    return upd((cs []string) => append(cs, msg))
+}
+
+func main() {
+    println(add("a"))
+    println(names([]int{1, 2, 3}))
+    println(lastMap())
+    println(replace([]int{1, 2, 3}))
+    println(record("m"))
+}

@@ -137,8 +137,8 @@ func sort[T](xs Iter[T], ord Ord[T]) []T { ... }
   ブロック形は従来どおり生成器。本体の `yield` は字句的に囲む生成器のもの — 生成器のブロック形の中の文形 for は
   「入れ子の走査から外側へ yield する」命令型ジェネレータになる（`for x <- xs { for y <- ys { yield P{x, y} } }`）。囲む生成器が
   無ければ `yield` は未定義の名前で拒否
-  - return は使える（8 節の inline ラムダの規則）。yield 形の本体で禁止なのは push 型で消費時に囲みの関数が終わっている
-    可能性があるから（8 節）で、文形は展開点がその場なので当たらない
+  - return は使える（8 節の inline ラムダの規則）。yield 形の本体も同じく使える（決定 2026-11-02 — 生成器は値として
+    逃げられないので、本体は常に消費側の inline 展開の中で走る。8 節の撤回の経緯を参照）
   - break / continue は使える（2026-09-28、reaudit round 3 で追加 — round 2 の初版は未対応だった）: for 全体を label で包む形。
     `label brk (GEN(src, k))` の k の本体を、展開ごとに新しい `label cont` で包む — break → brk（生成元の展開ごと抜ける）、
     continue → cont（本体の末尾 = k から戻って生成元の次の周回へ）。どちらも jump までの defer を内側から走らせる（break は生成元の
@@ -222,7 +222,7 @@ func sort[T](xs Iter[T], ord Ord[T]) []T { ... }
   「構文が 1 つ増える」は半分しか当たらなかった — 文法は増えない（ブロック形の ForExpr は既にある）。増えたのは「文の位置のブロック形は
   消費」という位置の分岐 1 つで、脱糖先は inline ラムダ（この節の機構）そのもの。ラムダの形（`each`）も引き続き書ける
 - 結果、`for` = ジェネレータ式 + 文形の消費、`while` = 状態機械（カーソル走査・終端条件つきループ）の命令型ループ
-- 非局所 return は inline ラムダ内のみ（決定 2026-09-17）。yield 形の for 本体（7 節）は push 型に脱糖され消費時に囲みの関数が終わっている可能性があるので、yield 形の本体からの非局所 return は禁止。文形 for（7 節、2026-09-28）の本体は inline ラムダの本体として展開点で走るので return できる。inline ラムダは呼び出し点に展開されるので健全。**値の位置のラムダ（25 節のクロージャ — 格納され、定義した関数より長く生きうる）も非局所 return は書けない**（「逃げないこと」の条件そのまま — 明文化 2026-10-17）。借りの実引数のラムダ（値の呼び出しの先へ渡す — 25 節 (α)）も同じ（持ち上げた Def で走るので行き先が無い）— 早期脱出の要る本体は名前付き関数へ切り出す
+- 非局所 return は inline ラムダ内のみ（決定 2026-09-17）。yield 形の for 本体（7 節）も消費側の inline 展開の中で走る（生成器は値として逃げられない — 7 節）ので return できる（決定 2026-11-02 — 文形と同じく、生成元と消費側の展開の defer を内側から走らせて囲む関数から抜ける）。文形 for（7 節、2026-09-28）の本体は inline ラムダの本体として展開点で走るので return できる。棄てた案: yield 形の本体の return を禁止（2026-09-17 — push 型で囲む関数が終わっている可能性。escape する Iter が断片外なので前提が立たない — 2026-11-02 に撤回。再訪の条件: escape する Iter〔束縛・返す・格納〕を断片に入れるときは、yield 本体の return をその形でだけ拒否する — 値の位置のラムダと同じ規則に乗る）。inline ラムダは呼び出し点に展開されるので健全。**値の位置のラムダ（25 節のクロージャ — 格納され、定義した関数より長く生きうる）も非局所 return は書けない**（「逃げないこと」の条件そのまま — 明文化 2026-10-17）。借りの実引数のラムダ（値の呼び出しの先へ渡す — 25 節 (α)）も同じ（持ち上げた Def で走るので行き先が無い）— 早期脱出の要る本体は名前付き関数へ切り出す
 - inline は宣言しない。展開は生成方式で、意味には触れない（決定 2026-09-18）。ラムダの渡し方は一様（コード + 環境）で意味を決め、呼び出し点への展開はジェネリクスの「辞書渡しが意味、特化は最適化器」と同じ扱い。ラムダ内の `return` を許せるかを決めるのは inline かどうかではなく、その関数型引数が逃げないこと（フィールドに格納・返す・spawn に渡す、のいずれもしない）で、これは 12 節の透過性と Phase 2 の escape 規則の土俵。決定 10 が「読み手は inline かを知らなくてよい」と言っているので、inline を宣言に見せる理由が無い。Phase 1 の codegen は関数型引数を持つ関数を全部展開し（実体のコードは出さない）、再帰するものは拒否する。mut 引数だけが展開の理由の関数（関数型引数なし・非再帰）は、lower では region 透過の実体関数として呼ぶ（改訂 2026-09-29 — 26 節・raw〔`--passes` なし〕にも広げた 2026-10-29） — 展開と同じ region 意味論・check は展開か（anchor 1 slot に収まる関数は）既存の callM の Def として型付けする（E2-S 2026-10-02 — formal.md「check の callM の段」）ので、これも「生成方式で意味に触れない」の 1 例（関数型引数の展開・ジェネリクスの特化に続く 3 例目）。関数型引数を持つ関数は展開のまま（非局所 return と文形 for の本体はそれに依る）。省略可の匿名関数型の仮引数（25 節 Z — 2026-10-25）は有無の組ごとに関数を写し分けて `p != nil` の分岐を畳む — 同じく生成方式（意味は「無い / 借り」の option の検査）。再帰の拒否は現行の言語規則として扱う（明文化 2026-09-27） — 関数型引数・mut 引数（26 節）を持つ関数は直接・相互とも再帰できない。当初は「実装制限で、規則ではない」としていたが、利用者から見えて検査で落ちる以上は規則で、緩めるなら仕様変更として扱う。緩める候補（展開をやめて閉包 = コード + 環境で渡す実装）は IR / バックエンド移行時の未決に積んだ。展開中の callee からは呼び手のローカルは見えず、ラムダ本体からは定義時に見えていた名前 + 自分の引数だけが見える。ラムダ本体の `break` / `continue` は境界を越えない。棄てた案: `@inline` 注釈（Phase 1 実装時に一度入れて戻した。根拠「読み手が宣言で inline を知る」は決定 10 が消していた。Kotlin が `inline` を要るのは JVM のクロージャ割り当てと非局所 return の都合で、Sober が継ぐ理由がない）
 - ラムダ内の `return` は常に囲みの名前付き関数から戻る（決定 2026-09-18、syntax.md 決定 10）。読み手は `each` が inline かどうかを知らないと `x => { ... return err }` の意味を決められない（Go が range-over-func でループ本体を構文に残した理由）。構文を増やす代わりに読み規則を 1 本にする: `return` は例外なく名前付き関数を出る（`?` も同じ — ただし `task.Run` の本体の中の `?` は scope の失敗で、本体を出る — 11 節「本体の `?`」・2026-10-13）。inline でないラムダに `return` を書いたら拒否。ラムダ自身の値は末尾式。帰結: 早期脱出が要る複数文のラムダ（サンプル 2 の Handler）は名前付き関数に切り出し、ラムダは `(req Request) => lookup(c, req)` の部分適用だけになる。14 節「公開境界は名前付き」とも揃う。Kotlin の inline 関数と同じ規則で、`return@label` は持たない
 
@@ -659,8 +659,8 @@ structured io の線（決定 2026-10-05）: 意味論だけ先に引く — io 
   v1 の範囲: 左辺は `(T, error?)` を返す呼び出しだけ（`(A, B, error?)` は対象外 — 需要 0）・エラーの値は束縛しない（値を見たいなら多値 switch の `case _, e:`）・
   break / continue は入れない（需要 0）。脱糖は loader の固定テンプレート（src/compiler/loader/catchx.sober — 多値 switch の mvcase と同じ層）:
   `{ $v, $e := f(); if $e != nil { D } else { $v } }`、文の値そのもの（束縛 / 代入の値・return の先頭・式文）なら束縛を文の直前に置き値は if だけ。
-  `catch nil`（決定 2026-10-04・F-v。実装 2026-10-05）: nil の腕の型は兄弟の `$v` の `T?` から取る — 写しは
-  `{ mut $r := $v; if $e != nil { $r = nil }; $r }`（代入の nil は束縛の型が期待型を与える。文の値の位置では 2 文を束縛の後ろへ・値は `$r` だけ）
+  `catch nil`（決定 2026-10-04・F-v。実装 2026-10-05）: nil の腕の型は兄弟の腕 `$v` の型 T から `T?`（15 節の兄弟の腕の規則 — 2026-11-01 から D と同じ写しの if。
+  T が `T?` でない `(T, error?)` も `T?` になる。旧写し `{ mut $r := $v; if $e != nil { $r = nil }; $r }` は $v が T のとき $r が T で nil を受けられなかった）
   左辺が func 宣言の直接呼び出しで結果が `(T, error?)` でなければ loader が名指して拒否する（diag.CatchLhs — 負例 examples/catch_infallible・catch_infallible_pkg。関数型の値を通した呼び出しは写した後の束縛の数の照合が拒否）。
   `task.Join(h)` は結果が字面で `T` 1 つ（fallible な task の T = `(U, error?)` は呼び出し点の型引数で決まる）なので loader は判定を保留し、表層型の後の ParCheck の層が同じ CatchLhs を名指す（2026-10-13 — 11 節 Join の項・負例 examples/task_join_catch_infallible）。
   コア・Lean・lower は無変更。需要 = エラーハンドリングの全数分類（2026-10-02）の「既定値 / 番兵」23 か所（推論器の「不明に落とす」）。
@@ -947,12 +947,33 @@ Go のイディオム（`http.HandlerFunc`、`sort.Interface`）を規則に昇�
 Go の nil を踏襲しない。nil が這い回る経路（interface、メソッドレシーバ、ゼロ値のポインタ）はすでに大半潰しているのでコストは Go より小さい。
 
 - 型 `T` は常に値を持ち、`T?` だけが `nil` を取れる（Kotlin / Swift 式）。slice / map の空は `nil` ではなく空値
+- 兄弟の腕から `T?` を組む（決定 2026-10-31・実装 2026-11-01 — spec T-16 の改訂）: 期待型の無い位置の if / switch の式で、腕（else if の鎖・default を含む）の
+  どれかが `nil` で終わり、他の腕から型 `T` が読めるなら、式の型は `T?`（T が既に `T?` ならそのまま — `T??` にしない）。`x := if c { 3 } else { nil }` の x は `int?`。
+  error のラベルの腕は error の値なので `error?`（`e := if c { L{} } else { nil }` — 2026-11-01 lower の合流を追従・例 examples/nil_sibling_label）。
+  全部の腕が nil（型が読めない）なら今までどおり拒否（diag.UntypedNil — 負例 examples/nil_untyped）。推論は式の中に閉じる（腕の型だけを見る — 関数内推論の線を破らない）。
+  脱糖は期待型 `T?` のある if / switch と同じ道（desugar の coerceExpr / coerceArm・lower の腕の合流 joinTypeN → joinArms が腕の値を `T?` へ寄せる）。
+  根拠 = Kotlin / Rust / Swift の同型の先例・意図が曖昧でない・審査基準（期待型の無い位置の nil 禁止は条件付き制約で、兄弟から型が取れる場面まで拒否するのは原理より広い）。
+  棄てた案: 期待型の無い位置の nil を一律に拒否（旧 T-16 — 番兵の nil を書くたびに束縛へ型注釈が要る）
+- `T` と `T?` の腕の合流（決定 2026-11-01 ユーザー裁定・実装 2026-11-02 — spec T-16 の延長）: 期待型の無い位置の if / switch の式で、腕の型が `T` と `T?` に
+  分かれるなら式の型は `T?`（`r := if c { 4 } else { q }`・q は `int?` → r は `int?`。絞った腕と絞らない腕 `if p != nil { p } else { q }` も同じ）。
+  兄弟の nil の腕と同じく推論は腕の型だけを見て、脱糖も同じ道（T の腕を `T?` へ寄せる — desugar の coerceExpr・lower の joinArms）。
+  T と U?（T ≠ U）は今までどおり拒否。根拠 = 審査基準（nil の腕だけを特別扱いすると「nil なら合流・T? の値なら拒否」の条件付き制約が残る）。例 examples/opt_arm_join
 - 絞り込みはコンパイラの flow typing — `if err != nil { return }` の後で `err` は `error`。switch の腕でも同様。Kotlin の smart cast が `var` で壊れる問題は const デフォルトでほぼ出ない（`mut` をラムダが捕捉した場合だけ絞り込みを諦める）
-  - 連鎖と早期脱出（決定 2026-10-04・F-w / F-y。実装 2026-10-05）: `if A && x != nil && B { … }` の `B` と本体で x は T（`&&` の右辺 — else の無い if だけ。else つき / else-if の連鎖は F 台帳のピン〔再訪条件 = 複製でなく共有の脱糖機構 — else の腕の複製は lower の展開で膨らむ。決定 2026-10-05〕）。
-    `if x == nil || A { return … }` の否定側（else・後ろ）で x は T（`||` の否定側 — then が脱出〔return / break / continue〕1 文のとき）。
+  - 絞った mut の束縛への代入は拒否（2026-11-02 — ユーザー裁定 2026-11-01・diag.NarrowAssign で名指し: 的の名前と絞った if の位置）: `mut x := get(); if x != nil { x = 5 }`・
+    `if x == nil { return }` の後ろの `x = …`。絞った領域の x は T? の中身で、代入（`x = nil` を含む）は絞りの証明を壊す — 健全性側の制約。回避 = 別の名前に束縛（`mut v := x`）。
+    棄てた案: flow-sensitive（代入で絞りが外れ型が T? に戻る — Kotlin の smart cast の var）— 実需が出たら再訪
+  - 連鎖と早期脱出（決定 2026-10-04・F-w / F-y。実装 2026-10-05）: `if A && x != nil && B { … }` の `B` と本体で x は T（`&&` の右辺）。
+    `&&` の右の項の絞りはどこでも効く（2026-11-01 — T-17 改訂の 1 段目: 値の位置 `c := x != nil && x != ""`・`return b != nil && b`・else つき if の条件・assert の式。
+    写しは `if A { if x != nil { B } else { false } } else { false }` — 複製するのは定数の腕だけ。`||` の `x == nil` の右の項も同じ形で x は T）。
+    if の本体の絞りは else の有無を問わない（2026-11-01 — T-17 改訂の 2 段目）: `if A && x != nil && B { T } else { E }` の T と、
+    `if A || x == nil || B { T } else { E }` の E で x は T。写しは `if <上の値の形の条件> { if x != nil { T } else { $unreach() } } else { E }`
+    （`||` は E の側を包む）— T・E は 1 回ずつ。条件の値が真なら判定は必ず成り立つ（絞った名前への代入・mut 渡しは拒否なので条件と本体の間で x は変わらない）。
+    `$unreach` は利用者が書けない名前で、後段は到達しない点（コアの unreach・panic の効果に数えない）として読む。
+    棄てた案: 腕の複製（else の腕〔else if の鎖ごと〕の複製が lower の展開で膨らむ — 自己 build の RSS 479 → 2248 MB を実測）・
+    旗の変数（値の位置で結果の束縛に型が要る）・内部の unwrap `x := $nn(x)` の束縛し直し（同じ名前の束縛し直しと新しい語彙が層ごとに要る — 単独の判定の入れ子なら既存の絞りの道だけで済む）。
+    `if x == nil || A { return … }` の否定側の後ろの文で x は T（`||` の否定側 — then が脱出〔return / break / continue〕1 文のとき。else の無い if の後ろの文に絞りが届くのはこの形だけ）。
     `if x == nil { return … }` の後ろの文で x は T（早期脱出 — Go のガード節の慣用形）。脱糖は loader の固定テンプレート（src/compiler/loader/flowx.sober —
     単独の nil 判定の if の入れ子へ写す。`||` の then は脱出 1 文のときだけ複製）— コア・Lean は無変更。
-    棄てた案: 脱出で終わらない then の `||` の否定側（then を複製すると複製先で x が絞られて読まれる — 需要が出たら再訪）
 - `T?` の単値 subject の switch に `case nil:`（決定 2026-10-01） — `switch x { case nil: A; …残りの腕…; default: D }` は
   `if x != nil { switch x { …残りの腕…; default: D } } else { A }` と同じ（x が名前でなければ一度束縛する）。腕の並びは保ち、nil の腕だけを抜く。
   残りの腕が default だけなら then はその本体。網羅は内側の switch の既存の検査（error なら導出集合の全ラベル・union なら全 variant・int なら default）。
@@ -1034,8 +1055,8 @@ Go の nil を踏襲しない。nil が這い回る経路（interface、メソ�
      （Go の Marshal と違い `<` `>` `&` は素のまま）・NaN / ±Inf は JSON に無いので panic（json.NotFinite{field}）。範囲は Decode と同じ。
      欄名の対応 = `json.DecodeWith[T](d, n, r)` / `json.EncodeWith[T](v, r)`（r = map[string]string — 欄名 → JSON のキー・入れ子の struct の欄にも同じ辞書が掛かる・
      対応の無い欄は欄名のまま）。同じ辞書で両方向（例 json_encode — Encode → Parse → Decode の往復・Go の Marshal と同じ綴り）。
-     棄てた案: 省略可能な引数 `rename: map[string]string?`（名前付き引数の T? 省略 — `map[string]string?` は「値が string? の map」で、省略可能な map / slice は
-     文法上書けない〔型に括弧が無い — 旧記述の「言語の穴 F-ag」は読み違いで取り下げ・2026-10-19 追従〕。書けるようにするかは言語の裁定 — 書けたら 1 つの口に畳む）
+     棄てた案: 省略可能な引数 `rename: map[string]string?`（名前付き引数の T? 省略 — `map[string]string?` は「値が string? の map」。省略可能な map / slice は
+     括弧の型 `(map[string]string)?` で書ける〔25 節 Z の括弧の型 — `f(b []byte, more ([]byte)?)` は受理・省略も `more: x` も通る（2026-11-02 確認）〕— 1 つの口に畳むかは別の裁定）
    - 命名規約: 辞書の型は大文字（`Shape[T]`、`Layout[T]`、`Ord[T]`）、その値を返すコンパイラ組み込みの const 式は小文字（`shape[T]`。`len` と同じ組み込み関数の扱い）。`Layout[T]` に小文字形が無いのは暗黙に渡され利用者が式に書く場面が無いためで、`sizeof` 相当が要れば `layout[T].size` として同じ規約に乗る
    - DCE は壊れない: `shape[T]` は参照された型（とそこから到達する入れ子の型）の分だけ rodata に出る。グローバルな型テーブルを持たないので、design-dev.md「型情報テーブルとリフレクションは無い」はそのまま。Go の reflect との差はここ（Go は全型のメタデータが常駐する）
    - 性能の賭けは 9 節・region-domain-pool.md と同じ: `shape[User]` は定数なので、最適化器の定数伝播 + ループ展開で型ごとに手書きしたデコーダと同じコードになる。「辞書が定数なら単相化と同じ」の 3 個目の適用例で、新しい機構ではない
@@ -2177,13 +2198,21 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
       - 判定: net を使う std/task のプログラムのワーカーは、io_uring_setup が DEFER_TASKRUN + SINGLE_ISSUER + CQSIZE（SQ 256 / CQ 4096 — カーネル ≥ 6.1）を受けたら
         net の ring を作り、epoll を作らない。受けなければ epoll の道。開発の口 `SOBER_NET=1` は epoll の道に固定（出力一致の網）・`SOBER_IO_TRACE` はワーカーごとに
         `backend=uring+net` を出す（backend はここで見える — 観測の口の API〔`io.Backend()` 等〕は持たない。積み）
-      - net の ring のワーカー: fd の待ち = POLL_ADD・受け = 接続ごとの multishot RECV（PBUF_RING — region-domain-pool.md 4c 節）・送り = SEND（完了を待つ — N8'）・
+      - net の ring のワーカー: fd の待ち = POLL_ADD・受け = 接続ごとの multishot RECV（PBUF_RING — 6.12 以上は増分消費の環・region-domain-pool.md 4c 節）・送り = SEND（完了を待つ — N8'）・
         accept = listener の multishot ACCEPT（受けた fd は fd で引く listener の記録の列へ — 鎖は受けた fd 自身の記録の空き語）・閉じ = 張った RECV / ACCEPT を
         ASYNC_CANCEL で止めてから（multishot は close では止まらない — 止まる前に閉じると後の完了が同じ番号の別の接続の記録に落ちる）、受けの列のスロットを返し、
         listener なら列に残った受けた fd を閉じてから close
       - close を ring に積むのは task の出口（rt.fd_drain — Serve の接続）だけ（IORING_OP_CLOSE — 出口の直後のスケジューラの提出に乗る）。std の生成元の後始末
         （Listen / Dial / Accept の for）は同期の close。棄てた案: close を全部 ring へ（積んだ SQE は次の enter まで出ないので、task が走り続けると相手の FIN や
         listener の閉じが遅れる — 閉じた直後の Dial が backlog に繋がりうる）
+      - 登録済みの ring fd と固定のファイル表（2026-11-02 — report-rt-4〜6。効きの白黒は GHA の perf の run で付ける — 効かなければ revert）: ring を作ったワーカーが
+        REGISTER_RING_FDS し enter は添字で入る（5.18 — 断られたら素の fd）。net の ring は ring ごと 4,096 枠の sparse の表（5.19・枠 1 つ 8 B のカーネルの表 — W64 で 2 MiB）を持ち、
+        接続の task の ring（持ち主 — 走り始めた task はワーカーを動かない）が最初に RECV を張るとき枠を取って FILES_UPDATE の SQE で fd を入れ、持ち主の ring の SEND は
+        IOSQE_FIXED_FILE で枠を引く（SQE ごとの fget / fput を省く — 増分消費の環の後は要求あたり 1.13 回 → 0）。両持ち（普通の fd も残す — std/net の Conn・rt の登録簿・
+        epoll の道は fd の番号のまま）。枠が尽きた接続は素の fd。枠はファイルの参照を持つので閉じで外す: 持ち主は CLOSE（file_index）、持ち主でなければ SHUTDOWN で FIN を
+        即時に出して MSG_RING で持ち主へ依頼（枠の世代と中身の fd で照合 — 古い依頼は捨てる。Conn は task をまたがないので std の上では起きない — rt の保険・網は変異 33）。
+        棄てた案: 枠の番号 = fd の番号（表が fd の上限 65,536 枠を強いて W64 で Slab +33 MiB — report-rt-5）・ACCEPT で直に枠へ（普通の fd が無くなる）・全ワーカーの ring に
+        登録（SINGLE_ISSUER で他の ring の表は触れない）
       - 眠り = enter（走れる task が尽きたときに提出・取り込み・眠りを 1 回 — 完了は enter でしか CQ に載らない〔DEFER_TASKRUN〕）。期限つきの待ち手の最小の期限は
         IORING_ENTER_EXT_ARG の timeout
       - 頭の取り込み（D2 の例外 — 2026-10-24・report-1104 / 1105）: 未提出の SQE が 8 本に届いたら、走れる task が残っていても眠らずに提出と取り込み
@@ -2213,6 +2242,26 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
         （report-1133 (A) — 掃いた後の深い取り込みで keep-alive −11〜19%）・頭の取り込みを外す（公平だが keep-alive −14%・churn −10%）・D を環境変数 / 内部定数に
         （アプリごとに求める品質が違う — 宣言で買う口に）・プロセス全体で 1 つの D（同じプロセスの 2 つの Serve を分けられない）・task.Spawn 一般の名前付き引数（実需が
         Serve だけ — region: と同じ線）・期限の順の構造（ヒープ — 押し込みが O(log n) で LIFO の得が消える）
+      - 次に走る候補の先読み（2026-11-01 — T1・report-t1-0 / 1）: 飽和下の積みは深く（async 16,000 接続で走れる task 11,700 本・待ちの中央値 72 ms）、
+        起きた task の TCB と積みは走るまでに L3 の外へ落ちる（作業集合 ≈ 14 KB × 接続）。取り出しの直後、次に取られうる 2 本
+        （頭と底 — 溢れの列の最古か環の底）のうち冷えている方（環で 2^22 TSC 以上待った — 枠の積んだ時刻・≈1.4 ms。溢れの列から来る底は常に冷えている側）だけ、TCB の頭 7 線と
+        生きた積み [退避した rsp, TCB)（上限 96 線）を prefetcht0 で先読みする。今から走る 1 本の TCB の頭 7 線は常に先読みする（温かくても作業集合が L2 を超え、
+        切り替えで直列に引く線を並べて引く — 直後に必ず使う線なので汚しにならない — GHA の同一バイナリ A/B で外すと limited-conn −3.2%）。環が空なら枠を読まない（空の環の枠は古い）。
+        開発の口: `SOBER_PF_SELF=0`（今から走る 1 本の先読みを外す）・`SOBER_PF_CAND=0`（候補の判定と先読みを外す）。両方 0 で T1 なし。
+        順・D・観測は不変（prefetch は値も効果も持たない）。手元: async 16,000 の cycles / 要求 −19%・baseline 16,000 −13%。
+        冷えの門（2026-11-03 — report-t1h-0 / t1i）: GHA（9V74）で環での待ち ≥ 1.4 ms は churn ≈4% / keep-alive 2〜4% / async 83〜91% と谷で分かれる（off-CPU とほぼ同じ分離）。
+        判定は枠の行だけで決まり、相手の TCB を読まない。
+        積みの深さの条件（2026-11-03 — report-t1f）: 積みを常に先読みした初版は churn（limited-conn・W8）で rps −7%（GHA の同箱 A/B では −10〜16%）—
+        浅い積みの task はまだ温かく、積みの線（≈170 線 / 要求）が L2 を汚して user は −9% でも sys が +0.6 µs / 要求。TCB だけなら churn は戻るが
+        async の得が消え（−2%）、頭だけ積み・積み 32 線・走った task だけ・TC_CTX を読まない固定窓はどれも churn が戻らない。512 本の閾値は churn 同等で async −16%。
+        TCB の深さの条件（2026-11-03 — report-t1g）: 積みだけを門に入れた形でも GHA（EPYC 9V74）の同箱 A/B で limited-conn が v0.6.5 比 −8%・CPU / 要求 +7.6% 残った
+        （手元の Zen 5 では TCB だけの churn は −1% と見えない — 箱依存）→ TCB も同じ門の中へ。値段 = async 4,096（環が 256 に届かない）の TCB の分の cycles −3% が消える
+        （rps は sys 側の頭打ちで全形同じ）。
+        棄てた案: 深さの門（環が 256 本以上のときだけ — 2026-11-03 まで。churn でも門の 83〜90% が開き、深さは冷えの代理にならない — report-t1h-0）・
+        per-task の off-CPU の門（相手の TCB の語 TC_LRUN を読んで判定 — 判定の demand load が churn の損の主犯: GHA で候補の判定ごと外すと limited-conn +5.7% — report-t1i-4 後の run 41560401287）・
+        冷えの門だけ（今から走る 1 本の TCB を先読みしない — keep-alive で頭の TCB の先読みの得が消え user cycles +5〜7% — report-t1i-1）・
+        時計の満了で先読み（起きてから走るまで 70 ms 待つので届かない — 満了の側のミスが増えるだけ）・候補 1 本（期限で頭か底を予測 —
+        命令 −1K だが cycles で 2 本に劣る）・積み 64 / 128 線（96 と同等以下）
       - 表の外の番号（fd ≥ 65536 — rt の登録簿の大きさ）: ring の道は受けたその場で閉じる（記録が無く列に積めない）。Serve は両方の道で断る番号なので同じ・
         Accept の for だけ epoll の道（k に渡す）と差がある
       - 前提: 1 つの fd を accept するのは 1 本の task（= 1 ワーカー — 待ち手の起こしは今のワーカーの走れる積みへ積む）。Listener は同一性の型で写せず
@@ -2267,6 +2316,7 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
       recv を 1 回だけ回すので実需に当たらない）。棄てた案: (a) 接続ごとに切片の上限の持ち越しの席を先取り（≈ 66 KB / 接続）・(c) 伸ばせる置き場（rt の新しい口 — 凍結に当たる）。
       網 = examples/tls_serve（設定の網 + live の echo）・負例 tls_neg_copy / tls_neg_field・相互運用の確認（openssl s_client — HRR・ChaCha20・
       KeyUpdate の受け〔`K` で自分の KeyUpdate を返す・`k` は返さない〕・ALPN の不一致 → alert 120・TLS 1.2 → alert 70・break の後の Recv は Closed）
+      - 握手の順（H1 — 2026-11-01・ナビ裁定で棄却・report-tls-4）: 棄てた案 = `tls.Serve` の `handshakes: K`（署名の段の FIFO の入場券 — std の内側の数えの門）。別のワーカーからの起こしが受け箱の間引き（256 周に 1 回）を待つので渡した券が遊び、K < ワーカー数は新しい接続の握手を秒単位で飢えさせ・K = ワーカー数は順を変えない（署名と済んだ接続の要求の CPU の分け合いはスケジューラの順の問題で、入場の数では作れない）。手元の json-tls の 5 秒の窓は不変（284K 対 素通り 281.5K）・本家の形（GHA 64vcpu）では死に時間そのものが無い（5 秒 1.29M 対 15 秒 1.19M rps）。部品の patch は .pair/tls/h1/
       - 送りの 2 段（S レーン — 2026-10-25・ナビ裁定〔Put / Flush の名前はユーザーの追認待ち〕・report-1128〜1130・http の口は Z の後に `ServeWith(…, put:)` へ — report-1158）: `tls.Put(c, b)` は b の record を接続の置き場の
         送りの束（record 1 つ丸ごと = 16,406 B — blk の中・rt の口 `lease_bytes` で書く）へ Seal して積むだけ・`tls.Flush(c)` が積んだ分を送る・`tls.Send = Put + Flush`
         （顔と意味は前と同じ）。tls.Recv は受けた切片 1 つを k へ配り終えるたびに Flush する（Put で積んだ分は次の受けを待つ前に必ず送られる — 誤用の詰まりが構造で無い）。
@@ -2455,7 +2505,9 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
     プログラムの rt.sleep は眠る間はワーカーを譲る（旧 nanosleep はワーカーごと塞いだ）。net の ring のワーカーでは目標の時刻（min(今 + ms, 期限)）をワーカーごとの時計の表
     （4 分ヒープ — 2026-10-23 report-ct1 / ct4。SQE もカーネルの timer も使わない）に積み、眠りの関門が満了を起こして次の満了を ring の眠りの timeout にする（表が満杯なら
     IORING_OP_TIMEOUT 1 本 — 前の形）。epoll の道は timerfd を rt.fdwait で待つ。逐次のプログラムは nanosleep。棄てた案: 期限つきの io の待ちも同じ表に（完了で表から
-    消す道が要り、ベンチの道に無い — 期限つき io の待ちは今の鎖の走査のまま）・timer wheel（削除が要らない sleep では利点が効かない）
+    消す道が要り、ベンチの道に無い — 期限つき io の待ちは今の鎖の走査のまま）・timer wheel（削除が要らない sleep では利点が効かない）。
+    満了で起こす task は TCB の頭 7 線を先読みする（2026-11-02 report-tm-1 — 保持の間に冷えた TCB を走りまでに引く・順は不変）。棄てた案: 積みも先読みする
+    （起きた task の積みは走れる積みの先読みが覆う — 引き直すと L2 を汚す）・関門でヒープの頭の近い満了 k 本を前倒しで先読み（冷えの大半は TCB と積みの外で天井に届かない）
     実装（段 3 の ④）: 実効の期限は task の語（CLOCK_MONOTONIC の絶対時刻・0 = 期限なし）— scope の開きで min(今の値, 今 + 宣言) を入れて出口で戻し、
     spawn の子は親の値を写す（子の寿命は scope の中なので、根までの期限の木を歩く形〔budget の天井の節〕と同じ値を写しで運ぶ）。io の口の頭は std/io の
     `sysDeadline`（組み込み — 期限があるときだけ時刻を読む）を見る。deadline: を書かないプログラムでは判定は定数 0 で畳まれる（IR 不変 — 書いたかは ParCheck の歩きが印を付ける）。
@@ -2585,6 +2637,9 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
   2026-10-29 に小分けの check から付け替え — 便 2 R3）+ analyzer を掛け直して、前回との差分の診断だけを標準エラーへ（`+ 行` / `- 行` / `watch: ok | N diagnostic(s)`）。
   診断の行は一括の `sober check` と同じ（網 = ゲート watchcheck）。回は編集の静止（SOBER_WATCH_QUIET — 既定 200 ms）を待って始め、回の答えは素の `sober check` が
   再生で引ける形で置き場に書く。受理の回の後は build を裏で温める（子プロセス — nice・ワーカーを絞る・SOBER_WATCH_BUILD=0 で止まる — docs/incremental.md）。
+  温めのテストが読んだファイル（`_test.sober`・double・契約で読んだ相手 — 本番の読みに無いもの）も、そのテストが終わった時点から見張りに足す（2026-10-31 — DI R3。
+  回の検査そのものは本番の読みのまま）。使い方は「立てたら忘れてよい」— 普段どおり `sober check` / `build` / `test` を打てば温めの当たりで速く返り、watch の出力は
+  不具合を疑ったときだけ見る（当たり / 外れの印は出さない — 温めは透明なインフラ・ユーザー裁定 2026-10-31）。
   検査器は起動時のバイナリに固定（bin/sober は stage2 の写し out/watch/sober2-<鍵> を走らせる・`SOBER_WATCH_REF=<バイナリ>` で明示の固定参照 — compiler/ を編集しても
   検査器と鍵が動かないので温が効く）。役割は「エディタの赤線」— 正式の判定は gates のまま（固定参照の検査器は今の compiler/ の受理集合と食い違いうる）。
   後便（ピン）: status の照会口・影響テストの eager 実行・inotify。棄てた案: 毎周プロセスを起こし直す（鍵の計算〔/proc/self/exe の SHA-256〕と L0 の読み込みを毎回払う）
@@ -2855,6 +2910,12 @@ std の公開名は次の 5 つに従う。新しい公開関数はこの規則�
      短い一致が主の入力（noisy・rnd2）で +10〜11%。率の線は lv4〜6 だけ実測の最大 × 1.005 に引き直し（check.ts ⑤）、全形の合算の「zlib より縮む」は廃止。
      lv1〜3・7〜9 は不変（率を優先したい呼び手は lv7 以上を選ぶ）。棄てた案: 3 バイトの補助表で率を取り戻す（json では長さ 3 の一致が文字より高くつき逆に悪い）・
      閾値 > 16 / > 32（効きが 0.73 / 0.96 に落ちて noisy と dataset はやはり割る）・割り当て器の便〔率不変 −10〜18%〕は棚（report-1115 (α)）
+     → **再訪 2（追記 2026-11-01 — ユーザー裁定・report-hperf-4）: lv6 の中身を json-comp の採点式（rps / Bpr² — 速さと率の交換）で掃引した値にする**。
+     約束は「**lv6 は zlib 比 +数 % 以内の率で大幅に速い**」（実戦形〔json の本文・dataset〕で zlib の +3% まで）。lv6 = 鎖 64・nice 96・lazy の閾値 10・
+     中の挿入を省く一致の長さ > 6（他の level は上のまま）。値札: json-comp の 1 要求の命令 −8.3%・応答の大きさ +1.3%（採点式で +6% 前後）・
+     率は json の本文 zlib × 1.023〜1.026・dataset 1.016・人工形（noisy・rnd2）は +11〜12% 級のまま。率を厳密に取りたい呼び手は lv7〜9（zlib と同じ探し方）、
+     さらに縮めたいなら brotli / zstd（std/compress への追加 — 予定）。棄てた案: zlib を絶対の基準にする線（上位の実装に level の概念は無く、既定の一本道を
+     採点式に調律している — ベンチの数字が「利用者が既定で得る性能」になる方が誠実）・lazy の閾値 6・鎖 16（json の枠の内で点は +1.6% 多いが dataset が zlib × 1.11 に落ちる）
    - base64・URL の符号化（追記 2026-10-22 — std/base64・std/url 新設・0.7.0 の Web の小物の束）: base64 は `Encode` ⇄ `Decode`（RFC 4648 4 節の標準の字母・詰めつき）と
      `EncodeUrl` ⇄ `DecodeUrl`（5 節の URL に安全な字母・詰めなし）— 字母の違いは別関数（名前付き引数にしない: 綴りの約束が違う口は 34 節の「族ごとに戻りの形は 1 つ」の線で分ける）。
      復号は厳格（字母の外・空白と改行・余計な詰め・最後の文字の使わない bit が 0 でない綴りは `Bad` — 1 つのバイト列に綴りは 1 つ・RFC 4648 3.5）。
@@ -2927,7 +2988,12 @@ object でなければ error）→ `NeedObject`（Need の族）・variant `json
   全部通った package の印字は置き場に覚え、次の同じ問い合わせは建てずに走らせずに同じ印字を返す（結果の再生 — 鍵と照合は docs/incremental.md「テストの結果の再生」。
   `--fresh` で走らせ直す。失敗のある package・リテラルでない環境変数の読みを持つ package は覚えない）`--run <接頭辞>`（T8 — CLI C3 で `-run` から改名）。`sober check <package> --test`（T12）
 - assert = power assert（T5・A1〜A5）: `assert(e)` は `_test.sober` だけの語彙（外は loader の拒否 — T7）。loader の固定テンプレートが部分式を束縛して
-  偽なら `assert failed: <式>` と部分式の値（`<綴り> = <値>`）と式の中の名前の値（同じ名前は 1 回 — 2026-10-02 追補）を標準エラーへ書いて panic する:
+  偽なら `assert failed: <式>` と部分式の値（`<綴り> = <値>`）と式の中の名前の値（同じ名前は 1 回 — 2026-10-02 追補）を標準エラーへ書いて panic する。
+  panic はテンプレートが assert を書いた位置に置く（`panic: testing.AssertFailed{} at <file>:<line>:<col>` が利用者の assert の行を指す — 2026-11-02。
+  棄てた案: 見出しに `at <file>:<line>` を焼き込む — loader は字句の位置を持たず、panic の位置の印字が既に同じことを言う）。
+  任意のラベル `assert(e, label)`（2026-11-02 — テーブル駆動で落ちたケースを名指す口）: 見出しが `assert failed (<label>): <式>` になる。label は string で、
+  失敗のブロックの中に置くので偽のときだけ評価する（assert は固定テンプレートの語彙で、ラベルは `&&` の右辺と同類の「評価されないことがある実引数」— 通る assert には補間の値札が掛からない。
+  棄てた案: 普通の実引数として先に評価する — 通るたびにラベルの文字列を組む値札をテーブルの行数だけ払う）:
   ```
   assert failed: Double(x) == x + 1
     Double(x) = 6
@@ -2935,7 +3001,9 @@ object でなければ error）→ `NeedObject`（Need の族）・variant `json
     x = 3
   ```
   割る深さは最上位の比較の両辺・呼び出しの実引数・`!x` の x（`&&` / `||` は短絡を保つため割らない）。値の印字は補間（int / bool / string — T6 の初版）。
-  印字できない型（byte・struct・slice）の値の行は黙って省く（補間の節の印 — 穴の型が印字できなければ行全体を空文字に。脱糖器・lower の補間の脱糖）。
+  印字できない型（byte・struct・slice・関数値）の値の行は黙って省く（補間の節の印 — 穴の型が印字できなければ行全体を空文字に。脱糖器・lower の補間の脱糖）。
+  リテラル・名前・`mut x` の部分式は束縛しない（関数型の名前は局所に束縛できず、`mut x` は値でない — 名前の値は式の中の名前の行が出す）。
+  見出しと値の行の綴りは catch を書いたとおりに戻す（printer が loader の catch の写しを `L catch D` で書く）。
   総称関数 `Show[T]` にしなかったのは、T = string の Def が region を持つ型引数（積み R3）で拒否されるため — R3 か shape[T] が入ったら移す
 - 性質ベースのテスト = std/quick（2026-10-30 — 検証の四点セット T2）: 生成器の値は持たない（ジェネリックな関数値は値にできず、関数型に mut の席も無い — 25 節・26 節）。
   利用者が `mut q := quick.New()` を束ね、性質のラムダ（仮引数なし・最後の式が bool）の中で `quick.Int(mut q, 0, 9)` のように選択の源から引く（借りのラムダの mut の捕捉 — 26 節）。
@@ -2962,6 +3030,7 @@ object でなければ error）→ `NeedObject`（Need の族）・variant `json
   棄てた案: FuzzXxx の別の語彙（同じ性質を 2 回書く）・ランナー（compiler）が駆動する（縮めの段を二重に持つか compiler が std/quick を import して鎖の段が要る）・
   親の側の期限（束の単位でしか切れず、1000 本の束の遅さとハングを区別できない）・駆動役と役ごとの関数を mut q + prop で書く（Check が呼び出し点ごとに展開されるので
   駆動役が Check ごとに複製された — 束の試行とコーパスの再生は Check の本体の search / shrink / falsified に合流）
+- テストの構成の差し替え（`@doubles` と `_double.sober` — package を丸ごと double にする）は 41 節
 - 例: examples/quick_fuzz.sober（駆動役の仕組み）・testdata/sobertest（calc・badsig・asserts・props・propsbad・propsfuzz — ゲート sobertest）・testdata/quickfuzz（駆動役 — ゲート quickfuzz）・src/compiler/obuf/obuf_test.sober（ゲート unittest — compiler/ の単体テスト）
 
 ### 36. @layout 最小形 — 幅の語彙・固定長配列・N 連の写し（決定 2026-10-02 — 設計 Y1〜Y9・Q1〜Q4。実装済み 2026-10-02）
@@ -3087,13 +3156,15 @@ func readPhdr(b []byte, phoff int, i int) Elf64Phdr? {
 
   | 誤り | check | build（今） | 畳む先 |
   |---|---|---|---|
-  | 型の食い違い（演算・条件・引数・代入・戻り） | `type error at …`（検査器） | `lower error at … (Mismatch)` | `type error at …` |
+  | 型の食い違い（演算・条件・引数・代入・戻り） | `type error at …`（検査器） | check も拒否なら check と同じ行（下）・でなければ `lower error at … (Mismatch)` | `type error at …` |
   | 値を返さない経路（戻りのある関数の末尾） | `type error at …`（本体の末尾の式） | `lower error at … (Missing)`（関数の頭） | `type error at …`（文言の便で「missing return」を足す） |
   | 名前・欄・関数・型が無い | `desugar error at … (UnknownName)` | `lower error at … (UndefinedName / UndefinedFunction / UndefinedType / UndefinedField)` | 別便で裁定（`name error at …` 等 — 種類の細かさの揃え方が論点） |
   | 脱糖の拒否（形の誤り） | `desugar error at … (<種類>)` | 同じ（同じ脱糖器） | 据え置き |
   | load の拒否 | `load error …` | 同じ | 据え置き |
 
-  build 側の書き換え（`lower error … (Mismatch)` → `type error at …`）は別便（便 1 の範囲は check 側の語と、この表）
+  build 側の書き換え（決定・実装 2026-11-01 — F 掃除便 族 H）: build の拒否が内部段の名前だけ（`lower error … (Mismatch)` / `(Unsupported)`）のとき、
+  同じ木を check の経路に通し、check も拒否するなら **check と同じ行**を出す（冷たい道 — 受理の道の値札 0・文面の出どころは check の 1 か所）。
+  check が受理する形（build だけが拒否 — F 台帳の ⊃）は lower の行のまま。棄てた案: lower の各拒否点に文面を足す（同じ誤りの文面が 2 か所に分かれ、check の改善が build に届かない）
 - 文言（何がどう食い違ったか — 「the operands of + are int and string」の形・期待と実際の型）は次の便（1b）で、規則ごとの文言の表を見てから決める
 - 棄てた案: 層の語 `check error`（同じ誤りに check と build で別の語）・判定 JSON に位置の欄を足す（Lean の出力と割れる）・表層型検査器に拒否の口を足して
   よくある型の誤りを先に落とす（型の判定が 2 か所になり、検査器の規則を全部は覆えない）・関数の頭（`--def-index` の位置）で済ませる（式の位置まで — ユーザー裁定）・
@@ -3184,6 +3255,136 @@ func readPhdr(b []byte, phoff int, i int) Elf64Phdr? {
 - 将来の席: リテラルの変異は期待の型を知る層（型付けの後）なら型を保てる — その層の写しを持つ便で
 - 例: examples/mutate_basic.sober（変異の種類の全部 — 基線は写しの無い build と同じ出力）・testdata/mutate/calc（変異の種類の全部・未到達の関数・生き残る境界・ハングする変異）・testdata/mutate/chain.sober（16 項の連鎖 — 太り方の線）— ゲート mutate
   （例題全数を `sober build --mutate`〔開発の口〕で建てる・黄金・W1 ≡ W8・schemata ≡ 1 体だけ）
+
+### 41. テストの構成の差し替え — `@replaces` と `@doubles`（決定 2026-10-31 — ビルド時 DI・起案 U1〜U9）
+
+テストのビルドの中だけで、ある package を代役（double）に丸ごと差し替える。実行時の DI（interface・コンテナ・注入）の代わりに、ビルドの中の import の解決先を
+付け替える（リンクシーム — 型と効果の契約の検査つき）。本番のビルドは double を読まない。
+
+```sober
+// testdata/doubles/store/fake/fake_double.sober
+@replaces("testdata/doubles/store")
+package store
+
+type Conn struct {
+    rows []Row
+    deny bool
+}
+…
+```
+
+```sober
+// testdata/doubles/handler/handler_test.sober
+@doubles("testdata/doubles/store/fake")
+package handler
+
+import "testdata/doubles/store/fake"
+
+func TestLookup() {
+    c := fake.With([]fake.Row{fake.Row{k: "a", v: "1"}})
+    assert(Lookup(c, "a") == "1")
+}
+```
+
+- **名乗り**: double は 1 つのディレクトリ（置き場の慣習 = 相手の下 — `app/db/fake/`）で、ファイルは全部 `_double.sober`。各ファイルは package 節の前に同じ
+  `@replaces("相手のパス")` を持ち、package 名は相手の名前。`@replaces` は `_double.sober` の package 節の前にだけ書ける（package 節の前に置ける注釈は `@replaces` と `@doubles` のどちらか 1 つ — syntax.md）
+- **束ね**: テストの package の `_test.sober` の package 節の前に `@doubles("double のパス", …)`（文字列のリテラル 1 つ以上・テストの package ごとに高々 1 つ — `@replaces` と同じ席）。
+  そのテストのビルドでは、相手を import する全部のファイル（他の package も）が double を読む。配線はテストの package ごとに 1 か所で、構成を選ぶフラグは持たない。
+  統合テストは `@doubles` を書かない package に置く（本物で走る）
+- **本番に混ざらない**: `_double.sober` は差し替えの表が名指したときだけ読む（本番の build・check・テストの外の読みは、ファイル名で落とす — double のディレクトリは空に見え、
+  import は「double は @doubles からだけ読む」で拒否）。double のパスの import は `_test.sober` と `_double.sober` からだけ
+- **double のパスの import**: テストは double にだけある名前（fake の調整口 — 決め打ちの応答・注入する誤りを持つ把手を作る関数）を double のパス経由で使う。
+  そのビルドでは double のパスは相手と同じ package の別名（参照名はパスの末尾 — `fake.Conn` と `store.Conn` は同じ型）。double にだけある名前を相手のパス経由で
+  参照すると拒否（本番のコードが double にしか無い名前に依る道を塞ぐ）
+- **契約**（double の公開の名前のうち相手にもある名前 — 相手にあって double に無い名前は可: 閉世界なので使われる分だけ書けばよい）: 種類が同じ・関数の署名が同じ
+  （型パラメータの数・仮引数の mut と型・結果。型の比較は参照名を import のパスへ解いて — 修飾の無い名前は両側とも相手の package）・const は値の式が同じ・
+  型は struct / error / panic なら両方にある欄の型が同じ（欄の増減は自由 — 把手の中身を変えるのが double の本分）・union と名前付き関数型は形ごと同じ。
+  関数の `@errors` は double ⊆ 相手。相手の関数には `@effects`（と error を返すなら `@errors`）の宣言が要る（無ければ拒否 — `sober fix --effects --errors` が書く）。
+  double が `@effects` を書けばそれが相手の宣言の内側にあること、書かなければ相手の宣言が double の関数の宣言になる — analyzer の照合「導出 ⊆ 宣言」が
+  double の導出を相手の宣言と照らす（本物に無い効果〔panic・相手が io を持たないのに io〕を持つ double を拒否する — モックが本物と乖離する道を塞ぐ）。
+  相手は宣言だけを読む（本体は検査しない — 相手の import の閉包をテストのビルドへ入れない）
+- 契約の検査は loader（名前・署名・型・const・@errors・宣言の有無）と analyzer（double の導出 ⊆ 相手の @effects）の 2 段。analyzer の段は check の仕事
+  （`sober check <package> --test`・`sober check <double>`）で、build（`sober test` の build を含む）は analyzer を走らせない — 他の効果の宣言と同じ線
+- `sober check <double のディレクトリ>` は相手を import するだけの合成の main で double を相手として読み、契約だけを検査する（テストの package なしで fake を検査できる）
+- 再生: テストの結果の再生と答えの再生が照合する「読んだファイル」に、契約の検査が読んだ相手のファイルを足す（相手の宣言が変われば外れる）
+- 配線の一覧は出力で見る: `sober test <package>… --wiring` がテストのビルドを読み（走らせない）、double ごとに `<テストの package>: <相手> <= <double>` を 1 行印字する
+- double はテストの道具で被検体でない: `--cover`（`--cover-pkg` で double のディレクトリを含めても）は double のファイルに計器を打たず、`--mutate` も変異を打たない。
+  double の中の panic の位置は double の実パスで印字する（他のファイルは import のパス + ファイル名 — double は相手のパスを名乗るので、それで綴ると存在しないパスになる）
+- キャッシュ: 差し替えのための鍵の項目は無い（鍵は中身から組む — 同じ論理パスで中身の違う package は、関数の本体・宣言の要約・閉包が鍵に入って別の項目になる）。
+  本物の build と double つきのテストを同じ置き場で交互に建てて、検証モード（SOBER_CACHE_VERIFY=1 / 2）で stale が出ないことを確かめた
+- 拒否（loader — diag.Double）: `@replaces` の置き場・double のファイルの名乗りの欠けと食い違い・double のディレクトリの `_double.sober` 以外のファイル・
+  `@doubles` の置き場・double でないパス・同じ相手の double が 2 つ・相手が閉包に無い（古い配線）・相手がテストの package か std・double が相手を import する・
+  double の import の置き場・配線されていない double の import・double の package 名・double にだけある名前を相手のパス経由で参照・契約の各項
+- 範囲の外（後便）: std の package を相手にする（時計・ネットワーク — std は焼き込みで std 同士の import と internal を持つ）・double の package の
+  `_test.sober`・double が別の double を import する形
+- 棄てた案: 宣言の上書き（本物の package に double のファイルを重ねる — 把手の型を変えられず状態のある fake が書けない・double が本物の内部に結合する）・
+  ルートの表ファイル 1 枚（設定ファイルという新しい箱 — 配線とテストのコードが離れる）・CLI の引数で配線（コードから見えない）・import で起動
+  （import の有無がプログラムの意味を変える — `import _` を棄てた理由 — syntax.md 決定 14）・ディレクトリの規約で相手を決める（契約の主語がファイルに書かれない）・
+  相手の公開面との全面一致（使われない関数の穴埋めは panic の本体になり、効果の契約で書けない）・相手の導出と比べる（相手の本体と import の閉包を読むことになる）・
+  struct の欄の列の一致（把手の中身を変える double が書けない）・`@doubles` を注釈つきの const にする（`@doubles const wiring = []string{…}` — R1 の形・2026-10-31 に廃止:
+  どこからも参照されない const は宣言の顔をした設定で、名乗りで印の const を棄てたのと同じ理由。package 節の前で `@replaces` と対称の席に）
+- 例: testdata/doubles（handler = 決め打ちの応答と誤りの注入の double で走るテスト・greet = 状態を貯める spy の double で走るテスト・app = 本番の読み・
+  crashed = double の中の panic の位置・neg = 拒否の一式と効果の漏れ）・testdata/cells（置き場の読み書き・並行の Update・quick の試行ごとの空）— ゲート doubles
+
+#### 状態を貯める fake — std/testing/cell（決定 2026-10-31 — 起案 V1〜V8）
+
+fake が呼ばれた記録・書かれた値を貯める置き場。言語に大域の変数を足さず、テストの構成のファイルからだけ使える std の package に、プロセスに 1 つの置き場を持たせる。
+fake から見ると、状態はファイルと同じ「値の世界の外」にあり、効果は io として数える（DI の契約の効果の照合がそのまま効く）。
+
+```sober
+// testdata/doubles/logger/spy/spy_double.sober
+@replaces("testdata/doubles/logger")
+package logger
+
+import "std/testing/cell"
+
+const Lines = cell.Cell[[]string]{}
+
+func Log(msg string) {
+    cell.Update(Lines, (ls []string) => append(ls, msg))
+}
+```
+
+```sober
+// testdata/doubles/greet/greet_test.sober
+@doubles("testdata/doubles/logger/spy")
+package greet
+
+import "std/testing/cell"
+import "testdata/doubles/logger/spy"
+
+func TestGreetLogs() {
+    assert(Greet("a") == "hello, a")
+    assert(Greet("b") == "hello, b")
+    lines := cell.Get(spy.Lines)
+    assert(len(lines) == 2)
+    assert(lines[1] == "hello, b")
+}
+```
+
+- **把手**: `const X = cell.Cell[T]{}`（初期値は `init:` — `cell.Cell[int]{init: 1}`）。把手を作れるのはトップレベルの const の宣言だけで、同一性は宣言ごと
+  （loader が欄 `key` に package のパスと const の名前から決めた鍵を書く — 利用者は書かない）。const の外の `cell.Cell[T]{…}` のリテラルは拒否（何の置き場も指さない）。
+  把手の値は局所の束縛・実引数・欄に置ける（鍵の写し）
+- **口**: `cell.Get(h) T`（一度も書いていなければ init — 書いていなければ T のゼロ値）・`cell.Set(h, v)`・`cell.Update(h, f)`（読み → f → 書きを置き場のロックの中で 1 回に —
+  並行の task の Update は記録を失わない）。効果は Set / Update = `io`・Get = `io, nondet`（並行の task から触ると読める値がスケジュールで変わる — ファイルの読みと同じ扱い）。
+  帰結: 本物の宣言が io を持たない関数（純な本物・時刻だけの `@effects(nondet)` の本物）は、置き場を使う fake で差し替えられない（契約で落ちる — 時間とともに答えが変わる偽物を構造で止める）
+- **Update の f**: ラムダのリテラル（仮引数 1 つ）で効果なし（`@effects()` と同じ照合 — ロックを持ったまま走るので、待つ・外と出入りする・panic しうる本体は analyzer が拒否）
+- **T**: 置ける値はチャネルのペイロードと同じ素のデータ（関数値・mut の部分・同一性の値〔札・handle・端点・ファイル〕を持たない）。
+  値は置き場へ写して持ち（Set / Update の書き）、Get は呼び手の最内の region へ写して返す（region をまたぐ参照は出ない）
+- **寿命**: プロセス。`sober test` は 1 テスト 1 プロセスなので、テストごとに空から始まる。std/quick の試行（縮め・コーパスの再生を含む）の頭で rt が置き場を空にする
+  （前の試行の書きが次の試行の入力になると、試行が種と番号で決まらなくなる）
+- **封**: `std/testing/cell` を import できるのは `_test.sober` と `_double.sober`（と std）だけ — 本番のプログラムには出てこない
+- 拒否（loader — diag.Cell）: import の置き場・const の外のリテラル・`key:` を書く・Update の f がラムダのリテラルでない。analyzer: Update の f の効果。
+  型: 置けない T（diag.Cell）・Set / Update の値の型の食い違い
+- 実装: 置き場は rt の表 1 つ（`@rt.cells` — 項 = [鍵, アリーナ, 使った量, 値の箱]）とロック 1 本。書きはチャネルの送りと同じ梱包（値をプールのスロットのアリーナへ写す・
+  写した部分の印は読み手が必ず写し直す深さ）で、前のアリーナはプールへ返す。置き場を使うプログラムは task の rt を持つ（プールと写しの印のため）。
+  呼び出しは compiler が呼び出し点で写す（総称の Def にしない — T = string 等の region を持つ型引数の Def の制限を避ける）。check のコアの近似は
+  Get = 把手の init 欄・Set = 値を T として評価して捨てる・Update = 仮引数を init 欄に束ねた本体を T として評価して捨てる（置き場はコアからは io の葉と同じく不透明 — Lean は無変更）
+- 棄てた案: 言語の大域セル（`_double.sober` にだけトップレベルの mut — 決定 14 の例外で規則が 2 系統に割れる）・端点を把手の struct に入れて actor の task が状態を持つ
+  （11 節の規則の緩めが本番を含む全員に効き、fake の操作が block になって `io, nondet` の本物の契約で落ちる）・loader が隠れた mut の実引数で箱を配る（書いていない引数が流れる）・
+  名前の文字列で同一性（綴りの衝突が黙って状態を共有する）・Get が `T?` を返す（初期値のある把手でも毎回 nil の分岐）・効果なしに見せる（純な本物を状態つきの偽物で差し替えられる）・
+  Get も io だけ（並行の読みの揺れが宣言から読めない）・ロックなしの Update（Get + Set の糖衣 — 並行の spy が記録を黙って落とす）・std/testing に同居（assert の裏方は
+  `_test.sober` に暗黙で入る — 置き場が全部のテストに見える）・鍵を読み込みの順の通し番号に（package ごとのキャッシュの鍵と食い違う）
 
 ## サンプル（構文は仮置き）
 

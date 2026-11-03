@@ -1,0 +1,471 @@
+package record
+
+// TLS 1.3 の record 層（RFC 9846 5 節 — 8446bis）。std/tls の内側で、利用者は import しない
+// （公開の API は std/tls の Serve / Conn。std の網が例から叩けるように公開名で置いている）。
+//
+// - 送り: Seal は平文を 2^14 バイトずつの record に割り、1 record ごとに [頭 5 | 暗号文（平文 ‖ 内容の型 ‖ 0 埋め）| tag 16] を書く
+//   （AEAD は std/crypto の record 層向けの API SealTo — 頭 = 追加データ・nonce = iv ⊕ seq）
+// - 受け: Frames は転送路の受信コールバック recv から record の枠を切り出す呼び出し形の生成元（`for r <- record.Frames(recv)? { … }`）。record が受けの
+//   切片に丸ごと入っていれば切片のまま（写さない）・切片をまたぐときだけ持ち越しの列に溜めて繋ぐ。Open は枠 1 つを Dir の鍵で検証・復号して
+//   内容の型と中身を返す（剥がしは末尾 256 バイトを固定回数で舐める — 定数時間の対象・ctcheck）
+// - 鍵: Dir は 1 方向の traffic の鍵（traffic secret → HKDF-Expand-Label で key / iv）と seq。Update は KeyUpdate（secret を "traffic upd" で進め
+//   seq を 0 に）。AES-GCM の鍵の使用上限（RFC 9846 5.5 — 2^24.5 record）の手前で NeedUpdate が真になる（送りの KeyUpdate は handshake の層が送る）
+// - 誤りは Alert（TLS の alert の番号 — 閉じるときに相手へ送る値・RFC 9846 6 節）1 つ
+
+import "std/binary"
+import "std/crypto"
+import "std/crypto/aesgcm"
+import "std/crypto/chacha20poly1305"
+import "std/crypto/hkdf"
+import "std/iter"
+
+// cipher suite の番号（RFC 9846 B.4 — v1 は 2 つ・どちらも SHA-256）
+const AesGcm = 0x1301     // TLS_AES_128_GCM_SHA256
+const ChaCha = 0x1303     // TLS_CHACHA20_POLY1305_SHA256
+
+// record の内容の型（RFC 9846 5.1）
+const CtCcs = 20         // change_cipher_spec（互換の CCS）
+const CtAlert = 21       // alert
+const CtHandshake = 22   // handshake
+const CtApp = 23         // application_data
+
+// record の大きさ（RFC 9846 5.1 / 5.2）
+const MaxPlain = 16384           // TLSInnerPlaintext の中身の上限
+const MaxCipher = 16384 + 256    // TLSCiphertext の本体の上限
+const HeadSize = 5              // record の頭のバイト数
+
+// AES-GCM の 1 つの鍵で守る record の上限（RFC 9846 5.5 — 2^24.5 ≈ 23,726,566。手前で KeyUpdate）
+const aesLimit = 23726566
+
+// alert の番号（RFC 9846 6）
+const AlertUnexpected = 10    // unexpected_message
+const AlertBadMac = 20        // bad_record_mac
+const AlertOverflow = 22      // record_overflow
+const AlertDecode = 50        // decode_error
+const AlertInternal = 80      // internal_error
+
+// record 層の誤り（desc = 相手へ送る alert の番号）
+type Alert error {
+    desc int
+}
+
+// 転送路の受信コールバックが失敗した（相手の切断・期限など — 元の誤りは関数値越しでラベルを導出できないので包み替える。std/tls が tls.Closed に読む）
+type Transport error
+
+// 1 方向の traffic の鍵と seq
+type Dir struct {
+    suite int
+    secret []byte
+    aes aesgcm.Key
+    cc chacha20poly1305.Key
+    iv []byte
+    seq int
+}
+
+// 受けた record の枠 1 つ = b[off, off + n)（頭 5 バイト込み）。b は受けの切片か、切片をまたいだ record を繋いだ写し（反復の間だけ生きる）
+type Frame struct {
+    b []byte
+    off int
+    n int
+}
+
+// HKDF-Expand-Label(secret, label, context, n)（RFC 9846 7.1 — info = 長さ 2 バイト ‖ "tls13 " ‖ label ‖ context の長さ付き）
+@effects()
+func ExpandLabel(secret []byte, label string, context []byte, n int) []byte {
+    lb := bytes(label)
+    mut info := mut []byte{}
+    info = append(info, byte((n >> 8) & 0xff))
+    info = append(info, byte(n & 0xff))
+    info = append(info, byte(6 + len(lb)))
+    for c <- bytes("tls13 ") {
+        info = append(info, c)
+    }
+    for c <- lb {
+        info = append(info, c)
+    }
+    info = append(info, byte(len(context)))
+    for c <- context {
+        info = append(info, c)
+    }
+    out, _ := hkdf.Expand(secret, freeze(info), n)
+    return out
+}
+
+// suite と traffic secret の Dir（key = ExpandLabel(secret, "key", "", 16 / 32)・iv = ExpandLabel(secret, "iv", "", 12)・seq 0）
+@errors(Alert)
+@effects()
+func NewDir(suite int, secret []byte) (Dir, error?) {
+    if suite != AesGcm && suite != ChaCha {
+        return emptyDir(), Alert{desc: AlertInternal}
+    }
+    iv := ExpandLabel(secret, "iv", []byte{}, 12)
+    if suite == AesGcm {
+        k, e := aesgcm.Prepare(ExpandLabel(secret, "key", []byte{}, 16))
+        if e != nil {
+            return emptyDir(), Alert{desc: AlertInternal}
+        }
+        return Dir{suite: suite, secret: secret, aes: k, cc: chacha20poly1305.Key{key: []byte{}}, iv: iv, seq: 0}, nil
+    }
+    k, e := chacha20poly1305.Prepare(ExpandLabel(secret, "key", []byte{}, 32))
+    if e != nil {
+        return emptyDir(), Alert{desc: AlertInternal}
+    }
+    return Dir{suite: suite, secret: secret, aes: aesgcm.Key{ctx: []byte{}}, cc: k, iv: iv, seq: 0}, nil
+}
+
+func emptyDir() Dir {
+    return Dir{suite: 0, secret: []byte{}, aes: aesgcm.Key{ctx: []byte{}}, cc: chacha20poly1305.Key{key: []byte{}}, iv: []byte{}, seq: 0}
+}
+
+// KeyUpdate（secret' = ExpandLabel(secret, "traffic upd", "", 32) — RFC 9846 7.2・key / iv を作り直して seq を 0 に）
+@errors(Alert)
+@effects()
+func Update(d mut Dir) error? {
+    nd := NewDir(d.suite, ExpandLabel(d.secret, "traffic upd", []byte{}, 32))?
+    d = nd
+    return nil
+}
+
+// 送りの鍵を進めるべきか（AES-GCM の使用上限の手前 — ChaCha20-Poly1305 は seq の上限〔2^64〕まで来ない）
+@effects()
+func NeedUpdate(d Dir) bool {
+    return d.suite == AesGcm && d.seq >= aesLimit
+}
+
+// 内容の型 ctype の平文 pt を record の列にしたもの（2^14 バイトずつ・各 record の内側の末尾に 0 埋め pad バイト〔0 = 埋めない〕）。
+// 空の pt は中身 0 バイトの record 1 つ（application_data には送らない約束は呼び手 — RFC 9846 5.1）
+@effects()
+func Seal(d mut Dir, ctype int, pt []byte, pad int) []byte {
+    n := len(pt)
+    if n <= MaxPlain {
+        return sealOne(mut d, ctype, pt, 0, n, pad)
+    }
+    mut out := mut []byte{}
+    mut at := 0
+    while at < n {
+        m := if n - at < MaxPlain { n - at } else { MaxPlain }
+        r := sealOne(mut d, ctype, pt, at, m, pad)
+        mut j := 0
+        while j < len(r) {
+            out = append(out, r[j])
+            j += 1
+        }
+        at += m
+    }
+    return freeze(out)
+}
+
+// Seal の宛先を呼び手の列 dst[at:] にした形（record 1 つ — pt が MaxPlain を越える・dst に入らなければ −1。書いたバイト数を返す）。
+// d は読むだけ（seq は呼び手が +1 して書き戻す — mut の仮引数を dst の 1 つに保つ）。作業の列（頭・nonce・tail・AEAD の作業）は呼び手の region に積もる
+@effects()
+func SealInto(d Dir, ctype int, pt []byte, dst mut []byte, at int) int {
+    m := len(pt)
+    if m > MaxPlain {
+        return 0 - 1
+    }
+    tail := []byte{byte(ctype)}
+    hd := head(m + 1 + 16)
+    nonce := nonceOf(d.iv, d.seq)
+    if d.suite == AesGcm {
+        return aesgcm.SealInto(d.aes, nonce, hd, pt, hd, tail, mut dst, at)
+    }
+    return chacha20poly1305.SealInto(d.cc, nonce, hd, pt, hd, tail, mut dst, at)
+}
+
+// pt[at, at + m) を 1 record に（内側 = 中身 ‖ ctype ‖ 0 × pad・頭 = 23 / 0x0303 / 内側 + tag の長さ）。中身は写さず切り出しで渡し、
+// ctype と詰め物は SealTo の tail で後ろに繋ぐ（写しは SealTo の宛先への 1 回だけ）
+func sealOne(d mut Dir, ctype int, pt []byte, at int, m int, pad int) []byte {
+    mut tl := mut []byte{}
+    tl = append(tl, byte(ctype))
+    mut z := 0
+    while z < pad {
+        tl = append(tl, 0)
+        z += 1
+    }
+    tail := freeze(tl)
+    body := pt[at:at + m]
+    hd := head(m + len(tail) + 16)
+    nonce := nonceOf(d.iv, d.seq)
+    d.seq += 1
+    if d.suite == AesGcm {
+        r, _ := aesgcm.SealTo(d.aes, nonce, hd, body, hd, tail)
+        return r
+    }
+    r, _ := chacha20poly1305.SealTo(d.cc, nonce, hd, body, hd, tail)
+    return r
+}
+
+// 暗号化した record の頭（application_data・legacy_record_version 0x0303・本体の長さ n）
+func head(n int) []byte {
+    mut h := mut []byte{}
+    h = append(h, byte(CtApp))
+    h = append(h, byte(3))
+    h = append(h, byte(3))
+    h = append(h, byte((n >> 8) & 0xff))
+    h = append(h, byte(n & 0xff))
+    return freeze(h)
+}
+
+// iv ⊕ seq（seq は 64 ビットの大きい端を iv の後ろ 8 バイトに — RFC 9846 5.3）
+func nonceOf(iv []byte, seq int) []byte {
+    return []byte{iv[0], iv[1], iv[2], iv[3],
+        byte(int(iv[4]) ^ ((seq >> 56) & 0xff)), byte(int(iv[5]) ^ ((seq >> 48) & 0xff)), byte(int(iv[6]) ^ ((seq >> 40) & 0xff)), byte(int(iv[7]) ^ ((seq >> 32) & 0xff)),
+        byte(int(iv[8]) ^ ((seq >> 24) & 0xff)), byte(int(iv[9]) ^ ((seq >> 16) & 0xff)), byte(int(iv[10]) ^ ((seq >> 8) & 0xff)), byte(int(iv[11]) ^ ((seq >> 0) & 0xff))}
+}
+
+// 暗号化していない record（handshake の最初の flight・互換の CCS）の内容の型と中身（枠 r の頭の後ろ — 写さない部分列）
+@effects()
+func Plain(r Frame) (int, []byte) {
+    return int(r.b[r.off]), r.b[r.off + HeadSize:r.off + r.n]
+}
+
+// 枠 r（外側の内容の型 = application_data）を d の鍵で検証・復号して、内側の内容の型と中身（0 埋めを剥がした平文）を返す。
+// tag の不一致は bad_record_mac・本体が tag より短い / 長すぎるは record_overflow / decode_error・内側が全部 0（内容の型が無い）は unexpected_message
+@errors(Alert)
+@bless
+@effects()
+func Open(d mut Dir, r Frame) (int, []byte, error?) {
+    if int(r.b[r.off]) != CtApp {
+        return 0, []byte{}, Alert{desc: AlertUnexpected}
+    }
+    body := r.n - HeadSize
+    if body > MaxCipher {
+        return 0, []byte{}, Alert{desc: AlertOverflow}
+    }
+    if body < 17 {
+        return 0, []byte{}, Alert{desc: AlertDecode}
+    }
+    nonce := nonceOf(d.iv, d.seq)
+    ad := r.b[r.off:r.off + HeadSize]
+    ok, p := openBody(d, nonce, ad, r)
+    if !ok {
+        return 0, []byte{}, Alert{desc: AlertBadMac}
+    }
+    d.seq += 1
+    ct, n := strip(p)
+    if n < 0 {
+        return 0, []byte{}, Alert{desc: AlertUnexpected}
+    }
+    if n > MaxPlain {
+        return 0, []byte{}, Alert{desc: AlertOverflow}
+    }
+    return ct, p[0:n], nil
+}
+
+// 枠 r の本体を d の鍵で開いた内側の平文（tag の不一致なら ok = false）
+func openBody(d Dir, nonce []byte, ad []byte, r Frame) (bool, []byte) {
+    body := r.n - HeadSize
+    if d.suite == AesGcm {
+        p, e := aesgcm.OpenAt(d.aes, nonce, ad, r.b, r.off + HeadSize, body)
+        return e == nil, p
+    }
+    p, e := chacha20poly1305.OpenAt(d.cc, nonce, ad, r.b, r.off + HeadSize, body)
+    return e == nil, p
+}
+
+// 内側の平文 p の内容の型と中身の長さ（末尾から 0 でない最初のバイト — RFC 9846 5.4。無ければ (0, -1)）。末尾 256 バイトは固定回数で
+// 舐め（stripTail — 0 埋めの長さを時間に出さない）、そこが全部 0 のときだけ前の全部を同じく固定回数で舐める（256 を超える 0 埋めは
+// 「長い」ことだけが時間に出る — 前の探索は早く抜けない。通常の record は末尾で決まるので値札なし）
+func strip(p []byte) (int, int) {
+    m := len(p)
+    lo := if m > 256 { m - 256 } else { 0 }
+    at, ct := stripTail(p, lo, m)
+    if at >= 0 {
+        return ct, at
+    }
+    at2, ct2 := stripTail(p, 0, lo)
+    if at2 >= 0 {
+        return ct2, at2
+    }
+    return 0, 0 - 1
+}
+
+// p[lo, m) で最後の 0 でないバイトの位置と値（無ければ (-1, 0)）。回数は m - lo（公開の長さ）だけで決まり、選択は mask（定数時間 — ctcheck）
+@bless
+func stripTail(p []byte, lo int, m int) (int, int) {
+    mut at := 0 - 1
+    mut ct := 0
+    for i <- iter.Range(lo, m) {
+        nz := crypto.NonZero(int(p[i]))
+        at = crypto.Select(nz, i, at)
+        ct = crypto.Select(nz, int(p[i]), ct)
+    }
+    return at, ct
+}
+
+// 転送路の受信コールバック recv から record の枠を順に k へ渡す（呼び出し形の生成元 — `for r <- record.Frames(recv)? { … }`）。
+// 枠の本体の長さが MaxCipher を超えれば record_overflow（溜めない）。record が受けの切片に丸ごと入っていれば切片のまま渡し、切片をまたぐ
+// record は持ち越しの列（最初にまたいだときに頭 + MaxCipher バイトを 1 回確保）に溜めて、揃ったら繋いだ写しを渡す。recv が閉じたときに
+// 半端な record が残っていれば decode_error。recv の失敗は Transport に包み替える
+@errors(Alert, Transport)
+@effects()
+func Frames(recv func(k func([]byte)) error?, k func(Frame)) error? {
+    capa := HeadSize + MaxCipher
+    mut pend := mut []byte{}
+    mut pn := 0
+    for chunk <- (recv()? Transport{}) {
+        mut at := 0
+        n := len(chunk)
+        // 持ち越しがあれば、まず 1 record を揃える
+        if pn > 0 {
+            // 頭（5 バイト）を揃えてから本体を揃える — どちらも添字の写しの形（copyloop (B) — 一括の写しに下りる）
+            if pn < HeadSize {
+                m := if HeadSize - pn < n - at { HeadSize - pn } else { n - at }
+                carry(mut pend, pn, chunk, at, m)
+                pn += m
+                at += m
+                if pn == HeadSize && (int(pend[3]) << 8 | int(pend[4])) > MaxCipher {
+                    return Alert{desc: AlertOverflow}
+                }
+            }
+            if pn >= HeadSize {
+                want := HeadSize + (int(pend[3]) << 8 | int(pend[4]))
+                m := if want - pn < n - at { want - pn } else { n - at }
+                carry(mut pend, pn, chunk, at, m)
+                pn += m
+                at += m
+                if pn == want {
+                    k(Frame{b: joined(mut pend, pn), off: 0, n: pn})
+                    pn = 0
+                }
+            }
+        }
+        // 丸ごと入っている record は切片のまま
+        mut more := pn == 0
+        while more && n - at >= HeadSize {
+            body := int(chunk[at + 3]) << 8 | int(chunk[at + 4])
+            if body > MaxCipher {
+                return Alert{desc: AlertOverflow}
+            }
+            if n - at >= HeadSize + body {
+                k(Frame{b: chunk, off: at, n: HeadSize + body})
+                at += HeadSize + body
+            } else {
+                more = false
+            }
+        }
+        // 残り（半端な record の頭）を持ち越す
+        if at < n {
+            if len(pend) == 0 {
+                mut z := 0
+                while z < capa {
+                    pend = append(pend, 0)
+                    z += 1
+                }
+            }
+            m := n - at
+            carry(mut pend, pn, chunk, at, m)
+            pn += m
+            at += m
+        }
+    }
+    if pn > 0 {
+        return Alert{desc: AlertDecode}
+    }
+    return nil
+}
+
+// chunk[at, at + m) を pend[pn, pn + m) へ（添字の写しの形 — copyloop (B)）
+func carry(pend mut []byte, pn int, chunk []byte, at int, m int) {
+    mut j := 0
+    while j < m {
+        pend[pn + j] = chunk[at + j]
+        j += 1
+    }
+}
+
+// pend の先頭 n バイトの写し（切片をまたいだ record — 反復の region に）
+func joined(pend mut []byte, n int) []byte {
+    mut out := mut []byte{}
+    mut i := 0
+    while i < n {
+        out = append(out, pend[i])
+        i += 1
+    }
+    return freeze(out)
+}
+
+// ── std/tls の口（Conn の置き場 — 接続の状態は値の外の int の列に住む）──
+
+// b[off, off + n) を枠に（std/tls の handshake の組み立て — 呼び手が頭の長さを検査した後）
+@effects()
+func At(b []byte, off int, n int) Frame {
+    return Frame{b: b, off: off, n: n}
+}
+
+// d の語の列（[suite, seq, 秘密の長さ, 秘密 …, iv の長さ, iv …, 鍵の素材の長さ, 鍵の素材 …] — バイト列は 8 バイト / 語。
+// 鍵の素材 = AES-GCM の展開済みの ctx か ChaCha20-Poly1305 の鍵 — 開くたびに展開し直さない）
+@effects(panic)
+func Pack(d Dir) []int {
+    mut w := mut []int{}
+    w = append(w, d.suite)
+    w = append(w, d.seq)
+    packBytes(mut w, d.secret)
+    packBytes(mut w, d.iv)
+    packBytes(mut w, if d.suite == AesGcm { d.aes.ctx } else { d.cc.key })
+    return freeze(w)
+}
+
+// Pack の逆（w[at:] から）
+@effects()
+func Unpack(w []int, at int) Dir {
+    suite := w[at]
+    seq := w[at + 1]
+    secret, a1 := unpackBytes(w, at + 2)
+    iv, a2 := unpackBytes(w, a1)
+    km, _ := unpackBytes(w, a2)
+    if suite == AesGcm {
+        return Dir{suite: suite, secret: secret, aes: aesgcm.Key{ctx: km}, cc: chacha20poly1305.Key{key: []byte{}}, iv: iv, seq: seq}
+    }
+    return Dir{suite: suite, secret: secret, aes: aesgcm.Key{ctx: []byte{}}, cc: chacha20poly1305.Key{key: km}, iv: iv, seq: seq}
+}
+
+// d の seq を seq に差し替えた Dir（鍵の素材は d と共有 — std/tls が展開済みの送りの方向に置き場の seq の語を当てる）
+@effects()
+func WithSeq(d Dir, seq int) Dir {
+    return Dir{suite: d.suite, secret: d.secret, aes: d.aes, cc: d.cc, iv: d.iv, seq: seq}
+}
+
+// d の seq（std/tls がストレージの seq の語だけを書き戻す）
+@effects()
+func Seq(d Dir) int {
+    return d.seq
+}
+
+func packBytes(w mut []int, b []byte) {
+    n := len(b)
+    w = append(w, n)
+    mut i := 0
+    // 丸ごとの 8 バイトは語の読み 1 回（little-endian — 端のバイトの組み立てと同じ並び）
+    while i + 8 <= n {
+        w = append(w, binary.Load64(b, i))
+        i += 8
+    }
+    if i < n {
+        mut v := 0
+        mut j := 0
+        while i + j < n {
+            v = v | (int(b[i + j]) << (j * 8))
+            j += 1
+        }
+        w = append(w, v)
+    }
+}
+
+// packBytes の逆。語ごとに直列化のループ（copyloop の形 D — 丸ごとの語は 8 バイトの store 1 回に下りる）
+func unpackBytes(w []int, at int) ([]byte, int) {
+    n := w[at]
+    mut b := mut []byte{}
+    mut k := 0
+    while k < n {
+        mut v := w[at + 1 + k / 8]
+        mut x := if n - k < 8 { (n - k) * 8 } else { 64 }
+        while x >= 8 {
+            b = append(b, byte(v & 0xff))
+            v = v >> 8
+            x = x - 8
+        }
+        k += 8
+    }
+    return freeze(b), at + 1 + (n + 7) / 8
+}

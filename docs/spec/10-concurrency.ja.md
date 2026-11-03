@@ -132,9 +132,9 @@ C-10. handle を捨てた子（`_ = task.Spawn(…)`）の置き場は子の寿�
 
 ## 10.4 チャネル
 
-C-11. `tx, rx := task.NewChannel[T](cap: n)` は送り端 `task.Sender[T]` と受け端 `task.Receiver[T]` を作る（容量 n は 1 以上の整数の字面）。端点は単一の task が持ち、子へは `task.Spawn(s, (out) => …, give: tx)` でちょうど 1 つ渡す（捕獲はできない）。渡した後に親が使うと panic（終了コード 101）。1 本のチャネルの送り手・受け手は高々 1 task ずつなので、到着の順は存在しない。
+C-11. `tx, rx := task.NewChannel[T](cap: n)` は送り端 `task.Sender[T]` と受け端 `task.Receiver[T]` を作る（容量 n は 1 以上の整数の字面）。端点は単一の task が持ち、子へは `task.Spawn(s, (out) => …, give: tx)` でちょうど 1 つ渡す（捕獲はできない）。渡した後に親が使うと panic（終了コード 101）。端点でない値を `give:` に渡す形は拒否する（値は捕獲で渡す）。1 本のチャネルの送り手・受け手は高々 1 task ずつなので、到着の順は存在しない。
 例: [`examples/task_chan.sober`](../../examples/task_chan.sober)・[`examples/task_chan_def.sober`](../../examples/task_chan_def.sober)・[`examples/task_stale.sober`](../../examples/task_stale.sober)
-拒否: [`examples/task_neg_cap.sober`](../../examples/task_neg_cap.sober)・[`examples/task_neg_endpoint.sober`](../../examples/task_neg_endpoint.sober)・[`examples/task_neg_wrap_endpoint.sober`](../../examples/task_neg_wrap_endpoint.sober)
+拒否: [`examples/task_neg_cap.sober`](../../examples/task_neg_cap.sober)・[`examples/task_neg_endpoint.sober`](../../examples/task_neg_endpoint.sober)・[`examples/task_neg_wrap_endpoint.sober`](../../examples/task_neg_wrap_endpoint.sober)・[`examples/task_neg_give_struct.sober`](../../examples/task_neg_give_struct.sober)・[`examples/task_neg_give_int.sober`](../../examples/task_neg_give_int.sober)
 決定: [language.md 11 節・18 節](../language.md)
 
 C-12. `task.Send(tx, v)` は満杯なら待つ。`task.Recv(rx)` は `T?` — 空なら待ち、閉じて空なら nil。`task.Close(tx)` は送り端だけが閉じられ、閉じた後の Send と 2 度目の Close は panic。`for v <- task.Recv(rx) { … }` は閉じて空になるまで受ける。

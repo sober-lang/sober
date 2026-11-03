@@ -1,0 +1,10 @@
+package greet
+
+import "testdata/doubles/logger"
+
+// the greeting for name (logged as it is made)
+func Greet(name string) string {
+    s := "hello, ${name}"
+    logger.Log(s)
+    return s
+}

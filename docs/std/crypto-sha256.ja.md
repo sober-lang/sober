@@ -85,3 +85,12 @@ func Sum256(data []byte) []byte
 ```
 
 data の SHA-256 の値（ワンショット API）
+
+## ShaSelfCheck
+
+```sober
+@effects(!io, !block, !nondet)
+func ShaSelfCheck(seed int, rounds int) int
+```
+
+塊の Write と Sober の writeS の照合（検証の網の API — 利用者は使わない: examples/crypto\_sha256blk と cryptocheck の格子が叩く）。種 seed の擬似乱数で長さ 0〜300 の入力を rounds 個作り、乱数の長さの切れ目で 1〜3 回に分けて書いた値を両方の道で比べる。食い違いの数を返す

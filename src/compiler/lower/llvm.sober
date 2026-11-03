@@ -797,7 +797,7 @@ func llIns(st mut St, out mut []byte, lc mut LlCur, ins InsRef, bi int, cs int, 
         vreg(mut out, r)
         obuf.Lit(mut out, " = add i64 0, -38\n")
     case OpSyscall:
-        if ib == AES_B || ib == MM_B {
+        if ib == AES_B || ib == MM_B || ib == PF_B {
             // AES-GCM の塊（aes.sober）は .ll では持たない — cpuaes の印は 0 で、std の分岐が塊を呼ばない（残りの種類も 0 を返すだけ）
             obuf.Lit(mut out, "  ")
             vreg(mut out, r)

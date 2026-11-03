@@ -26,5 +26,6 @@
   "print the declarations of source files with their line ranges": "ソースファイルの宣言を行の範囲つきで印字する",
   "print the package, the imports and the declarations (types, functions, constants) of source files with their line ranges — read from the source only, with the annotations as written": "ソースファイルの package・import・宣言（型・関数・定数）を行の範囲つきで印字する — ソースだけを読み、注釈は書かれたまま",
   "list the build cache": "ビルドキャッシュの中身を一覧する",
-  "drop old generations over the limits": "上限を超えた古い世代を捨てる"
+  "drop old generations over the limits": "上限を超えた古い世代を捨てる",
+  "re-check on every change and warm the build and the tests in the background. Leave it running and type sober check / build / test as usual: they return the warmed results. Read its output only when you suspect a problem": "保存のたびに check をやり直し、build とテストを裏で温める。立てたら放っておき、普段どおり sober check / build / test を打てば温めた結果が返る。出力を見るのは不具合を疑ったときだけでよい"
 }

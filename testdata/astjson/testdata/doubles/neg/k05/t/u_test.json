@@ -1,0 +1,77 @@
+{
+  "package": "t",
+  "imports": [
+    {
+      "alias": "$testing",
+      "path": "std/testing",
+      "tok": 0
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "TestY",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 14
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 16
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 18
+                  },
+                  "tok": 17
+                }
+              ],
+              "tok": 15
+            }
+          }
+        ]
+      },
+      "tok": 10,
+      "bodiless": false,
+      "span": {
+        "start": 9,
+        "end": 23
+      },
+      "sig_end": 13
+    }
+  ],
+  "consts": [],
+  "doubles": [
+    {
+      "paths": [
+        {
+          "k": "strlit",
+          "value": "testdata/doubles/neg/k05/r/fake",
+          "tok": 3
+        }
+      ],
+      "tok": 0
+    }
+  ]
+}

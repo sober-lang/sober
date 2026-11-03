@@ -1,0 +1,62 @@
+package main
+
+// T と T? の腕の合流（spec T-16）: 期待型の無い位置の if / switch の式で、腕の型が T と T? に分かれるなら式の型は T?。
+// nil の腕から組む T?（examples/nil_sibling）と同じ道で、T の腕を T? へ寄せる。T と U?（T ≠ U）は今までどおり拒否
+
+func get(n int) int? {
+    if n > 0 {
+        return n
+    }
+    return nil
+}
+
+func show(r int?) {
+    if r != nil {
+        println(r)
+    } else {
+        println(-1)
+    }
+}
+
+type Op union {
+    Add { n int }
+    Neg {}
+    Skip {}
+}
+
+func main() {
+    q := get(0)
+    p := get(7)
+    show(if true { 4 } else { q })
+    show(if false { 4 } else { q })
+    show(if false { q } else { 5 })
+    show(if p != nil { p } else { q })
+    c := 2
+    r := if c == 1 { 1 } else if c == 2 { p } else { 3 }
+    show(r)
+    s := switch c {
+    case 1: q
+    case 2: 20
+    default: p
+    }
+    show(s)
+    o := pick()
+    t := switch o {
+    case Add{n}: n
+    case Neg{}: q
+    case Skip{}: 0
+    }
+    show(t)
+    w := if c == 2 { "x" } else { getS() }
+    if w != nil {
+        println(w)
+    }
+}
+
+func getS() string? {
+    return nil
+}
+
+func pick() Op {
+    return Neg{}
+}

@@ -19,6 +19,20 @@ import "std/iter"
 @intrinsic("mulhi")
 func mulhi(a int, b int) int
 
+// 体の積の塊（compiler/lower/mulx.sober の MK_FE — MULX の 25 本の積で fmulS と limb ごとに同じ値を番地 d へ）: cpumulx = この機械で塊を使えるか・
+// addrn / lease_view = 作業域を imm の []int に置いて番地と mut の窓の両方で触る口（std/crypto/rsa の bn と同じ形）
+@intrinsic("cpumulx")
+func cpumulx() int
+
+@intrinsic("femul")
+func femul(d int, a int, b int) int
+
+@intrinsic("addrn")
+func addrn(b []int) int
+
+@intrinsic("lease_view")
+func leaseView(blk []int, off int, n int) mut []int
+
 const mask51 = 0x7ffffffffffff
 const mask52 = 0xfffffffffffff
 
@@ -64,10 +78,13 @@ func Shared(k []byte, u []byte) []byte {
     }
     s[0] = s[0] & 248
     s[31] = (s[31] & 127) | 64
-    mut w := mut []int{}
+    mut z := mut []int{}
     for i <- iter.Range(0, fWords) {
-        w = append(w, 0)
+        z = append(z, 0)
     }
+    blk := freeze(z)
+    mut w := leaseView(blk, 0, fWords)
+    wa := addrn(blk)
     unpack(mut w, fX1, u)
     w[fX2] = 1
     for i <- iter.Range(0, 5) {
@@ -85,29 +102,29 @@ func Shared(k []byte, u []byte) []byte {
         cswap(mut w, fZ2, fZ3, m)
         swap = kt
         fadd(mut w, fA, fX2, fZ2)
-        fmul(mut w, fAA, fA, fA)
+        fmul(mut w, wa, fAA, fA, fA)
         fsub(mut w, fB, fX2, fZ2)
-        fmul(mut w, fBB, fB, fB)
+        fmul(mut w, wa, fBB, fB, fB)
         fsub(mut w, fE, fAA, fBB)
         fadd(mut w, fC, fX3, fZ3)
         fsub(mut w, fD, fX3, fZ3)
-        fmul(mut w, fDA, fD, fA)
-        fmul(mut w, fCB, fC, fB)
+        fmul(mut w, wa, fDA, fD, fA)
+        fmul(mut w, wa, fCB, fC, fB)
         fadd(mut w, fT, fDA, fCB)
-        fmul(mut w, fX3, fT, fT)
+        fmul(mut w, wa, fX3, fT, fT)
         fsub(mut w, fT, fDA, fCB)
-        fmul(mut w, fT, fT, fT)
-        fmul(mut w, fZ3, fX1, fT)
-        fmul(mut w, fX2, fAA, fBB)
-        fmul(mut w, fT, fK, fE)
+        fmul(mut w, wa, fT, fT, fT)
+        fmul(mut w, wa, fZ3, fX1, fT)
+        fmul(mut w, wa, fX2, fAA, fBB)
+        fmul(mut w, wa, fT, fK, fE)
         fadd(mut w, fT, fAA, fT)
-        fmul(mut w, fZ2, fE, fT)
+        fmul(mut w, wa, fZ2, fE, fT)
     }
     m := -swap
     cswap(mut w, fX2, fX3, m)
     cswap(mut w, fZ2, fZ3, m)
-    invert(mut w, fR, fZ2)
-    fmul(mut w, fR, fX2, fR)
+    invert(mut w, wa, fR, fZ2)
+    fmul(mut w, wa, fR, fX2, fR)
     return pack(w, fR)
 }
 
@@ -150,10 +167,19 @@ func fsub(w mut []int, d int, a int, b int) {
     carry(mut w, d, w[a] + 0xfffffffffffda - w[b], w[a + 1] + 0xffffffffffffe - w[b + 1], w[a + 2] + 0xffffffffffffe - w[b + 2], w[a + 3] + 0xffffffffffffe - w[b + 3], w[a + 4] + 0xffffffffffffe - w[b + 4])
 }
 
-// 区画 d = a × b mod p（d は a / b と同じでよい — 入力を全部読んでから書く）。limb < 2^52 の前提で、乗数 x = a × 2^12 < 2^64・
+// 区画 d = a × b mod p（d は a / b と同じでよい）。塊が使える機械では femul（fmulS と limb ごとに同じ値）・それ以外は fmulS
+func fmul(w mut []int, wa int, d int, a int, b int) {
+    if cpumulx() == 1 {
+        _ = femul(wa + 8 * d, wa + 8 * a, wa + 8 * b)
+        return
+    }
+    fmulS(mut w, d, a, b)
+}
+
+// fmul の Sober の形（塊の無い出力の道・塊の照合の相手）。d は a / b と同じでよい — 入力を全部読んでから書く。limb < 2^52 の前提で、乗数 x = a × 2^12 < 2^64・
 // 相手 y = b か 19b < 2^57: 積 < 2^109 → 上 < 2^57。列 k の和 = l_k + h_k × 2^52（5 項 — l < 2^55・h < 2^60）。h_k × 2 を列 k + 1 へ、
 // h_4 × 2 は 19 倍して列 0 へ（2^61 × 19 は溢れるので 51 bit で割って列 0 と列 1 に分ける）。どの列の和も 2^62 未満で carry に渡せる
-func fmul(w mut []int, d int, a int, b int) {
+func fmulS(w mut []int, d int, a int, b int) {
     x0 := w[a] << 12
     x1 := w[a + 1] << 12
     x2 := w[a + 2] << 12
@@ -183,17 +209,17 @@ func fmul(w mut []int, d int, a int, b int) {
 }
 
 // 区画 d = z^(p-2)（p - 2 = 2^255 - 21 — 指数は公開の値なので普通の二乗と掛け算。d と z は別の区画）
-func invert(w mut []int, d int, z int) {
+func invert(w mut []int, wa int, d int, z int) {
     for i <- iter.Range(0, 5) {
         w[d + i] = 0
     }
     w[d] = 1
     for i <- iter.Range(0, 255) {
         bit := 254 - i
-        fmul(mut w, d, d, d)
+        fmul(mut w, wa, d, d, d)
         // p - 2 のビット: 254..5 は 1・4 は 0・3..0 = 1011
         if bit >= 5 || bit == 3 || bit == 1 || bit == 0 {
-            fmul(mut w, d, d, z)
+            fmul(mut w, wa, d, d, z)
         }
     }
 }
@@ -235,4 +261,54 @@ func pack(w []int, d int) []byte {
         bs = append(bs, byte(out[i]))
     }
     return freeze(bs)
+}
+
+// 専用命令の体の積 femul と Sober の fmulS の照合（検証の網の API — 利用者は使わない: examples/crypto_femul と cryptocheck の格子が叩く）。
+// 種 seed の擬似乱数で limb < 2^52（積の前提の上限）の元を rounds 組作り、別の区画への積・入力と同じ区画への積（d = a）・2 乗で両方を比べる。
+// 食い違いの数を返す
+@effects(!io, !block, !nondet)
+func FeSelfCheck(seed int, rounds int) int {
+    mut x := seed
+    mut bad := 0
+    // 区画（語の番地）: 0 = a・5 = b・10 / 15 = 積の塊 / Sober・20 / 25 = d = a の塊 / Sober・30 / 35 = 2 乗の塊 / Sober
+    blk := make0(40)
+    mut w := leaseView(blk, 0, 40)
+    wa := addrn(blk)
+    for r <- iter.Range(0, rounds) {
+        for i <- iter.Range(0, 10) {
+            x = x * 6364136223846793005 + 1442695040888963407
+            top := if r % 3 == 0 { mask52 } else { mask51 }
+            w[i] = if r % 5 == 4 { top } else { (x >> 11) & top }
+        }
+        fmul(mut w, wa, 10, 0, 5)
+        fmulS(mut w, 15, 0, 5)
+        fmul(mut w, wa, 30, 0, 0)
+        for i <- iter.Range(0, 5) {
+            w[20 + i] = w[i]
+            w[25 + i] = w[i]
+        }
+        fmul(mut w, wa, 20, 20, 5)
+        fmulS(mut w, 25, 25, 5)
+        for i <- iter.Range(0, 5) {
+            if w[10 + i] != w[15 + i] || w[20 + i] != w[25 + i] {
+                bad += 1
+            }
+        }
+        fmulS(mut w, 35, 0, 0)
+        for i <- iter.Range(0, 5) {
+            if w[30 + i] != w[35 + i] {
+                bad += 1
+            }
+        }
+    }
+    return bad
+}
+
+// n 個の 0
+func make0(n int) []int {
+    mut out := mut []int{}
+    for i <- iter.Range(0, n) {
+        out = append(out, 0)
+    }
+    return freeze(out)
 }

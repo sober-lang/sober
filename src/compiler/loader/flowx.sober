@@ -3,9 +3,8 @@ package loader
 // flow typing の連鎖と早期脱出（language.md 427 行の flow typing の改訂）を脱糖の固定テンプレートで if の入れ子に写す。
 // 以降の層（desugar・lower・typer・analyzer）は写した後の木（単独の `x != nil` / `x == nil` を条件に持つ if）だけを読む — コア・Lean は無変更。
 //
-// ① `&&` の連鎖の中の `x != nil`（右辺と本体で x は T）— else の無い if だけ:
+// ① `&&` の連鎖の中の `x != nil`（右辺と本体で x は T）— else の無い if:
 //        if A && x != nil && B { T }   →   if A { if x != nil { if B { T } } }
-//     （else のある形は else の腕の複製が lower の展開で膨らむので写さない — 自己 build の RSS 479 → 2248 MB を実測。需要が出たら旗の変数で再訪）
 // ② `||` の連鎖の中の `x == nil` で、then が脱出（return / break / continue）1 文だけ（否定側 = else で x は T）:
 //        if A || x == nil || B { T } else { E }
 //     →  if A { T } else { if x == nil { T } else { if B { T } else { E } } }
@@ -13,6 +12,16 @@ package loader
 // ③ 早期脱出: 文の列の中の else の無い `if C { …; return }`（C は `x == nil` か ② の連鎖）の後ろの文を else に入れる:
 //        if x == nil { return … }  rest…   →   if x == nil { return … } else { rest… }
 //     （rest の中で x は T。defer・束縛の見える範囲は列の終わりと同じ — else の腕は region 境界ではない）
+// ④ 値の位置の `&&` / `||`（else つき if の条件を含む — ①〜③ の if の条件は除く）の中の `x != nil` / `x == nil`（右の項で x は T）:
+//        A && x != nil && B   →   if A { if x != nil { B } else { false } } else { false }
+//        A || x == nil || B   →   if A { true } else { if x == nil { true } else { B } }
+//     （複製するのは定数の腕だけ）
+// ⑤ else つき if の本体（`&&` は then・`||` は else — ② の形を除く）: 条件は ④ の形・本体は連鎖の nil 判定の名前ごとの単独の判定で包む:
+//        if A && x != nil && B { T } else { E }   →   if <④ の形> { if x != nil { T } else { $unreach() } } else { E }
+//        if A || x == nil || B { T } else { E }   →   if <④ の形> { T } else { if x != nil { E } else { $unreach() } }
+//     （T・E は 1 回ずつ — else の腕の複製は lower の展開で膨らむ〔自己 build の RSS 479 → 2248 MB を実測〕。条件の値が真〔|| は偽〕なら
+//      判定は必ず成り立つ — 絞った名前への代入・mut 渡しは拒否なので条件と本体の間で x は変わらない。`$unreach` は利用者が書けない名前で、
+//      後段は到達しない点〔panic の効果に数えない〕として読む）
 // 写しは固定点まで回す（写した後の入れ子にまた連鎖が残る）。名前の判定は字面だけ（x の型は見ない — 型が T? でなくても写しは意味を変えない）
 
 import "std/builder"
@@ -24,18 +33,103 @@ import "lexer"
 func flowAll(ts []ast.Tree) []ast.Tree {
     mut out := mut []ast.Tree{}
     for i <- iter.Range(0, len(ts)) {
-        mut t := ts[i]
-        mut round := 0
-        mut going := true
-        while going && round < 16 {
-            t2, changed := flowRound(t)
-            t = t2
-            going = changed
-            round += 1
-        }
-        out = append(out, t)
+        out = append(out, flowFix(ts[i]))
     }
     return freeze(out)
+}
+
+// 木 t を固定点まで写す
+func flowFix(t0 ast.Tree) ast.Tree {
+    mut t := t0
+    mut round := 0
+    mut going := true
+    while going && round < 16 {
+        t2, changed := flowRound(t)
+        t = t2
+        going = changed
+        round += 1
+    }
+    return t
+}
+
+// ④ の連鎖の nil 判定の位置（&& なら x != nil・|| なら x == nil — 右の項が x を読むものだけ）。無ければ -1
+func valueNilAt(t ast.Tree, cs []int, op int) int {
+    want := if op == lexer.AmpersandAmpersand { 1 } else { 2 }
+    for q <- iter.Range(0, len(cs) - 1) {
+        if nilTestKind(t, cs[q]) == want {
+            nm := nilTestName(t, cs[q])
+            for r <- iter.Range(q + 1, len(cs)) {
+                if mentions(t, cs[r], nm) {
+                    return q
+                }
+            }
+        }
+    }
+    return -1
+}
+
+// nil 判定 n の名前（プールの文字列）
+func nilTestName(t ast.Tree, n0 int) int {
+    x := t.nodes[unparen(t, n0)]
+    l := unparen(t, x.b)
+    return if t.nodes[l].kind == ast.EIdent { t.nodes[l].a } else { t.nodes[unparen(t, x.c)].a }
+}
+
+// 式 n が名前 nm を読むか（辿らない種類の節は読むとみなす — 写しは意味を変えないので過剰側は安全）
+func mentions(t ast.Tree, n int, nm int) bool {
+    x := t.nodes[n]
+    k := x.kind
+    if k == ast.EIdent || k == ast.EMutArg {
+        return strEqPool(t, x.a, nm)
+    }
+    if k == ast.EInt || k == ast.ENil || k == ast.EStrlit || k == ast.EFloat {
+        return false
+    }
+    if k == ast.EBinary {
+        return mentions(t, x.b, nm) || mentions(t, x.c, nm)
+    }
+    if k == ast.EUnary {
+        return mentions(t, x.b, nm)
+    }
+    if k == ast.EParen || k == ast.ESelector {
+        return mentions(t, x.a, nm)
+    }
+    if k == ast.EIndex {
+        return mentions(t, x.a, nm) || mentions(t, x.b, nm)
+    }
+    if k == ast.ECall {
+        for j <- iter.Range(0, ast.ListLen(t, x.b)) {
+            if mentions(t, ast.ListAt(t, x.b, j), nm) {
+                return true
+            }
+        }
+        return mentions(t, x.a, nm)
+    }
+    return true
+}
+
+// 連鎖の節 n とその内側の同じ演算子の節を kept に（左結合の内側の節を ④ が写すと ①〜③ の連鎖が崩れる）
+func keepChain(t ast.Tree, kept mut []bool, n int) {
+    kept[n] = true
+    x := t.nodes[n]
+    if x.kind == ast.EBinary && (x.a == lexer.AmpersandAmpersand || x.a == lexer.PipePipe) {
+        keepSide(t, mut kept, x.b, x.a)
+        keepSide(t, mut kept, x.c, x.a)
+    }
+}
+
+// keepChain の片側 c（同じ演算子 op の節なら印を付けて潜る）
+func keepSide(t ast.Tree, kept mut []bool, c int, op int) {
+    u := unparen(t, c)
+    if t.nodes[u].kind == ast.EBinary && t.nodes[u].a == op {
+        kept[c] = true
+        keepChain(t, mut kept, u)
+    }
+}
+
+// if の条件を ①〜③ に任せるか（else の無い if・then が脱出 1 文の if）
+func condKept(t ast.Tree, nd ast.Node) bool {
+    return nd.c < 0 || diverges(t, nd.b) && ast.ListLen(t, t.nodes[nd.b].a) == 1
 }
 
 // 節 n が `x != nil`（1）/ `x == nil`（2）/ どちらでもない（0）か（x は名前）
@@ -112,6 +206,92 @@ func fxBlock(x mut Fx, e int, tok int) int {
     return fxNode(mut x, ast.Node{ast.KBlock, tok, ast.PutList(mut x.db, []int{s}), 0, 0, 0, 0, 0})
 }
 
+// 式 e を唯一の文に持つ EBlock（else の腕）
+func fxBlockE(x mut Fx, e int, tok int) int {
+    s := fxNode(mut x, ast.Node{ast.SExpr, tok, e, 0, 0, 0, 0, 0})
+    return fxNode(mut x, ast.Node{ast.EBlock, tok, ast.PutList(mut x.db, []int{s}), 0, 0, 0, 0, 0})
+}
+
+// 名前 kw（true / false）の節
+func fxConst(x mut Fx, kw string, tok int) int {
+    return fxNode(mut x, ast.Node{ast.EIdent, tok, ast.PutLit(mut x.db, kw), 0, 0, 0, 0, 0})
+}
+
+// 名前 kw だけの else の腕
+func fxConstE(x mut Fx, kw string, tok int) int {
+    return fxBlockE(mut x, fxConst(mut x, kw, tok), tok)
+}
+
+// ④ の形: 項の列 cs の p 番目の nil 判定で割った値の位置の連鎖（&& : if 頭 { if 判定 { 残り } else { false } } else { false }・|| は真偽を逆に）
+func fxValueChain(x mut Fx, cs []int, p int, op int, tok int) ast.Node {
+    and := op == lexer.AmpersandAmpersand
+    kw := if and { "false" } else { "true" }
+    if p + 1 == len(cs) {
+        // 判定が末尾（⑤ だけ — p > 0）: && : if 頭 { 判定 } else { false }・|| : if 頭 { true } else { 判定 }
+        head := fxJoin(mut x, cs, 0, p, op, tok)
+        return if and { ast.Node{ast.EIf, tok, head, fxBlock(mut x, cs[p], tok), fxConstE(mut x, kw, tok), 0, 0, 0} } else { ast.Node{ast.EIf, tok, head, fxBlock(mut x, fxConst(mut x, kw, tok), tok), fxBlockE(mut x, cs[p], tok), 0, 0, 0} }
+    }
+    rest := fxJoin(mut x, cs, p + 1, len(cs), op, tok)
+    mid := if and { ast.Node{ast.EIf, tok, cs[p], fxBlock(mut x, rest, tok), fxConstE(mut x, kw, tok), 0, 0, 0} } else { ast.Node{ast.EIf, tok, cs[p], fxBlock(mut x, fxConst(mut x, kw, tok), tok), fxBlockE(mut x, rest, tok), 0, 0, 0} }
+    if p == 0 {
+        return mid
+    }
+    m := fxNode(mut x, mid)
+    head := fxJoin(mut x, cs, 0, p, op, tok)
+    return if and { ast.Node{ast.EIf, tok, head, fxBlock(mut x, m, tok), fxConstE(mut x, kw, tok), 0, 0, 0} } else { ast.Node{ast.EIf, tok, head, fxBlock(mut x, fxConst(mut x, kw, tok), tok), fxBlockE(mut x, m, tok), 0, 0, 0} }
+}
+
+// 到達しない点 `$unreach()` だけの else の腕
+func fxUnreachE(x mut Fx, tok int) int {
+    callee := fxNode(mut x, ast.Node{ast.EIdent, tok, ast.PutLit(mut x.db, "$unreach"), 0, 0, 0, 0, 0})
+    call := fxNode(mut x, ast.Node{ast.ECall, tok, callee, ast.PutList(mut x.db, []int{}), 0, 0, 0, 0})
+    return fxBlockE(mut x, call, tok)
+}
+
+// 本体 blk（KBlock）を連鎖 cs の nil 判定（種類 want）の名前ごとの `if x != nil { … } else { $unreach() }` で包んだ外側の if（同じ名前は 1 回・名前は 1 つ以上）
+func fxNarrowBody(t ast.Tree, x mut Fx, cs []int, want int, blk int, tok int) int {
+    mut names := mut []int{}
+    mut ats := mut []int{}
+    for q <- iter.Range(0, len(cs)) {
+        if nilTestKind(t, cs[q]) == want {
+            nm := nilTestName(t, cs[q])
+            mut seen := false
+            for w <- iter.Range(0, len(names)) {
+                seen = seen || names[w] == nm
+            }
+            if !seen {
+                names = append(names, nm)
+                ats = append(ats, unparen(t, cs[q]))
+            }
+        }
+    }
+    mut body := blk
+    mut out := -1
+    mut q := len(names) - 1
+    while q >= 0 {
+        at := t.nodes[ats[q]].tok
+        id := fxNode(mut x, ast.Node{ast.EIdent, at, names[q], 0, 0, 0, 0, 0})
+        nl := fxNode(mut x, ast.Node{ast.ENil, at, 0, 0, 0, 0, 0, 0})
+        test := fxNode(mut x, ast.Node{ast.EBinary, at, lexer.BangEqual, id, nl, 0, 0, 0})
+        out = fxNode(mut x, ast.Node{ast.EIf, at, test, body, fxUnreachE(mut x, at), 0, 0, 0})
+        body = fxBlock(mut x, out, tok)
+        q -= 1
+    }
+    return out
+}
+
+// ⑤ の対象（else つき if で、&& の連鎖に x != nil・または ② に任せない || の連鎖に x == nil）なら 1（&&）/ 2（||）・でなければ 0
+func fiveAt(t ast.Tree, nd ast.Node) int {
+    if nd.kind != ast.EIf || nd.c < 0 {
+        return 0
+    }
+    if nilIn(t, nd.a, lexer.AmpersandAmpersand, 1, true) {
+        return 1
+    }
+    two := diverges(t, nd.b) && ast.ListLen(t, t.nodes[nd.b].a) == 1
+    return if !two && nilIn(t, nd.a, lexer.PipePipe, 2, true) { 2 } else { 0 }
+}
+
 // 節 n の op の連鎖（multi なら 2 項以上）に nilTestKind が want の項があるか
 func nilIn(t ast.Tree, n int, op int, want int, multi bool) bool {
     cs := chainOf(t, n, op)
@@ -129,8 +309,20 @@ func nilIn(t ast.Tree, n int, op int, want int, multi bool) bool {
 // 節 nd を flowRound が写すか（下の ①〜③ の条件と同じ — 写す節が 1 つも無い周は節の表とデータの写しを作らずに返す）
 func flowAt(t ast.Tree, nd ast.Node) bool {
     if nd.kind == ast.EIf {
-        return nd.c < 0 && nilIn(t, nd.a, lexer.AmpersandAmpersand, 1, true) ||
+        return fiveAt(t, nd) != 0 || nd.c < 0 && nilIn(t, nd.a, lexer.AmpersandAmpersand, 1, true) ||
             diverges(t, nd.b) && ast.ListLen(t, t.nodes[nd.b].a) == 1 && nilIn(t, nd.a, lexer.PipePipe, 2, true)
+    }
+    if nd.kind == ast.EBinary && (nd.a == lexer.AmpersandAmpersand || nd.a == lexer.PipePipe) {
+        l := chainOf(t, nd.b, nd.a)
+        r := chainOf(t, nd.c, nd.a)
+        mut cs := mut []int{}
+        for i <- iter.Range(0, len(l)) {
+            cs = append(cs, l[i])
+        }
+        for i <- iter.Range(0, len(r)) {
+            cs = append(cs, r[i])
+        }
+        return valueNilAt(t, freeze(cs), nd.a) >= 0
     }
     if nd.kind == ast.KBlock || nd.kind == ast.EBlock {
         k := ast.ListLen(t, nd.a)
@@ -163,9 +355,53 @@ func flowRound(t ast.Tree) (ast.Tree, bool) {
         builder.Push(mut x.db, t.data[j])
     }
     mut changed := false
+    // ①〜③ に任せる if の条件（④ で写さない）
+    mut kept := mut []bool{}
+    for i <- iter.Range(0, n0) {
+        kept = append(kept, false)
+    }
+    for i <- iter.Range(0, n0) {
+        nd := t.nodes[i]
+        if nd.kind == ast.EIf && (condKept(t, nd) || fiveAt(t, nd) != 0) {
+            kept[nd.a] = true
+            keepChain(t, mut kept, unparen(t, nd.a))
+        }
+    }
     for i <- iter.Range(0, n0) {
         nd := t.nodes[i]
         tok := nd.tok
+        if nd.kind == ast.EBinary && (nd.a == lexer.AmpersandAmpersand || nd.a == lexer.PipePipe) && !kept[i] {
+            op := nd.a
+            cs := chainOf(t, i, op)
+            p := valueNilAt(t, cs, op)
+            if p >= 0 {
+                ns[i] = fxValueChain(mut x, cs, p, op, tok)
+                changed = true
+                continue
+            }
+        }
+        five := fiveAt(t, nd)
+        if five != 0 {
+            // ⑤ else つき if の本体
+            op := if five == 1 { lexer.AmpersandAmpersand } else { lexer.PipePipe }
+            cs := chainOf(t, nd.a, op)
+            mut p := -1
+            for q <- iter.Range(0, len(cs)) {
+                if p < 0 && nilTestKind(t, cs[q]) == five {
+                    p = q
+                }
+            }
+            cond := fxNode(mut x, fxValueChain(mut x, cs, p, op, tok))
+            if five == 1 {
+                ns[i] = ast.Node{ast.EIf, tok, cond, fxBlock(mut x, fxNarrowBody(t, mut x, cs, 1, nd.b, tok), tok), nd.c, 0, 0, 0}
+            } else {
+                e := t.nodes[nd.c]
+                eb := if e.kind == ast.EBlock { fxNode(mut x, ast.Node{ast.KBlock, e.tok, e.a, 0, 0, 0, 0, 0}) } else { fxBlock(mut x, nd.c, tok) }
+                ns[i] = ast.Node{ast.EIf, tok, cond, nd.b, fxBlockE(mut x, fxNarrowBody(t, mut x, cs, 2, eb, tok), tok), 0, 0, 0}
+            }
+            changed = true
+            continue
+        }
         if nd.kind == ast.EIf {
             // ① && の連鎖の中の x != nil
             ands := chainOf(t, nd.a, lexer.AmpersandAmpersand)

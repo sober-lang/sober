@@ -67,7 +67,27 @@ func PutInt(o mut builder.Builder[byte], n int) {
         return
     }
     if v < 100000000 {
-        putDigits(mut o, v, 0)
+        // 最短の形は 2 桁ずつ（割り算が半分）。r < 100 の上の桁 = (r × 103) >> 10（0〜99 で r / 10 と一致）
+        mut x := v
+        mut acc := 0
+        mut k := 0
+        while x >= 100 {
+            q := x / 100
+            r := x - q * 100
+            t := (r * 103) >> 10
+            acc = (acc << 16) | ((48 + r - t * 10) << 8) | (48 + t)
+            x = q
+            k += 2
+        }
+        if x >= 10 {
+            t := (x * 103) >> 10
+            acc = (acc << 16) | ((48 + x - t * 10) << 8) | (48 + t)
+            k += 2
+        } else {
+            acc = (acc << 8) | (48 + x)
+            k += 1
+        }
+        builder.PushWord(mut o, acc, k)
         return
     }
     if v < 10000000000000000 {

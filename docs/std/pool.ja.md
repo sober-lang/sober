@@ -117,7 +117,7 @@ pool.Load(mut s, 3)   // 0
 func NewScratch(s mut Scratch, n int)
 ```
 
-容量 0 の s を容量 n・全部 0 にする（容量は 1 回だけ — 容量のある s に呼ぶと panic(ScratchSized{}): lease の窓の中でストレージを作り直すと、新しい列が task の region に取られて長命のストレージから宙吊りになる — region-domain-pool.md 4d 節）。0 の chunk min(n, 256) 個を 1 つ作り、chunk ごとに一括の写しの形で足す（flate の fill と同じ）
+容量 0 の s を容量 n・全部 0 にする（容量は 1 回だけ — 容量のある s に呼ぶと panic(ScratchSized{}): lease の窓の中でストレージを作り直すと、新しい列が task の region に取られて長命のストレージから宙吊りになる — region-domain-pool.md 4d 節）
 
 ## Cap
 

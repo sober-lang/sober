@@ -56,7 +56,7 @@ func needCpu(st mut St) {
 }
 
 // rt.cpu_probe() → 印 + 1 を rt.cpu に置いて返す（印の bit 0 = PCLMULQDQ かつ SOBER_NOCLMUL でない・bit 1 = AES-NI・SSSE3・
-// PCLMULQDQ が揃い SOBER_NOAES でない・bit 2 = BMI2・bit 3 = BMI2 かつ ADX — bit 2 / 3 は SOBER_NOMULX で 0）
+// PCLMULQDQ が揃い SOBER_NOAES でない・bit 2 = BMI2・bit 3 = BMI2 かつ ADX — bit 2 / 3 は SOBER_NOMULX で 0・bit 4 = SHA-NI かつ SSSE3 — SOBER_NOSHA で 0）
 func buildCpuProbe(st mut St) {
     if st.cpuG == -1 {
         return
@@ -74,7 +74,10 @@ func buildCpuProbe(st mut St) {
     m2 := bin(mut st, BMul, bin(mut st, BAnd, bin(mut st, BSar, ebx7, iconst(mut st, 8)), iconst(mut st, 1)), cmp(mut st, CEq, nm, iconst(mut st, 0)))
     // bit 3 = 64 bit の塊（BMI2 かつ ADX〔EBX bit 19 — ADCX / ADOX〕・SOBER_NOMULX でない — RSA の続き (イ-b)）
     m3 := bin(mut st, BAnd, m2, bin(mut st, BSar, ebx7, iconst(mut st, 19)))
-    r := urAdd(mut st, bin(mut st, BOr, bin(mut st, BOr, m0, bin(mut st, BShl, m1, iconst(mut st, 1))), bin(mut st, BOr, bin(mut st, BShl, m2, iconst(mut st, 2)), bin(mut st, BShl, m3, iconst(mut st, 3)))), 1)
+    // bit 4 = SHA-256 の塊（SHA-NI〔EBX bit 29〕かつ SSSE3〔CPUID.1:ECX bit 9 — pshufb〕・SOBER_NOSHA でない）
+    ns := envMb(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.meta), W_ARGV)), "SOBER_NOSHA=", 0, true)
+    m4 := bin(mut st, BMul, bin(mut st, BAnd, bin(mut st, BAnd, bin(mut st, BSar, ebx7, iconst(mut st, 29)), bin(mut st, BSar, ecx, iconst(mut st, 9))), iconst(mut st, 1)), cmp(mut st, CEq, ns, iconst(mut st, 0)))
+    r := urAdd(mut st, bin(mut st, BOr, bin(mut st, BOr, bin(mut st, BOr, m0, bin(mut st, BShl, m1, iconst(mut st, 1))), bin(mut st, BOr, bin(mut st, BShl, m2, iconst(mut st, 2)), bin(mut st, BShl, m3, iconst(mut st, 3)))), bin(mut st, BShl, m4, iconst(mut st, 4))), 1)
     store(mut st, globaladdr(mut st, st.cpuG), 0, r)
     ret(mut st, r)
 }

@@ -1,0 +1,13 @@
+@replaces("testdata/doubles/logger")
+package logger
+
+// A spy of the logger: keeps every line logged, writing nothing.
+
+import "std/testing/cell"
+
+// the lines logged, in order
+const Lines = cell.Cell[[]string]{}
+
+func Log(msg string) {
+    cell.Update(Lines, (ls []string) => append(ls, msg))
+}

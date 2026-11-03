@@ -71,3 +71,6 @@ testdata/frozen_src/testdata/pool/nested.sober
 examples/early_return_pure.sober
 examples/try_prop_pure.sober
 examples/try_wrap_pure.sober
+# 退役（2026-11-01、F-bo の修理 — 多値を穴へ順に落とすパイプ `f() |> g(_, _)`）: 凍結した Zig の脱糖器は全部の穴に左辺の同じ節を置いて
+# 型が合わず拒否する（同じ誤り）。主の sober は受理する — 意味の差でなく凍結物の誤り
+examples/pipe_multi.sober

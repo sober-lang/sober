@@ -1,0 +1,460 @@
+package lower
+
+// ジェネリクスの単相化（src/stage1/lower_types.zig の instStruct / typeKey / tyArgOk、src/stage1/lower_inline.zig の genericCall / genericInline /
+// instFunc の写し）と辞書 const（dictConst）。型引数の推論は表層型検査器（desugar/typer.sober）の表を引く（tableTArgs — C1 B2）。
+// 型環境 = 型パラメータの束縛の列 [n, (名前, 型)…]（st.tenv — 下ろし中の関数・展開・ジェネリック struct のレイアウト中のもの）
+
+import "diag"
+import "desugar"
+import "ast"
+import "std/iter"
+
+// 型環境 env の名前 name の型（無ければ -1）
+func envLookup(st mut St, env int, name desugar.StrRef) int {
+    if env < 0 {
+        return -1
+    }
+    mut i := 0
+    while i < desugar.HeapGet(mut st.d, env) {
+        if strEq(mut st, hgetS(mut st, env + 1 + i * 2), name) {
+            return desugar.HeapGet(mut st.d, env + 2 + i * 2)
+        }
+        i += 1
+    }
+    return -1
+}
+
+// 型パラメータの名前の列 names（文字列の列）と型引数の列 targs の型環境
+func bindsOf(st mut St, names desugar.ListRef, targs desugar.ListRef) int {
+    n := lenL(mut st, names)
+    env := recN(mut st, 1 + n * 2)
+    desugar.HeapSet(mut st.d, env, n)
+    for i <- iter.Range(0, n) {
+        desugar.HeapSet(mut st.d, env + 1 + i * 2, latI(mut st, names, i))
+        desugar.HeapSet(mut st.d, env + 2 + i * 2, latI(mut st, targs, i))
+    }
+    return env
+}
+
+// Def として呼ぶジェネリックの型引数として許される型（region を持たない）
+func tyArgOk(st mut St, t int) bool {
+    k := desugar.HeapGet(mut st.d, t)
+    return switch k {
+    case TInt | TBool | TFnv | TNamed | TByte | TFloat: true
+    case TOpt: tyArgOk(mut st, desugar.HeapGet(mut st.d, t + 1))
+    case TStruct | TUnion: tyArgFields(mut st, t, false)
+    default: false
+    }
+}
+
+// 展開されるジェネリック・ジェネリック struct の型引数（値を持つ型なら string / slice / map を含んでよい）
+func tyArgValueOk(st mut St, t int) bool {
+    k := desugar.HeapGet(mut st.d, t)
+    return switch k {
+    case TInt | TBool | TFnv | TNamed | TByte | TFloat: true
+    case TSlice | TOpt: tyArgValueOk(mut st, desugar.HeapGet(mut st.d, t + 1))
+    case TMap: tyArgValueOk(mut st, desugar.HeapGet(mut st.d, t + 1)) && tyArgValueOk(mut st, desugar.HeapGet(mut st.d, t + 2))
+    case TStruct | TUnion: tyArgFields(mut st, t, true)
+    default: false
+    }
+}
+
+// struct / union のフィールドがすべて型引数として許されるか
+func tyArgFields(st mut St, t int, value bool) bool {
+    info := desugar.HeapGet(mut st.d, t + 1)
+    fs := hgetL(mut st, info + SI_FIELDS)
+    if desugar.HeapGet(mut st.d, t) == TStruct {
+        for i <- iter.Range(0, lenL(mut st, fs)) {
+            ft := desugar.HeapGet(mut st.d, latI(mut st, fs, i) + 1)
+            ok := if value { tyArgValueOk(mut st, ft) } else { tyArgOk(mut st, ft) }
+            if !ok {
+                return false
+            }
+        }
+        return true
+    }
+    for v <- iter.Range(0, lenL(mut st, fs)) {
+        vfs := hgetL(mut st, latI(mut st, fs, v) + 2)
+        for i <- iter.Range(0, lenL(mut st, vfs)) {
+            ft := desugar.HeapGet(mut st.d, latI(mut st, vfs, i) + 1)
+            ok := if value { tyArgValueOk(mut st, ft) } else { tyArgOk(mut st, ft) }
+            if !ok {
+                return false
+            }
+        }
+    }
+    return true
+}
+
+// ── 型の綴り（インスタンスのキー — IR の関数名に出る）──
+// 綴りはヒープの先端へ 1 バイト 1 語で直接積む（綴りの途中でヒープの他の記録を作らない — 連続した文字列になる）。
+// 出力先を別の mut slice にして再帰の Def に渡す形は sober check が def error にした（mut 引数 2 本の再帰 — F-31）
+
+func putLit(st mut St, w string) {
+    b := bytes(w)
+    for i <- iter.Range(0, len(b)) {
+        desugar.HeapPush(mut st.d, int(b[i]))
+    }
+}
+
+func putStr(st mut St, s int) {
+    n := dat(mut st, s)
+    for i <- iter.Range(0, n) {
+        desugar.HeapPush(mut st.d, dat(mut st, s + 1 + i))
+    }
+}
+
+func typeKey(st mut St, t int) {
+    k := desugar.HeapGet(mut st.d, t)
+    switch k {
+    case TInt:
+        putLit(mut st, "int")
+        return
+    case TBool:
+        putLit(mut st, "bool")
+        return
+    case TByte:
+        putLit(mut st, "byte")
+        return
+    case TFloat:
+        putLit(mut st, "float")
+        return
+    case TNamed:
+        // named scalar のインスタンスは型の名前で分ける（同名の named が別 package にあると同じインスタンスを共有する — 表現は下地なので観測は同じ）
+        putStr(mut st, nodeOf(mut st, hgetN(mut st, t + 2)).a)
+        return
+    case TStruct:
+        putStr(mut st, desugar.HeapGet(mut st.d, desugar.HeapGet(mut st.d, t + 1) + SI_KEY))
+        return
+    case TUnion:
+        info := desugar.HeapGet(mut st.d, t + 1)
+        if desugar.HeapGet(mut st.d, info + SI_DECL) == -1 {
+            putLit(mut st, "error")
+        } else {
+            putStr(mut st, desugar.HeapGet(mut st.d, info + SI_KEY))
+        }
+        return
+    case TOpt:
+        desugar.HeapPush(mut st.d, 63)
+        typeKey(mut st, desugar.HeapGet(mut st.d, t + 1))
+        return
+    case TFnv | TFunc:
+        ft := desugar.HeapGet(mut st.d, t + 1)
+        putLit(mut st, "fn(")
+        mut i := 0
+        while i < lenL(mut st, hgetL(mut st, ft)) {
+            typeKey(mut st, latI(mut st, hgetL(mut st, ft), i))
+            desugar.HeapPush(mut st.d, 44)
+            i += 1
+        }
+        desugar.HeapPush(mut st.d, 41)
+        i = 0
+        while i < lenL(mut st, hgetL(mut st, ft + 1)) {
+            typeKey(mut st, latI(mut st, hgetL(mut st, ft + 1), i))
+            i += 1
+        }
+        return
+    case TSlice:
+        putLit(mut st, if desugar.HeapGet(mut st.d, t + 2) != 0 { "mut[]" } else { "[]" })
+        typeKey(mut st, desugar.HeapGet(mut st.d, t + 1))
+        return
+    case TMap:
+        putLit(mut st, "map[")
+        typeKey(mut st, desugar.HeapGet(mut st.d, t + 1))
+        putLit(mut st, "]")
+        typeKey(mut st, desugar.HeapGet(mut st.d, t + 2))
+        return
+    }
+    desugar.HeapPush(mut st.d, 63)
+}
+
+// `base[T1,T2]`（base は文字列）の文字列
+func instKey(st mut St, base int, targs desugar.ListRef) desugar.StrRef {
+    at := desugar.StrRef(desugar.HeapLen(mut st.d))
+    desugar.HeapPush(mut st.d, 0)
+    putStr(mut st, base)
+    desugar.HeapPush(mut st.d, 91)
+    for i <- iter.Range(0, lenL(mut st, targs)) {
+        if i > 0 {
+            desugar.HeapPush(mut st.d, 44)
+        }
+        typeKey(mut st, latI(mut st, targs, i))
+    }
+    desugar.HeapPush(mut st.d, 93)
+    desugar.HeapSet(mut st.d, int(at), desugar.HeapLen(mut st.d) - int(at) - 1)
+    return at
+}
+
+// ── ジェネリック struct ──
+
+// 型表のキー（文字列）の struct / union の情報（無ければ -1）
+func structByKey(st mut St, key desugar.StrRef) int {
+    mut x := st.types
+    while x >= 0 {
+        if (desugar.HeapGet(mut st.d, x) == TStruct || desugar.HeapGet(mut st.d, x) == TUnion) && desugar.HeapGet(mut st.d, x + SI_KEY) >= 0 && strEq(mut st, hgetS(mut st, x + SI_KEY), key) {
+            return x
+        }
+        x = desugar.HeapGet(mut st.d, x + SI_NEXT)
+    }
+    return -1
+}
+
+// ジェネリック struct の適用 `Name[args]`（型引数は呼び手の文脈で読む）。レイアウトは呼び手が済ませる
+func instStruct(st mut St, pk int, name desugar.StrRef, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
+    r := desugar.ResolveType(mut st.d, pk, name)
+    td := desugar.NodeRef(r.idx)
+    if td == -1 || lenL(mut st, lB(nodeOf(mut st, td))) == 0 {
+        return 0, diag.UndefinedType{at: posOf(mut st, at)}
+    }
+    if lenL(mut st, args) != lenL(mut st, lB(nodeOf(mut st, td))) {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    n := lenL(mut st, args)
+    targs := desugar.ListRef(listN(mut st, n))
+    for i <- iter.Range(0, n) {
+        t := resolveType(mut st, pk, latN(mut st, args, i), false)?
+        if !tyArgValueOk(mut st, t) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        lput(mut st, targs, i, t)
+    }
+    return instStructTys(mut st, td, r.pkg, targs, at)
+}
+
+// ジェネリック struct / union（型宣言 td・宣言側 package dpk）の型引数 targs（型の列）のインスタンスの情報
+// （union は明示の型引数。レイアウトは layoutBody が型環境 SI_ENV で variant の欄を引く）
+func instStructTys(st mut St, td desugar.NodeRef, dpk int, targs desugar.ListRef, at desugar.NodeRef) (int, error?) {
+    for i <- iter.Range(0, lenL(mut st, targs)) {
+        if !tyArgValueOk(mut st, latI(mut st, targs, i)) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+    }
+    ik := instKey(mut st, int(strDot(mut st, pkgPath(mut st, dpk), sA(nodeOf(mut st, td)))), targs)
+    x := structByKey(mut st, ik)
+    if x >= 0 {
+        return x, nil
+    }
+    bk := kindN(mut st, nC(nodeOf(mut st, td)))
+    if bk != ast.BStruct && bk != ast.BUnion {
+        return 0, diag.Unsupported{at: posOf(mut st, at)}
+    }
+    info := recN(mut st, SISZ)
+    desugar.HeapSet(mut st.d, info, if bk == ast.BStruct { TStruct } else { TUnion })
+    desugar.HeapSet(mut st.d, info + SI_DECL, int(td))
+    desugar.HeapSet(mut st.d, info + SI_PKG, dpk)
+    desugar.HeapSet(mut st.d, info + SI_WORDS, 0)
+    desugar.HeapSet(mut st.d, info + SI_STATE, LPending)
+    desugar.HeapSet(mut st.d, info + SI_NEXT, st.types)
+    desugar.HeapSet(mut st.d, info + SI_TY, rec4(mut st, desugar.HeapGet(mut st.d, info), info, 0, 0))
+    desugar.HeapSet(mut st.d, info + SI_KEY, int(ik))
+    desugar.HeapSet(mut st.d, info + SI_ENV, bindsOf(mut st, lB(nodeOf(mut st, td)), targs))
+    desugar.HeapSet(mut st.d, info + SI_TARGS, int(targs))
+    st.types = info
+    return info, nil
+}
+
+
+// ── ジェネリック関数 ──
+
+// 関数宣言 decl の署名を package pk・型環境 env で読む
+func sigIn(st mut St, decl desugar.NodeRef, pk int, env int) (Sig, error?) {
+    saved := st.tenv
+    st.tenv = env
+    defer {
+        st.tenv = saved
+    }
+    sig := sigOf(mut st, decl, pk)?
+    return sig, nil
+}
+
+// 呼び出し（callee の節 cn）の型引数: 表層型検査器の表（desugar/typer.sober の YTArgsOf — 明示の型引数・実引数との
+// 単一化・型なしの定数の扱いは検査器の規則が正）を lower の型へ写す。決まらないものがあるか、型引数に置けない型なら拒否（C1 B2）
+func tableTArgs(st mut St, cn desugar.NodeRef, at desugar.NodeRef, value_ok bool) (desugar.ListRef, error?) {
+    yl := desugar.YTArgsOf(mut st.d, desugar.NodeRef(cn))
+    if yl == -1 {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    targs := yLowerList(mut st, yl, at)?
+    if targs == -1 {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    for i <- iter.Range(0, lenL(mut st, targs)) {
+        t := latI(mut st, targs, i)
+        ok := if value_ok { tyArgValueOk(mut st, t) } else { tyArgOk(mut st, t) }
+        if !ok {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+    }
+    return targs, nil
+}
+
+// ── 型なしの定数の実引数（language.md 32 節）: 値は今までどおり先に評価し（IR の順は不変）、型引数の推論では一度外す
+// （外して決まらなければ定数の型 = int / bool で推論し直す — 推論は検査器の yNamedCall）。インスタンスの仮引数が named scalar なら値の型だけ付け替える ──
+
+// 実引数ごとの「型なしの定数なら評価した型、でなければ -1」の列
+func constArgs(st mut St, n int) desugar.ListRef {
+    l := desugar.ListRef(listN(mut st, n))
+    for i <- iter.Range(0, n) {
+        lput(mut st, l, i, -1)
+    }
+    return l
+}
+
+// i 番目の実引数 a が型なしの定数なら型 t を覚える（インスタンスの仮引数の型に合わせて付け替える — retagConsts）
+// byte の範囲外の定数は -2 - t で覚える（named への付け替えはする・byte へはしない — 範囲外は下の照合で型エラー）
+func noteConstArg(st mut St, cts int, i int, a desugar.NodeRef, t int) {
+    if untypedConst(mut st, a) {
+        desugar.HeapSet(mut st.d, cts + 1 + i, if desugar.UntypedByte(mut st.d, a, st.curPkg) { t } else { -2 - t })
+    }
+}
+
+// 定数の実引数（評価済みの EVal）の型を、インスタンスの仮引数の型 pts が named scalar なら付け替える
+func retagConsts(st mut St, cts desugar.ListRef, srcs desugar.ListRef, pts desugar.ListRef) {
+    for i <- iter.Range(0, lenL(mut st, cts)) {
+        raw := latI(mut st, cts, i)
+        ct := if raw < -1 { -2 - raw } else { raw }
+        if raw != -1 && i < lenL(mut st, pts) {
+            pt := latI(mut st, pts, i)
+            src := latN(mut st, srcs, i)
+            fits := if isTag(mut st, pt, TByte) { raw >= 0 && isTag(mut st, ct, TInt) } else { isTag(mut st, pt, TNamed) && tEql(mut st, baseTy(mut st, pt), ct) }
+            if fits && kindN(mut st, src) == EVal {
+                lput(mut st, srcs, i, node(mut st, EVal, src, pt, nodeOf(mut st, src).b, 0, 0))
+            }
+        }
+    }
+}
+
+// ジェネリック関数のインスタンス（単相コピー）。キー = "pkg.name[型…]"、本体は作業列で下ろす
+func instFunc(st mut St, fidx int, targs desugar.ListRef) (int, error?) {
+    pk := fnPkg(mut st, fidx)
+    decl := fnNode(mut st, fidx)
+    k := instKey(mut st, int(strDot(mut st, pkgPath(mut st, pk), fnName(mut st, fidx))), targs)
+    mut x := st.insts
+    while x >= 0 {
+        if strEq(mut st, hgetS(mut st, x + 1), k) {
+            lsEv(mut st, EV_INST, int(infoAt(mut st, desugar.HeapGet(mut st.d, x + 2)).ir), 0, 0, 0)
+            return desugar.HeapGet(mut st.d, x + 2), nil
+        }
+        x = desugar.HeapGet(mut st.d, x)
+    }
+    env := bindsOf(mut st, lB(nodeOf(mut st, decl)), targs)
+    sig := sigIn(mut st, decl, pk, env)?
+    fi := newFuncSig(mut st, int(k), decl, pk, desugar.ListRef(sig.ps), desugar.ListRef(sig.rs), -1, env)
+    if fnTransparent(mut st, fidx) {
+        markTransp(mut st, fi)
+    }
+    st.insts = rec4(mut st, st.insts, int(k), fi, 0)
+    lsEv(mut st, EV_INST, int(infoAt(mut st, fi).ir), 0, 0, 0)
+    return fi, nil
+}
+
+// ジェネリック関数の呼び出し: 引数を左から評価して退避 → 型引数（表層型検査器の表）→ インスタンスを呼ぶ
+func genericCall(st mut St, fidx int, args desugar.ListRef, at desugar.NodeRef, cn desugar.NodeRef) (int, error?) {
+    pk := fnPkg(mut st, fidx)
+    decl := fnNode(mut st, fidx)
+    transp := fnTransparent(mut st, fidx)
+    if fnExpands(mut st, fidx) && !transp {
+        return genericInline(mut st, fidx, args, at, cn)
+    }
+    ps := lC(nodeOf(mut st, decl))
+    n := lenL(mut st, ps)
+    if lenL(mut st, args) != n {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    vsrcs := desugar.ListRef(listN(mut st, n))
+    cts := constArgs(mut st, n)
+    for i <- iter.Range(0, n) {
+        a := latN(mut st, args, i)
+        if ast.ParamIsMut(nodeOf(mut st, latN(mut st, ps, i))) {
+            // mut 仮引数（mut_def）: 実引数は呼び手のセルのまま渡す（評価してコピーしない）
+            mutArgCell(mut st, a, at)?
+            lput(mut st, vsrcs, i, int(a))
+        } else {
+            x := expr(mut st, a)?
+            if isTag(mut st, x.t, TNever) {
+                return -1, nil
+            }
+            v := copyVal(mut st, x.t, x.v)
+            noteConstArg(mut st, int(cts), i, a, x.t)
+            lput(mut st, vsrcs, i, node(mut st, EVal, at, x.t, v, 0, 0))
+        }
+    }
+    // region 透過の実体関数の型引数は展開と同じ制約（値を持つ型なら string / slice / map を含んでよい）
+    targs := tableTArgs(mut st, cn, at, transp)?
+    fi := instFunc(mut st, fidx, targs)?
+    retagConsts(mut st, cts, vsrcs, desugar.ListRef(infoAt(mut st, fi).params))
+    return emitCall(mut st, infoAt(mut st, fi).ir, -1, desugar.ListRef(infoAt(mut st, fi).params), desugar.ListRef(infoAt(mut st, fi).results), vsrcs, at, decl)
+}
+
+// ジェネリックかつ関数型 / mut の仮引数を持つ関数: 値の引数を先に評価し、閉包は型引数（表層型検査器の表）が決まってから作る。
+// 本体は束縛した型環境で展開する
+func genericInline(st mut St, fidx int, args desugar.ListRef, at desugar.NodeRef, cn desugar.NodeRef) (int, error?) {
+    pk := fnPkg(mut st, fidx)
+    decl := fnNode(mut st, fidx)
+    ps := lC(nodeOf(mut st, decl))
+    n := lenL(mut st, ps)
+    if lenL(mut st, args) != n {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    outs := desugar.ListRef(listN(mut st, n))
+    cts := constArgs(mut st, n)
+    for i <- iter.Range(0, n) {
+        a := latN(mut st, args, i)
+        prm := latN(mut st, ps, i)
+        lput(mut st, outs, i, int(a))
+        if ast.ParamIsMut(nodeOf(mut st, prm)) {
+            mutArgCell(mut st, a, at)?
+        } else if kindN(mut st, nB(nodeOf(mut st, prm))) == ast.TFunc {
+            // 閉包（ラムダ・for 式・閉包の名前）は型引数が決まってから作る
+        } else {
+            x := expr(mut st, a)?
+            if isTag(mut st, x.t, TNever) {
+                return -1, nil
+            }
+            v := copyVal(mut st, x.t, x.v)
+            lput(mut st, outs, i, node(mut st, EVal, at, x.t, v, 0, 0))
+            noteConstArg(mut st, int(cts), i, a, x.t)
+        }
+    }
+    targs := tableTArgs(mut st, cn, at, true)?
+    env := bindsOf(mut st, lB(nodeOf(mut st, decl)), targs)
+    sig := sigIn(mut st, decl, pk, env)?
+    retagConsts(mut st, cts, outs, desugar.ListRef(sig.ps))
+    return inlineCall(mut st, decl, pk, desugar.ListRef(sig.ps), desugar.ListRef(sig.rs), outs, at, env)
+}
+
+// ── 辞書 const ──
+
+// 式を別の文脈で下ろすときに入れ替える束（名前の可視範囲・package・型環境・辞書 const の中か — C10）
+type ExpCtx struct {
+    chain int
+    curPkg int
+    tenv int
+    inDict int
+}
+
+func expCtx(st mut St) ExpCtx {
+    return ExpCtx{chain: st.chain, curPkg: st.curPkg, tenv: st.tenv, inDict: st.inDict}
+}
+
+func setExpCtx(st mut St, c ExpCtx) {
+    st.chain = c.chain
+    st.curPkg = c.curPkg
+    st.tenv = c.tenv
+    st.inDict = c.inDict
+}
+
+// 辞書 const の参照点での展開: 宣言側の文脈（package・空の可視範囲・空の型環境）で struct リテラルを作り直す
+func dictConst(st mut St, c int, pk int) (Val, error?) {
+    saved := expCtx(mut st)
+    st.chain = list2(mut st, st.nscope, VOPEN)
+    st.curPkg = pk
+    st.tenv = -1
+    st.inDict = 1
+    defer {
+        setExpCtx(mut st, saved)
+    }
+    x := expr(mut st, nB(nodeOf(mut st, conNode(mut st, c))))?
+    return x, nil
+}
+

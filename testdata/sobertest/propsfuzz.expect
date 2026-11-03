@@ -11,7 +11,7 @@ quick: falsified at the corpus case testdata/sobertest/propsfuzz/testdata/fuzz/T
   Int(0, 1000000) = 777777
 assert failed: Accept(quick.Int(mut q, 0, 1000000))
   quick.Int(mut q, 0, 1000000) = 777777
-panic: testing.AssertFailed{} at std/testing/testing.sober:25:10
+panic: testing.AssertFailed{} at testdata/sobertest/propsfuzz/propsfuzz_test.sober:18:36
 FAIL testdata/sobertest/propsfuzz.TestCorpus (exit 101)
 ok   testdata/sobertest/propsfuzz.TestOk
 1 passed, 2 failed

@@ -50,6 +50,7 @@ examples/byte_unary.sober: sober: lower error at examples/byte_unary.sober:6:13 
 examples/call_arity.sober: sober: lower error at examples/call_arity.sober:11:16 (Mismatch)
 examples/catch_infallible.sober: sober: load error at examples/catch_infallible.sober:9:17: the left of catch must be a call that returns (T, error?)
 examples/catch_infallible_pkg.sober: sober: load error at examples/catch_infallible_pkg.sober:7:39: the left of catch must be a call that returns (T, error?)
+examples/cell_neg_import.sober: sober: load error at examples/cell_neg_import.sober:5:8: std/testing/cell is imported only from _test.sober and _double.sober files
 examples/char_lit_nonascii.sober: sober: load error at examples/char_lit_nonascii.sober:5:12: source does not match the grammar
 examples/clone_neg_scalar.sober: sober: lower error at examples/clone_neg_scalar.sober:5:15 (Mismatch)
 examples/clone_neg_string.sober: sober: lower error at examples/clone_neg_string.sober:5:15 (Mismatch)
@@ -69,6 +70,8 @@ examples/const_neg_mutslice.sober: sober: load error at examples/const_neg_mutsl
 examples/const_neg_nil.sober: sober: load error at examples/const_neg_nil.sober:4:30: const expression: nil is allowed only as a field value
 examples/const_neg_strop.sober: sober: load error at examples/const_neg_strop.sober:6:19: const expression: operators work only on int consts — string, bool, float, struct and slice consts are written as literals
 examples/defined_neg_struct.sober: sober: load error at examples/defined_neg_struct.sober:9:6: the underlying type of a defined type is int or bool — to give another type a second name, write an alias: type V = W
+examples/doubles_neg_import.sober: sober: load error at examples/doubles_neg_import.sober:5:8: this package is a double (its files are _double.sober): it is read only through the @doubles list of a test package
+examples/doubles_neg_replaces.sober: sober: load error at examples/doubles_neg_replaces.sober:1:1: @replaces is written only before the package clause of a _double.sober file
 examples/effects_neg_target.sober: sober: load error: source does not match the grammar
 examples/embed_neg_nomatch.sober: sober: load error at examples/embed_neg_nomatch.sober:6:7: @embed pattern matches no file
 examples/errors_neg_try_dest.sober: sober: lower error at examples/errors_neg_try_dest.sober:16:18 (Mismatch)
@@ -87,6 +90,7 @@ examples/for_fallible_result.sober: sober: load error at examples/for_fallible_r
 examples/for_fallible_unmarked.sober: sober: load error at examples/for_fallible_unmarked.sober:24:20: this generator can fail (it returns error?): mark the for with `?` — `for x <- g(…)? { … }` — or drop the error explicitly with `_ = g(…, (x) => { … })`
 examples/for_fallible_yield.sober: sober: load error at examples/for_fallible_yield.sober:24:29: a generator that can fail is only allowed in the statement form of for (for x <- g(…)? { … }), not in a for expression
 examples/for_neg_yield_outside.sober: sober: lower error at examples/for_neg_yield_outside.sober:8:9 (UndefinedFunction)
+examples/for_string_src.sober: sober: desugar error at examples/for_string_src.sober:8:14 (TypeMismatch): a string is not a for source — name the view: `for c <- bytes(s)`
 examples/freeze_neg_alias.sober: examples/freeze_neg_alias.sober:9:7: error: this writes through `ys[…]`, which may hold the contents frozen by `freeze(xs)` — the frozen value would change. Build the value through one binding only, or copy it before freezing (Analyzer)
 examples/freeze_neg_write.sober: examples/freeze_neg_write.sober:8:7: error: this writes to `xs[…]` after it was frozen by `freeze(xs)` — the frozen value would change. Finish writing before freeze, or start a new value after it (`x = mut []T{}`) (Analyzer)
 examples/func_neg_method.sober: sober: load error at examples/func_neg_method.sober:7:1: source does not match the grammar
@@ -179,6 +183,7 @@ examples/named_scalar_typed_const_neg_arith.sober: sober: lower error at example
 examples/named_scalar_typed_const_neg_constexpr.sober: sober: load error at examples/named_scalar_typed_const_neg_constexpr.sober:8:7: const expression
 examples/named_scalar_typed_const_neg_int.sober: sober: lower error at examples/named_scalar_typed_const_neg_int.sober:14:14 (Mismatch)
 examples/named_scalar_under.sober: sober: lower error at examples/named_scalar_under.sober:8:14 (Mismatch)
+examples/narrow_assign.sober: sober: desugar error at examples/narrow_assign.sober:15:5 (NarrowAssign): cannot assign to a narrowed binding — inside the narrowed region the name is the T?'s payload; bind it to a new name (`mut v := x`) or assign outside the region (name: x, narrowed at examples/narrow_assign.sober:12:5)
 examples/net_neg_capture.sober: sober: load error at examples/net_neg_capture.sober:16:46: a closure cannot capture an io.File, net.Conn, net.Listener or tls.Conn — pass it as an argument (only the body of par.Scope may capture it)
 examples/net_neg_copy.sober: sober: load error at examples/net_neg_copy.sober:13:14: an io.File, net.Conn, net.Listener or tls.Conn cannot be copied to another binding (it has identity — keep using the name bound by io.Open or by the for)
 examples/nil_untyped.sober: sober: lower error at examples/nil_untyped.sober:7:10 (Mismatch)
@@ -257,6 +262,8 @@ examples/task_neg_deadline.sober: sober: load error at examples/task_neg_deadlin
 examples/task_neg_endpoint.sober: sober: load error at examples/task_neg_endpoint.sober:11:23: a channel endpoint (task.Sender / task.Receiver) moves to a child only through give: — task.Spawn(s, (out) => …, give: tx)
 examples/task_neg_escape.sober: sober: lower error at examples/task_neg_escape.sober:10:13 (Mismatch)
 examples/task_neg_fnparam.sober: sober: load error at examples/task_neg_fnparam.sober:8:70: a spawned task cannot capture a function-typed parameter (it is a closure inlined at the call — call it in the scope body and spawn with the value)
+examples/task_neg_give_int.sober: sober: load error at examples/task_neg_give_int.sober:9:48: give: hands one channel endpoint (task.Sender / task.Receiver) to the child — capture any other value in the lambda instead
+examples/task_neg_give_struct.sober: sober: load error at examples/task_neg_give_struct.sober:14:50: give: hands one channel endpoint (task.Sender / task.Receiver) to the child — capture any other value in the lambda instead
 examples/task_neg_handle.sober: sober: load error at examples/task_neg_handle.sober:10:49: a spawned task cannot capture a task handle (task.Handle), also inside a struct field or T? — join it in the scope body
 examples/task_neg_handles.sober: sober: load error at examples/task_neg_handles.sober:9:19: handles (task.Handle) go in a mut slice: mut hs := mut []task.Handle[T]{} (an imm slice copies its elements, and a handle is not copied)
 examples/task_neg_handles_err.sober: sober: load error at examples/task_neg_handles_err.sober:15:35: an error-returning task's handle goes in a slice of task.Handle[(T, error?)] (the element type says the task can fail — Join gives two values)

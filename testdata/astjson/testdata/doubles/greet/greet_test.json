@@ -1,0 +1,330 @@
+{
+  "package": "greet",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/testing/cell",
+      "tok": 10
+    },
+    {
+      "alias": null,
+      "path": "testdata/doubles/logger/spy",
+      "tok": 13
+    },
+    {
+      "alias": "$testing",
+      "path": "std/testing",
+      "tok": 0
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "TestGreetLogs",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 20
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Greet",
+                      "tok": 22
+                    },
+                    "args": [
+                      {
+                        "k": "strlit",
+                        "value": "a",
+                        "tok": 24
+                      }
+                    ],
+                    "tok": 23
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "hello, a",
+                    "tok": 27
+                  },
+                  "tok": 26
+                }
+              ],
+              "tok": 21
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 30
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Greet",
+                      "tok": 32
+                    },
+                    "args": [
+                      {
+                        "k": "strlit",
+                        "value": "b",
+                        "tok": 34
+                      }
+                    ],
+                    "tok": 33
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "hello, b",
+                    "tok": 37
+                  },
+                  "tok": 36
+                }
+              ],
+              "tok": 31
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "lines"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "cell",
+                    "tok": 42
+                  },
+                  "field": "Get",
+                  "tok": 44
+                },
+                "args": [
+                  {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "spy",
+                      "tok": 46
+                    },
+                    "field": "Lines",
+                    "tok": 48
+                  }
+                ],
+                "tok": 45
+              }
+            ],
+            "tok": 40
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 51
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "len",
+                      "tok": 53
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "lines",
+                        "tok": 55
+                      }
+                    ],
+                    "tok": 54
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 2,
+                    "tok": 58
+                  },
+                  "tok": 57
+                }
+              ],
+              "tok": 52
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 61
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "index",
+                    "base": {
+                      "k": "ident",
+                      "name": "lines",
+                      "tok": 63
+                    },
+                    "idx": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 65
+                    },
+                    "tok": 64
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "hello, b",
+                    "tok": 68
+                  },
+                  "tok": 67
+                }
+              ],
+              "tok": 62
+            }
+          }
+        ]
+      },
+      "tok": 16,
+      "bodiless": false,
+      "span": {
+        "start": 15,
+        "end": 73
+      },
+      "sig_end": 19
+    },
+    {
+      "name": "TestFreshPerTest",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 78
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "len",
+                      "tok": 80
+                    },
+                    "args": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "cell",
+                            "tok": 82
+                          },
+                          "field": "Get",
+                          "tok": 84
+                        },
+                        "args": [
+                          {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "spy",
+                              "tok": 86
+                            },
+                            "field": "Lines",
+                            "tok": 88
+                          }
+                        ],
+                        "tok": 85
+                      }
+                    ],
+                    "tok": 81
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 92
+                  },
+                  "tok": 91
+                }
+              ],
+              "tok": 79
+            }
+          }
+        ]
+      },
+      "tok": 74,
+      "bodiless": false,
+      "span": {
+        "start": 73,
+        "end": 97
+      },
+      "sig_end": 77
+    }
+  ],
+  "consts": [],
+  "doubles": [
+    {
+      "paths": [
+        {
+          "k": "strlit",
+          "value": "testdata/doubles/logger/spy",
+          "tok": 3
+        }
+      ],
+      "tok": 0
+    }
+  ]
+}

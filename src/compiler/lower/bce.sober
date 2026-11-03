@@ -9,6 +9,7 @@ package lower
 //   ④`uge x, y` / `ult x, y` は、支配する辺で `x + k <u y`（k は非負の定数）が成り立ち x ≥ 0 なら偽 / 真（`a[i] = a[i + 1]` の 2 本目の検査）
 //   ⑤`uge c1, y` / `ult c1, y`（c1 は定数か定数の式）は、支配する辺で `c2 <u y`（c2 は定数か定数の式・0 ≤ c1 ≤ c2）が成り立てば偽 / 真
 //     （全展開した定数添字の束 — nbody の advance の `b[o + k]`。大きい添字の検査が先なら小さい添字の検査は消える）
+//   ⑥`uge (and_ a, m), k` / `ult (and_ a, m), k`（m・k は定数か定数の式・0 ≤ m < k）は偽 / 真（`byte(x & 255)` の範囲の検査）
 // 消した検査は panic の点へ行かない経路だけ（値は変えない）— 観測は変わらない（optdiff が見る）
 
 import "desugar"
@@ -103,6 +104,14 @@ func bceKnown(st mut St, w mut m2rW, bw mut BceW, bb int, c int) int {
     if d >= 0 && irInsOp(mut st, InsRef(d)) == OpConst {
         return if irInsA(mut st, InsRef(d)) != 0 { 1 } else { 0 }
     }
+    // ⑥ `uge (and_ a, m), k` は偽・`ult (and_ a, m), k` は真（0 ≤ m < k — 非負の m との and は [0, m] に入る。`byte(x & 255)` の検査）
+    if d >= 0 && irInsOp(mut st, InsRef(d)) == OpCmp && (irInsA(mut st, InsRef(d)) == CUge || irInsA(mut st, InsRef(d)) == CUlt) {
+        k6 := bceCv(mut st, mut bw, irInsC(mut st, InsRef(d)))
+        m6 := bceMask(mut st, mut bw, irInsB(mut st, InsRef(d)))
+        if k6 >= 0 && m6 >= 0 && m6 < k6 {
+            return if irInsA(mut st, InsRef(d)) == CUge { 0 } else { 1 }
+        }
+    }
     // ⑤ の候補: c が `uge c1, y` / `ult c1, y`（c1 は非負の定数）なら c1 を控える（支配木の走査の中で辺ごとに引き直さない）
     mut c1 := -1
     if d >= 0 && irInsOp(mut st, InsRef(d)) == OpCmp && (irInsA(mut st, InsRef(d)) == CUge || irInsA(mut st, InsRef(d)) == CUlt) {
@@ -144,6 +153,16 @@ func bceKnown(st mut St, w mut m2rW, bw mut BceW, bb int, c int) int {
         cb = p
     }
     return -1
+}
+
+// 値 v が `and_ a, m`（m は非負の定数の式）ならその m、そうでなければ -1
+func bceMask(st mut St, bw mut BceW, v int) int {
+    d := bw.defIns[v]
+    if d < 0 || irInsOp(mut st, InsRef(d)) != OpBin || irInsA(mut st, InsRef(d)) != BAnd {
+        return -1
+    }
+    mc := bceCv(mut st, mut bw, irInsC(mut st, InsRef(d)))
+    return if mc >= 0 { mc } else { bceCv(mut st, mut bw, irInsB(mut st, InsRef(d))) }
 }
 
 // fc が真と分かっているとき、c の値（分からなければ -1）: fc = `lt x, y`・c = `uge x, y` → 0・`ult x, y` → 1（x ≥ 0）

@@ -12,6 +12,15 @@ const MM_B = 3
 // 種類（OpSyscall の c）
 const MK_CPU = 0    // a = [] → 0（hw の道でない出力の cpumulx の印）
 const MK_MUL = 1    // a = [d, a, b, m, m0i, n]
+const MK_SEL = 2    // a = [d, t, idx, n, stride, cnt]（mmsel — 表の定数時間の選び）
+const MK_SQR = 3    // a = [d, a, m, m0i, n]（montsqr — 2 乗の専用の形）
+const MK_FE = 4     // a = [d, a, b]（femul — x25519 の体の積）
+const MK_SHA = 5    // a = [h, p, n, k]（sha256blk — SHA-NI の圧縮 n ブロック）
+
+// 種類が xmm を作業に使うか（x86.sober の xHasXmmBlk — その関数は xmm に値を置かず、呼び手の xmm2〜15 を入口で退避する）
+func xMmXmm(kind int) bool {
+    return kind == MK_SEL || kind == MK_SHA
+}
 
 // cpumulx の値（hw の道: rt.cpu の印の bit 3）
 func cpuMulx(st mut St) int {
@@ -21,6 +30,14 @@ func cpuMulx(st mut St) int {
     return bin(mut st, BAnd, bin(mut st, BSar, cpuMarks(mut st), iconst(mut st, 3)), iconst(mut st, 1))
 }
 
+// cpusha の値（hw の道: rt.cpu の印の bit 4 — 他の出力は MK_CPU の印〔0〕）
+func cpuSha(st mut St) int {
+    if !st.hwFold {
+        return push(mut st, true, OpSyscall, list0(mut st), MM_B, MK_CPU)
+    }
+    return bin(mut st, BAnd, bin(mut st, BSar, cpuMarks(mut st), iconst(mut st, 4)), iconst(mut st, 1))
+}
+
 // montmul（vs = 引数の列）
 func mmOp(st mut St, kind int, vs int) int {
     return push(mut st, true, OpSyscall, vs, MM_B, kind)
@@ -28,5 +45,5 @@ func mmOp(st mut St, kind int, vs int) int {
 
 // IR テキストの綴り
 func mmName(kind int) string {
-    return if kind == MK_CPU { "mm.cpu " } else { "mm.mul " }
+    return if kind == MK_CPU { "mm.cpu " } else if kind == MK_MUL { "mm.mul " } else if kind == MK_SEL { "mm.sel " } else if kind == MK_SQR { "mm.sqr " } else if kind == MK_FE { "mm.fe " } else { "mm.sha " }
 }

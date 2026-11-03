@@ -1,0 +1,2 @@
+sober: load error at examples/task_neg_give_struct.sober:14:50: give: hands one channel endpoint (task.Sender / task.Receiver) to the child — capture any other value in the lambda instead
+exit=1

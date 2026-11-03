@@ -1,0 +1,4 @@
+@doubles("a")
+package t
+
+const W = 1

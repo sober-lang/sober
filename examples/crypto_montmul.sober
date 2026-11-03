@@ -6,5 +6,5 @@ package main
 import "std/crypto/rsa"
 
 func main() {
-    println("montmul mismatch", rsa.MontSelfCheck(1, 40, 24), rsa.MontSelfCheck(77, 34, 40))
+    println("montmul mismatch", rsa.MontSelfCheck(1, 40, 24), rsa.MontSelfCheck(77, 34, 40), "sel", rsa.SelSelfCheck(5, 40))
 }

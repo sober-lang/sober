@@ -38,7 +38,7 @@ for f in "$W"/testdata/fix/*/*.sober; do
         [ "$got" = "$words" ] || { echo "FAIL ④ ${pkg}.${name}: wrote ($words) — derived ($got)"; fail=1; }
     done < <(awk '/^@effects\(/ { d = $0; next } /^func / && d != "" { split($2, a, "("); print d, a[1]; d = ""; next } /^@/ { next } { d = "" }' "$f")
 done
-mkdir -p "$W/std/app" && { echo "package main"; echo; for d in $(cd src && find std -name '*.sober' ! -name '*_test.sober' ! -path 'std/internal/*' -printf '%h\n' | sort -u); do echo "import \"$d\""; done; echo; echo "func main() {"; echo "}"; } > "$W/std/app/main.sober"
+mkdir -p "$W/std/app" && { echo "package main"; echo; for d in $(cd src && find std -name '*.sober' ! -name '*_test.sober' ! -path 'std/internal/*' ! -path 'std/testing/cell/*' -printf '%h\n' | sort -u); do echo "import \"$d\""; done; echo; echo "func main() {"; echo "}"; } > "$W/std/app/main.sober"
 (cd "$W/std" && "$S2" fix --effects --std "$W/std/out" app/main.sober) > "$W/fixstd.txt" 2>&1 || { echo "FAIL ⑤ fix --std: $(head -c 300 "$W/fixstd.txt")"; fail=1; }
 [ -s "$W/fixstd.txt" ] && { echo "FAIL ⑤ fix --std wrote (the std declarations are not in derived form): $(head -c 300 "$W/fixstd.txt")"; fail=1; }
 echo "fixcheck: $(wc -l < "$W/fix1.txt") files written, ${n} positive @effects matched the derivation, std fix --std wrote $(wc -l < "$W/fixstd.txt"), fail=$fail"

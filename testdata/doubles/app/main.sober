@@ -1,0 +1,9 @@
+package main
+
+import "testdata/doubles/handler"
+import "testdata/doubles/store"
+
+func main() {
+    c := store.Open("/nonexistent-dir")
+    println(handler.Lookup(c, "a"))
+}

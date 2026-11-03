@@ -90,13 +90,14 @@ T-15. string の中身は見方を名指して読む: `bytes(s)` は同じバイ
 
 ## 2.7 `T?`
 
-T-16. 型 `T` は常に値を持ち、`nil` は `T?` にだけ住める。slice・map・string の空は nil でなく空の値。期待型の無い位置（束縛の右辺の if の腕など）の `nil` は型が決まらないので拒否する。
-例: [`examples/opt.sober`](../../examples/opt.sober)
+T-16. 型 `T` は常に値を持ち、`nil` は `T?` にだけ住める。slice・map・string の空は nil でなく空の値。期待型の無い位置の if / switch の式で、腕のどれかが `nil` で終わり他の腕から型 `T` が読めるなら、式の型は `T?`（T が `T?` ならそのまま・error のラベルの腕は `error?`）。腕の型が `T` と `T?` に分かれるときも式の型は `T?`。型の読める腕が無い位置の `nil` は型が決まらないので拒否する。
+例: [`examples/opt.sober`](../../examples/opt.sober)・[`examples/nil_sibling.sober`](../../examples/nil_sibling.sober)・[`examples/nil_sibling_label.sober`](../../examples/nil_sibling_label.sober)・[`examples/opt_arm_join.sober`](../../examples/opt_arm_join.sober)
 拒否: [`examples/nil_untyped.sober`](../../examples/nil_untyped.sober)
 決定: [language.md 15 節](../language.md)
 
-T-17. `T?` の値は絞り込んでから `T` として使う（flow typing）。`if x != nil { … }` の本体で x は `T`。else の無い if の `A && x != nil && B` では `B` と本体で x は `T`。`if x == nil || A { 脱出 }`（then が return / break / continue の 1 文）の後ろと、`if x == nil { 脱出 }` の後ろの文で x は `T`。
-例: [`examples/opt.sober`](../../examples/opt.sober)・[`examples/flow_chain.sober`](../../examples/flow_chain.sober)
+T-17. `T?` の値は絞り込んでから `T` として使う（flow typing）。`if x != nil { … }` の本体で x は `T`。`A && x != nil && B` の `B` と `A || x == nil || B` の `B` で x は `T`（式の位置を問わない）。`if A && x != nil && B { … }` の本体と、`if A || x == nil || B { … } else { … }` の else の腕で x は `T`（else の有無を問わない）。`if x == nil || A { 脱出 }`（then が return / break / continue の 1 文）の後ろと、`if x == nil { 脱出 }` の後ろの文で x は `T`。絞り込んだ領域の `mut` の x へは代入できない（中身を変えるなら別の名前に束縛する）。
+例: [`examples/opt.sober`](../../examples/opt.sober)・[`examples/flow_chain.sober`](../../examples/flow_chain.sober)・[`examples/flow_body.sober`](../../examples/flow_body.sober)
+拒否: [`examples/narrow_assign.sober`](../../examples/narrow_assign.sober)
 決定: [language.md 15 節](../language.md)
 
 T-18. `T?` と `T` の値の `==` / `!=` は無い — 絞り込んでから比べる。`println` も `T?` を受けない。

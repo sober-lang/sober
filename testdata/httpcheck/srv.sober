@@ -7,6 +7,8 @@ package main
 // 応答の gzip は既定の level（compress: http.Gzip{} — json-comp の検査は check.ts の jsonComp）。SRV_WORK が空でなければ符号器の作業域を
 // ワーカー局所の lease で借りる（ServeConn の work: — report-720。httpcheck.sh が両方の構成で回す）。SRV_MAXBODY（バイト）があれば ServeConn の maxBody:
 // （既定 16 KiB — httpcheck.sh の echo の大きい本文の構成〔8gbit の検査の 100 KB と上限 128 KiB〕だけが渡す）
+// SRV_TLS_PORT があれば平文の代わりに TLS で 127.0.0.1:<SRV_TLS_PORT> に立つ（tls.Serve + ServeWith の put: = `(b) => tls.Put(c, b)` — bench/httparena の
+// TLS の形。"tls-ready <port>" を出してから待ち受ける・httpcheck.sh の SRV_TLS=1 の構成 + check.ts --tls）
 
 import "std/compress/flate"
 import "std/convert"
@@ -17,6 +19,7 @@ import "std/json"
 import "std/net"
 import "std/os"
 import "std/task"
+import "std/tls"
 import "std/strings"
 
 // num は数でなければ 0（go-stdlib と同じ寛容さ）
@@ -298,11 +301,34 @@ func run(port string) error? {
     sr := os.Getenv("STATIC_ROOT") catch nil
     st := http.Static("/static", if sr != nil { sr } else { "/nonexistent" }, precompressed: true)
     sh := sharedRoutes(if sr != nil { sr } else { "/nonexistent" })
+    tp := os.Getenv("SRV_TLS_PORT") catch nil
+    if tp == nil || tp == "" {
+        return plain(port, ds, st, sh, dp, dl, mb, wk)
+    }
+    // TLS の構成: 同じ route を tls.Serve の上の ServeWith（put: = tls.Put — 応答の列を積む口）で 127.0.0.1:<SRV_TLS_PORT> に立てる（平文の待ち受けは立てない）
+    cfg := tls.Load("testdata/crypto/httparena-server.crt", "testdata/crypto/httparena-server.key")?
+    println("tls-ready ${tp}")
+    return serveTls(tp, cfg, ds, if sr != nil { sr } else { "/nonexistent" }, dp, dl, mb)
+}
+
+func plain(port string, ds []Item, st []http.Route, sh []http.Route, dp string, dl int, mb int, wk task.Local?) error? {
     for l <- net.Listen("0.0.0.0:${port}")? {
         println("ready ${net.Port(l)}")
         net.Serve(l, (c net.Conn) => http.ServeConn(c, (r http.Request) => route(ds, st, sh, dp, dl, r), maxBody: mb, compress: http.Gzip{}, work: wk), conns: 40000)?
     }
     return nil
+}
+
+// TLS の構成の待ち受け（符号器の作業域は要求ごと — work: は平文の構成だけが見る・route の表は接続ごとに組む — Handler の閉包は平たい値だけを捕捉する）
+func serveTls(tp string, cfg tls.Config, ds []Item, root string, dp string, dl int, mb int) error? {
+    return tls.Serve("127.0.0.1:${tp}", cfg, (c tls.Conn) => serveTlsConn(c, ds, root, dp, dl, mb))
+}
+
+func serveTlsConn(c tls.Conn, ds []Item, root string, dp string, dl int, mb int) error? {
+    st := http.Static("/static", root, precompressed: true)
+    sh := sharedRoutes(root)
+    return http.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), (r http.Request) => route(ds, st, sh, dp, dl, r), maxBody: mb, compress: http.Gzip{},
+        put: (b) => tls.Put(c, b))
 }
 
 func main() int {

@@ -1,0 +1,12 @@
+@replaces("testdata/doubles/logger")
+package logger
+
+// A logger that dies on every line: the panic names this file, not the replaced package's directory.
+
+func Log(msg string) {
+    xs := []int{}
+    n := len(bytes(msg))
+    if xs[n] == 0 {
+        return
+    }
+}

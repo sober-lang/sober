@@ -1219,8 +1219,8 @@ func ServeWith(recv func(k func([]byte)) error?, send func(b []byte) error?, rou
     if work != nil && gz == 0 {
         return panic(WorkNoCompress{})
     }
-    capa := mh + 2 * mb + 128
-    // 持ち越しの列（初めてまたいだときに capa バイトを 1 回だけ確保 — 以降は添字で書く）
+    // 持ち越しの列（未完の要求の長さまで伸ばす — append の倍々で再確保は対数回・接続の region に残るのは最長の持ち越しの 2 倍以内。
+    // 上限〔maxHead + 2 × maxBody〕で一括に取ると、1 回でも分割受信した接続がその大きさで常駐する）
     mut pend := mut []byte{}
     mut pn := 0
     for chunk <- recv()? {
@@ -1243,14 +1243,10 @@ func ServeWith(recv func(k func([]byte)) error?, send func(b []byte) error?, rou
         if shut != 0 {
             return nil
         }
-        // 残り（未完の要求）を持ち越す — 大きさは serveBuf の上限の検査で capa 未満
+        // 残り（未完の要求）を持ち越す — 大きさは serveBuf の上限の検査で maxHead + 2 × maxBody + 128 未満
         rest := len(in) - used
-        if rest > 0 && len(pend) == 0 {
-            mut k := 0
-            while k < capa {
-                pend = append(pend, 0)
-                k += 1
-            }
+        while len(pend) < rest {
+            pend = append(pend, 0)
         }
         mut j := 0
         while j < rest {

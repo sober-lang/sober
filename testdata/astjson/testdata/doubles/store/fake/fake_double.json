@@ -1,0 +1,511 @@
+{
+  "package": "store",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/iter",
+      "tok": 10
+    },
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "Conn",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "rows",
+            "type": {
+              "k": "slice_of",
+              "elem": {
+                "k": "name",
+                "name": "Row"
+              },
+              "mut": false
+            },
+            "tok": 16
+          },
+          {
+            "name": "deny",
+            "type": {
+              "k": "name",
+              "name": "bool"
+            },
+            "tok": 21
+          }
+        ]
+      },
+      "tok": 13,
+      "span": {
+        "start": 12,
+        "end": 26
+      }
+    },
+    {
+      "name": "Row",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "k",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 30
+          },
+          {
+            "name": "v",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 33
+          }
+        ]
+      },
+      "tok": 27,
+      "span": {
+        "start": 26,
+        "end": 38
+      }
+    },
+    {
+      "name": "Denied",
+      "type_params": [],
+      "body": {
+        "k": "error",
+        "fields": []
+      },
+      "tok": 39,
+      "span": {
+        "start": 38,
+        "end": 44
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "With",
+      "type_params": [],
+      "params": [
+        {
+          "name": "rows",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "Row"
+            },
+            "mut": false
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "Conn"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Conn",
+                "elems": [
+                  {
+                    "key": "rows",
+                    "value": {
+                      "k": "ident",
+                      "name": "rows",
+                      "tok": 59
+                    }
+                  },
+                  {
+                    "key": "deny",
+                    "value": {
+                      "k": "ident",
+                      "name": "false",
+                      "tok": 63
+                    }
+                  }
+                ],
+                "tok": 55,
+                "type_args": []
+              }
+            ],
+            "tok": 54
+          }
+        ]
+      },
+      "tok": 45,
+      "bodiless": false,
+      "span": {
+        "start": 44,
+        "end": 68
+      },
+      "sig_end": 53
+    },
+    {
+      "name": "Denying",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "Conn"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Conn",
+                "elems": [
+                  {
+                    "key": "rows",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "Row"
+                      },
+                      "elems": [],
+                      "mut": false,
+                      "tok": 79
+                    }
+                  },
+                  {
+                    "key": "deny",
+                    "value": {
+                      "k": "ident",
+                      "name": "true",
+                      "tok": 87
+                    }
+                  }
+                ],
+                "tok": 75,
+                "type_args": []
+              }
+            ],
+            "tok": 74
+          }
+        ]
+      },
+      "tok": 69,
+      "bodiless": false,
+      "span": {
+        "start": 68,
+        "end": 92
+      },
+      "sig_end": 73
+    },
+    {
+      "name": "Put",
+      "type_params": [],
+      "params": [
+        {
+          "name": "c",
+          "type": {
+            "k": "name",
+            "name": "Conn"
+          },
+          "mutable": false
+        },
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        },
+        {
+          "name": "v",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "error"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "c",
+                  "tok": 114
+                },
+                "field": "deny",
+                "tok": 116
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "composite",
+                        "type_name": "Denied",
+                        "elems": [],
+                        "tok": 119,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 118
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 113
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "nil",
+                "tok": 126
+              }
+            ],
+            "tok": 125
+          }
+        ]
+      },
+      "tok": 99,
+      "bodiless": false,
+      "span": {
+        "start": 92,
+        "end": 130
+      },
+      "sig_end": 112
+    },
+    {
+      "name": "Get",
+      "type_params": [],
+      "params": [
+        {
+          "name": "c",
+          "type": {
+            "k": "name",
+            "name": "Conn"
+          },
+          "mutable": false
+        },
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "string"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "i"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "iter",
+                        "tok": 145
+                      },
+                      "field": "Range",
+                      "tok": 147
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 149
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "len",
+                          "tok": 151
+                        },
+                        "args": [
+                          {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "c",
+                              "tok": 153
+                            },
+                            "field": "rows",
+                            "tok": 155
+                          }
+                        ],
+                        "tok": 152
+                      }
+                    ],
+                    "tok": 148
+                  },
+                  "guards": [],
+                  "tok": 143
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "if",
+                      "cond": {
+                        "k": "binary",
+                        "op": "==",
+                        "lhs": {
+                          "k": "selector",
+                          "base": {
+                            "k": "index",
+                            "base": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "c",
+                                "tok": 160
+                              },
+                              "field": "rows",
+                              "tok": 162
+                            },
+                            "idx": {
+                              "k": "ident",
+                              "name": "i",
+                              "tok": 164
+                            },
+                            "tok": 163
+                          },
+                          "field": "k",
+                          "tok": 167
+                        },
+                        "rhs": {
+                          "k": "ident",
+                          "name": "k",
+                          "tok": 169
+                        },
+                        "tok": 168
+                      },
+                      "then": {
+                        "stmts": [
+                          {
+                            "k": "ret",
+                            "values": [
+                              {
+                                "k": "selector",
+                                "base": {
+                                  "k": "index",
+                                  "base": {
+                                    "k": "selector",
+                                    "base": {
+                                      "k": "ident",
+                                      "name": "c",
+                                      "tok": 172
+                                    },
+                                    "field": "rows",
+                                    "tok": 174
+                                  },
+                                  "idx": {
+                                    "k": "ident",
+                                    "name": "i",
+                                    "tok": 176
+                                  },
+                                  "tok": 175
+                                },
+                                "field": "v",
+                                "tok": 179
+                              }
+                            ],
+                            "tok": 171
+                          }
+                        ]
+                      },
+                      "else": null,
+                      "tok": 159
+                    }
+                  }
+                ]
+              },
+              "tok": 142
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "nil",
+                "tok": 186
+              }
+            ],
+            "tok": 185
+          }
+        ]
+      },
+      "tok": 131,
+      "bodiless": false,
+      "span": {
+        "start": 130,
+        "end": 190
+      },
+      "sig_end": 141
+    }
+  ],
+  "consts": [],
+  "replaces": [
+    {
+      "replaces": "testdata/doubles/store",
+      "tok": 0
+    }
+  ]
+}

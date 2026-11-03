@@ -66,6 +66,9 @@ func installRt(st mut St) {
     }
     if st.taskUse {
         needTaskRt(mut st)
+        if st.cellUse {
+            needCellRt(mut st)
+        }
     }
     st.rtFlush = addFunc(mut st, int(strLit(mut st, "rt.flush")), desugar.ListRef(list0(mut st)), -1)
     st.rtPchar = addFunc(mut st, int(strLit(mut st, "rt.print_char")), desugar.ListRef(list1(mut st, TyI64)), -1)

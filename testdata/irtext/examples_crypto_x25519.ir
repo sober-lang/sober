@@ -42,7 +42,7 @@ global @str.34 [2] = {8601708606660288556, 35435399443553}
 global @str.35 [1] = {35899498962976}
 global @str.36 [5] = {7309940765259427104, 7599578576357124455, 6874858533597243508, 2323330133470241143, 2608}
 global @str.37 [3] = {7232620951369114994, 8674334734093152357, 8250}
-global @rt.psites [135] = {9851624553971716, 8725724647129091, 6473924984439041, 9851624704966913, 7881300404863489, 3659175787758081, 1688850950783489, 4222125757956609, 1688850967560705, 1688851068224001, 6473925705859585, 2814751008621057, 1688851135332865, 1688851152110081, 4785075963036161, 7036875776721412, 4503601590305281, 7599826334122497, 5910976490635777, 2814751746818561, 5910976507412993, 2814751763595777, 3940651787878916, 3940651821433348, 3940651854987780, 3940651888542212, 3940651922096644, 1688852141965825, 10133101460062724, 1688852158743041, 1688852175520257, 1688852192297473, 1688852209074689, 6192451920331265, 8162776757305857, 9851626617569793, 12947851361387009, 15762601128493569, 18858825872310785, 21673575639417345, 24769800383234561, 27584550150341121, 30680774894158337, 6192452004217345, 13229326421983745, 14918176282247681, 23080950606856705, 25895700373963265, 34058474698572289, 36873224465678849, 45035998790287873, 47850748557394433, 56013522882003457, 3377702354551297, 4503602261393924, 3377702371328513, 5629502185013764, 3377702388105729, 5629502201790980, 3377702404882945, 5629502218568196, 3377702421660161, 5629502235345412, 3377702438437377, 3377702455214593, 3377702471991809, 3377702488769025, 3377702505546241, 6473927333249540, 15199651611279876, 23925375889310212, 32651100167340548, 41376824445370884, 6473927366803972, 15199651644834308, 23925375922864644, 32651100200894980, 41376824478925316, 6473927400358404, 15199651678388740, 23925375956419076, 32651100234449412, 41376824512479748, 6473927433912836, 15199651711943172, 23925375989973508, 32651100268003844, 41376824546034180, 6473927467467268, 15199651745497604, 23925376023527940, 32651100301558276, 41376824579588612, 18858826493067780, 2814752921223681, 1688853047935489, 2814753189659137, 6192452960518657, 9288677704335876, 7881302837559809, 14073752325194244, 2814753256768001, 4503603234472449, 7318353001579012, 3096228367696385, 6755403064934916, 3096228384473601, 6755403081712132, 3096228401250817, 6755403098489348, 3096228418028033, 6755403115266564, 3377703411515905, 3377703428293121, 7318353102242308, 3377703445070337, 7318353119019524, 3377703461847553, 7318353135796740, 3377703478624769, 7318353152573956, 7599828246725121, 12103427874095617, 15199652617912836, 20829152152125956, 3377703596065281, 9288678174097921, 8162778267255299, 5348024825938689, 10133099446797060, 9288674516665089, 9288674533442305, 6755400045036289, 6755400061813505, 8725724965896963}
+global @rt.psites [135] = {9851624553971716, 8725724647129091, 6473924984439041, 9851624704966913, 7881300639744513, 3659176022639105, 1688851185664513, 4222125992837633, 1688851202441729, 1688851353436673, 6473925991072257, 2814751293833729, 1688851420545537, 1688851437322753, 4785076248248833, 7036876061934084, 4503601875517953, 7599826619335169, 5910976775848449, 2814752032031233, 5910976792625665, 2814752048808449, 3940652073091588, 3940652106646020, 3940652140200452, 3940652173754884, 3940652207309316, 1688852427178497, 10133101745275396, 1688852443955713, 1688852460732929, 1688852477510145, 1688852494287361, 6192452205543937, 8162777042518529, 9851626902782465, 12947851646599681, 15762601413706241, 18858826157523457, 21673575924630017, 24769800668447233, 27584550435553793, 30680775179371009, 6192452289430017, 13229326707196417, 14918176567460353, 23080950892069377, 25895700659175937, 34058474983784961, 36873224750891521, 45035999075500545, 47850748842607105, 56013523167216129, 3377702790758913, 4503602697601540, 3377702807536129, 5629502621221380, 3377702824313345, 5629502637998596, 3377702841090561, 5629502654775812, 3377702857867777, 5629502671553028, 3377702874644993, 3377702891422209, 3377702908199425, 3377702924976641, 3377702941753857, 6473927769457156, 15199652047487492, 23925376325517828, 32651100603548164, 41376824881578500, 6473927803011588, 15199652081041924, 23925376359072260, 32651100637102596, 41376824915132932, 6473927836566020, 15199652114596356, 23925376392626692, 32651100670657028, 41376824948687364, 6473927870120452, 15199652148150788, 23925376426181124, 32651100704211460, 41376824982241796, 6473927903674884, 15199652181705220, 23925376459735556, 32651100737765892, 41376825015796228, 18858826929275396, 2814753357431297, 1688853484143105, 2814753625866753, 6192453396726273, 9288678140543492, 7881303273767425, 14073752761401860, 2814753692975617, 4503603670680065, 7318353437786628, 3096228803904001, 6755403501142532, 3096228820681217, 6755403517919748, 3096228837458433, 6755403534696964, 3096228854235649, 6755403551474180, 3377703847723521, 3377703864500737, 7318353538449924, 3377703881277953, 7318353555227140, 3377703898055169, 7318353572004356, 3377703914832385, 7318353588781572, 7599828682932737, 12103428310303233, 15199653054120452, 20829152588333572, 3377704032272897, 9288678610305537, 8162778703462915, 5348024825938689, 10133099446797060, 9288674516665089, 9288674533442305, 6755400045036289, 6755400061813505, 8725724965896963}
 global @str.38 [1] = {9071397899755888}
 global @str.39 [3] = {8462017926321696361, 7953763900396085364, 25959}
 global @str.40 [4] = {8026013105759284339, 8391735665840385653, 7453001576142499616, 101}
@@ -3062,8 +3062,9 @@ func @std/crypto/x25519.Shared(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %
   slot s5 [1]
   slot s6 [3]
   slot s7 [3]
-  slot s8 [1]
-  slot s9 [3]
+  slot s8 [3]
+  slot s9 [1]
+  slot s10 [3]
 b0:
   %7 = slotaddr s0
   store %7[0], %1
@@ -3285,20 +3286,46 @@ b19:
   %144 = le %143, %139
   condbr %144, b20, b21
 b20:
-  %187 = const 1
-  %188 = add %9, %187
-  %189 = const 0
-  %190 = load.i64 %8[0]
-  %191 = load.i64 %8[1]
-  %192 = load.i64 %8[2]
-  %193 = globaladdr @rt.meta
-  store %193[2572], %188
-  call @std/crypto/x25519.unpack(%135, %189, %190, %191, %192)
-  %194 = const 5
-  %195 = const 1
-  %196 = load.i64 %135[1]
-  %197 = uge %194, %196
-  condbr %197, b28, b29
+  %187 = slotaddr s7
+  %188 = load.i64 %135[0]
+  store %187[0], %188
+  %189 = load.i64 %135[1]
+  store %187[1], %189
+  %190 = load.i64 %135[2]
+  store %187[2], %190
+  %191 = const 0
+  %192 = const 85
+  %193 = slotaddr s6
+  %194 = load.i64 %187[0]
+  %195 = const 3
+  %196 = shl %191, %195
+  %197 = add %194, %196
+  store %193[0], %197
+  store %193[1], %192
+  %198 = load.i64 %187[2]
+  store %193[2], %198
+  %199 = slotaddr s8
+  %200 = load.i64 %193[0]
+  store %199[0], %200
+  %201 = load.i64 %193[1]
+  store %199[1], %201
+  %202 = load.i64 %193[2]
+  store %199[2], %202
+  %203 = load.i64 %187[0]
+  %204 = const 1
+  %205 = add %9, %204
+  %206 = const 0
+  %207 = load.i64 %8[0]
+  %208 = load.i64 %8[1]
+  %209 = load.i64 %8[2]
+  %210 = globaladdr @rt.meta
+  store %210[2572], %205
+  call @std/crypto/x25519.unpack(%199, %206, %207, %208, %209)
+  %211 = const 5
+  %212 = const 1
+  %213 = load.i64 %199[1]
+  %214 = uge %211, %213
+  condbr %214, b28, b29
 b21:
   %145 = slotaddr s6
   %146 = load.i64 %135[0]
@@ -3364,410 +3391,410 @@ b27:
   store %135[2], %186
   br b20
 b28:
-  %198 = const 9
-  call @rt.panic(%198)
+  %215 = const 9
+  call @rt.panic(%215)
   exit 101
 b29:
-  %199 = load.i64 %135[0]
-  %200 = itop %199
-  %201 = const 1
-  %202 = mul %194, %201
-  %203 = gep.word %200, %202
-  store %203[0], %195
-  %204 = region.depth
-  %205 = const 0
-  %206 = const 5
-  %207 = slotaddr s5
-  %208 = region.depth
-  %209 = slotaddr s4
-  store %209[0], %205
-  %210 = region.depth
+  %216 = load.i64 %199[0]
+  %217 = itop %216
+  %218 = const 1
+  %219 = mul %211, %218
+  %220 = gep.word %217, %219
+  store %220[0], %212
+  %221 = region.depth
+  %222 = const 0
+  %223 = const 5
+  %224 = slotaddr s5
+  %225 = region.depth
+  %226 = slotaddr s4
+  store %226[0], %222
+  %227 = region.depth
   br b32
 b30:
-  region.setdepth %204
-  %240 = const 20
-  %241 = const 1
-  %242 = load.i64 %135[1]
-  %243 = uge %240, %242
-  condbr %243, b40, b41
+  region.setdepth %221
+  %257 = const 20
+  %258 = const 1
+  %259 = load.i64 %199[1]
+  %260 = uge %257, %259
+  condbr %260, b40, b41
 b31:
   br b30
 b32:
-  region.setdepth %210
-  %211 = load.i64 %209[0]
-  %212 = lt %211, %206
-  condbr %212, b33, b34
+  region.setdepth %227
+  %228 = load.i64 %226[0]
+  %229 = lt %228, %223
+  condbr %229, b33, b34
 b33:
   region.enter
-  %213 = region.depth
-  %214 = load.i64 %209[0]
-  %215 = region.depth
-  %216 = const 15
-  %217 = add %216, %214
-  %218 = const 0
-  %219 = add %218, %214
-  %220 = load.i64 %135[1]
-  %221 = uge %219, %220
-  condbr %221, b36, b37
+  %230 = region.depth
+  %231 = load.i64 %226[0]
+  %232 = region.depth
+  %233 = const 15
+  %234 = add %233, %231
+  %235 = const 0
+  %236 = add %235, %231
+  %237 = load.i64 %199[1]
+  %238 = uge %236, %237
+  condbr %238, b36, b37
 b34:
-  region.setdepth %210
+  region.setdepth %227
   br b31
 b35:
-  region.setdepth %215
-  %237 = const 1
-  %238 = load.i64 %209[0]
-  %239 = add %238, %237
-  store %209[0], %239
+  region.setdepth %232
+  %254 = const 1
+  %255 = load.i64 %226[0]
+  %256 = add %255, %254
+  store %226[0], %256
   br b32
 b36:
-  %222 = const 10
-  call @rt.panic(%222)
+  %239 = const 10
+  call @rt.panic(%239)
   exit 101
 b37:
-  %223 = load.i64 %135[0]
-  %224 = itop %223
-  %225 = const 1
-  %226 = mul %219, %225
-  %227 = gep.word %224, %226
-  %228 = load.i64 %227[0]
-  %229 = load.i64 %135[1]
-  %230 = uge %217, %229
-  condbr %230, b38, b39
+  %240 = load.i64 %199[0]
+  %241 = itop %240
+  %242 = const 1
+  %243 = mul %236, %242
+  %244 = gep.word %241, %243
+  %245 = load.i64 %244[0]
+  %246 = load.i64 %199[1]
+  %247 = uge %234, %246
+  condbr %247, b38, b39
 b38:
-  %231 = const 11
-  call @rt.panic(%231)
+  %248 = const 11
+  call @rt.panic(%248)
   exit 101
 b39:
-  %232 = load.i64 %135[0]
-  %233 = itop %232
-  %234 = const 1
-  %235 = mul %217, %234
-  %236 = gep.word %233, %235
-  store %236[0], %228
+  %249 = load.i64 %199[0]
+  %250 = itop %249
+  %251 = const 1
+  %252 = mul %234, %251
+  %253 = gep.word %250, %252
+  store %253[0], %245
   br b35
 b40:
-  %244 = const 12
-  call @rt.panic(%244)
+  %261 = const 12
+  call @rt.panic(%261)
   exit 101
 b41:
-  %245 = load.i64 %135[0]
-  %246 = itop %245
-  %247 = const 1
-  %248 = mul %240, %247
-  %249 = gep.word %246, %248
-  store %249[0], %241
-  %250 = const 75
-  %251 = const 121665
-  %252 = load.i64 %135[1]
-  %253 = uge %250, %252
-  condbr %253, b42, b43
+  %262 = load.i64 %199[0]
+  %263 = itop %262
+  %264 = const 1
+  %265 = mul %257, %264
+  %266 = gep.word %263, %265
+  store %266[0], %258
+  %267 = const 75
+  %268 = const 121665
+  %269 = load.i64 %199[1]
+  %270 = uge %267, %269
+  condbr %270, b42, b43
 b42:
-  %254 = const 13
-  call @rt.panic(%254)
+  %271 = const 13
+  call @rt.panic(%271)
   exit 101
 b43:
-  %255 = load.i64 %135[0]
-  %256 = itop %255
-  %257 = const 1
-  %258 = mul %250, %257
-  %259 = gep.word %256, %258
-  store %259[0], %251
-  %260 = const 0
-  %261 = slotaddr s4
-  store %261[0], %260
-  %262 = region.depth
-  %263 = const 0
-  %264 = const 255
-  %265 = slotaddr s5
-  %266 = region.depth
-  %267 = slotaddr s8
-  store %267[0], %263
-  %268 = region.depth
+  %272 = load.i64 %199[0]
+  %273 = itop %272
+  %274 = const 1
+  %275 = mul %267, %274
+  %276 = gep.word %273, %275
+  store %276[0], %268
+  %277 = const 0
+  %278 = slotaddr s4
+  store %278[0], %277
+  %279 = region.depth
+  %280 = const 0
+  %281 = const 255
+  %282 = slotaddr s5
+  %283 = region.depth
+  %284 = slotaddr s9
+  store %284[0], %280
+  %285 = region.depth
   br b46
 b44:
-  region.setdepth %262
-  %430 = load.i64 %261[0]
-  %431 = const 0
-  %432 = sub %431, %430
-  %433 = const 1
-  %434 = add %9, %433
-  %435 = const 5
-  %436 = const 15
-  %437 = globaladdr @rt.meta
-  store %437[2572], %434
-  call @std/crypto/x25519.cswap(%135, %435, %436, %432)
-  %438 = const 1
-  %439 = add %9, %438
-  %440 = const 10
-  %441 = const 20
-  %442 = globaladdr @rt.meta
-  store %442[2572], %439
-  call @std/crypto/x25519.cswap(%135, %440, %441, %432)
-  %443 = const 1
-  %444 = add %9, %443
-  %445 = const 80
-  %446 = const 10
-  %447 = globaladdr @rt.meta
-  store %447[2572], %444
-  call @std/crypto/x25519.invert(%135, %445, %446)
-  %448 = const 1
-  %449 = add %9, %448
-  %450 = const 80
-  %451 = const 5
-  %452 = const 80
-  %453 = globaladdr @rt.meta
-  store %453[2572], %449
-  call @std/crypto/x25519.fmul(%135, %450, %451, %452)
-  %454 = slotaddr s9
-  %455 = load.i64 %135[0]
-  %456 = load.i64 %135[1]
-  %457 = load.i64 %135[2]
-  %458 = const 80
+  region.setdepth %279
+  %447 = load.i64 %278[0]
+  %448 = const 0
+  %449 = sub %448, %447
+  %450 = const 1
+  %451 = add %9, %450
+  %452 = const 5
+  %453 = const 15
+  %454 = globaladdr @rt.meta
+  store %454[2572], %451
+  call @std/crypto/x25519.cswap(%199, %452, %453, %449)
+  %455 = const 1
+  %456 = add %9, %455
+  %457 = const 10
+  %458 = const 20
   %459 = globaladdr @rt.meta
-  store %459[2571], %19
-  call @std/crypto/x25519.pack(%454, %455, %456, %457, %458)
-  %460 = load.i64 %454[0]
-  store %0[0], %460
-  %461 = load.i64 %454[1]
-  store %0[1], %461
-  %462 = load.i64 %454[2]
-  store %0[2], %462
+  store %459[2572], %456
+  call @std/crypto/x25519.cswap(%199, %457, %458, %449)
+  %460 = const 1
+  %461 = add %9, %460
+  %462 = const 80
+  %463 = const 10
+  %464 = globaladdr @rt.meta
+  store %464[2572], %461
+  call @std/crypto/x25519.invert(%199, %203, %462, %463)
+  %465 = const 1
+  %466 = add %9, %465
+  %467 = const 80
+  %468 = const 5
+  %469 = const 80
+  %470 = globaladdr @rt.meta
+  store %470[2572], %466
+  call @std/crypto/x25519.fmul(%199, %203, %467, %468, %469)
+  %471 = slotaddr s10
+  %472 = load.i64 %199[0]
+  %473 = load.i64 %199[1]
+  %474 = load.i64 %199[2]
+  %475 = const 80
+  %476 = globaladdr @rt.meta
+  store %476[2571], %19
+  call @std/crypto/x25519.pack(%471, %472, %473, %474, %475)
+  %477 = load.i64 %471[0]
+  store %0[0], %477
+  %478 = load.i64 %471[1]
+  store %0[1], %478
+  %479 = load.i64 %471[2]
+  store %0[2], %479
   call @rt.region_relocate8(%0, %9)
   region.setdepth %9
   ret
 b45:
   br b44
 b46:
-  region.setdepth %268
-  %269 = load.i64 %267[0]
-  %270 = lt %269, %264
-  condbr %270, b47, b48
+  region.setdepth %285
+  %286 = load.i64 %284[0]
+  %287 = lt %286, %281
+  condbr %287, b47, b48
 b47:
   region.enter
-  %271 = region.depth
-  %272 = load.i64 %267[0]
-  %273 = region.depth
-  %274 = const 254
-  %275 = sub %274, %272
-  %276 = const 8
-  %277 = div %275, %276
-  %278 = load.i64 %26[1]
-  %279 = uge %277, %278
-  condbr %279, b50, b51
+  %288 = region.depth
+  %289 = load.i64 %284[0]
+  %290 = region.depth
+  %291 = const 254
+  %292 = sub %291, %289
+  %293 = const 8
+  %294 = div %292, %293
+  %295 = load.i64 %26[1]
+  %296 = uge %294, %295
+  condbr %296, b50, b51
 b48:
-  region.setdepth %268
+  region.setdepth %285
   br b45
 b49:
-  region.setdepth %273
-  %427 = const 1
-  %428 = load.i64 %267[0]
-  %429 = add %428, %427
-  store %267[0], %429
+  region.setdepth %290
+  %444 = const 1
+  %445 = load.i64 %284[0]
+  %446 = add %445, %444
+  store %284[0], %446
   br b46
 b50:
-  %280 = const 14
-  call @rt.panic(%280)
+  %297 = const 14
+  call @rt.panic(%297)
   exit 101
 b51:
-  %281 = load.i64 %26[0]
-  %282 = itop %281
-  %283 = const 1
-  %284 = mul %277, %283
-  %285 = gep.word %282, %284
-  %286 = load.i64 %285[0]
-  %287 = const 8
-  %288 = rem %275, %287
-  %290 = const 0
-  %291 = lt %288, %290
-  condbr %291, b52, b53
+  %298 = load.i64 %26[0]
+  %299 = itop %298
+  %300 = const 1
+  %301 = mul %294, %300
+  %302 = gep.word %299, %301
+  %303 = load.i64 %302[0]
+  %304 = const 8
+  %305 = rem %292, %304
+  %307 = const 0
+  %308 = lt %305, %307
+  condbr %308, b52, b53
 b52:
-  %292 = const 15
-  call @rt.panic(%292)
+  %309 = const 15
+  call @rt.panic(%309)
   exit 101
 b53:
-  %293 = const 63
-  %294 = gt %288, %293
-  condbr %294, b55, b56
-b54(%289 i64):
-  %298 = const 1
-  %299 = and_ %289, %298
-  %300 = const 1
-  %301 = add %9, %300
-  %302 = load.i64 %261[0]
-  %303 = xor %302, %299
-  store %261[0], %303
-  %304 = load.i64 %261[0]
-  %305 = const 0
-  %306 = sub %305, %304
-  %307 = const 1
-  %308 = add %9, %307
-  %309 = const 5
-  %310 = const 15
-  %311 = globaladdr @rt.meta
-  store %311[2572], %308
-  call @std/crypto/x25519.cswap(%135, %309, %310, %306)
-  %312 = const 1
-  %313 = add %9, %312
-  %314 = const 10
-  %315 = const 20
-  %316 = globaladdr @rt.meta
-  store %316[2572], %313
-  call @std/crypto/x25519.cswap(%135, %314, %315, %306)
+  %310 = const 63
+  %311 = gt %305, %310
+  condbr %311, b55, b56
+b54(%306 i64):
+  %315 = const 1
+  %316 = and_ %306, %315
   %317 = const 1
   %318 = add %9, %317
-  store %261[0], %299
-  %319 = const 1
-  %320 = add %9, %319
-  %321 = const 25
-  %322 = const 5
-  %323 = const 10
-  %324 = globaladdr @rt.meta
-  store %324[2572], %320
-  call @std/crypto/x25519.fadd(%135, %321, %322, %323)
-  %325 = const 1
-  %326 = add %9, %325
-  %327 = const 30
-  %328 = const 25
-  %329 = const 25
-  %330 = globaladdr @rt.meta
-  store %330[2572], %326
-  call @std/crypto/x25519.fmul(%135, %327, %328, %329)
-  %331 = const 1
-  %332 = add %9, %331
-  %333 = const 35
-  %334 = const 5
-  %335 = const 10
-  %336 = globaladdr @rt.meta
-  store %336[2572], %332
-  call @std/crypto/x25519.fsub(%135, %333, %334, %335)
-  %337 = const 1
-  %338 = add %9, %337
-  %339 = const 40
-  %340 = const 35
-  %341 = const 35
-  %342 = globaladdr @rt.meta
-  store %342[2572], %338
-  call @std/crypto/x25519.fmul(%135, %339, %340, %341)
-  %343 = const 1
-  %344 = add %9, %343
-  %345 = const 45
-  %346 = const 30
-  %347 = const 40
-  %348 = globaladdr @rt.meta
-  store %348[2572], %344
-  call @std/crypto/x25519.fsub(%135, %345, %346, %347)
-  %349 = const 1
-  %350 = add %9, %349
-  %351 = const 50
-  %352 = const 15
-  %353 = const 20
-  %354 = globaladdr @rt.meta
-  store %354[2572], %350
-  call @std/crypto/x25519.fadd(%135, %351, %352, %353)
-  %355 = const 1
-  %356 = add %9, %355
-  %357 = const 55
-  %358 = const 15
-  %359 = const 20
-  %360 = globaladdr @rt.meta
-  store %360[2572], %356
-  call @std/crypto/x25519.fsub(%135, %357, %358, %359)
-  %361 = const 1
-  %362 = add %9, %361
-  %363 = const 60
-  %364 = const 55
-  %365 = const 25
-  %366 = globaladdr @rt.meta
-  store %366[2572], %362
-  call @std/crypto/x25519.fmul(%135, %363, %364, %365)
-  %367 = const 1
-  %368 = add %9, %367
-  %369 = const 65
-  %370 = const 50
-  %371 = const 35
-  %372 = globaladdr @rt.meta
-  store %372[2572], %368
-  call @std/crypto/x25519.fmul(%135, %369, %370, %371)
-  %373 = const 1
-  %374 = add %9, %373
-  %375 = const 70
-  %376 = const 60
-  %377 = const 65
-  %378 = globaladdr @rt.meta
-  store %378[2572], %374
-  call @std/crypto/x25519.fadd(%135, %375, %376, %377)
-  %379 = const 1
-  %380 = add %9, %379
-  %381 = const 15
-  %382 = const 70
-  %383 = const 70
-  %384 = globaladdr @rt.meta
-  store %384[2572], %380
-  call @std/crypto/x25519.fmul(%135, %381, %382, %383)
-  %385 = const 1
-  %386 = add %9, %385
-  %387 = const 70
-  %388 = const 60
-  %389 = const 65
-  %390 = globaladdr @rt.meta
-  store %390[2572], %386
-  call @std/crypto/x25519.fsub(%135, %387, %388, %389)
-  %391 = const 1
-  %392 = add %9, %391
-  %393 = const 70
-  %394 = const 70
-  %395 = const 70
-  %396 = globaladdr @rt.meta
-  store %396[2572], %392
-  call @std/crypto/x25519.fmul(%135, %393, %394, %395)
-  %397 = const 1
-  %398 = add %9, %397
-  %399 = const 20
-  %400 = const 0
-  %401 = const 70
-  %402 = globaladdr @rt.meta
-  store %402[2572], %398
-  call @std/crypto/x25519.fmul(%135, %399, %400, %401)
-  %403 = const 1
-  %404 = add %9, %403
-  %405 = const 5
-  %406 = const 30
-  %407 = const 40
-  %408 = globaladdr @rt.meta
-  store %408[2572], %404
-  call @std/crypto/x25519.fmul(%135, %405, %406, %407)
-  %409 = const 1
-  %410 = add %9, %409
+  %319 = load.i64 %278[0]
+  %320 = xor %319, %316
+  store %278[0], %320
+  %321 = load.i64 %278[0]
+  %322 = const 0
+  %323 = sub %322, %321
+  %324 = const 1
+  %325 = add %9, %324
+  %326 = const 5
+  %327 = const 15
+  %328 = globaladdr @rt.meta
+  store %328[2572], %325
+  call @std/crypto/x25519.cswap(%199, %326, %327, %323)
+  %329 = const 1
+  %330 = add %9, %329
+  %331 = const 10
+  %332 = const 20
+  %333 = globaladdr @rt.meta
+  store %333[2572], %330
+  call @std/crypto/x25519.cswap(%199, %331, %332, %323)
+  %334 = const 1
+  %335 = add %9, %334
+  store %278[0], %316
+  %336 = const 1
+  %337 = add %9, %336
+  %338 = const 25
+  %339 = const 5
+  %340 = const 10
+  %341 = globaladdr @rt.meta
+  store %341[2572], %337
+  call @std/crypto/x25519.fadd(%199, %338, %339, %340)
+  %342 = const 1
+  %343 = add %9, %342
+  %344 = const 30
+  %345 = const 25
+  %346 = const 25
+  %347 = globaladdr @rt.meta
+  store %347[2572], %343
+  call @std/crypto/x25519.fmul(%199, %203, %344, %345, %346)
+  %348 = const 1
+  %349 = add %9, %348
+  %350 = const 35
+  %351 = const 5
+  %352 = const 10
+  %353 = globaladdr @rt.meta
+  store %353[2572], %349
+  call @std/crypto/x25519.fsub(%199, %350, %351, %352)
+  %354 = const 1
+  %355 = add %9, %354
+  %356 = const 40
+  %357 = const 35
+  %358 = const 35
+  %359 = globaladdr @rt.meta
+  store %359[2572], %355
+  call @std/crypto/x25519.fmul(%199, %203, %356, %357, %358)
+  %360 = const 1
+  %361 = add %9, %360
+  %362 = const 45
+  %363 = const 30
+  %364 = const 40
+  %365 = globaladdr @rt.meta
+  store %365[2572], %361
+  call @std/crypto/x25519.fsub(%199, %362, %363, %364)
+  %366 = const 1
+  %367 = add %9, %366
+  %368 = const 50
+  %369 = const 15
+  %370 = const 20
+  %371 = globaladdr @rt.meta
+  store %371[2572], %367
+  call @std/crypto/x25519.fadd(%199, %368, %369, %370)
+  %372 = const 1
+  %373 = add %9, %372
+  %374 = const 55
+  %375 = const 15
+  %376 = const 20
+  %377 = globaladdr @rt.meta
+  store %377[2572], %373
+  call @std/crypto/x25519.fsub(%199, %374, %375, %376)
+  %378 = const 1
+  %379 = add %9, %378
+  %380 = const 60
+  %381 = const 55
+  %382 = const 25
+  %383 = globaladdr @rt.meta
+  store %383[2572], %379
+  call @std/crypto/x25519.fmul(%199, %203, %380, %381, %382)
+  %384 = const 1
+  %385 = add %9, %384
+  %386 = const 65
+  %387 = const 50
+  %388 = const 35
+  %389 = globaladdr @rt.meta
+  store %389[2572], %385
+  call @std/crypto/x25519.fmul(%199, %203, %386, %387, %388)
+  %390 = const 1
+  %391 = add %9, %390
+  %392 = const 70
+  %393 = const 60
+  %394 = const 65
+  %395 = globaladdr @rt.meta
+  store %395[2572], %391
+  call @std/crypto/x25519.fadd(%199, %392, %393, %394)
+  %396 = const 1
+  %397 = add %9, %396
+  %398 = const 15
+  %399 = const 70
+  %400 = const 70
+  %401 = globaladdr @rt.meta
+  store %401[2572], %397
+  call @std/crypto/x25519.fmul(%199, %203, %398, %399, %400)
+  %402 = const 1
+  %403 = add %9, %402
+  %404 = const 70
+  %405 = const 60
+  %406 = const 65
+  %407 = globaladdr @rt.meta
+  store %407[2572], %403
+  call @std/crypto/x25519.fsub(%199, %404, %405, %406)
+  %408 = const 1
+  %409 = add %9, %408
+  %410 = const 70
   %411 = const 70
-  %412 = const 75
-  %413 = const 45
-  %414 = globaladdr @rt.meta
-  store %414[2572], %410
-  call @std/crypto/x25519.fmul(%135, %411, %412, %413)
-  %415 = const 1
-  %416 = add %9, %415
-  %417 = const 70
-  %418 = const 30
-  %419 = const 70
-  %420 = globaladdr @rt.meta
-  store %420[2572], %416
-  call @std/crypto/x25519.fadd(%135, %417, %418, %419)
-  %421 = const 1
-  %422 = add %9, %421
-  %423 = const 10
-  %424 = const 45
-  %425 = const 70
-  %426 = globaladdr @rt.meta
-  store %426[2572], %422
-  call @std/crypto/x25519.fmul(%135, %423, %424, %425)
+  %412 = const 70
+  %413 = globaladdr @rt.meta
+  store %413[2572], %409
+  call @std/crypto/x25519.fmul(%199, %203, %410, %411, %412)
+  %414 = const 1
+  %415 = add %9, %414
+  %416 = const 20
+  %417 = const 0
+  %418 = const 70
+  %419 = globaladdr @rt.meta
+  store %419[2572], %415
+  call @std/crypto/x25519.fmul(%199, %203, %416, %417, %418)
+  %420 = const 1
+  %421 = add %9, %420
+  %422 = const 5
+  %423 = const 30
+  %424 = const 40
+  %425 = globaladdr @rt.meta
+  store %425[2572], %421
+  call @std/crypto/x25519.fmul(%199, %203, %422, %423, %424)
+  %426 = const 1
+  %427 = add %9, %426
+  %428 = const 70
+  %429 = const 75
+  %430 = const 45
+  %431 = globaladdr @rt.meta
+  store %431[2572], %427
+  call @std/crypto/x25519.fmul(%199, %203, %428, %429, %430)
+  %432 = const 1
+  %433 = add %9, %432
+  %434 = const 70
+  %435 = const 30
+  %436 = const 70
+  %437 = globaladdr @rt.meta
+  store %437[2572], %433
+  call @std/crypto/x25519.fadd(%199, %434, %435, %436)
+  %438 = const 1
+  %439 = add %9, %438
+  %440 = const 10
+  %441 = const 45
+  %442 = const 70
+  %443 = globaladdr @rt.meta
+  store %443[2572], %439
+  call @std/crypto/x25519.fmul(%199, %203, %440, %441, %442)
   br b49
 b55:
-  %295 = const 63
-  %296 = sar %286, %295
-  br b54(%296)
+  %312 = const 63
+  %313 = sar %303, %312
+  br b54(%313)
 b56:
-  %297 = sar %286, %288
-  br b54(%297)
+  %314 = sar %303, %305
+  br b54(%314)
 }
 
 func @std/crypto/x25519.cswap(%0 ptr, %1 i64, %2 i64, %3 i64) {
@@ -4508,7 +4535,43 @@ b20:
   ret
 }
 
-func @std/crypto/x25519.fmul(%0 ptr, %1 i64, %2 i64, %3 i64) {
+func @std/crypto/x25519.fmul(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64) {
+b0:
+  %5 = region.depth
+  %6 = globaladdr @rt.meta
+  %7 = load.i64 %6[2572]
+  %8 = const 0
+  %9 = eq %7, %8
+  %10 = mul %9, %5
+  %11 = add %7, %10
+  %12 = mm.cpu ()
+  %13 = const 1
+  %14 = eq %12, %13
+  condbr %14, b1, b2
+b1:
+  %15 = const 8
+  %16 = mul %15, %2
+  %17 = add %1, %16
+  %18 = const 8
+  %19 = mul %18, %3
+  %20 = add %1, %19
+  %21 = const 8
+  %22 = mul %21, %4
+  %23 = add %1, %22
+  %24 = mm.fe (%17, %20, %23)
+  region.setdepth %5
+  ret
+b2:
+  br b3
+b3:
+  %25 = globaladdr @rt.meta
+  store %25[2572], %11
+  call @std/crypto/x25519.fmulS(%0, %2, %3, %4)
+  region.setdepth %5
+  ret
+}
+
+func @std/crypto/x25519.fmulS(%0 ptr, %1 i64, %2 i64, %3 i64) {
 b0:
   %4 = region.depth
   %5 = globaladdr @rt.meta
@@ -5465,147 +5528,147 @@ b175:
   br b173(%580)
 }
 
-func @std/crypto/x25519.invert(%0 ptr, %1 i64, %2 i64) {
+func @std/crypto/x25519.invert(%0 ptr, %1 i64, %2 i64, %3 i64) {
   slot s0 [1]
   slot s1 [1]
 b0:
-  %3 = region.depth
-  %4 = globaladdr @rt.meta
-  %5 = load.i64 %4[2572]
-  %6 = const 0
-  %7 = eq %5, %6
-  %8 = mul %7, %3
-  %9 = add %5, %8
-  %10 = region.depth
-  %11 = const 0
-  %12 = const 5
-  %13 = slotaddr s0
-  %14 = region.depth
-  %15 = slotaddr s1
-  store %15[0], %11
-  %16 = region.depth
+  %4 = region.depth
+  %5 = globaladdr @rt.meta
+  %6 = load.i64 %5[2572]
+  %7 = const 0
+  %8 = eq %6, %7
+  %9 = mul %8, %4
+  %10 = add %6, %9
+  %11 = region.depth
+  %12 = const 0
+  %13 = const 5
+  %14 = slotaddr s0
+  %15 = region.depth
+  %16 = slotaddr s1
+  store %16[0], %12
+  %17 = region.depth
   br b3
 b1:
-  region.setdepth %10
-  %35 = const 1
-  %36 = load.i64 %0[1]
-  %37 = uge %1, %36
-  condbr %37, b9, b10
+  region.setdepth %11
+  %36 = const 1
+  %37 = load.i64 %0[1]
+  %38 = uge %2, %37
+  condbr %38, b9, b10
 b2:
   br b1
 b3:
-  region.setdepth %16
-  %17 = load.i64 %15[0]
-  %18 = lt %17, %12
-  condbr %18, b4, b5
+  region.setdepth %17
+  %18 = load.i64 %16[0]
+  %19 = lt %18, %13
+  condbr %19, b4, b5
 b4:
   region.enter
-  %19 = region.depth
-  %20 = load.i64 %15[0]
-  %21 = region.depth
-  %22 = add %1, %20
-  %23 = const 0
-  %24 = load.i64 %0[1]
-  %25 = uge %22, %24
-  condbr %25, b7, b8
+  %20 = region.depth
+  %21 = load.i64 %16[0]
+  %22 = region.depth
+  %23 = add %2, %21
+  %24 = const 0
+  %25 = load.i64 %0[1]
+  %26 = uge %23, %25
+  condbr %26, b7, b8
 b5:
-  region.setdepth %16
+  region.setdepth %17
   br b2
 b6:
-  region.setdepth %21
-  %32 = const 1
-  %33 = load.i64 %15[0]
-  %34 = add %33, %32
-  store %15[0], %34
+  region.setdepth %22
+  %33 = const 1
+  %34 = load.i64 %16[0]
+  %35 = add %34, %33
+  store %16[0], %35
   br b3
 b7:
-  %26 = const 94
-  call @rt.panic(%26)
+  %27 = const 94
+  call @rt.panic(%27)
   exit 101
 b8:
-  %27 = load.i64 %0[0]
-  %28 = itop %27
-  %29 = const 1
-  %30 = mul %22, %29
-  %31 = gep.word %28, %30
-  store %31[0], %23
+  %28 = load.i64 %0[0]
+  %29 = itop %28
+  %30 = const 1
+  %31 = mul %23, %30
+  %32 = gep.word %29, %31
+  store %32[0], %24
   br b6
 b9:
-  %38 = const 95
-  call @rt.panic(%38)
+  %39 = const 95
+  call @rt.panic(%39)
   exit 101
 b10:
-  %39 = load.i64 %0[0]
-  %40 = itop %39
-  %41 = const 1
-  %42 = mul %1, %41
-  %43 = gep.word %40, %42
-  store %43[0], %35
-  %44 = region.depth
-  %45 = const 0
-  %46 = const 255
-  %47 = slotaddr s1
-  %48 = region.depth
-  %49 = slotaddr s0
-  store %49[0], %45
-  %50 = region.depth
+  %40 = load.i64 %0[0]
+  %41 = itop %40
+  %42 = const 1
+  %43 = mul %2, %42
+  %44 = gep.word %41, %43
+  store %44[0], %36
+  %45 = region.depth
+  %46 = const 0
+  %47 = const 255
+  %48 = slotaddr s1
+  %49 = region.depth
+  %50 = slotaddr s0
+  store %50[0], %46
+  %51 = region.depth
   br b13
 b11:
-  region.setdepth %44
-  region.setdepth %3
+  region.setdepth %45
+  region.setdepth %4
   ret
 b12:
   br b11
 b13:
-  region.setdepth %50
-  %51 = load.i64 %49[0]
-  %52 = lt %51, %46
-  condbr %52, b14, b15
+  region.setdepth %51
+  %52 = load.i64 %50[0]
+  %53 = lt %52, %47
+  condbr %53, b14, b15
 b14:
   region.enter
-  %53 = region.depth
-  %54 = load.i64 %49[0]
-  %55 = region.depth
-  %56 = const 254
-  %57 = sub %56, %54
-  %58 = globaladdr @rt.meta
-  store %58[2572], %9
-  call @std/crypto/x25519.fmul(%0, %1, %1, %1)
-  %59 = const 5
-  %60 = ge %57, %59
-  condbr %60, b18(%60), b17
+  %54 = region.depth
+  %55 = load.i64 %50[0]
+  %56 = region.depth
+  %57 = const 254
+  %58 = sub %57, %55
+  %59 = globaladdr @rt.meta
+  store %59[2572], %10
+  call @std/crypto/x25519.fmul(%0, %1, %2, %2, %2)
+  %60 = const 5
+  %61 = ge %58, %60
+  condbr %61, b18(%61), b17
 b15:
-  region.setdepth %50
+  region.setdepth %51
   br b12
 b16:
-  region.setdepth %55
-  %71 = const 1
-  %72 = load.i64 %49[0]
-  %73 = add %72, %71
-  store %49[0], %73
+  region.setdepth %56
+  %72 = const 1
+  %73 = load.i64 %50[0]
+  %74 = add %73, %72
+  store %50[0], %74
   br b13
 b17:
-  %62 = const 3
-  %63 = eq %57, %62
-  br b18(%63)
-b18(%61 i64):
-  condbr %61, b20(%61), b19
+  %63 = const 3
+  %64 = eq %58, %63
+  br b18(%64)
+b18(%62 i64):
+  condbr %62, b20(%62), b19
 b19:
-  %65 = const 1
-  %66 = eq %57, %65
-  br b20(%66)
-b20(%64 i64):
-  condbr %64, b22(%64), b21
+  %66 = const 1
+  %67 = eq %58, %66
+  br b20(%67)
+b20(%65 i64):
+  condbr %65, b22(%65), b21
 b21:
-  %68 = const 0
-  %69 = eq %57, %68
-  br b22(%69)
-b22(%67 i64):
-  condbr %67, b23, b24
+  %69 = const 0
+  %70 = eq %58, %69
+  br b22(%70)
+b22(%68 i64):
+  condbr %68, b23, b24
 b23:
-  %70 = globaladdr @rt.meta
-  store %70[2572], %9
-  call @std/crypto/x25519.fmul(%0, %1, %1, %2)
+  %71 = globaladdr @rt.meta
+  store %71[2572], %10
+  call @std/crypto/x25519.fmul(%0, %1, %2, %2, %3)
   br b25
 b24:
   br b25

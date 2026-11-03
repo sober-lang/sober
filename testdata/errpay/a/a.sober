@@ -1,0 +1,14 @@
+package a
+
+type P struct {
+    x int
+}
+
+type E error {
+    p P
+}
+
+@errors(E)
+func Fail(k int) error {
+    return E{p: P{x: k}}
+}

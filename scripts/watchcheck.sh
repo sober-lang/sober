@@ -122,4 +122,25 @@ kill $P 2> /dev/null
 ( cd "$W" && SOBER_BUILD_CACHE=1 SOBER_CACHE=$W/cw SOBER_CACHE_STAT=1 "$C" build pkg2 -o q2.elf ) > /dev/null 2> "$W/b.err"
 grep -q '^cache: build-replay 1/1$' "$W/b.err" || { echo "watchcheck: FAIL warm watch: the first build after watch did not replay"; grep '^cache: build-replay' "$W/b.err"; exit 1; }
 cmp -s "$W/q2.elf" "$W/fresh.elf" || { echo "watchcheck: FAIL warm watch: the ELF differs from a build without the cache"; exit 1; }
-echo "watchcheck: $n rounds match testdata/watchcheck/expect.txt, last 2 rounds hit · the query replays the watch's answer · build replays and watch warms it"
+# 見張りにテストのビルドだけが読むファイルが入る: 温めのテストが読んだ double（本番の読みに無い — ディレクトリも見張りの外）を編集すると回が起きる
+mkdir -p "$W/app3" "$W/lib" "$W/dep/fake"
+printf 'package main\n\nimport "lib"\n\nfunc main() {\n    println(lib.Twice(1))\n}\n' > "$W/app3/main.sober"
+printf 'package lib\n\nimport "dep"\n\nfunc Twice(x int) int {\n    return dep.Get(x) * 2\n}\n' > "$W/lib/lib.sober"
+printf '@doubles("dep/fake")\npackage lib\n\nfunc TestTwice() {\n    assert(Twice(1) == 6)\n}\n' > "$W/lib/lib_test.sober"
+printf 'package dep\n\n@effects()\nfunc Get(x int) int {\n    return x\n}\n' > "$W/dep/dep.sober"
+printf '@replaces("dep")\npackage dep\n\nfunc Get(x int) int {\n    return 3\n}\n' > "$W/dep/fake/fake_double.sober"
+( cd "$W" && SOBER_BUILD_CACHE=1 SOBER_CACHE=$W/c3 SOBER_WATCH_MS=20 exec "$C" watch app3 ) 2> "$W/w3.err" &
+P=$!
+i=0
+while ! grep -q '^watch:' "$W/w3.err"; do i=$((i + 1)); [ $i -gt 1200 ] && { echo "watchcheck: FAIL test files: no round"; exit 1; }; sleep 0.05; done
+G=$(ls -d "$W"/c3/sober-build-1/*/ | head -1)
+i=0
+until wp=$(cat "$G"/watch/*.pid 2> /dev/null) && [ -n "$wp" ] && grep -qx "done $wp" "$G"/watch/*.warm 2> /dev/null; do i=$((i + 1)); [ $i -gt 2400 ] && { echo "watchcheck: FAIL test files: the warm tests did not finish"; exit 1; }; sleep 0.05; done
+grep -qx "test 0" "$G"/watch/*.warm || { echo "watchcheck: FAIL test files: the warm tests failed"; cat "$G"/watch/*.warm; exit 1; }
+# 親が進みを読んで見張りに足すまでの余裕（ポーリング 20 ms の数周）
+sleep 0.5
+echo '// edited' >> "$W/dep/fake/fake_double.sober"
+i=0
+while [ "$(grep -c '^watch:' "$W/w3.err")" -lt 2 ]; do i=$((i + 1)); [ $i -gt 400 ] && { echo "watchcheck: FAIL test files: editing a double the warm tests read did not start a round"; cat "$W/w3.err"; exit 1; }; sleep 0.05; done
+kill $P 2> /dev/null
+echo "watchcheck: $n rounds match testdata/watchcheck/expect.txt, last 2 rounds hit · the query replays the watch's answer · build replays and watch warms it · editing a double the warm tests read starts a round"

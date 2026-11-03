@@ -1,0 +1,73 @@
+package cells
+
+import "std/iter"
+import "std/quick"
+import "std/task"
+import "std/testing/cell"
+
+type Row struct {
+    k string
+    v string
+}
+
+const Rows = cell.Cell[[]Row]{}
+const N = cell.Cell[int]{init: 3}
+const S = cell.Cell[string]{init: "x"}
+const Hits = cell.Cell[int]{}
+const Seen = cell.Cell[[]string]{}
+const Sum = cell.Cell[int]{}
+
+func add(k int) {
+    cell.Update(Rows, (rs []Row) => append(rs, Row{k: "${k}", v: "v${k}"}))
+}
+
+// Get before any Set reads init (or the zero value), and each handle is its own cell
+func TestGetSetUpdate() {
+    assert(cell.Get(N) == 3)
+    assert(len(cell.Get(Rows)) == 0)
+    assert(cell.Get(S) == "x")
+    cell.Set(N, 4)
+    cell.Set(S, "n = ${cell.Get(N)}")
+    cell.Set(Rows, []Row{Row{k: "a", v: "b"}})
+    add(3)
+    add(4)
+    cell.Update(N, (n int) => n + 10)
+    got := cell.Get(Rows)
+    assert(len(got) == 3)
+    assert(got[0].k == "a")
+    assert(got[2].v == "v4")
+    assert(cell.Get(S) == "n = 4")
+    assert(cell.Get(N) == 14)
+}
+
+func work(i int) int {
+    for j <- iter.Range(0, 200) {
+        cell.Update(Hits, (n int) => n + 1)
+        cell.Update(Seen, (s []string) => append(s, "w${i}-${j}"))
+    }
+    return i
+}
+
+// Update reads and writes under the lock: no update from the children is lost
+func TestParallelUpdates() {
+    r, _ := task.Run((sc task.Scope) => {
+        h0 := task.Spawn(sc, () => work(0))
+        h1 := task.Spawn(sc, () => work(1))
+        h2 := task.Spawn(sc, () => work(2))
+        h3 := task.Spawn(sc, () => work(3))
+        task.Join(h0) + task.Join(h1) + task.Join(h2) + task.Join(h3)
+    })
+    assert(r == 6)
+    assert(cell.Get(Hits) == 800)
+    assert(len(cell.Get(Seen)) == 800)
+}
+
+// every quick trial starts with empty cells (a trial is fixed by the seed and its number)
+func TestQuickTrialsStartEmpty() {
+    mut q := quick.New()
+    quick.Check(mut q, () => {
+        x := quick.Int(mut q, 1, 9)
+        cell.Update(Sum, (n int) => n + x)
+        cell.Get(Sum) == x
+    })
+}

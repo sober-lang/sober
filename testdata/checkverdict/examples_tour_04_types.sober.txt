@@ -1,2 +1,2 @@
-sober: desugar error at examples/tour_04_types.sober:31:42 (CoreFragment)
-exit=1
+{"ok":true,"ty":{"k":"int"}}
+exit=0

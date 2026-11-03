@@ -1,5 +1,5 @@
 # dudect — 定数時間の統計の網（scripts/dudect.sh — effect の波 段 3d・report-981 3 節 / 985 / 986）。手動の起動だけ（gates に入れない網の箱の版）。
-# std/internal/dudect の題材（std/crypto の公開の口 + 負例）を 1 本ずつ直列に走らせ、Welch の |t| の表を job の要約に・記録の行（bench/data/dudect.tsv の形）を
+# std/internal/dudect の題材（std/crypto の公開の口 + 負例）と white-box の題材（std/crypto/poly1305・std/crypto/rsa の _test）を 1 本ずつ直列に走らせ、Welch の |t| の表を job の要約に・記録の行（bench/data/dudect.tsv の形）を
 # artifact にする。取り込みは手元で bench/data/dudect.tsv へ追記（env = gha-<runner>/<CPU の型番の短縮> — 箱の CPU の世代が混ざる・report-1027 / 1028）。漏れ（負例でない題材の |t| > 4.5・負例が漏れと出ない）は job の失敗
 name: dudect
 

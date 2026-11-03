@@ -1,0 +1,38 @@
+package main
+
+// mut の成分を持つ struct の mut 局所: 書かない mut の欄・mut の欄への外の値の append・mut 仮引数の関数へ渡す
+
+type C struct {
+    ts []string
+}
+
+type W struct {
+    cx C
+    sc mut []string
+    sp int
+}
+
+func bump(w mut W) {
+    w.sc = append(w.sc, w.cx.ts[0])
+    w.sp = w.sp + 1
+}
+
+func direct(ts []string) int {
+    mut w := W{}
+    w.sc = append(w.sc, ts[0])
+    w.sc = append(w.sc, ts[1])
+    return len(w.sc)
+}
+
+func viaCall(c C) int {
+    mut w := W{cx: c}
+    bump(mut w)
+    bump(mut w)
+    return w.sp + len(w.sc)
+}
+
+func main() {
+    ts := []string{"a", "b"}
+    println(direct(ts))
+    println(viaCall(C{ts: ts}))
+}

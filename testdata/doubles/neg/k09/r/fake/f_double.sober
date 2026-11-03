@@ -1,0 +1,4 @@
+@replaces("testdata/doubles/neg/k09/t")
+package t
+
+const Z = 1

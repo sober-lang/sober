@@ -93,6 +93,38 @@ func TestAesgcmOpenAt() {
     })
 }
 
+// 縫い合わせの塊の道（128 の倍数の部分 — aesseal / aesopen）: 平文 256 バイト
+func TestAesgcmSealTo256() {
+    n := Count()
+    if n == 0 || !aesgcm.Available() {
+        return
+    }
+    k, _ := aesgcm.Prepare(pat(16, 2))
+    nonce := pat(12, 3)
+    ad := pat(13, 4)
+    Measure("aesgcm_sealto_256", n, 15, (c, i) => sec(c, i, 256), (x) => {
+        s, _ := aesgcm.SealTo(k, nonce, ad, x, []byte{}, []byte{})
+        len(s) > 0
+    })
+}
+
+func TestAesgcmOpenAt256() {
+    n := Count()
+    if n == 0 || !aesgcm.Available() {
+        return
+    }
+    k, _ := aesgcm.Prepare(pat(16, 2))
+    nonce := pat(12, 3)
+    ad := pat(13, 4)
+    Measure("aesgcm_openat_256", n, 16, (c, i) => {
+        s, _ := aesgcm.SealTo(k, nonce, ad, sec(c, i, 256), []byte{}, []byte{})
+        s
+    }, (x) => {
+        p, _ := aesgcm.OpenAt(k, nonce, ad, x, 0, len(x))
+        len(p) > 0
+    })
+}
+
 func TestChachaSealTo() {
     n := Count()
     if n == 0 {

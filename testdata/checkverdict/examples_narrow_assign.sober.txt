@@ -1,0 +1,2 @@
+sober: desugar error at examples/narrow_assign.sober:15:5 (NarrowAssign): cannot assign to a narrowed binding — inside the narrowed region the name is the T?'s payload; bind it to a new name (`mut v := x`) or assign outside the region (name: x, narrowed at examples/narrow_assign.sober:12:5)
+exit=1

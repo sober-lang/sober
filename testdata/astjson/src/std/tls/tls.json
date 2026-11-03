@@ -9146,7 +9146,7 @@
       "name": "dirW",
       "expr": {
         "k": "int",
-        "value": 64,
+        "value": 80,
         "tok": 122
       },
       "tok": 120,
@@ -9167,7 +9167,7 @@
         },
         "rhs": {
           "k": "int",
-          "value": 64,
+          "value": 80,
           "tok": 129
         },
         "tok": 128
@@ -9193,14 +9193,14 @@
           },
           "rhs": {
             "k": "int",
-            "value": 64,
+            "value": 80,
             "tok": 136
           },
           "tok": 135
         },
         "rhs": {
           "k": "int",
-          "value": 64,
+          "value": 80,
           "tok": 138
         },
         "tok": 137
@@ -9229,14 +9229,14 @@
             },
             "rhs": {
               "k": "int",
-              "value": 64,
+              "value": 80,
               "tok": 145
             },
             "tok": 144
           },
           "rhs": {
             "k": "int",
-            "value": 64,
+            "value": 80,
             "tok": 147
           },
           "tok": 146
@@ -9275,14 +9275,14 @@
               },
               "rhs": {
                 "k": "int",
-                "value": 64,
+                "value": 80,
                 "tok": 156
               },
               "tok": 155
             },
             "rhs": {
               "k": "int",
-              "value": 64,
+              "value": 80,
               "tok": 158
             },
             "tok": 157

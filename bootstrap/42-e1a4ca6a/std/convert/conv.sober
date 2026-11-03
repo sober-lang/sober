@@ -1,0 +1,228 @@
+package convert
+
+// 数値と文字列の変換（language.md 37 節・language.md 34 節の Format… / Parse…）。float の最短の往復表現と正しく丸めた解析の公開の API — 中身は std/internal/floatfmt
+// （整数だけの多倍長・float の字句を含まない内部の算法）。int の 10 進表記 FormatInt は文字列補間の裏方（parser の合成の暗黙 import）。
+// int の解析（ParseInt）もここ
+
+import "std/internal/floatfmt"
+
+// 組み込みの宣言（本体なし。実装はコンパイラの表: loader/intrinsic.sober・desugar / lower の SysKey）
+@intrinsic("fbits")
+func sysFBits(x float) int
+
+@intrinsic("ffrombits")
+func sysFFromBits(b int) float
+
+// f の最短の往復表現（読み戻すと同じビットになる最短の 10 進 — Go の strconv.FormatFloat(f, 'g', -1, 64) と同じ綴り・println と同じ）
+@effects()
+func FormatFloat(f float) string {
+    return floatfmt.Format(sysFBits(f))
+}
+
+// f を小数点以下 prec 桁で（Go の strconv.FormatFloat(f, 'f', prec, 64)・fmt の %.<prec>f と同じ綴り — 正確な値を最近接・偶数へ丸める）（対の ParseFixed は実需まで足さない — language.md 34 節 2 の注記）
+@effects()
+func FormatFixed(f float, prec int) string {
+    return floatfmt.FormatFixed(sysFBits(f), prec)
+}
+
+// ParseFloat の構文の違い（10 進の数字・小数点・指数、または inf / infinity / nan でない）
+type InvalidFloat error {
+}
+
+// ParseFloat の溢れ（値は ±Inf — Go の ErrRange と同じ）
+type FloatOutOfRange error {
+}
+
+// s の値（10 進の正確な値を 1 回だけ最近接・偶数へ丸める — 浮動小数のリテラルと同じ算法。0 に丸まる小さい値は誤りでない）。
+// 受ける形は [+-]? 数字の列（小数点 1 つ・指数 e / E [+-] 数字）か inf / infinity（符号可）/ nan（大文字小文字を問わない）。16 進・_ は受けない
+@errors(InvalidFloat, FloatOutOfRange)
+@effects()
+func ParseFloat(s string) (float, error?) {
+    // Clinger の速い道: 仮数 ≤ 2^53・|10 の指数| ≤ 22 なら仮数も 10 の累乗も binary64 で正確 → 乗除 1 回の丸め 1 回で正しく丸まる（外れは多倍長へ）
+    ok, f := fastFloat(bytes(s))
+    if ok {
+        return f, nil
+    }
+    bits, err := floatfmt.ParseBits(bytes(s))
+    if err != nil {
+        // ParseBits の誤りは InvalidSyntax と OutOfRange だけ（analyzer が導出して網羅を検査する）
+        syntax := switch err {
+        case floatfmt.InvalidSyntax{}: true
+        case floatfmt.OutOfRange{}: false
+        }
+        if syntax {
+            return 0.0, InvalidFloat{}
+        }
+        return sysFFromBits(bits), FloatOutOfRange{}
+    }
+    return sysFFromBits(bits), nil
+}
+
+// Clinger の速い道（受けるのは `[+-]? 数字+ ('.' 数字+)? ([eE] [+-]? 数字+)?` で仮数 ≤ 2^53・|指数| ≤ 22 の形だけ — 他は (false, _) で多倍長へ）
+func fastFloat(b []byte) (bool, float) {
+    mut i := 0
+    neg := len(b) > 0 && b[0] == '-'
+    if len(b) > 0 && (b[0] == '-' || b[0] == '+') {
+        i = 1
+    }
+    mut m := 0
+    mut e := 0
+    mut nd := 0
+    while i < len(b) && b[i] >= '0' && b[i] <= '9' {
+        m = m * 10 + (int(b[i]) - 48)
+        nd += 1
+        if m > 9007199254740992 {
+            return false, 0.0
+        }
+        i += 1
+    }
+    if nd == 0 {
+        return false, 0.0
+    }
+    if i < len(b) && b[i] == '.' {
+        i += 1
+        mut fd := 0
+        while i < len(b) && b[i] >= '0' && b[i] <= '9' {
+            m = m * 10 + (int(b[i]) - 48)
+            fd += 1
+            if m > 9007199254740992 {
+                return false, 0.0
+            }
+            i += 1
+        }
+        if fd == 0 {
+            return false, 0.0
+        }
+        e -= fd
+    }
+    if i < len(b) && (b[i] == 'e' || b[i] == 'E') {
+        i += 1
+        mut eneg := false
+        if i < len(b) && (b[i] == '-' || b[i] == '+') {
+            eneg = b[i] == '-'
+            i += 1
+        }
+        mut x := 0
+        mut xd := 0
+        while i < len(b) && b[i] >= '0' && b[i] <= '9' {
+            x = x * 10 + (int(b[i]) - 48)
+            xd += 1
+            if x > 1000 {
+                return false, 0.0
+            }
+            i += 1
+        }
+        if xd == 0 {
+            return false, 0.0
+        }
+        e += if eneg { 0 - x } else { x }
+    }
+    if i != len(b) || e < -22 || e > 22 {
+        return false, 0.0
+    }
+    mut p := 1.0
+    mut k := if e < 0 { 0 - e } else { e }
+    while k > 0 {
+        p = p * 10.0
+        k -= 1
+    }
+    f := if e < 0 { float(m) / p } else { float(m) * p }
+    return true, if neg { -f } else { f }
+}
+
+// ParseInt の構文の違い（[+-]? と 10 進の数字の列でない — 空・空白・_・16 進は受けない）
+type InvalidInt error {
+}
+
+// ParseInt の溢れ（int〔64 ビット〕の範囲の外 — Go の ErrRange と同じ。値は 0）
+type IntOutOfRange error {
+}
+
+// s の 10 進の値（Go の strconv.Atoi と同じ受け方 — `[+-]? 数字+`）
+@errors(InvalidInt, IntOutOfRange)
+@effects()
+func ParseInt(s string) (int, error?) {
+    b := bytes(s)
+    neg := len(b) > 0 && b[0] == '-'
+    mut i := if len(b) > 0 && (b[0] == '-' || b[0] == '+') { 1 } else { 0 }
+    if i == len(b) {
+        return 0, InvalidInt{}
+    }
+    // 負の側で積む（最小値 -2^63 が表せる）。/ は 0 へ切り捨て = 負の数の切り上げなので、v < (最小 + d) / 10 なら v * 10 - d が溢れる
+    mut v := 0
+    while i < len(b) {
+        c := b[i]
+        if c < '0' || c > '9' {
+            return 0, InvalidInt{}
+        }
+        d := int(c) - 48
+        if v < (-9223372036854775807 - 1 + d) / 10 {
+            return 0, IntOutOfRange{}
+        }
+        v = v * 10 - d
+        i += 1
+    }
+    if neg {
+        return v, nil
+    }
+    if v == -9223372036854775807 - 1 {
+        return 0, IntOutOfRange{}
+    }
+    return 0 - v, nil
+}
+
+// n の 10 進表記（Go の strconv.Itoa と同じ — ParseInt の対）。文字列補間 `${n}` の int の変換もこれ（parser の合成の暗黙 import $convert —
+// コアに変換 op を足さない）。最小値は符号反転が溢れるので綴りをそのまま返す
+@effects()
+func FormatInt(n int) string {
+    return if n == -9223372036854775807 - 1 {
+        "-9223372036854775808"
+    } else if n < 0 {
+        "-" + formatUint(-n)
+    } else {
+        formatUint(n)
+    }
+}
+
+// 0 以上の n の 10 進表記
+func formatUint(n int) string {
+    mut rev := mut []byte{}
+    mut m := n
+    rev = append(rev, byte(48 + m % 10))
+    m = m / 10
+    while m > 0 {
+        rev = append(rev, byte(48 + m % 10))
+        m = m / 10
+    }
+    mut out := mut []byte{}
+    mut i := len(rev) - 1
+    while i >= 0 {
+        out = append(out, rev[i])
+        i -= 1
+    }
+    return bytesToString(freeze(out))
+}
+
+// ParseBool の構文の違い（受ける綴りの外 — Go の strconv.ErrSyntax と同じ）
+type InvalidBool error {
+}
+
+// s の真偽（Go の strconv.ParseBool と同じ受け方 — 真 = "1" "t" "T" "TRUE" "true" "True"・偽 = "0" "f" "F" "FALSE" "false" "False"。
+// 他の綴り〔"yes"・"on"・"tRUE"・前後の空白〕は InvalidBool。値は false）
+@errors(InvalidBool)
+@effects()
+func ParseBool(s string) (bool, error?) {
+    if s == "1" || s == "t" || s == "T" || s == "TRUE" || s == "true" || s == "True" {
+        return true, nil
+    }
+    if s == "0" || s == "f" || s == "F" || s == "FALSE" || s == "false" || s == "False" {
+        return false, nil
+    }
+    return false, InvalidBool{}
+}
+
+// b の綴り "true" / "false"（Go の strconv.FormatBool と同じ — ParseBool の対・補間 `${b}` と同じ綴り）
+@effects()
+func FormatBool(b bool) string {
+    return if b { "true" } else { "false" }
+}

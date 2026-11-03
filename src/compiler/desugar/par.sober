@@ -279,6 +279,20 @@ func lambdaBodyTy(st mut S, lam NodeRef, eb int, ef int) TyRef {
     return computeTy(mut st, lbody, eb, ef)
 }
 
+// ラムダ lam の本体が panic の呼び出し（か、末尾の文がそれのブロック）か
+func bodyPanics(st mut S, lam NodeRef, eb int) bool {
+    mut e := nB(nodeOf(mut st, lam))
+    if kindN(mut st, e) == ast.EBlock {
+        ss := lA(nodeOf(mut st, e))
+        n := lenL(mut st, ss)
+        if n == 0 || kindN(mut st, latN(mut st, ss, n - 1)) != ast.SExpr {
+            return false
+        }
+        e = nA(nodeOf(mut st, latN(mut st, ss, n - 1)))
+    }
+    return kindN(mut st, e) == ast.ECall && isPanicCall(mut st, e, eb)
+}
+
 // SpawnGive のラムダ lam の仮引数（引き渡す端点）を深さ depth（親の let）に束ねた環境
 func giveBind(st mut S, lam NodeRef, eb int, depth int, t TyRef) int {
     p := latN(mut st, lA(nodeOf(mut st, lam)), 0)
@@ -322,7 +336,9 @@ func parScope(st mut S, fi int, arg NodeRef, at NodeRef, eb int, ef int, depth i
     benv := scopeBind(mut st, lam, eb, depth)
     saved_ps := st.parScope1
     st.parScope1 = st.rdepth
-    tb := lambdaBodyTy(mut st, lam, benv, ef)
+    // panic で終わる本体は値を持たない — 結果は unit（文の位置の panic と同じ）
+    tb0 := lambdaBodyTy(mut st, lam, benv, ef)
+    tb := if tb0 == -1 && bodyPanics(mut st, lam, benv) { st.tUnit } else { tb0 }
     // 本体の `?` = scope の失敗（language.md 11 節「本体の `?`」）: 本体を関数の本体と同じ戻りのラベル `label (tb, err?)` で包み、`?` はそこへの
     // jump（関数の `?` と同じテンプレート — call.sober）。return は ParCheck の kind 7 が先に拒否する。ラベルは本体の内側なので scope の Λ = [] は保たれる。
     // `?` が使わなければ包まない（コアは従来の形のまま）

@@ -1,0 +1,10 @@
+@doubles("testdata/doubles/neg/k01/r/fake")
+package t
+
+import "testdata/doubles/neg/k01/r"
+import "testdata/doubles/neg/k01/r/fake"
+import "testdata/doubles/neg/k01/p"
+
+func TestX() {
+    assert(r.Show(fake.New(), "a") == 3)
+}

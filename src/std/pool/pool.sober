@@ -115,7 +115,7 @@ type Scratch struct {
 }
 
 // 容量 0 の s を容量 n・全部 0 にする（容量は 1 回だけ — 容量のある s に呼ぶと panic(ScratchSized{}): lease の窓の中でストレージを
-// 作り直すと、新しい列が task の region に取られて長命のストレージから宙吊りになる — region-domain-pool.md 4d 節）。0 の chunk min(n, 256) 個を 1 つ作り、chunk ごとに一括の写しの形で足す（flate の fill と同じ）
+// 作り直すと、新しい列が task の region に取られて長命のストレージから宙吊りになる — region-domain-pool.md 4d 節）
 @effects(panic)
 func NewScratch(s mut Scratch, n int) {
     if len(s.words) > 0 {
@@ -125,24 +125,11 @@ func NewScratch(s mut Scratch, n int) {
     zeros(mut s.words, n)
 }
 
-// 空の列 xs を長さ n の 0 にする（0 の chunk min(n, 256) 個を 1 つ作り、chunk ごとに一括の写しの形で足す — flate の fill と同じ。欄を mut の実引数で渡して
-// 仮引数へ append する形でないと一括の写し〔copyloop〕に乗らず 1 語ずつ〔欄へ直に append〕か、局所の列を欄へ代入する写しが 1 回増える）
+// 空の列 xs を長さ n の 0 にする（仮引数へ同じ値を append する for は lower の copyloop の詰めの形 — 伸ばすのは 1 回。欄へ直に append する形や、
+// 局所の列を欄へ代入する形はこの形に乗らない）
 func zeros(xs mut []int, n int) {
-    bn := if n < 256 { n } else { 256 }
-    mut b := mut []int{}
-    for j <- iter.Range(0, bn) {
-        b = append(b, 0)
-    }
-    blk := freeze(b)
-    mut k := 0
-    while k + bn <= n && bn > 0 {
-        for j <- iter.Range(0, bn) {
-            xs = append(xs, blk[j])
-        }
-        k += bn
-    }
-    for j <- iter.Range(0, n - k) {
-        xs = append(xs, blk[j])
+    for j <- iter.Range(0, n) {
+        xs = append(xs, 0)
     }
 }
 

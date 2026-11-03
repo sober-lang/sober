@@ -2,6 +2,95 @@
 
 This file records user-facing changes per public release. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/) (no backward-compatibility promise while on 0.x).
 
+## v0.6.6 — 2026-11-03
+
+A performance release. The HTTP server's receive buffer ring is now consumed incrementally, which cuts CPU per request. TLS gets faster handshakes (RSA signing, x25519, SHA-256) and faster AES-GCM records, and deflate's lv6 gives up a few percent of compression ratio for speed. The language gains `@replaces` / `@doubles`, which swap a package for a double in a test build (build-time DI), and std/testing/cell, a place for fakes to keep state. `assert` now reports the user's line on failure and takes an optional label. Many disagreements between check and build were fixed.
+
+### Language
+
+- Swapping packages in test builds (build-time DI): a double is a directory of `_double.sober` files only, each with `@replaces("<target path>")` before its package clause. `@doubles("<double path>", …)` before the package clause of a test package's `_test.sober` makes every file in that test build that imports the target (other packages included) read the double instead. Production build and check never read `_double.sober`. The public names the double shares with the target are checked as a contract (function signatures, the types of shared fields, consts, `@errors` ⊆, the target's `@effects` declarations); a double with effects the real package doesn't have is rejected. `sober check <double directory>` checks only the contract.
+- A failing `assert` now panics at the line where the user wrote the assert (it used to point inside std/testing). An optional label `assert(e, label)` is evaluated only on failure, and the heading reads `assert failed (<label>): <expr>`.
+- An if / switch expression with no expected type whose arms are T and T? (`r := if c { 4 } else { q }`, a narrowed arm next to an unnarrowed one), or whose arm ends in nil, has type T?. An arm of nil merged with an error-label arm gives error?.
+- Narrowing by nil checks on the right side of `&&` / `||` now works wherever the expression appears (the condition of an if with else, return, a binding, an assert), and in the bodies of `if A && x != nil { … } else { … }`.
+- Assigning to a narrowed mut binding (`if x != nil { x = 5 }` and the like) is still rejected; the diagnostic now names the target, the position of the narrowing if, and the workaround (bind another name).
+- `return` in the body of a yield-form for is officially accepted (the prohibition is removed from the documents — the implementation already accepted it).
+- Values passed with `give:` must be channel endpoints (std/task Sender / Receiver); anything else is rejected by name (build used to accept it and the program failed at run time). Pass other values by capture.
+- Fixed disagreements between check and build (in each case one of them used to reject):
+  - adding or copying a value from an outer region into a local slice / map (an `append` element, a literal element), and the initial value of a struct with mut parts and `append` to its fields
+  - the expected type now reaches the tail of a block with statements, the body of a lambda's block and switch arms (`{ g(); 44 }` in a `byte?` arm, `return string(b) catch nil`, …)
+  - reading fields of generic structs and of a generic function's result
+  - a pipe that drops multiple values into holes in order, `divmod(17, 5) |> add(_, _)`
+  - a scope body that ends in panic (`task.Run((s) => { panic(Boom{}) })`)
+  - a string used directly as a for source, `for c <- s`, is now rejected by name in check too (suggesting `for c <- bytes(s)`)
+  - a form rejected only by an internal stage of build gets the same diagnostic as check, when check rejects it too
+
+### Testing
+
+- std/testing/cell (new): a place for fakes to record calls and written values. A `Cell[T]` is created only by a const declaration and read and written with `Get` / `Set` / `Update` (the effect is io). Only `_test.sober` and `_double.sober` may import it. std/quick empties it for each trial.
+- `sober test --wiring`: reads the test build (without running it) and prints `<test package>: <target> <= <double>` for each double.
+- Doubles are outside the instruments: `--cover` doesn't instrument double files and `--mutate` doesn't mutate them. A panic inside a double is printed with the double's real path.
+- Power-assert value lines now appear for expressions with function-typed arguments, `mut` arguments and `catch`.
+
+### Tools
+
+- `sober watch` also watches the files the warmed tests read (`_test.sober`, doubles, and the targets read for contracts).
+- Check cache fix: a function returning a plain `error` could miss invalidation when the type of an error payload in another package changed.
+
+### Standard library
+
+- std/crypto/aesgcm: `Open` / `OpenAt` now fold GHASH while decrypting and compare the tag at the end (they used to compare first, then decrypt). If the tag doesn't match, the plaintext written so far is zeroed with `crypto.Wipe` and `Auth` is returned (no plaintext reaches the caller).
+- std/compress (deflate): lv6 (the default of `compress:`) is tuned toward speed (chain 128 → 64, nice 128 → 96, lazy threshold 12 → 10). The output bytes change. On JSON bodies the output is 1.6–2.6% larger than zlib's lv6 (it was within 1%); use lv7–9 when ratio matters more. lv4 / 5 / 7–9 are unchanged.
+- std/crypto/sha256: on CPUs with SHA-NI, compression uses those instructions (Sum256 of 1 MiB: 34.9 → 2.04 cycles / B, local Zen 5). Other CPUs use the previous code.
+
+### Runtime
+
+- The receive buffer ring is consumed incrementally (IOU_PBUF_RING_INC — Linux 6.12 or later): 16 KiB buffers are shared in pieces by all of a worker's connections. The path where, with many connections, the ring ran empty and receives kept falling back to read(2) is gone. The rings total at most about 16 MiB across workers. Kernels before 6.12 use the previous fixed-slot ring.
+- The io_uring ring fd is registered (Linux 5.18 or later), and connection sends go through a fixed file table (4,096 slots per ring), saving a file reference get / put per SQE. Connections beyond the slots use their plain fd.
+- The TCB and stack of the tasks likely to run next are prefetched (this helps when the run queue is deep under saturation — locally with 12 workers, async at 16,000 connections: −18 to −20% cycles per request). Only candidates that have waited at least 2^22 TSC ticks (≈1.4 ms) in the run queue are prefetched; the check uses the push time kept in the run-queue slot, so it does not read the candidate's TCB. The TCB of the task about to run is always prefetched. The TCB of a task woken by a sleep's expiry is prefetched too.
+- Run order, the wait bound D and every observable value are unchanged.
+
+### Performance
+
+- HTTP — measured on bench/httparena, our own harness rather than an official HttpArena result. It uses the HttpArena load generators and request files on a 16-vCPU GitHub Actions runner (AMD EPYC 9V74), with 8 CPUs for the server; v0.6.6, v0.6.5 and Go's net/http ran alternately round by round in the same job (median of 5 rounds):
+
+  | Test | Requests/s (vs v0.6.5) | CPU/request (vs v0.6.5) | Requests/s vs Go, v0.6.5 | Requests/s vs Go, v0.6.6 |
+  |---|---|---|---|---|
+  | baseline | +9.2% | −8.7% | 2.76× | 3.02× |
+  | pipelined | −1.9% | +2.2% | 12.6× | 12.4× |
+  | limited-conn * | −4.8% | +4.6% | 2.47× | — |
+  | json | +9.0% | −8.5% | 3.03× | 3.31× |
+  | json-comp | +19.7% | −16.4% | 1.66× | 1.98× |
+  | json-comp-16k | +17.0% | −14.6% | 1.58× | 1.85× |
+  | json-tls | +29.8% | −23.2% | 2.19× | 2.85× |
+  | 8gbit | +0.8% | −8.5% | 0.99× | 1.00× |
+  | async | +3.7% | −5.0% | 1.82× | 1.89× |
+
+  \* The limited-conn row (a new connection for every few requests) is from a separate run after the prefetch fix (see Runtime above — candidates that are still warm are not prefetched), on the same runner type and alternating with v0.6.5 in the same job. Same-runner comparisons of this test move by ±2.5–3% from run to run; depending on the CPU and the run it lands within −5% to +3% of v0.6.5 (EPYC 9V74 −4.8%, 9V45 −2.5% to even, Xeon even). In the same run, baseline was +9.6% and async +4.2%. The ratio to Go was not measured in that run.
+
+  - 8gbit is bandwidth-bound, so read it as CPU per request. The latency tests (fixed rate) held their rate in both versions, with CPU per request −0.1 to −2.2%.
+  - No non-2xx responses in any test.
+- TLS handshakes: RSA signing's window table lookup and Montgomery squaring, x25519 field multiplication and SHA-256 are now instruction blocks. Server user cycles per handshake 4.61 → 3.20 M (−31% — local Zen 5, one worker).
+- AES-GCM: GHASH folds 8 blocks per reduction, and CTR and GHASH run in one stitched pass (GHASH uses Karatsuba). The key table and the per-record state are separate, removing a 384-byte copy per record. 16 KiB records: Seal 1.08 → 0.63 and Open 1.09 → 0.64 cycles / B; 64-byte records: instructions −51% for Seal and −47% for Open (local Zen 5).
+- Compiler: keeps the hot path of bounds checks on the fall-through side of the branch (copies on edges to cold blocks move to the end of the function), extends inlining of tiny leaf functions into inlined bodies, folds comparisons of a value with itself, and more. Locally: json-comp server cycles per request −6.6% (8 layouts × 3 rounds); sequential routing −7.7%, jsonapi −1.7%.
+- Sequential benchmarks against the Go twins (CPU time — task-clock — as the median of per-round paired ratios over 5 rounds; the range is the min–max of the per-round ratios; 16-vCPU GitHub Actions runner (AMD EPYC 9V74), pinned to one core):
+
+  | Benchmark | Sober / Go | Range |
+  |---|---:|---|
+  | binary-trees (18) | 0.37× | 0.36–0.38 |
+  | k-nucleotide | 0.37× | 0.36–0.38 |
+  | 1BRC (10M rows) | 0.55× | 0.54–0.56 |
+  | reverse-complement | 0.63× | 0.62–0.63 |
+  | fasta (2.5M) | 0.64× | 0.63–0.64 |
+  | jsonapi (100k) | 0.74× | 0.74–0.76 |
+  | n-body (5M) | 0.81× | 0.81–0.82 |
+  | logagg (500k) | 0.96× | 0.94–0.98 |
+  | fannkuch-redux (11) | 0.97× | 0.97–0.98 |
+  | mandelbrot (4000) | 0.98× | 0.98–0.98 |
+  | spectral-norm (2000) | 1.00× | 0.99–1.02 |
+  | routing (500k) | 1.15× | 1.15–1.22 |
+
+  The previous official run (2026-10-25) was on an AMD EPYC 9V45; the CPU models differ, so the two can't be compared side by side.
+
 ## v0.6.5 — 2026-10-31
 
 A testing release. It adds four verification tools — property-based testing with std/quick, `sober fuzz`, `sober test --cover` (coverage) and `sober test --mutate` (mutation testing) — with a guide on writing tests. `sober check` / `sober build` / `sober test` now remember the answer to a query and return it when the same query comes again, and `sober watch` warms build and tests in the background after each save. The CLI is now declared as a table (the new std/cli), and usage errors exit with code 2 (**breaking change** — `-run` → `--run` and others).

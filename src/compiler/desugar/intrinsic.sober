@@ -68,7 +68,7 @@ func ParOpenErr(st mut S, fi int) bool {
 // 空の関数になり x86 の内部コンパイラエラーを起こす）ので公開の口で見る: 中の組み込み〔newPool / ledgerWord / poolFail — 本体なし〕は
 // ParReach の参照の辺に現れない）
 func ParRtUse(st mut S, fi int) bool {
-    if ParKey(mut st, fi) != 0 {
+    if ParKey(mut st, fi) != 0 || CellKey(mut st, fi) != 0 {
         return true
     }
     if !strIs(mut st, PkgPath(mut st, fnPkg(mut st, fi)), "std/task") {
@@ -76,6 +76,20 @@ func ParRtUse(st mut S, fi int) bool {
     }
     n := fnName(mut st, fi)
     return strIs(mut st, n, "NewPool") || strIs(mut st, n, "Ledger") || strIs(mut st, n, "MarkFailed")
+}
+
+// std/testing/cell の呼び出し点の写し（language.md 41 節「状態を貯める fake」— 置き場は rt の表・値は梱包と写し。総称の Def にしない）
+const CELL_GET = 1
+const CELL_SET = 2
+const CELL_UPDATE = 3
+
+// 関数 fi が std/testing/cell の Get / Set / Update ならその番号（違えば 0）
+func CellKey(st mut S, fi int) int {
+    if !strIs(mut st, PkgPath(mut st, fnPkg(mut st, fi)), "std/testing/cell") {
+        return 0
+    }
+    n := fnName(mut st, fi)
+    return if strIs(mut st, n, "Get") { CELL_GET } else if strIs(mut st, n, "Set") { CELL_SET } else if strIs(mut st, n, "Update") { CELL_UPDATE } else { 0 }
 }
 
 // 関数 fi が std/task の Scope / Spawn / Join / Try ならその番号（違えば 0）

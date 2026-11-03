@@ -3137,100 +3137,105 @@ b18:
   %90 = le %88, %89
   condbr %90, b21, b22
 b19:
-  %107 = add %85, %87
-  %108 = load.i64 %3[0]
+  %102 = add %85, %87
+  %103 = load.i64 %3[0]
+  %104 = itop %103
+  %105 = const 1
+  %106 = mul %102, %105
+  %107 = gep.word %104, %106
+  %108 = load.i64 %78[0]
   %109 = itop %108
   %110 = const 1
-  %111 = mul %107, %110
+  %111 = mul %92, %110
   %112 = gep.word %109, %111
-  %113 = load.i64 %78[0]
-  %114 = itop %113
-  %115 = const 1
-  %116 = mul %92, %115
-  %117 = gep.word %114, %116
-  %118 = const 1
-  %119 = mul %88, %118
-  call @rt.copy(%112, %117, %119)
+  %113 = const 1
+  %114 = mul %88, %113
+  call @rt.copy(%107, %112, %114)
   store %83[0], %69
   br b21
 b20:
-  %120 = region.depth
-  br b23
+  %115 = region.depth
+  br b28
 b21:
-  %149 = load.i64 %46[0]
-  %150 = add %149, %69
-  store %46[0], %150
-  %151 = load.i64 %47[0]
-  %152 = add %151, %69
-  store %47[0], %152
+  %144 = load.i64 %46[0]
+  %145 = add %144, %69
+  store %46[0], %145
+  %146 = load.i64 %47[0]
+  %147 = add %146, %69
+  store %47[0], %147
   br b11
 b22:
   %91 = load.i64 %78[1]
   %92 = add %59, %87
   %93 = ge %92, %89
+  condbr %93, b23, b20
+b23:
   %94 = add %59, %69
   %95 = le %94, %91
-  %96 = and_ %93, %95
-  %97 = ge %87, %89
-  %98 = and_ %96, %97
-  %99 = load.i64 %3[1]
-  %100 = add %85, %87
-  %101 = ge %100, %89
-  %102 = add %85, %69
-  %103 = le %102, %99
-  %104 = and_ %101, %103
-  %105 = and_ %98, %104
-  %106 = ne %105, %89
-  condbr %106, b19, b20
-b23:
-  region.setdepth %120
-  %121 = load.i64 %83[0]
-  %122 = lt %121, %69
-  condbr %122, b24, b25
+  condbr %95, b24, b20
 b24:
-  region.enter
-  %123 = region.depth
-  %124 = load.i64 %46[0]
-  %125 = load.i64 %83[0]
-  %126 = add %124, %125
-  %127 = load.i64 %83[0]
-  %128 = add %59, %127
-  %129 = load.i64 %78[1]
-  %130 = uge %128, %129
-  condbr %130, b26, b27
+  %96 = ge %87, %89
+  condbr %96, b25, b20
 b25:
-  region.setdepth %120
-  br b21
+  %97 = load.i64 %3[1]
+  %98 = add %85, %87
+  %99 = ge %98, %89
+  condbr %99, b26, b20
 b26:
-  %131 = const 23
-  call @rt.panic(%131)
-  exit 101
+  %100 = add %85, %69
+  %101 = le %100, %97
+  condbr %101, b27, b20
 b27:
-  %132 = load.i64 %78[0]
-  %133 = itop %132
-  %134 = const 1
-  %135 = mul %128, %134
-  %136 = gep.word %133, %135
-  %137 = load.i64 %136[0]
-  %138 = load.i64 %3[1]
-  %139 = uge %126, %138
-  condbr %139, b28, b29
+  br b19
 b28:
-  %140 = const 24
-  call @rt.panic(%140)
-  exit 101
+  region.setdepth %115
+  %116 = load.i64 %83[0]
+  %117 = lt %116, %69
+  condbr %117, b29, b30
 b29:
-  %141 = load.i64 %3[0]
-  %142 = itop %141
-  %143 = const 1
-  %144 = mul %126, %143
-  %145 = gep.word %142, %144
-  store %145[0], %137
-  %146 = const 1
-  %147 = load.i64 %83[0]
-  %148 = add %147, %146
-  store %83[0], %148
-  br b23
+  region.enter
+  %118 = region.depth
+  %119 = load.i64 %46[0]
+  %120 = load.i64 %83[0]
+  %121 = add %119, %120
+  %122 = load.i64 %83[0]
+  %123 = add %59, %122
+  %124 = load.i64 %78[1]
+  %125 = uge %123, %124
+  condbr %125, b31, b32
+b30:
+  region.setdepth %115
+  br b21
+b31:
+  %126 = const 23
+  call @rt.panic(%126)
+  exit 101
+b32:
+  %127 = load.i64 %78[0]
+  %128 = itop %127
+  %129 = const 1
+  %130 = mul %123, %129
+  %131 = gep.word %128, %130
+  %132 = load.i64 %131[0]
+  %133 = load.i64 %3[1]
+  %134 = uge %121, %133
+  condbr %134, b33, b34
+b33:
+  %135 = const 24
+  call @rt.panic(%135)
+  exit 101
+b34:
+  %136 = load.i64 %3[0]
+  %137 = itop %136
+  %138 = const 1
+  %139 = mul %121, %138
+  %140 = gep.word %137, %139
+  store %140[0], %132
+  %141 = const 1
+  %142 = load.i64 %83[0]
+  %143 = add %142, %141
+  store %83[0], %143
+  br b28
 }
 
 func @std/convert.FormatInt(%0 ptr, %1 i64) {

@@ -232,6 +232,7 @@ func initState(st mut S, p loader.Program) {
     st.rdepth = 1
     st.retTarget = -1
     st.tailWant = TyRef(-1)
+    st.coerceIfnil = NodeRef(-1)
     st.swWant = TyRef(-1)
     st.swHint = TyRef(-1)
     st.swUnreach = TyRef(-1)

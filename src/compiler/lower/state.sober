@@ -168,6 +168,9 @@ type St struct {
     rtCutWalk FnRef
     rtCutEnd FnRef
     cutGenG int
+    // std/testing/cell の置き場の表（lower/cell.sober — 0 = 無し）
+    cellG int
+    cellUse bool
     // 孤児の待ち（orphan.sober）: orphOn = 組む（std/task のプログラムで wait_fd を使う）・@rt.orphgen・rt.orph_*
     orphOn bool
     orphGenG int
@@ -218,6 +221,8 @@ type St struct {
     ubStat bool
     // フレームの内訳の印字（開発の口 --frame-stat — 1 本の経路だけ。x86.sober xFunc が関数ごとに `frame …` を stdout へ）
     frStat bool
+    // 割り当ての結果のダンプ（開発用の口 — SOBER_XDBG の値のバイト列・空 = 口なし。名前の照合は xdbgMatch）
+    xdbgPat []int
     // lower の束縛の事実（lower.sober の ubBind — `$k, $e := utf8.Check(b)` の直後の `v := if $e != nil { 脱出 } else { $k }`）: 文の通し番号・
     // 待ちの束縛の文の番号・$k / $e の名前・b の値（スロットの番地）
     ubSeq int
@@ -281,6 +286,8 @@ type St struct {
     destDepth int
     // ラムダの塊の本体の末尾の式の期待型 + 1（0 = 無し）: lambdaCall が armValue の直前に置き、blockTail が入口で読んで消す（文の中の塊へは届かない）
     tailW int
+    // 値の switch 式の腕の型なし定数を割り当てる型（byte・named scalar）+ 1（0 = 無し）: exprExpecting が置き、switchExpr が入口で読んで消す
+    swW int
     // 宛先構築レーン M5（格納点の写し）: 字面の region の入れ子（反復の region・式ブロック）・各段の入口で退避した深度（IR の値）・
     // mut 仮引数の行き先の深度（呼び手が W_ANCHOR で渡す — 入口で読む IR の値・-1 = 無し）・今の関数が region 透過か
     rnest int

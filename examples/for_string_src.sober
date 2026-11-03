@@ -1,0 +1,11 @@
+package main
+
+// 負例（check が名指しで拒否 — diag.TypeMismatch kind 3）: string は回し方が一意でないので for の生成元に直に置けない
+// （language.md 7 節 — 見方を名指す `for c <- bytes(s)`）
+
+func main() {
+    s := "abc"
+    for c <- s {
+        println(c)
+    }
+}

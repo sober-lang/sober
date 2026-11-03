@@ -1,0 +1,191 @@
+package dudect
+
+// dudect の題材: std/crypto の公開の口。クラス 0 = 固定の秘密・クラス 1 = 乱数の秘密（入力は計時の前に作る）。
+// 鍵を変えられない口（rsa.SignPSS — 鍵は 1 本の試験鍵）は平文を変える。結果は f の bool（窓の外で畳む — Measure の型が強制する）
+
+import "std/crypto"
+import "std/crypto/aesgcm"
+import "std/crypto/chacha20poly1305"
+import "std/crypto/hmac"
+import "std/crypto/pem"
+import "std/crypto/poly1305"
+import "std/crypto/rsa"
+import "std/crypto/x25519"
+import "std/iter"
+import "std/rand"
+
+@embed("testdata/crypto/rsa2048.key")
+const rsaKeys = map[string]string{}
+
+// 固定の n バイト（クラス 0 の秘密）
+func pat(n int, k int) []byte {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, n) {
+        b = append(b, byte((i * 37 + k * 11 + 5) & 0xff))
+    }
+    return freeze(b)
+}
+
+// i ごとに決まる乱数の n バイト（クラス 1 の秘密）
+func rnd(n int, i int) []byte {
+    mut r := rand.New(i * 2654435761 + 99)
+    mut b := mut []byte{}
+    for k <- iter.Range(0, n) {
+        b = append(b, byte(rand.Intn(mut r, 256)))
+    }
+    return freeze(b)
+}
+
+// クラス c の i 回目の n バイトの秘密
+func sec(c int, i int, n int) []byte {
+    return if c == 0 { pat(n, 1) } else { rnd(n, i) }
+}
+
+func TestSelect() {
+    n := Count()
+    if n == 0 {
+        return
+    }
+    // 秘密 = mask m（クラス 0 = 0・クラス 1 = -1 — 入力の 1 バイト目の最下位のビット）
+    Measure("ct_select", n, 2, (c, i) => []byte{byte(c)}, (x) => (crypto.Select(0 - (int(x[0]) & 1), 7, 9) & 1) == 1)
+}
+
+func TestNonZero() {
+    n := Count()
+    if n == 0 {
+        return
+    }
+    // 秘密 = x（クラス 0 = 0・クラス 1 = 乱数の 8 バイト — 0 でない見込み）
+    Measure("ct_nonzero", n, 3, (c, i) => if c == 0 { pat(8, 0) } else { rnd(8, i) }, (x) => crypto.NonZero(int(x[0]) | int(x[3]) << 8 | int(x[7]) << 16) == 0)
+}
+
+func TestAesgcmSealTo() {
+    n := Count()
+    if n == 0 || !aesgcm.Available() {
+        return
+    }
+    k, _ := aesgcm.Prepare(pat(16, 2))
+    nonce := pat(12, 3)
+    ad := pat(13, 4)
+    head := pat(5, 5)
+    // 秘密 = 平文 64 バイト（鍵は固定）
+    Measure("aesgcm_sealto", n, 4, (c, i) => sec(c, i, 64), (x) => {
+        s, _ := aesgcm.SealTo(k, nonce, ad, x, head, []byte{})
+        len(s) > 0
+    })
+}
+
+func TestAesgcmOpenAt() {
+    n := Count()
+    if n == 0 || !aesgcm.Available() {
+        return
+    }
+    k, _ := aesgcm.Prepare(pat(16, 2))
+    nonce := pat(12, 3)
+    ad := pat(13, 4)
+    // 秘密 = 平文 64 バイト（どちらのクラスも正しい封 — tag の成否は公開の値なので両クラスとも通る形）
+    Measure("aesgcm_openat", n, 5, (c, i) => {
+        s, _ := aesgcm.SealTo(k, nonce, ad, sec(c, i, 64), []byte{}, []byte{})
+        s
+    }, (x) => {
+        p, _ := aesgcm.OpenAt(k, nonce, ad, x, 0, len(x))
+        len(p) > 0
+    })
+}
+
+func TestChachaSealTo() {
+    n := Count()
+    if n == 0 {
+        return
+    }
+    k, _ := chacha20poly1305.Prepare(pat(32, 6))
+    nonce := pat(12, 3)
+    ad := pat(13, 4)
+    head := pat(5, 5)
+    Measure("chacha_sealto", n, 6, (c, i) => sec(c, i, 64), (x) => {
+        s, _ := chacha20poly1305.SealTo(k, nonce, ad, x, head, []byte{})
+        len(s) > 0
+    })
+}
+
+func TestChachaOpenAt() {
+    n := Count()
+    if n == 0 {
+        return
+    }
+    k, _ := chacha20poly1305.Prepare(pat(32, 6))
+    nonce := pat(12, 3)
+    ad := pat(13, 4)
+    Measure("chacha_openat", n, 7, (c, i) => {
+        s, _ := chacha20poly1305.SealTo(k, nonce, ad, sec(c, i, 64), []byte{}, []byte{})
+        s
+    }, (x) => {
+        p, _ := chacha20poly1305.OpenAt(k, nonce, ad, x, 0, len(x))
+        len(p) > 0
+    })
+}
+
+// i ごとに決まる乱数の鍵 32 バイトで、r の上の limb（r4 = 鍵の 13〜15 バイト目 — 締めの後は 2^20 未満で一様）だけを 2^8 未満に絞ったもの
+// （14・15 バイト目を 0 に — s〔16〜31 バイト目〕と r の他の limb は乱数のまま）
+func smallR4(i int) []byte {
+    r := rnd(32, i + 1000000007)
+    mut b := mut []byte{}
+    for k <- iter.Range(0, 32) {
+        b = append(b, if k == 14 || k == 15 { byte(0) } else { r[k] })
+    }
+    return freeze(b)
+}
+
+// poly1305_sum_otk: Poly1305 の鍵は 1 回限り（AEAD ではメッセージごとに chacha20 から導く・Sum の doc も「1 回だけ使う鍵」）なので、題材も両クラスとも毎回違う鍵にして、
+// クラスで変えるのは鍵の性質だけにする — クラス 0 = r の上の limb が小さい鍵の群（smallR4）・クラス 1 = 一様乱数の鍵。検定するのは「鍵の性質の差が時間に出るか」で、
+// 古典の固定 対 乱数（固定鍵を数百万回）より検出力は落ちる（固定の値ごとのずれは平均で消える）。棄てた形: 固定 対 乱数（旧 poly1305_sum — exp_test の
+// exp_poly_fixed に informational として残置）は、Zen 3 / Zen 4（GHA の EPYC 7763 / 9V74）で固定鍵の値ごとに決まる 0.1 cycle 級のずれ（1 呼び出し ≈ 480 cycle の
+// 0.01〜0.03%・仕組みは未特定 — 積の早抜けでもビットの重みでもない・Zen 5 では出ない）を拾って |t| 5〜19 と出ていた。1 回限りの鍵では
+// 1 つの鍵を 1 回しか測れないので、そのずれは使われ方では掘れない
+func TestPoly1305SumOtk() {
+    n := Count()
+    if n == 0 {
+        return
+    }
+    msg := pat(64, 7)
+    Measure("poly1305_sum_otk", n, 8, (c, i) => if c == 0 { smallR4(i) } else { rnd(32, i) }, (x) => len(poly1305.Sum(x, msg)) == 16)
+}
+
+func TestX25519Shared() {
+    n := CountDiv(10)
+    if n == 0 {
+        return
+    }
+    u := x25519.Base(pat(32, 8))
+    // 秘密 = スカラー 32 バイト
+    Measure("x25519_shared", n, 9, (c, i) => sec(c, i, 32), (x) => len(x25519.Shared(x, u)) == 32)
+}
+
+func TestHmacSum256() {
+    n := Count()
+    if n == 0 {
+        return
+    }
+    msg := pat(64, 9)
+    // 秘密 = 鍵 32 バイト
+    Measure("hmac_sum256", n, 10, (c, i) => sec(c, i, 32), (x) => len(hmac.Sum256(x, msg)) == 32)
+}
+
+func TestRsaSignPSS() {
+    n := CountDiv(500)
+    if n == 0 {
+        return
+    }
+    kt := rsaKeys["testdata/crypto/rsa2048.key"]
+    if kt == nil {
+        return
+    }
+    bs, _ := pem.Parse(kt)
+    k, _ := rsa.ParsePKCS8(bs[0].der)
+    salt := pat(32, 10)
+    // 鍵は 1 本（試験鍵）— 秘密の側の入力として平文 64 バイトを変える（鍵を変える網は鍵の生成の口が要る — 積み）
+    Measure("rsa_signpss", n, 11, (c, i) => sec(c, i, 64), (x) => {
+        s, _ := rsa.SignPSS(k, x, salt)
+        len(s) > 0
+    })
+}

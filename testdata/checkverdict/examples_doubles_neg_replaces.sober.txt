@@ -1,0 +1,2 @@
+sober: load error at examples/doubles_neg_replaces.sober:1:1: @replaces is written only before the package clause of a _double.sober file
+exit=1

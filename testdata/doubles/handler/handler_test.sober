@@ -1,0 +1,14 @@
+@doubles("testdata/doubles/store/fake")
+package handler
+
+import "testdata/doubles/store/fake"
+
+func TestLookup() {
+    c := fake.With([]fake.Row{fake.Row{k: "a", v: "1"}})
+    assert(Lookup(c, "a") == "1")
+    assert(Lookup(c, "b") == "none")
+}
+
+func TestSaveDenied() {
+    assert(!Save(fake.Denying(), "a", "1"))
+}

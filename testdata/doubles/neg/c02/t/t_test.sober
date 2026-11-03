@@ -1,0 +1,8 @@
+package t
+
+import "std/testing/cell"
+
+func TestT() {
+    h := cell.Cell[int]{}
+    cell.Set(h, 1)
+}

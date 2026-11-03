@@ -1,0 +1,38 @@
+package main
+
+import "std/iter"
+
+func gen(n int, k func(int)) {
+    defer println(900)
+    mut i := 0
+    while i < n {
+        k(i)
+        i += 1
+    }
+}
+
+func total(it iter.Iter[int]) int {
+    defer println(800)
+    mut s := 0
+    it((x) => {
+        s += x
+    })
+    return s
+}
+
+func f(n int) int {
+    defer println(700)
+    r := total(for x <- gen(n) yield {
+        if x == 2 {
+            return -1
+        }
+        x * 10
+    })
+    println(600)
+    return r
+}
+
+func main() {
+    println(f(5))
+    println(f(2))
+}

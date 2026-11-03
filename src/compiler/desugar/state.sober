@@ -143,6 +143,8 @@ type S struct {
     stmtIf int
     loopFloor int
     tailWant TyRef
+    // T? を期待する位置（coerceExpr）の nil 判定の if 式の節（-1 = 無し）: ifnilExpr が腕を coerceArm で期待型へ寄せる（some に包む）
+    coerceIfnil NodeRef
     swWant TyRef
     swStmt int         // 今の switch が文位置か（腕の値を捨てる — switchExpr。0 / 1）
     swHint TyRef       // 呼び手が知っている switch の結果型（return の値 — coerceExpr が積み、switchExpr が 1 度だけ読む）

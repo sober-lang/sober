@@ -1,0 +1,246 @@
+{
+  "package": "handler",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/doubles/store",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "Lookup",
+      "type_params": [],
+      "params": [
+        {
+          "name": "c",
+          "type": {
+            "k": "name",
+            "name": "store.Conn"
+          },
+          "mutable": false
+        },
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "string"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "v"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "store",
+                    "tok": 21
+                  },
+                  "field": "Get",
+                  "tok": 23
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "c",
+                    "tok": 25
+                  },
+                  {
+                    "k": "ident",
+                    "name": "k",
+                    "tok": 27
+                  }
+                ],
+                "tok": 24
+              }
+            ],
+            "tok": 19
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "if",
+                "cond": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "v",
+                    "tok": 32
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 34
+                  },
+                  "tok": 33
+                },
+                "then": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "strlit",
+                        "value": "none",
+                        "tok": 36
+                      }
+                    }
+                  ]
+                },
+                "else": {
+                  "k": "block",
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "ident",
+                        "name": "v",
+                        "tok": 40
+                      }
+                    }
+                  ]
+                },
+                "tok": 31
+              }
+            ],
+            "tok": 30
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 45
+      },
+      "sig_end": 18
+    },
+    {
+      "name": "Save",
+      "type_params": [],
+      "params": [
+        {
+          "name": "c",
+          "type": {
+            "k": "name",
+            "name": "store.Conn"
+          },
+          "mutable": false
+        },
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        },
+        {
+          "name": "v",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "bool"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "err"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "store",
+                    "tok": 63
+                  },
+                  "field": "Put",
+                  "tok": 65
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "c",
+                    "tok": 67
+                  },
+                  {
+                    "k": "ident",
+                    "name": "k",
+                    "tok": 69
+                  },
+                  {
+                    "k": "ident",
+                    "name": "v",
+                    "tok": 71
+                  }
+                ],
+                "tok": 66
+              }
+            ],
+            "tok": 61
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "ident",
+                  "name": "err",
+                  "tok": 75
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 77
+                },
+                "tok": 76
+              }
+            ],
+            "tok": 74
+          }
+        ]
+      },
+      "tok": 46,
+      "bodiless": false,
+      "span": {
+        "start": 45,
+        "end": 81
+      },
+      "sig_end": 60
+    }
+  ],
+  "consts": []
+}

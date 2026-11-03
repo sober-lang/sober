@@ -1,0 +1,15 @@
+package main
+
+import "testdata/errpay/a"
+import "testdata/errpay/b"
+
+func code(e error) int {
+    return switch e {
+    case a.E{p}: p.x
+    case b.BE{n}: 100 + n
+    }
+}
+
+func main() {
+    println(code(a.Fail(3)), code(b.G(4)))
+}

@@ -1,0 +1,27 @@
+{
+  "package": "p",
+  "imports": [],
+  "types": [],
+  "funcs": [],
+  "consts": [
+    {
+      "name": "A",
+      "expr": {
+        "k": "int",
+        "value": 1,
+        "tok": 12
+      },
+      "tok": 10,
+      "span": {
+        "start": 9,
+        "end": 14
+      }
+    }
+  ],
+  "replaces": [
+    {
+      "replaces": "x",
+      "tok": 0
+    }
+  ]
+}

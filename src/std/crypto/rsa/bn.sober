@@ -22,6 +22,14 @@ func cpumulx() int
 @intrinsic("montmul")
 func montmul(d int, a int, b int, m int, m0i int, n int) int
 
+// montsqr(d, a, m, m0i, n) = montSqr の 1 回まるごと（番地で — 書くのは d の n + 1 語だけ）。倒れ先 = montMulS(a, a)
+@intrinsic("montsqr")
+func montsqr(d int, a int, m int, m0i int, n int) int
+
+// mmsel(d, t, idx, n, stride, cnt) = sel の 1 回まるごと（番地 d へ n 語 — 表 k は番地 t + 8 × stride × k）。倒れ先 = Sober の selS
+@intrinsic("mmsel")
+func mmsel(d int, t int, idx int, n int, stride int, cnt int) int
+
 @intrinsic("addrn")
 func addrn(b []int) int
 
@@ -166,6 +174,15 @@ func montMul(w mut []int, wa int, d int, a int, b int, mt mont) {
     montMulS(mut w, d, a, b, mt)
 }
 
+// w[d..] = w[a..]² × R^-1 mod m（montMul の 2 乗 — 塊は積の対称で積を減らす形。d と a は重ならない・a < m の前提）
+func montSqr(w mut []int, wa int, d int, a int, mt mont) {
+    if cpumulx() == 1 {
+        _ = montsqr(wa + 8 * d, wa + 8 * a, addrn(mt.m), mt.m0i, len(mt.m))
+        return
+    }
+    montMulS(mut w, d, a, a, mt)
+}
+
 // montMul の Sober の形（塊の無い出力の道・塊の照合の相手）
 func montMulS(w mut []int, d int, a int, b int, mt mont) {
     m := mt.m
@@ -299,45 +316,63 @@ func expMont(xm []int, e []int, nb int, mt mont) []int {
     for i <- iter.Range(1, 16) {
         montMul(mut w, wa, (6 + i) * l, (5 + i) * l, 2 * l, mt)
     }
+    // 溜めと作業の区画は窓ごとに入れ替える（番地は公開の値 — 写しを省く）
+    mut acc := 3 * l
+    mut tmp := 4 * l
     for j <- iter.Range(0, l) {
-        w[3 * l + j] = w[6 * l + j]
+        w[acc + j] = w[6 * l + j]
     }
     nw := (nb + 3) / 4
     for k <- iter.Range(0, nw) {
         top := 4 * (nw - 1 - k)
-        // 4 回の 2 乗（溜め → t → 溜めの行き来）
-        montMul(mut w, wa, 4 * l, 3 * l, 3 * l, mt)
-        montMul(mut w, wa, 3 * l, 4 * l, 4 * l, mt)
-        montMul(mut w, wa, 4 * l, 3 * l, 3 * l, mt)
-        montMul(mut w, wa, 3 * l, 4 * l, 4 * l, mt)
+        // 4 回の 2 乗（溜め → 作業 → 溜めの行き来）
+        montSqr(mut w, wa, tmp, acc, mt)
+        montSqr(mut w, wa, acc, tmp, mt)
+        montSqr(mut w, wa, tmp, acc, mt)
+        montSqr(mut w, wa, acc, tmp, mt)
         mut idx := 0
         for q <- iter.Range(0, 4) {
             pos := top + 3 - q
             bit := if pos < nb && pos / 64 < len(e) { (e[pos / 64] >> (pos % 64)) & 1 } else { 0 }
             idx = (idx << 1) | bit
         }
-        for j <- iter.Range(0, n) {
-            w[5 * l + j] = 0
-        }
-        for t <- iter.Range(0, 16) {
-            hit := ((idx ^ t) - 1) >> 63
-            base := (6 + t) * l
-            for j <- iter.Range(0, n) {
-                w[5 * l + j] = w[5 * l + j] | (w[base + j] & hit)
-            }
-        }
-        montMul(mut w, wa, 4 * l, 3 * l, 5 * l, mt)
-        for j <- iter.Range(0, n) {
-            w[3 * l + j] = w[4 * l + j]
-        }
+        sel(mut w, wa, 5 * l, 6 * l, idx, n, l, 16)
+        montMul(mut w, wa, tmp, acc, 5 * l, mt)
+        t := acc
+        acc = tmp
+        tmp = t
     }
     // 普通の形へ: 溜め × 1 × R^-1
-    montMul(mut w, wa, 4 * l, 3 * l, l, mt)
+    montMul(mut w, wa, tmp, acc, l, mt)
     mut out := mut []int{}
     for i <- iter.Range(0, l) {
-        out = append(out, w[4 * l + i])
+        out = append(out, w[tmp + i])
     }
     return freeze(out)
+}
+
+// w[d..d+n) = 表 idx（表 k は w[t + stride × k ..] — cnt 本）の先頭 n 語（w[d+n] は触らない）。表を全部・同じ順で読み、一致の mask で選ぶ
+// （idx は秘密の窓の値 — 添字にも分岐にも使わない）。区画 d は表と重ならない
+func sel(w mut []int, wa int, d int, t int, idx int, n int, stride int, cnt int) {
+    if cpumulx() == 1 {
+        _ = mmsel(wa + 8 * d, wa + 8 * t, idx, n, stride, cnt)
+        return
+    }
+    selS(mut w, d, t, idx, n, stride, cnt)
+}
+
+// sel の Sober の形（塊の無い出力の道・塊の照合の相手）
+func selS(w mut []int, d int, t int, idx int, n int, stride int, cnt int) {
+    for j <- iter.Range(0, n) {
+        w[d + j] = 0
+    }
+    for k <- iter.Range(0, cnt) {
+        hit := ((idx ^ k) - 1) >> 63
+        base := t + stride * k
+        for j <- iter.Range(0, n) {
+            w[d + j] = w[d + j] | (w[base + j] & hit)
+        }
+    }
 }
 
 // xm^e（xm は Montgomery の形・e は**公開の**指数・nb = e の実ビット長）を普通の形で（n + 1 limb）。表を作らない 2 進の square-and-multiply —
@@ -416,16 +451,49 @@ func MontSelfCheck(seed int, maxN int, rounds int) int {
             }
             mt := newMont(freeze(m))
             l := n + 1
-            // 区画: 0 = a・1 = b・2 = 塊の結果・3 = Sober の結果
-            blk := zeros(4 * l)
-            mut w := leaseView(blk, 0, 4 * l)
+            // 区画: 0 = a・1 = b・2 = 塊の結果・3 = Sober の結果・4 = 塊の 2 乗・5 = Sober の 2 乗
+            blk := zeros(6 * l)
+            mut w := leaseView(blk, 0, 6 * l)
             wa := addrn(blk)
             put(mut w, 0, freeze(av), n)
             put(mut w, l, if r % 4 == 2 { freeze(av) } else { freeze(bv) }, n)
             montMul(mut w, wa, 2 * l, 0, if r % 4 == 2 { 0 } else { l }, mt)
             montMulS(mut w, 3 * l, 0, if r % 4 == 2 { 0 } else { l }, mt)
+            montSqr(mut w, wa, 4 * l, 0, mt)
+            montMulS(mut w, 5 * l, 0, 0, mt)
             for i <- iter.Range(0, l) {
-                if w[2 * l + i] != w[3 * l + i] {
+                if w[2 * l + i] != w[3 * l + i] || w[4 * l + i] != w[5 * l + i] {
+                    bad += 1
+                }
+            }
+        }
+    }
+    return bad
+}
+
+// 専用命令の表引き sel と Sober の selS の照合（検証の網の API — 利用者は使わない: examples/crypto_montmul と cryptocheck の格子が叩く）。種 seed の擬似乱数で
+// 語の数 1〜maxN の表 16 本を作り、idx 0〜15 の全部で両方の結果と表そのものを比べる。食い違いの数を返す
+@effects(!io, !block, !nondet)
+func SelSelfCheck(seed int, maxN int) int {
+    mut x := seed
+    mut bad := 0
+    for n <- iter.Range(1, maxN + 1) {
+        l := n + 1
+        // 区画: 0〜15 = 表・16 = 塊の結果・17 = Sober の結果
+        blk := zeros(18 * l)
+        mut w := leaseView(blk, 0, 18 * l)
+        wa := addrn(blk)
+        for i <- iter.Range(0, 16 * l) {
+            x = x * 6364136223846793005 + 1442695040888963407
+            w[i] = x
+        }
+        for idx <- iter.Range(0, 16) {
+            w[16 * l + n] = 7
+            w[17 * l + n] = 7
+            sel(mut w, wa, 16 * l, 0, idx, n, l, 16)
+            selS(mut w, 17 * l, 0, idx, n, l, 16)
+            for i <- iter.Range(0, l) {
+                if w[16 * l + i] != w[17 * l + i] || (i < n && w[16 * l + i] != w[idx * l + i]) {
                     bad += 1
                 }
             }

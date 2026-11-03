@@ -26,6 +26,12 @@ on:
       sober_env:
         description: "extra env for the Sober server only, space-separated (e.g. \"SOBER_WORKERS=31 SOBER_PIN=1\" — overrides local.sh's SOBER_WORKERS; empty = none)"
         default: ""
+      alt_ref:
+        description: "branch, tag or commit (full or short SHA) to build as a third server (sober-alt) alternating with Sober / Go in the same job — an A/B on the same box; empty = none"
+        default: ""
+      alt_env:
+        description: "extra env for sober-alt only, space-separated (after sober_env). Without alt_ref, sober-alt is the same binary as Sober — an env A/B on the same box (e.g. \"SOBER_NET_FIXED=0\")"
+        default: ""
       runner:
         description: "runs-on label (linux-x64-16vcpu = the org's larger runner, 8 server / 8 load cores; ubuntu-24.04 = free 2-vCPU)"
         default: "linux-x64-16vcpu"
@@ -37,6 +43,9 @@ on:
         default: "baseline pipelined"
       perf_nets:
         description: "SOBER_NET values for the perf step, space-separated (e.g. \"1 0\" = epoll then ring — the same binary, one profile each); empty = sober_net"
+        default: ""
+      rt_hist:
+        description: "forms for the rt histogram step (dlsrv built with --rt-mutant=4 — ready-ring depth / ring wait / off-CPU per pick), space-separated: churn ka async; empty = skip"
         default: ""
 
 permissions:
@@ -67,6 +76,25 @@ jobs:
         run: |
           (cd src/stage1 && zig build)
           scripts/stage2.sh
+
+      - name: Build the alt Sober server (alt_ref)
+        if: ${{ inputs.alt_ref != '' }}
+        env:
+          ALT_REF: ${{ inputs.alt_ref }}
+        run: |
+          # ブランチ・タグ・完全な SHA は直に取れる。短縮 SHA は GitHub が取らせないので、歴史を全部取ってから rev-parse で解く
+          if git fetch --no-tags --depth=1 origin "$ALT_REF"; then
+            alt=$(git rev-parse FETCH_HEAD)
+          else
+            git fetch --no-tags --unshallow origin '+refs/heads/*:refs/remotes/origin/*'
+            alt=$(git rev-parse --verify "$ALT_REF^{commit}")
+          fi
+          git worktree add --detach "$RUNNER_TEMP/alt" "$alt"
+          (cd "$RUNNER_TEMP/alt/src/stage1" && zig build)
+          # 版ごとの main.sober で建てる（版どうしの比較 — entry の変更も込みで比べる）
+          (cd "$RUNNER_TEMP/alt/bench/httparena" && ../../bin/sober build main.sober -o "$RUNNER_TEMP/alt-srv")
+          echo "SOBER_ALT_BIN=$RUNNER_TEMP/alt-srv" >> "$GITHUB_ENV"
+          echo "alt: $(git -C "$RUNNER_TEMP/alt" rev-parse --short=9 HEAD) $(git -C "$RUNNER_TEMP/alt" log -1 --format=%s)"
 
       - name: Build gcannon (liburing 2.9)
         run: |
@@ -112,6 +140,7 @@ jobs:
         env:
           SOBER_NET: ${{ inputs.sober_net }}
           SOBER_SRV_ENV: ${{ inputs.sober_env }}
+          SOBER_ALT_ENV: ${{ inputs.alt_env }}
           # latency-1m の 1M req/s は本家の 32 コア箱の値 — 8 サーバコアでは Go が飽和（~460K・rate_ratio 0.46）するので
           # コア比で 250K に（1M × 8/32）。64vcpu（32 サーバコア = 本家と同格）では本家と同じ 1M で「保てるか」を見る
           ZRK_RATE_1M: ${{ inputs.runner == 'linux-x64-64vcpu' && '1000000' || '250000' }}
@@ -134,6 +163,8 @@ jobs:
             echo "kernel=$(uname -r)"
             echo "sober_net=$SOBER_NET"
             echo "sober_env=$SOBER_SRV_ENV"
+            echo "alt_ref=${{ inputs.alt_ref }}"
+            echo "alt_env=$SOBER_ALT_ENV"
             echo "rounds=${{ inputs.rounds }}"
             echo "duration=${{ inputs.duration }}"
             echo "conns=${{ inputs.conns }}"
@@ -144,7 +175,7 @@ jobs:
           {
             echo "## HttpArena HTTP/1.1 — Sober / Go"
             echo
-            echo "- env: $HTTPARENA_ENV · cpu: $cpu · nproc: $(nproc) · runner: $RUNNER_NAME · kernel: $(uname -r) · SOBER_NET=${SOBER_NET} · sober_env: ${SOBER_SRV_ENV:-none} · latency-1m rate: $ZRK_RATE_1M"
+            echo "- env: $HTTPARENA_ENV · cpu: $cpu · nproc: $(nproc) · runner: $RUNNER_NAME · kernel: $(uname -r) · SOBER_NET=${SOBER_NET} · sober_env: ${SOBER_SRV_ENV:-none} · alt_ref: ${{ inputs.alt_ref || 'none' }} · alt_env: ${SOBER_ALT_ENV:-none} · latency-1m rate: $ZRK_RATE_1M"
             echo
           } >> "$GITHUB_STEP_SUMMARY"
           ulimit -n
@@ -182,6 +213,24 @@ jobs:
             done
           done
 
+      - name: rt histogram (--rt-mutant=4 dlsrv — ready-ring depth / ring wait / off-CPU per pick)
+        if: ${{ inputs.rt_hist != '' }}
+        env:
+          FORMS: ${{ inputs.rt_hist }}
+        run: |
+          # async は 32000 接続 — nofile / memlock を Run のステップと同じに（prlimit はこのシェルに掛け子が継承）
+          sudo prlimit --pid $$ --memlock=unlimited --nofile=1048576:1048576 || true
+          ulimit -n 1048576 || ulimit -n 65536
+          out/stage2/sober2 build bench/httparena/tools/dlsrv.sober --emit=elf --passes --rt-mutant=4 -o "$RUNNER_TEMP/ksrv4"
+          bench/httparena/tools/rthist.sh "$RUNNER_TEMP/ksrv4" $FORMS | tee "$RUNNER_TEMP/rthist.txt"
+          {
+            echo
+            echo "## rt histogram (--rt-mutant=4 — depth / ring wait / off-CPU at the pick point)"
+            echo '```'
+            cat "$RUNNER_TEMP/rthist.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -192,6 +241,7 @@ jobs:
             ${{ runner.temp }}/httparena.tsv.lat
             ${{ runner.temp }}/httparena.tsv.thr
             ${{ runner.temp }}/httparena-env.txt
+            ${{ runner.temp }}/rthist.txt
             ${{ runner.temp }}/perf-report-net*.txt
             ${{ runner.temp }}/work/gc-*.txt
             ${{ runner.temp }}/work/*.err

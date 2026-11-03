@@ -1,0 +1,81 @@
+package main
+
+// 兄弟の腕から T? を組む（spec T-16）: 期待型の無い if / switch の式で、腕のどれかが nil で終わり
+// 他の腕から型 T が読めるなら、式の型は T?（T が T? ならそのまま）
+
+import "std/iter"
+
+type Point struct {
+    x int
+    y int
+}
+
+type Missing error {
+    key string
+}
+
+type Shape union {
+    Sq{s int}
+    Ci{r int}
+}
+
+@errors(Missing)
+func lookup(k string) (int, error?) {
+    if k == "a" {
+        return 1, nil
+    }
+    return 0, Missing{key: k}
+}
+
+func describe(v int?) string {
+    return if v != nil { "some" } else { "nil" }
+}
+
+func side(sh Shape) int? {
+    a := switch sh {
+    case Sq{s}: s
+    case Ci{r}: nil
+    }
+    return a
+}
+
+func main() {
+    for k <- iter.Range(0, 3) {
+        // if の腕
+        a := if k == 0 { 10 } else { nil }
+        println(describe(a))
+        // else if の鎖の途中の nil・前に文のある腕
+        b := if k == 0 { 1 } else if k == 1 { println("mid"); nil } else { 3 }
+        println(describe(b))
+        // switch の腕
+        c := switch k {
+        case 0: nil
+        case 1: 20
+        default: 30
+        }
+        if c != nil {
+            println(c)
+        }
+    }
+    // struct・string・error の腕
+    p := if len(bytes("ab")) == 2 { Point{x: 1, y: 2} } else { nil }
+    if p != nil {
+        println(p.x + p.y)
+    }
+    s := if len(bytes("ab")) == 3 { "three" } else { nil }
+    println(s == nil)
+    e := if len(bytes("ab")) == 2 { Missing{key: "z"} } else { nil }
+    println(e != nil)
+    // T が既に T? なら T?（T?? にしない）
+    q := if len(bytes("ab")) == 2 { a0() } else { nil }
+    println(describe(q))
+    // catch nil は (T, error?) の T から T?
+    println(describe(lookup("a") catch nil))
+    println(describe(lookup("b") catch nil))
+    println(describe(side(Sq{s: 4})))
+    println(describe(side(Ci{r: 1})))
+}
+
+func a0() int? {
+    return 5
+}

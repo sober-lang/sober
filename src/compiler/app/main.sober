@@ -45,6 +45,7 @@ const ECacheFloor = cli.Env{name: "SOBER_CACHE_FLOOR", help: "the garbage floor 
 const EWatchMs = cli.Env{name: "SOBER_WATCH_MS", help: "the polling interval of watch in milliseconds"}
 const EWatchQuiet = cli.Env{name: "SOBER_WATCH_QUIET", help: "how long watch waits for the edits to settle, in milliseconds (default 200)"}
 const EWatchBuild = cli.Env{name: "SOBER_WATCH_BUILD", help: "0 stops watch from warming the build cache"}
+const ETestFilesOut = cli.Env{name: "SOBER_TEST_FILES_OUT", help: "the file sober test writes the paths of the files its test builds read to, one per line (watch passes it to watch those files too)"}
 const EWatchTest = cli.Env{name: "SOBER_WATCH_TEST", help: "0 stops watch from running the tests of the watched packages in the background (to replay their results)"}
 const ELowerSplit = cli.Env{name: "SOBER_LOWER_SPLIT", help: "0 turns the parallel lowering off"}
 const ECheckCache = cli.Env{name: "SOBER_CHECK_CACHE", help: "0 turns the check cache off (default on)"}
@@ -80,6 +81,7 @@ const ERuleordStats = cli.Env{name: "SOBER_RULEORD_STATS", help: "1 prints the r
 const ECover = cli.Env{name: "SOBER_COVER", help: "the file a coverage-instrumented executable (build --cover) writes its marks to", dev: true}
 const EMutateOne = cli.Env{name: "SOBER_MUTATE_ONE", help: "test --mutate builds only mutant <n> without the switches and runs every test (the schemata net)", dev: true}
 const ENumOff = cli.Env{name: "SOBER_NUMOFF", help: "offset the late numbers (the numpert net)", dev: true}
+const EXdbg = cli.Env{name: "SOBER_XDBG", help: "name[,name…] dumps the register allocation of the matching functions (with SOBER_WORKERS=1 SOBER_CHECK_REPLAY=0 SOBER_BUILD_CACHE=0)", dev: true}
 const ENumNoPatch = cli.Env{name: "SOBER_NUMNOPATCH", help: "1 leaves the late numbers unpatched (the numpert net)", dev: true}
 const ESlotPoison = cli.Env{name: "SOBER_SLOT_POISON", help: "poison the slots of the generated code", dev: true}
 const EStrix = cli.Env{name: "SOBER_STRIX", help: "the mode of the string index of the lowering", dev: true}
@@ -110,7 +112,7 @@ const TrapProbe = cli.BoolFlag{name: "trap-probe", help: "the task trap probe in
 const TraceErrors = cli.BoolFlag{name: "trace-errors", help: "instrument the error exits", dev: true}
 const TraceEffects = cli.BoolFlag{name: "trace-effects", help: "instrument the function effects", dev: true}
 const Mutant = cli.IntFlag{name: "rt-mutant", help: "build with an rt mutant (self-tests of the nets)", opt: true, dev: true,
-    allow: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}}
+    allow: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37}}
 const Layout = cli.IntFlag{name: "layout", arg: "<seed>", help: "permute the code layout (v2)", min: 1, max: 999, opt: true, dev: true}
 const LayoutV1 = cli.IntFlag{name: "layout-v1", arg: "<seed>", help: "permute the code layout (v1)", min: 1, max: 999, opt: true, dev: true}
 const FitCheck = cli.BoolFlag{name: "fit-check", help: "make the line-crossing windows but do not pad", dev: true}
@@ -182,9 +184,10 @@ const TCoverOut = cli.StrFlag{name: "cover-out", arg: "<file>", help: "write eve
 const TCoverPkg = cli.StrFlag{name: "cover-pkg", arg: "<patterns>", help: "measure these packages instead of the tested one (comma-separated; p/... = p and the packages below it; std is never measured); implies --cover", opt: true}
 const TMutate = cli.BoolFlag{name: "mutate", help: "mutation testing: run the tests against every mutant of the tested package and report the mutants no test killed (<package>/testdata/mutate.ignore lists mutants to skip, as the first two columns of --mutate-out lines; cannot be combined with --cover)"}
 const TMutateOut = cli.StrFlag{name: "mutate-out", arg: "<file>", help: "write every mutant to <file> (one `file:line:col<TAB>mutation<TAB>result<TAB>killing test` line per mutant); implies --mutate", opt: true}
+const TWiring = cli.BoolFlag{name: "wiring", help: "print which double replaces which package in each package's test build, one `<package>: <replaced> <= <double>` line per double, instead of running the tests"}
 const Pkgs = cli.Positional{name: "package", help: "package directories", many: true}
 const Test = cli.Command{name: "test", summary: "run the TestXxx() functions in the packages' *_test.sober",
-    bools: []cli.BoolFlag{TVerbose, TFresh, TCover, TMutate}, strs: []cli.StrFlag{TRun, TWork, TCoverOut, TCoverPkg, TMutateOut}, pos: []cli.Positional{Pkgs}, run: cmdTest}
+    bools: []cli.BoolFlag{TVerbose, TFresh, TCover, TMutate, TWiring}, strs: []cli.StrFlag{TRun, TWork, TCoverOut, TCoverPkg, TMutateOut}, pos: []cli.Positional{Pkgs}, env: []cli.Env{ETestFilesOut}, run: cmdTest}
 
 // fuzz
 const FzPkg = cli.Positional{name: "package", help: "the package directory"}
@@ -200,7 +203,7 @@ const Fuzz = cli.Command{name: "fuzz", summary: "run the std/quick properties of
 
 // 小さいコマンド
 const File = cli.Positional{name: "file", help: "a .sober file"}
-const Watch = cli.Command{name: "watch", summary: "re-check on every change", pos: []cli.Positional{Entry}, env: []cli.Env{EWatchMs, EWatchQuiet, EWatchBuild, EWatchTest, ECheckCache},
+const Watch = cli.Command{name: "watch", summary: "re-check on every change", help: "re-check on every change and warm the build and the tests in the background. Leave it running and type sober check / build / test as usual: they return the warmed results. Read its output only when you suspect a problem", pos: []cli.Positional{Entry}, env: []cli.Env{EWatchMs, EWatchQuiet, EWatchBuild, EWatchTest, ECheckCache},
     run: cmdWatch}
 const Fmt = cli.Command{name: "fmt", summary: "print the formatted source", pos: []cli.Positional{File}, run: cmdFmt}
 const IPkg = cli.StrFlag{name: "pkg", arg: "<path>", help: "print only this package", opt: true}
@@ -250,7 +253,7 @@ const Sober = cli.App{
     env: []cli.Env{EBuildCache, ECache, ECacheMax, ECacheGens, EWatchMs, EWatchQuiet, EWatchBuild, EWatchTest, ELowerSplit, ECheckCache, ECheckReplay, EVerify, EStages,
         EBuildPar, EDesugarPar, ECheckStop, EL0, ESelfKey, ECacheStat, ECacheFsck, EDkAudit, ETyAudit, ETyOrder, ETyPadA, ETyPadB, EFinishDie,
         ELowerDie, ELowerRev, EParStats, EIrinlOrder, EIrTags, ENoRflow, ERflowMeter, ERawExpand, EChainRev, ERuleordOff, ERuleordNorenum,
-        ERuleordStats, ENumOff, ENumNoPatch, ESlotPoison, EStrix, ECover, EMutateOne},
+        ERuleordStats, ENumOff, EXdbg, ENumNoPatch, ESlotPoison, EStrix, ECover, EMutateOne},
 }
 
 func fail(msg string) int {
@@ -287,8 +290,21 @@ func desugarPar() bool {
 // lower の拒否を出して 1（健全性の規則の拒否〔diag.Frozen — lower の build が表層型の表の上で掛ける〕は analyzer.Freeze で
 // 行を引き直して analyzeAll と同じ形で全部・他は errDiag の 1 行）
 func lowerFail(p loader.Program, std map[string]string, err error?) int {
-    return if diag.IsFrozen(err) { frozenLines(p, std) } else { fail(errDiag(p, std, err)) }
+    if diag.IsFrozen(err) {
+        return frozenLines(p, std)
+    }
+    // 内部段の名前だけの拒否（Mismatch / Unsupported）: check も拒否するなら check と同じ診断を出す（冷たい道 — 文面の出どころを 1 つに）。
+    // check が受理するなら lower の拒否のまま
+    if diag.IsInternal(err) {
+        r := checkSeqR(p, std, false, []string{}, ckNoCache())
+        if r.code != 0 && len(r.msgs) > 0 {
+            _ = stderrLines(r.msgs)
+            return 1
+        }
+    }
+    return fail(errDiag(p, std, err))
 }
+
 
 // 健全性の規則の指摘の行を全部出して 1
 func frozenLines(p loader.Program, std map[string]string) int {
@@ -310,8 +326,14 @@ func loadDiag(p loader.Program, std map[string]string, err error?) string {
 // 種類の綴りは Zig 版の error 名）
 func errDiag(p loader.Program, std map[string]string, err error?) string {
     s := diag.Format(err, where(p, std, diag.At(err)))
-    // 2 つ目の位置（NonExhaustive の落ちている variant）の綴りを添える
+    // 2 つ目の位置を添える（NonExhaustive の落ちている variant の綴り・NarrowAssign は的の名前の綴りと絞った if の場所）
     n := diag.Note(err)
+    if n.file >= 0 && diag.NoteIsPlace(err) {
+        a := diag.At(err)
+        src, ok := loader.SourceFs(p, a.file, std)
+        nm := if ok { diag.Spell(src, a.tok) } else { "?" }
+        return "${s} (name: ${nm}, narrowed at ${where(p, std, n)})"
+    }
     if n.file >= 0 {
         src, ok := loader.SourceFs(p, n.file, std)
         if ok {

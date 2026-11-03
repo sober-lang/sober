@@ -44,6 +44,10 @@ const UR_DLQ = 49     // 期限つきの待ち手の鎖の頭（TC_AWNEXT — ne
 const UR_TS = 50      // enter の timeout（__kernel_timespec 2 語）
 const UR_GEA = 52     // io_uring_getevents_arg（3 語 — sigmask 0・大きさ 0・ts の番地）
 const UR_NSQ = 256
+// 登録済みの ring fd（REGISTER_RING_FDS — 5.18）: enter はファイル表の引きと参照の原子操作を省いて添字で入る。登録はスレッドごと（ring を作ったワーカーが自分で）
+const UR_EFDX = 71    // enter に渡す fd（登録できたら添字・できなければ素の fd）
+const UR_EFL = 72     // enter の flags に足す語（IORING_ENTER_REGISTERED_RING = 16・登録できなければ 0）
+const UR_RFR = 73     // io_uring_rsrc_update（2 語 — offset = −1 で自動・data = fd）
 // 頭の取り込み（D2 の例外）: net の ring は走れる task が尽きたときだけ enter するが、未提出が UR_POKE 本に届いたら
 // mn_next の頭で眠らずに提出と取り込み（GETEVENTS・min_complete 0）+ 時計の表の満了。1 回の enter で取り込む束が作業集合の深さで、束が深いと
 // 4096 接続で cycles / 要求が 256 接続の 2.5 倍の崖がある — 小刻みにすると L2 に収まる。取り込んだ task は走れる積みの前（LIFO — 熱いうちに）。
@@ -220,6 +224,11 @@ func buildUringInit(st mut St) {
     store(mut st, rp, 2, sqes)
     store(mut st, rp, UR_EFD, efd)
     store(mut st, rp, UR_ONE, one)
+    store(mut st, rp, UR_RFR, iconst(mut st, 4294967295))
+    store(mut st, rp, UR_RFR + 1, fd)
+    rfd := cmp(mut st, CEq, urSys(mut st, 427, []int{fd, iconst(mut st, 20), urAdd(mut st, rec, UR_RFR * 8), one}), one)
+    store(mut st, rp, UR_EFDX, bin(mut st, BAdd, fd, bin(mut st, BMul, rfd, bin(mut st, BSub, urLd32(mut st, urAdd(mut st, rec, UR_RFR * 8), 0), fd))))
+    store(mut st, rp, UR_EFL, bin(mut st, BShl, rfd, iconst(mut st, 4)))
     store(mut st, wk, WK_RING, rec)
     if netOn(mut st) {
         // net の記録が先にあれば（spawn の前に net で待った — netpoll.sober）ring の fd も epoll へ
@@ -232,6 +241,7 @@ func buildUringInit(st mut St) {
             // net の ring: 受けの PBUF_RING（ワーカーごと）と接続の記録の表（ワーカー 0 — 他のワーカーの起動より前）— netring.sober
             bPb := branchIf(mut st, cmp(mut st, CNe, load(mut st, itop(mut st, rec), UR_NET), zero))
             pbInit(mut st, rec)
+            fxInit(mut st, rec)
             bT0 := branchIf(mut st, w0)
             store(mut st, mn, MN_NTAB, sysMmap(mut st, iconst(mut st, NT_CAP * NR_W * 8)))
             br(mut st, bT0, -1)
@@ -254,7 +264,7 @@ func buildUringInit(st mut St) {
     }
     urSt32(mut st, bin(mut st, BAdd, bin(mut st, BAdd, ring, urLd32(mut st, sqo, 24)), bin(mut st, BShl, idx, iconst(mut st, 2))), idx)
     urSt32(mut st, tailA, urAdd(mut st, t, 1))
-    en := urSys(mut st, 426, []int{fd, one, one, one, zero, zero})
+    en := urSys(mut st, 426, []int{load(mut st, rp, UR_EFDX), one, one, bin(mut st, BOr, one, load(mut st, rp, UR_EFL)), zero, zero})
     headA := bin(mut st, BAdd, ring, urLd32(mut st, cqo, 0))
     h := urLd32(mut st, headA, 0)
     cmask := urLd32(mut st, bin(mut st, BAdd, ring, urLd32(mut st, cqo, 8)), 0)
@@ -291,6 +301,11 @@ func buildUringInit(st mut St) {
 // eventfd の読みだけが空きを見ずに積むと、期限の走査の取り消しで未提出がちょうど SQ の大きさに届いた直後に 1 本越え、一番古い未提出の SQE〔SEND〕を
 // 上書きして失う — その完了を待つ task は誰にも起こされず、期限の scope の中の Serve が終わらない）
 func urSqe(st mut St, rec int, w0 int, addr int, n int, ud int, off int) {
+    urSqeW5(mut st, rec, w0, addr, n, ud, off, -1)
+}
+
+// urSqe に SQE の 6 語目（buf_index / personality / file_index）を足した形（w5 = -1 は 0）
+func urSqeW5(st mut St, rec int, w0 int, addr int, n int, ud int, off int, w5 int) {
     urRoom(mut st, rec)
     rp := itop(mut st, rec)
     ring := load(mut st, rp, 1)
@@ -305,7 +320,7 @@ func urSqe(st mut St, rec int, w0 int, addr int, n int, ud int, off int) {
     store(mut st, sqe, 2, addr)
     store(mut st, sqe, 3, n)
     store(mut st, sqe, 4, ud)
-    store(mut st, sqe, 5, zero)
+    store(mut st, sqe, 5, if w5 == -1 { zero } else { w5 })
     store(mut st, sqe, 6, zero)
     store(mut st, sqe, 7, zero)
     urSt32(mut st, bin(mut st, BAdd, bin(mut st, BAdd, ring, urLd32(mut st, sqo, 24)), bin(mut st, BShl, idx, iconst(mut st, 2))), idx)
@@ -328,7 +343,7 @@ func urRoom(st mut St, rec int) {
     wk := globaladdr(mut st, st.wkG)
     n := load(mut st, wk, WK_IOSUB)
     bFull := branchIf(mut st, cmp(mut st, CGe, n, urLd32(mut st, urAdd(mut st, rec, UR_PARAMS), 0)))
-    r := urSys(mut st, 426, []int{load(mut st, itop(mut st, rec), 0), n, iconst(mut st, 0), iconst(mut st, 0), iconst(mut st, 0), iconst(mut st, 0)})
+    r := urSys(mut st, 426, []int{load(mut st, itop(mut st, rec), UR_EFDX), n, iconst(mut st, 0), load(mut st, itop(mut st, rec), UR_EFL), iconst(mut st, 0), iconst(mut st, 0)})
     kInc(mut st, 11)
     store(mut st, wk, WK_IOSUB, bin(mut st, BSub, n, imax(mut st, r, iconst(mut st, 0))))
     br(mut st, bFull, -1)
@@ -534,7 +549,7 @@ func buildUpoll(st mut St) {
         br(mut st, bCk, -1)
         setCur(mut st, bCk)
     }
-    r := urSys(mut st, 426, []int{load(mut st, rp, 0), n, mc, fl, ga, gs})
+    r := urSys(mut st, 426, []int{load(mut st, rp, UR_EFDX), n, mc, bin(mut st, BOr, fl, load(mut st, rp, UR_EFL)), ga, gs})
     if net {
         frRecP(mut st, FK_ENTER, n, mc, r)
     }
@@ -616,6 +631,14 @@ func buildUpoll(st mut St) {
             kInc(mut st, 8)
             urReapAcc(mut st, ud, res, bin(mut st, BAnd, bin(mut st, BSar, load(mut st, cqe, 1), iconst(mut st, 32)), iconst(mut st, 4294967295)), hn)
             setCur(mut st, bNa)
+            // 固定のファイル表（TAG_FUP — 登録の失敗だけ・TAG_FMSG — 持ち主でない閉じからの依頼）— netring.sober
+            bFx := newBlock(mut st)
+            bNf := newBlock(mut st)
+            condbr(mut st, bin(mut st, BOr, cmp(mut st, CEq, hi, iconst(mut st, 4)), cmp(mut st, CEq, hi, iconst(mut st, 5))), bFx, -1, bNf, -1)
+            setCur(mut st, bFx)
+            urReapFx(mut st, rec, ud, hi)
+            br(mut st, hn, -1)
+            setCur(mut st, bNf)
         }
         condbr(mut st, cmp(mut st, CNe, bin(mut st, BAnd, ud, iconst(mut st, UDT_POLL)), zero), bPl, -1, bNp, -1)
         setCur(mut st, bPl)

@@ -19,15 +19,28 @@ fail=0
 sum=
 # 構成 = ワーカー数 × 符号器の作業域（SRV_WORK=1 = ServeConn の work: — ワーカー局所の lease・report-720）+ echo の大きい本文（SRV_MAXBODY = 128 KiB の
 # maxBody: で check.ts --echo-big — HttpArena の 8gbit の validate の 100 KB と上限ちょうどの 128 KiB を Content-Length と chunked で・超えた 1 本〔+1 B・1 MB〕は 413。
-# 上限は bench/httparena の entry と同じ値。W8 / W1 — report-848 / 849）
-for cfg in "SOBER_WORKERS=8" "SOBER_WORKERS=1" "SOBER_WORKERS=8 SRV_WORK=1" "SOBER_WORKERS=1 SRV_WORK=1" "SOBER_WORKERS=8 SRV_MAXBODY=131072" "SOBER_WORKERS=1 SRV_MAXBODY=131072"; do
+# 上限は bench/httparena の entry と同じ値。W8 / W1 — report-848 / 849）。W8 の受けは増分消費の環（カーネル 6.12 以上）が既定 — SOBER_PBUF_INC=0 の 2 構成で固定スロットの環の道も見る。
+# TLS の構成（SRV_TLS=1 — srv が tls.Serve + ServeWith の put: で立ち、check.ts --tls が生の送受の群〔パイプライン・stream を挟むパイプライン・誤り・echo〕を TLS の上で掛ける）
+for cfg in "SOBER_WORKERS=8" "SOBER_WORKERS=1" "SOBER_WORKERS=8 SRV_WORK=1" "SOBER_WORKERS=1 SRV_WORK=1" "SOBER_WORKERS=8 SRV_MAXBODY=131072" "SOBER_WORKERS=1 SRV_MAXBODY=131072" "SOBER_WORKERS=8 SOBER_PBUF_INC=0" "SOBER_WORKERS=8 SRV_MAXBODY=131072 SOBER_PBUF_INC=0" "SOBER_WORKERS=8 SRV_MAXBODY=131072 SRV_TLS=1" "SOBER_WORKERS=1 SRV_TLS=1"; do
     rm -rf "$W/static" && mkdir -p "$W/static/www"
     rm -f "$W/flight"
-    env $cfg SOBER_FLIGHT="$W/flight" DATASET_PATH=testdata/httpcheck/dataset.json STATIC_ROOT="$W/static/www" "$W/srv" 0 > "$W/srv.out" 2> "$W/srv.err" &
+    tlsenv=
+    tlsarg=
+    case "$cfg" in *SRV_TLS=1*)
+        tlsenv="SRV_TLS_PORT=$(node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')"
+        tlsarg=--tls ;;
+    esac
+    env $cfg $tlsenv SOBER_FLIGHT="$W/flight" DATASET_PATH=testdata/httpcheck/dataset.json STATIC_ROOT="$W/static/www" "$W/srv" 0 > "$W/srv.out" 2> "$W/srv.err" &
     SP=$!
     port=
     for i in $(seq 100); do
-        port=$(sed -n 's/^ready \([0-9]*\)$/\1/p' "$W/srv.out")
+        if [ -n "$tlsenv" ]; then
+            # tls.Serve は "tls-ready" の後に待ち受けを張る — 繋がるまで待つ
+            p=$(sed -n 's/^tls-ready \([0-9]*\)$/\1/p' "$W/srv.out")
+            [ -n "$p" ] && (exec 3<>/dev/tcp/127.0.0.1/$p) 2>/dev/null && port=$p
+        else
+            port=$(sed -n 's/^ready \([0-9]*\)$/\1/p' "$W/srv.out")
+        fi
         [ -n "$port" ] && break
         sleep 0.05
     done
@@ -35,8 +48,8 @@ for cfg in "SOBER_WORKERS=8" "SOBER_WORKERS=1" "SOBER_WORKERS=8 SRV_WORK=1" "SOB
         echo "httpcheck: FAIL $cfg — server did not start ($(head -c 200 "$W/srv.err"))"; fail=1
     else
         big=
-        case "$cfg" in *SRV_MAXBODY*) big=--echo-big ;; esac
-        out=$(timeout 120 node --experimental-strip-types --experimental-eventsource --no-warnings testdata/httpcheck/check.ts "$port" --frag-random 100 $big --static "$W/static" 2>&1) || { echo "httpcheck: FAIL $cfg (port $port)"; echo "$out" | tail -20; echo "--- srv stderr（末尾）"; tail -c 2000 "$W/srv.err"; ss -Hltnp "sport = :$port" 2>/dev/null | head -5; FL_KEEP=1; fail=1; }
+        case "$cfg" in *SRV_MAXBODY*) big="--echo-big --rss-pid $SP" ;; esac
+        out=$(timeout 120 node --experimental-strip-types --experimental-eventsource --no-warnings testdata/httpcheck/check.ts "$port" --frag-random 100 $big $tlsarg --static "$W/static" 2>&1) || { echo "httpcheck: FAIL $cfg (port $port)"; echo "$out" | tail -20; echo "--- srv stderr（末尾）"; tail -c 2000 "$W/srv.err"; ss -Hltnp "sport = :$port" 2>/dev/null | head -5; FL_KEEP=1; fail=1; }
         sum="$sum [$cfg: $(echo "$out" | sed -n 's/^check: \([0-9]* passed, [0-9]* failed\).*/\1/p')]"
     fi
     kill $SP 2>/dev/null

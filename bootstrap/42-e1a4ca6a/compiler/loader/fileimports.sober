@@ -1,0 +1,85 @@
+package loader
+
+// import はファイルごと（language.md 20 節 — Go と同じ）: ファイルに書いた修飾名 `ref.N`（式の選択子・型名・
+// 型パターン・composite の型名・@errors のラベル名）の参照名 ref は、そのファイル自身の import 宣言に要る（同じ package の別ファイルの
+// import は見えない — そのファイルを読むだけで参照名が分かる）。解決（desugar.ImportOf・fileImportOf）もファイル単位で、ここは
+// 拒否の位置と文言を 1 か所で出すための検査。同じ package で同じ参照名に別の path（RefCollide）と、局所名と別ファイルの import 名の
+// 衝突（LocalImport）は package 単位の拒否のまま（Go より狭い側）
+
+import "ast"
+import "diag"
+import "std/iter"
+
+// 最初の違反（ファイル・字句 — 無ければ file = -1）。ファイルごとに「package の参照名のうちこのファイルが import しないもの」を先に引き、
+// 修飾名の参照名はその短い列とデータプールのまま照合する（節ごとに名前の string を作って import 表を引くと自己 build が重くなる）
+func notImportedHit(cx Cx) NameHit {
+    for f <- iter.Range(0, len(cx.trees)) {
+        tok := notImportedIn(cx, f)
+        if tok >= 0 {
+            return NameHit{f, tok, diag.NotImported{at: diag.Pos{f, tok}}}
+        }
+    }
+    return noHit()
+}
+
+// ファイル f の最初の違反の字句（無ければ -1 — finpar.sober の子も同じ関数を呼ぶ）
+func notImportedIn(cx Cx, f int) int {
+    t := cx.trees[f]
+    mut miss := mut []string{}
+    for e <- iter.Range(0, len(cx.imp_pkg)) {
+        if cx.imp_pkg[e] == cx.file_pkg[f] && missing(cx, f, cx.imp_ref[e]) {
+            miss = append(miss, cx.imp_ref[e])
+        }
+    }
+    if len(miss) > 0 {
+        for i <- iter.Range(0, len(t.nodes)) {
+            x := t.nodes[i]
+            bad := if x.kind == ast.ESelector && x.a >= 0 && t.nodes[x.a].kind == ast.EIdent {
+                missIn(t, t.nodes[x.a].a, miss, false)
+            } else if (x.kind == ast.TName || x.kind == ast.TGeneric || x.kind == ast.EComposite) && x.a >= 0 {
+                missIn(t, x.a, miss, true)
+            } else if x.kind == ast.KPType && x.b >= 0 {
+                missIn(t, x.b, miss, true)
+            } else {
+                false
+            }
+            if bad {
+                return x.tok
+            }
+            if x.kind == ast.KFuncDecl && x.f >= 0 && ast.ListLen(t, x.f) >= 7 {
+                raw := ast.ListAt(t, x.f, 5)
+                if raw >= 0 {
+                    for k <- iter.Range(0, ast.ListLen(t, raw)) {
+                        if missIn(t, ast.ListAt(t, raw, k), miss, true) {
+                            return ast.ListAt(t, x.f, 6)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return 0 - 1
+}
+
+// 参照名 ref が package の import の参照名なのに、ファイル f 自身は import していないか
+func missing(cx Cx, f int, ref string) bool {
+    return importOf(cx, cx.file_pkg[f], ref) >= 0 && fileImportOf(cx, f, ref) < 0
+}
+
+// データプールの名前 s（dotted = 修飾名 `ref.N` — 最初の '.' の前が参照名。でなければ名前そのもの）の参照名が miss のどれかか
+func missIn(t ast.Tree, s int, miss []string, dotted bool) bool {
+    for k <- iter.Range(0, len(miss)) {
+        b := bytes(miss[k])
+        n := len(b)
+        mut same := if dotted { t.data[s] > n && t.data[s + 1 + n] == 46 } else { t.data[s] == n }
+        if same {
+            for i <- iter.Range(0, n) {
+                same = same && t.data[s + 1 + i] == int(b[i])
+            }
+            if same {
+                return true
+            }
+        }
+    }
+    return false
+}

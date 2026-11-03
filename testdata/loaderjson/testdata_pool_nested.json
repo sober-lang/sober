@@ -137,7 +137,6 @@
           "has_try": false,
           "callees": [
             "append",
-            "freeze",
             "iter.Range"
           ]
         },

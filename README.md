@@ -191,7 +191,7 @@ Standard library (29 packages — signatures and descriptions in the [std refere
 - Cryptography and hashing: crypto (AES-GCM, ChaCha20-Poly1305, SHA-256, HMAC, HKDF, X25519, RSA, PEM, constant-time operations), hash (crc32, sha256)
 - Encoding and conversion: json, base64, hex, binary, convert, strings, utf8, compress (the compression side of flate / gzip)
 - Data and computation: iter, sort, math, rand, table, builder, pool, layout
-- Parallelism and testing: task (a deterministic parallel Map, among others), testing, quick (property-based testing)
+- Parallelism and testing: task (a deterministic parallel Map, among others), testing (cell — state that test doubles keep), quick (property-based testing)
 
 Tools (subcommands of the single `sober` binary):
 

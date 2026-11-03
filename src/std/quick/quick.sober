@@ -27,6 +27,10 @@ import "std/iter"
 import "std/convert"
 import "std/hex"
 
+// std/testing/cell の置き場を空にする（試行・再生の頭 — 前の試行の書きが次の試行の入力にならない）
+@intrinsic("cell_reset")
+func cellReset() int
+
 // 選択の源（引き出しの状態 — 利用者は New / Seed で作り、mut で Check と引き出しに渡す）
 type Src struct {
     r rand.Rand
@@ -212,6 +216,7 @@ func falsified(q mut Src, prop func() bool, bad []int, head string) {
     say(head)
     replayList(mut q, bad)
     q.show = true
+    _ = cellReset()
     held := prop()
     q.show = false
     // `_test.sober` ではプロパティの値の式が power assert に包まれていて、偽ならこの再生の中で部分式を印字して落ちる（ここへは来ない）
@@ -253,6 +258,7 @@ func runTrials(q mut Src, prop func() bool, r role, seed int, n int, all bool) (
 
 // prop を 1 回呼ぶ（hang > 0 なら期限 hang ms の SIGALRM を張って、戻ったら解く）
 func run(prop func() bool, hang int) bool {
+    _ = cellReset()
     if hang > 0 {
         os.Alarm(hang)
     }

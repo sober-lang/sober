@@ -527,6 +527,9 @@ func userFiles(p loader.Program) []string {
             out = append(out, p.file_path[f])
         }
     }
+    for i <- iter.Range(0, len(p.contract_files)) {
+        out = append(out, p.contract_files[i])
+    }
     return freeze(out)
 }
 
@@ -870,7 +873,7 @@ func checkFront(entry string, tst bool, std map[string]string) int {
 // 答えに効かない環境変数（置き場・計測・watch の口）— 鍵に入れない
 const replayEnvSkip = []string{"SOBER_CACHE", "SOBER_CACHE_MAX", "SOBER_CACHE_GENS", "SOBER_CACHE_FLOOR", "SOBER_CACHE_STAT", "SOBER_CACHE_VERIFY",
     "SOBER_CACHE_FSCK", "SOBER_CHECK_CACHE", "SOBER_CHECK_REPLAY", "SOBER_BUILD_CACHE", "SOBER_SELF_KEY", "SOBER_WATCH_MS",
-    "SOBER_WATCH_QUIET", "SOBER_WATCH_BUILD", "SOBER_WATCH_TEST", "SOBER_COVER"}
+    "SOBER_WATCH_QUIET", "SOBER_WATCH_BUILD", "SOBER_WATCH_TEST", "SOBER_COVER", "SOBER_TEST_FILES_OUT"}
 
 func replayKey(entry string, tst bool) string {
     return replayKeyOf("check-replay 1", entry, tst)

@@ -1,0 +1,6 @@
+@doubles("testdata/doubles/neg/k05/r/fake")
+package t
+
+func TestY() {
+    assert(1 == 1)
+}

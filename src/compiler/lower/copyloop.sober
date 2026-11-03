@@ -213,14 +213,16 @@ func copyLoopStmt(st mut St, s desugar.NodeRef, m CopyLoop) (bool, error?) {
     setCur(mut st, nonempty)
     srcLen := load(mut st, sx.v, 1)
     s0 := bin(mut st, BAdd, bv, j0)
-    mut okc := bin(mut st, BAnd, cmp(mut st, CGe, s0, zero), cmp(mut st, CLe, bin(mut st, BAdd, bv, ev.v), srcLen))
-    okc = bin(mut st, BAnd, okc, cmp(mut st, CGe, j0, zero))
+    clGuard(mut st, cmp(mut st, CGe, s0, zero), slow)
+    clGuard(mut st, cmp(mut st, CLe, bin(mut st, BAdd, bv, ev.v), srcLen), slow)
+    clGuard(mut st, cmp(mut st, CGe, j0, zero), slow)
     if m.kind == 2 {
         dlen := load(mut st, haddr, 1)
         d0 := bin(mut st, BAdd, av, j0)
-        okc = bin(mut st, BAnd, okc, bin(mut st, BAnd, cmp(mut st, CGe, d0, zero), cmp(mut st, CLe, bin(mut st, BAdd, av, ev.v), dlen)))
+        clGuard(mut st, cmp(mut st, CGe, d0, zero), slow)
+        clGuard(mut st, cmp(mut st, CLe, bin(mut st, BAdd, av, ev.v), dlen), slow)
     }
-    condbr(mut st, cmp(mut st, CNe, okc, zero), fast, -1, slow, -1)
+    br(mut st, fast, -1)
     // 一括
     setCur(mut st, fast)
     cellw := tWords(mut st, elem)
@@ -384,8 +386,9 @@ func forAppendStmt(st mut St, e desugar.NodeRef) (bool, error?) {
     condbr(mut st, cmp(mut st, CLe, n, zero), done, -1, go_b, -1)
     setCur(mut st, go_b)
     fast := newBlock(mut st)
-    okc := bin(mut st, BAnd, cmp(mut st, CGe, lo.v, zero), cmp(mut st, CLe, hi.v, load(mut st, sx.v, 1)))
-    condbr(mut st, cmp(mut st, CNe, okc, zero), fast, -1, slow, -1)
+    clGuard(mut st, cmp(mut st, CGe, lo.v, zero), slow)
+    clGuard(mut st, cmp(mut st, CLe, hi.v, load(mut st, sx.v, 1)), slow)
+    br(mut st, fast, -1)
     setCur(mut st, fast)
     appendBulk(mut st, dt, haddr, sx.v, lo.v, n)
     br(mut st, done, -1)
@@ -506,9 +509,11 @@ func forWriteStmt(st mut St, e desugar.NodeRef) (bool, error?) {
     condbr(mut st, cmp(mut st, CLe, n, zero), done, -1, go_b, -1)
     setCur(mut st, go_b)
     n0 := load(mut st, np, 0)
-    mut okc := bin(mut st, BAnd, cmp(mut st, CGe, lo.v, zero), cmp(mut st, CLe, hi.v, load(mut st, sx.v, 1)))
-    okc = bin(mut st, BAnd, okc, bin(mut st, BAnd, cmp(mut st, CGe, n0, zero), cmp(mut st, CLe, bin(mut st, BAdd, n0, n), load(mut st, bufp, 1))))
-    condbr(mut st, cmp(mut st, CNe, okc, zero), fast, -1, slow, -1)
+    clGuard(mut st, cmp(mut st, CGe, lo.v, zero), slow)
+    clGuard(mut st, cmp(mut st, CLe, hi.v, load(mut st, sx.v, 1)), slow)
+    clGuard(mut st, cmp(mut st, CGe, n0, zero), slow)
+    clGuard(mut st, cmp(mut st, CLe, bin(mut st, BAdd, n0, n), load(mut st, bufp, 1)), slow)
+    br(mut st, fast, -1)
     setCur(mut st, fast)
     call(mut st, st.rtCopy8, list3(mut st, gepByte(mut st, hdrPtr(mut st, bufp), n0), gepByte(mut st, hdrPtr(mut st, sx.v), lo.v), n))
     store(mut st, np, 0, bin(mut st, BAdd, n0, n))
@@ -898,4 +903,12 @@ func drainLoopStmt(st mut St, s desugar.NodeRef, m DrainLoop) (bool, error?) {
     br(mut st, head, -1)
     setCur(mut st, done)
     return true, nil
+}
+
+// 範囲の検査の 1 本: 成り立たなければ元のループ（slow）へ・成り立てば次の検査へ（比較ごとに分岐 — 真偽の and の鎖を作らない。
+// 鎖は比較ごとに setcc + movzx + and になり、融合した cmp + jcc の倍の命令を払う）
+func clGuard(st mut St, c int, slow BlkRef) {
+    nx := newBlock(mut st)
+    condbr(mut st, c, nx, -1, slow, -1)
+    setCur(mut st, nx)
 }

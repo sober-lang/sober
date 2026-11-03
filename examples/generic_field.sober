@@ -1,0 +1,35 @@
+package main
+
+import "std/builder"
+
+// 総称の型引数の宣言を辿る欄読み: 総称 struct の欄・総称の関数の結果・明示の型引数・総称 struct の辞書 const のラムダ
+
+type Tk struct {
+    tag int
+}
+
+type Box[T] struct {
+    one T
+    all []T
+}
+
+type Ord[T] struct {
+    less func(T, T) bool
+}
+
+const ByTag = Ord[Tk]{less: (a, b) => a.tag < b.tag}
+
+func items[T](b Box[T]) []T {
+    return b.all
+}
+
+func main() {
+    b := Box[Tk]{one: Tk{5}, all: []Tk{Tk{6}, Tk{7}}}
+    println(b.one.tag + b.all[1].tag)
+    println(items(b)[0].tag + items[Tk](b)[1].tag)
+    mut bl := builder.Builder[Tk]{}
+    builder.Push(mut bl, Tk{8})
+    snap := builder.Build(mut bl)
+    println(snap[0].tag)
+    println(ByTag.less(Tk{1}, Tk{2}))
+}

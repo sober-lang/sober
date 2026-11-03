@@ -1,0 +1,138 @@
+{
+  "package": "logger",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "Log",
+      "type_params": [],
+      "params": [
+        {
+          "name": "msg",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "xs"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "int"
+                },
+                "elems": [],
+                "mut": false,
+                "tok": 18
+              }
+            ],
+            "tok": 16
+          },
+          {
+            "k": "bind",
+            "names": [
+              "n"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "len",
+                  "tok": 26
+                },
+                "args": [
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "bytes",
+                      "tok": 28
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "msg",
+                        "tok": 30
+                      }
+                    ],
+                    "tok": 29
+                  }
+                ],
+                "tok": 27
+              }
+            ],
+            "tok": 24
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "index",
+                  "base": {
+                    "k": "ident",
+                    "name": "xs",
+                    "tok": 35
+                  },
+                  "idx": {
+                    "k": "ident",
+                    "name": "n",
+                    "tok": 37
+                  },
+                  "tok": 36
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 0,
+                  "tok": 40
+                },
+                "tok": 39
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [],
+                    "tok": 42
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 34
+            }
+          }
+        ]
+      },
+      "tok": 10,
+      "bodiless": false,
+      "span": {
+        "start": 9,
+        "end": 48
+      },
+      "sig_end": 15
+    }
+  ],
+  "consts": [],
+  "replaces": [
+    {
+      "replaces": "testdata/doubles/logger",
+      "tok": 0
+    }
+  ]
+}

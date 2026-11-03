@@ -58,15 +58,16 @@ R-2. `for … yield e |> f` の `|>` は for 式全体に掛かる（yield の�
 例: [`examples/lexer_iter.sober`](../../examples/lexer_iter.sober)・[`examples/tour_03_collections.sober`](../../examples/tour_03_collections.sober)
 決定: [language.md 7 節](../language.md)
 
-R-3. `yield` は字句的に囲む生成器のもの。生成器のブロック形の中の文形 for から `yield` すると外の生成器へ押し出す（入れ子の走査）。囲む生成器が無い `yield` は拒否する。
-例: [`examples/for_stmt.sober`](../../examples/for_stmt.sober)
+R-3. `yield` は字句的に囲む生成器のもの。生成器のブロック形の中の文形 for から `yield` すると外の生成器へ押し出す（入れ子の走査）。囲む生成器が無い `yield` は拒否する。yield 形の本体の `return` は囲む関数から抜ける（生成器は値として逃げられず、本体は常に消費側の展開の中で走る — 生成元と消費側の defer を内側から走らせる）。
+例: [`examples/for_stmt.sober`](../../examples/for_stmt.sober)・[`examples/yield_return.sober`](../../examples/yield_return.sober)
 拒否: [`examples/for_neg_yield_outside.sober`](../../examples/for_neg_yield_outside.sober)
-決定: [language.md 7 節](../language.md)
+決定: [language.md 7 節・8 節](../language.md)
 
 ## 6.2 生成元
 
-R-4. slice は `x <- xs` で要素を先頭から回す。map は `k <- m` でキーを初回挿入の順に回す（`keys(m)` の写しの上を回るので、回している間の変更は回る列に影響しない — 2 章 T-30）。
+R-4. slice は `x <- xs` で要素を先頭から回す。map は `k <- m` でキーを初回挿入の順に回す（`keys(m)` の写しの上を回るので、回している間の変更は回る列に影響しない — 2 章 T-30）。string は回し方が一意でないので生成元に直に置けない — 見方を名指す（`for c <- bytes(s)`）。
 例: [`examples/for_stmt.sober`](../../examples/for_stmt.sober)・[`examples/map_keys.sober`](../../examples/map_keys.sober)
+拒否: [`examples/for_string_src.sober`](../../examples/for_string_src.sober)
 決定: [language.md 7 節・22 節](../language.md)
 
 R-5. 生成元が名前つきの関数の呼び出しで、仮引数が実引数より 1 つ多く、最後の仮引数が関数型なら、for は継続 `(x) => …` を末尾の実引数に足して呼ぶ（呼び出し形の生成元 — `for i <- iter.Range(0, n)`）。判定は呼び先の宣言の署名だけで決まる。

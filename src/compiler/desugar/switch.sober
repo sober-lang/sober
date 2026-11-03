@@ -36,6 +36,14 @@ func switchExpr(st mut S, sw NodeRef, eb int, ef int, depth int, want TyRef) (Co
     return r, nil
 }
 
+// switch の腕の本体 l（深さ d）。値の位置で腕の型が T? なら、腕を if の腕と同じ道で T? へ寄せる（ペイロードの値は some・nil は注釈つき nil）
+func armBody(st mut S, l ListRef, eb int, ef int, d int) (CoreRef, error?) {
+    if st.swStmt == 0 && isTag(mut st, st.swWant, TOpt) && lenL(mut st, l) > 0 {
+        return coerceArm(mut st, l, st.swWant, eb, ef, d, latN(mut st, l, 0))
+    }
+    return scoped(mut st, l, eb, ef, d, false, st.swStmt != 0, st.swWant)
+}
+
 // 選択肢の列に `_` があるか
 func hasWildcard(st mut S, alts ListRef) bool {
     for i <- iter.Range(0, lenL(mut st, alts)) {
@@ -149,7 +157,7 @@ func constSwitch(st mut S, sw NodeRef, eb int, ef int, depth int) (CoreRef, erro
     }
     d2 := sb + n
     dflt := nC(nodeOf(mut st, sw))
-    dbody := if dflt != -1 { scoped(mut st, lA(nodeOf(mut st, dflt)), eb, ef, d2, false, st.swStmt != 0, st.swWant)? } else { cTriv(mut st) }
+    dbody := if dflt != -1 { armBody(mut st, lA(nodeOf(mut st, dflt)), eb, ef, d2)? } else { cTriv(mut st) }
     // 値位置の switch は腕の region を合流させる（ifExpr と同じ）: 腕を (cond, body, 腕の型) の 3 つ組で 1 本の slice に積み、
     // 全腕を最内の region へ上げた型が一致するなら各腕をその型へ ann してから畳む
     joining := st.swStmt == 0 && dflt != -1
@@ -195,7 +203,7 @@ func constSwitch(st mut S, sw NodeRef, eb int, ef int, depth int) (CoreRef, erro
             }
             i += 1
         }
-        body := scoped(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, c)))), eb2, ef, d2, false, st.swStmt != 0, st.swWant)?
+        body := armBody(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, c)))), eb2, ef, d2)?
         bt := if joining { armTy(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, c)))), eb2, ef) } else { TyRef(-1) }
         arms = append(arms, int(cond))
         arms = append(arms, int(body))
@@ -481,7 +489,7 @@ func armGen(st mut S, c ArmCont, ef int, d0 int) (CoreRef, error?) {
             i += 1
         }
     }
-    mut body := scoped(mut st, lA(nodeOf(mut st, blk)), eb2, ef, d, false, st.swStmt != 0, st.swWant)?
+    mut body := armBody(mut st, lA(nodeOf(mut st, blk)), eb2, ef, d)?
     mut i := len(exs) - 1
     while i >= 0 {
         body = cLet(mut st, exs[i], body)
@@ -640,7 +648,7 @@ func patFlat(st mut S, tp NodeRef, src int, es int, vfs ListRef, pk int) error? 
 // 手 [i, hi) を今の深さ d で下ろす。尽きたら腕の本体（外れの行き先は続き c — 同じ variant の次の行）
 func patGen(st mut S, i int, hi int, eb2 int, ef int, d int, blk NodeRef, c ArmCont) (CoreRef, error?) {
     if i == hi {
-        return scoped(mut st, lA(nodeOf(mut st, blk)), eb2, ef, d, false, st.swStmt != 0, st.swWant)
+        return armBody(mut st, lA(nodeOf(mut st, blk)), eb2, ef, d)
     }
     s := pstep(mut st, i)
     if s.k == 2 || s.k == 3 {

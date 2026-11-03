@@ -298,6 +298,10 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
     if pkey != 0 {
         return parCall(mut st, pkey, fi, args, at, eb, ef, depth)
     }
+    ckey := CellKey(mut st, fi)
+    if ckey != 0 {
+        return cellCall(mut st, ckey, args, at, eb, ef, depth)
+    }
     if fnExpands(mut st, fi) || e2sSiteInline(mut st, fi, explicit, args, eb, ef, at) {
         expBegin(mut st)
         r, ierr := inlineCall(mut st, fi, callee0, explicit, args, at, eb, ef, depth)
@@ -807,6 +811,7 @@ func closureArg(st mut S, arg NodeRef, want TyRef, eb int, ef int, at NodeRef) (
             return 0, diag.CoreFragment{at: posOf(mut st, arg)}
         }
         g := latN(mut st, lA(nodeOf(mut st, arg)), 0)
+        notStringSrc(mut st, nB(nodeOf(mut st, g)), eb, ef)?
         lowered := forLower(mut st, arg, forSrcKind(mut st, nB(nodeOf(mut st, g)), eb, ef))
         return closure(mut st, lowered, eb, ef, want), nil
     }
@@ -947,7 +952,16 @@ func forStmt(st mut S, fe NodeRef, eb int, ef int) (NodeRef, error?) {
         return 0, diag.CoreFragment{at: posOf(mut st, fe)}
     }
     g := latN(mut st, lA(nodeOf(mut st, fe)), 0)
+    notStringSrc(mut st, nB(nodeOf(mut st, g)), eb, ef)?
     return forGen(mut st, fe, forSrcKind(mut st, nB(nodeOf(mut st, g)), eb, ef)), nil
+}
+
+// string は回し方が一意でないので for の生成元に直に置けない（language.md 7 節 — 見方を名指す `for c <- bytes(s)`）
+func notStringSrc(st mut S, src NodeRef, eb int, ef int) error? {
+    if isStringTy(mut st, computeTy(mut st, src, eb, ef)) {
+        return diag.TypeMismatch{at: posOf(mut st, src), kind: 3}
+    }
+    return nil
 }
 
 // for の生成元の呼び出し `GEN(src, (x) => { if g { 本体 } })`（本体 = yield 形なら `yield(e)`、ブロック形なら文の列）
@@ -1098,9 +1112,15 @@ func lambdaCall(st mut S, cl int, args ListRef, at NodeRef, eb int, ef int, dept
     lbody := nB(nodeOf(mut st, lam))
     // 結果が T?（`func(c Conn) error?` — 28 節 net の handler）なら本体の値を期待型で寄せる（ラベル・nil・if の腕。他の結果型は従来どおり ann だけ）
     rw := if loop == 0 && isTag(mut st, ft, TFn) && tg(mut st, tRight(mut st, ft)) == TOpt { pointTy(mut st, tRight(mut st, ft)) } else { TyRef(-1) }
+    // 結果が byte なら本体の末尾の型なしの定数を byte に（language.md 33 節 — `(x) => { g(); 9 }`）
+    bw := if loop == 0 && isTag(mut st, ft, TFn) && tg(mut st, tRight(mut st, ft)) == TByte { tRight(mut st, ft) } else { TyRef(-1) }
     mut body := CoreRef(-1)
     if kindN(mut st, lbody) == ast.EBlock && rw != -1 {
         body = coerceArm(mut st, lA(nodeOf(mut st, lbody)), rw, benv, fenv, level, lbody)?
+    } else if kindN(mut st, lbody) == ast.EBlock && bw != -1 {
+        body = scoped(mut st, lA(nodeOf(mut st, lbody)), benv, fenv, level, false, false, bw)?
+    } else if bw != -1 {
+        body = coerceExpr(mut st, lbody, bw, benv, fenv, level, lbody)?
     } else if kindN(mut st, lbody) == ast.EBlock {
         body = scoped(mut st, lA(nodeOf(mut st, lbody)), benv, fenv, level, false, loop > 0, -1)?
     } else if rw != -1 {

@@ -1,0 +1,32 @@
+package main
+
+// nil の腕と error のラベルの腕の合流は error?（束縛を挟んでも・else if の鎖でも）
+
+type L error {}
+
+type M error {
+    n int
+}
+
+func one(c bool) error? {
+    e := if c { L{} } else { nil }
+    return e
+}
+
+func chain(c bool, d bool) error? {
+    e := if c { M{n: 4} } else if d { nil } else { M{n: 5} }
+    return e
+}
+
+func show(e error?) int {
+    return switch e {
+    case nil: 0
+    case L{}: 1
+    case M{n}: 10 + n
+    }
+}
+
+func main() {
+    println(show(one(true)), show(one(false)))
+    println(show(chain(true, false)), show(chain(false, true)), show(chain(false, false)))
+}

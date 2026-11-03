@@ -1,0 +1,11 @@
+package logger
+
+// Writes log lines to standard error.
+
+import "std/io"
+
+// writes msg and a newline to standard error (a failed write is dropped)
+@effects(io, nondet)
+func Log(msg string) {
+    _ = io.WriteStderr(bytes(msg + "\n"))
+}

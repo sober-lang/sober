@@ -32,6 +32,9 @@
 #                    GOMAXPROCS も 8）。本家の箱の 4 コアと手元の 4 コアは同じ桁なので、レートは箱で割り直さない（採点 = rate_ratio・CPU / 要求・p99）
 # 前提: gcannon（PATH か $GCANNON）と HttpArena の requests/（$ARENA_REQ — 無ければ GitHub から取る）・go・bin/sober
 # CPU の割り当て: SMT の兄弟を同じ側に置き、前半の物理コアをサーバ・後半を gcannon（$SERVER_CPUS / $LOAD_CPUS で上書き）
+# 3 本目の交互（同じ箱で版や env を比べる口）: SOBER_ALT_BIN（別の版で建てた Sober のサーバの実行ファイル）か SOBER_ALT_ENV（Sober のサーバに足す env —
+# SOBER_SRV_ENV の後に書く）のどちらかがあれば、名前 sober-alt を sober / go と同じ周の輪に入れる（実行ファイルが無ければ主の Sober と同じもの）。
+# 要約には sober-alt / sober の比の表が付く
 # 注: seki の seccomp の下では時間（req/s・CPU）が歪む — 値は参考。公式の数字は GH Actions（.github/workflows/httparena.yml）
 set -uo pipefail
 cd "$(dirname "$0")"
@@ -121,6 +124,11 @@ esac
 
 # 建てる（Sober = 主の sober・Go = 静的）
 "$ROOT/bin/sober" build main.sober -o "$W/sober-srv" > "$W/b1.log" 2>&1 || { echo "local.sh: sober build failed: $(head -c 300 "$W/b1.log")" >&2; exit 1; }
+ALT=
+if [ -n "${SOBER_ALT_BIN:-}" ] || [ -n "${SOBER_ALT_ENV:-}" ]; then
+    ALT=1
+    cp "${SOBER_ALT_BIN:-$W/sober-srv}" "$W/sober-alt-srv" || { echo "local.sh: cannot copy SOBER_ALT_BIN ($SOBER_ALT_BIN)" >&2; exit 1; }
+fi
 (cd go && CGO_ENABLED=0 go build -trimpath -o "$W/go-srv" .) > "$W/b2.log" 2>&1 || { echo "local.sh: go build failed: $(head -c 300 "$W/b2.log")" >&2; exit 1; }
 
 # サーバの port は 18000 番台（ephemeral の範囲の外 — workflow は ip_local_port_range を 1024-65535 に広げるので、
@@ -151,6 +159,7 @@ start() {
         # SOBER_SRV_ENV（httparena.yml の sober_env）は Sober のサーバだけに足す env — 後に書くので SOBER_WORKERS を上書きできる（report-1161 の pin の A/B）
         local xenv=
         [ "$1" = sober ] && xenv=${SOBER_SRV_ENV:-}
+        [ "$1" = sober-alt ] && xenv="${SOBER_SRV_ENV:-} ${SOBER_ALT_ENV:-}"
         env SOBER_WORKERS=$ns GOMAXPROCS=$ns DATASET_PATH="$DATA" TLS_CERT="$CERT" TLS_KEY="$KEY" $xenv taskset -c "$scpus" "$b" "$port" "$tport" > "$W/srv.out" 2> "$W/srv.err" &
         SP=$!
         for i in $(seq 100); do
@@ -303,11 +312,15 @@ for prof in $profiles; do
         # 交互（周ごとに先後を入れ替える — 熱と時間帯の偏りを両側に散らす）
         order="sober go"
         [ $((k % 2)) = 0 ] && order="go sober"
+        # 3 本のときは周ごとに順を回す（どの名前も先頭・中・末尾を同じ回数ずつ）
+        if [ -n "$ALT" ]; then
+            case $((k % 3)) in 1) order="sober go sober-alt" ;; 2) order="go sober-alt sober" ;; 0) order="sober-alt sober go" ;; esac
+        fi
         for name in $order; do
             start "$name" || exit 1
             sleep 0.3
             thr=
-            case "$name/$prof" in sober/limited-conn|sober/latency-*) thr=1; thr_snap | sort > "$W/thr0"; t0=$(date +%s.%N) ;; esac
+            case "$name/$prof" in sober/limited-conn|sober/latency-*|sober-alt/limited-conn|sober-alt/latency-*) thr=1; thr_snap | sort > "$W/thr0"; t0=$(date +%s.%N) ;; esac
             run_one "$name" "$prof" "$k" | tee -a "$out"
             [ -n "$thr" ] && thr_row "$name" "$prof" "$k" "$W/thr0" "$(awk -v a="$t0" -v b="$(date +%s.%N)" 'BEGIN { print b - a }')"
             rss_row "$name" "$prof" "$k"
@@ -353,7 +366,7 @@ if [ "$(wc -l < "$out.thr")" -gt 1 ]; then
     {
         echo
         echo "## server threads (Sober — CPU % per thread over each run: main thread = worker 0 / accept loop · max and median of the rest)"
-        tail -n +2 "$out.thr" | sort -t$'\t' -k2,2 -k3,3n -k8,8nr | awk -F'\t' '{ key = $2 " r" $3; if (!(key in c)) ord[++m] = key; c[key]++
+        tail -n +2 "$out.thr" | sort -t$'\t' -k2,2 -k3,3n -k8,8nr | awk -F'\t' '{ key = ($1 == "sober" ? "" : $1 " ") $2 " r" $3; if (!(key in c)) ord[++m] = key; c[key]++
                 if ($5 == 1) mt[key] = $8 " (user " $6 " / sys " $7 ")"; else { if (!(key in mx)) mx[key] = $8; v[key] = v[key] " " $8 } }
             END { for (i = 1; i <= m; i++) { key = ord[i]; n = split(v[key], a, " ")
                 for (x = 1; x < n; x++) for (y = x + 1; y <= n; y++) if (a[y] + 0 < a[x] + 0) { t = a[x]; a[x] = a[y]; a[y] = t }

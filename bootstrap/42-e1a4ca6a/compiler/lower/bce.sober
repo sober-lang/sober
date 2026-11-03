@@ -1,0 +1,377 @@
+package lower
+
+// 分岐の畳み込みと境界検査の消去: GVN の後の SSA に掛ける。
+// condbr の条件が「その点で分かっている」なら br に畳む（到達しなくなったブロックは P4 の optBlocks が消す）。分かっている = 証明級だけ:
+//   ①条件が定数 ②条件の値そのものが、支配木の上の condbr の then / else の辺（行き先の前任がその condbr だけ）で真 / 偽と決まっている
+//     （GVN が同じ比較を 1 つの値にまとめるので、`xs[i]` を 2 度引く検査の 2 度目はここで消える）
+//   ③`uge x, y`（添字の境界検査 — 範囲外で panic の点へ）は、支配する辺で `lt x, y` が真かつ x ≥ 0 なら偽（符号つき x < y と x ≥ 0 から符号なし x < y）。
+//     `ult x, y` は同じ条件で真。x ≥ 0 = 非負の定数か、ループの頭の引数で入りの値が全部「非負の定数 / 自分 + 正の定数」の帰納変数
+//   ④`uge x, y` / `ult x, y` は、支配する辺で `x + k <u y`（k は非負の定数）が成り立ち x ≥ 0 なら偽 / 真（`a[i] = a[i + 1]` の 2 本目の検査）
+//   ⑤`uge c1, y` / `ult c1, y`（c1 は定数か定数の式）は、支配する辺で `c2 <u y`（c2 は定数か定数の式・0 ≤ c1 ≤ c2）が成り立てば偽 / 真
+//     （全展開した定数添字の束 — nbody の advance の `b[o + k]`。大きい添字の検査が先なら小さい添字の検査は消える）
+// 消した検査は panic の点へ行かない経路だけ（値は変えない）— 観測は変わらない（optdiff が見る）
+
+import "desugar"
+import "std/iter"
+
+// モジュールの全関数に分岐の畳み込みを掛ける
+func bceModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            bceFunc(mut st, f)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// 関数の作業域: 値 → 定義の命令（-1 = 命令でない）・値 → 引数のブロック番号と位置（-1 = 引数でない）
+type BceW struct {
+    defIns mut []int
+    defBlk mut []int
+    parBlk mut []int
+    parIx mut []int
+}
+
+func bceFunc(st mut St, f FnRef) {
+    nb := irFnNBlk(mut st, f)
+    nv := irFnNVal(mut st, f)
+    mut w := m2rW{nb: nb, blk: mut []int{}, rpoIx: mut []int{}, rpo: mut []int{}, nrpo: 0, pcnt: mut []int{}, preds: mut []int{}, idom: mut []int{}}
+    m2rCfg(mut st, mut w, f)
+    mut bw := BceW{defIns: mut []int{}, defBlk: mut []int{}, parBlk: mut []int{}, parIx: mut []int{}}
+    xFill(mut bw.defIns, nv, -1)
+    xFill(mut bw.defBlk, nv, -1)
+    xFill(mut bw.parBlk, nv, -1)
+    xFill(mut bw.parIx, nv, -1)
+    for bi <- iter.Range(0, nb) {
+        b := BlkRef(w.blk[bi])
+        if int(b) >= 0 {
+            mut p := irBlkPHead(mut st, b)
+            mut k := 0
+            while p >= 0 {
+                bw.parBlk[desugar.HeapGet(mut st.d, p + 1)] = bi
+                bw.parIx[desugar.HeapGet(mut st.d, p + 1)] = k
+                k += 1
+                p = desugar.HeapGet(mut st.d, p)
+            }
+            mut ins := irBlkIHead(mut st, b)
+            while ins != -1 {
+                r := irInsRes(mut st, ins)
+                if r >= 0 {
+                    bw.defIns[r] = int(ins)
+                    bw.defBlk[r] = bi
+                }
+                ins = irInsNext(mut st, ins)
+            }
+        }
+    }
+    mut changed := false
+    for k <- iter.Range(0, w.nrpo) {
+        bb := w.rpo[k]
+        b := BlkRef(w.blk[bb])
+        if irBlkTerm(mut st, b) == TmCondbr {
+            c := irBlkX1(mut st, b)
+            kv := bceKnown(mut st, mut w, mut bw, bb, c)
+            if kv >= 0 {
+                // br に畳む（行き先と実引数は分かっている側）
+                to := if kv == 1 { irBlkX2(mut st, b) } else { irBlkX4(mut st, b) }
+                args := if kv == 1 { irBlkX3(mut st, b) } else { irBlkX5(mut st, b) }
+                irSetBlkTerm(mut st, b, TmBr)
+                irSetBlkX1(mut st, b, to)
+                irSetBlkX2(mut st, b, args)
+                irSetBlkX3(mut st, b, -1)
+                irSetBlkX4(mut st, b, -1)
+                irSetBlkX5(mut st, b, -1)
+                changed = true
+            }
+        }
+    }
+    if changed {
+        optReset(mut st, nv, nb)
+        optBlocks(mut st, f)
+        optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+        optDce(mut st, f)
+        optRenumber(mut st, f)
+    }
+    // 残った定数添字の検査の版分け（bver.sober）
+    bverFunc(mut st, f)
+}
+
+// 番号 bb のブロックの点で値 c（条件）が分かっていれば 1 / 0（分からなければ -1）
+func bceKnown(st mut St, w mut m2rW, bw mut BceW, bb int, c int) int {
+    d := bw.defIns[c]
+    if d >= 0 && irInsOp(mut st, InsRef(d)) == OpConst {
+        return if irInsA(mut st, InsRef(d)) != 0 { 1 } else { 0 }
+    }
+    // ⑤ の候補: c が `uge c1, y` / `ult c1, y`（c1 は非負の定数）なら c1 を控える（支配木の走査の中で辺ごとに引き直さない）
+    mut c1 := -1
+    if d >= 0 && irInsOp(mut st, InsRef(d)) == OpCmp && (irInsA(mut st, InsRef(d)) == CUge || irInsA(mut st, InsRef(d)) == CUlt) {
+        c1 = bceCv(mut st, mut bw, irInsB(mut st, InsRef(d)))
+    }
+    // 支配木を上へ: 支配する condbr の辺で決まっている値
+    mut cb := bb
+    while cb != 0 && w.idom[cb] >= 0 && w.idom[cb] != cb {
+        p := w.idom[cb]
+        pb := BlkRef(w.blk[p])
+        if irBlkTerm(mut st, pb) == TmCondbr && irBlkX2(mut st, pb) != irBlkX4(mut st, pb) && w.pcnt[cb + 1] - w.pcnt[cb] == 1 {
+            fc := irBlkX1(mut st, pb)
+            side := if irBlkId(mut st, BlkRef(irBlkX2(mut st, pb))) == cb { 1 } else if irBlkId(mut st, BlkRef(irBlkX4(mut st, pb))) == cb { 0 } else { -1 }
+            if side >= 0 {
+                if fc == c {
+                    return side
+                }
+                // ③ 支配する `lt x, y` が真 → `uge x, y` は偽・`ult x, y` は真（x ≥ 0 のとき）
+                if side == 1 {
+                    r := bceFromLt(mut st, mut w, mut bw, fc, c)
+                    if r >= 0 {
+                        return r
+                    }
+                }
+                // ④ 支配する `x + c <u y` が真（`uge x + c, y` の偽の辺・`ult x + c, y` の真の辺）→ `uge x, y` は偽・`ult x, y` は真（x ≥ 0・c ≥ 0 のとき）
+                r4 := bceFromAdd(mut st, mut w, mut bw, fc, side, c)
+                if r4 >= 0 {
+                    return r4
+                }
+                // ⑤ 支配する `c2 <u y` が真（`uge c2, y` の偽の辺・`ult c2, y` の真の辺）→ `uge c1, y` は偽・`ult c1, y` は真（0 ≤ c1 ≤ c2）
+                if c1 >= 0 {
+                    r5 := bceFromConst(mut st, mut bw, fc, side, c, c1)
+                    if r5 >= 0 {
+                        return r5
+                    }
+                }
+            }
+        }
+        cb = p
+    }
+    return -1
+}
+
+// fc が真と分かっているとき、c の値（分からなければ -1）: fc = `lt x, y`・c = `uge x, y` → 0・`ult x, y` → 1（x ≥ 0）
+func bceFromLt(st mut St, w mut m2rW, bw mut BceW, fc int, c int) int {
+    fd := bw.defIns[fc]
+    cd := bw.defIns[c]
+    if fd < 0 || cd < 0 || irInsOp(mut st, InsRef(fd)) != OpCmp || irInsOp(mut st, InsRef(cd)) != OpCmp {
+        return -1
+    }
+    if irInsA(mut st, InsRef(fd)) != CLt {
+        return -1
+    }
+    x := irInsB(mut st, InsRef(fd))
+    y := irInsC(mut st, InsRef(fd))
+    if irInsB(mut st, InsRef(cd)) != x || irInsC(mut st, InsRef(cd)) != y || !bceNonneg(mut st, mut w, mut bw, x, 0) {
+        return -1
+    }
+    k := irInsA(mut st, InsRef(cd))
+    return if k == CUge { 0 } else if k == CUlt { 1 } else { -1 }
+}
+
+// fc が side（1 = 真・0 = 偽）と分かっているとき、c の値（分からなければ -1）: fc が `x + k <u y` を言っていて（`uge a, y` が偽か
+// `ult a, y` が真・a = `add x, k`・k は非負の定数）、c = `uge x, y` → 0・`ult x, y` → 1（x ≥ 0）。論拠: x と k は 2^63 未満なので符号なしの
+// x + k は桁あふれせず、x ≤ x + k <u y（回転の `perm1[i] = perm1[i + 1]`）
+func bceFromAdd(st mut St, w mut m2rW, bw mut BceW, fc int, side int, c int) int {
+    fd := bw.defIns[fc]
+    cd := bw.defIns[c]
+    if fd < 0 || cd < 0 || irInsOp(mut st, InsRef(fd)) != OpCmp || irInsOp(mut st, InsRef(cd)) != OpCmp {
+        return -1
+    }
+    fk := irInsA(mut st, InsRef(fd))
+    if !((side == 0 && fk == CUge) || (side == 1 && fk == CUlt)) {
+        return -1
+    }
+    y := irInsC(mut st, InsRef(fd))
+    x := irInsB(mut st, InsRef(cd))
+    if irInsC(mut st, InsRef(cd)) != y {
+        return -1
+    }
+    ad := bw.defIns[irInsB(mut st, InsRef(fd))]
+    if ad < 0 || irInsOp(mut st, InsRef(ad)) != OpBin || irInsA(mut st, InsRef(ad)) != BAdd {
+        return -1
+    }
+    u := irInsB(mut st, InsRef(ad))
+    v := irInsC(mut st, InsRef(ad))
+    other := if u == x { v } else if v == x { u } else { -1 }
+    if other < 0 {
+        return -1
+    }
+    od := bw.defIns[other]
+    if od < 0 || irInsOp(mut st, InsRef(od)) != OpConst || irInsA(mut st, InsRef(od)) < 0 || !bceNonneg(mut st, mut w, mut bw, x, 0) {
+        return -1
+    }
+    k := irInsA(mut st, InsRef(cd))
+    return if k == CUge { 0 } else if k == CUlt { 1 } else { -1 }
+}
+
+// fc が side（1 = 真・0 = 偽）と分かっているとき、c の値（分からなければ -1）: fc が `c2 <u y` を言っていて（`uge c2, y` が偽か
+// `ult c2, y` が真・c2 は定数）、c = `uge c1, y` → 0・`ult c1, y` → 1（c1 は c の第 1 被演算子の定数 — 0 ≤ c1 ≤ c2）。論拠: c1 ≤u c2 <u y
+func bceFromConst(st mut St, bw mut BceW, fc int, side int, c int, c1 int) int {
+    fd := bw.defIns[fc]
+    if fd < 0 || irInsOp(mut st, InsRef(fd)) != OpCmp {
+        return -1
+    }
+    fk := irInsA(mut st, InsRef(fd))
+    if !((side == 0 && fk == CUge) || (side == 1 && fk == CUlt)) {
+        return -1
+    }
+    cd := bw.defIns[c]
+    if irInsC(mut st, InsRef(fd)) != irInsC(mut st, InsRef(cd)) {
+        return -1
+    }
+    if bceCv(mut st, mut bw, irInsB(mut st, InsRef(fd))) < c1 {
+        return -1
+    }
+    k := irInsA(mut st, InsRef(cd))
+    return if k == CUge { 0 } else { 1 }
+}
+
+// 値 v が定数の式（定数と、定数どうしの add / mul — 全展開の写しの添字 `o + k` は gvn が畳まないのでこの形で残る）なら
+// その値（0 以上 BCE_CMAX 以下だけ — 途中も同じ範囲で桁あふれしない）、そうでなければ -1。式の木は幅優先で BCE_CNODES 個まで集めて後ろから畳む
+// （mut 引数の関数の再帰は並列の束の閉包で自己 check が def error になるので作業列で）
+func bceCv(st mut St, bw mut BceW, v int) int {
+    d := bw.defIns[v]
+    if d < 0 {
+        return -1
+    }
+    if irInsOp(mut st, InsRef(d)) == OpConst {
+        k := irInsA(mut st, InsRef(d))
+        return if k >= 0 && k <= BCE_CMAX { k } else { -1 }
+    }
+    if irInsOp(mut st, InsRef(d)) != OpBin {
+        return -1
+    }
+    // ns = 節の値・ch = 子の先頭の位置（-1 = 葉の定数）
+    mut ns := mut []int{v}
+    mut ch := mut []int{}
+    mut q := 0
+    while q < len(ns) {
+        dq := bw.defIns[ns[q]]
+        if dq < 0 {
+            return -1
+        }
+        op := irInsOp(mut st, InsRef(dq))
+        if op == OpConst {
+            ch = append(ch, -1)
+        } else if op == OpBin && (irInsA(mut st, InsRef(dq)) == BAdd || irInsA(mut st, InsRef(dq)) == BMul) && len(ns) + 2 <= BCE_CNODES {
+            ch = append(ch, len(ns))
+            ns = append(ns, irInsB(mut st, InsRef(dq)))
+            ns = append(ns, irInsC(mut st, InsRef(dq)))
+        } else {
+            return -1
+        }
+        q += 1
+    }
+    mut cvs := mut []int{}
+    xFill(mut cvs, len(ns), 0)
+    mut k := len(ns) - 1
+    while k >= 0 {
+        dk := InsRef(bw.defIns[ns[k]])
+        if ch[k] < 0 {
+            c := irInsA(mut st, dk)
+            if c < 0 || c > BCE_CMAX {
+                return -1
+            }
+            cvs[k] = c
+        } else {
+            a := cvs[ch[k]]
+            b := cvs[ch[k] + 1]
+            r := if irInsA(mut st, dk) == BAdd { a + b } else { a * b }
+            if r > BCE_CMAX {
+                return -1
+            }
+            cvs[k] = r
+        }
+        k -= 1
+    }
+    return cvs[0]
+}
+
+const BCE_CNODES = 15
+const BCE_CMAX = 1 << 30
+
+// 値 x が常に 0 以上か（非負の定数・ループの頭の帰納変数 — 入りの値が全部「非負の定数か自分 + 正の定数」）
+func bceNonneg(st mut St, w mut m2rW, bw mut BceW, x int, depth int) bool {
+    d := bw.defIns[x]
+    if d >= 0 {
+        return irInsOp(mut st, InsRef(d)) == OpConst && irInsA(mut st, InsRef(d)) >= 0
+    }
+    bi := bw.parBlk[x]
+    if bi < 0 || depth > 0 {
+        return false
+    }
+    ix := bw.parIx[x]
+    // 行き先が bi の辺の実引数を全部見る
+    mut seen := 0
+    for j <- iter.Range(w.pcnt[bi], w.pcnt[bi + 1]) {
+        pb := BlkRef(w.blk[w.preds[j]])
+        t := irBlkTerm(mut st, pb)
+        if t == TmBr {
+            if !bceArgOk(mut st, mut w, mut bw, irBlkX2(mut st, pb), ix, x, depth) {
+                return false
+            }
+            seen += 1
+        } else if t == TmCondbr {
+            if irBlkId(mut st, BlkRef(irBlkX2(mut st, pb))) == bi {
+                if !bceArgOk(mut st, mut w, mut bw, irBlkX3(mut st, pb), ix, x, depth) {
+                    return false
+                }
+                seen += 1
+            }
+            if irBlkId(mut st, BlkRef(irBlkX4(mut st, pb))) == bi {
+                if !bceArgOk(mut st, mut w, mut bw, irBlkX5(mut st, pb), ix, x, depth) {
+                    return false
+                }
+                seen += 1
+            }
+        } else {
+            return false
+        }
+    }
+    return seen > 0
+}
+
+// 辺の実引数の列 l の ix 番目が「非負の定数」か「x + 正の定数」か
+func bceArgOk(st mut St, w mut m2rW, bw mut BceW, l int, ix int, x int, depth int) bool {
+    if l < 0 || ix >= desugar.HeapGet(mut st.d, l) {
+        return false
+    }
+    a := desugar.HeapGet(mut st.d, l + 1 + ix)
+    if a == x {
+        return true
+    }
+    d := bw.defIns[a]
+    if d < 0 {
+        return false
+    }
+    op := irInsOp(mut st, InsRef(d))
+    if op == OpConst {
+        return irInsA(mut st, InsRef(d)) >= 0
+    }
+    if op == OpBin && irInsA(mut st, InsRef(d)) == BAdd {
+        u := irInsB(mut st, InsRef(d))
+        v := irInsC(mut st, InsRef(d))
+        other := if u == x { v } else if v == x { u } else { -1 }
+        if other >= 0 {
+            // x + 1 だけ・足し算の点が `lt x, _` の真の辺に支配されていること（x < y ≤ 最大値 なので x + 1 は溢れない — 証明級）
+            od := bw.defIns[other]
+            return od >= 0 && irInsOp(mut st, InsRef(od)) == OpConst && irInsA(mut st, InsRef(od)) == 1 && bceGuarded(mut st, mut w, mut bw.defIns, bw.defBlk[a], x)
+        }
+    }
+    return false
+}
+
+// 番号 bb のブロックが「`lt x, _` が真の辺」に支配されているか（行き先の前任がその condbr だけの then の辺 — 値 → 定義の命令の表 def。promote も使う）
+func bceGuarded(st mut St, w mut m2rW, def mut []int, bb int, x int) bool {
+    mut cb := bb
+    while cb > 0 && w.idom[cb] >= 0 && w.idom[cb] != cb {
+        p := w.idom[cb]
+        pb := BlkRef(w.blk[p])
+        if irBlkTerm(mut st, pb) == TmCondbr && irBlkX2(mut st, pb) != irBlkX4(mut st, pb) && w.pcnt[cb + 1] - w.pcnt[cb] == 1 &&
+            irBlkId(mut st, BlkRef(irBlkX2(mut st, pb))) == cb {
+            fd := def[irBlkX1(mut st, pb)]
+            if fd >= 0 && irInsOp(mut st, InsRef(fd)) == OpCmp && irInsA(mut st, InsRef(fd)) == CLt && irInsB(mut st, InsRef(fd)) == x {
+                return true
+            }
+        }
+        cb = p
+    }
+    return false
+}

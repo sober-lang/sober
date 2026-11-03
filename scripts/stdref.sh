@@ -49,8 +49,9 @@ entry() {
 # gen <出力の置き場>: docs/std の生成（警告の行は $W/warn.tsv）
 gen() {
     mkdir -p "$1"
-    entry src/std "$W/all.sober"
-    "$BIN" gen src/std "$W/all.sober" . docs/std/en scripts/stdref/head.ja.md "$1" > "$W/warn.tsv"
+    # 合成の入口は _test.sober の名前（std/testing/cell はテストの構成のファイルからだけ import できる — language.md 41 節）
+    entry src/std "$W/all_test.sober"
+    "$BIN" gen src/std "$W/all_test.sober" . docs/std/en scripts/stdref/head.ja.md "$1" > "$W/warn.tsv"
 }
 
 # neg: 負例の警告の行（位置は testdata/stdref/neg 相対）

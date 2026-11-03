@@ -16,28 +16,28 @@ func TestMainPath() string {
 }
 
 // package pkg のテストのビルドの Program（LoadFs と同じく std は焼き込んだ表 sm から）
-@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.TestSignature, diag.Par)
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.TestSignature, diag.Par, diag.Double, diag.Cell)
 func LoadTestFs(pkg string, sm map[string]string) (Program, error?) {
     return loadTest(pkg, sm, false, []string{}, 0)
 }
 
 // LoadTestFs のカバレッジの計器つき（pats = 写す package のパターン — coverPkgIs。名前を知る 1 回目の読みは写さない）
-@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.TestSignature, diag.Par)
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.TestSignature, diag.Par, diag.Double, diag.Cell)
 func LoadTestFsCover(pkg string, sm map[string]string, pats []string) (Program, error?) {
     return loadTest(pkg, sm, true, pats, 0)
 }
 
 // LoadTestFs の mutation testing の写しつき（mutx.sober — 対象 = package pkg の非テストのファイル。one = 1 体だけの build の変異の番号・-1 = schemata）
-@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.TestSignature, diag.Par)
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.TestSignature, diag.Par, diag.Double, diag.Cell)
 func LoadTestFsMutate(pkg string, sm map[string]string, one int) (Program, error?) {
     return loadTest(pkg, sm, false, []string{pkg}, if one >= 0 { one + 2 } else { 1 })
 }
 
-@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.TestSignature, diag.Par)
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.TestSignature, diag.Par, diag.Double, diag.Cell)
 func loadTest(pkg string, sm map[string]string, cover bool, pats []string, mutate int) (Program, error?) {
     // 1 回目: 名前を知るために、何も呼ばない main で読む（対象の package の _test.sober も読まれる）
     mut sink := PcSink{}
-    p0, err0 := load(Manifest{TestMainPath(), "", []string{}, pkg, testMain(pkg, []string{}), false, []string{}, 0}, true, sm, PcOff(), mut sink)
+    p0, err0 := load(Manifest{TestMainPath(), "", []string{}, pkg, testMain(pkg, []string{}), false, []string{}, 0, []string{}, []string{}}, true, sm, PcOff(), mut sink)
     if err0 != nil {
         return p0, err0
     }
@@ -45,7 +45,7 @@ func loadTest(pkg string, sm map[string]string, cover bool, pats []string, mutat
     if nerr != nil {
         return located(p0.file_path, p0.file_std), nerr
     }
-    return load(Manifest{TestMainPath(), "", []string{}, pkg, testMain(pkg, names), cover || mutate != 0, pats, mutate}, true, sm, PcOff(), mut sink)
+    return load(Manifest{TestMainPath(), "", []string{}, pkg, testMain(pkg, names), cover || mutate != 0, pats, mutate, []string{}, []string{}}, true, sm, PcOff(), mut sink)
 }
 
 // p の package pkg の `_test.sober` にある `TestXxx()`（Test の後が小文字でない）の名前（宣言順）。

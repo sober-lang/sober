@@ -147,8 +147,9 @@ fresh() { [ -x "$OUT/sober2" ] && [ -f "$OUT/.key" ] && [ "$(cat "$OUT/.key")" =
 # （3'' 第 2 段の 1.5 — std のプリビルド焼き込み。同じコードが計算した値を、建て直す stage2 に @embed で焼き込む）
 l0_bake() {
     local s2a=$1 e=$W/l0all.sober d
-    { echo "package main"; echo; for d in $(cd "$W/root" && find std -name '*.sober' ! -name '*_test.sober' ! -path 'std/internal/*' -printf '%h\n' | sort -u); do echo "import \"$d\""; done; echo; echo "func main() {"; echo "}"; } > "$e"
+    { echo "package main"; echo; for d in $(cd "$W/root" && find std -name '*.sober' ! -name '*_test.sober' ! -path 'std/internal/*' ! -path 'std/testing/cell/*' -printf '%h\n' | sort -u); do echo "import \"$d\""; done; echo; echo "func main() {"; echo "}"; } > "$e"
     # std/internal/… は std の中からだけ import できる（language.md 20 節 — この合成の main は std の外）ので列挙から外す。internal の package は使う std の package を通して読まれる
+    # std/testing/cell もテストの構成のファイルからだけ import できる（41 節）ので外す — テストのビルドがソースから読む
     # 失敗したら check の出力（拒否の文面 — std のどこが落ちたか）と、def error の位置を引く手順を見せる（stdout を捨てていて理由が出なかった）
     SOBER_CACHE= SOBER_L0=0 "$s2a" check "$e" --split --l0-out "$W/root/l0" > "$W/l0.out" 2>&1 || {
         echo "stage2.sh: FAIL L0 bake (std check):" >&2

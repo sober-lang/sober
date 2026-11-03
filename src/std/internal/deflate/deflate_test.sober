@@ -239,7 +239,7 @@ func TestStreamSizes() {
         cs = append(cs, at)
     }
     c64 := freeze(cs)
-    want := []int{1, 96125, 96131, 96226, 98715, 6, 82334, 82340, 82424, 84792, 9, 74503, 74509, 74611, 77094}
+    want := []int{1, 96125, 96131, 96226, 98715, 6, 82635, 82641, 82738, 85098, 9, 74503, 74509, 74611, 77094}
     mut k := 0
     while k < len(want) {
         lv := want[k]
@@ -427,7 +427,7 @@ func lengthsRef(f []int, maxBits int) []int {
     }
     // 深さごとの数（maxBits を越えた深さは maxBits へ寄せてから Kraft の和を 2^maxBits に戻す — miniz の enforce_max_code_size）
     mut nc := mut []int{}
-    fill(mut nc, maxBits + 1, 0)
+    zero(mut nc, maxBits + 1)
     for i <- iter.Range(0, m) {
         d := if a[i] > maxBits { maxBits } else { a[i] }
         nc[d] = nc[d] + 1
@@ -452,7 +452,7 @@ func lengthsRef(f []int, maxBits int) []int {
     }
     // 頻度の高い方（昇順の後ろ）から短い長さを配る
     mut out := mut []int{}
-    fill(mut out, n, 0)
+    zero(mut out, n)
     mut j := m
     for l <- iter.Range(1, maxBits + 1) {
         for r <- iter.Range(0, nc[l]) {

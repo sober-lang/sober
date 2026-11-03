@@ -1,0 +1,31 @@
+package r
+
+import "std/io"
+
+type Conn struct {
+    dir string
+}
+
+type Bad error {}
+
+const Max = 3
+
+@effects(io, nondet)
+@errors(Bad)
+func Put(c Conn, k string) error? {
+    err := io.WriteFile(c.dir + "/" + k, bytes(k))
+    if err != nil {
+        return Bad{}
+    }
+    return nil
+}
+
+@effects(io)
+func Show(c Conn, k string) int {
+    println(k)
+    return Max
+}
+
+func Plain(x int) int {
+    return x + 1
+}

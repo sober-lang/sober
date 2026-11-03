@@ -1,0 +1,13 @@
+package t
+
+import "std/testing/cell"
+
+const H = cell.Cell[int]{}
+
+func inc(n int) int {
+    return n + 1
+}
+
+func TestT() {
+    cell.Update(H, inc)
+}

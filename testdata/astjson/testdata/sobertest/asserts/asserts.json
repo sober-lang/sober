@@ -1,7 +1,21 @@
 {
   "package": "asserts",
   "imports": [],
-  "types": [],
+  "types": [
+    {
+      "name": "Bad",
+      "type_params": [],
+      "body": {
+        "k": "error",
+        "fields": []
+      },
+      "tok": 130,
+      "span": {
+        "start": 129,
+        "end": 133
+      }
+    }
+  ],
   "funcs": [
     {
       "name": "Double",
@@ -197,6 +211,384 @@
         "end": 58
       },
       "sig_end": 48
+    },
+    {
+      "name": "Apply",
+      "type_params": [],
+      "params": [
+        {
+          "name": "f",
+          "type": {
+            "k": "func",
+            "params": [
+              {
+                "k": "name",
+                "name": "int"
+              }
+            ],
+            "results": [
+              {
+                "k": "name",
+                "name": "bool"
+              }
+            ]
+          },
+          "mutable": false
+        },
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "bool"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "f",
+                  "tok": 74
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "x",
+                    "tok": 76
+                  }
+                ],
+                "tok": 75
+              }
+            ],
+            "tok": 73
+          }
+        ]
+      },
+      "tok": 59,
+      "bodiless": false,
+      "span": {
+        "start": 58,
+        "end": 81
+      },
+      "sig_end": 72
+    },
+    {
+      "name": "Twice",
+      "type_params": [],
+      "params": [
+        {
+          "name": "f",
+          "type": {
+            "k": "func",
+            "params": [],
+            "results": [
+              {
+                "k": "name",
+                "name": "bool"
+              }
+            ]
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "if",
+                "cond": {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "f",
+                    "tok": 94
+                  },
+                  "args": [],
+                  "tok": 95
+                },
+                "then": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "int",
+                        "value": 2,
+                        "tok": 98
+                      }
+                    }
+                  ]
+                },
+                "else": {
+                  "k": "block",
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 102
+                      }
+                    }
+                  ]
+                },
+                "tok": 93
+              }
+            ],
+            "tok": 92
+          }
+        ]
+      },
+      "tok": 82,
+      "bodiless": false,
+      "span": {
+        "start": 81,
+        "end": 107
+      },
+      "sig_end": 91
+    },
+    {
+      "name": "Inc",
+      "type_params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": true
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "bool"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "x",
+                "tok": 116
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "binary",
+                "op": "+",
+                "lhs": {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 118
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 120
+                },
+                "tok": 119
+              }
+            ],
+            "tok": 116
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": ">",
+                "lhs": {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 123
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 5,
+                  "tok": 125
+                },
+                "tok": 124
+              }
+            ],
+            "tok": 122
+          }
+        ]
+      },
+      "tok": 108,
+      "bodiless": false,
+      "span": {
+        "start": 107,
+        "end": 129
+      },
+      "sig_end": 115
+    },
+    {
+      "name": "Parse",
+      "type_params": [],
+      "params": [
+        {
+          "name": "s",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        },
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "error"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "ident",
+                  "name": "s",
+                  "tok": 153
+                },
+                "rhs": {
+                  "k": "strlit",
+                  "value": "",
+                  "tok": 155
+                },
+                "tok": 154
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 158
+                      },
+                      {
+                        "k": "composite",
+                        "type_name": "Bad",
+                        "elems": [],
+                        "tok": 160,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 157
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 152
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 1,
+                "tok": 167
+              },
+              {
+                "k": "nil",
+                "tok": 169
+              }
+            ],
+            "tok": 166
+          }
+        ]
+      },
+      "tok": 140,
+      "bodiless": false,
+      "span": {
+        "start": 133,
+        "end": 173
+      },
+      "sig_end": 151
+    },
+    {
+      "name": "Opt",
+      "type_params": [],
+      "params": [
+        {
+          "name": "s",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "string"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "s",
+                "tok": 183
+              }
+            ],
+            "tok": 182
+          }
+        ]
+      },
+      "tok": 174,
+      "bodiless": false,
+      "span": {
+        "start": 173,
+        "end": 187
+      },
+      "sig_end": 181
     }
   ],
   "consts": []

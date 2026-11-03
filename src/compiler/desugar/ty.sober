@@ -291,7 +291,7 @@ func tyEql(st mut S, a TyRef, b TyRef) bool {
     }
 }
 
-// a を b へ緩められるか（Lean の Ty.sub の鏡）
+// a を b へ緩められるか（Lean の Ty.sub の鏡 — mut の腕は等しいときだけ）
 func tyLooser(st mut S, a TyRef, b TyRef) bool {
     k := tg(mut st, a)
     if k != tg(mut st, b) {
@@ -300,9 +300,9 @@ func tyLooser(st mut S, a TyRef, b TyRef) bool {
     return switch k {
     case TOpt: tyLooser(mut st, tInner(mut st, a), tInner(mut st, b))
     case TUn | TPr: tyLooser(mut st, tLeft(mut st, a), tLeft(mut st, b)) && tyLooser(mut st, tRight(mut st, a), tRight(mut st, b))
-    case TSl: tMutBit(mut st, a) == 0 && tMutBit(mut st, b) == 0 && tRegion(mut st, a) <= tRegion(mut st, b) && tyLooser(mut st, tElem(mut st, a), tElem(mut st, b))
-    case TMp: tMutBit(mut st, a) == 0 && tMutBit(mut st, b) == 0 && tRegion(mut st, a) <= tRegion(mut st, b) && tyLooser(mut st, tKey(mut st, a), tKey(mut st, b)) && tyLooser(mut st, tVal(mut st, a), tVal(mut st, b))
-    case TRef: tMutBit(mut st, a) == 0 && tMutBit(mut st, b) == 0 && tRegion(mut st, a) <= tRegion(mut st, b) && tyEql(mut st, tElem(mut st, a), tElem(mut st, b))
+    case TSl: if tMutBit(mut st, a) != 0 || tMutBit(mut st, b) != 0 { tyEql(mut st, a, b) } else { tRegion(mut st, a) <= tRegion(mut st, b) && tyLooser(mut st, tElem(mut st, a), tElem(mut st, b)) }
+    case TMp: if tMutBit(mut st, a) != 0 || tMutBit(mut st, b) != 0 { tyEql(mut st, a, b) } else { tRegion(mut st, a) <= tRegion(mut st, b) && tyLooser(mut st, tKey(mut st, a), tKey(mut st, b)) && tyLooser(mut st, tVal(mut st, a), tVal(mut st, b)) }
+    case TRef: if tMutBit(mut st, a) != 0 || tMutBit(mut st, b) != 0 { tyEql(mut st, a, b) } else { tRegion(mut st, a) <= tRegion(mut st, b) && tyEql(mut st, tElem(mut st, a), tElem(mut st, b)) }
     default: tyEql(mut st, a, b)
     }
 }

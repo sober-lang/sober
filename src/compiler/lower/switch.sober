@@ -65,6 +65,8 @@ func bindAdd(st mut St, bs int, name int, t int, v int) {
 // subject を 1 回だけ評価し、case を上から順に照合する（不一致は次の case へ）。default 無しで全部外れたら値はゼロ
 func switchExpr(st mut St, sw desugar.NodeRef) (Val, error?) {
     at := sw
+    cw := st.swW - 1
+    st.swW = 0
     subjects := lA(nodeOf(mut st, sw))
     cases := lB(nodeOf(mut st, sw))
     dflt := nC(nodeOf(mut st, sw))
@@ -98,6 +100,7 @@ func switchExpr(st mut St, sw desugar.NodeRef) (Val, error?) {
     }
     nc := lenL(mut st, cases)
     ends := endsNew(mut st, nc + 1)
+    nilSw := nilCaseL(mut st, sw)
     mut t := -1
     for ci <- iter.Range(0, nc) {
         c := latN(mut st, cases, ci)
@@ -124,9 +127,13 @@ func switchExpr(st mut St, sw desugar.NodeRef) (Val, error?) {
             declareNew(mut st, hgetS(mut st, b + 1), LVal, desugar.HeapGet(mut st.d, b + 2), desugar.HeapGet(mut st.d, b + 3), c)?
             b = desugar.HeapGet(mut st.d, b)
         }
-        av := armTail(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, c)))))?
+        mut av := armTail(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, c)))))?
         popScope(mut st)
-        t = joinType(mut st, t, if cur(mut st) == -1 { tNever(mut st) } else { av.t }, c)?
+        // 期待型が byte / named scalar なら、末尾が型なしの定数の腕をそれに割り当てる（if 式の腕と同じ規則）
+        if cw >= 0 && cur(mut st) != -1 && armUntyped(mut st, nB(nodeOf(mut st, c))) && armFits(mut st, cw, av.t, nB(nodeOf(mut st, c))) {
+            av = Val{t: cw, v: av.v}
+        }
+        t = joinTypeN(mut st, t, if cur(mut st) == -1 { tNever(mut st) } else { av.t }, nilSw, c)?
         if cur(mut st) != -1 {
             endsAdd(mut st, ends, cur(mut st), av.t, av.v)
         }
@@ -145,8 +152,11 @@ func switchExpr(st mut St, sw desugar.NodeRef) (Val, error?) {
         checkCover(mut st, sw, cty, t)?
     }
     if dflt != -1 {
-        dv := armValue(mut st, lA(nodeOf(mut st, dflt)))?
-        t = joinType(mut st, t, if cur(mut st) == -1 { tNever(mut st) } else { dv.t }, at)?
+        mut dv := armValue(mut st, lA(nodeOf(mut st, dflt)))?
+        if cw >= 0 && cur(mut st) != -1 && armUntyped(mut st, dflt) && armFits(mut st, cw, dv.t, dflt) {
+            dv = Val{t: cw, v: dv.v}
+        }
+        t = joinTypeN(mut st, t, if cur(mut st) == -1 { tNever(mut st) } else { dv.t }, nilSw, at)?
         if cur(mut st) != -1 {
             endsAdd(mut st, ends, cur(mut st), dv.t, dv.v)
         }
@@ -363,4 +373,16 @@ func matchPattern(st mut St, p desugar.NodeRef, sty int, sv int, nx BlkRef, bs i
         }
     }
     return nil
+}
+
+// switch の腕（default を含む）のどれかが nil で終わるか
+func nilCaseL(st mut St, sw desugar.NodeRef) bool {
+    cs := lB(nodeOf(mut st, sw))
+    for i <- iter.Range(0, lenL(mut st, cs)) {
+        if nilTailL(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, latN(mut st, cs, i)))))) {
+            return true
+        }
+    }
+    dflt := nC(nodeOf(mut st, sw))
+    return dflt != -1 && nilTailL(mut st, lA(nodeOf(mut st, dflt)))
 }

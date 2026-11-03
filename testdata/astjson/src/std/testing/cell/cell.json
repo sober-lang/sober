@@ -1,0 +1,189 @@
+{
+  "package": "cell",
+  "imports": [],
+  "types": [
+    {
+      "name": "Cell",
+      "type_params": [
+        "T"
+      ],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "key",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 10
+          },
+          {
+            "name": "init",
+            "type": {
+              "k": "name",
+              "name": "T"
+            },
+            "tok": 13
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 18
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "Get",
+      "type_params": [
+        "T"
+      ],
+      "params": [
+        {
+          "name": "h",
+          "type": {
+            "k": "generic",
+            "name": "Cell",
+            "args": [
+              {
+                "k": "name",
+                "name": "T"
+              }
+            ]
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "T"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "h",
+                  "tok": 41
+                },
+                "field": "init",
+                "tok": 43
+              }
+            ],
+            "tok": 40
+          }
+        ]
+      },
+      "tok": 27,
+      "bodiless": false,
+      "span": {
+        "start": 18,
+        "end": 47
+      },
+      "sig_end": 39
+    },
+    {
+      "name": "Set",
+      "type_params": [
+        "T"
+      ],
+      "params": [
+        {
+          "name": "h",
+          "type": {
+            "k": "generic",
+            "name": "Cell",
+            "args": [
+              {
+                "k": "name",
+                "name": "T"
+              }
+            ]
+          },
+          "mutable": false
+        },
+        {
+          "name": "v",
+          "type": {
+            "k": "name",
+            "name": "T"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": []
+      },
+      "tok": 54,
+      "bodiless": false,
+      "span": {
+        "start": 47,
+        "end": 71
+      },
+      "sig_end": 68
+    },
+    {
+      "name": "Update",
+      "type_params": [
+        "T"
+      ],
+      "params": [
+        {
+          "name": "h",
+          "type": {
+            "k": "generic",
+            "name": "Cell",
+            "args": [
+              {
+                "k": "name",
+                "name": "T"
+              }
+            ]
+          },
+          "mutable": false
+        },
+        {
+          "name": "f",
+          "type": {
+            "k": "func",
+            "params": [
+              {
+                "k": "name",
+                "name": "T"
+              }
+            ],
+            "results": [
+              {
+                "k": "name",
+                "name": "T"
+              }
+            ]
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": []
+      },
+      "tok": 78,
+      "bodiless": false,
+      "span": {
+        "start": 71,
+        "end": 99
+      },
+      "sig_end": 96
+    }
+  ],
+  "consts": []
+}

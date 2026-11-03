@@ -1,0 +1,8 @@
+package t
+
+import "testdata/doubles/neg/k12/r"
+import "testdata/doubles/neg/k12/r/fake"
+
+func TestX() {
+    assert(r.Show(fake.New(), "a") == 3)
+}

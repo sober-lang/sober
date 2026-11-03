@@ -19,6 +19,8 @@ const IL_MAXINS = 40
 const IL_MAXBLK = 12
 const IL_GROW = 400
 const IL_TINY = 8
+// 葉の極小関数の大きさの上限（組 3 — 呼び出しの手間〔実引数の写し・退避・呼び手の跨ぐ値の spill〕と同じ桁）
+const IL_LEAF = 16
 const IL_CALLER = 400
 // 部分インライン: IL_MAXINS / IL_MAXBLK を超えても、冷たいブロック（exit で終わる panic の点・error を返す return 文の
 // ブロック〔B_LOOP のビット 2 — lower の retStmt が立てる〕・前任が全部冷たいブロック）を除いた熱い命令が IL_HOTINS 以下なら写す。冷たい道も
@@ -87,6 +89,7 @@ func irInlineModule(st mut St) {
     //   組 1 = 部分インラインの候補のうち先に処理するもの（ilFirst）を呼び手が先の順で — 呼び手は展開済みの本体を写す
     //     （Str の写しに boundary の呼び出しが 2 本残ると 1brc +4.1%・knuc +8.6%）
     //   組 2 = 残りを呼び手が先の順で — 呼び先は処理の前の本体（1 段）
+    //   組 3 = 最後に葉の極小関数（ilLeafTiny）を写しの中まで一巡 — 写した本体に残った呼び出し（pool.StoreRaw 等）が呼び手の区間を跨ぎにしない
     // 棄てた形: 全部を処理の前から写す（仕事 −12% だがコンパイラ自身 +8.5%）・全部を呼び先が先〔後順〕（出力 +7%・仕事 +7%）・
     // 小さい候補（≤ 40 命令）を全部畳み切る（後順と同じ）・rt を先の組に（効かない）
     // hot[i] = 熱い命令の数（-1 = 印が無い・-2 = まだ数えていない）— 呼び手が初めて見たときに数える
@@ -140,7 +143,67 @@ func irInlineModule(st mut St) {
             }
         }
     }
+    // 組 3 = 葉の極小関数（ilLeafTiny）を最後にもう一巡 — 写しの中に残った呼び出しまで写す（1 段の規則の外）。本体は呼び出しを持たない
+    // （戻らない panic だけ）ので 1 巡で尽き、どの順に回しても同じ形になる
+    mut leafm := mut []int{}
+    for i <- iter.Range(0, len(fr)) {
+        if irFnBHead(mut st, FnRef(fr[i])) != -1 && ilLeafTiny(mut st, FnRef(fr[i])) && ilShapeD(mut st, FnRef(fr[i]), size[i], true) == 1 {
+            leafm = append(leafm, fr[i])
+        }
+    }
+    leaf := freeze(leafm)
+    if len(leaf) > 0 {
+        for i <- iter.Range(0, len(fr)) {
+            if irFnBHead(mut st, FnRef(fr[i])) != -1 && !ilIn(leaf, fr[i]) {
+                ilLeafSweep(mut st, FnRef(fr[i]), leaf)
+            }
+        }
+    }
     st.fn = save
+}
+
+// f の中の葉の極小関数（leaf）の呼び出しを全部写す — exit で終わるブロック（panic の点）は除く
+func ilLeafSweep(st mut St, f FnRef, leaf []int) {
+    st.fn = f
+    mut blks := mut []int{}
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        blks = append(blks, int(b))
+        b = irBlkNext(mut st, b)
+    }
+    for k <- iter.Range(0, len(blks)) {
+        mut blk := BlkRef(blks[k])
+        mut ins := if irBlkTerm(mut st, blk) == TmExit { InsRef(-1) } else { irBlkIHead(mut st, blk) }
+        while ins != -1 {
+            nx := irInsNext(mut st, ins)
+            if irInsOp(mut st, ins) == OpCall && ilIn(leaf, int(irInsFn(mut st, ins))) {
+                blk = ilCall(mut st, f, blk, ins, irInsFn(mut st, ins))
+            }
+            ins = nx
+        }
+    }
+}
+
+// 葉の極小関数か: 呼び出しは exit で終わるブロック（panic の点）にだけあり、命令が IL_LEAF 以下。region.depth / setdepth は数えない
+// （mut 引数の関数が持つ深さの保存と復元 — 確保の無い葉では対で打ち消し合う。写しても呼び手の深さを変えない）
+func ilLeafTiny(st mut St, f FnRef) bool {
+    mut n := 0
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpCall && irBlkTerm(mut st, b) != TmExit {
+                return false
+            }
+            if op != OpDead && op != OpRDepth && op != OpRSetDepth {
+                n += 1
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return n <= IL_LEAF
 }
 
 func ilIn(xs []int, x int) bool {
@@ -702,6 +765,11 @@ func ilLoopDepth(st mut St, f FnRef) []int {
 
 // g を写してよいか: 0 = 写さない・1 = 小さい（全部を数えて IL_MAXINS / IL_MAXBLK 以下）・2 = 形は写せるが大きい（部分インラインの候補 — 熱い命令で判定）
 func ilShape(st mut St, g FnRef, n int) int {
+    return ilShapeD(mut st, g, n, false)
+}
+
+// dep = region.depth / setdepth を許す（葉の極小関数の組 3 — 深さの保存と復元の対だけを持つ）
+func ilShapeD(st mut St, g FnRef, n int, dep bool) int {
     b := irFnBHead(mut st, g)
     // rt.copy / rt.copy8 は x86 が rep movs に置き換えるので写さない。rt.matchlen / rt.jclean も手書きの本体に置き換えるので写さない。rt.out_node / out_fork / out_adv（出力の区間の冷たい道）
     // （写すと spawn の切替点〔rt.task_go〕の割り当てが増え、退避が全部の spawn に乗る）
@@ -713,7 +781,7 @@ func ilShape(st mut St, g FnRef, n int) int {
         mut i := irBlkIHead(mut st, x)
         while i != -1 {
             op := irInsOp(mut st, i)
-            if op == OpSlotaddr || op == OpREnter || op == OpRDepth || op == OpRSetDepth || op == OpRAlloc || op == OpRBump || op == OpRReloc || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone || op == OpUnwind {
+            if op == OpSlotaddr || op == OpREnter || ((op == OpRDepth || op == OpRSetDepth) && !dep) || op == OpRAlloc || op == OpRBump || op == OpRReloc || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone || op == OpUnwind {
                 return 0
             }
             i = irInsNext(mut st, i)

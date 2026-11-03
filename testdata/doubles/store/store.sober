@@ -1,0 +1,33 @@
+package store
+
+// A key-value store kept as one file per key under a directory.
+
+import "std/io"
+
+type Conn struct {
+    dir string
+}
+
+// the value could not be written
+type Denied error {}
+
+func Open(dir string) Conn {
+    return Conn{dir: dir}
+}
+
+@effects(io, nondet)
+@errors(Denied)
+func Put(c Conn, k string, v string) error? {
+    err := io.WriteFile(c.dir + "/" + k, bytes(v))
+    if err != nil {
+        return Denied{}
+    }
+    return nil
+}
+
+@effects(io, nondet)
+func Get(c Conn, k string) string? {
+    b := io.ReadFile(c.dir + "/" + k) catch return nil
+    s := string(b) catch ""
+    return s
+}

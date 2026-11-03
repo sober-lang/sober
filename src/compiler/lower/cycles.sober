@@ -21,3 +21,14 @@ func cyclesOp(st mut St) int {
     }
     return push(mut st, true, OpSyscall, list0(mut st), CY_B, 0)
 }
+
+// 先読みの指示（prefetcht0 — 番地の線を L1 へ。値も効果も持たない: 結果は 0）。rt の取り出しの道が、次に走る task の冷えた線を
+// 前もって取りに行かせる口（ミスを今の task の走りに重ねる）。番地は不正でもよい（prefetch は落ちない）。x86 の正規バックエンドの ELF の道でだけ命令・他の出力では何もしない
+const PF_B = 6
+
+func prefetchOp(st mut St, addr int) {
+    if !st.hwFold {
+        return
+    }
+    _ = push(mut st, true, OpSyscall, list1(mut st, addr), PF_B, 0)
+}

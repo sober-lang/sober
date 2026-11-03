@@ -1,0 +1,10 @@
+package main
+
+// std/crypto/x25519 の体の積の塊（MULX）の照合: 塊の fmul と Sober の fmulS を乱数の元・入力と同じ区画への積・2 乗・上限寄りの limb で
+// 突き合わせる（塊の無い出力・SOBER_NOMULX=1 では両方 Sober — 同じ出力になる）
+
+import "std/crypto/x25519"
+
+func main() {
+    println("femul mismatch", x25519.FeSelfCheck(1, 20000), x25519.FeSelfCheck(99, 5000))
+}

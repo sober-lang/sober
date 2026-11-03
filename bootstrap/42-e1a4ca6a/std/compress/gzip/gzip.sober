@@ -1,0 +1,150 @@
+package gzip
+
+// gzip（RFC 1952）の符号化と復号（中身は std/compress/flate）
+
+import "std/compress/flate"
+import "std/hash/crc32"
+import "std/internal/inflate"
+import "std/iter"
+
+// data を gzip（RFC 1952 — 1 個のメンバ）に符号化する: 10 バイトの頭（ID 1f 8b・CM 8 = deflate・FLG 0・MTIME 0・XFL・OS 255 = 不明）+
+// flate.Encode(data, level) + CRC-32 + 長さ（mod 2^32）の 8 バイト（どちらも little endian）。level は flate と同じ 0〜9（範囲外は panic(flate.BadLevel)）:
+//
+//     z := gzip.Encode(bytes(body), 6)   // HTTP の Content-Encoding: gzip の本文
+//
+// 名前・時刻・コメントの欄は持たない（MTIME 0 = 無し — 同じ入力なら常に同じバイト列）。XFL は level 9 で 2・level 1 で 4（RFC の「最大圧縮 / 最速」の印）・他 0。
+// OS は Go の compress/gzip の既定と同じ 255（対は Decode）
+@effects(!io, !block, !nondet)
+func Encode(data []byte, level int) []byte {
+    mut w := flate.Work{}
+    return EncodeWith(mut w, data, level)
+}
+
+// Encode と同じ符号化を flate の作業域 w で行う（flate.EncodeWith と同じ API — ワーカー局所の lease で借りた w を渡す。結果は Encode と同じバイト列）（対の DecodeWith は実需まで足さない — 復号の作業域は数 KB の符号の表だけ。flate.Decode と同じ・34 節 2 の注記）
+@effects(!io, !block, !nondet)
+func EncodeWith(w mut flate.Work, data []byte, level int) []byte {
+    z := flate.EncodeWith(mut w, data, level)
+    xfl := if level == 9 { 2 } else if level == 1 { 4 } else { 0 }
+    mut out := mut []byte{}
+    out = append(out, byte(0x1f))
+    out = append(out, byte(0x8b))
+    out = append(out, byte(8))
+    out = append(out, byte(0))
+    for i <- iter.Range(0, 4) {
+        out = append(out, byte(0))
+    }
+    out = append(out, byte(xfl))
+    out = append(out, byte(255))
+    for i <- iter.Range(0, len(z)) {
+        out = append(out, z[i])
+    }
+    c := crc32.Sum(data)
+    n := len(data)
+    for i <- iter.Range(0, 4) {
+        out = append(out, byte((c >> (8 * i)) & 0xff))
+    }
+    for i <- iter.Range(0, 4) {
+        out = append(out, byte((n >> (8 * i)) & 0xff))
+    }
+    return freeze(out)
+}
+
+// Decode の入力の gzip の包みが違う（ID が 1f 8b でない・CM が 8 でない・FLG の予約ビット・頭の欄の途中で尽きた・FHCRC の不一致・
+// 末尾の CRC-32 / 長さ〔ISIZE〕が中身と合わない・メンバの後に余りのバイト）。中身の DEFLATE の誤りは flate.Bad
+type Bad error
+
+// gzip（RFC 1952）の data を復号したバイト列（Encode の対）。メンバが続いていれば全部を繋ぐ（RFC 1952 2.2 — gzip(1)・Go と同じ）。
+// 頭の FNAME・FCOMMENT・FEXTRA は読み飛ばし、FHCRC は照合する。各メンバの CRC-32 と長さ（mod 2^32）を照合する。maxSize は全メンバの出力の合計の上限
+// （flate.Decode と同じ — 越えたら flate.TooLarge・省略 = 上限なし。信頼できない入力には必ず渡す）:
+//
+//     body := gzip.Decode(r.body, maxSize: 1 << 20)?   // Content-Encoding: gzip の要求の本文
+@errors(Bad, flate.Bad, flate.TooLarge)
+@effects(!io, !block, !nondet)
+func Decode(data []byte, maxSize int?) ([]byte, error?) {
+    lim := if maxSize != nil { maxSize } else { -1 }
+    mut out := mut []byte{}
+    mut p := 0
+    // 空の入力はメンバが 1 つも無い — 誤り（gzip(1) も Go も拒む）
+    while p < len(data) || p == 0 {
+        h := header(data, p)
+        if h < 0 {
+            return []byte{}, Bad{}
+        }
+        rest := if lim < 0 { 0 - 1 } else { lim - len(out) }
+        body, q, st := inflate.At(data, h, rest)
+        if st == inflate.Large {
+            return []byte{}, flate.TooLarge{}
+        }
+        if st != inflate.Ok {
+            return []byte{}, flate.Bad{}
+        }
+        if q + 8 > len(data) {
+            return []byte{}, Bad{}
+        }
+        if le32(data, q) != crc32.Sum(body) || le32(data, q + 4) != (len(body) & 0xffffffff) {
+            return []byte{}, Bad{}
+        }
+        for i <- iter.Range(0, len(body)) {
+            out = append(out, body[i])
+        }
+        p = q + 8
+    }
+    return freeze(out), nil
+}
+
+// data[p:] の gzip のメンバの頭（RFC 1952 2.3）の後の位置（形が違えば −1）
+func header(data []byte, p int) int {
+    if p + 10 > len(data) || data[p] != byte(0x1f) || data[p + 1] != byte(0x8b) || data[p + 2] != byte(8) {
+        return 0 - 1
+    }
+    flg := int(data[p + 3])
+    if flg & 0xe0 != 0 {
+        return 0 - 1
+    }
+    mut q := p + 10
+    // FEXTRA: XLEN（2 バイト）+ XLEN バイト
+    if flg & 4 != 0 {
+        if q + 2 > len(data) {
+            return 0 - 1
+        }
+        q += 2 + (int(data[q]) | (int(data[q + 1]) << 8))
+    }
+    // FNAME・FCOMMENT: 0 で終わる列
+    if flg & 8 != 0 {
+        q = zeroEnd(data, q)
+    }
+    if flg & 16 != 0 && q >= 0 {
+        q = zeroEnd(data, q)
+    }
+    if q < 0 || q > len(data) {
+        return 0 - 1
+    }
+    // FHCRC: 頭（ここまで）の CRC-32 の下位 16 ビット
+    if flg & 2 != 0 {
+        if q + 2 > len(data) {
+            return 0 - 1
+        }
+        if (crc32.Sum(data[p:q]) & 0xffff) != (int(data[q]) | (int(data[q + 1]) << 8)) {
+            return 0 - 1
+        }
+        q += 2
+    }
+    return q
+}
+
+// data[q:] の最初の 0 の次の位置（無ければ −1）
+func zeroEnd(data []byte, q int) int {
+    mut i := q
+    while i < len(data) {
+        if data[i] == byte(0) {
+            return i + 1
+        }
+        i += 1
+    }
+    return 0 - 1
+}
+
+// data[q:q + 4] の little endian の値
+func le32(data []byte, q int) int {
+    return int(data[q]) | (int(data[q + 1]) << 8) | (int(data[q + 2]) << 16) | (int(data[q + 3]) << 24)
+}

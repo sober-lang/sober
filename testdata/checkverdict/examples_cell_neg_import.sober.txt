@@ -1,0 +1,2 @@
+sober: load error at examples/cell_neg_import.sober:5:8: std/testing/cell is imported only from _test.sober and _double.sober files
+exit=1

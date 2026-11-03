@@ -498,9 +498,12 @@ func printPos(st mut St, fsl int, line int, col int, paths []string) {
 }
 
 // 点のファイルの綴り（置き場所に依らない — hermetic: main package のファイルは名前だけ・他は import のパス + "/" + 名前。
-// エントリの綴り〔相対 / 絶対〕や cwd を焼かない）
+// エントリの綴り〔相対 / 絶対〕や cwd を焼かない）。double のファイルは相手の import のパスを名乗るので、ルート相対の実パスで綴る
 func sitePath(p loader.Program, f int) string {
     path := p.file_path[f]
+    if strings.HasSuffix(path, "_double.sober") {
+        return path
+    }
     _, after, slashed := strings.CutLast(path, "/")
     base := if slashed { after } else { path }
     pk := p.pkg_path[p.file_pkg[f]]

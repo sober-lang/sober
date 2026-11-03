@@ -10,7 +10,7 @@ AES-128-GCM（NIST SP 800-38D — 鍵 16 バイト・nonce 12 バイト・tag 16
 if aesgcm.Available() { ct := aesgcm.Seal(key, nonce, ad, pt)? }
 ```
 
-record 層向けの API: 鍵の展開は Prepare で 1 回（接続ごと方向ごと）・record ごとは ctx の写し + nonce だけ。SealTo は head ‖ 暗号文 ‖ tag を 1 回の確保に直に書き、OpenAt は b[off, off + n) を写さずに検証してから復号する
+record 層向けの API: 鍵の展開は Prepare で 1 回（接続ごと方向ごと — 鍵の表は以後読むだけ）・record ごとは小さい状態の列（計数器・GHASH の溜め・端のブロック）を 1 本だけ作る。SealTo は head ‖ 暗号文 ‖ tag を 1 回の確保に直に書き、OpenAt は b[off, off + n) を平文の列へ復号しながら検証する（tag が合わなければ平文を 0 で消して Auth — 平文は外へ出ない）
 
 ```sober
 k := aesgcm.Prepare(key)?
@@ -89,7 +89,7 @@ type Key struct {
 }
 ```
 
-展開した鍵（Prepare の結果 — 鍵の展開 11 段と GHASH の H^1〜H^4 を持つ ctx のテンプレート。Sober からも専用命令の実装からも書かない — record ごとに写して使う）
+展開した鍵（Prepare の結果 — 鍵の展開 11 段・GHASH の H^1〜H^8 と定数を持つ表。Prepare の後は Sober からも専用命令の実装からも書かない — record の状態が番地で指す）
 
 ## Prepare
 
@@ -127,7 +127,7 @@ pt を暗号化して tag を付けたもの（暗号文 ‖ tag）。nonce は�
 func Open(key []byte, nonce []byte, ad []byte, sealed []byte) ([]byte, error?)
 ```
 
-Seal の逆（tag を crypto.Equal で照合してから復号する）
+Seal の逆（復号しながら GHASH を畳み、tag を crypto.Equal で照合する — 合わなければ平文を消して Auth）
 
 失敗のラベル: [`NoHardware`](#nohardware)・[`BadSize`](#badsize)・[`Auth`](#auth)
 
@@ -154,7 +154,7 @@ head ‖ 暗号文 ‖ tag（平文 = pt ‖ tail — tail は TLS 1.3 の内側
 func SealInto(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte, dst mut []byte, at int) int
 ```
 
-SealTo の宛先を呼び手の列 dst[at:] にした形（head ‖ 暗号文 ‖ tag を dst へ書いて、書いたバイト数を返す — 入らなければ −1・nonce の長さが違えば −1）。pt の 16 の倍数の部分は CTR が pt から dst へ直に書く（Sober の写しなし）・端（pt の残り ‖ tail）は 16 の倍数に埋めた作業の列で CTR して写す。作業の列（ctx の写し・端）は呼び手の region に積もるので、送りの park の深度を空けたい呼び手（std/tls の送りの束）は式ブロックで包む
+SealTo の宛先を呼び手の列 dst[at:] にした形（head ‖ 暗号文 ‖ tag を dst へ書いて、書いたバイト数を返す — 入らなければ −1・nonce の長さが違えば −1）。pt の 16 の倍数の部分は CTR が pt から dst へ直に書く（Sober の写しなし）・端（pt の残り ‖ tail）は record の状態の中に並べて CTR が dst へ書く。作業の列（record の状態 — 計数器・GHASH の溜め・端）は呼び手の region に積もるので、送りの park の深度を空けたい呼び手（std/tls の送りの束）は式ブロックで包む
 
 ## OpenAt
 
@@ -164,7 +164,7 @@ SealTo の宛先を呼び手の列 dst[at:] にした形（head ‖ 暗号文 �
 func OpenAt(k Key, nonce []byte, ad []byte, b []byte, off int, n int) ([]byte, error?)
 ```
 
-b[off, off + n)（暗号文 ‖ tag）を写さずに tag を照合してから復号した平文。nonce の長さが違う・n が tag より短い・[off, off + n) が b の外なら BadSize
+b[off, off + n)（暗号文 ‖ tag）を復号した平文（128 の倍数の部分は GHASH と復号を縫い合わせた 1 回の走査・残りは照合の後 — tag が合わなければ書いた平文を crypto.Wipe で消して Auth）。nonce の長さが違う・n が tag より短い・[off, off + n) が b の外なら BadSize
 
 失敗のラベル: [`BadSize`](#badsize)・[`Auth`](#auth)
 

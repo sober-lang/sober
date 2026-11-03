@@ -1,0 +1,13 @@
+package main
+
+// give: に端点でない値（int）を渡す（diag.Par kind 30 — check と build が同じ拒否）
+
+import "std/task"
+
+func main() {
+    r, _ := task.Run((s) => {
+        h := task.Spawn(s, (n) => n + 1, give: 3)
+        task.Join(h)
+    })
+    println(r)
+}

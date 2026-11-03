@@ -43,8 +43,8 @@ X-7. 値を明示して捨てるときは `_ = e` と書く（捨てた事実が
 
 ## 4.3 パイプ
 
-X-8. `x |> f(a)` は `f(x, a)` — 左の値は既定で右の呼び出しの第 1 引数になる。位置を選ぶときは穴 `_` を書く（`x |> f(a, _)` は `f(a, x)`）。`x |> f` は `f(x)`。穴は右の呼び出しの直下の実引数の位置だけで、入れ子の呼び出しの中（`x |> f(g(_))`）には置けない。
-例: [`examples/pipe_basic.sober`](../../examples/pipe_basic.sober)
+X-8. `x |> f(a)` は `f(x, a)` — 左の値は既定で右の呼び出しの第 1 引数になる。位置を選ぶときは穴 `_` を書く（`x |> f(a, _)` は `f(a, x)`）。`x |> f` は `f(x)`。穴は右の呼び出しの直下の実引数の位置だけで、入れ子の呼び出しの中（`x |> f(g(_))`）には置けない。左が多値なら穴を値の数だけ書き、値を左から順に穴へ落とす（`divmod(17, 5) |> add(_, _)` — 左は 1 度だけ評価する）。
+例: [`examples/pipe_basic.sober`](../../examples/pipe_basic.sober)・[`examples/pipe_multi.sober`](../../examples/pipe_multi.sober)
 拒否: [`examples/pipe_neg_nested_hole.sober`](../../examples/pipe_neg_nested_hole.sober)
 決定: [language.md 4 節](../language.md)
 

@@ -191,7 +191,7 @@ v0.6 時点で実装済みの表面の一覧です。規則の全文は[言語�
 - 暗号とハッシュ: crypto（AES-GCM・ChaCha20-Poly1305・SHA-256・HMAC・HKDF・X25519・RSA・PEM・定数時間演算）・hash（crc32・sha256）
 - 符号化と変換: json・base64・hex・binary・convert・strings・utf8・compress（flate / gzip の圧縮側）
 - データと計算: iter・sort・math・rand・table・builder・pool・layout
-- 並列とテスト: task（決定的な並列 Map ほか）・testing・quick（プロパティベーステスト）
+- 並列とテスト: task（決定的な並列 Map ほか）・testing（cell — テストの double が状態を貯める置き場）・quick（プロパティベーステスト）
 
 ツール（単バイナリ `sober` のサブコマンド）:
 

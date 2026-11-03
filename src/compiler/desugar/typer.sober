@@ -991,6 +991,15 @@ func yStmt(st mut S, s NodeRef) int {
             _ = yLambda(mut st, latN(mut st, rv, 0), yTe(mut st, fnPkg(mut st, st.yfi), fnTParams(mut st, st.yfi), latN(mut st, fnResults(mut st, st.yfi), 0)))
         } else {
             yExprs(mut st, rv)
+            // 腕が全部型なしの定数の if / switch の値は、結果の byte / named scalar に割り当てる（desugar の末尾期待型・lower の exprExpecting と同じ）
+            if st.ylam == 0 && st.yfi >= 0 && lenL(mut st, rv) == 1 && lenL(mut st, fnResults(mut st, st.yfi)) == 1 {
+                v := latN(mut st, rv, 0)
+                rt := yTe(mut st, fnPkg(mut st, st.yfi), fnTParams(mut st, st.yfi), latN(mut st, fnResults(mut st, st.yfi), 0))
+                vt := YTypeOf(mut st, v)
+                if vt >= 0 && rt >= 0 && yNamedOver(mut st, rt, vt) && yArmsUntyped(mut st, v) {
+                    yPut(mut st, int(v), rt)
+                }
+            }
         }
         yNoteRet(mut st, lA(nodeOf(mut st, s)))
         return yBase(YNever)
@@ -1654,7 +1663,7 @@ func yBuiltin(st mut S, name StrRef, args ListRef) int {
     if strIs(mut st, name, "println") || strIs(mut st, name, "delete") {
         return yBase(YNone)
     }
-    if strIs(mut st, name, "panic") {
+    if strIs(mut st, name, "panic") || strIs(mut st, name, "$unreach") {
         // `panic(L{…})` は戻らない（return と同じ — 兄弟の腕の型に合う）
         return yBase(YNever)
     }
@@ -1777,19 +1786,33 @@ func yJoin(st mut S, a int, b int) int {
     }
     // nil の腕は兄弟の腕の T?（`if c { v } else { nil }` — 兄弟が T? ならそのまま）
     if yk(mut st, b) == YNil {
-        return if yk(mut st, a) == YOpt { a } else { yMk(mut st, YOpt, a, 0, 0) }
+        return yNilUp(mut st, a)
     }
     if yk(mut st, a) == YNil {
-        return if yk(mut st, b) == YOpt { b } else { yMk(mut st, YOpt, b, 0, 0) }
+        return yNilUp(mut st, b)
     }
     // T の腕と T? の腕は T?（`if c { "a" } else if d { "b" } else { nil }` の内側の if・`else { o }` — T? の期待位置の合流）
-    if yk(mut st, a) == YOpt && yEq(mut st, YAt(mut st, a).a, b) {
+    if yk(mut st, a) == YOpt && yOptHolds(mut st, a, b) {
         return a
     }
-    if yk(mut st, b) == YOpt && yEq(mut st, YAt(mut st, b).a, a) {
+    if yk(mut st, b) == YOpt && yOptHolds(mut st, b, a) {
         return b
     }
     return -1
+}
+
+// nil の腕と合流する腕の型 t の T?（T? ならそのまま・error のラベルは error?）
+func yNilUp(st mut S, t int) int {
+    if yk(mut st, t) == YOpt {
+        return t
+    }
+    return yMk(mut st, YOpt, if yk(mut st, t) == YLabel { yBase(YErr) } else { t }, 0, 0)
+}
+
+// T? の o が腕の型 t の値を中身に持てるか（t が中身そのもの・error? にラベル）
+func yOptHolds(st mut S, o int, t int) bool {
+    in := YAt(mut st, o).a
+    return yEq(mut st, in, t) || (yk(mut st, in) == YErr && yk(mut st, t) == YLabel)
 }
 
 // 条件 c が `x != nil` / `x == nil`（x は T? の局所）なら (名前, 中身の型, then 側が値ありか)。でなければ名前 -1
@@ -1857,15 +1880,35 @@ func yNamedOver(st mut S, n int, u int) bool {
     return (un == 0 && yk(mut st, u) == YInt) || (un == 1 && yk(mut st, u) == YBool)
 }
 
-// if の腕 a（then の KBlock・else の EBlock か式）がちょうど型なしの定数 1 つか
+// 値の if（else つき）/ switch の腕が全部、値が型なしの定数か
+func yArmsUntyped(st mut S, e NodeRef) bool {
+    k := kindN(mut st, e)
+    if k == ast.EIf {
+        return nC(nodeOf(mut st, e)) != -1 && yArmUntyped(mut st, nB(nodeOf(mut st, e))) && yArmUntyped(mut st, nC(nodeOf(mut st, e)))
+    }
+    if k != ast.ESwitch {
+        return false
+    }
+    cs := lB(nodeOf(mut st, e))
+    for i <- iter.Range(0, lenL(mut st, cs)) {
+        if !yArmUntyped(mut st, nB(nodeOf(mut st, latN(mut st, cs, i)))) {
+            return false
+        }
+    }
+    dflt := nC(nodeOf(mut st, e))
+    return dflt == -1 || yArmUntyped(mut st, dflt)
+}
+
+// if の腕 a（then の KBlock・else の EBlock か式）の値が型なしの定数か（塊なら末尾の式文 — 前の文は問わない。lower の armUntyped と同じ）
 func yArmUntyped(st mut S, a NodeRef) bool {
     k := kindN(mut st, a)
     if k == ast.KBlock || k == ast.EBlock {
         l := lA(nodeOf(mut st, a))
-        if lenL(mut st, l) != 1 || kindN(mut st, latN(mut st, l, 0)) != ast.SExpr {
+        n := lenL(mut st, l)
+        if n == 0 || kindN(mut st, latN(mut st, l, n - 1)) != ast.SExpr {
             return false
         }
-        return yArmUntyped(mut st, nA(nodeOf(mut st, latN(mut st, l, 0))))
+        return yArmUntyped(mut st, nA(nodeOf(mut st, latN(mut st, l, n - 1))))
     }
     if k == ast.EIdent && yLookup(mut st, sA(nodeOf(mut st, a))) != -2 {
         return false

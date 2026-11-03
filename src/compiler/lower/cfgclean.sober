@@ -51,10 +51,12 @@ func cfgCleanFunc(st mut St, f FnRef) {
     // ③ 定数の畳み込み（P2 — インラインした rt の本体の定数の実引数〔n = 1 の確保の n * 8 等〕が畳める）と P3・振り直し
     optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
     single := ccSinglePtr(mut st, f)
-    if removed || merged || threaded || single {
+    // 畳みで条件が定数になった condbr（copyloop の範囲の検査の `j0 >= 0` 等）は取る側への br に — 取らない側は P4 が消す
+    optFold(mut st, f)
+    cbr := ccConstBr(mut st, f)
+    if removed || merged || threaded || single || cbr {
         optBlocks(mut st, f)
     }
-    optFold(mut st, f)
     optDce(mut st, f)
     optRenumber(mut st, f)
     // ④ GVN（インラインで入った rt の本体の meta の読み直し・同じ番地の計算 — gvn.sober をそのまま）
@@ -715,7 +717,7 @@ func ccPostFold(st mut St, f FnRef) {
     optRenumber(mut st, f)
 }
 
-// 条件が定数の condbr があるか（ccPostFold の門）: 条件が定数の命令（OpConst）の結果か、両辺が定数の比較の結果。
+// 条件が定数の condbr があるか（ccPostFold の門）: 条件が定数の命令（OpConst）の結果か、両辺が定数か同じ値の比較の結果。
 // 展開後の mem2reg は tag の load を定数へ置き換えるので、`condbr (cmp ne k, 0)` の形で残る（logagg main の catch の値の検査）
 func ccConstCond(st mut St, f FnRef) bool {
     // 印: 1 = condbr の条件・2 = 定数の命令の結果（両方立つ値もある）
@@ -748,7 +750,7 @@ func ccConstCond(st mut St, f FnRef) bool {
             r := irInsRes(mut st, i)
             if r >= 0 && mk[r] & 1 == 1 {
                 op := irInsOp(mut st, i)
-                if op == OpConst || op == OpCmp && irInsA(mut st, i) < CFEq && mk[irInsB(mut st, i)] & 2 == 2 && mk[irInsC(mut st, i)] & 2 == 2 {
+                if op == OpConst || op == OpCmp && irInsA(mut st, i) < CFEq && (mk[irInsB(mut st, i)] & 2 == 2 && mk[irInsC(mut st, i)] & 2 == 2 || irInsB(mut st, i) == irInsC(mut st, i)) {
                     return true
                 }
             }

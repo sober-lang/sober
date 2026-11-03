@@ -1,0 +1,2 @@
+sober: desugar error at examples/for_string_src.sober:8:14 (TypeMismatch): a string is not a for source — name the view: `for c <- bytes(s)`
+exit=1

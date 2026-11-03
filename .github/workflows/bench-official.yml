@@ -16,8 +16,11 @@ on:
         description: "seqperf / extsort の周の数（交互）"
         default: "5"
       extsort_chart:
-        description: "extsort の RSS の図の入力の大きさ（バイト・空白区切り — 空にすると省く・約 9 分短くなる。公式の表は 1 GiB の周だけを読む）"
-        default: "268435456 1073741824 4294967296"
+        description: "extsort の RSS の図の入力の大きさ（バイト・空白区切り — 空にすると省く。公式の表は 1 GiB の周だけを読む）"
+        default: "268435456 1073741824"
+      extsort_mem_high:
+        description: "extsort の RAM の天井（cgroup MemoryHigh の MiB — 入力 1 GiB を RAM 超にする・0 で天井なし）"
+        default: "768"
 
 concurrency:
   group: bench-official
@@ -110,7 +113,7 @@ jobs:
 
       - name: extsort
         run: |
-          bench/extsort.sh -n "${{ inputs.rounds }}" --chart "${{ inputs.extsort_chart }}" -o out/bench/extsort.tsv
+          bench/extsort.sh -n "${{ inputs.rounds }}" --chart "${{ inputs.extsort_chart }}" --mem-high "${{ inputs.extsort_mem_high }}" -o out/bench/extsort.tsv
           wc -l out/bench/extsort.tsv
 
       # 取り込んだときの姿の下見（job の中で official.tsv を作って文書とグラフを生成 — 読むだけ・リポジトリには書かない）

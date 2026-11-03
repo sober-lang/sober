@@ -1,0 +1,11 @@
+package main
+
+// the cells of std/testing/cell are state for test doubles: only _test.sober and _double.sober files import the package (language.md 41 節)
+
+import "std/testing/cell"
+
+const N = cell.Cell[int]{}
+
+func main() {
+    cell.Set(N, 1)
+}

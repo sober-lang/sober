@@ -1,0 +1,108 @@
+package utf8
+
+// 検査済みの UTF-8 のビュー（View — 全体を 1 回検査すれば、文字境界で切った部分列は検査し直さずに string にできる）。
+// UTF-8 の妥当性の検査そのもの（Valid / IndexInvalid / InvalidUtf8）は std/strings、`string(b)` の裏方は std/internal/utf8
+
+import "std/iter"
+import "std/task"
+import "std/strings"
+
+// 棄てた案: 非公開の型 view（構築は塞げるが型の名前が書けず、View を受け渡す関数が書けない — 欄の読みはどちらでも塞げない）。
+// 再訪条件: 可視性の細分（構築のみ私有）が入ったら封を外す
+
+// 中身が有効な UTF-8 と検査済みのバイト列（型つき証人）。作れるのは Check だけ: 非公開の型の封の欄 seal があるので外からは composite に
+// 書けない（部分リテラルは拒否・sealed の値は外で書けない）。型は公開（引数の型に utf8.View と書ける — json.Doc と同じ形）。
+// 全体を 1 回検査すれば、文字境界で切った部分列は全部有効（有効な列を境界で切ると両側とも有効）なので、Str は境界の 2 バイトを読むだけで string を返す
+// — 行ごとに検査し直さない
+type View struct {
+    b []byte
+    seal sealed
+}
+
+// View の封（非公開 — 外で値を書けない）
+type sealed struct {
+}
+
+// b 全体を検査して View にする（不正なら最初の不正なシーケンスの位置の InvalidUtf8 — string(b) と同じ位置）
+@errors(strings.InvalidUtf8)
+@effects(block)
+func Check(b []byte) (View, error?) {
+    at := if len(b) < CHECK_PAR_MIN { strings.IndexInvalid(b) } else { indexInvalidPar(b) }
+    if at >= 0 {
+        return View{}, strings.InvalidUtf8{pos: at}
+    }
+    return View{b: b, seal: sealed{}}, nil
+}
+
+// View のバイト列（読むだけ）
+@effects()
+func Bytes(v View) []byte {
+    return v.b
+}
+
+// p が v の文字境界か（端か、継続バイト 10xxxxxx でない）
+func boundary(v View, p int) bool {
+    return p == 0 || p == len(v.b) || (p > 0 && p < len(v.b) && int(v.b[p]) & 192 != 128)
+}
+
+// v の [s, i) を検査し直さずに string にする。s と i が文字境界でなければ strings.InvalidUtf8{pos: 境界でない側}（範囲外の添字は slice と同じく panic）
+@errors(strings.InvalidUtf8)
+@effects()
+func Str(v View, s int, i int) (string, error?) {
+    sub := v.b[s:i]
+    if !boundary(v, s) {
+        return "", strings.InvalidUtf8{pos: s}
+    }
+    if !boundary(v, i) {
+        return "", strings.InvalidUtf8{pos: i}
+    }
+    return bytesToString(sub), nil
+}
+
+// 1BRC で読み込みの直後の全体の検査が Amdahl の直列の大半だった — 大きい入力は区間に割る
+
+// 大きい入力の Check を区間に割って並列に検査するときの大きさ（バイト）。区間の大きさは入力の大きさだけで決まる（ワーカー数に依らない — 区間の数 = 長さ / CHECK_GRAIN）。CHECK_PAR_MIN 未満は逐次のまま
+// （区間 1 つの検査 ≈ 数百万命令に対し task の器は ≈ 1,000 命令 — 区間が 2 つ以上になる長さから割る）
+const CHECK_GRAIN = 1048576
+const CHECK_PAR_MIN = 2097152
+
+// strings.IndexInvalid(b) と同じ値を区間ごとの並列の検査で求める。区間の頭は名目の位置から継続バイト（10xxxxxx）を読み飛ばした
+// 最初の非継続バイト（か末尾）: 妥当な列の内側は継続バイトだけなので、手前の区間に不正が無ければ逐次の走査もちょうどそこを列の頭として通る。
+// 区間の末尾で途切れる列は、全体でも次のバイトが継続バイトでないので不正 — 区間ごとの判定は全体の判定と同じ。読み飛ばした継続バイトは
+// 手前の区間に入る（区間は隙間なく並ぶ）。答え = 区間の順で最初の不正（後ろの区間の不正は手前が全部妥当なときだけ採る — 逐次と同じ値）
+func indexInvalidPar(b []byte) int {
+    n := (len(b) + CHECK_GRAIN - 1) / CHECK_GRAIN
+    mut bounds := mut []int{0}
+    for k <- iter.Range(1, n) {
+        mut p := k * CHECK_GRAIN
+        if p < bounds[len(bounds) - 1] {
+            p = bounds[len(bounds) - 1]
+        }
+        while p < len(b) && int(b[p]) & 192 == 128 {
+            p += 1
+        }
+        bounds = append(bounds, p)
+    }
+    bounds = append(bounds, len(b))
+    bs := freeze(bounds)
+    mut ks := mut []int{}
+    for k <- iter.Range(0, n) {
+        ks = append(ks, k)
+    }
+    ats, e := task.Map(freeze(ks), (k) => chunkInvalid(b, bs[k], bs[k + 1]))
+    if e != nil {
+        return strings.IndexInvalid(b)
+    }
+    for k <- iter.Range(0, n) {
+        if ats[k] >= 0 {
+            return ats[k]
+        }
+    }
+    return -1
+}
+
+// b[lo:hi] の最初の不正の位置（b 上）、妥当なら -1
+func chunkInvalid(b []byte, lo int, hi int) int {
+    at := strings.IndexInvalid(b[lo:hi])
+    return if at >= 0 { lo + at } else { -1 }
+}

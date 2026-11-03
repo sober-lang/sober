@@ -303,6 +303,11 @@ func efWalkFn(az mut Az, fi int) {
         efConst(mut az, fi, if key == desugar.PAR_SCOPE || key == desugar.PAR_JOIN || key == desugar.PAR_TRY || key == desugar.PAR_SEND || key == desugar.PAR_RECV { loader.EffBlock } else { 0 }, int(desugar.FnAt(mut az.d, fi).node))
         return
     }
+    ck := desugar.CellKey(mut az.d, fi)
+    if ck != 0 {
+        efConst(mut az, fi, if ck == desugar.CELL_GET { loader.EffIo | loader.EffNondet } else { loader.EffIo }, int(desugar.FnAt(mut az.d, fi).node))
+        return
+    }
     body := desugar.NodeRef(fd.e)
     if body == -1 {
         l, t := desugar.FuncEffects(mut az.d, fd)
@@ -653,6 +658,13 @@ func efCall(az mut Az, e desugar.NodeRef, callee desugar.NodeRef, args desugar.L
             efExpr(mut az, c)
         }
     }
+    // cell.Update のラムダは置き場のロックを持ったまま走る: 効果なしと照合する（呼び出し点で写すので値の位置の表に載らない — 型宣言の印 -2）
+    if g >= 0 && lhs == -1 && desugar.CellKey(mut az.d, g) == desugar.CELL_UPDATE && desugar.LenL(mut az.d, args) == 2 && kind(mut az, nat(mut az, args, 1)) == ast.ELambda {
+        efExpr(mut az, nat(mut az, args, 0))
+        table.Push(mut az.ef.flam, efLambda(mut az, nat(mut az, args, 1)))
+        table.Push(mut az.ef.flam, -2)
+        return
+    }
     // 実引数（pipe の左辺は穴の位置か先頭）
     n := desugar.LenL(mut az.d, args)
     mut hole := false
@@ -675,6 +687,10 @@ func efCall(az mut Az, e desugar.NodeRef, callee desugar.NodeRef, args desugar.L
 
 // 呼び出しの名前 name が葉（組み込みの panic / println・今の package の @intrinsic の鍵）なら to に足す
 func efLeaf(az mut Az, to int, name desugar.StrRef, e desugar.NodeRef) bool {
+    if desugar.StrIs(mut az.d, name, "$unreach") {
+        // flowx が写した到達しない点（条件が成り立たせた nil 判定の外れ）— panic の効果に数えない
+        return true
+    }
     if desugar.StrIs(mut az.d, name, "panic") {
         efConst(mut az, to, loader.EffPanic, int(e))
         return true
@@ -938,6 +954,13 @@ func efCheck(az mut Az) {
 
 // F の位置の値（節 id・置いた節 at）を F の契約と照合する
 func efFnCheck(az mut Az, id int, d int, at int) {
+    if d == -2 {
+        miss := table.Get(mut az.ef.bits, id)
+        if miss != 0 {
+            report(mut az, MEffFnLeak, desugar.NodeRef(at), desugar.NodeRef(efViol(mut az, id, miss, 0, d)))
+        }
+        return
+    }
     l, t, pk := desugar.FnTypeEffects(mut az.d, desugar.NodeRef(d))
     if l == -1 || efBad(mut az, pk, l) != -1 {
         return
@@ -1067,6 +1090,9 @@ func efMessage(az mut Az, k int, at desugar.NodeRef, x int) string {
     via := efFirst(mut az, id, miss)
     if k == MEffFnLeak {
         d := table.Get(mut az.ef.viol, x * EV_W + 3)
+        if d == -2 {
+            return "the function given to cell.Update may have the effect ${efBitsStr(miss)} via ${via}: it runs holding the cell's lock, so it has no effects"
+        }
         return "this function value of type '${fnTyName(mut az, d)}' may have the effect ${efBitsStr(miss)} via ${via}, which the @effects of '${fnTyName(mut az, d)}' does not allow (allowed: ${efBitsStr(allow)})"
     }
     return "'${fnName(mut az, id)}' may have the effect ${efBitsStr(miss)} via ${via}, which its @effects does not allow (allowed: ${efBitsStr(allow)})"

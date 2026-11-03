@@ -409,12 +409,15 @@ func vfyInst(st mut St, v mut vfyS, w mut m2rW, f FnRef, ins InsRef, nf int) str
         if b == CY_B {
             return if n != 0 { "cycles with ${n} operands" } else { "" }
         }
+        if b == PF_B {
+            return if n != 1 { "prefetch with ${n} operands" } else { vfyList(mut st, mut v, mut w, a, TyI64, "prefetch") }
+        }
         if b == MM_B {
-            nm := if c == MK_CPU { 0 } else if c == MK_MUL { 6 } else { -1 }
+            nm := if c == MK_CPU { 0 } else if c == MK_MUL || c == MK_SEL { 6 } else if c == MK_SQR { 5 } else if c == MK_FE { 3 } else if c == MK_SHA { 4 } else { -1 }
             return if n != nm { "montmul op ${c} with ${n} operands" } else { vfyList(mut st, mut v, mut w, a, TyI64, "montmul") }
         }
         if b == AES_B {
-            na := if c == AK_CPU { 0 } else if c == AK_KEY { 2 } else if c == AK_CTR { 4 } else if c == AK_GHASH { 3 } else if c == AK_TAG { 2 } else { -1 }
+            na := if c == AK_CPU { 0 } else if c == AK_KEY { 2 } else if c == AK_CTR { 4 } else if c == AK_GHASH { 3 } else if c == AK_TAG { 2 } else if c == AK_SEAL || c == AK_OPEN { 4 } else { -1 }
             return if n != na { "aes op ${c} with ${n} operands" } else { vfyList(mut st, mut v, mut w, a, TyI64, "aes") }
         }
         if n < 1 || n > 7 {

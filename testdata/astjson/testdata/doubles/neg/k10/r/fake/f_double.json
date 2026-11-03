@@ -1,0 +1,169 @@
+{
+  "package": "r",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/doubles/neg/k10/r",
+      "tok": 10
+    }
+  ],
+  "types": [
+    {
+      "name": "Conn",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 16
+          }
+        ]
+      },
+      "tok": 13,
+      "span": {
+        "start": 12,
+        "end": 21
+      }
+    },
+    {
+      "name": "Bad",
+      "type_params": [],
+      "body": {
+        "k": "error",
+        "fields": []
+      },
+      "tok": 22,
+      "span": {
+        "start": 21,
+        "end": 27
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "New",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "Conn"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Conn",
+                "elems": [
+                  {
+                    "key": "n",
+                    "value": {
+                      "k": "int",
+                      "value": 0,
+                      "tok": 38
+                    }
+                  }
+                ],
+                "tok": 34,
+                "type_args": []
+              }
+            ],
+            "tok": 33
+          }
+        ]
+      },
+      "tok": 28,
+      "bodiless": false,
+      "span": {
+        "start": 27,
+        "end": 43
+      },
+      "sig_end": 32
+    },
+    {
+      "name": "Show",
+      "type_params": [],
+      "params": [
+        {
+          "name": "c",
+          "type": {
+            "k": "name",
+            "name": "Conn"
+          },
+          "mutable": false
+        },
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 3,
+                "tok": 55
+              }
+            ],
+            "tok": 54
+          }
+        ]
+      },
+      "tok": 44,
+      "bodiless": false,
+      "span": {
+        "start": 43,
+        "end": 59
+      },
+      "sig_end": 53
+    }
+  ],
+  "consts": [
+    {
+      "name": "M",
+      "expr": {
+        "k": "selector",
+        "base": {
+          "k": "ident",
+          "name": "r",
+          "tok": 62
+        },
+        "field": "Max",
+        "tok": 64
+      },
+      "tok": 60,
+      "span": {
+        "start": 59,
+        "end": 66
+      }
+    }
+  ],
+  "replaces": [
+    {
+      "replaces": "testdata/doubles/neg/k10/r",
+      "tok": 0
+    }
+  ]
+}

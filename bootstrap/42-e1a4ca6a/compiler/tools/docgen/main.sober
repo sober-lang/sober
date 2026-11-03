@@ -1,0 +1,1192 @@
+package main
+
+// docgen: std リファレンスの生成器。合成の entry（std の全 package を import する main — scripts/stdref.sh が
+// stage2.sh の L0 と同じ列挙で書く）を loader で読み、std/internal を除く各 package の公開の宣言を、ソースの出現順に docs/std/<package>.ja.md へ書く。
+// 署名は .sobi と同じ印字器（printer.FuncDeclText の署名だけの形・TypeDeclText・ConstText — 畳める const は畳んだ値）で印字する。
+// doc コメントはパーサの木に無いので、宣言の名前の字句の位置からソースのバイト列を直前へ遡って取る（注釈の行を飛ばし、連続した `//` 行）。
+// 同時に doc の lint（警告 — 標準出力に `WARN\t<種類>\t<位置>\t<名前>\t<詳細>` の行）と英訳表（docs/std/en/<package>.json — 原文の crc32）の古さを見る。
+
+import "std/io"
+import "std/os"
+import "std/builder"
+import "std/iter"
+import "std/strings"
+import "std/convert"
+import "std/json"
+import "std/hash/crc32"
+import "lexer"
+import "parser"
+import "ast"
+import "loader"
+import "printer"
+
+// package の 1 ファイル（生のソースを parse し直した木 — loader の写しの前）
+type Src struct {
+    path string
+    src []byte
+    t ast.Tree
+    ts []lexer.Token
+}
+
+// 型の欄か variant 1 つ（doc は直前の `//` 行か行末のコメント — 無ければ ""）
+type Member struct {
+    name string
+    doc string
+}
+
+// 公開の宣言 1 つ（kind 0 = 型・1 = 関数・2 = const・3 = std の @intrinsic・4 = loader が合成する口〔`// 合成:` の塊 — synthDecls〕）
+type Decl struct {
+    name string
+    kind int
+    file int
+    pos int
+    line int
+    sig string
+    doc []string
+    tail string
+    lead string
+    labels []string
+    members []Member
+}
+
+// 生成の置き場（root = リポジトリの根 — examples/ と docs/language.md を引く・en = 英訳表の置き場・out = 書き出し先）
+type Cfg struct {
+    root string
+    en string
+    out string
+    head string
+}
+
+// lint と欄の doc の数え上げ
+type Stat struct {
+    decls int
+    warns int
+    members int
+    memberDocs int
+}
+
+func str(b []byte) string {
+    return string(b) catch "?"
+}
+
+func warn(o mut builder.Builder[byte], st mut Stat, kind string, at string, name string, detail string) {
+    st.warns += 1
+    builder.PushString(mut o, "WARN\t${kind}\t${at}\t${name}\t${detail}\n")
+}
+
+// ── ソースの行 ──
+
+func lineStart(src []byte, at int) int {
+    mut a := at
+    while a > 0 && src[a - 1] != '\n' {
+        a -= 1
+    }
+    return a
+}
+
+func lineEnd(src []byte, at int) int {
+    mut b := at
+    while b < len(src) && src[b] != '\n' {
+        b += 1
+    }
+    return b
+}
+
+func skipSpace(src []byte, a int, b int) int {
+    mut i := a
+    while i < b && (src[i] == ' ' || src[i] == '\t') {
+        i += 1
+    }
+    return i
+}
+
+func lineNo(src []byte, at int) int {
+    mut n := 1
+    for i <- iter.Range(0, at) {
+        if src[i] == '\n' {
+            n += 1
+        }
+    }
+    return n
+}
+
+// `//` の行 [a, b)（a は `//` の位置）の中身（`//` と直後の空白 1 つを外し、行末の空白を落とす）
+func commentText(src []byte, a int, b int) string {
+    mut s := a + 2
+    if s < b && src[s] == ' ' {
+        s += 1
+    }
+    mut e := b
+    while e > s && (src[e - 1] == ' ' || src[e - 1] == '\t' || src[e - 1] == '\r') {
+        e -= 1
+    }
+    return str(src[s:e])
+}
+
+func isComment(src []byte, a int, b int) bool {
+    return b - a >= 2 && src[a] == '/' && src[a + 1] == '/'
+}
+
+// 位置 at の行の直前の doc コメント（注釈の行 `@…` は doc の前に限り飛ばす — doc は注釈の上に書く）
+func docBefore(src []byte, at int) []string {
+    mut rev := mut []string{}
+    mut ls := lineStart(src, at)
+    mut more := true
+    while more && ls > 0 {
+        pe := ls - 1
+        ps := lineStart(src, pe)
+        a := skipSpace(src, ps, pe)
+        if len(rev) == 0 && a < pe && src[a] == '@' {
+            ls = ps
+        } else if isComment(src, a, pe) {
+            rev = append(rev, commentText(src, a, pe))
+            ls = ps
+        } else {
+            more = false
+        }
+    }
+    mut out := mut []string{}
+    mut k := len(rev)
+    while k > 0 {
+        k -= 1
+        out = append(out, rev[k])
+    }
+    return freeze(out)
+}
+
+// 位置 at の行の末尾のコメント（at より後の ` //` — 引用符を越えた先は見ない。無ければ ""）
+func tailComment(src []byte, at int) string {
+    e := lineEnd(src, at)
+    mut i := at
+    while i + 2 < e {
+        if src[i] == '"' {
+            return ""
+        }
+        if src[i] == ' ' && src[i + 1] == '/' && src[i + 2] == '/' {
+            return commentText(src, i + 1, e)
+        }
+        i += 1
+    }
+    return ""
+}
+
+// `package x` の行の後の塊（空行を飛ばした最初の `//` の連続 — 塊の次が空行か import か終わりのときだけ。宣言に付いていれば宣言の doc）
+func pkgDoc(src []byte) []string {
+    mut i := 0
+    while i < len(src) && !(lineStart(src, i) == i && strings.HasPrefix(str(src[i:lineEnd(src, i)]), "package ")) {
+        i = lineEnd(src, i) + 1
+    }
+    if i >= len(src) {
+        return []string{}
+    }
+    i = lineEnd(src, i) + 1
+    while i < len(src) && skipSpace(src, i, lineEnd(src, i)) == lineEnd(src, i) {
+        i = lineEnd(src, i) + 1
+    }
+    mut out := mut []string{}
+    while i < len(src) && isComment(src, i, lineEnd(src, i)) {
+        out = append(out, commentText(src, i, lineEnd(src, i)))
+        i = lineEnd(src, i) + 1
+    }
+    if i < len(src) {
+        e := lineEnd(src, i)
+        if skipSpace(src, i, e) != e && !strings.HasPrefix(str(src[i:e]), "import ") {
+            return []string{}
+        }
+    }
+    return freeze(out)
+}
+
+// ── 宣言の一覧 ──
+
+func isPublic(s string) bool {
+    b := bytes(s)
+    return len(b) > 0 && int(b[0]) >= 65 && int(b[0]) <= 90
+}
+
+// 欄・variant の名前の字句 at の doc（直前の `//` 行 — 同じ行に前の欄が無いとき — か行末のコメント）
+func memberDoc(src []byte, at int) string {
+    ls := lineStart(src, at)
+    if skipSpace(src, ls, at) == at {
+        d := docBefore(src, at)
+        if len(d) > 0 {
+            mut j := d[0]
+            for i <- iter.Range(1, len(d)) {
+                j = joinLine(j, d[i])
+            }
+            return j
+        }
+    }
+    return tailComment(src, at)
+}
+
+func members(s Src, body ast.Node) []Member {
+    t := s.t
+    mut out := mut []Member{}
+    if body.kind == ast.BStruct || body.kind == ast.BError {
+        for k <- iter.Range(0, ast.ListLen(t, body.a)) {
+            f := t.nodes[ast.ListAt(t, body.a, k)]
+            out = append(out, Member{name: loader.Name(t, f.a), doc: memberDoc(s.src, s.ts[f.tok].start)})
+        }
+    } else if body.kind == ast.BUnion {
+        for k <- iter.Range(0, ast.ListLen(t, body.a)) {
+            v := t.nodes[ast.ListAt(t, body.a, k)]
+            out = append(out, Member{name: loader.Name(t, v.a), doc: memberDoc(s.src, s.ts[v.tok].start)})
+        }
+    }
+    return freeze(out)
+}
+
+// 関数の `@errors(…)` のラベル名（無ければ空）
+func labelsOf(t ast.Tree, x ast.Node) []string {
+    mut out := mut []string{}
+    if t.data[x.f] >= 6 && t.data[x.f + 6] >= 0 {
+        l := t.data[x.f + 6]
+        for k <- iter.Range(0, t.data[l]) {
+            out = append(out, loader.Name(t, t.data[l + 1 + k]))
+        }
+    }
+    return freeze(out)
+}
+
+func constIndex(p loader.Program, f int, n int) int {
+    for i <- iter.Range(0, len(p.c_file)) {
+        if p.c_file[i] == f && p.c_node[i] == n {
+            return i
+        }
+    }
+    return -1
+}
+
+const minInt = -9223372036854775807 - 1
+
+// const の印字（.sobi と同じ — 畳める const は畳んだ値・他は原文の宣言）
+func constSig(p loader.Program, f int, t ast.Tree, n int, name string) string {
+    ci := constIndex(p, f, n)
+    if ci >= 0 && !p.c_dict[ci] && p.c_has[ci] {
+        v := if p.c_value[ci] == minInt { "-9223372036854775807 - 1" } else { convert.FormatInt(p.c_value[ci]) }
+        return "const ${name} = ${v}"
+    }
+    return str(printer.ConstText(t, n))
+}
+
+func mkDecl(p loader.Program, fi int, s Src, k int, n int, kind int) Decl {
+    t := s.t
+    x := t.nodes[n]
+    name := loader.Name(t, x.a)
+    at := s.ts[x.tok].start
+    sig := switch kind {
+    case 0: str(printer.TypeDeclText(t, n))
+    case 1: str(printer.FuncDeclText(t, n, true, false))
+    case 2: constSig(p, fi, t, n, name)
+    default: str(printer.IntrinsicDeclText(t, n))
+    }
+    ls := if kind == 0 { members(s, t.nodes[x.c]) } else { []Member{} }
+    lb := if kind == 1 { labelsOf(t, x) } else { []string{} }
+    // const の群（空行を挟まず続く `const` の行）: 自分の doc が無ければ群の先頭の塊を doc とし、1 文目は群の先頭の名前で始める
+    top := if kind == 2 { groupTop(s.src, at) } else { lineStart(s.src, at) }
+    own := docBefore(s.src, at)
+    grouped := len(own) == 0 && top != lineStart(s.src, at)
+    return Decl{name: name, kind: kind, file: k, pos: at, line: lineNo(s.src, at), sig: sig, doc: if grouped { docBefore(s.src, top) } else { own },
+        tail: tailComment(s.src, at), lead: if grouped { constName(s.src, top) } else { name }, labels: lb, members: ls}
+}
+
+// 位置 at の const の行から、空行を挟まず上に続く `const` の行の先頭（群の先頭の行の始まり）
+func groupTop(src []byte, at int) int {
+    mut ls := lineStart(src, at)
+    mut more := true
+    while more && ls > 0 {
+        ps := lineStart(src, ls - 1)
+        if strings.HasPrefix(str(src[ps:ls - 1]), "const ") {
+            ls = ps
+        } else {
+            more = false
+        }
+    }
+    return ls
+}
+
+// `const 名前 = …` の行（行の始まり ls）の名前
+func constName(src []byte, ls int) string {
+    mut a := ls + 6
+    mut b := a
+    while b < len(src) && src[b] != ' ' && src[b] != '=' && src[b] != '\n' {
+        b += 1
+    }
+    return str(src[a:b])
+}
+
+func pushDecls(out mut []Decl, p loader.Program, fi int, s Src, k int, l int, kind int) {
+    t := s.t
+    if l == 0 {
+        return
+    }
+    for j <- iter.Range(0, ast.ListLen(t, l)) {
+        n := ast.ListAt(t, l, j)
+        if isPublic(loader.Name(t, t.nodes[n].a)) {
+            out = append(out, mkDecl(p, fi, s, k, n, kind))
+        }
+    }
+}
+
+// 合成の口の印字（`func Decode[T](…) …` / `const Size[T] int`）の名前
+func synthName(sig string) string {
+    rest := strings.TrimPrefix(strings.TrimPrefix(sig, "func "), "const ")
+    b := bytes(rest)
+    mut e := 0
+    while e < len(b) && isIdentByte(b[e]) {
+        e += 1
+    }
+    return str(b[0:e])
+}
+
+// ファイル s の `// 合成: <印字>` で始まる塊（前後が空行のコメントの塊 — 宣言に付かない）を合成の口の宣言として足す。
+// std に実体が無く loader の固定テンプレートが呼び出しを写す口（layout.Decode[T]・json.Decode[T] 等）の doc の置き場 — 印字は手書き（language.md の該当節が正）
+func pushSynth(out mut []Decl, s Src, k int) {
+    src := s.src
+    mut i := 0
+    mut prevComment := false
+    while i < len(src) {
+        e := lineEnd(src, i)
+        a := skipSpace(src, i, e)
+        c := isComment(src, a, e)
+        if c && !prevComment && strings.HasPrefix(commentText(src, a, e), "合成: ") {
+            sig := strings.TrimPrefix(commentText(src, a, e), "合成: ")
+            at := i
+            mut doc := mut []string{}
+            mut j := e + 1
+            mut more := true
+            while more && j < len(src) {
+                je := lineEnd(src, j)
+                ja := skipSpace(src, j, je)
+                if isComment(src, ja, je) {
+                    doc = append(doc, commentText(src, ja, je))
+                    j = je + 1
+                } else {
+                    more = false
+                }
+            }
+            name := synthName(sig)
+            // pos は負に（ファイルの末尾に置いても同じファイルの宣言より先に並ぶ — 合成の口が package の主役なので頭に）
+            out = append(out, Decl{name: name, kind: 4, file: k, pos: at - len(src), line: lineNo(src, at), sig: sig, doc: freeze(doc), tail: "", lead: name,
+                labels: []string{}, members: []Member{}})
+            i = j
+            prevComment = true
+        } else {
+            prevComment = c
+            i = e + 1
+        }
+    }
+}
+
+// package の公開の宣言（ファイル順 × ファイルの中の出現順）
+func declsOf(p loader.Program, fis []int, srcs []Src) []Decl {
+    mut out := mut []Decl{}
+    for k <- iter.Range(0, len(srcs)) {
+        t := srcs[k].t
+        fl := t.nodes[t.file]
+        mut ds := mut []Decl{}
+        pushDecls(mut ds, p, fis[k], srcs[k], k, fl.c, 0)
+        pushDecls(mut ds, p, fis[k], srcs[k], k, fl.d, 1)
+        pushDecls(mut ds, p, fis[k], srcs[k], k, fl.e, 2)
+        pushDecls(mut ds, p, fis[k], srcs[k], k, fl.f, 3)
+        pushSynth(mut ds, srcs[k], k)
+        // 出現順（挿入の並べ替え — 1 ファイルの宣言は高々数十）
+        for i <- iter.Range(1, len(ds)) {
+            mut j := i
+            while j > 0 && ds[j - 1].pos > ds[j].pos {
+                d := ds[j]
+                ds[j] = ds[j - 1]
+                ds[j - 1] = d
+                j -= 1
+            }
+        }
+        for i <- iter.Range(0, len(ds)) {
+            out = append(out, ds[i])
+        }
+    }
+    return freeze(out)
+}
+
+// ── doc の本文 ──
+
+// doc コメントを読んだ結果（段落・例のパス・対の注記の語）
+type Body struct {
+    paras []string
+    examples []string
+    pairs []string
+}
+
+func isAsciiEnd(s string) bool {
+    b := bytes(s)
+    return len(b) > 0 && int(b[len(b) - 1]) < 128
+}
+
+func isAsciiStart(s string) bool {
+    b := bytes(s)
+    return len(b) > 0 && int(b[0]) < 128
+}
+
+// 段落から「（対の X は実需まで足さない …）」を抜いた残りと X（無ければ ""）
+func pairNote(s string) (string, string) {
+    before, after, found := strings.Cut(s, "（対の ")
+    if !found {
+        return s, ""
+    }
+    inner, rest, closed := strings.Cut(after, "）")
+    if !closed || !strings.Contains(inner, "実需まで足さない") {
+        return s, ""
+    }
+    x, _, _ := strings.Cut(inner, " は")
+    return before + rest, x
+}
+
+// 段落の中の行の継ぎ（ASCII どうしか「—」の後だけ空白 — 日本語の行の折り返しは詰める）
+func joinLine(cur string, l string) string {
+    return cur + (if (isAsciiEnd(cur) && isAsciiStart(l)) || strings.HasSuffix(cur, "—") { " " } else { "" }) + l
+}
+
+// xs に s があるか
+func hasStr(xs []string, s string) bool {
+    for i <- iter.Range(0, len(xs)) {
+        if xs[i] == s {
+            return true
+        }
+    }
+    return false
+}
+
+// doc の行（と宣言の行末のコメント）を段落に組む。空の行で段落を切り、段落の中の行は joinLine で継ぐ。
+// `- ` で始まる行は箇条（行を保つ — 2 字下げの行は前の項目の続き）・4 字下げの行はコードの塊（段落を ```sober で包む）
+func readBody(lines []string, tail string) Body {
+    mut paras := mut []string{}
+    mut exs := mut []string{}
+    mut pairs := mut []string{}
+    mut cur := ""
+    mut mode := 0
+    for i <- iter.Range(0, len(lines)) {
+        l := lines[i]
+        code := strings.HasPrefix(l, "    ")
+        if strings.HasPrefix(l, "例: examples/") {
+            exs = append(exs, strings.TrimPrefix(l, "例: "))
+        } else if l == "" || (code != (mode == 2) && cur != "") {
+            if cur != "" {
+                paras = append(paras, if mode == 2 { "```sober\n" + cur + "\n```" } else { cur })
+            }
+            cur = if l == "" { "" } else { strings.TrimPrefix(l, "    ") }
+            mode = if l == "" { 0 } else if code { 2 } else if strings.HasPrefix(l, "- ") { 1 } else { 0 }
+        } else if code {
+            cur = if cur == "" { strings.TrimPrefix(l, "    ") } else { cur + "\n" + strings.TrimPrefix(l, "    ") }
+            mode = 2
+        } else if strings.HasPrefix(l, "- ") {
+            cur = if cur == "" { l } else { cur + "\n" + l }
+            mode = 1
+        } else if cur == "" {
+            cur = l
+        } else {
+            cur = joinLine(cur, if mode == 1 { trimLead(l) } else { l })
+        }
+    }
+    if cur != "" {
+        paras = append(paras, if mode == 2 { "```sober\n" + cur + "\n```" } else { cur })
+    }
+    mut out := mut []string{}
+    for i <- iter.Range(0, len(paras)) {
+        rest, x := pairNote(paras[i])
+        if x != "" && !hasStr(pairs, x) {
+            pairs = append(pairs, x)
+        }
+        if rest != "" {
+            out = append(out, rest)
+        }
+    }
+    if strings.HasPrefix(tail, "対の ") && strings.Contains(tail, "実需まで足さない") {
+        x, _, _ := strings.Cut(strings.TrimPrefix(tail, "対の "), " は")
+        if !hasStr(pairs, x) {
+            pairs = append(pairs, x)
+        }
+    } else if tail != "" {
+        out = append(out, tail)
+    }
+    return Body{paras: freeze(out), examples: freeze(exs), pairs: freeze(pairs)}
+}
+
+func trimLead(s string) string {
+    b := bytes(s)
+    mut i := 0
+    while i < len(b) && b[i] == ' ' {
+        i += 1
+    }
+    return str(b[i:len(b)])
+}
+
+func isCode(p string) bool {
+    return strings.HasPrefix(p, "```")
+}
+
+// markdown の記号（`<`・`*`・`_`）をコードの区間 `…` の外でだけ逃がす（HTML のタグ・強調に読まれないように）
+func escape(s string) string {
+    b := bytes(s)
+    mut o := builder.Builder[byte]{}
+    mut code := false
+    for i <- iter.Range(0, len(b)) {
+        c := b[i]
+        if c == '`' {
+            code = !code
+        }
+        if !code && (c == '<' || c == '*' || c == '_') {
+            builder.Push(mut o, '\\')
+        }
+        builder.Push(mut o, c)
+    }
+    return str(builder.Build(mut o))
+}
+
+// 段落の中の裸の `N 節`（`language.md N 節` でない節の参照 — 他の文書 `x.md N 節` と `RFC NNNN N 節` は数えない）の N の列。
+// `2・4 節` の列挙は先頭の数の前を見る
+func bareSecs(s string) []int {
+    b := bytes(outsideCode(s))
+    t := bytes(" 節")
+    mut out := mut []int{}
+    mut i := 0
+    while i + len(t) <= len(b) {
+        mut hit := true
+        for k <- iter.Range(0, len(t)) {
+            hit = hit && b[i + k] == t[k]
+        }
+        if hit {
+            mut a := i
+            while a > 0 && isDigit(b[a - 1]) {
+                a -= 1
+            }
+            if a < i {
+                n, _ := leadingInt(str(b[a:i]))
+                mut h := a
+                // 「2・4 節」— 「・」（3 バイト）と数の対を遡る
+                while h >= 4 && b[h - 3] == 0xe3 && b[h - 2] == 0x83 && b[h - 1] == 0xbb && isDigit(b[h - 4]) {
+                    h -= 3
+                    while h > 0 && isDigit(b[h - 1]) {
+                        h -= 1
+                    }
+                }
+                pre := str(b[0:h])
+                if !(strings.HasSuffix(pre, ".md ") || rfcBefore(b, h)) {
+                    out = append(out, n)
+                }
+            }
+            i += len(t)
+        } else {
+            i += 1
+        }
+    }
+    return freeze(out)
+}
+
+// 位置 h の直前が `RFC <数> ` か
+func rfcBefore(b []byte, h int) bool {
+    if h < 2 || b[h - 1] != ' ' {
+        return false
+    }
+    mut a := h - 1
+    while a > 0 && isDigit(b[a - 1]) {
+        a -= 1
+    }
+    return a < h - 1 && strings.HasSuffix(str(b[0:a]), "RFC ")
+}
+
+// コードの区間 `…` を除いた文字列（強調の記号の検査用 — `xoshiro128**` のような綴りは区間の中なら太字にならない）
+func outsideCode(s string) string {
+    b := bytes(s)
+    mut o := builder.Builder[byte]{}
+    mut code := false
+    for i <- iter.Range(0, len(b)) {
+        if b[i] == '`' {
+            code = !code
+        } else if !code {
+            builder.Push(mut o, b[i])
+        }
+    }
+    return str(builder.Build(mut o))
+}
+
+// 段落の中の `language.md N 節` の N の列
+func secRefs(s string) []int {
+    mut out := mut []int{}
+    mut rest := s
+    mut more := true
+    while more {
+        _, after, found := strings.Cut(rest, "language.md ")
+        more = found
+        if found {
+            n, num := leadingInt(after)
+            if num > 0 && strings.HasPrefix(str(bytes(after)[num:len(bytes(after))]), " 節") {
+                out = append(out, n)
+            }
+            rest = after
+        }
+    }
+    return freeze(out)
+}
+
+func leadingInt(s string) (int, int) {
+    b := bytes(s)
+    mut n := 0
+    mut i := 0
+    while i < len(b) && b[i] >= '0' && b[i] <= '9' {
+        n = n * 10 + int(b[i]) - 48
+        i += 1
+    }
+    return n, i
+}
+
+// `language.md N 節` を決定の記録へのリンクに（節の中の位置への錨は振らない — 見出しの錨は経緯の文を含むので不安定）
+func linkSecs(s string) string {
+    mut o := ""
+    mut rest := s
+    mut more := true
+    while more {
+        before, after, found := strings.Cut(rest, "language.md ")
+        if !found {
+            o = o + rest
+            more = false
+        } else {
+            n, num := leadingInt(after)
+            ab := bytes(after)
+            tailS := str(ab[num:len(ab)])
+            if num > 0 && strings.HasPrefix(tailS, " 節") {
+                o = o + before + "[language.md ${n} 節](../language.md)"
+                rest = strings.TrimPrefix(tailS, " 節")
+            } else {
+                o = o + before + "language.md "
+                rest = after
+            }
+        }
+    }
+    return o
+}
+
+func render(s string) string {
+    return if isCode(s) { s } else { linkSecs(escape(s)) }
+}
+
+// ── lint ──
+
+func hasDigitAfter(s string, word string) bool {
+    mut rest := s
+    mut more := true
+    while more {
+        _, after, found := strings.Cut(rest, word)
+        more = found
+        if found {
+            b := bytes(after)
+            mut i := 0
+            while i < len(b) && b[i] == ' ' {
+                i += 1
+            }
+            if i < len(b) && b[i] >= '0' && b[i] <= '9' {
+                return true
+            }
+            rest = after
+        }
+    }
+    return false
+}
+
+func isDigit(c byte) bool {
+    return c >= '0' && c <= '9'
+}
+
+// `dddd-dd-dd` を含むか
+func hasDate(s string) bool {
+    b := bytes(s)
+    mut i := 0
+    while i + 10 <= len(b) {
+        if isDigit(b[i]) && isDigit(b[i + 1]) && isDigit(b[i + 2]) && isDigit(b[i + 3]) && b[i + 4] == '-' && isDigit(b[i + 5]) && isDigit(b[i + 6]) &&
+            b[i + 7] == '-' && isDigit(b[i + 8]) && isDigit(b[i + 9]) {
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+// 作業の段の符丁（`P3a`・`P5-3` — 英数字の後でない P の直後に数字）を含むか
+func hasPhase(s string) bool {
+    b := bytes(s)
+    for i <- iter.Range(0, len(b) - 1) {
+        if b[i] == 'P' && isDigit(b[i + 1]) && (i == 0 || !(isDigit(b[i - 1]) || (b[i - 1] >= 'a' && b[i - 1] <= 'z') || (b[i - 1] >= 'A' && b[i - 1] <= 'Z') || b[i - 1] == '-')) {
+            return true
+        }
+    }
+    return false
+}
+
+// 内部の符丁の種類の列（report-N・便・段 N・日付・P3a 形）
+func jargon(s string) []string {
+    mut out := mut []string{}
+    if hasDigitAfter(s, "report-") {
+        out = append(out, "report-N")
+    }
+    if strings.Contains(s, "便") && !strings.Contains(s, "便利") {
+        out = append(out, "便")
+    }
+    if hasDigitAfter(s, "段") {
+        out = append(out, "段 N")
+    }
+    if hasDate(s) {
+        out = append(out, "日付")
+    }
+    if hasPhase(s) || hasDigitAfter(s, "Phase ") {
+        out = append(out, "P3a 形")
+    }
+    return freeze(out)
+}
+
+// 識別子の字か
+func isIdentByte(c byte) bool {
+    return c == '_' || isDigit(c) || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+// b の i から閉じの字 c の直後へ（無ければ len(b)）
+func skipTo(b []byte, i int, c byte) int {
+    mut k := i
+    while k < len(b) && b[k] != c {
+        k += 1
+    }
+    return if k < len(b) { k + 1 } else { k }
+}
+
+// doc の 1 文目が「<名前> は」で始まるか（規約違反 — 宣言の直下で読むので名前の繰り返しは要らない）。
+// 名前の後の `[T]`・`(a, b)`・`・名前`・`.名前` の続きも同じ形として見る
+func namedLead(doc string, name string) bool {
+    if name == "" || !strings.HasPrefix(doc, name) {
+        return false
+    }
+    b := bytes(doc)
+    mut k := len(bytes(name))
+    if k < len(b) && isIdentByte(b[k]) {
+        return false
+    }
+    mut more := true
+    while more && k < len(b) {
+        if b[k] == '[' {
+            k = skipTo(b, k, ']')
+        } else if b[k] == '(' {
+            k = skipTo(b, k, ')')
+        } else if b[k] == '.' || strings.HasPrefix(str(b[k:len(b)]), "・") {
+            w := if b[k] == '.' { 1 } else { len(bytes("・")) }
+            k += w
+            while k < len(b) && isIdentByte(b[k]) {
+                k += 1
+            }
+        } else {
+            more = false
+        }
+    }
+    while k < len(b) && b[k] == ' ' {
+        k += 1
+    }
+    return strings.HasPrefix(str(b[k:len(b)]), "は")
+}
+
+// doc の文字列 1 本（段落か欄の doc）の符丁・節の実在・強調を見る
+func lintText(o mut builder.Builder[byte], st mut Stat, secs []bool, at string, name string, s string) {
+    if isCode(s) {
+        return
+    }
+    js := jargon(s)
+    for i <- iter.Range(0, len(js)) {
+        warn(mut o, mut st, "jargon", at, name, js[i])
+    }
+    rs := secRefs(s)
+    for i <- iter.Range(0, len(rs)) {
+        if rs[i] <= 0 || rs[i] >= len(secs) || !secs[rs[i]] {
+            warn(mut o, mut st, "section", at, name, "language.md ${rs[i]} 節")
+        }
+    }
+    bs := bareSecs(s)
+    for i <- iter.Range(0, len(bs)) {
+        warn(mut o, mut st, "section", at, name, "裸の ${bs[i]} 節（language.md ${bs[i]} 節 と書く）")
+    }
+    if strings.Contains(outsideCode(s), "**") {
+        warn(mut o, mut st, "bold", at, name, "**")
+    }
+}
+
+func exists(path string) bool {
+    _ = io.ReadFile(path) catch return false
+    return true
+}
+
+// ── 書き出し ──
+
+func fence(o mut builder.Builder[byte], body string) {
+    builder.PushString(mut o, "```sober\n")
+    builder.PushString(mut o, body)
+    if !strings.HasSuffix(body, "\n") {
+        builder.PushString(mut o, "\n")
+    }
+    builder.PushString(mut o, "```\n\n")
+}
+
+func flat(path string) string {
+    return strings.Join(splitAll(strings.TrimPrefix(path, "std/"), "/"), "-")
+}
+
+func splitAll(s string, sep string) []string {
+    mut out := mut []string{}
+    mut rest := s
+    mut more := true
+    while more {
+        a, b, found := strings.Cut(rest, sep)
+        out = append(out, a)
+        rest = b
+        more = found
+    }
+    return freeze(out)
+}
+
+func lower(s string) string {
+    b := bytes(s)
+    mut o := builder.Builder[byte]{}
+    for i <- iter.Range(0, len(b)) {
+        builder.Push(mut o, if b[i] >= 'A' && b[i] <= 'Z' { byte(int(b[i]) + 32) } else { b[i] })
+    }
+    return str(builder.Build(mut o))
+}
+
+func isTypeIn(ds []Decl, name string) bool {
+    for i <- iter.Range(0, len(ds)) {
+        if ds[i].kind == 0 && ds[i].name == name {
+            return true
+        }
+    }
+    return false
+}
+
+// 段落の 1 文目（最初の「。」まで — 無ければ段落全体）
+func firstSentence(s string) string {
+    a, _, found := strings.Cut(s, "。")
+    return if found { a + "。" } else { s }
+}
+
+// 英訳表の照合に使う原文の印（doc の行と行末のコメントの crc32）
+func docHash(lines []string, tail string) string {
+    return convert.FormatInt(crc32.Sum(bytes(strings.Join(lines, "\n") + "\n" + tail)))
+}
+
+// 英訳表 docs/std/en/<package>.json（{"<名前>": {"hash": "…", "doc": "…"}, "": パッケージの doc}）の古さを見る（B-1 は機構だけ — 表が無ければ 1 本の警告）
+func enCheck(o mut builder.Builder[byte], st mut Stat, cfg Cfg, path string, names []string, hashes []string) {
+    jp := "${cfg.en}/${flat(path)}.json"
+    src := io.ReadFile(jp) catch {
+        warn(mut o, mut st, "en-none", jp, path, "${len(names)} 項目")
+        return
+    }
+    d := json.Parse(src) catch {
+        warn(mut o, mut st, "en-bad", jp, path, "JSON として読めない")
+        return
+    }
+    for i <- iter.Range(0, len(names)) {
+        e := json.Get(d, json.Root(d), names[i])
+        if e == nil {
+            warn(mut o, mut st, "en-missing", jp, names[i], "訳なし")
+        } else {
+            h := json.Get(d, e, "hash")
+            mut got := ""
+            if h != nil {
+                switch json.At(d, h) {
+                case json.String{v}: got = v
+                default:
+                }
+            }
+            if got != hashes[i] {
+                warn(mut o, mut st, "en-stale", jp, names[i], "原文 ${hashes[i]} ≠ 訳 ${got}")
+            }
+        }
+    }
+}
+
+func readExample(cfg Cfg, ex string) string {
+    b := io.ReadFile("${cfg.root}/${ex}") catch return ""
+    return str(b)
+}
+
+// package 1 つのページ（戻りは README の一覧の 1 文目と索引の行）
+func genPkg(o mut builder.Builder[byte], st mut Stat, cfg Cfg, secs []bool, path string, srcs []Src, ds []Decl) (string, []string) {
+    mut pg := builder.Builder[byte]{}
+    builder.PushString(mut pg, "# ${path}\n\n日本語\n\n`import \"${path}\"`\n\n")
+    mut pdoc := mut []string{}
+    mut pfile := ""
+    for k <- iter.Range(0, len(srcs)) {
+        if len(pdoc) == 0 {
+            pd := pkgDoc(srcs[k].src)
+            if len(pd) > 0 {
+                for j <- iter.Range(0, len(pd)) {
+                    pdoc = append(pdoc, pd[j])
+                }
+                pfile = srcs[k].path
+            }
+        }
+    }
+    pb := readBody(freeze(pdoc), "")
+    mut summary := ""
+    if len(pb.paras) == 0 {
+        warn(mut o, mut st, "nodoc", "src/${srcs[0].path}:1", path, "package の doc なし")
+    } else {
+        summary = firstSentence(pb.paras[0])
+        _, base, _ := strings.CutLast(path, "/")
+        if namedLead(pb.paras[0], base) {
+            warn(mut o, mut st, "name", "src/${pfile}", path, "1 文目が「${base} は」で始まる")
+        }
+    }
+    for i <- iter.Range(0, len(pb.paras)) {
+        lintText(mut o, mut st, secs, "src/${pfile}", path, pb.paras[i])
+        builder.PushString(mut pg, render(pb.paras[i]))
+        builder.PushString(mut pg, "\n\n")
+    }
+    mut names := mut []string{""}
+    mut hashes := mut []string{docHash(freeze(pdoc), "")}
+    mut index := mut []string{}
+    for i <- iter.Range(0, len(ds)) {
+        d := ds[i]
+        st.decls += 1
+        at := "src/${srcs[d.file].path}:${d.line}"
+        names = append(names, d.name)
+        hashes = append(hashes, docHash(d.doc, d.tail))
+        builder.PushString(mut pg, "## ${d.name}\n\n")
+        fence(mut pg, d.sig)
+        b := readBody(d.doc, d.tail)
+        if len(b.paras) == 0 {
+            warn(mut o, mut st, "nodoc", at, d.name, "doc コメントなし")
+        } else if namedLead(b.paras[0], d.lead) {
+            warn(mut o, mut st, "name", at, d.name, "1 文目が「${d.lead} は」で始まる")
+        }
+        index = append(index, "${d.name}\t${flat(path)}.ja.md#${lower(d.name)}\t${if len(b.paras) > 0 { firstSentence(b.paras[0]) } else { "" }}")
+        for j <- iter.Range(0, len(b.paras)) {
+            lintText(mut o, mut st, secs, at, d.name, b.paras[j])
+            builder.PushString(mut pg, render(b.paras[j]))
+            builder.PushString(mut pg, "\n\n")
+        }
+        for j <- iter.Range(0, len(b.examples)) {
+            ex := b.examples[j]
+            body := readExample(cfg, ex)
+            if body == "" {
+                warn(mut o, mut st, "example", at, d.name, ex)
+            } else {
+                builder.PushString(mut pg, "例:\n\n")
+                fence(mut pg, "// ${ex}\n${body}")
+            }
+        }
+        if len(d.labels) > 0 {
+            builder.PushString(mut pg, "失敗のラベル: ")
+            for j <- iter.Range(0, len(d.labels)) {
+                if j > 0 {
+                    builder.PushString(mut pg, "・")
+                }
+                l := d.labels[j]
+                builder.PushString(mut pg, if isTypeIn(ds, l) { "[`${l}`](#${lower(l)})" } else { "`${l}`" })
+            }
+            builder.PushString(mut pg, "\n\n")
+        }
+        for j <- iter.Range(0, len(b.pairs)) {
+            builder.PushString(mut pg, "対の `${b.pairs[j]}` は実需まで足さない（[language.md 34 節](../language.md) の規則 2）。\n\n")
+        }
+        mut any := false
+        for j <- iter.Range(0, len(d.members)) {
+            m := d.members[j]
+            st.members += 1
+            if m.doc != "" {
+                st.memberDocs += 1
+                if namedLead(m.doc, m.name) {
+                    warn(mut o, mut st, "name", at, "${d.name}.${m.name}", "1 文目が「${m.name} は」で始まる")
+                }
+                lintText(mut o, mut st, secs, at, "${d.name}.${m.name}", m.doc)
+                if !any {
+                    builder.PushString(mut pg, if d.kind == 0 && strings.Contains(d.sig, " union") { "variant:\n\n" } else { "欄:\n\n" })
+                    any = true
+                }
+                builder.PushString(mut pg, "- `${m.name}` — ${render(m.doc)}\n")
+            }
+        }
+        if any {
+            builder.PushString(mut pg, "\n")
+        }
+    }
+    enCheck(mut o, mut st, cfg, path, freeze(names), freeze(hashes))
+    outPath := "${cfg.out}/${flat(path)}.ja.md"
+    _ = io.WriteFile(outPath, trimEnd(builder.Build(mut pg)))
+    return summary, freeze(index)
+}
+
+// 末尾の空行を 1 つの改行に
+func trimEnd(b []byte) []byte {
+    mut e := len(b)
+    while e > 0 && b[e - 1] == '\n' {
+        e -= 1
+    }
+    mut o := mut []byte{}
+    for i <- iter.Range(0, e) {
+        o = append(o, b[i])
+    }
+    o = append(o, '\n')
+    return freeze(o)
+}
+
+// language.md の節の番号の表（`### N.` の見出し — 添字 N が true）
+func sections(root string) []bool {
+    mut out := mut []bool{}
+    src := io.ReadFile("${root}/docs/language.md") catch return freeze(out)
+    for i <- iter.Range(0, 200) {
+        out = append(out, false)
+    }
+    mut i := 0
+    while i < len(src) {
+        e := lineEnd(src, i)
+        if e - i > 4 && src[i] == '#' && src[i + 1] == '#' && src[i + 2] == '#' && src[i + 3] == ' ' {
+            n, num := leadingInt(str(src[i + 4:e]))
+            if num > 0 && i + 4 + num < e && src[i + 4 + num] == '.' && n < 200 {
+                out[n] = true
+            }
+        }
+        i = e + 1
+    }
+    return freeze(out)
+}
+
+// ── std の表と読み込み ──
+
+func stdMap(dir string, rel string, m mut map[string]string) bool {
+    es := io.ReadDir(dir) catch return false
+    for i <- iter.Range(0, len(es)) {
+        e := es[i]
+        full := dir + "/" + e.Name
+        key := rel + "/" + e.Name
+        switch e.Kind {
+        case io.Dir{}:
+            if !stdMap(full, key, mut m) {
+                return false
+            }
+        case io.Regular{}:
+            if strings.HasSuffix(e.Name, ".sober") && !strings.HasSuffix(e.Name, "_test.sober") {
+                src := io.ReadFile(full) catch return false
+                m[key] = string(src) catch return false
+            }
+        default:
+        }
+    }
+    return true
+}
+
+func cmdGen(stdDir string, entry string, cfg Cfg) int {
+    mut sm := mut map[string]string{}
+    if !stdMap(stdDir, "std", mut sm) {
+        _ = io.WriteStderr(bytes("docgen: cannot read ${stdDir}\n"))
+        return 1
+    }
+    p, lerr := loader.LoadFs(entry, sm)
+    if lerr != nil {
+        _ = io.WriteStderr(bytes("docgen: load failed: ${entry}\n"))
+        return 1
+    }
+    secs := sections(cfg.root)
+    mut o := builder.Builder[byte]{}
+    mut st := Stat{}
+    mut rows := mut []string{}
+    mut index := mut []string{}
+    for k <- iter.Range(0, len(p.pkg_path)) {
+        path := p.pkg_path[k]
+        if strings.HasPrefix(path, "std/") && !strings.HasPrefix(path, "std/internal/") {
+            mut srcs := mut []Src{}
+            mut fis := mut []int{}
+            for f <- iter.Range(p.pkg_lo[k], p.pkg_hi[k]) {
+                src, ok := loader.SourceFs(p, f, sm)
+                if ok {
+                    t, pok := parser.Parse(src, lexer.Lex(src))
+                    if pok && t.file >= 0 {
+                        srcs = append(srcs, Src{path: p.file_path[f], src: src, t: t, ts: lexer.Lex(src)})
+                        fis = append(fis, f)
+                    }
+                }
+            }
+            if len(srcs) > 0 {
+                ds := declsOf(p, freeze(fis), freeze(srcs))
+                summary, idx := genPkg(mut o, mut st, cfg, secs, path, freeze(srcs), ds)
+                rows = append(rows, "${path}\t${summary}")
+                for i <- iter.Range(0, len(idx)) {
+                    index = append(index, "${p.pkg_name[k]}.${idx[i]}")
+                }
+            }
+        }
+    }
+    readme(cfg, sortStrings(freeze(rows)), sortStrings(freeze(index)))
+    builder.PushString(mut o, "STAT\tdecls=${st.decls}\twarns=${st.warns}\tmembers=${st.members}\tmember-docs=${st.memberDocs}\n")
+    _ = io.WriteStdout(builder.Build(mut o))
+    return 0
+}
+
+// バイト列の辞書順
+func less(a string, b string) bool {
+    x := bytes(a)
+    y := bytes(b)
+    mut i := 0
+    while i < len(x) && i < len(y) {
+        if x[i] != y[i] {
+            return x[i] < y[i]
+        }
+        i += 1
+    }
+    return len(x) < len(y)
+}
+
+func sortStrings(xs []string) []string {
+    mut ys := mut []string{}
+    for i <- iter.Range(0, len(xs)) {
+        ys = append(ys, xs[i])
+    }
+    for i <- iter.Range(1, len(ys)) {
+        mut j := i
+        while j > 0 && less(ys[j], ys[j - 1]) {
+            s := ys[j]
+            ys[j] = ys[j - 1]
+            ys[j - 1] = s
+            j -= 1
+        }
+    }
+    return freeze(ys)
+}
+
+// docs/std/README.ja.md（前文 = cfg.head の写し + package の一覧 + 名前の索引）
+func readme(cfg Cfg, rows []string, index []string) {
+    mut b := builder.Builder[byte]{}
+    head := io.ReadFile(cfg.head) catch []byte{}
+    builder.PushString(mut b, str(head))
+    builder.PushString(mut b, "\n## package\n\n| package | 概要 |\n|---|---|\n")
+    for i <- iter.Range(0, len(rows)) {
+        path, summary, _ := strings.Cut(rows[i], "\t")
+        builder.PushString(mut b, "| [${path}](${flat(path)}.ja.md) | ${render(summary)} |\n")
+    }
+    builder.PushString(mut b, "\n## 索引\n\n")
+    for i <- iter.Range(0, len(index)) {
+        name, rest, _ := strings.Cut(index[i], "\t")
+        link, summary, _ := strings.Cut(rest, "\t")
+        builder.PushString(mut b, "- [`${name}`](${link})")
+        if summary != "" {
+            builder.PushString(mut b, " — ${render(summary)}")
+        }
+        builder.PushString(mut b, "\n")
+    }
+    _ = io.WriteFile("${cfg.out}/README.ja.md", builder.Build(mut b))
+}
+
+func usage() int {
+    _ = io.WriteStderr(bytes("usage: docgen gen <std-dir> <entry> <root> <en-dir> <head.md> <out-dir>\n"))
+    return 1
+}
+
+func main() int {
+    args := os.Args() catch return 1
+    if len(args) == 8 && args[1] == "gen" {
+        return cmdGen(args[2], args[3], Cfg{root: args[4], en: args[5], head: args[6], out: args[7]})
+    }
+    return usage()
+}

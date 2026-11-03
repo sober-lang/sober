@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # extsort.sh（実証便 その 2 — 外部ソートの題材・report-612〜614）: bench/extsort の Sober / Go / Rust素 と GNU sort を同じ窓 W で交互に測る。
 # seqperf に載せない理由: 引数が 2〜3 つ（入力・一時 dir・窓）・GNU sort の 4 つ目の列・run の片付け・RSS の図（入力の大きさを振る）が要る
-#   bench/extsort.sh [-n 回数] [-w 窓 MiB] [--size バイト] [--chart "バイト…"] [--cpu K] [-o 結果の TSV]
+#   bench/extsort.sh [-n 回数] [-w 窓 MiB] [--size バイト] [--chart "バイト…"] [--cpu K] [--mem-high MiB] [-o 結果の TSV]
 # 1. 看板の表: 入力 --size（既定 1 GiB）を 4 実装 × n 回（既定 5）の交互で。cycles:u / instructions:u / task-clock / wall / 最大 RSS
 #    （perf → time → 本体 — seqperf と同じ並び）。出力の md5 を毎回 `LC_ALL=C sort` の出力の md5 と照合する
-# 2. RSS の図: --chart の大きさ（既定 256 MiB / 1 GiB / 4 GiB・--chart "" で省く）で各実装 1 回ずつ — 「RSS は窓 × 定数で、入力の大きさに比例しない」の確認
+# 2. RSS の図: --chart の大きさ（既定 256 MiB / 1 GiB・--chart "" で省く）で各実装 1 回ずつ — 「RSS は窓 × 定数で、入力の大きさに比例しない」の確認
+# RAM の天井（--mem-high・既定 768 MiB — 0 で外す）: 各実装を cgroup（systemd-run --scope の MemoryHigh・swap なし）の中で走らせ、入力 1 GiB を「RAM 超」にする。
+# 天井は run のファイルのページキャッシュも数えるので、書いた run は天井で押し戻される（溢れ・背圧の形が 1 GiB で出る — 入力を RAM より大きくする代わり）。
+# 入力は天井の外で先に読んであるのでキャッシュに載ったまま（warm の規律は変えない）。天井は全実装の作業集合（最大 = Go の約 540 MB）より上に置く —
+# 下回ると swap なしの匿名メモリが締め付けられ、ソートでなく天井を測る。張れない環境（systemd のバスも sudo も無い）では止まる（--mem-high 0 で天井なしの旧形）
 # 規律: warm（入力はページキャッシュに載る大きさ — デバイスは測らない。WSL2 の VHD はデバイス縛りを歪める）・同じ 1 つの論理 CPU に固定・
 # ワーカー 1（SOBER_WORKERS=1 — 逐次の土俵。GNU sort も --parallel=1）・gates と同時に回さない。
 # cycles:u は利用者の空間だけを数える（写し・ページフォールト・ファイルの読み書きのカーネルの費用は task-clock と wall に出る — report-610 の注）
@@ -14,7 +18,8 @@ ROOT=$PWD
 N=5
 WM=64
 SIZE=1073741824
-CHART="268435456 1073741824 4294967296"
+CHART="268435456 1073741824"
+MH=768
 CPU=$(( $(nproc) - 1 ))
 res=""
 while [ $# -gt 0 ]; do
@@ -24,6 +29,7 @@ while [ $# -gt 0 ]; do
         --size) SIZE=$2; shift ;;
         --chart) CHART=$2; shift ;;
         --cpu) CPU=$2; shift ;;
+        --mem-high) MH=$2; shift ;;
         -o) res=$2; shift ;;
         *) echo "extsort.sh: unknown argument $1" >&2; exit 2 ;;
     esac
@@ -54,6 +60,19 @@ input() {
     fi
 }
 TMP=$B/extsort-tmp
+# cg: 天井の cgroup に入れて走らせる前置き（user の systemd → sudo の systemd の順に試す。sudo の道は env を落とすので one が env で渡し直す）
+cg=()
+if [ "$MH" -gt 0 ]; then
+    cgp=(--scope -q -p "MemoryHigh=${MH}M" -p MemorySwapMax=0)
+    if systemd-run --user "${cgp[@]}" true 2> /dev/null; then
+        cg=(systemd-run --user "${cgp[@]}")
+    elif sudo -n systemd-run "${cgp[@]}" --uid="$(id -u)" --gid="$(id -g)" true 2> /dev/null; then
+        cg=(sudo -n systemd-run "${cgp[@]}" --uid="$(id -u)" --gid="$(id -g)")
+    else
+        echo "extsort.sh: RAM の天井（cgroup MemoryHigh ${MH} MiB）を張れない — systemd-run --user も sudo -n systemd-run も通らない（--mem-high 0 で天井なしの旧形）" >&2
+        exit 2
+    fi
+fi
 # one <名前> <入力の大きさ>: 一時 dir を作り直して 1 回測り、`名前 大きさ wall user rssKB cycles insts task-clock-ms` を足す
 one() {
     local name=$1 n=$2 in=$B/extsort-$2.txt t0 t1
@@ -67,7 +86,7 @@ one() {
         gnu) cmd=(env LC_ALL=C sort -S "${WM}M" --parallel=1 -T "$TMP/runs" "$in") ;;
     esac
     t0=$EPOCHREALTIME
-    SOBER_WORKERS=1 taskset -c "$CPU" "$PERF" stat -x, -e cycles:u,instructions:u,task-clock -o "$TMP/p" /usr/bin/time -f "%U %M" -o "$TMP/t" "${cmd[@]}" > "$TMP/out" 2> "$TMP/err" || { echo "extsort.sh: FAIL $name $n" >&2; head -c 300 "$TMP/err" >&2; exit 1; }
+    "${cg[@]}" env SOBER_WORKERS=1 SOBER_HASH_SEED="$SOBER_HASH_SEED" PATH="$PATH" taskset -c "$CPU" "$PERF" stat -x, -e cycles:u,instructions:u,task-clock -o "$TMP/p" /usr/bin/time -f "%U %M" -o "$TMP/t" "${cmd[@]}" > "$TMP/out" 2> "$TMP/err" || { echo "extsort.sh: FAIL $name $n" >&2; head -c 300 "$TMP/err" >&2; exit 1; }
     t1=$EPOCHREALTIME
     local sum
     sum=$(md5sum < "$TMP/out" | cut -d' ' -f1)
@@ -88,12 +107,12 @@ for n in $CHART; do
     done
 done
 rm -rf "$TMP"
-awk -v size="$SIZE" -v ps="$IMPLS" -v wm="$WM" '
+awk -v size="$SIZE" -v ps="$IMPLS" -v wm="$WM" -v mh="$MH" '
 $2 == size { k = $1; if (!(k in c) || $6 < c[k]) c[k] = $6; if (!(k in w) || $3 < w[k]) w[k] = $3; tc[k, ++nt[k]] = $8; if ($5 > m[k]) m[k] = $5; i[k] = $7 }
 { rss[$1, $2] = $5; sz[$2] = 1 }
 END {
     n = split(ps, p, " ")
-    printf "入力 %.0f MiB・窓 %d MiB（W1・warm）\n\n", size / 1048576, wm
+    printf "入力 %.0f MiB・窓 %d MiB・RAM の天井 %s（W1・warm）\n\n", size / 1048576, wm, (mh > 0 ? mh " MiB" : "なし")
     printf "| 実装 | wall 最小 s | task-clock 中央 s | cycles:u 最小 G | 命令 G | 最大 RSS MB | wall 対 Rust素 |\n|---|---|---|---|---|---|---|\n"
     for (x = 1; x <= n; x++) { k = p[x]
         cnt = nt[k]; for (a = 1; a <= cnt; a++) v[a] = tc[k, a]

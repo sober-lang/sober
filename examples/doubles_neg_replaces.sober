@@ -1,0 +1,8 @@
+@replaces("testdata/doubles/store")
+package main
+
+// @replaces is the double's own declaration: it is written only before the package clause of a _double.sober file (language.md 41 節)
+
+func main() {
+    println(1)
+}

@@ -18,12 +18,13 @@ bench/httparena/main.sober main.serveTlsConn 6383
 bench/httparena/main.sober @sum 106543
 # 2026-10-25 P3（飽和下の待ちの上限 D — rt.mn_next / rt.task_new の語が増えた・report-1142 / 1143・実測 × 1.01・標準運用の引き直し — ユーザーへは事後追認）: bench/httparena @zero 2008（線 1996 を越えた）→ 2029
 # 2026-10-26 飛行記録（rt.netop の ACCEPT の getpeername の受け皿・clockNs の時計の受け皿 — on の区画の中の枠・report-1176・実測 × 1.01・標準運用の引き直し — ユーザーへは事後追認）: bench/httparena @zero 2088（線 2029 を越えた）→ 2109
-bench/httparena/main.sober @zero 2109
+bench/httparena/main.sober @zero 2133
 # 2026-10-25 Z レーン ラウンド 2（finish に optEtaAll の結果〔OzStep〕— namedargs・optfn・η を 1 つの関数へ寄せた後の残り +48 B・report-1157・実測 × 1.01・標準運用の引き直し — ユーザーへは事後追認）: @self loader.finish 2016（HEAD 1968）→ 2036
 # 2026-10-27 凍った map の封（finish の freeze の点に封の鍵のスロット 4 語 + 32 B — 関数ごとに 1 本・report-1209・実測 × 1.01・標準運用の引き直し — ユーザーへは事後追認）: @self loader.finish 2048（線 2036 を越えた）→ 2068
 # 2026-10-31 カバレッジの計器（finish に coverAll の結果〔CoverOut — 点の列と鍵が Program まで生きる〕・report-cov-2・実測 × 1.01・標準運用の引き直し — 事後追認）: @self loader.finish 2144（線 2068 を越えた）→ 2166
 # 2026-10-31 mutation testing（finish の写しの分岐に mutAll の結果・report-mut-3・実測 × 1.01・標準運用の引き直し — 事後追認）: @self loader.finish 2288（線 2166 を越えた）→ 2311
-@self loader.finish 2311
+# 2026-10-31 ビルド時 DI R1（Program の欄 contract_files の 1 語の分・report-di-3・実測 × 1.01・標準運用の引き直し — 事後追認）: @self loader.finish 2320（線 2311 を越えた）→ 2343
+@self loader.finish 2343
 # 2026-10-23 effect の波 段 5a-1（analyzer/effects.sober の歩きと解き — report-1084・実測 × 1.01 の標準運用）: @self @sum 861456
 # 2026-10-23 effect の波 段 5a-2 / 5a-3（trace の計装・sober fix — report-1084・実測 × 1.01 の標準運用）: @self @sum 876496
 # 2026-10-25 S レーン（tls の送りの束 — Put / Flush・pump の受けの反復ごとの Flush・http.ServeFlushed の展開・report-1128〜1131・実測 × 1.01・標準運用の引き直し — ユーザーへは事後追認）: bench/httparena @sum 103632（線 103198 を越えた）→ 104668
@@ -47,4 +48,7 @@ bench/httparena/main.sober @zero 2109
 # 2026-10-31 検証の四点セット T3.5 R1（loader/coverx.sober・lower/cover.sober・irinl の ilCoverSweep の新しい関数の枠・report-cov-2・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1193024（線 1180569 を越えた）→ 1204955
 # 2026-10-31 T3.5 R2（app/cover.sober・cmd_tests の計器の道の新しい関数の枠・report-cov-3・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1206384（線 1204955 を越えた）→ 1218448
 # 2026-10-31 T4 R1（loader/mutx.sober・app/mutate.sober の新しい関数の枠・report-mut-3・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1228720（線 1218448 を越えた）→ 1241008
-@self @sum 1241008
+# 2026-10-31 ビルド時 DI R1（loader/doubles.sober の新しい関数の枠・report-di-3・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1249600（線 1241008 を越えた）→ 1262096
+# 2026-11-01 F 掃除便 R4（T-16 改訂 — catch nil の写しが素の if に・desugar / lower の新しい関数の枠・report-fclean-6・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1264400（線 1262096 を越えた）→ 1277044・httparena @zero 2112（線 2109）→ 2133
+# 2026-11-03 T1 根治便 ①（lower/mn.sober の計器 kDepth / kAge の関数の枠・report-t1h-0・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1277184（線 1277044 を越えた）→ 1289956
+@self @sum 1289956

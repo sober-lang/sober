@@ -53,12 +53,6 @@ func lexeme(src []byte, t lexer.Token) string {
     return r
 }
 
-// 字句のビルダーの写し（`builder.Build` の結果の欄を直に読むと check が CoreFragment で拒否する。
-// 型つきの包みで回避 — parser の tokens と同じ形）
-func tokens(b mut builder.Builder[lexer.Token]) []lexer.Token {
-    return builder.Build(mut b)
-}
-
 // parser の lexHoles と同じ規則で補間の穴の字句を末尾に足した列（入れ子の穴の host は一番外の本文の文字列リテラル）
 func allTokens(src []byte, ts []lexer.Token) Toks {
     mut all := builder.Builder[lexer.Token]{}
@@ -69,7 +63,7 @@ func allTokens(src []byte, ts []lexer.Token) Toks {
     }
     mut i := 0
     while i < builder.Len(mut all) {
-        snap := tokens(mut all)
+        snap := builder.Build(mut all)
         while i < len(snap) {
             t := snap[i]
             if t.tag == lexer.StringLiteral {
@@ -103,7 +97,7 @@ func allTokens(src []byte, ts []lexer.Token) Toks {
             i += 1
         }
     }
-    return Toks{tokens(mut all), builder.Build(mut host)}
+    return Toks{builder.Build(mut all), builder.Build(mut host)}
 }
 
 // ファイルのパス（ルート相対）の package: std は `std/<dir>`・それ以外は `dir:<dir>`
@@ -249,6 +243,8 @@ func desc(k int, b int) int {
     case ast.KField | ast.KParam | ast.KConst | ast.KElem | ast.KLParam | ast.KFieldPat | ast.KNamedArg: d6(2, 1, 0, 0, 0, 0)
     case ast.KFuncDecl: d6(2, 4, 3, 3, 1, 0)
     case ast.KIntrinsic: d6(2, 2, 3, 3, 0, 0)
+    case ast.KReplaces: d6(2, 0, 0, 0, 0, 0)
+    case ast.KDoubles: d6(3, 0, 0, 0, 0, 0)
     case ast.KGen: d6(4, 1, 3, 0, 0, 0)
     default: 0
     }

@@ -1,0 +1,9 @@
+package t
+
+import "std/testing/cell"
+
+const H = cell.Cell[mut []int]{}
+
+func TestT() {
+    _ = cell.Get(H)
+}

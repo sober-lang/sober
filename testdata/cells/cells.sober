@@ -1,0 +1,6 @@
+package cells
+
+// the sum of 1..n
+func Tri(n int) int {
+    return n * (n + 1) / 2
+}

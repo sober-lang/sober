@@ -170,12 +170,14 @@ Output:
 ```
 assert failed: len(ps) == 2
   len(ps) = 0
-panic: testing.AssertFailed{} at std/testing/testing.sober:25:10
+panic: testing.AssertFailed{} at examples/guide/kvbug/kv_test.sober:10:5
 FAIL examples/guide/kvbug.TestParse (exit 101)
 0 passed, 1 failed
 ```
 
 An `assert` per condition, rather than conditions joined with `&&`, tells you with values where it failed.
+
+The position on the `panic:` line is the line of the failing `assert`. When one `assert` runs over the rows of a table, pass a label as the second argument and it appears in the heading (`assert(e, "case ${name}")` → `assert failed (case …): e`). The label is evaluated only when the assert fails.
 
 ## 2. Property-based testing — std/quick
 
@@ -223,7 +225,7 @@ quick: falsified at trial 49 of 100 (seed 392200337, 92 shrink runs)
     String = ";"
   (1 items)
 assert failed: same(back, ps)
-panic: testing.AssertFailed{} at std/testing/testing.sober:25:10
+panic: testing.AssertFailed{} at examples/guide/kvbug/kv_test.sober:26:13
 FAIL examples/guide/kvbug.TestRoundTrip (exit 101)
 0 passed, 1 failed
 ```
@@ -447,6 +449,8 @@ The number of trials depends on the deadline, so it is written `<n>` here. Sober
 ## 6. On every save — `sober watch`
 
 `sober watch <entry>` (the main package of a program that uses `kv`) re-checks on every save, and builds and runs the tests in the background, remembering the results. `sober test` on a package that passed returns the remembered result without building or running (a few ms). By the time you type `sober test`, the tests have already run.
+
+Once watch is running you can forget about it. Keep typing `sober check` / `build` / `test` as usual, and they return fast because watch warmed their results. You only need to read watch's output when you suspect something is wrong.
 
 ```sh
 sober watch app

@@ -1,0 +1,34 @@
+{
+  "package": "t",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/testing/cell",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [],
+  "consts": [
+    {
+      "name": "H",
+      "expr": {
+        "k": "composite",
+        "type_name": "cell.Cell",
+        "elems": [],
+        "tok": 9,
+        "type_args": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 18
+      }
+    }
+  ]
+}

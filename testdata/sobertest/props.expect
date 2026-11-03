@@ -8,7 +8,7 @@ quick: falsified at trial 2 of 100 (seed 829379576, 212 shrink runs)
   (4 items)
 assert failed: Sum(xs) < 30
   Sum(xs) = 30
-panic: testing.AssertFailed{} at std/testing/testing.sober:25:10
+panic: testing.AssertFailed{} at testdata/sobertest/props/props_test.sober:20:17
 FAIL testdata/sobertest/props.TestSumSmall (exit 101)
 quick: falsified at trial 1 of 100 (seed 403918150, 26 shrink runs)
   Slice:
@@ -17,7 +17,7 @@ quick: falsified at trial 1 of 100 (seed 403918150, 26 shrink runs)
     Int(0, 3) = 0
   (1 items)
 assert failed: Same(Rev(quick.Slice(mut q, 5, () => quick.Int(mut q, 0, 3))), quick.Slice(mut q, 5, () => quick.Int(mut q, 0, 3)))
-panic: testing.AssertFailed{} at std/testing/testing.sober:25:10
+panic: testing.AssertFailed{} at testdata/sobertest/props/props_test.sober:26:34
 FAIL testdata/sobertest/props.TestRevIsSame (exit 101)
 quick: ok, 100 trials (16 discarded)
 ok   testdata/sobertest/props.TestDivMod

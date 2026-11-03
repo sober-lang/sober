@@ -1,0 +1,377 @@
+package lower
+
+// 割り当ての結果のダンプ（開発用の口 — 公開 CLI に出さない）: SOBER_XDBG=<名前>[,<名前>…] で、名前に一致する（関数名そのものか、
+// 末尾が「.<名前>」か「<名前>」）関数ごとに、吐く順のブロック（位置・ループの深さ・冷たいか）・命令と値の置き場・部分区間の表
+// （区間・重み・置き場・二段目の固定）・spill した部分区間の理由（組のレジスタごとに重なる先客）を stdout へ `xdbg ` の行で出す。
+// 環境変数は lower の頭で 1 回だけ読み（St.xdbgPat — 群の子へは xParCfg で写り、build のキャッシュの鍵にも入る）、立っていない build は関数ごとの仕事を足さない。
+// 並列の群の子でも出るので、行が混ざらないよう SOBER_WORKERS=1 で。build の結果の再生・関数のキャッシュに当たると関数を吐かない（同じ値で 2 回目の build は当たる）ので SOBER_CHECK_REPLAY=0 SOBER_BUILD_CACHE=0 で
+
+import "desugar"
+import "std/iter"
+
+// x86 の群の cfg（base — 末尾の語が値の長さ）の後ろへ SOBER_XDBG の値のバイト列を足す
+func xdbgCfg(base []int, pat []int) []int {
+    mut cfg := mut []int{}
+    for k <- iter.Range(0, len(base)) {
+        cfg = append(cfg, base[k])
+    }
+    for k <- iter.Range(0, len(pat)) {
+        cfg = append(cfg, pat[k])
+    }
+    return freeze(cfg)
+}
+
+// cfg の n 語の値のバイト列（cfg の base の長さの後ろ — xdbgCfg の逆）
+func xdbgPatOf(cfg []int, n int) []int {
+    mut pat := mut []int{}
+    for k <- iter.Range(0, n) {
+        pat = append(pat, cfg[len(cfg) - n + k])
+    }
+    return freeze(pat)
+}
+
+// 関数 f が SOBER_XDBG の名前に一致するか（値は lower の頭で St.xdbgPat へ — 群の子へは xParCfg で写る）
+func xdbgMatch(st mut St, f FnRef) bool {
+    pat := st.xdbgPat
+    s := xfName(mut st, f)
+    if s >= desugar.LBASE {
+        return false
+    }
+    n := xg(mut st, s)
+    mut a := 0
+    while a <= len(pat) {
+        mut b := a
+        while b < len(pat) && pat[b] != 44 {
+            b += 1
+        }
+        m := b - a
+        if m > 0 && m <= n {
+            mut ok := true
+            for i <- iter.Range(0, m) {
+                if xg(mut st, s + 1 + n - m + i) != pat[a + i] {
+                    ok = false
+                }
+            }
+            if ok && (m == n || xg(mut st, s + n - m) == 46 || xg(mut st, s + n - m) == 47) {
+                return true
+            }
+        }
+        a = b + 1
+    }
+    return false
+}
+
+func xdbgName(st mut St, f FnRef, out mut []byte) {
+    s := xfName(mut st, f)
+    if s >= desugar.LBASE {
+        out = append(out, '#')
+        xPutDec(mut out, int(f))
+        return
+    }
+    for i <- iter.Range(0, xg(mut st, s)) {
+        out = append(out, byte(xg(mut st, s + 1 + i)))
+    }
+}
+
+func xdbgStr(out mut []byte, s string) {
+    b := bytes(s)
+    for i <- iter.Range(0, len(b)) {
+        out = append(out, b[i])
+    }
+}
+
+func xdbgInt(out mut []byte, n int) {
+    if n < 0 {
+        out = append(out, '-')
+        xPutDec(mut out, 0 - n)
+    } else {
+        xPutDec(mut out, n)
+    }
+}
+
+func xdbgHex(out mut []byte, n int) {
+    if n < 0 {
+        out = append(out, '-')
+        xdbgHex(mut out, 0 - n)
+        return
+    }
+    if n >= 16 {
+        xdbgHex(mut out, n / 16)
+    }
+    d := n % 16
+    out = append(out, byte(if d < 10 { 48 + d } else { 87 + d }))
+}
+
+func xdbgLine(out mut []byte) {
+    mut cp := mut []byte{}
+    for i <- iter.Range(0, len(out)) {
+        cp = append(cp, out[i])
+    }
+    println("xdbg", string(freeze(cp)) catch "?")
+    out = mut []byte{}
+}
+
+func xdbgReg(out mut []byte, r int) {
+    if r >= xX0 {
+        xdbgStr(mut out, "xmm")
+        xPutDec(mut out, r - xX0)
+        return
+    }
+    names := []string{"rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"}
+    xdbgStr(mut out, if r >= 0 && r < 16 { names[r] } else { "r?" })
+}
+
+// 部分区間 c の置き場
+func xdbgLoc(e mut xF, out mut []byte, c int) {
+    v := e.pv[c]
+    if v < e.nv && e.remat[v] != 0 {
+        xdbgStr(mut out, "remat")
+        return
+    }
+    if e.ivS[c] < 0 {
+        xdbgStr(mut out, "-")
+        return
+    }
+    l := e.loc[c]
+    if xIsReg(l) {
+        xdbgReg(mut out, xLocVal(l))
+    } else if l == xSpill {
+        xdbgStr(mut out, "spill?")
+    } else {
+        out = append(out, '[')
+        xdbgInt(mut out, xLocVal(l))
+        out = append(out, ']')
+    }
+}
+
+// 値 v の位置 p での置き場（部分区間で）: `v12:rbx`
+func xdbgVal(e mut xF, out mut []byte, v int, p int) {
+    out = append(out, 'v')
+    xdbgInt(mut out, v)
+    if v < 0 || v >= e.nv {
+        return
+    }
+    out = append(out, ':')
+    if e.fold[v] == 1 {
+        xdbgStr(mut out, "fold")
+        return
+    }
+    if e.fuse[v] != 0 {
+        xdbgStr(mut out, "flags")
+        return
+    }
+    c := xPieceAt(mut e, v, p)
+    if c >= 0 {
+        xdbgLoc(mut e, mut out, c)
+    } else if e.remat[v] != 0 {
+        xdbgStr(mut out, "remat")
+    } else {
+        // 位置が区間の外（辺の実引数の読みが割る点の後ろ等）— 最初の部分区間で
+        xdbgLoc(mut e, mut out, v)
+        out = append(out, '*')
+    }
+}
+
+func xdbgList(st mut St, e mut xF, out mut []byte, l int, p int) {
+    out = append(out, '(')
+    for k <- iter.Range(0, xLen(mut st, l)) {
+        if k > 0 {
+            out = append(out, ',')
+        }
+        xdbgVal(mut e, mut out, xAt(mut st, l, k), p)
+    }
+    out = append(out, ')')
+}
+
+// entry = 関数の入口の位置（ブロックの機械語の位置 `+<16 進>` はここからの相対）・nsp1 = 一段目の spill の数・split = 二段目を走らせたか
+func xdbgDump(st mut St, e mut xF, f FnRef, entry int, nsp1 int, split bool, nsp int) {
+    mut out := mut []byte{}
+    xdbgStr(mut out, "fn ")
+    xdbgName(mut st, f, mut out)
+    xdbgStr(mut out, " nv=")
+    xdbgInt(mut out, e.nv)
+    xdbgStr(mut out, " npc=")
+    xdbgInt(mut out, e.npc)
+    xdbgStr(mut out, " npc0=")
+    xdbgInt(mut out, e.npc0)
+    xdbgStr(mut out, " nb=")
+    xdbgInt(mut out, e.norder)
+    xdbgStr(mut out, " ng=")
+    xdbgInt(mut out, e.ng)
+    xdbgStr(mut out, " nx=")
+    xdbgInt(mut out, e.nx)
+    xdbgStr(mut out, " spill1=")
+    xdbgInt(mut out, nsp1)
+    xdbgStr(mut out, " split=")
+    xdbgInt(mut out, if split { 1 } else { 0 })
+    xdbgStr(mut out, " spill=")
+    xdbgInt(mut out, nsp)
+    xdbgLine(mut out)
+    // ループの範囲（吐く順の [頭, 体の最後]）
+    xdbgStr(mut out, "loops")
+    for j <- iter.Range(0, len(e.lpR) / 2) {
+        out = append(out, ' ')
+        xdbgInt(mut out, e.lpR[2 * j])
+        out = append(out, '-')
+        xdbgInt(mut out, e.lpR[2 * j + 1])
+    }
+    xdbgLine(mut out)
+    // ブロックと命令
+    for k <- iter.Range(0, e.norder) {
+        bi := e.order[k]
+        b := BlkRef(e.blk[bi])
+        bs := e.bpos[bi]
+        out = append(out, 'b')
+        xdbgInt(mut out, k)
+        xdbgStr(mut out, " #")
+        xdbgInt(mut out, bi)
+        xdbgStr(mut out, " @")
+        xdbgInt(mut out, bs)
+        xdbgStr(mut out, " +")
+        xdbgHex(mut out, e.blockAt[bi] - entry)
+        xdbgStr(mut out, " d=")
+        xdbgInt(mut out, e.ldep[k])
+        if e.cold[k] == 1 {
+            xdbgStr(mut out, " cold")
+        }
+        xdbgStr(mut out, " params")
+        mut p := xbPHead(mut st, b)
+        while p >= 0 {
+            out = append(out, ' ')
+            xdbgVal(mut e, mut out, xParamVal(mut st, p), bs)
+            p = xParamNext(mut st, p)
+        }
+        xdbgLine(mut out)
+        mut i := xbIHead(mut st, b)
+        mut n := 0
+        while i != -1 {
+            ip := bs + 2 * (n + 1)
+            xdbgStr(mut out, "  @")
+            xdbgInt(mut out, ip)
+            out = append(out, ' ')
+            r := xiRes(mut st, i)
+            if r >= 0 {
+                xdbgVal(mut e, mut out, r, ip)
+                xdbgStr(mut out, " = ")
+            }
+            xdbgStr(mut out, "op")
+            xdbgInt(mut out, xiOp(mut st, i))
+            out = append(out, '(')
+            for j <- iter.Range(0, xNOps(mut st, i)) {
+                if j > 0 {
+                    out = append(out, ',')
+                }
+                xdbgVal(mut e, mut out, xOpnd(mut st, i, j), ip)
+            }
+            out = append(out, ')')
+            xdbgLine(mut out)
+            n += 1
+            i = xiNext(mut st, i)
+        }
+        be := bs + 2 * (n + 1)
+        xdbgStr(mut out, "  @")
+        xdbgInt(mut out, be)
+        tm := xbTerm(mut st, b)
+        if tm == TmBr {
+            xdbgStr(mut out, " br #")
+            xdbgInt(mut out, xbId(mut st, xbBrTo(mut st, b)))
+            xdbgList(mut st, mut e, mut out, xTermX(mut st, b, 2), be)
+        } else if tm == TmCondbr {
+            xdbgStr(mut out, " condbr ")
+            xdbgVal(mut e, mut out, xTermX(mut st, b, 1), be)
+            xdbgStr(mut out, " #")
+            xdbgInt(mut out, xbId(mut st, xbThen(mut st, b)))
+            xdbgList(mut st, mut e, mut out, xTermX(mut st, b, 3), be)
+            xdbgStr(mut out, " #")
+            xdbgInt(mut out, xbId(mut st, xbElse(mut st, b)))
+            xdbgList(mut st, mut e, mut out, xTermX(mut st, b, 5), be)
+        } else {
+            xdbgStr(mut out, " term")
+            xdbgInt(mut out, tm)
+            for j <- iter.Range(0, xNTermOps(mut st, b)) {
+                out = append(out, ' ')
+                xdbgVal(mut e, mut out, xTermOpnd(mut st, b, j), be)
+            }
+        }
+        xdbgLine(mut out)
+    }
+    // 部分区間の表: `pc <c> v<v> [s,e] pwt= wt= wc= hu= <置き場> [cross] [ccold] [fl] [fix=]`
+    for c <- iter.Range(0, e.npc) {
+        if e.ivS[c] < 0 {
+            continue
+        }
+        v := e.pv[c]
+        xdbgStr(mut out, "pc ")
+        xdbgInt(mut out, c)
+        xdbgStr(mut out, " v")
+        xdbgInt(mut out, v)
+        xdbgStr(mut out, " [")
+        xdbgInt(mut out, e.ivS[c])
+        out = append(out, ',')
+        xdbgInt(mut out, e.ivE[c])
+        xdbgStr(mut out, "] pwt=")
+        xdbgInt(mut out, e.pwt[c])
+        xdbgStr(mut out, " wt=")
+        xdbgInt(mut out, e.wt[v])
+        xdbgStr(mut out, " wc=")
+        xdbgInt(mut out, e.wc[v])
+        xdbgStr(mut out, " hu=")
+        xdbgInt(mut out, e.hu[v])
+        out = append(out, ' ')
+        xdbgLoc(mut e, mut out, c)
+        fl := e.fcls[v] != 0
+        if fl {
+            xdbgStr(mut out, " fl")
+        } else if xCrossCall(mut e, c) {
+            xdbgStr(mut out, " cross")
+        } else if xCrossCold(mut e, c) {
+            xdbgStr(mut out, " ccold")
+        }
+        if e.pnx[c] >= 0 || c >= e.nv {
+            xdbgStr(mut out, " next=")
+            xdbgInt(mut out, e.pnx[c])
+        }
+        if len(e.pfix) > c && e.pfix[c] != -1 {
+            xdbgStr(mut out, " fix=")
+            xdbgInt(mut out, e.pfix[c])
+        }
+        xdbgLine(mut out)
+    }
+    // spill した部分区間の理由: 組のレジスタごとに重なる先客（部分区間・値・重み）
+    for c <- iter.Range(0, e.npc) {
+        if e.ivS[c] < 0 || xIsReg(e.loc[c]) || (e.pv[c] < e.nv && e.remat[e.pv[c]] != 0) {
+            continue
+        }
+        v := e.pv[c]
+        fl := e.fcls[v] != 0
+        cross := !fl && xCrossCall(mut e, c)
+        nr := if fl { e.nx } else if cross { xNCallee } else { e.ng }
+        xdbgStr(mut out, "why pc")
+        xdbgInt(mut out, c)
+        xdbgStr(mut out, " pwt=")
+        xdbgInt(mut out, e.pwt[c])
+        for j <- iter.Range(0, nr) {
+            r := if fl { xXmmReg(j) } else { xAllocReg(j) }
+            out = append(out, ' ')
+            xdbgReg(mut out, r)
+            out = append(out, '{')
+            base := e.aB[r]
+            mut first := true
+            for q <- iter.Range(0, e.aN[r]) {
+                w := e.aL[base + q]
+                if xOverlap(mut e, w, e.ivS[c], e.ivE[c]) {
+                    if !first {
+                        out = append(out, ' ')
+                    }
+                    first = false
+                    xdbgStr(mut out, "pc")
+                    xdbgInt(mut out, w)
+                    out = append(out, '/')
+                    xdbgInt(mut out, e.pwt[w])
+                }
+            }
+            out = append(out, '}')
+        }
+        xdbgLine(mut out)
+    }
+}

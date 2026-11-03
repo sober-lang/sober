@@ -33,6 +33,7 @@ Sober の唯一の中間表現。`sober build` は AST → IR → 正規バッ�
   - iconst の札（2026-10-26 — インクリの波 段 2・docs/incremental.md）: 発見順の番号（panic / spawn の点）を運ぶ定数は記録の欄 b に札を持つ（テキスト形式には出ない — `const n` のまま）。札つきは札なしと GVN で併合されず、正規バックエンドは imm32 を後埋めにする
 - メモリ: load・store（語、ptr + 語オフセット）/ load8・store8（[]byte・string のセルと io のバイトバッファ — byte の段）/ gep（語・バイト）/ ptoi・itop / slotaddr / globaladdr / funcaddr
 - 呼び出し: call / call_indirect / syscall
+  - syscall の札の op（x86 の正規バックエンドの ELF の道だけ命令 — 他の出力では値 0 か無発行）: vcall・aes の塊・montmul・cycles / tsc・`prefetch(%a)`（2026-11-01 — rt 専用の prefetcht0。値も効果も無い・番地が不正でも落ちない — 走れる積みの次の候補の先読み）
 - region: region.enter / depth / setdepth / alloc / bump / relocate
 - 終端: br / condbr / ret / exit(code)
 - task の罠（段 6 P3a-2a — 下の 4.5 節）: `%r = trap %callee(%arg)` / `unwind`

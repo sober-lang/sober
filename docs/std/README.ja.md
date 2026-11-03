@@ -57,7 +57,8 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 | [std/strings](strings.ja.md) | Go の strings パッケージが仕様のオラクル。 |
 | [std/table](table.ja.md) | 添字で読み書きできる可変長の列 Table[T]（大きな表を O(1) で読み書きする — 小さな列を積んで Build するなら std/builder） |
 | [std/task](task.ja.md) | structured concurrency の表層（[language.md 11 節](../language.md)「表層」）。 |
-| [std/testing](testing.ja.md) | テストの語彙の裏方: `_test.sober` の `assert(e)` は loader の固定テンプレート（compiler/loader/assert.sober）が「部分式を束縛 → 偽なら Fail」に写す。 |
+| [std/testing](testing.ja.md) | テストの語彙の裏方: `_test.sober` の `assert(e)` は loader の固定テンプレート（compiler/loader/assert.sober）が「部分式を束縛 → 偽なら Report して assert の位置で panic」に写す。 |
+| [std/testing/cell](testing-cell.ja.md) | テストの構成（`_test.sober`・`_double.sober`）の状態の置き場（[language.md 41 節](../language.md)「状態を貯める fake」）。 |
 | [std/tls](tls.ja.md) | TLS 1.3 のサーバ（RFC 9846 — X25519・AES-128-GCM / ChaCha20-Poly1305・RSA-PSS の証明書・resumption / 0-RTT なし）。 |
 | [std/tls/record](tls-record.ja.md) | TLS 1.3 の record 層（RFC 9846 5 節 — 8446bis）。 |
 | [std/url](url.ja.md) | URL の部品の符号化: percent-encoding（RFC 3986 2.1）の Escape ⇄ Unescape と、クエリ文字列（application/x-www-form-urlencoded — `k=v&…`）の全部の組を読む ParseQuery。 |
@@ -68,12 +69,12 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`aesgcm.Auth`](crypto-aesgcm.ja.md#auth) — tag が合わない
 - [`aesgcm.Available`](crypto-aesgcm.ja.md#available) — この機械で Seal / Open が使えるか
 - [`aesgcm.BadSize`](crypto-aesgcm.ja.md#badsize) — 鍵・nonce の長さが違う・暗号文が tag より短い・切片の外を指す
-- [`aesgcm.Key`](crypto-aesgcm.ja.md#key) — 展開した鍵（Prepare の結果 — 鍵の展開 11 段と GHASH の H^1〜H^4 を持つ ctx のテンプレート。
+- [`aesgcm.Key`](crypto-aesgcm.ja.md#key) — 展開した鍵（Prepare の結果 — 鍵の展開 11 段・GHASH の H^1〜H^8 と定数を持つ表。
 - [`aesgcm.KeySize`](crypto-aesgcm.ja.md#keysize) — 長さの定数（バイト）
 - [`aesgcm.NoHardware`](crypto-aesgcm.ja.md#nohardware) — この機械で AES-GCM の専用命令の実装を使えない（AES-NI / PCLMULQDQ / SSSE3 が無い・SOBER\_NOAES=1・x86 の最適化のバックエンド以外の出力）
 - [`aesgcm.NonceSize`](crypto-aesgcm.ja.md#noncesize) — 長さの定数（バイト）
-- [`aesgcm.Open`](crypto-aesgcm.ja.md#open) — Seal の逆（tag を crypto.Equal で照合してから復号する）
-- [`aesgcm.OpenAt`](crypto-aesgcm.ja.md#openat) — b[off, off + n)（暗号文 ‖ tag）を写さずに tag を照合してから復号した平文。
+- [`aesgcm.Open`](crypto-aesgcm.ja.md#open) — Seal の逆（復号しながら GHASH を畳み、tag を crypto.Equal で照合する — 合わなければ平文を消して Auth）
+- [`aesgcm.OpenAt`](crypto-aesgcm.ja.md#openat) — b[off, off + n)（暗号文 ‖ tag）を復号した平文（128 の倍数の部分は GHASH と復号を縫い合わせた 1 回の走査・残りは照合の後 — tag が合わなければ書いた平文を crypto.Wipe で消して Auth）。
 - [`aesgcm.Overhead`](crypto-aesgcm.ja.md#overhead) — 長さの定数（バイト）
 - [`aesgcm.Prepare`](crypto-aesgcm.ja.md#prepare) — key を展開した Key（専用命令の有無と鍵の長さはここで見る）
 - [`aesgcm.Seal`](crypto-aesgcm.ja.md#seal) — pt を暗号化して tag を付けたもの（暗号文 ‖ tag）。
@@ -96,6 +97,10 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`builder.PushBetween`](builder.ja.md#pushbetween) — xs を open と close で挟んで末尾に積む（Push(b, open)・PushAll(b, xs)・Push(b, close) と同じ結果 — 今の chunk に len(xs) + 2 の空きがあれば空きの検査と chunk の出し入れは 1 回だけ。
 - [`builder.PushString`](builder.ja.md#pushstring) — s のバイト列を末尾に積む（PushAll(b, bytes(s))）
 - [`builder.PushWord`](builder.ja.md#pushword) — w の下の k バイトを下のバイトから順に末尾に積む（Push(b, byte(w & 255)) と w = w >> 8 を k 回くり返すのと同じ結果）。
+- [`cell.Cell`](testing-cell.ja.md#cell) — 置き場の把手（key は loader が const の宣言ごとに振る — 書かない）
+- [`cell.Get`](testing-cell.ja.md#get) — 置き場の今の値（一度も Set していなければ init — 書いていなければ T のゼロ値）
+- [`cell.Set`](testing-cell.ja.md#set) — 置き場の値を v にする
+- [`cell.Update`](testing-cell.ja.md#update) — 置き場の値を f(今の値) にする（読みと書きの間に他の task の書きが挟まらない）。
 - [`chacha20.Block`](crypto-chacha20.ja.md#block) — 鍵 key・nonce・ブロック番号 counter の鍵ストリームの 1 ブロック（64 バイト）。
 - [`chacha20.XorKeyStream`](crypto-chacha20.ja.md#xorkeystream) — src を鍵ストリーム（ブロック番号 counter から）と xor したもの（暗号化 = 復号）。
 - [`chacha20.XorKeyStreamAt`](crypto-chacha20.ja.md#xorkeystreamat) — src[at, at + n) を鍵ストリームと xor したもの（写さずに読む — record 層向けの API）。
@@ -403,7 +408,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`pool.Len`](pool.ja.md#len) — 未返却（Acquire したが Release していない）の個数
 - [`pool.Load`](pool.ja.md#load) — s の i 番目の値（今の世代で Store していなければ 0）
 - [`pool.LoadRaw`](pool.ja.md#loadraw) — s の i 番目の語をそのまま読む（生のアクセサ — 世代に触れない。
-- [`pool.NewScratch`](pool.ja.md#newscratch) — 容量 0 の s を容量 n・全部 0 にする（容量は 1 回だけ — 容量のある s に呼ぶと panic(ScratchSized{}): lease の窓の中でストレージを作り直すと、新しい列が task の region に取られて長命のストレージから宙吊りになる — region-domain-pool.md 4d 節）。
+- [`pool.NewScratch`](pool.ja.md#newscratch) — 容量 0 の s を容量 n・全部 0 にする（容量は 1 回だけ — 容量のある s に呼ぶと panic(ScratchSized{}): lease の窓の中でストレージを作り直すと、新しい列が task の region に取られて長命のストレージから宙吊りになる — region-domain-pool.md 4d 節）
 - [`pool.Pool`](pool.ja.md#pool) — スロットを使い回す資源のプール（ゼロ値 `pool.Pool[T]{}` が空の Pool）
 - [`pool.Release`](pool.ja.md#release) — h のスロットを空きに戻す。
 - [`pool.Renew`](pool.ja.md#renew) — s の全部の項目を 0 に戻す（世代を 1 つ進める — 2^32 回目の一周だけ本当に消す）
@@ -483,11 +488,13 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`rsa.PrivateKey`](crypto-rsa.ja.md#privatekey) — RSAPrivateKey の成分（RFC 8017 A.1.2 — d は使わない・CRT の p, q〔の Montgomery の文脈 mp, mq〕, dp, dq, qinv）
 - [`rsa.Public`](crypto-rsa.ja.md#public) — k の公開鍵
 - [`rsa.PublicKey`](crypto-rsa.ja.md#publickey) — 法 n と公開の指数 e（limb の列）・k = n のバイト長・bits = n のビット長・mt = n の Montgomery の文脈（鍵を読むときに 1 回）
+- [`rsa.SelSelfCheck`](crypto-rsa.ja.md#selselfcheck) — 専用命令の表引き sel と Sober の selS の照合（検証の網の API — 利用者は使わない: examples/crypto\_montmul と cryptocheck の格子が叩く）。
 - [`rsa.SignPSS`](crypto-rsa.ja.md#signpss) — msg の RSASSA-PSS の署名（k バイト）。
 - [`rsa.Size`](crypto-rsa.ja.md#size) — pub の法のバイト長（署名の長さ）
 - [`rsa.VerifyPSS`](crypto-rsa.ja.md#verifypss) — sig が pub で msg の RSASSA-PSS の署名（salt 長 sLen）か
 - [`sha256.BlockSize`](crypto-sha256.ja.md#blocksize) — 長さの定数（バイト）
 - [`sha256.New`](crypto-sha256.ja.md#new) — 空の入力の状態
+- [`sha256.ShaSelfCheck`](crypto-sha256.ja.md#shaselfcheck) — 塊の Write と Sober の writeS の照合（検証の網の API — 利用者は使わない: examples/crypto\_sha256blk と cryptocheck の格子が叩く）。
 - [`sha256.Size`](crypto-sha256.ja.md#size) — 長さの定数（バイト）
 - [`sha256.State`](crypto-sha256.ja.md#state) — 途中の状態（h = 8 語の連鎖値・tail = まだ畳んでいない 64 バイト未満の端・n = これまでに書いた長さ）
 - [`sha256.Sum`](crypto-sha256.ja.md#sum) — s に書いた全体の値（32 バイト）。
@@ -574,8 +581,8 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`task.SpawnGive`](task.ja.md#spawngive) — `Spawn(s, give: ep, (ep) => …)` の写し先（loader が呼び先を付け替える — 端点 ep をちょうど 1 つの子へ移す。
 - [`task.SpawnIn`](task.ja.md#spawnin) — プール pool の天井に入れれば子の task を生む（handle, nil）・入れなければ (nil, Shed{})（縮退しない — shed を望む境界の API ・[language.md 11 節](../language.md)「shed」）。
 - [`task.Try`](task.ja.md#try) — 子の結果を Outcome で（死は値）
-- [`testing.AssertFailed`](testing.ja.md#assertfailed) — assert の失敗（panic ラベル — 欄なし: 式と部分式の値は Fail が前置で印字する。
-- [`testing.Fail`](testing.ja.md#fail) — assert の失敗: `assert failed: <式>` と部分式の値を 1 行ずつ標準エラーへ書いて panic(AssertFailed{}) する（exit 101 — [language.md 27 節](../language.md)の panic の契約）
+- [`testing.AssertFailed`](testing.ja.md#assertfailed) — assert の失敗（panic ラベル — 欄なし: 式と部分式の値は Report が前置で印字する。
+- [`testing.Report`](testing.ja.md#report) — assert の失敗の印字: `assert failed: <式>`（ラベルがあれば `assert failed (<ラベル>): <式>`）と部分式の値を 1 行ずつ標準エラーへ書く。
 - [`tls.Alpn`](tls.ja.md#alpn) — 受ける ALPN をサーバの好みの順 alpn に替えた Config（空 = ALPN を使わない。
 - [`tls.BadRecord`](tls.ja.md#badrecord) — 受けた record が壊れている（改竄・形の誤り・想定外のメッセージ — 相手へ alert を送って閉じた）
 - [`tls.Closed`](tls.ja.md#closed) — 接続が閉じている（相手の切断・相手の alert・転送路の失敗・途中で抜けた後の Recv）
@@ -603,4 +610,5 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`utf8.Str`](utf8.ja.md#str) — v の [s, i) を検査し直さずに string にする。
 - [`utf8.View`](utf8.ja.md#view) — 中身が有効な UTF-8 と検査済みのバイト列（型つき証人）。
 - [`x25519.Base`](crypto-x25519.ja.md#base) — 秘密鍵 k（32 バイト — 短ければ添字の境界の panic・長い分は読まない）の公開鍵 = k × 9
+- [`x25519.FeSelfCheck`](crypto-x25519.ja.md#feselfcheck) — 専用命令の体の積 femul と Sober の fmulS の照合（検証の網の API — 利用者は使わない: examples/crypto\_femul と cryptocheck の格子が叩く）。
 - [`x25519.Shared`](crypto-x25519.ja.md#shared) — 秘密鍵 k（32 バイト — 内部で RFC 7748 の clamp を掛ける）と相手の u 座標（32 バイト — 最上位のビットは無視）の X25519。

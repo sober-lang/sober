@@ -99,7 +99,7 @@ const TArray = 46      // a = 長さ（値）, b = elem — `[N]T`。struct の�
 const TTuple = 47      // a = 要素の型の列（2 つ以上）— `(T, error?)`。型引数の位置にだけ（parser）・std/task の Task の型引数の外は loader の拒否（language.md 11 節 — P3b 残穴1）
 
 // ── 宣言・その他 ──
-const KFile = 50       // a = package（文字列）, b = imports, c = types, d = funcs, e = consts（すべて列）, f = intrinsics（KIntrinsic の列 — 無ければ 0。std だけ）
+const KFile = 50       // a = package（文字列）, b = imports, c = types, d = funcs, e = consts（すべて列）, f = intrinsics（KIntrinsic の列 — 無ければ 0。std だけ）か package 節の前置の注釈 1 つの列（KReplaces / KDoubles）
 const KImport = 51     // a = alias（文字列、-1 可）, b = path（文字列）
 const KTypeDecl = 52   // a = 名前, b = type_params（文字列の列）, c = body, d = span.start, e = span.end, f = 1 なら `@layout`（language.md 36 節）
 const BStruct = 53     // a = fields（列）
@@ -133,6 +133,12 @@ const KIntrinsic = 74
 // 型の別名の本体（`type A = B` — language.md 32 節「型の別名」）: a = 右辺の型式（loader が TName だけを受ける）。loader/alias.sober が参照を実体の名前へ写し、
 // 検査の束の後で宣言を型の列から外す — desugar 以降の層は見ない（生の木を読む fmt・.sobi・docgen は見る）
 const BAlias = 75
+// package 節の前置の `@replaces("path")`（double の名乗り — language.md 41 節）: a = 相手の package のパス（文字列）, b = package 名の字句の番号。
+// KFile の f の列にだけ現れる（列の要素はこれ 1 つ）。loader が読んで木から外す — 以降の層は見ない
+const KReplaces = 76
+// package 節の前置の `@doubles("path", …)`（テストの構成の差し替えの表 — language.md 41 節）: a = パスの列（EStrlit の節の列）, b = package 名の字句の番号。
+// KFile の f の列にだけ現れる。loader が読んで木から外す
+const KDoubles = 77
 // lower が合成する評価済みの値の節（木には現れない — pipe の左辺を引数へ渡す。Zig の ArgSrc.val）: a = 型, b = 値。
 // 番号は木の種類と重ならないように離して置く（desugar の descTable は木の節の欄の付け替えにだけ使い、EVal は引かない）
 const EVal = 90

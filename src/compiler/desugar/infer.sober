@@ -150,10 +150,11 @@ func computeTy0(st mut S, e NodeRef, eb int, ef int) TyRef {
     case ast.EMaplit:
         key := tyOf(mut st, st.curPkg, nA(nodeOf(mut st, e)), e, TYFUEL) catch return -1
         value := tyOf(mut st, st.curPkg, nB(nodeOf(mut st, e)), e, TYFUEL) catch return -1
-        return tMap(mut st, nodeOf(mut st, e).d != 0, st.rdepth - 1, key, value)
+        return tMap(mut st, nodeOf(mut st, e).d != 0, st.rdepth - 1, pointTy(mut st, key), pointTy(mut st, value))
     case ast.ESlicelit:
+        // 要素の型は expr が作る mkslice と同じ最内の点座標（素の宣言型の region 0 で読むと、外の値の append に緩めの ann が付かない）
         elem := tyOf(mut st, st.curPkg, nA(nodeOf(mut st, e)), e, TYFUEL) catch return -1
-        return tSlice(mut st, nodeOf(mut st, e).c != 0, st.rdepth - 1, elem, false)
+        return tSlice(mut st, nodeOf(mut st, e).c != 0, st.rdepth - 1, pointTy(mut st, elem), false)
     case ast.EBinary:
         op := nodeOf(mut st, e).a
         switch op {
@@ -252,7 +253,7 @@ func chainAt(st mut S, t TyRef, i int, n int) TyRef {
 }
 
 // struct リテラル e の型（型引数なし）: 欄ごとに宣言の型を、値の式の型が region だけ違う同じ形で読めるならその型に置き換える
-// （宣言の座標でなく、値が実際に置かれた座標で読む。値の型が読めない欄・ゼロ値リテラルは宣言の型のまま）
+// （宣言の座標でなく、値が実際に置かれた座標で読む。値の型が読めない欄は宣言の型のまま。書かれない欄のゼロ値はここで作られるので点座標）
 func litStructTy(st mut S, e NodeRef, pk int, fs ListRef, eb int, ef int) TyRef {
     n := lenL(mut st, fs)
     if n == 0 {
@@ -267,11 +268,13 @@ func litStructTy(st mut S, e NodeRef, pk int, fs ListRef, eb int, ef int) TyRef 
     }
     elems := lB(nodeOf(mut st, e))
     ne := lenL(mut st, elems)
+    mut given := ListRef(-1)
     if ne > 0 {
         fof, cm := CompositeFields(mut st, fieldNames(mut st, fs), elems)
         if cm != CMOk {
             return -1
         }
+        given = fof
         mut j := 0
         while j < ne {
             fi := latI(mut st, fof, j)
@@ -283,7 +286,29 @@ func litStructTy(st mut S, e NodeRef, pk int, fs ListRef, eb int, ef int) TyRef 
             j += 1
         }
     }
+    mut k := 0
+    while k < n {
+        if !listHasI(mut st, given, ne, k) {
+            hsetTy(mut st, int(ts) + 1 + k, pointTy(mut st, latTy(mut st, ts, k)))
+        }
+        k += 1
+    }
     return tyChain(mut st, ts)
+}
+
+// fof（長さ ne の欄の添字の列 — -1 なら空）に k があるか
+func listHasI(st mut S, fof ListRef, ne int, k int) bool {
+    if fof == -1 {
+        return false
+    }
+    mut j := 0
+    while j < ne {
+        if latI(mut st, fof, j) == k {
+            return true
+        }
+        j += 1
+    }
+    return false
 }
 
 func compositeTy(st mut S, e NodeRef, eb int, ef int) TyRef {
@@ -422,6 +447,17 @@ func callTy(st mut S, e NodeRef, eb int, ef int) TyRef {
         }
         return if skip == 0 { parTy(mut st, pkey, fi, args, eb, ef, explicit) } else { TyRef(-1) }
     }
+    ckey := CellKey(mut st, fi)
+    if ckey != 0 {
+        if skip != 0 || lenL(mut st, args) < 1 {
+            return -1
+        }
+        if ckey != CELL_GET {
+            return st.tUnit
+        }
+        ht := computeTy(mut st, latN(mut st, args, 0), eb, ef)
+        return if ht != -1 && tg(mut st, ht) == TPr { tRight(mut st, ht) } else { TyRef(-1) }
+    }
     rs := fnResults(mut st, fi)
     if lenL(mut st, rs) != 1 + skip {
         return -1
@@ -503,6 +539,9 @@ func declOfExpr(st mut S, e NodeRef, eb int, ef int) int {
             }
             return -1
         }
+        if CellKey(mut st, fi) == CELL_GET && skip == 0 && lenL(mut st, lB(nodeOf(mut st, e))) == 1 {
+            return cellDecl(mut st, latN(mut st, lB(nodeOf(mut st, e)), 0), eb, false)
+        }
         rs := fnResults(mut st, fi)
         if lenL(mut st, rs) != 1 + skip {
             return -1
@@ -546,10 +585,8 @@ func declOfExpr(st mut S, e NodeRef, eb int, ef int) int {
         // `U?` の欄は中身の宣言（仮引数の `U?` の束縛と同じ — 絞った後の欄読みが引ける）
         ft := if kindN(mut st, ft0) == ast.TOpt { nA(nodeOf(mut st, ft0)) } else { ft0 }
         fk := kindN(mut st, ft)
-        if fk == ast.TName {
-            return lookupType(mut st, hget(mut st, base + 1), sA(nodeOf(mut st, ft)))
-        }
-        if fk == ast.TGeneric {
+        if fk == ast.TName || fk == ast.TGeneric {
+            // 型引数の名前（総称 struct の欄 `one T`）は宣言の参照の束縛から
             saved := st.tenv
             st.tenv = hget(mut st, base + 2)
             d := declOfTypeExpr(mut st, hget(mut st, base + 1), ft)
@@ -727,6 +764,9 @@ func elemDeclOfExpr(st mut S, e NodeRef, eb int, ef int) int {
                 }
             }
             return -1
+        }
+        if CellKey(mut st, fi) == CELL_GET && skip == 0 && lenL(mut st, args) == 1 {
+            return cellDecl(mut st, latN(mut st, args, 0), eb, true)
         }
         rs := fnResults(mut st, fi)
         if lenL(mut st, rs) != 1 + skip {
@@ -1135,6 +1175,37 @@ func callEnv(st mut S, fi int, cn NodeRef, explicit NodeRef, args ListRef, eb in
                     hset(mut st, penv + 3 + i * 3, if is_elem { elemDeclOfExpr(mut st, arg, eb, ef) } else { declOfExpr(mut st, arg, eb, ef) })
                 }
             }
+        } else if kindN(mut st, pt) == ast.TGeneric {
+            // 総称 struct の仮引数 `B[T]`: 実引数の宣言の参照の束縛（genericEnv）の同じ位置から
+            arg := latN(mut st, args, j)
+            mut ad := -1
+            if kindN(mut st, arg) == ast.EMutArg {
+                bm := lookup(mut st, eb, sA(nodeOf(mut st, arg)))
+                ad = if bm >= 0 { bnd(mut st, bm).decl } else { -1 }
+            } else {
+                ad = declOfExpr(mut st, arg, eb, ef)
+            }
+            genv := if ad >= 0 { hget(mut st, ad + 2) } else { -1 }
+            targs := lB(nodeOf(mut st, pt))
+            if genv >= 0 && hget(mut st, genv) == lenL(mut st, targs) {
+                for q <- iter.Range(0, lenL(mut st, targs)) {
+                    ta := latN(mut st, targs, q)
+                    if kindN(mut st, ta) == ast.TName {
+                        for i <- iter.Range(0, n) {
+                            if strEq(mut st, hgetS(mut st, penv + 1 + i * 3), sA(nodeOf(mut st, ta))) && hget(mut st, penv + 3 + i * 3) == -1 {
+                                hset(mut st, penv + 3 + i * 3, hget(mut st, genv + 3 + q * 3))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // 明示の型引数 `f[Tk](…)` の宣言
+    if explicit != -1 && n == 1 && hget(mut st, penv + 3) == -1 {
+        te := typeNameOf(mut st, explicit)
+        if te != -1 {
+            hset(mut st, penv + 3, declOfTypeExpr(mut st, st.curPkg, te))
         }
     }
     // ラムダの結果からだけ決まる型引数の宣言（P3b 残穴2）: 関数型の仮引数の結果が `U` / `[]U` なら、ラムダの本体の値の宣言
@@ -1399,11 +1470,38 @@ func boundTy(st mut S, l ListRef, n int, name StrRef, eb int, ef int) TyRef {
 }
 
 // switch の値の型（腕の末尾から。上の case → default の順に分かる方）。全腕の型が読めて region の合流（constSwitch）が
-// 掛かるなら、合流した型（ifTy と同じ）
+// 掛かるなら、合流した型（ifTy と同じ）。腕のどれかが nil で終わるなら T?（ifTy と同じ — spec T-16）
 func switchTy(st mut S, sw NodeRef, eb int, ef int) TyRef {
+    mut t := switchTyArms(mut st, sw, eb, ef)
+    if !nilCase(mut st, sw) {
+        return t
+    }
+    // 兄弟の腕の型（型パターンの欄だけを値にする腕 `case Sq{s}: s` も欄を束ねて読む）
+    cs := lB(nodeOf(mut st, sw))
+    mut i := 0
+    while t == -1 && i < lenL(mut st, cs) {
+        t = caseTyN(mut st, latN(mut st, cs, i), eb, ef, true)
+        i += 1
+    }
+    return if t != -1 { optUp(mut st, t) } else { t }
+}
+
+// switch の腕（default を含む）のどれかが nil で終わるか
+func nilCase(st mut S, sw NodeRef) bool {
+    cs := lB(nodeOf(mut st, sw))
+    for i <- iter.Range(0, lenL(mut st, cs)) {
+        if nilTail(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, latN(mut st, cs, i)))))) {
+            return true
+        }
+    }
+    dflt := nC(nodeOf(mut st, sw))
+    return dflt != -1 && nilTail(mut st, lA(nodeOf(mut st, dflt)))
+}
+
+func switchTyArms(st mut S, sw NodeRef, eb int, ef int) TyRef {
     t0 := switchTy0(mut st, sw, eb, ef)
     dflt := nC(nodeOf(mut st, sw))
-    if t0 == -1 || dflt == -1 {
+    if t0 == -1 {
         return t0
     }
     mut arms := mut []int{}
@@ -1415,8 +1513,59 @@ func switchTy(st mut S, sw NodeRef, eb int, ef int) TyRef {
         arms = append(arms, int(caseTy(mut st, latN(mut st, cs, i), eb, ef)))
         i += 1
     }
-    up := upJoinN(mut st, armTy(mut st, lA(nodeOf(mut st, dflt)), eb, ef), mut arms)
+    dt := if dflt != -1 { armTy(mut st, lA(nodeOf(mut st, dflt)), eb, ef) } else { TyRef(-1) }
+    // 腕の型が T と T? に分かれるなら T?（spec T-16）
+    mut m := optMix(mut st, t0, dt)
+    i = 0
+    while m == -1 && i < lenL(mut st, cs) {
+        m = optMix(mut st, t0, TyRef(arms[i * 3 + 2]))
+        i += 1
+    }
+    if m != -1 {
+        return m
+    }
+    if dflt == -1 {
+        return t0
+    }
+    up := upJoinN(mut st, dt, mut arms)
     return if up != -1 { up } else { t0 }
+}
+
+// 腕の型 a と b の片方が T? で他方がその中身 T なら T?（spec T-16 — T と T? の腕の合流。でなければ -1）
+func optMix(st mut S, a TyRef, b TyRef) TyRef {
+    if a == -1 || b == -1 {
+        return -1
+    }
+    if isTag(mut st, a, TOpt) && !isTag(mut st, b, TOpt) && tyEql(mut st, tInner(mut st, a), b) {
+        return a
+    }
+    if isTag(mut st, b, TOpt) && !isTag(mut st, a, TOpt) && tyEql(mut st, tInner(mut st, b), a) {
+        return b
+    }
+    return -1
+}
+
+// if 式 e の腕の型が T と T? に分かれるか（nil 判定の if は絞った腕を中身の型で読む — ifnilTy と同じ束縛）
+func optMixIf(st mut S, e NodeRef, eb int, ef int) bool {
+    els := nC(nodeOf(mut st, e))
+    if els == -1 {
+        return false
+    }
+    then := lA(nodeOf(mut st, nB(nodeOf(mut st, e))))
+    mut et := eb
+    mut eo := eb
+    nt, some := nilTest(mut st, nA(nodeOf(mut st, e)), eb)
+    if nt != -1 {
+        b := lookup(mut st, eb, nt)
+        bt := bnd(mut st, b).ty
+        pty := if isTag(mut st, bt, TOpt) { tInner(mut st, bt) } else { TyRef(-1) }
+        eb2 := bind(mut st, eb, nt, bnd(mut st, b).level, false, bnd(mut st, b).decl, pty, -1, 0, -1, false, bnd(mut st, b).sty)
+        et = if some { eb2 } else { eb }
+        eo = if some { eb } else { eb2 }
+    }
+    tt := armTy(mut st, then, et, ef)
+    ot := if kindN(mut st, els) == ast.EBlock { armTy(mut st, lA(nodeOf(mut st, els)), eo, ef) } else { computeTy(mut st, els, eo, ef) }
+    return optMix(mut st, tt, ot) != -1
 }
 
 func switchTy0(st mut S, sw NodeRef, eb int, ef int) TyRef {
@@ -1434,6 +1583,11 @@ func switchTy0(st mut S, sw NodeRef, eb int, ef int) TyRef {
 // switch の節 c の腕の値の型。欄の束縛なしで読めなければ、型パターン `V{f, …}` の名前だけの欄を armGen と同じ型で束ねて読み直す
 // （`d := switch e { case L{desc}: desc }` で結果型が読めないと、到達しない腕〔閉じた世界の他のラベル〕が unit に落ちて Def が型の不一致になる）
 func caseTy(st mut S, c NodeRef, eb int, ef int) TyRef {
+    return caseTyN(mut st, c, eb, ef, false)
+}
+
+// caseTy の欄の束ね直しを union の variant にも掛けるか（all — nil の腕から T? を組む switchTy が兄弟の腕の型を読むとき）
+func caseTyN(st mut S, c NodeRef, eb int, ef int, all bool) TyRef {
     l := lA(nodeOf(mut st, nB(nodeOf(mut st, c))))
     t := armTy(mut st, l, eb, ef)
     ps := lA(nodeOf(mut st, c))
@@ -1444,7 +1598,7 @@ func caseTy(st mut S, c NodeRef, eb int, ef int) TyRef {
     vr := findVariant(mut st, st.curPkg, sB(nodeOf(mut st, tp)))
     fps := lC(nodeOf(mut st, tp))
     // 到達しない腕が出るのは error の switch だけ（union は網羅を行列で確かめ済み — 推定の束縛を足すのも error のラベルに限る）
-    if vr.decl != NodeRef(ERRS) || lenL(mut st, fps) == 0 {
+    if vr.decl == -1 || (vr.decl != NodeRef(ERRS) && !all) || lenL(mut st, fps) == 0 {
         return t
     }
     v := vat(mut st, vr.decl, vr.idx)
@@ -1462,8 +1616,45 @@ func caseTy(st mut S, c NodeRef, eb int, ef int) TyRef {
 }
 
 // if 式の値の型（then → else の順に分かる方）。両腕の型が読めて region の合流（ifExpr）が掛かるなら、合流した型
-// （値が実際に置かれる座標 — `{ if c { p } else { p } }` のブロックの出口の付け替えがこれを見る）
+// （値が実際に置かれる座標 — `{ if c { p } else { p } }` のブロックの出口の付け替えがこれを見る）。
+// 腕（else if の鎖を含む）のどれかが nil で終わり、他の腕から型 T が読めるなら T の T?（T が既に T? ならそのまま — spec T-16）
 func ifTy(st mut S, e NodeRef, eb int, ef int) TyRef {
+    t := ifTyArms(mut st, e, eb, ef)
+    if t == -1 || nC(nodeOf(mut st, e)) == -1 || !nilArm(mut st, e) {
+        return t
+    }
+    return optUp(mut st, t)
+}
+
+// if 式 e の腕（else if の鎖を含む）のどれかが nil で終わるか
+func nilArm(st mut S, e NodeRef) bool {
+    if nilTail(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, e))))) {
+        return true
+    }
+    els := nC(nodeOf(mut st, e))
+    if els == -1 {
+        return false
+    }
+    k := kindN(mut st, els)
+    return if k == ast.EBlock { nilTail(mut st, lA(nodeOf(mut st, els))) } else if k == ast.EIf { nilArm(mut st, els) } else { false }
+}
+
+// T の T?（T が既に T? ならそのまま）
+func optUp(st mut S, t TyRef) TyRef {
+    return if isTag(mut st, t, TOpt) { t } else { tOpt(mut st, t) }
+}
+
+// 文の列 l の末尾が式文の nil か
+func nilTail(st mut S, l ListRef) bool {
+    n := lenL(mut st, l)
+    if n == 0 {
+        return false
+    }
+    s := latN(mut st, l, n - 1)
+    return kindN(mut st, s) == ast.SExpr && kindN(mut st, nA(nodeOf(mut st, s))) == ast.ENil
+}
+
+func ifTyArms(st mut S, e NodeRef, eb int, ef int) TyRef {
     nt, some := nilTest(mut st, nA(nodeOf(mut st, e)), eb)
     if nt != -1 {
         return ifnilTy(mut st, e, nt, some, eb, ef)
@@ -1477,6 +1668,10 @@ func ifTy(st mut S, e NodeRef, eb int, ef int) TyRef {
     // else の腕の型は ifTy0 が読んでいればそれを使う（同じ入力の読み直し — else if の鎖で腕ごとに 2 回読むと鎖の長さの指数になる。
     // loader.IntrinsicCode の 19 段の鎖 1 つで自己 check の脱糖の 3 割を占めたことがある）
     ot := if o0 != -2 { o0 } else if kindN(mut st, els) == ast.EBlock { armTy(mut st, lA(nodeOf(mut st, els)), eb, ef) } else { computeTy(mut st, els, eb, ef) }
+    m := optMix(mut st, tt, ot)
+    if m != -1 {
+        return m
+    }
     up := upJoin2(mut st, tt, ot)
     return if up != -1 { up } else { t0 }
 }
@@ -1503,6 +1698,10 @@ func ifnilTy(st mut S, e NodeRef, name StrRef, some bool, eb int, ef int) TyRef 
     se := singleExpr(mut st, then)
     if se != -1 && isUntypedConst(mut st, se, eb, st.curPkg) && isTag(mut st, ot, TByte) {
         return ot
+    }
+    m := optMix(mut st, tt, ot)
+    if m != -1 {
+        return m
     }
     up := upJoin2(mut st, tt, ot)
     return if up != -1 { up } else { tt }

@@ -392,7 +392,7 @@ func lambdaCall(st mut St, c int, args desugar.ListRef, at desugar.NodeRef) (int
         st.nloop = st.nloop + 1
     }
     // 結果が T? 1 つ（`func(c Conn) error?` — 28 節 net の handler）: 本体の値を期待型で寄せる（ラベル・nil・if の腕。脱糖器の lambdaCall と同じ線）
-    rw := if loop == 0 && lenL(mut st, frs) == 1 && isTag(mut st, latI(mut st, frs, 0), TOpt) { latI(mut st, frs, 0) } else { -1 }
+    rw := if loop == 0 && lenL(mut st, frs) == 1 && (isTag(mut st, latI(mut st, frs, 0), TOpt) || takesConst(mut st, latI(mut st, frs, 0))) { latI(mut st, frs, 0) } else { -1 }
     // 本体が呼び出し / パイプなら値なしも許す
     if rw >= 0 && bk != ast.EBlock {
         x1 := exprExpecting(mut st, body, rw, body)?

@@ -55,11 +55,11 @@ type tlsSeal struct {
 const fFlags = 0
 const fLeft = 1
 const fWr = 2
-const dirW = 64
-const fRd = 2 + 64
-const fPend = 2 + 64 + 64
-const fSend = 2 + 64 + 64 + 1
-const fBytes = 2 + 64 + 64 + 1 + sendW
+const dirW = 80
+const fRd = 2 + 80
+const fPend = 2 + 80 + 80
+const fSend = 2 + 80 + 80 + 1
+const fBytes = 2 + 80 + 80 + 1 + sendW
 
 // 送りの束（application の record 1 つ丸ごと = 頭 5 + 平文 2^14 + 内容の型 1 + tag 16 バイト）: Put は record を接続の寿命の置き場へ Seal して積み、
 // Flush が送る — 呼び手は平文の region を閉じてから Flush で待てる（送りの完了待ち〔park〕の間、要求の作業の region を空にしておく。rt が空のスロットを
@@ -372,7 +372,7 @@ func sendNow(c Conn, b []byte, fl int) error? {
     return nil
 }
 
-// b を送りの束の at から Seal した record 1 つのバイト数（束に入らない・鍵の使用上限の手前なら −1）。作業の列（頭・nonce・AEAD の ctx の写し）は
+// b を送りの束の at から Seal した record 1 つのバイト数（束に入らない・鍵の使用上限の手前なら −1）。作業の列（頭・nonce・AEAD の record の状態）は
 // この関数の region に積もって戻れば捨てられる（ループでない式ブロックで包む形は、最適化の道で region が消えて呼び手に合流するので使わない）
 func sealPut(c Conn, b []byte, seq int, at int) int {
     wr := record.WithSeq(c.wr, seq)

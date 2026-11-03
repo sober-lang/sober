@@ -1,0 +1,569 @@
+package desugar
+
+// 区画の置き場の読み戻し: TypeAll の package の番で鍵 K1（tycanon.sober）が
+// 置き場の項目に当たったら、型付けを走らせずに区画の値を店へ写し直す。引き直し:
+// - 記録 = （参照表の番号, 持ち主の区画の中の序数）→ 持ち主の PRTYS の lo + 序数（依存は後順で先に済み — 当たりでも外れでも区画は店にある。
+//   指せるのは宣言の相の記録だけ — 扉の監査 body = 0）・前置きは添字のまま
+// - 型宣言・関数 = （参照表の番号, 名前）→ 今の表で引く（名前の表 — tyNames）
+// - 自分の節 = （ファイルの package の中の序数, 添字）→ 木の参照・合成の節 = 持ち主の区画の中の序数 → PRSYN の lo + 序数（Init は毎回走る）
+// - 列は店に積み直す（ylN）・文字列は綴りからヒープへ（strOf）
+// 関数・const の欄は package の区間（fo / ford）の同じ位置へ — 鍵がソースの要約と順の撹拌の口を含むので並びは書いたときと同じ（名前で確かめる）
+
+import "ast"
+import "loader"
+import "std/io"
+import "std/iter"
+import "std/table"
+
+// 置き場の切り口 γ の項目（lower が BcView から組む — 鍵 [k1, k2] と値のバイト列）と検証の段（0 = 当たりは読み戻す・
+// 1 = 当たりでも型付けして値を書きの側へ出す〔lower の bcAdd が置き場の値とバイトで比べる〕・2 = 読み戻した区画を直列化し直して値と照らす）
+type TyCache struct {
+    on bool
+    vfy int
+    exe string
+    k1 []int
+    k2 []int
+    vs [][]byte
+}
+
+// TypeAllC の書きの側（外れの package の値 — lower が検査の後に TyValSeal で検査の語を足して bcAdd へ。pk = 値の package）と当否の数・
+// 読み戻しの照合の食い違い（vfy = 2 — package の論理パス）
+type TyPut struct {
+    pk []int
+    k1 []int
+    k2 []int
+    vs [][]byte
+    hit int
+    miss int
+    bad [][]byte
+}
+
+// 検査の語（値の末尾の 1 語 — γc）: 値は検査（ParCheckTyped の std/task の歩き・freeze の U1〜U3）が通った build だけが
+// 置き場へ書く（書きの束は build の終わりに流す — 拒否の build は書かない）ので、当たりの package は検査を飛ばし、区画の外へ出る旗だけ足す
+// （nimpl は区画の値・DeadlineUse はこの語）。検査の歩きが読むのは自分の木・自分の区画の記録・閉包の宣言の相だけ（扉 — tyChkDoor）。
+// fileCheck は借りの規則（fcBrwPos / fcBrwVal）が依存の本体と全体の捕獲表を読むので飛ばさない（毎回走る側 — 自己 build で 5 ms）
+const GC_SKIP = 1   // KSGC: 当たり（検査を飛ばす）
+const GC_DL = 2     // KSGC / 検査の語: deadline: を書いた Scope がある（ParCheckTyped の印 — DeadlineUse）
+const GC_AUD = 4    // KSGC: 当たりだが検査を走らせ直す（SOBER_CACHE_VERIFY=2 の監査 — 判定と印が値と食い違えば名指しして落ちる）
+const GC_DLV = 8    // KSGC: 監査の package の値の DeadlineUse の印（走らせ直した歩きの GC_DL と照らす）
+const GC_OK = 1     // 検査の語: 検査が通った build で書いた（いつも立つ — 語の有無の印）
+
+// package pk の検査を飛ばすか（γ の当たり — ParCheckTyped と analyzer の freeze が引く）
+func CheckSkip(st mut S, pk int) bool {
+    return st.ty.kst != 0 && ksAt(mut st, KSGC, pk) & (GC_SKIP | GC_AUD) == GC_SKIP
+}
+
+// TypeAllC の当たりの package pk の印（chk = 値の検査の語・aud = 監査）
+func gcHit(st mut S, pk int, chk int, aud bool) {
+    if aud {
+        ksSet(mut st, KSGC, pk, GC_SKIP | GC_AUD | (if chk & GC_DL != 0 { GC_DLV } else { 0 }))
+    } else {
+        ksSet(mut st, KSGC, pk, GC_SKIP | (chk & GC_DL))
+    }
+}
+
+// ParCheckTyped の歩きの後: 監査の package の DeadlineUse の印が値と同じか（違えば名指しして落ちる）・証人
+// `#gcaudit parcheck audited=<数> skipped=<数> ckdoor=<fileCheck の外読みの数>`（監査の package の判定は歩きそのもの — 拒否なら build が落ちる）
+func gcAudit(st mut S) {
+    if st.ty.kst == 0 {
+        return
+    }
+    mut na := 0
+    mut ns := 0
+    for k <- iter.Range(0, st.npkg) {
+        g := ksAt(mut st, KSGC, k)
+        if g & GC_AUD != 0 {
+            na += 1
+            if (g & GC_DL != 0) != (g & GC_DLV != 0) {
+                _ = io.WriteStderr(bytes("cache: gamma check audit mismatch (deadline) "))
+                _ = io.WriteStderr(tcPathB(mut st, k))
+                _ = io.WriteStderr(bytes("\n"))
+                panic(InvariantBroken{})
+            }
+        } else if g & GC_SKIP != 0 {
+            ns += 1
+        }
+    }
+    if na > 0 {
+        _ = io.WriteStderr(bytes("#gcaudit parcheck audited=${na} skipped=${ns} ckdoor=${hget(mut st, ksB(mut st) + KSCD)}\n"))
+    }
+}
+
+// fileCheck の外読み（依存の本体・全体の捕獲表 — 飛ばさない側の理由）を数える（監査の証人の ckdoor）
+func gcDoor(st mut S) {
+    if st.ty.kst != 0 {
+        hset(mut st, ksB(mut st) + KSCD, hget(mut st, ksB(mut st) + KSCD) + 1)
+    }
+}
+
+// ParCheckTyped の歩きが package pk に deadline: を書いた Scope を見た（値の検査の語へ）
+func gcDlMark(st mut S, pk int) {
+    if st.ty.kst != 0 && pk >= 0 && pk < st.npkg {
+        ksSet(mut st, KSGC, pk, ksAt(mut st, KSGC, pk) | GC_DL)
+    }
+}
+
+// γ の当たり（区画を読み戻した package）があったか（TyFreeze がヒープの尾を子へ渡すか）
+func gcAnyHit(st mut S) bool {
+    if st.ty.kst == 0 {
+        return false
+    }
+    for k <- iter.Range(0, st.npkg) {
+        if ksAt(mut st, KSGC, k) & GC_SKIP != 0 {
+            return true
+        }
+    }
+    return false
+}
+
+// 当たりの package のどれかが deadline: を書いた Scope を持つか（飛ばした歩きの印を足す）
+func gcDlAny(st mut S) bool {
+    if st.ty.kst == 0 {
+        return false
+    }
+    for k <- iter.Range(0, st.npkg) {
+        if ksAt(mut st, KSGC, k) & (GC_SKIP | GC_AUD | GC_DL) == GC_SKIP | GC_DL {
+            return true
+        }
+    }
+    return false
+}
+
+// package pk の値 v の末尾に検査の語を足す（検査の後 — lower の bcGammaPut）
+func TyValSeal(st mut S, pk int, v []byte) []byte {
+    mut out := mut []byte{}
+    for x <- v {
+        out = append(out, x)
+    }
+    w := GC_OK | (ksAt(mut st, KSGC, pk) & GC_DL)
+    // zigzag の 1 バイト（w < 64）
+    out = append(out, byte(w << 1))
+    return freeze(out)
+}
+
+func TyCacheOff() TyCache {
+    return TyCache{on: false, vfy: 0, exe: "", k1: []int{}, k2: []int{}, vs: [][]byte{}}
+}
+
+// 鍵 [h1, h2] の項目（無ければ -1 — 項目の数は package の数 × 版の数で小さい）
+func tyFind(c TyCache, h1 int, h2 int) int {
+    for i <- iter.Range(0, len(c.k1)) {
+        if c.k1[i] == h1 && c.k2[i] == h2 {
+            return i
+        }
+    }
+    return -1
+}
+
+// 値のバイト列を語へ（tyValEnc の逆）— 末尾の検査の語（TyValSeal）は外して 2 つ目の値に
+func tyValDec(b []byte) ([]int, int) {
+    ws, _ := loader.Unvarints(b, 0, len(b))
+    if len(ws) == 0 {
+        return []int{}, 0
+    }
+    return ws[0:len(ws) - 1], ws[len(ws) - 1]
+}
+
+// ── 名前の表（package × 名前 → 関数 / 型宣言 — 開番地。[鍵, 値] の組）──
+
+func tyNameHash(st mut S, pk int, s StrRef) int {
+    mut h := TC_S1 ^ pk
+    for i <- iter.Range(0, slen(mut st, s)) {
+        h = (h ^ sat(mut st, s, i)) * TC_M1
+        h = h ^ (h >> 29)
+    }
+    return h
+}
+
+func tyTabSize(n int) int {
+    mut m := 16
+    while m < n * 2 {
+        m = m * 2
+    }
+    return m
+}
+
+// 大きさ m の組の表（ヒープの列 [2m, …] — 空きは値 -1）
+func tyTabNew(st mut S, m int) int {
+    t := listN(mut st, 2 * m)
+    for i <- iter.Range(0, m) {
+        hset(mut st, t + 2 + 2 * i, -1)
+    }
+    return t
+}
+
+// 表 t（大きさ m の組）へ（鍵 h, 値 v）— 値は関数の添字か節の参照（0 以上）
+func tyTabPut(st mut S, t int, m int, h int, v int) {
+    mut i := h & (m - 1)
+    while hget(mut st, t + 2 + 2 * i) != -1 {
+        i = (i + 1) & (m - 1)
+    }
+    hset(mut st, t + 1 + 2 * i, h)
+    hset(mut st, t + 2 + 2 * i, v)
+}
+
+// 関数の名前の表
+func tyFnNames(st mut S) int {
+    mf := tyTabSize(st.nfn)
+    tf := tyTabNew(mut st, mf)
+    for fi <- iter.Range(0, st.nfn) {
+        tyTabPut(mut st, tf, mf, tyNameHash(mut st, fnPkg(mut st, fi), sA(nodeOf(mut st, fnNode(mut st, fi)))), fi)
+    }
+    return tf
+}
+
+// 型宣言の名前の表（木の型宣言と合成の型宣言）
+func tyDeclNames(st mut S) int {
+    mut nd := 0
+    for f <- iter.Range(0, len(st.trees)) {
+        nd += lenL(mut st, lC(nodeOf(mut st, FileRoot(mut st, f))))
+    }
+    for i <- iter.Range(0, table.Len(mut st.syn)) {
+        x := synAt(mut st, i)
+        if x.kind == ast.KTypeDecl {
+            nd += 1
+        }
+    }
+    md := tyTabSize(nd)
+    td := tyTabNew(mut st, md)
+    for f <- iter.Range(0, len(st.trees)) {
+        tys := lC(nodeOf(mut st, FileRoot(mut st, f)))
+        for i <- iter.Range(0, lenL(mut st, tys)) {
+            n := latN(mut st, tys, i)
+            tyTabPut(mut st, td, md, tyNameHash(mut st, FilePkg(mut st, f), sA(nodeOf(mut st, n))), int(n))
+        }
+    }
+    for i <- iter.Range(0, table.Len(mut st.syn)) {
+        x := synAt(mut st, i)
+        if x.kind == ast.KTypeDecl {
+            n := NodeRef(SBASE + i)
+            f := fileOf(mut st, n)
+            if f >= 0 {
+                tyTabPut(mut st, td, md, tyNameHash(mut st, FilePkg(mut st, f), sA(nodeOf(mut st, n))), int(n))
+            }
+        }
+    }
+    return td
+}
+
+// ── 読み戻し ──
+
+// 値の読み手（語の列・位置・参照表〔番号 → 今の package〕・名前の表）
+type TyRd struct {
+    w []int
+    at int
+    refs []int
+    tf int
+    td int
+    k int
+}
+
+func trGet(r mut TyRd) int {
+    v := r.w[r.at]
+    r.at += 1
+    return v
+}
+
+// 綴り（tcStr の形 — 札・長さ・バイト）を読んで、名前の表の照合用にヒープの文字列にする
+func trStr(st mut S, r mut TyRd) StrRef {
+    t := trGet(mut r)
+    if t == -1 {
+        return StrRef(-1)
+    }
+    n := trGet(mut r)
+    mut b := mut []byte{}
+    for i <- iter.Range(0, n) {
+        b = append(b, byte(trGet(mut r)))
+    }
+    return strOf(mut st, freeze(b))
+}
+
+func trRec(st mut S, r mut TyRd) int {
+    t := trGet(mut r)
+    if t < 0 {
+        return t
+    }
+    if t == TC_PRE {
+        return trGet(mut r)
+    }
+    p := r.refs[trGet(mut r)]
+    lo, _ := PkgRegion(mut st, p, PRTYS)
+    return lo + trGet(mut r)
+}
+
+func trList(st mut S, r mut TyRd) int {
+    t := trGet(mut r)
+    if t == -1 {
+        return -1
+    }
+    n := trGet(mut r)
+    mut xs := mut []int{}
+    for i <- iter.Range(0, n) {
+        xs = append(xs, trRec(mut st, mut r))
+    }
+    l := ylN(mut st, n)
+    for i <- iter.Range(0, n) {
+        yput(mut st, l, i, xs[i])
+    }
+    return int(l)
+}
+
+// 名前の表 t で（package p, 名前 s）を引く（無ければ -1）
+func trLook(st mut S, t int, p int, s StrRef, fn bool) int {
+    m := hget(mut st, t) / 2
+    h := tyNameHash(mut st, p, s)
+    mut i := h & (m - 1)
+    while hget(mut st, t + 2 + 2 * i) != -1 {
+        if hget(mut st, t + 1 + 2 * i) == h {
+            v := hget(mut st, t + 2 + 2 * i)
+            n := if fn { fnNode(mut st, v) } else { NodeRef(v) }
+            vp := if fn { fnPkg(mut st, v) } else { FilePkg(mut st, fileOf(mut st, n)) }
+            if vp == p && tcStrEq(mut st, sA(nodeOf(mut st, n)), s) {
+                return v
+            }
+        }
+        i = (i + 1) & (m - 1)
+    }
+    return -1
+}
+
+// 型宣言（-1 | TC_DECL 参照表の番号 名前）
+func trDecl(st mut S, r mut TyRd) int {
+    t := trGet(mut r)
+    if t == -1 {
+        return -1
+    }
+    p := r.refs[trGet(mut r)]
+    s := trStr(mut st, mut r)
+    v := trLook(mut st, r.td, p, s, false)
+    if v < 0 {
+        tyBad(mut st, "decl")
+    }
+    return v
+}
+
+func trFn(st mut S, r mut TyRd) int {
+    _ = trGet(mut r)
+    p := r.refs[trGet(mut r)]
+    s := trStr(mut st, mut r)
+    v := trLook(mut st, r.tf, p, s, true)
+    if v < 0 {
+        tyBad(mut st, "fn")
+    }
+    return v
+}
+
+// 節（-1 | TC_NODE 参照表の番号 ファイルの序数 添字 | TC_SYN 参照表の番号 序数）
+func trNode(st mut S, r mut TyRd) int {
+    t := trGet(mut r)
+    if t == -1 {
+        return -1
+    }
+    if t == TC_NODE {
+        p := r.refs[trGet(mut r)]
+        f := PkgFlo(mut st, p) + trGet(mut r)
+        return ABASE + f * FW + trGet(mut r)
+    }
+    p := r.refs[trGet(mut r)]
+    lo, _ := PkgRegion(mut st, p, PRSYN)
+    return SBASE + lo + trGet(mut r)
+}
+
+// package pk の論理パスのバイト列（TypeAllC から呼ぶ形 — catch を含む関数〔tcPath〕は小分けの check の .sobi に脱糖後の
+// 綴り〔$ct0v〕で本体が印字されて読み戻せない）
+func tcPathB(st mut S, pk int) []byte {
+    s := PkgPath(mut st, pk)
+    mut b := mut []byte{}
+    for i <- iter.Range(0, slen(mut st, s)) {
+        b = append(b, byte(sat(mut st, s, i)))
+    }
+    return freeze(b)
+}
+
+// 値が今の build の表で引けない（鍵が当たったのに — 鍵の穴か値の形の誤り）: 名指しして落ちる
+func tyBad(st mut S, what string) {
+    _ = io.WriteStderr(bytes("cache: bad gamma entry (${what})\n"))
+    panic(InvariantBroken{})
+}
+
+// 記録 1 つ（tcRecord の形）を店へ積む
+func trRecord(st mut S, r mut TyRd) {
+    k := trGet(mut r)
+    switch k {
+    case YSlice | YOpt:
+        a := trRec(mut st, mut r)
+        _ = yMk(mut st, k, a, trGet(mut r), 0)
+    case YMap:
+        a := trRec(mut st, mut r)
+        b := trRec(mut st, mut r)
+        _ = yMk(mut st, k, a, b, trGet(mut r))
+    case YDecl:
+        a := trDecl(mut st, mut r)
+        c := trList(mut st, mut r)
+        _ = yMk(mut st, k, a, FilePkg(mut st, fileOf(mut st, NodeRef(a))), c)
+    case YFn:
+        a := trList(mut st, mut r)
+        b := trList(mut st, mut r)
+        c := if r.w[r.at] == 0 { trGet(mut r) } else { trDecl(mut st, mut r) + 1 }
+        _ = yMk(mut st, k, a, b, c)
+    case YTuple:
+        _ = yMk(mut st, k, trList(mut st, mut r), 0, 0)
+    case YVar:
+        a := trGet(mut r)
+        _ = yMk(mut st, k, a, int(trStr(mut st, mut r)), 0)
+    default:
+        a := trGet(mut r)
+        b := trGet(mut r)
+        _ = yMk(mut st, k, a, b, trGet(mut r))
+    }
+}
+
+// package k の区画を値 w から店へ写す（TypeAll の番の代わり — 区画の境・宣言の要約・区画の外へ出る状態も立てる）
+func tyRead(st mut S, k int, w []int, tf int, td int) {
+    n := len(w)
+    ns := w[n - 1]
+    nyw := w[n - 2]
+    ny := w[n - 3]
+    ftail := n - 11
+    nrec := w[ftail]
+    ndecl := w[ftail + 1]
+    nfn := w[ftail + 2]
+    ncon := w[ftail + 3]
+    nent := w[ftail + 4]
+    nlam := w[ftail + 5]
+    nedge := w[ftail + 6]
+    // 参照表（区画の直列化と memo の節の後）→ 今の package 番号
+    mut r := TyRd{w: w, at: ns + nyw, refs: []int{}, tf: tf, td: td, k: k}
+    nr := trGet(mut r)
+    mut refs := mut []int{}
+    for i <- iter.Range(0, nr) {
+        ln := trGet(mut r)
+        mut p := -1
+        for q <- iter.Range(0, st.npkg) {
+            s := PkgPath(mut st, q)
+            if p < 0 && slen(mut st, s) == ln {
+                mut eq := true
+                for j <- iter.Range(0, ln) {
+                    if sat(mut st, s, j) != w[r.at + j] {
+                        eq = false
+                    }
+                }
+                if eq {
+                    p = q
+                }
+            }
+        }
+        if p < 0 {
+            tyBad(mut st, "ref")
+        }
+        refs = append(refs, p)
+        r.at += ln
+    }
+    d1 := trGet(mut r)
+    d2 := trGet(mut r)
+    dnimpl := trGet(mut r)
+    r.refs = freeze(refs)
+    r.at = 0
+    t0 := table.Len(mut st.ty.ytys)
+    l0 := table.Len(mut st.ty.yl)
+    e0 := table.Len(mut st.ty.yents)
+    m0 := table.Len(mut st.ty.ylamN)
+    g0 := st.ty.yedges
+    // 記録より先に区画の境（自分の記録を序数で指す — 持ち主の lo が要る）
+    prSet(mut st, k, PRTYS, t0, t0 + nrec)
+    for i <- iter.Range(0, nrec) {
+        trRecord(mut st, mut r)
+    }
+    prSet(mut st, k, PRDECL, t0, t0 + ndecl)
+    fo := hget(mut st, st.ty.fo + 1 + k)
+    for j <- iter.Range(0, nfn) {
+        fi := hget(mut st, st.ty.ford + 1 + fo + j)
+        if trFn(mut st, mut r) != fi {
+            tyBad(mut st, "fn order")
+        }
+        table.Set(mut st.ty.yfnsig, fi, trRec(mut st, mut r))
+        table.Set(mut st.ty.yfnres, fi, trRec(mut st, mut r))
+        yput(mut st, ListRef(st.ty.ymark), fi, trGet(mut r))
+    }
+    co := hget(mut st, st.ty.co + 1 + k)
+    for j <- iter.Range(0, ncon) {
+        c := hget(mut st, st.ty.cord + 1 + co + j)
+        _ = trStr(mut st, mut r)
+        table.Set(mut st.ty.yconty, c, trRec(mut st, mut r))
+    }
+    for i <- iter.Range(0, nent) {
+        tag := trGet(mut r)
+        nd := trNode(mut st, mut r)
+        if tag == 0 {
+            yPut(mut st, nd, trRec(mut st, mut r))
+        } else if tag == 4 {
+            yPut(mut st, 0 - FORSRCKEY - nd, trGet(mut r))
+        } else if tag == 3 {
+            yPut(mut st, 0 - IMPLKEY - nd, trRec(mut st, mut r))
+        } else if tag == 2 {
+            v := if r.w[r.at] == -1 { trGet(mut r) } else { trFn(mut st, mut r) }
+            yPut(mut st, 0 - PREDIR - nd, v)
+        } else {
+            yPut(mut st, 0 - 1 - nd, trRec(mut st, mut r))
+        }
+    }
+    for i <- iter.Range(0, nlam) {
+        table.Push(mut st.ty.ylamN, trNode(mut st, mut r))
+        table.Push(mut st.ty.ylamK, trDecl(mut st, mut r))
+        table.Push(mut st.ty.ylamY, trRec(mut st, mut r))
+    }
+    // 辺の鎖（値は新しい順 — 古い方から積み直す）
+    mut es := mut []int{}
+    for i <- iter.Range(0, nedge) {
+        a := trFn(mut st, mut r)
+        es = append(es, a)
+        es = append(es, trFn(mut st, mut r))
+    }
+    mut i := nedge - 1
+    while i >= 0 {
+        e := ylN(mut st, 3)
+        yput(mut st, e, 0, es[2 * i])
+        yput(mut st, e, 1, es[2 * i + 1])
+        yput(mut st, e, 2, st.ty.yedges)
+        st.ty.yedges = int(e)
+        i -= 1
+    }
+    // memo の節（区画の直列化の後 — 合成の節は Init が毎回作るので読まない）
+    r.at = ns
+    for q <- iter.Range(0, ny) {
+        kind := trGet(mut r)
+        key := if kind == 0 { trDecl(mut st, mut r) } else { -1 - (trRec(mut st, mut r) * 65536 + k) }
+        nf := trGet(mut r)
+        c0 := yfmCells(mut st, key, nf)
+        for j <- iter.Range(0, nf) {
+            if trGet(mut r) != 0 {
+                table.Set(mut st.ty.yfm, c0 + j, trRec(mut st, mut r) + 2)
+            }
+        }
+    }
+    prSet(mut st, k, PREDGE, st.ty.yedges, g0)
+    prSet(mut st, k, PRLAM, m0, table.Len(mut st.ty.ylamN))
+    prSet(mut st, k, PRYL, l0, table.Len(mut st.ty.yl))
+    prSet(mut st, k, PRENT, e0, table.Len(mut st.ty.yents))
+    st.nimpl += dnimpl
+    ksSet(mut st, KSKD, k * 2, d1)
+    ksSet(mut st, KSKD, k * 2 + 1, d2)
+}
+
+// 読み戻した区画を直列化し直して値の区画の直列化（先頭 ns 語）と照らす（vfy = 2 — 食い違えば false）
+func tyAudit2(st mut S, k int, w []int) bool {
+    ns := w[len(w) - 1]
+    tcRegion(mut st, k, false)
+    h1 := st.ty.ch1
+    h2 := st.ty.ch2
+    st.ty.ch1 = TC_S1
+    st.ty.ch2 = TC_S2
+    for i <- iter.Range(0, ns) {
+        tcW(mut st, w[i])
+    }
+    if st.ty.ch1 != h1 || st.ty.ch2 != h2 {
+        return false
+    }
+    tcRegion(mut st, k, true)
+    return ksAt(mut st, KSKD, k * 2) == st.ty.ch1 && ksAt(mut st, KSKD, k * 2 + 1) == st.ty.ch2
+}

@@ -1,0 +1,91 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/doubles/store/fake",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "c"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "fake",
+                    "tok": 13
+                  },
+                  "field": "Denying",
+                  "tok": 15
+                },
+                "args": [],
+                "tok": 16
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 19
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "len",
+                    "tok": 21
+                  },
+                  "args": [
+                    {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "c",
+                        "tok": 23
+                      },
+                      "field": "rows",
+                      "tok": 25
+                    }
+                  ],
+                  "tok": 22
+                }
+              ],
+              "tok": 20
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 31
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

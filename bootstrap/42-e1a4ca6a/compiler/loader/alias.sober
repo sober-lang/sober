@@ -1,0 +1,377 @@
+package loader
+
+// 型の別名 `type A = B`（language.md 32 節「型の別名」）と定義型の下地の検査（同 32 節 — 宣言の位置）。
+// 別名は透過: finish の最初の段（intrinsic・layout・jsonshape の前 — どれも型を名前で引く）で、別名を指す名前を全部実体の名前へ書き換える。
+// 実体の package を import していないファイルには合成の import `$a<k>`（k = 実体の package のパスごとに全体で 1 つ — 同じ参照名に別のパスが来ない）を足す
+// — 参照名が `$` なので internal の検問とファイルごとの import の検査の外（補間の裏方の `$utf8` と同じ線）。
+// 別名の宣言は検査の束（checksB — 名前の規則が別名の名前を型の名前として見る）の後まで型の列に残し、aliasStrip で剥がす。
+// 以降の段（desugar・lower・analyzer）は別名を見ない。finish の最後の aliasLeft が書き換えの後の木に別名の名前が残っていないことを検査する（fail-closed）。
+// 書き換えの的（名前で型を指す節）: TName / TGeneric / EComposite の名前・EIdent（変換の呼び手 `M(3)`・型引数）・選択子 `ref.N`（基が import の参照名）。
+// 名前の規則（13 節 — ローカル束縛・型パラメータはトップレベルの名前と同名にできない）があるので、構文だけで別名の参照と決まる
+// （同名のローカルを持つプログラムは束縛の位置を checksB が拒否する — 書き換えの結果は観測されない）
+
+import "std/builder"
+import "std/iter"
+import "std/strings"
+import "ast"
+import "diag"
+
+// diag.TypeDecl の kind
+const TD_UNDER = 0
+const TD_TARGET = 1
+const TD_CYCLE = 2
+const TD_TPARAMS = 3
+const TD_HIDDEN = 4
+const TD_LEFT = 5
+
+// 別名の表: 別名（宣言の package のパス + " " + 名前）→ 番号・実体（パスと名前）・合成の import のパスの列
+type AliasTab struct {
+    idx map[string]int
+    // 別名の名前（package を問わない — 節ごとの引きの前の篩）
+    names map[string]int
+    tpath []string
+    tname []string
+    syn []string
+}
+
+func noAlias() AliasTab {
+    return AliasTab{map[string]int{}, map[string]int{}, []string{}, []string{}, []string{}}
+}
+
+func aliasKey(path string, name string) string {
+    return "${path} ${name}"
+}
+
+// package path の型宣言 name の（ファイル, 節）— 無ければ（-1, -1）
+func aliasDeclOf(ts []ast.Tree, fpkg []string, path string, name string) (int, int) {
+    for f <- iter.Range(0, len(ts)) {
+        if fpkg[f] == path {
+            t := ts[f]
+            tl := t.nodes[t.file].c
+            for j <- iter.Range(0, ast.ListLen(t, tl)) {
+                d := ast.ListAt(t, tl, j)
+                if StrIs(t, t.nodes[d].a, name) {
+                    return f, d
+                }
+            }
+        }
+    }
+    return 0 - 1, 0 - 1
+}
+
+func builtinTypeName(n string) bool {
+    return n == "int" || n == "bool" || n == "byte" || n == "float" || n == "string" || n == "error"
+}
+
+// 別名を解決して参照を書き換え、定義型の下地を検査する（別名も定義型も無いプログラムは木を写さない）
+@errors(diag.TypeDecl)
+func aliasAll(ts []ast.Tree, fpkg []string) ([]ast.Tree, AliasTab, error?) {
+    // 1. 定義型の下地（int / bool だけ — 32 節）と別名の宣言の列
+    mut af := mut []int{}
+    mut an := mut []int{}
+    for f <- iter.Range(0, len(ts)) {
+        t := ts[f]
+        tl := t.nodes[t.file].c
+        for j <- iter.Range(0, ast.ListLen(t, tl)) {
+            d := ast.ListAt(t, tl, j)
+            td := t.nodes[d]
+            body := t.nodes[td.c]
+            if body.kind == ast.BDefined {
+                u := t.nodes[body.a]
+                if u.kind != ast.TName || !(StrIs(t, u.a, "int") || StrIs(t, u.a, "bool")) {
+                    return ts, noAlias(), diag.TypeDecl{at: diag.Pos{file: f, tok: td.tok}, kind: TD_UNDER}
+                }
+            } else if body.kind == ast.BAlias {
+                af = append(af, f)
+                an = append(an, d)
+            }
+        }
+    }
+    if len(af) == 0 {
+        return ts, noAlias(), nil
+    }
+    // 2. 実体（鎖を辿る — 段の数が別名の数を越えたら循環）
+    mut idx := mut map[string]int{}
+    mut names := mut map[string]int{}
+    mut tps := mut []string{}
+    mut tns := mut []string{}
+    mut syn := mut []string{}
+    for i <- iter.Range(0, len(af)) {
+        f0 := af[i]
+        d0 := an[i]
+        t0 := ts[f0]
+        tp, tn, bad := aliasTarget(ts, fpkg, f0, d0, len(af))
+        if bad >= 0 {
+            return ts, noAlias(), diag.TypeDecl{at: diag.Pos{file: f0, tok: t0.nodes[d0].tok}, kind: bad}
+        }
+        an0 := Name(t0, t0.nodes[d0].a)
+        idx[aliasKey(fpkg[f0], an0)] = i
+        names[an0] = i
+        tps = append(tps, tp)
+        tns = append(tns, tn)
+        mut seen := false
+        for k <- iter.Range(0, len(syn)) {
+            seen = seen || syn[k] == tp
+        }
+        if !seen {
+            syn = append(syn, tp)
+        }
+    }
+    tab := AliasTab{freeze(idx), freeze(names), freeze(tps), freeze(tns), freeze(syn)}
+    // 3. ファイルごとの書き換え
+    mut out := mut []ast.Tree{}
+    for f <- iter.Range(0, len(ts)) {
+        out = append(out, aliasFile(ts[f], fpkg[f], tab))
+    }
+    return freeze(out), tab, nil
+}
+
+// ファイル f の別名の宣言の節 d の実体（パス, 名前, -1）— 拒否なら kind（3 番目 — TD_*）。鎖は別名の数 n を越えたら循環
+func aliasTarget(ts []ast.Tree, fpkg []string, f0 int, d0 int, n int) (string, string, int) {
+    mut f := f0
+    mut d := d0
+    mut steps := 0
+    while steps <= n {
+        t := ts[f]
+        td := t.nodes[d]
+        if ast.ListLen(t, td.b) != 0 {
+            return "", "", TD_TPARAMS
+        }
+        x := t.nodes[t.nodes[td.c].a]
+        if x.kind != ast.TName {
+            return "", "", TD_TARGET
+        }
+        s := Name(t, x.a)
+        ref, rest, dotted := strings.Cut(s, ".")
+        base := if dotted { rest } else { s }
+        path := if dotted { importPath(t, ref) } else { fpkg[f] }
+        if !dotted && builtinTypeName(s) {
+            return "", "", TD_TARGET
+        }
+        if path == "" || (dotted && !isUpper(base)) {
+            return "", "", TD_HIDDEN
+        }
+        nf, nd := aliasDeclOf(ts, fpkg, path, base)
+        if nf < 0 {
+            return "", "", TD_HIDDEN
+        }
+        bk := ts[nf].nodes[ts[nf].nodes[nd].c].kind
+        if bk == ast.BError || bk == ast.BPanic {
+            return "", "", TD_TARGET
+        }
+        if bk != ast.BAlias {
+            return path, base, 0 - 1
+        }
+        steps += 1
+        f = nf
+        d = nd
+    }
+    return "", "", TD_CYCLE
+}
+
+// 名前 s（`N` か `ref.N` — ファイル t・package pkg に書いた）が別名を指すなら実体の綴り（ok = true）。
+// 綴りは、実体が同じ package なら裸の名前・ファイルが実体の package を import していればその参照名・でなければ合成の参照名 `$a<k>`（syn = k — 呼び手が import を足す）
+func aliasRef(t ast.Tree, pkg string, tab AliasTab, s string) (string, int, bool) {
+    ref, base, dotted := strings.Cut(s, ".")
+    n := if dotted { base } else { s }
+    if tab.names[n] == nil {
+        return "", 0 - 1, false
+    }
+    path := if dotted { importPath(t, ref) } else { pkg }
+    if path == "" {
+        return "", 0 - 1, false
+    }
+    i := tab.idx[aliasKey(path, n)]
+    if i == nil {
+        return "", 0 - 1, false
+    }
+    tp := tab.tpath[i]
+    tn := tab.tname[i]
+    if tp == pkg {
+        return tn, 0 - 1, true
+    }
+    r := refOfPath(t, tp)
+    if r != "" {
+        return "${r}.${tn}", 0 - 1, true
+    }
+    mut k := 0
+    while tab.syn[k] != tp {
+        k += 1
+    }
+    return "$a${k}.${tn}", k, true
+}
+
+// ファイル t が path を import する参照名（無ければ ""）
+func refOfPath(t ast.Tree, path string) string {
+    imps := t.nodes[t.file].b
+    for k <- iter.Range(0, ast.ListLen(t, imps)) {
+        im := t.nodes[ast.ListAt(t, imps, k)]
+        if StrIs(t, im.b, path) {
+            return if im.a >= 0 { Name(t, im.a) } else { Basename(path) }
+        }
+    }
+    return ""
+}
+
+// 節 x が別名を指す名前を持つなら（新しい綴り, 合成の参照名の番号 — 無ければ -1）。選択子 `ref.N` は基の EIdent の名前と欄の名前を繋いで読む
+func aliasSite(t ast.Tree, pkg string, tab AliasTab, x ast.Node) (string, int, bool) {
+    if x.kind == ast.TName || x.kind == ast.TGeneric || x.kind == ast.EComposite || x.kind == ast.EIdent {
+        return aliasRef(t, pkg, tab, Name(t, x.a))
+    }
+    if x.kind == ast.ESelector && t.nodes[x.a].kind == ast.EIdent {
+        n := Name(t, x.b)
+        if tab.names[n] != nil {
+            return aliasRef(t, pkg, tab, "${Name(t, t.nodes[x.a].a)}.${n}")
+        }
+    }
+    return "", 0 - 1, false
+}
+
+// ファイル t の別名の参照を実体の綴りへ写す（参照が無ければ t のまま）
+func aliasFile(t ast.Tree, pkg string, tab AliasTab) ast.Tree {
+    n0 := len(t.nodes)
+    mut hit := false
+    for i <- iter.Range(0, n0) {
+        _, _, ok := aliasSite(t, pkg, tab, t.nodes[i])
+        hit = hit || ok
+    }
+    if !hit {
+        return t
+    }
+    mut db := builder.Builder[int]{}
+    builder.PushAll(mut db, t.data)
+    mut ns := mut []ast.Node{}
+    for i <- iter.Range(0, n0) {
+        ns = append(ns, t.nodes[i])
+    }
+    mut used := mut []bool{}
+    for _ <- iter.Range(0, len(tab.syn)) {
+        used = append(used, false)
+    }
+    for i <- iter.Range(0, n0) {
+        x := t.nodes[i]
+        s, k, ok := aliasSite(t, pkg, tab, x)
+        if ok {
+            if k >= 0 {
+                used[k] = true
+            }
+            if x.kind == ast.ESelector {
+                // `ref.N` → 実体の `ref'.N'` の選択子（同じ package の実体なら裸の EIdent）
+                ref, base, dotted := strings.Cut(s, ".")
+                if dotted {
+                    ns = append(ns, ast.Node{ast.EIdent, t.nodes[x.a].tok, ast.PutLit(mut db, ref), 0, 0, 0, 0, 0})
+                    ns[i] = ast.Node{x.kind, x.tok, len(ns) - 1, ast.PutLit(mut db, base), x.c, x.d, x.e, x.f}
+                } else {
+                    ns[i] = ast.Node{ast.EIdent, x.tok, ast.PutLit(mut db, s), 0, 0, 0, 0, 0}
+                }
+            } else {
+                ns[i] = ast.Node{x.kind, x.tok, ast.PutLit(mut db, s), x.b, x.c, x.d, x.e, x.f}
+            }
+        }
+    }
+    // 合成の import（使った番号だけ）をファイルの import の列の後ろに
+    root := t.nodes[t.file]
+    mut imps := mut []int{}
+    for k <- iter.Range(0, ast.ListLen(t, root.b)) {
+        imps = append(imps, ast.ListAt(t, root.b, k))
+    }
+    for k <- iter.Range(0, len(tab.syn)) {
+        if used[k] {
+            ns = append(ns, ast.Node{ast.KImport, 0, ast.PutLit(mut db, "$a${k}"), ast.PutLit(mut db, tab.syn[k]), 0, 0, 0, 0})
+            imps = append(imps, len(ns) - 1)
+        }
+    }
+    il := ast.PutList(mut db, freeze(imps))
+    ns[t.file] = ast.Node{root.kind, root.tok, root.a, il, root.c, root.d, root.e, root.f}
+    return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
+}
+
+// cx の木から別名の宣言を剥がす（別名の無いプログラムは cx のまま — finish の段。finish を太らせないよう関数に出す）
+func aliasStripCx(cx Cx, tab AliasTab) Cx {
+    if len(tab.tname) == 0 {
+        return cx
+    }
+    return Cx{aliasStrip(cx.trees), cx.file_pkg, cx.pkg_path, cx.pkg_lo, cx.pkg_hi, cx.imp_pkg, cx.imp_ref, cx.imp_path, cx.tys}
+}
+
+// finish の最後の fail-closed の検査（aliasLeft — ファイルの package のパスは cx の表から）
+func aliasLeftCx(cx Cx, tab AliasTab) diag.Pos {
+    if len(tab.tname) == 0 {
+        return diag.None()
+    }
+    mut fps := mut []string{}
+    for f <- iter.Range(0, len(cx.trees)) {
+        fps = append(fps, cx.pkg_path[cx.file_pkg[f]])
+    }
+    return aliasLeft(cx.trees, freeze(fps), tab)
+}
+
+// 別名の宣言を型宣言の列から外す（別名の無いファイルは写さない）
+func aliasStrip(ts []ast.Tree) []ast.Tree {
+    mut out := mut []ast.Tree{}
+    for f <- iter.Range(0, len(ts)) {
+        t := ts[f]
+        root := t.nodes[t.file]
+        mut keep := mut []int{}
+        mut drop := false
+        for j <- iter.Range(0, ast.ListLen(t, root.c)) {
+            d := ast.ListAt(t, root.c, j)
+            if t.nodes[t.nodes[d].c].kind == ast.BAlias {
+                drop = true
+            } else {
+                keep = append(keep, d)
+            }
+        }
+        if !drop {
+            out = append(out, t)
+            continue
+        }
+        mut db := builder.Builder[int]{}
+        builder.PushAll(mut db, t.data)
+        mut ns := mut []ast.Node{}
+        for i <- iter.Range(0, len(t.nodes)) {
+            ns = append(ns, t.nodes[i])
+        }
+        tl := ast.PutList(mut db, freeze(keep))
+        ns[t.file] = ast.Node{root.kind, root.tok, root.a, root.b, tl, root.d, root.e, root.f}
+        out = append(out, ast.Tree{freeze(ns), builder.Build(mut db), t.file})
+    }
+    return freeze(out)
+}
+
+// 書き換えの後の木（finish の最後 — loader の全部の段の後）に、別名を指す名前か剥がし残りの別名の宣言があれば最初の位置（無ければ file = -1）。
+// fail-closed の網: 名前を持つ節の種類の列は書き換えの列（aliasSite）と独立に持つ（片方の漏れをもう片方が拾う）— 型パターンの variant の名前も見る
+func aliasLeft(ts []ast.Tree, fpkg []string, tab AliasTab) diag.Pos {
+    if len(tab.tname) == 0 {
+        return diag.None()
+    }
+    for f <- iter.Range(0, len(ts)) {
+        t := ts[f]
+        tl := t.nodes[t.file].c
+        for j <- iter.Range(0, ast.ListLen(t, tl)) {
+            d := t.nodes[ast.ListAt(t, tl, j)]
+            if t.nodes[d.c].kind == ast.BAlias {
+                return diag.Pos{file: f, tok: d.tok}
+            }
+        }
+        for i <- iter.Range(0, len(t.nodes)) {
+            x := t.nodes[i]
+            k := x.kind
+            mut s := ""
+            if k == ast.TName || k == ast.TGeneric || k == ast.EComposite || k == ast.EIdent {
+                s = Name(t, x.a)
+            } else if k == ast.KPType {
+                s = Name(t, x.b)
+            } else if k == ast.ESelector && t.nodes[x.a].kind == ast.EIdent {
+                s = "${Name(t, t.nodes[x.a].a)}.${Name(t, x.b)}"
+            }
+            if s != "" {
+                _, _, hit := aliasRef(t, fpkg[f], tab, s)
+                if hit {
+                    return diag.Pos{file: f, tok: x.tok}
+                }
+            }
+        }
+    }
+    return diag.None()
+}

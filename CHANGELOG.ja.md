@@ -2,6 +2,95 @@
 
 このファイルは公開リリースごとの利用者向けの変更点を記録する。形式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に倣う。バージョンは [Semantic Versioning](https://semver.org/lang/ja/) に従う（0.x の間は後方互換を約束しない）。
 
+## v0.6.6 — 2026-11-03
+
+性能の版。HTTP サーバは受けのバッファの環を増分消費に替え、要求あたりの CPU を減らした。TLS は握手（RSA の署名・x25519・SHA-256）と AES-GCM の record を速くし、deflate の lv6 は圧縮率を数 % 譲って速くした。言語では、テストの構成で package を代役に差し替える `@replaces` / `@doubles`（ビルド時 DI）と、状態を貯める fake の置き場 std/testing/cell を足した。assert は失敗の位置を利用者の行で出し、ラベルを取れるようになった。check と build の判定の食い違いも多数直した。
+
+### 言語
+
+- テストの構成の差し替え（ビルド時 DI）: double は `_double.sober` だけのディレクトリで、各ファイルの package 節の前に `@replaces("相手のパス")` を書く。テストの package の `_test.sober` の package 節の前に `@doubles("double のパス", …)` を書くと、そのテストのビルドでは相手を import する全部のファイル（他の package も）が double を読む。本番の build と check は `_double.sober` を読まない。double と相手の公開の名前は契約として照合する（関数の署名・型の共通の欄・const・`@errors` ⊆・相手の `@effects` の宣言）。本物に無い効果を持つ double は拒否する。`sober check <double のディレクトリ>` は契約だけを検査する
+- `assert` の失敗の panic は、利用者が assert を書いた行を指すようになった（今までは std/testing の中を指していた）。第 2 引数に任意のラベル `assert(e, label)` を取れる。ラベルは失敗したときだけ評価し、見出しは `assert failed (<label>): <式>`
+- 期待型の無い位置の if / switch の式で、腕の型が T と T? に分かれる形（`r := if c { 4 } else { q }`・絞った腕と絞らない腕）、または腕の一つが nil で終わる形は、式の型を T? にする。nil の腕と error のラベルの腕の合流は error? になる
+- `&&` / `||` の右の項での nil の絞りが、式の位置（else つき if の条件・return・束縛・assert）によらず効くようになった。`if A && x != nil { … } else { … }` の本体でも x は絞られる
+- 絞った mut の束縛への代入（`if x != nil { x = 5 }` など）は今までどおり拒否する。診断は的の名前・絞った if の位置・回避の形（別の名前に束縛する）を名指すようになった
+- yield 形の for の本体の `return` を正式に受理する（文書の禁止を外した — 実装は今までも受理していた）
+- `give:` に渡せる値をチャネルの端点（std/task の Sender / Receiver）に限り、それ以外は名指しで拒否する（今までは build が受理し、実行時に落ちていた）。値は捕獲で渡す
+- check と build の判定の食い違いを直した（どれも、今までは片方だけが拒否していた形）:
+  - 外の region の値を局所の slice / map へ足す・写す形（`append` の要素・リテラルの要素）、mut の成分を持つ struct の初期値と欄への `append`
+  - 期待型を、文つきのブロックの末尾・ラムダのブロックの本体・switch の腕まで届ける（`byte?` の腕の `{ g(); 44 }`・`return string(b) catch nil` など）
+  - ジェネリックの struct の欄の読み・ジェネリックの関数の結果の欄の読み
+  - 多値を穴へ順に落とすパイプ `divmod(17, 5) |> add(_, _)`
+  - panic で終わる scope の本体（`task.Run((s) => { panic(Boom{}) })`）
+  - string を for の生成元に直に置く形 `for c <- s` は check でも名指しで拒否する（`for c <- bytes(s)` を案内する）
+  - build の内部段だけが拒否する形は、check が同じ形を拒否するなら check と同じ診断を出す
+
+### テスト
+
+- std/testing/cell（新）: fake が呼ばれた記録・書かれた値を貯める置き場。`Cell[T]` は const の宣言でだけ作り、`Get` / `Set` / `Update` で読み書きする（効果は io）。import できるのは `_test.sober` と `_double.sober` だけ。std/quick は試行ごとに置き場を空にする
+- `sober test --wiring`: テストのビルドを読み（走らせない）、double ごとに `<テストの package>: <相手> <= <double>` を印字する
+- double は計器の外: `--cover` は double のファイルに計器を打たず、`--mutate` も変異を打たない。double の中の panic の位置は double の実パスで印字する
+- power assert の値の行が、関数型の実引数・`mut` の実引数・`catch` を含む式でも出るようになった
+
+### ツール
+
+- `sober watch` は温めのテストが読んだファイル（`_test.sober`・double・契約で読んだ相手）も見張る
+- check のキャッシュの直し: 素の `error` を返す関数が、他の package の error の payload の型の変化で無効化されないことがあった
+
+### std
+
+- std/crypto/aesgcm: `Open` / `OpenAt` は復号しながら GHASH を畳み、最後に tag を照合する形になった（今までは照合してから復号）。tag が合わなければ、書いた平文を `crypto.Wipe` で 0 に消して `Auth` を返す（平文は呼び手に渡らない）
+- std/compress（deflate）: lv6（`compress:` の既定）の設定を速さ寄りにした（鎖 128 → 64・nice 128 → 96・lazy の閾値 12 → 10）。出力のバイト列が変わる。JSON の本文の圧縮率は zlib の lv6 比で 1.6〜2.6% 大きい（今までは 1% 以内）。率を重く見るなら lv7〜9。lv4 / 5 / 7〜9 は変わらない
+- std/crypto/sha256: SHA-NI のある CPU では命令の塊で圧縮する（1 MiB の Sum256 34.9 → 2.04 cycles / B — 手元 Zen 5）。無い CPU は今までの形
+
+### ランタイム
+
+- 受けのバッファの環を増分消費（IOU_PBUF_RING_INC — Linux 6.12 以上）にした。16 KiB のバッファをワーカーの全接続で区間ずつ分け合う。接続が多いと環が空になって read(2) に倒れ続けていた道が消える。環の大きさは全ワーカーの和で最大約 16 MiB。6.12 より前のカーネルでは今までの固定スロットの環で動く
+- io_uring の ring の fd を登録し（Linux 5.18 以上）、接続の送りを固定のファイル表（ring ごとに 4,096 枠）から出す。SQE ごとのファイルの参照の取り外しが省ける。枠が尽きた接続は今までの fd で動く
+- 次に走る候補の task の TCB とスタックを先読みする（飽和して run queue が深いときに効く — 手元 W12 で async 16,000 接続の cycles / 要求 −18〜20%）。先読みするのは run queue で 2^22 TSC（≈1.4 ms）以上待った候補だけで、判定は run queue の枠に持つ積んだ時刻で決まる（候補の TCB を読まない）。今から走る task の TCB は常に先読みする。sleep の満了で起こす task の TCB も先読みする
+- 実行の順・待ちの上限 D・観測できる値はどれも変わらない
+
+### 性能
+
+- HTTP — bench/httparena（自前の物差し。HttpArena の負荷発生器と要求のファイルを使うが、HttpArena の公式の結果ではない）。GitHub Actions の 16 vCPU の箱（AMD EPYC 9V74）で、サーバに 8 CPU を割り当て、同じジョブで v0.6.6・v0.6.5・Go の net/http を周ごとに交互に走らせた（5 周の中央値）:
+
+  | 題材 | 要求 / 秒（対 v0.6.5） | CPU / 要求（対 v0.6.5） | 対 Go 要求 / 秒 v0.6.5 | 対 Go 要求 / 秒 v0.6.6 |
+  |---|---|---|---|---|
+  | baseline | +9.2% | −8.7% | 2.76× | 3.02× |
+  | pipelined | −1.9% | +2.2% | 12.6× | 12.4× |
+  | limited-conn ※ | −4.8% | +4.6% | 2.47× | — |
+  | json | +9.0% | −8.5% | 3.03× | 3.31× |
+  | json-comp | +19.7% | −16.4% | 1.66× | 1.98× |
+  | json-comp-16k | +17.0% | −14.6% | 1.58× | 1.85× |
+  | json-tls | +29.8% | −23.2% | 2.19× | 2.85× |
+  | 8gbit | +0.8% | −8.5% | 0.99× | 1.00× |
+  | async | +3.7% | −5.0% | 1.82× | 1.89× |
+
+  ※ limited-conn（数要求ごとに接続を張り直す形）の行は、先読みの修理（上のランタイムの節 — 温かい task の候補を先読みしない形）の後の別の run の値（同じ箱の型・同じジョブで v0.6.5 と交互）。この題材の同じ箱の比較は 1 run で ±2.5〜3% 揺れ、箱と run により v0.6.5 比 −5〜+3% の同等圏に入る（EPYC 9V74 −4.8%・9V45 −2.5%〜同等・Xeon 同等）。同じ run の baseline は +9.6%・async は +4.2%。対 Go の比はこの run で取っていない
+
+  - 8gbit は帯域で頭打ちの題材で、CPU / 要求で読む。latency 系（一定レート）は両版ともレートを保ち、CPU / 要求は −0.1〜−2.2%
+  - 全題材で 2xx 以外の応答なし
+- TLS の握手: RSA の署名の窓の表引きと Montgomery の 2 乗、x25519 の体の積、SHA-256 を命令の塊にした。握手 1 回のサーバの user cycles 4.61 → 3.20 M（−31% — 手元 Zen 5・1 ワーカー）
+- AES-GCM: GHASH を 8 ブロック束ねて還元を 1 回にし、CTR と GHASH を 1 回の走査に縫い合わせた（GHASH は Karatsuba）。鍵の表と record ごとの状態を分け、record ごとの 384 B の写しを消した。16 KiB の record で Seal 1.08 → 0.63・Open 1.09 → 0.64 cycles / B、64 B の record の命令は Seal −51%・Open −47%（手元 Zen 5）
+- コンパイラ: 境界検査の熱い道を分岐の落ちる側に保つ（冷たい区画への辺の写しを関数の末尾へ出す）、葉の極小関数の展開を写した本体の中まで広げる、同じ値どうしの比較を畳む、ほか。サーバの json-comp で cycles / 要求 −6.6%（8 配置 × 3 周 — 手元）、逐次の routing −7.7%・jsonapi −1.7%
+- 逐次の題材の Go の双子との比（CPU 時間〔task-clock〕の同じ周の対の比の 5 周の中央・範囲は周ごとの比の最小〜最大・GitHub Actions の 16 vCPU〔AMD EPYC 9V74〕で 1 コアに固定）:
+
+  | 題材 | Sober / Go | 範囲 |
+  |---|---:|---|
+  | binary-trees（18） | 0.37× | 0.36〜0.38 |
+  | k-nucleotide | 0.37× | 0.36〜0.38 |
+  | 1BRC（1,000 万行） | 0.55× | 0.54〜0.56 |
+  | reverse-complement | 0.63× | 0.62〜0.63 |
+  | fasta（250 万） | 0.64× | 0.63〜0.64 |
+  | jsonapi（10 万） | 0.74× | 0.74〜0.76 |
+  | n-body（500 万） | 0.81× | 0.81〜0.82 |
+  | logagg（50 万） | 0.96× | 0.94〜0.98 |
+  | fannkuch-redux（11） | 0.97× | 0.97〜0.98 |
+  | mandelbrot（4000） | 0.98× | 0.98〜0.98 |
+  | spectral-norm（2000） | 1.00× | 0.99〜1.02 |
+  | routing（50 万） | 1.15× | 1.15〜1.22 |
+
+  前回の公式（2026-10-25）は AMD EPYC 9V45 の箱で、型番が違うので並べて比べられない。
+
 ## v0.6.5 — 2026-10-31
 
 テストの版。std/quick のプロパティベーステスト、`sober fuzz`、`sober test --cover`（カバレッジ）、`sober test --mutate`（ミューテーションテスト）の 4 つの検証の道具を足し、テストの書き方のガイドを付けた。`sober check` / `sober build` / `sober test` は前回と同じ問い合わせの答えを覚えて返すようになり、`sober watch` は保存の後に build とテストを裏で温める。CLI は宣言の表（新しい std/cli）に置き換え、使い方の誤りは終了コード 2 になった（**破壊的変更** — `-run` → `--run` ほか）。

@@ -26,6 +26,14 @@ const ICoverGet = 54  // cover_get(k) → 0 / 1（点 k の印を読む — std/
 const ICoverN = 55    // cover_n() → 点の数（cover_fd が置いた n — 計器なしのビルドは 0）
 const ICoverMid = 56  // cover_mid() → 選ばれた変異の点の番号 + 1（0 = 基線 — mutation testing の schemata・loader/mutx.sober）
 const ICoverSetMid = 57  // cover_setmid(v) → 0（選ばれた変異の点の番号 + 1 を置く — テストのビルドの合成の main の頭）
+const IMmSel = 59      // mmsel(d, t, idx, n, stride, cnt) → 0（表 cnt 本〔番地 t から stride 語おき〕の idx 本目の先頭 n 語を番地 d へ — 全部の表を読んで mask で選ぶ定数時間の選び。std/crypto/rsa の expMont だけ）
+const IMmSqr = 60      // montsqr(d, a, m, m0i, n) → 0（a² × R^-1 mod m — montmul の 2 乗の専用の形〔積の対称で積を減らす〕。std/crypto/rsa の montSqr だけ）
+const IFeMul = 61      // femul(d, a, b) → 0（体 2^255 − 19 の積 — 51 bit × 5 limb・std/crypto/x25519 の fmul と limb ごとに同じ値を番地 d へ。fmul だけ）
+const IShaCpu = 62     // cpusha() → この機械で SHA-256 の塊（SHA-NI・SSSE3）を使えるか（0 / 1 — x86 の最適化のバックエンドの ELF の CPUID の判定・他の出力は 0）
+const IShaBlk = 63     // sha256blk(h, p, n, k) → 0（状態 h〔8 語〕に p から 64 バイトのブロック n 個を畳む — k = 定数 64 個を 2 個ずつ詰めた 32 語。std/crypto/sha256 だけ）
+const IAesSeal = 64    // aesseal(st, src, dst, n) → 0（n は 128 の倍数 — CTR で dst = src ^ 鍵の流れと、その暗号文 dst の GHASH を縫い合わせた 1 回の走査。std/crypto/aesgcm だけ）
+const IAesOpen = 65    // aesopen(st, src, dst, n) → 0（n は 128 の倍数 — 暗号文 src の GHASH と CTR の復号 dst = src ^ 鍵の流れを縫い合わせた 1 回の走査。std/crypto/aesgcm だけ）
+const ICellReset = 58  // cell_reset() → 0（std/testing/cell の置き場を全部空にする — std/quick の試行の頭。置き場を使わないプログラムは何もしない）
 const IRunFdEnv = 51  // run_fd_env(argv, envz, ofd, efd) → run_fd と同じで、子の環境を envz（「NAME=値 + 0」の連結）だけにする（rt.run_fd_env）
 const IMkdir = 11
 const IStat = 12
@@ -70,7 +78,7 @@ const ILoad64 = 34      // load64(b, i) → b[i:i+8] の 8 バイトを little-e
 
 // 鍵の綴り → 番号（閉じた集合の外は 0）
 func IntrinsicCode(key string) int {
-    return if key == "fsqrt" { IFSqrt } else if key == "fbits" { IFBits } else if key == "ffrombits" { IFFromBits } else if key == "errno" { IErrno } else if key == "args" { IArgs } else if key == "environ" { IEnviron } else if key == "read_file" { IReadFile } else if key == "read_dir" { IReadDir } else if key == "read_fd" { IReadFd } else if key == "run" { IRun } else if key == "run_fd" { IRunFd } else if key == "run_fd_env" { IRunFdEnv } else if key == "mkdir" { IMkdir } else if key == "syscall" { ISyscall } else if key == "addr" { IAddr } else if key == "wait_fd" { IWaitFd } else if key == "fd_own" { IFdOwn } else if key == "net_op" { INetOp } else if key == "stat" { IStat } else if key == "sleep" { ISleep } else if key == "write_file" { IWriteFile } else if key == "write_fd" { IWriteFd } else if key == "write_mode" { IWriteMode } else if key == "rename" { IRename } else if key == "par_pool" { IParPool } else if key == "par_ledger" { IParLedger } else if key == "par_fail" { IParFail } else if key == "open" { IOpen } else if key == "close" { IClose } else if key == "chunk_open" { IChunkOpen } else if key == "chunk_next" { IChunkNext } else if key == "chunk_close" { IChunkClose } else if key == "deadline" { IDeadline } else if key == "lease_op" { ILeaseOp } else if key == "lease_view" { ILeaseView } else if key == "lease_bytes" { ILeaseBytes } else if key == "load64" { ILoad64 } else if key == "matchlen" { IMatchLen } else if key == "jclean" { IJClean } else if key == "cpuclmul" { ICpuClmul } else if key == "crcfold" { ICrcFold } else if key == "cpuaes" { IAesCpu } else if key == "aeskey" { IAesKey } else if key == "aesctr" { IAesCtr } else if key == "aesghash" { IAesGhash } else if key == "aestag" { IAesTag } else if key == "mulhi" { IMulHi } else if key == "addrn" { IAddrN } else if key == "cpumulx" { IMmCpu } else if key == "montmul" { IMmMul } else if key == "cycles" { ICycles } else if key == "cover" { ICover } else if key == "cover_fd" { ICoverFd } else if key == "cover_get" { ICoverGet } else if key == "cover_n" { ICoverN } else if key == "cover_mid" { ICoverMid } else if key == "cover_setmid" { ICoverSetMid } else { 0 }
+    return if key == "fsqrt" { IFSqrt } else if key == "fbits" { IFBits } else if key == "ffrombits" { IFFromBits } else if key == "errno" { IErrno } else if key == "args" { IArgs } else if key == "environ" { IEnviron } else if key == "read_file" { IReadFile } else if key == "read_dir" { IReadDir } else if key == "read_fd" { IReadFd } else if key == "run" { IRun } else if key == "run_fd" { IRunFd } else if key == "run_fd_env" { IRunFdEnv } else if key == "mkdir" { IMkdir } else if key == "syscall" { ISyscall } else if key == "addr" { IAddr } else if key == "wait_fd" { IWaitFd } else if key == "fd_own" { IFdOwn } else if key == "net_op" { INetOp } else if key == "stat" { IStat } else if key == "sleep" { ISleep } else if key == "write_file" { IWriteFile } else if key == "write_fd" { IWriteFd } else if key == "write_mode" { IWriteMode } else if key == "rename" { IRename } else if key == "par_pool" { IParPool } else if key == "par_ledger" { IParLedger } else if key == "par_fail" { IParFail } else if key == "open" { IOpen } else if key == "close" { IClose } else if key == "chunk_open" { IChunkOpen } else if key == "chunk_next" { IChunkNext } else if key == "chunk_close" { IChunkClose } else if key == "deadline" { IDeadline } else if key == "lease_op" { ILeaseOp } else if key == "lease_view" { ILeaseView } else if key == "lease_bytes" { ILeaseBytes } else if key == "load64" { ILoad64 } else if key == "matchlen" { IMatchLen } else if key == "jclean" { IJClean } else if key == "cpuclmul" { ICpuClmul } else if key == "crcfold" { ICrcFold } else if key == "cpuaes" { IAesCpu } else if key == "aeskey" { IAesKey } else if key == "aesctr" { IAesCtr } else if key == "aesghash" { IAesGhash } else if key == "aestag" { IAesTag } else if key == "aesseal" { IAesSeal } else if key == "aesopen" { IAesOpen } else if key == "mulhi" { IMulHi } else if key == "addrn" { IAddrN } else if key == "cpumulx" { IMmCpu } else if key == "montmul" { IMmMul } else if key == "mmsel" { IMmSel } else if key == "montsqr" { IMmSqr } else if key == "femul" { IFeMul } else if key == "cpusha" { IShaCpu } else if key == "sha256blk" { IShaBlk } else if key == "cycles" { ICycles } else if key == "cover" { ICover } else if key == "cover_fd" { ICoverFd } else if key == "cover_get" { ICoverGet } else if key == "cover_n" { ICoverN } else if key == "cover_mid" { ICoverMid } else if key == "cover_setmid" { ICoverSetMid } else if key == "cell_reset" { ICellReset } else { 0 }
 }
 
 // 関数の効果のビット（language.md 12 節の関数の効果 — v1 の語彙。上位ビットは出所の credential 等、将来の拡張用に予約）
@@ -81,12 +89,13 @@ const EffNondet = 8  // io の入力を固定しても値が揺れる（時刻�
 const EffAll = 15
 
 // 鍵の番号の効果のビット（葉の表 — 効果の葉は rt の原始の口で、表は compiler が持つ）。
-// 純な鍵（fsqrt・fbits・errno・addr・load64・cpu*・crcfold・aes*・mulhi・montmul — cpu* は機械に依るが 1 プロセスで一定）と lease_* / par_pool / par_fail（観測は
+// 純な鍵（fsqrt・fbits・errno・addr・load64・cpu*・crcfold・aes*（aesseal・aesopen を含む）・mulhi・montmul・mmsel・montsqr・femul・sha256blk — cpu* は機械に依るが 1 プロセスで一定）と lease_* / par_pool / par_fail（観測は
 // par_ledger の側）は 0
 func IntrinsicEffects(code int) int {
     return switch code {
     case IReadFd | INetOp | IWaitFd | IRun | IRunFd | IRunFdEnv | IChunkNext | IChunkClose: EffBlock | EffIo
     case ISleep: EffBlock
+    case ICellReset: EffIo
     case IArgs | IEnviron | IReadFile | IReadDir | IMkdir | IStat | IWriteFile | IWriteFd | IWriteMode | IRename | IOpen | IClose | IChunkOpen | ISyscall | IFdOwn: EffIo
     case IDeadline | ICycles | IParLedger: EffNondet
     default: 0
@@ -141,15 +150,23 @@ func IntrinsicSig(code int) string {
     case IAesKey: "ii>i"
     case IAesCtr: "iiii>i"
     case IAesGhash: "iii>i"
+    case IAesSeal: "iiii>i"
+    case IAesOpen: "iiii>i"
     case IAesTag: "ii>i"
     case IMulHi: "ii>i"
     case IAddrN: "n>i"
     case IMmCpu: ">i"
     case IMmMul: "iiiiii>i"
+    case IMmSel: "iiiiii>i"
+    case IMmSqr: "iiiii>i"
+    case IFeMul: "iii>i"
+    case IShaCpu: ">i"
+    case IShaBlk: "iiii>i"
     case ICycles: ">i"
     case ICover: "i>i"
     case ICoverFd: "ii>i"
     case ICoverGet: "i>i"
+    case ICellReset: ">i"
     case ICoverN: ">i"
     case ICoverMid: ">i"
     case ICoverSetMid: "i>i"

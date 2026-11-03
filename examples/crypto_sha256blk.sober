@@ -1,0 +1,10 @@
+package main
+
+// std/crypto/sha256 の SHA-NI の塊の照合: 塊の Write と Sober の writeS を乱数の長さ・乱数の切れ目で突き合わせる
+// （塊の無い出力・SOBER_NOSHA=1 では両方 Sober — 同じ出力になる）
+
+import "std/crypto/sha256"
+
+func main() {
+    println("sha256blk mismatch", sha256.ShaSelfCheck(1, 3000), sha256.ShaSelfCheck(42, 1000))
+}

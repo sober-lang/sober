@@ -12,7 +12,7 @@ package desugar
 //       （要素の型は `task.Handle[(T, error?)]`）
 //       20 = budget: が呼び出し・割り算を含む
 //       21 = mut の中身を持つ値（imm の束縛の mut の別名 `v := m` を含む）の捕獲
-//       19 = chan のペイロードの型が札・handle・端点を含む（欄・`T?` の中も）
+//       19 = chan のペイロードの型が札・handle・端点を含む（欄・`T?` の中も）・30 = give: の値がチャネルの端点でない
 //       11 = 関数型の仮引数（展開される閉包 — 子へは値しか渡せない）の捕獲・12 = 札・handle を関数の実引数 / 戻り値に（コアの paramOk / retOk が拒否する形）
 // Join の結果の数（PC_CATCHLHS / PC_MULTIBIND — diag.Par でなく loader の診断を名指す）: Join の結果は字面で T 1 つで、fallible な task の T = `(U, error?)` は
 // 呼び出し点の型引数で決まる。loader（catchx.sober）は字面で数えるので Join の判定をここへ保留する — `task.Join(h) catch D` は fallible な task だけ（CatchLhs）・
@@ -313,6 +313,13 @@ func pcCall(st mut S, fi int, n NodeRef, key int) PcHit {
             kx := latN(mut st, args, 4)
             if kindN(mut st, kx) != ast.ENil && !pcSizeExpr(mut st, kx) {
                 return PcHit{at: kx, kind: 29}
+            }
+        }
+        // give: の値はチャネルの端点 1 つ（kind 30 — SpawnGive の型引数 E は制約を持たないので、ここで名指す。端点でない値は捕獲で渡す）
+        if key == PAR_SPAWNGIVE {
+            gx := latN(mut st, args, 1)
+            if pcParKind(mut st, YTypeOf(mut st, gx)) != 3 {
+                return PcHit{at: gx, kind: 30}
             }
         }
         lam := latN(mut st, args, if key == PAR_SCOPE { 0 } else { na - 2 })

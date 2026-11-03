@@ -1,14 +1,14 @@
 package loader
 
-// `assert(e)`（power assert。`_test.sober` だけの語彙）を脱糖の固定テンプレートで写す:
+// `assert(e)` / `assert(e, label)`（power assert。`_test.sober` だけの語彙）を脱糖の固定テンプレートで写す:
 //
-//     assert(f(x) == m + 1)
-//  →  { $aK0 := f(x); $aK1 := m + 1; if !($aK0 == $aK1) { $testing.Fail("f(x) == m + 1", []string{"f(x) = ${$aK0}", "m + 1 = ${$aK1}"}) } }
+//     assert(f(x) == m + 1, l)
+//  →  { $aK0 := f(x); $aK1 := m + 1; if !($aK0 == $aK1) { $testing.Report("f(x) == m + 1", l, []string{"f(x) = ${$aK0}", "m + 1 = ${$aK1}"}); panic($testing.AssertFailed{}) } }
 //
 // 割る深さ: 最上位が比較（== != < <= > >=）なら両辺・呼び出しなら各実引数（と呼び出しの値）・`!x` なら x・それ以外は式全体を 1 つ。
 // `&&` / `||` は短絡を保つため割らない（全体を 1 つ）。部分式は書いた順に 1 回だけ評価する。値の印字は補間（int / bool / string — T6）。
-// リテラルの部分式（整数・文字列）は値の行を出さない
-// 失敗は std/testing.Fail（標準エラーへ印字して panic — exit 101）。式の綴りは printer.Expr。
+// リテラル・名前・`mut x` の部分式は束縛しない（名前の値は式の中の名前の行として出す）。印字できない型の値は行ごと空文字
+// 失敗は std/testing.Report（標準エラーへ印字）の後に assert の位置の panic（exit 101）。ラベルは失敗の道だけで評価する。式の綴りは printer.Expr。
 // parser が `assert(…)` を持つファイルに std/testing と std/strings の暗黙 import（$testing・$strings）を足す。`_test.sober` の外の assert は拒否
 
 import "std/builder"
@@ -51,9 +51,9 @@ func isQAssert(t ast.Tree, x ast.Node) bool {
     return c.kind == ast.EIdent && StrIs(t, c.a, "$qassert")
 }
 
-// 節 x が `assert(e)`（実引数 1 つ）か
+// 節 x が `assert(e)` か `assert(e, label)` か
 func isAssert(t ast.Tree, x ast.Node) bool {
-    if x.kind != ast.ECall || ast.ListLen(t, x.b) != 1 {
+    if x.kind != ast.ECall || ast.ListLen(t, x.b) < 1 || ast.ListLen(t, x.b) > 2 {
         return false
     }
     c := t.nodes[x.a]
@@ -119,8 +119,9 @@ func asserts(t ast.Tree) ast.Tree {
             mut lines := mut []int{}
             for j <- iter.Range(0, len(ps)) {
                 pk0 := t.nodes[ps[j]].kind
-                if pk0 == ast.ENil || pk0 == ast.EInt || pk0 == ast.EStrlit {
-                    // リテラル（nil・整数・文字列）は束縛しない — 条件にそのまま残す（nil は型が無いので束縛できない）。綴りが値そのものなので行も出さない
+                if pk0 == ast.ENil || pk0 == ast.EInt || pk0 == ast.EStrlit || pk0 == ast.EIdent || pk0 == ast.EMutArg {
+                    // リテラル（nil・整数・文字列）・名前・`mut x` は束縛しない — 条件にそのまま残す（nil は型が無い・関数型の名前は局所に
+                    // 束縛できない・`mut x` は値でない）。名前の値の行は下の「式の中の名前」の行が出す
                     ids = append(ids, ps[j])
                     continue
                 }
@@ -130,10 +131,8 @@ func asserts(t ast.Tree) ast.Tree {
                 stmts = append(stmts, at)
                 builder.Push(mut nb, ast.Node{ast.EIdent, tok, nm, 0, 0, 0, 0, 0})
                 ids = append(ids, at + 1)
-                // 印字の行 "<綴り> = ${名前}"（リテラルの部分式は綴りが値そのものなので出さない）
-                pk := t.nodes[ps[j]].kind
-                if pk == ast.EInt || pk == ast.EStrlit || (ps[j] == e && pk != ast.EIdent) {
-                    // リテラルは綴りが値そのもの・式全体（割らない形 — `&&` 等）は見出しと同じなので行を出さない
+                // 印字の行 "<綴り> = ${名前}"（式全体 — 割らない形の `&&` 等 — は見出しと同じなので出さない）
+                if ps[j] == e {
                     continue
                 }
                 txt := printer.Expr(t, ps[j])
@@ -145,14 +144,9 @@ func asserts(t ast.Tree) ast.Tree {
                 builder.Push(mut nb, ast.Node{ast.EInterp, tok, ast.PutList(mut db, []int{lit, ast.PutLit(mut db, "")}), ast.PutList(mut db, []int{hole}), 1, 0, 0, 0})
                 lines = append(lines, hole + 1)
             }
-            // 式の中の名前（変数の参照）の値の行 — 名前は副作用がないので束縛せずに参照する。書いた順・同じ名前は 1 回・
-            // 辺として印字済みの名前は飛ばす。呼び出しの関数名・selector の基（package / struct）・true / false は除く
+            // 式の中の名前（変数の参照）の値の行 — 名前は副作用がないので束縛せずに参照する。書いた順・同じ名前は 1 回。
+            // 呼び出しの関数名・selector の基（package / struct）・true / false は除く
             mut seen := mut []int{}
-            for j <- iter.Range(0, len(ps)) {
-                if t.nodes[ps[j]].kind == ast.EIdent {
-                    seen = append(seen, t.nodes[ps[j]].a)
-                }
-            }
             names := identsOf(t, e)
             for j <- iter.Range(0, len(names)) {
                 nm := t.nodes[names[j]].a
@@ -183,7 +177,7 @@ func asserts(t ast.Tree) ast.Tree {
             } else {
                 cond = is[0]
             }
-            // if !(cond) { $testing.Fail("<式>", []string{…}) }・$qassert は { $aKc := cond; if !$aKc && g { Fail(…) }; $aKc }
+            // if !(cond) { $testing.Report("<式>", <ラベル>, []string{…}); panic($testing.AssertFailed{}) }・$qassert は { $aKc := cond; if !$aKc && g { … }; $aKc }
             et := printer.Expr(t, e)
             cv := if qa { ast.PutLit(mut db, "$a${k}c") } else { -1 }
             if qa {
@@ -193,24 +187,35 @@ func asserts(t ast.Tree) ast.Tree {
                 builder.Push(mut nb, ast.Node{ast.EIdent, tok, cv, 0, 0, 0, 0, 0})
                 cond = cb + 1
             }
+            // 印字は Report・panic は assert を書いた位置（callee の tok）に置く — panic の位置が利用者の assert の行を指す。
+            // ラベル（第 2 実引数）は失敗のブロックの中に置く — 偽のときだけ評価する
+            atok := t.nodes[x.a].tok
             b := n0 + builder.Len(mut nb)
             builder.Push(mut nb, ast.Node{ast.EParen, tok, cond, 0, 0, 0, 0, 0})
             builder.Push(mut nb, ast.Node{ast.EUnary, tok, lexer.Bang, b, 0, 0, 0, 0})
             builder.Push(mut nb, ast.Node{ast.EIdent, tok, ast.PutLit(mut db, "$testing"), 0, 0, 0, 0, 0})
-            builder.Push(mut nb, ast.Node{ast.ESelector, tok, b + 2, ast.PutLit(mut db, "Fail"), 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.ESelector, tok, b + 2, ast.PutLit(mut db, "Report"), 0, 0, 0, 0})
             builder.Push(mut nb, ast.Node{ast.EStrlit, tok, ast.PutBytes(mut db, et, 0, len(et)), 0, 0, 0, 0, 0})
             builder.Push(mut nb, ast.Node{ast.TName, tok, ast.PutLit(mut db, "string"), 0, 0, 0, 0, 0})
             builder.Push(mut nb, ast.Node{ast.ESlicelit, tok, b + 5, ast.PutList(mut db, freeze(lines)), 0, 0, 0, 0})
-            builder.Push(mut nb, ast.Node{ast.ECall, tok, b + 3, ast.PutList(mut db, []int{b + 4, b + 6}), 0, 0, 0, 0})
-            builder.Push(mut nb, ast.Node{ast.SExpr, tok, b + 7, 0, 0, 0, 0, 0})
-            builder.Push(mut nb, ast.Node{ast.KBlock, tok, ast.PutList(mut db, []int{b + 8}), 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EStrlit, tok, ast.PutLit(mut db, ""), 0, 0, 0, 0, 0})
+            lab := if !qa && ast.ListLen(t, x.b) == 2 { ast.ListAt(t, x.b, 1) } else { b + 7 }
+            // ラベルの型の誤り（string でない）はラベルの位置で出す
+            rtok := if lab == b + 7 { tok } else { t.nodes[lab].tok }
+            builder.Push(mut nb, ast.Node{ast.ECall, rtok, b + 3, ast.PutList(mut db, []int{b + 4, lab, b + 6}), 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.SExpr, tok, b + 8, 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EIdent, atok, ast.PutLit(mut db, "panic"), 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EComposite, atok, ast.PutLit(mut db, "$testing.AssertFailed"), ast.PutList(mut db, []int{}), ast.PutList(mut db, []int{}), 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.ECall, atok, b + 10, ast.PutList(mut db, []int{b + 11}), 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.SExpr, atok, b + 12, 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.KBlock, tok, ast.PutList(mut db, []int{b + 9, b + 13}), 0, 0, 0, 0, 0})
             mut guard := b + 1
             if qa {
                 guard = n0 + builder.Len(mut nb)
                 builder.Push(mut nb, ast.Node{ast.EBinary, tok, lexer.AmpersandAmpersand, b + 1, ast.ListAt(t, x.b, 0), 0, 0, 0})
             }
             ifn := n0 + builder.Len(mut nb)
-            builder.Push(mut nb, ast.Node{ast.EIf, tok, guard, b + 9, 0 - 1, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EIf, tok, guard, b + 14, 0 - 1, 0, 0, 0})
             builder.Push(mut nb, ast.Node{ast.SExpr, tok, ifn, 0, 0, 0, 0, 0})
             stmts = append(stmts, ifn + 1)
             if qa {
@@ -228,7 +233,8 @@ func asserts(t ast.Tree) ast.Tree {
     for i <- iter.Range(0, len(added)) {
         ns = append(ns, added[i])
     }
-    return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
+    // 写した条件（`!(v != nil && v == "2")`・$qassert の束縛）にも flow typing の写し（flowx.sober — assert より前の段）を掛ける
+    return flowFix(ast.Tree{freeze(ns), builder.Build(mut db), t.file})
 }
 
 // プールの文字列 a と b をつないだ文字列（[n, バイト…]）

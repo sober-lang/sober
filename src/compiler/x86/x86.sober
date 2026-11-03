@@ -214,6 +214,13 @@ func Rdtsc(c mut table.Table[byte]) {
     put(mut c, 0x31)
 }
 
+// prefetcht0 [rax] — 0F 18 08（rax の番地の線を全段のキャッシュへ — 値を返さず・不正な番地でも落ちない）
+func PrefetchT0Rax(c mut table.Table[byte]) {
+    put(mut c, 0x0f)
+    put(mut c, 0x18)
+    put(mut c, 0x08)
+}
+
 // pause — F3 90（スピンの待ちの 1 回）
 func Pause(c mut table.Table[byte]) {
     put(mut c, 0xf3)
@@ -773,6 +780,41 @@ func sse38(c mut table.Table[byte], op int, x int, y int) {
     put(mut c, 0x38)
     put(mut c, op)
     table.Push(mut c, modrm(3, lo(x), lo(y)))
+}
+
+// NP [REX] 0F 38 op /r（SHA の拡張 — 接頭辞 66 なし）
+func sseNp38(c mut table.Table[byte], op int, x int, y int) {
+    rex(mut c, false, hi(x), 0, hi(y), false)
+    put(mut c, 0x0f)
+    put(mut c, 0x38)
+    put(mut c, op)
+    table.Push(mut c, modrm(3, lo(x), lo(y)))
+}
+
+// sha256rnds2 x, y（暗黙の xmm0 = 次の 2 段の語 + 定数）— 2 段: x = 状態 C D G H を入れて A B E F を出す・y = A B E F — NP 0F 38 CB /r
+func Sha256rnds2XX(c mut table.Table[byte], x int, y int) {
+    sseNp38(mut c, 0xcb, x, y)
+}
+
+// sha256msg1 x, y（語の拡張の前半 — σ0）— NP 0F 38 CC /r
+func Sha256msg1XX(c mut table.Table[byte], x int, y int) {
+    sseNp38(mut c, 0xcc, x, y)
+}
+
+// sha256msg2 x, y（語の拡張の後半 — σ1）— NP 0F 38 CD /r
+func Sha256msg2XX(c mut table.Table[byte], x int, y int) {
+    sseNp38(mut c, 0xcd, x, y)
+}
+
+// palignr x, y, imm（x:y の 32 バイトを imm バイト右へずらした下 16 バイト）— 66 [REX] 0F 3A 0F /r ib
+func PalignrXXI(c mut table.Table[byte], x int, y int, imm int) {
+    put(mut c, 0x66)
+    rex(mut c, false, hi(x), 0, hi(y), false)
+    put(mut c, 0x0f)
+    put(mut c, 0x3a)
+    put(mut c, 0x0f)
+    table.Push(mut c, modrm(3, lo(x), lo(y)))
+    put(mut c, imm & 255)
 }
 
 // aesenc x, y（AES の 1 段 — AES-NI の CPU だけ。std/crypto/aesgcm で使用）— 66 [REX] 0F 38 DC /r

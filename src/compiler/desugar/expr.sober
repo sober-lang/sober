@@ -39,9 +39,12 @@ func exprIn(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     st.mutDest = 0
     k := kindN(mut st, e)
     at := e
-    // byte の末尾期待（if 式・ブロックの腕の末尾）の型なし定数（language.md 33 節）
+    // byte の末尾期待（if 式・ブロックの腕の末尾）の型なし定数（language.md 33 節）。byte? の末尾なら some
     if isTag(mut st, want, TByte) && isUntypedConst(mut st, e, eb, st.curPkg) {
         return byteLit(mut st, e, eb)
+    }
+    if isTag(mut st, want, TOpt) && isTag(mut st, tInner(mut st, want), TByte) && isUntypedConst(mut st, e, eb, st.curPkg) {
+        return c1(mut st, CSome, byteLit(mut st, e, eb)?), nil
     }
     switch k {
     case ast.EInt:
@@ -187,6 +190,10 @@ func exprIn(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
         }
         return call(mut st, nA(nodeOf(mut st, e)), lB(nodeOf(mut st, e)), at, eb, ef, depth)
     case ast.EPipe:
+        if pipeHoles(mut st, e) >= 2 {
+            // 文の列を今の region のまま脱糖する（ブロックにしない — region の境界を足さない。lower も境界を作らない）
+            return scoped(mut st, pipeSplit(mut st, e), eb, ef, depth, false, false, want)
+        }
         return call(mut st, nB(nodeOf(mut st, e)), pipeArgs(mut st, e), at, eb, ef, depth)
     case ast.EComposite:
         // 外の mut 場所へ流れ込む struct リテラルは mut のコンテナの欄を行き先の region に作る（行き先構築の struct リテラル版）
@@ -252,6 +259,42 @@ func exprIn(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
         return 0, diag.Malformed{at: posOf(mut st, at)}
     }
     return 0, diag.CoreFragment{at: posOf(mut st, at)}
+}
+
+// パイプの穴の数
+func pipeHoles(st mut S, e NodeRef) int {
+    pa := lC(nodeOf(mut st, e))
+    mut h := 0
+    for i <- iter.Range(0, lenL(mut st, pa)) {
+        if latI(mut st, pa, i) < 0 {
+            h += 1
+        }
+    }
+    return h
+}
+
+// 多値を穴へ順に落とすパイプ `lhs |> f(_, _)` を文の列 `pipe#0, pipe#1 := lhs; f(pipe#0, pipe#1)` の合成の節に（lhs は 1 度だけ評価する）
+func pipeSplit(st mut S, e NodeRef) ListRef {
+    pa := lC(nodeOf(mut st, e))
+    n := lenL(mut st, pa)
+    hn := listN(mut st, pipeHoles(mut st, e))
+    args := listN(mut st, n)
+    mut k := 0
+    for i <- iter.Range(0, n) {
+        a := latI(mut st, pa, i)
+        if a < 0 {
+            nm := strLit(mut st, "pipe#${k}")
+            hset(mut st, hn + 1 + k, int(nm))
+            hset(mut st, args + 1 + i, rec8(mut st, ast.EIdent, e, int(nm), 0, 0, 0, 0, 0))
+            k += 1
+        } else {
+            hset(mut st, args + 1 + i, a)
+        }
+    }
+    sb := rec8(mut st, ast.SBind, e, hn, 0, list1(mut st, nodeOf(mut st, e).a), 0, 0, 0)
+    c := rec8(mut st, ast.ECall, e, nodeOf(mut st, e).b, args, 0, 0, 0, 0)
+    sx := rec8(mut st, ast.SExpr, e, c, 0, 0, 0, 0, 0)
+    return ListRef(list2(mut st, sb, sx))
 }
 
 // `lhs |> callee(args)` の実引数の列（穴があれば穴に、無ければ第 1 引数に lhs）
@@ -530,6 +573,10 @@ func ifExpr(st mut S, e NodeRef, eb int, ef int, depth int, want TyRef) (CoreRef
     stmt := (st.stmtIf != 0)
     st.stmtIf = b2i(false)
     arm_want := if stmt { TyRef(-1) } else if want != -1 { want } else { ifTy(mut st, e, eb, ef) }
+    if !stmt && want == -1 && isTag(mut st, arm_want, TOpt) && (nilArm(mut st, e) || optMixIf(mut st, e, eb, ef)) {
+        // 腕の nil・T と T? の腕から組んだ T?（spec T-16）: 期待型のある if と同じ道で腕を T? へ寄せる
+        return coerceExpr(mut st, e, arm_want, eb, ef, depth, e)
+    }
     cond0 := nA(nodeOf(mut st, e))
     notNamed(mut st, cond0, eb, ef)?
     notByte(mut st, cond0, eb, ef)?
@@ -606,10 +653,15 @@ func ifnilExpr(st mut S, name StrRef, some_then bool, e NodeRef, eb int, ef int,
     bt := bnd(mut st, b).ty
     pty := if isTag(mut st, bt, TOpt) { tInner(mut st, bt) } else { TyRef(-1) }
     eb2 := bind(mut st, eb, name, depth, false, bnd(mut st, b).decl, pty, -1, 0, -1, false, bnd(mut st, b).sty)
+    if bnd(mut st, b).mutable {
+        setNrw(mut st, eb2, e)
+    }
     then := lA(nodeOf(mut st, nB(nodeOf(mut st, e))))
     els := nC(nodeOf(mut st, e))
     then_dis := stmt || els == -1
-    mut tb2 := if some_then { scoped(mut st, then, eb2, ef, depth + 1, false, then_dis, want)? } else { scoped(mut st, then, eb, ef, depth, false, then_dis, want)? }
+    co := st.coerceIfnil == e && !stmt && els != -1 && isTag(mut st, want, TOpt)
+    st.coerceIfnil = NodeRef(-1)
+    mut tb2 := if co && some_then { coerceArm(mut st, then, want, eb2, ef, depth + 1, e)? } else if co { coerceArm(mut st, then, want, eb, ef, depth, e)? } else if some_then { scoped(mut st, then, eb2, ef, depth + 1, false, then_dis, want)? } else { scoped(mut st, then, eb, ef, depth, false, then_dis, want)? }
     mut eb3 := eb
     mut d3 := depth
     if !some_then {
@@ -618,7 +670,11 @@ func ifnilExpr(st mut S, name StrRef, some_then bool, e NodeRef, eb int, ef int,
     }
     mut ob := CoreRef(-1)
     if els != -1 {
-        if kindN(mut st, els) == ast.EBlock {
+        if co && kindN(mut st, els) == ast.EBlock {
+            ob = coerceArm(mut st, lA(nodeOf(mut st, els)), want, eb3, ef, d3, e)?
+        } else if co {
+            ob = coerceExpr(mut st, els, want, eb3, ef, d3, e)?
+        } else if kindN(mut st, els) == ast.EBlock {
             ob = scoped(mut st, lA(nodeOf(mut st, els)), eb3, ef, d3, false, stmt, want)?
         } else {
             st.tailWant = want
@@ -693,6 +749,13 @@ func coerceExpr(st mut S, e NodeRef, want TyRef, eb int, ef int, depth int, at N
     }
     if k == ast.EIf && nodeOf(mut st, e).c >= 0 {
         nt, _ := nilTest(mut st, nA(nodeOf(mut st, e)), eb)
+        if nt != -1 {
+            st.coerceIfnil = e
+            st.tailWant = want
+            r := expr(mut st, e, eb, ef, depth)?
+            st.coerceIfnil = NodeRef(-1)
+            return r, nil
+        }
         if nt == -1 {
             cond := expr(mut st, nA(nodeOf(mut st, e)), eb, ef, depth)?
             t := coerceArm(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, e)))), want, eb, ef, depth, at)?
@@ -772,8 +835,10 @@ func coerceArm(st mut S, l ListRef, want TyRef, eb int, ef int, depth int, at No
         }
         ends_exit = sk == ast.SRet || sk == ast.SBreak || sk == ast.SContinue
     }
-    // 末尾の式の型が取れない（`{ println(x); nil }` の nil）なら末尾の期待型を渡して寄せる（腕の値は want の型で組まれる）
-    tail_want := ends_exit || (n > 0 && t == -1 && kindN(mut st, latN(mut st, l, n - 1)) == ast.SExpr)
+    // 末尾の式の型が取れない（`{ println(x); nil }` の nil）・型なしの定数を byte? の中身に置く（`{ g(); 44 }`）なら、
+    // 末尾の期待型を渡して寄せる（腕の値は want の型で組まれる）
+    tail_lit := n > 0 && kindN(mut st, latN(mut st, l, n - 1)) == ast.SExpr && isTag(mut st, want, TOpt) && isTag(mut st, tInner(mut st, want), TByte) && isUntypedConst(mut st, nA(nodeOf(mut st, latN(mut st, l, n - 1))), eb, st.curPkg)
+    tail_want := ends_exit || tail_lit || (n > 0 && t == -1 && kindN(mut st, latN(mut st, l, n - 1)) == ast.SExpr)
     core := scoped(mut st, l, eb, ef, depth, false, false, if tail_want { want } else { TyRef(-1) })?
     if tail_want {
         return core, nil
@@ -866,7 +931,7 @@ func storeCopy(st mut S, core CoreRef, vt TyRef, et TyRef, k int) CoreRef {
     return cCopyTo(mut st, k, et, core)
 }
 
-// append の値（subject が名前の mut 束縛の mut slice）を要素型へ緩める ann
+// append の値（subject が mut 束縛の mut slice — 名前か、根が名前の欄・添字の連鎖）を要素型へ緩める ann
 func appendValueAnn(st mut S, subject NodeRef, value NodeRef, core CoreRef, eb int, ef int) CoreRef {
     if kindN(mut st, subject) != ast.EIdent {
         // 欄・添字の連鎖（`p.slots`）: 根の mut 束縛の region より深い値は写す
@@ -886,15 +951,36 @@ func appendValueAnn(st mut S, subject NodeRef, value NodeRef, core CoreRef, eb i
         st.rdepth = bnd(mut st, rb).region + 1
         et := pointTy(mut st, tElem(mut st, st0))
         st.rdepth = ssaved
-        c := storeCopy(mut st, core, computeTy(mut st, value, eb, ef), et, bnd(mut st, rb).region)
-        return if c != -1 { c } else { core }
+        fvt := computeTy(mut st, value, eb, ef)
+        c := storeCopy(mut st, core, fvt, et, bnd(mut st, rb).region)
+        if c != -1 {
+            return c
+        }
+        // 写さない値（外の region の imm）は要素型の座標へ緩める（名前の mut 束縛の腕と同じ）
+        if fvt == -1 || !hasRegion(mut st, et) || tyEql(mut st, fvt, et) || !tyLooser(mut st, fvt, et) {
+            return core
+        }
+        return cAnn(mut st, core, et)
     }
     b := lookup(mut st, eb, sA(nodeOf(mut st, subject)))
+    if b >= 0 && !bnd(mut st, b).mutable {
+        // コア上の正確な型（展開の仮引数の ann の型）があればそれで読む — 宣言型は素の座標
+        it := if bnd(mut st, b).core != -1 { bnd(mut st, b).core } else { bnd(mut st, b).ty }
+        if !isTag(mut st, it, TSl) {
+            return core
+        }
+        iet := tElem(mut st, it)
+        ivt := computeTy(mut st, value, eb, ef)
+        if ivt == -1 || !hasRegion(mut st, iet) || tyEql(mut st, ivt, iet) || !tyLooser(mut st, ivt, iet) {
+            return core
+        }
+        return cAnn(mut st, core, iet)
+    }
     if b < 0 || !bnd(mut st, b).mutable {
         return core
     }
     t := bnd(mut st, b).ty
-    if !isTag(mut st, t, TSl) || tMutBit(mut st, t) == 0 {
+    if !isTag(mut st, t, TSl) {
         return core
     }
     vt := computeTy(mut st, value, eb, ef)
@@ -1069,7 +1155,7 @@ func lowerInterp(st mut S, e NodeRef, eb int, ef int) (NodeRef, error?) {
         h := latN(mut st, holes, k)
         kind := interpKind(mut st, h, eb, ef)
         if kind < 0 && nodeOf(mut st, e).c == 1 {
-            // 印字できない型の穴（assert の値の行 — 印字を諦めて空文字。std/testing.Fail は空の行を出さない）
+            // 印字できない型の穴（assert の値の行 — 印字を諦めて空文字。std/testing.Report は空の行を出さない）
             return NodeRef(rec8(mut st, ast.EStrlit, at, int(strLit(mut st, "")), 0, 0, 0, 0, 0)), nil
         }
         if kind < 0 {
@@ -1431,7 +1517,7 @@ func emptyChain(st mut S, at NodeRef) (CoreRef, error?) {
 }
 
 // `panic(…)` の呼び出し e のコア（結果型 want の unreach）。loader（panicx.sober）が写した形 — 実引数は [ラベルの名前の文字列] か
-// [名前, 欄の struct の composite]: 欄の値は書いた順に評価して捨てる（let — 欄の型の検査は普通の composite と同じ）。実引数なし = 裸の `panic()`（廃止 — loader が拒否するので来ない）
+// [名前, 欄の struct の composite]: 欄の値は書いた順に評価して捨てる（let — 欄の型の検査は普通の composite と同じ）。実引数なし = flowx の `$unreach()`（裸の `panic()` は loader が拒否するので来ない）
 func panicCore(st mut S, e NodeRef, want TyRef, eb int, ef int, depth int) (CoreRef, error?) {
     args := lB(nodeOf(mut st, e))
     n := lenL(mut st, args)
@@ -1448,7 +1534,14 @@ func panicCore(st mut S, e NodeRef, want TyRef, eb int, ef int, depth int) (Core
 // e が組み込みの `panic(…)` の呼び出しか（名前 panic が局所の束縛・package の関数で上書きされていないとき）
 func isPanicCall(st mut S, e NodeRef, eb int) bool {
     callee := nA(nodeOf(mut st, e))
-    if kindN(mut st, callee) != ast.EIdent || !strIs(mut st, sA(nodeOf(mut st, callee)), "panic") {
+    if kindN(mut st, callee) != ast.EIdent {
+        return false
+    }
+    // `$unreach()`: loader（flowx）が写した到達しない点（利用者は書けない名前 — 引数なしの unreach）
+    if strIs(mut st, sA(nodeOf(mut st, callee)), "$unreach") {
+        return true
+    }
+    if !strIs(mut st, sA(nodeOf(mut st, callee)), "panic") {
         return false
     }
     return lookup(mut st, eb, sA(nodeOf(mut st, callee))) < 0 && findFn(mut st, callee, eb) < 0

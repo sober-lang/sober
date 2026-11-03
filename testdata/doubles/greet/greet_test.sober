@@ -1,0 +1,17 @@
+@doubles("testdata/doubles/logger/spy")
+package greet
+
+import "std/testing/cell"
+import "testdata/doubles/logger/spy"
+
+func TestGreetLogs() {
+    assert(Greet("a") == "hello, a")
+    assert(Greet("b") == "hello, b")
+    lines := cell.Get(spy.Lines)
+    assert(len(lines) == 2)
+    assert(lines[1] == "hello, b")
+}
+
+func TestFreshPerTest() {
+    assert(len(cell.Get(spy.Lines)) == 0)
+}

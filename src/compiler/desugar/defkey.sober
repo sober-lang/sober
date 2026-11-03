@@ -365,8 +365,8 @@ func dkGraph(st mut S) DkGraph {
         }
         for n <- iter.Range(0, len(t.nodes)) {
             k := t.nodes[n].kind
-            // error? の型（仮引数・結果・欄・注釈）を書く項目は error の表を読む
-            if k == ast.TOpt && dkErrorOpt(mut st, f, n) {
+            // error の型（error? を含む — 仮引数・結果・欄・注釈）を書く項目は error の表を読む（全ラベルの閉じた union と payload の型 — errTy）
+            if k == ast.TName && dkIs(mut st, sA(nodeOf(mut st, dkTreeRef(f, n))), "error") {
                 z := zBlock(mut st, f, n)
                 o := if z >= 0 { nfn + z } else { rangeOfSorted(rr, t.nodes[n].tok) }
                 if o >= 0 {
@@ -409,6 +409,9 @@ func dkGraph(st mut S) DkGraph {
         if kindN(mut st, nC(nodeOf(mut st, NodeRef(ty[k])))) == ast.BError {
             src = append(src, errs)
             dst = append(dst, 2 * nfn + st.ncon + k)
+            // ラベルの値の型は error の型そのもの（リテラルの型推論も errTy を引く）— ラベルを読む項目は error の表も読む
+            src = append(src, 2 * nfn + st.ncon + k)
+            dst = append(dst, errs)
         }
     }
     g := csrN(freeze(src), freeze(dst), nent)
@@ -715,10 +718,4 @@ func dkIs(st mut S, s StrRef, w string) bool {
         }
     }
     return true
-}
-
-// ファイル f の節 n（TOpt）が error? か
-func dkErrorOpt(st mut S, f int, n int) bool {
-    t := nA(nodeOf(mut st, dkTreeRef(f, n)))
-    return kindN(mut st, t) == ast.TName && dkIs(mut st, sA(nodeOf(mut st, t)), "error")
 }

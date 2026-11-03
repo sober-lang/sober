@@ -72,7 +72,7 @@ const TC_WORDS = TC_FLEN + 5
 // 自前の深度の [スロットの基底, bump] の退避（深度 k → TC_SAVE + 2k・+1）。2 × (MAX_DEPTH + 1) 語 = 16 KiB の列なので記録の末尾に置く —
 // 毎回の io の欄（TC_FLEN〜TC_SLOTSZ・TC_FDS / TC_CHS / TC_DL = 語 27〜34）を TC_NEXT 等と同じ先頭の頁に収め、完了 1 本で TCB の 2 頁を
 // 触らないため（退避の列の後ろに置くと io の欄が 5 頁目に来て、4096 接続の ring で dTLB の取りこぼし 12 / 要求のうち
-// 3.6 が rt.uring_poll の TC_IORES になる）。TC_SAVE は TC_DL・TC_LEASE（語 35）・孤児の登録簿の TC_ORG（語 36 — orphan.sober）・TC_NSLOT（語 37）より後ろ・TC_END × 8 = 16,712 B < TASK_HEAD
+// 3.6 が rt.uring_poll の TC_IORES になる）。TC_SAVE は TC_DL・TC_LEASE（語 35）・孤児の登録簿の TC_ORG（語 36 — orphan.sober）・TC_NSLOT（語 37）より後ろ・TC_END × 8 = 16,720 B < TASK_HEAD
 // 次の spawn 1 回のスロットの大きさの印（バイト — 0 = 印なし。rt.netop 6 が今の task に書き、rt.task_new が親のこの語を読んで消す — std/net の Serve の region:）
 const TC_NSLOT = 37
 // 飽和下の待ちの上限（language.md 28 節 ring の道）: TC_PREV = 溢れの列の 1 つ古い側（走れる積みの環から溢れた task だけ。
@@ -85,7 +85,9 @@ const TC_MAXW = 40
 const TC_NMAXW = 41
 // 未着手の子の上限（language.md 11 節 — 1〜255・0 = 既定 DQ_CAP − 1）: この task が spawn した子を列に積める本数。子は親から継ぐ・spawn ごとに読むので先頭の頁に
 const TC_BACKLOG = 42
-const TC_SAVE = 43
+// 前回走り出した時刻（TSC — rt.mn_next が取るたびに WK_NOW・spawn で親のワーカーの WK_NOW）。変異 4 の off-CPU の計器が読む（off-CPU = 今 − この語）
+const TC_LRUN = 43
+const TC_SAVE = 44
 const TC_END = TC_SAVE + 2 * (MAX_DEPTH + 1)
 // 開いた fd の鎖の頭（fd + 1・0 = 空 — 登録簿 rt.sober の needOpen）。sysOpen を使うプログラムでだけ使う語（TC_WORDS の外）。main の記録
 // （rt.main_task）は退避の列の末尾まで（TC_END）なので、TC_FDS / TC_CHS / TC_DL はどのプログラムでも中にある。子の塊の記録は TASK_HEAD の頁の中
@@ -159,7 +161,7 @@ const PM_STACK = 4
 func needTaskRt(st mut St) {
     lsNeed(mut st, NEED_TASK, 0)
     st.taskG = addWorkerGlobal(mut st, int(strLit(mut st, "rt.task")), TK_WORDS)
-    st.mainTcb = addGlobalInit(mut st, int(strLit(mut st, "rt.main_task")), TC_END, -1)
+    st.mainTcb = addGlobalInit(mut st, int(strLit(mut st, "rt.main_task")), TC_END + (if st.rtMut == 4 { 1 } else { 0 }), -1)
     st.rtTaskNew = addFunc(mut st, int(strLit(mut st, "rt.task_new")), desugar.ListRef(list2(mut st, TyI64, TyI64)), TyPtr)
     st.rtTaskGo = addFunc(mut st, int(strLit(mut st, "rt.task_go")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), -1)
     st.rtTaskStart = addFunc(mut st, int(strLit(mut st, "rt.task_start")), desugar.ListRef(list1(mut st, TyPtr)), -1)

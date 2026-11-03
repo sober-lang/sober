@@ -30,6 +30,7 @@ type Binding struct {
     sty int       // 表層型（surface.sober — SUNK = 不明）
     fres ListRef      // 関数値の結果の型式の列（名前付き関数から束縛した imm の関数値 — 後置 `?` の形。-1 = 不明）
     brw int       // 借りの閉包の仮引数なら借りの位置の型式（値化可能な named fn type の匿名の関数型の仮引数の節）+ 1（0 = 借りでない — (α-L0)）
+    nrw int       // mut の T? を絞った束縛なら絞った if の節 + 1（0 = 絞りでない — 代入は NarrowAssign で名指す）
 }
 
 // 束縛を積む。split = 割る場所か（呼び手の判定）— 宣言が struct のときだけ割った束縛になる
@@ -43,6 +44,13 @@ func bind(st mut S, eb int, name StrRef, level int, mutable bool, decl int, ty T
 // 束縛 b の記録（非ジェネリックの包み — ジェネリックな Get の結果の struct は欄の型が脱糖器に見えない F-10）
 func bnd(st mut S, b int) Binding {
     return table.Get(mut st.binds, b)
+}
+
+// 束縛 b を mut の T? を if の節 e で絞った束縛として記録する
+func setNrw(st mut S, b int, e NodeRef) {
+    mut x := bnd(mut st, b)
+    x.nrw = int(e) + 1
+    table.Set(mut st.binds, b, x)
 }
 
 // 束縛 b の関数値の結果の型式の列を記録する
@@ -862,7 +870,8 @@ func genericEnv(st mut S, pk int, dr int, args ListRef, at NodeRef) (int, error?
         }
         hset(mut st, env + 1 + i * 3, latI(mut st, tps, i))
         hsetTy(mut st, env + 2 + i * 3, t)
-        hset(mut st, env + 3 + i * 3, -1)
+        // 型引数の宣言（`B[Tk]` の欄 `one T` を読んだ値の欄読みが Tk の宣言を引ける）
+        hset(mut st, env + 3 + i * 3, declOfTypeExpr(mut st, pk, latN(mut st, args, i)))
     }
     hset(mut st, env, n)
     return env, nil

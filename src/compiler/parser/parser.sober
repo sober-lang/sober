@@ -131,11 +131,6 @@ func FarthestTok(src []byte, ts []lexer.Token) int {
     return if q < len(ts) { q } else { far }
 }
 
-// 字句のビルダーの写し（非ジェネリックの包み — ジェネリックな Build の結果は要素型が脱糖器に見えない。F-10）
-func tokens(b mut builder.Builder[lexer.Token]) []lexer.Token {
-    return builder.Build(mut b)
-}
-
 // int のビルダーの写し。一度も Push していないビルダーの Build は panic する（std/builder の cur のゼロ値が 0 で、
 // 無い chunk 0 を読む — selfhost-drafts の F-12）ので、空なら空の slice を返す
 func ints(b mut builder.Builder[int]) []int {
@@ -158,7 +153,7 @@ func lexHoles(src []byte, ts []lexer.Token) Cx {
     mut i := 0
     mut nh := 0
     while i < builder.Len(mut all) {
-        snap := tokens(mut all)
+        snap := builder.Build(mut all)
         while i < len(snap) {
             t := snap[i]
             mut fh := -1
@@ -196,7 +191,7 @@ func lexHoles(src []byte, ts []lexer.Token) Cx {
             i += 1
         }
     }
-    return Cx{src, tokens(mut all), ints(mut first), ints(mut holes), -1, false}
+    return Cx{src, builder.Build(mut all), ints(mut first), ints(mut holes), -1, false}
 }
 
 // hasKind は表に kind の節があるか（暗黙 import の判定 — for / 補間 / string(b)。試し読みの残骸は型の節だけなので混ざらない）
@@ -265,11 +260,43 @@ func hasKind(ns []ast.Node, kind int) bool {
 
 // source_file <- package_clause ';' (import_decl ';')* top_level_decl* EOF
 func parseFile(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx) int {
-    if tg(cx, 0) != lexer.KwPackage || tg(cx, 1) != lexer.Identifier || tg(cx, 2) != lexer.Semicolon {
+    // package 節の前置の注釈は `@replaces("path")`（double の名乗り）か `@doubles("path", …)`（テストの構成の差し替えの表）のどちらか 1 つ
+    // （置ける場所の検査は loader）
+    mut p0 := 0
+    mut pre := -1
+    if tg(cx, 0) == lexer.At {
+        rep := textIs(cx, 1, "replaces")
+        if !(rep || textIs(cx, 1, "doubles")) || tg(cx, 2) != lexer.LParen {
+            return -1
+        }
+        mut q := 3
+        mut paths := mut []int{}
+        while tg(cx, q) == lexer.StringLiteral {
+            v, r := parseExpr(mut nb, mut db, cx, q, false)
+            if v < 0 || r != q + 1 {
+                return -1
+            }
+            paths = append(paths, v)
+            q = r
+            if tg(cx, q) == lexer.Comma {
+                q += 1
+            }
+        }
+        if tg(cx, q) != lexer.RParen || len(paths) == 0 || (rep && len(paths) != 1) {
+            return -1
+        }
+        p0 = if tg(cx, q + 1) == lexer.Semicolon { q + 2 } else { q + 1 }
+        pre = if rep {
+            node(mut nb, ast.KReplaces, tk(cx, 0), nodeAt(mut nb, paths[0]).a, p0 + 1, 0, 0, 0, 0)
+        } else {
+            node(mut nb, ast.KDoubles, tk(cx, 0), ast.PutList(mut db, freeze(paths)), p0 + 1, 0, 0, 0, 0)
+        }
+    }
+    if tg(cx, p0) != lexer.KwPackage || tg(cx, p0 + 1) != lexer.Identifier || tg(cx, p0 + 2) != lexer.Semicolon {
         return -1
     }
-    pkg := name(mut db, cx, 1)
-    mut p := 3
+    pkg := name(mut db, cx, p0 + 1)
+    mut p := p0 + 3
     mut imports := mut []int{}
     while tg(cx, p) == lexer.KwImport {
         p = importDecl(mut nb, mut db, cx, p, mut imports)
@@ -349,7 +376,16 @@ func parseFile(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx
     tl := ast.PutList(mut db, freeze(types))
     fl := ast.PutList(mut db, freeze(funcs))
     cl := ast.PutList(mut db, freeze(consts))
-    xl := if len(intrs) > 0 { ast.PutList(mut db, freeze(intrs)) } else { 0 }
+    if pre >= 0 && len(intrs) > 0 {
+        return -1
+    }
+    xl := if len(intrs) > 0 {
+        ast.PutList(mut db, freeze(intrs))
+    } else if pre >= 0 {
+        ast.PutList(mut db, []int{pre})
+    } else {
+        0
+    }
     return node(mut nb, ast.KFile, 0, pkg, il, tl, fl, cl, xl)
 }
 

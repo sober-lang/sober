@@ -1,0 +1,19 @@
+package main
+
+import "std/task"
+
+// 本体が panic で終わる scope（値を持たない本体 — 結果は unit。panic は scope の外へ伝わる）
+
+type Boom panic {}
+
+func run(armed bool) int {
+    if !armed {
+        return 0
+    }
+    _, e := task.Run((s) => { panic(Boom{}) })
+    return if e == nil { 1 } else { 2 }
+}
+
+func main() {
+    println(run(false))
+}

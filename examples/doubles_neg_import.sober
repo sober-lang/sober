@@ -1,0 +1,10 @@
+package main
+
+// a double is read only through the @doubles list of a test package: the normal build sees its directory as empty (language.md 41 節)
+
+import "testdata/doubles/store/fake"
+
+func main() {
+    c := fake.Denying()
+    println(len(c.rows))
+}

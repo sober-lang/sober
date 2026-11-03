@@ -161,13 +161,15 @@ let x86Fields = 0;
     const DOOR: Record<string, RegExp> = { hf: /^hf$/, hfOn: /^true$/, xAddr: /^addr$/, xXmm: /^(0|all)$/ };
     const pg = fns.get("xParGroup")!.body;
     const pc = fns.get("xParCfg");
-    // 要素の数 = `return []int{…}` の一番外の括弧の中のカンマ + 1
+    // 要素の数 = `return []int{…}` の一番外の括弧の中のカンマ + 1（SOBER_XDBG の値を後ろへ足す包み `return xdbgCfg([]int{…}, …)` も同じ — 足す分は
+    // 末尾の語〔値の長さ〕で決まり、読み手は cfg[末尾の語] を経て読む）
     let ncfg = 0;
     if (pc) {
-      const at = pc.body.indexOf("return []int{");
+      const hm = pc.body.match(/return (?:xdbgCfg\()?\[\]int\{/);
+      const at = hm ? hm.index! : -1;
       if (at >= 0) {
         let d = 0, n = 1;
-        for (const ch of pc.body.slice(at + "return []int{".length)) {
+        for (const ch of pc.body.slice(at + hm![0].length)) {
           if ("([{".includes(ch)) d += 1;
           else if (")]}".includes(ch)) { if (d === 0) break; d -= 1; }
           else if (ch === "," && d === 0) n += 1;

@@ -1,0 +1,7 @@
+package t
+
+// a test helper outside the test files cannot reach the cells
+
+import "std/testing/cell"
+
+const H = cell.Cell[int]{}

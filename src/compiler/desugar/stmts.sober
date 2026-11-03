@@ -261,10 +261,12 @@ func stmtsIn(st mut S, l ListRef, eb0 int, ef int, depth0 int, ra bool, dis bool
                 ve := latN(mut st, vals, j)
                 // 後で外の mut 束縛へ出ていく mut のリテラルは行き先に作る（M4 — mutDestAhead）
                 vk := kindN(mut st, ve)
+                mut destR := -1
                 if mutable && ((vk == ast.ESlicelit && nodeOf(mut st, ve).c != 0) || (vk == ast.EMaplit && nodeOf(mut st, ve).d != 0) || vk == ast.EComposite) {
                     dr := mutDestAhead(mut st, s, latS(mut st, names, j), env0)
                     if dr >= 0 {
                         st.mutDest = dr + 1
+                        destR = if vk == ast.EComposite { -1 } else { dr }
                     }
                 }
                 mut v := expr(mut st, ve, env0, ef, depth + j)?
@@ -279,9 +281,16 @@ func stmtsIn(st mut S, l ListRef, eb0 int, ef int, depth0 int, ra bool, dis bool
                     v = cAlloc(mut st, 1, ann)
                 }
                 lets = append(lets, v)
+                // 行き先に作った slice / map のリテラルのセルは行き先の region の座標（キー・要素の写しの基準 — 最内で読むと深い値が写らない）
+                rsaved := st.rdepth
+                if destR >= 0 {
+                    st.rdepth = destR + 1
+                }
                 ty := computeTy(mut st, ve, env0, ef)
+                st.rdepth = rsaved
                 el := elemDeclOfExpr(mut st, ve, env0, ef)
-                eb = bind(mut st, eb, latS(mut st, names, j), depth + j, mutable, d, ty, el, aliasRegion(mut st, mutable, ve, ty, env0), -1, split, bindSty(mut st, ve, env0, ef))
+                reg := if destR >= 0 { destR } else { aliasRegion(mut st, mutable, ve, ty, env0) }
+                eb = bind(mut st, eb, latS(mut st, names, j), depth + j, mutable, d, ty, el, reg, -1, split, bindSty(mut st, ve, env0, ef))
                 if !mutable && isTag(mut st, ty, TFn) {
                     // imm の関数値は結果の型式の列を持ち回る（後置 `?` の形 — tryExpr）。mut は別の関数を代入できるので持たない
                     fr := fnResOf(mut st, ve, env0)
@@ -684,6 +693,16 @@ func assignExpr(st mut S, s NodeRef, eb int, ef int, depth int) (CoreRef, error?
         }
         v := expr(mut st, latN(mut st, vals, 0), eb, ef, depth)?
         return cLet(mut st, v, cTriv(mut st)), nil
+    }
+    // 絞った mut の束縛への代入は名指して拒否（絞った領域の名前は T? の中身 — 代入は絞りの証明を壊す。`x = nil` の UntypedNil より先に）
+    for j <- iter.Range(0, nt) {
+        tx := latN(mut st, targets, j)
+        if kindN(mut st, tx) == ast.EIdent {
+            b := lookup(mut st, eb, sA(nodeOf(mut st, tx)))
+            if b >= 0 && bnd(mut st, b).nrw > 0 {
+                return 0, diag.NarrowAssign{at: posOf(mut st, tx), narrowed: posOf(mut st, NodeRef(bnd(mut st, b).nrw - 1))}
+            }
+        }
     }
     // 表層型の照合（language.md 32 節）: `=` は場所の表層型へ代入可能か、複合代入は算術なので named scalar を取らない
     for j <- iter.Range(0, nt) {

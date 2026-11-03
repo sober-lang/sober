@@ -1,0 +1,4 @@
+@replaces("x")
+package p
+
+const A = 1

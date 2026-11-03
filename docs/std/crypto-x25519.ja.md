@@ -33,3 +33,12 @@ func Shared(k []byte, u []byte) []byte
 ```
 
 秘密鍵 k（32 バイト — 内部で RFC 7748 の clamp を掛ける）と相手の u 座標（32 バイト — 最上位のビットは無視）の X25519。k・u が 32 バイトより短ければ添字の境界の panic（長い分は読まない）。u が低位数の点なら結果は全 0 — 全 0 を拒否する検査は呼び手がする（RFC 7748 6.1・TLS 1.3 は RFC 9846 7.4.2）
+
+## FeSelfCheck
+
+```sober
+@effects(!io, !block, !nondet)
+func FeSelfCheck(seed int, rounds int) int
+```
+
+専用命令の体の積 femul と Sober の fmulS の照合（検証の網の API — 利用者は使わない: examples/crypto\_femul と cryptocheck の格子が叩く）。種 seed の擬似乱数で limb \< 2^52（積の前提の上限）の元を rounds 組作り、別の区画への積・入力と同じ区画への積（d = a）・2 乗で両方を比べる。食い違いの数を返す

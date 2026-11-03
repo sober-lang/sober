@@ -49,7 +49,7 @@ func expEnd(st mut S, fi int, kind int) {
 }
 
 // p を脱糖して寄与（自分だけ）の多い順に上位 ntop 件の表（テキスト）
-@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.NarrowAssign, diag.FnCap, diag.Cell)
 func ExpansionReport(p loader.Program, ntop int) ([]byte, error?) {
     mut st := S{}
     initState(mut st, p)
@@ -131,7 +131,7 @@ func nameOut(st mut S, out mut []byte, s StrRef) {
 // 開発用（`sober check --def-cost` — 関数単位の check キャッシュの費用を見る計器）: p を脱糖して関数ごとの行
 // `F 関数 package Def か 展開されるか std か Def の本体の寄与（含む） 展開の回数 展開の寄与（含む） 区間の費用の代理 名前` と、展開の辺 `E 呼び手 呼び先`
 // （呼び出し点ごと — expEdges）・参照の辺 `R 呼び手 呼び先`（refGraph）を出す。excl = E2-S の逃げの集合（判定の経路の 1 周目と同じなら loader.ExpandMarked）
-@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.NarrowAssign, diag.FnCap, diag.Cell)
 func DefCostDump(p loader.Program, excl []int) ([]byte, error?) {
     mut st := S{}
     initState(mut st, p)

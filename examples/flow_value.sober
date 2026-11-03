@@ -1,0 +1,24 @@
+package main
+
+// `&&` / `||` の右の項の絞り（spec T-17）: 値の位置・else つき if の条件でも、`x != nil` の右（`||` は `x == nil` の右）で x は T
+
+func on(b bool?) bool {
+    return b != nil && b
+}
+
+func blank(s string?) bool {
+    return s == nil || s == ""
+}
+
+func label(n int?) string {
+    return if n != nil && n > 9 { "big" } else { "small" }
+}
+
+func main() {
+    println("${on(true)} ${on(false)} ${on(nil)}")
+    println("${blank(nil)} ${blank("")} ${blank("x")}")
+    println(label(12) + " " + label(3) + " " + label(nil))
+    v := if label(1) == "small" { "2" } else { nil }
+    ok := v != nil && v == "2" && on(true)
+    println(ok)
+}

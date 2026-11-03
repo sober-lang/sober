@@ -1,0 +1,144 @@
+package loader
+
+// η 展開（language.md 25 節「名前付き関数を関数型の引数に渡す」）: 関数型リテラル（`func(…)`）の仮引数に名前付き関数（`f` / `pkg.F`）を
+// 渡した実引数を、同じ数の仮引数のラムダに写す — 脱糖の固定テンプレート（namedargs と同じ層: desugar・lower・typer・analyzer は写した後の木だけを読む。
+// コア・Lean は無変更）:
+//
+//     func app(x int, k func(int) int) int      app(3, dbl)  →  app(3, ($e0) => dbl($e0))
+//
+// 写す相手は func 宣言の直接呼び出し（`f(…)`・`ref.F(…)`・`f[T](…)`）とパイプ段の実引数。名前は局所の束縛と衝突しない（LocalTop — 局所は
+// トップレベルの名前を使えない）ので、func 宣言の名前ならそれを指す。名前付き関数型（`type Fn func(…)`）の仮引数は関数値を受ける位置なので写さない。
+// 写せない形は loader の拒否（diag.FnArg）: 1 = mut 仮引数を持つ関数（関数型の仮引数に mut の席が無い — 26 節）・2 = 仮引数の数が関数型と違う
+
+import "std/builder"
+import "ast"
+import "diag"
+
+// 全ファイルの木の関数型の実引数に置かれた名前付き関数をラムダへ写す（写せない形は拒否）。ft = namedArgsAll と同じ関数表
+@errors(diag.FnArg)
+func etaAll(cx Cx, ft FnTab) ([]ast.Tree, error?) {
+    mut out := mut []ast.Tree{}
+    mut f := 0
+    while f < len(cx.trees) {
+        t := cx.trees[f]
+        mut hits := builder.Builder[int]{}
+        mut i := 0
+        while i < len(t.nodes) {
+            k := t.nodes[i].kind
+            // 拒否は kind + 字句 × 4（kind は 1 / 2）
+            bad := if k == ast.ECall || k == ast.EPipe { etaScan(cx, ft, f, i, mut hits) } else { 0 }
+            if bad != 0 {
+                return []ast.Tree{}, diag.FnArg{at: diag.Pos{file: f, tok: bad / 4}, kind: bad % 4}
+            }
+            i += 1
+        }
+        hs := builder.Build(mut hits)
+        out = append(out, if len(hs) == 0 { t } else { etaRewrite(t, hs) })
+        f += 1
+    }
+    return freeze(out), nil
+}
+
+// 呼び出しの節 i の関数型の位置の名前付き関数を hits に [呼び出しの節, 実引数の位置, 仮引数の数] の 3 語ずつ積む
+// （拒否なら kind + 実引数の字句 × 4）
+func etaScan(cx Cx, ft FnTab, f int, i int, hits mut builder.Builder[int]) int {
+    t := cx.trees[f]
+    x := t.nodes[i]
+    pipe := x.kind == ast.EPipe
+    args := if pipe { x.c } else { x.b }
+    na := ast.ListLen(t, args)
+    // 実引数に名前（func 宣言を指しうる節）が無い呼び出しは呼び先を引かない（大半の呼び出し）
+    mut cand := false
+    mut holes := false
+    mut k := 0
+    while k < na {
+        a := ast.ListAt(t, args, k)
+        holes = holes || a < 0
+        cand = cand || (a >= 0 && (t.nodes[a].kind == ast.EIdent || t.nodes[a].kind == ast.ESelector))
+        k += 1
+    }
+    fi := if cand { calleeFn(cx, ft, f, if pipe { x.b } else { x.a }, FN_FPARAM) } else { 0 - 1 }
+    if fi < 0 {
+        return 0
+    }
+    dt := cx.trees[ft.file[fi]]
+    ps := dt.nodes[ft.node[fi]].c
+    // 穴の無いパイプ段は左辺が第 1 仮引数（実引数 k = 仮引数 k + 1）
+    off := if pipe && !holes { 1 } else { 0 }
+    k = 0
+    while k < na && k + off < ast.ListLen(dt, ps) {
+        a := ast.ListAt(t, args, k)
+        pty := dt.nodes[ast.ListAt(dt, ps, k + off)].b
+        gi := if a >= 0 && dt.nodes[pty].kind == ast.TFunc && (t.nodes[a].kind == ast.EIdent || t.nodes[a].kind == ast.ESelector) { calleeFn(cx, ft, f, a, 0) } else { 0 - 1 }
+        if gi >= 0 {
+            gt := cx.trees[ft.file[gi]]
+            gps := gt.nodes[ft.node[gi]].c
+            ng := ast.ListLen(gt, gps)
+            mut q := 0
+            while q < ng {
+                if ast.ParamIsMut(gt.nodes[ast.ListAt(gt, gps, q)]) {
+                    return 1 + t.nodes[a].tok * 4
+                }
+                q += 1
+            }
+            if ng != ast.ListLen(dt, dt.nodes[pty].a) {
+                return 2 + t.nodes[a].tok * 4
+            }
+            builder.Push(mut hits, i)
+            builder.Push(mut hits, k)
+            builder.Push(mut hits, ng)
+        }
+        k += 1
+    }
+    return 0
+}
+
+// hits（[呼び出しの節, 実引数の位置, 仮引数の数] — 節の順）の実引数を `($e<節>_0, …) => f($e<節>_0, …)` に写した木
+// （仮引数の名前は利用者が綴れない合成名 — catch の `$v` と同じ。節の字句は実引数の名前 = 診断の位置）
+func etaRewrite(t ast.Tree, hs []int) ast.Tree {
+    mut ns := mut []ast.Node{}
+    for x <- t.nodes {
+        ns = append(ns, x)
+    }
+    mut db := builder.Builder[int]{}
+    for w <- t.data {
+        builder.Push(mut db, w)
+    }
+    mut h := 0
+    while h < len(hs) {
+        i := hs[h]
+        x := ns[i]
+        pipe := x.kind == ast.EPipe
+        args := if pipe { x.c } else { x.b }
+        mut repl := mut []int{}
+        mut k := 0
+        while k < ast.ListLen(t, args) {
+            repl = append(repl, ast.ListAt(t, args, k))
+            k += 1
+        }
+        // 同じ呼び出しの写す実引数を全部（hits は呼び出しごとに連続）
+        while h < len(hs) && hs[h] == i {
+            a := repl[hs[h + 1]]
+            tok := t.nodes[a].tok
+            mut lps := mut []int{}
+            mut cas := mut []int{}
+            mut q := 0
+            while q < hs[h + 2] {
+                nm := ast.PutLit(mut db, "$e${i}_${q}")
+                lps = append(lps, len(ns))
+                ns = append(ns, ast.Node{ast.KLParam, tok, nm, -1, 0, 0, 0, 0})
+                cas = append(cas, len(ns))
+                ns = append(ns, ast.Node{ast.EIdent, tok, nm, 0, 0, 0, 0, 0})
+                q += 1
+            }
+            call := len(ns)
+            ns = append(ns, ast.Node{ast.ECall, tok, a, ast.PutList(mut db, freeze(cas)), 0, 0, 0, 0})
+            repl[hs[h + 1]] = len(ns)
+            ns = append(ns, ast.Node{ast.ELambda, tok, ast.PutList(mut db, freeze(lps)), call, 0, 0, 0, 0})
+            h += 3
+        }
+        l := ast.PutList(mut db, freeze(repl))
+        ns[i] = if pipe { ast.Node{x.kind, x.tok, x.a, x.b, l, x.d, x.e, x.f} } else { ast.Node{x.kind, x.tok, x.a, l, x.c, x.d, x.e, x.f} }
+    }
+    return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
+}

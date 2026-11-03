@@ -1,0 +1,42 @@
+package main
+
+import "std/task"
+
+// error を型引数に: 総称 struct の欄（error? と []error）と、error? を返す task の handle（Task[error?] — 多値でない task の値としての error?）
+
+type Bad error {
+    code int
+}
+
+type Box[T] struct {
+    v T
+}
+
+func fail(n int) error? {
+    if n > 3 {
+        return Bad{code: n}
+    }
+    return nil
+}
+
+func show(e error?) {
+    switch e {
+    case Bad{code}: println("bad ${code}")
+    case nil: println("nil")
+    default: println("other")
+    }
+}
+
+func main() {
+    b := Box[error?]{v: fail(7)}
+    show(b.v)
+    es := Box[[]error]{v: []error{Bad{code: 1}, Bad{code: 2}}}
+    println(len(es.v))
+    r, se := task.Run((s task.Scope) => {
+        h := task.Spawn(s, () => fail(5))
+        _ = task.Spawn(s, () => fail(1))
+        task.Join(h)
+    })
+    show(r)
+    show(se)
+}

@@ -3,6 +3,7 @@
 // --echo-big: echo の大きい本文の格子だけ（100 KB・上限ちょうどの 128 KiB を Content-Length と chunked で + 上限を超えた 128 KiB + 1 B と 1 MB は 413 —
 // 相手は SRV_MAXBODY = 131072 の srv〔bench/httparena の entry と同じ上限〕。report-848 / 849）
 import * as net from "node:net";
+import * as tls from "node:tls";
 import * as http from "node:http";
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -11,6 +12,12 @@ import { constants as zc, createGunzip, gunzipSync, gzipSync } from "node:zlib";
 
 const port = Number(process.argv[2]);
 const echoBig = process.argv.includes("--echo-big");
+// --tls: 生の送受を TLS の上で（相手 = srv の SRV_TLS_PORT — tls.Serve + ServeWith の put:）。fetch / curl / EventSource の受け手を使う群は飛ばす
+const useTls = process.argv.includes("--tls");
+const CONNECT = useTls ? "secureConnect" : "connect";
+function dial(): net.Socket {
+    return useTls ? tls.connect({ port, host: "127.0.0.1", rejectUnauthorized: false }) : net.createConnection({ port, host: "127.0.0.1" });
+}
 const staticDir = process.argv.includes("--static") ? process.argv[process.argv.indexOf("--static") + 1] : "";
 const fragRandom = Number(process.argv[process.argv.indexOf("--frag-random") + 1] ?? 100) || 100;
 let pass = 0;
@@ -90,7 +97,7 @@ function parseAll(buf: Buffer, closed = false): { resps: Resp[]; rest: number } 
 // lport = 手元の port（サーバの飛行記録の ACCEPT の相手の port と 1:1 — 落ちの詳細に出す）
 function exchange(parts: (string | Buffer)[], want: number, gap = 20, timeout = 5000): Promise<{ resps: Resp[]; closed: boolean; raw: Buffer; lport: number }> {
     return new Promise((resolve) => {
-        const s = net.createConnection({ port, host: "127.0.0.1" });
+        const s = dial();
         s.setNoDelay(true);
         let buf = Buffer.alloc(0);
         let done = false;
@@ -115,7 +122,7 @@ function exchange(parts: (string | Buffer)[], want: number, gap = 20, timeout = 
         s.on("end", () => finish(true));
         s.on("close", () => finish(true));
         s.on("error", () => finish(true));
-        s.on("connect", async () => {
+        s.on(CONNECT, async () => {
             lport = s.localPort ?? 0;
             for (let i = 0; i < parts.length; i++) {
                 if (i > 0) await new Promise((r) => setTimeout(r, gap));
@@ -261,8 +268,8 @@ async function pipeline() {
     // limited-conn: 10 要求ずつ張り直し × 50
     let good = 0;
     for (let c = 0; c < 50; c++) {
-        const s = net.createConnection({ port, host: "127.0.0.1" });
-        await new Promise((r) => s.on("connect", r));
+        const s = dial();
+        await new Promise((r) => s.on(CONNECT, r));
         let buf = Buffer.alloc(0);
         let n = 0;
         for (let i = 0; i < 10; i++) {
@@ -988,9 +995,53 @@ async function uploadEp() {
     await one("upload GET 405", `GET /upload HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 405, null);
 }
 
+// 分割受信の接続の常駐（--rss-pid <srv の pid> — echo-big の構成で）: 要求の頭を 2 回に割って送った接続を n 本開いたまま、srv の VmRSS の増えを
+// 割らない接続 n 本の増えと比べる。持ち越しの列は未完の要求の長さだけ取る約束（maxHead + 2 × maxBody の一括確保なら 1 本 ≈ 270 KB 増える）
+const rssPid = process.argv.includes("--rss-pid") ? Number(process.argv[process.argv.indexOf("--rss-pid") + 1]) : 0;
+async function splitRss(pid: number, n: number) {
+    const rss = () => Number(/VmRSS:\s+(\d+)/.exec(readFileSync(`/proc/${pid}/status`, "utf8"))![1]);
+    const req = `GET /baseline11?a=1&b=2 HTTP/1.1\r\n${H}X-Pad: ${"p".repeat(200)}\r\n\r\n`;
+    const cut = 40;
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    async function batch(split: boolean): Promise<{ kb: number; good: number; socks: net.Socket[] }> {
+        const r0 = rss();
+        const socks: net.Socket[] = [];
+        const done = Array.from({ length: n }, () => {
+            const s = dial();
+            socks.push(s);
+            return new Promise<boolean>((res) => {
+                let got = "";
+                s.on("data", (d) => {
+                    got += d.toString("latin1");
+                    if (got.includes("\r\n\r\n3")) res(true);
+                });
+                s.on("error", () => res(false));
+                s.on("close", () => res(false));
+                s.on(CONNECT, () => {
+                    if (!split) s.write(req);
+                    else {
+                        s.write(req.slice(0, cut));
+                        setTimeout(() => s.write(req.slice(cut)), 50);
+                    }
+                });
+            });
+        });
+        const good = (await Promise.all(done)).filter((x) => x).length;
+        await sleep(100);
+        return { kb: rss() - r0, good, socks };
+    }
+    const whole = await batch(false);
+    const split = await batch(true);
+    for (const s of [...whole.socks, ...split.socks]) s.destroy();
+    await sleep(200);
+    ok(`split-receive ${n} conns resident`, whole.good === n && split.good === n && split.kb - whole.kb < n * 32,
+        `whole +${whole.kb} KB split +${split.kb} KB good=${whole.good}/${split.good}`);
+}
+
 if (echoBig) {
     // 8gbit の validate の大きさ（1 / 1 KB / 10 KB / 100 KB・chunked 10 KB / 100 KB）+ 上限ちょうど（128 KiB）
     await echoEp([1, 1024, 10240, 102400, 131072], 30000);
+    if (rssPid) await splitRss(rssPid, 200);
     // 上限を超えたら 413（頭だけ送る — 本文を送り切ると lingering close の上限〔64 KiB〕の後の RST で応答が落ちうる。既存の「CL > 16 KiB」と同じ形）
     for (const n of [131073, 1048576]) {
         await one(`echo CL ${n} 413`, `POST /echo HTTP/1.1\r\n${H}Content-Length: ${n}\r\n\r\n`, 413, null);
@@ -1178,9 +1229,11 @@ await delay();
 await jsonEp();
 await jsonComp();
 await streamEp();
-await chunkedEp();
-await gzipStream();
-await sseEp();
+if (!useTls) {
+    await chunkedEp();
+    await gzipStream();
+    await sseEp();
+}
 await staticEp();
 await originEp();
 await uploadEp();

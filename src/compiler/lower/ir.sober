@@ -1058,6 +1058,12 @@ func printOp(st mut St, out mut []byte, i InsRef) {
             obuf.Lit(mut out, if c == 1 { "tsc()" } else { "cycles()" })
             return
         }
+        if b == PF_B {
+            obuf.Lit(mut out, "prefetch(")
+            vals(mut st, mut out, a)
+            out = append(out, ')')
+            return
+        }
         if b == MM_B {
             obuf.Lit(mut out, mmName(c))
             out = append(out, '(')

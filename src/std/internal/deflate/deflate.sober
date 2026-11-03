@@ -207,25 +207,10 @@ func setupFixed(e mut enc) {
     e.fixed = true
 }
 
-// 空の列 xs を長さ n の v にする（min(n, 32) 個の塊を 1 つ作り、塊ごとに一括の写しの形〔iter.Range の append — lower の copyloop〕で足す。
-// 1 個ずつの append は要素ごとに rt の割り当てを呼び、小さい応答では符号化そのものより高くつく。塊は呼び手の深度に残るので小さく保つ — 256 語の塊だと
-// flush のブロックごとの作業域に 2 KB も積んでしまう
-func fill(xs mut []int, n int, v int) {
-    bn := if n < 32 { n } else { 32 }
-    mut b := mut []int{}
-    for j <- iter.Range(0, bn) {
-        b = append(b, v)
-    }
-    blk := freeze(b)
-    mut k := 0
-    while k + bn <= n && bn > 0 {
-        for j <- iter.Range(0, bn) {
-            xs = append(xs, blk[j])
-        }
-        k += bn
-    }
-    for j <- iter.Range(0, n - k) {
-        xs = append(xs, blk[j])
+// 空の列 xs を長さ n の 0 にする（仮引数へ同じ値を append する for は lower の copyloop の詰めの形 — 伸ばすのは 1 回で、要素ごとの割り当ての呼び出しがない）
+func zero(xs mut []int, n int) {
+    for j <- iter.Range(0, n) {
+        xs = append(xs, 0)
     }
 }
 
@@ -246,18 +231,23 @@ func put(e mut enc, v int, nb int) {
     e.bb = e.bb | (v << e.bn)
     nn := e.bn + nb
     if nn >= 64 {
-        mut bb := e.bb
-        mut bn := 64
-        while bn >= 8 {
-            e.out = append(e.out, byte(bb & 0xff))
-            bb = bb >> 8
-            bn = bn - 8
-        }
-        e.bb = v >> (64 - e.bn)
-        e.bn = nn - 64
+        putFull(mut e, v, nn)
     } else {
         e.bn = nn
     }
+}
+
+// put の満ちた道（溜めの 64 ビットを書き出して残りを溜め直す — 呼び手の速い道に退避の要るレジスタを持ち込まないよう別の関数に）
+func putFull(e mut enc, v int, nn int) {
+    mut bb := e.bb
+    mut bn := 64
+    while bn >= 8 {
+        e.out = append(e.out, byte(bb & 0xff))
+        bb = bb >> 8
+        bn = bn - 8
+    }
+    e.bb = v >> (64 - e.bn)
+    e.bn = nn - 64
 }
 
 // 溜めの満ちたバイトを書き切る（冷たい道 — バイト境界の出力の前に呼ぶ。呼んだ後は e.bn < 8）
@@ -314,9 +304,9 @@ func stored(e mut enc, data []byte, s int, t int, last bool) {
 func flush(e mut enc, w mut Work, data []byte, s int, t int, last bool) {
     // 頻度（文字・長さ 0〜285 と距離 0〜29）と、どの木でも同じ追加ビット（長さ・距離の extra）
     mut lf := mut []int{}
-    fill(mut lf, 286, 0)
+    zero(mut lf, 286)
     mut df := mut []int{}
-    fill(mut df, 30, 0)
+    zero(mut df, 30)
     mut extra := 0
     // 記号は溜めの生の形（文字 = 0〜255・一致 = (距離 << 8) | (長さ − 3)）のまま読む（(距離 << 16) | 長さ への組み直しは通さない）
     for i <- iter.Range(0, w.nsym) {
@@ -341,7 +331,7 @@ func flush(e mut enc, w mut Work, data []byte, s int, t int, last bool) {
     nd := used(dp, 1)
     rl := rle(lp, nl, dp, nd)
     mut cf := mut []int{}
-    fill(mut cf, 19, 0)
+    zero(mut cf, 19)
     mut k := 0
     while k < len(rl) {
         cf[rl[k]] = cf[rl[k]] + 1
@@ -546,7 +536,7 @@ func lengths(f []int, maxBits int) []int {
     // 通らないので使わない
     nb := (n >> 2) + 4
     mut pos := mut []int{}
-    fill(mut pos, nb, 0)
+    zero(mut pos, nb)
     mut cnt := 0
     for i <- iter.Range(0, n) {
         v := f[i]
@@ -570,7 +560,7 @@ func lengths(f []int, maxBits int) []int {
     }
     tail := pos[nb - 1]
     mut ks := mut []int{}
-    fill(mut ks, m, 0)
+    zero(mut ks, m)
     for i <- iter.Range(0, n) {
         v := fq[i]
         if v > 0 {
@@ -592,8 +582,9 @@ func lengths(f []int, maxBits int) []int {
     }
     // a[i] = 昇順 i 番目の頻度 → 深さ・sy[i] & 511 = その記号
     mut a := mut []int{}
+    zero(mut a, m)
     for i <- iter.Range(0, m) {
-        a = append(a, ks[i] >> 9)
+        a[i] = ks[i] >> 9
     }
     sy := freeze(ks)
     a[0] = a[0] + a[1]
@@ -644,7 +635,7 @@ func lengths(f []int, maxBits int) []int {
     }
     // 深さごとの数（maxBits を越えた深さは maxBits へ寄せてから Kraft の和を 2^maxBits に戻す — miniz の enforce_max_code_size）
     mut nc := mut []int{}
-    fill(mut nc, maxBits + 1, 0)
+    zero(mut nc, maxBits + 1)
     for i <- iter.Range(0, m) {
         d := if a[i] > maxBits { maxBits } else { a[i] }
         nc[d] = nc[d] + 1
@@ -669,7 +660,7 @@ func lengths(f []int, maxBits int) []int {
     }
     // 頻度の高い方（昇順の後ろ）から短い長さを配る
     mut out := mut []int{}
-    fill(mut out, n, 0)
+    zero(mut out, n)
     mut j := m
     for l <- iter.Range(1, maxBits + 1) {
         for r <- iter.Range(0, nc[l]) {
@@ -829,12 +820,14 @@ func greedy(w mut Work, data []byte, level int, p0 int) (int, int) {
 // 止めた所の一致と未出力の文字は w に残して再開する）
 func lazy(w mut Work, data []byte, level int, p0 int) (int, int) {
     good := if level <= 4 { 4 } else if level <= 7 { 8 } else { 32 }
-    // maxLazy の lv6 だけ zlib / Go の表（16）と違う 12（長さ 12〜15 の一致の後ろの 1 文字待ちを省く。lv6 の命令 −6%・
-    // 率は json の本文で +0.2% と小さく、率の線〔flatecheck の check.ts ⑤〕は全部内。lv5 / lv7 は表のまま）
-    maxLazy := if level == 4 { 4 } else if level == 5 { 16 } else if level == 6 { 12 } else if level == 7 { 32 } else if level == 8 { 128 } else { 258 }
-    nice := if level == 4 { 16 } else if level == 5 { 32 } else if level <= 7 { 128 } else { 258 }
-    chain := if level == 4 { 16 } else if level == 5 { 32 } else if level == 6 { 128 } else if level == 7 { 256 } else if level == 8 { 1024 } else { 4096 }
+    // lv6（compress: の既定）は zlib / Go の表でなく、json-comp の採点式（rps / Bpr² — 速さと率の交換）で掃引した値: 浅い鎖・早い打ち切り・
+    // 短い lazy で一致探しの命令を約 2 割減らし、率は json の本文で zlib の +2% 前後。率を優先するなら lv7〜9。lv4 / 5 / 7〜9 は zlib の表のまま
+    maxLazy := if level == 4 { 4 } else if level == 5 { 16 } else if level == 6 { 10 } else if level == 7 { 32 } else if level == 8 { 128 } else { 258 }
+    nice := if level == 4 { 16 } else if level == 5 { 32 } else if level == 6 { 96 } else if level == 7 { 128 } else { 258 }
+    chain := if level == 4 { 16 } else if level == 5 { 32 } else if level == 6 { 64 } else if level == 7 { 256 } else if level == 8 { 1024 } else { 4096 }
     skipIns := level <= 6
+    // 中の挿入を省く一致の長さの下限（lv6 は掃引で 6 — 他は 8）
+    skipLong := if level == 6 { 6 } else { 8 }
     n := len(data)
     mut p := p0
     mut prevLen := minMatch - 1
@@ -863,10 +856,10 @@ func lazy(w mut Work, data []byte, level int, p0 int) (int, int) {
             maxIns := n - minMatch
             mut q := p
             mut k := prevLen - 2
-            // lv4〜6: 長い一致（> 8）で重ならない（距離 ≥ 長さ）ものは中の位置を鎖に足さず、末尾の 2 位置だけ足す（挿入は json の本文で
+            // lv4〜6: 長い一致（> skipLong）で重ならない（距離 ≥ 長さ）ものは中の位置を鎖に足さず、末尾の 2 位置だけ足す（挿入は json の本文で
             // 全体の 8 割。率は zlib の同じ level より悪くなりうる〔線 = check.ts ⑤〕代わりに lv6 の符号化 −4 割級）。
             // 重なる一致（距離 < 長さ — 0 の列・短い周期）は省かない（省くと距離が跳ねて率が崩れる）
-            if skipIns && prevLen > 8 && p - 1 - prevMatch >= prevLen {
+            if skipIns && prevLen > skipLong && p - 1 - prevMatch >= prevLen {
                 q = p + prevLen - 4
                 k = 2
             }

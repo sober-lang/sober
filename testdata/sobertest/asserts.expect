@@ -3,22 +3,44 @@ assert failed: Double(x) == x + 1
   Double(x) = 6
   x + 1 = 4
   x = 3
-panic: testing.AssertFailed{} at std/testing/testing.sober:25:10
+panic: testing.AssertFailed{} at testdata/sobertest/asserts/asserts_test.sober:16:5
 FAIL testdata/sobertest/asserts.TestCompareFails (exit 101)
 assert failed: Name(2) == "one"
   Name(2) = many
-panic: testing.AssertFailed{} at std/testing/testing.sober:25:10
+panic: testing.AssertFailed{} at testdata/sobertest/asserts/asserts_test.sober:20:5
 FAIL testdata/sobertest/asserts.TestStringFails (exit 101)
 assert failed: Even(Double(1) + 1)
   Double(1) + 1 = 3
-panic: testing.AssertFailed{} at std/testing/testing.sober:25:10
+panic: testing.AssertFailed{} at testdata/sobertest/asserts/asserts_test.sober:24:5
 FAIL testdata/sobertest/asserts.TestCallFails (exit 101)
 assert failed: ok
   ok = false
-panic: testing.AssertFailed{} at std/testing/testing.sober:25:10
+panic: testing.AssertFailed{} at testdata/sobertest/asserts/asserts_test.sober:29:5
 FAIL testdata/sobertest/asserts.TestBoolFails (exit 101)
 assert failed: c == 'B' && p.a + n == 6
   n = 5
-panic: testing.AssertFailed{} at std/testing/testing.sober:25:10
+panic: testing.AssertFailed{} at testdata/sobertest/asserts/asserts_test.sober:42:5
 FAIL testdata/sobertest/asserts.TestUnprintableSkipped (exit 101)
-1 passed, 5 failed
+assert failed: Apply(f, 3)
+panic: testing.AssertFailed{} at testdata/sobertest/asserts/asserts_test.sober:47:5
+FAIL testdata/sobertest/asserts.TestFnArgFails (exit 101)
+assert failed: Twice(f) == 1
+  Twice(f) = 2
+panic: testing.AssertFailed{} at testdata/sobertest/asserts/asserts_test.sober:55:5
+FAIL testdata/sobertest/asserts.TestFnArgCompareFails (exit 101)
+assert failed: Inc(mut x)
+panic: testing.AssertFailed{} at testdata/sobertest/asserts/asserts_test.sober:64:5
+FAIL testdata/sobertest/asserts.TestMutArgFails (exit 101)
+assert failed: (Parse("") catch 7) == Double(1)
+  (Parse("") catch 7) = 7
+  Double(1) = 2
+panic: testing.AssertFailed{} at testdata/sobertest/asserts/asserts_test.sober:69:5
+FAIL testdata/sobertest/asserts.TestCatchFails (exit 101)
+assert failed (case one): Double(i) == i + i + i
+  Double(i) = 2
+  i + i + i = 3
+  i = 1
+panic: testing.AssertFailed{} at testdata/sobertest/asserts/asserts_test.sober:76:9
+FAIL testdata/sobertest/asserts.TestLabelFails (exit 101)
+ok   testdata/sobertest/asserts.TestLabelLazy
+2 passed, 10 failed

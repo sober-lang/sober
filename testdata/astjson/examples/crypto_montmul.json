@@ -92,6 +92,37 @@
                     }
                   ],
                   "tok": 29
+                },
+                {
+                  "k": "strlit",
+                  "value": "sel",
+                  "tok": 37
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "rsa",
+                      "tok": 39
+                    },
+                    "field": "SelSelfCheck",
+                    "tok": 41
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 5,
+                      "tok": 43
+                    },
+                    {
+                      "k": "int",
+                      "value": 40,
+                      "tok": 45
+                    }
+                  ],
+                  "tok": 42
                 }
               ],
               "tok": 12
@@ -103,7 +134,7 @@
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 40
+        "end": 51
       },
       "sig_end": 10
     }

@@ -30,6 +30,7 @@ func cmdWatch(cl cli.Parsed) int {
     iv := watchInterval()
     mut prev := []string{}
     mut paths := []string{entry}
+    mut extra := []string{}
     mut first := true
     mut ws := WatchStatus{round: 0, phase: "checking", verdict: "none", diags: []string{}, warm: WarmState{build: "off", test: "off"}}
     while true {
@@ -52,13 +53,20 @@ func cmdWatch(cl cli.Parsed) int {
         writeStatus(entry, ws)
         first = false
         prev = r.diags
-        next := if len(r.files) > 0 { r.files } else { paths }
-        stamps := watchCarry(next, paths, pre)
+        next := addPaths(if len(r.files) > 0 { r.files } else { paths }, extra)
+        mut stamps := watchCarry(next, paths, pre)
         paths = next
         while !watchChanged(paths, stamps) {
             os.Sleep(iv)
             w := warmProgress(entry, ws.warm)
             if w.build != ws.warm.build || w.test != ws.warm.test {
+                if w.test != ws.warm.test && (w.test == "done" || w.test == "failed") {
+                    // テストのビルドだけが読むファイル（_test.sober・double・契約で読んだ相手）も見張りに足す（足した時点からの編集を拾う）
+                    extra = addPaths(extra, warmFiles(entry))
+                    more := addPaths(paths, extra)
+                    stamps = watchCarry(more, paths, stamps)
+                    paths = more
+                }
                 ws.warm = w
                 writeStatus(entry, ws)
             }
@@ -66,6 +74,42 @@ func cmdWatch(cl cli.Parsed) int {
         watchQuiet(paths, quietMs())
     }
     return 0
+}
+
+// ps に qs のうち無いもの（と、そのディレクトリ）を足した列（ps の順を保つ — watchCarry が前の時刻を引き継ぐ）
+func addPaths(ps []string, qs []string) []string {
+    mut out := mut []string{}
+    for i <- iter.Range(0, len(ps)) {
+        out = append(out, ps[i])
+    }
+    for i <- iter.Range(0, len(qs)) {
+        d := parentOf(qs[i])
+        if !hasStr(freeze(out), d) {
+            out = append(out, d)
+        }
+        if !hasStr(freeze(out), qs[i]) {
+            out = append(out, qs[i])
+        }
+    }
+    return freeze(out)
+}
+
+// 温めの列のテストが読んだ利用者のファイル（<id>.files — 列のテストが SOBER_TEST_FILES_OUT へ書く・無ければ空）
+func warmFiles(entry string) []string {
+    dir := buildCacheDir()
+    if dir == "" {
+        return []string{}
+    }
+    b := io.ReadFile("${dir}/watch/${watchId(entry)}.files") catch return []string{}
+    s := string(b) catch return []string{}
+    mut out := mut []string{}
+    ls := strings.Split(s, "\n")
+    for i <- iter.Range(0, len(ls)) {
+        if ls[i] != "" {
+            out = append(out, ls[i])
+        }
+    }
+    return freeze(out)
 }
 
 // 編集の静止を待つ（保存の連打・書いて rename する保存を 1 回に畳む）: q ms の間に見張りのパスの時刻が動かなくなるまで
@@ -120,7 +164,7 @@ func warmChain(entry string, files []string) WarmState {
     mkdirs(wd + "/" + id + ".work")
     body := "d=$0; id=$1; e=$2; b=$3; x=$4; shift 4; exec 9> \"$d/$id.lock\"; flock -w 60 9 || exit 0; echo $$ > \"$d/$id.pid\"; g=\"$d/$id.warm\"; echo \"start $$\" > \"$g\"; " +
         "if [ \"$b\" = 1 ]; then w=$(( $(nproc) / 4 )); [ \"$w\" -ge 1 ] || w=1; env SOBER_WORKERS=\"$w\" nice -n 19 \"$x\" build \"$e\" -o \"$d/$id.out\"; echo \"build $?\" >> \"$g\"; rm -f \"$d/$id.out\"; fi; " +
-        "if [ $# -gt 0 ]; then nice -n 19 \"$x\" test --work \"$d/$id.work\" \"$@\"; echo \"test $?\" >> \"$g\"; fi; echo \"done $$\" >> \"$g\""
+        "if [ $# -gt 0 ]; then rm -f \"$d/$id.files\"; SOBER_TEST_FILES_OUT=\"$d/$id.files\" nice -n 19 \"$x\" test --work \"$d/$id.work\" \"$@\"; echo \"test $?\" >> \"$g\"; fi; echo \"done $$\" >> \"$g\""
     sh := "d=$0; id=$1; e=$2; b=$3; shift 3; x=$(readlink /proc/$PPID/exe); " +
         "setsid sh -c '" + body + "' \"$d\" \"$id\" \"$e\" \"$b\" \"$x\" \"$@\" > /dev/null 2>&1 < /dev/null &"
     mut args := mut []string{"-c", sh, wd, id, entry, if b { "1" } else { "0" }}
@@ -139,7 +183,7 @@ func stopWarm(entry string) {
         return
     }
     pf := "${dir}/watch/${watchId(entry)}.pid"
-    sh := "p=$(cat \"$0\" 2> /dev/null) || exit 0; rm -f \"$0\"; [ -n \"$p\" ] && tr '\\0' ' ' < /proc/$p/cmdline 2> /dev/null | grep -qF \"$1\" && kill -s TERM -- \"-$p\" 2> /dev/null; exit 0"
+    sh := "p=$(cat \"$0\" 2> /dev/null) || exit 0; rm -f \"$0\"; [ -n \"$p\" ] && tr '\\0' ' ' 2> /dev/null < /proc/$p/cmdline | grep -qF \"$1\" && kill -s TERM -- \"-$p\" 2> /dev/null; exit 0"
     _, _ = os.Run("/bin/sh", []string{"-c", sh, pf, watchId(entry)})
 }
 

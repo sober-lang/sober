@@ -170,12 +170,14 @@ $ sober test examples/guide/kvbug --run TestParse
 ```
 assert failed: len(ps) == 2
   len(ps) = 0
-panic: testing.AssertFailed{} at std/testing/testing.sober:25:10
+panic: testing.AssertFailed{} at examples/guide/kvbug/kv_test.sober:10:5
 FAIL examples/guide/kvbug.TestParse (exit 101)
 0 passed, 1 failed
 ```
 
 `assert` は `&&` で繋ぐより 1 つの条件ずつ書くと、どこで落ちたかが値つきで読めます。
+
+`panic:` の行の位置は落ちた `assert` を書いた行です。同じ `assert` をテーブルの行ごとに回すときは、第 2 引数にラベルを渡すと見出しに出ます（`assert(e, "case ${name}")` → `assert failed (case …): e`）。ラベルは落ちたときだけ評価されます。
 
 ## 2. プロパティベーステスト — std/quick
 
@@ -223,7 +225,7 @@ quick: falsified at trial 49 of 100 (seed 392200337, 92 shrink runs)
     String = ";"
   (1 items)
 assert failed: same(back, ps)
-panic: testing.AssertFailed{} at std/testing/testing.sober:25:10
+panic: testing.AssertFailed{} at examples/guide/kvbug/kv_test.sober:26:13
 FAIL examples/guide/kvbug.TestRoundTrip (exit 101)
 0 passed, 1 failed
 ```
@@ -447,6 +449,8 @@ quick: fuzz: <n> trials, no failure (check 0, seed 45306338)
 ## 6. 保存するたびに — `sober watch`
 
 `sober watch <entry>`（entry は `kv` を使うプログラムの main package）は、ファイルを保存するたびに check をやり直し、裏で build とテストを走らせて結果を覚えます。通った package の `sober test` は建てずに走らせずに覚えた結果を返します（数 ms）。自分で `sober test` を打つ頃には、テストがもう終わっています。
+
+watch は立てたら忘れてかまいません。普段どおり `sober check` / `build` / `test` を打てば、温めた結果に当たって速く返ります。watch の出力を見るのは、不具合を疑ったときだけで足ります。
 
 ```sh
 sober watch app

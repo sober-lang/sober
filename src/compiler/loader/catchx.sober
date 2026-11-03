@@ -54,14 +54,8 @@ func catchExprs(t ast.Tree) ast.Tree {
         builder.Push(mut db, t.data[j])
     }
     mut pend := mut []int{}
-    // catch nil の文の値の位置: 束縛の後ろに置く 2 文（mut $ctKr := $ctKv・if $ctKe != nil { $ctKr = nil }）の先頭の節（-1 = 無し）
-    mut pendNil := mut []int{}
-    // 1 本ずつ積む（2 本へ交互に append すると、どちらも region の先端に居ないので毎回写し — 2 乗の RSS）
     for i <- iter.Range(0, n0) {
         pend = append(pend, 0 - 1)
-    }
-    for i <- iter.Range(0, n0) {
-        pendNil = append(pendNil, 0 - 1)
     }
     mut k := 0
     for i <- iter.Range(0, n0) {
@@ -86,35 +80,13 @@ func catchExprs(t ast.Tree) ast.Tree {
             builder.Push(mut nb, ast.Node{ast.ENil, tok, 0, 0, 0, 0, 0, 0})
             builder.Push(mut nb, ast.Node{ast.EBinary, tok, lexer.BangEqual, base + 5, base + 6, 0, 0, 0})
             builder.Push(mut nb, ast.Node{ast.SBind, tok, ast.PutList(mut db, []int{vn, en}), 0, ast.PutList(mut db, []int{x.a}), 0, 0, 0})
-            mut ifn := ast.Node{ast.EIf, tok, base + 7, base + 1, base + 4, 0, 0, 0}
-            if t.nodes[x.b].kind == ast.ENil {
-                // `f() catch nil`: nil の腕の型を兄弟の $ctKv の T? から取る —
-                // `{ mut $ctKr := $ctKv; if $ctKe != nil { $ctKr = nil }; $ctKr }`（代入の nil は束縛の型 T? が期待型を与える）
-                rn := ast.PutLit(mut db, "$ct${k}r")
-                q := n0 + builder.Len(mut nb)
-                // q + 0 = $ctKv・1 = mut $ctKr := $ctKv・2 = $ctKr（代入先）・3 = nil・4 = 代入・5 = then の KBlock・6 = if・7 = if の式文・8 = $ctKr（値）・9 = 値の式文
-                builder.Push(mut nb, ast.Node{ast.EIdent, tok, vn, 0, 0, 0, 0, 0})
-                builder.Push(mut nb, ast.Node{ast.SBind, tok, ast.PutList(mut db, []int{rn}), 1, ast.PutList(mut db, []int{q}), 0, 0, 0})
-                builder.Push(mut nb, ast.Node{ast.EIdent, tok, rn, 0, 0, 0, 0, 0})
-                builder.Push(mut nb, ast.Node{ast.ENil, tok, 0, 0, 0, 0, 0, 0})
-                builder.Push(mut nb, ast.Node{ast.SAssign, tok, ast.PutList(mut db, []int{q + 2}), lexer.Equal, ast.PutList(mut db, []int{q + 3}), 0, 0, 0})
-                builder.Push(mut nb, ast.Node{ast.KBlock, tok, ast.PutList(mut db, []int{q + 4}), 0, 0, 0, 0, 0})
-                builder.Push(mut nb, ast.Node{ast.EIf, tok, base + 7, q + 5, 0 - 1, 0, 0, 0})
-                builder.Push(mut nb, ast.Node{ast.SExpr, tok, q + 6, 0, 0, 0, 0, 0})
-                builder.Push(mut nb, ast.Node{ast.EIdent, tok, rn, 0, 0, 0, 0, 0})
-                builder.Push(mut nb, ast.Node{ast.SExpr, tok, q + 8, 0, 0, 0, 0, 0})
-                ifn = ast.Node{ast.EBlock, tok, ast.PutList(mut db, []int{q + 1, q + 7, q + 9}), 0, 0, 0, 0, 0}
-                if stmtOf[i] >= 0 {
-                    // 文の値の位置: 2 文を束縛の後ろへ・値は $ctKr の名前だけ（式ブロックの region を挟まない）
-                    pendNil[stmtOf[i]] = q + 1
-                    ifn = ast.Node{ast.EIdent, tok, rn, 0, 0, 0, 0, 0}
-                }
-            }
+            // `f() catch nil` も同じ if — nil の腕の型は兄弟の腕 $ctKv の T から T?（spec T-16）
+            ifn := ast.Node{ast.EIf, tok, base + 7, base + 1, base + 4, 0, 0, 0}
             if stmtOf[i] >= 0 {
                 pend[stmtOf[i]] = base + 8
                 ns[i] = ifn
             } else {
-                // 次の 2 節 = if（catch nil は値のブロック）・その式文
+                // 次の 2 節 = if・その式文
                 w := n0 + builder.Len(mut nb)
                 builder.Push(mut nb, ifn)
                 builder.Push(mut nb, ast.Node{ast.SExpr, tok, w, 0, 0, 0, 0, 0})
@@ -140,10 +112,6 @@ func catchExprs(t ast.Tree) ast.Tree {
                     sn := ast.ListAt(t, sl, j)
                     if pend[sn] >= 0 {
                         l = append(l, pend[sn])
-                    }
-                    if pendNil[sn] >= 0 {
-                        l = append(l, pendNil[sn])
-                        l = append(l, pendNil[sn] + 6)
                     }
                     l = append(l, sn)
                 }

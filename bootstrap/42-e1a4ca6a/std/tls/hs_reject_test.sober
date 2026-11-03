@@ -1,0 +1,257 @@
+package tls
+
+// std/internal/hs の拒否の網（hs は std の内側）: ClientHello を組み立てて
+// （偽の転送路で）Feed に通し、サーバが返す alert の番号を照合する。TLS 1.2 だけの ClientHello = protocol_version（70）・X25519 も PSS も共通の suite も
+// 無い = handshake_failure（40）・圧縮・重複の拡張・短い / ゼロの key_share・HRR の後も X25519 が無い = illegal_parameter（47）・ALPN の不一致 =
+// no_application_protocol（120）・読めない = decode_error（50）・最初に application_data / CCS 2 枚 = unexpected_message（10）・改竄した record =
+// bad_record_mac（20）・違う verify_data の Finished = decrypt_error（51）・長すぎる record = record_overflow（22）。最初に正しい ClientHello で
+// サーバの flight が出る（WaitFin へ）ことも見る
+
+import "std/crypto/pem"
+import "std/crypto/rsa"
+import "std/crypto/x25519"
+import "std/hex"
+import "std/iter"
+import "std/internal/hs"
+import "std/tls/record"
+
+func rjParams() hs.Params {
+    cb, _ := pem.Parse(testFile(testCerts, "testdata/crypto/httparena-server.crt"))
+    kb, _ := pem.Parse(testFile(testCerts, "testdata/crypto/httparena-server.key"))
+    k, _ := rsa.ParsePKCS8(kb[0].der)
+    return hs.NewParams([][]byte{cb[0].der}, k, []string{"http/1.1"}, []int{record.AesGcm, record.ChaCha}, bytes("sober-tls-reject"))
+}
+
+// 組み立てる ClientHello の形
+type rjHello struct {
+    versions []int      // supported_versions（空 = 拡張なし）
+    groups []int        // supported_groups
+    shareGroup int      // key_share の群（0 = key_share なし）
+    share []byte
+    sigs []int
+    alpn []string
+    suites []int
+    comp []int
+    dup bool            // supported_groups を 2 回
+}
+
+func rjGood() rjHello {
+    return rjHello{versions: []int{0x0304}, groups: []int{0x001d}, shareGroup: 0x001d, share: x25519.Base(rjSeq(7, 32)), sigs: []int{0x0804},
+        alpn: []string{"http/1.1"}, suites: []int{0x1301, 0x1303}, comp: []int{0}, dup: false}
+}
+
+func rjSeq(from int, n int) []byte {
+    mut o := mut []byte{}
+    for i <- iter.Range(0, n) {
+        o = append(o, byte((from + i) & 0xff))
+    }
+    return freeze(o)
+}
+
+func rjP8(o mut []byte, v int) {
+    o = append(o, byte(v & 0xff))
+}
+
+func rjP16(o mut []byte, v int) {
+    o = append(o, byte((v >> 8) & 0xff))
+    o = append(o, byte(v & 0xff))
+}
+
+func rjPb(o mut []byte, b []byte) {
+    for c <- b {
+        o = append(o, c)
+    }
+}
+
+// 拡張 1 つ（型 ‖ 長さ ‖ 中身）
+func rjExt(o mut []byte, t int, body []byte) {
+    rjP16(mut o, t)
+    rjP16(mut o, len(body))
+    rjPb(mut o, body)
+}
+
+func rjU16list(xs []int, w1 bool) []byte {
+    mut b := mut []byte{}
+    if w1 {
+        rjP8(mut b, 2 * len(xs))
+    } else {
+        rjP16(mut b, 2 * len(xs))
+    }
+    for x <- xs {
+        rjP16(mut b, x)
+    }
+    return freeze(b)
+}
+
+// h の ClientHello の record（平文 — 頭 5 バイト込み）。cut > 0 なら本体を cut バイトで打ち切る
+func rjClientHello(h rjHello, cut int) []byte {
+    mut x := mut []byte{}
+    if len(h.versions) > 0 {
+        rjExt(mut x, 43, rjU16list(h.versions, true))
+    }
+    rjExt(mut x, 10, rjU16list(h.groups, false))
+    if h.dup {
+        rjExt(mut x, 10, rjU16list(h.groups, false))
+    }
+    if h.shareGroup != 0 {
+        mut ks := mut []byte{}
+        rjP16(mut ks, 4 + len(h.share))
+        rjP16(mut ks, h.shareGroup)
+        rjP16(mut ks, len(h.share))
+        rjPb(mut ks, h.share)
+        rjExt(mut x, 51, freeze(ks))
+    }
+    rjExt(mut x, 13, rjU16list(h.sigs, false))
+    if len(h.alpn) > 0 {
+        mut al := mut []byte{}
+        for a <- h.alpn {
+            rjP8(mut al, len(bytes(a)))
+            rjPb(mut al, bytes(a))
+        }
+        mut ab := mut []byte{}
+        rjP16(mut ab, len(al))
+        rjPb(mut ab, freeze(al))
+        rjExt(mut x, 16, freeze(ab))
+    }
+    mut b := mut []byte{}
+    rjP16(mut b, 0x0303)
+    rjPb(mut b, rjSeq(1, 32))
+    rjP8(mut b, 32)
+    rjPb(mut b, rjSeq(100, 32))
+    rjP16(mut b, 2 * len(h.suites))
+    for s <- h.suites {
+        rjP16(mut b, s)
+    }
+    rjP8(mut b, len(h.comp))
+    for c <- h.comp {
+        rjP8(mut b, c)
+    }
+    rjP16(mut b, len(x))
+    rjPb(mut b, freeze(x))
+    body := freeze(b)
+    n := if cut > 0 { cut } else { len(body) }
+    mut m := mut []byte{}
+    rjP8(mut m, 1)
+    rjP8(mut m, 0)
+    rjP16(mut m, n)
+    for i <- iter.Range(0, n) {
+        m = append(m, body[i])
+    }
+    return rjRec(22, freeze(m))
+}
+
+// 平文の record
+func rjRec(ct int, body []byte) []byte {
+    mut o := mut []byte{}
+    rjP8(mut o, ct)
+    rjP16(mut o, 0x0303)
+    rjP16(mut o, len(body))
+    rjPb(mut o, body)
+    return freeze(o)
+}
+
+func rjFeed(s []byte, k func([]byte)) error? {
+    k(s)
+    return nil
+}
+
+func rjDesc(e error?) int {
+    return switch e {
+        case nil: 0
+        case record.Alert{desc}: desc
+        case record.Transport{}: -1
+    }
+}
+
+// s を 1 切片で流して、最初の誤りの alert の番号（無ければ 0）と送ったバイト数と接続の状態を返す
+func rjRun(s []byte) (int, int, bool) {
+    mut h := hs.New()
+    mut sent := 0
+    mut d := 0
+    e := rjFrames(s, mut h, mut sent, mut d)
+    if e != nil {
+        d = rjDesc(e)
+    }
+    return d, sent, hs.IsConnected(h)
+}
+
+func rjFrames(s []byte, h mut hs.Hs, sent mut int, d mut int) error? {
+    p := rjParams()
+    for f <- record.Frames((k) => rjFeed(s, k))? {
+        o, e := hs.Feed(mut h, p, f)
+        if e != nil {
+            d = rjDesc(e)
+            return nil
+        }
+        sent += len(o.send)
+    }
+    return nil
+}
+
+// 正しい ClientHello の後の、client handshake traffic secret の鍵で封じた Finished（verify_data = vd）
+func rjBadFin(ch []byte) []byte {
+    mut h := hs.New()
+    mut sent := 0
+    mut d := 0
+    _ = rjFrames(ch, mut h, mut sent, mut d)
+    sec, _ := hex.Parse(rjFirstWord(hs.Secrets(h)))
+    mut w, _ := record.NewDir(record.AesGcm, sec)
+    mut m := mut []byte{}
+    rjP8(mut m, 20)
+    rjP8(mut m, 0)
+    rjP16(mut m, 32)
+    rjPb(mut m, rjSeq(9, 32))
+    return record.Seal(mut w, record.CtHandshake, freeze(m), 0)
+}
+
+func rjFirstWord(s string) string {
+    b := bytes(s)
+    mut i := 0
+    while i < len(b) && b[i] != ' ' {
+        i += 1
+    }
+    w, _ := string(b[0:i])
+    return w
+}
+
+// 拒否の場合 1 つ（名前・流すバイト列・期待する alert の番号）
+type rjCase struct {
+    name string
+    s []byte
+    want int
+}
+
+func TestReject() {
+    g := rjGood()
+    ok := rjClientHello(g, 0)
+    d0, sent, _ := rjRun(ok)
+    assert(d0 == 0 && sent > 0)
+    noShare := rjHello{versions: g.versions, groups: []int{0x0017, 0x001d}, shareGroup: 0x0017, share: rjSeq(4, 65), sigs: g.sigs, alpn: g.alpn, suites: g.suites, comp: g.comp, dup: false}
+    cases := []rjCase{
+        rjCase{name: "tls12", s: rjClientHello(rjHello{versions: []int{}, groups: g.groups, shareGroup: g.shareGroup, share: g.share, sigs: g.sigs, alpn: g.alpn, suites: g.suites, comp: g.comp, dup: false}, 0), want: 70},
+        rjCase{name: "nogroup", s: rjClientHello(rjHello{versions: g.versions, groups: []int{0x0017}, shareGroup: 0x0017, share: rjSeq(4, 65), sigs: g.sigs, alpn: g.alpn, suites: g.suites, comp: g.comp, dup: false}, 0), want: 40},
+        rjCase{name: "nosuite", s: rjClientHello(rjHello{versions: g.versions, groups: g.groups, shareGroup: g.shareGroup, share: g.share, sigs: g.sigs, alpn: g.alpn, suites: []int{0x1302}, comp: g.comp, dup: false}, 0), want: 40},
+        rjCase{name: "nosig", s: rjClientHello(rjHello{versions: g.versions, groups: g.groups, shareGroup: g.shareGroup, share: g.share, sigs: []int{0x0403}, alpn: g.alpn, suites: g.suites, comp: g.comp, dup: false}, 0), want: 40},
+        rjCase{name: "comp", s: rjClientHello(rjHello{versions: g.versions, groups: g.groups, shareGroup: g.shareGroup, share: g.share, sigs: g.sigs, alpn: g.alpn, suites: g.suites, comp: []int{1}, dup: false}, 0), want: 47},
+        rjCase{name: "dup", s: rjClientHello(rjHello{versions: g.versions, groups: g.groups, shareGroup: g.shareGroup, share: g.share, sigs: g.sigs, alpn: g.alpn, suites: g.suites, comp: g.comp, dup: true}, 0), want: 47},
+        rjCase{name: "alpn", s: rjClientHello(rjHello{versions: g.versions, groups: g.groups, shareGroup: g.shareGroup, share: g.share, sigs: g.sigs, alpn: []string{"h2"}, suites: g.suites, comp: g.comp, dup: false}, 0), want: 120},
+        rjCase{name: "short", s: rjClientHello(g, 40), want: 50},
+        rjCase{name: "share31", s: rjClientHello(rjHello{versions: g.versions, groups: g.groups, shareGroup: g.shareGroup, share: rjSeq(1, 31), sigs: g.sigs, alpn: g.alpn, suites: g.suites, comp: g.comp, dup: false}, 0), want: 47},
+        rjCase{name: "zero", s: rjClientHello(rjHello{versions: g.versions, groups: g.groups, shareGroup: g.shareGroup, share: testZeros(32), sigs: g.sigs, alpn: g.alpn, suites: g.suites, comp: g.comp, dup: false}, 0), want: 47},
+        rjCase{name: "hrr-again", s: testCat(rjClientHello(noShare, 0), rjClientHello(noShare, 0)), want: 47},
+        rjCase{name: "app-early", s: rjRec(23, rjSeq(0, 20)), want: 10},
+        rjCase{name: "ccs2", s: testCat(ok, testCat(rjRec(20, []byte{1}), rjRec(20, []byte{1}))), want: 10},
+        rjCase{name: "tamper", s: testCat(ok, rjRec(23, rjSeq(3, 40))), want: 20},
+        rjCase{name: "badfin", s: testCat(ok, rjBadFin(ok)), want: 51},
+        rjCase{name: "overflow", s: []byte{22, 3, 3, byte(0x41), byte(0x01)}, want: 22},
+    }
+    mut bad := 0
+    for c <- cases {
+        d, _, _ := rjRun(c.s)
+        if d != c.want {
+            println("reject ${c.name}: alert ${d}, want ${c.want}")
+            bad += 1
+        }
+    }
+    assert(bad == 0)
+}

@@ -6,14 +6,14 @@ package aesgcm
 //
 //     if aesgcm.Available() { ct := aesgcm.Seal(key, nonce, ad, pt)? }
 //
-// record 層向けの API: 鍵の展開は Prepare で 1 回（接続ごと方向ごと）・record ごとは ctx の写し + nonce だけ。
-// SealTo は head ‖ 暗号文 ‖ tag を 1 回の確保に直に書き、OpenAt は b[off, off + n) を写さずに検証してから復号する
+// record 層向けの API: 鍵の展開は Prepare で 1 回（接続ごと方向ごと — 鍵の表は以後読むだけ）・record ごとは小さい状態の列（計数器・GHASH の溜め・端のブロック）を 1 本だけ作る。
+// SealTo は head ‖ 暗号文 ‖ tag を 1 回の確保に直に書き、OpenAt は b[off, off + n) を平文の列へ復号しながら検証する（tag が合わなければ平文を 0 で消して Auth — 平文は外へ出ない）
 //
 //     k := aesgcm.Prepare(key)?
 //     rec := aesgcm.SealTo(k, nonce, ad, pt, hdr, tail)?     // hdr ‖ 暗号文（pt ‖ tail）‖ tag
 //     pt := aesgcm.OpenAt(k, nonce, ad, buf, off, n)?        // buf[off, off + n) = 暗号文 ‖ tag
 
-// 塊は compiler/lower/aes.sober・x86.sober の xAes: CTR は 8 ブロックを交互に・GHASH は 4 ブロックを束ねて還元 1 回
+// 塊は compiler/lower/aes.sober・x86.sober の xAes: CTR は 8 ブロックを交互に・GHASH は 8 ブロックを束ねて還元 1 回・128 の倍数の部分は両方を縫い合わせた 1 回の走査（aesseal / aesopen — GHASH は Karatsuba）
 
 import "std/crypto"
 import "std/iter"
@@ -33,6 +33,12 @@ func sysAesGhash(ctx int, p int, n int) int
 @intrinsic("aestag")
 func sysAesTag(ctx int, dst int) int
 
+@intrinsic("aesseal")
+func sysAesSeal(st int, src int, dst int, n int) int
+
+@intrinsic("aesopen")
+func sysAesOpen(st int, src int, dst int, n int) int
+
 @intrinsic("addr")
 func sysAddr(b []byte) int
 
@@ -41,10 +47,14 @@ const KeySize = 16 // 鍵の長さ
 const NonceSize = 12 // nonce の長さ
 const Overhead = 16 // Seal の暗号文が平文より長くなる分（tag）
 
-// ctx の大きさと配置（compiler/lower/aes.sober の頭と同じ）
-const ctxSize = 320
-const ctrAt = 240
-const yAt = 256
+// 鍵の表の大きさと record の状態の配置（compiler/lower/aes.sober の頭と同じ — 状態の [0, 40) は塊が読み書きする: 計数器・Y・鍵の表の番地）。
+// 状態の後ろは std の作業: tag の受け [48, 64)・ad の端（0 埋め）[64, 80)・端の席 [80, 80 + e16)（Seal = 平文の端〔pt の 16 の倍数の残り ‖ tail〕・
+// Open = 暗号文の端 — どちらも 0 埋めの 16 の倍数）・長さのブロック [80 + e16, 96 + e16)（端の直後 — Open は端と長さを GHASH 1 回で畳む）
+const tblSize = 512
+const stKey = 32
+const stTag = 48
+const stAd = 64
+const stEdge = 80
 
 // この機械で AES-GCM の専用命令の実装を使えない（AES-NI / PCLMULQDQ / SSSE3 が無い・SOBER_NOAES=1・x86 の最適化のバックエンド以外の出力）
 type NoHardware error
@@ -61,7 +71,7 @@ func Available() bool {
     return sysCpuAes() == 1
 }
 
-// 展開した鍵（Prepare の結果 — 鍵の展開 11 段と GHASH の H^1〜H^4 を持つ ctx のテンプレート。Sober からも専用命令の実装からも書かない — record ごとに写して使う）
+// 展開した鍵（Prepare の結果 — 鍵の展開 11 段・GHASH の H^1〜H^8 と定数を持つ表。Prepare の後は Sober からも専用命令の実装からも書かない — record の状態が番地で指す）
 type Key struct {
     ctx []byte @secret
 }
@@ -77,7 +87,7 @@ func Prepare(key []byte) (Key, error?) {
     if len(key) != KeySize {
         return Key{ctx: []byte{}}, BadSize{}
     }
-    ctx := zeros(ctxSize)
+    ctx := zeros(tblSize)
     _ = sysAesKey(sysAddr(key), sysAddr(ctx))
     return Key{ctx: ctx}, nil
 }
@@ -92,7 +102,7 @@ func Seal(key []byte, nonce []byte, ad []byte, pt []byte) ([]byte, error?) {
     return SealTo(k, nonce, ad, pt, []byte{}, []byte{})
 }
 
-// Seal の逆（tag を crypto.Equal で照合してから復号する）
+// Seal の逆（復号しながら GHASH を畳み、tag を crypto.Equal で照合する — 合わなければ平文を消して Auth）
 @errors(NoHardware, BadSize, Auth)
 @secret(key)
 @effects(!io, !block, !nondet)
@@ -114,7 +124,12 @@ func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte)
     h := len(head)
     p := len(pt)
     n := p + len(tail)
-    cd := recCtx(k.ctx, nonce, 2)
+    full := n - n % 16
+    e16 := (n - full + 15) / 16 * 16
+    mut sm := mut []byte{}
+    newState(mut sm, k, nonce, ad, e16, n)
+    putEdge(mut sm, pt, tail, full)
+    st := freeze(sm)
     mut o := mut []byte{}
     mut j := 0
     while j < h {
@@ -138,20 +153,35 @@ func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte)
     }
     out := freeze(o)
     at := sysAddr(out) + h
-    r := (n + 15) / 16 * 16
-    if r > 0 {
-        _ = sysAesCtr(sysAddr(cd), at, at, r)
+    sa := sysAddr(st)
+    af := len(ad) - len(ad) % 16
+    if af > 0 {
+        _ = sysAesGhash(sa, sysAddr(ad), af)
     }
-    ghashAt(cd, ad, 0, len(ad))
-    ghashAt(cd, out, h, n)
-    ghashLens(cd, len(ad), n)
-    _ = sysAesTag(sysAddr(cd), at + n)
+    if af < len(ad) {
+        _ = sysAesGhash(sa, sa + stAd, 16)
+    }
+    // 128 の倍数の部分は CTR と GHASH を縫い合わせて 1 回の走査（その場で）・残りの 16 の倍数は別々に
+    m8 := full - full % 128
+    if m8 > 0 {
+        _ = sysAesSeal(sa, at, at, m8)
+    }
+    if full > m8 {
+        _ = sysAesCtr(sa, at + m8, at + m8, full - m8)
+    }
+    // 端は状態の平文の端から宛先へ（半端は mask — 宛先の切り上げのはみ出し〔tag の席〕には端の席の 0 が入るので、GHASH は宛先をそのまま読める）
+    if e16 > 0 {
+        _ = sysAesCtr(sa, sa + stEdge, at + full, n - full)
+    }
+    _ = sysAesGhash(sa, at + m8, full - m8 + e16)
+    _ = sysAesGhash(sa, sa + stEdge + e16, 16)
+    _ = sysAesTag(sa, at + n)
     return out, nil
 }
 
 // SealTo の宛先を呼び手の列 dst[at:] にした形（head ‖ 暗号文 ‖ tag を dst へ書いて、書いたバイト数を返す — 入らなければ −1・nonce の長さが違えば −1）。
-// pt の 16 の倍数の部分は CTR が pt から dst へ直に書く（Sober の写しなし）・端（pt の残り ‖ tail）は 16 の倍数に埋めた作業の列で CTR して写す。
-// 作業の列（ctx の写し・端）は呼び手の region に積もるので、送りの park の深度を空けたい呼び手（std/tls の送りの束）は式ブロックで包む
+// pt の 16 の倍数の部分は CTR が pt から dst へ直に書く（Sober の写しなし）・端（pt の残り ‖ tail）は record の状態の中に並べて CTR が dst へ書く。
+// 作業の列（record の状態 — 計数器・GHASH の溜め・端）は呼び手の region に積もるので、送りの park の深度を空けたい呼び手（std/tls の送りの束）は式ブロックで包む
 @bless
 @effects(!io, !block, !nondet)
 func SealInto(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte, dst mut []byte, at int) int {
@@ -161,49 +191,46 @@ func SealInto(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byt
     if len(nonce) != NonceSize || at < 0 || at + h + n + Overhead > len(dst) {
         return 0 - 1
     }
-    cd := recCtx(k.ctx, nonce, 2)
+    full := p - p % 16
+    e16 := (n - full + 15) / 16 * 16
+    mut sm := mut []byte{}
+    newState(mut sm, k, nonce, ad, e16, n)
+    putEdge(mut sm, pt, tail, full)
+    st := freeze(sm)
     mut j := 0
     while j < h {
         dst[at + j] = head[j]
         j += 1
     }
     base := sysAddr(dst) + at + h
-    full := p - p % 16
-    if full > 0 {
-        _ = sysAesCtr(sysAddr(cd), sysAddr(pt), base, full)
+    sa := sysAddr(st)
+    af := len(ad) - len(ad) % 16
+    if af > 0 {
+        _ = sysAesGhash(sa, sysAddr(ad), af)
     }
-    // 端: pt[full:] ‖ tail を 0 で 16 の倍数に埋めて CTR し、n − full バイトを dst へ写す
-    mut e := mut []byte{}
-    for i <- iter.Range(full, p) {
-        e = append(e, pt[i])
+    if af < len(ad) {
+        _ = sysAesGhash(sa, sa + stAd, 16)
     }
-    for x <- tail {
-        e = append(e, x)
+    // 128 の倍数の部分は CTR（pt → dst）と書いた暗号文の GHASH を縫い合わせて 1 回の走査・残りの 16 の倍数は別々に
+    m8 := full - full % 128
+    if m8 > 0 {
+        _ = sysAesSeal(sa, sysAddr(pt), base, m8)
     }
-    while len(e) % 16 != 0 {
-        e = append(e, byte(0))
+    if full > m8 {
+        _ = sysAesCtr(sa, sysAddr(pt) + m8, base + m8, full - m8)
     }
-    eb := freeze(e)
-    if len(eb) > 0 {
-        _ = sysAesCtr(sysAddr(cd), sysAddr(eb), sysAddr(eb), len(eb))
+    // 端: 状態の平文の端（pt[full:] ‖ tail）を dst へ CTR（半端は mask — 切り上げのはみ出し〔tag の席〕には端の席の 0 が入る）
+    if e16 > 0 {
+        _ = sysAesCtr(sa, sa + stEdge, base + full, n - full)
     }
-    mut u := 0
-    while u < n - full {
-        dst[at + h + full + u] = eb[u]
-        u += 1
-    }
-    // GHASH: ad・暗号文の 16 の倍数の部分（dst の番地で）・端（eb の先頭 n − full バイト — 埋めは 0 に戻して畳む）
-    ghashAt(cd, ad, 0, len(ad))
-    if full > 0 {
-        _ = sysAesGhash(sysAddr(cd), base, full)
-    }
-    ghashAt(cd, eb, 0, n - full)
-    ghashLens(cd, len(ad), n)
-    _ = sysAesTag(sysAddr(cd), base + n)
+    // GHASH の残り: 縫い合わせの後ろの暗号文（dst の番地で — 端は 0 埋めまで）・長さのブロック
+    _ = sysAesGhash(sa, base + m8, full - m8 + e16)
+    _ = sysAesGhash(sa, sa + stEdge + e16, 16)
+    _ = sysAesTag(sa, base + n)
     return h + n + Overhead
 }
 
-// b[off, off + n)（暗号文 ‖ tag）を写さずに tag を照合してから復号した平文。nonce の長さが違う・n が tag より短い・[off, off + n) が b の外なら BadSize
+// b[off, off + n)（暗号文 ‖ tag）を復号した平文（128 の倍数の部分は GHASH と復号を縫い合わせた 1 回の走査・残りは照合の後 — tag が合わなければ書いた平文を crypto.Wipe で消して Auth）。nonce の長さが違う・n が tag より短い・[off, off + n) が b の外なら BadSize
 @errors(BadSize, Auth)
 @effects(!io, !block, !nondet)
 func OpenAt(k Key, nonce []byte, ad []byte, b []byte, off int, n int) ([]byte, error?) { // 対の SealAt は実需まで足さない（34 節 2 の注記）
@@ -211,58 +238,109 @@ func OpenAt(k Key, nonce []byte, ad []byte, b []byte, off int, n int) ([]byte, e
         return []byte{}, BadSize{}
     }
     m := n - Overhead
-    cd := recCtx(k.ctx, nonce, 2)
-    ghashAt(cd, ad, 0, len(ad))
-    ghashAt(cd, b, off, m)
-    ghashLens(cd, len(ad), m)
-    want := zeros(16)
-    _ = sysAesTag(sysAddr(cd), sysAddr(want))
-    if !crypto.Equal(want, b[off + m:off + n]) {
+    full := m - m % 16
+    e16 := (m - full + 15) / 16 * 16
+    mut sm := mut []byte{}
+    newState(mut sm, k, nonce, ad, e16, m)
+    mut c := 0
+    while c < m - full {
+        sm[stEdge + c] = b[off + full + c]
+        c += 1
+    }
+    st := freeze(sm)
+    sa := sysAddr(st)
+    af := len(ad) - len(ad) % 16
+    if af > 0 {
+        _ = sysAesGhash(sa, sysAddr(ad), af)
+    }
+    if af < len(ad) {
+        _ = sysAesGhash(sa, sa + stAd, 16)
+    }
+    // 平文の列（16 の倍数に切り上げ — 半端の CTR の席）。128 の倍数の部分は GHASH と復号を縫い合わせて 1 回の走査（暗号文 → 平文の列へ直に）・
+    // 残りの 16 の倍数と端は GHASH → 照合の後に復号する。照合が合わなければ縫い合わせで書いた平文を消して Auth（平文は外へ出ない）
+    // 平文の列は暗号文の写しで確保する（中身は塊が上書きする — 0 埋めのループは一括の写しにならず 16 KiB で ≈ 0.9 命令 / B 重い。
+    // 切り上げのはみ出しは tag の席 — b の内側）
+    r16 := (m + 15) / 16 * 16
+    mut q := mut []byte{}
+    e := off + r16
+    mut z := off
+    while z < e {
+        q = append(q, b[z])
+        z += 1
+    }
+    m8 := full - full % 128
+    src := sysAddr(b) + off
+    if m8 > 0 {
+        _ = sysAesOpen(sa, src, sysAddr(q), m8)
+    }
+    if full > m8 {
+        _ = sysAesGhash(sa, src + m8, full - m8)
+    }
+    _ = sysAesGhash(sa, sa + stEdge, e16 + 16)
+    _ = sysAesTag(sa, sa + stTag)
+    if !crypto.Equal(st[stTag:stTag + 16], b[off + m:off + n]) {
+        crypto.Wipe(mut q)
         return []byte{}, Auth{}
     }
-    // 暗号文を 16 の倍数に切り上げて一括で写し（切り上げのはみ出しは tag の席 — b の内側）、CTR をその場で・返すのは先頭 m バイトの部分列
-    e := off + (m + 15) / 16 * 16
-    mut q := mut []byte{}
-    mut j := off
-    while j < e {
-        q = append(q, b[j])
-        j += 1
+    if r16 > m8 {
+        _ = sysAesCtr(sa, src + m8, sysAddr(q) + m8, m - m8)
     }
     p := freeze(q)
-    if len(p) > 0 {
-        _ = sysAesCtr(sysAddr(cd), sysAddr(p), sysAddr(p), len(p))
-    }
     return p[0:m], nil
 }
 
-// record 1 つの作業域: テンプレート kc の鍵と H と定数を写し、計数器 = nonce ‖ 大きい端の c（J0 = 1・本文 = 2 から）・Y = 0
-func recCtx(kc []byte, nonce []byte, c int) []byte {
-    mut x := mut []byte{}
-    mut j := 0
-    while j < ctrAt {
-        x = append(x, kc[j])
-        j += 1
+// record 1 つの状態を s（空の列）に組む（stEdge + e16 + 16 バイト — 0 で一括に確保して欄だけ書く）: 計数器 = nonce ‖ 大きい端の 2（本文は 2 から・
+// J0 = 1 は tag の塊が組む）・Y = 0・鍵の表の番地・ad の端（0 埋め）・端の席 e16 バイト（呼び手が埋める）・長さのブロック（ad と本文 n バイトのビット長 —
+// 各 64 ビットの大きい端）
+func newState(s mut []byte, k Key, nonce []byte, ad []byte, e16 int, n int) {
+    sz := stEdge + e16 + 16
+    mut z := 0
+    while z < sz {
+        s = append(s, 0)
+        z += 1
     }
     mut i := 0
     while i < NonceSize {
-        x = append(x, nonce[i])
+        s[i] = nonce[i]
         i += 1
     }
-    x = append(x, 0)
-    x = append(x, 0)
-    x = append(x, 0)
-    x = append(x, byte(c))
-    mut y := 0
-    while y < 16 {
-        x = append(x, 0)
-        y += 1
+    s[15] = 2
+    putLe64(mut s, stKey, sysAddr(k.ctx))
+    af := len(ad) - len(ad) % 16
+    mut j := 0
+    while j < len(ad) - af {
+        s[stAd + j] = ad[af + j]
+        j += 1
     }
-    mut t := yAt + 16
-    while t < ctxSize {
-        x = append(x, kc[t])
-        t += 1
+    putBe64(mut s, stEdge + e16, 8 * len(ad))
+    putBe64(mut s, stEdge + e16 + 8, 8 * n)
+}
+
+// 平文 pt ‖ tail の [full, len) を状態の端の席へ
+func putEdge(s mut []byte, pt []byte, tail []byte, full int) {
+    p := len(pt)
+    mut q := full
+    while q < p {
+        s[stEdge + q - full] = pt[q]
+        q += 1
     }
-    return freeze(x)
+    mut v := if full > p { full - p } else { 0 }
+    while v < len(tail) {
+        s[stEdge + p + v - full] = tail[v]
+        v += 1
+    }
+}
+
+func putLe64(m mut []byte, at int, v int) {
+    for i <- iter.Range(0, 8) {
+        m[at + i] = byte((v >> (8 * i)) & 0xff)
+    }
+}
+
+func putBe64(m mut []byte, at int, v int) {
+    for i <- iter.Range(0, 8) {
+        m[at + i] = byte((v >> (56 - 8 * i)) & 0xff)
+    }
 }
 
 func zeros(n int) []byte {
@@ -273,41 +351,4 @@ func zeros(n int) []byte {
         i += 1
     }
     return freeze(z)
-}
-
-// b[from, to)（16 バイト未満）を 0 で 16 バイトに埋めた写し
-func padded(b []byte, from int, to int) []byte {
-    mut t := mut []byte{}
-    for i <- iter.Range(from, to) {
-        t = append(t, b[i])
-    }
-    for i <- iter.Range(to - from, 16) {
-        t = append(t, byte(0))
-    }
-    return freeze(t)
-}
-
-// b[off, off + n) を 16 の倍数に 0 で埋めて GHASH に畳む（16 の倍数の部分は写さずに番地で）
-func ghashAt(ctx []byte, b []byte, off int, n int) {
-    full := n - n % 16
-    if full > 0 {
-        _ = sysAesGhash(sysAddr(ctx), sysAddr(b) + off, full)
-    }
-    if full < n {
-        _ = sysAesGhash(sysAddr(ctx), sysAddr(padded(b, off + full, off + n)), 16)
-    }
-}
-
-// GHASH の最後のブロック（ad と暗号文のビット長 — 各 64 ビットの大きい端）
-func ghashLens(ctx []byte, adLen int, ctLen int) {
-    mut lens := mut []byte{}
-    be64(mut lens, 8 * adLen)
-    be64(mut lens, 8 * ctLen)
-    _ = sysAesGhash(sysAddr(ctx), sysAddr(freeze(lens)), 16)
-}
-
-func be64(m mut []byte, v int) {
-    for i <- iter.Range(0, 8) {
-        m = append(m, byte((v >> (56 - 8 * i)) & 0xff))
-    }
 }

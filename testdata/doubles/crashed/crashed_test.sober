@@ -1,0 +1,8 @@
+@doubles("testdata/doubles/logger/crash")
+package crashed
+
+import "testdata/doubles/greet"
+
+func TestDies() {
+    assert(greet.Greet("a") == "hello, a")
+}

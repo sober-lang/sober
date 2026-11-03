@@ -53,9 +53,12 @@ edit() {
         listat-sem) sed -i 's|^    return t.data\[l + 1 + i\]$|    return t.data[l + 2 + i]|' "$T/ast/ast.sober" ;;
         xfixadd-sem) sed -i '/^func xFixAdd/,/^}/s|table.Push(mut fx, at)|table.Push(mut fx, at + 1)|' "$T/lower/x86.sober" ;;
         panic-add) sed -i '/^func main() int {$/a\    a20, e20 := os.Args()\n    if e20 == nil \&\& len(a20) > 20 \&\& 100 / (len(a20) - 21) == 1 {\n        return 3\n    }' "$T/app/main.sober" ;;
-        lambda-add) sed -i '/^    rs, cerr := task.Map(finFiles(n), (f) => checksOne(cx, pp, ixs, pnames, f, die))$/a\    if n < 0 {\n        xs0, e0 := task.Map(finFiles(0), (f) => f + 1)\n        if e0 != nil || len(xs0) > 99 {\n            return noHit(), false\n        }\n    }' "$T/loader/finpar.sober" ;;
+        # 子から呼ぶ再帰の関数 finStep は pure-flip の前後で IR が変わらず、検査点の印（純な子から届くか）だけが変わる — 鍵の cutInsert の 2 bit を
+        # 落とした変異（incrmut m3）が古い成果物を当てる題材（題材のループは最適化で消えうるので、消えない再帰の入口に置く）
+        lambda-add) sed -i '/^    rs, cerr := task.Map(finFiles(n), (f) => checksOne(cx, pp, ixs, pnames, f, die))$/a\    if n < 0 {\n        xs0, e0 := task.Map(finFiles(0), (f) => finStep(f))\n        if e0 != nil || len(xs0) > 99 {\n            return noHit(), false\n        }\n    }' "$T/loader/finpar.sober"
+            printf '\nfunc finStep(n int) int {\n    if n <= 0 {\n        return 0\n    }\n    return n + finStep(n - 1)\n}\n' >> "$T/loader/finpar.sober" ;;
         # spawn の子（lambda-add の子）の純性が変わる: stdout に書く子になる（cutPatch の旗・cutInsert の印 — β の鍵の 2 bit）
-        pure-flip) sed -i 's|^        xs0, e0 := task.Map(finFiles(0), (f) => f + 1)$|        xs0, e0 := task.Map(finFiles(0), (f) => { println("p"); f + 1 })|' "$T/loader/finpar.sober" ;;
+        pure-flip) sed -i 's|^        xs0, e0 := task.Map(finFiles(0), (f) => finStep(f))$|        xs0, e0 := task.Map(finFiles(0), (f) => { println("p"); finStep(f) })|' "$T/loader/finpar.sober" ;;
         # 関数を値として渡す（番地を取られる関数 — xAddr の印が変わり、呼び手の呼び出し規約が変わる — β の鍵の番地取りの bit）
         addr-add) sed -i '0,/^    bv := lower.BcOpen(bd)$/s//    bv := lower.BcOpen(bd)\n    if cli.Bool(cl, Typer) \&\& cli.Bool(cl, TyperDiff) {\n        fv := parentOf\n        println(fv("a\/b"))\n    }/' "$T/app/cmd_build.sober" ;;
         fnval) sed -i '/^func main() int {$/a\    a40, e40 := os.Args()\n    if e40 == nil \&\& len(a40) > 40 {\n        la := strings.HasPrefix\n        println(la("ab", "a"))\n    }' "$T/app/main.sober" ;;

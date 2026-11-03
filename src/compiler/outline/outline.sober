@@ -62,7 +62,10 @@ func Of(path string, src []byte, public bool) (File, error?) {
     pushDecls(mut ds, mut at, src, t, ts, fl.c, 0, public)
     pushDecls(mut ds, mut at, src, t, ts, fl.d, 1, public)
     pushDecls(mut ds, mut at, src, t, ts, fl.e, 2, public)
-    pushDecls(mut ds, mut at, src, t, ts, fl.f, 3, public)
+    // f の列は KIntrinsic の列か double の名乗り（KReplaces — 宣言ではない）
+    if fl.f != 0 && t.nodes[ast.ListAt(t, fl.f, 0)].kind == ast.KIntrinsic {
+        pushDecls(mut ds, mut at, src, t, ts, fl.f, 3, public)
+    }
     // 出現順（挿入の並べ替え — 1 ファイルの宣言は高々数百）
     for i <- iter.Range(1, len(ds)) {
         mut j := i

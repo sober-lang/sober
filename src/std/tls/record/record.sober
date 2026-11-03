@@ -280,15 +280,33 @@ func strip(p []byte) (int, int) {
     return 0, 0 - 1
 }
 
-// p[lo, m) で最後の 0 でないバイトの位置と値（無ければ (-1, 0)）。回数は m - lo（公開の長さ）だけで決まり、選択は mask（定数時間 — ctcheck）
+// p[lo, m) で最後の 0 でないバイトの位置と値（無ければ (-1, 0)）。回数は m - lo（公開の長さ）だけで決まり、選択は mask（定数時間 — ctcheck）:
+// 頭の半端（8 未満）は 1 バイトずつ・残りは 8 バイトの語ずつ最後の 0 でない語と位置を選び、最後にその語の 8 バイトから選ぶ（語が無ければ 0 で何も選ばれない）
 @bless
 func stripTail(p []byte, lo int, m int) (int, int) {
     mut at := 0 - 1
     mut ct := 0
-    for i <- iter.Range(lo, m) {
+    w0 := lo + (m - lo) % 8
+    for i <- iter.Range(lo, w0) {
         nz := crypto.NonZero(int(p[i]))
         at = crypto.Select(nz, i, at)
         ct = crypto.Select(nz, int(p[i]), ct)
+    }
+    mut wv := 0
+    mut wa := 0
+    mut i := w0
+    while i < m {
+        x := int(p[i]) | (int(p[i + 1]) << 8) | (int(p[i + 2]) << 16) | (int(p[i + 3]) << 24) | (int(p[i + 4]) << 32) | (int(p[i + 5]) << 40) | (int(p[i + 6]) << 48) | (int(p[i + 7]) << 56)
+        nz := crypto.NonZero(x)
+        wv = crypto.Select(nz, x, wv)
+        wa = crypto.Select(nz, i, wa)
+        i += 8
+    }
+    for j <- iter.Range(0, 8) {
+        v := (wv >> (8 * j)) & 0xff
+        nz := crypto.NonZero(v)
+        at = crypto.Select(nz, wa + j, at)
+        ct = crypto.Select(nz, v, ct)
     }
     return at, ct
 }

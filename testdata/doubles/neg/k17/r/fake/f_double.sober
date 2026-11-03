@@ -1,0 +1,18 @@
+@replaces("testdata/doubles/neg/k17/r")
+package r
+
+type Conn struct {
+    n int
+}
+
+type Bad error {}
+
+func New() Conn {
+    return Conn{n: 0}
+}
+
+func Show(c Conn, k string) int {
+    return 3
+}
+
+const Max = 4

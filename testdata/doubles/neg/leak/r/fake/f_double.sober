@@ -1,0 +1,18 @@
+@replaces("testdata/doubles/neg/leak/r")
+package r
+
+type Conn struct {
+    n int
+}
+
+type Bad error {}
+
+func New() Conn {
+    return Conn{n: 0}
+}
+
+type Boom panic
+
+func Show(c Conn, k string) int {
+    panic(Boom{})
+}

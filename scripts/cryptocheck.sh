@@ -35,10 +35,12 @@ for ex in crypto_aesgcm crypto_wycheproof_aesgcm; do
     if [ $e != 0 ] || ! head -n 1 "$W/out" | grep -q '^no hardware'; then echo "FAIL $ex [copy] the copy backend should have no AES path (exit $e)"; fail=$((fail + 1)); fi
 done
 # 多倍長の塊（MULX — RSA の続き report-864）: RSA の例は倒れ先（SOBER_NOMULX=1・--no-opt・写しのバックエンド — Sober の montMulS）も .out と同じ値
-# （RSA は TLS に必須なので NoHardware の逃げは無い — 塊と倒れ先が同じ結果であることを格子で照合。crypto_montmul は塊 ≡ montMulS の乱数の全数照合）
+# （RSA は TLS に必須なので NoHardware の逃げは無い — 塊と倒れ先が同じ結果であることを格子で照合。crypto_montmul は塊 ≡ montMulS の乱数の全数照合）。
+# x25519 の体の積の塊（femul）も同じ格子に載せる（crypto_femul は塊 ≡ fmulS の乱数照合・x25519 の例 2 本は倒れ先も .out と同じ値）
+# SHA-256 の塊（SHA-NI — 倒れ先は SOBER_NOSHA=1 で同じ格子の NOMULX=1 の列に相乗り）: crypto_sha256blk は塊 ≡ writeS の乱数照合・crypto_hmac_hkdf は倒れ先も .out と同じ値
 mx=1
 grep -qw bmi2 /proc/cpuinfo || mx=0
-for ex in crypto_montmul crypto_rsa crypto_wycheproof_pss; do
+for ex in crypto_montmul crypto_rsa crypto_wycheproof_pss crypto_femul crypto_x25519 crypto_wycheproof_x25519 crypto_sel_xmm crypto_sha256blk crypto_hmac_hkdf; do
     src=examples/$ex.sober
     "$S2" build "$src" --emit=elf --passes -o "$W/$ex.p" > /dev/null || { echo "FAIL build $ex"; fail=$((fail + 1)); continue; }
     "$S2" build "$src" --emit=elf -o "$W/$ex.n" > /dev/null || { echo "FAIL build --no-opt $ex"; fail=$((fail + 1)); continue; }
@@ -48,10 +50,10 @@ for ex in crypto_montmul crypto_rsa crypto_wycheproof_pss; do
         for nm in 0 1; do
             if [ $nm = 0 ] && [ $v = p ] && [ $mx = 0 ]; then echo "SKIP $ex [$v] MULX path (no BMI2)"; continue; fi
             n=$((n + 1))
-            if [ $nm = 1 ]; then SOBER_NOMULX=1 timeout 120 "$W/$ex.$v" > "$W/out" 2>&1; else timeout 120 "$W/$ex.$v" > "$W/out" 2>&1; fi; e=$?
+            if [ $nm = 1 ]; then SOBER_NOMULX=1 SOBER_NOSHA=1 timeout 120 "$W/$ex.$v" > "$W/out" 2>&1; else timeout 120 "$W/$ex.$v" > "$W/out" 2>&1; fi; e=$?
             if [ $e != 0 ] || ! cmp -s "$W/out" examples/$ex.out; then echo "FAIL $ex [$v NOMULX=$nm] differs from .out (exit $e)"; fail=$((fail + 1)); fi
         done
     done
 done
-echo "cryptocheck: $n runs — AES-GCM hw path ≡ .out / NOAES and copy backend fall back to NoHardware・RSA の MULX の塊 ≡ 倒れ先 ≡ .out, fail=$fail"
+echo "cryptocheck: $n runs — AES-GCM hw path ≡ .out / NOAES and copy backend fall back to NoHardware・RSA / x25519 の MULX の塊・SHA-NI の塊 ≡ 倒れ先 ≡ .out, fail=$fail"
 [ $fail = 0 ]

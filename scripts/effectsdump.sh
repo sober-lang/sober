@@ -24,9 +24,9 @@ for e in examples/effects_*.sober; do
     if [ $regen = 1 ]; then cp "$W/$k.txt" "$G/$k.txt"; continue; fi
     diff -q "$W/$k.txt" "$G/$k.txt" > /dev/null 2>&1 || { echo "FAIL $e:"; diff "$W/$k.txt" "$G/$k.txt" | head -5; fail=1; }
 done
-# std: std の全 package（std/internal は std の中からだけ）を import する合成の main の表（std の関数の効果の黄金・違反 0 件）
+# std: std の全 package（std/internal は std の中からだけ・std/testing/cell はテストの構成のファイルからだけ）を import する合成の main の表（std の関数の効果の黄金・違反 0 件）
 mkdir -p "$W/std/app" && cp -r src/std "$W/std/std"
-{ echo "package main"; echo; for d in $(cd src && find std -name '*.sober' ! -name '*_test.sober' ! -path 'std/internal/*' -printf '%h\n' | sort -u); do echo "import \"$d\""; done; echo; echo "func main() {"; echo "}"; } > "$W/std/app/main.sober"
+{ echo "package main"; echo; for d in $(cd src && find std -name '*.sober' ! -name '*_test.sober' ! -path 'std/internal/*' ! -path 'std/testing/cell/*' -printf '%h\n' | sort -u); do echo "import \"$d\""; done; echo; echo "func main() {"; echo "}"; } > "$W/std/app/main.sober"
 (cd "$W/std" && "$S2" check app/main.sober --effects-dump 2>&1) > "$W/std.txt"
 # 自己: compiler/ の木（std を写した — checkverdict の自己適用と同じ形）の要約の行
 mkdir -p "$W/self" && cp -r src/compiler "$W/self/compiler" && cp -r src/std "$W/self/compiler/std"

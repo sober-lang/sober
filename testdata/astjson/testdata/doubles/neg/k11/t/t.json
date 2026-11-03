@@ -1,0 +1,62 @@
+{
+  "package": "t",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/doubles/neg/k11/r/fake",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "g",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "fake",
+                      "tok": 13
+                    },
+                    "field": "New",
+                    "tok": 15
+                  },
+                  "args": [],
+                  "tok": 16
+                },
+                "field": "n",
+                "tok": 19
+              }
+            ],
+            "tok": 12
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 23
+      },
+      "sig_end": 11
+    }
+  ],
+  "consts": []
+}

@@ -2379,93 +2379,98 @@ b9(%41 i64):
   %52 = le %50, %51
   condbr %52, b12, b13
 b10:
-  %69 = add %25, %49
-  %70 = load.i64 %45[0]
-  %71 = itop %70
-  %72 = gep.byte %71, %69
-  %73 = load.i64 %4[0]
-  %74 = itop %73
-  %75 = gep.byte %74, %54
-  call @rt.copy8(%72, %75, %50)
+  %64 = add %25, %49
+  %65 = load.i64 %45[0]
+  %66 = itop %65
+  %67 = gep.byte %66, %64
+  %68 = load.i64 %4[0]
+  %69 = itop %68
+  %70 = gep.byte %69, %54
+  call @rt.copy8(%67, %70, %50)
   store %43[0], %41
   br b12
 b11:
-  %76 = region.depth
-  br b14
+  %71 = region.depth
+  br b19
 b12:
-  %103 = add %25, %41
-  %104 = const 4
-  %105 = gep.word %0, %104
-  store %105[0], %103
-  %106 = load.i64 %13[0]
-  %107 = add %106, %41
-  store %13[0], %107
+  %98 = add %25, %41
+  %99 = const 4
+  %100 = gep.word %0, %99
+  store %100[0], %98
+  %101 = load.i64 %13[0]
+  %102 = add %101, %41
+  store %13[0], %102
   br b1
 b13:
   %53 = load.i64 %4[1]
   %54 = add %48, %49
   %55 = ge %54, %51
+  condbr %55, b14, b11
+b14:
   %56 = add %48, %41
   %57 = le %56, %53
-  %58 = and_ %55, %57
-  %59 = ge %49, %51
-  %60 = and_ %58, %59
-  %61 = load.i64 %45[1]
-  %62 = add %25, %49
-  %63 = ge %62, %51
-  %64 = add %25, %41
-  %65 = le %64, %61
-  %66 = and_ %63, %65
-  %67 = and_ %60, %66
-  %68 = ne %67, %51
-  condbr %68, b10, b11
-b14:
-  region.setdepth %76
-  %77 = load.i64 %43[0]
-  %78 = lt %77, %41
-  condbr %78, b15, b16
+  condbr %57, b15, b11
 b15:
-  region.enter
-  %79 = region.depth
-  %80 = const 1
-  %81 = gep.word %0, %80
-  %82 = load.i64 %43[0]
-  %83 = add %25, %82
-  %84 = load.i64 %13[0]
-  %85 = load.i64 %43[0]
-  %86 = add %84, %85
-  %87 = load.i64 %4[1]
-  %88 = uge %86, %87
-  condbr %88, b17, b18
+  %58 = ge %49, %51
+  condbr %58, b16, b11
 b16:
-  region.setdepth %76
-  br b12
+  %59 = load.i64 %45[1]
+  %60 = add %25, %49
+  %61 = ge %60, %51
+  condbr %61, b17, b11
 b17:
-  %89 = const 3
-  call @rt.panic(%89)
-  exit 101
+  %62 = add %25, %41
+  %63 = le %62, %59
+  condbr %63, b18, b11
 b18:
-  %90 = load.i64 %4[0]
-  %91 = itop %90
-  %92 = gep.byte %91, %86
-  %93 = load8 %92[0]
-  %94 = load.i64 %81[1]
-  %95 = uge %83, %94
-  condbr %95, b19, b20
+  br b10
 b19:
-  %96 = const 4
-  call @rt.panic(%96)
-  exit 101
+  region.setdepth %71
+  %72 = load.i64 %43[0]
+  %73 = lt %72, %41
+  condbr %73, b20, b21
 b20:
-  %97 = load.i64 %81[0]
-  %98 = itop %97
-  %99 = gep.byte %98, %83
-  store8 %99[0], %93
-  %100 = const 1
-  %101 = load.i64 %43[0]
-  %102 = add %101, %100
-  store %43[0], %102
-  br b14
+  region.enter
+  %74 = region.depth
+  %75 = const 1
+  %76 = gep.word %0, %75
+  %77 = load.i64 %43[0]
+  %78 = add %25, %77
+  %79 = load.i64 %13[0]
+  %80 = load.i64 %43[0]
+  %81 = add %79, %80
+  %82 = load.i64 %4[1]
+  %83 = uge %81, %82
+  condbr %83, b22, b23
+b21:
+  region.setdepth %71
+  br b12
+b22:
+  %84 = const 3
+  call @rt.panic(%84)
+  exit 101
+b23:
+  %85 = load.i64 %4[0]
+  %86 = itop %85
+  %87 = gep.byte %86, %81
+  %88 = load8 %87[0]
+  %89 = load.i64 %76[1]
+  %90 = uge %78, %89
+  condbr %90, b24, b25
+b24:
+  %91 = const 4
+  call @rt.panic(%91)
+  exit 101
+b25:
+  %92 = load.i64 %76[0]
+  %93 = itop %92
+  %94 = gep.byte %93, %78
+  store8 %94[0], %88
+  %95 = const 1
+  %96 = load.i64 %43[0]
+  %97 = add %96, %95
+  store %43[0], %97
+  br b19
 }
 
 func @std/io.WriteString(%0 ptr, %1 i64, %2 i64, %3 i64) {

@@ -1,0 +1,43 @@
+@replaces("testdata/doubles/store")
+package store
+
+// A double of the store: answers from rows given up front, or fails every write.
+
+import "std/iter"
+
+type Conn struct {
+    rows []Row
+    deny bool
+}
+
+type Row struct {
+    k string
+    v string
+}
+
+type Denied error {}
+
+func With(rows []Row) Conn {
+    return Conn{rows: rows, deny: false}
+}
+
+func Denying() Conn {
+    return Conn{rows: []Row{}, deny: true}
+}
+
+@errors(Denied)
+func Put(c Conn, k string, v string) error? {
+    if c.deny {
+        return Denied{}
+    }
+    return nil
+}
+
+func Get(c Conn, k string) string? {
+    for i <- iter.Range(0, len(c.rows)) {
+        if c.rows[i].k == k {
+            return c.rows[i].v
+        }
+    }
+    return nil
+}

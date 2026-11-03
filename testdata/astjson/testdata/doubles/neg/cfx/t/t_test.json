@@ -1,0 +1,131 @@
+{
+  "package": "t",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/testing/cell",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "TestT",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "cell",
+                  "tok": 23
+                },
+                "field": "Update",
+                "tok": 25
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "H",
+                  "tok": 27
+                },
+                {
+                  "k": "lambda",
+                  "params": [
+                    {
+                      "name": "n",
+                      "type": {
+                        "k": "name",
+                        "name": "int"
+                      }
+                    }
+                  ],
+                  "body": {
+                    "k": "block",
+                    "stmts": [
+                      {
+                        "k": "expr",
+                        "expr": {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "println",
+                            "tok": 35
+                          },
+                          "args": [
+                            {
+                              "k": "ident",
+                              "name": "n",
+                              "tok": 37
+                            }
+                          ],
+                          "tok": 36
+                        }
+                      },
+                      {
+                        "k": "expr",
+                        "expr": {
+                          "k": "binary",
+                          "op": "+",
+                          "lhs": {
+                            "k": "ident",
+                            "name": "n",
+                            "tok": 40
+                          },
+                          "rhs": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 42
+                          },
+                          "tok": 41
+                        }
+                      }
+                    ]
+                  },
+                  "tok": 33
+                }
+              ],
+              "tok": 26
+            }
+          }
+        ]
+      },
+      "tok": 19,
+      "bodiless": false,
+      "span": {
+        "start": 18,
+        "end": 49
+      },
+      "sig_end": 22
+    }
+  ],
+  "consts": [
+    {
+      "name": "H",
+      "expr": {
+        "k": "composite",
+        "type_name": "cell.Cell",
+        "elems": [],
+        "tok": 9,
+        "type_args": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 18
+      }
+    }
+  ]
+}

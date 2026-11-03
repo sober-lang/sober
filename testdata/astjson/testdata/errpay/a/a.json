@@ -1,0 +1,117 @@
+{
+  "package": "a",
+  "imports": [],
+  "types": [
+    {
+      "name": "P",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "x",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 12
+      }
+    },
+    {
+      "name": "E",
+      "type_params": [],
+      "body": {
+        "k": "error",
+        "fields": [
+          {
+            "name": "p",
+            "type": {
+              "k": "name",
+              "name": "P"
+            },
+            "tok": 16
+          }
+        ]
+      },
+      "tok": 13,
+      "span": {
+        "start": 12,
+        "end": 21
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "Fail",
+      "type_params": [],
+      "params": [
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "error"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "E",
+                "elems": [
+                  {
+                    "key": "p",
+                    "value": {
+                      "k": "composite",
+                      "type_name": "P",
+                      "elems": [
+                        {
+                          "key": "x",
+                          "value": {
+                            "k": "ident",
+                            "name": "k",
+                            "tok": 44
+                          }
+                        }
+                      ],
+                      "tok": 40,
+                      "type_args": []
+                    }
+                  }
+                ],
+                "tok": 36,
+                "type_args": []
+              }
+            ],
+            "tok": 35
+          }
+        ]
+      },
+      "tok": 28,
+      "bodiless": false,
+      "span": {
+        "start": 21,
+        "end": 50
+      },
+      "sig_end": 34
+    }
+  ],
+  "consts": []
+}

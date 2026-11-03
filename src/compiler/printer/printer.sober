@@ -166,6 +166,25 @@ func typeParams(out mut []byte, t ast.Tree, l int) {
 
 func file(out mut []byte, t ast.Tree) {
     f := t.nodes[t.file]
+    pk := if f.f != 0 { t.nodes[t.data[f.f + 1]].kind } else { 0 }
+    rep := pk == ast.KReplaces || pk == ast.KDoubles
+    if pk == ast.KReplaces {
+        obuf.Lit(mut out, "@replaces(\"")
+        quoted(mut out, t, t.nodes[t.data[f.f + 1]].a)
+        obuf.Lit(mut out, "\")\n")
+    } else if pk == ast.KDoubles {
+        l := t.nodes[t.data[f.f + 1]].a
+        obuf.Lit(mut out, "@doubles(")
+        for i <- iter.Range(0, t.data[l]) {
+            if i > 0 {
+                obuf.Lit(mut out, ", ")
+            }
+            out = append(out, '"')
+            quoted(mut out, t, t.nodes[t.data[l + 1 + i]].a)
+            out = append(out, '"')
+        }
+        obuf.Lit(mut out, ")\n")
+    }
     obuf.Lit(mut out, "package ")
     raw(mut out, t, f.a)
     out = append(out, '\n')
@@ -208,7 +227,7 @@ func file(out mut []byte, t ast.Tree) {
         i += 1
     }
     // std の本体なしの宣言（KIntrinsic）は const の後・func の前に
-    if f.f != 0 {
+    if f.f != 0 && !rep {
         i = 0
         while i < t.data[f.f] {
             out = append(out, '\n')
@@ -790,7 +809,9 @@ func expr(out mut []byte, t ast.Tree, n int, d int, flat bool) {
     } else if k == ast.ESwitch {
         switchExpr(mut out, t, x, d, flat)
     } else if k == ast.EBlock {
-        block(mut out, t, x.a, d, flat)
+        if !catchBack(mut out, t, x, d, flat) {
+            block(mut out, t, x.a, d, flat)
+        }
     } else if k == ast.EFor {
         forExpr(mut out, t, x, d, flat)
     } else if k == ast.EMutArg {
@@ -962,4 +983,34 @@ func forExpr(out mut []byte, t ast.Tree, x ast.Node, d int, flat bool) {
         out = append(out, ' ')
         block(mut out, t, x.c, d, flat)
     }
+}
+
+// loader の catch の写し（`{ $ctKv, $ctKe := L; if $ctKe != nil { D } else { $ctKv } }`）を `L catch D` に戻して書く
+// （assert の見出しは写した後の木を印字する）。写しの形でなければ何も書かずに false
+func catchBack(out mut []byte, t ast.Tree, x ast.Node, d int, flat bool) bool {
+    if t.data[x.a] != 2 {
+        return false
+    }
+    b := t.nodes[t.data[x.a + 1]]
+    v := t.nodes[t.data[x.a + 2]]
+    if b.kind != ast.SBind || t.data[b.a] != 2 || t.data[b.c] != 1 || v.kind != ast.SExpr {
+        return false
+    }
+    nm := t.data[b.a + 1]
+    if t.data[nm] < 3 || t.data[nm + 1] != '$' || t.data[nm + 2] != 'c' || t.data[nm + 3] != 't' {
+        return false
+    }
+    w := t.nodes[v.a]
+    if w.kind != ast.EIf {
+        return false
+    }
+    expr(mut out, t, t.data[b.c + 1], d, flat)
+    obuf.Lit(mut out, " catch ")
+    th := t.data[t.nodes[w.b].a + 1]
+    if t.nodes[th].kind == ast.SRet {
+        stmt(mut out, t, th, d, flat)
+    } else {
+        expr(mut out, t, t.nodes[th].a, d, flat)
+    }
+    return true
 }

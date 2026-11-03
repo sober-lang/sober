@@ -1,0 +1,50 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 14
+              },
+              "args": [
+                {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 16
+                }
+              ],
+              "tok": 15
+            }
+          }
+        ]
+      },
+      "tok": 10,
+      "bodiless": false,
+      "span": {
+        "start": 9,
+        "end": 21
+      },
+      "sig_end": 13
+    }
+  ],
+  "consts": [],
+  "replaces": [
+    {
+      "replaces": "testdata/doubles/store",
+      "tok": 0
+    }
+  ]
+}

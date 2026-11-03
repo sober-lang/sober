@@ -1,0 +1,80 @@
+{
+  "package": "cells",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "Tri",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "/",
+                "lhs": {
+                  "k": "binary",
+                  "op": "*",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "n",
+                    "tok": 12
+                  },
+                  "rhs": {
+                    "k": "binary",
+                    "op": "+",
+                    "lhs": {
+                      "k": "ident",
+                      "name": "n",
+                      "tok": 15
+                    },
+                    "rhs": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 17
+                    },
+                    "tok": 16
+                  },
+                  "tok": 13
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 2,
+                  "tok": 20
+                },
+                "tok": 19
+              }
+            ],
+            "tok": 11
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 24
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

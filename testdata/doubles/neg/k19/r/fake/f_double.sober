@@ -1,0 +1,23 @@
+@replaces("testdata/doubles/neg/k19/r")
+package r
+
+type Conn struct {
+    n int
+}
+
+type Bad error {}
+
+func New() Conn {
+    return Conn{n: 0}
+}
+
+func Show(c Conn, k string) int {
+    return 3
+}
+
+type Other error {}
+
+@errors(Other)
+func Put(c Conn, k string) error? {
+    return Other{}
+}

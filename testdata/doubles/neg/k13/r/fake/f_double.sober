@@ -1,0 +1,4 @@
+@replaces("testdata/doubles/neg/k13/r")
+package fake
+
+const Z = 1

@@ -76,6 +76,8 @@ func errType(st mut St) (int, error?) {
     info := recN(mut st, SISZ)
     desugar.HeapSet(mut st.d, info, TStruct)
     desugar.HeapSet(mut st.d, info + SI_DECL, -2)
+    // 型引数の綴り（typeKey — `Box[error?]` のインスタンスの名前）
+    desugar.HeapSet(mut st.d, info + SI_KEY, int(strLit(mut st, "error")))
     desugar.HeapSet(mut st.d, info + SI_PKG, desugar.MainPkg(mut st.d))
     desugar.HeapSet(mut st.d, info + SI_FIELDS, fs)
     desugar.HeapSet(mut st.d, info + SI_WORDS, lw + 3)

@@ -113,12 +113,13 @@ Go と同じ: 識別子、整数 / 浮動小数 / 文字リテラル（n 進は 
 ### 5.1 ソースファイル・宣言
 
 ```ebnf
-SourceFile   = PackageClause ";" { ImportDecl ";" } { TopLevelDecl ";" } .
+SourceFile   = [ PackageAnnot [ ";" ] ] PackageClause ";" { ImportDecl ";" } { TopLevelDecl ";" } .
+PackageAnnot = "@" "replaces" "(" string_lit ")" | "@" "doubles" "(" string_lit { "," string_lit } [ "," ] ")" .   (* package 節の前の注釈はどちらか 1 つ — double の名乗り（`_double.sober`）とテストの構成の差し替えの表（テストの package の `_test.sober`）。置き場の検査は loader（language.md 41 節） *)
 ImportDecl   = "import" ( ImportSpec | "(" { ImportSpec ";" } ")" ) .
 ImportSpec   = [ identifier ] string_lit .                 (* 別名のみ。"_" と "." は無い（決定 14）。init() も無い *)
 TopLevelDecl = { Annotation } ( ConstDecl | TypeDecl | FuncDecl | BindDecl ) .
 
-Annotation   = "@" identifier [ "(" [ AnnotArgs ] ")" ] .   (* 名前は閉じた集合 — errors・noinline・layout・embed・exhaustive〔関数の印 — 表の網羅〕・secret〔関数は仮引数の名前の列（空にしない）・const は引数なし〕・bless〔関数 — 引数なしか `(origin)`〕・credential〔関数〕・effects〔関数 — 語・否定の語・名前付き関数型の名前の列〕ほか。知らない名前は文法の外 *)
+Annotation   = "@" identifier [ "(" [ AnnotArgs ] ")" ] .   (* 名前は閉じた集合 — errors・noinline・layout・embed・exhaustive〔関数の印 — 表の網羅〕・secret〔関数は仮引数の名前の列（空にしない）・const は引数なし〕・bless〔関数 — 引数なしか `(origin)`〕・credential〔関数〕・effects〔関数 — 語・否定の語・名前付き関数型の名前の列〕ほか（package 節の前の replaces・doubles は PackageAnnot）。知らない名前は文法の外 *)
 AnnotArgs    = AnnotArg { "," AnnotArg } .
 AnnotArg     = [ identifier ":" ] ConstExpr .            (* 名前付き / 位置。Argument と同じ並びで引数が const 式に限られるだけ *)
 

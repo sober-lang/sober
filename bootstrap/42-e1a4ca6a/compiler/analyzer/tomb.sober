@@ -1,0 +1,41 @@
+package analyzer
+
+// 墓標 lint: `_ = { …; 0 }`（値を捨てるブロック式の末尾がダミーの定数）を名指す。
+// ループ本体・関数の本体は自分の region を持つ（language.md「ループ本体はスコープ」）ので、作業域を捨てるための包みは何もしていない —
+// 旧 region 透過の回避術の folklore の再輸入を防ぐ。値を使うブロック式は無関係に正当のまま
+
+import "ast"
+import "desugar"
+
+const MTomb = 6 // `_ = { …; 定数 }`（at = 代入の文）
+
+// 代入の文 s が墓標の形なら指摘を積む
+func tombCheck(az mut Az, s desugar.NodeRef) {
+    x := node(mut az, s)
+    ts := desugar.ListRef(x.a)
+    vs := desugar.ListRef(x.c)
+    if desugar.LenL(mut az.d, ts) != 1 || desugar.LenL(mut az.d, vs) != 1 {
+        return
+    }
+    t := node(mut az, nat(mut az, ts, 0))
+    if t.kind != ast.EIdent || str(mut az, desugar.StrRef(t.a)) != "_" {
+        return
+    }
+    v := node(mut az, nat(mut az, vs, 0))
+    if v.kind != ast.EBlock {
+        return
+    }
+    l := desugar.ListRef(v.a)
+    n := desugar.LenL(mut az.d, l)
+    if n < 2 {
+        return
+    }
+    last := node(mut az, nat(mut az, l, n - 1))
+    if last.kind == ast.SExpr && node(mut az, desugar.NodeRef(last.a)).kind == ast.EInt {
+        report(mut az, MTomb, s, s)
+    }
+}
+
+func tombMessage() string {
+    return "this wrapper does nothing: `_ = { …; 0 }` — loop bodies and function bodies already have their own region (scopes are automatic). Write the statements directly"
+}

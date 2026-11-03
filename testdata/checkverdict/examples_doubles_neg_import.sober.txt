@@ -1,0 +1,2 @@
+sober: load error at examples/doubles_neg_import.sober:5:8: this package is a double (its files are _double.sober): it is read only through the @doubles list of a test package
+exit=1

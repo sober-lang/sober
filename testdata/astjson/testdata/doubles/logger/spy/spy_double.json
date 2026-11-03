@@ -1,0 +1,133 @@
+{
+  "package": "logger",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/testing/cell",
+      "tok": 10
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "Log",
+      "type_params": [],
+      "params": [
+        {
+          "name": "msg",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "cell",
+                  "tok": 33
+                },
+                "field": "Update",
+                "tok": 35
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "Lines",
+                  "tok": 37
+                },
+                {
+                  "k": "lambda",
+                  "params": [
+                    {
+                      "name": "ls",
+                      "type": {
+                        "k": "slice_of",
+                        "elem": {
+                          "k": "name",
+                          "name": "string"
+                        },
+                        "mut": false
+                      }
+                    }
+                  ],
+                  "body": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "append",
+                      "tok": 46
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "ls",
+                        "tok": 48
+                      },
+                      {
+                        "k": "ident",
+                        "name": "msg",
+                        "tok": 50
+                      }
+                    ],
+                    "tok": 47
+                  },
+                  "tok": 45
+                }
+              ],
+              "tok": 36
+            }
+          }
+        ]
+      },
+      "tok": 27,
+      "bodiless": false,
+      "span": {
+        "start": 26,
+        "end": 56
+      },
+      "sig_end": 32
+    }
+  ],
+  "consts": [
+    {
+      "name": "Lines",
+      "expr": {
+        "k": "composite",
+        "type_name": "cell.Cell",
+        "elems": [],
+        "tok": 15,
+        "type_args": [
+          {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "string"
+            },
+            "mut": false
+          }
+        ]
+      },
+      "tok": 13,
+      "span": {
+        "start": 12,
+        "end": 26
+      }
+    }
+  ],
+  "replaces": [
+    {
+      "replaces": "testdata/doubles/logger",
+      "tok": 0
+    }
+  ]
+}

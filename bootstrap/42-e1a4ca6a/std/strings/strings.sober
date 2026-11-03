@@ -1,0 +1,486 @@
+package strings
+
+// Go の strings パッケージが仕様のオラクル。string は不透明なので、中身はバイト列ビュー
+// （bytes(s)）越しに見る。位置はすべて bytes(s) 上のバイトオフセット（Go と同じ）
+
+// b[at:] が p で始まるか（呼び手が at + len(p) <= len(b) を保証）
+func hasPrefixAt(b []byte, at int, p []byte) bool {
+    mut i := 0
+    while i < len(p) {
+        if b[at + i] != p[i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// b[from:] で p が最初に現れる位置（b 上のオフセット）、無ければ -1
+func indexAt(b []byte, from int, p []byte) int {
+    mut i := from
+    mut at := -1
+    while at < 0 && i + len(p) <= len(b) {
+        if hasPrefixAt(b, i, p) {
+            at = i
+        }
+        i += 1
+    }
+    return at
+}
+
+// UTF-8 のコードポイント数。先頭バイト（継続バイト 10xxxxxx 以外）を数える。
+// 妥当な UTF-8 では Go の utf8.RuneCount と一致する（不正なバイト列では一致しない —
+// Go は不正バイトを 1 つずつ RuneError として数える）
+func runeCount(b []byte) int {
+    mut n := 0
+    mut i := 0
+    while i < len(b) {
+        if (int(b[i]) & 192) != 128 {
+            n += 1
+        }
+        i += 1
+    }
+    return n
+}
+
+// s が prefix で始まるかを返す
+@effects()
+func HasPrefix(s string, prefix string) bool {
+    b := bytes(s)
+    p := bytes(prefix)
+    return len(b) >= len(p) && hasPrefixAt(b, 0, p)
+}
+
+// s が suffix で終わるかを返す
+@effects()
+func HasSuffix(s string, suffix string) bool {
+    b := bytes(s)
+    p := bytes(suffix)
+    return len(b) >= len(p) && hasPrefixAt(b, len(b) - len(p), p)
+}
+
+// substr が s に最初に現れる位置を bytes(s) 上のバイトオフセットで返す。
+// 無ければ -1。substr が空なら 0
+@effects()
+func Index(s string, substr string) int {
+    return indexAt(bytes(s), 0, bytes(substr))
+}
+
+// substr が s に含まれるかを返す（空の substr は常に含まれる）
+@effects()
+func Contains(s string, substr string) bool {
+    return Index(s, substr) >= 0
+}
+
+// s に含まれる substr の重ならない出現数を返す。
+// substr が空なら s のコードポイント数 + 1（Go と同じ。コードポイント数は継続バイト〔0b10xxxxxx〕でないバイトの数 — 妥当な UTF-8 を前提）
+@effects()
+func Count(s string, substr string) int {
+    b := bytes(s)
+    p := bytes(substr)
+    return if len(p) == 0 { runeCount(b) + 1 } else { countFrom(b, p) }
+}
+
+// b 中の p（非空）の重ならない出現数
+func countFrom(b []byte, p []byte) int {
+    mut n := 0
+    mut i := 0
+    while i + len(p) <= len(b) {
+        if hasPrefixAt(b, i, p) {
+            n += 1
+            i += len(p)
+        } else {
+            i += 1
+        }
+    }
+    return n
+}
+
+// b で p が最後に現れる位置、無ければ -1（p が空なら len(b) — Go の strings.LastIndex と同じ）
+func lastIndexAt(b []byte, p []byte) int {
+    mut i := len(b) - len(p)
+    while i >= 0 && !hasPrefixAt(b, i, p) {
+        i -= 1
+    }
+    return i
+}
+
+// s を最初の sep の前と後に割る（Go の strings.Cut — 無ければ s・""・false）。
+// 割った 2 つは検査し直さない: 妥当な s の中で妥当な sep にバイト列として一致した位置は文字の頭（sep の頭は継続バイトでない）、一致の末尾も
+// 文字の頭（完結した列の直後に継続バイトは来ない）— 自己同期。`bytes(s)` に落として切って `string(…) catch` で戻す回り道が要らない
+@effects()
+func Cut(s string, sep string) (string, string, bool) {
+    b := bytes(s)
+    p := bytes(sep)
+    at := indexAt(b, 0, p)
+    if at < 0 {
+        return s, "", false
+    }
+    return bytesToString(b[0:at]), bytesToString(b[at + len(p):len(b)]), true
+}
+
+// s を最後の sep の前と後に割る（無ければ s・""・false — Cut の最後の出現版。検査し直さない理由は Cut と同じ）
+@effects()
+func CutLast(s string, sep string) (string, string, bool) {
+    b := bytes(s)
+    p := bytes(sep)
+    at := lastIndexAt(b, p)
+    if at < 0 {
+        return s, "", false
+    }
+    return bytesToString(b[0:at]), bytesToString(b[at + len(p):len(b)]), true
+}
+
+// s が prefix で始まればそれを外した残り、でなければ s（Go の strings.TrimPrefix — 残りは prefix の末尾から始まるので文字の頭）
+@effects()
+func TrimPrefix(s string, prefix string) string {
+    b := bytes(s)
+    p := bytes(prefix)
+    return if len(b) >= len(p) && hasPrefixAt(b, 0, p) { bytesToString(b[len(p):len(b)]) } else { s }
+}
+
+// s が suffix で終わればそれを外した残り、でなければ s（Go の strings.TrimSuffix — 残りは suffix の頭で終わるので文字の境目）
+@effects()
+func TrimSuffix(s string, suffix string) string {
+    b := bytes(s)
+    p := bytes(suffix)
+    return if len(b) >= len(p) && hasPrefixAt(b, len(b) - len(p), p) { bytesToString(b[0:len(b) - len(p)]) } else { s }
+}
+
+// substr が s に最後に現れる位置を bytes(s) 上のバイトオフセットで返す。無ければ -1。substr が空なら len(bytes(s))（Go の strings.LastIndex と同じ）
+@effects()
+func LastIndex(s string, substr string) int {
+    return lastIndexAt(bytes(s), bytes(substr))
+}
+
+// ── 割る・置き換える・空白と大小（Go の strings が仕様のオラクル〔scripts/strings_oracle.ts〕）。
+// 空白と大文字小文字は ASCII だけを見る: 空白 = ' ' '\t' '\n' '\v' '\f' '\r'（Go の Fields / TrimSpace は加えて U+0085・U+00A0 ほか Unicode の空白も見る）、
+// 大小 = 'A'..'Z' ⇄ 'a'..'z'（Go の ToLower / ToUpper / EqualFold は Unicode の case folding — 'É' ⇄ 'é'・K〔U+212A〕≡ k などは対象外）。
+// 非 ASCII のバイトはそのまま写すので、結果は妥当な UTF-8 のまま ──
+
+// c が ASCII の空白か（' ' '\t' '\n' '\v' '\f' '\r' — Go の asciiSpace と同じ 6 つ）
+func isSpace(c byte) bool {
+    return c == ' ' || (c >= 9 && c <= 13)
+}
+
+// b[i]（文字の頭）から始まる文字の終わりの位置（次の継続バイトでないバイトの位置 — 妥当な UTF-8 を前提）
+func runeEnd(b []byte, i int) int {
+    mut j := i + 1
+    while j < len(b) && (int(b[j]) & 192) == 128 {
+        j += 1
+    }
+    return j
+}
+
+// s を sep の出現ごとに割った片の列（Go の strings.Split と同じ）。sep が無ければ [s]・s が空で sep が空でなければ [""]。
+// sep が空なら 1 文字（コードポイント — UTF-8 の列）ずつに割る（s が空なら空の列）。片は検査し直さない（Cut と同じ自己同期の理由）
+@effects()
+func Split(s string, sep string) []string {
+    b := bytes(s)
+    p := bytes(sep)
+    mut out := mut []string{}
+    if len(p) == 0 {
+        mut i := 0
+        while i < len(b) {
+            j := runeEnd(b, i)
+            out = append(out, bytesToString(b[i:j]))
+            i = j
+        }
+        return freeze(out)
+    }
+    mut from := 0
+    mut at := indexAt(b, 0, p)
+    while at >= 0 {
+        out = append(out, bytesToString(b[from:at]))
+        from = at + len(p)
+        at = indexAt(b, from, p)
+    }
+    out = append(out, bytesToString(b[from:len(b)]))
+    return freeze(out)
+}
+
+// s を ASCII の空白の連なりで割った空でない片の列（Go の strings.Fields — 空白だけ / 空なら空の列）。空白は ASCII の 6 つだけ（Unicode の空白は片の中身）
+@effects()
+func Fields(s string) []string {
+    b := bytes(s)
+    mut out := mut []string{}
+    mut i := 0
+    while i < len(b) {
+        while i < len(b) && isSpace(b[i]) {
+            i += 1
+        }
+        start := i
+        while i < len(b) && !isSpace(b[i]) {
+            i += 1
+        }
+        if i > start {
+            out = append(out, bytesToString(b[start:i]))
+        }
+    }
+    return freeze(out)
+}
+
+// s の頭と尻の ASCII の空白を外した残り（Go の strings.TrimSpace — Unicode の空白は外さない）
+@effects()
+func TrimSpace(s string) string {
+    b := bytes(s)
+    mut i := 0
+    mut j := len(b)
+    while i < j && isSpace(b[i]) {
+        i += 1
+    }
+    while j > i && isSpace(b[j - 1]) {
+        j -= 1
+    }
+    return if i == 0 && j == len(b) { s } else { bytesToString(b[i:j]) }
+}
+
+// s の old の重ならない出現を前から n 個 new に置き換えた string（Go の strings.Replace — n < 0 なら全部・n == 0 なら s）。
+// old が空なら s の頭と各文字（コードポイント）の後ろに new を差す（Go と同じ — 差す位置は文字の境目なので結果は妥当な UTF-8）
+@effects()
+func Replace(s string, old string, new string, n int) string {
+    b := bytes(s)
+    o := bytes(old)
+    w := bytes(new)
+    if n == 0 {
+        return s
+    }
+    if len(o) > 0 && indexAt(b, 0, o) < 0 {
+        return s
+    }
+    mut out := mut []byte{}
+    mut done := 0
+    // i = 次に写す b の位置・at = 次に new を差す位置（old が空なら文字の境目を頭から順に — 末尾の後は -1）
+    mut i := 0
+    mut at := if len(o) == 0 { 0 } else { indexAt(b, 0, o) }
+    while at >= 0 && (n < 0 || done < n) {
+        mut k := i
+        while k < at {
+            out = append(out, b[k])
+            k += 1
+        }
+        mut m := 0
+        while m < len(w) {
+            out = append(out, w[m])
+            m += 1
+        }
+        done += 1
+        if len(o) == 0 {
+            i = at
+            at = if at == len(b) { -1 } else { runeEnd(b, at) }
+        } else {
+            i = at + len(o)
+            at = indexAt(b, i, o)
+        }
+    }
+    while i < len(b) {
+        out = append(out, b[i])
+        i += 1
+    }
+    return bytesToString(freeze(out))
+}
+
+// s の ASCII の大文字（'A'..'Z'）を小文字にした string（Go の strings.ToLower の ASCII の部分 — 非 ASCII の文字はそのまま。変わる所が無ければ s）
+@effects()
+func ToLower(s string) string {
+    return mapCase(s, 'A', 'Z', 32)
+}
+
+// s の ASCII の小文字（'a'..'z'）を大文字にした string（Go の strings.ToUpper の ASCII の部分 — 非 ASCII の文字はそのまま。変わる所が無ければ s）
+@effects()
+func ToUpper(s string) string {
+    return mapCase(s, 'a', 'z', -32)
+}
+
+// s の lo..hi のバイトに d を足した string（変わる所が無ければ s）
+func mapCase(s string, lo byte, hi byte, d int) string {
+    b := bytes(s)
+    mut i := 0
+    while i < len(b) && (b[i] < lo || b[i] > hi) {
+        i += 1
+    }
+    if i == len(b) {
+        return s
+    }
+    mut out := mut []byte{}
+    mut k := 0
+    while k < len(b) {
+        c := b[k]
+        out = append(out, if c >= lo && c <= hi { byte(int(c) + d) } else { c })
+        k += 1
+    }
+    return bytesToString(freeze(out))
+}
+
+// s と t が ASCII の大文字小文字を同一視して等しいか（Go の strings.EqualFold の ASCII の部分 — 非 ASCII のバイトは完全一致で比べる。
+// Go は Unicode の simple folding〔'É' ≡ 'é'・K〔U+212A〕≡ k・ſ ≡ s〕でも等しいとするが、ここでは等しくない）
+@effects()
+func EqualFold(s string, t string) bool {
+    a := bytes(s)
+    b := bytes(t)
+    if len(a) != len(b) {
+        return false
+    }
+    mut i := 0
+    while i < len(a) && foldByte(a[i]) == foldByte(b[i]) {
+        i += 1
+    }
+    return i == len(a)
+}
+
+// c の ASCII の大文字を小文字にしたもの（他はそのまま）
+func foldByte(c byte) byte {
+    return if c >= 'A' && c <= 'Z' { byte(int(c) + 32) } else { c }
+}
+
+// c が s に最初に現れる位置を bytes(s) 上のバイトオフセットで返す。無ければ -1
+@effects()
+func IndexByte(s string, c byte) int {
+    b := bytes(s)
+    mut i := 0
+    mut at := -1
+    while at < 0 && i < len(b) {
+        if b[i] == c {
+            at = i
+        }
+        i += 1
+    }
+    return at
+}
+
+// string のコピー先の region を表す（region 多相の seed の慣用句）。
+// seed は空の mut ヘッダで、mut slice の append はヘッダの region へ書くので「その region への確保権」として働く。
+// Arena を宣言した region に string を置き直したいとき（深い位置で作った string を外側の Pool / map / 表に入れる等）に使う:
+//
+//     mut a := strings.Arena{}
+//     ...
+//     t := strings.Clone(mut a, s)   // t は a の region にある s のコピー
+//
+// 同じ seed からの 2 回目以降の append は必ずコピーになる（language.md 21 節）ので、Clone の結果どうしが重なることはない
+type Arena struct {
+    seed mut []byte
+}
+
+// s のバイト列を a の region へコピーした string を返す（コピーのコストはソースに見える — 境界コピー = 明示イディオム）
+@effects()
+func Clone(a mut Arena, s string) string {
+    b := bytes(s)
+    mut c := a.seed
+    mut i := 0
+    while i < len(b) {
+        c = append(c, b[i])
+        i += 1
+    }
+    return bytesToString(freeze(c))
+}
+
+// ps を sep で繋いだ string（Go の strings.Join と同じ）。片の長さの和を 1 回だけ写す — 素直な `s = s + sep + p` の繰り返しは
+// 写しが積もる（先端一致の concat の in-place 成長はまだ無い）。積みは 1 本の列の先端なので写しが起きない
+@effects()
+func Join(ps []string, sep string) string {
+    sb := bytes(sep)
+    mut out := mut []byte{}
+    mut i := 0
+    while i < len(ps) {
+        if i > 0 {
+            mut j := 0
+            while j < len(sb) {
+                out = append(out, sb[j])
+                j += 1
+            }
+        }
+        p := bytes(ps[i])
+        mut k := 0
+        while k < len(p) {
+            out = append(out, p[k])
+            k += 1
+        }
+        i += 1
+    }
+    return bytesToString(freeze(out))
+}
+
+// ── UTF-8 の妥当性（「文字列の妥当性」は strings の語彙圏 — std/utf8 ではなくここに置く）。Go の unicode/utf8.Valid が
+// 仕様のオラクル（scripts/utf8_oracle.ts）。`string(b)` の裏方（std/internal/utf8.Parse）と検査済みのビュー（std/utf8.Check）もこの IndexInvalid を使う ──
+
+// 不正な UTF-8（pos = 最初の不正なシーケンスの先頭バイトのオフセット）
+type InvalidUtf8 error {
+    pos int
+}
+
+// b[i] が継続バイト lo..hi（範囲は先頭バイトで狭まる — 過長符号化・サロゲート・U+10FFFF 超を弾く）か
+func cont(b []byte, i int, lo int, hi int) bool {
+    return i < len(b) && int(b[i]) >= lo && int(b[i]) <= hi
+}
+
+// b[i] から始まる妥当なシーケンスの長さ、不正なら 0
+func seqLen(b []byte, i int) int {
+    c := int(b[i])
+    if c >= 0 && c < 128 {
+        return 1
+    }
+    if c >= 194 && c <= 223 {
+        return if cont(b, i + 1, 128, 191) { 2 } else { 0 }
+    }
+    if c >= 224 && c <= 239 {
+        lo := if c == 224 { 160 } else { 128 }
+        hi := if c == 237 { 159 } else { 191 }
+        return if cont(b, i + 1, lo, hi) && cont(b, i + 2, 128, 191) { 3 } else { 0 }
+    }
+    if c >= 240 && c <= 244 {
+        lo := if c == 240 { 144 } else { 128 }
+        hi := if c == 244 { 143 } else { 191 }
+        return if cont(b, i + 1, lo, hi) && cont(b, i + 2, 128, 191) && cont(b, i + 3, 128, 191) { 4 } else { 0 }
+    }
+    return 0
+}
+
+// 最初の不正なシーケンスの位置、妥当なら -1
+@effects()
+func IndexInvalid(b []byte) int {
+    mut i := 0
+    mut at := -1
+    while at < 0 && i < len(b) {
+        // 妥当な列の並びを速く読み進める（最適化のバックエンドでは SSE2 の検査器 — 非 ASCII の列もベクトルのまま。他の経路は i のまま）
+        i = validPrefix(b, i)
+        // ASCII の区間を先に読み飛ばす（素直な走査のループ — ベクトル化の対象の形。短い区間でも 1 バイトごとの seqLen の呼び出しが消える）
+        while i < len(b) && b[i] < 128 {
+            i += 1
+        }
+        if i >= len(b) {
+            break
+        }
+        // 2 バイト列（C2..DF + 継続）と 3 バイト列の普通の形（E1..EC / EE..EF + 継続 2 つ — 範囲が狭まる E0 / ED は seqLen）は
+        // seqLen を呼ばずに読む（非 ASCII が多い入力では 1 文字ごとの呼び出しの固定費が検査の大半を占める）
+        c := int(b[i])
+        if c >= 194 && c <= 223 && i + 1 < len(b) && int(b[i + 1]) & 192 == 128 {
+            i += 2
+            continue
+        }
+        if c >= 225 && c <= 239 && c != 237 && i + 2 < len(b) && int(b[i + 1]) & 192 == 128 && int(b[i + 2]) & 192 == 128 {
+            i += 3
+            continue
+        }
+        n := seqLen(b, i)
+        if n == 0 {
+            at = i
+        } else {
+            i += n
+        }
+    }
+    return at
+}
+
+// j ≥ i で「b[i:j] は妥当な UTF-8 の列の並び・j は列の頭（か末尾）」となる j を返す — i をそのまま返しても契約どおり
+// （SIMD の速い道への差し替え口）。最適化のバックエンドはこの呼び出しを SSE2 の検査器に差し替える（compiler/lower/irinl.sober の
+// ilUtf8 — 機構の置き場はコンパイラとランタイムの中）。この本体は他の経路（写しのバックエンド・.ll・照合）の形で、意味は全経路で同じ
+// （IndexInvalid は j から今の走査を続けるので、見つける最初の不正の位置は変わらない）
+func validPrefix(b []byte, i int) int {
+    return i
+}
+
+// b 全体が有効な UTF-8 か（IndexInvalid(b) < 0 と同じ）
+@effects()
+func Valid(b []byte) bool {
+    return IndexInvalid(b) < 0
+}

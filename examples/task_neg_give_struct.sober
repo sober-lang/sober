@@ -1,0 +1,18 @@
+package main
+
+// give: に端点でない値（struct）を渡す（diag.Par kind 30 — check と build が同じ拒否。desugar/parcheck.sober）。
+// 値は捕獲で渡す: `task.Spawn(s, () => p.a + 1)`
+
+import "std/task"
+
+type P struct {
+    a int
+}
+
+func main() {
+    r, _ := task.Run((s) => {
+        h := task.Spawn(s, (p) => p.a + 1, give: P{a: 3})
+        task.Join(h)
+    })
+    println(r)
+}

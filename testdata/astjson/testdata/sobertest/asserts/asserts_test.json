@@ -2,6 +2,16 @@
   "package": "asserts",
   "imports": [
     {
+      "alias": null,
+      "path": "std/iter",
+      "tok": 4
+    },
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    },
+    {
       "alias": "$testing",
       "path": "std/testing",
       "tok": 0
@@ -25,7 +35,7 @@
               "k": "name",
               "name": "int"
             },
-            "tok": 132
+            "tok": 153
           },
           {
             "name": "b",
@@ -33,14 +43,14 @@
               "k": "name",
               "name": "int"
             },
-            "tok": 135
+            "tok": 156
           }
         ]
       },
-      "tok": 129,
+      "tok": 150,
       "span": {
-        "start": 128,
-        "end": 140
+        "start": 149,
+        "end": 161
       }
     }
   ],
@@ -59,7 +69,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 8
+                "tok": 11
               },
               "args": [
                 {
@@ -70,26 +80,26 @@
                     "callee": {
                       "k": "ident",
                       "name": "Double",
-                      "tok": 10
+                      "tok": 13
                     },
                     "args": [
                       {
                         "k": "int",
                         "value": 2,
-                        "tok": 12
+                        "tok": 15
                       }
                     ],
-                    "tok": 11
+                    "tok": 14
                   },
                   "rhs": {
                     "k": "int",
                     "value": 4,
-                    "tok": 15
+                    "tok": 18
                   },
-                  "tok": 14
+                  "tok": 17
                 }
               ],
-              "tok": 9
+              "tok": 12
             }
           },
           {
@@ -99,7 +109,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 18
+                "tok": 21
               },
               "args": [
                 {
@@ -110,26 +120,26 @@
                     "callee": {
                       "k": "ident",
                       "name": "Name",
-                      "tok": 20
+                      "tok": 23
                     },
                     "args": [
                       {
                         "k": "int",
                         "value": 1,
-                        "tok": 22
+                        "tok": 25
                       }
                     ],
-                    "tok": 21
+                    "tok": 24
                   },
                   "rhs": {
                     "k": "strlit",
                     "value": "one",
-                    "tok": 25
+                    "tok": 28
                   },
-                  "tok": 24
+                  "tok": 27
                 }
               ],
-              "tok": 19
+              "tok": 22
             }
           },
           {
@@ -139,7 +149,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 28
+                "tok": 31
               },
               "args": [
                 {
@@ -147,19 +157,19 @@
                   "callee": {
                     "k": "ident",
                     "name": "Even",
-                    "tok": 30
+                    "tok": 33
                   },
                   "args": [
                     {
                       "k": "int",
                       "value": 4,
-                      "tok": 32
+                      "tok": 35
                     }
                   ],
-                  "tok": 31
+                  "tok": 34
                 }
               ],
-              "tok": 29
+              "tok": 32
             }
           },
           {
@@ -169,7 +179,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 36
+                "tok": 39
               },
               "args": [
                 {
@@ -180,32 +190,106 @@
                     "callee": {
                       "k": "ident",
                       "name": "Even",
-                      "tok": 39
+                      "tok": 42
                     },
                     "args": [
                       {
                         "k": "int",
                         "value": 3,
-                        "tok": 41
+                        "tok": 44
                       }
                     ],
-                    "tok": 40
+                    "tok": 43
                   },
-                  "tok": 38
+                  "tok": 41
                 }
               ],
-              "tok": 37
+              "tok": 40
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "v"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "Opt",
+                  "tok": 50
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "2",
+                    "tok": 52
+                  }
+                ],
+                "tok": 51
+              }
+            ],
+            "tok": 48
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 55
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "&&",
+                  "lhs": {
+                    "k": "binary",
+                    "op": "!=",
+                    "lhs": {
+                      "k": "ident",
+                      "name": "v",
+                      "tok": 57
+                    },
+                    "rhs": {
+                      "k": "nil",
+                      "tok": 59
+                    },
+                    "tok": 58
+                  },
+                  "rhs": {
+                    "k": "binary",
+                    "op": "==",
+                    "lhs": {
+                      "k": "ident",
+                      "name": "v",
+                      "tok": 61
+                    },
+                    "rhs": {
+                      "k": "strlit",
+                      "value": "2",
+                      "tok": 63
+                    },
+                    "tok": 62
+                  },
+                  "tok": 60
+                }
+              ],
+              "tok": 56
             }
           }
         ]
       },
-      "tok": 4,
+      "tok": 7,
       "bodiless": false,
       "span": {
-        "start": 3,
-        "end": 47
+        "start": 6,
+        "end": 68
       },
-      "sig_end": 7
+      "sig_end": 10
     },
     {
       "name": "TestCompareFails",
@@ -224,10 +308,10 @@
               {
                 "k": "int",
                 "value": 3,
-                "tok": 54
+                "tok": 75
               }
             ],
-            "tok": 52
+            "tok": 73
           },
           {
             "k": "expr",
@@ -236,7 +320,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 56
+                "tok": 77
               },
               "args": [
                 {
@@ -247,16 +331,16 @@
                     "callee": {
                       "k": "ident",
                       "name": "Double",
-                      "tok": 58
+                      "tok": 79
                     },
                     "args": [
                       {
                         "k": "ident",
                         "name": "x",
-                        "tok": 60
+                        "tok": 81
                       }
                     ],
-                    "tok": 59
+                    "tok": 80
                   },
                   "rhs": {
                     "k": "binary",
@@ -264,30 +348,30 @@
                     "lhs": {
                       "k": "ident",
                       "name": "x",
-                      "tok": 63
+                      "tok": 84
                     },
                     "rhs": {
                       "k": "int",
                       "value": 1,
-                      "tok": 65
+                      "tok": 86
                     },
-                    "tok": 64
+                    "tok": 85
                   },
-                  "tok": 62
+                  "tok": 83
                 }
               ],
-              "tok": 57
+              "tok": 78
             }
           }
         ]
       },
-      "tok": 48,
+      "tok": 69,
       "bodiless": false,
       "span": {
-        "start": 47,
-        "end": 70
+        "start": 68,
+        "end": 91
       },
-      "sig_end": 51
+      "sig_end": 72
     },
     {
       "name": "TestStringFails",
@@ -303,7 +387,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 75
+                "tok": 96
               },
               "args": [
                 {
@@ -314,37 +398,37 @@
                     "callee": {
                       "k": "ident",
                       "name": "Name",
-                      "tok": 77
+                      "tok": 98
                     },
                     "args": [
                       {
                         "k": "int",
                         "value": 2,
-                        "tok": 79
+                        "tok": 100
                       }
                     ],
-                    "tok": 78
+                    "tok": 99
                   },
                   "rhs": {
                     "k": "strlit",
                     "value": "one",
-                    "tok": 82
+                    "tok": 103
                   },
-                  "tok": 81
+                  "tok": 102
                 }
               ],
-              "tok": 76
+              "tok": 97
             }
           }
         ]
       },
-      "tok": 71,
+      "tok": 92,
       "bodiless": false,
       "span": {
-        "start": 70,
-        "end": 87
+        "start": 91,
+        "end": 108
       },
-      "sig_end": 74
+      "sig_end": 95
     },
     {
       "name": "TestCallFails",
@@ -360,7 +444,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 92
+                "tok": 113
               },
               "args": [
                 {
@@ -368,7 +452,7 @@
                   "callee": {
                     "k": "ident",
                     "name": "Even",
-                    "tok": 94
+                    "tok": 115
                   },
                   "args": [
                     {
@@ -379,40 +463,40 @@
                         "callee": {
                           "k": "ident",
                           "name": "Double",
-                          "tok": 96
+                          "tok": 117
                         },
                         "args": [
                           {
                             "k": "int",
                             "value": 1,
-                            "tok": 98
+                            "tok": 119
                           }
                         ],
-                        "tok": 97
+                        "tok": 118
                       },
                       "rhs": {
                         "k": "int",
                         "value": 1,
-                        "tok": 101
+                        "tok": 122
                       },
-                      "tok": 100
+                      "tok": 121
                     }
                   ],
-                  "tok": 95
+                  "tok": 116
                 }
               ],
-              "tok": 93
+              "tok": 114
             }
           }
         ]
       },
-      "tok": 88,
+      "tok": 109,
       "bodiless": false,
       "span": {
-        "start": 87,
-        "end": 107
+        "start": 108,
+        "end": 128
       },
-      "sig_end": 91
+      "sig_end": 112
     },
     {
       "name": "TestBoolFails",
@@ -436,26 +520,26 @@
                   "callee": {
                     "k": "ident",
                     "name": "Double",
-                    "tok": 114
+                    "tok": 135
                   },
                   "args": [
                     {
                       "k": "int",
                       "value": 1,
-                      "tok": 116
+                      "tok": 137
                     }
                   ],
-                  "tok": 115
+                  "tok": 136
                 },
                 "rhs": {
                   "k": "int",
                   "value": 5,
-                  "tok": 119
+                  "tok": 140
                 },
-                "tok": 118
+                "tok": 139
               }
             ],
-            "tok": 112
+            "tok": 133
           },
           {
             "k": "expr",
@@ -464,27 +548,27 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 121
+                "tok": 142
               },
               "args": [
                 {
                   "k": "ident",
                   "name": "ok",
-                  "tok": 123
+                  "tok": 144
                 }
               ],
-              "tok": 122
+              "tok": 143
             }
           }
         ]
       },
-      "tok": 108,
+      "tok": 129,
       "bodiless": false,
       "span": {
-        "start": 107,
-        "end": 128
+        "start": 128,
+        "end": 149
       },
-      "sig_end": 111
+      "sig_end": 132
     },
     {
       "name": "TestUnprintableSkipped",
@@ -505,19 +589,19 @@
                 "callee": {
                   "k": "ident",
                   "name": "byte",
-                  "tok": 147
+                  "tok": 168
                 },
                 "args": [
                   {
                     "k": "int",
                     "value": 65,
-                    "tok": 149
+                    "tok": 170
                   }
                 ],
-                "tok": 148
+                "tok": 169
               }
             ],
-            "tok": 145
+            "tok": 166
           },
           {
             "k": "bind",
@@ -535,7 +619,7 @@
                     "value": {
                       "k": "int",
                       "value": 1,
-                      "tok": 158
+                      "tok": 179
                     }
                   },
                   {
@@ -543,15 +627,15 @@
                     "value": {
                       "k": "int",
                       "value": 2,
-                      "tok": 162
+                      "tok": 183
                     }
                   }
                 ],
-                "tok": 154,
+                "tok": 175,
                 "type_args": []
               }
             ],
-            "tok": 152
+            "tok": 173
           },
           {
             "k": "bind",
@@ -563,10 +647,10 @@
               {
                 "k": "int",
                 "value": 5,
-                "tok": 167
+                "tok": 188
               }
             ],
-            "tok": 165
+            "tok": 186
           },
           {
             "k": "expr",
@@ -575,7 +659,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 169
+                "tok": 190
               },
               "args": [
                 {
@@ -587,15 +671,15 @@
                     "lhs": {
                       "k": "ident",
                       "name": "c",
-                      "tok": 171
+                      "tok": 192
                     },
                     "rhs": {
                       "k": "int",
                       "value": 66,
                       "char": true,
-                      "tok": 173
+                      "tok": 194
                     },
-                    "tok": 172
+                    "tok": 193
                   },
                   "rhs": {
                     "k": "binary",
@@ -608,40 +692,746 @@
                         "base": {
                           "k": "ident",
                           "name": "p",
-                          "tok": 175
+                          "tok": 196
                         },
                         "field": "a",
-                        "tok": 177
+                        "tok": 198
                       },
                       "rhs": {
                         "k": "ident",
                         "name": "n",
-                        "tok": 179
+                        "tok": 200
                       },
-                      "tok": 178
+                      "tok": 199
                     },
                     "rhs": {
                       "k": "int",
                       "value": 6,
-                      "tok": 181
+                      "tok": 202
                     },
-                    "tok": 180
+                    "tok": 201
                   },
-                  "tok": 174
+                  "tok": 195
                 }
               ],
-              "tok": 170
+              "tok": 191
             }
           }
         ]
       },
-      "tok": 141,
+      "tok": 162,
       "bodiless": false,
       "span": {
-        "start": 140,
-        "end": 186
+        "start": 161,
+        "end": 207
       },
-      "sig_end": 144
+      "sig_end": 165
+    },
+    {
+      "name": "applyFails",
+      "type_params": [],
+      "params": [
+        {
+          "name": "f",
+          "type": {
+            "k": "func",
+            "params": [
+              {
+                "k": "name",
+                "name": "int"
+              }
+            ],
+            "results": [
+              {
+                "k": "name",
+                "name": "bool"
+              }
+            ]
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 218
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "Apply",
+                    "tok": 220
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "f",
+                      "tok": 222
+                    },
+                    {
+                      "k": "int",
+                      "value": 3,
+                      "tok": 224
+                    }
+                  ],
+                  "tok": 221
+                }
+              ],
+              "tok": 219
+            }
+          }
+        ]
+      },
+      "tok": 208,
+      "bodiless": false,
+      "span": {
+        "start": 207,
+        "end": 230
+      },
+      "sig_end": 217
+    },
+    {
+      "name": "TestFnArgFails",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "applyFails",
+                "tok": 235
+              },
+              "args": [
+                {
+                  "k": "lambda",
+                  "params": [
+                    {
+                      "name": "x",
+                      "type": null
+                    }
+                  ],
+                  "body": {
+                    "k": "binary",
+                    "op": ">",
+                    "lhs": {
+                      "k": "ident",
+                      "name": "x",
+                      "tok": 241
+                    },
+                    "rhs": {
+                      "k": "int",
+                      "value": 5,
+                      "tok": 243
+                    },
+                    "tok": 242
+                  },
+                  "tok": 240
+                }
+              ],
+              "tok": 236
+            }
+          }
+        ]
+      },
+      "tok": 231,
+      "bodiless": false,
+      "span": {
+        "start": 230,
+        "end": 248
+      },
+      "sig_end": 234
+    },
+    {
+      "name": "twiceFails",
+      "type_params": [],
+      "params": [
+        {
+          "name": "f",
+          "type": {
+            "k": "func",
+            "params": [],
+            "results": [
+              {
+                "k": "name",
+                "name": "bool"
+              }
+            ]
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 258
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Twice",
+                      "tok": 260
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "f",
+                        "tok": 262
+                      }
+                    ],
+                    "tok": 261
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 265
+                  },
+                  "tok": 264
+                }
+              ],
+              "tok": 259
+            }
+          }
+        ]
+      },
+      "tok": 249,
+      "bodiless": false,
+      "span": {
+        "start": 248,
+        "end": 270
+      },
+      "sig_end": 257
+    },
+    {
+      "name": "TestFnArgCompareFails",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "twiceFails",
+                "tok": 275
+              },
+              "args": [
+                {
+                  "k": "lambda",
+                  "params": [],
+                  "body": {
+                    "k": "ident",
+                    "name": "true",
+                    "tok": 280
+                  },
+                  "tok": 279
+                }
+              ],
+              "tok": 276
+            }
+          }
+        ]
+      },
+      "tok": 271,
+      "bodiless": false,
+      "span": {
+        "start": 270,
+        "end": 285
+      },
+      "sig_end": 274
+    },
+    {
+      "name": "TestMutArgFails",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "x"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 293
+              }
+            ],
+            "tok": 290
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 295
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "Inc",
+                    "tok": 297
+                  },
+                  "args": [
+                    {
+                      "k": "mut_arg",
+                      "name": "x",
+                      "tok": 300
+                    }
+                  ],
+                  "tok": 298
+                }
+              ],
+              "tok": 296
+            }
+          }
+        ]
+      },
+      "tok": 286,
+      "bodiless": false,
+      "span": {
+        "start": 285,
+        "end": 306
+      },
+      "sig_end": 289
+    },
+    {
+      "name": "TestCatchFails",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 311
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "catch",
+                    "e": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "Parse",
+                        "tok": 314
+                      },
+                      "args": [
+                        {
+                          "k": "strlit",
+                          "value": "",
+                          "tok": 316
+                        }
+                      ],
+                      "tok": 315
+                    },
+                    "rhs": {
+                      "k": "int",
+                      "value": 7,
+                      "tok": 319
+                    },
+                    "tok": 318
+                  },
+                  "rhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Double",
+                      "tok": 322
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 324
+                      }
+                    ],
+                    "tok": 323
+                  },
+                  "tok": 321
+                }
+              ],
+              "tok": 312
+            }
+          }
+        ]
+      },
+      "tok": 307,
+      "bodiless": false,
+      "span": {
+        "start": 306,
+        "end": 330
+      },
+      "sig_end": 310
+    },
+    {
+      "name": "TestLabelFails",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "names"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "string"
+                },
+                "elems": [
+                  {
+                    "k": "strlit",
+                    "value": "zero",
+                    "tok": 341
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "one",
+                    "tok": 343
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "two",
+                    "tok": 345
+                  }
+                ],
+                "mut": false,
+                "tok": 337
+              }
+            ],
+            "tok": 335
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "i"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "iter",
+                        "tok": 351
+                      },
+                      "field": "Range",
+                      "tok": 353
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 355
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "len",
+                          "tok": 357
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "names",
+                            "tok": 359
+                          }
+                        ],
+                        "tok": 358
+                      }
+                    ],
+                    "tok": 354
+                  },
+                  "guards": [],
+                  "tok": 349
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "assert",
+                        "tok": 363
+                      },
+                      "args": [
+                        {
+                          "k": "binary",
+                          "op": "==",
+                          "lhs": {
+                            "k": "call",
+                            "callee": {
+                              "k": "ident",
+                              "name": "Double",
+                              "tok": 365
+                            },
+                            "args": [
+                              {
+                                "k": "ident",
+                                "name": "i",
+                                "tok": 367
+                              }
+                            ],
+                            "tok": 366
+                          },
+                          "rhs": {
+                            "k": "binary",
+                            "op": "+",
+                            "lhs": {
+                              "k": "binary",
+                              "op": "+",
+                              "lhs": {
+                                "k": "ident",
+                                "name": "i",
+                                "tok": 370
+                              },
+                              "rhs": {
+                                "k": "ident",
+                                "name": "i",
+                                "tok": 372
+                              },
+                              "tok": 371
+                            },
+                            "rhs": {
+                              "k": "ident",
+                              "name": "i",
+                              "tok": 374
+                            },
+                            "tok": 373
+                          },
+                          "tok": 369
+                        },
+                        {
+                          "k": "interp",
+                          "tmpl": {
+                            "lits": [
+                              "case ",
+                              ""
+                            ],
+                            "holes": [
+                              {
+                                "k": "index",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "names",
+                                  "tok": 376
+                                },
+                                "idx": {
+                                  "k": "ident",
+                                  "name": "i",
+                                  "tok": 376
+                                },
+                                "tok": 376
+                              }
+                            ]
+                          },
+                          "tok": 376
+                        }
+                      ],
+                      "tok": 364
+                    }
+                  }
+                ]
+              },
+              "tok": 348
+            }
+          }
+        ]
+      },
+      "tok": 331,
+      "bodiless": false,
+      "span": {
+        "start": 330,
+        "end": 383
+      },
+      "sig_end": 334
+    },
+    {
+      "name": "TestLabelLazy",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "n"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 391
+              }
+            ],
+            "tok": 388
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 393
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Double",
+                      "tok": 395
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 2,
+                        "tok": 397
+                      }
+                    ],
+                    "tok": 396
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 4,
+                    "tok": 400
+                  },
+                  "tok": 399
+                },
+                {
+                  "k": "interp",
+                  "tmpl": {
+                    "lits": [
+                      "never ",
+                      ""
+                    ],
+                    "holes": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "Inc",
+                          "tok": 402
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "n",
+                            "tok": 402
+                          }
+                        ],
+                        "tok": 402
+                      }
+                    ]
+                  },
+                  "tok": 402
+                }
+              ],
+              "tok": 394
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 405
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "n",
+                    "tok": 407
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 409
+                  },
+                  "tok": 408
+                }
+              ],
+              "tok": 406
+            }
+          }
+        ]
+      },
+      "tok": 384,
+      "bodiless": false,
+      "span": {
+        "start": 383,
+        "end": 414
+      },
+      "sig_end": 387
     }
   ],
   "consts": []

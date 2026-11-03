@@ -1,0 +1,276 @@
+{
+  "package": "handler",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/doubles/store/fake",
+      "tok": 10
+    },
+    {
+      "alias": "$testing",
+      "path": "std/testing",
+      "tok": 0
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "TestLookup",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "c"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "fake",
+                    "tok": 19
+                  },
+                  "field": "With",
+                  "tok": 21
+                },
+                "args": [
+                  {
+                    "k": "slicelit",
+                    "elem": {
+                      "k": "name",
+                      "name": "fake.Row"
+                    },
+                    "elems": [
+                      {
+                        "k": "composite",
+                        "type_name": "fake.Row",
+                        "elems": [
+                          {
+                            "key": "k",
+                            "value": {
+                              "k": "strlit",
+                              "value": "a",
+                              "tok": 35
+                            }
+                          },
+                          {
+                            "key": "v",
+                            "value": {
+                              "k": "strlit",
+                              "value": "1",
+                              "tok": 39
+                            }
+                          }
+                        ],
+                        "tok": 29,
+                        "type_args": []
+                      }
+                    ],
+                    "mut": false,
+                    "tok": 23
+                  }
+                ],
+                "tok": 22
+              }
+            ],
+            "tok": 17
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 44
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Lookup",
+                      "tok": 46
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "c",
+                        "tok": 48
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "a",
+                        "tok": 50
+                      }
+                    ],
+                    "tok": 47
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "1",
+                    "tok": 53
+                  },
+                  "tok": 52
+                }
+              ],
+              "tok": 45
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 56
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Lookup",
+                      "tok": 58
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "c",
+                        "tok": 60
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "b",
+                        "tok": 62
+                      }
+                    ],
+                    "tok": 59
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "none",
+                    "tok": 65
+                  },
+                  "tok": 64
+                }
+              ],
+              "tok": 57
+            }
+          }
+        ]
+      },
+      "tok": 13,
+      "bodiless": false,
+      "span": {
+        "start": 12,
+        "end": 70
+      },
+      "sig_end": 16
+    },
+    {
+      "name": "TestSaveDenied",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 75
+              },
+              "args": [
+                {
+                  "k": "unary",
+                  "op": "!",
+                  "operand": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Save",
+                      "tok": 78
+                    },
+                    "args": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "fake",
+                            "tok": 80
+                          },
+                          "field": "Denying",
+                          "tok": 82
+                        },
+                        "args": [],
+                        "tok": 83
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "a",
+                        "tok": 86
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "1",
+                        "tok": 88
+                      }
+                    ],
+                    "tok": 79
+                  },
+                  "tok": 77
+                }
+              ],
+              "tok": 76
+            }
+          }
+        ]
+      },
+      "tok": 71,
+      "bodiless": false,
+      "span": {
+        "start": 70,
+        "end": 94
+      },
+      "sig_end": 74
+    }
+  ],
+  "consts": [],
+  "doubles": [
+    {
+      "paths": [
+        {
+          "k": "strlit",
+          "value": "testdata/doubles/store/fake",
+          "tok": 3
+        }
+      ],
+      "tok": 0
+    }
+  ]
+}

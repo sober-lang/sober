@@ -1,0 +1,611 @@
+package loader
+
+// @layout（language.md 36 節）の loader の層 — 脱糖の固定テンプレート:
+//
+//     @layout                                  // 欄の型を Sober の型に写す（u16le → int・[4]u8 → []byte・[2]u32le → []int）
+//     type H struct { kind u16le; id [4]u8 }
+//
+//     h := layout.Decode[H](b, 0)              // → $layoutDecode_<f>_<k>(b, 0)
+//     layout.Encode[H](mut out, h)             // → $layoutEncode_<f>_<k>(mut out, h)
+//     n := layout.Size[H]                      // → 6（整数の定数）
+//
+// 写しの関数（Decode / DecodeAt / Encode）は呼び出すファイル f ごとの合成ファイル `$layout/<f のパス>`（同じ package — 他 package の非公開の名前を呼ばない）に
+// 普通の Sober のソースとして書き、parser に通して package の末尾に足す（生成されるコードは書いたコード — printer で読める）。合成の名前は `$` で始まり
+// 利用者のソースには書けない（lexer.LexSynth）。以降の層（脱糖器・検査器・lower）は写した後の木だけを読む — コア / Lean は無変更。
+// 撤去条件: region を持つ型引数の実体 Def が実装されたら、std の総称関数 + コンパイラが出す `layout[T]` 静的辞書（shape[T] と同じ機構）に移す
+// — 今の総称関数は T が `[]byte` の欄を持つとその条件に当たる（assert の Show[T] で確認済み）
+
+import "std/builder"
+import "std/iter"
+import "std/strings"
+import "ast"
+import "diag"
+import "lexer"
+import "parser"
+
+// @layout の struct の欄: n = 幅のバイト数・signed・be（ビッグエンディアン）・count = 固定長配列の長さ（0 = 配列でない）・off = struct の先頭からの位置
+type LField struct {
+    name string
+    wname string
+    n int
+    signed bool
+    be bool
+    count int
+    off int
+}
+
+// @layout の struct（pkg = 置かれた package のパス — fpkg と同じ綴り）
+type LDecl struct {
+    pkg string
+    name string
+    file int
+    fields []LField
+    size int
+}
+
+// 写した後のファイルの列（合成ファイルを package の末尾に足したもの — package ごとに連続のまま）
+type LOut struct {
+    trees []ast.Tree
+    pkg []string
+    path []string
+    std []bool
+}
+
+// 合成ファイルのパスの接頭辞（実在しないパスの予約 — `$` は識別子にもパスにも書けない）
+func LayoutPrefix() string {
+    return "$layout/"
+}
+
+// 幅の語 nm の（バイト数, 符号つき, ビッグエンディアン）— 幅の語でなければバイト数 0
+func widthOf(nm string) (int, bool, bool) {
+    if nm == "u8" || nm == "i8" {
+        return 1, nm == "i8", false
+    }
+    b := bytes(nm)
+    if len(b) != 5 || (b[0] != 'u' && b[0] != 'i') {
+        return 0, false, false
+    }
+    n := if b[1] == '1' && b[2] == '6' { 2 } else if b[1] == '3' && b[2] == '2' { 4 } else if b[1] == '6' && b[2] == '4' { 8 } else { 0 }
+    le := b[3] == 'l' && b[4] == 'e'
+    be := b[3] == 'b' && b[4] == 'e'
+    if n == 0 || !(le || be) {
+        return 0, false, false
+    }
+    return n, b[0] == 'i', be
+}
+
+// @layout の形の検査・欄の型の写し・`layout.X[T]` の呼び出しの差し替え・写しの関数の合成ファイルの追加
+@errors(diag.Layout, diag.GrammarMismatch)
+func layoutAll(ts []ast.Tree, fpkg []string, fpath []string, fstd []bool) (LOut, error?) {
+    // 1. 形の検査と @layout の struct の表
+    mut decls := mut []LDecl{}
+    for i <- iter.Range(0, len(ts)) {
+        t := ts[i]
+        tl := t.nodes[t.file].c
+        for j <- iter.Range(0, t.data[tl]) {
+            td := t.nodes[t.data[tl + 1 + j]]
+            body := t.nodes[td.c]
+            n0, s0, b0 := widthOf(Name(t, td.a))
+            if n0 > 0 {
+                return LOut{}, diag.Layout{at: diag.Pos{file: i, tok: td.tok}, kind: 4}
+            }
+            if td.f != 0 {
+                if body.kind != ast.BStruct {
+                    return LOut{}, diag.Layout{at: diag.Pos{file: i, tok: td.tok}, kind: 2}
+                }
+                if t.data[td.b] != 0 || t.data[body.a] == 0 {
+                    return LOut{}, diag.Layout{at: diag.Pos{file: i, tok: td.tok}, kind: 5}
+                }
+                d, bad := layoutDecl(t, td, fpkg[i], i)
+                if bad >= 0 {
+                    return LOut{}, diag.Layout{at: diag.Pos{file: i, tok: bad}, kind: 3}
+                }
+                decls = append(decls, d)
+            } else {
+                at := arrayField(t, td)
+                if at >= 0 {
+                    return LOut{}, diag.Layout{at: diag.Pos{file: i, tok: at}, kind: 1}
+                }
+            }
+        }
+    }
+    ds := freeze(decls)
+    // 2. ファイルごとの書き換えと合成ソース
+    mut outT := mut []ast.Tree{}
+    mut srcs := mut []string{}
+    for i <- iter.Range(0, len(ts)) {
+        t2, src, err := layoutFile(ts[i], i, fpkg[i], ds)
+        if err != nil {
+            return LOut{}, err
+        }
+        outT = append(outT, t2)
+        srcs = append(srcs, src)
+    }
+    rt := freeze(outT)
+    ss := freeze(srcs)
+    // 3. 合成ファイルを package の末尾に足す（package ごとに連続のまま）
+    mut out := LOut{trees: []ast.Tree{}, pkg: []string{}, path: []string{}, std: []bool{}}
+    mut nt := mut []ast.Tree{}
+    mut np := mut []string{}
+    mut npath := mut []string{}
+    mut nstd := mut []bool{}
+    mut lo := 0
+    for i <- iter.Range(0, len(rt)) {
+        nt = append(nt, rt[i])
+        np = append(np, fpkg[i])
+        npath = append(npath, fpath[i])
+        nstd = append(nstd, fstd[i])
+        last := i + 1 == len(rt) || fpkg[i + 1] != fpkg[i]
+        if last {
+            for j <- iter.Range(lo, i + 1) {
+                if ss[j] != "" {
+                    b := bytes(ss[j])
+                    st, ok := parser.Parse(b, lexer.LexSynth(b))
+                    if !ok {
+                        return LOut{}, diag.GrammarMismatch{at: diag.None()}
+                    }
+                    nt = append(nt, st)
+                    np = append(np, fpkg[j])
+                    npath = append(npath, LayoutPrefix() + fpath[j])
+                    nstd = append(nstd, fstd[j])
+                }
+            }
+            lo = i + 1
+        }
+    }
+    out.trees = freeze(nt)
+    out.pkg = freeze(np)
+    out.path = freeze(npath)
+    out.std = freeze(nstd)
+    return out, nil
+}
+
+// @layout の struct td の欄の表（欄の型が幅の語か幅の語の固定長配列でなければ、その字句を 2 つ目に返す — 無ければ -1）
+func layoutDecl(t ast.Tree, td ast.Node, pkg string, file int) (LDecl, int) {
+    body := t.nodes[td.c]
+    mut fs := mut []LField{}
+    mut off := 0
+    for k <- iter.Range(0, t.data[body.a]) {
+        fd := t.nodes[t.data[body.a + 1 + k]]
+        ty := t.nodes[fd.b]
+        mut count := 0
+        mut el := ty
+        if ty.kind == ast.TArray {
+            count = ty.a
+            el = t.nodes[ty.b]
+            if count < 1 {
+                return LDecl{}, ty.tok
+            }
+        }
+        if el.kind != ast.TName {
+            return LDecl{}, el.tok
+        }
+        wn := Name(t, el.a)
+        n, sg, be := widthOf(wn)
+        if n == 0 {
+            return LDecl{}, el.tok
+        }
+        fs = append(fs, LField{name: Name(t, fd.a), wname: wn, n: n, signed: sg, be: be, count: count, off: off})
+        off += if count > 0 { n * count } else { n }
+    }
+    return LDecl{pkg: pkg, name: Name(t, td.a), file: file, fields: freeze(fs), size: off}, -1
+}
+
+// @layout でない型宣言 td の欄（struct / union の variant / error）に `[N]T` があればその字句（無ければ -1）
+func arrayField(t ast.Tree, td ast.Node) int {
+    body := t.nodes[td.c]
+    if body.kind == ast.BStruct || body.kind == ast.BError {
+        return arrayIn(t, body.a)
+    }
+    if body.kind == ast.BUnion {
+        for v <- iter.Range(0, t.data[body.a]) {
+            at := arrayIn(t, t.nodes[t.data[body.a + 1 + v]].b)
+            if at >= 0 {
+                return at
+            }
+        }
+    }
+    return -1
+}
+
+// 欄の列 l の中の最初の `[N]T` の字句（無ければ -1）
+func arrayIn(t ast.Tree, l int) int {
+    for k <- iter.Range(0, t.data[l]) {
+        ty := t.nodes[t.nodes[t.data[l + 1 + k]].b]
+        if ty.kind == ast.TArray {
+            return ty.tok
+        }
+    }
+    return -1
+}
+
+// package pkg の @layout の struct name の添字（無ければ -1）
+func findDecl(ds []LDecl, pkg string, name string) int {
+    for i <- iter.Range(0, len(ds)) {
+        if ds[i].pkg == pkg && ds[i].name == name {
+            return i
+        }
+    }
+    return -1
+}
+
+// ファイル t の参照名 ref の import のパス（無ければ ""）
+func importPath(t ast.Tree, ref string) string {
+    imps := t.nodes[t.file].b
+    for k <- iter.Range(0, ast.ListLen(t, imps)) {
+        im := t.nodes[ast.ListAt(t, imps, k)]
+        path := Name(t, im.b)
+        r := if im.a >= 0 { Name(t, im.a) } else { Basename(path) }
+        if r == ref {
+            return path
+        }
+    }
+    return ""
+}
+
+// ファイル t が path を import するか（しなければ importPath(t, …) は path を返さない）
+func importsPath(t ast.Tree, path string) bool {
+    imps := t.nodes[t.file].b
+    for k <- iter.Range(0, ast.ListLen(t, imps)) {
+        if StrIs(t, t.nodes[ast.ListAt(t, imps, k)].b, path) {
+            return true
+        }
+    }
+    return false
+}
+
+// 節 x が std/layout の参照名か（ファイル t の import で）
+func isLayoutRef(t ast.Tree, x ast.Node) bool {
+    return x.kind == ast.EIdent && importPath(t, Name(t, x.a)) == "std/layout"
+}
+
+// 名前 op が std/layout の写しの口か
+func isLayoutOp(op string) bool {
+    return op == "Decode" || op == "DecodeAt" || op == "Encode" || op == "Size"
+}
+
+// ファイル t（package pkg）の型の式 e（`H` か `p.H`）の @layout の struct（無ければ -1）
+func resolveT(t ast.Tree, pkg string, ds []LDecl, e int) int {
+    x := t.nodes[e]
+    if x.kind == ast.EIdent {
+        return findDecl(ds, pkg, Name(t, x.a))
+    }
+    if x.kind == ast.ESelector && t.nodes[x.a].kind == ast.EIdent {
+        path := importPath(t, Name(t, t.nodes[x.a].a))
+        if path != "" {
+            return findDecl(ds, path, Name(t, x.b))
+        }
+    }
+    return -1
+}
+
+// ファイル t（package pkg）の型の名前の綴り（`H` か `p.H` — composite リテラルの type_name）の @layout の struct（無ければ -1）
+func resolveName(t ast.Tree, pkg string, ds []LDecl, nm string) int {
+    ref, name, dotted := strings.Cut(nm, ".")
+    if !dotted {
+        return findDecl(ds, pkg, nm)
+    }
+    path := importPath(t, ref)
+    return if path == "" { -1 } else { findDecl(ds, path, name) }
+}
+
+// ファイル t（f 番目・package pkg）を写す: @layout の欄の型・`layout.X[T]` の差し替え・幅の語の拒否・定数の範囲。
+// 結果は（写した木, 合成ソース — 写しの関数が要らなければ ""）
+@errors(diag.Layout)
+func layoutFile(t ast.Tree, f int, pkg string, ds []LDecl) (ast.Tree, string, error?) {
+    n0 := len(t.nodes)
+    // std/layout を import するか（しなければ isLayoutRef は常に偽 — 節ごとに名前の string と import の引きを作らない）
+    lay := importsPath(t, "std/layout")
+    // 速い道: std/layout も @layout の struct も無いファイルは書き換えない — 幅の語と composite の欄の範囲の検査だけ（節の表の写しを作らない）
+    tl0 := t.nodes[t.file].c
+    mut decl := false
+    for j <- iter.Range(0, t.data[tl0]) {
+        decl = decl || t.nodes[t.data[tl0 + 1 + j]].f != 0
+    }
+    if !lay && !decl {
+        for i <- iter.Range(0, n0) {
+            k, tok := layoutWordAt(t, pkg, ds, t.nodes[i])
+            if k > 0 {
+                return t, "", diag.Layout{at: diag.Pos{file: f, tok: tok}, kind: k}
+            }
+        }
+        return t, "", nil
+    }
+    mut ns := mut []ast.Node{}
+    for i <- iter.Range(0, n0) {
+        ns = append(ns, t.nodes[i])
+    }
+    mut db := builder.Builder[int]{}
+    for j <- iter.Range(0, len(t.data)) {
+        builder.Push(mut db, t.data[j])
+    }
+    // done[i] = 節 i は書き換え済み（幅の語の型名・std/layout の口）
+    mut done := mut []bool{}
+    for i <- iter.Range(0, n0) {
+        done = append(done, false)
+    }
+    mut changed := false
+    // @layout の struct の欄の型を写す
+    tl := t.nodes[t.file].c
+    for j <- iter.Range(0, t.data[tl]) {
+        td := t.nodes[t.data[tl + 1 + j]]
+        if td.f != 0 {
+            body := t.nodes[td.c]
+            for k <- iter.Range(0, t.data[body.a]) {
+                fi := t.data[body.a + 1 + k]
+                fd := t.nodes[fi]
+                ty := t.nodes[fd.b]
+                done[fd.b] = true
+                mut nty := 0
+                if ty.kind == ast.TArray {
+                    done[ty.b] = true
+                    el := t.nodes[ty.b]
+                    w := if Name(t, el.a) == "u8" { "byte" } else { "int" }
+                    ns = append(ns, ast.Node{ast.TName, el.tok, ast.PutLit(mut db, w), 0, 0, 0, 0, 0})
+                    ns = append(ns, ast.Node{ast.TSlice, ty.tok, len(ns) - 1, 0, 0, 0, 0, 0})
+                } else {
+                    ns = append(ns, ast.Node{ast.TName, ty.tok, ast.PutLit(mut db, "int"), 0, 0, 0, 0, 0})
+                }
+                nty = len(ns) - 1
+                ns[fi] = ast.Node{fd.kind, fd.tok, fd.a, nty, fd.c, fd.d, fd.e, fd.f}
+                changed = true
+            }
+        }
+    }
+    // `layout.Decode[T](…)` 等の呼び出しを写しの関数へ・`layout.Size[T]` を定数へ
+    mut used := mut []int{}
+    for i <- iter.Range(0, n0) {
+        x := t.nodes[i]
+        if x.kind == ast.ECall && t.nodes[x.a].kind == ast.EIndex {
+            c := t.nodes[x.a]
+            s := t.nodes[c.a]
+            if s.kind == ast.ESelector && isLayoutRef(t, t.nodes[s.a]) && isLayoutOp(Name(t, s.b)) {
+                op := Name(t, s.b)
+                if op == "Size" {
+                    return t, "", diag.Layout{at: diag.Pos{file: f, tok: c.tok}, kind: 7}
+                }
+                d := resolveT(t, pkg, ds, c.b)
+                if d < 0 {
+                    return t, "", diag.Layout{at: diag.Pos{file: f, tok: t.nodes[c.b].tok}, kind: 6}
+                }
+                mut k := 0 - 1
+                for u <- iter.Range(0, len(used)) {
+                    if used[u] == d {
+                        k = u
+                    }
+                }
+                if k < 0 {
+                    used = append(used, d)
+                    k = len(used) - 1
+                }
+                ns[x.a] = ast.Node{ast.EIdent, c.tok, ast.PutLit(mut db, "$layout${op}_${f}_${k}"), 0, 0, 0, 0, 0}
+                done[x.a] = true
+                done[c.a] = true
+                changed = true
+            }
+        }
+    }
+    for i <- iter.Range(0, n0) {
+        x := t.nodes[i]
+        if x.kind == ast.EIndex && !done[i] {
+            s := t.nodes[x.a]
+            if s.kind == ast.ESelector && isLayoutRef(t, t.nodes[s.a]) && isLayoutOp(Name(t, s.b)) {
+                if Name(t, s.b) != "Size" {
+                    return t, "", diag.Layout{at: diag.Pos{file: f, tok: x.tok}, kind: 7}
+                }
+                d := resolveT(t, pkg, ds, x.b)
+                if d < 0 {
+                    return t, "", diag.Layout{at: diag.Pos{file: f, tok: t.nodes[x.b].tok}, kind: 6}
+                }
+                ns[i] = ast.Node{ast.EInt, x.tok, ds[d].size, 0, 0, 0, 0, 0}
+                done[i] = true
+                done[x.a] = true
+                changed = true
+            }
+        }
+    }
+    for i <- iter.Range(0, n0) {
+        x := t.nodes[i]
+        // 型引数なし・呼ばない形の std/layout の口（`layout.Decode` だけ・`layout.Decode[T]` を値に）
+        if x.kind == ast.ESelector && !done[i] && isLayoutRef(t, t.nodes[x.a]) && isLayoutOp(Name(t, x.b)) {
+            return t, "", diag.Layout{at: diag.Pos{file: f, tok: x.tok}, kind: 7}
+        }
+        // 書き換えていない幅の語・composite の欄の範囲
+        if !(x.kind == ast.TName && done[i]) {
+            k, tok := layoutWordAt(t, pkg, ds, x)
+            if k > 0 {
+                return t, "", diag.Layout{at: diag.Pos{file: f, tok: tok}, kind: k}
+            }
+        }
+    }
+    if !changed {
+        return t, "", nil
+    }
+    us := freeze(used)
+    src := if len(us) == 0 { "" } else { synthSource(t, f, pkg, ds, us) }
+    return ast.Tree{nodes: freeze(ns), data: builder.Build(mut db), file: t.file}, src, nil
+}
+
+// 節 x の拒否の kind と字句（無ければ kind 0）: @layout の欄の外の幅の語（4 — 名前は 2 か 5 バイト）・@layout の struct の composite リテラルの
+// 欄に直に書いた整数リテラルの範囲（8 — const 名・式は実行時の検査）
+func layoutWordAt(t ast.Tree, pkg string, ds []LDecl, x ast.Node) (int, int) {
+    if x.kind == ast.TName && (t.data[x.a] == 2 || t.data[x.a] == 5) {
+        n, sg, be := widthOf(Name(t, x.a))
+        if n > 0 {
+            return 4, x.tok
+        }
+    }
+    if x.kind == ast.EComposite && len(ds) > 0 {
+        d := resolveName(t, pkg, ds, Name(t, x.a))
+        if d >= 0 {
+            bad := literalRange(t, x, ds[d])
+            if bad >= 0 {
+                return 8, bad
+            }
+        }
+    }
+    return 0, 0
+}
+
+// @layout の struct d の composite リテラル x の欄に直に書いた整数リテラル（負号込み）が幅に収まらなければその字句（無ければ -1）
+func literalRange(t ast.Tree, x ast.Node, d LDecl) int {
+    for k <- iter.Range(0, ast.ListLen(t, x.b)) {
+        el := t.nodes[ast.ListAt(t, x.b, k)]
+        mut fi := 0 - 1
+        if el.a >= 0 {
+            nm := Name(t, el.a)
+            for j <- iter.Range(0, len(d.fields)) {
+                if d.fields[j].name == nm {
+                    fi = j
+                }
+            }
+        } else if k < len(d.fields) {
+            fi = k
+        }
+        if fi >= 0 && d.fields[fi].count == 0 {
+            v := t.nodes[el.b]
+            mut lit := false
+            mut val := 0
+            if v.kind == ast.EInt {
+                lit = true
+                val = v.a
+            } else if v.kind == ast.EUnary && v.a == lexer.Minus && t.nodes[v.b].kind == ast.EInt {
+                lit = true
+                val = 0 - t.nodes[v.b].a
+            }
+            fd := d.fields[fi]
+            if lit && fd.n < 8 && (val < loOf(fd) || val > hiOf(fd)) {
+                return v.tok
+            }
+        }
+    }
+    return -1
+}
+
+// loOf / hiOf は幅の範囲（8 バイトの幅は int の全域 — 範囲の検査をしない）
+func loOf(fd LField) int {
+    return if fd.signed { 0 - (1 << (fd.n * 8 - 1)) } else { 0 }
+}
+
+func hiOf(fd LField) int {
+    return if fd.signed { (1 << (fd.n * 8 - 1)) - 1 } else { (1 << (fd.n * 8)) - 1 }
+}
+
+// ファイル t（f 番目・package pkg）が使う @layout の struct us の写しの関数のソース
+func synthSource(t ast.Tree, f int, pkg string, ds []LDecl, us []int) string {
+    mut s := "package ${Name(t, t.nodes[t.file].a)}\n\nimport $lb \"std/builder\"\nimport $ll \"std/layout\"\n"
+    // 他 package の struct は参照名 $lt<j> で import する（同じパスは 1 回）
+    mut paths := mut []string{}
+    for k <- iter.Range(0, len(us)) {
+        p := ds[us[k]].pkg
+        if p != pkg && pathIndex(freeze(paths), p) < 0 {
+            s = s + "import $lt${len(paths)} \"${p}\"\n"
+            paths = append(paths, p)
+        }
+    }
+    ps := freeze(paths)
+    for k <- iter.Range(0, len(us)) {
+        d := ds[us[k]]
+        tn := if d.pkg == pkg { d.name } else { "$lt${pathIndex(ps, d.pkg)}.${d.name}" }
+        s = s + decodeFn(d, tn, "${f}_${k}") + encodeFn(d, tn, "${f}_${k}")
+    }
+    return s
+}
+
+func pathIndex(ps []string, p string) int {
+    for i <- iter.Range(0, len(ps)) {
+        if ps[i] == p {
+            return i
+        }
+    }
+    return -1
+}
+
+// $b の位置 at（式の綴り）からの幅 fd の値を読む式（LE / BE・符号なし — 符号拡張は呼び手）
+func readExpr(fd LField, at string) string {
+    mut s := ""
+    for k <- iter.Range(0, fd.n) {
+        sh := if fd.be { (fd.n - 1 - k) * 8 } else { k * 8 }
+        term := if sh == 0 { "int($b[${at} + ${k}])" } else { "(int($b[${at} + ${k}]) << ${sh})" }
+        s = if k == 0 { term } else { s + " | " + term }
+    }
+    return s
+}
+
+// 符号なしで読んだ値の名前 u を幅 fd の符号つきに直す式（8 バイトと符号なしは u のまま）
+func signExt(fd LField, u string) string {
+    if !fd.signed || fd.n == 8 {
+        return u
+    }
+    half := 1 << (fd.n * 8 - 1)
+    return "if ${u} >= ${half} { ${u} - ${half * 2} } else { ${u} }"
+}
+
+// 写しの読み（Decode / DecodeAt）の関数のソース
+func decodeFn(d LDecl, tn string, key string) string {
+    mut s := "\n// ${tn} の写し（@layout — loader/layout.sober の固定テンプレート）: 足りなければ nil\n"
+    s = s + "func $layoutDecode_${key}($b []byte, $off int) ${tn}? {\n"
+    s = s + "    if $off < 0 || len($b) - $off < ${d.size} {\n        return nil\n    }\n"
+    mut lit := ""
+    for j <- iter.Range(0, len(d.fields)) {
+        fd := d.fields[j]
+        at := "$off + ${fd.off}"
+        if fd.count == 0 {
+            s = s + "    $u${j} := ${readExpr(fd, at)}\n"
+            s = s + "    $f${j} := ${signExt(fd, "$u${j}")}\n"
+        } else {
+            el := if fd.n == 1 && !fd.signed { "byte" } else { "int" }
+            s = s + "    mut $f${j} := $lb.Builder[${el}]{}\n    mut $i${j} := 0\n    while $i${j} < ${fd.count} {\n"
+            if fd.n == 1 && !fd.signed {
+                s = s + "        $lb.Push(mut $f${j}, $b[${at} + $i${j}])\n"
+            } else {
+                s = s + "        $u := ${readExpr(fd, "${at} + $i${j} * ${fd.n}")}\n"
+                s = s + "        $lb.Push(mut $f${j}, ${signExt(fd, "$u")})\n"
+            }
+            s = s + "        $i${j} += 1\n    }\n"
+        }
+        val := if fd.count == 0 { "$f${j}" } else { "$lb.Build(mut $f${j})" }
+        lit = if j == 0 { "${fd.name}: ${val}" } else { lit + ", ${fd.name}: ${val}" }
+    }
+    s = s + "    return ${tn}{${lit}}\n}\n"
+    s = s + "\nfunc $layoutDecodeAt_${key}($b []byte, $off int, $i int) ${tn}? {\n"
+    s = s + "    if $i < 0 || $i > len($b) / ${d.size} {\n        return nil\n    }\n"
+    s = s + "    return $layoutDecode_${key}($b, $off + $i * ${d.size})\n}\n"
+    return s
+}
+
+// 写しの書き（Encode）の関数のソース: 幅あふれ・長さ違いは panic（std/layout の FailWidth / FailLength）
+func encodeFn(d LDecl, tn string, key string) string {
+    mut s := "\nfunc $layoutEncode_${key}($out mut $lb.Builder[byte], $v ${tn}) {\n"
+    for j <- iter.Range(0, len(d.fields)) {
+        fd := d.fields[j]
+        label := "${d.name}.${fd.name}"
+        if fd.count == 0 {
+            s = s + "    $x${j} := $v.${fd.name}\n" + pushValue(fd, "$x${j}", label, "    ")
+        } else {
+            s = s + "    $a${j} := $v.${fd.name}\n"
+            s = s + "    if len($a${j}) != ${fd.count} {\n        $ll.FailLength(\"${label}\", ${fd.count}, len($a${j}))\n    }\n"
+            s = s + "    mut $i${j} := 0\n    while $i${j} < ${fd.count} {\n"
+            if fd.n == 1 && !fd.signed {
+                s = s + "        $lb.Push(mut $out, $a${j}[$i${j}])\n"
+            } else {
+                s = s + "        $e := $a${j}[$i${j}]\n" + pushValue(fd, "$e", label, "        ")
+            }
+            s = s + "        $i${j} += 1\n    }\n"
+        }
+    }
+    return s + "}\n"
+}
+
+// 値の名前 x を幅 fd で $out に書く文（範囲の検査つき — 8 バイトの幅は int の全域を受ける）。ind = 字下げ
+func pushValue(fd LField, x string, label string, ind string) string {
+    mut s := ""
+    if fd.n < 8 {
+        s = "${ind}if ${x} < ${loOf(fd)} || ${x} > ${hiOf(fd)} {\n${ind}    $ll.FailWidth(\"${label}\", \"${fd.wname}\", ${x})\n${ind}}\n"
+    }
+    for k <- iter.Range(0, fd.n) {
+        sh := if fd.be { (fd.n - 1 - k) * 8 } else { k * 8 }
+        s = s + "${ind}$lb.Push(mut $out, byte((${x} >> ${sh}) & 255))\n"
+    }
+    return s
+}

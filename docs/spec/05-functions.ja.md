@@ -42,7 +42,7 @@ F-7. 関数型の欄を持つ struct は辞書で、欄の関数値を `d.f(x)` 
 決定: [language.md 3 節・25 節](../language.md)
 
 F-8. トップレベルの const に辞書を置ける（`const IntOrd = Ord[int]{less: (a, b) => a < b}`）。欄には閉じたラムダと名前つきの関数の参照・入れ子の辞書を置ける。const 式の中で関数は呼べない（ラムダの本体は呼ばれたときに走るので呼べる）。辞書を含む組み立ての const（3 章 V-3）は参照するたびに組み立て直す — 同一性（アドレスの比較）は保証せず、struct・slice は参照のたびに大きさに比例する費用を払う（熱いループでは一度束縛して使う）。
-例: [`examples/constdict.sober`](../../examples/constdict.sober)・[`examples/closure_const_field.sober`](../../examples/closure_const_field.sober)
+例: [`examples/constdict.sober`](../../examples/constdict.sober)・[`examples/tour_04_types.sober`](../../examples/tour_04_types.sober)・[`examples/closure_const_field.sober`](../../examples/closure_const_field.sober)
 拒否: [`examples/const_neg_call.sober`](../../examples/const_neg_call.sober)
 決定: [language.md 25 節](../language.md)
 
@@ -93,7 +93,7 @@ F-22. func 宣言の仮引数は省略可の匿名関数型 `(func(…) R)?` を
 ## 5.4 ジェネリクス
 
 F-17. 関数と型は型パラメータを持てる — `func f[T](…)`・`type Ord[T] struct {…}`・`type Opt[T] union {…}`。型パラメータに制約は書かない（振る舞いは辞書で渡す — F-1）。関数の型引数は値の実引数の型と、ラムダの実引数の結果の型から推論し、決まらなければ拒否する。明示するときは `f[int](x)`（1 個まで）。ジェネリック union の variant のリテラルは型引数を明示し（`Some[int]{v: 3}`）、個数は宣言どおり。
-例: [`examples/generic.sober`](../../examples/generic.sober)・[`examples/generic_infer.sober`](../../examples/generic_infer.sober)・[`examples/generic_infer_lambda.sober`](../../examples/generic_infer_lambda.sober)・[`examples/generic_union.sober`](../../examples/generic_union.sober)
+例: [`examples/generic.sober`](../../examples/generic.sober)・[`examples/generic_field.sober`](../../examples/generic_field.sober)・[`examples/generic_infer.sober`](../../examples/generic_infer.sober)・[`examples/generic_infer_lambda.sober`](../../examples/generic_infer_lambda.sober)・[`examples/generic_union.sober`](../../examples/generic_union.sober)
 拒否: [`examples/generic_union_arity.sober`](../../examples/generic_union_arity.sober)・[`examples/generic_union_noargs.sober`](../../examples/generic_union_noargs.sober)
 決定: [language.md 3 節・25 節](../language.md)
 

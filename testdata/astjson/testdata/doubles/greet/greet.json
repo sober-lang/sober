@@ -1,0 +1,112 @@
+{
+  "package": "greet",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/doubles/logger",
+      "tok": 4
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "Greet",
+      "type_params": [],
+      "params": [
+        {
+          "name": "name",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "string"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "s"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "interp",
+                "tmpl": {
+                  "lits": [
+                    "hello, ",
+                    ""
+                  ],
+                  "holes": [
+                    {
+                      "k": "ident",
+                      "name": "name",
+                      "tok": 16
+                    }
+                  ]
+                },
+                "tok": 16
+              }
+            ],
+            "tok": 14
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "logger",
+                  "tok": 18
+                },
+                "field": "Log",
+                "tok": 20
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "s",
+                  "tok": 22
+                }
+              ],
+              "tok": 21
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "s",
+                "tok": 26
+              }
+            ],
+            "tok": 25
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 30
+      },
+      "sig_end": 13
+    }
+  ],
+  "consts": []
+}

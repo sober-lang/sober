@@ -24,10 +24,10 @@ for e in examples/secret_*.sober; do
     if [ $regen = 1 ]; then cp "$W/$k.txt" "$G/$k.txt"; continue; fi
     diff -q "$W/$k.txt" "$G/$k.txt" > /dev/null 2>&1 || { echo "FAIL $e:"; diff "$W/$k.txt" "$G/$k.txt" | head -5; fail=1; }
 done
-# std: std の全 package（std/internal は std の中からだけ — 使う package を通して読まれる）を import する合成の main の dump（std の印・表 T・秘密の欄・
+# std: std の全 package（std/internal は std の中からだけ・std/testing/cell はテストの構成のファイルからだけ — 使う package を通して読まれる）を import する合成の main の dump（std の印・表 T・秘密の欄・
 # 違反 0 件の証人 — 段 3b-2。stage2.sh の L0 焼き込みも std の check で違反を拒否するが、表の形をここで黄金に残す）
 mkdir -p "$W/std/app" && cp -r src/std "$W/std/std"
-{ echo "package main"; echo; for d in $(cd src && find std -name '*.sober' ! -name '*_test.sober' ! -path 'std/internal/*' -printf '%h\n' | sort -u); do echo "import \"$d\""; done; echo; echo "func main() {"; echo "}"; } > "$W/std/app/main.sober"
+{ echo "package main"; echo; for d in $(cd src && find std -name '*.sober' ! -name '*_test.sober' ! -path 'std/internal/*' ! -path 'std/testing/cell/*' -printf '%h\n' | sort -u); do echo "import \"$d\""; done; echo; echo "func main() {"; echo "}"; } > "$W/std/app/main.sober"
 (cd "$W/std" && "$S2" check app/main.sober --secret-dump 2>&1) > "$W/std.txt"
 if [ $regen = 1 ]; then
     cp "$W/std.txt" "$G/std.txt"

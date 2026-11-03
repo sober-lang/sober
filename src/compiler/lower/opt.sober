@@ -560,6 +560,9 @@ func optFold(st mut St, f FnRef) {
                 if op == OpCmp {
                     if cx && cy && k < CFEq {
                         setConst(mut st, ins, r, cmpConst(k, constOf(mut st, x), constOf(mut st, y)))
+                    } else if x == y && k < CFEq {
+                        // 同じ値どうしの整数比較は値に依らない（copyloop の範囲のガードの `n <= len` が同じ値に畳まれた形）
+                        setConst(mut st, ins, r, cmpConst(k, 0, 0))
                     }
                 } else if k == BAdd || k == BSub || k == BMul || k == BAnd || k == BOr || k == BXor {
                     if cx && cy {

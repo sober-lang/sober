@@ -10,4 +10,15 @@ for (const p of profs) {
     const s = med(g("sober", 3)), o = med(g("go", 3));
     md += `| ${p} | ${Math.round(s).toLocaleString("en")} | ${Math.round(o).toLocaleString("en")} | ${(s / o).toFixed(2)} | ${med(g("sober", 6)).toFixed(2)} | ${med(g("go", 6)).toFixed(2)} | ${l("sober")} | ${l("go")} | ${l("sober", 8)} | ${l("go", 8)} | ${g("sober", 5).reduce((a, b) => a + b, 0)}/${g("go", 5).reduce((a, b) => a + b, 0)} |\n`;
 }
+// sober-alt（local.sh の 3 本目 — 別の版か別の env の Sober）があれば、同じ周の輪で取った sober との比の表を足す
+if (rows.some((r) => r[0] === "sober-alt")) {
+    md += "\n## sober-alt vs sober (same job, same box)\n\n| profile | Sober req/s | alt req/s | alt/Sober req/s | Sober CPU µs/req | alt CPU µs/req | alt/Sober CPU | alt/Go req/s | alt p99 |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|\n";
+    for (const p of profs) {
+        const g = (n: string, i: number) => rows.filter((r) => r[0] === n && r[1] === p).map((r) => Number(r[i]));
+        if (g("sober-alt", 3).length === 0) continue;
+        const s = med(g("sober", 3)), a = med(g("sober-alt", 3)), o = med(g("go", 3)), sc = med(g("sober", 6)), ac = med(g("sober-alt", 6));
+        const l = rows.filter((r) => r[0] === "sober-alt" && r[1] === p).map((r) => r[7] ?? "-").join(" ");
+        md += `| ${p} | ${Math.round(s).toLocaleString("en")} | ${Math.round(a).toLocaleString("en")} | ${(a / s).toFixed(3)} | ${sc.toFixed(2)} | ${ac.toFixed(2)} | ${(ac / sc).toFixed(3)} | ${(a / o).toFixed(2)} | ${l} |\n`;
+    }
+}
 console.log(md);

@@ -146,8 +146,17 @@ flags:
                           test` line per mutant); implies --mutate
   --run <prefix>          run only the tests whose names start with <prefix>
   -v                      print every test
+  --wiring                print which double replaces which package in each
+                          package's test build, one `<package>: <replaced> <=
+                          <double>` line per double, instead of running the
+                          tests
   --work <dir>            build the runner in <dir> (default a directory in the
                           cache)
+
+environment:
+  SOBER_TEST_FILES_OUT  the file sober test writes the paths of the files its
+                        test builds read to, one per line (watch passes it to
+                        watch those files too)
 ```
 
 効果: `block, io, panic, nondet`
@@ -183,12 +192,14 @@ flags:
 
 ## sober watch
 
-変更のたびに check し直す
+保存のたびに check をやり直し、build とテストを裏で温める。立てたら放っておき、普段どおり sober check / build / test を打てば温めた結果が返る。出力を見るのは不具合を疑ったときだけでよい
 
 ```text
 usage: sober watch <entry>
 
-re-check on every change
+re-check on every change and warm the build and the tests in the background.
+Leave it running and type sober check / build / test as usual: they return the
+warmed results. Read its output only when you suspect a problem
 
 arguments:
   <entry>  a .sober file or a main package directory

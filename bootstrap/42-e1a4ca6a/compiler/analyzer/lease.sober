@@ -1,0 +1,126 @@
+package analyzer
+
+// lease の窓の性能 lint（region-domain-pool.md 4d 節）— 警告（受理は変えない）。窓 = loader が写した
+// `{ $lp := lp; $at := $task.LeaseTake($lp, 指紋); defer …; mut w := T{}; …; 本体 }`（loader/lease.sober）。どちらも「倒れる」= 新しい割り当てに
+// 黙って倒れる（意味は同じ・遅いだけ）を見せる:
+//   MLeaseBlock — 窓の中に block 効果の届く呼び出し（関数の効果の導出 — effects.sober・language.md 12 節「関数の効果の宣言」）: 待つ間に同じワーカーの別の task が同じ置き場を借りに来ると倒れる
+//   MLeaseNest  — 窓の中で同じ Local をもう一度借りる（字面の同じ名前 — 内側は必ず倒れる）
+// 近似: Local の同一性は窓の第 1 引数の名前の字面（別名・関数をまたぐ入れ子は見ない）。spawn の子のラムダの中は窓の外（別の task）として数える
+
+import "ast"
+import "desugar"
+import "loader"
+import "std/iter"
+import "std/table"
+
+const MLeaseBlock = 40 // 窓の中の待ち（at = 呼び出しの節, 付帯 = 呼び先の関数の添字・名前付き関数型の値なら −型宣言 − 2）
+const MLeaseNest = 41  // 同じ Local の入れ子の窓（at = 内側の窓, 付帯 = 内側の窓）
+
+// ブロック e が窓ならその Local の名前（字面の名前でなければ -1）、窓でなければ -2
+func leaseOf(az mut Az, e desugar.NodeRef) int {
+    l := desugar.ListRef(node(mut az, e).a)
+    if desugar.LenL(mut az.d, l) < 3 {
+        return -2
+    }
+    s0 := node(mut az, nat(mut az, l, 0))
+    s1 := node(mut az, nat(mut az, l, 1))
+    if s0.kind != ast.SBind || s1.kind != ast.SBind {
+        return -2
+    }
+    c := node(mut az, nat(mut az, desugar.ListRef(s1.c), 0))
+    if c.kind != ast.ECall {
+        return -2
+    }
+    cl := node(mut az, desugar.NodeRef(c.a))
+    if cl.kind != ast.ESelector || str(mut az, desugar.StrRef(cl.b)) != "LeaseTake" {
+        return -2
+    }
+    r := node(mut az, desugar.NodeRef(cl.a))
+    if r.kind != ast.EIdent || str(mut az, desugar.StrRef(r.a)) != "$task" {
+        return -2
+    }
+    lp := node(mut az, nat(mut az, desugar.ListRef(s0.c), 0))
+    return if lp.kind == ast.EIdent { lp.a } else { -1 }
+}
+
+// ブロックの式 e（ast.EBlock）の文の列を歩く（窓なら入れ子を照合し、窓の列に積んで歩く）
+func leaseBlock(az mut Az, e desugar.NodeRef) {
+    l := desugar.ListRef(node(mut az, e).a)
+    w := leaseOf(mut az, e)
+    if w == -2 {
+        stmtList(mut az, l)
+        return
+    }
+    if w != -1 {
+        for i <- iter.Range(az.winBase, az.winN) {
+            v := table.Get(mut az.wins, i * 2)
+            if v != -1 && str(mut az, desugar.StrRef(v)) == str(mut az, desugar.StrRef(w)) {
+                report(mut az, MLeaseNest, e, e)
+            }
+        }
+    }
+    if table.Len(mut az.wins) < (az.winN + 1) * 2 {
+        table.Push(mut az.wins, 0)
+        table.Push(mut az.wins, 0)
+    }
+    table.Set(mut az.wins, az.winN * 2, w)
+    table.Set(mut az.wins, az.winN * 2 + 1, 0)
+    az.winN += 1
+    stmtList(mut az, l)
+    az.winN -= 1
+}
+
+// 窓の中の呼び出し（callee）を照合する: 待ちうる関数（関数の効果の導出の block — effects.sober）か、待ちうる名前付き関数型の値
+// （契約か合併）の呼び出しなら、最内の窓につき 1 回だけ指摘する。匿名の関数型の値は数えない（仮引数は透過 — 渡した側の窓で数える）
+func leaseCall(az mut Az, e desugar.NodeRef, callee desugar.NodeRef) {
+    if az.winN <= az.winBase || table.Get(mut az.wins, (az.winN - 1) * 2 + 1) == 1 {
+        return
+    }
+    fi := leaseCallee(mut az, callee)
+    mut x := -1
+    if fi >= 0 {
+        if (table.Get(mut az.ef.bits, fi) & loader.EffBlock) != 0 {
+            x = fi
+        }
+    } else {
+        d := desugar.FnTypeOf(mut az.d, callee)
+        if d != -1 && (efTypeVal(mut az, d, 0) & loader.EffBlock) != 0 {
+            x = -d - 2
+        }
+    }
+    if x != -1 {
+        report(mut az, MLeaseBlock, e, desugar.NodeRef(x))
+        table.Set(mut az.wins, (az.winN - 1) * 2 + 1, 1)
+    }
+}
+
+// 呼び出しの callee の関数の表の添字（字面の名前だけ — 関数値・組み込みは -1）
+func leaseCallee(az mut Az, callee desugar.NodeRef) int {
+    c := if kind(mut az, callee) == ast.EIndex { desugar.NodeRef(node(mut az, callee).a) } else { callee }
+    x := node(mut az, c)
+    if x.kind == ast.EIdent {
+        return desugar.ResolveFn(mut az.d, az.pk, desugar.StrRef(x.a))
+    }
+    if x.kind == ast.ESelector && kind(mut az, desugar.NodeRef(x.a)) == ast.EIdent {
+        return desugar.ResolveSelFn(mut az.d, az.pk, desugar.StrRef(node(mut az, desugar.NodeRef(x.a)).a), desugar.StrRef(x.b))
+    }
+    return -1
+}
+
+// 呼び出しの callee が std/task の Spawn / SpawnGive / SpawnIn か（実引数のラムダは子の task — 窓の外）
+func spawnsChild(az mut Az, callee desugar.NodeRef) bool {
+    fi := leaseCallee(mut az, callee)
+    if fi < 0 {
+        return false
+    }
+    k := desugar.ParKey(mut az.d, fi)
+    return k == desugar.PAR_SPAWN || k == desugar.PAR_SPAWNGIVE || k == desugar.PAR_SPAWNIN
+}
+
+func leaseMessage(az mut Az, k int, at desugar.NodeRef, x desugar.NodeRef) string {
+    if k == MLeaseNest {
+        return "nested lease of the same Local '${str(mut az, desugar.StrRef(leaseOf(mut az, at)))}': the outer window holds the worker's slot, so this inner lease always falls back to a fresh allocation (same result, slower)"
+    }
+    who := if int(x) >= 0 { "'${fnName(mut az, int(x))}'" } else { "a value of type '${fnTyName(mut az, -int(x) - 2)}'" }
+    return "this lease window may block (${who} can wait): another task on the same worker may take the Local meanwhile, and its lease then falls back to a fresh allocation (same result, slower) — keep waits out of the window"
+}

@@ -1,0 +1,11 @@
+package b
+
+// 素の error を返し自分の package のラベルだけを作る — error の型（全ラベルの union）は a.E の payload の型 a.P を含む
+type BE error {
+    n int
+}
+
+@errors(BE)
+func G(k int) error {
+    return BE{n: k}
+}

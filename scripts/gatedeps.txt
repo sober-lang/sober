@@ -64,7 +64,8 @@ efftrace: examples scripts/efftrace.ts src/stage1 testdata
 fixcheck: src/stage1 testdata/fix testdata/fixgold ~testdata   # testdata は監査（report-1222）で読む単位に詰めた — M2 で確認
 uniqfreeze: bench examples lean scripts/uniqfreeze.list testdata/analyzer_neg testdata/implicitfreeze
 implicitfreeze: bench examples scripts/implicitfreeze.ts testdata
-sobertest: testdata/sobertest ~testdata   # 本文の propsfuzz/testdata は一時の場所に写した package の中の名前（木の testdata は読まない）
+sobertest: testdata/sobertest ~testdata
+doubles: testdata/cells testdata/cells.expect testdata/doubles ~testdata   # 本文の testdata は一時の場所に写した木の中の名前（木の testdata は doubles の下だけ読む）   # 本文の propsfuzz/testdata は一時の場所に写した package の中の名前（木の testdata は読まない）
 jsonsuite: scripts/oracles testdata/jsonpkg testdata/jsontestsuite
 unittest: testdata/crypto testdata/stdtest testdata/tls   # M2（report-1222）が名指し: Sober のプログラムが実行時に読む・import する入力（本文の抽出では見えない）
 x86enc: 

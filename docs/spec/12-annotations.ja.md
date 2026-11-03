@@ -6,7 +6,7 @@
 
 アノテーション `@名前(引数)` は宣言に付ける。受理されたプログラムの意味を変えず、拒否を起こすか、宣言の形を決めるだけ。コンパイル時の計算（comptime）は無い。
 
-A-1. 言語が知るアノテーションは `@errors`（7 章）・`@layout`・`@embed`・`@noinline`・`@exhaustive`・`@secret`・`@bless`・`@credential`・`@shared`・`@effects` の閉じた集合（interface ファイル `.sobi` にだけ書く `@expand` を除く）。知らないアノテーションは拒否する。
+A-1. 言語が知るアノテーションは `@errors`（7 章）・`@layout`・`@embed`・`@noinline`・`@exhaustive`・`@secret`・`@bless`・`@credential`・`@shared`・`@effects`・`@replaces`・`@doubles`（13 章）の閉じた集合（interface ファイル `.sobi` にだけ書く `@expand` を除く）。知らないアノテーションは拒否する。
 例: [`examples/errval.sober`](../../examples/errval.sober)・[`examples/layout_elf.sober`](../../examples/layout_elf.sober)・[`examples/embed_demo.sober`](../../examples/embed_demo.sober)・[`examples/noinline.sober`](../../examples/noinline.sober)
 拒否: [`examples/annot_neg_unknown.sober`](../../examples/annot_neg_unknown.sober)
 決定: [language.md 10 節](../language.md)

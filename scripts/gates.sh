@@ -117,6 +117,7 @@ declare -A GTAG=(
     [uniqfreeze]="desugar analyzer lean"
     [implicitfreeze]="desugar analyzer lower backend"
     [sobertest]="load lower backend"
+    [doubles]="load desugar analyzer lower backend"
     [jsonsuite]="load lower backend"
     [unittest]="lex parse load desugar check lower backend"
     [x86enc]="backend"
@@ -182,7 +183,8 @@ declare -A GTAG=(
 )
 # 長いものから（並列の詰め順 — 2026-10-27 に R1 の実測の札で並べ直した: selfpar の並列化〔R0〕で最長の札が incrbuild / leanbatch / hermetic の群に移った）。段 3 のキャッシュの網 4 本（incrmut / incrbuild / incrrace / cacheaudit — 3〜4 分ずつ）は stages の直後に置く —
 # 後ろに置くと最後に長い札が重なって --full の wall が伸びる（R3 の 766 s — report-1204 3 節）
-ORDER=(zigtest incrbuild leanbatch hermetic implicitfreeze cachesplit selfhost_check stages nextgen elfeq incrrace iouring selfpar incrmut incrcheck_self incrcheck_ex watchcheck testreplay quickfuzz cover mutate guidetest fnpkg errtrace typerdiff efftrace cachekey streq strix fitcheck numpert sobi obs cacheaudit tyorder selfhost_ll selfhost_e2e selfhost_lower selfhost_fmt selfhost_load toolcheck pkgcheck selfhost_parse io_args passes regionbound checkverdict checksplit checkpos panicmsg optdiff corejson irtext lltext llcheck astjson loaderjson selfhost_lex pool_oracle analyzer_neg secretdump effectsdump fixcheck uniqfreeze sobertest jsonsuite unittest x86enc trapprobe seqpar lparcfg schedvec schedfuzz parbudget cutstat mapfuse partinl docsync clidoc outline doclead benchsync maprepr ubfstat framestat sortcheck matchlencheck jcleancheck flatecheck ctcheck cryptocheck tlsfsm iterregion fnhash tyhash gatememo httpcheck starve pid1stop vaslot refs stdref corevec extract axes obs_zig hermetic_zig ir_roundtrip)
+# incrmut は単独で最長の札（冷の --full で 900 s 級）— 13 番目に置くと開始が 5 分近く遅れて臨界路になるので先頭に置く
+ORDER=(incrmut zigtest incrbuild leanbatch hermetic implicitfreeze cachesplit selfhost_check stages nextgen elfeq incrrace iouring selfpar incrcheck_self incrcheck_ex watchcheck testreplay quickfuzz cover mutate guidetest fnpkg errtrace typerdiff efftrace cachekey streq strix fitcheck numpert sobi obs cacheaudit tyorder selfhost_ll selfhost_e2e selfhost_lower selfhost_fmt selfhost_load toolcheck pkgcheck selfhost_parse io_args passes regionbound checkverdict checksplit checkpos panicmsg optdiff corejson irtext lltext llcheck astjson loaderjson selfhost_lex pool_oracle analyzer_neg secretdump effectsdump fixcheck uniqfreeze sobertest doubles jsonsuite unittest x86enc trapprobe seqpar lparcfg schedvec schedfuzz parbudget cutstat mapfuse partinl docsync clidoc outline doclead benchsync maprepr ubfstat framestat sortcheck matchlencheck jcleancheck flatecheck ctcheck cryptocheck tlsfsm iterregion fnhash tyhash gatememo httpcheck starve pid1stop vaslot refs stdref corevec extract axes obs_zig hermetic_zig ir_roundtrip)
 
 auto_tags() { # 変更ファイル → タグ（推定できない変更は all）
     local f
@@ -198,6 +200,7 @@ auto_tags() { # 変更ファイル → タグ（推定できない変更は all�
             scripts/frozen/lower.list) echo lower ;;
             scripts/ir_roundtrip.sh) echo zig ;;
             scripts/sobertest.sh|testdata/sobertest/*) echo load ;;
+            scripts/doubles.sh|testdata/doubles/*|testdata/cells/*|testdata/cells.expect) echo load ;;
             scripts/jsonsuite.sh|testdata/jsontestsuite/*|scripts/oracles/jsonsuite.go) echo backend ;;
             scripts/unittest.sh|src/compiler/*_test.sober) echo all ;;
             src/compiler/lexer/*|src/compiler/tools/lexdump/*) echo lex ;;

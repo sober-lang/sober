@@ -1,0 +1,3 @@
+ok   testdata/doubles/greet.TestGreetLogs
+ok   testdata/doubles/greet.TestFreshPerTest
+2 passed, 0 failed

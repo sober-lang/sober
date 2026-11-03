@@ -1,0 +1,90 @@
+{
+  "package": "t",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/testing/cell",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "TestT",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "cell",
+                  "tok": 26
+                },
+                "field": "Set",
+                "tok": 28
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "H",
+                  "tok": 30
+                },
+                {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 32
+                }
+              ],
+              "tok": 29
+            }
+          }
+        ]
+      },
+      "tok": 22,
+      "bodiless": false,
+      "span": {
+        "start": 21,
+        "end": 37
+      },
+      "sig_end": 25
+    }
+  ],
+  "consts": [
+    {
+      "name": "H",
+      "expr": {
+        "k": "composite",
+        "type_name": "cell.Cell",
+        "elems": [
+          {
+            "key": "key",
+            "value": {
+              "k": "int",
+              "value": 7,
+              "tok": 18
+            }
+          }
+        ],
+        "tok": 9,
+        "type_args": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 21
+      }
+    }
+  ]
+}

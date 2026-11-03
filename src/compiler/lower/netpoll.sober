@@ -451,6 +451,22 @@ func tmrEnt(st mut St, hp int, i int) int {
     return gepWord(mut st, hp, bin(mut st, BAdd, bin(mut st, BShl, i, iconst(mut st, 1)), iconst(mut st, 2)))
 }
 
+// 満了で起こす task の TCB の頭 7 線の先読み（関門の満了 → enter → 走りの間に間に合う。10 ms 級の保持で TCB は L3 の外へ落ちている）。
+// 積みは先読みしない — 起きた task の積みは mn_next の次の候補の先読みが覆い、ここで引き直すと L2 を汚すだけ。
+// 計器の変異: 34 = 先読みしない（対照）・35 / 36 = 積みも足す（棄てた形の再現）
+func tmrPrefetch(st mut St, t int) {
+    if st.rtMut != 34 {
+        mut j := 0
+        while j < 7 {
+            prefetchOp(mut st, urAdd(mut st, t, j * 64))
+            j += 1
+        }
+    }
+    if st.rtMut == 35 || st.rtMut == 36 {
+        prefetchStack(mut st, t)
+    }
+}
+
 // rt.tmr_push(目標, TCB) → 0（積んだ）/ 1（満杯）と rt.tmr_fire() → 次の満了までの ns（表が空なら −1）— 満了した待ち手を起こす
 func buildTmr(st mut St) {
     if st.rtTmrPush == -1 {
@@ -573,6 +589,7 @@ func buildTmr(st mut St) {
     store(mut st, tp, TC_IORES, iconst(mut st, -62))
     store(mut st, tp, TC_PREV, l)
     store(mut st, wf, WK_NETW, urAdd(mut st, load(mut st, wf, WK_NETW), -1))
+    tmrPrefetch(mut st, t)
     br(mut st, bP, list2(mut st, f, t))
     // 起こした列を尾（遅い目標）から走れる積みへ押し込む — 最後に積む頭が早い目標
     setCur(mut st, bDone)

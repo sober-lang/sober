@@ -1,10 +1,14 @@
 package asserts
 
+import "std/iter"
+
 func TestPass() {
     assert(Double(2) == 4)
     assert(Name(1) == "one")
     assert(Even(4))
     assert(!Even(3))
+    v := Opt("2")
+    assert(v != nil && v == "2")
 }
 
 func TestCompareFails() {
@@ -36,4 +40,46 @@ func TestUnprintableSkipped() {
     p := Pair{a: 1, b: 2}
     n := 5
     assert(c == 'B' && p.a + n == 6)
+}
+
+// 関数型の名前は束縛せずに渡す（閉包の値の行は出さない）
+func applyFails(f func(int) bool) {
+    assert(Apply(f, 3))
+}
+
+func TestFnArgFails() {
+    applyFails((x) => x > 5)
+}
+
+func twiceFails(f func() bool) {
+    assert(Twice(f) == 1)
+}
+
+func TestFnArgCompareFails() {
+    twiceFails(() => true)
+}
+
+func TestMutArgFails() {
+    mut x := 0
+    assert(Inc(mut x))
+}
+
+// catch の写しは見出しと値の行に元の綴りで出る
+func TestCatchFails() {
+    assert((Parse("") catch 7) == Double(1))
+}
+
+// ラベル（第 2 実引数）は見出しに出る — テーブル駆動で落ちたケースを名指す
+func TestLabelFails() {
+    names := []string{"zero", "one", "two"}
+    for i <- iter.Range(0, len(names)) {
+        assert(Double(i) == i + i + i, "case ${names[i]}")
+    }
+}
+
+// ラベルは偽のときだけ評価する（通る assert のラベルの式は走らない）
+func TestLabelLazy() {
+    mut n := 0
+    assert(Double(2) == 4, "never ${Inc(mut n)}")
+    assert(n == 0)
 }

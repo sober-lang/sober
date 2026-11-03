@@ -818,7 +818,7 @@ func builtin(st mut St, name desugar.StrRef, args desugar.ListRef, at desugar.No
 // 組み込みでなければ -2
 func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
     // 鍵の番号 → 実装の種類 k（下の switch — rt の呼び出し）。引数の数は鍵の署名から
-    k := if sk == loader.IReadFile { 1 } else if sk == loader.IWriteFile { 2 } else if sk == loader.IErrno { 3 } else if sk == loader.IArgs { 4 } else if sk == loader.IReadDir { 5 } else if sk == loader.IWriteFd { 6 } else if sk == loader.IRun { 7 } else if sk == loader.IWriteMode { 8 } else if sk == loader.IMkdir { 9 } else if sk == loader.IRename { 10 } else if sk == loader.IEnviron { 11 } else if sk == loader.IStat { 12 } else if sk == loader.ISleep { 13 } else if sk == loader.IReadFd { 14 } else if sk == loader.IParPool { 15 } else if sk == loader.IParLedger { 16 } else if sk == loader.IOpen { 17 } else if sk == loader.IClose { 18 } else if sk == loader.IChunkOpen { 19 } else if sk == loader.IChunkNext { 20 } else if sk == loader.IChunkClose { 21 } else if sk == loader.IDeadline { 22 } else if sk == loader.ISyscall { 23 } else if sk == loader.IAddr { 24 } else if sk == loader.IWaitFd { 25 } else if sk == loader.IFdOwn { 26 } else if sk == loader.IParFail { 27 } else if sk == loader.INetOp { 28 } else if sk == loader.ILeaseOp { 29 } else if sk == loader.ILeaseView { 30 } else if sk == loader.ILoad64 { 31 } else if sk == loader.ICpuClmul { 32 } else if sk == loader.ICrcFold { 33 } else if sk == loader.IAesCpu { 34 } else if sk == loader.IAesKey { 35 } else if sk == loader.IAesCtr { 36 } else if sk == loader.IAesGhash { 37 } else if sk == loader.IMulHi { 38 } else if sk == loader.IAddrN { 39 } else if sk == loader.IMmCpu { 40 } else if sk == loader.IMmMul { 41 } else if sk == loader.ICycles { 42 } else if sk == loader.IAesTag { 43 } else if sk == loader.ILeaseBytes { 44 } else if sk == loader.IMatchLen { 45 } else if sk == loader.IJClean { 46 } else if sk == loader.IRunFd { 47 } else if sk == loader.IRunFdEnv { 48 } else if sk == loader.ICover { 49 } else if sk == loader.ICoverFd { 50 } else if sk == loader.ICoverGet { 51 } else if sk == loader.ICoverN { 52 } else if sk == loader.ICoverMid { 53 } else if sk == loader.ICoverSetMid { 54 } else { 0 }
+    k := if sk == loader.IReadFile { 1 } else if sk == loader.IWriteFile { 2 } else if sk == loader.IErrno { 3 } else if sk == loader.IArgs { 4 } else if sk == loader.IReadDir { 5 } else if sk == loader.IWriteFd { 6 } else if sk == loader.IRun { 7 } else if sk == loader.IWriteMode { 8 } else if sk == loader.IMkdir { 9 } else if sk == loader.IRename { 10 } else if sk == loader.IEnviron { 11 } else if sk == loader.IStat { 12 } else if sk == loader.ISleep { 13 } else if sk == loader.IReadFd { 14 } else if sk == loader.IParPool { 15 } else if sk == loader.IParLedger { 16 } else if sk == loader.IOpen { 17 } else if sk == loader.IClose { 18 } else if sk == loader.IChunkOpen { 19 } else if sk == loader.IChunkNext { 20 } else if sk == loader.IChunkClose { 21 } else if sk == loader.IDeadline { 22 } else if sk == loader.ISyscall { 23 } else if sk == loader.IAddr { 24 } else if sk == loader.IWaitFd { 25 } else if sk == loader.IFdOwn { 26 } else if sk == loader.IParFail { 27 } else if sk == loader.INetOp { 28 } else if sk == loader.ILeaseOp { 29 } else if sk == loader.ILeaseView { 30 } else if sk == loader.ILoad64 { 31 } else if sk == loader.ICpuClmul { 32 } else if sk == loader.ICrcFold { 33 } else if sk == loader.IAesCpu { 34 } else if sk == loader.IAesKey { 35 } else if sk == loader.IAesCtr { 36 } else if sk == loader.IAesGhash { 37 } else if sk == loader.IMulHi { 38 } else if sk == loader.IAddrN { 39 } else if sk == loader.IMmCpu { 40 } else if sk == loader.IMmMul { 41 } else if sk == loader.ICycles { 42 } else if sk == loader.IAesTag { 43 } else if sk == loader.ILeaseBytes { 44 } else if sk == loader.IMatchLen { 45 } else if sk == loader.IJClean { 46 } else if sk == loader.IRunFd { 47 } else if sk == loader.IRunFdEnv { 48 } else if sk == loader.ICover { 49 } else if sk == loader.ICoverFd { 50 } else if sk == loader.ICoverGet { 51 } else if sk == loader.ICoverN { 52 } else if sk == loader.ICoverMid { 53 } else if sk == loader.ICoverSetMid { 54 } else if sk == loader.ICellReset { 55 } else if sk == loader.IMmSel { 56 } else if sk == loader.IMmSqr { 57 } else if sk == loader.IFeMul { 58 } else if sk == loader.IShaCpu { 59 } else if sk == loader.IShaBlk { 60 } else if sk == loader.IAesSeal { 61 } else if sk == loader.IAesOpen { 62 } else { 0 }
     arity := if k == 0 { 0 } else { desugar.SysArity(sk) }
     if k == 0 {
         return -2, nil
@@ -832,7 +832,12 @@ func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int
     if k == 29 || k == 30 || k == 44 {
         return leaseBuiltin(mut st, k, args, at)
     }
-    if k == 15 || k == 23 || k == 25 || k == 26 || k == 27 || k == 28 || k == 35 || k == 36 || k == 37 || k == 41 || k == 43 || k == 49 || k == 50 || k == 51 || k == 52 || k == 53 || k == 54 {
+    if k == 55 {
+        // 置き場を空にする（cell.sober — 置き場を使わないプログラムは何もしない）
+        cellReset(mut st)
+        return one1(mut st, tInt(mut st), iconst(mut st, 0)), nil
+    }
+    if k == 15 || k == 23 || k == 25 || k == 26 || k == 27 || k == 28 || k == 35 || k == 36 || k == 37 || k == 41 || k == 43 || k == 49 || k == 50 || k == 51 || k == 52 || k == 53 || k == 54 || k == 56 || k == 57 || k == 58 || k == 60 || k == 61 || k == 62 {
         // 引数が全部 int の口（+ AES-GCM の塊 — aes.sober）: std/task の名前つきプールの節（admit.sober）・std 専用の生の syscall（28 節の囲い:
         // rt を通らずその場で syscall）・fd の readiness の待ち（netpoll.sober）・fd の登録
         vs := listN(mut st, arity)
@@ -902,11 +907,11 @@ func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int
             }
             return one1(mut st, tInt(mut st), iconst(mut st, 0)), nil
         }
-        if k == 41 {
-            return one1(mut st, tInt(mut st), mmOp(mut st, MK_MUL, vs)), nil
+        if k == 41 || k == 56 || k == 57 || k == 58 || k == 60 {
+            return one1(mut st, tInt(mut st), mmOp(mut st, if k == 41 { MK_MUL } else if k == 56 { MK_SEL } else if k == 57 { MK_SQR } else if k == 58 { MK_FE } else { MK_SHA }, vs)), nil
         }
         if k >= 35 {
-            return one1(mut st, tInt(mut st), aesOp(mut st, if k == 43 { AK_TAG } else { k - 34 }, vs)), nil
+            return one1(mut st, tInt(mut st), aesOp(mut st, if k == 43 { AK_TAG } else if k == 61 { AK_SEAL } else if k == 62 { AK_OPEN } else { k - 34 }, vs)), nil
         }
         return one1(mut st, tInt(mut st), if k == 23 { syscall(mut st, vs) } else { call(mut st, if k == 15 { st.rtPoolNew } else if k == 28 { needNetOp(mut st) } else { needNet(mut st) }, vs) }), nil
     }
@@ -915,6 +920,8 @@ func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int
         return one1(mut st, tInt(mut st), cyclesOp(mut st)), nil
     case 40:
         return one1(mut st, tInt(mut st), cpuMulx(mut st)), nil
+    case 59:
+        return one1(mut st, tInt(mut st), cpuSha(mut st)), nil
     case 39:
         // []int の先頭の番地（ヘッダの 0 語目 — addr の []int 版）
         b := expr(mut st, latN(mut st, args, 0))?

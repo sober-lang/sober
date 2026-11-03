@@ -149,6 +149,20 @@ func lsGroups(st mut St) int {
 }
 
 // 環境変数の数（無ければ -1）
+// SOBER_XDBG の値のバイト列（無ければ空 — xdbg.sober）
+func xdbgEnv() []int {
+    v, err := os.Getenv("SOBER_XDBG")
+    mut out := mut []int{}
+    if err != nil || v == nil {
+        return freeze(out)
+    }
+    b := bytes(v)
+    for i <- iter.Range(0, len(b)) {
+        out = append(out, int(b[i]))
+    }
+    return freeze(out)
+}
+
 func lsEnvInt(name string) int {
     v, err := os.Getenv(name)
     if err != nil || v == nil {

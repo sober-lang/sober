@@ -1,0 +1,17 @@
+package main
+
+// 負例（check / build とも名指しで拒否 — diag.NarrowAssign）: 絞った mut の T? への代入。`if x == nil { return }` の後ろの x は
+// int?（器）でなく int（中身）で、代入すると絞りの証明が壊れる。中身を変えたいときは別の名前に束縛する（`mut v := x`）
+
+func get() int? {
+    return 3
+}
+
+func main() {
+    mut x := get()
+    if x == nil {
+        return
+    }
+    x = x + 1
+    println(x)
+}
