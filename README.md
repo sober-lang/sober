@@ -262,7 +262,7 @@ Language and compiler:
 
 - [x] Floating-point completeness (a single float type, IEEE 754 binary64 — bit-deterministic arithmetic and printing, no libm)
 - [x] Recursive data types (recursion through `[]T` / `map[K]T` elements or function types, including mutual recursion and generic recursive unions — design in section 1 of [language.md](docs/language.md), in Japanese)
-- [ ] Closures that capture mut bindings
+- [x] Closures that carry mutable state (locally-bound lambdas capture `mut` bindings by inlining; function types take explicit `mut` parameters — capturing `mut` into a function *value* was deliberately rejected)
 - [ ] Merging value streams (zip)
 - [ ] A stronger analyzer: better diagnostics and lints
 - [ ] Effect tracking: bring the effects now described by separate mechanisms (errors, mut, identity, …) into a single framework (design under consideration)
