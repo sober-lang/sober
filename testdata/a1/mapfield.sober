@@ -1,0 +1,42 @@
+package main
+
+// map の欄を通る再帰: 名前つきの子のディレクトリ木を挿入順に歩く
+
+type Dir struct {
+    name string
+    size int
+    subs map[string]Dir
+}
+
+func leaf(n string, s int) Dir {
+    return Dir{name: n, size: s, subs: map[string]Dir{}}
+}
+
+func total(d Dir) int {
+    mut t := d.size
+    for k <- d.subs {
+        c := d.subs[k]
+        if c != nil {
+            t += total(c)
+        }
+    }
+    return t
+}
+
+func paths(d Dir, pre string) {
+    println("${pre}/${d.name} ${d.size}")
+    for k <- d.subs {
+        c := d.subs[k]
+        if c != nil {
+            paths(c, pre + "/" + d.name)
+        }
+    }
+}
+
+func main() {
+    src := Dir{name: "src", size: 3, subs: map[string]Dir{"z": leaf("z", 10), "a": leaf("a", 20)}}
+    root := Dir{name: "root", size: 1, subs: map[string]Dir{"src": src, "doc": leaf("doc", 5), "src2": src}}
+    paths(root, "")
+    println(total(root))
+    println(len(root.subs))
+}

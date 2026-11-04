@@ -1,0 +1,33 @@
+package main
+
+// 関数型の結果を通る struct との相互再帰（状態を返し直す生成器）: Next は次の 1 歩 Step を返し、Step は続きの Next を持つ。
+// 仮引数 0 本の named fn type が組の成分になる形
+
+type Next func() Step
+
+type Step struct {
+    v int
+    more bool
+    next Next?
+}
+
+func counter(i int, lim int) Next {
+    return () => if i >= lim { Step{v: 0, more: false, next: nil} } else { Step{v: i + 1, more: true, next: counter(i + 1, lim)} }
+}
+
+func drain(g Next, acc int) int {
+    s := g()
+    if !s.more {
+        return acc
+    }
+    n := s.next
+    if n == nil {
+        return acc
+    }
+    return drain(n, acc * 10 + s.v)
+}
+
+func main() {
+    println(drain(counter(0, 3), 0))
+    println(drain(counter(5, 5), 7))
+}

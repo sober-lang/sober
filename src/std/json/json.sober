@@ -1,12 +1,12 @@
 package json
 
 // JSON（RFC 8259）の読みと決定的な印字（language.md 16 節）。文書は平らな表 Doc（ノードの番号で子を指す — compiler/ の ast.Tree と同じ形）に置き、
-// 触るのは 1 段だけ開くビューの union Value（json.At）— 各段の switch に網羅が要る（雑に読む手段が構成的に無い — language.md 16 節）。
-// 再帰の union にしないのはコアに再帰型が無いため（形式化の箱「ジェネリック union 段 (3) 再帰」— 入ったら再訪）。
+// 触るのは 1 段だけ開くビューの union View（json.At）— 各段の switch に網羅が要る（雑に読む手段が構成的に無い — language.md 16 節）。
+// 値の木（再帰の union Value）は書きの側: 組んで Encode[json.Value] で書く・Doc の節から Tree で開く。
 //
 //     d := json.Parse(b)?                       // 全量・入れ子の深さは MaxDepth まで
 //     switch json.At(d, json.Root(d)) {
-//     case json.Object{names, vals}: …              // 子はノードの番号 — json.At(d, vals[i]) で 1 段ずつ開く
+//     case json.ViewObject{names, vals}: …          // 子はノードの番号 — json.At(d, vals[i]) で 1 段ずつ開く
 //     …
 //     }
 //     s := json.Format(d, json.Root(d))        // 決定的（空白なし・欄はソースの順・数は字句のまま）
@@ -62,14 +62,24 @@ type Doc struct {
 type sealed struct {
 }
 
-// ノード 1 つのビュー（子はノードの番号 — json.At で開く）
+// JSON の値の木（再帰の union — 組んで Encode[json.Value] で書く・Doc の節から Tree で開く）。数は字句のまま
 type Value union {
     Null {}
     Bool { v bool }
     Number { lit string }
     String { v string }
-    Array { items []int }
-    Object { names []string; vals []int }
+    Array { items []Value }
+    Object { names []string; vals []Value }
+}
+
+// ノード 1 つのビュー（子はノードの番号 — json.At で開く）
+type View union {
+    ViewNull {}
+    ViewBool { v bool }
+    ViewNumber { lit string }
+    ViewString { v string }
+    ViewArray { items []int }
+    ViewObject { names []string; vals []int }
 }
 
 // 根のノード
@@ -86,22 +96,69 @@ func Pos(d Doc, n int) int {
 
 // ノード n を 1 段開く
 @effects()
-func At(d Doc, n int) Value {
+func At(d Doc, n int) View {
     a := d.a[n]
     b := d.b[n]
     k := d.kind[n]
     // 文の if + return で書く（値の位置の switch だと、[]string を持つ variant の腕の合流を check が拒否する）
     if k == kObj {
-        return Object{names: keysOf(d, a, b), vals: d.kids[a + b:a + b + b]}
+        return ViewObject{names: keysOf(d, a, b), vals: d.kids[a + b:a + b + b]}
     }
     return switch k {
+    case kNull: ViewNull{}
+    case kFalse: ViewBool{v: false}
+    case kTrue: ViewBool{v: true}
+    case kNum: ViewNumber{lit: bytesToString(d.src[a:b])}
+    case kStr: ViewString{v: bytesToString(d.src[a:b])}
+    case kStrEsc: ViewString{v: bytesToString(d.esc[a:b])}
+    default: ViewArray{items: d.kids[a:a + b]}
+    }
+}
+
+// ノード n を根とする部分木を値の木に開く。節は子が親より先に並び、部分木は [最初の子孫, n] の連続した区間なので、
+// 区間を前から 1 回歩いて下から組む（再帰しない — 深さ MaxDepth の文書でもスタックと region の深度を使わない）
+@effects()
+func Tree(d Doc, n int) Value {
+    mut lo := n
+    while (d.kind[lo] == kArr || d.kind[lo] == kObj) && d.b[lo] > 0 {
+        lo = d.kids[d.a[lo]]
+    }
+    mut built := mut []Value{}
+    for i <- iter.Range(lo, n + 1) {
+        a := d.a[i]
+        b := d.b[i]
+        k := d.kind[i]
+        t := if k == kArr {
+            mut xs := mut []Value{}
+            for j <- iter.Range(a, a + b) {
+                xs = append(xs, built[d.kids[j] - lo])
+            }
+            Array{items: freeze(xs)}
+        } else if k == kObj {
+            mut xs := mut []Value{}
+            for j <- iter.Range(a + b, a + b + b) {
+                xs = append(xs, built[d.kids[j] - lo])
+            }
+            Object{names: keysOf(d, a, b), vals: freeze(xs)}
+        } else {
+            leaf(d, i)
+        }
+        built = append(built, t)
+    }
+    return built[n - lo]
+}
+
+// 入れ物でない節 n の値
+func leaf(d Doc, n int) Value {
+    a := d.a[n]
+    b := d.b[n]
+    return switch d.kind[n] {
     case kNull: Null{}
     case kFalse: Bool{v: false}
     case kTrue: Bool{v: true}
     case kNum: Number{lit: bytesToString(d.src[a:b])}
     case kStr: String{v: bytesToString(d.src[a:b])}
-    case kStrEsc: String{v: bytesToString(d.esc[a:b])}
-    default: Array{items: d.kids[a:a + b]}
+    default: String{v: bytesToString(d.esc[a:b])}
     }
 }
 

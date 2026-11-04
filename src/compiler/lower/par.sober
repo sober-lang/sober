@@ -1307,7 +1307,7 @@ func kidParams(st mut St, ps desugar.ListRef, params desugar.ListRef) {
         }
         cr := cloAt(mut st, desugar.HeapGet(mut st.d, cs + 2 + k * 6))
         c := table.Len(mut st.closures)
-        table.Push(mut st.closures, Closure{lambda: cr.lambda, ft: cr.ft, pkg: cr.pkg, chain: freezeChain(mut st), ret: desugar.HeapGet(mut st.d, st.rets + 1), inl: st.inlining, env: cr.env, dest: st.destDepth})
+        table.Push(mut st.closures, Closure{lambda: cr.lambda, ft: cr.ft, pkg: cr.pkg, chain: freezeChain(mut st), ret: desugar.HeapGet(mut st.d, st.rets + 1), inl: st.inlining, env: cr.env, dest: st.destDepth, fdest: st.fnDest})
         desugar.HeapSet(mut st.d, cl + 1 + k, c)
     }
     pushScope(mut st)
@@ -1660,7 +1660,10 @@ func chanSendCopy(st mut St, chp int, slot int, t int, idx int) {
     store(mut st, sp, 0, a)
     store(mut st, bp, W_BUMP, a)
     store(mut st, wk, WK_RLAB, iconst(mut st, MAX_DEPTH))
+    // 送り手の値はこの後も読まれ、アリーナは受け手が写した後に使い回す — 元のセルを書き換えない写し
+    st.relocFresh = true
     relocateTo(mut st, slot, 0, t, rd)
+    st.relocFresh = false
     store(mut st, wk, WK_RLAB, iconst(mut st, 0))
     store(mut st, ar, 1, bin(mut st, BSub, load(mut st, bp, W_BUMP), a))
     store(mut st, sp, 0, oldS)

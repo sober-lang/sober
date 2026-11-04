@@ -1,0 +1,306 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "fill",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "slots"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "slice_of",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "mut": false
+                },
+                "elems": [
+                  {
+                    "k": "slicelit",
+                    "elem": {
+                      "k": "name",
+                      "name": "int"
+                    },
+                    "elems": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 23
+                      }
+                    ],
+                    "mut": false,
+                    "tok": 19
+                  },
+                  {
+                    "k": "slicelit",
+                    "elem": {
+                      "k": "name",
+                      "name": "int"
+                    },
+                    "elems": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 30
+                      }
+                    ],
+                    "mut": false,
+                    "tok": 26
+                  }
+                ],
+                "mut": true,
+                "tok": 13
+              }
+            ],
+            "tok": 9
+          },
+          {
+            "k": "bind",
+            "names": [
+              "i"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 37
+              }
+            ],
+            "tok": 34
+          },
+          {
+            "k": "while",
+            "cond": {
+              "k": "binary",
+              "op": "<",
+              "lhs": {
+                "k": "ident",
+                "name": "i",
+                "tok": 40
+              },
+              "rhs": {
+                "k": "int",
+                "value": 40,
+                "tok": 42
+              },
+              "tok": 41
+            },
+            "body": {
+              "stmts": [
+                {
+                  "k": "assign",
+                  "targets": [
+                    {
+                      "k": "index",
+                      "base": {
+                        "k": "ident",
+                        "name": "slots",
+                        "tok": 44
+                      },
+                      "idx": {
+                        "k": "binary",
+                        "op": "%",
+                        "lhs": {
+                          "k": "ident",
+                          "name": "i",
+                          "tok": 46
+                        },
+                        "rhs": {
+                          "k": "int",
+                          "value": 2,
+                          "tok": 48
+                        },
+                        "tok": 47
+                      },
+                      "tok": 45
+                    }
+                  ],
+                  "op": "=",
+                  "values": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "ident",
+                          "name": "i",
+                          "tok": 55
+                        },
+                        {
+                          "k": "binary",
+                          "op": "+",
+                          "lhs": {
+                            "k": "ident",
+                            "name": "i",
+                            "tok": 57
+                          },
+                          "rhs": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 59
+                          },
+                          "tok": 58
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 51
+                    }
+                  ],
+                  "tok": 44
+                },
+                {
+                  "k": "assign",
+                  "targets": [
+                    {
+                      "k": "ident",
+                      "name": "i",
+                      "tok": 62
+                    }
+                  ],
+                  "op": "+=",
+                  "values": [
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 64
+                    }
+                  ],
+                  "tok": 62
+                }
+              ]
+            },
+            "tok": 39
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "+",
+                "lhs": {
+                  "k": "index",
+                  "base": {
+                    "k": "index",
+                    "base": {
+                      "k": "ident",
+                      "name": "slots",
+                      "tok": 69
+                    },
+                    "idx": {
+                      "k": "int",
+                      "value": 0,
+                      "tok": 71
+                    },
+                    "tok": 70
+                  },
+                  "idx": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 74
+                  },
+                  "tok": 73
+                },
+                "rhs": {
+                  "k": "index",
+                  "base": {
+                    "k": "index",
+                    "base": {
+                      "k": "ident",
+                      "name": "slots",
+                      "tok": 77
+                    },
+                    "idx": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 79
+                    },
+                    "tok": 78
+                  },
+                  "idx": {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 82
+                  },
+                  "tok": 81
+                },
+                "tok": 76
+              }
+            ],
+            "tok": 68
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 87
+      },
+      "sig_end": 8
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 92
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "fill",
+                    "tok": 94
+                  },
+                  "args": [],
+                  "tok": 95
+                }
+              ],
+              "tok": 93
+            }
+          }
+        ]
+      },
+      "tok": 88,
+      "bodiless": false,
+      "span": {
+        "start": 87,
+        "end": 101
+      },
+      "sig_end": 91
+    }
+  ],
+  "consts": []
+}

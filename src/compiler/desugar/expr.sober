@@ -84,8 +84,10 @@ func exprIn(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
         st.rdepth = saved
         mut e2 := if dest { cMksliceAt(mut st, 1, et, md) } else { cMkslice(mut st, 1, et) }
         els := lB(nodeOf(mut st, e))
+        // 要素が値の位置（値化可能な named fn type かその option — closure.sober）なら要素は閉包の組
+        efv := fieldFnValDecl(mut st, st.curPkg, st.tenv, nA(nodeOf(mut st, e)))?
         for i <- iter.Range(0, lenL(mut st, els)) {
-            v := coerceExpr(mut st, latN(mut st, els, i), elem, eb, ef, depth, at)?
+            v := if efv >= 0 { closureValue(mut st, latN(mut st, els, i), elem, efv, eb, ef, depth, at)? } else { coerceExpr(mut st, latN(mut st, els, i), elem, eb, ef, depth, at)? }
             // 外側の region の値（仮引数・外の局所）は要素の点座標へ緩める（append の appendValueAnn と同じ規律）。
             // 行き先に作るなら、それより深い要素は行き先へ写す
             vc := if dest { storeCopy(mut st, v, computeTy(mut st, latN(mut st, els, i), eb, ef), et, md) } else { CoreRef(-1) }
@@ -110,10 +112,11 @@ func exprIn(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
         // 空の mut の map リテラルだけ行き先に作る（mkmapAt。要素つきは最内のまま）
         mut e2 := if dest { cMkmapAt(mut st, 1, key, vt, md) } else { cMkmap(mut st, 1, key, vt) }
         ens := lC(nodeOf(mut st, e))
+        vfv := fieldFnValDecl(mut st, st.curPkg, st.tenv, nB(nodeOf(mut st, e)))?
         for i <- iter.Range(0, lenL(mut st, ens)) {
             en := latN(mut st, ens, i)
             kv := mapKey(mut st, nA(nodeOf(mut st, en)), key, eb, ef, depth)?
-            vv := coerceExpr(mut st, nB(nodeOf(mut st, en)), value, eb, ef, depth, at)?
+            vv := if vfv >= 0 { closureValue(mut st, nB(nodeOf(mut st, en)), value, vfv, eb, ef, depth, at)? } else { coerceExpr(mut st, nB(nodeOf(mut st, en)), value, eb, ef, depth, at)? }
             // 値も要素の点座標へ緩める（slice literal と同じ）
             e2 = c3(mut st, CSetm, e2, kv, looserAnn(mut st, nB(nodeOf(mut st, en)), vv, vt, eb, ef))
         }
@@ -226,7 +229,11 @@ func exprIn(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
         if idx == -1 {
             return 0, diag.UnknownName{at: posOf(mut st, at)}
         }
-        base := expr(mut st, base0, eb, ef, depth)?
+        mut base := expr(mut st, base0, eb, ef, depth)?
+        // 再帰の組の struct の値は 1 段開いてから欄を読む
+        if isRecDr(mut st, bd) {
+            base = cUnfold(mut st, base)
+        }
         return projection(mut st, base, idx, lenL(mut st, fs)), nil
     case ast.ELambda:
         return 0, diag.CoreFragment{at: posOf(mut st, at)}
@@ -653,8 +660,16 @@ func ifnilExpr(st mut S, name StrRef, some_then bool, e NodeRef, eb int, ef int,
     bt := bnd(mut st, b).ty
     pty := if isTag(mut st, bt, TOpt) { tInner(mut st, bt) } else { TyRef(-1) }
     eb2 := bind(mut st, eb, name, depth, false, bnd(mut st, b).decl, pty, -1, 0, -1, false, bnd(mut st, b).sty)
+    tracked := bnd(mut st, b).mutable && IfWrites(mut st, e, name)
     if bnd(mut st, b).mutable {
         setNrw(mut st, eb2, e)
+    }
+    if tracked {
+        st.nrwNames = append(st.nrwNames, name)
+    }
+    nrwMark := len(st.nrwNames) - b2i(tracked)
+    defer {
+        st.nrwNames = st.nrwNames[0:nrwMark]
     }
     then := lA(nodeOf(mut st, nB(nodeOf(mut st, e))))
     els := nC(nodeOf(mut st, e))
@@ -1162,9 +1177,9 @@ func lowerInterp(st mut S, e NodeRef, eb int, ef int) (NodeRef, error?) {
             return 0, diag.CoreFragment{at: posOf(mut st, h)}
         }
         mut piece := h
-        if kind == 1 {
+        if kind == 1 || kind == 3 {
             base := rec8(mut st, ast.EIdent, at, int(strLit(mut st, "$convert")), 0, 0, 0, 0, 0)
-            callee := rec8(mut st, ast.ESelector, at, base, int(strLit(mut st, "FormatInt")), 0, 0, 0, 0)
+            callee := rec8(mut st, ast.ESelector, at, base, int(strLit(mut st, if kind == 1 { "FormatInt" } else { "FormatFloat" })), 0, 0, 0, 0)
             piece = NodeRef(rec8(mut st, ast.ECall, at, callee, list1(mut st, int(h)), 0, 0, 0, 0))
             yNoteSyn(mut st, piece, YString)
         } else if kind == 2 {
@@ -1193,7 +1208,7 @@ func textBlock(st mut S, kind int, text string, at NodeRef) int {
     return rec8(mut st, kind, at, list1(mut st, stmt), 0, 0, 0, 0, 0)
 }
 
-// 補間の穴の型（0 = string, 1 = int, 2 = bool, -1 = 補間できない）
+// 補間の穴の型（0 = string, 1 = int, 2 = bool, 3 = float, -1 = 補間できない）
 func interpKind(st mut S, e NodeRef, eb int, ef int) int {
     // 穴の種類は表層型検査器の表から（種類だけ要る — region の座標は要らない。C1 B3）。named scalar は断片外（build も拒否）
     y := YTypeOf(mut st, e)
@@ -1205,6 +1220,8 @@ func interpKind(st mut S, e NodeRef, eb int, ef int) int {
         return 1
     case YBool:
         return 2
+    case YFloat:
+        return 3
     }
     if k == YVar {
         // 型パラメータ型の穴: 今の型環境がインスタンスのもの（ジェネリック Def のインスタンス・展開）なら、その表層型の型引数で決める
@@ -1213,7 +1230,7 @@ func interpKind(st mut S, e NodeRef, eb int, ef int) int {
         i := YAt(mut st, y).a
         if ya != -1 && i < lenL(mut st, ya) {
             k2 := yk(mut st, latI(mut st, ya, i))
-            return if k2 == YString { 0 } else if k2 == YInt { 1 } else if k2 == YBool { 2 } else { -1 }
+            return if k2 == YString { 0 } else if k2 == YInt { 1 } else if k2 == YBool { 2 } else if k2 == YFloat { 3 } else { -1 }
         }
     }
     return -1
@@ -1251,7 +1268,12 @@ func composite(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?)
         }
         st.fvDest = cd
         vs, lets := fieldValuesIn(mut st, hget(mut st, dr + 1), tenv, lA(nodeOf(mut st, nC(nodeOf(mut st, hgetN(mut st, dr))))), elems, at, eb, ef, depth)?
-        return letsAround(mut st, lets, pairChain(mut st, vs)), nil
+        mut v := pairChain(mut st, vs)
+        // 再帰の組の struct は fold で包む（中身 = 1 段の展開の型）
+        if isRecDr(mut st, dr) {
+            v = recFold(mut st, recDrTy(mut st, declRef(mut st, hget(mut st, dr), hget(mut st, dr + 1), tenv), cd, at)?, v)
+        }
+        return letsAround(mut st, lets, v), nil
     }
     vr := findVariant(mut st, st.curPkg, name)
     if vr.decl == -1 {
@@ -1280,18 +1302,23 @@ func composite(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?)
     } else if ntp > 0 {
         return 0, diag.CoreFragment{at: posOf(mut st, at)}
     }
-    return labelIn(mut st, e, vr.decl, vr.pkg, vr.idx, venv, eb, ef, depth)
+    return labelIn(mut st, e, vr.decl, vr.pkg, vr.idx, venv, eb, ef, depth, cd)
 }
 
 // union variant / error ラベルのリテラル → inl / inr の鎖
 func labelL(st mut S, e NodeRef, decl NodeRef, pk int, idx int, eb int, ef int, depth int) (CoreRef, error?) {
-    return labelIn(mut st, e, decl, pk, idx, st.tenv, eb, ef, depth)
+    return labelIn(mut st, e, decl, pk, idx, st.tenv, eb, ef, depth, 0)
 }
 
-// labelL の型環境 venv つき（欄の型と union の木の型をジェネリック union の型引数の束縛で引く — 値の式は呼び手の文脈のまま）
-func labelIn(st mut S, e NodeRef, decl NodeRef, pk int, idx int, venv int, eb int, ef int, depth int) (CoreRef, error?) {
+// labelL の型環境 venv つき（欄の型と union の木の型をジェネリック union の型引数の束縛で引く — 値の式は呼び手の文脈のまま）。
+// dest = 行き先（composite の compDest — 0 = 最内）
+func labelIn(st mut S, e NodeRef, decl NodeRef, pk int, idx int, venv int, eb int, ef int, depth int, dest int) (CoreRef, error?) {
     v := vat(mut st, decl, idx)
     at := e
+    rec := isRecDecl(mut st, decl) && vcount(mut st, decl) >= 2
+    if rec {
+        st.fvDest = dest
+    }
     vs, lets := fieldValuesIn(mut st, pk, venv, vfields(mut st, v), lB(nodeOf(mut st, e)), at, eb, ef, depth)?
     payload := pairChain(mut st, vs)
     saved := st.tenv
@@ -1299,8 +1326,27 @@ func labelIn(st mut S, e NodeRef, decl NodeRef, pk int, idx int, venv int, eb in
     defer {
         st.tenv = saved
     }
+    if rec {
+        // 再帰の組の union は variant の鎖の外側を fold で包む。鎖の兄弟の型は fold の型の 1 段の展開から取る（μ の部分型は同じ μ だけ —
+        // 既定の座標で組むと、行き先が最内でない構築〔関数の結果の位置〕で fold の型と食い違う）
+        // 型パラメータの無い宣言は環境なしで引く（関数本体の型環境を鍵に混ぜると組の枠の照合が外れ、μ の本体に展開した μ が入る）
+        renv := if lenL(mut st, lB(nodeOf(mut st, decl))) > 0 { venv } else { -1 }
+        t := recDrTy(mut st, declRef(mut st, int(decl), pk, renv), dest, at)?
+        return letsAround(mut st, lets, recFold(mut st, t, encodeVariantTy(mut st, tyUnfold(mut st, t), vcount(mut st, decl), idx, payload))), nil
+    }
     r := encodeVariant(mut st, pk, decl, 0, idx, payload, at)?
     return letsAround(mut st, lets, r), nil
+}
+
+// encodeVariant の型を union の型 u（右結合の入れ子 — n 個の variant）から取る形
+func encodeVariantTy(st mut S, u TyRef, n int, idx int, payload CoreRef) CoreRef {
+    if idx == 0 {
+        return cInl(mut st, tRight(mut st, u), payload)
+    }
+    if n == 2 {
+        return cInr(mut st, tLeft(mut st, u), payload)
+    }
+    return cInr(mut st, tLeft(mut st, u), encodeVariantTy(mut st, tRight(mut st, u), n - 1, idx - 1, payload))
 }
 
 // variant（decl の start 番目からの列の idx 番目）のペイロードを右結合の union の入れ子へ包む
@@ -1475,6 +1521,10 @@ func zeroAt(st mut S, t TyRef, r int, at NodeRef) (CoreRef, error?) {
         a := zeroAt(mut st, tLeft(mut st, t), r, at)?
         b := zeroAt(mut st, tRight(mut st, t), r, at)?
         return c2(mut st, CPair, a, b), nil
+    case TMuRs:
+        // 再帰の組の値: 1 段の展開のゼロ値を fold で包む（組の整形でガードの無い閉路は無い — 止まる）
+        tt := tMuRsAt(mut st, t, r)
+        return recFold(mut st, tt, zeroAt(mut st, tyUnfold(mut st, tt), r, at)?), nil
     }
     return zeroOf(mut st, t, at)
 }
@@ -1495,6 +1545,9 @@ func zeroOf(st mut S, t TyRef, at NodeRef) (CoreRef, error?) {
         return cTriv(mut st), nil
     case TOpt:
         return cNil(mut st, pointTy(mut st, tInner(mut st, t))), nil
+    case TMuRs:
+        tt := pointTy(mut st, t)
+        return recFold(mut st, tt, zeroOf(mut st, tyUnfold(mut st, tt), at)?), nil
     case TSl:
         e := cMkslice(mut st, 1, pointTy(mut st, tElem(mut st, t)))
         return if tMutBit(mut st, t) != 0 { e } else { c1(mut st, CFreeze, e) }, nil

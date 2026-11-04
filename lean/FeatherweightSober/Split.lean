@@ -140,6 +140,8 @@ def renameFn (ρ : Nat → Nat) : Expr → Expr
   | send c e => send (renameFn ρ c) (renameFn ρ e)
   | recv c => recv (renameFn ρ c)
   | close c => close (renameFn ρ c)
+  | fold t e => fold t (renameFn ρ e)
+  | unfold e => unfold (renameFn ρ e)
   | loc r a => loc r a
   | slicev mt r base len => slicev mt r base len
   | mapv mt r base len => mapv mt r base len

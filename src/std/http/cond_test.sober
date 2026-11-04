@@ -112,10 +112,11 @@ func TestSendUnderStale() {
     _ = io.WriteFile(w + ".txt", bytes("abc"))
     st, e := statUnder("out", "http_cond_test.txt")
     assert(e == nil && st.size == 3)
-    e1 := sendUnder("out", "http_cond_test.txt", 3, st.modTime, (b) => nil)
+    mut o := Out{}
+    e1 := sendUnder("out", "http_cond_test.txt", 3, st.modTime, mut o, (p, b) => nil)
     assert(e1 == nil)
-    e2 := sendUnder("out", "http_cond_test.txt", 3, st.modTime + 1, (b) => nil)
-    e3 := sendUnder("out", "http_cond_test.txt", 2, st.modTime, (b) => nil)
+    e2 := sendUnder("out", "http_cond_test.txt", 3, st.modTime + 1, mut o, (p, b) => nil)
+    e3 := sendUnder("out", "http_cond_test.txt", 2, st.modTime, mut o, (p, b) => nil)
     assert(isStale(e2) && isStale(e3))
 }
 

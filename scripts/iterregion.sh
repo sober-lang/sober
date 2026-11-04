@@ -33,8 +33,14 @@
 #   ⑪ 形 + RSS: map_dest（map の宛先構築 — report-875・knucleotide の frequencies の形）: return に流れ着く `mut map[string]V{}` の空のヘッダは
 #      呼び手の宛先の深度に作る — build / counts の最初の region.bump の深度が enter の後に読んだ region.depth（自分の深度）でないこと（旧形 = 自分の
 #      深度に作って戻りでセル列を写す — 負例）。RSS は呼び手の反復の N と 10N で比例しない（宛先 = 呼び手の反復の region に積もらない）
-#   ⑫ 形 + RSS: iter_region_rcell（借りの閉包が mut で捕捉する 64 語以上の集合値のセルは今の深度の region — report-1068）: main に 73 語の
-#      region.alloc があること。RSS は N と 10N で比例しない（セルを関数の region に置く変異 = 20000 → 200000 で 11 → 114 MB — 負例は確認済み）
+#   ⑫ RSS: iter_region_rcell（関数型の mut 仮引数の席へ渡す 64 語以上の集合値の束縛 — 旧 (α-L1) の region 置きのセル〔report-1068〕は 2026-11-04 に撤去し、
+#      束縛は普通のセル〔フレームの枠〕）: RSS は N と 10N で比例しない（反復ごとの束縛が関数の region に積もらない）
+#   ⑬ RSS: iter_region_reccons（再帰型の境界コピーの補助の作業域 — report-repr-1）: 反復を越える cons の鎖の写しの作業スタックが
+#      反復ごとに外の region へ積もらないこと。鎖は保持する値なので増分は節点の数に比例する — 20000 → 200000 で節点あたり 128 B 以下
+#      （壊れると 1.6 KB / 節点）
+#   ⑮ RSS: iter_region_optcons（opt の中身を通る再帰型 — 欄は 1 セルの箱・report-repr2-2）: ⑬ と同じ形・同じ線（箱のセルと写しの作業域が反復ごとに積もらない）
+#   ⑭ RSS: dest_append_rec（宛先構築の返る列への追記 — loader/dest.sober の印 3・report-repr-2）: `ks = append(ks, mk(…))` の再帰で組む深さ n の鎖が
+#      深さの数だけ写らないこと — 90 → 900 段で +16 MB 以下（深度ごとの region の頁 ≈ 4 KB / 段だけ。壊れると 1.7 → 135 MB）
 #   scripts/iterregion.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -67,15 +73,6 @@ fi
 r1=$(cat "$W/r1"); r2=$(cat "$W/r2")
 if [ "$r2" -gt $((r1 + 1024)) ]; then
     echo "FAIL: iter_region_inner: RSS grows with the iterations ($r1 KB at 20000 → $r2 KB at 200000)"
-    fail=$((fail + 1))
-fi
-"$S2" build examples/iter_region_rcell.sober --emit=elf --passes --stop-after=llight --dump-ir -o "$W/rc.ir" > /dev/null 2>&1 || { echo "FAIL: dump-ir iter_region_rcell"; fail=$((fail + 1)); }
-rcn=$(awk '/^func @main\.main\(/ { on = 1; n = 0; delete c; next }
-    on && /^}/ { print n; on = 0 }
-    on && / = const 73$/ { c[$1] = 1 }
-    on && /= region\.alloc / { if ($NF in c) n++ }' "$W/rc.ir")
-if [ "$rcn" = 0 ]; then
-    echo "FAIL: iter_region_rcell: the 73-word cell captured by mut is not allocated in a region (want region.alloc of 73 words in main)"
     fail=$((fail + 1))
 fi
 "$S2" build examples/iter_region_rcell.sober -o "$W/rcell" > /dev/null 2>&1 || { echo "FAIL: build iter_region_rcell"; exit 1; }
@@ -195,6 +192,33 @@ for wm in 1:1024 4:4096; do
     fi
     eval "pe$w=\"$q1 → $q2\""
 done
+"$S2" build examples/iter_region_reccons.sober -o "$W/rcons" > /dev/null 2>&1 || { echo "FAIL: build iter_region_reccons"; exit 1; }
+/usr/bin/time -f %M -o "$W/k1" "$W/rcons" 20000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/k2" "$W/rcons" 200000 > /dev/null || fail=$((fail + 1))
+k1=$(cat "$W/k1"); k2=$(cat "$W/k2")
+# 増分は節点の数に比例する（鎖は保持する値）— 節点あたり 128 B 以下（180,000 節点 = 22,500 KB）
+if [ "$k2" -gt $((k1 + 22500)) ]; then
+    echo "FAIL: iter_region_reccons: RSS grows faster than the nodes ($k1 KB at 20000 → $k2 KB at 200000)"
+    fail=$((fail + 1))
+fi
+"$S2" build examples/iter_region_optcons.sober -o "$W/ocons" > /dev/null 2>&1 || { echo "FAIL: build iter_region_optcons"; exit 1; }
+/usr/bin/time -f %M -o "$W/o1" "$W/ocons" 20000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/o2" "$W/ocons" 200000 > /dev/null || fail=$((fail + 1))
+o1=$(cat "$W/o1"); o2=$(cat "$W/o2")
+# ⑮ 箱の欄（next L?）の鎖も ⑬ と同じ線 — 節点あたり 128 B 以下
+if [ "$o2" -gt $((o1 + 22500)) ]; then
+    echo "FAIL: iter_region_optcons: RSS grows faster than the nodes ($o1 KB at 20000 → $o2 KB at 200000)"
+    fail=$((fail + 1))
+fi
+"$S2" build examples/dest_append_rec.sober -o "$W/darec" > /dev/null 2>&1 || { echo "FAIL: build dest_append_rec"; exit 1; }
+/usr/bin/time -f %M -o "$W/a1" "$W/darec" 90 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/a2" "$W/darec" 900 > /dev/null || fail=$((fail + 1))
+a1=$(cat "$W/a1"); a2=$(cat "$W/a2")
+# 深さに比例するのは深度ごとの region の頁だけ（≈ 4 KB / 段）— 部分木を深さの数だけ写すと 2 乗（90 → 900 で +130 MB）
+if [ "$a2" -gt $((a1 + 16384)) ]; then
+    echo "FAIL: dest_append_rec: RSS grows with the square of the depth ($a1 KB at 90 → $a2 KB at 900)"
+    fail=$((fail + 1))
+fi
 "$S2" build examples/lease_iter.sober -o "$W/lsi" > /dev/null 2>&1 || { echo "FAIL: build lease_iter"; exit 1; }
 for w in 1 4; do
     SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/l1" "$W/lsi" 2000 > /dev/null || fail=$((fail + 1))
@@ -206,5 +230,5 @@ for w in 1 4; do
     fi
     eval "pl$w=\"$l1 → $l2\""
 done
-echo "iterregion: 4 loop shapes (enters kept/removed after llight) + inline dest direct (entry-depth allocs ${got}) + RSS $r1 → $r2 KB at 10x iterations + nonret RSS $n1 → $n2 KB + writer RSS $w1 → $w2 KB + map dest RSS $m1 → $m2 KB + region cell RSS $c1 → $c2 KB + inline dest RSS $d1 → $d2 KB + dest reg RSS $g1 → $g2 KB + fnval dest RSS $v1 → $v2 KB + discarded spawn residual RSS W1 $pd1 / W4 $pd4 KB + discarded deaths residual RSS W1 $pe1 / W4 $pe4 KB + lease RSS W1 $pl1 / W4 $pl4 KB, fail=$fail"
+echo "iterregion: 4 loop shapes (enters kept/removed after llight) + inline dest direct (entry-depth allocs ${got}) + RSS $r1 → $r2 KB at 10x iterations + nonret RSS $n1 → $n2 KB + writer RSS $w1 → $w2 KB + map dest RSS $m1 → $m2 KB + region cell RSS $c1 → $c2 KB + inline dest RSS $d1 → $d2 KB + dest reg RSS $g1 → $g2 KB + fnval dest RSS $v1 → $v2 KB + discarded spawn residual RSS W1 $pd1 / W4 $pd4 KB + discarded deaths residual RSS W1 $pe1 / W4 $pe4 KB + lease RSS W1 $pl1 / W4 $pl4 KB + recursive cons RSS $k1 → $k2 KB + opt cons RSS $o1 → $o2 KB + dest append RSS $a1 → $a2 KB, fail=$fail"
 [ "$fail" = 0 ]

@@ -4,6 +4,7 @@ package main
 // が .out を作る — std/rand の 32 bit の算術（int の上で桁に割る）が uint32 と一致することを見る
 
 import "std/iter"
+import "std/math"
 import "std/rand"
 
 func main() {
@@ -33,4 +34,20 @@ func main() {
         cnt[v] = cnt[v] + 1
     }
     println(cnt[0], cnt[1], cnt[2], cnt[3], cnt[4], cnt[5])
+    // Float: [0, 1) の 2^-53 刻み — 値とビット列・10 万本の和（同じ順の加算なのでビットまで Go と一致する）
+    mut fr := rand.New(99)
+    for k <- iter.Range(0, 4) {
+        u := rand.Float(mut fr)
+        println(u, math.Bits(u))
+    }
+    mut sum := 0.0
+    mut lo := 1.0
+    mut hi := 0.0
+    for k <- iter.Range(0, 100000) {
+        u := rand.Float(mut fr)
+        sum += u
+        lo = if u < lo { u } else { lo }
+        hi = if u > hi { u } else { hi }
+    }
+    println(sum, lo >= 0.0, hi < 1.0)
 }

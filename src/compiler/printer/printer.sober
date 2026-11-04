@@ -525,6 +525,13 @@ func typeExpr(out mut []byte, t ast.Tree, n int) {
             out = append(out, ')')
         }
         out = append(out, '?')
+    } else if k == ast.TMutP {
+        // 関数型の mut 仮引数: コンテナは型の mut と 1 つの `mut` を共有する（宣言の仮引数と同じ）
+        ik := t.nodes[x.a].kind
+        if ik != ast.TSlice && ik != ast.TMap {
+            obuf.Lit(mut out, "mut ")
+        }
+        typeExpr(mut out, t, x.a)
     } else if k == ast.TSlice {
         if x.b != 0 {
             obuf.Lit(mut out, "mut ")

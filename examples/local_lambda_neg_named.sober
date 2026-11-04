@@ -1,0 +1,14 @@
+package main
+
+// 負例: 局所の束縛のラムダは名前付き関数型の仮引数（値の位置 — 閉包として残る）へ渡せない（language.md 25 節）
+
+type Op func(n int) int
+
+func apply(op Op, n int) int {
+    return op(n)
+}
+
+func main() {
+    f := (n int) => n + 1
+    println(apply(f, 1))
+}

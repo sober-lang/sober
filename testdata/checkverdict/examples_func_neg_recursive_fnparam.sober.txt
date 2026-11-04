@@ -1,2 +1,2 @@
-sober: desugar error at examples/func_neg_recursive_fnparam.sober:6:43 (CoreFragment)
+sober: load error at examples/func_neg_recursive_fnparam.sober:5:6: this function has a parameter of anonymous function type, so it is expanded where it is called — it cannot call itself, directly or through other such functions (the expansion would not end): loop with for / while, or take a named function type (a value) instead
 exit=1

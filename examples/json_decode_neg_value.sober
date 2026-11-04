@@ -1,0 +1,22 @@
+package main
+
+// 負例（load が拒否 — diag.JsonShape 4）: Decode の T の欄に裸の json.Value（union はゼロ値を持たないので、`?` の早期 return で返す struct が
+// 作れない — 欄を json.Value? にするか json.Tree で読む。Encode だけなら裸の欄も書ける）
+
+import "std/json"
+
+type Msg struct {
+    id int
+    body json.Value
+}
+
+func main() {
+    d, err := json.Parse(bytes("{\"id\":1,\"body\":[]}"))
+    if err != nil {
+        return
+    }
+    m, derr := json.Decode[Msg](d, json.Root(d))
+    if derr == nil {
+        println(m.id)
+    }
+}

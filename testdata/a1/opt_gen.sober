@@ -1,0 +1,24 @@
+package main
+
+// ジェネリックの再帰 struct の opt の欄 N[T] { next N[T]? }
+
+type N[T] struct {
+    v T
+    next N[T]?
+}
+
+func mk(n int) N[int] {
+    if n == 0 {
+        return N[int]{v: 0, next: nil}
+    }
+    return N[int]{v: n, next: mk(n - 1)}
+}
+
+func sum(l N[int]) int {
+    n := l.next
+    return l.v + if n == nil { 0 } else { sum(n) }
+}
+
+func main() {
+    println(sum(mk(10)))
+}

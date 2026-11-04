@@ -6,7 +6,8 @@ import FeatherweightSober.Syntax
 実行できる述語（証明の対象ではない — Checker の外）。コア AST の上の抽象解釈で、次のどれかが起こりうるなら偽:
 
 - 凍結した buffer への書き（setidx / setm / delm — freeze の後の書き。古い別名・欄・ループの次の周回を含む）
-- 凍結した buffer に届く mut のセルを callM へ渡す（呼び先が書きうる）
+- 凍結した buffer に届く mut のセルを callM へ渡す（呼び先が書きうる）。関数値の呼び出し（callv / callMv）は呼び先が静的に
+  分からないので、実引数の届くセル全部を書きうるとみなす
 - Def の中で、仮引数（呼び手の持ち物）の buffer を freeze する（U1 の仮引数）
 - Def の mut の仮引数の buffer が戻り値で呼び出しを越えて逃げる（U3 の戻り値の側 — 別の仮引数への逃げはコアで仮引数の境目が
   残らないので表層の analyzer だけが見る。その分この述語は analyzer より弱い — 照合の向き analyzer ⊆ uniqFreeze は保たれる）
@@ -196,7 +197,8 @@ partial def ev (env : List AV) (e : Expr) (s : St) : AV × St :=
     let (vt, st) := ev env t s
     let (vf, sf) := ev env f { s with next := st.next }
     (vt.join vf, st.joinSt sf)
-  | .some a | .inl _ a | .inr _ a | .ann a _ | .block a | .blockR _ a | .copyTo _ _ a | .tobyte a | .toint a | .fconv _ a =>
+  | .some a | .inl _ a | .inr _ a | .ann a _ | .block a | .blockR _ a | .copyTo _ _ a | .tobyte a | .toint a | .fconv _ a
+  | .fold _ a | .unfold a =>
     ev env a s
   | .ifnil a n sm =>
     let (v, s) := ev env a s
@@ -220,8 +222,13 @@ partial def ev (env : List AV) (e : Expr) (s : St) : AV × St :=
     let (b, s) := s.fresh
     (.bufs (union (D s v) [b]), s)
   | .callv f a =>
+    -- 関数値の型の仮引数は mut を持ちうる（fn は loc-free — `fn (ref true 0 T) R` も整形で、callv はそれを型付ける）。
+    -- 呼び先は静的に分からないので、callMv と同じく実引数の届くセル全部を書きうるとみなす
     let (_, s) := ev env f s
     let (v, s) := ev env a s
+    let s := if (D s (.refs v.allRefs)).any (fun b => s.frozen.contains b) then
+      s.fail "callv: a mut argument reaches a frozen buffer" else s
+    let s := v.allRefs.foldl (fun s c => let (b, s) := s.fresh; s.setCell c ((s.cell c).join (.bufs [b]))) s
     let (b, s) := s.fresh
     (.bufs (union (D s v) [b]), s)
   | .callMv _ f a =>
@@ -414,5 +421,17 @@ def check (Δ : Defs) (mask : Nat → Bool) (e : Option Expr) (trust : Nat → B
     | some e =>
       let (_, s) := ev [] e { defs := Δ }
       s.err.map (fun m => (m, -1))
+
+/-- 関数値の呼び出しが mut の仮引数で凍結した buffer へ書く形（コアは同じ深さの callv で型付ける — mut 仮引数の Def の fnref は
+`fn (ref true 0 …) …`）。callM で呼んだ同じ形と同じく偽 -/
+private def wDefs : Defs :=
+  [ { param := .ref true 0 (.slice true 0 .int), ret := .int,
+      body := .letE (.setidx (.deref (.var 0)) (.lit 0) (.lit 1)) (.lit 0) } ]
+private def wMain (call : Expr → Expr) : Expr :=
+  .block (.letE (.alloc true (.mkslice true .int)) (.letE (.freeze (.deref (.var 0))) (call (.var 1))))
+example : check wDefs (fun _ => true) (some (wMain (.callv (.fnref 0 [])))) =
+    some ("callv: a mut argument reaches a frozen buffer", -1) := by native_decide
+example : check wDefs (fun _ => true) (some (wMain (.callM 0 []))) =
+    some ("callM: a mut argument reaches a frozen buffer", -1) := by native_decide
 
 end FS.Uniq

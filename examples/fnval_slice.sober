@@ -1,0 +1,29 @@
+package main
+
+// 値の位置の slice / map の要素（language.md 25 節）: []F・map[K]F の要素は閉包の値（捕捉つきのラムダ・名前付き関数）
+
+type Op func(a int, b int) int
+
+func add(a int, b int) int {
+    return a + b
+}
+
+type Calc struct {
+    ops []Op
+}
+
+func main() {
+    k := 3
+    c := Calc{ops: []Op{add, (a int, b int) => a * b * k}}
+    mut s := 0
+    for op <- c.ops {
+        s += op(2, 5)
+    }
+    println(s)
+    by := map[string]Op{"add": add, "sub": (a int, b int) => a - b - k}
+    f := by["sub"]
+    if f != nil {
+        println(f(10, 2))
+    }
+    println(c.ops[1](1, 1))
+}

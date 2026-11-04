@@ -221,6 +221,15 @@ type St struct {
     ubStat bool
     // フレームの内訳の印字（開発の口 --frame-stat — 1 本の経路だけ。x86.sober xFunc が関数ごとに `frame …` を stdout へ）
     frStat bool
+    // メモリの上界の報告（開発の口 --mem-report — memrep.sober。rtlower の手前で印字して止まる）
+    memRep bool
+    // スタックの上界の材料（--mem-report）: 関数 [記録, 仮引数の数 × 4 + 戻りの印]…・呼び出し [呼び手の番号, 呼び先の記録（-1 = 間接）, 実引数の数, 印]…・
+    // 番地を取られた関数の記録・x86 が決めたフレーム [記録, バイト]…・関数の名前（関数の列と同じ順）
+    memFn table.Table[int]
+    memEd table.Table[int]
+    memTk table.Table[int]
+    memFr table.Table[int]
+    memNm table.Table[string]
     // 割り当ての結果のダンプ（開発用の口 — SOBER_XDBG の値のバイト列・空 = 口なし。名前の照合は xdbgMatch）
     xdbgPat []int
     // lower の束縛の事実（lower.sober の ubBind — `$k, $e := utf8.Check(b)` の直後の `v := if $e != nil { 脱出 } else { $k }`）: 文の通し番号・
@@ -252,6 +261,21 @@ type St struct {
     rtExtend8 FnRef
     rtStreq FnRef
     rtMatchLen FnRef  // rt.matchlen（一致の長さ — rt8.sober の needMatchLen・-1 = 無し）
+    recRels int          // 再帰型の境界コピーの組の記録の鎖（recreloc.sober — [次, 補助, 組んだか, 成分の列]・-1 = 無し）
+    recRelsF int         // 同じ・元を書き換えない写し（relocFresh）の補助の鎖
+    relocFresh bool      // 境界コピーが元のセルを書き換えない形で写す間（外側を先に写し、写した先のセルの中身を写す — cont.sober relocateCells）
+    rcMemo int           // 情報ごとの「再帰するか」の覚え（[次, 情報, 0 / 1]）
+    nrec int             // 補助の通し番号
+    rcCur int            // 組んでいる補助の組の記録（-1 = 組んでいない）
+    rcSites table.Table[int] // 補助が見つけたヘッダの場所の型（今の補助の分は rcSite0 から）
+    rcSite0 int
+    taStack table.Table[int] // tyArgFields が歩いている途中の struct / union（再帰型の循環で止まる — generics.sober）
+    taN int
+    rcPartsBuilt bool
+    rtRecPush FnRef
+    rtRecGet FnRef
+    rtRecPut FnRef
+    rtRecRehash FnRef
     rtErrReloc FnRef  // rt.err_relocate（組み込み error の境界コピー — cont.sober の needErrReloc・-1 = 無し）
     rtJClean FnRef    // rt.jclean（JSON のエスケープの要らない区間の長さ — rt8.sober の needJClean・-1 = 無し）
     rtMapfind FnRef   // 最初に建てた map の引き（有無の印 — 族は mapFinds）
@@ -284,6 +308,9 @@ type St struct {
     lamDest bool
     // 宛先の深度（印のある確保の置き場 — 入口の深度か、呼び手がレジスタで渡したより浅い深度 — M1c）
     destDepth int
+    // 返る列へ追記する呼び出しの印（loader/dest.sober の 3）の置き場 — 関数では戻りの写しの床（展開の本体・展開されるラムダの本体はその宛先）。
+    // destDepth は外の束縛への代入の右辺の間だけ束縛の深度に差し替わるので別に持つ
+    fnDest int
     // ラムダの塊の本体の末尾の式の期待型 + 1（0 = 無し）: lambdaCall が armValue の直前に置き、blockTail が入口で読んで消す（文の中の塊へは届かない）
     tailW int
     // 値の switch 式の腕の型なし定数を割り当てる型（byte・named scalar）+ 1（0 = 無し）: exprExpecting が置き、switchExpr が入口で読んで消す
@@ -361,11 +388,20 @@ type St struct {
     bcXab []int          // β2 の鍵に入れた cfg の相手（bcAudBase の列 — bcAudOwn）
     bcAh int             // β2 のヒープの読みを記録したか（1 — 監査用のコンパイラの xg の差し込み）
     bcNames [][]byte     // 関数の鎖の順の名前（検証モードの stale の名指し — bcNamesOf）
+    fnvBusy int // 署名を引いている途中の named fn type の積み（closure.sober fnvPush — 0 = 空）
     closKs int // 閉包の値形（closure.sober）: K ごとの env の形の鎖の頭 + 1（0 = 無し）
     closFns int // 持ち上げた閉包の関数の捕捉の記録の鎖の頭 + 1（0 = 無し）
     liftBrw int // 次の liftClosure が借りの実引数のラムダか（1 — emitCall の間接呼び出しの実引数が立て、liftClosure が入口で消費する）
     callEnv int // 次の emitCall が隠れ第 1 引数に渡す env の番地 + 1（0 = 無し — emitCall が入口で消費する）
     tenv int // 型環境（generics.sober — [n, (名前, 型)…]、-1 = 空）
+    // レイアウトの入れ子の深さと、slice / map の要素の位置で出会って後回しにした型宣言（types.sober — 要素の大きさは外側の大きさに効かない。
+    // 再帰の組〔Dir → []File → File.parent Dir?〕で外側が並べ中の宣言を値で持つ形を外側の後に並べる）
+    layDepth int
+    layPend []int
+    // 箱の欄を mut 実引数に渡した写し（optbox.sober — [箱の型, 箱の番地, 直の opt の一時, 書き戻しの深度]…）: 呼び出しの後で箱へ詰め戻す
+    boxWB []int
+    // 絞った mut の名前（narrowkill.sober — [名前, 中身の記録, 外のセルの記録]…）: 書く文の頭 / 後ろで外のセルへ戻す
+    nrwCells []int
     insts int // ジェネリック関数のインスタンスの鎖（[next, キー, FnInfo]）
     inDict int // 辞書 const の展開中か（0 / 1）
     traceEffs bool   // 開発用 `--trace-effects`: 関数の入口 / 出口と効果の葉の印字（traceEff / traceLeaf — 関数の効果の動的オラクル）
@@ -427,6 +463,8 @@ type St struct {
     rtPanic FnRef     // rt.panic(点の番号) / rt.panic_mem(種類) — panic の観測性（panic.sober）
     rtPanicMem FnRef
     rtDrep FnRef
+    rtMemHw FnRef     // rt.mem_sample（変異 39 — region の高水位の標本。-1 = 無し）
+    rtStackPaint FnRef // rt.stack_paint（変異 39 — スタックの実測の塗り。-1 = 無し）
     rtPqstr FnRef     // rt.print_qstr（string を二重引用符 + エスケープで — panic ラベルの欄の印字）
     lastConstV int    // 最後に iconst で作った値の番号と定数（ir.sober — 定数で 0 でない除数のゼロ除算の検査を省く）
     lastConstN int
@@ -472,6 +510,8 @@ func initScalars(st mut St) {
     st.rtRenter = -1
     st.rtRenterL = -1
     st.rtRenterLL = -1
+    st.rtMemHw = -1
+    st.rtStackPaint = -1
     st.ubCheck = -1
     st.ubBound = -1
     st.ubPendSeq = -2
@@ -481,6 +521,11 @@ func initScalars(st mut St) {
     st.rtStreq = -1
     st.rtMatchLen = -1
     st.rtErrReloc = -1
+    st.recRels = -1
+    st.recRelsF = -1
+    st.rcMemo = -1
+    st.rcCur = -1
+    st.rtRecPush = -1
     st.rtJClean = -1
     st.rtMapfind = -1
     st.mapFinds = -1

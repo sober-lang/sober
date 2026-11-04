@@ -1,0 +1,987 @@
+package main
+
+// a1dump: 再帰の型宣言を使う単一ファイルの package main を、再帰型の無い形（A1 — 値ごとに自分の部分木の表 + 根）へ書き換えて標準出力に書く。
+// 検査用の脱糖器（差分オラクル scripts/a1check.sh の片側）: 速さは要らない — 構築は子の表を写すので O(節点 × 深さ)。
+//
+// 目標形（組 G・成分 A〔struct〕/ U〔union〕— 型の名前は元のまま）:
+//   type a1_G_Row union { a1_G_A_r { …再帰の位置は添字 int… }; a1_G_U_V_r { … }; … }
+//   type A struct { rows []a1_G_Row; root int }          値 = 自分の部分木の表 + 根の添字
+//   type a1_U_O union { V { …欄は元の型… }; … }          U を 1 段開いた形（switch の subject の行き先・variant の名前は元のまま）
+// 使い点: `A{…}` / `V{…}` → a1_A_mk / a1_U_mk_V・`e.f`（e が A）→ a1_A_get_f(e)・`switch e`（e が U）→ switch a1_U_open(e)。
+// 子の読みは親の表を共有する（値は imm なので写さなくても意味は同じ）。
+// 断片の外は `a1: unsupported: <理由> at <行>` を stderr に出して exit 2（黙って素通しにしない）。
+//
+// 使い方: a1dump [--groups] <std の置き場> <file.sober>（--groups は再帰の組の数だけを出す）
+
+import "std/io"
+import "std/os"
+import "std/builder"
+import "std/iter"
+import "std/strings"
+import "lexer"
+import "parser"
+import "ast"
+import "loader"
+import "desugar"
+import "printer"
+
+type Fld struct {
+    name string
+    ty int
+}
+
+// 成分の行の形 1 つ（struct の成分は 1 つ・union の成分は variant ごと）
+type Var struct {
+    name string
+    flds []Fld
+}
+
+type Mem struct {
+    name string
+    node int
+    isUnion bool
+    vars []Var
+}
+
+type Grp struct {
+    name string
+    tparams []string
+    mems []Mem
+}
+
+type Bad struct {
+    why string
+    tok int
+}
+
+// ── 型の読み ──
+
+func memOf(g Grp, name string) int {
+    for i <- iter.Range(0, len(g.mems)) {
+        if g.mems[i].name == name {
+            return i
+        }
+    }
+    return -1
+}
+
+func listOr(t ast.Tree, l int) []int {
+    if l < 0 {
+        return []int{}
+    }
+    mut out := []int{}
+    for i <- iter.Range(0, ast.ListLen(t, l)) {
+        out = append(out, ast.ListAt(t, l, i))
+    }
+    return out
+}
+
+// 型式 n が組の成分を参照するか
+func hasM(t ast.Tree, g Grp, n int) bool {
+    x := t.nodes[n]
+    k := x.kind
+    if k == ast.TName || k == ast.TGeneric {
+        if memOf(g, loader.Name(t, x.a)) >= 0 {
+            return true
+        }
+        if k == ast.TGeneric {
+            for a <- listOr(t, x.b) {
+                if hasM(t, g, a) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+    if k == ast.TSlice || k == ast.TOpt {
+        return hasM(t, g, x.a)
+    }
+    if k == ast.TMap {
+        return hasM(t, g, x.a) || hasM(t, g, x.b)
+    }
+    if k == ast.TArray {
+        return hasM(t, g, x.b)
+    }
+    return false
+}
+
+// 型式 n の綴り（row = true なら成分の参照を添字 int に）
+func tyText(t ast.Tree, g Grp, n int, row bool) string {
+    x := t.nodes[n]
+    k := x.kind
+    if k == ast.TName {
+        nm := loader.Name(t, x.a)
+        return if row && memOf(g, nm) >= 0 { "int" } else { nm }
+    }
+    if k == ast.TGeneric {
+        nm := loader.Name(t, x.a)
+        if row && memOf(g, nm) >= 0 {
+            return "int"
+        }
+        mut s := nm + "["
+        as := listOr(t, x.b)
+        for i <- iter.Range(0, len(as)) {
+            if i > 0 {
+                s = s + ", "
+            }
+            s = s + tyText(t, g, as[i], row)
+        }
+        return s + "]"
+    }
+    if k == ast.TSlice {
+        return (if x.b != 0 { "mut " } else { "" }) + "[]" + tyText(t, g, x.a, row)
+    }
+    if k == ast.TMap {
+        return (if x.c != 0 { "mut " } else { "" }) + "map[" + tyText(t, g, x.a, row) + "]" + tyText(t, g, x.b, row)
+    }
+    if k == ast.TOpt {
+        return tyText(t, g, x.a, row) + "?"
+    }
+    if k == ast.TArray {
+        return "[${x.a}]" + tyText(t, g, x.b, row)
+    }
+    return "?"
+}
+
+// 断片の外の型式（成分の欄に書けない形）を探す: 関数型・タプル・mut のコンテナ・配列の中の成分
+func badTy(t ast.Tree, g Grp, n int) string {
+    x := t.nodes[n]
+    k := x.kind
+    if k == ast.TFunc {
+        return "function type in a recursive group (S)"
+    }
+    if k == ast.TTuple {
+        return "tuple type in a recursive group"
+    }
+    if (k == ast.TSlice && x.b != 0) || (k == ast.TMap && x.c != 0) {
+        return "mut container in a recursive group"
+    }
+    if k == ast.TArray && hasM(t, g, x.b) {
+        return "array of a recursive member"
+    }
+    if k == ast.TMap && hasM(t, g, x.a) {
+        return "recursive member as a map key"
+    }
+    if k == ast.TSlice || k == ast.TOpt {
+        return badTy(t, g, x.a)
+    }
+    if k == ast.TMap {
+        return badTy(t, g, x.b)
+    }
+    if k == ast.TGeneric {
+        for a <- listOr(t, x.b) {
+            w := badTy(t, g, a)
+            if w != "" {
+                return w
+            }
+        }
+    }
+    return ""
+}
+
+// ── 組の発見（型宣言の参照グラフの SCC — 宣言順）──
+
+func refsOf(t ast.Tree, n int, out mut []string) {
+    if n < 0 {
+        return
+    }
+    x := t.nodes[n]
+    k := x.kind
+    if k == ast.TName {
+        out = append(out, loader.Name(t, x.a))
+    } else if k == ast.TGeneric {
+        out = append(out, loader.Name(t, x.a))
+        for a <- listOr(t, x.b) {
+            refsOf(t, a, mut out)
+        }
+    } else if k == ast.TSlice || k == ast.TOpt || k == ast.TMutP {
+        refsOf(t, x.a, mut out)
+    } else if k == ast.TMap {
+        refsOf(t, x.a, mut out)
+        refsOf(t, x.b, mut out)
+    } else if k == ast.TArray {
+        refsOf(t, x.b, mut out)
+    } else if k == ast.TTuple {
+        for a <- listOr(t, x.a) {
+            refsOf(t, a, mut out)
+        }
+    } else if k == ast.TFunc || k == ast.BFunc {
+        for a <- listOr(t, x.a) {
+            refsOf(t, a, mut out)
+        }
+        for a <- listOr(t, x.b) {
+            refsOf(t, a, mut out)
+        }
+    } else if k == ast.BStruct || k == ast.BError {
+        for f <- listOr(t, x.a) {
+            refsOf(t, t.nodes[f].b, mut out)
+        }
+    } else if k == ast.BUnion {
+        for v <- listOr(t, x.a) {
+            for f <- listOr(t, t.nodes[v].b) {
+                refsOf(t, t.nodes[f].b, mut out)
+            }
+        }
+    } else if k == ast.BDefined || k == ast.BAlias {
+        refsOf(t, x.a, mut out)
+    }
+}
+
+func fldsOf(t ast.Tree, l int) []Fld {
+    mut out := []Fld{}
+    for f <- listOr(t, l) {
+        out = append(out, Fld{name: loader.Name(t, t.nodes[f].a), ty: t.nodes[f].b})
+    }
+    return out
+}
+
+func strsOf(t ast.Tree, l int) []string {
+    mut out := []string{}
+    for s <- listOr(t, l) {
+        out = append(out, loader.Name(t, s))
+    }
+    return out
+}
+
+func sameStrs(a []string, b []string) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+func groupsOf(t ast.Tree) ([]Grp, Bad?) {
+    f := t.nodes[t.file]
+    ds := listOr(t, f.c)
+    n := len(ds)
+    mut names := []string{}
+    for d <- ds {
+        names = append(names, loader.Name(t, t.nodes[d].a))
+    }
+    // 到達の表（n × n — 題材は小さい）
+    mut r := mut []bool{}
+    for _ <- iter.Range(0, n * n) {
+        r = append(r, false)
+    }
+    for i <- iter.Range(0, n) {
+        mut rs := mut []string{}
+        refsOf(t, t.nodes[ds[i]].c, mut rs)
+        for nm <- rs {
+            for j <- iter.Range(0, n) {
+                if names[j] == nm {
+                    r[i * n + j] = true
+                }
+            }
+        }
+    }
+    for k <- iter.Range(0, n) {
+        for i <- iter.Range(0, n) {
+            if r[i * n + k] {
+                for j <- iter.Range(0, n) {
+                    if r[k * n + j] {
+                        r[i * n + j] = true
+                    }
+                }
+            }
+        }
+    }
+    mut done := mut []bool{}
+    for _ <- iter.Range(0, n) {
+        done = append(done, false)
+    }
+    mut gs := []Grp{}
+    for i <- iter.Range(0, n) {
+        if done[i] || !r[i * n + i] {
+            continue
+        }
+        mut ms := []Mem{}
+        mut tps := []string{}
+        for j <- iter.Range(i, n) {
+            if r[i * n + j] && r[j * n + i] {
+                done[j] = true
+                d := t.nodes[ds[j]]
+                b := t.nodes[d.c]
+                tp := strsOf(t, d.b)
+                if len(ms) == 0 {
+                    tps = tp
+                } else if !sameStrs(tps, tp) {
+                    return []Grp{}, Bad{why: "members of a recursive group with different type parameters", tok: d.tok}
+                }
+                if b.kind == ast.BStruct {
+                    ms = append(ms, Mem{name: names[j], node: ds[j], isUnion: false, vars: []Var{Var{name: names[j], flds: fldsOf(t, b.a)}}})
+                } else if b.kind == ast.BUnion {
+                    mut vs := []Var{}
+                    for v <- listOr(t, b.a) {
+                        vs = append(vs, Var{name: loader.Name(t, t.nodes[v].a), flds: fldsOf(t, t.nodes[v].b)})
+                    }
+                    ms = append(ms, Mem{name: names[j], node: ds[j], isUnion: true, vars: vs})
+                } else {
+                    return []Grp{}, Bad{why: "recursive member that is not a struct or a union (S / named type)", tok: d.tok}
+                }
+            }
+        }
+        g := Grp{name: ms[0].name, tparams: tps, mems: ms}
+        for m <- g.mems {
+            for v <- m.vars {
+                for fl <- v.flds {
+                    w := badTy(t, g, fl.ty)
+                    if w != "" {
+                        return []Grp{}, Bad{why: w, tok: t.nodes[m.node].tok}
+                    }
+                }
+            }
+        }
+        gs = append(gs, g)
+    }
+    return gs, nil
+}
+
+// ── 生成 ──
+
+func tpDecl(g Grp) string {
+    if len(g.tparams) == 0 {
+        return ""
+    }
+    return "[" + strings.Join(g.tparams, ", ") + "]"
+}
+
+// 型引数の綴り（宣言の型パラメータそのまま — 生成する補助の中で使う）
+func tpArgs(g Grp) string {
+    return tpDecl(g)
+}
+
+func rowName(g Grp) string {
+    return "a1_${g.name}_Row"
+}
+
+func rowVar(g Grp, m Mem, v Var) string {
+    return if m.isUnion { "a1_${g.name}_${m.name}_${v.name}_r" } else { "a1_${g.name}_${m.name}_r" }
+}
+
+func nRowVars(g Grp) int {
+    mut c := 0
+    for m <- g.mems {
+        c += len(m.vars)
+    }
+    return c
+}
+
+func put(b mut builder.Builder[byte], s string) {
+    builder.PushString(mut b, s)
+}
+
+// 値 src（型 ty）の写しの文を ind の字下げで b に出し、結果の式を返す。mode 0 = 元の型 → 行の型（子の表を a1_rows へ graft）・
+// 1 = 行の型 → 元の型（子は a1_v.rows を共有）・2 = 行の型 → 行の型（添字に a1_off の下駄）。tag は局所の名前の一意化
+func gen(b mut builder.Builder[byte], t ast.Tree, g Grp, ty int, src string, mode int, tag string, ind string) string {
+    if !hasM(t, g, ty) {
+        return src
+    }
+    x := t.nodes[ty]
+    k := x.kind
+    if k == ast.TName || k == ast.TGeneric {
+        nm := loader.Name(t, x.a)
+        if mode == 0 {
+            put(mut b, "${ind}a1_o${tag} := len(a1_rows)\n")
+            // 欄は仮引数で受けた補助で読む（map の読みを絞った局所の欄の読みは check が断片の外 — FLEDGER F-rec-a1）
+            put(mut b, "${ind}a1_rows = a1_${g.name}_cat${tpArgs(g)}(a1_rows, a1_${nm}_rows${tpArgs(g)}(${src}))\n")
+            return "a1_o${tag} + a1_${nm}_root${tpArgs(g)}(${src})"
+        }
+        if mode == 1 {
+            return "${nm}${tpArgs(g)}{rows: a1_v.rows, root: ${if mutIs("kids") { "a1_v.root" } else { src }}}"
+        }
+        return "${src} + a1_off${if mutIs("shift") { " + 1" } else { "" }}"
+    }
+    row := mode != 1
+    if k == ast.TSlice {
+        put(mut b, "${ind}mut a1_s${tag} := []${tyText(t, g, x.a, row)}{}\n")
+        put(mut b, "${ind}for a1_e${tag} <- ${src} {\n")
+        r := gen(mut b, t, g, x.a, "a1_e${tag}", mode, tag + "e", ind + "    ")
+        put(mut b, "${ind}    a1_s${tag} = append(a1_s${tag}, ${r})\n")
+        put(mut b, "${ind}}\n")
+        return "a1_s${tag}"
+    }
+    if k == ast.TMap {
+        put(mut b, "${ind}mut a1_s${tag} := mut map[${tyText(t, g, x.a, row)}]${tyText(t, g, x.b, row)}{}\n")
+        put(mut b, "${ind}for a1_k${tag} <- ${src} {\n")
+        put(mut b, "${ind}    a1_e${tag} := ${src}[a1_k${tag}]\n")
+        put(mut b, "${ind}    if a1_e${tag} != nil {\n")
+        r := gen(mut b, t, g, x.b, "a1_e${tag}", mode, tag + "e", ind + "        ")
+        put(mut b, "${ind}        a1_s${tag}[a1_k${tag}] = ${r}\n")
+        put(mut b, "${ind}    }\n")
+        put(mut b, "${ind}}\n")
+        // 明示の freeze: union の variant の欄は暗黙の freeze の位置に入らない（build が型の誤り — FLEDGER F-rec-a1 ②）
+        return "freeze(a1_s${tag})"
+    }
+    if k == ast.TOpt {
+        put(mut b, "${ind}a1_s${tag} := if ${src} != nil {\n")
+        r := gen(mut b, t, g, x.a, src, mode, tag + "e", ind + "    ")
+        put(mut b, "${ind}    ${r}\n")
+        put(mut b, "${ind}} else {\n${ind}    nil\n${ind}}\n")
+        return "a1_s${tag}"
+    }
+    return src
+}
+
+// 網の変異（scripts/a1oracle.sh --mut — 網が赤になることの確かめ）: A1_MUT=shift（graft の下駄を 1 ずらす）/
+// kids（子の読みの根を親のまま）
+func mutIs(w string) bool {
+    v, _ := os.Getenv("A1_MUT")
+    return v != nil && v == w
+}
+
+func fldList(v Var) string {
+    mut s := ""
+    for i <- iter.Range(0, len(v.flds)) {
+        if i > 0 {
+            s = s + ", "
+        }
+        s = s + v.flds[i].name
+    }
+    return s
+}
+
+func genGroup(b mut builder.Builder[byte], t ast.Tree, g Grp) {
+    tp := tpDecl(g)
+    ta := tpArgs(g)
+    rn := rowName(g)
+    // 行の union
+    put(mut b, "\ntype ${rn}${tp} union {\n")
+    for m <- g.mems {
+        for v <- m.vars {
+            put(mut b, "    ${rowVar(g, m, v)} {")
+            for i <- iter.Range(0, len(v.flds)) {
+                put(mut b, "${if i > 0 { ";" } else { "" }} ${v.flds[i].name} ${tyText(t, g, v.flds[i].ty, true)}")
+            }
+            put(mut b, " }\n")
+        }
+    }
+    put(mut b, "}\n")
+    // 値の型（名前は元のまま）と開いた形
+    for m <- g.mems {
+        put(mut b, "\ntype ${m.name}${tp} struct {\n    rows []${rn}${ta}\n    root int\n}\n")
+        put(mut b, "\nfunc a1_${m.name}_rows${tp}(a1_v ${m.name}${ta}) []${rn}${ta} {\n    return a1_v.rows\n}\n")
+        put(mut b, "\nfunc a1_${m.name}_root${tp}(a1_v ${m.name}${ta}) int {\n    return a1_v.root\n}\n")
+        if m.isUnion {
+            put(mut b, "\ntype a1_${m.name}_O${tp} union {\n")
+            for v <- m.vars {
+                put(mut b, "    ${v.name} {")
+                for i <- iter.Range(0, len(v.flds)) {
+                    put(mut b, "${if i > 0 { ";" } else { "" }} ${v.flds[i].name} ${tyText(t, g, v.flds[i].ty, false)}")
+                }
+                put(mut b, " }\n")
+            }
+            put(mut b, "}\n")
+        }
+    }
+    // shift: 行の添字の欄に下駄
+    put(mut b, "\nfunc a1_${g.name}_shift${tp}(a1_r ${rn}${ta}, a1_off int) ${rn}${ta} {\n    return switch a1_r {\n")
+    for m <- g.mems {
+        for v <- m.vars {
+            rv := rowVar(g, m, v)
+            put(mut b, "    case ${rv}{${fldList(v)}}: {\n")
+            mut args := ""
+            for i <- iter.Range(0, len(v.flds)) {
+                r := gen(mut b, t, g, v.flds[i].ty, v.flds[i].name, 2, "f${i}", "        ")
+                args = args + (if i > 0 { ", " } else { "" }) + "${v.flds[i].name}: ${r}"
+            }
+            put(mut b, "        ${rv}${ta}{${args}}\n    }\n")
+        }
+    }
+    put(mut b, "    }\n}\n")
+    // cat: 子の表を写して末尾へ
+    put(mut b, "\nfunc a1_${g.name}_cat${tp}(a1_rows ${"[]"}${rn}${ta}, a1_cs []${rn}${ta}) []${rn}${ta} {\n")
+    put(mut b, "    a1_off := len(a1_rows)\n    mut a1_o := a1_rows\n    for a1_c <- a1_cs {\n        a1_o = append(a1_o, a1_${g.name}_shift${ta}(a1_c, a1_off))\n    }\n    return a1_o\n}\n")
+    multi := nRowVars(g) > 1
+    for m <- g.mems {
+        // 構築: 欄の宣言順の位置引数（元の型）— 子を graft して自分の行を末尾に
+        for v <- m.vars {
+            fname := if m.isUnion { "a1_${m.name}_mk_${v.name}" } else { "a1_${m.name}_mk" }
+            mut ps := ""
+            for i <- iter.Range(0, len(v.flds)) {
+                ps = ps + (if i > 0 { ", " } else { "" }) + "${v.flds[i].name} ${tyText(t, g, v.flds[i].ty, false)}"
+            }
+            put(mut b, "\nfunc ${fname}${tp}(${ps}) ${m.name}${ta} {\n    mut a1_rows := []${rn}${ta}{}\n")
+            mut args := ""
+            for i <- iter.Range(0, len(v.flds)) {
+                r := gen(mut b, t, g, v.flds[i].ty, v.flds[i].name, 0, "f${i}", "    ")
+                args = args + (if i > 0 { ", " } else { "" }) + "${v.flds[i].name}: ${r}"
+            }
+            put(mut b, "    a1_rows = append(a1_rows, ${rowVar(g, m, v)}${ta}{${args}})\n")
+            put(mut b, "    return ${m.name}${ta}{rows: a1_rows, root: len(a1_rows) - 1}\n}\n")
+        }
+        if m.isUnion {
+            // 開く: 根の行を元の型の欄へ
+            put(mut b, "\nfunc a1_${m.name}_open${tp}(a1_v ${m.name}${ta}) a1_${m.name}_O${ta} {\n    return switch a1_v.rows[a1_v.root] {\n")
+            for v <- m.vars {
+                put(mut b, "    case ${rowVar(g, m, v)}{${fldList(v)}}: {\n")
+                mut args := ""
+                for i <- iter.Range(0, len(v.flds)) {
+                    r := gen(mut b, t, g, v.flds[i].ty, v.flds[i].name, 1, "f${i}", "        ")
+                    args = args + (if i > 0 { ", " } else { "" }) + "${v.flds[i].name}: ${r}"
+                }
+                put(mut b, "        ${v.name}${ta}{${args}}\n    }\n")
+            }
+            if nRowVars(g) > len(m.vars) {
+                put(mut b, "    default: panic(Unreachable{})\n")
+            }
+            put(mut b, "    }\n}\n")
+        } else {
+            // 欄の読み
+            v := m.vars[0]
+            for i <- iter.Range(0, len(v.flds)) {
+                fl := v.flds[i]
+                put(mut b, "\nfunc a1_${m.name}_get_${fl.name}${tp}(a1_v ${m.name}${ta}) ${tyText(t, g, fl.ty, false)} {\n    return switch a1_v.rows[a1_v.root] {\n")
+                put(mut b, "    case ${rowVar(g, m, v)}{${fldList(v)}}: {\n")
+                r := gen(mut b, t, g, fl.ty, fl.name, 1, "f${i}", "        ")
+                put(mut b, "        ${r}\n    }\n")
+                if multi {
+                    put(mut b, "    default: panic(Unreachable{})\n")
+                }
+                put(mut b, "    }\n}\n")
+            }
+        }
+    }
+}
+
+// ── 使い点の書き換え ──
+
+// 書き換えの作業場（節と data の写し — 節の置き換えは同じ添字へ・新しい節は末尾へ）
+type W struct {
+    ns mut []ast.Node
+    ds mut []int
+}
+
+func wStr(w mut W, s string) int {
+    at := len(w.ds)
+    bs := bytes(s)
+    w.ds = append(w.ds, len(bs))
+    for c <- bs {
+        w.ds = append(w.ds, int(c))
+    }
+    return at
+}
+
+func wList(w mut W, xs []int) int {
+    at := len(w.ds)
+    w.ds = append(w.ds, len(xs))
+    for x <- xs {
+        w.ds = append(w.ds, x)
+    }
+    return at
+}
+
+func wNode(w mut W, n ast.Node) int {
+    w.ns = append(w.ns, n)
+    return len(w.ns) - 1
+}
+
+func mkNode(kind int, tok int, a int, b int) ast.Node {
+    return ast.Node{kind: kind, tok: tok, a: a, b: b, c: 0, d: 0, e: 0, f: 0}
+}
+
+// 節 i を「name(args)」の呼び出しに置き換える
+func wCall(w mut W, i int, tok int, name string, args []int) {
+    id := wNode(mut w, mkNode(ast.EIdent, tok, wStr(mut w, name), 0))
+    w.ns[i] = mkNode(ast.ECall, tok, id, wList(mut w, args))
+}
+
+// 型引数の列の綴り（無ければ ""）
+func targsText(t ast.Tree, g Grp, l int) string {
+    as := listOr(t, l)
+    if len(as) == 0 {
+        return ""
+    }
+    mut s := "["
+    for i <- iter.Range(0, len(as)) {
+        s = s + (if i > 0 { ", " } else { "" }) + tyText(t, g, as[i], false)
+    }
+    return s + "]"
+}
+
+// 表層型 y が組の成分の宣言（この file の）なら (組, 成分)、でなければ (-1, -1)
+func memOfTy(p loader.Program, st mut desugar.S, gs []Grp, fi int, y int) (int, int) {
+    if y < 0 || desugar.YAt(mut st, y).k != desugar.YDecl {
+        return -1, -1
+    }
+    r := desugar.YAt(mut st, y).a
+    if r < desugar.ABASE || r >= 2 * desugar.ABASE {
+        return -1, -1
+    }
+    if (r % desugar.LK) / desugar.FW != fi {
+        return -1, -1
+    }
+    nd := r % desugar.FW
+    for gi <- iter.Range(0, len(gs)) {
+        for mi <- iter.Range(0, len(gs[gi].mems)) {
+            if gs[gi].mems[mi].node == nd {
+                return gi, mi
+            }
+        }
+    }
+    return -1, -1
+}
+
+// 表層型 y の綴り（綴れない型は ""）— ジェネリックの組の補助へ型引数を明示で渡すため（推論に任せると総称関数へ
+// 総称の struct を渡す既存の拒否に当たる）
+func yText(p loader.Program, st mut desugar.S, fi int, y int) string {
+    if y < 0 {
+        return ""
+    }
+    x := desugar.YAt(mut st, y)
+    k := x.k
+    if k == desugar.YInt {
+        return "int"
+    }
+    if k == desugar.YBool {
+        return "bool"
+    }
+    if k == desugar.YString {
+        return "string"
+    }
+    if k == desugar.YByte {
+        return "byte"
+    }
+    if k == desugar.YFloat {
+        return "float"
+    }
+    if k == desugar.YErr {
+        return "error"
+    }
+    if k == desugar.YSlice || k == desugar.YOpt {
+        e := yText(p, mut st, fi, x.a)
+        if e == "" {
+            return ""
+        }
+        return if k == desugar.YOpt { e + "?" } else { (if x.b != 0 { "mut " } else { "" }) + "[]" + e }
+    }
+    if k == desugar.YMap {
+        a := yText(p, mut st, fi, x.a)
+        b := yText(p, mut st, fi, x.b)
+        if a == "" || b == "" {
+            return ""
+        }
+        return (if x.c != 0 { "mut " } else { "" }) + "map[" + a + "]" + b
+    }
+    if k == desugar.YDecl {
+        r := x.a
+        if r < desugar.ABASE || r >= 2 * desugar.ABASE || (r % desugar.LK) / desugar.FW != fi {
+            return ""
+        }
+        t := p.trees[fi]
+        nm := loader.Name(t, t.nodes[r % desugar.FW].a)
+        ta := yTargs(p, mut st, fi, y)
+        return if ta == "?" { "" } else { nm + ta }
+    }
+    return ""
+}
+
+// YDecl の型引数の綴り "[A, B]"（無ければ ""・綴れなければ "?"）
+func yTargs(p loader.Program, st mut desugar.S, fi int, y int) string {
+    if y < 0 || desugar.YAt(mut st, y).k != desugar.YDecl {
+        return "?"
+    }
+    l := desugar.YAt(mut st, y).c
+    if l < 0 {
+        return ""
+    }
+    lr := desugar.ListRef(l)
+    n := desugar.LenL(mut st, lr)
+    if n == 0 {
+        return ""
+    }
+    mut s := "["
+    for i <- iter.Range(0, n) {
+        e := yText(p, mut st, fi, desugar.LatI(mut st, lr, i))
+        if e == "" {
+            return "?"
+        }
+        s = s + (if i > 0 { ", " } else { "" }) + e
+    }
+    return s + "]"
+}
+
+// 生成した補助の型引数（組がジェネリックのときだけ・y は組の成分の型）— 綴れなければ Bad
+func helperTargs(p loader.Program, st mut desugar.S, fi int, g Grp, y int) string {
+    if len(g.tparams) == 0 {
+        return ""
+    }
+    return yTargs(p, mut st, fi, y)
+}
+
+func unparen(t ast.Tree, n0 int) int {
+    mut n := n0
+    while n >= 0 && t.nodes[n].kind == ast.EParen {
+        n = t.nodes[n].a
+    }
+    return n
+}
+
+// 節 n の表層型（load した木と新しく parse した木で節が揃っていなければ揃わない印 -2）
+func tyOf(p loader.Program, st mut desugar.S, fi int, t ast.Tree, n int) int {
+    lt := p.trees[fi]
+    if n >= len(lt.nodes) || lt.nodes[n].kind != t.nodes[n].kind || lt.nodes[n].tok != t.nodes[n].tok {
+        return -2
+    }
+    return desugar.YTypeOf(mut st, desugar.NodeRef(desugar.ABASE + fi * desugar.FW + n))
+}
+
+// 構築の実引数（欄の宣言順）
+func ctorArgs(t ast.Tree, v Var, elems int) ([]int, Bad?) {
+    es := listOr(t, elems)
+    mut out := []int{}
+    for i <- iter.Range(0, len(v.flds)) {
+        mut got := -1
+        for j <- iter.Range(0, len(es)) {
+            e := t.nodes[es[j]]
+            if e.a >= 0 {
+                if loader.Name(t, e.a) == v.flds[i].name {
+                    got = e.b
+                }
+            } else if j == i {
+                got = e.b
+            }
+        }
+        if got < 0 {
+            return []int{}, Bad{why: "field ${v.flds[i].name} omitted in a literal (zero value)", tok: -1}
+        }
+        out = append(out, got)
+    }
+    return out, nil
+}
+
+func rewrite(p loader.Program, st mut desugar.S, fi int, t ast.Tree, gs []Grp) (ast.Tree, Bad?) {
+    mut w := W{ns: mut []ast.Node{}, ds: mut []int{}}
+    for x <- t.nodes {
+        w.ns = append(w.ns, x)
+    }
+    for d <- t.data {
+        w.ds = append(w.ds, d)
+    }
+    n0 := len(t.nodes)
+    // 1 周目: 構築と欄の読み・断片の外の検出（同じ添字へ置き換え — 親の指す先は変わらない）
+    for i <- iter.Range(0, n0) {
+        x := t.nodes[i]
+        if x.kind == ast.EComposite {
+            nm := loader.Name(t, x.a)
+            for g <- gs {
+                for m <- g.mems {
+                    for v <- m.vars {
+                        if v.name == nm {
+                            args, bad := ctorArgs(t, v, x.b)
+                            if bad != nil {
+                                return t, Bad{why: bad.why, tok: x.tok}
+                            }
+                            fname := if m.isUnion { "a1_${m.name}_mk_${v.name}" } else { "a1_${m.name}_mk" }
+                            mut ta := targsText(t, g, x.c)
+                            if ta == "" && len(g.tparams) > 0 {
+                                ta = helperTargs(p, mut st, fi, g, tyOf(p, mut st, fi, t, i))
+                                if ta == "?" || ta == "" {
+                                    return t, Bad{why: "type arguments of a generic recursive literal not spellable", tok: x.tok}
+                                }
+                            }
+                            wCall(mut w, i, x.tok, fname + ta, args)
+                        }
+                    }
+                }
+            }
+        } else if x.kind == ast.ESelector {
+            bn := unparen(t, x.a)
+            y := tyOf(p, mut st, fi, t, bn)
+            if y == -2 {
+                return t, Bad{why: "loaded tree does not line up with the source (selector base)", tok: x.tok}
+            }
+            gi, mi := memOfTy(p, mut st, gs, fi, y)
+            if gi >= 0 {
+                m := gs[gi].mems[mi]
+                if m.isUnion {
+                    return t, Bad{why: "selector on a recursive union", tok: x.tok}
+                }
+                ta := helperTargs(p, mut st, fi, gs[gi], y)
+                if ta == "?" {
+                    return t, Bad{why: "type arguments of a generic recursive value not spellable", tok: x.tok}
+                }
+                wCall(mut w, i, x.tok, "a1_${m.name}_get_${loader.Name(t, x.b)}${ta}", []int{x.a})
+            }
+        } else if x.kind == ast.SAssign {
+            for tg <- listOr(t, x.a) {
+                tn := t.nodes[tg]
+                if tn.kind == ast.ESelector {
+                    y := tyOf(p, mut st, fi, t, unparen(t, tn.a))
+                    gi, _ := memOfTy(p, mut st, gs, fi, y)
+                    if gi >= 0 || y == -2 {
+                        return t, Bad{why: "assignment to a field of a recursive value", tok: tn.tok}
+                    }
+                }
+            }
+        } else if x.kind == ast.KFieldPat && x.b >= 0 {
+            sub := t.nodes[x.b]
+            if sub.kind == ast.KPType {
+                vn := loader.Name(t, sub.b)
+                for g <- gs {
+                    for m <- g.mems {
+                        if m.isUnion {
+                            for v <- m.vars {
+                                if v.name == vn {
+                                    return t, Bad{why: "nested pattern into a recursive member", tok: x.tok}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // 2 周目: switch の subject を開く（subject の節を末尾へ写し、元の添字を open の呼び出しに）
+    for i <- iter.Range(0, n0) {
+        x := t.nodes[i]
+        if x.kind == ast.ESwitch {
+            for s <- listOr(t, x.a) {
+                y := tyOf(p, mut st, fi, t, unparen(t, s))
+                if y == -2 {
+                    return t, Bad{why: "loaded tree does not line up with the source (switch subject)", tok: x.tok}
+                }
+                gi, mi := memOfTy(p, mut st, gs, fi, y)
+                if gi >= 0 {
+                    m := gs[gi].mems[mi]
+                    if !m.isUnion {
+                        return t, Bad{why: "switch on a recursive struct", tok: x.tok}
+                    }
+                    ta := helperTargs(p, mut st, fi, gs[gi], y)
+                    if ta == "?" {
+                        return t, Bad{why: "type arguments of a generic recursive value not spellable", tok: x.tok}
+                    }
+                    moved := wNode(mut w, w.ns[s])
+                    wCall(mut w, s, w.ns[moved].tok, "a1_${m.name}_open${ta}", []int{moved})
+                }
+            }
+        }
+    }
+    // 組の型宣言を外す
+    f := t.nodes[t.file]
+    mut keep := []int{}
+    for d <- listOr(t, f.c) {
+        mut drop := false
+        for g <- gs {
+            for m <- g.mems {
+                if m.node == d {
+                    drop = true
+                }
+            }
+        }
+        if !drop {
+            keep = append(keep, d)
+        }
+    }
+    w.ns[t.file] = ast.WithC(f, wList(mut w, keep))
+    return ast.Tree{nodes: w.ns, data: w.ds, file: t.file}, nil
+}
+
+// ── 入口 ──
+
+func lineOf(src []byte, ts []lexer.Token, tok int) int {
+    if tok < 0 || tok >= len(ts) {
+        return 0
+    }
+    mut l := 1
+    for i <- iter.Range(0, ts[tok].start) {
+        if src[i] == '\n' {
+            l += 1
+        }
+    }
+    return l
+}
+
+func stdMap(dir string, rel string, m mut map[string]string) bool {
+    es := io.ReadDir(dir) catch return false
+    for i <- iter.Range(0, len(es)) {
+        e := es[i]
+        full := dir + "/" + e.Name
+        key := rel + "/" + e.Name
+        switch e.Kind {
+        case io.Dir{}:
+            if !stdMap(full, key, mut m) {
+                return false
+            }
+        case io.Regular{}:
+            if strings.HasSuffix(e.Name, ".sober") && !strings.HasSuffix(e.Name, "_test.sober") {
+                src := io.ReadFile(full) catch return false
+                m[key] = string(src) catch return false
+            }
+        default:
+        }
+    }
+    return true
+}
+
+func fail(why string) int {
+    _ = io.WriteStderr(bytes("a1: ${why}\n"))
+    return 1
+}
+
+func unsupported(src []byte, ts []lexer.Token, bad Bad) int {
+    _ = io.WriteStderr(bytes("a1: unsupported: ${bad.why} at ${lineOf(src, ts, bad.tok)}\n"))
+    return 2
+}
+
+func main() int {
+    args0 := os.Args() catch return fail("no args")
+    if len(args0) < 2 {
+        return fail("usage: a1dump <std-dir> <file.sober>")
+    }
+    args := []string{args0[len(args0) - 2], args0[len(args0) - 1]}
+    path := args[1]
+    src := io.ReadFile(path) catch return fail("cannot read ${path}")
+    ts := lexer.Lex(src)
+    t, ok := parser.Parse(src, ts)
+    if !ok {
+        return fail("parse error in ${path}")
+    }
+    gs, gbad := groupsOf(t)
+    if gbad != nil {
+        return unsupported(src, ts, gbad)
+    }
+    // --groups: 再帰の組の数だけを出す（a1check が A1 の出力に組が残っていないことを見る口）
+    if len(args0) >= 3 && args0[len(args0) - 3] == "--groups" {
+        println(len(gs))
+        return 0
+    }
+    mut sm := mut map[string]string{}
+    if !stdMap(args[0], "std", mut sm) {
+        return fail("cannot read ${args[0]}")
+    }
+    p, lerr := loader.LoadFs(path, sm)
+    if lerr != nil {
+        return fail("load error in ${path}")
+    }
+    mut fi := -1
+    for i <- iter.Range(0, len(p.file_path)) {
+        fp := p.file_path[i]
+        if !strings.HasPrefix(fp, "std/") && !strings.HasPrefix(fp, "$") {
+            if fi >= 0 {
+                return unsupported(src, ts, Bad{why: "more than one source file", tok: -1})
+            }
+            fi = i
+        }
+    }
+    if fi < 0 {
+        return fail("entry file not found in the loaded program")
+    }
+    mut st := desugar.S{}
+    desugar.Typed(mut st, p)
+    nt, rbad := rewrite(p, mut st, fi, t, gs)
+    if rbad != nil {
+        return unsupported(src, ts, rbad)
+    }
+    mut b := builder.Builder[byte]{}
+    builder.PushString(mut b, string(printer.Print(nt)) catch "")
+    for g <- gs {
+        genGroup(mut b, t, g)
+    }
+    _ = io.WriteStdout(builder.Build(mut b))
+    return 0
+}

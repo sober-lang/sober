@@ -178,9 +178,10 @@ func stmts(st mut S, l ListRef, eb0 int, ef int, depth0 int, ra bool, dis bool, 
     return v, nil
 }
 
-func stmtsIn(st mut S, l ListRef, eb0 int, ef int, depth0 int, ra bool, dis bool, want TyRef) (CoreRef, error?) {
+func stmtsIn(st mut S, l ListRef, eb0 int, ef0 int, depth0 int, ra bool, dis bool, want TyRef) (CoreRef, error?) {
     mut lets := mut []CoreRef{}
     mut eb := eb0
+    mut ef := ef0
     mut depth := depth0
     n := lenL(mut st, l)
     mut i := 0
@@ -195,6 +196,10 @@ func stmtsIn(st mut S, l ListRef, eb0 int, ef int, depth0 int, ra bool, dis bool
         k := kindN(mut st, s)
         at := s
         last := i + 1 == n
+        if len(st.nrwNames) > 0 {
+            // 絞りの消滅（narrowkill.sober）: ループ・式の位置で絞った名前に書く文は頭から外の束縛で読む
+            eb = killStmt(mut st, s, eb, true)
+        }
         if st.track && PackPos(posOf(mut st, s)) != 0 {
             st.opos = PackPos(posOf(mut st, s))
         }
@@ -205,6 +210,13 @@ func stmtsIn(st mut S, l ListRef, eb0 int, ef int, depth0 int, ra bool, dis bool
             vals := lC(nodeOf(mut st, s))
             mutable := nodeOf(mut st, s).b != 0
             nn := lenL(mut st, names)
+            if isLocalLam(mut st, s) {
+                // 局所の束縛のラムダ（借りの局所 — language.md 25 節）: 値にせず閉包の束縛に置き、使用ごとに呼び出し点へ展開する
+                // （展開される関数の匿名の関数型の仮引数と同じ扱い。名前の解決は束縛の点の環境 — 形の検査は loader/fnval.sober の llBind）
+                ef = localLamF(mut st, s, eb, ef)
+                i += 1
+                continue
+            }
             if nn > 1 && lenL(mut st, vals) == 1 {
                 // 多値呼び出しの分解 `x, y := g(...)`: call を匿名束縛し、射影で名前を付ける
                 v0e := latN(mut st, vals, 0)
@@ -420,6 +432,9 @@ func stmtsIn(st mut S, l ListRef, eb0 int, ef int, depth0 int, ra bool, dis bool
         }
         lets = append(lets, sv)
         depth += 1
+        if len(st.nrwNames) > 0 {
+            eb = killStmt(mut st, s, eb, false)
+        }
         i += 1
     }
     mut out := term
@@ -694,13 +709,14 @@ func assignExpr(st mut S, s NodeRef, eb int, ef int, depth int) (CoreRef, error?
         v := expr(mut st, latN(mut st, vals, 0), eb, ef, depth)?
         return cLet(mut st, v, cTriv(mut st)), nil
     }
-    // 絞った mut の束縛への代入は名指して拒否（絞った領域の名前は T? の中身 — 代入は絞りの証明を壊す。`x = nil` の UntypedNil より先に）
+    // 絞った mut の名前への代入（narrowkill.sober）: 右辺は絞ったまま読み、的は外の T? のセル（文の後ろで名前もセルへ戻る）
+    mut ebT := eb
     for j <- iter.Range(0, nt) {
         tx := latN(mut st, targets, j)
         if kindN(mut st, tx) == ast.EIdent {
-            b := lookup(mut st, eb, sA(nodeOf(mut st, tx)))
+            b := lookup(mut st, ebT, sA(nodeOf(mut st, tx)))
             if b >= 0 && bnd(mut st, b).nrw > 0 {
-                return 0, diag.NarrowAssign{at: posOf(mut st, tx), narrowed: posOf(mut st, NodeRef(bnd(mut st, b).nrw - 1))}
+                ebT = killEnv(mut st, ebT, b)
             }
         }
     }
@@ -709,7 +725,7 @@ func assignExpr(st mut S, s NodeRef, eb int, ef int, depth int) (CoreRef, error?
         tx := latN(mut st, targets, j)
         vx := latN(mut st, vals, j)
         if op == lexer.Equal {
-            wantAssignable(mut st, exprSty(mut st, tx, eb, ef), vx, eb, ef)?
+            wantAssignable(mut st, exprSty(mut st, tx, ebT, ef), vx, eb, ef)?
         } else {
             notNamed(mut st, tx, eb, ef)?
             notByte(mut st, tx, eb, ef)?
@@ -791,29 +807,29 @@ func assignExpr(st mut S, s NodeRef, eb int, ef int, depth int) (CoreRef, error?
         if op != lexer.Equal {
             return 0, diag.CoreFragment{at: posOf(mut st, at)}
         }
-        w := targetTy(mut st, target, eb, ef)
+        w := targetTy(mut st, target, ebT, ef)
         // 行き先（根の mut 束縛の region）を値の最上段の mut のリテラルへ渡す（M4 — 外の場所へは行き先に作る）
         mut root := target
         while kindN(mut st, root) == ast.ESelector {
             root = nA(nodeOf(mut st, root))
         }
         if kindN(mut st, root) == ast.EIdent {
-            rb := lookup(mut st, eb, sA(nodeOf(mut st, root)))
+            rb := lookup(mut st, ebT, sA(nodeOf(mut st, root)))
             if rb >= 0 && bnd(mut st, rb).mutable {
                 st.mutDest = bnd(mut st, rb).region + 1
             }
         }
         // 裸の nil は束縛の点座標の型で作る（`x = nil` — 宣言の型のままだとセルの型〔点座標〕と一致しない。catch nil の写しもこれを踏む）
-        wv := if w != -1 && kindN(mut st, latN(mut st, vals, 0)) == ast.ENil && kindN(mut st, root) == ast.EIdent { atBinding(mut st, root, w, eb) } else { w }
+        wv := if w != -1 && kindN(mut st, latN(mut st, vals, 0)) == ast.ENil && kindN(mut st, root) == ast.EIdent { atBinding(mut st, root, w, ebT) } else { w }
         v0 := if wv != -1 { coerceExpr(mut st, latN(mut st, vals, 0), wv, eb, ef, depth, at)? } else { expr(mut st, latN(mut st, vals, 0), eb, ef, depth)? }
         st.mutDest = 0
         v := fieldValueAnn(mut st, target, latN(mut st, vals, 0), v0, eb, ef)
         if kindN(mut st, target) == ast.EIdent {
             // 名前への代入も欄への代入と同じ読み（束縛点の点座標へ緩める — formal.md F-36）
-            return assignTarget(mut st, target, v, eb, depth, at)
+            return assignTarget(mut st, target, v, ebT, depth, at)
         }
         // フィールドパス: 値を先に束縛してから代入（再構築が値を var 0 で参照する）
-        a := assignTarget(mut st, target, cVar(mut st, 0), eb, depth + 1, at)?
+        a := assignTarget(mut st, target, cVar(mut st, 0), ebT, depth + 1, at)?
         return cLet(mut st, v, a), nil
     }
     // 同時代入 `x, y = y, x % y`: 全値を評価してから順に代入
@@ -829,7 +845,7 @@ func assignExpr(st mut S, s NodeRef, eb int, ef int, depth int) (CoreRef, error?
     mut body := cTriv(mut st)
     mut j := nt - 1
     while j >= 0 {
-        a := assignTarget(mut st, latN(mut st, targets, j), cVar(mut st, nt - 1), eb, depth + nt + j, at)?
+        a := assignTarget(mut st, latN(mut st, targets, j), cVar(mut st, nt - 1), ebT, depth + nt + j, at)?
         body = cLet(mut st, a, body)
         j -= 1
     }
@@ -847,6 +863,14 @@ func compoundAssign(st mut S, target NodeRef, op int, value NodeRef, eb int, ef 
     if b < 0 {
         return 0, diag.UnknownName{at: posOf(mut st, target)}
     }
+    if bnd(mut st, b).nrw > 0 {
+        // 絞った名前: 中身の値で計算して外の T? のセルへ包んで書く（文の後ろで名前もセルへ戻る — narrowkill.sober）
+        o := lookup(mut st, bnd(mut st, b).parent, bnd(mut st, b).name)
+        if o < 0 || !bnd(mut st, o).mutable || isSplitB(mut st, o) {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+        return compoundFrom(mut st, cVar(mut st, depth - 1 - bnd(mut st, o).level), cVar(mut st, depth - 1 - bnd(mut st, b).level), true, op, value, eb, ef, depth, at)
+    }
     if !bnd(mut st, b).mutable {
         return 0, diag.Malformed{at: posOf(mut st, at)}
     }
@@ -858,7 +882,11 @@ func compoundAssign(st mut S, target NodeRef, op int, value NodeRef, eb int, ef 
 
 // ref lref への複合代入 `assign lref (op (deref lref) v)`
 func compoundCore(st mut S, lref CoreRef, op int, value NodeRef, eb int, ef int, depth int, at NodeRef) (CoreRef, error?) {
-    cur := c1(mut st, CDeref, lref)
+    return compoundFrom(mut st, lref, c1(mut st, CDeref, lref), false, op, value, eb, ef, depth, at)
+}
+
+// `assign lref (op cur v)`（some = 外の T? のセルへ中身の値を包んで書く — 絞った名前の複合代入）
+func compoundFrom(st mut S, lref CoreRef, cur CoreRef, some bool, op int, value NodeRef, eb int, ef int, depth int, at NodeRef) (CoreRef, error?) {
     mut v := expr(mut st, value, eb, ef, depth)?
     // float（language.md 37 節）: 値が float なら算術 4 種だけ（場所の型との一致はコアの型付けが見る）
     if isTag(mut st, computeTy(mut st, value, eb, ef), TFloat) {
@@ -867,7 +895,7 @@ func compoundCore(st mut S, lref CoreRef, op int, value NodeRef, eb int, ef int,
             nomFail(mut st, at)?
             return 0, diag.CoreFragment{at: posOf(mut st, at)}
         }
-        return c2(mut st, CAssign, lref, cFBin(mut st, fk, cur, v)), nil
+        return c2(mut st, CAssign, lref, someIf(mut st, some, cFBin(mut st, fk, cur, v))), nil
     }
     if op == lexer.PlusEqual {
         v = c2(mut st, CAdd, cur, v)
@@ -878,7 +906,11 @@ func compoundCore(st mut S, lref CoreRef, op int, value NodeRef, eb int, ef int,
         }
         v = cBin(mut st, bk, cur, v)
     }
-    return c2(mut st, CAssign, lref, v), nil
+    return c2(mut st, CAssign, lref, someIf(mut st, some, v)), nil
+}
+
+func someIf(st mut S, some bool, v CoreRef) CoreRef {
+    return if some { c1(mut st, CSome, v) } else { v }
 }
 
 // 代入先 1 つ（名前は素の assign、フィールドパスは struct の再構築）

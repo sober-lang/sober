@@ -57,6 +57,7 @@ T-8. `println(b)` は byte を 10 進で印字する。byte は文字列補間 `
 
 T-9. `float` は IEEE 754 binary64 の 1 本だけ。リテラルは 10 進で、小数点か指数（または両方）を持つ（`1.5`・`2.0`・`1e9`・`1.5e-3`）。小数点の両側に数字が要る（`1.` と `.5` は無い）。リテラルは最近接・偶数への丸めで 1 回だけ丸める。丸めて ±Inf になるリテラルは拒否する。
 例: [`examples/float_basic.sober`](../../examples/float_basic.sober)・[`examples/float_clinger.sober`](../../examples/float_clinger.sober)
+拒否: [`examples/float_neg_range.sober`](../../examples/float_neg_range.sober)
 決定: [language.md 37 節](../language.md)
 
 T-10. int と float は交わらない — 整数リテラルも float の文脈には置けない（`x * 2.0` と書く）。変換は `float(i)`（最近接・偶数への丸め）と `int(f)`（0 方向への切り捨て。NaN・±Inf・int の範囲外は panic・終了コード 101）だけ。byte との直接の変換は無い。
@@ -77,10 +78,10 @@ T-12. float は map のキーにできない。float を subject にした定数
 T-13. `string` は UTF-8 検査済みのバイト列を表す不透明な型。`len`・添字・スライス・`append` は持たない。string 直の演算は `==` `!=` `+` と文字列補間だけ。
 例: [`examples/strings_ops.sober`](../../examples/strings_ops.sober)
 拒否: [`examples/len_string.sober`](../../examples/len_string.sober)
-決定: [language.md 24 節](../language.md)
+決定: [language.md 24 節・37 節](../language.md)
 
-T-14. 文字列補間 `"…${e}…"` の穴に置けるのは int・string・bool の 3 型（bool は `true` / `false`）。穴の型が型パラメータなら、インスタンスの型引数が 3 型のどれかのときだけ受理する。
-例: [`examples/interp.sober`](../../examples/interp.sober)・[`examples/interp_tparam.sober`](../../examples/interp_tparam.sober)
+T-14. 文字列補間 `"…${e}…"` の穴に置けるのは int・float・string・bool の 4 型（float は `println` と同じ最短の往復表現・bool は `true` / `false`）。穴の型が型パラメータなら、インスタンスの型引数が 4 型のどれかのときだけ受理する。
+例: [`examples/interp.sober`](../../examples/interp.sober)・[`examples/interp_tparam.sober`](../../examples/interp_tparam.sober)・[`examples/float_interp.sober`](../../examples/float_interp.sober)
 拒否: [`examples/interp_tparam_named.sober`](../../examples/interp_tparam_named.sober)・[`examples/byte_interp.sober`](../../examples/byte_interp.sober)
 決定: [language.md 24 節](../language.md)
 
@@ -95,9 +96,9 @@ T-16. 型 `T` は常に値を持ち、`nil` は `T?` にだけ住める。slice�
 拒否: [`examples/nil_untyped.sober`](../../examples/nil_untyped.sober)
 決定: [language.md 15 節](../language.md)
 
-T-17. `T?` の値は絞り込んでから `T` として使う（flow typing）。`if x != nil { … }` の本体で x は `T`。`A && x != nil && B` の `B` と `A || x == nil || B` の `B` で x は `T`（式の位置を問わない）。`if A && x != nil && B { … }` の本体と、`if A || x == nil || B { … } else { … }` の else の腕で x は `T`（else の有無を問わない）。`if x == nil || A { 脱出 }`（then が return / break / continue の 1 文）の後ろと、`if x == nil { 脱出 }` の後ろの文で x は `T`。絞り込んだ領域の `mut` の x へは代入できない（中身を変えるなら別の名前に束縛する）。
-例: [`examples/opt.sober`](../../examples/opt.sober)・[`examples/flow_chain.sober`](../../examples/flow_chain.sober)・[`examples/flow_body.sober`](../../examples/flow_body.sober)
-拒否: [`examples/narrow_assign.sober`](../../examples/narrow_assign.sober)
+T-17. `T?` の値は絞り込んでから `T` として使う（flow typing）。`if x != nil { … }` の本体で x は `T`。`A && x != nil && B` の `B` と `A || x == nil || B` の `B` で x は `T`（式の位置を問わない）。`if A && x != nil && B { … }` の本体と、`if A || x == nil || B { … } else { … }` の else の腕で x は `T`（else の有無を問わない）。`if x == nil || A { 脱出 }`（then が return / break / continue の 1 文）の後ろと、`if x == nil { 脱出 }` の後ろの文で x は `T`。`while A && x != nil && B { … }` の本体で x は `T`（周の頭で毎回絞り直す）。絞り込んだ領域で `mut` の x に書く文（`x = e`・`x op= e`・`f(mut x)`・`x.f = e`）の後ろでは x は `T?` に戻る — 名前への代入の右辺は `T` のまま読む。書きがループの本体か式の位置（条件・値の中）にあれば、その文の頭から `T?`。`&&` の連鎖で判定より後ろの項が x に書くなら本体で x は `T?`。
+例: [`examples/opt.sober`](../../examples/opt.sober)・[`examples/flow_chain.sober`](../../examples/flow_chain.sober)・[`examples/flow_body.sober`](../../examples/flow_body.sober)・[`examples/narrow_reassign.sober`](../../examples/narrow_reassign.sober)
+拒否: [`examples/narrow_assign.sober`](../../examples/narrow_assign.sober)・[`examples/narrow_reassign_loop_neg.sober`](../../examples/narrow_reassign_loop_neg.sober)・[`examples/narrow_path_neg.sober`](../../examples/narrow_path_neg.sober)
 決定: [language.md 15 節](../language.md)
 
 T-18. `T?` と `T` の値の `==` / `!=` は無い — 絞り込んでから比べる。`println` も `T?` を受けない。
@@ -175,8 +176,9 @@ T-32. union の値は型パターンの switch（`case A{x}: …`）で分解す
 拒否: [`examples/switch_nonexh_union.sober`](../../examples/switch_nonexh_union.sober)・[`examples/switch_nested_uncovered.sober`](../../examples/switch_nested_uncovered.sober)
 決定: [language.md 1 節・13 節](../language.md)
 
-T-33. 型は自分自身を含められない — 直接にも、`[]T`・`map[K]V`・`T?`・他の型宣言を通しても。木は平らな表と番号で持つ。
-拒否: [`examples/type_recursive.sober`](../../examples/type_recursive.sober)・[`examples/type_recursive_mutual.sober`](../../examples/type_recursive_mutual.sober)
+T-33. 型宣言は自分自身を（他の型宣言を通しても）含めてよい — ただし自分に戻るどの閉路も `[]T` か `map[K]V` の要素の位置か、`T?` の中身か、関数型の仮引数・結果を通る（値の大きさが有限）。互いに参照し合う型宣言の組（強連結成分）は 1 つの再帰型で、組の成分の順は宣言順（package のファイルの順 → ファイルの中の型宣言の順）。値は imm の木 — 下から組み、欄の読みと switch で 1 段ずつ開く。関数型の値（クロージャ）は作成点で組み、呼び出しで 1 段開く。`T?` の欄の代入は新しい値を作る（元の木は変わらない）。拒否するのは、値で自分を含む閉路（直接・`[N]T`・値の欄だけを通る — 大きさが無限）・組の中の参照が型引数を変える形（`Nest[[]T]` — 型が正則でない）。
+例: [`examples/type_recursive.sober`](../../examples/type_recursive.sober)・[`examples/type_recursive_tree.sober`](../../examples/type_recursive_tree.sober)・[`examples/type_recursive_mutual.sober`](../../examples/type_recursive_mutual.sober)・[`examples/type_recursive_group.sober`](../../examples/type_recursive_group.sober)・[`examples/type_recursive_generic.sober`](../../examples/type_recursive_generic.sober)・[`examples/type_recursive_state.sober`](../../examples/type_recursive_state.sober)・[`examples/type_recursive_mw.sober`](../../examples/type_recursive_mw.sober)・[`examples/type_recursive_gen.sober`](../../examples/type_recursive_gen.sober)・[`examples/type_recursive_fncycle.sober`](../../examples/type_recursive_fncycle.sober)・[`examples/type_recursive_opt.sober`](../../examples/type_recursive_opt.sober)・[`examples/type_recursive_opt_mutual.sober`](../../examples/type_recursive_opt_mutual.sober)
+拒否: [`examples/type_recursive_neg_value.sober`](../../examples/type_recursive_neg_value.sober)・[`examples/type_recursive_neg_targs.sober`](../../examples/type_recursive_neg_targs.sober)
 決定: [language.md 1 節](../language.md)
 
 ## 2.12 型宣言は nominal

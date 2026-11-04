@@ -1,0 +1,2 @@
+sober: load error at examples/local_lambda_neg_named.sober:13:19: a lambda bound to a local name is not a value, so it cannot be passed where a value is kept (a parameter of named function type, or an argument of a call of a function value) — write the lambda itself there, or use a named function
+exit=1

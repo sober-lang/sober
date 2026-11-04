@@ -20,8 +20,12 @@ package loader
 //        if A && x != nil && B { T } else { E }   →   if <④ の形> { if x != nil { T } else { $unreach() } } else { E }
 //        if A || x == nil || B { T } else { E }   →   if <④ の形> { T } else { if x != nil { E } else { $unreach() } }
 //     （T・E は 1 回ずつ — else の腕の複製は lower の展開で膨らむ〔自己 build の RSS 479 → 2248 MB を実測〕。条件の値が真〔|| は偽〕なら
-//      判定は必ず成り立つ — 絞った名前への代入・mut 渡しは拒否なので条件と本体の間で x は変わらない。`$unreach` は利用者が書けない名前で、
+//      判定は必ず成り立つ — 判定より後ろの項が x に書くなら包まない〔下の ⑥ の注〕。`$unreach` は利用者が書けない名前で、
 //      後段は到達しない点〔panic の効果に数えない〕として読む）
+// ⑥ while の条件の `&&` の連鎖の中の `x != nil`（本体で x は T — 周の頭で毎回絞り直す）:
+//        while C { B }   →   while true { if C { B } else { break } }
+//     （if は ⑤ / 単独の判定の形で絞る。本体の中の x への代入で絞りが外れ、次の周の頭でまた絞る — desugar/narrowkill.sober）
+// ⑤ の再判定は、判定より後ろの項が x に書く（`f(mut x)`・式の中の代入）なら作らない（本体の x は T? のまま — 書いた後に再判定すると nil で $unreach に落ちる）
 // 写しは固定点まで回す（写した後の入れ子にまた連鎖が残る）。名前の判定は字面だけ（x の型は見ない — 型が T? でなくても写しは意味を変えない）
 
 import "std/builder"
@@ -259,6 +263,9 @@ func fxNarrowBody(t ast.Tree, x mut Fx, cs []int, want int, blk int, tok int) in
             for w <- iter.Range(0, len(names)) {
                 seen = seen || names[w] == nm
             }
+            for r <- iter.Range(q + 1, len(cs)) {
+                seen = seen || writesT(t, cs[r], nm)
+            }
             if !seen {
                 names = append(names, nm)
                 ats = append(ats, unparen(t, cs[q]))
@@ -278,6 +285,120 @@ func fxNarrowBody(t ast.Tree, x mut Fx, cs []int, want int, blk int, tok int) in
         q -= 1
     }
     return out
+}
+
+// 節 n の中に名前 nm への書き（名前・道の根への代入・mut 実引数）があるか（ラムダの中は数えない — desugar/narrowkill.sober の writesN と同じ線）
+func writesT(t ast.Tree, n int, nm int) bool {
+    if n < 0 {
+        return false
+    }
+    x := t.nodes[n]
+    k := x.kind
+    if k == ast.EMutArg {
+        return mutRootT(t, x.a, nm)
+    }
+    if k == ast.EIdent || k == ast.EInt || k == ast.ENil || k == ast.EFloat || k == ast.EStrlit || k == ast.EUtf8Ref || k == ast.ELambda || k == ast.SBreak || k == ast.SContinue {
+        return false
+    }
+    if k == ast.SAssign {
+        for i <- iter.Range(0, ast.ListLen(t, x.a)) {
+            if rootT(t, ast.ListAt(t, x.a, i), nm) {
+                return true
+            }
+        }
+        return writesLT(t, x.a, nm) || writesLT(t, x.c, nm)
+    }
+    if k == ast.SBind {
+        return writesLT(t, x.c, nm)
+    }
+    if k == ast.SRet || k == ast.KBlock || k == ast.EBlock {
+        return writesLT(t, x.a, nm)
+    }
+    if k == ast.SExpr || k == ast.SDefer || k == ast.SYield || k == ast.EParen || k == ast.ESelector {
+        return writesT(t, x.a, nm)
+    }
+    if k == ast.EBinary {
+        return writesT(t, x.b, nm) || writesT(t, x.c, nm)
+    }
+    if k == ast.EIndex || k == ast.ECatch || k == ast.ETry || k == ast.SWhile || k == ast.KEntry {
+        return writesT(t, x.a, nm) || writesT(t, x.b, nm)
+    }
+    if k == ast.KNamedArg || k == ast.KCase || k == ast.KElem {
+        // a は名前 / パターンの列 / 欄の名前
+        return writesT(t, x.b, nm)
+    }
+    if k == ast.EUnary {
+        return writesT(t, x.b, nm)
+    }
+    if k == ast.ECall {
+        return writesT(t, x.a, nm) || writesLT(t, x.b, nm)
+    }
+    if k == ast.EPipe {
+        return writesT(t, x.a, nm) || writesT(t, x.b, nm) || writesLT(t, x.c, nm)
+    }
+    if k == ast.ESlice3 || k == ast.EIf {
+        return writesT(t, x.a, nm) || writesT(t, x.b, nm) || writesT(t, x.c, nm)
+    }
+    if k == ast.EInterp || k == ast.EComposite || k == ast.ESlicelit {
+        return writesLT(t, x.b, nm)
+    }
+    if k == ast.EMaplit {
+        return writesLT(t, x.c, nm)
+    }
+    if k == ast.ESwitch {
+        return writesLT(t, x.a, nm) || writesLT(t, x.b, nm) || writesT(t, x.c, nm)
+    }
+    if k == ast.EFor {
+        for i <- iter.Range(0, ast.ListLen(t, x.a)) {
+            g := t.nodes[ast.ListAt(t, x.a, i)]
+            if writesT(t, g.b, nm) || writesLT(t, g.c, nm) {
+                return true
+            }
+        }
+        return if x.b == 0 { writesT(t, x.c, nm) } else { writesLT(t, x.c, nm) }
+    }
+    return false
+}
+
+func writesLT(t ast.Tree, l int, nm int) bool {
+    if l < 0 {
+        return false
+    }
+    for i <- iter.Range(0, ast.ListLen(t, l)) {
+        if writesT(t, ast.ListAt(t, l, i), nm) {
+            return true
+        }
+    }
+    return false
+}
+
+// 道（`x.f`・`x[i]`）の根が名前 nm か
+func rootT(t ast.Tree, n0 int, nm int) bool {
+    mut n := n0
+    while t.nodes[n].kind == ast.ESelector || t.nodes[n].kind == ast.EIndex || t.nodes[n].kind == ast.EParen {
+        n = t.nodes[n].a
+    }
+    return t.nodes[n].kind == ast.EIdent && strEqPool(t, t.nodes[n].a, nm)
+}
+
+// mut 実引数の道（"x" / "x.f"）の根が nm か
+func mutRootT(t ast.Tree, path int, nm int) bool {
+    n := t.data[nm]
+    p := t.data[path]
+    if p < n || p > n && t.data[path + 1 + n] != '.' {
+        return false
+    }
+    for i <- iter.Range(0, n) {
+        if t.data[path + 1 + i] != t.data[nm + 1 + i] {
+            return false
+        }
+    }
+    return true
+}
+
+// ⑥ の対象（while の条件の && の連鎖に x != nil）
+func whileNil(t ast.Tree, nd ast.Node) bool {
+    return nilIn(t, nd.a, lexer.AmpersandAmpersand, 1, false)
 }
 
 // ⑤ の対象（else つき if で、&& の連鎖に x != nil・または ② に任せない || の連鎖に x == nil）なら 1（&&）/ 2（||）・でなければ 0
@@ -323,6 +444,9 @@ func flowAt(t ast.Tree, nd ast.Node) bool {
             cs = append(cs, r[i])
         }
         return valueNilAt(t, freeze(cs), nd.a) >= 0
+    }
+    if nd.kind == ast.SWhile && whileNil(t, nd) {
+        return true
     }
     if nd.kind == ast.KBlock || nd.kind == ast.EBlock {
         k := ast.ListLen(t, nd.a)
@@ -380,6 +504,15 @@ func flowRound(t ast.Tree) (ast.Tree, bool) {
                 continue
             }
         }
+        if nd.kind == ast.SWhile && whileNil(t, nd) {
+            // ⑥ while C { B } → while true { if C { B } else { break } }
+            brk := fxNode(mut x, ast.Node{ast.SBreak, tok, 0, 0, 0, 0, 0, 0})
+            els := fxNode(mut x, ast.Node{ast.EBlock, tok, ast.PutList(mut x.db, []int{brk}), 0, 0, 0, 0, 0})
+            iff := fxNode(mut x, ast.Node{ast.EIf, tok, nd.a, nd.b, els, 0, 0, 0})
+            ns[i] = ast.Node{ast.SWhile, tok, fxConst(mut x, "true", tok), fxBlock(mut x, iff, tok), nd.c, nd.d, nd.e, nd.f}
+            changed = true
+            continue
+        }
         five := fiveAt(t, nd)
         if five != 0 {
             // ⑤ else つき if の本体
@@ -393,11 +526,13 @@ func flowRound(t ast.Tree) (ast.Tree, bool) {
             }
             cond := fxNode(mut x, fxValueChain(mut x, cs, p, op, tok))
             if five == 1 {
-                ns[i] = ast.Node{ast.EIf, tok, cond, fxBlock(mut x, fxNarrowBody(t, mut x, cs, 1, nd.b, tok), tok), nd.c, 0, 0, 0}
+                nb := fxNarrowBody(t, mut x, cs, 1, nd.b, tok)
+                ns[i] = ast.Node{ast.EIf, tok, cond, if nb >= 0 { fxBlock(mut x, nb, tok) } else { nd.b }, nd.c, 0, 0, 0}
             } else {
                 e := t.nodes[nd.c]
                 eb := if e.kind == ast.EBlock { fxNode(mut x, ast.Node{ast.KBlock, e.tok, e.a, 0, 0, 0, 0, 0}) } else { fxBlock(mut x, nd.c, tok) }
-                ns[i] = ast.Node{ast.EIf, tok, cond, nd.b, fxBlockE(mut x, fxNarrowBody(t, mut x, cs, 2, eb, tok), tok), 0, 0, 0}
+                nb := fxNarrowBody(t, mut x, cs, 2, eb, tok)
+                ns[i] = ast.Node{ast.EIf, tok, cond, nd.b, if nb >= 0 { fxBlockE(mut x, nb, tok) } else { nd.c }, 0, 0, 0}
             }
             changed = true
             continue

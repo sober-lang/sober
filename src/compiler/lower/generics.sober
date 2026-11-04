@@ -8,6 +8,7 @@ import "diag"
 import "desugar"
 import "ast"
 import "std/iter"
+import "std/table"
 
 // 型環境 env の名前 name の型（無ければ -1）
 func envLookup(st mut St, env int, name desugar.StrRef) int {
@@ -62,6 +63,25 @@ func tyArgValueOk(st mut St, t int) bool {
 // struct / union のフィールドがすべて型引数として許されるか
 func tyArgFields(st mut St, t int, value bool) bool {
     info := desugar.HeapGet(mut st.d, t + 1)
+    // 再帰型（slice / map を通って自分を含む）: 歩いている途中の struct / union に戻ったら、その成分の判定は歩いている側に任せる
+    key := info * 2 + if value { 1 } else { 0 }
+    for i <- iter.Range(0, st.taN) {
+        if table.Get(mut st.taStack, i) == key {
+            return true
+        }
+    }
+    if st.taN == table.Len(mut st.taStack) {
+        table.Push(mut st.taStack, key)
+    } else {
+        table.Set(mut st.taStack, st.taN, key)
+    }
+    st.taN += 1
+    ok := tyArgFieldsIn(mut st, t, info, value)
+    st.taN -= 1
+    return ok
+}
+
+func tyArgFieldsIn(st mut St, t int, info int, value bool) bool {
     fs := hgetL(mut st, info + SI_FIELDS)
     if desugar.HeapGet(mut st.d, t) == TStruct {
         for i <- iter.Range(0, lenL(mut st, fs)) {
@@ -367,7 +387,7 @@ func genericCall(st mut St, fidx int, args desugar.ListRef, at desugar.NodeRef, 
         a := latN(mut st, args, i)
         if ast.ParamIsMut(nodeOf(mut st, latN(mut st, ps, i))) {
             // mut 仮引数（mut_def）: 実引数は呼び手のセルのまま渡す（評価してコピーしない）
-            mutArgCell(mut st, a, at)?
+            mutArgCell(mut st, a, at, false)?
             lput(mut st, vsrcs, i, int(a))
         } else {
             x := expr(mut st, a)?
@@ -383,7 +403,7 @@ func genericCall(st mut St, fidx int, args desugar.ListRef, at desugar.NodeRef, 
     targs := tableTArgs(mut st, cn, at, transp)?
     fi := instFunc(mut st, fidx, targs)?
     retagConsts(mut st, cts, vsrcs, desugar.ListRef(infoAt(mut st, fi).params))
-    return emitCall(mut st, infoAt(mut st, fi).ir, -1, desugar.ListRef(infoAt(mut st, fi).params), desugar.ListRef(infoAt(mut st, fi).results), vsrcs, at, decl)
+    return emitCall(mut st, infoAt(mut st, fi).ir, -1, desugar.ListRef(infoAt(mut st, fi).params), desugar.ListRef(infoAt(mut st, fi).results), vsrcs, at, decl, 0)
 }
 
 // ジェネリックかつ関数型 / mut の仮引数を持つ関数: 値の引数を先に評価し、閉包は型引数（表層型検査器の表）が決まってから作る。
@@ -403,7 +423,7 @@ func genericInline(st mut St, fidx int, args desugar.ListRef, at desugar.NodeRef
         prm := latN(mut st, ps, i)
         lput(mut st, outs, i, int(a))
         if ast.ParamIsMut(nodeOf(mut st, prm)) {
-            mutArgCell(mut st, a, at)?
+            mutArgCell(mut st, a, at, false)?
         } else if kindN(mut st, nB(nodeOf(mut st, prm))) == ast.TFunc {
             // 閉包（ラムダ・for 式・閉包の名前）は型引数が決まってから作る
         } else {

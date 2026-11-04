@@ -99,7 +99,7 @@
                     {
                       "k": "type",
                       "bind": null,
-                      "variant": "json.Null",
+                      "variant": "json.ViewNull",
                       "fields": [],
                       "tok": 38
                     }
@@ -146,7 +146,7 @@
                     {
                       "k": "type",
                       "bind": null,
-                      "variant": "json.Bool",
+                      "variant": "json.ViewBool",
                       "fields": [
                         {
                           "name": "v",
@@ -234,7 +234,7 @@
                     {
                       "k": "type",
                       "bind": null,
-                      "variant": "json.Number",
+                      "variant": "json.ViewNumber",
                       "fields": [
                         {
                           "name": "lit",
@@ -293,7 +293,7 @@
                     {
                       "k": "type",
                       "bind": null,
-                      "variant": "json.String",
+                      "variant": "json.ViewString",
                       "fields": [
                         {
                           "name": "v",
@@ -380,7 +380,7 @@
                     {
                       "k": "type",
                       "bind": null,
-                      "variant": "json.Array",
+                      "variant": "json.ViewArray",
                       "fields": [
                         {
                           "name": "items",
@@ -572,7 +572,7 @@
                     {
                       "k": "type",
                       "bind": null,
-                      "variant": "json.Object",
+                      "variant": "json.ViewObject",
                       "fields": [
                         {
                           "name": "names",

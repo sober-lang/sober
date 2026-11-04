@@ -468,7 +468,7 @@ func fcValueCallee(st mut S, cal NodeRef) bool {
         return false
     }
     c := YAt(mut st, y).c
-    return c > 0 && fnValDeclNode(mut st, NodeRef(c - 1)) || c == 0 && fcBrwVal(mut st, cal)
+    return c > 0 && fnValDeclNode(mut st, NodeRef(c - 1)) || c <= 0 && fcBrwVal(mut st, cal)
 }
 
 // 名前付き関数 fk の i 番目の仮引数が借りとして安全な位置か: 匿名の関数型で、本体がその仮引数を呼ぶ・借りの位置へ渡す・借りの位置の

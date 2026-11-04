@@ -16,7 +16,9 @@ Zig 側はこの形を吐く。スキーマ（"k" が種別タグ）:
   `{"k":"prod","l":T,"r":T}` /
   `{"k":"ref","m":Bool,"r":Nat,"t":T}` / `{"k":"slice","m":Bool,"r":Nat,"t":T}` /
   `{"k":"map","m":Bool,"r":Nat,"key":K,"t":V}`（セル型 prod K (opt V)。他のセル型は "cell"） / `{"k":"chan","rc":Nat,"t":T}` / `{"k":"own","o":"scope"|"task"|"tx"|"rx","r":Nat,"t":T}`（段 6 P1） /
-  `{"k":"fn","p":T,"r":T}`（V3-1。p / r は Def の base 座標） / `{"k":"tvar","i":Nat}`（V3-2）
+  `{"k":"fn","p":T,"r":T}`（V3-1。p / r は Def の base 座標） / `{"k":"tvar","i":Nat}`（V3-2） /
+  `{"k":"rvar","i":Nat}` / `{"k":"mus","n":Nat,"i":Nat,"b":T}` / `{"k":"muRs","r":Nat,"n":Nat,"i":Nat,"b":T}`
+  （再帰型 — iso の同時の μ・組 b の i 番目・成分 n 個。muRs = D の μ・座標 r つき。自己再帰は n = 1）
 - Expr: `{"k":"lit","n":Int}` / `{"k":"flit","n":Int}`（float の値 — ビット列を i64 の 2 の補数で読んだ値）/
   `{"k":"fadd"|"fsub"|"fmul"|"fdiv"|"feq"|"fne"|"flt"|"fle"|"fgt"|"fge","a":E,"b":E}` /
   `{"k":"fneg"|"fsqrt"|"tofloat"|"ftoint"|"fbits"|"ffrombits","e":E}`（float の段） / `{"k":"true"|"false"|"triv"}` / `{"k":"var","i":Nat}` /
@@ -38,6 +40,7 @@ Zig 側はこの形を吐く。スキーマ（"k" が種別タグ）:
   `{"k":"unreach","t":T}`（A5 — 到達しない。t は結果型の注釈） /
   `{"k":"parch","t":T,"e1":E,"e2":E}` / `{"k":"newchan","rc":Nat,"t":T}` /
   `{"k":"send","c":E,"e":E}` / `{"k":"recv","c":E}` / `{"k":"close","c":E}` /
+  `{"k":"fold","t":T,"e":E}` / `{"k":"unfold","e":E}`（再帰型） /
   `{"k":"scope","t":T,"eps":T,"e":E}`（eps = err の型 — P3b-4 1b'） / `{"k":"spawn","s":E,"a":E,"e":E}` / `{"k":"join","t":T,"h":E}` / `{"k":"try","t":T,"h":E}`（段 6 P1） /
   `{"k":"newch","r":Nat,"cap":Nat,"t":T}`（段 6 P1 — 端点の組を作る） /
   `{"k":"mkmap","m":Bool,"key":K,"t":V}` / `{"k":"getm","t":T,"e":E,"key":E}` /
@@ -89,6 +92,9 @@ def tyToJson : Ty → Json
   | .chan rc t => Json.mkObj [("k", "chan"), ("rc", (rc : Nat)), ("t", tyToJson t)]
   | .fn p r => Json.mkObj [("k", "fn"), ("p", tyToJson p), ("r", tyToJson r)]
   | .own k r t => Json.mkObj [("k", "own"), ("o", ownKToStr k), ("r", (r : Nat)), ("t", tyToJson t)]
+  | .mus n i b => Json.mkObj [("k", "mus"), ("n", (n : Nat)), ("i", (i : Nat)), ("b", tyToJson b)]
+  | .rvar i => Json.mkObj [("k", "rvar"), ("i", (i : Nat))]
+  | .muRs r n i b => Json.mkObj [("k", "muRs"), ("r", (r : Nat)), ("n", (n : Nat)), ("i", (i : Nat)), ("b", tyToJson b)]
 
 /-- Expr（ソース項）→ JSON。loc / chanV は境界の語彙に無い（ソースに現れない）ので
 ダミーの kind を吐く — Zig からは絶対に来ず、パースは拒否する -/
@@ -211,6 +217,8 @@ def exprToJson : Expr → Json
   | .send c e => Json.mkObj [("k", "send"), ("c", exprToJson c), ("e", exprToJson e)]
   | .recv c => Json.mkObj [("k", "recv"), ("c", exprToJson c)]
   | .close c => Json.mkObj [("k", "close"), ("c", exprToJson c)]
+  | .fold t e => Json.mkObj [("k", "fold"), ("t", tyToJson t), ("e", exprToJson e)]
+  | .unfold e => Json.mkObj [("k", "unfold"), ("e", exprToJson e)]
   | .loc _ _ => Json.mkObj [("k", "loc-not-in-source")]
   | .blit _ => Json.mkObj [("k", "blit-not-in-source")]
   | .chanV _ => Json.mkObj [("k", "chanv-not-in-source")]
@@ -280,6 +288,20 @@ def tyFromJson : Nat → Json → Except String Ty
         let r ← j.getObjVal? "r" >>= Json.getNat?
         let t ← j.getObjVal? "t" >>= tyFromJson fuel
         pure (.own o r t)
+    | "rvar" => do
+        let i ← j.getObjVal? "i" >>= Json.getNat?
+        pure (.rvar i)
+    | "mus" => do
+        let n ← j.getObjVal? "n" >>= Json.getNat?
+        let i ← j.getObjVal? "i" >>= Json.getNat?
+        let b ← j.getObjVal? "b" >>= tyFromJson fuel
+        pure (.mus n i b)
+    | "muRs" => do
+        let r ← j.getObjVal? "r" >>= Json.getNat?
+        let n ← j.getObjVal? "n" >>= Json.getNat?
+        let i ← j.getObjVal? "i" >>= Json.getNat?
+        let b ← j.getObjVal? "b" >>= tyFromJson fuel
+        pure (.muRs r n i b)
     | other => .error s!"tyFromJson: unknown kind {other}"
 
 /-- 型引数リスト（省略 = []） -/
@@ -617,6 +639,13 @@ def exprFromJson : Nat → Json → Except String Expr
     | "close" => do
         let c ← j.getObjVal? "c" >>= exprFromJson fuel
         pure (.close c)
+    | "fold" => do
+        let t ← j.getObjVal? "t" >>= tyFromJson fuel
+        let e ← j.getObjVal? "e" >>= exprFromJson fuel
+        pure (.fold t e)
+    | "unfold" => do
+        let e ← j.getObjVal? "e" >>= exprFromJson fuel
+        pure (.unfold e)
     | "scope" => do
         let t ← j.getObjVal? "t" >>= tyFromJson fuel
         let ε ← j.getObjVal? "eps" >>= tyFromJson fuel

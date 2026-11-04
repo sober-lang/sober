@@ -22,8 +22,6 @@ const TFunc = 10   // a = FnType（関数型の仮引数 — 値ではない）
 const TFnv = 11    // a = FnType（関数値）・b = 値の位置の印（匿名の関数型の欄 — 工程 5d）・c = 名前付き関数型（型宣言 + 1）
 const TNamed = 12  // named scalar（language.md 32 節）: a = 下地の型（int / bool）, b = 型宣言の節。表現は下地と同じ 1 語
 const TFloat = 14  // float（language.md 37 節）: 1 語に IEEE 754 binary64 のビット列（演算の瞬間だけ xmm へ — x86.sober の xFloat*）
-const TCell = 15   // 借りの閉包の mut の捕捉の env の槽（(α-L1)・closure.sober）: 2 語 = 束縛のセルの番地・束縛の行き先の深度（格納点の写しの floor）。
-                   // 値ではない — env の形と欄にだけ現れる（形の上では中身の型を持たない — 中身は持ち上げた関数の記録が持つ）
 const TByte = 13   // byte（language.md 33 節）: 語の中の 0〜255（[]byte のセルは段 B まで語のまま）。型なしの整数定数を受ける・比較 6 種・算術なし
 
 // StructInfo / UnionInfo（st.types の鎖）: [tag(TStruct / TUnion), decl, pkg, fields / variants（列）, words, state, next, 型]
@@ -107,13 +105,32 @@ func tWords(st mut St, t int) int {
     return switch k {
     case TInt | TBool | TFnv | TNamed | TByte | TFloat: 1
     case TStruct | TUnion: desugar.HeapGet(mut st.d, desugar.HeapGet(mut st.d, t + 1) + SI_WORDS)
-    case TOpt: desugar.HeapGet(mut st.d, t + 2)
+    case TOpt: optWords(mut st, t)
     case TSlice: 3
-    case TCell: 2
     // map のヘッダは 4 語目に索引の番地（M0 — rt.sober の buildMapFind。0 = 無し）
     case TMap: 4
     default: 0
     }
+}
+
+// T? の語数（中身が配置中に作った opt は -1 — 初めて引く時に埋める）
+func optWords(st mut St, t int) int {
+    w := desugar.HeapGet(mut st.d, t + 2)
+    if w >= 0 {
+        return w
+    }
+    n := 1 + tWords(mut st, desugar.HeapGet(mut st.d, t + 1))
+    desugar.HeapSet(mut st.d, t + 2, n)
+    return n
+}
+
+// 型 t の配置が済んでいるか（struct / union 以外は常に真）
+func laidOut(st mut St, t int) bool {
+    k := desugar.HeapGet(mut st.d, t)
+    if k != TStruct && k != TUnion {
+        return true
+    }
+    return desugar.HeapGet(mut st.d, desugar.HeapGet(mut st.d, t + 1) + SI_STATE) == LDone
 }
 
 // 1 語の値（SSA の i64 で持つ）: int / bool / 関数値
@@ -143,11 +160,11 @@ func namedTy(st mut St, td desugar.NodeRef) int {
 
 func isAggregate(st mut St, t int) bool {
     k := desugar.HeapGet(mut st.d, t)
-    return k == TStruct || k == TUnion || k == TOpt || k == TSlice || k == TMap || k == TCell
+    return k == TStruct || k == TUnion || k == TOpt || k == TSlice || k == TMap
 }
 
 func isString(st mut St, t int) bool {
-    return desugar.HeapGet(mut st.d, t) == TSlice && desugar.HeapGet(mut st.d, t + 3) != 0
+    return desugar.HeapGet(mut st.d, t) == TSlice && desugar.HeapGet(mut st.d, t + 3) == 1
 }
 
 // 値として IR に乗るときの型（値なしは -1）
@@ -185,17 +202,23 @@ func tEql(st mut St, a int, b int) bool {
         // 名前付き関数型は nominal（language.md 32 節 — 別の名前付きどうしは不可、片方が名前なしなら形で比べる）。名前 = c 欄（型宣言 + 1、0 = 名前なし）
         na := desugar.HeapGet(mut st.d, a + 3)
         nb := desugar.HeapGet(mut st.d, b + 3)
-        if na != 0 && nb != 0 && na != nb {
-            return false
+        if na != 0 && nb != 0 {
+            // 同じ名前は同じ型（署名を比べない — 自分を名指す named fn type の値の型は署名の中に自分を持つ）
+            return na == nb
         }
         return fnTypeEql(mut st, desugar.HeapGet(mut st.d, a + 1), desugar.HeapGet(mut st.d, b + 1))
     }
     return true
 }
 
-// FnType = [params（型の列）, results（型の列）]
+// FnType = [params（型の列）, results（型の列）, 局所の束縛のラムダの印（localFt）, mut の席のビット（ftMut）]
 func fnTypeEql(st mut St, a int, b int) bool {
-    return tListEql(mut st, desugar.HeapGet(mut st.d, a), desugar.HeapGet(mut st.d, b)) && tListEql(mut st, desugar.HeapGet(mut st.d, a + 1), desugar.HeapGet(mut st.d, b + 1))
+    return ftMut(mut st, a) == ftMut(mut st, b) && tListEql(mut st, desugar.HeapGet(mut st.d, a), desugar.HeapGet(mut st.d, b)) && tListEql(mut st, desugar.HeapGet(mut st.d, a + 1), desugar.HeapGet(mut st.d, b + 1))
+}
+
+// 関数型 ft の mut 仮引数の席のビット（仮引数 i が mut なら bit i）
+func ftMut(st mut St, ft int) int {
+    return desugar.HeapGet(mut st.d, ft + 3)
 }
 
 func tListEql(st mut St, a int, b int) bool {
@@ -303,27 +326,44 @@ func resolveType(st mut St, pk int, te desugar.NodeRef, inc bool) (int, error?) 
             return nt, nil
         }
         if kindN(mut st, nC(nodeOf(mut st, td))) == ast.BFunc {
-            // 値の位置に残った named fn type（欄・Def の仮引数 / 結果 — desugar の valFTE）= 関数値（工程 5）
-            ft := resolveType(mut st, pk, desugar.NamedFnTE(mut st.d, pk, te), false)?
+            // 値の位置に残った named fn type（欄・Def の仮引数 / 結果 — desugar の valFTE）= 関数値（工程 5）。
+            // 型は宣言ごとの結び目: 署名を引く前に値の型を作って積み、署名の中で同じ宣言に戻ったらそれを返す（`type State func(n int) State`）
+            busy := fnvBusyOf(mut st, int(td))
+            if busy >= 0 {
+                return busy, nil
+            }
+            name := int(td) + 1
+            // 捕捉のあるラムダを値の位置に持つ K は閉包の struct（closure.sober）
+            ct := closType(mut st, int(td), 0, name)
+            v := if ct >= 0 { ct } else { rec4(mut st, TFnv, 0, 0, name) }
+            if ct >= 0 && closTypeFt(mut st, ct) != 0 {
+                return ct, nil
+            }
+            fnvPush(mut st, int(td), v)
+            // 署名の型は値の大きさに関わらない — 並べ中の struct（Next { mws []Mw } ↔ Mw の仮引数 Next）は後回しで引く
+            ft, ferr := resolveType(mut st, pk, desugar.NamedFnTE(mut st.d, pk, te), true)
+            fnvPop(mut st)
+            if ferr != nil {
+                return 0, ferr
+            }
             if !isTag(mut st, ft, TFunc) {
                 return 0, diag.Unsupported{at: posOf(mut st, at)}
             }
+            sig := desugar.HeapGet(mut st.d, ft + 1)
             // 匿名の関数型の仮引数は借り（(α-L0)）— 値の呼び出しで渡すので関数値か閉包の型
-            closBorrowFt(mut st, desugar.HeapGet(mut st.d, ft + 1))
-            // 捕捉のあるラムダを値の位置に持つ K は閉包の struct（closure.sober）
-            ct := closType(mut st, int(td), desugar.HeapGet(mut st.d, ft + 1), desugar.HeapGet(mut st.d, ft + 3))
+            closBorrowFt(mut st, sig)
             if ct >= 0 {
-                return ct, nil
+                closTypeSetFt(mut st, ct, sig)
+            } else {
+                desugar.HeapSet(mut st.d, v + 1, sig)
             }
-            return rec4(mut st, TFnv, desugar.HeapGet(mut st.d, ft + 1), 0, desugar.HeapGet(mut st.d, ft + 3)), nil
+            return v, nil
         }
         info := infoOf(mut st, int(td))
         if info < 0 {
             return 0, diag.Unsupported{at: posOf(mut st, at)}
         }
-        if !(inc && desugar.HeapGet(mut st.d, info + SI_STATE) == LLaying) {
-            layoutInfo(mut st, info)?
-        }
+        layoutOrDefer(mut st, info, inc)?
         return desugar.HeapGet(mut st.d, info + SI_TY), nil
     case ast.TTuple:
         // 多値の型は std/task の Task の型引数にだけ（loader の検査 — P3b 残穴1）: lower の handle の型は Task[T]（T = 1 つ目 — Spawn の結果と同じ。
@@ -331,16 +371,15 @@ func resolveType(st mut St, pk int, te desugar.NodeRef, inc bool) (int, error?) 
         return resolveType(mut st, pk, latN(mut st, lA(nodeOf(mut st, te)), 0), inc)
     case ast.TGeneric:
         info := instStruct(mut st, pk, sA(nodeOf(mut st, te)), lB(nodeOf(mut st, te)), at)?
-        if !(inc && desugar.HeapGet(mut st.d, info + SI_STATE) == LLaying) {
-            layoutInfo(mut st, info)?
-        }
+        layoutOrDefer(mut st, info, inc)?
         return desugar.HeapGet(mut st.d, info + SI_TY), nil
     case ast.TOpt:
-        payload := resolveType(mut st, pk, nA(nodeOf(mut st, te)), false)?
+        // slice / map の要素の位置（inc）なら中身は配置中でもよい — 語数は使う時に引く（tWords の -1）
+        payload := resolveType(mut st, pk, nA(nodeOf(mut st, te)), inc)?
         if isTag(mut st, payload, TOpt) {
             return 0, diag.Unsupported{at: posOf(mut st, at)}
         }
-        return rec4(mut st, TOpt, payload, 1 + tWords(mut st, payload), 0), nil
+        return rec4(mut st, TOpt, payload, if laidOut(mut st, payload) { 1 + tWords(mut st, payload) } else { -1 }, 0), nil
     case ast.TSlice:
         elem := resolveType(mut st, pk, nA(nodeOf(mut st, te)), true)?
         return rec4(mut st, TSlice, elem, nodeOf(mut st, te).b, 0), nil
@@ -355,16 +394,22 @@ func resolveType(st mut St, pk int, te desugar.NodeRef, inc bool) (int, error?) 
         ps := lA(nodeOf(mut st, te))
         rs := lB(nodeOf(mut st, te))
         pl := listN(mut st, lenL(mut st, ps))
+        mut mm := 0
         for i <- iter.Range(0, lenL(mut st, ps)) {
-            t := resolveType(mut st, pk, latN(mut st, ps, i), false)?
+            pe := latN(mut st, ps, i)
+            // mut 仮引数の席: 型は中身・席は FnType の mut のビット（呼び手はセルの番地を渡す — func 宣言の mut 仮引数と同じ）
+            if kindN(mut st, pe) == ast.TMutP {
+                mm = mm | (1 << i)
+            }
+            t := resolveType(mut st, pk, if kindN(mut st, pe) == ast.TMutP { nA(nodeOf(mut st, pe)) } else { pe }, inc)?
             desugar.HeapSet(mut st.d, pl + 1 + i, t)
         }
         rl := listN(mut st, lenL(mut st, rs))
         for i <- iter.Range(0, lenL(mut st, rs)) {
-            t := resolveType(mut st, pk, latN(mut st, rs, i), false)?
+            t := resolveType(mut st, pk, latN(mut st, rs, i), inc)?
             desugar.HeapSet(mut st.d, rl + 1 + i, t)
         }
-        ft := rec4(mut st, pl, rl, 0, 0)
+        ft := rec4(mut st, pl, rl, 0, mm)
         return rec4(mut st, TFunc, ft, 0, int(desugar.NamedFnOf(mut st.d, int(te))) + 1), nil
     }
     return 0, diag.Unsupported{at: posOf(mut st, at)}
@@ -380,8 +425,8 @@ func fieldFnv(st mut St, te desugar.NodeRef, ft int) int {
     return if ct >= 0 { ct } else { rec4(mut st, TFnv, ft, 1, 0) }
 }
 
-// フィールドの列（KField の列）を語オフセットつきで並べる（型は pk の文脈）。(フィールドの列, 語数)
-func layoutFields(st mut St, pk int, dfs desugar.ListRef) (Layout, error?) {
+// フィールドの列（KField の列）を語オフセットつきで並べる（型は pk の文脈・owner = 欄を持つ宣言）。(フィールドの列, 語数)
+func layoutFields(st mut St, pk int, owner int, dfs desugar.ListRef) (Layout, error?) {
     n := lenL(mut st, dfs)
     out := listN(mut st, n)
     mut off := 0
@@ -394,7 +439,15 @@ func layoutFields(st mut St, pk int, dfs desugar.ListRef) (Layout, error?) {
             }
             j += 1
         }
-        rt := resolveType(mut st, pk, nB(nodeOf(mut st, df)), false)?
+        // 関数型の欄の署名の型は欄の大きさに効かない — 並べ中の struct（閉路の上の匿名の関数型）は後回しで引く
+        bte := boxPayloadTE(mut st, pk, owner, nB(nodeOf(mut st, df)))
+        mut rt := 0
+        if bte != -1 {
+            // 中身は配置中でもよい（箱は slice のヘッダ — 中身の大きさは欄の大きさに効かない）
+            rt = mkBox(mut st, resolveType(mut st, pk, bte, true)?)
+        } else {
+            rt = resolveType(mut st, pk, nB(nodeOf(mut st, df)), kindN(mut st, nB(nodeOf(mut st, df))) == ast.TFunc)?
+        }
         t := if isTag(mut st, rt, TFunc) { fieldFnv(mut st, nB(nodeOf(mut st, df)), desugar.HeapGet(mut st.d, rt + 1)) } else { rt }
         fr := rec4(mut st, nodeOf(mut st, df).a, t, off, 0)
         desugar.HeapSet(mut st.d, out + 1 + i, fr)
@@ -403,8 +456,39 @@ func layoutFields(st mut St, pk int, dfs desugar.ListRef) (Layout, error?) {
     return Layout{fields: out, words: off}, nil
 }
 
-// struct / union のレイアウト（済んでいれば何もしない。再帰は拒否）
+// 型宣言 info のレイアウト。inc = slice / map の要素の位置（要素の大きさは外側の大きさに効かない）: 外側のレイアウトの途中なら後回しにする
+func layoutOrDefer(st mut St, info int, inc bool) error? {
+    s := desugar.HeapGet(mut st.d, info + SI_STATE)
+    if s == LDone {
+        return nil
+    }
+    if inc && st.layDepth > 0 {
+        if s != LLaying {
+            st.layPend = append(st.layPend, info)
+        }
+        return nil
+    }
+    return layoutInfo(mut st, info)
+}
+
+// struct / union のレイアウト（済んでいれば何もしない。値で持つ閉路は拒否 — loader が先に拒否する）。
+// いちばん外のレイアウトの出口で、後回しにした要素の宣言を並べる
 func layoutInfo(st mut St, info int) error? {
+    st.layDepth += 1
+    e := layoutInfo0(mut st, info)
+    st.layDepth -= 1
+    if e != nil {
+        return e
+    }
+    while st.layDepth == 0 && len(st.layPend) > 0 {
+        x := st.layPend[len(st.layPend) - 1]
+        st.layPend = st.layPend[0:len(st.layPend) - 1]
+        layoutInfo(mut st, x)?
+    }
+    return nil
+}
+
+func layoutInfo0(st mut St, info int) error? {
     s := desugar.HeapGet(mut st.d, info + SI_STATE)
     if s == LDone {
         return nil
@@ -432,7 +516,7 @@ func layoutInfo(st mut St, info int) error? {
 
 func layoutBody(st mut St, info int, pk int, body desugar.NodeRef) error? {
     if desugar.HeapGet(mut st.d, info) == TStruct {
-        lay := layoutFields(mut st, pk, lA(nodeOf(mut st, body)))?
+        lay := layoutFields(mut st, pk, desugar.HeapGet(mut st.d, info + SI_DECL), lA(nodeOf(mut st, body)))?
         desugar.HeapSet(mut st.d, info + SI_FIELDS, lay.fields)
         desugar.HeapSet(mut st.d, info + SI_WORDS, lay.words)
     } else {
@@ -442,7 +526,7 @@ func layoutBody(st mut St, info int, pk int, body desugar.NodeRef) error? {
         mut mx := 0
         for i <- iter.Range(0, n) {
             dv := latN(mut st, dvs, i)
-            lay := layoutFields(mut st, pk, lB(nodeOf(mut st, dv)))?
+            lay := layoutFields(mut st, pk, desugar.HeapGet(mut st.d, info + SI_DECL), lB(nodeOf(mut st, dv)))?
             vr := rec4(mut st, nodeOf(mut st, dv).a, i, lay.fields, 0)
             desugar.HeapSet(mut st.d, vs + 1 + i, vr)
             if lay.words > mx {

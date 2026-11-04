@@ -1,2 +1,2 @@
-examples/effects_neg_transparent.sober:11:1: error: 'main.show' may have the effect io via a function literal it passes on (a parameter of an anonymous function type is transparent), which its @effects does not allow (allowed: block, panic, nondet) (Analyzer)
+examples/effects_neg_transparent.sober:11:1: error: 'main.show' may have the effect io via a function literal in its body (a lambda passed to a parameter of anonymous function type, or bound to a local name, is transparent), which its @effects does not allow (allowed: block, panic, nondet) (Analyzer)
 exit=1

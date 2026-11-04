@@ -4,6 +4,10 @@ English | [日本語](README.ja.md)
 
 A minimal, fast, safe and plain programming language.
 
+Sober is a systems programming language designed to make memory safety and structured concurrency practical without a borrow checker. Instead of tracking ownership through complex borrowing rules, Sober uses region-based memory management to make memory lifetimes predictable and safe by design. Safety here is structural, not disciplinary — use-after-free and data races are not things you carefully avoid; they are things the syntax cannot express.
+
+Statically typed (with type inference), expression-oriented, AOT-compiled straight to a native static ELF. No GC. Go-like syntax.
+
 ```sober
 // examples/collatz_par.sober
 package main
@@ -89,8 +93,8 @@ func main() int {
 ### Minimal
 
 - A single binary with zero dependencies. The compiler is one static ELF that depends on neither libc nor LLVM, and the executables it produces are static ELFs as well.
-- The compiler is about 110,000 lines (about 112,000), plus about 15,000 for the standard library (non-test source, comments and blank lines included).
-- Fully bootstrapped from Zig and source alone. Starting from stage1, a frozen compiler written in Zig, the source snapshots in `bootstrap/` are built in order until they produce the current compiler. There is no seed binary.
+- The compiler is about 130,000 lines (excluding the development tools in `src/compiler/tools/`), plus about 19,000 for the standard library (non-test source, comments and blank lines included).
+- Fully bootstrapped from Zig and source alone. Starting from stage1, a frozen compiler written in Zig, the source snapshots in `bootstrap/` are built in order until they produce the current compiler ([the full chain](bootstrap/chain.txt)). There is no seed binary.
 
 → [Why minimal](docs/design-notes/minimal.md) (in Japanese)
 
@@ -98,24 +102,36 @@ func main() int {
 
 - Runtime speed on par with Rust. Against straightforward Rust using the same algorithms, across 9 sequential benchmarks: 4 wins, 3 ties, 2 losses (the losses are reverse-complement 1.47× and n-body 1.17×). Against Go: 6 wins, 3 ties, no losses. <!-- benchsync:readme-speed-en -->
 - A memory footprint on par with Rust. There is no GC. Peak RSS is at or below Rust's in 8 of the 9 benchmarks (the exception is k-nucleotide). <!-- benchsync:readme-rss-en -->
-- High parallel performance — and deterministic. Structured-concurrency tasks are light (Skynet with 1.11 million tasks runs 5× faster than Go — measured 2026-10-10), and the output is the same bytes for any number of workers.
+- High parallel performance — and deterministic. Structured-concurrency tasks are light ([Skynet](bench/skynet) with 1.11 million tasks runs 5× faster than Go — measured 2026-10-10), and the output is the same bytes for any number of workers.
 
 → [Why fast](docs/design-notes/fast.md) (in Japanese)
 
 ### Safe
 
-- Memory safety and freedom from data races, with no GC and no borrow checker. Lifetimes match the nesting of scopes (every block is a region), and only immutable values and channels can be passed into a parallel scope.
-- Unhandled errors are rejected. Errors are sets of labels that the analyzer derives from the call graph, and public boundaries must declare them.
+- Memory safety and freedom from data races, with no GC and no borrow checker. Lifetimes match the nesting of scopes (every block is a region — [rules](docs/spec/09-memory.ja.md), in Japanese), and only immutable values and channels can be passed into a parallel scope ([rules](docs/spec/10-concurrency.ja.md), in Japanese).
+- Unhandled errors are rejected. Errors are sets of labels that the analyzer derives from the call graph, and public boundaries must declare them ([rules](docs/spec/07-errors.ja.md), in Japanese).
 - The only thing to learn is what you cannot write. There are no lifetime annotations and no borrowing rules; the forms that cannot be written (shared mutable state, escaping references) are simply compile errors.
 
 → [Why safe](docs/design-notes/safe.md) (in Japanese)
 
 ### Plain
 
-- Ordinary, expression-oriented procedural code. if / switch / blocks / for have values, and there are no methods, type classes or macros. If you can read Go, you can read Sober.
+- Ordinary, expression-oriented procedural code. if / switch / blocks / for have values ([rules](docs/spec/04-expressions.ja.md), in Japanese), and there are no methods, type classes or macros. If you can read Go, you can read Sober.
 - There is no etiquette for writing fast code. Straightforward code is the fastest form. The mechanisms for speed live only inside the runtime and the compiler, and the Sober side of the benchmarks is kept to the straightforward form.
 
 → [Why plain](docs/design-notes/plain.md) (in Japanese)
+
+## What you stop thinking about
+
+With Sober, the following are no longer the programmer's job:
+
+- When to free memory — regions are derived from the structure of the program. Forgotten frees, double frees and use-after-free are not things to be careful about; they cannot be written
+- Lifetime annotations — there are none. The shape of ownership is decided by the syntax
+- Data races and lock discipline — values are immutable by default and mutable bindings are unique. "Forgot to take the lock" is not a concept here
+- Whether parallelism changes the result — the output is byte-identical for any number of workers
+- "Fast way to write it" folklore — the straightforward form is the fast form (where a gap remains, it is measured and treated as the language's homework)
+- "It worked on my machine" — builds are reproducible and execution is deterministic; the class of unreproducible bugs is simply gone
+- Async coloring — functions have no color. Write blocking-style code and the M:N runtime schedules it
 
 ## Benchmarks
 
@@ -157,7 +173,26 @@ For more: [Install](docs/guide/install.md) → [Your first program](docs/guide/f
 
 ## The verification net
 
-A change to the compiler goes in only after passing every check of `scripts/gates.sh --full`: the self-compilation fixed point (stage3 ≡ stage4), golden tests, agreement of observations with and without optimization, comparison against the frozen Zig version, independent oracles (Go's UTF-8, GNU as), and comparison against a formal model in Lean (`lean/`) with proofs of type safety and confluence of parallelism.
+A change to the compiler goes in only after passing every check of `scripts/gates.sh --full`: the self-compilation fixed point (stage3 ≡ stage4), golden tests, agreement of observations with and without optimization, comparison against the frozen Zig version, independent oracles (Go's UTF-8, GNU as), and comparison against a formal model in Lean (`lean/` — [details](docs/formal.md), in Japanese) with proofs of type safety and confluence of parallelism.
+
+## As a research subject
+
+Beyond the language itself, Sober is a test bench with several claims you can verify:
+
+- Determinism as a language promise — "same input, same bytes" holds through arithmetic, printing and parallelism (the output is byte-identical for any number of workers). Few implementations give experiments on performance or semantics this kind of reproducible floor
+- Region inference without annotations, measured — a closed world plus "memory details are derived from structure and declarations" ([details](docs/region-domain-pool.md), in Japanese), tested against whether zero lifetime annotations can still reach systems-language performance (`bench/` carries the subjects with Go and Rust twins). One contemporary answer to the region lineage of MLKit and Cyclone
+- Mechanized conformance between the formal model and the implementation — the Lean small-step semantics (`lean/`) and the checker are compared continuously over hundreds of thousands of extracted vectors, with a desugaring reference implementation as a differential oracle. A living specimen for studying model/implementation divergence
+- Turning non-functional requirements into functional ones — performance (instruction-count ratchets), memory (bounds derived from declarations) and time (constant-time testing) treated as checked contracts rather than hopes
+- A case study in AI-driven development — most of this compiler was written by AI pairs under human design rulings. Decisions, discarded alternatives and verification records stay in the docs and the commit history, so the methodology itself — verification density setting the pace an agent can sustain — is open to observation
+
+How it goes about solving these (the design moves):
+
+- Constrain references to tree shapes — values are immutable by default, mutable bindings are unique, and data lives in a tree of regions. Removing aliasing graphs from the language turns ownership safety from something you prove into something whose failure modes cannot be written (recursive types joined on the same terms: a tree lives in one region — [rules](docs/spec/02-types.ja.md), in Japanese)
+- Turn unobservability into representational freedom — addresses and memory layout are not observable from the language, so the compiler is free to choose representations, and many features can be added without touching the semantic core
+- Make "no conditional constraints" a review criterion — rules of the form "you cannot B when A" are kept only when tied to a soundness theorem ([review criterion](docs/design-dev.md#審査基準), in Japanese). The growth of language complexity is itself managed by discipline
+- Put cross-cutting concerns in boundary declarations, not expressions — memory budgets, wait bounds and (planned) numeric precision are declared at boundaries, then derived and checked, never mixed into expressions
+- No sugar that cannot be written plainly — such features go to analyzer diagnostics, or get dropped
+- The methodological bet: oracle density sets development speed — goldens, mutations, properties, differential oracles and formal-model conformance run as a standing net, and its density is treated as the main variable of development
 
 ## Documents
 
@@ -169,6 +204,17 @@ A change to the compiler goes in only after passing every check of `scripts/gate
 - [Language specification](docs/spec/README.ja.md) (in Japanese) — the rules for what is accepted and how accepted programs behave (rules only; examples are the real files in examples/)
 - For developers (in Japanese): [decision record](docs/language.md), [syntax](docs/syntax.md), [IR](docs/ir.md), [formalization](docs/formal.md), [oracles](docs/oracles.md)
 
+## What can you build with Sober?
+
+Everything below is a real artifact in this tree:
+
+- An HTTP/1.1 + TLS 1.3 server — the `std/http` entry sits alongside C / Rust / V implementations on the public [HttpArena](https://github.com/MDA2AV/HttpArena) leaderboard (`bench/httparena/`)
+- This compiler itself — ~130K lines of self-hosted Sober, from lexing to x86-64 machine code and ELF emission, with no libc (`src/compiler/`)
+- The standard library — JSON, gzip/deflate, TLS 1.3, crypto (AES-GCM / SHA-256 / RSA / x25519) and the io_uring M:N runtime (`src/std/`)
+- Developer tooling — the test runner, property-based testing, fuzzing, coverage, mutation testing and watch (the whole `sober test` stack is itself written in Sober as part of the compiler)
+- Data-processing subjects — 1BRC and benchmarks-game problems, output-identical to their Go / Rust twins (`bench/`)
+- ~490 small examples — the guide's kvstore and more (`examples/` — all output-checked by gates)
+
 ## What is already there
 
 A list of the surface implemented as of v0.6. The full rules are in the [language specification](docs/spec/README.ja.md) (in Japanese), the signatures in the [std reference](docs/std/README.ja.md) (in Japanese).
@@ -176,26 +222,26 @@ A list of the surface implemented as of v0.6. The full rules are in the [languag
 Language:
 
 - Expression-oriented: if / switch / blocks have values. Multiple values, pipes and holes, defer, type inference
-- Types: slices, maps, structs, unions, nominal types, optionals (`T?`), generics
+- Types: slices, maps, structs, unions, nominal types, optionals (`T?`), generics, recursive types (declarations that refer back to themselves through slice / map elements or function types — [rules](docs/spec/02-types.ja.md), in Japanese)
 - Bindings: const by default, mutation is explicit with `mut`, no shadowing, freeze
 - Functions: lambdas, function values and closures, named arguments (no methods, type classes or macros)
 - Errors: error types, `?`, `catch`, label sets derived and checked for exhaustiveness by the analyzer (`@errors`), distinct from panics
 - Memory: regions (lifetime = the nesting of scopes), Pool, declared resource limits (budgets)
 - Concurrency: structured concurrency (scopes and tasks), channels, deterministic parallelism, budgets and deadlines, leases
 - Annotations: `@embed`, `@layout`, secret-value tracking, and more
-- Testing: `sober test` and assert (prints the values of subexpressions when false), property-based testing with std/quick, `sober fuzz`, `--cover` (coverage), `--mutate` (mutation testing)
+- Testing: `sober test` and assert (prints the values of subexpressions and the assert's position when false; an optional label `assert(e, label)`), property-based testing with std/quick, `sober fuzz`, `--cover` (coverage), `--mutate` (mutation testing), build-time substitution (a test's `@doubles` names a double — `*_double.sober` — that its build reads in place of the real package; signatures, types and effects are checked against the real declarations)
 
 Standard library (29 packages — signatures and descriptions in the [std reference](docs/std/README.ja.md)):
 
 - I/O and networking: io, os, net (TCP), http (an HTTP/1.1 server, SSE, multipart), tls (TLS 1.3), url, cli (a CLI declared as a table), env (a table of declared environment variables)
 - Cryptography and hashing: crypto (AES-GCM, ChaCha20-Poly1305, SHA-256, HMAC, HKDF, X25519, RSA, PEM, constant-time operations), hash (crc32, sha256)
-- Encoding and conversion: json, base64, hex, binary, convert, strings, utf8, compress (the compression side of flate / gzip)
+- Encoding and conversion: json, base64, hex, binary, convert, strings, utf8, compress (flate / gzip encoding and decoding)
 - Data and computation: iter, sort, math, rand, table, builder, pool, layout
 - Parallelism and testing: task (a deterministic parallel Map, among others), testing (cell — state that test doubles keep), quick (property-based testing)
 
 Tools (subcommands of the single `sober` binary):
 
-- `build` (with intermediate outputs via `--emit=ll|ir|elf`), `run`, `check` (type-check and analyze without building), `test` (`--cover`, `--mutate`), `fuzz`, `watch` (checks on every save and warms build and tests in the background), `fmt`, `iface` (print a package's public surface), `fix` (write derived `@effects` / `@errors` declarations), `outline` (declarations and their line ranges), `doc --cli`, `cache`
+- `build` (with intermediate outputs via `--emit=ll|ir|elf`), `run`, `check` (type-check and analyze without building), `test` (`--cover`, `--mutate`, `--wiring`), `fuzz`, `watch` (checks on every save and warms build and tests in the background), `fmt`, `iface` (print a package's public surface), `fix` (write derived `@effects` / `@errors` declarations), `outline` (declarations and their line ranges), `doc --cli`, `cache`
 - `check`, `build` and `test` remember the answer to a query and return it when the same query comes again; after an edit they redo only the changed functions and packages (the caches are on by default)
 
 ## Roadmap — not yet implemented
@@ -204,7 +250,7 @@ The core language surface is stable. 1.0 means "the language's promises are froz
 
 Standard library (features to implement before 1.0):
 
-- [ ] Decompression (inflate / gunzip) and more compression algorithms
+- [ ] More compression algorithms
 - [ ] More cryptography: ECDSA, and TLS features for operations (certificate reload, client authentication, session resumption)
 - [ ] Database clients: PostgreSQL and MySQL
 - [ ] An HTTP client, and full coverage of HTTP/1.1
@@ -214,8 +260,8 @@ Standard library (features to implement before 1.0):
 
 Language and compiler:
 
-- [ ] Floating-point completeness
-- [ ] Recursive data types
+- [x] Floating-point completeness (a single float type, IEEE 754 binary64 — bit-deterministic arithmetic and printing, no libm)
+- [x] Recursive data types (recursion through `[]T` / `map[K]T` elements or function types, including mutual recursion and generic recursive unions — design in section 1 of [language.md](docs/language.md), in Japanese)
 - [ ] Closures that capture mut bindings
 - [ ] Merging value streams (zip)
 - [ ] A stronger analyzer: better diagnostics and lints

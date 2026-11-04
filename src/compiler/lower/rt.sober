@@ -42,6 +42,8 @@ const W_MAXD = W_MADV + 1   // 前回の region_enter 以降に入った最深�
 // 0 = 無し〔深度 0 は確保の場所にならない〕）
 const W_DEST = W_MAXD + 1
 // mut 実引数の行き先の深度（宛先構築レーン M5 — 呼び手が mut 実引数の束縛の深度の最小を書き、呼ばれた側が入口で読む。0 = 無し）
+// W_DEST に足す旗: 返る列へ追記する呼び出し（loader/dest.sober の印 3）から来た — 呼ばれた側は戻りの写しの床も宛先にする
+const DEST_RET = 4294967296
 const W_ANCHOR = W_DEST + 1
 // 深度の計測口の旗（宛先構築レーン M5c — 入口が環境変数 SOBER_DEPTH_REPORT を読んで置く。真なら main の正常終了で rt.depth_report が
 // 到達した最深の深度を stderr へ）
@@ -60,7 +62,7 @@ const READ_CHUNK = 1048576 // read_file が 1 回の read(2) で region の先�
 // ランタイムのグローバルと関数を足して本体を組む（ir_rt.install と同じ順）
 func installRt(st mut St) {
     // 変異 13（--map-stat）は meta の後ろに map の成長の計数を置く（panic.sober の msAdd）
-    st.meta = addWorkerGlobal(mut st, int(strLit(mut st, "rt.meta")), META_WORDS + (if st.rtMut == 13 { 2 + MS_N } else if dlFn(st.rtD3) != 0 { 2 } else if st.taskUse { 1 } else { 0 }))
+    st.meta = addWorkerGlobal(mut st, int(strLit(mut st, "rt.meta")), META_WORDS + (if st.rtMut == 13 { 2 + MS_N } else if st.rtMut == 39 { 2 + MH_N } else if dlFn(st.rtD3) != 0 { 2 } else if st.taskUse { 1 } else { 0 }))
     if st.trapUse {
         st.trapG = addWorkerGlobal(mut st, int(strLit(mut st, "rt.trap")), TRAP_WORDS)
     }
@@ -84,6 +86,10 @@ func installRt(st mut St) {
     st.rtPanicMem = addFunc(mut st, int(strLit(mut st, "rt.panic_mem")), desugar.ListRef(list1(mut st, TyI64)), -1)
     // 深度の計測口（M5c — 本体は rt.panic_mem と同じく program の最後に組む）
     st.rtDrep = addFunc(mut st, int(strLit(mut st, "rt.depth_report")), desugar.ListRef(list0(mut st)), -1)
+    if st.rtMut == 39 {
+        st.rtMemHw = addFunc(mut st, int(strLit(mut st, "rt.mem_sample")), desugar.ListRef(list0(mut st)), -1)
+        st.rtStackPaint = addFunc(mut st, int(strLit(mut st, "rt.stack_paint")), desugar.ListRef(list0(mut st)), -1)
+    }
     // byte の列のランタイム（rt8.sober — 段 C で string = imm []byte になったので常に要る。本体は program の最後に組む）
     needByteRt(mut st)
     needGrowRt(mut st)
@@ -185,7 +191,19 @@ func buildEntry(st mut St, main_fn FnRef, main_int bool) {
     if st.taskUse {
         taskInitMain(mut st, sp)
     }
+    if st.rtMut == 39 {
+        // main を呼ぶ直前の Σ（比べるのは 最大 − これ ≤ main.main の H）
+        call(mut st, st.rtMemHw, list0(mut st))
+        store(mut st, meta, META_WORDS + 2 + MH_ENTRY, load(mut st, meta, META_WORDS + 2 + MH_MAX))
+        store(mut st, meta, META_WORDS + 2 + MH_SUSE, iconst(mut st, -1))
+        if st.rtStackPaint != -1 {
+            call(mut st, st.rtStackPaint, list0(mut st))
+        }
+    }
     code := call(mut st, main_fn, list0(mut st))
+    if st.rtStackPaint != -1 {
+        stackUseCount(mut st, meta)
+    }
     call(mut st, st.rtDrep, list0(mut st))
     if st.taskUse {
         call(mut st, st.rtOutDrain, list0(mut st))

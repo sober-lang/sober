@@ -1,0 +1,9 @@
+package main
+
+// 負例: 匿名の関数型の slice の要素は値の位置でない（値の位置は値化可能な named fn type の要素だけ — language.md 25 節）— 捕捉つきのラムダは置けない
+
+func main() {
+    k := 7
+    xs := []func(r int) int{(r int) => r + k}
+    println(xs[0](1))
+}

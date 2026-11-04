@@ -42,6 +42,9 @@ diff "$W/g" testdata/doubles/greet.expect > /dev/null || { echo "FAIL: greet out
 "$SOBER" test testdata/cells > "$W/c" 2>&1 || { echo "FAIL: sober test cells"; cat "$W/c"; fail=1; }
 diff "$W/c" testdata/cells.expect > /dev/null || { echo "FAIL: cells output"; diff "$W/c" testdata/cells.expect | head -5; fail=1; }
 "$SOBER" check testdata/cells --test > /dev/null || { echo "FAIL: check --test cells"; fail=1; }
+# 脱糖の拒否 diag.Cell の文面は check キャッシュの道（外れ → 当たり）でも切った道と同じ（diag.Words — 化けると CoreFragment の token 0）
+for m in 0 1 1; do SOBER_CHECK_CACHE=$m "$SOBER" check testdata/cellneg --test 2>&1 | tail -1; done > "$W/cn"
+[ "$(sort -u "$W/cn" | wc -l)" = 1 ] && grep -q '(Cell): a cell holds plain data' "$W/cn" || { echo "FAIL: cellneg verdict differs on the check cache path"; cat "$W/cn"; fail=1; }
 cfx='testdata/doubles/neg/cfx/t/t_test.sober:8:28: error: the function given to cell.Update may have the effect io via the call of '"'"'println'"'"': it runs holding the cell'"'"'s lock, so it has no effects (Analyzer)'
 "$SOBER" check testdata/doubles/neg/cfx/t --test > "$W/x" 2>&1 && { echo "FAIL: cfx accepted"; fail=1; }
 grep -qxF "$cfx" "$W/x" || { echo "FAIL: cfx diagnostic"; head -3 "$W/x"; fail=1; }

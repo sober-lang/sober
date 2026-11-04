@@ -1,28 +1,66 @@
 package loader
 
-// 再帰の型宣言の拒否（diag.RecursiveType）: 型宣言どうしの参照（struct の欄・union の variant の欄・error ラベルの欄・named scalar の下地・関数型の
-// 仮引数と結果 — `[]T`・`map[K]V`・`T?`・`[N]T`・型引数の中も）が循環していたら、循環の上の宣言を指して拒否する。コアの型に再帰型（μ / box）が
-// 無い（形式化の箱「ジェネリック union 段 (3) 再帰」）ので、以前は check が CoreFragment・build はコンパイラ自身が型の展開で depth_limit の死だった。
+// 再帰の型宣言（language.md 1 節）: 型宣言どうしの参照（struct の欄・union の variant の欄・error ラベルの欄・named scalar の下地・関数型の
+// 仮引数と結果 — `[]T`・`map[K]V`・`T?`・`[N]T`・型引数の中も）のグラフの強連結成分（SCC）を再帰の組にする。組の成分の順 = 宣言順
+// （package のファイルの順 → ファイルの中の型宣言の順 — 脱糖器はこの順で同時の μ の成分を並べる。同じ組が別の順で出ると別の型になる）。
+// 受理 = 閉路が slice / map の要素・opt の中身の位置（D）か関数型の仮引数・結果（S）を通る組。拒否（diag.RecursiveType）= I（どれも通らない閉路 —
+// 住人のいない型 — 値が作れない）・組の中の参照の型引数が参照する宣言の型引数そのままでない形（正則でない入れ子を含む）。
 // 循環は package の中に閉じる（他 package の型への参照は import の向きにしか張れず、循環 import は先に拒否済み）。修飾名は見ない
 
 import "ast"
 import "diag"
 import "std/iter"
 
-// 最初の再帰の型宣言の位置（無ければ file = -1）
-func recTypeAt(cx Cx) diag.Pos {
-    for p <- iter.Range(0, len(cx.pkg_path)) {
-        at := recTypeIn(cx, cx.pkg_lo[p], cx.pkg_hi[p])
-        if at.file >= 0 {
-            return at
-        }
-    }
-    return diag.None()
+// 型宣言の本体の中の参照 1 本
+type tyRef struct {
+    name string
+    guarded bool // slice / map の要素の位置の下
+    fn bool      // 関数型の仮引数・結果の中（named fn type の本体を含む）
+    arg bool     // 型引数の中
+    node int     // 参照の型式の節（TName / TGeneric）— name が空の行は匿名の関数型の節そのもの（fnode = それを囲む匿名の関数型）
+    fnode int    // 参照を囲むいちばん内側の匿名の関数型の節（無ければ -1）
 }
 
-// ファイル [lo, hi)（1 つの package）の型宣言の循環
-func recTypeIn(cx Cx, lo int, hi int) diag.Pos {
-    // 宣言の表: 名前（variant の名前も持ち主の宣言を指す）・位置
+// package 1 つの型宣言の表と参照の辺
+type recPkg struct {
+    names []string // 宣言名と variant 名（持ち主は owner）
+    owner []int
+    dfile []int
+    dnode []int
+    eto []int      // 辺の行き先（宣言の番号）— 宣言 d の辺は elo[d]..elo[d + 1]
+    eref []tyRef
+    elo []int
+    // 本体の中の匿名の関数型の節と、それを囲む匿名の関数型（-1 = 無し）・宣言の番号（3 本の並びの列）
+    fnNode []int
+    fnPar []int
+    fnDecl []int
+}
+
+// 最初の拒否する再帰の型宣言の位置と理由（diag.RecursiveType の kind — 無ければ file = -1）
+func recTypeAt(cx Cx) (diag.Pos, int) {
+    for p <- iter.Range(0, len(cx.pkg_path)) {
+        at, k := recTypeIn(cx, cx.pkg_lo[p], cx.pkg_hi[p])
+        if at.file >= 0 {
+            return at, k
+        }
+    }
+    return diag.None(), 0
+}
+
+// 受理した再帰の組の一覧（全 package）: 平らな列 [n, file0, node0, …, m, 匿名の関数型の file0, node0, …, n', …]
+// （成分は宣言順・m 個の閉路の上の匿名の関数型 — recAnonFns）
+func RecGroups(cx Cx) []int {
+    mut out := mut []int{}
+    for p <- iter.Range(0, len(cx.pkg_path)) {
+        g := recGroupsIn(cx, cx.pkg_lo[p], cx.pkg_hi[p])
+        for i <- iter.Range(0, len(g)) {
+            out = append(out, g[i])
+        }
+    }
+    return freeze(out)
+}
+
+func recPkgOf(cx Cx, lo int, hi int) recPkg {
     mut names := mut []string{}
     mut owner := mut []int{}
     mut dfile := mut []int{}
@@ -51,32 +89,106 @@ func recTypeIn(cx Cx, lo int, hi int) diag.Pos {
     ow := freeze(owner)
     df := freeze(dfile)
     dn := freeze(dnode)
-    n := len(df)
-    if n == 0 {
-        return diag.None()
-    }
-    // 辺: 宣言 d → 参照する宣言（重複あり — 平らな列 eto・各宣言の範囲 elo[d]..elo[d + 1]）
     mut eto := mut []int{}
+    mut eref := mut []tyRef{}
     mut elo := mut []int{}
-    for d <- iter.Range(0, n) {
+    mut fnNode := mut []int{}
+    mut fnPar := mut []int{}
+    mut fnDecl := mut []int{}
+    for d <- iter.Range(0, len(df)) {
         elo = append(elo, len(eto))
         t := cx.trees[df[d]]
         refs := typeRefs(t, t.nodes[dn[d]].c)
         for r <- iter.Range(0, len(refs)) {
+            if refs[r].name == "" {
+                fnNode = append(fnNode, refs[r].node)
+                fnPar = append(fnPar, refs[r].fnode)
+                fnDecl = append(fnDecl, d)
+            }
+        }
+        for r <- iter.Range(0, len(refs)) {
             for j <- iter.Range(0, len(nm)) {
-                if nm[j] == refs[r] {
+                if nm[j] == refs[r].name {
                     eto = append(eto, ow[j])
+                    eref = append(eref, refs[r])
                 }
             }
         }
     }
     elo = append(elo, len(eto))
-    es := freeze(eto)
-    el := freeze(elo)
-    // 参照先が全部外れた宣言を外していく — 残れば循環（か循環に届く宣言）
+    return recPkg{names: nm, owner: ow, dfile: df, dnode: dn, eto: freeze(eto), eref: freeze(eref), elo: freeze(elo), fnNode: freeze(fnNode), fnPar: freeze(fnPar), fnDecl: freeze(fnDecl)}
+}
+
+// 宣言 d から辺で届く宣言の印（d 自身は閉路があるときだけ）
+func reachFrom(g recPkg, d int) []bool {
+    n := len(g.dfile)
+    mut seen := mut []bool{}
+    for _ <- iter.Range(0, n) {
+        seen = append(seen, false)
+    }
+    mut q := mut []int{d}
+    mut qi := 0
+    while qi < len(q) {
+        x := q[qi]
+        qi += 1
+        for e <- iter.Range(g.elo[x], g.elo[x + 1]) {
+            y := g.eto[e]
+            if !seen[y] {
+                seen[y] = true
+                q = append(q, y)
+            }
+        }
+    }
+    return freeze(seen)
+}
+
+// 組（SCC）の番号: 宣言ごとに組の代表（組の最初の宣言）・再帰しない宣言は -1
+func recComps(g recPkg) []int {
+    n := len(g.dfile)
+    mut reach := mut [][]bool{}
+    for d <- iter.Range(0, n) {
+        reach = append(reach, reachFrom(g, d))
+    }
+    mut comp := mut []int{}
+    for d <- iter.Range(0, n) {
+        mut c := -1
+        if reach[d][d] {
+            for e <- iter.Range(0, n) {
+                if c < 0 && reach[d][e] && reach[e][d] {
+                    c = e
+                }
+            }
+        }
+        comp = append(comp, c)
+    }
+    return freeze(comp)
+}
+
+// 組 c（代表）を拒否するなら拒否の位置の宣言と理由（diag.RecursiveType の kind — 受理なら (-1, 0)）
+func recReject(cx Cx, g recPkg, comp []int, c int) (int, int) {
+    n := len(g.dfile)
+    // 型引数の中の自己参照・型引数が宣言の型引数そのままでない参照
+    for d <- iter.Range(0, n) {
+        if comp[d] == c {
+            t := cx.trees[g.dfile[d]]
+            if t.nodes[t.nodes[g.dnode[d]].c].kind == ast.BError {
+                return d, 0
+            }
+            for e <- iter.Range(g.elo[d], g.elo[d + 1]) {
+                if comp[g.eto[e]] == c {
+                    r := g.eref[e]
+                    if r.arg || !sameTypeArgs(cx, g, d, g.eto[e], r.node) {
+                        return d, 1
+                    }
+                }
+            }
+        }
+    }
+    // I: ガードの無い辺だけで閉路（沈みの除去 — ガードの無い辺の行き先が全部外れた宣言を外していき、残れば閉路）。
+    // 関数型の中の辺もガード（関数値の大きさは閉包の組のまま — 循環は呼ぶときの約束の中だけ）
     mut gone := mut []bool{}
     for d <- iter.Range(0, n) {
-        gone = append(gone, false)
+        gone = append(gone, comp[d] != c)
     }
     mut progress := true
     while progress {
@@ -84,8 +196,8 @@ func recTypeIn(cx Cx, lo int, hi int) diag.Pos {
         for d <- iter.Range(0, n) {
             if !gone[d] {
                 mut free := true
-                for e <- iter.Range(el[d], el[d + 1]) {
-                    if !gone[es[e]] {
+                for e <- iter.Range(g.elo[d], g.elo[d + 1]) {
+                    if !g.eref[e].guarded && !g.eref[e].fn && !gone[g.eto[e]] {
                         free = false
                     }
                 }
@@ -96,33 +208,149 @@ func recTypeIn(cx Cx, lo int, hi int) diag.Pos {
             }
         }
     }
-    // 残った最初の宣言から残った参照先を n 回辿る — 循環の上に着く
-    mut cur := -1
     for d <- iter.Range(0, n) {
-        if cur < 0 && !gone[d] {
-            cur = d
+        if !gone[d] {
+            return d, 0
         }
     }
-    if cur < 0 {
-        return diag.None()
-    }
-    for s <- iter.Range(0, n) {
-        mut nx := -1
-        for e <- iter.Range(el[cur], el[cur + 1]) {
-            if nx < 0 && !gone[es[e]] {
-                nx = es[e]
-            }
-        }
-        cur = nx
-    }
-    t := cx.trees[df[cur]]
-    return diag.Pos{file: df[cur], tok: t.nodes[dn[cur]].tok}
+    return -1, 0
 }
 
-// 型宣言の本体 b の中の修飾なしの型の名前（明示の待ち行列 — 型式の深さに依らない）
-func typeRefs(t ast.Tree, b int) []string {
-    mut out := mut []string{}
+// 組の中の参照 node（宣言 d の本体の中・行き先 e）の型引数が d の型引数をそのまま同じ順に渡すか（d と e の型引数の数も同じ）
+func sameTypeArgs(cx Cx, g recPkg, d int, e int, node int) bool {
+    t := cx.trees[g.dfile[d]]
+    te := cx.trees[g.dfile[e]]
+    ps := t.nodes[g.dnode[d]].b
+    np := ast.ListLen(t, ps)
+    if np != ast.ListLen(te, te.nodes[g.dnode[e]].b) {
+        return false
+    }
+    x := t.nodes[node]
+    if x.kind != ast.TGeneric {
+        return np == 0
+    }
+    if ast.ListLen(t, x.b) != np {
+        return false
+    }
+    for i <- iter.Range(0, np) {
+        a := t.nodes[ast.ListAt(t, x.b, i)]
+        if a.kind != ast.TName || Name(t, a.a) != Name(t, ast.ListAt(t, ps, i)) {
+            return false
+        }
+    }
+    return true
+}
+
+// ファイル [lo, hi)（1 つの package）の拒否する再帰の型宣言と理由
+func recTypeIn(cx Cx, lo int, hi int) (diag.Pos, int) {
+    g := recPkgOf(cx, lo, hi)
+    comp := recComps(g)
+    for d <- iter.Range(0, len(g.dfile)) {
+        if comp[d] == d {
+            x, k := recReject(cx, g, comp, d)
+            if x >= 0 {
+                t := cx.trees[g.dfile[x]]
+                return diag.Pos{file: g.dfile[x], tok: t.nodes[g.dnode[x]].tok}, k
+            }
+        }
+    }
+    return diag.None(), 0
+}
+
+// ファイル [lo, hi) の受理した組（RecGroups の形）
+func recGroupsIn(cx Cx, lo int, hi int) []int {
+    g := recPkgOf(cx, lo, hi)
+    comp := recComps(g)
+    mut out := mut []int{}
+    for c <- iter.Range(0, len(g.dfile)) {
+        x, _ := recReject(cx, g, comp, c)
+        if comp[c] == c && x < 0 {
+            mut k := 0
+            for d <- iter.Range(0, len(g.dfile)) {
+                if comp[d] == c {
+                    k += 1
+                }
+            }
+            out = append(out, k)
+            for d <- iter.Range(0, len(g.dfile)) {
+                if comp[d] == c {
+                    out = append(out, g.dfile[d])
+                    out = append(out, g.dnode[d])
+                }
+            }
+            an := recAnonFns(g, comp, c)
+            out = append(out, len(an) / 2)
+            for w <- an {
+                out = append(out, w)
+            }
+        }
+    }
+    return freeze(out)
+}
+
+// 組 c の閉路の上の匿名の関数型の節（[ファイル, 節] の 2 語ずつ — 成分の宣言順・宣言の中は節の番号の昇順）:
+// 組の成分への参照を囲む匿名の関数型（入れ子なら外側も全部）。S の組の成分として named fn type の後に並ぶ
+func recAnonFns(g recPkg, comp []int, c int) []int {
+    mut out := mut []int{}
+    for d <- iter.Range(0, len(g.dfile)) {
+        if comp[d] == c {
+            mut ns := mut []int{}
+            for e <- iter.Range(g.elo[d], g.elo[d + 1]) {
+                if comp[g.eto[e]] == c {
+                    mut f := g.eref[e].fnode
+                    while f >= 0 {
+                        mut seen := false
+                        for q <- iter.Range(0, len(ns)) {
+                            if ns[q] == f {
+                                seen = true
+                            }
+                        }
+                        if !seen {
+                            ns = append(ns, f)
+                        }
+                        f = recFnParent(g, d, f)
+                    }
+                }
+            }
+            // 節の番号の昇順（挿入の整列 — 列は短い）
+            mut i := 1
+            while i < len(ns) {
+                mut j := i
+                while j > 0 && ns[j - 1] > ns[j] {
+                    x := ns[j]
+                    ns[j] = ns[j - 1]
+                    ns[j - 1] = x
+                    j -= 1
+                }
+                i += 1
+            }
+            for q <- iter.Range(0, len(ns)) {
+                out = append(out, g.dfile[d])
+                out = append(out, ns[q])
+            }
+        }
+    }
+    return freeze(out)
+}
+
+// 宣言 d の本体の中の匿名の関数型の節 f を囲む匿名の関数型（無ければ -1）
+func recFnParent(g recPkg, d int, f int) int {
+    for i <- iter.Range(0, len(g.fnNode)) {
+        if g.fnDecl[i] == d && g.fnNode[i] == f {
+            return g.fnPar[i]
+        }
+    }
+    return -1
+}
+
+// 型宣言の本体 b の中の修飾なしの型の名前と位置の印（明示の待ち行列 — 型式の深さに依らない）
+func typeRefs(t ast.Tree, b int) []tyRef {
+    mut out := mut []tyRef{}
     mut st := mut []int{}
+    mut sg := mut []bool{}
+    mut sf := mut []bool{}
+    mut sa := mut []bool{}
+    mut sp := mut []int{}
     body := t.nodes[b]
     // 根: 欄の列（struct・error ラベル・union の各 variant）の型・named scalar の下地・関数型の仮引数と結果
     mut lists := mut []int{}
@@ -137,6 +365,10 @@ func typeRefs(t ast.Tree, b int) []string {
         }
     } else if body.kind == ast.BDefined {
         st = append(st, body.a)
+        sg = append(sg, false)
+        sf = append(sf, false)
+        sa = append(sa, false)
+        sp = append(sp, -1)
     } else if body.kind == ast.BFunc {
         lists = append(lists, body.a)
         fieldList = append(fieldList, false)
@@ -147,41 +379,90 @@ func typeRefs(t ast.Tree, b int) []string {
         for k <- iter.Range(0, ast.ListLen(t, lists[i])) {
             e := ast.ListAt(t, lists[i], k)
             st = append(st, if fieldList[i] { t.nodes[e].b } else { e })
+            sg = append(sg, false)
+            sf = append(sf, !fieldList[i])
+            sa = append(sa, false)
+            sp = append(sp, -1)
         }
     }
     mut qi := 0
     while qi < len(st) {
-        x := t.nodes[st[qi]]
+        xi := st[qi]
+        x := t.nodes[xi]
+        g := sg[qi]
+        f := sf[qi]
+        a := sa[qi]
+        p := sp[qi]
         qi += 1
-        // 子の型式の列（型引数・関数型の仮引数と結果）
+        // 子の囲む匿名の関数型（この節が関数型なら自分）
+        mut cp := p
+        // 子の型式の列（型引数・関数型の仮引数と結果）と子の印
         mut sub := -1
         mut sub2 := -1
+        mut cg := g
+        mut cf := f
+        mut ca := a
         if x.kind == ast.TName {
-            out = append(out, Name(t, x.a))
+            out = append(out, tyRef{name: Name(t, x.a), guarded: g, fn: f, arg: a, node: xi, fnode: p})
         } else if x.kind == ast.TGeneric {
-            out = append(out, Name(t, x.a))
+            out = append(out, tyRef{name: Name(t, x.a), guarded: g, fn: f, arg: a, node: xi, fnode: p})
             sub = x.b
-        } else if x.kind == ast.TOpt || x.kind == ast.TSlice {
+            ca = true
+        } else if x.kind == ast.TOpt {
+            // opt の中身はガード（値の I 族 — 組の成分を中身に持つ opt は実装が 1 セルの箱で表す）
             st = append(st, x.a)
+            sg = append(sg, true)
+            sf = append(sf, f)
+            sa = append(sa, a)
+            sp = append(sp, cp)
+        } else if x.kind == ast.TSlice {
+            st = append(st, x.a)
+            sg = append(sg, true)
+            sf = append(sf, f)
+            sa = append(sa, a)
+            sp = append(sp, cp)
         } else if x.kind == ast.TMap {
             st = append(st, x.a)
+            sg = append(sg, true)
+            sf = append(sf, f)
+            sa = append(sa, a)
+            sp = append(sp, cp)
             st = append(st, x.b)
+            sg = append(sg, true)
+            sf = append(sf, f)
+            sa = append(sa, a)
+            sp = append(sp, cp)
         } else if x.kind == ast.TArray {
             st = append(st, x.b)
+            sg = append(sg, g)
+            sf = append(sf, f)
+            sa = append(sa, a)
+            sp = append(sp, cp)
         } else if x.kind == ast.TTuple {
             sub = x.a
         } else if x.kind == ast.TFunc {
             sub = x.a
             sub2 = x.b
+            cf = true
+            cp = xi
+            out = append(out, tyRef{name: "", guarded: g, fn: f, arg: a, node: xi, fnode: p})
         }
         if sub >= 0 {
             for k <- iter.Range(0, ast.ListLen(t, sub)) {
                 st = append(st, ast.ListAt(t, sub, k))
+                sg = append(sg, cg)
+                sf = append(sf, cf)
+                sa = append(sa, ca)
+                sp = append(sp, cp)
             }
         }
         if sub2 >= 0 {
             for k <- iter.Range(0, ast.ListLen(t, sub2)) {
                 st = append(st, ast.ListAt(t, sub2, k))
+                sg = append(sg, cg)
+                sf = append(sf, cf)
+                sa = append(sa, ca)
+                sp = append(sp, cp)
             }
         }
     }

@@ -12,11 +12,11 @@ import "std/strings"
 
 func body() string { return "streamed from a file, chunk by chunk\n" }
 
-func sendFile(path string, emit func(b []byte) error?) error? {
+func sendFile(path string, out mut http.Out, emit func(out mut http.Out, b []byte) error?) error? {
     f := io.Open(path)?
     defer io.Close(f)
     for b <- io.Chunks(f)? {
-        emit(io.Raw(b))?
+        emit(mut out, io.Raw(b))?
     }
     return nil
 }
@@ -25,7 +25,7 @@ func route(dir string, r http.Request) http.Response {
     return switch {
     case strings.HasPrefix(r.path, "/file/"): {
         p := dir + "/" + strings.TrimPrefix(r.path, "/file/")
-        http.Response{status: 200, contentType: "text/plain", length: len(bytes(body())), stream: (emit) => sendFile(p, emit)}
+        http.Response{status: 200, contentType: "text/plain", length: len(bytes(body())), stream: (out, emit) => sendFile(p, mut out, emit)}
     }
     default: http.Status(404)
     }

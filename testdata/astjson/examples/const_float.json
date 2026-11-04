@@ -1,0 +1,537 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/iter",
+      "tok": 4
+    },
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    },
+    {
+      "alias": "$float",
+      "path": "std/internal/floatfmt",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "Body",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "vx",
+            "type": {
+              "k": "name",
+              "name": "float"
+            },
+            "tok": 53
+          },
+          {
+            "name": "mass",
+            "type": {
+              "k": "name",
+              "name": "float"
+            },
+            "tok": 56
+          }
+        ]
+      },
+      "tok": 50,
+      "span": {
+        "start": 49,
+        "end": 61
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 105
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "TwoPi",
+                  "tok": 107
+                },
+                {
+                  "k": "ident",
+                  "name": "SolarMass",
+                  "tok": 109
+                },
+                {
+                  "k": "ident",
+                  "name": "HalfNeg",
+                  "tok": 111
+                },
+                {
+                  "k": "ident",
+                  "name": "Sum",
+                  "tok": 113
+                }
+              ],
+              "tok": 106
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "b"
+                  ],
+                  "src": {
+                    "k": "ident",
+                    "name": "Bodies",
+                    "tok": 119
+                  },
+                  "guards": [],
+                  "tok": 117
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 121
+                      },
+                      "args": [
+                        {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "b",
+                            "tok": 123
+                          },
+                          "field": "vx",
+                          "tok": 125
+                        },
+                        {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "b",
+                            "tok": 127
+                          },
+                          "field": "mass",
+                          "tok": 129
+                        }
+                      ],
+                      "tok": 122
+                    }
+                  }
+                ]
+              },
+              "tok": 116
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "a"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "float",
+                "bits": 0,
+                "text": "0.0",
+                "tok": 137
+              }
+            ],
+            "tok": 134
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "k"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "iter",
+                        "tok": 142
+                      },
+                      "field": "Range",
+                      "tok": 144
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 146
+                      },
+                      {
+                        "k": "int",
+                        "value": 3,
+                        "tok": 148
+                      }
+                    ],
+                    "tok": 145
+                  },
+                  "guards": [],
+                  "tok": 140
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "assign",
+                    "targets": [
+                      {
+                        "k": "ident",
+                        "name": "a",
+                        "tok": 151
+                      }
+                    ],
+                    "op": "=",
+                    "values": [
+                      {
+                        "k": "binary",
+                        "op": "+",
+                        "lhs": {
+                          "k": "ident",
+                          "name": "a",
+                          "tok": 153
+                        },
+                        "rhs": {
+                          "k": "ident",
+                          "name": "TwoPi",
+                          "tok": 155
+                        },
+                        "tok": 154
+                      }
+                    ],
+                    "tok": 151
+                  }
+                ]
+              },
+              "tok": 139
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 159
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "a",
+                  "tok": 161
+                },
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "Sum",
+                    "tok": 163
+                  },
+                  "rhs": {
+                    "k": "float",
+                    "bits": 4599075939470750515,
+                    "text": "0.3",
+                    "tok": 165
+                  },
+                  "tok": 164
+                }
+              ],
+              "tok": 160
+            }
+          }
+        ]
+      },
+      "tok": 101,
+      "bodiless": false,
+      "span": {
+        "start": 100,
+        "end": 170
+      },
+      "sig_end": 104
+    }
+  ],
+  "consts": [
+    {
+      "name": "Pi",
+      "expr": {
+        "k": "float",
+        "bits": 4614256656552045848,
+        "text": "3.141592653589793",
+        "tok": 9
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 11
+      }
+    },
+    {
+      "name": "TwoPi",
+      "expr": {
+        "k": "binary",
+        "op": "*",
+        "lhs": {
+          "k": "float",
+          "bits": 4611686018427387904,
+          "text": "2.0",
+          "tok": 14
+        },
+        "rhs": {
+          "k": "ident",
+          "name": "Pi",
+          "tok": 16
+        },
+        "tok": 15
+      },
+      "tok": 12,
+      "span": {
+        "start": 11,
+        "end": 18
+      }
+    },
+    {
+      "name": "SolarMass",
+      "expr": {
+        "k": "binary",
+        "op": "*",
+        "lhs": {
+          "k": "binary",
+          "op": "*",
+          "lhs": {
+            "k": "float",
+            "bits": 4616189618054758400,
+            "text": "4.0",
+            "tok": 21
+          },
+          "rhs": {
+            "k": "ident",
+            "name": "Pi",
+            "tok": 23
+          },
+          "tok": 22
+        },
+        "rhs": {
+          "k": "ident",
+          "name": "Pi",
+          "tok": 25
+        },
+        "tok": 24
+      },
+      "tok": 19,
+      "span": {
+        "start": 18,
+        "end": 27
+      }
+    },
+    {
+      "name": "DaysPerYear",
+      "expr": {
+        "k": "float",
+        "bits": 4645132986222473380,
+        "text": "365.24",
+        "tok": 30
+      },
+      "tok": 28,
+      "span": {
+        "start": 27,
+        "end": 32
+      }
+    },
+    {
+      "name": "HalfNeg",
+      "expr": {
+        "k": "unary",
+        "op": "-",
+        "operand": {
+          "k": "binary",
+          "op": "/",
+          "lhs": {
+            "k": "ident",
+            "name": "Pi",
+            "tok": 37
+          },
+          "rhs": {
+            "k": "float",
+            "bits": 4611686018427387904,
+            "text": "2.0",
+            "tok": 39
+          },
+          "tok": 38
+        },
+        "tok": 35
+      },
+      "tok": 33,
+      "span": {
+        "start": 32,
+        "end": 42
+      }
+    },
+    {
+      "name": "Sum",
+      "expr": {
+        "k": "binary",
+        "op": "+",
+        "lhs": {
+          "k": "float",
+          "bits": 4591870180066957722,
+          "text": "0.1",
+          "tok": 45
+        },
+        "rhs": {
+          "k": "float",
+          "bits": 4596373779694328218,
+          "text": "0.2",
+          "tok": 47
+        },
+        "tok": 46
+      },
+      "tok": 43,
+      "span": {
+        "start": 42,
+        "end": 49
+      }
+    },
+    {
+      "name": "Sun",
+      "expr": {
+        "k": "composite",
+        "type_name": "Body",
+        "elems": [
+          {
+            "key": "vx",
+            "value": {
+              "k": "float",
+              "bits": 0,
+              "text": "0.0",
+              "tok": 68
+            }
+          },
+          {
+            "key": "mass",
+            "value": {
+              "k": "ident",
+              "name": "SolarMass",
+              "tok": 72
+            }
+          }
+        ],
+        "tok": 64,
+        "type_args": []
+      },
+      "tok": 62,
+      "span": {
+        "start": 61,
+        "end": 75
+      }
+    },
+    {
+      "name": "Bodies",
+      "expr": {
+        "k": "slicelit",
+        "elem": {
+          "k": "name",
+          "name": "Body"
+        },
+        "elems": [
+          {
+            "k": "ident",
+            "name": "Sun",
+            "tok": 82
+          },
+          {
+            "k": "composite",
+            "type_name": "Body",
+            "elems": [
+              {
+                "key": "vx",
+                "value": {
+                  "k": "binary",
+                  "op": "*",
+                  "lhs": {
+                    "k": "float",
+                    "bits": 4565298575141802505,
+                    "text": "1.66007664274403694e-03",
+                    "tok": 88
+                  },
+                  "rhs": {
+                    "k": "ident",
+                    "name": "DaysPerYear",
+                    "tok": 90
+                  },
+                  "tok": 89
+                }
+              },
+              {
+                "key": "mass",
+                "value": {
+                  "k": "binary",
+                  "op": "*",
+                  "lhs": {
+                    "k": "float",
+                    "bits": 4561945624537448757,
+                    "text": "9.54791938424326609e-04",
+                    "tok": 94
+                  },
+                  "rhs": {
+                    "k": "ident",
+                    "name": "SolarMass",
+                    "tok": 96
+                  },
+                  "tok": 95
+                }
+              }
+            ],
+            "tok": 84,
+            "type_args": []
+          }
+        ],
+        "mut": false,
+        "tok": 78
+      },
+      "tok": 76,
+      "span": {
+        "start": 75,
+        "end": 100
+      }
+    }
+  ]
+}

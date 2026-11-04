@@ -2,6 +2,53 @@
 
 This file records user-facing changes per public release. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/) (no backward-compatibility promise while on 0.x).
 
+## v0.6.7 — 2026-11-05
+
+A language-focused release. Sober now accepts plainly written recursive type declarations (forms like `type L struct { v int; next L? }` or `type Value union { Array { items []Value }; … }`), and `std/json` gained `json.Value` / `json.Tree`, which hold JSON values as an actual recursive tree. Floating point reached completion: string interpolation, constant-expression arithmetic, a handful of `std/math` functions, and better out-of-range literal diagnostics. The language also gained locally-bound lambdas and "mut parameters on function types," which let closures carry mutable state through an explicit parameter instead of capture. Narrowing (nil-checking) rules were made uniform across assignment and loop conditions. One miscompilation that predates 0.6.6 and two soundness gaps in `freeze` checking were fixed.
+
+### Breaking changes
+
+- `http.Stream`'s signature changed to `func(out mut Out, emit func(out mut Out, b []byte) error?) error?`. The destination's state (compressor, running totals, whether the response is chunked) now lives in the opaque `Out` value, which callers pass straight through to `emit` (replacing mutable capture by borrowed lambdas — see below)
+- Borrowed lambdas (the `(p) => { … }` form) can no longer capture a `mut` binding (L1 removed). A closure that needs mutable state is now written as a function type with a `mut` parameter (`func(st mut S, …)`)
+- `std/json`'s existing view type was renamed to `json.View` (and its variants follow suit). The name `Value` is now taken by the new recursive union type
+
+### Language
+
+- **Recursive type declarations are now accepted** (iso-recursive). Two forms: cycles through function types (S) and cycles through slice / map / fixed-size array elements (D — including generic type arguments). Self-reference through an optional field (`next L?`) is also accepted now — internally it is represented as a single-cell box, but the declared type stays `L?` as written. Cycles that cannot produce a value at all (e.g. a union variant that holds itself by value directly, which would be infinitely large) are still rejected; the diagnostic now reads "infinite size" instead of the older wording
+- Building a deep recursive value (e.g. a cons-list-like chain assembled as a function's return value) is now rewritten by the compiler to append into the eventual destination instead of copying the result up through every stack frame. This removes the per-node, depth-proportional copy: building a deep tree now takes time proportional to its size instead of size × depth, and working-set memory drops from quadratic to linear in depth (see Performance below)
+- Floating point is now complete:
+  - String interpolation `"${x}"` accepts `float` (joining `int` / `float` / `string` / `bool`)
+  - Arithmetic and unary minus in constant expressions (e.g. `-1.5`) are folded at build time as typed IEEE 754 operations
+  - `std/math` gained `Trunc`, `Floor`, `Ceil`, `Min`, `Max` (bit manipulation and comparison only — deterministic, no libm)
+  - Out-of-range literals (integer overflow, or a float literal that rounds to ±Inf) now get a specific diagnostic naming the problem, instead of a generic grammar-mismatch message
+- **Locally-bound lambdas**: `f := (n int) => n + k` is now accepted. Unlike a function value, this binding isn't a value you can pass around — it's inlined at every call site and every place it's passed to a function-type parameter, which lets it capture `mut` bindings with no limit on count. Using it as a value, passing it where a value is expected, `return` / `?` / an outer `break` inside its body, forward references, and simultaneous bindings are all rejected by name
+- **Mut parameters on function types**: `func(st mut S, ev int)` is now accepted everywhere a function type can appear — named functions, anonymous function types (as values, struct fields, generic type arguments), borrowed parameters, higher-order parameters, and locally-bound lambdas. State is now explicitly owned by the caller and passed with `mut` at each call, which let us remove two earlier restrictions ("a function with a `mut` parameter cannot become a function value" and "a lambda's `mut` parameter only works inside a borrow window")
+- **Narrowing rules were made uniform**: after a statement that writes to a narrowed `mut` variable (assignment, compound assignment, or passing it `mut` to a call), the name reverts to its original `T?` type. This is what makes a chain-walking loop like `while c != nil { s += c.v; c = c.next }` possible (writing to a *field* of a narrowed variable, `x.f = v`, is still a type error — the name reverts to `T?` at that statement; bind it to another name first if you need to write a field). A `while` loop's `x != nil` condition is now re-narrowed at the top of every iteration (previously `while` did not narrow at all)
+- Fixed several check/build disagreements, including compound assignment into an element's field (`xs[i].f op= v`)
+
+### Tooling
+
+- `sober build --mem-report`: a developer tool that reports, per function, an upper bound on memory use (the high-water mark of logical bytes held in regions across a call) and an upper bound on stack frame size. Forms it cannot bound (recursion, external input, indirect calls, etc.) are named along with the reason
+
+### std
+
+- `std/json`: added `Value` (a recursive union holding an actual JSON value as a tree), `Tree`, and `Encode[json.Value]` / `Decode[json.Value]`. The existing view type was renamed to `View` (breaking change, see above)
+- `std/math`: added `Trunc`, `Floor`, `Ceil`, `Min`, `Max`
+- Added `rand.Float` (uniform over `[0, 1)` in 2^-53 steps) and `quick.Float` (a property-based-testing generator covering boundary values, small binary fractions, and arbitrary bit patterns)
+
+### Fixes
+
+- Fixed a miscompilation in the boundary-copy optimization (which moves a value from one place to another) on paths that read the source afterward — channel sends and `cell`'s `Set` / `Get`. Values containing nested slices or strings could end up corrupting the sender's value or the `cell`'s stored value after the fact (present since before 0.6.6)
+- Fixed two gaps in `freeze` checking: ① the body of a locally-bound lambda was checked at its binding site rather than at each use site, which missed writes made through the lambda after a `freeze`; ② a call taking a function value as an argument did not account for that function possibly writing through its arguments. Both allowed code that could mutate a value after it had been frozen
+
+### Performance
+
+Linearized the construction of recursive values (local measurements, on a Zen 5 machine at hand):
+
+- Rewrote deep recursive-value construction to append into the eventual destination instead of copying the result up through every stack frame. The gap against a hand-written equivalent (idiomgap) at depths 2 / 4 / 6 shrank from +35 / +71 / +108% instruction overhead to +11.0 / +10.8 / +10.5% (the remainder is a depth-independent constant — the per-node cost of runtime relocation)
+- For a chain of depth `n` built by appending into the eventual destination: going from 90 to 900 links, working-set RSS dropped from 1.7 → 135 MB (quadratic, old) to 0.4 → 3.8 MB (linear)
+- Fixed where the relocation working stack lived, cutting RSS for a loop that builds a cons chain from 158 MB to 3 MB at 100,000 nodes
+
 ## v0.6.6 — 2026-11-03
 
 A performance release. The HTTP server's receive buffer ring is now consumed incrementally, which cuts CPU per request. TLS gets faster handshakes (RSA signing, x25519, SHA-256) and faster AES-GCM records, and deflate's lv6 gives up a few percent of compression ratio for speed. The language gains `@replaces` / `@doubles`, which swap a package for a double in a test build (build-time DI), and std/testing/cell, a place for fakes to keep state. `assert` now reports the user's line on failure and takes an optional label. Many disagreements between check and build were fixed.

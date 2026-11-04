@@ -71,6 +71,21 @@ func TestFloatBits() {
     assert(ok6 && v6 == 0)
 }
 
+// 整数リテラルの値は int の範囲の端まで受け、1 つ越えたら ok = false（10 進・16 進・2 進）
+func TestIntValue() {
+    b := bytes("9223372036854775807 9223372036854775808 0x7fffffffffffffff 0x8000000000000000 0b101")
+    v1, r1, ok1 := IntValue(b, 0, 19)
+    assert(ok1 && r1 == 10 && v1 == 9223372036854775807)
+    _, _, ok2 := IntValue(b, 20, 39)
+    assert(!ok2)
+    v3, r3, ok3 := IntValue(b, 40, 58)
+    assert(ok3 && r3 == 16 && v3 == 9223372036854775807)
+    _, _, ok4 := IntValue(b, 59, 77)
+    assert(!ok4)
+    v5, r5, ok5 := IntValue(b, 78, 83)
+    assert(ok5 && r5 == 2 && v5 == 5)
+}
+
 // InterpEnd は `${` の `{` から対応する `}` の直後（入れ子の波括弧・文字列を数える）
 func TestInterpEnd() {
     b := bytes("\"x \${f({1})} y\"")

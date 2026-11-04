@@ -1,0 +1,286 @@
+package desugar
+
+// 絞りの消滅（language.md 15 節 — 代入で絞りが外れる）: 絞った領域で mut の x に書く文（`x = e`・`f(mut x)`・`x.f = e`）の後ろでは、
+// 名前 x は外の `T?` のセルに戻る。ループ・式の位置での書き（条件・値の中の `f(mut x)` 等）はその文の頭から外れる —
+// 字面の順で切ると 2 周目の頭・同じ式の後ろの項が古いペイロードの写しを読む。
+// 判定は字面だけ（同じ名前の束縛し直しは無い — シャドーイングは拒否済み）。check（脱糖器）と build（lower）が同じ述語を引く
+
+import "ast"
+import "std/table"
+
+const KillNone = 0
+const KillAfter = 1
+const KillBefore = 2
+
+// 文 s が名前 nm（絞った mut の束縛）の絞りを外すか: KillNone / KillAfter（文の後ろから）/ KillBefore（文の頭から）
+func KillOf(st mut S, s NodeRef, nm StrRef) int {
+    x := nodeOf(mut st, s)
+    k := x.kind
+    if k == ast.SWhile {
+        return if writesN(mut st, nA(x), nm) || writesL(mut st, lA(nodeOf(mut st, nB(x))), nm) { KillBefore } else { KillNone }
+    }
+    if k == ast.SAssign {
+        if writesListN(mut st, lC(x), nm) {
+            return KillBefore
+        }
+        // 的: 名前そのものは右辺を絞ったまま読んでから書く（後ろから外れる）・欄 / 添字の道の根は文の頭から
+        ts := lA(x)
+        mut out := KillNone
+        mut i := 0
+        while i < lenL(mut st, ts) {
+            t := latN(mut st, ts, i)
+            if kindN(mut st, t) == ast.EIdent && strEq(mut st, sA(nodeOf(mut st, t)), nm) {
+                out = if out == KillNone { KillAfter } else { out }
+            } else if rootIs(mut st, t, nm) {
+                out = KillBefore
+            } else if writesN(mut st, t, nm) {
+                out = KillBefore
+            }
+            i += 1
+        }
+        return out
+    }
+    if k == ast.SBind {
+        return if writesListN(mut st, lC(x), nm) { KillBefore } else { KillNone }
+    }
+    if k == ast.SRet {
+        return if writesListN(mut st, lA(x), nm) { KillBefore } else { KillNone }
+    }
+    if k == ast.SExpr || k == ast.SYield {
+        e := nA(x)
+        ek := kindN(mut st, e)
+        if ek == ast.EIf {
+            return ifKill(mut st, e, nm)
+        }
+        if ek == ast.ESwitch {
+            y := nodeOf(mut st, e)
+            if writesListN(mut st, lA(y), nm) {
+                return KillBefore
+            }
+            return if casesWrite(mut st, e, nm) { KillAfter } else { KillNone }
+        }
+        return if writesN(mut st, e, nm) { KillBefore } else { KillNone }
+    }
+    // break / continue / defer（書きは領域の出口の後）
+    return KillNone
+}
+
+// 文位置の if: 条件の書きは頭から・腕の書きは後ろから（腕の中は腕の文の列が同じ規則で切る）
+func ifKill(st mut S, e NodeRef, nm StrRef) int {
+    y := nodeOf(mut st, e)
+    if writesN(mut st, nA(y), nm) {
+        return KillBefore
+    }
+    mut arms := writesL(mut st, lA(nodeOf(mut st, nB(y))), nm)
+    els := nC(y)
+    if els != -1 {
+        if kindN(mut st, els) == ast.EIf {
+            // else if の条件は前の腕で書いた後には評価されない（前の条件が偽のときだけ）
+            ek := ifKill(mut st, els, nm)
+            arms = arms || ek != KillNone
+        } else {
+            arms = arms || writesN(mut st, els, nm)
+        }
+    }
+    return if arms { KillAfter } else { KillNone }
+}
+
+// switch の腕（default を含む）のどれかが nm に書くか
+func casesWrite(st mut S, e NodeRef, nm StrRef) bool {
+    y := nodeOf(mut st, e)
+    cs := lB(y)
+    mut i := 0
+    while i < lenL(mut st, cs) {
+        if writesN(mut st, nB(nodeOf(mut st, latN(mut st, cs, i))), nm) {
+            return true
+        }
+        i += 1
+    }
+    return nC(y) != -1 && writesN(mut st, nC(y), nm)
+}
+
+// 道（`x.f.g`・`x[i]`）の根が名前 nm か
+func rootIs(st mut S, t0 NodeRef, nm StrRef) bool {
+    mut t := t0
+    while kindN(mut st, t) == ast.ESelector || kindN(mut st, t) == ast.EIndex || kindN(mut st, t) == ast.EParen {
+        t = nA(nodeOf(mut st, t))
+    }
+    return kindN(mut st, t) == ast.EIdent && strEq(mut st, sA(nodeOf(mut st, t)), nm)
+}
+
+// mut 実引数の道（"x" / "x.f.g"）の根が nm か
+func mutRootIs(st mut S, path StrRef, nm StrRef) bool {
+    n := dat(mut st, int(nm))
+    p := dat(mut st, int(path))
+    if p < n || p > n && dat(mut st, int(path) + 1 + n) != '.' {
+        return false
+    }
+    mut i := 0
+    while i < n {
+        if dat(mut st, int(path) + 1 + i) != dat(mut st, int(nm) + 1 + i) {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+func writesListN(st mut S, l ListRef, nm StrRef) bool {
+    if int(l) < 0 {
+        return false
+    }
+    mut i := 0
+    while i < lenL(mut st, l) {
+        if writesN(mut st, latN(mut st, l, i), nm) {
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+// 文の列が nm に書くか
+func writesL(st mut S, l ListRef, nm StrRef) bool {
+    return writesListN(mut st, l, nm)
+}
+
+// if 式 e（nil 判定の if）の腕のどれかが nm に書くか — 書かない絞りは消滅を追わない（文ごとの判定を省く）
+func IfWrites(st mut S, e NodeRef, nm StrRef) bool {
+    x := nodeOf(mut st, e)
+    return writesL(mut st, lA(nodeOf(mut st, nB(x))), nm) || writesN(mut st, nC(x), nm)
+}
+
+// 文の列 l が nm に書くか（lower の絞った腕の入口）
+func ListWrites(st mut S, l ListRef, nm StrRef) bool {
+    return writesL(mut st, l, nm)
+}
+
+// 節 n が nm に書くか（lower の絞った else if の入口）
+func NodeWrites(st mut S, n NodeRef, nm StrRef) bool {
+    return writesN(mut st, n, nm)
+}
+
+// 節 n（文・式・腕）の中に nm への書き（名前・道の根への代入・mut 実引数）があるか。ラムダの中は数えない（ラムダは mut の束縛を捕捉しない —
+// 外の x はラムダの本体から書けない）
+func writesN(st mut S, n NodeRef, nm StrRef) bool {
+    if int(n) < 0 {
+        return false
+    }
+    x := nodeOf(mut st, n)
+    k := x.kind
+    if k == ast.EMutArg {
+        return mutRootIs(mut st, sA(x), nm)
+    }
+    if k == ast.EIdent || k == ast.EInt || k == ast.ENil || k == ast.EFloat || k == ast.EStrlit || k == ast.EUtf8Ref || k == ast.ELambda || k == ast.SBreak || k == ast.SContinue {
+        return false
+    }
+    if k == ast.SAssign {
+        ts := lA(x)
+        mut i := 0
+        while i < lenL(mut st, ts) {
+            if rootIs(mut st, latN(mut st, ts, i), nm) {
+                return true
+            }
+            i += 1
+        }
+        return writesListN(mut st, ts, nm) || writesListN(mut st, lC(x), nm)
+    }
+    if k == ast.SBind {
+        return writesListN(mut st, lC(x), nm)
+    }
+    if k == ast.SRet {
+        return writesListN(mut st, lA(x), nm)
+    }
+    if k == ast.SExpr || k == ast.SDefer || k == ast.SYield || k == ast.EParen || k == ast.ESelector {
+        return writesN(mut st, nA(x), nm)
+    }
+    if k == ast.SWhile {
+        return writesN(mut st, nA(x), nm) || writesN(mut st, nB(x), nm)
+    }
+    if k == ast.KBlock || k == ast.EBlock {
+        return writesListN(mut st, lA(x), nm)
+    }
+    if k == ast.EBinary {
+        return writesN(mut st, nB(x), nm) || writesN(mut st, nC(x), nm)
+    }
+    if k == ast.EUnary {
+        return writesN(mut st, nB(x), nm)
+    }
+    if k == ast.ECall {
+        return writesN(mut st, nA(x), nm) || writesListN(mut st, lB(x), nm)
+    }
+    if k == ast.KEntry {
+        return writesN(mut st, nA(x), nm) || writesN(mut st, nB(x), nm)
+    }
+    if k == ast.KNamedArg || k == ast.KCase || k == ast.KElem {
+        // a は名前 / パターンの列 / 欄の名前
+        return writesN(mut st, nB(x), nm)
+    }
+    if k == ast.EPipe {
+        return writesN(mut st, nA(x), nm) || writesN(mut st, nB(x), nm) || writesListN(mut st, lC(x), nm)
+    }
+    if k == ast.EIndex || k == ast.ECatch || k == ast.ETry {
+        return writesN(mut st, nA(x), nm) || writesN(mut st, nB(x), nm)
+    }
+    if k == ast.ESlice3 || k == ast.EIf {
+        return writesN(mut st, nA(x), nm) || writesN(mut st, nB(x), nm) || writesN(mut st, nC(x), nm)
+    }
+    if k == ast.EInterp || k == ast.EComposite {
+        return writesListN(mut st, lB(x), nm)
+    }
+    if k == ast.ESlicelit {
+        return writesListN(mut st, lB(x), nm)
+    }
+    if k == ast.EMaplit {
+        return writesListN(mut st, lC(x), nm)
+    }
+    if k == ast.ESwitch {
+        return writesListN(mut st, lA(x), nm) || writesListN(mut st, lB(x), nm) || writesN(mut st, nC(x), nm)
+    }
+    if k == ast.EFor {
+        gs := lA(x)
+        mut i := 0
+        while i < lenL(mut st, gs) {
+            g := nodeOf(mut st, latN(mut st, gs, i))
+            if writesN(mut st, nB(g), nm) || writesListN(mut st, lC(g), nm) {
+                return true
+            }
+            i += 1
+        }
+        return if x.b == 0 { writesN(mut st, nC(x), nm) } else { writesListN(mut st, lC(x), nm) }
+    }
+    // 型・パターンの節は書かない
+    return false
+}
+
+// 束縛の鎖 eb の上で、絞った束縛 b（nrw > 0）の名前を外の mut のセルの束縛へ戻した鎖
+func killEnv(st mut S, eb int, b int) int {
+    x := bnd(mut st, b)
+    o := lookup(mut st, x.parent, x.name)
+    if o < 0 {
+        return eb
+    }
+    mut y := bnd(mut st, o)
+    y.parent = eb
+    at := table.Len(mut st.binds)
+    table.Push(mut st.binds, y)
+    return at
+}
+
+// 文 s の頭（before = true）/ 後ろで、今絞っている名前（st.nrwNames）のうち s が外す分を外の束縛へ戻した鎖
+func killStmt(st mut S, s NodeRef, eb0 int, before bool) int {
+    mut eb := eb0
+    mut i := 0
+    while i < len(st.nrwNames) {
+        nm := st.nrwNames[i]
+        b := lookup(mut st, eb, nm)
+        if b >= 0 && bnd(mut st, b).nrw > 0 {
+            ko := KillOf(mut st, s, nm)
+            if ko == KillBefore && before || ko == KillAfter && !before {
+                eb = killEnv(mut st, eb, b)
+            }
+        }
+        i += 1
+    }
+    return eb
+}

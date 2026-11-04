@@ -1,0 +1,72 @@
+package main
+
+// 局所の束縛のラムダ（借りの局所 — language.md 25 節）: `f := (…) => …` の f は値でなく、使うたびに呼び出しの点へ展開される。
+// だから mut の束縛をそのまま捕捉でき（何本でも）、更新は呼び手に見える。呼ぶ・匿名の関数型の仮引数へ渡す・展開されるラムダの中で呼ぶ、ができる
+
+import "std/convert"
+import "std/iter"
+
+type Bad error
+
+func each(xs []int, f func(x int)) {
+    for x <- xs {
+        f(x)
+    }
+}
+
+func parse(s string) (int, error?) {
+    if s == "" {
+        return 0, Bad{}
+    }
+    return len(bytes(s)), nil
+}
+
+func total(ss []string) (int, error?) {
+    // 結果が (T, error?) の局所のラムダは `?` を呼び出しの側に書く
+    p := (s string) => parse(s)
+    mut t := 0
+    for s <- ss {
+        t += p(s)?
+    }
+    return t, nil
+}
+
+func main() {
+    k := 3
+    mut sum := 0
+    mut calls := 0
+    add := (x int) => {
+        sum += x
+        calls += 1
+    }
+    sq := (n int) => n * n + k
+    add(1)
+    add(sq(2))
+    each([]int{10, 20}, add)
+    each([]int{1}, (x) => add(x * 100))
+    for i <- iter.Range(0, 3) {
+        add(i)
+    }
+    []int{1000} |> each(add)
+    println(sum)
+    println(calls)
+    println(sq(sq(1)))
+
+    // 局所のラムダの中の局所のラムダ
+    mut log := mut []string{}
+    note := (tag string, n int) => {
+        twice := (m int) => m * 2
+        log = append(log, tag + "=" + convert.FormatInt(twice(n)))
+    }
+    note("a", 1)
+    note("b", sum)
+    for s <- freeze(log) {
+        println(s)
+    }
+
+    n, e := total([]string{"ab", "cde"})
+    println(n)
+    println(e == nil)
+    _, e2 := total([]string{"ab", ""})
+    println(e2 == nil)
+}

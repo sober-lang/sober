@@ -1,0 +1,41 @@
+package main
+
+// 再帰の組の `T?` の欄（1 セルの箱）: 欄の代入・mut 実引数への受け渡し（一時の opt へ開いて書き戻す）・反復の中の書き換え
+
+type L struct {
+    v int
+    next L?
+}
+
+func setNil(n mut L?) {
+    n = nil
+}
+
+func setTo(n mut L?, v int) {
+    n = L{v: v, next: nil}
+}
+
+func count(l L?) int {
+    return if l == nil { 0 } else { 1 + count(l.next) }
+}
+
+func apply(n mut L?, f func(x L?) L?) {
+    n = f(n)
+}
+
+func main() {
+    mut k := L{v: 1, next: L{v: 2, next: L{v: 3, next: nil}}}
+    println(count(k))
+    setNil(mut k.next)
+    println(count(k))
+    setTo(mut k.next, 9)
+    println(count(k), k.v)
+    apply(mut k.next, (x) => L{v: 5, next: x})
+    println(count(k))
+    mut i := 0
+    while i < 3 {
+        setTo(mut k.next, i)
+        i += 1
+    }
+    println(count(k))
+}

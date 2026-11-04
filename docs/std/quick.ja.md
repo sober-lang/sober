@@ -176,6 +176,15 @@ func Bool(q mut Src) bool
 
 真偽（シュリンクは偽の側へ）
 
+## Float
+
+```sober
+@effects(io, panic, nondet)
+func Float(q mut Src) float
+```
+
+float を 1 つ（端の値・小さい 2 進の分数・任意のビット列 — NaN・±Inf・-0 も出る）。3 つの腕: ①端の値（±0・±1・0.5・2・最小の非正規数・最小の正規数・最大の有限値・±Inf・NaN）②小さい 2 進の分数 ±m / 2^d（m \< 1024・d ≤ 10 — 引く段で丸めが入らない）③64 bit の任意のビット列（非正規数・NaN の別のビットも出る）。シュリンクは前の腕・小さい選択の側へ — 最小の反例は 0.0・端の値・小さい分数に寄る。NaN を除くなら `quick.Assume(mut q, x == x)`
+
 ## Pick
 
 ```sober

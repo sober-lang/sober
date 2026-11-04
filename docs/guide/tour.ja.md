@@ -426,7 +426,7 @@ Go との違い: `go f()` と `sync.WaitGroup` の代わりに `task.Run` + `tas
 
 ## 8. テスト
 
-package の中の `*_test.sober` の `func TestXxx()` がテストです。`sober test <package>` が 1 テスト 1 プロセスで走らせます。書き方は [最初のプログラム](first-program.ja.md#テストを書く) を見てください。
+package の中の `*_test.sober` の `func TestXxx()` がテストです。`sober test <package>` が 1 テスト 1 プロセスで走らせます。書き方は [最初のプログラム](first-program.ja.md#テストを書く) に、プロパティベーステスト・カバレッジ・ミューテーションテスト・ファジングまでの通しの例は [テストの書き方](testing.ja.md) にあります。
 
 ## この先
 

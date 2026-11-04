@@ -114,6 +114,12 @@ theorem store_mono {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ Ψ' : StoreTy} {f b 
     cases he with | ite h1 h2 h3 => exact .ite (ihc h1) (iht h2) (ihe h3)
   | nil t => cases he; exact .nil
   | some e ihe => cases he with | some h => exact .some (ihe h)
+  | fold t e ihe => cases he with
+                      | foldS hok h => exact .foldS hok (ihe h)
+                      | foldRs hok h => exact .foldRs hok (ihe h)
+  | unfold e ihe => cases he with
+                      | unfoldS hok h => exact .unfoldS hok (ihe h)
+                      | unfoldRs hok h => exact .unfoldRs hok (ihe h)
   | pair a b iha ihb => cases he with | pair h1 h2 => exact .pair (iha h1) (ihb h2)
   | fst e ihe => cases he with | fst h => exact .fst (ihe h)
   | ann e t ihe => cases he with | ann h hs => exact .ann (ihe h) hs
@@ -255,6 +261,12 @@ theorem chan_mono {e : Expr} {Ξ Ξ' : ChanTy} {Ψ : StoreTy} {f b d : Nat} {Γ 
     cases he with | ite h1 h2 h3 => exact .ite (ihc h1) (iht h2) (ihe h3)
   | nil t => cases he; exact .nil
   | some e ihe => cases he with | some h => exact .some (ihe h)
+  | fold t e ihe => cases he with
+                      | foldS hok h => exact .foldS hok (ihe h)
+                      | foldRs hok h => exact .foldRs hok (ihe h)
+  | unfold e ihe => cases he with
+                      | unfoldS hok h => exact .unfoldS hok (ihe h)
+                      | unfoldRs hok h => exact .unfoldRs hok (ihe h)
   | pair a b iha ihb => cases he with | pair h1 h2 => exact .pair (iha h1) (ihb h2)
   | fst e ihe => cases he with | fst h => exact .fst (ihe h)
   | ann e t ihe => cases he with | ann h hs => exact .ann (ihe h) hs
@@ -377,6 +389,12 @@ theorem f_mono {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f f' b d : N
     cases he with | ite h1 h2 h3 => exact .ite (ihc h1) (iht h2) (ihe h3)
   | nil t => cases he; exact .nil
   | some e ihe => cases he with | some h => exact .some (ihe h)
+  | fold t e ihe => cases he with
+                      | foldS hok h => exact .foldS hok (ihe h)
+                      | foldRs hok h => exact .foldRs hok (ihe h)
+  | unfold e ihe => cases he with
+                      | unfoldS hok h => exact .unfoldS hok (ihe h)
+                      | unfoldRs hok h => exact .unfoldRs hok (ihe h)
   | pair a b iha ihb => cases he with | pair h1 h2 => exact .pair (iha h1) (ihb h2)
   | fst e ihe => cases he with | fst h => exact .fst (ihe h)
   | ann e t ihe => cases he with | ann h hs => exact .ann (ihe h) hs
@@ -490,6 +508,9 @@ theorem value_depth_weaken {v : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {
   | triv => cases he; exact .triv
   | nil t => cases he; exact .nil
   | some _ ih => cases he with | some h => exact .some (ih h)
+  | fold t _ ih => cases he with
+                     | foldS hok h => exact .foldS hok (ih h)
+                     | foldRs hok h => exact .foldRs hok (ih h)
   | pair _ _ iha ihb => cases he with | pair h1 h2 => exact .pair (iha h1) (ihb h2)
   | inl r _ ih => cases he with | inl h => exact .inl (ih h)
   | inr l _ ih => cases he with | inr h => exact .inr (ih h)
@@ -531,6 +552,9 @@ theorem value_strengthen {v : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f 
   | some _ ih =>
     cases he with
     | some h => exact .some (ih h (by simpa [Ty.regionsBelow] using hb))
+  | fold t _ ih => cases he with
+                     | foldS hok h => exact .foldS hok (ih h (Ty.musOk_unfold_rb hok _))
+                     | foldRs hok h => exact .foldRs hok (ih h (Ty.unfold_rb_muRs hok hb))
   | pair _ _ iha ihb =>
     cases he with
     | pair h1 h2 =>
@@ -601,6 +625,9 @@ theorem value_sb {v : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b b' d :
   | some _ ih =>
     cases he with
     | some h => exact .some (ih (by simpa [Ty.mutFree] using hm) h)
+  | fold t _ ih => cases he with
+                     | foldS hok h => exact .foldS hok (ih (Ty.musOk_unfold_mf hok) h)
+                     | foldRs hok h => exact .foldRs hok (ih (Ty.unfold_mf_muRs hm) h)
   | pair _ _ iha ihb =>
     cases he with
     | pair h1 h2 =>
@@ -654,6 +681,9 @@ theorem value_world {v : Expr} {Δ : Defs} {Ξ Ξ' : ChanTy} {Ψ : StoreTy} {f b
   | some _ ih =>
     cases he with
     | some h => exact .some (ih (by simpa [Ty.mutFree] using hm) h)
+  | fold t _ ih => cases he with
+                     | foldS hok h => exact .foldS hok (ih (Ty.musOk_unfold_mf hok) h)
+                     | foldRs hok h => exact .foldRs hok (ih (Ty.unfold_mf_muRs hm) h)
   | pair _ _ iha ihb =>
     cases he with
     | pair h1 h2 =>
@@ -694,6 +724,9 @@ theorem value_anyΞ {v : Expr} {Δ : Defs} {Ξ Ξ' : ChanTy} {Ψ : StoreTy} {f b
   | some _ ih =>
     cases he with
     | some h => exact .some (ih (by simpa [Ty.mutFree] using hm) (by simpa [Ty.chanFree] using hc) h)
+  | fold t _ ih => cases he with
+                     | foldS hok h => exact .foldS hok (ih (Ty.musOk_unfold_mf hok) (Ty.musOk_unfold_cf hok) h)
+                     | foldRs hok h => exact .foldRs hok (ih (Ty.unfold_mf_muRs hm) (Ty.unfold_cf_muRs hc) h)
   | pair _ _ iha ihb =>
     cases he with
     | pair h1 h2 =>
@@ -735,6 +768,9 @@ theorem value_f_set {v : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f n b d
   | some _ ih =>
     cases he with
     | some h => exact .some (ih h (by simpa [Ty.regionsBelow] using hb))
+  | fold t _ ih => cases he with
+                     | foldS hok h => exact .foldS hok (ih h (Ty.musOk_unfold_rb hok _))
+                     | foldRs hok h => exact .foldRs hok (ih h (Ty.unfold_rb_muRs hok hb))
   | pair _ _ iha ihb =>
     cases he with
     | pair h1 h2 =>
@@ -785,6 +821,9 @@ theorem value_ctx {v : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b d : N
   | triv => cases he; exact .triv
   | nil t => cases he; exact .nil
   | some _ ih => cases he with | some h => exact .some (ih h)
+  | fold t _ ih => cases he with
+                     | foldS hok h => exact .foldS hok (ih h)
+                     | foldRs hok h => exact .foldRs hok (ih h)
   | pair _ _ iha ihb => cases he with | pair h1 h2 => exact .pair (iha h1) (ihb h2)
   | inl r _ ih => cases he with | inl h => exact .inl (ih h)
   | inr l _ ih => cases he with | inr h => exact .inr (ih h)
@@ -893,6 +932,12 @@ theorem subst_preserve {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b 
   | some e ihe =>
     cases he with
     | some h => exact .some (ihe h hvv hv)
+  | fold t e ihe => cases he with
+                      | foldS hok h => exact .foldS hok (ihe h hvv hv)
+                      | foldRs hok h => exact .foldRs hok (ihe h hvv hv)
+  | unfold e ihe => cases he with
+                      | unfoldS hok h => exact .unfoldS hok (ihe h hvv hv)
+                      | unfoldRs hok h => exact .unfoldRs hok (ihe h hvv hv)
   | ifnil e n s ihe ihn ihs =>
     cases he with
     | ifnil h1 h2 h3 =>
@@ -1121,6 +1166,12 @@ theorem b_lower {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b b' d : 
     cases he with | ite h1 h2 h3 => exact .ite (ihc hb h1) (iht hb h2) (ihe hb h3)
   | nil t => cases he; exact .nil
   | some e ihe => cases he with | some h => exact .some (ihe hb h)
+  | fold t e ihe => cases he with
+                      | foldS hok h => exact .foldS hok (ihe hb h)
+                      | foldRs hok h => exact .foldRs hok (ihe hb h)
+  | unfold e ihe => cases he with
+                      | unfoldS hok h => exact .unfoldS hok (ihe hb h)
+                      | unfoldRs hok h => exact .unfoldRs hok (ihe hb h)
   | ifnil e n s ihe ihn ihs =>
     cases he with | ifnil h1 h2 h3 => exact .ifnil (ihe hb h1) (ihn hb h2) (ihs hb h3)
   | inl r e ihe => cases he with | inl h => exact .inl (ihe hb h)
@@ -1277,6 +1328,16 @@ theorem f_lower {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f f' b d : 
   | some e ihe =>
     simp only [Expr.noNewchan] at hnc
     cases he with | some h => exact .some (ihe hnc h)
+  | fold t e ihe =>
+    simp only [Expr.noNewchan] at hnc
+    cases he with
+    | foldS hok h => exact .foldS hok (ihe hnc h)
+    | foldRs hok h => exact .foldRs hok (ihe hnc h)
+  | unfold e ihe =>
+    simp only [Expr.noNewchan] at hnc
+    cases he with
+    | unfoldS hok h => exact .unfoldS hok (ihe hnc h)
+    | unfoldRs hok h => exact .unfoldRs hok (ihe hnc h)
   | ifnil e n s ihe ihn ihs =>
     simp only [Expr.noNewchan, Bool.and_eq_true] at hnc
     cases he with
@@ -1504,6 +1565,15 @@ theorem value_coerce {v : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b d 
       obtain ⟨t', rfl, hs'⟩ := Ty.sub_opt_inv hs
       obtain ⟨hv', ht'⟩ := ih h hs'
       exact ⟨.some hv', .some ht'⟩
+  | fold t hv' ih =>
+    cases he with
+    | foldS hok h =>
+      obtain rfl := Ty.sub_mus_inv hs
+      exact ⟨.fold _ hv', by simpa [Expr.coerceTo] using HasType.foldS hok h⟩
+    | foldRs hok h =>
+      obtain ⟨r', rfl, -⟩ := Ty.sub_muRs_inv hs
+      obtain ⟨hv'', ht''⟩ := ih h (Ty.sub_unfold_muRs hok hs)
+      exact ⟨.fold _ hv'', by simpa [Expr.coerceTo] using HasType.foldRs (Ty.muRsOk_r hok) ht''⟩
   | pair _ _ iha ihb =>
     cases he with
     | pair h1 h2 =>

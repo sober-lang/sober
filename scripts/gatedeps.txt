@@ -15,9 +15,11 @@ quickfuzz: testdata/quickfuzz
 cover: examples testdata/cover
 mutate: examples testdata/mutate
 fnpkg: testdata/fnpkg
+a1oracle: examples testdata/a1   # 題材 = examples の type_recursive* 5 本 + testdata/a1
+memcheck: examples testdata/memcheck testdata/alias testdata/specpkg   # 題材 = .out を持つ examples（上界の黄金は testdata/memcheck/expect.txt）+ 手組み・alias / specpkg = 題材の import 先
 guidetest: examples testdata/guide ~testdata   # 本文の testdata/fuzz は写しの中の題材のコーパス（木の testdata は読まない）
 testreplay: src/stage1 ~testdata   # 本文の testdata は一時の package の中の名前（木の testdata は読まない）
-incrbuild: bench examples src/stage1
+incrbuild: bench examples fuzz/progen src/stage1   # fuzz/progen = 鎖の題材の生成器（抽出が拾わない — 手で足す）
 incrrace: examples src/stage1
 cacheaudit: bench examples src/stage1
 tyorder: bench examples src/stage1
@@ -27,7 +29,7 @@ selfhost_ll: examples src/stage1 testdata/checkneg testdata/errpkg testdata/froz
 selfhost_e2e: examples lean src/stage1 testdata/checkneg testdata/errpkg testdata/frozen_src testdata/iface testdata/loader_neg testdata/pkgdemo testdata/selfhost_fmt testdata/selfhost_lex
 leanbatch: lean scripts/checkmut.ts testdata/corejson testdata/corevec.jsonl
 sobi: examples lean src/stage1 testdata
-selfhost_check: lean scripts/checkmut.ts src/stage1 testdata/checkneg testdata/corejson testdata/corevec.jsonl testdata/corevec_byte testdata/corevec_copyto testdata/corevec_float testdata/corevec_par testdata/errpkg testdata/frozen_src testdata/iface testdata/pkgdemo
+selfhost_check: lean scripts/checkmut.ts src/stage1 testdata/checkneg testdata/corejson testdata/corevec.jsonl testdata/corevec_byte testdata/corevec_copyto testdata/corevec_float testdata/corevec_par testdata/corevec_narrow testdata/errpkg testdata/frozen_src testdata/iface testdata/pkgdemo
 selfhost_lower: examples src/stage1 testdata/checkneg testdata/errpkg testdata/frozen_src testdata/iface testdata/loader_neg testdata/pkgdemo testdata/selfhost_fmt testdata/selfhost_lex
 selfhost_fmt: README.ja.md README.md bench docs examples lean scripts src/stage1 testdata/checkneg testdata/errpkg testdata/frozen_src testdata/iface testdata/loader_neg testdata/pkgdemo testdata/selfhost_fmt ~testdata   # testdata は監査（report-1222）で読む単位に詰めた — M2 で確認
 selfhost_load: README.ja.md README.md bench docs examples lean scripts src/stage1 testdata
@@ -47,7 +49,7 @@ checkpos: examples scripts/checkpos.ts testdata   # 変異の題材の生成（n
 cachesplit: examples scripts/checkverdict.sh scripts/irtext.sh testdata
 cachekey: examples testdata
 panicmsg: examples testdata
-optdiff: bench examples src/stage1 testdata scripts/noopt-excluded.list
+optdiff: bench examples fuzz/progen src/stage1 testdata scripts/noopt-excluded.list   # fuzz/progen = 乱択の母集団の生成器（抽出が拾わない — 手で足す）
 typerdiff: examples scripts/irtext.sh src/stage1 testdata
 corejson: examples testdata
 irtext: examples testdata
@@ -65,7 +67,7 @@ fixcheck: src/stage1 testdata/fix testdata/fixgold ~testdata   # testdata は監
 uniqfreeze: bench examples lean scripts/uniqfreeze.list testdata/analyzer_neg testdata/implicitfreeze
 implicitfreeze: bench examples scripts/implicitfreeze.ts testdata
 sobertest: testdata/sobertest ~testdata
-doubles: testdata/cells testdata/cells.expect testdata/doubles ~testdata   # 本文の testdata は一時の場所に写した木の中の名前（木の testdata は doubles の下だけ読む）   # 本文の propsfuzz/testdata は一時の場所に写した package の中の名前（木の testdata は読まない）
+doubles: testdata/cells testdata/cells.expect testdata/cellneg testdata/doubles ~testdata   # 本文の testdata は一時の場所に写した木の中の名前（木の testdata は doubles の下だけ読む）   # 本文の propsfuzz/testdata は一時の場所に写した package の中の名前（木の testdata は読まない）
 jsonsuite: scripts/oracles testdata/jsonpkg testdata/jsontestsuite
 unittest: testdata/crypto testdata/stdtest testdata/tls   # M2（report-1222）が名指し: Sober のプログラムが実行時に読む・import する入力（本文の抽出では見えない）
 x86enc: 

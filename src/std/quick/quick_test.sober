@@ -3,6 +3,7 @@ package quick
 // white-box の網: 真の性質は全試行を通る・縮めは最小形に届く（和の制約・0 の側への寄せ・範囲の端）・
 // 縮めは止まる（いつも偽の性質・単調でない性質でも再実行の上限の内）・同じ種なら同じ列
 
+import "std/math"
 import "std/strings"
 
 func sum(xs []int) int {
@@ -184,4 +185,39 @@ func TestAssume() {
         Assume(mut q, x >= 10) && x < 50
     })
     assert(x == 50)
+}
+
+// Float は 3 つの腕（端の値・小さい 2 進の分数・任意のビット列）から引き、NaN・±Inf・-0・非正規数・負の値が全部出る。
+// 縮めは小さい値へ寄る — 「100 より大きければ偽」の最小の反例は 101（2 進の分数の腕の m = 101）・「x == x」の最小の反例は NaN
+func TestFloat() {
+    mut q := Seed(3)
+    mut nan := 0
+    mut inf := 0
+    mut negz := 0
+    mut sub := 0
+    mut neg := 0
+    mut frac := 0
+    Check(mut q, () => {
+        x := Float(mut q)
+        b := math.Bits(x)
+        nan += if x != x { 1 } else { 0 }
+        inf += if x == 1.0 / 0.0 || x == -1.0 / 0.0 { 1 } else { 0 }
+        negz += if x == 0.0 && b != 0 { 1 } else { 0 }
+        sub += if x != 0.0 && math.Abs(x) < 2.2250738585072014e-308 { 1 } else { 0 }
+        neg += if x < 0.0 { 1 } else { 0 }
+        frac += if x > 0.0 && x < 1.0 && x * 1024.0 == float(int(x * 1024.0)) { 1 } else { 0 }
+        true
+    }, trials: 2000)
+    assert(nan > 0 && inf > 0 && negz > 0 && sub > 0 && neg > 0 && frac > 0)
+    mut v := 0.0
+    _ = minimal(mut q, () => {
+        v = Float(mut q)
+        !(v > 100.0)
+    })
+    assert(v == 101.0)
+    _ = minimal(mut q, () => {
+        v = Float(mut q)
+        v == v
+    })
+    assert(v != v)
 }

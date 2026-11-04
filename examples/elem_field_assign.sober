@@ -1,0 +1,78 @@
+package main
+
+// 列の要素の欄への代入: `xs[i].f = v` は要素を読んで欄を差し替えて書き戻すのと同じ（添字 → 右辺 → 要素の読み → 書きの順・添字は 1 回）。
+// 欄の鎖・入れ子の列・複合代入も同じ形。表 + 添字で組む構造（番兵つきの双方向リスト）が素直に書ける
+
+import "std/iter"
+
+type Ent struct {
+    key int
+    prev int
+    next int
+}
+
+type Pt struct {
+    x int
+    tag Tag
+}
+
+type Tag struct {
+    n int
+    s string
+}
+
+type Grid struct {
+    rows mut []Pt
+}
+
+// 番兵 0 番の直後に h を差し込む
+func pushFront(es mut []Ent, h int) {
+    first := es[0].next
+    es[h].prev = 0
+    es[h].next = first
+    es[first].prev = h
+    es[0].next = h
+}
+
+func unlink(es mut []Ent, h int) {
+    p := es[h].prev
+    n := es[h].next
+    es[p].next = n
+    es[n].prev = p
+}
+
+// 添字の式は 1 回だけ評価する
+func pick(calls mut []int, i int) int {
+    calls[0] = calls[0] + 1
+    return i
+}
+
+func main() {
+    mut es := mut []Ent{Ent{key: -1, prev: 0, next: 0}}
+    for k <- iter.Range(1, 5) {
+        es = append(es, Ent{key: k * 10, prev: 0, next: 0})
+        pushFront(mut es, k)
+    }
+    unlink(mut es, 2)
+    pushFront(mut es, 2)
+    mut h := es[0].next
+    mut order := ""
+    while h != 0 {
+        order = order + "${es[h].key} "
+        h = es[h].next
+    }
+    println(order)
+
+    mut ps := mut []Pt{Pt{x: 1, tag: Tag{n: 0, s: "a"}}, Pt{x: 2, tag: Tag{n: 0, s: "b"}}}
+    ps[1].tag.n = 7
+    ps[0].tag.s = "z${ps[1].tag.n}"
+    ps[1].x *= 3
+    mut calls := mut []int{0}
+    ps[pick(mut calls, 0)].tag.n += 5
+    println(ps[0].x, ps[0].tag.n, ps[0].tag.s, ps[1].x, ps[1].tag.n, calls[0])
+
+    mut gs := mut []Grid{Grid{rows: mut []Pt{Pt{x: 0, tag: Tag{n: 0, s: ""}}}}}
+    j := 0
+    gs[j].rows[0].tag.s = "deep"
+    println(gs[0].rows[0].tag.s)
+}

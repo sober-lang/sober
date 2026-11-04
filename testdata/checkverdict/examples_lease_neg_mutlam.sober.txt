@@ -1,2 +1,2 @@
-sober: load error at examples/lease_neg_mutlam.sober:18:32: a mut lambda parameter is written only as the window of task.Lease / task.NewLocal
+sober: load error at examples/lease_neg_mutlam.sober:18:32: this lambda's parameters do not match the function type it is passed as — write `mut` on a parameter exactly where the function type has it (`(st mut S, x int) => …`), or leave the parameter types out to take them from the function type
 exit=1

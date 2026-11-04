@@ -83,67 +83,208 @@
       "body": {
         "stmts": [
           {
+            "k": "bind",
+            "names": [
+              "root"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Dir",
+                "elems": [
+                  {
+                    "key": "name",
+                    "value": {
+                      "k": "strlit",
+                      "value": "root",
+                      "tok": 43
+                    }
+                  },
+                  {
+                    "key": "files",
+                    "value": {
+                      "k": "maplit",
+                      "key": {
+                        "k": "name",
+                        "name": "string"
+                      },
+                      "value": {
+                        "k": "name",
+                        "name": "File"
+                      },
+                      "entries": [],
+                      "mut": false,
+                      "tok": 47
+                    }
+                  }
+                ],
+                "tok": 39,
+                "type_args": []
+              }
+            ],
+            "tok": 37
+          },
+          {
+            "k": "bind",
+            "names": [
+              "f"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "File",
+                "elems": [
+                  {
+                    "key": "name",
+                    "value": {
+                      "k": "strlit",
+                      "value": "a",
+                      "tok": 62
+                    }
+                  },
+                  {
+                    "key": "parent",
+                    "value": {
+                      "k": "ident",
+                      "name": "root",
+                      "tok": 66
+                    }
+                  }
+                ],
+                "tok": 58,
+                "type_args": []
+              }
+            ],
+            "tok": 56
+          },
+          {
+            "k": "bind",
+            "names": [
+              "d"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Dir",
+                "elems": [
+                  {
+                    "key": "name",
+                    "value": {
+                      "k": "strlit",
+                      "value": "src",
+                      "tok": 75
+                    }
+                  },
+                  {
+                    "key": "files",
+                    "value": {
+                      "k": "maplit",
+                      "key": {
+                        "k": "name",
+                        "name": "string"
+                      },
+                      "value": {
+                        "k": "name",
+                        "name": "File"
+                      },
+                      "entries": [
+                        {
+                          "key": {
+                            "k": "strlit",
+                            "value": "a",
+                            "tok": 85
+                          },
+                          "value": {
+                            "k": "ident",
+                            "name": "f",
+                            "tok": 87
+                          }
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 79
+                    }
+                  }
+                ],
+                "tok": 71,
+                "type_args": []
+              }
+            ],
+            "tok": 69
+          },
+          {
             "k": "expr",
             "expr": {
               "k": "call",
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 37
+                "tok": 91
               },
               "args": [
                 {
-                  "k": "call",
-                  "callee": {
-                    "k": "ident",
-                    "name": "len",
-                    "tok": 39
+                  "k": "binary",
+                  "op": "+",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "len",
+                      "tok": 93
+                    },
+                    "args": [
+                      {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "d",
+                          "tok": 95
+                        },
+                        "field": "files",
+                        "tok": 97
+                      }
+                    ],
+                    "tok": 94
                   },
-                  "args": [
-                    {
-                      "k": "call",
-                      "callee": {
-                        "k": "ident",
-                        "name": "bytes",
-                        "tok": 41
-                      },
-                      "args": [
-                        {
-                          "k": "selector",
-                          "base": {
-                            "k": "composite",
-                            "type_name": "File",
-                            "elems": [
-                              {
-                                "key": "name",
-                                "value": {
-                                  "k": "strlit",
-                                  "value": "a",
-                                  "tok": 47
-                                }
-                              },
-                              {
-                                "key": "parent",
-                                "value": {
-                                  "k": "nil",
-                                  "tok": 51
-                                }
-                              }
-                            ],
-                            "tok": 43,
-                            "type_args": []
-                          },
-                          "field": "name",
-                          "tok": 54
-                        }
-                      ],
-                      "tok": 42
-                    }
-                  ],
-                  "tok": 40
+                  "rhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "len",
+                      "tok": 100
+                    },
+                    "args": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "bytes",
+                          "tok": 102
+                        },
+                        "args": [
+                          {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "f",
+                              "tok": 104
+                            },
+                            "field": "name",
+                            "tok": 106
+                          }
+                        ],
+                        "tok": 103
+                      }
+                    ],
+                    "tok": 101
+                  },
+                  "tok": 99
                 }
               ],
-              "tok": 38
+              "tok": 92
             }
           }
         ]
@@ -152,7 +293,7 @@
       "bodiless": false,
       "span": {
         "start": 32,
-        "end": 61
+        "end": 113
       },
       "sig_end": 36
     }

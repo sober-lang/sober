@@ -1,0 +1,78 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Two",
+      "type_params": [],
+      "body": {
+        "k": "func",
+        "params": [
+          {
+            "k": "mut_param",
+            "type": {
+              "k": "name",
+              "name": "int"
+            }
+          },
+          {
+            "k": "mut_param",
+            "type": {
+              "k": "name",
+              "name": "int"
+            }
+          }
+        ],
+        "results": [],
+        "param_names": [
+          "a",
+          "b"
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 16
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 21
+              },
+              "args": [
+                {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 23
+                }
+              ],
+              "tok": 22
+            }
+          }
+        ]
+      },
+      "tok": 17,
+      "bodiless": false,
+      "span": {
+        "start": 16,
+        "end": 28
+      },
+      "sig_end": 20
+    }
+  ],
+  "consts": []
+}

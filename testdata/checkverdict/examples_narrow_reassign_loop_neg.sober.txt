@@ -1,0 +1,3 @@
+sober: type error at examples/narrow_reassign_loop_neg.sober:15:23
+{"errors":[{"msg":"type error"}],"ok":false}
+exit=1

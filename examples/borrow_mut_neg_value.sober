@@ -1,7 +1,7 @@
 package main
 
 // 負例: 値の位置のラムダ（関数型の欄に格納する閉包）は mut を捕捉できない — 格納された閉包へ mut が逃げる（language.md 25 節 (α-L1)・U3）。
-// mut を捕捉できるのは値の呼び出しの借りの実引数のラムダだけ
+// 状態を更新し続けるなら呼び手が持って mut の席で渡す（language.md 25 節「関数型の mut 仮引数」）
 
 type Stream func(emit func(b []byte) error?) error?
 

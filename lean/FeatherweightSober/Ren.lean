@@ -53,6 +53,9 @@ theorem Ty.renR_top (δ : Nat) : ∀ t : Ty, t.renR δ δ = t.shiftR δ
   | .chan rc t => by simp [Ty.renR, Ty.shiftR, Ty.renR_top δ t, rmap_top]
   | .own k r t => by simp [Ty.renR, Ty.shiftR, Ty.renR_top δ t, rmap_top]
   | .fn p r => rfl
+  | .mus _ _ p => rfl
+  | .rvar p => rfl
+  | .muRs r _ _ b => by simp [Ty.renR, Ty.shiftR, rmap_top]
 
 /-- 深さ ρ ≥ 1 のシフトは写像と合成して ρ + δ のシフトになる（本体の中の call の instantiate） -/
 theorem Ty.shiftR_renR {ρ0 δ ρ : Nat} (hρ : 1 ≤ ρ) : ∀ t : Ty, (t.shiftR ρ).renR ρ0 δ = t.shiftR (ρ + δ)
@@ -76,6 +79,10 @@ theorem Ty.shiftR_renR {ρ0 δ ρ : Nat} (hρ : 1 ≤ ρ) : ∀ t : Ty, (t.shift
   | .own k r t => by
     simp only [Ty.shiftR, Ty.renR, Ty.shiftR_renR hρ t, rmap_pos (show 1 ≤ r + ρ by omega)]; congr 1; omega
   | .fn p r => rfl
+  | .mus _ _ p => rfl
+  | .rvar p => rfl
+  | .muRs r _ _ b => by
+    simp only [Ty.shiftR, Ty.renR, rmap_pos (show 1 ≤ r + ρ by omega)]; congr 1; omega
 
 /-- imm で chan を持たない型の relocR（全部の imm の region を k へ — task の結果の型）は renR と可換（P3b-4） -/
 theorem Ty.renR_relocR_mf {ρ0 δ k : Nat} : ∀ {t : Ty}, t.mutFree = true → t.chanFree = true →
@@ -110,6 +117,9 @@ theorem Ty.renR_relocR_mf {ρ0 δ k : Nat} : ∀ {t : Ty}, t.mutFree = true → 
   | .chan _ _, _, hc => by simp [Ty.chanFree] at hc
   | .own _ _ _, hm, _ => by simp [Ty.mutFree] at hm
   | .fn _ _, _, _ => rfl
+  | .mus _ _ _, _, _ => rfl
+  | .rvar _, _, _ => rfl
+  | .muRs r _ _ b, hm, _ => by simp only [Ty.mutFree] at hm; simp [Ty.relocR, Ty.renR, hm]
 
 /-- imm で chan を持たない型は、renR の後に relocR k で締めると renR の前に締めたのと同じ（imm の region は全部 k へ — P3b-4b） -/
 theorem Ty.relocR_renR_left {ρ0 δ k : Nat} : ∀ {t : Ty}, t.mutFree = true → t.chanFree = true →
@@ -144,6 +154,9 @@ theorem Ty.relocR_renR_left {ρ0 δ k : Nat} : ∀ {t : Ty}, t.mutFree = true �
   | .chan _ _, _, hc => by simp [Ty.chanFree] at hc
   | .own _ _ _, hm, _ => by simp [Ty.mutFree] at hm
   | .fn _ _, _, _ => rfl
+  | .mus _ _ _, _, _ => rfl
+  | .rvar _, _, _ => rfl
+  | .muRs r _ _ b, hm, _ => by simp only [Ty.mutFree] at hm; simp [Ty.relocR, Ty.renR, hm]
 
 /-- relocR（深さ ρ ≥ 1 の call 結果）も同じく合成する -/
 theorem Ty.relocR_renR {ρ0 δ ρ : Nat} (hρ : 1 ≤ ρ) : ∀ t : Ty, (t.relocR ρ).renR ρ0 δ = t.relocR (ρ + δ)
@@ -170,6 +183,12 @@ theorem Ty.relocR_renR {ρ0 δ ρ : Nat} (hρ : 1 ≤ ρ) : ∀ t : Ty, (t.reloc
   | .own k r t => by
     simp only [Ty.relocR, Ty.renR, Ty.shiftR_renR hρ t, rmap_pos (show 1 ≤ r + ρ by omega)]; congr 1; omega
   | .fn p r => rfl
+  | .mus _ _ p => rfl
+  | .rvar p => rfl
+  | .muRs r _ _ b => by
+    cases hm : b.mutFree
+    · simp only [Ty.relocR, Ty.renR, hm, Bool.false_eq_true, if_false, rmap_pos (show 1 ≤ r + ρ by omega)]; congr 1; omega
+    · simp [Ty.relocR, Ty.renR, hm, rmap_pos hρ]
 
 /-- 境界コピー式の結果型の上界の写像（M3）: chan を持たない t が region k 以下なら、写した型は rmap k 以下
 （renR_regionsBelow は n = k + 1 を rmap (k + 1) へ写すだけで、k = 0 が anchor ρ0 へ写る場合に足りない — 単調性から直接） -/
@@ -208,6 +227,12 @@ theorem Ty.renR_regionsBelow_succ {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
     exact ⟨Nat.lt_succ_of_le (rmap_le h0 (Nat.le_of_lt_succ h.1)), Ty.renR_regionsBelow_succ h0 hc h.2⟩
   | .chan _ _, _, hc, _ => by simp [Ty.chanFree] at hc
   | .fn _ _, _, _, _ => rfl
+  | .mus _ _ _, _, _, _ => rfl
+  | .rvar _, _, _, _ => rfl
+  | .muRs r _ _ b, k, _, h => by
+    simp only [Ty.regionsBelow, decide_eq_true_eq] at h
+    simp only [Ty.renR, Ty.regionsBelow, decide_eq_true_eq]
+    exact Nat.lt_succ_of_le (rmap_le h0 (Nat.le_of_lt_succ h))
 
 /-- escape 検査の保存（狭義単調性だけから） -/
 theorem Ty.renR_regionsBelow {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
@@ -251,6 +276,12 @@ theorem Ty.renR_regionsBelow {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
     simp only [Ty.renR, Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq]
     exact ⟨rmap_lt h0 h.1, Ty.renR_regionsBelow h0 h.2⟩
   | .fn _ _, _, _ => rfl
+  | .mus _ _ _, _, _ => rfl
+  | .rvar _, _, _ => rfl
+  | .muRs r _ _ b, _, h => by
+    simp only [Ty.regionsBelow, decide_eq_true_eq] at h
+    simp only [Ty.renR, Ty.regionsBelow, decide_eq_true_eq]
+    exact rmap_lt h0 h
 
 theorem Ty.renR_mutFree {ρ0 δ : Nat} : ∀ t : Ty, (t.renR ρ0 δ).mutFree = t.mutFree
   | .int => rfl
@@ -268,6 +299,9 @@ theorem Ty.renR_mutFree {ρ0 δ : Nat} : ∀ t : Ty, (t.renR ρ0 δ).mutFree = t
   | .chan rc t => rfl
   | .own k r t => rfl
   | .fn p r => rfl
+  | .mus _ _ p => rfl
+  | .rvar p => rfl
+  | .muRs r _ _ b => by simp [Ty.renR, Ty.mutFree]
 
 theorem Ty.keyOk_renR (ρ0 δ : Nat) {k : Ty} (h : k.keyOk = true) : (k.renR ρ0 δ).keyOk = true := by
   unfold Ty.keyOk at h
@@ -295,6 +329,9 @@ theorem Ty.annFree_renR {ρ0 δ : Nat} : ∀ t : Ty, (t.renR ρ0 δ).annFree = t
   | .chan _ _ => rfl
   | .own _ _ _ => rfl
   | .fn _ _ => rfl
+  | .mus _ _ _ => rfl
+  | .rvar _ => rfl
+  | .muRs r _ _ b => by simp [Ty.renR, Ty.annFree]
 
 theorem Ty.sub_renR {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
     ∀ {ta tb : Ty}, Ty.sub ta tb = true → Ty.sub (ta.renR ρ0 δ) (tb.renR ρ0 δ) = true
@@ -350,6 +387,12 @@ theorem Ty.sub_renR {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
   | .fn p r, tb, hs => by
     obtain rfl := Ty.sub_fn_inv hs
     exact Ty.sub_refl _
+  | .mus _ _ p, tb, hs => by
+    obtain rfl := Ty.sub_mus_inv hs
+    exact Ty.sub_refl _
+  | .rvar p, tb, hs => by
+    obtain rfl := Ty.sub_rvar_inv hs
+    exact Ty.sub_refl _
   | .ref true r t, tb, hs => by
     obtain rfl := Ty.sub_refT_inv hs
     exact Ty.sub_refl _
@@ -362,12 +405,18 @@ theorem Ty.sub_renR {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
   | .opt t, .int, hs => by simp [Ty.sub] at hs
   | .union l r, .int, hs => by simp [Ty.sub] at hs
   | .prod l r, .int, hs => by simp [Ty.sub] at hs
+  | .muRs r _ _ b, tb, hs => by
+    obtain ⟨r', rfl, h⟩ := Ty.sub_muRs_inv hs
+    simp only [Ty.renR, Ty.sub, decide_true, Bool.true_and, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq]
+    rcases h with rfl | ⟨h, hc⟩
+    · exact .inl rfl
+    · exact .inr ⟨rmap_le h0 h, hc⟩
 
 theorem Ty.mutTop_renR (ρ0 δ : Nat) : ∀ ta : Ty, (ta.renR ρ0 δ).mutTop = ta.mutTop.map (rmap ρ0 δ)
   | .ref m r _ => by cases m <;> simp [Ty.mutTop, Ty.renR]
   | .slice m r _ => by cases m <;> simp [Ty.mutTop, Ty.renR]
   | .map m r _ => by cases m <;> simp [Ty.mutTop, Ty.renR]
-  | .int | .tvar _ | .bool | .byte | .f64 | .unit | .opt _ | .union _ _ | .prod _ _ | .chan _ _ | .fn _ _ | .own _ _ _ => by
+  | .int | .tvar _ | .bool | .byte | .f64 | .unit | .opt _ | .union _ _ | .prod _ _ | .chan _ _ | .fn _ _ | .own _ _ _ | .rvar _ | .mus _ _ _ | .muRs _ _ _ _ => by
     simp [Ty.mutTop, Ty.renR]
 
 theorem Ty.anchorOf_renR (ρ0 δ : Nat) :
@@ -411,6 +460,9 @@ theorem Ty.renR_renR {ρ0 δ a d' : Nat} (hd' : 1 ≤ d') :
   | .chan rc t => by simp [Ty.renR, Ty.renR_renR hd' t, rmap_comp hd']
   | .own k r t => by simp [Ty.renR, Ty.renR_renR hd' t, rmap_comp hd']
   | .fn p r => rfl
+  | .mus _ _ p => rfl
+  | .rvar p => rfl
+  | .muRs r _ _ b => by simp [Ty.renR, rmap_comp hd']
 
 theorem Ty.relocA_renR {ρ0 δ a d' : Nat} (hd' : 1 ≤ d') :
     ∀ t : Ty, (t.relocA a d').renR ρ0 δ = t.relocA (rmap ρ0 δ a) (d' + δ)
@@ -435,6 +487,12 @@ theorem Ty.relocA_renR {ρ0 δ a d' : Nat} (hd' : 1 ≤ d') :
   | .chan rc t => by simp [Ty.relocA, Ty.renR, Ty.renR_renR hd' t, rmap_comp hd']
   | .own k r t => by simp [Ty.relocA, Ty.renR, Ty.renR_renR hd' t, rmap_comp hd']
   | .fn p r => rfl
+  | .mus _ _ p => rfl
+  | .rvar p => rfl
+  | .muRs r _ _ b => by
+    cases hm : b.mutFree
+    · simp [Ty.relocA, Ty.renR, hm, rmap_comp hd']
+    · simp only [Ty.relocA, Ty.renR, hm, if_true]; split <;> simp [rmap_pos hd']
 
 /-! ## R4a（深い relocate）の型の補題 -/
 
@@ -486,6 +544,12 @@ theorem Ty.renR_regionsBelow_refl {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
     simp only [Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq]
     exact ⟨(rmap_lt_iff h0).mp h.1, Ty.renR_regionsBelow_refl h0 h.2⟩
   | .fn _ _, _, _ => rfl
+  | .mus _ _ _, _, _ => rfl
+  | .rvar _, _, _ => rfl
+  | .muRs r _ _ b, _, h => by
+    simp only [Ty.renR, Ty.regionsBelow, decide_eq_true_eq] at h
+    simp only [Ty.regionsBelow, decide_eq_true_eq]
+    exact (rmap_lt_iff h0).mp h
 
 /-- 中身が region 0（呼び手空間）だけなら、深い締めは写像そのもの（フレーム外のコンテナの中身の型） -/
 theorem Ty.relocA_of_below1 {ρ0 δ : Nat} : ∀ {t : Ty}, t.regionsBelow 1 = true → t.relocA ρ0 δ = t.renR ρ0 δ
@@ -525,6 +589,13 @@ theorem Ty.relocA_of_below1 {ρ0 δ : Nat} : ∀ {t : Ty}, t.regionsBelow 1 = tr
   | .chan rc t, _ => rfl
   | .own k r t, _ => rfl
   | .fn _ _, _ => rfl
+  | .mus _ _ _, _ => rfl
+  | .rvar _, _ => rfl
+  | .muRs r _ _ b, h => by
+    simp only [Ty.regionsBelow, decide_eq_true_eq] at h
+    have : r = 0 := by omega
+    subst this
+    cases hm : b.mutFree <;> simp [Ty.relocA, Ty.renR, rmap, hm]
 
 /-- retOk な型の深い締めは呼び手空間（region ≤ d）に収まる -/
 theorem Ty.relocA_regionsBelow {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
@@ -570,6 +641,12 @@ theorem Ty.relocA_regionsBelow {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
       exact ⟨by split <;> omega, Ty.relocA_regionsBelow h0 h.2⟩
   | .chan _ _, h => by simp [Ty.retOk] at h
   | .fn _ _, _ => rfl
+  | .mus _ _ _, _ => rfl
+  | .rvar _, _ => rfl
+  | .muRs r _ _ b, h => by
+    simp only [Ty.retOk, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [Ty.relocA, h.1.1, if_true, Ty.regionsBelow, decide_eq_true_eq]
+    split <;> omega
 
 theorem Ty.relocA_mutFree {ρ0 δ : Nat} : ∀ {t : Ty}, t.retOk = true → (t.relocA ρ0 δ).mutFree = true
   | .int, _ => rfl
@@ -613,6 +690,11 @@ theorem Ty.relocA_mutFree {ρ0 δ : Nat} : ∀ {t : Ty}, t.retOk = true → (t.r
       exact Ty.relocA_mutFree h.2
   | .chan _ _, h => by simp [Ty.retOk] at h
   | .fn _ _, _ => rfl
+  | .mus _ _ _, _ => rfl
+  | .rvar _, _ => rfl
+  | .muRs r _ _ b, h => by
+    simp only [Ty.retOk, Bool.and_eq_true] at h
+    simp [Ty.relocA, h.1.1, Ty.mutFree]
 
 /-! ## R4b（脱出の境界コピー）: 締めと写像の交換 -/
 
@@ -638,6 +720,9 @@ theorem Ty.clampR_renR {ρ0 δ k : Nat} (h0 : ρ0 ≤ δ) :
   | .chan _ _ => rfl
   | .own _ _ _ => rfl
   | .fn _ _ => rfl
+  | .mus _ _ _ => rfl
+  | .rvar _ => rfl
+  | .muRs r _ _ b => by cases hm : b.mutFree <;> simp [Ty.renR, Ty.clampR, hm, rmap_min h0]
 
 theorem Ty.noClamp_renR {ρ0 δ k : Nat} (h0 : ρ0 ≤ δ) :
     ∀ t : Ty, (t.renR ρ0 δ).noClamp (rmap ρ0 δ k) = t.noClamp k
@@ -656,6 +741,9 @@ theorem Ty.noClamp_renR {ρ0 δ k : Nat} (h0 : ρ0 ≤ δ) :
   | .chan _ _ => rfl
   | .own _ _ _ => rfl
   | .fn _ _ => rfl
+  | .mus _ _ _ => rfl
+  | .rvar _ => rfl
+  | .muRs r _ _ b => by simp [Ty.renR, Ty.noClamp, rmap_le_iff h0]
 
 theorem Ty.chanFree_renR {ρ0 δ : Nat} : ∀ t : Ty, (t.renR ρ0 δ).chanFree = t.chanFree
   | .int => rfl
@@ -673,6 +761,9 @@ theorem Ty.chanFree_renR {ρ0 δ : Nat} : ∀ t : Ty, (t.renR ρ0 δ).chanFree =
   | .chan _ _ => rfl
   | .own _ _ _ => rfl
   | .fn _ _ => rfl
+  | .mus _ _ _ => rfl
+  | .rvar _ => rfl
+  | .muRs r _ _ b => by simp [Ty.renR, Ty.chanFree]
 
 
 theorem Ty.payOk_renR {ρ0 δ : Nat} {te t : Ty} (h : Ty.payOk te t = true) :
@@ -820,6 +911,28 @@ theorem ren_typing {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) {e : Expr} {Δ : Defs} {f b 
   | fst e ihe =>
     simp only [Expr.src] at hs
     cases he with | fst h => exact .fst (ihe h hd hs)
+  | fold t0 e ihe =>
+    simp only [Expr.src] at hs
+    cases he with
+    | foldS hok h =>
+      have h' := ihe h hd hs
+      rw [Ty.musOk_unfold_renR hok] at h'
+      exact .foldS hok h'
+    | foldRs hok h =>
+      have h' := ihe h hd hs
+      rw [Ty.unfold_renR_muRs hok] at h'
+      exact .foldRs (Ty.muRsOk_r hok) h'
+  | unfold e ihe =>
+    simp only [Expr.src] at hs
+    cases he with
+    | unfoldS hok h =>
+      have h' := ihe h hd hs
+      rw [Ty.musOk_unfold_renR hok]
+      exact .unfoldS hok h'
+    | unfoldRs hok h =>
+      have h' := ihe h hd hs
+      rw [Ty.unfold_renR_muRs hok]
+      exact .unfoldRs (Ty.muRsOk_r hok) h'
   | ann e t ihe =>
     simp only [Expr.src] at hs
     cases he with | ann h hsb => exact .ann (ihe h hd hs) (Ty.sub_renR h0 hsb)

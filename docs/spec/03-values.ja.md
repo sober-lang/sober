@@ -62,10 +62,10 @@ V-2. シャドーイングは無い。ローカルの束縛（`:=`・仮引数�
 拒否: [`examples/shadow_block.sober`](../../examples/shadow_block.sober)・[`examples/shadow_lambda.sober`](../../examples/shadow_lambda.sober)・[`examples/shadow_pattern.sober`](../../examples/shadow_pattern.sober)・[`examples/localname_const.sober`](../../examples/localname_const.sober)・[`examples/localname_import.sober`](../../examples/localname_import.sober)・[`examples/localname_named.sober`](../../examples/localname_named.sober)・[`examples/localname_tparam.sober`](../../examples/localname_tparam.sober)
 決定: [syntax.md 決定 13](../syntax.md)
 
-V-3. トップレベルの束縛は const 式だけ — 関数を呼べず、実行時の初期化（`init()`）も無い。const は 2 種類: **int の const** は int のリテラル・算術・ビット演算・int の const の参照でできた式で、ビルドの時点で値に畳む。**組み立ての const** は string / float のリテラル（負の float のリテラルを含む）・`true` / `false`・struct のリテラル（部分リテラル可）・imm の slice のリテラルと、その入れ子でできた式で、葉には int の const 式・閉じたラムダ・名前つき関数の参照（5 章 F-8）・他の const の参照・欄の値の位置の `nil` を置ける。組み立ての const は参照する点で組み立てる（5 章 F-8）。演算（`+`・補間・比較・`!` 等）を使えるのは int の const だけで、関数の呼び出し・`mut` のリテラル・map のリテラル（`@embed` を除く — 12 章 A-3）・トップレベルの `nil` は置けない。トップレベルの名前は package の中で一意（種類が違っても重ならない）。
-例: [`examples/constdict.sober`](../../examples/constdict.sober)・[`examples/const_lit.sober`](../../examples/const_lit.sober)・[`examples/const_table.sober`](../../examples/const_table.sober)
-拒否: [`examples/const_neg_call.sober`](../../examples/const_neg_call.sober)・[`examples/const_neg_strop.sober`](../../examples/const_neg_strop.sober)・[`examples/const_neg_mutslice.sober`](../../examples/const_neg_mutslice.sober)・[`examples/const_neg_map.sober`](../../examples/const_neg_map.sober)・[`examples/const_neg_nil.sober`](../../examples/const_neg_nil.sober)・[`examples/top_dup.sober`](../../examples/top_dup.sober)・[`examples/top_dup_kinds.sober`](../../examples/top_dup_kinds.sober)
-決定: [syntax.md 決定 14](../syntax.md)・[language.md 13 節・25 節](../language.md)
+V-3. トップレベルの束縛は const 式だけ — 関数を呼べず、実行時の初期化（`init()`）も無い。const は 2 種類: **int の const** は int のリテラル・算術・ビット演算・int の const の参照でできた式で、ビルドの時点で値に畳む。**組み立ての const** は string / float のリテラル（負の float のリテラルを含む）・`true` / `false`・struct のリテラル（部分リテラル可）・imm の slice のリテラルと、その入れ子でできた式で、葉には int の const 式・閉じたラムダ・名前つき関数の参照（5 章 F-8）・他の const の参照・欄の値の位置の `nil` を置ける。組み立ての const は参照する点で組み立てる（5 章 F-8）。float の const 式（float のリテラル・float の const の参照と、それらの `+` `-` `*` `/`・単項の `-`）も組み立ての const で、参照する点の式として実行時と同じ IEEE の丸めで計算する（int のリテラルは混ぜられない — 2 章 T-10）。それ以外の演算（string の `+`・補間・比較・`!` 等）を使えるのは int の const だけで、関数の呼び出し・`mut` のリテラル・map のリテラル（`@embed` を除く — 12 章 A-3）・トップレベルの `nil` は置けない。トップレベルの名前は package の中で一意（種類が違っても重ならない）。
+例: [`examples/constdict.sober`](../../examples/constdict.sober)・[`examples/const_lit.sober`](../../examples/const_lit.sober)・[`examples/const_table.sober`](../../examples/const_table.sober)・[`examples/const_float.sober`](../../examples/const_float.sober)
+拒否: [`examples/const_neg_call.sober`](../../examples/const_neg_call.sober)・[`examples/const_neg_strop.sober`](../../examples/const_neg_strop.sober)・[`examples/const_neg_floatint.sober`](../../examples/const_neg_floatint.sober)・[`examples/const_neg_mutslice.sober`](../../examples/const_neg_mutslice.sober)・[`examples/const_neg_map.sober`](../../examples/const_neg_map.sober)・[`examples/const_neg_nil.sober`](../../examples/const_neg_nil.sober)・[`examples/top_dup.sober`](../../examples/top_dup.sober)・[`examples/top_dup_kinds.sober`](../../examples/top_dup_kinds.sober)
+決定: [syntax.md 決定 14](../syntax.md)・[language.md 13 節・25 節・37 節](../language.md)
 
 ## 3.2 mut 引数
 
@@ -84,8 +84,9 @@ V-6. mut 仮引数（slice・map とそれを含む struct）の中身は呼び�
 拒否: [`examples/mutarg_neg_escape.sober`](../../examples/mutarg_neg_escape.sober)
 決定: [language.md 26 節](../language.md)
 
-V-7. mut 仮引数を持つ関数は関数値にならず、関数型の仮引数にも渡せない（関数型に mut の席は無い）。
-拒否: [`examples/fnarg_mut.sober`](../../examples/fnarg_mut.sober)
+V-7. 関数型の仮引数は mut にできる（`func(st mut S, x int)`）。mut の席は関数型 1 つに 1 本までで、席は関数型の同一性に入る。mut 仮引数を持つ関数は、同じ席に mut を持つ関数型の値になる。値の呼び出しの mut の席には `mut x` を渡し、他の席には値を渡す。ラムダの仮引数の型を書くなら mut の印も席と同じに書き、型を書かなければ席は関数型から決まる。
+例: [`examples/fn_mut_param.sober`](../../examples/fn_mut_param.sober)
+拒否: [`examples/fn_mut_param_neg_two.sober`](../../examples/fn_mut_param_neg_two.sober)・[`examples/fn_mut_param_neg_eta.sober`](../../examples/fn_mut_param_neg_eta.sober)・[`examples/fnarg_mut.sober`](../../examples/fnarg_mut.sober)・[`examples/fn_mut_param_neg_lambda.sober`](../../examples/fn_mut_param_neg_lambda.sober)・[`examples/fn_mut_param_neg_arg.sober`](../../examples/fn_mut_param_neg_arg.sober)・[`examples/lease_neg_mutlam.sober`](../../examples/lease_neg_mutlam.sober)
 決定: [language.md 25 節・26 節](../language.md)
 
 ## 3.3 freeze
@@ -99,3 +100,8 @@ V-9. freeze の後は、凍らせた道へ添字・欄・map の書き込みを�
 例: [`examples/freeze_unique.sober`](../../examples/freeze_unique.sober)
 拒否: [`examples/freeze_neg_write.sober`](../../examples/freeze_neg_write.sober)
 決定: [language.md 17 節](../language.md)
+
+V-10. mut の列の要素の欄へは書ける: `xs[i].f = v`（欄の鎖・入れ子の列・複合代入も）は、要素を読んで欄を差し替えて `xs[i]` へ書き戻すのと同じ。添字・右辺・要素の読み・書きの順に評価し、添字は 1 回だけ評価する。imm の列への書きは拒否する。
+例: [`examples/elem_field_assign.sober`](../../examples/elem_field_assign.sober)
+拒否: [`examples/elem_field_assign_neg_imm.sober`](../../examples/elem_field_assign_neg_imm.sober)
+決定: [language.md 21 節](../language.md)

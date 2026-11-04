@@ -241,6 +241,1050 @@
         "end": 134
       },
       "sig_end": 125
+    },
+    {
+      "name": "Trunc",
+      "type_params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "float"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "float"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "b"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "Bits",
+                  "tok": 149
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "x",
+                    "tok": 151
+                  }
+                ],
+                "tok": 150
+              }
+            ],
+            "tok": 147
+          },
+          {
+            "k": "bind",
+            "names": [
+              "e"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "binary",
+                "op": "-",
+                "lhs": {
+                  "k": "binary",
+                  "op": "&",
+                  "lhs": {
+                    "k": "binary",
+                    "op": ">>",
+                    "lhs": {
+                      "k": "ident",
+                      "name": "b",
+                      "tok": 158
+                    },
+                    "rhs": {
+                      "k": "int",
+                      "value": 52,
+                      "tok": 160
+                    },
+                    "tok": 159
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 2047,
+                    "tok": 163
+                  },
+                  "tok": 162
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 1023,
+                  "tok": 166
+                },
+                "tok": 165
+              }
+            ],
+            "tok": 154
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": ">=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "e",
+                  "tok": 169
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 52,
+                  "tok": 171
+                },
+                "tok": 170
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "ident",
+                        "name": "x",
+                        "tok": 174
+                      }
+                    ],
+                    "tok": 173
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 168
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "<",
+                "lhs": {
+                  "k": "ident",
+                  "name": "e",
+                  "tok": 179
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 0,
+                  "tok": 181
+                },
+                "tok": 180
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "FromBits",
+                          "tok": 184
+                        },
+                        "args": [
+                          {
+                            "k": "binary",
+                            "op": "&",
+                            "lhs": {
+                              "k": "ident",
+                              "name": "b",
+                              "tok": 186
+                            },
+                            "rhs": {
+                              "k": "binary",
+                              "op": "-",
+                              "lhs": {
+                                "k": "binary",
+                                "op": "-",
+                                "lhs": {
+                                  "k": "int",
+                                  "value": 0,
+                                  "tok": 189
+                                },
+                                "rhs": {
+                                  "k": "int",
+                                  "value": 9223372036854775807,
+                                  "tok": 191
+                                },
+                                "tok": 190
+                              },
+                              "rhs": {
+                                "k": "int",
+                                "value": 1,
+                                "tok": 193
+                              },
+                              "tok": 192
+                            },
+                            "tok": 187
+                          }
+                        ],
+                        "tok": 185
+                      }
+                    ],
+                    "tok": 183
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 178
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "frac"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "binary",
+                "op": "-",
+                "lhs": {
+                  "k": "binary",
+                  "op": "<<",
+                  "lhs": {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 202
+                  },
+                  "rhs": {
+                    "k": "binary",
+                    "op": "-",
+                    "lhs": {
+                      "k": "int",
+                      "value": 52,
+                      "tok": 205
+                    },
+                    "rhs": {
+                      "k": "ident",
+                      "name": "e",
+                      "tok": 207
+                    },
+                    "tok": 206
+                  },
+                  "tok": 203
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 211
+                },
+                "tok": 210
+              }
+            ],
+            "tok": 199
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "FromBits",
+                  "tok": 214
+                },
+                "args": [
+                  {
+                    "k": "binary",
+                    "op": "-",
+                    "lhs": {
+                      "k": "ident",
+                      "name": "b",
+                      "tok": 216
+                    },
+                    "rhs": {
+                      "k": "binary",
+                      "op": "&",
+                      "lhs": {
+                        "k": "ident",
+                        "name": "b",
+                        "tok": 219
+                      },
+                      "rhs": {
+                        "k": "ident",
+                        "name": "frac",
+                        "tok": 221
+                      },
+                      "tok": 220
+                    },
+                    "tok": 217
+                  }
+                ],
+                "tok": 215
+              }
+            ],
+            "tok": 213
+          }
+        ]
+      },
+      "tok": 140,
+      "bodiless": false,
+      "span": {
+        "start": 134,
+        "end": 227
+      },
+      "sig_end": 146
+    },
+    {
+      "name": "Floor",
+      "type_params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "float"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "float"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "t"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "Trunc",
+                  "tok": 242
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "x",
+                    "tok": 244
+                  }
+                ],
+                "tok": 243
+              }
+            ],
+            "tok": 240
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "if",
+                "cond": {
+                  "k": "binary",
+                  "op": "&&",
+                  "lhs": {
+                    "k": "binary",
+                    "op": "<",
+                    "lhs": {
+                      "k": "ident",
+                      "name": "x",
+                      "tok": 249
+                    },
+                    "rhs": {
+                      "k": "float",
+                      "bits": 0,
+                      "text": "0.0",
+                      "tok": 251
+                    },
+                    "tok": 250
+                  },
+                  "rhs": {
+                    "k": "binary",
+                    "op": "!=",
+                    "lhs": {
+                      "k": "ident",
+                      "name": "t",
+                      "tok": 253
+                    },
+                    "rhs": {
+                      "k": "ident",
+                      "name": "x",
+                      "tok": 255
+                    },
+                    "tok": 254
+                  },
+                  "tok": 252
+                },
+                "then": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "binary",
+                        "op": "-",
+                        "lhs": {
+                          "k": "ident",
+                          "name": "t",
+                          "tok": 257
+                        },
+                        "rhs": {
+                          "k": "float",
+                          "bits": 4607182418800017408,
+                          "text": "1.0",
+                          "tok": 259
+                        },
+                        "tok": 258
+                      }
+                    }
+                  ]
+                },
+                "else": {
+                  "k": "block",
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "ident",
+                        "name": "t",
+                        "tok": 263
+                      }
+                    }
+                  ]
+                },
+                "tok": 248
+              }
+            ],
+            "tok": 247
+          }
+        ]
+      },
+      "tok": 233,
+      "bodiless": false,
+      "span": {
+        "start": 227,
+        "end": 268
+      },
+      "sig_end": 239
+    },
+    {
+      "name": "Ceil",
+      "type_params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "float"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "float"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "unary",
+                "op": "-",
+                "operand": {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "Floor",
+                    "tok": 283
+                  },
+                  "args": [
+                    {
+                      "k": "unary",
+                      "op": "-",
+                      "operand": {
+                        "k": "ident",
+                        "name": "x",
+                        "tok": 286
+                      },
+                      "tok": 285
+                    }
+                  ],
+                  "tok": 284
+                },
+                "tok": 282
+              }
+            ],
+            "tok": 281
+          }
+        ]
+      },
+      "tok": 274,
+      "bodiless": false,
+      "span": {
+        "start": 268,
+        "end": 291
+      },
+      "sig_end": 280
+    },
+    {
+      "name": "Min",
+      "type_params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "float"
+          },
+          "mutable": false
+        },
+        {
+          "name": "y",
+          "type": {
+            "k": "name",
+            "name": "float"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "float"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 308
+                },
+                "rhs": {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 310
+                },
+                "tok": 309
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "ident",
+                        "name": "x",
+                        "tok": 313
+                      }
+                    ],
+                    "tok": 312
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 307
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "y",
+                  "tok": 318
+                },
+                "rhs": {
+                  "k": "ident",
+                  "name": "y",
+                  "tok": 320
+                },
+                "tok": 319
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "ident",
+                        "name": "y",
+                        "tok": 323
+                      }
+                    ],
+                    "tok": 322
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 317
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "&&",
+                "lhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "x",
+                    "tok": 328
+                  },
+                  "rhs": {
+                    "k": "float",
+                    "bits": 0,
+                    "text": "0.0",
+                    "tok": 330
+                  },
+                  "tok": 329
+                },
+                "rhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "y",
+                    "tok": 332
+                  },
+                  "rhs": {
+                    "k": "float",
+                    "bits": 0,
+                    "text": "0.0",
+                    "tok": 334
+                  },
+                  "tok": 333
+                },
+                "tok": 331
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "FromBits",
+                          "tok": 337
+                        },
+                        "args": [
+                          {
+                            "k": "binary",
+                            "op": "|",
+                            "lhs": {
+                              "k": "call",
+                              "callee": {
+                                "k": "ident",
+                                "name": "Bits",
+                                "tok": 339
+                              },
+                              "args": [
+                                {
+                                  "k": "ident",
+                                  "name": "x",
+                                  "tok": 341
+                                }
+                              ],
+                              "tok": 340
+                            },
+                            "rhs": {
+                              "k": "call",
+                              "callee": {
+                                "k": "ident",
+                                "name": "Bits",
+                                "tok": 344
+                              },
+                              "args": [
+                                {
+                                  "k": "ident",
+                                  "name": "y",
+                                  "tok": 346
+                                }
+                              ],
+                              "tok": 345
+                            },
+                            "tok": 343
+                          }
+                        ],
+                        "tok": 338
+                      }
+                    ],
+                    "tok": 336
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 327
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "if",
+                "cond": {
+                  "k": "binary",
+                  "op": "<",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "x",
+                    "tok": 354
+                  },
+                  "rhs": {
+                    "k": "ident",
+                    "name": "y",
+                    "tok": 356
+                  },
+                  "tok": 355
+                },
+                "then": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "ident",
+                        "name": "x",
+                        "tok": 358
+                      }
+                    }
+                  ]
+                },
+                "else": {
+                  "k": "block",
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "ident",
+                        "name": "y",
+                        "tok": 362
+                      }
+                    }
+                  ]
+                },
+                "tok": 353
+              }
+            ],
+            "tok": 352
+          }
+        ]
+      },
+      "tok": 297,
+      "bodiless": false,
+      "span": {
+        "start": 291,
+        "end": 367
+      },
+      "sig_end": 306
+    },
+    {
+      "name": "Max",
+      "type_params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "float"
+          },
+          "mutable": false
+        },
+        {
+          "name": "y",
+          "type": {
+            "k": "name",
+            "name": "float"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "float"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 384
+                },
+                "rhs": {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 386
+                },
+                "tok": 385
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "ident",
+                        "name": "x",
+                        "tok": 389
+                      }
+                    ],
+                    "tok": 388
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 383
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "y",
+                  "tok": 394
+                },
+                "rhs": {
+                  "k": "ident",
+                  "name": "y",
+                  "tok": 396
+                },
+                "tok": 395
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "ident",
+                        "name": "y",
+                        "tok": 399
+                      }
+                    ],
+                    "tok": 398
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 393
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "&&",
+                "lhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "x",
+                    "tok": 404
+                  },
+                  "rhs": {
+                    "k": "float",
+                    "bits": 0,
+                    "text": "0.0",
+                    "tok": 406
+                  },
+                  "tok": 405
+                },
+                "rhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "y",
+                    "tok": 408
+                  },
+                  "rhs": {
+                    "k": "float",
+                    "bits": 0,
+                    "text": "0.0",
+                    "tok": 410
+                  },
+                  "tok": 409
+                },
+                "tok": 407
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "FromBits",
+                          "tok": 413
+                        },
+                        "args": [
+                          {
+                            "k": "binary",
+                            "op": "&",
+                            "lhs": {
+                              "k": "call",
+                              "callee": {
+                                "k": "ident",
+                                "name": "Bits",
+                                "tok": 415
+                              },
+                              "args": [
+                                {
+                                  "k": "ident",
+                                  "name": "x",
+                                  "tok": 417
+                                }
+                              ],
+                              "tok": 416
+                            },
+                            "rhs": {
+                              "k": "call",
+                              "callee": {
+                                "k": "ident",
+                                "name": "Bits",
+                                "tok": 420
+                              },
+                              "args": [
+                                {
+                                  "k": "ident",
+                                  "name": "y",
+                                  "tok": 422
+                                }
+                              ],
+                              "tok": 421
+                            },
+                            "tok": 419
+                          }
+                        ],
+                        "tok": 414
+                      }
+                    ],
+                    "tok": 412
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 403
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "if",
+                "cond": {
+                  "k": "binary",
+                  "op": ">",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "x",
+                    "tok": 430
+                  },
+                  "rhs": {
+                    "k": "ident",
+                    "name": "y",
+                    "tok": 432
+                  },
+                  "tok": 431
+                },
+                "then": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "ident",
+                        "name": "x",
+                        "tok": 434
+                      }
+                    }
+                  ]
+                },
+                "else": {
+                  "k": "block",
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "ident",
+                        "name": "y",
+                        "tok": 438
+                      }
+                    }
+                  ]
+                },
+                "tok": 429
+              }
+            ],
+            "tok": 428
+          }
+        ]
+      },
+      "tok": 373,
+      "bodiless": false,
+      "span": {
+        "start": 367,
+        "end": 443
+      },
+      "sig_end": 382
     }
   ],
   "consts": [],

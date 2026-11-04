@@ -30,7 +30,7 @@ F-5. 匿名の関数型の仮引数を持つ関数は、直接にも相互にも
 拒否: [`examples/func_neg_recursive_fnparam.sober`](../../examples/func_neg_recursive_fnparam.sober)
 決定: [language.md 8 節](../language.md)
 
-F-6. 匿名の関数型の仮引数には名前つきの関数も渡せる（同じ数の仮引数のラムダとして扱う）。仮引数の数の違う関数・mut 仮引数を持つ関数は渡せない。
+F-6. 匿名の関数型の仮引数には名前つきの関数も渡せる（同じ数の仮引数のラムダとして扱う）。仮引数の数の違う関数・mut 仮引数の席が関数型と違う関数は渡せない（V-7）。
 例: [`examples/fnval_err.sober`](../../examples/fnval_err.sober)
 拒否: [`examples/fnarg_arity.sober`](../../examples/fnarg_arity.sober)・[`examples/fnarg_mut.sober`](../../examples/fnarg_mut.sober)
 決定: [language.md 25 節](../language.md)
@@ -46,8 +46,9 @@ F-8. トップレベルの const に辞書を置ける（`const IntOrd = Ord[int
 拒否: [`examples/const_neg_call.sober`](../../examples/const_neg_call.sober)
 決定: [language.md 25 節](../language.md)
 
-F-9. 値の位置 — 名前つき関数型の仮引数・結果、struct の関数型の欄、その option（`F?`）の欄 — に置いたラムダはクロージャになる。匿名の関数型の欄のクロージャを値の呼び出しの借りの実引数へそのまま渡すと、ラムダ `(…) => x.f(…)` に写して渡す。クロージャは作成点の imm の値を写して捕捉する（後で元の変数が変わっても見えない）。クロージャは仮引数・結果・欄として関数の境界を越えられる。
-例: [`examples/closure_field_capture.sober`](../../examples/closure_field_capture.sober)・[`examples/closure_param.sober`](../../examples/closure_param.sober)・[`examples/closure_result.sober`](../../examples/closure_result.sober)・[`examples/closure_field_opt.sober`](../../examples/closure_field_opt.sober)・[`examples/closure_def_capture.sober`](../../examples/closure_def_capture.sober)・[`examples/closure_anon_field.sober`](../../examples/closure_anon_field.sober)・[`examples/borrow_anon_field_eta.sober`](../../examples/borrow_anon_field_eta.sober)
+F-9. 値の位置 — 名前つき関数型の仮引数・結果、struct の関数型の欄、その option（`F?`）の欄、`[]F`・`map[K]F` の要素（slice / map のリテラルの要素）— に置いたラムダはクロージャになる。値にできる名前つき関数型は、仮引数・結果に値にできる名前つき関数型を値の位置で持ってよい（自分自身も — `type State func(n int) State`）。ジェネリックな名前つき関数型と匿名の関数型の slice の要素は値の位置でない。匿名の関数型の欄のクロージャを値の呼び出しの借りの実引数へそのまま渡すと、ラムダ `(…) => x.f(…)` に写して渡す。クロージャは作成点の imm の値を写して捕捉する（後で元の変数が変わっても見えない）。クロージャは仮引数・結果・欄として関数の境界を越えられる。
+例: [`examples/closure_field_capture.sober`](../../examples/closure_field_capture.sober)・[`examples/closure_param.sober`](../../examples/closure_param.sober)・[`examples/closure_result.sober`](../../examples/closure_result.sober)・[`examples/closure_field_opt.sober`](../../examples/closure_field_opt.sober)・[`examples/closure_def_capture.sober`](../../examples/closure_def_capture.sober)・[`examples/closure_anon_field.sober`](../../examples/closure_anon_field.sober)・[`examples/borrow_anon_field_eta.sober`](../../examples/borrow_anon_field_eta.sober)・[`examples/fnval_slice.sober`](../../examples/fnval_slice.sober)・[`examples/type_recursive_state.sober`](../../examples/type_recursive_state.sober)
+拒否: [`examples/fnval_slice_neg_anon.sober`](../../examples/fnval_slice_neg_anon.sober)・[`examples/fnval_slice_neg_generic.sober`](../../examples/fnval_slice_neg_generic.sober)
 決定: [language.md 25 節](../language.md)
 
 F-10. 値の位置のラムダは mut の束縛と同一性の型（task の Scope・Handle・端点、net.Conn など）を捕捉できず、本体に `return` を書けない（定義した関数より長く生きうる）。
@@ -80,15 +81,20 @@ F-15. 借りの位置のラムダの中では、囲む展開される関数の�
 拒否: [`examples/borrow_pend_mut.sober`](../../examples/borrow_pend_mut.sober)・[`examples/borrow_pend_value.sober`](../../examples/borrow_pend_value.sober)
 決定: [language.md 25 節](../language.md)
 
-F-16. 値の呼び出しの借りの実引数のラムダ（とその本体の中の展開されるラムダ・文形 for）は、mut の束縛（mut ローカル・mut 仮引数）を捕捉できる。捕捉は作成点の写しでなく束縛そのもので、借りの呼び出しをまたいだ更新が呼び手に見える。1 つの値の呼び出しの借りの実引数のラムダが捕捉する mut の束縛は合わせて 1 つまで（同じ束縛を複数のラムダで捕捉するのは可 — 2 つ要るなら 1 つの struct にまとめる）。値の位置のラムダと、展開待ちの的へ流れるラムダ（F-15）の mut の捕捉は拒否し、借りの値をそのまま実引数に渡す呼び出しの借りのラムダの mut の捕捉も拒否する。借りの実引数のラムダは関数値（クロージャ）を持つ値も捕捉できる。freeze の規則（3 章 V-8・V-9）では、捕捉は作成点の呼び出しへの mut 実引数に数え、ラムダの本体の中では捕捉した束縛の中身を freeze できない。
-例: [`examples/borrow_mut_count.sober`](../../examples/borrow_mut_count.sober)・[`examples/borrow_mut_state.sober`](../../examples/borrow_mut_state.sober)・[`examples/borrow_mut_deep.sober`](../../examples/borrow_mut_deep.sober)・[`examples/borrow_mut_union.sober`](../../examples/borrow_mut_union.sober)・[`examples/borrow_mut_param.sober`](../../examples/borrow_mut_param.sober)・[`examples/borrow_mut_shared.sober`](../../examples/borrow_mut_shared.sober)・[`examples/borrow_mut_store.sober`](../../examples/borrow_mut_store.sober)・[`examples/borrow_mut_anon_field.sober`](../../examples/borrow_mut_anon_field.sober)
-拒否: [`examples/borrow_mut_neg_value.sober`](../../examples/borrow_mut_neg_value.sober)・[`examples/borrow_mut_neg_two.sober`](../../examples/borrow_mut_neg_two.sober)・[`examples/borrow_mut_neg_two_args.sober`](../../examples/borrow_mut_neg_two_args.sober)・[`examples/borrow_mut_neg_frozen.sober`](../../examples/borrow_mut_neg_frozen.sober)・[`examples/borrow_mut_neg_freeze_body.sober`](../../examples/borrow_mut_neg_freeze_body.sober)・[`examples/borrow_mut_neg_forward.sober`](../../examples/borrow_mut_neg_forward.sober)
+F-16. ラムダは、どの位置でも mut の束縛を捕捉できない（値の呼び出しの借りの実引数のラムダも同じ）。状態を呼び出しをまたいで更新するなら、呼び手が持って関数型の mut 仮引数の席で渡す（3 章 V-7）。借りの実引数のラムダは関数値（クロージャ）を持つ値も捕捉できる。ラムダの mut 仮引数の席の仮引数は、本体の中では mut 仮引数として freeze の規則（3 章 V-8・V-9）に数え、中身を freeze できない。
+例: [`examples/borrow_mut_count.sober`](../../examples/borrow_mut_count.sober)・[`examples/borrow_mut_state.sober`](../../examples/borrow_mut_state.sober)・[`examples/borrow_mut_deep.sober`](../../examples/borrow_mut_deep.sober)・[`examples/borrow_mut_param.sober`](../../examples/borrow_mut_param.sober)・[`examples/borrow_mut_store.sober`](../../examples/borrow_mut_store.sober)
+拒否: [`examples/borrow_mut_neg_capture.sober`](../../examples/borrow_mut_neg_capture.sober)・[`examples/borrow_mut_neg_value.sober`](../../examples/borrow_mut_neg_value.sober)・[`examples/borrow_mut_neg_frozen.sober`](../../examples/borrow_mut_neg_frozen.sober)・[`examples/borrow_mut_neg_freeze_body.sober`](../../examples/borrow_mut_neg_freeze_body.sober)
 決定: [language.md 17 節・25 節](../language.md)
 
 F-22. func 宣言の仮引数は省略可の匿名関数型 `(func(…) R)?` を持てる。実引数は `nil`（省略を含む — F-18）・ラムダ・名前つきの関数・囲む関数の同じ種類の仮引数に限り、有る / 無いは呼び出し点ごとに字面で決まる。本体の中では、呼ぶことと省略可でない関数型の仮引数への転送を `if p != nil { … }` の腕（`if p == nil` の else）の中でだけ書け、その腕の中の p は匿名の関数型の仮引数（借り — F-13〜F-15）として扱う。nil と比べる・省略可の仮引数へ転送する以外の使用（束縛・格納・return）は書けない。p を渡さない呼び出し点のコードは、p の仮引数が無い関数と同じになる（`p != nil` の分岐は呼び出し点ごとに畳まれる）。省略可の匿名関数型は func 宣言の仮引数の外（名前つき関数型の中・struct の欄・結果・ラムダの仮引数）には書けず、括弧の無い `func(…) R?` は「結果が `R?` の関数」と紛れるので省略可の形としては拒否する。
 例: [`examples/optfn.sober`](../../examples/optfn.sober)・[`examples/optfn_errors.sober`](../../examples/optfn_errors.sober)
 拒否: [`examples/optfn_neg_bare.sober`](../../examples/optfn_neg_bare.sober)・[`examples/optfn_neg_field.sober`](../../examples/optfn_neg_field.sober)・[`examples/optfn_neg_fntype.sober`](../../examples/optfn_neg_fntype.sober)・[`examples/optfn_neg_arg.sober`](../../examples/optfn_neg_arg.sober)・[`examples/optfn_neg_unguarded.sober`](../../examples/optfn_neg_unguarded.sober)・[`examples/optfn_neg_forward.sober`](../../examples/optfn_neg_forward.sober)・[`examples/optfn_neg_bind.sober`](../../examples/optfn_neg_bind.sober)・[`examples/optfn_neg_store.sober`](../../examples/optfn_neg_store.sober)・[`examples/optfn_neg_return.sober`](../../examples/optfn_neg_return.sober)・[`examples/optfn_neg_valcap.sober`](../../examples/optfn_neg_valcap.sober)・[`examples/optfn_neg_spawn.sober`](../../examples/optfn_neg_spawn.sober)
 決定: [language.md 25 節](../language.md)・[syntax.md 決定 7](../syntax.md)
+
+F-23. ラムダは局所の名前に束縛できる（`f := (n int) => n + k`）。その名前は値でなく、使うたびに呼び出しの点へ展開される — 呼ぶ・匿名の関数型の仮引数へ渡す・展開されるラムダや文形 for の本体の中で呼ぶ、だけを書け、別の名前への束縛・欄への格納・return・名前つき関数型の仮引数や値の呼び出しの実引数へ渡す・値の位置のラムダの中で使う形は拒否する。展開なので mut の束縛をそのまま捕捉でき（本数の縛りは無い）、更新は呼び手に見える。freeze の規則（3 章 V-8・V-9）では、本体の書きを呼び出しの点の書きとして数える。本体の名前は束縛の点で決まり、ラムダより後で宣言した名前は指せない。束縛は `mut` にできず、他の名前と同時には束縛できない。本体に `return`・`?`・ラムダの外のループへの `break` / `continue` は書けない（結果が `(T, error?)` なら `?` は呼び出しの側に書く）。仮引数の型は書いた型、書かなければ実引数の型。
+例: [`examples/local_lambda.sober`](../../examples/local_lambda.sober)
+拒否: [`examples/local_lambda_neg_value.sober`](../../examples/local_lambda_neg_value.sober)・[`examples/local_lambda_neg_named.sober`](../../examples/local_lambda_neg_named.sober)・[`examples/local_lambda_neg_capture.sober`](../../examples/local_lambda_neg_capture.sober)・[`examples/local_lambda_neg_return.sober`](../../examples/local_lambda_neg_return.sober)・[`examples/local_lambda_neg_try.sober`](../../examples/local_lambda_neg_try.sober)・[`examples/local_lambda_neg_later.sober`](../../examples/local_lambda_neg_later.sober)・[`examples/local_lambda_neg_mut.sober`](../../examples/local_lambda_neg_mut.sober)・[`examples/local_lambda_neg_frozen.sober`](../../examples/local_lambda_neg_frozen.sober)
+決定: [language.md 8 節・25 節](../language.md)
 
 ## 5.4 ジェネリクス
 

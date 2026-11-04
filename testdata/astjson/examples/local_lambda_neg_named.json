@@ -1,0 +1,187 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Op",
+      "type_params": [],
+      "body": {
+        "k": "func",
+        "params": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ],
+        "results": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ],
+        "param_names": [
+          "n"
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 12
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "apply",
+      "type_params": [],
+      "params": [
+        {
+          "name": "op",
+          "type": {
+            "k": "name",
+            "name": "Op"
+          },
+          "mutable": false
+        },
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "op",
+                  "tok": 24
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "n",
+                    "tok": 26
+                  }
+                ],
+                "tok": 25
+              }
+            ],
+            "tok": 23
+          }
+        ]
+      },
+      "tok": 13,
+      "bodiless": false,
+      "span": {
+        "start": 12,
+        "end": 31
+      },
+      "sig_end": 22
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "f"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "lambda",
+                "params": [
+                  {
+                    "name": "n",
+                    "type": {
+                      "k": "name",
+                      "name": "int"
+                    }
+                  }
+                ],
+                "body": {
+                  "k": "binary",
+                  "op": "+",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "n",
+                    "tok": 43
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 45
+                  },
+                  "tok": 44
+                },
+                "tok": 42
+              }
+            ],
+            "tok": 36
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 47
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "apply",
+                    "tok": 49
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "f",
+                      "tok": 51
+                    },
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 53
+                    }
+                  ],
+                  "tok": 50
+                }
+              ],
+              "tok": 48
+            }
+          }
+        ]
+      },
+      "tok": 32,
+      "bodiless": false,
+      "span": {
+        "start": 31,
+        "end": 59
+      },
+      "sig_end": 35
+    }
+  ],
+  "consts": []
+}

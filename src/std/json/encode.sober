@@ -2,6 +2,7 @@ package json
 
 import "std/builder"
 import "std/convert"
+import "std/iter"
 
 // T→JSON の裏方（shape[T] の逆向き — language.md 16 節 2）: 利用者は `json.Encode[T](v)`（欄名の対応つきは `json.EncodeWith[T](v, map[string]string{"欄": "キー"})`）を書き、
 // loader の固定テンプレート（compiler/loader/jsonshape.sober）が型ごとの写しの関数（mut の builder に書く普通の Sober）を合成する。ここは部品だけ。
@@ -136,10 +137,45 @@ func Done(o mut builder.Builder[byte]) string {
     return bytesToString(builder.Build(mut o))
 }
 
+// 値の木 v を o に書く（json.Encode[json.Value] の写しと、欄の型が json.Value の struct の写しが呼ぶ部品）。印字の規則は Format と同じ
+// （空白なし・欄は並びの順・数は字句のまま）。再帰の深さ = 木の深さ（Tree で開いた木なら MaxDepth まで）
+@effects()
+func PutValue(o mut builder.Builder[byte], x Value) {
+    switch x {
+    case Null{}: Put(mut o, "null")
+    case Bool{v}: Put(mut o, if v { "true" } else { "false" })
+    case Number{lit}: Put(mut o, lit)
+    case String{v}: PutString(mut o, v)
+    case Array{items}: {
+        builder.Push(mut o, '[')
+        for i <- iter.Range(0, len(items)) {
+            if i > 0 {
+                builder.Push(mut o, ',')
+            }
+            PutValue(mut o, items[i])
+        }
+        builder.Push(mut o, ']')
+    }
+    case Object{names, vals}: {
+        builder.Push(mut o, '{')
+        for i <- iter.Range(0, len(names)) {
+            if i > 0 {
+                builder.Push(mut o, ',')
+            }
+            PutString(mut o, names[i])
+            builder.Push(mut o, ':')
+            PutValue(mut o, vals[i])
+        }
+        builder.Push(mut o, '}')
+    }
+    }
+}
+
 // 以下は loader が合成する口（std に実体は無い — 呼び出しは型ごとの写しの関数へ写る）
 
 // 合成: func Encode[T](v T) string
-// v の JSON（空白なし・欄は宣言の順・`U?` の nil は null）。T の範囲は Decode と同じ。float の NaN / ±Inf は panic(NotFinite)
+// v の JSON（空白なし・欄は宣言の順・`U?` の nil は null）。T の範囲は Decode と同じ + 裸の json.Value の欄・T = json.Value（値の木 — 印字は Format と同じ規則）。
+// float の NaN / ±Inf は panic(NotFinite)
 // 例: examples/json_encode.sober
 
 // 合成: func EncodeWith[T](v T, rename map[string]string) string

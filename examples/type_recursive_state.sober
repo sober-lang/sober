@@ -1,0 +1,37 @@
+package main
+
+// 関数型の結果を通る再帰（S — 状態関数）: 状態は「次の入力で次の状態を返す関数」。捕捉つきの閉包も同じ型の値になる
+
+import "std/iter"
+
+type State func(n int) State
+
+func done(n int) State {
+    println(n * 100)
+    return done
+}
+
+func after(k int, label string) State {
+    return (n int) => step(n, k, label)
+}
+
+func step(n int, k int, label string) State {
+    println("${label} ${n} ${k}")
+    if k <= 1 {
+        return done
+    }
+    return after(k - 1, label)
+}
+
+type Machine struct {
+    s State
+}
+
+func main() {
+    mut s := after(3, "a")
+    for i <- iter.Range(0, 5) {
+        s = s(i)
+    }
+    m := Machine{s: after(2, "m")}
+    _ = m.s(7)(8)(9)
+}

@@ -426,7 +426,7 @@ Differences from Go: use `task.Run` + `task.Spawn` + `task.Join` instead of `go 
 
 ## 8. Tests
 
-Each `func TestXxx()` in a `*_test.sober` file inside a package is a test. `sober test <package>` runs them, one process per test. See [Your first program](first-program.md#write-tests) for how to write them.
+Each `func TestXxx()` in a `*_test.sober` file inside a package is a test. `sober test <package>` runs them, one process per test. See [Your first program](first-program.md#write-tests) for how to write them, and [Writing tests](testing.md) for a worked example through property-based testing, coverage, mutation testing and fuzzing.
 
 ## Where next
 

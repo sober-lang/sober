@@ -1,0 +1,2 @@
+sober: load error at examples/local_lambda_neg_later.sober:6:16: this lambda bound to a local name uses a name that is declared after the lambda — the body sees only the names visible where the lambda is written
+exit=1

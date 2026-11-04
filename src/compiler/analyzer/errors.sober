@@ -213,6 +213,7 @@ func walkFn(az mut Az, fi int) {
     mut n := 0
     while again && n < 16 {
         az.er.envChanged = false
+        az.er.llN = 0
         blockVal(mut az, body)
         again = az.er.envChanged
         n += 1
@@ -272,6 +273,18 @@ func est(az mut Az, s desugar.NodeRef) {
         vals := desugar.ListRef(x.c)
         nn := desugar.LenL(mut az.d, names)
         nv := desugar.LenL(mut az.d, vals)
+        if nn == 1 && nv == 1 && x.b == 0 && kind(mut az, nat(mut az, vals, 0)) == ast.ELambda {
+            // 局所の束縛のラムダ: 本体は使用の点で歩く（erLocal）— 名前を覚えるだけ
+            if az.er.llN < table.Len(mut az.er.llName) {
+                table.Set(mut az.er.llName, az.er.llN, desugar.LatI(mut az.d, names, 0))
+                table.Set(mut az.er.llLam, az.er.llN, int(nat(mut az, vals, 0)))
+            } else {
+                table.Push(mut az.er.llName, desugar.LatI(mut az.d, names, 0))
+                table.Push(mut az.er.llLam, int(nat(mut az, vals, 0)))
+            }
+            az.er.llN = az.er.llN + 1
+            return
+        }
         if nn == nv {
             for i <- iter.Range(0, nn) {
                 envAdd(mut az, desugar.StrRef(desugar.LatI(mut az.d, names, i)), ev(mut az, nat(mut az, vals, i)))
@@ -350,6 +363,11 @@ func ev(az mut Az, e desugar.NodeRef) LSet {
     k := x.kind
     switch k {
     case ast.EIdent:
+        // 局所の束縛のラムダを渡す（展開の位置）: その位置にラムダを書いたのと同じ
+        ll := erLocal(mut az, e)
+        if ll != -1 {
+            return ev(mut az, ll)
+        }
         return ident(mut az, desugar.StrRef(x.a))
     case ast.ECall:
         return callVal(mut az, desugar.NodeRef(x.a), desugar.ListRef(x.b), desugar.NodeRef(-1), lsNone())
@@ -526,6 +544,10 @@ func calleeFn(az mut Az, callee desugar.NodeRef) int {
 
 // 呼び出し callee(args)（pipe なら左辺 lhs — 穴 -1 の位置か先頭 — の集合 lm）の集合。実引数の集合は呼び先の error の仮引数の P へ
 func callVal(az mut Az, callee desugar.NodeRef, args desugar.ListRef, lhs desugar.NodeRef, lm LSet) LSet {
+    lc := erLocal(mut az, callee)
+    if lc != -1 {
+        return erLocalCall(mut az, lc, args, lhs, lm)
+    }
     fi := calleeFn(mut az, callee)
     fp := if fi == -2 { curFlowParam(mut az, callee) } else { -1 }
     // F の値のラムダの Flow の対象の仮引数の呼び出し・宣言つきの名前付き関数型 F の値の呼び出し（fntype.sober）
@@ -595,6 +617,51 @@ func callVal(az mut Az, callee desugar.NodeRef, args desugar.ListRef, lhs desuga
         return lsNone()
     }
     return lsOr(fnLabels(mut az, fi), extra)
+}
+
+// 節 e が局所の束縛のラムダの名前ならそのラムダの節（新しい順 — 兄弟のスコープの同じ名前は後の束縛。でなければ -1）
+func erLocal(az mut Az, e desugar.NodeRef) desugar.NodeRef {
+    if az.er.llN == 0 || e == -1 || kind(mut az, e) != ast.EIdent || az.er.llDepth > 64 {
+        return -1
+    }
+    nm := desugar.StrRef(node(mut az, e).a)
+    mut i := az.er.llN - 1
+    while i >= 0 {
+        if desugar.StrEq(mut az.d, desugar.StrRef(table.Get(mut az.er.llName, i)), nm) {
+            return desugar.NodeRef(table.Get(mut az.er.llLam, i))
+        }
+        i -= 1
+    }
+    return -1
+}
+
+// 局所の束縛のラムダ lam の呼び出し（展開）: 仮引数を実引数の集合で束ね、本体の値の集合（pipe の左辺 lhs は穴か先頭）
+func erLocalCall(az mut Az, lam desugar.NodeRef, args desugar.ListRef, lhs desugar.NodeRef, lm LSet) LSet {
+    n := desugar.LenL(mut az.d, args)
+    mut hole := false
+    for i <- iter.Range(0, n) {
+        if nat(mut az, args, i) == -1 {
+            hole = true
+        }
+    }
+    mut ms := mut []LSet{}
+    if lhs != -1 && !hole {
+        ms = append(ms, lm)
+    }
+    for i <- iter.Range(0, n) {
+        a := nat(mut az, args, i)
+        ms = append(ms, if a == -1 { lm } else { ev(mut az, a) })
+    }
+    ps := desugar.ListRef(node(mut az, lam).a)
+    for i <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
+        envAdd(mut az, desugar.StrRef(node(mut az, nat(mut az, ps, i)).a), if i < len(ms) { ms[i] } else { lsTop() })
+    }
+    az.er.llDepth += 1
+    body := desugar.NodeRef(node(mut az, lam).b)
+    bk := kind(mut az, body)
+    v := if bk == ast.EBlock || bk == ast.KBlock { blockVal(mut az, body) } else { ev(mut az, body) }
+    az.er.llDepth -= 1
+    return v
 }
 
 // 関数 fi（error を返す）の集合

@@ -39,7 +39,7 @@ func main() {
         return
     }
     xs := switch json.At(d, json.Root(d)) {
-    case json.Array{items}: items
+    case json.ViewArray{items}: items
     default: []int{}
     }
     mut ids := 0

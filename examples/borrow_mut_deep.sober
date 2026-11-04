@@ -1,22 +1,22 @@
 package main
 
-// 借りの閉包の mut 捕捉（(α-L1)）の anchor: z はループの外（anchor = z の region < 呼び手の最内）・借りのラムダはループの中で作る。
-// ラムダはループの中で作った imm（tag — 反復の region）も捕捉し、stream は反復の region の slice を emit する — imm の成分は anchor へ形式コピー（M4 (a)）
-
-type Stream func(emit func(b []byte) error?) error?
+// 借りの仮引数の mut の席の anchor: z はループの外（anchor = z の region < 呼び手の最内）・借りのラムダはループの中で作る。
+// ラムダはループの中で作った imm（tag — 反復の region）も捕捉し、stream は反復の region の slice を emit する — imm の成分は anchor へ形式コピー
 
 type Z struct {
     acc mut []byte
     n int
 }
 
-func chunks(k int, emit func(b []byte) error?) error? {
+type Stream func(z mut Z, emit func(z mut Z, b []byte) error?) error?
+
+func chunks(k int, z mut Z, emit func(z mut Z, b []byte) error?) error? {
     mut i := 0
     while i < k {
         mut buf := mut []byte{}
         buf = append(buf, byte(97 + i))
         buf = append(buf, byte(98 + i))
-        emit(freeze(buf))?
+        emit(mut z, freeze(buf))?
         i += 1
     }
     return nil
@@ -28,9 +28,9 @@ func main() {
     while r < 3 {
         tag := bytes("r${r}")
         st := mk(r + 1)
-        e := st((b []byte) => {
-            z.acc = append(z.acc, b[0])
-            z.n += len(b) + len(tag)
+        e := st(mut z, (y, b) => {
+            y.acc = append(y.acc, b[0])
+            y.n += len(b) + len(tag)
             nil
         })
         if e != nil { println("error") }
@@ -41,5 +41,5 @@ func main() {
 }
 
 func mk(k int) Stream {
-    return (emit) => chunks(k, emit)
+    return (z, emit) => chunks(k, mut z, emit)
 }

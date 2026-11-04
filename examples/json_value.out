@@ -1,0 +1,6 @@
+{"name":"a\"b","n":12345678901234567890,"xs":[null,true,-1.5e3]}
+2
+true
+4
+{"id":7,"payload":{"k":[1,2,{"z":null}]},"tags":["x",3]}
+{"id":1,"payload":null,"tags":[]}

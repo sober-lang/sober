@@ -1,0 +1,35 @@
+package main
+
+// ジェネリックの再帰 struct: 型引数ごとの組（int と bool）。string の型引数は既存の F（総称関数へ Bx[string] を渡す形が
+// CoreFragment）に当たるので A1 の補助（総称関数）が建たない — 直ったら string に戻す
+
+type Rose[T] struct {
+    v T
+    kids []Rose[T]
+}
+
+func countB(r Rose[bool]) int {
+    mut c := if r.v { 1 } else { 0 }
+    for k <- r.kids {
+        c += countB(k)
+    }
+    return c
+}
+
+func sumI(r Rose[int]) int {
+    mut s := r.v
+    for k <- r.kids {
+        s += sumI(k)
+    }
+    return s
+}
+
+func main() {
+    a := Rose[bool]{v: true, kids: []Rose[bool]{Rose[bool]{v: false, kids: []Rose[bool]{}}, Rose[bool]{v: true, kids: []Rose[bool]{}}}}
+    r := Rose[bool]{v: false, kids: []Rose[bool]{a, a}}
+    println(countB(r))
+    println(countB(a))
+    n := Rose[int]{v: 5, kids: []Rose[int]{Rose[int]{v: 7, kids: []Rose[int]{}}}}
+    println(sumI(Rose[int]{v: 1, kids: []Rose[int]{n, n, n}}))
+    println(len(n.kids[0].kids))
+}

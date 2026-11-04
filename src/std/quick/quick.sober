@@ -26,6 +26,7 @@ import "std/io"
 import "std/iter"
 import "std/convert"
 import "std/hex"
+import "std/math"
 
 // std/testing/cell の置き場を空にする（試行・再生の頭 — 前の試行の書きが次の試行の入力にならない）
 @intrinsic("cell_reset")
@@ -419,6 +420,43 @@ func Bool(q mut Src) bool {
         line(q, "Bool = ${v}")
     }
     return v
+}
+
+// float を 1 つ（端の値・小さい 2 進の分数・任意のビット列 — NaN・±Inf・-0 も出る）。3 つの腕: ①端の値（±0・±1・0.5・2・最小の非正規数・最小の正規数・最大の有限値・±Inf・NaN）
+// ②小さい 2 進の分数 ±m / 2^d（m < 1024・d ≤ 10 — 引く段で丸めが入らない）③64 bit の任意のビット列（非正規数・NaN の別のビットも出る）。
+// シュリンクは前の腕・小さい選択の側へ — 最小の反例は 0.0・端の値・小さい分数に寄る。NaN を除くなら `quick.Assume(mut q, x == x)`
+@effects(io, panic, nondet)
+func Float(q mut Src) float {
+    v := switch choose(mut q, 3) {
+    case 0: floatEdge(choose(mut q, len(floatEdges) + 3))
+    case 1: floatDyadic(mut q)
+    default: floatBits(mut q)
+    }
+    if q.show {
+        line(q, "Float = ${convert.FormatFloat(v)} (bits ${convert.FormatInt(math.Bits(v))})")
+    }
+    return v
+}
+
+const floatEdges = []float{0.0, -0.0, 1.0, -1.0, 0.5, 2.0, 5.0e-324, 2.2250738585072014e-308, 1.7976931348623157e308, -1.7976931348623157e308}
+
+// 端の値の k 番目（表の後ろの 3 つ = +Inf・-Inf・NaN — リテラルで書けないのでビット列から）
+func floatEdge(k int) float {
+    inf := math.FromBits(0x7ff0000000000000)
+    return if k < len(floatEdges) { floatEdges[k] } else if k == len(floatEdges) { inf } else if k == len(floatEdges) + 1 { -inf } else { math.FromBits(0x7ff8000000000000) }
+}
+
+// 符号の 1 bit + 下の 63 bit（int の溢れに触れないよう符号は単項の - で付ける — IEEE の符号反転は符号の bit だけを変える）
+func floatBits(q mut Src) float {
+    neg := choose(mut q, 2) == 1
+    x := math.FromBits((choose(mut q, 1 << 31) << 32) | choose(mut q, 1 << 32))
+    return if neg { -x } else { x }
+}
+
+func floatDyadic(q mut Src) float {
+    neg := choose(mut q, 2) == 1
+    m := float(choose(mut q, 1024)) / float(1 << choose(mut q, 11))
+    return if neg { -m } else { m }
 }
 
 // [0, n) の添字（シュリンクは 0 へ）— 腕を選ぶ口: `switch quick.Pick(mut q, 3) { case 0: … }`

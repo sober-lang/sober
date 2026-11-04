@@ -1,0 +1,24 @@
+package main
+
+// opt の中身を通る相互参照 A { b B? } / B { a A? }
+
+type A struct {
+    x int
+    b B?
+}
+
+type B struct {
+    y int
+    a A?
+}
+
+func main() {
+    a := A{x: 1, b: B{y: 2, a: A{x: 3, b: nil}}}
+    b := a.b
+    if b != nil {
+        c := b.a
+        if c != nil {
+            println(a.x + b.y + c.x)
+        }
+    }
+}

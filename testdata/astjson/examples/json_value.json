@@ -1,0 +1,1142 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/json",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/iter",
+      "tok": 7
+    },
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "Event",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 13
+          },
+          {
+            "name": "payload",
+            "type": {
+              "k": "opt",
+              "type": {
+                "k": "name",
+                "name": "json.Value"
+              }
+            },
+            "tok": 16
+          },
+          {
+            "name": "tags",
+            "type": {
+              "k": "slice_of",
+              "elem": {
+                "k": "name",
+                "name": "json.Value"
+              },
+              "mut": false
+            },
+            "tok": 22
+          }
+        ]
+      },
+      "tok": 10,
+      "span": {
+        "start": 9,
+        "end": 31
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "numbers",
+      "type_params": [],
+      "params": [
+        {
+          "name": "v",
+          "type": {
+            "k": "name",
+            "name": "json.Value"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "switch",
+                "subjects": [
+                  {
+                    "k": "ident",
+                    "name": "v",
+                    "tok": 43
+                  }
+                ],
+                "cases": [
+                  {
+                    "patterns": [
+                      {
+                        "k": "type",
+                        "bind": null,
+                        "variant": "json.Number",
+                        "fields": [
+                          {
+                            "name": "lit",
+                            "sub": null,
+                            "tok": 50
+                          }
+                        ],
+                        "tok": 46
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 53
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 45
+                  },
+                  {
+                    "patterns": [
+                      {
+                        "k": "type",
+                        "bind": null,
+                        "variant": "json.Array",
+                        "fields": [
+                          {
+                            "name": "items",
+                            "sub": null,
+                            "tok": 60
+                          }
+                        ],
+                        "tok": 56
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "block",
+                            "stmts": [
+                              {
+                                "k": "bind",
+                                "names": [
+                                  "c"
+                                ],
+                                "mutable": true,
+                                "values": [
+                                  {
+                                    "k": "int",
+                                    "value": 0,
+                                    "tok": 67
+                                  }
+                                ],
+                                "tok": 64
+                              },
+                              {
+                                "k": "expr",
+                                "expr": {
+                                  "k": "for",
+                                  "gens": [
+                                    {
+                                      "names": [
+                                        "x"
+                                      ],
+                                      "src": {
+                                        "k": "ident",
+                                        "name": "items",
+                                        "tok": 72
+                                      },
+                                      "guards": [],
+                                      "tok": 70
+                                    }
+                                  ],
+                                  "body": {
+                                    "k": "block",
+                                    "stmts": [
+                                      {
+                                        "k": "assign",
+                                        "targets": [
+                                          {
+                                            "k": "ident",
+                                            "name": "c",
+                                            "tok": 74
+                                          }
+                                        ],
+                                        "op": "+=",
+                                        "values": [
+                                          {
+                                            "k": "call",
+                                            "callee": {
+                                              "k": "ident",
+                                              "name": "numbers",
+                                              "tok": 76
+                                            },
+                                            "args": [
+                                              {
+                                                "k": "ident",
+                                                "name": "x",
+                                                "tok": 78
+                                              }
+                                            ],
+                                            "tok": 77
+                                          }
+                                        ],
+                                        "tok": 74
+                                      }
+                                    ]
+                                  },
+                                  "tok": 69
+                                }
+                              },
+                              {
+                                "k": "expr",
+                                "expr": {
+                                  "k": "ident",
+                                  "name": "c",
+                                  "tok": 83
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 55
+                  },
+                  {
+                    "patterns": [
+                      {
+                        "k": "type",
+                        "bind": null,
+                        "variant": "json.Object",
+                        "fields": [
+                          {
+                            "name": "names",
+                            "sub": null,
+                            "tok": 92
+                          },
+                          {
+                            "name": "vals",
+                            "sub": null,
+                            "tok": 94
+                          }
+                        ],
+                        "tok": 88
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "block",
+                            "stmts": [
+                              {
+                                "k": "bind",
+                                "names": [
+                                  "c"
+                                ],
+                                "mutable": true,
+                                "values": [
+                                  {
+                                    "k": "int",
+                                    "value": 0,
+                                    "tok": 101
+                                  }
+                                ],
+                                "tok": 98
+                              },
+                              {
+                                "k": "expr",
+                                "expr": {
+                                  "k": "for",
+                                  "gens": [
+                                    {
+                                      "names": [
+                                        "i"
+                                      ],
+                                      "src": {
+                                        "k": "call",
+                                        "callee": {
+                                          "k": "selector",
+                                          "base": {
+                                            "k": "ident",
+                                            "name": "iter",
+                                            "tok": 106
+                                          },
+                                          "field": "Range",
+                                          "tok": 108
+                                        },
+                                        "args": [
+                                          {
+                                            "k": "int",
+                                            "value": 0,
+                                            "tok": 110
+                                          },
+                                          {
+                                            "k": "call",
+                                            "callee": {
+                                              "k": "ident",
+                                              "name": "len",
+                                              "tok": 112
+                                            },
+                                            "args": [
+                                              {
+                                                "k": "ident",
+                                                "name": "names",
+                                                "tok": 114
+                                              }
+                                            ],
+                                            "tok": 113
+                                          }
+                                        ],
+                                        "tok": 109
+                                      },
+                                      "guards": [],
+                                      "tok": 104
+                                    }
+                                  ],
+                                  "body": {
+                                    "k": "block",
+                                    "stmts": [
+                                      {
+                                        "k": "assign",
+                                        "targets": [
+                                          {
+                                            "k": "ident",
+                                            "name": "c",
+                                            "tok": 118
+                                          }
+                                        ],
+                                        "op": "+=",
+                                        "values": [
+                                          {
+                                            "k": "call",
+                                            "callee": {
+                                              "k": "ident",
+                                              "name": "numbers",
+                                              "tok": 120
+                                            },
+                                            "args": [
+                                              {
+                                                "k": "index",
+                                                "base": {
+                                                  "k": "ident",
+                                                  "name": "vals",
+                                                  "tok": 122
+                                                },
+                                                "idx": {
+                                                  "k": "ident",
+                                                  "name": "i",
+                                                  "tok": 124
+                                                },
+                                                "tok": 123
+                                              }
+                                            ],
+                                            "tok": 121
+                                          }
+                                        ],
+                                        "tok": 118
+                                      }
+                                    ]
+                                  },
+                                  "tok": 103
+                                }
+                              },
+                              {
+                                "k": "expr",
+                                "expr": {
+                                  "k": "ident",
+                                  "name": "c",
+                                  "tok": 130
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 87
+                  }
+                ],
+                "default": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 136
+                      }
+                    }
+                  ]
+                },
+                "tok": 42
+              }
+            ],
+            "tok": 41
+          }
+        ]
+      },
+      "tok": 32,
+      "bodiless": false,
+      "span": {
+        "start": 31,
+        "end": 142
+      },
+      "sig_end": 40
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "v"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "json.Object",
+                "elems": [
+                  {
+                    "key": "names",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "string"
+                      },
+                      "elems": [
+                        {
+                          "k": "strlit",
+                          "value": "name",
+                          "tok": 159
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "n",
+                          "tok": 161
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "xs",
+                          "tok": 163
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 155
+                    }
+                  },
+                  {
+                    "key": "vals",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "json.Value"
+                      },
+                      "elems": [
+                        {
+                          "k": "composite",
+                          "type_name": "json.String",
+                          "elems": [
+                            {
+                              "key": "v",
+                              "value": {
+                                "k": "strlit",
+                                "value": "a\"b",
+                                "tok": 180
+                              }
+                            }
+                          ],
+                          "tok": 174,
+                          "type_args": []
+                        },
+                        {
+                          "k": "composite",
+                          "type_name": "json.Number",
+                          "elems": [
+                            {
+                              "key": "lit",
+                              "value": {
+                                "k": "strlit",
+                                "value": "12345678901234567890",
+                                "tok": 189
+                              }
+                            }
+                          ],
+                          "tok": 183,
+                          "type_args": []
+                        },
+                        {
+                          "k": "composite",
+                          "type_name": "json.Array",
+                          "elems": [
+                            {
+                              "key": "items",
+                              "value": {
+                                "k": "slicelit",
+                                "elem": {
+                                  "k": "name",
+                                  "name": "json.Value"
+                                },
+                                "elems": [
+                                  {
+                                    "k": "composite",
+                                    "type_name": "json.Null",
+                                    "elems": [],
+                                    "tok": 204,
+                                    "type_args": []
+                                  },
+                                  {
+                                    "k": "composite",
+                                    "type_name": "json.Bool",
+                                    "elems": [
+                                      {
+                                        "key": "v",
+                                        "value": {
+                                          "k": "ident",
+                                          "name": "true",
+                                          "tok": 216
+                                        }
+                                      }
+                                    ],
+                                    "tok": 210,
+                                    "type_args": []
+                                  },
+                                  {
+                                    "k": "composite",
+                                    "type_name": "json.Number",
+                                    "elems": [
+                                      {
+                                        "key": "lit",
+                                        "value": {
+                                          "k": "strlit",
+                                          "value": "-1.5e3",
+                                          "tok": 225
+                                        }
+                                      }
+                                    ],
+                                    "tok": 219,
+                                    "type_args": []
+                                  }
+                                ],
+                                "mut": false,
+                                "tok": 198
+                              }
+                            }
+                          ],
+                          "tok": 192,
+                          "type_args": []
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 168
+                    }
+                  }
+                ],
+                "tok": 149,
+                "type_args": []
+              }
+            ],
+            "tok": 147
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 232
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "index",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "json",
+                        "tok": 234
+                      },
+                      "field": "Encode",
+                      "tok": 236
+                    },
+                    "idx": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "json",
+                        "tok": 238
+                      },
+                      "field": "Value",
+                      "tok": 240
+                    },
+                    "tok": 237
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "v",
+                      "tok": 243
+                    }
+                  ],
+                  "tok": 242
+                }
+              ],
+              "tok": 233
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 247
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "numbers",
+                    "tok": 249
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "v",
+                      "tok": 251
+                    }
+                  ],
+                  "tok": 250
+                }
+              ],
+              "tok": 248
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "d"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "json",
+                      "tok": 257
+                    },
+                    "field": "Parse",
+                    "tok": 259
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "bytes",
+                        "tok": 261
+                      },
+                      "args": [
+                        {
+                          "k": "strlit",
+                          "value": "{\"id\":7,\"payload\":{\"k\":[1,2,{\"z\":null}]},\"tags\":[\"x\",3]}",
+                          "tok": 263
+                        }
+                      ],
+                      "tok": 262
+                    }
+                  ],
+                  "tok": 260
+                },
+                "rhs": {
+                  "k": "block",
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "println",
+                          "tok": 268
+                        },
+                        "args": [
+                          {
+                            "k": "strlit",
+                            "value": "bad json",
+                            "tok": 270
+                          }
+                        ],
+                        "tok": 269
+                      }
+                    },
+                    {
+                      "k": "ret",
+                      "values": [],
+                      "tok": 273
+                    }
+                  ]
+                },
+                "tok": 266
+              }
+            ],
+            "tok": 255
+          },
+          {
+            "k": "bind",
+            "names": [
+              "t"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "json",
+                    "tok": 279
+                  },
+                  "field": "Tree",
+                  "tok": 281
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "d",
+                    "tok": 283
+                  },
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "json",
+                        "tok": 285
+                      },
+                      "field": "Root",
+                      "tok": 287
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "d",
+                        "tok": 289
+                      }
+                    ],
+                    "tok": 288
+                  }
+                ],
+                "tok": 282
+              }
+            ],
+            "tok": 277
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 293
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "index",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "json",
+                          "tok": 295
+                        },
+                        "field": "Encode",
+                        "tok": 297
+                      },
+                      "idx": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "json",
+                          "tok": 299
+                        },
+                        "field": "Value",
+                        "tok": 301
+                      },
+                      "tok": 298
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "t",
+                        "tok": 304
+                      }
+                    ],
+                    "tok": 303
+                  },
+                  "rhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "json",
+                        "tok": 307
+                      },
+                      "field": "Format",
+                      "tok": 309
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "d",
+                        "tok": 311
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "json",
+                            "tok": 313
+                          },
+                          "field": "Root",
+                          "tok": 315
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "d",
+                            "tok": 317
+                          }
+                        ],
+                        "tok": 316
+                      }
+                    ],
+                    "tok": 310
+                  },
+                  "tok": 306
+                }
+              ],
+              "tok": 294
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 322
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "numbers",
+                    "tok": 324
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "t",
+                      "tok": 326
+                    }
+                  ],
+                  "tok": 325
+                }
+              ],
+              "tok": 323
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "e"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "index",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "json",
+                        "tok": 332
+                      },
+                      "field": "Decode",
+                      "tok": 334
+                    },
+                    "idx": {
+                      "k": "ident",
+                      "name": "Event",
+                      "tok": 336
+                    },
+                    "tok": 335
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "d",
+                      "tok": 339
+                    },
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "json",
+                          "tok": 341
+                        },
+                        "field": "Root",
+                        "tok": 343
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "d",
+                          "tok": 345
+                        }
+                      ],
+                      "tok": 344
+                    }
+                  ],
+                  "tok": 338
+                },
+                "rhs": {
+                  "k": "block",
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "println",
+                          "tok": 350
+                        },
+                        "args": [
+                          {
+                            "k": "strlit",
+                            "value": "bad event",
+                            "tok": 352
+                          }
+                        ],
+                        "tok": 351
+                      }
+                    },
+                    {
+                      "k": "ret",
+                      "values": [],
+                      "tok": 355
+                    }
+                  ]
+                },
+                "tok": 348
+              }
+            ],
+            "tok": 330
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 359
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "index",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "json",
+                        "tok": 361
+                      },
+                      "field": "Encode",
+                      "tok": 363
+                    },
+                    "idx": {
+                      "k": "ident",
+                      "name": "Event",
+                      "tok": 365
+                    },
+                    "tok": 364
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "e",
+                      "tok": 368
+                    }
+                  ],
+                  "tok": 367
+                }
+              ],
+              "tok": 360
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 372
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "index",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "json",
+                        "tok": 374
+                      },
+                      "field": "Encode",
+                      "tok": 376
+                    },
+                    "idx": {
+                      "k": "ident",
+                      "name": "Event",
+                      "tok": 378
+                    },
+                    "tok": 377
+                  },
+                  "args": [
+                    {
+                      "k": "composite",
+                      "type_name": "Event",
+                      "elems": [
+                        {
+                          "key": "id",
+                          "value": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 385
+                          }
+                        },
+                        {
+                          "key": "payload",
+                          "value": {
+                            "k": "nil",
+                            "tok": 389
+                          }
+                        },
+                        {
+                          "key": "tags",
+                          "value": {
+                            "k": "slicelit",
+                            "elem": {
+                              "k": "name",
+                              "name": "json.Value"
+                            },
+                            "elems": [],
+                            "mut": false,
+                            "tok": 393
+                          }
+                        }
+                      ],
+                      "tok": 381,
+                      "type_args": []
+                    }
+                  ],
+                  "tok": 380
+                }
+              ],
+              "tok": 373
+            }
+          }
+        ]
+      },
+      "tok": 143,
+      "bodiless": false,
+      "span": {
+        "start": 142,
+        "end": 406
+      },
+      "sig_end": 146
+    }
+  ],
+  "consts": []
+}

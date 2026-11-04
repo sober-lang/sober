@@ -1,17 +1,17 @@
 package main
 
-// 負例（check / build とも名指しで拒否 — diag.NarrowAssign）: 絞った mut の T? への代入。`if x == nil { return }` の後ろの x は
-// int?（器）でなく int（中身）で、代入すると絞りの証明が壊れる。中身を変えたいときは別の名前に束縛する（`mut v := x`）
+// 負例（型の不一致）: 絞った mut の名前へ代入した文の後ろでは、名前は外の T? のセルに戻る（絞りが外れる）。
+// 代入の後ろで x を中身の int として使うには、もう一度絞る（`if x != nil { … }`）
 
-func get() int? {
-    return 3
+func get(n int) int? {
+    return if n > 0 { n } else { nil }
 }
 
 func main() {
-    mut x := get()
+    mut x := get(3)
     if x == nil {
         return
     }
-    x = x + 1
-    println(x)
+    x = get(x - 1)
+    println(x + 1)
 }

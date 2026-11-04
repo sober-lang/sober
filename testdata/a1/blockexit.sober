@@ -1,0 +1,47 @@
+package main
+
+// ブロックの出口・switch の腕・関数の結果で部分木を返す（子は親の表を握ったまま外へ出る）
+
+type N struct {
+    v int
+    kids []N
+}
+
+func mk(v int, d int) N {
+    if d == 0 {
+        return N{v: v, kids: []N{}}
+    }
+    return N{v: v, kids: []N{mk(v * 2, d - 1), mk(v * 2 + 1, d - 1)}}
+}
+
+func pick(n N, path []int) N {
+    mut cur := n
+    for i <- path {
+        cur = cur.kids[i]
+    }
+    return cur
+}
+
+func sum(n N) int {
+    mut s := n.v
+    for k <- n.kids {
+        s += sum(k)
+    }
+    return s
+}
+
+func main() {
+    t := mk(1, 5)
+    sub := {
+        x := pick(t, []int{1, 0})
+        pick(x, []int{1})
+    }
+    println(sub.v)
+    println(sum(sub))
+    w := switch len(t.kids) {
+    case 2: t.kids[1]
+    default: t
+    }
+    println(sum(w))
+    println(sum(N{v: 100, kids: []N{sub, w}}))
+}

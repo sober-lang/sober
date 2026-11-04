@@ -1,0 +1,13 @@
+package main
+
+// 負例: imm の列の要素の欄へは書けない（要素の欄への代入は要素の書き戻し — imm の列への書きと同じ名指しの拒否）
+
+type P struct {
+    a int
+}
+
+func main() {
+    ps := []P{P{a: 1}}
+    ps[0].a = 2
+    println(ps[0].a)
+}

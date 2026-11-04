@@ -1,0 +1,16 @@
+package main
+
+// 負例: 値の位置のラムダ（ここでは名前付き関数型の欄）の本体から局所の束縛のラムダは使えない — その本体は束縛のスコープの外で走る（language.md 25 節）
+
+type Op func(n int) int
+
+type R struct {
+    op Op
+}
+
+func main() {
+    k := 2
+    f := (n int) => n * k
+    r := R{op: (n) => f(n) + 1}
+    println(r.op(3))
+}

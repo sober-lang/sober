@@ -6,4 +6,4 @@ quick: falsified at trial 1 of 100 (seed 0, 356 shrink runs)
     Int(0, 9) = 9
   (4 items)
 quick: property returned false
-panic: quick.Falsified{} at std/quick/quick.sober:229:10
+panic: quick.Falsified{} at std/quick/quick.sober:230:10

@@ -36,3 +36,61 @@ func Bits(x float) int {
 func FromBits(b int) float {
     return sysFFromBits(b)
 }
+
+// x の 0 方向への切り捨て（整数部 — 小数部のビットを落とす。±Inf・NaN・|x| ≥ 2^52 はそのまま・|x| < 1 は符号を残した 0）
+@effects()
+func Trunc(x float) float {
+    b := Bits(x)
+    e := ((b >> 52) & 2047) - 1023
+    if e >= 52 {
+        return x
+    }
+    if e < 0 {
+        return FromBits(b & (0 - 9223372036854775807 - 1))
+    }
+    frac := (1 << (52 - e)) - 1
+    return FromBits(b - (b & frac))
+}
+
+// x 以下の最大の整数（-0.5 → -1・-0 → -0・±Inf・NaN はそのまま）
+@effects()
+func Floor(x float) float {
+    t := Trunc(x)
+    return if x < 0.0 && t != x { t - 1.0 } else { t }
+}
+
+// x 以上の最小の整数（-0.5 → -0・±Inf・NaN はそのまま）
+@effects()
+func Ceil(x float) float {
+    return -Floor(-x)
+}
+
+// x と y の小さいほう（どちらかが NaN ならその NaN・-0 と +0 では -0）
+@effects()
+func Min(x float, y float) float {
+    if x != x {
+        return x
+    }
+    if y != y {
+        return y
+    }
+    if x == 0.0 && y == 0.0 {
+        return FromBits(Bits(x) | Bits(y))
+    }
+    return if x < y { x } else { y }
+}
+
+// x と y の大きいほう（どちらかが NaN ならその NaN・-0 と +0 では +0）
+@effects()
+func Max(x float, y float) float {
+    if x != x {
+        return x
+    }
+    if y != y {
+        return y
+    }
+    if x == 0.0 && y == 0.0 {
+        return FromBits(Bits(x) & Bits(y))
+    }
+    return if x > y { x } else { y }
+}

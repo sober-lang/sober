@@ -1,0 +1,32 @@
+package main
+
+// 関数型の仮引数と slice を両方通る相互再帰（S と D の組 — next 形の middleware）: Mw は次の鎖 Next を受けて内側を呼ぶ
+
+type Mw func(r int, next Next) int
+
+type Next struct {
+    mws []Mw
+    i int
+}
+
+func call(n Next, r int) int {
+    if n.i >= len(n.mws) {
+        return r * 10
+    }
+    return n.mws[n.i](r, Next{mws: n.mws, i: n.i + 1})
+}
+
+func logMw(r int, next Next) int {
+    return call(next, r) + 100
+}
+
+func plusMw(r int, next Next) int {
+    return call(next, r + 1)
+}
+
+func main() {
+    k := 7
+    ms := []Mw{logMw, plusMw, (r int, next Next) => call(next, r + k), plusMw}
+    println(call(Next{mws: ms, i: 0}, 1))
+    println(call(Next{mws: ms, i: 2}, 1))
+}

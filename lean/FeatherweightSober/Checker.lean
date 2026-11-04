@@ -371,6 +371,14 @@ def typecheck (Δ : Defs) (Ξ : ChanTy) (Ψ : StoreTy) (f : Nat) : Nat → Nat �
       match typecheck Δ Ξ Ψ f b d Γ Λ c with
       | some (.own .tx _ _) => some .unit
       | _ => none
+  | b, d, Γ, Λ, .fold t e =>
+      match typecheck Δ Ξ Ψ f b d Γ Λ e with
+      | some t' => if t.foldOk && decide (t' = t.unfold) then some t else none
+      | none => none
+  | b, d, Γ, Λ, .unfold e =>
+      match typecheck Δ Ξ Ψ f b d Γ Λ e with
+      | some t => if t.foldOk then some t.unfold else none
+      | none => none
   -- 実行時の形はソースに現れない。型付けに自由度がある（loc の m）ので検査器の対象外
   | _, _, _, _, .loc _ _ => none
   | _, _, _, _, .blit _ => none
@@ -975,6 +983,39 @@ theorem typecheck_sound {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f : Nat} :
     exact .tryJ (ih ‹_›)
   | scopeV rs => intro _ _ _ _ _ h; simp [typecheck] at h
   | taskV rs n => intro _ _ _ _ _ h; simp [typecheck] at h
+  | fold t0 e ih =>
+    intro b d Γ Λ t h
+    simp only [typecheck] at h
+    split at h
+    · rename_i t' ht'
+      split at h
+      · rename_i hc
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+        cases h
+        simp only [Ty.foldOk, Bool.or_eq_true] at hc
+        rcases hc.1 with hm | hm
+        · obtain ⟨n, i, b0, rfl⟩ := Ty.musOk_mus hm
+          exact .foldS hm (hc.2 ▸ ih ht')
+        · obtain ⟨r, n, i, b0, rfl⟩ := Ty.muRsOk_muRs hm
+          exact .foldRs hm (hc.2 ▸ ih ht')
+      · cases h
+    · cases h
+  | unfold e ih =>
+    intro b d Γ Λ t h
+    simp only [typecheck] at h
+    split at h
+    · rename_i t' ht'
+      split at h
+      · rename_i hc
+        cases h
+        simp only [Ty.foldOk, Bool.or_eq_true] at hc
+        rcases hc with hm | hm
+        · obtain ⟨n, i, b0, rfl⟩ := Ty.musOk_mus hm
+          exact .unfoldS hm (ih ht')
+        · obtain ⟨r, n, i, b0, rfl⟩ := Ty.muRsOk_muRs hm
+          exact .unfoldRs hm (ih ht')
+      · cases h
+    · cases h
 
 /-- 完全性: ソース項の型付け導出があれば typecheck が同じ型を返す -/
 theorem typecheck_complete {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f : Nat} :
@@ -1266,6 +1307,22 @@ theorem typecheck_complete {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f : Nat} :
     intro hs
     simp only [Expr.src] at hs
     simp [typecheck, ih hs]
+  | foldS hok h ih =>
+    intro hs
+    simp only [Expr.src] at hs
+    simp [typecheck, ih hs, Ty.foldOk, hok]
+  | unfoldS hok h ih =>
+    intro hs
+    simp only [Expr.src] at hs
+    simp [typecheck, ih hs, Ty.foldOk, hok]
+  | foldRs hok h ih =>
+    intro hs
+    simp only [Expr.src] at hs
+    simp [typecheck, ih hs, Ty.foldOk, hok]
+  | unfoldRs hok h ih =>
+    intro hs
+    simp only [Expr.src] at hs
+    simp [typecheck, ih hs, Ty.foldOk, hok]
   | newch h1 h2 h3 h4 h5 h6 =>
     intro _
     simp only [typecheck, h1, h2, h3, h4, h5, h6, decide_true, Bool.and_self, if_true]

@@ -1,0 +1,2 @@
+sober: load error at examples/type_recursive_neg_value.sober:5:6: recursive type contains itself by value (directly, through [N]T or another type's field) — the size would be infinite; go through T?, []T or map[K]T, or keep a table and an index
+exit=1

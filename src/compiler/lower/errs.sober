@@ -43,7 +43,7 @@ func layoutErrsBody(st mut St, info int) error? {
     for i <- iter.Range(0, n) {
         td := desugar.ErrNode(mut st.d, i)
         pk := desugar.ErrPkg(mut st.d, i)
-        lay := layoutFields(mut st, pk, lA(nodeOf(mut st, nC(nodeOf(mut st, td)))))?
+        lay := layoutFields(mut st, pk, int(td), lA(nodeOf(mut st, nC(nodeOf(mut st, td)))))?
         vr := rec4(mut st, nodeOf(mut st, td).a, i, lay.fields, 0)
         desugar.HeapSet(mut st.d, vs + 1 + i, vr)
         if lay.words > mx {

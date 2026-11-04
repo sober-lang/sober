@@ -1,0 +1,7 @@
+package main
+
+// float に丸めて溢れる（±Inf になる）リテラルは拒否（language.md 37 節 — Go と同じ。0 に丸まる小さいリテラルは受ける）
+
+func main() {
+    println(1.0e309)
+}

@@ -1,0 +1,75 @@
+package main
+
+// 絞った mut の名前への代入で絞りが外れる（language.md 15 節）: 右辺は絞ったまま読み、代入した文の後ろでは名前は外の T? のセル。
+// while の条件の `x != nil` は周の頭で毎回絞り直す — 鎖の歩き `while c != nil { …; c = c.next }` がそのまま書ける
+
+type L struct {
+    v int
+    next L?
+}
+
+func build(n int) L {
+    if n == 0 {
+        return L{v: 0, next: nil}
+    }
+    return L{v: n, next: build(n - 1)}
+}
+
+func get(n int) int? {
+    return if n > 0 { n } else { nil }
+}
+
+func bump(p mut int?) {
+    p = get(7)
+}
+
+func main() {
+    // 鎖の歩き
+    l := build(10)
+    mut c := l.next
+    mut s := l.v
+    while c != nil {
+        s += c.v
+        c = c.next
+    }
+    println(s)
+    // 腕の中の代入の後に読む（x は int? — 絞り直すと中身）
+    mut x := get(3)
+    if x != nil {
+        y := x + 1
+        x = get(y * 2)
+        println(y, x == nil)
+        if x != nil {
+            println(x + 100)
+        }
+    }
+    // 複合代入・mut 渡しも書き（文の後ろで外れる）
+    mut z := get(5)
+    if z != nil {
+        z += 10
+        bump(mut z)
+        if z != nil {
+            println(z)
+        }
+    }
+    // 入れ子の絞り
+    mut a := get(1)
+    mut b := get(2)
+    if a != nil {
+        if b != nil {
+            a = b + a
+            b = nil
+        }
+        println(a == nil, b == nil)
+    }
+    // ループの中で書くと、そのループは頭から外れる（2 周目の頭は 1 周目の代入の後ろ）
+    mut d := get(3)
+    if d != nil {
+        mut i := 0
+        while i < 2 {
+            d = get(i)
+            i += 1
+        }
+        println(d == nil)
+    }
+}

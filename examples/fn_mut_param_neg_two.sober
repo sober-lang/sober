@@ -1,0 +1,9 @@
+package main
+
+// 負例: 関数型の mut 仮引数は 1 本まで — 2 つの状態は 1 つの struct にまとめて渡す（language.md 25 節）
+
+type Two func(a mut int, b mut int)
+
+func main() {
+    println(1)
+}

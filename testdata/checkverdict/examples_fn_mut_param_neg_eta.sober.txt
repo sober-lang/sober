@@ -1,0 +1,2 @@
+sober: load error at examples/fn_mut_param_neg_eta.sober:18:17: the mut parameters of this function are not where the function type has them — a function type marks its mut parameter (`func(st mut S, x int)`), and the function must take the same parameters mut
+exit=1

@@ -1,0 +1,15 @@
+package main
+
+// 負例: 関数値の mut 仮引数の席には `mut x` を渡す（印の無い実引数は値渡し — language.md 25 節）
+
+type Step func(acc mut int, x int)
+
+func run(f Step) int {
+    mut s := 0
+    f(s, 2)
+    return s
+}
+
+func main() {
+    println(run((a, x) => { a += x }))
+}

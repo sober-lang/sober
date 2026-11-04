@@ -1,0 +1,42 @@
+package main
+
+// 関数型の mut の席 × 再帰の組の `T?` の欄（1 セルの箱）: 箱の欄を mut の席へ渡す形（`f(mut k.next, …)`）は、値の位置の関数値・
+// 展開される関数の関数型の仮引数・局所の束縛のラムダのどれでも、呼んだ後に欄が書き換わる
+
+type L struct {
+    v int
+    next L?
+}
+
+type Setter func(n mut L?, v int)
+
+func setTo(n mut L?, v int) {
+    n = L{v: v, next: n}
+}
+
+func clear(n mut L?, v int) {
+    n = nil
+}
+
+func count(l L?) int {
+    return if l == nil { 0 } else { 1 + count(l.next) }
+}
+
+func both(f func(n mut L?, v int), k mut L) {
+    f(mut k.next, 8)
+    f(mut k.next, 9)
+}
+
+func main() {
+    mut k := L{v: 1, next: L{v: 2, next: nil}}
+    fs := []Setter{setTo, clear, setTo}
+    for f <- fs {
+        f(mut k.next, 5)
+    }
+    println(count(k))
+    both((n, v) => { n = L{v: v, next: n} }, mut k)
+    println(count(k))
+    drop := (n mut L?, v int) => { n = nil }
+    drop(mut k.next, 0)
+    println(count(k))
+}

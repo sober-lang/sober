@@ -1,0 +1,20 @@
+package main
+
+// ジェネリックの再帰 union: 組は型引数ごとに 1 つ（List[int] の t の要素は List[int]）
+
+type List[T] union {
+    Nil {}
+    Cons { h T; t []List[T] }
+}
+
+func sum(l List[int]) int {
+    return switch l {
+    case Cons{h, t}: if len(t) > 0 { h + sum(t[0]) } else { h }
+    default: 0
+    }
+}
+
+func main() {
+    l := Cons[int]{h: 1, t: []List[int]{Cons[int]{h: 2, t: []List[int]{}}}}
+    println(sum(l))
+}

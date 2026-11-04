@@ -1,0 +1,37 @@
+package main
+
+// 反復の region の約束と再帰型の境界コピー: 反復を越える再帰型の値（cons の鎖）の写しは補助 rt.rec_relocate が担う。
+// 補助の作業スタックを今の深度の region に取ると、反復の region が畳まれたループでは反復ごとに外の region へ 1.5 KiB 積もる
+// （壊れると 20000 → 200000 回で 32 → 320 MB）。積もるのは節点そのもの（数十バイト / 反復）だけ — scripts/iterregion.sh が
+// 回数を 10 倍にして増分を節点あたりで見る
+
+import "std/convert"
+import "std/iter"
+import "std/os"
+
+type L struct {
+    v int
+    next []L
+}
+
+func main() {
+    args, e := os.Args()
+    mut n := 2000
+    if e == nil && len(args) >= 2 {
+        x, pe := convert.ParseInt(args[1])
+        if pe == nil {
+            n = x
+        }
+    }
+    mut l := L{v: 0, next: []L{}}
+    for i <- iter.Range(1, n + 1) {
+        l = L{v: i, next: []L{l}}
+    }
+    mut s := 0
+    mut c := l
+    while len(c.next) > 0 {
+        s += c.v
+        c = c.next[0]
+    }
+    println(s == n * (n + 1) / 2)
+}

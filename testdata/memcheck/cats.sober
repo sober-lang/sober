@@ -1,0 +1,18 @@
+package main
+
+// 反復のたびに 2 本の連結を積む（単独の伸長ではない — 反復数を掛ける）
+func cats() int {
+    mut s := ""
+    mut t := ""
+    mut i := 0
+    while i < 40 {
+        s = s + "abcdefgh"
+        t = t + "ijklmnop"
+        i += 1
+    }
+    return len(bytes(s)) + len(bytes(t))
+}
+
+func main() {
+    println(cats())
+}

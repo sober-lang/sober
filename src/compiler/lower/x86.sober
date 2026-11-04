@@ -570,6 +570,7 @@ type XPar struct {
     ends []int     // 群の中の関数ごとの出した長さの末尾（段 3 R2 — 関数ごとに [begs, ends) で切る。入口 = starts は begs から線の跨ぎの詰め物の分だけ後ろでありうる）
     begs []int     // 群の中の関数ごとの吐き始めの位置（整列の後・xFunc の前）
     xmms []int     // 関数ごとの xmm の組（同上）
+    frs []int      // --mem-report のフレーム [関数の記録, バイト]…（それ以外は空）
 }
 
 // 1 つの群（関数の記録の列・命令の数）
@@ -582,7 +583,7 @@ type XGroup struct {
 func xParCfg(st mut St) []int {
     // 末尾の語 = SOBER_XDBG の値の長さ。値のバイト列はその後ろへ（xdbgCfg — 鍵にも入るので値を変えればキャッシュに当たらない）
     return xdbgCfg([]int{int(st.rtCopy), int(st.rtCopy8), int(st.rtGrow), int(st.rtGrow8), int(st.rtGrowTry), int(st.rtMapGrow), int(st.rtReloc), int(st.rtReloc8),
-        st.trapG, if st.trapUse { 1 } else { 0 }, if st.taskUse { 1 } else { 0 }, if st.xcopy { 1 } else { 0 }, st.xLay, int(st.rtPanic), int(st.rtPanicMem), if st.slotPoison { 1 } else { 0 }, if st.frStat { 1 } else { 0 }, int(st.rtMatchLen), st.rtMut, int(st.rtJClean), int(st.rtErrReloc), len(st.xdbgPat)}, st.xdbgPat)
+        st.trapG, if st.trapUse { 1 } else { 0 }, if st.taskUse { 1 } else { 0 }, if st.xcopy { 1 } else { 0 }, st.xLay, int(st.rtPanic), int(st.rtPanicMem), if st.slotPoison { 1 } else { 0 }, if st.frStat { 1 } else { 0 }, int(st.rtMatchLen), st.rtMut, int(st.rtJClean), int(st.rtErrReloc), if st.memRep { 1 } else { 0 }, len(st.xdbgPat)}, st.xdbgPat)
 }
 
 // 整列（配置の土台）: 関数の先頭とループの頭を XA_* バイトの境界へ nop で詰める（最適化のバックエンドだけ — 写しのバックエンドは
@@ -707,6 +708,9 @@ func xParMerge(st mut St, c mut table.Table[byte], fx mut table.Table[int], fsta
         xFixAdd(mut fx, base + o.fix[3 * k], o.fix[3 * k + 1], o.fix[3 * k + 2])
     }
     st.xXmm = st.xXmm | o.xmm
+    for k <- iter.Range(0, len(o.frs)) {
+        table.Push(mut st.memFr, o.frs[k])
+    }
 }
 
 // 関数の命令の数（群の太さの物差し）
@@ -754,7 +758,10 @@ func xParGroup(g XGroup, hf table.Frozen[int], cfg []int, addr []int, fr []int, 
     // rt.jclean の手書きの本体（xJCleanBody — 変異 25〜27 は開発用 --rt-mutant）
     st.rtJClean = FnRef(cfg[19])
     st.rtErrReloc = FnRef(cfg[20])
-    st.xdbgPat = xdbgPatOf(cfg, cfg[21])
+    // メモリの上界の報告（--mem-report）: フレームを子の作業域 memFr に積み、結果（XPar.frs）で親へ返す
+    st.memRep = cfg[21] == 1
+    st.memFr = table.Table[int]{}
+    st.xdbgPat = xdbgPatOf(cfg, cfg[22])
     // 段 3 の例外の印（xRegCc）
     st.xAddr = addr
     st.xXmm = 0
@@ -786,7 +793,11 @@ func xParGroup(g XGroup, hf table.Frozen[int], cfg []int, addr []int, fr []int, 
     for k <- iter.Range(0, table.Len(mut fx)) {
         fix = append(fix, table.Get(mut fx, k))
     }
-    return XPar{freeze(code), freeze(starts), freeze(fix), st.xXmm, freeze(ends), freeze(begs), freeze(xmms)}
+    mut frs := mut []int{}
+    for k <- iter.Range(0, table.Len(mut st.memFr)) {
+        frs = append(frs, table.Get(mut st.memFr, k))
+    }
+    return XPar{freeze(code), freeze(starts), freeze(fix), st.xXmm, freeze(ends), freeze(begs), freeze(xmms), freeze(frs)}
 }
 
 // 関数に task の切替 / 罠（OpTSwitch・OpTStart・OpTrapI）があるか（段 6 P4-6 — 積む xmm の組をプログラム全体の和で決めるので最後に吐く）
@@ -1578,6 +1589,10 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
         xSlotValid(mut st, mut e)
     }
     frame := (0 - bottom + 15) / 16 * 16
+    if st.memRep {
+        table.Push(mut st.memFr, int(f))
+        table.Push(mut st.memFr, frame)
+    }
     if st.frStat && frame > 0 {
         xFrameStat(mut st, f, []int{frame, 8 * slotWords, 8 * e.zCnt, 8 * e.nsave, 0 - bottom - 8 * slotWords - 8 * e.nsave, nsp})
     }

@@ -1,0 +1,20 @@
+package main
+
+// 負例（型の不一致）: 絞った領域の中のループが本体で x に書くなら、x はループの頭から外の T? のセル — 1 周目の代入の後ろに
+// 2 周目の頭が来るので、字面で代入より前の読み（`x + 1`）も中身としては読めない
+
+func get(n int) int? {
+    return if n > 0 { n } else { nil }
+}
+
+func main() {
+    mut x := get(3)
+    if x != nil {
+        mut i := 0
+        while i < 2 {
+            println(x + 1)
+            x = get(i)
+            i += 1
+        }
+    }
+}

@@ -10,6 +10,8 @@
 |---|---|---|
 | [`std/io`](../std/io.ja.md) | ファイル・標準入出力・ディレクトリ | `ReadFile`・`WriteFile`・`ReadStdin`・`WriteStdout`・`WriteStderr`・`ReadDir`・開いたファイル `Open` / `Close`（`defer io.Close(f)` を直後に）/ `ReadAll`・切片を写さずに借りる読み `for c <- io.Chunks(f)?`（`Lines`・位置を指定する `ChunksAt`・中身は `Raw`）・バッファつきの `Writer`（`WriteString` / `WriteByte` / `Flush`）。エラーのラベルは `NotFound`・`Denied`・`Timeout`・`Expired`（囲む `task.Run` の期限が尽きた後）・`Closed`・`Other` |
 | [`std/os`](../std/os.ja.md) | プロセスと環境 | `Args`・`Getenv`・`Run`（子プロセス）・`Mkdir`・`Rename`・`ModTime`・`WriteMode`・`Sleep` |
+| [`std/cli`](../std/cli.ja.md) | コマンド行の解析と使い方の文書 | フラグ・位置引数・コマンドを const の表で宣言（`BoolFlag`・`StrFlag`・`IntFlag`・`ChoiceFlag`・`ListFlag`・`Positional`・`Command`・`App`）・`Main` が解析・`--help`・`--version`・誤用の印字・コマンドへの振り分けを持つ・値は `Str` / `Int` / `Bool` / `Pos` で引く |
+| [`std/env`](../std/env.ja.md) | 環境変数の宣言の表 | 読む変数を const の表で宣言（`StrVar`・`IntVar`・`BoolVar`・`Table`）・`Load` が入場で 1 回だけ全部を読んで検査し、凍った表 `Values` を返す・一覧は `Spec`（[環境変数](env.ja.md)） |
 
 ## テキスト
 
@@ -80,10 +82,19 @@ slice（`[]T`）と map（`map[K]V`）は言語の組み込みです（`append`�
 | [`std/crypto/x25519`](../std/crypto-x25519.ja.md)・[`std/crypto/rsa`](../std/crypto-rsa.ja.md) | 鍵共有と署名 | `Base` / `Shared`・`ParsePKCS8` / `SignPSS` / `VerifyPSS` |
 | [`std/crypto/pem`](../std/crypto-pem.ja.md) | PEM の読み | `Parse` |
 
+## テスト
+
+| package | 用途 | 主なもの |
+|---|---|---|
+| [`std/quick`](../std/quick.ja.md) | プロパティベーステスト | 選択の源 `Src`（`New` / `Named` / `Seed`）から値を引き（`Int`・`Bool`・`Pick`・`Elem`・`Bytes`・`String`・`Runes`・`Slice`）、`Check` がプロパティを試行ごとに呼ぶ・`Assume`（試行を捨てる条件）・反例は縮めて印字 |
+| [`std/testing`](../std/testing.ja.md) | `assert` の裏方 | 失敗のラベル `AssertFailed` と印字 `Report`（`assert(e)` / `assert(e, label)` は `_test.sober` の中で使う — import は要らない） |
+| [`std/testing/cell`](../std/testing-cell.ja.md) | テストの double が状態を貯める置き場 | const の把手 `Cell[T]{init: …}` に `Get` / `Set` / `Update`（`_test.sober` と `_double.sober` だけが import できる） |
+
+書き方の通しの例は [テストの書き方](testing.ja.md) にあります。
+
 ## その他
 
 | package | 用途 |
 |---|---|
-| [`std/testing`](../std/testing.ja.md) | テストの補助（`assert` の失敗のラベル） |
 | [`std/layout`](../std/layout.ja.md) | バイナリのレイアウトの宣言（`@layout`）の補助 |
 | [`std/binary`](../std/binary.ja.md) | バイト列の語単位の読み（`Load64` — 8 バイトを little-endian で） |

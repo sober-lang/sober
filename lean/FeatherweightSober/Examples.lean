@@ -1921,4 +1921,208 @@ example : (runAny [] false 50 (loadT (letE (par (lit 1) (lit 2)) (lit 0))) ∅).
 example : (runAny [] false 50 (loadT (scope .int (letE (newchan 0 .int) (lit 0)))) ∅).1.mainDead = true := by native_decide
 example : (stepN [] 20 (load (letE (newchan 0 .int) (lit 0))) ∅).1 = .ret [] [] (lit 0) := by native_decide
 
+/-! ## 再帰型（iso — language.md 1 節の S）: next 形のミドルウェア
+
+`type Middleware func(r Request, next Next) Response` / `type Next struct { mws []Middleware; i int }` のコアの形。
+Mw = μM. fn (int × ([]M × int)) int — 再帰の変数は関数型の中の slice の要素に出る。値は fold で作り（関数値の型 = 1 段の展開）、
+slice から取り出したら unfold して callv で呼ぶ。0 = callNext（i が範囲内なら mws[i] に (r, (mws, i + 1)) を渡す・尽きたら r）、
+1 = logMw（next の結果に 100 を足す）、2 = plusMw（r に 1 を足して next へ） -/
+def tMwE : Ty := .mu1 (.fn (.prod .int (.prod (.slice false 0 (.rvar 0)) .int)) .int)
+
+def mwΔ : Defs :=
+  [ { param := .prod .int (.prod (.slice false 0 tMwE) .int), ret := .int,
+      body := Expr.ite (Expr.lt (Expr.snd (Expr.snd (var 0))) (Expr.lenE (Expr.fst (Expr.snd (var 0)))))
+        (Expr.callv (Expr.unfold (Expr.index (Expr.fst (Expr.snd (var 0))) (Expr.snd (Expr.snd (var 0))) none))
+          (pair (Expr.fst (var 0)) (pair (Expr.fst (Expr.snd (var 0))) (add (Expr.snd (Expr.snd (var 0))) (lit 1)))))
+        (Expr.fst (var 0)) }
+  , { param := .prod .int (.prod (.slice false 0 tMwE) .int), ret := .int,
+      body := add (Expr.call 0 [] (var 0)) (lit 100) }
+  , { param := .prod .int (.prod (.slice false 0 tMwE) .int), ret := .int,
+      body := Expr.call 0 [] (pair (add (Expr.fst (var 0)) (lit 1)) (Expr.snd (var 0))) } ]
+
+example : checkDefs mwΔ = true := by native_decide
+example : tMwE.musOk = true := by native_decide
+/-- 関数値の型は μ の 1 段の展開そのもの（fold の前提） -/
+example : tMwE.unfold = .fn (.prod .int (.prod (.slice false 0 tMwE) .int)) .int := by native_decide
+
+/-- 鎖 [log, plus] を 5 で走らせる: log → plus（5 + 1）→ 尽きて 6 → log が 100 を足して 106 -/
+def mw1 : Expr :=
+  block (Expr.call 0 [] (pair (lit 5)
+    (pair (Expr.append (Expr.append (Expr.mkslice false tMwE) (Expr.fold tMwE (Expr.fnref 1 [])))
+      (Expr.fold tMwE (Expr.fnref 2 []))) (lit 0))))
+
+example : typecheck mwΔ ∅ [] 0 0 0 [] [] mw1 = some .int := by native_decide
+example : (stepN mwΔ 400 (load mw1) ∅).1 = .ret [] [] (lit 106) := by native_decide
+example : programFromJson 200 (programToJson mwΔ mw1) = .ok (mwΔ, mw1) := rfl
+
+/-- 否定例 1: fold せずに関数値を slice に入れると拒否（要素型は μ — 関数型そのものではない。iso なので暗黙に畳まない） -/
+example : typecheck mwΔ ∅ [] 0 0 0 [] []
+    (block (Expr.append (Expr.mkslice false tMwE) (Expr.fnref 1 []))) = none := by native_decide
+/-- 否定例 2: unfold せずに μ の値を呼ぶと拒否（callv は関数型を要る） -/
+example : typecheck mwΔ ∅ [] 0 0 0 [] []
+    (block (Expr.callv (Expr.fold tMwE (Expr.fnref 1 [])) (pair (lit 0) (pair (Expr.mkslice false tMwE) (lit 0))))) = none := by native_decide
+/-- 否定例 3: S の組（mus）の成分は関数型に限る — データの再帰を S で書くと fold できない（musOk の外 — データは D の muRs） -/
+example : typecheck [] ∅ [] 0 0 0 [] []
+    (block (Expr.fold (.mu1 (.slice false 0 (.rvar 0))) (Expr.mkslice false (.mu1 (.slice false 0 (.rvar 0)))))) = none := by native_decide
+/-- 否定例 4: 展開と違う型の関数値を fold すると拒否（同一の μ だけ — 部分型の緩めはしない）。対照 = 展開と同じ型の callNext は受理 -/
+example : typecheck mwΔ ∅ [] 0 0 0 [] [] (block (Expr.fold tMwE (Expr.fnref 0 []))) = some tMwE := by native_decide
+example : typecheck [ { param := .int, ret := .int, body := var 0 } ] ∅ [] 0 0 0 [] []
+    (block (Expr.fold tMwE (Expr.fnref 0 []))) = none := by native_decide
+
+/-! ## 再帰型 D（slice の要素を通る再帰 — language.md 1 節）: 木を組んで数える
+
+Tree = μX. []X（子の slice だけを持つ節）。値は D の μ（幅 1 の組 `muR1 r b` = `muRs r 1 0 (b × unit)` — 座標 r の region に木が 1 つ閉じる）。
+0 = build（深さ n の完全二分木を自フレームで組んで返す — 返り境界の写しが木ごと呼び手へ: 燃料つきの relocTo が μ を開く）、
+1 = count（節の数 — unfold して子の slice を 2 へ）、2 = cnt（子を順に count して足す） -/
+def tTreeB : Ty := .slice false 0 (.rvar 0)
+def tTree (r : Nat) : Ty := .muR1 r tTreeB
+
+def treeΔ : Defs :=
+  [ { param := .int, ret := tTree 1,
+      body := Expr.ite (Expr.lt (var 0) (lit 1))
+        (Expr.fold (tTree 1) (Expr.mkslice false (tTree 1)))
+        (Expr.fold (tTree 1) (Expr.append (Expr.append (Expr.mkslice false (tTree 1))
+          (Expr.call 0 [] (add (var 0) (lit (-1))))) (Expr.call 0 [] (add (var 0) (lit (-1)))))) }
+  , { param := tTree 0, ret := .int,
+      body := add (lit 1) (Expr.call 2 [] (pair (Expr.unfold (var 0)) (lit 0))) }
+  , { param := .prod (.slice false 0 (tTree 0)) .int, ret := .int,
+      body := Expr.ite (Expr.lt (Expr.snd (var 0)) (Expr.lenE (Expr.fst (var 0))))
+        (add (Expr.call 1 [] (Expr.index (Expr.fst (var 0)) (Expr.snd (var 0)) (some (tTree 0))))
+          (Expr.call 2 [] (pair (Expr.fst (var 0)) (add (Expr.snd (var 0)) (lit 1)))))
+        (lit 0) } ]
+
+example : checkDefs treeΔ = true := by native_decide
+example : (tTree 1).muRsOk = true := by native_decide
+/-- 1 段の展開 = 座標 1 の slice（要素は同じ座標の木） -/
+example : (tTree 1).unfold = .slice false 1 (tTree 1) := by native_decide
+
+/-- 深さ 3 の完全二分木の節の数 = 15（build の返り境界ごとに部分木が呼び手の region へ写る） -/
+def tree1 : Expr := block (Expr.call 1 [] (Expr.call 0 [] (lit 3)))
+
+example : typecheck treeΔ ∅ [] 0 0 0 [] [] tree1 = some .int := by native_decide
+example : (stepN treeΔ 6000 (load tree1) ∅).1 = .ret [] [] (lit 15) := by native_decide
+example : programFromJson 200 (programToJson treeΔ tree1) = .ok (treeΔ, tree1) := rfl
+
+/-- 否定例 1: 展開と違う型の中身を fold すると拒否（int の slice は木の展開ではない） -/
+example : typecheck [] ∅ [] 0 0 0 [] []
+    (block (Expr.fold (tTree 0) (Expr.mkslice false .int))) = none := by native_decide
+/-- 否定例 2: ガードのない再帰（直の自己欄 — I）は muRsOk の外 = fold できない -/
+example : (Ty.muR1 0 (.prod .int (.rvar 0))).muRsOk = false := by native_decide
+example : typecheck [] ∅ [] 0 0 0 [] []
+    (block (Expr.fold (.muR1 0 (.prod .int (.rvar 0))) (pair (lit 0) (lit 0)))) = none := by native_decide
+/-- 否定例 3: 本体が局所座標でない（region を跨ぐ — 木は 1 region）μ は fold できない -/
+example : (Ty.muR1 0 (.slice false 1 (.rvar 0))).muRsOk = false := by native_decide
+/-- 否定例 4: 木の値を unfold せずに slice として使うと拒否（iso — 暗黙に開かない） -/
+example : typecheck treeΔ ∅ [] 0 0 0 [] []
+    (block (Expr.lenE (Expr.call 0 [] (lit 1)))) = none := by native_decide
+/-- 燃料: 燃料 0 の写しは μ を開けない（none）・型が μ を含まなければ燃料に依らず成功する。
+機械の燃料（relocFuel = 値の大きさ + ヒープのセルの値の大きさの和 + 1）なら写せる（型付きなら一般に — relocTo_ne_none） -/
+example : relocN 0 0 (tTree 0) [[(false, .fold (tTree 1) (.slicev false 1 0 0))], []] (.fold (tTree 1) (.slicev false 1 0 0))
+    = none := by native_decide
+example : relocN 0 0 .int [[]] (lit 7) = some ([[]], lit 7) := by native_decide
+example : relocTo 0 (tTree 0) [[(false, .fold (tTree 1) (.slicev false 1 0 0))], []] (.fold (tTree 1) (.slicev false 1 0 0)) ≠ none := by
+  native_decide
+
+/-! ## 同時の μ（相互再帰の組 — language.md 1 節）: A ↔ B を組んで数える
+
+A { as []A; bs []B } / B { bs []B; as []A } — 宣言ごとに 1 束縛の μ を付ける符号化では B の型が文脈で変わる形（帰還頂点集合 2 — 正準でない）。
+組を 1 つの束縛 `muRs r 2 i AB` にすると、A の展開の要素の型がそのまま B の型（i = 1）になる — `a.bs[0]` を B を受ける関数へ渡せる。
+0 = buildA / 1 = buildB（深さ n の木を自フレームで組んで返す — 返り境界の写しが組の μ を開く）・2 = countA / 3 = countB・4 = cntA / 5 = cntB（子の slice を順に） -/
+def abBs : Ty := .prod (.prod (.slice false 0 (.rvar 0)) (.slice false 0 (.rvar 1)))
+  (.prod (.prod (.slice false 0 (.rvar 1)) (.slice false 0 (.rvar 0))) .unit)
+def tAB (r i : Nat) : Ty := .muRs r 2 i abBs
+
+def abΔ : Defs :=
+  let bld (me other : Nat) (i : Nat) : Expr :=
+    Expr.ite (Expr.lt (var 0) (lit 1))
+      (Expr.fold (tAB 1 i) (pair (Expr.mkslice false (tAB 1 i)) (Expr.mkslice false (tAB 1 (1 - i)))))
+      (Expr.fold (tAB 1 i) (pair (Expr.append (Expr.mkslice false (tAB 1 i)) (Expr.call me [] (add (var 0) (lit (-1)))))
+        (Expr.append (Expr.mkslice false (tAB 1 (1 - i))) (Expr.call other [] (add (var 0) (lit (-1)))))))
+  let count (cMe cOther : Nat) : Expr :=
+    add (lit 1) (add (Expr.call cMe [] (pair (Expr.fst (Expr.unfold (var 0))) (lit 0)))
+      (Expr.call cOther [] (pair (Expr.snd (Expr.unfold (var 0))) (lit 0))))
+  let cnt (i : Nat) (counter self : Nat) : Expr :=
+    Expr.ite (Expr.lt (Expr.snd (var 0)) (Expr.lenE (Expr.fst (var 0))))
+      (add (Expr.call counter [] (Expr.index (Expr.fst (var 0)) (Expr.snd (var 0)) (some (tAB 0 i))))
+        (Expr.call self [] (pair (Expr.fst (var 0)) (add (Expr.snd (var 0)) (lit 1)))))
+      (lit 0)
+  [ { param := .int, ret := tAB 1 0, body := bld 0 1 0 }
+  , { param := .int, ret := tAB 1 1, body := bld 1 0 1 }
+  , { param := tAB 0 0, ret := .int, body := count 4 5 }
+  , { param := tAB 0 1, ret := .int, body := count 5 4 }
+  , { param := .prod (.slice false 0 (tAB 0 0)) .int, ret := .int, body := cnt 0 2 4 }
+  , { param := .prod (.slice false 0 (tAB 0 1)) .int, ret := .int, body := cnt 1 3 5 } ]
+
+example : checkDefs abΔ = true := by native_decide
+example : (tAB 1 0).muRsOk = true ∧ (tAB 1 1).muRsOk = true := by native_decide
+/-- 正準: A の展開 = (A の slice, B の slice) — 要素の型は組の型そのもの（文脈で変わらない） -/
+example : (tAB 1 0).unfold = .prod (.slice false 1 (tAB 1 0)) (.slice false 1 (tAB 1 1)) := by native_decide
+example : (tAB 1 1).unfold = .prod (.slice false 1 (tAB 1 1)) (.slice false 1 (tAB 1 0)) := by native_decide
+
+/-- 深さ 3 の木の節の数 = 15（A と B が交互に入れ子 — 返り境界ごとに組の μ を開いて呼び手の region へ写る） -/
+def ab1 : Expr := block (Expr.call 2 [] (Expr.call 0 [] (lit 3)))
+
+example : typecheck abΔ ∅ [] 0 0 0 [] [] ab1 = some .int := by native_decide
+example : (stepN abΔ 20000 (load ab1) ∅).1 = .ret [] [] (lit 15) := by native_decide
+example : programFromJson 200 (programToJson abΔ ab1) = .ok (abΔ, ab1) := rfl
+
+/-- 否定例 1: 組の別の成分の展開を fold すると拒否（A の中身に B の展開） -/
+example : typecheck [] ∅ [] 0 0 0 [] []
+    (block (Expr.fold (tAB 0 0) (pair (Expr.mkslice false (tAB 0 1)) (Expr.mkslice false (tAB 0 0))))) = none := by native_decide
+/-- opt を通る閉路（A { b B? } / B { a A? } — 値の I 族・実装は 1 セルの箱）は整形 -/
+example : (Ty.muRs 0 2 0 (.prod (.opt (.rvar 1)) (.prod (.opt (.rvar 0)) .unit))).muRsOk = true := by native_decide
+/-- 否定例 2: ガードの無い閉路（A { b B } / B { a A } — 住人のいない型）は整形の外 -/
+example : (Ty.muRs 0 2 0 (.prod (.rvar 1) (.prod (.rvar 0) .unit))).muRsOk = false := by native_decide
+/-- cons の鎖（L { v int; next L? } — opt を通る再帰・値の I 族）: 0 = 長さ n + 1 の鎖を組む（返り境界ごとに μ と opt を開いて写る）・
+1 = 値の和。和 3 + 2 + 1 + 0 = 6 -/
+def tCons (r : Nat) : Ty := .muRs r 1 0 (.prod (.prod .int (.opt (.rvar 0))) .unit)
+def consΔ : Defs :=
+  [ { param := .int, ret := tCons 1,
+      body := Expr.ite (Expr.lt (var 0) (lit 1)) (Expr.fold (tCons 1) (pair (var 0) (Expr.nil (tCons 1))))
+        (Expr.fold (tCons 1) (pair (var 0) (Expr.some (Expr.call 0 [] (add (var 0) (lit (-1))))))) }
+  , { param := tCons 0, ret := .int,
+      body := add (Expr.fst (Expr.unfold (var 0))) (Expr.ifnil (Expr.snd (Expr.unfold (var 0))) (lit 0) (Expr.call 1 [] (var 0))) } ]
+example : (tCons 0).muRsOk = true := by native_decide
+example : checkDefs consΔ = true := by native_decide
+def cons1 : Expr := block (Expr.call 1 [] (Expr.call 0 [] (lit 3)))
+example : typecheck consΔ ∅ [] 0 0 0 [] [] cons1 = some .int := by native_decide
+example : (stepN consΔ 20000 (load cons1) ∅).1 = .ret [] [] (lit 6) := by native_decide
+/-- 絞り → 代入 → 絞りの消滅（language.md 15 節 — 鎖の歩き `mut c := l.next; mut s := l.v; while c != nil { s += c.v; c = c.next }` の脱糖後の形）:
+絞りは ifnil の some の腕の新しい束縛（中身の写し — var 0）で、代入の的は外の T? のセル。代入の後ろの名前は外のセル（deref）を読む。
+周の頭の ifnil が毎回絞り直す。和 3 + 2 + 1 + 0 = 6 -/
+def walk1 : Expr :=
+  block (letE (Expr.call 0 [] (lit 3))
+    (letE (alloc true (Expr.snd (Expr.unfold (var 0))))
+      (letE (alloc true (Expr.fst (Expr.unfold (var 1))))
+        (letE (whileE (Expr.ifnil (deref (var 1)) (lt (lit 1) (lit 0)) (lt (lit 0) (lit 1)))
+                 (Expr.ifnil (deref (var 1)) (Expr.unreach .unit)
+                    (letE (assign (var 1) (add (deref (var 1)) (Expr.fst (Expr.unfold (var 0)))))
+                      (assign (var 3) (Expr.snd (Expr.unfold (var 1)))))))
+          (deref (var 1))))))
+example : typecheck consΔ ∅ [] 0 0 0 [] [] walk1 = some .int := by native_decide
+example : (stepN consΔ 20000 (load walk1) ∅).1 = .ret [] [] (lit 6) := by native_decide
+/-- 否定例: 代入の後ろで名前を中身として読む形（外のセルは T? — 開かずに欄は読めない）は型が付かない -/
+def walkStale : Expr :=
+  block (letE (Expr.call 0 [] (lit 3))
+    (letE (alloc true (Expr.snd (Expr.unfold (var 0))))
+      (letE (alloc true (Expr.fst (Expr.unfold (var 1))))
+        (letE (whileE (Expr.ifnil (deref (var 1)) (lt (lit 1) (lit 0)) (lt (lit 0) (lit 1)))
+                 (Expr.ifnil (deref (var 1)) (Expr.unreach .unit)
+                    (letE (assign (var 2) (Expr.snd (Expr.unfold (var 0))))
+                      (assign (var 2) (add (deref (var 2)) (Expr.fst (Expr.unfold (deref (var 3)))))))))
+          (deref (var 1))))))
+example : typecheck consΔ ∅ [] 0 0 0 [] [] walkStale = none := by native_decide
+/-- 値で持つ成分（A { b B } / B { as []A } — 閉路は slice を通る）は整形 -/
+example : (Ty.muRs 0 2 0 (.prod (.rvar 1) (.prod (.slice false 0 (.rvar 0)) .unit))).muRsOk = true := by native_decide
+/-- 否定例 3: 鎖の長さと幅が食い違う組は整形の外 -/
+example : (Ty.muRs 0 2 0 (.prod (.slice false 0 (.rvar 0)) .unit)).muRsOk = false := by native_decide
+/-- 否定例 4: 成分の番号が範囲外 -/
+example : (Ty.muRs 0 2 2 abBs).muRsOk = false := by native_decide
+
+/-- 同時の μ の S（関数型の成分）: F = fn(G) int / G = fn(int) F の組。展開 = 関数型 -/
+def tFG (i : Nat) : Ty := .mus 2 i (.prod (.fn (.rvar 1) .int) (.prod (.fn .int (.rvar 0)) .unit))
+example : (tFG 0).musOk = true := by native_decide
+example : (tFG 0).unfold = .fn (tFG 1) .int := by native_decide
+example : (tFG 1).unfold = .fn .int (tFG 0) := by native_decide
+
 end FS.Examples

@@ -1815,6 +1815,10 @@
       "name": "floatfmt",
       "imports": [
         {
+          "ref": "bigint",
+          "path": "std/internal/bigint"
+        },
+        {
           "ref": "iter",
           "path": "std/iter"
         },
@@ -1847,16 +1851,16 @@
           "has_try": false,
           "callees": [
             "append",
-            "bnCmp",
-            "bnDivSmall",
-            "bnMulAdd",
-            "bnOdd",
-            "bnSet",
-            "bnSetInt",
-            "bnShl",
-            "bnShr",
-            "bnSub",
-            "bnTop",
+            "bigint.Cmp",
+            "bigint.DivSmall",
+            "bigint.MulAdd",
+            "bigint.Odd",
+            "bigint.Set",
+            "bigint.SetInt",
+            "bigint.Shl",
+            "bigint.Shr",
+            "bigint.Sub",
+            "bigint.Top",
             "byte",
             "bytesToString",
             "freeze",
@@ -1881,14 +1885,14 @@
           "has_try": false,
           "callees": [
             "append",
+            "bigint.Add",
+            "bigint.Cmp",
+            "bigint.MulAdd",
+            "bigint.Set",
+            "bigint.SetInt",
+            "bigint.Shl",
+            "bigint.Sub",
             "bitLen",
-            "bnAdd",
-            "bnCmp",
-            "bnMulAdd",
-            "bnSet",
-            "bnSetInt",
-            "bnShl",
-            "bnSub",
             "iter.Range"
           ]
         },
@@ -1932,10 +1936,10 @@
           "mut_def": false,
           "has_try": false,
           "callees": [
-            "bnBitLen",
-            "bnCmp",
+            "bigint.BitLen",
+            "bigint.Cmp",
+            "bigint.MulAdd",
             "bnDivScaled",
-            "bnMulAdd",
             "iter.Range",
             "len"
           ]
@@ -1946,10 +1950,164 @@
           "mut_def": false,
           "has_try": false,
           "callees": [
-            "bnCmp",
-            "bnSet",
-            "bnShl",
-            "bnSub"
+            "bigint.Cmp",
+            "bigint.Set",
+            "bigint.Shl",
+            "bigint.Sub"
+          ]
+        },
+        {
+          "name": "bitLen",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        }
+      ],
+      "consts": [
+        {
+          "name": "HIDDEN",
+          "value": 4503599627370496,
+          "dict": false
+        },
+        {
+          "name": "NoFast",
+          "value": -100000,
+          "dict": false
+        }
+      ]
+    },
+    {
+      "path": "std/internal/bigint",
+      "name": "bigint",
+      "imports": [
+        {
+          "ref": "iter",
+          "path": "std/iter"
+        },
+        {
+          "ref": "iter#",
+          "path": "std/iter"
+        }
+      ],
+      "funcs": [
+        {
+          "name": "SetInt",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append"
+          ]
+        },
+        {
+          "name": "Set",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "iter.Range",
+            "len"
+          ]
+        },
+        {
+          "name": "MulAdd",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "iter.Range",
+            "len"
+          ]
+        },
+        {
+          "name": "Add",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "iter.Range",
+            "len"
+          ]
+        },
+        {
+          "name": "Shl",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "iter.Range",
+            "len"
+          ]
+        },
+        {
+          "name": "Shr",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "len"
+          ]
+        },
+        {
+          "name": "DivSmall",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "len"
+          ]
+        },
+        {
+          "name": "Odd",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "len"
+          ]
+        },
+        {
+          "name": "Top",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "len"
+          ]
+        },
+        {
+          "name": "BitLen",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "Top",
+            "bitLen"
+          ]
+        },
+        {
+          "name": "Cmp",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "Top"
+          ]
+        },
+        {
+          "name": "Sub",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "iter.Range",
+            "len"
           ]
         },
         {
@@ -1960,120 +2118,12 @@
           "callees": []
         },
         {
-          "name": "bnSetInt",
-          "expands": true,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "append"
-          ]
-        },
-        {
-          "name": "bnSet",
+          "name": "Mul",
           "expands": true,
           "mut_def": false,
           "has_try": false,
           "callees": [
             "append",
-            "iter.Range",
-            "len"
-          ]
-        },
-        {
-          "name": "bnMulAdd",
-          "expands": true,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "append",
-            "iter.Range",
-            "len"
-          ]
-        },
-        {
-          "name": "bnAdd",
-          "expands": true,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "append",
-            "iter.Range",
-            "len"
-          ]
-        },
-        {
-          "name": "bnShl",
-          "expands": true,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "append",
-            "iter.Range",
-            "len"
-          ]
-        },
-        {
-          "name": "bnShr",
-          "expands": true,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "append",
-            "len"
-          ]
-        },
-        {
-          "name": "bnDivSmall",
-          "expands": true,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "len"
-          ]
-        },
-        {
-          "name": "bnOdd",
-          "expands": true,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "len"
-          ]
-        },
-        {
-          "name": "bnTop",
-          "expands": true,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "len"
-          ]
-        },
-        {
-          "name": "bnBitLen",
-          "expands": true,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "bitLen",
-            "bnTop"
-          ]
-        },
-        {
-          "name": "bnCmp",
-          "expands": true,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "bnTop"
-          ]
-        },
-        {
-          "name": "bnSub",
-          "expands": true,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
             "iter.Range",
             "len"
           ]
@@ -2081,18 +2131,8 @@
       ],
       "consts": [
         {
-          "name": "LIMB",
+          "name": "Limb",
           "value": 1073741824,
-          "dict": false
-        },
-        {
-          "name": "HIDDEN",
-          "value": 4503599627370496,
-          "dict": false
-        },
-        {
-          "name": "NoFast",
-          "value": -100000,
           "dict": false
         }
       ]

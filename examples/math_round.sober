@@ -1,0 +1,49 @@
+package main
+
+// std/math の Trunc / Floor / Ceil / Min / Max（ビット操作と比較だけ — libm なし・決定的）。期待値は Go の双子 scripts/oracles/math_round.go
+// （Go の math の同名の関数）。端の値は印字・乱択の 3,000 値は結果のビット列の XOR（NaN は「NaN か」だけを見る — NaN のビットは Go と約束しない）
+
+import "std/iter"
+import "std/math"
+
+func key(f float) int {
+    return if f != f { 1 } else { math.Bits(f) }
+}
+
+func main() {
+    inf := 1.0 / 0.0
+    edges := []float{0.0, -0.0, 0.5, -0.5, 1.0, -1.0, 1.5, -1.5, 2.5, -2.5, 0.49999999999999994, -0.49999999999999994,
+        4503599627370495.5, -4503599627370495.5, 4503599627370496.0, 9007199254740993.0, 1.0e300, -1.0e-300, 5.0e-324, inf, 0.0 - inf, 0.0 / 0.0}
+    for x <- edges {
+        println(x, math.Trunc(x), math.Floor(x), math.Ceil(x))
+    }
+    for i <- iter.Range(0, 4) {
+        a := edges[i]
+        for j <- iter.Range(0, 4) {
+            b := edges[j]
+            println(math.Bits(math.Min(a, b)), math.Bits(math.Max(a, b)))
+        }
+    }
+    println(math.Min(1.0, 0.0 / 0.0), math.Max(0.0 / 0.0, 1.0), math.Min(inf, 0.0 - inf), math.Max(-3.0, 2.0))
+    mut h := 7
+    mut l := 99
+    mut xt := 0
+    mut xf := 0
+    mut xc := 0
+    mut xm := 0
+    mut prev := 0.0
+    for k <- iter.Range(0, 3000) {
+        h = (h * 1103515245 + 12345) & 2147483647
+        l = (l * 1103515245 + 12345) & 2147483647
+        b := (h << 32) | l
+        // 指数を [−60, 60] に寄せた値を半分（小数部の境目を多く通る）・残りは任意のビット列
+        f0 := math.FromBits(if k % 2 == 0 { (b & 4503599627370495) | ((963 + (h % 121)) << 52) } else { b })
+        x := if l % 3 == 0 { -f0 } else { f0 }
+        xt = xt ^ key(math.Trunc(x))
+        xf = xf ^ key(math.Floor(x))
+        xc = xc ^ key(math.Ceil(x))
+        xm = xm ^ key(math.Min(x, prev)) ^ (key(math.Max(x, prev)) >> 1)
+        prev = x
+    }
+    println(xt, xf, xc, xm)
+}

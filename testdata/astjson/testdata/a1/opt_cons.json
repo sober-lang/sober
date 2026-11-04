@@ -1,0 +1,364 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "L",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "v",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          },
+          {
+            "name": "next",
+            "type": {
+              "k": "opt",
+              "type": {
+                "k": "name",
+                "name": "L"
+              }
+            },
+            "tok": 10
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 16
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "build",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "L"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "ident",
+                  "name": "n",
+                  "tok": 25
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 0,
+                  "tok": 27
+                },
+                "tok": 26
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "composite",
+                        "type_name": "L",
+                        "elems": [
+                          {
+                            "key": "v",
+                            "value": {
+                              "k": "int",
+                              "value": 0,
+                              "tok": 34
+                            }
+                          },
+                          {
+                            "key": "next",
+                            "value": {
+                              "k": "nil",
+                              "tok": 38
+                            }
+                          }
+                        ],
+                        "tok": 30,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 29
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 24
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "L",
+                "elems": [
+                  {
+                    "key": "v",
+                    "value": {
+                      "k": "ident",
+                      "name": "n",
+                      "tok": 48
+                    }
+                  },
+                  {
+                    "key": "next",
+                    "value": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "build",
+                        "tok": 52
+                      },
+                      "args": [
+                        {
+                          "k": "binary",
+                          "op": "-",
+                          "lhs": {
+                            "k": "ident",
+                            "name": "n",
+                            "tok": 54
+                          },
+                          "rhs": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 56
+                          },
+                          "tok": 55
+                        }
+                      ],
+                      "tok": 53
+                    }
+                  }
+                ],
+                "tok": 44,
+                "type_args": []
+              }
+            ],
+            "tok": 43
+          }
+        ]
+      },
+      "tok": 17,
+      "bodiless": false,
+      "span": {
+        "start": 16,
+        "end": 62
+      },
+      "sig_end": 23
+    },
+    {
+      "name": "sum",
+      "type_params": [],
+      "params": [
+        {
+          "name": "l",
+          "type": {
+            "k": "name",
+            "name": "L"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "n"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "l",
+                  "tok": 72
+                },
+                "field": "next",
+                "tok": 74
+              }
+            ],
+            "tok": 70
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "+",
+                "lhs": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "l",
+                    "tok": 77
+                  },
+                  "field": "v",
+                  "tok": 79
+                },
+                "rhs": {
+                  "k": "if",
+                  "cond": {
+                    "k": "binary",
+                    "op": "==",
+                    "lhs": {
+                      "k": "ident",
+                      "name": "n",
+                      "tok": 82
+                    },
+                    "rhs": {
+                      "k": "nil",
+                      "tok": 84
+                    },
+                    "tok": 83
+                  },
+                  "then": {
+                    "stmts": [
+                      {
+                        "k": "expr",
+                        "expr": {
+                          "k": "int",
+                          "value": 0,
+                          "tok": 86
+                        }
+                      }
+                    ]
+                  },
+                  "else": {
+                    "k": "block",
+                    "stmts": [
+                      {
+                        "k": "expr",
+                        "expr": {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "sum",
+                            "tok": 90
+                          },
+                          "args": [
+                            {
+                              "k": "ident",
+                              "name": "n",
+                              "tok": 92
+                            }
+                          ],
+                          "tok": 91
+                        }
+                      }
+                    ]
+                  },
+                  "tok": 81
+                },
+                "tok": 80
+              }
+            ],
+            "tok": 76
+          }
+        ]
+      },
+      "tok": 63,
+      "bodiless": false,
+      "span": {
+        "start": 62,
+        "end": 98
+      },
+      "sig_end": 69
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 103
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "sum",
+                    "tok": 105
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "build",
+                        "tok": 107
+                      },
+                      "args": [
+                        {
+                          "k": "int",
+                          "value": 10,
+                          "tok": 109
+                        }
+                      ],
+                      "tok": 108
+                    }
+                  ],
+                  "tok": 106
+                }
+              ],
+              "tok": 104
+            }
+          }
+        ]
+      },
+      "tok": 99,
+      "bodiless": false,
+      "span": {
+        "start": 98,
+        "end": 116
+      },
+      "sig_end": 102
+    }
+  ],
+  "consts": []
+}

@@ -345,7 +345,7 @@ func emit(out mut []byte, t Tree, n0 int, d int) {
         kStr(mut out, t, e, false, "name", x.a)
         kNode(mut out, t, e, false, "value", x.b)
         kTok(mut out, e, x)
-    } else if k >= TName && k <= TTuple {
+    } else if k >= TName && k <= TMutP {
         emitType(mut out, t, e, x)
     } else if k >= SBind && k <= SYield {
         emitStmt(mut out, t, e, x)
@@ -400,6 +400,9 @@ func emitType(out mut []byte, t Tree, e int, x Node) {
     } else if k == TTuple {
         tag(mut out, e, "tuple")
         kList(mut out, t, e, false, "elems", x.a)
+    } else if k == TMutP {
+        tag(mut out, e, "mut_param")
+        kNode(mut out, t, e, false, "type", x.a)
     } else {
         tag(mut out, e, "generic")
         kStr(mut out, t, e, false, "name", x.a)

@@ -97,6 +97,8 @@ const TMap = 44        // a = key, b = value, c = mut
 const TGeneric = 45    // a = 名前, b = args（列）
 const TArray = 46      // a = 長さ（値）, b = elem — `[N]T`。struct の欄の型の位置にだけ（parser）・@layout の struct の外は loader の拒否（language.md 36 節）
 const TTuple = 47      // a = 要素の型の列（2 つ以上）— `(T, error?)`。型引数の位置にだけ（parser）・std/task の Task の型引数の外は loader の拒否（language.md 11 節 — P3b 残穴1）
+// 関数型（TFunc / BFunc）の mut 仮引数の席（`func(st mut App, ev Ev)`）: a = 仮引数の型。仮引数の型の列にだけ現れる
+const TMutP = 48
 
 // ── 宣言・その他 ──
 const KFile = 50       // a = package（文字列）, b = imports, c = types, d = funcs, e = consts（すべて列）, f = intrinsics（KIntrinsic の列 — 無ければ 0。std だけ）か package 節の前置の注釈 1 つの列（KReplaces / KDoubles）
@@ -189,4 +191,31 @@ func ListLen(t Tree, l int) int {
 
 func ListAt(t Tree, l int, i int) int {
     return t.data[l + 1 + i]
+}
+
+// 関数型（TFunc / BFunc）の仮引数の型の列 l の mut の席のビット（仮引数 i が mut なら bit i）
+func FnTyMutMask(t Tree, l int) int {
+    mut m := 0
+    for i <- iter.Range(0, ListLen(t, l)) {
+        if t.nodes[ListAt(t, l, i)].kind == TMutP {
+            m = m | (1 << i)
+        }
+    }
+    return m
+}
+
+// func 宣言・ラムダの仮引数の列 l（KParam / KLParam — c = mut の印）の mut のビット
+func ParamsMutMask(t Tree, l int) int {
+    mut m := 0
+    for i <- iter.Range(0, ListLen(t, l)) {
+        if t.nodes[ListAt(t, l, i)].c != 0 {
+            m = m | (1 << i)
+        }
+    }
+    return m
+}
+
+// 関数型の仮引数の型 n から mut の席の包みを外した型（包みが無ければ n）
+func FnParamTy(t Tree, n int) int {
+    return if t.nodes[n].kind == TMutP { t.nodes[n].a } else { n }
 }

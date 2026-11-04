@@ -1,23 +1,22 @@
 package main
 
-// 借りの閉包の mut 捕捉（(α-L1) — language.md 25 節）: 値の呼び出しの借りの実引数のラムダは mut の束縛を捕捉できる。捕捉は束縛そのもの —
-// emit の呼び出しをまたいだ更新が呼び手に見える（長さ既知の stream の emit の合計の形）。コアは anchor つきの値の呼び出し callMv。
-// build は L1-4（lower）まで名指しで止まる（irtext / lltext の EXCLUDED）
+// 借りの仮引数の mut の席（language.md 25 節「関数型の mut 仮引数」）: 状態 n は呼び手が持ち、stream が emit に毎回 mut で渡す。
+// emit の呼び出しをまたいだ更新が呼び手に見える（長さ既知の stream の emit の合計の形）。コアは anchor つきの値の呼び出し callMv
 
-type Stream func(emit func(b []byte) error?) error?
+type Stream func(n mut int, emit func(n mut int, b []byte) error?) error?
 
 func count(st Stream) int {
     mut n := 0
-    e := st((b []byte) => { n += len(b); nil })
+    e := st(mut n, (c, b) => { c += len(b); nil })
     if e != nil { return -1 }
     return n
 }
 
-func two(emit func(b []byte) error?) error? {
-    emit(bytes("abc"))?
-    return emit(bytes("de"))
+func two(n mut int, emit func(n mut int, b []byte) error?) error? {
+    emit(mut n, bytes("abc"))?
+    return emit(mut n, bytes("de"))
 }
 
 func main() {
-    println(count((emit) => two(emit)))
+    println(count(two))
 }

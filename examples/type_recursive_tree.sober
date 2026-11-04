@@ -1,0 +1,26 @@
+package main
+
+// 再帰の型宣言の木: build が自フレームで組んだ部分木を返り境界で呼び手の region へ写す（再帰の写し）
+
+type Tree struct {
+    kids []Tree
+}
+
+func build(n int) Tree {
+    if n < 1 {
+        return Tree{kids: []Tree{}}
+    }
+    return Tree{kids: []Tree{build(n - 1), build(n - 1)}}
+}
+
+func count(t Tree) int {
+    mut c := 1
+    for k <- t.kids {
+        c += count(k)
+    }
+    return c
+}
+
+func main() {
+    println(count(build(3)))
+}

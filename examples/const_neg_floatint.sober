@@ -1,0 +1,10 @@
+package main
+
+// float の const 式に int のリテラルは混ぜられない（`2 * Pi` は拒否 — `2.0 * Pi`。int と float は交わらない — spec T-10）
+
+const Pi = 3.141592653589793
+const TwoPi = 2 * Pi
+
+func main() {
+    println(TwoPi)
+}

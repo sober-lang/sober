@@ -1,0 +1,2 @@
+sober: load error at examples/fn_mut_param_neg_two.sober:5:28: a function type has at most one mut parameter — put the state in one struct and take that (`func(st mut S, …)` with `type S struct { … }`)
+exit=1

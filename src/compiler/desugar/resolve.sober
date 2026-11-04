@@ -30,7 +30,7 @@ type Binding struct {
     sty int       // 表層型（surface.sober — SUNK = 不明）
     fres ListRef      // 関数値の結果の型式の列（名前付き関数から束縛した imm の関数値 — 後置 `?` の形。-1 = 不明）
     brw int       // 借りの閉包の仮引数なら借りの位置の型式（値化可能な named fn type の匿名の関数型の仮引数の節）+ 1（0 = 借りでない — (α-L0)）
-    nrw int       // mut の T? を絞った束縛なら絞った if の節 + 1（0 = 絞りでない — 代入は NarrowAssign で名指す）
+    nrw int       // mut の T? を絞った束縛なら絞った if の節 + 1（0 = 絞りでない — 書く文の後ろで外の束縛へ戻す: narrowkill.sober）
 }
 
 // 束縛を積む。split = 割る場所か（呼び手の判定）— 宣言が struct のときだけ割った束縛になる
@@ -732,6 +732,10 @@ func tyOf(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (TyRef, error?) {
         bk := kindN(mut st, nC(nodeOf(mut st, decl)))
         switch bk {
         case ast.BStruct | ast.BUnion:
+            // 再帰の組の宣言は同時の μ（rec.sober — 展開中の組なら再帰の変数）
+            if isRecDecl(mut st, decl) {
+                return recTy(mut st, dpk, decl, -1, at, fuel)
+            }
             // 型環境なしの参照は memo する（欄の型名は今の型環境で引くので、型環境つきの参照は結果が環境に依る — 対象外）
             if noTenv(mut st) {
                 m := memoGet(mut st, int(decl), -1, fuel)
@@ -780,6 +784,9 @@ func tyOf(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (TyRef, error?) {
             }
             return 0, diag.CoreFragment{at: posOf(mut st, at)}
         }
+        if isRecDecl(mut st, decl) {
+            return recTy(mut st, hget(mut st, dr + 1), decl, env, at, fuel)
+        }
         m := memoGet(mut st, int(decl), env, fuel)
         if m != -1 {
             return m, nil
@@ -822,6 +829,8 @@ func tyOf(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (TyRef, error?) {
     case ast.TOpt:
         x := tyOf(mut st, pk, nA(nodeOf(mut st, te)), at, fuel - 1)?
         return tOpt(mut st, x), nil
+    case ast.TMutP:
+        return mutParamTy(mut st, pk, nA(nodeOf(mut st, te)), at, fuel - 1)
     case ast.TSlice:
         x := tyOf(mut st, pk, nA(nodeOf(mut st, te)), at, fuel - 1)?
         return tSlice(mut st, nodeOf(mut st, te).b != 0, 0, x, false), nil

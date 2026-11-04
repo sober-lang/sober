@@ -10,6 +10,8 @@ A map of the packages you use with `import "std/<name>"`. The exact signature an
 |---|---|---|
 | [`std/io`](../std/io.ja.md) | Files, standard I/O, directories | `ReadFile`, `WriteFile`, `ReadStdin`, `WriteStdout`, `WriteStderr`, `ReadDir`, open files `Open` / `Close` (`defer io.Close(f)` right after) / `ReadAll`, reading slots without copying them `for c <- io.Chunks(f)?` (`Lines`, `ChunksAt` from a given offset, the bytes via `Raw`), the buffered `Writer` (`WriteString` / `WriteByte` / `Flush`). Error labels are `NotFound`, `Denied`, `Timeout`, `Expired` (after the deadline of the enclosing `task.Run` has passed), `Closed`, `Other` |
 | [`std/os`](../std/os.ja.md) | Processes and the environment | `Args`, `Getenv`, `Run` (child processes), `Mkdir`, `Rename`, `ModTime`, `WriteMode`, `Sleep` |
+| [`std/cli`](../std/cli.ja.md) | Command-line parsing and usage text | Declare flags, positional arguments and commands in a const table (`BoolFlag`, `StrFlag`, `IntFlag`, `ChoiceFlag`, `ListFlag`, `Positional`, `Command`, `App`); `Main` handles parsing, `--help`, `--version`, misuse messages and dispatch to commands; read values with `Str` / `Int` / `Bool` / `Pos` |
+| [`std/env`](../std/env.ja.md) | A declared table of environment variables | Declare the variables a program reads in a const table (`StrVar`, `IntVar`, `BoolVar`, `Table`); `Load` reads and checks them all once at startup and returns a frozen table `Values`; `Spec` lists them ([Environment variables](env.md)) |
 
 ## Text
 
@@ -80,10 +82,19 @@ Only immutable values and channels can be passed to a child task. The output is 
 | [`std/crypto/x25519`](../std/crypto-x25519.ja.md), [`std/crypto/rsa`](../std/crypto-rsa.ja.md) | Key agreement and signatures | `Base` / `Shared`, `ParsePKCS8` / `SignPSS` / `VerifyPSS` |
 | [`std/crypto/pem`](../std/crypto-pem.ja.md) | Reading PEM | `Parse` |
 
+## Testing
+
+| Package | Purpose | Main items |
+|---|---|---|
+| [`std/quick`](../std/quick.ja.md) | Property-based testing | Draw values from a choice source `Src` (`New` / `Named` / `Seed`) — `Int`, `Bool`, `Pick`, `Elem`, `Bytes`, `String`, `Runes`, `Slice`; `Check` calls the property once per trial; `Assume` (discard a trial); counterexamples are shrunk before printing |
+| [`std/testing`](../std/testing.ja.md) | Behind `assert` | The failure label `AssertFailed` and the printer `Report` (`assert(e)` / `assert(e, label)` are used in `_test.sober` files — no import needed) |
+| [`std/testing/cell`](../std/testing-cell.ja.md) | Where a test double keeps its state | `Get` / `Set` / `Update` on a const handle `Cell[T]{init: …}` (only `_test.sober` and `_double.sober` files can import it) |
+
+For a worked example, see [Writing tests](testing.md).
+
 ## Other
 
 | Package | Purpose |
 |---|---|
-| [`std/testing`](../std/testing.ja.md) | Test helpers (labels for `assert` failures) |
 | [`std/layout`](../std/layout.ja.md) | Helpers for declaring binary layouts (`@layout`) |
 | [`std/binary`](../std/binary.ja.md) | Reading bytes a word at a time (`Load64` — 8 bytes, little-endian) |

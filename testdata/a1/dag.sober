@@ -1,0 +1,49 @@
+package main
+
+// 部分木の共有（DAG）: 同じ値を 2 か所に置いても値の意味は同じ（A1 は写す・ネイティブは共有しうる — 観測は同じ）
+
+import "std/iter"
+
+type T union {
+    Leaf { v int }
+    Node { tag string; kids []T }
+}
+
+func show(t T) string {
+    return switch t {
+    case Leaf{v}: "${v}"
+    case Node{tag, kids}: {
+        mut s := tag + "("
+        for i <- iter.Range(0, len(kids)) {
+            if i > 0 {
+                s = s + ","
+            }
+            s = s + show(kids[i])
+        }
+        s + ")"
+    }
+    }
+}
+
+func size(t T) int {
+    return switch t {
+    case Node{kids}: {
+        mut c := 1
+        for k <- kids {
+            c += size(k)
+        }
+        c
+    }
+    default: 1
+    }
+}
+
+
+func main() {
+    a := Node{tag: "a", kids: []T{Leaf{v: 1}, Leaf{v: 2}}}
+    b := Node{tag: "b", kids: []T{a, a, Leaf{v: 3}}}
+    c := Node{tag: "c", kids: []T{b, a, b}}
+    println(show(c))
+    println(size(c))
+    println(show(Node{tag: "d", kids: []T{}}))
+}

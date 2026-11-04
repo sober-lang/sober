@@ -1,0 +1,151 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "P",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "a",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 12
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "ps"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "P"
+                },
+                "elems": [
+                  {
+                    "k": "composite",
+                    "type_name": "P",
+                    "elems": [
+                      {
+                        "key": "a",
+                        "value": {
+                          "k": "int",
+                          "value": 1,
+                          "tok": 27
+                        }
+                      }
+                    ],
+                    "tok": 23,
+                    "type_args": []
+                  }
+                ],
+                "mut": false,
+                "tok": 19
+              }
+            ],
+            "tok": 17
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "index",
+                  "base": {
+                    "k": "ident",
+                    "name": "ps",
+                    "tok": 31
+                  },
+                  "idx": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 33
+                  },
+                  "tok": 32
+                },
+                "field": "a",
+                "tok": 36
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "int",
+                "value": 2,
+                "tok": 38
+              }
+            ],
+            "tok": 31
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 40
+              },
+              "args": [
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "index",
+                    "base": {
+                      "k": "ident",
+                      "name": "ps",
+                      "tok": 42
+                    },
+                    "idx": {
+                      "k": "int",
+                      "value": 0,
+                      "tok": 44
+                    },
+                    "tok": 43
+                  },
+                  "field": "a",
+                  "tok": 47
+                }
+              ],
+              "tok": 41
+            }
+          }
+        ]
+      },
+      "tok": 13,
+      "bodiless": false,
+      "span": {
+        "start": 12,
+        "end": 52
+      },
+      "sig_end": 16
+    }
+  ],
+  "consts": []
+}

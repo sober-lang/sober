@@ -1,0 +1,8 @@
+package main
+
+// 負例: ラムダを束縛した局所は mut にできない — 名前はラムダそのものを指し、呼ぶたびに展開される（language.md 25 節）
+
+func main() {
+    mut f := (n int) => n + 1
+    println(f(1))
+}

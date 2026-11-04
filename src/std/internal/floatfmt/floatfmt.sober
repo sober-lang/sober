@@ -8,9 +8,9 @@ package floatfmt
 //     仮数が偶数なら端を含む）を Go の strconv.FormatFloat(f, 'g', -1, 64) と同じ綴りで
 //   ParseBits: 10 進の正確な値を 1 回だけ最近接・偶数へ丸める（compiler/lexer の浮動小数リテラルもこれを使う — リテラルと実行時の解析は同じビット）
 
+import "std/internal/bigint"
 import "std/iter"
 
-const LIMB = 1073741824 // 2^30
 const HIDDEN = 4503599627370496 // 2^52
 
 // binary64 のビット列 bits の最短の往復表現
@@ -104,37 +104,37 @@ func FormatFixed(bits int, prec int) string {
     }
     // q = round(f × 2^e × 10^prec)（最近接・偶数）
     mut n := mut []int{}
-    bnSetInt(mut n, f)
+    bigint.SetInt(mut n, f)
     for k <- iter.Range(0, prec) {
-        bnMulAdd(mut n, 10, 0)
+        bigint.MulAdd(mut n, 10, 0)
     }
     mut q := mut []int{}
     if e >= 0 {
-        bnShl(mut n, e)
-        bnSet(mut q, mut n)
+        bigint.Shl(mut n, e)
+        bigint.Set(mut q, mut n)
     } else {
         // q = floor(n / 2^-e)・余りの比較で丸め
         sh := 0 - e
         mut d := mut []int{}
-        bnSetInt(mut d, 1)
-        bnShl(mut d, sh)
-        bnShr(mut q, mut n, sh)
+        bigint.SetInt(mut d, 1)
+        bigint.Shl(mut d, sh)
+        bigint.Shr(mut q, mut n, sh)
         mut back := mut []int{}
-        bnSet(mut back, mut q)
-        bnShl(mut back, sh)
+        bigint.Set(mut back, mut q)
+        bigint.Shl(mut back, sh)
         mut r := mut []int{}
-        bnSet(mut r, mut n)
-        bnSub(mut r, mut back)
-        bnMulAdd(mut r, 2, 0)
-        c := bnCmp(mut r, mut d)
-        if c > 0 || (c == 0 && bnOdd(mut q)) {
-            bnMulAdd(mut q, 1, 1)
+        bigint.Set(mut r, mut n)
+        bigint.Sub(mut r, mut back)
+        bigint.MulAdd(mut r, 2, 0)
+        c := bigint.Cmp(mut r, mut d)
+        if c > 0 || (c == 0 && bigint.Odd(mut q)) {
+            bigint.MulAdd(mut q, 1, 1)
         }
     }
     // q の 10 進の桁（下位から）
     mut ds := mut []int{}
-    while bnTop(mut q) >= 0 {
-        ds = append(ds, bnDivSmall(mut q, 10))
+    while bigint.Top(mut q) >= 0 {
+        ds = append(ds, bigint.DivSmall(mut q, 10))
     }
     while len(ds) < prec + 1 {
         ds = append(ds, 0)
@@ -229,31 +229,31 @@ func shortest(ds mut []int, ex int, mant int) int {
     mut mp := mut []int{}
     mut mm := mut []int{}
     if e >= 0 {
-        bnSetInt(mut r, f)
-        bnSetInt(mut mp, 1)
-        bnShl(mut mp, e)
-        bnSetInt(mut mm, 1)
-        bnShl(mut mm, e)
+        bigint.SetInt(mut r, f)
+        bigint.SetInt(mut mp, 1)
+        bigint.Shl(mut mp, e)
+        bigint.SetInt(mut mm, 1)
+        bigint.Shl(mut mm, e)
         if f != HIDDEN {
-            bnShl(mut r, e + 1)
-            bnSetInt(mut s, 2)
+            bigint.Shl(mut r, e + 1)
+            bigint.SetInt(mut s, 2)
         } else {
-            bnShl(mut r, e + 2)
-            bnSetInt(mut s, 4)
-            bnShl(mut mp, 1)
+            bigint.Shl(mut r, e + 2)
+            bigint.SetInt(mut s, 4)
+            bigint.Shl(mut mp, 1)
         }
     } else {
-        bnSetInt(mut r, f)
-        bnSetInt(mut s, 1)
-        bnSetInt(mut mm, 1)
+        bigint.SetInt(mut r, f)
+        bigint.SetInt(mut s, 1)
+        bigint.SetInt(mut mm, 1)
         if ex <= 1 || f != HIDDEN {
-            bnShl(mut r, 1)
-            bnShl(mut s, 1 - e)
-            bnSetInt(mut mp, 1)
+            bigint.Shl(mut r, 1)
+            bigint.Shl(mut s, 1 - e)
+            bigint.SetInt(mut mp, 1)
         } else {
-            bnShl(mut r, 2)
-            bnShl(mut s, 2 - e)
-            bnSetInt(mut mp, 2)
+            bigint.Shl(mut r, 2)
+            bigint.Shl(mut s, 2 - e)
+            bigint.SetInt(mut mp, 2)
         }
     }
     // k = 上の端 (r + mp) / s が 10^k 未満（偶数なら以下）になる最小の k。見積もり（log10 2 ≈ 78913 / 2^18）から合わせる
@@ -261,32 +261,32 @@ func shortest(ds mut []int, ex int, mant int) int {
     mut k := if bl >= 1 { ((bl - 1) * 78913) >> 18 } else { 0 - ((((1 - bl) * 78913) >> 18) + 1) }
     if k >= 0 {
         for i <- iter.Range(0, k) {
-            bnMulAdd(mut s, 10, 0)
+            bigint.MulAdd(mut s, 10, 0)
         }
     } else {
         for i <- iter.Range(0, 0 - k) {
-            bnMulAdd(mut r, 10, 0)
-            bnMulAdd(mut mp, 10, 0)
-            bnMulAdd(mut mm, 10, 0)
+            bigint.MulAdd(mut r, 10, 0)
+            bigint.MulAdd(mut mp, 10, 0)
+            bigint.MulAdd(mut mm, 10, 0)
         }
     }
     mut hi := mut []int{}
     mut fixed := false
     while !fixed {
-        bnSet(mut hi, mut r)
-        bnAdd(mut hi, mut mp)
-        c := bnCmp(mut hi, mut s)
+        bigint.Set(mut hi, mut r)
+        bigint.Add(mut hi, mut mp)
+        c := bigint.Cmp(mut hi, mut s)
         if c > 0 || (c == 0 && even) {
-            bnMulAdd(mut s, 10, 0)
+            bigint.MulAdd(mut s, 10, 0)
             k += 1
         } else {
             // 小さすぎないか: (r + mp) × 10 が s を越えなければ（偶数なら届かなければ）1 つ下げる
-            bnMulAdd(mut hi, 10, 0)
-            c2 := bnCmp(mut hi, mut s)
+            bigint.MulAdd(mut hi, 10, 0)
+            c2 := bigint.Cmp(mut hi, mut s)
             if c2 < 0 || (c2 == 0 && !even) {
-                bnMulAdd(mut r, 10, 0)
-                bnMulAdd(mut mp, 10, 0)
-                bnMulAdd(mut mm, 10, 0)
+                bigint.MulAdd(mut r, 10, 0)
+                bigint.MulAdd(mut mp, 10, 0)
+                bigint.MulAdd(mut mm, 10, 0)
                 k -= 1
             } else {
                 fixed = true
@@ -296,19 +296,19 @@ func shortest(ds mut []int, ex int, mant int) int {
     // 桁を出す
     mut done := false
     while !done {
-        bnMulAdd(mut r, 10, 0)
-        bnMulAdd(mut mp, 10, 0)
-        bnMulAdd(mut mm, 10, 0)
+        bigint.MulAdd(mut r, 10, 0)
+        bigint.MulAdd(mut mp, 10, 0)
+        bigint.MulAdd(mut mm, 10, 0)
         mut d := 0
-        while bnCmp(mut r, mut s) >= 0 {
-            bnSub(mut r, mut s)
+        while bigint.Cmp(mut r, mut s) >= 0 {
+            bigint.Sub(mut r, mut s)
             d += 1
         }
-        cl := bnCmp(mut r, mut mm)
+        cl := bigint.Cmp(mut r, mut mm)
         tc1 := cl < 0 || (cl == 0 && even)
-        bnSet(mut hi, mut r)
-        bnAdd(mut hi, mut mp)
-        ch := bnCmp(mut hi, mut s)
+        bigint.Set(mut hi, mut r)
+        bigint.Add(mut hi, mut mp)
+        ch := bigint.Cmp(mut hi, mut s)
         tc2 := ch > 0 || (ch == 0 && even)
         if !tc1 && !tc2 {
             ds = append(ds, d)
@@ -320,9 +320,9 @@ func shortest(ds mut []int, ex int, mant int) int {
                 ds = append(ds, d + 1)
             } else {
                 // 両方の端に届く: 近い方（2r と s の比較 — 同点は偶数の桁）
-                bnSet(mut hi, mut r)
-                bnMulAdd(mut hi, 2, 0)
-                c3 := bnCmp(mut hi, mut s)
+                bigint.Set(mut hi, mut r)
+                bigint.MulAdd(mut hi, 2, 0)
+                c3 := bigint.Cmp(mut hi, mut s)
                 ds = append(ds, if c3 < 0 || (c3 == 0 && d % 2 == 0) { d } else { d + 1 })
             }
         }
@@ -458,19 +458,19 @@ func decimalBits(ds mut []int, exp10 int) (int, bool) {
     }
     mut n := mut []int{0}
     for k <- iter.Range(0, len(ds)) {
-        bnMulAdd(mut n, 10, ds[k])
+        bigint.MulAdd(mut n, 10, ds[k])
     }
     mut den := mut []int{1}
     if exp10 >= 0 {
         for k <- iter.Range(0, exp10) {
-            bnMulAdd(mut n, 10, 0)
+            bigint.MulAdd(mut n, 10, 0)
         }
     } else {
         for k <- iter.Range(0, 0 - exp10) {
-            bnMulAdd(mut den, 10, 0)
+            bigint.MulAdd(mut den, 10, 0)
         }
     }
-    mut s := 52 - (bnBitLen(mut n) - bnBitLen(mut den))
+    mut s := 52 - (bigint.BitLen(mut n) - bigint.BitLen(mut den))
     mut q := 0
     mut r := mut []int{}
     mut d2 := mut []int{}
@@ -492,8 +492,8 @@ func decimalBits(ds mut []int, exp10 int) (int, bool) {
         q = bnDivScaled(mut n, mut den, s, mut r, mut d2)
         biased = 0
     }
-    bnMulAdd(mut r, 2, 0)
-    c := bnCmp(mut r, mut d2)
+    bigint.MulAdd(mut r, 2, 0)
+    c := bigint.Cmp(mut r, mut d2)
     if c > 0 || (c == 0 && q % 2 == 1) {
         q += 1
     }
@@ -511,21 +511,21 @@ func decimalBits(ds mut []int, exp10 int) (int, bool) {
 }
 
 func bnDivScaled(n mut []int, den mut []int, s int, r mut []int, d2 mut []int) int {
-    bnSet(mut r, mut n)
-    bnSet(mut d2, mut den)
+    bigint.Set(mut r, mut n)
+    bigint.Set(mut d2, mut den)
     if s >= 0 {
-        bnShl(mut r, s)
+        bigint.Shl(mut r, s)
     } else {
-        bnShl(mut d2, 0 - s)
+        bigint.Shl(mut d2, 0 - s)
     }
     mut q := 0
     mut sh := mut []int{}
     mut k := 55
     while k >= 0 {
-        bnSet(mut sh, mut d2)
-        bnShl(mut sh, k)
-        if bnCmp(mut r, mut sh) >= 0 {
-            bnSub(mut r, mut sh)
+        bigint.Set(mut sh, mut d2)
+        bigint.Shl(mut sh, k)
+        if bigint.Cmp(mut r, mut sh) >= 0 {
+            bigint.Sub(mut r, mut sh)
             q = q | (1 << k)
         }
         k -= 1
@@ -541,161 +541,4 @@ func bitLen(x0 int) int {
         n += 1
     }
     return n
-}
-
-func bnSetInt(a mut []int, v0 int) {
-    a = mut []int{}
-    mut v := v0
-    a = append(a, v % LIMB)
-    v = v / LIMB
-    while v > 0 {
-        a = append(a, v % LIMB)
-        v = v / LIMB
-    }
-}
-
-func bnSet(a mut []int, b mut []int) {
-    a = mut []int{}
-    for k <- iter.Range(0, len(b)) {
-        a = append(a, b[k])
-    }
-}
-
-// a = a × m + c（m・c は小さい非負）
-func bnMulAdd(a mut []int, m int, c int) {
-    mut carry := c
-    for k <- iter.Range(0, len(a)) {
-        x := a[k] * m + carry
-        a[k] = x % LIMB
-        carry = x / LIMB
-    }
-    while carry > 0 {
-        a = append(a, carry % LIMB)
-        carry = carry / LIMB
-    }
-}
-
-// a = a + b
-func bnAdd(a mut []int, b mut []int) {
-    while len(a) < len(b) {
-        a = append(a, 0)
-    }
-    mut carry := 0
-    for k <- iter.Range(0, len(a)) {
-        x := a[k] + (if k < len(b) { b[k] } else { 0 }) + carry
-        a[k] = x % LIMB
-        carry = x / LIMB
-    }
-    if carry > 0 {
-        a = append(a, carry)
-    }
-}
-
-// a = a × 2^n
-func bnShl(a mut []int, n int) {
-    mut w := n / 30
-    bits := n % 30
-    if bits > 0 {
-        mut carry := 0
-        for k <- iter.Range(0, len(a)) {
-            x := (a[k] << bits) + carry
-            a[k] = x % LIMB
-            carry = x / LIMB
-        }
-        if carry > 0 {
-            a = append(a, carry)
-        }
-    }
-    if w > 0 {
-        mut z := mut []int{}
-        while w > 0 {
-            z = append(z, 0)
-            w -= 1
-        }
-        for k <- iter.Range(0, len(a)) {
-            z = append(z, a[k])
-        }
-        a = z
-    }
-}
-
-// q = floor(a / 2^n)
-func bnShr(q mut []int, a mut []int, n int) {
-    w := n / 30
-    bits := n % 30
-    q = mut []int{}
-    mut k := w
-    while k < len(a) {
-        lo := a[k] >> bits
-        hi := if k + 1 < len(a) && bits > 0 { (a[k + 1] << (30 - bits)) % LIMB } else { 0 }
-        q = append(q, lo | hi)
-        k += 1
-    }
-    if len(q) == 0 {
-        q = append(q, 0)
-    }
-}
-
-// a = floor(a / m) にして余りを返す（m は小さい正）
-func bnDivSmall(a mut []int, m int) int {
-    mut r := 0
-    mut k := len(a) - 1
-    while k >= 0 {
-        x := r * LIMB + a[k]
-        a[k] = x / m
-        r = x % m
-        k -= 1
-    }
-    return r
-}
-
-func bnOdd(a mut []int) bool {
-    return len(a) > 0 && a[0] % 2 == 1
-}
-
-func bnTop(a mut []int) int {
-    mut k := len(a) - 1
-    while k >= 0 && a[k] == 0 {
-        k -= 1
-    }
-    return k
-}
-
-func bnBitLen(a mut []int) int {
-    t := bnTop(mut a)
-    if t < 0 {
-        return 0
-    }
-    return t * 30 + bitLen(a[t])
-}
-
-func bnCmp(a mut []int, b mut []int) int {
-    ta := bnTop(mut a)
-    tb := bnTop(mut b)
-    if ta != tb {
-        return if ta > tb { 1 } else { -1 }
-    }
-    mut k := ta
-    while k >= 0 {
-        if a[k] != b[k] {
-            return if a[k] > b[k] { 1 } else { -1 }
-        }
-        k -= 1
-    }
-    return 0
-}
-
-// a = a - b（a ≥ b）
-func bnSub(a mut []int, b mut []int) {
-    mut borrow := 0
-    for k <- iter.Range(0, len(a)) {
-        x := a[k] - (if k < len(b) { b[k] } else { 0 }) - borrow
-        if x < 0 {
-            a[k] = x + LIMB
-            borrow = 1
-        } else {
-            a[k] = x
-            borrow = 0
-        }
-    }
 }

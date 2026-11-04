@@ -759,6 +759,26 @@ theorem tcEq_close (x0 : Expr) (ih_x0 : ∀ n b d Γ Λ, sizeOf x0 < n → evalR
     simp only [evalRule, tcStep, ihx0]
     tc_fin
 
+theorem tcEq_fold (x0 : Ty) (x1 : Expr) (ih_x1 : ∀ n b d Γ Λ, sizeOf x1 < n → evalRule Δ f n b d Γ Λ x1 = typecheck Δ Ξ Ψ f b d Γ Λ x1) :
+    ∀ n b d Γ Λ, sizeOf (Expr.fold x0 x1) < n → evalRule Δ f n b d Γ Λ (Expr.fold x0 x1) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.fold x0 x1) := by
+  intro n b d Γ Λ h; cases n with
+  | zero => omega
+  | succ n =>
+    simp only [Expr.fold.sizeOf_spec] at h
+    have ihx1 := fun b d Γ Λ => ih_x1 n b d Γ Λ (by omega)
+    simp only [evalRule, tcStep, ihx1]
+    cases hA : typecheck Δ Ξ Ψ f b d Γ Λ x1 <;> simp [kFold, typecheck, hA]
+
+theorem tcEq_unfold (x0 : Expr) (ih_x0 : ∀ n b d Γ Λ, sizeOf x0 < n → evalRule Δ f n b d Γ Λ x0 = typecheck Δ Ξ Ψ f b d Γ Λ x0) :
+    ∀ n b d Γ Λ, sizeOf (Expr.unfold x0) < n → evalRule Δ f n b d Γ Λ (Expr.unfold x0) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.unfold x0) := by
+  intro n b d Γ Λ h; cases n with
+  | zero => omega
+  | succ n =>
+    simp only [Expr.unfold.sizeOf_spec] at h
+    have ihx0 := fun b d Γ Λ => ih_x0 n b d Γ Λ (by omega)
+    simp only [evalRule, tcStep, ihx0]
+    cases hA : typecheck Δ Ξ Ψ f b d Γ Λ x0 <;> simp [kUnfold, typecheck, hA]
+
 theorem tcEq_loc (x0 : Nat) (x1 : Nat)  :
     ∀ n b d Γ Λ, sizeOf (Expr.loc x0 x1) < n → evalRule Δ f n b d Γ Λ (Expr.loc x0 x1) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.loc x0 x1) := by
   intro n b d Γ Λ h; cases n with
@@ -952,6 +972,8 @@ theorem evalRule_eq_typecheck :
   | send x0 x1 ih_x0 ih_x1 => exact tcEq_send x0 x1 ih_x0 ih_x1
   | recv x0 ih_x0 => exact tcEq_recv x0 ih_x0
   | close x0 ih_x0 => exact tcEq_close x0 ih_x0
+  | fold x0 x1 ih_x1 => exact tcEq_fold x0 x1 ih_x1
+  | unfold x0 ih_x0 => exact tcEq_unfold x0 ih_x0
   | loc x0 x1 => exact tcEq_loc x0 x1
   | slicev x0 x1 x2 x3 => exact tcEq_slicev x0 x1 x2 x3
   | mapv x0 x1 x2 x3 => exact tcEq_mapv x0 x1 x2 x3

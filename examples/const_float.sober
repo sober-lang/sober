@@ -1,0 +1,33 @@
+package main
+
+// float の const 式（language.md 37 節・25 節）: float のリテラル・float の const の参照と + - * /・単項の - は組み立ての const —
+// 参照する点で式ごと組み立て、実行時と同じ IEEE の丸め（0.1 + 0.2 は 0.30000000000000004）。期待値は Go の双子 scripts/oracles/const_float.go
+
+import "std/iter"
+
+const Pi = 3.141592653589793
+const TwoPi = 2.0 * Pi
+const SolarMass = 4.0 * Pi * Pi
+const DaysPerYear = 365.24
+const HalfNeg = -(Pi / 2.0)
+const Sum = 0.1 + 0.2
+
+type Body struct {
+    vx float
+    mass float
+}
+
+const Sun = Body{vx: 0.0, mass: SolarMass}
+const Bodies = []Body{Sun, Body{vx: 1.66007664274403694e-03 * DaysPerYear, mass: 9.54791938424326609e-04 * SolarMass}}
+
+func main() {
+    println(TwoPi, SolarMass, HalfNeg, Sum)
+    for b <- Bodies {
+        println(b.vx, b.mass)
+    }
+    mut a := 0.0
+    for k <- iter.Range(0, 3) {
+        a = a + TwoPi
+    }
+    println(a, Sum == 0.3)
+}

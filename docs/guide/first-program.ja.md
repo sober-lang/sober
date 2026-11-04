@@ -73,7 +73,7 @@ proj/
 // proj/mathx/mathx.sober
 package mathx
 
-// Gcd は a と b の最大公約数
+// a と b の最大公約数
 func Gcd(a int, b int) int {
     mut x := a
     mut y := b
@@ -131,11 +131,12 @@ ok   mathx.TestGcd
 1 passed, 0 failed
 ```
 
-`assert` は失敗すると式の部分ごとの値を出します（power assert）:
+`assert` は失敗すると、式の部分ごとの値（power assert）と、失敗した `assert` の位置を出します（5 行目を `== 2` にしたとき）:
 
 ```
 assert failed: Gcd(7, 13) == 2
   Gcd(7, 13) = 1
+panic: testing.AssertFailed{} at mathx/mathx_test.sober:5:5
 ```
 
 次へ: [言語ツアー](tour.ja.md)

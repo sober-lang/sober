@@ -578,6 +578,17 @@ func llDepths(st mut St, f FnRef) map[int]int {
     return freeze(m)
 }
 
+// rt の確保・写しの呼び出し i の深度の引数の値（深度を取らない呼び出しは -1）
+func llRtDepthArg(st mut St, i InsRef) int {
+    g := irInsFn(mut st, i)
+    args := desugar.ListRef(irInsB(mut st, i))
+    k := if g == st.rtAlloc8 || g == st.rtRalloc { 0 } else if g == st.rtCat8 || g == st.rtGrow { 3 } else if g == st.rtReloc || g == st.rtGrow8 { 2 } else if g == st.rtReloc8 || g == st.rtErrReloc { 1 } else { -1 }
+    if k < 0 || lenL(mut st, args) <= k {
+        return -1
+    }
+    return latI(mut st, args, k)
+}
+
 // 値 v が集合 ds にあるか
 func llIn(ds map[int]int, v int) bool {
     x := ds[v]
@@ -638,6 +649,8 @@ func llFnOwnAlloc(st mut St, f FnRef) bool {
     ds := llDepths(mut st, f)
     enters := rlEnters(mut st, f)
     mut none := mut map[int]int{}
+    // 値の定義の表（llCallerDepth は 1 回ごとに関数を頭から走査する — 確保・写しの深度の問い合わせは表で引く）
+    defs := if enters { llDefMap(mut st, f) } else { map[int]int{} }
     mut b := irFnBHead(mut st, f)
     while b != -1 {
         mut i := irBlkIHead(mut st, b)
@@ -648,7 +661,13 @@ func llFnOwnAlloc(st mut St, f FnRef) bool {
             } else if enters && (op == OpRAlloc || op == OpRBump) {
                 // enter する関数の確保は自分の深度が普通だが、宛先構築（M1 の印 — 呼び手の深度・W_DEST）は呼び手の深度へ作る（見落とすと
                 // binary-trees の one() の木が呼び手の深度に作られ、呼ぶループの反復の region を消していたので反復ごとの木が main に積もる — 1 GB 級）
-                if llCallerDepth(mut st, f, irInsA(mut st, i)) {
+                if llCallerDepthD(mut st, defs, irInsA(mut st, i)) {
+                    return true
+                }
+            } else if enters && op == OpCall && llRtDepthArg(mut st, i) >= 0 {
+                // enter する関数の rt の確保・写しの深度も同じ: 宛先の深度の算術（戻りの写しの床を含む — 返る列へ追記する呼び出しから来たときは宛先）
+                // は呼び手の深度でありうる
+                if llCallerDepthD(mut st, defs, llRtDepthArg(mut st, i)) {
                     return true
                 }
             } else if llInsAllocs(mut st, i, mut none, ds) {
@@ -706,6 +725,60 @@ func llCallerDepth(st mut St, f FnRef, v0 int) bool {
         if op == OpBin {
             // 算術（宛先の深度の選び）: どちらかが呼び手の深度なら真
             if llCallerDepth(mut st, f, irInsB(mut st, def)) {
+                return true
+            }
+            v = irInsC(mut st, def)
+        } else {
+            return true
+        }
+        steps += 1
+    }
+    return true
+}
+
+// 関数 f の値の定義の表: 値 → 定義の命令 × 4 + 入口のブロックか × 2 + 入口のブロックの enter より前か
+func llDefMap(st mut St, f FnRef) map[int]int {
+    mut m := mut map[int]int{}
+    b0 := irFnBHead(mut st, f)
+    mut b := b0
+    while b != -1 {
+        mut seenEnter := false
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpREnter || rlEnterCall(mut st, i) {
+                seenEnter = true
+            }
+            r := irInsRes(mut st, i)
+            if r >= 0 && m[r] == nil {
+                m[r] = int(i) * 4 + (if b == b0 { 2 } else { 0 }) + (if seenEnter { 0 } else { 1 })
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return freeze(m)
+}
+
+// llCallerDepth と同じ判定を定義の表 defs で
+func llCallerDepthD(st mut St, defs map[int]int, v0 int) bool {
+    mut v := v0
+    mut steps := 0
+    while steps < 32 {
+        d := defs[v]
+        if d == nil {
+            return true
+        }
+        def := InsRef(d / 4)
+        op := irInsOp(mut st, def)
+        if op == OpRDepth {
+            return d % 4 == 3
+        }
+        if op == OpLoad {
+            return irInsB(mut st, def) == W_DEST
+        }
+        if op == OpBin {
+            if llCallerDepthD(mut st, defs, irInsB(mut st, def)) {
                 return true
             }
             v = irInsC(mut st, def)

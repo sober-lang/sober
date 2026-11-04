@@ -420,6 +420,16 @@ theorem stepLeaf_closeK (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) 
     step Δ π' (.ret H ((.closeK) :: S) v) K2 = (step Δ π (.ret H ((.closeK) :: S) v) K).map (fun p => (p.1.fixLeaf, K2)) := by
   first | kR | (cases v <;> kR)
 
+set_option maxHeartbeats 0 in
+theorem stepLeaf_foldK (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) (v : Expr) (K K2 : ChanSt) (t : Ty) :
+    step Δ π' (.ret H ((.foldK t) :: S) v) K2 = (step Δ π (.ret H ((.foldK t) :: S) v) K).map (fun p => (p.1.fixLeaf, K2)) := by
+  first | kR | (cases v <;> kR)
+
+set_option maxHeartbeats 0 in
+theorem stepLeaf_unfoldK (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) (v : Expr) (K K2 : ChanSt) :
+    step Δ π' (.ret H ((.unfoldK) :: S) v) K2 = (step Δ π (.ret H ((.unfoldK) :: S) v) K).map (fun p => (p.1.fixLeaf, K2)) := by
+  first | kR | (cases v <;> kR)
+
 theorem stepLeaf_taskK (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) (v : Expr) (K K2 : ChanSt) :
     step Δ π' (.ret H ((.taskK) :: S) v) K2 = (step Δ π (.ret H ((.taskK) :: S) v) K).map (fun p => (p.1.fixLeaf, K2)) := by
   simp [step]
@@ -529,6 +539,8 @@ theorem stepLeaf_ret (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) (v 
     | joinK t => exact stepLeaf_joinK Δ π π' H S v K K2 t
     | taskK => exact stepLeaf_taskK Δ π π' H S v K K2
     | closeK => exact stepLeaf_closeK Δ π π' H S v K K2
+    | foldK t => exact stepLeaf_foldK Δ π π' H S v K K2 t
+    | unfoldK => exact stepLeaf_unfoldK Δ π π' H S v K K2
     | tryK t => exact stepLeaf_tryK Δ π π' H S v K K2 t
 
 /-- 旧構成子の redex（task の中では famMain が横取りして panic にする形） -/

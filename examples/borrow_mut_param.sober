@@ -1,35 +1,42 @@
 package main
 
-// 借りの閉包の mut 捕捉（(α-L1)）の対象は mut ローカルと mut 仮引数: mut 仮引数 z（割った struct — 欄ごとのセル）と n（int の ref）を
-// それぞれ別の呼び出しの借りのラムダが捕捉する（1 つの呼び出しが捕捉する mut の束縛は 1 つ）
-
-type Stream func(emit func(b []byte) error?) error?
+// 借りの仮引数の mut の席へ渡せるのは mut ローカルと mut 仮引数: mut 仮引数 z（割った struct — 欄ごとのセル）と n（int の ref）を
+// それぞれ別の値の呼び出しの mut の席へ渡す
 
 type Z struct {
     acc mut []byte
     n int
 }
 
-func fill(z mut Z, n mut int, st Stream) {
-    e := st((b []byte) => {
-        z.acc = append(z.acc, b[0])
-        z.n += len(b)
+type SZ func(z mut Z, emit func(z mut Z, b []byte) error?) error?
+
+type SN func(n mut int, emit func(n mut int, b []byte) error?) error?
+
+func fill(z mut Z, n mut int, sz SZ, sn SN) {
+    e := sz(mut z, (y, b) => {
+        y.acc = append(y.acc, b[0])
+        y.n += len(b)
         nil
     })
     if e != nil { z.n = -1 }
-    f := st((b []byte) => { n += 1; nil })
+    f := sn(mut n, (c, b) => { c += 1; nil })
     if f != nil { n = -1 }
 }
 
-func two(emit func(b []byte) error?) error? {
-    emit(bytes("abc"))?
-    return emit(bytes("de"))
+func twoZ(z mut Z, emit func(z mut Z, b []byte) error?) error? {
+    emit(mut z, bytes("abc"))?
+    return emit(mut z, bytes("de"))
+}
+
+func twoN(n mut int, emit func(n mut int, b []byte) error?) error? {
+    emit(mut n, bytes("abc"))?
+    return emit(mut n, bytes("de"))
 }
 
 func main() {
     mut z := Z{acc: mut []byte{}, n: 0}
     mut n := 0
-    fill(mut z, mut n, (emit) => two(emit))
+    fill(mut z, mut n, twoZ, twoN)
     println(z.n * 100 + len(z.acc))
     println(n)
 }

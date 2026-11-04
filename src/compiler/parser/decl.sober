@@ -172,16 +172,16 @@ func parametersN(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], 
         }
         mut done := false
         if len(names) > 0 {
-            // 宣言・ラムダの仮引数の先頭の mut は mut 引数の印（ラムダの mut 仮引数は task.Lease / task.NewLocal の窓の位置だけ — loader が柵。region-domain-pool.md 4d 節）
-            pm := mode != 1 && tg(cx, q) == lexer.KwMut
-            ty, r := typeOf(mut nb, mut db, cx, q, mode != 1)
+            // 仮引数の先頭の mut は mut 引数の印。関数型（mode 1）では仮引数の型を ast.TMutP で包む（mut の席 — language.md 25 節「関数型の mut 仮引数」）
+            pm := tg(cx, q) == lexer.KwMut
+            ty, r := typeOf(mut nb, mut db, cx, q, true)
             if ty >= 0 {
                 mut k := 0
                 while k < len(names) {
                     if mode == 0 {
                         out = append(out, node(mut nb, ast.KParam, 0, name(mut db, cx, names[k]), ty, if pm { 1 } else { 0 }, 0, 0, 0))
                     } else if mode == 1 {
-                        out = append(out, ty)
+                        out = append(out, if pm { node(mut nb, ast.TMutP, tk(cx, q), ty, 0, 0, 0, 0, 0) } else { ty })
                         pnames = append(pnames, name(mut db, cx, names[k]))
                     } else {
                         out = append(out, node(mut nb, ast.KLParam, 0, name(mut db, cx, names[k]), ty, if pm { 1 } else { 0 }, 0, 0, 0))
@@ -204,11 +204,12 @@ func parametersN(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], 
                 out = append(out, node(mut nb, ast.KLParam, 0, name(mut db, cx, p), -1, 0, 0, 0, 0))
                 p += 1
             } else {
-                ty, r := typeOf(mut nb, mut db, cx, p, false)
+                pm := tg(cx, p) == lexer.KwMut
+                ty, r := typeOf(mut nb, mut db, cx, p, pm)
                 if ty < 0 {
                     return -1, -1, p
                 }
-                out = append(out, ty)
+                out = append(out, if pm { node(mut nb, ast.TMutP, tk(cx, p), ty, 0, 0, 0, 0, 0) } else { ty })
                 unnamed += 1
                 p = r
             }

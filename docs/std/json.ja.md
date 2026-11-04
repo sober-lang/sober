@@ -4,12 +4,12 @@
 
 `import "std/json"`
 
-JSON（RFC 8259）の読みと決定的な印字（[language.md 16 節](../language.md)）。文書は平らな表 Doc（ノードの番号で子を指す — compiler/ の ast.Tree と同じ形）に置き、触るのは 1 段だけ開くビューの union Value（json.At）— 各段の switch に網羅が要る（雑に読む手段が構成的に無い — [language.md 16 節](../language.md)）。再帰の union にしないのはコアに再帰型が無いため（形式化の箱「ジェネリック union 段 (3) 再帰」— 入ったら再訪）。
+JSON（RFC 8259）の読みと決定的な印字（[language.md 16 節](../language.md)）。文書は平らな表 Doc（ノードの番号で子を指す — compiler/ の ast.Tree と同じ形）に置き、触るのは 1 段だけ開くビューの union View（json.At）— 各段の switch に網羅が要る（雑に読む手段が構成的に無い — [language.md 16 節](../language.md)）。値の木（再帰の union Value）は書きの側: 組んで Encode[json.Value] で書く・Doc の節から Tree で開く。
 
 ```sober
 d := json.Parse(b)?                       // 全量・入れ子の深さは MaxDepth まで
 switch json.At(d, json.Root(d)) {
-case json.Object{names, vals}: …              // 子はノードの番号 — json.At(d, vals[i]) で 1 段ずつ開く
+case json.ViewObject{names, vals}: …          // 子はノードの番号 — json.At(d, vals[i]) で 1 段ずつ開く
 …
 }
 s := json.Format(d, json.Root(d))        // 決定的（空白なし・欄はソースの順・数は字句のまま）
@@ -23,7 +23,7 @@ s := json.Format(d, json.Root(d))        // 決定的（空白なし・欄はソ
 func Decode[T](d Doc, n int) (T, error?)
 ```
 
-ノード n を struct T に読む。欄の名前 = JSON のキー。T の欄に書ける型は int・float・bool・string・struct・`[]U`・`U?`（U は前のどれか）。欠けた欄は Missing（`U?` の欄だけ欠けと null を nil で受ける）・種類の合わないノードは WrongType・int の欄の範囲外は IntRange。余った欄は無視する
+ノード n を struct T に読む。欄の名前 = JSON のキー。T の欄に書ける型は int・float・bool・string・struct・`[]U`・`U?`（U は前のどれか か json.Value — 裸の json.Value の欄は拒否: union はゼロ値を持たない）。T = json.Value は Tree と同じ（値の木）。欠けた欄は Missing（`U?` の欄だけ欠けと null を nil で受ける）・種類の合わないノードは WrongType・int の欄の範囲外は IntRange。余った欄は無視する
 
 例:
 
@@ -85,7 +85,7 @@ func main() {
         return
     }
     xs := switch json.At(d, json.Root(d)) {
-    case json.Array{items}: items
+    case json.ViewArray{items}: items
     default: []int{}
     }
     for i <- iter.Range(0, len(xs)) {
@@ -251,7 +251,7 @@ func ParseFloat(d Doc, n int) (float, error?)
 func Encode[T](v T) string
 ```
 
-v の JSON（空白なし・欄は宣言の順・`U?` の nil は null）。T の範囲は Decode と同じ。float の NaN / ±Inf は panic(NotFinite)
+v の JSON（空白なし・欄は宣言の順・`U?` の nil は null）。T の範囲は Decode と同じ + 裸の json.Value の欄・T = json.Value（値の木 — 印字は Format と同じ規則）。float の NaN / ±Inf は panic(NotFinite)
 
 例:
 
@@ -391,6 +391,15 @@ func Done(o mut builder.Builder[byte]) string
 
 積んだバイト列の string
 
+## PutValue
+
+```sober
+@effects()
+func PutValue(o mut builder.Builder[byte], x Value)
+```
+
+値の木 v を o に書く（json.Encode[json.Value] の写しと、欄の型が json.Value の struct の写しが呼ぶ部品）。印字の規則は Format と同じ（空白なし・欄は並びの順・数は字句のまま）。再帰の深さ = 木の深さ（Tree で開いた木なら MaxDepth まで）
+
 ## MaxDepth
 
 ```sober
@@ -467,8 +476,23 @@ type Value union {
     Bool { v bool }
     Number { lit string }
     String { v string }
-    Array { items []int }
-    Object { names []string; vals []int }
+    Array { items []Value }
+    Object { names []string; vals []Value }
+}
+```
+
+JSON の値の木（再帰の union — 組んで Encode[json.Value] で書く・Doc の節から Tree で開く）。数は字句のまま
+
+## View
+
+```sober
+type View union {
+    ViewNull {}
+    ViewBool { v bool }
+    ViewNumber { lit string }
+    ViewString { v string }
+    ViewArray { items []int }
+    ViewObject { names []string; vals []int }
 }
 ```
 
@@ -496,10 +520,19 @@ func Pos(d Doc, n int) int
 
 ```sober
 @effects()
-func At(d Doc, n int) Value
+func At(d Doc, n int) View
 ```
 
 ノード n を 1 段開く
+
+## Tree
+
+```sober
+@effects()
+func Tree(d Doc, n int) Value
+```
+
+ノード n を根とする部分木を値の木に開く。節は子が親より先に並び、部分木は [最初の子孫, n] の連続した区間なので、区間を前から 1 回歩いて下から組む（再帰しない — 深さ MaxDepth の文書でもスタックと region の深度を使わない）
 
 ## Get
 

@@ -158,7 +158,8 @@ let x86Fields = 0;
     x86Fields = xf.size;
     // 子の St に写す欄の出所 = cfg の列（xParCfg — β の鍵の x86 の cfg）か扉（下の DOOR）。外の値を新しく写すなら cfg に足す（鍵に入る）
     // xXmm は子の作業域（0 から積んで結果で返す — 外の値ではない）
-    const DOOR: Record<string, RegExp> = { hf: /^hf$/, hfOn: /^true$/, xAddr: /^addr$/, xXmm: /^(0|all)$/ };
+    // memFr も子の作業域（--mem-report のフレーム — 空から積んで XPar.frs で返す）
+    const DOOR: Record<string, RegExp> = { hf: /^hf$/, hfOn: /^true$/, xAddr: /^addr$/, xXmm: /^(0|all)$/, memFr: /^table\.Table\[int\]\{\}$/ };
     const pg = fns.get("xParGroup")!.body;
     const pc = fns.get("xParCfg");
     // 要素の数 = `return []int{…}` の一番外の括弧の中のカンマ + 1（SOBER_XDBG の値を後ろへ足す包み `return xdbgCfg([]int{…}, …)` も同じ — 足す分は

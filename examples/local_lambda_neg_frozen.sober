@@ -1,0 +1,14 @@
+package main
+
+// 負例: 局所の束縛のラムダの本体は呼び出しの点で走る — freeze の後に呼べば、そこで捕捉した束縛に書く（language.md 17 節 U2・25 節）
+
+func main() {
+    mut b := mut []int{0}
+    set := (x int) => {
+        b[0] = x
+    }
+    set(1)
+    c := freeze(b)
+    set(9)
+    println(c[0])
+}

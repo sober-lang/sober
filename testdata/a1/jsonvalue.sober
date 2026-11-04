@@ -1,0 +1,82 @@
+package main
+
+// std/json の Value と同じ形の再帰の union（a1dump は単一ファイルの main だけを写すので同形を main に書く）: 関数の結果で組む・
+// 部分木を共有する・印字（Format と同じ規則）・std/json の View から開いて組む
+
+import "std/iter"
+import "std/json"
+
+type J union {
+    JNull {}
+    JBool { v bool }
+    JNum { lit string }
+    JStr { v string }
+    JArr { items []J }
+    JObj { names []string; vals []J }
+}
+
+func num(n int) J {
+    return JNum{lit: "${n}"}
+}
+
+func arr(xs []J) J {
+    return JArr{items: xs}
+}
+
+func show(x J) string {
+    return switch x {
+    case JNull{}: "null"
+    case JBool{v}: if v { "true" } else { "false" }
+    case JNum{lit}: lit
+    case JStr{v}: "\"${v}\""
+    case JArr{items}: {
+        mut s := "["
+        for i <- iter.Range(0, len(items)) {
+            s = s + (if i > 0 { "," } else { "" }) + show(items[i])
+        }
+        s + "]"
+    }
+    case JObj{names, vals}: {
+        mut s := "{"
+        for i <- iter.Range(0, len(names)) {
+            s = s + (if i > 0 { "," } else { "" }) + "\"${names[i]}\":" + show(vals[i])
+        }
+        s + "}"
+    }
+    }
+}
+
+// std/json の文書の節 n から下を J に開く（ビューを 1 段ずつ — 再帰）
+func open(d json.Doc, n int) J {
+    return switch json.At(d, n) {
+    case json.ViewNull{}: JNull{}
+    case json.ViewBool{v}: JBool{v: v}
+    case json.ViewNumber{lit}: JNum{lit: lit}
+    case json.ViewString{v}: JStr{v: v}
+    case json.ViewArray{items}: {
+        mut xs := []J{}
+        for k <- items {
+            xs = append(xs, open(d, k))
+        }
+        JArr{items: xs}
+    }
+    case json.ViewObject{names, vals}: {
+        mut xs := []J{}
+        for k <- vals {
+            xs = append(xs, open(d, k))
+        }
+        JObj{names: names, vals: xs}
+    }
+    }
+}
+
+func main() {
+    shared := arr([]J{num(1), JNull{}})
+    top := JObj{names: []string{"a", "b", "c"}, vals: []J{shared, arr([]J{shared, shared, JBool{v: false}}), JStr{v: "s"}}}
+    println(show(top))
+    d := json.Parse(bytes("{\"k\":[1,{\"z\":[true,null,\"q\"]},[]],\"n\":-2.5e1}")) catch {
+        println("bad")
+        return
+    }
+    println(show(open(d, json.Root(d))))
+}

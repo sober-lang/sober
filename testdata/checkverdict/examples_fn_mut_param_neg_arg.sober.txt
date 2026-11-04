@@ -1,0 +1,2 @@
+sober: load error at examples/fn_mut_param_neg_arg.sober:9:7: this argument does not match the function's parameter: a mut parameter takes `mut x` (a mut binding or one of its fields), and a parameter taken by value takes a plain value
+exit=1

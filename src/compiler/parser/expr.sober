@@ -549,16 +549,9 @@ func primary(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx C
 // （printer と AST JSON だけが見る — 文字リテラルの b = 1 と同じ扱い）
 func intLit(nb mut builder.Builder[ast.Node], cx Cx, p int) (int, int) {
     t := cx.ts[p]
-    r := if t.end - t.start > 2 && cx.src[t.start] == '0' && !lexer.IsDecimalDigit(int(cx.src[t.start + 1])) { lexer.RadixOf(int(cx.src[t.start + 1])) } else { 10 }
-    mut v := 0
-    mut i := if r == 10 { t.start } else { t.start + 2 }
-    while i < t.end {
-        d := lexer.DigitVal(int(cx.src[i]), r)
-        if v > (9223372036854775807 - d) / r {
-            return -1, p
-        }
-        v = v * r + d
-        i += 1
+    v, r, ok := lexer.IntValue(cx.src, t.start, t.end)
+    if !ok {
+        return -1, p
     }
     return node(mut nb, ast.EInt, tk(cx, p), v, if r == 10 { 0 } else { r }, 0, 0, 0, 0), p + 1
 }

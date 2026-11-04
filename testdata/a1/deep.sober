@@ -1,0 +1,37 @@
+package main
+
+// 深い鎖: 1 本の子しか持たない木を深さ 60 まで積み、根から葉へ歩いて和を取る
+
+import "std/iter"
+
+type L struct {
+    v int
+    next []L
+}
+
+func build(n int) L {
+    mut l := L{v: 0, next: []L{}}
+    for i <- iter.Range(1, n + 1) {
+        l = L{v: i, next: []L{l}}
+    }
+    return l
+}
+
+func walk(l L) int {
+    mut s := l.v
+    for x <- l.next {
+        s += walk(x)
+    }
+    return s
+}
+
+func depth(l L) int {
+    return if len(l.next) == 0 { 1 } else { 1 + depth(l.next[0]) }
+}
+
+func main() {
+    l := build(60)
+    println(walk(l))
+    println(depth(l))
+    println(l.next[0].next[0].v)
+}

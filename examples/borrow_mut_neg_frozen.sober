@@ -1,27 +1,27 @@
 package main
 
-// 負例: 借りのラムダの mut の捕捉は作成点の呼び出しへの mut 実引数（language.md 17 節 U2・25 節 (α-L1)）— freeze の後に捕捉すると、
-// 本体が読むだけでも拒否（呼び先へ `mut z` を渡すのと同じ）
-
-type Stream func(emit func(b []byte) error?) error?
+// 負例: 値の呼び出しの mut の席へ渡すのは mut 実引数（language.md 17 節 U2・25 節「関数型の mut 仮引数」）— freeze の後に渡すと、
+// 受け手が読むだけでも拒否（func 宣言へ `mut z` を渡すのと同じ）
 
 type Z struct {
     acc mut []byte
     n int
 }
 
-func two(emit func(b []byte) error?) error? {
-    return emit(bytes("de"))
+type Stream func(z mut Z, emit func(z mut Z, b []byte) error?) error?
+
+func two(z mut Z, emit func(z mut Z, b []byte) error?) error? {
+    return emit(mut z, bytes("de"))
 }
 
 func count(st Stream) int {
     mut z := Z{acc: mut []byte{1, 2}, n: 0}
     w := freeze(z.acc)
-    e := st((b []byte) => { println(z.n); nil })
+    e := st(mut z, (y, b) => { println(y.n); nil })
     if e != nil { return -1 }
     return len(w)
 }
 
 func main() {
-    println(count((emit) => two(emit)))
+    println(count(two))
 }

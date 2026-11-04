@@ -873,7 +873,7 @@
                       {
                         "k": "type",
                         "bind": null,
-                        "variant": "json.Array",
+                        "variant": "json.ViewArray",
                         "fields": [
                           {
                             "name": "items",

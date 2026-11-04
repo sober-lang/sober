@@ -8,7 +8,7 @@ import "std/http"
 
 func route(r http.Request) http.Response {
     if r.path == "/stream" {
-        return http.Response{status: 200, contentType: "text/plain", length: 6, stream: (emit) => emit(bytes("chunk\n"))}
+        return http.Response{status: 200, contentType: "text/plain", length: 6, stream: (out, emit) => emit(mut out, bytes("chunk\n"))}
     }
     return http.Text("hello\n")
 }

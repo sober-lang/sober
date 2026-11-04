@@ -38,15 +38,17 @@ func Render(spec []byte, cmds []string, effs []string, ja []byte) (string, error
         t := json.Parse(ja) catch {
             return "", BadSpec{what: "the translation table is not JSON"}
         }
-        switch json.At(t, json.Root(t)) {
-        case json.Object{names, vals}:
-            for k <- iter.Range(0, len(names)) {
-                tr.en = append(tr.en, names[k])
-                tr.ja = append(tr.ja, json.ParseString(t, vals[k]) catch "")
-                tr.used = append(tr.used, false)
-            }
-        default:
+        // ビューの variant の名前に依らない読み（compiler/ は鎖の boot の std〔旧名〕と今の std〔新名〕の両方で建つ必要がある — 次の鎖の段で
+        // json.At の switch に戻せる）: オブジェクトの節の欄 = kids[a, a + b) がキー・kids[a + b, a + 2b) が値（Doc の欄の読み）
+        o := json.NeedObject(t, json.Root(t)) catch {
             return "", BadSpec{what: "the translation table is not an object"}
+        }
+        a := t.a[o]
+        b := t.b[o]
+        for k <- iter.Range(0, b) {
+            tr.en = append(tr.en, json.ParseString(t, t.kids[a + k]) catch "")
+            tr.ja = append(tr.ja, json.ParseString(t, t.kids[a + b + k]) catch "")
+            tr.used = append(tr.used, false)
         }
     }
     name := str(d, r, "name")

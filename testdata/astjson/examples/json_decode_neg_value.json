@@ -1,0 +1,248 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/json",
+      "tok": 4
+    }
+  ],
+  "types": [
+    {
+      "name": "Msg",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 10
+          },
+          {
+            "name": "body",
+            "type": {
+              "k": "name",
+              "name": "json.Value"
+            },
+            "tok": 13
+          }
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 20
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "d",
+              "err"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "json",
+                    "tok": 29
+                  },
+                  "field": "Parse",
+                  "tok": 31
+                },
+                "args": [
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "bytes",
+                      "tok": 33
+                    },
+                    "args": [
+                      {
+                        "k": "strlit",
+                        "value": "{\"id\":1,\"body\":[]}",
+                        "tok": 35
+                      }
+                    ],
+                    "tok": 34
+                  }
+                ],
+                "tok": 32
+              }
+            ],
+            "tok": 25
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "err",
+                  "tok": 40
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 42
+                },
+                "tok": 41
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [],
+                    "tok": 44
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 39
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "m",
+              "derr"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "index",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "json",
+                      "tok": 52
+                    },
+                    "field": "Decode",
+                    "tok": 54
+                  },
+                  "idx": {
+                    "k": "ident",
+                    "name": "Msg",
+                    "tok": 56
+                  },
+                  "tok": 55
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "d",
+                    "tok": 59
+                  },
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "json",
+                        "tok": 61
+                      },
+                      "field": "Root",
+                      "tok": 63
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "d",
+                        "tok": 65
+                      }
+                    ],
+                    "tok": 64
+                  }
+                ],
+                "tok": 58
+              }
+            ],
+            "tok": 48
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "ident",
+                  "name": "derr",
+                  "tok": 70
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 72
+                },
+                "tok": 71
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 74
+                      },
+                      "args": [
+                        {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "m",
+                            "tok": 76
+                          },
+                          "field": "id",
+                          "tok": 78
+                        }
+                      ],
+                      "tok": 75
+                    }
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 69
+            }
+          }
+        ]
+      },
+      "tok": 21,
+      "bodiless": false,
+      "span": {
+        "start": 20,
+        "end": 85
+      },
+      "sig_end": 24
+    }
+  ],
+  "consts": []
+}

@@ -41,3 +41,48 @@ func FromBits(b int) float
 ```
 
 ビット列 b の float（±Inf・NaN もこれで作る）
+
+## Trunc
+
+```sober
+@effects()
+func Trunc(x float) float
+```
+
+x の 0 方向への切り捨て（整数部 — 小数部のビットを落とす。±Inf・NaN・|x| ≥ 2^52 はそのまま・|x| \< 1 は符号を残した 0）
+
+## Floor
+
+```sober
+@effects()
+func Floor(x float) float
+```
+
+x 以下の最大の整数（-0.5 → -1・-0 → -0・±Inf・NaN はそのまま）
+
+## Ceil
+
+```sober
+@effects()
+func Ceil(x float) float
+```
+
+x 以上の最小の整数（-0.5 → -0・±Inf・NaN はそのまま）
+
+## Min
+
+```sober
+@effects()
+func Min(x float, y float) float
+```
+
+x と y の小さいほう（どちらかが NaN ならその NaN・-0 と +0 では -0）
+
+## Max
+
+```sober
+@effects()
+func Max(x float, y float) float
+```
+
+x と y の大きいほう（どちらかが NaN ならその NaN・-0 と +0 では +0）

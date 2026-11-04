@@ -1,7 +1,7 @@
 package main
 
-// JSONTestSuite の判定（scripts/jsonsuite.sh）: 標準入力の文書を json.Parse で読み、受理なら「ok」+ 印字の不動点（Parse → Format → Parse → Format が同じ）、
-// 拒否なら「reject <位置> <種類>」を 1 行
+// JSONTestSuite の判定（scripts/jsonsuite.sh）: 標準入力の文書を json.Parse で読み、受理なら「ok」+ 印字の不動点（Parse → Format → Parse → Format が同じ・
+// 値の木を通しても同じ — Parse → Tree → Encode[json.Value] が Format と一致し、それを Parse → Format しても同じ）、拒否なら「reject <位置> <種類>」を 1 行
 
 import "std/io"
 import "std/json"
@@ -23,8 +23,25 @@ func main() {
         } else if json.Format(d2, json.Root(d2)) != s {
             println("roundtrip-differs")
         } else {
-            println("ok")
+            tree(d, s)
         }
     }
+    }
+}
+
+// 値の木を通した不動点（s = 文書 d の Format）
+func tree(d json.Doc, s string) {
+    w := json.Encode[json.Value](json.Tree(d, json.Root(d)))
+    if w != s {
+        println("roundtrip-tree-differs")
+        return
+    }
+    d3, err3 := json.Parse(bytes(w))
+    if err3 != nil {
+        println("roundtrip-tree-reject")
+    } else if json.Format(d3, json.Root(d3)) != s {
+        println("roundtrip-tree-format")
+    } else {
+        println("ok")
     }
 }

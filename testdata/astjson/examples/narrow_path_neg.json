@@ -1,0 +1,171 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "L",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "v",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          },
+          {
+            "name": "next",
+            "type": {
+              "k": "opt",
+              "type": {
+                "k": "name",
+                "name": "L"
+              }
+            },
+            "tok": 10
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 16
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "l"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "L",
+                "elems": [
+                  {
+                    "key": "v",
+                    "value": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 27
+                    }
+                  },
+                  {
+                    "key": "next",
+                    "value": {
+                      "k": "composite",
+                      "type_name": "L",
+                      "elems": [
+                        {
+                          "key": "v",
+                          "value": {
+                            "k": "int",
+                            "value": 2,
+                            "tok": 35
+                          }
+                        },
+                        {
+                          "key": "next",
+                          "value": {
+                            "k": "nil",
+                            "tok": 39
+                          }
+                        }
+                      ],
+                      "tok": 31,
+                      "type_args": []
+                    }
+                  }
+                ],
+                "tok": 23,
+                "type_args": []
+              }
+            ],
+            "tok": 21
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "l",
+                    "tok": 44
+                  },
+                  "field": "next",
+                  "tok": 46
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 48
+                },
+                "tok": 47
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 50
+                      },
+                      "args": [
+                        {
+                          "k": "selector",
+                          "base": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "l",
+                              "tok": 52
+                            },
+                            "field": "next",
+                            "tok": 54
+                          },
+                          "field": "v",
+                          "tok": 56
+                        }
+                      ],
+                      "tok": 51
+                    }
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 43
+            }
+          }
+        ]
+      },
+      "tok": 17,
+      "bodiless": false,
+      "span": {
+        "start": 16,
+        "end": 63
+      },
+      "sig_end": 20
+    }
+  ],
+  "consts": []
+}

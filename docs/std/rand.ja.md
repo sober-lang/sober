@@ -72,6 +72,15 @@ func Intn(r mut Rand, n int) int
 
 [0, n) の値（n は 1 以上 — 0 以下は panic(NonPositiveBound{n})）。偏りなし（棄却法: n の倍数に収まる範囲の値だけ使う）
 
+## Float
+
+```sober
+@effects()
+func Float(r mut Rand) float
+```
+
+[0, 1) の float（2^-53 刻みの 2^53 通りが等確率）。Int62 の上位 53 bit を 2^-53 倍する — どちらの段も正確なので丸めは入らない
+
 ## Bool
 
 ```sober

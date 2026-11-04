@@ -15,6 +15,11 @@ import "std/table"
 type S struct {
     h table.Table[int]
     types table.Table[Ty]
+    tInt int // 欄の無い構成子の作り置き（生成物が st.tInt … を読む — state.sober の S と同じ）
+    tBool int
+    tByte int
+    tF64 int
+    tUnit int
 }
 
 // 読み口（入力のバイト列と位置）
@@ -84,6 +89,17 @@ func ty(st mut S, p mut P) int {
     case 'C':
         rc := num(mut p)
         return mk(mut st, TChan, rc, ty(mut st, mut p), 0)
+    case 'X':
+        return mk(mut st, TRVar, num(mut p), 0, 0)
+    case 'G':
+        n := num(mut p)
+        i := num(mut p)
+        return mk(mut st, TMuS, n, i, ty(mut st, mut p))
+    case 'H':
+        r := num(mut p)
+        n := num(mut p)
+        i := num(mut p)
+        return mk4(mut st, TMuRs, r, n, i, ty(mut st, mut p))
     }
     m := num(mut p)
     r := num(mut p)
@@ -172,6 +188,28 @@ func putTy(st mut S, out mut []byte, t int) {
     case TOpt:
         put(mut out, "o ")
         putTy(mut st, mut out, tA(mut st, t))
+        return
+    case TRVar:
+        put(mut out, "X ")
+        putNum(mut out, tA(mut st, t))
+        return
+    case TMuS:
+        put(mut out, "G ")
+        putNum(mut out, tA(mut st, t))
+        put(mut out, " ")
+        putNum(mut out, tB(mut st, t))
+        put(mut out, " ")
+        putTy(mut st, mut out, tC(mut st, t))
+        return
+    case TMuRs:
+        put(mut out, "H ")
+        putNum(mut out, tA(mut st, t))
+        put(mut out, " ")
+        putNum(mut out, tB(mut st, t))
+        put(mut out, " ")
+        putNum(mut out, tC(mut st, t))
+        put(mut out, " ")
+        putTy(mut st, mut out, tD(mut st, t))
         return
     case TUn | TPr | TFn:
         put(mut out, if k == TUn { "U " } else if k == TPr { "P " } else { "F " })
@@ -308,6 +346,87 @@ func line(st mut S, p mut P, out mut []byte) {
         d := num(mut p)
         rn = rehome(mut st, d, ty(mut st, mut p))
         kind = 2
+    } else if fname == "rsubst" {
+        t := ty(mut st, mut p)
+        k := num(mut p)
+        rn = rsubst(mut st, t, k, ty(mut st, mut p))
+        kind = 2
+    } else if fname == "rfree" {
+        n := num(mut p)
+        rb = rfree(mut st, n, ty(mut st, mut p))
+    } else if fname == "isFn" {
+        rb = isFn(mut st, ty(mut st, mut p))
+    } else if fname == "unfold" {
+        rn = unfold(mut st, ty(mut st, mut p))
+        kind = 2
+    } else if fname == "covOk" {
+        rb = covOk(mut st, ty(mut st, mut p))
+    } else if fname == "localOnly" {
+        rb = localOnly(mut st, ty(mut st, mut p))
+    } else if fname == "recOk" {
+        rb = recOk(mut st, ty(mut st, mut p))
+    } else if fname == "foldOk" {
+        rb = foldOk(mut st, ty(mut st, mut p))
+    } else if fname == "musOk" {
+        rb = musOk(mut st, ty(mut st, mut p))
+    } else if fname == "muRsOk" {
+        rb = muRsOk(mut st, ty(mut st, mut p))
+    } else if fname == "comp" {
+        t := ty(mut st, mut p)
+        rn = comp(mut st, t, num(mut p))
+        kind = 2
+    } else if fname == "isChain" {
+        t := ty(mut st, mut p)
+        rb = isChain(mut st, t, num(mut p))
+    } else if fname == "chainFn" {
+        t := ty(mut st, mut p)
+        rb = chainFn(mut st, t, num(mut p))
+    } else if fname == "rguardN" {
+        k := num(mut p)
+        n := num(mut p)
+        f := num(mut p) != 0
+        rb = rguardN(mut st, k, n, f, ty(mut st, mut p))
+    } else if fname == "uoccAny" {
+        k := num(mut p)
+        n := num(mut p)
+        g := num(mut p) != 0
+        rb = uoccAny(mut st, k, n, g, ty(mut st, mut p))
+    } else if fname == "sinkPick" {
+        n := num(mut p)
+        c := num(mut p)
+        rn = sinkPick(mut st, n, c, ty(mut st, mut p))
+        kind = 2
+    } else if fname == "sinkStep" {
+        n := num(mut p)
+        bs := ty(mut st, mut p)
+        rn = sinkStep(mut st, n, bs, num(mut p))
+        kind = 2
+    } else if fname == "sinkRounds" {
+        n := num(mut p)
+        bs := ty(mut st, mut p)
+        rn = sinkRounds(mut st, n, bs, num(mut p))
+        kind = 2
+    } else if fname == "allSink" {
+        bs := ty(mut st, mut p)
+        n := num(mut p)
+        rb = allSink(mut st, bs, n, num(mut p))
+    } else if fname == "groupOk" {
+        bs := ty(mut st, mut p)
+        rb = groupOk(mut st, bs, num(mut p))
+    } else if fname == "grp" {
+        d := num(mut p) != 0
+        n := num(mut p)
+        j := num(mut p)
+        rn = grp(mut st, d, n, j, ty(mut st, mut p))
+        kind = 2
+    } else if fname == "substG" {
+        t := ty(mut st, mut p)
+        d := num(mut p) != 0
+        n := num(mut p)
+        bs := ty(mut st, mut p)
+        j := num(mut p)
+        rn = substG(mut st, t, d, n, bs, j, num(mut p))
+        kind = 2
     } else if fname == "tyEq" {
         a := ty(mut st, mut p)
         rb = tyEq(mut st, a, ty(mut st, mut p))
@@ -349,10 +468,16 @@ func main() int {
         _ = io.WriteStderr(bytes("tyvecdump: cannot read stdin\n"))
         return 1
     }
-    mut st := S{h: table.Table[int]{}, types: table.Table[Ty]{}}
     mut p := P{b: src, i: 0}
     mut out := mut []byte{}
     while p.i < len(p.b) {
+        // 行ごとに型の表を作り直す（ループの本体の region で捨てる — 表を持ち越すと本数に比例して積もる）
+        mut st := S{h: table.Table[int]{}, types: table.Table[Ty]{}, tInt: 0, tBool: 0, tByte: 0, tF64: 0, tUnit: 0}
+        st.tInt = mk(mut st, TInt, 0, 0, 0)
+        st.tBool = mk(mut st, TBool, 0, 0, 0)
+        st.tByte = mk(mut st, TByte, 0, 0, 0)
+        st.tF64 = mk(mut st, TF64, 0, 0, 0)
+        st.tUnit = mk(mut st, TUnit, 0, 0, 0)
         line(mut st, mut p, mut out)
     }
     werr := io.WriteStdout(freeze(out))

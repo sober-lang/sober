@@ -803,6 +803,9 @@ func ilFunc(st mut St, f FnRef, fr []int, ok []int, cv []int, hot mut []int) {
     mut grown := 0
     size0 := ilSize(mut st, f)
     small := size0 <= IL_CALLER
+    // sober_entry へ利用者の関数（main.main・task の入口）を写さない: 入口は深度 0 の上で呼ぶ — 写すと入口の region の enter が消え、
+    // 呼び手の region へ書く呼び先が深度 0（スロットの無い深度）へ確保する（rflow の入口の扱いと同じ約束）
+    ent := xIsEntry(mut st, f)
     // ループの体のブロック（番号ごと — 部分インラインはループの中の呼び出し点だけ。最初の候補で数える）。続きのブロック（ilCall が作る）は
     // 番号が表の外 — 元の呼び出しのブロックの印を継ぐ（loopOf）
     mut inLoop := []int{}
@@ -817,8 +820,9 @@ func ilFunc(st mut St, f FnRef, fr []int, ok []int, cv []int, hot mut []int) {
             if irInsOp(mut st, ins) == OpCall {
                 g := irInsFn(mut st, ins)
                 gi := xIndex(fr, int(g))
+                skip := ent && !ilIsRt(mut st, g)
                 // std/utf8.Check は写さない（呼び出しの点が ubf.sober の「中身が凍結済みと分かる点」— 写すと点が消える。1 回だけ走る呼び出し）
-                n := if g != f && g != st.ubCheck && ok[gi] == 1 { ilSize(mut st, g) } else { 0 }
+                n := if !skip && g != f && g != st.ubCheck && ok[gi] == 1 { ilSize(mut st, g) } else { 0 }
                 cov := n > IL_TINY && len(cv) > 0 && ilIn(cv, int(g))
                 if n > 0 && (n <= IL_TINY || (small && grown < IL_GROW) || cov) {
                     if n > IL_TINY && !cov {
@@ -828,7 +832,7 @@ func ilFunc(st mut St, f FnRef, fr []int, ok []int, cv []int, hot mut []int) {
                 } else if n > 0 && g == st.rtRenterLL && size0 <= IL_LLMAX {
                     // 反復の軽い enter（B）
                     blk = ilCall(mut st, f, blk, ins, g)
-                } else if g != f && g != st.ubCheck && ok[gi] == 2 {
+                } else if !skip && g != f && g != st.ubCheck && ok[gi] == 2 {
                     // 部分インライン: ループの中の呼び出し点だけ・冷たい道を除いた熱い命令で判定・予算は熱い命令で
                     if hot[gi] == -2 {
                         hot[gi] = ilHot(mut st, g)

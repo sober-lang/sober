@@ -1,0 +1,2 @@
+sober: load error at examples/type_recursive_neg_targs.sober:5:6: recursive type whose recursive references change the type arguments — pass the declaration's own type parameters in the same order
+exit=1

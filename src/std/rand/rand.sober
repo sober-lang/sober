@@ -72,6 +72,12 @@ func Intn(r mut Rand, n int) int {
     return v % n
 }
 
+// [0, 1) の float（2^-53 刻みの 2^53 通りが等確率）。Int62 の上位 53 bit を 2^-53 倍する — どちらの段も正確なので丸めは入らない
+@effects()
+func Float(r mut Rand) float {
+    return float(Int62(mut r) >> 9) * 1.1102230246251565e-16
+}
+
 // 真偽を 1 つ
 @effects()
 func Bool(r mut Rand) bool {

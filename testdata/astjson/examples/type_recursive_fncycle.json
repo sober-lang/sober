@@ -1,0 +1,442 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "Node",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "kids",
+            "type": {
+              "k": "slice_of",
+              "elem": {
+                "k": "name",
+                "name": "Node"
+              },
+              "mut": false
+            },
+            "tok": 7
+          },
+          {
+            "name": "v",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 12
+          },
+          {
+            "name": "cb",
+            "type": {
+              "k": "func",
+              "params": [
+                {
+                  "k": "name",
+                  "name": "Node"
+                }
+              ],
+              "results": [
+                {
+                  "k": "name",
+                  "name": "int"
+                }
+              ],
+              "param_names": [
+                "n"
+              ]
+            },
+            "tok": 15
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 25
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "size",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "Node"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "s"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "n",
+                  "tok": 36
+                },
+                "field": "v",
+                "tok": 38
+              }
+            ],
+            "tok": 33
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "k"
+                  ],
+                  "src": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "n",
+                      "tok": 43
+                    },
+                    "field": "kids",
+                    "tok": 45
+                  },
+                  "guards": [],
+                  "tok": 41
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "assign",
+                    "targets": [
+                      {
+                        "k": "ident",
+                        "name": "s",
+                        "tok": 47
+                      }
+                    ],
+                    "op": "+=",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "size",
+                          "tok": 49
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "k",
+                            "tok": 51
+                          }
+                        ],
+                        "tok": 50
+                      }
+                    ],
+                    "tok": 47
+                  }
+                ]
+              },
+              "tok": 40
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "s",
+                "tok": 57
+              }
+            ],
+            "tok": 56
+          }
+        ]
+      },
+      "tok": 26,
+      "bodiless": false,
+      "span": {
+        "start": 25,
+        "end": 61
+      },
+      "sig_end": 32
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "leaf"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Node",
+                "elems": [
+                  {
+                    "key": "kids",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "Node"
+                      },
+                      "elems": [],
+                      "mut": false,
+                      "tok": 72
+                    }
+                  },
+                  {
+                    "key": "v",
+                    "value": {
+                      "k": "int",
+                      "value": 2,
+                      "tok": 80
+                    }
+                  },
+                  {
+                    "key": "cb",
+                    "value": {
+                      "k": "lambda",
+                      "params": [
+                        {
+                          "name": "n",
+                          "type": {
+                            "k": "name",
+                            "name": "Node"
+                          }
+                        }
+                      ],
+                      "body": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "n",
+                          "tok": 89
+                        },
+                        "field": "v",
+                        "tok": 91
+                      },
+                      "tok": 88
+                    }
+                  }
+                ],
+                "tok": 68,
+                "type_args": []
+              }
+            ],
+            "tok": 66
+          },
+          {
+            "k": "bind",
+            "names": [
+              "t"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Node",
+                "elems": [
+                  {
+                    "key": "kids",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "Node"
+                      },
+                      "elems": [
+                        {
+                          "k": "ident",
+                          "name": "leaf",
+                          "tok": 104
+                        },
+                        {
+                          "k": "ident",
+                          "name": "leaf",
+                          "tok": 106
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 100
+                    }
+                  },
+                  {
+                    "key": "v",
+                    "value": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 111
+                    }
+                  },
+                  {
+                    "key": "cb",
+                    "value": {
+                      "k": "lambda",
+                      "params": [
+                        {
+                          "name": "n",
+                          "type": {
+                            "k": "name",
+                            "name": "Node"
+                          }
+                        }
+                      ],
+                      "body": {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "size",
+                          "tok": 120
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "n",
+                            "tok": 122
+                          }
+                        ],
+                        "tok": 121
+                      },
+                      "tok": 119
+                    }
+                  }
+                ],
+                "tok": 96,
+                "type_args": []
+              }
+            ],
+            "tok": 94
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 126
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "t",
+                      "tok": 128
+                    },
+                    "field": "cb",
+                    "tok": 130
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "t",
+                      "tok": 132
+                    }
+                  ],
+                  "tok": 131
+                }
+              ],
+              "tok": 127
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 136
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "index",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "t",
+                          "tok": 138
+                        },
+                        "field": "kids",
+                        "tok": 140
+                      },
+                      "idx": {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 142
+                      },
+                      "tok": 141
+                    },
+                    "field": "cb",
+                    "tok": 145
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "t",
+                      "tok": 147
+                    }
+                  ],
+                  "tok": 146
+                }
+              ],
+              "tok": 137
+            }
+          }
+        ]
+      },
+      "tok": 62,
+      "bodiless": false,
+      "span": {
+        "start": 61,
+        "end": 153
+      },
+      "sig_end": 65
+    }
+  ],
+  "consts": []
+}

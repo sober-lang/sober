@@ -895,7 +895,7 @@ func enCheck(o mut builder.Builder[byte], st mut Stat, cfg Cfg, path string, nam
             mut got := ""
             if h != nil {
                 switch json.At(d, h) {
-                case json.String{v}: got = v
+                case json.ViewString{v}: got = v
                 default:
                 }
             }

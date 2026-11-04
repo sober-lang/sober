@@ -1,0 +1,12 @@
+package main
+
+// 負例（load が拒否 — diag.RecursiveType）: 自分を直に値で持つ — 値が作れない（住人のいない型）。T? / []T / map を通すか、表 + 番号で持つ
+
+type L struct {
+    v int
+    next L
+}
+
+func main() {
+    println(0)
+}

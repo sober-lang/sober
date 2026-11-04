@@ -13,7 +13,7 @@ package loader
 // 意味の約束「窓のたびに新しい値」はテンプレートの形そのもの（スカラーの欄はゼロ値・Scratch は LeaseAttach が整えた直後の全部 0）。置き場の使い回しは
 // 写し先の実装（LeaseTake が区画を返したとき）だけの最適化で、観測に出ない。task.Local は型引数を持たない（T は mut の列を持つ struct で型引数に置けない —
 // language.md 25 節）ので、T の同一性は型の名前（package の path + 名前）の指紋を字面の整数で焼き、LeaseTake が置き場の指紋と照合する（違えば panic）。parser が窓のあるファイルに std/task と std/pool の暗黙 import（$task・$pool）を足す。
-// 拒否（diag.Par）: 24 = 窓の形（mut 仮引数 1 つ・型を書いたラムダ）・25 = 窓の外のラムダの mut 仮引数・26 = T の形（スカラーと pool.Scratch の欄だけの struct）・
+// 拒否（diag.Par）: 24 = 窓の形（mut 仮引数 1 つ・型を書いたラムダ）・26 = T の形（スカラーと pool.Scratch の欄だけの struct）・
 // 27 = 整えの文（`pool.NewScratch(mut w.f, 定数)` を Scratch の欄ごとにちょうど 1 回）・28 = 写し先の直の呼び出し（std の外）
 
 import "std/builder"
@@ -24,7 +24,6 @@ import "diag"
 import "lexer"
 
 const PAR_LEASE_FORM = 24
-const PAR_LEASE_MUTLAM = 25
 const PAR_LEASE_SHAPE = 26
 const PAR_LEASE_PREP = 27
 const PAR_LEASE_RESERVED = 28
@@ -34,7 +33,7 @@ type LShape struct {
     scratch []string
 }
 
-// 全ファイルの task.NewLocal / task.Lease を写す（窓の外のラムダの mut 仮引数・写し先の直の呼び出し・形の違反は拒否）
+// 全ファイルの task.NewLocal / task.Lease を写す（写し先の直の呼び出し・形の違反は拒否）
 @errors(diag.Par)
 func leaseAll(cx Cx) ([]ast.Tree, error?) {
     ppar := pkgOf(cx, "std/task")
@@ -66,23 +65,9 @@ func leaseAll(cx Cx) ([]ast.Tree, error?) {
         }
         // 窓の呼び出し点
         mut hits := mut []int{}
-        mut lams := mut []int{}
         for i <- iter.Range(0, len(t.nodes)) {
-            w := leaseWhich(cx, f, ppar, t.nodes[i])
-            if w != 0 {
+            if leaseWhich(cx, f, ppar, t.nodes[i]) != 0 {
                 hits = append(hits, i)
-                na := ast.ListLen(t, t.nodes[i].b)
-                if na > 0 {
-                    lams = append(lams, ast.ListAt(t, t.nodes[i].b, na - 1))
-                }
-            }
-        }
-        // 窓の外のラムダの mut 仮引数
-        ls := freeze(lams)
-        for i <- iter.Range(0, len(t.nodes)) {
-            x := t.nodes[i]
-            if x.kind == ast.ELambda && lamHasMut(t, x) && !lsHas(ls, i) {
-                return []ast.Tree{}, diag.Par{at: diag.Pos{file: f, tok: x.tok}, kind: PAR_LEASE_MUTLAM}
             }
         }
         hs := freeze(hits)
@@ -123,25 +108,6 @@ func leaseWhich(cx Cx, f int, ppar int, x ast.Node) int {
         return 0
     }
     return w
-}
-
-// ラムダ x の仮引数に mut の印があるか
-func lamHasMut(t ast.Tree, x ast.Node) bool {
-    for j <- iter.Range(0, ast.ListLen(t, x.a)) {
-        if t.nodes[ast.ListAt(t, x.a, j)].c != 0 {
-            return true
-        }
-    }
-    return false
-}
-
-func lsHas(xs []int, v int) bool {
-    for i <- iter.Range(0, len(xs)) {
-        if xs[i] == v {
-            return true
-        }
-    }
-    return false
 }
 
 // ファイル f の窓の呼び出し点 hs を写した木（節は末尾に足し、呼び出しの節をその場でブロックに差し替える）。k = 隠れた名前の通し番号

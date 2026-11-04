@@ -6,7 +6,7 @@
 # 母集団:
 #   obs の entry（examples/*.out・testdata/*/app.out）— 期待値を持つので **--no-opt の側だけ** 建てて期待値（.out / .exit / .stderr）と照合する
 #     （既定の側は obs と panicmsg が同じ期待値と照合している — 推移で opt ≟ no-opt。同じビルドを二重に払わない）
-#   progen の固定シード（size 3 / 4 × 既定 20 本・--full は 60 本）と bench の 3 題材（小さい規模）— 期待値が無いので両方を建てて突き合わせる
+#   progen の固定シード（size 3 / 4 × 既定 20 本・--full は 60 本 — 旗なしと旗 float の 2 列）と bench の 6 題材（小さい規模 — float の 3 種目を含む）— 期待値が無いので両方を建てて突き合わせる
 #     （参照の側は --no-opt --backend=copy — 写しのバックエンド。既定の側の最適化のバックエンド〔性能投資 M4〜〕も照合に入る）
 #   展開の口（SOBER_RAW_EXPAND=1 の --no-opt — mut 引数だけの関数を呼び出し点ごとに展開する旧の raw の形）の obs の entry も期待値と照合する（種類 expx — --mut では回さない）:
 #     raw の既定は透過の実体関数（report-1278）なので、既定の照合は透過 ↔ 透過。expx が「展開 ≡ 透過」の実行の照合を受け持つ（期待値を介した推移）。
@@ -59,9 +59,13 @@ else
     for f in testdata/*/app.out; do d=${f%/app.out}; grep -qxF -e "$d/app" <<< "$excl" || list+=("expx xtd_$(basename "$d") $d/app"); done
 fi
 list+=("pair bench_fannkuch bench/fannkuch/main.sober 8" "pair bench_binarytrees bench/binarytrees/main.sober 10" "pair bench_1brc bench/1brc/main.sober testdata/bench1brc.txt")
+# float の 3 題材（小さい規模 — xmm の割り当て・SLP の束ね・比較の融合を突く）
+list+=("pair bench_nbody bench/nbody/main.sober 1000" "pair bench_spectralnorm bench/spectralnorm/main.sober 100" "pair bench_mandelbrot bench/mandelbrot/main.sober 200")
 for z in 3 4; do
     for s in $(seq 1 "$SEEDS"); do
         timeout 10 "$W/progen" "$s" "$z" > "$W/src/p${s}_$z.sober" 2> /dev/null && list+=("pair pg_${s}_$z $W/src/p${s}_$z.sober")
+        # float の式を混ぜた同じ種（progen の旗 float — 旗なしの列は変えない）
+        timeout 10 "$W/progen" "$s" "$z" float > "$W/src/pf${s}_$z.sober" 2> /dev/null && list+=("pair pgf_${s}_$z $W/src/pf${s}_$z.sober")
     done
 done
 run() { # run <実行ファイル> <出力の前置き> <引数…> → 前置き.o / .e / .c（標準入力 = $RUNIN〔例の .in〕か /dev/null）

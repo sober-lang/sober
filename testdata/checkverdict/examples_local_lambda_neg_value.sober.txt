@@ -1,0 +1,2 @@
+sober: load error at examples/local_lambda_neg_value.sober:7:10: a lambda bound to a local name can only be called (`f(x)`) or passed to a parameter of anonymous function type — it is expanded where it is used and is not a value (to keep a function as a value, write the lambda in a position of named function type)
+exit=1

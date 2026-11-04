@@ -2,7 +2,7 @@
 
 English | [日本語](testing.ja.md)
 
-This page takes a small package, `kv`, and adds tests to it in six steps. Each step is "write → run → read the output". Every output shown here is real: the repository's checks (guidetest in `scripts/gates.sh`) runs the same commands every time and checks them.
+This page takes a small package, `kv`, and adds tests to it in six steps. Sections 7 and 8 replace a dependency with a double in the tests of a package that uses `kv`. Each step is "write → run → read the output". Every output shown here is real: the repository's checks (guidetest in `scripts/gates.sh`) runs the same commands every time and checks them.
 
 Before this page: [Your first program](first-program.md) (`*_test.sober` and `sober test`) and sections 1–5 of the [Language tour](tour.md).
 
@@ -458,6 +458,241 @@ sober watch app
 
 (The output depends on time, so it is not shown here.)
 
+## 7. Reading a double in place of the real package — `@doubles`
+
+Take a package `settings` that uses `kv` to read and write settings. The settings live one line per file, and the package `kvstore` does the file reading and writing.
+
+```sober
+// examples/guide/kvstore/kvstore.sober
+package kvstore
+
+// Keeps one line of text per name, as files under a directory (the subject of section 7 of docs/guide/testing.md).
+
+import "std/io"
+
+type Dir struct {
+    path string
+}
+
+// no file called name
+type Missing error {
+    name string
+}
+
+// the file could not be written
+type Denied error {}
+
+func Open(path string) Dir {
+    return Dir{path: path}
+}
+
+@effects(io, nondet)
+@errors(Missing)
+func Load(d Dir, name string) (string, error?) {
+    b := io.ReadFile(d.path + "/" + name) catch return "", Missing{name: name}
+    return string(b) catch "", nil
+}
+
+@effects(io, nondet)
+@errors(Denied)
+func Store(d Dir, name string, line string) error? {
+    err := io.WriteFile(d.path + "/" + name, bytes(line))
+    return if err != nil { Denied{} } else { nil }
+}
+```
+
+```sober
+// examples/guide/settings/settings.sober
+package settings
+
+// Settings kept as one `key=value;key=value` line per file in a kvstore directory.
+
+import "examples/guide/kv"
+import "examples/guide/kvstore"
+
+// the value of key in the file name, or def when the file or the key is missing
+func Value(d kvstore.Dir, name string, key string, def string) string {
+    line := kvstore.Load(d, name) catch return def
+    ps := kv.Parse(line) catch return def
+    mut i := 0
+    while i < len(ps) {
+        if ps[i].key == key {
+            return ps[i].value
+        }
+        i += 1
+    }
+    return def
+}
+
+// sets key = value in the file name (creating the file) and writes the file back
+@errors(kvstore.Denied)
+func Set(d kvstore.Dir, name string, key string, value string) error? {
+    line := kvstore.Load(d, name) catch ""
+    ps := kv.Parse(line) catch []kv.Pair{}
+    mut out := mut []kv.Pair{}
+    mut found := false
+    mut i := 0
+    while i < len(ps) {
+        if ps[i].key == key {
+            out = append(out, kv.Pair{key: key, value: value})
+            found = true
+        } else {
+            out = append(out, ps[i])
+        }
+        i += 1
+    }
+    if !found {
+        out = append(out, kv.Pair{key: key, value: value})
+    }
+    return kvstore.Store(d, name, kv.Format(freeze(out)))
+}
+```
+
+`settings` imports `kvstore` and calls it directly. There is no interface and nothing is injected through a constructor. The tests of `settings` can still be written without touching the disk: inside the test's build only, `kvstore` is replaced as a whole by a stand-in (a double).
+
+A double lives in a directory under the package it replaces, and its file names end in `_double.sober`. The `@replaces` before the package clause names the package it stands in for, and the package name is the same as that package's.
+
+```sober
+// examples/guide/kvstore/mem/mem_double.sober
+@replaces("examples/guide/kvstore")
+package kvstore
+
+// A double of kvstore: the files live in a cell instead of on disk, and a directory from Failing refuses every write.
+
+import "std/testing/cell"
+
+type Dir struct {
+    failing bool
+}
+
+type File struct {
+    name string
+    line string
+}
+
+type Missing error {
+    name string
+}
+
+type Denied error {}
+
+// the files written so far, in the order of the writes
+const Files = cell.Cell[[]File]{}
+
+func Empty() Dir {
+    return Dir{failing: false}
+}
+
+func Failing() Dir {
+    return Dir{failing: true}
+}
+
+@errors(Missing)
+func Load(d Dir, name string) (string, error?) {
+    fs := cell.Get(Files)
+    mut i := len(fs) - 1
+    while i >= 0 {
+        if fs[i].name == name {
+            return fs[i].line, nil
+        }
+        i -= 1
+    }
+    return "", Missing{name: name}
+}
+
+@errors(Denied)
+func Store(d Dir, name string, line string) error? {
+    if d.failing {
+        return Denied{}
+    }
+    cell.Update(Files, (fs []File) => append(fs, File{name: name, line: line}))
+    return nil
+}
+```
+
+Instead of files, it keeps the written lines in `Files`, a cell from std/testing/cell. A test process has one of each cell, and each test starts with it empty. `Empty` and `Failing` exist only in the double: they are how a test picks the starting state, or injects a failing write.
+
+A test package names the doubles it uses with `@doubles` before the package clause of its `_test.sober`.
+
+```sober
+// examples/guide/settings/settings_test.sober
+@doubles("examples/guide/kvstore/mem")
+package settings
+
+import "examples/guide/kvstore/mem"
+import "std/testing/cell"
+
+func TestSetThenValue() {
+    d := mem.Empty()
+    assert(Set(d, "app", "port", "80") == nil)
+    assert(Set(d, "app", "host", "a=b") == nil)
+    assert(Set(d, "app", "port", "8080") == nil)
+    assert(Value(d, "app", "port", "") == "8080")
+    assert(Value(d, "app", "host", "") == "a=b")
+    assert(Value(d, "app", "user", "-") == "-")
+    files := cell.Get(mem.Files)
+    assert(files[len(files) - 1].line == "port=8080;host=a\\=b")
+}
+
+func TestMissingFile() {
+    assert(Value(mem.Empty(), "app", "port", "8080") == "8080")
+}
+
+func TestDenied() {
+    assert(Set(mem.Failing(), "app", "port", "80") != nil)
+    assert(len(cell.Get(mem.Files)) == 0)
+}
+```
+
+```sh
+$ sober test examples/guide/settings
+```
+
+Output:
+
+```
+ok   examples/guide/settings.TestSetThenValue
+ok   examples/guide/settings.TestMissingFile
+ok   examples/guide/settings.TestDenied
+3 passed, 0 failed
+```
+
+In that test's build, every file that imports `kvstore` reads the double (`settings.sober` too). The production build and check never read `_double.sober`. `--wiring` lists which test runs with which double (it builds the tests but does not run them).
+
+```sh
+$ sober test examples/guide/settings --wiring
+```
+
+Output:
+
+```
+examples/guide/settings: examples/guide/kvstore <= examples/guide/kvstore/mem
+```
+
+A double cannot drift away from the real package. For each name both have, the function signatures, the types of struct fields and `@errors` are checked against each other, and the double's effects (derived by the analyzer) must lie within the real package's `@effects`. A double with an effect the real package does not have (a panic, or io where the real package has none) is rejected. Names the real package has and the double lacks can be left out: write only what the tests use.
+
+## 8. The ceremony is not needed
+
+To test `settings` without the disk in other languages, the usual steps are:
+
+1. Pull the operations of `kvstore` out into an interface (`Store`)
+2. Write a production implementation and a test implementation (a mock) of it
+3. Add a `Store` parameter to the functions or the constructor of `settings`, and pass the production implementation from every caller (sometimes with a DI container)
+4. To keep the layering rule ("the domain does not depend on infrastructure"), invert the dependency through the interface
+
+None of these are needed in Sober. The replacement is a change in where an import resolves to, inside the test's build (section 7), and the production code keeps calling the real package directly. No interface, parameter or layer is added for the sake of replacing it.
+
+The contract check (signatures, types, effects) keeps the mock from drifting away from the real package. The direction of the dependencies is all in the import graph, visible statically in a closed world.
+
+What not to do:
+
+- Do not create an interface with a single implementation just for tests (when production needs to swap behaviour, use the function values and structs of [Abstraction](abstraction.md))
+- Do not add function parameters just for tests
+- Do not use mock libraries or DI containers
+- Do not split layers only to make things replaceable
+
+There is no way yet to replace a std package (clocks, the network, files) directly. To replace one, wrap it in a package of your own and replace that package (the shape of `kvstore` in this section).
+
 ## Summary
 
 1. Write single cases with `assert`
@@ -465,7 +700,8 @@ sober watch app
 3. Find the branches nothing takes with `--cover`, and the places the tests pass without looking with `--mutate`
 4. Fuzz with `sober fuzz`; the counterexamples it finds stay in `testdata/fuzz` as regression tests
 5. For code with tasks, vary the schedule too with `--sched`
+6. Replace a dependency with a double inside the test's build only, with `@doubles` (no interface, no injection)
 
 At every step the same code and the same seed gave the same result (the counterexample in section 2, the percentages in section 3, the trial where fuzzing found the bug in section 4). That is why a failure replays from one seed, a passing result can be remembered and replayed (section 6), and one run is enough to judge each mutant.
 
-The exact definitions are in [chapter 13 of the language specification](../spec/13-testing.ja.md), and the history of the decisions in sections 35, 39 and 40 of the [decision record](../language.md) (both in Japanese).
+The exact definitions are in [chapter 13 of the language specification](../spec/13-testing.ja.md), and the history of the decisions in sections 35, 39, 40 and 41 of the [decision record](../language.md) (both in Japanese).

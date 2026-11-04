@@ -1,0 +1,18 @@
+package main
+
+// 反復の中で作った値を外の束縛へ運ぶ（反復の region から外への境界の写し — 写しの間は元と写しが両方ある）
+func carry() []int {
+    mut keep := []int{0}
+    mut i := 0
+    while i < 3 {
+        t := []int{i, i + 1, i + 2, i + 3}
+        keep = if t[0] == 2 { t } else { keep }
+        i += 1
+    }
+    return keep
+}
+
+func main() {
+    k := carry()
+    println(k[3])
+}

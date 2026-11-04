@@ -149,7 +149,10 @@ func cellRead(st mut St, e int, t int, hinit int) int {
     setCur(mut st, bHave)
     storeVal(mut st, res, 0, t, copyVal(mut st, t, loadVal(mut st, itop(mut st, vp), 0, t)))
     if containsSlice(mut st, t) {
+        // 置き場は何度も読まれる — 元（アリーナ）のセルを書き換えない写し
+        st.relocFresh = true
         relocateTo(mut st, res, 0, t, regionDepth(mut st))
+        st.relocFresh = false
     }
     br(mut st, bEnd, -1)
     setCur(mut st, bInit)
@@ -189,7 +192,10 @@ func cellStore(st mut St, e int, t int, vbox int) {
     storeVal(mut st, vp, 0, t, loadVal(mut st, vbox, 0, t))
     if containsSlice(mut st, t) {
         store(mut st, wk, WK_RLAB, iconst(mut st, MAX_DEPTH))
+        // 書き手の値はこの後も読まれ、アリーナは次の Set で返る — 元のセルを書き換えない写し
+        st.relocFresh = true
         relocateTo(mut st, vp, 0, t, z)
+        st.relocFresh = false
         store(mut st, wk, WK_RLAB, z)
     }
     store(mut st, e, 1, a)

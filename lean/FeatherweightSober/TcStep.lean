@@ -339,6 +339,14 @@ def kClose : Option Ty → Option Ty
   | some (.own .tx _ _) => some .unit
   | _ => none
 
+def kFold : Option Ty → Ty → Option Ty
+  | some t', t => if t.foldOk && decide (t' = t.unfold) then some t else none
+  | none, _ => none
+
+def kUnfold : Option Ty → Option Ty
+  | some t => if t.foldOk then some t.unfold else none
+  | none => none
+
 def sSpawn2 : Option Ty → Option Ty → Expr → Nat → Act
   | some (.own .scope _ _), some ta, e, d => .sub e d (d + 1) (ctxCons (ta.rehome d) []) []
   | _, _, _, _ => .ret none
@@ -521,6 +529,10 @@ def tcStep (Δ : Defs) (f b d : Nat) (Γ : Ctx) (Λ : LCtx) (r1 r2 r3 : Option T
   | .recv _, _ + 1 => .ret (kRecv d r1)
   | .close c, 0 => .sub c b d Γ Λ
   | .close _, _ + 1 => .ret (kClose r1)
+  | .fold _ e, 0 => .sub e b d Γ Λ
+  | .fold t _, _ + 1 => .ret (kFold r1 t)
+  | .unfold e, 0 => .sub e b d Γ Λ
+  | .unfold _, _ + 1 => .ret (kUnfold r1)
   | .loc _ _, _ => .ret none
   | .blit _, _ => .ret none
   | .chanV _, _ => .ret none

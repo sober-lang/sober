@@ -7,7 +7,7 @@
 #   scripts/selfhost_check.sh --fast       (iii) の変異体を第 3 黄金の 4 本に 1 本だけに間引く（約 1/4 — 常備ゲートの短縮用）
 #   scripts/selfhost_check.sh FILE.json... 指定のコア AST JSON だけ
 #
-# (i)   testdata/corevec.jsonl（seed 42・1000 本 — 型指向 + 近傍変異 + chaos）の各 "e" + testdata/corevec_byte/*.json・corevec_float/*.json・corevec_copyto/*.json・corevec_par/*.json（手書き — Gen が作らない op / 作りにくい reject）
+# (i)   testdata/corevec.jsonl（seed 42・1000 本 — 型指向 + 近傍変異 + chaos）の各 "e" + testdata/corevec_byte/*.json・corevec_float/*.json・corevec_copyto/*.json・corevec_par/*.json・corevec_narrow/*.json（手書き — Gen が作らない op / 作りにくい reject）
 # (ii)  第 3 黄金 testdata/corejson/*.json（71 本）+ compiler/tools/*（Sober 製コンパイラ自身のコア AST。cwd = compiler/）。
 #       7 本全部（desugardump・checkdump・sobercheck はコア AST が 9.6〜10.6MB — 旧 64MB スロットでは 1 バイト 1 語の入力が溢れたので
 #    外していた。region 予約の拡大 = で解除）。
@@ -130,6 +130,10 @@ section "(i'''') corevec_copyto"
 prefetch testdata/corevec_par/*.json
 for f in testdata/corevec_par/*.json; do par_run one "$f" "$f"; done
 section "(i''''') corevec_par"
+# 絞り → 代入 → 絞りの消滅（language.md 15 節 — examples/narrow_reassign・narrow_assign・narrow_reassign_loop_neg の脱糖後のコア: 受理 1・拒否 2）
+prefetch testdata/corevec_narrow/*.json
+for f in testdata/corevec_narrow/*.json; do par_run one "$f" "$f"; done
+section "(i'''''') corevec_narrow"
 # (i') 追加シード（golden に焼かない乱択 — corevec v2）: --more N で seed 1..N × 1000 本。gates --all（GATES_ALL=1）では常設で seed 1..2（3 本で +90 s を計測 — +1 分の目安に合わせて 2）
 more=0
 if [ "${1:-}" = "--more" ]; then more=${2:-1}

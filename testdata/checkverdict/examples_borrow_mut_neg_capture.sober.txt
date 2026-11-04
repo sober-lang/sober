@@ -1,0 +1,2 @@
+sober: load error at examples/borrow_mut_neg_capture.sober:10:29: a lambda that becomes a closure (a function-typed field, a value of named function type, or a lambda passed to a call of a function value) cannot capture a mut binding — captures are immutable copies taken at creation. To keep the value it has now, copy it into an immutable binding first (`kk := k`) and capture that; to keep updating state, keep it with the caller and pass it through a mut parameter of the function type (`func(st mut S, …)` called as `f(mut st, …)`)
+exit=1

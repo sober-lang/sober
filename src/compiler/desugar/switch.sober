@@ -319,6 +319,8 @@ func unionSwitch(st mut S, sw NodeRef, eb int, ef int, depth int) (CoreRef, erro
     subject := expr(mut st, s0, eb, ef, depth)?
     // 型パターンの束縛（`case e V{…}:` — syntax.md 決定 3）: subject を let で束縛し、腕の束縛名はそのレベルを指す（error は下で let 済み）
     saved_sw := swCtx(mut st)
+    sdr := declOfExpr(mut st, s0, eb, ef)
+    st.swEnv = if sdr >= 0 && hgetN(mut st, sdr) == decl { hget(mut st, sdr + 2) } else { -1 }
     if hasBind {
         st.swSubj = depth
         st.swSubjDecl = declOfExpr(mut st, s0, eb, ef)
@@ -394,7 +396,9 @@ func unionTree(st mut S, subject CoreRef, s0 NodeRef, dpk int, decl NodeRef, arm
 }
 
 // 右結合の union の入れ子に沿った case の入れ子（variant の列は decl の start 番目から）
-func caseTree(st mut S, subject CoreRef, pk int, decl NodeRef, start int, arms int, eb int, ef int, depth int) (CoreRef, error?) {
+func caseTree(st mut S, subject0 CoreRef, pk int, decl NodeRef, start int, arms int, eb int, ef int, depth int) (CoreRef, error?) {
+    // 再帰の組の union の値は 1 段開いてから分岐する
+    subject := if start == 0 && isRecDecl(mut st, decl) { cUnfold(mut st, subject0) } else { subject0 }
     n := vcount(mut st, decl) - start
     if n == 1 {
         a := caseArm(mut st, arms, start, pk, vat(mut st, decl, start), eb, ef, depth)?
@@ -688,7 +692,8 @@ func patGen(st mut S, i int, hi int, eb2 int, ef int, d int, blk NodeRef, c ArmC
 }
 
 // 手 i（照合）の case の木（caseTree と同じ右結合の入れ子 — variant の列は decl の start 番目から）
-func patTree(st mut S, subject CoreRef, i int, hi int, decl NodeRef, start int, eb2 int, ef int, d int, blk NodeRef, c ArmCont) (CoreRef, error?) {
+func patTree(st mut S, subject0 CoreRef, i int, hi int, decl NodeRef, start int, eb2 int, ef int, d int, blk NodeRef, c ArmCont) (CoreRef, error?) {
+    subject := if start == 0 && isRecDecl(mut st, decl) { cUnfold(mut st, subject0) } else { subject0 }
     n := vcount(mut st, decl) - start
     if n == 1 {
         a := patArm(mut st, i, hi, start, eb2, ef, d, blk, c)?

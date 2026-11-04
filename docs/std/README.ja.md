@@ -252,6 +252,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`http.NotImplemented`](http.ja.md#notimplemented) — 501 Not Implemented（知らない Transfer-Encoding）
 - [`http.NotModified`](http.ja.md#notmodified) — 304 Not Modified（条件付き GET の一致 — 本文なし）
 - [`http.OK`](http.ja.md#ok) — 200 OK
+- [`http.Out`](http.ja.md#out) — stream の送りの状態（圧縮する stream の符号器・送った合計・長さ既知なら length・超えたか）。
 - [`http.Param`](http.ja.md#param) — r のパターンの :key / \*key の値（Dispatch が一致させたパターンと path を並べて歩く — パターンに key が無い・ルーターを通らない要求は nil）
 - [`http.Part`](http.ja.md#part) — multipart/form-data の部分 1 つ（Multipart の結果 — 本文の順）
 - [`http.PreconditionFailed`](http.ja.md#preconditionfailed) — 412 Precondition Failed（If-Match / If-Unmodified-Since の不一致）
@@ -351,10 +352,13 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`json.PutInt`](json.ja.md#putint) — n の 10 進を builder へ直に積む（FormatInt の string を経ない）。
 - [`json.PutKey`](json.ja.md#putkey) — 欄の頭（2 つ目以降は ','・キーの文字列・':'）
 - [`json.PutString`](json.ja.md#putstring) — s を JSON の文字列（引用符つき — `"` `\` と制御文字だけをエスケープ）として積む
+- [`json.PutValue`](json.ja.md#putvalue) — 値の木 v を o に書く（json.Encode[json.Value] の写しと、欄の型が json.Value の struct の写しが呼ぶ部品）。
 - [`json.Root`](json.ja.md#root) — 根のノード
 - [`json.Syntax`](json.ja.md#syntax) — InvalidJson の kind（形の誤り・不正な UTF-8・MaxDepth を超えた入れ子・オブジェクトのキーの重複）
 - [`json.TooDeep`](json.ja.md#toodeep) — InvalidJson の kind（形の誤り・不正な UTF-8・MaxDepth を超えた入れ子・オブジェクトのキーの重複）
-- [`json.Value`](json.ja.md#value) — ノード 1 つのビュー（子はノードの番号 — json.At で開く）
+- [`json.Tree`](json.ja.md#tree) — ノード n を根とする部分木を値の木に開く。
+- [`json.Value`](json.ja.md#value) — JSON の値の木（再帰の union — 組んで Encode[json.Value] で書く・Doc の節から Tree で開く）。
+- [`json.View`](json.ja.md#view) — ノード 1 つのビュー（子はノードの番号 — json.At で開く）
 - [`json.WrongType`](json.ja.md#wrongtype) — ノードの種類が欄の型に合わない（want = 期待した JSON の種類: object・array・string・number・int・bool）
 - [`layout.Decode`](layout.ja.md#decode) — b の off バイト目から T を 1 つ読む。
 - [`layout.DecodeAt`](layout.ja.md#decodeat) — b の off バイト目から並ぶ T の i 番目を読む（間隔 = Size[T]）。
@@ -366,8 +370,13 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`layout.WidthOverflow`](layout.ja.md#widthoverflow) — 書き込みの幅あふれ: 欄 field の値 value が幅 width に収まらない
 - [`math.Abs`](math.ja.md#abs) — x の絶対値（符号ビットを落とす — NaN の符号も落ちる・-0 は +0）
 - [`math.Bits`](math.ja.md#bits) — x の IEEE 754 のビット列（i64 で読んだ値 — 変換でなく同じビットの読み替え）
+- [`math.Ceil`](math.ja.md#ceil) — x 以上の最小の整数（-0.5 → -0・±Inf・NaN はそのまま）
+- [`math.Floor`](math.ja.md#floor) — x 以下の最大の整数（-0.5 → -1・-0 → -0・±Inf・NaN はそのまま）
 - [`math.FromBits`](math.ja.md#frombits) — ビット列 b の float（±Inf・NaN もこれで作る）
+- [`math.Max`](math.ja.md#max) — x と y の大きいほう（どちらかが NaN ならその NaN・-0 と +0 では +0）
+- [`math.Min`](math.ja.md#min) — x と y の小さいほう（どちらかが NaN ならその NaN・-0 と +0 では -0）
 - [`math.Sqrt`](math.ja.md#sqrt) — x の平方根（IEEE 754 の sqrt — 正しく丸めた値・負は NaN・-0 は -0）
+- [`math.Trunc`](math.ja.md#trunc) — x の 0 方向への切り捨て（整数部 — 小数部のビットを落とす。
 - [`net.Accept`](net.ja.md#accept) — l の接続を受けるたびに k に渡し、k が返ったら閉じる（列は終わらない — 本体の break か失敗で止まる。
 - [`net.Bad`](net.ja.md#bad) — addr の形の誤り（"a.b.c.d:port" — IPv4 の 4 つ組と 0〜65535 の port）
 - [`net.Conn`](net.ja.md#conn) — 接続（同一性の型 — Listener と同じ規則。
@@ -428,6 +437,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`quick.Crashed`](quick.ja.md#crashed) — fuzz がプロパティの中の panic（exit = 101）かハング（142 — 試行の期限の SIGALRM）を見つけた（シュリンクした列は panic の前に標準エラーへ印字済み）
 - [`quick.Elem`](quick.ja.md#elem) — xs の要素の 1 つ（シュリンクは先頭へ）
 - [`quick.Falsified`](quick.ja.md#falsified) — プロパティが偽になった（反例は panic の前に標準エラーへ印字済み）
+- [`quick.Float`](quick.ja.md#float) — float を 1 つ（端の値・小さい 2 進の分数・任意のビット列 — NaN・±Inf・-0 も出る）。
 - [`quick.Int`](quick.ja.md#int) — [lo, hi] の整数（両端を含む — 値の数は 2^62 まで）。
 - [`quick.Named`](quick.ja.md#named) — 名前 name のハッシュと SOBER\_QUICK\_SEED を混ぜたシードの源（テストごとに別の列にする口）
 - [`quick.New`](quick.ja.md#new) — 選択の源（シード = SOBER\_QUICK\_SEED — 無ければ 0）
@@ -440,6 +450,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`quick.String`](quick.ja.md#string) — 長さ max 文字以下の印字可能な ASCII の文字列（シュリンクは短く・'a' へ）
 - [`quick.TooManyDiscards`](quick.ja.md#toomanydiscards) — Assume が捨てた試行が多すぎる（成立 trials 件に対して 10 倍を超えた — 引く値の範囲が条件に比べて広すぎる）
 - [`rand.Bool`](rand.ja.md#bool) — 真偽を 1 つ
+- [`rand.Float`](rand.ja.md#float) — [0, 1) の float（2^-53 刻みの 2^53 通りが等確率）。
 - [`rand.Int62`](rand.ja.md#int62) — [0, 2^62) の値（Next 2 回 — 上位 30 bit + 下位 32 bit）
 - [`rand.Intn`](rand.ja.md#intn) — [0, n) の値（n は 1 以上 — 0 以下は panic(NonPositiveBound{n})）。
 - [`rand.New`](rand.ja.md#new) — シード seed（任意の int — 負でもよい）の Rand。

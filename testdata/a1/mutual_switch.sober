@@ -1,0 +1,54 @@
+package main
+
+// 相互再帰の union の組（式と文）を switch で解釈する
+
+type Expr union {
+    Lit { n int }
+    Add { xs []Expr }
+    Blk { body []Stmt; res []Expr }
+}
+
+type Stmt union {
+    Print { e []Expr }
+    Twice { ss []Stmt }
+}
+
+func eval(e Expr) int {
+    return switch e {
+    case Lit{n}: n
+    case Add{xs}: {
+        mut s := 0
+        for x <- xs {
+            s += eval(x)
+        }
+        s
+    }
+    case Blk{body, res}: {
+        for st <- body {
+            exec(st)
+        }
+        if len(res) > 0 { eval(res[0]) } else { 0 }
+    }
+    }
+}
+
+func exec(s Stmt) {
+    switch s {
+    case Print{e}:
+        for x <- e {
+            println(eval(x))
+        }
+    case Twice{ss}:
+        for t <- ss {
+            exec(t)
+            exec(t)
+        }
+    }
+}
+
+func main() {
+    one := Lit{n: 1}
+    p := Print{e: []Expr{Add{xs: []Expr{one, Lit{n: 41}}}}}
+    b := Blk{body: []Stmt{p, Twice{ss: []Stmt{Print{e: []Expr{one}}}}}, res: []Expr{Add{xs: []Expr{one, one, one}}}}
+    println(eval(Add{xs: []Expr{b, b}}))
+}

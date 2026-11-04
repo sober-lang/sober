@@ -274,6 +274,10 @@ partial def exprStr (cx : Ctx) (e : Expr) : MetaM String := do
       for a in args do
         let s ← exprStr cx a
         fs := fs ++ [if (← inferType a).isConstOf ``Bool then s!"b2i({s})" else s]
+      -- 欄 4 つの構成子（同時の μ の D）は mk4 / mkLike4（記録の 4 つ目の欄 d）
+      if fs.length == 4 then
+        if let some v := like then return s!"mkLike4(mut st, {v}, {tag}, {", ".intercalate fs})"
+        return s!"mk4(mut st, {tag}, {", ".intercalate fs})"
       let fs3 := (fs ++ ["0", "0", "0"]).take 3
       if let some v := like then return s!"mkLike(mut st, {v}, {tag}, {", ".intercalate fs3})"
       return s!"mk(mut st, {tag}, {", ".intercalate fs3})"

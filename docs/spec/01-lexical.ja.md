@@ -8,7 +8,7 @@
 
 L-1. 整数リテラルは 10 進と、接頭辞 `0x` / `0o` / `0b`（小文字だけ）の n 進。値は int に収まる範囲。桁区切りの `_` は無い。先頭が 0 の 10 進（`010`）は拒否する — 8 進は `0o10` と書く。
 例: [`examples/radix_lit.sober`](../../examples/radix_lit.sober)
-拒否: [`examples/lit_leading_zero.sober`](../../examples/lit_leading_zero.sober)
+拒否: [`examples/lit_leading_zero.sober`](../../examples/lit_leading_zero.sober)・[`examples/lit_int_range.sober`](../../examples/lit_int_range.sober)
 決定: [syntax.md 決定 18](../syntax.md)
 
 L-2. 浮動小数のリテラルは 10 進だけで、小数点の両側に数字が要る（`1.` と `.5` は無い）。文字リテラル `'a'` は ASCII だけ。規則の詳細は 2 章（T-7・T-9）。

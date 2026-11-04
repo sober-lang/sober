@@ -1,0 +1,42 @@
+package main
+
+// 相互再帰の組（A ↔ B — どちらも自分と相手の slice を持つ）: a.bs の要素はそのまま B を受ける関数へ渡せる
+
+type A struct {
+    as []A
+    bs []B
+}
+
+type B struct {
+    bs []B
+    as []A
+}
+
+func countA(a A) int {
+    mut c := 1
+    for x <- a.as {
+        c += countA(x)
+    }
+    for y <- a.bs {
+        c += countB(y)
+    }
+    return c
+}
+
+func countB(b B) int {
+    mut c := 1
+    for x <- b.bs {
+        c += countB(x)
+    }
+    for y <- b.as {
+        c += countA(y)
+    }
+    return c
+}
+
+func main() {
+    b := B{bs: []B{}, as: []A{}}
+    a := A{as: []A{}, bs: []B{b, b}}
+    println(countA(A{as: []A{a}, bs: []B{}}))
+    println(countB(a.bs[0]))
+}

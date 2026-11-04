@@ -555,7 +555,7 @@ func ozDesc(x ast.Node) int {
     case ast.EFor: if x.b == 1 { 3 + 3 * 64 } else { 3 + 64 }
     case ast.SBind: 4 + 3 * 64
     case ast.SAssign: 3 + 3 * 64
-    case ast.SExpr | ast.SDefer | ast.SYield | ast.TOpt | ast.EParen | ast.TSlice | ast.BDefined | ast.BAlias: 1
+    case ast.SExpr | ast.SDefer | ast.SYield | ast.TOpt | ast.TMutP | ast.EParen | ast.TSlice | ast.BDefined | ast.BAlias: 1
     case ast.TFunc | ast.BFunc: 3 + 3 * 8 + 4 * 64
     case ast.TGeneric | ast.KVariant: 2 + 3 * 8
     case ast.TArray: 8

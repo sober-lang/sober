@@ -19,7 +19,9 @@ def ctorTable : List (Name × String × List String) :=
     (``FS.Ty.opt, "TOpt", ["tA"]), (``FS.Ty.union, "TUn", ["tA", "tB"]), (``FS.Ty.prod, "TPr", ["tA", "tB"]),
     (``FS.Ty.ref, "TRef", ["tA", "tB", "tC"]), (``FS.Ty.slice, "TSl", ["tA", "tB", "tC"]),
     (``FS.Ty.map, "TMp", ["tA", "tB", "tC"]), (``FS.Ty.chan, "TChan", ["tA", "tB"]),
-    (``FS.Ty.fn, "TFn", ["tA", "tB"]), (``FS.Ty.own, "TOwn", ["tA", "tB", "tC"]) ]
+    (``FS.Ty.fn, "TFn", ["tA", "tB"]), (``FS.Ty.own, "TOwn", ["tA", "tB", "tC"]),
+    (``FS.Ty.rvar, "TRVar", ["tA"]),
+    (``FS.Ty.mus, "TMuS", ["tA", "tB", "tC"]), (``FS.Ty.muRs, "TMuRs", ["tA", "tB", "tC", "tD"]) ]
 
 /-- 欄を持たない列挙の inductive の構成子 → Sober の整数の式（記録の欄に整数で入る — Ty.own の種類 = ty.sober の TOwn の a。
 FConvOp は式の語の番号 — fconv の式の kind がそのまま op） -/
@@ -83,7 +85,8 @@ def nodeTable : List (Name × String × Option String × List String) :=
     one ``FS.Expr.recv "W_RECV" [a], rt ``FS.Expr.loc 2, rt ``FS.Expr.slicev 4, rt ``FS.Expr.mapv 4, rt ``FS.Expr.chanV 1,
     one ``FS.Expr.scope "W_SCOPE" [a, c, b], one ``FS.Expr.spawn "W_SPAWN" [a, b, c], one ``FS.Expr.join "W_JOIN" [a, b],
     one ``FS.Expr.tryJ "W_TRY" [a, b], rt ``FS.Expr.scopeV 2, rt ``FS.Expr.taskV 2,
-    one ``FS.Expr.newch "W_NEWCH" [a, b, c], rt ``FS.Expr.epV 4, one ``FS.Expr.close "W_CLOSE" [a] ]
+    one ``FS.Expr.newch "W_NEWCH" [a, b, c], rt ``FS.Expr.epV 4, one ``FS.Expr.close "W_CLOSE" [a],
+    one ``FS.Expr.fold "W_FOLD" [a, b], one ``FS.Expr.unfold "W_UNFOLD" [a] ]
 
 /-- 節の switch の外れ（札の無い構成子 = 実行時だけの形・未知の kind）の戻り値 -/
 def nodeDefault : String := "actRet(mut st, 0 - 1)"
@@ -109,7 +112,7 @@ def tcTargets : List Name :=
     ``FS.kDeref, ``FS.kAssign, ``FS.kWhile, ``FS.kFreeze, ``FS.kMkslice, ``FS.kStrlit, ``FS.kMksliceAt, ``FS.kMkmapAt,
     ``FS.kIndex, ``FS.kLen, ``FS.kTobyte, ``FS.kToint, ``FS.kFconv, ``FS.kAppend, ``FS.kSetidx, ``FS.kSubslice,
     ``FS.kEqs, ``FS.kConcat, ``FS.kMkmap, ``FS.kGetm, ``FS.kSetm, ``FS.kDelm, ``FS.kLenm, ``FS.kKeysm, ``FS.kCloneR, ``FS.kClone, ``FS.kPar,
-    ``FS.kParch, ``FS.kNewchan, ``FS.kSend, ``FS.kRecv, ``FS.kClose, ``FS.sSpawn2, ``FS.kSpawn, ``FS.kNewch, ``FS.kJoin, ``FS.kTry,
+    ``FS.kParch, ``FS.kNewchan, ``FS.kSend, ``FS.kRecv, ``FS.kClose, ``FS.kFold, ``FS.kUnfold, ``FS.sSpawn2, ``FS.kSpawn, ``FS.kNewch, ``FS.kJoin, ``FS.kTry,
     ``FS.tcStep ]
 
 /-- 欄の無い構成子の作り置き（記録を毎回積まない — state.sober の S が起動時に作る。記録は作ったら変えない・等しさは構造で見るので観測等価） -/
@@ -126,7 +129,11 @@ def targets : List Name :=
     ``FS.rmap, ``FS.Ty.renR, ``FS.Ty.relocA, ``FS.Ty.clampR, ``FS.Ty.noClamp, ``FS.Ty.annFree,
     ``FS.Ty.isMut0, ``FS.Ty.mutTop, ``FS.Ty.anchorOf, ``FS.Ty.sub, ``FS.Ty.chanFree, ``FS.Ty.jumpRel,
     ``FS.Ty.readAs, ``FS.Ty.tyArgOk, ``FS.Ty.tyArgsOk, ``FS.Ty.tsubst, ``FS.Ty.tvarsBelow,
-    ``FS.Ty.paramOk, ``FS.Ty.retOk, ``FS.Ty.givable, ``FS.Ty.rehome, ``FS.Ty.payOk ]
+    ``FS.Ty.paramOk, ``FS.Ty.retOk, ``FS.Ty.givable, ``FS.Ty.rehome, ``FS.Ty.payOk,
+    ``FS.Ty.rsubst, ``FS.Ty.rfree, ``FS.Ty.isFn, ``FS.Ty.unfold,
+    ``FS.Ty.covOk, ``FS.Ty.comp, ``FS.Ty.isChain, ``FS.Ty.chainFn, ``FS.Ty.rguardN, ``FS.Ty.uoccAny, ``FS.Ty.sinkPick,
+    ``FS.Ty.sinkStep, ``FS.Ty.sinkRounds, ``FS.Ty.allSink, ``FS.Ty.groupOk, ``FS.Ty.grp, ``FS.Ty.substG,
+    ``FS.Ty.localOnly, ``FS.Ty.recOk, ``FS.Ty.musOk, ``FS.Ty.muRsOk, ``FS.Ty.foldOk ]
 
 /-- 近道: 抽出する関数の **定理**（`f パターン… = 右辺` の形 — 方程式でなく証明つきの等式）を、方程式の腕の前に置く腕として出す。
 定理なので最初に当てても値は変わらない（観測等価）— 方程式どおりに再帰で作り直す仕事を飛ばす（手書きの写しが持っていた速い道の、定理で正当化した形 — E2） -/
@@ -174,6 +181,11 @@ func listGet(st mut S, ts int, i int) int {
 func mkLike(st mut S, old int, k int, a int, b int, c int) int {
     x := tyAt(mut st, old)
     return if x.tag == k && x.a == a && x.b == b && x.c == c { old } else { mk(mut st, k, a, b, c) }
+}
+
+func mkLike4(st mut S, old int, k int, a int, b int, c int, d int) int {
+    x := tyAt(mut st, old)
+    return if x.tag == k && x.a == a && x.b == b && x.c == c && x.d == d { old } else { mk4(mut st, k, a, b, c, d) }
 }
 "
 

@@ -249,12 +249,12 @@ func parseFile(m Manifest, fsm bool, sm map[string]string, path string, std bool
     if perr != nil {
         return t, pcNone(), perr
     }
-    // catch 式を既存の形へ写す（catchx.sober — 以降の段は写した後の木だけを読む）。置き場を使わない道は束縛せずに返す（束縛すると木を
+    // catch 式・列の要素の欄への代入を既存の形へ写す（catchx.sober・elemassign.sober — 以降の段は写した後の木だけを読む）。置き場を使わない道は束縛せずに返す（束縛すると木を
     // この関数の region に作ってから写すので、境界コピーが 1 回増える — 自己 build で +0.03 G）
     if !pc.on {
-        return catchExprs(t), pcNone(), nil
+        return surfaceRewrites(t), pcNone(), nil
     }
-    ct := catchExprs(t)
+    ct := surfaceRewrites(t)
     v := pcEnc(ct)
     mut st := 2
     if pc.vfy && e >= 0 {
@@ -270,7 +270,7 @@ func parseFile(m Manifest, fsm bool, sm map[string]string, path string, std bool
 }
 
 // ソース src の字句 + 構文（loader の写し〔catchExprs〕の前の木）
-@errors(diag.LeadingZero, diag.GrammarMismatch)
+@errors(diag.LeadingZero, diag.LitRange, diag.GrammarMismatch)
 func parseSrc(src []byte, fi int) (ast.Tree, error?) {
     ts := lexer.Lex(src)
     // 先頭が 0 の 10 進（`010`）は字句で拒否 — Go の旧来の 8 進と読み違える（syntax.md 決定 18 — 8 進は `0o755` だけ）
@@ -283,13 +283,34 @@ func parseSrc(src []byte, fi int) (ast.Tree, error?) {
     t, pok := parser.Parse(src, ts)
     if !pok {
         far := parser.FarthestTok(src, ts)
+        // 値が型に収まらないリテラル（int の範囲外・float で ±Inf に丸まる）があれば parser はそこで必ず落ちる — 文法の不一致に紛れさせず名指す
+        // （拒否の道だけで数える — 受理の道は parser の値の計算が判定を兼ねる）
+        for k <- iter.Range(0, len(ts)) {
+            lk := litOut(src, ts[k])
+            if lk >= 0 {
+                return t, diag.LitRange{at: diag.Pos{file: fi, tok: k}, kind: lk}
+            }
+        }
         return t, diag.GrammarMismatch{at: if far >= 0 { diag.Pos{file: fi, tok: far} } else { diag.None() }}
     }
     return t, nil
 }
 
+// トークン x が値の収まらないリテラルなら種類（0 = int・1 = float）、でなければ -1
+func litOut(src []byte, x lexer.Token) int {
+    if x.tag == lexer.IntegerLiteral {
+        _, _, ok := lexer.IntValue(src, x.start, x.end)
+        return if ok { -1 } else { 0 }
+    }
+    if x.tag == lexer.FloatLiteral {
+        _, ok := lexer.FloatBits(src, x.start, x.end)
+        return if ok { -1 } else { 1 }
+    }
+    return -1
+}
+
 // parseFile の写しの前の木（置き場を使わない道 — 小分けの check の視点の target。写した木は呼び手が catchExprs で作る）
-@errors(diag.ReadFail, diag.LeadingZero, diag.GrammarMismatch)
+@errors(diag.ReadFail, diag.LeadingZero, diag.LitRange, diag.GrammarMismatch)
 func parseFileRaw(m Manifest, fsm bool, sm map[string]string, path string, std bool, fi int) (ast.Tree, error?) {
     src, ok := readSrc(m, fsm, sm, path, std)
     if !ok {
@@ -392,7 +413,7 @@ func isDir(path string) bool {
 
 // Manifest の entry（.sober ファイルか main package のディレクトリ）から Program を組む（失敗なら拒否 — diag のラベル。
 // 位置つきの拒否なら Program はファイルのパスだけを持つ — SourceFs）
-@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Double, diag.Cell)
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.LitRange, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Double, diag.Cell)
 func Load(m Manifest) (Program, error?) {
     mut sink := PcSink{}
     return load(m, false, map[string]string{}, PcOff(), mut sink)
@@ -401,7 +422,7 @@ func Load(m Manifest) (Program, error?) {
 // stage2 の CLI の入口: entry（.sober ファイルか main package のディレクトリ — cwd 相対）から、package のディレクトリを
 // io.ReadDir で読み、`std/` の中身は焼き込んだ表 sm（パス → ソース — `@embed("std/**/*.sober")`）から取る。
 // std の package のファイル一覧も表のキーから引く（keysm の段 — R35-2 の暫定 ReadDir を撤去）
-@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Double, diag.Cell)
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.LitRange, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Double, diag.Cell)
 func LoadFs(entry string, sm map[string]string) (Program, error?) {
     if doubleDir(Manifest{}, true, sm, entry) {
         return loadDouble(entry, sm)
@@ -412,7 +433,7 @@ func LoadFs(entry string, sm map[string]string) (Program, error?) {
 
 // LoadFs に parse のキャッシュの読みの表 pc を足したもの（build の置き場を使う道 — app が lower.BcParseView で組む）。
 // ファイルごとの読みの結果は sink へ（lower が書きの束へ）。test = テストのビルド（LoadTestFs — キャッシュは使わない）
-@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.TestSignature, diag.Double, diag.Cell)
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.LitRange, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.TestSignature, diag.Double, diag.Cell)
 func LoadFsC(entry string, sm map[string]string, pc PCache, test bool, sink mut PcSink) (Program, error?) {
     if test {
         return LoadTestFs(entry, sm)
@@ -424,14 +445,14 @@ func LoadFsC(entry string, sm map[string]string, pc PCache, test bool, sink mut 
 }
 
 // LoadFs のカバレッジの計器つき（利用者の非テストのファイルの分岐の腕に数え口 — coverx.sober。parse のキャッシュは使わない）
-@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Double, diag.Cell)
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.LitRange, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Double, diag.Cell)
 func LoadFsCover(entry string, sm map[string]string) (Program, error?) {
     mut sink := PcSink{}
     return load(Manifest{entry, "", []string{}, "", "", true, []string{}, 0, []string{}, []string{}}, true, sm, PcOff(), mut sink)
 }
 
 // LoadFs の mutation testing の写しつき（mutx.sober — 全部の変異を 1 本に。開発の口 `sober build --mutate` — 型付けが通るかの網）
-@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Double, diag.Cell)
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.LitRange, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Double, diag.Cell)
 func LoadFsMutate(entry string, sm map[string]string) (Program, error?) {
     mut sink := PcSink{}
     return load(Manifest{entry, "", []string{}, "", "", true, []string{}, 1, []string{}, []string{}}, true, sm, PcOff(), mut sink)
@@ -630,7 +651,7 @@ func load(m Manifest, fsm bool, sm map[string]string, pc PCache, sink mut PcSink
 
 // ファイルの集合（ロード順 — package ごとに連続）から Program を組む（@layout・@embed・固定テンプレートの写し・表・検査）。
 // load（import を辿って集める）と LoadView（link.txt の順に .sobi とソースを読む）が共用する
-@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Double, diag.Cell)
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.LitRange, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Double, diag.Cell)
 func finish(trees []ast.Tree, fpkg []string, fpath []string, fstd []bool, cov []string, covOn bool, mutate int) (Program, error?) {
     // std/internal/… の検問（20 節 — load は import を辿る巡で先に止める。LoadView〔.sobi の小分け〕の道はここで）。
     // .sobi の木は fstd が立たないので package のパスでも std を見る（std/tls の .sobi は公開の型の欄のために std/internal/hs を import する — intrinsicAll と同じ形）
@@ -719,10 +740,10 @@ func finish(trees []ast.Tree, fpkg []string, fpath []string, fstd []bool, cov []
     if cyc.file >= 0 {
         return located(lay.path, lay.std), diag.ImportCycle{at: cyc}
     }
-    // ── 再帰の型宣言の拒否（rectype.sober — コアに再帰型が無い）──
-    rec := recTypeAt(cx)
+    // ── 受理しない再帰の型宣言の拒否（rectype.sober — 値に埋まる閉路・関数型をまたぐ閉路・型引数の変わる参照）──
+    rec, rk := recTypeAt(cx)
     if rec.file >= 0 {
-        return located(lay.path, lay.std), diag.RecursiveType{at: rec}
+        return located(lay.path, lay.std), diag.RecursiveType{at: rec, kind: rk}
     }
     pnames := pt.name
 
@@ -742,6 +763,10 @@ func finish(trees []ast.Tree, fpkg []string, fpath []string, fstd []bool, cov []
     Stage("f-checks")
     // 省略可の匿名関数型の仮引数（optfn.sober — language.md 25 節 Z）: 名前付き実引数の写しの後に、呼び出し点ごとの有無で関数を写し分け
     // （`F` / `F$z<有無>`）・`p != nil` の分岐を畳み、続けて η 展開。以降の段は省略可の関数型を見ない（写しが無ければ木も関数表もそのまま）
+    merr := fnTyMutOne(cx)
+    if merr != nil {
+        return located(lay.path, lay.std), merr
+    }
     oz, oerr := optEtaAll(cx, fnTab(cx))
     if oerr != nil {
         return located(lay.path, lay.std), oerr
@@ -783,6 +808,10 @@ func finish(trees []ast.Tree, fpkg []string, fpath []string, fstd []bool, cov []
     if fs.bad_noinline != -1 {
         bf := fs.file[fs.bad_noinline]
         return located(lay.path, lay.std), diag.Noinline{at: diag.Pos{file: bf, tok: cx.trees[bf].nodes[fs.node[fs.bad_noinline]].tok}}
+    }
+    if fs.bad_rec != -1 {
+        rf := fs.file[fs.bad_rec]
+        return located(lay.path, lay.std), diag.FnCap{at: diag.Pos{file: rf, tok: cx.trees[rf].nodes[fs.node[fs.bad_rec]].tok}, kind: 17}
     }
 
     et, eterr := errorLabels(cx.trees, cx.file_pkg)

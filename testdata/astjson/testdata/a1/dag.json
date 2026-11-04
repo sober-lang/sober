@@ -1,0 +1,908 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/iter",
+      "tok": 4
+    },
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "T",
+      "type_params": [],
+      "body": {
+        "k": "union",
+        "variants": [
+          {
+            "name": "Leaf",
+            "fields": [
+              {
+                "name": "v",
+                "type": {
+                  "k": "name",
+                  "name": "int"
+                },
+                "tok": 12
+              }
+            ],
+            "tok": 10
+          },
+          {
+            "name": "Node",
+            "fields": [
+              {
+                "name": "tag",
+                "type": {
+                  "k": "name",
+                  "name": "string"
+                },
+                "tok": 18
+              },
+              {
+                "name": "kids",
+                "type": {
+                  "k": "slice_of",
+                  "elem": {
+                    "k": "name",
+                    "name": "T"
+                  },
+                  "mut": false
+                },
+                "tok": 21
+              }
+            ],
+            "tok": 16
+          }
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 29
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "show",
+      "type_params": [],
+      "params": [
+        {
+          "name": "t",
+          "type": {
+            "k": "name",
+            "name": "T"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "string"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "switch",
+                "subjects": [
+                  {
+                    "k": "ident",
+                    "name": "t",
+                    "tok": 39
+                  }
+                ],
+                "cases": [
+                  {
+                    "patterns": [
+                      {
+                        "k": "type",
+                        "bind": null,
+                        "variant": "Leaf",
+                        "fields": [
+                          {
+                            "name": "v",
+                            "sub": null,
+                            "tok": 44
+                          }
+                        ],
+                        "tok": 42
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "interp",
+                            "tmpl": {
+                              "lits": [
+                                "",
+                                ""
+                              ],
+                              "holes": [
+                                {
+                                  "k": "ident",
+                                  "name": "v",
+                                  "tok": 47
+                                }
+                              ]
+                            },
+                            "tok": 47
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 41
+                  },
+                  {
+                    "patterns": [
+                      {
+                        "k": "type",
+                        "bind": null,
+                        "variant": "Node",
+                        "fields": [
+                          {
+                            "name": "tag",
+                            "sub": null,
+                            "tok": 52
+                          },
+                          {
+                            "name": "kids",
+                            "sub": null,
+                            "tok": 54
+                          }
+                        ],
+                        "tok": 50
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "block",
+                            "stmts": [
+                              {
+                                "k": "bind",
+                                "names": [
+                                  "s"
+                                ],
+                                "mutable": true,
+                                "values": [
+                                  {
+                                    "k": "binary",
+                                    "op": "+",
+                                    "lhs": {
+                                      "k": "ident",
+                                      "name": "tag",
+                                      "tok": 61
+                                    },
+                                    "rhs": {
+                                      "k": "strlit",
+                                      "value": "(",
+                                      "tok": 63
+                                    },
+                                    "tok": 62
+                                  }
+                                ],
+                                "tok": 58
+                              },
+                              {
+                                "k": "expr",
+                                "expr": {
+                                  "k": "for",
+                                  "gens": [
+                                    {
+                                      "names": [
+                                        "i"
+                                      ],
+                                      "src": {
+                                        "k": "call",
+                                        "callee": {
+                                          "k": "selector",
+                                          "base": {
+                                            "k": "ident",
+                                            "name": "iter",
+                                            "tok": 68
+                                          },
+                                          "field": "Range",
+                                          "tok": 70
+                                        },
+                                        "args": [
+                                          {
+                                            "k": "int",
+                                            "value": 0,
+                                            "tok": 72
+                                          },
+                                          {
+                                            "k": "call",
+                                            "callee": {
+                                              "k": "ident",
+                                              "name": "len",
+                                              "tok": 74
+                                            },
+                                            "args": [
+                                              {
+                                                "k": "ident",
+                                                "name": "kids",
+                                                "tok": 76
+                                              }
+                                            ],
+                                            "tok": 75
+                                          }
+                                        ],
+                                        "tok": 71
+                                      },
+                                      "guards": [],
+                                      "tok": 66
+                                    }
+                                  ],
+                                  "body": {
+                                    "k": "block",
+                                    "stmts": [
+                                      {
+                                        "k": "expr",
+                                        "expr": {
+                                          "k": "if",
+                                          "cond": {
+                                            "k": "binary",
+                                            "op": ">",
+                                            "lhs": {
+                                              "k": "ident",
+                                              "name": "i",
+                                              "tok": 81
+                                            },
+                                            "rhs": {
+                                              "k": "int",
+                                              "value": 0,
+                                              "tok": 83
+                                            },
+                                            "tok": 82
+                                          },
+                                          "then": {
+                                            "stmts": [
+                                              {
+                                                "k": "assign",
+                                                "targets": [
+                                                  {
+                                                    "k": "ident",
+                                                    "name": "s",
+                                                    "tok": 85
+                                                  }
+                                                ],
+                                                "op": "=",
+                                                "values": [
+                                                  {
+                                                    "k": "binary",
+                                                    "op": "+",
+                                                    "lhs": {
+                                                      "k": "ident",
+                                                      "name": "s",
+                                                      "tok": 87
+                                                    },
+                                                    "rhs": {
+                                                      "k": "strlit",
+                                                      "value": ",",
+                                                      "tok": 89
+                                                    },
+                                                    "tok": 88
+                                                  }
+                                                ],
+                                                "tok": 85
+                                              }
+                                            ]
+                                          },
+                                          "else": null,
+                                          "tok": 80
+                                        }
+                                      },
+                                      {
+                                        "k": "assign",
+                                        "targets": [
+                                          {
+                                            "k": "ident",
+                                            "name": "s",
+                                            "tok": 93
+                                          }
+                                        ],
+                                        "op": "=",
+                                        "values": [
+                                          {
+                                            "k": "binary",
+                                            "op": "+",
+                                            "lhs": {
+                                              "k": "ident",
+                                              "name": "s",
+                                              "tok": 95
+                                            },
+                                            "rhs": {
+                                              "k": "call",
+                                              "callee": {
+                                                "k": "ident",
+                                                "name": "show",
+                                                "tok": 97
+                                              },
+                                              "args": [
+                                                {
+                                                  "k": "index",
+                                                  "base": {
+                                                    "k": "ident",
+                                                    "name": "kids",
+                                                    "tok": 99
+                                                  },
+                                                  "idx": {
+                                                    "k": "ident",
+                                                    "name": "i",
+                                                    "tok": 101
+                                                  },
+                                                  "tok": 100
+                                                }
+                                              ],
+                                              "tok": 98
+                                            },
+                                            "tok": 96
+                                          }
+                                        ],
+                                        "tok": 93
+                                      }
+                                    ]
+                                  },
+                                  "tok": 65
+                                }
+                              },
+                              {
+                                "k": "expr",
+                                "expr": {
+                                  "k": "binary",
+                                  "op": "+",
+                                  "lhs": {
+                                    "k": "ident",
+                                    "name": "s",
+                                    "tok": 107
+                                  },
+                                  "rhs": {
+                                    "k": "strlit",
+                                    "value": ")",
+                                    "tok": 109
+                                  },
+                                  "tok": 108
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 49
+                  }
+                ],
+                "default": null,
+                "tok": 38
+              }
+            ],
+            "tok": 37
+          }
+        ]
+      },
+      "tok": 30,
+      "bodiless": false,
+      "span": {
+        "start": 29,
+        "end": 117
+      },
+      "sig_end": 36
+    },
+    {
+      "name": "size",
+      "type_params": [],
+      "params": [
+        {
+          "name": "t",
+          "type": {
+            "k": "name",
+            "name": "T"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "switch",
+                "subjects": [
+                  {
+                    "k": "ident",
+                    "name": "t",
+                    "tok": 127
+                  }
+                ],
+                "cases": [
+                  {
+                    "patterns": [
+                      {
+                        "k": "type",
+                        "bind": null,
+                        "variant": "Node",
+                        "fields": [
+                          {
+                            "name": "kids",
+                            "sub": null,
+                            "tok": 132
+                          }
+                        ],
+                        "tok": 130
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "block",
+                            "stmts": [
+                              {
+                                "k": "bind",
+                                "names": [
+                                  "c"
+                                ],
+                                "mutable": true,
+                                "values": [
+                                  {
+                                    "k": "int",
+                                    "value": 1,
+                                    "tok": 139
+                                  }
+                                ],
+                                "tok": 136
+                              },
+                              {
+                                "k": "expr",
+                                "expr": {
+                                  "k": "for",
+                                  "gens": [
+                                    {
+                                      "names": [
+                                        "k"
+                                      ],
+                                      "src": {
+                                        "k": "ident",
+                                        "name": "kids",
+                                        "tok": 144
+                                      },
+                                      "guards": [],
+                                      "tok": 142
+                                    }
+                                  ],
+                                  "body": {
+                                    "k": "block",
+                                    "stmts": [
+                                      {
+                                        "k": "assign",
+                                        "targets": [
+                                          {
+                                            "k": "ident",
+                                            "name": "c",
+                                            "tok": 146
+                                          }
+                                        ],
+                                        "op": "+=",
+                                        "values": [
+                                          {
+                                            "k": "call",
+                                            "callee": {
+                                              "k": "ident",
+                                              "name": "size",
+                                              "tok": 148
+                                            },
+                                            "args": [
+                                              {
+                                                "k": "ident",
+                                                "name": "k",
+                                                "tok": 150
+                                              }
+                                            ],
+                                            "tok": 149
+                                          }
+                                        ],
+                                        "tok": 146
+                                      }
+                                    ]
+                                  },
+                                  "tok": 141
+                                }
+                              },
+                              {
+                                "k": "expr",
+                                "expr": {
+                                  "k": "ident",
+                                  "name": "c",
+                                  "tok": 155
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 129
+                  }
+                ],
+                "default": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 161
+                      }
+                    }
+                  ]
+                },
+                "tok": 126
+              }
+            ],
+            "tok": 125
+          }
+        ]
+      },
+      "tok": 118,
+      "bodiless": false,
+      "span": {
+        "start": 117,
+        "end": 167
+      },
+      "sig_end": 124
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "a"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Node",
+                "elems": [
+                  {
+                    "key": "tag",
+                    "value": {
+                      "k": "strlit",
+                      "value": "a",
+                      "tok": 178
+                    }
+                  },
+                  {
+                    "key": "kids",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "T"
+                      },
+                      "elems": [
+                        {
+                          "k": "composite",
+                          "type_name": "Leaf",
+                          "elems": [
+                            {
+                              "key": "v",
+                              "value": {
+                                "k": "int",
+                                "value": 1,
+                                "tok": 190
+                              }
+                            }
+                          ],
+                          "tok": 186,
+                          "type_args": []
+                        },
+                        {
+                          "k": "composite",
+                          "type_name": "Leaf",
+                          "elems": [
+                            {
+                              "key": "v",
+                              "value": {
+                                "k": "int",
+                                "value": 2,
+                                "tok": 197
+                              }
+                            }
+                          ],
+                          "tok": 193,
+                          "type_args": []
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 182
+                    }
+                  }
+                ],
+                "tok": 174,
+                "type_args": []
+              }
+            ],
+            "tok": 172
+          },
+          {
+            "k": "bind",
+            "names": [
+              "b"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Node",
+                "elems": [
+                  {
+                    "key": "tag",
+                    "value": {
+                      "k": "strlit",
+                      "value": "b",
+                      "tok": 208
+                    }
+                  },
+                  {
+                    "key": "kids",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "T"
+                      },
+                      "elems": [
+                        {
+                          "k": "ident",
+                          "name": "a",
+                          "tok": 216
+                        },
+                        {
+                          "k": "ident",
+                          "name": "a",
+                          "tok": 218
+                        },
+                        {
+                          "k": "composite",
+                          "type_name": "Leaf",
+                          "elems": [
+                            {
+                              "key": "v",
+                              "value": {
+                                "k": "int",
+                                "value": 3,
+                                "tok": 224
+                              }
+                            }
+                          ],
+                          "tok": 220,
+                          "type_args": []
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 212
+                    }
+                  }
+                ],
+                "tok": 204,
+                "type_args": []
+              }
+            ],
+            "tok": 202
+          },
+          {
+            "k": "bind",
+            "names": [
+              "c"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Node",
+                "elems": [
+                  {
+                    "key": "tag",
+                    "value": {
+                      "k": "strlit",
+                      "value": "c",
+                      "tok": 235
+                    }
+                  },
+                  {
+                    "key": "kids",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "T"
+                      },
+                      "elems": [
+                        {
+                          "k": "ident",
+                          "name": "b",
+                          "tok": 243
+                        },
+                        {
+                          "k": "ident",
+                          "name": "a",
+                          "tok": 245
+                        },
+                        {
+                          "k": "ident",
+                          "name": "b",
+                          "tok": 247
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 239
+                    }
+                  }
+                ],
+                "tok": 231,
+                "type_args": []
+              }
+            ],
+            "tok": 229
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 251
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "show",
+                    "tok": 253
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "c",
+                      "tok": 255
+                    }
+                  ],
+                  "tok": 254
+                }
+              ],
+              "tok": 252
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 259
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "size",
+                    "tok": 261
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "c",
+                      "tok": 263
+                    }
+                  ],
+                  "tok": 262
+                }
+              ],
+              "tok": 260
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 267
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "show",
+                    "tok": 269
+                  },
+                  "args": [
+                    {
+                      "k": "composite",
+                      "type_name": "Node",
+                      "elems": [
+                        {
+                          "key": "tag",
+                          "value": {
+                            "k": "strlit",
+                            "value": "d",
+                            "tok": 275
+                          }
+                        },
+                        {
+                          "key": "kids",
+                          "value": {
+                            "k": "slicelit",
+                            "elem": {
+                              "k": "name",
+                              "name": "T"
+                            },
+                            "elems": [],
+                            "mut": false,
+                            "tok": 279
+                          }
+                        }
+                      ],
+                      "tok": 271,
+                      "type_args": []
+                    }
+                  ],
+                  "tok": 270
+                }
+              ],
+              "tok": 268
+            }
+          }
+        ]
+      },
+      "tok": 168,
+      "bodiless": false,
+      "span": {
+        "start": 167,
+        "end": 290
+      },
+      "sig_end": 171
+    }
+  ],
+  "consts": []
+}

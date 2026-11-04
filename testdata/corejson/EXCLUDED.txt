@@ -15,9 +15,7 @@ examples/annot_neg_unknown.sober: sober: load error: source does not match the g
 examples/assert_outside.sober: sober: load error at examples/assert_outside.sober:5:5: assert is only available in _test.sober files
 examples/bind.sober: examples/bind.sober:3:1: error: top-level declaration kind (Unsupported)
 examples/bind_neg_assign.sober: sober: desugar error at examples/bind_neg_assign.sober:7:5 (Malformed)
-examples/borrow_mut_neg_forward.sober: sober: load error at examples/borrow_mut_neg_forward.sober:16:46: this call passes on a borrowed function as it is, so the lambdas passed to it cannot also capture a mut binding — call the borrowed function inside the lambda instead, or capture the mut binding in a separate call
-examples/borrow_mut_neg_two.sober: sober: load error at examples/borrow_mut_neg_two.sober:15:42: the lambdas passed to one call of a function value can capture only one mut binding between them, and this is a second one — put both in one struct (`mut s := S{…}`) and capture that
-examples/borrow_mut_neg_two_args.sober: sober: load error at examples/borrow_mut_neg_two_args.sober:15:64: the lambdas passed to one call of a function value can capture only one mut binding between them, and this is a second one — put both in one struct (`mut s := S{…}`) and capture that
+examples/borrow_mut_neg_capture.sober: sober: load error at examples/borrow_mut_neg_capture.sober:10:29: a lambda that becomes a closure (a function-typed field, a value of named function type, or a lambda passed to a call of a function value) cannot capture a mut binding — captures are immutable copies taken at creation. To keep the value it has now, copy it into an immutable binding first (`kk := k`) and capture that; to keep updating state, keep it with the caller and pass it through a mut parameter of the function type (`func(st mut S, …)` called as `f(mut st, …)`)
 examples/borrow_mut_neg_value.sober: sober: load error at examples/borrow_mut_neg_value.sober:14:32: a lambda kept as a value (a function-typed field, a value of named function type, or a lambda that flows on to another call) cannot capture a mut binding — captures are immutable copies taken at creation; only a lambda passed straight to a call of a function value (a borrowed closure) can capture one
 examples/borrow_neg_bind.sober: sober: load error at examples/borrow_neg_bind.sober:13:14: a borrowed function (a parameter of anonymous function type of a function value) can only be called, passed on to a call, or captured by a lambda passed to a call — it cannot be stored, returned, bound, or handed to another task
 examples/borrow_neg_return.sober: sober: load error at examples/borrow_neg_return.sober:14:38: a borrowed function (a parameter of anonymous function type of a function value) can only be called, passed on to a call, or captured by a lambda passed to a call — it cannot be stored, returned, bound, or handed to another task
@@ -60,6 +58,7 @@ examples/composite_field_ty.sober: sober: desugar error at examples/composite_fi
 examples/composite_mixed.sober: sober: desugar error at examples/composite_mixed.sober:11:10 (Malformed)
 examples/composite_slice_elem_ty.sober: sober: desugar error at examples/composite_slice_elem_ty.sober:10:15 (FieldType): the value does not have the field's declared type
 examples/const_neg_call.sober: sober: load error at examples/const_neg_call.sober:9:7: const expression
+examples/const_neg_floatint.sober: sober: load error at examples/const_neg_floatint.sober:6:17: const expression: operators work only on int consts, and + - * / on float consts (float literals and float consts — no int literal); string, bool, struct and slice consts are written as literals
 examples/const_neg_map.sober: sober: load error at examples/const_neg_map.sober:4:15: const expression: a map literal is not allowed in a const (only @embed fills a map const)
 examples/const_neg_mutslice.sober: sober: load error at examples/const_neg_mutslice.sober:4:16: const expression: a const is immutable — `mut` literals are not allowed
 examples/const_neg_nil.sober: sober: load error at examples/const_neg_nil.sober:4:30: const expression: nil is allowed only as a field value
@@ -68,14 +67,22 @@ examples/defined_neg_struct.sober: sober: load error at examples/defined_neg_str
 examples/doubles_neg_import.sober: sober: load error at examples/doubles_neg_import.sober:5:8: this package is a double (its files are _double.sober): it is read only through the @doubles list of a test package
 examples/doubles_neg_replaces.sober: sober: load error at examples/doubles_neg_replaces.sober:1:1: @replaces is written only before the package clause of a _double.sober file
 examples/effects_neg_target.sober: sober: load error: source does not match the grammar
+examples/elem_field_assign_neg_imm.sober: sober: error at examples/elem_field_assign_neg_imm.sober:11:5 (ImmWrite): cannot write into an imm map / slice — create it writable (`mut m := mut map[K]V{}`, `mut xs := mut []T{}`)
 examples/embed_neg_nomatch.sober: sober: load error at examples/embed_neg_nomatch.sober:6:7: @embed pattern matches no file
 examples/errors_neg_try_dest.sober: sober: desugar error at examples/errors_neg_try_dest.sober:16:18 (Malformed)
 examples/exprstmt_pure.sober: sober: load error at examples/exprstmt_pure.sober:6:7: an expression statement must be a call: the value of a pure expression is unused (bind or assign it, or remove it)
 examples/float_neg_mapkey.sober: sober: desugar error at examples/float_neg_mapkey.sober:6:18 (TypeMismatch)
 examples/float_neg_mix.sober: sober: desugar error at examples/float_neg_mix.sober:6:14 (TypeMismatch)
+examples/float_neg_range.sober: sober: load error at examples/float_neg_range.sober:6:13: a float literal must be finite — it rounds to Inf (the largest float is 1.7976931348623157e308)
+examples/fn_mut_param_neg_arg.sober: sober: load error at examples/fn_mut_param_neg_arg.sober:9:7: this argument does not match the function's parameter: a mut parameter takes `mut x` (a mut binding or one of its fields), and a parameter taken by value takes a plain value
+examples/fn_mut_param_neg_eta.sober: sober: load error at examples/fn_mut_param_neg_eta.sober:18:17: the mut parameters of this function are not where the function type has them — a function type marks its mut parameter (`func(st mut S, x int)`), and the function must take the same parameters mut
+examples/fn_mut_param_neg_lambda.sober: sober: load error at examples/fn_mut_param_neg_lambda.sober:14:32: this lambda's parameters do not match the function type it is passed as — write `mut` on a parameter exactly where the function type has it (`(st mut S, x int) => …`), or leave the parameter types out to take them from the function type
+examples/fn_mut_param_neg_two.sober: sober: load error at examples/fn_mut_param_neg_two.sober:5:28: a function type has at most one mut parameter — put the state in one struct and take that (`func(st mut S, …)` with `type S struct { … }`)
 examples/fnarg_arity.sober: sober: load error at examples/fnarg_arity.sober:14:13: this function takes a different number of parameters than the function type expects
 examples/fnarg_mut.sober: sober: load error at examples/fnarg_mut.sober:15:13: a function with mut parameters cannot be passed where a function type is expected (function types have no mut parameters)
 examples/fntype_errors_neg_prefix.sober: sober: load error at examples/fntype_errors_neg_prefix.sober:5:10: source does not match the grammar
+examples/fnval_slice_neg_anon.sober: sober: desugar error at examples/fnval_slice_neg_anon.sober:7:44 (CoreFragment)
+examples/fnval_slice_neg_generic.sober: sober: desugar error at examples/fnval_slice_neg_generic.sober:9:11 (CoreFragment)
 examples/for.sober: examples/for.sober:7:6: error: type outside the core fragment (CoreFragment)
 examples/for_closure_gen_named.sober: sober: load error at examples/for_closure_gen_named.sober:18:20: only a parameter of anonymous function type (`recv func(k func(T)) error?` — expanded at the call) can be called as a for generator; a parameter of named function type is a value and is not expanded — call it with a lambda instead (`recv((x) => { … })`)
 examples/for_closure_gen_result.sober: sober: load error at examples/for_closure_gen_result.sober:14:20: `?` on a generator needs a generator that returns error? only
@@ -121,6 +128,7 @@ examples/io_root_neg_unclosed.sober: sober: load error at examples/io_root_neg_u
 examples/io_under_neg_unclosed.sober: sober: load error at examples/io_under_neg_unclosed.sober:10:22: the file opened here must be closed by the next statement: insert `defer io.Close(f)` (with the name bound here — `defer io.CloseRoot(r)` for io.OpenRoot) right after this line
 examples/json_decode_neg_field.sober: sober: load error at examples/json_decode_neg_field.sober:9:9: json.Decode supports struct fields of int, float, bool, string, nested structs, []T and T? (generic structs, unions, maps and named scalars come later)
 examples/json_decode_neg_type.sober: sober: load error at examples/json_decode_neg_type.sober:12:28: the type argument of json.Decode must be a struct type without type parameters
+examples/json_decode_neg_value.sober: sober: load error at examples/json_decode_neg_value.sober:10:10: json.Decode cannot read into a struct with a json.Value field (a union has no zero value, so the early return of `?` has no struct to return) — make the field json.Value? or read it with json.Tree
 examples/json_doc_forge.sober: sober: desugar error at examples/json_doc_forge.sober:9:10 (Malformed)
 examples/json_view_nonexh.sober: sober: desugar error at examples/json_view_nonexh.sober:12:5 (Malformed)
 examples/layout_neg_array.sober: sober: load error at examples/layout_neg_array.sober:6:11: a fixed-length array field ([N]T) is only allowed in a @layout struct
@@ -138,7 +146,15 @@ examples/lease_neg_reserved.sober: sober: load error at examples/lease_neg_reser
 examples/lease_neg_shape.sober: sober: load error at examples/lease_neg_shape.sober:19:36: a worker-local place holds a struct with only scalar fields (int, byte, bool, float) and pool.Scratch fields, without type parameters
 examples/lease_neg_zero.sober: sober: load error at examples/lease_neg_zero.sober:14:11: `par.Local` has identity: only par.NewLocal makes one — a zero value would refer to nothing
 examples/len_string.sober: sober: desugar error at examples/len_string.sober:6:15 (LenString): len is not defined on string — use len(bytes(s)) for the byte count
+examples/lit_int_range.sober: sober: load error at examples/lit_int_range.sober:6:13: an integer literal must fit in int (at most 9223372036854775807)
 examples/lit_leading_zero.sober: sober: load error at examples/lit_leading_zero.sober:6:13: a decimal literal cannot start with 0 — write 0o for octal (0o755), or drop the leading zeros
+examples/local_lambda_neg_capture.sober: sober: load error at examples/local_lambda_neg_capture.sober:14:23: a lambda kept as a value (or passed to a call of a function value) cannot use a lambda bound to a local name — that lambda is expanded where it is called, and this body runs elsewhere
+examples/local_lambda_neg_later.sober: sober: load error at examples/local_lambda_neg_later.sober:6:16: this lambda bound to a local name uses a name that is declared after the lambda — the body sees only the names visible where the lambda is written
+examples/local_lambda_neg_mut.sober: sober: load error at examples/local_lambda_neg_mut.sober:6:5: a lambda bound to a local name cannot be mut — the name stands for the lambda, which is expanded where it is called (bind it with `f := (…) => …`)
+examples/local_lambda_neg_named.sober: sober: load error at examples/local_lambda_neg_named.sober:13:19: a lambda bound to a local name is not a value, so it cannot be passed where a value is kept (a parameter of named function type, or an argument of a call of a function value) — write the lambda itself there, or use a named function
+examples/local_lambda_neg_return.sober: sober: load error at examples/local_lambda_neg_return.sober:8:13: the body of a lambda bound to a local name cannot use return — its value is its last expression (return would leave the enclosing function where the lambda is called)
+examples/local_lambda_neg_try.sober: sober: load error at examples/local_lambda_neg_try.sober:15:32: the body of a lambda bound to a local name cannot use `?` — the error would leave the enclosing function where the lambda is called; let the lambda return the error as its value (`f := (s) => parse(s)`) and use `?` at the call (`f(s)?`)
+examples/local_lambda_neg_value.sober: sober: load error at examples/local_lambda_neg_value.sober:7:10: a lambda bound to a local name can only be called (`f(x)`) or passed to a parameter of anonymous function type — it is expanded where it is used and is not a value (to keep a function as a value, write the lambda in a position of named function type)
 examples/localname_const.sober: sober: load error at examples/localname_const.sober:8:5: a local binding cannot reuse a top-level name (const, func or type)
 examples/localname_import.sober: sober: load error at examples/localname_import.sober:8:5: a local binding cannot reuse an import reference name
 examples/localname_named.sober: sober: load error at examples/localname_named.sober:12:5: a local binding cannot reuse a top-level name (const, func or type)
@@ -172,7 +188,6 @@ examples/named_scalar_typed_const_neg_arith.sober: sober: desugar error at examp
 examples/named_scalar_typed_const_neg_constexpr.sober: sober: load error at examples/named_scalar_typed_const_neg_constexpr.sober:8:7: const expression
 examples/named_scalar_typed_const_neg_int.sober: sober: desugar error at examples/named_scalar_typed_const_neg_int.sober:14:15 (TypeMismatch)
 examples/named_scalar_under.sober: sober: desugar error at examples/named_scalar_under.sober:8:14 (TypeMismatch)
-examples/narrow_assign.sober: sober: desugar error at examples/narrow_assign.sober:15:5 (NarrowAssign): cannot assign to a narrowed binding — inside the narrowed region the name is the T?'s payload; bind it to a new name (`mut v := x`) or assign outside the region (name: x, narrowed at examples/narrow_assign.sober:12:5)
 examples/net_neg_capture.sober: sober: load error at examples/net_neg_capture.sober:16:46: a closure cannot capture an io.File, net.Conn, net.Listener or tls.Conn — pass it as an argument (only the body of par.Scope may capture it)
 examples/net_neg_copy.sober: sober: load error at examples/net_neg_copy.sober:13:14: an io.File, net.Conn, net.Listener or tls.Conn cannot be copied to another binding (it has identity — keep using the name bound by io.Open or by the for)
 examples/nil_untyped.sober: sober: desugar error at examples/nil_untyped.sober:7:31 (UntypedNil): nil has no type here — use it where a T? is expected (a typed parameter, field or result)
@@ -274,8 +289,8 @@ examples/tls_neg_field.sober: sober: load error at examples/tls_neg_field.sober:
 examples/top_dup.sober: sober: load error at examples/top_dup.sober:6:6: a top-level name is declared more than once in the package
 examples/top_dup_kinds.sober: sober: load error at examples/top_dup_kinds.sober:7:6: a top-level name is declared more than once in the package
 examples/try.sober: examples/try.sober:7:6: error: type outside the core fragment (CoreFragment)
-examples/type_recursive.sober: sober: load error at examples/type_recursive.sober:5:6: recursive type declaration (a type cannot contain itself — directly or through []T, map, T? or another type)
-examples/type_recursive_mutual.sober: sober: load error at examples/type_recursive_mutual.sober:5:6: recursive type declaration (a type cannot contain itself — directly or through []T, map, T? or another type)
+examples/type_recursive_neg_targs.sober: sober: load error at examples/type_recursive_neg_targs.sober:5:6: recursive type whose recursive references change the type arguments — pass the declaration's own type parameters in the same order
+examples/type_recursive_neg_value.sober: sober: load error at examples/type_recursive_neg_value.sober:5:6: recursive type contains itself by value (directly, through [N]T or another type's field) — the size would be infinite; go through T?, []T or map[K]T, or keep a table and an index
 examples/union.sober: examples/union.sober:24:12: error: switch without a single subject is outside the core fragment (CoreFragment)
 examples/unknown_field_type.sober: sober: desugar error at examples/unknown_field_type.sober:6:7 (UnknownName)
 examples/unknown_mutparam_type.sober: sober: desugar error at examples/unknown_mutparam_type.sober:9:13 (UnknownName)

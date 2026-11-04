@@ -2,7 +2,7 @@
 
 [English](testing.md) | 日本語
 
-小さな package `kv` を題材に、テストを 6 段で足していきます。各段は「書く → 走らせる → 出力を見る」の順です。ここに載せた出力はすべて実物で、リポジトリの検査（`scripts/gates.sh` の guidetest）が毎回同じコマンドを走らせて照合しています。
+小さな package `kv` を題材に、テストを 6 段で足していきます。7・8 節では、`kv` を使う package のテストで依存を double に差し替えます。各段は「書く → 走らせる → 出力を見る」の順です。ここに載せた出力はすべて実物で、リポジトリの検査（`scripts/gates.sh` の guidetest）が毎回同じコマンドを走らせて照合しています。
 
 前提: [最初のプログラム](first-program.ja.md#テストを書く)（`*_test.sober` と `sober test`）と [言語ツアー](tour.ja.md) の 1〜5 節。
 
@@ -458,6 +458,241 @@ sober watch app
 
 （この出力は時刻に依るので、ここでは載せません。）
 
+## 7. 本物の代わりに double を読む — `@doubles`
+
+`kv` を使って設定を読み書きする package `settings` を考えます。設定はファイルに 1 行ずつ置き、ファイルの読み書きは package `kvstore` が受け持ちます。
+
+```sober
+// examples/guide/kvstore/kvstore.sober
+package kvstore
+
+// Keeps one line of text per name, as files under a directory (the subject of section 7 of docs/guide/testing.md).
+
+import "std/io"
+
+type Dir struct {
+    path string
+}
+
+// no file called name
+type Missing error {
+    name string
+}
+
+// the file could not be written
+type Denied error {}
+
+func Open(path string) Dir {
+    return Dir{path: path}
+}
+
+@effects(io, nondet)
+@errors(Missing)
+func Load(d Dir, name string) (string, error?) {
+    b := io.ReadFile(d.path + "/" + name) catch return "", Missing{name: name}
+    return string(b) catch "", nil
+}
+
+@effects(io, nondet)
+@errors(Denied)
+func Store(d Dir, name string, line string) error? {
+    err := io.WriteFile(d.path + "/" + name, bytes(line))
+    return if err != nil { Denied{} } else { nil }
+}
+```
+
+```sober
+// examples/guide/settings/settings.sober
+package settings
+
+// Settings kept as one `key=value;key=value` line per file in a kvstore directory.
+
+import "examples/guide/kv"
+import "examples/guide/kvstore"
+
+// the value of key in the file name, or def when the file or the key is missing
+func Value(d kvstore.Dir, name string, key string, def string) string {
+    line := kvstore.Load(d, name) catch return def
+    ps := kv.Parse(line) catch return def
+    mut i := 0
+    while i < len(ps) {
+        if ps[i].key == key {
+            return ps[i].value
+        }
+        i += 1
+    }
+    return def
+}
+
+// sets key = value in the file name (creating the file) and writes the file back
+@errors(kvstore.Denied)
+func Set(d kvstore.Dir, name string, key string, value string) error? {
+    line := kvstore.Load(d, name) catch ""
+    ps := kv.Parse(line) catch []kv.Pair{}
+    mut out := mut []kv.Pair{}
+    mut found := false
+    mut i := 0
+    while i < len(ps) {
+        if ps[i].key == key {
+            out = append(out, kv.Pair{key: key, value: value})
+            found = true
+        } else {
+            out = append(out, ps[i])
+        }
+        i += 1
+    }
+    if !found {
+        out = append(out, kv.Pair{key: key, value: value})
+    }
+    return kvstore.Store(d, name, kv.Format(freeze(out)))
+}
+```
+
+`settings` は `kvstore` を直に import して呼んでいます。interface もコンストラクタへの注入もありません。それでも `settings` のテストはディスクに触らずに書けます。テストのビルドの中でだけ、`kvstore` を代役（double）に丸ごと差し替えるからです。
+
+double は差し替える相手の下のディレクトリに置き、ファイル名は `_double.sober` で終えます。package 節の前の `@replaces` で相手を名乗り、package 名は相手と同じにします。
+
+```sober
+// examples/guide/kvstore/mem/mem_double.sober
+@replaces("examples/guide/kvstore")
+package kvstore
+
+// A double of kvstore: the files live in a cell instead of on disk, and a directory from Failing refuses every write.
+
+import "std/testing/cell"
+
+type Dir struct {
+    failing bool
+}
+
+type File struct {
+    name string
+    line string
+}
+
+type Missing error {
+    name string
+}
+
+type Denied error {}
+
+// the files written so far, in the order of the writes
+const Files = cell.Cell[[]File]{}
+
+func Empty() Dir {
+    return Dir{failing: false}
+}
+
+func Failing() Dir {
+    return Dir{failing: true}
+}
+
+@errors(Missing)
+func Load(d Dir, name string) (string, error?) {
+    fs := cell.Get(Files)
+    mut i := len(fs) - 1
+    while i >= 0 {
+        if fs[i].name == name {
+            return fs[i].line, nil
+        }
+        i -= 1
+    }
+    return "", Missing{name: name}
+}
+
+@errors(Denied)
+func Store(d Dir, name string, line string) error? {
+    if d.failing {
+        return Denied{}
+    }
+    cell.Update(Files, (fs []File) => append(fs, File{name: name, line: line}))
+    return nil
+}
+```
+
+ファイルの代わりに、std/testing/cell の置き場 `Files` に書いた行を貯めます。置き場はテストのプロセスに 1 つで、テストごとに空から始まります。`Empty` と `Failing` は double にだけある名前で、テストが状態の初期値と書きの誤りの注入を選ぶ口です。
+
+テストの package は、`_test.sober` の package 節の前の `@doubles` で使う double を名指します。
+
+```sober
+// examples/guide/settings/settings_test.sober
+@doubles("examples/guide/kvstore/mem")
+package settings
+
+import "examples/guide/kvstore/mem"
+import "std/testing/cell"
+
+func TestSetThenValue() {
+    d := mem.Empty()
+    assert(Set(d, "app", "port", "80") == nil)
+    assert(Set(d, "app", "host", "a=b") == nil)
+    assert(Set(d, "app", "port", "8080") == nil)
+    assert(Value(d, "app", "port", "") == "8080")
+    assert(Value(d, "app", "host", "") == "a=b")
+    assert(Value(d, "app", "user", "-") == "-")
+    files := cell.Get(mem.Files)
+    assert(files[len(files) - 1].line == "port=8080;host=a\\=b")
+}
+
+func TestMissingFile() {
+    assert(Value(mem.Empty(), "app", "port", "8080") == "8080")
+}
+
+func TestDenied() {
+    assert(Set(mem.Failing(), "app", "port", "80") != nil)
+    assert(len(cell.Get(mem.Files)) == 0)
+}
+```
+
+```sh
+$ sober test examples/guide/settings
+```
+
+出力:
+
+```
+ok   examples/guide/settings.TestSetThenValue
+ok   examples/guide/settings.TestMissingFile
+ok   examples/guide/settings.TestDenied
+3 passed, 0 failed
+```
+
+そのテストのビルドでは、`kvstore` を import するファイルが全部 double を読みます（`settings.sober` も）。本番の build と check は `_double.sober` を読みません。どのテストがどの double で走るかは `--wiring` で一覧できます（建てるだけで走らせません）。
+
+```sh
+$ sober test examples/guide/settings --wiring
+```
+
+出力:
+
+```
+examples/guide/settings: examples/guide/kvstore <= examples/guide/kvstore/mem
+```
+
+double は本物と食い違えません。double と本物の両方にある名前は、関数の署名・型の欄の型・`@errors` が照合され、double の効果（analyzer が導く）は本物の `@effects` の内側でなければなりません。本物に無い効果（panic・本物が io を持たないのに io）を持つ double は拒否されます。本物にあって double に無い名前は書かなくてかまいません。テストが使う分だけ書けば足ります。
+
+## 8. その儀式は要らない
+
+他の言語で `settings` をディスクなしでテストするには、たいてい次の手順を踏みます。
+
+1. `kvstore` の操作を interface（`Store`）に切り出す
+2. 本番の実装と、テスト用の実装（モック）を 1 つずつ書く
+3. `settings` の関数かコンストラクタに `Store` の引数を足し、呼ぶ側全部で本番の実装を渡す（DI コンテナを使うこともある）
+4. 層を分ける規約（「ドメインはインフラに依存しない」）を守るため、依存の向きを interface で逆にする
+
+Sober ではどれも要りません。差し替えはテストのビルドの中の import の解決先の付け替えで済み（7 節）、本番のコードは本物を直に呼ぶ形のままです。差し替えのための interface も引数も層も持ち込みません。
+
+モックが本物と乖離する心配は、契約の照合（署名・型・効果）が塞ぎます。依存の向きは import のグラフに全部出ていて、閉じた世界の中で静的に見えます。
+
+やらないことの一覧:
+
+- 実装が 1 つしかない interface を、テストのために作らない（振る舞いを差し替える必要が本番にあるときは [抽象化](abstraction.ja.md) の関数値と struct で）
+- テストのために関数の引数を増やさない
+- モックのライブラリや DI コンテナを使わない
+- 差し替えのためだけに層を分けない
+
+いまは std の package（時計・ネットワーク・ファイル）を直に差し替える口はありません。std を相手にした差し替えは、自分の package で包んでその package を差し替えます（この節の `kvstore` の形）。
+
 ## まとめ
 
 1. 単発の例を `assert` で書く
@@ -465,7 +700,8 @@ sober watch app
 3. `--cover` で通っていない分岐を、`--mutate` で通っているのに見ていない所を見つける
 4. `sober fuzz` でファジングし、見つけた反例は `testdata/fuzz` に残って回帰テストになる
 5. task を使うコードは `--sched` でスケジュールも振る
+6. 依存は `@doubles` でテストのビルドの中だけ double に差し替える（interface も注入も要らない）
 
 どの段でも、同じコードと同じシードなら結果は毎回同じでした（2 節の反例・3 節の割合・4 節の fuzz が見つけた試行）。だから失敗はシード 1 つで再現でき、通った結果は覚えておいて再生でき（6 節）、ミュータントごとの判定も 1 回走らせれば決まります。
 
-正確な定義は [言語仕様 13 章](../spec/13-testing.ja.md)、決定の経緯は [決定の記録](../language.md) の 35・39・40 節にあります。
+正確な定義は [言語仕様 13 章](../spec/13-testing.ja.md)、決定の経緯は [決定の記録](../language.md) の 35・39・40・41 節にあります。

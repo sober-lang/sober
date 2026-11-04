@@ -761,6 +761,28 @@ func kClose(st mut S, a0 int) int {
     return -1
 }
 
+// FS.kFold（方程式 2 本）
+func kFold(st mut S, a0 int, a1 int) int {
+    // FS.kFold.eq_1
+    if a0 >= 0 {
+        v_x := a1
+        return if (foldOk(mut st, v_x) && (tyEq(mut st, a0, unfold(mut st, v_x)))) { v_x } else { -1 }
+    }
+    // FS.kFold.eq_2（最後の腕 — 先行の腕が外れれば当たる: a0 < 0）
+    return -1
+}
+
+// FS.kUnfold（方程式 2 本）
+func kUnfold(st mut S, a0 int) int {
+    // FS.kUnfold.eq_1
+    if a0 >= 0 {
+        v_t := a0
+        return if foldOk(mut st, v_t) { unfold(mut st, v_t) } else { -1 }
+    }
+    // FS.kUnfold.eq_2（最後の腕 — 先行の腕が外れれば当たる: a0 < 0）
+    return -1
+}
+
 // FS.sSpawn2（方程式 2 本）
 func sSpawn2(st mut S, a0 int, a1 int, a2 int, a3 int) int {
     // FS.sSpawn2.eq_1
@@ -816,7 +838,7 @@ func kTry(st mut S, a0 int, a1 int) int {
     return -1
 }
 
-// FS.tcStep（方程式 171 本）
+// FS.tcStep（方程式 175 本）
 func tcStep(st mut S, a0 int, a1 int, a2 int, a3 int, a4 int, a5 int, a6 int, a7 int, a8 int, a9 int) int {
     switch nK(mut st, a8) {
     case W_LIT:
@@ -1369,45 +1391,59 @@ func tcStep(st mut S, a0 int, a1 int, a2 int, a3 int, a4 int, a5 int, a6 int, a7
         }
         // FS.tcStep.eq_154（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kClose(mut st, a5))
+    case W_FOLD:
+        // FS.tcStep.eq_155
+        if a9 == 0 {
+            return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
+        }
+        // FS.tcStep.eq_156（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        return actRet(mut st, kFold(mut st, a5, (nA(mut st, a8))))
+    case W_UNFOLD:
+        // FS.tcStep.eq_157
+        if a9 == 0 {
+            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
+        }
+        // FS.tcStep.eq_158（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        return actRet(mut st, kUnfold(mut st, a5))
     case W_SCOPE:
-        // FS.tcStep.eq_158
+        // FS.tcStep.eq_162
         if a9 == 0 {
             v_d := a2
             return actSub(mut st, (nB(mut st, a8)), a1, (v_d + 1), ctxCons(mut st, mk(mut st, TOwn, 0, v_d, (nC(mut st, a8))), a3), -1)
         }
-        // FS.tcStep.eq_159（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        // FS.tcStep.eq_163（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kScope(mut st, a5, a1, a2, (nA(mut st, a8)), (nC(mut st, a8))))
     case W_SPAWN:
-        // FS.tcStep.eq_160
+        // FS.tcStep.eq_164
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_161
+        // FS.tcStep.eq_165
         if a9 == 1 {
             return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_162
+        // FS.tcStep.eq_166
         if a9 == 2 {
             return sSpawn2(mut st, a5, a6, (nC(mut st, a8)), a2)
         }
-        // FS.tcStep.eq_163（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1 && ((a9 - 1) - 1) >= 1）
+        // FS.tcStep.eq_167（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1 && ((a9 - 1) - 1) >= 1）
         return actRet(mut st, kSpawn(mut st, a5, a6, a7))
     case W_NEWCH:
-        // FS.tcStep.eq_164
+        // FS.tcStep.eq_168
         return actRet(mut st, kNewch(mut st, a1, a2, (nA(mut st, a8)), (nB(mut st, a8)), (nC(mut st, a8))))
     case W_JOIN:
-        // FS.tcStep.eq_166
+        // FS.tcStep.eq_170
         if a9 == 0 {
             return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_167（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        // FS.tcStep.eq_171（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kJoin(mut st, a5, (nA(mut st, a8))))
     case W_TRY:
-        // FS.tcStep.eq_168
+        // FS.tcStep.eq_172
         if a9 == 0 {
             return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_169（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        // FS.tcStep.eq_173（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kTry(mut st, a5, (nA(mut st, a8))))
     }
     return actRet(mut st, 0 - 1)

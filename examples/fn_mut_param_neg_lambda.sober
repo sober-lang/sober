@@ -1,0 +1,15 @@
+package main
+
+// 負例: ラムダの仮引数の型を書くなら mut の印も関数型と同じ席に（型を書かなければ関数型から — language.md 25 節）
+
+type Step func(acc mut int, x int)
+
+func run(f Step) int {
+    mut s := 0
+    f(mut s, 2)
+    return s
+}
+
+func main() {
+    println(run((a int, x int) => { println(a + x) }))
+}

@@ -1,2 +1,2 @@
-sober: load error at examples/fnarg_mut.sober:15:13: a function with mut parameters cannot be passed where a function type is expected (function types have no mut parameters)
+sober: load error at examples/fnarg_mut.sober:15:13: the mut parameters of this function are not where the function type has them — a function type marks its mut parameter (`func(st mut S, x int)`), and the function must take the same parameters mut
 exit=1

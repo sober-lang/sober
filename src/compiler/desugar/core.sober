@@ -69,7 +69,10 @@ const CSend = 60     // a = 送り端, b = 値
 const CRecv = 61     // a = 受け端（型は T? — 閉じて空なら nil）
 const CClose = 62    // a = 送り端（P3b-4 ③ — 閉じる）
 const CClone = 63    // a = e, b = 読み出しの注釈の型（-1 = 注釈なし — CIndex と同じ）（clone の段 — slice / map の浅い写しを最内 region の mut へ）
-const CCallMv = 64   // a = f, b = e, c = anchor の region（anchor つきの関数値の呼び出し — Lean の callMv・借りの閉包の mut 捕捉 (α-L1)）
+const CCallMv = 64   // a = f, b = e, c = anchor の region（anchor つきの関数値の呼び出し — Lean の callMv・関数型の mut 仮引数の席）
+// 再帰型（iso — Lean の fold / unfold）: CFold の a = 型（μ）, b = e（中身は 1 段の展開の型）/ CUnfold の a = e
+const CFold = 65
+const CUnfold = 66
 
 // float の二項の種類（FAdd..FDiv は farith、FEq..FGe は fcmp）
 const FAdd = 1
@@ -249,6 +252,14 @@ func cNil(st mut S, t TyRef) CoreRef {
 
 func cUnreach(st mut S, t TyRef) CoreRef {
     return ce(mut st, CUnreach, int(t), 0, 0, 0)
+}
+
+func cFold(st mut S, t TyRef, e CoreRef) CoreRef {
+    return ce(mut st, CFold, int(t), int(e), 0, 0)
+}
+
+func cUnfold(st mut S, e CoreRef) CoreRef {
+    return c1(mut st, CUnfold, e)
 }
 
 func cInl(st mut S, r TyRef, e CoreRef) CoreRef {

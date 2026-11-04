@@ -24,6 +24,11 @@ type Eng struct {
     env table.Table[int]     // 今の関数の局所 [名前, lo, hi]…
     envN int
     envChanged bool
+    // 今の関数の局所の束縛のラムダ（`f := (…) => …` — 使用の点へ展開される）の名前とラムダの節（llN 個が有効 — errors の名前空間）
+    llName table.Table[int]
+    llLam table.Table[int]
+    llN int
+    llDepth int
 }
 
 const NBITS = 126                 // これ以上のタグのラベルは TOP に倒す（2 語の集合）

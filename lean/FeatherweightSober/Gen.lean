@@ -115,11 +115,43 @@ def genBase (t : Ty) : Rand Expr := do
   | .own _ _ _ => return .triv
   | .fn _ _ => return .triv
   | .tvar _ => return .triv
+  | .mus _ _ _ => return .triv
+  | .rvar _ => return .triv
+  | .muRs _ _ _ _ => return .triv
 
 def tString (r : Nat) : Ty := .slice false r .byte
 
 /-- P3b-4 1b': 子の結果の組の型（err は int） -/
 def ktI (t : Ty) : Ty := .prod t (.opt .int)
+
+/-- 再帰型（iso — language.md 1 節の S）の題材: 自分を受ける関数（自己適用）・次の状態を返す関数（状態関数）・
+自分の slice を受ける関数（next 形のミドルウェアの形 — 再帰の変数が関数型の中の slice の要素に出る） -/
+def tMuS : Ty := .mu1 (.fn (.rvar 0) .int)
+def tMuN : Ty := .mu1 (.fn .int (.rvar 0))
+def tMw : Ty := .mu1 (.fn (.prod .int (.slice false 0 (.rvar 0))) .int)
+/-- D の題材（座標 r の木）: 節が子の slice を持つ木・JSON の値の形（数 / 列 / 名前つきの組の map） -/
+def tNode (r : Nat) : Ty := .muR1 r (.union .int (.slice false 0 (.rvar 0)))
+def tTree (r : Nat) : Ty := .muR1 r (.slice false 0 (.rvar 0))
+/-- 同時の μ（相互再帰の組 — A { as []A; bs []B } / B { bs []B; as []A }）の i 番目。1 束縛の μ では型が文脈で変わる形（帰還頂点集合 2） -/
+def tABs : Ty := .prod (.prod (.slice false 0 (.rvar 0)) (.slice false 0 (.rvar 1)))
+  (.prod (.prod (.slice false 0 (.rvar 1)) (.slice false 0 (.rvar 0))) .unit)
+def tAB (r i : Nat) : Ty := .muRs r 2 i tABs
+def abBuild (me other i : Nat) : Expr :=
+  .ite (.lt (.var 0) (.lit 1))
+    (.fold (tAB 1 i) (.pair (.mkslice false (tAB 1 i)) (.mkslice false (tAB 1 (1 - i)))))
+    (.fold (tAB 1 i) (.pair (.append (.mkslice false (tAB 1 i)) (.call me [] (.add (.var 0) (.lit (-1)))))
+      (.append (.mkslice false (tAB 1 (1 - i))) (.call other [] (.add (.var 0) (.lit (-1)))))))
+def abCount (cMe cOther : Nat) : Expr :=
+  .add (.lit 1) (.add (.call cMe [] (.pair (.fst (.unfold (.var 0))) (.lit 0)))
+    (.call cOther [] (.pair (.snd (.unfold (.var 0))) (.lit 0))))
+def abCnt (i counter self : Nat) : Expr :=
+  .ite (.lt (.snd (.var 0)) (.lenE (.fst (.var 0))))
+    (.add (.call counter [] (.index (.fst (.var 0)) (.snd (.var 0)) (some (tAB 0 i))))
+      (.call self [] (.pair (.fst (.var 0)) (.add (.snd (.var 0)) (.lit 1)))))
+    (.lit 0)
+/-- 値の I 族（opt を通る再帰 — 実装は 1 セルの箱）: cons の鎖 `L { v int; next L? }` -/
+def tCons (r : Nat) : Ty := .muR1 r (.prod .int (.opt (.rvar 0)))
+def tVal (r : Nat) : Ty := .muR1 r (.union .int (.union (.slice false 0 (.rvar 0)) (.map false 0 (.prod .int (.opt (.rvar 0))))))
 
 /-- ベクタ共通の関数表（V3-1: 閉じた関数値を踏むため）。本体は base の世界
 （Γ = [param]、d = 2、f = 1、b = 0）で型付く。2 番は関数値を受けて callv する高階 Def -/
@@ -176,7 +208,38 @@ def genDefs : Defs :=
   , { param := .int, ret := .union .int (.union .unit .int)
       body := .scope .int .int (.letE (.newch 2 1 .int) (.letE (.spawn (.var 1) (.pair (.fst (.var 0)) (.var 2))
         (.pair (.send (.fst (.var 0)) (.add (.snd (.var 0)) (.lit 1))) (.nil .int)))
-        (.letE (.ifnil (.recv (.snd (.var 1))) (.lit 0) (.var 0)) (.letE (.join (ktI .unit) (.var 1)) (.var 1))))) } ]
+        (.letE (.ifnil (.recv (.snd (.var 1))) (.lit 0) (.var 0)) (.letE (.join (ktI .unit) (.var 1)) (.var 1))))) }
+  -- 18〜20（再帰型 — iso の S）: 18 = 自己適用（μ を開いて自分に自分を渡す）・19 = 状態関数（自分を fold して返す）・
+  -- 20 = next 形（自分の slice を受けて長さを返す）。関数値の型は unfold の展開と一致する
+  , { param := tMuS, ret := .int, body := .callv (.unfold (.var 0)) (.var 0) }
+  , { param := .int, ret := tMuN, body := .fold tMuN (.fnref 19 []) }
+  , { param := .prod .int (.slice false 0 tMw), ret := .int, body := .add (.fst (.var 0)) (.lenE (.snd (.var 0))) }
+  -- 21〜23（再帰型 — D）: 21 = 深さ n の完全二分木を自フレームで組んで返す（返り境界の写しが μ を開く）・
+  -- 22 = 節の数（unfold して子の slice を 23 へ）・23 = 子を順に数えて足す
+  , { param := .int, ret := tTree 1,
+      body := .ite (.lt (.var 0) (.lit 1)) (.fold (tTree 1) (.mkslice false (tTree 1)))
+        (.fold (tTree 1) (.append (.append (.mkslice false (tTree 1)) (.call 21 [] (.add (.var 0) (.lit (-1)))))
+          (.call 21 [] (.add (.var 0) (.lit (-1)))))) }
+  , { param := tTree 0, ret := .int, body := .add (.lit 1) (.call 23 [] (.pair (.unfold (.var 0)) (.lit 0))) }
+  , { param := .prod (.slice false 0 (tTree 0)) .int, ret := .int,
+      body := .ite (.lt (.snd (.var 0)) (.lenE (.fst (.var 0))))
+        (.add (.call 22 [] (.index (.fst (.var 0)) (.snd (.var 0)) (some (tTree 0))))
+          (.call 23 [] (.pair (.fst (.var 0)) (.add (.snd (.var 0)) (.lit 1)))))
+        (.lit 0) }
+  -- 24〜29（同時の μ — 相互再帰の組 A ↔ B）: 24 / 25 = buildA / buildB（深さ n — 返り境界の写しが組の μ を開く）・
+  -- 26 / 27 = countA / countB（unfold して両方の子の slice を 28 / 29 へ）・28 / 29 = 子の slice を順に数える
+  , { param := .int, ret := tAB 1 0, body := abBuild 24 25 0 }
+  , { param := .int, ret := tAB 1 1, body := abBuild 25 24 1 }
+  , { param := tAB 0 0, ret := .int, body := abCount 28 29 }
+  , { param := tAB 0 1, ret := .int, body := abCount 29 28 }
+  , { param := .prod (.slice false 0 (tAB 0 0)) .int, ret := .int, body := abCnt 0 26 28 }
+  , { param := .prod (.slice false 0 (tAB 0 1)) .int, ret := .int, body := abCnt 1 27 29 }
+  -- 30 / 31（opt を通る再帰 — 値の I 族）: 30 = 長さ n + 1 の cons の鎖を組む（返り境界の写しが μ と opt を開く）・31 = 値の和
+  , { param := .int, ret := tCons 1,
+      body := .ite (.lt (.var 0) (.lit 1)) (.fold (tCons 1) (.pair (.var 0) (.nil (tCons 1))))
+        (.fold (tCons 1) (.pair (.var 0) (.some (.call 30 [] (.add (.var 0) (.lit (-1))))))) }
+  , { param := tCons 0, ret := .int,
+      body := .add (.fst (.unfold (.var 0))) (.ifnil (.snd (.unfold (.var 0))) (.lit 0) (.call 31 [] (.var 0))) } ]
 
 /-- Γ にある ref true の (index, region, ペイロード型) -/
 def mutRefsOf (Γ : Ctx) : List (Nat × Nat × Ty) :=
@@ -360,7 +423,7 @@ def useAt (Γ : Ctx) (b d i : Nat) : Rand (Option (Expr × Ty)) := do
 /-- 型指向の腕 -/
 inductive Arm where
   | base | letE | ite | case | ifnil | block | alloc | mutop | allocDeref | whileE | chan | pair
-  | op | fn | callM | label | par | unreach | mkc | usec | task
+  | op | fn | callM | label | par | unreach | mkc | usec | task | recD
   deriving Inhabited, BEq
 
 /-- 型 t の well-typed な項を生成する。f = 0 / Ξ = Ψ = [] 前提（sober-check と同じ土俵）。
@@ -395,9 +458,21 @@ def genTyped (t : Ty) (Γ : Ctx) (b d : Nat) : Nat → Rand Expr
       , (1, .unreach)
       , (if canW then 6 else 0, .mkc)
       , (if sls.isEmpty && mps.isEmpty then 0 else 18, .usec)
-      , (if t.regionsBelow 0 && t.chanFree && decide (b < d) then 3 else 0, .task) ]
+      , (if t.regionsBelow 0 && t.chanFree && decide (b < d) then 3 else 0, .task)
+      , (if canW && t == .int then 2 else 0, .recD) ]
     match arm with
     | .base => genTyped t Γ b d 0
+    -- 再帰型（D）: 木を組んで数える（境界コピーが μ を開く）・呼び出しの結果の木を開いて子の数・その場で fold した葉を数える
+    | .recD => do
+      match ← rnd 6 with
+      | 5 => return .call 31 [] (.call 30 [] (← pickD [.lit 0, .lit 1, .lit 3, ← genTyped .int Γ b d fuel]))
+      | 0 => return .call 22 [] (.call 21 [] (← pickD [.lit 0, .lit 1, .lit 2, ← genTyped .int Γ b d fuel]))
+      | 1 => return .lenE (.unfold (.call 21 [] (.lit (Int.ofNat (← rnd 2)))))
+      | 2 => return .call 22 [] (.fold (tTree (d - 1)) (.mkslice false (tTree (d - 1))))
+      -- 同時の μ: 組んで数える・A の子の B を B の数え手へ（組の成分の型が文脈で変わらない）
+      | 3 => return .call 26 [] (.call 24 [] (← pickD [.lit 0, .lit 1, .lit 2, ← genTyped .int Γ b d fuel]))
+      | 4 => return .call 28 [] (.pair (.snd (.unfold (.call 25 [] (.lit (Int.ofNat (← rnd 2)))))) (.lit 0))
+      | _ => return .call 27 [] (.fold (tAB (d - 1) 1) (.pair (.mkslice false (tAB (d - 1) 1)) (.mkslice false (tAB (d - 1) 0))))
     | .letE => do
       let s ← genTy 1
       let e ← genTyped s Γ b d fuel
@@ -503,8 +578,20 @@ def genTyped (t : Ty) (Γ : Ctx) (b d : Nat) : Nat → Rand Expr
       else
         match t with
         | .int => do
-          match ← rnd 8 with
+          match ← rnd 11 with
           | 0 => return .callv (.fnref 0 []) (← genTyped .int Γ b d fuel)
+          -- 再帰型（S）: fold した関数値を unfold して呼ぶ・自己適用の Def・状態関数の結果を開く・next 形に自分の slice を渡す
+          | 9 | 10 | 11 => do
+            let fS := Expr.fold tMuS (.fnref 18 [])
+            let fW := Expr.fold tMw (.fnref 20 [])
+            match ← rnd 3 with
+            | 0 => return .call 18 [] fS
+            | 1 => return .callv (.unfold fS) fS
+            | 2 =>
+              return .letE (.callv (.unfold (.call 19 [] (← genTyped .int Γ b d fuel))) (← genTyped .int Γ b d fuel))
+                (← genTyped .int (tMuN :: Γ) b d fuel)
+            | _ =>
+              return .callv (.unfold fW) (.pair (← genTyped .int Γ b d fuel) (.append (.mkslice false tMw) fW))
           -- L1: anchor つきの関数値の呼び出し（mut を持たない仮引数でも anchor は b〜d - 1 のどこでも型が付く）
           | 6 => do
             let a := if (← rnd 1) = 0 then b else d - 1
@@ -675,7 +762,7 @@ def genTyped (t : Ty) (Γ : Ctx) (b d : Nat) : Nat → Rand Expr
 def genChaosTy : Nat → Rand Ty
   | 0 => genScalarTy
   | fuel + 1 => do
-    match ← rnd 13 with
+    match ← rnd 15 with
     | 0 => return .int
     | 1 => return .bool
     | 2 => return .unit
@@ -689,6 +776,8 @@ def genChaosTy : Nat → Rand Ty
     | 10 => return .f64
     | 11 => return .slice ((← rnd 1) = 0) (← rnd 2) (← genChaosTy fuel)
     | 12 => return .map ((← rnd 1) = 0) (← rnd 2) (.prod (← genChaosTy 0) (.opt (← genChaosTy fuel)))
+    | 13 => pickD [tMuS, tMuN, tMw, .mu1 (← genChaosTy fuel), tNode (← rnd 2), tVal (← rnd 2), tCons (← rnd 2), .muR1 (← rnd 2) (← genChaosTy fuel), tAB (← rnd 2) (← rnd 1)]
+    | 14 => return .rvar (← rnd 1)
     | _ => return .tvar (← rnd 1)
 
 def genChaos : Nat → Rand Expr
@@ -703,7 +792,7 @@ def genChaos : Nat → Rand Expr
     | 6 => return .strlit (← genBytes) (← rnd 2)
     | _ => return .nil (← genChaosTy 1)
   | fuel + 1 => do
-    match ← rnd 65 with
+    match ← rnd 67 with
     | 0 => genChaos 0
     | 1 => return .letE (← genChaos fuel) (← genChaos fuel)
     | 2 => return .add (← genChaos fuel) (← genChaos fuel)
@@ -785,6 +874,8 @@ def genChaos : Nat → Rand Expr
       let ot : Option Ty ← (do if (← rnd 1) = 0 then return none else return some (← genChaosTy fuel))
       return .clone ot (← genChaos fuel)
     | 64 => return .callMv (← rnd 2) (← genChaos fuel) (← genChaos fuel)
+    | 65 => return .fold (← genChaosTy fuel) (← genChaos fuel)
+    | 66 => return .unfold (← genChaos fuel)
     | _ => do
       let op ← pickD [CmpOp.eq, .ne, .le, .gt, .ge]
       return .cmp op (← genChaos fuel) (← genChaos fuel)
@@ -822,6 +913,7 @@ def kids : Expr → List Expr
   | .par a b | .parch _ a b | .send a b => [a, b]
   | .scope _ _ e | .join _ e | .tryJ _ e => [e]
   | .spawn sc a e => [sc, a, e]
+  | .fold _ e | .unfold e => [e]
   | _ => []
 
 /-- 子を差し替える（kids と同じ順・同じ数。数が合わなければ元のまま） -/
@@ -883,6 +975,8 @@ def setKids (x : Expr) (cs : List Expr) : Expr :=
   | .join t _, [e] => .join t e
   | .tryJ t _, [e] => .tryJ t e
   | .spawn _ _ _, [sc, a, e] => .spawn sc a e
+  | .fold t _, [e] => .fold t e
+  | .unfold _, [e] => .unfold e
   | x, _ => x
 
 /-- 前順の節の列（fuel = 深さの上限） -/
@@ -919,6 +1013,8 @@ def mutKinds : Expr → List String
   | .lit _ | .tt | .ff | .tobyte _ | .toint _ | .eqs _ _ | .add _ _ | .lenE _ | .lenm _
   | .arith _ _ _ | .farith _ _ _ => ["op"]
   | .index _ _ _ => ["idx"]
+  | .fold _ _ => ["annty"]
+  | .unfold _ => ["op"]
   | _ => []
 
 /-- s と違う loc-free の型 -/
@@ -979,6 +1075,8 @@ def applyMut (kind : String) (e : Expr) : Rand Expr := do
   | "op", .farith _ a b => return .arith .mul a b
   | "op", .lenE x => return .lenm x
   | "op", .lenm x => return .lenE x
+  | "op", .unfold x => return x
+  | "annty", .fold t x => return .fold (← pickD ([tMuS, tMuN, tMw, .mu1 (.slice false 0 (.rvar 0)), tTree 0, tTree 1, tNode 1, tCons 1, tAB 0 0, tAB 0 1].filter (· != t))) x
   | "idx", .index x i Option.none => return .index x i (some (← otherTy .int))
   | "idx", .index x i (Option.some _) => return .index x i none
   | _, x => return x

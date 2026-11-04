@@ -1,0 +1,32 @@
+package main
+
+// 文字列補間の float の穴（language.md 24 節・37 節）: 綴りは println と同じ最短の往復表現（convert.FormatFloat — Go の strconv 'g' -1）。
+// 特殊値（NaN・±Inf・-0）・指数の形・型パラメータの穴（float のインスタンス）・式の穴。期待値は Go の双子 scripts/oracles/float_interp.go
+
+type Pt struct {
+    x float
+    y float
+}
+
+func show[T](label string, v T) string {
+    return "${label}=${v}"
+}
+
+func main() {
+    x := 1.5
+    p := Pt{x: 0.1 + 0.2, y: -2.0}
+    println("x=${x} p=(${p.x}, ${p.y}) sum=${p.x + p.y}")
+    println("big=${1.0e21} small=${1.0e-7} tiny=${5.0e-324} max=${1.7976931348623157e308}")
+    inf := 1.0 / 0.0
+    println("inf=${inf} ninf=${0.0 - inf} nan=${0.0 / 0.0} negz=${-0.0} z=${0.0}")
+    println(show("f", 2.5), show("i", 7), show("e", 6.02e23))
+    mut acc := ""
+    mut v := 1.0
+    mut k := 0
+    while k < 4 {
+        acc = acc + "${v};"
+        v = v / 3.0
+        k += 1
+    }
+    println(acc)
+}

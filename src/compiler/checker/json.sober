@@ -174,9 +174,15 @@ const W_EPS = 143
 const W_CLONE = 144
 // L1 で足した語（Lean の callMv — anchor つきの関数値の呼び出し。記録は [callmv, nc, f, e, a]）
 const W_CALLMV = 145
-const NW = 146
+// 再帰型で足した語（Lean の fold / unfold の式・rvar / mus / muRs の型 — iso）。fold の記録は [fold, nc, t, e]・unfold は [unfold, nc, e]
+const W_FOLD = 146
+const W_UNFOLD = 147
+const W_RVAR = 148
+const W_MUS = 149
+const W_MURS = 150
+const NW = 151
 // 注釈つき block（Lean の blockR）の式の kind。綴りは持たない（JSON では "block" + "t"）
-const K_BLOCKR = 146
+const K_BLOCKR = 151
 
 // 綴りの表は switch（if 式の鎖は F-22 の形 — 入れ子が深くなる）
 func wordStr(c int) string {
@@ -325,16 +331,21 @@ func wordStr(c int) string {
     case W_CALLMV: "callmv"
     case W_EPS: "eps"
     case W_CLONE: "clone"
+    case W_FOLD: "fold"
+    case W_UNFOLD: "unfold"
+    case W_RVAR: "rvar"
+    case W_MUS: "mus"
+    case W_MURS: "muRs"
     default: "byte" // W_BYTE
     }
 }
 
 func isExprKind(c int) bool {
-    return c == W_NIL || c == W_SOME || (c >= W_LIT && c <= W_RECV) || c == W_STRLIT || c == W_COPYTO || c == W_KEYSM || c == W_CLONE || c == W_UNREACH || c == W_TOBYTE || c == W_TOINT || (c >= W_FLIT && c <= W_FFROMBITS) || (c >= W_SCOPE && c <= W_NEWCH) || c == W_CLOSE || c == W_CALLMV
+    return c == W_NIL || c == W_SOME || (c >= W_LIT && c <= W_RECV) || c == W_STRLIT || c == W_COPYTO || c == W_KEYSM || c == W_CLONE || c == W_UNREACH || c == W_TOBYTE || c == W_TOINT || (c >= W_FLIT && c <= W_FFROMBITS) || (c >= W_SCOPE && c <= W_NEWCH) || c == W_CLOSE || c == W_CALLMV || c == W_FOLD || c == W_UNFOLD
 }
 
 func isTyKind(c int) bool {
-    return c >= W_INT && c <= W_FN || c == W_BYTE || c == W_F64 || c == W_OWN
+    return c >= W_INT && c <= W_FN || c == W_BYTE || c == W_F64 || c == W_OWN || c == W_RVAR || c == W_MUS || c == W_MURS
 }
 
 // 値の tag（parse 中の欄・配列の要素）
@@ -563,6 +574,20 @@ func buildTy(st mut S, fb int, c int) int {
         r := fN(mut st, fb, W_R)
         t := fT(mut st, fb, W_T)
         return if o < 0 || r < 0 || t < 0 { -1 } else { mk(mut st, TOwn, o, r, t) }
+    case W_RVAR:
+        i := fN(mut st, fb, W_I)
+        return if i < 0 { -1 } else { mk(mut st, TRVar, i, 0, 0) }
+    case W_MUS:
+        n := fN(mut st, fb, W_N)
+        i := fN(mut st, fb, W_I)
+        bt := fT(mut st, fb, W_B)
+        return if n < 0 || i < 0 || bt < 0 { -1 } else { mk(mut st, TMuS, n, i, bt) }
+    case W_MURS:
+        r := fN(mut st, fb, W_R)
+        n := fN(mut st, fb, W_N)
+        i := fN(mut st, fb, W_I)
+        bt := fT(mut st, fb, W_B)
+        return if r < 0 || n < 0 || i < 0 || bt < 0 { -1 } else { mk4(mut st, TMuRs, r, n, i, bt) }
     }
     return -1
 }
@@ -603,15 +628,15 @@ func buildExpr(st mut S, fb int, c int) int {
         }
         return node(mut st, c, nc(mut st, a) | nc(mut st, b) | nc(mut st, d), a, b, d)
     // 式 1 つ
-    case W_SOME | W_FST | W_SND | W_DEREF | W_FREEZE | W_LEN | W_LENM | W_KEYSM | W_RECV | W_CLOSE | W_TOBYTE | W_TOINT | W_FNEG | W_FSQRT | W_TOFLOAT | W_FTOINT | W_FBITS | W_FFROMBITS:
+    case W_SOME | W_FST | W_SND | W_DEREF | W_FREEZE | W_LEN | W_LENM | W_KEYSM | W_RECV | W_CLOSE | W_TOBYTE | W_TOINT | W_FNEG | W_FSQRT | W_TOFLOAT | W_FTOINT | W_FBITS | W_FFROMBITS | W_UNFOLD:
         a := fE(mut st, fb, if c == W_RECV || c == W_CLOSE { W_C } else { W_E })
         return if a < 0 { -1 } else { node(mut st, c, nc(mut st, a), a, 0, 0) }
     // 型 1 つ
     case W_NIL | W_UNREACH:
         t := fT(mut st, fb, W_T)
         return if t < 0 { -1 } else { node(mut st, c, 0, t, 0, 0) }
-    // 型 + 式（inl r e / inr l e / ann e t / label t e）
-    case W_INL | W_INR | W_ANN | W_LABEL:
+    // 型 + 式（inl r e / inr l e / ann e t / label t e / fold t e）
+    case W_INL | W_INR | W_ANN | W_LABEL | W_FOLD:
         t := fT(mut st, fb, if c == W_INL { W_R } else if c == W_INR { W_L } else { W_T })
         e := fE(mut st, fb, W_E)
         if t < 0 || e < 0 {

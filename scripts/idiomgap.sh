@@ -41,6 +41,10 @@ jsondecode/struct-return bench/jsondecode/mutout/main.sober bench/jsondecode/mai
 serializer/pieces-d2 bench/jsonencode/builder/main.sober bench/jsonencode/pieces/main.sober 2
 serializer/pieces-d4 bench/jsonencode/builder/main.sober bench/jsonencode/pieces/main.sober 4
 serializer/pieces-d6 bench/jsonencode/builder/main.sober bench/jsonencode/pieces/main.sober 6
+serializer/rec-d2 bench/jsonencode/builder/main.sober bench/jsonencode/rec/main.sober 2
+serializer/rec-d4 bench/jsonencode/builder/main.sober bench/jsonencode/rec/main.sober 4
+serializer/rec-d6 bench/jsonencode/builder/main.sober bench/jsonencode/rec/main.sober 6
+serializer/recpieces-d4 bench/jsonencode/pieces/main.sober bench/jsonencode/recpieces/main.sober 4
 append/alternate bench/growalt/seq/main.sober bench/growalt/main.sober 2000000
 map/alternate bench/growalt/map/seq/main.sober bench/growalt/map/main.sober 200000
 concat/loop bench/concat/bytes/main.sober bench/concat/main.sober 2000000

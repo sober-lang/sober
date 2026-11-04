@@ -1,0 +1,834 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "Rose",
+      "type_params": [
+        "T"
+      ],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "v",
+            "type": {
+              "k": "name",
+              "name": "T"
+            },
+            "tok": 10
+          },
+          {
+            "name": "kids",
+            "type": {
+              "k": "slice_of",
+              "elem": {
+                "k": "generic",
+                "name": "Rose",
+                "args": [
+                  {
+                    "k": "name",
+                    "name": "T"
+                  }
+                ]
+              },
+              "mut": false
+            },
+            "tok": 13
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 23
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "countB",
+      "type_params": [],
+      "params": [
+        {
+          "name": "r",
+          "type": {
+            "k": "generic",
+            "name": "Rose",
+            "args": [
+              {
+                "k": "name",
+                "name": "bool"
+              }
+            ]
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "c"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "if",
+                "cond": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "r",
+                    "tok": 38
+                  },
+                  "field": "v",
+                  "tok": 40
+                },
+                "then": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 42
+                      }
+                    }
+                  ]
+                },
+                "else": {
+                  "k": "block",
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 46
+                      }
+                    }
+                  ]
+                },
+                "tok": 37
+              }
+            ],
+            "tok": 34
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "k"
+                  ],
+                  "src": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 52
+                    },
+                    "field": "kids",
+                    "tok": 54
+                  },
+                  "guards": [],
+                  "tok": 50
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "assign",
+                    "targets": [
+                      {
+                        "k": "ident",
+                        "name": "c",
+                        "tok": 56
+                      }
+                    ],
+                    "op": "+=",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "countB",
+                          "tok": 58
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "k",
+                            "tok": 60
+                          }
+                        ],
+                        "tok": 59
+                      }
+                    ],
+                    "tok": 56
+                  }
+                ]
+              },
+              "tok": 49
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "c",
+                "tok": 66
+              }
+            ],
+            "tok": 65
+          }
+        ]
+      },
+      "tok": 24,
+      "bodiless": false,
+      "span": {
+        "start": 23,
+        "end": 70
+      },
+      "sig_end": 33
+    },
+    {
+      "name": "sumI",
+      "type_params": [],
+      "params": [
+        {
+          "name": "r",
+          "type": {
+            "k": "generic",
+            "name": "Rose",
+            "args": [
+              {
+                "k": "name",
+                "name": "int"
+              }
+            ]
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "s"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "r",
+                  "tok": 84
+                },
+                "field": "v",
+                "tok": 86
+              }
+            ],
+            "tok": 81
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "k"
+                  ],
+                  "src": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 91
+                    },
+                    "field": "kids",
+                    "tok": 93
+                  },
+                  "guards": [],
+                  "tok": 89
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "assign",
+                    "targets": [
+                      {
+                        "k": "ident",
+                        "name": "s",
+                        "tok": 95
+                      }
+                    ],
+                    "op": "+=",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "sumI",
+                          "tok": 97
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "k",
+                            "tok": 99
+                          }
+                        ],
+                        "tok": 98
+                      }
+                    ],
+                    "tok": 95
+                  }
+                ]
+              },
+              "tok": 88
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "s",
+                "tok": 105
+              }
+            ],
+            "tok": 104
+          }
+        ]
+      },
+      "tok": 71,
+      "bodiless": false,
+      "span": {
+        "start": 70,
+        "end": 109
+      },
+      "sig_end": 80
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "a"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Rose",
+                "elems": [
+                  {
+                    "key": "v",
+                    "value": {
+                      "k": "ident",
+                      "name": "true",
+                      "tok": 123
+                    }
+                  },
+                  {
+                    "key": "kids",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "generic",
+                        "name": "Rose",
+                        "args": [
+                          {
+                            "k": "name",
+                            "name": "bool"
+                          }
+                        ]
+                      },
+                      "elems": [
+                        {
+                          "k": "composite",
+                          "type_name": "Rose",
+                          "elems": [
+                            {
+                              "key": "v",
+                              "value": {
+                                "k": "ident",
+                                "name": "false",
+                                "tok": 141
+                              }
+                            },
+                            {
+                              "key": "kids",
+                              "value": {
+                                "k": "slicelit",
+                                "elem": {
+                                  "k": "generic",
+                                  "name": "Rose",
+                                  "args": [
+                                    {
+                                      "k": "name",
+                                      "name": "bool"
+                                    }
+                                  ]
+                                },
+                                "elems": [],
+                                "mut": false,
+                                "tok": 145
+                              }
+                            }
+                          ],
+                          "tok": 134,
+                          "type_args": [
+                            {
+                              "k": "name",
+                              "name": "bool"
+                            }
+                          ]
+                        },
+                        {
+                          "k": "composite",
+                          "type_name": "Rose",
+                          "elems": [
+                            {
+                              "key": "v",
+                              "value": {
+                                "k": "ident",
+                                "name": "true",
+                                "tok": 162
+                              }
+                            },
+                            {
+                              "key": "kids",
+                              "value": {
+                                "k": "slicelit",
+                                "elem": {
+                                  "k": "generic",
+                                  "name": "Rose",
+                                  "args": [
+                                    {
+                                      "k": "name",
+                                      "name": "bool"
+                                    }
+                                  ]
+                                },
+                                "elems": [],
+                                "mut": false,
+                                "tok": 166
+                              }
+                            }
+                          ],
+                          "tok": 155,
+                          "type_args": [
+                            {
+                              "k": "name",
+                              "name": "bool"
+                            }
+                          ]
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 127
+                    }
+                  }
+                ],
+                "tok": 116,
+                "type_args": [
+                  {
+                    "k": "name",
+                    "name": "bool"
+                  }
+                ]
+              }
+            ],
+            "tok": 114
+          },
+          {
+            "k": "bind",
+            "names": [
+              "r"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Rose",
+                "elems": [
+                  {
+                    "key": "v",
+                    "value": {
+                      "k": "ident",
+                      "name": "false",
+                      "tok": 187
+                    }
+                  },
+                  {
+                    "key": "kids",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "generic",
+                        "name": "Rose",
+                        "args": [
+                          {
+                            "k": "name",
+                            "name": "bool"
+                          }
+                        ]
+                      },
+                      "elems": [
+                        {
+                          "k": "ident",
+                          "name": "a",
+                          "tok": 198
+                        },
+                        {
+                          "k": "ident",
+                          "name": "a",
+                          "tok": 200
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 191
+                    }
+                  }
+                ],
+                "tok": 180,
+                "type_args": [
+                  {
+                    "k": "name",
+                    "name": "bool"
+                  }
+                ]
+              }
+            ],
+            "tok": 178
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 204
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "countB",
+                    "tok": 206
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 208
+                    }
+                  ],
+                  "tok": 207
+                }
+              ],
+              "tok": 205
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 212
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "countB",
+                    "tok": 214
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "a",
+                      "tok": 216
+                    }
+                  ],
+                  "tok": 215
+                }
+              ],
+              "tok": 213
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "n"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Rose",
+                "elems": [
+                  {
+                    "key": "v",
+                    "value": {
+                      "k": "int",
+                      "value": 5,
+                      "tok": 229
+                    }
+                  },
+                  {
+                    "key": "kids",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "generic",
+                        "name": "Rose",
+                        "args": [
+                          {
+                            "k": "name",
+                            "name": "int"
+                          }
+                        ]
+                      },
+                      "elems": [
+                        {
+                          "k": "composite",
+                          "type_name": "Rose",
+                          "elems": [
+                            {
+                              "key": "v",
+                              "value": {
+                                "k": "int",
+                                "value": 7,
+                                "tok": 247
+                              }
+                            },
+                            {
+                              "key": "kids",
+                              "value": {
+                                "k": "slicelit",
+                                "elem": {
+                                  "k": "generic",
+                                  "name": "Rose",
+                                  "args": [
+                                    {
+                                      "k": "name",
+                                      "name": "int"
+                                    }
+                                  ]
+                                },
+                                "elems": [],
+                                "mut": false,
+                                "tok": 251
+                              }
+                            }
+                          ],
+                          "tok": 240,
+                          "type_args": [
+                            {
+                              "k": "name",
+                              "name": "int"
+                            }
+                          ]
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 233
+                    }
+                  }
+                ],
+                "tok": 222,
+                "type_args": [
+                  {
+                    "k": "name",
+                    "name": "int"
+                  }
+                ]
+              }
+            ],
+            "tok": 220
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 263
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "sumI",
+                    "tok": 265
+                  },
+                  "args": [
+                    {
+                      "k": "composite",
+                      "type_name": "Rose",
+                      "elems": [
+                        {
+                          "key": "v",
+                          "value": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 274
+                          }
+                        },
+                        {
+                          "key": "kids",
+                          "value": {
+                            "k": "slicelit",
+                            "elem": {
+                              "k": "generic",
+                              "name": "Rose",
+                              "args": [
+                                {
+                                  "k": "name",
+                                  "name": "int"
+                                }
+                              ]
+                            },
+                            "elems": [
+                              {
+                                "k": "ident",
+                                "name": "n",
+                                "tok": 285
+                              },
+                              {
+                                "k": "ident",
+                                "name": "n",
+                                "tok": 287
+                              },
+                              {
+                                "k": "ident",
+                                "name": "n",
+                                "tok": 289
+                              }
+                            ],
+                            "mut": false,
+                            "tok": 278
+                          }
+                        }
+                      ],
+                      "tok": 267,
+                      "type_args": [
+                        {
+                          "k": "name",
+                          "name": "int"
+                        }
+                      ]
+                    }
+                  ],
+                  "tok": 266
+                }
+              ],
+              "tok": 264
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 295
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "len",
+                    "tok": 297
+                  },
+                  "args": [
+                    {
+                      "k": "selector",
+                      "base": {
+                        "k": "index",
+                        "base": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "n",
+                            "tok": 299
+                          },
+                          "field": "kids",
+                          "tok": 301
+                        },
+                        "idx": {
+                          "k": "int",
+                          "value": 0,
+                          "tok": 303
+                        },
+                        "tok": 302
+                      },
+                      "field": "kids",
+                      "tok": 306
+                    }
+                  ],
+                  "tok": 298
+                }
+              ],
+              "tok": 296
+            }
+          }
+        ]
+      },
+      "tok": 110,
+      "bodiless": false,
+      "span": {
+        "start": 109,
+        "end": 312
+      },
+      "sig_end": 113
+    }
+  ],
+  "consts": []
+}

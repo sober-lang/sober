@@ -1,0 +1,12 @@
+package main
+
+// 負例（load が拒否 — diag.RecursiveType）: 再帰の参照が型引数を変える（Nest[[]T] — 型が正則でない）
+
+type Nest[T] struct {
+    v T
+    deeper []Nest[[]T]
+}
+
+func main() {
+    println(1)
+}

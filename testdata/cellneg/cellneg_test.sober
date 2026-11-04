@@ -1,0 +1,14 @@
+package cellneg
+
+// check キャッシュの道の文面の網: 脱糖の拒否 diag.Cell（関数値を貯める cell — kind 11）が置き場の当たり・外れのどちらでも同じ文面（diag.Words の tag 14）
+
+import "std/testing/cell"
+
+type F func(n int) int
+
+const C = cell.Cell[F]{init: (n) => n}
+
+func TestHoldsFunction() {
+    cell.Set(C, (n) => n + 1)
+    assert(One() == 1)
+}

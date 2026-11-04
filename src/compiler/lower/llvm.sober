@@ -64,6 +64,10 @@ func rtlower(st mut St) {
                 op := irInsOp(mut st, ins)
                 res := irInsRes(mut st, ins)
                 a := irInsA(mut st, ins)
+                if st.rtMemHw != -1 && (op == OpRSetDepth || (op == OpCall && st.rtRenterLL != -1 && a == int(st.rtRenterLL))) {
+                    // 変異 39: region を捨てる点の手前で高水位を標本（高水位は捨てる直前でだけ極大になる）
+                    linkInst(mut st, b, mkInst(mut st, -1, OpCall, int(st.rtMemHw), list0(mut st), 0))
+                }
                 if op == OpREnter {
                     linkInst(mut st, b, mkInst(mut st, -1, OpCall, int(st.rtRenter), list0(mut st), 0))
                 } else if op == OpRDepth {

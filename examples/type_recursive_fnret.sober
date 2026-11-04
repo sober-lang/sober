@@ -1,0 +1,41 @@
+package main
+
+// 再帰の union を関数の結果で返す: variant の構築は関数の結果の位置（行き先が呼び手の region）でも、局所に束縛してからでも同じ型
+
+type Expr union {
+    Lit { n int }
+    Neg { arg []Expr }
+    Add { xs []Expr }
+}
+
+func lit(n int) Expr {
+    return Lit{n: n}
+}
+
+func neg(e Expr) Expr {
+    x := Neg{arg: []Expr{e}}
+    return x
+}
+
+func sum(xs []Expr) Expr {
+    return if len(xs) == 1 { xs[0] } else { Add{xs: xs} }
+}
+
+func eval(e Expr) int {
+    return switch e {
+    case Lit{n}: n
+    case Neg{arg}: 0 - eval(arg[0])
+    case Add{xs}: {
+        mut s := 0
+        for x <- xs {
+            s += eval(x)
+        }
+        s
+    }
+    }
+}
+
+func main() {
+    println(eval(sum([]Expr{lit(3), neg(lit(10)), neg(neg(lit(4)))})))
+    println(eval(sum([]Expr{lit(9)})))
+}

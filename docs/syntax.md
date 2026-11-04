@@ -159,7 +159,8 @@ TypeArgs     = "[" TypeArg { "," TypeArg } "]" .
 TypeArg      = Type | "(" Type "," Type { "," Type } ")" .   (* 多値の型は型引数の位置にだけ — `task.Handle[(T, error?)]`（P3b 残穴1）。std/task の Task の型引数の外は loader が拒否 — 一般の匿名タプル型は入れない（決定 4 の線のまま） *)
 TypeLit      = ArrayType | SliceType | MapType | FuncType | PinnedType .
 PinnedType   = "*" Type .                                 (* acquire / get の戻りにのみ現れる *)
-FuncType     = "func" Signature .   (* 仮引数名は全部付けるか全部付けないか — Go と同じ。名前は型の同一性に入らず、名前付き関数型を通した名前付き引数〔決定 7〕だけが読む *)
+FuncType     = "func" Signature .   (* 仮引数名は全部付けるか全部付けないか — Go と同じ。名前は型の同一性に入らず、名前付き関数型を通した名前付き引数〔決定 7〕だけが読む。
+               仮引数の型の前の `mut` は mut 仮引数の席（`func(st mut S, x int)`・名前なしは `func(mut S, int)` — 席は型の同一性に入る・1 本まで: language.md 25 節「関数型の mut 仮引数」） *)
 (* InterfaceType, ChannelType, StructType(式位置), PointerType(演算子) は無い *)
 ```
 
@@ -204,7 +205,7 @@ AnnotatedBlock = Annotation Block .                         (* @noblock { ... } 
 ```ebnf
 Expression   = Lambda | PipeExpr .
 Lambda       = LambdaParams "=>" ( Expression | Block ) .   (* Block は式位置。中の return は囲みの名前付き関数から戻る（決定 10） *)
-LambdaParams = identifier | "(" [ ParameterList ] ")" .   (* 型は省略可。双方向推論。型の前の `mut`（mut 仮引数）は task.Lease / task.NewLocal の窓だけ — loader の柵（2026-10-16） *)
+LambdaParams = identifier | "(" [ ParameterList ] ")" .   (* 型は省略可。双方向推論。型の前の `mut`（mut 仮引数）は task.Lease / task.NewLocal の窓と関数型の mut の席（language.md 25 節 — 型を書かない仮引数の席は関数型から） *)
 
 PipeExpr     = OrExpr { "|>" PipeStage } .
 PipeStage    = PostfixExpr [ "?" [ CompositeLit ] ] .      (* 穴 _ は PipeStage の呼び出し直下引数のみ。? は段の結果に掛かる *)

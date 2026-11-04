@@ -64,7 +64,7 @@ func presetWiring(m Manifest) Wiring {
 }
 
 // double のディレクトリ dir を entry にした読み（`sober check <double>` — 相手を import するだけの合成の main で、相手を dir から読み契約を検査する）
-@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Double, diag.Cell)
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.LitRange, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Double, diag.Cell)
 func loadDouble(dir string, sm map[string]string) (Program, error?) {
     m0 := Manifest{}
     tgt, ok := targetOf(m0, true, sm, dir)
@@ -224,7 +224,7 @@ func contractFiles(m Manifest, fsm bool, sm map[string]string, w Wiring) []strin
     return freeze(out)
 }
 
-@errors(diag.Double, diag.ReadFail, diag.LeadingZero, diag.GrammarMismatch)
+@errors(diag.Double, diag.ReadFail, diag.LeadingZero, diag.LitRange, diag.GrammarMismatch)
 func dblCheck(m Manifest, fsm bool, sm map[string]string, w Wiring, trees []ast.Tree, fpkg []string, fpath []string, dblFile []int, dblRef []string) ([]ast.Tree, error?) {
     mut out := mut []ast.Tree{}
     for i <- iter.Range(0, len(trees)) {
@@ -365,7 +365,7 @@ func declIndex(ds Decls, n string) int {
 }
 
 // 本物の package tgt（相手）のファイルの木（テストと double を除く — 本体は検査しない・宣言だけを読む）
-@errors(diag.ReadFail, diag.LeadingZero, diag.GrammarMismatch)
+@errors(diag.ReadFail, diag.LeadingZero, diag.LitRange, diag.GrammarMismatch)
 func realTrees(m Manifest, fsm bool, sm map[string]string, tgt string, base int) ([]ast.Tree, error?) {
     mut m0 := m
     m0.dbl_t = []string{}

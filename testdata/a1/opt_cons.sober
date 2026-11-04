@@ -1,0 +1,24 @@
+package main
+
+// opt の中身を通る自己参照（cons の鎖）: 再帰で組んで和
+
+type L struct {
+    v int
+    next L?
+}
+
+func build(n int) L {
+    if n == 0 {
+        return L{v: 0, next: nil}
+    }
+    return L{v: n, next: build(n - 1)}
+}
+
+func sum(l L) int {
+    n := l.next
+    return l.v + if n == nil { 0 } else { sum(n) }
+}
+
+func main() {
+    println(sum(build(10)))
+}

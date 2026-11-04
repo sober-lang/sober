@@ -46,15 +46,16 @@ type Request struct {
 // 返ったら終端の chunk）— HTTP/1.0 の要求には Content-Length も chunked も書かず、stream が返ったら閉じる（閉じで区切る）。stream が誤りを返したら終端を書かずに閉じる。
 // compress: があり・Content-Type が圧縮向き・要求が gzip を受け・coded が無い stream の応答（長さ既知なら length が 1024 以上のとき）は gzip にして chunked で送る
 // （emit 1 回 = deflate の sync flush 1 回 = chunk 1 つ・窓は emit をまたいで持ち越す・HTTP/1.0 は閉じで区切る・Vary は body の応答と同じ）。HEAD では呼ばない（頭は GET と同じ）。
-// stream は要求の値（path など）を捕捉してよいクロージャ。File は捕捉させず path を捕捉して stream の中で開く:
+// stream は要求の値（path など）を捕捉してよいクロージャ。File は捕捉させず path を捕捉して stream の中で開く。送りの状態 out（Out — 中身は
+// std/http の外から見えない）は呼び手が持ち、emit を呼ぶたびに `emit(mut out, b)` と渡す（閉包は mut を捕捉しない — language.md 25 節「関数型の mut 仮引数」）:
 //
 //     func handle(r http.Request) http.Response {
-//         return http.Response{status: 200, contentType: "text/plain", length: n, stream: (emit) => sendFile(r.path, emit)}
+//         return http.Response{status: 200, contentType: "text/plain", length: n, stream: (out, emit) => sendFile(r.path, mut out, emit)}
 //     }
-//     func sendFile(path string, emit func(b []byte) error?) error? {
+//     func sendFile(path string, out mut http.Out, emit func(out mut http.Out, b []byte) error?) error? {
 //         f := io.Open(path)?
 //         defer io.Close(f)
-//         for b <- io.Chunks(f)? { emit(io.Raw(b))? }
+//         for b <- io.Chunks(f)? { emit(mut out, io.Raw(b))? }
 //         return nil
 //     }
 type Response struct {
@@ -118,8 +119,17 @@ type BadHeader panic {
     name string
 }
 
-// 応答の本文の供給（emit は借り — 呼ぶ・借りの位置へ渡すだけ。language.md 25 節「借り」）
-type Stream func(emit func(b []byte) error?) error? @errors(emit, io.NotFound, io.Denied, io.Timeout, io.Expired, io.Other)
+// 応答の本文の供給（emit は借り — 呼ぶ・借りの位置へ渡すだけ。language.md 25 節「借り」）。out は送りの状態で、emit に毎回 mut で渡す
+type Stream func(out mut Out, emit func(out mut Out, b []byte) error?) error? @errors(emit, io.NotFound, io.Denied, io.Timeout, io.Expired, io.Other)
+
+// stream の送りの状態（圧縮する stream の符号器・送った合計・長さ既知なら length・超えたか）。ServeConn が作って stream に渡す — 利用者は
+// 中身を読み書きせず、受け取った out を emit にそのまま渡す
+type Out struct {
+    s deflate.Stream
+    n int
+    lim int?
+    over bool
+}
 
 // 200・text/plain の応答
 @effects()
@@ -150,10 +160,10 @@ type BadEvent panic {
 
 // e の text/event-stream の 1 イベント（`event:`・`id:`・`retry:`・`data:` の行と、終わりの空行）。data は改行（LF・CRLF・CR）で割って行ごとの `data:` にする
 // （受け手は行を LF で繋ぎ直す — 改行の種類は LF に揃う）。event / id に CR・LF・NUL があれば panic(BadEvent)。配送は応答の stream で、emit 1 回 = 送り 1 回
-// （language.md 28 節の「SSE」— 長さ不定の stream は chunked）。心拍のコメントは `emit(bytes(": ping\n\n"))` で書ける:
+// （language.md 28 節の「SSE」— 長さ不定の stream は chunked）。心拍のコメントは `emit(mut out, bytes(": ping\n\n"))` で書ける:
 //
-//     http.Response{status: 200, contentType: "text/event-stream", cache: http.NoStore{}, stream: (emit) => {
-//         emit(bytes(http.FormatEvent(http.Event{event: "tick", data: "1", id: "1"})))?
+//     http.Response{status: 200, contentType: "text/event-stream", cache: http.NoStore{}, stream: (out, emit) => {
+//         emit(mut out, bytes(http.FormatEvent(http.Event{event: "tick", data: "1", id: "1"})))?
 //         nil
 //     }}
 @effects(panic)
@@ -712,9 +722,9 @@ func staticOf(r Request, root string, file string, st io.FileInfo, ct string, en
     vs := Validators{etag: tag, modified: if mt > 0 { mt / 1000000000 } else { 0 }, seal: validSeal{}}
     n := st.size
     if coded {
-        return Response{status: OK, contentType: ct, length: n, stream: (emit) => sendUnder(root, file, n, mt, emit), coded: Coded{encoding: enc}, validators: vs}
+        return Response{status: OK, contentType: ct, length: n, stream: (out, emit) => sendUnder(root, file, n, mt, mut out, emit), coded: Coded{encoding: enc}, validators: vs}
     }
-    return Response{status: OK, contentType: ct, length: n, stream: (emit) => sendUnder(root, file, n, mt, emit), validators: vs}
+    return Response{status: OK, contentType: ct, length: n, stream: (out, emit) => sendUnder(root, file, n, mt, mut out, emit), validators: vs}
 }
 
 // root の下の rel を開いて属性を見て閉じる（通常のファイルでなければ io.Other — EISDIR）
@@ -741,7 +751,7 @@ func statUnder(root string, rel string) (io.FileInfo, error?) {
 
 // root の下の rel の先頭 n バイトを切片ずつ emit へ渡す（開き直した実体の大きさか更新時刻が handler で見た n / mt と違えば
 // 誤り〔ESTALE〕— ServeConn が接続を閉じる。読めた分が n より短くても誤り）
-func sendUnder(root string, rel string, n int, mt int, emit func(b []byte) error?) error? {
+func sendUnder(root string, rel string, n int, mt int, out mut Out, emit func(out mut Out, b []byte) error?) error? {
     d := io.OpenRoot(root)?
     defer io.CloseRoot(d)
     f := io.OpenUnder(d, rel)?
@@ -754,7 +764,7 @@ func sendUnder(root string, rel string, n int, mt int, emit func(b []byte) error
     for c <- io.Chunks(f)? {
         b := io.Raw(c)
         k := if len(b) < left { len(b) } else { left }
-        emit(b[0:k])?
+        emit(mut out, b[0:k])?
         left -= k
         if left == 0 {
             break
@@ -1357,32 +1367,32 @@ func serveBuf(send func(b []byte) error?, b []byte, route func(Request) Response
                             return at, 1, []byte{}, e2
                         }
                         out = mut []byte{}
+                        // 送りの状態（stream の 4 つの形で 1 つ — 枠に Out を 1 つだけ置く）。lim は長さ既知の形だけが読む
+                        mut so := Out{lim: ln}
                         if zs {
                             // 圧縮する stream: emit 1 回 = Feed 1 回（sync flush）= chunk 1 つ（HTTP/1.0 は素で — 閉じの区切り）。返ったら最後のブロックと CRC-32 と長さ・
-                            // 終端。長さ既知なら非圧縮の合計を数え、length でなければ最後を書かずに閉じる（z は符号器と合計の 1 つの束縛 — 借りの閉包の mut の捕捉は 1 つ）
+                            // 終端。長さ既知なら非圧縮の合計を数え、length でなければ最後を書かずに閉じる（符号器と合計は送りの状態 so — stream が emit に渡し回す）
                             v10 := f.v10
-                            mut z := zState{lim: ln}
-                            deflate.Begin(mut z.s, gz, true)
-                            st((p []byte) => gzFeed(mut z, p, (q) => if v10 { send(q) } else { send(chunkOf(q)) }))?
-                            short := if ln != nil { z.n != ln } else { false }
-                            if z.over || short {
+                            deflate.Begin(mut so.s, gz, true)
+                            st(mut so, (o, p) => gzFeed(mut o, p, (q) => if v10 { send(q) } else { send(chunkOf(q)) }))?
+                            short := if ln != nil { so.n != ln } else { false }
+                            if so.over || short {
                                 return at, 1, []byte{}, nil
                             }
-                            tl := deflate.End(mut z.s)
+                            tl := deflate.End(mut so.s)
                             send(if v10 { tl } else { chunkEnd(tl) })?
                         } else if ul && !f.v10 {
                             // chunked: emit 1 回 = chunk 1 つ・返ったら終端（誤りなら終端を書かずに閉じる）
-                            st((p []byte) => if len(p) == 0 { nil } else { send(chunkOf(p)) })?
+                            st(mut so, (o, p) => if len(p) == 0 { nil } else { send(chunkOf(p)) })?
                             send(bytes("0\r\n\r\n"))?
                         } else if ln != nil {
                             // 長さ既知: 合計を数え、超えた emit は送らない・返った時点で length でなければ閉じる（相手は本文の切れで知る）
-                            mut c := sCount{lim: ln}
-                            st((p []byte) => sendCounted(mut c, p, (q) => send(q)))?
-                            if c.over || c.n != ln {
+                            st(mut so, (o, p) => sendCounted(mut o, p, (q) => send(q)))?
+                            if so.over || so.n != ln {
                                 return at, 1, []byte{}, nil
                             }
                         } else {
-                            st((p []byte) => send(p))?
+                            st(mut so, (o, p) => send(p))?
                         }
                     } else {
                         for x <- bd {
@@ -1743,16 +1753,8 @@ func wire(r Response, keep bool, v10 bool, gz int, ae bool, wk task.Local?) ([]b
     return respHead(Response{status: r.status, contentType: r.contentType, body: z, headers: r.headers, cache: r.cache, validators: r.validators}, keep, v10, 2), z
 }
 
-// 圧縮する stream の状態（符号器・非圧縮の合計・長さ既知なら length・超えたか）— serveBuf の借りの閉包が mut で捕捉する 1 つの束縛
-type zState struct {
-    s deflate.Stream
-    n int
-    lim int?
-    over bool
-}
-
 // emit 1 回分の p を圧縮して out へ渡す（空の p は何もしない — sync flush の空打ちを送らない）。合計が lim を超えたら以後は送らない
-func gzFeed(z mut zState, p []byte, out func(q []byte) error?) error? {
+func gzFeed(z mut Out, p []byte, out func(q []byte) error?) error? {
     if len(p) == 0 || z.over {
         return nil
     }
@@ -1767,22 +1769,18 @@ func gzFeed(z mut zState, p []byte, out func(q []byte) error?) error? {
     return out(deflate.Feed(mut z.s, p))
 }
 
-// 長さ既知の stream の送りの合計（lim = length・超えたか）
-type sCount struct {
-    n int
-    lim int
-    over bool
-}
-
-// p を数えて out へ渡す（合計が lim を超える emit は送らず、以後も送らない）
-func sendCounted(c mut sCount, p []byte, out func(q []byte) error?) error? {
+// p を数えて out へ渡す（合計が lim〔長さ既知の stream の length〕を超える emit は送らず、以後も送らない）
+func sendCounted(c mut Out, p []byte, out func(q []byte) error?) error? {
     if c.over {
         return nil
     }
     c.n += len(p)
-    if c.n > c.lim {
-        c.over = true
-        return nil
+    lim := c.lim
+    if lim != nil {
+        if c.n > lim {
+            c.over = true
+            return nil
+        }
     }
     return out(p)
 }

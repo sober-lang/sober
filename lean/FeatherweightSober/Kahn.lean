@@ -52,7 +52,7 @@ def Op.run : Op → ChanSt → Option (Option Pkt × ChanSt)
             else if e.q.length < e.cap then
               match packV (.opt e.ty) H (Expr.some v) with
               | Option.some w => some (some (Pkt.ofV .triv), K.setEp k { e with q := e.q ++ [w] })
-              | Option.none => none
+              | Option.none => some (none, K)
             else none
           else some (none, K)
       | Option.none => some (none, K)
@@ -160,7 +160,7 @@ def Mini.f : Mini → Option EpEnt → Option (Option Pkt × Option EpEnt)
         else if e.q.length < e.cap then
           (match packV (.opt e.ty) H (Expr.some v) with
            | Option.some w => some (some (Pkt.ofV .triv), some { e with q := e.q ++ [w] })
-           | Option.none => none)
+           | Option.none => some (none, none))
         else none)
       else some (none, none)
   | .recv me _, some e =>
@@ -524,7 +524,7 @@ def mainCont (Δ : Defs) (π : List Bool) (id : List Nat) (o n : Nat) (m : State
       | Option.some w =>
           match xfer (H.length - 1) (w.ty.relocR (H.length - 1)) [w.cs] H w.v with
           | Option.some (H', v') => some (.fam id o n (.ret H' S v') ks)
-          | Option.none => none
+          | Option.none => some (.fam id o n (.panic H) ks)
       | Option.none => some (.fam id o n (.panic H) ks)
   | .ret H (.closeK :: S) (epV _ _ true _) =>
       match res with
@@ -537,7 +537,7 @@ def mainCont (Δ : Defs) (π : List Bool) (id : List Nat) (o n : Nat) (m : State
           | Option.some (Hk, v) =>
               match xfer rs t Hk H v with
               | Option.some (H', v') => some (.fam id o n (.ret H' S v') (ks.mark (i - o)))
-              | Option.none => none
+              | Option.none => some (.fam id o n (.panic H) ks)
           | Option.none => if kid.mainDead then some (.fam id o n (.panic H) ks) else none
       | _, _ => some (.fam id o n (.panic H) ks)
   | .ret H (.tryK t :: S) (taskV _ i) =>
@@ -547,7 +547,7 @@ def mainCont (Δ : Defs) (π : List Bool) (id : List Nat) (o n : Nat) (m : State
           | Option.some (Hk, v) =>
               match xfer rs t Hk H v with
               | Option.some (H', v') => some (.fam id o n (.ret H' S (Expr.some v')) (ks.mark (i - o)))
-              | Option.none => none
+              | Option.none => some (.fam id o n (.panic H) ks)
           | Option.none => if kid.mainDead then some (.fam id o n (.ret H S (nil t)) ks) else none
       | _, _ => some (.fam id o n (.panic H) ks)
   | .ret H (.scopeK t ε :: S) v =>
@@ -560,12 +560,12 @@ def mainCont (Δ : Defs) (π : List Bool) (id : List Nat) (o n : Nat) (m : State
               if εk = ε.relocR 0 then
                 match xfer (H.length - 2) (ε.relocR (H.length - 2)) Hk H e with
                 | Option.some (H', e') => some (.fam id o n (.ret H'.dropLast S (inr t (inr .unit e'))) ks)
-                | Option.none => none
+                | Option.none => some (.fam id o n (.panic H) ks)
               else some (.fam id o n (.panic H) ks)
           | Option.none =>
               match relocTo (H.length - 2) t H v with
               | Option.some (H', v') => some (.fam id o n (.ret H'.dropLast S (inl (.union .unit (ε.relocR (H.length - 2))) v')) ks)
-              | Option.none => none
+              | Option.none => some (.fam id o n (.panic H) ks)
       else none
   | .eval H _ (par _ _) => some (.fam id o n (.panic H) ks)
   | .eval H _ (parch _ _ _) => some (.fam id o n (.panic H) ks)
@@ -604,7 +604,7 @@ theorem famMain_spec (Δ : Defs) (π : List Bool) (id : List Nat) (o n : Nat) (m
         by_cases h1 : e.orx = id <;> simp only [h1, if_true, if_false, Option.bind_some, Option.map_some]
         · cases e.q with
           | cons w q' => simp only [Option.bind_some, Option.map_some]; cases xfer _ _ _ _ _ <;> rfl
-          | nil => by_cases h0 : e.closed = true <;> simp [h0, xfer, Ty.relocR]
+          | nil => by_cases h0 : e.closed = true <;> simp [h0, xfer_opt_nil, Ty.relocR]
     -- 葉の歩（famMain の最後の腕）
     rename_i h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13
     have hop : mainOp id n ks m = .pure := by

@@ -62,6 +62,19 @@ inductive Ty : Type where
   子の世界では型が付かず、捕獲も実行時の代入も構造で閉じる）・t = 結果 / ペイロードの型（P1 は loc-free）。
   mutFree でない（捕獲できない）・chanFree でない（写せない）・部分型は不変 -/
   | own (k : OwnK) (r : Nat) (t : Ty)
+  /-- 再帰の変数（de Bruijn — 最も内側の束縛が 0。同時の μ は n 個を平らに束ねる）。区域系の述語は fn と同じ腕 -/
+  | rvar (i : Nat)
+  /-- 再帰型の束縛の S（iso 再帰の同時の μ — 相互再帰の組・language.md 1 節）: bs は n 個の成分の本体を prod の鎖（unit で終わる）で持ち、型は組の i 番目。
+  n 個の再帰の変数を平らな de Bruijn で束ねる（本体の rvar j は j < n なら組の j 番目・j ≥ n なら外へ j − n）。
+  成分は関数型（`Ty.musOk`）なので μ は関数型と同じく base 座標の型スキームで region を持たない（loc-free・シフト不動）。
+  自己再帰は n = 1 の組。値は `fold` で作り `unfold` で 1 段開く（`Ty.unfold`）。部分型は同一の μ だけ（展開の等価で比べない）。
+  幅 n を構成子に持つ（bs の鎖の長さで数えると、尾の型変数の代入で幅が変わり外の変数を捕獲する） -/
+  | mus (n i : Nat) (bs : Ty)
+  /-- 再帰型の束縛の D（slice / map の要素を通る再帰の同時の μ）: 組全体で region 座標 r を 1 つ持つコンテナ（木は 1 region）。
+  成分の本体は局所座標（関数型の外の region は全部 0 = μ 自身の region）で、シフト・写像・締めは r だけに掛かり本体を見ない。束ね方は mus と同じ。
+  部分型は同じ組・同じ成分で外の座標だけ（slice の規則の持ち上げ — 深く共変な組なら r ≤ r'・そうでなければ r = r'）。
+  展開は組の全成分を局所座標で代入してから r へ（`Ty.unfold`） -/
+  | muRs (r n i : Nat) (bs : Ty)
   deriving DecidableEq, Repr
 
 /-- 型が言及する region がすべてレベル d 未満（block の escape 検査に使う） -/
@@ -84,6 +97,9 @@ def Ty.regionsBelow (d : Nat) : Ty → Bool
   | .own _ r t => decide (r < d) && t.regionsBelow d
   -- 関数値は環境を持たない（Def 参照のみ）。シグネチャは base 座標の型スキーム
   | .fn _ _ => true
+  | .mus _ _ _ => true
+  | .rvar _ => true
+  | .muRs r _ _ _ => decide (r < d)
 
 /-- mut 参照をどこにも含まない（深い不変性）。par に渡せる Γ の条件（段 3b）。
 loc-free（`regionsBelow 0`）から緩和: immutable 参照は含んでよい -/
@@ -104,7 +120,10 @@ def Ty.mutFree : Ty → Bool
   -- 内部同期を持つのでタスクに渡せる。mutFree 検査の白リスト
   | .chan _ _ => true
   | .fn _ _ => true
+  | .mus _ _ _ => true
+  | .rvar _ => true
   | .own _ _ _ => false
+  | .muRs _ _ _ b => b.mutFree
 
 /-- map のキー型の制限（R3: int | imm string の二択）。mkmap の型規則だけが使う -/
 def Ty.keyOk : Ty → Bool
@@ -140,6 +159,9 @@ theorem Ty.mutFree_of_locFree : ∀ {t : Ty}, t.regionsBelow 0 = true → t.mutF
   | .map m r t, h => by simp [Ty.regionsBelow] at h
   | .chan rc t, _ => rfl
   | .fn p r, _ => rfl
+  | .mus _ _ _, _ => rfl
+  | .rvar _, _ => rfl
+  | .muRs r _ _ b, h => by simp [Ty.regionsBelow] at h
 
 /-- regionsBelow の単調性: 上界を緩める向きは常に健全（round4 の imm 上界化で多用）。
 chan は内側が rc 固定なので外側の rc ≤ d だけが動く -/
@@ -174,6 +196,11 @@ theorem Ty.regionsBelow_mono {m n : Nat} (hmn : m ≤ n) :
     simp only [Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq] at h ⊢
     exact ⟨by omega, Ty.regionsBelow_mono hmn h.2⟩
   | .fn p r, _ => rfl
+  | .mus _ _ _, _ => rfl
+  | .rvar _, _ => rfl
+  | .muRs r _ _ b, h => by
+    simp only [Ty.regionsBelow, decide_eq_true_eq] at h ⊢
+    omega
 
 /-- 全 region 添字への一様シフト +ρ（round4: Def を base で一度型付けし、
 呼び出し深さへ instantiate する）。imm の添字は上界なのでシフトは常に健全、
@@ -193,7 +220,10 @@ def Ty.shiftR (ρ : Nat) : Ty → Ty
   | .map m r t => .map m (r + ρ) (t.shiftR ρ)
   | .chan rc t => .chan (rc + ρ) (t.shiftR ρ)
   | .fn p r => .fn p r
+  | .mus n i b => .mus n i b
+  | .rvar i => .rvar i
   | .own k r t => .own k (r + ρ) (t.shiftR ρ)
+  | .muRs r n i b => .muRs (r + ρ) n i b
 
 theorem Ty.shiftR_zero : ∀ t : Ty, t.shiftR 0 = t
   | .int => rfl
@@ -211,6 +241,9 @@ theorem Ty.shiftR_zero : ∀ t : Ty, t.shiftR 0 = t
   | .chan rc t => by simp [Ty.shiftR, Ty.shiftR_zero t]
   | .own k r t => by simp [Ty.shiftR, Ty.shiftR_zero t]
   | .fn p r => rfl
+  | .mus _ _ _ => rfl
+  | .rvar _ => rfl
+  | .muRs r _ _ b => by simp [Ty.shiftR]
 
 theorem Ty.shiftR_comp (ρ₁ ρ₂ : Nat) : ∀ t : Ty, (t.shiftR ρ₁).shiftR ρ₂ = t.shiftR (ρ₁ + ρ₂)
   | .int => rfl
@@ -228,6 +261,9 @@ theorem Ty.shiftR_comp (ρ₁ ρ₂ : Nat) : ∀ t : Ty, (t.shiftR ρ₁).shiftR
   | .chan rc t => by simp [Ty.shiftR, Ty.shiftR_comp ρ₁ ρ₂ t]; omega
   | .own k r t => by simp [Ty.shiftR, Ty.shiftR_comp ρ₁ ρ₂ t]; omega
   | .fn p r => rfl
+  | .mus _ _ _ => rfl
+  | .rvar _ => rfl
+  | .muRs r _ _ b => by simp [Ty.shiftR]; omega
 
 /-- シフトと escape 検査の可換性: 世界と型を同じ ρ でずらすと regionsBelow は不変 -/
 theorem Ty.shiftR_regionsBelow {ρ : Nat} :
@@ -254,6 +290,9 @@ theorem Ty.shiftR_regionsBelow {ρ : Nat} :
   | .own k r t, d => by
     simp [Ty.shiftR, Ty.regionsBelow, Ty.shiftR_regionsBelow t d]
   | .fn p r, d => rfl
+  | .mus _ _ _, _ => rfl
+  | .rvar _, _ => rfl
+  | .muRs r _ _ b, d => by simp [Ty.shiftR, Ty.regionsBelow]
 
 theorem Ty.shiftR_mutFree {ρ : Nat} : ∀ t : Ty, (t.shiftR ρ).mutFree = t.mutFree
   | .int => rfl
@@ -271,6 +310,9 @@ theorem Ty.shiftR_mutFree {ρ : Nat} : ∀ t : Ty, (t.shiftR ρ).mutFree = t.mut
   | .chan rc t => by simp [Ty.shiftR, Ty.mutFree]
   | .own k r t => rfl
   | .fn p r => rfl
+  | .mus _ _ _ => rfl
+  | .rvar _ => rfl
+  | .muRs r _ _ b => by simp [Ty.shiftR, Ty.mutFree]
 
 /-- call 結果の座標付け替え（round5: call 結果の再転送、R0 で値ラッパの中へ延長）: shiftR ρ と
 同じ一様シフトだが、**最上段の imm コンテナ / 参照の上界だけ ρ に締める** — fretK の浅い
@@ -298,7 +340,10 @@ def Ty.relocR (ρ : Nat) : Ty → Ty
   | .map true r t => .map true (r + ρ) (t.shiftR ρ)
   | .chan rc t => .chan (rc + ρ) (t.shiftR ρ)
   | .fn p r => .fn p r
+  | .mus n i b => .mus n i b
+  | .rvar i => .rvar i
   | .own k r t => .own k (r + ρ) (t.shiftR ρ)
+  | .muRs r n i b => if b.mutFree then .muRs ρ n i b else .muRs (r + ρ) n i b
 
 /-- relocR とシフトの合成: instantiate をさらに ρ₂ ずらすと relocR (ρ₁ + ρ₂)（シフト定理の
 call ケースが要求する形） -/
@@ -323,6 +368,9 @@ theorem Ty.relocR_shiftR_comp (ρ₁ ρ₂ : Nat) : ∀ t : Ty, (t.relocR ρ₁)
   | .chan rc t => by simp [Ty.relocR, Ty.shiftR, Ty.shiftR_comp]; omega
   | .own k r t => by simp [Ty.relocR, Ty.shiftR, Ty.shiftR_comp]; omega
   | .fn p r => rfl
+  | .mus _ _ _ => rfl
+  | .rvar _ => rfl
+  | .muRs r _ _ b => by cases hm : b.mutFree <;> simp [Ty.relocR, Ty.shiftR, hm]; omega
 
 /-- region の写像: 0（圧縮された呼び手空間）↦ ρ0、それ以外は +δ -/
 def rmap (ρ0 δ : Nat) : Nat → Nat
@@ -345,7 +393,10 @@ def Ty.renR (ρ0 δ : Nat) : Ty → Ty
   | .map m r t => .map m (rmap ρ0 δ r) (t.renR ρ0 δ)
   | .chan rc t => .chan (rmap ρ0 δ rc) (t.renR ρ0 δ)
   | .fn p r => .fn p r
+  | .mus n i b => .mus n i b
+  | .rvar i => .rvar i
   | .own k r t => .own k (rmap ρ0 δ r) (t.renR ρ0 δ)
+  | .muRs r n i b => .muRs (rmap ρ0 δ r) n i b
 
 /-- anchor つき call 結果の座標（relocR の一般化 — R2）: 最上段の imm コンテナ / 参照のうち、
 region 0（呼び手空間由来）は anchor ρ0 へ、自フレーム（region 1）由来は呼び手最内 d へ締める
@@ -369,7 +420,10 @@ def Ty.relocA (ρ0 d : Nat) : Ty → Ty
   | .map true r t => .map true (rmap ρ0 d r) (t.renR ρ0 d)
   | .chan rc t => .chan (rmap ρ0 d rc) (t.renR ρ0 d)
   | .fn p r => .fn p r
+  | .mus n i b => .mus n i b
+  | .rvar i => .rvar i
   | .own k r t => .own k (rmap ρ0 d r) (t.renR ρ0 d)
+  | .muRs r n i b => if b.mutFree then .muRs (if r = 0 then ρ0 else d) n i b else .muRs (rmap ρ0 d r) n i b
 
 /-- 脱出の締め（R4b — jump の境界コピー）: k より深い imm の region を k に締める（中身も）。
 jump は巻き戻しで捨てる region（> k）の imm コンテナを、ラベルの最内 region k へ中身ごと写す（深い relocate の一般化）。
@@ -381,6 +435,7 @@ def Ty.clampR (k : Nat) : Ty → Ty
   | .ref false r t => .ref false (min r k) (t.clampR k)
   | .slice false r t => .slice false (min r k) (t.clampR k)
   | .map false r t => .map false (min r k) (t.clampR k)
+  | .muRs r n i b => if b.mutFree then .muRs (min r k) n i b else .muRs r n i b
   | t => t
 
 /-- 締めで何も変わらない（imm の region がどこも k 以下 — 実行時にも写すものが無い） -/
@@ -391,6 +446,7 @@ def Ty.noClamp (k : Nat) : Ty → Bool
   | .ref false r t => decide (r ≤ k) && t.noClamp k
   | .slice false r t => decide (r ≤ k) && t.noClamp k
   | .map false r t => decide (r ≤ k) && t.noClamp k
+  | .muRs r _ _ _ => decide (r ≤ k)
   | _ => true
 
 /-- 値が型注釈を持たない型（R4b-cov）: opt / union（nil / inl / inr が注釈を運ぶ）と tvar を含まない。
@@ -410,7 +466,10 @@ def Ty.annFree : Ty → Bool
   | .map m _ t => m || t.annFree
   | .chan _ _ => true
   | .fn _ _ => true
+  | .mus _ _ _ => true
+  | .rvar _ => true
   | .own _ _ _ => true
+  | .muRs _ _ _ _ => false
 
 /-- 仮引数型の mut 位置（region 0 の ref / slice / map true） -/
 def Ty.isMut0 : Ty → Bool
@@ -435,6 +494,69 @@ def Ty.anchorOf : Ty → Ty → Option Nat
       | _ => none
   | p, ta => if p.isMut0 then ta.mutTop else none
 
+/-- チャネルを含まない（round4: 関数境界は chan の rc が正確なため断片外） -/
+def Ty.chanFree : Ty → Bool
+  | .int => true
+  | .tvar i => true
+  | .bool => true
+  | .byte => true
+  | .f64 => true
+  | .unit => true
+  | .opt t => t.chanFree
+  | .union l r => l.chanFree && r.chanFree
+  | .prod l r => l.chanFree && r.chanFree
+  | .ref _ _ t => t.chanFree
+  | .slice _ _ t => t.chanFree
+  | .map _ _ t => t.chanFree
+  | .chan _ _ => false
+  | .fn _ _ => true
+  | .mus _ _ _ => true
+  | .rvar _ => true
+  | .own _ _ _ => false
+  | .muRs _ _ _ b => b.chanFree
+
+/-- 自由な再帰の変数がすべて n 未満（n = 0 で閉じた型） -/
+def Ty.rfree (n : Nat) : Ty → Bool
+  | .int => true
+  | .tvar _ => true
+  | .bool => true
+  | .byte => true
+  | .f64 => true
+  | .unit => true
+  | .opt t => t.rfree n
+  | .union l r => l.rfree n && r.rfree n
+  | .prod l r => l.rfree n && r.rfree n
+  | .ref _ _ t => t.rfree n
+  | .slice _ _ t => t.rfree n
+  | .map _ _ t => t.rfree n
+  | .chan _ t => t.rfree n
+  | .fn p r => p.rfree n && r.rfree n
+  | .own _ _ t => t.rfree n
+  | .mus n' _ b => b.rfree (n + n')
+  | .rvar i => decide (i < n)
+  | .muRs _ n' _ b => b.rfree (n + n')
+
+/-- 深く共変な本体（D の μ の部分型 — region を上げても中身の部分型が成り立つ）: imm のコンテナと値ラッパだけ・imm の ref の中身は
+loc-free（ref は浅い共変 — 中身は正確一致なので region を持てない）。mut・chan・own は持たない（正確な region）。関数型・S の μ・型変数は座標を持たない -/
+def Ty.covOk : Ty → Bool
+  | .int => true
+  | .tvar _ => true
+  | .bool => true
+  | .byte => true
+  | .f64 => true
+  | .unit => true
+  | .opt t => t.covOk
+  | .union l r => l.covOk && r.covOk
+  | .prod l r => l.covOk && r.covOk
+  | .ref false _ t => t.regionsBelow 0 && t.chanFree && t.rfree 0
+  | .slice false _ t => t.covOk
+  | .map false _ t => t.covOk
+  | .fn _ _ => true
+  | .mus _ _ _ => true
+  | .rvar _ => true
+  | .muRs _ _ _ b => b.covOk
+  | _ => false
+
 /-- 部分型（round4、V1 = 浅い imm 共変）: imm コンテナ / 参照の region 上界は
 緩められる（要素型は正確なまま — セル型付けが要素型を正確に固定するため、
 深い共変には「セル sub」が要る = 後続の梯子）。値ラッパ（opt / union / prod）へは
@@ -446,7 +568,16 @@ def Ty.sub : Ty → Ty → Bool
   | .ref false r t, .ref false r' t' => decide (r ≤ r') && decide (t = t')
   | .slice false r t, .slice false r' t' => decide (r ≤ r') && Ty.sub t t'
   | .map false r t, .map false r' t' => decide (r ≤ r') && Ty.sub t t'
+  | .muRs r n i b, .muRs r' n' i' b' =>
+    decide (n = n') && decide (i = i') && decide (b = b') && (decide (r = r') || (decide (r ≤ r') && b.covOk))
   | a, b => decide (a = b)
+
+theorem Ty.sub_muRs_inv {r n i : Nat} {b tb : Ty} (hs : Ty.sub (.muRs r n i b) tb = true) :
+    ∃ r', tb = .muRs r' n i b ∧ (r = r' ∨ (r ≤ r' ∧ b.covOk = true)) := by
+  cases tb <;> simp only [Ty.sub, Bool.and_eq_true, decide_eq_true_eq, reduceCtorEq] at hs
+  obtain ⟨⟨⟨h1, h2⟩, h3⟩, h⟩ := hs
+  subst h1 h2 h3
+  exact ⟨_, rfl, by simpa using h⟩
 
 theorem Ty.sub_refl : ∀ t : Ty, Ty.sub t t = true
   | .int => rfl
@@ -464,6 +595,9 @@ theorem Ty.sub_refl : ∀ t : Ty, Ty.sub t t = true
   | .chan rc t => by simp [Ty.sub]
   | .own k r t => by simp [Ty.sub]
   | .fn p r => by simp [Ty.sub]
+  | .mus _ _ b => by simp [Ty.sub]
+  | .rvar i => by simp [Ty.sub]
+  | .muRs r _ _ b => by simp [Ty.sub]
 
 /-- sub は escape 検査を狭める向きに保つ: 上界の緩み ta ≤ tb は
 tb の床がそのまま ta の床（boundary copy と block 出口の transport） -/
@@ -521,6 +655,12 @@ theorem Ty.sub_regionsBelow {d : Nat} :
   | .fn p r, tb, hs, hb => by
     simp only [Ty.sub, decide_eq_true_eq] at hs
     exact hs ▸ hb
+  | .mus _ _ b, tb, hs, hb => by
+    simp only [Ty.sub, decide_eq_true_eq] at hs
+    exact hs ▸ hb
+  | .rvar i, tb, hs, hb => by
+    simp only [Ty.sub, decide_eq_true_eq] at hs
+    exact hs ▸ hb
   | .ref true r t, tb, hs, hb => by
     simp only [Ty.sub, decide_eq_true_eq] at hs
     exact hs ▸ hb
@@ -533,6 +673,10 @@ theorem Ty.sub_regionsBelow {d : Nat} :
   | .opt t, .int, hs, hb => by simp [Ty.sub] at hs
   | .union l r, .int, hs, hb => by simp [Ty.sub] at hs
   | .prod l r, .int, hs, hb => by simp [Ty.sub] at hs
+  | .muRs r _ _ b, tb, hs, hb => by
+    obtain ⟨r', rfl, h⟩ := Ty.sub_muRs_inv hs
+    simp only [Ty.regionsBelow, decide_eq_true_eq] at hb ⊢
+    rcases h with rfl | ⟨h, _⟩ <;> omega
 
 /-- sub は mutFree を変えない（緩むのは imm 側だけ） -/
 theorem Ty.sub_mutFree :
@@ -586,6 +730,12 @@ theorem Ty.sub_mutFree :
   | .fn p r, tb, hs => by
     simp only [Ty.sub, decide_eq_true_eq] at hs
     rw [hs]
+  | .mus _ _ b, tb, hs => by
+    simp only [Ty.sub, decide_eq_true_eq] at hs
+    rw [hs]
+  | .rvar i, tb, hs => by
+    simp only [Ty.sub, decide_eq_true_eq] at hs
+    rw [hs]
   | .ref true r t, tb, hs => by
     simp only [Ty.sub, decide_eq_true_eq] at hs
     rw [hs]
@@ -598,24 +748,9 @@ theorem Ty.sub_mutFree :
   | .opt t, .int, hs => by simp [Ty.sub] at hs
   | .union l r, .int, hs => by simp [Ty.sub] at hs
   | .prod l r, .int, hs => by simp [Ty.sub] at hs
-
-/-- チャネルを含まない（round4: 関数境界は chan の rc が正確なため断片外） -/
-def Ty.chanFree : Ty → Bool
-  | .int => true
-  | .tvar i => true
-  | .bool => true
-  | .byte => true
-  | .f64 => true
-  | .unit => true
-  | .opt t => t.chanFree
-  | .union l r => l.chanFree && r.chanFree
-  | .prod l r => l.chanFree && r.chanFree
-  | .ref _ _ t => t.chanFree
-  | .slice _ _ t => t.chanFree
-  | .map _ _ t => t.chanFree
-  | .chan _ _ => false
-  | .fn _ _ => true
-  | .own _ _ _ => false
+  | .muRs r _ _ b, tb, hs => by
+    obtain ⟨r', rfl, _⟩ := Ty.sub_muRs_inv hs
+    rfl
 
 /-- jump のペイロードの型 tJ からラベルの型 tL への関係（R4b）: k へ締めてから浅い共変で緩める。
 締めで型が変わる（= 実行時に写す）なら、写す先 k は共有 region でなく（b ≤ k）、ペイロードは chan を持たない -/
@@ -664,6 +799,12 @@ theorem Ty.sub_own_inv {k : OwnK} {r : Nat} {t tb : Ty} (hs : Ty.sub (.own k r t
     tb = .own k r t := by
   cases tb <;> simp [Ty.sub] at hs
   · obtain ⟨rfl, rfl, rfl⟩ := hs; rfl
+
+theorem Ty.sub_mus_inv {n i : Nat} {b tb : Ty} (hs : Ty.sub (.mus n i b) tb = true) : tb = .mus n i b := by
+  cases tb <;> simp [Ty.sub] at hs ⊢; exact ⟨hs.1.symm, hs.2.1.symm, hs.2.2.symm⟩
+
+theorem Ty.sub_rvar_inv {i : Nat} {tb : Ty} (hs : Ty.sub (.rvar i) tb = true) : tb = .rvar i := by
+  cases tb <;> simp [Ty.sub] at hs <;> simp [hs]
 
 theorem Ty.sub_fn_inv {p r tb : Ty} (hs : Ty.sub (.fn p r) tb = true) :
     tb = .fn p r := by
@@ -733,6 +874,8 @@ theorem Ty.sub_trans : ∀ {a b c : Ty}, Ty.sub a b = true → Ty.sub b c = true
   | .chan _ _, _, _, h1, h2 => by obtain rfl := Ty.sub_chan_inv h1; exact h2
   | .own _ _ _, _, _, h1, h2 => by obtain rfl := Ty.sub_own_inv h1; exact h2
   | .fn _ _, _, _, h1, h2 => by obtain rfl := Ty.sub_fn_inv h1; exact h2
+  | .mus _ _ _, _, _, h1, h2 => by obtain rfl := Ty.sub_mus_inv h1; exact h2
+  | .rvar _, _, _, h1, h2 => by obtain rfl := Ty.sub_rvar_inv h1; exact h2
   | .opt a, _, _, h1, h2 => by
     obtain ⟨b, rfl, hb⟩ := Ty.sub_opt_inv h1
     obtain ⟨c, rfl, hc⟩ := Ty.sub_opt_inv h2
@@ -760,6 +903,15 @@ theorem Ty.sub_trans : ∀ {a b c : Ty}, Ty.sub a b = true → Ty.sub b c = true
     obtain ⟨rb, b, rfl, hb, hab⟩ := Ty.sub_mapF_inv h1
     obtain ⟨rc, c, rfl, hc, hbc⟩ := Ty.sub_mapF_inv h2
     simp only [Ty.sub, Bool.and_eq_true, decide_eq_true_eq]; exact ⟨by omega, Ty.sub_trans hab hbc⟩
+  | .muRs r _ _ b, _, _, h1, h2 => by
+    obtain ⟨r', rfl, h⟩ := Ty.sub_muRs_inv h1
+    obtain ⟨r'', rfl, h'⟩ := Ty.sub_muRs_inv h2
+    simp only [Ty.sub, decide_true, Bool.true_and, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq]
+    rcases h with rfl | ⟨h, hc⟩ <;> rcases h' with rfl | ⟨h', hc'⟩
+    · exact .inl rfl
+    · exact .inr ⟨h', hc'⟩
+    · exact .inr ⟨h, hc⟩
+    · exact .inr ⟨by omega, hc⟩
 
 /-- sub とシフトの可換性: 両辺を同じ ρ でずらしても sub は保たれる
 （シフト定理の call ケース） -/
@@ -817,6 +969,12 @@ theorem Ty.sub_shiftR {ρ : Nat} :
   | .fn p r, tb, hs => by
     obtain rfl := Ty.sub_fn_inv hs
     exact Ty.sub_refl _
+  | .mus _ _ b, tb, hs => by
+    obtain rfl := Ty.sub_mus_inv hs
+    exact Ty.sub_refl _
+  | .rvar i, tb, hs => by
+    obtain rfl := Ty.sub_rvar_inv hs
+    exact Ty.sub_refl _
   | .ref true r t, tb, hs => by
     obtain rfl := Ty.sub_refT_inv hs
     exact Ty.sub_refl _
@@ -829,6 +987,12 @@ theorem Ty.sub_shiftR {ρ : Nat} :
   | .opt t, .int, hs => by simp [Ty.sub] at hs
   | .union l r, .int, hs => by simp [Ty.sub] at hs
   | .prod l r, .int, hs => by simp [Ty.sub] at hs
+  | .muRs r _ _ b, tb, hs => by
+    obtain ⟨r', rfl, h⟩ := Ty.sub_muRs_inv hs
+    simp only [Ty.shiftR, Ty.sub, decide_true, Bool.true_and, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq]
+    rcases h with rfl | ⟨h, hc⟩
+    · exact .inl rfl
+    · exact .inr ⟨by omega, hc⟩
 
 /-! ## 型代入（V3-2: Def の型パラメータ）
 
@@ -836,8 +1000,165 @@ theorem Ty.sub_shiftR {ρ : Nat} :
 代入がシフト・relocR・escape 検査・mutFree と可換になり、region の議論に触れない。
 region を含む型引数（`[]T` を T に入れる等）は後段の梯子 -/
 
+/-- 再帰の変数 k を閉じた型 s で置き換える（unfold が渡すのは閉じた μ だけなので、束縛の下で s を持ち上げない）。
+関数型の中へも入る（再帰の変数は関数型の中に出る — S） -/
+def Ty.rsubst : Ty → Nat → Ty → Ty
+  | .int, _, _ => .int
+  | .tvar i, _, _ => .tvar i
+  | .bool, _, _ => .bool
+  | .byte, _, _ => .byte
+  | .f64, _, _ => .f64
+  | .unit, _, _ => .unit
+  | .opt t, k, s => .opt (t.rsubst k s)
+  | .union l r, k, s => .union (l.rsubst k s) (r.rsubst k s)
+  | .prod l r, k, s => .prod (l.rsubst k s) (r.rsubst k s)
+  | .ref m r t, k, s => .ref m r (t.rsubst k s)
+  | .slice m r t, k, s => .slice m r (t.rsubst k s)
+  | .map m r t, k, s => .map m r (t.rsubst k s)
+  | .chan rc t, k, s => .chan rc (t.rsubst k s)
+  | .fn p r, k, s => .fn (p.rsubst k s) (r.rsubst k s)
+  | .own o r t, k, s => .own o r (t.rsubst k s)
+  | .mus n i b, k, s => .mus n i (b.rsubst (k + n) s)
+  | .rvar i, k, s => if i = k then s else .rvar i
+  | .muRs r n i b, k, s => .muRs r n i (b.rsubst (k + n) s)
+
+/-- 関数型か（S の組の成分の判定） -/
+def Ty.isFn : Ty → Bool
+  | .fn _ _ => true
+  | _ => false
+
+/-! ### 同時の μ の組（成分の本体の prod の鎖 — unit で終わる）と整形 -/
+
+/-- 組の c 番目の成分（鎖の外は int） -/
+def Ty.comp : Ty → Nat → Ty
+  | .prod b _, 0 => b
+  | .prod _ rest, c + 1 => rest.comp c
+  | _, _ => .int
+
+/-- n 個の成分の鎖（unit で終わる） -/
+def Ty.isChain : Ty → Nat → Bool
+  | .unit, 0 => true
+  | .prod _ rest, n + 1 => rest.isChain n
+  | _, _ => false
+
+/-- n 個の関数型の成分の鎖（S の組 — 本体はどれも関数型） -/
+def Ty.chainFn : Ty → Nat → Bool
+  | .unit, 0 => true
+  | .prod b rest, n + 1 => b.isFn && rest.chainFn n
+  | _, _ => false
+
+/-- 束縛 [k, k + n) の再帰の変数がどれも関数型の中に出ない（D の組の本体は値の木 — 関数型を跨いで組を指さない） -/
+def Ty.rguardN (k n : Nat) (inFn : Bool) : Ty → Bool
+  | .opt t => t.rguardN k n inFn
+  | .union l r => l.rguardN k n inFn && r.rguardN k n inFn
+  | .prod l r => l.rguardN k n inFn && r.rguardN k n inFn
+  | .ref _ _ t => t.rguardN k n inFn
+  | .slice _ _ t => t.rguardN k n inFn
+  | .map _ _ t => t.rguardN k n inFn
+  | .chan _ t => t.rguardN k n inFn
+  | .own _ _ t => t.rguardN k n inFn
+  | .fn p r => p.rguardN k n true && r.rguardN k n true
+  | .rvar i => !(decide (k ≤ i) && decide (i < k + n)) || !inFn
+  | .mus m _ b => b.rguardN (k + m) n inFn
+  | .muRs _ m _ b => b.rguardN (k + m) n inFn
+  | _ => true
+
+/-- 束縛 [k, k + n) の再帰の変数がガード（slice / map の要素・opt の中身）の無い位置に出る（関数型の中は数えない — rguardN が別に拒否する）。
+ref / chan / own の中身はガードを外す（値の大きさを有限にしない）。opt の中身はガード — 組の成分を中身に持つ opt は実装が 1 セルの箱で
+表す（値の大きさが有限・`next L?` の鎖 — language.md 1 節。表現の選択で、ここの型規則とは独立） -/
+def Ty.uoccAny (k n : Nat) (g : Bool) : Ty → Bool
+  | .opt t => t.uoccAny k n true
+  | .union l r => l.uoccAny k n g || r.uoccAny k n g
+  | .prod l r => l.uoccAny k n g || r.uoccAny k n g
+  | .ref _ _ t => t.uoccAny k n false
+  | .slice _ _ t => t.uoccAny k n true
+  | .map _ _ t => t.uoccAny k n true
+  | .chan _ t => t.uoccAny k n false
+  | .own _ _ t => t.uoccAny k n false
+  | .rvar i => !g && decide (k ≤ i) && decide (i < k + n)
+  | .mus m _ b => b.uoccAny (k + m) n g
+  | .muRs _ m _ b => b.uoccAny (k + m) n g
+  | _ => false
+
+/-- 成分 c が沈み（ガードの無い組の変数を持たない）なら、その変数を int に置き換える -/
+def Ty.sinkPick (n c : Nat) (bs : Ty) : Ty := if (bs.comp c).uoccAny 0 n false then bs else bs.rsubst c .int
+
+/-- 沈みの代入の 1 周: 成分 0..c−1 を順に見て、沈みの成分の変数を int に置き換える -/
+def Ty.sinkStep (n : Nat) : Ty → Nat → Ty
+  | bs, 0 => bs
+  | bs, c + 1 => (bs.sinkStep n c).sinkPick n c
+
+/-- 沈みの代入を m 周 -/
+def Ty.sinkRounds (n : Nat) : Ty → Nat → Ty
+  | bs, 0 => bs
+  | bs, m + 1 => (bs.sinkRounds n m).sinkStep n n
+
+/-- 成分 0..c−1 がどれも沈み -/
+def Ty.allSink (bs : Ty) (n : Nat) : Nat → Bool
+  | 0 => true
+  | c + 1 => !(bs.comp c).uoccAny 0 n false && bs.allSink n c
+
+/-- 組の整形（D）: 組の変数は関数型を跨がず、ガードの無い参照の辺（成分 c の本体がガードなしで成分 c' を持つ）に閉路が無い
+（沈みの代入を n 周して全成分が沈み — 閉路の上の成分は沈みにならない）。n = 1 で「変数はガードの下だけ・関数型を跨がない」。
+表層の I の拒否（閉路が slice / map / opt を通らない）と同じ線 — 健全性の証明は使わない（値の大きさの有限性の約束） -/
+def Ty.groupOk (bs : Ty) (n : Nat) : Bool := bs.rguardN 0 n false && (bs.sinkRounds n n).allSink n n
+
+/-- 組の j 番目の成分の型（局所座標）: d = true が D（muRs 0 — 展開の後で本体ごと r へ置く）・false が S -/
+def Ty.grp (d : Bool) (n j : Nat) (bs : Ty) : Ty := if d then .muRs 0 n j bs else .mus n j bs
+
+/-- 自己再帰（幅 1 の組）の略記: S と D。本体の rvar 0 が自分・rvar (k + 1) が外の k -/
+abbrev Ty.mu1 (b : Ty) : Ty := .mus 1 0 (.prod b .unit)
+abbrev Ty.muR1 (r : Nat) (b : Ty) : Ty := .muRs r 1 0 (.prod b .unit)
+
+/-- 組の変数 j..j+m−1 を組の成分の型に置き換える（多重代入 — 代入する型は閉じているので 1 つずつでも同時と同じ） -/
+def Ty.substG : Ty → Bool → Nat → Ty → Nat → Nat → Ty
+  | t, _, _, _, _, 0 => t
+  | t, d, n, bs, j, m + 1 => (t.rsubst j (Ty.grp d n j bs)).substG d n bs (j + 1) m
+
+/-- 関数型の外の region が全部 0（D の μ の本体は局所座標 — 木は 1 region）。関数型・S の μ は座標の境なので見ない -/
+def Ty.localOnly : Ty → Bool
+  | .int => true
+  | .tvar _ => true
+  | .bool => true
+  | .byte => true
+  | .f64 => true
+  | .unit => true
+  | .opt t => t.localOnly
+  | .union l r => l.localOnly && r.localOnly
+  | .prod l r => l.localOnly && r.localOnly
+  | .ref _ r t => decide (r = 0) && t.localOnly
+  | .slice _ r t => decide (r = 0) && t.localOnly
+  | .map _ r t => decide (r = 0) && t.localOnly
+  | .chan rc t => decide (rc = 0) && t.regionsBelow 0 && t.chanFree && t.rfree 0
+  | .own _ r t => decide (r = 0) && t.regionsBelow 0 && t.chanFree && t.rfree 0
+  | .fn _ _ => true
+  | .mus _ _ _ => true
+  | .rvar _ => true
+  | .muRs r _ _ _ => decide (r = 0)
+
+/-- 再帰型の整形（型の全体）: D の μ は本体が局所座標・変数 0 はガードつきで関数型を跨がない・S の μ は本体が関数型。入れ子も -/
+def Ty.recOk : Ty → Bool
+  | .int => true
+  | .tvar _ => true
+  | .bool => true
+  | .byte => true
+  | .f64 => true
+  | .unit => true
+  | .opt t => t.recOk
+  | .union l r => l.recOk && r.recOk
+  | .prod l r => l.recOk && r.recOk
+  | .ref _ _ t => t.recOk
+  | .slice _ _ t => t.recOk
+  | .map _ _ t => t.recOk
+  | .chan _ t => t.recOk
+  | .own _ _ t => t.recOk
+  | .fn p r => p.recOk && r.recOk
+  | .mus n i bs => bs.chainFn n && decide (i < n) && bs.recOk
+  | .rvar _ => true
+  | .muRs _ n i bs => bs.isChain n && decide (i < n) && bs.localOnly && bs.groupOk n && bs.recOk
+
 /-- 型引数として許される型 -/
-def Ty.tyArgOk (t : Ty) : Bool := t.regionsBelow 0 && t.chanFree
+def Ty.tyArgOk (t : Ty) : Bool := t.regionsBelow 0 && (t.chanFree && (t.rfree 0 && t.recOk))
 
 /-- 型引数リストの条件 -/
 def Ty.tyArgsOk (ts : List Ty) : Bool := ts.all Ty.tyArgOk
@@ -859,7 +1180,10 @@ def Ty.tsubst (ts : List Ty) : Ty → Ty
   | .map m r t => .map m r (t.tsubst ts)
   | .chan rc t => .chan rc (t.tsubst ts)
   | .fn p r => .fn (p.tsubst ts) (r.tsubst ts)
+  | .mus n i b => .mus n i (b.tsubst ts)
+  | .rvar i => .rvar i
   | .own k r t => .own k r (t.tsubst ts)
+  | .muRs r n i b => .muRs r n i (b.tsubst ts)
 
 /-- tvar がすべて n 未満（Def のシグネチャの整形条件） -/
 def Ty.tvarsBelow (n : Nat) : Ty → Bool
@@ -877,7 +1201,10 @@ def Ty.tvarsBelow (n : Nat) : Ty → Bool
   | .map _ _ t => t.tvarsBelow n
   | .chan _ t => t.tvarsBelow n
   | .fn p r => p.tvarsBelow n && r.tvarsBelow n
+  | .mus _ _ b => b.tvarsBelow n
+  | .rvar _ => true
   | .own _ _ t => t.tvarsBelow n
+  | .muRs _ _ _ b => b.tvarsBelow n
 
 theorem Ty.tyArgsOk_get {ts : List Ty} {i : Nat} {τ : Ty} (h : Ty.tyArgsOk ts = true)
     (hi : ts[i]? = some τ) : τ.tyArgOk = true := by
@@ -893,14 +1220,14 @@ theorem Ty.shiftR_of_argOk {ρ : Nat} : ∀ {t : Ty}, t.tyArgOk = true → t.shi
   | .f64, _ => rfl
   | .unit, _ => rfl
   | .opt t, h => by
-    simp only [Ty.tyArgOk, Ty.regionsBelow, Ty.chanFree] at h
+    simp only [Ty.tyArgOk, Ty.regionsBelow, Ty.chanFree, Ty.rfree, Ty.recOk] at h
     simp [Ty.shiftR, Ty.shiftR_of_argOk (t := t) (by simp [Ty.tyArgOk, h])]
   | .union l r, h => by
-    simp only [Ty.tyArgOk, Ty.regionsBelow, Ty.chanFree, Bool.and_eq_true] at h
+    simp only [Ty.tyArgOk, Ty.regionsBelow, Ty.chanFree, Ty.rfree, Ty.recOk, Bool.and_eq_true] at h
     simp [Ty.shiftR, Ty.shiftR_of_argOk (t := l) (by simp [Ty.tyArgOk, h]),
       Ty.shiftR_of_argOk (t := r) (by simp [Ty.tyArgOk, h])]
   | .prod l r, h => by
-    simp only [Ty.tyArgOk, Ty.regionsBelow, Ty.chanFree, Bool.and_eq_true] at h
+    simp only [Ty.tyArgOk, Ty.regionsBelow, Ty.chanFree, Ty.rfree, Ty.recOk, Bool.and_eq_true] at h
     simp [Ty.shiftR, Ty.shiftR_of_argOk (t := l) (by simp [Ty.tyArgOk, h]),
       Ty.shiftR_of_argOk (t := r) (by simp [Ty.tyArgOk, h])]
   | .ref _ _ _, h => by simp [Ty.tyArgOk, Ty.regionsBelow] at h
@@ -908,6 +1235,9 @@ theorem Ty.shiftR_of_argOk {ρ : Nat} : ∀ {t : Ty}, t.tyArgOk = true → t.shi
   | .map _ _ _, h => by simp [Ty.tyArgOk, Ty.regionsBelow] at h
   | .chan _ _, h => by simp [Ty.tyArgOk, Ty.chanFree] at h
   | .fn _ _, _ => rfl
+  | .mus _ _ _, _ => rfl
+  | .rvar _, _ => rfl
+  | .muRs _ _ _ _, h => by simp [Ty.tyArgOk, Ty.regionsBelow] at h
 
 theorem Ty.relocR_of_argOk {ρ : Nat} : ∀ {t : Ty}, t.tyArgOk = true → t.relocR ρ = t
   | .int, _ => rfl
@@ -917,14 +1247,14 @@ theorem Ty.relocR_of_argOk {ρ : Nat} : ∀ {t : Ty}, t.tyArgOk = true → t.rel
   | .f64, _ => rfl
   | .unit, _ => rfl
   | .opt t, h => by
-    simp only [Ty.tyArgOk, Ty.regionsBelow, Ty.chanFree] at h
+    simp only [Ty.tyArgOk, Ty.regionsBelow, Ty.chanFree, Ty.rfree, Ty.recOk] at h
     simp [Ty.relocR, Ty.relocR_of_argOk (t := t) (by simp [Ty.tyArgOk, h])]
   | .union l r, h => by
-    simp only [Ty.tyArgOk, Ty.regionsBelow, Ty.chanFree, Bool.and_eq_true] at h
+    simp only [Ty.tyArgOk, Ty.regionsBelow, Ty.chanFree, Ty.rfree, Ty.recOk, Bool.and_eq_true] at h
     simp [Ty.relocR, Ty.relocR_of_argOk (t := l) (by simp [Ty.tyArgOk, h]),
       Ty.relocR_of_argOk (t := r) (by simp [Ty.tyArgOk, h])]
   | .prod l r, h => by
-    simp only [Ty.tyArgOk, Ty.regionsBelow, Ty.chanFree, Bool.and_eq_true] at h
+    simp only [Ty.tyArgOk, Ty.regionsBelow, Ty.chanFree, Ty.rfree, Ty.recOk, Bool.and_eq_true] at h
     simp [Ty.relocR, Ty.relocR_of_argOk (t := l) (by simp [Ty.tyArgOk, h]),
       Ty.relocR_of_argOk (t := r) (by simp [Ty.tyArgOk, h])]
   | .ref _ _ _, h => by simp [Ty.tyArgOk, Ty.regionsBelow] at h
@@ -932,6 +1262,9 @@ theorem Ty.relocR_of_argOk {ρ : Nat} : ∀ {t : Ty}, t.tyArgOk = true → t.rel
   | .map _ _ _, h => by simp [Ty.tyArgOk, Ty.regionsBelow] at h
   | .chan _ _, h => by simp [Ty.tyArgOk, Ty.chanFree] at h
   | .fn _ _, _ => rfl
+  | .mus _ _ _, _ => rfl
+  | .rvar _, _ => rfl
+  | .muRs _ _ _ _, h => by simp [Ty.tyArgOk, Ty.regionsBelow] at h
 
 /-- 型引数リストのシフト不動（シフト定理の call / fnref ケース） -/
 theorem Ty.map_shiftR_of_argsOk {ts : List Ty} {ρ : Nat} (h : Ty.tyArgsOk ts = true) :
@@ -968,6 +1301,34 @@ theorem Ty.tsubst_shiftR {ts : List Ty} {ρ : Nat} (h : Ty.tyArgsOk ts = true) :
   | .chan rc t => by simp [Ty.tsubst, Ty.shiftR, Ty.tsubst_shiftR h t]
   | .own k r t => by simp [Ty.tsubst, Ty.shiftR, Ty.tsubst_shiftR h t]
   | .fn p r => rfl
+  | .mus _ _ _ => rfl
+  | .rvar _ => rfl
+  | .muRs r _ _ b => by simp [Ty.tsubst, Ty.shiftR]
+
+theorem Ty.tsubst_mutFree {ts : List Ty} (h : Ty.tyArgsOk ts = true) :
+    ∀ t : Ty, (t.tsubst ts).mutFree = t.mutFree
+  | .int => rfl
+  | .tvar i => by
+    simp only [Ty.tsubst, Ty.mutFree]
+    have ha := Ty.tsubst_tvar_argOk h i
+    simp only [Ty.tyArgOk, Bool.and_eq_true] at ha
+    exact Ty.mutFree_of_locFree ha.1
+  | .bool => rfl
+  | .byte => rfl
+  | .f64 => rfl
+  | .unit => rfl
+  | .opt t => by simp [Ty.tsubst, Ty.mutFree, Ty.tsubst_mutFree h t]
+  | .union l r => by simp [Ty.tsubst, Ty.mutFree, Ty.tsubst_mutFree h l, Ty.tsubst_mutFree h r]
+  | .prod l r => by simp [Ty.tsubst, Ty.mutFree, Ty.tsubst_mutFree h l, Ty.tsubst_mutFree h r]
+  | .ref m r t => by simp [Ty.tsubst, Ty.mutFree, Ty.tsubst_mutFree h t]
+  | .slice m r t => by simp [Ty.tsubst, Ty.mutFree, Ty.tsubst_mutFree h t]
+  | .map m r t => by simp [Ty.tsubst, Ty.mutFree, Ty.tsubst_mutFree h t]
+  | .chan rc t => rfl
+  | .own k r t => rfl
+  | .fn p r => rfl
+  | .mus _ _ _ => rfl
+  | .rvar _ => rfl
+  | .muRs r _ _ b => by simp [Ty.tsubst, Ty.mutFree, Ty.tsubst_mutFree h b]
 
 theorem Ty.tsubst_relocR {ts : List Ty} {ρ : Nat} (h : Ty.tyArgsOk ts = true) :
     ∀ t : Ty, (t.tsubst ts).relocR ρ = (t.relocR ρ).tsubst ts
@@ -988,6 +1349,9 @@ theorem Ty.tsubst_relocR {ts : List Ty} {ρ : Nat} (h : Ty.tyArgsOk ts = true) :
   | .chan rc t => by simp [Ty.tsubst, Ty.relocR, Ty.tsubst_shiftR h t]
   | .own k r t => by simp [Ty.tsubst, Ty.relocR, Ty.tsubst_shiftR h t]
   | .fn p r => rfl
+  | .mus _ _ _ => rfl
+  | .rvar _ => rfl
+  | .muRs r _ _ b => by cases hm : b.mutFree <;> simp [Ty.tsubst, Ty.relocR, Ty.tsubst_mutFree h b, hm]
 
 theorem Ty.tsubst_regionsBelow {ts : List Ty} (h : Ty.tyArgsOk ts = true) :
     ∀ (t : Ty) (d : Nat), (t.tsubst ts).regionsBelow d = t.regionsBelow d
@@ -1012,28 +1376,9 @@ theorem Ty.tsubst_regionsBelow {ts : List Ty} (h : Ty.tyArgsOk ts = true) :
   | .chan rc t, d => by simp [Ty.tsubst, Ty.regionsBelow, Ty.tsubst_regionsBelow h t rc]
   | .own k r t, d => by simp [Ty.tsubst, Ty.regionsBelow, Ty.tsubst_regionsBelow h t d]
   | .fn p r, _ => rfl
-
-theorem Ty.tsubst_mutFree {ts : List Ty} (h : Ty.tyArgsOk ts = true) :
-    ∀ t : Ty, (t.tsubst ts).mutFree = t.mutFree
-  | .int => rfl
-  | .tvar i => by
-    simp only [Ty.tsubst, Ty.mutFree]
-    have ha := Ty.tsubst_tvar_argOk h i
-    simp only [Ty.tyArgOk, Bool.and_eq_true] at ha
-    exact Ty.mutFree_of_locFree ha.1
-  | .bool => rfl
-  | .byte => rfl
-  | .f64 => rfl
-  | .unit => rfl
-  | .opt t => by simp [Ty.tsubst, Ty.mutFree, Ty.tsubst_mutFree h t]
-  | .union l r => by simp [Ty.tsubst, Ty.mutFree, Ty.tsubst_mutFree h l, Ty.tsubst_mutFree h r]
-  | .prod l r => by simp [Ty.tsubst, Ty.mutFree, Ty.tsubst_mutFree h l, Ty.tsubst_mutFree h r]
-  | .ref m r t => by simp [Ty.tsubst, Ty.mutFree, Ty.tsubst_mutFree h t]
-  | .slice m r t => by simp [Ty.tsubst, Ty.mutFree, Ty.tsubst_mutFree h t]
-  | .map m r t => by simp [Ty.tsubst, Ty.mutFree, Ty.tsubst_mutFree h t]
-  | .chan rc t => rfl
-  | .own k r t => rfl
-  | .fn p r => rfl
+  | .mus _ _ _, _ => rfl
+  | .rvar _, _ => rfl
+  | .muRs r _ _ b, d => by simp [Ty.tsubst, Ty.regionsBelow]
 
 theorem Ty.tsubst_chanFree {ts : List Ty} (h : Ty.tyArgsOk ts = true) :
     ∀ t : Ty, (t.tsubst ts).chanFree = t.chanFree
@@ -1042,7 +1387,7 @@ theorem Ty.tsubst_chanFree {ts : List Ty} (h : Ty.tyArgsOk ts = true) :
     simp only [Ty.tsubst, Ty.chanFree]
     have ha := Ty.tsubst_tvar_argOk h i
     simp only [Ty.tyArgOk, Bool.and_eq_true] at ha
-    exact ha.2
+    exact ha.2.1
   | .bool => rfl
   | .byte => rfl
   | .f64 => rfl
@@ -1056,32 +1401,183 @@ theorem Ty.tsubst_chanFree {ts : List Ty} (h : Ty.tyArgsOk ts = true) :
   | .chan rc t => rfl
   | .own k r t => rfl
   | .fn p r => rfl
+  | .mus _ _ _ => rfl
+  | .rvar _ => rfl
+  | .muRs r _ _ b => by simp [Ty.tsubst, Ty.chanFree, Ty.tsubst_chanFree h b]
+
+theorem Ty.rfree_mono {m n : Nat} (hmn : m ≤ n) : ∀ {t : Ty}, t.rfree m = true → t.rfree n = true
+  | .int, _ => rfl
+  | .tvar _, _ => rfl
+  | .bool, _ => rfl
+  | .byte, _ => rfl
+  | .f64, _ => rfl
+  | .unit, _ => rfl
+  | .opt t, h => by simp only [Ty.rfree] at h ⊢; exact Ty.rfree_mono hmn h
+  | .union l r, h => by simp only [Ty.rfree, Bool.and_eq_true] at h ⊢; exact ⟨Ty.rfree_mono hmn h.1, Ty.rfree_mono hmn h.2⟩
+  | .prod l r, h => by simp only [Ty.rfree, Bool.and_eq_true] at h ⊢; exact ⟨Ty.rfree_mono hmn h.1, Ty.rfree_mono hmn h.2⟩
+  | .ref _ _ t, h => by simp only [Ty.rfree] at h ⊢; exact Ty.rfree_mono hmn h
+  | .slice _ _ t, h => by simp only [Ty.rfree] at h ⊢; exact Ty.rfree_mono hmn h
+  | .map _ _ t, h => by simp only [Ty.rfree] at h ⊢; exact Ty.rfree_mono hmn h
+  | .chan _ t, h => by simp only [Ty.rfree] at h ⊢; exact Ty.rfree_mono hmn h
+  | .own _ _ t, h => by simp only [Ty.rfree] at h ⊢; exact Ty.rfree_mono hmn h
+  | .fn p r, h => by simp only [Ty.rfree, Bool.and_eq_true] at h ⊢; exact ⟨Ty.rfree_mono hmn h.1, Ty.rfree_mono hmn h.2⟩
+  | .mus _ _ b, h => by simp only [Ty.rfree] at h ⊢; exact Ty.rfree_mono (by omega) h
+  | .rvar i, h => by simp only [Ty.rfree, decide_eq_true_eq] at h ⊢; omega
+  | .muRs _ _ _ b, h => by simp only [Ty.rfree] at h ⊢; exact Ty.rfree_mono (by omega) h
+
+/-- 閉じた型引数での代入は自由な再帰の変数を増やさない -/
+theorem Ty.rfree_tsubst {ts : List Ty} (h : Ty.tyArgsOk ts = true) {n : Nat} :
+    ∀ {t : Ty}, t.rfree n = true → (t.tsubst ts).rfree n = true
+  | .int, _ => rfl
+  | .tvar i, _ => by
+    simp only [Ty.tsubst]
+    cases hi : ts[i]? with
+    | none => rfl
+    | some τ =>
+      have := Ty.tyArgsOk_get h hi
+      simp only [Ty.tyArgOk, Bool.and_eq_true] at this
+      exact Ty.rfree_mono (Nat.zero_le _) this.2.2.1
+  | .bool, _ => rfl
+  | .byte, _ => rfl
+  | .f64, _ => rfl
+  | .unit, _ => rfl
+  | .opt t, hr => by simp only [Ty.rfree] at hr; simp [Ty.tsubst, Ty.rfree, Ty.rfree_tsubst h hr]
+  | .union l r, hr => by
+    simp only [Ty.rfree, Bool.and_eq_true] at hr; simp [Ty.tsubst, Ty.rfree, Ty.rfree_tsubst h hr.1, Ty.rfree_tsubst h hr.2]
+  | .prod l r, hr => by
+    simp only [Ty.rfree, Bool.and_eq_true] at hr; simp [Ty.tsubst, Ty.rfree, Ty.rfree_tsubst h hr.1, Ty.rfree_tsubst h hr.2]
+  | .ref m r t, hr => by simp only [Ty.rfree] at hr; simp [Ty.tsubst, Ty.rfree, Ty.rfree_tsubst h hr]
+  | .slice m r t, hr => by simp only [Ty.rfree] at hr; simp [Ty.tsubst, Ty.rfree, Ty.rfree_tsubst h hr]
+  | .map m r t, hr => by simp only [Ty.rfree] at hr; simp [Ty.tsubst, Ty.rfree, Ty.rfree_tsubst h hr]
+  | .chan rc t, hr => by simp only [Ty.rfree] at hr; simp [Ty.tsubst, Ty.rfree, Ty.rfree_tsubst h hr]
+  | .own k r t, hr => by simp only [Ty.rfree] at hr; simp [Ty.tsubst, Ty.rfree, Ty.rfree_tsubst h hr]
+  | .fn p r, hr => by
+    simp only [Ty.rfree, Bool.and_eq_true] at hr; simp [Ty.tsubst, Ty.rfree, Ty.rfree_tsubst h hr.1, Ty.rfree_tsubst h hr.2]
+  | .mus _ _ b, hr => by simp only [Ty.rfree] at hr; simp [Ty.tsubst, Ty.rfree, Ty.rfree_tsubst h hr]
+  | .rvar i, hr => hr
+  | .muRs r _ _ b, hr => by simp only [Ty.rfree] at hr; simp [Ty.tsubst, Ty.rfree, Ty.rfree_tsubst h hr]
+
+/-- 深く共変な型は mut を持たない -/
+theorem Ty.mutFree_of_covOk : ∀ {t : Ty}, t.covOk = true → t.mutFree = true
+  | .int, _ => rfl
+  | .tvar _, _ => rfl
+  | .bool, _ => rfl
+  | .byte, _ => rfl
+  | .f64, _ => rfl
+  | .unit, _ => rfl
+  | .opt t, h => by simp only [Ty.covOk] at h; simp [Ty.mutFree, Ty.mutFree_of_covOk h]
+  | .union l r, h => by simp only [Ty.covOk, Bool.and_eq_true] at h; simp [Ty.mutFree, Ty.mutFree_of_covOk h.1, Ty.mutFree_of_covOk h.2]
+  | .prod l r, h => by simp only [Ty.covOk, Bool.and_eq_true] at h; simp [Ty.mutFree, Ty.mutFree_of_covOk h.1, Ty.mutFree_of_covOk h.2]
+  | .ref m _ t, h => by
+    cases m
+    · simp only [Ty.covOk, Bool.and_eq_true] at h; simp [Ty.mutFree, Ty.mutFree_of_locFree h.1.1]
+    · simp [Ty.covOk] at h
+  | .slice m _ t, h => by
+    cases m
+    · simp only [Ty.covOk] at h; simp [Ty.mutFree, Ty.mutFree_of_covOk h]
+    · simp [Ty.covOk] at h
+  | .map m _ t, h => by
+    cases m
+    · simp only [Ty.covOk] at h; simp [Ty.mutFree, Ty.mutFree_of_covOk h]
+    · simp [Ty.covOk] at h
+  | .chan _ _, h => by simp [Ty.covOk] at h
+  | .own _ _ _, h => by simp [Ty.covOk] at h
+  | .fn _ _, _ => rfl
+  | .mus _ _ _, _ => rfl
+  | .rvar _, _ => rfl
+  | .muRs _ _ _ b, h => by simp only [Ty.covOk] at h; simp [Ty.mutFree, Ty.mutFree_of_covOk h]
+
+/-- loc-free の型は深く共変（region を持たないので上げで変わらない） -/
+theorem Ty.covOk_of_locFree : ∀ {t : Ty}, t.regionsBelow 0 = true → t.chanFree = true → t.covOk = true
+  | .int, _, _ => rfl
+  | .tvar _, _, _ => rfl
+  | .bool, _, _ => rfl
+  | .byte, _, _ => rfl
+  | .f64, _, _ => rfl
+  | .unit, _, _ => rfl
+  | .opt t, h, c => by
+    simp only [Ty.regionsBelow] at h; simp only [Ty.chanFree] at c; simp [Ty.covOk, Ty.covOk_of_locFree h c]
+  | .union l r, h, c => by
+    simp only [Ty.regionsBelow, Bool.and_eq_true] at h; simp only [Ty.chanFree, Bool.and_eq_true] at c
+    simp [Ty.covOk, Ty.covOk_of_locFree h.1 c.1, Ty.covOk_of_locFree h.2 c.2]
+  | .prod l r, h, c => by
+    simp only [Ty.regionsBelow, Bool.and_eq_true] at h; simp only [Ty.chanFree, Bool.and_eq_true] at c
+    simp [Ty.covOk, Ty.covOk_of_locFree h.1 c.1, Ty.covOk_of_locFree h.2 c.2]
+  | .ref _ _ _, h, _ => by simp [Ty.regionsBelow] at h
+  | .slice _ _ _, h, _ => by simp [Ty.regionsBelow] at h
+  | .map _ _ _, h, _ => by simp [Ty.regionsBelow] at h
+  | .chan _ _, _, c => by simp [Ty.chanFree] at c
+  | .own _ _ _, h, _ => by simp [Ty.regionsBelow] at h
+  | .fn _ _, _, _ => rfl
+  | .mus _ _ _, _, _ => rfl
+  | .rvar _, _, _ => rfl
+  | .muRs _ _ _ _, h, _ => by simp [Ty.regionsBelow] at h
+
+/-- 型引数（loc-free）での代入は深い共変を保つ -/
+theorem Ty.covOk_tsubst {ts : List Ty} (h : Ty.tyArgsOk ts = true) : ∀ {t : Ty}, t.covOk = true → (t.tsubst ts).covOk = true
+  | .int, _ => rfl
+  | .tvar i, _ => by
+    simp only [Ty.tsubst]
+    cases hi : ts[i]? with
+    | none => rfl
+    | some τ =>
+      have := Ty.tyArgsOk_get h hi
+      simp only [Option.getD_some]
+      simp only [Ty.tyArgOk, Bool.and_eq_true] at this
+      exact Ty.covOk_of_locFree this.1 this.2.1
+  | .bool, _ => rfl
+  | .byte, _ => rfl
+  | .f64, _ => rfl
+  | .unit, _ => rfl
+  | .opt t, hc => by simp only [Ty.covOk] at hc; simp [Ty.tsubst, Ty.covOk, Ty.covOk_tsubst h hc]
+  | .union l r, hc => by
+    simp only [Ty.covOk, Bool.and_eq_true] at hc; simp [Ty.tsubst, Ty.covOk, Ty.covOk_tsubst h hc.1, Ty.covOk_tsubst h hc.2]
+  | .prod l r, hc => by
+    simp only [Ty.covOk, Bool.and_eq_true] at hc; simp [Ty.tsubst, Ty.covOk, Ty.covOk_tsubst h hc.1, Ty.covOk_tsubst h hc.2]
+  | .ref m r t, hc => by
+    cases m
+    · simp only [Ty.covOk, Bool.and_eq_true] at hc; simp [Ty.tsubst, Ty.covOk, Ty.tsubst_regionsBelow h t 0, Ty.tsubst_chanFree h t, hc, Ty.rfree_tsubst h hc.2]
+    · simp [Ty.covOk] at hc
+  | .slice m r t, hc => by
+    cases m
+    · simp only [Ty.covOk] at hc; simp [Ty.tsubst, Ty.covOk, Ty.covOk_tsubst h hc]
+    · simp [Ty.covOk] at hc
+  | .map m r t, hc => by
+    cases m
+    · simp only [Ty.covOk] at hc; simp [Ty.tsubst, Ty.covOk, Ty.covOk_tsubst h hc]
+    · simp [Ty.covOk] at hc
+  | .chan _ _, hc => by simp [Ty.covOk] at hc
+  | .own _ _ _, hc => by simp [Ty.covOk] at hc
+  | .fn _ _, _ => rfl
+  | .mus _ _ _, _ => rfl
+  | .rvar _, _ => rfl
+  | .muRs r _ _ b, hc => by simp only [Ty.covOk] at hc; simp [Ty.tsubst, Ty.covOk, Ty.covOk_tsubst h hc]
 
 /-- sub は代入で保たれる（sub が見るのは region 上界と構造の一致だけ） -/
-theorem Ty.sub_tsubst {ts : List Ty} :
+theorem Ty.sub_tsubst {ts : List Ty} (h0 : Ty.tyArgsOk ts = true) :
     ∀ {ta tb : Ty}, Ty.sub ta tb = true → Ty.sub (ta.tsubst ts) (tb.tsubst ts) = true
   | .opt t, .opt t', hs => by
     simp only [Ty.sub] at hs
     simp only [Ty.tsubst, Ty.sub]
-    exact Ty.sub_tsubst hs
+    exact Ty.sub_tsubst h0 hs
   | .union l r, .union l' r', hs => by
     simp only [Ty.sub, Bool.and_eq_true] at hs
     simp only [Ty.tsubst, Ty.sub, Bool.and_eq_true]
-    exact ⟨Ty.sub_tsubst hs.1, Ty.sub_tsubst hs.2⟩
+    exact ⟨Ty.sub_tsubst h0 hs.1, Ty.sub_tsubst h0 hs.2⟩
   | .prod l r, .prod l' r', hs => by
     simp only [Ty.sub, Bool.and_eq_true] at hs
     simp only [Ty.tsubst, Ty.sub, Bool.and_eq_true]
-    exact ⟨Ty.sub_tsubst hs.1, Ty.sub_tsubst hs.2⟩
+    exact ⟨Ty.sub_tsubst h0 hs.1, Ty.sub_tsubst h0 hs.2⟩
   | .ref false r t, .ref false r' t', hs => by
     simp only [Ty.sub, Bool.and_eq_true, decide_eq_true_eq] at hs
     obtain ⟨hle, rfl⟩ := hs
     simp [Ty.tsubst, Ty.sub, hle]
   | .slice false r t, .slice false r' t', hs => by
     simp only [Ty.sub, Bool.and_eq_true, decide_eq_true_eq] at hs
-    simp [Ty.tsubst, Ty.sub, hs.1, Ty.sub_tsubst hs.2]
+    simp [Ty.tsubst, Ty.sub, hs.1, Ty.sub_tsubst h0 hs.2]
   | .map false r t, .map false r' t', hs => by
     simp only [Ty.sub, Bool.and_eq_true, decide_eq_true_eq] at hs
-    simp [Ty.tsubst, Ty.sub, hs.1, Ty.sub_tsubst hs.2]
+    simp [Ty.tsubst, Ty.sub, hs.1, Ty.sub_tsubst h0 hs.2]
   | .int, tb, hs => by
     obtain rfl := Ty.sub_int_inv hs
     exact Ty.sub_refl _
@@ -1109,6 +1605,12 @@ theorem Ty.sub_tsubst {ts : List Ty} :
   | .fn p r, tb, hs => by
     obtain rfl := Ty.sub_fn_inv hs
     exact Ty.sub_refl _
+  | .mus _ _ b, tb, hs => by
+    obtain rfl := Ty.sub_mus_inv hs
+    exact Ty.sub_refl _
+  | .rvar i, tb, hs => by
+    obtain rfl := Ty.sub_rvar_inv hs
+    exact Ty.sub_refl _
   | .ref true r t, tb, hs => by
     obtain rfl := Ty.sub_refT_inv hs
     exact Ty.sub_refl _
@@ -1121,6 +1623,12 @@ theorem Ty.sub_tsubst {ts : List Ty} :
   | .opt t, .int, hs => by simp [Ty.sub] at hs
   | .union l r, .int, hs => by simp [Ty.sub] at hs
   | .prod l r, .int, hs => by simp [Ty.sub] at hs
+  | .muRs r _ _ b, tb, hs => by
+    obtain ⟨r', rfl, h⟩ := Ty.sub_muRs_inv hs
+    simp only [Ty.tsubst, Ty.sub, decide_true, Bool.true_and, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq]
+    rcases h with rfl | ⟨h, hc⟩
+    · exact .inl rfl
+    · exact .inr ⟨h, Ty.covOk_tsubst h0 hc⟩
 
 /-- 代入の合成: シグネチャの tvar が ts' の範囲内なら、ts' で代入してから ts で代入するのは
 ts' の各要素を ts で代入したもので一度に代入するのと同じ（ジェネリックがジェネリックを呼ぶ形） -/
@@ -1147,6 +1655,397 @@ theorem Ty.tsubst_comp {ts ts' : List Ty} :
   | .own k r t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.tsubst, Ty.tsubst_comp h]
   | .fn p r, h => by
     simp only [Ty.tvarsBelow, Bool.and_eq_true] at h; simp [Ty.tsubst, Ty.tsubst_comp h.1, Ty.tsubst_comp h.2]
+  | .mus _ _ b, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.tsubst, Ty.tsubst_comp h]
+  | .rvar _, _ => rfl
+  | .muRs r _ _ b, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.tsubst, Ty.tsubst_comp h]
+
+theorem Ty.isFn_tsubst {ts : List Ty} {t : Ty} (hf : t.isFn = true) : (t.tsubst ts).isFn = true := by
+  cases t <;> simp_all [Ty.isFn, Ty.tsubst]
+
+/-- loc-free・chan-free の型は局所座標 -/
+theorem Ty.localOnly_of_lf : ∀ {t : Ty}, t.regionsBelow 0 = true → t.chanFree = true → t.localOnly = true
+  | .int, _, _ => rfl
+  | .tvar _, _, _ => rfl
+  | .bool, _, _ => rfl
+  | .byte, _, _ => rfl
+  | .f64, _, _ => rfl
+  | .unit, _, _ => rfl
+  | .opt t, h, c => by
+    simp only [Ty.regionsBelow] at h; simp only [Ty.chanFree] at c; simp [Ty.localOnly, Ty.localOnly_of_lf h c]
+  | .union l r, h, c => by
+    simp only [Ty.regionsBelow, Bool.and_eq_true] at h; simp only [Ty.chanFree, Bool.and_eq_true] at c
+    simp [Ty.localOnly, Ty.localOnly_of_lf h.1 c.1, Ty.localOnly_of_lf h.2 c.2]
+  | .prod l r, h, c => by
+    simp only [Ty.regionsBelow, Bool.and_eq_true] at h; simp only [Ty.chanFree, Bool.and_eq_true] at c
+    simp [Ty.localOnly, Ty.localOnly_of_lf h.1 c.1, Ty.localOnly_of_lf h.2 c.2]
+  | .ref _ _ _, h, _ => by simp [Ty.regionsBelow] at h
+  | .slice _ _ _, h, _ => by simp [Ty.regionsBelow] at h
+  | .map _ _ _, h, _ => by simp [Ty.regionsBelow] at h
+  | .chan _ _, _, c => by simp [Ty.chanFree] at c
+  | .own _ _ _, h, _ => by simp [Ty.regionsBelow] at h
+  | .fn _ _, _, _ => rfl
+  | .mus _ _ _, _, _ => rfl
+  | .rvar _, _, _ => rfl
+  | .muRs _ _ _ _, h, _ => by simp [Ty.regionsBelow] at h
+
+theorem Ty.localOnly_tsubst {ts : List Ty} (h : Ty.tyArgsOk ts = true) : ∀ {t : Ty}, t.localOnly = true → (t.tsubst ts).localOnly = true
+  | .int, _ => rfl
+  | .tvar i, _ => by
+    have ha := Ty.tsubst_tvar_argOk h i
+    simp only [Ty.tyArgOk, Bool.and_eq_true] at ha
+    simp only [Ty.tsubst]; exact Ty.localOnly_of_lf ha.1 ha.2.1
+  | .bool, _ => rfl
+  | .byte, _ => rfl
+  | .f64, _ => rfl
+  | .unit, _ => rfl
+  | .opt t, hl => by simp only [Ty.localOnly] at hl; simp [Ty.tsubst, Ty.localOnly, Ty.localOnly_tsubst h hl]
+  | .union l r, hl => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at hl; simp [Ty.tsubst, Ty.localOnly, Ty.localOnly_tsubst h hl.1, Ty.localOnly_tsubst h hl.2]
+  | .prod l r, hl => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at hl; simp [Ty.tsubst, Ty.localOnly, Ty.localOnly_tsubst h hl.1, Ty.localOnly_tsubst h hl.2]
+  | .ref m r t, hl => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at hl; simp [Ty.tsubst, Ty.localOnly, hl.1, Ty.localOnly_tsubst h hl.2]
+  | .slice m r t, hl => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at hl; simp [Ty.tsubst, Ty.localOnly, hl.1, Ty.localOnly_tsubst h hl.2]
+  | .map m r t, hl => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at hl; simp [Ty.tsubst, Ty.localOnly, hl.1, Ty.localOnly_tsubst h hl.2]
+  | .chan rc t, hl => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at hl
+    simp [Ty.tsubst, Ty.localOnly, hl.1.1.1, Ty.tsubst_regionsBelow h, hl.1.1.2, Ty.tsubst_chanFree h, hl.1.2,
+      Ty.rfree_tsubst h hl.2]
+  | .own o r t, hl => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at hl
+    simp [Ty.tsubst, Ty.localOnly, hl.1.1.1, Ty.tsubst_regionsBelow h, hl.1.1.2, Ty.tsubst_chanFree h, hl.1.2,
+      Ty.rfree_tsubst h hl.2]
+  | .fn _ _, _ => rfl
+  | .mus _ _ _, _ => rfl
+  | .rvar _, _ => rfl
+  | .muRs r _ _ b, hl => hl
+
+/-- 1 段の展開（iso 再帰の unfold）: μ の本体の変数 0 を μ そのものに。μ でなければそのまま -/
+def Ty.unfold : Ty → Ty
+  | .mus n i bs => (bs.comp i).substG false n bs 0 n
+  | .muRs r n i bs => ((bs.comp i).substG true n bs 0 n).shiftR r
+  | t => t
+
+/-- fold / unfold が扱う同時の μ の S（整形・閉じている） -/
+def Ty.musOk : Ty → Bool
+  | .mus n i bs => (Ty.mus n i bs).recOk && (Ty.mus n i bs).rfree 0
+  | _ => false
+
+/-- fold / unfold が扱う同時の μ の D（整形・閉じている） -/
+def Ty.muRsOk : Ty → Bool
+  | .muRs r n i bs => (Ty.muRs r n i bs).recOk && (Ty.muRs r n i bs).rfree 0
+  | _ => false
+
+/-- 型変数を持たない型は型代入で不変 -/
+theorem Ty.tsubst_of_tvarsBelow0 {ts : List Ty} : ∀ {t : Ty}, t.tvarsBelow 0 = true → t.tsubst ts = t
+  | .int, _ => rfl
+  | .tvar i, h => by simp [Ty.tvarsBelow] at h
+  | .bool, _ => rfl
+  | .byte, _ => rfl
+  | .f64, _ => rfl
+  | .unit, _ => rfl
+  | .opt t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.tsubst, Ty.tsubst_of_tvarsBelow0 h]
+  | .union l r, h => by
+    simp only [Ty.tvarsBelow, Bool.and_eq_true] at h; simp [Ty.tsubst, Ty.tsubst_of_tvarsBelow0 h.1, Ty.tsubst_of_tvarsBelow0 h.2]
+  | .prod l r, h => by
+    simp only [Ty.tvarsBelow, Bool.and_eq_true] at h; simp [Ty.tsubst, Ty.tsubst_of_tvarsBelow0 h.1, Ty.tsubst_of_tvarsBelow0 h.2]
+  | .ref m r t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.tsubst, Ty.tsubst_of_tvarsBelow0 h]
+  | .slice m r t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.tsubst, Ty.tsubst_of_tvarsBelow0 h]
+  | .map m r t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.tsubst, Ty.tsubst_of_tvarsBelow0 h]
+  | .chan rc t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.tsubst, Ty.tsubst_of_tvarsBelow0 h]
+  | .own k r t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.tsubst, Ty.tsubst_of_tvarsBelow0 h]
+  | .fn p r, h => by
+    simp only [Ty.tvarsBelow, Bool.and_eq_true] at h; simp [Ty.tsubst, Ty.tsubst_of_tvarsBelow0 h.1, Ty.tsubst_of_tvarsBelow0 h.2]
+  | .mus _ _ b, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.tsubst, Ty.tsubst_of_tvarsBelow0 h]
+  | .rvar _, _ => rfl
+  | .muRs r _ _ b, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.tsubst, Ty.tsubst_of_tvarsBelow0 h]
+
+/-- 置き換えは型変数の上界を保つ -/
+theorem Ty.tvarsBelow_rsubst {n k : Nat} {s : Ty} (hs : s.tvarsBelow n = true) :
+    ∀ {t : Ty}, t.tvarsBelow n = true → (t.rsubst k s).tvarsBelow n = true
+  | .int, _ => by simp [Ty.rsubst, Ty.tvarsBelow]
+  | .tvar i, h => by simpa [Ty.rsubst] using h
+  | .bool, _ => by simp [Ty.rsubst, Ty.tvarsBelow]
+  | .byte, _ => by simp [Ty.rsubst, Ty.tvarsBelow]
+  | .f64, _ => by simp [Ty.rsubst, Ty.tvarsBelow]
+  | .unit, _ => by simp [Ty.rsubst, Ty.tvarsBelow]
+  | .opt t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.rsubst, Ty.tvarsBelow, Ty.tvarsBelow_rsubst hs h]
+  | .union l r, h => by
+    simp only [Ty.tvarsBelow, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.tvarsBelow, Ty.tvarsBelow_rsubst hs h.1, Ty.tvarsBelow_rsubst hs h.2]
+  | .prod l r, h => by
+    simp only [Ty.tvarsBelow, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.tvarsBelow, Ty.tvarsBelow_rsubst hs h.1, Ty.tvarsBelow_rsubst hs h.2]
+  | .ref m r t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.rsubst, Ty.tvarsBelow, Ty.tvarsBelow_rsubst hs h]
+  | .slice m r t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.rsubst, Ty.tvarsBelow, Ty.tvarsBelow_rsubst hs h]
+  | .map m r t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.rsubst, Ty.tvarsBelow, Ty.tvarsBelow_rsubst hs h]
+  | .chan rc t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.rsubst, Ty.tvarsBelow, Ty.tvarsBelow_rsubst hs h]
+  | .own k' r t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.rsubst, Ty.tvarsBelow, Ty.tvarsBelow_rsubst hs h]
+  | .fn p r, h => by
+    simp only [Ty.tvarsBelow, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.tvarsBelow, Ty.tvarsBelow_rsubst hs h.1, Ty.tvarsBelow_rsubst hs h.2]
+  | .mus _ _ b, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.rsubst, Ty.tvarsBelow, Ty.tvarsBelow_rsubst hs h]
+  | .rvar i, _ => by simp only [Ty.rsubst]; split <;> simp_all [Ty.tvarsBelow]
+  | .muRs r _ _ b, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.rsubst, Ty.tvarsBelow, Ty.tvarsBelow_rsubst hs h]
+
+/-- 閉じた型（n 未満の変数だけ）への置き換えは、n 以上の変数には届かない -/
+theorem Ty.rsubst_of_rfree {s : Ty} : ∀ {n k : Nat} {t : Ty}, t.rfree n = true → n ≤ k → t.rsubst k s = t
+  | _, _, .int, _, _ => rfl
+  | _, _, .tvar _, _, _ => rfl
+  | _, _, .bool, _, _ => rfl
+  | _, _, .byte, _, _ => rfl
+  | _, _, .f64, _, _ => rfl
+  | _, _, .unit, _, _ => rfl
+  | _, _, .opt t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rsubst, Ty.rsubst_of_rfree h hk]
+  | _, _, .union l r, h, hk => by
+    simp only [Ty.rfree, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.rsubst_of_rfree h.1 hk, Ty.rsubst_of_rfree h.2 hk]
+  | _, _, .prod l r, h, hk => by
+    simp only [Ty.rfree, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.rsubst_of_rfree h.1 hk, Ty.rsubst_of_rfree h.2 hk]
+  | _, _, .ref m r t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rsubst, Ty.rsubst_of_rfree h hk]
+  | _, _, .slice m r t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rsubst, Ty.rsubst_of_rfree h hk]
+  | _, _, .map m r t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rsubst, Ty.rsubst_of_rfree h hk]
+  | _, _, .chan rc t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rsubst, Ty.rsubst_of_rfree h hk]
+  | _, _, .own o r t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rsubst, Ty.rsubst_of_rfree h hk]
+  | _, _, .fn p r, h, hk => by
+    simp only [Ty.rfree, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.rsubst_of_rfree h.1 hk, Ty.rsubst_of_rfree h.2 hk]
+  | _, _, .mus _ _ b, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rsubst, Ty.rsubst_of_rfree h (Nat.add_le_add_right hk _)]
+  | _, _, .rvar i, h, hk => by
+    simp only [Ty.rfree, decide_eq_true_eq] at h
+    simp only [Ty.rsubst]; split
+    · omega
+    · rfl
+  | _, _, .muRs r _ _ b, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rsubst, Ty.rsubst_of_rfree h (Nat.add_le_add_right hk _)]
+
+/-- 閉じた型引数での型代入は再帰の変数の置き換えと可換 -/
+theorem Ty.tsubst_rsubst {ts : List Ty} (h : Ty.tyArgsOk ts = true) {s : Ty} :
+    ∀ {k : Nat} (t : Ty), (t.rsubst k s).tsubst ts = (t.tsubst ts).rsubst k (s.tsubst ts)
+  | _, .int => rfl
+  | k, .tvar i => by
+    simp only [Ty.rsubst, Ty.tsubst]
+    cases hi : ts[i]? with
+    | none => rfl
+    | some τ =>
+      have := Ty.tyArgsOk_get h hi
+      simp only [Ty.tyArgOk, Bool.and_eq_true] at this
+      simp [Ty.rsubst_of_rfree this.2.2.1 (Nat.zero_le k)]
+  | _, .bool => rfl
+  | _, .byte => rfl
+  | _, .f64 => rfl
+  | _, .unit => rfl
+  | _, .opt t => by simp [Ty.rsubst, Ty.tsubst, Ty.tsubst_rsubst h t]
+  | _, .union l r => by simp [Ty.rsubst, Ty.tsubst, Ty.tsubst_rsubst h l, Ty.tsubst_rsubst h r]
+  | _, .prod l r => by simp [Ty.rsubst, Ty.tsubst, Ty.tsubst_rsubst h l, Ty.tsubst_rsubst h r]
+  | _, .ref m r t => by simp [Ty.rsubst, Ty.tsubst, Ty.tsubst_rsubst h t]
+  | _, .slice m r t => by simp [Ty.rsubst, Ty.tsubst, Ty.tsubst_rsubst h t]
+  | _, .map m r t => by simp [Ty.rsubst, Ty.tsubst, Ty.tsubst_rsubst h t]
+  | _, .chan rc t => by simp [Ty.rsubst, Ty.tsubst, Ty.tsubst_rsubst h t]
+  | _, .own o r t => by simp [Ty.rsubst, Ty.tsubst, Ty.tsubst_rsubst h t]
+  | _, .fn p r => by simp [Ty.rsubst, Ty.tsubst, Ty.tsubst_rsubst h p, Ty.tsubst_rsubst h r]
+  | _, .mus _ _ b => by simp [Ty.rsubst, Ty.tsubst, Ty.tsubst_rsubst h b]
+  | k, .rvar i => by simp only [Ty.rsubst]; split <;> simp [Ty.tsubst, Ty.rsubst, *]
+  | _, .muRs r _ _ b => by simp [Ty.rsubst, Ty.tsubst, Ty.tsubst_rsubst h b]
+
+/-! ### 組の鎖の補題（代入・型代入が鎖の形と成分の取り出しに可換） -/
+
+theorem Ty.chainFn_isChain {bs : Ty} {n : Nat} (h : bs.chainFn n = true) : bs.isChain n = true := by
+  induction bs generalizing n <;> cases n <;> simp_all [Ty.chainFn, Ty.isChain]
+
+theorem Ty.isChain_tsubst {ts : List Ty} {bs : Ty} {n : Nat} (h : bs.isChain n = true) : (bs.tsubst ts).isChain n = true := by
+  induction bs generalizing n <;> cases n <;> simp_all [Ty.isChain, Ty.tsubst]
+
+theorem Ty.chainFn_tsubst {ts : List Ty} {bs : Ty} {n : Nat} (h : bs.chainFn n = true) : (bs.tsubst ts).chainFn n = true := by
+  induction bs generalizing n <;> cases n <;> simp_all [Ty.chainFn, Ty.tsubst, Ty.isFn_tsubst]
+
+theorem Ty.comp_tsubst {ts : List Ty} {bs : Ty} {n : Nat} (h : bs.isChain n = true) (c : Nat) :
+    (bs.tsubst ts).comp c = (bs.comp c).tsubst ts := by
+  induction bs generalizing n c with
+  | prod l r _ ihr =>
+    cases n with
+    | zero => simp [Ty.isChain] at h
+    | succ n => cases c with
+      | zero => rfl
+      | succ c => exact ihr (n := n) (by simpa [Ty.isChain] using h) c
+  | unit => cases c <;> rfl
+  | _ => cases n <;> simp [Ty.isChain] at h
+
+theorem Ty.isChain_rsubst {k : Nat} {s bs : Ty} {n : Nat} (h : bs.isChain n = true) : (bs.rsubst k s).isChain n = true := by
+  induction bs generalizing n <;> cases n <;> simp_all [Ty.isChain, Ty.rsubst]
+
+theorem Ty.comp_rsubst {k : Nat} {s bs : Ty} {n : Nat} (h : bs.isChain n = true) (c : Nat) :
+    (bs.rsubst k s).comp c = (bs.comp c).rsubst k s := by
+  induction bs generalizing n c with
+  | prod l r _ ihr =>
+    cases n with
+    | zero => simp [Ty.isChain] at h
+    | succ n => cases c with
+      | zero => rfl
+      | succ c => exact ihr (n := n) (by simpa [Ty.isChain] using h) c
+  | unit => cases c <;> rfl
+  | _ => cases n <;> simp [Ty.isChain] at h
+
+/-- 閉じた型（m 未満の変数だけ）には、m 以上の束縛の変数はガードなしで出ない -/
+theorem Ty.uoccAny_of_rfree : ∀ {m k n : Nat} {g : Bool} {t : Ty}, t.rfree m = true → m ≤ k → t.uoccAny k n g = false
+  | _, _, _, _, .int, _, _ => rfl
+  | _, _, _, _, .tvar _, _, _ => rfl
+  | _, _, _, _, .bool, _, _ => rfl
+  | _, _, _, _, .byte, _, _ => rfl
+  | _, _, _, _, .f64, _, _ => rfl
+  | _, _, _, _, .unit, _, _ => rfl
+  | _, _, _, _, .opt t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.uoccAny, Ty.uoccAny_of_rfree h hk]
+  | _, _, _, _, .union l r, h, hk => by
+    simp only [Ty.rfree, Bool.and_eq_true] at h; simp [Ty.uoccAny, Ty.uoccAny_of_rfree h.1 hk, Ty.uoccAny_of_rfree h.2 hk]
+  | _, _, _, _, .prod l r, h, hk => by
+    simp only [Ty.rfree, Bool.and_eq_true] at h; simp [Ty.uoccAny, Ty.uoccAny_of_rfree h.1 hk, Ty.uoccAny_of_rfree h.2 hk]
+  | _, _, _, _, .ref _ _ t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.uoccAny, Ty.uoccAny_of_rfree h hk]
+  | _, _, _, _, .slice _ _ t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.uoccAny, Ty.uoccAny_of_rfree h hk]
+  | _, _, _, _, .map _ _ t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.uoccAny, Ty.uoccAny_of_rfree h hk]
+  | _, _, _, _, .chan _ t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.uoccAny, Ty.uoccAny_of_rfree h hk]
+  | _, _, _, _, .own _ _ t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.uoccAny, Ty.uoccAny_of_rfree h hk]
+  | _, _, _, _, .fn _ _, _, _ => rfl
+  | _, _, _, _, .rvar i, h, hk => by simp only [Ty.rfree, decide_eq_true_eq] at h; simp [Ty.uoccAny]; omega
+  | _, _, _, _, .mus _ _ b, h, hk => by simp only [Ty.rfree] at h; simp [Ty.uoccAny, Ty.uoccAny_of_rfree h (Nat.add_le_add_right hk _)]
+  | _, _, _, _, .muRs _ _ _ b, h, hk => by simp only [Ty.rfree] at h; simp [Ty.uoccAny, Ty.uoccAny_of_rfree h (Nat.add_le_add_right hk _)]
+
+theorem Ty.rguardN_of_rfree : ∀ {m k n : Nat} {inFn : Bool} {t : Ty}, t.rfree m = true → m ≤ k → t.rguardN k n inFn = true
+  | _, _, _, _, .int, _, _ => rfl
+  | _, _, _, _, .tvar _, _, _ => rfl
+  | _, _, _, _, .bool, _, _ => rfl
+  | _, _, _, _, .byte, _, _ => rfl
+  | _, _, _, _, .f64, _, _ => rfl
+  | _, _, _, _, .unit, _, _ => rfl
+  | _, _, _, _, .opt t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rguardN, Ty.rguardN_of_rfree h hk]
+  | _, _, _, _, .union l r, h, hk => by
+    simp only [Ty.rfree, Bool.and_eq_true] at h; simp [Ty.rguardN, Ty.rguardN_of_rfree h.1 hk, Ty.rguardN_of_rfree h.2 hk]
+  | _, _, _, _, .prod l r, h, hk => by
+    simp only [Ty.rfree, Bool.and_eq_true] at h; simp [Ty.rguardN, Ty.rguardN_of_rfree h.1 hk, Ty.rguardN_of_rfree h.2 hk]
+  | _, _, _, _, .ref _ _ t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rguardN, Ty.rguardN_of_rfree h hk]
+  | _, _, _, _, .slice _ _ t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rguardN, Ty.rguardN_of_rfree h hk]
+  | _, _, _, _, .map _ _ t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rguardN, Ty.rguardN_of_rfree h hk]
+  | _, _, _, _, .chan _ t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rguardN, Ty.rguardN_of_rfree h hk]
+  | _, _, _, _, .own _ _ t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rguardN, Ty.rguardN_of_rfree h hk]
+  | _, _, _, _, .fn p r, h, hk => by
+    simp only [Ty.rfree, Bool.and_eq_true] at h; simp [Ty.rguardN, Ty.rguardN_of_rfree h.1 hk, Ty.rguardN_of_rfree h.2 hk]
+  | _, _, _, _, .rvar i, h, hk => by simp only [Ty.rfree, decide_eq_true_eq] at h; simp [Ty.rguardN]; omega
+  | _, _, _, _, .mus _ _ b, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rguardN, Ty.rguardN_of_rfree h (Nat.add_le_add_right hk _)]
+  | _, _, _, _, .muRs _ _ _ b, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rguardN, Ty.rguardN_of_rfree h (Nat.add_le_add_right hk _)]
+
+theorem Ty.uoccAny_tsubst {ts : List Ty} (h : Ty.tyArgsOk ts = true) :
+    ∀ {k n : Nat} {g : Bool} {t : Ty}, (t.tsubst ts).uoccAny k n g = t.uoccAny k n g
+  | _, _, _, .int => rfl
+  | k, _, _, .tvar i => by
+    have ha := Ty.tsubst_tvar_argOk h i
+    simp only [Ty.tyArgOk, Bool.and_eq_true] at ha
+    simp only [Ty.tsubst]; rw [Ty.uoccAny_of_rfree ha.2.2.1 (Nat.zero_le k)]; rfl
+  | _, _, _, .bool => rfl
+  | _, _, _, .byte => rfl
+  | _, _, _, .f64 => rfl
+  | _, _, _, .unit => rfl
+  | _, _, _, .opt t => by simp [Ty.tsubst, Ty.uoccAny, Ty.uoccAny_tsubst h (t := t)]
+  | _, _, _, .union l r => by simp [Ty.tsubst, Ty.uoccAny, Ty.uoccAny_tsubst h (t := l), Ty.uoccAny_tsubst h (t := r)]
+  | _, _, _, .prod l r => by simp [Ty.tsubst, Ty.uoccAny, Ty.uoccAny_tsubst h (t := l), Ty.uoccAny_tsubst h (t := r)]
+  | _, _, _, .ref _ _ t => by simp [Ty.tsubst, Ty.uoccAny, Ty.uoccAny_tsubst h (t := t)]
+  | _, _, _, .slice _ _ t => by simp [Ty.tsubst, Ty.uoccAny, Ty.uoccAny_tsubst h (t := t)]
+  | _, _, _, .map _ _ t => by simp [Ty.tsubst, Ty.uoccAny, Ty.uoccAny_tsubst h (t := t)]
+  | _, _, _, .chan _ t => by simp [Ty.tsubst, Ty.uoccAny, Ty.uoccAny_tsubst h (t := t)]
+  | _, _, _, .own _ _ t => by simp [Ty.tsubst, Ty.uoccAny, Ty.uoccAny_tsubst h (t := t)]
+  | _, _, _, .fn _ _ => rfl
+  | _, _, _, .rvar _ => rfl
+  | _, _, _, .mus _ _ b => by simp [Ty.tsubst, Ty.uoccAny, Ty.uoccAny_tsubst h (t := b)]
+  | _, _, _, .muRs _ _ _ b => by simp [Ty.tsubst, Ty.uoccAny, Ty.uoccAny_tsubst h (t := b)]
+
+theorem Ty.rguardN_tsubst {ts : List Ty} (h : Ty.tyArgsOk ts = true) :
+    ∀ {k n : Nat} {g : Bool} {t : Ty}, (t.tsubst ts).rguardN k n g = t.rguardN k n g
+  | _, _, _, .int => rfl
+  | k, _, _, .tvar i => by
+    have ha := Ty.tsubst_tvar_argOk h i
+    simp only [Ty.tyArgOk, Bool.and_eq_true] at ha
+    simp only [Ty.tsubst]; rw [Ty.rguardN_of_rfree ha.2.2.1 (Nat.zero_le k)]; rfl
+  | _, _, _, .bool => rfl
+  | _, _, _, .byte => rfl
+  | _, _, _, .f64 => rfl
+  | _, _, _, .unit => rfl
+  | _, _, _, .opt t => by simp [Ty.tsubst, Ty.rguardN, Ty.rguardN_tsubst h (t := t)]
+  | _, _, _, .union l r => by simp [Ty.tsubst, Ty.rguardN, Ty.rguardN_tsubst h (t := l), Ty.rguardN_tsubst h (t := r)]
+  | _, _, _, .prod l r => by simp [Ty.tsubst, Ty.rguardN, Ty.rguardN_tsubst h (t := l), Ty.rguardN_tsubst h (t := r)]
+  | _, _, _, .ref _ _ t => by simp [Ty.tsubst, Ty.rguardN, Ty.rguardN_tsubst h (t := t)]
+  | _, _, _, .slice _ _ t => by simp [Ty.tsubst, Ty.rguardN, Ty.rguardN_tsubst h (t := t)]
+  | _, _, _, .map _ _ t => by simp [Ty.tsubst, Ty.rguardN, Ty.rguardN_tsubst h (t := t)]
+  | _, _, _, .chan _ t => by simp [Ty.tsubst, Ty.rguardN, Ty.rguardN_tsubst h (t := t)]
+  | _, _, _, .own _ _ t => by simp [Ty.tsubst, Ty.rguardN, Ty.rguardN_tsubst h (t := t)]
+  | _, _, _, .fn p r => by simp [Ty.tsubst, Ty.rguardN, Ty.rguardN_tsubst h (t := p), Ty.rguardN_tsubst h (t := r)]
+  | _, _, _, .rvar _ => rfl
+  | _, _, _, .mus _ _ b => by simp [Ty.tsubst, Ty.rguardN, Ty.rguardN_tsubst h (t := b)]
+  | _, _, _, .muRs _ _ _ b => by simp [Ty.tsubst, Ty.rguardN, Ty.rguardN_tsubst h (t := b)]
+
+theorem Ty.isChain_sinkStep {n : Nat} {bs : Ty} (h : bs.isChain n = true) : ∀ c, (bs.sinkStep n c).isChain n = true
+  | 0 => h
+  | c + 1 => by
+    simp only [Ty.sinkStep, Ty.sinkPick]; split
+    · exact Ty.isChain_sinkStep h c
+    · exact Ty.isChain_rsubst (Ty.isChain_sinkStep h c)
+
+theorem Ty.sinkStep_tsubst {ts : List Ty} (h0 : Ty.tyArgsOk ts = true) {n : Nat} {bs : Ty} (h : bs.isChain n = true) :
+    ∀ c, (bs.sinkStep n c).tsubst ts = (bs.tsubst ts).sinkStep n c
+  | 0 => rfl
+  | c + 1 => by
+    have ih := Ty.sinkStep_tsubst h0 h c
+    have hc := Ty.isChain_sinkStep h c
+    simp only [Ty.sinkStep, Ty.sinkPick, ← ih, Ty.comp_tsubst hc, Ty.uoccAny_tsubst h0]
+    split
+    · rfl
+    · rw [Ty.tsubst_rsubst h0]; rfl
+
+theorem Ty.isChain_sinkRounds {n : Nat} {bs : Ty} (h : bs.isChain n = true) : ∀ m, (bs.sinkRounds n m).isChain n = true
+  | 0 => h
+  | m + 1 => Ty.isChain_sinkStep (Ty.isChain_sinkRounds h m) n
+
+theorem Ty.sinkRounds_tsubst {ts : List Ty} (h0 : Ty.tyArgsOk ts = true) {n : Nat} {bs : Ty} (h : bs.isChain n = true) :
+    ∀ m, (bs.sinkRounds n m).tsubst ts = (bs.tsubst ts).sinkRounds n m
+  | 0 => rfl
+  | m + 1 => by
+    simp only [Ty.sinkRounds, ← Ty.sinkRounds_tsubst h0 h m, Ty.sinkStep_tsubst h0 (Ty.isChain_sinkRounds h m)]
+
+theorem Ty.allSink_tsubst {ts : List Ty} (h0 : Ty.tyArgsOk ts = true) {n : Nat} {bs : Ty} (h : bs.isChain n = true) :
+    ∀ c, (bs.tsubst ts).allSink n c = bs.allSink n c
+  | 0 => rfl
+  | c + 1 => by simp only [Ty.allSink, Ty.comp_tsubst h, Ty.uoccAny_tsubst h0, Ty.allSink_tsubst h0 h c]
+
+/-- 組の整形は閉じた型引数での型代入で変わらない -/
+theorem Ty.groupOk_tsubst {ts : List Ty} (h0 : Ty.tyArgsOk ts = true) {n : Nat} {bs : Ty} (h : bs.isChain n = true) :
+    (bs.tsubst ts).groupOk n = bs.groupOk n := by
+  simp only [Ty.groupOk, Ty.rguardN_tsubst h0, ← Ty.sinkRounds_tsubst h0 h,
+    Ty.allSink_tsubst h0 (Ty.isChain_sinkRounds h n)]
+
+theorem Ty.recOk_tsubst {ts : List Ty} (h : Ty.tyArgsOk ts = true) : ∀ {t : Ty}, t.recOk = true → (t.tsubst ts).recOk = true
+  | .int, _ => rfl
+  | .tvar i, _ => by
+    have ha := Ty.tsubst_tvar_argOk h i
+    simp only [Ty.tyArgOk, Bool.and_eq_true] at ha
+    simp only [Ty.tsubst]; exact ha.2.2.2
+  | .bool, _ => rfl
+  | .byte, _ => rfl
+  | .f64, _ => rfl
+  | .unit, _ => rfl
+  | .opt t, hl => by simp only [Ty.recOk] at hl; simp [Ty.tsubst, Ty.recOk, Ty.recOk_tsubst h hl]
+  | .union l r, hl => by
+    simp only [Ty.recOk, Bool.and_eq_true] at hl; simp [Ty.tsubst, Ty.recOk, Ty.recOk_tsubst h hl.1, Ty.recOk_tsubst h hl.2]
+  | .prod l r, hl => by
+    simp only [Ty.recOk, Bool.and_eq_true] at hl; simp [Ty.tsubst, Ty.recOk, Ty.recOk_tsubst h hl.1, Ty.recOk_tsubst h hl.2]
+  | .ref m r t, hl => by simp only [Ty.recOk] at hl; simp [Ty.tsubst, Ty.recOk, Ty.recOk_tsubst h hl]
+  | .slice m r t, hl => by simp only [Ty.recOk] at hl; simp [Ty.tsubst, Ty.recOk, Ty.recOk_tsubst h hl]
+  | .map m r t, hl => by simp only [Ty.recOk] at hl; simp [Ty.tsubst, Ty.recOk, Ty.recOk_tsubst h hl]
+  | .chan rc t, hl => by simp only [Ty.recOk] at hl; simp [Ty.tsubst, Ty.recOk, Ty.recOk_tsubst h hl]
+  | .own o r t, hl => by simp only [Ty.recOk] at hl; simp [Ty.tsubst, Ty.recOk, Ty.recOk_tsubst h hl]
+  | .fn p r, hl => by
+    simp only [Ty.recOk, Bool.and_eq_true] at hl; simp [Ty.tsubst, Ty.recOk, Ty.recOk_tsubst h hl.1, Ty.recOk_tsubst h hl.2]
+  | .mus _ _ b, hl => by
+    simp only [Ty.recOk, Bool.and_eq_true, decide_eq_true_eq] at hl
+    simp [Ty.tsubst, Ty.recOk, Ty.chainFn_tsubst hl.1.1, hl.1.2, Ty.recOk_tsubst h hl.2]
+  | .rvar i, hl => hl
+  | .muRs r _ _ b, hl => by
+    simp only [Ty.recOk, Bool.and_eq_true, decide_eq_true_eq] at hl
+    obtain ⟨⟨⟨⟨hc, hi⟩, hlo⟩, hg⟩, hr⟩ := hl
+    simp [Ty.tsubst, Ty.recOk, Ty.isChain_tsubst hc, hi, Ty.localOnly_tsubst h hlo, Ty.groupOk_tsubst h hc, hg,
+      Ty.recOk_tsubst h hr]
 
 /-- 型引数を型引数で代入しても型引数（ジェネリックの入れ子呼び出しの ts の保存） -/
 theorem Ty.tyArgsOk_map_tsubst {ts ts' : List Ty} (h : Ty.tyArgsOk ts = true)
@@ -1156,7 +2055,665 @@ theorem Ty.tyArgsOk_map_tsubst {ts ts' : List Ty} (h : Ty.tyArgsOk ts = true)
   have := h' τ hτ
   simp only [Ty.tyArgOk, Bool.and_eq_true] at this ⊢
   rw [Ty.tsubst_regionsBelow h, Ty.tsubst_chanFree h]
-  exact this
+  exact ⟨this.1, this.2.1, Ty.rfree_tsubst h this.2.2.1, Ty.recOk_tsubst h this.2.2.2⟩
+
+/-- loc-free・chan-free の型はシフトで不動 -/
+theorem Ty.shiftR_of_lf {ρ : Nat} : ∀ {t : Ty}, t.regionsBelow 0 = true → t.chanFree = true → t.shiftR ρ = t
+  | .int, _, _ => rfl
+  | .tvar _, _, _ => rfl
+  | .bool, _, _ => rfl
+  | .byte, _, _ => rfl
+  | .f64, _, _ => rfl
+  | .unit, _, _ => rfl
+  | .opt t, h, c => by
+    simp only [Ty.regionsBelow] at h; simp only [Ty.chanFree] at c; simp [Ty.shiftR, Ty.shiftR_of_lf h c]
+  | .union l r, h, c => by
+    simp only [Ty.regionsBelow, Bool.and_eq_true] at h; simp only [Ty.chanFree, Bool.and_eq_true] at c
+    simp [Ty.shiftR, Ty.shiftR_of_lf h.1 c.1, Ty.shiftR_of_lf h.2 c.2]
+  | .prod l r, h, c => by
+    simp only [Ty.regionsBelow, Bool.and_eq_true] at h; simp only [Ty.chanFree, Bool.and_eq_true] at c
+    simp [Ty.shiftR, Ty.shiftR_of_lf h.1 c.1, Ty.shiftR_of_lf h.2 c.2]
+  | .ref _ _ _, h, _ => by simp [Ty.regionsBelow] at h
+  | .slice _ _ _, h, _ => by simp [Ty.regionsBelow] at h
+  | .map _ _ _, h, _ => by simp [Ty.regionsBelow] at h
+  | .chan _ _, _, c => by simp [Ty.chanFree] at c
+  | .own _ _ _, h, _ => by simp [Ty.regionsBelow] at h
+  | .fn _ _, _, _ => rfl
+  | .mus _ _ _, _, _ => rfl
+  | .rvar _, _, _ => rfl
+  | .muRs _ _ _ _, h, _ => by simp [Ty.regionsBelow] at h
+
+/-- loc-free・chan-free の型は写像で不動 -/
+theorem Ty.renR_of_lf {ρ0 δ : Nat} : ∀ {t : Ty}, t.regionsBelow 0 = true → t.chanFree = true → t.renR ρ0 δ = t
+  | .int, _, _ => rfl
+  | .tvar _, _, _ => rfl
+  | .bool, _, _ => rfl
+  | .byte, _, _ => rfl
+  | .f64, _, _ => rfl
+  | .unit, _, _ => rfl
+  | .opt t, h, c => by
+    simp only [Ty.regionsBelow] at h; simp only [Ty.chanFree] at c; simp [Ty.renR, Ty.renR_of_lf h c]
+  | .union l r, h, c => by
+    simp only [Ty.regionsBelow, Bool.and_eq_true] at h; simp only [Ty.chanFree, Bool.and_eq_true] at c
+    simp [Ty.renR, Ty.renR_of_lf h.1 c.1, Ty.renR_of_lf h.2 c.2]
+  | .prod l r, h, c => by
+    simp only [Ty.regionsBelow, Bool.and_eq_true] at h; simp only [Ty.chanFree, Bool.and_eq_true] at c
+    simp [Ty.renR, Ty.renR_of_lf h.1 c.1, Ty.renR_of_lf h.2 c.2]
+  | .ref _ _ _, h, _ => by simp [Ty.regionsBelow] at h
+  | .slice _ _ _, h, _ => by simp [Ty.regionsBelow] at h
+  | .map _ _ _, h, _ => by simp [Ty.regionsBelow] at h
+  | .chan _ _, _, c => by simp [Ty.chanFree] at c
+  | .own _ _ _, h, _ => by simp [Ty.regionsBelow] at h
+  | .fn _ _, _, _ => rfl
+  | .mus _ _ _, _, _ => rfl
+  | .rvar _, _, _ => rfl
+  | .muRs _ _ _ _, h, _ => by simp [Ty.regionsBelow] at h
+
+/-- 局所座標の型への局所座標の型の置き換えは局所座標のまま -/
+theorem Ty.localOnly_rsubst {s : Ty} (hs : s.localOnly = true) :
+    ∀ {k : Nat} {t : Ty}, t.localOnly = true → (t.rsubst k s).localOnly = true
+  | _, .int, _ => rfl
+  | _, .tvar _, _ => rfl
+  | _, .bool, _ => rfl
+  | _, .byte, _ => rfl
+  | _, .f64, _ => rfl
+  | _, .unit, _ => rfl
+  | _, .opt t, h => by simp only [Ty.localOnly] at h; simp [Ty.rsubst, Ty.localOnly, Ty.localOnly_rsubst hs h]
+  | _, .union l r, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.localOnly, Ty.localOnly_rsubst hs h.1, Ty.localOnly_rsubst hs h.2]
+  | _, .prod l r, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.localOnly, Ty.localOnly_rsubst hs h.1, Ty.localOnly_rsubst hs h.2]
+  | _, .ref m r t, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.localOnly, h.1, Ty.localOnly_rsubst hs h.2]
+  | _, .slice m r t, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.localOnly, h.1, Ty.localOnly_rsubst hs h.2]
+  | _, .map m r t, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.localOnly, h.1, Ty.localOnly_rsubst hs h.2]
+  | k, .chan rc t, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at h
+    have : t.rsubst k s = t := Ty.rsubst_of_rfree (n := 0) h.2 (Nat.zero_le _)
+    simp [Ty.rsubst, Ty.localOnly, this, h]
+  | k, .own o r t, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at h
+    have : t.rsubst k s = t := Ty.rsubst_of_rfree (n := 0) h.2 (Nat.zero_le _)
+    simp [Ty.rsubst, Ty.localOnly, this, h]
+  | _, .fn p r, _ => rfl
+  | _, .mus _ _ b, _ => rfl
+  | k, .rvar i, _ => by simp only [Ty.rsubst]; split <;> simp_all [Ty.localOnly]
+  | _, .muRs r _ _ b, h => h
+
+/-- 局所座標の型を r へ置くと、r < d なら region の上界 d の下 -/
+theorem Ty.rb_shift_local {r d : Nat} (hr : r < d) : ∀ {t : Ty}, t.localOnly = true → (t.shiftR r).regionsBelow d = true
+  | .int, _ => rfl
+  | .tvar _, _ => rfl
+  | .bool, _ => rfl
+  | .byte, _ => rfl
+  | .f64, _ => rfl
+  | .unit, _ => rfl
+  | .opt t, h => by simp only [Ty.localOnly] at h; simp [Ty.shiftR, Ty.regionsBelow, Ty.rb_shift_local hr h]
+  | .union l r, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at h; simp [Ty.shiftR, Ty.regionsBelow, Ty.rb_shift_local hr h.1, Ty.rb_shift_local hr h.2]
+  | .prod l r, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at h; simp [Ty.shiftR, Ty.regionsBelow, Ty.rb_shift_local hr h.1, Ty.rb_shift_local hr h.2]
+  | .ref m r' t, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp [Ty.shiftR, Ty.regionsBelow, h.1, hr, Ty.rb_shift_local hr h.2]
+  | .slice m r' t, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp [Ty.shiftR, Ty.regionsBelow, h.1, hr, Ty.rb_shift_local hr h.2]
+  | .map m r' t, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp [Ty.shiftR, Ty.regionsBelow, h.1, hr, Ty.rb_shift_local hr h.2]
+  | .chan rc t, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨rfl, hb⟩, hc⟩, _⟩ := h
+    simp [Ty.shiftR, Ty.regionsBelow, Ty.shiftR_of_lf hb hc, Ty.regionsBelow_mono (Nat.zero_le r) hb, Nat.le_of_lt hr]
+  | .own o r' t, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨rfl, hb⟩, hc⟩, _⟩ := h
+    simp [Ty.shiftR, Ty.regionsBelow, Ty.shiftR_of_lf hb hc, Ty.regionsBelow_mono (Nat.zero_le d) hb, hr]
+  | .fn _ _, _ => rfl
+  | .mus _ _ _, _ => rfl
+  | .rvar _, _ => rfl
+  | .muRs r' _ _ b, h => by
+    simp only [Ty.localOnly, decide_eq_true_eq] at h
+    simp [Ty.shiftR, Ty.regionsBelow, h, hr]
+
+/-- 局所座標の型を r へ置いてから写すのは、写した座標へ置くのと同じ -/
+theorem Ty.renR_shift_local {ρ0 δ r : Nat} : ∀ {t : Ty}, t.localOnly = true → (t.shiftR r).renR ρ0 δ = t.shiftR (rmap ρ0 δ r)
+  | .int, _ => rfl
+  | .tvar _, _ => rfl
+  | .bool, _ => rfl
+  | .byte, _ => rfl
+  | .f64, _ => rfl
+  | .unit, _ => rfl
+  | .opt t, h => by simp only [Ty.localOnly] at h; simp [Ty.shiftR, Ty.renR, Ty.renR_shift_local h]
+  | .union l r, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at h; simp [Ty.shiftR, Ty.renR, Ty.renR_shift_local h.1, Ty.renR_shift_local h.2]
+  | .prod l r, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at h; simp [Ty.shiftR, Ty.renR, Ty.renR_shift_local h.1, Ty.renR_shift_local h.2]
+  | .ref m r' t, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨rfl, h2⟩ := h; simp [Ty.shiftR, Ty.renR, Ty.renR_shift_local h2]
+  | .slice m r' t, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨rfl, h2⟩ := h; simp [Ty.shiftR, Ty.renR, Ty.renR_shift_local h2]
+  | .map m r' t, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨rfl, h2⟩ := h; simp [Ty.shiftR, Ty.renR, Ty.renR_shift_local h2]
+  | .chan rc t, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨rfl, hb⟩, hc⟩, _⟩ := h
+    simp [Ty.shiftR, Ty.renR, Ty.shiftR_of_lf hb hc, Ty.renR_of_lf hb hc]
+  | .own o r' t, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨rfl, hb⟩, hc⟩, _⟩ := h
+    simp [Ty.shiftR, Ty.renR, Ty.shiftR_of_lf hb hc, Ty.renR_of_lf hb hc]
+  | .fn _ _, _ => rfl
+  | .mus _ _ _, _ => rfl
+  | .rvar _, _ => rfl
+  | .muRs r' _ _ b, h => by
+    simp only [Ty.localOnly, decide_eq_true_eq] at h
+    subst h; simp [Ty.shiftR, Ty.renR]
+
+/-- 深く共変な型への深く共変な型の置き換えは深く共変 -/
+theorem Ty.covOk_rsubst {s : Ty} (hs : s.covOk = true) :
+    ∀ {k : Nat} {t : Ty}, t.covOk = true → (t.rsubst k s).covOk = true
+  | _, .int, _ => rfl
+  | _, .tvar _, _ => rfl
+  | _, .bool, _ => rfl
+  | _, .byte, _ => rfl
+  | _, .f64, _ => rfl
+  | _, .unit, _ => rfl
+  | _, .opt t, h => by simp only [Ty.covOk] at h; simp [Ty.rsubst, Ty.covOk, Ty.covOk_rsubst hs h]
+  | _, .union l r, h => by
+    simp only [Ty.covOk, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.covOk, Ty.covOk_rsubst hs h.1, Ty.covOk_rsubst hs h.2]
+  | _, .prod l r, h => by
+    simp only [Ty.covOk, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.covOk, Ty.covOk_rsubst hs h.1, Ty.covOk_rsubst hs h.2]
+  | k, .ref m r t, h => by
+    cases m
+    · simp only [Ty.covOk, Bool.and_eq_true] at h
+      have : t.rsubst k s = t := Ty.rsubst_of_rfree (n := 0) h.2 (Nat.zero_le _)
+      simp [Ty.rsubst, Ty.covOk, this, h]
+    · simp [Ty.covOk] at h
+  | _, .slice m r t, h => by
+    cases m
+    · simp only [Ty.covOk] at h; simp [Ty.rsubst, Ty.covOk, Ty.covOk_rsubst hs h]
+    · simp [Ty.covOk] at h
+  | _, .map m r t, h => by
+    cases m
+    · simp only [Ty.covOk] at h; simp [Ty.rsubst, Ty.covOk, Ty.covOk_rsubst hs h]
+    · simp [Ty.covOk] at h
+  | _, .chan _ _, h => by simp [Ty.covOk] at h
+  | _, .own _ _ _, h => by simp [Ty.covOk] at h
+  | _, .fn p r, _ => rfl
+  | _, .mus _ _ b, _ => rfl
+  | k, .rvar i, _ => by simp only [Ty.rsubst]; split <;> simp_all [Ty.covOk]
+  | _, .muRs r _ _ b, h => by simp only [Ty.covOk] at h; simp [Ty.rsubst, Ty.covOk, Ty.covOk_rsubst hs h]
+
+/-- 局所座標で深く共変な型は、置く座標を上げると部分型（slice の深い共変の持ち上げ） -/
+theorem Ty.sub_shift_local {r r' : Nat} (hrr : r ≤ r') :
+    ∀ {t : Ty}, t.localOnly = true → t.covOk = true → Ty.sub (t.shiftR r) (t.shiftR r') = true
+  | .int, _, _ => rfl
+  | .tvar _, _, _ => by simp [Ty.shiftR, Ty.sub]
+  | .bool, _, _ => rfl
+  | .byte, _, _ => rfl
+  | .f64, _, _ => rfl
+  | .unit, _, _ => rfl
+  | .opt t, h, c => by
+    simp only [Ty.localOnly] at h; simp only [Ty.covOk] at c; simp [Ty.shiftR, Ty.sub, Ty.sub_shift_local hrr h c]
+  | .union l r, h, c => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at h; simp only [Ty.covOk, Bool.and_eq_true] at c
+    simp [Ty.shiftR, Ty.sub, Ty.sub_shift_local hrr h.1 c.1, Ty.sub_shift_local hrr h.2 c.2]
+  | .prod l r, h, c => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at h; simp only [Ty.covOk, Bool.and_eq_true] at c
+    simp [Ty.shiftR, Ty.sub, Ty.sub_shift_local hrr h.1 c.1, Ty.sub_shift_local hrr h.2 c.2]
+  | .ref m r0 t, h, c => by
+    cases m
+    · simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+      simp only [Ty.covOk, Bool.and_eq_true] at c
+      obtain ⟨rfl, _⟩ := h
+      simp [Ty.shiftR, Ty.sub, Ty.shiftR_of_lf c.1.1 c.1.2, hrr]
+    · simp [Ty.covOk] at c
+  | .slice m r0 t, h, c => by
+    cases m
+    · simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+      simp only [Ty.covOk] at c
+      obtain ⟨rfl, h2⟩ := h
+      simp [Ty.shiftR, Ty.sub, hrr, Ty.sub_shift_local hrr h2 c]
+    · simp [Ty.covOk] at c
+  | .map m r0 t, h, c => by
+    cases m
+    · simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+      simp only [Ty.covOk] at c
+      obtain ⟨rfl, h2⟩ := h
+      simp [Ty.shiftR, Ty.sub, hrr, Ty.sub_shift_local hrr h2 c]
+    · simp [Ty.covOk] at c
+  | .chan _ _, _, c => by simp [Ty.covOk] at c
+  | .own _ _ _, _, c => by simp [Ty.covOk] at c
+  | .fn _ _, _, _ => Ty.sub_refl _
+  | .mus _ _ _, _, _ => Ty.sub_refl _
+  | .rvar _, _, _ => Ty.sub_refl _
+  | .muRs r0 _ _ b, h, c => by
+    simp only [Ty.localOnly, decide_eq_true_eq] at h
+    simp only [Ty.covOk] at c
+    subst h
+    simp [Ty.shiftR, Ty.sub, c, hrr]
+
+/-! ### D の fold / unfold と境界コピーのための展開の補題 -/
+
+/-- fold / unfold が扱う再帰型（S の μ か D の μ — 1 束縛と同時の組） -/
+def Ty.foldOk (t : Ty) : Bool := t.musOk || t.muRsOk
+
+theorem Ty.mutFree_rsubst {s : Ty} (hs : s.mutFree = true) :
+    ∀ {k : Nat} {t : Ty}, t.mutFree = true → (t.rsubst k s).mutFree = true
+  | _, .int, _ => rfl
+  | _, .tvar _, _ => rfl
+  | _, .bool, _ => rfl
+  | _, .byte, _ => rfl
+  | _, .f64, _ => rfl
+  | _, .unit, _ => rfl
+  | _, .opt t, h => by simp only [Ty.mutFree] at h; simp [Ty.rsubst, Ty.mutFree, Ty.mutFree_rsubst hs h]
+  | _, .union l r, h => by
+    simp only [Ty.mutFree, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.mutFree, Ty.mutFree_rsubst hs h.1, Ty.mutFree_rsubst hs h.2]
+  | _, .prod l r, h => by
+    simp only [Ty.mutFree, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.mutFree, Ty.mutFree_rsubst hs h.1, Ty.mutFree_rsubst hs h.2]
+  | _, .ref m r t, h => by
+    simp only [Ty.mutFree, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.mutFree, h.1, Ty.mutFree_rsubst hs h.2]
+  | _, .slice m r t, h => by
+    simp only [Ty.mutFree, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.mutFree, h.1, Ty.mutFree_rsubst hs h.2]
+  | _, .map m r t, h => by
+    simp only [Ty.mutFree, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.mutFree, h.1, Ty.mutFree_rsubst hs h.2]
+  | _, .chan _ _, _ => rfl
+  | _, .fn _ _, _ => rfl
+  | _, .mus _ _ _, _ => rfl
+  | k, .rvar i, _ => by simp only [Ty.rsubst]; split <;> simp_all [Ty.mutFree]
+  | _, .own _ _ _, h => by simp [Ty.mutFree] at h
+  | _, .muRs r _ _ b, h => by simp only [Ty.mutFree] at h; simp [Ty.rsubst, Ty.mutFree, Ty.mutFree_rsubst hs h]
+
+theorem Ty.chanFree_rsubst {s : Ty} (hs : s.chanFree = true) :
+    ∀ {k : Nat} {t : Ty}, t.chanFree = true → (t.rsubst k s).chanFree = true
+  | _, .int, _ => rfl
+  | _, .tvar _, _ => rfl
+  | _, .bool, _ => rfl
+  | _, .byte, _ => rfl
+  | _, .f64, _ => rfl
+  | _, .unit, _ => rfl
+  | _, .opt t, h => by simp only [Ty.chanFree] at h; simp [Ty.rsubst, Ty.chanFree, Ty.chanFree_rsubst hs h]
+  | _, .union l r, h => by
+    simp only [Ty.chanFree, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.chanFree, Ty.chanFree_rsubst hs h.1, Ty.chanFree_rsubst hs h.2]
+  | _, .prod l r, h => by
+    simp only [Ty.chanFree, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.chanFree, Ty.chanFree_rsubst hs h.1, Ty.chanFree_rsubst hs h.2]
+  | _, .ref m r t, h => by simp only [Ty.chanFree] at h; simp [Ty.rsubst, Ty.chanFree, Ty.chanFree_rsubst hs h]
+  | _, .slice m r t, h => by simp only [Ty.chanFree] at h; simp [Ty.rsubst, Ty.chanFree, Ty.chanFree_rsubst hs h]
+  | _, .map m r t, h => by simp only [Ty.chanFree] at h; simp [Ty.rsubst, Ty.chanFree, Ty.chanFree_rsubst hs h]
+  | _, .chan _ _, h => by simp [Ty.chanFree] at h
+  | _, .fn _ _, _ => rfl
+  | _, .mus _ _ _, _ => rfl
+  | k, .rvar i, _ => by simp only [Ty.rsubst]; split <;> simp_all [Ty.chanFree]
+  | _, .own _ _ _, h => by simp [Ty.chanFree] at h
+  | _, .muRs r _ _ b, h => by simp only [Ty.chanFree] at h; simp [Ty.rsubst, Ty.chanFree, Ty.chanFree_rsubst hs h]
+
+theorem Ty.shiftR_chanFree {ρ : Nat} : ∀ t : Ty, (t.shiftR ρ).chanFree = t.chanFree
+  | .int => rfl
+  | .tvar _ => rfl
+  | .bool => rfl
+  | .byte => rfl
+  | .f64 => rfl
+  | .unit => rfl
+  | .opt t => by simp [Ty.shiftR, Ty.chanFree, Ty.shiftR_chanFree t]
+  | .union l r => by simp [Ty.shiftR, Ty.chanFree, Ty.shiftR_chanFree l, Ty.shiftR_chanFree r]
+  | .prod l r => by simp [Ty.shiftR, Ty.chanFree, Ty.shiftR_chanFree l, Ty.shiftR_chanFree r]
+  | .ref m r t => by simp [Ty.shiftR, Ty.chanFree, Ty.shiftR_chanFree t]
+  | .slice m r t => by simp [Ty.shiftR, Ty.chanFree, Ty.shiftR_chanFree t]
+  | .map m r t => by simp [Ty.shiftR, Ty.chanFree, Ty.shiftR_chanFree t]
+  | .chan _ _ => rfl
+  | .fn _ _ => rfl
+  | .mus _ _ _ => rfl
+  | .rvar _ => rfl
+  | .own _ _ _ => rfl
+  | .muRs r _ _ b => rfl
+
+/-- 局所座標で imm・chan なしの型を r へ置いてから締めるのは、締めた座標へ置くのと同じ -/
+theorem Ty.clampR_shift_local {r k : Nat} : ∀ {t : Ty}, t.localOnly = true → t.mutFree = true → t.chanFree = true →
+    (t.shiftR r).clampR k = t.shiftR (min r k)
+  | .int, _, _, _ => rfl
+  | .tvar _, _, _, _ => rfl
+  | .bool, _, _, _ => rfl
+  | .byte, _, _, _ => rfl
+  | .f64, _, _, _ => rfl
+  | .unit, _, _, _ => rfl
+  | .opt t, h, m, c => by
+    simp only [Ty.localOnly] at h; simp only [Ty.mutFree] at m; simp only [Ty.chanFree] at c
+    simp [Ty.shiftR, Ty.clampR, Ty.clampR_shift_local h m c]
+  | .union l r, h, m, c => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at h; simp only [Ty.mutFree, Bool.and_eq_true] at m
+    simp only [Ty.chanFree, Bool.and_eq_true] at c
+    simp [Ty.shiftR, Ty.clampR, Ty.clampR_shift_local h.1 m.1 c.1, Ty.clampR_shift_local h.2 m.2 c.2]
+  | .prod l r, h, m, c => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at h; simp only [Ty.mutFree, Bool.and_eq_true] at m
+    simp only [Ty.chanFree, Bool.and_eq_true] at c
+    simp [Ty.shiftR, Ty.clampR, Ty.clampR_shift_local h.1 m.1 c.1, Ty.clampR_shift_local h.2 m.2 c.2]
+  | .ref mm r0 t, h, m, c => by
+    simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [Ty.mutFree, Bool.and_eq_true, Bool.not_eq_true'] at m; simp only [Ty.chanFree] at c
+    obtain ⟨rfl, h2⟩ := h; obtain ⟨rfl, m2⟩ := m
+    simp [Ty.shiftR, Ty.clampR, Ty.clampR_shift_local h2 m2 c]
+  | .slice mm r0 t, h, m, c => by
+    simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [Ty.mutFree, Bool.and_eq_true, Bool.not_eq_true'] at m; simp only [Ty.chanFree] at c
+    obtain ⟨rfl, h2⟩ := h; obtain ⟨rfl, m2⟩ := m
+    simp [Ty.shiftR, Ty.clampR, Ty.clampR_shift_local h2 m2 c]
+  | .map mm r0 t, h, m, c => by
+    simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [Ty.mutFree, Bool.and_eq_true, Bool.not_eq_true'] at m; simp only [Ty.chanFree] at c
+    obtain ⟨rfl, h2⟩ := h; obtain ⟨rfl, m2⟩ := m
+    simp [Ty.shiftR, Ty.clampR, Ty.clampR_shift_local h2 m2 c]
+  | .chan _ _, _, _, c => by simp [Ty.chanFree] at c
+  | .fn _ _, _, _, _ => rfl
+  | .mus _ _ _, _, _, _ => rfl
+  | .rvar _, _, _, _ => rfl
+  | .own _ _ _, _, m, _ => by simp [Ty.mutFree] at m
+  | .muRs r0 _ _ b, h, m, _ => by
+    simp only [Ty.localOnly, decide_eq_true_eq] at h; simp only [Ty.mutFree] at m
+    subst h; simp [Ty.shiftR, Ty.clampR, m]
+
+/-- 局所座標で imm・chan なしの型を r へ置いてから全部を ρ へ写すのは、ρ へ置くのと同じ -/
+theorem Ty.relocR_shift_local {r ρ : Nat} : ∀ {t : Ty}, t.localOnly = true → t.mutFree = true → t.chanFree = true →
+    (t.shiftR r).relocR ρ = t.shiftR ρ
+  | .int, _, _, _ => rfl
+  | .tvar _, _, _, _ => rfl
+  | .bool, _, _, _ => rfl
+  | .byte, _, _, _ => rfl
+  | .f64, _, _, _ => rfl
+  | .unit, _, _, _ => rfl
+  | .opt t, h, m, c => by
+    simp only [Ty.localOnly] at h; simp only [Ty.mutFree] at m; simp only [Ty.chanFree] at c
+    simp [Ty.shiftR, Ty.relocR, Ty.relocR_shift_local h m c]
+  | .union l r, h, m, c => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at h; simp only [Ty.mutFree, Bool.and_eq_true] at m
+    simp only [Ty.chanFree, Bool.and_eq_true] at c
+    simp [Ty.shiftR, Ty.relocR, Ty.relocR_shift_local h.1 m.1 c.1, Ty.relocR_shift_local h.2 m.2 c.2]
+  | .prod l r, h, m, c => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at h; simp only [Ty.mutFree, Bool.and_eq_true] at m
+    simp only [Ty.chanFree, Bool.and_eq_true] at c
+    simp [Ty.shiftR, Ty.relocR, Ty.relocR_shift_local h.1 m.1 c.1, Ty.relocR_shift_local h.2 m.2 c.2]
+  | .ref mm r0 t, h, m, c => by
+    simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [Ty.mutFree, Bool.and_eq_true, Bool.not_eq_true'] at m; simp only [Ty.chanFree] at c
+    obtain ⟨rfl, h2⟩ := h; obtain ⟨rfl, m2⟩ := m
+    simp [Ty.shiftR, Ty.relocR, Ty.relocR_shift_local h2 m2 c]
+  | .slice mm r0 t, h, m, c => by
+    simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [Ty.mutFree, Bool.and_eq_true, Bool.not_eq_true'] at m; simp only [Ty.chanFree] at c
+    obtain ⟨rfl, h2⟩ := h; obtain ⟨rfl, m2⟩ := m
+    simp [Ty.shiftR, Ty.relocR, Ty.relocR_shift_local h2 m2 c]
+  | .map mm r0 t, h, m, c => by
+    simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [Ty.mutFree, Bool.and_eq_true, Bool.not_eq_true'] at m; simp only [Ty.chanFree] at c
+    obtain ⟨rfl, h2⟩ := h; obtain ⟨rfl, m2⟩ := m
+    simp [Ty.shiftR, Ty.relocR, Ty.relocR_shift_local h2 m2 c]
+  | .chan _ _, _, _, c => by simp [Ty.chanFree] at c
+  | .fn _ _, _, _, _ => rfl
+  | .mus _ _ _, _, _, _ => rfl
+  | .rvar _, _, _, _ => rfl
+  | .own _ _ _, _, m, _ => by simp [Ty.mutFree] at m
+  | .muRs r0 _ _ b, h, m, _ => by
+    simp only [Ty.localOnly, decide_eq_true_eq] at h; simp only [Ty.mutFree] at m
+    subst h; simp [Ty.shiftR, Ty.relocR, m]
+
+/-- 局所座標の型を k 以下の r へ置くと締め不要 -/
+theorem Ty.noClamp_shift_local {r k : Nat} (hrk : r ≤ k) : ∀ {t : Ty}, t.localOnly = true → (t.shiftR r).noClamp k = true
+  | .int, _ => rfl
+  | .tvar _, _ => rfl
+  | .bool, _ => rfl
+  | .byte, _ => rfl
+  | .f64, _ => rfl
+  | .unit, _ => rfl
+  | .opt t, h => by simp only [Ty.localOnly] at h; simp [Ty.shiftR, Ty.noClamp, Ty.noClamp_shift_local hrk h]
+  | .union l r, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at h
+    simp [Ty.shiftR, Ty.noClamp, Ty.noClamp_shift_local hrk h.1, Ty.noClamp_shift_local hrk h.2]
+  | .prod l r, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at h
+    simp [Ty.shiftR, Ty.noClamp, Ty.noClamp_shift_local hrk h.1, Ty.noClamp_shift_local hrk h.2]
+  | .ref mm r0 t, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨rfl, h2⟩ := h
+    cases mm <;> simp [Ty.shiftR, Ty.noClamp, hrk, Ty.noClamp_shift_local hrk h2]
+  | .slice mm r0 t, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨rfl, h2⟩ := h
+    cases mm <;> simp [Ty.shiftR, Ty.noClamp, hrk, Ty.noClamp_shift_local hrk h2]
+  | .map mm r0 t, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨rfl, h2⟩ := h
+    cases mm <;> simp [Ty.shiftR, Ty.noClamp, hrk, Ty.noClamp_shift_local hrk h2]
+  | .chan _ _, _ => rfl
+  | .fn _ _, _ => rfl
+  | .mus _ _ _, _ => rfl
+  | .rvar _, _ => rfl
+  | .own _ _ _, _ => rfl
+  | .muRs r0 _ _ b, h => by
+    simp only [Ty.localOnly, decide_eq_true_eq] at h
+    subst h; simp [Ty.shiftR, Ty.noClamp, hrk]
+
+/-! ### 同時の μ の展開の補題（1 段の代入の補題を成分の数だけ畳む — 多重代入へ持ち上げる） -/
+
+/-- 多重代入は、1 段の代入（組の成分の型で）が保つ性質を保つ -/
+theorem Ty.substG_pres {d : Bool} {n : Nat} {bs : Ty} (P : Ty → Prop)
+    (hP : ∀ t j, P t → P (t.rsubst j (Ty.grp d n j bs))) : ∀ (m j : Nat) {t : Ty}, P t → P (t.substG d n bs j m)
+  | 0, _, _, h => h
+  | m + 1, j, t, h => Ty.substG_pres P hP m (j + 1) (hP t j h)
+
+theorem Ty.grp_tsubst {ts : List Ty} (d : Bool) (n j : Nat) (bs : Ty) :
+    (Ty.grp d n j bs).tsubst ts = Ty.grp d n j (bs.tsubst ts) := by cases d <;> rfl
+
+theorem Ty.substG_tsubst {ts : List Ty} (h : Ty.tyArgsOk ts = true) {d : Bool} {n : Nat} {bs : Ty} :
+    ∀ (m j : Nat) (t : Ty), (t.substG d n bs j m).tsubst ts = (t.tsubst ts).substG d n (bs.tsubst ts) j m
+  | 0, _, _ => rfl
+  | m + 1, j, t => by
+    simp only [Ty.substG]; rw [Ty.substG_tsubst h m (j + 1), Ty.tsubst_rsubst h, Ty.grp_tsubst]
+
+theorem Ty.comp_localOnly {bs : Ty} (h : bs.localOnly = true) (c : Nat) : (bs.comp c).localOnly = true := by
+  induction bs generalizing c with
+  | prod l r _ ihr =>
+    simp only [Ty.localOnly, Bool.and_eq_true] at h
+    cases c with
+    | zero => exact h.1
+    | succ c => exact ihr h.2 c
+  | _ => cases c <;> rfl
+
+theorem Ty.comp_mutFree {bs : Ty} (h : bs.mutFree = true) (c : Nat) : (bs.comp c).mutFree = true := by
+  induction bs generalizing c with
+  | prod l r _ ihr =>
+    simp only [Ty.mutFree, Bool.and_eq_true] at h
+    cases c with
+    | zero => exact h.1
+    | succ c => exact ihr h.2 c
+  | _ => cases c <;> rfl
+
+theorem Ty.comp_chanFree {bs : Ty} (h : bs.chanFree = true) (c : Nat) : (bs.comp c).chanFree = true := by
+  induction bs generalizing c with
+  | prod l r _ ihr =>
+    simp only [Ty.chanFree, Bool.and_eq_true] at h
+    cases c with
+    | zero => exact h.1
+    | succ c => exact ihr h.2 c
+  | _ => cases c <;> rfl
+
+theorem Ty.comp_covOk {bs : Ty} (h : bs.covOk = true) (c : Nat) : (bs.comp c).covOk = true := by
+  induction bs generalizing c with
+  | prod l r _ ihr =>
+    simp only [Ty.covOk, Bool.and_eq_true] at h
+    cases c with
+    | zero => exact h.1
+    | succ c => exact ihr h.2 c
+  | _ => cases c <;> rfl
+
+theorem Ty.comp_isFn {bs : Ty} {n : Nat} (h : bs.chainFn n = true) {c : Nat} (hc : c < n) : (bs.comp c).isFn = true := by
+  induction bs generalizing n c with
+  | prod l r _ ihr =>
+    cases n with
+    | zero => simp [Ty.chainFn] at h
+    | succ n =>
+      simp only [Ty.chainFn, Bool.and_eq_true] at h
+      cases c with
+      | zero => exact h.1
+      | succ c => exact ihr h.2 (by omega)
+  | unit => cases n <;> simp_all [Ty.chainFn]
+  | _ => cases n <;> simp [Ty.chainFn] at h
+
+theorem Ty.isFn_rsubst {k : Nat} {s t : Ty} (h : t.isFn = true) : (t.rsubst k s).isFn = true := by
+  cases t <;> simp_all [Ty.isFn, Ty.rsubst]
+
+/-- 展開の本体（D — 局所座標）: 組の i 番目の成分に組の全成分を代入したもの -/
+theorem Ty.unfold_muRs (r n i : Nat) (bs : Ty) :
+    (Ty.muRs r n i bs).unfold = ((bs.comp i).substG true n bs 0 n).shiftR r := rfl
+
+theorem Ty.muRsOk_muRs {t : Ty} (h : t.muRsOk = true) : ∃ r n i bs, t = .muRs r n i bs := by
+  cases t <;> simp [Ty.muRsOk] at h ⊢
+
+/-- muRsOk は外の座標に依らない -/
+theorem Ty.muRsOk_r {r r' n i : Nat} {bs : Ty} (h : (Ty.muRs r n i bs).muRsOk = true) : (Ty.muRs r' n i bs).muRsOk = true := by
+  simpa [Ty.muRsOk, Ty.recOk, Ty.rfree] using h
+
+theorem Ty.muRsOk_parts {r n i : Nat} {bs : Ty} (h : (Ty.muRs r n i bs).muRsOk = true) :
+    bs.isChain n = true ∧ i < n ∧ bs.localOnly = true ∧ bs.groupOk n = true ∧ bs.recOk = true := by
+  simp only [Ty.muRsOk, Ty.recOk, Bool.and_eq_true, decide_eq_true_eq] at h
+  exact ⟨h.1.1.1.1.1, h.1.1.1.1.2, h.1.1.1.2, h.1.1.2, h.1.2⟩
+
+theorem Ty.unfold_local_muRs {r n i : Nat} {bs : Ty} (hok : (Ty.muRs r n i bs).muRsOk = true) :
+    ((bs.comp i).substG true n bs 0 n).localOnly = true :=
+  Ty.substG_pres (fun t => t.localOnly = true) (fun _ _ h => Ty.localOnly_rsubst (by simp [Ty.grp, Ty.localOnly]) h) n 0
+    (Ty.comp_localOnly (Ty.muRsOk_parts hok).2.2.1 i)
+
+/-- 展開は D の同時の μ の座標の上界を保つ -/
+theorem Ty.unfold_rb_muRs {r n i d : Nat} {bs : Ty} (hok : (Ty.muRs r n i bs).muRsOk = true)
+    (hd : (Ty.muRs r n i bs).regionsBelow d = true) : (Ty.muRs r n i bs).unfold.regionsBelow d = true := by
+  simp only [Ty.regionsBelow, decide_eq_true_eq] at hd
+  exact Ty.rb_shift_local hd (Ty.unfold_local_muRs hok)
+
+/-- 展開とシフトの可換 -/
+theorem Ty.unfold_shiftR_muRs (ρ r n i : Nat) (bs : Ty) :
+    (Ty.muRs r n i bs).unfold.shiftR ρ = ((Ty.muRs r n i bs).shiftR ρ).unfold := by
+  simp [Ty.unfold, Ty.shiftR, Ty.shiftR_comp]
+
+/-- 展開と写像の可換 -/
+theorem Ty.unfold_renR_muRs {ρ0 δ r n i : Nat} {bs : Ty} (hok : (Ty.muRs r n i bs).muRsOk = true) :
+    (Ty.muRs r n i bs).unfold.renR ρ0 δ = ((Ty.muRs r n i bs).renR ρ0 δ).unfold := by
+  simp only [Ty.unfold, Ty.renR]
+  exact Ty.renR_shift_local (Ty.unfold_local_muRs hok)
+
+/-- 部分型は展開へ下りる（同じ組・同じ成分で外の座標だけ — 展開すると中の slice の深い共変） -/
+theorem Ty.sub_unfold_muRs {r r' n i : Nat} {bs : Ty} (hok : (Ty.muRs r n i bs).muRsOk = true)
+    (hs : Ty.sub (.muRs r n i bs) (.muRs r' n i bs) = true) :
+    Ty.sub (Ty.muRs r n i bs).unfold (Ty.muRs r' n i bs).unfold = true := by
+  obtain ⟨_, he, h⟩ := Ty.sub_muRs_inv hs
+  cases he
+  rcases h with rfl | ⟨hrr, hc⟩
+  · exact Ty.sub_refl _
+  · simp only [Ty.unfold]
+    exact Ty.sub_shift_local hrr (Ty.unfold_local_muRs hok)
+      (Ty.substG_pres (fun t => t.covOk = true)
+        (fun _ _ h => Ty.covOk_rsubst (by simp [Ty.grp, Ty.covOk, hc]) h) n 0 (Ty.comp_covOk hc i))
+
+theorem Ty.unfold_mf_muRs {r n i : Nat} {bs : Ty} (hm : bs.mutFree = true) : (Ty.muRs r n i bs).unfold.mutFree = true := by
+  simp only [Ty.unfold, Ty.shiftR_mutFree]
+  exact Ty.substG_pres (fun t => t.mutFree = true)
+    (fun _ _ h => Ty.mutFree_rsubst (by simp [Ty.grp, Ty.mutFree, hm]) h) n 0 (Ty.comp_mutFree hm i)
+
+theorem Ty.unfold_cf_muRs {r n i : Nat} {bs : Ty} (hc : bs.chanFree = true) : (Ty.muRs r n i bs).unfold.chanFree = true := by
+  simp only [Ty.unfold, Ty.shiftR_chanFree]
+  exact Ty.substG_pres (fun t => t.chanFree = true)
+    (fun _ _ h => Ty.chanFree_rsubst (by simp [Ty.grp, Ty.chanFree, hc]) h) n 0 (Ty.comp_chanFree hc i)
+
+theorem Ty.unfold_body_mf {n i : Nat} {bs : Ty} (hm : bs.mutFree = true) :
+    ((bs.comp i).substG true n bs 0 n).mutFree = true :=
+  Ty.substG_pres (fun t => t.mutFree = true)
+    (fun _ _ h => Ty.mutFree_rsubst (by simp [Ty.grp, Ty.mutFree, hm]) h) n 0 (Ty.comp_mutFree hm i)
+
+theorem Ty.unfold_body_cf {n i : Nat} {bs : Ty} (hc : bs.chanFree = true) :
+    ((bs.comp i).substG true n bs 0 n).chanFree = true :=
+  Ty.substG_pres (fun t => t.chanFree = true)
+    (fun _ _ h => Ty.chanFree_rsubst (by simp [Ty.grp, Ty.chanFree, hc]) h) n 0 (Ty.comp_chanFree hc i)
+
+/-- 締めと展開の可換（imm・chan なしの組） -/
+theorem Ty.unfold_clampR_muRs {r k n i : Nat} {bs : Ty} (hok : (Ty.muRs r n i bs).muRsOk = true) (hm : bs.mutFree = true)
+    (hc : bs.chanFree = true) : (Ty.muRs r n i bs).unfold.clampR k = (Ty.muRs (min r k) n i bs).unfold := by
+  simp only [Ty.unfold]
+  exact Ty.clampR_shift_local (Ty.unfold_local_muRs hok) (Ty.unfold_body_mf hm) (Ty.unfold_body_cf hc)
+
+/-- 全 region の写しと展開の可換（imm・chan なしの組） -/
+theorem Ty.unfold_relocR_muRs {r ρ n i : Nat} {bs : Ty} (hok : (Ty.muRs r n i bs).muRsOk = true) (hm : bs.mutFree = true)
+    (hc : bs.chanFree = true) : (Ty.muRs r n i bs).unfold.relocR ρ = (Ty.muRs ρ n i bs).unfold := by
+  simp only [Ty.unfold]
+  exact Ty.relocR_shift_local (Ty.unfold_local_muRs hok) (Ty.unfold_body_mf hm) (Ty.unfold_body_cf hc)
+
+/-- 締め不要なら展開も締め不要 -/
+theorem Ty.unfold_noClamp_muRs {r k n i : Nat} {bs : Ty} (hok : (Ty.muRs r n i bs).muRsOk = true) (hrk : r ≤ k) :
+    (Ty.muRs r n i bs).unfold.noClamp k = true := by
+  simp only [Ty.unfold]
+  exact Ty.noClamp_shift_local hrk (Ty.unfold_local_muRs hok)
+
+/-- 展開は閉じた型引数での型代入と可換（鎖の組） -/
+theorem Ty.unfold_tsubst_muRs {ts : List Ty} (h : Ty.tyArgsOk ts = true) {r n i : Nat} {bs : Ty} (hc : bs.isChain n = true) :
+    (Ty.muRs r n i bs).unfold.tsubst ts = ((Ty.muRs r n i bs).tsubst ts).unfold := by
+  simp only [Ty.unfold, Ty.tsubst, ← Ty.tsubst_shiftR h, Ty.substG_tsubst h, Ty.comp_tsubst hc]
+
+/-- muRsOk は閉じた整形な型引数での型代入で保たれる -/
+theorem Ty.muRsOk_tsubst {ts : List Ty} (h : Ty.tyArgsOk ts = true) {t : Ty} (hm : t.muRsOk = true) : (t.tsubst ts).muRsOk = true := by
+  obtain ⟨r, n, i, bs, rfl⟩ := Ty.muRsOk_muRs hm
+  simp only [Ty.muRsOk, Bool.and_eq_true] at hm
+  have h1 := Ty.recOk_tsubst h hm.1
+  have h2 := Ty.rfree_tsubst h hm.2
+  simp only [Ty.tsubst] at h1 h2
+  simp [Ty.tsubst, Ty.muRsOk, h1, h2]
+
+/-! S の同時の μ（成分は関数型 — 展開は関数型なので区域系の述語は真） -/
+
+theorem Ty.musOk_mus {t : Ty} (h : t.musOk = true) : ∃ n i bs, t = .mus n i bs := by
+  cases t <;> simp [Ty.musOk] at h ⊢
+
+theorem Ty.musOk_fn {t : Ty} (h : t.musOk = true) : ∃ p r, t.unfold = .fn p r := by
+  obtain ⟨n, i, bs, rfl⟩ := Ty.musOk_mus h
+  simp only [Ty.musOk, Ty.recOk, Bool.and_eq_true, decide_eq_true_eq] at h
+  have hf : ((bs.comp i).substG false n bs 0 n).isFn = true :=
+    Ty.substG_pres (fun t => t.isFn = true) (fun _ _ h => Ty.isFn_rsubst h) n 0 (Ty.comp_isFn h.1.1.1 h.1.1.2)
+  simp only [Ty.unfold]
+  revert hf
+  cases (bs.comp i).substG false n bs 0 n <;> simp [Ty.isFn]
+
+theorem Ty.musOk_unfold_rb {t : Ty} (h : t.musOk = true) (d : Nat) : t.unfold.regionsBelow d = true := by
+  obtain ⟨p, r, hpr⟩ := Ty.musOk_fn h; rw [hpr]; rfl
+
+theorem Ty.musOk_unfold_mf {t : Ty} (h : t.musOk = true) : t.unfold.mutFree = true := by
+  obtain ⟨p, r, hpr⟩ := Ty.musOk_fn h; rw [hpr]; rfl
+
+theorem Ty.musOk_unfold_cf {t : Ty} (h : t.musOk = true) : t.unfold.chanFree = true := by
+  obtain ⟨p, r, hpr⟩ := Ty.musOk_fn h; rw [hpr]; rfl
+
+theorem Ty.musOk_unfold_renR {t : Ty} (h : t.musOk = true) (ρ0 δ : Nat) : t.unfold.renR ρ0 δ = t.unfold := by
+  obtain ⟨p, r, hpr⟩ := Ty.musOk_fn h; rw [hpr]; rfl
+
+theorem Ty.musOk_unfold_shiftR {t : Ty} (h : t.musOk = true) (ρ : Nat) : t.unfold.shiftR ρ = t.unfold := by
+  obtain ⟨p, r, hpr⟩ := Ty.musOk_fn h; rw [hpr]; rfl
+
+theorem Ty.musOk_chain {n i : Nat} {bs : Ty} (h : (Ty.mus n i bs).musOk = true) : bs.isChain n = true := by
+  simp only [Ty.musOk, Ty.recOk, Bool.and_eq_true] at h
+  exact Ty.chainFn_isChain h.1.1.1
+
+theorem Ty.unfold_tsubst_mus {ts : List Ty} (h : Ty.tyArgsOk ts = true) {n i : Nat} {bs : Ty} (hc : bs.isChain n = true) :
+    (Ty.mus n i bs).unfold.tsubst ts = ((Ty.mus n i bs).tsubst ts).unfold := by
+  simp only [Ty.unfold, Ty.tsubst, Ty.substG_tsubst h, Ty.comp_tsubst hc]
+
+theorem Ty.musOk_tsubst {ts : List Ty} (h : Ty.tyArgsOk ts = true) {t : Ty} (hm : t.musOk = true) : (t.tsubst ts).musOk = true := by
+  obtain ⟨n, i, bs, rfl⟩ := Ty.musOk_mus hm
+  simp only [Ty.musOk, Bool.and_eq_true] at hm
+  have h1 := Ty.recOk_tsubst h hm.1
+  have h2 := Ty.rfree_tsubst h hm.2
+  simp only [Ty.tsubst] at h1 h2
+  simp [Ty.tsubst, Ty.musOk, h1, h2]
 
 /-- 送る値の型 te がチャネルのペイロード型 t と region を除いて一致する（P3b-4b — 送りで梱包するので region はどこでもよい）:
 どちらも imm で chan を持たず、region を全部 0 へ締めると同じ -/
@@ -1456,6 +3013,10 @@ inductive Expr : Type where
   | epV (p : List Nat) (k : Nat) (tx : Bool) (r : Nat)
   /-- 送り端を閉じる（par.Close — P3b-4 ③）: 以後の受けは、キューが空になったら nil（閉じた後の送り・二度目の close は定義された panic） -/
   | close (c : Expr)
+  /-- 再帰型の値を作る（iso 再帰 — language.md 1 節の S）: e は t の 1 段の展開（`Ty.unfold t`）の型。t は注釈（`Ty.foldOk`） -/
+  | fold (t : Ty) (e : Expr)
+  /-- 再帰型の値を 1 段開く（fold の逆） -/
+  | unfold (e : Expr)
   deriving Repr, DecidableEq
 
 /-- 一階関数の定義。引数は 1 つ（多引数は脱糖器が struct に束ねる。formal.md）。
@@ -1543,6 +3104,8 @@ def shift (c : Nat) : Expr → Expr
   | send ch e => send (shift c ch) (shift c e)
   | recv ch => recv (shift c ch)
   | close ch => close (shift c ch)
+  | fold t e => fold t (shift c e)
+  | unfold e => unfold (shift c e)
   | loc r a => loc r a
   | slicev mt r base len => slicev mt r base len
   | mapv mt r base len => mapv mt r base len
@@ -1627,6 +3190,8 @@ def subst (k : Nat) (v : Expr) : Expr → Expr
   | send c e => send (subst k v c) (subst k v e)
   | recv c => recv (subst k v c)
   | close c => close (subst k v c)
+  | fold t e => fold t (subst k v e)
+  | unfold e => unfold (subst k v e)
   | loc r a => loc r a
   | slicev mt r base len => slicev mt r base len
   | mapv mt r base len => mapv mt r base len
@@ -1713,6 +3278,8 @@ def shiftTy (ρ : Nat) : Expr → Expr
   | send c e => send (shiftTy ρ c) (shiftTy ρ e)
   | recv c => recv (shiftTy ρ c)
   | close c => close (shiftTy ρ c)
+  | fold t e => fold (t.shiftR ρ) (shiftTy ρ e)
+  | unfold e => unfold (shiftTy ρ e)
   | loc r a => loc (r + ρ) a
   | slicev mt r base len => slicev mt (r + ρ) base len
   | mapv mt r base len => mapv mt (r + ρ) base len
@@ -1797,6 +3364,8 @@ def tsubstTy (ts : List Ty) : Expr → Expr
   | send c e => send (tsubstTy ts c) (tsubstTy ts e)
   | recv c => recv (tsubstTy ts c)
   | close c => close (tsubstTy ts c)
+  | fold t e => fold (t.tsubst ts) (tsubstTy ts e)
+  | unfold e => unfold (tsubstTy ts e)
   | loc r a => loc r a
   | slicev mt r base len => slicev mt r base len
   | mapv mt r base len => mapv mt r base len
@@ -1883,6 +3452,8 @@ def noNewchan : Expr → Bool
   | send c e => noNewchan c && noNewchan e
   | recv c => noNewchan c
   | close c => noNewchan c
+  | fold _ e => noNewchan e
+  | unfold e => noNewchan e
   | loc _ _ => true
   | slicev _ _ _ _ => true
   | mapv _ _ _ _ => true
@@ -1970,6 +3541,8 @@ def renTy (ρ0 δ : Nat) : Expr → Expr
   | send c e => send (renTy ρ0 δ c) (renTy ρ0 δ e)
   | recv c => recv (renTy ρ0 δ c)
   | close c => close (renTy ρ0 δ c)
+  | fold t e => fold (t.renR ρ0 δ) (renTy ρ0 δ e)
+  | unfold e => unfold (renTy ρ0 δ e)
   | loc r a => loc (rmap ρ0 δ r) a
   | slicev mt r base len => slicev mt (rmap ρ0 δ r) base len
   | mapv mt r base len => mapv mt (rmap ρ0 δ r) base len
@@ -2037,7 +3610,7 @@ def src : Expr → Bool
   | .mapv _ _ _ _ => false
   | .ite c t e | .ifnil c t e => c.src && t.src && e.src
   | .some e | .inl _ e | .inr _ e | .block e | .blockR _ e | .copyTo _ _ e | .alloc _ e | .deref e
-  | .freeze e | .recv e | .close e | .fst e | .snd e => e.src
+  | .freeze e | .recv e | .close e | .fst e | .snd e | .unfold e | .fold _ e => e.src
   | .pair a b => a.src && b.src
   | .call _ _ e => e.src
   | .callM _ _ e => e.src
@@ -2072,6 +3645,7 @@ def coerceTo : Ty → Expr → Expr
   | .union l' r', inl _ e => inl r' (coerceTo l' e)
   | .union l' r', inr _ e => inr l' (coerceTo r' e)
   | .prod l' r', pair a b => pair (coerceTo l' a) (coerceTo r' b)
+  | .muRs r n i b, fold _ e => fold (.muRs r n i b) (coerceTo (Ty.muRs r n i b).unfold e)
   | _, e => e
 
 /-- 読み出しの注釈（R4b-cov A-2）: 注釈があれば coerceTo、無ければそのまま -/
@@ -2107,6 +3681,7 @@ inductive Value : Expr → Prop where
   | taskV (rs n : Nat) : Value (.taskV rs n)
   | epV (p : List Nat) (k : Nat) (b : Bool) (r : Nat) : Value (.epV p k b r)
   | fnref (fn : Nat) (ts : List Ty) : Value (.fnref fn ts)
+  | fold {v : Expr} (t : Ty) : Value v → Value (.fold t v)
 
 /-- shift は値性を保つ（値は block / alloc / deref を含まない wrapper のみ） -/
 theorem Value.shift {v : Expr} (hv : Value v) (c : Nat) : Value (v.shift c) := by
@@ -2130,6 +3705,7 @@ theorem Value.shift {v : Expr} (hv : Value v) (c : Nat) : Value (v.shift c) := b
   | taskV rs n => exact .taskV rs n
   | epV p k b r => exact .epV p k b r
   | fnref fn ts => exact .fnref fn ts
+  | fold t _ ih => exact .fold t ih
 
 /-- 値は自由変数を含まないので shift は恒等 -/
 theorem Value.shift_eq {v : Expr} (hv : Value v) (c : Nat) : v.shift c = v := by
@@ -2153,5 +3729,6 @@ theorem Value.shift_eq {v : Expr} (hv : Value v) (c : Nat) : v.shift c = v := by
   | scopeV _ _ => rfl
   | taskV _ _ => rfl
   | epV _ _ _ _ => rfl
+  | fold t _ ih => simp [Expr.shift, ih]
 
 end FS

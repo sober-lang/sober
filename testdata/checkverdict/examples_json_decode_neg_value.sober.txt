@@ -1,0 +1,2 @@
+sober: load error at examples/json_decode_neg_value.sober:10:10: json.Decode cannot read into a struct with a json.Value field (a union has no zero value, so the early return of `?` has no struct to return) — make the field json.Value? or read it with json.Tree
+exit=1

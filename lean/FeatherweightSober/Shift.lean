@@ -31,7 +31,7 @@ theorem Ty.mutTop_shiftR (ρ : Nat) : ∀ ta : Ty, (ta.shiftR ρ).mutTop = ta.mu
   | .ref m r _ => by cases m <;> simp [Ty.mutTop, Ty.shiftR]
   | .slice m r _ => by cases m <;> simp [Ty.mutTop, Ty.shiftR]
   | .map m r _ => by cases m <;> simp [Ty.mutTop, Ty.shiftR]
-  | .int | .tvar _ | .bool | .byte | .f64 | .unit | .opt _ | .union _ _ | .prod _ _ | .chan _ _ | .fn _ _ | .own _ _ _ => by
+  | .int | .tvar _ | .bool | .byte | .f64 | .unit | .opt _ | .union _ _ | .prod _ _ | .chan _ _ | .fn _ _ | .own _ _ _ | .rvar _ | .mus _ _ _ | .muRs _ _ _ _ => by
     simp [Ty.mutTop, Ty.shiftR]
 
 /-- anchor の読み取りはシフトと可換（実引数の型の mut 位置の region が +ρ ずれるだけ） -/
@@ -51,28 +51,8 @@ theorem Ty.anchorOf_shiftR (ρ : Nat) : ∀ (p ta : Ty), Ty.anchorOf p (ta.shift
 
 /-- 型引数（loc-free・chan-free）は写像で不動 -/
 theorem Ty.renR_of_argOk {ρ0 δ : Nat} {t : Ty} (h : t.tyArgOk = true) : t.renR ρ0 δ = t := by
-  induction t with
-  | int => rfl
-  | tvar _ => rfl
-  | bool => rfl
-  | byte => rfl
-  | f64 => rfl
-  | unit => rfl
-  | opt t ih =>
-    simp only [Ty.tyArgOk, Ty.regionsBelow, Ty.chanFree] at h
-    simp [Ty.renR, ih (by simp [Ty.tyArgOk, h])]
-  | union l r ihl ihr =>
-    simp only [Ty.tyArgOk, Ty.regionsBelow, Ty.chanFree, Bool.and_eq_true] at h
-    simp [Ty.renR, ihl (by simp [Ty.tyArgOk, h]), ihr (by simp [Ty.tyArgOk, h])]
-  | prod l r ihl ihr =>
-    simp only [Ty.tyArgOk, Ty.regionsBelow, Ty.chanFree, Bool.and_eq_true] at h
-    simp [Ty.renR, ihl (by simp [Ty.tyArgOk, h]), ihr (by simp [Ty.tyArgOk, h])]
-  | ref _ _ _ _ => simp [Ty.tyArgOk, Ty.regionsBelow] at h
-  | slice _ _ _ _ => simp [Ty.tyArgOk, Ty.regionsBelow] at h
-  | map _ _ _ _ => simp [Ty.tyArgOk, Ty.regionsBelow] at h
-  | chan _ _ _ => simp [Ty.tyArgOk, Ty.chanFree] at h
-  | fn _ _ _ _ => rfl
-  | own _ _ _ _ => simp [Ty.tyArgOk, Ty.regionsBelow] at h
+  simp only [Ty.tyArgOk, Bool.and_eq_true] at h
+  exact Ty.renR_of_lf h.1 h.2.1
 
 theorem Ty.map_renR_of_argsOk {ts : List Ty} {ρ0 δ : Nat} (h : Ty.tyArgsOk ts = true) :
     ts.map (Ty.renR ρ0 δ) = ts := by
@@ -102,6 +82,9 @@ theorem Ty.renR_shiftR (a d ρ : Nat) : ∀ t : Ty, (t.renR a d).shiftR ρ = t.r
   | .chan rc t => by simp [Ty.renR, Ty.shiftR, Ty.renR_shiftR a d ρ t, rmap_shift]
   | .fn p r => rfl
   | .own k r t => by simp [Ty.renR, Ty.shiftR, Ty.renR_shiftR a d ρ t, rmap_shift]
+  | .mus _ _ _ => rfl
+  | .rvar _ => rfl
+  | .muRs r _ _ b => by simp [Ty.renR, Ty.shiftR, rmap_shift]
 
 theorem Ty.relocA_shiftR (a d ρ : Nat) : ∀ t : Ty, (t.relocA a d).shiftR ρ = t.relocA (a + ρ) (d + ρ)
   | .int => rfl
@@ -125,6 +108,12 @@ theorem Ty.relocA_shiftR (a d ρ : Nat) : ∀ t : Ty, (t.relocA a d).shiftR ρ =
   | .chan rc t => by simp [Ty.relocA, Ty.shiftR, Ty.renR_shiftR, rmap_shift]
   | .fn p r => rfl
   | .own k r t => by simp [Ty.relocA, Ty.shiftR, Ty.renR_shiftR, rmap_shift]
+  | .mus _ _ _ => rfl
+  | .rvar _ => rfl
+  | .muRs r _ _ b => by
+    cases hm : b.mutFree
+    · simp [Ty.relocA, Ty.shiftR, hm, rmap_shift]
+    · simp only [Ty.relocA, Ty.shiftR, hm, if_true]; split <;> rfl
 
 namespace HasType
 

@@ -1,0 +1,2 @@
+sober: load error at examples/lit_int_range.sober:6:13: an integer literal must fit in int (at most 9223372036854775807)
+exit=1

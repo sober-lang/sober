@@ -1023,7 +1023,7 @@ func efEdgeStr(az mut Az, src int, at desugar.NodeRef) string {
         return "the call of '${fnName(mut az, src)}'"
     }
     if src >= 0 && table.Get(mut az.ef.nk, src) == EN_LAM {
-        return "a function literal it passes on (a parameter of an anonymous function type is transparent)"
+        return "a function literal in its body (a lambda passed to a parameter of anonymous function type, or bound to a local name, is transparent)"
     }
     if src >= 0 && table.Get(mut az.ef.nk, src) == EN_F {
         return "a call through a value of type '${fnTyName(mut az, table.Get(mut az.ef.nref, src))}'"

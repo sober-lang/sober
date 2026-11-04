@@ -33,6 +33,22 @@ func DigitVal(c int, r int) int {
     return if v < r { v } else { -1 }
 }
 
+// 字句 IntegerLiteral（b[s:e] — 10 進か `0x` / `0o` / `0b`）の値と基数。int に収まらなければ ok = false
+func IntValue(b []byte, s int, e int) (int, int, bool) {
+    r := if e - s > 2 && b[s] == '0' && !isDigit(int(b[s + 1])) { RadixOf(int(b[s + 1])) } else { 10 }
+    mut v := 0
+    mut i := if r == 10 { s } else { s + 2 }
+    while i < e {
+        d := DigitVal(int(b[i]), r)
+        if v > (9223372036854775807 - d) / r {
+            return 0, r, false
+        }
+        v = v * r + d
+        i += 1
+    }
+    return v, r, true
+}
+
 func digitIn(c int, r int) bool {
     return DigitVal(c, r) >= 0
 }

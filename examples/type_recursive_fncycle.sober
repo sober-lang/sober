@@ -1,0 +1,24 @@
+package main
+
+// 閉路が匿名の関数型の欄を通る再帰: cb の仮引数が自分の型（関数型の中の自分は S の組の成分として束ねる）
+
+type Node struct {
+    kids []Node
+    v int
+    cb func(n Node) int
+}
+
+func size(n Node) int {
+    mut s := n.v
+    for k <- n.kids {
+        s += size(k)
+    }
+    return s
+}
+
+func main() {
+    leaf := Node{kids: []Node{}, v: 2, cb: (n Node) => n.v}
+    t := Node{kids: []Node{leaf, leaf}, v: 1, cb: (n Node) => size(n)}
+    println(t.cb(t))
+    println(t.kids[0].cb(t))
+}

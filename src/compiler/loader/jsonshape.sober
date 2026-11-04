@@ -9,7 +9,7 @@ package loader
 // struct T と、その欄から届く型（int・float・bool・string・`U?`・`[]U`・入れ子の struct）ごとに写しの関数（普通の Sober）を、呼び出すファイル f ごとの
 // 合成ファイル `$json/<f のパス>`（同じ package）に書いて package の末尾に足す。写しの関数は std/json の部品（NeedObject・Need・Get・Items・DecInt …）を呼ぶ。
 // 欄の名前 = JSON のキー（Rename 辞書は未実装）・`U?` の欄だけ欠けと null を nil で受ける・余った欄は無視・欠けた欄は json.Missing。
-// 範囲外（未対応）: 総称の struct・union の欄・map の欄・named scalar の欄 — 写す前に diag.JsonShape で名指して拒否。
+// 範囲外（未対応）: 総称の struct・union の欄（std/json の Value〔値の木〕だけは例外 — 読み = json.Tree・書き = json.PutValue）・map の欄・named scalar の欄 — 写す前に diag.JsonShape で名指して拒否。
 // 以降の層（脱糖器・検査器・lower）は写した後の木だけを読む — コア / Lean は無変更
 
 import "std/builder"
@@ -28,6 +28,7 @@ const jString = 4
 const jStruct = 5
 const jSlice = 6
 const jOpt = 7
+const jValue = 8   // std/json の Value（値の木 — 読み = json.Tree・書き = json.PutValue）
 
 // 写しの要求（canon = 型の正準の綴り — 重複除き・file / node = struct の宣言・elem = []U / U? の中身の要求）
 type JReq struct {
@@ -137,7 +138,7 @@ func jsonFile(ts []ast.Tree, fpkg []string, f int) (ast.Tree, string, error?) {
     for c <- iter.Range(0, len(cs)) {
         idx := t.nodes[t.nodes[cs[c]].a]
         r := jsonRoot(ts, fpkg, f, idx.b)
-        if r.kind != jStruct {
+        if r.kind != jStruct && r.kind != jValue {
             return t, "", diag.JsonShape{at: diag.Pos{file: f, tok: t.nodes[idx.b].tok}, kind: 1}
         }
         k := reqIndex(freeze(reqs), r.canon)
@@ -146,6 +147,14 @@ func jsonFile(ts []ast.Tree, fpkg []string, f int) (ast.Tree, string, error?) {
             roots = append(roots, len(reqs) - 1)
         } else {
             roots = append(roots, k)
+        }
+    }
+    // 読みの口があるか（裸の json.Value の欄は読みの写しを組めない — union はゼロ値を持たないので `?` の早期 return の struct が作れない）
+    mut decodes := false
+    for c <- iter.Range(0, len(cs)) {
+        on := Name(t, t.nodes[t.nodes[t.nodes[cs[c]].a].a].b)
+        if on == "Decode" || on == "DecodeWith" {
+            decodes = true
         }
     }
     mut q := 0
@@ -159,6 +168,9 @@ func jsonFile(ts []ast.Tree, fpkg []string, f int) (ast.Tree, string, error?) {
                 e, bad := jsonType(ts, fpkg, r.file, fd.b)
                 if bad >= 0 {
                     return t, "", diag.JsonShape{at: diag.Pos{file: r.file, tok: bad}, kind: 2}
+                }
+                if decodes && e.kind == jValue {
+                    return t, "", diag.JsonShape{at: diag.Pos{file: r.file, tok: st.nodes[fd.b].tok}, kind: 4}
                 }
                 if e.kind >= jStruct && reqIndex(freeze(reqs), e.canon) < 0 {
                     reqs = append(reqs, e)
@@ -263,11 +275,24 @@ func jsonBase(ts []ast.Tree, fpkg []string, f int, e int) (JReq, int) {
         pkg = importPath(t, ref)
         name = n2
     }
+    if isJsonValue(pkg, name) {
+        return valueReq(), -1
+    }
     df, dn := findStruct(ts, fpkg, pkg, name)
     if df < 0 {
         return JReq{}, x.tok
     }
     return JReq{kind: jStruct, canon: "${pkg}.${name}", pkg: pkg, name: name, file: df, node: dn, elem: -1}, -1
+}
+
+// std/json の値の木の型か
+func isJsonValue(pkg string, name string) bool {
+    return pkg == "std/json" && name == "Value"
+}
+
+// json.Value の要求
+func valueReq() JReq {
+    return JReq{kind: jValue, canon: "std/json.Value", pkg: "", name: "", file: -1, node: -1, elem: -1}
 }
 
 // `json.Decode[T]` の型引数の式 e（`T` か `q.T` — 式として読まれている）の struct の要求（struct でなければ kind 0）
@@ -282,6 +307,9 @@ func jsonRoot(ts []ast.Tree, fpkg []string, f int, e int) JReq {
     } else if x.kind == ast.ESelector && t.nodes[x.a].kind == ast.EIdent {
         pkg = importPath(t, Name(t, t.nodes[x.a].a))
         name = Name(t, x.b)
+    }
+    if isJsonValue(pkg, name) {
+        return valueReq()
     }
     df, dn := findStruct(ts, fpkg, pkg, name)
     if df < 0 {
@@ -363,6 +391,10 @@ func jsonSource(ts []ast.Tree, fpkg []string, f int, rs []JReq) string {
             // 絞りは肯定の形で書く（早期 return の後の絞り込みは check が拒否する）
             s = s + "\nfunc $jsonField_${f}_${k}($d $jj.Doc, $m int?, rename map[string]string) (${sp}, error?) {\n    if $m != nil {\n        return ${fname}($d, $m, rename)\n    }\n"
             s = s + "    return nil, nil\n}\n"
+        } else if r.kind == jValue {
+            s = s + "\nfunc ${fname}($d $jj.Doc, $n int, rename map[string]string) ($jj.Value, error?) {\n    return $jj.Tree($d, $n), nil\n}\n"
+            s = s + "\nfunc $jsonDecodeTop_${f}_${k}_0($d $jj.Doc, $n int) ($jj.Value, error?) {\n    return ${fname}($d, $n, map[string]string{})\n}\n"
+            s = s + "\nfunc $jsonDecodeTop_${f}_${k}_1($d $jj.Doc, $n int, rename map[string]string) ($jj.Value, error?) {\n    return ${fname}($d, $n, rename)\n}\n"
         }
         s = s + jsonEncodeFn(ts, fpkg, rs, ps, pkg, f, k, false) + jsonEncodeFn(ts, fpkg, rs, ps, pkg, f, k, true)
     }
@@ -413,6 +445,14 @@ func jsonEncodeFn(ts []ast.Tree, fpkg []string, rs []JReq, ps []string, pkg stri
         e, _ := jsonType(ts, fpkg, r.file, r.node)
         s = s + "\nfunc ${fname}($o mut $jb.Builder[byte], $v ${sp}${rp}) {\n    $jb.Push(mut $o, '[')\n    mut $i := 0\n    while $i < len($v) {\n"
         s = s + "        if $i > 0 {\n            $jb.Push(mut $o, ',')\n        }\n        ${encCall(rs, f, e, "$v[$i]", "", rn)}\n        $i += 1\n    }\n    $jb.Push(mut $o, ']')\n}\n"
+    } else if r.kind == jValue {
+        // 値の木の書き（欄名は木の中のキー — rename は掛からない）
+        s = s + "\nfunc ${fname}($o mut $jb.Builder[byte], $v ${sp}${rp}) {\n    $jj.PutValue(mut $o, $v)\n}\n"
+        if rn {
+            s = s + "\nfunc $jsonEncodeTop_${f}_${k}_1($v ${sp}, rename map[string]string) string {\n    mut $o := $jb.Builder[byte]{}\n    ${fname}(mut $o, $v, rename)\n    return $jj.Done(mut $o)\n}\n"
+        } else {
+            s = s + "\nfunc $jsonEncodeTop_${f}_${k}_0($v ${sp}) string {\n    mut $o := $jb.Builder[byte]{}\n    ${fname}(mut $o, $v)\n    return $jj.Done(mut $o)\n}\n"
+        }
     } else if r.kind == jOpt {
         e, _ := jsonType(ts, fpkg, r.file, r.node)
         s = s + "\nfunc ${fname}($o mut $jb.Builder[byte], $v ${sp}${rp}) {\n    if $v != nil {\n        ${encCall(rs, f, e, "$v", "", rn)}\n    } else {\n        $jj.Put(mut $o, \"null\")\n    }\n}\n"
@@ -484,7 +524,9 @@ func spell(ts []ast.Tree, fpkg []string, rs []JReq, ps []string, pkg string, k0 
     mut core := ""
     while core == "" {
         r := rs[k]
-        if r.kind == jStruct {
+        if r.kind == jValue {
+            core = "$jj.Value"
+        } else if r.kind == jStruct {
             core = if r.pkg == pkg { r.name } else { "$jt${pathIndex(ps, r.pkg)}.${r.name}" }
         } else if r.kind == jSlice || r.kind == jOpt {
             wraps = append(wraps, r.kind)

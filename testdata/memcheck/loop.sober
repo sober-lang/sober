@@ -1,0 +1,17 @@
+package main
+
+// 定数回のループ（展開されない回数）で反復ごとに外の列の要素へ新しい値を置く（反復の region から外への写し — 今の解析は ⊤。
+// 網の題材: 反復の region の判定を外す変異〔SOBER_MEMREP_MUT=3〕が偽の数字を出すと実測がそれを越える）
+func fill() int {
+    mut slots := mut [][]int{[]int{0}, []int{0}}
+    mut i := 0
+    while i < 40 {
+        slots[i % 2] = []int{i, i + 1}
+        i += 1
+    }
+    return slots[0][0] + slots[1][1]
+}
+
+func main() {
+    println(fill())
+}

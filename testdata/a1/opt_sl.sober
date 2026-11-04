@@ -1,0 +1,13 @@
+package main
+
+// 欄の []L?（slice の要素の opt — 中身は配置中の型）
+
+type L struct {
+    v int
+    xs []L?
+}
+
+func main() {
+    l := L{v: 3, xs: []L?{L{v: 4, xs: []L?{}}, nil}}
+    println(l.v + len(l.xs))
+}

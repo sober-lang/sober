@@ -8,9 +8,11 @@ package loader
 //
 // 写す相手は func 宣言の直接呼び出し（`f(…)`・`ref.F(…)`・`f[T](…)`）とパイプ段の実引数。名前は局所の束縛と衝突しない（LocalTop — 局所は
 // トップレベルの名前を使えない）ので、func 宣言の名前ならそれを指す。名前付き関数型（`type Fn func(…)`）の仮引数は関数値を受ける位置なので写さない。
-// 写せない形は loader の拒否（diag.FnArg）: 1 = mut 仮引数を持つ関数（関数型の仮引数に mut の席が無い — 26 節）・2 = 仮引数の数が関数型と違う
+// mut 仮引数は同じ席の mut 仮引数（`func(a mut int, x int)`）へ写す — `($e0, $e1) => f(mut $e0, $e1)`（ラムダの仮引数に mut の印）。
+// 写せない形は loader の拒否（diag.FnArg）: 1 = mut 仮引数の席が関数型と違う・2 = 仮引数の数が関数型と違う
 
 import "std/builder"
+import "std/iter"
 import "ast"
 import "diag"
 
@@ -39,7 +41,7 @@ func etaAll(cx Cx, ft FnTab) ([]ast.Tree, error?) {
     return freeze(out), nil
 }
 
-// 呼び出しの節 i の関数型の位置の名前付き関数を hits に [呼び出しの節, 実引数の位置, 仮引数の数] の 3 語ずつ積む
+// 呼び出しの節 i の関数型の位置の名前付き関数を hits に [呼び出しの節, 実引数の位置, 仮引数の数, mut の席のビット] の 4 語ずつ積む
 // （拒否なら kind + 実引数の字句 × 4）
 func etaScan(cx Cx, ft FnTab, f int, i int, hits mut builder.Builder[int]) int {
     t := cx.trees[f]
@@ -74,19 +76,17 @@ func etaScan(cx Cx, ft FnTab, f int, i int, hits mut builder.Builder[int]) int {
             gt := cx.trees[ft.file[gi]]
             gps := gt.nodes[ft.node[gi]].c
             ng := ast.ListLen(gt, gps)
-            mut q := 0
-            while q < ng {
-                if ast.ParamIsMut(gt.nodes[ast.ListAt(gt, gps, q)]) {
-                    return 1 + t.nodes[a].tok * 4
-                }
-                q += 1
-            }
             if ng != ast.ListLen(dt, dt.nodes[pty].a) {
                 return 2 + t.nodes[a].tok * 4
+            }
+            mm := ast.ParamsMutMask(gt, gps)
+            if mm != ast.FnTyMutMask(dt, dt.nodes[pty].a) {
+                return 1 + t.nodes[a].tok * 4
             }
             builder.Push(mut hits, i)
             builder.Push(mut hits, k)
             builder.Push(mut hits, ng)
+            builder.Push(mut hits, mm)
         }
         k += 1
     }
@@ -125,20 +125,45 @@ func etaRewrite(t ast.Tree, hs []int) ast.Tree {
             mut q := 0
             while q < hs[h + 2] {
                 nm := ast.PutLit(mut db, "$e${i}_${q}")
+                mq := (hs[h + 3] >> q) & 1
                 lps = append(lps, len(ns))
-                ns = append(ns, ast.Node{ast.KLParam, tok, nm, -1, 0, 0, 0, 0})
+                ns = append(ns, ast.Node{ast.KLParam, tok, nm, -1, mq, 0, 0, 0})
                 cas = append(cas, len(ns))
-                ns = append(ns, ast.Node{ast.EIdent, tok, nm, 0, 0, 0, 0, 0})
+                ns = append(ns, ast.Node{if mq != 0 { ast.EMutArg } else { ast.EIdent }, tok, nm, 0, 0, 0, 0, 0})
                 q += 1
             }
             call := len(ns)
             ns = append(ns, ast.Node{ast.ECall, tok, a, ast.PutList(mut db, freeze(cas)), 0, 0, 0, 0})
             repl[hs[h + 1]] = len(ns)
             ns = append(ns, ast.Node{ast.ELambda, tok, ast.PutList(mut db, freeze(lps)), call, 0, 0, 0, 0})
-            h += 3
+            h += 4
         }
         l := ast.PutList(mut db, freeze(repl))
         ns[i] = if pipe { ast.Node{x.kind, x.tok, x.a, x.b, l, x.d, x.e, x.f} } else { ast.Node{x.kind, x.tok, x.a, l, x.c, x.d, x.e, x.f} }
     }
     return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
+}
+
+// 関数型（匿名・名前付き）の mut 仮引数は 1 本まで（呼び出しの anchor は 1 つ — 2 本の状態は 1 つの struct にまとめる。language.md 25 節）。
+// 拒否は diag.FnArg kind 3（位置 = 2 本目の mut）
+@errors(diag.FnArg)
+func fnTyMutOne(cx Cx) error? {
+    for f <- iter.Range(0, len(cx.trees)) {
+        t := cx.trees[f]
+        for x <- t.nodes {
+            if x.kind == ast.TFunc || x.kind == ast.BFunc {
+                mut n := 0
+                for i <- iter.Range(0, ast.ListLen(t, x.a)) {
+                    p := t.nodes[ast.ListAt(t, x.a, i)]
+                    if p.kind == ast.TMutP {
+                        n += 1
+                        if n == 2 {
+                            return diag.FnArg{at: diag.Pos{file: f, tok: p.tok}, kind: 3}
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return nil
 }

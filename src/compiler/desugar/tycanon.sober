@@ -302,7 +302,9 @@ func tcRecord(st mut S, x YT) {
         if x.c > 0 {
             tcDecl(mut st, NodeRef(x.c - 1))
         } else {
+            // 名前なし: 0 の印 + mut 仮引数の席のビット
             tcW(mut st, 0)
+            tcW(mut st, 0 - x.c)
         }
     case YTuple:
         tcList(mut st, ListRef(x.a))

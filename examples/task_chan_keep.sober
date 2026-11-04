@@ -1,0 +1,76 @@
+package main
+
+// チャネルの送りは送り手の値を写して渡す（language.md 11 節「チャネル」）: 送った後も送り手の値はそのまま読める。
+// 入れ子の slice・slice を持つ map・string を持つ error・再帰の union — どれも送り手の region で作った値。送り手は送った後に
+// 何本も送り続け（チャネルの写しの置き場が使い回される）、最後に最初の値を読む
+
+import "std/task"
+
+type Node union {
+    Leaf { n int }
+    Kids { xs []Node }
+}
+
+type Bad error {
+    why string
+}
+
+type Msg struct {
+    lines []string
+    index map[string][]string
+    tree Node
+    err error?
+}
+
+func sum(t Node) int {
+    return switch t {
+    case Leaf{n}: n
+    case Kids{xs}: {
+        mut s := 0
+        for x <- xs {
+            s += sum(x)
+        }
+        s
+    }
+    default: 0
+    }
+}
+
+func show(m Msg) string {
+    vs := m.index["k"]
+    v := if vs == nil { "-" } else { vs[0] }
+    return "${m.lines[0]} ${v} ${sum(m.tree)} ${if m.err == nil { "-" } else { "err" }}"
+}
+
+func make(k string, n int) Msg {
+    mut ix := mut map[string][]string{}
+    ix["k"] = []string{k + "v"}
+    return Msg{lines: []string{k + "=1"}, index: freeze(ix), tree: Kids{xs: []Node{Leaf{n: n}, Kids{xs: []Node{Leaf{n: n * 10}}}}}, err: Bad{why: k + "!"}}
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        tx, rx := task.NewChannel[Msg](cap: 1)
+        h := task.Spawn(s, (out) => {
+            m := make("k", 1)
+            task.Send(out, m)
+            mut i := 0
+            while i < 50 {
+                task.Send(out, make("p${i}", i + 2))
+                i += 1
+            }
+            show(m)
+        }, give: tx)
+        mut first := ""
+        mut n := 0
+        while n < 51 {
+            x := task.Recv(rx)
+            if x != nil && n == 0 {
+                first = show(x)
+            }
+            n += 1
+        }
+        "${first} / ${task.Join(h)}"
+    })
+    println(r)
+}

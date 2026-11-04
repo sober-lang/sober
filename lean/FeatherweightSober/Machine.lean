@@ -154,6 +154,9 @@ inductive Frame : Type where
   | fcmpL (op : FCmpOp) (b : Expr)
   | fcmpR (op : FCmpOp) (a : Expr)
   | fconvK (op : FConvOp)
+  /-- 再帰型: fold の中身の評価中（t = 注釈）・unfold の被演算子の評価中 -/
+  | foldK (t : Ty)
+  | unfoldK
   /-- append の subject 評価中（値 v を保持） -/
   | appL (v : Expr)
   /-- append の値評価中（評価済み slice 値を保持） -/
@@ -492,20 +495,52 @@ def relocList (f : Heap → Expr → Option (Heap × Expr)) : Heap → List (Boo
           | Option.none => Option.none
       | Option.none => Option.none
 
+/-- 境界コピーで燃料切れがありうる型（D の μ を歩く） -/
+def Ty.hasMuR : Ty → Bool
+  | .opt t => t.hasMuR
+  | .union l r => l.hasMuR || r.hasMuR
+  | .prod l r => l.hasMuR || r.hasMuR
+  | .ref _ _ t => t.hasMuR
+  | .slice _ _ t => t.hasMuR
+  | .map _ _ t => t.hasMuR
+  | .muRs _ _ _ _ => true
+  | _ => false
+
+/-- 値の大きさ（値の構成子の節の数 — 写しが歩く分だけ。fold の節を 1 つずつ数える） -/
+def Expr.vsize : Expr → Nat
+  | .some e => e.vsize + 1
+  | .inl _ e => e.vsize + 1
+  | .inr _ e => e.vsize + 1
+  | .fold _ e => e.vsize + 1
+  | .pair a c => a.vsize + c.vsize + 1
+  | _ => 1
+
+/-- 写しの燃料 = 値の大きさ + ヒープの全セルの値の大きさの和 + 1 — μ を開くのは値の fold の節ごとで、
+写しが辿るセルは凍結の順に下りる（同じセルを 2 度通らない）ので、道の上の fold の節の数はこれを越えない -/
+def cellSize (H : Heap) (i j : Nat) : Nat :=
+  match (H[i]?).bind (·[j]?) with
+  | some c => c.2.vsize
+  | none => 0
+
+def heapSize (H : Heap) : Nat :=
+  ((List.range H.length).map fun i => ((List.range ((H[i]?).getD []).length).map fun j => cellSize H i j).sum).sum
+
+def relocFuel (H : Heap) (v : Expr) : Nat := v.vsize + heapSize H + 1
+
 /-- 脱出の境界コピー（R4b α — relocT の複数 region 一般化）: 型 t に沿って値を歩き、k より深い region にある
 imm のヘッダ / loc は、セルの値をまず再帰で写してから region k の末尾へ連続に積み直して付け替える。
 k 以下のコンテナは中身も k 以下（HeapOk の tyBelow）なので触らない。nil / inl / inr の型注釈は t に書き換える。
 jump の巻き戻しで捨てる region（> k = ラベルの最内）から生き残る値を写す — 関数の return と同じ survivor コピー。
 関数の返り境界（fretK）は k = 呼び手の最内（H.length - 2）の特殊形（R4a の relocT を R4b-cov で統合 — 写す元は自フレームだけ） -/
-def relocTo (k : Nat) : Ty → Heap → Expr → Option (Heap × Expr)
-  | .opt t', H, .some e => (relocTo k t' H e).map (fun p => (p.1, .some p.2))
+def relocW (k : Nat) (rec : Ty → Heap → Expr → Option (Heap × Expr)) : Ty → Heap → Expr → Option (Heap × Expr)
+  | .opt t', H, .some e => (relocW k rec t' H e).map (fun p => (p.1, .some p.2))
   | .opt t', H, .nil _ => Option.some (H, .nil t')
-  | .union l r, H, .inl _ e => (relocTo k l H e).map (fun p => (p.1, .inl r p.2))
-  | .union l r, H, .inr _ e => (relocTo k r H e).map (fun p => (p.1, .inr l p.2))
+  | .union l r, H, .inl _ e => (relocW k rec l H e).map (fun p => (p.1, .inl r p.2))
+  | .union l r, H, .inr _ e => (relocW k rec r H e).map (fun p => (p.1, .inr l p.2))
   | .prod l r, H, .pair a b =>
-      match relocTo k l H a with
+      match relocW k rec l H a with
       | Option.some (H1, a') =>
-          match relocTo k r H1 b with
+          match relocW k rec r H1 b with
           | Option.some (H2, b') => Option.some (H2, .pair a' b')
           | Option.none => Option.none
       | Option.none => Option.none
@@ -513,7 +548,7 @@ def relocTo (k : Nat) : Ty → Heap → Expr → Option (Heap × Expr)
       if k < r then
         match H[r]? with
         | Option.some ρs =>
-            match relocList (relocTo k t') H ((ρs.drop base).take len) with
+            match relocList (relocW k rec t') H ((ρs.drop base).take len) with
             | Option.some (H1, cs) =>
                 match H1[k]? with
                 | Option.some ρd => Option.some (H1.set k (ρd ++ cs), .slicev mt k ρd.length len)
@@ -525,7 +560,7 @@ def relocTo (k : Nat) : Ty → Heap → Expr → Option (Heap × Expr)
       if k < r then
         match H[r]? with
         | Option.some ρs =>
-            match relocList (relocTo k t') H ((ρs.drop base).take len) with
+            match relocList (relocW k rec t') H ((ρs.drop base).take len) with
             | Option.some (H1, cs) =>
                 match H1[k]? with
                 | Option.some ρd => Option.some (H1.set k (ρd ++ cs), .mapv mt k ρd.length len)
@@ -537,7 +572,7 @@ def relocTo (k : Nat) : Ty → Heap → Expr → Option (Heap × Expr)
       if k < r then
         match H[r]? with
         | Option.some ρs =>
-            match relocList (relocTo k t') H ((ρs.drop a).take 1) with
+            match relocList (relocW k rec t') H ((ρs.drop a).take 1) with
             | Option.some (H1, cs) =>
                 match H1[k]? with
                 | Option.some ρd => Option.some (H1.set k (ρd ++ cs), .loc k ρd.length)
@@ -545,54 +580,86 @@ def relocTo (k : Nat) : Ty → Heap → Expr → Option (Heap × Expr)
             | Option.none => Option.none
         | Option.none => Option.none
       else Option.some (H, .loc r a)
+  | .muRs r n i b, H, .fold _ e => (rec (Ty.muRs r n i b).unfold H e).map (fun p => (p.1, .fold (.muRs r n i b) p.2))
   | _, H, v => Option.some (H, v)
+
+/-- 写しの燃料 n の段: μ を開くたびに 1 減る（燃料切れは none — 呼び手は panic） -/
+def relocN (k : Nat) : Nat → Ty → Heap → Expr → Option (Heap × Expr)
+  | 0 => relocW k (fun _ _ _ => Option.none)
+  | n + 1 => relocW k (relocN k n)
+
+/-- 境界コピー（脱出・返り境界・blockR / scope の出口・copyTo）: 型 t に沿う写し。燃料は写す元のヒープと型から決める
+（循環はコアで作れないので実装は燃料を数えない — 模型だけに到達不能な panic の道がある） -/
+def relocTo (k : Nat) (t : Ty) (H : Heap) (v : Expr) : Option (Heap × Expr) :=
+  relocN k (relocFuel H v) t H v
+
+/-- 燃料の段を 1 つ開く（燃料が式のままでも歩きの腕を simp で展開できる形） -/
+theorem relocN_unfold (k n : Nat) :
+    relocN k n = relocW k (match n with | 0 => fun _ _ _ => Option.none | n + 1 => relocN k n) := by
+  cases n <;> rfl
 
 /-- 境界をまたぐ写し（P3b-4 — task の結果）: 子のヒープ Hs の値 v を型 t に沿って歩き、imm のヘッダ / loc は
 （region に依らず全部）セルの値をまず再帰で写してから親のヒープ Hd の region k の末尾へ連続に積み直して付け替える。
 共有の region（親のコピー）を指す値も写す — imm なので観測は変わらない（実装は写さずに済ませてよい）。nil / inl / inr の注釈は t に書き換える -/
-def xfer (k : Nat) : Ty → Heap → Heap → Expr → Option (Heap × Expr)
-  | .opt t', Hs, Hd, .some e => (xfer k t' Hs Hd e).map (fun p => (p.1, .some p.2))
-  | .opt t', _, Hd, .nil _ => Option.some (Hd, .nil t')
-  | .union l r, Hs, Hd, .inl _ e => (xfer k l Hs Hd e).map (fun p => (p.1, .inl r p.2))
-  | .union l r, Hs, Hd, .inr _ e => (xfer k r Hs Hd e).map (fun p => (p.1, .inr l p.2))
-  | .prod l r, Hs, Hd, .pair a b =>
-      match xfer k l Hs Hd a with
+def xferW (k : Nat) (rec : Ty → Heap → Expr → Option (Heap × Expr)) (Hs : Heap) : Ty → Heap → Expr → Option (Heap × Expr)
+  | .opt t', Hd, .some e => (xferW k rec Hs t' Hd e).map (fun p => (p.1, .some p.2))
+  | .opt t', Hd, .nil _ => Option.some (Hd, .nil t')
+  | .union l r, Hd, .inl _ e => (xferW k rec Hs l Hd e).map (fun p => (p.1, .inl r p.2))
+  | .union l r, Hd, .inr _ e => (xferW k rec Hs r Hd e).map (fun p => (p.1, .inr l p.2))
+  | .prod l r, Hd, .pair a b =>
+      match xferW k rec Hs l Hd a with
       | Option.some (H1, a') =>
-          match xfer k r Hs H1 b with
+          match xferW k rec Hs r H1 b with
           | Option.some (H2, b') => Option.some (H2, .pair a' b')
           | Option.none => Option.none
       | Option.none => Option.none
-  | .slice false _ t', Hs, Hd, .slicev mt r base len =>
+  | .slice false _ t', Hd, .slicev mt r base len =>
       match Hs[r]? with
       | Option.some ρs =>
-          match relocList (xfer k t' Hs) Hd ((ρs.drop base).take len) with
+          match relocList (xferW k rec Hs t') Hd ((ρs.drop base).take len) with
           | Option.some (H1, cs) =>
               match H1[k]? with
               | Option.some ρd => Option.some (H1.set k (ρd ++ cs), .slicev mt k ρd.length len)
               | Option.none => Option.none
           | Option.none => Option.none
       | Option.none => Option.none
-  | .map false _ t', Hs, Hd, .mapv mt r base len =>
+  | .map false _ t', Hd, .mapv mt r base len =>
       match Hs[r]? with
       | Option.some ρs =>
-          match relocList (xfer k t' Hs) Hd ((ρs.drop base).take len) with
+          match relocList (xferW k rec Hs t') Hd ((ρs.drop base).take len) with
           | Option.some (H1, cs) =>
               match H1[k]? with
               | Option.some ρd => Option.some (H1.set k (ρd ++ cs), .mapv mt k ρd.length len)
               | Option.none => Option.none
           | Option.none => Option.none
       | Option.none => Option.none
-  | .ref false _ t', Hs, Hd, .loc r a =>
+  | .ref false _ t', Hd, .loc r a =>
       match Hs[r]? with
       | Option.some ρs =>
-          match relocList (xfer k t' Hs) Hd ((ρs.drop a).take 1) with
+          match relocList (xferW k rec Hs t') Hd ((ρs.drop a).take 1) with
           | Option.some (H1, cs) =>
               match H1[k]? with
               | Option.some ρd => Option.some (H1.set k (ρd ++ cs), .loc k ρd.length)
               | Option.none => Option.none
           | Option.none => Option.none
       | Option.none => Option.none
-  | _, _, Hd, v => Option.some (Hd, v)
+  | .muRs r n i b, Hd, .fold _ e => (rec (Ty.muRs r n i b).unfold Hd e).map (fun p => (p.1, .fold (.muRs r n i b) p.2))
+  | _, Hd, v => Option.some (Hd, v)
+
+def xferN (k : Nat) (Hs : Heap) : Nat → Ty → Heap → Expr → Option (Heap × Expr)
+  | 0 => xferW k (fun _ _ _ => Option.none) Hs
+  | n + 1 => xferW k (xferN k Hs n) Hs
+
+def xfer (k : Nat) (t : Ty) (Hs Hd : Heap) (v : Expr) : Option (Heap × Expr) :=
+  xferN k Hs (relocFuel Hs v) t Hd v
+
+theorem xfer_opt_nil (k : Nat) (t t0 : Ty) (Hs Hd : Heap) : xfer k (.opt t) Hs Hd (.nil t0) = some (Hd, .nil t) := by
+  simp only [xfer]; cases relocFuel Hs (.nil t0) <;> rfl
+
+theorem xferN_unfold (k : Nat) (Hs : Heap) (n : Nat) :
+    xferN k Hs n = xferW k (match n with | 0 => fun _ _ _ => Option.none | n + 1 => xferN k Hs n) Hs := by
+  cases n <;> rfl
+
 
 /-- 送りの梱包（P3b-4b）: 送り手のヒープ H の値 v を項目の型 ty で 1 region の小さなヒープへ写す（失敗 = none — 型付きなら起きない） -/
 def packV (ty : Ty) (H : Heap) (v : Expr) : Option Pkt :=
@@ -721,7 +788,7 @@ def famMain (id : List Nat) (o n : Nat) (m : State) (ks : Kids) (K : ChanSt) (r 
             else if ent.q.length < ent.cap then
               match packV (.opt ent.ty) H (Expr.some v) with
               | Option.some w => some (.fam id o n (.ret H S triv) ks, K.setEp (p, k) { ent with q := ent.q ++ [w] })
-              | Option.none => none
+              | Option.none => some (.fam id o n (.panic H) ks, K)
             else none
           else some (.fam id o n (.panic H) ks, K)
       | Option.none => some (.fam id o n (.panic H) ks, K)
@@ -734,7 +801,7 @@ def famMain (id : List Nat) (o n : Nat) (m : State) (ks : Kids) (K : ChanSt) (r 
             | w :: q' =>
                 match xfer (H.length - 1) (w.ty.relocR (H.length - 1)) [w.cs] H w.v with
                 | Option.some (H', v') => some (.fam id o n (.ret H' S v') ks, K.setEp (p, k) { ent with q := q' })
-                | Option.none => none
+                | Option.none => some (.fam id o n (.panic H) ks, K.setEp (p, k) { ent with q := q' })
             | [] =>
                 -- 閉じて空なら nil（P3b-4 ③ — 梱包と同じ形の空の値。何度受けても nil）
                 if ent.closed then some (.fam id o n (.ret H S (nil (ent.ty.relocR (H.length - 1)))) ks, K) else none
@@ -756,7 +823,7 @@ def famMain (id : List Nat) (o n : Nat) (m : State) (ks : Kids) (K : ChanSt) (r 
           | Option.some (Hk, v) =>
               match xfer rs t Hk H v with
               | Option.some (H', v') => some (.fam id o n (.ret H' S v') (ks.mark (i - o)), K)
-              | Option.none => none
+              | Option.none => some (.fam id o n (.panic H) ks, K)
           | Option.none => if kid.mainDead then some (.fam id o n (.panic H) ks, K) else none
       | _, _ => some (.fam id o n (.panic H) ks, K)
   | .ret H (.tryK t :: S) (taskV _ i) =>
@@ -766,7 +833,7 @@ def famMain (id : List Nat) (o n : Nat) (m : State) (ks : Kids) (K : ChanSt) (r 
           | Option.some (Hk, v) =>
               match xfer rs t Hk H v with
               | Option.some (H', v') => some (.fam id o n (.ret H' S (Expr.some v')) (ks.mark (i - o)), K)
-              | Option.none => none
+              | Option.none => some (.fam id o n (.panic H) ks, K)
           | Option.none => if kid.mainDead then some (.fam id o n (.ret H S (nil t)) ks, K) else none
       | _, _ => some (.fam id o n (.panic H) ks, K)
   | .ret H (.scopeK t ε :: S) v =>
@@ -781,13 +848,13 @@ def famMain (id : List Nat) (o n : Nat) (m : State) (ks : Kids) (K : ChanSt) (r 
               if εk = ε.relocR 0 then
                 match xfer (H.length - 2) (ε.relocR (H.length - 2)) Hk H e with
                 | Option.some (H', e') => some (.fam id o n (.ret H'.dropLast S (inr t (inr .unit e'))) ks, K)
-                | Option.none => none
+                | Option.none => some (.fam id o n (.panic H) ks, K)
               else some (.fam id o n (.panic H) ks, K)
           | Option.none =>
               -- 待ちが明けたら task の外の出口と同じ（blockR の写し + pop）
               match relocTo (H.length - 2) t H v with
               | Option.some (H', v') => some (.fam id o n (.ret H'.dropLast S (inl (.union .unit (ε.relocR (H.length - 2))) v')) ks, K)
-              | Option.none => none
+              | Option.none => some (.fam id o n (.panic H) ks, K)
       else none
   -- 旧 par / parch / newchan / 旧 chan の送受は task の中では定義された panic（凍結 — load の側にだけ残る・退役は Kahn の後。
   -- 旧 newchan の id は全 task 共有の通し番号で順序に依り、旧 par は MPMC の並走を作るので、task の木の合流性〔Kahn〕を壊す）
@@ -901,6 +968,8 @@ def step (Δ : Defs) (π : List Bool) : State → ChanSt → Option (State × Ch
   | .eval H S (send c e), K => some (.eval H (.sendL e :: S) c, K)
   | .eval H S (recv c), K => some (.eval H (.recvK :: S) c, K)
   | .eval H S (close c), K => some (.eval H (.closeK :: S) c, K)
+  | .eval H S (fold t e), K => some (.eval H (.foldK t :: S) e, K)
+  | .eval H S (unfold e), K => some (.eval H (.unfoldK :: S) e, K)
   -- 段 6 P1: scope / spawn / join / try の分解（札・handle は値）
   | .eval H S (scope t ε e), K => some (.eval (H ++ [[]]) (.scopeK t ε :: S) (subst 0 (scopeV H.length ε) e), K)
   | .eval H S (spawn sc a e), K => some (.eval H (.spawnK a e :: S) sc, K)
@@ -1178,14 +1247,14 @@ def step (Δ : Defs) (π : List Bool) : State → ChanSt → Option (State × Ch
   | .ret H (.regionKR t :: S) v, K =>
       match relocTo (H.length - 2) t H v with
       | Option.some (H', v') => some (.ret H'.dropLast S v', K)
-      | Option.none => none
+      | Option.none => some (.panic H, K)
   | .ret H (.labelK _ :: S) v, K => some (.ret H S v, K)
   | .ret H (.spawnK a e :: S) sv, K => some (.eval H (.spawnA sv e :: S) a, K)
   -- scope の出口（task の外 = 子の居ない世界 — task の中では fam が先に待ちを検査してから委ねる）: blockR と同じ
   | .ret H (.scopeK t ε :: S) v, K =>
       match relocTo (H.length - 2) t H v with
       | Option.some (H', v') => some (.ret H'.dropLast S (inl (.union .unit (ε.relocR (H.length - 2))) v'), K)
-      | Option.none => none
+      | Option.none => some (.panic H, K)
   -- task の外での spawn / join / try（旧 load の根や旧 par の子 — 子の表を持たない）: 到達しない形を panic で閉じる
   | .ret H (.spawnA (scopeV _ _) _ :: _) _, K => some (.panic H, K)
   | .ret H (.joinK _ :: _) (taskV _ _), K => some (.panic H, K)
@@ -1196,13 +1265,13 @@ def step (Δ : Defs) (π : List Bool) : State → ChanSt → Option (State × Ch
   | .ret H (.copyK k t :: S) v, K =>
       match relocTo k t H v with
       | Option.some (H', v') => some (.ret H' S v', K)
-      | Option.none => none
+      | Option.none => some (.panic H, K)
   | .ret H (.jumpK n :: S) v, K =>
       match unwind n S H with
       | Option.some (H', S', tL) =>
           match relocTo (H'.length - 1) tL H v with
           | Option.some (H'', v') => some (.ret (H''.take H'.length) S' v', K)
-          | Option.none => none
+          | Option.none => some (.panic H, K)
       | Option.none => none
   | .ret H (.sendL e :: S) v, K => some (.eval H (.sendR v :: S) e, K)
   -- send: enqueue（無限バッファ。常に進む）
@@ -1245,7 +1314,7 @@ def step (Δ : Defs) (π : List Bool) : State → ChanSt → Option (State × Ch
   | .ret H (.fretK t :: S) v, K =>
       match relocTo (H.length - 2) t H v with
       | Option.some (H', v') => some (.ret H'.dropLast S v', K)
-      | Option.none => none
+      | Option.none => some (.panic H, K)
   | .ret H (.recvK :: S) (chanV c), K =>
       match K.leg[c]? with
       | Option.some (v :: q) => some (.ret H S v, K.setLeg c q)
@@ -1270,6 +1339,8 @@ def step (Δ : Defs) (π : List Bool) : State → ChanSt → Option (State × Ch
       | Option.none => some (.panic H, K)
   | .ret H (.fconvK .bits :: S) (flit n), K => some (.ret H S (lit (F64.bits n)), K)
   | .ret H (.fconvK .fromBits :: S) (lit i), K => some (.ret H S (flit (F64.fromBits i)), K)
+  | .ret H (.foldK t :: S) v, K => some (.ret H S (fold t v), K)
+  | .ret H (.unfoldK :: S) (fold _ v), K => some (.ret H S v, K)
   | .ret _ _ _, _ => none
   -- panic は terminal
   | .panic _, _ => none

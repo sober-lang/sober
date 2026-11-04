@@ -47,10 +47,11 @@ type SwCtx struct {
     swSubjDecl int
     swSubjTy TyRef
     swSubjSty int
+    swEnv int
 }
 
 func swCtx(st mut S) SwCtx {
-    return SwCtx{swSubj: st.swSubj, swSubjDecl: st.swSubjDecl, swSubjTy: st.swSubjTy, swSubjSty: st.swSubjSty}
+    return SwCtx{swSubj: st.swSubj, swSubjDecl: st.swSubjDecl, swSubjTy: st.swSubjTy, swSubjSty: st.swSubjSty, swEnv: st.swEnv}
 }
 
 func setSwCtx(st mut S, c SwCtx) {
@@ -58,6 +59,7 @@ func setSwCtx(st mut S, c SwCtx) {
     st.swSubjDecl = c.swSubjDecl
     st.swSubjTy = c.swSubjTy
     st.swSubjSty = c.swSubjSty
+    st.swEnv = c.swEnv
 }
 
 // error の switch の文脈（腕の `cause` が読む鎖のレベルと型）

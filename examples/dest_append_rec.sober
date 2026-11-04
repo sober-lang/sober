@@ -1,0 +1,69 @@
+package main
+
+// 宛先構築の返る列への追記（loader/dest.sober の印 3）: ループの中の `ks = append(ks, mk(…))` で ks が return に直に流れ着くとき、
+// 子の部分木は関数の宛先に直に作られ、戻りの写しの床も宛先になる — 部分木が深さの数だけ写るのが 1 回に減る（深さ n の鎖で写しが
+// O(n²) → O(n)）。scripts/iterregion.sh が深さを 10 倍にして RSS の伸びを見る。early は早い return で別の値を返す関数 —
+// 印を立てない（追記した値が宛先のゴミになる）ので、同じ値を今の形で作る
+
+import "std/convert"
+import "std/iter"
+import "std/os"
+
+type N struct {
+    id int
+    pad []int
+    kids []N
+}
+
+// 深さ d の鎖（子 1 本）— 子は ks へ追記して返す
+func mk(id int, d int) N {
+    mut ks := mut []N{}
+    if d > 0 {
+        for i <- iter.Range(0, 1) {
+            ks = append(ks, mk(id + 1 + i, d - 1))
+        }
+    }
+    return N{id: id, pad: []int{id, id, id, id}, kids: freeze(ks)}
+}
+
+func early(id int, d int) N {
+    mut ks := mut []N{}
+    for i <- iter.Range(0, 2) {
+        if d == 0 {
+            return N{id: id, pad: []int{}, kids: []N{}}
+        }
+        ks = append(ks, early(id * 2 + i, d - 1))
+    }
+    return N{id: id, pad: []int{id}, kids: freeze(ks)}
+}
+
+func depth(n N) int {
+    mut d := 0
+    mut c := n
+    while len(c.kids) > 0 {
+        d += 1
+        c = c.kids[0]
+    }
+    return d
+}
+
+func count(n N) int {
+    mut s := 1
+    for i <- iter.Range(0, len(n.kids)) {
+        s += count(n.kids[i])
+    }
+    return s
+}
+
+func main() {
+    args, e := os.Args()
+    mut d := 100
+    if e == nil && len(args) >= 2 {
+        x, pe := convert.ParseInt(args[1])
+        if pe == nil {
+            d = x
+        }
+    }
+    t := mk(0, d)
+    println(depth(t), t.kids[0].pad[3], count(early(1, 6)))
+}

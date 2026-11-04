@@ -1,0 +1,25 @@
+# Sober
+
+> A minimal, fast, safe and plain systems programming language: memory safety and structured concurrency without a borrow checker or a GC (region-based, derived from program structure), deterministic down to the bits (arithmetic, printing, and parallel execution — output is byte-identical for any worker count), self-hosted (~130K lines, lexer to x86-64 ELF, no libc), with a Lean formal model checked against the implementation.
+
+Japanese is the source of truth for most documents; English versions, where they exist, are translations. Code examples in docs are real files verified by gates (docsync / guidetest), so they are runnable as shown.
+
+## Start here
+
+- [README.md](README.md): overview, pillars, what you stop thinking about, benchmarks, what you can build, roadmap
+- [docs/guide/](docs/guide/): user guide — install, first program, testing (including build-time DI), environment variables
+- [docs/spec/](docs/spec/): the language rules (normative and terse — rules only, examples live in examples/)
+
+## Design and rationale (deep, mostly Japanese)
+
+- [docs/language.md](docs/language.md): the language book — every decision with its rationale and the discarded alternatives, one line each
+- [docs/design-dev.md](docs/design-dev.md): the review criteria used to accept or reject features (e.g., elimination of conditional constraints)
+- [docs/design-notes/](docs/design-notes/): essays — the safety model, why the core stays small, performance honesty
+- [docs/formal.md](docs/formal.md) and [lean/](lean/): the Lean small-step semantics and soundness proofs; the checker is compared against it over hundreds of thousands of extracted vectors
+
+## What exists
+
+- [src/compiler/](src/compiler/): the self-hosted compiler
+- [src/std/](src/std/): std — HTTP/1.1, TLS 1.3, crypto, JSON, deflate/gzip, the io_uring M:N runtime
+- [bench/](bench/): benchmarks with Go and Rust twins; [bench/httparena/](bench/httparena/) is the public HttpArena leaderboard entry
+- [examples/](examples/): ~490 runnable, gate-verified examples

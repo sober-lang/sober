@@ -1,0 +1,5 @@
+package cellneg
+
+func One() int {
+    return 1
+}

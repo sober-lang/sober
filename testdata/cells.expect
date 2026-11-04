@@ -1,4 +1,5 @@
 ok   testdata/cells.TestGetSetUpdate
 ok   testdata/cells.TestParallelUpdates
 ok   testdata/cells.TestQuickTrialsStartEmpty
-3 passed, 0 failed
+ok   testdata/cells.TestCopiesLeaveTheSourceIntact
+4 passed, 0 failed

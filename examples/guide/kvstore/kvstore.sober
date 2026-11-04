@@ -1,0 +1,35 @@
+package kvstore
+
+// Keeps one line of text per name, as files under a directory (the subject of section 7 of docs/guide/testing.md).
+
+import "std/io"
+
+type Dir struct {
+    path string
+}
+
+// no file called name
+type Missing error {
+    name string
+}
+
+// the file could not be written
+type Denied error {}
+
+func Open(path string) Dir {
+    return Dir{path: path}
+}
+
+@effects(io, nondet)
+@errors(Missing)
+func Load(d Dir, name string) (string, error?) {
+    b := io.ReadFile(d.path + "/" + name) catch return "", Missing{name: name}
+    return string(b) catch "", nil
+}
+
+@effects(io, nondet)
+@errors(Denied)
+func Store(d Dir, name string, line string) error? {
+    err := io.WriteFile(d.path + "/" + name, bytes(line))
+    return if err != nil { Denied{} } else { nil }
+}

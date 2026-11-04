@@ -184,7 +184,17 @@ self/build inst 98.07
 # 2026-10-31 引き上げ（cell R2 — loader/cellx・desugar/cell・lower/cell と @errors の diag.Cell の分・report-di-6・標準運用 = 実測 × 1.005・事後追認）: 実測 88.451 G → 線 88.90
 # 2026-11-01 引き上げ（F 掃除便 R4 — spec T-16 改訂〔兄弟の腕から T? — desugar の ifTy / switchTy・switch の腕の寄せ・lower の joinNil〕の分。2×2: 木の仕事 +0.091 G・コンパイラの退行 +0.064 G〔閾値 0.1 G 未満 — joinType の本体を保ち nil の規則は冷たい道へ〕・report-fclean-6・標準運用 = 実測 × 1.005・事後追認）: 実測 88.977 G → 線 89.42
 # 2026-11-02 引き上げ（呼び出し規約の便 A — lower/irinl.sober の組 3〔葉の極小関数を写しの中まで一巡 — 今まで region.depth の対で資格 0 だった `st mut St` の極小アクセサ・rt.region_alloc の速い道がコンパイラ自身にも展開される〕・report-cc-1・標準運用・事後追認。2 点計測: 旧 stage2 × 新しい木 93.72 G → 新 stage2 × 新しい木 97.58 G〔+4.1%〕・鎖に段を足した定常〔新規則で建てた stage3 × 新しい木〕95.20 G〔+1.6%〕— 新規則のコンパイラ自身は −2.4%）: 実測 90.463 G → 線 90.92
-self/build3 inst 90.92
+# 2026-11-03 引き上げ（再帰型の波 R4b — lower/recreloc.sober〔再帰型の境界コピーの補助 — 組ごとの明示の作業スタック + 写した先の表〕と tyArgFields の循環止めの分だけ自己 build のソースが伸びた・report-rec-8・標準運用 = 実測 × 1.005・事後追認。2×2〔SOBER_CACHE を切って〕: 木の仕事 +0.523 G・コンパイラの退行 +0.007 G）: 実測 91.298 G → 線 91.75
+# 2026-11-03 引き上げ（再帰型の波 R4a-1 — desugar/rec.sober〔再帰の組の環境・同時の μ の展開〕・loader/rectype の SCC と拒否の理由・desugar の fold / unfold の差し込みと型の小道具の μ の腕・lower の後回しのレイアウトの分だけ自己 build のソースが伸びた・report-rec-13・標準運用 = 実測 × 1.005・事後追認。2×2 は未実施）: 実測 91.864 G → 線 92.32
+# 2026-11-04 引き上げ（再帰型の波 R6 — std/json の値の木〔Value・Tree・PutValue〕と View の改名・loader/jsonshape の jValue・desugar の再帰の union の構築の型〔F-ra6〕・clidoc の読みの書き換え・lower の写しの表の遅延確保の分・report-rec-18・標準運用 = 実測 × 1.005・事後追認。2×2 は不成立〔std の View 改名で新 stage2 の焼き込みの std では旧木の clidoc が建たない〕— 全木の m.sh: 旧 × 旧 106.478 G・新 × 新 108.103 G）: 実測 92.335 G → 線 92.80
+# 2026-11-04 引き上げ（メモリの上界の報告 R1a — lower/memrep.sober〔--mem-report の解析 ≈1,000 行〕の自己 build の compile の分・標準運用 = 実測 × 1.005・事後追認）: 実測 93.224 G → 線 93.69
+# 2026-11-04 引き上げ（float-lane + mem R1a/b の merge — 両レーンがそれぞれ線を引いたが合流で加算・実測 93.710 G × 1.005・標準運用・事後追認）: → 94.18
+# 2026-11-04 引き上げ（clo 便 — 局所の束縛のラムダ〔loader の llBind・desugar の閉包の束縛と型の読み・lower の局所の閉包・typer と analyzer 3 本の使用の点の読み〕と診断の分だけ自己 build のソースが伸びた・局所のラムダの無いプログラムでは引きを素通り〔数え口 nLocLam / nll / nLl / llN〕・report-clo-1・標準運用 = 実測 × 1.005・事後追認。2×2 は未実施）: 実測 94.609 G → 線 95.08
+# 2026-11-04 引き上げ（mem R2a — lower/memval.sober 新設〔多項式と値の上界の層〕+ memrep の多項式化で自己 build のソースが伸びた・解析は --mem-report の下だけ〔通常の build の道は不変〕・report-mem-6・標準運用 = 実測 × 1.005・事後追認。2×2 は未実施）: 実測 95.889 G → 線 96.37
+# 2026-11-04 引き上げ（mem R2b — memval の深度の分類・memrep の経路の最大と確保したての成長で自己 build のソースが伸びた・解析は --mem-report の下だけ・report-mem-8・標準運用 = 実測 × 1.005・事後追認。2×2 は未実施）: 実測 96.612 G → 線 97.10
+# 2026-11-04 引き上げ（repr B1+B2a — lower/optbox.sober〔再帰の組の `T?` の欄の箱〕と opt の語数の遅延で自己 build のソースが伸びた・標準運用 = 実測 × 1.005・事後追認。2×2 は未実施）: 実測 97.112 G → 線 97.60
+# 2026-11-05 引き上げ（repr W1-b — 絞りの消滅〔desugar / lower の narrowkill・表層型検査器・loader の while の絞り〕で自己 build のソースが伸びた・腕が書かない絞りは追わない前置きで解析の費用は ±0〔97.643 → 97.642〕・標準運用 = 実測 × 1.005・事後追認。2×2 は未実施）: 実測 97.642 G → 線 98.13
+self/build3 inst 98.13
 # RSS は揺れが小さい（stages ゲートも同じ上限を見る — 段 5 の仕上げ便: 基準 837d0c6 の 506 MB の +30%）
 # 2026-10-05 締め直し（RSS 回収便 — huge page を止め返却の閾値 1 MiB で自己 build 540 → 216 MB・その +35%）
 # 2026-10-12 緩め（展開便 段 1 — 同じ裁定・report-565 / 566）: 290 → 296（stage3 の自己 build 294.9 MB の +1 MB）。値札 = spec の木の伸び +1.6 MB・特化の走り +3.3 MB
@@ -242,7 +252,12 @@ self/build rss 530
 # 2026-11-02 引き上げ（rt 束 — lower/netring.sober の増分消費の環〔区間の表・取り込み / 受け / 閉じの分岐〕の自己 build のソースの伸び・report-rt-3・標準運用・事後追認）: 実測 482 MB → 線 485
 # 2026-11-02 引き上げ（x86 の冷たい辺の写しの外置き — 出力の小片の分と際の揺れ〔--full では線の内・単独の再走で 487〕・report-cc-1・標準運用・事後追認）: 実測 487 MB → 線 490
 # 2026-11-02 引き上げ（呼び出し規約の便 A — lower/irinl.sober の組 3〔葉の極小関数を写しの中まで一巡 — 今まで region.depth の対で資格 0 だった `st mut St` の極小アクセサ・rt.region_alloc の速い道がコンパイラ自身にも展開される〕・report-cc-1・標準運用・事後追認。2 点計測: 旧 stage2 × 新しい木 93.72 G → 新 stage2 × 新しい木 97.58 G〔+4.1%〕・鎖に段を足した定常〔新規則で建てた stage3 × 新しい木〕95.20 G〔+1.6%〕— 新規則のコンパイラ自身は −2.4%）: 実測 498〜502 MB（stages 2 回 — 際の揺れ）→ 線 505
-self/build3 rss 505
+# 2026-11-03 引き上げ（再帰型の波 R4b — lower/recreloc.sober〔再帰型の境界コピーの補助 — 組ごとの明示の作業スタック + 写した先の表〕と tyArgFields の循環止めの分だけ自己 build のソースが伸びた・report-rec-8・標準運用 = 実測 × 1.005・事後追認。2×2〔SOBER_CACHE を切って〕: 木の仕事 +0.523 G・コンパイラの退行 +0.007 G）: 実測 506 MB → 線 509
+# 2026-11-04 引き上げ（再帰型の波 R4a〜R6 の締め — NOTES の棚追補「HEAD×HEAD でも 511」の判定: 静かな窓の --full で 509 以内・単独の stages で 512 = 揺れの帯が線を跨ぐ。R4a 以降の desugar / loader / std/json の伸びの分・report-rec-18・標準運用 = 実測 × 1.005・事後追認）: 実測 509〜512 MB → 線 515
+# 2026-11-04 引き上げ（同上 merge の加算 — 実測 516 MB × 1.005・標準運用・事後追認）: → 519
+# 2026-11-04 引き上げ（mem R2a — 同上・実測 520〜524 MB〔2 回 — 大きい方〕× 1.005・標準運用・事後追認）: → 527
+# 2026-11-04 引き上げ（repr β1+β2 — loader/dest.sober の返る列への追記の解析〔関数ごとに 1 回〕と rlight の定義の表の分・report-repr-2・標準運用 = 実測 × 1.005・事後追認。stages 3 回 = 524 / 529 / 529 MB〔大きい方〕・命令は線の内 96.774 G）: → 532
+self/build3 rss 532
 # 2026-10-10 新設（展開の予算の配り直し便 — ナビ裁定 report-465 (6)）: stage3 の ELF の大きさ（MB = 10^6 バイト・scripts/stages.sh が照合）。
 # 今 7.87 MB（27b4aa60）— 上限 9.0 は +9% 級の膨張（呼び出しグラフの後順を全関数に掛けた棄却形の印）の網
 # 2026-10-18 引き上げ（TLS 便 796 の x86 の塊 + 席 A の A-1 で 9.01 MB — 膨張の網としての幅は保つ・ユーザー追認済み 2026-10-18）
@@ -289,7 +304,18 @@ self/build3 rss 505
 # 2026-11-01 引き上げ（F 掃除便 R5 — T-17 改訂の 1 段目〔loader/flowx.sober の値の位置の && / || の写し・名前の参照の判定〕の分・report-fclean-7・標準運用・事後追認）: 実測 12,420,912 B → 線 12.49 MB
 # 2026-11-02 引き上げ（x86 の冷たい辺の写しの外置き — 写しの要る panic の点・遅い道への辺の写しを関数の末尾へ出す小片〔jcc + 写し + jmp〕の分・report-cc-1・標準運用・事後追認）: 実測 12,596,360 B → 線 12.66 MB
 # 2026-11-02 引き上げ（呼び出し規約の便 A — lower/irinl.sober の組 3〔葉の極小関数を写しの中まで一巡 — 今まで region.depth の対で資格 0 だった `st mut St` の極小アクセサ・rt.region_alloc の速い道がコンパイラ自身にも展開される〕・report-cc-1・標準運用・事後追認。2 点計測: 旧 stage2 × 新しい木 93.72 G → 新 stage2 × 新しい木 97.58 G〔+4.1%〕・鎖に段を足した定常〔新規則で建てた stage3 × 新しい木〕95.20 G〔+1.6%〕— 新規則のコンパイラ自身は −2.4%）: 実測 12,839,440 B → 線 12.90 MB
-self/elf size 12.90
+# 2026-11-03 引き上げ（再帰型の波 R4b — lower/recreloc.sober〔再帰型の境界コピーの補助 — 組ごとの明示の作業スタック + 写した先の表〕と tyArgFields の循環止めの分だけ自己 build のソースが伸びた・report-rec-8・標準運用 = 実測 × 1.005・事後追認。2×2〔SOBER_CACHE を切って〕: 木の仕事 +0.523 G・コンパイラの退行 +0.007 G）: 実測 12,955,936 B → 線 13.02 MB
+# 2026-11-03 引き上げ（再帰型の波 R4a-1 — 同上・report-rec-13・標準運用 = 実測 × 1.005・事後追認）: 実測 13,026,672 B → 線 13.09 MB
+# 2026-11-04 引き上げ（float レーン F3a — floatfmt の多倍長の部品を std/internal/bigint へ移した・report-fl-3・標準運用 = 実測 × 1.005・事後追認。2×2〔SOBER_BUILD_CACHE=0〕: 木 +9.9 KB・コンパイラ ±0。
+# ソースの増分は +1.1 KB — 残りは package を跨いだ bigint の 7 本が自己 build では実体のまま残る分〔旧は floatfmt の中で展開〕。利用者のプログラム〔印字 + 解析 20 万本〕の命令は旧と一致）: 実測 13,096,080 B → 線 13.16 MB
+# 2026-11-04 引き上げ（メモリの上界の報告 R1a — 同上・標準運用 = 実測 × 1.005・事後追認）: 実測 13,182,584 B → 線 13.25 MB
+# 2026-11-04 merge（float-lane + mem R1a/b が同居 — 線は merge 後の実測 × 1.005 で引き直し予定・仮置き）
+# 2026-11-04 引き上げ（clo 便 — 同上・標準運用 = 実測 × 1.005・事後追認）: 実測 13,306,760 B → 線 13.38 MB
+# 2026-11-04 引き上げ（mem R2a — 同上・標準運用 = 実測 × 1.005・事後追認）: 実測 13,467,208 B → 線 13.54 MB
+# 2026-11-04 引き上げ（mem R2b — 同上・標準運用 = 実測 × 1.005・事後追認）: 実測 13,547,480 B → 線 13.62 MB
+# 2026-11-04 引き上げ（repr B1+B2a — 同上・標準運用 = 実測 × 1.005・事後追認）: 実測 13,627,920 B → 線 13.70 MB
+# 2026-11-05 引き上げ（repr W1-b — 同上・標準運用 = 実測 × 1.005・事後追認）: 実測 13,702,232 B → 線 13.78 MB
+self/elf size 13.78
 # wall は参考値（基準 837d0c6 の 5.53 s の +20% — 照合しない）
 self/build wall 6.6 ref
 # 2026-10-07 新設（段 6 P6-6 — 決定の範囲・朝に追認を）: self/check rss = 自己 check（一括・W1）の peak RSS — scripts/selfpar.sh が stage2 で照合（bench.sh も W1 で測る）。
@@ -365,7 +391,10 @@ self/build-par rss 1188
 golden/irtext maxfile 3.329
 # 2026-11-02 事後追認（標準運用 × 1.005 — F1〔登録済みの ring fd + 固定のファイル表〕で rt の受け・送り・閉じの道が伸びた・examples_tls_serve.ll 7.654 MB）
 golden/lltext maxfile 7.692
-golden/corejson maxfile 12.156
+# 2026-11-04 事後追認（標準運用 × 1.005 — std/json の値の木〔Value・Tree・PutValue〕で http の例の閉包のコア JSON が伸びた・examples_http_servewith_conn.json 12.207 MB）
+# 2026-11-04 事後追認（標準運用 × 1.005 — http の Stream の送りの状態 Out を mut の席で渡す形〔旧 (α-L1) の撤去〕: Out〔圧縮器を含む struct〕の欄ごとのセルの木が
+# stream の 4 つの送りの形と sendUnder の emit ごとに乗る・examples_http_servewith_conn.json 12.207 → 13.981 MB）
+golden/corejson maxfile 14.051
 golden/astjson maxfile 5.174
 golden/irtext total 110.1 ref
 golden/lltext total 300.3 ref

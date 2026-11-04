@@ -31,8 +31,6 @@ const MFzAliasAt = 9  // 上の別名ができた場所（注 — at = 別名を
 const MFzParam = 10   // mut の仮引数の中身の freeze（U1 — at = freeze の節, 付帯 = 仮引数の節）
 const MFzEscape = 20  // mut の仮引数の中身が逃げる（U3 — at = 逃げる節, 付帯 = 仮引数の節）
 const MFzImplicitAt = 14  // 暗黙の freeze の点（注 — at = 凍った式の節, 付帯 = 同じ節）
-const MFzCapWrite = 17 // 借りのラムダの作成点の mut の捕捉（mut 実引数と同じ書き — U2）が freeze の後（at = 捕捉の名前の節, 付帯 = freeze の節）
-const MFzCapture = 16 // 借りのラムダの本体の中で、捕捉した mut の束縛の中身の freeze（U1 — (α-L1)・at = freeze の節, 付帯 = 捕捉の名前の節）
 
 const FvFreeze = 1
 const FvWrite = 2
@@ -58,11 +56,12 @@ type Fz struct {
     ev table.Table[int]
     // ループの区間 [始め, 終わり]…
     loops table.Table[int]
-    // 名前が mut の束縛か（mut ローカル・mut 仮引数 — 借りのラムダの mut の捕捉の判定）
+    // 名前が mut の束縛か（mut ローカル・mut 仮引数・ラムダの mut 仮引数の席）
     mutb table.Table[int]
-    // 借りのラムダ（(α-L1) — mut の束縛を捕捉した値の位置の行のラムダ）の本体の区間と捕捉した mut の名前 [始め, 終わり, 名前, 捕捉の名前の節]…
-    lcap table.Table[int]
-    nLcap int
+    // 名前が局所の束縛のラムダ（`f := (…) => …` — 使用の点へ展開される）ならラムダの節 + 1（でなければ 0）。本体は束縛の点でなく呼び出しの点で歩く
+    llam table.Table[int]
+    llDepth int
+    nLl int
     seq int
     inRet bool
     exempt bool
@@ -202,7 +201,7 @@ func fzFunc(z mut Fz, d mut desugar.S, fd ast.Node) {
     z.nEsc = 0
     z.nEv = 0
     z.nLoops = 0
-    z.nLcap = 0
+    z.nLl = 0
     z.nRoots = 0
     z.nSeen = 0
     z.seq = 0
@@ -271,6 +270,7 @@ func fzNewName(z mut Fz, d mut desugar.S, n int, ref int, lo int, hi int) {
     fzAt(mut z.ptype, n, -1)
     fzAt(mut z.decl, n, 0)
     fzAt(mut z.mutb, n, 0)
+    fzAt(mut z.llam, n, 0)
     h := fzHash(mut z, mut d, ref, lo, hi)
     fzAt(mut z.bnext, n, if table.Get(mut z.bstamp, h) == z.stamp { table.Get(mut z.bhead, h) } else { -1 })
     table.Set(mut z.bhead, h, n)
@@ -832,6 +832,13 @@ func fzStmt(z mut Fz, d mut desugar.S, s desugar.NodeRef) {
         vs := desugar.ListRef(x.c)
         nn := desugar.LenL(mut d, names)
         nv := desugar.LenL(mut d, vs)
+        if nn == 1 && nv == 1 && x.b == 0 && desugar.KindN(mut d, fzNat(mut d, vs, 0)) == ast.ELambda {
+            // 局所の束縛のラムダ: 本体は呼び出しの点で歩く（fzLocal）— ここでは名前を覚えるだけ
+            dst := fzDeclName(mut z, mut d, desugar.LatI(mut d, names, 0))
+            table.Set(mut z.llam, dst, int(fzNat(mut d, vs, 0)) + 1)
+            z.nLl += 1
+            return
+        }
         for i <- iter.Range(0, nv) {
             fzExpr(mut z, mut d, fzNat(mut d, vs, i))
         }
@@ -948,6 +955,17 @@ func fzExpr0(z mut Fz, d mut desugar.S, e desugar.NodeRef) {
         fzExpr(mut z, mut d, callee)
         fzExprs(mut z, mut d, as)
         n := desugar.LenL(mut d, as)
+        // 局所の束縛のラムダを実引数に渡す（展開の仮引数 — 何度でも走りうる）・呼ぶ（その点で 1 回走る）: 本体をここで歩く
+        for i <- iter.Range(0, n) {
+            la := fzLocal(mut z, mut d, fzNat(mut d, as, i))
+            if la != -1 {
+                fzExpr(mut z, mut d, la)
+            }
+        }
+        lc := fzLocal(mut z, mut d, callee)
+        if lc != -1 {
+            fzLocalCall(mut z, mut d, lc)
+        }
         if desugar.KindN(mut d, callee) == ast.EIdent {
             cn := desugar.StrRef(desugar.NodeOf(mut d, callee).a)
             if desugar.StrIs(mut d, cn, "freeze") && n == 1 {
@@ -992,7 +1010,24 @@ func fzExpr0(z mut Fz, d mut desugar.S, e desugar.NodeRef) {
         }
     } else if k == ast.ELambda {
         // ラムダの本体は何度でも走りうる — ループとみなす（中の return はラムダの戻り値）
-        lc0 := fzLamCaps(mut z, mut d, e)
+        // 関数型の mut 仮引数の席の仮引数は mut 仮引数（U1・U3 — 中身は呼び手がまだ持っている: freeze できず、呼び出しの外へ逃げない）
+        seats := desugar.LamMutSeats(mut d, e)
+        if seats != 0 {
+            lps := desugar.ListRef(x.a)
+            for i <- iter.Range(0, desugar.LenL(mut d, lps)) {
+                if (seats >> i) & 1 != 0 {
+                    pn := fzNat(mut d, lps, i)
+                    p := desugar.NodeOf(mut d, pn)
+                    pk := fzDeclName(mut z, mut d, p.a)
+                    table.Set(mut z.ptype, pk, p.b)
+                    table.Set(mut z.mutb, pk, 1)
+                    holds := if p.b != -1 { fzTyContainer(mut z, mut d, z.pk, desugar.NodeRef(p.b), 8) } else { !desugar.LamParamScalar(mut d, e, i) }
+                    if holds {
+                        table.Set(mut z.param, pk, int(pn))
+                    }
+                }
+            }
+        }
         slot := fzLoopBegin(mut z, mut d)
         save := z.inRet
         z.inRet = false
@@ -1005,9 +1040,6 @@ func fzExpr0(z mut Fz, d mut desugar.S, e desugar.NodeRef) {
         }
         z.inRet = save
         fzLoopEnd(mut z, mut d, slot)
-        for q <- iter.Range(lc0, z.nLcap) {
-            table.Set(mut z.lcap, 4 * q + 1, z.seq)
-        }
     } else if k == ast.EIf {
         fzExpr(mut z, mut d, desugar.NodeRef(x.a))
         fzBlock(mut z, mut d, desugar.NodeRef(x.b))
@@ -1085,33 +1117,30 @@ func fzExpr0(z mut Fz, d mut desugar.S, e desugar.NodeRef) {
     }
 }
 
-// ラムダ e が mut の束縛を捕捉した借りのラムダ（loader の捕捉の表の行 — mut を捕捉できるのは借りの実引数のラムダだけ）なら、
-// 捕捉した mut の名前を本体の区間の始め（今の通し番号）とともに積む（終わりは呼び手が埋める）。積む前の数を返す。
-// 作成点では捕捉は呼び出しへの mut 実引数（U2 — 書きの事象。本体の区間の前に置くので、本体の中の freeze の「後」には数えない）
-func fzLamCaps(z mut Fz, d mut desugar.S, e desugar.NodeRef) int {
-    lc0 := z.nLcap
-    row := desugar.CapRow(mut d, e)
-    if row < 0 {
-        return lc0
+// 節 e が局所の束縛のラムダの名前ならそのラムダの節（でなければ -1）
+func fzLocal(z mut Fz, d mut desugar.S, e desugar.NodeRef) desugar.NodeRef {
+    if z.nLl == 0 || e == -1 || desugar.KindN(mut d, e) != ast.EIdent || z.llDepth > 64 {
+        return -1
     }
-    ids := desugar.CapNodes(mut d, row)
-    for j <- iter.Range(0, desugar.LenL(mut d, ids)) {
-        n := fzNat(mut d, ids, j)
-        if n != -1 {
-            x := desugar.NodeOf(mut d, n)
-            k := if x.kind == ast.EMutArg { fzMutRoot(mut z, mut d, x.a) } else { fzName(mut z, mut d, x.a, 0, desugar.Dat(mut d, x.a)) }
-            if table.Get(mut z.mutb, k) == 1 {
-                fzEvent(mut z, mut d, FvWrite, k, n)
-                q := z.nLcap
-                fzAt(mut z.lcap, 4 * q, z.seq)
-                fzAt(mut z.lcap, 4 * q + 1, -1)
-                fzAt(mut z.lcap, 4 * q + 2, k)
-                fzAt(mut z.lcap, 4 * q + 3, int(n))
-                z.nLcap = q + 1
-            }
-        }
+    a := desugar.NodeOf(mut d, e).a
+    k := fzName(mut z, mut d, a, 0, desugar.Dat(mut d, a))
+    return desugar.NodeRef(table.Get(mut z.llam, k) - 1)
+}
+
+// 局所の束縛のラムダ lam の呼び出し: 本体を呼び出しの点で 1 回歩く（展開と同じ — 本体の書きは呼び出しの点の事象）
+func fzLocalCall(z mut Fz, d mut desugar.S, lam desugar.NodeRef) {
+    z.llDepth += 1
+    save := z.inRet
+    z.inRet = false
+    body := desugar.NodeRef(desugar.NodeOf(mut d, lam).b)
+    bk := desugar.KindN(mut d, body)
+    if bk == ast.EBlock || bk == ast.KBlock {
+        fzLamBlock(mut z, mut d, body)
+    } else {
+        fzExpr(mut z, mut d, body)
     }
-    return lc0
+    z.inRet = save
+    z.llDepth -= 1
 }
 
 // ラムダの本体のブロック（中の return は関数の return ではない — 事象にしない）
@@ -1273,14 +1302,6 @@ func fzJudge(z mut Fz, d mut desugar.S) {
                         pdone = true
                     }
                 }
-                // U1 の捕捉（(α-L1)）: 借りのラムダの本体の中で、捕捉した mut の束縛の中身（を持ちうる名前）を freeze — 呼び手の関数がまだ持っていて
-                // 呼び出しの後に書ける（本体の中では捕捉は mut の仮引数）
-                for q <- iter.Range(0, z.nLcap) {
-                    if !pdone && table.Get(mut z.lcap, 4 * q) < fs && fs < table.Get(mut z.lcap, 4 * q + 1) && table.Get(mut z.hs, table.Get(mut z.lcap, 4 * q + 2)) == 1 {
-                        fzReport(mut z, MFzCapture, fat, desugar.NodeRef(table.Get(mut z.lcap, 4 * q + 3)))
-                        pdone = true
-                    }
-                }
             }
             // U2 / U1 の別名: r を持ちうる束縛が後に書く（最初の 1 件だけ）
             mut done := false
@@ -1300,7 +1321,7 @@ func fzJudge(z mut Fz, d mut desugar.S) {
                         if dup {
                             done = true
                         } else if wr == fr {
-                            fzReport(mut z, if fzIsCapNode(mut z, wat) { MFzCapWrite } else { MFzWrite }, wat, fat)
+                            fzReport(mut z, MFzWrite, wat, fat)
                             fzNoteImplicit(mut z, mut d, fat)
                             done = true
                         } else if !z.exempt {
@@ -1368,16 +1389,10 @@ func fzEdgeOf(z mut Fz, d mut desugar.S, w int) desugar.NodeRef {
 // ── 診断の文面 ──
 
 func fzMessage(z mut Fz, d mut desugar.S, k int, at desugar.NodeRef, x desugar.NodeRef) string {
-    // freeze の点の節（MFzParam / MFzCapture は at・書きの指摘は付帯）
-    fp := if k == MFzParam || k == MFzCapture { at } else { x }
-    if k == MFzCapWrite && !fzExplicit(mut z, mut d, x) {
-        return fzMessageImplicit(mut z, mut d, MFzWrite, at, x)
-    }
+    // freeze の点の節（MFzParam は at・書きの指摘は付帯）
+    fp := if k == MFzParam { at } else { x }
     if k != MFzEscape && k != MFzAliasAt && k != MFzImplicitAt && !fzExplicit(mut z, mut d, fp) {
         return fzMessageImplicit(mut z, mut d, k, at, x)
-    }
-    if k == MFzCapWrite {
-        return "this lambda captures `${fzCapName(mut z, mut d, at)}` as a mut binding (it is passed to the call like `mut ${fzCapName(mut z, mut d, at)}`) after its contents were frozen by `${fzSpell(mut z, mut d, x)}` — the frozen value could change. Capture it before the freeze, or freeze after the call"
     }
     return switch k {
     case MFzWrite: "this writes to `${fzSpell(mut z, mut d, at)}` after it was frozen by `${fzSpell(mut z, mut d, x)}` — the frozen value would change. Finish writing before freeze, or start a new value after it (`x = mut []T{}`)"
@@ -1385,7 +1400,6 @@ func fzMessage(z mut Fz, d mut desugar.S, k int, at desugar.NodeRef, x desugar.N
     case MFzAliasAt: "(note) the contents are shared from here — the binding written above and the frozen one may hold the same buffer"
     case MFzImplicitAt: "(note) `${fzSpell(mut z, mut d, at)}` is frozen here — ${if desugar.IsForSource(mut d, at) { "a for loop iterates over an immutable value" } else { "an immutable value is expected at this point" }} (implicit freeze)"
     case MFzParam: "`${fzSpell(mut z, mut d, at)}` freezes the contents of the mut parameter `${fzParamName(mut z, mut d, x)}` — the caller still holds them and can write. Freeze in the caller instead (this function only writes through `mut ${fzParamName(mut z, mut d, x)}`), or build a new value here and freeze that"
-    case MFzCapture: "`${fzSpell(mut z, mut d, at)}` freezes the contents of `${fzCapName(mut z, mut d, x)}`, which this lambda captured as a mut binding — the enclosing function still holds them and can write after the call. Freeze in the enclosing function after the call instead, or build a new value here and freeze that"
     default: "the contents of the mut parameter `${fzParamName(mut z, mut d, x)}` must not escape the call (here: `${fzSpell(mut z, mut d, at)}`) — the caller's freeze would no longer be sound. Return a newly built value, or write into the caller's binding (`${fzParamName(mut z, mut d, x)} = …`)"
     }
 }
@@ -1426,27 +1440,6 @@ func fzSpell(z mut Fz, d mut desugar.S, n desugar.NodeRef) string {
         return fzSpell(mut z, mut d, desugar.NodeRef(x.a))
     }
     return "…"
-}
-
-// 節 n が借りのラムダの mut の捕捉の名前の節（作成点の書きの事象 — fzLamCaps）か
-func fzIsCapNode(z mut Fz, n desugar.NodeRef) bool {
-    for q <- iter.Range(0, z.nLcap) {
-        if table.Get(mut z.lcap, 4 * q + 3) == int(n) {
-            return true
-        }
-    }
-    return false
-}
-
-// 捕捉の名前の節（名前・`mut` の道）の根の綴り
-func fzCapName(z mut Fz, d mut desugar.S, n desugar.NodeRef) string {
-    s := fzSpell(mut z, mut d, n)
-    b := bytes(s)
-    mut k := 0
-    while k < len(b) && b[k] != '.' {
-        k += 1
-    }
-    return string(b[0:k]) catch return s
 }
 
 func fzParamName(z mut Fz, d mut desugar.S, p desugar.NodeRef) string {

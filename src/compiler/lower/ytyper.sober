@@ -127,6 +127,9 @@ func yMatch(st mut St, y int, t int) int {
             return 0
         }
         ft := if isClosT(mut st, t) { closFt(mut st, t) } else { desugar.HeapGet(mut st.d, t + 1) }
+        if yFnMut(mut st, x) != ftMut(mut st, ft) {
+            return 0
+        }
         return yAnd(yMatchList(mut st, desugar.ListRef(x.a), hgetL(mut st, ft)), yMatchList(mut st, desugar.ListRef(x.b), hgetL(mut st, ft + 1)))
     }
     return -1
@@ -218,11 +221,16 @@ func yLower(st mut St, y int, at desugar.NodeRef) (int, error?) {
     case desugar.YFn:
         pl := yLowerList(mut st, desugar.ListRef(x.a), at)?
         rl := yLowerList(mut st, desugar.ListRef(x.b), at)?
-        return if pl == -1 || rl == -1 { -1 } else { rec4(mut st, TFnv, rec4(mut st, int(pl), int(rl), 0, 0), 0, 0) }, nil
+        return if pl == -1 || rl == -1 { -1 } else { rec4(mut st, TFnv, rec4(mut st, int(pl), int(rl), 0, yFnMut(mut st, x)), 0, 0) }, nil
     case desugar.YDecl:
         bk := kindN(mut st, nC(nodeOf(mut st, desugar.NodeRef(x.a))))
         if bk == ast.BDefined {
             return namedTy(mut st, desugar.NodeRef(x.a)), nil
+        }
+        if bk == ast.BFunc {
+            // 値化可能な named fn type（型引数 `iter.Slice[F]` の F — 値の位置の slice の要素）は関数値の型（宣言の package で名前を引く）
+            te := node(mut st, ast.TName, at, nodeOf(mut st, desugar.NodeRef(x.a)).a, 0, 0, 0)
+            return resolveType(mut st, x.b, desugar.NodeRef(te), true)
         }
         if bk != ast.BStruct && bk != ast.BUnion {
             return -1, nil
@@ -267,3 +275,17 @@ func yLowerList(st mut St, l desugar.ListRef, at desugar.NodeRef) (desugar.ListR
     return out, nil
 }
 
+// 表層の関数型 x（YFn）の mut 仮引数の席のビット（名前なしは c に負で・名前付きは宣言の署名から）
+func yFnMut(st mut St, x desugar.YT) int {
+    if x.c <= 0 {
+        return 0 - x.c
+    }
+    ps := lA(nodeOf(mut st, nC(nodeOf(mut st, desugar.NodeRef(x.c - 1)))))
+    mut m := 0
+    for i <- iter.Range(0, lenL(mut st, ps)) {
+        if kindN(mut st, latN(mut st, ps, i)) == ast.TMutP {
+            m = m | (1 << i)
+        }
+    }
+    return m
+}

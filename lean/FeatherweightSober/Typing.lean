@@ -466,6 +466,20 @@ inductive HasType (Δ : Defs) : ChanTy → StoreTy → Nat → Nat → Nat → C
   /-- 実行時の handle。結果型はこの世界の子の表（Ξ.tk — 世界ごと）が与える -/
   | taskV {Ξ Ψ f b d Γ Λ} {rs n : Nat} {t : Ty} :
       b ≤ rs → rs < d → Ξ.tk[n]? = some (rs, t) → HasType Δ Ξ Ψ f b d Γ Λ (.taskV rs n) (.own .task rs t)
+  /-- 再帰型（S — 同時の μ の組の i 番目・自己再帰は n = 1）の値を作る（iso 再帰 — language.md 1 節）: 中身は 1 段の展開の型（組の全成分を代入した i 番目の本体） -/
+  | foldS {Ξ Ψ f b d Γ Λ} {e : Expr} {n i : Nat} {t : Ty} :
+      (Ty.mus n i t).musOk = true → HasType Δ Ξ Ψ f b d Γ Λ e (Ty.mus n i t).unfold →
+      HasType Δ Ξ Ψ f b d Γ Λ (.fold (.mus n i t) e) (.mus n i t)
+  | unfoldS {Ξ Ψ f b d Γ Λ} {e : Expr} {n i : Nat} {t : Ty} :
+      (Ty.mus n i t).musOk = true → HasType Δ Ξ Ψ f b d Γ Λ e (.mus n i t) →
+      HasType Δ Ξ Ψ f b d Γ Λ (.unfold e) (Ty.mus n i t).unfold
+  /-- 同時の μ の D の値を作る: 中身は 1 段の展開の型（組の全成分を局所座標で代入した i 番目の本体を座標 r へ） -/
+  | foldRs {Ξ Ψ f b d Γ Λ} {e : Expr} {r n i : Nat} {t : Ty} :
+      (Ty.muRs r n i t).muRsOk = true → HasType Δ Ξ Ψ f b d Γ Λ e (Ty.muRs r n i t).unfold →
+      HasType Δ Ξ Ψ f b d Γ Λ (.fold (.muRs r n i t) e) (.muRs r n i t)
+  | unfoldRs {Ξ Ψ f b d Γ Λ} {e : Expr} {r n i : Nat} {t : Ty} :
+      (Ty.muRs r n i t).muRsOk = true → HasType Δ Ξ Ψ f b d Γ Λ e (.muRs r n i t) →
+      HasType Δ Ξ Ψ f b d Γ Λ (.unfold e) (Ty.muRs r n i t).unfold
 
 /-- 引数境界の条件（round4 V1、R2 で mut を解禁）: 呼び手空間（region 0）への参照までを許す。
 imm は上界、mut は正確（callM の anchor が呼び手の束縛の region を与える。call なら呼び手最内 d）。
@@ -494,6 +508,10 @@ def Ty.retOk : Ty → Bool
   | .chan _ _ => false
   -- 関数値は loc-free・閉じているので境界を渡れる
   | .fn _ _ => true
+  | .mus _ _ _ => true
+  | .rvar _ => true
+  -- D の μ は imm のコンテナと同じ（中身の局所 region は自分の座標）
+  | .muRs r _ _ b => b.mutFree && decide (r < 2) && b.retOk
   | .own _ _ _ => false
 
 /-- 関数表の整合（round4: 同世界化）: 各本体は base の世界

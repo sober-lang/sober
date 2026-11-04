@@ -1,0 +1,17 @@
+package main
+
+// 負例: 局所の束縛のラムダの本体に return は書けない — 値は本体の末尾の式（return は呼び出しの点の関数から抜けてしまう）（language.md 25 節）
+
+func g(n int) int {
+    f := (x int) => {
+        if x < 0 {
+            return 0
+        }
+        x * 2
+    }
+    return f(n)
+}
+
+func main() {
+    println(g(3))
+}

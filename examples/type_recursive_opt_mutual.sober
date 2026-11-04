@@ -1,0 +1,44 @@
+package main
+
+// opt の中身を通る相互再帰と、値の欄を挟んだ間接の閉路: `A { b B? }` / `B { a A? }`・`Dir { up Entry? }` / `Entry { d Dir }`
+// （Entry は Dir を値で持ち、閉路は Dir.up の `Entry?` だけを通る — 大きさは有限）
+
+type A struct {
+    x int
+    b B?
+}
+
+type B struct {
+    y int
+    a A?
+}
+
+type Dir struct {
+    name string
+    up Entry?
+}
+
+type Entry struct {
+    size int
+    d Dir
+}
+
+func depth(d Dir) int {
+    e := d.up
+    return if e == nil { 0 } else { 1 + depth(e.d) }
+}
+
+func main() {
+    a := A{x: 1, b: B{y: 2, a: A{x: 3, b: nil}}}
+    b := a.b
+    if b != nil {
+        c := b.a
+        if c != nil {
+            println(a.x + b.y + c.x)
+        }
+    }
+    root := Dir{name: "/", up: nil}
+    usr := Dir{name: "usr", up: Entry{size: 1, d: root}}
+    bin := Dir{name: "bin", up: Entry{size: 2, d: usr}}
+    println(bin.name, depth(bin))
+}

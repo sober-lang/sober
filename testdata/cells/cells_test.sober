@@ -16,6 +16,8 @@ const S = cell.Cell[string]{init: "x"}
 const Hits = cell.Cell[int]{}
 const Seen = cell.Cell[[]string]{}
 const Sum = cell.Cell[int]{}
+const Lines = cell.Cell[[]string]{}
+const Index = cell.Cell[map[string][]string]{}
 
 func add(k int) {
     cell.Update(Rows, (rs []Row) => append(rs, Row{k: "${k}", v: "v${k}"}))
@@ -70,4 +72,35 @@ func TestQuickTrialsStartEmpty() {
         cell.Update(Sum, (n int) => n + x)
         cell.Get(Sum) == x
     })
+}
+
+func lastLine() string {
+    ls := cell.Get(Lines)
+    return ls[len(ls) - 1]
+}
+
+func indexed(k string) string {
+    m := cell.Get(Index)
+    vs := m[k]
+    return if vs == nil { "-" } else { vs[0] }
+}
+
+// a value read from a cell stays intact after the reader returns, and the writer's own value stays intact after later writes
+// (nested slices and a map of slices — values built in the writer's region)
+func TestCopiesLeaveTheSourceIntact() {
+    k := "k"
+    xs := []string{k + "=1"}
+    cell.Set(Lines, xs)
+    assert(lastLine() == "k=1")
+    assert(lastLine() == "k=1")
+    cell.Set(Lines, []string{k + "=2"})
+    cell.Update(Lines, (ls []string) => append(ls, k + "=3"))
+    assert(xs[0] == "k=1")
+    assert(lastLine() == "k=3")
+    assert(lastLine() == "k=3")
+    mut m := mut map[string][]string{}
+    m[k] = []string{k + "v"}
+    cell.Set(Index, freeze(m))
+    assert(indexed("k") == "kv")
+    assert(indexed("k") == "kv")
 }

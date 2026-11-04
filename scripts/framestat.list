@@ -13,7 +13,9 @@
 # 2026-10-23 間接呼び出しの sret の受け皿を全語の書きと読む（ir.sober CALLI_SRET — zeroinit / slotcolor・report-1069）: serveTlsConn 6448 → 5872・@sum 95904 → 94256・@zero 3752 → 1560（受け皿が要零の専用スロットから彩色の候補へ）・締め直し = 実測 × 1.01
 # 2026-10-23 0.7.0 便 8 の段 8-5（compress + stream — serveBuf の展開先に stream の枝・report-1057〜1071・ユーザー裁定 = 値札受理）: serveTlsConn 5872 → 6224・@sum 94256 → 99392・@zero 1560 → 1816・締め直し = 実測 × 1.01（事後追認の標準運用）
 # 2026-10-24 json-tls の粒 a / b'（tls.Conn に送りの Dir を持つ — Conn の値が 10 語伸びる・json.putDigits の新しい関数・report-1118）: serveTlsConn 6224 → 6320・@sum 99392 → 102176・@zero 1816 → 1976・締め直し = 実測 × 1.01（事後追認の標準運用）
-bench/httparena/main.sober main.serveTlsConn 6383
+# 2026-11-04 案 P の言語便 R1（旧 (α-L1) の撤去 — 送りの状態 http.Out〔圧縮器の deflate.Stream を含む 88 語級〕が serveBuf の展開先の枠のスロットに乗る。
+# 旧は借りの閉包が捕捉する 64 語以上のセルを region に置いていた〔rcellOk — 撤去〕・Out は stream の 4 つの形で 1 つに畳んだ・report-p-1）: serveTlsConn 6320 → 7088・締め直し = 実測 × 1.01（事後追認の標準運用）
+bench/httparena/main.sober main.serveTlsConn 7159
 # 2026-10-26 案 S（accept の輪をワーカーごとに — std/net の Serve の輪の task と scope が 1 段増えた・report-1172 / 1173・実測 × 1.01・標準運用の引き直し — ユーザーへは事後追認）: bench/httparena @sum 105488（線 104668 を越えた）→ 106543
 bench/httparena/main.sober @sum 106543
 # 2026-10-25 P3（飽和下の待ちの上限 D — rt.mn_next / rt.task_new の語が増えた・report-1142 / 1143・実測 × 1.01・標準運用の引き直し — ユーザーへは事後追認）: bench/httparena @zero 2008（線 1996 を越えた）→ 2029
@@ -51,4 +53,8 @@ bench/httparena/main.sober @zero 2133
 # 2026-10-31 ビルド時 DI R1（loader/doubles.sober の新しい関数の枠・report-di-3・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1249600（線 1241008 を越えた）→ 1262096
 # 2026-11-01 F 掃除便 R4（T-16 改訂 — catch nil の写しが素の if に・desugar / lower の新しい関数の枠・report-fclean-6・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1264400（線 1262096 を越えた）→ 1277044・httparena @zero 2112（線 2109）→ 2133
 # 2026-11-03 T1 根治便 ①（lower/mn.sober の計器 kDepth / kAge の関数の枠・report-t1h-0・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1277184（線 1277044 を越えた）→ 1289956
-@self @sum 1289956
+# 2026-11-03 再帰型の波 R4a-1（desugar/rec.sober・loader/rectype の組み替え・lower の後回しのレイアウトの新しい関数の枠・report-rec-13・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1292128（線 1289956 を越えた）→ 1305049
+# 2026-11-04 メモリの上界の報告 R1a / R1b（lower/memrep.sober の解析とスタック上界・x86 の群のフレームの返し・report-mem-2 / mem-3・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1305200（線 1305049 を越えた）→ 1318252
+# 2026-11-04 メモリの上界の報告 R2a（lower/memval.sober の値の層・memrep の多項式化の新しい関数の枠・report-mem-6・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1327760（線 1318252 を越えた）→ 1341038
+# 2026-11-05 repr W1-b（絞りの消滅 — desugar / lower の narrowkill・表層型検査器・flowx の新しい関数・実測 × 1.01・事後追認）: @self @sum 1345888 → 1359347
+@self @sum 1359347

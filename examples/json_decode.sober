@@ -54,7 +54,7 @@ func main() {
         return
     }
     xs := switch json.At(d, json.Root(d)) {
-    case json.Array{items}: items
+    case json.ViewArray{items}: items
     default: []int{}
     }
     for i <- iter.Range(0, len(xs)) {

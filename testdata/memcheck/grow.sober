@@ -1,0 +1,17 @@
+package main
+
+// 2 本の列を交互に伸ばす（先端を奪い合う — 2 度目からの成長は余剰容量つき・確保したての列の初回だけが長さちょうど）
+func two() int {
+    mut xs := []int{1, 2}
+    mut ys := []int{3}
+    xs = append(xs, 4)
+    ys = append(ys, 5)
+    xs = append(xs, 6)
+    ys = append(ys, 7)
+    xs = append(xs, 8)
+    return len(xs) + len(ys)
+}
+
+func main() {
+    println(two())
+}

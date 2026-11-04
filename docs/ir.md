@@ -126,6 +126,11 @@ Sober の唯一の中間表現。`sober build` は AST → IR → 正規バッ�
 - 境界コピー（region 多相の裁定 — language.md 31 節、Lean の relocT / relocTo / regionKR）は 1 つの規則 lower_cont.relocateTo(値, 型, floor) に集めてある
   - 対象は、ヘッダの深度が floor より深いコンテナだけ。中身を先に再帰で写してから、外側のセル列を floor の region の先端へ連続に積む
   - 同じ規則を使う出口: 関数の戻りと `?`（floor = 入口の深度）、inline 展開の return と `?`（floor = 呼び出し点の深度）、式ブロックの普通の出口（floor = ブロックの入口の深度）
+  - 再帰型（slice / map の要素を通って自分を含む struct / union — language.md 1 節の D）はその場に並べると止まらないので、互いに含み合う型の組ごとに
+    補助 `rt.rec_relocate#n(p, floor, 成分)` を 1 本建てて呼ぶ（lower/recreloc.sober）。補助は明示の作業スタックで歩き（深い木でネイティブのスタックも
+    region の深度も使わない — 中身を写し終えてから外側を写す順は、外側の後始末の項を積んでから中身の項を積むことで保つ）、写した先の表（元のセル列の番地 →
+    写した番地）で共有したセル列を 1 回だけ写す（imm の共有は観測できない）。作業スタックと表は今の深度の region に置く。開発用 --rt-mutant=38 は表を引かない。
+    lower の分割（席 A）の子は補助を組めない（型は子の外へ出ない）ので、補助が要る関数があれば拒否して直の道で下ろす
 - 最適化が使う別名の事実（ヘッダのループ昇格 — src/compiler/lower/hloop.sober・2026-10-12 裁定）: mut の印のある ptr 仮引数 P（呼び手のヘッダのセル）は、
   次の番地の書き込みと重ならない — ①確保した番地（region.alloc の結果・rt.region_alloc / region_alloc8 / slice_grow / slice_grow8 の結果とその gep —
   確保したばかりのセルは入口で既にあった P の指す先に属さない）②rt の大域・ワーカーの表（globaladdr / fsaddr）とこの関数のスロット ③P 自身のデータ
@@ -156,6 +161,7 @@ Sober の唯一の中間表現。`sober build` は AST → IR → 正規バッ�
 - huge page を使わない（2026-10-05、RSS 回収便）: 入口が予約したアリーナに madvise(MADV_NOHUGEPAGE) を掛ける（失敗は無視）。透過的 huge page では深度のスロットに 1 バイト触るだけで 2 MB が RSS に乗り、小さいプログラムでも 4〜6 MB・コンパイラ自身の自己 build で 540 MB だった（→ 226 MB）。代価 = TLB の利得（自己 build の cycles +1.5〜3%・題材は揺れの範囲）
 - slice の幾何成長（2026-10-05、データ構造便 — src/compiler/lower/rtgrow.sober）: append が先端でないときは rt.slice_grow / rt.slice_grow8（ヘッダの値を受け取り新しい列の先頭を返す）。初回の全コピーは長さちょうど（先端に戻る）・rt の側の表（rt.gcache — 直接写像 64 項 × [番地, 深度, 世代, 水位, 容量の終わり]）に載った列がもう一度全コピーになるとき（2 本が先端を奪い合う）は余剰容量つき（2 × (長さ + 1)）。表の項の番地・深度・世代が一致しヘッダの終わり == 水位で容量に空きがあればその場で水位を進める — 同じ割り当てを共有するヘッダのうち伸ばせるのは先に伸ばした方だけ（先端の判定と同じ排他）なので値の意味論は不変（容量・水位は観測不能 — Lean 無変更）。世代（rt.rgen — 深度ごと）は full の enter とループの反復の軽い enter（rt.region_enter_lloop）が進める（関数の入口の軽い enter は自分の深度に確保しないので進めない）
 - 深度の計測口（2026-10-05、宛先構築レーン M5c）: 環境変数 `SOBER_DEPTH_REPORT`（1 以上の 10 進）が立っていれば、main の正常終了で `rt.depth_report` が `region_depth{max: d}` を stderr へ書く（d = 一度でも入った最深の深度 — 深度ごとの bump は enter〔full・軽い〕でだけ初期化され出ても 0 に戻らないので、熱い経路に計測の命令を足さずに読める）。旗はメタ領域の末尾の W_DREP（入口が置く）。panic（101 / 102）の経路は書かない（102 は死亡ダンプが深度を出す）。用途 = 深度の契約（language.md 27 節 — 1023 段）の消費の実測
+- メモリの上界の実測口（2026-11-04 — mem レーン R1c・開発用 `--rt-mutant=39`・既定の道に命令なし）: rtlower が region を捨てる点（setdepth・反復の軽い enter の呼び出し）の手前に `rt.mem_sample` を挟み、Σ_{深度 1..今} (bump − スロットの先頭) の最大をメタの末尾に持つ。入口は main を呼ぶ直前に `rt.stack_paint`（自分のスロットの下 1 MiB を模様で塗る — スロットを持つ関数は展開されないので呼び手のフレームを踏まない）、main が返った直後に最も低く書き換わった語を数える。exit・panic 101 / 102 の道で `memhw <最大> <main の入口の Σ> <スタック（数えていない道は -1）>` を stderr へ。照合 = scripts/memcheck.sh（`--mem-report` の main.main の H / S と）。棄てた案: 確保の点ごとの数え（熱い道の全部に乗る — 捨てる直前の標本で高水位は取りこぼさない）
 - 入口の引数: `_start` は初期 rsp（argc の位置 — `[argc, argv…, 0, envp…, 0]`）を sober_entry の引数 0 として渡す（ir_x86: `mov rax, rsp; and rsp, -16; sub rsp, 8; push rax; call`、LLVM: `movq %rsp, %rdi` の後に整列して call）。環境変数を読むのと、argv の置き場としてメタ領域の W_ARGV（末尾に足した 1 語 — 既存の語の番地は動かさない）に保存するのに使う（rt.read_args が読む）。引数を宣言しない sober_entry（テストの IR テキスト）は読まないだけで動く
 - 終了コード（2026-09-28）: `func main() int` なら入口が戻り値を受け、0〜255 の外は exit 101、内なら `syscall(231, code)`（exit_group）。後ろは到達しない定数の exit 0 — IR の exit 終端子は定数 code のままで、op は増やしていない（language.md 27 節）
 - errno の語はワーカーごと（2026-10-14 — net 4b・fc93eee5）: rt の中で task が待つ関数（ring の読み・net の受け等）は、待ちの後で errno の語を置き直す — 待つ間に同じワーカーの他の task が書く

@@ -1,0 +1,22 @@
+package main
+
+// 負例: 局所の束縛のラムダの本体に `?` は書けない — エラーは呼び出しの点の関数から抜けてしまう。ラムダはエラーを値として返し、`?` は呼び出しの側に書く（language.md 25 節）
+
+type Bad error
+
+func parse(s string) (int, error?) {
+    if s == "" {
+        return 0, Bad{}
+    }
+    return 1, nil
+}
+
+func g(s string) (int, error?) {
+    f := (t string) => parse(t)? + 1
+    return f(s), nil
+}
+
+func main() {
+    n, _ := g("a")
+    println(n)
+}

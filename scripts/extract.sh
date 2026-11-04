@@ -15,7 +15,7 @@ ROOT=$PWD
 GEN_OUT=src/compiler/checker/ty_gen.sober
 TC_OUT=src/compiler/checker/tc_gen.sober   # typecheck の 1 フレームの遷移（段 6 P2b — lean/FeatherweightSober/TcStep.lean）
 SEED=${TYVEC_SEED:-42}
-COUNT=${TYVEC_COUNT:-224000}   # 28 関数 × 8000
+COUNT=${TYVEC_COUNT:-400000}   # 50 関数 × 8000
 
 mode=${1:---check}
 tmp=$(mktemp -d)

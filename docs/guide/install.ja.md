@@ -16,7 +16,7 @@ Sober のコンパイラは、凍結した Zig 製の最初の版（stage1）か
 git clone <this repository> sober
 cd sober
 (cd src/stage1 && zig build)   # stage1 — src/stage1/zig-out/bin/sober
-scripts/stage2.sh              # bootstrap/ の 25 段を順に建て、最後の段が今のコンパイラ（stage2）を建てる
+scripts/stage2.sh              # bootstrap/ の段を順に建て、最後の段が今のコンパイラ（stage2）を建てる
 ```
 
 `scripts/stage2.sh` の初回は数分かかります（段ごとの結果は `out/stage2/` にキャッシュされ、2 回目以降はソースが変わったときだけ作り直します）。

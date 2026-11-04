@@ -47,16 +47,16 @@ type Response struct {
 }
 ```
 
-応答（status・Content-Type〔"" なら書かない〕・本文）。stream があれば本文の代わりに ServeConn が頭の後で stream を呼び、stream がemit に渡したバイト列をそのまま送る（コールバック形式〔継続渡し / CPS〕— [language.md 28 節](../language.md) w2 の「応答の枠」）。emit 1 回 = 送り 1 回（emit をまたいで溜めない）。length があれば Content-Length（stream が emit で送る合計は length ちょうどであること — ServeConn は合計を数え、超えた emit は送らず・stream が返った時点で合計が length でなければ閉じる〔相手は本文の切れで知る〕）。length が nil（長さ不定）なら Transfer-Encoding: chunked（emit 1 回 = chunk 1 つ・空の emit は送らない・stream が nil で返ったら終端の chunk）— HTTP/1.0 の要求には Content-Length も chunked も書かず、stream が返ったら閉じる（閉じで区切る）。stream が誤りを返したら終端を書かずに閉じる。compress: があり・Content-Type が圧縮向き・要求が gzip を受け・coded が無い stream の応答（長さ既知なら length が 1024 以上のとき）は gzip にして chunked で送る（emit 1 回 = deflate の sync flush 1 回 = chunk 1 つ・窓は emit をまたいで持ち越す・HTTP/1.0 は閉じで区切る・Vary は body の応答と同じ）。HEAD では呼ばない（頭は GET と同じ）。stream は要求の値（path など）を捕捉してよいクロージャ。File は捕捉させず path を捕捉して stream の中で開く:
+応答（status・Content-Type〔"" なら書かない〕・本文）。stream があれば本文の代わりに ServeConn が頭の後で stream を呼び、stream がemit に渡したバイト列をそのまま送る（コールバック形式〔継続渡し / CPS〕— [language.md 28 節](../language.md) w2 の「応答の枠」）。emit 1 回 = 送り 1 回（emit をまたいで溜めない）。length があれば Content-Length（stream が emit で送る合計は length ちょうどであること — ServeConn は合計を数え、超えた emit は送らず・stream が返った時点で合計が length でなければ閉じる〔相手は本文の切れで知る〕）。length が nil（長さ不定）なら Transfer-Encoding: chunked（emit 1 回 = chunk 1 つ・空の emit は送らない・stream が nil で返ったら終端の chunk）— HTTP/1.0 の要求には Content-Length も chunked も書かず、stream が返ったら閉じる（閉じで区切る）。stream が誤りを返したら終端を書かずに閉じる。compress: があり・Content-Type が圧縮向き・要求が gzip を受け・coded が無い stream の応答（長さ既知なら length が 1024 以上のとき）は gzip にして chunked で送る（emit 1 回 = deflate の sync flush 1 回 = chunk 1 つ・窓は emit をまたいで持ち越す・HTTP/1.0 は閉じで区切る・Vary は body の応答と同じ）。HEAD では呼ばない（頭は GET と同じ）。stream は要求の値（path など）を捕捉してよいクロージャ。File は捕捉させず path を捕捉して stream の中で開く。送りの状態 out（Out — 中身はstd/http の外から見えない）は呼び手が持ち、emit を呼ぶたびに `emit(mut out, b)` と渡す（閉包は mut を捕捉しない — [language.md 25 節](../language.md)「関数型の mut 仮引数」）:
 
 ```sober
 func handle(r http.Request) http.Response {
-    return http.Response{status: 200, contentType: "text/plain", length: n, stream: (emit) => sendFile(r.path, emit)}
+    return http.Response{status: 200, contentType: "text/plain", length: n, stream: (out, emit) => sendFile(r.path, mut out, emit)}
 }
-func sendFile(path string, emit func(b []byte) error?) error? {
+func sendFile(path string, out mut http.Out, emit func(out mut http.Out, b []byte) error?) error? {
     f := io.Open(path)?
     defer io.Close(f)
-    for b <- io.Chunks(f)? { emit(io.Raw(b))? }
+    for b <- io.Chunks(f)? { emit(mut out, io.Raw(b))? }
     return nil
 }
 ```
@@ -125,10 +125,23 @@ Response の headers の 1 本が書けない（名前が空か tchar でない�
 ## Stream
 
 ```sober
-type Stream func(emit func(b []byte) error?) error? @errors(emit, io.NotFound, io.Denied, io.Timeout, io.Expired, io.Other)
+type Stream func(out mut Out, emit func(out mut Out, b []byte) error?) error? @errors(emit, io.NotFound, io.Denied, io.Timeout, io.Expired, io.Other)
 ```
 
-応答の本文の供給（emit は借り — 呼ぶ・借りの位置へ渡すだけ。[language.md 25 節](../language.md)「借り」）
+応答の本文の供給（emit は借り — 呼ぶ・借りの位置へ渡すだけ。[language.md 25 節](../language.md)「借り」）。out は送りの状態で、emit に毎回 mut で渡す
+
+## Out
+
+```sober
+type Out struct {
+    s deflate.Stream
+    n int
+    lim int?
+    over bool
+}
+```
+
+stream の送りの状態（圧縮する stream の符号器・送った合計・長さ既知なら length・超えたか）。ServeConn が作って stream に渡す — 利用者は中身を読み書きせず、受け取った out を emit にそのまま渡す
 
 ## Text
 
@@ -178,11 +191,11 @@ Event の event / id に CR・LF・NUL がある（呼び手の契約違反 — 
 func FormatEvent(e Event) string
 ```
 
-e の text/event-stream の 1 イベント（`event:`・`id:`・`retry:`・`data:` の行と、終わりの空行）。data は改行（LF・CRLF・CR）で割って行ごとの `data:` にする（受け手は行を LF で繋ぎ直す — 改行の種類は LF に揃う）。event / id に CR・LF・NUL があれば panic(BadEvent)。配送は応答の stream で、emit 1 回 = 送り 1 回（[language.md 28 節](../language.md)の「SSE」— 長さ不定の stream は chunked）。心拍のコメントは `emit(bytes(": ping\n\n"))` で書ける:
+e の text/event-stream の 1 イベント（`event:`・`id:`・`retry:`・`data:` の行と、終わりの空行）。data は改行（LF・CRLF・CR）で割って行ごとの `data:` にする（受け手は行を LF で繋ぎ直す — 改行の種類は LF に揃う）。event / id に CR・LF・NUL があれば panic(BadEvent)。配送は応答の stream で、emit 1 回 = 送り 1 回（[language.md 28 節](../language.md)の「SSE」— 長さ不定の stream は chunked）。心拍のコメントは `emit(mut out, bytes(": ping\n\n"))` で書ける:
 
 ```sober
-http.Response{status: 200, contentType: "text/event-stream", cache: http.NoStore{}, stream: (emit) => {
-    emit(bytes(http.FormatEvent(http.Event{event: "tick", data: "1", id: "1"})))?
+http.Response{status: 200, contentType: "text/event-stream", cache: http.NoStore{}, stream: (out, emit) => {
+    emit(mut out, bytes(http.FormatEvent(http.Event{event: "tick", data: "1", id: "1"})))?
     nil
 }}
 ```

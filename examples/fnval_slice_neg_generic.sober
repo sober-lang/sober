@@ -1,0 +1,11 @@
+package main
+
+// 負例: ジェネリックな named fn type は値化可能でない（language.md 25 節）— slice の要素に捕捉つきのラムダは置けない
+
+type G[T] func(x T) T
+
+func main() {
+    k := 7
+    xs := []G[int]{(x int) => x + k}
+    println(xs[0](1))
+}

@@ -287,7 +287,7 @@ func destMark(st mut St, e desugar.NodeRef) bool {
         return false
     }
     m := nodeOf(mut st, e).e
-    return m == 1 || m == 2 && st.lamDest
+    return m == 1 || m == 3 || m == 2 && st.lamDest
 }
 
 // 空のヘッダ（現在の深度の先端・長さ 0）を p へ
@@ -1446,13 +1446,31 @@ func relocateArm(st mut St, c int) BlkRef {
 // （Lean の relocT）。struct は静的オフセット、opt / union はタグで生きている腕だけ。slice / map は 2 相（中身を先に、外側のセル列を後に）
 func relocateTo(st mut St, p int, off int, t int, floor int) {
     slotPin(mut st, p)
-    if isErr(mut st, t) && containsSlice(mut st, t) {
+    if isErr(mut st, t) && containsSlice(mut st, t) && !st.relocFresh {
         // 組み込み error は補助 1 本の呼び出し（先頭ラベルは閉世界の全ラベルの union — その場に並べると点ごとの費用が
         // 「string を持つラベルの欄の数」に比例して、ラベルを 1 つ足すだけで全部の error の境界コピーが膨らむ）
         call(mut st, needErrReloc(mut st), list2(mut st, fieldPtr(mut st, p, off), floor))
         return
     }
+    if isErr(mut st, t) && containsSlice(mut st, t) {
+        // 元を書き換えない写しの間は補助を通さずその場に並べる（補助の本体は元のセルの上で書き換える形で 1 本だけ）
+        _, eerr := errType(mut st)
+        if eerr != nil {
+            panic(InvariantBroken{})
+        }
+        fs := hgetL(mut st, st.errstruct + SI_FIELDS)
+        for i <- iter.Range(0, lenL(mut st, fs)) {
+            f := latI(mut st, fs, i)
+            relocateTo(mut st, p, off + desugar.HeapGet(mut st.d, f + 2), desugar.HeapGet(mut st.d, f + 1), floor)
+        }
+        return
+    }
     k := desugar.HeapGet(mut st.d, t)
+    if (k == TStruct || k == TUnion) && rcIsRec(mut st, t) {
+        // 再帰型は組ごとの補助（recreloc.sober — 明示の作業スタック + 写した先の表）
+        rcCall(mut st, fieldPtr(mut st, p, off), t, floor)
+        return
+    }
     if k == TSlice {
         elem := desugar.HeapGet(mut st.d, t + 1)
         relocateCells(mut st, fieldPtr(mut st, p, off), tWords(mut st, elem), floor, t, if containsSlice(mut st, elem) { 1 } else { 0 })
@@ -1558,6 +1576,10 @@ func relocateCells(st mut St, h int, cellw int, floor int, t int, inner int) {
     }
     // 外側が floor 以下なら中身ごと触らない
     deep := relocateArm(mut st, cmp(mut st, CGt, load(mut st, h, 2), floor))
+    if st.relocFresh {
+        // 元のセルを書き換えない: 外側を先に写し、写した先のセルの中身を写す
+        regionRelocate(mut st, h, cellw, floor)
+    }
     bs := itop(mut st, load(mut st, h, 0))
     n := load(mut st, h, 1)
     loop := newBlock(mut st)
@@ -1583,7 +1605,9 @@ func relocateCells(st mut St, h int, cellw int, floor int, t int, inner int) {
     }
     br(mut st, loop, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))))
     setCur(mut st, after)
-    regionRelocate(mut st, h, cellw, floor)
+    if !st.relocFresh {
+        regionRelocate(mut st, h, cellw, floor)
+    }
     br(mut st, deep, -1)
     setCur(mut st, deep)
 }

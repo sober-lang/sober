@@ -1,0 +1,9 @@
+package main
+
+// 負例: 局所の束縛のラムダは値でない — 呼ぶ・匿名の関数型の仮引数へ渡す以外の使用（別の名前への束縛・格納・返す・println）は拒否（language.md 25 節）
+
+func main() {
+    f := (n int) => n + 1
+    g := f
+    println(g(1))
+}

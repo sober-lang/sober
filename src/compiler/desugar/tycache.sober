@@ -404,7 +404,13 @@ func trRecord(st mut S, r mut TyRd) {
     case YFn:
         a := trList(mut st, mut r)
         b := trList(mut st, mut r)
-        c := if r.w[r.at] == 0 { trGet(mut r) } else { trDecl(mut st, mut r) + 1 }
+        // 名前なし: 0 の印 + mut 仮引数の席のビット（c = 0 - ビット — tycanon の YFn と同じ形）
+        c := if r.w[r.at] == 0 {
+            _ = trGet(mut r)
+            0 - trGet(mut r)
+        } else {
+            trDecl(mut st, mut r) + 1
+        }
         _ = yMk(mut st, k, a, b, c)
     case YTuple:
         _ = yMk(mut st, k, trList(mut st, mut r), 0, 0)

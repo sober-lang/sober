@@ -6,7 +6,9 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"os"
+	"strconv"
 )
 
 type Rand struct{ s [4]uint32 }
@@ -62,6 +64,8 @@ func (r *Rand) Intn(n int64) int64 {
 	return v % n
 }
 
+func (r *Rand) Float() float64 { return float64(r.Int62()>>9) * 0x1p-53 }
+
 func (r *Rand) Bool() bool { return r.Next()&1 == 1 }
 
 func (r *Rand) Split() Rand {
@@ -91,4 +95,19 @@ func main() {
 		cnt[d.Intn(6)]++
 	}
 	fmt.Println(cnt[0], cnt[1], cnt[2], cnt[3], cnt[4], cnt[5])
+	// Float: [0, 1) の 2^-53 刻み — 値（最短の往復表現）とビット列・10 万本の和（同じ順の加算なのでビットまで一致する）
+	f := New(99)
+	for i := 0; i < 4; i++ {
+		x := f.Float()
+		fmt.Println(strconv.FormatFloat(x, 'g', -1, 64), math.Float64bits(x))
+	}
+	sum := 0.0
+	lo, hi := 1.0, 0.0
+	for i := 0; i < 100000; i++ {
+		x := f.Float()
+		sum += x
+		lo = math.Min(lo, x)
+		hi = math.Max(hi, x)
+	}
+	fmt.Println(strconv.FormatFloat(sum, 'g', -1, 64), lo >= 0.0, hi < 1.0)
 }

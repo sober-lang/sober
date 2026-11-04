@@ -20,6 +20,8 @@ type Funcs struct {
     callees []string
     // `@noinline` を付けてはいけない関数に付けた最初の関数の添字（mut 引数が無い・関数型引数がある — Zig の markMutDefs の拒否）か -1
     bad_noinline int
+    // 匿名の関数型の仮引数を持つ関数（展開される）どうしの呼び出しの閉路の上にある最初の関数の添字か -1
+    bad_rec int
 }
 
 // x（-1 は無視）をスタックに積み、新しい深さを返す
@@ -199,6 +201,7 @@ func scanFuncs(cx Cx) Funcs {
     mut fnode := builder.Builder[int]{}
     mut hasMut := builder.Builder[bool]{}
     mut hasFunc := builder.Builder[bool]{}
+    mut hasAnon := builder.Builder[bool]{}
     mut htry := builder.Builder[bool]{}
     mut clo := builder.Builder[int]{}
     mut chi := builder.Builder[int]{}
@@ -216,6 +219,7 @@ func scanFuncs(cx Cx) Funcs {
             fd := t.nodes[fnode_k]
             mut m := false
             mut fu := false
+            mut an := false
             mut p := 0
             while p < ast.ListLen(t, fd.c) {
                 prm := t.nodes[ast.ListAt(t, fd.c, p)]
@@ -225,6 +229,9 @@ func scanFuncs(cx Cx) Funcs {
                 ty := t.nodes[prm.b]
                 if ty.kind == ast.TFunc || (ty.kind == ast.TName || ty.kind == ast.TGeneric) && namedFunc(cx, f, Name(t, ty.a)) {
                     fu = true
+                }
+                if ty.kind == ast.TFunc && !ast.ParamIsMut(prm) {
+                    an = true
                 }
                 if cx.pkg_path[pk] == "std/task" && parHandles(t, ty) {
                     fu = true
@@ -243,6 +250,7 @@ func scanFuncs(cx Cx) Funcs {
             builder.Push(mut fnode, fnode_k)
             builder.Push(mut hasMut, m)
             builder.Push(mut hasFunc, fu)
+            builder.Push(mut hasAnon, an && fd.e >= 0)
             builder.Push(mut htry, tr)
             // 本体の無い宣言（.sobi の署名だけ）は呼び先の package で展開しないと決まった関数（再帰する mut 関数・@noinline・非展開）— 本体が無いので
             // 再帰を辿れない。mut 引数を持てば mut_def に倒す（展開の判定は package の中で閉じる）
@@ -259,6 +267,7 @@ func scanFuncs(cx Cx) Funcs {
     nodes := builder.Build(mut fnode)
     hm := builder.Build(mut hasMut)
     hf := builder.Build(mut hasFunc)
+    hfa := builder.Build(mut hasAnon)
     ni := builder.Build(mut noinl)
     nb := builder.Build(mut nobody)
     mut ex := builder.Builder[bool]{}
@@ -270,7 +279,15 @@ func scanFuncs(cx Cx) Funcs {
     for i <- iter.Range(0, len(files)) {
         need = append(need, hm[i] && !hf[i] && !ni[i] && !nb[i])
     }
-    cyc := onCycle(cx, files, nodes, lo, hi, cs, ix, freeze(need))
+    cyc := onCycle(cx, files, nodes, lo, hi, cs, ix, freeze(need), false)
+    // 匿名の関数型の仮引数を持つ関数（呼び出しの点に展開される）どうしの閉路: 展開が終わらない — 名指しで拒否（FnCap kind 17）
+    cycA := onCycle(cx, files, nodes, lo, hi, cs, ix, hfa, true)
+    mut badRec := -1
+    for i <- iter.Range(0, len(files)) {
+        if hfa[i] && cycA[i] && badRec == -1 {
+            badRec = i
+        }
+    }
     for i <- iter.Range(0, len(files)) {
         if ni[i] && (!hm[i] || hf[i]) && bad == -1 {
             bad = i
@@ -280,7 +297,7 @@ func scanFuncs(cx Cx) Funcs {
         builder.Push(mut md, mdef)
         builder.Push(mut cl, hm[i] && !hf[i] && !mdef)
     }
-    return Funcs{files, nodes, builder.Build(mut ex), builder.Build(mut md), builder.Build(mut cl), builder.Build(mut htry), lo, hi, cs, bad}
+    return Funcs{files, nodes, builder.Build(mut ex), builder.Build(mut md), builder.Build(mut cl), builder.Build(mut htry), lo, hi, cs, bad, badRec}
 }
 
 // 関数 i の名前
@@ -344,8 +361,9 @@ func indexFns(cx Cx, files []int, nodes []int, cs []string) FnIndex {
 
 // 関数ごとに、同じ package の裸の名前の呼び出しを辿って自分へ戻れるか（呼び出しグラフの閉路の上にあるか — 自分を直に呼ぶ辺を含む）。
 // need の関数から届く範囲だけを Tarjan の強連結成分で 1 回たどる（関数ごとの到達集合の反復は関数 × 到達集合 — 自己適用で 0.1 G 級）。
-// 辺 g → h = g の呼び出し名 c と同じ名前の、g と同じ package の関数 h（同名が複数なら全部 — 索引の鎖を最後まで見る）
-func onCycle(cx Cx, files []int, nodes []int, lo []int, hi []int, cs []string, ix FnIndex, need []bool) []bool {
+// 辺 g → h = g の呼び出し名 c と同じ名前の、g と同じ package の関数 h（同名が複数なら全部 — 索引の鎖を最後まで見る）。
+// only = 辺の行き先も need の関数だけ（need の関数どうしの閉路）
+func onCycle(cx Cx, files []int, nodes []int, lo []int, hi []int, cs []string, ix FnIndex, need []bool, only bool) []bool {
     n := len(files)
     mut num := mut []int{}
     mut low := mut []int{}
@@ -390,7 +408,7 @@ func onCycle(cx Cx, files []int, nodes []int, lo []int, hi []int, cs []string, i
                     } else {
                         cand := h
                         h = ix.next[h]
-                        if cx.file_pkg[files[cand]] == pk && fnIs(cx, files, nodes, cand, cs[c]) {
+                        if cx.file_pkg[files[cand]] == pk && (!only || need[cand]) && fnIs(cx, files, nodes, cand, cs[c]) {
                             w = cand
                         }
                     }

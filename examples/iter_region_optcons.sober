@@ -1,0 +1,42 @@
+package main
+
+// 反復の region の約束と opt の中身を通る再帰型（`next L?` — 欄は 1 セルの箱）: 反復を越える鎖への継ぎ足しで、箱のセルと
+// 境界コピーの作業域は反復ごとに外の region へ積もらない。積もるのは節点そのものだけ — scripts/iterregion.sh が回数を 10 倍にして
+// 増分を節点あたりで見る
+
+import "std/convert"
+import "std/iter"
+import "std/os"
+
+type L struct {
+    v int
+    next L?
+}
+
+func main() {
+    args, e := os.Args()
+    mut n := 2000
+    if e == nil && len(args) >= 2 {
+        x, pe := convert.ParseInt(args[1])
+        if pe == nil {
+            n = x
+        }
+    }
+    mut l := L{v: 0, next: nil}
+    for i <- iter.Range(1, n + 1) {
+        l = L{v: i, next: l}
+    }
+    mut s := 0
+    mut c := l
+    mut more := true
+    while more {
+        s += c.v
+        nx := c.next
+        if nx == nil {
+            more = false
+        } else {
+            c = nx
+        }
+    }
+    println(s == n * (n + 1) / 2)
+}

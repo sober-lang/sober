@@ -64,7 +64,9 @@ func fieldTy(st mut S, dr int, i int, at NodeRef) (TyRef, error?) {
 }
 
 // struct の値 v（純粋な式 — 変数か射影）から、葉ごとに alloc した ref の木を組む
-func cellsOf(st mut S, v CoreRef, dr int) CoreRef {
+func cellsOf(st mut S, v0 CoreRef, dr int) CoreRef {
+    // 再帰の組の struct の値は 1 段開いてから割る（v0 は純粋な式なので欄ごとに開き直してよい）
+    v := if isRecDr(mut st, dr) { cUnfold(mut st, v0) } else { v0 }
     n := lenL(mut st, structFields(mut st, dr))
     comps := ListRef(listN(mut st, n))
     for i <- iter.Range(0, n) {
@@ -82,11 +84,18 @@ func valueOf(st mut S, refs CoreRef, dr int) CoreRef {
         p := projection(mut st, refs, i, n)
         hsetCore(mut st, int(comps) + 1 + i, if fieldSplits(mut st, dr, i) { valueOf(mut st, p, fieldDecl(mut st, dr, i)) } else { c1(mut st, CDeref, p) })
     }
-    return pairChain(mut st, comps)
+    v := pairChain(mut st, comps)
+    // 再帰の組の struct は組み直した値を fold で包む
+    if isRecDr(mut st, dr) {
+        t := recDrTy(mut st, dr, 0, NodeRef(-1)) catch return v
+        return recFold(mut st, t, v)
+    }
+    return v
 }
 
 // ref の木 refs の葉へ struct の値 v（純粋な式）の成分を書く — `pair(assign …, pair(…))` の 1 式（左から右に評価。値は捨てる）
-func assignAll(st mut S, refs CoreRef, v CoreRef, dr int) CoreRef {
+func assignAll(st mut S, refs CoreRef, v0 CoreRef, dr int) CoreRef {
+    v := if isRecDr(mut st, dr) { cUnfold(mut st, v0) } else { v0 }
     n := lenL(mut st, structFields(mut st, dr))
     comps := ListRef(listN(mut st, n))
     for i <- iter.Range(0, n) {

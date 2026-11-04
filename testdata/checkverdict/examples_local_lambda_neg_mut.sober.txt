@@ -1,0 +1,2 @@
+sober: load error at examples/local_lambda_neg_mut.sober:6:5: a lambda bound to a local name cannot be mut — the name stands for the lambda, which is expanded where it is called (bind it with `f := (…) => …`)
+exit=1

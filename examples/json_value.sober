@@ -1,0 +1,54 @@
+package main
+
+// std/json の値の木 Value（language.md 16 節 — 再帰の union）: 組んで json.Encode[json.Value] で書く・Doc の節から json.Tree で開いて歩く。
+// 構造体の欄にも置ける（Encode は裸の欄も・Decode は json.Value? の欄 — union はゼロ値を持たない）。数は字句のまま
+
+import "std/json"
+import "std/iter"
+
+type Event struct {
+    id int
+    payload json.Value?
+    tags []json.Value
+}
+
+// 木の中の数の字句を数える（switch の網羅 — 子は値そのもの）
+func numbers(v json.Value) int {
+    return switch v {
+    case json.Number{lit}: 1
+    case json.Array{items}: {
+        mut c := 0
+        for x <- items {
+            c += numbers(x)
+        }
+        c
+    }
+    case json.Object{names, vals}: {
+        mut c := 0
+        for i <- iter.Range(0, len(names)) {
+            c += numbers(vals[i])
+        }
+        c
+    }
+    default: 0
+    }
+}
+
+func main() {
+    v := json.Object{names: []string{"name", "n", "xs"}, vals: []json.Value{json.String{v: "a\"b"}, json.Number{lit: "12345678901234567890"}, json.Array{items: []json.Value{json.Null{}, json.Bool{v: true}, json.Number{lit: "-1.5e3"}}}}}
+    println(json.Encode[json.Value](v))
+    println(numbers(v))
+    d := json.Parse(bytes("{\"id\":7,\"payload\":{\"k\":[1,2,{\"z\":null}]},\"tags\":[\"x\",3]}")) catch {
+        println("bad json")
+        return
+    }
+    t := json.Tree(d, json.Root(d))
+    println(json.Encode[json.Value](t) == json.Format(d, json.Root(d)))
+    println(numbers(t))
+    e := json.Decode[Event](d, json.Root(d)) catch {
+        println("bad event")
+        return
+    }
+    println(json.Encode[Event](e))
+    println(json.Encode[Event](Event{id: 1, payload: nil, tags: []json.Value{}}))
+}

@@ -121,6 +121,30 @@ func tyJson(st mut S, out mut []byte, t TyRef) {
         obuf.Lit(mut out, ",\"t\":")
         tyJson(mut st, mut out, tElem(mut st, t))
         out = append(out, '}')
+    } else if k == TRVar {
+        obuf.Lit(mut out, "{\"k\":\"rvar\",\"i\":")
+        obuf.Int(mut out, tyAt(mut st, t).a)
+        out = append(out, '}')
+    } else if k == TMuS {
+        x := tyAt(mut st, t)
+        obuf.Lit(mut out, "{\"k\":\"mus\",\"n\":")
+        obuf.Int(mut out, x.a)
+        obuf.Lit(mut out, ",\"i\":")
+        obuf.Int(mut out, x.b)
+        obuf.Lit(mut out, ",\"b\":")
+        tyJson(mut st, mut out, TyRef(x.c))
+        out = append(out, '}')
+    } else if k == TMuRs {
+        x := tyAt(mut st, t)
+        obuf.Lit(mut out, "{\"k\":\"muRs\",\"r\":")
+        obuf.Int(mut out, x.a)
+        obuf.Lit(mut out, ",\"n\":")
+        obuf.Int(mut out, x.b)
+        obuf.Lit(mut out, ",\"i\":")
+        obuf.Int(mut out, x.c)
+        obuf.Lit(mut out, ",\"b\":")
+        tyJson(mut st, mut out, TyRef(x.d))
+        out = append(out, '}')
     } else if k == TFn {
         obuf.Lit(mut out, "{\"k\":\"fn\",\"p\":")
         tyJson(mut st, mut out, tLeft(mut st, t))
@@ -422,6 +446,16 @@ func exprJson(st mut S, out mut []byte, e0 CoreRef) {
             sp = spush(mut st, sp, OS, J_E)
             sp = spush(mut st, sp, OT, a)
             sp = spush(mut st, sp, OS, J_T)
+        } else if k == CFold {
+            obuf.Lit(mut out, "{\"k\":\"fold\",\"t\":")
+            tyJson(mut st, mut out, TyRef(a))
+            obuf.Lit(mut out, ",\"e\":")
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            sp = spush(mut st, sp, OE, b)
+        } else if k == CUnfold {
+            obuf.Lit(mut out, "{\"k\":\"unfold\",\"e\":")
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            sp = spush(mut st, sp, OE, a)
         } else if k == CInl || k == CInr {
             obuf.Lit(mut out, if k == CInl { "{\"k\":\"inl\",\"r\":" } else { "{\"k\":\"inr\",\"l\":" })
             tyJson(mut st, mut out, TyRef(a))

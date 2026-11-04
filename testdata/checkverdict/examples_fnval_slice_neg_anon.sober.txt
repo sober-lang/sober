@@ -1,0 +1,2 @@
+sober: desugar error at examples/fnval_slice_neg_anon.sober:7:44 (CoreFragment)
+exit=1

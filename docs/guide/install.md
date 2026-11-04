@@ -16,7 +16,7 @@ The Sober compiler is made by starting from stage1, a frozen first compiler writ
 git clone <this repository> sober
 cd sober
 (cd src/stage1 && zig build)   # stage1 — src/stage1/zig-out/bin/sober
-scripts/stage2.sh              # build the 25 stages of bootstrap/ in order; the last stage builds the current compiler (stage2)
+scripts/stage2.sh              # build the stages of bootstrap/ in order; the last stage builds the current compiler (stage2)
 ```
 
 The first run of `scripts/stage2.sh` takes a few minutes (the result of each stage is cached in `out/stage2/`, and later runs rebuild only when the sources change).

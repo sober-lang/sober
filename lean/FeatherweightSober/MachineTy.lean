@@ -216,6 +216,19 @@ inductive StackTy (Δ : Defs) (Ξ : ChanTy) (Ψ : StoreTy) (b : Nat) : Stack →
       StackTy Δ Ξ Ψ b (.fcmpR op a :: S) Λ d .f64 tf
   | fconvK {S d op tf} :
       StackTy Δ Ξ Ψ b S Λ d op.cod tf → StackTy Δ Ξ Ψ b (.fconvK op :: S) Λ d op.dom tf
+  /-- 再帰型: fold の中身（展開の型）を待つ・unfold の被演算子（μ）を待つ -/
+  | foldKS {S d n i t tf} :
+      (Ty.mus n i t).musOk = true → StackTy Δ Ξ Ψ b S Λ d (.mus n i t) tf →
+      StackTy Δ Ξ Ψ b (.foldK (.mus n i t) :: S) Λ d (Ty.mus n i t).unfold tf
+  | unfoldKS {S d n i t tf} :
+      (Ty.mus n i t).musOk = true → StackTy Δ Ξ Ψ b S Λ d (Ty.mus n i t).unfold tf →
+      StackTy Δ Ξ Ψ b (.unfoldK :: S) Λ d (.mus n i t) tf
+  | foldKRs {S d r n i t tf} :
+      (Ty.muRs r n i t).muRsOk = true → StackTy Δ Ξ Ψ b S Λ d (.muRs r n i t) tf →
+      StackTy Δ Ξ Ψ b (.foldK (.muRs r n i t) :: S) Λ d (Ty.muRs r n i t).unfold tf
+  | unfoldKRs {S d r n i t tf} :
+      (Ty.muRs r n i t).muRsOk = true → StackTy Δ Ξ Ψ b S Λ d (Ty.muRs r n i t).unfold tf →
+      StackTy Δ Ξ Ψ b (.unfoldK :: S) Λ d (.muRs r n i t) tf
   | tointK {S d tf} :
       StackTy Δ Ξ Ψ b S Λ d .int tf → StackTy Δ Ξ Ψ b (.tointK :: S) Λ d .byte tf
   /-- append の継続。結果 region rr は mut なら subject と同じ r（正確）、
@@ -390,6 +403,150 @@ theorem take_pre_take {Ψ Ψ' : StoreTy} {b d : Nat}
   rw [List.take_take, Nat.min_eq_left hbd, List.take_take, Nat.min_eq_left hbd]
   exact hpre
 
+/-- 値が指すセル（slice / map のヘッダの範囲・参照の loc）。値の構成子の中へ潜る — 写し（relocTo / xfer）が歩く先 -/
+def Expr.refs : Expr → List (Nat × Nat)
+  | .some e => e.refs
+  | .inl _ e => e.refs
+  | .inr _ e => e.refs
+  | .fold _ e => e.refs
+  | .pair a c => a.refs ++ c.refs
+  | .slicev _ r base len => (List.range len).map (fun j => (r, base + j))
+  | .mapv _ r base len => (List.range len).map (fun j => (r, base + j))
+  | .loc r a => [(r, a)]
+  | _ => []
+
+/-- ヒープのセル（region i の j 番） -/
+def cellAt (H : Heap) (i j : Nat) : Option (Bool × Expr) := (H[i]?).bind (·[j]?)
+
+/-- 凍結セルの参照は非循環（凍結の順の存在）: 凍結セルの値が指す凍結セルは順位が真に小さい。
+凍結済みのセルへの書きは panic・新しく凍結するセルの値は既に凍結したセルだけを指すので保たれる。
+機械は凍結の時刻を持たないので順位は存在で言う（位置の順では言えない — 書ける間のセルは後から積んだセルを指せる） -/
+def HeapAcyc (H : Heap) : Prop :=
+  ∃ rank : Nat → Nat → Nat, ∀ i j w, cellAt H i j = some (false, w) →
+    ∀ q ∈ w.refs, ∀ w', cellAt H q.1 q.2 = some (false, w') → rank q.1 q.2 < rank i j
+
+theorem HeapAcyc.nil : HeapAcyc [] := ⟨fun _ _ => 0, fun i j w h => by simp [cellAt] at h⟩
+
+/-- 凍結セルが増えない（値も同じ）なら同じ順位で保たれる -/
+theorem HeapAcyc.sub {H H' : Heap} (ha : HeapAcyc H)
+    (hs : ∀ i j w, cellAt H' i j = some (false, w) → cellAt H i j = some (false, w)) : HeapAcyc H' := by
+  obtain ⟨rank, hr⟩ := ha
+  exact ⟨rank, fun i j w h q hq w' hq' => hr i j w (hs i j w h) q hq w' (hs _ _ _ hq')⟩
+
+theorem nat_le_sum_of_mem {a : Nat} : ∀ {l : List Nat}, a ∈ l → a ≤ l.sum
+  | x :: xs, h => by
+    rcases List.mem_cons.mp h with rfl | h
+    · simp
+    · have := nat_le_sum_of_mem h; simp; omega
+
+/-- 順位の上界（ヒープの全位置の順位の和 + 1） -/
+def rankBound (rank : Nat → Nat → Nat) (H : Heap) : Nat :=
+  ((List.range H.length).map fun i => ((List.range ((H[i]?).getD []).length).map fun j => rank i j).sum).sum + 1
+
+theorem rank_lt_bound {rank : Nat → Nat → Nat} {H : Heap} {i j : Nat} {c : Bool × Expr}
+    (h : cellAt H i j = some c) : rank i j < rankBound rank H := by
+  unfold cellAt at h
+  cases hi : H[i]? with
+  | none => simp [hi] at h
+  | some ρ =>
+    simp only [hi, Option.bind_some] at h
+    have hil : i < H.length := (List.getElem?_eq_some_iff.mp hi).1
+    have hjl : j < ρ.length := (List.getElem?_eq_some_iff.mp h).1
+    have h1 : rank i j ≤ ((List.range ((H[i]?).getD []).length).map fun j => rank i j).sum := by
+      apply nat_le_sum_of_mem
+      rw [hi]; simp; exact ⟨j, hjl, rfl⟩
+    have h2 : ((List.range ((H[i]?).getD []).length).map fun j => rank i j).sum ≤
+        ((List.range H.length).map fun i => ((List.range ((H[i]?).getD []).length).map fun j => rank i j).sum).sum := by
+      apply nat_le_sum_of_mem
+      simp; exact ⟨i, hil, rfl⟩
+    unfold rankBound; omega
+
+/-- 凍結セルが増える遷移: 前から凍結していたセルは値ごと残り、今の凍結セルが指す凍結セルは前から凍結していたものだけなら保たれる
+（新しく凍結したセルには前の全セルより大きい順位を与える） -/
+theorem HeapAcyc.extend {H H' : Heap} (ha : HeapAcyc H)
+    (hC : ∀ i j w, cellAt H i j = some (false, w) → cellAt H' i j = some (false, w))
+    (hA : ∀ i j w, cellAt H' i j = some (false, w) → ∀ q ∈ w.refs, ∀ w', cellAt H' q.1 q.2 = some (false, w') →
+      ∃ w'', cellAt H q.1 q.2 = some (false, w'')) : HeapAcyc H' := by
+  obtain ⟨rank, hr⟩ := ha
+  let M := rankBound rank H
+  let rank' : Nat → Nat → Nat := fun i j => match cellAt H i j with
+    | some (false, _) => rank i j
+    | _ => M
+  refine ⟨rank', fun i j w h q hq w' hq' => ?_⟩
+  obtain ⟨w'', hold⟩ := hA i j w h q hq w' hq'
+  have hq1 : rank' q.1 q.2 = rank q.1 q.2 := by simp only [rank', hold]
+  rw [hq1]
+  cases hpo : cellAt H i j with
+  | some c =>
+    obtain ⟨m, w0⟩ := c
+    cases m with
+    | false =>
+      have hsame := hC i j w0 hpo
+      rw [h] at hsame; cases hsame
+      have : rank' i j = rank i j := by simp only [rank', hpo]
+      rw [this]; exact hr i j w hpo q hq w'' hold
+    | true =>
+      have : rank' i j = M := by simp only [rank', hpo]
+      rw [this]; exact rank_lt_bound hold
+  | none =>
+    have : rank' i j = M := by simp only [rank', hpo]
+    rw [this]; exact rank_lt_bound hold
+
+/-- imm（深く mutFree）な型の値が指すセルは、型付けのストアで凍結（タグ false） -/
+theorem HasType.refs_frozen {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b d : Nat} {Γ : Ctx} {Λ : LCtx} {v : Expr} {t : Ty}
+    (hv : Value v) (he : HasType Δ Ξ Ψ f b d Γ Λ v t) (hm : t.mutFree = true) :
+    ∀ q ∈ v.refs, ∃ σ tc, Ψ[q.1]? = Option.some σ ∧ σ[q.2]? = Option.some (false, tc) := by
+  induction hv generalizing t with
+  | some _ ih =>
+    cases he with | some h => exact ih h (by simpa [Ty.mutFree] using hm)
+  | inl _ _ ih =>
+    cases he with | inl h => exact ih h (by simp only [Ty.mutFree, Bool.and_eq_true] at hm; exact hm.1)
+  | inr _ _ ih =>
+    cases he with | inr h => exact ih h (by simp only [Ty.mutFree, Bool.and_eq_true] at hm; exact hm.2)
+  | pair _ _ iha ihc =>
+    cases he with
+    | pair h1 h2 =>
+      simp only [Ty.mutFree, Bool.and_eq_true] at hm
+      intro q hq
+      simp only [Expr.refs, List.mem_append] at hq
+      rcases hq with hq | hq
+      · exact iha h1 hm.1 q hq
+      · exact ihc h2 hm.2 q hq
+  | fold _ _ ih =>
+    cases he with
+    | foldS hok h => exact ih h (Ty.musOk_unfold_mf hok)
+    | foldRs hok h => exact ih h (Ty.unfold_mf_muRs (by simpa [Ty.mutFree] using hm))
+  | slicev mt r base len =>
+    cases he with
+    | slicev hk _ _ _ _ _ _ =>
+      simp only [Ty.mutFree, Bool.and_eq_true, Bool.not_eq_true'] at hm
+      have hm0 := hm.1
+      intro q hq
+      simp only [Expr.refs, List.mem_map, List.mem_range] at hq
+      obtain ⟨j, hj, rfl⟩ := hq
+      obtain ⟨ρ, mk, tc, h1, h2, h3, -, -⟩ := hk j hj
+      exact ⟨ρ, tc, h1, by rw [h3 hm0] at h2; exact h2⟩
+  | mapv mt r base len =>
+    cases he with
+    | mapv hk _ _ _ _ _ _ =>
+      simp only [Ty.mutFree, Bool.and_eq_true, Bool.not_eq_true'] at hm
+      have hm0 := hm.1
+      intro q hq
+      simp only [Expr.refs, List.mem_map, List.mem_range] at hq
+      obtain ⟨j, hj, rfl⟩ := hq
+      obtain ⟨ρ, mk, tc, h1, h2, h3, -, -⟩ := hk j hj
+      exact ⟨ρ, tc, h1, by rw [h3 hm0] at h2; exact h2⟩
+  | loc r a =>
+    cases he with
+    | loc h1 h2 _ _ _ h6 =>
+      simp only [Ty.mutFree, Bool.and_eq_true, Bool.not_eq_true'] at hm
+      have hm0 := hm.1
+      intro q hq
+      simp only [Expr.refs, List.mem_singleton] at hq
+      subst hq
+      exact ⟨_, _, h1, by rw [h6 hm0] at h2; exact h2⟩
+  | _ => intro q hq; simp [Expr.refs] at hq
+
 /-- ヒープの型付け: 長さ・各 region のストア長が Ψ と一致し、
 region r の格納値は「immutable セルか自世界のセル（b ≤ r）」なら値であり
 `Ψ.take (r+1)` の深さ r+1・共有境界 b で型が付く。
@@ -417,6 +574,8 @@ structure HeapOk (Δ : Defs) (Ξ : ChanTy) (b : Nat) (Ψ : StoreTy) (H : Heap) :
   spawn での型付けの引き継ぎ（heapOk_spawn）の要） -/
   immMutFree : ∀ (r : Nat) (σ : List (Bool × Ty)) (a : Nat) (t : Ty),
     Ψ[r]? = some σ → σ[a]? = some (false, t) → t.mutFree
+  /-- 凍結セルの参照は非循環（境界コピーの燃料が尽きない根拠） -/
+  acyc : HeapAcyc H
 
 /-- 梱包したペイロードの型付け（P3b-4b）: 歩いた型は t で、セル列は 1 region の小さなヒープ（共有境界 0・型環境は空）として型付き、
 値はその世界（深さ 1）で t に型付く — どの task の世界へも xfer で写せる -/
@@ -608,6 +767,10 @@ theorem StackTy.mono {Δ : Defs} {Ξ : ChanTy} {Ψ Ψ' : StoreTy} {b : Nat} {S d
     exact .fcmpR hv (h1.store_mono (hle _ (Nat.le_refl _)) (storePre_of_take_eq (take_pre_take hpre hS.le_depth)))
       (ih hle)
   | fconvK _ ih => exact .fconvK (ih hle)
+  | foldKS hok _ ih => exact .foldKS hok (ih hle)
+  | foldKRs hok _ ih => exact .foldKRs hok (ih hle)
+  | unfoldKS hok _ ih => exact .unfoldKS hok (ih hle)
+  | unfoldKRs hok _ ih => exact .unfoldKRs hok (ih hle)
   | tointK _ ih => exact .tointK (ih hle)
   | appL h1 hbm hbi hS ih =>
     exact .appL (h1.store_mono (hle _ (Nat.le_refl _)) (storePre_of_take_eq (take_pre_take hpre hS.le_depth)))
@@ -746,6 +909,10 @@ theorem StackTy.chan_mono {Δ : Defs} {Ξ Ξ' : ChanTy} {Ψ : StoreTy} {b : Nat}
   | fcmpL h1 _ ih => exact .fcmpL (h1.chan_mono hle) ih
   | fcmpR hv h1 _ ih => exact .fcmpR hv (h1.chan_mono hle) ih
   | fconvK _ ih => exact .fconvK ih
+  | foldKS hok _ ih => exact .foldKS hok ih
+  | foldKRs hok _ ih => exact .foldKRs hok ih
+  | unfoldKS hok _ ih => exact .unfoldKS hok ih
+  | unfoldKRs hok _ ih => exact .unfoldKRs hok ih
   | tointK _ ih => exact .tointK ih
   | appL h1 hbm hbi _ ih => exact .appL (h1.chan_mono hle) hbm hbi ih
   | appR hv h1 hbm hbi _ ih => exact .appR hv (h1.chan_mono hle) hbm hbi ih
@@ -1004,10 +1171,97 @@ theorem take_pre_append {α} {b : Nat} {l : List α} (n : Nat) (l' : List α)
   rw [List.take_take, List.take_take]
   exact take_append_left_of_le (Nat.le_trans (Nat.min_le_left b n) hb) l'
 
+theorem cellAt_eq {H : Heap} {i j : Nat} {c : Bool × Expr} :
+    cellAt H i j = some c ↔ ∃ ρ, H[i]? = some ρ ∧ ρ[j]? = some c := by
+  unfold cellAt
+  cases H[i]? <;> simp
+
+/-- ストアの凍結セルに対応するヒープのセルも凍結 -/
+theorem HeapOk.cell_of_store {Δ : Defs} {Ξ : ChanTy} {b : Nat} {Ψ : StoreTy} {H : Heap} (hH : HeapOk Δ Ξ b Ψ H)
+    {i j : Nat} {σ : List (Bool × Ty)} {tc : Ty} (h1 : Ψ[i]? = some σ) (h2 : σ[j]? = some (false, tc)) :
+    ∃ w, cellAt H i j = some (false, w) := by
+  have hil : i < H.length := by rw [hH.len]; exact (List.getElem?_eq_some_iff.mp h1).1
+  obtain ⟨ρ, hρ⟩ : ∃ ρ, H[i]? = some ρ := ⟨_, List.getElem?_eq_getElem hil⟩
+  have hl := hH.storeLen i ρ σ hρ h1
+  have hjl : j < ρ.length := by rw [hl]; exact (List.getElem?_eq_some_iff.mp h2).1
+  obtain ⟨⟨mv, w⟩, hc⟩ : ∃ c, ρ[j]? = some c := ⟨_, List.getElem?_eq_getElem hjl⟩
+  have := hH.tags i ρ σ j mv w false tc hρ h1 hc h2
+  subst this
+  exact ⟨w, cellAt_eq.mpr ⟨ρ, hρ, hc⟩⟩
+
+/-- 凍結セルの値は凍結セルだけを指す（凍結セルの型は深く mutFree） -/
+theorem HeapOk.frozen_refs {Δ : Defs} {Ξ : ChanTy} {b : Nat} {Ψ : StoreTy} {H : Heap} (hH : HeapOk Δ Ξ b Ψ H)
+    {i j : Nat} {w : Expr} (h : cellAt H i j = some (false, w)) :
+    ∀ q ∈ w.refs, ∃ w', cellAt H q.1 q.2 = some (false, w') := by
+  obtain ⟨ρ, hρ, hc⟩ := cellAt_eq.mp h
+  have hil : i < Ψ.length := by rw [← hH.len]; exact (List.getElem?_eq_some_iff.mp hρ).1
+  obtain ⟨σ, hσ⟩ : ∃ σ, Ψ[i]? = some σ := ⟨_, List.getElem?_eq_getElem hil⟩
+  have hl := hH.storeLen i ρ σ hρ hσ
+  have hjl : j < σ.length := by rw [← hl]; exact (List.getElem?_eq_some_iff.mp hc).1
+  obtain ⟨⟨m, tc⟩, hsc⟩ : ∃ c, σ[j]? = some c := ⟨_, List.getElem?_eq_getElem hjl⟩
+  have hm := hH.tags i ρ σ j false w m tc hρ hσ hc hsc
+  subst hm
+  obtain ⟨hv, ht⟩ := hH.typed i ρ σ j false w false tc hρ hσ hc hsc (.inl rfl)
+  intro q hq
+  obtain ⟨σ', tc', h1, h2⟩ := HasType.refs_frozen hv ht (hH.immMutFree i σ j tc hσ hsc) q hq
+  exact hH.cell_of_store (getElem?_take_some h1).2 h2
+
+theorem cellAt_set {H : Heap} {r : Nat} {ρ' : List (Bool × Expr)} (hr : r < H.length) (i j : Nat) :
+    cellAt (H.set r ρ') i j = if i = r then ρ'[j]? else cellAt H i j := by
+  unfold cellAt
+  by_cases hi : i = r
+  · subst hi; simp [List.getElem?_set_self hr]
+  · simp [hi, List.getElem?_set_ne (Ne.symm hi)]
+
+/-- region r のセル列を差し替える: 凍結セルは値ごと残り、新しく凍結したセルの値が前のヒープの凍結セルだけを指すなら非循環は保たれる -/
+theorem HeapOk.acyc_set {Δ : Defs} {Ξ : ChanTy} {b : Nat} {Ψ : StoreTy} {H : Heap} (hH : HeapOk Δ Ξ b Ψ H)
+    {r : Nat} {ρ : List (Bool × Expr)} (hρ : H[r]? = some ρ) (ρ' : List (Bool × Expr))
+    (hkeep : ∀ (j : Nat) (w : Expr), ρ[j]? = some (false, w) → ρ'[j]? = some (false, w))
+    (hnew : ∀ (j : Nat) (w : Expr), ρ'[j]? = some (false, w) → ρ[j]? = some (false, w) ∨
+      ∀ q ∈ w.refs, ∃ w', cellAt H q.1 q.2 = some (false, w')) :
+    HeapAcyc (H.set r ρ') := by
+  have hrl : r < H.length := (List.getElem?_eq_some_iff.mp hρ).1
+  refine hH.acyc.extend (fun i j w h => ?_) (fun i j w h q hq w' _ => ?_)
+  · rw [cellAt_set hrl]
+    split
+    · rename_i hi; subst hi
+      obtain ⟨ρ0, hρ0, hc⟩ := cellAt_eq.mp h
+      rw [hρ] at hρ0; cases hρ0
+      exact hkeep j w hc
+    · exact h
+  · rw [cellAt_set hrl] at h
+    split at h
+    · rename_i hi; subst hi
+      rcases hnew j w h with hold | hr
+      · exact hH.frozen_refs (cellAt_eq.mpr ⟨ρ, hρ, hold⟩) q hq
+      · exact hr q hq
+    · exact hH.frozen_refs h q hq
+
+/-- region k の末尾にセル列を積む: 新しい凍結セルの値が前のヒープの凍結セルだけを指すなら非循環は保たれる -/
+theorem HeapOk.acyc_append {Δ : Defs} {Ξ : ChanTy} {b : Nat} {Ψ : StoreTy} {H : Heap} (hH : HeapOk Δ Ξ b Ψ H)
+    {k : Nat} {ρ : List (Bool × Expr)} (hk : H[k]? = some ρ) (cs : List (Bool × Expr))
+    (hnew : ∀ c ∈ cs, c.1 = false → ∀ q ∈ c.2.refs, ∃ w, cellAt H q.1 q.2 = some (false, w)) :
+    HeapAcyc (H.set k (ρ ++ cs)) := by
+  refine hH.acyc_set hk _ (fun j w h => ?_) (fun j w h => ?_)
+  · rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp h).1]; exact h
+  · by_cases hj : j < ρ.length
+    · rw [List.getElem?_append_left hj] at h; exact .inl h
+    · rw [List.getElem?_append_right (Nat.le_of_not_lt hj)] at h
+      exact .inr (hnew _ (List.mem_of_getElem? h) rfl)
+
+/-- 値の型付けのストアが Ψ の前置きなら、imm の値の参照先はヒープの凍結セル -/
+theorem HeapOk.value_refs_frozen {Δ : Defs} {Ξ Ξ' : ChanTy} {b : Nat} {Ψ : StoreTy} {H : Heap} (hH : HeapOk Δ Ξ b Ψ H)
+    {D f b' d : Nat} {Γ : Ctx} {Λ : LCtx} {v : Expr} {t : Ty}
+    (hv : Value v) (he : HasType Δ Ξ' (Ψ.take D) f b' d Γ Λ v t) (hm : t.mutFree = true) :
+    ∀ q ∈ v.refs, ∃ w, cellAt H q.1 q.2 = some (false, w) := by
+  intro q hq
+  obtain ⟨σ, tc, h1, h2⟩ := HasType.refs_frozen hv he hm q hq
+  exact hH.cell_of_store (getElem?_take_some h1).2 h2
+
 /-! ## HeapOk の遷移補題 -/
 
 theorem heapOk_empty {Δ : Defs} {Ξ : ChanTy} {b : Nat} : HeapOk Δ Ξ b [] [] := by
-  refine ⟨rfl, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨rfl, ?_, ?_, ?_, ?_, ?_, HeapAcyc.nil⟩
   · intro r ρ σ h1 _
     simp at h1
   · intro r ρ σ a mv v m t h1 _ _ _
@@ -1022,7 +1276,7 @@ theorem heapOk_empty {Δ : Defs} {Ξ : ChanTy} {b : Nat} : HeapOk Δ Ξ b [] [] 
 /-- Ξ の transport: newchan で Ξ が伸びてもヒープの型付けは保たれる -/
 theorem heapOk_chan_mono {Δ : Defs} {Ξ Ξ' : ChanTy} {b : Nat} {Ψ : StoreTy} {H : Heap}
     (hle : ChanLE Ξ Ξ') (hH : HeapOk Δ Ξ b Ψ H) : HeapOk Δ Ξ' b Ψ H := by
-  refine ⟨hH.len, hH.storeLen, hH.tags, ?_, hH.tyBelow, hH.immMutFree⟩
+  refine ⟨hH.len, hH.storeLen, hH.tags, ?_, hH.tyBelow, hH.immMutFree, hH.acyc⟩
   intro r ρ σ a mv v m t h1 h2 h3 h4 hcond
   obtain ⟨hv, ht⟩ := hH.typed r ρ σ a mv v m t h1 h2 h3 h4 hcond
   exact ⟨hv, ht.chan_mono hle⟩
@@ -1030,7 +1284,17 @@ theorem heapOk_chan_mono {Δ : Defs} {Ξ Ξ' : ChanTy} {b : Nat} {Ψ : StoreTy} 
 /-- block の push: 空 region を両側に足す -/
 theorem heapOk_push {Δ : Defs} {Ξ : ChanTy} {b : Nat} {Ψ : StoreTy} {H : Heap} (hH : HeapOk Δ Ξ b Ψ H) :
     HeapOk Δ Ξ b (Ψ ++ [[]]) (H ++ [[]]) := by
-  refine ⟨by simp [hH.len], ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨by simp [hH.len], ?_, ?_, ?_, ?_, ?_, hH.acyc.sub (fun i j w h => ?_)⟩
+  rotate_left 5
+  · obtain ⟨ρ0, h1, h2⟩ := cellAt_eq.mp h
+    by_cases hi : i < H.length
+    · rw [List.getElem?_append_left hi] at h1; exact cellAt_eq.mpr ⟨ρ0, h1, h2⟩
+    · rw [List.getElem?_append_right (Nat.le_of_not_lt hi)] at h1
+      have h0 : ρ0 = [] := by
+        rcases Nat.lt_or_ge (i - H.length) 1 with hlt | hge
+        · rw [show i - H.length = 0 by omega] at h1; simp at h1; exact h1
+        · rw [List.getElem?_eq_none (by simp; omega)] at h1; cases h1
+      subst h0; simp at h2
   · intro r ρ σ h1 h2
     by_cases hr : r < H.length
     · rw [List.getElem?_append_left hr] at h1
@@ -1116,7 +1380,11 @@ theorem heapOk_push {Δ : Defs} {Ξ : ChanTy} {b : Nat} {Ψ : StoreTy} {H : Heap
 /-- pop: 最内 region を両側から落とす -/
 theorem heapOk_pop {Δ : Defs} {Ξ : ChanTy} {b : Nat} {Ψ : StoreTy} {H : Heap} (hH : HeapOk Δ Ξ b Ψ H) :
     HeapOk Δ Ξ b Ψ.dropLast H.dropLast := by
-  refine ⟨by simp [hH.len], ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨by simp [hH.len], ?_, ?_, ?_, ?_, ?_, hH.acyc.sub (fun i j w h => ?_)⟩
+  rotate_left 5
+  · obtain ⟨ρ0, h1, h2⟩ := cellAt_eq.mp h
+    rw [List.dropLast_eq_take] at h1
+    exact cellAt_eq.mpr ⟨ρ0, (getElem?_take_some h1).2, h2⟩
   · intro r ρ σ h1 h2
     rw [List.dropLast_eq_take] at h1 h2
     exact hH.storeLen r ρ σ (getElem?_take_some h1).2 (getElem?_take_some h2).2
@@ -1150,7 +1418,11 @@ theorem heapOk_alloc {Δ : Defs} {Ξ : ChanTy} {b : Nat} {Ψ : StoreTy} {H : Hea
   have hle : StoreLE Ψ (Ψ.set k (σ ++ [(m, t)])) := storeLE_set_concat hΨk (m, t)
   have hkΨ : k < Ψ.length := by omega
   have hkH : k < H.length := by rw [hH.len]; omega
-  refine ⟨by simp [hH.len], ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨by simp [hH.len], ?_, ?_, ?_, ?_, ?_,
+    hH.acyc_append hHk [(m, v)] (fun c hc hm0 => ?_)⟩
+  rotate_left 5
+  · simp only [List.mem_singleton] at hc; subst hc
+    exact hH.value_refs_frozen (D := Ψ.length) hv (by rw [List.take_length]; exact ht) (hmf hm0)
   · intro r ρ' σ' h1 h2
     by_cases hrk : r = k
     · subst hrk
@@ -1268,7 +1540,15 @@ theorem heapOk_write {Δ : Defs} {Ξ : ChanTy} {b : Nat} {Ψ : StoreTy} {H : Hea
     HeapOk Δ Ξ b Ψ (H.set r (ρ.set a (true, v))) := by
   replace ht := HasType.value_ctx (Γ' := []) (Λ' := []) hv ht
   have hrH : r < H.length := (List.getElem?_eq_some_iff.mp hρ).1
-  refine ⟨by simp [hH.len], ?_, ?_, ?_, hH.tyBelow, hH.immMutFree⟩
+  refine ⟨by simp [hH.len], ?_, ?_, ?_, hH.tyBelow, hH.immMutFree, hH.acyc.sub (fun i j w h => ?_)⟩
+  rotate_left 3
+  · rw [cellAt_set hrH] at h
+    split at h
+    · rename_i hi; subst hi
+      by_cases hj : a = j
+      · subst hj; simp [List.getElem?_set] at h
+      · rw [List.getElem?_set_ne hj] at h; exact cellAt_eq.mpr ⟨ρ, hρ, h⟩
+    · exact h
   · intro r' ρ' σ' h1 h2
     by_cases hrr : r' = r
     · subst hrr
@@ -1337,7 +1617,17 @@ theorem heapOk_freeze {Δ : Defs} {Ξ : ChanTy} {b : Nat} {Ψ : StoreTy} {H : He
   have hrΨ : r < Ψ.length := (List.getElem?_eq_some_iff.mp hσ).1
   have haρ : a < ρ.length := (List.getElem?_eq_some_iff.mp hρa).1
   have haσ : a < σ.length := (List.getElem?_eq_some_iff.mp hσa).1
-  refine ⟨by simp [hH.len], ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨by simp [hH.len], ?_, ?_, ?_, ?_, ?_,
+    hH.acyc_set hρ _ (fun j w' h => ?_) (fun j w' h => ?_)⟩
+  rotate_left 5
+  · by_cases hj : a = j
+    · subst hj; rw [hρa] at h; cases h; rw [List.getElem?_set_self haρ]
+    · rw [List.getElem?_set_ne hj]; exact h
+  · by_cases hj : a = j
+    · subst hj; rw [List.getElem?_set_self haρ] at h; cases h
+      obtain ⟨hwv, hwt⟩ := hH.typed r ρ σ a mw w m t hρ hσ hρa hσa (.inr hbr)
+      exact .inr (hH.value_refs_frozen hwv hwt hmf)
+    · rw [List.getElem?_set_ne hj] at h; exact .inl h
   · intro r' ρ' σ' h1 h2
     by_cases hrr : r' = r
     · subst hrr
@@ -1435,7 +1725,11 @@ theorem heapOk_append1 {Δ : Defs} {Ξ : ChanTy} {b : Nat} {Ψ : StoreTy} {H : H
   have hle : StoreLE Ψ (Ψ.set k (σ ++ [(m, t)])) := storeLE_set_concat hΨk (m, t)
   have hkΨ : k < Ψ.length := (List.getElem?_eq_some_iff.mp hΨk).1
   have hkH : k < H.length := by rw [hH.len]; omega
-  refine ⟨by simp [hH.len], ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨by simp [hH.len], ?_, ?_, ?_, ?_, ?_,
+    hH.acyc_append hHk [(m, v)] (fun c hc hm0 => ?_)⟩
+  rotate_left 5
+  · simp only [List.mem_singleton] at hc; subst hc
+    exact hH.value_refs_frozen hv ht (hmf hm0)
   · intro r ρ' σ' h1 h2
     by_cases hrk : r = k
     · subst hrk
@@ -1840,7 +2134,7 @@ immutable セルの格納値は mutFree（immMutFree 不変条件）なので f_
 theorem heapOk_spawn {Δ : Defs} {Ξ : ChanTy} {b : Nat} {Ψ : StoreTy} {H : Heap}
     (hbl : b ≤ Ψ.length) (hH : HeapOk Δ Ξ b Ψ H) :
     HeapOk Δ Ξ Ψ.length Ψ H := by
-  refine ⟨hH.len, hH.storeLen, hH.tags, ?_, hH.tyBelow, hH.immMutFree⟩
+  refine ⟨hH.len, hH.storeLen, hH.tags, ?_, hH.tyBelow, hH.immMutFree, hH.acyc⟩
   intro r ρ σ a mv v m t h1 h2 h3 h4 hcond
   have hr : r < Ψ.length := (List.getElem?_eq_some_iff.mp h2).1
   have hm : m = false := by

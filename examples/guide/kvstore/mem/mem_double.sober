@@ -1,0 +1,54 @@
+@replaces("examples/guide/kvstore")
+package kvstore
+
+// A double of kvstore: the files live in a cell instead of on disk, and a directory from Failing refuses every write.
+
+import "std/testing/cell"
+
+type Dir struct {
+    failing bool
+}
+
+type File struct {
+    name string
+    line string
+}
+
+type Missing error {
+    name string
+}
+
+type Denied error {}
+
+// the files written so far, in the order of the writes
+const Files = cell.Cell[[]File]{}
+
+func Empty() Dir {
+    return Dir{failing: false}
+}
+
+func Failing() Dir {
+    return Dir{failing: true}
+}
+
+@errors(Missing)
+func Load(d Dir, name string) (string, error?) {
+    fs := cell.Get(Files)
+    mut i := len(fs) - 1
+    while i >= 0 {
+        if fs[i].name == name {
+            return fs[i].line, nil
+        }
+        i -= 1
+    }
+    return "", Missing{name: name}
+}
+
+@errors(Denied)
+func Store(d Dir, name string, line string) error? {
+    if d.failing {
+        return Denied{}
+    }
+    cell.Update(Files, (fs []File) => append(fs, File{name: name, line: line}))
+    return nil
+}

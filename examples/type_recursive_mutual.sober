@@ -1,6 +1,6 @@
 package main
 
-// 負例（load が拒否 — diag.RecursiveType）: 2 つの struct が map と T? を通して互いを持つ
+// 相互再帰の型宣言: Dir は File を map で持ち、File は親の Dir を値（T?）で持つ — 閉路は map を通るので値の大きさは有限（D）
 
 type Dir struct {
     name string
@@ -13,5 +13,8 @@ type File struct {
 }
 
 func main() {
-    println(len(bytes(File{name: "a", parent: nil}.name)))
+    root := Dir{name: "root", files: map[string]File{}}
+    f := File{name: "a", parent: root}
+    d := Dir{name: "src", files: map[string]File{"a": f}}
+    println(len(d.files) + len(bytes(f.name)))
 }

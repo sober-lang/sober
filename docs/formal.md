@@ -1479,6 +1479,89 @@ language.md 31 節の裁定の形式化。全段で `lake build` 全緑・sorry 
   否定例 6 本（byte の算術・byte の cmp 直・tobyte の入れ子・toint (lit)・byte の条件・blit はソース項でない）+ JSON の往復。
   公理 propext / Quot.sound のみ（soundness・preservation・progress・step_shared_stable・typecheck_sound / complete）、sorry なし。規模 +336 行
 
+### 再帰型の段（2026-11-03 決定。S = 完了・D = 完了〔型の層 + 型規則 + 燃料つきの写し + 燃料切れの到達不能〕・同時の μ = 完了〔R3e — 最終形は S・D とも同時の μ 1 本ずつ〕。裁定は language.md 1 節の「再帰の型宣言」）
+
+S（関数型の中を通る再帰）と D（slice / map の要素の位置を通る再帰・ジェネリックの再帰 union を含む）を同じ波で開く。I（直の自己欄・`T?`・`[N]T`）は入れない。
+契約（全段）: iso に徹する（Ty.sub は同一の μ だけ — 余帰納・展開の等価にしない）・再帰の変数は束縛と同じ region（跨ぎは書けない）・Lean と checker は
+同じ段で着地して照合ベクタ（tyvec / corevec / checkverdict）に μ の場合を足す・region × μ に条件付きの制約か特例が要りそうなら入れずに裁定へ戻す。
+
+- **最終形（R3e-3 以降）**: 符号化 = 構造的な同時の μ — `Ty.mus (n i : Nat) (bs : Ty)`（S）/ `Ty.muRs (r n i : Nat) (bs : Ty)`（D）/ `Ty.rvar (i : Nat)`（平らな de Bruijn）・
+  自己再帰は幅 1 の組（`Ty.mu1 b = mus 1 0 (b × unit)`・`Ty.muR1 r b = muRs r 1 0 (b × unit)` — 略記の abbrev）・項 `fold t e` / `unfold e`・値 `fold t v`・
+  fold / unfold が扱う μ = `Ty.foldOk`（musOk か muRsOk）・型規則 foldS / unfoldS / foldRs / unfoldRs。下の S / D の段の記述は 1 束縛の μ（`Ty.mu` / `Ty.muR`）で
+  建てた経緯で、R3e で組の形へ持ち上げてから 1 束縛の構成子と腕・専用の補題を撤去した（同じ定理が n = 1 の組で成り立つ）。
+  棄てた案 = 名前の表（コアの Ty は名前を持たない構造型で、同じ名前が関数型の外と中で座標違いに現れる — region の引数 + 表の引き回し + 宣言の旗が要る）
+- S の段（完了）: fold / unfold が扱う μ は `Ty.muOk`（本体が関数型・閉じている・型変数を持たない）に限る。μ は関数型と同じく base 座標の型スキームで
+  region を持たないので、区域系の述語（regionsBelow / mutFree / chanFree / annFree / retOk）は真・シフト / 写像（shiftR / relocR / renR / relocA）は恒等の腕で閉じ、
+  中へ入るのは tsubst / tvarsBelow / rsubst / rfree だけ。型規則は結論の型を構文で `μ (fn p r)` に固定（canonical forms の場合分けが構文で閉じる）:
+  `foldE : muOk T → e : T.unfold → fold T e : T`・`unfoldE : muOk T → e : T → unfold e : T.unfold`。機械 = 枠 foldK t / unfoldK・
+  `unfold (fold t v) ⟶ v`・canonical_mu。preservation / progress / step_shared_stable・写像定理 ren_typing・tsubst_typing（muOk の型は型変数を持たないので
+  型代入で不変）・Checker の健全性 / 完全性・TcStep / TcEq（kFold / kUnfold）・Leaf・UniqFreeze・Split・Json（`{"k":"mu","b":T}` / `{"k":"rvar","i":n}` /
+  `{"k":"fold","t":T,"e":E}` / `{"k":"unfold","e":E}`）。sorry なし。証人（Examples）= next 形のミドルウェア（Mw = μM. fn (int × ([]M × int)) int・
+  鎖 [log, plus] を 5 で走らせて 106）+ 否定例 4 本（fold なしで slice に入れる・unfold なしで呼ぶ・本体が関数型でない μ・展開と違う型の関数値）。
+  照合: 抽出（ty_gen に rsubst / rfree / isFn / unfold / muOk・tc_gen に kFold / kUnfold）・tyvec 33 関数 × 8000（μ を含む型の乱択）・
+  Gen に μ の題材 3 つ（自己適用・状態関数・next 形）と chaos / 近傍変異の腕 → corevec の黄金を再生成（Sober の検査器 ≡ Lean）
+- D の段（R3a = 型の層 完了）: `Ty.muR (r : Nat) (b : Ty)` — μ 自体が region 座標 r を持つコンテナで、本体 b は局所座標（関数型の外の region は全部 0 = `Ty.localOnly`）。
+  シフト・写像・締め・relocR / relocA は r だけに掛かり本体を見ない（slice の腕の持ち上げ — imm / mut は本体の mutFree で割る）。
+  部分型 = `b = b' ∧ (r = r' ∨ (r ≤ r' ∧ b.covOk))`（`Ty.covOk` = 深く共変な本体: imm のコンテナと値ラッパだけ・imm の ref の中身は loc-free）— μ の中へ潜らない。
+  展開 = `(b.rsubst 0 (muR 0 b)).shiftR r`（局所座標のまま μ 自身を代入してから本体ごと r へ置く — 素直な「置いてから代入」は相互再帰で壊れる: 有限列挙 C1 の反例 12）。
+  整形 = `Ty.recOk`（D の本体は局所座標・再帰の変数は slice / map の要素の下にだけ〔`Ty.rguard`〕で関数型を跨がない・S の本体は関数型）+ 閉じている = `Ty.muROk`。
+  補題: 展開とシフト / 写像 / 型代入の可換・region の上界の保存・**部分型が展開へ下りる（sub_unfold_muR — 余帰納なし: 本体の構造的帰納で、変数の位置は外の座標の部分型そのもの）**。
+  型引数に「閉じている」を足した（tyArgOk = loc-free ∧ chan-free ∧ rfree 0）ので型代入と展開が可換になり、S の muOk の「型変数なし」を外した（S のジェネリックも開く）。
+  `Ty.sub_tsubst` / `readAs_tsubst` は型引数の条件を前提に取る（D の部分型の covOk を型代入で保つため）。
+  反証探索 = `.pair/rec/r3a-enum.lean`（本番の Ty に対する有限列挙の #eval — 閉じて整形な D の μ 6,526 本で 11 本の言明が反例 0）。
+  R3a ではまだ muR の値を作れない（fold は S の μ だけ）— 境界コピーの muR の腕は空（R3b で canonical_muR に置き換える）
+- D の段（R3b+c = 型規則・値・燃料つきの写し 完了）: 型規則 `foldR : muROk (muR r b) → e : (muR r b).unfold → fold (muR r b) e : muR r b`・`unfoldR`（逆）。
+  結論の型を構文で `.muR r b` に固定（S の foldE と同じ — canonical forms の場合分けが構文で閉じる）。fold / unfold が扱う μ = `Ty.foldOk`（muOk か muROk）— 検査器・TcStep もこれで判定。
+  値の補題は展開の補題で閉じる（value_strengthen = unfold_rb_muR・value_sb / value_world = unfold_mf_muR・value_anyΞ = unfold_cf_muR・value_coerce = sub_unfold_muR — 余帰納なし）。
+  `Expr.coerceTo` に fold の腕（`coerceTo (muR r b) (fold _ e) = fold (muR r b) (coerceTo (muR r b).unfold e)` — 値の上の構造的再帰。部分型で座標を上げた木の注釈を中まで書き換える）。
+  型代入・写像・シフトの型付けは unfold_tsubst_muR / unfold_renR_muR と muROk の保存（muROk_tsubst・muROk_r — muROk は外の座標に依らない）。
+  **型引数の条件に「整形」を足した**（`tyArgOk = loc-free ∧ chan-free ∧ rfree 0 ∧ recOk` — 型代入が muROk を保つため。脱糖器の出す型引数は整形なので受理集合は不変。
+  棄てた案 = muROk から入れ子の recOk を外す — R3a の整形の定義を崩す）。
+  **境界コピーは燃料つき（T-a）**: 写しを `relocW k rec`（従来の歩き + muR の腕だけ rec で展開の型を歩く）と `relocN k n`（燃料 n で rec を畳む — μ を開くたびに 1 減る・
+  0 で none）に割り、`relocTo k t H v = relocN k (relocFuel H v) t H v`（燃料 = 値の大きさ + ヒープの全セルの値の大きさの和 + 1 — 大きさは値の構成子の節の数 `Expr.vsize`）。
+  xfer も同じ形（xferW / xferN）。棄てた案 = 燃料 =（セル数 + 1）×（型の muR の数 + 1）— 入れ子の μ を展開した型の上界の証明が重い（展開で型が大きくなる）。
+  機械は写しの none を panic にする（返り境界・blockR・scope の出口・copyTo・jump・join / try・失敗の値・送りの梱包・受けの展開 — 受けは取り出した後の端点で panic）。
+  **燃料切れは到達しない（T-b — T-a の乖離は解消済み）**: HeapOk に不変条件 `acyc : HeapAcyc H`（凍結セルの値が指す凍結セルは順位が真に小さい — `∃ rank`。
+  機械は凍結の時刻を持たないので順位は存在で言う。位置の順では言えない: 書ける間のセルは後から積んだセルを指せる〔append → setidx → freeze〕）。
+  保存は汎用 3 本で閉じる: 凍結集合が縮む（push / pop / take / write — 書くのはタグ true のセル）・`HeapOk.acyc_set`（前の凍結セルは値ごと残り、新しく凍結したセルの値は
+  前のヒープの凍結セルだけを指す — 新しいセルに前の全順位より大きい順位: alloc / append1 / freeze。値の参照先が凍結なのは mutFree の型の値の型付けから — `HasType.refs_frozen`）・
+  同じヒープ（spawn / chan_mono）。append_copy 系・freezeRange・append_list・境界コピーの積み直しは基底の合成で無変更。
+  燃料の十分性: 写しの失敗の条件を値に依存させた（`PN lo rank N W H v` = W が D の μ を含み、region ≥ lo の順位が整ったヒープでは N < need）。
+  `need = vsize v + pot(refBound)`（pot R = region ≥ lo の凍結セルで順位 < R のものの値の大きさの和・refBound = 値の参照先の順位 + 1 の最大）。
+  伝播: 包む値は need が単調・pair の後ろは前の写しの後のヒープで need 不変（RelocJ に「k より上の region は不変」の枠を足した — 写しは region k だけに書く）・
+  セルへ降りると need が下がる（`need_cell` — そのセル自身が pot に入り、セルの値の参照は順位がより小さい）・fold を開くと need が 1 下がる（`need_fold`）。
+  `need < relocFuel` なので relocTo_ok / xfer_ok の燃料切れの腕は False（`relocTo_ne_none` / `xfer_ne_none` — 機械の写しの panic の腕は型付きの状態では到達しない）。
+  relocTo は lo = k + 1（読むのは k より上の region）・xfer は lo = 0（読み元の子のヒープは固定）。
+  証人（Examples）= 木 Tree = μX. []X を組んで数える 3 Def（build が深さ n の完全二分木を自フレームで組んで返す — 返り境界の写しが燃料つきで μ を開く）で
+  深さ 3 → 15 + 否定例 4 本（展開と違う中身の fold・ガードのない再帰〔I〕・局所座標でない本体・unfold せずに slice として使う）+ 燃料 0 の写しは none・μ なしは成功。
+  照合: 抽出（ty_gen に foldOk・tyArgOk の recOk・tc_gen の kFold / kUnfold が foldOk）・tyvec 39 関数 × 8000 = 312,000（foldOk を追加）・
+  Gen に D の題材（21〜23 = 同じ木の 3 Def・腕 recD = 組んで数える / 呼び出しの結果を開く / その場で fold した葉）→ corevec の黄金を再生成（Sober の検査器 ≡ Lean）
+- 同時の μ の段（R3e — 相互再帰の正準形）: `Ty.mus (n i) (bs)`（S）/ `Ty.muRs (r n i) (bs)`（D）— bs は n 個の本体の prod の鎖（unit 終端）・型は組の i 番目・
+  組の変数は平らな de Bruijn で n 個（本体の rvar j は j < n なら組の j 番目・j ≥ n なら外へ j − n — 束縛の下の持ち上げは +1 が +n になるだけ）。
+  **幅 n を構成子に持つ**（鎖の長さで数えると、尾が型変数の組で型代入が prod を入れたとき幅が変わり外の変数を捕獲する — rsubst と tsubst の可換が偽になる）。
+  展開 = `((bs.comp i).substG d n bs 0 n).shiftR r`（substG = 組の変数 j を組の成分の型〔D は局所座標の muRs 0 n j bs・S は mus n j bs〕に 1 つずつ置き換える多重代入 —
+  代入する型は閉じているので逐次 = 同時。素直な「r へ置いてから外の座標の成分を代入」は列挙で 57 件の可換の破れ — report-rec-9）。
+  補題は 1 段の代入の補題を `substG_pres`（1 段が保つ性質は多重代入も保つ）で持ち上げる: unfold_rb / shiftR / renR / clampR / relocR / noClamp / tsubst の _muRs・
+  sub_unfold_muRs（部分型が展開へ下りる — 同じ組・同じ成分で外の座標だけ）・musOk_fn（S の展開は関数型）。
+  整形 = `recOk` の腕（D: 鎖・i < n・局所座標・`groupOk`・入れ子の整形 / S: 関数型の鎖・i < n）。`groupOk` = 組の変数が関数型を跨がない（rguardN）∧
+  ガードの無い参照の辺に閉路が無い（沈みの代入〔ガードなしの組の変数を持たない成分の変数を int に〕を n 周して全成分が沈み — 抽出できる形: Ty の構造的再帰と Nat だけ）。
+  n = 1 で 1 束縛の μ の整形（変数はガードの下だけ・関数型を跨がない）と同じ。健全性の証明は groupOk を使わない（型代入で保たれること〔groupOk_tsubst〕だけ — 型引数の整形のため）。
+  ガード = slice / map の要素と **opt の中身**（2026-11-04 — repr 便 B0・ユーザー裁定 U6: 値の I 族〔`next L?` の鎖・`l T?; r T?` の木〕。opt を通る組の値も
+  有限の項で、型規則・値の型付け・写しの燃料は変わらない — 証明の変更なし。実装は組の成分を中身に持つ opt を 1 セルの箱で表す〔lower の表現の選択〕）。
+  証人 = cons の鎖（consΔ — 組んで和 = 6）・`A { b B? } / B { a A? }` は整形・`A { b B } / B { a A }`（住人のいない型）は整形の外。
+- 絞りの消滅（2026-11-04 — W1-b・language.md 15 節）: コアの規則は無変更（絞りは脱糖の再束縛 — ifnil の some の腕の var 0。代入の的は外の T? のセル）。証人 = Examples の walk1（鎖の歩き `while c != nil { s += c.v; c = c.next }` の脱糖後の形 — 型 int・実行で 6）・否定例 walkStale（代入の後ろで外のセルを中身として読む形は型が付かない）。照合 = testdata/corevec_narrow（examples/narrow_* の脱糖後のコア — Lean ≡ Sober の検査器）
+  型規則 foldS / unfoldS / foldRs / unfoldRs（結論の型を構文で固定 — canonical_mus / canonical_muRs）・StackTy の 4 本・写しの muRs の腕（relocW / xferW — 燃料は値の fold の節で数えるので組でも同じ）。
+  証人（Examples）= A ↔ B（A { as []A; bs []B } / B { bs []B; as []A } — 1 束縛の μ では正準でない形）を組んで数える 6 Def（深さ 3 → 15・返り境界の写しが組の μ を開く）+
+  `a.bs[0]` の型 = B の型（展開の等式）+ 否定例 4 本 + S の組（F ↔ G）。
+  照合: 本番の Ty への列挙（.pair/rec/r3e-real-enum.lean — 59,112 本 E1〜E12 反例 0）・抽出（ty_gen に組の関数 14 本・記録に 4 つ目の欄 d〔TMuRs〕）・tyvec 53 関数 × 8000 = 424,000・
+  Gen に組の題材（24〜29 = 同じ A ↔ B の 6 Def・腕 recD に組の 3 形）→ corevec の黄金を再生成
+- 撤去の段（R3e-3 — 置き換えの完了）: `Ty.mu` / `Ty.muR` の構成子と全腕・型規則 foldE / unfoldE / foldR / unfoldR・StackTy の 4 本・専用の補題
+  （muOk / muROk / rguard と *_muR・canonical_mu / canonical_muR・clampR_sub_muR / relocR_sub_muR）を撤去し、証人（Mw・Tree）と Gen / TyVec の題材を
+  幅 1 の組（mu1 / muR1）へ書き換えた。checker の TMu / TMuR・JSON の語 mu / muR も撤去（tag と語の番号を詰めた）・tyvec 50 関数 × 8000 = 400,000・corevec の黄金を再生成。
+  棄てた案 = 1 束縛の μ を残して組と併存（μ の形が 4 種残り、今後の Ty 関数ごとに 4 腕・脱糖器も n = 1 とそれ以外で出し分け）/
+  1 束縛の μ だけで相互再帰を符号化（帰還頂点集合 ≥ 2 の SCC — 例 A { as []A; bs []B } / B { bs []B; as []A } — で宣言の型が展開の文脈で別の項になり正準形が無い — report-rec-7）
+- 照合: 実装のネイティブの表現と、値ごとに自己完結の表へ書き換えた模型（language.md 1 節の棄てた案 A1 — 今の言語で書ける）の出力を差分で照合する
+
 ## 借りるもの
 
 | 前例 | 借りる点 | 借りない点 |

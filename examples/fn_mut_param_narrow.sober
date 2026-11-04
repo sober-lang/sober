@@ -1,0 +1,42 @@
+package main
+
+// 関数型の mut の席 × 絞りの消滅: 絞った mut の名前を関数値の mut の席へ渡す文（`f(mut x, …)`）は書く文 — その文の頭から x は外の T? の
+// セルで、後ろでも T?（中身として使うなら絞り直す）
+
+type Step func(p mut int?, by int)
+
+func dec(p mut int?, by int) {
+    p = if p != nil && p > by { p - by } else { nil }
+}
+
+func get(n int) int? {
+    return if n > 0 { n } else { nil }
+}
+
+func main() {
+    steps := []Step{dec, dec}
+    mut x := get(10)
+    if x != nil {
+        println(x + 1)
+        for s <- steps {
+            s(mut x, 3)
+        }
+        println(x == nil)
+        if x != nil {
+            println(x)
+        }
+    }
+    mut y := get(2)
+    if y != nil {
+        steps[0](mut y, 5)
+        println(y == nil)
+    }
+    bump := (p mut int?, by int) => { p = get(by) }
+    mut z := get(1)
+    if z != nil {
+        bump(mut z, 7)
+        if z != nil {
+            println(z)
+        }
+    }
+}

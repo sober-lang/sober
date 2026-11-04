@@ -1,6 +1,6 @@
 package main
 
-// std/json（language.md 16 節）: 平らな文書 Doc を 1 段ずつ開くビュー Value で歩く — 各段の switch は網羅が要る（負例 json_view_nonexh）。
+// std/json（language.md 16 節）: 平らな文書 Doc を 1 段ずつ開くビュー View で歩く — 各段の switch は網羅が要る（負例 json_view_nonexh）。
 // 入れ子は明示のスタックで（関数の再帰でも書ける — 普通の関数なので）。印字は決定的（空白なし・欄はソースの順・数は字句のまま）
 
 import "std/io"
@@ -10,17 +10,17 @@ import "std/json"
 // 節 n から下を深さ優先で 1 行ずつ印字する（path = そこまでの道）
 func walk(d json.Doc, n int, path string) {
     switch json.At(d, n) {
-    case json.Null{}: println("${path} = null")
-    case json.Bool{v}: println("${path} = ${if v { "true" } else { "false" }}")
-    case json.Number{lit}: println("${path} = num ${lit}")
-    case json.String{v}: println("${path} = str \"${v}\" (${len(bytes(v))} bytes)")
-    case json.Array{items}: {
+    case json.ViewNull{}: println("${path} = null")
+    case json.ViewBool{v}: println("${path} = ${if v { "true" } else { "false" }}")
+    case json.ViewNumber{lit}: println("${path} = num ${lit}")
+    case json.ViewString{v}: println("${path} = str \"${v}\" (${len(bytes(v))} bytes)")
+    case json.ViewArray{items}: {
         println("${path} = array of ${len(items)}")
         for i <- iter.Range(0, len(items)) {
             walk(d, items[i], "${path}[${i}]")
         }
     }
-    case json.Object{names, vals}: {
+    case json.ViewObject{names, vals}: {
         println("${path} = object of ${len(names)}")
         for i <- iter.Range(0, len(names)) {
             walk(d, vals[i], "${path}.${names[i]}")

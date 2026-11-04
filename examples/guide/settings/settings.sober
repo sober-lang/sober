@@ -1,0 +1,43 @@
+package settings
+
+// Settings kept as one `key=value;key=value` line per file in a kvstore directory.
+
+import "examples/guide/kv"
+import "examples/guide/kvstore"
+
+// the value of key in the file name, or def when the file or the key is missing
+func Value(d kvstore.Dir, name string, key string, def string) string {
+    line := kvstore.Load(d, name) catch return def
+    ps := kv.Parse(line) catch return def
+    mut i := 0
+    while i < len(ps) {
+        if ps[i].key == key {
+            return ps[i].value
+        }
+        i += 1
+    }
+    return def
+}
+
+// sets key = value in the file name (creating the file) and writes the file back
+@errors(kvstore.Denied)
+func Set(d kvstore.Dir, name string, key string, value string) error? {
+    line := kvstore.Load(d, name) catch ""
+    ps := kv.Parse(line) catch []kv.Pair{}
+    mut out := mut []kv.Pair{}
+    mut found := false
+    mut i := 0
+    while i < len(ps) {
+        if ps[i].key == key {
+            out = append(out, kv.Pair{key: key, value: value})
+            found = true
+        } else {
+            out = append(out, ps[i])
+        }
+        i += 1
+    }
+    if !found {
+        out = append(out, kv.Pair{key: key, value: value})
+    }
+    return kvstore.Store(d, name, kv.Format(freeze(out)))
+}

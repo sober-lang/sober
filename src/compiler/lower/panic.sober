@@ -231,6 +231,9 @@ func buildPanicMem(st mut St) {
     br(mut st, fin, -1)
     setCur(mut st, fin)
     call(mut st, st.rtFlush, list0(mut st))
+    if st.rtMemHw != -1 {
+        memHwDump(mut st, meta)
+    }
     if st.covG != -1 {
         coverDump(mut st)
     }
@@ -253,6 +256,108 @@ func msAdd(st mut St, k int, v int) {
     store(mut st, g, META_WORDS + 2 + k, bin(mut st, BAdd, load(mut st, g, META_WORDS + 2 + k), v))
 }
 
+// region の高水位の標本（開発用 — rt の変異 39・memcheck の網）。meta の後ろ（META_WORDS + 2 から MH_N 語）に
+// Σ_深度 (bump − スロットの先頭) の最大と main の入口の Σ を持ち、rt.depth_report が `memhw <最大> <入口の Σ>` を stderr へ。
+// 標本の点 = region を捨てる点の手前（rtlower — setdepth と反復の軽い enter）と exit。数え口は普通の load / store（SOBER_WORKERS=1 で使う）
+const MH_MAX = 0
+const MH_ENTRY = 1
+const MH_SREF = 2     // スタックの物差しの基準（main を呼ぶ sober_entry の rsp — S の行と同じ起点）
+const MH_SLO = 3      // 塗った範囲の下端
+const MH_SUSE = 4     // main が使ったスタック（基準 − 書き換わった最も低い語 — exit の前に sober_entry が直に数える）
+const MH_N = 5
+const MH_UP = 24            // rt.stack_paint のスロット → 呼び手の rsp（x86 のフレーム: 戻り番地・push rbp・スロット = rbp − 8）
+const MH_MARGIN = 64        // 塗りの上端（スロットからの距離 — rt.stack_paint 自身のフレームを避ける。MH_UP + これ未満の使用はその値と読める）
+const MH_PAINT = 1048576    // 塗る量（バイト）
+const MH_PAT = -6148914691236517206 // 塗りの模様（0xaaaa…）
+
+// rt.mem_sample の本体: 深度 1 から今の深度までの使用量の和で最大を更新
+func buildMemSample(st mut St) {
+    begin(mut st, st.rtMemHw)
+    meta := globaladdr(mut st, st.meta)
+    depth := load(mut st, meta, W_DEPTH)
+    loop := newBlock(mut st)
+    d := param(mut st, loop, TyI64)
+    acc := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    sum := param(mut st, done, TyI64)
+    br(mut st, loop, list2(mut st, iconst(mut st, 1), iconst(mut st, 0)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLe, d, depth), body, -1, done, list1(mut st, acc))
+    setCur(mut st, body)
+    used := bin(mut st, BSub, load(mut st, gepWord(mut st, meta, d), W_BUMP), slotBase(mut st, meta, d))
+    br(mut st, loop, list2(mut st, bin(mut st, BAdd, d, iconst(mut st, 1)), bin(mut st, BAdd, acc, used)))
+    setCur(mut st, done)
+    up := newBlock(mut st)
+    fin := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, sum, load(mut st, meta, META_WORDS + 2 + MH_MAX)), up, -1, fin, -1)
+    setCur(mut st, up)
+    store(mut st, meta, META_WORDS + 2 + MH_MAX, sum)
+    br(mut st, fin, -1)
+    setCur(mut st, fin)
+    ret(mut st, -1)
+}
+
+// rt.stack_paint の本体: 自分のスロットの MH_MARGIN 下から MH_PAINT バイトを模様で塗る（main を呼ぶ直前 — 塗る範囲は rsp より下で死んでいる）。
+// スロットを持つ関数は展開されない（irinl.ilShapeD）ので、塗りが呼び手のフレームに掛かることはない
+func buildStackPaint(st mut St) {
+    begin(mut st, st.rtStackPaint)
+    meta := globaladdr(mut st, st.meta)
+    sl := ptoi(mut st, newSlotAddrOwn(mut st, 1))
+    ref := bin(mut st, BAdd, sl, iconst(mut st, MH_UP))
+    hi := bin(mut st, BSub, sl, iconst(mut st, MH_MARGIN))
+    lo := bin(mut st, BSub, hi, iconst(mut st, MH_PAINT))
+    store(mut st, meta, META_WORDS + 2 + MH_SREF, ref)
+    store(mut st, meta, META_WORDS + 2 + MH_SLO, lo)
+    loop := newBlock(mut st)
+    q := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, lo))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, q, hi), body, -1, done, -1)
+    setCur(mut st, body)
+    store(mut st, itop(mut st, q), 0, iconst(mut st, MH_PAT))
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, q, iconst(mut st, 8))))
+    setCur(mut st, done)
+    ret(mut st, -1)
+}
+
+// main が返った直後（sober_entry の中・呼び出しの前 — 数える間にスタックを使わない）: 塗った範囲を下から見て最初に書き換わった語までの距離を MH_SUSE へ
+func stackUseCount(st mut St, meta int) {
+    lo := load(mut st, meta, META_WORDS + 2 + MH_SLO)
+    hi := bin(mut st, BSub, load(mut st, meta, META_WORDS + 2 + MH_SREF), iconst(mut st, MH_UP + MH_MARGIN))
+    loop := newBlock(mut st)
+    q := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    next := newBlock(mut st)
+    done := newBlock(mut st)
+    l := param(mut st, done, TyI64)
+    br(mut st, loop, list1(mut st, lo))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, q, hi), body, -1, done, list1(mut st, q))
+    setCur(mut st, body)
+    condbr(mut st, cmp(mut st, CEq, load(mut st, itop(mut st, q), 0), iconst(mut st, MH_PAT)), next, -1, done, list1(mut st, q))
+    setCur(mut st, next)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, q, iconst(mut st, 8))))
+    setCur(mut st, done)
+    store(mut st, meta, META_WORDS + 2 + MH_SUSE, bin(mut st, BSub, load(mut st, meta, META_WORDS + 2 + MH_SREF), l))
+}
+
+// 最後の標本を取って `memhw <最大> <入口の Σ> <スタック>` を stderr へ（スタック = main が使った量・数えていない道〔task のプログラム・panic〕は -1）（exit と panic 101 / 102 の道 — 印字の fd は stderr のまま返る）
+func memHwDump(st mut St, meta int) {
+    call(mut st, st.rtMemHw, list0(mut st))
+    toStderr(mut st, meta)
+    printLit(mut st, "memhw ")
+    call(mut st, st.rtPint, list1(mut st, load(mut st, meta, META_WORDS + 2 + MH_MAX)))
+    printLit(mut st, " ")
+    call(mut st, st.rtPint, list1(mut st, load(mut st, meta, META_WORDS + 2 + MH_ENTRY)))
+    printLit(mut st, " ")
+    call(mut st, st.rtPint, list1(mut st, load(mut st, meta, META_WORDS + 2 + MH_SUSE)))
+    printLit(mut st, "\n")
+    call(mut st, st.rtFlush, list0(mut st))
+}
+
 // rt.depth_report の本体（102 の深度の契約〔27 節〕の消費の計測口・死亡ダンプ以外の口）:
 // 旗（W_DREP — 入口が SOBER_DEPTH_REPORT から置く）が立っていれば `region_depth{max: d}` を stderr へ。d = 一度でも入った最深の深度
 // （深度 d の bump は enter〔full・軽い〕でだけ初期化され、出ても 0 に戻らない — 熱い経路に計測の命令を足さずに読める）
@@ -264,6 +369,10 @@ func buildDepthReport(st mut St) {
     }
     if st.covG != -1 {
         coverDump(mut st)
+    }
+    if st.rtMemHw != -1 {
+        memHwDump(mut st, meta)
+        store(mut st, meta, W_FD, iconst(mut st, 1))
     }
     if st.rtMut == 13 {
         // map の成長の計数（--map-stat）を stderr へ（印字の fd を 1 に戻す）
@@ -311,6 +420,12 @@ func buildDepthReport(st mut St) {
 func buildPanic(st mut St, p loader.Program) {
     buildPanicMem(mut st)
     buildDepthReport(mut st)
+    if st.rtMemHw != -1 {
+        buildMemSample(mut st)
+        if st.rtStackPaint != -1 {
+            buildStackPaint(mut st)
+        }
+    }
     if st.rtPqstr != -1 {
         buildPrintQstr(mut st)
     }
@@ -413,6 +528,9 @@ func buildPanic(st mut St, p loader.Program) {
     call(mut st, st.rtPint, list1(mut st, col))
     call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\n')))
     call(mut st, st.rtFlush, list0(mut st))
+    if st.rtMemHw != -1 {
+        memHwDump(mut st, meta)
+    }
     if st.covG != -1 {
         coverDump(mut st)
     }

@@ -9,14 +9,14 @@ import "std/http"
 
 func route(r http.Request) http.Response {
     if r.path == "/stream" {
-        return http.Response{status: 200, contentType: "text/plain", length: 12, stream: (emit) => twice(emit)}
+        return http.Response{status: 200, contentType: "text/plain", length: 12, stream: (out, emit) => twice(mut out, emit)}
     }
     return http.Text("hello\n")
 }
 
-func twice(emit func(b []byte) error?) error? {
-    emit(bytes("chunk\n"))?
-    return emit(bytes("chunk\n"))
+func twice(out mut http.Out, emit func(out mut http.Out, b []byte) error?) error? {
+    emit(mut out, bytes("chunk\n"))?
+    return emit(mut out, bytes("chunk\n"))
 }
 
 // 切片 1 つを k に渡し、戻ったら積んだ分を送る（tls.Recv の約束の形）

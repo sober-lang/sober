@@ -73,7 +73,7 @@ proj/
 // proj/mathx/mathx.sober
 package mathx
 
-// Gcd is the greatest common divisor of a and b
+// the greatest common divisor of a and b
 func Gcd(a int, b int) int {
     mut x := a
     mut y := b
@@ -131,11 +131,12 @@ ok   mathx.TestGcd
 1 passed, 0 failed
 ```
 
-When an `assert` fails, it prints the value of each part of the expression (power assert):
+When an `assert` fails, it prints the value of each part of the expression (power assert) and the position of the failing `assert` (here with line 5 changed to `== 2`):
 
 ```
 assert failed: Gcd(7, 13) == 2
   Gcd(7, 13) = 1
+panic: testing.AssertFailed{} at mathx/mathx_test.sober:5:5
 ```
 
 Next: [Language tour](tour.md)

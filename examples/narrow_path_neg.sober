@@ -1,0 +1,15 @@
+package main
+
+// 負例（型の不一致）: 絞るのは名前だけ — 欄の道（`l.next != nil`）では絞らない。名前に束縛してから絞る（`n := l.next; if n != nil { … }`）
+
+type L struct {
+    v int
+    next L?
+}
+
+func main() {
+    l := L{v: 1, next: L{v: 2, next: nil}}
+    if l.next != nil {
+        println(l.next.v)
+    }
+}

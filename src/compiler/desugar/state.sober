@@ -110,7 +110,7 @@ type S struct {
     liftHint int
     // 次の liftLambdaCap が借りの閉包の持ち上げか（(α-L0) — 同一性の型の捕捉を許す。1 回で消費）
     liftBrw int
-    // 借りの実引数のラムダを持ち上げる呼び出しの anchor + 1（0 = callv の呼び出し — (α-L1)。callClosure が置き liftLambdaCap が読んで消す）
+    // 借りの実引数のラムダを持ち上げる呼び出しの anchor + 1（0 = callv の呼び出し — 関数型の mut の席。callClosure が置き liftLambdaCap が読んで消す）
     liftAnchor int
     // 前走り（closure.sober の shapesFor）か・記録した形が関数値の型を含むか（含めば形が形の U に依るので前走りを固定点まで回す）
     preRun bool
@@ -145,6 +145,8 @@ type S struct {
     tailWant TyRef
     // T? を期待する位置（coerceExpr）の nil 判定の if 式の節（-1 = 無し）: ifnilExpr が腕を coerceArm で期待型へ寄せる（some に包む）
     coerceIfnil NodeRef
+    // 今絞っている mut の名前（narrowkill.sober — 絞った腕を読む間だけ積む。代入の文の後ろで外の束縛へ戻す）
+    nrwNames []StrRef
     swWant TyRef
     swStmt int         // 今の switch が文位置か（腕の値を捨てる — switchExpr。0 / 1）
     swHint TyRef       // 呼び手が知っている switch の結果型（return の値 — coerceExpr が積み、switchExpr が 1 度だけ読む）
@@ -155,6 +157,8 @@ type S struct {
     // 型パターンの束縛（`case e V{…}:`）の行き先: let で束縛した subject のレベル・型宣言・核の型・表層型
     swSubj int
     swSubjDecl int
+    // 型パターンの欄の型を引く型引数の束縛（ジェネリック union の subject の宣言の — -1 = 無し）
+    swEnv int
     swSubjTy TyRef
     swSubjSty int
     psteps table.Table[PatStep]  // 入れ子の型パターンを前順に平たくした手（switch.sober の nestedArm）
@@ -187,6 +191,8 @@ type S struct {
     expIncl table.Table[int]
     expExcl table.Table[int]
     yenv int
+    // 表層型検査器の絞った名前（[名前, 外の T? の型]… — 書く文の頭 / 後ろで外の型へ戻す: narrowkill.sober）
+    yNrw []int
     ypk int
     ytps ListRef
     // 型パラメータ型の補間の穴（インスタンスごとに種類を決める）: 検査中の関数・印の列
@@ -194,6 +200,7 @@ type S struct {
     // ジェネリック Def のインスタンスの表（鎖 [関数, 型引数の列, Def の添字, next]）
     yfi int
     ylam int     // 型付け中のラムダの入れ子の深さ（中の return は関数の return でない — 暗黙の freeze の点にしない）
+    nLocLam int  // 束ねた局所の束縛のラムダの数（0 なら局所のラムダの引きを素通り — 無いプログラムに値札を払わせない）
     nimpl int    // 暗黙の freeze の点の数（0 なら IsImplicit は表を引かない）
     yexplOn bool   // 開発の口 FreezeSites: 外すと同じ点で暗黙の freeze になる明示の freeze の呼び出しを集める
     yexpl table.Table[int]
@@ -227,6 +234,10 @@ type S struct {
     // 値の位置（closure.sober）: loader の判定の口（loader.FnValDecl — check と build が同じ判定を読む）と、
     // 値の位置のラムダの捕捉の表（loader.Program の cap_* の写し — ラムダは [ファイル, 節] で引き、名前は capNames[capLo, capHi)）
     fvcx loader.Cx
+    // 再帰の組（rec.sober）: loader.RecGroups の写し（[n, file0, node0, …]・成分は宣言順）と、展開中の組の枠の積み（枠 = [種類, n, 組の位置, 型引数の束縛]）
+    recGroups []int
+    recFr table.Table[int]
+    recN int
     // 値の位置の匿名の関数型の欄の型式の節（loader.FnValAnonFields。欄の型の読みを閉包の型にする印）
     anonFT []int
     capFile []int

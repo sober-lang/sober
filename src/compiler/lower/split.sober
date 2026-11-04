@@ -28,6 +28,7 @@ type LSplit struct {
     dict int               // 次の liftLambdaFn が辞書 const のラムダか（ラムダの節 + 1・0 = 違う — liftLambda が立てる）
     groups int             // 群の数（0 = まだ読んでいない — lsGroups）
     dl int                 // 子: 親の DeadlineUse（1 = 偽・2 = 真 — 子は ParCheck を走らせない。0 = 自分の表で判定）
+    rej bool               // 子: 親が組めない補助が要った（再帰型の境界コピー — recreloc.sober）→ 拒否して直の道へ
     par int                // 子: 親の std/task の判定 taskUse（1 = 偽・2 = 真 — buildInit の参照の辺の判定を走らせない。0 = 自分で判定）
 }
 
@@ -236,7 +237,7 @@ func lsChild(p loader.Program, fz desugar.TyFrozen, dl bool, par bool, cfg []int
             st.ls.on = true
             e3 := funcBody(mut st, fi)
             st.ls.on = false
-            if e3 != nil {
+            if e3 != nil || st.ls.rej {
                 return [][]int{}
             }
             out = append(out, lsEntry(mut st, fi, s0))

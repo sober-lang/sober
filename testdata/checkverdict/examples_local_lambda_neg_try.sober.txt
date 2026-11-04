@@ -1,0 +1,2 @@
+sober: load error at examples/local_lambda_neg_try.sober:15:32: the body of a lambda bound to a local name cannot use `?` — the error would leave the enclosing function where the lambda is called; let the lambda return the error as its value (`f := (s) => parse(s)`) and use `?` at the call (`f(s)?`)
+exit=1

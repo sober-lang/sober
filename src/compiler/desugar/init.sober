@@ -30,7 +30,7 @@ func desc(k int) int {
     case ast.EFor: d6(3, 0, 0, 0, 0, 0)
     case ast.SBind: d6(4, 0, 3, 0, 0, 0)
     case ast.SAssign: d6(3, 0, 3, 0, 0, 0)
-    case ast.SExpr | ast.SDefer | ast.SYield | ast.TOpt | ast.EParen | ast.TSlice | ast.BDefined | ast.BAlias: d6(1, 0, 0, 0, 0, 0)
+    case ast.SExpr | ast.SDefer | ast.SYield | ast.TOpt | ast.TMutP | ast.EParen | ast.TSlice | ast.BDefined | ast.BAlias: d6(1, 0, 0, 0, 0, 0)
     case ast.TFunc | ast.BFunc: d6(3, 3, 4, 0, 0, 0)
     case ast.TGeneric | ast.KVariant: d6(2, 3, 0, 0, 0, 0)
     case ast.TTuple: d6(3, 0, 0, 0, 0, 0)
@@ -54,6 +54,7 @@ func initState(st mut S, p loader.Program) {
     st.trees = p.trees
     // 値の位置の判定の口と捕捉の表（closure.sober）
     st.fvcx = loader.ProgCx(p)
+    st.recGroups = loader.RecGroups(st.fvcx)
     st.capFile = p.cap_file
     afs := loader.FnValAnonFields(st.fvcx)
     mut aft := mut []int{}
@@ -223,6 +224,7 @@ func initState(st mut S, p loader.Program) {
     st.curRtys = -1
     st.curRes = -1
     st.tenv = -1
+    st.swEnv = -1
     st.liftedHead = -1
     st.liftedTail = -1
     st.inlining = -1
@@ -290,6 +292,16 @@ func valFTE(st mut S, pk int, te NodeRef) bool {
     if te == -1 {
         return false
     }
+    // slice / map の要素も値の位置（`[]F`・`map[K]F` — 要素は閉包の組）
+    k := kindN(mut st, te)
+    if k == ast.TSlice || k == ast.TMap {
+        return valFTE1(mut st, pk, if k == ast.TSlice { nA(nodeOf(mut st, te)) } else { nB(nodeOf(mut st, te)) })
+    }
+    return valFTE1(mut st, pk, te)
+}
+
+// 型式 te が値化可能な named fn type かその option か
+func valFTE1(st mut S, pk int, te NodeRef) bool {
     n := if kindN(mut st, te) == ast.TOpt { nA(nodeOf(mut st, te)) } else { te }
     if kindN(mut st, n) != ast.TName {
         return false
@@ -388,9 +400,16 @@ func LookupTypeDecl(st mut S, pk int, name StrRef) NodeRef {
     return NodeRef(ResolveType(mut st, pk, name).idx)
 }
 
-// 値の位置に残した named fn type の型式 te（package pk）を関数型の節へ展開する（lower が関数値の型を読む口 — 工程 5）
+// 値の位置に残した named fn type の型式 te（package pk）を関数型の節へ 1 段だけ展開する（lower が関数値の型を読む口 — 工程 5）。
+// 仮引数・結果の中の named fn type は値の位置にしか出ない（loader の値化可能の判定）ので展開しない — 自分を名指す宣言（State）で止まる
 func NamedFnTE(st mut S, pk int, te NodeRef) NodeRef {
-    return expandTE(mut st, pk, te, EXPANDFUEL)
+    td := LookupTypeDecl(mut st, pk, sA(nodeOf(mut st, te)))
+    if td == -1 || kindN(mut st, nC(nodeOf(mut st, td))) != ast.BFunc {
+        return te
+    }
+    r := substFunc(mut st, td, -1, te, declPkg(mut st, pk, sA(nodeOf(mut st, te))))
+    noteNamedFn(mut st, int(r), int(td))
+    return r
 }
 
 // 名前付き関数型の展開（expandTE / expandList）の燃料 = 入れ子の深さの上限
@@ -438,7 +457,7 @@ func expandTE(st mut S, pk int, te NodeRef, fuel int) NodeRef {
             return te
         }
         return NodeRef(rec8(mut st, ast.TFunc, te, int(ps), int(rs), 0, 0, 0, 0))
-    case ast.TOpt | ast.TSlice:
+    case ast.TOpt | ast.TSlice | ast.TMutP:
         x := expandTE(mut st, pk, nA(nodeOf(mut st, te)), fuel - 1)
         if x == nA(nodeOf(mut st, te)) {
             return te
@@ -513,7 +532,7 @@ func substTE(st mut S, td NodeRef, te NodeRef, args ListRef, qual int) int {
         ps := substList(mut st, td, lA(nodeOf(mut st, te)), args, qual)
         rs := substList(mut st, td, lB(nodeOf(mut st, te)), args, qual)
         return rec8(mut st, ast.TFunc, te, ps, rs, 0, 0, 0, 0)
-    case ast.TOpt | ast.TSlice:
+    case ast.TOpt | ast.TSlice | ast.TMutP:
         return rec8(mut st, k, te, substTE(mut st, td, nA(nodeOf(mut st, te)), args, qual), nodeOf(mut st, te).b, 0, 0, 0, 0)
     case ast.TMap:
         return rec8(mut st, k, te, substTE(mut st, td, nA(nodeOf(mut st, te)), args, qual), substTE(mut st, td, nB(nodeOf(mut st, te)), args, qual), nodeOf(mut st, te).c, 0, 0, 0)

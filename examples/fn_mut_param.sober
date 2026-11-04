@@ -1,0 +1,127 @@
+package main
+
+// 関数型の mut 仮引数（language.md 25 節「関数型の mut 仮引数」）: 状態は呼び手が持ち、呼ぶたびに `h(mut st, …)` と渡す。
+// 閉包は mut を捕捉しない — 書き込みの先は呼び出しの印に見える
+
+// イベントの受け手の表（後で呼ぶ — 値の位置）
+type App struct {
+    count int
+    log []int
+}
+
+type Handler func(st mut App, ev int)
+
+func tally(st mut App, ev int) {
+    st.count += ev
+}
+
+// Elm の update の形（状態 = Model・メッセージ = データ）
+type Msg union {
+    Inc{by int}
+    Reset{}
+}
+
+type Update func(m mut int, msg Msg)
+
+func update(m mut int, msg Msg) {
+    switch msg {
+    case Inc{by}: m += by
+    case Reset{}: m = 0
+    }
+}
+
+// middleware の next（再帰の名前付き関数型）
+type Mw func(st mut int, n int, next Mw?) int
+
+func outer(st mut int, n int, next Mw?) int {
+    st += 10
+    return if next != nil { next(mut st, n * 2, nil) } else { n }
+}
+
+func inner(st mut int, n int, next Mw?) int {
+    st += 1
+    return n + 1
+}
+
+// 借りの仮引数の mut の席（emit は呼ぶだけ — 状態は呼び手から渡す）
+type Acc struct {
+    sum int
+    n int
+}
+
+type Source func(acc mut Acc, emit func(a mut Acc, v int))
+
+func three(acc mut Acc, emit func(a mut Acc, v int)) {
+    emit(mut acc, 1)
+    emit(mut acc, 2)
+    emit(mut acc, 3)
+}
+
+func drain(src Source, w int) Acc {
+    mut acc := Acc{sum: 0, n: 0}
+    src(mut acc, (a, v) => {
+        a.sum += v * w
+        a.n += 1
+    })
+    return acc
+}
+
+// 展開される関数の匿名の関数型の仮引数・struct の欄の匿名の関数型
+func twice(f func(a mut int, x int), x int) int {
+    mut s := 1
+    f(mut s, x)
+    f(mut s, x)
+    return s
+}
+
+type Step struct {
+    run func(a mut int, x int)
+}
+
+func main() {
+    k := 100
+    hs := []Handler{tally, (st, ev) => { st.count += ev * k }, (st mut App, ev int) => { st.log = append(st.log, ev) }}
+    mut app := App{count: 0, log: []int{}}
+    for h <- hs {
+        h(mut app, 2)
+    }
+    println(app.count)
+    println(len(app.log))
+
+    us := []Update{update}
+    up := us[0]
+    mut model := 5
+    msgs := []Msg{Inc{by: 3}, Inc{by: 4}}
+    for msg <- msgs {
+        up(mut model, msg)
+    }
+    println(model)
+    up(mut model, Reset{})
+    println(model)
+
+    mut c := 0
+    r := outer(mut c, 5, inner)
+    println(r)
+    println(c)
+
+    a := drain(three, 10)
+    println(a.sum)
+    println(a.n)
+    b := drain((acc, emit) => { emit(mut acc, 7) }, 1)
+    println(b.sum)
+
+    println(twice((p, x) => { p *= x }, 3))
+    steps := []Step{Step{run: (p, x) => { p += x }}, Step{run: (p, x) => { p -= x * k }}}
+    mut s := 0
+    for st <- steps {
+        st.run(mut s, 2)
+    }
+    println(s)
+
+    // 局所の束縛のラムダの mut 仮引数（呼ぶたびに展開）
+    bump := (p mut int, x int) => { p += x }
+    mut t := 1
+    bump(mut t, 2)
+    bump(mut t, 3)
+    println(t)
+}

@@ -77,13 +77,6 @@ type FieldType error {
     at Pos
 }
 
-// 絞った mut の束縛への代入（`mut x := get(); if x != nil { x = 5 }` — 絞った領域の x は T? の中身で、代入すると絞りの証明が壊れる）。
-// at = 代入の的の名前・narrowed = 絞った if
-type NarrowAssign error {
-    at Pos
-    narrowed Pos
-}
-
 // ── lower の拒否（種類の綴りは Zig 版の error 名 — Undefined* は引けなかったものの種類ごと）──
 
 type Unsupported error {
@@ -181,9 +174,10 @@ type ErrorHoldsError error {
     at Pos
 }
 
-// 型宣言の参照が循環している（loader — rectype.sober。コアに再帰型が無い）
+// 受理しない再帰の型宣言（loader — rectype.sober）。kind = 理由（0 = 値に埋まる閉路〔I〕・1 = 組の中の参照の型引数が宣言の型引数そのままでない）
 type RecursiveType error {
     at Pos
+    kind int
 }
 
 // kind = 拒否の理由（loader/consts.sober の CE_* — 0 は理由の添えなし）
@@ -249,6 +243,12 @@ type LeadingZero error {
     at Pos
 }
 
+// 値が型に収まらないリテラル（kind = 0 int の範囲外・1 float で ±Inf に丸まる — language.md 37 節）
+type LitRange error {
+    at Pos
+    kind int
+}
+
 // 名前付き実引数（syntax.md 決定 7）を位置へ写せない形（loader/namedargs.sober・名前付き関数型の値は desugar/namedval.sober）。kind = 1 呼び先が func 宣言でも仮引数名を持つ名前付き関数型の値でもない・2 その名前の仮引数が無い・
 // 3 宣言の順でない（重複を含む）・4 位置で渡した仮引数を名前でも渡した・5 省略できない（`T?` でない）仮引数が無い・6 パイプ段で穴 `_` が無い
 type NamedArg error {
@@ -294,7 +294,8 @@ type FileUse error {
     kind int
 }
 
-// 関数型の実引数に置いた名前付き関数を η 展開できない形（loader/eta.sober — language.md 25 節）。kind = 1 mut 仮引数を持つ関数・2 仮引数の数が関数型と違う
+// 関数型の mut 仮引数の席の拒否（language.md 25 節）。kind = 1 η で写す名前付き関数の mut 仮引数の席が関数型と違う・2 仮引数の数が関数型と違う・
+// 3 関数型の mut 仮引数が 2 本以上・4 ラムダの仮引数の mut の印が関数型と違う・5 関数値の呼び出しの実引数の mut の印が席と違う
 type FnArg error {
     at Pos
     kind int
@@ -311,8 +312,9 @@ type FnOpt error {
 // 値の位置（値化可能な named fn type の struct の欄 — language.md 25 節）のラムダの、値になれない形
 // （loader/fnval.sober）。kind = 1 mut（mut 束縛・mut 実引数）の捕捉・2 非局所 return・3 `?`（非局所脱出）・4 ラムダを越える break / continue・
 // 5 値として写せない捕捉（同一性の型・関数値・能力・mut の器 — desugar/closure.sober が束縛の型で判定）・
-// 6 1 つの値の呼び出しの借りの実引数のラムダが 2 つ目の mut の束縛を捕捉（(α-L1) の縛り — loader/fnval.sober の fvMutOne）・
-// 7 借りの値をそのまま実引数に渡す値の呼び出しの借りのラムダが mut の束縛を捕捉（同じ縛りの (b) — anchor が転送する借りの region 0 と割れうる）
+// 局所の束縛のラムダ（借りの局所 — `f := (…) => …`・loader/fnval.sober の llBind）: 8 mut の束縛・9 他の名前と同時の束縛・10 呼ぶ / 展開の位置へ渡す以外の使用・
+// 11 値の位置・値の呼び出しの実引数へ渡す・12 値の位置のラムダの中での使用・13 本体の return・14 本体の `?`・15 本体を越える break / continue・
+// 16 本体がラムダより後で宣言した名前を指す。17 = 匿名の関数型の仮引数を持つ関数（展開される）どうしの再帰（loader/funcs.sober の scanFuncs）
 type FnCap error {
     at Pos
     kind int
@@ -349,7 +351,8 @@ type Layout error {
     kind int
 }
 
-// `json.Decode[T]`（shape[T] — loader/jsonshape.sober）の拒否（kind 1 = T が struct でない・2 = 範囲外の欄の型・3 = 型引数つきで呼んでいない）
+// `json.Decode[T]`（shape[T] — loader/jsonshape.sober）の拒否（kind 1 = T が struct でない・2 = 範囲外の欄の型・3 = 型引数つきで呼んでいない・
+// 4 = Decode の T の欄に裸の json.Value）
 type JsonShape error {
     at Pos
     kind int
@@ -433,7 +436,6 @@ func At(err error?) Pos {
     case NonExhaustive{at}: at
     case ImmWrite{at}: at
     case FieldType{at}: at
-    case NarrowAssign{at}: at
     case Unsupported{at}: at
     case UndefinedName{at}: at
     case UndefinedFunction{at}: at
@@ -477,6 +479,7 @@ func At(err error?) Pos {
     case NilCase{at}: at
     case NamedArg{at}: at
     case LeadingZero{at}: at
+    case LitRange{at}: at
     case AssertOutsideTest{at}: at
     case CatchLhs{at}: at
     case MultiBind{at}: at
@@ -518,7 +521,6 @@ func Format(err error?, where string) string {
     case NonExhaustive{at}: "error at ${where} (NonExhaustive): switch does not cover every variant of the union — add the missing cases or a default"
     case ImmWrite{at}: "error at ${where} (ImmWrite): cannot write into an imm map / slice — create it writable (`mut m := mut map[K]V{}`, `mut xs := mut []T{}`)"
     case FieldType{at}: "desugar error at ${where} (FieldType): the value does not have the field's declared type"
-    case NarrowAssign{at}: "desugar error at ${where} (NarrowAssign): cannot assign to a narrowed binding — inside the narrowed region the name is the T?'s payload; bind it to a new name (`mut v := x`) or assign outside the region"
     case Unsupported{at}: "lower error at ${where} (Unsupported)"
     case UndefinedName{at}: "lower error at ${where} (UndefinedName)"
     case UndefinedFunction{at}: "lower error at ${where} (UndefinedFunction)"
@@ -542,12 +544,15 @@ func Format(err error?, where string) string {
     case ImportCycle{at}: loadLine(err, where, "import cycle")
     case Noinline{at}: loadLine(err, where, "@noinline applies to a function with mut parameters and no function-typed parameters")
     case ErrorHoldsError{at}: loadLine(err, where, "an error label cannot hold an error")
-    case RecursiveType{at}: loadLine(err, where, "recursive type declaration (a type cannot contain itself — directly or through []T, map, T? or another type)")
+    case RecursiveType{at, kind}: loadLine(err, where, switch kind {
+    case 1: "recursive type whose recursive references change the type arguments — pass the declaration's own type parameters in the same order"
+    default: "recursive type contains itself by value (directly, through [N]T or another type's field) — the size would be infinite; go through T?, []T or map[K]T, or keep a table and an index"
+    })
     case ConstExpr{at, kind}: loadLine(err, where, switch kind {
         case 1: "const expression: a const cannot call a function — call it inside a function instead"
         case 2: "const expression: a const is immutable — `mut` literals are not allowed"
         case 3: "const expression: a map literal is not allowed in a const (only @embed fills a map const)"
-        case 4: "const expression: operators work only on int consts — string, bool, float, struct and slice consts are written as literals"
+        case 4: "const expression: operators work only on int consts, and + - * / on float consts (float literals and float consts — no int literal); string, bool, struct and slice consts are written as literals"
         case 5: "const expression: nil is allowed only as a field value"
         default: "const expression"
     })
@@ -601,10 +606,12 @@ func Format(err error?, where string) string {
     } else {
         "this literal leaves a field at its zero value that holds a `${identityName(kind - 100)}`, which has identity: only ${identityMaker(kind - 100)} makes one — set the field, or declare it `T?`"
     })
-    case FnArg{at, kind}: loadLine(err, where, if kind == 1 {
-        "a function with mut parameters cannot be passed where a function type is expected (function types have no mut parameters)"
-    } else {
-        "this function takes a different number of parameters than the function type expects"
+    case FnArg{at, kind}: loadLine(err, where, switch kind {
+        case 1: "the mut parameters of this function are not where the function type has them — a function type marks its mut parameter (`func(st mut S, x int)`), and the function must take the same parameters mut"
+        case 3: "a function type has at most one mut parameter — put the state in one struct and take that (`func(st mut S, …)` with `type S struct { … }`)"
+        case 4: "this lambda's parameters do not match the function type it is passed as — write `mut` on a parameter exactly where the function type has it (`(st mut S, x int) => …`), or leave the parameter types out to take them from the function type"
+        case 5: "this argument does not match the function's parameter: a mut parameter takes `mut x` (a mut binding or one of its fields), and a parameter taken by value takes a plain value"
+        default: "this function takes a different number of parameters than the function type expects"
     })
     case FnOpt{at, kind}: loadLine(err, where, switch kind {
         case 1: "an optional function type is written in parentheses: `(func(…) R)?` — a bare `func(…) R?` reads as a function returning `R?`"
@@ -614,13 +621,21 @@ func Format(err error?, where string) string {
         default: "an optional function parameter can only be called, passed on to another call, or compared with nil — not bound, stored or returned"
     })
     case FnCap{at, kind}: loadLine(err, where, switch kind {
-        case 1: "a lambda kept as a value (a function-typed field, a value of named function type, or a lambda that flows on to another call) cannot capture a mut binding — captures are immutable copies taken at creation; only a lambda passed straight to a call of a function value (a borrowed closure) can capture one"
-        case 7: "this call passes on a borrowed function as it is, so the lambdas passed to it cannot also capture a mut binding — call the borrowed function inside the lambda instead, or capture the mut binding in a separate call"
-        case 6: "the lambdas passed to one call of a function value can capture only one mut binding between them, and this is a second one — put both in one struct (`mut s := S{…}`) and capture that"
-        case 2: "a lambda in a value position (a function-typed field) cannot use return — its body is an expression; return would escape the enclosing function"
-        case 3: "a lambda in a value position (a function-typed field) cannot use `?` — the error would escape the enclosing function"
-        case 5: "a lambda in a value position (a function-typed field) can only capture plain values (scalars, strings, immutable slices / maps and structs of them) — not a value with identity (task.Scope, task.Handle, a channel end, io.File, net.Conn …), a function value or a mutable container"
-        default: "a lambda in a value position (a function-typed field) cannot break or continue a loop outside the lambda"
+        case 1: "a lambda that becomes a closure (a function-typed field, a value of named function type, or a lambda passed to a call of a function value) cannot capture a mut binding — captures are immutable copies taken at creation. To keep the value it has now, copy it into an immutable binding first (`kk := k`) and capture that; to keep updating state, keep it with the caller and pass it through a mut parameter of the function type (`func(st mut S, …)` called as `f(mut st, …)`)"
+        case 2: "a lambda kept as a value (a function-typed field, a value of named function type, or an element of []F / map[K]F) cannot use return — its body is an expression; return would escape the enclosing function"
+        case 3: "a lambda kept as a value (a function-typed field, a value of named function type, or an element of []F / map[K]F) cannot use `?` — the error would escape the enclosing function"
+        case 5: "a lambda kept as a value (a function-typed field, a value of named function type, or an element of []F / map[K]F) can only capture plain values (scalars, strings, immutable slices / maps and structs of them) — not a value with identity (task.Scope, task.Handle, a channel end, io.File, net.Conn …), a function value or a mutable container"
+        case 8: "a lambda bound to a local name cannot be mut — the name stands for the lambda, which is expanded where it is called (bind it with `f := (…) => …`)"
+        case 9: "bind a lambda to a local name on its own (`f := (…) => …`) — not together with other names"
+        case 10: "a lambda bound to a local name can only be called (`f(x)`) or passed to a parameter of anonymous function type — it is expanded where it is used and is not a value (to keep a function as a value, write the lambda in a position of named function type)"
+        case 11: "a lambda bound to a local name is not a value, so it cannot be passed where a value is kept (a parameter of named function type, or an argument of a call of a function value) — write the lambda itself there, or use a named function"
+        case 12: "a lambda kept as a value (or passed to a call of a function value) cannot use a lambda bound to a local name — that lambda is expanded where it is called, and this body runs elsewhere"
+        case 13: "the body of a lambda bound to a local name cannot use return — its value is its last expression (return would leave the enclosing function where the lambda is called)"
+        case 14: "the body of a lambda bound to a local name cannot use `?` — the error would leave the enclosing function where the lambda is called; let the lambda return the error as its value (`f := (s) => parse(s)`) and use `?` at the call (`f(s)?`)"
+        case 15: "the body of a lambda bound to a local name cannot break or continue a loop outside the lambda"
+        case 16: "this lambda bound to a local name uses a name that is declared after the lambda — the body sees only the names visible where the lambda is written"
+        case 17: "this function has a parameter of anonymous function type, so it is expanded where it is called — it cannot call itself, directly or through other such functions (the expansion would not end): loop with for / while, or take a named function type (a value) instead"
+        default: "a lambda kept as a value (a function-typed field, a value of named function type, or an element of []F / map[K]F) cannot break or continue a loop outside the lambda"
     })
     case ForFallible{at, kind}: loadLine(err, where, switch kind {
         case 1: "this generator can fail (it returns error?): mark the for with `?` — `for x <- g(…)? { … }` — or drop the error explicitly with `_ = g(…, (x) => { … })`"
@@ -649,8 +664,9 @@ func Format(err error?, where string) string {
         default: "internal: a name still refers to an alias after the loader rewrote aliases to the types they name"
     })
     case JsonShape{at, kind}: loadLine(err, where, switch kind {
-        case 1: "the type argument of json.Decode / Encode must be a struct type without type parameters"
-        case 2: "json.Decode / Encode support struct fields of int, float, bool, string, nested structs, []T and T? (generic structs, unions, maps and named scalars come later)"
+        case 1: "the type argument of json.Decode / Encode must be a struct type without type parameters or json.Value"
+        case 2: "json.Decode / Encode support struct fields of int, float, bool, string, json.Value, nested structs, []T and T? (generic structs, unions, maps and named scalars come later)"
+        case 4: "json.Decode cannot read into a struct with a json.Value field (a union has no zero value, so the early return of `?` has no struct to return) — make the field json.Value? or read it with json.Tree"
         default: "json.Decode / Encode (and DecodeWith / EncodeWith) are called with a type argument: json.Decode[T](doc, node), json.Encode[T](value)"
     })
     case Intrinsic{at, kind}: loadLine(err, where, switch kind {
@@ -681,7 +697,6 @@ func Format(err error?, where string) string {
         case 29: "backlog: is a count written without calls or division (a literal, a name, + - *) — the bound on unstarted children per worker, 1 to 255"
         case 21: "a spawned task cannot capture mut contents (this value is a mut slice / map or holds one — freeze it before the Spawn: v := freeze(x))"
         case 24: "task.Lease / task.NewLocal take a window: a lambda with one mut parameter of a written struct type — (w mut T) => …"
-        case 25: "a mut lambda parameter is written only as the window of task.Lease / task.NewLocal"
         case 26: "a worker-local place holds a struct with only scalar fields (int, byte, bool, float) and pool.Scratch fields, without type parameters"
         case 27: "the setup of task.NewLocal sizes each pool.Scratch field exactly once — pool.NewScratch(mut w.f, n) with n a constant (a literal, a const name, + - * <<) — and does nothing else"
         case 28: "LocalNew / LeaseTake / LeaseGive / LeaseBlock / LeaseAttach are what task.NewLocal / task.Lease are rewritten into — call task.NewLocal / task.Lease instead"
@@ -712,6 +727,7 @@ func Format(err error?, where string) string {
         default: "a panic label is only used as the argument of panic(L{…})"
     })
     case LeadingZero{at}: loadLine(err, where, "a decimal literal cannot start with 0 — write 0o for octal (0o755), or drop the leading zeros")
+    case LitRange{at, kind}: loadLine(err, where, if kind == 0 { "an integer literal must fit in int (at most 9223372036854775807)" } else { "a float literal must be finite — it rounds to Inf (the largest float is 1.7976931348623157e308)" })
     case NamedArg{at, kind}: loadLine(err, where, switch kind {
         case 1: "named arguments can only be passed to a func declaration or a value of a named function type with parameter names"
         case 2: "the function has no parameter with this name"
@@ -772,21 +788,11 @@ func loadLine(err error?, where string, why string) string {
     return if At(err).file >= 0 { "load error at ${where}: ${why}" } else { "load error: ${why}" }
 }
 
-// 2 つ目の位置が場所（`(narrowed at <path>:<行>:<列>)` で添える — NarrowAssign）か。でなければ綴り（`(missing: <綴り>)` — NonExhaustive）
-func NoteIsPlace(err error?) bool {
-    return switch err {
-    case nil: false
-    case NarrowAssign{at}: true
-    default: false
-    }
-}
-
-// 拒否の 2 つ目の位置（NonExhaustive の落ちている variant・NarrowAssign の絞った if — 無ければ None）
+// 拒否の 2 つ目の位置（NonExhaustive の落ちている variant — 無ければ None）
 func Note(err error?) Pos {
     return switch err {
     case nil: None()
     case NonExhaustive{at, missing}: missing
-    case NarrowAssign{at, narrowed}: narrowed
     default: None()
     }
 }
@@ -813,14 +819,15 @@ func WordsOf(err error?) Words {
     case NonExhaustive{at, missing}: Words{tag: 8, kind: 0, at: at, missing: missing}
     case ImmWrite{at}: Words{tag: 9, kind: 0, at: at, missing: None()}
     case FieldType{at}: Words{tag: 10, kind: 0, at: at, missing: None()}
-    case NarrowAssign{at, narrowed}: Words{tag: 12, kind: 0, at: at, missing: narrowed}
     case FnCap{at, kind}: Words{tag: 11, kind: kind, at: at, missing: None()}
+    case FnArg{at, kind}: Words{tag: 13, kind: kind, at: at, missing: None()}
+    case Cell{at, kind}: Words{tag: 14, kind: kind, at: at, missing: None()}
     default: Words{tag: 0, kind: 0, at: None(), missing: None()}
     }
 }
 
 // WordsOf の逆（種類 tag・kind・位置 at・2 つ目の位置 missing — 種類 0 は呼ばない）
-@errors(CoreFragment, UnknownName, Malformed, TypeMismatch, PrintArg, LenString, UntypedNil, NonExhaustive, ImmWrite, FieldType, NarrowAssign, FnCap)
+@errors(CoreFragment, UnknownName, Malformed, TypeMismatch, PrintArg, LenString, UntypedNil, NonExhaustive, ImmWrite, FieldType, FnCap, FnArg, Cell)
 func FromWords(tag int, kind int, at Pos, missing Pos) error? {
     return switch tag {
     case 2: UnknownName{at: at}
@@ -833,7 +840,8 @@ func FromWords(tag int, kind int, at Pos, missing Pos) error? {
     case 9: ImmWrite{at: at}
     case 10: FieldType{at: at}
     case 11: FnCap{at: at, kind: kind}
-    case 12: NarrowAssign{at: at, narrowed: missing}
+    case 13: FnArg{at: at, kind: kind}
+    case 14: Cell{at: at, kind: kind}
     default: CoreFragment{at: at}
     }
 }

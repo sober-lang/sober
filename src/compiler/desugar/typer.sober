@@ -24,7 +24,7 @@ const YSlice = 8   // a = 要素, b = mut（0 / 1）
 const YMap = 9     // a = キー, b = 値, c = mut
 const YOpt = 10    // a = 中身
 const YDecl = 11   // 型宣言（struct / union / named scalar / 名前付き関数型）: a = 型宣言の節, b = package, c = 型引数の列（-1 = 無し）
-const YFn = 12     // 関数値: a = 仮引数の型の列, b = 結果の型の列, c = 名前付き関数型の型宣言の節 + 1（名前なしは 0）
+const YFn = 12     // 関数値: a = 仮引数の型の列, b = 結果の型の列, c = 名前付き関数型の型宣言の節 + 1（名前なしは 0 - mut 仮引数の席のビット）
 const YTuple = 13  // 多値（2 個以上の結果）: a = 型の列
 const YVar = 14    // 型パラメータ: a = 添字（関数か型宣言の型パラメータの列の中）, b = 名前（文字列）
 const YLabel = 15  // error ラベルのリテラルの値（error へは受け手で包む — lower のラベルの union）
@@ -44,6 +44,7 @@ type YBind struct {
     name StrRef
     ty int
     clo bool   // 閉包の名前（展開される関数の関数型の仮引数 — lower の LClosure）
+    lam int    // 局所の束縛のラムダの節（`f := (…) => …` — 使用の点で本体を型付けする）。他は -1
 }
 
 // 表の記録（節 → 型の鎖つきハッシュ）
@@ -161,14 +162,14 @@ func yGet(st mut S, key int) int {
 
 func yBindName(st mut S, name StrRef, y int) {
     at := table.Len(mut st.ty.ybinds)
-    table.Push(mut st.ty.ybinds, YBind{parent: st.yenv, name: name, ty: y, clo: false})
+    table.Push(mut st.ty.ybinds, YBind{parent: st.yenv, name: name, ty: y, clo: false, lam: -1})
     st.yenv = at
 }
 
 // 閉包の名前を積む
 func yBindClo(st mut S, name StrRef, y int) {
     at := table.Len(mut st.ty.ybinds)
-    table.Push(mut st.ty.ybinds, YBind{parent: st.yenv, name: name, ty: y, clo: true})
+    table.Push(mut st.ty.ybinds, YBind{parent: st.yenv, name: name, ty: y, clo: true, lam: -1})
     st.yenv = at
 }
 
@@ -186,6 +187,55 @@ func yIsClo(st mut S, name StrRef) bool {
 }
 
 // 局所の名前（見つからなければ -2、見つかって型が不明なら -1）
+// 局所の束縛のラムダを積む（型は持たない — 呼び出しの点で本体を型付けする: yLocalCall）
+func yBindLam(st mut S, name StrRef, lam NodeRef) {
+    st.nLocLam += 1
+    at := table.Len(mut st.ty.ybinds)
+    table.Push(mut st.ty.ybinds, YBind{parent: st.yenv, name: name, ty: -1, clo: true, lam: int(lam)})
+    st.yenv = at
+}
+
+// 名前が局所の束縛のラムダならそのラムダの節（でなければ -1）
+func yLookupLam(st mut S, name StrRef) NodeRef {
+    if st.nLocLam == 0 {
+        return -1
+    }
+    mut b := st.yenv
+    while b != -1 {
+        x := ybindAt(mut st, b)
+        if strEq(mut st, x.name, name) {
+            return NodeRef(x.lam)
+        }
+        b = x.parent
+    }
+    return -1
+}
+
+// 実引数の節 a が局所の束縛のラムダの名前ならそのラムダ、ラムダならそれ自身（でなければ -1）
+func yLamArg(st mut S, a NodeRef) NodeRef {
+    if a == -1 {
+        return -1
+    }
+    k := kindN(mut st, a)
+    return if k == ast.ELambda { a } else if k == ast.EIdent { yLookupLam(mut st, sA(nodeOf(mut st, a))) } else { NodeRef(-1) }
+}
+
+// 局所の束縛のラムダ lam の呼び出し: 仮引数を書いた型（書かなければ実引数の型 at）で束ねて本体を型付けし、本体の型を返す（脱糖器の localCallTy と同じ読み）
+func yLocalCall(st mut S, lam NodeRef, at ListRef) int {
+    saved := st.yenv
+    ps := lA(nodeOf(mut st, lam))
+    for i <- iter.Range(0, lenL(mut st, ps)) {
+        p := nodeOf(mut st, latN(mut st, ps, i))
+        t := if nB(p) != -1 { yTe(mut st, st.ypk, st.ytps, nB(p)) } else if at != -1 && i < lenL(mut st, at) { latI(mut st, at, i) } else { -1 }
+        yBindName(mut st, sA(p), t)
+    }
+    st.ylam += 1
+    r := yExpr(mut st, nB(nodeOf(mut st, lam)))
+    st.ylam -= 1
+    st.yenv = saved
+    return r
+}
+
 func yLookup(st mut S, name StrRef) int {
     mut b := st.yenv
     while b != -1 {
@@ -394,6 +444,9 @@ func yTe2(st mut S, pk int, tps ListRef, te NodeRef, k int) int {
     case ast.TOpt:
         a := yTe(mut st, pk, tps, nA(x))
         return if a < 0 { -1 } else { yMk(mut st, YOpt, a, 0, 0) }
+    case ast.TMutP:
+        // 関数型の mut 仮引数の席: 表層型は中身の型（席の照合はコアの検査器と lower の関数型の同一性 — ref の型・ftMut）
+        return yTe(mut st, pk, tps, nA(x))
     case ast.TSlice:
         a := yTe(mut st, pk, tps, nA(x))
         return if a < 0 { -1 } else { yMk(mut st, YSlice, a, if x.b != 0 { 1 } else { 0 }, 0) }
@@ -405,8 +458,9 @@ func yTe2(st mut S, pk int, tps ListRef, te NodeRef, k int) int {
         ps := yTeList(mut st, pk, tps, lA(x))
         rs := yTeList(mut st, pk, tps, lB(x))
         // 名前付き関数型の展開の結果なら型宣言を c に（1 + 節 — 名前の区別は surface.sober の照合だけが見る）
+        // 名前なしの関数型の mut 仮引数の席は c に負で（- ビット — 名前付きは宣言の署名から読む）
         td := namedFnOf(mut st, int(te))
-        return if ps == -1 || rs == -1 { -1 } else { yFnT(mut st, ps, rs, if td == -1 { 0 } else { int(td) + 1 }) }
+        return if ps == -1 || rs == -1 { -1 } else { yFnT(mut st, ps, rs, if td == -1 { 0 - teMutMask(mut st, te) } else { int(td) + 1 }) }
     }
     return -1
 }
@@ -955,10 +1009,30 @@ func yBlock(st mut S, l ListRef) int {
     saved := st.yenv
     mut v := yBase(YNone)
     for i <- iter.Range(0, lenL(mut st, l)) {
-        v = yStmt(mut st, latN(mut st, l, i))
+        s := latN(mut st, l, i)
+        if len(st.yNrw) > 0 {
+            yKill(mut st, s, true)
+        }
+        v = yStmt(mut st, s)
+        if len(st.yNrw) > 0 {
+            yKill(mut st, s, false)
+        }
     }
     st.yenv = saved
     return v
+}
+
+// 絞りの消滅（narrowkill.sober の KillOf を共有）: 文 s の頭 / 後ろで、s が書く絞った名前を外の T? の型へ束縛し直す
+func yKill(st mut S, s NodeRef, before bool) {
+    mut i := 0
+    while i < len(st.yNrw) {
+        nm := StrRef(st.yNrw[i])
+        ko := KillOf(mut st, s, nm)
+        if ko == KillBefore && before || ko == KillAfter && !before {
+            yBindName(mut st, nm, st.yNrw[i + 1])
+        }
+        i += 2
+    }
 }
 
 // 文 s を検査し、ブロックの末尾に置かれたときの値の型を返す（式文 = その式・return / break / continue = 戻らない・他 = 値なし）
@@ -1020,6 +1094,21 @@ func yStmt(st mut S, s NodeRef) int {
     return -1
 }
 
+// リテラルの要素の列 l（要素の型 el）を検査する — ラムダは要素の型で仮引数に型を付ける（値の位置の `[]F{…}`）
+func yElems(st mut S, l ListRef, el int) {
+    for i <- iter.Range(0, lenL(mut st, l)) {
+        yElem(mut st, latN(mut st, l, i), el)
+    }
+}
+
+func yElem(st mut S, v NodeRef, el int) {
+    if kindN(mut st, v) == ast.ELambda && el >= 0 {
+        _ = yLambda(mut st, v, el)
+    } else {
+        yExpr(mut st, v)
+    }
+}
+
 func yExprs(st mut S, l ListRef) {
     for i <- iter.Range(0, lenL(mut st, l)) {
         yExpr(mut st, latN(mut st, l, i))
@@ -1036,6 +1125,11 @@ func yBindStmt(st mut S, s NodeRef) {
         for j <- iter.Range(0, nn) {
             yBindName(mut st, latS(mut st, names, j), if tl != -1 && j < lenL(mut st, tl) { latI(mut st, tl, j) } else { -1 })
         }
+        return
+    }
+    if isLocalLam(mut st, s) {
+        // 局所の束縛のラムダ: 本体は使用の点で型付けする（yLocalCall・yLamArg）
+        yBindLam(mut st, latS(mut st, names, 0), latN(mut st, vals, 0))
         return
     }
     // 値は新しい名前が見えないところで左から右へ
@@ -1149,19 +1243,19 @@ func yExpr0(st mut S, e NodeRef) int {
         yExpr(mut st, nC(nodeOf(mut st, e)))
         return if yk(mut st, b) == YString || (yk(mut st, b) == YSlice && YAt(mut st, b).b == 0) { b } else { -1 }
     case ast.ESlicelit:
-        yExprs(mut st, lB(nodeOf(mut st, e)))
         el := yTe(mut st, st.ypk, st.ytps, nA(nodeOf(mut st, e)))
+        yElems(mut st, lB(nodeOf(mut st, e)), el)
         yNoteElems(mut st, lB(nodeOf(mut st, e)), el)
         return if el < 0 { -1 } else { yMk(mut st, YSlice, el, if nodeOf(mut st, e).c != 0 { 1 } else { 0 }, 0) }
     case ast.EMaplit:
         ents := lC(nodeOf(mut st, e))
+        kt := yTe(mut st, st.ypk, st.ytps, nA(nodeOf(mut st, e)))
+        vt := yTe(mut st, st.ypk, st.ytps, nB(nodeOf(mut st, e)))
         for i <- iter.Range(0, lenL(mut st, ents)) {
             en := nodeOf(mut st, latN(mut st, ents, i))
             yExpr(mut st, nA(en))
-            yExpr(mut st, nB(en))
+            yElem(mut st, nB(en), vt)
         }
-        kt := yTe(mut st, st.ypk, st.ytps, nA(nodeOf(mut st, e)))
-        vt := yTe(mut st, st.ypk, st.ytps, nB(nodeOf(mut st, e)))
         for i <- iter.Range(0, lenL(mut st, ents)) {
             ev := nB(nodeOf(mut st, latN(mut st, ents, i)))
             if yCand(mut st, ev) {
@@ -1387,6 +1481,10 @@ func yCallee(st mut S, callee0 NodeRef, an ListRef, at ListRef) int {
     k := kindN(mut st, callee)
     if k == ast.EIdent {
         name := sA(nodeOf(mut st, callee))
+        ll := yLookupLam(mut st, name)
+        if ll != -1 {
+            return yLocalCall(mut st, ll, at)
+        }
         l0 := yLookup(mut st, name)
         if l0 != -2 {
             if l0 >= 0 {
@@ -1400,8 +1498,8 @@ func yCallee(st mut S, callee0 NodeRef, an ListRef, at ListRef) int {
             fps := yLa(YAt(mut st, l))
             yNoteArgTys(mut st, an, at, fps)
             for i <- iter.Range(0, lenL(mut st, an)) {
-                a := latN(mut st, an, i)
-                if a != -1 && kindN(mut st, a) == ast.ELambda && i < lenL(mut st, fps) {
+                a := yLamArg(mut st, latN(mut st, an, i))
+                if a != -1 && i < lenL(mut st, fps) {
                     yLambda(mut st, a, latI(mut st, fps, i))
                 }
             }
@@ -1433,6 +1531,17 @@ func yCallee(st mut S, callee0 NodeRef, an ListRef, at ListRef) int {
     return -1
 }
 
+// 実引数の節の列に局所の束縛のラムダの名前があるか
+func hasLocalLam(st mut S, an ListRef) bool {
+    for i <- iter.Range(0, lenL(mut st, an)) {
+        a := latN(mut st, an, i)
+        if a != -1 && kindN(mut st, a) == ast.EIdent && yLookupLam(mut st, sA(nodeOf(mut st, a))) != -1 {
+            return true
+        }
+    }
+    return false
+}
+
 // 実引数の節の列にラムダがあるか
 func hasLambda(st mut S, an ListRef) bool {
     for i <- iter.Range(0, lenL(mut st, an)) {
@@ -1449,7 +1558,7 @@ func hasLambda(st mut S, an ListRef) bool {
 func yNamedCall(st mut S, fi int, an ListRef, at ListRef, ex ListRef, cn NodeRef) int {
     tps := fnTParams(mut st, fi)
     nt := lenL(mut st, tps)
-    if nt == 0 && ex == -1 && !hasLambda(mut st, an) {
+    if nt == 0 && ex == -1 && !hasLambda(mut st, an) && !hasLocalLam(mut st, an) {
         yNoteArgs(mut st, fi, an, at, ListRef(-1))
         return yFnResults(mut st, fi)
     }
@@ -1495,8 +1604,8 @@ func yNamedCall(st mut S, fi int, an ListRef, at ListRef, ex ListRef, cn NodeRef
     // 定数も入れて最初からやり直す（language.md 32 節 — 定数は相手の named scalar に合わせる）
     yInfer(mut st, pts, an, ats, m, env, ex)
     for i <- iter.Range(0, m) {
-        a := latN(mut st, an, i)
-        if a != -1 && kindN(mut st, a) == ast.ELambda {
+        a := yLamArg(mut st, latN(mut st, an, i))
+        if a != -1 {
             // 値化可能な named fn type の仮引数（展開されず値の位置 — 工程 4 B1 の同梱）は関数値の表層型として読む
             pt := yFnView(mut st, latI(mut st, pts, i))
             r := yLambda(mut st, a, ySubst(mut st, pt, env))
@@ -1630,8 +1739,12 @@ func yLambda(st mut S, lam NodeRef, pt0 int) int {
     if pt >= 0 && yk(mut st, pt) == YFn && capEntry(mut st, lam) >= 0 && lamRec(mut st, lam) < 0 {
         // 値の位置のラムダの期待型（lower が env の形を K ごとに集める口 — named fn type は宣言・匿名は関数型の表層型）
         table.Push(mut st.ty.ylamN, int(lam))
-        table.Push(mut st.ty.ylamK, YAt(mut st, pt).c - 1)
+        table.Push(mut st.ty.ylamK, if YAt(mut st, pt).c > 0 { YAt(mut st, pt).c - 1 } else { 0 - 1 })
         table.Push(mut st.ty.ylamY, pt)
+    }
+    // mut 仮引数の席のある関数型の位置のラムダは、ラムダの節に期待型を記録する（analyzer が仮引数を mut 仮引数として数える口 — LamMutSeats）
+    if pt >= 0 && yk(mut st, pt) == YFn && yFnSeats(mut st, YAt(mut st, pt)) != 0 {
+        yPut(mut st, int(lam), pt)
     }
     saved := st.yenv
     ps := lA(nodeOf(mut st, lam))
@@ -1841,6 +1954,11 @@ func yIf(st mut S, e NodeRef) int {
     yExpr(mut st, nA(nodeOf(mut st, e)))
     nn, inner, someThen := yNilTest(mut st, nA(nodeOf(mut st, e)))
     saved := st.yenv
+    nmark := len(st.yNrw)
+    if nn != -1 && IfWrites(mut st, e, nn) {
+        st.yNrw = append(st.yNrw, int(nn))
+        st.yNrw = append(st.yNrw, yLookup(mut st, nn))
+    }
     if nn != -1 && someThen {
         yBindName(mut st, nn, inner)
     }
@@ -1848,12 +1966,14 @@ func yIf(st mut S, e NodeRef) int {
     st.yenv = saved
     el := nC(nodeOf(mut st, e))
     if el == -1 {
+        st.yNrw = st.yNrw[0:nmark]
         return yBase(YNone)
     }
     if nn != -1 && !someThen {
         yBindName(mut st, nn, inner)
     }
     o := yExpr(mut st, el)
+    st.yNrw = st.yNrw[0:nmark]
     st.yenv = saved
     j := yJoin(mut st, t, o)
     if j < 0 && t >= 0 && o >= 0 {
@@ -2151,7 +2271,7 @@ func yGenCall(st mut S, src NodeRef) int {
     cx := nodeOf(mut st, callee)
     // 閉包の名前の呼び出し形（L-for — 束縛の型が匿名の関数型で、仮引数が実引数より 1 つ多く、最後が 1 引数の関数型）
     lt := if cx.kind == ast.EIdent { yLookup(mut st, sA(cx)) } else { -2 }
-    if lt >= 0 && yk(mut st, lt) == YFn && YAt(mut st, lt).c == 0 {
+    if lt >= 0 && yk(mut st, lt) == YFn && YAt(mut st, lt).c <= 0 {
         lps := yLa(YAt(mut st, lt))
         nl := lenL(mut st, lps)
         if nl != lenL(mut st, args) + 1 {
@@ -2351,4 +2471,44 @@ func yCompareTArgs(st mut S, cn NodeRef, ts ListRef, ok bool) {
         table.Push(mut st.ydlog, 2)
         table.Push(mut st.ydlog, if ok { 1 } else { 0 })
     }
+}
+
+// 関数型の型式 te（TFunc / BFunc）の mut 仮引数の席のビット
+func teMutMask(st mut S, te NodeRef) int {
+    ps := lA(nodeOf(mut st, te))
+    mut m := 0
+    for i <- iter.Range(0, lenL(mut st, ps)) {
+        if kindN(mut st, latN(mut st, ps, i)) == ast.TMutP {
+            m = m | (1 << i)
+        }
+    }
+    return m
+}
+
+// 関数型 x（YFn）の mut 仮引数の席のビット（名前なしは c に負で・名前付きは宣言の署名から）
+func yFnSeats(st mut S, x YT) int {
+    return if x.c <= 0 { 0 - x.c } else { teMutMask(mut st, nC(nodeOf(mut st, NodeRef(x.c - 1)))) }
+}
+
+// ラムダ lam の仮引数の mut の席のビット（書いた印と、期待する関数型の席 — 表層型検査器の記録）
+func LamMutSeats(st mut S, lam NodeRef) int {
+    ps := lA(nodeOf(mut st, lam))
+    mut m := 0
+    for i <- iter.Range(0, lenL(mut st, ps)) {
+        if nodeOf(mut st, latN(mut st, ps, i)).c != 0 {
+            m = m | (1 << i)
+        }
+    }
+    y := yGet(mut st, int(lam))
+    return if y >= 0 && yk(mut st, y) == YFn { m | yFnSeats(mut st, YAt(mut st, y)) } else { m }
+}
+
+// ラムダ lam の仮引数 i の型がスカラー（int・bool・byte・float・string — 中身を持たない）と分かるか（期待型の記録から）
+func LamParamScalar(st mut S, lam NodeRef, i int) bool {
+    y := yGet(mut st, int(lam))
+    if y < 0 || yk(mut st, y) != YFn || i >= lenL(mut st, yLa(YAt(mut st, y))) {
+        return false
+    }
+    k := yk(mut st, latI(mut st, yLa(YAt(mut st, y)), i))
+    return k == YInt || k == YBool || k == YString || k == YByte || k == YFloat
 }

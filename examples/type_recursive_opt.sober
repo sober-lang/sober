@@ -1,0 +1,57 @@
+package main
+
+// opt の中身を通る再帰（値の I 族 — 2026-11-04）: `next L?` の鎖と `l T?; r T?` の二分木。値は imm の木で、下から組んで欄の読みで 1 段ずつ開く。
+// 欄の代入は新しい値を作る（`n.l = …` は n の写しの欄を差し替える — 元の木は変わらない）
+
+type L struct {
+    v int
+    next L?
+}
+
+type T struct {
+    v int
+    l T?
+    r T?
+}
+
+func build(n int) L {
+    if n == 0 {
+        return L{v: 0, next: nil}
+    }
+    return L{v: n, next: build(n - 1)}
+}
+
+func sum(l L) int {
+    n := l.next
+    return l.v + if n == nil { 0 } else { sum(n) }
+}
+
+func ins(t T?, v int) T {
+    if t == nil {
+        return T{v: v, l: nil, r: nil}
+    }
+    mut n := t
+    if v < n.v {
+        n.l = ins(n.l, v)
+    } else {
+        n.r = ins(n.r, v)
+    }
+    return n
+}
+
+func inorder(t T?) string {
+    return if t == nil { "" } else { inorder(t.l) + " ${t.v}" + inorder(t.r) }
+}
+
+func main() {
+    println(sum(build(10)))
+    mut t := T{v: 50, l: nil, r: nil}
+    xs := []int{30, 70, 20, 40, 60, 80}
+    for x <- xs {
+        t = ins(t, x)
+    }
+    u := t
+    t.l = nil
+    println(inorder(u))
+    println(inorder(t))
+}

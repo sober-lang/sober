@@ -34,7 +34,7 @@ attributes #0 = { nounwind "no-builtins" "frame-pointer"="all" }
 @"str.15" = internal constant [1 x i64] [i64 35899498962976]
 @"str.16" = internal constant [5 x i64] [i64 7309940765259427104, i64 7599578576357124455, i64 6874858533597243508, i64 2323330133470241143, i64 2608]
 @"str.17" = internal constant [3 x i64] [i64 7232620951369114994, i64 8674334734093152357, i64 8250]
-@"rt.psites" = internal constant [42 x i64] [i64 10696049299554305, i64 15481123903635457, i64 3659174948897025, i64 4785074922848772, i64 11258999806624257, i64 8725725016228355, i64 13510799687418369, i64 10977524897022467, i64 9851625191506435, i64 9851625208283651, i64 9851625241838083, i64 8725725368549891, i64 16044074863690241, i64 9851625376055811, i64 18858824798568961, i64 9851625543827971, i64 4222127502787076, i64 4222127687336452, i64 8162777797493249, i64 7881302904668673, i64 12947853307544068, i64 24206852375970308, i64 4222133710356996, i64 6755408836297217, i64 4222134180119041, i64 2814759313342977, i64 4222134465331713, i64 10977533906387457, i64 2814759598555649, i64 5629509617320449, i64 6755409524163076, i64 3940659773833729, i64 7881309682663937, i64 6192460527043073, i64 3659186105745921, i64 5910985919431169, i64 6755410866340353, i64 8725735703314945, i64 4222136260493825, i64 10977535701549569, i64 3940661317337601, i64 3940661367669249]
+@"rt.psites" = internal constant [42 x i64] [i64 10696049299554305, i64 15481123903635457, i64 3659174948897025, i64 4785074922848772, i64 11258999806624257, i64 8725725016228355, i64 13510799687418369, i64 10977524897022467, i64 9851625191506435, i64 9851625208283651, i64 9851625241838083, i64 8725725368549891, i64 16044074863690241, i64 9851625376055811, i64 18858824798568961, i64 9851625543827971, i64 4222127502787076, i64 4222127687336452, i64 8162777797493249, i64 7881302904668673, i64 12947853307544068, i64 24206852375970308, i64 4222133710356996, i64 6755399894041345, i64 4222125237863169, i64 2814750371087105, i64 4222125523075841, i64 10977524964131585, i64 2814750656299777, i64 5629500675064577, i64 6755400581907204, i64 3940650831577857, i64 7881300740408065, i64 6192451618341633, i64 3659177230598913, i64 5910977044284161, i64 6755401991193345, i64 8725726828167937, i64 4222127385346817, i64 10977526826402561, i64 3940652442190593, i64 3940652492522241]
 @"str.18" = internal constant [1 x i64] [i64 9071397899755888]
 @"str.19" = internal constant [3 x i64] [i64 8462017926321696361, i64 7953763900396085364, i64 25959]
 @"str.20" = internal constant [4 x i64] [i64 8026013105759284339, i64 8391735665840385653, i64 7453001576142499616, i64 101]
@@ -47,6 +47,7 @@ attributes #0 = { nounwind "no-builtins" "frame-pointer"="all" }
 @"str.27" = internal constant [2 x i64] [i64 7093014581389910381, i64 29285]
 @"str.28" = internal constant [3 x i64] [i64 8243122688087061619, i64 8030813629395003695, i64 7497058]
 @"str.29" = internal constant [5 x i64] [i64 7310589493174891635, i64 8028904589562572402, i64 7810982780818846817, i64 8299699176509563247, i64 1919246959]
+@"str.30" = internal constant [4 x i64] [i64 7310589493174891635, i64 7451595014282505842, i64 7595155167007501929, i64 8243102923784877166]
 
 define internal void @"rt.flush"() #0 {
 b0:
@@ -6873,29 +6874,29 @@ b4:
   %v70 = getelementptr i64, ptr @"rt.meta", i64 0
   %st32 = getelementptr i64, ptr %v70, i64 2572
   store i64 %v3, ptr %st32
-  call void @"std/internal/floatfmt.bnSetInt"(ptr %v32, i64 %v69)
+  call void @"std/internal/bigint.SetInt"(ptr %v32, i64 %v69)
   %v71 = add i64 0, 1
   %v72 = getelementptr i64, ptr @"rt.meta", i64 0
   %st33 = getelementptr i64, ptr %v72, i64 2572
   store i64 %v3, ptr %st33
-  call void @"std/internal/floatfmt.bnSetInt"(ptr %v52, i64 %v71)
+  call void @"std/internal/bigint.SetInt"(ptr %v52, i64 %v71)
   %v73.p = getelementptr i64, ptr %v14, i64 0
   %v73 = load i64, ptr %v73.p
   %v74 = getelementptr i64, ptr @"rt.meta", i64 0
   %st34 = getelementptr i64, ptr %v74, i64 2572
   store i64 %v3, ptr %st34
-  call void @"std/internal/floatfmt.bnShl"(ptr %v52, i64 %v73)
+  call void @"std/internal/bigint.Shl"(ptr %v52, i64 %v73)
   %v75 = add i64 0, 1
   %v76 = getelementptr i64, ptr @"rt.meta", i64 0
   %st35 = getelementptr i64, ptr %v76, i64 2572
   store i64 %v3, ptr %st35
-  call void @"std/internal/floatfmt.bnSetInt"(ptr %v62, i64 %v75)
+  call void @"std/internal/bigint.SetInt"(ptr %v62, i64 %v75)
   %v77.p = getelementptr i64, ptr %v14, i64 0
   %v77 = load i64, ptr %v77.p
   %v78 = getelementptr i64, ptr @"rt.meta", i64 0
   %st36 = getelementptr i64, ptr %v78, i64 2572
   store i64 %v3, ptr %st36
-  call void @"std/internal/floatfmt.bnShl"(ptr %v62, i64 %v77)
+  call void @"std/internal/bigint.Shl"(ptr %v62, i64 %v77)
   %v79.p = getelementptr i64, ptr %v10, i64 0
   %v79 = load i64, ptr %v79.p
   %v80 = add i64 0, 4503599627370496
@@ -6913,17 +6914,17 @@ b5:
   %v97 = getelementptr i64, ptr @"rt.meta", i64 0
   %st39 = getelementptr i64, ptr %v97, i64 2572
   store i64 %v3, ptr %st39
-  call void @"std/internal/floatfmt.bnSetInt"(ptr %v32, i64 %v96)
+  call void @"std/internal/bigint.SetInt"(ptr %v32, i64 %v96)
   %v98 = add i64 0, 1
   %v99 = getelementptr i64, ptr @"rt.meta", i64 0
   %st40 = getelementptr i64, ptr %v99, i64 2572
   store i64 %v3, ptr %st40
-  call void @"std/internal/floatfmt.bnSetInt"(ptr %v42, i64 %v98)
+  call void @"std/internal/bigint.SetInt"(ptr %v42, i64 %v98)
   %v100 = add i64 0, 1
   %v101 = getelementptr i64, ptr @"rt.meta", i64 0
   %st41 = getelementptr i64, ptr %v101, i64 2572
   store i64 %v3, ptr %st41
-  call void @"std/internal/floatfmt.bnSetInt"(ptr %v62, i64 %v100)
+  call void @"std/internal/bigint.SetInt"(ptr %v62, i64 %v100)
   %v102 = add i64 0, 1
   %v103.c = icmp sle i64 %v1, %v102
   %v103 = zext i1 %v103.c to i64
@@ -6941,12 +6942,12 @@ b6:
   %v85 = getelementptr i64, ptr @"rt.meta", i64 0
   %st44 = getelementptr i64, ptr %v85, i64 2572
   store i64 %v3, ptr %st44
-  call void @"std/internal/floatfmt.bnShl"(ptr %v32, i64 %v84)
+  call void @"std/internal/bigint.Shl"(ptr %v32, i64 %v84)
   %v86 = add i64 0, 2
   %v87 = getelementptr i64, ptr @"rt.meta", i64 0
   %st45 = getelementptr i64, ptr %v87, i64 2572
   store i64 %v3, ptr %st45
-  call void @"std/internal/floatfmt.bnSetInt"(ptr %v42, i64 %v86)
+  call void @"std/internal/bigint.SetInt"(ptr %v42, i64 %v86)
   br label %b8
 b7:
   %v88.p = getelementptr i64, ptr %v14, i64 0
@@ -6956,17 +6957,17 @@ b7:
   %v91 = getelementptr i64, ptr @"rt.meta", i64 0
   %st46 = getelementptr i64, ptr %v91, i64 2572
   store i64 %v3, ptr %st46
-  call void @"std/internal/floatfmt.bnShl"(ptr %v32, i64 %v90)
+  call void @"std/internal/bigint.Shl"(ptr %v32, i64 %v90)
   %v92 = add i64 0, 4
   %v93 = getelementptr i64, ptr @"rt.meta", i64 0
   %st47 = getelementptr i64, ptr %v93, i64 2572
   store i64 %v3, ptr %st47
-  call void @"std/internal/floatfmt.bnSetInt"(ptr %v42, i64 %v92)
+  call void @"std/internal/bigint.SetInt"(ptr %v42, i64 %v92)
   %v94 = add i64 0, 1
   %v95 = getelementptr i64, ptr @"rt.meta", i64 0
   %st48 = getelementptr i64, ptr %v95, i64 2572
   store i64 %v3, ptr %st48
-  call void @"std/internal/floatfmt.bnShl"(ptr %v52, i64 %v94)
+  call void @"std/internal/bigint.Shl"(ptr %v52, i64 %v94)
   br label %b8
 b8:
   br label %b14
@@ -6990,7 +6991,7 @@ b11:
   %v109 = getelementptr i64, ptr @"rt.meta", i64 0
   %st51 = getelementptr i64, ptr %v109, i64 2572
   store i64 %v3, ptr %st51
-  call void @"std/internal/floatfmt.bnShl"(ptr %v32, i64 %v108)
+  call void @"std/internal/bigint.Shl"(ptr %v32, i64 %v108)
   %v110 = add i64 0, 1
   %v111.p = getelementptr i64, ptr %v14, i64 0
   %v111 = load i64, ptr %v111.p
@@ -6998,19 +6999,19 @@ b11:
   %v113 = getelementptr i64, ptr @"rt.meta", i64 0
   %st52 = getelementptr i64, ptr %v113, i64 2572
   store i64 %v3, ptr %st52
-  call void @"std/internal/floatfmt.bnShl"(ptr %v42, i64 %v112)
+  call void @"std/internal/bigint.Shl"(ptr %v42, i64 %v112)
   %v114 = add i64 0, 1
   %v115 = getelementptr i64, ptr @"rt.meta", i64 0
   %st53 = getelementptr i64, ptr %v115, i64 2572
   store i64 %v3, ptr %st53
-  call void @"std/internal/floatfmt.bnSetInt"(ptr %v52, i64 %v114)
+  call void @"std/internal/bigint.SetInt"(ptr %v52, i64 %v114)
   br label %b13
 b12:
   %v116 = add i64 0, 2
   %v117 = getelementptr i64, ptr @"rt.meta", i64 0
   %st54 = getelementptr i64, ptr %v117, i64 2572
   store i64 %v3, ptr %st54
-  call void @"std/internal/floatfmt.bnShl"(ptr %v32, i64 %v116)
+  call void @"std/internal/bigint.Shl"(ptr %v32, i64 %v116)
   %v118 = add i64 0, 2
   %v119.p = getelementptr i64, ptr %v14, i64 0
   %v119 = load i64, ptr %v119.p
@@ -7018,12 +7019,12 @@ b12:
   %v121 = getelementptr i64, ptr @"rt.meta", i64 0
   %st55 = getelementptr i64, ptr %v121, i64 2572
   store i64 %v3, ptr %st55
-  call void @"std/internal/floatfmt.bnShl"(ptr %v42, i64 %v120)
+  call void @"std/internal/bigint.Shl"(ptr %v42, i64 %v120)
   %v122 = add i64 0, 2
   %v123 = getelementptr i64, ptr @"rt.meta", i64 0
   %st56 = getelementptr i64, ptr %v123, i64 2572
   store i64 %v3, ptr %st56
-  call void @"std/internal/floatfmt.bnSetInt"(ptr %v52, i64 %v122)
+  call void @"std/internal/bigint.SetInt"(ptr %v52, i64 %v122)
   br label %b13
 b13:
   br label %b14
@@ -7221,7 +7222,7 @@ b33:
   %v181 = getelementptr i64, ptr @"rt.meta", i64 0
   %st76 = getelementptr i64, ptr %v181, i64 2572
   store i64 %v3, ptr %st76
-  call void @"std/internal/floatfmt.bnMulAdd"(ptr %v42, i64 %v179, i64 %v180)
+  call void @"std/internal/bigint.MulAdd"(ptr %v42, i64 %v179, i64 %v180)
   br label %b35
 b34:
   %v547 = getelementptr i64, ptr @"rt.meta", i64 0
@@ -7275,19 +7276,19 @@ b39:
   %v201 = getelementptr i64, ptr @"rt.meta", i64 0
   %st84 = getelementptr i64, ptr %v201, i64 2572
   store i64 %v3, ptr %st84
-  call void @"std/internal/floatfmt.bnMulAdd"(ptr %v32, i64 %v199, i64 %v200)
+  call void @"std/internal/bigint.MulAdd"(ptr %v32, i64 %v199, i64 %v200)
   %v202 = add i64 0, 10
   %v203 = add i64 0, 0
   %v204 = getelementptr i64, ptr @"rt.meta", i64 0
   %st85 = getelementptr i64, ptr %v204, i64 2572
   store i64 %v3, ptr %st85
-  call void @"std/internal/floatfmt.bnMulAdd"(ptr %v52, i64 %v202, i64 %v203)
+  call void @"std/internal/bigint.MulAdd"(ptr %v52, i64 %v202, i64 %v203)
   %v205 = add i64 0, 10
   %v206 = add i64 0, 0
   %v207 = getelementptr i64, ptr @"rt.meta", i64 0
   %st86 = getelementptr i64, ptr %v207, i64 2572
   store i64 %v3, ptr %st86
-  call void @"std/internal/floatfmt.bnMulAdd"(ptr %v62, i64 %v205, i64 %v206)
+  call void @"std/internal/bigint.MulAdd"(ptr %v62, i64 %v205, i64 %v206)
   br label %b41
 b40:
   %v553 = getelementptr i64, ptr @"rt.meta", i64 0
@@ -7368,7 +7369,7 @@ b44:
   %v232 = getelementptr i64, ptr @"rt.meta", i64 0
   %st100 = getelementptr i64, ptr %v232, i64 2572
   store i64 %v231, ptr %st100
-  call void @"std/internal/floatfmt.bnSet"(ptr %v217, ptr %v32)
+  call void @"std/internal/bigint.Set"(ptr %v217, ptr %v32)
   %v233.c = icmp slt i64 %v3, %v3
   %v233 = zext i1 %v233.c to i64
   %v234 = sub i64 %v3, %v3
@@ -7377,7 +7378,7 @@ b44:
   %v237 = getelementptr i64, ptr @"rt.meta", i64 0
   %st101 = getelementptr i64, ptr %v237, i64 2572
   store i64 %v236, ptr %st101
-  call void @"std/internal/floatfmt.bnAdd"(ptr %v217, ptr %v52)
+  call void @"std/internal/bigint.Add"(ptr %v217, ptr %v52)
   %v238.c = icmp slt i64 %v3, %v3
   %v238 = zext i1 %v238.c to i64
   %v239 = sub i64 %v3, %v3
@@ -7386,7 +7387,7 @@ b44:
   %v242 = getelementptr i64, ptr @"rt.meta", i64 0
   %st102 = getelementptr i64, ptr %v242, i64 2572
   store i64 %v241, ptr %st102
-  %v243 = call i64 @"std/internal/floatfmt.bnCmp"(ptr %v217, ptr %v42)
+  %v243 = call i64 @"std/internal/bigint.Cmp"(ptr %v217, ptr %v42)
   %v244 = add i64 0, 0
   %v245.c = icmp sgt i64 %v243, %v244
   %v245 = zext i1 %v245.c to i64
@@ -7437,7 +7438,7 @@ b50:
   %v252 = getelementptr i64, ptr @"rt.meta", i64 0
   %st111 = getelementptr i64, ptr %v252, i64 2572
   store i64 %v3, ptr %st111
-  call void @"std/internal/floatfmt.bnMulAdd"(ptr %v42, i64 %v250, i64 %v251)
+  call void @"std/internal/bigint.MulAdd"(ptr %v42, i64 %v250, i64 %v251)
   %v253 = add i64 0, 1
   %v254.p = getelementptr i64, ptr %v163, i64 0
   %v254 = load i64, ptr %v254.p
@@ -7451,7 +7452,7 @@ b51:
   %v258 = getelementptr i64, ptr @"rt.meta", i64 0
   %st113 = getelementptr i64, ptr %v258, i64 2572
   store i64 %v3, ptr %st113
-  call void @"std/internal/floatfmt.bnMulAdd"(ptr %v217, i64 %v256, i64 %v257)
+  call void @"std/internal/bigint.MulAdd"(ptr %v217, i64 %v256, i64 %v257)
   %v259.c = icmp slt i64 %v3, %v3
   %v259 = zext i1 %v259.c to i64
   %v260 = sub i64 %v3, %v3
@@ -7460,7 +7461,7 @@ b51:
   %v263 = getelementptr i64, ptr @"rt.meta", i64 0
   %st114 = getelementptr i64, ptr %v263, i64 2572
   store i64 %v262, ptr %st114
-  %v264 = call i64 @"std/internal/floatfmt.bnCmp"(ptr %v217, ptr %v42)
+  %v264 = call i64 @"std/internal/bigint.Cmp"(ptr %v217, ptr %v42)
   %v265 = add i64 0, 0
   %v266.c = icmp slt i64 %v264, %v265
   %v266 = zext i1 %v266.c to i64
@@ -7501,19 +7502,19 @@ b56:
   %v275 = getelementptr i64, ptr @"rt.meta", i64 0
   %st121 = getelementptr i64, ptr %v275, i64 2572
   store i64 %v3, ptr %st121
-  call void @"std/internal/floatfmt.bnMulAdd"(ptr %v32, i64 %v273, i64 %v274)
+  call void @"std/internal/bigint.MulAdd"(ptr %v32, i64 %v273, i64 %v274)
   %v276 = add i64 0, 10
   %v277 = add i64 0, 0
   %v278 = getelementptr i64, ptr @"rt.meta", i64 0
   %st122 = getelementptr i64, ptr %v278, i64 2572
   store i64 %v3, ptr %st122
-  call void @"std/internal/floatfmt.bnMulAdd"(ptr %v52, i64 %v276, i64 %v277)
+  call void @"std/internal/bigint.MulAdd"(ptr %v52, i64 %v276, i64 %v277)
   %v279 = add i64 0, 10
   %v280 = add i64 0, 0
   %v281 = getelementptr i64, ptr @"rt.meta", i64 0
   %st123 = getelementptr i64, ptr %v281, i64 2572
   store i64 %v3, ptr %st123
-  call void @"std/internal/floatfmt.bnMulAdd"(ptr %v62, i64 %v279, i64 %v280)
+  call void @"std/internal/bigint.MulAdd"(ptr %v62, i64 %v279, i64 %v280)
   %v282 = add i64 0, 1
   %v283.p = getelementptr i64, ptr %v163, i64 0
   %v283 = load i64, ptr %v283.p
@@ -7554,19 +7555,19 @@ b61:
   %v295 = getelementptr i64, ptr @"rt.meta", i64 0
   %st129 = getelementptr i64, ptr %v295, i64 2572
   store i64 %v3, ptr %st129
-  call void @"std/internal/floatfmt.bnMulAdd"(ptr %v32, i64 %v293, i64 %v294)
+  call void @"std/internal/bigint.MulAdd"(ptr %v32, i64 %v293, i64 %v294)
   %v296 = add i64 0, 10
   %v297 = add i64 0, 0
   %v298 = getelementptr i64, ptr @"rt.meta", i64 0
   %st130 = getelementptr i64, ptr %v298, i64 2572
   store i64 %v3, ptr %st130
-  call void @"std/internal/floatfmt.bnMulAdd"(ptr %v52, i64 %v296, i64 %v297)
+  call void @"std/internal/bigint.MulAdd"(ptr %v52, i64 %v296, i64 %v297)
   %v299 = add i64 0, 10
   %v300 = add i64 0, 0
   %v301 = getelementptr i64, ptr @"rt.meta", i64 0
   %st131 = getelementptr i64, ptr %v301, i64 2572
   store i64 %v3, ptr %st131
-  call void @"std/internal/floatfmt.bnMulAdd"(ptr %v62, i64 %v299, i64 %v300)
+  call void @"std/internal/bigint.MulAdd"(ptr %v62, i64 %v299, i64 %v300)
   %v302 = add i64 0, 0
   %v303 = getelementptr i64, ptr %s11, i64 0
   %st132 = getelementptr i64, ptr %v303, i64 0
@@ -7597,7 +7598,7 @@ b63:
   %v309 = getelementptr i64, ptr @"rt.meta", i64 0
   %st136 = getelementptr i64, ptr %v309, i64 2572
   store i64 %v308, ptr %st136
-  %v310 = call i64 @"std/internal/floatfmt.bnCmp"(ptr %v32, ptr %v42)
+  %v310 = call i64 @"std/internal/bigint.Cmp"(ptr %v32, ptr %v42)
   %v311 = add i64 0, 0
   %v312.c = icmp sge i64 %v310, %v311
   %v312 = zext i1 %v312.c to i64
@@ -7620,7 +7621,7 @@ b64:
   %v318 = getelementptr i64, ptr @"rt.meta", i64 0
   %st139 = getelementptr i64, ptr %v318, i64 2572
   store i64 %v317, ptr %st139
-  call void @"std/internal/floatfmt.bnSub"(ptr %v32, ptr %v42)
+  call void @"std/internal/bigint.Sub"(ptr %v32, ptr %v42)
   %v319 = add i64 0, 1
   %v320.p = getelementptr i64, ptr %v303, i64 0
   %v320 = load i64, ptr %v320.p
@@ -7640,7 +7641,7 @@ b65:
   %v326 = getelementptr i64, ptr @"rt.meta", i64 0
   %st142 = getelementptr i64, ptr %v326, i64 2572
   store i64 %v325, ptr %st142
-  %v327 = call i64 @"std/internal/floatfmt.bnCmp"(ptr %v32, ptr %v62)
+  %v327 = call i64 @"std/internal/bigint.Cmp"(ptr %v32, ptr %v62)
   %v328 = add i64 0, 0
   %v329.c = icmp slt i64 %v327, %v328
   %v329 = zext i1 %v329.c to i64
@@ -7670,7 +7671,7 @@ b67:
   %v338 = getelementptr i64, ptr @"rt.meta", i64 0
   %st147 = getelementptr i64, ptr %v338, i64 2572
   store i64 %v337, ptr %st147
-  call void @"std/internal/floatfmt.bnSet"(ptr %v217, ptr %v32)
+  call void @"std/internal/bigint.Set"(ptr %v217, ptr %v32)
   %v339.c = icmp slt i64 %v3, %v3
   %v339 = zext i1 %v339.c to i64
   %v340 = sub i64 %v3, %v3
@@ -7679,7 +7680,7 @@ b67:
   %v343 = getelementptr i64, ptr @"rt.meta", i64 0
   %st148 = getelementptr i64, ptr %v343, i64 2572
   store i64 %v342, ptr %st148
-  call void @"std/internal/floatfmt.bnAdd"(ptr %v217, ptr %v52)
+  call void @"std/internal/bigint.Add"(ptr %v217, ptr %v52)
   %v344.c = icmp slt i64 %v3, %v3
   %v344 = zext i1 %v344.c to i64
   %v345 = sub i64 %v3, %v3
@@ -7688,7 +7689,7 @@ b67:
   %v348 = getelementptr i64, ptr @"rt.meta", i64 0
   %st149 = getelementptr i64, ptr %v348, i64 2572
   store i64 %v347, ptr %st149
-  %v349 = call i64 @"std/internal/floatfmt.bnCmp"(ptr %v217, ptr %v42)
+  %v349 = call i64 @"std/internal/bigint.Cmp"(ptr %v217, ptr %v42)
   %v350 = add i64 0, 0
   %v351.c = icmp sgt i64 %v349, %v350
   %v351 = zext i1 %v351.c to i64
@@ -7992,13 +7993,13 @@ b91:
   %v473 = getelementptr i64, ptr @"rt.meta", i64 0
   %st196 = getelementptr i64, ptr %v473, i64 2572
   store i64 %v472, ptr %st196
-  call void @"std/internal/floatfmt.bnSet"(ptr %v217, ptr %v32)
+  call void @"std/internal/bigint.Set"(ptr %v217, ptr %v32)
   %v474 = add i64 0, 2
   %v475 = add i64 0, 0
   %v476 = getelementptr i64, ptr @"rt.meta", i64 0
   %st197 = getelementptr i64, ptr %v476, i64 2572
   store i64 %v3, ptr %st197
-  call void @"std/internal/floatfmt.bnMulAdd"(ptr %v217, i64 %v474, i64 %v475)
+  call void @"std/internal/bigint.MulAdd"(ptr %v217, i64 %v474, i64 %v475)
   %v477.c = icmp slt i64 %v3, %v3
   %v477 = zext i1 %v477.c to i64
   %v478 = sub i64 %v3, %v3
@@ -8007,7 +8008,7 @@ b91:
   %v481 = getelementptr i64, ptr @"rt.meta", i64 0
   %st198 = getelementptr i64, ptr %v481, i64 2572
   store i64 %v480, ptr %st198
-  %v482 = call i64 @"std/internal/floatfmt.bnCmp"(ptr %v217, ptr %v42)
+  %v482 = call i64 @"std/internal/bigint.Cmp"(ptr %v217, ptr %v42)
   %v483 = getelementptr i64, ptr %s12, i64 0
   %v484.p = getelementptr i64, ptr %v0, i64 0
   %v484 = load i64, ptr %v484.p
@@ -8292,7 +8293,7 @@ b8:
   br label %b6
 }
 
-define internal void @"std/internal/floatfmt.bnSetInt"(ptr %v0, i64 %v1) #0 {
+define internal void @"std/internal/bigint.SetInt"(ptr %v0, i64 %v1) #0 {
 b0:
   %s0 = alloca [3 x i64], align 8
   %s0.z0 = getelementptr i64, ptr %s0, i64 0
@@ -8579,7 +8580,7 @@ b9:
   br label %b7
 }
 
-define internal void @"std/internal/floatfmt.bnSet"(ptr %v0, ptr %v1) #0 {
+define internal void @"std/internal/bigint.Set"(ptr %v0, ptr %v1) #0 {
 b0:
   %s0 = alloca [3 x i64], align 8
   %s0.z0 = getelementptr i64, ptr %s0, i64 0
@@ -8969,7 +8970,7 @@ b20:
   br label %b18
 }
 
-define internal void @"std/internal/floatfmt.bnMulAdd"(ptr %v0, i64 %v1, i64 %v2) #0 {
+define internal void @"std/internal/bigint.MulAdd"(ptr %v0, i64 %v1, i64 %v2) #0 {
 b0:
   %s0 = alloca [1 x i64], align 8
   %s0.z0 = getelementptr i64, ptr %s0, i64 0
@@ -9252,7 +9253,7 @@ b16:
   br label %b14
 }
 
-define internal void @"std/internal/floatfmt.bnAdd"(ptr %v0, ptr %v1) #0 {
+define internal void @"std/internal/bigint.Add"(ptr %v0, ptr %v1) #0 {
 b0:
   %s0 = alloca [3 x i64], align 8
   %s0.z0 = getelementptr i64, ptr %s0, i64 0
@@ -9664,7 +9665,7 @@ b27:
   ret void
 }
 
-define internal void @"std/internal/floatfmt.bnShl"(ptr %v0, i64 %v1) #0 {
+define internal void @"std/internal/bigint.Shl"(ptr %v0, i64 %v1) #0 {
 b0:
   %s0 = alloca [1 x i64], align 8
   %s0.z0 = getelementptr i64, ptr %s0, i64 0
@@ -10479,7 +10480,7 @@ b53:
   ret void
 }
 
-define internal i64 @"std/internal/floatfmt.bnTop"(ptr %v0) #0 {
+define internal i64 @"std/internal/bigint.Top"(ptr %v0) #0 {
 b0:
   %s0 = alloca [1 x i64], align 8
   %s0.z0 = getelementptr i64, ptr %s0, i64 0
@@ -10584,7 +10585,7 @@ b7:
   br label %b5
 }
 
-define internal i64 @"std/internal/floatfmt.bnCmp"(ptr %v0, ptr %v1) #0 {
+define internal i64 @"std/internal/bigint.Cmp"(ptr %v0, ptr %v1) #0 {
 b0:
   %s0 = alloca [1 x i64], align 8
   %s0.z0 = getelementptr i64, ptr %s0, i64 0
@@ -10603,11 +10604,11 @@ b0:
   %v9 = getelementptr i64, ptr @"rt.meta", i64 0
   %st0 = getelementptr i64, ptr %v9, i64 2572
   store i64 %v8, ptr %st0
-  %v10 = call i64 @"std/internal/floatfmt.bnTop"(ptr %v0)
+  %v10 = call i64 @"std/internal/bigint.Top"(ptr %v0)
   %v11 = getelementptr i64, ptr @"rt.meta", i64 0
   %st1 = getelementptr i64, ptr %v11, i64 2572
   store i64 %v8, ptr %st1
-  %v12 = call i64 @"std/internal/floatfmt.bnTop"(ptr %v1)
+  %v12 = call i64 @"std/internal/bigint.Top"(ptr %v1)
   %v13.c = icmp ne i64 %v10, %v12
   %v13 = zext i1 %v13.c to i64
   %c.b0 = icmp ne i64 %v13, 0
@@ -10825,7 +10826,7 @@ b23:
   br label %b7
 }
 
-define internal void @"std/internal/floatfmt.bnSub"(ptr %v0, ptr %v1) #0 {
+define internal void @"std/internal/bigint.Sub"(ptr %v0, ptr %v1) #0 {
 b0:
   %s0 = alloca [1 x i64], align 8
   %s0.z0 = getelementptr i64, ptr %s0, i64 0
@@ -11146,6 +11147,13 @@ b0:
   store i64 0, ptr %s11.z1
   %s11.z2 = getelementptr i64, ptr %s11, i64 2
   store i64 0, ptr %s11.z2
+  %s12 = alloca [3 x i64], align 8
+  %s12.z0 = getelementptr i64, ptr %s12, i64 0
+  store i64 0, ptr %s12.z0
+  %s12.z1 = getelementptr i64, ptr %s12, i64 1
+  store i64 0, ptr %s12.z1
+  %s12.z2 = getelementptr i64, ptr %s12, i64 2
+  store i64 0, ptr %s12.z2
   %v1 = getelementptr i64, ptr @"rt.meta", i64 0
   %v2 = getelementptr i64, ptr @"rt.psites", i64 0
   %v3 = getelementptr i64, ptr %v2, i64 %v0
@@ -11376,14 +11384,14 @@ b14:
 b15:
   br label %b1
 b16:
-  %v100 = add i64 0, 58
-  call void @"rt.print_char"(i64 %v100)
+  %v107 = add i64 0, 58
+  call void @"rt.print_char"(i64 %v107)
   call void @"rt.print_int"(i64 %v14)
-  %v101 = add i64 0, 58
-  call void @"rt.print_char"(i64 %v101)
+  %v108 = add i64 0, 58
+  call void @"rt.print_char"(i64 %v108)
   call void @"rt.print_int"(i64 %v18)
-  %v102 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v102)
+  %v109 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v109)
   call void @"rt.flush"()
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -11450,6 +11458,30 @@ b21:
   call void @"rt.print_str"(ptr %v98)
   br label %b16
 b22:
+  %v100 = add i64 0, 3
+  %v101.c = icmp eq i64 %v10, %v100
+  %v101 = zext i1 %v101.c to i64
+  %c.b22 = icmp ne i64 %v101, 0
+  br i1 %c.b22, label %b22.t58, label %b22.e59
+b22.t58:
+  br label %b23
+b22.e59:
+  br label %b24
+b23:
+  %v102 = getelementptr i64, ptr @"str.30", i64 0
+  %v103 = add i64 0, 32
+  %v104 = add i64 0, 0
+  %v105 = getelementptr i64, ptr %s12, i64 0
+  %v106 = ptrtoint ptr %v102 to i64
+  %st59 = getelementptr i64, ptr %v105, i64 0
+  store i64 %v106, ptr %st59
+  %st60 = getelementptr i64, ptr %v105, i64 1
+  store i64 %v103, ptr %st60
+  %st61 = getelementptr i64, ptr %v105, i64 2
+  store i64 %v104, ptr %st61
+  call void @"rt.print_str"(ptr %v105)
+  br label %b16
+b24:
   br label %b16
 }
 

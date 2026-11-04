@@ -348,6 +348,10 @@ func matchPattern(st mut St, p desugar.NodeRef, sty int, sv int, nx BlkRef, bs i
         if f >= 0 {
             ft = desugar.HeapGet(mut st.d, f + 1)
             fv = loadVal(mut st, sv, 1 + desugar.HeapGet(mut st.d, f + 2), ft)
+            if isBox(mut st, ft) {
+                fv = openBox(mut st, ft, fv)
+                ft = surfTy(mut st, ft)
+            }
         } else if is_err && strIs(mut st, sA(nodeOf(mut st, fp)), "cause") {
             ft = optOf(mut st, sty0)
             fv = causeOf(mut st, sv, sty0, ut)

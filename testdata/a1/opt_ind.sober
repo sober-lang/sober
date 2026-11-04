@@ -1,0 +1,23 @@
+package main
+
+// 間接の値の閉路 L { p P? } / P { l L }: 箱になるのは L.p だけ（P.l は直の値）
+
+type L struct {
+    v int
+    p P?
+}
+
+type P struct {
+    w int
+    l L
+}
+
+func sum(l L) int {
+    p := l.p
+    return l.v + if p == nil { 0 } else { p.w + sum(p.l) }
+}
+
+func main() {
+    l := L{v: 1, p: P{w: 2, l: L{v: 3, p: P{w: 4, l: L{v: 5, p: nil}}}}}
+    println(sum(l))
+}

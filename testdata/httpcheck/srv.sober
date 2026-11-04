@@ -105,7 +105,7 @@ func items(ds []Item, r http.Request) http.Response {
 }
 
 // genBytes は /stream/{n} の本文: 'a' + i % 26 の n バイトを 1000 バイトずつ emit する（stream の閉包の網 — report-763）
-func genBytes(n int, emit func(b []byte) error?) error? {
+func genBytes(n int, out mut http.Out, emit func(out mut http.Out, b []byte) error?) error? {
     mut i := 0
     while i < n {
         k := if n - i < 1000 { n - i } else { 1000 }
@@ -113,18 +113,18 @@ func genBytes(n int, emit func(b []byte) error?) error? {
         for j <- iter.Range(0, k) {
             b = append(b, byte(97 + (i + j) % 26))
         }
-        emit(freeze(b))?
+        emit(mut out, freeze(b))?
         i += k
     }
     return nil
 }
 
 // sendFile は /file の本文: path を stream の中で開いて切片ごとに emit する（File は閉包に捕捉させない — 28 節）
-func sendFile(path string, emit func(b []byte) error?) error? {
+func sendFile(path string, out mut http.Out, emit func(out mut http.Out, b []byte) error?) error? {
     f := io.Open(path)?
     defer io.Close(f)
     for b <- io.Chunks(f)? {
-        emit(io.Raw(b))?
+        emit(mut out, io.Raw(b))?
     }
     return nil
 }
@@ -132,11 +132,11 @@ func sendFile(path string, emit func(b []byte) error?) error? {
 // stream は /stream/{n}（n バイトの生成）と /file（dataset を stream で — 長さは起動時に読んだ大きさ）の応答
 func stream(dp string, dl int, r http.Request) http.Response {
     if r.path == "/file" {
-        return http.Response{status: 200, contentType: "application/json", length: dl, stream: (emit) => sendFile(dp, emit)}
+        return http.Response{status: 200, contentType: "application/json", length: dl, stream: (out, emit) => sendFile(dp, mut out, emit)}
     }
     n0 := num(strings.TrimPrefix(r.path, "/stream/"))
     n := if n0 < 0 { 0 } else { n0 }
-    return http.Response{status: 200, contentType: "text/plain", length: n, stream: (emit) => genBytes(n, emit)}
+    return http.Response{status: 200, contentType: "text/plain", length: n, stream: (out, emit) => genBytes(n, mut out, emit)}
 }
 
 // chunked は /chunked/{n}?k=&e=&fail= の応答（長さ不定の stream — chunked で送る・HTTP/1.0 は閉じで区切る — 便 8 の段 8-2）: 'a' + i % 26 の n バイトを
@@ -152,13 +152,13 @@ func chunked(r http.Request) http.Response {
     ct := if http.Query(r, "bin") != nil { "application/octet-stream" } else { "text/plain" }
     if http.Query(r, "len") != nil {
         ln := num(http.Query(r, "len"))
-        return http.Response{status: 200, contentType: ct, length: ln, stream: (emit) => genChunks(n, k, em, fl, emit)}
+        return http.Response{status: 200, contentType: ct, length: ln, stream: (out, emit) => genChunks(n, k, em, fl, mut out, emit)}
     }
-    return http.Response{status: 200, contentType: ct, stream: (emit) => genChunks(n, k, em, fl, emit)}
+    return http.Response{status: 200, contentType: ct, stream: (out, emit) => genChunks(n, k, em, fl, mut out, emit)}
 }
 
 // genChunks は chunked の本文（genBytes の切り方を k で・空の emit・途中の誤り）
-func genChunks(n int, k int, em bool, fl int, emit func(b []byte) error?) error? {
+func genChunks(n int, k int, em bool, fl int, out mut http.Out, emit func(out mut http.Out, b []byte) error?) error? {
     mut i := 0
     while i < n {
         if fl >= 0 && i >= fl {
@@ -170,9 +170,9 @@ func genChunks(n int, k int, em bool, fl int, emit func(b []byte) error?) error?
             b = append(b, byte(97 + (i + j) % 26))
         }
         if em {
-            emit([]byte{})?
+            emit(mut out, []byte{})?
         }
-        emit(freeze(b))?
+        emit(mut out, freeze(b))?
         i += m
     }
     return nil
@@ -180,13 +180,13 @@ func genChunks(n int, k int, em bool, fl int, emit func(b []byte) error?) error?
 
 // slow は /chunked-slow の応答（"first" を emit してから 300 ms 待って "second" — emit 1 回 = 送り 1 回の網: 受け手は stream が返る前に 1 つ目を受ける）
 func slow(r http.Request) http.Response {
-    return http.Response{status: 200, contentType: "text/plain", stream: (emit) => slowBody(emit)}
+    return http.Response{status: 200, contentType: "text/plain", stream: (out, emit) => slowBody(mut out, emit)}
 }
 
-func slowBody(emit func(b []byte) error?) error? {
-    emit(bytes("first"))?
+func slowBody(out mut http.Out, emit func(out mut http.Out, b []byte) error?) error? {
+    emit(mut out, bytes("first"))?
     os.Sleep(300)
-    emit(bytes("second"))?
+    emit(mut out, bytes("second"))?
     return nil
 }
 
@@ -196,19 +196,19 @@ func sse(r http.Request) http.Response {
     n0 := num(http.Query(r, "n"))
     n := if n0 <= 0 { 2 } else { n0 }
     from := num(http.Header(r, "Last-Event-ID"))
-    return http.Response{status: 200, contentType: "text/event-stream", cache: http.NoStore{}, stream: (emit) => sseBody(from, n, emit)}
+    return http.Response{status: 200, contentType: "text/event-stream", cache: http.NoStore{}, stream: (out, emit) => sseBody(from, n, mut out, emit)}
 }
 
-func sseBody(from int, n int, emit func(b []byte) error?) error? {
+func sseBody(from int, n int, out mut http.Out, emit func(out mut http.Out, b []byte) error?) error? {
     mut i := from + 1
     while i <= from + n {
-        emit(bytes(http.FormatEvent(http.Event{event: "tick", data: "n=${i}\r\nsq=${i * i}", id: convert.FormatInt(i)})))?
+        emit(mut out, bytes(http.FormatEvent(http.Event{event: "tick", data: "n=${i}\r\nsq=${i * i}", id: convert.FormatInt(i)})))?
         if i == from + 1 {
             os.Sleep(300)
         }
         i += 1
     }
-    emit(bytes(http.FormatEvent(http.Event{event: "end", data: "", retry: 100})))?
+    emit(mut out, bytes(http.FormatEvent(http.Event{event: "end", data: "", retry: 100})))?
     return nil
 }
 

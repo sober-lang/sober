@@ -67,7 +67,7 @@ func foldConsts(cx Cx, fs Funcs) Consts {
 func isDictC(cx Cx, f int, c int, fuel int) bool {
     t := cx.trees[f]
     e := unparen(t, t.nodes[c].b)
-    if expandLit(t, e) || (t.nodes[c].f & 1) != 0 {
+    if expandLit(t, e) || (t.nodes[c].f & 1) != 0 || floatExpr(cx, f, e, fuel) {
         return true
     }
     cf, cn := constRef(cx, f, e)
@@ -85,6 +85,28 @@ func expandLit(t ast.Tree, e int) bool {
         return x.a == lexer.Minus && t.nodes[unparen(t, x.b)].kind == ast.EFloat
     }
     return k == ast.EIdent && boolLit(t, e)
+}
+
+// 式 e が float の const 式か: float のリテラル・float の const の参照と、それらの `+` `-` `*` `/`・単項の `-`（int と交わらない —
+// 整数のリテラルを混ぜた式は畳まない側〔int の const 式〕で拒否する）。参照する点で式ごと組み立て、演算は実行時と同じ IEEE の丸め（language.md 37 節）
+func floatExpr(cx Cx, f int, e0 int, fuel int) bool {
+    t := cx.trees[f]
+    e := unparen(t, e0)
+    x := t.nodes[e]
+    switch x.kind {
+    case ast.EFloat:
+        return true
+    case ast.EUnary:
+        return x.a == lexer.Minus && floatExpr(cx, f, x.b, fuel)
+    case ast.EBinary:
+        op := x.a
+        arith := op == lexer.Plus || op == lexer.Minus || op == lexer.Star || op == lexer.Slash
+        return arith && floatExpr(cx, f, x.b, fuel) && floatExpr(cx, f, x.c, fuel)
+    case ast.EIdent | ast.ESelector:
+        cf, cn := constRef(cx, f, e)
+        return cf >= 0 && fuel > 0 && floatExpr(cx, cf, cx.trees[cf].nodes[cn].b, fuel - 1)
+    }
+    return false
 }
 
 // 識別子 e が true / false か
@@ -314,7 +336,7 @@ func dictElem(cx Cx, fs Funcs, f int, e0 int, fuel int, field bool) (int, int) {
         fi := lookupFunc(cx, fs, dep, Name(t, x.b))
         return if fi >= 0 && funcRefOk(cx, fs, fi) { 0 - 1 } else { e }, 0
     case ast.EUnary:
-        if expandLit(t, e) {
+        if expandLit(t, e) || floatExpr(cx, f, e, fuel) {
             return 0 - 1, 0
         }
         v, ok := foldExpr(cx, fs, f, e, fuel)
@@ -323,6 +345,9 @@ func dictElem(cx Cx, fs Funcs, f int, e0 int, fuel int, field bool) (int, int) {
         }
         return opBad(cx, f, e)
     case ast.EInt | ast.EBinary | ast.EInterp:
+        if k == ast.EBinary && floatExpr(cx, f, e, fuel) {
+            return 0 - 1, 0
+        }
         v, ok := foldExpr(cx, fs, f, e, fuel)
         if ok {
             return 0 - 1, 0

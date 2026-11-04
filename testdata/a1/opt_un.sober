@@ -1,0 +1,23 @@
+package main
+
+// union の variant の opt の欄（Add { a E?; b E? }）と switch の分解
+
+type E union {
+    Lit { n int }
+    Add { a E?; b E? }
+}
+
+func ev(e E?) int {
+    if e == nil {
+        return 0
+    }
+    return switch e {
+    case Lit{n}: n
+    case Add{a, b}: ev(a) + ev(b)
+    }
+}
+
+func main() {
+    e := Add{a: Lit{n: 3}, b: Add{a: Lit{n: 4}, b: nil}}
+    println(ev(e))
+}

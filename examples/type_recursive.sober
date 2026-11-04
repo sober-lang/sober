@@ -1,6 +1,6 @@
 package main
 
-// 負例（load が拒否 — diag.RecursiveType）: union の variant の欄が自分の型を []T で持つ（コアに再帰型が無い — 以前は build でコンパイラ自身が depth_limit で死んだ）
+// 再帰の型宣言（D — slice の要素の位置を通る再帰）: JSON の値の形の union。値は木で、構築は下から・分解は switch
 
 type Value union {
     Null {}
@@ -8,10 +8,21 @@ type Value union {
     Arr { xs []Value }
 }
 
-func main() {
-    v := Arr{xs: []Value{Num{n: 1}, Null{}}}
-    println(switch v {
-    case Arr{xs}: len(xs)
+func sum(v Value) int {
+    return switch v {
+    case Arr{xs}: {
+        mut s := 0
+        for x <- xs {
+            s += sum(x)
+        }
+        s
+    }
+    case Num{n}: n
     default: 0
-    })
+    }
+}
+
+func main() {
+    v := Arr{xs: []Value{Num{n: 1}, Null{}, Arr{xs: []Value{Num{n: 2}, Num{n: 3}}}}}
+    println(sum(v))
 }

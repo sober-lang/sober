@@ -1,0 +1,2 @@
+sober: load error at examples/float_neg_range.sober:6:13: a float literal must be finite — it rounds to Inf (the largest float is 1.7976931348623157e308)
+exit=1

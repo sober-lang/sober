@@ -1,0 +1,3 @@
+sober: type error at examples/narrow_path_neg.sober:13:24
+{"errors":[{"msg":"type error"}],"ok":false}
+exit=1

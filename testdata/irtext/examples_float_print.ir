@@ -29,7 +29,7 @@ global @str.21 [2] = {8601708606660288556, 35435399443553}
 global @str.22 [1] = {35899498962976}
 global @str.23 [5] = {7309940765259427104, 7599578576357124455, 6874858533597243508, 2323330133470241143, 2608}
 global @str.24 [3] = {7232620951369114994, 8674334734093152357, 8250}
-global @rt.psites [82] = {4503599828697095, 5348025379586311, 7599825444929793, 6755400531575041, 10977525182234881, 7318350585659649, 11540475236319489, 7881300555858177, 6473925840077057, 8444250727383297, 12666375378043137, 9007200697581825, 6755401085223169, 10977525735883009, 7881301042397441, 12103425693057281, 5910976222200065, 8444251096482049, 12666375747141889, 9007201066680577, 4785074922848772, 11258999806624257, 8725725016228355, 13510799687418369, 10977524897022467, 9851625191506435, 9851625208283651, 9851625241838083, 8725725368549891, 16044074863690241, 9851625376055811, 18858824798568961, 9851625543827971, 4222127502787076, 4222127687336452, 8162777797493249, 7881302904668673, 12947853307544068, 24206852375970308, 6755405464076801, 10977530114736641, 4503605667168769, 7881305740018177, 12103430390678017, 16888504994759169, 3659181106135553, 9007205730746881, 10696055607788033, 6755406118388225, 10977530769048065, 7881306075562497, 12103430726222337, 5910981255365121, 8444256163201537, 12666380813861377, 9851631080309249, 5348031905923585, 6755406823031297, 8725732012327425, 5629508090593796, 6755408316203524, 4222133710356996, 6755408836297217, 4222134180119041, 2814759313342977, 4222134465331713, 10977533906387457, 2814759598555649, 5629509617320449, 6755409524163076, 3940659773833729, 7881309682663937, 6192460527043073, 8162785548567041, 3659186105745921, 5910985919431169, 6755410866340353, 8725735703314945, 4222136260493825, 10977535701549569, 3940661317337601, 3940661367669249}
+global @rt.psites [83] = {4503599828697095, 5348025379586311, 7599825444929793, 6755400531575041, 10977525182234881, 7318350585659649, 11540475236319489, 7881300555858177, 6473925840077057, 8444250727383297, 12666375378043137, 9007200697581825, 6755401085223169, 10977525735883009, 7881301042397441, 12103425693057281, 5910976222200065, 8444251096482049, 12666375747141889, 9007201066680577, 4785074922848772, 11258999806624257, 8725725016228355, 13510799687418369, 10977524897022467, 9851625191506435, 9851625208283651, 9851625241838083, 8725725368549891, 16044074863690241, 9851625376055811, 18858824798568961, 9851625543827971, 4222127502787076, 4222127687336452, 8162777797493249, 7881302904668673, 12947853307544068, 24206852375970308, 6755405464076801, 10977530114736641, 4503605667168769, 7881305740018177, 12103430390678017, 16888504994759169, 3659181106135553, 9007205730746881, 10696055607788033, 6755406118388225, 10977530769048065, 7881306075562497, 12103430726222337, 5910981255365121, 8444256163201537, 12666380813861377, 9851631080309249, 5348031905923585, 6755406823031297, 10133106895880705, 5629508090593796, 6755408316203524, 4222133710356996, 6755399894041345, 4222125237863169, 2814750371087105, 4222125523075841, 10977524964131585, 2814750656299777, 5629500675064577, 6755400581907204, 3940650831577857, 7881300740408065, 6192451618341633, 8162776656642817, 3659177230598913, 5910977044284161, 6755401991193345, 8725726828167937, 4222127385346817, 10977526826402561, 3940652442190593, 3940652492522241, 4222127637005060}
 global @str.25 [1] = {9071397899755888}
 global @str.26 [3] = {8462017926321696361, 7953763900396085364, 25959}
 global @str.27 [4] = {8026013105759284339, 8391735665840385653, 7453001576142499616, 101}
@@ -42,6 +42,7 @@ global @str.33 [1] = {544497952}
 global @str.34 [3] = {8246195871170915430, 7305524086039670377, 114}
 global @str.35 [3] = {8533880815701226611, 8533880815702274661, 125779768734510}
 global @str.36 [5] = {7310589493174891635, 8028904589562572402, 7810982780818846817, 8299699176509563247, 1919246959}
+global @str.37 [4] = {7310589493174891635, 7451595014282505842, 7595155167007501929, 8243102923784877166}
 
 func @rt.flush() {
 b0:
@@ -4915,23 +4916,23 @@ b4:
   %69 = load.i64 %10[0]
   %70 = globaladdr @rt.meta
   store %70[2572], %3
-  call @std/internal/floatfmt.bnSetInt(%32, %69)
+  call @std/internal/bigint.SetInt(%32, %69)
   %71 = const 1
   %72 = globaladdr @rt.meta
   store %72[2572], %3
-  call @std/internal/floatfmt.bnSetInt(%52, %71)
+  call @std/internal/bigint.SetInt(%52, %71)
   %73 = load.i64 %14[0]
   %74 = globaladdr @rt.meta
   store %74[2572], %3
-  call @std/internal/floatfmt.bnShl(%52, %73)
+  call @std/internal/bigint.Shl(%52, %73)
   %75 = const 1
   %76 = globaladdr @rt.meta
   store %76[2572], %3
-  call @std/internal/floatfmt.bnSetInt(%62, %75)
+  call @std/internal/bigint.SetInt(%62, %75)
   %77 = load.i64 %14[0]
   %78 = globaladdr @rt.meta
   store %78[2572], %3
-  call @std/internal/floatfmt.bnShl(%62, %77)
+  call @std/internal/bigint.Shl(%62, %77)
   %79 = load.i64 %10[0]
   %80 = const 4503599627370496
   %81 = ne %79, %80
@@ -4940,15 +4941,15 @@ b5:
   %96 = load.i64 %10[0]
   %97 = globaladdr @rt.meta
   store %97[2572], %3
-  call @std/internal/floatfmt.bnSetInt(%32, %96)
+  call @std/internal/bigint.SetInt(%32, %96)
   %98 = const 1
   %99 = globaladdr @rt.meta
   store %99[2572], %3
-  call @std/internal/floatfmt.bnSetInt(%42, %98)
+  call @std/internal/bigint.SetInt(%42, %98)
   %100 = const 1
   %101 = globaladdr @rt.meta
   store %101[2572], %3
-  call @std/internal/floatfmt.bnSetInt(%62, %100)
+  call @std/internal/bigint.SetInt(%62, %100)
   %102 = const 1
   %103 = le %1, %102
   condbr %103, b10(%103), b9
@@ -4958,11 +4959,11 @@ b6:
   %84 = add %82, %83
   %85 = globaladdr @rt.meta
   store %85[2572], %3
-  call @std/internal/floatfmt.bnShl(%32, %84)
+  call @std/internal/bigint.Shl(%32, %84)
   %86 = const 2
   %87 = globaladdr @rt.meta
   store %87[2572], %3
-  call @std/internal/floatfmt.bnSetInt(%42, %86)
+  call @std/internal/bigint.SetInt(%42, %86)
   br b8
 b7:
   %88 = load.i64 %14[0]
@@ -4970,15 +4971,15 @@ b7:
   %90 = add %88, %89
   %91 = globaladdr @rt.meta
   store %91[2572], %3
-  call @std/internal/floatfmt.bnShl(%32, %90)
+  call @std/internal/bigint.Shl(%32, %90)
   %92 = const 4
   %93 = globaladdr @rt.meta
   store %93[2572], %3
-  call @std/internal/floatfmt.bnSetInt(%42, %92)
+  call @std/internal/bigint.SetInt(%42, %92)
   %94 = const 1
   %95 = globaladdr @rt.meta
   store %95[2572], %3
-  call @std/internal/floatfmt.bnShl(%52, %94)
+  call @std/internal/bigint.Shl(%52, %94)
   br b8
 b8:
   br b14
@@ -4993,33 +4994,33 @@ b11:
   %108 = const 1
   %109 = globaladdr @rt.meta
   store %109[2572], %3
-  call @std/internal/floatfmt.bnShl(%32, %108)
+  call @std/internal/bigint.Shl(%32, %108)
   %110 = const 1
   %111 = load.i64 %14[0]
   %112 = sub %110, %111
   %113 = globaladdr @rt.meta
   store %113[2572], %3
-  call @std/internal/floatfmt.bnShl(%42, %112)
+  call @std/internal/bigint.Shl(%42, %112)
   %114 = const 1
   %115 = globaladdr @rt.meta
   store %115[2572], %3
-  call @std/internal/floatfmt.bnSetInt(%52, %114)
+  call @std/internal/bigint.SetInt(%52, %114)
   br b13
 b12:
   %116 = const 2
   %117 = globaladdr @rt.meta
   store %117[2572], %3
-  call @std/internal/floatfmt.bnShl(%32, %116)
+  call @std/internal/bigint.Shl(%32, %116)
   %118 = const 2
   %119 = load.i64 %14[0]
   %120 = sub %118, %119
   %121 = globaladdr @rt.meta
   store %121[2572], %3
-  call @std/internal/floatfmt.bnShl(%42, %120)
+  call @std/internal/bigint.Shl(%42, %120)
   %122 = const 2
   %123 = globaladdr @rt.meta
   store %123[2572], %3
-  call @std/internal/floatfmt.bnSetInt(%52, %122)
+  call @std/internal/bigint.SetInt(%52, %122)
   br b13
 b13:
   br b14
@@ -5135,7 +5136,7 @@ b33:
   %180 = const 0
   %181 = globaladdr @rt.meta
   store %181[2572], %3
-  call @std/internal/floatfmt.bnMulAdd(%42, %179, %180)
+  call @std/internal/bigint.MulAdd(%42, %179, %180)
   br b35
 b34:
   region.setdepth %173
@@ -5166,17 +5167,17 @@ b39:
   %200 = const 0
   %201 = globaladdr @rt.meta
   store %201[2572], %3
-  call @std/internal/floatfmt.bnMulAdd(%32, %199, %200)
+  call @std/internal/bigint.MulAdd(%32, %199, %200)
   %202 = const 10
   %203 = const 0
   %204 = globaladdr @rt.meta
   store %204[2572], %3
-  call @std/internal/floatfmt.bnMulAdd(%52, %202, %203)
+  call @std/internal/bigint.MulAdd(%52, %202, %203)
   %205 = const 10
   %206 = const 0
   %207 = globaladdr @rt.meta
   store %207[2572], %3
-  call @std/internal/floatfmt.bnMulAdd(%62, %205, %206)
+  call @std/internal/bigint.MulAdd(%62, %205, %206)
   br b41
 b40:
   region.setdepth %193
@@ -5225,21 +5226,21 @@ b44:
   %231 = add %3, %230
   %232 = globaladdr @rt.meta
   store %232[2572], %231
-  call @std/internal/floatfmt.bnSet(%217, %32)
+  call @std/internal/bigint.Set(%217, %32)
   %233 = lt %3, %3
   %234 = sub %3, %3
   %235 = mul %233, %234
   %236 = add %3, %235
   %237 = globaladdr @rt.meta
   store %237[2572], %236
-  call @std/internal/floatfmt.bnAdd(%217, %52)
+  call @std/internal/bigint.Add(%217, %52)
   %238 = lt %3, %3
   %239 = sub %3, %3
   %240 = mul %238, %239
   %241 = add %3, %240
   %242 = globaladdr @rt.meta
   store %242[2572], %241
-  %243 = call @std/internal/floatfmt.bnCmp(%217, %42)
+  %243 = call @std/internal/bigint.Cmp(%217, %42)
   %244 = const 0
   %245 = gt %243, %244
   condbr %245, b47(%245), b46
@@ -5265,7 +5266,7 @@ b50:
   %251 = const 0
   %252 = globaladdr @rt.meta
   store %252[2572], %3
-  call @std/internal/floatfmt.bnMulAdd(%42, %250, %251)
+  call @std/internal/bigint.MulAdd(%42, %250, %251)
   %253 = const 1
   %254 = load.i64 %163[0]
   %255 = add %254, %253
@@ -5276,14 +5277,14 @@ b51:
   %257 = const 0
   %258 = globaladdr @rt.meta
   store %258[2572], %3
-  call @std/internal/floatfmt.bnMulAdd(%217, %256, %257)
+  call @std/internal/bigint.MulAdd(%217, %256, %257)
   %259 = lt %3, %3
   %260 = sub %3, %3
   %261 = mul %259, %260
   %262 = add %3, %261
   %263 = globaladdr @rt.meta
   store %263[2572], %262
-  %264 = call @std/internal/floatfmt.bnCmp(%217, %42)
+  %264 = call @std/internal/bigint.Cmp(%217, %42)
   %265 = const 0
   %266 = lt %264, %265
   condbr %266, b53(%266), b52
@@ -5304,17 +5305,17 @@ b56:
   %274 = const 0
   %275 = globaladdr @rt.meta
   store %275[2572], %3
-  call @std/internal/floatfmt.bnMulAdd(%32, %273, %274)
+  call @std/internal/bigint.MulAdd(%32, %273, %274)
   %276 = const 10
   %277 = const 0
   %278 = globaladdr @rt.meta
   store %278[2572], %3
-  call @std/internal/floatfmt.bnMulAdd(%52, %276, %277)
+  call @std/internal/bigint.MulAdd(%52, %276, %277)
   %279 = const 10
   %280 = const 0
   %281 = globaladdr @rt.meta
   store %281[2572], %3
-  call @std/internal/floatfmt.bnMulAdd(%62, %279, %280)
+  call @std/internal/bigint.MulAdd(%62, %279, %280)
   %282 = const 1
   %283 = load.i64 %163[0]
   %284 = sub %283, %282
@@ -5341,17 +5342,17 @@ b61:
   %294 = const 0
   %295 = globaladdr @rt.meta
   store %295[2572], %3
-  call @std/internal/floatfmt.bnMulAdd(%32, %293, %294)
+  call @std/internal/bigint.MulAdd(%32, %293, %294)
   %296 = const 10
   %297 = const 0
   %298 = globaladdr @rt.meta
   store %298[2572], %3
-  call @std/internal/floatfmt.bnMulAdd(%52, %296, %297)
+  call @std/internal/bigint.MulAdd(%52, %296, %297)
   %299 = const 10
   %300 = const 0
   %301 = globaladdr @rt.meta
   store %301[2572], %3
-  call @std/internal/floatfmt.bnMulAdd(%62, %299, %300)
+  call @std/internal/bigint.MulAdd(%62, %299, %300)
   %302 = const 0
   %303 = slotaddr s11
   store %303[0], %302
@@ -5370,7 +5371,7 @@ b63:
   %308 = add %3, %307
   %309 = globaladdr @rt.meta
   store %309[2572], %308
-  %310 = call @std/internal/floatfmt.bnCmp(%32, %42)
+  %310 = call @std/internal/bigint.Cmp(%32, %42)
   %311 = const 0
   %312 = ge %310, %311
   condbr %312, b64, b65
@@ -5383,7 +5384,7 @@ b64:
   %317 = add %3, %316
   %318 = globaladdr @rt.meta
   store %318[2572], %317
-  call @std/internal/floatfmt.bnSub(%32, %42)
+  call @std/internal/bigint.Sub(%32, %42)
   %319 = const 1
   %320 = load.i64 %303[0]
   %321 = add %320, %319
@@ -5397,7 +5398,7 @@ b65:
   %325 = add %3, %324
   %326 = globaladdr @rt.meta
   store %326[2572], %325
-  %327 = call @std/internal/floatfmt.bnCmp(%32, %62)
+  %327 = call @std/internal/bigint.Cmp(%32, %62)
   %328 = const 0
   %329 = lt %327, %328
   condbr %329, b67(%329), b66
@@ -5412,21 +5413,21 @@ b67(%330 i64):
   %337 = add %3, %336
   %338 = globaladdr @rt.meta
   store %338[2572], %337
-  call @std/internal/floatfmt.bnSet(%217, %32)
+  call @std/internal/bigint.Set(%217, %32)
   %339 = lt %3, %3
   %340 = sub %3, %3
   %341 = mul %339, %340
   %342 = add %3, %341
   %343 = globaladdr @rt.meta
   store %343[2572], %342
-  call @std/internal/floatfmt.bnAdd(%217, %52)
+  call @std/internal/bigint.Add(%217, %52)
   %344 = lt %3, %3
   %345 = sub %3, %3
   %346 = mul %344, %345
   %347 = add %3, %346
   %348 = globaladdr @rt.meta
   store %348[2572], %347
-  %349 = call @std/internal/floatfmt.bnCmp(%217, %42)
+  %349 = call @std/internal/bigint.Cmp(%217, %42)
   %350 = const 0
   %351 = gt %349, %350
   condbr %351, b71(%351), b70
@@ -5596,19 +5597,19 @@ b91:
   %472 = add %3, %471
   %473 = globaladdr @rt.meta
   store %473[2572], %472
-  call @std/internal/floatfmt.bnSet(%217, %32)
+  call @std/internal/bigint.Set(%217, %32)
   %474 = const 2
   %475 = const 0
   %476 = globaladdr @rt.meta
   store %476[2572], %3
-  call @std/internal/floatfmt.bnMulAdd(%217, %474, %475)
+  call @std/internal/bigint.MulAdd(%217, %474, %475)
   %477 = lt %3, %3
   %478 = sub %3, %3
   %479 = mul %477, %478
   %480 = add %3, %479
   %481 = globaladdr @rt.meta
   store %481[2572], %480
-  %482 = call @std/internal/floatfmt.bnCmp(%217, %42)
+  %482 = call @std/internal/bigint.Cmp(%217, %42)
   %483 = slotaddr s12
   %484 = load.i64 %0[0]
   store %483[0], %484
@@ -6932,7 +6933,7 @@ b17:
   %59 = load.i64 %58[0]
   %60 = globaladdr @rt.meta
   store %60[2572], %3
-  call @std/internal/floatfmt.bnMulAdd(%34, %50, %59)
+  call @std/internal/bigint.MulAdd(%34, %50, %59)
   br b15
 b18:
   %77 = region.depth
@@ -6973,7 +6974,7 @@ b23:
   %89 = const 0
   %90 = globaladdr @rt.meta
   store %90[2572], %3
-  call @std/internal/floatfmt.bnMulAdd(%34, %88, %89)
+  call @std/internal/bigint.MulAdd(%34, %88, %89)
   br b25
 b24:
   region.setdepth %82
@@ -7004,7 +7005,7 @@ b29:
   %108 = const 0
   %109 = globaladdr @rt.meta
   store %109[2572], %3
-  call @std/internal/floatfmt.bnMulAdd(%71, %107, %108)
+  call @std/internal/bigint.MulAdd(%71, %107, %108)
   br b31
 b30:
   region.setdepth %101
@@ -7020,10 +7021,10 @@ b32:
   %113 = const 52
   %114 = globaladdr @rt.meta
   store %114[2572], %3
-  %115 = call @std/internal/floatfmt.bnBitLen(%34)
+  %115 = call @std/internal/bigint.BitLen(%34)
   %116 = globaladdr @rt.meta
   store %116[2572], %3
-  %117 = call @std/internal/floatfmt.bnBitLen(%71)
+  %117 = call @std/internal/bigint.BitLen(%71)
   %118 = sub %115, %117
   %119 = sub %113, %118
   %120 = slotaddr s3
@@ -7170,14 +7171,14 @@ b44:
   %208 = const 0
   %209 = globaladdr @rt.meta
   store %209[2572], %3
-  call @std/internal/floatfmt.bnMulAdd(%129, %207, %208)
+  call @std/internal/bigint.MulAdd(%129, %207, %208)
   %210 = lt %3, %3
   %211 = sub %3, %3
   %212 = mul %210, %211
   %213 = add %3, %212
   %214 = globaladdr @rt.meta
   store %214[2572], %213
-  %215 = call @std/internal/floatfmt.bnCmp(%129, %139)
+  %215 = call @std/internal/bigint.Cmp(%129, %139)
   %216 = const 0
   %217 = gt %215, %216
   condbr %217, b46(%217), b45
@@ -7298,28 +7299,28 @@ b0:
   %15 = add %11, %14
   %16 = globaladdr @rt.meta
   store %16[2572], %15
-  call @std/internal/floatfmt.bnSet(%3, %0)
+  call @std/internal/bigint.Set(%3, %0)
   %17 = lt %11, %11
   %18 = sub %11, %11
   %19 = mul %17, %18
   %20 = add %11, %19
   %21 = globaladdr @rt.meta
   store %21[2572], %20
-  call @std/internal/floatfmt.bnSet(%4, %1)
+  call @std/internal/bigint.Set(%4, %1)
   %22 = const 0
   %23 = ge %2, %22
   condbr %23, b1, b2
 b1:
   %24 = globaladdr @rt.meta
   store %24[2572], %11
-  call @std/internal/floatfmt.bnShl(%3, %2)
+  call @std/internal/bigint.Shl(%3, %2)
   br b3
 b2:
   %25 = const 0
   %26 = sub %25, %2
   %27 = globaladdr @rt.meta
   store %27[2572], %11
-  call @std/internal/floatfmt.bnShl(%4, %26)
+  call @std/internal/bigint.Shl(%4, %26)
   br b3
 b3:
   %28 = const 0
@@ -7361,18 +7362,18 @@ b5:
   %50 = add %11, %49
   %51 = globaladdr @rt.meta
   store %51[2572], %50
-  call @std/internal/floatfmt.bnSet(%36, %4)
+  call @std/internal/bigint.Set(%36, %4)
   %52 = load.i64 %41[0]
   %53 = globaladdr @rt.meta
   store %53[2572], %5
-  call @std/internal/floatfmt.bnShl(%36, %52)
+  call @std/internal/bigint.Shl(%36, %52)
   %54 = lt %11, %5
   %55 = sub %11, %5
   %56 = mul %54, %55
   %57 = add %5, %56
   %58 = globaladdr @rt.meta
   store %58[2572], %57
-  %59 = call @std/internal/floatfmt.bnCmp(%3, %36)
+  %59 = call @std/internal/bigint.Cmp(%3, %36)
   %60 = const 0
   %61 = ge %59, %60
   condbr %61, b7, b8
@@ -7388,7 +7389,7 @@ b7:
   %65 = add %5, %64
   %66 = globaladdr @rt.meta
   store %66[2572], %65
-  call @std/internal/floatfmt.bnSub(%3, %36)
+  call @std/internal/bigint.Sub(%3, %36)
   %67 = load.i64 %29[0]
   %68 = const 1
   %69 = load.i64 %41[0]
@@ -7481,7 +7482,7 @@ b8:
   br b6(%22)
 }
 
-func @std/internal/floatfmt.bnSetInt(%0 ptr, %1 i64) {
+func @std/internal/bigint.SetInt(%0 ptr, %1 i64) {
   slot s0 [3]
   slot s1 [3]
   slot s2 [1]
@@ -7642,7 +7643,7 @@ b9:
   br b7(%85, %84)
 }
 
-func @std/internal/floatfmt.bnSet(%0 ptr, %1 ptr) {
+func @std/internal/bigint.Set(%0 ptr, %1 ptr) {
   slot s0 [3]
   slot s1 [3]
   slot s2 [3]
@@ -7854,7 +7855,7 @@ b20:
   br b18(%108, %107)
 }
 
-func @std/internal/floatfmt.bnMulAdd(%0 ptr, %1 i64, %2 i64) {
+func @std/internal/bigint.MulAdd(%0 ptr, %1 i64, %2 i64) {
   slot s0 [1]
   slot s1 [1]
   slot s2 [1]
@@ -8011,7 +8012,7 @@ b16:
   br b14(%75, %74)
 }
 
-func @std/internal/floatfmt.bnAdd(%0 ptr, %1 ptr) {
+func @std/internal/bigint.Add(%0 ptr, %1 ptr) {
   slot s0 [3]
   slot s1 [3]
   slot s2 [1]
@@ -8242,7 +8243,7 @@ b27:
   ret
 }
 
-func @std/internal/floatfmt.bnShl(%0 ptr, %1 i64) {
+func @std/internal/bigint.Shl(%0 ptr, %1 i64) {
   slot s0 [1]
   slot s1 [1]
   slot s2 [1]
@@ -8698,7 +8699,7 @@ b53:
   ret
 }
 
-func @std/internal/floatfmt.bnTop(%0 ptr) i64 {
+func @std/internal/bigint.Top(%0 ptr) i64 {
   slot s0 [1]
 b0:
   %1 = region.depth
@@ -8757,7 +8758,7 @@ b7:
   br b5(%28)
 }
 
-func @std/internal/floatfmt.bnBitLen(%0 ptr) i64 {
+func @std/internal/bigint.BitLen(%0 ptr) i64 {
 b0:
   %1 = region.depth
   %2 = globaladdr @rt.meta
@@ -8768,7 +8769,7 @@ b0:
   %7 = add %3, %6
   %8 = globaladdr @rt.meta
   store %8[2572], %7
-  %9 = call @std/internal/floatfmt.bnTop(%0)
+  %9 = call @std/internal/bigint.Top(%0)
   %10 = const 0
   %11 = lt %9, %10
   condbr %11, b1, b2
@@ -8795,13 +8796,13 @@ b5:
   %21 = mul %9, %20
   %22 = gep.word %19, %21
   %23 = load.i64 %22[0]
-  %24 = call @std/internal/floatfmt.bitLen(%23)
+  %24 = call @std/internal/bigint.bitLen(%23)
   %25 = add %14, %24
   region.setdepth %1
   ret %25
 }
 
-func @std/internal/floatfmt.bnCmp(%0 ptr, %1 ptr) i64 {
+func @std/internal/bigint.Cmp(%0 ptr, %1 ptr) i64 {
   slot s0 [1]
 b0:
   %2 = region.depth
@@ -8813,10 +8814,10 @@ b0:
   %8 = add %4, %7
   %9 = globaladdr @rt.meta
   store %9[2572], %8
-  %10 = call @std/internal/floatfmt.bnTop(%0)
+  %10 = call @std/internal/bigint.Top(%0)
   %11 = globaladdr @rt.meta
   store %11[2572], %8
-  %12 = call @std/internal/floatfmt.bnTop(%1)
+  %12 = call @std/internal/bigint.Top(%1)
   %13 = ne %10, %12
   condbr %13, b1, b2
 b1:
@@ -8940,7 +8941,7 @@ b23:
   br b7
 }
 
-func @std/internal/floatfmt.bnSub(%0 ptr, %1 ptr) {
+func @std/internal/bigint.Sub(%0 ptr, %1 ptr) {
   slot s0 [1]
   slot s1 [1]
   slot s2 [1]
@@ -9075,6 +9076,64 @@ b20:
   br b6
 }
 
+func @std/internal/bigint.bitLen(%0 i64) i64 {
+  slot s0 [1]
+  slot s1 [1]
+b0:
+  %1 = region.depth
+  region.enter
+  %2 = slotaddr s0
+  store %2[0], %0
+  %3 = const 0
+  %4 = slotaddr s1
+  store %4[0], %3
+  %5 = region.depth
+  br b1
+b1:
+  region.setdepth %5
+  %6 = load.i64 %2[0]
+  %7 = const 0
+  %8 = gt %6, %7
+  condbr %8, b2, b3
+b2:
+  region.enter
+  %9 = region.depth
+  %10 = const 1
+  %11 = add %1, %10
+  %12 = load.i64 %2[0]
+  %13 = const 1
+  %15 = const 0
+  %16 = lt %13, %15
+  condbr %16, b4, b5
+b3:
+  region.setdepth %5
+  %26 = load.i64 %4[0]
+  region.setdepth %1
+  ret %26
+b4:
+  %17 = const 82
+  call @rt.panic(%17)
+  exit 101
+b5:
+  %18 = const 63
+  %19 = gt %13, %18
+  condbr %19, b7, b8
+b6(%14 i64):
+  store %2[0], %14
+  %23 = const 1
+  %24 = load.i64 %4[0]
+  %25 = add %24, %23
+  store %4[0], %25
+  br b1
+b7:
+  %20 = const 63
+  %21 = sar %12, %20
+  br b6(%21)
+b8:
+  %22 = sar %12, %13
+  br b6(%22)
+}
+
 func @rt.err_relocate(%0 ptr, %1 i64) {
 b0:
   %2 = const 1
@@ -9096,6 +9155,7 @@ func @rt.panic(%0 i64) {
   slot s9 [3]
   slot s10 [3]
   slot s11 [3]
+  slot s12 [3]
 b0:
   %1 = globaladdr @rt.meta
   %2 = globaladdr @rt.psites
@@ -9247,14 +9307,14 @@ b14:
 b15:
   br b1
 b16:
-  %100 = const 58
-  call @rt.print_char(%100)
+  %107 = const 58
+  call @rt.print_char(%107)
   call @rt.print_int(%14)
-  %101 = const 58
-  call @rt.print_char(%101)
+  %108 = const 58
+  call @rt.print_char(%108)
   call @rt.print_int(%18)
-  %102 = const 10
-  call @rt.print_char(%102)
+  %109 = const 10
+  call @rt.print_char(%109)
   call @rt.flush()
   exit 101
 b17:
@@ -9299,6 +9359,21 @@ b21:
   call @rt.print_str(%98)
   br b16
 b22:
+  %100 = const 3
+  %101 = eq %10, %100
+  condbr %101, b23, b24
+b23:
+  %102 = globaladdr @str.37
+  %103 = const 32
+  %104 = const 0
+  %105 = slotaddr s12
+  %106 = ptoi %102
+  store %105[0], %106
+  store %105[1], %103
+  store %105[2], %104
+  call @rt.print_str(%105)
+  br b16
+b24:
   br b16
 }
 
