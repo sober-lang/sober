@@ -67,3 +67,12 @@ func Rand(n int) []byte
 ```
 
 OS の暗号論的な乱数 n バイト（getrandom — 呼ぶのはこの 1 か所だけ。flags 0 = 初期化前は待つ）。EINTR はやり直す。失敗は panic(NoEntropy{errno})
+
+## RandIntn
+
+```sober
+@effects(io, panic)
+func RandIntn(n int) int
+```
+
+[0, n) の暗号論的な乱数（OS の乱数 8 バイトの下位 62 bit — 偏りなし: n の倍数に収まる範囲の値だけ使う棄却法。std/rand.Intn と同じ契約）。n が 1 未満なら panic(rand.NonPositiveBound{n})・乱数が取れなければ panic(NoEntropy{errno})

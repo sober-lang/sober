@@ -1,0 +1,268 @@
+package session
+
+// 世代つきのセッショントークン（HMAC-SHA256 で署名した claims — サーバ側にセッションの表を持たない）。
+// トークンは発行した時点の世代（gen）を刻む。認証の根（パスワードのハッシュ等）の隣に世代番号を置き、根を替えるとき（パスワードの変更・全端末のログアウト）に
+// 世代を 1 つ進めれば、それより前に発行したトークンは全部 Stale になる — 消し忘れの規律でなく構造で切れる。
+// 照合は二段: Open が形・タグ・期限を見て Unchecked を返し、呼び手は Subject で根の行を引いて、今の世代を Check に渡す。Claims は Check だけが作るので、
+// 今の世代を引かない限り Claims は手に入らない。世代を使わないアプリは gen を常に 0 で回す
+//
+//     k := session.KeyFrom(cfgSecret)                        // 32 バイト以上の秘密（設定由来）— 起動ごとに作るなら session.KeyNew()
+//     t := session.Mint(k, user.id, user.gen, time.Now(), 86400)
+//     // session.Seal(t) を __Host- の cookie の値に書く
+//
+//     u := session.Open(k, raw, time.Now())?                 // raw = cookie の値
+//     user := users[session.Subject(u)]                      // 根の行を引く（無ければ再ログインへ）
+//     c := session.Check(u, user.gen)?
+//     who, _ := session.Who(c)                               // 認可に使える subject（ゼロ値の Claims では false）
+//
+// Key・Token・Unchecked・Claims は封の型（外で composite に書けない）。Token と Key に ==・印字の口は無い — 外へ出す口は Seal だけ（grep で数えられる名前）。
+// タグの比較は定数時間（crypto.Equal）で、claims の欄はタグが合ってから読む
+//
+// 脅威モデル — 備えているもの（攻撃 → 備え）:
+// - トークンの偽造・改竄（subject・世代・期限の書き換え）→ HMAC-SHA256 のタグ。鍵を知らなければ作れず、1 bit の書き換えも Bad
+// - タグの比較の時間から正しいタグを探る → 定数時間の比較（crypto.Equal）。claims の欄はタグが合うまで読まない
+// - 盗まれたトークンを長く使い続ける → 期限（ttlSec は必須 — 無期限のトークンは書けない）
+// - パスワードを変えた後も、変える前のトークンで入り続ける（盗んだ側の居座り）→ 世代。パスワードの変更で世代を進めれば、それまでのトークンは全部 Stale。
+//   今の世代を Check に渡さないと Claims は手に入らないので、世代の照合を忘れる書き方が無い
+// - 乗っ取った側がパスワードを変えて本人を締め出す → 世代が進んで乗っ取った側の他のトークンも本人の端末も切れる（黙って並び立てない — 乗っ取りが表に出る）
+// - 短い秘密から鍵を総当たり → KeyFrom は 32 バイト未満を panic(WeakSecret)・HKDF で session の用途の鍵に分ける
+// - ゼロ値の Claims（外の package でも書ける）を検証済みとして渡す → 中身は Check が入れたときだけある。Who と Of はゼロ値で false を返し、
+//   欄を直に読んでも nil の絞りを通らないと中身に届かない
+// - トークンや鍵がログ・印字に漏れる → Token と Key に印字の口が無い。Seal の結果は認証の源（その値を載せた応答は共有キャッシュに置けない）
+// - cookie の盗み読み（スクリプト・平文の経路）→ std/http/server の SetCookie の既定（Secure・HttpOnly・SameSite=Lax）と __Host- の名前で
+//
+// 守らないもの:
+// - 同じ世代の中で盗まれたトークン: 期限か世代の進みまで通る（持っている者を本人として扱う — 本人の操作と区別しない）。ttlSec を短くし、怪しければ世代を進める
+// - 端末ごとの失効（この端末だけログアウト）: logout で cookie を消しても、トークンそのものは期限まで有効。端末ごとに切るなら、失効させたトークンの
+//   Claims の id（Of）をアプリの表に持ち、Check の後で引く（表と掃除は std/session の外 — 期限を過ぎた id は表から捨ててよい）
+// - 鍵の漏れ: 鍵を知る者は任意のトークンを作れる。鍵を替える（KeyNew・別の secret）と発行済みのトークンは全部 Bad になる
+// - 同じトークンの再送: 期限の内なら何度でも通る
+
+import "std/base64"
+import "std/crypto"
+import "std/crypto/hkdf"
+import "std/crypto/hmac"
+import "std/hex"
+import "std/internal/bless"
+import "std/iter"
+import "std/time"
+
+// 照合の鍵（HMAC-SHA256 の 32 バイト）
+type Key struct {
+    k []byte @secret
+    seal keySeal
+}
+
+// Key の封（非公開 — 外で値を書けない）
+type keySeal struct {
+}
+
+// 発行したトークン（外へ出す口は Seal だけ）
+type Token struct {
+    s string
+    seal tokenSeal
+}
+
+// Token の封
+type tokenSeal struct {
+}
+
+// タグと期限は通ったが、世代はまだ見ていないトークン（Open の結果 — Subject で根の行を引いて Check へ渡す）
+type Unchecked struct {
+    subject string
+    gen int
+    id string
+    issued int
+    expires int
+    seal uncheckedSeal
+}
+
+// Unchecked の封
+type uncheckedSeal struct {
+}
+
+// Check を通ったトークン（作れるのは Check だけ — 受け取った関数は世代まで検証済みと読める）。
+// 中身は Who（subject）と Of（全欄）で読む — ゼロ値の Claims（外でも書ける）ではどちらも false で、検証済みの値として読める形が無い
+type Claims struct {
+    v Info?
+    seal claimsSeal
+}
+
+// Claims の中身（Of の結果 — ただの値で、検証の証人は Claims の側）。issued・expires は秒の精度（Mint の now の端数は切り捨て）
+type Info struct {
+    subject string
+    gen int
+    // トークンの識別子（nonce の 16 進 32 文字 — 公開の値・端末単位の失効の表の鍵用。同じ subject・同じ秒でも毎回違う）
+    id string
+    issued time.Time
+    expires time.Time
+}
+
+// Claims の封
+type claimsSeal struct {
+}
+
+// トークンの形が崩れている・タグが合わない（改竄・鍵違い・知らない版）
+type Bad error
+
+// 有効期限（発行時の ttlSec）を過ぎた
+type Expired error
+
+// トークンの世代が今の世代と違う（Check — 期限の切れたトークンは Open が先に Expired で落とす）— 根の世代が進んでいる（パスワードの変更・全端末のログアウトなど）ので、そのトークンでは入れない。再ログインが要る
+type Stale error
+
+// KeyFrom の secret が 32 バイトに満たない（短い秘密は発行済みのトークンから総当たりで鍵を割られる）
+type WeakSecret panic {
+    n int
+}
+
+// Mint の ttlSec が 0 以下（発行した時点で切れているトークンは作らない）
+type BadTtl panic {
+    ttlSec int
+}
+
+const version = 1
+const keyLen = 32
+const tagLen = 32
+const nonceLen = 16
+// 版・gen・issued・expires・nonce の固定長の頭
+const headLen = 41
+
+// OS の乱数の新しい鍵（プロセスの寿命だけ使う鍵 — 再起動で発行済みのトークンは全部 Bad になる）
+@effects(io, panic)
+func KeyNew() Key {
+    return Key{k: crypto.Rand(keyLen), seal: keySeal{}}
+}
+
+// 設定由来の secret（32 バイト以上）から HKDF-SHA256 で導いた鍵（同じ secret から同じ鍵 — 再起動をまたいでトークンが通る）。
+// session の用途の salt と info で分けるので、同じ secret を他の用途の鍵にしても衝突しない。32 バイト未満は panic(WeakSecret{n})
+@secret(secret)
+@effects(panic)
+func KeyFrom(secret []byte) Key {
+    if len(secret) < keyLen {
+        return panic(WeakSecret{n: len(secret)})
+    }
+    prk := crypto.hkdf.Extract(bytes("std/session v1"), secret)
+    k, _ := crypto.hkdf.Expand(prk, bytes("hmac-sha256"), keyLen)
+    return Key{k: k, seal: keySeal{}}
+}
+
+// subject・世代 gen のトークン（now から ttlSec 秒有効 — 上限は無い・int の上限で飽和）。nonce は OS の乱数 16 バイトで、同じ秒・同じ subject でも毎回違うトークンになる。
+// ttlSec が 0 以下なら panic(BadTtl{ttlSec})
+@effects(io, panic)
+func Mint(k Key, subject string, gen int, now time.Time, ttlSec int) Token {
+    if ttlSec <= 0 {
+        return panic(BadTtl{ttlSec: ttlSec})
+    }
+    iss := time.UnixSec(now)
+    exp := if ttlSec > maxInt - iss { maxInt } else { iss + ttlSec }
+    mut b := mut []byte{}
+    b = append(b, byte(version))
+    for x <- iter.Slice([]int{gen, iss, exp}) {
+        for i <- iter.Range(0, 8) {
+            b = append(b, byte((x >> (56 - 8 * i)) & 0xff))
+        }
+    }
+    nonce := crypto.Rand(nonceLen)
+    for i <- iter.Range(0, nonceLen) {
+        b = append(b, nonce[i])
+    }
+    sb := bytes(subject)
+    for i <- iter.Range(0, len(sb)) {
+        b = append(b, sb[i])
+    }
+    body := freeze(b)
+    // タグは外へ出すトークンの一部（HMAC の出力 — 公開してよい）
+    tag := internal.bless.Bytes(crypto.hmac.Sum256(k.k, body))
+    mut w := mut []byte{}
+    for i <- iter.Range(0, len(body)) {
+        w = append(w, body[i])
+    }
+    for i <- iter.Range(0, tagLen) {
+        w = append(w, tag[i])
+    }
+    return Token{s: base64.EncodeUrl(freeze(w)), seal: tokenSeal{}}
+}
+
+// t の文字列（base64url・詰めなし — cookie の値に引用なしで置ける）。トークンを外へ出す唯一の口で、結果は認証の源
+// （この値を載せた応答は共有キャッシュに置けない）
+@credential
+@effects()
+func Seal(t Token) string {
+    return t.s
+}
+
+// raw（Seal の文字列）を鍵 k で照合し、今の時刻 now で期限を見たもの（世代はまだ見ない — Subject で根の行を引いて Check へ）。
+// 形が崩れている・タグが合わない・知らない版は Bad、now の秒が期限以上なら Expired（根の行を引かずに落とせる）。
+// タグの比較は定数時間で、claims の欄はタグが合ってから読む
+@errors(Bad, Expired)
+@effects(!io, !block, !nondet)
+func Open(k Key, raw string, now time.Time) (Unchecked, error?) {
+    zero := Unchecked{subject: "", gen: 0, id: "", issued: 0, expires: 0, seal: uncheckedSeal{}}
+    w, de := base64.DecodeUrl(raw)
+    if de != nil || len(w) < headLen + tagLen {
+        return zero, Bad{}
+    }
+    n := len(w) - tagLen
+    body := w[0:n]
+    if !crypto.Equal(crypto.hmac.Sum256(k.k, body), w[n:len(w)]) {
+        return zero, Bad{}
+    }
+    if int(body[0]) != version {
+        return zero, Bad{}
+    }
+    exp := get64(body, 17)
+    if time.UnixSec(now) >= exp {
+        return zero, Expired{}
+    }
+    // タグが合った body は Mint が string から作ったもの（有効な UTF-8）
+    sub := bytesToString(body[headLen:n])
+    return Unchecked{subject: sub, gen: get64(body, 1), id: hex.Format(body[25:headLen]), issued: get64(body, 9), expires: exp, seal: uncheckedSeal{}}, nil
+}
+
+// u の subject — 根の行（今の世代）を引くための値。認可には使わない（世代を見ていない — 認可は Check の結果の Claims を Who で読む）
+@effects()
+func Subject(u Unchecked) string {
+    return u.subject
+}
+
+// u の世代が今の世代 currentGen と同じなら Claims、違えば Stale（根の世代が進んだ — 再ログインが要る）
+@errors(Stale)
+@effects()
+func Check(u Unchecked, currentGen int) (Claims, error?) {
+    if u.gen != currentGen {
+        return Claims{v: nil, seal: claimsSeal{}}, Stale{}
+    }
+    return Claims{v: Info{subject: u.subject, gen: u.gen, id: u.id, issued: time.Unix(u.issued, 0), expires: time.Unix(u.expires, 0)}, seal: claimsSeal{}}, nil
+}
+
+// c の subject（認可に使える値）と true。Check が作った Claims でなければ（ゼロ値）"" と false
+@effects()
+func Who(c Claims) (string, bool) {
+    v := c.v
+    if v == nil {
+        return "", false
+    }
+    return v.subject, true
+}
+
+// c の全欄（世代・id・発行と期限の時刻 — id は端末単位の失効の表の鍵）と true。Check が作った Claims でなければ（ゼロ値）ゼロ値の Info と false
+@effects()
+func Of(c Claims) (Info, bool) {
+    v := c.v
+    if v == nil {
+        return Info{subject: "", gen: 0, id: "", issued: time.Unix(0, 0), expires: time.Unix(0, 0)}, false
+    }
+    return v, true
+}
+
+const maxInt = 0x7fffffffffffffff
+
+// b[at:at+8] のビッグエンディアンの int
+func get64(b []byte, at int) int {
+    mut x := 0
+    for i <- iter.Range(0, 8) {
+        x = (x << 8) | int(b[at + i])
+    }
+    return x
+}

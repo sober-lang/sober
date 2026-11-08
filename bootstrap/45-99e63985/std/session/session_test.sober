@@ -1,0 +1,242 @@
+package session
+
+// 公開の口の網（white-box）: 往復・二段（Open → Subject → Check）・期限の境界と飽和・世代の不一致・改竄（全バイトの 1 bit 反転）・鍵違い・KeyFrom の決定性・読めない raw の形・知らない版
+
+import "std/base64"
+import "std/crypto"
+import "std/crypto/hmac"
+import "std/hex"
+import "std/internal/bless"
+import "std/iter"
+import "std/time"
+
+func kind(e error?) int {
+    return switch e {
+        case nil: 0
+        case Bad{}: 1
+        case Expired{}: 2
+        case Stale{}: 3
+    }
+}
+
+func key1() Key {
+    return KeyFrom(bytes("0123456789abcdef0123456789abcdef"))
+}
+
+func t0() time.Time {
+    return time.Unix(1700000000, 999999999)
+}
+
+// Open と Check を通した結果（どちらかの誤りの種類）
+func verify(k Key, raw string, now time.Time, gen int) (Claims, error?) {
+    u := Open(k, raw, now)?
+    return Check(u, gen)
+}
+
+func check(k Key, raw string, now time.Time, gen int) int {
+    _, e := verify(k, raw, now, gen)
+    return kind(e)
+}
+
+func TestRoundTrip() {
+    k := key1()
+    for sub <- iter.Slice([]string{"alice", "", "ユーザー 42", "a;b=c\"d"}) {
+        for gen <- iter.Slice([]int{0, 7, -1, 0x7fffffffffffffff, -0x7fffffffffffffff - 1}) {
+            raw := Seal(Mint(k, sub, gen, t0(), 3600))
+            cl, e := verify(k, raw, t0(), gen)
+            assert(e == nil, "${sub} ${gen}")
+            who, wok := Who(cl)
+            assert(wok && who == sub)
+            c, ok := Of(cl)
+            assert(ok && c.subject == sub && c.gen == gen)
+            assert(time.UnixSec(c.issued) == 1700000000 && time.Nano(c.issued) == 0)
+            assert(time.UnixSec(c.expires) == 1700003600)
+            w, _ := base64.DecodeUrl(raw)
+            assert(c.id == hex.Format(w[25:41]) && len(bytes(c.id)) == 32)
+        }
+    }
+}
+
+// cookie の値に引用なしで置ける字母だけ（base64url・詰めなし）
+func TestAlphabet() {
+    raw := Seal(Mint(key1(), "x", 1, t0(), 60))
+    b := bytes(raw)
+    for i <- iter.Range(0, len(b)) {
+        c := int(b[i])
+        assert((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_')
+    }
+}
+
+// nonce で同じ秒・同じ subject・同じ世代でも毎回違うトークン
+func TestNonce() {
+    k := key1()
+    a := Seal(Mint(k, "alice", 1, t0(), 60))
+    b := Seal(Mint(k, "alice", 1, t0(), 60))
+    assert(a != b)
+    assert(check(k, a, t0(), 1) == 0 && check(k, b, t0(), 1) == 0)
+    ca, _ := verify(k, a, t0(), 1)
+    cb, _ := verify(k, b, t0(), 1)
+    ia, _ := Of(ca)
+    ib, _ := Of(cb)
+    assert(ia.id != ib.id)
+}
+
+// 期限 = issued（秒）+ ttlSec。期限の秒の 1 ns 前まで通り、期限の秒ちょうどから Expired
+func TestExpiry() {
+    k := key1()
+    raw := Seal(Mint(k, "alice", 1, t0(), 60))
+    assert(check(k, raw, time.Unix(1700000059, 999999999), 1) == 0)
+    assert(check(k, raw, time.Unix(1700000060, 0), 1) == 2)
+    assert(check(k, raw, time.Unix(1800000000, 0), 1) == 2)
+    // 発行より前の時刻（時計の巻き戻り）は期限の内
+    assert(check(k, raw, time.Unix(1600000000, 0), 1) == 0)
+    // ttlSec 1 の最短
+    r1 := Seal(Mint(k, "alice", 1, t0(), 1))
+    assert(check(k, r1, time.Unix(1700000000, 999999999), 1) == 0)
+    assert(check(k, r1, time.Unix(1700000001, 0), 1) == 2)
+}
+
+// 上限の無い ttlSec は int の上限で飽和（巻き戻って過去の期限にならない）
+func TestTtlSaturates() {
+    k := key1()
+    raw := Seal(Mint(k, "alice", 1, t0(), 0x7fffffffffffffff))
+    cl, e := verify(k, raw, time.Unix(0x7ffffffffffffffe, 0), 1)
+    assert(e == nil)
+    c, _ := Of(cl)
+    assert(time.UnixSec(c.expires) == 0x7fffffffffffffff)
+}
+
+func TestStale() {
+    k := key1()
+    raw := Seal(Mint(k, "alice", 5, t0(), 60))
+    assert(check(k, raw, t0(), 6) == 3)
+    assert(check(k, raw, t0(), 4) == 3)
+    assert(check(k, raw, t0(), 0) == 3)
+    // 世代と期限の両方が外れたら Expired（期限は Open が根の行を引く前に見る）
+    assert(check(k, raw, time.Unix(1800000000, 0), 6) == 2)
+}
+
+// 二段: Subject は Open の後・世代を見る前に読める（根の行を引くため）。Check が世代を見て Claims を作る
+func TestTwoStep() {
+    k := key1()
+    raw := Seal(Mint(k, "alice", 5, t0(), 60))
+    u, e := Open(k, raw, t0())
+    assert(e == nil)
+    assert(Subject(u) == "alice")
+    cs, es := Check(u, 6)
+    assert(kind(es) == 3)
+    _, sok := Who(cs)
+    assert(!sok)
+    cl, ec := Check(u, 5)
+    c, ok := Of(cl)
+    assert(ec == nil && ok && c.subject == "alice" && c.gen == 5)
+    // 同じ Unchecked を何度 Check してもよい（世代の照合だけ — 副作用なし）
+    _, es2 := Check(u, 4)
+    assert(kind(es2) == 3)
+    // 改竄・期限切れは Open で落ちる（Subject に届かない）
+    _, eb := Open(k, "${raw}A", t0())
+    assert(kind(eb) == 1)
+    _, ee := Open(k, raw, time.Unix(1700000060, 0))
+    assert(kind(ee) == 2)
+}
+
+func TestWrongKey() {
+    raw := Seal(Mint(key1(), "alice", 1, t0(), 60))
+    assert(check(KeyNew(), raw, t0(), 1) == 1)
+    assert(check(KeyFrom(bytes("0123456789abcdef0123456789abcdeF")), raw, t0(), 1) == 1)
+}
+
+// 同じ secret から同じ鍵（別々に導いた Key で照合が通る）・secret の長さは 32 以上なら何でも
+func TestKeyFromDeterministic() {
+    raw := Seal(Mint(key1(), "alice", 1, t0(), 60))
+    assert(check(key1(), raw, t0(), 1) == 0)
+    same := crypto.Equal(key1().k, KeyFrom(bytes("0123456789abcdef0123456789abcdef")).k)
+    assert(same)
+    long := KeyFrom(bytes("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-long"))
+    assert(check(long, Seal(Mint(long, "a", 0, t0(), 9)), t0(), 0) == 0)
+    // 秘密を素の HMAC の鍵に使っていない（HKDF で用途に分けた鍵）
+    plain := crypto.Equal(key1().k, bytes("0123456789abcdef0123456789abcdef"))
+    assert(!plain)
+}
+
+// 復号した列の全バイトの各 bit を反転すると Bad（頭・nonce・subject・タグのどこでも）
+func TestTamper() {
+    k := key1()
+    raw := Seal(Mint(k, "alice", 1, t0(), 60))
+    w, e := base64.DecodeUrl(raw)
+    assert(e == nil)
+    for i <- iter.Range(0, len(w)) {
+        for bit <- iter.Range(0, 8) {
+            mut m := mut []byte{}
+            for j <- iter.Range(0, len(w)) {
+                m = append(m, if j == i { byte(int(w[j]) ^ (1 << bit)) } else { w[j] })
+            }
+            assert(check(k, base64.EncodeUrl(freeze(m)), t0(), 1) == 1, "byte ${i} bit ${bit}")
+        }
+    }
+    // 切り詰め・継ぎ足し
+    assert(check(k, base64.EncodeUrl(w[0:len(w) - 1]), t0(), 1) == 1)
+    mut x := mut []byte{}
+    for j <- iter.Range(0, len(w)) {
+        x = append(x, w[j])
+    }
+    x = append(x, byte(0))
+    assert(check(k, base64.EncodeUrl(freeze(x)), t0(), 1) == 1)
+}
+
+// 正しい鍵で封じても版が 1 でなければ Bad（形式替えの口）
+func TestUnknownVersion() {
+    k := key1()
+    w, _ := base64.DecodeUrl(Seal(Mint(k, "alice", 1, t0(), 60)))
+    n := len(w) - tagLen
+    for v <- iter.Slice([]int{0, 2, 255}) {
+        mut b := mut []byte{}
+        for j <- iter.Range(0, n) {
+            b = append(b, if j == 0 { byte(v) } else { w[j] })
+        }
+        body := freeze(b)
+        // 封じ直したタグは外へ出すトークンの一部（Mint と同じ祝福）
+        tag := internal.bless.Bytes(crypto.hmac.Sum256(k.k, body))
+        mut o := mut []byte{}
+        for j <- iter.Range(0, n) {
+            o = append(o, body[j])
+        }
+        for j <- iter.Range(0, tagLen) {
+            o = append(o, tag[j])
+        }
+        assert(check(k, base64.EncodeUrl(freeze(o)), t0(), 1) == 1, "version ${v}")
+    }
+}
+
+// 読めない raw の形は全部 Bad（空・字母の外・詰めの '='・標準の字母・長さ 4k + 1・頭とタグに足りない長さ）
+func TestMalformed() {
+    k := key1()
+    good := Seal(Mint(k, "alice", 1, t0(), 60))
+    short := base64.EncodeUrl(bytes("012345678901234567890123456789012345678901234567890123456789012345678901"))
+    for raw <- iter.Slice([]string{"", "A", "AA", "!!!!", "AQ==", " ${good}", "${good} ", "${good}=", "${good}A", "a.b.c", short}) {
+        assert(check(k, raw, t0(), 1) == 1, raw)
+    }
+    // '-' '_' を標準の字母の '+' '/' に書き換えた綴りも Bad
+    gb := bytes(good)
+    mut s := mut []byte{}
+    mut changed := false
+    for i <- iter.Range(0, len(gb)) {
+        c := int(gb[i])
+        if c == '-' || c == '_' {
+            changed = true
+        }
+        s = append(s, if c == '-' { byte('+') } else if c == '_' { byte('/') } else { gb[i] })
+    }
+    if changed {
+        assert(check(k, bytesToString(freeze(s)), t0(), 1) == 1)
+    }
+}
+
+// ゼロ値の Claims（外の package でも書ける）は検証済みとして読めない — Who も Of も false
+func TestZeroClaims() {
+    z := Claims{}
+    who, ok := Who(z)
+    assert(!ok && who == "")
+    i, iok := Of(z)
+    assert(!iok && i.subject == "" && i.id == "")
+}

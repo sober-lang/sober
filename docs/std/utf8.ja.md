@@ -4,7 +4,7 @@
 
 `import "std/utf8"`
 
-検査済みの UTF-8 のビュー（View — 全体を 1 回検査すれば、文字境界で切った部分列は検査し直さずに string にできる）。UTF-8 の妥当性の検査そのもの（Valid / IndexInvalid / InvalidUtf8）は std/strings、`string(b)` の裏方は std/internal/utf8
+検査済みの UTF-8 のビュー（View — 全体を 1 回検査すれば、文字境界で切った部分列は検査し直さずに string にできる）。UTF-8 の妥当性の検査そのもの（Valid / IndexInvalid / BadUtf8）は std/strings、`string(b)` の裏方は std/internal/utf8
 
 ## View
 
@@ -20,14 +20,14 @@ type View struct {
 ## Check
 
 ```sober
-@errors(strings.InvalidUtf8)
+@errors(strings.BadUtf8)
 @effects(block)
 func Check(b []byte) (View, error?)
 ```
 
-b 全体を検査して View にする（不正なら最初の不正なシーケンスの位置の InvalidUtf8 — string(b) と同じ位置）
+b 全体を検査して View にする（不正なら最初の不正なシーケンスの位置の BadUtf8 — string(b) と同じ位置）
 
-失敗のラベル: `strings.InvalidUtf8`
+失敗のラベル: `strings.BadUtf8`
 
 ## Bytes
 
@@ -41,14 +41,14 @@ View のバイト列（読むだけ）
 ## Str
 
 ```sober
-@errors(strings.InvalidUtf8)
+@errors(strings.BadUtf8)
 @effects()
 func Str(v View, s int, i int) (string, error?)
 ```
 
-v の [s, i) を検査し直さずに string にする。s と i が文字境界でなければ strings.InvalidUtf8{pos: 境界でない側}（範囲外の添字は slice と同じく panic）
+v の [s, i) を検査し直さずに string にする。s と i が文字境界でなければ strings.BadUtf8{pos: 境界でない側}（範囲外の添字は slice と同じく panic）
 
-失敗のラベル: `strings.InvalidUtf8`
+失敗のラベル: `strings.BadUtf8`
 
 ## CHECK_GRAIN
 

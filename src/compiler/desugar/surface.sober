@@ -455,7 +455,19 @@ const CONV_BYTE = -4 // `byte(n)`（language.md 33 節 — 下地の付け替え
 const CONV_FLOAT = -5 // `float(i)`（language.md 37 節 — int → float の値の変換・コアの tofloat。float(f) は恒等）
 
 // 呼び出しの callee が変換なら行き先（named scalar の型宣言 / CONV_INT / CONV_BOOL — でなければ CONV_NONE）
+// lower の口: 呼び出しの callee が名前付き関数型の名前（変換 `W(e)` — 局所の名前かは lower が先に見る）ならその宣言（でなければ -1）
+func FnConvDecl(st mut S, callee NodeRef, pk int) NodeRef {
+    k := kindN(mut st, callee)
+    name := if k == ast.EIdent { sA(nodeOf(mut st, callee)) } else if k == ast.ESelector { qualName(mut st, callee, -1, pk) } else { StrRef(-1) }
+    if name == -1 {
+        return -1
+    }
+    td := LookupTypeDecl(mut st, pk, name)
+    return if td != -1 && kindN(mut st, nC(nodeOf(mut st, td))) == ast.BFunc { td } else { NodeRef(-1) }
+}
+
 func convTarget(st mut S, callee NodeRef, eb int, pk int) int {
+    st.lastFnConv = -1
     mut name := StrRef(-1)
     k := kindN(mut st, callee)
     if k == ast.EIdent {
@@ -482,10 +494,23 @@ func convTarget(st mut S, callee NodeRef, eb int, pk int) int {
         return CONV_NONE
     }
     td := LookupTypeDecl(mut st, pk, name)
+    if td != -1 && kindN(mut st, nC(nodeOf(mut st, td))) == ast.BFunc {
+        // 名前付き関数型への変換 `W(e)` は値を変える変換でない — 呼び手が LastFnConv で読む（型の表の引きを 1 回に）
+        st.lastFnConv = td
+    }
     if td == -1 || kindN(mut st, nC(nodeOf(mut st, td))) != ast.BDefined {
         return CONV_NONE
     }
     return int(td)
+}
+
+// 直前の convTarget / ConvTarget が見た callee の名前付き関数型の宣言（変換 `W(e)` — でなければ -1）
+func LastFnConv(st mut S) NodeRef {
+    return st.lastFnConv
+}
+
+func ClearFnConv(st mut S) {
+    st.lastFnConv = -1
 }
 
 // 変換 cv（convTarget の結果）を、核の型 t・表層型 s の値に掛けられるか（下地が同じ — named ⇄ 下地・同じ下地の named どうし）

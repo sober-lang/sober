@@ -1,0 +1,140 @@
+package x509
+
+import "std/iter"
+
+// DER の読み（X.690 — 証明書の読みに要る範囲）: タグは 1 バイト（高タグ番号の形は拒否）・長さは短い形か最短の長い形（1〜4 バイト）・不定長は拒否
+
+// 要素 1 つ（tag = 識別子のバイト・b[at:cs) = 頭・b[cs:ce) = 中身）
+type El struct {
+    tag int
+    at int
+    cs int
+    ce int
+}
+
+// 読めない要素の印（ok = false のときの値）
+func noEl() El {
+    return El{tag: -1, at: 0, cs: 0, ce: 0}
+}
+
+// b[at:end) の先頭の要素
+func elAt(b []byte, at int, end int) (El, bool) {
+    if at + 2 > end {
+        return noEl(), false
+    }
+    tag := int(b[at])
+    if (tag & 0x1f) == 0x1f {
+        return noEl(), false
+    }
+    l0 := int(b[at + 1])
+    if l0 < 0x80 {
+        if at + 2 + l0 > end {
+            return noEl(), false
+        }
+        return El{tag: tag, at: at, cs: at + 2, ce: at + 2 + l0}, true
+    }
+    nb := l0 - 0x80
+    if nb == 0 || nb > 4 || at + 2 + nb > end || b[at + 2] == byte(0) {
+        return noEl(), false
+    }
+    mut l := 0
+    for i <- iter.Range(0, nb) {
+        l = (l << 8) | int(b[at + 2 + i])
+    }
+    if l < 0x80 {
+        return noEl(), false
+    }
+    cs := at + 2 + nb
+    if cs + l > end {
+        return noEl(), false
+    }
+    return El{tag: tag, at: at, cs: cs, ce: cs + l}, true
+}
+
+// e の直後から e の親の中身の終わり end までの次の要素（無ければ ok = false）
+func nextEl(b []byte, e El, end int) (El, bool) {
+    return elAt(b, e.ce, end)
+}
+
+// e の中身の最初の子
+func firstChild(b []byte, e El) (El, bool) {
+    return elAt(b, e.cs, e.ce)
+}
+
+// e の頭と中身（TLV まるごと）
+func whole(b []byte, e El) []byte {
+    return b[e.at:e.ce]
+}
+
+func content(b []byte, e El) []byte {
+    return b[e.cs:e.ce]
+}
+
+// 中身が OID のバイト列 o（定数は OID の中身の 16 進）と等しいか
+func oidIs(b []byte, e El, o string) bool {
+    want := hexBytes(o)
+    if e.tag != 0x06 || e.ce - e.cs != len(want) {
+        return false
+    }
+    for i <- iter.Range(0, len(want)) {
+        if b[e.cs + i] != want[i] {
+            return false
+        }
+    }
+    return true
+}
+
+// 16 進の定数（字は 0-9a-f の偶数個）
+func hexBytes(s string) []byte {
+    sb := bytes(s)
+    mut o := mut []byte{}
+    mut i := 0
+    while i + 1 < len(sb) {
+        o = append(o, byte(16 * hexv(int(sb[i])) + hexv(int(sb[i + 1]))))
+        i = i + 2
+    }
+    return freeze(o)
+}
+
+func hexv(c int) int {
+    return if c <= 57 { c - 48 } else { c - 87 }
+}
+
+// OID の中身の点区切り（最初の 2 弧は 40 × X + Y・各弧は 7 bit の基数 128 — 最短の符号化でなければ "?"）
+func oidText(o []byte) string {
+    if len(o) == 0 {
+        return "?"
+    }
+    mut parts := mut []string{}
+    mut v := 0
+    mut first := true
+    mut start := true
+    for i <- iter.Range(0, len(o)) {
+        c := int(o[i])
+        if start && c == 0x80 {
+            return "?"
+        }
+        v = (v << 7) | (c & 0x7f)
+        start = false
+        if (c & 0x80) == 0 {
+            if first {
+                a := if v < 80 { v / 40 } else { 2 }
+                parts = append(parts, "${a}")
+                parts = append(parts, "${v - 40 * a}")
+                first = false
+            } else {
+                parts = append(parts, "${v}")
+            }
+            v = 0
+            start = true
+        }
+    }
+    if !start {
+        return "?"
+    }
+    mut s := parts[0]
+    for i <- iter.Range(1, len(parts)) {
+        s = "${s}.${parts[i]}"
+    }
+    return s
+}

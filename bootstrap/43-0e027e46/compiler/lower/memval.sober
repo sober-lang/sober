@@ -1,0 +1,1631 @@
+package lower
+
+// メモリの上界の報告の値の層: 整数の値ごとの上界の式（−N(v) ≤ v ≤ U(v)）とループの反復数。
+// 式 = 単調な多項式: 係数 ≥ 0 の単項式の和（定数項だけは任意の符号）・変数 = 関数の仮引数 x ごとに正部 x⁺（変数 2i）と負部 x⁻（2i + 1）。
+// 変数が全部 ≥ 0 なので、変数に上界を代入すると結果の上界になる（呼び出し点の具体化の健全性）。max は係数ごとの max・次数は 2 まで（越えれば ⊤）。
+// 表現 = [単項式の鍵, 係数] の列（鍵の昇順）・⊤ = 長さ 1。鍵 0 = 定数・変数 v 1 つ = v + 1・2 つ（a ≤ b）= (a + 1) × MP_K + (b + 1)
+
+import "desugar"
+import "std/iter"
+
+const MP_K = 1 << 20
+
+func mpTop() []int {
+    return []int{-1}
+}
+
+func mpIsTop(p []int) bool {
+    return len(p) == 1
+}
+
+func mpConst(c int) []int {
+    return if c >= MR_INF || c <= 0 - MR_INF { mpTop() } else if c == 0 { []int{} } else { []int{0, c} }
+}
+
+func mpVar(v int) []int {
+    return []int{v + 1, 1}
+}
+
+func mpIsConst(p []int) bool {
+    return len(p) == 0 || (len(p) == 2 && p[0] == 0)
+}
+
+// 定数の値（定数でなければ使わない）
+func mpConstOf(p []int) int {
+    return if len(p) == 2 && p[0] == 0 { p[1] } else { 0 }
+}
+
+func mpIsZero(p []int) bool {
+    return len(p) == 0
+}
+
+func mpDeg(k int) int {
+    return if k == 0 { 0 } else if k < MP_K { 1 } else { 2 }
+}
+
+// 2 つの列の合併（係数の組み合わせ: op 0 = 和・1 = max）
+func mpMerge(a []int, b []int, op int) []int {
+    if mpIsTop(a) || mpIsTop(b) {
+        return mpTop()
+    }
+    mut o := mut []int{}
+    mut i := 0
+    mut j := 0
+    while i < len(a) || j < len(b) {
+        mut k := 0
+        mut ca := 0
+        mut cb := 0
+        if j >= len(b) || (i < len(a) && a[i] < b[j]) {
+            k = a[i]
+            ca = a[i + 1]
+            i += 2
+        } else if i >= len(a) || b[j] < a[i] {
+            k = b[j]
+            cb = b[j + 1]
+            j += 2
+        } else {
+            k = a[i]
+            ca = a[i + 1]
+            cb = b[j + 1]
+            i += 2
+            j += 2
+        }
+        c := if op == 0 { ca + cb } else if ca > cb { ca } else { cb }
+        if c >= MR_INF || c <= 0 - MR_INF {
+            return mpTop()
+        }
+        if c != 0 {
+            o = append(o, k)
+            o = append(o, c)
+        }
+    }
+    return freeze(o)
+}
+
+func mpAdd(a []int, b []int) []int {
+    return mpMerge(a, b, 0)
+}
+
+func mpMax(a []int, b []int) []int {
+    return mpMerge(a, b, 1)
+}
+
+// 定数項を 0 以上に（変数の項は既に ≥ 0 — 結果は max(p, 0) の上界）
+func mpPos(p []int) []int {
+    if mpIsTop(p) || len(p) == 0 || p[0] != 0 || p[1] > 0 {
+        return p
+    }
+    return p[2:len(p)]
+}
+
+func mpScale(p []int, k int) []int {
+    if mpIsTop(p) {
+        return p
+    }
+    if k == 0 {
+        return []int{}
+    }
+    mut o := mut []int{}
+    for q <- iter.Range(0, len(p) / 2) {
+        c := mrMul(if p[2 * q + 1] < 0 { 0 - p[2 * q + 1] } else { p[2 * q + 1] }, if k < 0 { 0 - k } else { k })
+        if c >= MR_INF {
+            return mpTop()
+        }
+        o = append(o, p[2 * q])
+        o = append(o, if (p[2 * q + 1] < 0) != (k < 0) { 0 - c } else { c })
+    }
+    return freeze(o)
+}
+
+// 単項式の積の鍵（次数 > 2 なら -1）
+func mpKeyMul(x int, y int) int {
+    if x == 0 {
+        return y
+    }
+    if y == 0 {
+        return x
+    }
+    if mpDeg(x) + mpDeg(y) > 2 {
+        return -1
+    }
+    a := x - 1
+    b := y - 1
+    return if a <= b { (a + 1) * MP_K + (b + 1) } else { (b + 1) * MP_K + (a + 1) }
+}
+
+// 項 (k, c) を 1 つ足す
+func mpTerm(p []int, k int, c int) []int {
+    return mpAdd(p, if c == 0 { []int{} } else { []int{k, c} })
+}
+
+// 積（被演算子の負の定数項は 0 に上げる — 非負の量の積の上界）
+func mpMul(a0 []int, b0 []int) []int {
+    if mpIsTop(a0) || mpIsTop(b0) {
+        return mpTop()
+    }
+    a := mpPos(a0)
+    b := mpPos(b0)
+    mut o := []int{}
+    for i <- iter.Range(0, len(a) / 2) {
+        for j <- iter.Range(0, len(b) / 2) {
+            k := mpKeyMul(a[2 * i], b[2 * j])
+            if k < 0 {
+                return mpTop()
+            }
+            c := mrMul(a[2 * i + 1], b[2 * j + 1])
+            if c >= MR_INF {
+                return mpTop()
+            }
+            o = mpTerm(o, k, c)
+            if mpIsTop(o) {
+                return o
+            }
+        }
+    }
+    return o
+}
+
+// 変数 [lo, hi) を sub[v − lo] に置き換える（他の変数はそのまま）
+func mpSubst(p []int, lo int, hi int, sub [][]int) []int {
+    if mpIsTop(p) {
+        return p
+    }
+    mut o := []int{}
+    for q <- iter.Range(0, len(p) / 2) {
+        k := p[2 * q]
+        c := p[2 * q + 1]
+        if k == 0 {
+            o = mpAdd(o, []int{0, c})
+            continue
+        }
+        a := if k >= MP_K { k / MP_K - 1 } else { -1 }
+        b := (if k >= MP_K { k % MP_K } else { k }) - 1
+        mut m := mpVarSub(b, lo, hi, sub)
+        if a >= 0 {
+            m = mpMul(mpVarSub(a, lo, hi, sub), m)
+        }
+        o = mpAdd(o, mpScale(m, c))
+        if mpIsTop(o) {
+            return o
+        }
+    }
+    return o
+}
+
+func mpVarSub(v int, lo int, hi int, sub [][]int) []int {
+    return if v >= lo && v < hi { sub[v - lo] } else { mpVar(v) }
+}
+
+// 変数 [lo, hi) を含むか
+func mpHas(p []int, lo int, hi int) bool {
+    if mpIsTop(p) {
+        return false
+    }
+    for q <- iter.Range(0, len(p) / 2) {
+        k := p[2 * q]
+        if k == 0 {
+            continue
+        }
+        a := if k >= MP_K { k / MP_K - 1 } else { -1 }
+        b := (if k >= MP_K { k % MP_K } else { k }) - 1
+        if (a >= lo && a < hi) || (b >= lo && b < hi) {
+            return true
+        }
+    }
+    return false
+}
+
+// 係数ごとに a ≤ b（変数 ≥ 0 で a ≤ b の十分条件）
+func mpLe(a []int, b []int) bool {
+    if mpIsTop(b) {
+        return true
+    }
+    if mpIsTop(a) {
+        return false
+    }
+    m := mpMax(a, b)
+    if len(m) != len(b) {
+        return false
+    }
+    for q <- iter.Range(0, len(b)) {
+        if m[q] != b[q] {
+            return false
+        }
+    }
+    return true
+}
+
+// a と b の小さい方の上界（係数ごとに比べられれば小さい方・比べられなければ a）
+func mpMinish(a []int, b []int) []int {
+    return if mpLe(b, a) && !mpIsTop(b) { b } else { a }
+}
+
+func mpEq(a []int, b []int) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for q <- iter.Range(0, len(a)) {
+        if a[q] != b[q] {
+            return false
+        }
+    }
+    return true
+}
+
+// p の中の単項式 v（次数 1）の係数と、それを除いた残り
+func mpCoefOf(p []int, v int) int {
+    for q <- iter.Range(0, len(p) / 2) {
+        if p[2 * q] == v + 1 {
+            return p[2 * q + 1]
+        }
+    }
+    return 0
+}
+
+func mpWithout(p []int, v int) []int {
+    mut o := mut []int{}
+    for q <- iter.Range(0, len(p) / 2) {
+        if p[2 * q] != v + 1 {
+            o = append(o, p[2 * q])
+            o = append(o, p[2 * q + 1])
+        }
+    }
+    return freeze(o)
+}
+
+// 定数による割り算の上界（定数なら切り捨て — 単調・でなければ max(p, 0)）
+func mpDiv(p []int, k int) []int {
+    if mpIsTop(p) {
+        return p
+    }
+    return if mpIsConst(p) { mpConst(mpConstOf(p) / k) } else { mpPos(p) }
+}
+
+// 対数の原子: 変数 v（仮引数の正部 / 負部）を k で割り続けて 0 になるまでの回数 — 変数 MP_LOG + v × 1024 + k（単調・語の幅で上限あり）
+const MP_LOG = 1 << 19
+
+const MP_WMAX = 9223372036854775807
+
+// c を k で割り続けて 0 になるまでの回数（c ≤ 0 なら 0）
+func mpSteps(c int, k int) int {
+    mut x := c
+    mut n := 0
+    while x > 0 {
+        x = x / k
+        n += 1
+    }
+    return n
+}
+
+// p（の正部）を k で割り続ける回数の上界: 定数なら回数・仮引数の変数 1 つ（変数の番号 < lim）なら原子・それ以外は語の幅の上限
+func mpLogOf(p []int, k int, lim int) []int {
+    if !mpIsTop(p) && mpIsConst(p) {
+        return mpConst(mpSteps(mpConstOf(p), k))
+    }
+    if !mpIsTop(p) && len(p) == 2 && p[0] >= 1 && p[0] - 1 < lim && p[1] == 1 && p[0] - 1 < MP_LOG / 1024 {
+        return mpVar(MP_LOG + (p[0] - 1) * 1024 + k)
+    }
+    return mpConst(mpSteps(MP_WMAX, k))
+}
+
+// 呼び出し点の具体化: 仮引数の変数 [0, len(sub)) を sub に・対数の原子は代入した式の対数の上界に
+func mpInst(p []int, sub [][]int, lim int) []int {
+    if mpIsTop(p) {
+        return p
+    }
+    mut o := []int{}
+    for q <- iter.Range(0, len(p) / 2) {
+        k := p[2 * q]
+        c := p[2 * q + 1]
+        if k == 0 {
+            o = mpAdd(o, []int{0, c})
+            continue
+        }
+        a := if k >= MP_K { k / MP_K - 1 } else { -1 }
+        b := (if k >= MP_K { k % MP_K } else { k }) - 1
+        mut m := mpInstVar(b, sub, lim)
+        if a >= 0 {
+            m = mpMul(mpInstVar(a, sub, lim), m)
+        }
+        o = mpAdd(o, mpScale(m, c))
+        if mpIsTop(o) {
+            return o
+        }
+    }
+    return o
+}
+
+func mpInstVar(v int, sub [][]int, lim int) []int {
+    if v >= MP_LOG {
+        x := (v - MP_LOG) / 1024
+        k := (v - MP_LOG) % 1024
+        return if x < len(sub) { mpLogOf(sub[x], k, lim) } else { mpConst(mpSteps(MP_WMAX, k)) }
+    }
+    return if v < len(sub) { sub[v] } else { mpVar(v) }
+}
+
+// バイト数を語に切り上げた上界（定数なら厳密・でなければ +7）
+func mpRound8(p []int) []int {
+    return if mpIsTop(p) { p } else if mpIsConst(p) { mpConst((mpConstOf(p) + 7) / 8 * 8) } else { mpAdd(p, mpConst(7)) }
+}
+
+// 印字: `8*p2+24`（p = 仮引数の正部・n = 負部）
+func mpStr(p []int) string {
+    if mpIsTop(p) {
+        return "top"
+    }
+    if len(p) == 0 {
+        return "0"
+    }
+    mut s := ""
+    // 定数は末尾へ
+    for q <- iter.Range(0, len(p) / 2) {
+        k := p[2 * q]
+        if k == 0 {
+            continue
+        }
+        a := if k >= MP_K { k / MP_K - 1 } else { -1 }
+        b := (if k >= MP_K { k % MP_K } else { k }) - 1
+        mut t := mpVName(b)
+        if a >= 0 {
+            t = "${mpVName(a)}*${t}"
+        }
+        if p[2 * q + 1] != 1 {
+            t = "${p[2 * q + 1]}*${t}"
+        }
+        s = if s == "" { t } else { "${s}+${t}" }
+    }
+    c := mpCoefConst(p)
+    return if c == 0 { s } else if s == "" { "${c}" } else if c > 0 { "${s}+${c}" } else { "${s}${c}" }
+}
+
+func mpCoefConst(p []int) int {
+    return if len(p) >= 2 && p[0] == 0 { p[1] } else { 0 }
+}
+
+func mpVName(v int) string {
+    if v >= MP_LOG {
+        return "log${(v - MP_LOG) % 1024}(${mpVName((v - MP_LOG) / 1024)})"
+    }
+    return if v % 2 == 0 { "p${v / 2}" } else { "n${v / 2}" }
+}
+
+// ── 関数の要約（呼び手の値の層が読む）──
+
+// ret / retN = i64 の戻り値の上界・sret / sretN = 仮引数 0 の番地へ書く語ごとの上界（stop = 書く語が定まらない）・wr = 仮引数ごとに番地を通して書きうるか
+type MvSum struct {
+    known bool
+    ret []int
+    retN []int
+    sret [][]int
+    sretN [][]int
+    stop bool
+    wr []int
+}
+
+func mvUnknown() MvSum {
+    return MvSum{known: false, ret: mpTop(), retN: mpTop(), sret: [][]int{}, sretN: [][]int{}, stop: true, wr: []int{}}
+}
+
+// 関数の値の層の結果
+type MvRes struct {
+    U [][]int     // 値 → 上界
+    N [][]int     // 値 → 下界の符号を返したもの
+    T [][]int     // ループ → 反復数（後ろの辺を通る回数）の上界
+    hlen [][]int  // 番地の値 → 指すヘッダの長さの語（語のずれ + 1）の上界（スロットの語の表から — 番地でなければ ⊤）
+    hsh []int     // 番地の値 → 指すヘッダの深度の語が入口の深度以下なら 1（写しの rt は床より深いときだけ写す）
+    dfl []int     // 値 → 入口の深度以上と分かる深度なら 1（写しの床）
+    sum MvSum
+}
+
+// 呼び出しの実引数（値の列 l）を呼び先の変数への代入に: [x⁺, x⁻, …]
+func mvArgSub(U [][]int, N [][]int, st mut St, l desugar.ListRef) [][]int {
+    mut o := mut [][]int{}
+    for k <- iter.Range(0, lenL(mut st, l)) {
+        a := latI(mut st, l, k)
+        o = append(o, if a >= 0 && a < len(U) { mpPos(U[a]) } else { mpTop() })
+        o = append(o, if a >= 0 && a < len(N) { mpPos(N[a]) } else { mpTop() })
+    }
+    return freeze(o)
+}
+
+// 関数 f の値の層。heads / memb / moff = ループ（頭・本体のブロックの列）・tc = R1 の定数の反復数（> 0 ならそれを使う）・
+// sums / ix = 呼び先の要約（利用者の関数の番号 — 無ければ未知）
+func mvFn(st mut St, f FnRef, w MrW, cw mut m2rW, heads []int, memb []int, moff []int, tc []int, sums []MvSum, ix map[int]int, names map[int]string) MvRes {
+    nb := w.nb
+    nv := w.nv
+    np := w.np
+    nsl := irFnNSlot(mut st, f)
+    nl := len(heads)
+    // 番地の値 → [スロット, 語のずれ]… の列（スロット = 関数のスロット・nsl + i = 仮引数 i の指す先）
+    mut pts := mut [][]int{}
+    for v <- iter.Range(0, nv) {
+        pts = append(pts, []int{})
+    }
+    pl := desugar.ListRef(irFnPtys(mut st, f))
+    for i <- iter.Range(0, np) {
+        if latI(mut st, pl, i) == TyPtr {
+            pts[i] = []int{nsl + i, 0}
+        }
+    }
+    // 逃げたスロット（書きうる先が分からない）
+    mut esc := mut []int{}
+    xFill(mut esc, nsl + np, 0)
+    // 番地の伝播（ブロックの引数の和は増えるだけ — 落ち着くまで）
+    mut changed := true
+    mut guard := 0
+    while changed && guard < 8 {
+        changed = false
+        guard += 1
+        for k <- iter.Range(0, cw.nrpo) {
+            bi := cw.rpo[k]
+            b := BlkRef(cw.blk[bi])
+            mut ins := irBlkIHead(mut st, b)
+            while ins != -1 {
+                op := irInsOp(mut st, ins)
+                r := irInsRes(mut st, ins)
+                if r >= 0 && len(pts[r]) == 0 {
+                    if op == OpSlotaddr {
+                        pts[r] = []int{irInsA(mut st, ins), 0}
+                        changed = true
+                    } else if op == OpGepW {
+                        base := irInsA(mut st, ins)
+                        idx := irInsB(mut st, ins)
+                        if base >= 0 && base < nv && len(pts[base]) > 0 {
+                            c := w.cst[idx]
+                            if c != MR_INF {
+                                mut o := mut []int{}
+                                for q <- iter.Range(0, len(pts[base]) / 2) {
+                                    o = append(o, pts[base][2 * q])
+                                    o = append(o, pts[base][2 * q + 1] + c)
+                                }
+                                pts[r] = freeze(o)
+                                changed = true
+                            }
+                        }
+                    }
+                }
+                ins = irInsNext(mut st, ins)
+            }
+            // 行き先のブロックの引数へ
+            for s <- mvSuccs(mut st, b) {
+                l := mrArgsTo(mut st, b, s)
+                if l < 0 {
+                    continue
+                }
+                tb := BlkRef(cw.blk[s])
+                mut p := irBlkPHead(mut st, tb)
+                mut q := 0
+                while p >= 0 {
+                    pv := desugar.HeapGet(mut st.d, p + 1)
+                    if q < lenL(mut st, desugar.ListRef(l)) {
+                        a := latI(mut st, desugar.ListRef(l), q)
+                        if a >= 0 && a < nv && len(pts[a]) > 0 {
+                            u := mvUnion(pts[pv], pts[a])
+                            if len(u) != len(pts[pv]) {
+                                pts[pv] = u
+                                changed = true
+                            }
+                        }
+                    }
+                    q += 1
+                    p = desugar.HeapGet(mut st.d, p)
+                }
+            }
+        }
+    }
+    // 逃げ: 番地の値の使い方を見る（読み = load の基底・書き = store の基底は記録・それ以外は逃げ）
+    // 書きの記録: [スロット, 語, 値] / 呼び出しの sret: [スロット, ずれ, 呼び先の番号, 実引数の列]
+    mut wrs := mut []int{}
+    mut srs := mut []int{}
+    mut rfl := mut []int{}
+    for k <- iter.Range(0, cw.nrpo) {
+        bi := cw.rpo[k]
+        b := BlkRef(cw.blk[bi])
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            op := irInsOp(mut st, ins)
+            if op == OpLoad || op == OpLoad8 {
+                // 読みは逃げない
+            } else if op == OpStore {
+                a := irInsA(mut st, ins)
+                v := irInsC(mut st, ins)
+                mvEsc(pts, mut esc, v)
+                if a >= 0 && a < nv {
+                    for q <- iter.Range(0, len(pts[a]) / 2) {
+                        wrs = append(wrs, pts[a][2 * q])
+                        wrs = append(wrs, pts[a][2 * q + 1] + irInsB(mut st, ins))
+                        wrs = append(wrs, v)
+                    }
+                }
+            } else if op == OpGepW {
+                if w.cst[irInsB(mut st, ins)] == MR_INF {
+                    mvEsc(pts, mut esc, irInsA(mut st, ins))
+                }
+            } else if op == OpCall && mvRelocHdr(mrNm(names, int(irInsFn(mut st, ins)))) {
+                // 写しの rt はヘッダの番地と深度の語（0・2）だけを書き換える（長さの語は保つ — rt の信用する宣言）
+                l := desugar.ListRef(irInsB(mut st, ins))
+                fk := if mrNm(names, int(irInsFn(mut st, ins))) == "rt.region_relocate" { 2 } else { 1 }
+                fl := if fk < lenL(mut st, l) { latI(mut st, l, fk) } else { -1 }
+                for j <- iter.Range(0, lenL(mut st, l)) {
+                    a := latI(mut st, l, j)
+                    if j > 0 || a < 0 || a >= nv {
+                        continue
+                    }
+                    for z <- iter.Range(0, len(pts[a]) / 2) {
+                        for wq <- iter.Range(0, 2) {
+                            wrs = append(wrs, pts[a][2 * z])
+                            wrs = append(wrs, pts[a][2 * z + 1] + 2 * wq)
+                            wrs = append(wrs, -1)
+                        }
+                        // 深度の語は写した先の床か元のまま
+                        rfl = append(rfl, pts[a][2 * z])
+                        rfl = append(rfl, pts[a][2 * z + 1] + 2)
+                        rfl = append(rfl, fl)
+                    }
+                }
+            } else if op == OpCall {
+                g := irInsFn(mut st, ins)
+                l := desugar.ListRef(irInsB(mut st, ins))
+                q := mrIx(ix, int(g))
+                for j <- iter.Range(0, lenL(mut st, l)) {
+                    a := latI(mut st, l, j)
+                    if a < 0 || a >= nv || len(pts[a]) == 0 {
+                        continue
+                    }
+                    if q < 0 || !sums[q].known {
+                        mvEsc(pts, mut esc, a)
+                        continue
+                    }
+                    s := sums[q]
+                    if j < len(s.wr) && s.wr[j] == 0 {
+                        continue
+                    }
+                    if j == 0 && !s.stop {
+                        for z <- iter.Range(0, len(pts[a]) / 2) {
+                            srs = append(srs, pts[a][2 * z])
+                            srs = append(srs, pts[a][2 * z + 1])
+                            srs = append(srs, q)
+                            srs = append(srs, int(l))
+                        }
+                        continue
+                    }
+                    mvEsc(pts, mut esc, a)
+                }
+            } else {
+                // 他の命令: 被演算子に番地があれば逃げ（store8 / gep.byte / ptoi / 間接の呼び出し / 写し / syscall …）
+                mvEscIns(mut st, pts, mut esc, ins, op)
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        if irBlkTerm(mut st, b) == TmRet {
+            x := irBlkX1(mut st, b)
+            mvEsc(pts, mut esc, x)
+        }
+    }
+    // スロットの語の上界（鍵 = スロット << 16 | 語）: 書きのある語だけ 0 から始めて書きの和へ（落ち着くまで）
+    mut skey := mut map[int]int{}
+    mut sU := mut [][]int{}
+    mut sN := mut [][]int{}
+    for q <- iter.Range(0, len(wrs) / 3) {
+        mvSlotWord(mut skey, mut sU, mut sN, wrs[3 * q] * 65536 + wrs[3 * q + 1])
+    }
+    for q <- iter.Range(0, len(srs) / 4) {
+        s := sums[srs[4 * q + 2]]
+        for z <- iter.Range(0, len(s.sret)) {
+            mvSlotWord(mut skey, mut sU, mut sN, srs[4 * q] * 65536 + srs[4 * q + 1] + z)
+        }
+    }
+    mut res := MvRes{U: [][]int{}, N: [][]int{}, T: [][]int{}, hlen: [][]int{}, hsh: []int{}, dfl: []int{}, sum: mvUnknown()}
+    mut round := 0
+    mut done := false
+    while !done {
+        res = mvEval(mut st, f, w, mut cw, heads, memb, moff, tc, sums, ix, pts, esc, skey, clone(sU), clone(sN), nsl)
+        // 書きの和
+        mut nU := mut [][]int{}
+        mut nN := mut [][]int{}
+        for q <- iter.Range(0, len(sU)) {
+            nU = append(nU, []int{})
+            nN = append(nN, []int{})
+        }
+        for q <- iter.Range(0, len(wrs) / 3) {
+            k := skey[wrs[3 * q] * 65536 + wrs[3 * q + 1]]
+            v := wrs[3 * q + 2]
+            if k != nil {
+                nU[k] = mpMax(nU[k], if v >= 0 && v < nv { res.U[v] } else { mpTop() })
+                nN[k] = mpMax(nN[k], if v >= 0 && v < nv { res.N[v] } else { mpTop() })
+            }
+        }
+        for q <- iter.Range(0, len(srs) / 4) {
+            s := sums[srs[4 * q + 2]]
+            sub := mvArgSub(res.U, res.N, mut st, desugar.ListRef(srs[4 * q + 3]))
+            for z <- iter.Range(0, len(s.sret)) {
+                k := skey[srs[4 * q] * 65536 + srs[4 * q + 1] + z]
+                if k != nil {
+                    nU[k] = mpMax(nU[k], mpInst(s.sret[z], sub, 2 * np))
+                    nN[k] = mpMax(nN[k], mpInst(s.sretN[z], sub, 2 * np))
+                }
+            }
+        }
+        done = true
+        for q <- iter.Range(0, len(sU)) {
+            if !mpLe(nU[q], sU[q]) || !mpLe(nN[q], sN[q]) {
+                done = false
+                sU[q] = if round >= 6 { mpTop() } else { mpMax(sU[q], nU[q]) }
+                sN[q] = if round >= 6 { mpTop() } else { mpMax(sN[q], nN[q]) }
+            }
+        }
+        round += 1
+    }
+    // 要約: 戻り値・仮引数 0 の先へ書く語・仮引数ごとの書き
+    mut retU := []int{}
+    mut retN := []int{}
+    mut anyRet := false
+    for k <- iter.Range(0, cw.nrpo) {
+        b := BlkRef(cw.blk[cw.rpo[k]])
+        if irBlkTerm(mut st, b) == TmRet {
+            x := irBlkX1(mut st, b)
+            if x >= 0 && x < nv {
+                retU = mvJoin(retU, res.U[x], !anyRet)
+                retN = mvJoin(retN, res.N[x], !anyRet)
+                anyRet = true
+            }
+        }
+    }
+    mut wr := mut []int{}
+    xFill(mut wr, np, 0)
+    for i <- iter.Range(0, np) {
+        if esc[nsl + i] != 0 {
+            wr[i] = 1
+        }
+    }
+    for q <- iter.Range(0, len(wrs) / 3) {
+        if wrs[3 * q] >= nsl {
+            wr[wrs[3 * q] - nsl] = 1
+        }
+    }
+    for q <- iter.Range(0, len(srs) / 4) {
+        if srs[4 * q] >= nsl {
+            wr[srs[4 * q] - nsl] = 1
+        }
+    }
+    // 仮引数 0 の先の語（語のずれ 0..）
+    mut sret := mut [][]int{}
+    mut sretN := mut [][]int{}
+    mut stop := np == 0 || esc[nsl] != 0
+    if !stop {
+        mut maxw := -1
+        for q <- iter.Range(0, len(wrs) / 3) {
+            if wrs[3 * q] == nsl {
+                maxw = if wrs[3 * q + 1] > maxw { wrs[3 * q + 1] } else { maxw }
+                if wrs[3 * q + 1] < 0 || wrs[3 * q + 1] > 64 {
+                    stop = true
+                }
+            }
+        }
+        for q <- iter.Range(0, len(srs) / 4) {
+            if srs[4 * q] == nsl {
+                maxw = mrMaxI(maxw, srs[4 * q + 1] + len(sums[srs[4 * q + 2]].sret) - 1)
+                if srs[4 * q + 1] < 0 || srs[4 * q + 1] > 64 {
+                    stop = true
+                }
+            }
+        }
+        if !stop {
+            for z <- iter.Range(0, maxw + 1) {
+                k := skey[nsl * 65536 + z]
+                sret = append(sret, if k != nil { sU[k] } else { []int{} })
+                sretN = append(sretN, if k != nil { sN[k] } else { []int{} })
+            }
+        }
+    }
+    // ヘッダの長さの語（写しの量の上界 — 写しの rt はヘッダの長さだけ写す）
+    mut hl := mut [][]int{}
+    for v <- iter.Range(0, nv) {
+        mut u := mpTop()
+        mut first := true
+        for q <- iter.Range(0, len(pts[v]) / 2) {
+            s0 := pts[v][2 * q]
+            k := skey[s0 * 65536 + pts[v][2 * q + 1] + 1]
+            mut x := mpTop()
+            if k != nil {
+                if esc[s0] == 0 {
+                    x = sU[k]
+                }
+            }
+            u = mvJoin(u, x, first)
+            first = false
+        }
+        hl = append(hl, u)
+    }
+    res.hlen = freeze(hl)
+    dc := mvDepthCls(mut st, w, mut cw, pts, esc, wrs, srs, rfl, nsl)
+    res.hsh = dc[0]
+    res.dfl = dc[1]
+    res.sum = MvSum{known: true, ret: if anyRet { retU } else { mpTop() }, retN: if anyRet { retN } else { mpTop() }, sret: freeze(sret), sretN: freeze(sretN), stop: stop, wr: freeze(wr)}
+    return res
+}
+
+func mvRelocHdr(n string) bool {
+    return n == "rt.region_relocate8" || n == "rt.region_relocate"
+}
+
+func mrMaxI(a int, b int) int {
+    return if a > b { a } else { b }
+}
+
+func mvSlotWord(skey mut map[int]int, sU mut [][]int, sN mut [][]int, key int) {
+    if skey[key] == nil {
+        skey[key] = len(sU)
+        sU = append(sU, []int{})
+        sN = append(sN, []int{})
+    }
+}
+
+// 値 v が番地ならその先のスロットを逃げに
+func mvEsc(pts [][]int, esc mut []int, v int) {
+    if v < 0 || v >= len(pts) {
+        return
+    }
+    for q <- iter.Range(0, len(pts[v]) / 2) {
+        s := pts[v][2 * q]
+        if s >= 0 && s < len(esc) {
+            esc[s] = 1
+        }
+    }
+}
+
+// 命令 ins の被演算子（値の欄と値の列 — op の行の種別 st.opk）に番地があれば逃げに
+func mvEscIns(st mut St, pts [][]int, esc mut []int, ins InsRef, op int) {
+    row := st.opk[op]
+    for q <- iter.Range(0, 3) {
+        k := (row >> (4 * q)) & 15
+        x := if q == 0 { irInsA(mut st, ins) } else if q == 1 { irInsB(mut st, ins) } else { irInsC(mut st, ins) }
+        if k == K_VAL {
+            mvEsc(pts, mut esc, x)
+        } else if k == K_VLIST {
+            mvEscList(mut st, pts, mut esc, x)
+        }
+    }
+}
+
+func mvEscList(st mut St, pts [][]int, esc mut []int, l int) {
+    if l < 0 {
+        return
+    }
+    for k <- iter.Range(0, lenL(mut st, desugar.ListRef(l))) {
+        mvEsc(pts, mut esc, latI(mut st, desugar.ListRef(l), k))
+    }
+}
+
+// 2 つの [スロット, ずれ] の列の和
+func mvUnion(a []int, b []int) []int {
+    mut o := mut []int{}
+    for x <- a {
+        o = append(o, x)
+    }
+    for q <- iter.Range(0, len(b) / 2) {
+        mut has := false
+        for z <- iter.Range(0, len(a) / 2) {
+            if a[2 * z] == b[2 * q] && a[2 * z + 1] == b[2 * q + 1] {
+                has = true
+            }
+        }
+        if !has {
+            o = append(o, b[2 * q])
+            o = append(o, b[2 * q + 1])
+        }
+    }
+    return freeze(o)
+}
+
+// ブロック b の終端の行き先（番号）
+func mvSuccs(st mut St, b BlkRef) []int {
+    t := irBlkTerm(mut st, b)
+    if t == TmBr {
+        return []int{irBlkId(mut st, BlkRef(irBlkX1(mut st, b)))}
+    }
+    if t == TmCondbr {
+        return []int{irBlkId(mut st, BlkRef(irBlkX2(mut st, b))), irBlkId(mut st, BlkRef(irBlkX4(mut st, b)))}
+    }
+    return []int{}
+}
+
+// 値の評価の 1 周（スロットの語の上界 sU / sN を与えて）
+func mvEval(st mut St, f FnRef, w MrW, cw mut m2rW, heads []int, memb []int, moff []int, tc []int, sums []MvSum, ix map[int]int, pts [][]int, esc []int, skey map[int]int, sU [][]int, sN [][]int, nsl int) MvRes {
+    nb := w.nb
+    nv := w.nv
+    np := w.np
+    nl := len(heads)
+    mut U := mut [][]int{}
+    mut N := mut [][]int{}
+    mut done := mut []int{}
+    for v <- iter.Range(0, nv) {
+        U = append(U, mpTop())
+        N = append(N, mpTop())
+        done = append(done, 0)
+    }
+    for i <- iter.Range(0, np) {
+        U[i] = mpVar(2 * i)
+        N[i] = mpVar(2 * i + 1)
+        done[i] = 1
+    }
+    // ループの表: 頭 → ループ・ループごとの最後のブロック（逆後順の位置）・一時変数の範囲
+    mut lofH := mut []int{}
+    xFill(mut lofH, nb, -1)
+    mut lastAt := mut []int{}
+    mut pLo := mut []int{}
+    mut pHi := mut []int{}
+    mut T := mut [][]int{}
+    mut nextVar := 2 * np
+    for l <- iter.Range(0, nl) {
+        lofH[heads[l]] = l
+        mut m := -1
+        for q <- iter.Range(moff[l], moff[l + 1]) {
+            x := cw.rpoIx[memb[q]]
+            m = if x > m { x } else { m }
+        }
+        lastAt = append(lastAt, m)
+        pLo = append(pLo, 0)
+        pHi = append(pHi, 0)
+        T = append(T, mpTop())
+    }
+    // ループごとの本体の印（ブロック → 入るか — 頭の引数の初期値と後ろの辺の区別）
+    // 初期値: 頭の引数ごとに [U, N]（ループの外の前任から）
+    mut initU := mut [][]int{}
+    mut initN := mut [][]int{}
+    for v <- iter.Range(0, nv) {
+        initU = append(initU, []int{})
+        initN = append(initN, []int{})
+    }
+    for k <- iter.Range(0, cw.nrpo) {
+        bi := cw.rpo[k]
+        b := BlkRef(cw.blk[bi])
+        hl := lofH[bi]
+        // ブロックの引数
+        mut p := irBlkPHead(mut st, b)
+        mut pk := 0
+        if hl >= 0 {
+            pLo[hl] = nextVar
+        }
+        while p >= 0 {
+            pv := desugar.HeapGet(mut st.d, p + 1)
+            mut u := []int{}
+            mut n := []int{}
+            mut any := false
+            mut bad := false
+            for j <- iter.Range(cw.pcnt[bi], cw.pcnt[bi + 1]) {
+                pr := cw.preds[j]
+                if cw.rpoIx[pr] < 0 {
+                    continue
+                }
+                if hl >= 0 && mvInLoop(memb, moff, hl, pr) {
+                    continue
+                }
+                if cw.rpoIx[pr] >= k {
+                    bad = true
+                    continue
+                }
+                l := mrArgsTo(mut st, BlkRef(cw.blk[pr]), bi)
+                if l < 0 || pk >= lenL(mut st, desugar.ListRef(l)) {
+                    bad = true
+                    continue
+                }
+                a := latI(mut st, desugar.ListRef(l), pk)
+                u = mvJoin(u, if a >= 0 && a < nv { U[a] } else { mpTop() }, !any)
+                n = mvJoin(n, if a >= 0 && a < nv { N[a] } else { mpTop() }, !any)
+                any = true
+            }
+            if bad || !any {
+                u = mpTop()
+                n = mpTop()
+            }
+            if hl >= 0 {
+                initU[pv] = u
+                initN[pv] = n
+                U[pv] = mpVar(nextVar)
+                N[pv] = mpVar(nextVar + 1)
+                nextVar += 2
+            } else {
+                U[pv] = u
+                N[pv] = n
+            }
+            done[pv] = 1
+            pk += 1
+            p = desugar.HeapGet(mut st.d, p)
+        }
+        if hl >= 0 {
+            pHi[hl] = nextVar
+        }
+        // 命令
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            r := irInsRes(mut st, ins)
+            if r >= 0 && r < nv {
+                op := irInsOp(mut st, ins)
+                mut u := mpTop()
+                mut n := mpTop()
+                if op == OpConst {
+                    c := irInsA(mut st, ins)
+                    u = mpConst(c)
+                    n = mpConst(0 - c)
+                } else if op == OpCmp || op == OpLoad8 {
+                    u = mpConst(if op == OpCmp { 1 } else { 255 })
+                    n = []int{}
+                } else if op == OpBin {
+                    bo := irInsA(mut st, ins)
+                    x := irInsB(mut st, ins)
+                    y := irInsC(mut st, ins)
+                    ux := mvGet(mut U, x)
+                    nx := mvGet(mut N, x)
+                    uy := mvGet(mut U, y)
+                    ny := mvGet(mut N, y)
+                    cy := if y >= 0 && y < nv { w.cst[y] } else { MR_INF }
+                    cx := if x >= 0 && x < nv { w.cst[x] } else { MR_INF }
+                    if bo == BAdd {
+                        u = mpAdd(ux, uy)
+                        n = mpAdd(nx, ny)
+                    } else if bo == BSub {
+                        u = mpAdd(ux, ny)
+                        n = mpAdd(nx, uy)
+                    } else if bo == BMul && (cy != MR_INF || cx != MR_INF) {
+                        c := if cy != MR_INF { cy } else { cx }
+                        uv := if cy != MR_INF { ux } else { uy }
+                        nvv := if cy != MR_INF { nx } else { ny }
+                        u = if c >= 0 { mpScale(uv, c) } else { mpScale(nvv, 0 - c) }
+                        n = if c >= 0 { mpScale(nvv, c) } else { mpScale(uv, 0 - c) }
+                    } else if bo == BMul && mvNonNeg(nx) && mvNonNeg(ny) {
+                        u = mpMul(ux, uy)
+                        n = []int{}
+                    } else if bo == BShl && cy != MR_INF && cy >= 0 && cy < 40 {
+                        u = mpScale(ux, 1 << cy)
+                        n = mpScale(nx, 1 << cy)
+                    } else if bo == BDiv && cy != MR_INF && cy >= 1 {
+                        u = mpDiv(ux, cy)
+                        n = mpDiv(nx, cy)
+                    } else if bo == BRem && cy != MR_INF && cy >= 1 {
+                        u = mpConst(cy - 1)
+                        n = if mvNonNeg(nx) { []int{} } else { mpConst(cy - 1) }
+                    } else if bo == BAnd && ((cy != MR_INF && cy >= 0) || (cx != MR_INF && cx >= 0)) {
+                        u = mpConst(if cy != MR_INF && cy >= 0 { cy } else { cx })
+                        n = []int{}
+                    } else if bo == BSar && cy != MR_INF && cy >= 0 && cy < 63 {
+                        u = if mpIsConst(ux) { mpConst(mpConstOf(ux) >> cy) } else { mpPos(ux) }
+                        n = if mpIsConst(nx) { mpConst((mpConstOf(nx) + (1 << cy) - 1) >> cy) } else { mpPos(nx) }
+                    }
+                } else if op == OpLoad {
+                    a := irInsA(mut st, ins)
+                    if a >= 0 && a < nv && len(pts[a]) > 0 {
+                        u = []int{}
+                        n = []int{}
+                        mut any := false
+                        for q <- iter.Range(0, len(pts[a]) / 2) {
+                            s := pts[a][2 * q]
+                            key := skey[s * 65536 + pts[a][2 * q + 1] + irInsB(mut st, ins)]
+                            if s >= nsl || esc[s] != 0 || key == nil {
+                                u = mpTop()
+                                n = mpTop()
+                            } else {
+                                u = mvJoin(u, sU[key], !any)
+                                n = mvJoin(n, sN[key], !any)
+                            }
+                            any = true
+                        }
+                        if !any {
+                            u = mpTop()
+                            n = mpTop()
+                        }
+                    }
+                } else if op == OpCall {
+                    g := irInsFn(mut st, ins)
+                    q := mrIx(ix, int(g))
+                    if q >= 0 && sums[q].known && !mpIsTop(sums[q].ret) {
+                        sub := mvArgSub(clone(U), clone(N), mut st, desugar.ListRef(irInsB(mut st, ins)))
+                        u = mpInst(sums[q].ret, sub, 2 * np)
+                        n = mpInst(sums[q].retN, sub, 2 * np)
+                    }
+                }
+                U[r] = u
+                N[r] = n
+                done[r] = 1
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        // このブロックで終わるループを閉じる（内側から — 本体の小さい順）
+        mut closing := mut []int{}
+        for l <- iter.Range(0, nl) {
+            if lastAt[l] == k {
+                closing = append(closing, l)
+            }
+        }
+        mut ci := 0
+        while ci < len(closing) {
+            // 本体の小さいものから
+            mut best := ci
+            for z <- iter.Range(ci + 1, len(closing)) {
+                if moff[closing[z] + 1] - moff[closing[z]] < moff[closing[best] + 1] - moff[closing[best]] {
+                    best = z
+                }
+            }
+            l := closing[best]
+            closing[best] = closing[ci]
+            closing[ci] = l
+            ci += 1
+            mvClose(mut st, w, mut cw, heads, memb, moff, tc, l, pLo[l], pHi[l], mut U, mut N, mut T, clone(initU), clone(initN), clone(done))
+        }
+    }
+    return MvRes{U: freeze(U), N: freeze(N), T: freeze(T), hlen: [][]int{}, hsh: []int{}, dfl: []int{}, sum: mvUnknown()}
+}
+
+// 合流（最初の 1 つはそのまま — 0 の多項式から始めると負の定数項が 0 に上がる）
+func mvJoin(acc []int, x []int, first bool) []int {
+    return if first { x } else { mpMax(acc, x) }
+}
+
+func mvGet(a mut [][]int, v int) []int {
+    return if v >= 0 && v < len(a) { a[v] } else { mpTop() }
+}
+
+// N ≤ 0（値が非負）
+func mvNonNeg(n []int) bool {
+    return !mpIsTop(n) && mpIsConst(n) && mpConstOf(n) <= 0
+}
+
+func mvInLoop(memb []int, moff []int, l int, b int) bool {
+    for q <- iter.Range(moff[l], moff[l + 1]) {
+        if memb[q] == b {
+            return true
+        }
+    }
+    return false
+}
+
+// ループ l を閉じる: 反復数・頭の引数の解（累積の規則）・一時変数 [lo, hi) の代入
+func mvClose(st mut St, w MrW, cw mut m2rW, heads []int, memb []int, moff []int, tc []int, l int, lo int, hi int, U mut [][]int, N mut [][]int, T mut [][]int, initU [][]int, initN [][]int, done []int) {
+    nv := w.nv
+    h := heads[l]
+    hb := BlkRef(cw.blk[h])
+    // 頭の引数の列と後ろの辺の値
+    mut pvs := mut []int{}
+    mut backU := mut [][]int{}
+    mut backN := mut [][]int{}
+    // 後ろの辺の値（後ろの辺が 1 本のときだけ — 対数の帰納変数の認識）
+    mut backV := mut []int{}
+    mut p := irBlkPHead(mut st, hb)
+    mut pk := 0
+    while p >= 0 {
+        pv := desugar.HeapGet(mut st.d, p + 1)
+        pvs = append(pvs, pv)
+        mut u := []int{}
+        mut n := []int{}
+        mut first := true
+        mut bv := -1
+        mut nlat := 0
+        for j <- iter.Range(cw.pcnt[h], cw.pcnt[h + 1]) {
+            pr := cw.preds[j]
+            if cw.rpoIx[pr] < 0 || !mvInLoop(memb, moff, l, pr) {
+                continue
+            }
+            nlat += 1
+            a := mrArgsTo(mut st, BlkRef(cw.blk[pr]), h)
+            if a < 0 || pk >= lenL(mut st, desugar.ListRef(a)) {
+                u = mpTop()
+                n = mpTop()
+                first = false
+                continue
+            }
+            x := latI(mut st, desugar.ListRef(a), pk)
+            bv = x
+            u = mvJoin(u, mvGet(mut U, x), first)
+            n = mvJoin(n, mvGet(mut N, x), first)
+            first = false
+        }
+        backU = append(backU, u)
+        backN = append(backN, n)
+        backV = append(backV, if nlat == 1 { bv } else { -1 })
+        pk += 1
+        p = desugar.HeapGet(mut st.d, p)
+    }
+    // 反復数
+    mut t := mvLogTrip(mut st, w, mut cw, h, memb, moff, l, pvs, freeze(backV), initU, initN, mut U, mut N)
+    if mpIsTop(t) {
+        t = if tc[l] > 0 { mpConst(tc[l]) } else { mvTrip(mut st, w, mut cw, h, memb, moff, l, lo, hi, pvs, backU, backN, initU, initN, mut U, mut N) }
+    }
+    T[l] = t
+    // 頭の引数の解: 後ろの辺が P + δ（δ はこのループの一時変数を含まない）なら init + T·δ⁺・P を含まなければ max(init, 後ろ)
+    np := len(pvs)
+    mut solU := mut [][]int{}
+    mut solN := mut [][]int{}
+    mut ok := mut []int{}
+    for k <- iter.Range(0, np) {
+        solU = append(solU, mpTop())
+        solN = append(solN, mpTop())
+        ok = append(ok, 0)
+    }
+    mut progress := true
+    while progress {
+        progress = false
+        // 解けた変数の代入表（解けていない一時変数は自分のまま）
+        mut sub := mut [][]int{}
+        for k <- iter.Range(0, np) {
+            sub = append(sub, if ok[k] == 1 { solU[k] } else { mpVar(lo + 2 * k) })
+            sub = append(sub, if ok[k] == 1 { solN[k] } else { mpVar(lo + 2 * k + 1) })
+        }
+        sf := freeze(sub)
+        for k <- iter.Range(0, np) {
+            if ok[k] == 1 {
+                continue
+            }
+            pv := pvs[k]
+            iu := initU[pv]
+            inN := initN[pv]
+            bu := mpSubst(backU[k], lo, hi, sf)
+            bn := mpSubst(backN[k], lo, hi, sf)
+            su := mvSolve(bu, iu, lo + 2 * k, lo, hi, t)
+            sn := mvSolve(bn, inN, lo + 2 * k + 1, lo, hi, t)
+            if su[0] == 2 || sn[0] == 2 {
+                // 他の一時変数待ち
+                continue
+            }
+            solU[k] = su[1:len(su)]
+            solN[k] = sn[1:len(sn)]
+            ok[k] = 1
+            progress = true
+        }
+    }
+    mut sub := mut [][]int{}
+    for k <- iter.Range(0, np) {
+        sub = append(sub, if ok[k] == 1 { solU[k] } else { mpTop() })
+        sub = append(sub, if ok[k] == 1 { solN[k] } else { mpTop() })
+    }
+    sf := freeze(sub)
+    for v <- iter.Range(0, nv) {
+        if done[v] == 1 && mpHas(U[v], lo, hi) {
+            U[v] = mpSubst(U[v], lo, hi, sf)
+        }
+        if done[v] == 1 && mpHas(N[v], lo, hi) {
+            N[v] = mpSubst(N[v], lo, hi, sf)
+        }
+    }
+    for k <- iter.Range(0, np) {
+        U[pvs[k]] = sf[2 * k]
+        N[pvs[k]] = sf[2 * k + 1]
+    }
+    for q <- iter.Range(0, len(T)) {
+        if mpHas(T[q], lo, hi) {
+            T[q] = mpSubst(T[q], lo, hi, sf)
+        }
+    }
+}
+
+// 後ろの辺の上界 b を一時変数 v について解く: 結果 = [状態, 式…]（状態 0 = 解けた・1 = ⊤・2 = 他の一時変数待ち）
+func mvSolve(b []int, init []int, v int, lo int, hi int, t []int) []int {
+    if mpIsTop(b) || mpIsTop(init) {
+        return []int{1, -1}
+    }
+    a := mpCoefOf(b, v)
+    rest := mpWithout(b, v)
+    if mpHas(rest, lo, hi) {
+        return []int{2, -1}
+    }
+    if a == 0 {
+        return mvPre(0, mpMax(init, rest))
+    }
+    if a != 1 {
+        return []int{1, -1}
+    }
+    d := mpPos(rest)
+    if mpIsZero(d) {
+        return mvPre(0, init)
+    }
+    if mpIsTop(t) {
+        return []int{1, -1}
+    }
+    return mvPre(0, mpAdd(init, mpMul(t, d)))
+}
+
+func mvPre(s int, p []int) []int {
+    if mpIsTop(p) {
+        return []int{1, -1}
+    }
+    mut o := mut []int{s}
+    for x <- p {
+        o = append(o, x)
+    }
+    return freeze(o)
+}
+
+// 反復数（後ろの辺を通る回数）の上界: 本体の後ろの辺の元を全部支配するブロックの condbr で、比較の片方が頭の引数（± 定数）の帰納変数
+func mvTrip(st mut St, w MrW, cw mut m2rW, head int, memb []int, moff []int, l int, lo int, hi int, pvs []int, backU [][]int, backN [][]int, initU [][]int, initN [][]int, U mut [][]int, N mut [][]int) []int {
+    nv := w.nv
+    // 後ろの辺の元
+    mut latches := mut []int{}
+    for j <- iter.Range(cw.pcnt[head], cw.pcnt[head + 1]) {
+        pr := cw.preds[j]
+        if mvInLoop(memb, moff, l, pr) && cw.rpoIx[pr] >= 0 {
+            latches = append(latches, pr)
+        }
+    }
+    for q <- iter.Range(moff[l], moff[l + 1]) {
+        bi := memb[q]
+        b := BlkRef(cw.blk[bi])
+        if irBlkTerm(mut st, b) != TmCondbr {
+            continue
+        }
+        mut domAll := true
+        for x <- latches {
+            if !licmDominates(mut cw, bi, x) {
+                domAll = false
+            }
+        }
+        if !domAll {
+            continue
+        }
+        t1 := irBlkId(mut st, BlkRef(irBlkX2(mut st, b)))
+        t2 := irBlkId(mut st, BlkRef(irBlkX4(mut st, b)))
+        in1 := mvInLoop(memb, moff, l, t1)
+        in2 := mvInLoop(memb, moff, l, t2)
+        if in1 == in2 {
+            continue
+        }
+        cv := irBlkX1(mut st, b)
+        ci := if cv >= 0 && cv < nv { w.dins[cv] } else { -1 }
+        if ci < 0 || irInsOp(mut st, InsRef(ci)) != OpCmp {
+            continue
+        }
+        // 続ける条件（then が本体なら比較そのもの・else が本体なら否定）
+        mut op := irInsA(mut st, InsRef(ci))
+        if !in1 {
+            op = mvNeg(op)
+        }
+        for side <- iter.Range(0, 2) {
+            x := if side == 0 { irInsB(mut st, InsRef(ci)) } else { irInsC(mut st, InsRef(ci)) }
+            bd := if side == 0 { irInsC(mut st, InsRef(ci)) } else { irInsB(mut st, InsRef(ci)) }
+            o := if side == 0 { op } else { mvFlip(op) }
+            // x = 頭の引数 k（± 定数 d）
+            mut k := -1
+            mut d := 0
+            for z <- iter.Range(0, len(pvs)) {
+                if pvs[z] == x {
+                    k = z
+                }
+            }
+            if k < 0 {
+                xi := if x >= 0 && x < nv { w.dins[x] } else { -1 }
+                if xi >= 0 && irInsOp(mut st, InsRef(xi)) == OpBin && (irInsA(mut st, InsRef(xi)) == BAdd || irInsA(mut st, InsRef(xi)) == BSub) {
+                    y0 := irInsB(mut st, InsRef(xi))
+                    y1 := irInsC(mut st, InsRef(xi))
+                    for z <- iter.Range(0, len(pvs)) {
+                        if pvs[z] == y0 && w.cst[y1] != MR_INF {
+                            k = z
+                            d = w.cst[y1]
+                        } else if pvs[z] == y1 && w.cst[y0] != MR_INF && irInsA(mut st, InsRef(xi)) == BAdd {
+                            k = z
+                            d = w.cst[y0]
+                        }
+                    }
+                }
+            }
+            if k < 0 {
+                continue
+            }
+            ub := mvGet(mut U, bd)
+            nb := mvGet(mut N, bd)
+            if mpIsTop(ub) || mpIsTop(nb) || mpHas(ub, lo, hi) || mpHas(nb, lo, hi) {
+                continue
+            }
+            // 刻み: 後ろの辺 = P + a・下界側 = Q + c（p_next ≥ p − c）
+            P := lo + 2 * k
+            Q := lo + 2 * k + 1
+            bu := backU[k]
+            bn := backN[k]
+            if mpIsTop(bu) || mpIsTop(bn) || mpCoefOf(bu, P) != 1 || mpCoefOf(bn, Q) != 1 {
+                continue
+            }
+            ru := mpWithout(bu, P)
+            rn := mpWithout(bn, Q)
+            if !mpIsConst(ru) || !mpIsConst(rn) {
+                continue
+            }
+            up := 0 - mpConstOf(rn)
+            down := 0 - mpConstOf(ru)
+            pv := pvs[k]
+            ad := if d < 0 { 0 - d } else { d }
+            mut r := mpTop()
+            if up >= 1 && (o == CLt || o == CLe) {
+                // p + d < bd: T ≤ (U(bd) + N(init) + |d|) / up + 2
+                r = mpAdd(mpDiv(mpAdd(mpAdd(ub, initN[pv]), mpConst(ad)), up), mpConst(2))
+            } else if down >= 1 && (o == CGt || o == CGe) {
+                r = mpAdd(mpDiv(mpAdd(mpAdd(initU[pv], nb), mpConst(ad)), down), mpConst(2))
+            }
+            if !mpIsTop(r) {
+                return r
+            }
+        }
+    }
+    return mpTop()
+}
+
+// 対数の帰納変数（後ろの辺 = 自分 / 定数 k ≥ 2 — 0 へ向かって縮み 0 で止まる）で、続ける条件が「0 より大きい」形
+// （iv > c〔c ≥ 0〕・iv >= c〔c ≥ 1〕・iv != 0）のループの反復数: 初期値の大きさの桁数 + 1（桁数 = 正部と負部の対数の原子）
+func mvLogTrip(st mut St, w MrW, cw mut m2rW, head int, memb []int, moff []int, l int, pvs []int, backV []int, initU [][]int, initN [][]int, U mut [][]int, N mut [][]int) []int {
+    nv := w.nv
+    mut latches := mut []int{}
+    for j <- iter.Range(cw.pcnt[head], cw.pcnt[head + 1]) {
+        pr := cw.preds[j]
+        if mvInLoop(memb, moff, l, pr) && cw.rpoIx[pr] >= 0 {
+            latches = append(latches, pr)
+        }
+    }
+    for q <- iter.Range(moff[l], moff[l + 1]) {
+        bi := memb[q]
+        b := BlkRef(cw.blk[bi])
+        if irBlkTerm(mut st, b) != TmCondbr {
+            continue
+        }
+        mut domAll := true
+        for x <- latches {
+            if !licmDominates(mut cw, bi, x) {
+                domAll = false
+            }
+        }
+        t1 := irBlkId(mut st, BlkRef(irBlkX2(mut st, b)))
+        t2 := irBlkId(mut st, BlkRef(irBlkX4(mut st, b)))
+        in1 := mvInLoop(memb, moff, l, t1)
+        if !domAll || in1 == mvInLoop(memb, moff, l, t2) {
+            continue
+        }
+        cv := irBlkX1(mut st, b)
+        ci := if cv >= 0 && cv < nv { w.dins[cv] } else { -1 }
+        if ci < 0 || irInsOp(mut st, InsRef(ci)) != OpCmp {
+            continue
+        }
+        mut op := irInsA(mut st, InsRef(ci))
+        if !in1 {
+            op = mvNeg(op)
+        }
+        for side <- iter.Range(0, 2) {
+            x := if side == 0 { irInsB(mut st, InsRef(ci)) } else { irInsC(mut st, InsRef(ci)) }
+            bd := if side == 0 { irInsC(mut st, InsRef(ci)) } else { irInsB(mut st, InsRef(ci)) }
+            o := if side == 0 { op } else { mvFlip(op) }
+            c := if bd >= 0 && bd < nv { w.cst[bd] } else { MR_INF }
+            if c == MR_INF || !((o == CGt && c >= 0) || (o == CGe && c >= 1) || (o == CNe && c == 0)) {
+                continue
+            }
+            for k <- iter.Range(0, len(pvs)) {
+                if pvs[k] != x || backV[k] < 0 {
+                    continue
+                }
+                di := w.dins[backV[k]]
+                if di < 0 || irInsOp(mut st, InsRef(di)) != OpBin || irInsA(mut st, InsRef(di)) != BDiv || irInsB(mut st, InsRef(di)) != x {
+                    continue
+                }
+                kd := w.cst[irInsC(mut st, InsRef(di))]
+                if kd == MR_INF || kd < 2 || kd >= 1024 {
+                    continue
+                }
+                return mpAdd(mpAdd(mpLogOf(initU[x], kd, 2 * w.np), mpLogOf(initN[x], kd, 2 * w.np)), mpConst(1))
+            }
+        }
+    }
+    return mpTop()
+}
+
+func mvNeg(op int) int {
+    return if op == CLt { CGe } else if op == CGe { CLt } else if op == CLe { CGt } else if op == CGt { CLe } else if op == CEq { CNe } else if op == CNe { CEq } else { -1 }
+}
+
+func mvFlip(op int) int {
+    return if op == CLt { CGt } else if op == CGt { CLt } else if op == CLe { CGe } else if op == CGe { CLe } else { op }
+}
+
+// 深度の語の分類: [0] = 番地の値ごとに、指すヘッダの深度の語が入口の深度 D0 以下か（1）・[1] = 値ごとに D0 以上の深度か（1）。
+// D0 以下の値 = 定数 ≤ 0（静的な列）・入口の enter より前の region.depth・仮引数（呼び手の値の深度 — 呼び手の生きた値は呼び手の深度以下）・
+// 宛先の深度の挟み（a + [1 ≤ x ≤ a] × (x − a)）・呼び手の記憶の読み・D0 以下だけを受けるブロックの引数（大きい不動点 — 全部の入りが D0 以下なら）。
+// 深度の語へ書く値は深度（型の約束）なので、仮引数・呼び手の記憶をそのまま D0 以下と読める
+func mvDepthCls(st mut St, w MrW, cw mut m2rW, pts [][]int, esc []int, wrs []int, srs []int, rfl []int, nsl int) [][]int {
+    nv := w.nv
+    mut sh := mut []int{}
+    mut dp := mut []int{}
+    xFill(mut sh, nv, 1)
+    xFill(mut dp, nv, 1)
+    // 仮引数は呼び手の深度（D0 以下）だが D0 以上とは言えない
+    for i <- iter.Range(0, w.np) {
+        dp[i] = 0
+    }
+    // 語の鍵 → 書きの値の列の印（書きのある語の集合 — 呼び先の書きは D0 以下と言えない）
+    mut bad := mut map[int]int{}
+    mut seen := mut map[int]int{}
+    for q <- iter.Range(0, len(srs) / 4) {
+        for z <- iter.Range(0, 64) {
+            bad[srs[4 * q] * 65536 + srs[4 * q + 1] + z] = 1
+            seen[srs[4 * q] * 65536 + srs[4 * q + 1] + z] = 1
+        }
+    }
+    for q <- iter.Range(0, len(wrs) / 3) {
+        seen[wrs[3 * q] * 65536 + wrs[3 * q + 1]] = 1
+    }
+    mut changed := true
+    while changed {
+        changed = false
+        // 語ごとの書きの判定（写しの -1 は rfl の床で読む）
+        for q <- iter.Range(0, len(wrs) / 3) {
+            v := wrs[3 * q + 2]
+            key := wrs[3 * q] * 65536 + wrs[3 * q + 1]
+            if v == -1 {
+                continue
+            }
+            if (v < 0 || v >= nv || sh[v] == 0) && bad[key] == nil {
+                bad[key] = 1
+                changed = true
+            }
+        }
+        for q <- iter.Range(0, len(rfl) / 3) {
+            v := rfl[3 * q + 2]
+            key := rfl[3 * q] * 65536 + rfl[3 * q + 1]
+            // 床が D0 以上なら、D0 以下の深度は写されず元のまま（D0 より深ければ語はもう悪い）
+            if (v < 0 || v >= nv || (sh[v] == 0 && dp[v] == 0)) && bad[key] == nil {
+                bad[key] = 1
+                changed = true
+            }
+        }
+        // 周ごとの写し（判定は前の周の推定で — 落ちるだけなので収束は変わらない）
+        bad0 := clone(bad)
+        sh0 := clone(sh)
+        dp0 := clone(dp)
+        for k <- iter.Range(0, cw.nrpo) {
+            bi := cw.rpo[k]
+            b := BlkRef(cw.blk[bi])
+            mut ins := irBlkIHead(mut st, b)
+            while ins != -1 {
+                r := irInsRes(mut st, ins)
+                if r >= 0 && r < nv {
+                    s1 := mvShallowIns(mut st, w, pts, esc, bad0, seen, sh0, nsl, ins)
+                    d1 := mvDeepIns(mut st, w, dp0, ins)
+                    if s1 == 0 && sh[r] != 0 {
+                        sh[r] = 0
+                        changed = true
+                    }
+                    if d1 == 0 && dp[r] != 0 {
+                        dp[r] = 0
+                        changed = true
+                    }
+                }
+                ins = irInsNext(mut st, ins)
+            }
+            for s <- mvSuccs(mut st, b) {
+                l := mrArgsTo(mut st, b, s)
+                tb := BlkRef(cw.blk[s])
+                mut p := irBlkPHead(mut st, tb)
+                mut q := 0
+                while p >= 0 {
+                    pv := desugar.HeapGet(mut st.d, p + 1)
+                    a := if l >= 0 && q < lenL(mut st, desugar.ListRef(l)) { latI(mut st, desugar.ListRef(l), q) } else { -1 }
+                    if pv >= 0 && pv < nv {
+                        if (a < 0 || a >= nv || sh[a] == 0) && sh[pv] != 0 {
+                            sh[pv] = 0
+                            changed = true
+                        }
+                        if (a < 0 || a >= nv || dp[a] == 0) && dp[pv] != 0 {
+                            dp[pv] = 0
+                            changed = true
+                        }
+                    }
+                    q += 1
+                    p = desugar.HeapGet(mut st.d, p)
+                }
+            }
+        }
+    }
+    // 番地の値ごと: 指す先の深度の語（ずれ + 2）が全部 D0 以下
+    mut hs := mut []int{}
+    for v <- iter.Range(0, nv) {
+        mut ok := len(pts[v]) > 0
+        for q <- iter.Range(0, len(pts[v]) / 2) {
+            s0 := pts[v][2 * q]
+            key := s0 * 65536 + pts[v][2 * q + 1] + 2
+            if esc[s0] != 0 || bad[key] != nil || (s0 < nsl && seen[key] == nil) {
+                ok = false
+            }
+        }
+        hs = append(hs, if ok { 1 } else { 0 })
+    }
+    return [][]int{freeze(hs), freeze(dp)}
+}
+
+// 命令の結果が D0 以下か（sh = 今の推定・到達しないものは 1 のまま）
+func mvShallowIns(st mut St, w MrW, pts [][]int, esc []int, bad map[int]int, seen map[int]int, sh []int, nsl int, ins InsRef) int {
+    op := irInsOp(mut st, ins)
+    r := irInsRes(mut st, ins)
+    if op == OpConst {
+        return if irInsA(mut st, ins) <= 0 { 1 } else { 0 }
+    }
+    if op == OpRDepth {
+        return if w.dblk[r] == 0 && (w.entEnter < 0 || w.dpos[r] < w.entEnter) { 1 } else { 0 }
+    }
+    if op == OpLoad {
+        a := irInsA(mut st, ins)
+        if a < 0 || a >= w.nv || len(pts[a]) == 0 {
+            return 0
+        }
+        for q <- iter.Range(0, len(pts[a]) / 2) {
+            s0 := pts[a][2 * q]
+            key := s0 * 65536 + pts[a][2 * q + 1] + irInsB(mut st, ins)
+            if esc[s0] != 0 || bad[key] != nil || (s0 < nsl && seen[key] == nil) {
+                return 0
+            }
+        }
+        return 1
+    }
+    if op == OpBin && irInsA(mut st, ins) == BAdd {
+        // 挟み: a + m・m = c × (x − a)・c = [… ∧ x ≤ a]（0 / 1）
+        x := irInsB(mut st, ins)
+        y := irInsC(mut st, ins)
+        return if mvClampOf(mut st, w, sh, x, y) || mvClampOf(mut st, w, sh, y, x) { 1 } else { 0 }
+    }
+    return 0
+}
+
+func mvClampOf(st mut St, w MrW, sh []int, a int, m int) bool {
+    if a < 0 || a >= w.nv || sh[a] == 0 || m < 0 || m >= w.nv || w.dins[m] < 0 {
+        return false
+    }
+    mi := InsRef(w.dins[m])
+    if irInsOp(mut st, mi) != OpBin || irInsA(mut st, mi) != BMul {
+        return false
+    }
+    return mvClampMul(mut st, w, a, irInsB(mut st, mi), irInsC(mut st, mi)) || mvClampMul(mut st, w, a, irInsC(mut st, mi), irInsB(mut st, mi))
+}
+
+// c × s で s = x − a・c = [x ≤ a]（比較 1 本か、比較 2 本の and で片方が x ≤ a）
+func mvClampMul(st mut St, w MrW, a int, c int, s int) bool {
+    if s < 0 || s >= w.nv || w.dins[s] < 0 || c < 0 || c >= w.nv || w.dins[c] < 0 {
+        return false
+    }
+    si := InsRef(w.dins[s])
+    if irInsOp(mut st, si) != OpBin || irInsA(mut st, si) != BSub || irInsC(mut st, si) != a {
+        return false
+    }
+    x := irInsB(mut st, si)
+    ci := InsRef(w.dins[c])
+    if irInsOp(mut st, ci) == OpCmp {
+        return mvLeCmp(mut st, ci, x, a)
+    }
+    if irInsOp(mut st, ci) != OpBin || irInsA(mut st, ci) != BAnd {
+        return false
+    }
+    p := irInsB(mut st, ci)
+    q := irInsC(mut st, ci)
+    if p < 0 || p >= w.nv || q < 0 || q >= w.nv || w.dins[p] < 0 || w.dins[q] < 0 {
+        return false
+    }
+    pi := InsRef(w.dins[p])
+    qi := InsRef(w.dins[q])
+    if irInsOp(mut st, pi) != OpCmp || irInsOp(mut st, qi) != OpCmp {
+        return false
+    }
+    return mvLeCmp(mut st, pi, x, a) || mvLeCmp(mut st, qi, x, a)
+}
+
+func mvLeCmp(st mut St, ci InsRef, x int, a int) bool {
+    k := irInsA(mut st, ci)
+    l := irInsB(mut st, ci)
+    r := irInsC(mut st, ci)
+    return (k == CLe && l == x && r == a) || (k == CGe && l == a && r == x)
+}
+
+// 命令の結果が D0 以上の深度か（region.depth はどこでも D0 以上・それに非負の定数を足したもの）
+func mvDeepIns(st mut St, w MrW, dp []int, ins InsRef) int {
+    op := irInsOp(mut st, ins)
+    if op == OpRDepth {
+        return 1
+    }
+    if op == OpBin && irInsA(mut st, ins) == BAdd {
+        x := irInsB(mut st, ins)
+        y := irInsC(mut st, ins)
+        if x >= 0 && x < w.nv && y >= 0 && y < w.nv {
+            return if (dp[x] != 0 && w.cst[y] != MR_INF && w.cst[y] >= 0) || (dp[y] != 0 && w.cst[x] != MR_INF && w.cst[x] >= 0) { 1 } else { 0 }
+        }
+    }
+    return 0
+}

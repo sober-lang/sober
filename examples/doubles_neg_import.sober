@@ -5,6 +5,6 @@ package main
 import "testdata/doubles/store/fake"
 
 func main() {
-    c := fake.Denying()
+    c := testdata.doubles.store.fake.Denying()
     println(len(c.rows))
 }

@@ -1,0 +1,7 @@
+{"ok":true,"ty":{"k":"int"}}
+(check exit 0)
+hello, mod
+own json
+1
+v
+(run exit 0)

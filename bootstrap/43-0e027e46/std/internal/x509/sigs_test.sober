@@ -1,0 +1,53 @@
+package x509
+
+// 署名の検証の口の網（white-box）: RSA-PSS（SHA-256 / 384 / 512・salt = ハッシュの長さ）を Go の crypto/rsa の署名と 1 ビット変えた署名で
+// （testdata/crypto/rsapss.txt — scripts/oracles/crypto_rsapss.go）
+
+import "std/convert"
+import "std/hex"
+import "std/strings"
+
+@embed("testdata/crypto/rsapss.txt")
+const Pss = map[string]string{}
+
+// RSAPublicKey（SEQUENCE { INTEGER n, INTEGER e }）の DER（n と e は正の数の大きい端 — 先頭の bit が立っていれば 0 を足す）
+func rsaPub(n []byte, e []byte) []byte {
+    ni := derInt2(n)
+    ei := derInt2(e)
+    body := cat(ni, ei)
+    return cat(derHead(0x30, len(body)), body)
+}
+
+func derInt2(x []byte) []byte {
+    v := if len(x) > 0 && int(x[0]) >= 0x80 { cat([]byte{0}, x) } else { x }
+    return cat(derHead(0x02, len(v)), v)
+}
+
+func derHead(tag int, n int) []byte {
+    if n < 128 {
+        return []byte{byte(tag), byte(n)}
+    }
+    if n < 256 {
+        return []byte{byte(tag), byte(0x81), byte(n)}
+    }
+    return []byte{byte(tag), byte(0x82), byte(n >> 8), byte(n & 0xff)}
+}
+
+func TestRsaPss() {
+    mut n := 0
+    for l <- strings.Split(strings.TrimSpace(get(Pss, "testdata/crypto/rsapss.txt")), "\n") {
+        f := strings.Fields(l)
+        nb, _ := hex.Parse(f[1])
+        eb, _ := hex.Parse(f[2])
+        hb, _ := convert.ParseInt(f[3])
+        m, _ := hex.Parse(f[4])
+        sig, _ := hex.Parse(f[5])
+        mut c := noCert()
+        c.pubAlg = PubRsa
+        c.pubKey = rsaPub(nb, eb)
+        ok := VerifyRsaPss(c, hb, Digest(hb, m), sig)
+        assert(ok == (f[6] == "1"))
+        n += 1
+    }
+    assert(n == 36)
+}

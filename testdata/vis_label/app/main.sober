@@ -5,7 +5,7 @@ package main
 import "testdata/vis_label/lib"
 
 func f() (int, error?) {
-    return 0, lib.bad{n: 1}
+    return 0, testdata.vis_label.lib.bad{n: 1}
 }
 
 func main() {

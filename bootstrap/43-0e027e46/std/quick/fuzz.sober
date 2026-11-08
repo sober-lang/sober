@@ -1,0 +1,660 @@
+package quick
+
+import "std/os"
+import "std/io"
+import "std/iter"
+import "std/convert"
+import "std/strings"
+import "std/hex"
+import "std/rand"
+import "std/sort"
+import "std/internal/cover"
+
+// fuzz の役（テストの実行ファイルの自己再実行 — 引数の `quick:` の指示）:
+//
+//     quick:fuzz=<ms>                          駆動役: 対象の Check で、下の役の子を期限まで起こし続ける（quick:check=<n> で対象を 1 つに・
+//                                              0 = 期限なしで Check の試行の数だけ）
+//     quick:work=<check>:<シード>:<from>:<to>       束の試行: 試行 [from, to) を回す。偽はシュリンクして quick:out=<file> へ（最良を更新するたび — Check の本体・
+//                                              quick:out が無ければシュリンクせずに死ぬ）
+//     quick:record=<check>:<シード>:<k>:<file>      1 試行の記録: 試行 k の選択を 1 つずつ file へ書き足す
+//     quick:replay=<check>:<file>              列の再生: file の列を 1 本再生（quick:log=<file> へ実際に引いた列・quick:show で値を印字）
+//
+// 共通: quick:hang=<ms>（試行ごとの期限 — 0 = 張らない）・quick:corpus=<dir>（列の置き場 — 試行の前に再生する）・quick:save（見つけた列を置き場へ書く）・
+// quick:mark=<file>（Check の中で死んだかの印）・quick:sched（試行 1 本ずつ子の SOBER_SCHED_SEED を振る — std/task のスケジュールの軸）・
+// quick:tmp=<dir>（駆動役の作業場所）・quick:pool=<dir>（カバレッジの誘導のシードの置き場 — 束の試行の半分をシードの列のミューテーションにする・`sober fuzz` が
+// 計器つきで建てたときだけ。駆動役の本の束〔quick:poolw〕だけが、新しい点を開いた試行の列と見た点を束の終わりに書く）。
+// 対象でない Check は何もせずに戻る。列のファイル = 1 行目 `sober quick v1`・`sched <シード>`（スケジュールの軸で見つけた列）・以下 1 行 1 選択の 10 進
+const roleNone = 0
+const roleWork = 1
+const roleRecord = 2
+const roleReplay = 3
+const roleFuzz = 4
+
+// 引数から読んだ役
+type role struct {
+    kind int
+    // 対象の Check の通し番号（fuzz の -1 = 全部）
+    check int
+    seed int
+    from int
+    to int
+    // 記録の試行の番号
+    k int
+    // 再生の列のファイル
+    in string
+    // 実際に引いた選択を書き足すファイル（記録・再生）
+    log string
+    // 束の子が偽の列を書くファイル
+    out string
+    hang int
+    ms int
+    corpus string
+    // スケジュールの軸（quick:sched — 試行ごとに子の SOBER_SCHED_SEED を振る）と、今の子に渡すシード（0 = 渡さない）
+    sched bool
+    cur int
+    // 見つけた列をコーパスへ書くか（`sober fuzz` — `sober test` のシュリンクし直しは書かない）
+    save bool
+    // 空でなければ Check が試行の前に作り、通常に戻るときに消すファイル（中身 = Check の番号 — `sober test` がプロパティの中の死を見分ける）
+    mark string
+    tmp string
+    // カバレッジの誘導のシードの置き場（空 = 誘導なし）と、束の終わりに書くか（駆動役の本の束だけ — 二分探索・記録の子は読むだけ）
+    pool string
+    poolw bool
+    show bool
+    // `quick:` でない引数（argv[1:] — テスト名）。子へそのまま渡す
+    pass []string
+    self string
+}
+
+// 子の死に方（終了コードと、標準エラーの最後の `panic:` の行から欄の値を除いた形 — 同じ失敗かの判定）
+type death struct {
+    exit int
+    sig string
+}
+
+func readRole() role {
+    args := os.Args() catch return role{kind: roleNone, check: -1}
+    mut r := role{kind: roleNone, check: -1, hang: 0}
+    mut pass := mut []string{}
+    for i <- iter.Range(1, len(args)) {
+        a := args[i]
+        if strings.HasPrefix(a, "quick:") {
+            key, val, _ := strings.Cut(strings.TrimPrefix(a, "quick:"), "=")
+            ps := strings.Split(val, ":")
+            if key == "fuzz" {
+                r.kind = roleFuzz
+                r.ms = num(a, val)
+                if r.hang == 0 {
+                    r.hang = defaultHang
+                }
+            } else if key == "work" && len(ps) == 4 {
+                r.kind = roleWork
+                r.check = num(a, ps[0])
+                r.seed = num(a, ps[1])
+                r.from = num(a, ps[2])
+                r.to = num(a, ps[3])
+            } else if key == "record" && len(ps) >= 4 {
+                r.kind = roleRecord
+                r.check = num(a, ps[0])
+                r.seed = num(a, ps[1])
+                r.k = num(a, ps[2])
+                r.log = rest(ps, 3)
+            } else if key == "replay" && len(ps) >= 2 {
+                r.kind = roleReplay
+                r.check = num(a, ps[0])
+                r.in = rest(ps, 1)
+            } else if key == "check" {
+                r.check = num(a, val)
+            } else if key == "hang" {
+                r.hang = num(a, val)
+            } else if key == "out" {
+                r.out = val
+            } else if key == "log" {
+                r.log = val
+            } else if key == "corpus" {
+                r.corpus = val
+            } else if key == "tmp" {
+                r.tmp = val
+            } else if key == "show" {
+                r.show = true
+            } else if key == "sched" {
+                r.sched = true
+            } else if key == "save" {
+                r.save = true
+            } else if key == "mark" {
+                r.mark = val
+            } else if key == "pool" {
+                r.pool = val
+            } else if key == "poolw" {
+                r.poolw = true
+            } else {
+                panic(BadArg{arg: a})
+            }
+        } else {
+            pass = append(pass, a)
+        }
+    }
+    r.pass = freeze(pass)
+    r.self = args[0]
+    return r
+}
+
+// 指示 a の欄 s の整数
+func num(a string, s string) int {
+    n := convert.ParseInt(s) catch panic(BadArg{arg: a})
+    return n
+}
+
+// ps[from:] を `:` で繋ぎ直す（ファイルのパスは `:` を含みうる）
+func rest(ps []string, from int) string {
+    return strings.Join(ps[from:len(ps)], ":")
+}
+
+// 記録・再生の役（対象の Check の中 — 試行 1 本）
+func once(q mut Src, prop func() bool, r role) {
+    if r.kind == roleRecord {
+        startTrial(mut q, r.seed, r.k, poolLists(r.pool))
+    } else {
+        replayList(mut q, readList(r.in))
+    }
+    if r.log != "" {
+        _ = io.WriteFile(r.log, bytes(listHead + "\n"))
+        q.logTo = r.log
+    }
+    q.show = r.show
+    held := run(prop, r.hang)
+    q.show = false
+    q.logTo = ""
+    if !held && !q.rejected {
+        say("quick: property returned false\n")
+        panic(Falsified{})
+    }
+}
+
+// 駆動役: Check の番号 idx の試行（シード seed）を束の子で回し、死んだ試行を見つけたらシュリンクして印字して（quick:save ならコーパスへ書いて）panic する。
+// 回す長さ = 期限 r.ms（ms = 0 なら試行 n 本 — `sober test` がプロパティの中の死をシュリンクし直す形）。試行の前にコーパスの列を全部再生する
+func drive(seed int, r role, idx int, n int) {
+    tmp := scratch(r)
+    bounded := r.ms == 0
+    pre := if bounded { "quick:" } else { "quick: fuzz:" }
+    for path <- corpusFiles(r, idx) {
+        rs := withSched(r, schedOf(path))
+        d := child(rs, tmp, "quick:replay=${idx}:${path}", "")
+        if d.exit != 0 {
+            crashed(rs, tmp, idx, readList(path), d, pre, "in the corpus case ${path}", seed)
+        }
+    }
+    end := os.Monotonic() + r.ms * 1000000
+    mut a := 0
+    while if bounded { a < n } else { os.Monotonic() < end } {
+        // スケジュールの軸: 試行 1 本を 1 つの子で（ワーカー 1・試行ごとのシード — 前の試行のスケジューラの状態を持ち越すと記録・再生で再現しない）
+        rs := if r.sched { withSched(r, a % 65536 + 1) } else { r }
+        to := if r.sched { a + 1 } else if bounded { min(a + fuzzBatch, n) } else { a + fuzzBatch }
+        _ = os.Remove(tmp + "/out")
+        mut rw := rs
+        rw.poolw = rs.pool != ""
+        d := child(rw, tmp, "quick:work=${idx}:${seed}:${a}:${to}", if r.sched { "" } else { "quick:out=${tmp}/out" })
+        if d.exit == 0 {
+            a = to
+        } else if exists(tmp + "/out") {
+            // プロパティの偽 — 子がシュリンクした最良の列（シュリンクの途中で死んでいてもそこまでの最良）
+            report(rs, tmp, idx, readList(tmp + "/out"), "${pre} falsified in trials ${a + 1}..${to} (seed ${seed}${schedNote(rs)})\n")
+            panic(Falsified{})
+        } else {
+            k := firstDeath(rs, tmp, idx, seed, a, to)
+            first := child(rs, tmp, "quick:record=${idx}:${seed}:${k}:${tmp}/rec", "")
+            if first.exit != 0 {
+                crashed(rs, tmp, idx, readList(tmp + "/rec"), first, pre, "at trial ${k + 1}", seed)
+            }
+            // 走らせ直して再現しない死（負荷の窓で遅いだけの試行の期限切れ等）は採らずに次へ
+            say("${pre} trial ${k + 1} did not fail again on replay — skipped\n")
+            a = k + 1
+        }
+    }
+    cleanup(r, tmp)
+    if !bounded {
+        say("quick: fuzz: ${a} trials, no failure (check ${idx}, seed ${seed})\n")
+    }
+}
+
+// 死んだ列 l（死に方 first）が再生で同じ死に方をすると確かめられたら、シュリンクして印字し panic する（確かめられなければ戻る）。
+// 見出し = pre + 死に方 + where
+func crashed(r role, tmp string, idx int, l []int, first death, pre string, where string, seed int) {
+    if !confirm(r, tmp, idx, l, first) {
+        return
+    }
+    bad, runs := shrink(l, (c []int, b []int) => tryChild(r, tmp, idx, first, c, b))
+    what := if first.exit == 142 { "hang (over ${r.hang} ms)" } else if isFalse(first) { "falsified" } else { "panic" }
+    report(r, tmp, idx, bad, "${pre} ${what} ${where} (seed ${seed}${schedNote(r)}, ${runs} shrink runs)\n")
+    if isFalse(first) {
+        panic(Falsified{})
+    }
+    panic(Crashed{exit: first.exit})
+}
+
+// プロパティの偽で死んだか（再生役は偽なら panic(Falsified{})）
+func isFalse(d death) bool {
+    return d.exit == 101 && strings.HasPrefix(d.sig, "panic: quick.Falsified")
+}
+
+// Check の番号 idx のコーパスの列のファイル（<corpus>/<テスト名>/<idx>-… — 名前の順）
+func corpusFiles(r role, idx int) []string {
+    if r.corpus == "" {
+        return []string{}
+    }
+    dir := corpusDir(r)
+    es := io.ReadDir(dir) catch return []string{}
+    mut out := mut []string{}
+    for e <- es {
+        if strings.HasPrefix(e.Name, "${idx}-") && regular(e.Kind) {
+            out = append(out, dir + "/" + e.Name)
+        }
+    }
+    return freeze(out)
+}
+
+func regular(k io.EntryKind) bool {
+    return switch k {
+    case io.Regular{}: true
+    default: false
+    }
+}
+
+func corpusDir(r role) string {
+    return r.corpus + "/" + (if len(r.pass) > 0 { r.pass[0] } else { "main" })
+}
+
+// `sched` の行を持つコーパスの列を、そのスケジュールの再生役の子で走らせる（死んだら子の出力を写して panic — 印は残すので sober test がシュリンクし直す）
+func schedCase(r role, idx int, path string) {
+    tmp := scratch(r)
+    rs := withSched(r, schedOf(path))
+    d := child(withHang(rs), tmp, "quick:replay=${idx}:${path}", "")
+    if d.exit != 0 {
+        shown := io.ReadFile(tmp + "/oe") catch []byte{}
+        _ = io.WriteStderr(shown)
+        cleanup(r, tmp)
+        say("quick: the corpus case ${path} fails (sched ${rs.cur}, exit ${d.exit})\n")
+        panic(Crashed{exit: d.exit})
+    }
+    cleanup(r, tmp)
+}
+
+// 期限が無ければ既定の期限を張る形（コーパスの再生がハングの列で止まらないように）
+func withHang(r role) role {
+    mut c := r
+    if c.hang == 0 {
+        c.hang = defaultHang
+    }
+    return c
+}
+
+// 束 [a, to) の中で最初に死ぬ試行（[a, lo) は通り [a, hi) は死ぬ、を保って二分探索 — 試行は決定的）
+func firstDeath(r role, tmp string, idx int, seed int, a int, to int) int {
+    mut lo := a
+    mut hi := to
+    while hi - lo > 1 {
+        mid := lo + (hi - lo) / 2
+        d := child(r, tmp, "quick:work=${idx}:${seed}:${lo}:${mid}", "")
+        if d.exit == 0 {
+            lo = mid
+        } else {
+            hi = mid
+        }
+    }
+    return lo
+}
+
+// 記録した列 l の再生が同じ死に方をするか（ハングは 2 回とも期限切れのときだけ）
+func confirm(r role, tmp string, idx int, l []int, first death) bool {
+    writeList(tmp + "/cand", l)
+    mut n := if first.exit == 142 { 2 } else { 1 }
+    while n > 0 {
+        d := child(r, tmp, "quick:replay=${idx}:${tmp}/cand", "")
+        if !sameDeath(d, first) {
+            return false
+        }
+        n = n - 1
+    }
+    return true
+}
+
+// 候補の列 c を再生役の子で試す（同じ死に方で、実際に引いた列が best より小さければ better）
+func tryChild(r role, tmp string, idx int, first death, c []int, best []int) tried {
+    writeList(tmp + "/cand", c)
+    d := child(r, tmp, "quick:replay=${idx}:${tmp}/cand", "quick:log=${tmp}/log")
+    if !sameDeath(d, first) {
+        return tried{better: false, log: []int{}}
+    }
+    l := readList(tmp + "/log")
+    return tried{better: shorter(l, best), log: l}
+}
+
+func sameDeath(d death, first death) bool {
+    return d.exit == first.exit && (d.exit == 142 || d.sig == first.sig)
+}
+
+// シュリンクした列 bad を値つきで再生して印字し（子の出力を写す）、コーパスに書いて作業場所を片付ける
+func report(r role, tmp string, idx int, bad []int, head string) {
+    say(head)
+    writeList(tmp + "/cand", bad)
+    _ = child(r, tmp, "quick:replay=${idx}:${tmp}/cand", "quick:show")
+    shown := io.ReadFile(tmp + "/oe") catch []byte{}
+    _ = io.WriteStderr(shown)
+    if r.save && r.corpus != "" {
+        dir := corpusDir(r)
+        mkdirs(dir)
+        b := listTextSched(bad, r.cur)
+        path := "${dir}/${idx}-${listHash(b)}"
+        if io.WriteFile(path, b) == nil {
+            say("quick: wrote ${path}\n")
+        }
+    }
+    cleanup(r, tmp)
+}
+
+// 役の指示 x / y（空なら付けない）で自分を子として走らせ、死に方を返す（出力は <tmp>/oe へ）
+func child(r role, tmp string, x string, y string) death {
+    mut args := mut []string{}
+    for p <- r.pass {
+        args = append(args, p)
+    }
+    args = append(args, x)
+    if y != "" {
+        args = append(args, y)
+    }
+    args = append(args, "quick:hang=${r.hang}")
+    if r.pool != "" {
+        args = append(args, "quick:pool=${r.pool}")
+    }
+    if r.poolw {
+        args = append(args, "quick:poolw")
+    }
+    // 走らせられない（作業場所に書けない・実行ファイルが消えた）のは駆動役の続けられない誤り
+    env := if r.cur != 0 { []string{"SOBER_WORKERS=1", "SOBER_SCHED_SEED=${r.cur}"} } else { []string{} }
+    ec := os.RunToEnv(r.self, freeze(args), env, tmp + "/oe", tmp + "/oe") catch panic(BadArg{arg: "quick:tmp=${tmp}"})
+    out := io.ReadFile(tmp + "/oe") catch []byte{}
+    return death{exit: ec, sig: panicSig(out)}
+}
+
+// 出力の最後の `panic: ` の行から `{…}` の中身を除いた形（欄の値はシュリンクで変わる — 種類と位置で同じ失敗とみなす）
+func panicSig(b []byte) string {
+    mut last := ""
+    for ln <- strings.Split(string(b) catch "", "\n") {
+        if strings.HasPrefix(ln, "panic: ") {
+            last = ln
+        }
+    }
+    mut out := mut []byte{}
+    mut depth := 0
+    for c <- bytes(last) {
+        if c == '}' {
+            depth = depth - 1
+        }
+        if depth == 0 {
+            out = append(out, c)
+        }
+        if c == '{' {
+            depth = depth + 1
+        }
+    }
+    return string(freeze(out)) catch ""
+}
+
+// 駆動役の作業場所（quick:tmp か、$TMPDIR〔無ければ /tmp〕の下に単調時計の値の名前で作る）
+func scratch(r role) string {
+    if r.tmp != "" {
+        _ = os.Mkdir(r.tmp)
+        return r.tmp
+    }
+    mut base := "/tmp"
+    t := os.Getenv("TMPDIR") catch nil
+    if t != nil && t != "" {
+        base = t
+    }
+    m := os.Monotonic()
+    dir := "${base}/sober-quick-${m}"
+    _ = os.Mkdir(dir)
+    return dir
+}
+
+// 作業場所のファイルを消す（quick:tmp で渡された場所はディレクトリを残す）
+func cleanup(r role, tmp string) {
+    names := []string{"out", "oe", "rec", "cand", "log"}
+    for f <- names {
+        _ = os.Remove(tmp + "/" + f)
+    }
+    if r.tmp == "" {
+        _ = os.RemoveDir(tmp)
+    }
+}
+
+// path のディレクトリを親から順に作る（あるものはそのまま）
+func mkdirs(path string) {
+    ps := strings.Split(path, "/")
+    mut at := ""
+    for i <- iter.Range(0, len(ps)) {
+        at = if i == 0 { ps[0] } else { at + "/" + ps[i] }
+        if at != "" {
+            _ = os.Mkdir(at)
+        }
+    }
+}
+
+func exists(path string) bool {
+    _ = io.ReadFile(path) catch return false
+    return true
+}
+
+// コーパスのファイルの中身（sched ≠ 0 なら 2 行目に `sched <シード>` — 再生の子の SOBER_SCHED_SEED）
+func listTextSched(xs []int, sched int) []byte {
+    if sched == 0 {
+        return listText(xs)
+    }
+    mut s := listHead + "\nsched ${sched}\n"
+    for x <- xs {
+        s = s + "${x}\n"
+    }
+    return bytes(s)
+}
+
+// 列のファイルの `sched <シード>` の行のシード（無ければ 0）
+func schedOf(path string) int {
+    b := io.ReadFile(path) catch return 0
+    for ln <- strings.Split(string(b) catch "", "\n") {
+        if strings.HasPrefix(ln, "sched ") {
+            n := convert.ParseInt(strings.TrimPrefix(ln, "sched ")) catch panic(BadArg{arg: path})
+            return n
+        }
+    }
+    return 0
+}
+
+// r の子をシード s のスケジュール（ワーカー 1・SOBER_SCHED_SEED = s — 0 なら親の環境のまま）で走らせる形
+func withSched(r role, s int) role {
+    mut c := r
+    c.cur = s
+    return c
+}
+
+func schedNote(r role) string {
+    return if r.cur != 0 { ", sched ${r.cur}" } else { "" }
+}
+
+// 列のファイルの中身の 16 桁の 16 進（FNV-1a の 32 bit を 2 本 — 積が 64 bit を溢れないよう 32 bit に保つ）
+func listHash(b []byte) string {
+    mut h1 := 2166136261
+    mut h2 := 84696351
+    for c <- b {
+        h1 = ((h1 ^ int(c)) * 16777619) & 0xffffffff
+        h2 = ((h2 ^ int(c)) * 16777619) & 0xffffffff
+    }
+    mut out := mut []byte{}
+    for i <- iter.Range(0, 4) {
+        out = append(out, byte((h1 >> (24 - 8 * i)) & 255))
+    }
+    for i <- iter.Range(0, 4) {
+        out = append(out, byte((h2 >> (24 - 8 * i)) & 255))
+    }
+    return hex.Format(freeze(out))
+}
+
+// 列のファイルの中身
+func listText(xs []int) []byte {
+    mut s := listHead + "\n"
+    for x <- xs {
+        s = s + "${x}\n"
+    }
+    return bytes(s)
+}
+
+func writeList(path string, xs []int) {
+    _ = io.WriteFile(path, listText(xs))
+}
+
+// 列のファイルを読む（無い・読めないなら空。1 行目と `sched` の行は飛ばす・整数でない行は panic(BadArg)）
+func readList(path string) []int {
+    b := io.ReadFile(path) catch return []int{}
+    mut out := mut []int{}
+    for ln <- strings.Split(string(b) catch "", "\n") {
+        if ln != "" && ln != listHead && !strings.HasPrefix(ln, "sched ") {
+            out = append(out, convert.ParseInt(ln) catch panic(BadArg{arg: path}))
+        }
+    }
+    return freeze(out)
+}
+
+// ── カバレッジの誘導（quick:pool — `sober fuzz` が計器つきで建てたとき）──
+//
+// 束の子は頭でシードの置き場の列（名前の順）を読んで固定し、試行 a はシード・番号・シードの列だけで決まる（駆動役の二分探索と記録が同じ試行を作り直せる）:
+// シードの列があれば半分の試行はシードの列 1 本のミューテーション（値の付け替え・削除・挿入・切り詰め — 選択の列の上のミューテーションなので型を知らない）を頭に読み、
+// 尽きたら乱数で続ける。試行ごとに計器の点を見て、新しい点を開いた試行の列を覚え、束が最後まで回ったら置き場へ書く（見た点の表も）
+
+// 試行 a の頭（シードの列 pool が空なら乱数だけ — 誘導なしと同じ試行）
+func startTrial(q mut Src, seed int, a int, pool [][]int) {
+    mut r := trial(seed, a)
+    if len(pool) == 0 || rand.Intn(mut r, 2) == 0 {
+        begin(mut q, r)
+        return
+    }
+    base := pool[rand.Intn(mut r, len(pool))]
+    m := mutate(mut r, base)
+    begin(mut q, r)
+    q.pre = m
+    q.replay = true
+    q.tail = true
+}
+
+// 列 xs のミューテーション 1〜3 回（値の付け替え〔0・±1・乱数〕・削除・挿入・切り詰め）
+func mutate(r mut rand.Rand, xs []int) []int {
+    mut cur := copyList(xs)
+    mut n := 1 + rand.Intn(mut r, 3)
+    while n > 0 {
+        n = n - 1
+        op := rand.Intn(mut r, 4)
+        if len(cur) == 0 || op == 2 {
+            at := rand.Intn(mut r, len(cur) + 1)
+            cur = insertAt(cur, at, rand.Intn(mut r, 256))
+        } else if op == 0 {
+            at := rand.Intn(mut r, len(cur))
+            how := rand.Intn(mut r, 4)
+            v := if how == 0 { 0 } else if how == 1 { cur[at] + 1 } else if how == 2 { if cur[at] > 0 { cur[at] - 1 } else { 0 } } else { rand.Intn(mut r, 256) }
+            cur = set(cur, at, v)
+        } else if op == 1 {
+            cur = cut(cur, rand.Intn(mut r, len(cur)), 1)
+        } else {
+            cur = cur[0:rand.Intn(mut r, len(cur))]
+        }
+    }
+    return cur
+}
+
+func insertAt(xs []int, at int, v int) []int {
+    mut out := mut []int{}
+    for i <- iter.Range(0, at) {
+        out = append(out, xs[i])
+    }
+    out = append(out, v)
+    for i <- iter.Range(at, len(xs)) {
+        out = append(out, xs[i])
+    }
+    return freeze(out)
+}
+
+// シードの置き場 dir の列（`s-` で始まるファイル — 名前の順。dir が空・読めなければ空）
+func poolLists(dir string) [][]int {
+    if dir == "" {
+        return [][]int{}
+    }
+    es := io.ReadDir(dir) catch return [][]int{}
+    mut names := mut []string{}
+    for e <- es {
+        if strings.HasPrefix(e.Name, "s-") {
+            names = append(names, e.Name)
+        }
+    }
+    ns := freeze(names)
+    ord := sort.Order(len(ns), (i, j) => strLess(ns[i], ns[j]))
+    mut out := mut [][]int{}
+    for i <- iter.Range(0, len(ord)) {
+        out = append(out, readList("${dir}/${ns[ord[i]]}"))
+    }
+    return freeze(out)
+}
+
+func strLess(a string, b string) bool {
+    x := bytes(a)
+    y := bytes(b)
+    for i <- iter.Range(0, min(len(x), len(y))) {
+        if x[i] != y[i] {
+            return x[i] < y[i]
+        }
+    }
+    return len(x) < len(y)
+}
+
+// 誘導つきの束の試行（search の all の形 — 試行 a0, a0 + 1, … を n 本）。束が最後まで回り r.poolw なら、新しい点を開いた試行の列と見た点を置き場へ
+func searchGuided(q mut Src, prop func() bool, r role, a0 int, n int) (int, int) {
+    pool := poolLists(r.pool)
+    nc := cover.N()
+    seenB := io.ReadFile(r.pool + "/seen") catch []byte{}
+    mut seen := mut []bool{}
+    for i <- iter.Range(0, nc) {
+        seen = append(seen, len(seenB) == nc && seenB[i] != 0)
+    }
+    mut found := mut [][]int{}
+    mut k := 0
+    mut dropped := 0
+    while k + dropped < n {
+        startTrial(mut q, r.seed, a0 + k + dropped, pool)
+        held := run(prop, r.hang)
+        mut fresh := false
+        for i <- iter.Range(0, nc) {
+            if !seen[i] && cover.Got(i) {
+                seen[i] = true
+                fresh = true
+            }
+        }
+        if fresh && r.poolw {
+            found = append(found, copyList(q.log))
+        }
+        if q.rejected {
+            dropped = dropped + 1
+        } else if !held {
+            return k, dropped
+        } else {
+            k = k + 1
+        }
+    }
+    if r.poolw && nc > 0 {
+        for l <- freeze(found) {
+            b := listText(l)
+            _ = io.WriteFile("${r.pool}/s-${listHash(b)}", b)
+        }
+        mut sb := mut []byte{}
+        for i <- iter.Range(0, nc) {
+            sb = append(sb, if seen[i] { byte(1) } else { byte(0) })
+        }
+        _ = io.WriteFile(r.pool + "/seen", freeze(sb))
+    }
+    return k, dropped
+}

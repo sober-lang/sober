@@ -1,0 +1,149 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/time",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "z",
+              "_"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "time",
+                    "tok": 15
+                  },
+                  "field": "LoadZone",
+                  "tok": 17
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "Asia/Tokyo",
+                    "tok": 19
+                  }
+                ],
+                "tok": 18
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "bind",
+            "names": [
+              "t"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "time",
+                    "tok": 24
+                  },
+                  "field": "Now",
+                  "tok": 26
+                },
+                "args": [],
+                "tok": 27
+              }
+            ],
+            "tok": 22
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 30
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "time",
+                      "tok": 32
+                    },
+                    "field": "FormatRFC3339",
+                    "tok": 34
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "t",
+                      "tok": 36
+                    },
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "time",
+                          "tok": 38
+                        },
+                        "field": "OffsetAt",
+                        "tok": 40
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "z",
+                          "tok": 42
+                        },
+                        {
+                          "k": "ident",
+                          "name": "t",
+                          "tok": 44
+                        }
+                      ],
+                      "tok": 41
+                    }
+                  ],
+                  "tok": 35
+                }
+              ],
+              "tok": 31
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 51
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

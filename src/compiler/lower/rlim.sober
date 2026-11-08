@@ -32,9 +32,10 @@ func rmSeedOff(k int) bool {
     return k == W_SLOTS || k == W_SLOT_SIZE
 }
 
-// 利用者のループの頭があり（展開した先のループの印も写る — irinl）、種の 2 語の語を読む load がある関数か（作業域を作らない走査 —
-// 番地の出所は見ない。ループの無い関数で CFG を組まない — 展開した region.alloc の上限の load は自己 build のほとんどの関数にある）
-func rmCheap(st mut St, f FnRef) bool {
+// 展開後のループの段の安い走査（作業域を作らない — ループの無い関数で CFG を組まない。展開した region.alloc の上限の load は自己 build の
+// ほとんどの関数にある）。利用者のループの頭がある関数で、印のビット: 1 = 種の 2 語の語を読む load がある（rlim — 番地の出所は見ない）・
+// 2 = 狭い語の op（load16 / store16 / load32 / store32 — pool.Scratch の表の口）がある（ldhoist の資格 — 同じ 1 周に相乗り）
+func lbScan(st mut St, f FnRef) int {
     mut loop := false
     mut b := irFnBHead(mut st, f)
     while b != -1 && !loop {
@@ -44,20 +45,24 @@ func rmCheap(st mut St, f FnRef) bool {
         b = irBlkNext(mut st, b)
     }
     if !loop {
-        return false
+        return 0
     }
+    mut bits := 0
     b = irFnBHead(mut st, f)
-    while b != -1 {
+    while b != -1 && bits != 3 {
         mut i := irBlkIHead(mut st, b)
         while i != -1 {
-            if irInsOp(mut st, i) == OpLoad && rmSeedOff(irInsB(mut st, i)) {
-                return true
+            op := irInsOp(mut st, i)
+            if op == OpLoad && rmSeedOff(irInsB(mut st, i)) {
+                bits = bits | 1
+            } else if op == OpLoad16 || op == OpLoad32 || op == OpStore16 || op == OpStore32 {
+                bits = bits | 2
             }
             i = irInsNext(mut st, i)
         }
         b = irBlkNext(mut st, b)
     }
-    return false
+    return bits
 }
 
 // 値 v が `globaladdr @rt.meta` の結果か（def = 値 → 定義の命令）
@@ -71,9 +76,14 @@ func rmSeed(st mut St, def mut []int, ins InsRef) bool {
 }
 
 func rlimFunc(st mut St, f FnRef) {
-    if !rmCheap(mut st, f) {
+    if lbScan(mut st, f) & 1 == 0 {
         return
     }
+    rlimBody(mut st, f)
+}
+
+// lbScan の印 1 を見た後の本体
+func rlimBody(st mut St, f FnRef) {
     nb := irFnNBlk(mut st, f)
     nv := irFnNVal(mut st, f)
     mut w := m2rW{nb: nb, blk: mut []int{}, rpoIx: mut []int{}, rpo: mut []int{}, nrpo: 0, pcnt: mut []int{}, preds: mut []int{}, idom: mut []int{}}

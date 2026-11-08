@@ -14,7 +14,7 @@
       "name": "H",
       "expr": {
         "k": "composite",
-        "type_name": "cell.Cell",
+        "type_name": "testing.cell.Cell",
         "elems": [],
         "tok": 9,
         "type_args": [
@@ -27,7 +27,7 @@
       "tok": 7,
       "span": {
         "start": 6,
-        "end": 18
+        "end": 20
       }
     }
   ]

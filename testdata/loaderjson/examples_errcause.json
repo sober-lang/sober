@@ -86,7 +86,7 @@
           "path": "std/internal/floatfmt"
         },
         {
-          "ref": "floatfmt",
+          "ref": "internal.floatfmt",
           "path": "std/internal/floatfmt"
         }
       ],
@@ -97,7 +97,7 @@
           "mut_def": false,
           "has_try": false,
           "callees": [
-            "floatfmt.Format",
+            "internal.floatfmt.Format",
             "sysFBits"
           ]
         },
@@ -107,7 +107,7 @@
           "mut_def": false,
           "has_try": false,
           "callees": [
-            "floatfmt.FormatFixed",
+            "internal.floatfmt.FormatFixed",
             "sysFBits"
           ]
         },
@@ -119,7 +119,7 @@
           "callees": [
             "bytes",
             "fastFloat",
-            "floatfmt.ParseBits",
+            "internal.floatfmt.ParseBits",
             "sysFFromBits"
           ]
         },
@@ -189,7 +189,7 @@
       "name": "floatfmt",
       "imports": [
         {
-          "ref": "bigint",
+          "ref": "internal.bigint",
           "path": "std/internal/bigint"
         },
         {
@@ -225,19 +225,19 @@
           "has_try": false,
           "callees": [
             "append",
-            "bigint.Cmp",
-            "bigint.DivSmall",
-            "bigint.MulAdd",
-            "bigint.Odd",
-            "bigint.Set",
-            "bigint.SetInt",
-            "bigint.Shl",
-            "bigint.Shr",
-            "bigint.Sub",
-            "bigint.Top",
             "byte",
             "bytesToString",
             "freeze",
+            "internal.bigint.Cmp",
+            "internal.bigint.DivSmall",
+            "internal.bigint.MulAdd",
+            "internal.bigint.Odd",
+            "internal.bigint.Set",
+            "internal.bigint.SetInt",
+            "internal.bigint.Shl",
+            "internal.bigint.Shr",
+            "internal.bigint.Sub",
+            "internal.bigint.Top",
             "iter.Range",
             "len"
           ]
@@ -259,14 +259,14 @@
           "has_try": false,
           "callees": [
             "append",
-            "bigint.Add",
-            "bigint.Cmp",
-            "bigint.MulAdd",
-            "bigint.Set",
-            "bigint.SetInt",
-            "bigint.Shl",
-            "bigint.Sub",
             "bitLen",
+            "internal.bigint.Add",
+            "internal.bigint.Cmp",
+            "internal.bigint.MulAdd",
+            "internal.bigint.Set",
+            "internal.bigint.SetInt",
+            "internal.bigint.Shl",
+            "internal.bigint.Sub",
             "iter.Range"
           ]
         },
@@ -310,10 +310,10 @@
           "mut_def": false,
           "has_try": false,
           "callees": [
-            "bigint.BitLen",
-            "bigint.Cmp",
-            "bigint.MulAdd",
             "bnDivScaled",
+            "internal.bigint.BitLen",
+            "internal.bigint.Cmp",
+            "internal.bigint.MulAdd",
             "iter.Range",
             "len"
           ]
@@ -324,10 +324,10 @@
           "mut_def": false,
           "has_try": false,
           "callees": [
-            "bigint.Cmp",
-            "bigint.Set",
-            "bigint.Shl",
-            "bigint.Sub"
+            "internal.bigint.Cmp",
+            "internal.bigint.Set",
+            "internal.bigint.Shl",
+            "internal.bigint.Sub"
           ]
         },
         {
@@ -580,7 +580,7 @@
       "pkg": "main"
     },
     {
-      "name": "InvalidFloat",
+      "name": "BadFloat",
       "pkg": "std/convert"
     },
     {
@@ -588,7 +588,7 @@
       "pkg": "std/convert"
     },
     {
-      "name": "InvalidInt",
+      "name": "BadInt",
       "pkg": "std/convert"
     },
     {
@@ -596,7 +596,7 @@
       "pkg": "std/convert"
     },
     {
-      "name": "InvalidBool",
+      "name": "BadBool",
       "pkg": "std/convert"
     },
     {

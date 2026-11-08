@@ -44,8 +44,8 @@ func recvShow(e error?) string {
 func show(e error?) string {
     return switch e {
         case nil: "ok"
-        case pem.Bad{}: "bad pem"
-        case rsa.BadKey{}: "bad key"
+        case crypto.pem.Bad{}: "bad pem"
+        case crypto.rsa.BadKey{}: "bad key"
     }
 }
 

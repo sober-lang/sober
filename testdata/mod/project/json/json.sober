@@ -1,0 +1,6 @@
+package json
+
+// the app's own json package: the tree name json is free because sober.mod renames std/json to stdjson
+func Own() string {
+    return "own json"
+}

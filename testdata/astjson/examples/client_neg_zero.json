@@ -1,0 +1,98 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/http/client",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "s"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "http.client.Session",
+                "elems": [],
+                "tok": 13,
+                "type_args": []
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "_",
+                "tok": 21
+              },
+              {
+                "k": "ident",
+                "name": "_",
+                "tok": 23
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "http",
+                      "tok": 25
+                    },
+                    "field": "client",
+                    "tok": 27
+                  },
+                  "field": "Send",
+                  "tok": 29
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "s",
+                    "tok": 31
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "/",
+                    "tok": 33
+                  }
+                ],
+                "tok": 30
+              }
+            ],
+            "tok": 21
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 38
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

@@ -1,0 +1,30 @@
+package main
+
+// 値の位置のラムダの借りの仮引数に型を注釈する形（`(f func(n int) int) => f(k)`）と、借りの実引数のラムダが
+// 囲む関数の名前付き関数型の仮引数を捕捉する形（捕捉の無い実引数だけを渡しても）
+
+type H func(f func(n int) int) int
+
+type W struct {
+    h H
+}
+
+type G func(n int) int
+
+type Stream func(emit func(b []byte) error?) error?
+
+func run(st Stream, g G) error? {
+    return st((b []byte) => {
+        println(g(len(b)))
+        nil
+    })
+}
+
+func main() {
+    k := 3
+    w := W{h: (f func(n int) int) => f(k)}
+    println(w.h((n) => n + 1))
+    d := 5
+    println(w.h((n) => n * d))
+    _ = run((emit) => emit(bytes("abc")), (n int) => n * 10)
+}

@@ -521,7 +521,7 @@
       "pkg": "testdata/iface/lib"
     },
     {
-      "name": "InvalidUtf8",
+      "name": "BadUtf8",
       "pkg": "std/strings"
     }
   ]

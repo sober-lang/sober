@@ -38,15 +38,24 @@ for (const d of docs) {
     }
   }
 }
-// package の題材（examples/guide/<package>/<ファイル>.sober — テスティングガイド）: 1 行目の末尾が `（抜粋）` / ` (excerpt)` の塊はファイルの連続した行の抜粋、
-// 他はファイルの全体と一致。`$ sober …` の 1 行だけの ```sh の塊の直後の「出力:」/「Output:」の塊は、testdata/guide/testing.cmds の同じコマンドの黄金
+// package の題材（examples/guide/<package>/<ファイル>.sober — テスティングガイド・examples/mod/<モジュール>/… — 最初のガイド）と examples/<名前>.sober: 1 行目の末尾が `（抜粋）` / ` (excerpt)` の塊はファイルの連続した行の抜粋
+// （抜粋の塊は出力の照合を持たない）、examples/guide/ の他の塊はファイルの全体と一致。`$ sober …` の 1 行だけの ```sh の塊の直後の「出力:」/「Output:」の塊は、testdata/guide/testing.cmds の同じコマンドの黄金
 // （testdata/guide/testing/<名前>.out — 網 guidetest が走らせた実物）から終了コードの行を除いたものと一致。一覧に無いコマンドは名指す
-const cmds = existsSync("testdata/guide/testing.cmds")
-  ? new Map(readFileSync("testdata/guide/testing.cmds", "utf8").split("\n").filter((l) => l !== "" && !l.startsWith("#")).map((l) => [l.slice(l.indexOf(" ") + 1), l.slice(0, l.indexOf(" "))]))
-  : new Map<string, string>();
+// コマンドの一覧は 2 本: testing.cmds（examples/guide が起点 — 黄金 testdata/guide/testing/）・modules.cmds（examples/mod/hello が起点 — 黄金 testdata/guide/modules/）
+const cmds = new Map<string, string>();
+for (const k of ["testing", "modules"]) {
+  const f = `testdata/guide/${k}.cmds`;
+  if (!existsSync(f)) continue;
+  for (const l of readFileSync(f, "utf8").split("\n")) {
+    if (l === "" || l.startsWith("#")) continue;
+    cmds.set(l.slice(l.indexOf(" ") + 1), `${k}/${l.slice(0, l.indexOf(" "))}`);
+  }
+}
 for (const d of docs) {
   const s = readFileSync(d, "utf8");
-  for (const m of s.matchAll(/```sober\n\/\/ (examples\/guide\/[A-Za-z0-9_\/]+\.sober)(（抜粋）| \(excerpt\))?\n([\s\S]*?)\n```/g)) {
+  for (const m of s.matchAll(/```sober\n\/\/ (examples\/(?:(?:guide|mod)\/[A-Za-z0-9_\/]+(?:\.sober|\/sober\.mod)|[A-Za-z0-9_]+\.sober))(（抜粋）| \(excerpt\))?\n([\s\S]*?)\n```/g)) {
+    // examples/ の直下の全文の塊は上の節が照合する（ここは抜粋だけ）。examples/mod/ はモジュールの題材（sober.mod の塊も — 最初のガイドの「モジュールと依存」）
+    if (!/^examples\/(guide|mod)\//.test(m[1]) && m[2] === undefined) continue;
     n++;
     if (!existsSync(m[1])) { bad(`${d}: ${m[1]} does not exist`); continue; }
     const src = readFileSync(m[1], "utf8").replace(/\n$/, "");
@@ -54,10 +63,10 @@ for (const d of docs) {
   }
   for (const m of s.matchAll(/```sh\n\$ (sober [^\n]+)\n```(?:\n\n(出力|Output):\n\n```\n([\s\S]*?)\n```)?/g)) {
     const name = cmds.get(m[1]);
-    if (name === undefined) { bad(`${d}: \`${m[1]}\` is not in testdata/guide/testing.cmds`); continue; }
+    if (name === undefined) { bad(`${d}: \`${m[1]}\` is not in testdata/guide/{testing,modules}.cmds`); continue; }
     n++;
     if (m[2] === undefined) continue;
-    const g = `testdata/guide/testing/${name}.out`;
+    const g = `testdata/guide/${name}.out`;
     const out = existsSync(g) ? readFileSync(g, "utf8").replace(/\n$/, "").replace(/\n?\(exit \d+\)$/, "") : "";
     if (out !== m[3]) bad(`${d}: the output block for \`${m[1]}\` differs from ${g}`);
   }
@@ -93,6 +102,14 @@ for (const d of specs) {
           const v = verdict(r[1]);
           if (v === undefined) bad(`${d}: ${id}: examples/${r[1]}.sober has no checkverdict golden`);
           else if (v.ok !== want) bad(`${d}: ${id}: examples/${r[1]}.sober is listed as ${want ? "accepted" : "rejected"} but check ${v.ok ? "accepts" : "rejects"} it`);
+        }
+        // モジュールの題材（testdata/mod/<題材>/ — 起点ごとのディレクトリ。判定は網 modcheck の黄金 testdata/mod/<題材>.expect の check の終了コード）
+        for (const r of line.matchAll(/`testdata\/mod\/([A-Za-z0-9_]+)\/`/g)) {
+          refs++;
+          const g = `testdata/mod/${r[1]}.expect`;
+          if (!existsSync(g)) { bad(`${d}: ${id}: ${g} does not exist`); continue; }
+          const ok = readFileSync(g, "utf8").includes("(check exit 0)");
+          if (ok !== want) bad(`${d}: ${id}: testdata/mod/${r[1]}/ is listed as ${want ? "accepted" : "rejected"} but check ${ok ? "accepts" : "rejects"} it`);
         }
       }
       if (/^(決定|Decided):/.test(line)) {

@@ -361,7 +361,8 @@ func usesRef(refs []string, ref string) bool {
         return false
     }
     for i <- iter.Range(0, len(refs)) {
-        if refs[i] == ref || strings.HasPrefix(refs[i], ref + ".") {
+        q, _, dotted := strings.CutLast(refs[i], ".")
+        if refs[i] == ref || dotted && q == ref {
             return true
         }
     }

@@ -388,6 +388,28 @@ func fzValP(z mut Fz, d mut desugar.S, e desugar.NodeRef, rk int, top desugar.No
     } else if k == ast.ECall {
         callee := desugar.NodeRef(x.a)
         as := desugar.ListRef(x.b)
+        lam := fzLocal(mut z, mut d, callee)
+        if lam != -1 {
+            // 局所の束縛のラムダの呼び出しは展開と同じ（U3 の「結果は新しい値」は成り立たない — 捕捉した束縛・mut の仮引数の席をそのまま返せる）:
+            // 本体の末尾の値の根と、mut で渡した実引数の根（仮引数の席を返す形 — 対応を取らず全部）を積む
+            z.llDepth += 1
+            body := desugar.NodeRef(desugar.NodeOf(mut d, lam).b)
+            bk := desugar.KindN(mut d, body)
+            if bk == ast.EBlock || bk == ast.KBlock {
+                fzTail(mut z, mut d, body)
+            } else {
+                fzValP(mut z, mut d, body, rk, desugar.NodeRef(-1))
+            }
+            z.llDepth -= 1
+            for i <- iter.Range(0, desugar.LenL(mut d, as)) {
+                an := fzNat(mut d, as, i)
+                a := desugar.NodeOf(mut d, an)
+                if a.kind == ast.EMutArg {
+                    fzPushRoot(mut z, mut d, fzMutRoot(mut z, mut d, a.a), rk, an)
+                }
+            }
+            return
+        }
         if desugar.KindN(mut d, callee) == ast.EIdent && desugar.LenL(mut d, as) > 0 {
             cn := desugar.StrRef(desugar.NodeOf(mut d, callee).a)
             if desugar.StrIs(mut d, cn, "append") {

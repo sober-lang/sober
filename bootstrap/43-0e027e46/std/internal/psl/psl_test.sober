@@ -1,0 +1,55 @@
+package psl
+
+// 公式の照合表（testdata/psl/test_psl.txt — publicsuffix/list の tests・焼き込みと同じコミット）の checkPublicSuffix(名前, 登録可能な名前) を全部。
+// 非 ASCII の名前の行は飛ばす（ASCII の名前だけを受ける — punycode の行は照合する）
+
+import "std/strings"
+
+@embed("testdata/psl/test_psl.txt")
+const Tests = map[string]string{}
+
+func TestOfficial() {
+    v := Tests["testdata/psl/test_psl.txt"]
+    text := if v != nil { v } else { "" }
+    assert(text != "")
+    mut n := 0
+    mut skipped := 0
+    for l <- strings.Split(text, "\n") {
+        if strings.HasPrefix(l, "checkPublicSuffix(") {
+            args := strings.TrimSuffix(strings.TrimPrefix(l, "checkPublicSuffix("), ");")
+            a, b, _ := strings.Cut(args, ", ")
+            if a == "null" || !ascii(a) {
+                skipped += 1
+            } else {
+                name := strings.TrimSuffix(strings.TrimPrefix(a, "'"), "'")
+                want := if b == "null" { "" } else { strings.TrimSuffix(strings.TrimPrefix(b, "'"), "'") }
+                r := Registrable(name)
+                g := if r == nil { "" } else { r }
+                if g != want {
+                    println("psl: ${name} → ${g} (want ${want})")
+                }
+                assert(g == want)
+                n += 1
+            }
+        }
+    }
+    println("psl: ${n} official cases, ${skipped} skipped (null / non-ASCII)")
+    assert(n > 50)
+}
+
+func TestSuffix() {
+    assert(IsPublicSuffix("com") && IsPublicSuffix("co.uk") && IsPublicSuffix("github.io"))
+    assert(!IsPublicSuffix("example.com") && !IsPublicSuffix("bbc.co.uk"))
+    // 未登録の TLD は既定の規則 "*" で公開の接尾辞
+    assert(IsPublicSuffix("example") && PublicSuffix("a.b.example") == "example")
+    assert(IsPublicSuffix("CO.UK."))
+}
+
+func ascii(s string) bool {
+    for x <- bytes(s) {
+        if int(x) >= 0x80 {
+            return false
+        }
+    }
+    return true
+}

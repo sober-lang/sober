@@ -16,6 +16,7 @@
 //      lv6 1.018〔json50 1.0128〕/ 1.118〔noisy 1.1120〕）。lv1〜3・7〜9 は上の値のまま。全形の合算は ≤ 1.006（実測 1.0007 × 1.005 — zlib より縮む約束は廃止）
 //      → 2026-11-01 ユーザー裁定（lv6 の中身を json-comp の採点式 rps / Bpr² で掃引 — 実戦形の率は zlib の +3% まで）: lv6 の実戦形の線は
 //      1.031〔json50 1.0255 × 1.005〕・人工形は 1.118 のまま〔noisy 1.1161〕
+//   ⑦ 記録つき（History）の列: 「hist 名前 level …」の行ごとに往復・gzip の往復・大きさ ≤ 記録なし × 1.03 + 1・json-comp の巡回の lv6 は zlib × 1.031。黄金にも並べる
 //   ⑥ 復号の双子（report-1021）: 「twin <i> 長さ CRC-32」の行ごとに、index（twin.ts — node:zlib と Go の符号化）の i 番目の列を node:zlib で解いた結果と
 //      <dir>/twin<i>.out（Sober の flate.Decode / gzip.Decode）がバイト一致・index の全部の列に twin の行がある（Sober の自分の符号化の往復と maxSize の境目は main.sober が FAIL の行で出す）
 //   node --experimental-strip-types check.ts <list> <dir> <golden> <index> [--regen]
@@ -27,6 +28,7 @@ const twinIndex = readFileSync(index, "utf8").split("\n").filter((l) => l !== ""
 let twins = 0;
 const lines = readFileSync(list, "utf8").split("\n").filter((l) => l !== "");
 let fail = 0;
+const hz = new Array(10).fill(0), hp = new Array(10).fill(0);
 const bad = (m: string) => { fail++; if (fail <= 10) console.log("FAIL " + m); };
 const gold: string[] = [];
 const sober = new Array(10).fill(0), zl = new Array(10).fill(0), jgz = new Array(10).fill(0), jzl = new Array(10).fill(0);
@@ -40,6 +42,27 @@ for (const l of lines) {
         const got = readFileSync(`${dir}/twin${is}.out`);
         if (!got.equals(want) || got.length !== Number(len)) bad(`twin ${is} ${path}: Sober ${got.length} bytes != zlib ${want.length} bytes`);
         twins++;
+        continue;
+    }
+    if (l.startsWith("hist ")) {
+        // ⑦ 記録つき（compress.flate.History）の列: 往復・gzip の形・大きさ ≤ 記録なし × 1.03 + 1（ε — flate.History の doc）・json-comp の巡回は lv6 の率の線 1.031 も
+        const [, name, lvs, inlen, incrc, outlen, outcrc, plain] = l.split(" ");
+        const lv = Number(lvs);
+        const src = readFileSync(`${dir}/${name}.in`);
+        const z = readFileSync(`${dir}/${name}.${lv}.z`);
+        if (src.length !== Number(inlen) || z.length !== Number(outlen)) bad(`hist ${name} ${lv}: length`);
+        if (crc32(src) !== Number(incrc) || crc32(z) !== Number(outcrc)) bad(`hist ${name} ${lv}: crc32`);
+        let back: Buffer | null = null;
+        try { back = inflateRawSync(z); } catch (e) { bad(`hist ${name} ${lv}: inflate: ${(e as Error).message}`); }
+        if (back !== null && !back.equals(src)) bad(`hist ${name} ${lv}: round trip differs`);
+        let gback: Buffer | null = null;
+        try { gback = gunzipSync(readFileSync(`${dir}/${name}.${lv}.gz`)); } catch (e) { bad(`hist ${name} ${lv}: gunzip: ${(e as Error).message}`); }
+        if (gback !== null && !gback.equals(src)) bad(`hist ${name} ${lv}: gzip round trip differs`);
+        if (z.length * 100 > (Number(plain) + 1) * 103) bad(`hist ${name} ${lv}: size ${z.length} > ${plain} × 1.03 + 1（ε — check.ts ⑦）`);
+        const idx = Number(name.slice(4));
+        if (lv === 6 && idx < 9) { const zlen = deflateRawSync(src, { level: 6 }).length; if (z.length > zlen * 1.031) bad(`hist ${name} 6: size ${z.length} > zlib ${zlen} × 1.031（率の線 — check.ts ⑦）`); }
+        hz[lv] += z.length; hp[lv] += Number(plain);
+        gold.push(`hist ${name} ${lv} ${outlen} ${outcrc}`);
         continue;
     }
     const [name, lvs, inlen, incrc, outlen, outcrc] = l.split(" ");
@@ -95,5 +118,6 @@ const stot = sober.slice(1).reduce((a, b) => a + b, 0), ztot = zl.slice(1).reduc
 if (stot > ztot * 1.006) bad(`total size ${stot} > zlib ${ztot} × 1.006（全形の合算の線 — check.ts ⑤）`);
 const ratio = sober.map((s, i) => `${i}:${(s / zl[i]).toFixed(4)}`).join(" ");
 const json = [1, 6, 9].map((l) => `gzip ${l} ${(jgz[l] / 3).toFixed(1)} vs zlib ${(jzl[l] / 3).toFixed(1)}`).join(" / ");
-console.log(`flatecheck: ${lines.length - twins} encodings (deflate + gzip) round-trip through zlib and Sober's Decode · ${twins} zlib / Go streams decoded ≡ zlib · size vs zlib (same level) ${ratio} · json-comp mean ${json} · fail=${fail}`);
+const hist = [1, 6, 9].map((l) => `${l}:${(hz[l] / hp[l]).toFixed(4)}`).join(" ");
+console.log(`flatecheck: ${lines.length - twins} encodings (deflate + gzip) round-trip through zlib and Sober's Decode · ${twins} zlib / Go streams decoded ≡ zlib · size vs zlib (same level) ${ratio} · json-comp mean ${json} · History / plain ${hist} · fail=${fail}`);
 process.exit(fail === 0 ? 0 : 1);

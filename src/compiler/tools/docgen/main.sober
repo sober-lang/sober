@@ -872,7 +872,7 @@ func firstSentence(s string) string {
 
 // 英訳表の照合に使う原文の印（doc の行と行末のコメントの crc32）
 func docHash(lines []string, tail string) string {
-    return convert.FormatInt(crc32.Sum(bytes(strings.Join(lines, "\n") + "\n" + tail)))
+    return convert.FormatInt(hash.crc32.Sum(bytes(strings.Join(lines, "\n") + "\n" + tail)))
 }
 
 // 英訳表 docs/std/en/<package>.json（{"<名前>": {"hash": "…", "doc": "…"}, "": パッケージの doc}）の古さを見る（B-1 は機構だけ — 表が無ければ 1 本の警告）

@@ -259,7 +259,7 @@ func cfRootSlot(st mut St, def mut []int, v int) int {
 // 命令 i が写し元 A（根のスロット aslot — スロットでなければ -1）の指す先か、スロット s（ほかの写しの store）を書きうるか
 func cfDanger(st mut St, def mut []int, i InsRef, aslot int, s int) bool {
     op := irInsOp(mut st, i)
-    if op == OpStore || op == OpStore8 {
+    if op == OpStore || isNarrowSt(op) {
         t := cfRootSlot(mut st, mut def, irInsA(mut st, i))
         return t < 0 || t == aslot || t == s
     }

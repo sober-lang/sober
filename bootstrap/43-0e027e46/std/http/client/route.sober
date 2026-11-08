@@ -1,0 +1,132 @@
+package client
+
+// proxy の経路（client.New の proxy: / proxyAuth: — 環境変数は読まない）: http の行き先は proxy へ絶対 URI の要求（Proxy-Authorization つき）・
+// https の行き先は proxy への CONNECT のトンネルの上で行き先と TLS（proxy が https なら TLS の中の TLS）
+
+import "std/http"
+import "std/internal/hsc"
+import "std/io"
+import "std/net"
+import "std/internal/record"
+
+// proxy が CONNECT を断った（status = proxy の応答の状態 — 407 は認証の要求）
+type ProxyRefused error {
+    status int
+}
+
+// New の proxy: が http / https の URL（path なし・userinfo なし）でない（呼び手の契約違反）
+type BadProxy panic
+
+// 要求 1 本の経路（proxied = proxy を通す・px = proxy の URL・auth = Proxy-Authorization の値〔"" = 書かない〕）
+type via struct {
+    proxied bool
+    px target
+    auth string
+}
+
+func viaOf(c Client, t target) via {
+    return via{proxied: c.proxied, px: c.px, auth: c.proxyAuth}
+}
+
+// 最初に Dial する番地（proxy か行き先）
+func firstHop(rt via, t target) string {
+    return dialAddr(if rt.proxied { rt.px } else { t })
+}
+
+// 要求の対象（proxy へ平文の http を頼むときは絶対 URI — RFC 9112 3.2.2）
+func requestTarget(rt via, t target) target {
+    if !rt.proxied || t.tls {
+        return t
+    }
+    return target{tls: false, host: t.host, port: t.port, path: "http://${hostHeader(t)}${t.path}"}
+}
+
+// 要求の頭に Proxy-Authorization を足す（proxy へ平文の http を頼むときだけ — CONNECT のときは CONNECT の頭に）
+func withProxyAuth(rt via, t target, fs []http.Field) []http.Field {
+    if !rt.proxied || t.tls || rt.auth == "" {
+        return fs
+    }
+    mut o := mut []http.Field{}
+    for f <- fs {
+        o = append(o, f)
+    }
+    o = append(o, http.Field{name: "Proxy-Authorization", value: rt.auth})
+    return freeze(o)
+}
+
+// 接続 conn（proxy か行き先へ Dial 済み）の上に経路の層を重ねる: proxy への TLS → CONNECT → 行き先への TLS（pa / pb = proxy / 行き先の握手の設定）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, record.Alert, hsc.CertFailed, ProxyRefused, BadResponse)
+@effects(block, io, panic, nondet)
+func setupLink(conn net.Conn, blk []int, rt via, t target, pa hsc.CParams, pb hsc.CParams) error? {
+    if rt.proxied && rt.px.tls {
+        handshakeAt(conn, blk, 1, pa, pa)?
+    }
+    if rt.proxied && t.tls {
+        hostPort := "${t.host}:${t.port}"
+        auth := if rt.auth == "" { "" } else { "Proxy-Authorization: ${rt.auth}\r\n" }
+        linkSend(conn, blk, bytes("CONNECT ${hostPort} HTTP/1.1\r\nHost: ${hostPort}\r\n${auth}\r\n"))?
+        mut raw := mut []byte{}
+        mut st := newScan()
+        mut eof := false
+        while st.hend < 0 && !st.bad && !eof {
+            d, e := linkPoll(conn, blk, pa, pa)?
+            for x <- d {
+                raw = append(raw, x)
+            }
+            eof = e
+            st = scan(mut raw, len(raw), st, true, 0)
+        }
+        if st.hend < 0 || st.bad {
+            return BadResponse{}
+        }
+        if st.status < 200 || st.status > 299 {
+            return ProxyRefused{status: st.status}
+        }
+        // トンネルの上で行き先が先に話すことは無い（TLS はクライアントが先）— 頭の後ろのバイトは形の誤り
+        if len(raw) > st.hend {
+            return BadResponse{}
+        }
+    }
+    if t.tls {
+        handshakeAt(conn, blk, 2, pb, pa)?
+    }
+    return nil
+}
+
+// 経路の上の 1 往復（要求を送り、応答が済むか相手が閉じるまで読む — 済んだ応答の後ろの平文は置き場へ持ち越す）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, record.Alert, hsc.CertFailed)
+@effects(block, io, panic, nondet)
+func linkTrip(conn net.Conn, blk []int, pa hsc.CParams, pb hsc.CParams, req []byte, raw mut []byte, st mut scanSt, noBody bool, maxBody int) error? {
+    linkSend(conn, blk, req)?
+    mut first := true
+    mut eof := false
+    while !eof && !settled(st) {
+        d, e := linkPoll(conn, blk, pa, pb)?
+        eof = e
+        for x <- d {
+            raw = append(raw, x)
+        }
+        if len(d) > 0 || first {
+            st = scan(mut raw, len(raw), st, noBody, maxBody)
+        }
+        first = false
+    }
+    if eof {
+        setFlag(blk, bDead)
+    }
+    if st.end >= 0 && st.end < len(raw) {
+        putApp(blk, tailOf(mut raw, st.end))
+    }
+    return nil
+}
+
+// b[at:] の写し（mut の引数からも読める形 — 新しい列を作って凍らせる）
+func tailOf(b mut []byte, at int) []byte {
+    mut o := mut []byte{}
+    mut i := at
+    while i < len(b) {
+        o = append(o, b[i])
+        i += 1
+    }
+    return freeze(o)
+}

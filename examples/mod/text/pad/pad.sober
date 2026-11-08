@@ -1,0 +1,10 @@
+package pad
+
+// s padded with dots on the left up to n bytes
+func Left(s string, n int) string {
+    mut out := s
+    while len(bytes(out)) < n {
+        out = ".${out}"
+    }
+    return out
+}

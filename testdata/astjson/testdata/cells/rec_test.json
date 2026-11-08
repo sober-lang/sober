@@ -1,0 +1,1020 @@
+{
+  "package": "cells",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/testing/cell",
+      "tok": 4
+    },
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    },
+    {
+      "alias": "$testing",
+      "path": "std/testing",
+      "tok": 0
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "Node",
+      "type_params": [],
+      "body": {
+        "k": "union",
+        "variants": [
+          {
+            "name": "Leaf",
+            "fields": [
+              {
+                "name": "s",
+                "type": {
+                  "k": "name",
+                  "name": "string"
+                },
+                "tok": 12
+              }
+            ],
+            "tok": 10
+          },
+          {
+            "name": "Kids",
+            "fields": [
+              {
+                "name": "xs",
+                "type": {
+                  "k": "slice_of",
+                  "elem": {
+                    "k": "name",
+                    "name": "Node"
+                  },
+                  "mut": false
+                },
+                "tok": 18
+              }
+            ],
+            "tok": 16
+          }
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 26
+      }
+    },
+    {
+      "name": "Bad",
+      "type_params": [],
+      "body": {
+        "k": "error",
+        "fields": [
+          {
+            "name": "why",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 30
+          }
+        ]
+      },
+      "tok": 27,
+      "span": {
+        "start": 26,
+        "end": 35
+      }
+    },
+    {
+      "name": "Fail",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "why",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 39
+          },
+          {
+            "name": "err",
+            "type": {
+              "k": "opt",
+              "type": {
+                "k": "name",
+                "name": "error"
+              }
+            },
+            "tok": 42
+          }
+        ]
+      },
+      "tok": 36,
+      "span": {
+        "start": 35,
+        "end": 48
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "leaves",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "Node"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "string"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "switch",
+                "subjects": [
+                  {
+                    "k": "ident",
+                    "name": "n",
+                    "tok": 100
+                  }
+                ],
+                "cases": [
+                  {
+                    "patterns": [
+                      {
+                        "k": "type",
+                        "bind": null,
+                        "variant": "Leaf",
+                        "fields": [
+                          {
+                            "name": "s",
+                            "sub": null,
+                            "tok": 105
+                          }
+                        ],
+                        "tok": 103
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "ident",
+                            "name": "s",
+                            "tok": 108
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 102
+                  },
+                  {
+                    "patterns": [
+                      {
+                        "k": "type",
+                        "bind": null,
+                        "variant": "Kids",
+                        "fields": [
+                          {
+                            "name": "xs",
+                            "sub": null,
+                            "tok": 113
+                          }
+                        ],
+                        "tok": 111
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "block",
+                            "stmts": [
+                              {
+                                "k": "bind",
+                                "names": [
+                                  "out"
+                                ],
+                                "mutable": true,
+                                "values": [
+                                  {
+                                    "k": "strlit",
+                                    "value": "",
+                                    "tok": 120
+                                  }
+                                ],
+                                "tok": 117
+                              },
+                              {
+                                "k": "expr",
+                                "expr": {
+                                  "k": "for",
+                                  "gens": [
+                                    {
+                                      "names": [
+                                        "x"
+                                      ],
+                                      "src": {
+                                        "k": "ident",
+                                        "name": "xs",
+                                        "tok": 125
+                                      },
+                                      "guards": [],
+                                      "tok": 123
+                                    }
+                                  ],
+                                  "body": {
+                                    "k": "block",
+                                    "stmts": [
+                                      {
+                                        "k": "assign",
+                                        "targets": [
+                                          {
+                                            "k": "ident",
+                                            "name": "out",
+                                            "tok": 127
+                                          }
+                                        ],
+                                        "op": "=",
+                                        "values": [
+                                          {
+                                            "k": "binary",
+                                            "op": "+",
+                                            "lhs": {
+                                              "k": "ident",
+                                              "name": "out",
+                                              "tok": 129
+                                            },
+                                            "rhs": {
+                                              "k": "call",
+                                              "callee": {
+                                                "k": "ident",
+                                                "name": "leaves",
+                                                "tok": 131
+                                              },
+                                              "args": [
+                                                {
+                                                  "k": "ident",
+                                                  "name": "x",
+                                                  "tok": 133
+                                                }
+                                              ],
+                                              "tok": 132
+                                            },
+                                            "tok": 130
+                                          }
+                                        ],
+                                        "tok": 127
+                                      }
+                                    ]
+                                  },
+                                  "tok": 122
+                                }
+                              },
+                              {
+                                "k": "expr",
+                                "expr": {
+                                  "k": "ident",
+                                  "name": "out",
+                                  "tok": 138
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 110
+                  }
+                ],
+                "default": null,
+                "tok": 99
+              }
+            ],
+            "tok": 98
+          }
+        ]
+      },
+      "tok": 91,
+      "bodiless": false,
+      "span": {
+        "start": 90,
+        "end": 146
+      },
+      "sig_end": 97
+    },
+    {
+      "name": "TestRecursiveValue",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 151
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "leaves",
+                      "tok": 153
+                    },
+                    "args": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "testing",
+                              "tok": 155
+                            },
+                            "field": "cell",
+                            "tok": 157
+                          },
+                          "field": "Get",
+                          "tok": 159
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "Tree",
+                            "tok": 161
+                          }
+                        ],
+                        "tok": 160
+                      }
+                    ],
+                    "tok": 154
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "",
+                    "tok": 165
+                  },
+                  "tok": 164
+                }
+              ],
+              "tok": 152
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "k"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "strlit",
+                "value": "a",
+                "tok": 170
+              }
+            ],
+            "tok": 168
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "testing",
+                    "tok": 172
+                  },
+                  "field": "cell",
+                  "tok": 174
+                },
+                "field": "Set",
+                "tok": 176
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "Tree",
+                  "tok": 178
+                },
+                {
+                  "k": "composite",
+                  "type_name": "Kids",
+                  "elems": [
+                    {
+                      "key": "xs",
+                      "value": {
+                        "k": "slicelit",
+                        "elem": {
+                          "k": "name",
+                          "name": "Node"
+                        },
+                        "elems": [
+                          {
+                            "k": "composite",
+                            "type_name": "Leaf",
+                            "elems": [
+                              {
+                                "key": "s",
+                                "value": {
+                                  "k": "ident",
+                                  "name": "k",
+                                  "tok": 192
+                                }
+                              }
+                            ],
+                            "tok": 188,
+                            "type_args": []
+                          },
+                          {
+                            "k": "composite",
+                            "type_name": "Kids",
+                            "elems": [
+                              {
+                                "key": "xs",
+                                "value": {
+                                  "k": "slicelit",
+                                  "elem": {
+                                    "k": "name",
+                                    "name": "Node"
+                                  },
+                                  "elems": [
+                                    {
+                                      "k": "composite",
+                                      "type_name": "Leaf",
+                                      "elems": [
+                                        {
+                                          "key": "s",
+                                          "value": {
+                                            "k": "binary",
+                                            "op": "+",
+                                            "lhs": {
+                                              "k": "ident",
+                                              "name": "k",
+                                              "tok": 207
+                                            },
+                                            "rhs": {
+                                              "k": "strlit",
+                                              "value": "!",
+                                              "tok": 209
+                                            },
+                                            "tok": 208
+                                          }
+                                        }
+                                      ],
+                                      "tok": 203,
+                                      "type_args": []
+                                    }
+                                  ],
+                                  "mut": false,
+                                  "tok": 199
+                                }
+                              }
+                            ],
+                            "tok": 195,
+                            "type_args": []
+                          }
+                        ],
+                        "mut": false,
+                        "tok": 184
+                      }
+                    }
+                  ],
+                  "tok": 180,
+                  "type_args": []
+                }
+              ],
+              "tok": 177
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 217
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "leaves",
+                      "tok": 219
+                    },
+                    "args": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "testing",
+                              "tok": 221
+                            },
+                            "field": "cell",
+                            "tok": 223
+                          },
+                          "field": "Get",
+                          "tok": 225
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "Tree",
+                            "tok": 227
+                          }
+                        ],
+                        "tok": 226
+                      }
+                    ],
+                    "tok": 220
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "aa!",
+                    "tok": 231
+                  },
+                  "tok": 230
+                }
+              ],
+              "tok": 218
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "testing",
+                    "tok": 234
+                  },
+                  "field": "cell",
+                  "tok": 236
+                },
+                "field": "Update",
+                "tok": 238
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "Tree",
+                  "tok": 240
+                },
+                {
+                  "k": "lambda",
+                  "params": [
+                    {
+                      "name": "t",
+                      "type": {
+                        "k": "name",
+                        "name": "Node"
+                      }
+                    }
+                  ],
+                  "body": {
+                    "k": "composite",
+                    "type_name": "Kids",
+                    "elems": [
+                      {
+                        "key": "xs",
+                        "value": {
+                          "k": "slicelit",
+                          "elem": {
+                            "k": "name",
+                            "name": "Node"
+                          },
+                          "elems": [
+                            {
+                              "k": "ident",
+                              "name": "t",
+                              "tok": 255
+                            },
+                            {
+                              "k": "composite",
+                              "type_name": "Leaf",
+                              "elems": [
+                                {
+                                  "key": "s",
+                                  "value": {
+                                    "k": "strlit",
+                                    "value": "z",
+                                    "tok": 261
+                                  }
+                                }
+                              ],
+                              "tok": 257,
+                              "type_args": []
+                            }
+                          ],
+                          "mut": false,
+                          "tok": 251
+                        }
+                      }
+                    ],
+                    "tok": 247,
+                    "type_args": []
+                  },
+                  "tok": 246
+                }
+              ],
+              "tok": 239
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 267
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "leaves",
+                      "tok": 269
+                    },
+                    "args": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "testing",
+                              "tok": 271
+                            },
+                            "field": "cell",
+                            "tok": 273
+                          },
+                          "field": "Get",
+                          "tok": 275
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "Tree",
+                            "tok": 277
+                          }
+                        ],
+                        "tok": 276
+                      }
+                    ],
+                    "tok": 270
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "aa!z",
+                    "tok": 281
+                  },
+                  "tok": 280
+                }
+              ],
+              "tok": 268
+            }
+          }
+        ]
+      },
+      "tok": 147,
+      "bodiless": false,
+      "span": {
+        "start": 146,
+        "end": 286
+      },
+      "sig_end": 150
+    },
+    {
+      "name": "TestErrorField",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "testing",
+                    "tok": 291
+                  },
+                  "field": "cell",
+                  "tok": 293
+                },
+                "field": "Set",
+                "tok": 295
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "Fails",
+                  "tok": 297
+                },
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "Fail"
+                  },
+                  "elems": [
+                    {
+                      "k": "composite",
+                      "type_name": "Fail",
+                      "elems": [
+                        {
+                          "key": "why",
+                          "value": {
+                            "k": "strlit",
+                            "value": "w",
+                            "tok": 307
+                          }
+                        },
+                        {
+                          "key": "err",
+                          "value": {
+                            "k": "composite",
+                            "type_name": "Bad",
+                            "elems": [
+                              {
+                                "key": "why",
+                                "value": {
+                                  "k": "strlit",
+                                  "value": "b",
+                                  "tok": 315
+                                }
+                              }
+                            ],
+                            "tok": 311,
+                            "type_args": []
+                          }
+                        }
+                      ],
+                      "tok": 303,
+                      "type_args": []
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 299
+                }
+              ],
+              "tok": 296
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "fs"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "testing",
+                      "tok": 323
+                    },
+                    "field": "cell",
+                    "tok": 325
+                  },
+                  "field": "Get",
+                  "tok": 327
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "Fails",
+                    "tok": 329
+                  }
+                ],
+                "tok": 328
+              }
+            ],
+            "tok": 321
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 332
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "&&",
+                  "lhs": {
+                    "k": "binary",
+                    "op": "!=",
+                    "lhs": {
+                      "k": "selector",
+                      "base": {
+                        "k": "index",
+                        "base": {
+                          "k": "ident",
+                          "name": "fs",
+                          "tok": 334
+                        },
+                        "idx": {
+                          "k": "int",
+                          "value": 0,
+                          "tok": 336
+                        },
+                        "tok": 335
+                      },
+                      "field": "err",
+                      "tok": 339
+                    },
+                    "rhs": {
+                      "k": "nil",
+                      "tok": 341
+                    },
+                    "tok": 340
+                  },
+                  "rhs": {
+                    "k": "binary",
+                    "op": "==",
+                    "lhs": {
+                      "k": "selector",
+                      "base": {
+                        "k": "index",
+                        "base": {
+                          "k": "ident",
+                          "name": "fs",
+                          "tok": 343
+                        },
+                        "idx": {
+                          "k": "int",
+                          "value": 0,
+                          "tok": 345
+                        },
+                        "tok": 344
+                      },
+                      "field": "why",
+                      "tok": 348
+                    },
+                    "rhs": {
+                      "k": "strlit",
+                      "value": "w",
+                      "tok": 350
+                    },
+                    "tok": 349
+                  },
+                  "tok": 342
+                }
+              ],
+              "tok": 333
+            }
+          }
+        ]
+      },
+      "tok": 287,
+      "bodiless": false,
+      "span": {
+        "start": 286,
+        "end": 355
+      },
+      "sig_end": 290
+    }
+  ],
+  "consts": [
+    {
+      "name": "Tree",
+      "expr": {
+        "k": "composite",
+        "type_name": "testing.cell.Cell",
+        "elems": [
+          {
+            "key": "init",
+            "value": {
+              "k": "composite",
+              "type_name": "Kids",
+              "elems": [
+                {
+                  "key": "xs",
+                  "value": {
+                    "k": "slicelit",
+                    "elem": {
+                      "k": "name",
+                      "name": "Node"
+                    },
+                    "elems": [],
+                    "mut": false,
+                    "tok": 66
+                  }
+                }
+              ],
+              "tok": 62,
+              "type_args": []
+            }
+          }
+        ],
+        "tok": 51,
+        "type_args": [
+          {
+            "k": "name",
+            "name": "Node"
+          }
+        ]
+      },
+      "tok": 49,
+      "span": {
+        "start": 48,
+        "end": 74
+      }
+    },
+    {
+      "name": "Fails",
+      "expr": {
+        "k": "composite",
+        "type_name": "testing.cell.Cell",
+        "elems": [],
+        "tok": 77,
+        "type_args": [
+          {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "Fail"
+            },
+            "mut": false
+          }
+        ]
+      },
+      "tok": 75,
+      "span": {
+        "start": 74,
+        "end": 90
+      }
+    }
+  ]
+}

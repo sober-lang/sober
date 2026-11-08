@@ -1,7 +1,7 @@
 package url
 
 // URL の部品の符号化: percent-encoding（RFC 3986 2.1）の Escape ⇄ Unescape と、クエリ文字列（application/x-www-form-urlencoded — `k=v&…`）の
-// 全部の組を読む ParseQuery。std/http の Query / Form は生のまま（デコードしない）の 1 キーの読み — デコードした値・同じキーの全部が要るときはこちら
+// 全部の組を読む ParseQuery。std/http/server の Query / Form は生のまま（デコードしない）の 1 キーの読み — デコードした値・同じキーの全部が要るときはこちら
 
 import "std/iter"
 
@@ -46,6 +46,27 @@ func Unescape(s string) (string, error?) {
     }
     v := string(b) catch return "", Bad{}
     return v, nil
+}
+
+// ps のクエリ文字列（`k=v&…` — key と value は Escape〔空白は "%20"〕・書かれた順のまま。ParseQuery で同じ組の列に戻る）
+//
+//     url.FormatQuery([]url.Pair{url.Pair{key: "q", value: "a b"}, url.Pair{key: "tag", value: "あ"}})   // "q=a%20b&tag=%E3%81%82"
+@effects()
+func FormatQuery(ps []Pair) string {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, len(ps)) {
+        if i > 0 {
+            out = append(out, '&')
+        }
+        for x <- bytes(Escape(ps[i].key)) {
+            out = append(out, x)
+        }
+        out = append(out, '=')
+        for x <- bytes(Escape(ps[i].value)) {
+            out = append(out, x)
+        }
+    }
+    return string(freeze(out)) catch ""
 }
 
 // クエリ文字列 s（先頭の '?' は含めない）の全部の組（'&' で切る・空の項目は飛ばす・'=' の無い項目は値 ""・key と value は '+' を空白に読んでから

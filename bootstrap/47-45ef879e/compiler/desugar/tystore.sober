@@ -1,0 +1,354 @@
+package desugar
+
+// 表層型検査器の店: typer の記録と型の列を共有ヒープ st.h から外へ出し、1 つの値（S の欄 ty）にまとめる。
+// - 型の記録（ytys）・節 → 型の表（yents + ybucket）・memo（yfnres / yfnsig / yconty）・値の位置のラムダの鍵（ylam*）・局所の束縛（ybinds）
+// - 型の列（YFn の仮引数と結果・YTuple の成分・YDecl の型引数）と印の列（ymark）・辺の鎖（yedges）は店の列の表 yl に積む。
+//   参照 = YLBASE + yl の添字（列 = [n, 要素…] — ヒープの列と同じ形）。読みは lenL / latI の木の列の枝（>= LBASE）の中で振り分ける
+//   （ヒープの列の読みの値札は 0 — 足すのは木の列の読みの比較 1 つ）
+// - 作業の列（実引数の節と型・推論の途中の型環境 — 記録が指さないもの）はヒープのまま。記録がヒープの列を指さないことは監査の口が見る（TyAudit）
+// 店の参照は package を跨ぐ番号（関数の添字・節の参照・package 番号）をまだ持つ（正準の参照への置き換えは tycanon.sober 側で別途行う）
+
+import "std/io"
+import "std/iter"
+import "std/os"
+import "std/table"
+
+const YLBASE = 35184372088832   // 2^45（LBASE + 3 × LK より上 — 木の列の種類の桁と重ならない）
+
+type TyStore struct {
+    ytys table.Table[YT]
+    yl table.Table[int]   // 型の列・印の列・辺の鎖（参照 = YLBASE + 添字）
+    // 値の位置のラムダの鍵（lower が env の形を F ごとに集める口）: yLambda が期待型の named fn type の宣言を記録する
+    ylamN table.Table[int]
+    ylamK table.Table[int]
+    ylamY table.Table[int]
+    ybinds table.Table[YBind]
+    yents table.Table[YEnt]
+    ybucket table.Table[int]
+    yfnres table.Table[int]   // 関数ごとの呼び出しの結果の型（-2 = まだ）
+    yfnsig table.Table[int]   // 関数ごとの関数値の型（-2 = まだ）
+    yconty table.Table[int]   // 辞書 const ごとの型（-2 = まだ）
+    ymark int    // 印の列（関数ごと 0 / 1 — 本体に型パラメータ型の補間の穴がある。店の列）
+    yedges int   // 型パラメータを型引数に渡す呼び出しの辺（店の鎖 [呼び手の関数, 呼ばれる関数, next] — 印の伝播）
+    // TypeAll の終わりの大きさ（監査の口 TyAudit が後の書きを数える — 店は積むだけなので差が後の書き）
+    n0tys int
+    n0yl int
+    n0ents int
+    n0syn int
+    synPost int   // TypeAll の後に、それより前の合成の節を差し替えた回数（synSet — 凍結と衝突する書き）
+    // package の分割（tyPlan が Init で組み、Init と TypeAll が同じ順で回る）。どれもヒープの列（[n, …]）
+    pord int   // package の順（依存の後順 — import 先が先）
+    ford int   // 関数の順（package 番号ごとに連続 — 区間は fo）
+    fo int     // package 番号 → ford の区間の頭（[npkg + 1]）
+    cord int   // const の順（同じ形 — 区間は co）
+    co int
+    frev int   // ファイルを package の中で逆に回す（撹拌の口 — 0 / 1）
+    ordOn int  // 撹拌の口が効いている（証人を出す — 0 / 1）
+    preg int   // package ごとの区画の境（PRSZ 語 — 下の PR* の位置）
+    ydk int    // 宣言の相を回している package（-1 = 相の外）
+    ycur int   // 型付けしている package（宣言の相・本体の相 — TypeAll の外は npkg。型引数つきの yFieldAt の memo を package ごとに分ける扉）
+    late int   // 宣言の相の外で埋まった memo（呼び手の都合で別の区画に積まれた署名 — 監査の口が数える）
+    // yFieldAt の memo（欄の型 — 型引数なしの struct は型宣言 × 欄・型引数つきは記録 × 欄）: yfmh = 鎖の頭・yfm = [鍵, next, 欄の数, 値 + 2…]
+    yfmh table.Table[int]
+    yfm table.Table[int]
+    // 正準の直列化の作業（tycanon.sober — 混ぜの 2 語・今の package・参照表〔package → 番号 + 1 / 番号 → package〕・推移の import の表・扉の数）
+    ch1 int
+    ch2 int
+    ck int
+    cri int
+    crl int
+    crn int
+    cclo int
+    cdoor int
+    cbody int
+    cents int
+    // 型付けの前の鍵（tycanon.sober の TyKeyOn。0 = 切 — ヒープの塊 KS* の頭。欄を 1 語に畳む — S の語は自己 build の値札）
+    kst int
+    h0 int     // Init の終わりのヒープの長さ（γ の読み戻しが積んだ文字列を席 A の子へ渡す基準 — TyFreeze）
+}
+
+// 区画の境（package ごとの PRSZ 語 — [lo, hi) の組。Init が合成の節・TypeAll が記録・店の列・節 → 型の記録・宣言の相の記録（[lo, 相の終わり)）・
+// 値の位置のラムダの鍵・辺の鎖（[頭, 相の終わりの頭) — 鎖は新しい順）
+const PRSZ = 14
+const PRSYN = 0
+const PRTYS = 2
+const PRYL = 4
+const PRENT = 6
+const PRDECL = 8
+const PRLAM = 10
+const PREDGE = 12
+const YFMB = 4093
+
+// package pk の区画の境の欄 at（lo）と at + 1（hi）を書く
+func prSet(st mut S, pk int, at int, lo int, hi int) {
+    hset(mut st, st.ty.preg + 1 + pk * PRSZ + at, lo)
+    hset(mut st, st.ty.preg + 2 + pk * PRSZ + at, hi)
+}
+
+// package pk の区画の境（at = PRSYN / PRTYS / PRYL / PRENT — [lo, hi)）
+func PkgRegion(st mut S, pk int, at int) (int, int) {
+    return hget(mut st, st.ty.preg + 1 + pk * PRSZ + at), hget(mut st, st.ty.preg + 2 + pk * PRSZ + at)
+}
+
+// memo を宣言の相の外で埋めたら数える（owner = その関数・const の package）
+func yLate(st mut S, owner int) {
+    if owner != st.ty.ydk {
+        st.ty.late += 1
+    }
+}
+
+// yFieldAt の memo の鍵 key（欄の数 nf）の値の頭（yfm の添字 — 無ければ作る。値 0 = まだ）
+func yfmCells(st mut S, key int, nf int) int {
+    h := (key % YFMB + YFMB) % YFMB
+    mut e := table.Get(mut st.ty.yfmh, h)
+    while e != -1 {
+        if table.Get(mut st.ty.yfm, e) == key {
+            return e + 3
+        }
+        e = table.Get(mut st.ty.yfm, e + 1)
+    }
+    at := table.Len(mut st.ty.yfm)
+    table.Push(mut st.ty.yfm, key)
+    table.Push(mut st.ty.yfm, table.Get(mut st.ty.yfmh, h))
+    table.Push(mut st.ty.yfm, nf)
+    for i <- iter.Range(0, nf) {
+        table.Push(mut st.ty.yfm, 0)
+    }
+    table.Set(mut st.ty.yfmh, h, at)
+    return at + 3
+}
+
+// 長さ n の店の列を確保する（中身は 0 — 呼び手が yput で埋める）
+func ylN(st mut S, n int) ListRef {
+    at := table.Len(mut st.ty.yl)
+    table.Push(mut st.ty.yl, n)
+    for i <- iter.Range(0, n) {
+        table.Push(mut st.ty.yl, 0)
+    }
+    return ListRef(YLBASE + at)
+}
+
+func yl0(st mut S) ListRef {
+    return ylN(mut st, 0)
+}
+
+func yl1(st mut S, x int) ListRef {
+    l := ylN(mut st, 1)
+    yput(mut st, l, 0, x)
+    return l
+}
+
+// typer の列 l（店の列かヒープの作業の列）の i 番に v を書く（検査なし — 作った直後に埋める形）
+func yput(st mut S, l ListRef, i int, v int) {
+    if int(l) >= YLBASE {
+        table.Set(mut st.ty.yl, int(l) - YLBASE + 1 + i, v)
+    } else {
+        lput(mut st, l, i, v)
+    }
+}
+
+// ylLen / ylAt は店の列の読み（lenL / latI の振り分け先）
+func ylLen(st mut S, l int) int {
+    return table.Get(mut st.ty.yl, l - YLBASE)
+}
+
+func ylAt(st mut S, l int, i int) int {
+    return table.Get(mut st.ty.yl, l - YLBASE + 1 + i)
+}
+
+// TypeAll の終わりの大きさを控える（監査の口の基準）
+func tySeal(st mut S) {
+    st.ty.n0tys = table.Len(mut st.ty.ytys)
+    st.ty.n0yl = table.Len(mut st.ty.yl)
+    st.ty.n0ents = table.Len(mut st.ty.yents)
+    st.ty.n0syn = table.Len(mut st.syn)
+}
+
+// yListField は記録 x の列の欄の数（YFn = 2・YTuple = 1・型引数つきの YDecl = 1）と i 番の値
+func yListFields(x YT) int {
+    return switch x.k {
+    case YFn: 2
+    case YTuple: 1
+    case YDecl: if x.c >= 0 { 1 } else { 0 }
+    default: 0
+    }
+}
+
+func yListField(x YT, i int) int {
+    return if x.k == YFn && i == 1 { x.b } else if x.k == YDecl { x.c } else { x.a }
+}
+
+// 監査の口 SOBER_TYAUDIT: 空でなければ証人 `#tyaudit <at> …` を stderr へ — 記録が店の外の列を指す数（leak）・
+// TypeAll の後に積んだ記録・列の語・節 → 型の記録の数（post*）・TypeAll より前の合成の節の差し替えの数（synset）・店の大きさ
+func TyAudit(st mut S, at string) {
+    v, err := os.Getenv("SOBER_TYAUDIT")
+    if err != nil || v == nil {
+        return
+    }
+    n := table.Len(mut st.ty.ytys)
+    mut leak := 0
+    mut leakTree := 0
+    for y <- iter.Range(0, n) {
+        x := YAt(mut st, y)
+        for i <- iter.Range(0, yListFields(x)) {
+            l := yListField(x, i)
+            if l != -1 && l < LBASE {
+                leak += 1
+            } else if l != -1 && l < YLBASE {
+                leakTree += 1
+            }
+        }
+    }
+    nyl := table.Len(mut st.ty.yl)
+    ne := table.Len(mut st.ty.yents)
+    // 区画: 境が順に並び隙間なく積まれているか（out = 境が package の順と食い違う数）・区画の要約
+    mut out := 0
+    mut rh := 0
+    mut prev := -1
+    for q <- iter.Range(0, if st.ty.pord == 0 { 0 } else { st.npkg }) {
+        pk := hget(mut st, st.ty.pord + 1 + q)
+        lo, hi := PkgRegion(mut st, pk, PRTYS)
+        if lo < prev || hi < lo {
+            out += 1
+        }
+        prev = hi
+        rh = (rh * 31 + pk * 7 + hi - lo + 1) % 1000000007
+    }
+    // 扉の監査（tycanon.sober。全区画を直列化するので TypeAll の直後の点だけ）
+    mut doors := ""
+    if at == "typed" && st.ty.pord != 0 {
+        d, b, e := tyDoors(mut st)
+        doors = " door=${d} body=${b} xents=${e}"
+    }
+    _ = io.WriteStderr(bytes("#tyaudit ${at}${doors} leak=${leak} tree=${leakTree} tys=${n} yl=${nyl} ents=${ne} posttys=${n - st.ty.n0tys} postyl=${nyl - st.ty.n0yl} postents=${ne - st.ty.n0ents} synset=${st.ty.synPost} late=${st.ty.late} regions=${st.npkg} rout=${out} rsum=${rh} yfm=${table.Len(mut st.ty.yfm)} heap=${hlen(mut st)}\n"))
+}
+
+
+// ── 凍らせた店の受け渡し: 席 A の子は型付けを走らせ直さず、親の店を受け取る ──
+// - 親は店の写しを凍らせて渡し（親の表はそのまま）、子は Init の後で自分の表へ積み直す。凍った基底 + 上の表で読む形（写さない）は
+//   読みの振り分けが直の道にも毎回掛かる（自己 build +0.14%）ので採らない
+// - 局所の束縛 ybinds は型付けの作業なので渡さない。区画の境（preg — ヒープの列）は子では Init の分だけ（監査と emit だけが読む）
+
+// 凍らせた店（imm — 子へそのまま渡せる）
+type TyFrozen struct {
+    tys table.Frozen[YT]
+    yl table.Frozen[int]
+    ents table.Frozen[YEnt]
+    bucket []int
+    fnres []int
+    fnsig []int
+    conty []int
+    lamN []int
+    lamK []int
+    lamY []int
+    yfmh []int
+    yfm []int
+    sc []int   // 店の語（TyFreeze が積む並び — TyAdopt が同じ並びで戻す）
+    heap []int // Init の後のヒープの尾（γ の当たりがあった build だけ — 読み戻しが型変数の名前を strOf でヒープへ積む。子は Init の後の同じ番地へ積み直す）
+}
+
+func tyInts(t mut table.Table[int]) []int {
+    mut o := mut []int{}
+    for i <- iter.Range(0, table.Len(mut t)) {
+        o = append(o, table.Get(mut t, i))
+    }
+    return freeze(o)
+}
+
+func tyRefill(t mut table.Table[int], xs []int) {
+    _ = table.Freeze(mut t)
+    if len(xs) > 0 {
+        table.PushAll(mut t, xs)
+    }
+}
+
+// 親の店の写しを凍らせて返す（子へ渡す値 — 親の表は変えない）
+func TyFreeze(st mut S) TyFrozen {
+    mut cpT := table.Table[YT]{}
+    for i <- iter.Range(0, table.Len(mut st.ty.ytys)) {
+        table.Push(mut cpT, table.Get(mut st.ty.ytys, i))
+    }
+    mut cpE := table.Table[YEnt]{}
+    for i <- iter.Range(0, table.Len(mut st.ty.yents)) {
+        table.Push(mut cpE, table.Get(mut st.ty.yents, i))
+    }
+    mut cpL := table.Table[int]{}
+    for i <- iter.Range(0, table.Len(mut st.ty.yl)) {
+        table.Push(mut cpL, table.Get(mut st.ty.yl, i))
+    }
+    ftys := table.Freeze(mut cpT)
+    fyl := table.Freeze(mut cpL)
+    fents := table.Freeze(mut cpE)
+    mut sc := mut []int{}
+    sc = append(sc, st.ty.ymark)
+    sc = append(sc, st.ty.yedges)
+    sc = append(sc, st.ty.n0tys)
+    sc = append(sc, st.ty.n0yl)
+    sc = append(sc, st.ty.n0ents)
+    sc = append(sc, st.ty.n0syn)
+    sc = append(sc, st.ty.synPost)
+    sc = append(sc, st.ty.ydk)
+    sc = append(sc, st.ty.ycur)
+    sc = append(sc, st.ty.late)
+    sc = append(sc, st.nimpl)
+    sc = append(sc, st.ty.h0)
+    mut hp := mut []int{}
+    if gcAnyHit(mut st) {
+        for i <- iter.Range(st.ty.h0, hlen(mut st)) {
+            hp = append(hp, hget(mut st, i))
+        }
+    }
+    return TyFrozen{heap: freeze(hp), tys: ftys, yl: fyl, ents: fents, bucket: tyInts(mut st.ty.ybucket), fnres: tyInts(mut st.ty.yfnres), fnsig: tyInts(mut st.ty.yfnsig), conty: tyInts(mut st.ty.yconty), lamN: tyInts(mut st.ty.ylamN), lamK: tyInts(mut st.ty.ylamK), lamY: tyInts(mut st.ty.ylamY), yfmh: tyInts(mut st.ty.yfmh), yfm: tyInts(mut st.ty.yfm), sc: freeze(sc)}
+}
+
+// 子が Init の後で親の店を受け取る（TypeAll の代わり — 型付けの結果は親の店のまま）
+func TyAdopt(st mut S, f TyFrozen) {
+    _ = table.Freeze(mut st.ty.ytys)
+    _ = table.Freeze(mut st.ty.yl)
+    _ = table.Freeze(mut st.ty.yents)
+    _ = table.Freeze(mut st.ty.ybinds)
+    for i <- iter.Range(0, table.FrozenLen(f.tys)) {
+        table.Push(mut st.ty.ytys, table.At(f.tys, i))
+    }
+    for i <- iter.Range(0, table.FrozenLen(f.ents)) {
+        table.Push(mut st.ty.yents, table.At(f.ents, i))
+    }
+    for i <- iter.Range(0, table.FrozenLen(f.yl)) {
+        table.Push(mut st.ty.yl, table.At(f.yl, i))
+    }
+    tyRefill(mut st.ty.ybucket, f.bucket)
+    tyRefill(mut st.ty.yfnres, f.fnres)
+    tyRefill(mut st.ty.yfnsig, f.fnsig)
+    tyRefill(mut st.ty.yconty, f.conty)
+    tyRefill(mut st.ty.ylamN, f.lamN)
+    tyRefill(mut st.ty.ylamK, f.lamK)
+    tyRefill(mut st.ty.ylamY, f.lamY)
+    tyRefill(mut st.ty.yfmh, f.yfmh)
+    tyRefill(mut st.ty.yfm, f.yfm)
+    st.ty.ymark = f.sc[0]
+    st.ty.yedges = f.sc[1]
+    st.ty.n0tys = f.sc[2]
+    st.ty.n0yl = f.sc[3]
+    st.ty.n0ents = f.sc[4]
+    st.ty.n0syn = f.sc[5]
+    st.ty.synPost = f.sc[6]
+    st.ty.ydk = f.sc[7]
+    st.ty.ycur = f.sc[8]
+    st.ty.late = f.sc[9]
+    // 店の外の型付けの結果の語: 暗黙の freeze の点の数（IsImplicit の門 — 点そのものは節 → 型の表の別キー〔IMPLKEY〕で店の中。
+    // 点の列 ypts は analyzer の Freeze だけが読む — 子は検査しないので渡さない）
+    st.nimpl = f.sc[10]
+    // γ の読み戻しの文字列（ヒープの尾 — Init の終わりの長さが親と同じことが前提: Init は決定的）
+    if len(f.heap) > 0 {
+        if hlen(mut st) != f.sc[11] {
+            panic(InvariantBroken{})
+        }
+        for w <- f.heap {
+            hpush(mut st, w)
+        }
+    }
+    // TypeAll の頭が立てる S の語（型付けの作業の状態 — 終わった後の値と同じ）
+    st.yfi = -1
+    st.instEnvs = -1
+    st.insts = -1
+}

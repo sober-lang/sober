@@ -1,0 +1,11 @@
+package kv
+
+import "store"
+
+func Put(s store.Store, k string, v string) store.Store {
+    return store.With(s, k, v)
+}
+
+func Get(s store.Store, k string) string {
+    return store.Find(s, k)
+}

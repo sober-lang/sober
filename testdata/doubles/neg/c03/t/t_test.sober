@@ -2,8 +2,8 @@ package t
 
 import "std/testing/cell"
 
-const H = cell.Cell[int]{key: 7}
+const H = testing.cell.Cell[int]{key: 7}
 
 func TestT() {
-    cell.Set(H, 1)
+    testing.cell.Set(H, 1)
 }

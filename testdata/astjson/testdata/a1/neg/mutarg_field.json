@@ -1,0 +1,260 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "K",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "v",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          },
+          {
+            "name": "next",
+            "type": {
+              "k": "opt",
+              "type": {
+                "k": "name",
+                "name": "K"
+              }
+            },
+            "tok": 10
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 16
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "setTail",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "opt",
+            "type": {
+              "k": "name",
+              "name": "K"
+            }
+          },
+          "mutable": true
+        },
+        {
+          "name": "v",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "n",
+                "tok": 28
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "K",
+                "elems": [
+                  {
+                    "key": "v",
+                    "value": {
+                      "k": "ident",
+                      "name": "v",
+                      "tok": 34
+                    }
+                  },
+                  {
+                    "key": "next",
+                    "value": {
+                      "k": "nil",
+                      "tok": 38
+                    }
+                  }
+                ],
+                "tok": 30,
+                "type_args": []
+              }
+            ],
+            "tok": 28
+          }
+        ]
+      },
+      "tok": 17,
+      "bodiless": false,
+      "span": {
+        "start": 16,
+        "end": 43
+      },
+      "sig_end": 27
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "k"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "K",
+                "elems": [
+                  {
+                    "key": "v",
+                    "value": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 55
+                    }
+                  },
+                  {
+                    "key": "next",
+                    "value": {
+                      "k": "nil",
+                      "tok": 59
+                    }
+                  }
+                ],
+                "tok": 51,
+                "type_args": []
+              }
+            ],
+            "tok": 48
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "setTail",
+                "tok": 62
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "k.next",
+                  "tok": 65
+                },
+                {
+                  "k": "int",
+                  "value": 2,
+                  "tok": 69
+                }
+              ],
+              "tok": 63
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "nx"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "k",
+                  "tok": 74
+                },
+                "field": "next",
+                "tok": 76
+              }
+            ],
+            "tok": 72
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "nx",
+                  "tok": 79
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 81
+                },
+                "tok": 80
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 83
+                      },
+                      "args": [
+                        {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "nx",
+                            "tok": 85
+                          },
+                          "field": "v",
+                          "tok": 87
+                        }
+                      ],
+                      "tok": 84
+                    }
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 78
+            }
+          }
+        ]
+      },
+      "tok": 44,
+      "bodiless": false,
+      "span": {
+        "start": 43,
+        "end": 94
+      },
+      "sig_end": 47
+    }
+  ],
+  "consts": []
+}

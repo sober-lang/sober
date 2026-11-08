@@ -1,3 +1,2 @@
-sober: type error at examples/func_neg_noreturn.sober:6:12
-{"errors":[{"msg":"def error"}],"ok":false}
+sober: load error at examples/func_neg_noreturn.sober:6:12: the body of a func with results ends in a call whose value is not returned — the last expression is not the result: write `return f(…)`
 exit=1

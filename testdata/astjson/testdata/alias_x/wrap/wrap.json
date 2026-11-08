@@ -40,7 +40,7 @@
           "name": "w",
           "type": {
             "k": "name",
-            "name": "lib.Work"
+            "name": "testdata.alias_x.lib.Work"
           },
           "mutable": true
         },
@@ -63,26 +63,36 @@
               "callee": {
                 "k": "selector",
                 "base": {
-                  "k": "ident",
-                  "name": "lib",
-                  "tok": 28
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "testdata",
+                      "tok": 32
+                    },
+                    "field": "alias_x",
+                    "tok": 34
+                  },
+                  "field": "lib",
+                  "tok": 36
                 },
                 "field": "Feed",
-                "tok": 30
+                "tok": 38
               },
               "args": [
                 {
                   "k": "mut_arg",
                   "name": "w",
-                  "tok": 33
+                  "tok": 41
                 },
                 {
                   "k": "ident",
                   "name": "x",
-                  "tok": 35
+                  "tok": 43
                 }
               ],
-              "tok": 31
+              "tok": 39
             }
           }
         ]
@@ -91,9 +101,9 @@
       "bodiless": false,
       "span": {
         "start": 15,
-        "end": 40
+        "end": 48
       },
-      "sig_end": 27
+      "sig_end": 31
     },
     {
       "name": "Mean",
@@ -103,7 +113,7 @@
           "name": "w",
           "type": {
             "k": "name",
-            "name": "lib.Work"
+            "name": "testdata.alias_x.lib.Work"
           },
           "mutable": false
         }
@@ -111,7 +121,7 @@
       "results": [
         {
           "k": "name",
-          "name": "lib.Res"
+          "name": "testdata.alias_x.lib.Res"
         }
       ],
       "body": {
@@ -124,34 +134,44 @@
                 "callee": {
                   "k": "selector",
                   "base": {
-                    "k": "ident",
-                    "name": "lib",
-                    "tok": 53
+                    "k": "selector",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "testdata",
+                        "tok": 69
+                      },
+                      "field": "alias_x",
+                      "tok": 71
+                    },
+                    "field": "lib",
+                    "tok": 73
                   },
                   "field": "Mean",
-                  "tok": 55
+                  "tok": 75
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "w",
-                    "tok": 57
+                    "tok": 77
                   }
                 ],
-                "tok": 56
+                "tok": 76
               }
             ],
-            "tok": 52
+            "tok": 68
           }
         ]
       },
-      "tok": 41,
+      "tok": 49,
       "bodiless": false,
       "span": {
-        "start": 40,
-        "end": 62
+        "start": 48,
+        "end": 82
       },
-      "sig_end": 51
+      "sig_end": 67
     },
     {
       "name": "Value",
@@ -161,7 +181,7 @@
           "name": "r",
           "type": {
             "k": "name",
-            "name": "lib.Res"
+            "name": "testdata.alias_x.lib.Res"
           },
           "mutable": false
         }
@@ -183,7 +203,7 @@
                   {
                     "k": "ident",
                     "name": "r",
-                    "tok": 74
+                    "tok": 98
                   }
                 ],
                 "cases": [
@@ -192,15 +212,15 @@
                       {
                         "k": "type",
                         "bind": null,
-                        "variant": "lib.Ok",
+                        "variant": "testdata.alias_x.lib.Ok",
                         "fields": [
                           {
                             "name": "v",
                             "sub": null,
-                            "tok": 81
+                            "tok": 109
                           }
                         ],
-                        "tok": 77
+                        "tok": 101
                       }
                     ],
                     "body": {
@@ -210,12 +230,12 @@
                           "expr": {
                             "k": "ident",
                             "name": "v",
-                            "tok": 84
+                            "tok": 112
                           }
                         }
                       ]
                     },
-                    "tok": 76
+                    "tok": 100
                   }
                 ],
                 "default": {
@@ -228,27 +248,27 @@
                         "operand": {
                           "k": "int",
                           "value": 1,
-                          "tok": 89
+                          "tok": 117
                         },
-                        "tok": 88
+                        "tok": 116
                       }
                     }
                   ]
                 },
-                "tok": 73
+                "tok": 97
               }
             ],
-            "tok": 72
+            "tok": 96
           }
         ]
       },
-      "tok": 63,
+      "tok": 83,
       "bodiless": false,
       "span": {
-        "start": 62,
-        "end": 95
+        "start": 82,
+        "end": 123
       },
-      "sig_end": 71
+      "sig_end": 95
     },
     {
       "name": "Twice",
@@ -258,7 +278,7 @@
           "name": "s",
           "type": {
             "k": "name",
-            "name": "lib.Step"
+            "name": "testdata.alias_x.lib.Step"
           },
           "mutable": false
         },
@@ -287,7 +307,7 @@
                 "callee": {
                   "k": "ident",
                   "name": "s",
-                  "tok": 109
+                  "tok": 141
                 },
                 "args": [
                   {
@@ -295,32 +315,32 @@
                     "callee": {
                       "k": "ident",
                       "name": "s",
-                      "tok": 111
+                      "tok": 143
                     },
                     "args": [
                       {
                         "k": "ident",
                         "name": "x",
-                        "tok": 113
+                        "tok": 145
                       }
                     ],
-                    "tok": 112
+                    "tok": 144
                   }
                 ],
-                "tok": 110
+                "tok": 142
               }
             ],
-            "tok": 108
+            "tok": 140
           }
         ]
       },
-      "tok": 96,
+      "tok": 124,
       "bodiless": false,
       "span": {
-        "start": 95,
-        "end": 119
+        "start": 123,
+        "end": 151
       },
-      "sig_end": 107
+      "sig_end": 139
     },
     {
       "name": "Last",
@@ -351,23 +371,23 @@
                 "base": {
                   "k": "ident",
                   "name": "a",
-                  "tok": 128
+                  "tok": 160
                 },
                 "field": "last",
-                "tok": 130
+                "tok": 162
               }
             ],
-            "tok": 127
+            "tok": 159
           }
         ]
       },
-      "tok": 120,
+      "tok": 152,
       "bodiless": false,
       "span": {
-        "start": 119,
-        "end": 134
+        "start": 151,
+        "end": 166
       },
-      "sig_end": 126
+      "sig_end": 158
     },
     {
       "name": "NewAcc",
@@ -402,25 +422,25 @@
                     "value": {
                       "k": "ident",
                       "name": "x",
-                      "tok": 147
+                      "tok": 179
                     }
                   }
                 ],
-                "tok": 143,
+                "tok": 175,
                 "type_args": []
               }
             ],
-            "tok": 142
+            "tok": 174
           }
         ]
       },
-      "tok": 135,
+      "tok": 167,
       "bodiless": false,
       "span": {
-        "start": 134,
-        "end": 152
+        "start": 166,
+        "end": 184
       },
-      "sig_end": 141
+      "sig_end": 173
     }
   ],
   "consts": []

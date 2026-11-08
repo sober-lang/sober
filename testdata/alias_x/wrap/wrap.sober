@@ -18,23 +18,23 @@ type acc struct {
 // 別名の別名（package をまたぐ鎖）
 // (別名の行)
 
-func Feed(w mut lib.Work, x int) {
-    lib.Feed(mut w, x)
+func Feed(w mut testdata.alias_x.lib.Work, x int) {
+    testdata.alias_x.lib.Feed(mut w, x)
 }
 
-func Mean(w lib.Work) lib.Res {
-    return lib.Mean(w)
+func Mean(w testdata.alias_x.lib.Work) testdata.alias_x.lib.Res {
+    return testdata.alias_x.lib.Mean(w)
 }
 
-// Value は lib.Res の値（union の variant は実体の package の名前で書く — 利用者は lib を書けないので、分解は包みの関数に置く）
-func Value(r lib.Res) int {
+// Value は testdata.alias_x.lib.Res の値（union の variant は実体の package の名前で書く — 利用者は lib を書けないので、分解は包みの関数に置く）
+func Value(r testdata.alias_x.lib.Res) int {
     return switch r {
-    case lib.Ok{v}: v
+    case testdata.alias_x.lib.Ok{v}: v
     default: -1
     }
 }
 
-func Twice(s lib.Step, x int) int {
+func Twice(s testdata.alias_x.lib.Step, x int) int {
     return s(s(x))
 }
 

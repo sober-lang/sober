@@ -1,0 +1,76 @@
+package lower
+
+// 写しの転送（cpfwd.sober）の網: IR を手で組んで直に見る（`cd src/compiler && ../../bin/sober test lower`）。
+// 転送は観測を変えない変換なので、門を緩めすぎる変異は例・題材の出力では鳴りにくい — 転送する / しない形をここで固定する
+
+import "desugar"
+import "std/iter"
+
+// `S = A[0..2] の写し; [kind の形]; x = load S[1]; str_eq(S, Q)` の関数（A・Q = ptr・p = i64）に転送を掛け、使い道のブロックに残った
+// S の使い道（load の番地・str_eq の引数）の数を返す（0 = 転送した・2 = しない）。
+// kind: 0 = 何も足さない・1 = 写しと使い道の間に A[0] への store・2 = 写しが使い道を支配しない（p で写しを飛ばす道がある）・3 = 間に未知の呼び出し
+func cfT(kind int) int {
+    mut st := St{}
+    initScalars(mut st)
+    desugar.HeapPush(mut st.d, 0)
+    pt := listN(mut st, 3)
+    desugar.HeapSet(mut st.d, pt + 1, TyPtr)
+    desugar.HeapSet(mut st.d, pt + 2, TyPtr)
+    desugar.HeapSet(mut st.d, pt + 3, TyI64)
+    st.rtStreq = addFunc(mut st, 0, desugar.ListRef(listN(mut st, 0)), TyI64)
+    other := addFunc(mut st, 0, desugar.ListRef(listN(mut st, 0)), -1)
+    f := addFunc(mut st, 0, desugar.ListRef(pt), -1)
+    st.fn = f
+    entry := newBlock(mut st)
+    st.cur = entry
+    cp := newBlock(mut st)
+    skip := newBlock(mut st)
+    use := newBlock(mut st)
+    s := slotaddr(mut st, 5)
+    if kind == 2 {
+        condbr(mut st, 2, cp, -1, skip, -1)
+        setCur(mut st, skip)
+        br(mut st, use, -1)
+    } else {
+        br(mut st, cp, -1)
+    }
+    setCur(mut st, cp)
+    for j <- iter.Range(0, 3) {
+        store(mut st, s, j, load(mut st, 0, j))
+    }
+    if kind == 1 {
+        store(mut st, 0, 0, iconst(mut st, 7))
+    } else if kind == 3 {
+        _ = call(mut st, other, listN(mut st, 0))
+    }
+    br(mut st, use, -1)
+    setCur(mut st, use)
+    _ = load(mut st, s, 1)
+    _ = call(mut st, st.rtStreq, list2(mut st, s, 1))
+    ret(mut st, -1)
+    cpfwdFunc(mut st, f)
+    mut n := 0
+    mut k := irBlkIHead(mut st, use)
+    while k != -1 {
+        op := irInsOp(mut st, k)
+        if op == OpLoad && irInsA(mut st, k) != 0 && irInsA(mut st, k) != 1 {
+            n += 1
+        }
+        if op == OpCall && irInsFn(mut st, k) == st.rtStreq && desugar.HeapGet(mut st.d, irInsB(mut st, k) + 1) != 0 {
+            n += 1
+        }
+        k = irInsNext(mut st, k)
+    }
+    return n
+}
+
+func TestCpfwd() {
+    // 0: 写しの後に危うい命令が無ければ、使い道は写し元 A（仮引数 0）へ付け替わる
+    assert(cfT(0) == 0)
+    // 1: 写しと使い道の間に A の指す先への store があれば転送しない（store の検査を外す変異はここで落ちる）
+    assert(cfT(1) == 2)
+    // 2: 写しが使い道を支配しなければ転送しない（支配の検査を外す変異はここで落ちる）
+    assert(cfT(2) == 2)
+    // 3: 間に未知の呼び出しがあれば転送しない
+    assert(cfT(3) == 2)
+}

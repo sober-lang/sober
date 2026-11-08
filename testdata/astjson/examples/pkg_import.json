@@ -30,14 +30,14 @@
             "values": [
               {
                 "k": "composite",
-                "type_name": "shapes.Rect",
+                "type_name": "testdata.specpkg.shapes.Rect",
                 "elems": [
                   {
                     "key": "w",
                     "value": {
                       "k": "int",
                       "value": 2,
-                      "tok": 23
+                      "tok": 27
                     }
                   },
                   {
@@ -45,7 +45,7 @@
                     "value": {
                       "k": "int",
                       "value": 3,
-                      "tok": 27
+                      "tok": 31
                     }
                   }
                 ],
@@ -62,7 +62,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 30
+                "tok": 34
               },
               "args": [
                 {
@@ -70,21 +70,31 @@
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "shapes",
-                      "tok": 32
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 36
+                        },
+                        "field": "specpkg",
+                        "tok": 38
+                      },
+                      "field": "shapes",
+                      "tok": 40
                     },
                     "field": "Area",
-                    "tok": 34
+                    "tok": 42
                   },
                   "args": [
                     {
                       "k": "ident",
                       "name": "r",
-                      "tok": 36
+                      "tok": 44
                     }
                   ],
-                  "tok": 35
+                  "tok": 43
                 },
                 {
                   "k": "call",
@@ -93,42 +103,52 @@
                     "base": {
                       "k": "ident",
                       "name": "sh",
-                      "tok": 39
+                      "tok": 47
                     },
                     "field": "Area",
-                    "tok": 41
+                    "tok": 49
                   },
                   "args": [
                     {
                       "k": "ident",
                       "name": "r",
-                      "tok": 43
+                      "tok": 51
                     }
                   ],
-                  "tok": 42
+                  "tok": 50
                 },
                 {
                   "k": "selector",
                   "base": {
                     "k": "ident",
                     "name": "r",
-                    "tok": 46
+                    "tok": 54
                   },
                   "field": "w",
-                  "tok": 48
+                  "tok": 56
                 },
                 {
                   "k": "selector",
                   "base": {
-                    "k": "ident",
-                    "name": "shapes",
-                    "tok": 50
+                    "k": "selector",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "testdata",
+                        "tok": 58
+                      },
+                      "field": "specpkg",
+                      "tok": 60
+                    },
+                    "field": "shapes",
+                    "tok": 62
                   },
                   "field": "Unit",
-                  "tok": 52
+                  "tok": 64
                 }
               ],
-              "tok": 31
+              "tok": 35
             }
           },
           {
@@ -144,24 +164,34 @@
                 "callee": {
                   "k": "selector",
                   "base": {
-                    "k": "ident",
-                    "name": "shapes",
-                    "tok": 59
+                    "k": "selector",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "testdata",
+                        "tok": 71
+                      },
+                      "field": "specpkg",
+                      "tok": 73
+                    },
+                    "field": "shapes",
+                    "tok": 75
                   },
                   "field": "Parse",
-                  "tok": 61
+                  "tok": 77
                 },
                 "args": [
                   {
                     "k": "strlit",
                     "value": "circle",
-                    "tok": 63
+                    "tok": 79
                   }
                 ],
-                "tok": 62
+                "tok": 78
               }
             ],
-            "tok": 55
+            "tok": 67
           },
           {
             "k": "expr",
@@ -171,7 +201,7 @@
                 {
                   "k": "ident",
                   "name": "err",
-                  "tok": 67
+                  "tok": 83
                 }
               ],
               "cases": [
@@ -182,7 +212,7 @@
                       "alts": [
                         {
                           "k": "nil",
-                          "tok": 70
+                          "tok": 86
                         }
                       ]
                     }
@@ -196,7 +226,7 @@
                           "callee": {
                             "k": "ident",
                             "name": "println",
-                            "tok": 72
+                            "tok": 88
                           },
                           "args": [
                             {
@@ -204,33 +234,33 @@
                               "base": {
                                 "k": "ident",
                                 "name": "q",
-                                "tok": 74
+                                "tok": 90
                               },
                               "field": "w",
-                              "tok": 76
+                              "tok": 92
                             }
                           ],
-                          "tok": 73
+                          "tok": 89
                         }
                       }
                     ]
                   },
-                  "tok": 69
+                  "tok": 85
                 },
                 {
                   "patterns": [
                     {
                       "k": "type",
                       "bind": null,
-                      "variant": "shapes.Unknown",
+                      "variant": "testdata.specpkg.shapes.Unknown",
                       "fields": [
                         {
                           "name": "name",
                           "sub": null,
-                          "tok": 84
+                          "tok": 104
                         }
                       ],
-                      "tok": 80
+                      "tok": 96
                     }
                   ],
                   "body": {
@@ -242,30 +272,30 @@
                           "callee": {
                             "k": "ident",
                             "name": "println",
-                            "tok": 87
+                            "tok": 107
                           },
                           "args": [
                             {
                               "k": "strlit",
                               "value": "unknown",
-                              "tok": 89
+                              "tok": 109
                             },
                             {
                               "k": "ident",
                               "name": "name",
-                              "tok": 91
+                              "tok": 111
                             }
                           ],
-                          "tok": 88
+                          "tok": 108
                         }
                       }
                     ]
                   },
-                  "tok": 79
+                  "tok": 95
                 }
               ],
               "default": null,
-              "tok": 66
+              "tok": 82
             }
           }
         ]
@@ -274,7 +304,7 @@
       "bodiless": false,
       "span": {
         "start": 10,
-        "end": 98
+        "end": 118
       },
       "sig_end": 14
     }

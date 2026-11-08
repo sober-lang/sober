@@ -3,7 +3,7 @@ package lex
 // minic の字句: 数・+ - * / ( ) と空白。位置はファイル先頭からのバイトオフセット
 
 import "std/builder"
-import "testdata/minic/diag"
+import diag "testdata/minic/diag"
 
 // 字句の種類
 const Num = 0

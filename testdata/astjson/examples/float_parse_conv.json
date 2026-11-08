@@ -345,7 +345,7 @@
                             {
                               "k": "type",
                               "bind": null,
-                              "variant": "convert.InvalidFloat",
+                              "variant": "convert.BadFloat",
                               "fields": [],
                               "tok": 105
                             }

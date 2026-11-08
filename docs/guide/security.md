@@ -10,10 +10,10 @@ Please read the last section, "[What Sober does not protect](#12-what-sober-does
 
 Sober answers each kind of accident in one of two layers.
 
-- **Removed by structure**: the shape that causes the accident cannot be written in the language. Memory corruption, data races, resource leaks and path traversal are here. Write the shape and both `sober build` and `sober check` reject it.
-- **Removed by declarations and analysis**: properties that structure cannot express are derived by the analyzer from the call graph and the flow of values, and compared with declarations. Unhandled errors, branches on secrets, storing authenticated responses in shared caches, and function effects are here.
+- Removed by structure: the shape that causes the accident cannot be written in the language. Memory corruption, data races, resource leaks and path traversal are here. Write the shape and both `sober build` and `sober check` reject it.
+- Removed by declarations and analysis: properties that structure cannot express are derived by the analyzer from the call graph and the flow of values, and compared with declarations. Unhandled errors, branches on secrets, storing authenticated responses in shared caches, and function effects are here.
 
-**The analyzer's rules are applied only by `sober check`.** `sober build` does not run the analyzer and does not change what it accepts (the analyzer only narrows what is accepted; it never changes a program's meaning). To make the rules marked "rejected by check" in this guide take effect, run `sober check <file.sober>` in CI or before you commit. The rules that build rejects (the structural layer) stop the program either way.
+The analyzer's rules are applied only by `sober check`. `sober build` does not run the analyzer and does not change what it accepts (the analyzer only narrows what is accepted; it never changes a program's meaning). To make the rules marked "rejected by check" in this guide take effect, run `sober check <file.sober>` in CI or before you commit. The rules that build rejects (the structural layer) stop the program either way.
 
 The sections that follow go threat by threat, but as a quick reference, three classes cover most of them.
 
@@ -79,6 +79,9 @@ xs[5]: out of range
 Because `at` returns `int?`, the caller cannot use the value without writing the out-of-range case. Writing `xs[5]` directly stops at the out-of-range access with a panic.
 
 Real-world contrast: in its October 2026 security release, Node.js fixed a vulnerability in its bundled Brotli (a C implementation) — an out-of-bounds write during decompression that could lead to remote code execution (CVE-2026-111497). Writing the same shape in Sober, the decompressor's output writes are bounds-checked on the slice, so crafted compressed data can at most trigger "decompression failed — a labeled panic (only that connection's task dies)" — it cannot become memory corruption or RCE. What still remains: sending input that triggers a panic can still get a connection cut (see admission in [section 9](#9-resource-exhaustion-denial-of-service)).
+
+
+Giving up executable memory: at startup, a Sober program has the kernel permanently forbid the process from creating memory that is both writable and executable, and from adding execute permission to memory that was not executable (`PR_SET_MDWE` — on by default on Linux 6.6 and later). Sober generates no code at run time (no JIT, no dynamic library loading), so nothing is lost. Even if a bug in the compiler or std lets memory be overwritten, the kernel has closed the path from there to executing injected code. There is no switch inside the program to turn this off, so a dependency cannot break it either. Only when running under dynamic instrumentation such as valgrind, which generates code inside the process, can you start the program without it by setting the environment variable `SOBER_MDWE=0`. What this protects against is escalation from memory corruption inside the process; anyone who can set the environment before startup can already run a different program, so this switch does not weaken that protection. Child processes started with `os.Run` do not inherit it, so running another runtime that uses a JIT as a child still works. On older kernels (6.5 and earlier) it is not applied and the program runs as before.
 
 More: [language spec 9 Memory](../spec/09-memory.ja.md) (Japanese) · [Design note: safe](../design-notes/safe.md) (Japanese)
 
@@ -289,9 +292,9 @@ hello.txt: 17 bytes
 missing.txt: not found
 ```
 
-`http.Static` (serving static files) opens files through this. A request pointing outside the root gets the same 404 as a missing file (it does not reveal whether files outside exist).
+`http.server.Static` (serving static files) opens files through this. A request pointing outside the root gets the same 404 as a missing file (it does not reveal whether files outside exist).
 
-More: [language spec 11 I-7](../spec/11-io.ja.md) (Japanese) · [std/http Static](../std/http.ja.md#static) (Japanese)
+More: [language spec 11 I-7](../spec/11-io.ja.md) (Japanese) · [std/http/server Static](../std/http-server.ja.md#static) (Japanese)
 
 ## 7. Secrets leaking through timing
 
@@ -313,12 +316,12 @@ import "std/crypto/hmac"
 // the key is a secret: no branch, index or division may depend on it
 @secret(key)
 func valid(key []byte, msg []byte, tag []byte) bool {
-    return crypto.Equal(hmac.Sum256(key, msg), tag)
+    return crypto.Equal(crypto.hmac.Sum256(key, msg), tag)
 }
 
 func main() {
     key := bytes("k3y-0f-the-server")
-    tag := hmac.Sum256(key, bytes("user=ada"))
+    tag := crypto.hmac.Sum256(key, bytes("user=ada"))
     println(valid(key, bytes("user=ada"), tag))
     println(valid(key, bytes("user=root"), tag))
 }
@@ -375,8 +378,8 @@ Threat: the origin declares that a response whose content depends on a Cookie or
 
 Sober's answer: two layers.
 
-- Structure (std/http): the storage policy is written only in typed fields (`Route.cache`, `Response.cache`, Static's `cache:`); there is no way to write Cache-Control as an arbitrary header. Dynamic responses default to `Cache-Control: private`. Credentials can be read only through the named accessors `http.Authorization` / `http.Cookie` (`http.Header` returns nil for the credential headers).
-- Analysis: policies that let shared caches store the response (`http.Fresh`, `http.Shared`) can be written only on route rows. check rejects the forms where that route's handler or middleware can reach a credential accessor, and the form that mounts a route with a shared policy under an authenticating middleware.
+- Structure (std/http/server): the storage policy is written only in typed fields (`Route.cache`, `Response.cache`, Static's `cache:`); there is no way to write Cache-Control as an arbitrary header. Dynamic responses default to `Cache-Control: private`. Credentials can be read only through the named accessors `http.server.Authorization` / `http.server.Cookie` (`http.server.Header` returns nil for the credential headers).
+- Analysis: policies that let shared caches store the response (`http.server.Fresh`, `http.server.Shared`) can be written only on route rows. check rejects the forms where that route's handler or middleware can reach a credential accessor, and the form that mounts a route with a shared policy under an authenticating middleware.
 
 Sharing public assets while keeping the authenticated API private is accepted.
 
@@ -386,19 +389,19 @@ package main
 
 // Security: shared caches — public assets may be cached by a CDN; responses that read a cookie stay private (docs/guide/security.md)
 
-import "std/http"
+import "std/http/server"
 
 // me depends on the session cookie, so its response must not be stored by a shared cache
-func me(r http.Request) http.Response {
-    sid := http.Cookie(r, "sid")
-    return http.Text(if sid != nil { "signed in" } else { "guest" })
+func me(r http.server.Request) http.server.Response {
+    sid := http.server.Cookie(r, "sid")
+    return http.server.Text(if sid != nil { "signed in" } else { "guest" })
 }
 
 func main() {
-    auth := http.Middleware{before: (r) => if http.Cookie(r, "sid") == nil { http.Status(401) } else { nil }}
-    api := http.Mount("/api", []http.Route{http.Route{method: "GET", path: "/me", handler: me, cache: http.Private{maxAge: 30}}}, []http.Middleware{auth})
-    assets := http.Static("/assets", "/srv/www", cache: http.Shared{maxAge: 3600, sMaxAge: 86400})
-    routes := http.Merge(api, assets)
+    auth := http.server.Middleware{before: (r) => if http.server.Cookie(r, "sid") == nil { http.server.Status(401) } else { nil }}
+    api := http.server.Mount("/api", []http.server.Route{http.server.Route{method: "GET", path: "/me", handler: me, cache: http.server.Private{maxAge: 30}}}, []http.server.Middleware{auth})
+    assets := http.server.Static("/assets", "/srv/www", cache: http.server.Shared{maxAge: 3600, sMaxAge: 86400})
+    routes := http.server.Merge(api, assets)
     println(len(routes))
 }
 ```
@@ -417,15 +420,15 @@ package main
 
 // Security: shared caches — a route that lets a CDN store its response must not read a cookie (rejected by check) (docs/guide/security.md)
 
-import "std/http"
+import "std/http/server"
 
-func me(r http.Request) http.Response {
-    sid := http.Cookie(r, "sid")
-    return http.Text(if sid != nil { "signed in" } else { "guest" })
+func me(r http.server.Request) http.server.Response {
+    sid := http.server.Cookie(r, "sid")
+    return http.server.Text(if sid != nil { "signed in" } else { "guest" })
 }
 
 func main() {
-    routes := []http.Route{http.Route{method: "GET", path: "/me", handler: me, cache: http.Shared{maxAge: 60}}}
+    routes := []http.server.Route{http.server.Route{method: "GET", path: "/me", handler: me, cache: http.server.Shared{maxAge: 60}}}
     println(len(routes))
 }
 ```
@@ -433,10 +436,10 @@ func main() {
 Rejected:
 
 ```
-examples/security_cache_neg.sober:13:28: error: the shared cache policy 'Shared' meets a handler or middleware that reaches a credential source (http.Authorization / http.Cookie / Request.head) in one route — a response that depends on Authorization / Cookie must not be stored by a shared cache — it would be served to other users (language.md 12 節「出所の依存」); use http.Private / http.NoStore for this route, or move the credential read out of it (Analyzer)
+examples/security_cache_neg.sober:13:35: error: the shared cache policy 'Shared' meets a handler or middleware that reaches a credential source (server.Authorization / server.Cookie / Request.head) in one route — a response that depends on Authorization / Cookie must not be stored by a shared cache — it would be served to other users (language.md 12 節「出所の依存」); use server.Private / server.NoStore for this route, or move the credential read out of it (Analyzer)
 ```
 
-More: [std/http Cache](../std/http.ja.md#cache) (Japanese) · [language spec 12 A-12, A-13](../spec/12-annotations.ja.md) (Japanese)
+More: [std/http/server Cache](../std/http-server.ja.md#cache) (Japanese) · [language spec 12 A-12, A-13](../spec/12-annotations.ja.md) (Japanese)
 
 ## 9. Resource exhaustion (denial of service)
 
@@ -444,11 +447,11 @@ Threat: many connections, large requests, or memory-hungry requests stop the who
 
 Sober's answer: the server (`net.Serve`) has ceilings on resources in three layers.
 
-- **Admission**: `conns:` is the ceiling on simultaneous connections (default 10000). A connection over the ceiling is sent the `reject:` bytes and closed without running user code.
-- **Budget (`budget:`)**: the declared upper bound of the memory one connection uses (default 64 KiB). The admission ceiling is counted in bytes, `conns × budget`. For tasks in general, writing `budget:` on `task.Spawn` and friends makes the children that do not fit under the ceiling run sequentially instead of in parallel (values and output do not change).
-- **Region cap (`region:`)**: the cap on one region of a connection's task (default 128 MiB). Going over kills only that connection's task; Serve absorbs it and carries on with the other connections.
+- Admission: `conns:` is the ceiling on simultaneous connections (default 10000). A connection over the ceiling is sent the `reject:` bytes and closed without running user code.
+- Budget (`budget:`): the declared upper bound of the memory one connection uses (default 64 KiB). The admission ceiling is counted in bytes, `conns × budget`. For tasks in general, writing `budget:` on `task.Spawn` and friends makes the children that do not fit under the ceiling run sequentially instead of in parallel (values and output do not change).
+- Region cap (`region:`): the cap on one region of a connection's task (default 128 MiB). Going over kills only that connection's task; Serve absorbs it and carries on with the other connections.
 
-At the HTTP layer, the request head and body have limits (`http.ServeConn`'s `maxHead:`, default 8 KiB, gives 431 when exceeded; `maxBody:`, default 16 KiB, gives 413 — the handler does not run). Waits can be given a deadline (`task.Run(…, deadline:)` — io after the deadline returns `io.Expired`, and net waits are cut at the deadline).
+At the HTTP layer, the request head and body have limits (`http.server.ServeConn`'s `maxHead:`, default 8 KiB, gives 431 when exceeded; `maxBody:`, default 16 KiB, gives 413 — the handler does not run). Waits can be given a deadline (`task.Run(…, deadline:)` — io after the deadline returns `io.Expired`, and net waits are cut at the deadline).
 
 ```sober
 // examples/security_limits.sober
@@ -457,17 +460,17 @@ package main
 // Security: resource exhaustion — admission, a per-connection budget and a per-connection region cap (docs/guide/security.md)
 // a server: check and build only (it does not stop by itself)
 
-import "std/http"
+import "std/http/server"
 import "std/net"
 import "std/task"
 
-func route(r http.Request) http.Response {
-    return http.Text("ok")
+func route(r http.server.Request) http.server.Response {
+    return http.server.Text("ok")
 }
 
 // app serves one connection; oversized heads and bodies get 431 / 413 before route runs
 func app(c net.Conn) error? {
-    return http.ServeConn(c, route, maxHead: 8 * task.KB, maxBody: 64 * task.KB)
+    return http.server.ServeConn(c, route, maxHead: 8 * task.KB, maxBody: 64 * task.KB)
 }
 
 func run() error? {
@@ -488,7 +491,7 @@ func main() {
 
 This example is a server, so the net checks and builds it (it does not stop when run, so there is no output to compare).
 
-More: [std/net Serve](../std/net.ja.md) (Japanese) · [language spec 10.6 Budgets, pools and deadlines](../spec/10-concurrency.ja.md) (Japanese) · [std/http ServeConn](../std/http.ja.md) (Japanese)
+More: [std/net Serve](../std/net.ja.md) (Japanese) · [language spec 10.6 Budgets, pools and deadlines](../spec/10-concurrency.ja.md) (Japanese) · [std/http/server ServeConn](../std/http-server.ja.md) (Japanese)
 
 ## 10. Functions doing things behind your back
 
@@ -589,15 +592,15 @@ Sober's answer:
 
 A language can remove only some kinds of accidents. The following stay the writer's responsibility, even with Sober.
 
-- **Authorization and business logic**: who may do what, whether this request is allowed for this user, whether the rules about amounts or stock are right. The language does not remove these. Reading a credential and branching on it is the ordinary shape of a correct program, and whether that branch is right is not something the language can know.
-- **Not running the analyzer**: the rules in sections 3, 7, 8 and 10 are applied only by `sober check`. If you only build, they do not apply.
-- **Validating what input means**: beyond the type and UTF-8 checks — value ranges, formats, business validity — the writer checks.
-- **SQL injection**: there is no database client in std yet. Today's Sober has no specific answer to this accident.
-- **Mishandling secrets**: `@secret` looks only at timing flows in the source (branches, indexes, division). It does not stop writing a secret to a log or a response (printing is outside the check), reusing keys or nonces, or misusing randomness. For user code, it does not go as far as checking that the generated machine code has no branches.
-- **What remains of caching**: a CDN configured to ignore `private`, missing Vary, tokens in the query or the body, and responses that vary by the client's IP are outside section 8's check.
-- **Requests that choke on computation**: a deadline (`deadline:`) is a limit on waiting, not on running time. Computation that is running is not stopped. Where you accept heavy computation, put a limit on the size of the input yourself. There is also no graceful shutdown that drains in-flight connections yet (stopping cuts them).
-- **Sharing a port with processes of the same uid**: `net.Listen` sets SO_REUSEPORT (so that `net.Serve` can add one listener per worker on the same address and accept on every worker in parallel). As a result, another process running as the same uid can bind the same address, and the kernel splits incoming connections between them. A second start on the same address does not fail with "address in use"; it silently takes a share of the connections. Processes of a different uid cannot bind it. The same uid can already reach the process through ptrace or `/proc/<pid>/mem`, so this is not a new boundary being broken — but give each service its own uid (systemd `DynamicUser`, or the default separation of a container).
-- **The reach of the proofs**: memory safety and data-race freedom are proved in Lean 4 for a formal model of the language's core, but what is proved is a property of the model, not of the compiler's implementation itself ([Design note: safe](../design-notes/safe.md) (Japanese)). Bugs in the compiler, the runtime or the kernel are outside every answer in this guide.
+- Authorization and business logic: who may do what, whether this request is allowed for this user, whether the rules about amounts or stock are right. The language does not remove these. Reading a credential and branching on it is the ordinary shape of a correct program, and whether that branch is right is not something the language can know.
+- Not running the analyzer: the rules in sections 3, 7, 8 and 10 are applied only by `sober check`. If you only build, they do not apply.
+- Validating what input means: beyond the type and UTF-8 checks — value ranges, formats, business validity — the writer checks.
+- SQL injection: there is no database client in std yet. Today's Sober has no specific answer to this accident.
+- Mishandling secrets: `@secret` looks only at timing flows in the source (branches, indexes, division). It does not stop writing a secret to a log or a response (printing is outside the check), reusing keys or nonces, or misusing randomness. For user code, it does not go as far as checking that the generated machine code has no branches.
+- What remains of caching: a CDN configured to ignore `private`, missing Vary, tokens in the query or the body, and responses that vary by the client's IP are outside section 8's check.
+- Requests that choke on computation: a deadline (`deadline:`) is a limit on waiting, not on running time. Computation that is running is not stopped. Where you accept heavy computation, put a limit on the size of the input yourself. There is also no graceful shutdown that drains in-flight connections yet (stopping cuts them).
+- Sharing a port with processes of the same uid: `net.Listen` sets SO_REUSEPORT (so that `net.Serve` can add one listener per worker on the same address and accept on every worker in parallel). As a result, another process running as the same uid can bind the same address, and the kernel splits incoming connections between them. A second start on the same address does not fail with "address in use"; it silently takes a share of the connections. Processes of a different uid cannot bind it. The same uid can already reach the process through ptrace or `/proc/<pid>/mem`, so this is not a new boundary being broken — but give each service its own uid (systemd `DynamicUser`, or the default separation of a container).
+- The reach of the proofs: memory safety and data-race freedom are proved in Lean 4 for a formal model of the language's core, but what is proved is a property of the model, not of the compiler's implementation itself ([Design note: safe](../design-notes/safe.md) (Japanese)). Bugs in the compiler, the runtime or the kernel are outside every answer in this guide.
 
 ---
 

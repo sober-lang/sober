@@ -12,6 +12,7 @@ package net
 // net の ring のワーカー（カーネル ≥ 6.1）では送り・受け・accept・閉じが rt の中で ring に載る（sysNetOp / read_fd — EAGAIN を返さず rt が待つ）
 
 import "std/io"
+import "std/strings"
 import "std/task"
 
 @intrinsic("syscall")
@@ -248,17 +249,45 @@ func Accept(l Listener, k func(Conn)) error? {
     return nil
 }
 
-// addr へ接続した Conn を 1 回だけ k に渡し、k が返ったら閉じる
-@errors(Bad, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+// addr（"a.b.c.d:port" か "ホスト名:port"）へ接続した Conn を 1 回だけ k に渡し、k が返ったら閉じる。ホスト名は /etc/hosts と
+// /etc/resolv.conf の nameserver で引いた IPv4 の番地へ順に繋ぐ（最初に繋がった 1 つ — 名前の解決は dns.sober）
+@errors(Bad, NoHost, NonASCIIHost, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
 @effects(block, io, nondet)
 func Dial(addr string, k func(Conn)) error? {
     if sysDeadline() != 0 {
         return io.Expired{}
     }
     sa := sockaddr(addr)
-    if len(sa) != 16 {
+    if len(sa) == 16 {
+        return dialSa(sa, k)
+    }
+    host, port, ok := strings.CutLast(addr, ":")
+    if !ok || len(sockaddr("0.0.0.0:${port}")) != 16 {
         return Bad{}
     }
+    ips := resolveSys(host)?
+    // 番地へ順に繋ぐ（最初に繋がった 1 つ — 全部だめなら最後の誤り）
+    if len(ips) == 0 {
+        return NoHost{}
+    }
+    mut last := dialSa(ipSa(ips[0], port), k)
+    mut failed := last != nil
+    mut i := 1
+    while failed && i < len(ips) {
+        last = dialSa(ipSa(ips[i], port), k)
+        failed = last != nil
+        i += 1
+    }
+    return last
+}
+
+func ipSa(ip []byte, port string) []byte {
+    return sockaddr("${int(ip[0])}.${int(ip[1])}.${int(ip[2])}.${int(ip[3])}:${port}")
+}
+
+// sockaddr_in sa へ繋いで k に渡す
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+func dialSa(sa []byte, k func(Conn)) error? {
     fd := sysCall(41, 2, 526337, 0, 0, 0, 0)
     if fd < 0 {
         return errOf(0 - fd)

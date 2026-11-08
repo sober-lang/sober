@@ -38,31 +38,46 @@
                 "callee": {
                   "k": "selector",
                   "base": {
-                    "k": "ident",
-                    "name": "fake",
-                    "tok": 19
+                    "k": "selector",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 19
+                        },
+                        "field": "doubles",
+                        "tok": 21
+                      },
+                      "field": "store",
+                      "tok": 23
+                    },
+                    "field": "fake",
+                    "tok": 25
                   },
                   "field": "With",
-                  "tok": 21
+                  "tok": 27
                 },
                 "args": [
                   {
                     "k": "slicelit",
                     "elem": {
                       "k": "name",
-                      "name": "fake.Row"
+                      "name": "testdata.doubles.store.fake.Row"
                     },
                     "elems": [
                       {
                         "k": "composite",
-                        "type_name": "fake.Row",
+                        "type_name": "testdata.doubles.store.fake.Row",
                         "elems": [
                           {
                             "key": "k",
                             "value": {
                               "k": "strlit",
                               "value": "a",
-                              "tok": 35
+                              "tok": 53
                             }
                           },
                           {
@@ -70,19 +85,19 @@
                             "value": {
                               "k": "strlit",
                               "value": "1",
-                              "tok": 39
+                              "tok": 57
                             }
                           }
                         ],
-                        "tok": 29,
+                        "tok": 41,
                         "type_args": []
                       }
                     ],
                     "mut": false,
-                    "tok": 23
+                    "tok": 29
                   }
                 ],
-                "tok": 22
+                "tok": 28
               }
             ],
             "tok": 17
@@ -94,7 +109,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 44
+                "tok": 62
               },
               "args": [
                 {
@@ -105,31 +120,31 @@
                     "callee": {
                       "k": "ident",
                       "name": "Lookup",
-                      "tok": 46
+                      "tok": 64
                     },
                     "args": [
                       {
                         "k": "ident",
                         "name": "c",
-                        "tok": 48
+                        "tok": 66
                       },
                       {
                         "k": "strlit",
                         "value": "a",
-                        "tok": 50
+                        "tok": 68
                       }
                     ],
-                    "tok": 47
+                    "tok": 65
                   },
                   "rhs": {
                     "k": "strlit",
                     "value": "1",
-                    "tok": 53
+                    "tok": 71
                   },
-                  "tok": 52
+                  "tok": 70
                 }
               ],
-              "tok": 45
+              "tok": 63
             }
           },
           {
@@ -139,7 +154,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 56
+                "tok": 74
               },
               "args": [
                 {
@@ -150,31 +165,31 @@
                     "callee": {
                       "k": "ident",
                       "name": "Lookup",
-                      "tok": 58
+                      "tok": 76
                     },
                     "args": [
                       {
                         "k": "ident",
                         "name": "c",
-                        "tok": 60
+                        "tok": 78
                       },
                       {
                         "k": "strlit",
                         "value": "b",
-                        "tok": 62
+                        "tok": 80
                       }
                     ],
-                    "tok": 59
+                    "tok": 77
                   },
                   "rhs": {
                     "k": "strlit",
                     "value": "none",
-                    "tok": 65
+                    "tok": 83
                   },
-                  "tok": 64
+                  "tok": 82
                 }
               ],
-              "tok": 57
+              "tok": 75
             }
           }
         ]
@@ -183,7 +198,7 @@
       "bodiless": false,
       "span": {
         "start": 12,
-        "end": 70
+        "end": 88
       },
       "sig_end": 16
     },
@@ -201,7 +216,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 75
+                "tok": 93
               },
               "args": [
                 {
@@ -212,7 +227,7 @@
                     "callee": {
                       "k": "ident",
                       "name": "Save",
-                      "tok": 78
+                      "tok": 96
                     },
                     "args": [
                       {
@@ -220,44 +235,59 @@
                         "callee": {
                           "k": "selector",
                           "base": {
-                            "k": "ident",
-                            "name": "fake",
-                            "tok": 80
+                            "k": "selector",
+                            "base": {
+                              "k": "selector",
+                              "base": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "testdata",
+                                  "tok": 98
+                                },
+                                "field": "doubles",
+                                "tok": 100
+                              },
+                              "field": "store",
+                              "tok": 102
+                            },
+                            "field": "fake",
+                            "tok": 104
                           },
                           "field": "Denying",
-                          "tok": 82
+                          "tok": 106
                         },
                         "args": [],
-                        "tok": 83
+                        "tok": 107
                       },
                       {
                         "k": "strlit",
                         "value": "a",
-                        "tok": 86
+                        "tok": 110
                       },
                       {
                         "k": "strlit",
                         "value": "1",
-                        "tok": 88
+                        "tok": 112
                       }
                     ],
-                    "tok": 79
+                    "tok": 97
                   },
-                  "tok": 77
+                  "tok": 95
                 }
               ],
-              "tok": 76
+              "tok": 94
             }
           }
         ]
       },
-      "tok": 71,
+      "tok": 89,
       "bodiless": false,
       "span": {
-        "start": 70,
-        "end": 94
+        "start": 88,
+        "end": 118
       },
-      "sig_end": 74
+      "sig_end": 92
     }
   ],
   "consts": [],

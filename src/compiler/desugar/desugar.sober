@@ -178,6 +178,7 @@ func prefix(st mut S) error? {
     // 表層型検査器（関数本体ごとに 1 回 — exprSty が表を読む）
     TypeAll(mut st)
     loader.Stage("ds-typeall")
+    TyRejectAt(mut st)?
     if st.stopAt == 7 {
         return nil
     }

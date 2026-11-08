@@ -149,7 +149,8 @@ if [ "$more" -gt 0 ]; then
 fi
 
 # (ii) 実コーパス
-TOOLS="lexdump parsedump fmtdump loaderdump desugardump checkdump sobercheck"
+# 実コーパスの tools の一覧は scripts/selfhost_check_tools.txt（leanbatch が「Lean の判定をここで照合している入力」として読む）
+TOOLS=$(cat scripts/selfhost_check_tools.txt)
 mkdir -p "$tmp/tools"
 for t in $TOOLS; do
     (cd src/compiler && "$SOBER" check "tools/$t/main.sober" --core-json > "$tmp/tools/$t.json" 2> /dev/null || rm -f "$tmp/tools/$t.json") &

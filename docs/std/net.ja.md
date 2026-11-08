@@ -4,7 +4,23 @@
 
 `import "std/net"`
 
-TCP のリスナーと接続（[language.md 28 節](../language.md)の net）: 寿命は for の本体で言う（閉じる関数は無い）。`for l <- net.Listen(addr)? { … }`・`for c <- net.Dial(addr)? { … }`・`for c <- net.Accept(l)? { … }`（失敗しうる生成元 — [language.md 7 節](../language.md)）は本体を抜けたら std が閉じる（Listen / Dial は 1 回だけ渡す・Accept は受けるたびに渡す — break で止める）。本体の `?` は囲む関数の失敗（文形 for の規則 — 利用者のラムダは error? を返せないので k の形にはしない）。受信は `for chunk <- net.Recv(c)? { … }`（FIN = 列の終わり）・送信は `net.Send(c, b)?`（同期の写し）。socket の操作は std 専用の生の syscall（sysCall / sysAddr — [language.md 28 節](../language.md)の囲い）で書く。期限（task.Run の deadline:）は待ちも切る（待ちの途中で期限が来たら io.Expired）
+名前の解決（スタブリゾルバ — libc の getaddrinfo を使わない）: Dial が IPv4 の綴りでないホストを受けたときに、/etc/hosts → /etc/resolv.conf の nameserver（最大 3 本を順に・1 回の問い合わせは期限つき）へ A を問う。search / ndots の候補の順（resolv.conf(5)）・応答の切り詰め（TC）は TCP で問い直す・応答の CNAME の鎖を追う（answer 節の中だけ・8 段まで）・txid は getrandom・応答は txid と問いの名前と型の一致を確かめる。AAAA も読めるが、Dial は IPv4 だけ。非 ASCII のホスト名（IDN）は名指しで拒否する（punycode は URL の層の仕事）。DNSSEC・DoH / DoT・キャッシュは持たない
+
+## NoHost
+
+```sober
+type NoHost error
+```
+
+ホストの名前が引けない（NXDOMAIN・どの候補にも答えが無い・hosts にも無い）
+
+## NonASCIIHost
+
+```sober
+type NonASCIIHost error
+```
+
+ホストの名前に非 ASCII の字がある（IDN は punycode〔xn--〕で渡す — 名前の解決の層は扱わない）
 
 ## Listener
 
@@ -72,14 +88,14 @@ l の接続を受けるたびに k に渡し、k が返ったら閉じる（列�
 ## Dial
 
 ```sober
-@errors(Bad, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@errors(Bad, NoHost, NonASCIIHost, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
 @effects(block, io, nondet)
 func Dial(addr string, k func(Conn)) error?
 ```
 
-addr へ接続した Conn を 1 回だけ k に渡し、k が返ったら閉じる
+addr（"a.b.c.d:port" か "ホスト名:port"）へ接続した Conn を 1 回だけ k に渡し、k が返ったら閉じる。ホスト名は /etc/hosts と/etc/resolv.conf の nameserver で引いた IPv4 の番地へ順に繋ぐ（最初に繋がった 1 つ — 名前の解決は dns.sober）
 
-失敗のラベル: [`Bad`](#bad)・`io.Closed`・`io.Timeout`・`io.Expired`・`io.Denied`・`io.Other`
+失敗のラベル: [`Bad`](#bad)・[`NoHost`](#nohost)・[`NonASCIIHost`](#nonasciihost)・`io.Closed`・`io.Timeout`・`io.Expired`・`io.Denied`・`io.Other`
 
 ## Recv
 

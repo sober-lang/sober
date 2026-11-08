@@ -7,14 +7,14 @@
       "tok": 4
     },
     {
-      "alias": null,
+      "alias": "lex",
       "path": "testdata/frozen_src/testdata/minic_rd/lex",
-      "tok": 7
+      "tok": 8
     },
     {
-      "alias": null,
+      "alias": "diag",
       "path": "testdata/frozen_src/testdata/minic_rd/diag",
-      "tok": 10
+      "tok": 12
     }
   ],
   "types": [
@@ -30,7 +30,7 @@
               "k": "name",
               "name": "int"
             },
-            "tok": 46
+            "tok": 48
           },
           {
             "name": "val",
@@ -38,7 +38,7 @@
               "k": "name",
               "name": "int"
             },
-            "tok": 48
+            "tok": 50
           },
           {
             "name": "pos",
@@ -46,7 +46,7 @@
               "k": "name",
               "name": "int"
             },
-            "tok": 50
+            "tok": 52
           },
           {
             "name": "l",
@@ -54,7 +54,7 @@
               "k": "name",
               "name": "int"
             },
-            "tok": 52
+            "tok": 54
           },
           {
             "name": "r",
@@ -62,14 +62,14 @@
               "k": "name",
               "name": "int"
             },
-            "tok": 54
+            "tok": 56
           }
         ]
       },
-      "tok": 43,
+      "tok": 45,
       "span": {
-        "start": 42,
-        "end": 59
+        "start": 44,
+        "end": 61
       }
     }
   ],
@@ -105,10 +105,10 @@
               {
                 "k": "ident",
                 "name": "c",
-                "tok": 75
+                "tok": 77
               }
             ],
-            "tok": 72
+            "tok": 74
           },
           {
             "k": "ret",
@@ -120,32 +120,32 @@
                   "base": {
                     "k": "ident",
                     "name": "lex",
-                    "tok": 78
+                    "tok": 80
                   },
                   "field": "Next",
-                  "tok": 80
+                  "tok": 82
                 },
                 "args": [
                   {
                     "k": "mut_arg",
                     "name": "d",
-                    "tok": 83
+                    "tok": 85
                   }
                 ],
-                "tok": 81
+                "tok": 83
               }
             ],
-            "tok": 77
+            "tok": 79
           }
         ]
       },
-      "tok": 60,
+      "tok": 62,
       "bodiless": false,
       "span": {
-        "start": 59,
-        "end": 88
+        "start": 61,
+        "end": 90
       },
-      "sig_end": 71
+      "sig_end": 73
     },
     {
       "name": "node",
@@ -191,24 +191,24 @@
                 "base": {
                   "k": "ident",
                   "name": "builder",
-                  "tok": 105
+                  "tok": 107
                 },
                 "field": "Push",
-                "tok": 107
+                "tok": 109
               },
               "args": [
                 {
                   "k": "mut_arg",
                   "name": "nb",
-                  "tok": 110
+                  "tok": 112
                 },
                 {
                   "k": "ident",
                   "name": "n",
-                  "tok": 112
+                  "tok": 114
                 }
               ],
-              "tok": 108
+              "tok": 110
             }
           },
           {
@@ -224,39 +224,39 @@
                     "base": {
                       "k": "ident",
                       "name": "builder",
-                      "tok": 116
+                      "tok": 118
                     },
                     "field": "Len",
-                    "tok": 118
+                    "tok": 120
                   },
                   "args": [
                     {
                       "k": "mut_arg",
                       "name": "nb",
-                      "tok": 121
+                      "tok": 123
                     }
                   ],
-                  "tok": 119
+                  "tok": 121
                 },
                 "rhs": {
                   "k": "int",
                   "value": 1,
-                  "tok": 124
+                  "tok": 126
                 },
-                "tok": 123
+                "tok": 125
               }
             ],
-            "tok": 115
+            "tok": 117
           }
         ]
       },
-      "tok": 89,
+      "tok": 91,
       "bodiless": false,
       "span": {
-        "start": 88,
-        "end": 128
+        "start": 90,
+        "end": 130
       },
-      "sig_end": 104
+      "sig_end": 106
     },
     {
       "name": "expr",
@@ -314,27 +314,27 @@
                   "callee": {
                     "k": "ident",
                     "name": "term",
-                    "tok": 156
+                    "tok": 158
                   },
                   "args": [
                     {
                       "k": "mut_arg",
                       "name": "nb",
-                      "tok": 159
+                      "tok": 161
                     },
                     {
                       "k": "mut_arg",
                       "name": "c",
-                      "tok": 162
+                      "tok": 164
                     }
                   ],
-                  "tok": 157
+                  "tok": 159
                 },
                 "wrap": null,
-                "tok": 164
+                "tok": 166
               }
             ],
-            "tok": 153
+            "tok": 155
           },
           {
             "k": "bind",
@@ -346,17 +346,17 @@
               {
                 "k": "ident",
                 "name": "true",
-                "tok": 169
+                "tok": 171
               }
             ],
-            "tok": 166
+            "tok": 168
           },
           {
             "k": "while",
             "cond": {
               "k": "ident",
               "name": "more",
-              "tok": 172
+              "tok": 174
             },
             "body": {
               "stmts": [
@@ -372,19 +372,19 @@
                       "callee": {
                         "k": "ident",
                         "name": "peek",
-                        "tok": 176
+                        "tok": 178
                       },
                       "args": [
                         {
                           "k": "mut_arg",
                           "name": "c",
-                          "tok": 179
+                          "tok": 181
                         }
                       ],
-                      "tok": 177
+                      "tok": 179
                     }
                   ],
-                  "tok": 174
+                  "tok": 176
                 },
                 {
                   "k": "expr",
@@ -401,22 +401,22 @@
                           "base": {
                             "k": "ident",
                             "name": "t",
-                            "tok": 183
+                            "tok": 185
                           },
                           "field": "kind",
-                          "tok": 185
+                          "tok": 187
                         },
                         "rhs": {
                           "k": "selector",
                           "base": {
                             "k": "ident",
                             "name": "lex",
-                            "tok": 187
+                            "tok": 189
                           },
                           "field": "Plus",
-                          "tok": 189
+                          "tok": 191
                         },
-                        "tok": 186
+                        "tok": 188
                       },
                       "rhs": {
                         "k": "binary",
@@ -426,24 +426,24 @@
                           "base": {
                             "k": "ident",
                             "name": "t",
-                            "tok": 191
+                            "tok": 193
                           },
                           "field": "kind",
-                          "tok": 193
+                          "tok": 195
                         },
                         "rhs": {
                           "k": "selector",
                           "base": {
                             "k": "ident",
                             "name": "lex",
-                            "tok": 195
+                            "tok": 197
                           },
                           "field": "Minus",
-                          "tok": 197
+                          "tok": 199
                         },
-                        "tok": 194
+                        "tok": 196
                       },
-                      "tok": 190
+                      "tok": 192
                     },
                     "then": {
                       "stmts": [
@@ -456,19 +456,19 @@
                               "base": {
                                 "k": "ident",
                                 "name": "lex",
-                                "tok": 199
+                                "tok": 201
                               },
                               "field": "Next",
-                              "tok": 201
+                              "tok": 203
                             },
                             "args": [
                               {
                                 "k": "mut_arg",
                                 "name": "c",
-                                "tok": 204
+                                "tok": 206
                               }
                             ],
-                            "tok": 202
+                            "tok": 204
                           }
                         },
                         {
@@ -485,27 +485,27 @@
                                 "callee": {
                                   "k": "ident",
                                   "name": "term",
-                                  "tok": 209
+                                  "tok": 211
                                 },
                                 "args": [
                                   {
                                     "k": "mut_arg",
                                     "name": "nb",
-                                    "tok": 212
+                                    "tok": 214
                                   },
                                   {
                                     "k": "mut_arg",
                                     "name": "c",
-                                    "tok": 215
+                                    "tok": 217
                                   }
                                 ],
-                                "tok": 210
+                                "tok": 212
                               },
                               "wrap": null,
-                              "tok": 217
+                              "tok": 219
                             }
                           ],
-                          "tok": 207
+                          "tok": 209
                         },
                         {
                           "k": "bind",
@@ -524,22 +524,22 @@
                                   "base": {
                                     "k": "ident",
                                     "name": "t",
-                                    "tok": 222
+                                    "tok": 224
                                   },
                                   "field": "kind",
-                                  "tok": 224
+                                  "tok": 226
                                 },
                                 "rhs": {
                                   "k": "selector",
                                   "base": {
                                     "k": "ident",
                                     "name": "lex",
-                                    "tok": 226
+                                    "tok": 228
                                   },
                                   "field": "Plus",
-                                  "tok": 228
+                                  "tok": 230
                                 },
-                                "tok": 225
+                                "tok": 227
                               },
                               "then": {
                                 "stmts": [
@@ -548,7 +548,7 @@
                                     "expr": {
                                       "k": "ident",
                                       "name": "Add",
-                                      "tok": 230
+                                      "tok": 232
                                     }
                                   }
                                 ]
@@ -561,15 +561,15 @@
                                     "expr": {
                                       "k": "ident",
                                       "name": "Sub",
-                                      "tok": 234
+                                      "tok": 236
                                     }
                                   }
                                 ]
                               },
-                              "tok": 221
+                              "tok": 223
                             }
                           ],
-                          "tok": 219
+                          "tok": 221
                         },
                         {
                           "k": "assign",
@@ -577,7 +577,7 @@
                             {
                               "k": "ident",
                               "name": "l",
-                              "tok": 237
+                              "tok": 239
                             }
                           ],
                           "op": "=",
@@ -587,13 +587,13 @@
                               "callee": {
                                 "k": "ident",
                                 "name": "node",
-                                "tok": 239
+                                "tok": 241
                               },
                               "args": [
                                 {
                                   "k": "mut_arg",
                                   "name": "nb",
-                                  "tok": 242
+                                  "tok": 244
                                 },
                                 {
                                   "k": "composite",
@@ -604,7 +604,7 @@
                                       "value": {
                                         "k": "ident",
                                         "name": "k",
-                                        "tok": 246
+                                        "tok": 248
                                       }
                                     },
                                     {
@@ -612,7 +612,7 @@
                                       "value": {
                                         "k": "int",
                                         "value": 0,
-                                        "tok": 248
+                                        "tok": 250
                                       }
                                     },
                                     {
@@ -622,17 +622,9 @@
                                         "base": {
                                           "k": "ident",
                                           "name": "t",
-                                          "tok": 250
+                                          "tok": 252
                                         },
                                         "field": "pos",
-                                        "tok": 252
-                                      }
-                                    },
-                                    {
-                                      "key": null,
-                                      "value": {
-                                        "k": "ident",
-                                        "name": "l",
                                         "tok": 254
                                       }
                                     },
@@ -640,19 +632,27 @@
                                       "key": null,
                                       "value": {
                                         "k": "ident",
-                                        "name": "r",
+                                        "name": "l",
                                         "tok": 256
+                                      }
+                                    },
+                                    {
+                                      "key": null,
+                                      "value": {
+                                        "k": "ident",
+                                        "name": "r",
+                                        "tok": 258
                                       }
                                     }
                                   ],
-                                  "tok": 244,
+                                  "tok": 246,
                                   "type_args": []
                                 }
                               ],
-                              "tok": 240
+                              "tok": 242
                             }
                           ],
-                          "tok": 237
+                          "tok": 239
                         }
                       ]
                     },
@@ -665,7 +665,7 @@
                             {
                               "k": "ident",
                               "name": "more",
-                              "tok": 263
+                              "tok": 265
                             }
                           ],
                           "op": "=",
@@ -673,19 +673,19 @@
                             {
                               "k": "ident",
                               "name": "false",
-                              "tok": 265
+                              "tok": 267
                             }
                           ],
-                          "tok": 263
+                          "tok": 265
                         }
                       ]
                     },
-                    "tok": 182
+                    "tok": 184
                   }
                 }
               ]
             },
-            "tok": 171
+            "tok": 173
           },
           {
             "k": "ret",
@@ -693,24 +693,24 @@
               {
                 "k": "ident",
                 "name": "l",
-                "tok": 272
+                "tok": 274
               },
               {
                 "k": "nil",
-                "tok": 274
+                "tok": 276
               }
             ],
-            "tok": 271
+            "tok": 273
           }
         ]
       },
-      "tok": 129,
+      "tok": 131,
       "bodiless": false,
       "span": {
-        "start": 128,
-        "end": 278
+        "start": 130,
+        "end": 280
       },
-      "sig_end": 152
+      "sig_end": 154
     },
     {
       "name": "term",
@@ -768,27 +768,27 @@
                   "callee": {
                     "k": "ident",
                     "name": "unary",
-                    "tok": 306
+                    "tok": 308
                   },
                   "args": [
                     {
                       "k": "mut_arg",
                       "name": "nb",
-                      "tok": 309
+                      "tok": 311
                     },
                     {
                       "k": "mut_arg",
                       "name": "c",
-                      "tok": 312
+                      "tok": 314
                     }
                   ],
-                  "tok": 307
+                  "tok": 309
                 },
                 "wrap": null,
-                "tok": 314
+                "tok": 316
               }
             ],
-            "tok": 303
+            "tok": 305
           },
           {
             "k": "bind",
@@ -800,17 +800,17 @@
               {
                 "k": "ident",
                 "name": "true",
-                "tok": 319
+                "tok": 321
               }
             ],
-            "tok": 316
+            "tok": 318
           },
           {
             "k": "while",
             "cond": {
               "k": "ident",
               "name": "more",
-              "tok": 322
+              "tok": 324
             },
             "body": {
               "stmts": [
@@ -826,19 +826,19 @@
                       "callee": {
                         "k": "ident",
                         "name": "peek",
-                        "tok": 326
+                        "tok": 328
                       },
                       "args": [
                         {
                           "k": "mut_arg",
                           "name": "c",
-                          "tok": 329
+                          "tok": 331
                         }
                       ],
-                      "tok": 327
+                      "tok": 329
                     }
                   ],
-                  "tok": 324
+                  "tok": 326
                 },
                 {
                   "k": "expr",
@@ -855,22 +855,22 @@
                           "base": {
                             "k": "ident",
                             "name": "t",
-                            "tok": 333
+                            "tok": 335
                           },
                           "field": "kind",
-                          "tok": 335
+                          "tok": 337
                         },
                         "rhs": {
                           "k": "selector",
                           "base": {
                             "k": "ident",
                             "name": "lex",
-                            "tok": 337
+                            "tok": 339
                           },
                           "field": "Star",
-                          "tok": 339
+                          "tok": 341
                         },
-                        "tok": 336
+                        "tok": 338
                       },
                       "rhs": {
                         "k": "binary",
@@ -880,24 +880,24 @@
                           "base": {
                             "k": "ident",
                             "name": "t",
-                            "tok": 341
+                            "tok": 343
                           },
                           "field": "kind",
-                          "tok": 343
+                          "tok": 345
                         },
                         "rhs": {
                           "k": "selector",
                           "base": {
                             "k": "ident",
                             "name": "lex",
-                            "tok": 345
+                            "tok": 347
                           },
                           "field": "Slash",
-                          "tok": 347
+                          "tok": 349
                         },
-                        "tok": 344
+                        "tok": 346
                       },
-                      "tok": 340
+                      "tok": 342
                     },
                     "then": {
                       "stmts": [
@@ -910,19 +910,19 @@
                               "base": {
                                 "k": "ident",
                                 "name": "lex",
-                                "tok": 349
+                                "tok": 351
                               },
                               "field": "Next",
-                              "tok": 351
+                              "tok": 353
                             },
                             "args": [
                               {
                                 "k": "mut_arg",
                                 "name": "c",
-                                "tok": 354
+                                "tok": 356
                               }
                             ],
-                            "tok": 352
+                            "tok": 354
                           }
                         },
                         {
@@ -939,27 +939,27 @@
                                 "callee": {
                                   "k": "ident",
                                   "name": "unary",
-                                  "tok": 359
+                                  "tok": 361
                                 },
                                 "args": [
                                   {
                                     "k": "mut_arg",
                                     "name": "nb",
-                                    "tok": 362
+                                    "tok": 364
                                   },
                                   {
                                     "k": "mut_arg",
                                     "name": "c",
-                                    "tok": 365
+                                    "tok": 367
                                   }
                                 ],
-                                "tok": 360
+                                "tok": 362
                               },
                               "wrap": null,
-                              "tok": 367
+                              "tok": 369
                             }
                           ],
-                          "tok": 357
+                          "tok": 359
                         },
                         {
                           "k": "bind",
@@ -978,22 +978,22 @@
                                   "base": {
                                     "k": "ident",
                                     "name": "t",
-                                    "tok": 372
+                                    "tok": 374
                                   },
                                   "field": "kind",
-                                  "tok": 374
+                                  "tok": 376
                                 },
                                 "rhs": {
                                   "k": "selector",
                                   "base": {
                                     "k": "ident",
                                     "name": "lex",
-                                    "tok": 376
+                                    "tok": 378
                                   },
                                   "field": "Star",
-                                  "tok": 378
+                                  "tok": 380
                                 },
-                                "tok": 375
+                                "tok": 377
                               },
                               "then": {
                                 "stmts": [
@@ -1002,7 +1002,7 @@
                                     "expr": {
                                       "k": "ident",
                                       "name": "Mul",
-                                      "tok": 380
+                                      "tok": 382
                                     }
                                   }
                                 ]
@@ -1015,15 +1015,15 @@
                                     "expr": {
                                       "k": "ident",
                                       "name": "Div",
-                                      "tok": 384
+                                      "tok": 386
                                     }
                                   }
                                 ]
                               },
-                              "tok": 371
+                              "tok": 373
                             }
                           ],
-                          "tok": 369
+                          "tok": 371
                         },
                         {
                           "k": "assign",
@@ -1031,7 +1031,7 @@
                             {
                               "k": "ident",
                               "name": "l",
-                              "tok": 387
+                              "tok": 389
                             }
                           ],
                           "op": "=",
@@ -1041,13 +1041,13 @@
                               "callee": {
                                 "k": "ident",
                                 "name": "node",
-                                "tok": 389
+                                "tok": 391
                               },
                               "args": [
                                 {
                                   "k": "mut_arg",
                                   "name": "nb",
-                                  "tok": 392
+                                  "tok": 394
                                 },
                                 {
                                   "k": "composite",
@@ -1058,7 +1058,7 @@
                                       "value": {
                                         "k": "ident",
                                         "name": "k",
-                                        "tok": 396
+                                        "tok": 398
                                       }
                                     },
                                     {
@@ -1066,7 +1066,7 @@
                                       "value": {
                                         "k": "int",
                                         "value": 0,
-                                        "tok": 398
+                                        "tok": 400
                                       }
                                     },
                                     {
@@ -1076,17 +1076,9 @@
                                         "base": {
                                           "k": "ident",
                                           "name": "t",
-                                          "tok": 400
+                                          "tok": 402
                                         },
                                         "field": "pos",
-                                        "tok": 402
-                                      }
-                                    },
-                                    {
-                                      "key": null,
-                                      "value": {
-                                        "k": "ident",
-                                        "name": "l",
                                         "tok": 404
                                       }
                                     },
@@ -1094,19 +1086,27 @@
                                       "key": null,
                                       "value": {
                                         "k": "ident",
-                                        "name": "r",
+                                        "name": "l",
                                         "tok": 406
+                                      }
+                                    },
+                                    {
+                                      "key": null,
+                                      "value": {
+                                        "k": "ident",
+                                        "name": "r",
+                                        "tok": 408
                                       }
                                     }
                                   ],
-                                  "tok": 394,
+                                  "tok": 396,
                                   "type_args": []
                                 }
                               ],
-                              "tok": 390
+                              "tok": 392
                             }
                           ],
-                          "tok": 387
+                          "tok": 389
                         }
                       ]
                     },
@@ -1119,7 +1119,7 @@
                             {
                               "k": "ident",
                               "name": "more",
-                              "tok": 413
+                              "tok": 415
                             }
                           ],
                           "op": "=",
@@ -1127,19 +1127,19 @@
                             {
                               "k": "ident",
                               "name": "false",
-                              "tok": 415
+                              "tok": 417
                             }
                           ],
-                          "tok": 413
+                          "tok": 415
                         }
                       ]
                     },
-                    "tok": 332
+                    "tok": 334
                   }
                 }
               ]
             },
-            "tok": 321
+            "tok": 323
           },
           {
             "k": "ret",
@@ -1147,24 +1147,24 @@
               {
                 "k": "ident",
                 "name": "l",
-                "tok": 422
+                "tok": 424
               },
               {
                 "k": "nil",
-                "tok": 424
+                "tok": 426
               }
             ],
-            "tok": 421
+            "tok": 423
           }
         ]
       },
-      "tok": 279,
+      "tok": 281,
       "bodiless": false,
       "span": {
-        "start": 278,
-        "end": 428
+        "start": 280,
+        "end": 430
       },
-      "sig_end": 302
+      "sig_end": 304
     },
     {
       "name": "unary",
@@ -1222,22 +1222,22 @@
                   "base": {
                     "k": "ident",
                     "name": "lex",
-                    "tok": 455
+                    "tok": 457
                   },
                   "field": "Next",
-                  "tok": 457
+                  "tok": 459
                 },
                 "args": [
                   {
                     "k": "mut_arg",
                     "name": "c",
-                    "tok": 460
+                    "tok": 462
                   }
                 ],
-                "tok": 458
+                "tok": 460
               }
             ],
-            "tok": 453
+            "tok": 455
           },
           {
             "k": "expr",
@@ -1251,22 +1251,22 @@
                   "base": {
                     "k": "ident",
                     "name": "t",
-                    "tok": 464
+                    "tok": 466
                   },
                   "field": "kind",
-                  "tok": 466
+                  "tok": 468
                 },
                 "rhs": {
                   "k": "selector",
                   "base": {
                     "k": "ident",
                     "name": "lex",
-                    "tok": 468
+                    "tok": 470
                   },
                   "field": "Minus",
-                  "tok": 470
+                  "tok": 472
                 },
-                "tok": 467
+                "tok": 469
               },
               "then": {
                 "stmts": [
@@ -1284,27 +1284,27 @@
                           "callee": {
                             "k": "ident",
                             "name": "unary",
-                            "tok": 474
+                            "tok": 476
                           },
                           "args": [
                             {
                               "k": "mut_arg",
                               "name": "nb",
-                              "tok": 477
+                              "tok": 479
                             },
                             {
                               "k": "mut_arg",
                               "name": "c",
-                              "tok": 480
+                              "tok": 482
                             }
                           ],
-                          "tok": 475
+                          "tok": 477
                         },
                         "wrap": null,
-                        "tok": 482
+                        "tok": 484
                       }
                     ],
-                    "tok": 472
+                    "tok": 474
                   },
                   {
                     "k": "ret",
@@ -1314,13 +1314,13 @@
                         "callee": {
                           "k": "ident",
                           "name": "node",
-                          "tok": 485
+                          "tok": 487
                         },
                         "args": [
                           {
                             "k": "mut_arg",
                             "name": "nb",
-                            "tok": 488
+                            "tok": 490
                           },
                           {
                             "k": "composite",
@@ -1331,7 +1331,7 @@
                                 "value": {
                                   "k": "ident",
                                   "name": "Neg",
-                                  "tok": 492
+                                  "tok": 494
                                 }
                               },
                               {
@@ -1339,7 +1339,7 @@
                                 "value": {
                                   "k": "int",
                                   "value": 0,
-                                  "tok": 494
+                                  "tok": 496
                                 }
                               },
                               {
@@ -1349,10 +1349,10 @@
                                   "base": {
                                     "k": "ident",
                                     "name": "t",
-                                    "tok": 496
+                                    "tok": 498
                                   },
                                   "field": "pos",
-                                  "tok": 498
+                                  "tok": 500
                                 }
                               },
                               {
@@ -1363,14 +1363,14 @@
                                   "lhs": {
                                     "k": "int",
                                     "value": 0,
-                                    "tok": 500
+                                    "tok": 502
                                   },
                                   "rhs": {
                                     "k": "int",
                                     "value": 1,
-                                    "tok": 502
+                                    "tok": 504
                                   },
-                                  "tok": 501
+                                  "tok": 503
                                 }
                               },
                               {
@@ -1378,27 +1378,27 @@
                                 "value": {
                                   "k": "ident",
                                   "name": "v",
-                                  "tok": 504
+                                  "tok": 506
                                 }
                               }
                             ],
-                            "tok": 490,
+                            "tok": 492,
                             "type_args": []
                           }
                         ],
-                        "tok": 486
+                        "tok": 488
                       },
                       {
                         "k": "nil",
-                        "tok": 508
+                        "tok": 510
                       }
                     ],
-                    "tok": 484
+                    "tok": 486
                   }
                 ]
               },
               "else": null,
-              "tok": 463
+              "tok": 465
             }
           },
           {
@@ -1413,22 +1413,22 @@
                   "base": {
                     "k": "ident",
                     "name": "t",
-                    "tok": 513
+                    "tok": 515
                   },
                   "field": "kind",
-                  "tok": 515
+                  "tok": 517
                 },
                 "rhs": {
                   "k": "selector",
                   "base": {
                     "k": "ident",
                     "name": "lex",
-                    "tok": 517
+                    "tok": 519
                   },
                   "field": "Num",
-                  "tok": 519
+                  "tok": 521
                 },
-                "tok": 516
+                "tok": 518
               },
               "then": {
                 "stmts": [
@@ -1440,13 +1440,13 @@
                         "callee": {
                           "k": "ident",
                           "name": "node",
-                          "tok": 522
+                          "tok": 524
                         },
                         "args": [
                           {
                             "k": "mut_arg",
                             "name": "nb",
-                            "tok": 525
+                            "tok": 527
                           },
                           {
                             "k": "composite",
@@ -1457,7 +1457,7 @@
                                 "value": {
                                   "k": "ident",
                                   "name": "Lit",
-                                  "tok": 529
+                                  "tok": 531
                                 }
                               },
                               {
@@ -1467,10 +1467,10 @@
                                   "base": {
                                     "k": "ident",
                                     "name": "t",
-                                    "tok": 531
+                                    "tok": 533
                                   },
                                   "field": "val",
-                                  "tok": 533
+                                  "tok": 535
                                 }
                               },
                               {
@@ -1480,10 +1480,10 @@
                                   "base": {
                                     "k": "ident",
                                     "name": "t",
-                                    "tok": 535
+                                    "tok": 537
                                   },
                                   "field": "pos",
-                                  "tok": 537
+                                  "tok": 539
                                 }
                               },
                               {
@@ -1494,14 +1494,14 @@
                                   "lhs": {
                                     "k": "int",
                                     "value": 0,
-                                    "tok": 539
-                                  },
-                                  "rhs": {
-                                    "k": "int",
-                                    "value": 1,
                                     "tok": 541
                                   },
-                                  "tok": 540
+                                  "rhs": {
+                                    "k": "int",
+                                    "value": 1,
+                                    "tok": 543
+                                  },
+                                  "tok": 542
                                 }
                               },
                               {
@@ -1512,34 +1512,34 @@
                                   "lhs": {
                                     "k": "int",
                                     "value": 0,
-                                    "tok": 543
+                                    "tok": 545
                                   },
                                   "rhs": {
                                     "k": "int",
                                     "value": 1,
-                                    "tok": 545
+                                    "tok": 547
                                   },
-                                  "tok": 544
+                                  "tok": 546
                                 }
                               }
                             ],
-                            "tok": 527,
+                            "tok": 529,
                             "type_args": []
                           }
                         ],
-                        "tok": 523
+                        "tok": 525
                       },
                       {
                         "k": "nil",
-                        "tok": 549
+                        "tok": 551
                       }
                     ],
-                    "tok": 521
+                    "tok": 523
                   }
                 ]
               },
               "else": null,
-              "tok": 512
+              "tok": 514
             }
           },
           {
@@ -1554,22 +1554,22 @@
                   "base": {
                     "k": "ident",
                     "name": "t",
-                    "tok": 554
+                    "tok": 556
                   },
                   "field": "kind",
-                  "tok": 556
+                  "tok": 558
                 },
                 "rhs": {
                   "k": "selector",
                   "base": {
                     "k": "ident",
                     "name": "lex",
-                    "tok": 558
+                    "tok": 560
                   },
                   "field": "LParen",
-                  "tok": 560
+                  "tok": 562
                 },
-                "tok": 557
+                "tok": 559
               },
               "then": {
                 "stmts": [
@@ -1587,27 +1587,27 @@
                           "callee": {
                             "k": "ident",
                             "name": "expr",
-                            "tok": 564
+                            "tok": 566
                           },
                           "args": [
                             {
                               "k": "mut_arg",
                               "name": "nb",
-                              "tok": 567
+                              "tok": 569
                             },
                             {
                               "k": "mut_arg",
                               "name": "c",
-                              "tok": 570
+                              "tok": 572
                             }
                           ],
-                          "tok": 565
+                          "tok": 567
                         },
                         "wrap": null,
-                        "tok": 572
+                        "tok": 574
                       }
                     ],
-                    "tok": 562
+                    "tok": 564
                   },
                   {
                     "k": "bind",
@@ -1623,22 +1623,22 @@
                           "base": {
                             "k": "ident",
                             "name": "lex",
-                            "tok": 576
+                            "tok": 578
                           },
                           "field": "Next",
-                          "tok": 578
+                          "tok": 580
                         },
                         "args": [
                           {
                             "k": "mut_arg",
                             "name": "c",
-                            "tok": 581
+                            "tok": 583
                           }
                         ],
-                        "tok": 579
+                        "tok": 581
                       }
                     ],
-                    "tok": 574
+                    "tok": 576
                   },
                   {
                     "k": "expr",
@@ -1652,22 +1652,22 @@
                           "base": {
                             "k": "ident",
                             "name": "u",
-                            "tok": 585
+                            "tok": 587
                           },
                           "field": "kind",
-                          "tok": 587
+                          "tok": 589
                         },
                         "rhs": {
                           "k": "selector",
                           "base": {
                             "k": "ident",
                             "name": "lex",
-                            "tok": 589
+                            "tok": 591
                           },
                           "field": "RParen",
-                          "tok": 591
+                          "tok": 593
                         },
-                        "tok": 588
+                        "tok": 590
                       },
                       "then": {
                         "stmts": [
@@ -1677,19 +1677,19 @@
                               {
                                 "k": "ident",
                                 "name": "e",
-                                "tok": 594
+                                "tok": 596
                               },
                               {
                                 "k": "nil",
-                                "tok": 596
+                                "tok": 598
                               }
                             ],
-                            "tok": 593
+                            "tok": 595
                           }
                         ]
                       },
                       "else": null,
-                      "tok": 584
+                      "tok": 586
                     }
                   },
                   {
@@ -1704,22 +1704,22 @@
                           "base": {
                             "k": "ident",
                             "name": "u",
-                            "tok": 601
+                            "tok": 603
                           },
                           "field": "kind",
-                          "tok": 603
+                          "tok": 605
                         },
                         "rhs": {
                           "k": "selector",
                           "base": {
                             "k": "ident",
                             "name": "lex",
-                            "tok": 605
+                            "tok": 607
                           },
                           "field": "End",
-                          "tok": 607
+                          "tok": 609
                         },
-                        "tok": 604
+                        "tok": 606
                       },
                       "then": {
                         "stmts": [
@@ -1729,7 +1729,7 @@
                               {
                                 "k": "int",
                                 "value": 0,
-                                "tok": 610
+                                "tok": 612
                               },
                               {
                                 "k": "composite",
@@ -1742,10 +1742,10 @@
                                       "base": {
                                         "k": "ident",
                                         "name": "u",
-                                        "tok": 618
+                                        "tok": 620
                                       },
                                       "field": "pos",
-                                      "tok": 620
+                                      "tok": 622
                                     }
                                   },
                                   {
@@ -1753,20 +1753,20 @@
                                     "value": {
                                       "k": "int",
                                       "value": 5,
-                                      "tok": 624
+                                      "tok": 626
                                     }
                                   }
                                 ],
-                                "tok": 612,
+                                "tok": 614,
                                 "type_args": []
                               }
                             ],
-                            "tok": 609
+                            "tok": 611
                           }
                         ]
                       },
                       "else": null,
-                      "tok": 600
+                      "tok": 602
                     }
                   },
                   {
@@ -1775,7 +1775,7 @@
                       {
                         "k": "int",
                         "value": 0,
-                        "tok": 630
+                        "tok": 632
                       },
                       {
                         "k": "composite",
@@ -1788,10 +1788,10 @@
                               "base": {
                                 "k": "ident",
                                 "name": "u",
-                                "tok": 638
+                                "tok": 640
                               },
                               "field": "pos",
-                              "tok": 640
+                              "tok": 642
                             }
                           },
                           {
@@ -1799,20 +1799,20 @@
                             "value": {
                               "k": "int",
                               "value": 1,
-                              "tok": 644
+                              "tok": 646
                             }
                           }
                         ],
-                        "tok": 632,
+                        "tok": 634,
                         "type_args": []
                       }
                     ],
-                    "tok": 629
+                    "tok": 631
                   }
                 ]
               },
               "else": null,
-              "tok": 553
+              "tok": 555
             }
           },
           {
@@ -1827,22 +1827,22 @@
                   "base": {
                     "k": "ident",
                     "name": "t",
-                    "tok": 650
+                    "tok": 652
                   },
                   "field": "kind",
-                  "tok": 652
+                  "tok": 654
                 },
                 "rhs": {
                   "k": "selector",
                   "base": {
                     "k": "ident",
                     "name": "lex",
-                    "tok": 654
+                    "tok": 656
                   },
                   "field": "End",
-                  "tok": 656
+                  "tok": 658
                 },
-                "tok": 653
+                "tok": 655
               },
               "then": {
                 "stmts": [
@@ -1852,7 +1852,7 @@
                       {
                         "k": "int",
                         "value": 0,
-                        "tok": 659
+                        "tok": 661
                       },
                       {
                         "k": "composite",
@@ -1865,23 +1865,23 @@
                               "base": {
                                 "k": "ident",
                                 "name": "t",
-                                "tok": 667
+                                "tok": 669
                               },
                               "field": "pos",
-                              "tok": 669
+                              "tok": 671
                             }
                           }
                         ],
-                        "tok": 661,
+                        "tok": 663,
                         "type_args": []
                       }
                     ],
-                    "tok": 658
+                    "tok": 660
                   }
                 ]
               },
               "else": null,
-              "tok": 649
+              "tok": 651
             }
           },
           {
@@ -1890,7 +1890,7 @@
               {
                 "k": "int",
                 "value": 0,
-                "tok": 675
+                "tok": 677
               },
               {
                 "k": "composite",
@@ -1903,10 +1903,10 @@
                       "base": {
                         "k": "ident",
                         "name": "t",
-                        "tok": 683
+                        "tok": 685
                       },
                       "field": "pos",
-                      "tok": 685
+                      "tok": 687
                     }
                   },
                   {
@@ -1914,25 +1914,25 @@
                     "value": {
                       "k": "int",
                       "value": 0,
-                      "tok": 689
+                      "tok": 691
                     }
                   }
                 ],
-                "tok": 677,
+                "tok": 679,
                 "type_args": []
               }
             ],
-            "tok": 674
+            "tok": 676
           }
         ]
       },
-      "tok": 429,
+      "tok": 431,
       "bodiless": false,
       "span": {
-        "start": 428,
-        "end": 694
+        "start": 430,
+        "end": 696
       },
-      "sig_end": 452
+      "sig_end": 454
     },
     {
       "name": "Parse",
@@ -1981,7 +1981,7 @@
                 "k": "composite",
                 "type_name": "builder.Builder",
                 "elems": [],
-                "tok": 732,
+                "tok": 734,
                 "type_args": [
                   {
                     "k": "name",
@@ -1990,7 +1990,7 @@
                 ]
               }
             ],
-            "tok": 729
+            "tok": 731
           },
           {
             "k": "bind",
@@ -2006,22 +2006,22 @@
                   "base": {
                     "k": "ident",
                     "name": "lex",
-                    "tok": 744
+                    "tok": 746
                   },
                   "field": "Start",
-                  "tok": 746
+                  "tok": 748
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "ts",
-                    "tok": 748
+                    "tok": 750
                   }
                 ],
-                "tok": 747
+                "tok": 749
               }
             ],
-            "tok": 741
+            "tok": 743
           },
           {
             "k": "bind",
@@ -2033,10 +2033,10 @@
               {
                 "k": "ident",
                 "name": "c",
-                "tok": 754
+                "tok": 756
               }
             ],
-            "tok": 751
+            "tok": 753
           },
           {
             "k": "expr",
@@ -2047,19 +2047,19 @@
                 "base": {
                   "k": "ident",
                   "name": "lex",
-                  "tok": 756
+                  "tok": 758
                 },
                 "field": "Remaining",
-                "tok": 758
+                "tok": 760
               },
               "args": [
                 {
                   "k": "mut_arg",
                   "name": "d",
-                  "tok": 761
+                  "tok": 763
                 }
               ],
-              "tok": 759
+              "tok": 761
             }
           },
           {
@@ -2071,24 +2071,24 @@
                 "callee": {
                   "k": "ident",
                   "name": "expr",
-                  "tok": 764
+                  "tok": 766
                 },
                 "args": [
                   {
                     "k": "mut_arg",
                     "name": "nb",
-                    "tok": 767
+                    "tok": 769
                   },
                   {
                     "k": "mut_arg",
                     "name": "c",
-                    "tok": 770
+                    "tok": 772
                   }
                 ],
-                "tok": 765
+                "tok": 767
               },
               "wrap": null,
-              "tok": 772
+              "tok": 774
             }
           },
           {
@@ -2105,22 +2105,22 @@
                   "base": {
                     "k": "ident",
                     "name": "lex",
-                    "tok": 776
+                    "tok": 778
                   },
                   "field": "Next",
-                  "tok": 778
+                  "tok": 780
                 },
                 "args": [
                   {
                     "k": "mut_arg",
                     "name": "c",
-                    "tok": 781
+                    "tok": 783
                   }
                 ],
-                "tok": 779
+                "tok": 781
               }
             ],
-            "tok": 774
+            "tok": 776
           },
           {
             "k": "expr",
@@ -2134,22 +2134,22 @@
                   "base": {
                     "k": "ident",
                     "name": "t",
-                    "tok": 785
+                    "tok": 787
                   },
                   "field": "kind",
-                  "tok": 787
+                  "tok": 789
                 },
                 "rhs": {
                   "k": "selector",
                   "base": {
                     "k": "ident",
                     "name": "lex",
-                    "tok": 789
+                    "tok": 791
                   },
                   "field": "RParen",
-                  "tok": 791
+                  "tok": 793
                 },
-                "tok": 788
+                "tok": 790
               },
               "then": {
                 "stmts": [
@@ -2164,7 +2164,7 @@
                         },
                         "elems": [],
                         "mut": false,
-                        "tok": 794
+                        "tok": 796
                       },
                       {
                         "k": "composite",
@@ -2177,23 +2177,23 @@
                               "base": {
                                 "k": "ident",
                                 "name": "t",
-                                "tok": 806
+                                "tok": 808
                               },
                               "field": "pos",
-                              "tok": 808
+                              "tok": 810
                             }
                           }
                         ],
-                        "tok": 800,
+                        "tok": 802,
                         "type_args": []
                       }
                     ],
-                    "tok": 793
+                    "tok": 795
                   }
                 ]
               },
               "else": null,
-              "tok": 784
+              "tok": 786
             }
           },
           {
@@ -2208,22 +2208,22 @@
                   "base": {
                     "k": "ident",
                     "name": "t",
-                    "tok": 814
+                    "tok": 816
                   },
                   "field": "kind",
-                  "tok": 816
+                  "tok": 818
                 },
                 "rhs": {
                   "k": "selector",
                   "base": {
                     "k": "ident",
                     "name": "lex",
-                    "tok": 818
+                    "tok": 820
                   },
                   "field": "End",
-                  "tok": 820
+                  "tok": 822
                 },
-                "tok": 817
+                "tok": 819
               },
               "then": {
                 "stmts": [
@@ -2238,7 +2238,7 @@
                         },
                         "elems": [],
                         "mut": false,
-                        "tok": 823
+                        "tok": 825
                       },
                       {
                         "k": "composite",
@@ -2251,10 +2251,10 @@
                               "base": {
                                 "k": "ident",
                                 "name": "t",
-                                "tok": 835
+                                "tok": 837
                               },
                               "field": "pos",
-                              "tok": 837
+                              "tok": 839
                             }
                           },
                           {
@@ -2262,20 +2262,20 @@
                             "value": {
                               "k": "int",
                               "value": 1,
-                              "tok": 841
+                              "tok": 843
                             }
                           }
                         ],
-                        "tok": 829,
+                        "tok": 831,
                         "type_args": []
                       }
                     ],
-                    "tok": 822
+                    "tok": 824
                   }
                 ]
               },
               "else": null,
-              "tok": 813
+              "tok": 815
             }
           },
           {
@@ -2288,36 +2288,36 @@
                   "base": {
                     "k": "ident",
                     "name": "builder",
-                    "tok": 847
+                    "tok": 849
                   },
                   "field": "Build",
-                  "tok": 849
+                  "tok": 851
                 },
                 "args": [
                   {
                     "k": "mut_arg",
                     "name": "nb",
-                    "tok": 852
+                    "tok": 854
                   }
                 ],
-                "tok": 850
+                "tok": 852
               },
               {
                 "k": "nil",
-                "tok": 855
+                "tok": 857
               }
             ],
-            "tok": 846
+            "tok": 848
           }
         ]
       },
-      "tok": 711,
+      "tok": 713,
       "bodiless": false,
       "span": {
-        "start": 694,
-        "end": 859
+        "start": 696,
+        "end": 861
       },
-      "sig_end": 728
+      "sig_end": 730
     }
   ],
   "consts": [
@@ -2326,12 +2326,12 @@
       "expr": {
         "k": "int",
         "value": 0,
-        "tok": 15
+        "tok": 17
       },
-      "tok": 13,
+      "tok": 15,
       "span": {
-        "start": 12,
-        "end": 17
+        "start": 14,
+        "end": 19
       }
     },
     {
@@ -2339,12 +2339,12 @@
       "expr": {
         "k": "int",
         "value": 1,
-        "tok": 20
+        "tok": 22
       },
-      "tok": 18,
+      "tok": 20,
       "span": {
-        "start": 17,
-        "end": 22
+        "start": 19,
+        "end": 24
       }
     },
     {
@@ -2352,12 +2352,12 @@
       "expr": {
         "k": "int",
         "value": 2,
-        "tok": 25
+        "tok": 27
       },
-      "tok": 23,
+      "tok": 25,
       "span": {
-        "start": 22,
-        "end": 27
+        "start": 24,
+        "end": 29
       }
     },
     {
@@ -2365,12 +2365,12 @@
       "expr": {
         "k": "int",
         "value": 3,
-        "tok": 30
+        "tok": 32
       },
-      "tok": 28,
+      "tok": 30,
       "span": {
-        "start": 27,
-        "end": 32
+        "start": 29,
+        "end": 34
       }
     },
     {
@@ -2378,12 +2378,12 @@
       "expr": {
         "k": "int",
         "value": 4,
-        "tok": 35
+        "tok": 37
       },
-      "tok": 33,
+      "tok": 35,
       "span": {
-        "start": 32,
-        "end": 37
+        "start": 34,
+        "end": 39
       }
     },
     {
@@ -2391,12 +2391,12 @@
       "expr": {
         "k": "int",
         "value": 5,
-        "tok": 40
+        "tok": 42
       },
-      "tok": 38,
+      "tok": 40,
       "span": {
-        "start": 37,
-        "end": 42
+        "start": 39,
+        "end": 44
       }
     }
   ]

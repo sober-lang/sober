@@ -10,7 +10,7 @@ import "std/json"
 func show(s string) {
     _, err := json.Parse(bytes(s))
     switch err {
-    case json.InvalidJson{pos, kind}: println("kind ${kind} at ${pos}")
+    case json.BadJson{pos, kind}: println("kind ${kind} at ${pos}")
     case nil: println("ok")
     }
 }

@@ -33,21 +33,31 @@
                 "callee": {
                   "k": "selector",
                   "base": {
-                    "k": "ident",
-                    "name": "store",
-                    "tok": 16
+                    "k": "selector",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "testdata",
+                        "tok": 16
+                      },
+                      "field": "doubles",
+                      "tok": 18
+                    },
+                    "field": "store",
+                    "tok": 20
                   },
                   "field": "Open",
-                  "tok": 18
+                  "tok": 22
                 },
                 "args": [
                   {
                     "k": "strlit",
                     "value": "/nonexistent-dir",
-                    "tok": 20
+                    "tok": 24
                   }
                 ],
-                "tok": 19
+                "tok": 23
               }
             ],
             "tok": 14
@@ -59,7 +69,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 23
+                "tok": 27
               },
               "args": [
                 {
@@ -67,29 +77,39 @@
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "handler",
-                      "tok": 25
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 29
+                        },
+                        "field": "doubles",
+                        "tok": 31
+                      },
+                      "field": "handler",
+                      "tok": 33
                     },
                     "field": "Lookup",
-                    "tok": 27
+                    "tok": 35
                   },
                   "args": [
                     {
                       "k": "ident",
                       "name": "c",
-                      "tok": 29
+                      "tok": 37
                     },
                     {
                       "k": "strlit",
                       "value": "a",
-                      "tok": 31
+                      "tok": 39
                     }
                   ],
-                  "tok": 28
+                  "tok": 36
                 }
               ],
-              "tok": 24
+              "tok": 28
             }
           }
         ]
@@ -98,7 +118,7 @@
       "bodiless": false,
       "span": {
         "start": 9,
-        "end": 37
+        "end": 45
       },
       "sig_end": 13
     }

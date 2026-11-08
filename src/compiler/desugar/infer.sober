@@ -450,7 +450,9 @@ func callTy(st mut S, e NodeRef, eb int, ef int) TyRef {
     }
     fi := findFn(mut st, callee, eb)
     if fi < 0 {
-        return -1
+        // 名前付き関数型への変換 `W(e)` の型は W の閉包の型（関数でなかったときだけ見る — 名前は関数と型で衝突しない）
+        fcd := if skip == 0 && na == 1 { fnConvDr(mut st, callee0, eb) } else { -1 }
+        return if fcd >= 0 { fnConvTy(mut st, fcd, e) } else { TyRef(-1) }
     }
     pkey := ParKey(mut st, fi)
     if pkey != 0 {
@@ -469,8 +471,9 @@ func callTy(st mut S, e NodeRef, eb int, ef int) TyRef {
         if ckey != CELL_GET {
             return st.tUnit
         }
+        // 値は把手の const を呼び出しの点で組んだもの（最内の座標）— cellCall の Set / Update の want と同じく最内へ写した型
         ht := computeTy(mut st, latN(mut st, args, 0), eb, ef)
-        return if ht != -1 && tg(mut st, ht) == TPr { tRight(mut st, ht) } else { TyRef(-1) }
+        return if ht != -1 && tg(mut st, ht) == TPr { tyRelocAll(mut st, tRight(mut st, ht), st.rdepth - 1) } else { TyRef(-1) }
     }
     rs := fnResults(mut st, fi)
     if lenL(mut st, rs) != 1 + skip {
@@ -537,6 +540,11 @@ func declOfExpr(st mut S, e NodeRef, eb int, ef int) int {
         }
         fi := findFn(mut st, callee, eb)
         if fi < 0 {
+            // 変換 `W(e)` の値の宣言は W（値化可能な named fn type — 閉包の値の束縛として呼べる）
+            fcd := if skip == 0 && explicit == -1 && lenL(mut st, lB(nodeOf(mut st, e))) == 1 { fnConvDr(mut st, callee, eb) } else { -1 }
+            if fcd >= 0 {
+                return fcd
+            }
             // 閉包の値の呼び出し（`f(x)`・`xs[i](x)`・`g(x)(y)`）: named fn type の宣言の結果から
             cd := closureCalleeDr(mut st, nA(nodeOf(mut st, e)), eb, ef)
             if cd >= 0 {
@@ -1072,7 +1080,8 @@ func inferTs0(st mut S, fi int, explicit NodeRef, args ListRef, eb int, ef int, 
                 return 0, diag.CoreFragment{at: posOf(mut st, at)}
             }
         } else if !tyArgOk(mut st, t) {
-            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+            // Def として呼ぶジェネリックの型引数は region もチャネルも持てない（language.md 31 節 R1 — 撤去は R3 として積み）
+            return 0, diag.TypeMismatch{at: posOf(mut st, at), kind: 5}
         }
     }
     return binds, nil
@@ -1617,7 +1626,8 @@ func switchTy(st mut S, sw NodeRef, eb int, ef int) TyRef {
         t = caseTyN(mut st, latN(mut st, cs, i), eb, ef, true)
         i += 1
     }
-    return if t != -1 { optUp(mut st, t) } else { t }
+    // 値は最内に組まれる（ラベルの cause の鎖・リテラル）— if の合流（upJoin2）と同じく最内の座標へ上げる（nil の腕の注釈もこの型）
+    return if t != -1 { upRegion(mut st, optUp(mut st, t), st.rdepth - 1) } else { t }
 }
 
 // switch の腕（default を含む）のどれかが nil で終わるか

@@ -18,12 +18,12 @@ A map of the packages you use with `import "std/<name>"`. The exact signature an
 | Package | Purpose | Main items |
 |---|---|---|
 | [`std/utf8`](../std/utf8.ja.md) | Validated UTF-8 views | `Check` (validate the whole input once and get a `View`), `Str` (take a substring from a validated view without copying), `Bytes` |
-| [`std/strings`](../std/strings.ja.md) | String operations | `Contains`, `HasPrefix`, `HasSuffix`, `Index`, `IndexByte`, `Count`, `LastIndex`, `Cut`, `CutLast`, `Split`, `Fields`, `TrimPrefix`, `TrimSuffix`, `TrimSpace`, `Replace`, `ToLower`, `ToUpper`, `EqualFold`, `Join`, `Clone`, UTF-8 validation `Valid`, `IndexInvalid` (error label `InvalidUtf8`) (the pieces `Cut` and friends return are not re-validated — a position that matches a separator is always a character boundary; whitespace and case are ASCII only — no Unicode case folding) |
+| [`std/strings`](../std/strings.ja.md) | String operations | `Contains`, `HasPrefix`, `HasSuffix`, `Index`, `IndexByte`, `Count`, `LastIndex`, `Cut`, `CutLast`, `Split`, `Fields`, `TrimPrefix`, `TrimSuffix`, `TrimSpace`, `Replace`, `ToLower`, `ToUpper`, `EqualFold`, `Join`, `Clone`, UTF-8 validation `Valid`, `IndexInvalid` (error label `BadUtf8`) (the pieces `Cut` and friends return are not re-validated — a position that matches a separator is always a character boundary; whitespace and case are ASCII only — no Unicode case folding) |
 | [`std/builder`](../std/builder.ja.md) | Building sequences | push onto a `Builder[T]` with `Push`, `PushAll`, `PushString`, and take the result with `Build` |
 | [`std/convert`](../std/convert.ja.md) | Converting between numbers and strings | `FormatInt`, `ParseInt`, `ParseFloat`, `FormatFloat`, `FormatFixed`, `ParseBool`, `FormatBool` |
 | [`std/hex`](../std/hex.ja.md) | Hexadecimal | `Format`, `Parse` |
 | [`std/base64`](../std/base64.ja.md) | base64 (RFC 4648) | `Encode` / `Decode` (standard alphabet, padded), `EncodeUrl` / `DecodeUrl` (URL-safe alphabet, unpadded) — decoding is strict (one spelling per byte sequence) |
-| [`std/url`](../std/url.ja.md) | Encoding URL components | percent-encoding `Escape` / `Unescape`, `ParseQuery` for every pair of a query string (a repeated key gives separate pairs, `+` reads as a space) |
+| [`std/url`](../std/url.ja.md) | Encoding URL components | percent-encoding `Escape` / `Unescape`, `ParseQuery` for every pair of a query string and `FormatQuery` to write one back (a repeated key gives separate pairs, `+` reads as a space) |
 
 `string` is immutable text, and `bytes(s)` views it as a byte sequence (`[]byte`). String interpolation is `"x = ${x}"`.
 
@@ -52,6 +52,8 @@ Only immutable values and channels can be passed to a child task. The output is 
 | Package | Purpose | Main items |
 |---|---|---|
 | [`std/math`](../std/math.ja.md) | Floating-point basics | `Sqrt`, `Abs`, `Bits` / `FromBits` |
+| [`std/time`](../std/time.ja.md) | Time (wall-clock `Time` and monotonic `Instant` are separate types; only `Now` reads the wall clock) | `Now`, `Mono`, `Since`, `Unix`, `Add` / `Sub`, `ToCivil` / `FromCivil`, `FormatRFC3339` / `ParseRFC3339`, `FormatHTTP` / `ParseHTTP`, time zones `LoadZone` / `ToCivilIn` / `OffsetAt` (IANA tzdata baked in) |
+| [`std/uuid`](../std/uuid.ja.md) | UUIDs (RFC 9562 — versions 4 and 7) | `NewV4`, `NewV7`, `Parse`, `String`, `Equal` |
 | [`std/rand`](../std/rand.ja.md) | Deterministic pseudo-random numbers | `New` (from a seed), `Intn`, `Int62`, `Bool`, `Split` (split per parallel task) |
 | [`std/hash`](../std/hash.ja.md) | Hashing | `Sha256` |
 | [`std/hash/crc32`](../std/hash-crc32.ja.md) | Checksums | `Sum` (CRC-32 — the same value as gzip, zlib and PNG) |
@@ -61,24 +63,27 @@ Only immutable values and channels can be passed to a child task. The output is 
 | Package | Purpose | Main items |
 |---|---|---|
 | [`std/compress/flate`](../std/compress-flate.ja.md) | DEFLATE (RFC 1951) encoder and decoder | `Encode(data, level)` (level 0–9 on the zlib scale — 6 is the usual default; the same input always gives the same bytes), `Decode(data, maxSize:)` (an output limit — always pass one for untrusted input; exceeding it gives `TooLarge`, a broken stream gives `Bad`) |
-| [`std/compress/gzip`](../std/compress-gzip.ja.md) | gzip (RFC 1952) encoder and decoder | `Encode(data, level)` (10-byte header + DEFLATE + CRC-32 + length — the body for HTTP `Content-Encoding: gzip`), `Decode(data, maxSize:)` (checks the CRC-32 and length, joins multiple members; wrapper errors are `gzip.Bad`) |
+| [`std/compress/gzip`](../std/compress-gzip.ja.md) | gzip (RFC 1952) encoder and decoder | `Encode(data, level)` (10-byte header + DEFLATE + CRC-32 + length — the body for HTTP `Content-Encoding: gzip`), `Decode(data, maxSize:)` (checks the CRC-32 and length, joins multiple members; wrapper errors are `compress.gzip.Bad`) |
 
 ## Networking
 
 | Package | Purpose | Main items |
 |---|---|---|
 | [`std/net`](../std/net.ja.md) | TCP | `for l <- net.Listen(addr)?`, `for c <- net.Accept(l)?`, `for c <- net.Dial(addr)?` (closed when the body exits), `for chunk <- net.Recv(c)?`, `Send`, and `Serve` (one task per connection) |
-| [`std/http`](../std/http.ja.md) | HTTP/1.1 server | `ServeConn` (on a net connection) / `ServeWith` (on receive and send functions — e.g. a TLS connection; the optional `put:` takes responses without sending them, flushed by the receive side, as `tls.Put`), `Request` / `Response`, `Text` / `Json` / `Status`, `Header` / `Query` / `Form` / `Multipart` (file uploads) / `JsonDoc`, a router `Route` + `Mount` / `Merge` / `Dispatch` / `Param`, `Middleware` (`Before` / `After`), gzip and streamed responses |
-| [`std/tls`](../std/tls.ja.md) | TLS 1.3 server | `Serve` (hands over only connections whose handshake is done), a `Config` from `Load` / `Parse`, `Recv` / `Send` (same shape as net) / `Put` + `Flush` (put without sending — `Recv` sends what was put before the next receive). Errors are `HandshakeFailed`, `BadRecord`, `Closed` ([`std/tls/record`](../std/tls-record.ja.md) is the record layer inside — not for direct import) |
+| [`std/http`](../std/http.ja.md) | HTTP vocabulary shared by the server and the client | `Field` (one header), `StatusCode` and its typed consts (`http.OK` …), `BadHeader` |
+| [`std/http/server`](../std/http-server.ja.md) | HTTP/1.1 server | `ServeConn` (on a net connection) / `ServeWith` (on receive and send functions — e.g. a TLS connection; the optional `put:` takes responses without sending them, flushed by the receive side, as `tls.Put`), `SetCookie` (Response.cookies — Secure / HttpOnly / SameSite=Lax by default), `Request` / `Response`, `Text` / `Json` / `Status`, `Header` / `Query` / `Form` / `Multipart` (file uploads) / `JsonDoc`, a router `Route` + `Mount` / `Merge` / `Dispatch` / `Param`, `Middleware` (`Before` / `After`), gzip and streamed responses |
+| [`std/http/client`](../std/http-client.ja.md) | HTTP/1.1 client (TLS is always verified — 1.3 only by default) | Holds no state. `Request(url, method:, headers:, body:, cookies:, policy:)` per request; `Policy`, a plain data value (the zero values are the safe defaults: an 8 MiB body limit, a 30 s deadline, 10 redirects; `extraRoots` for a private PKI via `tls.ParseRoots`, `proxy` via `ParseProxy` / `proxyAuth`, `dangerouslyAllowTls12`); cookies are values (read with `CookieValue`, sent with `cookies:`); `for part <- http.client.Stream(url)?` to receive the body in pieces, and `Send` inside a keep-alive `Open` (Session is an identity type). Errors are `Dns`, `Tls`, `Timeout`, `TooManyRedirects`, `InsecureRedirect`, `BodyTooLarge`, `Closed`, `BadUrl`, `BadResponse`, `ProxyRefused`, `BadProxy` (from ParseProxy) |
+| [`std/tls`](../std/tls.ja.md) | TLS 1.3 server | `Serve` (hands over only connections whose handshake is done), a `Config` from `Load` / `Parse`, `Recv` / `Send` (same shape as net) / `Put` + `Flush` (put without sending — `Recv` sends what was put before the next receive); `ParseRoots` makes the `Roots` a client adds to its trust anchors (error `BadRoots`). Errors are `HandshakeFailed`, `BadRecord`, `Closed` |
 
 ## Cryptography
 
 | Package | Purpose | Main items |
 |---|---|---|
-| [`std/crypto`](../std/crypto.ja.md) | Constant-time helpers and OS randomness | `Equal`, `NonZero`, `Select`, `Wipe`, `Rand` |
+| [`std/crypto`](../std/crypto.ja.md) | Constant-time helpers and OS randomness | `Equal`, `NonZero`, `Select`, `Wipe`, `Rand`, `RandIntn` (cryptographically random integers — deterministic ones are in std/rand) |
 | [`std/crypto/aesgcm`](../std/crypto-aesgcm.ja.md) / [`std/crypto/chacha20poly1305`](../std/crypto-chacha20poly1305.ja.md) | AEAD | `Seal` / `Open`, `Prepare` (expand the key once) + `SealTo` / `OpenAt` (aesgcm needs AES-NI — `Available`) |
 | [`std/crypto/chacha20`](../std/crypto-chacha20.ja.md), [`std/crypto/poly1305`](../std/crypto-poly1305.ja.md) | Stream cipher and MAC | `XorKeyStream`, `Sum` / `SumAead` |
 | [`std/crypto/sha256`](../std/crypto-sha256.ja.md), [`std/crypto/hmac`](../std/crypto-hmac.ja.md), [`std/crypto/hkdf`](../std/crypto-hkdf.ja.md) | Hash, MAC, key derivation | `New` / `Write` / `Sum`, `Sum256`, `Extract` / `Expand` |
+| [`std/crypto/password`](../std/crypto-password.ja.md) | Password storage hashes and verification (the writer names the scheme — pick Argon2id for new systems) | `Argon2id`, `Bcrypt`, `Pbkdf2`, `Verify`, `NeedsRehash` |
 | [`std/crypto/x25519`](../std/crypto-x25519.ja.md), [`std/crypto/rsa`](../std/crypto-rsa.ja.md) | Key agreement and signatures | `Base` / `Shared`, `ParsePKCS8` / `SignPSS` / `VerifyPSS` |
 | [`std/crypto/pem`](../std/crypto-pem.ja.md) | Reading PEM | `Parse` |
 
@@ -97,4 +102,4 @@ For a worked example, see [Writing tests](testing.md).
 | Package | Purpose |
 |---|---|
 | [`std/layout`](../std/layout.ja.md) | Helpers for declaring binary layouts (`@layout`) |
-| [`std/binary`](../std/binary.ja.md) | Reading bytes a word at a time (`Load64` — 8 bytes, little-endian) |
+| [`std/binary`](../std/binary.ja.md) | Reading bytes a word at a time (`Load64` — 8 bytes, little-endian) and appending a word (`AppendWord`) |

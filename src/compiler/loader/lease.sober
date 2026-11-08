@@ -391,7 +391,7 @@ type LPrep struct {
 // 整えの文の列 ps が関数 1 つの呼び出し `F(mut w)` / `pkg.F(mut w)` で、1 文の転送を辿って T の package（tpk）の関数に着くなら、その関数の本体（mut 仮引数 1 つ）を返す
 func prepCall(cx Cx, f int, t ast.Tree, ps []int, w string, tpk int) LPrep {
     // 1 文の転送 `G(mut p)`（p は呼んだ関数の唯一の mut 仮引数そのもの）は G へ辿る — T の package の関数に着くまで・深さ 4 まで
-    //（公開の package の包みが std/internal の実体の整えを呼ぶ形 — 別名の第一顧客 flate.Prepare → deflate.Prepare。region-domain-pool.md 4d）
+    //（公開の package の包みが std/internal の実体の整えを呼ぶ形 — 別名の第一顧客 flate.NewWork → deflate.NewWork。region-domain-pool.md 4d）
     mut cf := f
     mut ct := t
     mut cps := ps
@@ -468,7 +468,7 @@ func leaseImports(cx Cx, f int, ppar int, ppool int) bool {
     imps := t.nodes[t.file].b
     for k <- iter.Range(0, ast.ListLen(t, imps)) {
         im := t.nodes[ast.ListAt(t, imps, k)]
-        r := if im.a >= 0 { Name(t, im.a) } else { Basename(Name(t, im.b)) }
+        r := ImpRef(t, im)
         pk := importOf(cx, cx.file_pkg[f], r)
         if pk >= 0 && (pk == ppar || pk == ppool) {
             return true

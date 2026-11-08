@@ -5,5 +5,5 @@ package main
 import "testdata/specpkg/cyca"
 
 func main() {
-    println(cyca.A())
+    println(testdata.specpkg.cyca.A())
 }

@@ -333,10 +333,7 @@ func compositeAhead(nb mut builder.Builder[ast.Node], db mut builder.Builder[int
     }
     t := tg(cx, p)
     if t == lexer.Identifier || t == lexer.KwError {
-        mut q := p + 1
-        if t == lexer.Identifier && tg(cx, q) == lexer.Dot && tg(cx, q + 1) == lexer.Identifier {
-            q += 2
-        }
+        mut q := if t == lexer.Identifier { qualEnd(cx, p) } else { p + 1 }
         if tg(cx, q) == lexer.LBracket {
             ta, r := typeArgs(mut nb, mut db, cx, q)
             if ta < 0 {
@@ -667,10 +664,7 @@ func typePatAhead(cx Cx, p int) bool {
     if tg(cx, p) != lexer.Identifier {
         return false
     }
-    if tg(cx, p + 1) == lexer.Dot && tg(cx, p + 2) == lexer.Identifier {
-        return tg(cx, p + 3) == lexer.LBrace
-    }
-    return tg(cx, p + 1) == lexer.LBrace
+    return tg(cx, qualEnd(cx, p)) == lexer.LBrace
 }
 
 // pattern <- IDENT type_pattern / type_pattern / const_pattern

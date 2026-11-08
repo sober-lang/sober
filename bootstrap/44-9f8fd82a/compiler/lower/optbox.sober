@@ -1,0 +1,159 @@
+package lower
+
+// 再帰の組の中の `T?` の欄の箱（language.md 1 節 — opt の中身を通る閉路）: 欄の置き場は slice のヘッダの形（番地・長さ 0/1・深度 —
+// 要素 = 中身・imm）で、型表では印つきの TSlice。写し・境界コピー・ゼロ値・containsSlice は slice の道をそのまま通る。
+// 表層の型は `T?` のまま — 欄の読みで直の opt に開き、欄の書きで箱に詰める。箱は共有しても観測できない（欄の代入は新しい箱を作る）
+
+import "desugar"
+import "ast"
+
+// TSlice の c 欄の印（1 = string）
+const BoxMark = 2
+
+func mkBox(st mut St, payload int) int {
+    return rec4(mut st, TSlice, payload, 0, BoxMark)
+}
+
+func isBox(st mut St, t int) bool {
+    return isTag(mut st, t, TSlice) && desugar.HeapGet(mut st.d, t + 3) == BoxMark
+}
+
+// 欄の型 t の表層の型（箱は中身の opt・他はそのまま）
+func surfTy(st mut St, t int) int {
+    return if isBox(mut st, t) { optOf(mut st, desugar.HeapGet(mut st.d, t + 1)) } else { t }
+}
+
+// 欄の型式 te が箱になるなら中身の型式（ならなければ -1）: `T?` で、T が owner と同じ再帰の組の struct / union で、T から値の位置
+// （欄・opt の中身）だけを辿って owner に戻る — 値の大きさが閉路を作る欄だけ（slice / map / 関数型を通る閉路は直の opt で有限）
+func boxPayloadTE(st mut St, pk int, owner int, te desugar.NodeRef) desugar.NodeRef {
+    if owner < 0 || kindN(mut st, te) != ast.TOpt {
+        return -1
+    }
+    inner := nA(nodeOf(mut st, te))
+    k := kindN(mut st, inner)
+    if k != ast.TName && k != ast.TGeneric {
+        return -1
+    }
+    name := sA(nodeOf(mut st, inner))
+    if k == ast.TName && envLookup(mut st, st.tenv, name) >= 0 {
+        return -1
+    }
+    td := lookupTypeDecl(mut st, pk, name)
+    if td == -1 || !desugar.SameRecGroup(mut st.d, td, desugar.NodeRef(owner)) {
+        return -1
+    }
+    // 関数型の成分（閉路が関数型を通る組）は値の大きさが有限 — 直の opt のまま
+    bk := kindN(mut st, nC(nodeOf(mut st, td)))
+    if bk != ast.BStruct && bk != ast.BUnion {
+        return -1
+    }
+    return if valueReaches(mut st, pk, int(td), owner) { inner } else { -1 }
+}
+
+// 宣言 from から値の位置（欄・opt の中身・union の variant の欄）だけを辿って宣言 to に届くか（同じ再帰の組の中だけを歩く）
+func valueReaches(st mut St, pk int, from int, to int) bool {
+    mut seen := []int{from}
+    mut i := 0
+    while i < len(seen) {
+        if seen[i] == to {
+            return true
+        }
+        body := nC(nodeOf(mut st, desugar.NodeRef(seen[i])))
+        if kindN(mut st, body) == ast.BStruct {
+            seen = valueNext(mut st, pk, lA(nodeOf(mut st, body)), to, seen)
+        } else if kindN(mut st, body) == ast.BUnion {
+            dvs := lA(nodeOf(mut st, body))
+            mut j := 0
+            while j < lenL(mut st, dvs) {
+                seen = valueNext(mut st, pk, lB(nodeOf(mut st, latN(mut st, dvs, j))), to, seen)
+                j += 1
+            }
+        }
+        i += 1
+    }
+    return false
+}
+
+// 欄の列 dfs の値の位置が名指す to と同じ組の宣言のうち、seen に無いものを足した列
+func valueNext(st mut St, pk int, dfs desugar.ListRef, to int, seen []int) []int {
+    mut out := seen
+    mut j := 0
+    while j < lenL(mut st, dfs) {
+        mut te := nB(nodeOf(mut st, latN(mut st, dfs, j)))
+        if kindN(mut st, te) == ast.TOpt {
+            te = nA(nodeOf(mut st, te))
+        }
+        k := kindN(mut st, te)
+        if k == ast.TName || k == ast.TGeneric {
+            td := lookupTypeDecl(mut st, pk, sA(nodeOf(mut st, te)))
+            if td != -1 && desugar.SameRecGroup(mut st.d, td, desugar.NodeRef(to)) {
+                mut dup := false
+                mut y := 0
+                while y < len(out) {
+                    dup = dup || out[y] == int(td)
+                    y += 1
+                }
+                if !dup {
+                    out = append(out, int(td))
+                }
+            }
+        }
+        j += 1
+    }
+    return out
+}
+
+// 箱 h（型 bt のヘッダの番地）を直の opt へ開く（長さ 0 = nil・1 = セルの中身）
+func openBox(st mut St, bt int, h int) int {
+    pt := desugar.HeapGet(mut st.d, bt + 1)
+    p := newAgg(mut st, optOf(mut st, pt))
+    n := load(mut st, h, 1)
+    store(mut st, p, 0, n)
+    some := newBlock(mut st)
+    join := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, n, iconst(mut st, 0)), some, -1, join, -1)
+    setCur(mut st, some)
+    storeVal(mut st, p, 1, pt, loadVal(mut st, hdrPtr(mut st, h), 0, pt))
+    br(mut st, join, -1)
+    setCur(mut st, join)
+    return p
+}
+
+// 直の opt o を型 bt の箱へ詰める（nil = 今の region の空のヘッダ・値 = 今の region に 1 セル）
+func boxUp(st mut St, bt int, o int) int {
+    return boxUpAt(mut st, bt, o, regionDepth(mut st))
+}
+
+// 直の opt o を型 bt の箱へ、深度 d の region に詰める
+func boxUpAt(st mut St, bt int, o int, d int) int {
+    pt := desugar.HeapGet(mut st.d, bt + 1)
+    h := newAgg(mut st, bt)
+    emptyAtDepth(mut st, h, false, d)
+    tag := load(mut st, o, 0)
+    some := newBlock(mut st)
+    join := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, tag, iconst(mut st, 0)), some, -1, join, -1)
+    setCur(mut st, some)
+    c := regionAlloc(mut st, d, iconst(mut st, tWords(mut st, pt)))
+    storeVal(mut st, c, 0, pt, loadVal(mut st, o, 1, pt))
+    store(mut st, h, 0, ptoi(mut st, c))
+    store(mut st, h, 1, iconst(mut st, 1))
+    store(mut st, h, 2, d)
+    br(mut st, join, -1)
+    setCur(mut st, join)
+    return h
+}
+
+// mark より後に積んだ mut 実引数の箱の写しを片付ける: ok なら一時の opt を書き戻しの深度の箱に詰めて欄へ書く（呼び出しが到達しないなら捨てるだけ）
+func boxWriteBack(st mut St, mark int, ok bool) {
+    if ok && cur(mut st) != -1 {
+        mut i := mark
+        while i + 3 < len(st.boxWB) {
+            bt := st.boxWB[i]
+            h := boxUpAt(mut st, bt, st.boxWB[i + 2], st.boxWB[i + 3])
+            storeVal(mut st, st.boxWB[i + 1], 0, bt, h)
+            i += 4
+        }
+    }
+    st.boxWB = st.boxWB[0:mark]
+}

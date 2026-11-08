@@ -1,7 +1,7 @@
 package main
 
 // shape[T] の最小形（language.md 16 節 2）: json.Decode[T](d, n) が struct T（欄 = int・float・bool・string・入れ子の struct・[]T・T?）へ写す。
-// 欠けた欄は json.Missing・T? の欄だけ欠けと null が nil・余った欄は無視・型の合わない節は json.WrongType・int に収まらない数は json.IntRange
+// 欠けた欄は json.Missing・T? の欄だけ欠けと null が nil・余った欄は無視・型の合わない節は json.WrongType・int に収まらない数は json.IntOutOfRange
 
 import "std/convert"
 import "std/io"
@@ -63,7 +63,7 @@ func main() {
         case nil: show(s)
         case json.Missing{pos, field}: println("#${i}: missing ${field} (object at ${pos})")
         case json.WrongType{pos, want}: println("#${i}: want ${want} at ${pos}")
-        case json.IntRange{pos}: println("#${i}: int out of range at ${pos}")
+        case json.IntOutOfRange{pos}: println("#${i}: int out of range at ${pos}")
         }
     }
 }

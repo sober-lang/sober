@@ -1,0 +1,14 @@
+package main
+
+// 負例（check も build も名指しで拒否 — diag.TypeMismatch kind 4）: 関数値の option（`F?` の欄・map の読み）は絞ってから呼ぶ
+
+type F func(a int, b int) int
+
+type W struct {
+    f F?
+}
+
+func main() {
+    w := W{}
+    println(w.f(2, 5))
+}

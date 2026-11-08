@@ -1,0 +1,3 @@
+# docs/guide/first-program{,.ja}.md の「モジュールと依存」の `$ sober …` の塊（examples/mod/hello を起点に走らせる — dep の ../text は examples/mod の写しの中）
+m-check sober check main.sober
+m-run sober run main.sober

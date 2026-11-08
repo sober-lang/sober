@@ -358,6 +358,8 @@ func gvnBlock(st mut St, t mut GvnT, blk BlkRef, vt int, lt mut []int, ln0 int) 
             } else {
                 gvnAdd(mut t, op, a, b, c, r)
             }
+        } else if op == OpLoad16 || op == OpLoad32 {
+            // 狭い読みはメモリを書かない（load の表は残す — 同じ語の列のヘッダの読みを読みと書きの間で畳む）
         } else if op != OpDead && op != OpRDepth && op != OpRBump {
             // メモリを書きうる命令: load の表を空に
             ln = 0

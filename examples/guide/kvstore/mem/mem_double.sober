@@ -1,4 +1,4 @@
-@replaces("examples/guide/kvstore")
+@replaces("kvstore")
 package kvstore
 
 // A double of kvstore: the files live in a cell instead of on disk, and a directory from Failing refuses every write.
@@ -21,7 +21,7 @@ type Missing error {
 type Denied error {}
 
 // the files written so far, in the order of the writes
-const Files = cell.Cell[[]File]{}
+const Files = testing.cell.Cell[[]File]{}
 
 func Empty() Dir {
     return Dir{failing: false}
@@ -33,7 +33,7 @@ func Failing() Dir {
 
 @errors(Missing)
 func Load(d Dir, name string) (string, error?) {
-    fs := cell.Get(Files)
+    fs := testing.cell.Get(Files)
     mut i := len(fs) - 1
     while i >= 0 {
         if fs[i].name == name {
@@ -49,6 +49,6 @@ func Store(d Dir, name string, line string) error? {
     if d.failing {
         return Denied{}
     }
-    cell.Update(Files, (fs []File) => append(fs, File{name: name, line: line}))
+    testing.cell.Update(Files, (fs []File) => append(fs, File{name: name, line: line}))
     return nil
 }

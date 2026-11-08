@@ -1,0 +1,9 @@
+package main
+
+// 負例（language.md 20 節）: 多段の修飾子の根の段（hash）だけでは package を指さない — std/hash/crc32 の名前は hash.crc32.Sum
+
+import "std/hash/crc32"
+
+func main() {
+    println(hash.Sum(bytes("abc")))
+}

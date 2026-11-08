@@ -221,7 +221,7 @@ func exhJoin(s string, n string) string {
 
 // package dp の名前 n を package pk から見た綴り（別の package なら `p.n`）
 func exhQual(az mut Az, dp int, pk int, n string) string {
-    return if dp == pk { n } else { "${lastSeg(str(mut az, desugar.PkgPath(mut az.d, dp)))}.${n}" }
+    return if dp == pk { n } else { "${qualOf(str(mut az, desugar.PkgPath(mut az.d, dp)))}.${n}" }
 }
 
 // error の switch の節 sw の腕のラベル L が、@exhaustive の閉じた集合の一員として「到達しない腕」の拒否から外れるか

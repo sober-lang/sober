@@ -2,12 +2,12 @@ package main
 
 import "testdata/constlit/lib"
 
-const Mine = []lib.Flag{lib.Flag{name: "x", on: true}}
+const Mine = []testdata.constlit.lib.Flag{testdata.constlit.lib.Flag{name: "x", on: true}}
 
-const Tag = lib.Version
+const Tag = testdata.constlit.lib.Version
 
 func main() {
-    println(lib.Version, Tag, lib.Debug, lib.Ratio)
-    println(len(lib.Sizes), lib.Sizes[2], lib.Defaults[1].name)
-    println(lib.Count(lib.Defaults), lib.Count(Mine))
+    println(testdata.constlit.lib.Version, Tag, testdata.constlit.lib.Debug, testdata.constlit.lib.Ratio)
+    println(len(testdata.constlit.lib.Sizes), testdata.constlit.lib.Sizes[2], testdata.constlit.lib.Defaults[1].name)
+    println(testdata.constlit.lib.Count(testdata.constlit.lib.Defaults), testdata.constlit.lib.Count(Mine))
 }

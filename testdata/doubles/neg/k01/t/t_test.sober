@@ -6,5 +6,5 @@ import "testdata/doubles/neg/k01/r/fake"
 import "testdata/doubles/neg/k01/p"
 
 func TestX() {
-    assert(r.Show(fake.New(), "a") == 3)
+    assert(testdata.doubles.neg.k01.r.Show(testdata.doubles.neg.k01.r.fake.New(), "a") == 3)
 }

@@ -1,0 +1,2 @@
+sober: desugar error at examples/fn_type_conv_neg.sober:11:12 (TypeMismatch): a value of another named function type cannot be converted — named function types are distinct even with the same signature
+exit=1

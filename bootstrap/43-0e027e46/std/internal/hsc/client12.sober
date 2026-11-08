@@ -1,0 +1,400 @@
+package hsc
+
+// TLS 1.2 のクライアントの道（RFC 5246 — dangerouslyAllowTls12 の明示でだけ申し出る。既定は 1.3 だけ）。範囲 = ECDHE（X25519）× ECDSA / RSA の証明書 ×
+// AES-128-GCM / ChaCha20-Poly1305 の 4 suite・extended master secret（RFC 7627）必須・renegotiation_info（RFC 5746）必須で再交渉は断る・
+// 1.3 を申し出たのに 1.2 を選んだサーバの降格の印（RFC 8446 4.1.3 — ServerHello の random の末尾 8 バイト）は中止。CertificateRequest には空の Certificate で答える
+
+import "std/crypto"
+import "std/crypto/aesgcm"
+import "std/crypto/chacha20poly1305"
+import "std/crypto/hmac"
+import "std/crypto/sha256"
+import "std/crypto/x25519"
+import "std/internal/bless"
+import "std/internal/x509"
+import "std/iter"
+import "std/internal/record"
+
+const s12EcdsaGcm = 0xc02b
+const s12RsaGcm = 0xc02f
+const s12EcdsaChaCha = 0xcca9
+const s12RsaChaCha = 0xcca8
+const tServerKeyExchange = 12
+const tCertificateRequest = 13
+const tServerHelloDone = 14
+const tClientKeyExchange = 16
+const tHelloRequest = 0
+const aNoRenegotiation = 100
+
+// 申し出る 1.2 の suite（AES-GCM は塊のある機械だけ — 倒れ先は ChaCha20）
+func suites12() []int {
+    return if aesgcm.Available() { []int{s12EcdsaGcm, s12RsaGcm, s12EcdsaChaCha, s12RsaChaCha} } else { []int{s12EcdsaChaCha, s12RsaChaCha} }
+}
+
+func isGcm12(s int) bool {
+    return s == s12EcdsaGcm || s == s12RsaGcm
+}
+
+func isEcdsa12(s int) bool {
+    return s == s12EcdsaGcm || s == s12EcdsaChaCha
+}
+
+// 1.2 の ServerHello（降格の印・suite・EMS と renegotiation_info の必須）
+@errors(record.Alert)
+func onServerHello12(h mut Ch, p CParams, m []byte, random []byte, suite int) (Out, error?) {
+    // DOWNGRD\x01 / DOWNGRD\x00 — 1.3 を申し出たクライアントは中止する
+    tail := sliceOf(random, 24, 7)
+    if same(tail, bytes("DOWNGRD")) && (random[31] == byte(1) || random[31] == byte(0)) {
+        return none(), alert(aIllegalParameter)
+    }
+    mut ok := false
+    for st <- suites12() {
+        ok = ok || st == suite
+    }
+    if !ok {
+        return none(), alert(aIllegalParameter)
+    }
+    mut c := cur(4, len(m))
+    _ = u16(m, mut c)
+    _ = take(m, mut c, 32)
+    _ = take(m, mut c, u8(m, mut c))
+    _ = u16(m, mut c)
+    _ = u8(m, mut c)
+    mut xs := sub(mut c, u16(m, mut c))
+    mut ems := false
+    mut reneg := false
+    while rest(xs) >= 4 {
+        t := u16(m, mut xs)
+        mut v := sub(mut xs, u16(m, mut xs))
+        if t == 0x0017 {
+            ems = rest(v) == 0
+        } else if t == 0xff01 {
+            reneg = rest(v) == 1 && u8(m, mut v) == 0
+        } else if t == xAlpn {
+            mut l := sub(mut v, u16(m, mut v))
+            a := bytesToString(take(m, mut l, u8(m, mut l)))
+            mut hit := false
+            for x <- p.alpn {
+                hit = hit || x == a
+            }
+            if !hit {
+                return none(), alert(aIllegalParameter)
+            }
+            h.alpn = a
+        }
+    }
+    if !ems || !reneg {
+        return none(), alert(aHandshakeFailure)
+    }
+    sha256.Write(mut h.th, m)
+    h.v12 = true
+    h.suite = suite
+    h.srandom = random
+    h.ph = C12Cert{}
+    return none(), nil
+}
+
+// 1.2 の record の枠（サーバの CCS より前は平文・後は 1.2 の AEAD）
+@errors(record.Alert, CertFailed)
+func feed12(h mut Ch, p CParams, f record.Frame) (Out, error?) {
+    ct := int(f.b[f.off])
+    if ct == record.CtCcs {
+        _, body := record.Plain(f)
+        waiting := switch h.ph {
+        case C12Ccs{}: true
+        default: false
+        }
+        if !waiting || len(body) != 1 || body[0] != 1 || len(h.hbuf) > 0 {
+            return none(), alert(aUnexpected)
+        }
+        h.rkeyed = true
+        h.ph = C12Fin{}
+        return none(), nil
+    }
+    mut pt := []byte{}
+    if h.rkeyed {
+        pt = open12(mut h, f)?
+    } else {
+        _, b := record.Plain(f)
+        pt = b
+    }
+    if ct == record.CtAlert {
+        if len(pt) != 2 {
+            return none(), alert(aDecodeError)
+        }
+        if int(pt[0]) == 1 && int(pt[1]) != aCloseNotify {
+            // 警告の alert（close_notify 以外）は読み捨てる
+            return none(), nil
+        }
+        h.ph = CClosed{}
+        return Out{send: []byte{}, app: []byte{}, done: false, closed: true, peer: int(pt[1]), upd: false}, nil
+    }
+    if ct == record.CtApp {
+        if !ClientConnected(h) {
+            return none(), alert(aUnexpected)
+        }
+        return Out{send: []byte{}, app: pt, done: false, closed: false, peer: 0 - 1, upd: false}, nil
+    }
+    if ct != record.CtHandshake || len(pt) == 0 {
+        return none(), alert(aUnexpected)
+    }
+    h.hbuf = cat(h.hbuf, pt)
+    mut out := none()
+    while len(h.hbuf) >= 4 {
+        n := int(h.hbuf[1]) << 16 | int(h.hbuf[2]) << 8 | int(h.hbuf[3])
+        if len(h.hbuf) < 4 + n {
+            return out, nil
+        }
+        m := sliceOf(h.hbuf, 0, 4 + n)
+        h.hbuf = sliceOf(h.hbuf, 4 + n, len(h.hbuf) - 4 - n)
+        o := on12(mut h, p, m)?
+        out = Out{send: cat(out.send, o.send), app: out.app, done: out.done || o.done, closed: false, peer: 0 - 1, upd: false}
+    }
+    return out, nil
+}
+
+// 1.2 の handshake のメッセージ 1 つ
+@errors(record.Alert, CertFailed)
+func on12(h mut Ch, p CParams, m []byte) (Out, error?) {
+    t := int(m[0])
+    k := switch h.ph {
+    case C12Cert{}: 1
+    case C12Skx{}: 2
+    case C12Done{}: 3
+    case C12Fin{}: 4
+    case CConnected{}: 5
+    default: 0
+    }
+    if k == 1 && t == tCertificate {
+        h.leaf = cert12(m, p)?
+        if isEcdsa12(h.suite) != (h.leaf.pubAlg == x509.PubP256 || h.leaf.pubAlg == x509.PubP384) {
+            return none(), alert(aUnsupportedCertificate)
+        }
+        sha256.Write(mut h.th, m)
+        h.ph = C12Skx{}
+        return none(), nil
+    }
+    if k == 2 && t == tServerKeyExchange {
+        skx12(mut h, m)?
+        sha256.Write(mut h.th, m)
+        h.ph = C12Done{}
+        return none(), nil
+    }
+    if k == 3 && t == tCertificateRequest {
+        h.certReq = true
+        sha256.Write(mut h.th, m)
+        return none(), nil
+    }
+    if k == 3 && t == tServerHelloDone {
+        if len(m) != 4 || len(h.hbuf) > 0 {
+            return none(), alert(aDecodeError)
+        }
+        sha256.Write(mut h.th, m)
+        return flight12(mut h)
+    }
+    if k == 4 && t == tFinished {
+        want := prf(h.ms, "server finished", sha256.Sum(h.th), 12)
+        if len(m) != 4 + 12 || !crypto.Equal(sliceOf(m, 4, 12), want) {
+            return none(), alert(aDecryptError)
+        }
+        h.ph = CConnected{}
+        return Out{send: []byte{}, app: []byte{}, done: true, closed: false, peer: 0 - 1, upd: false}, nil
+    }
+    if k == 5 && t == tHelloRequest {
+        // 再交渉は断る（RFC 5746 — 警告の no_renegotiation を返して接続は続ける）
+        return Out{send: seal12(mut h, record.CtAlert, []byte{1, byte(aNoRenegotiation)}), app: []byte{}, done: false, closed: false, peer: 0 - 1, upd: false}, nil
+    }
+    return none(), alert(aUnexpected)
+}
+
+// 1.2 の Certificate（certificate_list の各 cert は 3 バイトの長さ — 拡張は無い）→ 鎖の検証
+@errors(record.Alert, CertFailed)
+func cert12(m []byte, p CParams) (x509.Cert, error?) {
+    mut c := cur(4, len(m))
+    mut l := sub(mut c, u24(m, mut c))
+    mut ders := mut [][]byte{}
+    while rest(l) > 0 {
+        ders = append(ders, take(m, mut l, u24(m, mut l)))
+    }
+    ds := freeze(ders)
+    if len(ds) == 0 || rest(c) != 0 {
+        return noLeaf(), alert(aDecodeError)
+    }
+    mut inters := mut [][]byte{}
+    for i <- iter.Range(1, len(ds)) {
+        inters = append(inters, ds[i])
+    }
+    chain := x509.Verify(ds[0], freeze(inters), p.roots, p.host, p.now)? CertFailed{}
+    if chain[len(chain) - 1].baked {
+        x509.CabLeaf(chain[0])? CertFailed{}
+    }
+    return chain[0], nil
+}
+
+// ServerKeyExchange（ECDHE — named_curve x25519 の公開値と、client_random ‖ server_random ‖ 公開値の組への署名）
+@errors(record.Alert)
+func skx12(h mut Ch, m []byte) error? {
+    mut c := cur(4, len(m))
+    if u8(m, mut c) != 3 || u16(m, mut c) != groupX25519 {
+        return alert(aIllegalParameter)
+    }
+    pub := take(m, mut c, u8(m, mut c))
+    params := sliceOf(m, 4, 4 + len(pub))
+    scheme := u16(m, mut c)
+    sig := take(m, mut c, u16(m, mut c))
+    if rest(c) != 0 || len(pub) != 32 {
+        return alert(aDecodeError)
+    }
+    tbs := cat(cat(h.crandom, h.srandom), params)
+    ok := if scheme == 0x0403 || scheme == 0x0503 || scheme == 0x0603 {
+        x509.VerifyEcdsa(h.leaf, x509.Digest(if scheme == 0x0403 { 256 } else if scheme == 0x0503 { 384 } else { 512 }, tbs), sig)
+    } else if scheme == 0x0401 || scheme == 0x0501 || scheme == 0x0601 {
+        hb := if scheme == 0x0401 { 256 } else if scheme == 0x0501 { 384 } else { 512 }
+        x509.VerifyRsaV15(h.leaf, hb, x509.Digest(hb, tbs), sig)
+    } else if scheme == 0x0804 || scheme == 0x0805 || scheme == 0x0806 {
+        hb := if scheme == 0x0804 { 256 } else if scheme == 0x0805 { 384 } else { 512 }
+        x509.VerifyRsaPss(h.leaf, hb, x509.Digest(hb, tbs), sig)
+    } else {
+        false
+    }
+    if !ok {
+        return alert(aDecryptError)
+    }
+    shared := x25519.Shared(h.priv, pub)
+    if crypto.Equal(shared, zeros(32)) {
+        return alert(aIllegalParameter)
+    }
+    h.pms = shared
+    return nil
+}
+
+// クライアントの flight（[空の Certificate] ‖ ClientKeyExchange ‖ CCS ‖ Finished）と鍵の導出（EMS — RFC 7627 4）
+@errors(record.Alert)
+func flight12(h mut Ch) (Out, error?) {
+    mut send := mut []byte{}
+    if h.certReq {
+        cm := msg(tCertificate, []byte{0, 0, 0})
+        sha256.Write(mut h.th, cm)
+        putBytes(mut send, plain(record.CtHandshake, cm))
+    }
+    pub := x25519.Base(h.priv)
+    mut kb := mut []byte{}
+    put8(mut kb, len(pub))
+    putBytes(mut kb, pub)
+    cke := msg(tClientKeyExchange, freeze(kb))
+    sha256.Write(mut h.th, cke)
+    putBytes(mut send, plain(record.CtHandshake, cke))
+    h.ms = prf(h.pms, "extended master secret", sha256.Sum(h.th), 48)
+    kl := if isGcm12(h.suite) { 16 } else { 32 }
+    il := if isGcm12(h.suite) { 4 } else { 12 }
+    block := prf(h.ms, "key expansion", cat(h.srandom, h.crandom), 2 * kl + 2 * il)
+    h.wkey = sliceOf(block, 0, kl)
+    h.rkey = sliceOf(block, kl, kl)
+    h.wiv = sliceOf(block, 2 * kl, il)
+    h.riv = sliceOf(block, 2 * kl + il, il)
+    putBytes(mut send, plain(record.CtCcs, []byte{1}))
+    h.wkeyed = true
+    // verify_data は握手の要約の MAC で相手に送る値（公開してよい — transcript に積むので祝福してから）
+    fin := msg(tFinished, bless.Bytes(prf(h.ms, "client finished", sha256.Sum(h.th), 12)))
+    sha256.Write(mut h.th, fin)
+    putBytes(mut send, seal12(mut h, record.CtHandshake, fin))
+    h.ph = C12Ccs{}
+    return Out{send: freeze(send), app: []byte{}, done: false, closed: false, peer: 0 - 1, upd: false}, nil
+}
+
+// PRF（RFC 5246 5 — P_SHA256(secret, label ‖ seed) の先頭 n バイト）
+func prf(secret []byte, label string, seed []byte, n int) []byte {
+    ls := cat(bytes(label), seed)
+    mut out := mut []byte{}
+    mut a := hmac.Sum256(secret, ls)
+    while len(out) < n {
+        for x <- hmac.Sum256(secret, cat(a, ls)) {
+            if len(out) < n {
+                out = append(out, x)
+            }
+        }
+        a = hmac.Sum256(secret, a)
+    }
+    return freeze(out)
+}
+
+func seq8(n int) []byte {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, 8) {
+        b = append(b, byte((n >> (56 - 8 * i)) & 0xff))
+    }
+    return freeze(b)
+}
+
+// 1.2 の AEAD の nonce（GCM = IV 4 バイト ‖ 明示の 8 バイト〔番号〕・ChaCha20 = IV 12 バイト ⊕ 番号 — RFC 5288 / 7905）
+func nonce12(gcm bool, iv []byte, seq int) []byte {
+    s := seq8(seq)
+    if gcm {
+        return cat(iv, s)
+    }
+    mut o := mut []byte{}
+    for i <- iter.Range(0, 12) {
+        sb := if i < 4 { 0 } else { int(s[i - 4]) }
+        o = append(o, byte(int(iv[i]) ^ sb))
+    }
+    return freeze(o)
+}
+
+// 平文 pt の 1.2 の record 1 枚（AAD = 番号 ‖ 型 ‖ 0x0303 ‖ 平文の長さ）
+func seal12(h mut Ch, ct int, pt []byte) []byte {
+    gcm := isGcm12(h.suite)
+    ad := cat(seq8(h.wseq), []byte{byte(ct), 3, 3, byte(len(pt) >> 8), byte(len(pt) & 0xff)})
+    nn := nonce12(gcm, h.wiv, h.wseq)
+    sealed := if gcm { aesgcm.Seal(h.wkey, nn, ad, pt) catch []byte{} } else { chacha20poly1305.Seal(h.wkey, nn, ad, pt) catch []byte{} }
+    body := if gcm { cat(seq8(h.wseq), sealed) } else { sealed }
+    h.wseq += 1
+    mut o := mut []byte{}
+    put8(mut o, ct)
+    put16(mut o, 0x0303)
+    put16(mut o, len(body))
+    putBytes(mut o, body)
+    return freeze(o)
+}
+
+// application の平文 pt（2^14 ずつ）
+func seal12App(h mut Ch, pt []byte) []byte {
+    mut out := mut []byte{}
+    mut at := 0
+    while at < len(pt) {
+        n := if len(pt) - at < record.MaxPlain { len(pt) - at } else { record.MaxPlain }
+        putBytes(mut out, seal12(mut h, record.CtApp, sliceOf(pt, at, n)))
+        at += n
+    }
+    return freeze(out)
+}
+
+// 1.2 の record 1 枚の平文（認証の失敗は bad_record_mac）
+@errors(record.Alert)
+func open12(h mut Ch, f record.Frame) ([]byte, error?) {
+    ct := int(f.b[f.off])
+    _, body := record.Plain(f)
+    gcm := isGcm12(h.suite)
+    ex := if gcm { 8 } else { 0 }
+    if len(body) < ex + 16 {
+        return []byte{}, alert(record.AlertBadMac)
+    }
+    nn := if gcm { cat(h.riv, sliceOf(body, 0, 8)) } else { nonce12(false, h.riv, h.rseq) }
+    sealed := sliceOf(body, ex, len(body) - ex)
+    pl := len(sealed) - 16
+    ad := cat(seq8(h.rseq), []byte{byte(ct), 3, 3, byte(pl >> 8), byte(pl & 0xff)})
+    if gcm {
+        pt, e := aesgcm.Open(h.rkey, nn, ad, sealed)
+        if e != nil {
+            return []byte{}, alert(record.AlertBadMac)
+        }
+        h.rseq += 1
+        // record 層の出口（1.3 の record.Open と同じ線 — 中身の種類と長さが決まった record の平文は公開。http 以降がこれで分岐する）
+        return bless.Bytes(pt), nil
+    }
+    pt2, e2 := chacha20poly1305.Open(h.rkey, nn, ad, sealed)
+    if e2 != nil {
+        return []byte{}, alert(record.AlertBadMac)
+    }
+    h.rseq += 1
+    return bless.Bytes(pt2), nil
+}

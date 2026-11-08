@@ -15,13 +15,13 @@
         "k": "alias",
         "type": {
           "k": "name",
-          "name": "deflate.Work"
+          "name": "testdata.alias_lease.deflate.Work"
         }
       },
       "tok": 7,
       "span": {
         "start": 6,
-        "end": 13
+        "end": 17
       }
     }
   ],
@@ -58,11 +58,11 @@
                 "k": "composite",
                 "type_name": "Work",
                 "elems": [],
-                "tok": 24,
+                "tok": 28,
                 "type_args": []
               }
             ],
-            "tok": 21
+            "tok": 25
           },
           {
             "k": "ret",
@@ -72,37 +72,37 @@
                 "callee": {
                   "k": "ident",
                   "name": "EncodeWith",
-                  "tok": 29
+                  "tok": 33
                 },
                 "args": [
                   {
                     "k": "mut_arg",
                     "name": "w",
-                    "tok": 32
+                    "tok": 36
                   },
                   {
                     "k": "ident",
                     "name": "x",
-                    "tok": 34
+                    "tok": 38
                   }
                 ],
-                "tok": 30
+                "tok": 34
               }
             ],
-            "tok": 28
+            "tok": 32
           }
         ]
       },
-      "tok": 14,
+      "tok": 18,
       "bodiless": false,
       "span": {
-        "start": 13,
-        "end": 39
+        "start": 17,
+        "end": 43
       },
-      "sig_end": 20
+      "sig_end": 24
     },
     {
-      "name": "Prepare",
+      "name": "NewWork",
       "type_params": [],
       "params": [
         {
@@ -124,32 +124,42 @@
               "callee": {
                 "k": "selector",
                 "base": {
-                  "k": "ident",
-                  "name": "deflate",
-                  "tok": 47
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "testdata",
+                      "tok": 51
+                    },
+                    "field": "alias_lease",
+                    "tok": 53
+                  },
+                  "field": "deflate",
+                  "tok": 55
                 },
-                "field": "Prepare",
-                "tok": 49
+                "field": "NewWork",
+                "tok": 57
               },
               "args": [
                 {
                   "k": "mut_arg",
                   "name": "w",
-                  "tok": 52
+                  "tok": 60
                 }
               ],
-              "tok": 50
+              "tok": 58
             }
           }
         ]
       },
-      "tok": 40,
+      "tok": 44,
       "bodiless": false,
       "span": {
-        "start": 39,
-        "end": 57
+        "start": 43,
+        "end": 65
       },
-      "sig_end": 46
+      "sig_end": 50
     },
     {
       "name": "Ready",
@@ -173,28 +183,28 @@
               "k": "call",
               "callee": {
                 "k": "ident",
-                "name": "Prepare",
-                "tok": 65
+                "name": "NewWork",
+                "tok": 73
               },
               "args": [
                 {
                   "k": "mut_arg",
                   "name": "w",
-                  "tok": 68
+                  "tok": 76
                 }
               ],
-              "tok": 66
+              "tok": 74
             }
           }
         ]
       },
-      "tok": 58,
+      "tok": 66,
       "bodiless": false,
       "span": {
-        "start": 57,
-        "end": 73
+        "start": 65,
+        "end": 81
       },
-      "sig_end": 64
+      "sig_end": 72
     },
     {
       "name": "EncodeWith",
@@ -233,39 +243,49 @@
                 "callee": {
                   "k": "selector",
                   "base": {
-                    "k": "ident",
-                    "name": "deflate",
-                    "tok": 86
+                    "k": "selector",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "testdata",
+                        "tok": 94
+                      },
+                      "field": "alias_lease",
+                      "tok": 96
+                    },
+                    "field": "deflate",
+                    "tok": 98
                   },
                   "field": "EncodeWith",
-                  "tok": 88
+                  "tok": 100
                 },
                 "args": [
                   {
                     "k": "mut_arg",
                     "name": "w",
-                    "tok": 91
+                    "tok": 103
                   },
                   {
                     "k": "ident",
                     "name": "x",
-                    "tok": 93
+                    "tok": 105
                   }
                 ],
-                "tok": 89
+                "tok": 101
               }
             ],
-            "tok": 85
+            "tok": 93
           }
         ]
       },
-      "tok": 74,
+      "tok": 82,
       "bodiless": false,
       "span": {
-        "start": 73,
-        "end": 98
+        "start": 81,
+        "end": 110
       },
-      "sig_end": 84
+      "sig_end": 92
     }
   ],
   "consts": []

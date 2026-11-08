@@ -1,0 +1,505 @@
+package exact
+
+// IEEE 754 binary64 の結果の検算（オラクル — language.md 37 節の float の意味論の定義そのもの）。結果を計算せず、
+// 正確な値 x と候補 r について「r は x を最近接・偶数へ丸めた値か」を、r とその隣の float との中点と x の大小で確かめる。
+// 実装（SSE2 の演算・std/internal/floatfmt の丸め）と算法を共有しない — 共有するのは多倍長の部品（std/internal/bigint）だけ。
+// 有限の float と隣との中点はどれも 2^-1075 の整数倍なので、大きさは 2^-1075 を単位にした非負の多倍長で持つ（最大 2^2099）。
+// NaN の結果はどの NaN でもよい（ペイロードは見ない）
+
+import "std/internal/bigint"
+import "std/iter"
+import "std/math"
+
+const infBits = 0x7ff0000000000000
+const magMask = 0x7fffffffffffffff
+
+// a + b の結果として r が正しいか（±Inf・NaN・符号つきの 0 の規則を含む）
+func CheckAdd(a float, b float, r float) bool {
+    return addCheck(math.Bits(a), math.Bits(b), math.Bits(r))
+}
+
+// a - b の結果として r が正しいか（a + (-b) — 符号反転は符号の bit だけを変える）
+func CheckSub(a float, b float, r float) bool {
+    return addCheck(math.Bits(a), math.Bits(-b), math.Bits(r))
+}
+
+// a × b の結果として r が正しいか
+func CheckMul(a float, b float, r float) bool {
+    ab := math.Bits(a)
+    bb := math.Bits(b)
+    rb := math.Bits(r)
+    if isNaN(ab) || isNaN(bb) {
+        return isNaN(rb)
+    }
+    neg := (ab < 0) != (bb < 0)
+    am := ab & magMask
+    bm := bb & magMask
+    if am == infBits || bm == infBits {
+        return if am == 0 || bm == 0 { isNaN(rb) } else { rb == signed(infBits, neg) }
+    }
+    if am == 0 || bm == 0 {
+        return rb == signed(0, neg)
+    }
+    mut p := mut []int{}
+    mut va := mut []int{}
+    mut vb := mut []int{}
+    units(mut va, am)
+    units(mut vb, bm)
+    internal.bigint.Mul(mut p, mut va, mut vb)
+    mut one := mut []int{}
+    internal.bigint.SetInt(mut one, 1)
+    return rounds(rb, neg, mut p, -2150, mut one, 0)
+}
+
+// a ÷ b の結果として r が正しいか
+func CheckDiv(a float, b float, r float) bool {
+    ab := math.Bits(a)
+    bb := math.Bits(b)
+    rb := math.Bits(r)
+    if isNaN(ab) || isNaN(bb) {
+        return isNaN(rb)
+    }
+    neg := (ab < 0) != (bb < 0)
+    am := ab & magMask
+    bm := bb & magMask
+    if am == infBits {
+        return if bm == infBits { isNaN(rb) } else { rb == signed(infBits, neg) }
+    }
+    if bm == infBits {
+        return rb == signed(0, neg)
+    }
+    if bm == 0 {
+        return if am == 0 { isNaN(rb) } else { rb == signed(infBits, neg) }
+    }
+    if am == 0 {
+        return rb == signed(0, neg)
+    }
+    mut va := mut []int{}
+    mut vb := mut []int{}
+    units(mut va, am)
+    units(mut vb, bm)
+    return rounds(rb, neg, mut va, -1075, mut vb, -1075)
+}
+
+// sqrt(a) の結果として r が正しいか（負の数は NaN・-0 は -0。平方根が 2 つの float のちょうど中点になることは無い —
+// 中点は有効桁が 54 bit で、その 2 乗は 53 bit に収まらない）
+func CheckSqrt(a float, r float) bool {
+    ab := math.Bits(a)
+    rb := math.Bits(r)
+    if isNaN(ab) {
+        return isNaN(rb)
+    }
+    if ab & magMask == 0 {
+        return rb == ab
+    }
+    if ab < 0 {
+        return isNaN(rb)
+    }
+    if ab == infBits {
+        return rb == infBits
+    }
+    if rb < 0 || isNaN(rb) || rb == infBits {
+        return false
+    }
+    // lo² ≤ a ≤ hi²（単位 2^-1075 で: lo_u² ≤ a_u × 2^1075）
+    mut va := mut []int{}
+    units(mut va, ab)
+    internal.bigint.Shl(mut va, 1075)
+    mut lo := mut []int{}
+    mut hi := mut []int{}
+    mids(mut lo, mut hi, rb)
+    mut sq := mut []int{}
+    mut cp := mut []int{}
+    if rb > 0 {
+        internal.bigint.Set(mut cp, mut lo)
+        internal.bigint.Mul(mut sq, mut lo, mut cp)
+        if internal.bigint.Cmp(mut sq, mut va) > 0 {
+            return false
+        }
+    }
+    internal.bigint.Set(mut cp, mut hi)
+    internal.bigint.Mul(mut sq, mut hi, mut cp)
+    return internal.bigint.Cmp(mut va, mut sq) <= 0
+}
+
+// float(i) の結果として r が正しいか
+func CheckFromInt(i int, r float) bool {
+    rb := math.Bits(r)
+    if i == 0 {
+        return rb == 0
+    }
+    mut p := mut []int{}
+    absInt(mut p, i)
+    mut one := mut []int{}
+    internal.bigint.SetInt(mut one, 1)
+    return rounds(rb, i < 0, mut p, 0, mut one, 0)
+}
+
+// int(f) の結果として i が正しいか（0 方向への切り捨て: |i| ≤ |f| < |i| + 1・0 でない i の符号は f と同じ。f は有限）
+func CheckToInt(f float, i int) bool {
+    fb := math.Bits(f)
+    mag := fb & magMask
+    if mag >= infBits || i != 0 && (i < 0) != (fb < 0) {
+        return false
+    }
+    mut v := mut []int{}
+    units(mut v, mag)
+    mut lo := mut []int{}
+    mut hi := mut []int{}
+    absInt(mut lo, i)
+    absInt(mut hi, i)
+    internal.bigint.MulAdd(mut hi, 1, 1)
+    internal.bigint.Shl(mut lo, 1075)
+    internal.bigint.Shl(mut hi, 1075)
+    return internal.bigint.Cmp(mut lo, mut v) <= 0 && internal.bigint.Cmp(mut v, mut hi) < 0
+}
+
+// d = |i|（i = −2^63 を含む）
+func absInt(d mut []int, i int) {
+    if i == 0 - 9223372036854775807 - 1 {
+        internal.bigint.SetInt(mut d, 1)
+        internal.bigint.Shl(mut d, 63)
+    } else {
+        internal.bigint.SetInt(mut d, if i < 0 { 0 - i } else { i })
+    }
+}
+
+// 10 進の正確な値 (-1)^neg × digits × 10^exp10（digits は 10 進の数字の列 — 空は 0）を丸めた結果として r が正しいか
+// （解析・リテラル・印字の往復の検算。0 の符号は neg のまま — Go の ParseFloat("-0") = -0 と同じ）
+func CheckDecimal(neg bool, digits []byte, exp10 int, r float) bool {
+    rb := math.Bits(r)
+    mut p := mut []int{}
+    internal.bigint.SetInt(mut p, 0)
+    for c <- digits {
+        internal.bigint.MulAdd(mut p, 10, int(c) - '0')
+    }
+    if internal.bigint.Top(mut p) < 0 {
+        return rb == signed(0, neg)
+    }
+    mut q := mut []int{}
+    internal.bigint.SetInt(mut q, 1)
+    if exp10 >= 0 {
+        for k <- iter.Range(0, exp10) {
+            internal.bigint.MulAdd(mut p, 10, 0)
+        }
+    } else {
+        for k <- iter.Range(0, 0 - exp10) {
+            internal.bigint.MulAdd(mut q, 10, 0)
+        }
+    }
+    return rounds(rb, neg, mut p, 0, mut q, 0)
+}
+
+// s が r の最短の往復表現か: ① s を読むと r に丸まる ② 有効桁を 1 つ減らした 2 つの候補（切り捨て・切り上げ）はどちらも r に丸まらない
+// ③ 同じ桁数の隣（± 最下位の 1）が r に丸まるなら、s のほうが r に近いか同じ。綴り（指数の形・NaN / ±Inf）は Go の
+// strconv.FormatFloat(f, 'g', -1, 64) の形を読む — 綴りの選び方そのものは見ない
+func CheckFormat(r float, s string) bool {
+    rb := math.Bits(r)
+    b := bytes(s)
+    if s == "NaN" {
+        return isNaN(rb)
+    }
+    if s == "+Inf" || s == "-Inf" {
+        return rb == signed(infBits, s == "-Inf")
+    }
+    neg, ds, e, ok := readDecimal(b)
+    if !ok {
+        return false
+    }
+    if !CheckDecimal(neg, ds, e, r) {
+        return false
+    }
+    k := len(ds)
+    if k == 0 {
+        return true
+    }
+    if k > 1 {
+        mut fl := mut []byte{}
+        for i <- iter.Range(0, k - 1) {
+            fl = append(fl, ds[i])
+        }
+        if CheckDecimal(neg, fl, e + 1, r) || CheckDecimal(neg, inc(fl), e + 1, r) {
+            return false
+        }
+    }
+    up := inc(ds)
+    if CheckDecimal(neg, up, e, r) && !nearer(ds, up, e, rb) {
+        return false
+    }
+    dn := dec(ds)
+    return !(len(dn) > 0 && CheckDecimal(neg, dn, e, r) && !nearer(ds, dn, e, rb))
+}
+
+// s を読み、[-]数字[.数字][e[+-]数字] を (符号, 末尾の 0 を落とした有効数字, 10 の指数) に。数字が無い・形が違えば ok = false
+func readDecimal(b []byte) (bool, []byte, int, bool) {
+    mut i := 0
+    neg := len(b) > 0 && b[0] == '-'
+    if neg {
+        i = 1
+    }
+    mut ds := mut []byte{}
+    mut e := 0
+    mut seen := false
+    mut frac := false
+    while i < len(b) && (isDigit(b[i]) || b[i] == '.' && !frac) {
+        if b[i] == '.' {
+            frac = true
+        } else {
+            seen = true
+            if len(ds) > 0 || b[i] != '0' {
+                ds = append(ds, b[i])
+            }
+            if frac {
+                e -= 1
+            }
+        }
+        i += 1
+    }
+    if !seen {
+        return false, []byte{}, 0, false
+    }
+    if i < len(b) && b[i] == 'e' {
+        i += 1
+        mut en := false
+        if i < len(b) && (b[i] == '+' || b[i] == '-') {
+            en = b[i] == '-'
+            i += 1
+        }
+        mut x := 0
+        mut nd := 0
+        while i < len(b) && isDigit(b[i]) && nd < 6 {
+            x = x * 10 + int(b[i]) - '0'
+            nd += 1
+            i += 1
+        }
+        if nd == 0 {
+            return false, []byte{}, 0, false
+        }
+        e += if en { 0 - x } else { x }
+    }
+    if i != len(b) {
+        return false, []byte{}, 0, false
+    }
+    // 末尾の 0 を指数へ
+    mut n := len(ds)
+    while n > 0 && ds[n - 1] == '0' {
+        n -= 1
+        e += 1
+    }
+    mut out := mut []byte{}
+    for j <- iter.Range(0, n) {
+        out = append(out, ds[j])
+    }
+    return neg, freeze(out), e, true
+}
+
+func isDigit(c byte) bool {
+    return c >= '0' && c <= '9'
+}
+
+// 10 進の数字の列に 1 を足す（桁が増えうる）
+func inc(ds []byte) []byte {
+    mut out := mut []byte{}
+    for c <- ds {
+        out = append(out, c)
+    }
+    mut i := len(out) - 1
+    while i >= 0 && out[i] == '9' {
+        out[i] = '0'
+        i -= 1
+    }
+    if i < 0 {
+        // 全部 9 だった: 1 と 0 の列（桁が 1 つ増える）
+        mut w := mut []byte{'1'}
+        for k <- iter.Range(0, len(ds)) {
+            w = append(w, '0')
+        }
+        return freeze(w)
+    }
+    out[i] = byte(int(out[i]) + 1)
+    return freeze(out)
+}
+
+// 10 進の数字の列から 1 を引く（正の数だけ — 結果の先頭の 0 は落とす）
+func dec(ds []byte) []byte {
+    mut out := mut []byte{}
+    for c <- ds {
+        out = append(out, c)
+    }
+    mut i := len(out) - 1
+    while i >= 0 && out[i] == '0' {
+        out[i] = '9'
+        i -= 1
+    }
+    if i >= 0 {
+        out[i] = byte(int(out[i]) - 1)
+    }
+    mut j := 0
+    while j < len(out) && out[j] == '0' {
+        j += 1
+    }
+    mut w := mut []byte{}
+    for k <- iter.Range(j, len(out)) {
+        w = append(w, out[k])
+    }
+    return freeze(w)
+}
+
+// |ds × 10^e − r| ≤ |other × 10^e − r| か（ds と other は同じ桁数の隣どうし・r は有限 — 大きさで比べる。
+// 尺度 10^max(−e, 0) × 2^1075 を掛けて整数で: 2·S と 2·R の差を T = 10^e の尺度と比べる）
+func nearer(ds []byte, other []byte, e int, rb int) bool {
+    k10 := if e < 0 { 0 - e } else { 0 }
+    mut s := mut []int{}
+    mut o := mut []int{}
+    mut t := mut []int{}
+    digitsTo(mut s, ds, e + k10)
+    digitsTo(mut o, other, e + k10)
+    digitsTo(mut t, []byte{'1'}, e + k10)
+    internal.bigint.Shl(mut s, 1075)
+    internal.bigint.Shl(mut o, 1075)
+    internal.bigint.Shl(mut t, 1075)
+    mut rr := mut []int{}
+    units(mut rr, rb & magMask)
+    for k <- iter.Range(0, k10) {
+        internal.bigint.MulAdd(mut rr, 10, 0)
+    }
+    // |S − R| ≤ |O − R|: O = S ± T なので、O > S なら 2S + T ≥ 2R、O < S なら 2S ≤ 2R + T
+    mut l := mut []int{}
+    mut rgt := mut []int{}
+    internal.bigint.Set(mut l, mut s)
+    internal.bigint.Add(mut l, mut s)
+    internal.bigint.Set(mut rgt, mut rr)
+    internal.bigint.Add(mut rgt, mut rr)
+    if internal.bigint.Cmp(mut o, mut s) > 0 {
+        internal.bigint.Add(mut l, mut t)
+        return internal.bigint.Cmp(mut l, mut rgt) >= 0
+    }
+    internal.bigint.Add(mut rgt, mut t)
+    return internal.bigint.Cmp(mut l, mut rgt) <= 0
+}
+
+// d = 数字の列 × 10^e（e ≥ 0）
+func digitsTo(d mut []int, ds []byte, e int) {
+    internal.bigint.SetInt(mut d, 0)
+    for c <- ds {
+        internal.bigint.MulAdd(mut d, 10, int(c) - '0')
+    }
+    for k <- iter.Range(0, e) {
+        internal.bigint.MulAdd(mut d, 10, 0)
+    }
+}
+
+// x + y（ビット列で）の結果として rb が正しいか
+func addCheck(ab int, bb int, rb int) bool {
+    if isNaN(ab) || isNaN(bb) {
+        return isNaN(rb)
+    }
+    am := ab & magMask
+    bm := bb & magMask
+    if am == infBits || bm == infBits {
+        if am == infBits && bm == infBits && (ab < 0) != (bb < 0) {
+            return isNaN(rb)
+        }
+        return rb == (if am == infBits { ab } else { bb })
+    }
+    mut va := mut []int{}
+    mut vb := mut []int{}
+    units(mut va, am)
+    units(mut vb, bm)
+    mut p := mut []int{}
+    mut neg := ab < 0
+    if (ab < 0) == (bb < 0) {
+        internal.bigint.Set(mut p, mut va)
+        internal.bigint.Add(mut p, mut vb)
+    } else if internal.bigint.Cmp(mut va, mut vb) >= 0 {
+        internal.bigint.Set(mut p, mut va)
+        internal.bigint.Sub(mut p, mut vb)
+    } else {
+        internal.bigint.Set(mut p, mut vb)
+        internal.bigint.Sub(mut p, mut va)
+        neg = bb < 0
+    }
+    if internal.bigint.Top(mut p) < 0 {
+        // 正確な 0: 両方が -0 のときだけ -0（最近接の丸めでは打ち消しの 0 は +0）
+        return rb == signed(0, ab < 0 && bb < 0)
+    }
+    mut one := mut []int{}
+    internal.bigint.SetInt(mut one, 1)
+    return rounds(rb, neg, mut p, -1075, mut one, 0)
+}
+
+// x = (-1)^neg × p × 2^ps / (q × 2^qs)（p ≠ 0・q > 0）を最近接・偶数へ丸めた値が rb か
+func rounds(rb int, neg bool, p mut []int, ps int, q mut []int, qs int) bool {
+    if isNaN(rb) || (rb < 0) != neg {
+        return false
+    }
+    mag := rb & magMask
+    even := mag % 2 == 0
+    mut lo := mut []int{}
+    mut hi := mut []int{}
+    if mag == infBits {
+        // 最大の有限値と 2^1024 の中点より上（中点ちょうどは仮数が奇数の最大値でなく Inf へ）
+        midPair(mut lo, infBits - 1, infBits)
+        return cmpUnits(mut lo, mut p, ps, mut q, qs) <= 0
+    }
+    mids(mut lo, mut hi, mag)
+    c1 := if mag == 0 { -1 } else { cmpUnits(mut lo, mut p, ps, mut q, qs) }
+    c2 := cmpUnits(mut hi, mut p, ps, mut q, qs)
+    return (c1 < 0 || c1 == 0 && even) && (c2 > 0 || c2 == 0 && even)
+}
+
+// 単位 2^-1075 の k と x = p × 2^ps / (q × 2^qs) の大小（-1 / 0 / 1）: k × q × 2^(qs − 1075) と p × 2^ps を比べる
+func cmpUnits(k mut []int, p mut []int, ps int, q mut []int, qs int) int {
+    mut l := mut []int{}
+    mut r := mut []int{}
+    internal.bigint.Mul(mut l, mut k, mut q)
+    internal.bigint.Set(mut r, mut p)
+    s := qs - 1075 - ps
+    if s >= 0 {
+        internal.bigint.Shl(mut l, s)
+    } else {
+        internal.bigint.Shl(mut r, 0 - s)
+    }
+    return internal.bigint.Cmp(mut l, mut r)
+}
+
+// 非負の有限の float（ビット列 mag）とその隣との中点（単位 2^-1075）: lo = 下の隣との中点（mag = 0 なら 0）・hi = 上の隣との中点
+// （最大の有限値の上の隣は 2^1024 — ビット列 infBits を同じ式で読んだ値）
+func mids(lo mut []int, hi mut []int, mag int) {
+    if mag == 0 {
+        internal.bigint.SetInt(mut lo, 0)
+    } else {
+        midPair(mut lo, mag - 1, mag)
+    }
+    midPair(mut hi, mag, mag + 1)
+}
+
+func midPair(d mut []int, a int, b int) {
+    mut vb := mut []int{}
+    units(mut d, a)
+    units(mut vb, b)
+    internal.bigint.Add(mut d, mut vb)
+    internal.bigint.Shr(mut vb, mut d, 1)
+    internal.bigint.Set(mut d, mut vb)
+}
+
+// 非負のビット列 mag（infBits まで）の値を単位 2^-1075 で: 正規数 (2^52 + 仮数) × 2^指数・非正規数 仮数 × 2
+func units(d mut []int, mag int) {
+    ex := mag >> 52
+    m := mag & 4503599627370495
+    if ex == 0 {
+        internal.bigint.SetInt(mut d, m)
+        internal.bigint.Shl(mut d, 1)
+    } else {
+        internal.bigint.SetInt(mut d, m + 4503599627370496)
+        internal.bigint.Shl(mut d, ex)
+    }
+}
+
+func isNaN(b int) bool {
+    return b & magMask > infBits
+}
+
+func signed(mag int, neg bool) int {
+    return if neg { mag | (0 - 9223372036854775807 - 1) } else { mag }
+}

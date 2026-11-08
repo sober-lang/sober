@@ -47,7 +47,7 @@ const sober = [
   "    s, err := string(b)",
   "    if err != nil {",
   "        switch err {",
-  '        case strings.InvalidUtf8{pos}: println("bad", pos)',
+  '        case strings.BadUtf8{pos}: println("bad", pos)',
   "        }",
   "    } else {",
   '        println("ok", s)',

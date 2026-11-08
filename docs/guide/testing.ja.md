@@ -107,7 +107,7 @@ func count(l string) int {
 }
 ```
 
-題材の途中の状態は `examples/guide/` に置いてあります。自分の package に写経しながら進めるときは、各節の終わりの状態と見比べてください。
+題材の途中の状態は `examples/guide/` に置いてあります。自分の package に写経しながら進めるときは、各節の終わりの状態と見比べてください。`examples/guide/` は `sober.mod`（`module "example.com/guide"`）を持つ 1 つのモジュールで、このガイドのコマンドはそこを起点に走らせます（`cd examples/guide`）。package の import パスと修飾子はモジュールの根からの全段です（`import "kvstore"` → `kvstore.Load`・`import "kvstore/mem"` → `kvstore.mem.Empty`）。
 
 | ディレクトリ | 状態 |
 | --- | --- |
@@ -149,20 +149,20 @@ func TestFormat() {
 走らせます（`--run` は名前の接頭辞で絞ります）。
 
 ```sh
-$ sober test examples/guide/kv2 --run TestParse
+$ sober test kv2 --run TestParse
 ```
 
 出力:
 
 ```
-ok   examples/guide/kv2.TestParse
+ok   kv2.TestParse
 1 passed, 0 failed
 ```
 
 直す前の `kvbug` で同じテストを走らせると、落ちた `assert` の部分式の値が出ます。`Parse` が 2 つ読むはずの行から 1 つも読めていません（ループの条件の `<` が `<=` になっていて、末尾の `;` の後ろをもう 1 片として読もうとして失敗します）。
 
 ```sh
-$ sober test examples/guide/kvbug --run TestParse
+$ sober test kvbug --run TestParse
 ```
 
 出力:
@@ -170,8 +170,8 @@ $ sober test examples/guide/kvbug --run TestParse
 ```
 assert failed: len(ps) == 2
   len(ps) = 0
-panic: testing.AssertFailed{} at examples/guide/kvbug/kv_test.sober:10:5
-FAIL examples/guide/kvbug.TestParse (exit 101)
+panic: testing.AssertFailed{} at kvbug/kv_test.sober:10:5
+FAIL kvbug.TestParse (exit 101)
 0 passed, 1 failed
 ```
 
@@ -213,7 +213,7 @@ func same(a []Pair, b []Pair) bool {
 `quick.New()` のシードはテストの名前で決まるので、何度走らせても同じ入力が出ます。直す前の `kvbug` で走らせます。
 
 ```sh
-$ sober test examples/guide/kvbug --run TestRoundTrip
+$ sober test kvbug --run TestRoundTrip
 ```
 
 出力:
@@ -225,8 +225,8 @@ quick: falsified at trial 49 of 100 (seed 392200337, 92 shrink runs)
     String = ";"
   (1 items)
 assert failed: same(back, ps)
-panic: testing.AssertFailed{} at examples/guide/kvbug/kv_test.sober:26:13
-FAIL examples/guide/kvbug.TestRoundTrip (exit 101)
+panic: testing.AssertFailed{} at kvbug/kv_test.sober:26:13
+FAIL kvbug.TestRoundTrip (exit 101)
 0 passed, 1 failed
 ```
 
@@ -237,15 +237,15 @@ FAIL examples/guide/kvbug.TestRoundTrip (exit 101)
 `escape` で `;` と `=` もエスケープするように直し、1 節のループの条件も `<` に直すと、2 節の終わりの状態（`kv2`）になります（3 つ目のバグはまだ残っていて、4 節で見つけます）。
 
 ```sh
-$ sober test examples/guide/kv2
+$ sober test kv2
 ```
 
 出力:
 
 ```
-ok   examples/guide/kv2.TestParse
-ok   examples/guide/kv2.TestFormat
-ok   examples/guide/kv2.TestRoundTrip
+ok   kv2.TestParse
+ok   kv2.TestFormat
+ok   kv2.TestRoundTrip
 3 passed, 0 failed
 ```
 
@@ -256,24 +256,24 @@ ok   examples/guide/kv2.TestRoundTrip
 まず `--cover` で、どの分岐をどのテストも通っていないかを見ます（出力では分岐の片側ずつを arm と呼びます）。
 
 ```sh
-$ sober test examples/guide/kv2 --cover
+$ sober test kv2 --cover
 ```
 
 出力:
 
 ```
-ok   examples/guide/kv2.TestParse
-ok   examples/guide/kv2.TestFormat
-ok   examples/guide/kv2.TestRoundTrip
-cover: examples/guide/kv2 69.2% of 26 arms (fn 4/6)
-  examples/guide/kv2/kv.sober:26:9   then   never taken
-  examples/guide/kv2/kv.sober:47:32  catch  never taken
-  examples/guide/kv2/kv.sober:60:32  catch  never taken
-  examples/guide/kv2/kv.sober:75:6   fn     never called  (CountAll)
-  examples/guide/kv2/kv.sober:77:12  then   never taken
-  examples/guide/kv2/kv.sober:77:12  else   never taken
-  examples/guide/kv2/kv.sober:80:6   fn     never called  (count)
-  examples/guide/kv2/kv.sober:81:20  catch  never taken
+ok   kv2.TestParse
+ok   kv2.TestFormat
+ok   kv2.TestRoundTrip
+cover: kv2 69.2% of 26 arms (fn 4/6)
+  kv2/kv.sober:26:9   then   never taken
+  kv2/kv.sober:47:32  catch  never taken
+  kv2/kv.sober:60:32  catch  never taken
+  kv2/kv.sober:75:6   fn     never called  (CountAll)
+  kv2/kv.sober:77:12  then   never taken
+  kv2/kv.sober:77:12  else   never taken
+  kv2/kv.sober:80:6   fn     never called  (count)
+  kv2/kv.sober:81:20  catch  never taken
 3 passed, 0 failed
 ```
 
@@ -282,18 +282,18 @@ cover: examples/guide/kv2 69.2% of 26 arms (fn 4/6)
 次に `--mutate` で、テストが通っている所を本当に見ているかを測ります。コードを少しずつ壊した版（ミュータント）を全部 1 本の実行ファイルに入れ、ミュータントごとにそのミュータントに届いたテストを走らせます。どれかのテストが落ちれば kill、全部通れば生存です。
 
 ```sh
-$ sober test examples/guide/kv2 --mutate
+$ sober test kv2 --mutate
 ```
 
 出力:
 
 ```
-ok   examples/guide/kv2.TestFormat
-ok   examples/guide/kv2.TestParse
-ok   examples/guide/kv2.TestRoundTrip
-mutate: examples/guide/kv2 94.4% killed (34 of 36 reached) · 0 unreached · 2 timeout
-  examples/guide/kv2/kv.sober:26:9 cond → false       survived  (reached by TestParse, TestRoundTrip)
-  examples/guide/kv2/kv.sober:26:14 >= → >             survived  (reached by TestParse, TestRoundTrip)
+ok   kv2.TestFormat
+ok   kv2.TestParse
+ok   kv2.TestRoundTrip
+mutate: kv2 94.4% killed (34 of 36 reached) · 0 unreached · 2 timeout
+  kv2/kv.sober:26:9        cond → false       survived  (reached by TestParse, TestRoundTrip)
+  kv2/kv.sober:26:14       >= → >             survived  (reached by TestParse, TestRoundTrip)
 3 passed, 0 failed
 ```
 
@@ -322,17 +322,17 @@ func badAt(s string) int {
 ```
 
 ```sh
-$ sober test examples/guide/kv3 --mutate
+$ sober test kv3 --mutate
 ```
 
 出力:
 
 ```
-ok   examples/guide/kv3.TestBadPiece
-ok   examples/guide/kv3.TestFormat
-ok   examples/guide/kv3.TestParse
-ok   examples/guide/kv3.TestRoundTrip
-mutate: examples/guide/kv3 100.0% killed (36 of 36 reached) · 0 unreached · 2 timeout
+ok   kv3.TestBadPiece
+ok   kv3.TestFormat
+ok   kv3.TestParse
+ok   kv3.TestRoundTrip
+mutate: kv3 100.0% killed (36 of 36 reached) · 0 unreached · 2 timeout
 4 passed, 0 failed
 ```
 
@@ -361,7 +361,7 @@ func TestAnyLine() {
 `sober test` はこのプロパティを 100 回試します。直す前の `kvbug` でも 100 回では見つかりません。`sober fuzz` は同じプロパティを期限まで回し続け、カバレッジを手がかりに新しい分岐を開く入力を育てます。
 
 ```sh
-$ sober fuzz examples/guide/kvbug --run TestAnyLine --time 5s
+$ sober fuzz kvbug --run TestAnyLine --time 5s
 ```
 
 出力:
@@ -369,44 +369,44 @@ $ sober fuzz examples/guide/kvbug --run TestAnyLine --time 5s
 ```
 quick: fuzz: panic at trial 122 (seed 516221799, 43 shrink runs)
   String = "\\"
-panic: index out of range at examples/guide/kvbug/kv.sober:44:28
-quick: wrote examples/guide/kvbug/testdata/fuzz/TestAnyLine/0-6285beb84c4f3dee
+panic: index out of range at kvbug/kv.sober:44:28
+quick: wrote kvbug/testdata/fuzz/TestAnyLine/0-6285beb84c4f3dee
 panic: quick.Crashed{exit: 101} at std/quick/fuzz.sober:232:10
 ```
 
 `"\\"`（`\` 1 文字の行）で `field` が範囲の外を読んでいました。`Format` が作る行は最後が 1 つだけの `\` にならないので、往復のプロパティでは届かない入力です。見つけた反例はシュリンクして `testdata/fuzz/TestAnyLine/` に書かれます。以後は普通の `sober test` が試行の前にこのファイルを再生するので、同じバグが戻ってくれば毎回落ちます。
 
 ```sh
-$ sober test examples/guide/kvbug --run TestAnyLine
+$ sober test kvbug --run TestAnyLine
 ```
 
 出力:
 
 ```
-quick: panic in the corpus case examples/guide/kvbug/testdata/fuzz/TestAnyLine/0-6285beb84c4f3dee (seed 516221799, 20 shrink runs)
+quick: panic in the corpus case kvbug/testdata/fuzz/TestAnyLine/0-6285beb84c4f3dee (seed 516221799, 20 shrink runs)
   String = "\\"
-panic: index out of range at examples/guide/kvbug/kv.sober:44:28
+panic: index out of range at kvbug/kv.sober:44:28
 panic: quick.Crashed{exit: 101} at std/quick/fuzz.sober:232:10
-FAIL examples/guide/kvbug.TestAnyLine (exit 101)
+FAIL kvbug.TestAnyLine (exit 101)
 0 passed, 1 failed
 ```
 
 `field` のエスケープの条件に `j + 1 < len(b)` を足して直すと、最後の状態（`kv`）です。直した条件の分だけミュータントも増えますが、このプロパティが全部殺します。
 
 ```sh
-$ sober test examples/guide/kv --mutate
+$ sober test kv --mutate
 ```
 
 出力:
 
 ```
-ok   examples/guide/kv.TestAnyLine
-ok   examples/guide/kv.TestBadPiece
-ok   examples/guide/kv.TestCountAll
-ok   examples/guide/kv.TestFormat
-ok   examples/guide/kv.TestParse
-ok   examples/guide/kv.TestRoundTrip
-mutate: examples/guide/kv 100.0% killed (40 of 40 reached) · 0 unreached · 3 timeout
+ok   kv.TestAnyLine
+ok   kv.TestBadPiece
+ok   kv.TestCountAll
+ok   kv.TestFormat
+ok   kv.TestParse
+ok   kv.TestRoundTrip
+mutate: kv 100.0% killed (40 of 40 reached) · 0 unreached · 3 timeout
 6 passed, 0 failed
 ```
 
@@ -435,7 +435,7 @@ func TestCountAll() {
 `sober fuzz --sched` は試行ごとに task のスケジュール（どの順に走らせるか）もシードで振ります。順番に依る失敗が見つかれば、そのシードで何度でも同じ交互配置を再現できます。
 
 ```sh
-$ sober fuzz examples/guide/kv --run TestCountAll --sched --time 2s
+$ sober fuzz kv --run TestCountAll --sched --time 2s
 ```
 
 出力:
@@ -507,8 +507,8 @@ package settings
 
 // Settings kept as one `key=value;key=value` line per file in a kvstore directory.
 
-import "examples/guide/kv"
-import "examples/guide/kvstore"
+import "kv"
+import "kvstore"
 
 // the value of key in the file name, or def when the file or the key is missing
 func Value(d kvstore.Dir, name string, key string, def string) string {
@@ -554,7 +554,7 @@ double は差し替える相手の下のディレクトリに置き、ファイ�
 
 ```sober
 // examples/guide/kvstore/mem/mem_double.sober
-@replaces("examples/guide/kvstore")
+@replaces("kvstore")
 package kvstore
 
 // A double of kvstore: the files live in a cell instead of on disk, and a directory from Failing refuses every write.
@@ -577,7 +577,7 @@ type Missing error {
 type Denied error {}
 
 // the files written so far, in the order of the writes
-const Files = cell.Cell[[]File]{}
+const Files = testing.cell.Cell[[]File]{}
 
 func Empty() Dir {
     return Dir{failing: false}
@@ -589,7 +589,7 @@ func Failing() Dir {
 
 @errors(Missing)
 func Load(d Dir, name string) (string, error?) {
-    fs := cell.Get(Files)
+    fs := testing.cell.Get(Files)
     mut i := len(fs) - 1
     while i >= 0 {
         if fs[i].name == name {
@@ -605,7 +605,7 @@ func Store(d Dir, name string, line string) error? {
     if d.failing {
         return Denied{}
     }
-    cell.Update(Files, (fs []File) => append(fs, File{name: name, line: line}))
+    testing.cell.Update(Files, (fs []File) => append(fs, File{name: name, line: line}))
     return nil
 }
 ```
@@ -616,57 +616,57 @@ func Store(d Dir, name string, line string) error? {
 
 ```sober
 // examples/guide/settings/settings_test.sober
-@doubles("examples/guide/kvstore/mem")
+@doubles("kvstore/mem")
 package settings
 
-import "examples/guide/kvstore/mem"
+import "kvstore/mem"
 import "std/testing/cell"
 
 func TestSetThenValue() {
-    d := mem.Empty()
+    d := kvstore.mem.Empty()
     assert(Set(d, "app", "port", "80") == nil)
     assert(Set(d, "app", "host", "a=b") == nil)
     assert(Set(d, "app", "port", "8080") == nil)
     assert(Value(d, "app", "port", "") == "8080")
     assert(Value(d, "app", "host", "") == "a=b")
     assert(Value(d, "app", "user", "-") == "-")
-    files := cell.Get(mem.Files)
+    files := testing.cell.Get(kvstore.mem.Files)
     assert(files[len(files) - 1].line == "port=8080;host=a\\=b")
 }
 
 func TestMissingFile() {
-    assert(Value(mem.Empty(), "app", "port", "8080") == "8080")
+    assert(Value(kvstore.mem.Empty(), "app", "port", "8080") == "8080")
 }
 
 func TestDenied() {
-    assert(Set(mem.Failing(), "app", "port", "80") != nil)
-    assert(len(cell.Get(mem.Files)) == 0)
+    assert(Set(kvstore.mem.Failing(), "app", "port", "80") != nil)
+    assert(len(testing.cell.Get(kvstore.mem.Files)) == 0)
 }
 ```
 
 ```sh
-$ sober test examples/guide/settings
+$ sober test settings
 ```
 
 出力:
 
 ```
-ok   examples/guide/settings.TestSetThenValue
-ok   examples/guide/settings.TestMissingFile
-ok   examples/guide/settings.TestDenied
+ok   settings.TestSetThenValue
+ok   settings.TestMissingFile
+ok   settings.TestDenied
 3 passed, 0 failed
 ```
 
 そのテストのビルドでは、`kvstore` を import するファイルが全部 double を読みます（`settings.sober` も）。本番の build と check は `_double.sober` を読みません。どのテストがどの double で走るかは `--wiring` で一覧できます（建てるだけで走らせません）。
 
 ```sh
-$ sober test examples/guide/settings --wiring
+$ sober test settings --wiring
 ```
 
 出力:
 
 ```
-examples/guide/settings: examples/guide/kvstore <= examples/guide/kvstore/mem
+settings: kvstore <= kvstore/mem
 ```
 
 double は本物と食い違えません。double と本物の両方にある名前は、関数の署名・型の欄の型・`@errors` が照合され、double の効果（analyzer が導く）は本物の `@effects` の内側でなければなりません。本物に無い効果（panic・本物が io を持たないのに io）を持つ double は拒否されます。本物にあって double に無い名前は書かなくてかまいません。テストが使う分だけ書けば足ります。

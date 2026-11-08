@@ -1,0 +1,4 @@
+{"ok":true,"ty":{"k":"int"}}
+(check exit 0)
+b
+(run exit 0)

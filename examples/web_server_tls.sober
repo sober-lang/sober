@@ -1,0 +1,42 @@
+package main
+
+// Web サーバのガイド 9 節: https で公開する。tls.Serve が handshake を済ませた接続だけを app に渡し、app は tls.Recv / tls.Send を
+// http.server.ServeWith の受けと送りに繋ぐ（ServeConn の TLS 版）。証明書と鍵は @embed で焼き込む（起動時にファイルから読むなら tls.Load）。
+// 既定の走りは設定の確かめだけ。`web_server_tls live <port>` で 127.0.0.1:<port> に https で待ち受ける
+// （試すなら curl --cacert testdata/crypto/httparena-server.crt https://localhost:<port>/ — 自己署名の証明書なので起点を足す）
+
+import "std/http/server"
+import "std/os"
+import "std/tls"
+
+@embed("testdata/crypto/httparena-server.*")
+const Certs = map[string]string{}
+
+func file(p string) string {
+    v := Certs[p]
+    return if v != nil { v } else { "" }
+}
+
+func route(r http.server.Request) http.server.Response {
+    return if r.path == "/" { http.server.Text("hello over TLS\n") } else { http.server.Status(404) }
+}
+
+// 接続 1 本の handler（handshake は済んでいる — c は復号した後の読み書きの口）
+func app(c tls.Conn) error? {
+    return http.server.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route)
+}
+
+func main() int {
+    cfg, e := tls.Parse(file("testdata/crypto/httparena-server.crt"), file("testdata/crypto/httparena-server.key"))
+    if e != nil {
+        println("bad certificate or key")
+        return 1
+    }
+    println("certificate and key: ok")
+    args, _ := os.Args()
+    if len(args) >= 3 && args[1] == "live" {
+        e2 := tls.Serve("127.0.0.1:${args[2]}", tls.Alpn(cfg, []string{"http/1.1"}), app)
+        return if e2 == nil { 0 } else { 1 }
+    }
+    return 0
+}

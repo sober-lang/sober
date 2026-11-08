@@ -42,7 +42,7 @@ check() {
 
 check 0 "0 args" --
 check 0 "$(printf '4 args\n[1] a (1 bytes)\n[2] héllo (6 bytes)\n[3]  (0 bytes)\n[4] x y (3 bytes)')" -- a "héllo" "" "x y"
-# 不正な UTF-8（0xff）: 全体が utf8.InvalidUtf8、pos は引数の中の位置
+# 不正な UTF-8（0xff）: 全体が utf8.BadUtf8、pos は引数の中の位置
 check 2 "invalid utf-8 at 1" -- ok "z$(printf '\xff')"
 # 多数の引数（region の先端で連続して積む — 1,000 個）
 many=$(seq 1 1000)

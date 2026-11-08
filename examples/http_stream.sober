@@ -1,18 +1,18 @@
 package main
 
-// std/http の応答の stream（language.md 28 節 w2）: route が返す Response の stream は要求の path を
+// std/http/server の応答の stream（language.md 28 節 w2）: route が返す Response の stream は要求の path を
 // 捕捉した閉包で、ServeConn が頭（Content-Length = length）を送ってから呼ぶ。File は閉包に捕捉させず、path を受けて stream の中で開く
 // （sendFile — emit は借り: 文形 for の本体が捕捉して呼ぶ）。loopback で 1 本の task が Dial → 要求を送る → Accept して ServeConn → 応答を受ける（net_echo の形）
 
-import "std/http"
+import "std/http/server"
 import "std/io"
 import "std/net"
-import "std/task"
 import "std/strings"
+import "std/task"
 
 func body() string { return "streamed from a file, chunk by chunk\n" }
 
-func sendFile(path string, out mut http.Out, emit func(out mut http.Out, b []byte) error?) error? {
+func sendFile(path string, out mut http.server.Out, emit func(out mut http.server.Out, b []byte) error?) error? {
     f := io.Open(path)?
     defer io.Close(f)
     for b <- io.Chunks(f)? {
@@ -21,13 +21,13 @@ func sendFile(path string, out mut http.Out, emit func(out mut http.Out, b []byt
     return nil
 }
 
-func route(dir string, r http.Request) http.Response {
+func route(dir string, r http.server.Request) http.server.Response {
     return switch {
     case strings.HasPrefix(r.path, "/file/"): {
         p := dir + "/" + strings.TrimPrefix(r.path, "/file/")
-        http.Response{status: 200, contentType: "text/plain", length: len(bytes(body())), stream: (out, emit) => sendFile(p, mut out, emit)}
+        http.server.Response{status: 200, contentType: "text/plain", length: len(bytes(body())), stream: (out, emit) => sendFile(p, mut out, emit)}
     }
-    default: http.Status(404)
+    default: http.server.Status(404)
     }
 }
 
@@ -54,7 +54,7 @@ func run(dir string) error? {
 // 1 本だけ受けて ServeConn に渡す（Connection: close で返る）
 func serveOne(l net.Listener, dir string) (int, error?) {
     for c <- net.Accept(l)? {
-        http.ServeConn(c, (r http.Request) => route(dir, r))?
+        http.server.ServeConn(c, (r http.server.Request) => route(dir, r))?
         break
     }
     return 0, nil

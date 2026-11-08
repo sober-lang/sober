@@ -1,0 +1,51 @@
+package cells
+
+import "std/testing/cell"
+
+// 置き場の値が再帰の union（チャネルのペイロードと同じく写せる）と、error? の欄を持つ struct の列（Get の結果の要素の欄読み）
+
+type Node union {
+    Leaf { s string }
+    Kids { xs []Node }
+}
+
+type Bad error {
+    why string
+}
+
+type Fail struct {
+    why string
+    err error?
+}
+
+const Tree = testing.cell.Cell[Node]{init: Kids{xs: []Node{}}}
+
+const Fails = testing.cell.Cell[[]Fail]{}
+
+func leaves(n Node) string {
+    return switch n {
+    case Leaf{s}: s
+    case Kids{xs}: {
+        mut out := ""
+        for x <- xs {
+            out = out + leaves(x)
+        }
+        out
+    }
+    }
+}
+
+func TestRecursiveValue() {
+    assert(leaves(testing.cell.Get(Tree)) == "")
+    k := "a"
+    testing.cell.Set(Tree, Kids{xs: []Node{Leaf{s: k}, Kids{xs: []Node{Leaf{s: k + "!"}}}}})
+    assert(leaves(testing.cell.Get(Tree)) == "aa!")
+    testing.cell.Update(Tree, (t Node) => Kids{xs: []Node{t, Leaf{s: "z"}}})
+    assert(leaves(testing.cell.Get(Tree)) == "aa!z")
+}
+
+func TestErrorField() {
+    testing.cell.Set(Fails, []Fail{Fail{why: "w", err: Bad{why: "b"}}})
+    fs := testing.cell.Get(Fails)
+    assert(fs[0].err != nil && fs[0].why == "w")
+}

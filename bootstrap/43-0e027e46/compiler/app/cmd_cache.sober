@@ -1,0 +1,90 @@
+package main
+
+// `sober cache info` / `sober cache gc` の handler
+
+import "std/cli"
+import "std/io"
+import "std/iter"
+import "std/json"
+import "std/strings"
+import "lower"
+
+// cmdCache は `sober cache info`（build の後段の関数キャッシュの置き場の一覧）・`sober cache gc`（線を越えた古い世代・古い一時ファイル・隠した世代の残りを消す）
+func cmdCacheInfo(cl cli.Parsed) int {
+    return cmdCache(false)
+}
+
+func cmdCacheGc(cl cli.Parsed) int {
+    return cmdCache(true)
+}
+
+func cmdCache(gc bool) int {
+    root := buildCacheRoot()
+    if root == "" {
+        return fail("sober: cache: no cache directory (SOBER_CACHE is empty and neither XDG_CACHE_HOME nor HOME is set)")
+    }
+    if gc {
+        lower.BcGc(root, buildCacheGen())
+        return 0
+    }
+    lower.BcInfo(root, buildCacheGen())
+    watchInfo()
+    return 0
+}
+
+// 今の世代の watch の状態ファイル（watch/*.json）を 1 行ずつ: `watch <cwd> <entry>: round N <verdict> · warm build=… test=…`。
+// pid が生きていなければ（watch が終わった・落ちた）行末に (stale)
+func watchInfo() {
+    dir := buildCacheDir()
+    if dir == "" {
+        return
+    }
+    es := io.ReadDir(dir + "/watch") catch return
+    for i <- iter.Range(0, len(es)) {
+        if strings.HasSuffix(es[i].Name, ".json") {
+            println(watchLine(dir + "/watch/" + es[i].Name))
+        }
+    }
+}
+
+// 状態ファイル 1 つの要約の行（読めなければ `watch <path>: unreadable`）
+func watchLine(path string) string {
+    bad := "watch ${path}: unreadable"
+    b := io.ReadFile(path) catch return bad
+    d := json.Parse(b) catch return bad
+    r := json.Root(d)
+    cwd := jsonStr(d, r, "cwd")
+    entry := jsonStr(d, r, "entry")
+    verdict := jsonStr(d, r, "verdict")
+    round := jsonInt(d, r, "round")
+    pid := jsonInt(d, r, "pid")
+    w := json.Get(d, r, "warm")
+    wb := if w == nil { "?" } else { jsonStr(d, w, "build") }
+    wt := if w == nil { "?" } else { jsonStr(d, w, "test") }
+    return "watch ${cwd} ${entry}: round ${round} ${verdict} · warm build=${wb} test=${wt}" + if procAlive(pid) { "" } else { " (stale)" }
+}
+
+// pid のプロセスが生きているか（/proc/<pid> が読める）
+func procAlive(pid int) bool {
+    if pid <= 0 {
+        return false
+    }
+    _ = io.ReadFile("/proc/${pid}/stat") catch return false
+    return true
+}
+
+func jsonStr(d json.Doc, n int, key string) string {
+    k := json.Get(d, n, key)
+    if k == nil {
+        return "?"
+    }
+    return json.ParseString(d, k) catch "?"
+}
+
+func jsonInt(d json.Doc, n int, key string) int {
+    k := json.Get(d, n, key)
+    if k == nil {
+        return 0
+    }
+    return json.ParseInt(d, k) catch 0
+}

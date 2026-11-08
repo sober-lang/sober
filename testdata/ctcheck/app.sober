@@ -10,14 +10,17 @@ import "std/crypto/chacha20"
 import "std/crypto/chacha20poly1305"
 import "std/crypto/hkdf"
 import "std/crypto/hmac"
+import "std/crypto/password"
 import "std/crypto/poly1305"
 import "std/crypto/x25519"
 import "std/crypto/pem"
 import "std/crypto/rsa"
 import "std/crypto/sha256"
+import "std/http/client"
+import "std/session"
+import "std/time"
 import "std/iter"
 import "std/tls"
-import "std/tls/record"
 
 @embed("testdata/crypto/rsa2048.key")
 const Keys = map[string]string{}
@@ -64,42 +67,62 @@ func main() {
     crypto.Wipe(mut w)
     k := crypto.Rand(32)
     n := crypto.Rand(12)
-    t := poly1305.Sum(k, a)
-    c := chacha20.XorKeyStream(k, n, 1, a)
-    sealed, _ := chacha20poly1305.Seal(k, n, b, a)
-    opened, _ := chacha20poly1305.Open(k, n, b, sealed)
-    xs := x25519.Shared(k, x25519.Base(a))
-    ga, _ := aesgcm.Seal(a, n, b, k)
-    gp, _ := aesgcm.Open(a, n, b, ga)
+    t := crypto.poly1305.Sum(k, a)
+    c := crypto.chacha20.XorKeyStream(k, n, 1, a)
+    sealed, _ := crypto.chacha20poly1305.Seal(k, n, b, a)
+    opened, _ := crypto.chacha20poly1305.Open(k, n, b, sealed)
+    xs := crypto.x25519.Shared(k, crypto.x25519.Base(a))
+    ga, _ := crypto.aesgcm.Seal(a, n, b, k)
+    gp, _ := crypto.aesgcm.Open(a, n, b, ga)
     println(len(gp))
-    gk, _ := aesgcm.Prepare(a)
-    go, _ := aesgcm.OpenAt(gk, n, b, ga, 0, len(ga))
+    gk, _ := crypto.aesgcm.Prepare(a)
+    go, _ := crypto.aesgcm.OpenAt(gk, n, b, ga, 0, len(ga))
     println(len(ga) + len(go))
-    mut rw, _ := record.NewDir(record.ChaCha, k)
-    mut rr, _ := record.NewDir(record.ChaCha, k)
-    rec := record.Seal(mut rw, record.CtApp, a, 3)
-    rct, rpt, _ := record.Open(mut rr, record.Frame{b: rec, off: 0, n: len(rec)})
-    println(rct + len(rpt))
-    _ = record.Update(mut rw)
-    println(len(record.Pack(rw)) + len(record.ExpandLabel(k, "key", b, 16)))
-    prk := hkdf.Extract(b, k)
-    okm, _ := hkdf.Expand(prk, b, 32)
-    println(len(okm) + len(hmac.Sum256(k, a)) + len(sha256.Sum256(a)) + binary.Load64(k, 0))
-    // tls（hs・Conn の送り）は走らない枝から参照する（ELF に載せるだけ）
+    prk := crypto.hkdf.Extract(b, k)
+    okm, _ := crypto.hkdf.Expand(prk, b, 32)
+    println(len(okm) + len(crypto.hmac.Sum256(k, a)) + len(crypto.sha256.Sum256(a)) + binary.Load64(k, 0))
+    // password（Rand を呼ぶ書く側は走らない枝から — ELF に載せるだけ）
+    if len(a) == 1000 {
+        h1, _ := crypto.password.Argon2id("pw", memoryKiB: 64, passes: 1, lanes: 1)
+        h2, _ := crypto.password.Bcrypt("pw", cost: 4)
+        h3, _ := crypto.password.Pbkdf2("pw", iters: 1)
+        r, _ := crypto.password.NeedsRehash(h1, crypto.password.UseBcrypt{cost: 4})
+        println("${h1}${h2}${h3}${r}")
+    }
+    vok, _ := crypto.password.Verify("$pbkdf2-sha256$i=1,l=8$c2FsdHNhbHQ$aGFzaGhhc2g", "pw")
+    println(vok)
+    // session（Mint は Rand を呼ぶので走らない枝から）
+    sk := session.KeyFrom(k)
+    if len(a) == 1000 {
+        println(session.Seal(session.Mint(sk, "s", 1, time.Unix(0, 0), 60)))
+    }
+    su, _ := session.Open(sk, "AQ", time.Unix(0, 0))
+    sc, _ := session.Check(su, 1)
+    si, _ := session.Of(sc)
+    println(si.gen)
+    // tls（hs・Conn の送り・内側の record 層）は走らない枝から参照する（ELF に載せるだけ）
     if len(a) == 1000 {
         cfg, _ := tls.Parse("", "")
         _ = tls.Serve(":0", cfg, (tc) => serveOne(tc, a))
     }
+    // HTTP クライアント（hsc の握手・1.2 の record・束の置き場）は走らない枝から参照する（ELF に載せるだけ）
+    if len(a) == 1000 {
+        pol := http.client.Policy{dangerouslyAllowTls12: true}
+        _ = http.client.Open("https://x", (s) => {
+            _, _ = http.client.Send(s, "/")
+        }, policy: pol)
+        _, _ = http.client.Request("https://x/", policy: pol)
+    }
     ks := Keys
     kt := ks["testdata/crypto/rsa2048.key"]
     if kt != nil {
-        bs, _ := pem.Parse(kt)
+        bs, _ := crypto.pem.Parse(kt)
         if len(bs) == 1 {
-            pk, _ := rsa.ParsePKCS8(bs[0].der)
-            sig, _ := rsa.SignPSS(pk, a, b)
+            pk, _ := crypto.rsa.ParsePKCS8(bs[0].der)
+            sig, _ := crypto.rsa.SignPSS(pk, a, b)
             println(len(sig))
         }
     }
-    println(len(xs) + len(t) + len(c) + len(opened) + len(chacha20.Block(k, n, 0)) == 0)
+    println(len(xs) + len(t) + len(c) + len(opened) + len(crypto.chacha20.Block(k, n, 0)) == 0)
     println(crypto.Equal(a, b) || negEqEarly(a, b) || crypto.Select(m, 1, 2) + negSelectIf(m, 1, 2) + negPrefix(k) == 0 || int(w[0]) == 9)
 }

@@ -103,6 +103,8 @@ structure St where
   defs : List Def := []
   /-- std の信頼の口の Def（コア JSON の `"trust":true` — std/table.Freeze・std/strings.Clone。U1 の仮引数・U3 を見ない — language.md 17 節） -/
   trusted : Bool := false
+  /-- 呼び先が std の信頼の口か（呼び手の側の要約 — callM） -/
+  trustF : Nat → Bool := fun _ => false
   deriving Inhabited
 
 def St.cell (s : St) (c : Nat) : AV :=
@@ -250,6 +252,16 @@ partial def ev (env : List AV) (e : Expr) (s : St) : AV × St :=
       | none => v.allRefs
     let s := if (D s (.refs wc)).any (fun b => s.frozen.contains b) then
       s.fail "callM: a mut argument reaches a frozen buffer" else s
+    if s.trustF fn then
+      -- 信頼の口（U1・U3 を免除した呼び先）の呼び手の側の要約 = 取り出し形: mut の実引数から届く buffer（ヘッダと中身）は凍って結果へ移り、
+      -- 実引数のセルは新しい値に戻る。呼び手の手元に残った同じ buffer の別名からの後の書きは U2 で拒否される（外からの構築で別名を
+      -- 与える形は表層の規則〔language.md 20 節〕が先に塞ぐ — ここはその前提を述語の側でも成り立たせる）
+      let taken := D s (.refs wc)
+      let s := { s with frozen := union s.frozen taken }
+      let s := wc.foldl (fun s c => let (b, s) := s.fresh; s.setCell c (.bufs [b])) s
+      let (b, s) := s.fresh
+      (.bufs (union (union (deep s 4 v.allBufs) taken) [b]), s)
+    else
     -- 呼び先はセルを差し替えうる（新しい buffer — U3 で他の仮引数の中身は入らない）
     let s := v.allRefs.foldl (fun s c => let (b, s) := s.fresh; s.setCell c ((s.cell c).join (.bufs [b]))) s
     let (b, s) := s.fresh
@@ -393,8 +405,8 @@ partial def ev (env : List AV) (e : Expr) (s : St) : AV × St :=
     (.bufs [], s)
 
 /-- Def 1 本: 仮引数の抽象値で本体を評価し、U1（仮引数の freeze）・U3（戻り値への mut の仮引数の中身）を見る -/
-def checkDef (Δ : Defs) (d : Def) (trusted : Bool := false) : Option String :=
-  let (pv, _, s0) := paramAV d.param 0 { defs := Δ, trusted := trusted }
+def checkDef (Δ : Defs) (d : Def) (trusted : Bool := false) (trustF : Nat → Bool := fun _ => false) : Option String :=
+  let (pv, _, s0) := paramAV d.param 0 { defs := Δ, trusted := trusted, trustF := trustF }
   let (v, s) := ev [pv] d.body s0
   match s.err with
   | some m => some m
@@ -409,7 +421,7 @@ def check (Δ : Defs) (mask : Nat → Bool) (e : Option Expr) (trust : Nat → B
     | [], _ => none
     | d :: ds, i =>
       if mask i then
-        match checkDef Δ d (trust i) with
+        match checkDef Δ d (trust i) trust with
         | some m => some (m, (i : Int))
         | none => go ds (i + 1)
       else go ds (i + 1)
@@ -419,7 +431,7 @@ def check (Δ : Defs) (mask : Nat → Bool) (e : Option Expr) (trust : Nat → B
     match e with
     | none => none
     | some e =>
-      let (_, s) := ev [] e { defs := Δ }
+      let (_, s) := ev [] e { defs := Δ, trustF := trust }
       s.err.map (fun m => (m, -1))
 
 /-- 関数値の呼び出しが mut の仮引数で凍結した buffer へ書く形（コアは同じ深さの callv で型付ける — mut 仮引数の Def の fnref は
@@ -433,5 +445,26 @@ example : check wDefs (fun _ => true) (some (wMain (.callv (.fnref 0 [])))) =
     some ("callv: a mut argument reaches a frozen buffer", -1) := by native_decide
 example : check wDefs (fun _ => true) (some (wMain (.callM 0 []))) =
     some ("callM: a mut argument reaches a frozen buffer", -1) := by native_decide
+
+/-- 信頼の口の呼び手の側の要約（取り出し形）: 信頼の口 Def 0 が mut の仮引数の中身を凍らせて返す。呼び手が同じ buffer の別名を手元に
+残して呼ぶと、後の別名からの書きは U2（外からの構築で Table / Arena に別名を与えた形の述語の側 — 表層は language.md 20 節が拒否）。
+別名が無ければ、呼んだ後も同じセルを使い続けられる（実引数のセルは新しい値に戻る） -/
+private def tDefs : Defs :=
+  [ { param := .ref true 0 (.slice true 0 .int), ret := .slice false 0 .int,
+      body := .freeze (.deref (.var 0)) } ]
+private def tTrust : Nat → Bool := fun i => i == 0
+-- セル m（中身 b）の別名 x = deref m を残して信頼の口へ渡し、x に書く
+private def tAlias : Expr :=
+  .block (.letE (.alloc true (.mkslice true .int)) (.letE (.deref (.var 0))
+    (.letE (.callM 0 [] (.var 1)) (.setidx (.var 1) (.lit 0) (.lit 1)))))
+-- 別名なし: 呼んだ後に同じセルの中身へ書き、もう一度信頼の口へ渡す
+private def tReuse : Expr :=
+  .block (.letE (.alloc true (.mkslice true .int))
+    (.letE (.callM 0 [] (.var 0))
+      (.letE (.setidx (.deref (.var 1)) (.lit 0) (.lit 1)) (.callM 0 [] (.var 2)))))
+example : check tDefs (fun _ => true) (some tAlias) tTrust = some ("U2: write (setidx) to a frozen buffer", -1) := by native_decide
+example : check tDefs (fun _ => true) (some tReuse) tTrust = none := by native_decide
+-- 信頼の口でない呼び先（U3 で中身は返らない読み）では同じ形は通る — 要約は信頼の口だけに掛かる
+example : check tDefs (fun _ => false) (some tAlias) = none := by native_decide
 
 end FS.Uniq

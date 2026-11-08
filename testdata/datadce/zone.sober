@@ -1,0 +1,11 @@
+package main
+
+// datadce の題材: LoadZone を使う — 焼き込みのゾーンの表が ELF に入る（網が目印を数えられることの正例）
+
+import "std/time"
+
+func main() {
+    z, _ := time.LoadZone("Asia/Tokyo")
+    t := time.Now()
+    println(time.FormatRFC3339(t, time.OffsetAt(z, t)))
+}

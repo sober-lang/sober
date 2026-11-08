@@ -101,7 +101,7 @@ V-9. freeze の後は、凍らせた道へ添字・欄・map の書き込みを�
 拒否: [`examples/freeze_neg_write.sober`](../../examples/freeze_neg_write.sober)
 決定: [language.md 17 節](../language.md)
 
-V-10. mut の列の要素の欄へは書ける: `xs[i].f = v`（欄の鎖・入れ子の列・複合代入も）は、要素を読んで欄を差し替えて `xs[i]` へ書き戻すのと同じ。添字・右辺・要素の読み・書きの順に評価し、添字は 1 回だけ評価する。imm の列への書きは拒否する。
+V-10. mut の列の要素の欄へは書ける: `xs[i].f = v`（欄の鎖・入れ子の列・複合代入も）は、要素を読んで欄を差し替えて `xs[i]` へ書き戻すのと同じ。添字への直の複合代入 `xs[i] op= v` も同じ写し（map の `m[k] op= v` は無い — 読みが `T?`）。添字・右辺・要素の読み・書きの順に評価し、添字は 1 回だけ評価する。imm の列への書きは拒否する。
 例: [`examples/elem_field_assign.sober`](../../examples/elem_field_assign.sober)
 拒否: [`examples/elem_field_assign_neg_imm.sober`](../../examples/elem_field_assign_neg_imm.sober)
 決定: [language.md 21 節](../language.md)

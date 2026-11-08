@@ -1,0 +1,11 @@
+package main
+
+// 外からの構築で mut の中身を持つ欄に値を与える（別名でなく新しいリテラルでも — 規則は欄の型で決まる）
+import "testdata/fieldpkg/box"
+
+func main() {
+    mut m := mut []int{1, 2}
+    mut b := testdata.fieldpkg.box.Box{n: 0, name: "x", inner: testdata.fieldpkg.box.Inner{k: 0}, xs: m, tags: mut map[string]int{}}
+    m[0] = 99
+    println(testdata.fieldpkg.box.Len(mut b))
+}

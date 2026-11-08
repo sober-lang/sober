@@ -46,21 +46,26 @@
                 "callee": {
                   "k": "selector",
                   "base": {
-                    "k": "ident",
-                    "name": "sha256",
-                    "tok": 24
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "crypto",
+                      "tok": 24
+                    },
+                    "field": "sha256",
+                    "tok": 26
                   },
                   "field": "Sum256",
-                  "tok": 26
+                  "tok": 28
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "data",
-                    "tok": 28
+                    "tok": 30
                   }
                 ],
-                "tok": 27
+                "tok": 29
               }
             ],
             "tok": 23
@@ -71,7 +76,7 @@
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 33
+        "end": 35
       },
       "sig_end": 22
     }

@@ -1,7 +1,7 @@
 package dudect
 
 // dudect の題材: std/crypto の公開の口。クラス 0 = 固定の秘密・クラス 1 = 乱数の秘密（入力は計時の前に作る）。
-// 鍵を変えられない口（rsa.SignPSS — 鍵は 1 本の試験鍵）は平文を変える。結果は f の bool（窓の外で畳む — Measure の型が強制する）
+// 鍵を変えられない口（crypto.rsa.SignPSS — 鍵は 1 本の試験鍵）は平文を変える。結果は f の bool（窓の外で畳む — Measure の型が強制する）
 
 import "std/crypto"
 import "std/crypto/aesgcm"
@@ -61,34 +61,34 @@ func TestNonZero() {
 
 func TestAesgcmSealTo() {
     n := Count()
-    if n == 0 || !aesgcm.Available() {
+    if n == 0 || !crypto.aesgcm.Available() {
         return
     }
-    k, _ := aesgcm.Prepare(pat(16, 2))
+    k, _ := crypto.aesgcm.Prepare(pat(16, 2))
     nonce := pat(12, 3)
     ad := pat(13, 4)
     head := pat(5, 5)
     // 秘密 = 平文 64 バイト（鍵は固定）
     Measure("aesgcm_sealto", n, 4, (c, i) => sec(c, i, 64), (x) => {
-        s, _ := aesgcm.SealTo(k, nonce, ad, x, head, []byte{})
+        s, _ := crypto.aesgcm.SealTo(k, nonce, ad, x, head, []byte{})
         len(s) > 0
     })
 }
 
 func TestAesgcmOpenAt() {
     n := Count()
-    if n == 0 || !aesgcm.Available() {
+    if n == 0 || !crypto.aesgcm.Available() {
         return
     }
-    k, _ := aesgcm.Prepare(pat(16, 2))
+    k, _ := crypto.aesgcm.Prepare(pat(16, 2))
     nonce := pat(12, 3)
     ad := pat(13, 4)
     // 秘密 = 平文 64 バイト（どちらのクラスも正しい封 — tag の成否は公開の値なので両クラスとも通る形）
     Measure("aesgcm_openat", n, 5, (c, i) => {
-        s, _ := aesgcm.SealTo(k, nonce, ad, sec(c, i, 64), []byte{}, []byte{})
+        s, _ := crypto.aesgcm.SealTo(k, nonce, ad, sec(c, i, 64), []byte{}, []byte{})
         s
     }, (x) => {
-        p, _ := aesgcm.OpenAt(k, nonce, ad, x, 0, len(x))
+        p, _ := crypto.aesgcm.OpenAt(k, nonce, ad, x, 0, len(x))
         len(p) > 0
     })
 }
@@ -96,31 +96,31 @@ func TestAesgcmOpenAt() {
 // 縫い合わせの塊の道（128 の倍数の部分 — aesseal / aesopen）: 平文 256 バイト
 func TestAesgcmSealTo256() {
     n := Count()
-    if n == 0 || !aesgcm.Available() {
+    if n == 0 || !crypto.aesgcm.Available() {
         return
     }
-    k, _ := aesgcm.Prepare(pat(16, 2))
+    k, _ := crypto.aesgcm.Prepare(pat(16, 2))
     nonce := pat(12, 3)
     ad := pat(13, 4)
     Measure("aesgcm_sealto_256", n, 15, (c, i) => sec(c, i, 256), (x) => {
-        s, _ := aesgcm.SealTo(k, nonce, ad, x, []byte{}, []byte{})
+        s, _ := crypto.aesgcm.SealTo(k, nonce, ad, x, []byte{}, []byte{})
         len(s) > 0
     })
 }
 
 func TestAesgcmOpenAt256() {
     n := Count()
-    if n == 0 || !aesgcm.Available() {
+    if n == 0 || !crypto.aesgcm.Available() {
         return
     }
-    k, _ := aesgcm.Prepare(pat(16, 2))
+    k, _ := crypto.aesgcm.Prepare(pat(16, 2))
     nonce := pat(12, 3)
     ad := pat(13, 4)
     Measure("aesgcm_openat_256", n, 16, (c, i) => {
-        s, _ := aesgcm.SealTo(k, nonce, ad, sec(c, i, 256), []byte{}, []byte{})
+        s, _ := crypto.aesgcm.SealTo(k, nonce, ad, sec(c, i, 256), []byte{}, []byte{})
         s
     }, (x) => {
-        p, _ := aesgcm.OpenAt(k, nonce, ad, x, 0, len(x))
+        p, _ := crypto.aesgcm.OpenAt(k, nonce, ad, x, 0, len(x))
         len(p) > 0
     })
 }
@@ -130,12 +130,12 @@ func TestChachaSealTo() {
     if n == 0 {
         return
     }
-    k, _ := chacha20poly1305.Prepare(pat(32, 6))
+    k, _ := crypto.chacha20poly1305.Prepare(pat(32, 6))
     nonce := pat(12, 3)
     ad := pat(13, 4)
     head := pat(5, 5)
     Measure("chacha_sealto", n, 6, (c, i) => sec(c, i, 64), (x) => {
-        s, _ := chacha20poly1305.SealTo(k, nonce, ad, x, head, []byte{})
+        s, _ := crypto.chacha20poly1305.SealTo(k, nonce, ad, x, head, []byte{})
         len(s) > 0
     })
 }
@@ -145,14 +145,14 @@ func TestChachaOpenAt() {
     if n == 0 {
         return
     }
-    k, _ := chacha20poly1305.Prepare(pat(32, 6))
+    k, _ := crypto.chacha20poly1305.Prepare(pat(32, 6))
     nonce := pat(12, 3)
     ad := pat(13, 4)
     Measure("chacha_openat", n, 7, (c, i) => {
-        s, _ := chacha20poly1305.SealTo(k, nonce, ad, sec(c, i, 64), []byte{}, []byte{})
+        s, _ := crypto.chacha20poly1305.SealTo(k, nonce, ad, sec(c, i, 64), []byte{}, []byte{})
         s
     }, (x) => {
-        p, _ := chacha20poly1305.OpenAt(k, nonce, ad, x, 0, len(x))
+        p, _ := crypto.chacha20poly1305.OpenAt(k, nonce, ad, x, 0, len(x))
         len(p) > 0
     })
 }
@@ -180,7 +180,7 @@ func TestPoly1305SumOtk() {
         return
     }
     msg := pat(64, 7)
-    Measure("poly1305_sum_otk", n, 8, (c, i) => if c == 0 { smallR4(i) } else { rnd(32, i) }, (x) => len(poly1305.Sum(x, msg)) == 16)
+    Measure("poly1305_sum_otk", n, 8, (c, i) => if c == 0 { smallR4(i) } else { rnd(32, i) }, (x) => len(crypto.poly1305.Sum(x, msg)) == 16)
 }
 
 func TestX25519Shared() {
@@ -188,9 +188,9 @@ func TestX25519Shared() {
     if n == 0 {
         return
     }
-    u := x25519.Base(pat(32, 8))
+    u := crypto.x25519.Base(pat(32, 8))
     // 秘密 = スカラー 32 バイト
-    Measure("x25519_shared", n, 9, (c, i) => sec(c, i, 32), (x) => len(x25519.Shared(x, u)) == 32)
+    Measure("x25519_shared", n, 9, (c, i) => sec(c, i, 32), (x) => len(crypto.x25519.Shared(x, u)) == 32)
 }
 
 func TestHmacSum256() {
@@ -200,7 +200,7 @@ func TestHmacSum256() {
     }
     msg := pat(64, 9)
     // 秘密 = 鍵 32 バイト
-    Measure("hmac_sum256", n, 10, (c, i) => sec(c, i, 32), (x) => len(hmac.Sum256(x, msg)) == 32)
+    Measure("hmac_sum256", n, 10, (c, i) => sec(c, i, 32), (x) => len(crypto.hmac.Sum256(x, msg)) == 32)
 }
 
 func TestRsaSignPSS() {
@@ -212,12 +212,12 @@ func TestRsaSignPSS() {
     if kt == nil {
         return
     }
-    bs, _ := pem.Parse(kt)
-    k, _ := rsa.ParsePKCS8(bs[0].der)
+    bs, _ := crypto.pem.Parse(kt)
+    k, _ := crypto.rsa.ParsePKCS8(bs[0].der)
     salt := pat(32, 10)
     // 鍵は 1 本（試験鍵）— 秘密の側の入力として平文 64 バイトを変える（鍵を変える網は鍵の生成の口が要る — 積み）
     Measure("rsa_signpss", n, 11, (c, i) => sec(c, i, 64), (x) => {
-        s, _ := rsa.SignPSS(k, x, salt)
+        s, _ := crypto.rsa.SignPSS(k, x, salt)
         len(s) > 0
     })
 }

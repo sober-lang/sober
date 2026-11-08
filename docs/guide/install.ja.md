@@ -49,7 +49,7 @@ Hello, Sober!
 
 ## サーバを走らせる
 
-std/net（したがって std/http と std/tls）を使うプログラムは、環境に 3 つのことを求めます:
+std/net（したがって std/http/server と std/tls）を使うプログラムは、環境に 3 つのことを求めます:
 
 - io_uring: Docker の既定の seccomp のプロファイル（と gVisor）は io_uring を塞ぎます。そのとき Sober は自動で epoll に倒れます — 動きますが遅くなります。本来の速さには `io_uring_setup` / `io_uring_enter` / `io_uring_register` を許すプロファイルで走らせてください（例: `docker run --security-opt seccomp=unconfined …`）。io_uring のネットワークの道は Linux 6.1 以降が要ります
 - memlock: ワーカーごとに io_uring の ring を 1 本持ち、古いカーネルは ring のメモリをユーザー全体の `RLIMIT_MEMLOCK` で数えます。ring の作成が ENOMEM で失敗すると上と同じく倒れて遅くなるので、上限を上げてください（`ulimit -l unlimited`・systemd なら `LimitMEMLOCK=infinity`・Docker なら `--ulimit memlock=-1`）。Linux 5.12 以降は cgroup で数えるので、ほぼ問題になりません

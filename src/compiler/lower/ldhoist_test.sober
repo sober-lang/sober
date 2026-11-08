@@ -1,0 +1,91 @@
+package lower
+
+// 展開後の欄の読みの巻き上げ（ldhoist.sober）の網: IR を手で組んで直に見る（`cd src/compiler && ../../bin/sober test lower`）。
+// 巻き上げは観測を変えない変換なので、別名の判定を緩めすぎる変異は例・題材の出力では鳴りにくい — 巻き上げる / 巻き上げない形をここで固定する
+
+import "desugar"
+
+// f(P ptr〔mut の印〕, Q ptr〔印なし〕, n i64) の `for i < n { x = load (gep.word P, 3)[1]; [kind の形] }` に巻き上げを掛け、本体に残った
+// P の鎖の語 4 の load の数を返す。kind: 0 = 何も足さない・1 = 未知の関数の呼び出し・2 = 同じ語への store・3 = P の別の語への store・
+// 4 = P から読んだデータの番地への store・5 = 印なしの仮引数 Q への store・6 = P をデータへ書く（脱出）・7 = 許す rt に P の鎖を渡す・
+// 8 = P に mut の印が無い・9 = 許す rt（slice_grow）の呼び出しだけ
+func lhT(kind int) int {
+    mut st := St{}
+    initScalars(mut st)
+    desugar.HeapPush(mut st.d, 0)
+    pt := listN(mut st, 3)
+    desugar.HeapSet(mut st.d, pt + 1, TyPtr)
+    desugar.HeapSet(mut st.d, pt + 2, TyPtr)
+    desugar.HeapSet(mut st.d, pt + 3, TyI64)
+    g := addFunc(mut st, 0, desugar.ListRef(listN(mut st, 0)), -1)
+    st.rtGrow = g
+    other := addFunc(mut st, 0, desugar.ListRef(listN(mut st, 0)), -1)
+    f := addFunc(mut st, 0, desugar.ListRef(pt), -1)
+    irSetFnMutP(mut st, f, if kind == 8 { 0 } else { 1 })
+    st.fn = f
+    p := 0
+    q := 1
+    n := 2
+    entry := newBlock(mut st)
+    st.cur = entry
+    hd := newBlock(mut st)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    irSetBlkLoop(mut st, hd, 1)
+    br(mut st, hd, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, hd)
+    i := param(mut st, hd, TyI64)
+    condbr(mut st, cmp(mut st, CLt, i, n), body, -1, done, -1)
+    setCur(mut st, body)
+    x := load(mut st, gepWord(mut st, p, iconst(mut st, 3)), 1)
+    if kind == 1 {
+        _ = call(mut st, other, listN(mut st, 0))
+    } else if kind == 2 {
+        store(mut st, gepWord(mut st, p, iconst(mut st, 3)), 1, i)
+    } else if kind == 3 {
+        store(mut st, p, 0, i)
+    } else if kind == 4 || kind == 6 {
+        d := itop(mut st, load(mut st, p, 0))
+        store(mut st, d, 0, if kind == 6 { p } else { i })
+    } else if kind == 5 {
+        store(mut st, q, 4, i)
+    } else if kind == 7 {
+        _ = call(mut st, g, list1(mut st, gepWord(mut st, p, iconst(mut st, 3))))
+    } else if kind == 9 {
+        _ = call(mut st, g, listN(mut st, 0))
+    }
+    br(mut st, hd, list1(mut st, bin(mut st, BAdd, i, x)))
+    setCur(mut st, done)
+    ret(mut st, -1)
+    ldhoistFunc(mut st, f)
+    mut left := 0
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        if b != entry {
+            mut k := irBlkIHead(mut st, b)
+            while k != -1 {
+                if irInsOp(mut st, k) == OpLoad && irInsB(mut st, k) == 1 {
+                    left += 1
+                }
+                k = irInsNext(mut st, k)
+            }
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return left
+}
+
+func TestLdhoist() {
+    // 巻き上げる形: 何も書かない・P の別の語を書く・P のデータを書く・許す rt を呼ぶだけ
+    assert(lhT(0) == 0, "plain")
+    assert(lhT(3) == 0, "other word")
+    assert(lhT(4) == 0, "own data")
+    assert(lhT(9) == 0, "allowed rt")
+    // 巻き上げない形（判定を緩めすぎる変異はここで落ちる）
+    assert(lhT(1) == 1, "unknown call")
+    assert(lhT(2) == 1, "same word")
+    assert(lhT(5) == 1, "unmarked param")
+    assert(lhT(6) == 1, "escape")
+    assert(lhT(7) == 1, "chain to rt")
+    assert(lhT(8) == 1, "not mut")
+}

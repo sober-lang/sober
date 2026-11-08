@@ -20,8 +20,9 @@ sum=
 # 構成 = ワーカー数 × 符号器の作業域（SRV_WORK=1 = ServeConn の work: — ワーカー局所の lease・report-720）+ echo の大きい本文（SRV_MAXBODY = 128 KiB の
 # maxBody: で check.ts --echo-big — HttpArena の 8gbit の validate の 100 KB と上限ちょうどの 128 KiB を Content-Length と chunked で・超えた 1 本〔+1 B・1 MB〕は 413。
 # 上限は bench/httparena の entry と同じ値。W8 / W1 — report-848 / 849）。W8 の受けは増分消費の環（カーネル 6.12 以上）が既定 — SOBER_PBUF_INC=0 の 2 構成で固定スロットの環の道も見る。
+# 平文の keep-alive の応答の送りは次の受けの待ちと畳む（rt.netop 9 — 既定）— SOBER_NET_FUSE=0 の構成で畳まない道も見る。
 # TLS の構成（SRV_TLS=1 — srv が tls.Serve + ServeWith の put: で立ち、check.ts --tls が生の送受の群〔パイプライン・stream を挟むパイプライン・誤り・echo〕を TLS の上で掛ける）
-for cfg in "SOBER_WORKERS=8" "SOBER_WORKERS=1" "SOBER_WORKERS=8 SRV_WORK=1" "SOBER_WORKERS=1 SRV_WORK=1" "SOBER_WORKERS=8 SRV_MAXBODY=131072" "SOBER_WORKERS=1 SRV_MAXBODY=131072" "SOBER_WORKERS=8 SOBER_PBUF_INC=0" "SOBER_WORKERS=8 SRV_MAXBODY=131072 SOBER_PBUF_INC=0" "SOBER_WORKERS=8 SRV_MAXBODY=131072 SRV_TLS=1" "SOBER_WORKERS=1 SRV_TLS=1"; do
+for cfg in "SOBER_WORKERS=8" "SOBER_WORKERS=1" "SOBER_WORKERS=8 SRV_WORK=1" "SOBER_WORKERS=1 SRV_WORK=1" "SOBER_WORKERS=8 SRV_MAXBODY=131072" "SOBER_WORKERS=1 SRV_MAXBODY=131072" "SOBER_WORKERS=8 SOBER_PBUF_INC=0" "SOBER_WORKERS=8 SRV_MAXBODY=131072 SOBER_PBUF_INC=0" "SOBER_WORKERS=8 SRV_MAXBODY=131072 SRV_TLS=1" "SOBER_WORKERS=1 SRV_TLS=1" "SOBER_WORKERS=8 SOBER_NET_FUSE=0" "SOBER_WORKERS=8 SRV_FRESH=1"; do
     rm -rf "$W/static" && mkdir -p "$W/static/www"
     rm -f "$W/flight"
     tlsenv=

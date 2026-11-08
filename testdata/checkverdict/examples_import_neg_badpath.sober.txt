@@ -1,0 +1,2 @@
+sober: load error at examples/import_neg_badpath.sober:5:8: every segment of an import path is a lowercase identifier (a-z, 0-9, _ — not starting with a digit) that is not a keyword — the path is also the qualifier (std/http/server → http.server)
+exit=1

@@ -4,5 +4,5 @@ package crashed
 import "testdata/doubles/greet"
 
 func TestDies() {
-    assert(greet.Greet("a") == "hello, a")
+    assert(testdata.doubles.greet.Greet("a") == "hello, a")
 }

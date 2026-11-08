@@ -1,10 +1,10 @@
 package main
 
-import "std/http"
+import "std/http/server"
 
 // Cookie を読む after を持つ共有のルート
 func main() {
-    tag := http.Middleware{after: (r, w) => if http.Cookie(r, "beta") != nil { http.Text("beta\n") } else { w }}
-    rs := []http.Route{http.Route{method: "GET", path: "/", handler: (r) => http.Text("home\n"), middleware: []http.Middleware{tag}, cache: http.Fresh{maxAge: 60}}}
+    tag := http.server.Middleware{after: (r, w) => if http.server.Cookie(r, "beta") != nil { http.server.Text("beta\n") } else { w }}
+    rs := []http.server.Route{http.server.Route{method: "GET", path: "/", handler: (r) => http.server.Text("home\n"), middleware: []http.server.Middleware{tag}, cache: http.server.Fresh{maxAge: 60}}}
     println(len(rs))
 }

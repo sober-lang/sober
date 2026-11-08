@@ -1,0 +1,54 @@
+package password
+
+// PBKDF2-HMAC-SHA256 の核の網（white-box）: RFC 7914 11 節の 2 例と、Go の crypto/pbkdf2 の格子（testdata/crypto/pbkdf2_sha256.txt —
+// scripts/oracles/crypto_pbkdf2.go）。格子は鍵の長さ（ブロック 64 の前後 — 縮める境目）・塩の長さ（塩 ++ 番号が 1 ブロックに収まる / 収まらない）・
+// 反復（区切り pbkdf2Chunk の前後）・出力の長さ（32 の前後 — T_i の 2 本目）を跨ぐ
+
+import "std/convert"
+import "std/crypto"
+import "std/hex"
+import "std/iter"
+import "std/strings"
+
+@embed("testdata/crypto/pbkdf2_sha256.txt")
+const pbkdf2Grid = map[string]string{}
+
+func pat(n int, k int) []byte {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, n) {
+        b = append(b, byte((i * 31 + k * 13 + 7) % 256))
+    }
+    return freeze(b)
+}
+
+func embedded(fs map[string]string, p string) string {
+    v := fs[p]
+    if v != nil {
+        return v
+    }
+    return ""
+}
+
+func TestPbkdf2Rfc7914() {
+    w1, _ := hex.Parse("55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc49ca9cccf179b645991664b39d77ef317c71b845b1e30bd509112041d3a19783")
+    ok1 := crypto.Equal(pbkdf2Key(bytes("passwd"), bytes("salt"), 1, 64), w1)
+    assert(ok1)
+    w2, _ := hex.Parse("4ddcd8f60b98be21830cee5ef22701f9641a4418d04c0414aeff08876b34ab56a1d425a1225833549adb841b51c9b3176a272bdebba1d078478f62b397f33c8d")
+    ok2 := crypto.Equal(pbkdf2Key(bytes("Password"), bytes("NaCl"), 80000, 64), w2)
+    assert(ok2)
+}
+
+func TestPbkdf2Grid() {
+    lines := strings.Split(strings.TrimSpace(embedded(pbkdf2Grid, "testdata/crypto/pbkdf2_sha256.txt")), "\n")
+    assert(len(lines) == 432)
+    for li <- iter.Range(0, len(lines)) {
+        f := strings.Fields(lines[li])
+        pl, _ := convert.ParseInt(f[0])
+        sl, _ := convert.ParseInt(f[1])
+        it, _ := convert.ParseInt(f[2])
+        n, _ := convert.ParseInt(f[3])
+        want, _ := hex.Parse(f[4])
+        ok := crypto.Equal(pbkdf2Key(pat(pl, 1), pat(sl, 2), it, n), want)
+        assert(ok)
+    }
+}

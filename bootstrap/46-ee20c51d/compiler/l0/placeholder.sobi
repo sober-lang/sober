@@ -1,0 +1,1 @@
+// L0 の仮のファイル（@embed("l0/**/*.sobi") は一致 0 を拒否する — std の焼き込みの本体は scripts/stage2.sh が建てるときに l0/std/ へ書く）

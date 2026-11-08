@@ -13,7 +13,7 @@ func code(b []byte) int {
     s, err := string(b)
     return if err != nil {
         switch err {
-        case strings.InvalidUtf8{pos}: 1000 + pos
+        case strings.BadUtf8{pos}: 1000 + pos
         }
     } else {
         len(bytes(s))

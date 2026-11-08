@@ -145,6 +145,16 @@ type St struct {
     ssmG int
     rtSmGive FnRef
     rtSmTake FnRef
+    // 浅い region の窓を組むか（std/task を使い std/net の Serve を持つプログラムだけ — 窓を張る task〔region: の接続〕が無いプログラムは
+    // 窓の道・先端の伸長の比較を組まない。下ろしの前に決まる）
+    winOn bool
+    winG int           // 窓の有効の印（rt.win — 0 = 未読・1 = SOBER_TASK_WIN=0・2 = 有効）と窓の rt（task.sober の窓の注）
+    rtWinSpill FnRef
+    rtWinRalloc FnRef
+    rtWinPark FnRef
+    rtWinCol FnRef
+    rtWinStart FnRef
+    rtWinIs FnRef
     parIn int          // task.SpawnIn の (handle?) の置き場（parSpawn の形の切り替え — -1 = Spawn）
     parInShed BlkRef   // task.SpawnIn の shed の道のブロック（parSpawn が作る）
     parDiscard int     // handle を `_` に捨てる束縛の右辺の節（bindStmt / assignStmt が書き、parSpawn が自分の呼び出しの節と比べて読んだら戻す — -1 = 無し）
@@ -153,6 +163,7 @@ type St struct {
     chanDepth int // 字面に囲む最も外の task.Run の region の深度の値（NewChannel の記録の置き場 — parNewChan。-1 = 囲む scope なし。funcBody が戻す）
     rtMnSteal FnRef
     rtMnAnyDq FnRef
+    rtMnAnyDqAll FnRef
     rtMnTrace FnRef
     rtUringInit FnRef   // rt.uring_init（uring.sober）
     rtUio FnRef         // rt.uio（ring に出して待つ io の口）
@@ -328,6 +339,7 @@ type St struct {
     tInt int
     tBool int
     llSqrt bool   // .ll に llvm.sqrt.f64 の宣言が要るか（float の sqrt を印字したとき — llvm.sober）
+    llCtz bool    // .ll に llvm.cttz.i64 の宣言が要るか（BCtz を印字したとき）
     tFloat int    // float（types.sober の tFloat — 使うまで 0）
     tByte int     // byte（types.sober の tByte — 使うまで 0）
     tNever int
@@ -521,6 +533,9 @@ func initScalars(st mut St) {
     st.rtStreq = -1
     st.rtMatchLen = -1
     st.rtErrReloc = -1
+    st.rtWinRalloc = -1
+    st.rtWinStart = -1
+    st.rtWinIs = -1
     st.recRels = -1
     st.recRelsF = -1
     st.rcMemo = -1

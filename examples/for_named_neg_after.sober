@@ -1,0 +1,18 @@
+package main
+
+// 負例（syntax.md 決定 7）: 手で書く呼び出しは名前付き引数の後ろに位置引数を置けない — 継続を名前付きの前へ差すのは for の生成元の脱糖だけ
+// （`for d <- digits(s, step: 2)? { … }` の形 — examples/for_named）
+
+func digits(s string, k func(int), step int?) {
+    for b <- bytes(s) {
+        k(int(b) - 48)
+    }
+}
+
+func main() {
+    mut n := 0
+    digits("12", step: 2, (d) => {
+        n += d
+    })
+    println("${n}")
+}

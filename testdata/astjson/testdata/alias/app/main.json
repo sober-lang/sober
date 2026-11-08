@@ -30,7 +30,7 @@
             "values": [
               {
                 "k": "composite",
-                "type_name": "wrap.Work",
+                "type_name": "testdata.alias.wrap.Work",
                 "elems": [],
                 "tok": 14,
                 "type_args": []
@@ -55,24 +55,24 @@
                   {
                     "k": "int",
                     "value": 3,
-                    "tok": 26
+                    "tok": 30
                   },
                   {
                     "k": "int",
                     "value": 5,
-                    "tok": 28
+                    "tok": 32
                   },
                   {
                     "k": "int",
                     "value": 10,
-                    "tok": 30
+                    "tok": 34
                   }
                 ],
                 "mut": false,
-                "tok": 22
+                "tok": 26
               }
             ],
-            "tok": 20
+            "tok": 24
           },
           {
             "k": "expr",
@@ -86,10 +86,10 @@
                   "src": {
                     "k": "ident",
                     "name": "xs",
-                    "tok": 36
+                    "tok": 40
                   },
                   "guards": [],
-                  "tok": 34
+                  "tok": 38
                 }
               ],
               "body": {
@@ -102,31 +102,41 @@
                       "callee": {
                         "k": "selector",
                         "base": {
-                          "k": "ident",
-                          "name": "wrap",
-                          "tok": 38
+                          "k": "selector",
+                          "base": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "testdata",
+                              "tok": 42
+                            },
+                            "field": "alias",
+                            "tok": 44
+                          },
+                          "field": "wrap",
+                          "tok": 46
                         },
                         "field": "Feed",
-                        "tok": 40
+                        "tok": 48
                       },
                       "args": [
                         {
                           "k": "mut_arg",
                           "name": "w",
-                          "tok": 43
+                          "tok": 51
                         },
                         {
                           "k": "ident",
                           "name": "x",
-                          "tok": 45
+                          "tok": 53
                         }
                       ],
-                      "tok": 41
+                      "tok": 49
                     }
                   }
                 ]
               },
-              "tok": 33
+              "tok": 37
             }
           },
           {
@@ -141,24 +151,34 @@
                 "callee": {
                   "k": "selector",
                   "base": {
-                    "k": "ident",
-                    "name": "wrap",
-                    "tok": 52
+                    "k": "selector",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "testdata",
+                        "tok": 60
+                      },
+                      "field": "alias",
+                      "tok": 62
+                    },
+                    "field": "wrap",
+                    "tok": 64
                   },
                   "field": "Mean",
-                  "tok": 54
+                  "tok": 66
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "w",
-                    "tok": 56
+                    "tok": 68
                   }
                 ],
-                "tok": 55
+                "tok": 67
               }
             ],
-            "tok": 50
+            "tok": 58
           },
           {
             "k": "expr",
@@ -167,7 +187,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 59
+                "tok": 71
               },
               "args": [
                 {
@@ -175,33 +195,53 @@
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "wrap",
-                      "tok": 61
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 73
+                        },
+                        "field": "alias",
+                        "tok": 75
+                      },
+                      "field": "wrap",
+                      "tok": 77
                     },
                     "field": "Value",
-                    "tok": 63
+                    "tok": 79
                   },
                   "args": [
                     {
                       "k": "ident",
                       "name": "r",
-                      "tok": 65
+                      "tok": 81
                     }
                   ],
-                  "tok": 64
+                  "tok": 80
                 },
                 {
                   "k": "call",
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "wrap",
-                      "tok": 68
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 84
+                        },
+                        "field": "alias",
+                        "tok": 86
+                      },
+                      "field": "wrap",
+                      "tok": 88
                     },
                     "field": "Value",
-                    "tok": 70
+                    "tok": 90
                   },
                   "args": [
                     {
@@ -209,29 +249,39 @@
                       "callee": {
                         "k": "selector",
                         "base": {
-                          "k": "ident",
-                          "name": "wrap",
-                          "tok": 72
+                          "k": "selector",
+                          "base": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "testdata",
+                              "tok": 92
+                            },
+                            "field": "alias",
+                            "tok": 94
+                          },
+                          "field": "wrap",
+                          "tok": 96
                         },
                         "field": "Mean",
-                        "tok": 74
+                        "tok": 98
                       },
                       "args": [
                         {
                           "k": "composite",
-                          "type_name": "wrap.Work",
+                          "type_name": "testdata.alias.wrap.Work",
                           "elems": [],
-                          "tok": 76,
+                          "tok": 100,
                           "type_args": []
                         }
                       ],
-                      "tok": 75
+                      "tok": 99
                     }
                   ],
-                  "tok": 71
+                  "tok": 91
                 }
               ],
-              "tok": 60
+              "tok": 72
             }
           },
           {
@@ -241,7 +291,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 85
+                "tok": 113
               },
               "args": [
                 {
@@ -249,12 +299,22 @@
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "wrap",
-                      "tok": 87
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 115
+                        },
+                        "field": "alias",
+                        "tok": 117
+                      },
+                      "field": "wrap",
+                      "tok": 119
                     },
                     "field": "Twice",
-                    "tok": 89
+                    "tok": 121
                   },
                   "args": [
                     {
@@ -274,27 +334,27 @@
                         "lhs": {
                           "k": "ident",
                           "name": "x",
-                          "tok": 96
+                          "tok": 128
                         },
                         "rhs": {
                           "k": "int",
                           "value": 3,
-                          "tok": 98
+                          "tok": 130
                         },
-                        "tok": 97
+                        "tok": 129
                       },
-                      "tok": 95
+                      "tok": 127
                     },
                     {
                       "k": "int",
                       "value": 2,
-                      "tok": 100
+                      "tok": 132
                     }
                   ],
-                  "tok": 90
+                  "tok": 122
                 }
               ],
-              "tok": 86
+              "tok": 114
             }
           },
           {
@@ -309,24 +369,34 @@
                 "callee": {
                   "k": "selector",
                   "base": {
-                    "k": "ident",
-                    "name": "wrap",
-                    "tok": 106
+                    "k": "selector",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "testdata",
+                        "tok": 138
+                      },
+                      "field": "alias",
+                      "tok": 140
+                    },
+                    "field": "wrap",
+                    "tok": 142
                   },
                   "field": "NewAcc",
-                  "tok": 108
+                  "tok": 144
                 },
                 "args": [
                   {
                     "k": "int",
                     "value": 9,
-                    "tok": 110
+                    "tok": 146
                   }
                 ],
-                "tok": 109
+                "tok": 145
               }
             ],
-            "tok": 104
+            "tok": 136
           },
           {
             "k": "expr",
@@ -335,7 +405,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 113
+                "tok": 149
               },
               "args": [
                 {
@@ -343,24 +413,34 @@
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "wrap",
-                      "tok": 115
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 151
+                        },
+                        "field": "alias",
+                        "tok": 153
+                      },
+                      "field": "wrap",
+                      "tok": 155
                     },
                     "field": "Last",
-                    "tok": 117
+                    "tok": 157
                   },
                   "args": [
                     {
                       "k": "ident",
                       "name": "a",
-                      "tok": 119
+                      "tok": 159
                     }
                   ],
-                  "tok": 118
+                  "tok": 158
                 }
               ],
-              "tok": 114
+              "tok": 150
             }
           },
           {
@@ -374,14 +454,14 @@
                 "k": "slicelit",
                 "elem": {
                   "k": "name",
-                  "name": "wrap.W2"
+                  "name": "testdata.alias.wrap.W2"
                 },
                 "elems": [],
                 "mut": true,
-                "tok": 127
+                "tok": 167
               }
             ],
-            "tok": 123
+            "tok": 163
           },
           {
             "k": "assign",
@@ -389,7 +469,7 @@
               {
                 "k": "ident",
                 "name": "ws",
-                "tok": 135
+                "tok": 179
               }
             ],
             "op": "=",
@@ -399,24 +479,24 @@
                 "callee": {
                   "k": "ident",
                   "name": "append",
-                  "tok": 137
+                  "tok": 181
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "ws",
-                    "tok": 139
+                    "tok": 183
                   },
                   {
                     "k": "ident",
                     "name": "w",
-                    "tok": 141
+                    "tok": 185
                   }
                 ],
-                "tok": 138
+                "tok": 182
               }
             ],
-            "tok": 135
+            "tok": 179
           },
           {
             "k": "expr",
@@ -425,7 +505,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 144
+                "tok": 188
               },
               "args": [
                 {
@@ -433,23 +513,23 @@
                   "callee": {
                     "k": "ident",
                     "name": "len",
-                    "tok": 146
+                    "tok": 190
                   },
                   "args": [
                     {
                       "k": "ident",
                       "name": "ws",
-                      "tok": 148
+                      "tok": 192
                     }
                   ],
-                  "tok": 147
+                  "tok": 191
                 },
                 {
                   "k": "call",
                   "callee": {
                     "k": "ident",
                     "name": "other",
-                    "tok": 151
+                    "tok": 195
                   },
                   "args": [
                     {
@@ -457,20 +537,20 @@
                       "base": {
                         "k": "ident",
                         "name": "ws",
-                        "tok": 153
+                        "tok": 197
                       },
                       "idx": {
                         "k": "int",
                         "value": 0,
-                        "tok": 155
+                        "tok": 199
                       },
-                      "tok": 154
+                      "tok": 198
                     }
                   ],
-                  "tok": 152
+                  "tok": 196
                 }
               ],
-              "tok": 145
+              "tok": 189
             }
           }
         ]
@@ -479,7 +559,7 @@
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 162
+        "end": 206
       },
       "sig_end": 10
     }

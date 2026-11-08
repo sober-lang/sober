@@ -26,7 +26,7 @@ import "std/net"
 import "std/os"
 import "std/strings"
 import "std/internal/hs"
-import "std/tls/record"
+import "std/internal/record"
 
 @embed("testdata/crypto/httparena-server.*")
 const testCerts = map[string]string{}
@@ -54,45 +54,45 @@ func testZeros(n int) []byte {
 }
 
 // 場合 name のサーバの設定（証明書と鍵は HttpArena の試験用の対・乱数の源は固定の seed）
-func testParams(name string) hs.Params {
-    cb, _ := pem.Parse(testFile(testCerts, "testdata/crypto/httparena-server.crt"))
-    kb, _ := pem.Parse(testFile(testCerts, "testdata/crypto/httparena-server.key"))
-    k, _ := rsa.ParsePKCS8(kb[0].der)
-    suites := if name == "chacha" { []int{record.ChaCha, record.AesGcm} } else { []int{record.AesGcm, record.ChaCha} }
-    return hs.NewParams([][]byte{cb[0].der}, k, []string{"http/1.1"}, suites, bytes("sober-tls-trace-${name}"))
+func testParams(name string) internal.hs.Params {
+    cb, _ := crypto.pem.Parse(testFile(testCerts, "testdata/crypto/httparena-server.crt"))
+    kb, _ := crypto.pem.Parse(testFile(testCerts, "testdata/crypto/httparena-server.key"))
+    k, _ := crypto.rsa.ParsePKCS8(kb[0].der)
+    suites := if name == "chacha" { []int{internal.record.ChaCha, internal.record.AesGcm} } else { []int{internal.record.AesGcm, internal.record.ChaCha} }
+    return internal.hs.NewParams([][]byte{cb[0].der}, k, []string{"http/1.1"}, suites, bytes("sober-tls-trace-${name}"))
 }
 
 // 1 接続: record の枠を Feed に通し、送るものを send へ・受けた平文に "echo:" を付けて返す・相手の close_notify で close_notify を返して終わる。
 // 印字の行（secret・受けた平文・閉じ方）を返す
-func trServe(p hs.Params, recv func(k func([]byte)) error?, send func(b []byte) error?) string {
+func trServe(p internal.hs.Params, recv func(k func([]byte)) error?, send func(b []byte) error?) string {
     mut log := ""
     e := trLoop(p, recv, send, mut log)
     return if e == nil { log } else { "${log}error transport\n" }
 }
 
-func trLoop(p hs.Params, recv func(k func([]byte)) error?, send func(b []byte) error?, log mut string) error? {
-    mut h := hs.New()
-    for f <- record.Frames(recv)? {
-        o, e := hs.Feed(mut h, p, f)
+func trLoop(p internal.hs.Params, recv func(k func([]byte)) error?, send func(b []byte) error?, log mut string) error? {
+    mut h := internal.hs.New()
+    for f <- internal.record.Frames(recv)? {
+        o, e := internal.hs.Feed(mut h, p, f)
         if e != nil {
             d := trAlertDesc(e)
-            _ = send(hs.AlertRecord(mut h, d))
+            _ = send(internal.hs.AlertRecord(mut h, d))
             log = "${log}error alert ${d}\n"
             return nil
         }
         send(o.send)?
         if o.done {
-            log = "${log}secrets ${hs.Secrets(h)}\nalpn ${hs.Alpn(h)} suite ${hs.Suite(h)}\n"
+            log = "${log}secrets ${internal.hs.Secrets(h)}\nalpn ${internal.hs.Alpn(h)} suite ${internal.hs.Suite(h)}\n"
         }
         if len(o.app) > 0 {
             s, _ := string(o.app)
             log = "${log}app ${s}\n"
-            r, _ := hs.SealApp(mut h, testCat(bytes("echo:"), o.app))
+            r, _ := internal.hs.SealApp(mut h, testCat(bytes("echo:"), o.app))
             send(r)?
         }
         if o.closed {
             log = "${log}closed ${o.peer}\n"
-            send(hs.CloseNotify(mut h))?
+            send(internal.hs.CloseNotify(mut h))?
             return nil
         }
     }
@@ -103,7 +103,7 @@ func trLoop(p hs.Params, recv func(k func([]byte)) error?, send func(b []byte) e
 func trAlertDesc(e error?) int {
     return switch e {
         case nil: -1
-        case record.Alert{desc}: desc
+        case internal.record.Alert{desc}: desc
     }
 }
 
@@ -136,13 +136,13 @@ func trFeed(s []byte, size int, k func([]byte)) error? {
 // 場合 name の記録を切片の大きさ size で流し直した印字の節（サーバの出力は SHA-256 に畳む — 黄金の節と同じ形）
 func trReplay(name string, size int) string {
     c2s, _ := hex.Parse(testFile(testTraces, "testdata/tls/trace-${name}.hex"))
-    mut acc := sha256.New()
+    mut acc := crypto.sha256.New()
     log := trServe(testParams(name), (k) => trFeed(c2s, size, k), (b) => trPut(mut acc, b))
-    return "== ${name} (chunk ${size})\n${log}s2c ${hex.Format(sha256.Sum(acc))}\n"
+    return "== ${name} (chunk ${size})\n${log}s2c ${hex.Format(crypto.sha256.Sum(acc))}\n"
 }
 
-func trPut(acc mut sha256.State, b []byte) error? {
-    sha256.Write(mut acc, b)
+func trPut(acc mut crypto.sha256.State, b []byte) error? {
+    crypto.sha256.Write(mut acc, b)
     return nil
 }
 
@@ -165,7 +165,7 @@ func TestTrace() {
     names := []string{"aes", "chacha", "hrr"}
     sizes := []int{65536, 7}
     for name <- names {
-        if name == "chacha" || aesgcm.Available() {
+        if name == "chacha" || crypto.aesgcm.Available() {
             for size <- sizes {
                 got := trReplay(name, size)
                 if !strings.Contains(gold, got) {

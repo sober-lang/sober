@@ -1,0 +1,25 @@
+package main
+
+import "std/iter"
+
+// union の variant の composite の欄も暗黙の freeze の点（struct の欄と同じ — 「composite の欄」に区別は無い）
+
+type R union {
+    D { xs []int; m map[string]int }
+    E { x int }
+}
+
+func build(n int) R {
+    mut s := mut []int{}
+    mut m := mut map[string]int{}
+    for i <- iter.Range(0, n) {
+        s = append(s, i)
+    }
+    m["n"] = n
+    return D{xs: s, m: m}
+}
+
+func main() {
+    r := build(3)
+    println(switch r { case D{xs, m}: len(xs) + len(m); default: 0 })
+}

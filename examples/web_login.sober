@@ -1,0 +1,242 @@
+package main
+
+// ログインのセッション: パスワードのハッシュ（crypto/password）と世代つきのトークン（std/session）を __Host- の cookie に載せる。
+// ユーザーの行はハッシュの隣に世代を持ち、パスワードを変えると世代が進んで、それまでに発行したトークンは全部切れる（他の端末の古い cookie も）。
+// 状態（ユーザーの表）を持つので受けは直列（ServeConn に渡すラムダは借り — mut の表を通せる）。並行に受けるなら状態は外の保存先に置く。
+// 後半の客は 2 台の端末（laptop / phone）の代役で、cookie は値として各端末が持つ（応答から http.client.CookieValue で取り出し、次の要求の cookies: に載せる）
+
+import "std/crypto/password"
+import "std/http"
+import "std/http/client"
+import "std/http/server"
+import "std/net"
+import "std/session"
+import "std/task"
+import "std/time"
+import "std/url"
+
+type User struct {
+    hash string
+    gen int
+}
+
+const cookieName = "__Host-sid"
+const ttlSec = 3600
+
+// form の本文の key の値（% と + をデコードした値 — http.server.Form は生のまま）
+func field(r http.server.Request, key string) string? {
+    ps, e := url.ParseQuery(string(r.body) catch "")
+    if e != nil {
+        return nil
+    }
+    for p <- ps {
+        if p.key == key {
+            return p.value
+        }
+    }
+    return nil
+}
+
+// 世代 user.gen のトークンを cookie に載せた応答
+func issue(name string, user User, k session.Key, msg string) http.server.Response {
+    t := session.Mint(k, name, user.gen, time.Now(), ttlSec)
+    c := http.server.SetCookie{name: cookieName, value: session.Seal(t), maxAge: ttlSec}
+    return http.server.Response{status: 200, contentType: "text/plain", body: bytes(msg), cookies: []http.server.SetCookie{c}}
+}
+
+func unauthorized(why string) http.server.Response {
+    return http.server.Response{status: 401, contentType: "text/plain", body: bytes(why)}
+}
+
+// cookie のトークンの持ち主（name が "" なら why が断る理由）
+func whoami(users mut map[string]User, k session.Key, r http.server.Request) (string, string) {
+    raw := http.server.Cookie(r, cookieName)
+    if raw == nil {
+        return "", "not logged in"
+    }
+    u, e := session.Open(k, raw, time.Now())
+    if e != nil {
+        return "", switch e {
+            case session.Bad{}: "invalid session: log in"
+            case session.Expired{}: "session expired: log in again"
+        }
+    }
+    user := users[session.Subject(u)]
+    if user == nil {
+        return "", "unknown user: log in"
+    }
+    c, es := session.Check(u, user.gen)
+    if es != nil {
+        return "", "session revoked (the password was changed): log in again"
+    }
+    who, _ := session.Who(c)
+    return who, ""
+}
+
+func signup(users mut map[string]User, r http.server.Request) http.server.Response {
+    name := field(r, "name")
+    pw := field(r, "password")
+    if name == nil || pw == nil || name == "" {
+        return http.server.Status(400)
+    }
+    if users[name] != nil {
+        return http.server.Status(409)
+    }
+    h := crypto.password.Argon2id(pw) catch return http.server.Status(500)
+    users[name] = User{hash: h, gen: 0}
+    return http.server.Response{status: 201, contentType: "text/plain", body: bytes("created ${name}")}
+}
+
+func logIn(users mut map[string]User, k session.Key, r http.server.Request) http.server.Response {
+    name := field(r, "name")
+    pw := field(r, "password")
+    if name == nil || pw == nil {
+        return http.server.Status(400)
+    }
+    user := users[name]
+    if user == nil {
+        return unauthorized("wrong name or password")
+    }
+    ok := crypto.password.Verify(user.hash, pw) catch false
+    if !ok {
+        return unauthorized("wrong name or password")
+    }
+    return issue(name, user, k, "welcome ${name}")
+}
+
+// 古いパスワードを確かめて新しいハッシュに替え、世代を進める（他の端末のトークンは全部 Stale になる）。この端末には新しい世代のトークンを渡し直す
+func changePassword(users mut map[string]User, k session.Key, r http.server.Request) http.server.Response {
+    name, why := whoami(mut users, k, r)
+    if name == "" {
+        return unauthorized(why)
+    }
+    old := field(r, "old")
+    pw := field(r, "new")
+    if old == nil || pw == nil {
+        return http.server.Status(400)
+    }
+    user := users[name]
+    if user == nil {
+        return unauthorized("unknown user: log in")
+    }
+    ok := crypto.password.Verify(user.hash, old) catch false
+    if !ok {
+        return http.server.Response{status: 403, contentType: "text/plain", body: bytes("wrong password")}
+    }
+    h := crypto.password.Argon2id(pw) catch return http.server.Status(500)
+    next := User{hash: h, gen: user.gen + 1}
+    users[name] = next
+    return issue(name, next, k, "password changed: other sessions are revoked")
+}
+
+// この端末の cookie を消す（トークンそのものは期限まで有効 — 全部の端末を切るのは世代を進める changePassword）
+func logout() http.server.Response {
+    c := http.server.SetCookie{name: cookieName, value: "", maxAge: 0}
+    return http.server.Response{status: 200, contentType: "text/plain", body: bytes("bye"), cookies: []http.server.SetCookie{c}}
+}
+
+func route(users mut map[string]User, k session.Key, r http.server.Request) http.server.Response {
+    if r.method == "POST" && r.path == "/signup" {
+        return signup(mut users, r)
+    }
+    if r.method == "POST" && r.path == "/login" {
+        return logIn(mut users, k, r)
+    }
+    if r.method == "GET" && r.path == "/me" {
+        name, why := whoami(mut users, k, r)
+        return if name == "" { unauthorized(why) } else { http.server.Text("hello ${name}") }
+    }
+    if r.method == "POST" && r.path == "/change-password" {
+        return changePassword(mut users, k, r)
+    }
+    if r.method == "POST" && r.path == "/logout" {
+        return logout()
+    }
+    return http.server.Status(404)
+}
+
+// n 本の接続を順に受ける
+func serve(l net.Listener, n int) error? {
+    mut users := mut map[string]User{}
+    k := session.KeyNew()
+    mut i := 0
+    for c <- net.Accept(l)? {
+        http.server.ServeConn(c, (r) => route(mut users, k, r))?
+        i = i + 1
+        if i == n {
+            break
+        }
+    }
+    return nil
+}
+
+// --- ここから客（端末の代役） ---
+
+// 要求 1 本の結果（応答の行と、Set-Cookie で渡された cookie の値 — 無ければ nil）
+type Reply struct {
+    line string
+    cookie string?
+}
+
+func send(base string, method string, path string, cookie string?, form []url.Pair) Reply {
+    hs := []http.Field{http.Field{name: "content-type", value: "application/x-www-form-urlencoded"}}
+    cs := if cookie == nil { []http.client.Cookie{} } else { []http.client.Cookie{http.client.Cookie{name: cookieName, value: cookie}} }
+    resp, e := http.client.Request("${base}${path}", method: method, headers: hs, body: bytes(url.FormatQuery(form)), cookies: cs)
+    if e != nil {
+        return Reply{line: "${method} ${path}: failed", cookie: nil}
+    }
+    return Reply{line: "${method} ${path} -> ${resp.status} ${string(resp.body) catch ""}", cookie: http.client.CookieValue(resp, cookieName)}
+}
+
+func pairs(kv []string) []url.Pair {
+    mut ps := mut []url.Pair{}
+    mut i := 0
+    while i + 1 < len(kv) {
+        ps = append(ps, url.Pair{key: kv[i], value: kv[i + 1]})
+        i += 2
+    }
+    return freeze(ps)
+}
+
+// 2 台の端末でログインし、laptop でパスワードを変えると phone の古いトークンが切れる流れ（要求は 12 本）
+func tour(base string) []string {
+    mut out := mut []string{}
+    none := []url.Pair{}
+    out = append(out, send(base, "POST", "/signup", nil, pairs([]string{"name", "alice", "password", "correct horse"})).line)
+    laptop := send(base, "POST", "/login", nil, pairs([]string{"name", "alice", "password", "correct horse"}))
+    phone := send(base, "POST", "/login", nil, pairs([]string{"name", "alice", "password", "correct horse"}))
+    out = append(out, "laptop: ${laptop.line}")
+    out = append(out, "phone: ${phone.line}")
+    out = append(out, "phone: ${send(base, "GET", "/me", phone.cookie, none).line}")
+    changed := send(base, "POST", "/change-password", laptop.cookie, pairs([]string{"old", "correct horse", "new", "battery staple"}))
+    out = append(out, "laptop: ${changed.line}")
+    out = append(out, "phone: ${send(base, "GET", "/me", phone.cookie, none).line}")
+    out = append(out, "laptop (old cookie): ${send(base, "GET", "/me", laptop.cookie, none).line}")
+    out = append(out, "laptop (new cookie): ${send(base, "GET", "/me", changed.cookie, none).line}")
+    out = append(out, "phone: ${send(base, "POST", "/login", nil, pairs([]string{"name", "alice", "password", "correct horse"})).line}")
+    again := send(base, "POST", "/login", nil, pairs([]string{"name", "alice", "password", "battery staple"}))
+    out = append(out, "phone: ${again.line}")
+    bye := send(base, "POST", "/logout", again.cookie, none)
+    bc := bye.cookie
+    cleared := bc != nil && bc == ""
+    out = append(out, "phone: ${bye.line} (cookie cleared: ${cleared})")
+    out = append(out, "phone: ${send(base, "GET", "/me", nil, none).line}")
+    return freeze(out)
+}
+
+func main() {
+    e := net.Listen("127.0.0.1:0", (l) => {
+        base := "http://127.0.0.1:${net.Port(l)}"
+        got, _ := task.Run((s) => {
+            h := task.Spawn(s, () => tour(base))
+            _ = serve(l, 12)
+            task.Join(h)
+        })
+        for line <- got {
+            println(line)
+        }
+    })
+    if e != nil {
+        println("listen failed")
+    }
+}

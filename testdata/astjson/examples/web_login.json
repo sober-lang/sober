@@ -1,0 +1,6365 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/crypto/password",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/http",
+      "tok": 7
+    },
+    {
+      "alias": null,
+      "path": "std/http/client",
+      "tok": 10
+    },
+    {
+      "alias": null,
+      "path": "std/http/server",
+      "tok": 13
+    },
+    {
+      "alias": null,
+      "path": "std/net",
+      "tok": 16
+    },
+    {
+      "alias": null,
+      "path": "std/session",
+      "tok": 19
+    },
+    {
+      "alias": null,
+      "path": "std/task",
+      "tok": 22
+    },
+    {
+      "alias": null,
+      "path": "std/time",
+      "tok": 25
+    },
+    {
+      "alias": null,
+      "path": "std/url",
+      "tok": 28
+    },
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    },
+    {
+      "alias": "$utf8",
+      "path": "std/internal/utf8",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "User",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "hash",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 34
+          },
+          {
+            "name": "gen",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 37
+          }
+        ]
+      },
+      "tok": 31,
+      "span": {
+        "start": 30,
+        "end": 42
+      }
+    },
+    {
+      "name": "Reply",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "line",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 1302
+          },
+          {
+            "name": "cookie",
+            "type": {
+              "k": "opt",
+              "type": {
+                "k": "name",
+                "name": "string"
+              }
+            },
+            "tok": 1305
+          }
+        ]
+      },
+      "tok": 1299,
+      "span": {
+        "start": 1298,
+        "end": 1311
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "field",
+      "type_params": [],
+      "params": [
+        {
+          "name": "r",
+          "type": {
+            "k": "name",
+            "name": "http.server.Request"
+          },
+          "mutable": false
+        },
+        {
+          "name": "key",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "string"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "ps",
+              "e"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "url",
+                    "tok": 72
+                  },
+                  "field": "ParseQuery",
+                  "tok": 74
+                },
+                "args": [
+                  {
+                    "k": "catch",
+                    "e": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "$utf8",
+                          "tok": 76
+                        },
+                        "field": "Parse",
+                        "tok": 76
+                      },
+                      "args": [
+                        {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "r",
+                            "tok": 78
+                          },
+                          "field": "body",
+                          "tok": 80
+                        }
+                      ],
+                      "tok": 77
+                    },
+                    "rhs": {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 83
+                    },
+                    "tok": 82
+                  }
+                ],
+                "tok": 75
+              }
+            ],
+            "tok": 68
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "e",
+                  "tok": 87
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 89
+                },
+                "tok": 88
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "nil",
+                        "tok": 92
+                      }
+                    ],
+                    "tok": 91
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 86
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "p"
+                  ],
+                  "src": {
+                    "k": "ident",
+                    "name": "ps",
+                    "tok": 99
+                  },
+                  "guards": [],
+                  "tok": 97
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "if",
+                      "cond": {
+                        "k": "binary",
+                        "op": "==",
+                        "lhs": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "p",
+                            "tok": 102
+                          },
+                          "field": "key",
+                          "tok": 104
+                        },
+                        "rhs": {
+                          "k": "ident",
+                          "name": "key",
+                          "tok": 106
+                        },
+                        "tok": 105
+                      },
+                      "then": {
+                        "stmts": [
+                          {
+                            "k": "ret",
+                            "values": [
+                              {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "p",
+                                  "tok": 109
+                                },
+                                "field": "value",
+                                "tok": 111
+                              }
+                            ],
+                            "tok": 108
+                          }
+                        ]
+                      },
+                      "else": null,
+                      "tok": 101
+                    }
+                  }
+                ]
+              },
+              "tok": 96
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "nil",
+                "tok": 118
+              }
+            ],
+            "tok": 117
+          }
+        ]
+      },
+      "tok": 53,
+      "bodiless": false,
+      "span": {
+        "start": 52,
+        "end": 122
+      },
+      "sig_end": 67
+    },
+    {
+      "name": "issue",
+      "type_params": [],
+      "params": [
+        {
+          "name": "name",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        },
+        {
+          "name": "user",
+          "type": {
+            "k": "name",
+            "name": "User"
+          },
+          "mutable": false
+        },
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "session.Key"
+          },
+          "mutable": false
+        },
+        {
+          "name": "msg",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "http.server.Response"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "t"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "session",
+                    "tok": 147
+                  },
+                  "field": "Mint",
+                  "tok": 149
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "k",
+                    "tok": 151
+                  },
+                  {
+                    "k": "ident",
+                    "name": "name",
+                    "tok": 153
+                  },
+                  {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "user",
+                      "tok": 155
+                    },
+                    "field": "gen",
+                    "tok": 157
+                  },
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "time",
+                        "tok": 159
+                      },
+                      "field": "Now",
+                      "tok": 161
+                    },
+                    "args": [],
+                    "tok": 162
+                  },
+                  {
+                    "k": "ident",
+                    "name": "ttlSec",
+                    "tok": 165
+                  }
+                ],
+                "tok": 150
+              }
+            ],
+            "tok": 145
+          },
+          {
+            "k": "bind",
+            "names": [
+              "c"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "http.server.SetCookie",
+                "elems": [
+                  {
+                    "key": "name",
+                    "value": {
+                      "k": "ident",
+                      "name": "cookieName",
+                      "tok": 178
+                    }
+                  },
+                  {
+                    "key": "value",
+                    "value": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "session",
+                          "tok": 182
+                        },
+                        "field": "Seal",
+                        "tok": 184
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "t",
+                          "tok": 186
+                        }
+                      ],
+                      "tok": 185
+                    }
+                  },
+                  {
+                    "key": "maxAge",
+                    "value": {
+                      "k": "ident",
+                      "name": "ttlSec",
+                      "tok": 191
+                    }
+                  }
+                ],
+                "tok": 170,
+                "type_args": []
+              }
+            ],
+            "tok": 168
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "http.server.Response",
+                "elems": [
+                  {
+                    "key": "status",
+                    "value": {
+                      "k": "int",
+                      "value": 200,
+                      "tok": 203
+                    }
+                  },
+                  {
+                    "key": "contentType",
+                    "value": {
+                      "k": "strlit",
+                      "value": "text/plain",
+                      "tok": 207
+                    }
+                  },
+                  {
+                    "key": "body",
+                    "value": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "bytes",
+                        "tok": 211
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "msg",
+                          "tok": 213
+                        }
+                      ],
+                      "tok": 212
+                    }
+                  },
+                  {
+                    "key": "cookies",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "http.server.SetCookie"
+                      },
+                      "elems": [
+                        {
+                          "k": "ident",
+                          "name": "c",
+                          "tok": 226
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 218
+                    }
+                  }
+                ],
+                "tok": 195,
+                "type_args": []
+              }
+            ],
+            "tok": 194
+          }
+        ]
+      },
+      "tok": 123,
+      "bodiless": false,
+      "span": {
+        "start": 122,
+        "end": 232
+      },
+      "sig_end": 144
+    },
+    {
+      "name": "unauthorized",
+      "type_params": [],
+      "params": [
+        {
+          "name": "why",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "http.server.Response"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "http.server.Response",
+                "elems": [
+                  {
+                    "key": "status",
+                    "value": {
+                      "k": "int",
+                      "value": 401,
+                      "tok": 253
+                    }
+                  },
+                  {
+                    "key": "contentType",
+                    "value": {
+                      "k": "strlit",
+                      "value": "text/plain",
+                      "tok": 257
+                    }
+                  },
+                  {
+                    "key": "body",
+                    "value": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "bytes",
+                        "tok": 261
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "why",
+                          "tok": 263
+                        }
+                      ],
+                      "tok": 262
+                    }
+                  }
+                ],
+                "tok": 245,
+                "type_args": []
+              }
+            ],
+            "tok": 244
+          }
+        ]
+      },
+      "tok": 233,
+      "bodiless": false,
+      "span": {
+        "start": 232,
+        "end": 269
+      },
+      "sig_end": 243
+    },
+    {
+      "name": "whoami",
+      "type_params": [],
+      "params": [
+        {
+          "name": "users",
+          "type": {
+            "k": "map_of",
+            "key": {
+              "k": "name",
+              "name": "string"
+            },
+            "value": {
+              "k": "name",
+              "name": "User"
+            },
+            "mut": true
+          },
+          "mutable": true
+        },
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "session.Key"
+          },
+          "mutable": false
+        },
+        {
+          "name": "r",
+          "type": {
+            "k": "name",
+            "name": "http.server.Request"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "string"
+        },
+        {
+          "k": "name",
+          "name": "string"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "raw"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "http",
+                      "tok": 300
+                    },
+                    "field": "server",
+                    "tok": 302
+                  },
+                  "field": "Cookie",
+                  "tok": 304
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "r",
+                    "tok": 306
+                  },
+                  {
+                    "k": "ident",
+                    "name": "cookieName",
+                    "tok": 308
+                  }
+                ],
+                "tok": 305
+              }
+            ],
+            "tok": 298
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "ident",
+                  "name": "raw",
+                  "tok": 312
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 314
+                },
+                "tok": 313
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "strlit",
+                        "value": "",
+                        "tok": 317
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "not logged in",
+                        "tok": 319
+                      }
+                    ],
+                    "tok": 316
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 311
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "u",
+              "e"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "session",
+                    "tok": 327
+                  },
+                  "field": "Open",
+                  "tok": 329
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "k",
+                    "tok": 331
+                  },
+                  {
+                    "k": "ident",
+                    "name": "raw",
+                    "tok": 333
+                  },
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "time",
+                        "tok": 335
+                      },
+                      "field": "Now",
+                      "tok": 337
+                    },
+                    "args": [],
+                    "tok": 338
+                  }
+                ],
+                "tok": 330
+              }
+            ],
+            "tok": 323
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "e",
+                  "tok": 343
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 345
+                },
+                "tok": 344
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "strlit",
+                        "value": "",
+                        "tok": 348
+                      },
+                      {
+                        "k": "switch",
+                        "subjects": [
+                          {
+                            "k": "ident",
+                            "name": "e",
+                            "tok": 351
+                          }
+                        ],
+                        "cases": [
+                          {
+                            "patterns": [
+                              {
+                                "k": "type",
+                                "bind": null,
+                                "variant": "session.Bad",
+                                "fields": [],
+                                "tok": 354
+                              }
+                            ],
+                            "body": {
+                              "stmts": [
+                                {
+                                  "k": "expr",
+                                  "expr": {
+                                    "k": "strlit",
+                                    "value": "invalid session: log in",
+                                    "tok": 360
+                                  }
+                                }
+                              ]
+                            },
+                            "tok": 353
+                          },
+                          {
+                            "patterns": [
+                              {
+                                "k": "type",
+                                "bind": null,
+                                "variant": "session.Expired",
+                                "fields": [],
+                                "tok": 363
+                              }
+                            ],
+                            "body": {
+                              "stmts": [
+                                {
+                                  "k": "expr",
+                                  "expr": {
+                                    "k": "strlit",
+                                    "value": "session expired: log in again",
+                                    "tok": 369
+                                  }
+                                }
+                              ]
+                            },
+                            "tok": 362
+                          }
+                        ],
+                        "default": null,
+                        "tok": 350
+                      }
+                    ],
+                    "tok": 347
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 342
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "user"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "index",
+                "base": {
+                  "k": "ident",
+                  "name": "users",
+                  "tok": 377
+                },
+                "idx": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "session",
+                      "tok": 379
+                    },
+                    "field": "Subject",
+                    "tok": 381
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "u",
+                      "tok": 383
+                    }
+                  ],
+                  "tok": 382
+                },
+                "tok": 378
+              }
+            ],
+            "tok": 375
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "ident",
+                  "name": "user",
+                  "tok": 388
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 390
+                },
+                "tok": 389
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "strlit",
+                        "value": "",
+                        "tok": 393
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "unknown user: log in",
+                        "tok": 395
+                      }
+                    ],
+                    "tok": 392
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 387
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "c",
+              "es"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "session",
+                    "tok": 403
+                  },
+                  "field": "Check",
+                  "tok": 405
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "u",
+                    "tok": 407
+                  },
+                  {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "user",
+                      "tok": 409
+                    },
+                    "field": "gen",
+                    "tok": 411
+                  }
+                ],
+                "tok": 406
+              }
+            ],
+            "tok": 399
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "es",
+                  "tok": 415
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 417
+                },
+                "tok": 416
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "strlit",
+                        "value": "",
+                        "tok": 420
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "session revoked (the password was changed): log in again",
+                        "tok": 422
+                      }
+                    ],
+                    "tok": 419
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 414
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "who",
+              "_"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "session",
+                    "tok": 430
+                  },
+                  "field": "Who",
+                  "tok": 432
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "c",
+                    "tok": 434
+                  }
+                ],
+                "tok": 433
+              }
+            ],
+            "tok": 426
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "who",
+                "tok": 438
+              },
+              {
+                "k": "strlit",
+                "value": "",
+                "tok": 440
+              }
+            ],
+            "tok": 437
+          }
+        ]
+      },
+      "tok": 270,
+      "bodiless": false,
+      "span": {
+        "start": 269,
+        "end": 444
+      },
+      "sig_end": 297
+    },
+    {
+      "name": "signup",
+      "type_params": [],
+      "params": [
+        {
+          "name": "users",
+          "type": {
+            "k": "map_of",
+            "key": {
+              "k": "name",
+              "name": "string"
+            },
+            "value": {
+              "k": "name",
+              "name": "User"
+            },
+            "mut": true
+          },
+          "mutable": true
+        },
+        {
+          "name": "r",
+          "type": {
+            "k": "name",
+            "name": "http.server.Request"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "http.server.Response"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "name"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "field",
+                  "tok": 470
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "r",
+                    "tok": 472
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "name",
+                    "tok": 474
+                  }
+                ],
+                "tok": 471
+              }
+            ],
+            "tok": 468
+          },
+          {
+            "k": "bind",
+            "names": [
+              "pw"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "field",
+                  "tok": 479
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "r",
+                    "tok": 481
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "password",
+                    "tok": 483
+                  }
+                ],
+                "tok": 480
+              }
+            ],
+            "tok": 477
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "||",
+                "lhs": {
+                  "k": "binary",
+                  "op": "||",
+                  "lhs": {
+                    "k": "binary",
+                    "op": "==",
+                    "lhs": {
+                      "k": "ident",
+                      "name": "name",
+                      "tok": 487
+                    },
+                    "rhs": {
+                      "k": "nil",
+                      "tok": 489
+                    },
+                    "tok": 488
+                  },
+                  "rhs": {
+                    "k": "binary",
+                    "op": "==",
+                    "lhs": {
+                      "k": "ident",
+                      "name": "pw",
+                      "tok": 491
+                    },
+                    "rhs": {
+                      "k": "nil",
+                      "tok": 493
+                    },
+                    "tok": 492
+                  },
+                  "tok": 490
+                },
+                "rhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "name",
+                    "tok": 495
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "",
+                    "tok": 497
+                  },
+                  "tok": 496
+                },
+                "tok": 494
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "http",
+                              "tok": 500
+                            },
+                            "field": "server",
+                            "tok": 502
+                          },
+                          "field": "Status",
+                          "tok": 504
+                        },
+                        "args": [
+                          {
+                            "k": "int",
+                            "value": 400,
+                            "tok": 506
+                          }
+                        ],
+                        "tok": 505
+                      }
+                    ],
+                    "tok": 499
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 486
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "index",
+                  "base": {
+                    "k": "ident",
+                    "name": "users",
+                    "tok": 512
+                  },
+                  "idx": {
+                    "k": "ident",
+                    "name": "name",
+                    "tok": 514
+                  },
+                  "tok": 513
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 517
+                },
+                "tok": 516
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "http",
+                              "tok": 520
+                            },
+                            "field": "server",
+                            "tok": 522
+                          },
+                          "field": "Status",
+                          "tok": 524
+                        },
+                        "args": [
+                          {
+                            "k": "int",
+                            "value": 409,
+                            "tok": 526
+                          }
+                        ],
+                        "tok": 525
+                      }
+                    ],
+                    "tok": 519
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 511
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "h"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "crypto",
+                        "tok": 533
+                      },
+                      "field": "password",
+                      "tok": 535
+                    },
+                    "field": "Argon2id",
+                    "tok": 537
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "pw",
+                      "tok": 539
+                    }
+                  ],
+                  "tok": 538
+                },
+                "rhs": {
+                  "k": "ret",
+                  "values": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "http",
+                            "tok": 543
+                          },
+                          "field": "server",
+                          "tok": 545
+                        },
+                        "field": "Status",
+                        "tok": 547
+                      },
+                      "args": [
+                        {
+                          "k": "int",
+                          "value": 500,
+                          "tok": 549
+                        }
+                      ],
+                      "tok": 548
+                    }
+                  ],
+                  "tok": 542
+                },
+                "tok": 541
+              }
+            ],
+            "tok": 531
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "index",
+                "base": {
+                  "k": "ident",
+                  "name": "users",
+                  "tok": 552
+                },
+                "idx": {
+                  "k": "ident",
+                  "name": "name",
+                  "tok": 554
+                },
+                "tok": 553
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "User",
+                "elems": [
+                  {
+                    "key": "hash",
+                    "value": {
+                      "k": "ident",
+                      "name": "h",
+                      "tok": 561
+                    }
+                  },
+                  {
+                    "key": "gen",
+                    "value": {
+                      "k": "int",
+                      "value": 0,
+                      "tok": 565
+                    }
+                  }
+                ],
+                "tok": 557,
+                "type_args": []
+              }
+            ],
+            "tok": 552
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "http.server.Response",
+                "elems": [
+                  {
+                    "key": "status",
+                    "value": {
+                      "k": "int",
+                      "value": 201,
+                      "tok": 577
+                    }
+                  },
+                  {
+                    "key": "contentType",
+                    "value": {
+                      "k": "strlit",
+                      "value": "text/plain",
+                      "tok": 581
+                    }
+                  },
+                  {
+                    "key": "body",
+                    "value": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "bytes",
+                        "tok": 585
+                      },
+                      "args": [
+                        {
+                          "k": "interp",
+                          "tmpl": {
+                            "lits": [
+                              "created ",
+                              ""
+                            ],
+                            "holes": [
+                              {
+                                "k": "ident",
+                                "name": "name",
+                                "tok": 587
+                              }
+                            ]
+                          },
+                          "tok": 587
+                        }
+                      ],
+                      "tok": 586
+                    }
+                  }
+                ],
+                "tok": 569,
+                "type_args": []
+              }
+            ],
+            "tok": 568
+          }
+        ]
+      },
+      "tok": 445,
+      "bodiless": false,
+      "span": {
+        "start": 444,
+        "end": 593
+      },
+      "sig_end": 467
+    },
+    {
+      "name": "logIn",
+      "type_params": [],
+      "params": [
+        {
+          "name": "users",
+          "type": {
+            "k": "map_of",
+            "key": {
+              "k": "name",
+              "name": "string"
+            },
+            "value": {
+              "k": "name",
+              "name": "User"
+            },
+            "mut": true
+          },
+          "mutable": true
+        },
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "session.Key"
+          },
+          "mutable": false
+        },
+        {
+          "name": "r",
+          "type": {
+            "k": "name",
+            "name": "http.server.Request"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "http.server.Response"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "name"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "field",
+                  "tok": 624
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "r",
+                    "tok": 626
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "name",
+                    "tok": 628
+                  }
+                ],
+                "tok": 625
+              }
+            ],
+            "tok": 622
+          },
+          {
+            "k": "bind",
+            "names": [
+              "pw"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "field",
+                  "tok": 633
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "r",
+                    "tok": 635
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "password",
+                    "tok": 637
+                  }
+                ],
+                "tok": 634
+              }
+            ],
+            "tok": 631
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "||",
+                "lhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "name",
+                    "tok": 641
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 643
+                  },
+                  "tok": 642
+                },
+                "rhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "pw",
+                    "tok": 645
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 647
+                  },
+                  "tok": 646
+                },
+                "tok": 644
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "http",
+                              "tok": 650
+                            },
+                            "field": "server",
+                            "tok": 652
+                          },
+                          "field": "Status",
+                          "tok": 654
+                        },
+                        "args": [
+                          {
+                            "k": "int",
+                            "value": 400,
+                            "tok": 656
+                          }
+                        ],
+                        "tok": 655
+                      }
+                    ],
+                    "tok": 649
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 640
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "user"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "index",
+                "base": {
+                  "k": "ident",
+                  "name": "users",
+                  "tok": 663
+                },
+                "idx": {
+                  "k": "ident",
+                  "name": "name",
+                  "tok": 665
+                },
+                "tok": 664
+              }
+            ],
+            "tok": 661
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "ident",
+                  "name": "user",
+                  "tok": 669
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 671
+                },
+                "tok": 670
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "unauthorized",
+                          "tok": 674
+                        },
+                        "args": [
+                          {
+                            "k": "strlit",
+                            "value": "wrong name or password",
+                            "tok": 676
+                          }
+                        ],
+                        "tok": 675
+                      }
+                    ],
+                    "tok": 673
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 668
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "ok"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "crypto",
+                        "tok": 683
+                      },
+                      "field": "password",
+                      "tok": 685
+                    },
+                    "field": "Verify",
+                    "tok": 687
+                  },
+                  "args": [
+                    {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "user",
+                        "tok": 689
+                      },
+                      "field": "hash",
+                      "tok": 691
+                    },
+                    {
+                      "k": "ident",
+                      "name": "pw",
+                      "tok": 693
+                    }
+                  ],
+                  "tok": 688
+                },
+                "rhs": {
+                  "k": "ident",
+                  "name": "false",
+                  "tok": 696
+                },
+                "tok": 695
+              }
+            ],
+            "tok": 681
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "unary",
+                "op": "!",
+                "operand": {
+                  "k": "ident",
+                  "name": "ok",
+                  "tok": 700
+                },
+                "tok": 699
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "unauthorized",
+                          "tok": 703
+                        },
+                        "args": [
+                          {
+                            "k": "strlit",
+                            "value": "wrong name or password",
+                            "tok": 705
+                          }
+                        ],
+                        "tok": 704
+                      }
+                    ],
+                    "tok": 702
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 698
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "issue",
+                  "tok": 711
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "name",
+                    "tok": 713
+                  },
+                  {
+                    "k": "ident",
+                    "name": "user",
+                    "tok": 715
+                  },
+                  {
+                    "k": "ident",
+                    "name": "k",
+                    "tok": 717
+                  },
+                  {
+                    "k": "interp",
+                    "tmpl": {
+                      "lits": [
+                        "welcome ",
+                        ""
+                      ],
+                      "holes": [
+                        {
+                          "k": "ident",
+                          "name": "name",
+                          "tok": 719
+                        }
+                      ]
+                    },
+                    "tok": 719
+                  }
+                ],
+                "tok": 712
+              }
+            ],
+            "tok": 710
+          }
+        ]
+      },
+      "tok": 594,
+      "bodiless": false,
+      "span": {
+        "start": 593,
+        "end": 724
+      },
+      "sig_end": 621
+    },
+    {
+      "name": "changePassword",
+      "type_params": [],
+      "params": [
+        {
+          "name": "users",
+          "type": {
+            "k": "map_of",
+            "key": {
+              "k": "name",
+              "name": "string"
+            },
+            "value": {
+              "k": "name",
+              "name": "User"
+            },
+            "mut": true
+          },
+          "mutable": true
+        },
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "session.Key"
+          },
+          "mutable": false
+        },
+        {
+          "name": "r",
+          "type": {
+            "k": "name",
+            "name": "http.server.Request"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "http.server.Response"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "name",
+              "why"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "whoami",
+                  "tok": 757
+                },
+                "args": [
+                  {
+                    "k": "mut_arg",
+                    "name": "users",
+                    "tok": 760
+                  },
+                  {
+                    "k": "ident",
+                    "name": "k",
+                    "tok": 762
+                  },
+                  {
+                    "k": "ident",
+                    "name": "r",
+                    "tok": 764
+                  }
+                ],
+                "tok": 758
+              }
+            ],
+            "tok": 753
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "ident",
+                  "name": "name",
+                  "tok": 768
+                },
+                "rhs": {
+                  "k": "strlit",
+                  "value": "",
+                  "tok": 770
+                },
+                "tok": 769
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "unauthorized",
+                          "tok": 773
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "why",
+                            "tok": 775
+                          }
+                        ],
+                        "tok": 774
+                      }
+                    ],
+                    "tok": 772
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 767
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "old"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "field",
+                  "tok": 782
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "r",
+                    "tok": 784
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "old",
+                    "tok": 786
+                  }
+                ],
+                "tok": 783
+              }
+            ],
+            "tok": 780
+          },
+          {
+            "k": "bind",
+            "names": [
+              "pw"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "field",
+                  "tok": 791
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "r",
+                    "tok": 793
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "new",
+                    "tok": 795
+                  }
+                ],
+                "tok": 792
+              }
+            ],
+            "tok": 789
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "||",
+                "lhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "old",
+                    "tok": 799
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 801
+                  },
+                  "tok": 800
+                },
+                "rhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "pw",
+                    "tok": 803
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 805
+                  },
+                  "tok": 804
+                },
+                "tok": 802
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "http",
+                              "tok": 808
+                            },
+                            "field": "server",
+                            "tok": 810
+                          },
+                          "field": "Status",
+                          "tok": 812
+                        },
+                        "args": [
+                          {
+                            "k": "int",
+                            "value": 400,
+                            "tok": 814
+                          }
+                        ],
+                        "tok": 813
+                      }
+                    ],
+                    "tok": 807
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 798
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "user"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "index",
+                "base": {
+                  "k": "ident",
+                  "name": "users",
+                  "tok": 821
+                },
+                "idx": {
+                  "k": "ident",
+                  "name": "name",
+                  "tok": 823
+                },
+                "tok": 822
+              }
+            ],
+            "tok": 819
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "ident",
+                  "name": "user",
+                  "tok": 827
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 829
+                },
+                "tok": 828
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "unauthorized",
+                          "tok": 832
+                        },
+                        "args": [
+                          {
+                            "k": "strlit",
+                            "value": "unknown user: log in",
+                            "tok": 834
+                          }
+                        ],
+                        "tok": 833
+                      }
+                    ],
+                    "tok": 831
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 826
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "ok"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "crypto",
+                        "tok": 841
+                      },
+                      "field": "password",
+                      "tok": 843
+                    },
+                    "field": "Verify",
+                    "tok": 845
+                  },
+                  "args": [
+                    {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "user",
+                        "tok": 847
+                      },
+                      "field": "hash",
+                      "tok": 849
+                    },
+                    {
+                      "k": "ident",
+                      "name": "old",
+                      "tok": 851
+                    }
+                  ],
+                  "tok": 846
+                },
+                "rhs": {
+                  "k": "ident",
+                  "name": "false",
+                  "tok": 854
+                },
+                "tok": 853
+              }
+            ],
+            "tok": 839
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "unary",
+                "op": "!",
+                "operand": {
+                  "k": "ident",
+                  "name": "ok",
+                  "tok": 858
+                },
+                "tok": 857
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "composite",
+                        "type_name": "http.server.Response",
+                        "elems": [
+                          {
+                            "key": "status",
+                            "value": {
+                              "k": "int",
+                              "value": 403,
+                              "tok": 869
+                            }
+                          },
+                          {
+                            "key": "contentType",
+                            "value": {
+                              "k": "strlit",
+                              "value": "text/plain",
+                              "tok": 873
+                            }
+                          },
+                          {
+                            "key": "body",
+                            "value": {
+                              "k": "call",
+                              "callee": {
+                                "k": "ident",
+                                "name": "bytes",
+                                "tok": 877
+                              },
+                              "args": [
+                                {
+                                  "k": "strlit",
+                                  "value": "wrong password",
+                                  "tok": 879
+                                }
+                              ],
+                              "tok": 878
+                            }
+                          }
+                        ],
+                        "tok": 861,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 860
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 856
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "h"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "crypto",
+                        "tok": 887
+                      },
+                      "field": "password",
+                      "tok": 889
+                    },
+                    "field": "Argon2id",
+                    "tok": 891
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "pw",
+                      "tok": 893
+                    }
+                  ],
+                  "tok": 892
+                },
+                "rhs": {
+                  "k": "ret",
+                  "values": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "http",
+                            "tok": 897
+                          },
+                          "field": "server",
+                          "tok": 899
+                        },
+                        "field": "Status",
+                        "tok": 901
+                      },
+                      "args": [
+                        {
+                          "k": "int",
+                          "value": 500,
+                          "tok": 903
+                        }
+                      ],
+                      "tok": 902
+                    }
+                  ],
+                  "tok": 896
+                },
+                "tok": 895
+              }
+            ],
+            "tok": 885
+          },
+          {
+            "k": "bind",
+            "names": [
+              "next"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "User",
+                "elems": [
+                  {
+                    "key": "hash",
+                    "value": {
+                      "k": "ident",
+                      "name": "h",
+                      "tok": 912
+                    }
+                  },
+                  {
+                    "key": "gen",
+                    "value": {
+                      "k": "binary",
+                      "op": "+",
+                      "lhs": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "user",
+                          "tok": 916
+                        },
+                        "field": "gen",
+                        "tok": 918
+                      },
+                      "rhs": {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 920
+                      },
+                      "tok": 919
+                    }
+                  }
+                ],
+                "tok": 908,
+                "type_args": []
+              }
+            ],
+            "tok": 906
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "index",
+                "base": {
+                  "k": "ident",
+                  "name": "users",
+                  "tok": 923
+                },
+                "idx": {
+                  "k": "ident",
+                  "name": "name",
+                  "tok": 925
+                },
+                "tok": 924
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "ident",
+                "name": "next",
+                "tok": 928
+              }
+            ],
+            "tok": 923
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "issue",
+                  "tok": 931
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "name",
+                    "tok": 933
+                  },
+                  {
+                    "k": "ident",
+                    "name": "next",
+                    "tok": 935
+                  },
+                  {
+                    "k": "ident",
+                    "name": "k",
+                    "tok": 937
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "password changed: other sessions are revoked",
+                    "tok": 939
+                  }
+                ],
+                "tok": 932
+              }
+            ],
+            "tok": 930
+          }
+        ]
+      },
+      "tok": 725,
+      "bodiless": false,
+      "span": {
+        "start": 724,
+        "end": 944
+      },
+      "sig_end": 752
+    },
+    {
+      "name": "logout",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "http.server.Response"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "c"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "http.server.SetCookie",
+                "elems": [
+                  {
+                    "key": "name",
+                    "value": {
+                      "k": "ident",
+                      "name": "cookieName",
+                      "tok": 964
+                    }
+                  },
+                  {
+                    "key": "value",
+                    "value": {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 968
+                    }
+                  },
+                  {
+                    "key": "maxAge",
+                    "value": {
+                      "k": "int",
+                      "value": 0,
+                      "tok": 972
+                    }
+                  }
+                ],
+                "tok": 956,
+                "type_args": []
+              }
+            ],
+            "tok": 954
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "http.server.Response",
+                "elems": [
+                  {
+                    "key": "status",
+                    "value": {
+                      "k": "int",
+                      "value": 200,
+                      "tok": 984
+                    }
+                  },
+                  {
+                    "key": "contentType",
+                    "value": {
+                      "k": "strlit",
+                      "value": "text/plain",
+                      "tok": 988
+                    }
+                  },
+                  {
+                    "key": "body",
+                    "value": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "bytes",
+                        "tok": 992
+                      },
+                      "args": [
+                        {
+                          "k": "strlit",
+                          "value": "bye",
+                          "tok": 994
+                        }
+                      ],
+                      "tok": 993
+                    }
+                  },
+                  {
+                    "key": "cookies",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "http.server.SetCookie"
+                      },
+                      "elems": [
+                        {
+                          "k": "ident",
+                          "name": "c",
+                          "tok": 1007
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 999
+                    }
+                  }
+                ],
+                "tok": 976,
+                "type_args": []
+              }
+            ],
+            "tok": 975
+          }
+        ]
+      },
+      "tok": 945,
+      "bodiless": false,
+      "span": {
+        "start": 944,
+        "end": 1013
+      },
+      "sig_end": 953
+    },
+    {
+      "name": "route",
+      "type_params": [],
+      "params": [
+        {
+          "name": "users",
+          "type": {
+            "k": "map_of",
+            "key": {
+              "k": "name",
+              "name": "string"
+            },
+            "value": {
+              "k": "name",
+              "name": "User"
+            },
+            "mut": true
+          },
+          "mutable": true
+        },
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "session.Key"
+          },
+          "mutable": false
+        },
+        {
+          "name": "r",
+          "type": {
+            "k": "name",
+            "name": "http.server.Request"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "http.server.Response"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "&&",
+                "lhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 1043
+                    },
+                    "field": "method",
+                    "tok": 1045
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "POST",
+                    "tok": 1047
+                  },
+                  "tok": 1046
+                },
+                "rhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 1049
+                    },
+                    "field": "path",
+                    "tok": 1051
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "/signup",
+                    "tok": 1053
+                  },
+                  "tok": 1052
+                },
+                "tok": 1048
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "signup",
+                          "tok": 1056
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "users",
+                            "tok": 1059
+                          },
+                          {
+                            "k": "ident",
+                            "name": "r",
+                            "tok": 1061
+                          }
+                        ],
+                        "tok": 1057
+                      }
+                    ],
+                    "tok": 1055
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 1042
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "&&",
+                "lhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 1067
+                    },
+                    "field": "method",
+                    "tok": 1069
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "POST",
+                    "tok": 1071
+                  },
+                  "tok": 1070
+                },
+                "rhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 1073
+                    },
+                    "field": "path",
+                    "tok": 1075
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "/login",
+                    "tok": 1077
+                  },
+                  "tok": 1076
+                },
+                "tok": 1072
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "logIn",
+                          "tok": 1080
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "users",
+                            "tok": 1083
+                          },
+                          {
+                            "k": "ident",
+                            "name": "k",
+                            "tok": 1085
+                          },
+                          {
+                            "k": "ident",
+                            "name": "r",
+                            "tok": 1087
+                          }
+                        ],
+                        "tok": 1081
+                      }
+                    ],
+                    "tok": 1079
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 1066
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "&&",
+                "lhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 1093
+                    },
+                    "field": "method",
+                    "tok": 1095
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "GET",
+                    "tok": 1097
+                  },
+                  "tok": 1096
+                },
+                "rhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 1099
+                    },
+                    "field": "path",
+                    "tok": 1101
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "/me",
+                    "tok": 1103
+                  },
+                  "tok": 1102
+                },
+                "tok": 1098
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "bind",
+                    "names": [
+                      "name",
+                      "why"
+                    ],
+                    "mutable": false,
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "whoami",
+                          "tok": 1109
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "users",
+                            "tok": 1112
+                          },
+                          {
+                            "k": "ident",
+                            "name": "k",
+                            "tok": 1114
+                          },
+                          {
+                            "k": "ident",
+                            "name": "r",
+                            "tok": 1116
+                          }
+                        ],
+                        "tok": 1110
+                      }
+                    ],
+                    "tok": 1105
+                  },
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "if",
+                        "cond": {
+                          "k": "binary",
+                          "op": "==",
+                          "lhs": {
+                            "k": "ident",
+                            "name": "name",
+                            "tok": 1121
+                          },
+                          "rhs": {
+                            "k": "strlit",
+                            "value": "",
+                            "tok": 1123
+                          },
+                          "tok": 1122
+                        },
+                        "then": {
+                          "stmts": [
+                            {
+                              "k": "expr",
+                              "expr": {
+                                "k": "call",
+                                "callee": {
+                                  "k": "ident",
+                                  "name": "unauthorized",
+                                  "tok": 1125
+                                },
+                                "args": [
+                                  {
+                                    "k": "ident",
+                                    "name": "why",
+                                    "tok": 1127
+                                  }
+                                ],
+                                "tok": 1126
+                              }
+                            }
+                          ]
+                        },
+                        "else": {
+                          "k": "block",
+                          "stmts": [
+                            {
+                              "k": "expr",
+                              "expr": {
+                                "k": "call",
+                                "callee": {
+                                  "k": "selector",
+                                  "base": {
+                                    "k": "selector",
+                                    "base": {
+                                      "k": "ident",
+                                      "name": "http",
+                                      "tok": 1132
+                                    },
+                                    "field": "server",
+                                    "tok": 1134
+                                  },
+                                  "field": "Text",
+                                  "tok": 1136
+                                },
+                                "args": [
+                                  {
+                                    "k": "interp",
+                                    "tmpl": {
+                                      "lits": [
+                                        "hello ",
+                                        ""
+                                      ],
+                                      "holes": [
+                                        {
+                                          "k": "ident",
+                                          "name": "name",
+                                          "tok": 1138
+                                        }
+                                      ]
+                                    },
+                                    "tok": 1138
+                                  }
+                                ],
+                                "tok": 1137
+                              }
+                            }
+                          ]
+                        },
+                        "tok": 1120
+                      }
+                    ],
+                    "tok": 1119
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 1092
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "&&",
+                "lhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 1145
+                    },
+                    "field": "method",
+                    "tok": 1147
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "POST",
+                    "tok": 1149
+                  },
+                  "tok": 1148
+                },
+                "rhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 1151
+                    },
+                    "field": "path",
+                    "tok": 1153
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "/change-password",
+                    "tok": 1155
+                  },
+                  "tok": 1154
+                },
+                "tok": 1150
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "changePassword",
+                          "tok": 1158
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "users",
+                            "tok": 1161
+                          },
+                          {
+                            "k": "ident",
+                            "name": "k",
+                            "tok": 1163
+                          },
+                          {
+                            "k": "ident",
+                            "name": "r",
+                            "tok": 1165
+                          }
+                        ],
+                        "tok": 1159
+                      }
+                    ],
+                    "tok": 1157
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 1144
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "&&",
+                "lhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 1171
+                    },
+                    "field": "method",
+                    "tok": 1173
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "POST",
+                    "tok": 1175
+                  },
+                  "tok": 1174
+                },
+                "rhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 1177
+                    },
+                    "field": "path",
+                    "tok": 1179
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "/logout",
+                    "tok": 1181
+                  },
+                  "tok": 1180
+                },
+                "tok": 1176
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "logout",
+                          "tok": 1184
+                        },
+                        "args": [],
+                        "tok": 1185
+                      }
+                    ],
+                    "tok": 1183
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 1170
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "http",
+                      "tok": 1191
+                    },
+                    "field": "server",
+                    "tok": 1193
+                  },
+                  "field": "Status",
+                  "tok": 1195
+                },
+                "args": [
+                  {
+                    "k": "int",
+                    "value": 404,
+                    "tok": 1197
+                  }
+                ],
+                "tok": 1196
+              }
+            ],
+            "tok": 1190
+          }
+        ]
+      },
+      "tok": 1014,
+      "bodiless": false,
+      "span": {
+        "start": 1013,
+        "end": 1202
+      },
+      "sig_end": 1041
+    },
+    {
+      "name": "serve",
+      "type_params": [],
+      "params": [
+        {
+          "name": "l",
+          "type": {
+            "k": "name",
+            "name": "net.Listener"
+          },
+          "mutable": false
+        },
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "error"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "users"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "maplit",
+                "key": {
+                  "k": "name",
+                  "name": "string"
+                },
+                "value": {
+                  "k": "name",
+                  "name": "User"
+                },
+                "entries": [],
+                "mut": true,
+                "tok": 1220
+              }
+            ],
+            "tok": 1216
+          },
+          {
+            "k": "bind",
+            "names": [
+              "k"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "session",
+                    "tok": 1230
+                  },
+                  "field": "KeyNew",
+                  "tok": 1232
+                },
+                "args": [],
+                "tok": 1233
+              }
+            ],
+            "tok": 1228
+          },
+          {
+            "k": "bind",
+            "names": [
+              "i"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 1239
+              }
+            ],
+            "tok": 1236
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "c"
+                  ],
+                  "src": {
+                    "k": "try",
+                    "e": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "net",
+                          "tok": 1244
+                        },
+                        "field": "Accept",
+                        "tok": 1246
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "l",
+                          "tok": 1248
+                        }
+                      ],
+                      "tok": 1247
+                    },
+                    "wrap": null,
+                    "tok": 1250
+                  },
+                  "guards": [],
+                  "tok": 1242
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "try",
+                      "e": {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "http",
+                              "tok": 1252
+                            },
+                            "field": "server",
+                            "tok": 1254
+                          },
+                          "field": "ServeConn",
+                          "tok": 1256
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "c",
+                            "tok": 1258
+                          },
+                          {
+                            "k": "lambda",
+                            "params": [
+                              {
+                                "name": "r",
+                                "type": null
+                              }
+                            ],
+                            "body": {
+                              "k": "call",
+                              "callee": {
+                                "k": "ident",
+                                "name": "route",
+                                "tok": 1264
+                              },
+                              "args": [
+                                {
+                                  "k": "mut_arg",
+                                  "name": "users",
+                                  "tok": 1267
+                                },
+                                {
+                                  "k": "ident",
+                                  "name": "k",
+                                  "tok": 1269
+                                },
+                                {
+                                  "k": "ident",
+                                  "name": "r",
+                                  "tok": 1271
+                                }
+                              ],
+                              "tok": 1265
+                            },
+                            "tok": 1263
+                          }
+                        ],
+                        "tok": 1257
+                      },
+                      "wrap": null,
+                      "tok": 1274
+                    }
+                  },
+                  {
+                    "k": "assign",
+                    "targets": [
+                      {
+                        "k": "ident",
+                        "name": "i",
+                        "tok": 1276
+                      }
+                    ],
+                    "op": "=",
+                    "values": [
+                      {
+                        "k": "binary",
+                        "op": "+",
+                        "lhs": {
+                          "k": "ident",
+                          "name": "i",
+                          "tok": 1278
+                        },
+                        "rhs": {
+                          "k": "int",
+                          "value": 1,
+                          "tok": 1280
+                        },
+                        "tok": 1279
+                      }
+                    ],
+                    "tok": 1276
+                  },
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "if",
+                      "cond": {
+                        "k": "binary",
+                        "op": "==",
+                        "lhs": {
+                          "k": "ident",
+                          "name": "i",
+                          "tok": 1283
+                        },
+                        "rhs": {
+                          "k": "ident",
+                          "name": "n",
+                          "tok": 1285
+                        },
+                        "tok": 1284
+                      },
+                      "then": {
+                        "stmts": [
+                          {
+                            "k": "break",
+                            "tok": 1287
+                          }
+                        ]
+                      },
+                      "else": null,
+                      "tok": 1282
+                    }
+                  }
+                ]
+              },
+              "tok": 1241
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "nil",
+                "tok": 1294
+              }
+            ],
+            "tok": 1293
+          }
+        ]
+      },
+      "tok": 1203,
+      "bodiless": false,
+      "span": {
+        "start": 1202,
+        "end": 1298
+      },
+      "sig_end": 1215
+    },
+    {
+      "name": "send",
+      "type_params": [],
+      "params": [
+        {
+          "name": "base",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        },
+        {
+          "name": "method",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        },
+        {
+          "name": "path",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        },
+        {
+          "name": "cookie",
+          "type": {
+            "k": "opt",
+            "type": {
+              "k": "name",
+              "name": "string"
+            }
+          },
+          "mutable": false
+        },
+        {
+          "name": "form",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "url.Pair"
+            },
+            "mut": false
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "Reply"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "hs"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "http.Field"
+                },
+                "elems": [
+                  {
+                    "k": "composite",
+                    "type_name": "http.Field",
+                    "elems": [
+                      {
+                        "key": "name",
+                        "value": {
+                          "k": "strlit",
+                          "value": "content-type",
+                          "tok": 1350
+                        }
+                      },
+                      {
+                        "key": "value",
+                        "value": {
+                          "k": "strlit",
+                          "value": "application/x-www-form-urlencoded",
+                          "tok": 1354
+                        }
+                      }
+                    ],
+                    "tok": 1344,
+                    "type_args": []
+                  }
+                ],
+                "mut": false,
+                "tok": 1338
+              }
+            ],
+            "tok": 1336
+          },
+          {
+            "k": "bind",
+            "names": [
+              "cs"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "if",
+                "cond": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "cookie",
+                    "tok": 1361
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 1363
+                  },
+                  "tok": 1362
+                },
+                "then": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "slicelit",
+                        "elem": {
+                          "k": "name",
+                          "name": "http.client.Cookie"
+                        },
+                        "elems": [],
+                        "mut": false,
+                        "tok": 1365
+                      }
+                    }
+                  ]
+                },
+                "else": {
+                  "k": "block",
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "slicelit",
+                        "elem": {
+                          "k": "name",
+                          "name": "http.client.Cookie"
+                        },
+                        "elems": [
+                          {
+                            "k": "composite",
+                            "type_name": "http.client.Cookie",
+                            "elems": [
+                              {
+                                "key": "name",
+                                "value": {
+                                  "k": "ident",
+                                  "name": "cookieName",
+                                  "tok": 1393
+                                }
+                              },
+                              {
+                                "key": "value",
+                                "value": {
+                                  "k": "ident",
+                                  "name": "cookie",
+                                  "tok": 1397
+                                }
+                              }
+                            ],
+                            "tok": 1385,
+                            "type_args": []
+                          }
+                        ],
+                        "mut": false,
+                        "tok": 1377
+                      }
+                    }
+                  ]
+                },
+                "tok": 1360
+              }
+            ],
+            "tok": 1358
+          },
+          {
+            "k": "bind",
+            "names": [
+              "resp",
+              "e"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "http",
+                      "tok": 1406
+                    },
+                    "field": "client",
+                    "tok": 1408
+                  },
+                  "field": "Request",
+                  "tok": 1410
+                },
+                "args": [
+                  {
+                    "k": "interp",
+                    "tmpl": {
+                      "lits": [
+                        "",
+                        "",
+                        ""
+                      ],
+                      "holes": [
+                        {
+                          "k": "ident",
+                          "name": "base",
+                          "tok": 1412
+                        },
+                        {
+                          "k": "ident",
+                          "name": "path",
+                          "tok": 1412
+                        }
+                      ]
+                    },
+                    "tok": 1412
+                  },
+                  {
+                    "k": "named_arg",
+                    "name": "method",
+                    "value": {
+                      "k": "ident",
+                      "name": "method",
+                      "tok": 1416
+                    },
+                    "tok": 1414
+                  },
+                  {
+                    "k": "named_arg",
+                    "name": "headers",
+                    "value": {
+                      "k": "ident",
+                      "name": "hs",
+                      "tok": 1420
+                    },
+                    "tok": 1418
+                  },
+                  {
+                    "k": "named_arg",
+                    "name": "body",
+                    "value": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "bytes",
+                        "tok": 1424
+                      },
+                      "args": [
+                        {
+                          "k": "call",
+                          "callee": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "url",
+                              "tok": 1426
+                            },
+                            "field": "FormatQuery",
+                            "tok": 1428
+                          },
+                          "args": [
+                            {
+                              "k": "ident",
+                              "name": "form",
+                              "tok": 1430
+                            }
+                          ],
+                          "tok": 1429
+                        }
+                      ],
+                      "tok": 1425
+                    },
+                    "tok": 1422
+                  },
+                  {
+                    "k": "named_arg",
+                    "name": "cookies",
+                    "value": {
+                      "k": "ident",
+                      "name": "cs",
+                      "tok": 1436
+                    },
+                    "tok": 1434
+                  }
+                ],
+                "tok": 1411
+              }
+            ],
+            "tok": 1402
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "e",
+                  "tok": 1440
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 1442
+                },
+                "tok": 1441
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "composite",
+                        "type_name": "Reply",
+                        "elems": [
+                          {
+                            "key": "line",
+                            "value": {
+                              "k": "interp",
+                              "tmpl": {
+                                "lits": [
+                                  "",
+                                  " ",
+                                  ": failed"
+                                ],
+                                "holes": [
+                                  {
+                                    "k": "ident",
+                                    "name": "method",
+                                    "tok": 1449
+                                  },
+                                  {
+                                    "k": "ident",
+                                    "name": "path",
+                                    "tok": 1449
+                                  }
+                                ]
+                              },
+                              "tok": 1449
+                            }
+                          },
+                          {
+                            "key": "cookie",
+                            "value": {
+                              "k": "nil",
+                              "tok": 1453
+                            }
+                          }
+                        ],
+                        "tok": 1445,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 1444
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 1439
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Reply",
+                "elems": [
+                  {
+                    "key": "line",
+                    "value": {
+                      "k": "interp",
+                      "tmpl": {
+                        "lits": [
+                          "",
+                          " ",
+                          " -> ",
+                          " ",
+                          ""
+                        ],
+                        "holes": [
+                          {
+                            "k": "ident",
+                            "name": "method",
+                            "tok": 1463
+                          },
+                          {
+                            "k": "ident",
+                            "name": "path",
+                            "tok": 1463
+                          },
+                          {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "resp",
+                              "tok": 1463
+                            },
+                            "field": "status",
+                            "tok": 1463
+                          },
+                          {
+                            "k": "catch",
+                            "e": {
+                              "k": "call",
+                              "callee": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "$utf8",
+                                  "tok": 1463
+                                },
+                                "field": "Parse",
+                                "tok": 1463
+                              },
+                              "args": [
+                                {
+                                  "k": "selector",
+                                  "base": {
+                                    "k": "ident",
+                                    "name": "resp",
+                                    "tok": 1463
+                                  },
+                                  "field": "body",
+                                  "tok": 1463
+                                }
+                              ],
+                              "tok": 1463
+                            },
+                            "rhs": {
+                              "k": "strlit",
+                              "value": "",
+                              "tok": 1463
+                            },
+                            "tok": 1463
+                          }
+                        ]
+                      },
+                      "tok": 1463
+                    }
+                  },
+                  {
+                    "key": "cookie",
+                    "value": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "http",
+                            "tok": 1467
+                          },
+                          "field": "client",
+                          "tok": 1469
+                        },
+                        "field": "CookieValue",
+                        "tok": 1471
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "resp",
+                          "tok": 1473
+                        },
+                        {
+                          "k": "ident",
+                          "name": "cookieName",
+                          "tok": 1475
+                        }
+                      ],
+                      "tok": 1472
+                    }
+                  }
+                ],
+                "tok": 1459,
+                "type_args": []
+              }
+            ],
+            "tok": 1458
+          }
+        ]
+      },
+      "tok": 1312,
+      "bodiless": false,
+      "span": {
+        "start": 1311,
+        "end": 1481
+      },
+      "sig_end": 1335
+    },
+    {
+      "name": "pairs",
+      "type_params": [],
+      "params": [
+        {
+          "name": "kv",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "string"
+            },
+            "mut": false
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "slice_of",
+          "elem": {
+            "k": "name",
+            "name": "url.Pair"
+          },
+          "mut": false
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "ps"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "url.Pair"
+                },
+                "elems": [],
+                "mut": true,
+                "tok": 1499
+              }
+            ],
+            "tok": 1495
+          },
+          {
+            "k": "bind",
+            "names": [
+              "i"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 1510
+              }
+            ],
+            "tok": 1507
+          },
+          {
+            "k": "while",
+            "cond": {
+              "k": "binary",
+              "op": "<",
+              "lhs": {
+                "k": "binary",
+                "op": "+",
+                "lhs": {
+                  "k": "ident",
+                  "name": "i",
+                  "tok": 1513
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 1515
+                },
+                "tok": 1514
+              },
+              "rhs": {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "len",
+                  "tok": 1517
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "kv",
+                    "tok": 1519
+                  }
+                ],
+                "tok": 1518
+              },
+              "tok": 1516
+            },
+            "body": {
+              "stmts": [
+                {
+                  "k": "assign",
+                  "targets": [
+                    {
+                      "k": "ident",
+                      "name": "ps",
+                      "tok": 1522
+                    }
+                  ],
+                  "op": "=",
+                  "values": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "append",
+                        "tok": 1524
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "ps",
+                          "tok": 1526
+                        },
+                        {
+                          "k": "composite",
+                          "type_name": "url.Pair",
+                          "elems": [
+                            {
+                              "key": "key",
+                              "value": {
+                                "k": "index",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "kv",
+                                  "tok": 1534
+                                },
+                                "idx": {
+                                  "k": "ident",
+                                  "name": "i",
+                                  "tok": 1536
+                                },
+                                "tok": 1535
+                              }
+                            },
+                            {
+                              "key": "value",
+                              "value": {
+                                "k": "index",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "kv",
+                                  "tok": 1541
+                                },
+                                "idx": {
+                                  "k": "binary",
+                                  "op": "+",
+                                  "lhs": {
+                                    "k": "ident",
+                                    "name": "i",
+                                    "tok": 1543
+                                  },
+                                  "rhs": {
+                                    "k": "int",
+                                    "value": 1,
+                                    "tok": 1545
+                                  },
+                                  "tok": 1544
+                                },
+                                "tok": 1542
+                              }
+                            }
+                          ],
+                          "tok": 1528,
+                          "type_args": []
+                        }
+                      ],
+                      "tok": 1525
+                    }
+                  ],
+                  "tok": 1522
+                },
+                {
+                  "k": "assign",
+                  "targets": [
+                    {
+                      "k": "ident",
+                      "name": "i",
+                      "tok": 1550
+                    }
+                  ],
+                  "op": "+=",
+                  "values": [
+                    {
+                      "k": "int",
+                      "value": 2,
+                      "tok": 1552
+                    }
+                  ],
+                  "tok": 1550
+                }
+              ]
+            },
+            "tok": 1512
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "freeze",
+                  "tok": 1557
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "ps",
+                    "tok": 1559
+                  }
+                ],
+                "tok": 1558
+              }
+            ],
+            "tok": 1556
+          }
+        ]
+      },
+      "tok": 1482,
+      "bodiless": false,
+      "span": {
+        "start": 1481,
+        "end": 1564
+      },
+      "sig_end": 1494
+    },
+    {
+      "name": "tour",
+      "type_params": [],
+      "params": [
+        {
+          "name": "base",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "slice_of",
+          "elem": {
+            "k": "name",
+            "name": "string"
+          },
+          "mut": false
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "out"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "string"
+                },
+                "elems": [],
+                "mut": true,
+                "tok": 1578
+              }
+            ],
+            "tok": 1574
+          },
+          {
+            "k": "bind",
+            "names": [
+              "none"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "url.Pair"
+                },
+                "elems": [],
+                "mut": false,
+                "tok": 1586
+              }
+            ],
+            "tok": 1584
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "out",
+                "tok": 1594
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "append",
+                  "tok": 1596
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "out",
+                    "tok": 1598
+                  },
+                  {
+                    "k": "selector",
+                    "base": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "send",
+                        "tok": 1600
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "base",
+                          "tok": 1602
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "POST",
+                          "tok": 1604
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "/signup",
+                          "tok": 1606
+                        },
+                        {
+                          "k": "nil",
+                          "tok": 1608
+                        },
+                        {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "pairs",
+                            "tok": 1610
+                          },
+                          "args": [
+                            {
+                              "k": "slicelit",
+                              "elem": {
+                                "k": "name",
+                                "name": "string"
+                              },
+                              "elems": [
+                                {
+                                  "k": "strlit",
+                                  "value": "name",
+                                  "tok": 1616
+                                },
+                                {
+                                  "k": "strlit",
+                                  "value": "alice",
+                                  "tok": 1618
+                                },
+                                {
+                                  "k": "strlit",
+                                  "value": "password",
+                                  "tok": 1620
+                                },
+                                {
+                                  "k": "strlit",
+                                  "value": "correct horse",
+                                  "tok": 1622
+                                }
+                              ],
+                              "mut": false,
+                              "tok": 1612
+                            }
+                          ],
+                          "tok": 1611
+                        }
+                      ],
+                      "tok": 1601
+                    },
+                    "field": "line",
+                    "tok": 1627
+                  }
+                ],
+                "tok": 1597
+              }
+            ],
+            "tok": 1594
+          },
+          {
+            "k": "bind",
+            "names": [
+              "laptop"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "send",
+                  "tok": 1632
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "base",
+                    "tok": 1634
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "POST",
+                    "tok": 1636
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "/login",
+                    "tok": 1638
+                  },
+                  {
+                    "k": "nil",
+                    "tok": 1640
+                  },
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "pairs",
+                      "tok": 1642
+                    },
+                    "args": [
+                      {
+                        "k": "slicelit",
+                        "elem": {
+                          "k": "name",
+                          "name": "string"
+                        },
+                        "elems": [
+                          {
+                            "k": "strlit",
+                            "value": "name",
+                            "tok": 1648
+                          },
+                          {
+                            "k": "strlit",
+                            "value": "alice",
+                            "tok": 1650
+                          },
+                          {
+                            "k": "strlit",
+                            "value": "password",
+                            "tok": 1652
+                          },
+                          {
+                            "k": "strlit",
+                            "value": "correct horse",
+                            "tok": 1654
+                          }
+                        ],
+                        "mut": false,
+                        "tok": 1644
+                      }
+                    ],
+                    "tok": 1643
+                  }
+                ],
+                "tok": 1633
+              }
+            ],
+            "tok": 1630
+          },
+          {
+            "k": "bind",
+            "names": [
+              "phone"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "send",
+                  "tok": 1661
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "base",
+                    "tok": 1663
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "POST",
+                    "tok": 1665
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "/login",
+                    "tok": 1667
+                  },
+                  {
+                    "k": "nil",
+                    "tok": 1669
+                  },
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "pairs",
+                      "tok": 1671
+                    },
+                    "args": [
+                      {
+                        "k": "slicelit",
+                        "elem": {
+                          "k": "name",
+                          "name": "string"
+                        },
+                        "elems": [
+                          {
+                            "k": "strlit",
+                            "value": "name",
+                            "tok": 1677
+                          },
+                          {
+                            "k": "strlit",
+                            "value": "alice",
+                            "tok": 1679
+                          },
+                          {
+                            "k": "strlit",
+                            "value": "password",
+                            "tok": 1681
+                          },
+                          {
+                            "k": "strlit",
+                            "value": "correct horse",
+                            "tok": 1683
+                          }
+                        ],
+                        "mut": false,
+                        "tok": 1673
+                      }
+                    ],
+                    "tok": 1672
+                  }
+                ],
+                "tok": 1662
+              }
+            ],
+            "tok": 1659
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "out",
+                "tok": 1688
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "append",
+                  "tok": 1690
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "out",
+                    "tok": 1692
+                  },
+                  {
+                    "k": "interp",
+                    "tmpl": {
+                      "lits": [
+                        "laptop: ",
+                        ""
+                      ],
+                      "holes": [
+                        {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "laptop",
+                            "tok": 1694
+                          },
+                          "field": "line",
+                          "tok": 1694
+                        }
+                      ]
+                    },
+                    "tok": 1694
+                  }
+                ],
+                "tok": 1691
+              }
+            ],
+            "tok": 1688
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "out",
+                "tok": 1697
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "append",
+                  "tok": 1699
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "out",
+                    "tok": 1701
+                  },
+                  {
+                    "k": "interp",
+                    "tmpl": {
+                      "lits": [
+                        "phone: ",
+                        ""
+                      ],
+                      "holes": [
+                        {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "phone",
+                            "tok": 1703
+                          },
+                          "field": "line",
+                          "tok": 1703
+                        }
+                      ]
+                    },
+                    "tok": 1703
+                  }
+                ],
+                "tok": 1700
+              }
+            ],
+            "tok": 1697
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "out",
+                "tok": 1706
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "append",
+                  "tok": 1708
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "out",
+                    "tok": 1710
+                  },
+                  {
+                    "k": "interp",
+                    "tmpl": {
+                      "lits": [
+                        "phone: ",
+                        ""
+                      ],
+                      "holes": [
+                        {
+                          "k": "selector",
+                          "base": {
+                            "k": "call",
+                            "callee": {
+                              "k": "ident",
+                              "name": "send",
+                              "tok": 1712
+                            },
+                            "args": [
+                              {
+                                "k": "ident",
+                                "name": "base",
+                                "tok": 1712
+                              },
+                              {
+                                "k": "strlit",
+                                "value": "GET",
+                                "tok": 1712
+                              },
+                              {
+                                "k": "strlit",
+                                "value": "/me",
+                                "tok": 1712
+                              },
+                              {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "phone",
+                                  "tok": 1712
+                                },
+                                "field": "cookie",
+                                "tok": 1712
+                              },
+                              {
+                                "k": "ident",
+                                "name": "none",
+                                "tok": 1712
+                              }
+                            ],
+                            "tok": 1712
+                          },
+                          "field": "line",
+                          "tok": 1712
+                        }
+                      ]
+                    },
+                    "tok": 1712
+                  }
+                ],
+                "tok": 1709
+              }
+            ],
+            "tok": 1706
+          },
+          {
+            "k": "bind",
+            "names": [
+              "changed"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "send",
+                  "tok": 1717
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "base",
+                    "tok": 1719
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "POST",
+                    "tok": 1721
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "/change-password",
+                    "tok": 1723
+                  },
+                  {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "laptop",
+                      "tok": 1725
+                    },
+                    "field": "cookie",
+                    "tok": 1727
+                  },
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "pairs",
+                      "tok": 1729
+                    },
+                    "args": [
+                      {
+                        "k": "slicelit",
+                        "elem": {
+                          "k": "name",
+                          "name": "string"
+                        },
+                        "elems": [
+                          {
+                            "k": "strlit",
+                            "value": "old",
+                            "tok": 1735
+                          },
+                          {
+                            "k": "strlit",
+                            "value": "correct horse",
+                            "tok": 1737
+                          },
+                          {
+                            "k": "strlit",
+                            "value": "new",
+                            "tok": 1739
+                          },
+                          {
+                            "k": "strlit",
+                            "value": "battery staple",
+                            "tok": 1741
+                          }
+                        ],
+                        "mut": false,
+                        "tok": 1731
+                      }
+                    ],
+                    "tok": 1730
+                  }
+                ],
+                "tok": 1718
+              }
+            ],
+            "tok": 1715
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "out",
+                "tok": 1746
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "append",
+                  "tok": 1748
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "out",
+                    "tok": 1750
+                  },
+                  {
+                    "k": "interp",
+                    "tmpl": {
+                      "lits": [
+                        "laptop: ",
+                        ""
+                      ],
+                      "holes": [
+                        {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "changed",
+                            "tok": 1752
+                          },
+                          "field": "line",
+                          "tok": 1752
+                        }
+                      ]
+                    },
+                    "tok": 1752
+                  }
+                ],
+                "tok": 1749
+              }
+            ],
+            "tok": 1746
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "out",
+                "tok": 1755
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "append",
+                  "tok": 1757
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "out",
+                    "tok": 1759
+                  },
+                  {
+                    "k": "interp",
+                    "tmpl": {
+                      "lits": [
+                        "phone: ",
+                        ""
+                      ],
+                      "holes": [
+                        {
+                          "k": "selector",
+                          "base": {
+                            "k": "call",
+                            "callee": {
+                              "k": "ident",
+                              "name": "send",
+                              "tok": 1761
+                            },
+                            "args": [
+                              {
+                                "k": "ident",
+                                "name": "base",
+                                "tok": 1761
+                              },
+                              {
+                                "k": "strlit",
+                                "value": "GET",
+                                "tok": 1761
+                              },
+                              {
+                                "k": "strlit",
+                                "value": "/me",
+                                "tok": 1761
+                              },
+                              {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "phone",
+                                  "tok": 1761
+                                },
+                                "field": "cookie",
+                                "tok": 1761
+                              },
+                              {
+                                "k": "ident",
+                                "name": "none",
+                                "tok": 1761
+                              }
+                            ],
+                            "tok": 1761
+                          },
+                          "field": "line",
+                          "tok": 1761
+                        }
+                      ]
+                    },
+                    "tok": 1761
+                  }
+                ],
+                "tok": 1758
+              }
+            ],
+            "tok": 1755
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "out",
+                "tok": 1764
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "append",
+                  "tok": 1766
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "out",
+                    "tok": 1768
+                  },
+                  {
+                    "k": "interp",
+                    "tmpl": {
+                      "lits": [
+                        "laptop (old cookie): ",
+                        ""
+                      ],
+                      "holes": [
+                        {
+                          "k": "selector",
+                          "base": {
+                            "k": "call",
+                            "callee": {
+                              "k": "ident",
+                              "name": "send",
+                              "tok": 1770
+                            },
+                            "args": [
+                              {
+                                "k": "ident",
+                                "name": "base",
+                                "tok": 1770
+                              },
+                              {
+                                "k": "strlit",
+                                "value": "GET",
+                                "tok": 1770
+                              },
+                              {
+                                "k": "strlit",
+                                "value": "/me",
+                                "tok": 1770
+                              },
+                              {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "laptop",
+                                  "tok": 1770
+                                },
+                                "field": "cookie",
+                                "tok": 1770
+                              },
+                              {
+                                "k": "ident",
+                                "name": "none",
+                                "tok": 1770
+                              }
+                            ],
+                            "tok": 1770
+                          },
+                          "field": "line",
+                          "tok": 1770
+                        }
+                      ]
+                    },
+                    "tok": 1770
+                  }
+                ],
+                "tok": 1767
+              }
+            ],
+            "tok": 1764
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "out",
+                "tok": 1773
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "append",
+                  "tok": 1775
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "out",
+                    "tok": 1777
+                  },
+                  {
+                    "k": "interp",
+                    "tmpl": {
+                      "lits": [
+                        "laptop (new cookie): ",
+                        ""
+                      ],
+                      "holes": [
+                        {
+                          "k": "selector",
+                          "base": {
+                            "k": "call",
+                            "callee": {
+                              "k": "ident",
+                              "name": "send",
+                              "tok": 1779
+                            },
+                            "args": [
+                              {
+                                "k": "ident",
+                                "name": "base",
+                                "tok": 1779
+                              },
+                              {
+                                "k": "strlit",
+                                "value": "GET",
+                                "tok": 1779
+                              },
+                              {
+                                "k": "strlit",
+                                "value": "/me",
+                                "tok": 1779
+                              },
+                              {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "changed",
+                                  "tok": 1779
+                                },
+                                "field": "cookie",
+                                "tok": 1779
+                              },
+                              {
+                                "k": "ident",
+                                "name": "none",
+                                "tok": 1779
+                              }
+                            ],
+                            "tok": 1779
+                          },
+                          "field": "line",
+                          "tok": 1779
+                        }
+                      ]
+                    },
+                    "tok": 1779
+                  }
+                ],
+                "tok": 1776
+              }
+            ],
+            "tok": 1773
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "out",
+                "tok": 1782
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "append",
+                  "tok": 1784
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "out",
+                    "tok": 1786
+                  },
+                  {
+                    "k": "interp",
+                    "tmpl": {
+                      "lits": [
+                        "phone: ",
+                        ""
+                      ],
+                      "holes": [
+                        {
+                          "k": "selector",
+                          "base": {
+                            "k": "call",
+                            "callee": {
+                              "k": "ident",
+                              "name": "send",
+                              "tok": 1788
+                            },
+                            "args": [
+                              {
+                                "k": "ident",
+                                "name": "base",
+                                "tok": 1788
+                              },
+                              {
+                                "k": "strlit",
+                                "value": "POST",
+                                "tok": 1788
+                              },
+                              {
+                                "k": "strlit",
+                                "value": "/login",
+                                "tok": 1788
+                              },
+                              {
+                                "k": "nil",
+                                "tok": 1788
+                              },
+                              {
+                                "k": "call",
+                                "callee": {
+                                  "k": "ident",
+                                  "name": "pairs",
+                                  "tok": 1788
+                                },
+                                "args": [
+                                  {
+                                    "k": "slicelit",
+                                    "elem": {
+                                      "k": "name",
+                                      "name": "string"
+                                    },
+                                    "elems": [
+                                      {
+                                        "k": "strlit",
+                                        "value": "name",
+                                        "tok": 1788
+                                      },
+                                      {
+                                        "k": "strlit",
+                                        "value": "alice",
+                                        "tok": 1788
+                                      },
+                                      {
+                                        "k": "strlit",
+                                        "value": "password",
+                                        "tok": 1788
+                                      },
+                                      {
+                                        "k": "strlit",
+                                        "value": "correct horse",
+                                        "tok": 1788
+                                      }
+                                    ],
+                                    "mut": false,
+                                    "tok": 1788
+                                  }
+                                ],
+                                "tok": 1788
+                              }
+                            ],
+                            "tok": 1788
+                          },
+                          "field": "line",
+                          "tok": 1788
+                        }
+                      ]
+                    },
+                    "tok": 1788
+                  }
+                ],
+                "tok": 1785
+              }
+            ],
+            "tok": 1782
+          },
+          {
+            "k": "bind",
+            "names": [
+              "again"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "send",
+                  "tok": 1793
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "base",
+                    "tok": 1795
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "POST",
+                    "tok": 1797
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "/login",
+                    "tok": 1799
+                  },
+                  {
+                    "k": "nil",
+                    "tok": 1801
+                  },
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "pairs",
+                      "tok": 1803
+                    },
+                    "args": [
+                      {
+                        "k": "slicelit",
+                        "elem": {
+                          "k": "name",
+                          "name": "string"
+                        },
+                        "elems": [
+                          {
+                            "k": "strlit",
+                            "value": "name",
+                            "tok": 1809
+                          },
+                          {
+                            "k": "strlit",
+                            "value": "alice",
+                            "tok": 1811
+                          },
+                          {
+                            "k": "strlit",
+                            "value": "password",
+                            "tok": 1813
+                          },
+                          {
+                            "k": "strlit",
+                            "value": "battery staple",
+                            "tok": 1815
+                          }
+                        ],
+                        "mut": false,
+                        "tok": 1805
+                      }
+                    ],
+                    "tok": 1804
+                  }
+                ],
+                "tok": 1794
+              }
+            ],
+            "tok": 1791
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "out",
+                "tok": 1820
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "append",
+                  "tok": 1822
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "out",
+                    "tok": 1824
+                  },
+                  {
+                    "k": "interp",
+                    "tmpl": {
+                      "lits": [
+                        "phone: ",
+                        ""
+                      ],
+                      "holes": [
+                        {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "again",
+                            "tok": 1826
+                          },
+                          "field": "line",
+                          "tok": 1826
+                        }
+                      ]
+                    },
+                    "tok": 1826
+                  }
+                ],
+                "tok": 1823
+              }
+            ],
+            "tok": 1820
+          },
+          {
+            "k": "bind",
+            "names": [
+              "bye"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "send",
+                  "tok": 1831
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "base",
+                    "tok": 1833
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "POST",
+                    "tok": 1835
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "/logout",
+                    "tok": 1837
+                  },
+                  {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "again",
+                      "tok": 1839
+                    },
+                    "field": "cookie",
+                    "tok": 1841
+                  },
+                  {
+                    "k": "ident",
+                    "name": "none",
+                    "tok": 1843
+                  }
+                ],
+                "tok": 1832
+              }
+            ],
+            "tok": 1829
+          },
+          {
+            "k": "bind",
+            "names": [
+              "bc"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "bye",
+                  "tok": 1848
+                },
+                "field": "cookie",
+                "tok": 1850
+              }
+            ],
+            "tok": 1846
+          },
+          {
+            "k": "bind",
+            "names": [
+              "cleared"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "binary",
+                "op": "&&",
+                "lhs": {
+                  "k": "binary",
+                  "op": "!=",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "bc",
+                    "tok": 1854
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 1856
+                  },
+                  "tok": 1855
+                },
+                "rhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "bc",
+                    "tok": 1858
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "",
+                    "tok": 1860
+                  },
+                  "tok": 1859
+                },
+                "tok": 1857
+              }
+            ],
+            "tok": 1852
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "out",
+                "tok": 1862
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "append",
+                  "tok": 1864
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "out",
+                    "tok": 1866
+                  },
+                  {
+                    "k": "interp",
+                    "tmpl": {
+                      "lits": [
+                        "phone: ",
+                        " (cookie cleared: ",
+                        ")"
+                      ],
+                      "holes": [
+                        {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "bye",
+                            "tok": 1868
+                          },
+                          "field": "line",
+                          "tok": 1868
+                        },
+                        {
+                          "k": "ident",
+                          "name": "cleared",
+                          "tok": 1868
+                        }
+                      ]
+                    },
+                    "tok": 1868
+                  }
+                ],
+                "tok": 1865
+              }
+            ],
+            "tok": 1862
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "out",
+                "tok": 1871
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "append",
+                  "tok": 1873
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "out",
+                    "tok": 1875
+                  },
+                  {
+                    "k": "interp",
+                    "tmpl": {
+                      "lits": [
+                        "phone: ",
+                        ""
+                      ],
+                      "holes": [
+                        {
+                          "k": "selector",
+                          "base": {
+                            "k": "call",
+                            "callee": {
+                              "k": "ident",
+                              "name": "send",
+                              "tok": 1877
+                            },
+                            "args": [
+                              {
+                                "k": "ident",
+                                "name": "base",
+                                "tok": 1877
+                              },
+                              {
+                                "k": "strlit",
+                                "value": "GET",
+                                "tok": 1877
+                              },
+                              {
+                                "k": "strlit",
+                                "value": "/me",
+                                "tok": 1877
+                              },
+                              {
+                                "k": "nil",
+                                "tok": 1877
+                              },
+                              {
+                                "k": "ident",
+                                "name": "none",
+                                "tok": 1877
+                              }
+                            ],
+                            "tok": 1877
+                          },
+                          "field": "line",
+                          "tok": 1877
+                        }
+                      ]
+                    },
+                    "tok": 1877
+                  }
+                ],
+                "tok": 1874
+              }
+            ],
+            "tok": 1871
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "freeze",
+                  "tok": 1881
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "out",
+                    "tok": 1883
+                  }
+                ],
+                "tok": 1882
+              }
+            ],
+            "tok": 1880
+          }
+        ]
+      },
+      "tok": 1565,
+      "bodiless": false,
+      "span": {
+        "start": 1564,
+        "end": 1888
+      },
+      "sig_end": 1573
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "e"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "net",
+                    "tok": 1895
+                  },
+                  "field": "Listen",
+                  "tok": 1897
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "127.0.0.1:0",
+                    "tok": 1899
+                  },
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "l",
+                        "type": null
+                      }
+                    ],
+                    "body": {
+                      "k": "block",
+                      "stmts": [
+                        {
+                          "k": "bind",
+                          "names": [
+                            "base"
+                          ],
+                          "mutable": false,
+                          "values": [
+                            {
+                              "k": "interp",
+                              "tmpl": {
+                                "lits": [
+                                  "http://127.0.0.1:",
+                                  ""
+                                ],
+                                "holes": [
+                                  {
+                                    "k": "call",
+                                    "callee": {
+                                      "k": "selector",
+                                      "base": {
+                                        "k": "ident",
+                                        "name": "net",
+                                        "tok": 1908
+                                      },
+                                      "field": "Port",
+                                      "tok": 1908
+                                    },
+                                    "args": [
+                                      {
+                                        "k": "ident",
+                                        "name": "l",
+                                        "tok": 1908
+                                      }
+                                    ],
+                                    "tok": 1908
+                                  }
+                                ]
+                              },
+                              "tok": 1908
+                            }
+                          ],
+                          "tok": 1906
+                        },
+                        {
+                          "k": "bind",
+                          "names": [
+                            "got",
+                            "_"
+                          ],
+                          "mutable": false,
+                          "values": [
+                            {
+                              "k": "call",
+                              "callee": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "task",
+                                  "tok": 1914
+                                },
+                                "field": "Run",
+                                "tok": 1916
+                              },
+                              "args": [
+                                {
+                                  "k": "lambda",
+                                  "params": [
+                                    {
+                                      "name": "s",
+                                      "type": null
+                                    }
+                                  ],
+                                  "body": {
+                                    "k": "block",
+                                    "stmts": [
+                                      {
+                                        "k": "bind",
+                                        "names": [
+                                          "h"
+                                        ],
+                                        "mutable": false,
+                                        "values": [
+                                          {
+                                            "k": "call",
+                                            "callee": {
+                                              "k": "selector",
+                                              "base": {
+                                                "k": "ident",
+                                                "name": "task",
+                                                "tok": 1925
+                                              },
+                                              "field": "Spawn",
+                                              "tok": 1927
+                                            },
+                                            "args": [
+                                              {
+                                                "k": "ident",
+                                                "name": "s",
+                                                "tok": 1929
+                                              },
+                                              {
+                                                "k": "lambda",
+                                                "params": [],
+                                                "body": {
+                                                  "k": "call",
+                                                  "callee": {
+                                                    "k": "ident",
+                                                    "name": "tour",
+                                                    "tok": 1934
+                                                  },
+                                                  "args": [
+                                                    {
+                                                      "k": "ident",
+                                                      "name": "base",
+                                                      "tok": 1936
+                                                    }
+                                                  ],
+                                                  "tok": 1935
+                                                },
+                                                "tok": 1933
+                                              }
+                                            ],
+                                            "tok": 1928
+                                          }
+                                        ],
+                                        "tok": 1923
+                                      },
+                                      {
+                                        "k": "assign",
+                                        "targets": [
+                                          {
+                                            "k": "ident",
+                                            "name": "_",
+                                            "tok": 1940
+                                          }
+                                        ],
+                                        "op": "=",
+                                        "values": [
+                                          {
+                                            "k": "call",
+                                            "callee": {
+                                              "k": "ident",
+                                              "name": "serve",
+                                              "tok": 1942
+                                            },
+                                            "args": [
+                                              {
+                                                "k": "ident",
+                                                "name": "l",
+                                                "tok": 1944
+                                              },
+                                              {
+                                                "k": "int",
+                                                "value": 12,
+                                                "tok": 1946
+                                              }
+                                            ],
+                                            "tok": 1943
+                                          }
+                                        ],
+                                        "tok": 1940
+                                      },
+                                      {
+                                        "k": "expr",
+                                        "expr": {
+                                          "k": "call",
+                                          "callee": {
+                                            "k": "selector",
+                                            "base": {
+                                              "k": "ident",
+                                              "name": "task",
+                                              "tok": 1949
+                                            },
+                                            "field": "Join",
+                                            "tok": 1951
+                                          },
+                                          "args": [
+                                            {
+                                              "k": "ident",
+                                              "name": "h",
+                                              "tok": 1953
+                                            }
+                                          ],
+                                          "tok": 1952
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "tok": 1921
+                                }
+                              ],
+                              "tok": 1917
+                            }
+                          ],
+                          "tok": 1910
+                        },
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "for",
+                            "gens": [
+                              {
+                                "names": [
+                                  "line"
+                                ],
+                                "src": {
+                                  "k": "ident",
+                                  "name": "got",
+                                  "tok": 1962
+                                },
+                                "guards": [],
+                                "tok": 1960
+                              }
+                            ],
+                            "body": {
+                              "k": "block",
+                              "stmts": [
+                                {
+                                  "k": "expr",
+                                  "expr": {
+                                    "k": "call",
+                                    "callee": {
+                                      "k": "ident",
+                                      "name": "println",
+                                      "tok": 1964
+                                    },
+                                    "args": [
+                                      {
+                                        "k": "ident",
+                                        "name": "line",
+                                        "tok": 1966
+                                      }
+                                    ],
+                                    "tok": 1965
+                                  }
+                                }
+                              ]
+                            },
+                            "tok": 1959
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 1904
+                  }
+                ],
+                "tok": 1898
+              }
+            ],
+            "tok": 1893
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "e",
+                  "tok": 1975
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 1977
+                },
+                "tok": 1976
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 1979
+                      },
+                      "args": [
+                        {
+                          "k": "strlit",
+                          "value": "listen failed",
+                          "tok": 1981
+                        }
+                      ],
+                      "tok": 1980
+                    }
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 1974
+            }
+          }
+        ]
+      },
+      "tok": 1889,
+      "bodiless": false,
+      "span": {
+        "start": 1888,
+        "end": 1988
+      },
+      "sig_end": 1892
+    }
+  ],
+  "consts": [
+    {
+      "name": "cookieName",
+      "expr": {
+        "k": "strlit",
+        "value": "__Host-sid",
+        "tok": 45
+      },
+      "tok": 43,
+      "span": {
+        "start": 42,
+        "end": 47
+      }
+    },
+    {
+      "name": "ttlSec",
+      "expr": {
+        "k": "int",
+        "value": 3600,
+        "tok": 50
+      },
+      "tok": 48,
+      "span": {
+        "start": 47,
+        "end": 52
+      }
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+package password
+
+// bcrypt の核の網（white-box）: x/crypto の既知の 1 例（"allmine"・cost 10）と、golang.org/x/crypto の格子（testdata/crypto/bcrypt.txt —
+// scripts/oracles/xcrypto。pw の長さ 0〜72 × cost 4〜6・各行は塩を含む文字列）と、bcrypt の base64 の往復
+
+import "std/convert"
+import "std/internal/bless"
+import "std/iter"
+import "std/strings"
+
+@embed("testdata/crypto/bcrypt.txt")
+const bcryptGrid = map[string]string{}
+
+// 文字列 h（$2a$ / $2b$ の 60 文字）の塩と値を pw と cost で作り直して比べる
+func bcryptMatches(hs string, pw []byte, cost int) bool {
+    h := bytes(hs)
+    salt, ok := bcryptDecode(h[7:29])
+    if !ok {
+        return false
+    }
+    got := bcryptEncode(internal.bless.Bytes(bcryptHash(pw, salt, cost)))
+    return got == bytesToString(h[29:60])
+}
+
+func TestBcryptKnown() {
+    ok := bcryptMatches("$2a$10$XajjQvNhvvRt5GSeFk1xFeyqRrsxkhBkUiQeg0dt.wU1qD4aFDcga", bytes("allmine"), 10)
+    assert(ok)
+    println("conf: xcrypto-known/bcrypt 1")
+}
+
+func TestBcryptGrid() {
+    lines := strings.Split(strings.TrimSpace(embedded(bcryptGrid, "testdata/crypto/bcrypt.txt")), "\n")
+    assert(len(lines) == 18)
+    println("conf: xcrypto/bcrypt ${len(lines)}")
+    for li <- iter.Range(0, len(lines)) {
+        f := strings.Fields(lines[li])
+        l, _ := convert.ParseInt(f[0])
+        cost, _ := convert.ParseInt(f[1])
+        ok := bcryptMatches(f[2], pat(l, 1), cost)
+        assert(ok)
+    }
+}
+
+func TestBcryptBase64() {
+    for n <- iter.Range(0, 40) {
+        b := pat(n, 5)
+        d, ok := bcryptDecode(bytes(bcryptEncode(b)))
+        assert(ok)
+        assert(bytesToString(d) == bytesToString(b))
+    }
+    _, ok1 := bcryptDecode(bytes("abcde"))
+    assert(!ok1)
+    _, ok2 := bcryptDecode(bytes("ab*d"))
+    assert(!ok2)
+}

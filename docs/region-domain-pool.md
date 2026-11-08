@@ -42,6 +42,7 @@ docs/language.md の 11 節「スコープ = 領域」を、Domain / Pool の層
   - main（予約のアリーナ）と既定より大きいスロットの task は手放さない。予備をプールへ出すときは madvise しない。
   - 前提: 待ちに入りうる呼び出しの間、今の深度のレジスタは最内の生きた region の深度でなければならない。浅い深度へ確保させたい rt の口（宛先構築の read_file / read_dir）は深度を実引数で受け、レジスタを書き換えない（2026-10-23 の直し・report-1086 — 旧形は読む間だけレジスタを宛先へ下げていて、読みの待ちが (宛先, 今の深度] の生きた region を手放し、戻った task が深度を飛ばして入り直して他の task のスロットを自前にした。W ≥ 2 で io を読む task のある利用者のプログラムに影響）。網 = scripts/nextgen.sh（今の rt を積んだコンパイラで W ≥ 2 の自己 build。検査つきの rt は深度を飛ばした入り直しを exit 81 で止める）。
   - 既定より小さいスロットの task（std/net の Serve の接続 — `region:`・language.md 11 節）は、既定のスロット 1 本を割った小さいスロットを深度ごとに 1 本使い、park では既定の task と同じに予備へ返す。予備の欄には大きさの印があり、予備を採るのは同じ大きさの task だけ（違う大きさの task が深く入るときは予備を大きさに合った置き場へ出してから）。小さいスロットはワーカーの小さいスロットの深度ごとの列（溢れは共有の列 — 既定のスロットの深度ごとのプールと同じ形）に戻り、既定のプールへは返さない。列はスロットの外にあり、返したスロットの頁には書かない（中に鎖の語を書くと、列を通ったスロットの先頭の頁が全部常駐する — report-1079）。
+  - 小さいスロットの task の最初の 4 深度は、task の塊の末尾の頁（深度ごとに 1 頁）を窓として使い、溢れたら小さいスロットへ移る（窓の中身はその場に残る — language.md 11 節「接続の task の小さいスロット」）。表の基底は「窓の終わり − スロットの大きさ」（偽の基底）なので、確保の上限の検査は無変更で窓の終わりを指す。基底を region の先頭として読む口（深度の入りの bump・madvise・使用量・返し）だけが窓を見分けて直す。溢れて移した深度は普通のスロット（bump を窓の使った分だけ進めて始める — 上限の和は region: ちょうど）で、以後は窓を見ない。窓は予備にもプールにも出さない。park で手放す深度の窓は頁を返し、その task では以後窓にしない。
   - 棄てた案:
     - 止まらない部分木の間だけ own を下げる（L1-0b の試作）: 呼び出しごとに表の退避と復元が要り、止まる部分木に効かない。
     - park のたびに 1 本ずつプールへ返す: 深度ごとの出し入れで命令 +600/要求。
@@ -174,7 +175,7 @@ freeze（1c 節）と同じパターン「動的検査が健全性の底、静�
   **既定は増分消費の環**（IOU_PBUF_RING_INC — カーネル 6.12 以上）: ワーカーごと 16 KiB × n 本をそのワーカーの全接続で分け合い（n = clamp(1024 ÷ W, 16, 64) を 2 の冪へ切り下げ — 全ワーカーの和を W に依らず ≈ 16 MiB に。要る量は接続 / ワーカー × 要求の大きさで、接続の総数が同じなら W に反比例する — 裁定 2026-11-02 report-rt-2）、カーネルは頭のバッファの続きに受けを書く（受け 1 回は届いた分だけ使い、バッファの残りで切れる）。
   受けの単位は**区間**（バッファ・始まり・長さ）で、接続の受信の列は区間の鎖。区間の始まりは rt がバッファごとに持つ「カーネルが書いた位置」から出す（完了は始まりを運ばない）。
   バッファは「カーネル済み（F_BUF_MORE の無い完了）かつ未読の区間 0」で環へ戻す（バッファごとの参照数）。区間は 1 バイト以上なので、生きている区間の数は環の総バイトを越えない — 区間の表はその大きさで取り、尽きない。
-  Recv は列の区間を頭から求められた長さまで続けて写す（バッファの境目で割れた受けを 1 回で返す。割れたまま返すと、呼び手〔std/http〕が未完の要求を持ち越して持ち越しの列を取る — 実測で接続ごとに 270 KB 常駐した）。
+  Recv は列の区間を頭から求められた長さまで続けて写す（バッファの境目で割れた受けを 1 回で返す。割れたまま返すと、呼び手〔std/http/server〕が未完の要求を持ち越して持ち越しの列を取る — 実測で接続ごとに 270 KB 常駐した）。
   固定費の RSS = 環の総バイト（環が一巡すると全バイトが触られる — W ≤ 16 で 1 MiB / ワーカー・W 64 で 256 KiB / ワーカー = 和 16 MiB）。要求の大きさに依らず、倒し（下の read）は接続の数ではなく未読のバイトで決まる。
   遅い接続（読まれないまま区間を持つ）はバッファを丸ごと押さえる。押さえは本数で吸収し、全部押さえられたら下の空き切れ → read の道へ縮退する（悪くて固定スロットの環と同じ振る舞い）。
   登録が断られたら（6.12 より前は未知の flags を EINVAL）**固定スロットの環**で登録し直す。開発の口 `SOBER_PBUF_INC=0` はこちらに固定する（httpcheck が両方の道を回す）。
@@ -202,10 +203,10 @@ freeze（1c 節）と同じパターン「動的検査が健全性の底、静�
 
 ```
 // 置き場を作る（T の package の整えの関数 — 欄は宣言の package でだけ書ける）
-gzw := task.NewLocal((w mut flate.Work) => flate.Prepare(mut w))
+gzw := task.NewLocal((w mut compress.flate.Work) => compress.flate.NewWork(mut w))
 …
 // 窓 = mut 仮引数 1 つの inline ラムダ — 借りる / 返すが 1 つの式の入口と出口・値は本体の値
-z := task.Lease(gzw, (w mut flate.Work) => flate.EncodeWith(mut w, body, level))
+z := task.Lease(gzw, (w mut compress.flate.Work) => compress.flate.EncodeWith(mut w, body, level))
 ```
 
 - **意味の約束 = 「lease ≡ 新しい値」**: `task.Lease(lp, body)` は `{ mut w := T{}; 整え(mut w); body(mut w) }` と観測上同じ（スカラーの欄はゼロ値・
@@ -224,9 +225,12 @@ z := task.Lease(gzw, (w mut flate.Work) => flate.EncodeWith(mut w, body, level))
   読みは世代が今と違えば 0・lease の入口で世代を 1 つ進めるだけ〔O(1)〕・世代が一周〔2^32 回〕したときだけ本当に消す — zlib の head の手）
   - 窓の中の `pool.Renew` は進めた世代を置き場へ書き戻す（Scratch が置き場の住所を持つ — 書き戻さないと次の窓の LeaseAttach が同じ世代を配り、
     Renew の後の書きが次の窓に見えた〔report-720 で修理・回帰例 examples/lease_renew〕）
-- 最初の利用者 = std/compress/flate の `Work`（記号・鎖・ハッシュの表の Scratch 3 本 + スカラー — `flate.Prepare` が最大の容量 ≈ 650 KB に整える）と
-  `flate.EncodeWith` / `gzip.EncodeWith`（Encode は `Work{}` を作って呼ぶ形 — 出力のバイト列は同じ）。http の口は ServeConn の名前付き引数 `work:`
-  （compress: と組み — 無しなら panic(WorkNoCompress)・省略は要求ごとに作業域を取る今までの形）。json-comp の RSS / 接続は 150 → ≈ 70 KB（report-720）。
+  - 生のアクセサ（世代に触れない — 鮮度は呼び手が持つ）: 語の `LoadRaw` / `StoreRaw` と、語を 16 / 32 ビットの項目の列と見る `LoadRaw16` / `StoreRaw16` /
+    `LoadRaw32` / `StoreRaw32`（添字は項目の単位・容量は語のまま — 置き場の容量の宣言と LeaseAttach は語で数える）。表の足跡を詰める口（deflate の鎖と
+    ハッシュの表 = 16 ビット）。棄てた案: 1 語に 4 項目を shift / mask で詰める std だけの形 — 項目ごとの読み‐変え‐書きで命令が利得を食う
+- 最初の利用者 = std/compress/flate の `Work`（記号・頻度・鎖・ハッシュの表の Scratch 4 本 + スカラー — `compress.flate.NewWork` が最大の容量 ≈ 200 KB に整える — 記号と頻度は 32 ビット・鎖とハッシュの表は 16 ビットの項目）と
+  `compress.flate.EncodeWith` / `compress.gzip.EncodeWith`（Encode は `Work{}` を作って呼ぶ形 — 出力のバイト列は同じ）。http の口は ServeConn の名前付き引数 `work:`
+  （compression: と組み — 無しなら panic(WorkNoCompress)・省略は要求ごとに作業域を取る今までの形）。json-comp の RSS / 接続は 150 → ≈ 70 KB（report-720）。
   値札: 作業域は 1 語 1 項目（世代印の容器）に戻したので、work: を渡さない既定の道は要求ごとの作業域が詰めた形（report-716）より大きい
   （json-comp の RSS / 接続 150 → 200 KB — ユーザー裁定 2026-10-16 で受理。接続数に比例させたくない利用者は work: を渡す）
 - **倒れの形（窓の中の譲りは禁止しない）**: 窓の中で io・sleep・chan・spawn の待ちに譲ると、同じワーカーの別の task が同じ置き場を借りに来うる。rt は置き場の
@@ -246,8 +250,8 @@ z := task.Lease(gzw, (w mut flate.Work) => flate.EncodeWith(mut w, body, level))
 - **容量の宣言 = NewLocal の整えの窓**（裁定 (B)）: 窓の本体は Scratch の欄ごとに `pool.NewScratch(mut w.f, 定数)` をちょうど 1 回（定数 = 字面・const の名前・括弧・+ - * <<）。
   欄は宣言の package でだけ書ける（language.md 20 節）ので、T が別の package なら窓は T の package の関数 1 つ `F(mut w)` を呼ぶ形で、その本体を同じ規則で検査する（diag.Par 27）。
   F の本体が 1 文の転送 `G(mut w)`（w は F の唯一の mut 仮引数そのもの）なら G へ辿る（深さ 4 まで — 決定 2026-10-22・report-1043 A4）。T が std/internal の型で
-  公開の名前が型の別名（language.md 32 節）のとき、整えの関数の本体は T の package（internal）に置き、公開の package には転送を置く — `flate.Prepare(mut w)` が
-  `deflate.Prepare(mut w)` を呼ぶ形。棄てた案: 別名を宣言した package も「T の package」と数える（別名は宣言の package を変えない — 転送の本体は T の欄を書けないので、検査は結局 T の package の本体に要る）
+  公開の名前が型の別名（language.md 32 節）のとき、整えの関数の本体は T の package（internal）に置き、公開の package には転送を置く — `compress.flate.NewWork(mut w)` が
+  `deflate.NewWork(mut w)` を呼ぶ形。棄てた案: 別名を宣言した package も「T の package」と数える（別名は宣言の package を変えない — 転送の本体は T の欄を書けないので、検査は結局 T の package の本体に要る）
   テンプレートが組む欄の場所（容量の読み・区画の付け外し）は loader の印（EMutArg の b）で欄の書きの規則の外 — 形は loader が検査済み
 - **NewScratch は 1 回だけ**（裁定 (C)）: 容量のある Scratch に呼ぶと panic(ScratchSized{})。窓の中で作り直すと、新しい列が task の region に取られて長命の置き場から
   宙吊りになる — 呼ぶ関数は別の package にあり局所の検査では届かないので、動的な不変条件にする（倒れの道でも同じ振る舞い — 観測は割れない）
@@ -265,7 +269,7 @@ z := task.Lease(gzw, (w mut flate.Work) => flate.EncodeWith(mut w, body, level))
   倒れの形で足りる）・Acquire / Release の handle で借りて Get / Set で写す（毎回の写し — 84 KB の作業域では本末転倒）・ピン済み参照 `*T` を言語に（4 節の当初の設計 —
   mut 実引数の道で足りる間は棚）・置き場を接続の task ごと（今の形 — 接続数に比例）・Sharable（全ワーカーで 1 本・原子的な取り出し — 符号器には過剰〔競合・偽共有〕。
   io を跨ぐ lease〔DB の buffer pool — ピン = 貸出・eviction = 世代の fence〕の席として Phase 3 の原子性の設計と同時に）・Local を struct の欄に置く
-  （`http.Gzip{level, work}` — http の口は ServeConn の名前付き引数 `work:`）・rt が std の型ごとに暗黙の Local を持つ（`@worker_local` — グローバル変数に近く、性質を境界に書く柱と緊張）・
+  （`http.server.Gzip{level, work}` — http の口は ServeConn の名前付き引数 `work:`）・rt が std の型ごとに暗黙の Local を持つ（`@worker_local` — グローバル変数に近く、性質を境界に書く柱と緊張）・
   関数型一般に mut の席（26 節 G3・関数値に mut の別名が乗る）・`w =>` で暗黙に mut（印の無い mut）・型の宣言に容量（欄の既定値の構文が無い）・初回の Store で伸ばす（窓の中で伸びる）・
   初回の lease で置き場を作る（ワーカーの寿命の区画が要る）・Local を端点と同じ同一性の型（give: で 1 子へ移す — 接続の task は数千）・`Local[T]` の型引数で T を照合する（上の 25 節）・
   desugar（check の経路）と lower（build の経路）で別々に写す（同じ規則の 2 実装 — check ⊂/⊃ build の割れの種。loader の 1 か所に）

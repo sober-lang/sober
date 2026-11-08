@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # uniqfreeze（F-al の修理便① — language.md 17 節 U1〜U3）: analyzer の freeze の規則と、Lean の実行できる述語 uniqFreeze
 # （lean/FeatherweightSober/UniqFreeze.lean — `sober-check --uniq-batch`）の照合。
-#   ① testdata/analyzer_neg/freeze_*.sober と ifreeze_*.sober（暗黙の freeze の形 — 便② 段 2 から脱糖器が CFreeze を差す）（analyzer が拒否する負例）→
+#   ① testdata/analyzer_neg/freeze_*.sober と ifreeze_*.sober（暗黙の freeze の形 — 便② 段 2 から脱糖器が CFreeze を差す）・field_give_{table,arena}（外からの構築で信頼の口へ
+#     別名を渡す形 — 述語は信頼の口の呼び出しを呼び手の側で取り出し形に要約して拒否）（analyzer が拒否する負例）→
 #     述語も全部拒否すること（述語の検出力）
 #   ② scripts/uniqfreeze.list の代表（analyzer が受理する正例）→ 述語も全部受理すること（照合の向き analyzer ⊆ uniqFreeze）
 #   GATES_ALL=1（gates --all）なら ② を examples / bench の全部（analyzer が受理するもの — 約 280 本・2 分半）に広げる
@@ -16,7 +17,7 @@ W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 fail=0
 : > "$W/neg.ndjson"; : > "$W/neg.names"
-for s in testdata/analyzer_neg/freeze_*.sober testdata/analyzer_neg/ifreeze_*.sober; do
+for s in testdata/analyzer_neg/freeze_*.sober testdata/analyzer_neg/ifreeze_*.sober testdata/analyzer_neg/field_give_table.sober testdata/analyzer_neg/field_give_arena.sober; do
     "$SOBER" check "$s" --core-json > "$W/one" 2> /dev/null || { echo "FAIL $s: no core JSON"; fail=1; continue; }
     tr -d '\n' < "$W/one" >> "$W/neg.ndjson"; echo >> "$W/neg.ndjson"; echo "$s" >> "$W/neg.names"
 done

@@ -50,6 +50,16 @@ one() {
         echo "@@ ok"
         return
     fi
+    # --split の既知の差（$G/SPLIT-KNOWN.txt — F の項目に紐づく）: 外して known と数える。一致するようになったら行の消し忘れとして赤
+    if [ ${#split[@]} -gt 0 ] && grep -q "^$e " "$ROOT/$G/SPLIT-KNOWN.txt" 2>/dev/null; then
+        if cmp -s "$w/o" "$ROOT/$G/$key.txt"; then
+            echo "FAIL: $e: listed in $G/SPLIT-KNOWN.txt but now matches — remove the line (its F is fixed)"
+            echo "@@ fail"
+        else
+            echo "@@ known"
+        fi
+        return
+    fi
     if ! cmp -s "$w/o" "$ROOT/$G/$key.txt"; then
         echo "FAIL: $e: check output differs from $G/$key.txt"
         diff "$ROOT/$G/$key.txt" "$w/o" | head -6
@@ -95,5 +105,6 @@ par_wait > "$tmp/list"
 grep -v '^@@ ' "$tmp/list" || true
 ok=$(par_count ok "$tmp/list")
 fail=$(par_count fail "$tmp/list")
-echo "checkverdict${split:+ --split (G-e)}${CV_SAMPLE:+ (sample $CV_SAMPLE)}: $ok entries match testdata/checkverdict, fail=$fail"
+known=$(par_count known "$tmp/list")
+echo "checkverdict${split:+ --split (G-e)}${CV_SAMPLE:+ (sample $CV_SAMPLE)}: $ok entries match testdata/checkverdict${split:+ + $known known (SPLIT-KNOWN.txt)}, fail=$fail"
 [ "$fail" = 0 ]

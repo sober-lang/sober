@@ -7,8 +7,8 @@ import "testdata/jsonpkg/geo"
 type User struct {
     id int
     name string
-    home geo.Pt
-    visits []geo.Pt
+    home testdata.jsonpkg.geo.Pt
+    visits []testdata.jsonpkg.geo.Pt
     boss Ref?
 }
 

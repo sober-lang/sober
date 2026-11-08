@@ -1,0 +1,18 @@
+# scripts/httpinterop.sh の記録（scripts/confrecord.sh が書く — 手で直さない）
+commit 73597f45c958 (dirty)
+date 2026-11-07
+conf-item: interop/http plain
+conf-item: interop/http tls13
+conf-item: interop/http tls12-opt-in
+conf-item: interop/http tls12-default-refused
+conf-item: interop/http content-length
+conf-item: interop/http chunked
+conf-item: interop/http head
+conf-item: interop/http redirect-303
+conf-item: interop/http redirect-auth-same-origin-only
+conf-item: interop/http insecure-redirect-refused
+conf-item: interop/http stream
+conf-item: interop/http session
+conf-item: interop/http proxy-connect
+conf-item: interop/http proxy-auth
+conf-item: interop/http unknown-ca-refused

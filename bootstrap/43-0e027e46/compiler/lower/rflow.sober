@@ -1,0 +1,1244 @@
+package lower
+
+// 戻り値へ流れる関数の region の省略（C1 — 最適化のバックエンドの経路だけ・regionElideModule の手前）:
+// 関数 f が自分の深度に確保するもの（自前の確保と、呼び先の結果が f の深度に着く分）が全部戻り値から辿れるなら、入口の region.enter を消す。
+// f の確保は呼び手の今の深度に直に着き（今は出口の relocate が同じ深度へ写していた — 写しが 1 回減るだけで、呼び手の region の中身は同じ）、
+// 呼び先は 1 段浅く入る。出口の relocate は空振り・setdepth は同じ深度へ戻すだけ（残す）。条件:
+//   E1 入口のブロックに enter がちょうど 1 つ・mut の仮引数なし・W_ANCHOR へ書かない・task の命令なし・アドレスを取られていない（task の入口・
+//      関数値 — 子 task の入口の enter を消すと親の深度へ確保する）・rt が直に呼ぶ入口でない（main.main — 深度 0 の上で呼ばれる）・深度の算術は宛先構築の式（W_DEST の読みに依る add）だけ
+//   E2 再帰に関与しない（呼び出しグラフの強連結成分の外 — 間接呼び出しは引数の数と戻りの形の合う、アドレスを取られた関数全部への辺）。
+//      深度の契約（27 節）は輪の中の enter が守る — 輪の外の enter を消しても exit 102 の発火は遅れる向きにしか動かない
+//   E3 未着の点が ret に残らない（前向きのデータフロー）: 点 = 自分の深度でありうる確保・relocate と、ヒープを返しうる呼び出しの結果。
+//      着く = 戻り値の置き場（sret の %0 か ret の値）へ、その値か、それを中に持つ点の値が書かれる。スロットは語ごとに追う（使い回しの上書きは強い更新）
+// 外すもの（保守 — 1 バイトのゴミも許さない）: 自分の深度でありうる列の成長（抜け殻が残る）・輪の中の点・今の深度へ暗黙に確保する rt・
+// 呼び手の深度で確保しうる透過の呼び先・実引数に渡した点（読むだけでも — 渡した先で写されたら元は一時）・点が 62 を超える関数
+
+import "std/iter"
+import "desugar"
+import "std/os"
+import "std/table"
+
+// 条件を満たす関数の入口の region.enter を消す
+func regionFlowModule(st mut St) {
+    // 関数の密な番号
+    mut fx := mut map[int]int{}
+    mut fl := mut []int{}
+    mut ff := st.fhead
+    while ff != -1 {
+        fx[int(ff)] = len(fl)
+        fl = append(fl, int(ff))
+        ff = irFnNext(mut st, ff)
+    }
+    nFns := len(fl)
+    mut tkn := mut []bool{}
+    mut isRtF := mut []bool{}
+    mut nEnt := mut []bool{}
+    mut rtDep := mut []bool{}
+    for kx <- iter.Range(0, nFns) {
+        tkn = append(tkn, false)
+        gf := FnRef(fl[kx])
+        isRtF = append(isRtF, rfIsRt(mut st, gf))
+        nEnt = append(nEnt, irFnBHead(mut st, gf) != -1 && rlEnters(mut st, gf))
+        rtDep = append(rtDep, false)
+    }
+    // 呼ぶ関数の列（CSR）とアドレスを取られた関数・rt の今の深度の読み（W_DEPTH）
+    mut dg := mut []int{}
+    mut ad := mut []int{}
+    mut isite := mut []int{}
+    mut dAlloc := mut []bool{}
+    for kx <- iter.Range(0, nFns) {
+        dg = append(dg, len(ad))
+        dAlloc = append(dAlloc, false)
+        gf := FnRef(fl[kx])
+        mut bb := irFnBHead(mut st, gf)
+        mut mts := mut []int{}
+        while bb != -1 {
+            mut ins := irBlkIHead(mut st, bb)
+            while ins != -1 {
+                op := irInsOp(mut st, ins)
+                if op == OpFuncaddr {
+                    jx := fx[irInsA(mut st, ins)]
+                    if jx != nil {
+                        tkn[jx] = true
+                    }
+                } else if op == OpCall {
+                    jx := fx[int(irInsFn(mut st, ins))]
+                    if jx != nil {
+                        ad = append(ad, jx)
+                        // rt と sober_entry が直に呼ぶ利用者の関数 = 入口（main.main・task の入口の類 — rt の入口は深度 0 の上で呼ぶ: enter を消すと入口の region が無くなる）
+                        if (isRtF[kx] || fl[kx] == st.entryFn) && !isRtF[jx] {
+                            tkn[jx] = true
+                        }
+                    }
+                    cf := irInsFn(mut st, ins)
+                    if cf == st.rtAlloc8 || cf == st.rtRalloc || cf == st.rtCat8 || cf == st.rtGrow || cf == st.rtGrow8 || cf == st.rtReloc || cf == st.rtReloc8 || cf == st.rtErrReloc || cf == st.rtExtend8 || cf == st.rtMapGrow {
+                        dAlloc[kx] = true
+                    }
+                } else if op == OpRAlloc || op == OpRBump || op == OpRReloc {
+                    dAlloc[kx] = true
+                } else if op == OpCallI {
+                    // [呼び手, 引数の数, 結果の型]
+                    isite = append(isite, kx)
+                    isite = append(isite, lenL(mut st, desugar.ListRef(irInsB(mut st, ins))))
+                    isite = append(isite, irInsC(mut st, ins))
+                } else if (op == OpGlobal || op == OpFsAddr) && irInsA(mut st, ins) == st.meta {
+                    mts = append(mts, irInsRes(mut st, ins))
+                } else if op == OpLoad && irInsB(mut st, ins) == W_DEPTH && apIn(mut mts, irInsA(mut st, ins)) {
+                    rtDep[kx] = true
+                }
+                ins = irInsNext(mut st, ins)
+            }
+            bb = irBlkNext(mut st, bb)
+        }
+    }
+    dg = append(dg, len(ad))
+    // 間接呼び出しの辺（呼び手ごとに別の列 — CSR の後ろに足す: 呼び手 k の辺は deg[k]..deg[k+1] と ix の分）
+    mut idg := mut []int{}
+    mut iad := mut []int{}
+    mut tkl := mut []int{}
+    for jx <- iter.Range(0, nFns) {
+        if tkn[jx] {
+            tkl = append(tkl, jx)
+        }
+    }
+    mut ia := 0
+    for kx <- iter.Range(0, nFns) {
+        idg = append(idg, len(iad))
+        while ia < len(isite) && isite[ia] == kx {
+            nargs := isite[ia + 1]
+            cc := isite[ia + 2]
+            for tq <- iter.Range(0, len(tkl)) {
+                if rfSigFits(mut st, FnRef(fl[tkl[tq]]), nargs, cc) {
+                    iad = append(iad, tkl[tq])
+                }
+            }
+            ia += 3
+        }
+    }
+    idg = append(idg, len(iad))
+    inCycle := rfScc(nFns, mut dg, mut ad, mut idg, mut iad)
+    // rt の今の深度の読みは rt の呼び出しを伝う（rt.task_wait → rt.task_switch の類）
+    mut more := true
+    while more {
+        more = false
+        for kx <- iter.Range(0, nFns) {
+            if isRtF[kx] && !rtDep[kx] {
+                for ev <- iter.Range(dg[kx], dg[kx + 1]) {
+                    if isRtF[ad[ev]] && rtDep[ad[ev]] && !rtDep[kx] {
+                        rtDep[kx] = true
+                        more = true
+                    }
+                }
+            }
+        }
+    }
+    // 呼び手の深度で確保しうる透過の関数（入口で enter しない利用者の関数 — 推移的）と、ヒープを返しうる enter する関数
+    mut atCaller := mut []bool{}
+    mut hp := mut []bool{}
+    mut pmk := mut []int{}
+    for kx <- iter.Range(0, nFns) {
+        gf := FnRef(fl[kx])
+        atCaller = append(atCaller, !isRtF[kx] && !nEnt[kx] && irFnBHead(mut st, gf) != -1 && dAlloc[kx])
+        // ヒープの語（rfPtrMask）は判定の中で呼び先ごとに遅延で（-9 = 未計算 — rfHeap）
+        pmk = append(pmk, if isRtF[kx] || !nEnt[kx] { 0 } else { -9 })
+        hp = append(hp, !isRtF[kx] && irFnRet(mut st, gf) == TyPtr)
+    }
+    more = true
+    while more {
+        more = false
+        for kx <- iter.Range(0, nFns) {
+            if !atCaller[kx] && !isRtF[kx] && !nEnt[kx] {
+                mut hit := idg[kx + 1] > idg[kx]
+                for ev <- iter.Range(dg[kx], dg[kx + 1]) {
+                    jx := ad[ev]
+                    if atCaller[jx] || (isRtF[jx] && rfRtImplicit(mut st, FnRef(fl[jx]), rtDep[jx])) {
+                        hit = true
+                    }
+                }
+                if hit {
+                    atCaller[kx] = true
+                    more = true
+                }
+            }
+        }
+    }
+    meter := rflowMeterEnv()
+    for kx <- iter.Range(0, nFns) {
+        gf := FnRef(fl[kx])
+        if !isRtF[kx] && nEnt[kx] && !tkn[kx] && !inCycle[kx] && irFnMutP(mut st, gf) & 4611686018427387903 == 0 {
+            if rfJudge(mut st, gf, mut fx, mut fl, mut isRtF, mut rtDep, mut atCaller, mut hp, mut pmk) {
+                if meter {
+                    rfMeter(mut st, gf)
+                } else {
+                    rfRewrite(mut st, gf)
+                    table.Push(mut st.rflowFns, int(gf))
+                }
+            }
+        }
+    }
+}
+
+// rt の関数か（名前の頭が "rt."）
+func rfIsRt(st mut St, gf FnRef) bool {
+    sr := irFnName(mut st, gf)
+    return sr >= 0 && dat(mut st, sr) >= 3 && dat(mut st, sr + 1) == 'r' && dat(mut st, sr + 2) == 't' && dat(mut st, sr + 3) == '.'
+}
+
+// g が間接呼び出し（引数 na 個・結果の型 c — -1 / TyI64 / TyPtr / CALLI_SRET）の呼び先でありうるか
+func rfSigFits(st mut St, gf FnRef, nargs int, cc int) bool {
+    if lenL(mut st, desugar.ListRef(irFnPtys(mut st, gf))) != nargs {
+        return false
+    }
+    isSret := (irFnMutP(mut st, gf) >> F_SRET_BIT) & 1 == 1
+    if cc == CALLI_SRET {
+        return isSret
+    }
+    return !isSret && irFnRet(mut st, gf) == cc
+}
+
+// rt の関数 g が今の深度へ暗黙に確保しうるか（深度を引数で取る確保の rt は別に見る — rfJudge）
+func rfRtImplicit(st mut St, gf FnRef, readsDepth bool) bool {
+    // 深度を引数で取る確保と、戻らない panic（死の道 — 巻き戻しが region ごと捨てる）は数えない
+    if gf == st.rtAlloc8 || gf == st.rtRalloc || gf == st.rtCat8 || gf == st.rtGrow || gf == st.rtGrow8 || gf == st.rtReloc || gf == st.rtReloc8 || gf == st.rtErrReloc || gf == st.rtExtend8 || gf == st.rtPanic || gf == st.rtPanicMem {
+        return false
+    }
+    return readsDepth || llRtAlloc(mut st, gf)
+}
+
+// 呼び出しグラフ（直の辺 deg / adj + 間接の辺 ideg / iadj）の輪に入る関数の印（反復の Tarjan）
+func rfScc(nn int, dg mut []int, ad mut []int, idg mut []int, iad mut []int) []bool {
+    mut tIdx := mut []int{}
+    mut tLow := mut []int{}
+    mut tOn := mut []bool{}
+    mut cyc := mut []bool{}
+    for kx <- iter.Range(0, nn) {
+        tIdx = append(tIdx, -1)
+        tLow = append(tLow, 0)
+        tOn = append(tOn, false)
+        cyc = append(cyc, false)
+    }
+    // 積みは長さを数で持つ（stk = Tarjan の積み・tWork = [頂点, 次に見る辺の番号] — 辺の番号 = 直の辺の後に間接の辺を続けた通し）
+    mut stk := mut []int{}
+    mut ssp := 0
+    mut tWork := mut []int{}
+    mut wsp := 0
+    mut tNext := 0
+    for rv <- iter.Range(0, nn) {
+        if tIdx[rv] < 0 {
+            tIdx[rv] = tNext
+            tLow[rv] = tNext
+            tNext += 1
+            ssp = llPush(mut stk, ssp, rv)
+            tOn[rv] = true
+            wsp = llPush(mut tWork, wsp, rv)
+            wsp = llPush(mut tWork, wsp, 0)
+            while wsp > 0 {
+                wtop := wsp - 2
+                xv := tWork[wtop]
+                ev := tWork[wtop + 1]
+                nd := dg[xv + 1] - dg[xv]
+                ne := nd + idg[xv + 1] - idg[xv]
+                if ev < ne {
+                    tWork[wtop + 1] = ev + 1
+                    wv := if ev < nd { ad[dg[xv] + ev] } else { iad[idg[xv] + ev - nd] }
+                    if wv == xv {
+                        cyc[xv] = true
+                    }
+                    if tIdx[wv] < 0 {
+                        tIdx[wv] = tNext
+                        tLow[wv] = tNext
+                        tNext += 1
+                        ssp = llPush(mut stk, ssp, wv)
+                        tOn[wv] = true
+                        wsp = llPush(mut tWork, wsp, wv)
+                        wsp = llPush(mut tWork, wsp, 0)
+                    } else if tOn[wv] && tIdx[wv] < tLow[xv] {
+                        tLow[xv] = tIdx[wv]
+                    }
+                } else {
+                    wsp = wtop
+                    if wsp > 0 {
+                        pv := tWork[wsp - 2]
+                        if tLow[xv] < tLow[pv] {
+                            tLow[pv] = tLow[xv]
+                        }
+                    }
+                    if tLow[xv] == tIdx[xv] {
+                        mut fst := ssp - 1
+                        while stk[fst] != xv {
+                            fst -= 1
+                        }
+                        ncomp := ssp - fst
+                        for qi <- iter.Range(fst, ssp) {
+                            tOn[stk[qi]] = false
+                            if ncomp > 1 {
+                                cyc[stk[qi]] = true
+                            }
+                        }
+                        ssp = fst
+                    }
+                }
+            }
+        }
+    }
+    return freeze(cyc)
+}
+
+// 深度の値の種類（rfJudge）
+const RF_NONE = 0
+const RF_ENTRY = 1 // 入口の enter より前の region.depth（呼び手の深度 d）
+const RF_OWN = 2   // 入口の enter の後の region.depth（自分の深度 — 書き換え後は d）
+const RF_DEST = 3  // 宛先構築の式（W_DEST の読みに依る算術 — d 以下）
+const RF_INNER = 4 // 反復の region の enter の直後の region.depth（ループの深度）
+const RF_CUR = 5   // それ以外の region.depth（今の深度 — 自分の深度でありうる）
+
+// f が C1 の条件 E1 / E3 を満たすか（E2・アドレス・mut の仮引数は呼び手が見た）
+func rfJudge(st mut St, ff FnRef, fx mut map[int]int, fl mut []int, isRtF mut []bool, rtDep mut []bool, atCaller mut []bool, hp mut []bool, pmk mut []int) bool {
+    nval := irFnNVal(mut st, ff) + 1
+    b0 := irFnBHead(mut st, ff)
+    // 前検査（表を作る前 — 判定の費用の大半はここで落ちる関数の表づくりだった）: 入口の enter が 1 つ・task の命令なし・暗黙の深度の rt / 透過の呼び先 /
+    // map の成長なし・点になりうる命令（確保・relocate・ヒープを返しうる呼び出し）がある
+    if !rfPrescan(mut st, ff, mut fx, mut fl, mut isRtF, mut rtDep, mut atCaller, mut hp, mut pmk) {
+        return false
+    }
+    // ブロックの並び（番号 → 並びの位置）
+    mut blks := mut []int{}
+    mut bpos := mut map[int]int{}
+    mut bb := b0
+    while bb != -1 {
+        bpos[irBlkId(mut st, bb)] = len(blks)
+        blks = append(blks, int(bb))
+        bb = irBlkNext(mut st, bb)
+    }
+    nblk := len(blks)
+    // スロットの語（番号 → 平らな列の頭）
+    mut sb := mut []int{}
+    mut swd := mut []int{}
+    mut sr := irFnSHead(mut st, ff)
+    mut nSw := 0
+    while sr >= 0 {
+        snum := desugar.HeapGet(mut st.d, sr + 2)
+        while len(sb) <= snum {
+            sb = append(sb, 0)
+            swd = append(swd, 0)
+        }
+        sb[snum] = nSw
+        swd[snum] = desugar.HeapGet(mut st.d, sr + 1)
+        nSw += desugar.HeapGet(mut st.d, sr + 1)
+        sr = desugar.HeapGet(mut st.d, sr)
+    }
+    // 値の表
+    mut dkind := mut []int{}
+    mut fw := mut []bool{}
+    mut cv := mut []int{}
+    mut isCv := mut []bool{}
+    mut vO := mut []int{}
+    mut vS1 := mut []int{}
+    mut vS2 := mut []int{}
+    mut vR := mut []bool{}
+    mut vU := mut []bool{}
+    for kx <- iter.Range(0, nval) {
+        dkind = append(dkind, RF_NONE)
+        fw = append(fw, false)
+        cv = append(cv, 0)
+        isCv = append(isCv, false)
+        vO = append(vO, 0)
+        vS1 = append(vS1, -1)
+        vS2 = append(vS2, -1)
+        vR = append(vR, false)
+        vU = append(vU, false)
+    }
+    // 戻り値の置き場の語の位置（%0 か %0 の定数の gep — 他は -1）と、f の出口の relocate が触る語（ヒープを指す語 — 着くのはそこへの書きだけ）
+    mut rOff := mut []int{}
+    for kx <- iter.Range(0, nval) {
+        rOff = append(rOff, -1)
+    }
+    fj := fx[int(ff)]
+    ptrW0 := if fj != nil { rfMaskOf(mut st, mut fl, mut pmk, fj) } else { -1 }
+    mut ptrW := mut []int{}
+    ptrW = append(ptrW, ptrW0)
+    // 仮引数: sret なら %0 が戻り値の置き場・他は外の番地
+    isSret := (irFnMutP(mut st, ff) >> F_SRET_BIT) & 1 == 1
+    npar := lenL(mut st, desugar.ListRef(irFnPtys(mut st, ff)))
+    for kx <- iter.Range(0, npar) {
+        if kx < nval {
+            if kx == 0 && isSret {
+                vR[0] = true
+                rOff[0] = 0
+            } else {
+                vU[kx] = true
+            }
+        }
+    }
+    // 1 周目: 深度の種類・定数・前提の検査（E1 と E3 の構造の外し）
+    mut mts := mut []int{}
+    mut nEnt := 0
+    for qi <- iter.Range(0, nblk) {
+        bb = BlkRef(blks[qi])
+        mut seenEnter := false
+        mut ins := irBlkIHead(mut st, bb)
+        while ins != -1 {
+            op := irInsOp(mut st, ins)
+            rv := irInsRes(mut st, ins)
+            if op == OpREnter {
+                if qi == 0 {
+                    nEnt += 1
+                }
+                seenEnter = true
+            } else if op == OpRSetDepth {
+                seenEnter = false
+            } else if op == OpRDepth && rv >= 0 && rv < nval {
+                dkind[rv] = if qi == 0 { if seenEnter { RF_OWN } else { RF_ENTRY } } else if seenEnter { RF_INNER } else { RF_CUR }
+            } else if op == OpConst && rv >= 0 && rv < nval {
+                cv[rv] = irInsA(mut st, ins)
+                isCv[rv] = true
+            } else if op == OpGepW && rv >= 0 && rv < nval {
+                av := irInsA(mut st, ins)
+                iv := irInsB(mut st, ins)
+                if av >= 0 && av < nval && rOff[av] >= 0 && iv >= 0 && iv < nval && isCv[iv] {
+                    rOff[rv] = rOff[av] + cv[iv]
+                }
+            } else if (op == OpGlobal || op == OpFsAddr) && irInsA(mut st, ins) == st.meta {
+                mts = append(mts, rv)
+            } else if op == OpLoad && irInsB(mut st, ins) == W_DEST && apIn(mut mts, irInsA(mut st, ins)) && rv >= 0 && rv < nval {
+                fw[rv] = true
+            } else if op == OpStore && irInsB(mut st, ins) == W_ANCHOR && apIn(mut mts, irInsA(mut st, ins)) {
+                return false
+            } else if op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpClone || op == OpAtomic {
+                return false
+            } else if op == OpCall {
+                gf := irInsFn(mut st, ins)
+                jx := fx[int(gf)]
+                if jx != nil {
+                    if isRtF[jx] && rfRtImplicit(mut st, gf, rtDep[jx]) {
+                        return false
+                    }
+                    if !isRtF[jx] && atCaller[jx] {
+                        return false
+                    }
+                    if gf == st.rtMapGrow {
+                        return false
+                    }
+                }
+            }
+            ins = irInsNext(mut st, ins)
+        }
+    }
+    if nEnt != 1 {
+        return false
+    }
+    // W_DEST の読みに依る算術（固定点 — 並びの順で数周）と、深度の算術の検査
+    mut more := true
+    while more {
+        more = false
+        for qi <- iter.Range(0, nblk) {
+            mut ins := irBlkIHead(mut st, BlkRef(blks[qi]))
+            while ins != -1 {
+                op := irInsOp(mut st, ins)
+                rv := irInsRes(mut st, ins)
+                if (op == OpBin || op == OpCmp) && rv >= 0 && rv < nval && !fw[rv] {
+                    xv := irInsB(mut st, ins)
+                    yv := irInsC(mut st, ins)
+                    if (xv >= 0 && xv < nval && fw[xv]) || (yv >= 0 && yv < nval && fw[yv]) {
+                        fw[rv] = true
+                        more = true
+                    }
+                }
+                ins = irInsNext(mut st, ins)
+            }
+        }
+    }
+    for qi <- iter.Range(0, nblk) {
+        mut ins := irBlkIHead(mut st, BlkRef(blks[qi]))
+        while ins != -1 {
+            if irInsOp(mut st, ins) == OpBin {
+                rv := irInsRes(mut st, ins)
+                xv := irInsB(mut st, ins)
+                yv := irInsC(mut st, ins)
+                dkx := if xv >= 0 && xv < nval { dkind[xv] } else { RF_NONE }
+                dky := if yv >= 0 && yv < nval { dkind[yv] } else { RF_NONE }
+                if dkx == RF_ENTRY || dkx == RF_OWN || dkx == RF_CUR || dky == RF_ENTRY || dky == RF_OWN || dky == RF_CUR {
+                    // 宛先構築の式の中間（W_DEST の読みに依る — sub / mul / and）は通し、最後の add を宛先の深度に
+                    if rv >= 0 && rv < nval && fw[rv] {
+                        if irInsA(mut st, ins) == BAdd {
+                            dkind[rv] = RF_DEST
+                        }
+                    } else {
+                        return false
+                    }
+                }
+            }
+            ins = irInsNext(mut st, ins)
+        }
+    }
+    // 点の割り当て（命令 → ビット）: 確保・relocate・ヒープの結果の呼び出し。輪の中の点・自分の深度でありうる成長は外す
+    mut orgOf := mut map[int]int{}
+    mut nOrg := 0
+    mut pendMask := 0
+    for qi <- iter.Range(0, nblk) {
+        bb = BlkRef(blks[qi])
+        mut ins := irBlkIHead(mut st, bb)
+        while ins != -1 {
+            op := irInsOp(mut st, ins)
+            mut dv := -1
+            mut pk := 0
+            if op == OpRAlloc || op == OpRBump {
+                dv = irInsA(mut st, ins)
+                pk = 1
+            } else if op == OpRReloc {
+                dv = irInsC(mut st, ins)
+                pk = 2
+            } else if op == OpCall {
+                gf := irInsFn(mut st, ins)
+                ll := desugar.ListRef(irInsB(mut st, ins))
+                if gf == st.rtAlloc8 || gf == st.rtRalloc {
+                    dv = if lenL(mut st, ll) > 0 { latI(mut st, ll, 0) } else { -1 }
+                    pk = 1
+                } else if gf == st.rtReloc8 || gf == st.rtReloc || gf == st.rtErrReloc {
+                    kx := if gf == st.rtReloc { 2 } else { 1 }
+                    dv = if lenL(mut st, ll) > kx { latI(mut st, ll, kx) } else { -1 }
+                    pk = 2
+                } else if gf == st.rtCat8 || gf == st.rtGrow || gf == st.rtGrow8 || gf == st.rtExtend8 {
+                    kx := if gf == st.rtCat8 || gf == st.rtGrow { 3 } else if gf == st.rtGrow8 { 2 } else { 0 }
+                    dv = if lenL(mut st, ll) > kx { latI(mut st, ll, kx) } else { -1 }
+                    pk = 3
+                } else {
+                    jx := fx[int(gf)]
+                    if jx != nil && (hp[jx] || rfMaskOf(mut st, mut fl, mut pmk, jx) != 0) {
+                        pk = 4
+                    }
+                }
+            } else if op == OpCallI {
+                pk = 4
+            }
+            if pk != 0 {
+                dkd := if dv >= 0 && dv < nval { dkind[dv] } else { RF_NONE }
+                // 自分の深度でありうる: 自分の深度・今の深度・読んだ値（ヘッダの深度）・ブロックの引数
+                isMine := pk == 4 || !(dkd == RF_ENTRY || dkd == RF_DEST || dkd == RF_INNER)
+                if isMine {
+                    if pk == 3 {
+                        return false
+                    }
+                    if rfReaches(mut st, bb, mut bpos, nblk) {
+                        return false
+                    }
+                    if nOrg >= 62 {
+                        return false
+                    }
+                    orgOf[int(ins)] = nOrg
+                    pendMask = pendMask | (1 << nOrg)
+                    nOrg += 1
+                } else if pk == 1 {
+                    // 外（呼び手以下・反復）の確保: 中身を追う点（未着にはしない — 着く道の中継: 宛先に作った列の中の自前の欄）
+                    if nOrg >= 62 {
+                        return false
+                    }
+                    orgOf[int(ins)] = nOrg
+                    nOrg += 1
+                }
+            }
+            ins = irInsNext(mut st, ins)
+        }
+    }
+    // 点（未着になりうるもの）の無い関数は C1 の対象外（regionElide / regionLight の守備範囲 — 判定の費用もここで打ち切る）
+    if pendMask == 0 {
+        return false
+    }
+    // データフロー: 値の表と点の中身は流れによらない（単調に増える）・未着の集合とスロットの語は流れに沿う（ブロックの入口の状態）
+    mut ctn := mut []int{}
+    for kx <- iter.Range(0, nOrg + 1) {
+        ctn = append(ctn, 0)
+    }
+    slw := nSw + 1
+    mut inSt := mut []int{}
+    mut bhave := mut []bool{}
+    for kx <- iter.Range(0, nblk * slw) {
+        inSt = append(inSt, 0)
+    }
+    for kx <- iter.Range(0, nblk) {
+        bhave = append(bhave, false)
+    }
+    mut fcur := mut []int{}
+    for kx <- iter.Range(0, slw) {
+        fcur = append(fcur, 0)
+    }
+    mut fwl := mut []int{}
+    mut moved := true
+    mut fine := true
+    mut nRound := 0
+    while moved && nRound < 20 {
+        moved = false
+        fine = true
+        nRound += 1
+        for kx <- iter.Range(0, nblk * slw) {
+            inSt[kx] = 0
+        }
+        for kx <- iter.Range(0, nblk) {
+            bhave[kx] = false
+        }
+        bhave[0] = true
+        mut sp := llPush(mut fwl, 0, 0)
+        while sp > 0 {
+            sp -= 1
+            qi := fwl[sp]
+            for kx <- iter.Range(0, slw) {
+                fcur[kx] = inSt[qi * slw + kx]
+            }
+            bb = BlkRef(blks[qi])
+            mut ins := irBlkIHead(mut st, bb)
+            while ins != -1 {
+                op := irInsOp(mut st, ins)
+                rv := irInsRes(mut st, ins)
+                obit := orgOf[int(ins)]
+                mbit := if obit != nil { 1 << obit } else { 0 }
+                if op == OpSlotaddr {
+                    if rv >= 0 && rv < nval && vS1[rv] == -1 {
+                        snum := irInsA(mut st, ins)
+                        vS1[rv] = snum * 65536
+                        moved = true
+                    }
+                } else if op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop || op == OpBin {
+                    // 番地の算術: 中身と場所を写す（定数の語の添字だけ語の位置を進める）
+                    av := irInsA(mut st, ins)
+                    srcV := if op == OpBin { irInsB(mut st, ins) } else { av }
+                    srcV2 := if op == OpBin { irInsC(mut st, ins) } else { -1 }
+                    woff := if op == OpGepW && irInsB(mut st, ins) >= 0 && irInsB(mut st, ins) < nval && isCv[irInsB(mut st, ins)] { cv[irInsB(mut st, ins)] } else if op == OpPtoi || op == OpItop { 0 } else { -1 }
+                    if rv >= 0 && rv < nval {
+                        if rfJoinPtr(mut vO, mut vS1, mut vS2, mut vR, mut vU, rv, srcV, woff, nval) {
+                            moved = true
+                        }
+                        if srcV2 >= 0 && rfJoinPtr(mut vO, mut vS1, mut vS2, mut vR, mut vU, rv, srcV2, -1, nval) {
+                            moved = true
+                        }
+                    }
+                } else if op == OpLoad && rv >= 0 && rv < nval {
+                    pv := irInsA(mut st, ins)
+                    mk := rfLoad(mut fcur, mut sb, mut vO, mut vS1, mut vS2, mut ctn, pv, irInsB(mut st, ins), nval)
+                    if (vO[rv] | mk) != vO[rv] || !vU[rv] {
+                        vO[rv] = vO[rv] | mk
+                        vU[rv] = true
+                        moved = true
+                    }
+                } else if op == OpStore {
+                    pv := irInsA(mut st, ins)
+                    vv := irInsC(mut st, ins)
+                    mk := if vv >= 0 && vv < nval { vO[vv] } else { 0 }
+                    anch := vR[pv] && rfRetPtr(mut rOff, mut ptrW, pv, irInsB(mut st, ins))
+                    if rfStore(mut fcur, mut sb, mut swd, mut vO, mut vS1, mut vS2, anch, mut ctn, pv, irInsB(mut st, ins), mk, nval) {
+                        moved = true
+                    }
+                } else if op == OpRAlloc || op == OpRBump || (op == OpCall && mbit != 0 && (irInsFn(mut st, ins) == st.rtAlloc8 || irInsFn(mut st, ins) == st.rtRalloc)) {
+                    if mbit != 0 && rv >= 0 && rv < nval {
+                        fcur[nSw] = fcur[nSw] | (mbit & pendMask)
+                        if (vO[rv] | mbit) != vO[rv] {
+                            vO[rv] = vO[rv] | mbit
+                            moved = true
+                        }
+                    }
+                } else if mbit != 0 && (op == OpRReloc || (op == OpCall && (irInsFn(mut st, ins) == st.rtReloc || irInsFn(mut st, ins) == st.rtReloc8 || irInsFn(mut st, ins) == st.rtErrReloc))) {
+                    // 番地 a のヘッダを自分の深度へ写す: 新しい点がその場所に書かれる
+                    pv := if op == OpRReloc { irInsA(mut st, ins) } else { latI(mut st, desugar.ListRef(irInsB(mut st, ins)), 0) }
+                    fcur[nSw] = fcur[nSw] | mbit
+                    // rt.err_relocate は error の全語に点を書きうる（先頭の union の欄・鎖 — 語ごとに記す。多めは安全側）
+                    nw := if op == OpCall && irInsFn(mut st, ins) == st.rtErrReloc { desugar.HeapGet(mut st.d, st.errstruct + SI_WORDS) } else { 1 }
+                    for w <- iter.Range(0, nw) {
+                        anch := pv >= 0 && pv < nval && vR[pv] && rfRetPtr(mut rOff, mut ptrW, pv, w)
+                        if rfStore(mut fcur, mut sb, mut swd, mut vO, mut vS1, mut vS2, anch, mut ctn, pv, w, mbit, nval) {
+                            moved = true
+                        }
+                    }
+                } else if op == OpCall || op == OpCallI {
+                    ll := desugar.ListRef(irInsB(mut st, ins))
+                    // 実引数に渡した点は外す（読むだけでも — 渡した先で写されたら元は一時。rt.cat8 の先端一致〔その場で伸ばす〕と写しの合流も）。
+                    // relocate の番地（点の置き場の語の番地 — 点そのものではない）は数えない
+                    if !(op == OpCall && (irInsFn(mut st, ins) == st.rtReloc || irInsFn(mut st, ins) == st.rtReloc8 || irInsFn(mut st, ins) == st.rtErrReloc)) {
+                        for kx <- iter.Range(0, lenL(mut st, ll)) {
+                            av := latI(mut st, ll, kx)
+                            if av >= 0 && av < nval && vO[av] & pendMask != 0 {
+                                fine = false
+                            }
+                        }
+                    }
+                    isOut := if op == OpCallI { irInsC(mut st, ins) == CALLI_SRET } else { (irFnMutP(mut st, irInsFn(mut st, ins)) >> F_SRET_BIT) & 1 == 1 }
+                    if isOut && lenL(mut st, ll) > 0 {
+                        pv := latI(mut st, ll, 0)
+                        if pv >= 0 && pv < nval && vR[pv] {
+                            // sret の受け皿の転送（f の %0 を渡す）: 呼び先の結果は直に着く
+                        } else if pv >= 0 && pv < nval && vS1[pv] >= 0 && vS2[pv] == -1 {
+                            // 受け皿のスロットの全語を書く（強い更新）
+                            snum := vS1[pv] / 65536
+                            mut pw := -1
+                            if op == OpCall {
+                                gj := fx[int(irInsFn(mut st, ins))]
+                                if gj != nil {
+                                    pw = rfMaskOf(mut st, mut fl, mut pmk, gj)
+                                }
+                            }
+                            for kx <- iter.Range(0, swd[snum]) {
+                                fcur[sb[snum] + kx] = if pw == -1 || (kx < 62 && (pw >> kx) & 1 == 1) { mbit } else { 0 }
+                            }
+                            fcur[nSw] = fcur[nSw] | mbit
+                        } else if mbit != 0 {
+                            fine = false
+                        }
+                    } else if mbit != 0 {
+                        fcur[nSw] = fcur[nSw] | mbit
+                        if rv >= 0 && rv < nval && (vO[rv] | mbit) != vO[rv] {
+                            vO[rv] = vO[rv] | mbit
+                            moved = true
+                        }
+                    }
+                } else if rv >= 0 && rv < nval && op != OpConst && op != OpRDepth && op != OpCmp && op != OpLoad8 && op != OpGlobal && op != OpFsAddr && op != OpFuncaddr {
+                    // 知らない結果は外の番地（保守 — 書けば着かない・読めば中身は空）
+                    if !vU[rv] {
+                        vU[rv] = true
+                        moved = true
+                    }
+                }
+                ins = irInsNext(mut st, ins)
+            }
+            // 終端: ret で未着が残れば外す・分岐は引数を仮引数へ写して状態を合わせる
+            tm := irBlkTerm(mut st, bb)
+            if tm == TmRet {
+                xv := irBlkX1(mut st, bb)
+                if xv >= 0 && xv < nval && irFnRet(mut st, ff) == TyPtr {
+                    fcur[nSw] = fcur[nSw] & (-1 - rfClose(mut ctn, vO[xv], nOrg))
+                }
+                if fcur[nSw] != 0 {
+                    fine = false
+                }
+            } else if tm == TmBr || tm == TmCondbr {
+                for sd <- iter.Range(0, if tm == TmBr { 1 } else { 2 }) {
+                    toB := if tm == TmBr { irBrTo(mut st, bb) } else if sd == 0 { irCondThen(mut st, bb) } else { irCondElse(mut st, bb) }
+                    bargs := if tm == TmBr { irBlkX2(mut st, bb) } else if sd == 0 { irBlkX3(mut st, bb) } else { irBlkX5(mut st, bb) }
+                    if bargs >= 0 {
+                        nargs := desugar.HeapGet(mut st.d, bargs)
+                        mut pv := irBlkPHead(mut st, toB)
+                        mut kx := 0
+                        while pv >= 0 && kx < nargs {
+                            vv := desugar.HeapGet(mut st.d, pv + 1)
+                            av := desugar.HeapGet(mut st.d, bargs + 1 + kx)
+                            if vv >= 0 && vv < nval && av >= 0 && av < nval && rfJoinPtr(mut vO, mut vS1, mut vS2, mut vR, mut vU, vv, av, 0, nval) {
+                                moved = true
+                            }
+                            pv = desugar.HeapGet(mut st.d, pv)
+                            kx += 1
+                        }
+                    }
+                    tqi := bpos[irBlkId(mut st, toB)]
+                    if tqi != nil {
+                        mut bgrow := !bhave[tqi]
+                        for kx <- iter.Range(0, slw) {
+                            nwv := inSt[tqi * slw + kx] | fcur[kx]
+                            if nwv != inSt[tqi * slw + kx] {
+                                inSt[tqi * slw + kx] = nwv
+                                bgrow = true
+                            }
+                        }
+                        if bgrow {
+                            bhave[tqi] = true
+                            sp = llPush(mut fwl, sp, tqi)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return fine && !moved
+}
+
+// ブロック b が自分へ戻れるか（輪の中 — そこの点は呼び出しごとに何度も作られうる）
+func rfReaches(st mut St, bb BlkRef, bpos mut map[int]int, nblk int) bool {
+    mut vis := mut []bool{}
+    for kx <- iter.Range(0, nblk) {
+        vis = append(vis, false)
+    }
+    mut stck := mut []int{}
+    mut sp := llSuccs(mut st, bb, mut stck, 0)
+    while sp > 0 {
+        sp -= 1
+        xv := BlkRef(stck[sp])
+        if xv == bb {
+            return true
+        }
+        qi := bpos[irBlkId(mut st, xv)]
+        if qi != nil && !vis[qi] {
+            vis[qi] = true
+            sp = llSuccs(mut st, xv, mut stck, sp)
+        }
+    }
+    return false
+}
+
+// 値 r に値 a の中身（点の集合）と場所を合わせる（off = 語の添字の加算・-1 = 位置が分からない）。真 = 増えた
+func rfJoinPtr(vO mut []int, vS1 mut []int, vS2 mut []int, vR mut []bool, vU mut []bool, rv int, av int, woff int, nval int) bool {
+    if av < 0 || av >= nval {
+        return false
+    }
+    mut more := false
+    if (vO[rv] | vO[av]) != vO[rv] {
+        vO[rv] = vO[rv] | vO[av]
+        more = true
+    }
+    if vR[av] && !vR[rv] {
+        vR[rv] = true
+        more = true
+    }
+    if vU[av] && !vU[rv] {
+        vU[rv] = true
+        more = true
+    }
+    for sd <- iter.Range(0, 2) {
+        sav := if sd == 0 { vS1[av] } else { vS2[av] }
+        if sav != -1 {
+            xv := if sav == -3 || woff < 0 { -3 } else { sav + woff }
+            if vS1[rv] == -1 {
+                vS1[rv] = xv
+                more = true
+            } else if vS1[rv] != xv && vS2[rv] == -1 && vS1[rv] != -3 && xv != -3 {
+                vS2[rv] = xv
+                more = true
+            } else if vS1[rv] != xv && vS2[rv] != xv && vS1[rv] != -3 {
+                vS1[rv] = -3
+                more = true
+            }
+        }
+    }
+    return more
+}
+
+// 番地 p の語 off の読みが運ぶ点の集合（スロットの語は今の状態・点の中は中身・場所の分からないスロットは全語）
+func rfLoad(fcur mut []int, sb mut []int, vO mut []int, vS1 mut []int, vS2 mut []int, ctn mut []int, pv int, woff int, nval int) int {
+    if pv < 0 || pv >= nval {
+        return 0
+    }
+    mut mk := 0
+    for sd <- iter.Range(0, 2) {
+        sr := if sd == 0 { vS1[pv] } else { vS2[pv] }
+        if sr == -3 {
+            for kx <- iter.Range(0, len(fcur) - 1) {
+                mk = mk | fcur[kx]
+            }
+        } else if sr >= 0 {
+            wv := sb[sr / 65536] + sr % 65536 + woff
+            if wv >= 0 && wv < len(fcur) - 1 {
+                mk = mk | fcur[wv]
+            }
+        }
+    }
+    for kx <- iter.Range(0, len(ctn)) {
+        if (vO[pv] >> kx) & 1 == 1 {
+            mk = mk | ctn[kx]
+        }
+    }
+    return mk
+}
+
+// 番地 p の語 off へ点の集合 m を書く: 戻り値の置き場なら着く（中身ごと）・スロットの語は強い更新（場所が 2 つなら弱い）・
+// 点の中なら中身へ（流れによらない）。真 = 点の中身が増えた
+func rfStore(fcur mut []int, sb mut []int, swd mut []int, vO mut []int, vS1 mut []int, vS2 mut []int, anch bool, ctn mut []int, pv int, woff int, mk int, nval int) bool {
+    if pv < 0 || pv >= nval {
+        return false
+    }
+    nSw := len(fcur) - 1
+    if anch {
+        fcur[nSw] = fcur[nSw] & (-1 - rfClose(mut ctn, mk, len(ctn)))
+    }
+    twoS := vS1[pv] != -1 && vS2[pv] != -1
+    for sd <- iter.Range(0, 2) {
+        sr := if sd == 0 { vS1[pv] } else { vS2[pv] }
+        if sr == -3 {
+            for kx <- iter.Range(0, nSw) {
+                fcur[kx] = fcur[kx] | mk
+            }
+        } else if sr >= 0 {
+            wv := sb[sr / 65536] + sr % 65536 + woff
+            if wv >= 0 && wv < nSw {
+                fcur[wv] = if twoS { fcur[wv] | mk } else { mk }
+            }
+        }
+    }
+    mut more := false
+    for kx <- iter.Range(0, len(ctn)) {
+        if (vO[pv] >> kx) & 1 == 1 && (ctn[kx] | mk) != ctn[kx] {
+            ctn[kx] = ctn[kx] | mk
+            more = true
+        }
+    }
+    return more
+}
+
+// 点の集合 m と、その中身を辿って届く点の集合
+func rfClose(ctn mut []int, mk int, nOrg int) int {
+    mut xv := mk
+    mut more := true
+    while more {
+        more = false
+        for kx <- iter.Range(0, nOrg) {
+            if (xv >> kx) & 1 == 1 && (xv | ctn[kx]) != xv {
+                xv = xv | ctn[kx]
+                more = true
+            }
+        }
+    }
+    return xv
+}
+
+// f の入口の region.enter を消す（enter の後の region.depth は呼び手の深度を読む = f の確保は呼び手の今の深度へ）
+func rfRewrite(st mut St, ff FnRef) {
+    mut ins := irBlkIHead(mut st, irFnBHead(mut st, ff))
+    while ins != -1 {
+        if irInsOp(mut st, ins) == OpREnter {
+            irSetInsOp(mut st, ins, OpDead)
+            optReset(mut st, irFnNVal(mut st, ff), irFnNBlk(mut st, ff))
+            optDce(mut st, ff)
+            optRenumber(mut st, ff)
+            return
+        }
+        ins = irInsNext(mut st, ins)
+    }
+}
+
+// 省略を外す環境変数 SOBER_NO_RFLOW が立っているか（値は問わない — 変異・止めの経路でも 掛けた ≟ 掛けない を比べる口）
+func rflowOffEnv() bool {
+    vv, err := os.Getenv("SOBER_NO_RFLOW")
+    if err != nil {
+        return false
+    }
+    return vv != nil
+}
+
+// C1 で入口の enter を消した関数の不変条件（検証器の口 — 違反の文言・空 = 無し）: 入口のブロックに enter が無い・
+// 入口のブロックの region.depth（= 呼び手の深度 d）を使う算術は宛先構築の式（W_DEST の読みに依る）だけ — d より深い深度へ確保しない
+func rfVerify(st mut St, ff FnRef) string {
+    b0 := irFnBHead(mut st, ff)
+    if b0 == -1 {
+        return ""
+    }
+    nval := irFnNVal(mut st, ff) + 1
+    mut d0 := mut []bool{}
+    mut fw := mut []bool{}
+    for kx <- iter.Range(0, nval) {
+        d0 = append(d0, false)
+        fw = append(fw, false)
+    }
+    mut mts := mut []int{}
+    mut ins := irBlkIHead(mut st, b0)
+    mut seen := false
+    while ins != -1 {
+        op := irInsOp(mut st, ins)
+        rv := irInsRes(mut st, ins)
+        if op == OpREnter || rlEnterCall(mut st, ins) {
+            return "rflow: entry enter remains"
+        }
+        if op == OpRSetDepth || op == OpCall || op == OpCallI {
+            seen = true
+        }
+        if op == OpRDepth && !seen && rv >= 0 && rv < nval {
+            d0[rv] = true
+        }
+        ins = irInsNext(mut st, ins)
+    }
+    mut more := true
+    while more {
+        more = false
+        mut bb := b0
+        while bb != -1 {
+            mut jn := irBlkIHead(mut st, bb)
+            while jn != -1 {
+                op := irInsOp(mut st, jn)
+                rv := irInsRes(mut st, jn)
+                if (op == OpGlobal || op == OpFsAddr) && irInsA(mut st, jn) == st.meta {
+                    if !apIn(mut mts, rv) {
+                        mts = append(mts, rv)
+                    }
+                } else if op == OpLoad && irInsB(mut st, jn) == W_DEST && apIn(mut mts, irInsA(mut st, jn)) && rv >= 0 && rv < nval && !fw[rv] {
+                    fw[rv] = true
+                    more = true
+                } else if (op == OpBin || op == OpCmp) && rv >= 0 && rv < nval && !fw[rv] {
+                    xv := irInsB(mut st, jn)
+                    yv := irInsC(mut st, jn)
+                    if (xv >= 0 && xv < nval && fw[xv]) || (yv >= 0 && yv < nval && fw[yv]) {
+                        fw[rv] = true
+                        more = true
+                    }
+                }
+                jn = irInsNext(mut st, jn)
+            }
+            bb = irBlkNext(mut st, bb)
+        }
+    }
+    mut bb := b0
+    while bb != -1 {
+        mut jn := irBlkIHead(mut st, bb)
+        while jn != -1 {
+            if irInsOp(mut st, jn) == OpBin {
+                rv := irInsRes(mut st, jn)
+                xv := irInsB(mut st, jn)
+                yv := irInsC(mut st, jn)
+                uses := (xv >= 0 && xv < nval && d0[xv]) || (yv >= 0 && yv < nval && d0[yv])
+                if uses && !(rv >= 0 && rv < nval && fw[rv]) {
+                    return "rflow: depth arithmetic on the caller depth"
+                }
+            }
+            jn = irInsNext(mut st, jn)
+        }
+        bb = irBlkNext(mut st, bb)
+    }
+    return ""
+}
+
+// ff が C1 で書き換えた関数か（表は小さい — 線形）
+func rfMarked(st mut St, ff FnRef) bool {
+    for kx <- iter.Range(0, table.Len(mut st.rflowFns)) {
+        if table.Get(mut st.rflowFns, kx) == int(ff) {
+            return true
+        }
+    }
+    return false
+}
+
+// ゴミ計の環境変数 SOBER_RFLOW_METER が立っているか（値は問わない）
+func rflowMeterEnv() bool {
+    vv, err := os.Getenv("SOBER_RFLOW_METER")
+    if err != nil {
+        return false
+    }
+    return vv != nil
+}
+
+// ゴミ計が鳴ったときの終了コード
+const RF_METER_EXIT = 99
+
+// ゴミ計（C1 の判定 E3 の網）: C1 に掛かる関数 ff を書き換えずに残し、入口の enter の直後に自分の深度の bump を、
+// 出口の relocate（floor = 入口の深度）の前後で呼び手の深度の bump を読み、ret の手前で
+// 「自分の深度に積んだバイト − 出口の relocate が呼び手の深度へ写したバイト」= C1 なら呼び手の region に残るゴミ が正なら exit 99。
+// 写しの共有の重複は写しを大きく数えるだけ（ゴミを隠す向きでない）・部分のビュー（大きい列の一部を返す）は残りがゴミに数わる（C1 で残る分そのもの）
+func rfMeter(st mut St, ff FnRef) {
+    saved := st.fn
+    savedCur := st.cur
+    savedLen := st.slen
+    st.fn = ff
+    b0 := irFnBHead(mut st, ff)
+    mut entD := mut []int{}
+    mut ins := irBlkIHead(mut st, b0)
+    while ins != -1 && irInsOp(mut st, ins) != OpREnter {
+        if irInsOp(mut st, ins) == OpRDepth {
+            entD = append(entD, irInsRes(mut st, ins))
+        }
+        ins = irInsNext(mut st, ins)
+    }
+    acc := newSlotFresh(mut st, 1)
+    // 入口のブロック: enter の直後に [自分の深度・meta・base0・acc = 0]
+    mut own := -1
+    mut mt := -1
+    mut base0 := -1
+    mut accV := -1
+    ins = irBlkIHead(mut st, b0)
+    irSetBlkIHead(mut st, b0, -1)
+    irSetBlkITail(mut st, b0, -1)
+    setCur(mut st, b0)
+    while ins != -1 {
+        nx := irInsNext(mut st, ins)
+        linkInst(mut st, b0, ins)
+        if irInsOp(mut st, ins) == OpREnter && own == -1 {
+            own = push(mut st, true, OpRDepth, 0, 0, 0)
+            mt = globaladdr(mut st, st.meta)
+            base0 = load(mut st, gepWord(mut st, mt, own), W_BUMP)
+            accV = slotaddr(mut st, acc)
+            store(mut st, accV, 0, iconst(mut st, 0))
+        }
+        ins = nx
+    }
+    // 出口の relocate の前後で呼び手の深度の bump の差を acc へ・ret の手前で比べる
+    // 元のブロックの並び（足すブロック〔ret / exit 99〕は見ない）
+    mut obl := mut []int{}
+    mut ob := b0
+    while ob != -1 {
+        obl = append(obl, int(ob))
+        ob = irBlkNext(mut st, ob)
+    }
+    for qi <- iter.Range(0, len(obl)) {
+        bb := BlkRef(obl[qi])
+        ins = irBlkIHead(mut st, bb)
+        irSetBlkIHead(mut st, bb, -1)
+        irSetBlkITail(mut st, bb, -1)
+        setCur(mut st, bb)
+        while ins != -1 {
+            nx := irInsNext(mut st, ins)
+            op := irInsOp(mut st, ins)
+            mut fl := -1
+            if op == OpRReloc && apIn(mut entD, irInsC(mut st, ins)) {
+                fl = irInsC(mut st, ins)
+            } else if op == OpCall && (irInsFn(mut st, ins) == st.rtReloc || irInsFn(mut st, ins) == st.rtReloc8 || irInsFn(mut st, ins) == st.rtErrReloc) {
+                ll := desugar.ListRef(irInsB(mut st, ins))
+                kx := if irInsFn(mut st, ins) == st.rtReloc { 2 } else { 1 }
+                if lenL(mut st, ll) > kx && apIn(mut entD, latI(mut st, ll, kx)) {
+                    fl = latI(mut st, ll, kx)
+                }
+            }
+            if fl >= 0 && own >= 0 {
+                xv := load(mut st, gepWord(mut st, mt, fl), W_BUMP)
+                linkInst(mut st, bb, ins)
+                yv := load(mut st, gepWord(mut st, mt, fl), W_BUMP)
+                store(mut st, accV, 0, bin(mut st, BAdd, load(mut st, accV, 0), bin(mut st, BSub, yv, xv)))
+            } else {
+                linkInst(mut st, bb, ins)
+            }
+            ins = nx
+        }
+        if irBlkTerm(mut st, bb) == TmRet && own >= 0 {
+            rv := irBlkX1(mut st, bb)
+            used := bin(mut st, BSub, load(mut st, gepWord(mut st, mt, own), W_BUMP), base0)
+            gb := bin(mut st, BSub, used, load(mut st, accV, 0))
+            cc := cmp(mut st, CGt, gb, iconst(mut st, 0))
+            bOk := newBlock(mut st)
+            bG := newBlock(mut st)
+            setCur(mut st, bb)
+            condbr(mut st, cc, bG, -1, bOk, -1)
+            setCur(mut st, bOk)
+            ret(mut st, rv)
+            setCur(mut st, bG)
+            exit(mut st, RF_METER_EXIT)
+        }
+    }
+    st.fn = saved
+    st.cur = savedCur
+    st.slen = savedLen
+}
+
+// 戻り値の置き場の値 pv の語 woff への書きが、戻り値のヒープを指す語への書きか（位置が分からなければ偽 — 着かない側へ倒す）
+func rfRetPtr(rOff mut []int, ptrW mut []int, pv int, woff int) bool {
+    if pv < 0 || pv >= len(rOff) || rOff[pv] < 0 {
+        return false
+    }
+    wv := rOff[pv] + woff
+    return ptrW[0] == -1 || (wv >= 0 && wv < 62 && (ptrW[0] >> wv) & 1 == 1)
+}
+
+// 関数 gf の戻り値の置き場（sret の %0）のうち、出口の relocate（floor = 入口の深度）が触る語のビット集合（ヒープを指す語）。
+// 62 語より後ろの語なら -1（全語）・ヒープの語が無ければ 0
+func rfPtrMask(st mut St, gf FnRef) int {
+    b0 := irFnBHead(mut st, gf)
+    if b0 == -1 || (irFnMutP(mut st, gf) >> F_SRET_BIT) & 1 != 1 {
+        return 0
+    }
+    nval := irFnNVal(mut st, gf) + 1
+    mut entD := mut []int{}
+    mut ins := irBlkIHead(mut st, b0)
+    while ins != -1 && irInsOp(mut st, ins) != OpREnter {
+        if irInsOp(mut st, ins) == OpRDepth {
+            entD = append(entD, irInsRes(mut st, ins))
+        }
+        ins = irInsNext(mut st, ins)
+    }
+    mut off := mut []int{}
+    mut cvl := mut []int{}
+    mut isc := mut []bool{}
+    for kx <- iter.Range(0, nval) {
+        off = append(off, -1)
+        cvl = append(cvl, 0)
+        isc = append(isc, false)
+    }
+    off[0] = 0
+    mut mk := 0
+    mut bb := b0
+    while bb != -1 {
+        ins = irBlkIHead(mut st, bb)
+        while ins != -1 {
+            op := irInsOp(mut st, ins)
+            rv := irInsRes(mut st, ins)
+            if op == OpConst && rv >= 0 && rv < nval {
+                cvl[rv] = irInsA(mut st, ins)
+                isc[rv] = true
+            } else if op == OpGepW && rv >= 0 && rv < nval {
+                av := irInsA(mut st, ins)
+                iv := irInsB(mut st, ins)
+                if av >= 0 && av < nval && off[av] >= 0 && iv >= 0 && iv < nval && isc[iv] {
+                    off[rv] = off[av] + cvl[iv]
+                }
+            }
+            mut adr := -1
+            mut fl := -1
+            if op == OpRReloc {
+                adr = irInsA(mut st, ins)
+                fl = irInsC(mut st, ins)
+            } else if op == OpCall && (irInsFn(mut st, ins) == st.rtReloc || irInsFn(mut st, ins) == st.rtReloc8 || irInsFn(mut st, ins) == st.rtErrReloc) {
+                ll := desugar.ListRef(irInsB(mut st, ins))
+                kx := if irInsFn(mut st, ins) == st.rtReloc { 2 } else { 1 }
+                if lenL(mut st, ll) > kx {
+                    adr = latI(mut st, ll, 0)
+                    fl = latI(mut st, ll, kx)
+                }
+            }
+            // %0 の定数の位置の語だけ（中の列の要素の relocate — 番地を語から読んだもの — は入れ子の欄で、上の語から辿れる）
+            if fl >= 0 && apIn(mut entD, fl) && adr >= 0 && adr < nval && off[adr] >= 0 {
+                // rt.err_relocate は error の値の中の複数の語（先頭の union の欄・鎖）を写す — error の全語を印に（多めは安全側）
+                nw := if op == OpCall && irInsFn(mut st, ins) == st.rtErrReloc { desugar.HeapGet(mut st.d, st.errstruct + SI_WORDS) } else { 1 }
+                if off[adr] + nw <= 62 {
+                    for w <- iter.Range(0, nw) {
+                        mk = mk | (1 << (off[adr] + w))
+                    }
+                } else {
+                    return -1
+                }
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        bb = irBlkNext(mut st, bb)
+    }
+    return mk
+}
+
+// 関数 jx の戻り値のヒープを指す語（rfPtrMask — 呼び先ごとに 1 回だけ数える memo。-9 = 未計算）
+func rfMaskOf(st mut St, fl mut []int, pmk mut []int, jx int) int {
+    if pmk[jx] == -9 {
+        pmk[jx] = rfPtrMask(mut st, FnRef(fl[jx]))
+    }
+    return pmk[jx]
+}
+
+// rfJudge の安い前検査（値の表を作らない — 真 = 続けて判定する）
+func rfPrescan(st mut St, ff FnRef, fx mut map[int]int, fl mut []int, isRtF mut []bool, rtDep mut []bool, atCaller mut []bool, hp mut []bool, pmk mut []int) bool {
+    mut nEnter := 0
+    mut cand := false
+    mut first := true
+    mut bb := irFnBHead(mut st, ff)
+    while bb != -1 {
+        mut ins := irBlkIHead(mut st, bb)
+        while ins != -1 {
+            op := irInsOp(mut st, ins)
+            if op == OpREnter && first {
+                nEnter += 1
+            } else if op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpClone || op == OpAtomic {
+                return false
+            } else if op == OpRAlloc || op == OpRBump || op == OpRReloc || op == OpCallI {
+                cand = true
+            } else if op == OpCall {
+                gf := irInsFn(mut st, ins)
+                jx := fx[int(gf)]
+                if jx != nil {
+                    if isRtF[jx] {
+                        if rfRtImplicit(mut st, gf, rtDep[jx]) || gf == st.rtMapGrow {
+                            return false
+                        }
+                        if gf == st.rtAlloc8 || gf == st.rtRalloc || gf == st.rtReloc || gf == st.rtReloc8 || gf == st.rtErrReloc {
+                            cand = true
+                        }
+                    } else {
+                        if atCaller[jx] {
+                            return false
+                        }
+                        if !cand && (hp[jx] || rfMaskOf(mut st, mut fl, mut pmk, jx) != 0) {
+                            cand = true
+                        }
+                    }
+                }
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        first = false
+        bb = irBlkNext(mut st, bb)
+    }
+    return nEnter == 1 && cand
+}

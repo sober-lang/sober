@@ -4,9 +4,9 @@ package wrap
 
 import "testdata/alias/lib"
 
-type Work = lib.Work
-type Res = lib.Res
-type Step = lib.Step
+type Work = testdata.alias.lib.Work
+type Res = testdata.alias.lib.Res
+type Step = testdata.alias.lib.Step
 
 // 公開の別名が非公開の型を指す
 type Acc = acc
@@ -19,17 +19,17 @@ type acc struct {
 type W2 = Work
 
 func Feed(w mut Work, x int) {
-    lib.Feed(mut w, x)
+    testdata.alias.lib.Feed(mut w, x)
 }
 
 func Mean(w W2) Res {
-    return lib.Mean(w)
+    return testdata.alias.lib.Mean(w)
 }
 
 // Value は Res の値（union の variant は実体の package の名前で書く — 利用者は lib を書けないので、分解は包みの関数に置く）
 func Value(r Res) int {
     return switch r {
-    case lib.Ok{v}: v
+    case testdata.alias.lib.Ok{v}: v
     default: -1
     }
 }

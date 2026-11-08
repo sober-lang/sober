@@ -259,8 +259,8 @@ func inlineShape(st mut St, f FnRef) bool {
     mut ins := irBlkIHead(mut st, b)
     while ins != -1 {
         op := irInsOp(mut st, ins)
-        if !(op == OpDead || op == OpRDepth || op == OpConst || op == OpBin || op == OpCmp || op == OpLoad || op == OpLoad8 || op == OpStore ||
-            op == OpStore8 || op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop || op == OpGlobal || op == OpFsAddr || op == OpFuncaddr) {
+        if !(op == OpDead || op == OpRDepth || op == OpConst || op == OpBin || op == OpCmp || op == OpLoad || isNarrowLd(op) || op == OpStore ||
+            isNarrowSt(op) || op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop || op == OpGlobal || op == OpFsAddr || op == OpFuncaddr) {
             return false
         }
         ins = irInsNext(mut st, ins)
@@ -343,9 +343,9 @@ func inlineCallAt(st mut St, f FnRef, b BlkRef, ins InsRef) {
             if op == OpBin || op == OpCmp {
                 bb = desugar.HeapGet(mut st.d, vmap + 1 + bb)
                 c = desugar.HeapGet(mut st.d, vmap + 1 + c)
-            } else if op == OpLoad || op == OpLoad8 || op == OpPtoi || op == OpItop {
+            } else if op == OpLoad || isNarrowLd(op) || op == OpPtoi || op == OpItop {
                 a = desugar.HeapGet(mut st.d, vmap + 1 + a)
-            } else if op == OpStore || op == OpStore8 {
+            } else if op == OpStore || isNarrowSt(op) {
                 a = desugar.HeapGet(mut st.d, vmap + 1 + a)
                 c = desugar.HeapGet(mut st.d, vmap + 1 + c)
             } else if op == OpGepW || op == OpGepB {
@@ -665,7 +665,7 @@ func termOperands(st mut St, b BlkRef, mode int) {
 // ── P3 ──
 
 func isPure(op int) bool {
-    return op == OpConst || op == OpCmp || op == OpLoad || op == OpLoad8 || op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop ||
+    return op == OpConst || op == OpCmp || op == OpLoad || isNarrowLd(op) || op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop ||
         op == OpSlotaddr || op == OpGlobal || op == OpFsAddr || op == OpFuncaddr || op == OpRDepth || op == OpPArith || op == OpPMem
 }
 

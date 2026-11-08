@@ -1,2 +1,2 @@
-sober: desugar error at examples/pkg_neg_private.sober:8:25 (CoreFragment)
+sober: desugar error at examples/pkg_neg_private.sober:8:42 (CoreFragment)
 exit=1

@@ -1,0 +1,76 @@
+package lower
+
+// ヘッダのループ昇格（hloop.sober）の網: IR を手で組んで直に見る（`cd src/compiler && ../../bin/sober test lower`）。
+// 昇格は観測を変えない変換なので、別名の事実を緩めすぎる変異は例・題材の出力では鳴りにくい — 昇格する / しない形をここで固定する
+
+import "desugar"
+import "std/iter"
+
+// `for i < n { y = load P[1] + 1; store P[1] ← y; [bad: store itop(n)[0] ← y] }` の関数（P・Q = ptr・n = i64）に mut の印 mask で
+// 昇格を掛け、ループの本体のブロックに残った P の読み書きの数と、関数全体の `store P[1]` の数を返す
+func hlT(mask int, bad bool) (int, int) {
+    mut st := St{}
+    initScalars(mut st)
+    desugar.HeapPush(mut st.d, 0)
+    pt := listN(mut st, 3)
+    desugar.HeapSet(mut st.d, pt + 1, TyPtr)
+    desugar.HeapSet(mut st.d, pt + 2, TyPtr)
+    desugar.HeapSet(mut st.d, pt + 3, TyI64)
+    f := addFunc(mut st, 0, desugar.ListRef(pt), -1)
+    irSetFnMutP(mut st, f, mask)
+    st.fn = f
+    st.cur = newBlock(mut st)
+    hd := newBlock(mut st)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    irSetBlkLoop(mut st, hd, 1)
+    br(mut st, hd, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, hd)
+    i := param(mut st, hd, TyI64)
+    condbr(mut st, cmp(mut st, CLt, i, 2), body, -1, done, -1)
+    setCur(mut st, body)
+    x := load(mut st, 0, 1)
+    y := bin(mut st, BAdd, x, iconst(mut st, 1))
+    store(mut st, 0, 1, y)
+    if bad {
+        store(mut st, itop(mut st, 2), 0, y)
+    }
+    br(mut st, hd, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))))
+    setCur(mut st, done)
+    ret(mut st, -1)
+    hloopFunc(mut st, f)
+    mut inBody := 0
+    mut stores := 0
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut k := irBlkIHead(mut st, b)
+        while k != -1 {
+            op := irInsOp(mut st, k)
+            if (op == OpLoad || op == OpStore) && irInsA(mut st, k) == 0 {
+                if b == body {
+                    inBody += 1
+                }
+                if op == OpStore && irInsB(mut st, k) == 1 {
+                    stores += 1
+                }
+            }
+            k = irInsNext(mut st, k)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return inBody, stores
+}
+
+func TestHloop() {
+    // 0: mut の印のある P だけを読み書きするループは昇格する — 本体に P の読み書きが残らず、出口で 1 回書き戻す
+    a0, a1 := hlT(3, false)
+    assert(a0 == 0 && a1 == 1)
+    // 1: 番地の根が分からない store（itop(整数の仮引数)）がループにあれば昇格しない（別名の事実を緩めすぎる変異はここで落ちる）
+    b0, b1 := hlT(3, true)
+    assert(b0 == 2 && b1 == 1)
+    // 2: 印の無い ptr 仮引数は昇格しない
+    for m <- iter.Range(0, 2) {
+        c0, c1 := hlT(m * 2, false)
+        assert(c0 == 2 && c1 == 1)
+    }
+}

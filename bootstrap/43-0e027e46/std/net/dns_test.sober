@@ -1,0 +1,175 @@
+package net
+
+// 名前の解決の網（white-box — 純粋な部品の単体と、/etc/hosts の localhost で Dial が繋がること）
+
+import "std/io"
+import "std/iter"
+import "std/os"
+import "std/strings"
+import "std/task"
+
+func TestResolvConf() {
+    c := parseResolvConf("# comment\nnameserver 10.0.0.1\nnameserver ::1\nnameserver 10.0.0.2 ; x\nnameserver 10.0.0.3\nnameserver 10.0.0.4\nsearch corp.example. example.com\noptions ndots:3 timeout:2 attempts:4 rotate\n")
+    assert(len(c.servers) == 3 && c.servers[0] == "10.0.0.1" && c.servers[2] == "10.0.0.3")
+    assert(len(c.search) == 2 && c.search[0] == "corp.example")
+    assert(c.ndots == 3 && c.attempts == 4)
+    d := parseResolvConf("")
+    assert(len(d.servers) == 1 && d.servers[0] == "127.0.0.1" && d.ndots == 1 && d.attempts == 2)
+}
+
+func TestHosts() {
+    h := hostsLookup("127.0.0.1 localhost\n# x\n10.1.2.3  api.internal API2 # trailing\n::1 localhost\n", "API2")
+    assert(len(h) == 1 && int(h[0][0]) == 10 && int(h[0][3]) == 3)
+    assert(len(hostsLookup("127.0.0.1 localhost\n", "nope")) == 0)
+}
+
+func TestCandidates() {
+    c := parseResolvConf("search a.example b.example\noptions ndots:1\n")
+    k := candidates("svc", c)
+    assert(len(k) == 3 && k[0] == "svc.a.example" && k[2] == "svc")
+    k2 := candidates("www.example.com", c)
+    assert(k2[0] == "www.example.com")
+    k3 := candidates("abs.example.", c)
+    assert(len(k3) == 1 && k3[0] == "abs.example")
+}
+
+func TestNameCheck() {
+    assert(nameCheck("example.com") == 0)
+    assert(nameCheck("例え.jp") == 1)
+    assert(nameCheck("a..b") == 2)
+    assert(nameCheck("") == 2)
+    assert(nameCheck("xn--r8jz45g.jp") == 0)
+}
+
+// 応答の手組み: 頭（id・flags・数）+ 問い + 答えの列
+func resp(id int, flags int, rcode int, name string, qtype int, ans []byte, an int) []byte {
+    q := dnsQuery(id, name, qtype)
+    mut b := mut []byte{}
+    for x <- q {
+        b = append(b, x)
+    }
+    b[2] = byte(0x81 | flags)
+    b[3] = byte(0x80 | rcode)
+    b[7] = byte(an)
+    for x <- ans {
+        b = append(b, x)
+    }
+    return freeze(b)
+}
+
+// 答え 1 本（名前は問いの名前への圧縮の指し先 12 か、生の名前）
+func rr(namePtr []byte, t int, data []byte) []byte {
+    mut o := mut []byte{}
+    for x <- namePtr {
+        o = append(o, x)
+    }
+    head := []byte{byte(t >> 8), byte(t & 0xff), 0, 1, 0, 0, 0, 60, byte(len(data) >> 8), byte(len(data) & 0xff)}
+    for x <- head {
+        o = append(o, x)
+    }
+    for x <- data {
+        o = append(o, x)
+    }
+    return freeze(o)
+}
+
+// "lab.lab" の生の名前の符号
+func wire(n string) []byte {
+    mut o := mut []byte{}
+    for lab <- strings.Split(n, ".") {
+        lb := bytes(lab)
+        o = append(o, byte(len(lb)))
+        for x <- lb {
+            o = append(o, x)
+        }
+    }
+    o = append(o, byte(0))
+    return freeze(o)
+}
+
+func TestParseAnswer() {
+    a := resp(0x1234, 0, 0, "www.example", qtA, rr([]byte{0xc0, 12}, qtA, []byte{93, 184, 216, 34}), 1)
+    r := parseAnswer(a, 0x1234, "WWW.Example.", qtA)
+    assert(r.ok && r.rcode == 0 && len(r.addrs) == 1 && int(r.addrs[0][0]) == 93)
+    // txid の違う応答は形の誤り（捨てて次を待つ側）
+    assert(!parseAnswer(a, 0x1235, "www.example", qtA).ok)
+    // 問いの名前の違う応答
+    assert(!parseAnswer(a, 0x1234, "other.example", qtA).ok)
+    // CNAME の鎖（www → edge.cdn → 番地）
+    mut ch := mut []byte{}
+    for x <- rr([]byte{0xc0, 12}, qtCname, wire("edge.cdn")) {
+        ch = append(ch, x)
+    }
+    for x <- rr(wire("edge.cdn"), qtA, []byte{10, 0, 0, 7}) {
+        ch = append(ch, x)
+    }
+    c := resp(7, 0, 0, "www.example", qtA, freeze(ch), 2)
+    rc := parseAnswer(c, 7, "www.example", qtA)
+    assert(rc.ok && len(rc.addrs) == 1 && int(rc.addrs[0][3]) == 7)
+    // NXDOMAIN・切り詰め・AAAA
+    nx := parseAnswer(resp(9, 0, 3, "nope.example", qtA, []byte{}, 0), 9, "nope.example", qtA)
+    assert(nx.ok && nx.rcode == 3 && len(nx.addrs) == 0)
+    tc := parseAnswer(resp(9, 0x02, 0, "big.example", qtA, []byte{}, 0), 9, "big.example", qtA)
+    assert(tc.ok && tc.tc)
+    mut six := mut []byte{}
+    for i <- iter.Range(0, 16) {
+        six = append(six, byte(i))
+    }
+    v6 := parseAnswer(resp(3, 0, 0, "v6.example", qtAaaa, rr([]byte{0xc0, 12}, qtAaaa, freeze(six)), 1), 3, "v6.example", qtAaaa)
+    assert(v6.ok && len(v6.addrs) == 1 && len(v6.addrs[0]) == 16)
+    // 圧縮の指し先が自分か後ろを指す（輪）— 落ちずに形の誤り
+    loop := resp(5, 0, 0, "x.example", qtA, rr([]byte{0xc0, 200}, qtA, []byte{1, 2, 3, 4}), 1)
+    assert(len(parseAnswer(loop, 5, "x.example", qtA).addrs) == 0)
+}
+
+// /etc/hosts の localhost で Dial が名前から繋がる（自前の Listener へ）
+func TestDialLocalhost() {
+    mut ok := false
+    e := Listen("127.0.0.1:0", (l) => {
+        p := Port(l)
+        _ = Dial("localhost:${p}", (c) => {
+            ok = true
+        })
+    })
+    assert(e == nil && ok)
+    _, e2 := resolveIn("例え.jp", parseResolvConf(""), "", 53)
+    bad := switch e2 {
+    case nil: false
+    case NonASCIIHost{}: true
+    default: false
+    }
+    assert(bad)
+}
+
+// 送受の網（scripts/dnsinterop.sh が偽の DNS サーバを起こし、環境変数 SOBER_DNS_FAKE にその port を渡す — 無ければ何もしない）
+func TestResolveFake() {
+    v, e := os.Getenv("SOBER_DNS_FAKE")
+    if e != nil || v == nil {
+        return
+    }
+    port := decimal(v)
+    c := parseResolvConf("nameserver 127.0.0.1\nsearch corp.test\noptions ndots:1 attempts:1\n")
+    cf := dnsConf{servers: c.servers, search: c.search, ndots: c.ndots, timeout: 300 * task.MS, attempts: 1}
+    assert(look("a.test", cf, port) == "10.0.0.1")
+    assert(look("alias.test", cf, port) == "10.0.0.1")
+    assert(look("big.test", cf, port) == "10.0.0.2")
+    assert(look("spoof.test", cf, port) == "10.0.0.3")
+    assert(look("svc", cf, port) == "10.0.0.4")
+    assert(look("nx.test", cf, port) == "NoHost")
+    // 絶対名（search の候補を作らない）— 答えない nameserver は期限切れ
+    assert(look("slow.test.", cf, port) == "Timeout")
+}
+
+func look(name string, cf dnsConf, port int) string {
+    ips, e := resolveIn(name, cf, "", port)
+    return firstOctets(ips, e)
+}
+
+func firstOctets(ips [][]byte, e error?) string {
+    return switch e {
+    case nil: if len(ips) == 0 { "none" } else { "${int(ips[0][0])}.${int(ips[0][1])}.${int(ips[0][2])}.${int(ips[0][3])}" }
+    case NoHost{}: "NoHost"
+    case io.Timeout{}: "Timeout"
+    default: "other"
+    }
+}

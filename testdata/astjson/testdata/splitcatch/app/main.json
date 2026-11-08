@@ -25,14 +25,14 @@
             "values": [
               {
                 "k": "composite",
-                "type_name": "lib.Acc",
+                "type_name": "testdata.splitcatch.lib.Acc",
                 "elems": [
                   {
                     "key": "n",
                     "value": {
                       "k": "int",
                       "value": 1,
-                      "tok": 20
+                      "tok": 24
                     }
                   }
                 ],
@@ -49,7 +49,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 23
+                "tok": 27
               },
               "args": [
                 {
@@ -57,29 +57,39 @@
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "lib",
-                      "tok": 25
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 29
+                        },
+                        "field": "splitcatch",
+                        "tok": 31
+                      },
+                      "field": "lib",
+                      "tok": 33
                     },
                     "field": "Add",
-                    "tok": 27
+                    "tok": 35
                   },
                   "args": [
                     {
                       "k": "mut_arg",
                       "name": "a",
-                      "tok": 30
+                      "tok": 38
                     },
                     {
                       "k": "strlit",
                       "value": "/nonexistent/splitcatch",
-                      "tok": 32
+                      "tok": 40
                     }
                   ],
-                  "tok": 28
+                  "tok": 36
                 }
               ],
-              "tok": 24
+              "tok": 28
             }
           }
         ]
@@ -88,7 +98,7 @@
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 38
+        "end": 46
       },
       "sig_end": 10
     }

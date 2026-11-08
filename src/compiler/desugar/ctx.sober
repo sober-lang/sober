@@ -46,18 +46,20 @@ type SwCtx struct {
     swSubj int
     swSubjDecl int
     swSubjTy TyRef
+    swDecl NodeRef
     swSubjSty int
     swEnv int
 }
 
 func swCtx(st mut S) SwCtx {
-    return SwCtx{swSubj: st.swSubj, swSubjDecl: st.swSubjDecl, swSubjTy: st.swSubjTy, swSubjSty: st.swSubjSty, swEnv: st.swEnv}
+    return SwCtx{swSubj: st.swSubj, swSubjDecl: st.swSubjDecl, swSubjTy: st.swSubjTy, swDecl: st.swDecl, swSubjSty: st.swSubjSty, swEnv: st.swEnv}
 }
 
 func setSwCtx(st mut S, c SwCtx) {
     st.swSubj = c.swSubj
     st.swSubjDecl = c.swSubjDecl
     st.swSubjTy = c.swSubjTy
+    st.swDecl = c.swDecl
     st.swSubjSty = c.swSubjSty
     st.swEnv = c.swEnv
 }

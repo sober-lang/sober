@@ -1,0 +1,303 @@
+package x509
+
+// X.509 v3 の証明書の読み（RFC 5280 4.1 — std の内側: TLS のクライアントの鎖の検証の下）。厳密な DER（不定長・非最短の長さは拒否）・
+// 署名の値と公開鍵は中身のまま持ち、検証は鎖の側（chain）で。名前（issuer / subject）は DER のまま持って鎖の照合はバイトの一致で
+
+import "std/iter"
+
+// 拡張 1 本（oid = OID の中身・value = extnValue の OCTET STRING の中身）
+type Ext struct {
+    oid []byte
+    critical bool
+    value []byte
+}
+
+// 読んだ証明書（時刻は UNIX 秒・欄の無い拡張は既定値: bcValid false・pathLen -1・keyUsage 0）
+type Cert struct {
+    raw []byte
+    tbs []byte
+    version int
+    serial []byte
+    sigAlg int
+    sig []byte
+    // 署名の BIT STRING の使わない bit の数（0 でなければ鎖の検証で拒否 — 読みは受ける）
+    sigPad int
+    issuer []byte
+    subject []byte
+    notBefore int
+    notAfter int
+    spki []byte
+    pubAlg int
+    pubKey []byte
+    exts []Ext
+    bcValid bool
+    isCA bool
+    pathLen int
+    keyUsage int
+    eku []string
+    dns []string
+    ips [][]byte
+    ski []byte
+    aki []byte
+    // nameConstraints（dNSName と iPAddress の部分木 — 他の形の部分木があれば ncOther）
+    ncPresent bool
+    ncPermDNS []string
+    ncExclDNS []string
+    ncPermIP [][]byte
+    ncExclIP [][]byte
+    ncOther bool
+    // 信頼の起点の distrust-after（UNIX 秒 — この時刻より後の notBefore を持つ leaf はこの起点で信頼しない。0 = 無し・Roots が付ける）
+    distrustAfter int
+    // 焼き込みの信頼ストア（Roots）の起点か — この起点で止まる鎖の leaf には CA/B の leaf 規則（CabLeaf）を掛ける
+    baked bool
+}
+
+// 署名のアルゴリズム（sigAlg）
+const SigUnknown = 0
+const SigEcdsaSha256 = 1
+const SigEcdsaSha384 = 2
+const SigEcdsaSha512 = 3
+const SigRsaSha256 = 4
+const SigRsaSha384 = 5
+const SigRsaSha512 = 6
+const SigRsaSha1 = 7
+const SigRsaPss = 8
+const SigDsaSha1 = 9
+
+// 公開鍵のアルゴリズム（pubAlg）
+const PubUnknown = 0
+const PubP256 = 1
+const PubP384 = 2
+const PubRsa = 3
+
+func noCert() Cert {
+    return Cert{raw: []byte{}, tbs: []byte{}, version: 0, serial: []byte{}, sigAlg: 0, sig: []byte{}, sigPad: 0, issuer: []byte{}, subject: []byte{}, notBefore: 0, notAfter: 0,
+        spki: []byte{}, pubAlg: 0, pubKey: []byte{}, exts: []Ext{}, bcValid: false, isCA: false, pathLen: -1, keyUsage: 0, eku: []string{}, dns: []string{}, ips: [][]byte{}, ski: []byte{}, aki: []byte{},
+        ncPresent: false, ncPermDNS: []string{}, ncExclDNS: []string{}, ncPermIP: [][]byte{}, ncExclIP: [][]byte{}, ncOther: false, distrustAfter: 0, baked: false}
+}
+
+// AlgorithmIdentifier の e の署名のアルゴリズム（パラメタは RSA の NULL か無し・ECDSA は無し — 他は SigUnknown）
+func sigAlgOf(b []byte, e El) int {
+    o, ok := firstChild(b, e)
+    if !ok {
+        return SigUnknown
+    }
+    if oidIs(b, o, "2a8648ce3d040302") {
+        return SigEcdsaSha256
+    }
+    if oidIs(b, o, "2a8648ce3d040303") {
+        return SigEcdsaSha384
+    }
+    if oidIs(b, o, "2a8648ce3d040304") {
+        return SigEcdsaSha512
+    }
+    if oidIs(b, o, "2a864886f70d01010b") {
+        return SigRsaSha256
+    }
+    if oidIs(b, o, "2a864886f70d01010c") {
+        return SigRsaSha384
+    }
+    if oidIs(b, o, "2a864886f70d01010d") {
+        return SigRsaSha512
+    }
+    if oidIs(b, o, "2a864886f70d010105") {
+        return SigRsaSha1
+    }
+    if oidIs(b, o, "2a864886f70d01010a") {
+        return SigRsaPss
+    }
+    if oidIs(b, o, "2a8648ce380403") {
+        return SigDsaSha1
+    }
+    return SigUnknown
+}
+
+// BIT STRING の中身（使わない bit の数 0 だけ）
+func bitStr(b []byte, e El) ([]byte, bool) {
+    if e.tag != 0x03 || e.ce - e.cs < 1 || b[e.cs] != byte(0) {
+        return []byte{}, false
+    }
+    return b[e.cs + 1:e.ce], true
+}
+
+// BIT STRING の中身と使わない bit の数（0〜7・使わない bit は 0 — DER）
+func bitStrPad(b []byte, e El) ([]byte, int, bool) {
+    if e.tag != 0x03 || e.ce - e.cs < 1 {
+        return []byte{}, 0, false
+    }
+    u := int(b[e.cs])
+    if u > 7 || (u > 0 && (e.ce - e.cs == 1 || (int(b[e.ce - 1]) & ((1 << u) - 1)) != 0)) {
+        return []byte{}, 0, false
+    }
+    return b[e.cs + 1:e.ce], u, true
+}
+
+// 証明書 der を読む（後ろに余りがあれば拒否）
+@effects()
+func Parse(der []byte) (Cert, bool) {
+    top, ok := elAt(der, 0, len(der))
+    if !ok || top.tag != 0x30 || top.ce != len(der) {
+        return noCert(), false
+    }
+    tbsE, ok1 := firstChild(der, top)
+    algE, ok2 := nextEl(der, tbsE, top.ce)
+    sigE, ok3 := nextEl(der, algE, top.ce)
+    if !(ok1 && ok2 && ok3) || tbsE.tag != 0x30 || algE.tag != 0x30 || sigE.ce != top.ce {
+        return noCert(), false
+    }
+    sig, pad, ok4 := bitStrPad(der, sigE)
+    if !ok4 {
+        return noCert(), false
+    }
+    mut c := noCert()
+    c.raw = der
+    c.tbs = whole(der, tbsE)
+    c.sigAlg = sigAlgOf(der, algE)
+    c.sig = sig
+    c.sigPad = pad
+    if !parseTbs(der, tbsE, mut c) {
+        return noCert(), false
+    }
+    return c, true
+}
+
+// TBSCertificate を c へ
+func parseTbs(b []byte, t El, c mut Cert) bool {
+    e0, ok0 := firstChild(b, t)
+    if !ok0 {
+        return false
+    }
+    mut e := e0
+    c.version = 1
+    if e.tag == 0xa0 {
+        v, okv := firstChild(b, e)
+        if !okv || v.tag != 0x02 || v.ce - v.cs != 1 || v.ce != e.ce {
+            return false
+        }
+        vn := int(b[v.cs])
+        if vn > 2 {
+            return false
+        }
+        c.version = vn + 1
+        e1, ok1 := nextEl(b, e, t.ce)
+        if !ok1 {
+            return false
+        }
+        e = e1
+    }
+    // シリアルは正の整数（RFC 5280 4.1.2.2 — 負は拒否・0 は受ける〔実在のルートにある〕・Go の現行と同じ）
+    if e.tag != 0x02 || e.ce == e.cs || int(b[e.cs]) >= 0x80 {
+        return false
+    }
+    c.serial = content(b, e)
+    alg, oka := nextEl(b, e, t.ce)
+    iss, oki := nextEl(b, alg, t.ce)
+    val, okv2 := nextEl(b, iss, t.ce)
+    sub, oks := nextEl(b, val, t.ce)
+    spk, okp := nextEl(b, sub, t.ce)
+    if !(oka && oki && okv2 && oks && okp) || alg.tag != 0x30 || iss.tag != 0x30 || val.tag != 0x30 || sub.tag != 0x30 || spk.tag != 0x30 {
+        return false
+    }
+    // TBS の中の署名のアルゴリズムは外の欄と同じ（RFC 5280 4.1.1.2）
+    if sigAlgOf(b, alg) != c.sigAlg {
+        return false
+    }
+    c.issuer = whole(b, iss)
+    c.subject = whole(b, sub)
+    nbE, okn := firstChild(b, val)
+    naE, oka2 := nextEl(b, nbE, val.ce)
+    if !okn || !oka2 || naE.ce != val.ce {
+        return false
+    }
+    nb, okt1 := timeOf(b, nbE)
+    na, okt2 := timeOf(b, naE)
+    if !okt1 || !okt2 {
+        return false
+    }
+    c.notBefore = nb
+    c.notAfter = na
+    c.spki = whole(b, spk)
+    if !parseSpki(b, spk, mut c) {
+        return false
+    }
+    // 残り: [1] issuerUniqueID・[2] subjectUniqueID（読み飛ばす）・[3] 拡張
+    mut at := spk.ce
+    while at < t.ce {
+        x, okx := elAt(b, at, t.ce)
+        if !okx {
+            return false
+        }
+        if x.tag == 0xa3 {
+            if c.version != 3 || !parseExts(b, x, mut c) {
+                return false
+            }
+        } else if x.tag != 0x81 && x.tag != 0xa1 && x.tag != 0x82 && x.tag != 0xa2 {
+            return false
+        }
+        at = x.ce
+    }
+    return true
+}
+
+// SubjectPublicKeyInfo（EC は id-ecPublicKey + 曲線の OID・RSA は rsaEncryption + NULL）
+func parseSpki(b []byte, s El, c mut Cert) bool {
+    alg, ok := firstChild(b, s)
+    key, ok2 := nextEl(b, alg, s.ce)
+    if !ok || !ok2 || alg.tag != 0x30 || key.ce != s.ce {
+        return false
+    }
+    pk, ok3 := bitStr(b, key)
+    if !ok3 {
+        return false
+    }
+    c.pubKey = pk
+    o, ok4 := firstChild(b, alg)
+    if !ok4 {
+        return false
+    }
+    p, okp := nextEl(b, o, alg.ce)
+    if oidIs(b, o, "2a8648ce3d0201") && okp {
+        if oidIs(b, p, "2a8648ce3d030107") {
+            c.pubAlg = PubP256
+        } else if oidIs(b, p, "2b81040022") {
+            c.pubAlg = PubP384
+        }
+    } else if oidIs(b, o, "2a864886f70d010101") {
+        c.pubAlg = PubRsa
+    }
+    return true
+}
+
+// RSA の公開鍵（RSAPublicKey — SEQUENCE { INTEGER n, INTEGER e }）の n の中身と e の中身
+@effects()
+func RsaKey(pk []byte) ([]byte, []byte, bool) {
+    s, ok := elAt(pk, 0, len(pk))
+    if !ok || s.tag != 0x30 || s.ce != len(pk) {
+        return []byte{}, []byte{}, false
+    }
+    n, ok1 := firstChild(pk, s)
+    e, ok2 := nextEl(pk, n, s.ce)
+    if !ok1 || !ok2 || n.tag != 0x02 || e.tag != 0x02 || e.ce != s.ce {
+        return []byte{}, []byte{}, false
+    }
+    return content(pk, n), content(pk, e), true
+}
+
+// 正の整数の中身の bit 長（先頭の 0 の詰めを除く）
+@effects()
+func BitLen(x []byte) int {
+    mut i := 0
+    while i < len(x) && x[i] == byte(0) {
+        i = i + 1
+    }
+    if i == len(x) {
+        return 0
+    }
+    mut top := int(x[i])
+    mut n := 0
+    while top > 0 {
+        n = n + 1
+        top = top >> 1
+    }
+    return 8 * (len(x) - i - 1) + n
+}

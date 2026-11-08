@@ -1,11 +1,11 @@
 package main
 
-import "std/http"
+import "std/http/server"
 
 // std の外の @credential / @bless(origin)
 @credential
-func token(r http.Request) string? {
-    return http.Header(r, "x-token")
+func token(r http.server.Request) string? {
+    return http.server.Header(r, "x-token")
 }
 
 @bless(origin)

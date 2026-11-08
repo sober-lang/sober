@@ -1,0 +1,328 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "P",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "rows",
+            "type": {
+              "k": "slice_of",
+              "elem": {
+                "k": "name",
+                "name": "int"
+              },
+              "mut": false
+            },
+            "tok": 7
+          },
+          {
+            "name": "name",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 12
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 17
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "rows",
+      "type_params": [],
+      "params": [
+        {
+          "name": "m",
+          "type": {
+            "k": "map_of",
+            "key": {
+              "k": "name",
+              "name": "string"
+            },
+            "value": {
+              "k": "name",
+              "name": "P"
+            },
+            "mut": false
+          },
+          "mutable": false
+        },
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "e"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "index",
+                "base": {
+                  "k": "ident",
+                  "name": "m",
+                  "tok": 34
+                },
+                "idx": {
+                  "k": "ident",
+                  "name": "k",
+                  "tok": 36
+                },
+                "tok": 35
+              }
+            ],
+            "tok": 32
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "e",
+                  "tok": 40
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 42
+                },
+                "tok": 41
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "len",
+                          "tok": 45
+                        },
+                        "args": [
+                          {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "e",
+                              "tok": 47
+                            },
+                            "field": "rows",
+                            "tok": 49
+                          }
+                        ],
+                        "tok": 46
+                      }
+                    ],
+                    "tok": 44
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 39
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "unary",
+                "op": "-",
+                "operand": {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 56
+                },
+                "tok": 55
+              }
+            ],
+            "tok": 54
+          }
+        ]
+      },
+      "tok": 18,
+      "bodiless": false,
+      "span": {
+        "start": 17,
+        "end": 60
+      },
+      "sig_end": 31
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "m"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "maplit",
+                "key": {
+                  "k": "name",
+                  "name": "string"
+                },
+                "value": {
+                  "k": "name",
+                  "name": "P"
+                },
+                "entries": [
+                  {
+                    "key": {
+                      "k": "strlit",
+                      "value": "x",
+                      "tok": 73
+                    },
+                    "value": {
+                      "k": "composite",
+                      "type_name": "P",
+                      "elems": [
+                        {
+                          "key": "rows",
+                          "value": {
+                            "k": "slicelit",
+                            "elem": {
+                              "k": "name",
+                              "name": "int"
+                            },
+                            "elems": [
+                              {
+                                "k": "int",
+                                "value": 1,
+                                "tok": 83
+                              },
+                              {
+                                "k": "int",
+                                "value": 2,
+                                "tok": 85
+                              }
+                            ],
+                            "mut": false,
+                            "tok": 79
+                          }
+                        },
+                        {
+                          "key": "name",
+                          "value": {
+                            "k": "strlit",
+                            "value": "x",
+                            "tok": 90
+                          }
+                        }
+                      ],
+                      "tok": 75,
+                      "type_args": []
+                    }
+                  }
+                ],
+                "mut": false,
+                "tok": 67
+              }
+            ],
+            "tok": 65
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 94
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "rows",
+                    "tok": 96
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "m",
+                      "tok": 98
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "x",
+                      "tok": 100
+                    }
+                  ],
+                  "tok": 97
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "rows",
+                    "tok": 103
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "m",
+                      "tok": 105
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "y",
+                      "tok": 107
+                    }
+                  ],
+                  "tok": 104
+                }
+              ],
+              "tok": 95
+            }
+          }
+        ]
+      },
+      "tok": 61,
+      "bodiless": false,
+      "span": {
+        "start": 60,
+        "end": 113
+      },
+      "sig_end": 64
+    }
+  ],
+  "consts": []
+}

@@ -1,0 +1,40 @@
+package main
+
+// variant が 1 つの union（再帰・総称も）: 和を組まずペイロードそのもので表す — switch の腕は 1 つで網羅
+
+type Box union {
+    Only { v int }
+}
+
+type Tree union {
+    Node { kids []Tree; v int }
+}
+
+type One[T] union {
+    It { x T }
+}
+
+func sum(t Tree) int {
+    return switch t {
+    case Node{kids, v}: {
+        mut s := v
+        for k <- kids {
+            s += sum(k)
+        }
+        s
+    }
+    }
+}
+
+func name(o One[string]) string {
+    return switch o {
+    case It{x}: x
+    }
+}
+
+func main() {
+    b := Only{v: 3}
+    println(switch b { case Only{v}: v })
+    println(sum(Node{kids: []Tree{Node{kids: []Tree{}, v: 2}, Node{kids: []Tree{}, v: 4}}, v: 1}))
+    println(name(It[string]{x: "it"}))
+}

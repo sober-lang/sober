@@ -31,26 +31,36 @@
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "calc",
-                      "tok": 13
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 13
+                        },
+                        "field": "sobertest",
+                        "tok": 15
+                      },
+                      "field": "calc",
+                      "tok": 17
                     },
                     "field": "Add",
-                    "tok": 15
+                    "tok": 19
                   },
                   "args": [
                     {
                       "k": "int",
                       "value": 20,
-                      "tok": 17
+                      "tok": 21
                     },
                     {
                       "k": "int",
                       "value": 22,
-                      "tok": 19
+                      "tok": 23
                     }
                   ],
-                  "tok": 16
+                  "tok": 20
                 }
               ],
               "tok": 12
@@ -62,7 +72,7 @@
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 25
+        "end": 29
       },
       "sig_end": 10
     }

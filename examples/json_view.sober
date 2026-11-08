@@ -37,7 +37,7 @@ func main() {
     }
     d, err := json.Parse(b)
     switch err {
-    case json.InvalidJson{pos, kind}: println("invalid at ${pos} (kind ${kind})")
+    case json.BadJson{pos, kind}: println("invalid at ${pos} (kind ${kind})")
     case nil: {
         walk(d, json.Root(d), "$")
         println(json.Format(d, json.Root(d)))

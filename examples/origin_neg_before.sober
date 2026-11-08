@@ -1,10 +1,10 @@
 package main
 
-import "std/http"
+import "std/http/server"
 
 // 認証の before を持つ共有のルート（門の後ろの応答が共有キャッシュから門の外へ配られる）
 func main() {
-    auth := http.Middleware{before: (r) => if http.Cookie(r, "sid") == nil { http.Status(401) } else { nil }}
-    rs := []http.Route{http.Route{method: "GET", path: "/doc", handler: (r) => http.Text("members only\n"), middleware: []http.Middleware{auth}, cache: http.Fresh{maxAge: 3600}}}
+    auth := http.server.Middleware{before: (r) => if http.server.Cookie(r, "sid") == nil { http.server.Status(401) } else { nil }}
+    rs := []http.server.Route{http.server.Route{method: "GET", path: "/doc", handler: (r) => http.server.Text("members only\n"), middleware: []http.server.Middleware{auth}, cache: http.server.Fresh{maxAge: 3600}}}
     println(len(rs))
 }

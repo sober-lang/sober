@@ -1,0 +1,773 @@
+package lower
+
+// 再帰型（slice / map の要素を通る再帰 — language.md 1 節の D）の境界コピー。型ごとにその場へ並べる relocateTo は再帰型で
+// 止まらないので、互いに含み合う struct / union の組（強連結成分）ごとに補助 rt.rec_relocate#n(p, floor, 成分) を 1 本建てる。
+// 補助は明示の作業スタックで歩く（深い木でネイティブのスタックも region の深度も使わない）:
+//   VISIT（種類 = RC_VISIT + 成分, 値の番地）— 成分の値を 1 段その場で歩く。中の同じ組の値は VISIT を積む
+//   POST（種類 = RC_POST + 場所, ヘッダの番地）— 中身を写し終えてから外側のセル列を写す（relocateCells と同じ 2 相 —
+//   後から積んだ項が先に済むので、POST を積んでから中身の項を積めば順序が保たれる）
+// 写した先の表（元のセル列の番地 → 写した番地・長さ・深度の印）で、同じセル列を共有する部分木（imm の DAG）は 1 回だけ写す —
+// 共有は観測できないので、共有を保っても木として写しても同じ値。ctx と初めの容量の作業スタックは補助のスタック枠に置く（呼び出しごとに region へ取ると、反復の region が畳まれたループでは
+// 反復ごとに外の region へ積もる）。容量を超えた作業スタックと表は今の深度の region に置く（写す量に比例する分だけ）。
+// 席 A の子では建てない（型は子の外へ出ないので親が補助を組めない）— 子は拒否して直の道へ戻す
+
+import "desugar"
+import "std/iter"
+import "std/table"
+
+const RC_VISIT = 0
+const RC_POST = 1048576
+const RC_E = 3       // 作業スタックの 1 項 [種類, a, b]
+const RC_FE = 4      // 表の 1 項 [元の番地（0 = 空き）, 写した番地, 長さ, 深度の印]
+const RC_CAP0 = 16   // 作業スタックの初めの容量（項 — スタック枠に置くので入口で 0 埋めされる。超えたら今の深度の region へ倍々）
+const RC_TCAP0 = 16 // 写した先の表の初めの容量（項 — 表は 2 件目の put で確保する: 1 件目は ctx の中の 1 枠〔RC_C1〕。伸びは 4 倍 — 2 倍だと深い部分木の写しで再ハッシュが支配的だった）
+const RC_CTXW = 11   // ctx: 0 = スタック, 1 = 項数, 2 = 容量, 3 = 表, 4 = 件数, 5 = 表の容量, 6 = 置き場の深度, 7〜10 = 表の前の 1 枠（RC_FE 語）（ctx の直後に初めの作業スタック）
+const RC_C1 = 7      // 表の前の 1 枠の位置（表を作るまでの写した先 — 部分木の深いセル列が 1 本だけの写しは表を作らない）
+const RC_MUL = -7046029254386353131
+
+// 情報 info の型
+func rcTyOf(st mut St, info int) int {
+    return desugar.HeapGet(mut st.d, info + SI_TY)
+}
+
+// 型 x の直の成分（欄・variant の欄・opt の中身・slice の要素・map のキーと値）を todo へ
+func rcKids(st mut St, x int, todo mut []int) {
+    k := tTag(mut st, x)
+    if k == TStruct {
+        fs := hgetL(mut st, desugar.HeapGet(mut st.d, x + 1) + SI_FIELDS)
+        for i <- iter.Range(0, lenL(mut st, fs)) {
+            todo = append(todo, desugar.HeapGet(mut st.d, latI(mut st, fs, i) + 1))
+        }
+    } else if k == TUnion {
+        vs := hgetL(mut st, desugar.HeapGet(mut st.d, x + 1) + SI_FIELDS)
+        for v <- iter.Range(0, lenL(mut st, vs)) {
+            fs := hgetL(mut st, latI(mut st, vs, v) + 2)
+            for i <- iter.Range(0, lenL(mut st, fs)) {
+                todo = append(todo, desugar.HeapGet(mut st.d, latI(mut st, fs, i) + 1))
+            }
+        }
+    } else if k == TOpt || k == TSlice {
+        todo = append(todo, desugar.HeapGet(mut st.d, x + 1))
+    } else if k == TMap {
+        todo = append(todo, desugar.HeapGet(mut st.d, x + 1))
+        todo = append(todo, desugar.HeapGet(mut st.d, x + 2))
+    }
+}
+
+// 型 t から情報 goal の struct / union へ包含で届くか（self = t 自身も数える）
+func rcReach(st mut St, t int, goal int, self bool) bool {
+    mut todo := mut []int{}
+    mut seen := mut []int{}
+    if self {
+        todo = append(todo, t)
+    } else {
+        rcKids(mut st, t, mut todo)
+    }
+    mut i := 0
+    while i < len(todo) {
+        x := todo[i]
+        i += 1
+        k := tTag(mut st, x)
+        if k == TStruct || k == TUnion {
+            info := desugar.HeapGet(mut st.d, x + 1)
+            if info == goal {
+                return true
+            }
+            mut had := false
+            for s <- iter.Range(0, len(seen)) {
+                if seen[s] == info {
+                    had = true
+                }
+            }
+            if !had {
+                seen = append(seen, info)
+                rcKids(mut st, x, mut todo)
+            }
+        } else {
+            rcKids(mut st, x, mut todo)
+        }
+    }
+    return false
+}
+
+// 再帰型の組の記録 [次, 補助, 組んだか, 成分の列（情報）] の中で info を持つもの（無ければ -1）
+func rcFind(st mut St, info int) int {
+    mut r := if st.relocFresh { st.recRelsF } else { st.recRels }
+    while r >= 0 {
+        ms := desugar.ListRef(desugar.HeapGet(mut st.d, r + 3))
+        for i <- iter.Range(0, lenL(mut st, ms)) {
+            if latI(mut st, ms, i) == info {
+                return r
+            }
+        }
+        r = desugar.HeapGet(mut st.d, r + 0)
+    }
+    return -1
+}
+
+// 組の記録の中の info の位置
+func rcIndex(st mut St, r int, info int) int {
+    ms := desugar.ListRef(desugar.HeapGet(mut st.d, r + 3))
+    for i <- iter.Range(0, lenL(mut st, ms)) {
+        if latI(mut st, ms, i) == info {
+            return i
+        }
+    }
+    return -1
+}
+
+// struct / union の型 t が自分を（slice / map を通って）含むか — 結果は情報ごとに覚える（[次, 情報, 結果]）
+func rcIsRec(st mut St, t int) bool {
+    info := desugar.HeapGet(mut st.d, t + 1)
+    if desugar.HeapGet(mut st.d, info + SI_DECL) == -1 {
+        return false
+    }
+    mut m := st.rcMemo
+    while m >= 0 {
+        if desugar.HeapGet(mut st.d, m + 1) == info {
+            return desugar.HeapGet(mut st.d, m + 2) == 1
+        }
+        m = desugar.HeapGet(mut st.d, m)
+    }
+    y := rcReach(mut st, t, info, false)
+    st.rcMemo = rec4(mut st, st.rcMemo, info, if y { 1 } else { 0 }, 0)
+    return y
+}
+
+// 再帰する info の組の記録（初出なら宣言する — 本体は programRt の buildRecRelocs）
+func rcRecord(st mut St, info int) int {
+    r0 := rcFind(mut st, info)
+    if r0 >= 0 {
+        return r0
+    }
+    if st.ls.on {
+        st.ls.rej = true
+    }
+    // 成分 = 型表の並びで info と互いに届く情報（決定的な順）
+    t := rcTyOf(mut st, info)
+    mut ms := mut []int{}
+    mut x := st.types
+    while x >= 0 {
+        k := desugar.HeapGet(mut st.d, x)
+        if (k == TStruct || k == TUnion) && desugar.HeapGet(mut st.d, x + SI_STATE) == LDone {
+            if x == info || (rcReach(mut st, t, x, false) && rcReach(mut st, rcTyOf(mut st, x), info, false)) {
+                ms = append(ms, x)
+            }
+        }
+        x = desugar.HeapGet(mut st.d, x + SI_NEXT)
+    }
+    l := listN(mut st, len(ms))
+    for i <- iter.Range(0, len(ms)) {
+        desugar.HeapSet(mut st.d, l + 1 + i, ms[i])
+    }
+    n := st.nrec
+    st.nrec = n + 1
+    if st.relocFresh {
+        f := addFunc(mut st, int(strCat(mut st, strLit(mut st, "rt.rec_relocate_fresh#"), decimal(mut st, n))), desugar.ListRef(list3(mut st, TyPtr, TyI64, TyI64)), -1)
+        st.recRelsF = rec4(mut st, st.recRelsF, int(f), 0, l)
+        return st.recRelsF
+    }
+    f := addFunc(mut st, int(strCat(mut st, strLit(mut st, "rt.rec_relocate#"), decimal(mut st, n))), desugar.ListRef(list3(mut st, TyPtr, TyI64, TyI64)), -1)
+    st.recRels = rec4(mut st, st.recRels, int(f), 0, l)
+    return st.recRels
+}
+
+// relocateTo の再帰型の腕: 補助を呼ぶ
+func rcCall(st mut St, p int, t int, floor int) {
+    info := desugar.HeapGet(mut st.d, t + 1)
+    r := rcRecord(mut st, info)
+    call(mut st, FnRef(desugar.HeapGet(mut st.d, r + 1)), list3(mut st, p, floor, iconst(mut st, rcIndex(mut st, r, info))))
+}
+
+// ── 補助の本体 ──
+
+// 宣言済みでまだ組んでいない補助を全部組む（組む途中で別の組の補助が宣言されうる — 尽きるまで）+ 共有の部品
+func buildRecRelocs(st mut St) {
+    mut more := true
+    while more {
+        more = false
+        for fresh <- iter.Range(0, 2) {
+            st.relocFresh = fresh == 1
+            mut r := if st.relocFresh { st.recRelsF } else { st.recRels }
+            while r >= 0 {
+                if desugar.HeapGet(mut st.d, r + 2) == 0 {
+                    desugar.HeapSet(mut st.d, r + 2, 1)
+                    buildRecReloc(mut st, r)
+                    more = true
+                }
+                r = desugar.HeapGet(mut st.d, r)
+            }
+        }
+        st.relocFresh = false
+    }
+    if st.rtRecPush != -1 && !st.rcPartsBuilt {
+        st.rcPartsBuilt = true
+        buildRcPush(mut st)
+        buildRcGet(mut st)
+        buildRcPut(mut st)
+        buildRcRehash(mut st)
+    }
+}
+
+func rcParts(st mut St) {
+    if st.rtRecPush == -1 {
+        st.rtRecPush = addFunc(mut st, int(strLit(mut st, "rt.rec_push")), desugar.ListRef(list4(mut st, TyPtr, TyI64, TyI64, TyI64)), -1)
+        st.rtRecGet = addFunc(mut st, int(strLit(mut st, "rt.rec_fwd_get")), desugar.ListRef(list3(mut st, TyPtr, TyI64, TyI64)), TyI64)
+        st.rtRecPut = addFunc(mut st, int(strLit(mut st, "rt.rec_fwd_put")), desugar.ListRef(list5(mut st, TyPtr, TyI64, TyI64, TyI64, TyI64)), -1)
+        st.rtRecRehash = addFunc(mut st, int(strLit(mut st, "rt.rec_rehash")), desugar.ListRef(list1(mut st, TyPtr)), -1)
+    }
+}
+
+func buildRecReloc(st mut St, r int) {
+    rcParts(mut st)
+    begin(mut st, FnRef(desugar.HeapGet(mut st.d, r + 1)))
+    st.rcCur = r
+    st.rcSite0 = table.Len(mut st.rcSites)
+    p := 0
+    floor := 1
+    j0 := 2
+    ctx := rcCtxInit(mut st)
+    call(mut st, st.rtRecPush, list4(mut st, ctx, bin(mut st, BAdd, j0, iconst(mut st, RC_VISIT)), ptoi(mut st, p), iconst(mut st, 0)))
+    loop := newBlock(mut st)
+    done := newBlock(mut st)
+    pop := newBlock(mut st)
+    br(mut st, loop, -1)
+    setCur(mut st, loop)
+    wtop := load(mut st, ctx, 1)
+    condbr(mut st, cmp(mut st, CEq, wtop, iconst(mut st, 0)), done, -1, pop, -1)
+    setCur(mut st, pop)
+    t1 := bin(mut st, BSub, wtop, iconst(mut st, 1))
+    store(mut st, ctx, 1, t1)
+    e := gepWord(mut st, itop(mut st, load(mut st, ctx, 0)), bin(mut st, BMul, t1, iconst(mut st, RC_E)))
+    kind := load(mut st, e, 0)
+    a := load(mut st, e, 1)
+    // 成分ごとの VISIT
+    ms := desugar.ListRef(desugar.HeapGet(mut st.d, r + 3))
+    mut kinds := mut []int{}
+    mut blks := mut []int{}
+    for m <- iter.Range(0, lenL(mut st, ms)) {
+        b := newBlock(mut st)
+        setCur(mut st, b)
+        rcInl(mut st, itop(mut st, a), 0, rcTyOf(mut st, latI(mut st, ms, m)), floor, true, ctx)
+        br(mut st, loop, -1)
+        kinds = append(kinds, RC_VISIT + m)
+        blks = append(blks, int(b))
+    }
+    // VISIT が見つけたヘッダの場所ごとの POST（POST は中身へ降りないので場所は増えない）
+    for s <- iter.Range(0, table.Len(mut st.rcSites) - st.rcSite0) {
+        b := newBlock(mut st)
+        setCur(mut st, b)
+        rcPost(mut st, itop(mut st, a), table.Get(mut st.rcSites, st.rcSite0 + s), floor, ctx)
+        br(mut st, loop, -1)
+        kinds = append(kinds, RC_POST + s)
+        blks = append(blks, int(b))
+    }
+    // 振り分け（pop の末尾から種類の比較の鎖）
+    setCur(mut st, pop)
+    for i <- iter.Range(0, len(kinds)) {
+        nx := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CEq, kind, iconst(mut st, kinds[i])), BlkRef(blks[i]), -1, nx, -1)
+        setCur(mut st, nx)
+    }
+    br(mut st, loop, -1)
+    setCur(mut st, done)
+    ret(mut st, -1)
+    st.rcCur = -1
+}
+
+// ヘッダの場所の番号（型 t の slice / map — 同じ型は同じ番号）
+func rcSite(st mut St, t int) int {
+    for s <- iter.Range(st.rcSite0, table.Len(mut st.rcSites)) {
+        if tEql(mut st, table.Get(mut st.rcSites, s), t) {
+            return s - st.rcSite0
+        }
+    }
+    table.Push(mut st.rcSites, t)
+    return table.Len(mut st.rcSites) - 1 - st.rcSite0
+}
+
+// 今の組の成分の位置（成分でなければ -1）
+func rcMember(st mut St, t int) int {
+    k := tTag(mut st, t)
+    if k != TStruct && k != TUnion {
+        return -1
+    }
+    return rcIndex(mut st, st.rcCur, desugar.HeapGet(mut st.d, t + 1))
+}
+
+// 型 t が今の組の成分へ届くか（t 自身も数える）
+func rcReachCur(st mut St, t int) bool {
+    ms := desugar.ListRef(desugar.HeapGet(mut st.d, st.rcCur + 3))
+    return rcReach(mut st, t, latI(mut st, ms, 0), true)
+}
+
+// 番地 p + off の型 t の値を歩く（root = 補助が受け持つ成分の値そのもの — 1 段その場で開く）
+func rcInl(st mut St, p int, off int, t int, floor int, root bool, ctx int) {
+    if isErr(mut st, t) {
+        relocateTo(mut st, p, off, t, floor)
+        return
+    }
+    k := tTag(mut st, t)
+    if k == TStruct || k == TUnion {
+        j := rcMember(mut st, t)
+        if j < 0 {
+            relocateTo(mut st, p, off, t, floor)
+            return
+        }
+        if !root {
+            // 前検査: struct のヘッダ（slice / map — 入れ子の struct の中も）が全部 floor 以下の深度なら中身も浅い（浅い region は深い region を
+            // 指さない）— 積まずに飛ばす。宛先構築で子の部分木が先に宛先へ着いている形（返る列への追記）で、要素ごとの積み下ろしが消える
+            hs, flat := rcHdrOffs(mut st, t, off)
+            if k == TStruct && flat {
+                mut any := iconst(mut st, 0)
+                for i <- iter.Range(0, len(hs)) {
+                    any = bin(mut st, BOr, any, cmp(mut st, CGt, load(mut st, p, hs[i] + 2), floor))
+                }
+                skip := relocateArm(mut st, any)
+                call(mut st, st.rtRecPush, list4(mut st, ctx, iconst(mut st, RC_VISIT + j), ptoi(mut st, fieldPtr(mut st, p, off)), iconst(mut st, 0)))
+                br(mut st, skip, -1)
+                setCur(mut st, skip)
+                return
+            }
+            call(mut st, st.rtRecPush, list4(mut st, ctx, iconst(mut st, RC_VISIT + j), ptoi(mut st, fieldPtr(mut st, p, off)), iconst(mut st, 0)))
+            return
+        }
+        if k == TStruct {
+            fs := hgetL(mut st, desugar.HeapGet(mut st.d, t + 1) + SI_FIELDS)
+            for i <- iter.Range(0, lenL(mut st, fs)) {
+                f := latI(mut st, fs, i)
+                rcInl(mut st, p, off + desugar.HeapGet(mut st.d, f + 2), desugar.HeapGet(mut st.d, f + 1), floor, false, ctx)
+            }
+            return
+        }
+        tag := load(mut st, p, off)
+        vs := hgetL(mut st, desugar.HeapGet(mut st.d, t + 1) + SI_FIELDS)
+        for vi <- iter.Range(0, lenL(mut st, vs)) {
+            vr := latI(mut st, vs, vi)
+            fs := hgetL(mut st, vr + 2)
+            mut has := false
+            for i <- iter.Range(0, lenL(mut st, fs)) {
+                if containsSlice(mut st, desugar.HeapGet(mut st.d, latI(mut st, fs, i) + 1)) {
+                    has = true
+                }
+            }
+            if has {
+                join := relocateArm(mut st, cmp(mut st, CEq, tag, iconst(mut st, desugar.HeapGet(mut st.d, vr + 1))))
+                for i <- iter.Range(0, lenL(mut st, fs)) {
+                    f := latI(mut st, fs, i)
+                    rcInl(mut st, p, off + 1 + desugar.HeapGet(mut st.d, f + 2), desugar.HeapGet(mut st.d, f + 1), floor, false, ctx)
+                }
+                br(mut st, join, -1)
+                setCur(mut st, join)
+            }
+        }
+        return
+    }
+    if k == TOpt {
+        pl := desugar.HeapGet(mut st.d, t + 1)
+        if containsSlice(mut st, pl) {
+            live := relocateArm(mut st, cmp(mut st, CNe, load(mut st, p, off), iconst(mut st, 0)))
+            rcInl(mut st, p, off + 1, pl, floor, false, ctx)
+            br(mut st, live, -1)
+            setCur(mut st, live)
+        }
+        return
+    }
+    if (k == TSlice && rcReachCur(mut st, desugar.HeapGet(mut st.d, t + 1))) || (k == TMap && (rcReachCur(mut st, desugar.HeapGet(mut st.d, t + 1)) || rcReachCur(mut st, desugar.HeapGet(mut st.d, t + 2)))) {
+        rcHdr(mut st, fieldPtr(mut st, p, off), t, floor, ctx)
+        return
+    }
+    relocateTo(mut st, p, off, t, floor)
+}
+
+// struct t（位置 off の語から）のヘッダ（slice / map）の語の位置の列。opt / union / error の欄があれば偽（前検査をしない）
+func rcHdrOffs(st mut St, t int, off int) ([]int, bool) {
+    if tTag(mut st, t) != TStruct {
+        return []int{}, false
+    }
+    mut hs := mut []int{}
+    fs := hgetL(mut st, desugar.HeapGet(mut st.d, t + 1) + SI_FIELDS)
+    for i <- iter.Range(0, lenL(mut st, fs)) {
+        f := latI(mut st, fs, i)
+        ft := desugar.HeapGet(mut st.d, f + 1)
+        fo := off + desugar.HeapGet(mut st.d, f + 2)
+        if containsSlice(mut st, ft) {
+            if isErr(mut st, ft) {
+                return []int{}, false
+            }
+            k := tTag(mut st, ft)
+            if k == TSlice || k == TMap {
+                hs = append(hs, fo)
+            } else {
+                sub, ok := rcHdrOffs(mut st, ft, fo)
+                if !ok {
+                    return []int{}, false
+                }
+                for x <- iter.Range(0, len(sub)) {
+                    hs = append(hs, sub[x])
+                }
+            }
+        }
+    }
+    return freeze(hs), true
+}
+
+// ヘッダ h（型 t — 中身が今の組へ届く slice / map）: 深ければ、写し済みなら付け替えるだけ・でなければ POST を積んでからセルごとに歩く
+func rcHdr(st mut St, h int, t int, floor int, ctx int) {
+    deep := relocateArm(mut st, cmp(mut st, CGt, load(mut st, h, 2), floor))
+    old := load(mut st, h, 0)
+    n := load(mut st, h, 1)
+    isMap := tTag(mut st, t) == TMap
+    if !isMap {
+        fe := call(mut st, st.rtRecGet, list3(mut st, ctx, old, n))
+        hit := newBlock(mut st)
+        miss := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CNe, fe, iconst(mut st, 0)), hit, -1, miss, -1)
+        setCur(mut st, hit)
+        fp := itop(mut st, fe)
+        store(mut st, h, 0, load(mut st, fp, 1))
+        store(mut st, h, 2, load(mut st, fp, 3))
+        br(mut st, deep, -1)
+        setCur(mut st, miss)
+    }
+    if st.relocFresh {
+        // 元のセルを書き換えない: 外側を先に写して表へ・写した先のセルを歩く（POST なし）
+        regionRelocate(mut st, h, if isMap { mapRepr(mut st, t).cellw } else { tWords(mut st, desugar.HeapGet(mut st.d, t + 1)) }, floor)
+        if !isMap {
+            call(mut st, st.rtRecPut, list5(mut st, ctx, old, load(mut st, h, 0), n, load(mut st, h, 2)))
+        }
+    } else {
+        call(mut st, st.rtRecPush, list4(mut st, ctx, iconst(mut st, RC_POST + rcSite(mut st, t)), ptoi(mut st, h), iconst(mut st, 0)))
+    }
+    bs := itop(mut st, if st.relocFresh { load(mut st, h, 0) } else { old })
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    after := newBlock(mut st)
+    br(mut st, loop, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, i, n), body, -1, after, -1)
+    setCur(mut st, body)
+    if isMap {
+        r := mapRepr(mut st, t)
+        cp := cellAt(mut st, bs, i, r.cellw)
+        mrRelocKey(mut st, r, cp, floor)
+        if containsSlice(mut st, r.vt) {
+            live := relocateArm(mut st, cmp(mut st, CNe, mrTag(mut st, r, cp), iconst(mut st, 0)))
+            rcInl(mut st, cp, r.valOff, r.vt, floor, false, ctx)
+            br(mut st, live, -1)
+            setCur(mut st, live)
+        }
+    } else {
+        elem := desugar.HeapGet(mut st.d, t + 1)
+        rcInl(mut st, cellAt(mut st, bs, i, tWords(mut st, elem)), 0, elem, floor, false, ctx)
+    }
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))))
+    setCur(mut st, after)
+    if st.relocFresh && isMap {
+        // rcPost の map の後始末（索引を外す・imm なら封じ直す）
+        moved := relocateArm(mut st, cmp(mut st, CNe, load(mut st, h, 0), old))
+        store(mut st, h, 3, iconst(mut st, 0))
+        if desugar.HeapGet(mut st.d, t + 3) == 0 {
+            here := relocateArm(mut st, cmp(mut st, CEq, load(mut st, h, 2), floor))
+            sealHdr(mut st, h, t)
+            br(mut st, here, -1)
+            setCur(mut st, here)
+        }
+        br(mut st, moved, -1)
+        setCur(mut st, moved)
+    }
+    br(mut st, deep, -1)
+    setCur(mut st, deep)
+}
+
+// POST: 中身を写し終えたヘッダ h（型 t）の外側のセル列を写す（slice は写した先を表へ・map は relocateTo の map の腕と同じ後始末）
+func rcPost(st mut St, h int, t int, floor int, ctx int) {
+    old := load(mut st, h, 0)
+    if tTag(mut st, t) == TMap {
+        regionRelocate(mut st, h, mapRepr(mut st, t).cellw, floor)
+        moved := relocateArm(mut st, cmp(mut st, CNe, load(mut st, h, 0), old))
+        store(mut st, h, 3, iconst(mut st, 0))
+        if desugar.HeapGet(mut st.d, t + 3) == 0 {
+            here := relocateArm(mut st, cmp(mut st, CEq, load(mut st, h, 2), floor))
+            sealHdr(mut st, h, t)
+            br(mut st, here, -1)
+            setCur(mut st, here)
+        }
+        br(mut st, moved, -1)
+        setCur(mut st, moved)
+        return
+    }
+    n := load(mut st, h, 1)
+    fe := call(mut st, st.rtRecGet, list3(mut st, ctx, old, n))
+    hit := newBlock(mut st)
+    miss := newBlock(mut st)
+    out := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, fe, iconst(mut st, 0)), hit, -1, miss, -1)
+    setCur(mut st, hit)
+    fp := itop(mut st, fe)
+    store(mut st, h, 0, load(mut st, fp, 1))
+    store(mut st, h, 2, load(mut st, fp, 3))
+    br(mut st, out, -1)
+    setCur(mut st, miss)
+    regionRelocate(mut st, h, tWords(mut st, desugar.HeapGet(mut st.d, t + 1)), floor)
+    nw := load(mut st, h, 0)
+    moved := relocateArm(mut st, cmp(mut st, CNe, nw, old))
+    call(mut st, st.rtRecPut, list5(mut st, ctx, old, nw, n, load(mut st, h, 2)))
+    br(mut st, moved, -1)
+    setCur(mut st, moved)
+    br(mut st, out, -1)
+    setCur(mut st, out)
+}
+
+// ── 共有の部品（作業スタックと表）──
+
+// 表の位置: (番地 >> 3) × 乗数 の上位 32 ビット & mask
+func rcSlot(st mut St, key int, mask int) int {
+    m := bin(mut st, BMul, bin(mut st, BSar, key, iconst(mut st, 3)), iconst(mut st, RC_MUL))
+    return bin(mut st, BAnd, bin(mut st, BSar, m, iconst(mut st, 32)), mask)
+}
+
+// 深度 d に n 語を確保して 0 で埋める
+func rcZeroAlloc(st mut St, d int, n int) int {
+    p := call(mut st, st.rtRalloc, list2(mut st, d, n))
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    after := newBlock(mut st)
+    br(mut st, loop, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, i, n), body, -1, after, -1)
+    setCur(mut st, body)
+    store(mut st, gepWord(mut st, p, i), 0, iconst(mut st, 0))
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))))
+    setCur(mut st, after)
+    return p
+}
+
+// ctx + 初めの容量の作業スタックをスタック枠に（表は最初の put で今の深度の region に）
+func rcCtxInit(st mut St) int {
+    c := newSlotAddrOwn(mut st, RC_CTXW + RC_CAP0 * RC_E)
+    store(mut st, c, 0, ptoi(mut st, gepWord(mut st, c, iconst(mut st, RC_CTXW))))
+    store(mut st, c, 1, iconst(mut st, 0))
+    store(mut st, c, 2, iconst(mut st, RC_CAP0))
+    store(mut st, c, 3, iconst(mut st, 0))
+    store(mut st, c, 4, iconst(mut st, 0))
+    store(mut st, c, 5, iconst(mut st, 0))
+    store(mut st, c, 6, regionDepth(mut st))
+    store(mut st, c, RC_C1, iconst(mut st, 0))
+    return c
+}
+
+// rt.rec_push(ctx, 種類, a, b)
+func buildRcPush(st mut St) {
+    begin(mut st, st.rtRecPush)
+    c := 0
+    wtop := load(mut st, c, 1)
+    cap := load(mut st, c, 2)
+    growB := newBlock(mut st)
+    putB := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, wtop, cap), growB, -1, putB, -1)
+    setCur(mut st, growB)
+    ns := call(mut st, st.rtRalloc, list2(mut st, load(mut st, c, 6), bin(mut st, BMul, cap, iconst(mut st, 2 * RC_E))))
+    call(mut st, st.rtCopy, list3(mut st, ns, itop(mut st, load(mut st, c, 0)), bin(mut st, BMul, cap, iconst(mut st, RC_E))))
+    store(mut st, c, 0, ptoi(mut st, ns))
+    store(mut st, c, 2, bin(mut st, BMul, cap, iconst(mut st, 2)))
+    br(mut st, putB, -1)
+    setCur(mut st, putB)
+    e := gepWord(mut st, itop(mut st, load(mut st, c, 0)), bin(mut st, BMul, wtop, iconst(mut st, RC_E)))
+    store(mut st, e, 0, 1)
+    store(mut st, e, 1, 2)
+    store(mut st, e, 2, 3)
+    store(mut st, c, 1, bin(mut st, BAdd, wtop, iconst(mut st, 1)))
+    ret(mut st, -1)
+}
+
+// rt.rec_fwd_get(ctx, 元の番地, 長さ) → 表の項の番地（長さ以上を写した項 — 無ければ 0）
+func buildRcGet(st mut St) {
+    begin(mut st, st.rtRecGet)
+    if st.rtMut == 38 {
+        // 変異 38: 写した先の表を引かない（共有した部分木を木として写す — DAG の写しが部分木の数で膨らむ。網 = 共有の題材の時間と RSS）
+        ret(mut st, iconst(mut st, 0))
+        return
+    }
+    c := 0
+    key := 1
+    n := 2
+    // 表がまだ無ければ 1 枠だけを見る
+    one := newBlock(mut st)
+    have := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, load(mut st, c, 5), iconst(mut st, 0)), one, -1, have, -1)
+    setCur(mut st, one)
+    e1 := gepWord(mut st, c, iconst(mut st, RC_C1))
+    oneSame := newBlock(mut st)
+    oneMiss := newBlock(mut st)
+    oneHit := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, load(mut st, e1, 0), key), oneSame, -1, oneMiss, -1)
+    setCur(mut st, oneSame)
+    condbr(mut st, cmp(mut st, CGe, load(mut st, e1, 2), n), oneHit, -1, oneMiss, -1)
+    setCur(mut st, oneHit)
+    ret(mut st, ptoi(mut st, e1))
+    setCur(mut st, oneMiss)
+    ret(mut st, iconst(mut st, 0))
+    setCur(mut st, have)
+    tab := itop(mut st, load(mut st, c, 3))
+    mask := bin(mut st, BSub, load(mut st, c, 5), iconst(mut st, 1))
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    br(mut st, loop, list1(mut st, rcSlot(mut st, key, mask)))
+    setCur(mut st, loop)
+    e := gepWord(mut st, tab, bin(mut st, BMul, i, iconst(mut st, RC_FE)))
+    k := load(mut st, e, 0)
+    miss := newBlock(mut st)
+    look := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, k, iconst(mut st, 0)), miss, -1, look, -1)
+    setCur(mut st, miss)
+    ret(mut st, iconst(mut st, 0))
+    setCur(mut st, look)
+    hit := newBlock(mut st)
+    next := newBlock(mut st)
+    same := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, k, key), same, -1, next, -1)
+    setCur(mut st, same)
+    condbr(mut st, cmp(mut st, CGe, load(mut st, e, 2), n), hit, -1, next, -1)
+    setCur(mut st, hit)
+    ret(mut st, ptoi(mut st, e))
+    setCur(mut st, next)
+    br(mut st, loop, list1(mut st, bin(mut st, BAnd, bin(mut st, BAdd, i, iconst(mut st, 1)), mask)))
+}
+
+// 表 tab（容量 mask + 1）へ項を入れる（同じ番地があれば長い方で上書き）。件数が増えたら 1・でなければ 0 を返す値
+func rcInsert(st mut St, tab int, mask int, key int, nw int, n int, lab int) int {
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    done := newBlock(mut st)
+    added := param(mut st, done, TyI64)
+    br(mut st, loop, list1(mut st, rcSlot(mut st, key, mask)))
+    setCur(mut st, loop)
+    e := gepWord(mut st, tab, bin(mut st, BMul, i, iconst(mut st, RC_FE)))
+    k := load(mut st, e, 0)
+    empty := newBlock(mut st)
+    look := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, k, iconst(mut st, 0)), empty, -1, look, -1)
+    setCur(mut st, empty)
+    store(mut st, e, 0, key)
+    store(mut st, e, 1, nw)
+    store(mut st, e, 2, n)
+    store(mut st, e, 3, lab)
+    br(mut st, done, list1(mut st, iconst(mut st, 1)))
+    setCur(mut st, look)
+    same := newBlock(mut st)
+    next := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, k, key), same, -1, next, -1)
+    setCur(mut st, same)
+    upd := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, n, load(mut st, e, 2)), upd, -1, done, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, upd)
+    store(mut st, e, 1, nw)
+    store(mut st, e, 2, n)
+    store(mut st, e, 3, lab)
+    br(mut st, done, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, next)
+    br(mut st, loop, list1(mut st, bin(mut st, BAnd, bin(mut st, BAdd, i, iconst(mut st, 1)), mask)))
+    setCur(mut st, done)
+    return added
+}
+
+// rt.rec_fwd_put(ctx, 元の番地, 写した番地, 長さ, 深度の印)
+func buildRcPut(st mut St) {
+    begin(mut st, st.rtRecPut)
+    c := 0
+    // 表がまだ無い: 1 枠が空きか同じ番地ならそこへ（長い方で上書き）・塞がっていれば表を作って 1 枠の項を移す
+    tabB := newBlock(mut st)
+    noTab := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, load(mut st, c, 5), iconst(mut st, 0)), noTab, -1, tabB, -1)
+    setCur(mut st, noTab)
+    e1 := gepWord(mut st, c, iconst(mut st, RC_C1))
+    k1 := load(mut st, e1, 0)
+    fill := newBlock(mut st)
+    notEmpty := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, k1, iconst(mut st, 0)), fill, -1, notEmpty, -1)
+    setCur(mut st, notEmpty)
+    same1 := newBlock(mut st)
+    spill := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, k1, 1), same1, -1, spill, -1)
+    setCur(mut st, same1)
+    longer := newBlock(mut st)
+    keep := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, 3, load(mut st, e1, 2)), longer, -1, keep, -1)
+    setCur(mut st, keep)
+    ret(mut st, -1)
+    setCur(mut st, longer)
+    br(mut st, fill, -1)
+    setCur(mut st, fill)
+    store(mut st, e1, 0, 1)
+    store(mut st, e1, 1, 2)
+    store(mut st, e1, 2, 3)
+    store(mut st, e1, 3, 4)
+    ret(mut st, -1)
+    setCur(mut st, spill)
+    call(mut st, st.rtRecRehash, list1(mut st, c))
+    t0 := itop(mut st, load(mut st, c, 3))
+    m0 := bin(mut st, BSub, load(mut st, c, 5), iconst(mut st, 1))
+    _ = rcInsert(mut st, t0, m0, k1, load(mut st, e1, 1), load(mut st, e1, 2), load(mut st, e1, 3))
+    store(mut st, c, 4, iconst(mut st, 1))
+    br(mut st, tabB, -1)
+    setCur(mut st, tabB)
+    cnt := load(mut st, c, 4)
+    growB := newBlock(mut st)
+    putB := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, bin(mut st, BMul, bin(mut st, BAdd, cnt, iconst(mut st, 1)), iconst(mut st, 2)), load(mut st, c, 5)), growB, -1, putB, -1)
+    setCur(mut st, growB)
+    call(mut st, st.rtRecRehash, list1(mut st, c))
+    br(mut st, putB, -1)
+    setCur(mut st, putB)
+    tab := itop(mut st, load(mut st, c, 3))
+    mask := bin(mut st, BSub, load(mut st, c, 5), iconst(mut st, 1))
+    added := rcInsert(mut st, tab, mask, 1, 2, 3, 4)
+    store(mut st, c, 4, bin(mut st, BAdd, load(mut st, c, 4), added))
+    ret(mut st, -1)
+}
+
+// rt.rec_rehash(ctx): 表の容量を 4 倍に（表が無ければ RC_TCAP0 項で作る）
+func buildRcRehash(st mut St) {
+    begin(mut st, st.rtRecRehash)
+    c := 0
+    cap := load(mut st, c, 5)
+    // 容量 0（表がまだ無い）からは RC_TCAP0 項
+    nb := newBlock(mut st)
+    ncap := param(mut st, nb, TyI64)
+    first := newBlock(mut st)
+    dbl := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, cap, iconst(mut st, 0)), first, -1, dbl, -1)
+    setCur(mut st, first)
+    br(mut st, nb, list1(mut st, iconst(mut st, RC_TCAP0)))
+    setCur(mut st, dbl)
+    br(mut st, nb, list1(mut st, bin(mut st, BMul, cap, iconst(mut st, 4))))
+    setCur(mut st, nb)
+    old := itop(mut st, load(mut st, c, 3))
+    nt := rcZeroAlloc(mut st, load(mut st, c, 6), bin(mut st, BMul, ncap, iconst(mut st, RC_FE)))
+    mask := bin(mut st, BSub, ncap, iconst(mut st, 1))
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    after := newBlock(mut st)
+    br(mut st, loop, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, i, cap), body, -1, after, -1)
+    setCur(mut st, body)
+    e := gepWord(mut st, old, bin(mut st, BMul, i, iconst(mut st, RC_FE)))
+    k := load(mut st, e, 0)
+    ins := newBlock(mut st)
+    next := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, k, iconst(mut st, 0)), ins, -1, next, -1)
+    setCur(mut st, ins)
+    _ = rcInsert(mut st, nt, mask, k, load(mut st, e, 1), load(mut st, e, 2), load(mut st, e, 3))
+    br(mut st, next, -1)
+    setCur(mut st, next)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))))
+    setCur(mut st, after)
+    store(mut st, c, 3, ptoi(mut st, nt))
+    store(mut st, c, 5, ncap)
+    ret(mut st, -1)
+}

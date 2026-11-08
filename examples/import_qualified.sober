@@ -1,0 +1,47 @@
+package main
+
+// 多段の package の修飾（language.md 20 節）: 修飾子は import のパスの全段（std/ を落とす — std/hash/crc32 → hash.crc32）。
+// 式・型・可変の仮引数の型・@errors のラベル・型パターンで同じ綴り。std/hash と std/hash/crc32 は修飾子の最長一致で分かれる
+
+import "std/compress/flate"
+import "std/hash"
+import "std/hash/crc32"
+import "std/http"
+import "std/crypto/pem"
+
+type Box struct {
+    f http.Field?
+    w compress.flate.Work
+}
+
+func sum(b []byte) int {
+    return hash.crc32.Sum(b)
+}
+
+func pack(w mut compress.flate.Work, b []byte) int {
+    return len(compress.flate.EncodeWith(mut w, b, 6))
+}
+
+func main() {
+    println(sum(bytes("abc")))
+    println(hash.crc32.Sum(bytes("abc")))
+    println(len(hash.Sha256(bytes("abc"))))
+    mut b := Box{}
+    compress.flate.NewWork(mut b.w)
+    println(kind("x"))
+    println(pack(mut b.w, bytes("hello hello hello")) > 0)
+}
+
+@errors(crypto.pem.Bad)
+func parse(s string) (int, error?) {
+    bs := crypto.pem.Parse(s)?
+    return len(bs), nil
+}
+
+func kind(s string) int {
+    n, err := parse(s)
+    return switch err {
+    case nil: n
+    case crypto.pem.Bad{}: -1
+    }
+}

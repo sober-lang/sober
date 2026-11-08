@@ -1,0 +1,17 @@
+package main
+
+// 負例（check も build も名指しで拒否 — diag.TypeMismatch kind 5）: Def として呼ぶジェネリック（mut も関数型の仮引数も無い）の
+// 型引数は region を持てない（language.md 31 節 R1）— string の型引数を渡すなら関数型の仮引数で展開される形に
+
+type Bx[T] struct {
+    v T
+    n int
+}
+
+func get[T](b Bx[T]) int {
+    return b.n
+}
+
+func main() {
+    println(get[string](Bx[string]{v: "x", n: 1}))
+}

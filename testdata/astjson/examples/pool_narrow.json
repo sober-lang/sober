@@ -1,0 +1,987 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/iter",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/pool",
+      "tok": 7
+    },
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "count",
+      "type_params": [],
+      "params": [
+        {
+          "name": "t",
+          "type": {
+            "k": "name",
+            "name": "pool.Scratch"
+          },
+          "mutable": true
+        },
+        {
+          "name": "b",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "byte"
+            },
+            "mut": false
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "i"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "iter",
+                        "tok": 27
+                      },
+                      "field": "Range",
+                      "tok": 29
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 31
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "len",
+                          "tok": 33
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "b",
+                            "tok": 35
+                          }
+                        ],
+                        "tok": 34
+                      }
+                    ],
+                    "tok": 30
+                  },
+                  "guards": [],
+                  "tok": 25
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "bind",
+                    "names": [
+                      "k"
+                    ],
+                    "mutable": false,
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "int",
+                          "tok": 41
+                        },
+                        "args": [
+                          {
+                            "k": "index",
+                            "base": {
+                              "k": "ident",
+                              "name": "b",
+                              "tok": 43
+                            },
+                            "idx": {
+                              "k": "ident",
+                              "name": "i",
+                              "tok": 45
+                            },
+                            "tok": 44
+                          }
+                        ],
+                        "tok": 42
+                      }
+                    ],
+                    "tok": 39
+                  },
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "pool",
+                          "tok": 49
+                        },
+                        "field": "StoreRaw16",
+                        "tok": 51
+                      },
+                      "args": [
+                        {
+                          "k": "mut_arg",
+                          "name": "t",
+                          "tok": 54
+                        },
+                        {
+                          "k": "ident",
+                          "name": "k",
+                          "tok": 56
+                        },
+                        {
+                          "k": "binary",
+                          "op": "+",
+                          "lhs": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "pool",
+                                "tok": 58
+                              },
+                              "field": "LoadRaw16",
+                              "tok": 60
+                            },
+                            "args": [
+                              {
+                                "k": "mut_arg",
+                                "name": "t",
+                                "tok": 63
+                              },
+                              {
+                                "k": "ident",
+                                "name": "k",
+                                "tok": 65
+                              }
+                            ],
+                            "tok": 61
+                          },
+                          "rhs": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 68
+                          },
+                          "tok": 67
+                        }
+                      ],
+                      "tok": 52
+                    }
+                  }
+                ]
+              },
+              "tok": 24
+            }
+          }
+        ]
+      },
+      "tok": 10,
+      "bodiless": false,
+      "span": {
+        "start": 9,
+        "end": 75
+      },
+      "sig_end": 23
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "s"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "pool.Scratch",
+                "elems": [],
+                "tok": 83,
+                "type_args": []
+              }
+            ],
+            "tok": 80
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 89
+                },
+                "field": "NewScratch",
+                "tok": 91
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 94
+                },
+                {
+                  "k": "int",
+                  "value": 4,
+                  "tok": 96
+                }
+              ],
+              "tok": 92
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "i"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "iter",
+                        "tok": 102
+                      },
+                      "field": "Range",
+                      "tok": 104
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 106
+                      },
+                      {
+                        "k": "int",
+                        "value": 16,
+                        "tok": 108
+                      }
+                    ],
+                    "tok": 105
+                  },
+                  "guards": [],
+                  "tok": 100
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "pool",
+                          "tok": 111
+                        },
+                        "field": "StoreRaw16",
+                        "tok": 113
+                      },
+                      "args": [
+                        {
+                          "k": "mut_arg",
+                          "name": "s",
+                          "tok": 116
+                        },
+                        {
+                          "k": "ident",
+                          "name": "i",
+                          "tok": 118
+                        },
+                        {
+                          "k": "binary",
+                          "op": "*",
+                          "lhs": {
+                            "k": "ident",
+                            "name": "i",
+                            "tok": 120
+                          },
+                          "rhs": {
+                            "k": "int",
+                            "value": 4099,
+                            "tok": 122
+                          },
+                          "tok": 121
+                        }
+                      ],
+                      "tok": 114
+                    }
+                  }
+                ]
+              },
+              "tok": 99
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 127
+                },
+                "field": "StoreRaw16",
+                "tok": 129
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 132
+                },
+                {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 134
+                },
+                {
+                  "k": "int",
+                  "value": 70000,
+                  "tok": 136
+                }
+              ],
+              "tok": 130
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 139
+              },
+              "args": [
+                {
+                  "k": "interp",
+                  "tmpl": {
+                    "lits": [
+                      "",
+                      " ",
+                      ""
+                    ],
+                    "holes": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "pool",
+                            "tok": 141
+                          },
+                          "field": "LoadRaw16",
+                          "tok": 141
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "s",
+                            "tok": 141
+                          },
+                          {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 141
+                          }
+                        ],
+                        "tok": 141
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "pool",
+                            "tok": 141
+                          },
+                          "field": "LoadRaw16",
+                          "tok": 141
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "s",
+                            "tok": 141
+                          },
+                          {
+                            "k": "int",
+                            "value": 15,
+                            "tok": 141
+                          }
+                        ],
+                        "tok": 141
+                      }
+                    ]
+                  },
+                  "tok": 141
+                }
+              ],
+              "tok": 140
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 144
+              },
+              "args": [
+                {
+                  "k": "interp",
+                  "tmpl": {
+                    "lits": [
+                      "",
+                      ""
+                    ],
+                    "holes": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "pool",
+                            "tok": 146
+                          },
+                          "field": "LoadRaw",
+                          "tok": 146
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "s",
+                            "tok": 146
+                          },
+                          {
+                            "k": "int",
+                            "value": 0,
+                            "tok": 146
+                          }
+                        ],
+                        "tok": 146
+                      }
+                    ]
+                  },
+                  "tok": 146
+                }
+              ],
+              "tok": 145
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 149
+              },
+              "args": [
+                {
+                  "k": "interp",
+                  "tmpl": {
+                    "lits": [
+                      "",
+                      " ",
+                      ""
+                    ],
+                    "holes": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "pool",
+                            "tok": 151
+                          },
+                          "field": "LoadRaw32",
+                          "tok": 151
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "s",
+                            "tok": 151
+                          },
+                          {
+                            "k": "int",
+                            "value": 0,
+                            "tok": 151
+                          }
+                        ],
+                        "tok": 151
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "pool",
+                            "tok": 151
+                          },
+                          "field": "LoadRaw32",
+                          "tok": 151
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "s",
+                            "tok": 151
+                          },
+                          {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 151
+                          }
+                        ],
+                        "tok": 151
+                      }
+                    ]
+                  },
+                  "tok": 151
+                }
+              ],
+              "tok": 150
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 154
+                },
+                "field": "StoreRaw32",
+                "tok": 156
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 159
+                },
+                {
+                  "k": "int",
+                  "value": 7,
+                  "tok": 161
+                },
+                {
+                  "k": "binary",
+                  "op": "+",
+                  "lhs": {
+                    "k": "int",
+                    "value": 4294967295,
+                    "tok": 163
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 6,
+                    "tok": 165
+                  },
+                  "tok": 164
+                }
+              ],
+              "tok": 157
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 168
+              },
+              "args": [
+                {
+                  "k": "interp",
+                  "tmpl": {
+                    "lits": [
+                      "",
+                      " ",
+                      " ",
+                      ""
+                    ],
+                    "holes": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "pool",
+                            "tok": 170
+                          },
+                          "field": "LoadRaw32",
+                          "tok": 170
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "s",
+                            "tok": 170
+                          },
+                          {
+                            "k": "int",
+                            "value": 7,
+                            "tok": 170
+                          }
+                        ],
+                        "tok": 170
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "pool",
+                            "tok": 170
+                          },
+                          "field": "LoadRaw16",
+                          "tok": 170
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "s",
+                            "tok": 170
+                          },
+                          {
+                            "k": "int",
+                            "value": 14,
+                            "tok": 170
+                          }
+                        ],
+                        "tok": 170
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "pool",
+                            "tok": 170
+                          },
+                          "field": "LoadRaw16",
+                          "tok": 170
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "s",
+                            "tok": 170
+                          },
+                          {
+                            "k": "int",
+                            "value": 15,
+                            "tok": 170
+                          }
+                        ],
+                        "tok": 170
+                      }
+                    ]
+                  },
+                  "tok": 170
+                }
+              ],
+              "tok": 169
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "t"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "pool.Scratch",
+                "elems": [],
+                "tok": 176,
+                "type_args": []
+              }
+            ],
+            "tok": 173
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 182
+                },
+                "field": "NewScratch",
+                "tok": 184
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "t",
+                  "tok": 187
+                },
+                {
+                  "k": "int",
+                  "value": 64,
+                  "tok": 189
+                }
+              ],
+              "tok": 185
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "count",
+                "tok": 192
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "t",
+                  "tok": 195
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "bytes",
+                    "tok": 197
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "abracadabra",
+                      "tok": 199
+                    }
+                  ],
+                  "tok": 198
+                }
+              ],
+              "tok": 193
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 203
+              },
+              "args": [
+                {
+                  "k": "interp",
+                  "tmpl": {
+                    "lits": [
+                      "a=",
+                      " b=",
+                      " r=",
+                      " z=",
+                      ""
+                    ],
+                    "holes": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "pool",
+                            "tok": 205
+                          },
+                          "field": "LoadRaw16",
+                          "tok": 205
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "t",
+                            "tok": 205
+                          },
+                          {
+                            "k": "int",
+                            "value": 97,
+                            "tok": 205
+                          }
+                        ],
+                        "tok": 205
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "pool",
+                            "tok": 205
+                          },
+                          "field": "LoadRaw16",
+                          "tok": 205
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "t",
+                            "tok": 205
+                          },
+                          {
+                            "k": "int",
+                            "value": 98,
+                            "tok": 205
+                          }
+                        ],
+                        "tok": 205
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "pool",
+                            "tok": 205
+                          },
+                          "field": "LoadRaw16",
+                          "tok": 205
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "t",
+                            "tok": 205
+                          },
+                          {
+                            "k": "int",
+                            "value": 114,
+                            "tok": 205
+                          }
+                        ],
+                        "tok": 205
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "pool",
+                            "tok": 205
+                          },
+                          "field": "LoadRaw16",
+                          "tok": 205
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "t",
+                            "tok": 205
+                          },
+                          {
+                            "k": "int",
+                            "value": 122,
+                            "tok": 205
+                          }
+                        ],
+                        "tok": 205
+                      }
+                    ]
+                  },
+                  "tok": 205
+                }
+              ],
+              "tok": 204
+            }
+          }
+        ]
+      },
+      "tok": 76,
+      "bodiless": false,
+      "span": {
+        "start": 75,
+        "end": 210
+      },
+      "sig_end": 79
+    }
+  ],
+  "consts": []
+}

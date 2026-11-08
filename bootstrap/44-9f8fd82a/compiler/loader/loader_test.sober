@@ -1,0 +1,45 @@
+package loader
+
+// loader の単体テスト（純関数の小道具）: パスの切り分け・バイト順・@embed のパターン・テスト名の規則
+
+func TestDirBase() {
+    assert(Dirname("a/b/c.sober") == "a/b")
+    assert(Dirname("c.sober") == "")
+    assert(Basename("a/b/c.sober") == "c.sober")
+    assert(Basename("c.sober") == "c.sober")
+}
+
+func TestByteLess() {
+    assert(ByteLess("a", "b"))
+    assert(!ByteLess("b", "a"))
+    assert(ByteLess("ab", "abc"))
+    assert(!ByteLess("abc", "abc"))
+    // バイト順（LC_ALL=C）: 大文字は小文字より前
+    assert(ByteLess("Z", "a"))
+}
+
+func TestValidPattern() {
+    assert(validPattern("std/**/*.sober"))
+    assert(validPattern("data/*.txt"))
+    assert(!validPattern(""))
+    assert(!validPattern("/abs"))
+    assert(!validPattern("a//b"))
+    assert(!validPattern("a/../b"))
+    assert(!validPattern("a/x**/b"))
+    assert(!validPattern("a/[b]"))
+}
+
+func TestMatchSeg() {
+    assert(matchSeg(bytes("*.sober"), 0, bytes("x.sober"), 0))
+    assert(!matchSeg(bytes("*.sober"), 0, bytes("x.txt"), 0))
+    assert(matchSeg(bytes("a?c"), 0, bytes("abc"), 0))
+    assert(!matchSeg(bytes("a?c"), 0, bytes("ac"), 0))
+}
+
+func TestTestName() {
+    assert(isTestName("Test"))
+    assert(isTestName("TestAdd"))
+    assert(isTestName("Test_x"))
+    assert(!isTestName("Testify"))
+    assert(!isTestName("test"))
+}

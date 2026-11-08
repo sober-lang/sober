@@ -873,7 +873,7 @@ func efCanon(az mut Az, fi int) string {
         if i < EF_TMAX && (m & (1 << i)) != 0 {
             d := table.Get(mut az.ef.tdecl, i)
             tl, tt, tpk := desugar.FnTypeEffects(mut az.d, desugar.NodeRef(d))
-            nm := if tpk == pk { fnTyName(mut az, d) } else { lastSeg(str(mut az, desugar.PkgPath(mut az.d, tpk))) + "." + fnTyName(mut az, d) }
+            nm := if tpk == pk { fnTyName(mut az, d) } else { qualOf(str(mut az, desugar.PkgPath(mut az.d, tpk))) + "." + fnTyName(mut az, d) }
             s = if s == "" { nm } else { s + ", " + nm }
         }
     }

@@ -1,0 +1,21 @@
+package main
+
+// a1dump の断片の外の負例: 再帰の値の欄を mut 実引数に渡す（`mut k.next`）— A1 の値は表と根で、欄を mut の場所として渡す形が無い。a1dump は exit 2 で名指す（scripts/a1oracle.sh の負例の列）
+
+type K struct {
+    v int
+    next K?
+}
+
+func setTail(n mut K?, v int) {
+    n = K{v: v, next: nil}
+}
+
+func main() {
+    mut k := K{v: 1, next: nil}
+    setTail(mut k.next, 2)
+    nx := k.next
+    if nx != nil {
+        println(nx.v)
+    }
+}

@@ -46,21 +46,31 @@
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "flate",
-                      "tok": 16
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 16
+                        },
+                        "field": "alias_lease",
+                        "tok": 18
+                      },
+                      "field": "flate",
+                      "tok": 20
                     },
                     "field": "Encode",
-                    "tok": 18
+                    "tok": 22
                   },
                   "args": [
                     {
                       "k": "int",
                       "value": 3,
-                      "tok": 20
+                      "tok": 24
                     }
                   ],
-                  "tok": 19
+                  "tok": 23
                 }
               ],
               "tok": 15
@@ -80,10 +90,10 @@
                   "base": {
                     "k": "ident",
                     "name": "task",
-                    "tok": 26
+                    "tok": 30
                   },
                   "field": "NewLocal",
-                  "tok": 28
+                  "tok": 32
                 },
                 "args": [
                   {
@@ -93,7 +103,7 @@
                         "name": "w",
                         "type": {
                           "k": "name",
-                          "name": "flate.Work"
+                          "name": "testdata.alias_lease.flate.Work"
                         },
                         "mutable": true
                       }
@@ -103,29 +113,39 @@
                       "callee": {
                         "k": "selector",
                         "base": {
-                          "k": "ident",
-                          "name": "flate",
-                          "tok": 38
+                          "k": "selector",
+                          "base": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "testdata",
+                              "tok": 46
+                            },
+                            "field": "alias_lease",
+                            "tok": 48
+                          },
+                          "field": "flate",
+                          "tok": 50
                         },
-                        "field": "Prepare",
-                        "tok": 40
+                        "field": "NewWork",
+                        "tok": 52
                       },
                       "args": [
                         {
                           "k": "mut_arg",
                           "name": "w",
-                          "tok": 43
+                          "tok": 55
                         }
                       ],
-                      "tok": 41
+                      "tok": 53
                     },
-                    "tok": 37
+                    "tok": 45
                   }
                 ],
-                "tok": 29
+                "tok": 33
               }
             ],
-            "tok": 24
+            "tok": 28
           },
           {
             "k": "bind",
@@ -141,16 +161,16 @@
                   "base": {
                     "k": "ident",
                     "name": "task",
-                    "tok": 49
+                    "tok": 61
                   },
                   "field": "Lease",
-                  "tok": 51
+                  "tok": 63
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "lw",
-                    "tok": 53
+                    "tok": 65
                   },
                   {
                     "k": "lambda",
@@ -159,7 +179,7 @@
                         "name": "w",
                         "type": {
                           "k": "name",
-                          "name": "flate.Work"
+                          "name": "testdata.alias_lease.flate.Work"
                         },
                         "mutable": true
                       }
@@ -169,34 +189,44 @@
                       "callee": {
                         "k": "selector",
                         "base": {
-                          "k": "ident",
-                          "name": "flate",
-                          "tok": 63
+                          "k": "selector",
+                          "base": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "testdata",
+                              "tok": 79
+                            },
+                            "field": "alias_lease",
+                            "tok": 81
+                          },
+                          "field": "flate",
+                          "tok": 83
                         },
                         "field": "EncodeWith",
-                        "tok": 65
+                        "tok": 85
                       },
                       "args": [
                         {
                           "k": "mut_arg",
                           "name": "w",
-                          "tok": 68
+                          "tok": 88
                         },
                         {
                           "k": "int",
                           "value": 5,
-                          "tok": 70
+                          "tok": 90
                         }
                       ],
-                      "tok": 66
+                      "tok": 86
                     },
-                    "tok": 62
+                    "tok": 78
                   }
                 ],
-                "tok": 52
+                "tok": 64
               }
             ],
-            "tok": 47
+            "tok": 59
           },
           {
             "k": "bind",
@@ -212,16 +242,16 @@
                   "base": {
                     "k": "ident",
                     "name": "task",
-                    "tok": 76
+                    "tok": 96
                   },
                   "field": "Lease",
-                  "tok": 78
+                  "tok": 98
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "lw",
-                    "tok": 80
+                    "tok": 100
                   },
                   {
                     "k": "lambda",
@@ -230,7 +260,7 @@
                         "name": "w",
                         "type": {
                           "k": "name",
-                          "name": "flate.Work"
+                          "name": "testdata.alias_lease.flate.Work"
                         },
                         "mutable": true
                       }
@@ -240,34 +270,44 @@
                       "callee": {
                         "k": "selector",
                         "base": {
-                          "k": "ident",
-                          "name": "flate",
-                          "tok": 90
+                          "k": "selector",
+                          "base": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "testdata",
+                              "tok": 114
+                            },
+                            "field": "alias_lease",
+                            "tok": 116
+                          },
+                          "field": "flate",
+                          "tok": 118
                         },
                         "field": "EncodeWith",
-                        "tok": 92
+                        "tok": 120
                       },
                       "args": [
                         {
                           "k": "mut_arg",
                           "name": "w",
-                          "tok": 95
+                          "tok": 123
                         },
                         {
                           "k": "int",
                           "value": 7,
-                          "tok": 97
+                          "tok": 125
                         }
                       ],
-                      "tok": 93
+                      "tok": 121
                     },
-                    "tok": 89
+                    "tok": 113
                   }
                 ],
-                "tok": 79
+                "tok": 99
               }
             ],
-            "tok": 74
+            "tok": 94
           },
           {
             "k": "expr",
@@ -276,21 +316,21 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 101
+                "tok": 129
               },
               "args": [
                 {
                   "k": "ident",
                   "name": "a",
-                  "tok": 103
+                  "tok": 131
                 },
                 {
                   "k": "ident",
                   "name": "b",
-                  "tok": 105
+                  "tok": 133
                 }
               ],
-              "tok": 102
+              "tok": 130
             }
           },
           {
@@ -307,10 +347,10 @@
                   "base": {
                     "k": "ident",
                     "name": "task",
-                    "tok": 110
+                    "tok": 138
                   },
                   "field": "NewLocal",
-                  "tok": 112
+                  "tok": 140
                 },
                 "args": [
                   {
@@ -320,7 +360,7 @@
                         "name": "w",
                         "type": {
                           "k": "name",
-                          "name": "flate.Work"
+                          "name": "testdata.alias_lease.flate.Work"
                         },
                         "mutable": true
                       }
@@ -330,29 +370,39 @@
                       "callee": {
                         "k": "selector",
                         "base": {
-                          "k": "ident",
-                          "name": "flate",
-                          "tok": 122
+                          "k": "selector",
+                          "base": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "testdata",
+                              "tok": 154
+                            },
+                            "field": "alias_lease",
+                            "tok": 156
+                          },
+                          "field": "flate",
+                          "tok": 158
                         },
                         "field": "Ready",
-                        "tok": 124
+                        "tok": 160
                       },
                       "args": [
                         {
                           "k": "mut_arg",
                           "name": "w",
-                          "tok": 127
+                          "tok": 163
                         }
                       ],
-                      "tok": 125
+                      "tok": 161
                     },
-                    "tok": 121
+                    "tok": 153
                   }
                 ],
-                "tok": 113
+                "tok": 141
               }
             ],
-            "tok": 108
+            "tok": 136
           },
           {
             "k": "expr",
@@ -361,7 +411,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 131
+                "tok": 167
               },
               "args": [
                 {
@@ -371,16 +421,16 @@
                     "base": {
                       "k": "ident",
                       "name": "task",
-                      "tok": 133
+                      "tok": 169
                     },
                     "field": "Lease",
-                    "tok": 135
+                    "tok": 171
                   },
                   "args": [
                     {
                       "k": "ident",
                       "name": "lr",
-                      "tok": 137
+                      "tok": 173
                     },
                     {
                       "k": "lambda",
@@ -389,7 +439,7 @@
                           "name": "w",
                           "type": {
                             "k": "name",
-                            "name": "flate.Work"
+                            "name": "testdata.alias_lease.flate.Work"
                           },
                           "mutable": true
                         }
@@ -399,34 +449,44 @@
                         "callee": {
                           "k": "selector",
                           "base": {
-                            "k": "ident",
-                            "name": "flate",
-                            "tok": 147
+                            "k": "selector",
+                            "base": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "testdata",
+                                "tok": 187
+                              },
+                              "field": "alias_lease",
+                              "tok": 189
+                            },
+                            "field": "flate",
+                            "tok": 191
                           },
                           "field": "EncodeWith",
-                          "tok": 149
+                          "tok": 193
                         },
                         "args": [
                           {
                             "k": "mut_arg",
                             "name": "w",
-                            "tok": 152
+                            "tok": 196
                           },
                           {
                             "k": "int",
                             "value": 9,
-                            "tok": 154
+                            "tok": 198
                           }
                         ],
-                        "tok": 150
+                        "tok": 194
                       },
-                      "tok": 146
+                      "tok": 186
                     }
                   ],
-                  "tok": 136
+                  "tok": 172
                 }
               ],
-              "tok": 132
+              "tok": 168
             }
           }
         ]
@@ -435,7 +495,7 @@
       "bodiless": false,
       "span": {
         "start": 9,
-        "end": 161
+        "end": 205
       },
       "sig_end": 13
     }

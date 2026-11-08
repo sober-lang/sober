@@ -1,0 +1,99 @@
+package env
+
+// 受理 / 拒否の表駆動の網（white-box — Parse に environ の形の列を渡す）: 既定値・opt・空の値・同名の最初・整数の範囲・真偽の綴り・
+// 誤りのラベルと宣言の順・Spec の形
+
+const tHome = StrVar{name: "T_HOME", help: "the home", def: "/home"}
+const tTok = StrVar{name: "T_TOKEN", help: "a token", opt: true}
+const tNeed = StrVar{name: "T_NEED", help: "a required value"}
+const tPort = IntVar{name: "T_PORT", help: "a port", def: 8080, min: 1, max: 65535}
+const tJobs = IntVar{name: "T_JOBS", help: "jobs", opt: true, min: 1}
+const tDebug = BoolVar{name: "T_DEBUG", help: "debug"}
+
+const tTable = Table{strs: []StrVar{tHome, tTok, tNeed}, ints: []IntVar{tPort, tJobs}, bools: []BoolVar{tDebug}}
+
+type ecase struct {
+    pairs []string
+    want string
+}
+
+// Parse の結果の 1 行（受理 = `ok`・誤り = ラベルと欄）
+func verdict(pairs []string) string {
+    v, e := Parse(tTable, pairs)
+    return switch e {
+    case nil: "ok"
+    case Missing{name}: "Missing " + name
+    case BadValue{name, word, want}: "BadValue " + name + " " + word + " / " + want
+    case _: "other"
+    }
+}
+
+func TestParseTable() {
+    cases := []ecase{
+        ecase{pairs: []string{"T_NEED=x"}, want: "ok"},
+        ecase{pairs: []string{"T_NEED=x", "T_PORT=443", "T_JOBS=4", "T_DEBUG=1"}, want: "ok"},
+        ecase{pairs: []string{"T_NEED=x", "T_DEBUG=false", "OTHER=1"}, want: "ok"},
+        ecase{pairs: []string{}, want: "Missing T_NEED"},
+        ecase{pairs: []string{"T_NEED="}, want: "Missing T_NEED"},
+        ecase{pairs: []string{"T_NEED=x", "T_PORT=0"}, want: "BadValue T_PORT 0 / an integer in 1..65535"},
+        ecase{pairs: []string{"T_NEED=x", "T_PORT=http"}, want: "BadValue T_PORT http / an integer in 1..65535"},
+        ecase{pairs: []string{"T_NEED=x", "T_JOBS=0"}, want: "BadValue T_JOBS 0 / an integer >= 1"},
+        ecase{pairs: []string{"T_NEED=x", "T_DEBUG=yes"}, want: "BadValue T_DEBUG yes / 1, true, 0 or false"},
+        // 宣言の順で最初の誤り（strs → ints → bools）
+        ecase{pairs: []string{"T_PORT=0", "T_DEBUG=yes"}, want: "Missing T_NEED"},
+    }
+    for c <- cases {
+        got := verdict(c.pairs)
+        if got != c.want {
+            println("got  " + got)
+            println("want " + c.want)
+        }
+        assert(got == c.want)
+    }
+}
+
+func TestValues() {
+    v, e := Parse(tTable, []string{"T_NEED=x", "T_TOKEN=abc", "T_TOKEN=second", "T_JOBS=4", "T_DEBUG=true"})
+    assert(e == nil)
+    assert(Str(v, tHome) == "/home")
+    assert(strIs(StrOpt(v, tTok), "abc"))
+    assert(Str(v, tNeed) == "x")
+    assert(Int(v, tPort) == 8080)
+    assert(intIs(IntOpt(v, tJobs), 4))
+    assert(Bool(v, tDebug))
+    w, e2 := Parse(tTable, []string{"T_NEED=y", "T_TOKEN="})
+    assert(e2 == nil)
+    assert(StrOpt(w, tTok) == nil)
+    assert(IntOpt(w, tJobs) == nil)
+    assert(!Bool(w, tDebug))
+}
+
+func TestFormat() {
+    assert(Format(Missing{name: "A"}) == "missing environment variable A\n")
+    assert(Format(BadValue{name: "B", word: "", want: "an integer"}) == "invalid value \"\" for environment variable B\n  want an integer\n")
+}
+
+func TestSpec() {
+    s := Spec(Table{strs: []StrVar{tTok}, ints: []IntVar{tPort}, bools: []BoolVar{tDebug}})
+    want := "{\"vars\":[{\"kind\":\"string\",\"name\":\"T_TOKEN\",\"help\":\"a token\",\"dev\":false,\"default\":null,\"optional\":true}," +
+        "{\"kind\":\"int\",\"name\":\"T_PORT\",\"help\":\"a port\",\"dev\":false,\"default\":8080,\"min\":1,\"max\":65535,\"optional\":false}," +
+        "{\"kind\":\"bool\",\"name\":\"T_DEBUG\",\"help\":\"debug\",\"dev\":false}]}"
+    if s != want {
+        println(s)
+    }
+    assert(s == want)
+}
+
+func strIs(a string?, b string) bool {
+    if a == nil {
+        return false
+    }
+    return a == b
+}
+
+func intIs(a int?, b int) bool {
+    if a == nil {
+        return false
+    }
+    return a == b
+}

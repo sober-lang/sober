@@ -525,7 +525,7 @@ func mvFn(st mut St, f FnRef, w MrW, cw mut m2rW, heads []int, memb []int, moff 
         mut ins := irBlkIHead(mut st, b)
         while ins != -1 {
             op := irInsOp(mut st, ins)
-            if op == OpLoad || op == OpLoad8 {
+            if op == OpLoad || isNarrowLd(op) {
                 // 読みは逃げない
             } else if op == OpStore {
                 a := irInsA(mut st, ins)
@@ -949,8 +949,8 @@ func mvEval(st mut St, f FnRef, w MrW, cw mut m2rW, heads []int, memb []int, mof
                     c := irInsA(mut st, ins)
                     u = mpConst(c)
                     n = mpConst(0 - c)
-                } else if op == OpCmp || op == OpLoad8 {
-                    u = mpConst(if op == OpCmp { 1 } else { 255 })
+                } else if op == OpCmp || isNarrowLd(op) {
+                    u = mpConst(if op == OpCmp { 1 } else { (1 << (8 * narrowW(op))) - 1 })
                     n = []int{}
                 } else if op == OpBin {
                     bo := irInsA(mut st, ins)

@@ -1,0 +1,70 @@
+package session
+
+// dudect の題材（white-box — scripts/dudect.sh が std/internal/dudect と一緒に回す）。環境変数 SOBER_DUDECT が無ければ何もしない。
+// 2 つとも照合はタグで落ちる（結果はクラスに依らず Bad — 時間の差は秘密の値からしか来ない）:
+//   session_open_tag = タグの比較の位置の漏れ（クラス 0 = 最後の 1 バイトだけ違うタグ・1 = 最初の 1 バイトだけ違うタグ — 早く抜ける比較なら 0 が遅い）。
+//     raw の文字列は 1 文字しか違わない（乱数のタグにすると、公開の入力の base64 の復号の分岐の予測がクラスで割れて偽の漏れが出る）
+//   session_open_key = 鍵の値の漏れ（別の鍵で封じた固定の raw を、クラス 0 = 固定の鍵・1 = 毎回違う乱数の鍵で照合）
+
+import "std/base64"
+import "std/crypto/hmac"
+import "std/internal/bless"
+import "std/internal/dudect"
+import "std/iter"
+import "std/rand"
+import "std/time"
+
+func dkey(c int, i int) []byte {
+    mut b := mut []byte{}
+    mut r := rand.New(i * 2654435761 + 101)
+    for k <- iter.Range(0, keyLen) {
+        b = append(b, if c == 0 { byte((k * 37 + 16) & 0xff) } else { byte(rand.Intn(mut r, 256)) })
+    }
+    return freeze(b)
+}
+
+func dnow() time.Time {
+    return time.Unix(1700000000, 0)
+}
+
+// body ‖ tag の bad バイト目の最下位の bit を反転した raw（の文字列のバイト列）
+func tampered(body []byte, tag []byte, bad int) []byte {
+    mut o := mut []byte{}
+    for j <- iter.Range(0, len(body)) {
+        o = append(o, body[j])
+    }
+    for j <- iter.Range(0, tagLen) {
+        o = append(o, if j == bad { byte(int(tag[j]) ^ 1) } else { tag[j] })
+    }
+    return bytes(base64.EncodeUrl(freeze(o)))
+}
+
+func TestSessionOpenTag() {
+    n := internal.dudect.Count()
+    if n == 0 {
+        return
+    }
+    k := Key{k: dkey(0, 0), seal: keySeal{}}
+    w, _ := base64.DecodeUrl(Seal(Mint(k, "alice", 1, dnow(), 60)))
+    body := w[0:len(w) - tagLen]
+    // 封じ直したタグは外へ出すトークンの一部（Mint と同じ祝福）
+    tag := internal.bless.Bytes(crypto.hmac.Sum256(k.k, body))
+    r0 := tampered(body, tag, tagLen - 1)
+    r1 := tampered(body, tag, 0)
+    internal.dudect.Measure("session_open_tag", n, 21, (c, i) => if c == 0 { r0 } else { r1 }, (x) => {
+        _, e := Open(k, bytesToString(x), dnow())
+        e != nil
+    })
+}
+
+func TestSessionOpenKey() {
+    n := internal.dudect.Count()
+    if n == 0 {
+        return
+    }
+    raw := Seal(Mint(KeyFrom(bytes("another key -- 0123456789abcdef!")), "alice", 1, dnow(), 60))
+    internal.dudect.Measure("session_open_key", n, 22, dkey, (x) => {
+        _, e := Open(Key{k: x, seal: keySeal{}}, raw, dnow())
+        e != nil
+    })
+}

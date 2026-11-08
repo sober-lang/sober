@@ -1,0 +1,8 @@
+package text
+
+import "std/strings"
+
+// s in capitals, with an exclamation mark
+func Shout(s string) string {
+    return "${strings.ToUpper(s)}!"
+}

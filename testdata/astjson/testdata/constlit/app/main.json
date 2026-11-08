@@ -23,46 +23,76 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 41
+                "tok": 53
               },
               "args": [
                 {
                   "k": "selector",
                   "base": {
-                    "k": "ident",
-                    "name": "lib",
-                    "tok": 43
+                    "k": "selector",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "testdata",
+                        "tok": 55
+                      },
+                      "field": "constlit",
+                      "tok": 57
+                    },
+                    "field": "lib",
+                    "tok": 59
                   },
                   "field": "Version",
-                  "tok": 45
+                  "tok": 61
                 },
                 {
                   "k": "ident",
                   "name": "Tag",
-                  "tok": 47
+                  "tok": 63
                 },
                 {
                   "k": "selector",
                   "base": {
-                    "k": "ident",
-                    "name": "lib",
-                    "tok": 49
+                    "k": "selector",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "testdata",
+                        "tok": 65
+                      },
+                      "field": "constlit",
+                      "tok": 67
+                    },
+                    "field": "lib",
+                    "tok": 69
                   },
                   "field": "Debug",
-                  "tok": 51
+                  "tok": 71
                 },
                 {
                   "k": "selector",
                   "base": {
-                    "k": "ident",
-                    "name": "lib",
-                    "tok": 53
+                    "k": "selector",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "testdata",
+                        "tok": 73
+                      },
+                      "field": "constlit",
+                      "tok": 75
+                    },
+                    "field": "lib",
+                    "tok": 77
                   },
                   "field": "Ratio",
-                  "tok": 55
+                  "tok": 79
                 }
               ],
-              "tok": 42
+              "tok": 54
             }
           },
           {
@@ -72,7 +102,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 58
+                "tok": 82
               },
               "args": [
                 {
@@ -80,40 +110,60 @@
                   "callee": {
                     "k": "ident",
                     "name": "len",
-                    "tok": 60
+                    "tok": 84
                   },
                   "args": [
                     {
                       "k": "selector",
                       "base": {
-                        "k": "ident",
-                        "name": "lib",
-                        "tok": 62
+                        "k": "selector",
+                        "base": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "testdata",
+                            "tok": 86
+                          },
+                          "field": "constlit",
+                          "tok": 88
+                        },
+                        "field": "lib",
+                        "tok": 90
                       },
                       "field": "Sizes",
-                      "tok": 64
+                      "tok": 92
                     }
                   ],
-                  "tok": 61
+                  "tok": 85
                 },
                 {
                   "k": "index",
                   "base": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "lib",
-                      "tok": 67
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 95
+                        },
+                        "field": "constlit",
+                        "tok": 97
+                      },
+                      "field": "lib",
+                      "tok": 99
                     },
                     "field": "Sizes",
-                    "tok": 69
+                    "tok": 101
                   },
                   "idx": {
                     "k": "int",
                     "value": 2,
-                    "tok": 71
+                    "tok": 103
                   },
-                  "tok": 70
+                  "tok": 102
                 },
                 {
                   "k": "selector",
@@ -122,25 +172,35 @@
                     "base": {
                       "k": "selector",
                       "base": {
-                        "k": "ident",
-                        "name": "lib",
-                        "tok": 74
+                        "k": "selector",
+                        "base": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "testdata",
+                            "tok": 106
+                          },
+                          "field": "constlit",
+                          "tok": 108
+                        },
+                        "field": "lib",
+                        "tok": 110
                       },
                       "field": "Defaults",
-                      "tok": 76
+                      "tok": 112
                     },
                     "idx": {
                       "k": "int",
                       "value": 1,
-                      "tok": 78
+                      "tok": 114
                     },
-                    "tok": 77
+                    "tok": 113
                   },
                   "field": "name",
-                  "tok": 81
+                  "tok": 117
                 }
               ],
-              "tok": 59
+              "tok": 83
             }
           },
           {
@@ -150,7 +210,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 84
+                "tok": 120
               },
               "args": [
                 {
@@ -158,61 +218,91 @@
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "lib",
-                      "tok": 86
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 122
+                        },
+                        "field": "constlit",
+                        "tok": 124
+                      },
+                      "field": "lib",
+                      "tok": 126
                     },
                     "field": "Count",
-                    "tok": 88
+                    "tok": 128
                   },
                   "args": [
                     {
                       "k": "selector",
                       "base": {
-                        "k": "ident",
-                        "name": "lib",
-                        "tok": 90
+                        "k": "selector",
+                        "base": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "testdata",
+                            "tok": 130
+                          },
+                          "field": "constlit",
+                          "tok": 132
+                        },
+                        "field": "lib",
+                        "tok": 134
                       },
                       "field": "Defaults",
-                      "tok": 92
+                      "tok": 136
                     }
                   ],
-                  "tok": 89
+                  "tok": 129
                 },
                 {
                   "k": "call",
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "lib",
-                      "tok": 95
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 139
+                        },
+                        "field": "constlit",
+                        "tok": 141
+                      },
+                      "field": "lib",
+                      "tok": 143
                     },
                     "field": "Count",
-                    "tok": 97
+                    "tok": 145
                   },
                   "args": [
                     {
                       "k": "ident",
                       "name": "Mine",
-                      "tok": 99
+                      "tok": 147
                     }
                   ],
-                  "tok": 98
+                  "tok": 146
                 }
               ],
-              "tok": 85
+              "tok": 121
             }
           }
         ]
       },
-      "tok": 37,
+      "tok": 49,
       "bodiless": false,
       "span": {
-        "start": 36,
-        "end": 105
+        "start": 48,
+        "end": 153
       },
-      "sig_end": 40
+      "sig_end": 52
     }
   ],
   "consts": [
@@ -222,19 +312,19 @@
         "k": "slicelit",
         "elem": {
           "k": "name",
-          "name": "lib.Flag"
+          "name": "testdata.constlit.lib.Flag"
         },
         "elems": [
           {
             "k": "composite",
-            "type_name": "lib.Flag",
+            "type_name": "testdata.constlit.lib.Flag",
             "elems": [
               {
                 "key": "name",
                 "value": {
                   "k": "strlit",
                   "value": "x",
-                  "tok": 21
+                  "tok": 29
                 }
               },
               {
@@ -242,11 +332,11 @@
                 "value": {
                   "k": "ident",
                   "name": "true",
-                  "tok": 25
+                  "tok": 33
                 }
               }
             ],
-            "tok": 15,
+            "tok": 19,
             "type_args": []
           }
         ],
@@ -256,7 +346,7 @@
       "tok": 7,
       "span": {
         "start": 6,
-        "end": 29
+        "end": 37
       }
     },
     {
@@ -264,17 +354,27 @@
       "expr": {
         "k": "selector",
         "base": {
-          "k": "ident",
-          "name": "lib",
-          "tok": 32
+          "k": "selector",
+          "base": {
+            "k": "selector",
+            "base": {
+              "k": "ident",
+              "name": "testdata",
+              "tok": 40
+            },
+            "field": "constlit",
+            "tok": 42
+          },
+          "field": "lib",
+          "tok": 44
         },
         "field": "Version",
-        "tok": 34
+        "tok": 46
       },
-      "tok": 30,
+      "tok": 38,
       "span": {
-        "start": 29,
-        "end": 36
+        "start": 37,
+        "end": 48
       }
     }
   ]

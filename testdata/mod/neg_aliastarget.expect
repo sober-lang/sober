@@ -1,0 +1,2 @@
+sober: load error at sober.mod:2:11: an alias renames a std root: write `alias name "std/<root>"`
+(check exit 1)

@@ -39,11 +39,17 @@ on:
         description: "1 = also sample the Sober server with perf (cpu-clock, kernel symbols) under the perf_profiles loads"
         default: "1"
       perf_profiles:
-        description: "profiles for the perf step, space-separated: baseline pipelined async (async = GET /delay/10 at $ASYNC_CONNS = 32000 conns — the sys / user split of the timer-holding shape; put it last, it leaves ~32K sockets in TIME_WAIT)"
+        description: "profiles for the perf step, space-separated: baseline pipelined limited-conn latency-10k latency-1m async (limited-conn = -r 10 churn; latency-* = zrk at the fixed rate — the report's cpu/req line is the point, read the breakdown with it; async = GET /delay/10 at $ASYNC_CONNS = 32000 conns — the sys / user split of the timer-holding shape; put it last, it leaves ~32K sockets in TIME_WAIT)"
         default: "baseline pipelined"
       perf_nets:
         description: "SOBER_NET values for the perf step, space-separated (e.g. \"1 0\" = epoll then ring — the same binary, one profile each); empty = sober_net"
         default: ""
+      kstat_rate:
+        description: "forms for the rt counters at a fixed rate (dlsrv --rt-mutant=4 under zrk — enter/req, sleeps/req, cqe/enter, cpu/req per worker), space-separated: latency-10k latency-1m; empty = skip"
+        default: ""
+      cg_mem:
+        description: "1 = run each server in its own cgroup v2 and add memory.peak + end-of-run anon/file/kernel/sock to the RSS table (the container-style count the leaderboard's mem column uses)"
+        default: "1"
       rt_hist:
         description: "forms for the rt histogram step (dlsrv built with --rt-mutant=4 — ready-ring depth / ring wait / off-CPU per pick), space-separated: churn ka async; empty = skip"
         default: ""
@@ -178,6 +184,19 @@ jobs:
             echo "- env: $HTTPARENA_ENV · cpu: $cpu · nproc: $(nproc) · runner: $RUNNER_NAME · kernel: $(uname -r) · SOBER_NET=${SOBER_NET} · sober_env: ${SOBER_SRV_ENV:-none} · alt_ref: ${{ inputs.alt_ref || 'none' }} · alt_env: ${SOBER_ALT_ENV:-none} · latency-1m rate: $ZRK_RATE_1M"
             echo
           } >> "$GITHUB_STEP_SUMMARY"
+          # cg_mem: サーバを走りごとの子の cgroup で起動する（local.sh の HTTPARENA_CG）。このシェルを委譲した dir の葉（sh）へ移し、
+          # dir を runner の持ち物に — 移す書き込みは「移す元と先の共通の祖先の cgroup.procs」に要る権限で、それが委譲した dir になる
+          if [ "${{ inputs.cg_mem }}" = 1 ] && [ -f /sys/fs/cgroup/cgroup.subtree_control ]; then
+            cg=/sys/fs/cgroup/httparena
+            if sudo mkdir -p "$cg/sh" && echo +memory | sudo tee /sys/fs/cgroup/cgroup.subtree_control > /dev/null \
+              && echo +memory | sudo tee "$cg/cgroup.subtree_control" > /dev/null \
+              && sudo chown -R "$(id -u):$(id -g)" "$cg" && echo $$ | sudo tee "$cg/sh/cgroup.procs" > /dev/null; then
+              export HTTPARENA_CG=$cg
+              echo "cgroup: $cg (controllers: $(cat "$cg/cgroup.subtree_control"))"
+            else
+              echo "cgroup: setup failed — the cg_* columns stay empty"
+            fi
+          fi
           ulimit -n
           HTTPARENA_WORK="$RUNNER_TEMP/work" \
           bench/httparena/local.sh -n "${{ inputs.rounds }}" -d "${{ inputs.duration }}" -c "${{ inputs.conns }}" \
@@ -189,7 +208,11 @@ jobs:
         env:
           NETS: ${{ inputs.perf_nets != '' && inputs.perf_nets || inputs.sober_net }}
           PROFS: ${{ inputs.perf_profiles }}
+          # latency-1m のレートは Run のステップと同じ（16vcpu はコア比で 250K）
+          ZRK_RATE_1M: ${{ inputs.runner == 'linux-x64-64vcpu' && '1000000' || '250000' }}
         run: |
+          # zrk（latency-*）: Run のステップが取った pin があれば使う（無ければ perf.sh が同じ pin を取る）
+          [ -x "$RUNNER_TEMP/work/zrk" ] && export ZRK="$RUNNER_TEMP/work/zrk"
           sudo apt-get -qq update
           sudo apt-get -qq install -y linux-tools-common "linux-tools-$(uname -r)" 2> /dev/null || sudo apt-get -qq install -y linux-tools-generic
           sudo sysctl -w kernel.perf_event_paranoid=-1 kernel.kptr_restrict=0
@@ -213,6 +236,29 @@ jobs:
             done
           done
 
+      - name: rt counters at a fixed rate (--rt-mutant=4 dlsrv under zrk — the per-request round trip of the latency profiles)
+        if: ${{ inputs.kstat_rate != '' }}
+        env:
+          FORMS: ${{ inputs.kstat_rate }}
+          ZRK_RATE_1M: ${{ inputs.runner == 'linux-x64-64vcpu' && '1000000' || '250000' }}
+        run: |
+          [ -x "$RUNNER_TEMP/work/zrk" ] && export ZRK="$RUNNER_TEMP/work/zrk"
+          if [ -z "${ZRK:-}" ]; then
+            # Run のステップに latency-* が無かった — local.sh と同じ pin を取る
+            curl -fsSL -o "$RUNNER_TEMP/zrk.tar.gz" https://github.com/zoxy-io/zrk/releases/download/v2.3.0/zrk-2.3.0-x86_64-linux.tar.gz
+            echo "ab6f1c1ce34ce73f52afd106419d15e5c494bd1cedd475afa56babb85b09a816  $RUNNER_TEMP/zrk.tar.gz" | sha256sum -c -
+            tar xzf "$RUNNER_TEMP/zrk.tar.gz" -C "$RUNNER_TEMP" zrk && export ZRK="$RUNNER_TEMP/zrk"
+          fi
+          [ -x "$RUNNER_TEMP/ksrv4" ] || out/stage2/sober2 build bench/httparena/tools/dlsrv.sober --emit=elf --passes --rt-mutant=4 -o "$RUNNER_TEMP/ksrv4"
+          PER=1 bench/httparena/tools/kstatrate.sh "$RUNNER_TEMP/ksrv4" $FORMS | tee "$RUNNER_TEMP/kstatrate.txt"
+          {
+            echo
+            echo "## rt counters at a fixed rate (--rt-mutant=4 — the counters add their own cost: read cpu/req as a ratio, not the score)"
+            echo '```'
+            cat "$RUNNER_TEMP/kstatrate.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: rt histogram (--rt-mutant=4 dlsrv — ready-ring depth / ring wait / off-CPU per pick)
         if: ${{ inputs.rt_hist != '' }}
         env:
@@ -221,7 +267,7 @@ jobs:
           # async は 32000 接続 — nofile / memlock を Run のステップと同じに（prlimit はこのシェルに掛け子が継承）
           sudo prlimit --pid $$ --memlock=unlimited --nofile=1048576:1048576 || true
           ulimit -n 1048576 || ulimit -n 65536
-          out/stage2/sober2 build bench/httparena/tools/dlsrv.sober --emit=elf --passes --rt-mutant=4 -o "$RUNNER_TEMP/ksrv4"
+          [ -x "$RUNNER_TEMP/ksrv4" ] || out/stage2/sober2 build bench/httparena/tools/dlsrv.sober --emit=elf --passes --rt-mutant=4 -o "$RUNNER_TEMP/ksrv4"
           bench/httparena/tools/rthist.sh "$RUNNER_TEMP/ksrv4" $FORMS | tee "$RUNNER_TEMP/rthist.txt"
           {
             echo
@@ -242,6 +288,7 @@ jobs:
             ${{ runner.temp }}/httparena.tsv.thr
             ${{ runner.temp }}/httparena-env.txt
             ${{ runner.temp }}/rthist.txt
+            ${{ runner.temp }}/kstatrate.txt
             ${{ runner.temp }}/perf-report-net*.txt
             ${{ runner.temp }}/work/gc-*.txt
             ${{ runner.temp }}/work/*.err

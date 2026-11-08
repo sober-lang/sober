@@ -252,7 +252,7 @@ func zeroInto(inw mut []int, outw mut []int, preds []int, pcnt []int, id int, en
 
 // 命令 ins が sret の受け皿を渡す call（呼ぶ関数の F_MUTP の F_SRET_BIT・間接なら c = CALLI_SRET）なら受け皿の値（引数 0）、それ以外は -1
 func zeroSretP(st mut St, ins InsRef) int {
-    if xiOp(mut st, ins) == OpCallI && xiC(mut st, ins) == CALLI_SRET && xLen(mut st, xiB(mut st, ins)) > 0 {
+    if xiOp(mut st, ins) == OpCallI && calliTy(xiC(mut st, ins)) == CALLI_SRET && xLen(mut st, xiB(mut st, ins)) > 0 {
         return xAt(mut st, xiB(mut st, ins), 0)
     }
     if xiOp(mut st, ins) != OpCall || xLen(mut st, xiB(mut st, ins)) == 0 {

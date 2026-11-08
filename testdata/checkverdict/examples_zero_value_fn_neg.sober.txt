@@ -1,0 +1,2 @@
+sober: desugar error at examples/zero_value_fn_neg.sober:11:10 (TypeMismatch): a function-typed or union-typed value has no zero value — give every such field in the literal
+exit=1

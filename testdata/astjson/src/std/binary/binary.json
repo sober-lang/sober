@@ -597,6 +597,460 @@
         "end": 232
       },
       "sig_end": 164
+    },
+    {
+      "name": "AppendWord",
+      "type_params": [],
+      "params": [
+        {
+          "name": "b",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "byte"
+            },
+            "mut": true
+          },
+          "mutable": true
+        },
+        {
+          "name": "v",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        },
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "||",
+                "lhs": {
+                  "k": "binary",
+                  "op": "<",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "k",
+                    "tok": 280
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 282
+                  },
+                  "tok": 281
+                },
+                "rhs": {
+                  "k": "binary",
+                  "op": ">",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "k",
+                    "tok": 284
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 8,
+                    "tok": 286
+                  },
+                  "tok": 285
+                },
+                "tok": 283
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "outOfRange",
+                        "tok": 288
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "k",
+                          "tok": 290
+                        },
+                        {
+                          "k": "int",
+                          "value": 8,
+                          "tok": 292
+                        }
+                      ],
+                      "tok": 289
+                    }
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 279
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "n"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "len",
+                  "tok": 299
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "b",
+                    "tok": 301
+                  }
+                ],
+                "tok": 300
+              }
+            ],
+            "tok": 297
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "b",
+                "tok": 304
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "sysAppendWord",
+                  "tok": 306
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "b",
+                    "tok": 308
+                  },
+                  {
+                    "k": "ident",
+                    "name": "v",
+                    "tok": 310
+                  },
+                  {
+                    "k": "ident",
+                    "name": "k",
+                    "tok": 312
+                  }
+                ],
+                "tok": 307
+              }
+            ],
+            "tok": 304
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "len",
+                    "tok": 316
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "b",
+                      "tok": 318
+                    }
+                  ],
+                  "tok": 317
+                },
+                "rhs": {
+                  "k": "ident",
+                  "name": "n",
+                  "tok": 321
+                },
+                "tok": 320
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "appendBytes",
+                        "tok": 323
+                      },
+                      "args": [
+                        {
+                          "k": "mut_arg",
+                          "name": "b",
+                          "tok": 326
+                        },
+                        {
+                          "k": "ident",
+                          "name": "v",
+                          "tok": 328
+                        },
+                        {
+                          "k": "ident",
+                          "name": "k",
+                          "tok": 330
+                        }
+                      ],
+                      "tok": 324
+                    }
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 315
+            }
+          }
+        ]
+      },
+      "tok": 264,
+      "bodiless": false,
+      "span": {
+        "start": 257,
+        "end": 337
+      },
+      "sig_end": 278
+    },
+    {
+      "name": "appendBytes",
+      "type_params": [],
+      "params": [
+        {
+          "name": "b",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "byte"
+            },
+            "mut": true
+          },
+          "mutable": true
+        },
+        {
+          "name": "v",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        },
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "x"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "ident",
+                "name": "v",
+                "tok": 356
+              }
+            ],
+            "tok": 353
+          },
+          {
+            "k": "bind",
+            "names": [
+              "i"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 361
+              }
+            ],
+            "tok": 358
+          },
+          {
+            "k": "while",
+            "cond": {
+              "k": "binary",
+              "op": "<",
+              "lhs": {
+                "k": "ident",
+                "name": "i",
+                "tok": 364
+              },
+              "rhs": {
+                "k": "ident",
+                "name": "k",
+                "tok": 366
+              },
+              "tok": 365
+            },
+            "body": {
+              "stmts": [
+                {
+                  "k": "assign",
+                  "targets": [
+                    {
+                      "k": "ident",
+                      "name": "b",
+                      "tok": 368
+                    }
+                  ],
+                  "op": "=",
+                  "values": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "append",
+                        "tok": 370
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "b",
+                          "tok": 372
+                        },
+                        {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "byte",
+                            "tok": 374
+                          },
+                          "args": [
+                            {
+                              "k": "binary",
+                              "op": "&",
+                              "lhs": {
+                                "k": "ident",
+                                "name": "x",
+                                "tok": 376
+                              },
+                              "rhs": {
+                                "k": "int",
+                                "value": 255,
+                                "radix": 16,
+                                "tok": 378
+                              },
+                              "tok": 377
+                            }
+                          ],
+                          "tok": 375
+                        }
+                      ],
+                      "tok": 371
+                    }
+                  ],
+                  "tok": 368
+                },
+                {
+                  "k": "assign",
+                  "targets": [
+                    {
+                      "k": "ident",
+                      "name": "x",
+                      "tok": 382
+                    }
+                  ],
+                  "op": "=",
+                  "values": [
+                    {
+                      "k": "binary",
+                      "op": ">>",
+                      "lhs": {
+                        "k": "ident",
+                        "name": "x",
+                        "tok": 384
+                      },
+                      "rhs": {
+                        "k": "int",
+                        "value": 8,
+                        "tok": 386
+                      },
+                      "tok": 385
+                    }
+                  ],
+                  "tok": 382
+                },
+                {
+                  "k": "assign",
+                  "targets": [
+                    {
+                      "k": "ident",
+                      "name": "i",
+                      "tok": 388
+                    }
+                  ],
+                  "op": "+=",
+                  "values": [
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 390
+                    }
+                  ],
+                  "tok": 388
+                }
+              ]
+            },
+            "tok": 363
+          }
+        ]
+      },
+      "tok": 338,
+      "bodiless": false,
+      "span": {
+        "start": 337,
+        "end": 396
+      },
+      "sig_end": 352
     }
   ],
   "consts": [],
@@ -689,6 +1143,55 @@
       "span": {
         "start": 115,
         "end": 140
+      }
+    },
+    {
+      "name": "sysAppendWord",
+      "key": "appendword",
+      "params": [
+        {
+          "name": "b",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "byte"
+            },
+            "mut": false
+          },
+          "mutable": false
+        },
+        {
+          "name": "v",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        },
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "slice_of",
+          "elem": {
+            "k": "name",
+            "name": "byte"
+          },
+          "mut": true
+        }
+      ],
+      "tok": 239,
+      "span": {
+        "start": 232,
+        "end": 257
       }
     }
   ]

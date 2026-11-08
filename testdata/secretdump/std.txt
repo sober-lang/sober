@@ -1,8 +1,8 @@
 std/binary/binary.sober:12:6: secret std/binary.Load64
-std/crypto/ct.sober:25:6: secret std/crypto.Equal
-std/crypto/ct.sober:39:6: secret std/crypto.NonZero
-std/crypto/ct.sober:46:6: secret std/crypto.Select
-std/crypto/ct.sober:53:6: secret std/crypto.Wipe
+std/crypto/ct.sober:26:6: secret std/crypto.Equal
+std/crypto/ct.sober:40:6: secret std/crypto.NonZero
+std/crypto/ct.sober:47:6: secret std/crypto.Select
+std/crypto/ct.sober:54:6: secret std/crypto.Wipe
 std/crypto/aesgcm/aesgcm.sober:83:6: secret std/crypto/aesgcm.Prepare
 std/crypto/aesgcm/aesgcm.sober:100:6: secret std/crypto/aesgcm.Seal
 std/crypto/aesgcm/aesgcm.sober:109:6: secret std/crypto/aesgcm.Open
@@ -31,6 +31,33 @@ std/crypto/chacha20poly1305/chacha20poly1305.sober:157:6: secret std/crypto/chac
 std/crypto/hkdf/hkdf.sober:16:6: secret std/crypto/hkdf.Extract
 std/crypto/hkdf/hkdf.sober:34:6: secret std/crypto/hkdf.Expand
 std/crypto/hmac/hmac.sober:14:6: secret std/crypto/hmac.Sum256
+std/crypto/password/argon2.sober:22:6: secret std/crypto/password.cat2
+std/crypto/password/argon2.sober:35:6: secret std/crypto/password.lenPrefixed
+std/crypto/password/argon2.sober:42:6: secret std/crypto/password.hprime
+std/crypto/password/argon2.sober:67:6: secret std/crypto/password.gb
+std/crypto/password/argon2.sober:79:6: secret std/crypto/password.pround
+std/crypto/password/argon2.sober:94:6: secret std/crypto/password.blamka
+std/crypto/password/argon2.sober:105:6: secret std/crypto/password.fillBlock
+std/crypto/password/argon2.sober:119:6: secret std/crypto/password.nextAddresses
+std/crypto/password/argon2.sober:140:6: secret std/crypto/password.putBlock
+std/crypto/password/argon2.sober:154:6: secret std/crypto/password.argon2idKey
+std/crypto/password/bcrypt.sober:153:6: secret std/crypto/password.bff
+std/crypto/password/bcrypt.sober:163:6: secret std/crypto/password.bfEncrypt
+std/crypto/password/bcrypt.sober:176:6: secret std/crypto/password.bfWord
+std/crypto/password/bcrypt.sober:183:6: secret std/crypto/password.bfExpand
+std/crypto/password/bcrypt.sober:205:6: secret std/crypto/password.bcryptHash
+std/crypto/password/blake2b.sober:9:6: secret std/crypto/password.rotr64
+std/crypto/password/blake2b.sober:35:6: secret std/crypto/password.b2g
+std/crypto/password/blake2b.sober:48:6: secret std/crypto/password.b2compress
+std/crypto/password/blake2b.sober:86:6: secret std/crypto/password.blake2b
+std/crypto/password/password.sober:61:6: secret std/crypto/password.Argon2id
+std/crypto/password/password.sober:81:6: secret std/crypto/password.Bcrypt
+std/crypto/password/password.sober:101:6: secret std/crypto/password.Pbkdf2
+std/crypto/password/password.sober:117:6: secret std/crypto/password.Verify
+std/crypto/password/password.sober:176:6: secret std/crypto/password.bcryptPwOk
+std/crypto/password/pbkdf2.sober:9:6: secret std/crypto/password.macPad
+std/crypto/password/pbkdf2.sober:23:6: secret std/crypto/password.mac
+std/crypto/password/pbkdf2.sober:37:6: secret std/crypto/password.pbkdf2Key
 std/crypto/poly1305/poly1305.sober:16:6: secret std/crypto/poly1305.Sum
 std/crypto/poly1305/poly1305.sober:26:6: secret std/crypto/poly1305.SumAead
 std/crypto/poly1305/poly1305.sober:53:6: secret std/crypto/poly1305.start
@@ -54,7 +81,7 @@ std/crypto/rsa/bn.sober:277:6: secret std/crypto/rsa.toMont
 std/crypto/rsa/bn.sober:304:6: secret std/crypto/rsa.expMont
 std/crypto/rsa/bn.sober:356:6: secret std/crypto/rsa.sel
 std/crypto/rsa/bn.sober:365:6: secret std/crypto/rsa.selS
-std/crypto/rsa/bn.sober:506:6: secret std/crypto/rsa.bnAddMul
+std/crypto/rsa/bn.sober:416:6: secret std/crypto/rsa.bnAddMul
 std/crypto/rsa/rsa.sober:64:6: secret std/crypto/rsa.SignPSS
 std/crypto/rsa/rsa.sober:141:6: secret std/crypto/rsa.mgf1
 std/crypto/rsa/rsa.sober:161:6: secret std/crypto/rsa.pssEncode
@@ -78,32 +105,55 @@ std/crypto/x25519/x25519.sober:182:6: secret std/crypto/x25519.fmulS
 std/crypto/x25519/x25519.sober:212:6: secret std/crypto/x25519.invert
 std/crypto/x25519/x25519.sober:228:6: secret std/crypto/x25519.unpack
 std/crypto/x25519/x25519.sober:240:6: secret std/crypto/x25519.pack
-std/tls/tls.sober:133:6: secret std/tls.accept
-std/tls/tls.sober:206:6: secret std/tls.newBlk
-std/tls/tls.sober:233:6: secret std/tls.putDir
-std/tls/tls.sober:324:6: secret std/tls.Put
-std/tls/tls.sober:349:6: secret std/tls.Flush
-std/tls/tls.sober:360:6: secret std/tls.sendNow
-std/tls/tls.sober:377:6: secret std/tls.sealPut
-std/tls/tls.sober:409:6: secret std/tls.flags
-std/tls/tls.sober:413:6: secret std/tls.setFlags
-std/tls/tls.sober:418:6: secret std/tls.setSeq
-std/tls/tls.sober:423:6: secret std/tls.putWr
-std/tls/tls.sober:433:6: secret std/tls.view
-std/tls/tls.sober:439:6: secret std/tls.leftBytes
-std/tls/record/record.sober:74:6: secret std/tls/record.ExpandLabel
-std/tls/record/record.sober:97:6: secret std/tls/record.NewDir
-std/tls/record/record.sober:123:6: secret std/tls/record.Update
-std/tls/record/record.sober:138:6: secret std/tls/record.Seal
-std/tls/record/record.sober:161:6: secret std/tls/record.SealInto
-std/tls/record/record.sober:177:6: secret std/tls/record.sealOne
-std/tls/record/record.sober:210:6: secret std/tls/record.nonceOf
-std/tls/record/record.sober:227:6: secret std/tls/record.Open
-std/tls/record/record.sober:256:6: secret std/tls/record.openBody
-std/tls/record/record.sober:269:6: secret std/tls/record.strip
-std/tls/record/record.sober:286:6: secret std/tls/record.stripTail
-std/tls/record/record.sober:417:6: secret std/tls/record.Pack
-std/tls/record/record.sober:453:6: secret std/tls/record.packBytes
+std/http/client/link.sober:302:6: secret std/http/client.putConn
+std/session/session.sober:141:6: secret std/session.KeyFrom
+std/session/session.sober:153:6: secret std/session.Mint
+std/session/session.sober:200:6: secret std/session.Open
+std/tls/tls.sober:158:6: secret std/tls.accept
+std/tls/tls.sober:231:6: secret std/tls.newBlk
+std/tls/tls.sober:258:6: secret std/tls.putDir
+std/tls/tls.sober:349:6: secret std/tls.Put
+std/tls/tls.sober:374:6: secret std/tls.Flush
+std/tls/tls.sober:385:6: secret std/tls.sendNow
+std/tls/tls.sober:402:6: secret std/tls.sealPut
+std/tls/tls.sober:434:6: secret std/tls.flags
+std/tls/tls.sober:438:6: secret std/tls.setFlags
+std/tls/tls.sober:443:6: secret std/tls.setSeq
+std/tls/tls.sober:448:6: secret std/tls.putWr
+std/tls/tls.sober:458:6: secret std/tls.view
+std/tls/tls.sober:464:6: secret std/tls.leftBytes
+std/internal/hsc/client.sober:345:6: secret std/internal/hsc.onServerHello
+std/internal/hsc/client.sober:429:6: secret std/internal/hsc.onClientSealed
+std/internal/hsc/client12.sober:158:6: secret std/internal/hsc.on12
+std/internal/hsc/client12.sober:236:6: secret std/internal/hsc.skx12
+std/internal/hsc/client12.sober:273:6: secret std/internal/hsc.flight12
+std/internal/hsc/client12.sober:306:6: secret std/internal/hsc.prf
+std/internal/hsc/client12.sober:330:6: secret std/internal/hsc.nonce12
+std/internal/hsc/client12.sober:344:6: secret std/internal/hsc.seal12
+std/internal/hsc/client12.sober:373:6: secret std/internal/hsc.open12
+std/internal/hsc/codec.sober:84:6: secret std/internal/hsc.put8
+std/internal/hsc/codec.sober:93:6: secret std/internal/hsc.put24
+std/internal/hsc/codec.sober:99:6: secret std/internal/hsc.putBytes
+std/internal/hsc/codec.sober:108:6: secret std/internal/hsc.msg
+std/internal/hsc/codec.sober:117:6: secret std/internal/hsc.cat
+std/internal/hsc/codec.sober:125:6: secret std/internal/hsc.sliceOf
+std/internal/hsc/codec.sober:187:6: secret std/internal/hsc.deriveSecret
+std/internal/hsc/conn.sober:19:6: secret std/internal/hsc.PackConn
+std/internal/hsc/conn.sober:61:6: secret std/internal/hsc.putDir
+std/internal/hsc/conn.sober:77:6: secret std/internal/hsc.putWords
+std/internal/record/record.sober:74:6: secret std/internal/record.ExpandLabel
+std/internal/record/record.sober:97:6: secret std/internal/record.NewDir
+std/internal/record/record.sober:123:6: secret std/internal/record.Update
+std/internal/record/record.sober:138:6: secret std/internal/record.Seal
+std/internal/record/record.sober:161:6: secret std/internal/record.SealInto
+std/internal/record/record.sober:177:6: secret std/internal/record.sealOne
+std/internal/record/record.sober:210:6: secret std/internal/record.nonceOf
+std/internal/record/record.sober:227:6: secret std/internal/record.Open
+std/internal/record/record.sober:256:6: secret std/internal/record.openBody
+std/internal/record/record.sober:269:6: secret std/internal/record.strip
+std/internal/record/record.sober:286:6: secret std/internal/record.stripTail
+std/internal/record/record.sober:417:6: secret std/internal/record.Pack
+std/internal/record/record.sober:453:6: secret std/internal/record.packBytes
 std/internal/hs/codec.sober:82:6: secret std/internal/hs.put8
 std/internal/hs/codec.sober:91:6: secret std/internal/hs.put24
 std/internal/hs/codec.sober:97:6: secret std/internal/hs.putBytes
@@ -129,12 +179,22 @@ std/crypto/poly1305/poly1305.sober:40:6: field acc.h1 from the @secret parameter
 std/crypto/poly1305/poly1305.sober:40:6: field acc.h2 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
 std/crypto/poly1305/poly1305.sober:40:6: field acc.h3 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
 std/crypto/poly1305/poly1305.sober:40:6: field acc.h4 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
-std/tls/tls.sober:40:6: field Conn.blk from the @secret parameter 'key' of 'std/crypto/chacha20poly1305.Prepare'
-std/tls/record/record.sober:56:6: field Dir.secret from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
-std/tls/record/record.sober:56:6: field Dir.iv from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
+std/session/session.sober:51:6: field Key.k from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
+std/tls/tls.sober:54:6: field Conn.blk from the @secret parameter 'key' of 'std/crypto/chacha20poly1305.Prepare'
+std/internal/hsc/client.sober:64:6: field Ch.hsS from the @secret parameter 'ikm' of 'std/crypto/hkdf.Extract'
+std/internal/hsc/client.sober:64:6: field Ch.cHs from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
+std/internal/hsc/client.sober:64:6: field Ch.sHs from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
+std/internal/hsc/client.sober:64:6: field Ch.pms from the @secret parameter 'k' of 'std/crypto/x25519.Shared'
+std/internal/hsc/client.sober:64:6: field Ch.ms from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
+std/internal/hsc/client.sober:64:6: field Ch.wkey from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
+std/internal/hsc/client.sober:64:6: field Ch.wiv from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
+std/internal/hsc/client.sober:64:6: field Ch.rkey from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
+std/internal/hsc/client.sober:64:6: field Ch.riv from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
+std/internal/record/record.sober:56:6: field Dir.secret from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
+std/internal/record/record.sober:56:6: field Dir.iv from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
 std/internal/hs/hs.sober:86:6: field Hs.cHs from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
 std/internal/hs/hs.sober:86:6: field Hs.sHs from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
 std/internal/hs/hs.sober:86:6: field Hs.cAp from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
 std/internal/hs/hs.sober:86:6: field Hs.sAp from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
 std/internal/hs/hs.sober:86:6: field Hs.expFin from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
-summary atoms=31 secret-fns=120 secret-fields=19 violations=0 walks=1827
+summary atoms=55 secret-fns=170 secret-fields=29 violations=0 walks=2803

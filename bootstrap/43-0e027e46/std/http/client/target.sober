@@ -1,0 +1,143 @@
+package client
+
+// 要求の URL の読み（http / https の絶対 URL だけ）と redirect の Location の解決
+
+import "std/iter"
+import "std/strings"
+
+// 読んだ URL（host は小文字・port は省略時 80 / 443・path は '?' の後ろを含み '#' の前まで — 空なら "/"）
+type target struct {
+    tls bool
+    host string
+    port int
+    path string
+}
+
+func badTarget() target {
+    return target{tls: false, host: "", port: 0, path: ""}
+}
+
+// "host:port"（Dial に渡す形）
+func dialAddr(t target) string {
+    return "${t.host}:${t.port}"
+}
+
+// Host の頭の値（既定の port は書かない）
+func hostHeader(t target) string {
+    return if (t.tls && t.port == 443) || (!t.tls && t.port == 80) { t.host } else { "${t.host}:${t.port}" }
+}
+
+// scheme・host・port の組（redirect で origin が変わったかの比較）
+func origin(t target) string {
+    scheme := if t.tls { "https" } else { "http" }
+    return "${scheme}://${t.host}:${t.port}"
+}
+
+// u の読み（ok = false: scheme が http / https でない・userinfo がある・IPv6 の番地・host が空・port の形・空白や制御文字）
+func parseTarget(u string) (target, bool) {
+    b := bytes(u)
+    mut at := 0
+    mut secure := false
+    if prefixFold(b, "https://") {
+        secure = true
+        at = 8
+    } else if prefixFold(b, "http://") {
+        at = 7
+    } else {
+        return badTarget(), false
+    }
+    for x <- b {
+        if x <= ' ' || x == 0x7f || int(x) >= 0x80 {
+            return badTarget(), false
+        }
+    }
+    mut he := at
+    while he < len(b) && b[he] != '/' && b[he] != '?' && b[he] != '#' {
+        he += 1
+    }
+    mut pe := he
+    while pe < len(b) && b[pe] != '#' {
+        pe += 1
+    }
+    auth := sub(b, at, he)
+    if strings.Contains(auth, "@") || strings.Contains(auth, "[") {
+        return badTarget(), false
+    }
+    mut host := auth
+    mut port := if secure { 443 } else { 80 }
+    h, ps, hasPort := strings.Cut(auth, ":")
+    if hasPort {
+        host = h
+        port = portOf(ps)
+        if port <= 0 {
+            return badTarget(), false
+        }
+    }
+    if host == "" {
+        return badTarget(), false
+    }
+    raw := sub(b, he, pe)
+    path := if raw == "" { "/" } else if strings.HasPrefix(raw, "?") { "/${raw}" } else { raw }
+    return target{tls: secure, host: strings.ToLower(host), port: port, path: path}, true
+}
+
+// Location の値 loc を base に対して解く（絶対 URL・"//host…"・"/path"・相対の path）
+func resolveLocation(base target, loc string) string {
+    if prefixFold(bytes(loc), "http://") || prefixFold(bytes(loc), "https://") {
+        return loc
+    }
+    scheme := if base.tls { "https:" } else { "http:" }
+    if strings.HasPrefix(loc, "//") {
+        return "${scheme}${loc}"
+    }
+    root := "${scheme}//${hostHeader(base)}"
+    if strings.HasPrefix(loc, "/") {
+        return "${root}${loc}"
+    }
+    // 相対: base の path の最後の '/' までに繋ぐ（'?' の前で切る）
+    p, _, _ := strings.Cut(base.path, "?")
+    dir, _, _ := strings.CutLast(p, "/")
+    return "${root}${dir}/${loc}"
+}
+
+func portOf(s string) int {
+    b := bytes(s)
+    if len(b) == 0 || len(b) > 5 {
+        return 0
+    }
+    mut v := 0
+    for x <- b {
+        if x < '0' || x > '9' {
+            return 0
+        }
+        v = v * 10 + int(x) - 48
+    }
+    return if v > 65535 { 0 } else { v }
+}
+
+func prefixFold(b []byte, p string) bool {
+    pb := bytes(p)
+    if len(b) < len(pb) {
+        return false
+    }
+    for i <- iter.Range(0, len(pb)) {
+        if lower(b[i]) != pb[i] {
+            return false
+        }
+    }
+    return true
+}
+
+func lower(c byte) byte {
+    return if c >= 'A' && c <= 'Z' { byte(int(c) + 32) } else { c }
+}
+
+func sub(b []byte, s int, e int) string {
+    mut o := mut []byte{}
+    mut i := s
+    while i < e {
+        o = append(o, b[i])
+        i += 1
+    }
+    return bytesToString(freeze(o))
+}

@@ -69,12 +69,12 @@ func xIsEntry(st mut St, f FnRef) bool {
 // 表との一致は lower の単体テスト（kinds_test.sober — 全 op × 全終端）が見る
 func xNOps(st mut St, i InsRef) int {
     op := xiOp(mut st, i)
-    return if op == OpScanB { xLen(mut st, xiA(mut st, i)) } else if op == OpBin || op == OpCmp || op == OpStore || op == OpStore8 || op == OpGepW || op == OpGepB { 2 } else if op == OpLoad || op == OpLoad8 || op == OpPtoi || op == OpItop || op == OpRSetDepth || op == OpRBump { 1 } else if op == OpRAlloc || op == OpRReloc { 2 } else if op == OpCall { xLen(mut st, xiB(mut st, i)) } else if op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone { 1 + xLen(mut st, xiB(mut st, i)) } else if op == OpSyscall || op == OpCrcFold { xLen(mut st, xiA(mut st, i)) } else if op == OpPArith || op == OpPMem { 2 } else { 0 }
+    return if op == OpScanB { xLen(mut st, xiA(mut st, i)) } else if op == OpBin || op == OpCmp || op == OpStore || op == OpStore8 || op == OpGepW || op == OpGepB || op == OpStore16 || op == OpStore32 { 2 } else if op == OpLoad || op == OpLoad8 || op == OpLoad16 || op == OpLoad32 || op == OpPtoi || op == OpItop || op == OpRSetDepth || op == OpRBump { 1 } else if op == OpRAlloc || op == OpRReloc { 2 } else if op == OpCall { xLen(mut st, xiB(mut st, i)) } else if op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone { 1 + xLen(mut st, xiB(mut st, i)) } else if op == OpSyscall || op == OpCrcFold { xLen(mut st, xiA(mut st, i)) } else if op == OpPArith || op == OpPMem { 2 } else { 0 }
 }
 
 func xOpnd(st mut St, i InsRef, k int) int {
     op := xiOp(mut st, i)
-    return if op == OpScanB { xAt(mut st, xiA(mut st, i), k) } else if op == OpBin || op == OpCmp { if k == 0 { xiB(mut st, i) } else { xiC(mut st, i) } } else if op == OpStore || op == OpStore8 { if k == 0 { xiA(mut st, i) } else { xiC(mut st, i) } } else if op == OpGepW || op == OpGepB || op == OpRAlloc { if k == 0 { xiA(mut st, i) } else { xiB(mut st, i) } } else if op == OpRReloc { if k == 0 { xiA(mut st, i) } else { xiC(mut st, i) } } else if op == OpCall { xAt(mut st, xiB(mut st, i), k) } else if op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone { if k == 0 { xiA(mut st, i) } else { xAt(mut st, xiB(mut st, i), k - 1) } } else if op == OpSyscall || op == OpCrcFold { xAt(mut st, xiA(mut st, i), k) } else if op == OpPArith { if k == 0 { xiB(mut st, i) } else { xiC(mut st, i) } } else if k == 0 { xiA(mut st, i) } else { xiC(mut st, i) }
+    return if op == OpScanB { xAt(mut st, xiA(mut st, i), k) } else if op == OpBin || op == OpCmp { if k == 0 { xiB(mut st, i) } else { xiC(mut st, i) } } else if op == OpStore || op == OpStore8 || op == OpStore16 || op == OpStore32 { if k == 0 { xiA(mut st, i) } else { xiC(mut st, i) } } else if op == OpGepW || op == OpGepB || op == OpRAlloc { if k == 0 { xiA(mut st, i) } else { xiB(mut st, i) } } else if op == OpRReloc { if k == 0 { xiA(mut st, i) } else { xiC(mut st, i) } } else if op == OpCall { xAt(mut st, xiB(mut st, i), k) } else if op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone { if k == 0 { xiA(mut st, i) } else { xAt(mut st, xiB(mut st, i), k - 1) } } else if op == OpSyscall || op == OpCrcFold { xAt(mut st, xiA(mut st, i), k) } else if op == OpPArith { if k == 0 { xiB(mut st, i) } else { xiC(mut st, i) } } else if k == 0 { xiA(mut st, i) } else { xiC(mut st, i) }
 }
 
 // 終端のオペランド（条件・戻り値・辺の実引数）
@@ -583,7 +583,7 @@ type XGroup struct {
 func xParCfg(st mut St) []int {
     // 末尾の語 = SOBER_XDBG の値の長さ。値のバイト列はその後ろへ（xdbgCfg — 鍵にも入るので値を変えればキャッシュに当たらない）
     return xdbgCfg([]int{int(st.rtCopy), int(st.rtCopy8), int(st.rtGrow), int(st.rtGrow8), int(st.rtGrowTry), int(st.rtMapGrow), int(st.rtReloc), int(st.rtReloc8),
-        st.trapG, if st.trapUse { 1 } else { 0 }, if st.taskUse { 1 } else { 0 }, if st.xcopy { 1 } else { 0 }, st.xLay, int(st.rtPanic), int(st.rtPanicMem), if st.slotPoison { 1 } else { 0 }, if st.frStat { 1 } else { 0 }, int(st.rtMatchLen), st.rtMut, int(st.rtJClean), int(st.rtErrReloc), if st.memRep { 1 } else { 0 }, len(st.xdbgPat)}, st.xdbgPat)
+        st.trapG, if st.trapUse { 1 } else { 0 }, if st.taskUse { 1 } else { 0 }, if st.xcopy { 1 } else { 0 }, st.xLay, int(st.rtPanic), int(st.rtPanicMem), if st.slotPoison { 1 } else { 0 }, if st.frStat { 1 } else { 0 }, int(st.rtMatchLen), st.rtMut, int(st.rtJClean), int(st.rtErrReloc), if st.memRep { 1 } else { 0 }, int(st.rtWinRalloc), len(st.xdbgPat)}, st.xdbgPat)
 }
 
 // 整列（配置の土台）: 関数の先頭とループの頭を XA_* バイトの境界へ nop で詰める（最適化のバックエンドだけ — 写しのバックエンドは
@@ -761,7 +761,9 @@ func xParGroup(g XGroup, hf table.Frozen[int], cfg []int, addr []int, fr []int, 
     // メモリの上界の報告（--mem-report）: フレームを子の作業域 memFr に積み、結果（XPar.frs）で親へ返す
     st.memRep = cfg[21] == 1
     st.memFr = table.Table[int]{}
-    st.xdbgPat = xdbgPatOf(cfg, cfg[22])
+    // 窓の溢れ（xColdCall・xSlowRt — 写した rt.region_alloc の冷たい道）
+    st.rtWinRalloc = FnRef(cfg[22])
+    st.xdbgPat = xdbgPatOf(cfg, cfg[23])
     // 段 3 の例外の印（xRegCc）
     st.xAddr = addr
     st.xXmm = 0
@@ -2710,7 +2712,7 @@ func xIsCallOp(st mut St, i InsRef) bool {
 }
 
 // 呼び出し i（xIsCallOp）が冷たい呼び出しか（跨ぎの集合から外し、呼び手が前後で caller-saved を退避・復元する）:
-// 成長の rt（slice_grow・slice_grow8・grow_try・map_grow — 容器ごとの償却 O(1)）への直の call。根拠は「まれ」ではなく「退避の往復〔最大 5 語〕の
+// 成長の rt（slice_grow・slice_grow8・grow_try・map_grow — 容器ごとの償却 O(1)）と窓の溢れ（rt.win_ralloc — 写した rt.region_alloc の冷たい道）への直の call。根拠は「まれ」ではなく「退避の往復〔最大 5 語〕の
 // 費用が呼び出しそのものの費用で抑えられる」こと（要求ごとの容器の成長は反復に比例して走る — routing の map_grow 16 万回）。
 // region_relocate(8) は入れない（反復ごとの境界のコピー — logagg 395 万回 — xColdBlocks の種とは別）。棄てた案: 死ぬブロック（exit でしか
 // 終わらない道 — panic の文言の印字の rt.flush）の呼び出しも入れる形 — 題材 8 本の命令が同じで cycles にも符号一致の差が無く、判定の分だけ
@@ -2720,7 +2722,7 @@ func xColdCall(st mut St, i InsRef) bool {
         return false
     }
     g := FnRef(xiA(mut st, i))
-    return g == st.rtGrow || g == st.rtGrow8 || g == st.rtGrowTry || g == st.rtMapGrow
+    return g == st.rtGrow || g == st.rtGrow8 || g == st.rtGrowTry || g == st.rtMapGrow || g == st.rtWinRalloc
 }
 
 // 部分区間 v が冷たい呼び出しを跨ぐか（xCrossCall と同じ判定 — 列は cpc）
@@ -4143,7 +4145,7 @@ func xColdMark(st mut St, e mut xF, kOf mut []int, npred mut []int, cold mut []i
 
 // 遅い道の rt か（冷たい領域の種 — xColdBlocks）
 func xSlowRt(st mut St, f int) bool {
-    return f >= 0 && (f == int(st.rtGrow) || f == int(st.rtGrow8) || f == int(st.rtGrowTry) || f == int(st.rtMapGrow) || f == int(st.rtReloc) || f == int(st.rtReloc8) || f == int(st.rtErrReloc))
+    return f >= 0 && (f == int(st.rtGrow) || f == int(st.rtGrow8) || f == int(st.rtGrowTry) || f == int(st.rtMapGrow) || f == int(st.rtReloc) || f == int(st.rtReloc8) || f == int(st.rtErrReloc) || f == int(st.rtWinRalloc))
 }
 
 // spill の費用（M5）: 重み ÷ 区間の長さ（長く生きて使われの疎な値ほど安い）。長さは 256 で頭打ち — 区間を割らない linear scan では、
@@ -5440,7 +5442,7 @@ func xMemoClear(e mut xF) {
 func xMemoOp(st mut St, e mut xF, i InsRef) bool {
     op := xiOp(mut st, i)
     res := xiRes(mut st, i)
-    return op == OpConst || op == OpLoad || op == OpLoad8 || op == OpStore || op == OpStore8 || (op == OpGepW || op == OpGepB) && e.fold[res] == 1 || op == OpSlotaddr && e.remat[res] == 2
+    return op == OpConst || op == OpLoad || isNarrowLd(op) || op == OpStore || isNarrowSt(op) || (op == OpGepW || op == OpGepB) && e.fold[res] == 1 || op == OpSlotaddr && e.remat[res] == 2
 }
 
 // v が直前の xPut でフレームへ store したばかりで、その後に何も吐いていない（読み元のレジスタに v が残っている）か
@@ -5529,6 +5531,8 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
             x86.MovRegImm64(mut c, x86.Rax, a)
             xPut(mut e, mut c, res, x86.Rax)
         }
+    } else if op == OpBin && e.fold[res] == 1 {
+        // 狭い load / store の番地の倍率に畳んだ shl（xFoldScan — 使う load / store が SIB の倍率で組む）
     } else if op == OpBin && e.fuse[res] == 3 {
         // and の結果は比較にしか使われない — test で flags だけ立てる（xFuseScan）
         x86.TestRegImm(mut c, xGet(mut e, mut c, b, x86.Rax), e.constV[cc])
@@ -5545,6 +5549,13 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
             xGetInto(mut e, mut c, cc, x86.Rcx)
             x86.MulReg(mut c, x86.Rcx)
             xPut(mut e, mut c, res, x86.Rdx)
+        } else if a == BCtz {
+            // bsf は 0 で行き先が未定義（ZF = 1）— cmove で 64 に確定（rax / rdx は割り当てない scratch）
+            xGetInto(mut e, mut c, b, x86.Rax)
+            x86.MovRegImm32(mut c, x86.Rdx, 64)
+            x86.BsfRR(mut c, x86.Rax, x86.Rax)
+            x86.CmoveRR(mut c, x86.Rax, x86.Rdx)
+            xPut(mut e, mut c, res, x86.Rax)
         } else if (a == BShl || a == BSar) && e.opt && e.isConst[cc] == 1 && e.constV[cc] >= 0 && e.constV[cc] <= 63 && xIsGpr(xLocAt(mut e, res, e.pos)) {
             // 定数の量は即値のずらしを結果のレジスタへ直に（`mov rcx, k; shl rax, cl` と rax の往復を省く。量 0〜63 は cl の形と同じ意味）
             d := xLocVal(xLocAt(mut e, res, e.pos))
@@ -5563,6 +5574,17 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
                 x86.SarRegImm(mut c, x86.Rax, e.constV[cc])
             }
             xPut(mut e, mut c, res, x86.Rax)
+        } else if (a == BShl || a == BSar) && e.opt && xIsGpr(xLocAt(mut e, res, e.pos)) {
+            // 可変の量も結果のレジスタで直に（量 → rcx を先に — 結果のレジスタが量の置き場と同じでも壊さない。rcx は割り当てない scratch なので
+            // 左の値は rcx に居ない）。rax の往復を省く
+            d := xLocVal(xLocAt(mut e, res, e.pos))
+            xGetInto(mut e, mut c, cc, x86.Rcx)
+            xGetInto(mut e, mut c, b, d)
+            if a == BShl {
+                x86.ShlRegCl(mut c, d)
+            } else {
+                x86.SarRegCl(mut c, d)
+            }
         } else if a == BShl || a == BSar {
             xGetInto(mut e, mut c, b, x86.Rax)
             xGetInto(mut e, mut c, cc, x86.Rcx)
@@ -5638,13 +5660,13 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
     } else if op == OpStore && e.opt && e.remat[cc] == 0 && xIsXmm(xLocAt(mut e, cc, e.pos)) {
         p := xGet(mut e, mut c, a, x86.Rax)
         x86.MovsdMemX(mut c, p, 8 * b, xLocVal(xLocAt(mut e, cc, e.pos)) - xX0)
-    } else if (op == OpLoad || op == OpLoad8) && e.fold[a] == 1 {
+    } else if (op == OpLoad || isNarrowLd(op)) && e.fold[a] == 1 {
         d := if xIsGpr(xLocAt(mut e, res, e.pos)) { xLocVal(xLocAt(mut e, res, e.pos)) } else { x86.Rax }
-        xMemSib(mut e, mut c, a, if op == OpLoad { 8 * b } else { b }, d, op == OpLoad8, true)
+        xMemSib(mut e, mut c, a, if op == OpLoad { 8 * b } else { b }, d, narrowW(op), true)
         xPut(mut e, mut c, res, d)
-    } else if (op == OpStore || op == OpStore8) && e.fold[a] == 1 {
+    } else if (op == OpStore || isNarrowSt(op)) && e.fold[a] == 1 {
         v := xGet(mut e, mut c, cc, x86.Rdx)
-        xMemSib(mut e, mut c, a, if op == OpStore { 8 * b } else { b }, v, op == OpStore8, false)
+        xMemSib(mut e, mut c, a, if op == OpStore { 8 * b } else { b }, v, narrowW(op), false)
     } else if (op == OpLoad || op == OpStore) && e.opt && (e.remat[a] == 2 || (op == OpStore && e.remat[cc] == 1)) {
         // 番地がスロット（remat 2）なら [rbp + 変位] を直に・値が imm32 の定数（remat 1）なら mov [番地], imm32（段 6 P4-6 — lea / mov imm の往復を省く）
         mut base := x86.Rbp
@@ -5685,6 +5707,22 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
         p := xGet(mut e, mut c, a, x86.Rax)
         v := xGet(mut e, mut c, cc, x86.Rcx)
         x86.MovMem8Reg(mut c, p, b, v)
+    } else if op == OpLoad16 || op == OpLoad32 {
+        p := xGet(mut e, mut c, a, x86.Rax)
+        if op == OpLoad16 {
+            x86.MovzxRegMem16(mut c, x86.Rax, p, b)
+        } else {
+            x86.MovRegMem32(mut c, x86.Rax, p, b)
+        }
+        xPut(mut e, mut c, res, x86.Rax)
+    } else if op == OpStore16 || op == OpStore32 {
+        p := xGet(mut e, mut c, a, x86.Rax)
+        v := xGet(mut e, mut c, cc, x86.Rcx)
+        if op == OpStore16 {
+            x86.MovMem16Reg(mut c, p, b, v)
+        } else {
+            x86.MovMem32Reg(mut c, p, b, v)
+        }
     } else if (op == OpGepW || op == OpGepB) && e.opt && xIsReg(xLocAt(mut e, res, e.pos)) {
         p := xGet(mut e, mut c, a, x86.Rax)
         ix := xGet(mut e, mut c, b, x86.Rcx)
@@ -6734,6 +6772,13 @@ func xFoldScan(st mut St, e mut xF) {
     xFill(mut nAddr, e.nv, 0)
     mut defb := mut []int{}
     xFill(mut defb, e.nv, -1)
+    // 16 / 32 ビットの load / store の番地の使用の数・shl の被演算子と量（番地の倍率に畳む候補）
+    mut nNar := mut []int{}
+    xFill(mut nNar, e.nv, 0)
+    mut shX := mut []int{}
+    xFill(mut shX, e.nv, -1)
+    mut shK := mut []int{}
+    xFill(mut shK, e.nv, -1)
     for bi <- iter.Range(0, e.nb) {
         b := BlkRef(e.blk[bi])
         if int(b) < 0 {
@@ -6742,11 +6787,18 @@ func xFoldScan(st mut St, e mut xF) {
         mut i := xbIHead(mut st, b)
         while i != -1 {
             op := xiOp(mut st, i)
+            if op == OpLoad16 || op == OpLoad32 || op == OpStore16 || op == OpStore32 {
+                nNar[xiA(mut st, i)] = nNar[xiA(mut st, i)] + 1
+            }
+            if op == OpBin && xiA(mut st, i) == BShl && xiRes(mut st, i) >= 0 {
+                shX[xiRes(mut st, i)] = xiB(mut st, i)
+                shK[xiRes(mut st, i)] = xiC(mut st, i)
+            }
             for k <- iter.Range(0, xNOps(mut st, i)) {
                 v := xOpnd(mut st, i, k)
                 uses[v] = uses[v] + 1
             }
-            if op == OpLoad || op == OpLoad8 || op == OpStore || op == OpStore8 {
+            if op == OpLoad || isNarrowLd(op) || op == OpStore || isNarrowSt(op) {
                 nAddr[xiA(mut st, i)] = nAddr[xiA(mut st, i)] + 1
             }
             r := xiRes(mut st, i)
@@ -6768,6 +6820,19 @@ func xFoldScan(st mut St, e mut xF) {
             e.fold[v] = 1
         }
     }
+    // 狭い load / store だけが使う gep.byte(p, x << k)（k = 1〜3 の定数・shl の使い道はこの gep だけ）は [p + x × 2^k] の SIB に畳む:
+    // shl は吐かず（fold — 区間も持たない）、生存は gep の番地と同じく x の使用として数える（xLive ほかは fold の値の fA / fB を読む）
+    for v <- iter.Range(0, e.nv) {
+        s := e.fB[v]
+        if e.fold[v] == 1 && e.fS[v] == 1 && nNar[v] == uses[v] && s >= 0 && shX[s] >= 0 && uses[s] == 1 && e.isConst[shK[s]] == 1 &&
+            e.constV[shK[s]] >= 1 && e.constV[shK[s]] <= 3 {
+            e.fS[v] = 1 << e.constV[shK[s]]
+            e.fB[v] = shX[s]
+            e.fold[s] = 1
+            e.fA[s] = shX[s]
+            e.fB[s] = shX[s]
+        }
+    }
 }
 
 // xMemSib の xmm 版（movsd — 値は xmm x）
@@ -6786,7 +6851,7 @@ func xMemSibX(e mut xF, c mut table.Table[byte], g int, off int, x int, isLoad b
         }
     }
     ix := xGet(mut e, mut c, ixv, x86.Rcx)
-    sc := if e.fS[g] == 8 { x86.Scale8 } else { x86.Scale1 }
+    sc := if e.fS[g] == 8 { x86.Scale8 } else if e.fS[g] == 4 { x86.Scale4 } else if e.fS[g] == 2 { x86.Scale2 } else { x86.Scale1 }
     if isLoad {
         x86.MovsdXMemSib(mut c, x, p, ix, sc, off)
     } else {
@@ -6794,22 +6859,30 @@ func xMemSibX(e mut xF, c mut table.Table[byte], g int, off int, x int, isLoad b
     }
 }
 
-// 融合した gep g の番地 [p + ix * 倍率 + off] で load（toReg = レジスタ r へ）/ store（r の値を）する（b8 = バイト幅）。
+// 融合した gep g の番地 [p + ix * 倍率 + off] で load（toReg = レジスタ r へ）/ store（r の値を）する（w = 幅のバイト数 1 / 2 / 4 / 8）。
 // ix が imm32 に収まる定数なら変位へ畳む（[p + 変位]）
-func xMemSib(e mut xF, c mut table.Table[byte], g int, off int, r int, b8 bool, isLoad bool) {
+func xMemSib(e mut xF, c mut table.Table[byte], g int, off int, r int, w int, isLoad bool) {
     p := xGet(mut e, mut c, e.fA[g], x86.Rax)
     ixv := e.fB[g]
     if e.isConst[ixv] == 1 {
         dd := e.constV[ixv] * e.fS[g] + off
         if dd >= -2147483648 && dd <= 2147483647 && e.constV[ixv] >= -268435456 && e.constV[ixv] <= 268435455 {
             if isLoad {
-                if b8 {
+                if w == 1 {
                     x86.MovzxRegMem8(mut c, r, p, dd)
+                } else if w == 2 {
+                    x86.MovzxRegMem16(mut c, r, p, dd)
+                } else if w == 4 {
+                    x86.MovRegMem32(mut c, r, p, dd)
                 } else {
                     x86.MovRegMem(mut c, r, p, dd)
                 }
-            } else if b8 {
+            } else if w == 1 {
                 x86.MovMem8Reg(mut c, p, dd, r)
+            } else if w == 2 {
+                x86.MovMem16Reg(mut c, p, dd, r)
+            } else if w == 4 {
+                x86.MovMem32Reg(mut c, p, dd, r)
             } else {
                 x86.MovMemReg(mut c, p, dd, r)
             }
@@ -6817,15 +6890,23 @@ func xMemSib(e mut xF, c mut table.Table[byte], g int, off int, r int, b8 bool, 
         }
     }
     ix := xGet(mut e, mut c, ixv, x86.Rcx)
-    sc := if e.fS[g] == 8 { x86.Scale8 } else { x86.Scale1 }
+    sc := if e.fS[g] == 8 { x86.Scale8 } else if e.fS[g] == 4 { x86.Scale4 } else if e.fS[g] == 2 { x86.Scale2 } else { x86.Scale1 }
     if isLoad {
-        if b8 {
+        if w == 1 {
             x86.MovzxRegMem8Sib(mut c, r, p, ix, sc, off)
+        } else if w == 2 {
+            x86.MovzxRegMem16Sib(mut c, r, p, ix, sc, off)
+        } else if w == 4 {
+            x86.MovRegMem32Sib(mut c, r, p, ix, sc, off)
         } else {
             x86.MovRegMemSib(mut c, r, p, ix, sc, off)
         }
-    } else if b8 {
+    } else if w == 1 {
         x86.MovMem8RegSib(mut c, p, ix, sc, off, r)
+    } else if w == 2 {
+        x86.MovMem16RegSib(mut c, p, ix, sc, off, r)
+    } else if w == 4 {
+        x86.MovMem32RegSib(mut c, p, ix, sc, off, r)
     } else {
         x86.MovMemRegSib(mut c, p, ix, sc, off, r)
     }

@@ -123,26 +123,46 @@
                 "callee": {
                   "k": "selector",
                   "base": {
-                    "k": "ident",
-                    "name": "cell",
-                    "tok": 42
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "testing",
+                      "tok": 42
+                    },
+                    "field": "cell",
+                    "tok": 44
                   },
                   "field": "Get",
-                  "tok": 44
+                  "tok": 46
                 },
                 "args": [
                   {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "spy",
-                      "tok": 46
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "testdata",
+                            "tok": 48
+                          },
+                          "field": "doubles",
+                          "tok": 50
+                        },
+                        "field": "logger",
+                        "tok": 52
+                      },
+                      "field": "spy",
+                      "tok": 54
                     },
                     "field": "Lines",
-                    "tok": 48
+                    "tok": 56
                   }
                 ],
-                "tok": 45
+                "tok": 47
               }
             ],
             "tok": 40
@@ -154,7 +174,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 51
+                "tok": 59
               },
               "args": [
                 {
@@ -165,26 +185,26 @@
                     "callee": {
                       "k": "ident",
                       "name": "len",
-                      "tok": 53
+                      "tok": 61
                     },
                     "args": [
                       {
                         "k": "ident",
                         "name": "lines",
-                        "tok": 55
+                        "tok": 63
                       }
                     ],
-                    "tok": 54
+                    "tok": 62
                   },
                   "rhs": {
                     "k": "int",
                     "value": 2,
-                    "tok": 58
+                    "tok": 66
                   },
-                  "tok": 57
+                  "tok": 65
                 }
               ],
-              "tok": 52
+              "tok": 60
             }
           },
           {
@@ -194,7 +214,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 61
+                "tok": 69
               },
               "args": [
                 {
@@ -205,24 +225,24 @@
                     "base": {
                       "k": "ident",
                       "name": "lines",
-                      "tok": 63
+                      "tok": 71
                     },
                     "idx": {
                       "k": "int",
                       "value": 1,
-                      "tok": 65
+                      "tok": 73
                     },
-                    "tok": 64
+                    "tok": 72
                   },
                   "rhs": {
                     "k": "strlit",
                     "value": "hello, b",
-                    "tok": 68
+                    "tok": 76
                   },
-                  "tok": 67
+                  "tok": 75
                 }
               ],
-              "tok": 62
+              "tok": 70
             }
           }
         ]
@@ -231,7 +251,7 @@
       "bodiless": false,
       "span": {
         "start": 15,
-        "end": 73
+        "end": 81
       },
       "sig_end": 19
     },
@@ -249,7 +269,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 78
+                "tok": 86
               },
               "args": [
                 {
@@ -260,7 +280,7 @@
                     "callee": {
                       "k": "ident",
                       "name": "len",
-                      "tok": 80
+                      "tok": 88
                     },
                     "args": [
                       {
@@ -268,50 +288,70 @@
                         "callee": {
                           "k": "selector",
                           "base": {
-                            "k": "ident",
-                            "name": "cell",
-                            "tok": 82
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "testing",
+                              "tok": 90
+                            },
+                            "field": "cell",
+                            "tok": 92
                           },
                           "field": "Get",
-                          "tok": 84
+                          "tok": 94
                         },
                         "args": [
                           {
                             "k": "selector",
                             "base": {
-                              "k": "ident",
-                              "name": "spy",
-                              "tok": 86
+                              "k": "selector",
+                              "base": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "selector",
+                                  "base": {
+                                    "k": "ident",
+                                    "name": "testdata",
+                                    "tok": 96
+                                  },
+                                  "field": "doubles",
+                                  "tok": 98
+                                },
+                                "field": "logger",
+                                "tok": 100
+                              },
+                              "field": "spy",
+                              "tok": 102
                             },
                             "field": "Lines",
-                            "tok": 88
+                            "tok": 104
                           }
                         ],
-                        "tok": 85
+                        "tok": 95
                       }
                     ],
-                    "tok": 81
+                    "tok": 89
                   },
                   "rhs": {
                     "k": "int",
                     "value": 0,
-                    "tok": 92
+                    "tok": 108
                   },
-                  "tok": 91
+                  "tok": 107
                 }
               ],
-              "tok": 79
+              "tok": 87
             }
           }
         ]
       },
-      "tok": 74,
+      "tok": 82,
       "bodiless": false,
       "span": {
-        "start": 73,
-        "end": 97
+        "start": 81,
+        "end": 113
       },
-      "sig_end": 77
+      "sig_end": 85
     }
   ],
   "consts": [],

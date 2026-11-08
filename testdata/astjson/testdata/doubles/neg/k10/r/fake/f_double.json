@@ -146,17 +146,37 @@
       "expr": {
         "k": "selector",
         "base": {
-          "k": "ident",
-          "name": "r",
-          "tok": 62
+          "k": "selector",
+          "base": {
+            "k": "selector",
+            "base": {
+              "k": "selector",
+              "base": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "testdata",
+                  "tok": 62
+                },
+                "field": "doubles",
+                "tok": 64
+              },
+              "field": "neg",
+              "tok": 66
+            },
+            "field": "k10",
+            "tok": 68
+          },
+          "field": "r",
+          "tok": 70
         },
         "field": "Max",
-        "tok": 64
+        "tok": 72
       },
       "tok": 60,
       "span": {
         "start": 59,
-        "end": 66
+        "end": 74
       }
     }
   ],

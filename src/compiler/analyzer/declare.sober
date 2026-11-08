@@ -183,17 +183,17 @@ func labelNames(az mut Az, m LSet, pk int) string {
         if lsHas(m, L) {
             lp := desugar.ErrPkg(mut az.d, L)
             nm := str(mut az, desugar.StrRef(node(mut az, desugar.ErrNode(mut az.d, L)).a))
-            q := if lp == pk { nm } else { "${lastSeg(str(mut az, desugar.PkgPath(mut az.d, lp)))}.${nm}" }
+            q := if lp == pk { nm } else { "${qualOf(str(mut az, desugar.PkgPath(mut az.d, lp)))}.${nm}" }
             s = if s == "" { q } else { s + ", " + q }
         }
     }
     return s
 }
 
-// パスの最後の段（`std/io` → `io` — import の既定の参照名）
-func lastSeg(p string) string {
-    _, after, slashed := strings.CutLast(p, "/")
-    return if slashed { after } else { p }
+// package のパスの修飾子（`std/io` → `io`・`std/crypto/pem` → `crypto.pem` — import の既定の参照名 = ソースの綴り）
+func qualOf(p string) string {
+    q := strings.TrimPrefix(p, "std/")
+    return strings.Join(strings.Split(q, "/"), ".")
 }
 
 // error の switch（単一の subject — 最後の 1 周の記録）の網羅と到達: 網羅の対象はリンク集合の全ラベルでなく subject の導出集合 S

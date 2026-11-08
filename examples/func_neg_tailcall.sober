@@ -1,0 +1,15 @@
+package main
+
+// 負例（check も build も名指しで拒否 — load の式文の検査）: 結果を持つ func の本体の末尾の呼び出しの値は戻り値にならない（spec F-2）— `return k(n)` と書く
+
+func k(n int) int {
+    return n
+}
+
+func g(n int) int {
+    k(n)
+}
+
+func main() {
+    println(g(1))
+}

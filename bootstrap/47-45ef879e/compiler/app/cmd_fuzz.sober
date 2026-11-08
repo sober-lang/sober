@@ -1,0 +1,116 @@
+package main
+
+// `sober fuzz` の handler（package のテスト 1 本の std/quick の Check を期限まで回し続ける — 駆動役は std/quick の中でテストの実行ファイル自身）
+
+import "std/io"
+import "std/os"
+import "std/cli"
+import "std/convert"
+import "std/strings"
+import "std/hash"
+import "std/hex"
+import "lower"
+import "loader"
+
+// `sober fuzz <package> --run <TestXxx> [--time <dur>] [--hang <dur>] [--check <n>] [--sched]`: テストのビルドを <work>/t に書き、TestXxx を駆動役
+// （argv の `quick:fuzz=<ms>`）で走らせる。見つけた失敗は縮めて報告し、列を <package>/testdata/fuzz/<TestXxx>/ へ書く（次の sober test が先に再生する）。
+// 終了コード = 失敗を見つけた 1・期限まで見つからない 0・建たない / 名前が無い 2。子の出力はそのまま（期限が長いので捕まえない）。
+// 既定でカバレッジの誘導つき（テストした package に計器を掛けて建て、新しい点を開いた試行の列を種の置き場 — キャッシュの fuzz/<鍵> — に貯めて変異の元にする。
+// 置き場の関数キャッシュは使わない）。--no-guide は計器なしで乱数の試行だけ
+func cmdFuzz(cl cli.Parsed) int {
+    pkg := cli.Pos(cl, FzPkg)
+    name := cli.Str(cl, FzRun)
+    ms := durMs(cli.Str(cl, FzTime))
+    hang := durMs(cli.Str(cl, FzHang))
+    if ms < 1 || hang < 1 {
+        return misuse("fuzz: --time and --hang take a duration like 500ms, 30s or 2m")
+    }
+    work := testWork()
+    if work == "" {
+        return fail("fuzz: cannot make a work directory")
+    }
+    std := Std
+    guide := !cli.Bool(cl, FzNoGuide)
+    bd := if guide { "" } else { buildCacheDir() }
+    bv := lower.BcOpen(bd)
+    p, pcs, lerr := loadFuzz(pkg, std, bv, guide)
+    if lerr != nil {
+        _ = fail(loadDiag(p, std, lerr))
+        return 2
+    }
+    names, nerr := loader.TestNames(p, pkg)
+    if nerr != nil {
+        _ = fail(loadDiag(p, std, nerr))
+        return 2
+    }
+    if !hasName(names, name) {
+        _ = fail("fuzz: no test ${name} in ${pkg}")
+        return 2
+    }
+    exe, berr := testExe(p, bd, bv, pcs)
+    if berr != nil {
+        _ = lowerFail(p, std, berr)
+        return 2
+    }
+    bin := work + "/t"
+    if io.WriteFile(bin, exe) != nil || os.WriteMode(bin, 493) != nil {
+        _ = fail("fuzz: cannot write ${bin}")
+        return 2
+    }
+    mut args := mut []string{name, "quick:fuzz=${ms}", "quick:hang=${hang}", "quick:corpus=${pkg}/testdata/fuzz", "quick:save", "quick:tmp=${work}/quick"}
+    if cli.Bool(cl, FzSched) {
+        args = append(args, "quick:sched")
+    }
+    co := cli.IntOpt(cl, FzCheck)
+    if co != nil {
+        args = append(args, "quick:check=${co}")
+    }
+    if guide {
+        pool := fuzzPool(pkg, name, work)
+        if pool != "" {
+            args = append(args, "quick:pool=${pool}")
+        }
+    }
+    ec, rerr := os.Run(bin, freeze(args))
+    if rerr != nil {
+        _ = fail("fuzz: cannot run ${bin}")
+        return 2
+    }
+    return if ec == 0 { 0 } else { 1 }
+}
+
+// fuzz のテストのビルドを読む（guide なら計器つき — 対象 = package pkg）
+func loadFuzz(pkg string, std map[string]string, bv lower.BcView, guide bool) (loader.Program, []loader.PcPut, error?) {
+    if guide {
+        return loadTestCover(pkg, std, []string{pkg})
+    }
+    return loadNamed(pkg, true, std, if bv.on { lower.BcParseView(bv) } else { loader.PcOff() })
+}
+
+// カバレッジの誘導の種の置き場（キャッシュの fuzz/<PWD ‖ package ‖ テスト名のハッシュ> — 置き場が無ければ <work>/pool。作れなければ ""）
+func fuzzPool(pkg string, name string, work string) string {
+    pwd := os.Getenv("PWD") catch nil
+    cd := cacheDir()
+    wd := if pwd == nil { "" } else { pwd }
+    key := hex.Format(hash.Sha256(bytes(wd + "\n" + pkg + "\n" + name)))
+    dir := if cd == "" { work + "/pool" } else { cd + "/fuzz/" + key }
+    mkdirs(dir)
+    return if isDir(dir) { dir } else { "" }
+}
+
+func hasName(xs []string, x string) bool {
+    for y <- xs {
+        if y == x {
+            return true
+        }
+    }
+    return false
+}
+
+// 期間の綴り（`<整数>ms` / `s` / `m` — 単位なしは秒）の ms。読めなければ 0
+func durMs(s string) int {
+    unit := if strings.HasSuffix(s, "ms") { 1 } else if strings.HasSuffix(s, "s") { 1000 } else if strings.HasSuffix(s, "m") { 60000 } else { 1000 }
+    digits := strings.TrimSuffix(strings.TrimSuffix(strings.TrimSuffix(s, "ms"), "s"), "m")
+    n := convert.ParseInt(digits) catch 0
+    return if n < 0 { 0 } else { n * unit }
+}

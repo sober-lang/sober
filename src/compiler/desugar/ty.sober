@@ -389,6 +389,10 @@ func tyEql(st mut S, a TyRef, b TyRef) bool {
 
 // a を b へ緩められるか（Lean の Ty.sub の鏡 — mut の腕は等しいときだけ）
 func tyLooser(st mut S, a TyRef, b TyRef) bool {
+    // 型の読めない値（-1 — 腕の型を束縛なしで推定するときのパターンの名前など）は比べない
+    if a == -1 || b == -1 {
+        return false
+    }
     k := tg(mut st, a)
     if k != tg(mut st, b) {
         return false

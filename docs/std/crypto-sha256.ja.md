@@ -7,11 +7,11 @@
 SHA-256（FIPS 180-4）のインクリメンタル API。状態 State は値（写せば途中の値の写し — TLS の transcript hash は同じ状態から何度も Sum を取る）:
 
 ```sober
-mut s := sha256.New()
-sha256.Write(mut s, a)
-h1 := sha256.Sum(s)        // a の値（s は変わらない）
-sha256.Write(mut s, b)
-h2 := sha256.Sum(s)        // a ++ b の値
+mut s := crypto.sha256.New()
+crypto.sha256.Write(mut s, a)
+h1 := crypto.sha256.Sum(s)        // a の値（s は変わらない）
+crypto.sha256.Write(mut s, b)
+h2 := crypto.sha256.Sum(s)        // a ++ b の値
 ```
 
 ワンショット API は Sum256（std/hash の hash.Sha256 はこれを呼ぶ）。算術は全部 32 bit の語（[0, 2^32)）の上で閉じる — 和は 5 項まで（2^35 未満）を足してから mask32 で畳み、回転は shift 2 回 + or。積を使わないので int の 64 bit の溢れに触れない。データに依る分岐・添字は無い（定数時間 — HMAC の鍵を通してよい）
@@ -85,12 +85,3 @@ func Sum256(data []byte) []byte
 ```
 
 data の SHA-256 の値（ワンショット API）
-
-## ShaSelfCheck
-
-```sober
-@effects(!io, !block, !nondet)
-func ShaSelfCheck(seed int, rounds int) int
-```
-
-塊の Write と Sober の writeS の照合（検証の網の API — 利用者は使わない: examples/crypto\_sha256blk と cryptocheck の格子が叩く）。種 seed の擬似乱数で長さ 0〜300 の入力を rounds 個作り、乱数の長さの切れ目で 1〜3 回に分けて書いた値を両方の道で比べる。食い違いの数を返す

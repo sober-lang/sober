@@ -1,6 +1,6 @@
 package main
 
-// 負例: 借りの位置の判定は callee の本体の中の名前を callee の package で引く。brwpkg.Pass の中の stash は brwpkg の stash
+// 負例: 借りの位置の判定は callee の本体の中の名前を callee の package で引く。testdata.brwpkg.Pass の中の stash は brwpkg の stash
 // （send を net.Serve の接続ごとの子 task から呼ぶ — 借りの位置でない）なので、net.Conn を捕捉したラムダを Pass へ渡すのは拒否。main の同じ名前の安全な stash に
 // 引き間違えると誤って受理してしまう（呼び手の package で引く実装は誤り）
 
@@ -12,7 +12,7 @@ func stash(send func(b []byte) error?) error? {
 }
 
 func f(c net.Conn) {
-    brwpkg.Pass((b) => net.Send(c, b))
+    testdata.brwpkg.Pass((b) => net.Send(c, b))
 }
 
 func main() {

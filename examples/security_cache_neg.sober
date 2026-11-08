@@ -2,14 +2,14 @@ package main
 
 // Security: shared caches — a route that lets a CDN store its response must not read a cookie (rejected by check) (docs/guide/security.md)
 
-import "std/http"
+import "std/http/server"
 
-func me(r http.Request) http.Response {
-    sid := http.Cookie(r, "sid")
-    return http.Text(if sid != nil { "signed in" } else { "guest" })
+func me(r http.server.Request) http.server.Response {
+    sid := http.server.Cookie(r, "sid")
+    return http.server.Text(if sid != nil { "signed in" } else { "guest" })
 }
 
 func main() {
-    routes := []http.Route{http.Route{method: "GET", path: "/me", handler: me, cache: http.Shared{maxAge: 60}}}
+    routes := []http.server.Route{http.server.Route{method: "GET", path: "/me", handler: me, cache: http.server.Shared{maxAge: 60}}}
     println(len(routes))
 }

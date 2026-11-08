@@ -1,0 +1,9 @@
+GET /users/
+GET /users/:id
+GET /health
+GET /health -> 200 ok
+GET /users/42 -> 401
+GET /users/42 +token -> 200 user 42
+GET /users/ +token -> 200 users: alice, bob
+DELETE /health -> 405 (allow: GET, HEAD)
+GET /nope -> 404

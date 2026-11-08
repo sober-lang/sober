@@ -5,8 +5,8 @@ package main
 // 〔dataset の先頭 25 / 40 / 50 本 × m = 4 / 8 / 6 — bench/httparena/main.sober と同じ直列化〕）× level 0〜9 を符号化して
 // <dir>/<名前>.in と <dir>/<名前>.<level>.z（生の DEFLATE）・.gz（gzip）に書き、1 行ずつ「名前 level 入力の長さ 入力の CRC-32 出力の長さ 出力の CRC-32」を出す。
 // 照合（外の zlib で解いて一致・CRC-32 の一致・大きさの黄金）は testdata/flatecheck/check.ts。作業域の口（report-720）も照合する: ワーカー局所の lease で
-// 借りた作業域（flate.Prepare）・入力をまたいで使い回す 1 つの作業域（最初の入力の長さで取られ、足りない入力では新しい作業域に倒れる）の EncodeWith が
-// Encode とバイト一致（違えば FAIL の行）。復号（report-1021）: 各符号化を flate.Decode / gzip.Decode で解いて入力と一致・maxSize がちょうどの長さなら通り
+// 借りた作業域（compress.flate.NewWork）・入力をまたいで使い回す 1 つの作業域（最初の入力の長さで取られ、足りない入力では新しい作業域に倒れる）の EncodeWith が
+// Encode とバイト一致（違えば FAIL の行）。復号（report-1021）: 各符号化を compress.flate.Decode / compress.gzip.Decode で解いて入力と一致・maxSize がちょうどの長さなら通り
 // 1 バイト足りなければ TooLarge（違えば FAIL の行）。第 3 引数（twin.ts の index — node:zlib と Go の符号化）があれば各列を解いて <dir>/twin<i>.out に書き、
 // 「twin <i> 長さ CRC-32」を出す（解けなければ FAIL の行 — 照合は check.ts）
 //   main <dataset.json> <dir> [<index>]
@@ -172,23 +172,23 @@ func same(a []byte, b []byte) bool {
     return true
 }
 
-func one(dir string, lw task.Local, sw mut flate.Work, name string, data []byte) error? {
+func one(dir string, lw task.Local, sw mut compress.flate.Work, name string, data []byte) error? {
     io.WriteFile("${dir}/${name}.in", data)?
     for lv <- iter.Range(0, 10) {
-        z := flate.Encode(data, lv)
-        g := gzip.Encode(data, lv)
-        zl := task.Lease(lw, (w mut flate.Work) => flate.EncodeWith(mut w, data, lv))
-        gl := task.Lease(lw, (w mut flate.Work) => gzip.EncodeWith(mut w, data, lv))
+        z := compress.flate.Encode(data, lv)
+        g := compress.gzip.Encode(data, lv)
+        zl := task.Lease(lw, (w mut compress.flate.Work) => compress.flate.EncodeWith(mut w, data, lv))
+        gl := task.Lease(lw, (w mut compress.flate.Work) => compress.gzip.EncodeWith(mut w, data, lv))
         if !same(z, zl) || !same(g, gl) {
             println("FAIL lease ${name} ${convert.FormatInt(lv)}: EncodeWith differs from Encode")
         }
-        if !same(z, flate.EncodeWith(mut sw, data, lv)) {
+        if !same(z, compress.flate.EncodeWith(mut sw, data, lv)) {
             println("FAIL reuse ${name} ${convert.FormatInt(lv)}: EncodeWith differs from Encode")
         }
         decoded(name, lv, data, z, g)
         io.WriteFile("${dir}/${name}.${convert.FormatInt(lv)}.z", z)?
         io.WriteFile("${dir}/${name}.${convert.FormatInt(lv)}.gz", g)?
-        println("${name} ${convert.FormatInt(lv)} ${convert.FormatInt(len(data))} ${convert.FormatInt(crc32.Sum(data))} ${convert.FormatInt(len(z))} ${convert.FormatInt(crc32.Sum(z))}")
+        println("${name} ${convert.FormatInt(lv)} ${convert.FormatInt(len(data))} ${convert.FormatInt(hash.crc32.Sum(data))} ${convert.FormatInt(len(z))} ${convert.FormatInt(hash.crc32.Sum(z))}")
     }
     return nil
 }
@@ -196,44 +196,44 @@ func one(dir string, lw task.Local, sw mut flate.Work, name string, data []byte)
 // decoded は data の符号化 z（生の DEFLATE）・g（gzip）の復号の照合（往復・maxSize の境目）
 func decoded(name string, lv int, data []byte, z []byte, g []byte) {
     at := "${name} ${convert.FormatInt(lv)}"
-    d := flate.Decode(z) catch bytes("<Bad>")
+    d := compress.flate.Decode(z) catch bytes("<Bad>")
     if !same(d, data) {
         println("FAIL decode ${at}: flate.Decode differs from the input")
     }
-    e := gzip.Decode(g) catch bytes("<Bad>")
+    e := compress.gzip.Decode(g) catch bytes("<Bad>")
     if !same(e, data) {
         println("FAIL decode ${at}: gzip.Decode differs from the input")
     }
-    d2 := flate.Decode(z, maxSize: len(data)) catch bytes("<Bad>")
-    e2 := gzip.Decode(g, maxSize: len(data)) catch bytes("<Bad>")
+    d2 := compress.flate.Decode(z, maxSize: len(data)) catch bytes("<Bad>")
+    e2 := compress.gzip.Decode(g, maxSize: len(data)) catch bytes("<Bad>")
     if !same(d2, data) || !same(e2, data) {
         println("FAIL decode ${at}: maxSize = length rejected")
     }
     if len(data) > 0 {
-        _, x := flate.Decode(z, maxSize: len(data) - 1)
-        _, y := gzip.Decode(g, maxSize: len(data) - 1)
+        _, x := compress.flate.Decode(z, maxSize: len(data) - 1)
+        _, y := compress.gzip.Decode(g, maxSize: len(data) - 1)
         if !isLarge(x) || !isLarge(y) {
             println("FAIL decode ${at}: maxSize = length − 1 is not TooLarge")
         }
     }
 }
 
-// isLarge は e が flate.TooLarge か
+// isLarge は e が compress.flate.TooLarge か
 func isLarge(e error?) bool {
     return switch e {
     case nil: false
-    case flate.TooLarge{}: true
-    case flate.Bad{}: false
-    case gzip.Bad{}: false
+    case compress.flate.TooLarge{}: true
+    case compress.flate.Bad{}: false
+    case compress.gzip.Bad{}: false
     }
 }
 
 // decodeAs は種類 kind（gz = gzip・他 = 生の DEFLATE）の b の復号
 func decodeAs(kind string, b []byte) ([]byte, error?) {
     if kind == "gz" {
-        return gzip.Decode(b)
+        return compress.gzip.Decode(b)
     }
-    return flate.Decode(b)
+    return compress.flate.Decode(b)
 }
 
 // twins は index の各列（「パス 種類」— 種類 z = 生の DEFLATE・gz = gzip）を解いて <dir>/twin<i>.out に書く
@@ -251,7 +251,7 @@ func twins(dir string, index string) error? {
             println("FAIL twin ${convert.FormatInt(i)} ${path}: decode error")
         } else {
             io.WriteFile("${dir}/twin${convert.FormatInt(i)}.out", out)?
-            println("twin ${convert.FormatInt(i)} ${convert.FormatInt(len(out))} ${convert.FormatInt(crc32.Sum(out))}")
+            println("twin ${convert.FormatInt(i)} ${convert.FormatInt(len(out))} ${convert.FormatInt(hash.crc32.Sum(out))}")
         }
         i += 1
     }
@@ -264,8 +264,8 @@ func run(ds string, dir string) error? {
         println("FAIL dataset ${ds}: ${convert.FormatInt(len(items))} items")
         return nil
     }
-    lw := task.NewLocal((w mut flate.Work) => flate.Prepare(mut w))
-    mut sw := flate.Work{}
+    lw := task.NewLocal((w mut compress.flate.Work) => compress.flate.NewWork(mut w))
+    mut sw := compress.flate.Work{}
     one(dir, lw, mut sw, "json25", body(items, 25, 4))?
     one(dir, lw, mut sw, "json40", body(items, 40, 8))?
     one(dir, lw, mut sw, "json50", body(items, 50, 6))?
@@ -288,6 +288,33 @@ func run(ds string, dir string) error? {
     one(dir, lw, mut sw, "words", words(200000, 21))?
     one(dir, lw, mut sw, "mixed", cat(cat(words(20000, 22), rnd(5000, 256, 23)), rep("0123456789", 20000)))?
     one(dir, lw, mut sw, "noisy", noisy(300000, 5))?
+    for lv <- iter.Range(1, 10) {
+        hist(dir, lw, items, lv)?
+    }
+    return nil
+}
+
+// 記録つきの符号化（compress.flate.History）の列: json-comp の巡回 × 3 周と dataset の応答（先頭 n 本・m）の 30 本を 1 つの History で続けて
+// 符号化し、各本を「hist <名前> <level> 入力の長さ 入力の CRC-32 出力の長さ 出力の CRC-32 記録なしの長さ」の行と <名前>.<level>.z / .gz に書く
+// （check.ts ⑦ — 往復・大きさ ≤ 記録なし × 1.03 + 1・決定性は --passes / --no-opt の一致と黄金）。gzip は別の History で同じ列（記録の値が同じなら同じ中身）
+func hist(dir string, lw task.Local, items []Item, lv int) error? {
+    mut h := compress.flate.History{}
+    mut hg := compress.gzip.History{}
+    mut w := compress.flate.Work{}
+    for i <- iter.Range(0, 39) {
+        n := if i < 9 { 25 + 15 * (i % 3) - (if i % 3 == 2 { 5 } else { 0 }) } else { 1 + ((i - 9) * 17) % 50 }
+        m := if i < 9 { 4 + 4 * (i % 3) - (if i % 3 == 2 { 6 } else { 0 }) } else { 1 + ((i - 9) * 7) % 9 }
+        data := body(items, n, m)
+        name := "hist${convert.FormatInt(i)}"
+        z := compress.flate.EncodeWithHistory(mut w, mut h, data, lv)
+        g := compress.gzip.EncodeHistory(mut hg, data, lv)
+        zl := task.Lease(lw, (lw2 mut compress.flate.Work) => compress.flate.EncodeWith(mut lw2, data, lv))
+        decoded(name, lv, data, z, g)
+        io.WriteFile("${dir}/${name}.in", data)?
+        io.WriteFile("${dir}/${name}.${convert.FormatInt(lv)}.z", z)?
+        io.WriteFile("${dir}/${name}.${convert.FormatInt(lv)}.gz", g)?
+        println("hist ${name} ${convert.FormatInt(lv)} ${convert.FormatInt(len(data))} ${convert.FormatInt(hash.crc32.Sum(data))} ${convert.FormatInt(len(z))} ${convert.FormatInt(hash.crc32.Sum(z))} ${convert.FormatInt(len(zl))}")
+    }
     return nil
 }
 

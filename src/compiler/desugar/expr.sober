@@ -448,6 +448,10 @@ func binaryExpr(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?
         ls := isStringTy(mut st, computeTy(mut st, l, eb, ef))
         rs := isStringTy(mut st, computeTy(mut st, r, eb, ef))
         if ls || rs {
+            // `string?` と string の == / != も T? と値の比較（下の名指しと同じ — string の道が先に拾っていた）
+            if op != lexer.Plus && kindN(mut st, l) != ast.ENil && kindN(mut st, r) != ast.ENil && (yIsOpt(mut st, l) || yIsOpt(mut st, r)) {
+                return 0, diag.TypeMismatch{at: posOf(mut st, at), kind: 2}
+            }
             a := expr(mut st, l, eb, ef, depth)?
             b := expr(mut st, r, eb, ef, depth)?
             if op == lexer.Plus {
@@ -1315,7 +1319,7 @@ func labelL(st mut S, e NodeRef, decl NodeRef, pk int, idx int, eb int, ef int, 
 func labelIn(st mut S, e NodeRef, decl NodeRef, pk int, idx int, venv int, eb int, ef int, depth int, dest int) (CoreRef, error?) {
     v := vat(mut st, decl, idx)
     at := e
-    rec := isRecDecl(mut st, decl) && vcount(mut st, decl) >= 2
+    rec := isRecDecl(mut st, decl)
     if rec {
         st.fvDest = dest
     }
@@ -1340,6 +1344,9 @@ func labelIn(st mut S, e NodeRef, decl NodeRef, pk int, idx int, venv int, eb in
 
 // encodeVariant の型を union の型 u（右結合の入れ子 — n 個の variant）から取る形
 func encodeVariantTy(st mut S, u TyRef, n int, idx int, payload CoreRef) CoreRef {
+    if n == 1 {
+        return payload
+    }
     if idx == 0 {
         return cInl(mut st, tRight(mut st, u), payload)
     }
@@ -1352,7 +1359,7 @@ func encodeVariantTy(st mut S, u TyRef, n int, idx int, payload CoreRef) CoreRef
 // variant（decl の start 番目からの列の idx 番目）のペイロードを右結合の union の入れ子へ包む
 func encodeVariant(st mut S, pk int, decl NodeRef, start int, idx int, payload CoreRef, at NodeRef) (CoreRef, error?) {
     n := vcount(mut st, decl) - start
-    if n == 1 && isErrors(int(decl), start) {
+    if n == 1 {
         return payload, nil
     }
     if n < 2 {
@@ -1559,6 +1566,10 @@ func zeroOf(st mut S, t TyRef, at NodeRef) (CoreRef, error?) {
         a := zeroOf(mut st, tLeft(mut st, t), at)?
         b := zeroOf(mut st, tRight(mut st, t), at)?
         return c2(mut st, CPair, a, b), nil
+    }
+    // 関数値（閉包を含む）と union にはゼロ値が無い（部分リテラルで省いた欄・`T{}`）— 名指す
+    if k == TFn || k == TUn || isClosTy(mut st, t) {
+        return 0, diag.TypeMismatch{at: posOf(mut st, at), kind: 7}
     }
     return 0, diag.CoreFragment{at: posOf(mut st, at)}
 }

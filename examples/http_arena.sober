@@ -1,15 +1,15 @@
 package main
 
-// std/http の最小の使用例: HttpArena の baseline / pipelined / async の端点（/baseline11・/pipeline・/delay/{ms}）を
-// net.Serve + http.ServeConn で書き、同じバイナリの中のクライアントが生の要求を送る: Content-Length と chunked の本文・切片をまたぐ要求
+// std/http/server の最小の使用例: HttpArena の baseline / pipelined / async の端点（/baseline11・/pipeline・/delay/{ms}）を
+// net.Serve + http.server.ServeConn で書き、同じバイナリの中のクライアントが生の要求を送る: Content-Length と chunked の本文・切片をまたぐ要求
 // （2 回に割って送る）・パイプライン 16 本・keep-alive の 2 要求・誤り（400 / 431 / 505）。Serve は 500 ms の期限で返る。W1 でも W8 でも同じ出力
 
 import "std/convert"
-import "std/http"
+import "std/http/server"
 import "std/net"
 import "std/os"
-import "std/task"
 import "std/strings"
+import "std/task"
 
 // 数でなければ 0
 func num(s string?) int {
@@ -20,24 +20,24 @@ func num(s string?) int {
     return if e != nil { 0 } else { v }
 }
 
-func route(r http.Request) http.Response {
+func route(r http.server.Request) http.server.Response {
     return switch {
-    case r.path == "/pipeline": http.Text("ok")
+    case r.path == "/pipeline": http.server.Text("ok")
     case r.path == "/baseline11": {
         body := if r.method == "POST" { num(string(r.body) catch "") } else { 0 }
-        http.Text(convert.FormatInt(num(http.Query(r, "a")) + num(http.Query(r, "b")) + body))
+        http.server.Text(convert.FormatInt(num(http.server.Query(r, "a")) + num(http.server.Query(r, "b")) + body))
     }
     case strings.HasPrefix(r.path, "/delay/"): {
         ms := num(strings.TrimPrefix(r.path, "/delay/"))
         os.Sleep(ms)
-        http.Text(convert.FormatInt(ms))
+        http.server.Text(convert.FormatInt(ms))
     }
-    default: http.Status(404)
+    default: http.server.Status(404)
     }
 }
 
 func app(c net.Conn) error? {
-    return http.ServeConn(c, route)
+    return http.server.ServeConn(c, route)
 }
 
 // l で app を回す（Serve の結果を task.Run の本体の値に直に置くと check が拒否するので、名前つきの関数で包む）

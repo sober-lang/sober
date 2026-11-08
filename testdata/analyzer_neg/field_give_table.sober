@@ -1,0 +1,13 @@
+package main
+
+// 外からの構築で mut の中身を持つ欄に自分の別名を与え、信頼の口（std/table.Freeze）で凍らせた中身を後から書く形（1 → 77 になっていた）
+import "std/table"
+
+func main() {
+    mut c := mut []int{1, 2, 3}
+    mut cs := mut [](mut []int){c}
+    mut t := table.Table[int]{chunks: cs, n: 3}
+    f := table.Freeze(mut t)
+    c[0] = 77
+    println(table.At(f, 0))
+}

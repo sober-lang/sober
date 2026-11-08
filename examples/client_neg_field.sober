@@ -1,0 +1,17 @@
+package main
+
+// 負例: http.client.Session は struct の欄に置けない（同一性の型 — 束を値に持つと Open の範囲の外へ運べてしまう。diag.FileUse — desugar/filecheck）
+
+import "std/http/client"
+
+type Pool struct {
+    s http.client.Session
+    n int
+}
+
+func main() {
+    _ = http.client.Open("http://127.0.0.1:9", (s) => {
+        p := Pool{s: s, n: 1}
+        _, _ = http.client.Send(p.s, "/")
+    })
+}

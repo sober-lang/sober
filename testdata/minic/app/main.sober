@@ -7,10 +7,10 @@ package main
 import "std/io"
 import "std/pool"
 import "std/strings"
-import "testdata/minic/lex"
-import "testdata/minic/parse"
-import "testdata/minic/emit"
-import "testdata/minic/diag"
+import lex "testdata/minic/lex"
+import parse "testdata/minic/parse"
+import emit "testdata/minic/emit"
+import diag "testdata/minic/diag"
 
 // 行ごとの作業記録（Pool のスロット — T は loc-free）
 type Job struct {

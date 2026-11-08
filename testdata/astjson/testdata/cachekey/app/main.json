@@ -41,21 +41,31 @@
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "mid",
-                      "tok": 19
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 19
+                        },
+                        "field": "cachekey",
+                        "tok": 21
+                      },
+                      "field": "mid",
+                      "tok": 23
                     },
                     "field": "Twice",
-                    "tok": 21
+                    "tok": 25
                   },
                   "args": [
                     {
                       "k": "int",
                       "value": 1,
-                      "tok": 23
+                      "tok": 27
                     }
                   ],
-                  "tok": 22
+                  "tok": 26
                 }
               ],
               "tok": 18
@@ -68,7 +78,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 27
+                "tok": 31
               },
               "args": [
                 {
@@ -76,18 +86,28 @@
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "leaf",
-                      "tok": 29
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 33
+                        },
+                        "field": "cachekey",
+                        "tok": 35
+                      },
+                      "field": "leaf",
+                      "tok": 37
                     },
                     "field": "Count",
-                    "tok": 31
+                    "tok": 39
                   },
                   "args": [],
-                  "tok": 32
+                  "tok": 40
                 }
               ],
-              "tok": 28
+              "tok": 32
             }
           },
           {
@@ -97,7 +117,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 36
+                "tok": 44
               },
               "args": [
                 {
@@ -105,24 +125,34 @@
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "side",
-                      "tok": 38
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 46
+                        },
+                        "field": "cachekey",
+                        "tok": 48
+                      },
+                      "field": "side",
+                      "tok": 50
                     },
                     "field": "Half",
-                    "tok": 40
+                    "tok": 52
                   },
                   "args": [
                     {
                       "k": "int",
                       "value": 10,
-                      "tok": 42
+                      "tok": 54
                     }
                   ],
-                  "tok": 41
+                  "tok": 53
                 }
               ],
-              "tok": 37
+              "tok": 45
             }
           }
         ]
@@ -131,7 +161,7 @@
       "bodiless": false,
       "span": {
         "start": 12,
-        "end": 48
+        "end": 60
       },
       "sig_end": 16
     }

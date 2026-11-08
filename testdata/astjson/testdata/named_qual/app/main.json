@@ -31,21 +31,31 @@
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "mid",
-                      "tok": 13
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 13
+                        },
+                        "field": "named_qual",
+                        "tok": 15
+                      },
+                      "field": "mid",
+                      "tok": 17
                     },
                     "field": "F",
-                    "tok": 15
+                    "tok": 19
                   },
                   "args": [
                     {
                       "k": "int",
                       "value": 40,
-                      "tok": 17
+                      "tok": 21
                     }
                   ],
-                  "tok": 16
+                  "tok": 20
                 }
               ],
               "tok": 12
@@ -57,7 +67,7 @@
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 23
+        "end": 27
       },
       "sig_end": 10
     }

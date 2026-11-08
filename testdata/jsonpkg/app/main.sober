@@ -8,7 +8,7 @@ func main() {
     if err != nil {
         return
     }
-    u, derr := json.Decode[model.User](d, json.Root(d))
+    u, derr := json.Decode[testdata.jsonpkg.model.User](d, json.Root(d))
     if derr != nil {
         println("decode error")
         return
@@ -17,7 +17,7 @@ func main() {
     showBoss(u.boss)
 }
 
-func showBoss(b model.Ref?) {
+func showBoss(b testdata.jsonpkg.model.Ref?) {
     if b != nil {
         println("boss", b.id)
     }

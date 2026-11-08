@@ -508,7 +508,7 @@ func dkKey(g DkGraph, nfn int, i int, base DkH, mark mut []int, stk mut []int) (
 
 // 開発の口（`sober check <entry> --emit=defkeys` / `--def-graph`）: 検査する Def ごとに `K 関数 鍵1 鍵2 届いた項目 本体の項目 名前`。
 // graph なら項目 `N 項目 種類 名前`・辺 `G 項目 項目` も（外部の集計ツールが読む形式）。self = コンパイラの鍵
-@errors(diag.CoreFragment)
+@errors(diag.CoreFragment, diag.TypeMismatch)
 func DefKeys(p loader.Program, excl []int, trust bool, self []byte, graph bool) ([]byte, error?) {
     mut st := S{}
     initState(mut st, p)

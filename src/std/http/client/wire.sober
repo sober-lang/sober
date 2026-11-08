@@ -1,0 +1,465 @@
+package client
+
+// 要求の書き出しと応答の読み（HTTP/1.1 — RFC 9112）。応答は受けたバイトの列に積み、scan が頭の終わり・本文の区切り（Content-Length /
+// chunked / 閉じ）の進みを前回の続きから読む（chunked の切れ目の位置を持ち越す — 積むたびに頭から読み直さない）。済んだら finish が本文を組む
+
+import "std/http"
+import "std/iter"
+import "std/strings"
+
+// 応答の頭の上限（状態行 + ヘッダ）
+const maxHead = 65536
+
+// 本文の区切りの形
+const mUnknown = 0
+const mNone = 1
+const mLength = 2
+const mChunked = 3
+const mClose = 4
+
+// 読みの進み（base = 今の応答の頭の始め — 1xx の中間の応答を読み捨てると進む・hscan = 頭の終わりを探した位置・hend = 本文の始め〔-1 = 頭が未着〕・
+// clen = Content-Length・cpos = chunked の次の chunk の頭の位置・blen = chunked の本文の長さの合計・end = 応答の終わり〔-1 = 未着〕・
+// bad = 形の誤り・big = 本文の上限超え）
+type scanSt struct {
+    base int
+    hscan int
+    hend int
+    status int
+    mode int
+    clen int
+    cpos int
+    blen int
+    end int
+    bad bool
+    big bool
+}
+
+func newScan() scanSt {
+    return scanSt{base: 0, hscan: 0, hend: -1, status: 0, mode: mUnknown, clen: 0, cpos: 0, blen: 0, end: -1, bad: false, big: false}
+}
+
+// 済んだか（終わりが来た・誤り）
+func settled(s scanSt) bool {
+    return s.end >= 0 || s.bad || s.big
+}
+
+// 要求のバイト列（呼び手の頭は Host / Content-Length / Transfer-Encoding / Connection を書けない — panic(http.BadHeader)・名前と値の形も http の応答の頭と同じ検査）
+func requestBytes(method string, t target, headers []http.Field, body []byte, ua string, keep bool, cookie string) []byte {
+    m := if method == "" { "GET" } else { method }
+    if !tokenOk(bytes(m)) {
+        panic(http.BadHeader{name: ":method"})
+    }
+    mut h := "${m} ${t.path} HTTP/1.1\r\nHost: ${hostHeader(t)}\r\nUser-Agent: ${ua}\r\n"
+    // jar の cookie は呼び手の Cookie の頭と 1 本に繋ぐ（呼び手の分が先）
+    mut jarLeft := cookie
+    for f <- headers {
+        if !fieldOk(f) {
+            panic(http.BadHeader{name: f.name})
+        }
+        if jarLeft != "" && strings.ToLower(f.name) == "cookie" {
+            h = "${h}${f.name}: ${f.value}; ${jarLeft}\r\n"
+            jarLeft = ""
+        } else {
+            h = "${h}${f.name}: ${f.value}\r\n"
+        }
+    }
+    if jarLeft != "" {
+        h = "${h}Cookie: ${jarLeft}\r\n"
+    }
+    if len(body) > 0 || m == "POST" || m == "PUT" || m == "PATCH" {
+        h = "${h}Content-Length: ${len(body)}\r\n"
+    }
+    h = if keep { "${h}\r\n" } else { "${h}Connection: close\r\n\r\n" }
+    mut o := mut []byte{}
+    for x <- bytes(h) {
+        o = append(o, x)
+    }
+    for x <- body {
+        o = append(o, x)
+    }
+    return freeze(o)
+}
+
+func tokenOk(b []byte) bool {
+    if len(b) == 0 {
+        return false
+    }
+    for x <- b {
+        if !tchar(x) {
+            return false
+        }
+    }
+    return true
+}
+
+func tchar(c byte) bool {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '!' || c == '#' || c == '$' || c == '%' || c == '&' || c == '\'' || c == '*' || c == '+' || c == '-' || c == '.' || c == '^' || c == '_' || c == '`' || c == '|' || c == '~'
+}
+
+func fieldOk(f http.Field) bool {
+    nb := bytes(f.name)
+    if !tokenOk(nb) {
+        return false
+    }
+    for x <- bytes(f.value) {
+        if x == '\r' || x == '\n' || x == 0 {
+            return false
+        }
+    }
+    n := strings.ToLower(f.name)
+    return n != "host" && n != "content-length" && n != "transfer-encoding" && n != "connection"
+}
+
+// b[0, n) の読みを s から進める（noBody = HEAD の要求 — 本文を持たない）
+func scan(b mut []byte, n int, s0 scanSt, noBody bool, maxBody int) scanSt {
+    mut s := s0
+    while s.hend < 0 && !s.bad {
+        at := crlf2(mut b, if s.hscan > s.base { s.hscan } else { s.base }, n)
+        if at < 0 {
+            s.hscan = if n - 3 > s.base { n - 3 } else { s.base }
+            s.bad = n - s.base > maxHead
+            return s
+        }
+        s = headOf(mut b, s.base, at + 4, noBody, maxBody)
+        // 1xx（101 以外）は中間の応答 — 読み捨てて次の頭を待つ
+        if !s.bad && s.status >= 100 && s.status < 200 && s.status != 101 {
+            s = newScan()
+            s.base = at + 4
+            s.hscan = at + 4
+        }
+    }
+    if s.bad || s.big || s.end >= 0 {
+        return s
+    }
+    if s.mode == mNone {
+        s.end = s.hend
+    } else if s.mode == mLength {
+        if n - s.hend >= s.clen {
+            s.end = s.hend + s.clen
+        }
+    } else if s.mode == mChunked {
+        s = chunks(mut b, n, s, maxBody)
+    } else if s.mode == mClose {
+        s.big = n - s.hend > maxBody
+    }
+    return s
+}
+
+// 頭 b[base, hend) を読んだ進み（状態行・区切りの形）
+func headOf(b mut []byte, base int, hend int, noBody bool, maxBody int) scanSt {
+    mut s := newScan()
+    s.base = base
+    s.hend = hend
+    le := lineEnd(mut b, base, hend)
+    // "HTTP/1.x SSS"
+    if le - base < 12 || !lit(mut b, base, "HTTP/1.") || b[base + 8] != ' ' || (le - base > 12 && b[base + 12] != ' ') {
+        s.bad = true
+        return s
+    }
+    st := digits(mut b, base + 9, base + 12)
+    if st < 100 || st > 999 {
+        s.bad = true
+        return s
+    }
+    s.status = st
+    mut chunked := false
+    mut te := false
+    mut cl := -1
+    mut at := le + 2
+    while at < hend - 2 {
+        e := lineEnd(mut b, at, hend)
+        c := colon(mut b, at, e)
+        if c <= at || b[at] == ' ' || b[at] == '\t' {
+            s.bad = true
+            return s
+        }
+        vs := skipWs(mut b, c + 1, e)
+        ve := trimWs(mut b, vs, e)
+        if fold(mut b, at, c, "transfer-encoding") {
+            te = true
+            chunked = endsChunked(mut b, vs, ve)
+        } else if fold(mut b, at, c, "content-length") {
+            v := digits(mut b, vs, ve)
+            if v < 0 || (cl >= 0 && cl != v) {
+                s.bad = true
+                return s
+            }
+            cl = v
+        }
+        at = e + 2
+    }
+    if noBody || st < 200 || st == 204 || st == 304 {
+        s.mode = mNone
+    } else if te {
+        // Transfer-Encoding があれば Content-Length は見ない（RFC 9112 6.3）・最後が chunked でなければ閉じで区切る
+        s.mode = if chunked { mChunked } else { mClose }
+        s.cpos = hend
+    } else if cl >= 0 {
+        s.mode = mLength
+        s.clen = cl
+        s.big = cl > maxBody
+    } else {
+        s.mode = mClose
+    }
+    return s
+}
+
+// chunked の chunk を cpos から揃った分だけ進める（終端の chunk と trailer の空行で end）
+func chunks(b mut []byte, n int, s0 scanSt, maxBody int) scanSt {
+    mut s := s0
+    while true {
+        le := lineEnd(mut b, s.cpos, n)
+        if le >= n {
+            s.bad = n - s.cpos > 4096
+            return s
+        }
+        mut he := s.cpos
+        while he < le && b[he] != ';' {
+            he += 1
+        }
+        size := hexOf(mut b, s.cpos, trimWs(mut b, s.cpos, he))
+        if size < 0 {
+            s.bad = true
+            return s
+        }
+        if size == 0 {
+            // trailer の行を読み捨てて空行まで
+            mut at := le + 2
+            while true {
+                e := lineEnd(mut b, at, n)
+                if e >= n {
+                    return s
+                }
+                if e == at {
+                    s.end = e + 2
+                    return s
+                }
+                at = e + 2
+            }
+        }
+        if s.blen + size > maxBody {
+            s.big = true
+            return s
+        }
+        de := le + 2 + size
+        if de + 2 > n {
+            return s
+        }
+        if b[de] != '\r' || b[de + 1] != '\n' {
+            s.bad = true
+            return s
+        }
+        s.blen += size
+        s.cpos = de + 2
+    }
+    return s
+}
+
+// 済んだ応答の本文（chunked は繋ぎ直す・閉じで区切る形は n まで）
+func bodyOf(b []byte, n int, s scanSt) []byte {
+    mut o := mut []byte{}
+    if s.mode == mChunked {
+        mut at := s.hend
+        while true {
+            le := lineEnd2(b, at, n)
+            mut he := at
+            while he < le && b[he] != ';' {
+                he += 1
+            }
+            size := hexOf2(b, at, he)
+            if size <= 0 {
+                return freeze(o)
+            }
+            for i <- iter.Range(le + 2, le + 2 + size) {
+                o = append(o, b[i])
+            }
+            at = le + 2 + size + 2
+        }
+        return freeze(o)
+    }
+    e := if s.mode == mClose { n } else if s.end >= 0 { s.end } else { s.hend }
+    for i <- iter.Range(s.hend, e) {
+        o = append(o, b[i])
+    }
+    return freeze(o)
+}
+
+// 頭の列（名前は小文字）
+func fieldsOf(b []byte, s scanSt) []http.Field {
+    mut o := mut []http.Field{}
+    mut at := lineEnd2(b, s.base, s.hend) + 2
+    while at < s.hend - 2 {
+        e := lineEnd2(b, at, s.hend)
+        mut c := at
+        while c < e && b[c] != ':' {
+            c += 1
+        }
+        mut vs := c + 1
+        while vs < e && (b[vs] == ' ' || b[vs] == '\t') {
+            vs += 1
+        }
+        mut ve := e
+        while ve > vs && (b[ve - 1] == ' ' || b[ve - 1] == '\t') {
+            ve -= 1
+        }
+        o = append(o, http.Field{name: strings.ToLower(textOf(b, at, c)), value: textOf(b, vs, ve)})
+        at = e + 2
+    }
+    return freeze(o)
+}
+
+func textOf(b []byte, s int, e int) string {
+    mut o := mut []byte{}
+    for i <- iter.Range(s, e) {
+        o = append(o, b[i])
+    }
+    return bytesToString(freeze(o))
+}
+
+// b[from, n) の最初の "\r\n\r\n" の位置（無ければ -1）
+func crlf2(b mut []byte, from int, n int) int {
+    mut i := from
+    while i + 3 < n {
+        if b[i] == '\r' && b[i + 1] == '\n' && b[i + 2] == '\r' && b[i + 3] == '\n' {
+            return i
+        }
+        i += 1
+    }
+    return -1
+}
+
+// b[s, e) の最初の "\r\n" の位置（無ければ e）
+func lineEnd(b mut []byte, s int, e int) int {
+    mut i := s
+    while i + 1 < e {
+        if b[i] == '\r' && b[i + 1] == '\n' {
+            return i
+        }
+        i += 1
+    }
+    return e
+}
+
+func lineEnd2(b []byte, s int, e int) int {
+    mut i := s
+    while i + 1 < e {
+        if b[i] == '\r' && b[i + 1] == '\n' {
+            return i
+        }
+        i += 1
+    }
+    return e
+}
+
+func colon(b mut []byte, s int, e int) int {
+    mut i := s
+    while i < e {
+        if b[i] == ':' {
+            return i
+        }
+        if !tchar(b[i]) {
+            return -1
+        }
+        i += 1
+    }
+    return -1
+}
+
+func lit(b mut []byte, at int, s string) bool {
+    sb := bytes(s)
+    for i <- iter.Range(0, len(sb)) {
+        if b[at + i] != sb[i] {
+            return false
+        }
+    }
+    return true
+}
+
+func fold(b mut []byte, s int, e int, name string) bool {
+    nb := bytes(name)
+    if e - s != len(nb) {
+        return false
+    }
+    for i <- iter.Range(0, len(nb)) {
+        if lower(b[s + i]) != nb[i] {
+            return false
+        }
+    }
+    return true
+}
+
+// 値 b[s, e) の最後の符号化が chunked か
+func endsChunked(b mut []byte, s int, e int) bool {
+    mut t := s
+    mut i := s
+    while i < e {
+        if b[i] == ',' {
+            t = i + 1
+        }
+        i += 1
+    }
+    t = skipWs(mut b, t, e)
+    return fold(mut b, t, trimWs(mut b, t, e), "chunked")
+}
+
+func skipWs(b mut []byte, s int, e int) int {
+    mut i := s
+    while i < e && (b[i] == ' ' || b[i] == '\t') {
+        i += 1
+    }
+    return i
+}
+
+func trimWs(b mut []byte, s int, e int) int {
+    mut i := e
+    while i > s && (b[i - 1] == ' ' || b[i - 1] == '\t') {
+        i -= 1
+    }
+    return i
+}
+
+// 10 進の数（空・数字以外・18 桁超は -1）
+func digits(b mut []byte, s int, e int) int {
+    if e <= s || e - s > 18 {
+        return -1
+    }
+    mut v := 0
+    for i <- iter.Range(s, e) {
+        x := b[i]
+        if x < '0' || x > '9' {
+            return -1
+        }
+        v = v * 10 + int(x) - 48
+    }
+    return v
+}
+
+// 16 進の数（空・16 進以外・15 桁超は -1）
+func hexOf(b mut []byte, s int, e int) int {
+    if e <= s || e - s > 15 {
+        return -1
+    }
+    mut v := 0
+    for i <- iter.Range(s, e) {
+        d := hexDigit(b[i])
+        if d < 0 {
+            return -1
+        }
+        v = v * 16 + d
+    }
+    return v
+}
+
+func hexOf2(b []byte, s int, e int) int {
+    mut v := 0
+    mut i := s
+    while i < e && hexDigit(b[i]) >= 0 {
+        v = v * 16 + hexDigit(b[i])
+        i += 1
+    }
+    return v
+}
+
+func hexDigit(c byte) int {
+    return if c >= '0' && c <= '9' { int(c) - 48 } else if c >= 'a' && c <= 'f' { int(c) - 87 } else if c >= 'A' && c <= 'F' { int(c) - 55 } else { -1 }
+}

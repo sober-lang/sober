@@ -4,5 +4,5 @@ package main
 import "testdata/loader_neg/cycle/a"
 
 func main() {
-    println(a.F())
+    println(testdata.loader_neg.cycle.a.F())
 }

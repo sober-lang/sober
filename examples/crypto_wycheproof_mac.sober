@@ -84,7 +84,7 @@ func macs(src string) {
     for g <- f.testGroups {
         for t <- g.tests {
             n = n + 1
-            got := prefix(hmac.Sum256(unhex(t.key), unhex(t.msg)), g.tagSize / 8)
+            got := prefix(crypto.hmac.Sum256(unhex(t.key), unhex(t.msg)), g.tagSize / 8)
             ok := crypto.Equal(got, unhex(t.tag))
             if ok != (t.result == "valid") {
                 bad = append(bad, t.tcId)
@@ -110,7 +110,7 @@ func kdfs(src string) {
     for g <- f.testGroups {
         for t <- g.tests {
             n = n + 1
-            okm, e := hkdf.Expand(hkdf.Extract(unhex(t.salt), unhex(t.ikm)), unhex(t.info), t.size)
+            okm, e := crypto.hkdf.Expand(crypto.hkdf.Extract(unhex(t.salt), unhex(t.ikm)), unhex(t.info), t.size)
             ok := e == nil && crypto.Equal(okm, unhex(t.okm))
             if ok != (t.result == "valid") {
                 bad = append(bad, t.tcId)

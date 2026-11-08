@@ -1,0 +1,32 @@
+package main
+
+// struct の mut map 欄への格納（`s.m[k] = v` — mut 仮引数越し・入れ子の欄・反復で作った鍵も）: 名前の map と同じ格納
+
+type S struct {
+    n int
+    m mut map[string]int
+}
+
+type W struct {
+    s S
+}
+
+func put(c mut S, k string, v int) {
+    c.m[k] = v
+}
+
+func main() {
+    mut s := S{n: 0, m: mut map[string]int{}}
+    s.m["a"] = 1
+    put(mut s, "b", 2)
+    mut w := W{s: S{n: 1, m: mut map[string]int{}}}
+    w.s.m["x"] = 9
+    ks := []string{"p", "q"}
+    for k <- ks {
+        s.m[k + "!"] = 5
+    }
+    println(len(s.m), len(w.s.m))
+    for k <- s.m {
+        println(k)
+    }
+}

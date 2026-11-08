@@ -1,0 +1,169 @@
+{
+  "package": "kv",
+  "imports": [
+    {
+      "alias": null,
+      "path": "store",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "Put",
+      "type_params": [],
+      "params": [
+        {
+          "name": "s",
+          "type": {
+            "k": "name",
+            "name": "store.Store"
+          },
+          "mutable": false
+        },
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        },
+        {
+          "name": "v",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "store.Store"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "store",
+                    "tok": 25
+                  },
+                  "field": "With",
+                  "tok": 27
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "s",
+                    "tok": 29
+                  },
+                  {
+                    "k": "ident",
+                    "name": "k",
+                    "tok": 31
+                  },
+                  {
+                    "k": "ident",
+                    "name": "v",
+                    "tok": 33
+                  }
+                ],
+                "tok": 28
+              }
+            ],
+            "tok": 24
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 38
+      },
+      "sig_end": 23
+    },
+    {
+      "name": "Get",
+      "type_params": [],
+      "params": [
+        {
+          "name": "s",
+          "type": {
+            "k": "name",
+            "name": "store.Store"
+          },
+          "mutable": false
+        },
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "string"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "store",
+                    "tok": 52
+                  },
+                  "field": "Find",
+                  "tok": 54
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "s",
+                    "tok": 56
+                  },
+                  {
+                    "k": "ident",
+                    "name": "k",
+                    "tok": 58
+                  }
+                ],
+                "tok": 55
+              }
+            ],
+            "tok": 51
+          }
+        ]
+      },
+      "tok": 39,
+      "bodiless": false,
+      "span": {
+        "start": 38,
+        "end": 63
+      },
+      "sig_end": 50
+    }
+  ],
+  "consts": []
+}

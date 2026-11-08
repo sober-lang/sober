@@ -90,5 +90,12 @@ for v in 0 28 29; do
 done
 cmp -s "$W/rs.0.out" "$W/rs.28.out" || { echo "FAIL: readyspill — the spill path (ring capacity 8) changes the run order"; diff "$W/rs.0.out" "$W/rs.28.out" | head -6; fail=$((fail + 1)); }
 cmp -s "$W/rs.0.out" "$W/rs.29.out" && { echo "FAIL: readyspill — mutant 29 (spill order broken) was not caught"; fail=$((fail + 1)); }
-echo "schedfuzz: $n programs × $K seeds × workers {$WS} + 4 mutants + readyspill, fail=$fail"
+# 盗みの門（rt.mn の MN_DQB）の取りこぼし: spawn → Join の往復（bench/spawn の loop）を W2 で 20 回・1 回 5 秒で打ち切る。ビットが 0 のまま子が
+# 列に残ると、暇なワーカーは全走査のデッドロックの判定で眠りをやめては盗みで素通りする輪を回り、持ち主は眠って終わらない（死ではなく止まり）
+"$S2" build bench/spawn/main.sober --emit=elf -o "$W/sp" > /dev/null 2>&1 || { echo "FAIL: build bench/spawn"; fail=$((fail + 1)); }
+for r in $(seq 20); do
+    SOBER_WORKERS=2 timeout 5 "$W/sp" loop 1000000 > /dev/null 2>&1
+    [ $? = 124 ] && { echo "FAIL: bench/spawn loop W2 did not finish — a child stayed in a run queue the steal gate (MN_DQB) does not show"; fail=$((fail + 1)); break; }
+done
+echo "schedfuzz: $n programs × $K seeds × workers {$WS} + 4 mutants + readyspill + steal-gate stall, fail=$fail"
 [ $fail = 0 ]

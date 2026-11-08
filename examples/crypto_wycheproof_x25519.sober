@@ -59,7 +59,7 @@ func main() {
     for g <- f.testGroups {
         for t <- g.tests {
             n = n + 1
-            if !crypto.Equal(x25519.Shared(unhex(t.private), unhex(t.public)), unhex(t.shared)) {
+            if !crypto.Equal(crypto.x25519.Shared(unhex(t.private), unhex(t.public)), unhex(t.shared)) {
                 bad = append(bad, t.tcId)
             }
             if t.shared == "0000000000000000000000000000000000000000000000000000000000000000" {

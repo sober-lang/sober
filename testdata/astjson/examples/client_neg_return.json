@@ -1,0 +1,189 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/http/client",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "keep",
+      "type_params": [],
+      "params": [
+        {
+          "name": "s",
+          "type": {
+            "k": "name",
+            "name": "http.client.Session"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "http.client.Session"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "s",
+                "tok": 23
+              }
+            ],
+            "tok": 22
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 27
+      },
+      "sig_end": 21
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "_",
+                "tok": 32
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "http",
+                      "tok": 34
+                    },
+                    "field": "client",
+                    "tok": 36
+                  },
+                  "field": "Open",
+                  "tok": 38
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "http://127.0.0.1:9",
+                    "tok": 40
+                  },
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "s",
+                        "type": null
+                      }
+                    ],
+                    "body": {
+                      "k": "block",
+                      "stmts": [
+                        {
+                          "k": "assign",
+                          "targets": [
+                            {
+                              "k": "ident",
+                              "name": "_",
+                              "tok": 47
+                            },
+                            {
+                              "k": "ident",
+                              "name": "_",
+                              "tok": 49
+                            }
+                          ],
+                          "op": "=",
+                          "values": [
+                            {
+                              "k": "call",
+                              "callee": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "selector",
+                                  "base": {
+                                    "k": "ident",
+                                    "name": "http",
+                                    "tok": 51
+                                  },
+                                  "field": "client",
+                                  "tok": 53
+                                },
+                                "field": "Send",
+                                "tok": 55
+                              },
+                              "args": [
+                                {
+                                  "k": "call",
+                                  "callee": {
+                                    "k": "ident",
+                                    "name": "keep",
+                                    "tok": 57
+                                  },
+                                  "args": [
+                                    {
+                                      "k": "ident",
+                                      "name": "s",
+                                      "tok": 59
+                                    }
+                                  ],
+                                  "tok": 58
+                                },
+                                {
+                                  "k": "strlit",
+                                  "value": "/",
+                                  "tok": 62
+                                }
+                              ],
+                              "tok": 56
+                            }
+                          ],
+                          "tok": 47
+                        }
+                      ]
+                    },
+                    "tok": 45
+                  }
+                ],
+                "tok": 39
+              }
+            ],
+            "tok": 32
+          }
+        ]
+      },
+      "tok": 28,
+      "bodiless": false,
+      "span": {
+        "start": 27,
+        "end": 70
+      },
+      "sig_end": 31
+    }
+  ],
+  "consts": []
+}

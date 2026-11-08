@@ -4,5 +4,5 @@ package main
 import "testdata/loader_neg/pkgname/lib"
 
 func main() {
-    println(lib.F())
+    println(testdata.loader_neg.pkgname.lib.F())
 }

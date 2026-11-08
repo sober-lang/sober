@@ -10,10 +10,10 @@ type Local struct {
 }
 
 func main() {
-    mut b := box.Box{n: 0, name: "first", inner: box.Inner{k: 0}, xs: mut []int{}, tags: mut map[string]int{}}
-    box.Add(mut b, 3)
-    box.Add(mut b, 4)
-    println(b.n, b.name, b.inner.k, box.Len(mut b))
+    mut b := testdata.fieldpkg.box.Box{n: 0, name: "first", inner: testdata.fieldpkg.box.Inner{k: 0}}
+    testdata.fieldpkg.box.Add(mut b, 3)
+    testdata.fieldpkg.box.Add(mut b, 4)
+    println(b.n, b.name, b.inner.k, testdata.fieldpkg.box.Len(mut b))
     mut l := Local{count: 0, xs: mut []int{}}
     l.count += 1
     l.xs = append(l.xs, 5)

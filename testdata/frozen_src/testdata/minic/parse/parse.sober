@@ -5,8 +5,8 @@ package parse
 // 再帰の深さ上限（1023 段）にも当たらない。木は []Node + 添字参照で、子が親より先に並ぶ（後置順 = そのままスタック機械の順）
 
 import "std/builder"
-import "testdata/frozen_src/testdata/minic/lex"
-import "testdata/frozen_src/testdata/minic/diag"
+import lex "testdata/frozen_src/testdata/minic/lex"
+import diag "testdata/frozen_src/testdata/minic/diag"
 
 // 節の種類
 const Lit = 0

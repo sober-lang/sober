@@ -1,0 +1,17 @@
+package main
+
+// imm の欄に、暗黙の freeze の点にならない mut のコンテナ（局所のラムダの呼び出し — 捕捉した m の別名）を置く形。
+// コアの struct は欄の型を持たないので、check が受理し build の lower だけが落としていた
+
+type H struct {
+    xs []int
+    k int
+}
+
+func main() int {
+    mut m := mut []int{1, 2}
+    g := () => m
+    h := H{xs: g(), k: 0}
+    m[0] = 9
+    return h.xs[0]
+}

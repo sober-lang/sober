@@ -1,0 +1,72 @@
+package main
+
+// 名前付き引数を持つ呼び出し形の生成元（language.md 7 節）: `for x <- g(a, n: v)? { … }` の脱糖は継続 k を最後の位置引数として
+// 名前付き引数の前に差す — `g(a, (x) => { … }, n: v)?`。名前付き引数を渡しても渡さなくても同じ for の形で書ける
+
+type BadDigit error {
+    at int
+}
+
+// s の数字を k へ渡す（step: 個おき — 省けば 1。数字でない文字で BadDigit）
+@errors(BadDigit)
+func digits(s string, k func(int), step int?) error? {
+    bs := bytes(s)
+    st := if step == nil || step < 1 { 1 } else { step }
+    mut i := 0
+    while i < len(bs) {
+        if bs[i] < '0' || bs[i] > '9' {
+            return BadDigit{at: i}
+        }
+        k(int(bs[i]) - 48)
+        i += st
+    }
+    return nil
+}
+
+func sum(s string, step int?) (int, error?) {
+    mut n := 0
+    for d <- digits(s, step: step)? {
+        n += d
+    }
+    return n, nil
+}
+
+func sumAll(s string) (int, error?) {
+    mut n := 0
+    for d <- digits(s)? {
+        n += d
+    }
+    return n, nil
+}
+
+// slice を返す呼び出しの生成元（継続の席は無い — 名前付き引数はそのまま）
+func evens(n int, from int?, step int?) []int {
+    mut o := mut []int{}
+    mut i := if from == nil { 0 } else { from }
+    while i < n {
+        o = append(o, i)
+        i += if step == nil { 2 } else { step }
+    }
+    return freeze(o)
+}
+
+func show(n int, e error?) string {
+    return switch e {
+    case nil: "${n}"
+    case BadDigit{at}: "bad digit at ${at}"
+    }
+}
+
+func main() {
+    a, ea := sumAll("12345")
+    println("all: ${show(a, ea)}")
+    b, eb := sum("12345", 2)
+    println("every 2nd: ${show(b, eb)}")
+    c, ec := sum("12x45", 1)
+    println("bad: ${show(c, ec)}")
+    mut t := 0
+    for x <- evens(10, step: 3) {
+        t += x
+    }
+    println("slice source: ${t}")
+}

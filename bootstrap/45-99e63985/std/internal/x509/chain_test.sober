@@ -1,0 +1,444 @@
+package x509
+
+// 鎖の検証の網（white-box）: NIST PKITS の経路の期待値（testdata/x509/pkits/vectors.json — CertPath の先頭が信頼の起点・最後が leaf・
+// 時刻は 2020-01-01）。網の外に置く題材は pkOut の表（分類と理由 — conf: の行で準拠文書へ出る）
+
+import "std/base64"
+import "std/crypto/pem"
+import "std/iter"
+import "std/json"
+import "std/strings"
+
+@embed("testdata/x509/pkits/vectors.json")
+const Vectors = map[string]string{}
+
+type PkVec struct {
+    Name string
+    CertPath []string
+    ShouldValidate bool
+}
+
+const pkNow = 1577836800
+
+// PKITS の証明書の名前 → DER
+func pkitsDer() map[string][]byte {
+    mut m := mut map[string][]byte{}
+    for l <- strings.Split(strings.TrimSpace(get(Pkits, "testdata/x509/pkits/certs.txt")), "\n") {
+        f := strings.Fields(l)
+        d, _ := base64.Decode(f[1])
+        m[f[0]] = d
+    }
+    return freeze(m)
+}
+
+// PKITS の網の外に置く題材の 1 規則（名前が prefix で始まり、has が空でなければ has も含む題材）
+type PkRule struct {
+    prefix string
+    has string
+    cls string
+}
+
+// 網の外に置く題材（上から順に最初に当たった規則の分類）
+func pkOut() []PkRule {
+    return []PkRule{
+        PkRule{prefix: "4.4.", has: "", cls: "crl"},
+        PkRule{prefix: "4.14.", has: "", cls: "crl"},
+        PkRule{prefix: "4.15.", has: "", cls: "crl"},
+        PkRule{prefix: "4.5.2 ", has: "", cls: "crl"},
+        PkRule{prefix: "4.5.5 ", has: "", cls: "crl"},
+        PkRule{prefix: "4.5.7 ", has: "", cls: "crl"},
+        PkRule{prefix: "4.7.4 ", has: "", cls: "crl"},
+        PkRule{prefix: "4.7.5 ", has: "", cls: "crl"},
+        PkRule{prefix: "4.8.", has: "", cls: "policy"},
+        PkRule{prefix: "4.9.", has: "", cls: "policy"},
+        PkRule{prefix: "4.10.", has: "", cls: "policy"},
+        PkRule{prefix: "4.11.", has: "", cls: "policy"},
+        PkRule{prefix: "4.12.", has: "", cls: "policy"},
+        PkRule{prefix: "", has: "DSA", cls: "dsa"},
+        PkRule{prefix: "4.3.3 ", has: "", cls: "name-normalize"},
+        PkRule{prefix: "4.3.4 ", has: "", cls: "name-normalize"},
+        PkRule{prefix: "4.3.5 ", has: "", cls: "name-normalize"},
+        PkRule{prefix: "4.3.10 ", has: "", cls: "name-normalize"},
+        PkRule{prefix: "4.3.11 ", has: "", cls: "name-normalize"},
+        PkRule{prefix: "4.13.", has: "DN", cls: "nc-other-forms"},
+        PkRule{prefix: "4.13.", has: "RFC822", cls: "nc-other-forms"},
+        PkRule{prefix: "4.13.", has: "URI", cls: "nc-other-forms"},
+    }
+}
+
+// pkOut の分類の理由
+func pkWhy() map[string]string {
+    return map[string]string{
+        "crl": "失効は見ない（CRL の節と、無効の理由が CRL や CRL の署名鍵の題材）",
+        "policy": "証明書ポリシーは処理しない",
+        "dsa": "DSA の署名は対象外",
+        "name-normalize": "名前は DER のバイトの一致で照合する（空白・大文字小文字・文字列の型の正規化をしない — Go と同じ）",
+        "nc-other-forms": "nameConstraints は dNSName と iPAddress だけ（DN / RFC822 / URI の部分木を持つ CA は Unsupported で拒否 — Valid の題材が落ち、Invalid の題材は別の理由で通るので両方外す）",
+    }
+}
+
+// name を網の外に置くなら分類（網に載せるなら ""）
+func pkOutClass(name string) string {
+    for r <- pkOut() {
+        if strings.HasPrefix(name, r.prefix) && (r.has == "" || strings.Contains(name, r.has)) {
+            return r.cls
+        }
+    }
+    return ""
+}
+
+func TestPkits() {
+    d, err := json.Parse(bytes(get(Vectors, "testdata/x509/pkits/vectors.json")))
+    assert(err == nil)
+    if err != nil {
+        return
+    }
+    items, ierr := json.Items(d, json.Root(d))
+    assert(ierr == nil)
+    ders := pkitsDer()
+    mut n := 0
+    mut bad := 0
+    mut out := mut map[string]int{}
+    for it <- items {
+        v, derr := json.Decode[PkVec](d, it)
+        assert(derr == nil)
+        cls := pkOutClass(v.Name)
+        if cls != "" {
+            k := out[cls]
+            out[cls] = if k != nil { k + 1 } else { 1 }
+        } else {
+            n += 1
+            root, _ := Parse(derOf(ders, v.CertPath[0]))
+            mut inters := mut [][]byte{}
+            for i <- iter.Range(1, len(v.CertPath) - 1) {
+                inters = append(inters, derOf(ders, v.CertPath[i]))
+            }
+            leaf := derOf(ders, v.CertPath[len(v.CertPath) - 1])
+            _, e := Verify(leaf, freeze(inters), []Cert{root}, "", pkNow)
+            got := e == nil
+            if got != v.ShouldValidate {
+                println("pkits mismatch: ${v.Name} want ${v.ShouldValidate} got ${got} (${errName(e)})")
+                bad += 1
+            }
+        }
+    }
+    println("pkits: ${n} paths in scope, ${bad} mismatched")
+    assert(n > 0 && bad == 0)
+    println("conf: pkits/paths ${len(items)}")
+    println("conf: pkits/in-scope ${n}")
+    why := pkWhy()
+    mut sum := n
+    classes := []string{"crl", "policy", "dsa", "name-normalize", "nc-other-forms"}
+    for c <- classes {
+        k := out[c]
+        w := why[c]
+        assert(k != nil && w != nil, c)
+        if k != nil && w != nil {
+            println("conf: pkits/out/${c} ${k}")
+            println("conf-why: pkits/out/${c} ${w}")
+            println("conf-kind: pkits/out/${c} intentional")
+            sum += k
+        }
+    }
+    assert(sum == len(items))
+}
+
+func derOf(m map[string][]byte, k string) []byte {
+    v := m[k]
+    if v != nil {
+        return v
+    }
+    return []byte{}
+}
+
+func errName(e error?) string {
+    return switch e {
+    case nil: "ok"
+    case Malformed{}: "Malformed"
+    case Expired{}: "Expired"
+    case NotYetValid{}: "NotYetValid"
+    case UnknownAuthority{}: "UnknownAuthority"
+    case NameMismatch{}: "NameMismatch"
+    case BadSignature{}: "BadSignature"
+    case Unsupported{}: "Unsupported"
+    case ConstraintViolated{}: "ConstraintViolated"
+    }
+}
+
+// Go の verify_test.go の題材（同じ証明書・時刻・名前 — 期待は Go の判定をこちらの誤りの名に写したもの）
+type GoCase struct {
+    name string
+    leaf string
+    inters []string
+    roots []string
+    now int
+    host string
+    want string
+}
+
+func goDer(n string) []byte {
+    bs, _ := crypto.pem.Parse(get(GoCerts, "testdata/x509/go/${n}.pem"))
+    return bs[0].der
+}
+
+func TestGoVerify() {
+    cs := []GoCase{
+        GoCase{name: "Valid", leaf: "googleLeaf", inters: []string{"gtsIntermediate"}, roots: []string{"gtsRoot"}, now: 1677615892, host: "www.google.com", want: "ok"},
+        GoCase{name: "Valid (fqdn)", leaf: "googleLeaf", inters: []string{"gtsIntermediate"}, roots: []string{"gtsRoot"}, now: 1677615892, host: "www.google.com.", want: "ok"},
+        GoCase{name: "MixedCase", leaf: "googleLeaf", inters: []string{"gtsIntermediate"}, roots: []string{"gtsRoot"}, now: 1677615892, host: "WwW.GooGLE.coM", want: "ok"},
+        GoCase{name: "HostnameMismatch", leaf: "googleLeaf", inters: []string{"gtsIntermediate"}, roots: []string{"gtsRoot"}, now: 1677615892, host: "www.example.com", want: "NameMismatch"},
+        GoCase{name: "IPMissing", leaf: "googleLeaf", inters: []string{"gtsIntermediate"}, roots: []string{"gtsRoot"}, now: 1677615892, host: "1.2.3.4", want: "NameMismatch"},
+        GoCase{name: "Expired", leaf: "googleLeaf", inters: []string{"gtsIntermediate"}, roots: []string{"gtsRoot"}, now: 1, host: "", want: "NotYetValid"},
+        GoCase{name: "MissingIntermediate", leaf: "googleLeaf", inters: []string{}, roots: []string{"gtsRoot"}, now: 1677615892, host: "www.google.com", want: "UnknownAuthority"},
+        GoCase{name: "RootInIntermediates", leaf: "googleLeaf", inters: []string{"gtsRoot", "gtsIntermediate"}, roots: []string{"gtsRoot"}, now: 1677615892, host: "www.google.com", want: "ok"},
+        GoCase{name: "InvalidHash", leaf: "googleLeafWithInvalidHash", inters: []string{"gtsIntermediate"}, roots: []string{"gtsRoot"}, now: 1677615892, host: "www.google.com", want: "Unsupported"},
+        GoCase{name: "EKULeaf", leaf: "smimeLeaf", inters: []string{"smimeIntermediate"}, roots: []string{"smimeRoot"}, now: 1594673418, host: "", want: "ConstraintViolated"},
+        GoCase{name: "SHA-384", leaf: "trustAsiaLeaf", inters: []string{"trustAsiaSHA384Intermediate"}, roots: []string{"digicertRoot"}, now: 1558051200, host: "tm.cn", want: "ok"},
+        GoCase{name: "ExcludedNames", leaf: "excludedNamesLeaf", inters: []string{"excludedNamesIntermediate"}, roots: []string{"excludedNamesRoot"}, now: 1486684488, host: "bender.local", want: "ConstraintViolated"},
+        GoCase{name: "CriticalExtLeaf", leaf: "criticalExtLeafWithExt", inters: []string{"criticalExtIntermediate"}, roots: []string{"criticalExtRoot"}, now: 1486684488, host: "", want: "Unsupported"},
+        GoCase{name: "CriticalExtIntermediate", leaf: "criticalExtLeaf", inters: []string{"criticalExtIntermediateWithExt"}, roots: []string{"criticalExtRoot"}, now: 1486684488, host: "", want: "Unsupported"},
+        GoCase{name: "ValidCN", leaf: "validCNWithoutSAN", inters: []string{}, roots: []string{"invalidCNRoot"}, now: 1540000000, host: "foo.example.com", want: "NameMismatch"},
+        GoCase{name: "IgnoreCNWithSAN", leaf: "ignoreCNWithSANLeaf", inters: []string{}, roots: []string{"ignoreCNWithSANRoot"}, now: 1486684488, host: "foo.example.com", want: "NameMismatch"},
+        GoCase{name: "AKIDNoSKID", leaf: "leafWithAKID", inters: []string{}, roots: []string{"rootWithoutSKID"}, now: 1550000000, host: "example", want: "ok"},
+        GoCase{name: "AKIDMatching", leaf: "leafMatchingAKIDMatchingIssuer", inters: []string{}, roots: []string{"rootMatchingSKIDMismatchingSubject", "rootMismatchingSKIDMatchingSubject"}, now: 1550000000, host: "example", want: "ok"},
+    }
+    mut bad := 0
+    for c <- cs {
+        mut rs := mut []Cert{}
+        for r <- c.roots {
+            rc, _ := Parse(goDer(r))
+            rs = append(rs, rc)
+        }
+        mut is := mut [][]byte{}
+        for i <- c.inters {
+            is = append(is, goDer(i))
+        }
+        _, e := Verify(goDer(c.leaf), freeze(is), freeze(rs), c.host, c.now)
+        got := errName(e)
+        if got != c.want {
+            println("go case ${c.name}: want ${c.want} got ${got}")
+            bad += 1
+        }
+    }
+    assert(bad == 0)
+    println("conf: go-x509/verify ${len(cs)}")
+}
+
+// 名前の照合（ワイルドカードは最左のラベル丸ごと・IP の綴り・末尾の .・大文字小文字）と nameConstraints の DNS / IP の下
+func TestNames() {
+    assert(nameMatch("*.example.com", "a.example.com"))
+    assert(!nameMatch("*.example.com", "example.com"))
+    assert(!nameMatch("*.example.com", "a.b.example.com"))
+    assert(!nameMatch("*.com", "example.com"))
+    assert(!nameMatch("a*.example.com", "ab.example.com"))
+    assert(nameMatch("example.com", "example.com"))
+    assert(dnsUnder("a.example.com", "example.com"))
+    assert(dnsUnder("example.com", "example.com"))
+    assert(!dnsUnder("badexample.com", "example.com"))
+    assert(dnsUnder("a.example.com", ".example.com"))
+    assert(!dnsUnder("example.com", ".example.com"))
+    assert(dnsUnder("A.Example.COM", "example.com"))
+    assert(dnsUnder("x", ""))
+    assert(ipUnder([]byte{10, 1, 2, 3}, []byte{10, 0, 0, 0, 255, 0, 0, 0}))
+    assert(!ipUnder([]byte{11, 1, 2, 3}, []byte{10, 0, 0, 0, 255, 0, 0, 0}))
+    assert(len(parseIP("1.2.3.4")) == 4)
+    assert(len(parseIP("1.2.3")) == 0)
+    assert(len(parseIP("01.2.3.4")) == 0)
+    assert(len(parseIP("256.2.3.4")) == 0)
+}
+
+// 焼き込みの信頼ストア: 全部読めて、自己署名の署名が合う（distrust-after の付いた起点が少なくとも 1 本ある）
+func TestRoots() {
+    rs := Roots()
+    assert(len(rs) == len(rootLines()))
+    mut da := 0
+    for r <- rs {
+        assert(r.bcValid && r.isCA || r.version != 3)
+        if r.distrustAfter > 0 {
+            da += 1
+        }
+    }
+    assert(da >= 1)
+    println("roots: ${len(rs)} anchors, ${da} with distrust-after")
+    println("conf: nss/anchors ${len(rs)}")
+    println("conf: nss/distrust-after ${da}")
+}
+
+// distrust-after: 起点の distrust-after より後の notBefore を持つ leaf はその起点で信頼しない（前なら信頼する）
+func TestDistrustAfter() {
+    leaf := goDer("googleLeaf")
+    l, _ := Parse(leaf)
+    r0, _ := Parse(goDer("gtsRoot"))
+    mut early := r0
+    early.distrustAfter = l.notBefore - 1
+    _, e1 := Verify(leaf, [][]byte{goDer("gtsIntermediate")}, []Cert{early}, "www.google.com", 1677615892)
+    assert(errName(e1) == "UnknownAuthority")
+    mut late := r0
+    late.distrustAfter = l.notBefore
+    _, e2 := Verify(leaf, [][]byte{goDer("gtsIntermediate")}, []Cert{late}, "www.google.com", 1677615892)
+    assert(errName(e2) == "ok")
+}
+
+// 追加の起点を PEM の値で（RootsFromPEM）
+func TestRootsFromPEM() {
+    rs, e := RootsFromPEM(get(GoCerts, "testdata/x509/go/gtsRoot.pem"))
+    assert(e == nil && len(rs) == 1)
+    _, e2 := Verify(goDer("googleLeaf"), [][]byte{goDer("gtsIntermediate")}, rs, "www.google.com", 1677615892)
+    assert(errName(e2) == "ok")
+    _, e3 := RootsFromPEM("-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n")
+    assert(errName(e3) == "Malformed")
+}
+
+// x509-limbo（testdata/x509/limbo/limbo.json — scripts/limbo.ts の抜き出し・C2SP の Apache-2.0）。時刻の無い題材は 2025-01-01。
+// 食い違いは limboKnown の題材だけ（判定の向きの違い — 分類と理由は limboWhy）
+@embed("testdata/x509/limbo/limbo.json")
+const Limbo = map[string]string{}
+
+type LCase struct {
+    id string
+    trusted []string
+    inters []string
+    peer string
+    time int
+    nameKind string
+    name string
+    want string
+}
+
+type LFile struct {
+    cases []LCase
+}
+
+func pemDer(s string) []byte {
+    bs, err := crypto.pem.Parse(s)
+    if err != nil || len(bs) == 0 {
+        return []byte{}
+    }
+    return bs[0].der
+}
+
+func TestLimbo() {
+    d, err := json.Parse(bytes(get(Limbo, "testdata/x509/limbo/limbo.json")))
+    assert(err == nil)
+    if err != nil {
+        return
+    }
+    f, derr := json.Decode[LFile](d, json.Root(d))
+    assert(derr == nil)
+    known := limboKnown()
+    mut bad := 0
+    mut hits := 0
+    for c <- f.cases {
+        mut rs := mut []Cert{}
+        for t <- c.trusted {
+            r, ok := Parse(pemDer(t))
+            if ok {
+                rs = append(rs, r)
+            }
+        }
+        mut is := mut [][]byte{}
+        for i <- c.inters {
+            is = append(is, pemDer(i))
+        }
+        now := if c.time == 0 { 1735689600 } else { c.time }
+        _, e := Verify(pemDer(c.peer), freeze(is), freeze(rs), c.name, now)
+        ok := e == nil
+        if ok != (c.want == "SUCCESS") {
+            if known[c.id] == nil {
+                println("limbo mismatch: ${c.id} want ${c.want} got ${errName(e)}")
+                bad += 1
+            } else {
+                hits += 1
+            }
+        } else if known[c.id] != nil {
+            println("limbo: ${c.id} is in limboKnown but now agrees — drop it from the table")
+            bad += 1
+        }
+    }
+    println("limbo: ${len(f.cases)} cases, ${hits} known deviations, ${bad} unexpected")
+    assert(bad == 0)
+    println("conf: limbo/cases ${len(f.cases)}")
+    println("conf: limbo/agree ${len(f.cases) - hits}")
+    mut sum := 0
+    for w <- limboWhy() {
+        mut k := 0
+        for c <- f.cases {
+            cl := known[c.id]
+            if cl != nil && cl == w.cls {
+                println("conf-item: limbo/known/${w.cls} ${c.id}")
+                k += 1
+            }
+        }
+        assert(k > 0, w.cls)
+        println("conf: limbo/known/${w.cls} ${k}")
+        println("conf-why: limbo/known/${w.cls} ${w.why}")
+        println("conf-kind: limbo/known/${w.cls} ${w.kind}")
+        sum += k
+    }
+    assert(sum == hits && sum == len(known))
+}
+
+// 既知の差（どれも limbo が拒否を求め、こちらが受ける向き）: 題材 → 分類。表の外の食い違いと、表にあるのに一致した題材は赤
+func limboKnown() map[string]string {
+    return map[string]string{
+        "rfc5280::ski::root-missing-ski": "root-anchor",
+        "rfc5280::unknown-critical-extension-root": "root-anchor",
+        "rfc5280::root-missing-basic-constraints": "root-anchor",
+        "rfc5280::root-non-critical-basic-constraints": "root-anchor",
+        "rfc5280::root-inconsistent-ca-extensions": "root-anchor",
+        "webpki::aki::root-with-aki-missing-keyidentifier": "root-anchor",
+        "webpki::aki::root-with-aki-authoritycertissuer": "root-anchor",
+        "webpki::aki::root-with-aki-authoritycertserialnumber": "root-anchor",
+        "webpki::aki::root-with-aki-all-fields": "root-anchor",
+        "webpki::aki::root-with-aki-ski-mismatch": "root-anchor",
+        "webpki::eku::root-has-eku": "root-anchor",
+        "rfc5280::aki::critical-aki": "issuer-rules",
+        "rfc5280::aki::leaf-missing-aki": "issuer-rules",
+        "rfc5280::aki::intermediate-missing-aki": "issuer-rules",
+        "rfc5280::aki::cross-signed-root-missing-aki": "issuer-rules",
+        "rfc5280::nc::permitted-dns-match-noncritical": "issuer-rules",
+        "rfc5280::nc::invalid-dnsname-leading-period": "issuer-rules",
+        "rfc5280::nc::nc-forbids-othername-noop": "issuer-rules",
+        "rfc5280::san::noncritical-with-empty-subject": "issuer-rules",
+        "rfc5280::serial::too-long": "issuer-rules",
+        "rfc5280::serial::zero": "issuer-rules",
+        "rfc5280::ski::intermediate-missing-ski": "issuer-rules",
+        "rfc5280::ca-empty-subject": "issuer-rules",
+        "webpki::eku::ee-critical-eku": "issuer-rules",
+        "webpki::san::san-critical-with-nonempty-subject": "issuer-rules",
+        "webpki::malformed-aia": "issuer-rules",
+        "webpki::cn::ipv4-hex-mismatch": "no-cn",
+        "webpki::cn::ipv4-leading-zeros-mismatch": "no-cn",
+        "webpki::cn::ipv6-uppercase-mismatch": "no-cn",
+        "webpki::cn::ipv6-uncompressed-mismatch": "no-cn",
+        "webpki::cn::ipv6-non-rfc5952-mismatch": "no-cn",
+        "webpki::cn::punycode-not-in-san": "no-cn",
+        "webpki::cn::utf8-vs-punycode-mismatch": "no-cn",
+        "webpki::cn::not-in-san": "no-cn",
+        "webpki::cn::case-mismatch": "no-cn",
+        "webpki::eku::ee-anyeku": "cabf-leaf",
+        "webpki::eku::ee-without-eku": "cabf-leaf",
+        "webpki::ee-basicconstraints-ca": "cabf-leaf",
+        "webpki::ca-as-leaf": "cabf-leaf",
+        "webpki::san::public-suffix-multi-label-wildcard-san": "psl-wildcard",
+        "webpki::san::public-suffix-private-namespace-wildcard-san": "psl-wildcard",
+    }
+}
+
+// limboKnown の分類の理由（並びは準拠文書の表の順）
+func limboWhy() []LWhy {
+    return []LWhy{
+        LWhy{cls: "root-anchor", kind: "intentional", why: "信頼の起点（ルート）は CA の印・拡張・鍵 ID を問わない（RFC 5280 6.1 の trust anchor information — Go と同じ）"},
+        LWhy{cls: "issuer-rules", kind: "intentional", why: "発行側（CA）が守る MUST で、検証器は強制しない（鍵 ID の欠け・critical の AKI・critical でない nameConstraints・SAN の critical と空の subject の組・空の subject の CA・20 バイト超と 0 のシリアル〔0 は NSS のルートに実在〕・EKU の critical・AIA の形〔読まない〕・先頭が点の DNS の制約 — Go と同じ）"},
+        LWhy{cls: "no-cn", kind: "intentional", why: "CN は見ない — 「CN が SAN にあること」は発行側の規則（CA/B Forum）で、名前の照合は SAN だけ"},
+        LWhy{cls: "cabf-leaf", kind: "intentional", why: "CA/B Forum の leaf の規則（EKU 必須・anyEKU 禁止・CA の証明書を leaf に使わない）は焼き込みの WebPKI の起点で止まる鎖にだけ掛ける — limbo の起点は追加の起点（私的 PKI）の扱いで、RFC 5280 と Go と同じく受ける"},
+        LWhy{cls: "psl-wildcard", kind: "planned", why: "広すぎるワイルドカード（*.co.uk の形）の検出は public suffix の表が要る — std は PSL を持たない（使い手だった cookie jar を退役 — 繋ぐときに表を戻す）"},
+    }
+}
+
+// kind = intentional（意図して受ける）/ planned（未実装 — 時期は準拠文書の見送りの欄）
+type LWhy struct {
+    cls string
+    kind string
+    why string
+}

@@ -11,7 +11,7 @@ k10	testdata/doubles/neg/k10/r/fake/f_double.sober:4:8: a double cannot import t
 k11	testdata/doubles/neg/k11/t/t.sober:3:8: a double is imported only from _test.sober and _double.sober files
 k12	testdata/doubles/neg/k12/t/t_test.sober:4:8: this package is a double (its files are _double.sober): it is read only through the @doubles list of a test package
 k13	testdata/doubles/neg/k13/r/fake/f_double.sober:2:9: a double's package name is the name of the package it replaces
-k14	testdata/doubles/neg/k14/t/t_test.sober:8:21: this name exists only in the double: refer to it through the double's own import path
+k14	testdata/doubles/neg/k14/t/t_test.sober:8:71: this name exists only in the double: refer to it through the double's own import path
 k15	testdata/doubles/neg/k15/r/fake/f_double.sober:18:6: this name is declared as a different kind of declaration in the package the double replaces
 k16	testdata/doubles/neg/k16/r/fake/f_double.sober:14:6: this function's signature differs from the function of the same name in the package the double replaces
 k17	testdata/doubles/neg/k17/r/fake/f_double.sober:18:7: this constant differs from the constant of the same name in the package the double replaces
@@ -21,5 +21,5 @@ k20	testdata/doubles/neg/k20/r/fake/f_double.sober:18:6: the function of the sam
 k21	testdata/doubles/neg/k21/r/fake/f_double.sober:19:6: this function's @effects is not within the @effects of the function of the same name in the package the double replaces
 c01	testdata/doubles/neg/c01/t/t.sober:5:8: std/testing/cell is imported only from _test.sober and _double.sober files
 c02	testdata/doubles/neg/c02/t/t_test.sober:6:10: a cell.Cell is made only by a top-level const declaration (`const X = cell.Cell[T]{…}`) — a literal elsewhere would name no cell
-c03	testdata/doubles/neg/c03/t/t_test.sober:5:31: the key of a cell.Cell is given by the compiler: write only `init:`
-c04	testdata/doubles/neg/c04/t/t_test.sober:12:20: the function given to cell.Update is a lambda literal with one parameter
+c03	testdata/doubles/neg/c03/t/t_test.sober:5:39: the key of a cell.Cell is given by the compiler: write only `init:`
+c04	testdata/doubles/neg/c04/t/t_test.sober:12:28: the function given to cell.Update is a lambda literal with one parameter

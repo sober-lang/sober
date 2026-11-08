@@ -5,11 +5,11 @@ package main
 import "testdata/alias/lib"
 import "testdata/alias/wrap"
 
-func other(w wrap.Work) int {
-    v := lib.Work{n: 1, sum: 4}
+func other(w testdata.alias.wrap.Work) int {
+    v := testdata.alias.lib.Work{n: 1, sum: 4}
     return keep(w) + keep(v)
 }
 
-func keep(w lib.Work) int {
+func keep(w testdata.alias.lib.Work) int {
     return w.sum
 }

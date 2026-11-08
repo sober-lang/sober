@@ -16,17 +16,17 @@ func sysFFromBits(b int) float
 // f の最短の往復表現（読み戻すと同じビットになる最短の 10 進 — Go の strconv.FormatFloat(f, 'g', -1, 64) と同じ綴り・println と同じ）
 @effects()
 func FormatFloat(f float) string {
-    return floatfmt.Format(sysFBits(f))
+    return internal.floatfmt.Format(sysFBits(f))
 }
 
 // f を小数点以下 prec 桁で（Go の strconv.FormatFloat(f, 'f', prec, 64)・fmt の %.<prec>f と同じ綴り — 正確な値を最近接・偶数へ丸める）（対の ParseFixed は実需まで足さない — language.md 34 節 2 の注記）
 @effects()
 func FormatFixed(f float, prec int) string {
-    return floatfmt.FormatFixed(sysFBits(f), prec)
+    return internal.floatfmt.FormatFixed(sysFBits(f), prec)
 }
 
 // ParseFloat の構文の違い（10 進の数字・小数点・指数、または inf / infinity / nan でない）
-type InvalidFloat error {
+type BadFloat error {
 }
 
 // ParseFloat の溢れ（値は ±Inf — Go の ErrRange と同じ）
@@ -35,7 +35,7 @@ type FloatOutOfRange error {
 
 // s の値（10 進の正確な値を 1 回だけ最近接・偶数へ丸める — 浮動小数のリテラルと同じ算法。0 に丸まる小さい値は誤りでない）。
 // 受ける形は [+-]? 数字の列（小数点 1 つ・指数 e / E [+-] 数字）か inf / infinity（符号可）/ nan（大文字小文字を問わない）。16 進・_ は受けない
-@errors(InvalidFloat, FloatOutOfRange)
+@errors(BadFloat, FloatOutOfRange)
 @effects()
 func ParseFloat(s string) (float, error?) {
     // Clinger の速い道: 仮数 ≤ 2^53・|10 の指数| ≤ 22 なら仮数も 10 の累乗も binary64 で正確 → 乗除 1 回の丸め 1 回で正しく丸まる（外れは多倍長へ）
@@ -43,15 +43,15 @@ func ParseFloat(s string) (float, error?) {
     if ok {
         return f, nil
     }
-    bits, err := floatfmt.ParseBits(bytes(s))
+    bits, err := internal.floatfmt.ParseBits(bytes(s))
     if err != nil {
         // ParseBits の誤りは InvalidSyntax と OutOfRange だけ（analyzer が導出して網羅を検査する）
         syntax := switch err {
-        case floatfmt.InvalidSyntax{}: true
-        case floatfmt.OutOfRange{}: false
+        case internal.floatfmt.InvalidSyntax{}: true
+        case internal.floatfmt.OutOfRange{}: false
         }
         if syntax {
-            return 0.0, InvalidFloat{}
+            return 0.0, BadFloat{}
         }
         return sysFFromBits(bits), FloatOutOfRange{}
     }
@@ -131,7 +131,7 @@ func fastFloat(b []byte) (bool, float) {
 }
 
 // ParseInt の構文の違い（[+-]? と 10 進の数字の列でない — 空・空白・_・16 進は受けない）
-type InvalidInt error {
+type BadInt error {
 }
 
 // ParseInt の溢れ（int〔64 ビット〕の範囲の外 — Go の ErrRange と同じ。値は 0）
@@ -139,21 +139,21 @@ type IntOutOfRange error {
 }
 
 // s の 10 進の値（Go の strconv.Atoi と同じ受け方 — `[+-]? 数字+`）
-@errors(InvalidInt, IntOutOfRange)
+@errors(BadInt, IntOutOfRange)
 @effects()
 func ParseInt(s string) (int, error?) {
     b := bytes(s)
     neg := len(b) > 0 && b[0] == '-'
     mut i := if len(b) > 0 && (b[0] == '-' || b[0] == '+') { 1 } else { 0 }
     if i == len(b) {
-        return 0, InvalidInt{}
+        return 0, BadInt{}
     }
     // 負の側で積む（最小値 -2^63 が表せる）。/ は 0 へ切り捨て = 負の数の切り上げなので、v < (最小 + d) / 10 なら v * 10 - d が溢れる
     mut v := 0
     while i < len(b) {
         c := b[i]
         if c < '0' || c > '9' {
-            return 0, InvalidInt{}
+            return 0, BadInt{}
         }
         d := int(c) - 48
         if v < (-9223372036854775807 - 1 + d) / 10 {
@@ -204,12 +204,12 @@ func formatUint(n int) string {
 }
 
 // ParseBool の構文の違い（受ける綴りの外 — Go の strconv.ErrSyntax と同じ）
-type InvalidBool error {
+type BadBool error {
 }
 
 // s の真偽（Go の strconv.ParseBool と同じ受け方 — 真 = "1" "t" "T" "TRUE" "true" "True"・偽 = "0" "f" "F" "FALSE" "false" "False"。
-// 他の綴り〔"yes"・"on"・"tRUE"・前後の空白〕は InvalidBool。値は false）
-@errors(InvalidBool)
+// 他の綴り〔"yes"・"on"・"tRUE"・前後の空白〕は BadBool。値は false）
+@errors(BadBool)
 @effects()
 func ParseBool(s string) (bool, error?) {
     if s == "1" || s == "t" || s == "T" || s == "TRUE" || s == "true" || s == "True" {
@@ -218,7 +218,7 @@ func ParseBool(s string) (bool, error?) {
     if s == "0" || s == "f" || s == "F" || s == "FALSE" || s == "false" || s == "False" {
         return false, nil
     }
-    return false, InvalidBool{}
+    return false, BadBool{}
 }
 
 // b の綴り "true" / "false"（Go の strconv.FormatBool と同じ — ParseBool の対・補間 `${b}` と同じ綴り）

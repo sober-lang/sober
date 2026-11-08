@@ -1,0 +1,68 @@
+{
+  "package": "greet",
+  "imports": [
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "Hello",
+      "type_params": [],
+      "params": [
+        {
+          "name": "name",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "string"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "interp",
+                "tmpl": {
+                  "lits": [
+                    "hello, ",
+                    ""
+                  ],
+                  "holes": [
+                    {
+                      "k": "ident",
+                      "name": "name",
+                      "tok": 12
+                    }
+                  ]
+                },
+                "tok": 12
+              }
+            ],
+            "tok": 11
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 16
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

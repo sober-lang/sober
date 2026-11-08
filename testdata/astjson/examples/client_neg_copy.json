@@ -1,0 +1,151 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/http/client",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "_",
+                "tok": 11
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "http",
+                      "tok": 13
+                    },
+                    "field": "client",
+                    "tok": 15
+                  },
+                  "field": "Open",
+                  "tok": 17
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "http://127.0.0.1:9",
+                    "tok": 19
+                  },
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "s",
+                        "type": null
+                      }
+                    ],
+                    "body": {
+                      "k": "block",
+                      "stmts": [
+                        {
+                          "k": "bind",
+                          "names": [
+                            "d"
+                          ],
+                          "mutable": false,
+                          "values": [
+                            {
+                              "k": "ident",
+                              "name": "s",
+                              "tok": 28
+                            }
+                          ],
+                          "tok": 26
+                        },
+                        {
+                          "k": "assign",
+                          "targets": [
+                            {
+                              "k": "ident",
+                              "name": "_",
+                              "tok": 30
+                            },
+                            {
+                              "k": "ident",
+                              "name": "_",
+                              "tok": 32
+                            }
+                          ],
+                          "op": "=",
+                          "values": [
+                            {
+                              "k": "call",
+                              "callee": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "selector",
+                                  "base": {
+                                    "k": "ident",
+                                    "name": "http",
+                                    "tok": 34
+                                  },
+                                  "field": "client",
+                                  "tok": 36
+                                },
+                                "field": "Send",
+                                "tok": 38
+                              },
+                              "args": [
+                                {
+                                  "k": "ident",
+                                  "name": "d",
+                                  "tok": 40
+                                },
+                                {
+                                  "k": "strlit",
+                                  "value": "/",
+                                  "tok": 42
+                                }
+                              ],
+                              "tok": 39
+                            }
+                          ],
+                          "tok": 30
+                        }
+                      ]
+                    },
+                    "tok": 24
+                  }
+                ],
+                "tok": 18
+              }
+            ],
+            "tok": 11
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 50
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

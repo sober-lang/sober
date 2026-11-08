@@ -47,7 +47,7 @@ func file(fs map[string]string, p string) string {
 }
 
 func main() {
-    if !aesgcm.Available() {
+    if !crypto.aesgcm.Available() {
         println("no hardware")
         return
     }
@@ -76,9 +76,9 @@ func main() {
             iv := unhex(t.iv)
             aad := unhex(t.aad)
             want := t.ct + t.tag
-            sealed, se := aesgcm.Seal(key, iv, aad, unhex(t.msg))
+            sealed, se := crypto.aesgcm.Seal(key, iv, aad, unhex(t.msg))
             sealOk := se == nil && hex.Format(sealed) == want
-            pt, oe := aesgcm.Open(key, iv, aad, unhex(want))
+            pt, oe := crypto.aesgcm.Open(key, iv, aad, unhex(want))
             openOk := oe == nil && hex.Format(pt) == t.msg
             valid := t.result == "valid"
             ok := if !sized { se != nil && oe != nil } else if valid { sealOk && openOk } else { oe != nil }

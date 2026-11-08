@@ -1,0 +1,21 @@
+package main
+
+// map の読み（値の T?）を絞ってから欄を読む
+
+type P struct {
+    rows []int
+    name string
+}
+
+func rows(m map[string]P, k string) int {
+    e := m[k]
+    if e != nil {
+        return len(e.rows)
+    }
+    return -1
+}
+
+func main() {
+    m := map[string]P{"x": P{rows: []int{1, 2}, name: "x"}}
+    println(rows(m, "x"), rows(m, "y"))
+}

@@ -1,0 +1,4 @@
+all: 15
+every 2nd: 9
+bad: bad digit at 2
+slice source: 18

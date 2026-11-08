@@ -32,10 +32,10 @@ func XorKeyStream(key []byte, nonce []byte, counter int, src []byte) []byte {
     return XorKeyStreamAt(key, nonce, counter, src, 0, len(src))
 }
 
-// src[at, at + n) を鍵ストリームと xor したもの（写さずに読む — record 層向けの API）。同じ鍵・nonce の鍵ストリームを 2 つの平文に使ってはならない
+// src[off, off + n) を鍵ストリームと xor したもの（写さずに読む — record 層向けの API）。同じ鍵・nonce の鍵ストリームを 2 つの平文に使ってはならない
 @secret(key)
 @effects(!io, !block, !nondet)
-func XorKeyStreamAt(key []byte, nonce []byte, counter int, src []byte, at int, n int) []byte {
+func XorKeyStreamAt(key []byte, nonce []byte, counter int, src []byte, off int, n int) []byte {
     mut x := mut []int{}
     for i <- iter.Range(0, 16) {
         x = append(x, 0)
@@ -45,17 +45,17 @@ func XorKeyStreamAt(key []byte, nonce []byte, counter int, src []byte, at int, n
     s := freeze(s0)
     mut ctr := counter & mask32
     mut out := mut []byte{}
-    mut off := 0
-    while off < n {
+    mut done := 0
+    while done < n {
         rounds(mut x, s, ctr)
         for i <- iter.Range(0, 64) {
-            if off + i < n {
+            if done + i < n {
                 w := x[i / 4]
-                out = append(out, byte(int(src[at + off + i]) ^ ((w >> (8 * (i % 4))) & 0xff)))
+                out = append(out, byte(int(src[off + done + i]) ^ ((w >> (8 * (i % 4))) & 0xff)))
             }
         }
         ctr = (ctr + 1) & mask32
-        off = off + 64
+        done = done + 64
     }
     return freeze(out)
 }

@@ -9,7 +9,7 @@ import "std/internal/dudect"
 import "std/iter"
 
 func TestSelIdx() {
-    n := dudect.Count()
+    n := internal.dudect.Count()
     if n == 0 {
         return
     }
@@ -24,7 +24,7 @@ func TestSelIdx() {
     }
     blk := freeze(t)
     wa := addrn(blk)
-    dudect.Measure("rsa_sel_idx", n, 12, (c, i) => {
+    internal.dudect.Measure("rsa_sel_idx", n, 12, (c, i) => {
         []byte{byte(8 * c + ((i * 5 + 3) % 8))}
     }, (b) => {
         mut w := leaseView(blk, 0, 17 * l)
@@ -35,7 +35,7 @@ func TestSelIdx() {
 
 // 2 乗の塊（montSqr — 窓の 2 乗は秘密の値に掛かる）を、クラス 0 = 上半分の語が 0 の小さい値・クラス 1 = 全部の語が乱数の値で検定する（両クラスとも毎回違う値）
 func TestMontSqrVal() {
-    n := dudect.Count()
+    n := internal.dudect.Count()
     if n == 0 {
         return
     }
@@ -50,7 +50,7 @@ func TestMontSqrVal() {
     m[0] = m[0] | 1
     m[nl - 1] = m[nl - 1] | (1 << 63)
     mt := newMont(freeze(m))
-    dudect.Measure("rsa_montsqr_val", n, 13, (c, i) => {
+    internal.dudect.Measure("rsa_montsqr_val", n, 13, (c, i) => {
         mut b := mut []byte{}
         mut y := i * 2654435761 + 12345
         for k <- iter.Range(0, 8 * nl) {

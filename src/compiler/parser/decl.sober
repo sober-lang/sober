@@ -275,7 +275,7 @@ func resultOpt(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx
     return ast.PutList(mut db, []int{}), p
 }
 
-// qualName: type_name の綴り（IDENT ('.' IDENT)? / 'error'）。結果は（文字列, 次の位置）
+// qualName: type_name の綴り（IDENT ('.' IDENT)* / 'error' — 修飾子は多段 `http.server.Request`）。結果は（文字列, 次の位置）
 func qualName(db mut builder.Builder[int], cx Cx, p int) (int, int) {
     if tg(cx, p) == lexer.KwError {
         return ast.PutLit(mut db, "error"), p + 1
@@ -283,25 +283,41 @@ func qualName(db mut builder.Builder[int], cx Cx, p int) (int, int) {
     if tg(cx, p) != lexer.Identifier {
         return -1, p
     }
-    if tg(cx, p + 1) == lexer.Dot && tg(cx, p + 2) == lexer.Identifier {
-        a := cx.ts[p]
-        b := cx.ts[p + 2]
-        at := builder.Len(mut db)
-        builder.Push(mut db, a.end - a.start + 1 + b.end - b.start)
-        mut i := a.start
-        while i < a.end {
-            builder.Push(mut db, int(cx.src[i]))
-            i += 1
-        }
-        builder.Push(mut db, '.')
-        i = b.start
-        while i < b.end {
-            builder.Push(mut db, int(cx.src[i]))
-            i += 1
-        }
-        return at, p + 3
+    q := qualEnd(cx, p)
+    if q == p + 1 {
+        return name(mut db, cx, p), p + 1
     }
-    return name(mut db, cx, p), p + 1
+    // 段の字句は p, p + 2, …（間は '.'）
+    mut n := (q - p) / 2
+    mut k := p
+    while k < q {
+        n += cx.ts[k].end - cx.ts[k].start
+        k += 2
+    }
+    at := builder.Len(mut db)
+    builder.Push(mut db, n)
+    k = p
+    while k < q {
+        if k > p {
+            builder.Push(mut db, '.')
+        }
+        mut i := cx.ts[k].start
+        while i < cx.ts[k].end {
+            builder.Push(mut db, int(cx.src[i]))
+            i += 1
+        }
+        k += 2
+    }
+    return at, q
+}
+
+// 識別子の連鎖 IDENT ('.' IDENT)* の次の位置（p は識別子）
+func qualEnd(cx Cx, p int) int {
+    mut q := p + 1
+    while tg(cx, q) == lexer.Dot && tg(cx, q + 1) == lexer.Identifier {
+        q += 2
+    }
+    return q
 }
 
 // typeArgs: '[' type (',' type)* ']'（型の列、失敗は -1）

@@ -1,0 +1,145 @@
+package lower
+
+// 境界検査の消去（bce.sober）の網: IR を手で組んで直に見る（`cd src/compiler && ../../bin/sober test lower`）。
+// 検査の消去は範囲内の実行では観測を変えないので、門を緩めすぎる変異は範囲外で panic する例でしか鳴らない — 消す / 消さない形をここで固定する
+
+import "desugar"
+import "std/iter"
+
+// 仮引数 (y, y2, z) の関数に `uge c2, y`（偽の辺が続き）→ `uge c1, y'` の 2 本の検査を組んで bceFunc を掛け、残った condbr の数を返す。
+// kind: 0 = 直列（y' = y）・1 = c2 の検査が c1 の検査を支配しない（z の菱形の片側だけで c2 を検査）・2 = y' = y2（長さが違う）・
+// 3 = c1 の検査を c2 の検査の真の辺（範囲外 — panic の側）に置く・4 = 直列で c1 を定数の式 `(c1 × 1) + 0` に（全展開の写しの添字の形）
+func bcT(kind int, c1 int, c2 int) int {
+    mut st := St{}
+    initScalars(mut st)
+    desugar.HeapPush(mut st.d, 0)
+    pt := listN(mut st, 3)
+    desugar.HeapSet(mut st.d, pt + 1, TyI64)
+    desugar.HeapSet(mut st.d, pt + 2, TyI64)
+    desugar.HeapSet(mut st.d, pt + 3, TyI64)
+    f := addFunc(mut st, 0, desugar.ListRef(pt), -1)
+    st.fn = f
+    entry := newBlock(mut st)
+    st.cur = entry
+    bad := newBlock(mut st)
+    ok := newBlock(mut st)
+    done := newBlock(mut st)
+    y2 := if kind == 2 { 1 } else { 0 }
+    if kind == 1 {
+        a := newBlock(mut st)
+        join := newBlock(mut st)
+        condbr(mut st, 2, a, -1, join, -1)
+        setCur(mut st, a)
+        condbr(mut st, cmp(mut st, CUge, iconst(mut st, c2), 0), bad, -1, join, -1)
+        setCur(mut st, join)
+        condbr(mut st, cmp(mut st, CUge, iconst(mut st, c1), 0), bad, -1, done, -1)
+    } else if kind == 3 {
+        condbr(mut st, cmp(mut st, CUge, iconst(mut st, c2), 0), ok, -1, done, -1)
+        setCur(mut st, ok)
+        condbr(mut st, cmp(mut st, CUge, iconst(mut st, c1), 0), bad, -1, done, -1)
+    } else {
+        condbr(mut st, cmp(mut st, CUge, iconst(mut st, c2), 0), bad, -1, ok, -1)
+        setCur(mut st, ok)
+        x := if kind == 4 { bin(mut st, BAdd, bin(mut st, BMul, iconst(mut st, c1), iconst(mut st, 1)), iconst(mut st, 0)) } else { iconst(mut st, c1) }
+        condbr(mut st, cmp(mut st, CUge, x, y2), bad, -1, done, -1)
+    }
+    setCur(mut st, bad)
+    ret(mut st, -1)
+    setCur(mut st, done)
+    ret(mut st, -1)
+    bceFunc(mut st, f)
+    mut n := 0
+    mut b := irFnBHead(mut st, f)
+    while int(b) != -1 {
+        if irBlkTerm(mut st, b) == TmCondbr {
+            n += 1
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return n
+}
+
+func TestBceConst() {
+    // ⑤: `uge 5, y` の偽の辺が支配する `uge 3, y` は偽 — 畳まれて検査は 1 本だけ残る
+    assert(bcT(0, 3, 5) == 1)
+    // 同じ定数（c1 = c2 — GVN の前の形）も消える
+    assert(bcT(0, 5, 5) == 1)
+    // c1 > c2 なら消さない（比較を逆にする変異はここで落ちる）
+    assert(bcT(0, 6, 5) == 2)
+    // 支配しない検査からは言えない（菱形の片側 — z の condbr と 2 本の検査が残る）
+    assert(bcT(1, 3, 5) == 3)
+    // 長さが違えば言えない
+    assert(bcT(2, 3, 5) == 2)
+    // 真の辺（c2 ≥u y）からは言えない（辺の向きの門を外す変異はここで落ちる）
+    assert(bcT(3, 3, 5) == 2)
+    // 定数の式の添字も同じ（値で比べる — 式の値 6 > 5 なら消さない）
+    assert(bcT(4, 3, 5) == 1)
+    assert(bcT(4, 6, 5) == 2)
+}
+
+// 仮引数 (y) の関数に定数添字 1..n の検査 `uge k, y'` を直列に組んで bceFunc（⑤ の後に版分け）を掛け、残った condbr の数と、
+// 入口のブロックの判定 `ult c, y` の定数 c（判定が無ければ -1）を返す。kind: 0 = y' = y（入口で定まる）・1 = y' は入口の後ろのブロックの仮引数
+func bvT(kind int, n int) (int, int) {
+    mut st := St{}
+    initScalars(mut st)
+    desugar.HeapPush(mut st.d, 0)
+    pt := listN(mut st, 1)
+    desugar.HeapSet(mut st.d, pt + 1, TyI64)
+    f := addFunc(mut st, 0, desugar.ListRef(pt), -1)
+    st.fn = f
+    entry := newBlock(mut st)
+    st.cur = entry
+    bad := newBlock(mut st)
+    h := newBlock(mut st)
+    br(mut st, h, list1(mut st, 0))
+    setCur(mut st, h)
+    yp := param(mut st, h, TyI64)
+    y := if kind == 1 { yp } else { 0 }
+    for k <- iter.Range(1, n + 1) {
+        nx := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CUge, iconst(mut st, k), y), bad, -1, nx, -1)
+        setCur(mut st, nx)
+    }
+    ret(mut st, -1)
+    setCur(mut st, bad)
+    ret(mut st, -1)
+    bceFunc(mut st, f)
+    mut nc := 0
+    mut b := irFnBHead(mut st, f)
+    while int(b) != -1 {
+        if irBlkTerm(mut st, b) == TmCondbr {
+            nc += 1
+        }
+        b = irBlkNext(mut st, b)
+    }
+    mut c := -1
+    b0 := irFnBHead(mut st, f)
+    if irBlkTerm(mut st, b0) == TmCondbr {
+        mut i := irBlkIHead(mut st, b0)
+        while i != -1 {
+            if irInsRes(mut st, i) == irBlkX1(mut st, b0) && irInsOp(mut st, i) == OpCmp && irInsA(mut st, i) == CUlt {
+                mut j := irBlkIHead(mut st, b0)
+                while j != -1 {
+                    if irInsRes(mut st, j) == irInsB(mut st, i) && irInsOp(mut st, j) == OpConst {
+                        c = irInsA(mut st, j)
+                    }
+                    j = irInsNext(mut st, j)
+                }
+            }
+            i = irInsNext(mut st, i)
+        }
+    }
+    return nc, c
+}
+
+func TestBver() {
+    // 9 本（≥ BV_N）: 入口に `9 <u y` の判定（最大の添字ちょうど — 1 ずれの変異はここで落ちる）+ 元の 9 本が残り、写しの側には検査が無い
+    a0, a1 := bvT(0, 9)
+    assert(a0 == 10 && a1 == 9)
+    // 7 本（< BV_N）は写さない
+    b0, b1 := bvT(0, 7)
+    assert(b0 == 7 && b1 == -1)
+    // 長さが入口で定まらない値なら写さない（入口の判定に置けない）
+    c0, c1 := bvT(1, 9)
+    assert(c0 == 9 && c1 == -1)
+}

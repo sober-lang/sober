@@ -368,10 +368,11 @@ func stmtsIn(st mut S, l ListRef, eb0 int, ef0 int, depth0 int, ra bool, dis boo
                 gen := forStmt(mut st, e, eb, ef)?
                 brk := newLabel(mut st, LBrk, st.tUnit)
                 bi := pushLabel(mut st, brk)
-                // 失敗しうる生成元は `g(a, k)?`（forGen が `?` の節で包む）— 継続 k は `?` の内側の呼び出しの末尾の実引数
+                // 失敗しうる生成元は `g(a, k)?`（forGen が `?` の節で包む）— 継続 k は `?` の内側の呼び出しの末尾の実引数（名前付き引数を並べ直した呼び出しは loader の印の席）
                 gcall := if kindN(mut st, gen) == ast.ETry { nA(nodeOf(mut st, gen)) } else { gen }
                 ga := lB(nodeOf(mut st, gcall))
-                lam := latN(mut st, ga, lenL(mut st, ga) - 1)
+                ks := GenSlotIn(mut st, e)
+                lam := latN(mut st, ga, if ks >= 0 { ks } else { lenL(mut st, ga) - 1 })
                 ln := ast.WithC(nodeOf(mut st, lam), bi + 1)
                 synSet(mut st, int(lam), ln)
                 v := expr(mut st, gen, eb, ef, depth)?
@@ -746,15 +747,20 @@ func assignExpr(st mut S, s NodeRef, eb int, ef int, depth int) (CoreRef, error?
             return 0, diag.ImmWrite{at: posOf(mut st, at)}
         }
         if isTag(mut st, bt, TMp) {
-            if kindN(mut st, base0) != ast.EIdent {
+            // map の場所は名前か、根が名前の欄の道（`s.m[k] = v` — 組み直した map を assignTarget が欄の道へ書き戻す）
+            mut root := base0
+            while kindN(mut st, root) == ast.ESelector {
+                root = nA(nodeOf(mut st, root))
+            }
+            if kindN(mut st, root) != ast.EIdent {
                 return 0, diag.CoreFragment{at: posOf(mut st, at)}
             }
             base := expr(mut st, base0, eb, ef, depth)?
             // キー・値の型は mut 束縛のセル型 = 束縛点の点座標（V3-5 — appendValueAnn と同じ不変条件。F-26）
-            kt := atBinding(mut st, base0, tKey(mut st, bt), eb)
-            vt := atBinding(mut st, base0, tVal(mut st, bt), eb)
+            kt := atBinding(mut st, root, tKey(mut st, bt), eb)
+            vt := atBinding(mut st, root, tVal(mut st, bt), eb)
             // キー・値が束縛の region より深い（ループ本体・式ブロックで作った）なら写す（M4 — キーは mapKey の ann の前の素の値を写す）
-            mb := lookup(mut st, eb, sA(nodeOf(mut st, base0)))
+            mb := lookup(mut st, eb, sA(nodeOf(mut st, root)))
             kr := if mb >= 0 { bnd(mut st, mb).region } else { -1 }
             kraw := expr(mut st, nB(nodeOf(mut st, ix)), eb, ef, depth)?
             kc := if kr >= 0 && tg(mut st, kt) != TInt { storeCopy(mut st, kraw, computeTy(mut st, nB(nodeOf(mut st, ix)), eb, ef), kt, kr) } else { CoreRef(-1) }

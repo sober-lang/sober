@@ -44,28 +44,38 @@
                     "callee": {
                       "k": "selector",
                       "base": {
-                        "k": "ident",
-                        "name": "greet",
-                        "tok": 19
+                        "k": "selector",
+                        "base": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "testdata",
+                            "tok": 19
+                          },
+                          "field": "doubles",
+                          "tok": 21
+                        },
+                        "field": "greet",
+                        "tok": 23
                       },
                       "field": "Greet",
-                      "tok": 21
+                      "tok": 25
                     },
                     "args": [
                       {
                         "k": "strlit",
                         "value": "a",
-                        "tok": 23
+                        "tok": 27
                       }
                     ],
-                    "tok": 22
+                    "tok": 26
                   },
                   "rhs": {
                     "k": "strlit",
                     "value": "hello, a",
-                    "tok": 26
+                    "tok": 30
                   },
-                  "tok": 25
+                  "tok": 29
                 }
               ],
               "tok": 18
@@ -77,7 +87,7 @@
       "bodiless": false,
       "span": {
         "start": 12,
-        "end": 31
+        "end": 35
       },
       "sig_end": 16
     }

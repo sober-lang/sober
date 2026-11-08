@@ -1,0 +1,12 @@
+# scripts/tlsinterop.sh の記録（scripts/confrecord.sh が書く — 手で直さない）
+commit 8314196f0ed4 (dirty)
+date 2026-11-06
+conf-item: interop/tls p256 1.3
+conf-item: interop/tls p384 1.3
+conf-item: interop/tls rsa 1.3
+conf-item: interop/tls p256-12-gcm 1.2
+conf-item: interop/tls p256-12-chacha 1.2
+conf-item: interop/tls rsa-12-gcm 1.2
+conf-item: interop/tls rsa-12-chacha 1.2
+conf-item: interop/tls rsa-12-req 1.2
+conf: interop/tls 8

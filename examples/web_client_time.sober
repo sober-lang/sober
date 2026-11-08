@@ -1,0 +1,71 @@
+package main
+
+// Web クライアントのガイド 7 節: 時刻と期限。経過は単調時計（time.Mono / time.Since）で測り、応答の日付の頭は
+// time.ParseHTTP で壁時計の Time に読む（Retry-After）。Policy の timeout と time.Since はどちらも ns の int で、同じ物差しで比べられる
+
+import "std/http"
+import "std/http/client"
+import "std/http/server"
+import "std/net"
+import "std/task"
+import "std/time"
+
+// 外の API の代役: GET /v1/report は混んでいる — 503 と、いつ出直せばよいかの Retry-After（HTTP の日付の形）を返す
+func api(r http.server.Request) http.server.Response {
+    return if r.path == "/v1/report" {
+        http.server.Response{status: http.ServiceUnavailable, contentType: "text/plain", body: bytes("busy"),
+            headers: http.server.Headers{list: []http.Field{http.Field{name: "Retry-After", value: "Sun, 06 Nov 1994 08:49:37 GMT"}}}}
+    } else {
+        http.server.Status(404)
+    }
+}
+
+func fetch(base string) []string {
+    budget := 2 * time.Second
+    start := time.Mono()
+    r, e := http.client.Request("${base}/v1/report", policy: http.client.Policy{timeout: budget})
+    took := time.Since(start)
+    if e != nil {
+        return []string{"request failed"}
+    }
+    mut out := []string{"status ${r.status}", "within budget: ${took < budget}"}
+    ra := http.client.Header(r, "retry-after")
+    if ra != nil {
+        t, pe := time.ParseHTTP(ra)
+        if pe == nil {
+            out = append(out, "retry after (UTC) ${time.FormatRFC3339(t, 0)}")
+            out = append(out, "retry after (JST) ${time.FormatRFC3339(t, 9 * 3600)}")
+            out = append(out, "may retry now: ${time.Before(t, time.Now())}")
+        }
+    }
+    return out
+}
+
+func serve(l net.Listener, n int) error? {
+    mut k := 0
+    for c <- net.Accept(l)? {
+        http.server.ServeConn(c, api)?
+        k = k + 1
+        if k == n {
+            break
+        }
+    }
+    return nil
+}
+
+func main() {
+    e := net.Listen("127.0.0.1:0", (l) => {
+        base := "http://127.0.0.1:${net.Port(l)}"
+        got, _ := task.Run((s) => {
+            h := task.Spawn(s, () => fetch(base))
+            _ = serve(l, 1)
+            task.Join(h)
+        })
+        for line <- got {
+            println(line)
+        }
+    })
+    if e != nil {
+        println("listen failed")
+    }
+}

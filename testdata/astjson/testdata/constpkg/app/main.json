@@ -73,12 +73,22 @@
               {
                 "k": "selector",
                 "base": {
-                  "k": "ident",
-                  "name": "lib",
-                  "tok": 25
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "testdata",
+                      "tok": 25
+                    },
+                    "field": "constpkg",
+                    "tok": 27
+                  },
+                  "field": "lib",
+                  "tok": 29
                 },
                 "field": "Five",
-                "tok": 27
+                "tok": 31
               }
             ],
             "tok": 23
@@ -95,24 +105,34 @@
                 "callee": {
                   "k": "ident",
                   "name": "N",
-                  "tok": 31
+                  "tok": 35
                 },
                 "args": [
                   {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "lib",
-                      "tok": 33
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 37
+                        },
+                        "field": "constpkg",
+                        "tok": 39
+                      },
+                      "field": "lib",
+                      "tok": 41
                     },
                     "field": "Five",
-                    "tok": 35
+                    "tok": 43
                   }
                 ],
-                "tok": 32
+                "tok": 36
               }
             ],
-            "tok": 29
+            "tok": 33
           },
           {
             "k": "expr",
@@ -127,19 +147,29 @@
                   "lhs": {
                     "k": "ident",
                     "name": "n",
-                    "tok": 39
+                    "tok": 47
                   },
                   "rhs": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "lib",
-                      "tok": 41
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 49
+                        },
+                        "field": "constpkg",
+                        "tok": 51
+                      },
+                      "field": "lib",
+                      "tok": 53
                     },
                     "field": "Five",
-                    "tok": 43
+                    "tok": 55
                   },
-                  "tok": 40
+                  "tok": 48
                 },
                 "rhs": {
                   "k": "binary",
@@ -147,16 +177,16 @@
                   "lhs": {
                     "k": "ident",
                     "name": "m",
-                    "tok": 45
+                    "tok": 57
                   },
                   "rhs": {
                     "k": "ident",
                     "name": "n",
-                    "tok": 47
+                    "tok": 59
                   },
-                  "tok": 46
+                  "tok": 58
                 },
-                "tok": 44
+                "tok": 56
               },
               "then": {
                 "stmts": [
@@ -167,7 +197,7 @@
                       "callee": {
                         "k": "ident",
                         "name": "println",
-                        "tok": 49
+                        "tok": 61
                       },
                       "args": [
                         {
@@ -175,25 +205,25 @@
                           "callee": {
                             "k": "ident",
                             "name": "int",
-                            "tok": 51
+                            "tok": 63
                           },
                           "args": [
                             {
                               "k": "ident",
                               "name": "n",
-                              "tok": 53
+                              "tok": 65
                             }
                           ],
-                          "tok": 52
+                          "tok": 64
                         }
                       ],
-                      "tok": 50
+                      "tok": 62
                     }
                   }
                 ]
               },
               "else": null,
-              "tok": 38
+              "tok": 46
             }
           },
           {
@@ -211,14 +241,14 @@
                   "lhs": {
                     "k": "ident",
                     "name": "n",
-                    "tok": 62
+                    "tok": 74
                   },
                   "rhs": {
                     "k": "ident",
                     "name": "m",
-                    "tok": 64
+                    "tok": 76
                   },
-                  "tok": 63
+                  "tok": 75
                 },
                 "then": {
                   "stmts": [
@@ -227,12 +257,22 @@
                       "expr": {
                         "k": "selector",
                         "base": {
-                          "k": "ident",
-                          "name": "lib",
-                          "tok": 66
+                          "k": "selector",
+                          "base": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "testdata",
+                              "tok": 78
+                            },
+                            "field": "constpkg",
+                            "tok": 80
+                          },
+                          "field": "lib",
+                          "tok": 82
                         },
                         "field": "Five",
-                        "tok": 68
+                        "tok": 84
                       }
                     }
                   ]
@@ -245,15 +285,15 @@
                       "expr": {
                         "k": "ident",
                         "name": "n",
-                        "tok": 72
+                        "tok": 88
                       }
                     }
                   ]
                 },
-                "tok": 61
+                "tok": 73
               }
             ],
-            "tok": 59
+            "tok": 71
           },
           {
             "k": "expr",
@@ -262,7 +302,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 75
+                "tok": 91
               },
               "args": [
                 {
@@ -270,19 +310,19 @@
                   "callee": {
                     "k": "ident",
                     "name": "int",
-                    "tok": 77
+                    "tok": 93
                   },
                   "args": [
                     {
                       "k": "ident",
                       "name": "k",
-                      "tok": 79
+                      "tok": 95
                     }
                   ],
-                  "tok": 78
+                  "tok": 94
                 }
               ],
-              "tok": 76
+              "tok": 92
             }
           },
           {
@@ -292,21 +332,31 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 83
+                "tok": 99
               },
               "args": [
                 {
                   "k": "selector",
                   "base": {
-                    "k": "ident",
-                    "name": "lib",
-                    "tok": 85
+                    "k": "selector",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "testdata",
+                        "tok": 101
+                      },
+                      "field": "constpkg",
+                      "tok": 103
+                    },
+                    "field": "lib",
+                    "tok": 105
                   },
                   "field": "Min",
-                  "tok": 87
+                  "tok": 107
                 }
               ],
-              "tok": 84
+              "tok": 100
             }
           }
         ]
@@ -315,7 +365,7 @@
       "bodiless": false,
       "span": {
         "start": 10,
-        "end": 92
+        "end": 112
       },
       "sig_end": 14
     }

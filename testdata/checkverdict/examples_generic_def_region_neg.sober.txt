@@ -1,0 +1,2 @@
+sober: desugar error at examples/generic_def_region_neg.sober:16:24 (TypeMismatch): a generic func called as a function (not expanded) takes type arguments without regions — string / slice / map / channel types are not allowed here (a func with a mut or function-typed parameter is expanded and takes them)
+exit=1

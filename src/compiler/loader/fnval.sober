@@ -120,6 +120,86 @@ func typeDeclAt(cx Cx, f int, n string) (int, int) {
     return 0 - 1, 0 - 1
 }
 
+// 呼び出し cn の callee（ファイル f の木 t）が値化可能な名前付き関数型の名前（変換 `W(e)` / `p.W(e)` — language.md 25 節）なら
+// その宣言 (ファイル, 節)。でなければ (-1, -1)（局所の名前はトップレベルの名前と衝突しない — LocalTop — ので名前だけで決まる）
+func fvConvTy(cx Cx, ft FnTab, f int, t ast.Tree, cn int, gi int) (int, int) {
+    c := t.nodes[cn].a
+    x := t.nodes[c]
+    // 呼び出しの大半は関数の名前 — 型の表を引く前に外す（名前は関数と型で衝突しない）。変換は実引数 1 本
+    if (x.kind != ast.EIdent && x.kind != ast.ESelector) || ast.ListLen(t, t.nodes[cn].b) != 1 || x.kind == ast.EIdent && builtinCallee(t, x.a) || gi >= 0 {
+        return 0 - 1, 0 - 1
+    }
+    if x.kind == ast.ESelector && (t.nodes[x.a].kind != ast.EIdent || fileImportOf(cx, f, Name(t, t.nodes[x.a].a)) < 0) {
+        return 0 - 1, 0 - 1
+    }
+    n := if x.kind == ast.EIdent {
+        Name(t, x.a)
+    } else if x.kind == ast.ESelector && t.nodes[x.a].kind == ast.EIdent {
+        "${Name(t, t.nodes[x.a].a)}.${Name(t, x.b)}"
+    } else {
+        ""
+    }
+    if n == "" {
+        return 0 - 1, 0 - 1
+    }
+    tf, tn := typeDeclAt(cx, f, n)
+    if tf < 0 || !FnValDecl(cx, tf, tn) {
+        return 0 - 1, 0 - 1
+    }
+    return tf, tn
+}
+
+// 呼び出しの callee c が値の呼び出しか（構文だけで: func 宣言・型の名前〔変換〕・組み込み・package の修飾でない）
+func fvValCalleeSyn(cx Cx, ft FnTab, f int, t ast.Tree, c int, args int, gi int) bool {
+    // 実引数に名前（関数を指しうる節）が無い呼び出しは見ない（大半）
+    mut cand := false
+    for k <- iter.Range(0, ast.ListLen(t, args)) {
+        a := ast.ListAt(t, args, k)
+        cand = cand || (a >= 0 && (t.nodes[a].kind == ast.EIdent || t.nodes[a].kind == ast.ESelector))
+    }
+    x := t.nodes[c]
+    if !cand || gi >= 0 {
+        return false
+    }
+    if x.kind == ast.EIdent {
+        if builtinCallee(t, x.a) {
+            return false
+        }
+        n := Name(t, x.a)
+        if reserved(n) || builtinTypeName(n) {
+            return false
+        }
+        tf, _ := typeDeclAt(cx, f, n)
+        return tf < 0
+    }
+    if x.kind == ast.ESelector {
+        return t.nodes[x.a].kind != ast.EIdent || fileImportOf(cx, f, Name(t, t.nodes[x.a].a)) < 0
+    }
+    return x.kind == ast.ECall || x.kind == ast.EIndex || x.kind == ast.EParen
+}
+
+// 組み込みの呼び出しの名前か（データ s — 文字列を作らずに比べる）
+func builtinCallee(t ast.Tree, s int) bool {
+    return StrIs(t, s, "println") || StrIs(t, s, "len") || StrIs(t, s, "append") || StrIs(t, s, "panic") || StrIs(t, s, "assert") || StrIs(t, s, "freeze") || StrIs(t, s, "delete") || StrIs(t, s, "bytes") || StrIs(t, s, "string") || StrIs(t, s, "int") || StrIs(t, s, "byte") || StrIs(t, s, "bool") || StrIs(t, s, "float") || StrIs(t, s, "keys") || StrIs(t, s, "clone") || StrIs(t, s, "shape") || StrIs(t, s, "await")
+}
+
+// 実引数の列 l の名前付き関数（トップレベルの関数を指す名前）を自身の署名で η の的に積む
+func fnValEtaSelf(cx Cx, ft FnTab, f int, l int, hits mut builder.Builder[int]) {
+    t := cx.trees[f]
+    for k <- iter.Range(0, ast.ListLen(t, l)) {
+        v := ast.ListAt(t, l, k)
+        vk := if v >= 0 { t.nodes[v].kind } else { 0 - 1 }
+        gi := if vk == ast.EIdent || vk == ast.ESelector { calleeFn(cx, ft, f, v, 0) } else { 0 - 1 }
+        if gi >= 0 {
+            gt := cx.trees[ft.file[gi]]
+            gps := gt.nodes[ft.node[gi]].c
+            builder.Push(mut hits, v)
+            builder.Push(mut hits, ast.ListLen(gt, gps))
+            builder.Push(mut hits, ast.ParamsMutMask(gt, gps))
+        }
+    }
+}
+
 // 型式 te（ファイル df の木）が関数型を含まないか（TOpt / TSlice / TMap / TGeneric / TTuple の中も見る — 保守的）
 func fnValFirstOrder(cx Cx, df int, te int) bool {
     t := cx.trees[df]
@@ -381,7 +461,11 @@ func ValFOnly(cx Cx, f int, fnode int) bool {
 // 呼び出し節 n（ファイル f の木 t）の実引数のうち、呼び先（名前付き関数）の仮引数の型が値の位置（値化可能な named fn type
 // かその option）のもの: [実引数の節, 型宣言ファイル, 型宣言節] の 3 語ずつ（実引数の順。工程 4 B1 の同梱 — named fn type の仮引数の昇格）
 func callHits(cx Cx, ft FnTab, f int, t ast.Tree, n int) []int {
-    gi := calleeFn(cx, ft, f, t.nodes[n].a, 0)
+    return callHitsG(cx, ft, f, t, n, calleeFn(cx, ft, f, t.nodes[n].a, 0))
+}
+
+// callHits の呼び先の関数（calleeFn の結果 gi）を呼び手が引いた形
+func callHitsG(cx Cx, ft FnTab, f int, t ast.Tree, n int, gi int) []int {
     if gi < 0 || (ft.flags[gi] & FN_VALP) == 0 {
         return []int{}
     }
@@ -449,9 +533,9 @@ func fnValEtaScan(cx Cx, ft FnTab, f int, i int, hits mut builder.Builder[int]) 
 
 // 呼び出し節 i の値の位置の実引数のうち、名前付き関数を置いたものを hits に [実引数の節, 仮引数の数, mut の席のビット] の 3 語ずつ積む
 // （写せない形は kind + 字句 × 4 — fnValEtaScan と同じ符号）
-func fnValEtaCallScan(cx Cx, ft FnTab, f int, i int, hits mut builder.Builder[int]) int {
+func fnValEtaCallScan(cx Cx, ft FnTab, f int, i int, ci int, hits mut builder.Builder[int]) int {
     t := cx.trees[f]
-    hs := callHits(cx, ft, f, t, i)
+    hs := callHitsG(cx, ft, f, t, i, ci)
     mut h := 0
     while h < len(hs) {
         v := hs[h]
@@ -727,7 +811,18 @@ func fnValEtaAll(cx Cx, ft FnTab) ([]ast.Tree, error?) {
                 bad = fnValEtaScan(cx, ft, f, i, mut hits)
             }
             if t.nodes[i].kind == ast.ECall && bad == 0 {
-                bad = fnValEtaCallScan(cx, ft, f, i, mut chits)
+                cgi := calleeFn(cx, ft, f, t.nodes[i].a, 0)
+                bad = fnValEtaCallScan(cx, ft, f, i, cgi, mut chits)
+                // 変換 `W(f)` の実引数の名前付き関数は W の関数型で η（呼び先の関数の引きは 1 回 — 関数なら変換でも値の呼び出しでもない）
+                ctf, ctn := fvConvTy(cx, ft, f, t, i, cgi)
+                if bad == 0 && ctf >= 0 && ast.ListLen(t, t.nodes[i].b) == 1 {
+                    cw, cm := fvWant(cx, ctf, ctn)
+                    bad = fnValEtaOne(cx, ft, f, ast.ListAt(t, t.nodes[i].b, 0), cw, cm, mut chits)
+                } else if bad == 0 && fvValCalleeSyn(cx, ft, f, t, t.nodes[i].a, t.nodes[i].b, cgi) {
+                    // 値の呼び出し（呼び先が束縛・欄・添字・呼び出しの結果）の実引数の名前付き関数は自身の署名で η（仮引数の型は呼び先の値の型で
+                    // 構文からは見えない — η の後は実引数のラムダの既存の道）
+                    fnValEtaSelf(cx, ft, f, t.nodes[i].b, mut chits)
+                }
                 if len(afn) > 0 {
                     fnValAnonArgScan(cx, ft, f, i, afn, afa, afm, mut chits)
                 }
@@ -1340,15 +1435,19 @@ func fvN(w mut FvW, cx Cx, ft FnTab, n int, vp bool, ld int) {
         } else {
             fvN(mut w, cx, ft, x.a, vp, ld)
         }
-        hs := callHits(cx, ft, w.f, t, n)
+        cgi := calleeFn(cx, ft, w.f, x.a, 0)
+        hs := callHitsG(cx, ft, w.f, t, n, cgi)
         vc := fvValueCallee(mut w, cx, ft, x.a)
+        // 変換 `W(e)` の実引数は W の値の位置
+        ctf, ctn := fvConvTy(cx, ft, w.f, t, n, cgi)
         mut h := 0
         mut j := 0
         while j < ast.ListLen(t, x.b) {
             v := ast.ListAt(t, x.b, j)
-            hit := h < len(hs) && hs[h] == v
-            mask := if hit && hs[h + 2] >= 0 { fnValBrwMask(cx, hs[h + 1], hs[h + 2]) } else { 0 }
-            if hit {
+            conv := ctf >= 0 && j == 0
+            hit := h < len(hs) && hs[h] == v || conv
+            mask := if conv { fnValBrwMask(cx, ctf, ctn) } else if hit && hs[h + 2] >= 0 { fnValBrwMask(cx, hs[h + 1], hs[h + 2]) } else { 0 }
+            if hit && !conv {
                 h += 3
             }
             alr := if v >= 0 && t.nodes[v].kind == ast.EIdent { llRow(mut w, t, t.nodes[v].a) } else { 0 - 1 }

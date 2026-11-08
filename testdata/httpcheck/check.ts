@@ -637,7 +637,7 @@ async function chunkedEp() {
     ok("chunked curl sees the cut", cf.status !== 0, `rc=${cf.status}`);
 }
 
-// ── compress + stream（段 8-5 — language.md 28 節: compress: があり・Content-Type が圧縮向き・要求が gzip を受け・coded が無い stream の応答〔長さ既知なら
+// ── compress + stream（段 8-5 — language.md 28 節: compression: があり・Content-Type が圧縮向き・要求が gzip を受け・coded が無い stream の応答〔長さ既知なら
 // length ≥ 1024〕を gzip の chunked で送る。emit 1 回 = deflate の sync flush 1 回 = chunk 1 つ — 各 chunk までの接頭辞で、そこまでの平文が復号できる〔node:zlib の
 // Z_SYNC_FLUSH の読み〕・最後の chunk は最後のブロックと CRC-32 と長さ・HTTP/1.0 は閉じの区切り・長さ既知の stream の合計の検査〔不足 / 超過は終端なしで閉じる〕）
 function gzOk(x: Resp | undefined): boolean {
@@ -827,7 +827,7 @@ async function sseEp() {
         s.on("connect", () => s.write(`GET /sse HTTP/1.1\r\n${H}Connection: close\r\n\r\n`));
     });
     ok("sse first event arrives before the stream returns", tFirst >= 0 && tEnd >= 0 && tEnd - tFirst >= 200, `first=${tFirst.toFixed(0)} end=${tEnd.toFixed(0)}`);
-    // text/event-stream の body の応答も compress: の対象外（gzMin 以上・gzip を受ける要求でも）
+    // text/event-stream の body の応答も compression: の対象外（gzMin 以上・gzip を受ける要求でも）
     const b = (await exchange([`GET /sse-body HTTP/1.1\r\n${H}Accept-Encoding: gzip\r\nConnection: close\r\n\r\n`], 1)).resps[0];
     ok("sse body response not compressed", b?.status === 200 && !b.headers.has("content-encoding") && !b.headers.has("vary") && (b.body.length ?? 0) >= 2000 && b.body.startsWith(": pad\n\n"),
         `ce=${b?.headers.get("content-encoding")} vary=${b?.headers.get("vary")} len=${b?.body.length}`);
@@ -1052,7 +1052,7 @@ if (echoBig) {
     process.exit(fail ? 1 : 0);
 }
 // ── static（http.Static — report-956: GET /static/*path を STATIC_ROOT〔= --static の dir — ここで中身を作る〕の下から・precompressed・根の外は 404・
-// 毎要求ディスクを読む〔キャッシュなし〕・compress: の外）
+// 毎要求ディスクを読む〔キャッシュなし〕・compression: の外）
 async function staticEp() {
     if (!staticDir) return;
     const big = randomBytes(200000);

@@ -16,7 +16,7 @@ func Sum(data []byte) int
 data の CRC-32（IEEE 802.3 の多項式 — 反転形 0xedb88320・初期値と終わりの反転 0xffffffff。gzip・zlib・PNG と同じ値）。値は [0, 2^32) の int:
 
 ```sober
-c := crc32.Sum(bytes("123456789"))   // 0xcbf43926（RFC 1952 の照合値）
+c := internal.crc32.Sum(bytes("123456789"))   // 0xcbf43926（RFC 1952 の照合値）
 ```
 
 核は std/internal/crc32 の Update（PCLMULQDQ の畳み・倒れ先の slicing-by-8 — gzip の逐次の符号器と共有）

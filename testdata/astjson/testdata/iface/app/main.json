@@ -2,9 +2,9 @@
   "package": "main",
   "imports": [
     {
-      "alias": null,
+      "alias": "lib",
       "path": "testdata/iface/lib",
-      "tok": 4
+      "tok": 5
     }
   ],
   "types": [
@@ -31,14 +31,14 @@
                 }
               ]
             },
-            "tok": 10
+            "tok": 11
           }
         ]
       },
-      "tok": 7,
+      "tok": 8,
       "span": {
-        "start": 6,
-        "end": 19
+        "start": 7,
+        "end": 20
       }
     }
   ],
@@ -91,24 +91,24 @@
                         "lhs": {
                           "k": "ident",
                           "name": "x",
-                          "tok": 37
+                          "tok": 38
                         },
                         "rhs": {
                           "k": "int",
                           "value": 10,
-                          "tok": 39
+                          "tok": 40
                         },
-                        "tok": 38
+                        "tok": 39
                       },
-                      "tok": 36
+                      "tok": 37
                     }
                   }
                 ],
-                "tok": 29,
+                "tok": 30,
                 "type_args": []
               }
             ],
-            "tok": 27
+            "tok": 28
           },
           {
             "k": "ret",
@@ -120,32 +120,32 @@
                   "base": {
                     "k": "ident",
                     "name": "p",
-                    "tok": 43
+                    "tok": 44
                   },
                   "field": "f",
-                  "tok": 45
+                  "tok": 46
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "n",
-                    "tok": 47
+                    "tok": 48
                   }
                 ],
-                "tok": 46
+                "tok": 47
               }
             ],
-            "tok": 42
+            "tok": 43
           }
         ]
       },
-      "tok": 20,
+      "tok": 21,
       "bodiless": false,
       "span": {
-        "start": 19,
-        "end": 52
+        "start": 20,
+        "end": 53
       },
-      "sig_end": 26
+      "sig_end": 27
     },
     {
       "name": "main",
@@ -164,10 +164,10 @@
               {
                 "k": "int",
                 "value": 3,
-                "tok": 60
+                "tok": 61
               }
             ],
-            "tok": 57
+            "tok": 58
           },
           {
             "k": "expr",
@@ -178,19 +178,19 @@
                 "base": {
                   "k": "ident",
                   "name": "lib",
-                  "tok": 62
+                  "tok": 63
                 },
                 "field": "Bump",
-                "tok": 64
+                "tok": 65
               },
               "args": [
                 {
                   "k": "mut_arg",
                   "name": "v",
-                  "tok": 67
+                  "tok": 68
                 }
               ],
-              "tok": 65
+              "tok": 66
             }
           },
           {
@@ -200,16 +200,16 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 70
+                "tok": 71
               },
               "args": [
                 {
                   "k": "ident",
                   "name": "v",
-                  "tok": 72
+                  "tok": 73
                 }
               ],
-              "tok": 71
+              "tok": 72
             }
           },
           {
@@ -219,7 +219,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 75
+                "tok": 76
               },
               "args": [
                 {
@@ -229,10 +229,10 @@
                     "base": {
                       "k": "ident",
                       "name": "lib",
-                      "tok": 77
+                      "tok": 78
                     },
                     "field": "Twice",
-                    "tok": 79
+                    "tok": 80
                   },
                   "args": [
                     {
@@ -249,27 +249,27 @@
                         "lhs": {
                           "k": "ident",
                           "name": "x",
-                          "tok": 85
+                          "tok": 86
                         },
                         "rhs": {
                           "k": "int",
                           "value": 1,
-                          "tok": 87
+                          "tok": 88
                         },
-                        "tok": 86
+                        "tok": 87
                       },
-                      "tok": 84
+                      "tok": 85
                     },
                     {
                       "k": "int",
                       "value": 5,
-                      "tok": 89
+                      "tok": 90
                     }
                   ],
-                  "tok": 80
+                  "tok": 81
                 }
               ],
-              "tok": 76
+              "tok": 77
             }
           },
           {
@@ -279,7 +279,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 93
+                "tok": 94
               },
               "args": [
                 {
@@ -287,19 +287,19 @@
                   "callee": {
                     "k": "ident",
                     "name": "choose",
-                    "tok": 95
+                    "tok": 96
                   },
                   "args": [
                     {
                       "k": "int",
                       "value": 4,
-                      "tok": 97
+                      "tok": 98
                     }
                   ],
-                  "tok": 96
+                  "tok": 97
                 }
               ],
-              "tok": 94
+              "tok": 95
             }
           },
           {
@@ -309,7 +309,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 101
+                "tok": 102
               },
               "args": [
                 {
@@ -319,10 +319,10 @@
                     "base": {
                       "k": "ident",
                       "name": "lib",
-                      "tok": 103
+                      "tok": 104
                     },
                     "field": "Decode",
-                    "tok": 105
+                    "tok": 106
                   },
                   "args": [
                     {
@@ -335,22 +335,22 @@
                         {
                           "k": "int",
                           "value": 104,
-                          "tok": 111
+                          "tok": 112
                         },
                         {
                           "k": "int",
                           "value": 105,
-                          "tok": 113
+                          "tok": 114
                         }
                       ],
                       "mut": false,
-                      "tok": 107
+                      "tok": 108
                     }
                   ],
-                  "tok": 106
+                  "tok": 107
                 }
               ],
-              "tok": 102
+              "tok": 103
             }
           },
           {
@@ -360,7 +360,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 118
+                "tok": 119
               },
               "args": [
                 {
@@ -370,10 +370,10 @@
                     "base": {
                       "k": "ident",
                       "name": "lib",
-                      "tok": 120
+                      "tok": 121
                     },
                     "field": "Decode",
-                    "tok": 122
+                    "tok": 123
                   },
                   "args": [
                     {
@@ -386,17 +386,17 @@
                         {
                           "k": "int",
                           "value": 255,
-                          "tok": 128
+                          "tok": 129
                         }
                       ],
                       "mut": false,
-                      "tok": 124
+                      "tok": 125
                     }
                   ],
-                  "tok": 123
+                  "tok": 124
                 }
               ],
-              "tok": 119
+              "tok": 120
             }
           },
           {
@@ -406,7 +406,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 133
+                "tok": 134
               },
               "args": [
                 {
@@ -418,30 +418,30 @@
                       "base": {
                         "k": "ident",
                         "name": "lib",
-                        "tok": 135
+                        "tok": 136
                       },
                       "field": "ByMod",
-                      "tok": 137
+                      "tok": 138
                     },
                     "field": "less",
-                    "tok": 139
+                    "tok": 140
                   },
                   "args": [
                     {
                       "k": "int",
                       "value": 7,
-                      "tok": 141
+                      "tok": 142
                     },
                     {
                       "k": "int",
                       "value": 12,
-                      "tok": 143
+                      "tok": 144
                     }
                   ],
-                  "tok": 140
+                  "tok": 141
                 }
               ],
-              "tok": 134
+              "tok": 135
             }
           },
           {
@@ -451,7 +451,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 147
+                "tok": 148
               },
               "args": [
                 {
@@ -461,10 +461,10 @@
                     "base": {
                       "k": "ident",
                       "name": "lib",
-                      "tok": 149
+                      "tok": 150
                     },
                     "field": "Tag",
-                    "tok": 151
+                    "tok": 152
                   },
                   "args": [
                     {
@@ -476,29 +476,29 @@
                           "value": {
                             "k": "int",
                             "value": 2,
-                            "tok": 159
+                            "tok": 160
                           }
                         }
                       ],
-                      "tok": 153,
+                      "tok": 154,
                       "type_args": []
                     }
                   ],
-                  "tok": 152
+                  "tok": 153
                 }
               ],
-              "tok": 148
+              "tok": 149
             }
           }
         ]
       },
-      "tok": 53,
+      "tok": 54,
       "bodiless": false,
       "span": {
-        "start": 52,
-        "end": 166
+        "start": 53,
+        "end": 167
       },
-      "sig_end": 56
+      "sig_end": 57
     }
   ],
   "consts": []

@@ -3,7 +3,7 @@
   "imports": [
     {
       "alias": null,
-      "path": "std/http",
+      "path": "std/http/server",
       "tok": 4
     }
   ],
@@ -31,24 +31,29 @@
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "http",
-                      "tok": 13
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "http",
+                        "tok": 13
+                      },
+                      "field": "server",
+                      "tok": 15
                     },
                     "field": "FormatEvent",
-                    "tok": 15
+                    "tok": 17
                   },
                   "args": [
                     {
                       "k": "composite",
-                      "type_name": "http.Event",
+                      "type_name": "http.server.Event",
                       "elems": [
                         {
                           "key": "event",
                           "value": {
                             "k": "strlit",
                             "value": "greet",
-                            "tok": 23
+                            "tok": 27
                           }
                         },
                         {
@@ -56,15 +61,15 @@
                           "value": {
                             "k": "strlit",
                             "value": "line 1\nline 2",
-                            "tok": 27
+                            "tok": 31
                           }
                         }
                       ],
-                      "tok": 17,
+                      "tok": 19,
                       "type_args": []
                     }
                   ],
-                  "tok": 16
+                  "tok": 18
                 }
               ],
               "tok": 12
@@ -80,10 +85,10 @@
               {
                 "k": "strlit",
                 "value": "x\ndata: injected",
-                "tok": 34
+                "tok": 38
               }
             ],
-            "tok": 32
+            "tok": 36
           },
           {
             "k": "expr",
@@ -92,7 +97,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 36
+                "tok": 40
               },
               "args": [
                 {
@@ -100,24 +105,29 @@
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "http",
-                      "tok": 38
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "http",
+                        "tok": 42
+                      },
+                      "field": "server",
+                      "tok": 44
                     },
                     "field": "FormatEvent",
-                    "tok": 40
+                    "tok": 46
                   },
                   "args": [
                     {
                       "k": "composite",
-                      "type_name": "http.Event",
+                      "type_name": "http.server.Event",
                       "elems": [
                         {
                           "key": "event",
                           "value": {
                             "k": "ident",
                             "name": "name",
-                            "tok": 48
+                            "tok": 56
                           }
                         },
                         {
@@ -125,18 +135,18 @@
                           "value": {
                             "k": "strlit",
                             "value": "hello",
-                            "tok": 52
+                            "tok": 60
                           }
                         }
                       ],
-                      "tok": 42,
+                      "tok": 48,
                       "type_args": []
                     }
                   ],
-                  "tok": 41
+                  "tok": 47
                 }
               ],
-              "tok": 37
+              "tok": 41
             }
           }
         ]
@@ -145,7 +155,7 @@
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 59
+        "end": 67
       },
       "sig_end": 10
     }

@@ -83,3 +83,31 @@ func Basename(p string) string {
     _, base, slashed := strings.CutLast(p, "/")
     return if slashed { base } else { p }
 }
+
+// import のパスの修飾子（alias の無い import の参照名 — language.md 20 節）: `std/` を落とし、段の区切り '/' を '.' に
+// （std/http/server → http.server・testdata/box → testdata.box）
+func QualOf(p string) string {
+    q := if strings.HasPrefix(p, "std/") { cut(p, 4, len(bytes(p))) } else { p }
+    mut out := mut []byte{}
+    for c <- bytes(q) {
+        out = append(out, if c == '/' { byte('.') } else { c })
+    }
+    r := string(freeze(out)) catch return "?"
+    return r
+}
+
+// import 節 im の参照名（alias か修飾子）
+func ImpRef(t ast.Tree, im ast.Node) string {
+    return if im.a >= 0 { Name(t, im.a) } else { QualOf(Name(t, im.b)) }
+}
+
+// import 節 im が参照名 ref で引けるか（alias か修飾子）
+func ImpRefIs(t ast.Tree, im ast.Node, ref string) bool {
+    return ImpRef(t, im) == ref
+}
+
+// 修飾子の根の段（`http.server` → `http`。1 段ならそのまま）
+func RootSeg(q string) string {
+    root, _, dotted := strings.Cut(q, ".")
+    return if dotted { root } else { q }
+}

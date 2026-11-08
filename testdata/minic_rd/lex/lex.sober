@@ -36,7 +36,7 @@ func punct(c int) int {
 }
 
 // Lex は b[start:end]（1 行）を字句に分ける。末尾に End を置く
-@errors(diag.UnexpectedChar)
+@errors(testdata.minic_rd.diag.UnexpectedChar)
 func Lex(b []byte, start int, end int) ([]Token, error?) {
     mut tb := builder.Builder[Token]{}
     mut i := start
@@ -56,7 +56,7 @@ func Lex(b []byte, start int, end int) ([]Token, error?) {
         } else {
             k := punct(c)
             if k < 0 {
-                return []Token{}, diag.UnexpectedChar{pos: i}
+                return []Token{}, testdata.minic_rd.diag.UnexpectedChar{pos: i}
             }
             builder.Push(mut tb, Token{k, i, 0})
             i += 1

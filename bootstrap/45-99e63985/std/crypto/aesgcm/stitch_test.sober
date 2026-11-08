@@ -1,0 +1,127 @@
+package aesgcm
+
+// 縫い合わせの塊（aesseal / aesopen — 128 の倍数の部分）の網（white-box）: 縫い合わせない塊（aesctr / aesghash）だけで組んだ参照の Seal と、
+// SealTo（その場）・SealInto（pt → dst）・tail つき・OpenAt の往復を、長さの境目（16・128 の倍数の前後・record の上限）で突き合わせ、
+// 大きい暗号文（縫い合わせの道を通る長さ）の tag・暗号文を 1 ビット変えたものが Auth になることを確かめる
+
+import "std/iter"
+
+func TestStitch() {
+    if !Available() {
+        return
+    }
+    mut kb := mut []byte{}
+    for i <- iter.Range(0, 16) {
+        kb = append(kb, byte((i * 29 + 7) & 0xff))
+    }
+    k, _ := Prepare(freeze(kb))
+    nonce := []byte{9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 11, 12}
+    ns := []int{0, 1, 15, 16, 17, 112, 127, 128, 129, 143, 255, 256, 257, 383, 384, 385, 1000, 1024, 1100, 10240, 16385}
+    ads := []int{0, 5, 13, 16, 21}
+    for ai <- iter.Range(0, len(ads)) {
+        ad := pat(ads[ai], 3)
+        for t <- iter.Range(0, len(ns)) {
+            n := ns[t]
+            pt := pat(n, 11 + t)
+            want := refSeal(k, nonce, ad, pt)
+            got, e := SealTo(k, nonce, ad, pt, []byte{}, []byte{})
+            assert(e == nil)
+            assert(same(got, want))
+            // tail つき（平文 = pt[0:n − 1] ‖ pt[n − 1:]）
+            if n > 0 {
+                got2, _ := SealTo(k, nonce, ad, pt[0:n - 1], []byte{}, pt[n - 1:n])
+                assert(same(got2, want))
+            }
+            // SealInto（頭 3 バイト・pt → dst）
+            mut dst := mut []byte{}
+            for i <- iter.Range(0, n + Overhead + 7) {
+                dst = append(dst, byte(0xee))
+            }
+            w := SealInto(k, nonce, ad, pt, []byte{1, 2, 3}, []byte{}, mut dst, 2)
+            assert(w == 3 + n + Overhead)
+            d := freeze(dst)
+            assert(same(d[5:5 + n + Overhead], want))
+            // 往復
+            p, oe := OpenAt(k, nonce, ad, want, 0, len(want))
+            assert(oe == nil)
+            assert(same(p, pt))
+            // 改竄: tag の最後のビット・暗号文の頭のビット（縫い合わせの道の中）
+            bad := flip(want, len(want) - 1)
+            _, be := OpenAt(k, nonce, ad, bad, 0, len(bad))
+            assert(be != nil)
+            if n > 0 {
+                bad2 := flip(want, 0)
+                _, be2 := OpenAt(k, nonce, ad, bad2, 0, len(bad2))
+                assert(be2 != nil)
+            }
+        }
+    }
+}
+
+// 縫い合わせない塊だけの Seal（暗号文 ‖ tag）
+func refSeal(k Key, nonce []byte, ad []byte, pt []byte) []byte {
+    n := len(pt)
+    full := n - n % 16
+    e16 := (n - full + 15) / 16 * 16
+    mut sm := mut []byte{}
+    newState(mut sm, k, nonce, ad, e16, n)
+    putEdge(mut sm, pt, []byte{}, full)
+    st := freeze(sm)
+    sa := sysAddr(st)
+    mut o := mut []byte{}
+    for i <- iter.Range(0, n) {
+        o = append(o, pt[i])
+    }
+    for i <- iter.Range(0, Overhead) {
+        o = append(o, 0)
+    }
+    out := freeze(o)
+    at := sysAddr(out)
+    if full > 0 {
+        _ = sysAesCtr(sa, at, at, full)
+    }
+    if e16 > 0 {
+        _ = sysAesCtr(sa, sa + stEdge, at + full, n - full)
+    }
+    af := len(ad) - len(ad) % 16
+    if af > 0 {
+        _ = sysAesGhash(sa, sysAddr(ad), af)
+    }
+    if af < len(ad) {
+        _ = sysAesGhash(sa, sa + stAd, 16)
+    }
+    _ = sysAesGhash(sa, at, full + e16)
+    _ = sysAesGhash(sa, sa + stEdge + e16, 16)
+    _ = sysAesTag(sa, at + n)
+    return out
+}
+
+func pat(n int, seed int) []byte {
+    mut b := mut []byte{}
+    mut x := seed * 2654435761 + 1
+    for i <- iter.Range(0, n) {
+        x = x * 6364136223846793005 + 1442695040888963407
+        b = append(b, byte((x >> 33) & 0xff))
+    }
+    return freeze(b)
+}
+
+func same(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+func flip(a []byte, at int) []byte {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, len(a)) {
+        b = append(b, if i == at { byte(int(a[i]) ^ 1) } else { a[i] })
+    }
+    return freeze(b)
+}

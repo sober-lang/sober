@@ -1,0 +1,76 @@
+# rootstore — 信頼ストアの鮮度の見張り（ユーザー裁定 2026-11-05 の更新フロー ②）。週に 1 度、Mozilla NSS の最新の RTM タグを
+# 焼き込みの銘（testdata/x509/nss/SOURCE）のタグと比べ、新しければ scripts/rootstore.sh --regen で作り直した PR を起こす（同じタグの PR が開いていれば何もしない）。
+# dev（非公開）と公開のどちらのリポジトリでも同じファイルで動く（公開同期が workflow も運ぶ — secrets・リポジトリ名・固有のパスに依らない。リポジトリは github.repository）:
+# 非公開 = 正史の regen の PR（作れない設定なら issue に倒す）・公開 = 鮮度の信号の issue（PR は起こさない — 正史は dev の regen が公開同期で運ぶ）。GITHUB_TOKEN で作った PR では CI が自動では走らない — 取り込む前に手元で gates を回す
+name: rootstore
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: rootstore
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  rootstore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Compare the pinned NSS tag with the latest
+        id: tags
+        run: |
+          pinned=$(scripts/rootstore.sh --pinned)
+          latest=$(scripts/rootstore.sh --latest)
+          echo "pinned=$pinned" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "pinned $pinned / latest $latest" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Regenerate and open a PR (or an issue)
+        if: steps.tags.outputs.latest != '' && steps.tags.outputs.latest != steps.tags.outputs.pinned
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PRIVATE: ${{ github.event.repository.private }}
+          LATEST: ${{ steps.tags.outputs.latest }}
+          PINNED: ${{ steps.tags.outputs.pinned }}
+        run: |
+          if [ "$PRIVATE" != "true" ]; then
+            title="信頼ストアの更新: NSS $LATEST"
+            if [ -z "$(gh issue list --repo "$GH_REPO" --search "$title in:title" --state open --json number --jq '.[].number')" ]; then
+              gh issue create --repo "$GH_REPO" --title "$title" --body "銘の版 $PINNED に対して最新は $LATEST（鮮度の信号 — 正史の regen は dev のリポジトリで行い、公開同期で運ばれる）。"
+            fi
+            echo "public repository: opened a freshness issue for $LATEST" >> "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          branch="rootstore/$LATEST"
+          if [ -n "$(gh pr list --repo "$GH_REPO" --head "$branch" --state open --json number --jq '.[].number')" ]; then
+            echo "an open PR for $LATEST exists" >> "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          scripts/rootstore.sh --regen "$LATEST"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add src/std/internal/x509/roots.sober testdata/x509/nss
+          git commit -m "std/internal/x509: 信頼ストアを NSS $LATEST に（scripts/rootstore.sh --regen）"
+          body="scripts/rootstore.sh --regen $LATEST（$PINNED から）。取り込む前に手元で scripts/gates.sh --full（rootsync・unittest の x509）を回し、distrust-after と削除された起点を確かめる。"
+          if git push origin "$branch" && gh pr create --repo "$GH_REPO" --head "$branch" --title "信頼ストアを NSS $LATEST に" --body "$body"; then
+            echo "opened a PR for $LATEST" >> "$GITHUB_STEP_SUMMARY"
+          else
+            title="信頼ストアの更新: NSS $LATEST"
+            if [ -z "$(gh issue list --repo "$GH_REPO" --search "$title in:title" --state open --json number --jq '.[].number')" ]; then
+              gh issue create --repo "$GH_REPO" --title "$title" --body "PR を作れなかった。手元で $body"
+            fi
+            echo "opened an issue for $LATEST" >> "$GITHUB_STEP_SUMMARY"
+          fi

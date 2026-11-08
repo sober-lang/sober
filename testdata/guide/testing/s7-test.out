@@ -1,5 +1,5 @@
-ok   examples/guide/settings.TestSetThenValue
-ok   examples/guide/settings.TestMissingFile
-ok   examples/guide/settings.TestDenied
+ok   settings.TestSetThenValue
+ok   settings.TestMissingFile
+ok   settings.TestDenied
 3 passed, 0 failed
 (exit 0)

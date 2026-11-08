@@ -1,16 +1,16 @@
 package main
 
-import "std/http"
+import "std/http/server"
 import "std/net"
 
-func hello(r http.Request) http.Response {
-    n := http.Param(r, "name")
-    return http.Text("hello, ${if n != nil { n } else { "world" }}\n")
+func hello(r http.server.Request) http.server.Response {
+    n := http.server.Param(r, "name")
+    return http.server.Text("hello, ${if n != nil { n } else { "world" }}\n")
 }
 
 func app(c net.Conn) error? {
-    rs := []http.Route{http.Route{method: "GET", path: "/hello/:name", handler: hello}}
-    return http.ServeConn(c, (r) => http.Dispatch(rs, r))
+    rs := []http.server.Route{http.server.Route{method: "GET", path: "/hello/:name", handler: hello}}
+    return http.server.ServeConn(c, (r) => http.server.Dispatch(rs, r))
 }
 
 func serve() error? {

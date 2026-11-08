@@ -10,42 +10,42 @@ type Row struct {
     v string
 }
 
-const Rows = cell.Cell[[]Row]{}
-const N = cell.Cell[int]{init: 3}
-const S = cell.Cell[string]{init: "x"}
-const Hits = cell.Cell[int]{}
-const Seen = cell.Cell[[]string]{}
-const Sum = cell.Cell[int]{}
-const Lines = cell.Cell[[]string]{}
-const Index = cell.Cell[map[string][]string]{}
+const Rows = testing.cell.Cell[[]Row]{}
+const N = testing.cell.Cell[int]{init: 3}
+const S = testing.cell.Cell[string]{init: "x"}
+const Hits = testing.cell.Cell[int]{}
+const Seen = testing.cell.Cell[[]string]{}
+const Sum = testing.cell.Cell[int]{}
+const Lines = testing.cell.Cell[[]string]{}
+const Index = testing.cell.Cell[map[string][]string]{}
 
 func add(k int) {
-    cell.Update(Rows, (rs []Row) => append(rs, Row{k: "${k}", v: "v${k}"}))
+    testing.cell.Update(Rows, (rs []Row) => append(rs, Row{k: "${k}", v: "v${k}"}))
 }
 
 // Get before any Set reads init (or the zero value), and each handle is its own cell
 func TestGetSetUpdate() {
-    assert(cell.Get(N) == 3)
-    assert(len(cell.Get(Rows)) == 0)
-    assert(cell.Get(S) == "x")
-    cell.Set(N, 4)
-    cell.Set(S, "n = ${cell.Get(N)}")
-    cell.Set(Rows, []Row{Row{k: "a", v: "b"}})
+    assert(testing.cell.Get(N) == 3)
+    assert(len(testing.cell.Get(Rows)) == 0)
+    assert(testing.cell.Get(S) == "x")
+    testing.cell.Set(N, 4)
+    testing.cell.Set(S, "n = ${testing.cell.Get(N)}")
+    testing.cell.Set(Rows, []Row{Row{k: "a", v: "b"}})
     add(3)
     add(4)
-    cell.Update(N, (n int) => n + 10)
-    got := cell.Get(Rows)
+    testing.cell.Update(N, (n int) => n + 10)
+    got := testing.cell.Get(Rows)
     assert(len(got) == 3)
     assert(got[0].k == "a")
     assert(got[2].v == "v4")
-    assert(cell.Get(S) == "n = 4")
-    assert(cell.Get(N) == 14)
+    assert(testing.cell.Get(S) == "n = 4")
+    assert(testing.cell.Get(N) == 14)
 }
 
 func work(i int) int {
     for j <- iter.Range(0, 200) {
-        cell.Update(Hits, (n int) => n + 1)
-        cell.Update(Seen, (s []string) => append(s, "w${i}-${j}"))
+        testing.cell.Update(Hits, (n int) => n + 1)
+        testing.cell.Update(Seen, (s []string) => append(s, "w${i}-${j}"))
     }
     return i
 }
@@ -60,8 +60,8 @@ func TestParallelUpdates() {
         task.Join(h0) + task.Join(h1) + task.Join(h2) + task.Join(h3)
     })
     assert(r == 6)
-    assert(cell.Get(Hits) == 800)
-    assert(len(cell.Get(Seen)) == 800)
+    assert(testing.cell.Get(Hits) == 800)
+    assert(len(testing.cell.Get(Seen)) == 800)
 }
 
 // every quick trial starts with empty cells (a trial is fixed by the seed and its number)
@@ -69,18 +69,18 @@ func TestQuickTrialsStartEmpty() {
     mut q := quick.New()
     quick.Check(mut q, () => {
         x := quick.Int(mut q, 1, 9)
-        cell.Update(Sum, (n int) => n + x)
-        cell.Get(Sum) == x
+        testing.cell.Update(Sum, (n int) => n + x)
+        testing.cell.Get(Sum) == x
     })
 }
 
 func lastLine() string {
-    ls := cell.Get(Lines)
+    ls := testing.cell.Get(Lines)
     return ls[len(ls) - 1]
 }
 
 func indexed(k string) string {
-    m := cell.Get(Index)
+    m := testing.cell.Get(Index)
     vs := m[k]
     return if vs == nil { "-" } else { vs[0] }
 }
@@ -90,17 +90,17 @@ func indexed(k string) string {
 func TestCopiesLeaveTheSourceIntact() {
     k := "k"
     xs := []string{k + "=1"}
-    cell.Set(Lines, xs)
+    testing.cell.Set(Lines, xs)
     assert(lastLine() == "k=1")
     assert(lastLine() == "k=1")
-    cell.Set(Lines, []string{k + "=2"})
-    cell.Update(Lines, (ls []string) => append(ls, k + "=3"))
+    testing.cell.Set(Lines, []string{k + "=2"})
+    testing.cell.Update(Lines, (ls []string) => append(ls, k + "=3"))
     assert(xs[0] == "k=1")
     assert(lastLine() == "k=3")
     assert(lastLine() == "k=3")
     mut m := mut map[string][]string{}
     m[k] = []string{k + "v"}
-    cell.Set(Index, freeze(m))
+    testing.cell.Set(Index, freeze(m))
     assert(indexed("k") == "kv")
     assert(indexed("k") == "kv")
 }

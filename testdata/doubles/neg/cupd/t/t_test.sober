@@ -2,8 +2,8 @@ package t
 
 import "std/testing/cell"
 
-const H = cell.Cell[int]{}
+const H = testing.cell.Cell[int]{}
 
 func TestT() {
-    cell.Update(H, (n int) => "one")
+    testing.cell.Update(H, (n int) => "one")
 }

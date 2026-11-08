@@ -1,0 +1,420 @@
+package loader
+
+// モジュールの宣言（language.md 20 節「sober.mod」）: ビルドの起点（cwd）の sober.mod を読み、木での名前（import パスの根の段）の表を作る。
+// 起点の外へ sober.mod を探しには行かない（親のディレクトリを遡らない — ディレクトリの位置で解決が変わる隠れた状態を作らない）。
+// 字句は Sober の字句器をそのまま使う（改行 → `;` の自動挿入・`//` のコメント）。`module` / `dep` / `alias` はキーワードでなく、この文法の中だけの語。
+// 解決は表引き 1 回: import パスの根の段が dep の名前ならそのディレクトリへ、それ以外は起点からの相対。std の根は alias で付け替えられる。
+
+import "std/builder"
+import "std/io"
+import "std/iter"
+import "std/strings"
+import "ast"
+import "diag"
+import "lexer"
+
+const MOD_FILE = "sober.mod"
+
+// 読んだ sober.mod。dep_* は dep の行（木での名前・起点からのディレクトリ・相手の module 名の末尾の段）、al_* は alias の行（名前・付け替える std の根の段）
+type Mod struct {
+    on bool
+    name string
+    dep_name []string
+    dep_dir []string
+    dep_mod []string
+    al_name []string
+    al_root []string
+    // 読んだ sober.mod のパス（答えの再生の照合に足す）
+    files []string
+}
+
+func NoMod() Mod {
+    return Mod{false, "", []string{}, []string{}, []string{}, []string{}, []string{}, []string{}}
+}
+
+// 1 枚の sober.mod の字句の読み（tok = 各行の頭の字句の番号 — 拒否の位置）
+type modText struct {
+    name string
+    name_tok int
+    dep_name []string
+    dep_src []string
+    dep_ver []string
+    dep_tok []int
+    dep_named []bool
+    al_name []string
+    al_src []string
+    al_tok []int
+}
+
+// 字句 [s, e) の文字列リテラルの中身（エスケープ・補間を含むもの・UTF-8 でないものは ok = false）
+func modStr(src []byte, x lexer.Token) (string, bool) {
+    if x.tag != lexer.StringLiteral || x.end - x.start < 2 {
+        return "", false
+    }
+    mut b := mut []byte{}
+    for i <- iter.Range(x.start + 1, x.end - 1) {
+        c := src[i]
+        if c == '\\' || c == '$' {
+            return "", false
+        }
+        b = append(b, c)
+    }
+    r := string(freeze(b)) catch return "", false
+    return r, true
+}
+
+// 字句 x の識別子の綴り
+func modWord(src []byte, x lexer.Token) string {
+    if x.tag != lexer.Identifier {
+        return ""
+    }
+    r := string(src[x.start:x.end]) catch return ""
+    return r
+}
+
+@errors(diag.Mod)
+func parseMod(src []byte) (modText, error?) {
+    ts := lexer.Lex(src)
+    mut mt := modText{"", 0 - 1, []string{}, []string{}, []string{}, []int{}, []bool{}, []string{}, []string{}, []int{}}
+    mut dn := mut []string{}
+    mut ds := mut []string{}
+    mut dv := mut []string{}
+    mut dt := mut []int{}
+    mut dk := mut []bool{}
+    mut an := mut []string{}
+    mut as := mut []string{}
+    mut at := mut []int{}
+    mut i := 0
+    while ts[i].tag != lexer.Eof {
+        if ts[i].tag == lexer.Semicolon {
+            i += 1
+            continue
+        }
+        mut e := i
+        while ts[e].tag != lexer.Semicolon && ts[e].tag != lexer.Eof {
+            e += 1
+        }
+        kw := modWord(src, ts[i])
+        n := e - i
+        bad := diag.Mod{at: diag.Pos{file: 0, tok: i}, kind: 1}
+        if mt.name_tok < 0 {
+            if kw != "module" || n != 2 {
+                return mt, bad
+            }
+            s, ok := modStr(src, ts[i + 1])
+            if !ok {
+                return mt, bad
+            }
+            if !modNameOk(Basename(s)) {
+                return mt, diag.Mod{at: diag.Pos{file: 0, tok: i + 1}, kind: 2}
+            }
+            mt.name = s
+            mt.name_tok = i
+        } else if kw == "dep" && n >= 2 && n <= 4 {
+            named := ts[i + 1].tag == lexer.Identifier
+            k := if named { i + 2 } else { i + 1 }
+            if k >= e {
+                return mt, bad
+            }
+            s, ok := modStr(src, ts[k])
+            if !ok {
+                return mt, bad
+            }
+            mut v := ""
+            if k + 1 < e {
+                vs, vok := modStr(src, ts[k + 1])
+                if !vok || k + 2 != e {
+                    return mt, bad
+                }
+                v = vs
+            }
+            nm := if named { modWord(src, ts[i + 1]) } else { "" }
+            if named && !modNameOk(nm) {
+                return mt, diag.Mod{at: diag.Pos{file: 0, tok: i + 1}, kind: 3}
+            }
+            dn = append(dn, nm)
+            ds = append(ds, s)
+            dv = append(dv, v)
+            dt = append(dt, i)
+            dk = append(dk, named)
+        } else if kw == "alias" && n == 3 && ts[i + 1].tag == lexer.Identifier {
+            s, ok := modStr(src, ts[i + 2])
+            if !ok {
+                return mt, bad
+            }
+            nm := modWord(src, ts[i + 1])
+            if !modNameOk(nm) {
+                return mt, diag.Mod{at: diag.Pos{file: 0, tok: i + 1}, kind: 3}
+            }
+            an = append(an, nm)
+            as = append(as, s)
+            at = append(at, i)
+        } else {
+            return mt, bad
+        }
+        i = e
+    }
+    if mt.name_tok < 0 {
+        return mt, diag.Mod{at: diag.Pos{file: 0, tok: 0}, kind: 1}
+    }
+    mt.dep_name = freeze(dn)
+    mt.dep_src = freeze(ds)
+    mt.dep_ver = freeze(dv)
+    mt.dep_tok = freeze(dt)
+    mt.dep_named = freeze(dk)
+    mt.al_name = freeze(an)
+    mt.al_src = freeze(as)
+    mt.al_tok = freeze(at)
+    return mt, nil
+}
+
+// 木での名前・module の名前の段の規則（import パスの段と同じ — 小文字の識別子でキーワードでない）
+func modNameOk(s string) bool {
+    return s != "" && !strings.Contains(s, "/") && importPathOk(s)
+}
+
+// ローカルパスの出所か（`./…`・`../…`・`/…`）
+func localSrc(s string) bool {
+    return strings.HasPrefix(s, "./") || strings.HasPrefix(s, "../") || strings.HasPrefix(s, "/")
+}
+
+// 焼き込みの std の根の段（std/internal は利用者が import できないので外す）
+func stdRoots(sm map[string]string) []string {
+    mut out := mut []string{}
+    ks := keys(sm)
+    for i <- iter.Range(0, len(ks)) {
+        if strings.HasPrefix(ks[i], "std/") {
+            rest := cut(ks[i], 4, len(bytes(ks[i])))
+            root, _, slashed := strings.Cut(rest, "/")
+            if slashed && root != "internal" && !has(freeze(out), root) {
+                out = append(out, root)
+            }
+        }
+    }
+    return freeze(out)
+}
+
+// 起点の sober.mod を読んで検証する（無ければ NoMod）。拒否のときは位置の載るファイルのパスを返す（Pos.file = 0 がそのファイル）
+@errors(diag.Mod)
+func ReadMod(sm map[string]string) (Mod, string, error?) {
+    src := io.ReadFile(MOD_FILE) catch return NoMod(), "", nil
+    mt, perr := parseMod(src)
+    if perr != nil {
+        return NoMod(), MOD_FILE, perr
+    }
+    roots := stdRoots(sm)
+    mut names := mut []string{}
+    mut dn := mut []string{}
+    mut dd := mut []string{}
+    mut dm := mut []string{}
+    mut files := mut []string{}
+    files = append(files, MOD_FILE)
+    // alias（std の根の付け替え）を先に — 付け替えた根の段は木での名前から外れる
+    mut an := mut []string{}
+    mut ar := mut []string{}
+    for i <- iter.Range(0, len(mt.al_name)) {
+        s := mt.al_src[i]
+        root := if strings.HasPrefix(s, "std/") { cut(s, 4, len(bytes(s))) } else { "" }
+        if root == "" || strings.Contains(root, "/") || !has(roots, root) || has(freeze(ar), root) {
+            return NoMod(), MOD_FILE, diag.Mod{at: diag.Pos{file: 0, tok: mt.al_tok[i] + 2}, kind: 8}
+        }
+        an = append(an, mt.al_name[i])
+        ar = append(ar, root)
+    }
+    for i <- iter.Range(0, len(roots)) {
+        if !has(freeze(ar), roots[i]) {
+            names = append(names, roots[i])
+        }
+    }
+    for i <- iter.Range(0, len(an)) {
+        if has(freeze(names), an[i]) || isDir(an[i]) {
+            return NoMod(), MOD_FILE, diag.Mod{at: diag.Pos{file: 0, tok: mt.al_tok[i] + 1}, kind: 7}
+        }
+        names = append(names, an[i])
+    }
+    for i <- iter.Range(0, len(mt.dep_src)) {
+        s := mt.dep_src[i]
+        tk := mt.dep_tok[i] + if mt.dep_named[i] { 2 } else { 1 }
+        if !localSrc(s) {
+            return NoMod(), MOD_FILE, diag.Mod{at: diag.Pos{file: 0, tok: tk}, kind: 4}
+        }
+        if mt.dep_ver[i] != "" {
+            return NoMod(), MOD_FILE, diag.Mod{at: diag.Pos{file: 0, tok: tk + 1}, kind: 5}
+        }
+        dir := strings.TrimSuffix(if strings.HasPrefix(s, "./") { cut(s, 2, len(bytes(s))) } else { s }, "/")
+        dpath := dir + "/" + MOD_FILE
+        dsrc := io.ReadFile(dpath) catch return NoMod(), MOD_FILE, diag.Mod{at: diag.Pos{file: 0, tok: tk}, kind: 6}
+        dt, derr := parseMod(dsrc)
+        if derr != nil {
+            return NoMod(), dpath, derr
+        }
+        if len(dt.dep_src) > 0 || len(dt.al_src) > 0 {
+            return NoMod(), dpath, diag.Mod{at: diag.Pos{file: 0, tok: if len(dt.dep_src) > 0 { dt.dep_tok[0] } else { dt.al_tok[0] }}, kind: 9}
+        }
+        mname := Basename(dt.name)
+        nm := if mt.dep_named[i] { mt.dep_name[i] } else { mname }
+        if has(freeze(names), nm) || isDir(nm) {
+            return NoMod(), MOD_FILE, diag.Mod{at: diag.Pos{file: 0, tok: if mt.dep_named[i] { mt.dep_tok[i] + 1 } else { tk }}, kind: 7}
+        }
+        names = append(names, nm)
+        dn = append(dn, nm)
+        dd = append(dd, dir)
+        dm = append(dm, mname)
+        files = append(files, dpath)
+    }
+    return Mod{true, mt.name, freeze(dn), freeze(dd), freeze(dm), freeze(an), freeze(ar), freeze(files)}, "", nil
+}
+
+// 起点の sober.mod（拒否なら NoMod — 拒否は丸ごとの読みが先に出す道で使う）
+func modLax(sm map[string]string) Mod {
+    md, _, err := ReadMod(sm)
+    return if err != nil { NoMod() } else { md }
+}
+
+// import パス p の最初の段
+func firstSeg(p string) string {
+    root, _, _ := strings.Cut(p, "/")
+    return root
+}
+
+// dep の番号（p の根の段が dep の名前なら — でなければ -1）
+func depOf(md Mod, p string) int {
+    if isStd(p) {
+        return -1
+    }
+    r := firstSeg(p)
+    for i <- iter.Range(0, len(md.dep_name)) {
+        if md.dep_name[i] == r {
+            return i
+        }
+    }
+    return -1
+}
+
+// package のパス p のディレクトリ（dep の根なら dep のディレクトリへ・それ以外はそのまま）
+func modDir(md Mod, p string) string {
+    d := depOf(md, p)
+    if d < 0 {
+        return p
+    }
+    _, rest, more := strings.Cut(p, "/")
+    return if more { md.dep_dir[d] + "/" + rest } else { md.dep_dir[d] }
+}
+
+// package のパス p の package 名の期待（dep の根の package は相手の module 名の末尾の段 — dep の名前で付け替えていても）
+func modPkgName(md Mod, p string) string {
+    d := depOf(md, p)
+    return if d >= 0 && md.dep_name[d] == p { md.dep_mod[d] } else { Basename(p) }
+}
+
+// dep の package のファイルの木: 相手のモジュールの中の import（std の外）を dep の名前の下へ付け替える（参照名は相手のモジュールでの修飾子のまま）
+func depImports(t ast.Tree, dep string) ast.Tree {
+    imps := t.nodes[t.file].b
+    mut hit := false
+    for k <- iter.Range(0, ast.ListLen(t, imps)) {
+        im := t.nodes[ast.ListAt(t, imps, k)]
+        hit = hit || !isStd(Name(t, im.b)) && !synthImport(t, im)
+    }
+    if !hit {
+        return t
+    }
+    mut nb := builder.Builder[ast.Node]{}
+    mut db := builder.Builder[int]{}
+    for j <- iter.Range(0, len(t.data)) {
+        builder.Push(mut db, t.data[j])
+    }
+    for j <- iter.Range(0, len(t.nodes)) {
+        x := t.nodes[j]
+        if x.kind == ast.KImport && !(x.a >= 0 && strings.HasPrefix(Name(t, x.a), "$")) {
+            path := Name(t, x.b)
+            if !isStd(path) {
+                alias := if x.a >= 0 { x.a } else { ast.PutLit(mut db, QualOf(path)) }
+                builder.Push(mut nb, ast.Node{x.kind, x.tok, alias, ast.PutLit(mut db, dep + "/" + path), x.c, x.d, x.e, x.f})
+                continue
+            }
+        }
+        builder.Push(mut nb, x)
+    }
+    return ast.Tree{builder.Build(mut nb), builder.Build(mut db), t.file}
+}
+
+// 木での名前の出所（std の根・dep・起点の木の根の段）。std の根は alias で付け替えた名前
+func treeName(md Mod, p string) (string, string) {
+    if isStd(p) {
+        r := firstSeg(cut(p, 4, len(bytes(p))))
+        for i <- iter.Range(0, len(md.al_root)) {
+            if md.al_root[i] == r {
+                return md.al_name[i], "std/" + r
+            }
+        }
+        return r, "std/" + r
+    }
+    d := depOf(md, p)
+    return firstSeg(p), if d >= 0 { "dep:" + md.dep_name[d] } else { "root:" + firstSeg(p) }
+}
+
+// 起点のモジュールのファイル（std・dep の package の外）の import の木での名前の衝突を拒否し、alias で付け替えた std の根の import に参照名を足す
+@errors(diag.Mod)
+func modTrees(trees []ast.Tree, fpkg []string, fstd []bool, md Mod) ([]ast.Tree, error?) {
+    mut tn := mut []string{}
+    mut to := mut []string{}
+    mut out := mut []ast.Tree{}
+    for f <- iter.Range(0, len(trees)) {
+        t := trees[f]
+        if fstd[f] || isStd(fpkg[f]) || depOf(md, fpkg[f]) >= 0 {
+            out = append(out, t)
+            continue
+        }
+        imps := t.nodes[t.file].b
+        mut ali := false
+        for k <- iter.Range(0, ast.ListLen(t, imps)) {
+            im := t.nodes[ast.ListAt(t, imps, k)]
+            if synthImport(t, im) {
+                continue
+            }
+            path := Name(t, im.b)
+            n, o := treeName(md, path)
+            mut seen := false
+            for e <- iter.Range(0, len(tn)) {
+                if tn[e] == n {
+                    if to[e] != o {
+                        return []ast.Tree{}, diag.Mod{at: diag.Pos{file: f, tok: im.tok}, kind: 10}
+                    }
+                    seen = true
+                }
+            }
+            if !seen {
+                tn = append(tn, n)
+                to = append(to, o)
+            }
+            ali = ali || im.a < 0 && isStd(path) && n != firstSeg(cut(path, 4, len(bytes(path))))
+        }
+        out = append(out, if ali { aliasStd(t, md) } else { t })
+    }
+    return freeze(out), nil
+}
+
+// alias で付け替えた std の根を持つ import（ファイルの別名なし）に参照名 = 付け替えた修飾子を足す
+func aliasStd(t ast.Tree, md Mod) ast.Tree {
+    mut nb := builder.Builder[ast.Node]{}
+    mut db := builder.Builder[int]{}
+    for j <- iter.Range(0, len(t.data)) {
+        builder.Push(mut db, t.data[j])
+    }
+    for j <- iter.Range(0, len(t.nodes)) {
+        x := t.nodes[j]
+        if x.kind == ast.KImport && x.a < 0 && isStd(Name(t, x.b)) {
+            path := Name(t, x.b)
+            n, _ := treeName(md, path)
+            q := QualOf(path)
+            r := RootSeg(q)
+            if n != r {
+                rest := cut(q, len(bytes(r)), len(bytes(q)))
+                builder.Push(mut nb, ast.Node{x.kind, x.tok, ast.PutLit(mut db, n + rest), x.b, x.c, x.d, x.e, x.f})
+                continue
+            }
+        }
+        builder.Push(mut nb, x)
+    }
+    return ast.Tree{builder.Build(mut nb), builder.Build(mut db), t.file}
+}

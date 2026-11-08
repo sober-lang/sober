@@ -10,8 +10,10 @@ Sober を初めて使う人のための導線です。上から順に読めば�
 4. [抽象化 — interface の代わりに](abstraction.ja.md) — 関数型・関数の欄の struct・union で、他の言語の interface を書き直す
 5. [テストの書き方](testing.ja.md) — 小さな package に単体テスト・プロパティベーステスト・カバレッジ・ミューテーションテスト・ファジングの順でテストを足していく
 6. [標準ライブラリの案内](std.ja.md) — package ごとの地図
-7. [安全性ガイド](security.ja.md) — 脅威ごとに、Sober が何をどう消し、何を書き手に残すか
-8. [環境変数](env.ja.md) — Sober のプログラムが実行時に読む環境変数（ランタイムと標準ライブラリ）
+7. [Web クライアント](web-client.ja.md) — `std/http/client` で外の HTTP API を呼ぶ: 一発の要求・失敗のラベル・cookie を値で運ぶ・本文の切片・keep-alive の束
+8. [Web サーバ](web-server.ja.md) — `std/http/server` で HTTP を受ける: ルーティング・状態の置き場・ストリームと SSE・cookie の安全な既定・ログインのセッション・TLS・本番で走らせる
+9. [安全性ガイド](security.ja.md) — 脅威ごとに、Sober が何をどう消し、何を書き手に残すか
+10. [環境変数](env.ja.md) — Sober のプログラムが実行時に読む環境変数（ランタイムと標準ライブラリ）
 
 ガイドのコード例はすべて `examples/` にある実物で、コンパイラの検査の網（`scripts/gates.sh`）が毎回建てて走らせ、出力を照合しています。
 

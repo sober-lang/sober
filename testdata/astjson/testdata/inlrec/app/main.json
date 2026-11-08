@@ -18,7 +18,7 @@
             "name": "s",
             "type": {
               "k": "name",
-              "name": "lib.S"
+              "name": "testdata.inlrec.lib.S"
             },
             "tok": 10
           },
@@ -28,14 +28,14 @@
               "k": "name",
               "name": "int"
             },
-            "tok": 15
+            "tok": 19
           }
         ]
       },
       "tok": 7,
       "span": {
         "start": 6,
-        "end": 20
+        "end": 24
       }
     }
   ],
@@ -77,39 +77,49 @@
                 "callee": {
                   "k": "selector",
                   "base": {
-                    "k": "ident",
-                    "name": "lib",
-                    "tok": 33
+                    "k": "selector",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "testdata",
+                        "tok": 37
+                      },
+                      "field": "inlrec",
+                      "tok": 39
+                    },
+                    "field": "lib",
+                    "tok": 41
                   },
                   "field": "Llen",
-                  "tok": 35
+                  "tok": 43
                 },
                 "args": [
                   {
                     "k": "mut_arg",
                     "name": "u.s",
-                    "tok": 38
+                    "tok": 46
                   },
                   {
                     "k": "ident",
                     "name": "l",
-                    "tok": 42
+                    "tok": 50
                   }
                 ],
-                "tok": 36
+                "tok": 44
               }
             ],
-            "tok": 32
+            "tok": 36
           }
         ]
       },
-      "tok": 21,
+      "tok": 25,
       "bodiless": false,
       "span": {
-        "start": 20,
-        "end": 47
+        "start": 24,
+        "end": 55
       },
-      "sig_end": 31
+      "sig_end": 35
     },
     {
       "name": "main",
@@ -129,12 +139,12 @@
                 "k": "slicelit",
                 "elem": {
                   "k": "name",
-                  "name": "lib.T"
+                  "name": "testdata.inlrec.lib.T"
                 },
                 "elems": [
                   {
                     "k": "composite",
-                    "type_name": "lib.T",
+                    "type_name": "testdata.inlrec.lib.T",
                     "elems": [
                       {
                         "key": "xs",
@@ -148,28 +158,28 @@
                             {
                               "k": "int",
                               "value": 7,
-                              "tok": 70
+                              "tok": 86
                             },
                             {
                               "k": "int",
                               "value": 8,
-                              "tok": 72
+                              "tok": 88
                             }
                           ],
                           "mut": false,
-                          "tok": 66
+                          "tok": 82
                         }
                       }
                     ],
-                    "tok": 60,
+                    "tok": 72,
                     "type_args": []
                   }
                 ],
                 "mut": false,
-                "tok": 54
+                "tok": 62
               }
             ],
-            "tok": 52
+            "tok": 60
           },
           {
             "k": "bind",
@@ -189,21 +199,31 @@
                       "callee": {
                         "k": "selector",
                         "base": {
-                          "k": "ident",
-                          "name": "lib",
-                          "tok": 84
+                          "k": "selector",
+                          "base": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "testdata",
+                              "tok": 100
+                            },
+                            "field": "inlrec",
+                            "tok": 102
+                          },
+                          "field": "lib",
+                          "tok": 104
                         },
                         "field": "Mk",
-                        "tok": 86
+                        "tok": 106
                       },
                       "args": [
                         {
                           "k": "ident",
                           "name": "ts",
-                          "tok": 88
+                          "tok": 108
                         }
                       ],
-                      "tok": 87
+                      "tok": 107
                     }
                   },
                   {
@@ -211,15 +231,15 @@
                     "value": {
                       "k": "int",
                       "value": 0,
-                      "tok": 93
+                      "tok": 113
                     }
                   }
                 ],
-                "tok": 80,
+                "tok": 96,
                 "type_args": []
               }
             ],
-            "tok": 77
+            "tok": 93
           },
           {
             "k": "expr",
@@ -228,7 +248,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 96
+                "tok": 116
               },
               "args": [
                 {
@@ -236,24 +256,24 @@
                   "callee": {
                     "k": "ident",
                     "name": "llen",
-                    "tok": 98
+                    "tok": 118
                   },
                   "args": [
                     {
                       "k": "mut_arg",
                       "name": "u",
-                      "tok": 101
+                      "tok": 121
                     },
                     {
                       "k": "int",
                       "value": 101,
-                      "tok": 103
+                      "tok": 123
                     }
                   ],
-                  "tok": 99
+                  "tok": 119
                 }
               ],
-              "tok": 97
+              "tok": 117
             }
           },
           {
@@ -263,7 +283,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 107
+                "tok": 127
               },
               "args": [
                 {
@@ -271,35 +291,35 @@
                   "callee": {
                     "k": "ident",
                     "name": "llen",
-                    "tok": 109
+                    "tok": 129
                   },
                   "args": [
                     {
                       "k": "mut_arg",
                       "name": "u",
-                      "tok": 112
+                      "tok": 132
                     },
                     {
                       "k": "int",
                       "value": 1,
-                      "tok": 114
+                      "tok": 134
                     }
                   ],
-                  "tok": 110
+                  "tok": 130
                 }
               ],
-              "tok": 108
+              "tok": 128
             }
           }
         ]
       },
-      "tok": 48,
+      "tok": 56,
       "bodiless": false,
       "span": {
-        "start": 47,
-        "end": 120
+        "start": 55,
+        "end": 140
       },
-      "sig_end": 51
+      "sig_end": 59
     }
   ],
   "consts": []

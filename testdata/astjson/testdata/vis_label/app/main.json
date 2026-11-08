@@ -38,14 +38,14 @@
               },
               {
                 "k": "composite",
-                "type_name": "lib.bad",
+                "type_name": "testdata.vis_label.lib.bad",
                 "elems": [
                   {
                     "key": "n",
                     "value": {
                       "k": "int",
                       "value": 1,
-                      "tok": 26
+                      "tok": 30
                     }
                   }
                 ],
@@ -61,7 +61,7 @@
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 31
+        "end": 35
       },
       "sig_end": 16
     },
@@ -85,13 +85,13 @@
                 "callee": {
                   "k": "ident",
                   "name": "f",
-                  "tok": 40
+                  "tok": 44
                 },
                 "args": [],
-                "tok": 41
+                "tok": 45
               }
             ],
-            "tok": 36
+            "tok": 40
           },
           {
             "k": "expr",
@@ -100,7 +100,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 44
+                "tok": 48
               },
               "args": [
                 {
@@ -111,13 +111,13 @@
                     "lhs": {
                       "k": "ident",
                       "name": "e",
-                      "tok": 47
+                      "tok": 51
                     },
                     "rhs": {
                       "k": "nil",
-                      "tok": 49
+                      "tok": 53
                     },
-                    "tok": 48
+                    "tok": 52
                   },
                   "then": {
                     "stmts": [
@@ -126,7 +126,7 @@
                         "expr": {
                           "k": "int",
                           "value": 0,
-                          "tok": 51
+                          "tok": 55
                         }
                       }
                     ]
@@ -139,26 +139,26 @@
                         "expr": {
                           "k": "int",
                           "value": 1,
-                          "tok": 55
+                          "tok": 59
                         }
                       }
                     ]
                   },
-                  "tok": 46
+                  "tok": 50
                 }
               ],
-              "tok": 45
+              "tok": 49
             }
           }
         ]
       },
-      "tok": 32,
+      "tok": 36,
       "bodiless": false,
       "span": {
-        "start": 31,
-        "end": 61
+        "start": 35,
+        "end": 65
       },
-      "sig_end": 35
+      "sig_end": 39
     }
   ],
   "consts": []

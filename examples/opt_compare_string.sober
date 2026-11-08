@@ -1,0 +1,12 @@
+package main
+
+// 負例（check も build も名指しで拒否 — diag.TypeMismatch kind 2）: `string?` と string の == も T? と値の比較（spec T-18 — 絞ってから比べる）
+
+func get(b bool) string? {
+    return if b { "2" } else { nil }
+}
+
+func main() {
+    v := get(true)
+    println(v == "2")
+}

@@ -1,0 +1,13 @@
+package main
+
+// 負例（check も build も名指しで拒否 — diag.TypeMismatch kind 7）: 関数値と union にはゼロ値が無い — 部分リテラルでも欄は省けない
+
+type R struct {
+    n int
+    g func(x int) int
+}
+
+func main() {
+    r := R{n: 1}
+    println(r.n)
+}

@@ -84,7 +84,7 @@
       }
     },
     {
-      "name": "IntRange",
+      "name": "IntOutOfRange",
       "type_params": [],
       "body": {
         "k": "error",
@@ -1829,7 +1829,7 @@
                               },
                               {
                                 "k": "composite",
-                                "type_name": "IntRange",
+                                "type_name": "IntOutOfRange",
                                 "elems": [
                                   {
                                     "key": "pos",
@@ -1988,7 +1988,7 @@
                       },
                       {
                         "k": "composite",
-                        "type_name": "IntRange",
+                        "type_name": "IntOutOfRange",
                         "elems": [
                           {
                             "key": "pos",

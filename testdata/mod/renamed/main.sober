@@ -1,0 +1,9 @@
+package main
+
+import "kv2"
+import "kv2/store"
+
+func main() int {
+    println(kv2.Get(kv2.Put(kv2.store.Empty(), "a", "b"), "a"))
+    return 0
+}

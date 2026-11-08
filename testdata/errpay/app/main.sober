@@ -5,11 +5,11 @@ import "testdata/errpay/b"
 
 func code(e error) int {
     return switch e {
-    case a.E{p}: p.x
-    case b.BE{n}: 100 + n
+    case testdata.errpay.a.E{p}: p.x
+    case testdata.errpay.b.BE{n}: 100 + n
     }
 }
 
 func main() {
-    println(code(a.Fail(3)), code(b.G(4)))
+    println(code(testdata.errpay.a.Fail(3)), code(testdata.errpay.b.G(4)))
 }

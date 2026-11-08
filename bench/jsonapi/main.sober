@@ -136,7 +136,7 @@ func main() int {
                     switch derr {
                     case json.Missing{field}: "missing:" + field
                     case json.WrongType{}: "type"
-                    case json.IntRange{}: "type"
+                    case json.IntOutOfRange{}: "type"
                     }
                 } else {
                     check(r)

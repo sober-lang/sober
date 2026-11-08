@@ -1,0 +1,12 @@
+package main
+
+// 局所のラムダで暗黙の点を隠した View の嘘: Check の実引数の freeze の後に m へ書くと Str が不正な UTF-8 を返していた
+import "std/utf8"
+
+func main() {
+    mut m := mut []byte{97, 98}
+    g := () => m
+    v := utf8.Check(freeze(g())) catch return
+    m[0] = 255
+    println(utf8.Str(v, 0, 2) catch "x")
+}

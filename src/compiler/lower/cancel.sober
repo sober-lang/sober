@@ -687,7 +687,7 @@ func cutThinN(st mut St, f FnRef, s BlkRef, mb mut []int, ms mut []int, rs mut [
 
 // 間引きの表（開発用 `sober build --cut-stat` — 網 scripts/cutstat.sh）: 検査点を置いた利用者のループの頭ごとに 1 行
 // 「関数 b<頭> B=<本体の重み> N=<間引き> <形>」（形 = count〔数え口〕/ every〔毎反復〕・B の負は間引けない理由 — cutThinN）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
 func CutStat(p loader.Program, n int, vmode int) ([]byte, error?) {
     mut k := knob(KElf, true, true, false, false, 0, vmode)
     k.rtMut = n
@@ -741,7 +741,7 @@ func cutPreds(st mut St, f FnRef, nb int, preds mut []int, pnext mut []int, pfro
 
 // 1 命令の重みが機械語の定数個で抑えられる op か（呼び出し・syscall・データの長さに比例する展開・罠・切替・原子は外す）
 func cutLight(op int) bool {
-    return op == OpConst || op == OpBin || op == OpCmp || op == OpLoad || op == OpStore || op == OpLoad8 || op == OpStore8 || op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop || op == OpSlotaddr || op == OpGlobal || op == OpFsAddr || op == OpFuncaddr || op == OpRDepth || op == OpRSetDepth || op == OpRBump
+    return op == OpConst || op == OpBin || op == OpCmp || op == OpLoad || op == OpStore || op == OpLoad8 || op == OpStore8 || op == OpLoad16 || op == OpStore16 || op == OpLoad32 || op == OpStore32 || op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop || op == OpSlotaddr || op == OpGlobal || op == OpFsAddr || op == OpFuncaddr || op == OpRDepth || op == OpRSetDepth || op == OpRBump
 }
 
 // b の終端から s への辺の本数

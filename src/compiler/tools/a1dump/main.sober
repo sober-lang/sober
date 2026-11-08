@@ -754,6 +754,24 @@ func ctorArgs(t ast.Tree, v Var, elems int) ([]int, Bad?) {
     return out, nil
 }
 
+// f が再帰の組の struct の成分の欄の名前か
+func recField(gs []Grp, f string) bool {
+    for g <- gs {
+        for m <- g.mems {
+            if !m.isUnion {
+                for v <- m.vars {
+                    for fl <- v.flds {
+                        if fl.name == f {
+                            return true
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return false
+}
+
 func rewrite(p loader.Program, st mut desugar.S, fi int, t ast.Tree, gs []Grp) (ast.Tree, Bad?) {
     mut w := W{ns: mut []ast.Node{}, ds: mut []int{}}
     for x <- t.nodes {
@@ -806,6 +824,15 @@ func rewrite(p loader.Program, st mut desugar.S, fi int, t ast.Tree, gs []Grp) (
                     return t, Bad{why: "type arguments of a generic recursive value not spellable", tok: x.tok}
                 }
                 wCall(mut w, i, x.tok, "a1_${m.name}_get_${loader.Name(t, x.b)}${ta}", []int{x.a})
+            }
+        } else if x.kind == ast.EMutArg {
+            // `mut e.f`（道の 2 段目以降）の欄が再帰の struct の欄なら断片の外 — A1 の値は表と根で、欄を mut の場所として渡す形が無い。
+            // 道は名前の列だけで基底の型を引けないので、欄の名前が再帰の struct のどれかの欄と同じなら名指す（無関係の struct の同名の欄も名指す側に倒す）
+            segs := strings.Split(loader.Name(t, x.a), ".")
+            for k <- iter.Range(1, len(segs)) {
+                if recField(gs, segs[k]) {
+                    return t, Bad{why: "mut argument into a field of a recursive value (${segs[k]})", tok: x.tok}
+                }
             }
         } else if x.kind == ast.SAssign {
             for tg <- listOr(t, x.a) {

@@ -1,0 +1,68 @@
+package server
+
+// Set-Cookie の書きの網（white-box — 非公開の cookieLine / cookieOk / respHead）: 省いた欄の既定（Secure・HttpOnly・SameSite=Lax・Path=/・Domain なし）・
+// 各欄・緩める欄・書けない形（名前・値・属性の文字・負の Max-Age・SameSite=None と __Host- / __Secure- の Secure 抜き・__Host- の Path と Domain）・
+// 応答の頭に cookie の行が並ぶ順・書いた名前と値を Cookie の読みで戻す往復
+
+import "std/http"
+import "std/strings"
+
+func TestSetCookieDefaults() {
+    assert(cookieLine(SetCookie{name: "sid", value: "abc"}) == "Set-Cookie: sid=abc; Path=/; Secure; HttpOnly; SameSite=Lax\r\n")
+    assert(cookieLine(SetCookie{name: "__Host-sid", value: "x-y_z.0~"}) == "Set-Cookie: __Host-sid=x-y_z.0~; Path=/; Secure; HttpOnly; SameSite=Lax\r\n")
+}
+
+func TestSetCookieFields() {
+    assert(cookieLine(SetCookie{name: "a", value: "1", maxAge: 3600, path: "/app", domain: "example.com", sameSite: SameSiteStrict{}}) ==
+        "Set-Cookie: a=1; Path=/app; Domain=example.com; Max-Age=3600; Secure; HttpOnly; SameSite=Strict\r\n")
+    assert(cookieLine(SetCookie{name: "a", value: "", maxAge: 0}) == "Set-Cookie: a=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax\r\n")
+    assert(cookieLine(SetCookie{name: "t", value: "1", sameSite: SameSiteNone{}}) == "Set-Cookie: t=1; Path=/; Secure; HttpOnly; SameSite=None\r\n")
+    assert(cookieLine(SetCookie{name: "dev", value: "1", dangerouslyAllowHttp: true}) == "Set-Cookie: dev=1; Path=/; HttpOnly; SameSite=Lax\r\n")
+    assert(cookieLine(SetCookie{name: "ui", value: "dark", dangerouslyScriptReadable: true}) == "Set-Cookie: ui=dark; Path=/; Secure; SameSite=Lax\r\n")
+}
+
+func TestSetCookieRejects() {
+    bad := []SetCookie{
+        SetCookie{name: "", value: "1"},
+        SetCookie{name: "a b", value: "1"},
+        SetCookie{name: "a;", value: "1"},
+        SetCookie{name: "a", value: "x y"},
+        SetCookie{name: "a", value: "x;y"},
+        SetCookie{name: "a", value: "\"q\""},
+        SetCookie{name: "a", value: "x,y"},
+        SetCookie{name: "a", value: "x\\y"},
+        SetCookie{name: "a", value: "あ"},
+        SetCookie{name: "a", value: "1", path: ""},
+        SetCookie{name: "a", value: "1", path: "/x;Domain=evil"},
+        SetCookie{name: "a", value: "1", domain: "x\r\nSet-Cookie: b=2"},
+        SetCookie{name: "a", value: "1", maxAge: -1},
+        SetCookie{name: "a", value: "1", sameSite: SameSiteNone{}, dangerouslyAllowHttp: true},
+        SetCookie{name: "__Host-a", value: "1", dangerouslyAllowHttp: true},
+        SetCookie{name: "__Secure-a", value: "1", dangerouslyAllowHttp: true},
+        SetCookie{name: "__Host-a", value: "1", path: "/app"},
+        SetCookie{name: "__Host-a", value: "1", domain: "example.com"},
+    }
+    for c <- bad {
+        assert(!cookieOk(c))
+    }
+    assert(cookieOk(SetCookie{name: "__Host-a", value: "1", path: "/"}))
+    assert(cookieOk(SetCookie{name: "__Secure-a", value: "1", domain: "example.com", path: "/app"}))
+}
+
+func TestSetCookieHead() {
+    r := Response{status: http.OK, contentType: "text/plain", body: bytes("hi"), cookies: []SetCookie{SetCookie{name: "a", value: "1"}, SetCookie{name: "b", value: "2", maxAge: 0}}}
+    h := string(respHead(r, true, false, 0)) catch ""
+    assert(strings.Contains(h, "\r\nSet-Cookie: a=1; Path=/; Secure; HttpOnly; SameSite=Lax\r\nSet-Cookie: b=2; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax\r\n"))
+    // 生の Set-Cookie は任意ヘッダに書けない（型の欄だけ）
+    assert(!fieldOk(http.Field{name: "Set-Cookie", value: "a=1"}))
+    assert(!fieldOk(http.Field{name: "set-cookie", value: "a=1"}))
+    assert(fieldOk(http.Field{name: "X-Request-Id", value: "7"}))
+}
+
+func TestSetCookieRoundTrip() {
+    cs := []SetCookie{SetCookie{name: "sid", value: "AbC-123_x.y~z"}, SetCookie{name: "__Host-t", value: "!#$%&'()*+-./:<=>?@[]^_`{|}~"}}
+    for c <- cs {
+        r := rq("GET / HTTP/1.1\r\nHost: x\r\nCookie: z=0; ${c.name}=${c.value}\r\n\r\n")
+        assert(is(Cookie(r, c.name), c.value))
+    }
+}

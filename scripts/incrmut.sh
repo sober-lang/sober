@@ -40,7 +40,7 @@
 # cfg に追従して変わる（呼び先の戻りの型・mut 仮引数が変われば呼び手の呼び出しの形が変わる）ので、編集の列では鍵の冗長に隠れて鳴らない —
 # 成分が鍵に混ざっていることを直に見る。m3〜m6 = incrbuild の自己の鎖（scripts/incrbuild.sh — 当てる編集だけの短い列・温の ELF の割れか
 # 検証モードの `cache: stale entry … @<関数>`）
-# 使い方: scripts/incrmut.sh [m1 … m6]（既定は全部）・INCR_PAR = 同時に回す変異の数（既定 3）
+# 使い方: scripts/incrmut.sh [m1 … m6]（既定は全部）・INCR_PAR = 同時に回す変異の数（既定 5）
 set -uo pipefail
 # 答えの再生は切る（この網は関数単位キャッシュの当否を見る）
 export SOBER_CHECK_REPLAY=0
@@ -86,7 +86,7 @@ mutate() {
 mkdir -p "$W/orig"
 cp -r src/compiler/. "$W/orig/"
 # 変異 1 本（$1）を $W/<変異>/ の中だけで回して判定の行を $W/<変異>.out へ・FAIL なら $W/<変異>.fail を置く（変異どうしは互いに独立 —
-# INCR_PAR 本ずつ並べて回す。既定 3: --full の臨界路の札〔ORDER の先頭〕を縮める）
+# INCR_PAR 本ずつ並べて回す。既定 5: --full の臨界路の札〔ORDER の先頭〕を縮める — 1 本の山 ≈ 2 GB）
 one() {
     local m=$1 D=$W/$1 ec n hit st1 ed vf
     mkdir -p "$D/t"
@@ -170,7 +170,7 @@ one() {
     esac
     rm -rf "$D"
 }
-PAR=${INCR_PAR:-3}
+PAR=${INCR_PAR:-5}
 for m in "${MS[@]}"; do
     while [ "$(jobs -rp | wc -l)" -ge "$PAR" ]; do wait -n || true; done
     { one "$m" > "$W/$m.out" 2>&1 || touch "$W/$m.fail"; } &

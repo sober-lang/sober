@@ -5,5 +5,5 @@ import "testdata/doubles/neg/leak/r"
 import "testdata/doubles/neg/leak/r/fake"
 
 func TestX() {
-    assert(r.Show(fake.New(), "a") == 3)
+    assert(testdata.doubles.neg.leak.r.Show(testdata.doubles.neg.leak.r.fake.New(), "a") == 3)
 }

@@ -1,0 +1,2 @@
+sober: desugar error at examples/optfn_call_neg.sober:13:15 (TypeMismatch): cannot call an optional function value (F?) — narrow it first (`if f != nil { f(…) }`)
+exit=1

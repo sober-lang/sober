@@ -1,14 +1,15 @@
 package main
 
-// multipart/form-data の受け（http.Multipart — RFC 7578）: ブラウザのファイルのアップロードの形（Chrome の境界の綴り・テキストの欄・ファイルの欄・
+// multipart/form-data の受け（http.server.Multipart — RFC 7578）: ブラウザのファイルのアップロードの形（Chrome の境界の綴り・テキストの欄・ファイルの欄・
 // 選ばなかったファイルの欄〔filename=""〕）を部分ごとに印字し、閉じの境界の無い本文は 400 を返す。
 // ネットの代わりに recv が決まった要求の列を 1 切片で渡し、send が応答を印字する（examples/http_reqresp の形 — 行末の CR は外して印字）
 
 import "std/http"
+import "std/http/server"
 import "std/iter"
 
-func upload(r http.Request) http.Response {
-    parts := http.Multipart(r) catch return http.Status(http.BadRequest)
+func upload(r http.server.Request) http.server.Response {
+    parts := http.server.Multipart(r) catch return http.server.Status(http.BadRequest)
     mut out := ""
     for i <- iter.Range(0, len(parts)) {
         p := parts[i]
@@ -16,7 +17,7 @@ func upload(r http.Request) http.Response {
         kind := if f == nil { "field" } else { "file \"${f}\" (${p.contentType})" }
         out = out + "${p.name}: ${kind} ${len(p.body)} bytes\n"
     }
-    return http.Text(out)
+    return http.server.Text(out)
 }
 
 func show(b []byte) error? {
@@ -45,6 +46,6 @@ func main() {
     ct := "multipart/form-data; boundary=${bd}"
     reqs := "POST /upload HTTP/1.1\r\nContent-Type: ${ct}\r\nContent-Length: ${len(bytes(body))}\r\n\r\n${body}" +
         "POST /upload HTTP/1.1\r\nContent-Type: ${ct}\r\nContent-Length: ${len(bytes(broken))}\r\nConnection: close\r\n\r\n${broken}"
-    e := http.ServeWith((k) => feed(reqs, k), (b) => show(b), (r) => upload(r))
+    e := http.server.ServeWith((k) => feed(reqs, k), (b) => show(b), (r) => upload(r))
     println(e == nil)
 }

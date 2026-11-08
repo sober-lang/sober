@@ -17,6 +17,18 @@ func evalMulti(st mut St, e desugar.NodeRef) (int, error?) {
     switch k {
     case ast.ECall:
         cv := convOf(mut st, e)
+        // 名前付き関数型への変換 `W(e)`（language.md 25 節）: 実引数を W の値の位置として下ろす（W の型は表層型の表から）
+        if cv == desugar.CONV_NONE && desugar.LastFnConv(mut st.d) != -1 {
+            args := lB(nodeOf(mut st, e))
+            if lenL(mut st, args) != 1 {
+                return 0, diag.Mismatch{at: posOf(mut st, e)}
+            }
+            wt := yType(mut st, e)?
+            x := exprExpecting(mut st, latN(mut st, args, 0), wt, e)?
+            r := list2(mut st, x.t, x.v)
+            desugar.HeapSet(mut st.d, r, 1)
+            return r, nil
+        }
         if cv != desugar.CONV_NONE {
             x := convExpr(mut st, e, cv)?
             r := list2(mut st, x.t, x.v)
@@ -437,6 +449,8 @@ func emitCall0(st mut St, irf FnRef, fv int, params desugar.ListRef, results des
     mut k := 0
     mut sp := -1
     mut anchor := -1
+    // 関数値の呼び出しの mut の席の実引数の位置（ir.sober CALLI_MSH — slotcolor がその番地を逃げでなく読み書きと読む）
+    mut mm := 0
     if sret {
         mut rw := 0
         i = 0
@@ -469,6 +483,9 @@ func emitCall0(st mut St, irf FnRef, fv int, params desugar.ListRef, results des
                 return 0, diag.Mismatch{at: posOf(mut st, at)}
             }
             desugar.HeapSet(mut st.d, argl + 1 + k, desugar.HeapGet(mut st.d, l + 4))
+            if irf == -1 && (vmut >> i) & 1 != 0 && k < 48 {
+                mm = mm | (1 << k)
+            }
             k += 1
             i += 1
             continue
@@ -510,7 +527,7 @@ func emitCall0(st mut St, irf FnRef, fv int, params desugar.ListRef, results des
         // （結果は丸ごと宛先で生きる値。印 1 は保守側に余分に立ちうるので床は入口の深度のまま）
         store(mut st, globaladdr(mut st, st.meta), W_DEST, if nodeOf(mut st, at).e == 3 { bin(mut st, BAdd, st.fnDest, iconst(mut st, DEST_RET)) } else { st.destDepth })
     }
-    r := if irf != -1 { call(mut st, irf, argl) } else { callIndirect(mut st, fv, argl, if sret { CALLI_SRET } else if nr == 0 { -1 } else { TyI64 }) }
+    r := if irf != -1 { call(mut st, irf, argl) } else { callIndirectM(mut st, fv, argl, if sret { CALLI_SRET } else if nr == 0 { -1 } else { TyI64 }, mm) }
     out := listN(mut st, nr * 2)
     desugar.HeapSet(mut st.d, out, nr)
     if sret {
@@ -752,6 +769,7 @@ func untypedConst(st mut St, e desugar.NodeRef) bool {
 func convOf(st mut St, e desugar.NodeRef) int {
     callee := nA(nodeOf(mut st, e))
     if kindN(mut st, callee) == ast.EIdent && lookup(mut st, sA(nodeOf(mut st, callee))) >= 0 {
+        desugar.ClearFnConv(mut st.d)
         return desugar.CONV_NONE
     }
     return desugar.ConvTarget(mut st.d, callee, st.curPkg)
@@ -1315,19 +1333,23 @@ func arith(st mut St, op int, x int, y int, at desugar.NodeRef) (int, error?) {
     return bin(mut st, b, x, y), nil
 }
 
-// shift（Go 準拠）: 負の量は panic（exit 101）、量 ≥ 64 は << = 0・>> = 63 bit に畳む
+// shift（Go 準拠）: 負の量は panic（exit 101）、量 ≥ 64 は << = 0・>> = 63 bit に畳む。
+// 量が 0〜63 の定数なら検査なし。それ以外の熱い道の判定は符号なしの 1 本（n <u 64 なら 0 ≤ n ≤ 63）— 負と ≥ 64 の振り分けは外れた側でだけ
 func shift(st mut St, left bool, x int, n int, at desugar.NodeRef) int {
-    neg_b := newBlock(mut st)
-    ok_b := newBlock(mut st)
+    if n == st.lastConstV && st.lastConstN >= 0 && st.lastConstN <= 63 {
+        return bin(mut st, if left { BShl } else { BSar }, x, n)
+    }
+    out_b := newBlock(mut st)
+    in_b := newBlock(mut st)
     join := newBlock(mut st)
     res := param(mut st, join, TyI64)
-    condbr(mut st, cmp(mut st, CLt, n, iconst(mut st, 0)), neg_b, -1, ok_b, -1)
+    condbr(mut st, cmp(mut st, CUge, n, iconst(mut st, 64)), out_b, -1, in_b, -1)
+    setCur(mut st, out_b)
+    neg_b := newBlock(mut st)
+    over_b := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, n, iconst(mut st, 0)), neg_b, -1, over_b, -1)
     setCur(mut st, neg_b)
     panicSite(mut st, PK_SHIFT, at)
-    setCur(mut st, ok_b)
-    over_b := newBlock(mut st)
-    in_b := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CGt, n, iconst(mut st, 63)), over_b, -1, in_b, -1)
     setCur(mut st, over_b)
     over_v := if left { iconst(mut st, 0) } else { bin(mut st, BSar, x, iconst(mut st, 63)) }
     br(mut st, join, list1(mut st, over_v))

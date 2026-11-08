@@ -167,7 +167,7 @@ func namedFunc(cx Cx, f0 int, name string) bool {
     n := len(nb)
     mut dot := 0 - 1
     for i <- iter.Range(0, len(nb)) {
-        if nb[i] == '.' && dot < 0 {
+        if nb[i] == '.' {
             dot = i
         }
     }

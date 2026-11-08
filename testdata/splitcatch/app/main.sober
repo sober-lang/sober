@@ -3,6 +3,6 @@ package main
 import "testdata/splitcatch/lib"
 
 func main() {
-    mut a := lib.Acc{n: 1}
-    println(lib.Add(mut a, "/nonexistent/splitcatch"))
+    mut a := testdata.splitcatch.lib.Acc{n: 1}
+    println(testdata.splitcatch.lib.Add(mut a, "/nonexistent/splitcatch"))
 }

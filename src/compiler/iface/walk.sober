@@ -59,6 +59,13 @@ func identsUnder(t ast.Tree, roots []int) []string {
         n := stack[w]
         w += 1
         x := t.nodes[n]
+        // 生の木（loader の畳みの前）の選択子の連鎖 `http.server.X` は連鎖の綴りごと載せる（多段の修飾子の参照 — language.md 20 節）
+        if x.kind == ast.ESelector {
+            ct := chainOf(t, n)
+            if ct != "" {
+                out = append(out, ct)
+            }
+        }
         c := if x.kind == ast.EFor && x.b == 1 { d6(3, 0, 3, 0, 0, 0) } else if x.kind == ast.EFor { d6(3, 0, 1, 0, 0, 0) } else { desc(x.kind) }
         fs := []int{x.a, x.b, x.c, x.d, x.e, x.f}
         mut sh := 1
@@ -91,4 +98,17 @@ func identsUnder(t ast.Tree, roots []int) []string {
         }
     }
     return freeze(out)
+}
+
+// 節 i の識別子の連鎖の綴り（`a.b.c` — 連鎖でなければ ""）
+func chainOf(t ast.Tree, i int) string {
+    x := t.nodes[i]
+    if x.kind == ast.EIdent {
+        return loader.Name(t, x.a)
+    }
+    if x.kind == ast.ESelector && x.a >= 0 {
+        b := chainOf(t, x.a)
+        return if b == "" { "" } else { "${b}.${loader.Name(t, x.b)}" }
+    }
+    return ""
 }

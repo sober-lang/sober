@@ -1,0 +1,2 @@
+sober: load error at main.sober:4:13: the tree name of this import is also the tree name of another package root imported in this module (a std root, a dep, or a directory at the root) — rename one of them in sober.mod
+(check exit 1)

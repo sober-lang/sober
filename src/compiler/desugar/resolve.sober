@@ -164,7 +164,7 @@ func tbindAt(st mut S, env int, name StrRef) int {
 // 参照名（"N" か "ref.N"）→ (宣言を探す package, 基底名の開始位置)。解決できなければ package -1。
 // 修飾参照は from の import 表で解決し、公開（大文字）を検査する（language.md 20 節）
 func resolveIn(st mut S, from int, name StrRef) (int, int) {
-    dot := dotAt(mut st, name)
+    dot := lastDotAt(mut st, name)
     if dot < 0 {
         return from, 0
     }
@@ -931,6 +931,10 @@ func unionTreeTy(st mut S, pk int, decl NodeRef, start int, at NodeRef, fuel int
             return payloadTy(mut st, pk, vat(mut st, decl, 0), fuel)
         }
     }
+    if n == 1 {
+        // variant 1 つの union（error のラベル 1 つと同じ）: 和を組まずペイロードそのもの — caseTree の n == 1 の腕と対
+        return payloadTy(mut st, pk, vat(mut st, decl, start), fuel)
+    }
     if n < 2 {
         return 0, diag.CoreFragment{at: posOf(mut st, at)}
     }
@@ -975,6 +979,10 @@ func declOfTypeExpr(st mut S, pk int, te NodeRef) int {
 func elemDeclOfTypeExpr(st mut S, pk int, te NodeRef) int {
     if kindN(mut st, te) == ast.TSlice {
         return declOfTypeExpr(mut st, pk, nA(nodeOf(mut st, te)))
+    }
+    // map の読み（`m[k]` — 値の T?）の中身の宣言: 絞った後の欄読みが引ける（slice の要素と同じ）
+    if kindN(mut st, te) == ast.TMap {
+        return declOfTypeExpr(mut st, pk, nB(nodeOf(mut st, te)))
     }
     return -1
 }

@@ -211,11 +211,11 @@ func mfClear(st mut St, blk mut []int, def mut []int, pc mut []int, pl mut []int
 // 命令 i が map（ヘッダ h のスロット・セル・キー kp）を変えないか
 func mfHarmless(st mut St, def mut []int, i InsRef, h int, kp int, c1 InsRef, b1 int, blk mut []int) bool {
     op := irInsOp(mut st, i)
-    if op == OpDead || op == OpConst || op == OpBin || op == OpCmp || op == OpLoad || op == OpLoad8 || op == OpGepW || op == OpGepB ||
+    if op == OpDead || op == OpConst || op == OpBin || op == OpCmp || op == OpLoad || isNarrowLd(op) || op == OpGepW || op == OpGepB ||
         op == OpPtoi || op == OpItop || op == OpSlotaddr || op == OpGlobal || op == OpFsAddr || op == OpFuncaddr {
         return true
     }
-    if op != OpStore && op != OpStore8 {
+    if op != OpStore && !isNarrowSt(op) {
         return false
     }
     a := irInsA(mut st, i)
@@ -234,7 +234,7 @@ func mfHarmless(st mut St, def mut []int, i InsRef, h int, kp int, c1 InsRef, b1
     while j != -1 && j != c1 {
         if irInsOp(mut st, j) == OpStore && irInsA(mut st, j) == kp && irInsB(mut st, j) == irInsB(mut st, i) {
             last = irInsC(mut st, j)
-        } else if irInsOp(mut st, j) == OpStore8 && irInsA(mut st, j) == kp {
+        } else if isNarrowSt(irInsOp(mut st, j)) && irInsA(mut st, j) == kp {
             // バイトの書き込みは欄の境界が読めないので打ち消す
             last = -1
         }

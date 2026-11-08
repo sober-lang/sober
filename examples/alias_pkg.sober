@@ -6,9 +6,9 @@ package main
 import "testdata/alias/wrap"
 
 func main() {
-    mut w := wrap.Work{}
-    wrap.Feed(mut w, 4)
-    wrap.Feed(mut w, 8)
-    println(wrap.Value(wrap.Mean(w)))
-    println(wrap.Last(wrap.NewAcc(5)))
+    mut w := testdata.alias.wrap.Work{}
+    testdata.alias.wrap.Feed(mut w, 4)
+    testdata.alias.wrap.Feed(mut w, 8)
+    println(testdata.alias.wrap.Value(testdata.alias.wrap.Mean(w)))
+    println(testdata.alias.wrap.Last(testdata.alias.wrap.NewAcc(5)))
 }

@@ -1,26 +1,26 @@
-@doubles("examples/guide/kvstore/mem")
+@doubles("kvstore/mem")
 package settings
 
-import "examples/guide/kvstore/mem"
+import "kvstore/mem"
 import "std/testing/cell"
 
 func TestSetThenValue() {
-    d := mem.Empty()
+    d := kvstore.mem.Empty()
     assert(Set(d, "app", "port", "80") == nil)
     assert(Set(d, "app", "host", "a=b") == nil)
     assert(Set(d, "app", "port", "8080") == nil)
     assert(Value(d, "app", "port", "") == "8080")
     assert(Value(d, "app", "host", "") == "a=b")
     assert(Value(d, "app", "user", "-") == "-")
-    files := cell.Get(mem.Files)
+    files := testing.cell.Get(kvstore.mem.Files)
     assert(files[len(files) - 1].line == "port=8080;host=a\\=b")
 }
 
 func TestMissingFile() {
-    assert(Value(mem.Empty(), "app", "port", "8080") == "8080")
+    assert(Value(kvstore.mem.Empty(), "app", "port", "8080") == "8080")
 }
 
 func TestDenied() {
-    assert(Set(mem.Failing(), "app", "port", "80") != nil)
-    assert(len(cell.Get(mem.Files)) == 0)
+    assert(Set(kvstore.mem.Failing(), "app", "port", "80") != nil)
+    assert(len(testing.cell.Get(kvstore.mem.Files)) == 0)
 }

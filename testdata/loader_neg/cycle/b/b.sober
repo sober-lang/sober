@@ -3,5 +3,5 @@ package b
 import "testdata/loader_neg/cycle/a"
 
 func G() int {
-    return a.F()
+    return testdata.loader_neg.cycle.a.F()
 }

@@ -1,0 +1,51 @@
+package lower
+
+// 絞りの消滅の lower 側（desugar/narrowkill.sober と同じ規則 — 述語 desugar.KillOf を共有）: 絞った腕は mut の T? の名前を中身の写し（LVal）で
+// 宣言し直す。その名前に書く文の頭 / 後ろで、名前を外の T? のセルの記録の別名として宣言し直す。代入の的は外のセル
+
+import "desugar"
+
+// 絞った腕の入口: 名前 name の外の記録 outer が mut のセルなら、腕の中で宣言した中身の記録 inner との対を積む（積んだら真）
+func nrwPush(st mut St, name desugar.StrRef, inner int, outer int) bool {
+    if outer < 0 || desugar.HeapGet(mut st.d, outer + 2) != LCell {
+        return false
+    }
+    st.nrwCells = append(st.nrwCells, int(name))
+    st.nrwCells = append(st.nrwCells, inner)
+    st.nrwCells = append(st.nrwCells, outer)
+    return true
+}
+
+func nrwPop(st mut St) {
+    st.nrwCells = st.nrwCells[0:len(st.nrwCells) - 3]
+}
+
+// 名前の今の記録 l が絞った中身の記録なら外のセルの記録（でなければ -1）
+func nrwOuterOf(st mut St, l int) int {
+    mut i := len(st.nrwCells) - 3
+    while i >= 0 {
+        if st.nrwCells[i + 1] == l {
+            return st.nrwCells[i + 2]
+        }
+        i -= 3
+    }
+    return -1
+}
+
+// 文 s の頭（before）/ 後ろで、s が絞りを外す名前を外のセルの別名として今のスコープに宣言し直す
+func nrwKill(st mut St, s desugar.NodeRef, before bool) {
+    mut i := 0
+    while i < len(st.nrwCells) {
+        name := desugar.StrRef(st.nrwCells[i])
+        if lookup(mut st, name) == st.nrwCells[i + 1] {
+            ko := desugar.KillOf(mut st.d, s, name)
+            if ko == desugar.KillBefore && before || ko == desugar.KillAfter && !before {
+                o := st.nrwCells[i + 2]
+                declare(mut st, name, LCell, desugar.HeapGet(mut st.d, o + 3), desugar.HeapGet(mut st.d, o + 4))
+                l := lookup(mut st, name)
+                desugar.HeapSet(mut st.d, l + 5, desugar.HeapGet(mut st.d, o + 5))
+            }
+        }
+        i += 3
+    }
+}

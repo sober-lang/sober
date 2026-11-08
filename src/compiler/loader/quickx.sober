@@ -42,7 +42,7 @@ func qkAlias(t ast.Tree) string {
     for j <- iter.Range(0, ast.ListLen(t, root.b)) {
         im := t.nodes[ast.ListAt(t, root.b, j)]
         if StrIs(t, im.b, "std/quick") {
-            return if im.a >= 0 { Name(t, im.a) } else { "quick" }
+            return ImpRef(t, im)
         }
     }
     return ""

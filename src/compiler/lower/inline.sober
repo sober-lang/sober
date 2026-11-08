@@ -342,7 +342,7 @@ func inlineCall0(st mut St, decl desugar.NodeRef, pk int, params desugar.ListRef
     saved := enter(mut st, list0(mut st), pk, if body_env == -2 { st.tenv } else { body_env }, ctx, -1)
     st.inlining = declListAdd(mut st, st.inlining, int(decl))
     // 本体の宛先構築の印（e == 1 = callee の return へ流れ着く値）の行き先は展開入口の深度（inlineExit が結果を写す先）— 展開先の関数の宛先
-    // （st.destDepth のまま）にすると、ループの中の展開の結果が反復ごとに外の region へ積まれる（std/http.ServeConn の serveBuf）。
+    // （st.destDepth のまま）にすると、ループの中の展開の結果が反復ごとに外の region へ積まれる（std/http/server.ServeConn の serveBuf）。
     // ただし呼び出し点そのものに呼び手の印がある（ループ・ラムダの外で呼び手の return へ流れ着く — loader/dest.sober）なら呼び手の宛先のまま:
     // 結果は呼び手の宛先へ行くので、展開入口に作って inlineExit と呼び手の return で写す二重の写しが消える（extsort の lineOrder の
     // `return sort.OrderUnstable(…)`）。呼び手が展開の本体なら st.destDepth は外の展開の入口の深度で、入れ子でも反復をまたがない。
@@ -640,6 +640,19 @@ func liftLambda(st mut St, lam desugar.NodeRef, ft int, at desugar.NodeRef) (Val
     return Val{t: rec4(mut st, TFnv, ft, 0, 0), v: funcaddr(mut st, infoAt(mut st, fi).ir)}, nil
 }
 
+// ラムダの仮引数の注釈の型 t が関数型 ft の仮引数の型 p に合うか。借りの仮引数（注釈は匿名の関数型 TFunc）は、値の位置の閉包の関数型では
+// 関数値 1 語か閉包の struct へ書き換え済み（closBorrowFt）なので、関数型の中身で比べる
+func annParamFits(st mut St, t int, p int) bool {
+    if tEql(mut st, t, p) {
+        return true
+    }
+    if !isTag(mut st, t, TFunc) {
+        return false
+    }
+    pf := if isTag(mut st, p, TFnv) || isTag(mut st, p, TFunc) { desugar.HeapGet(mut st.d, p + 1) } else if isClosT(mut st, p) { closFt(mut st, p) } else { -1 }
+    return pf >= 0 && fnTypeEql(mut st, desugar.HeapGet(mut st.d, t + 1), pf)
+}
+
 // ラムダ lam（関数型 ft — 仮引数の数と注釈の型は検査済み）を匿名関数 lambda#N に持ち上げる（作業列で下ろす）。
 // env: 閉包の持ち上げ（隠れ第 1 引数 $env = env の番地 — closure.sober の closBind が入口で捕捉を束ねる）
 func liftLambdaFn(st mut St, lam desugar.NodeRef, ft int, env bool, at desugar.NodeRef) (int, error?) {
@@ -652,7 +665,7 @@ func liftLambdaFn(st mut St, lam desugar.NodeRef, ft int, env bool, at desugar.N
         te := nB(nodeOf(mut st, latN(mut st, ps, i)))
         if te != -1 {
             t := resolveType(mut st, st.curPkg, te, false)?
-            if !tEql(mut st, t, latI(mut st, hgetL(mut st, ft), i)) {
+            if !annParamFits(mut st, t, latI(mut st, hgetL(mut st, ft), i)) {
                 return 0, diag.Mismatch{at: posOf(mut st, at)}
             }
         }

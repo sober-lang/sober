@@ -18,7 +18,7 @@
             "name": "f",
             "type": {
               "k": "name",
-              "name": "p.F"
+              "name": "testdata.fnpkg.p.F"
             },
             "tok": 10
           }
@@ -27,7 +27,7 @@
       "tok": 7,
       "span": {
         "start": 6,
-        "end": 17
+        "end": 21
       }
     }
   ],
@@ -48,7 +48,7 @@
       "results": [
         {
           "k": "name",
-          "name": "p.F"
+          "name": "testdata.fnpkg.p.F"
         }
       ],
       "body": {
@@ -72,43 +72,53 @@
                     "callee": {
                       "k": "selector",
                       "base": {
-                        "k": "ident",
-                        "name": "p",
-                        "tok": 32
+                        "k": "selector",
+                        "base": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "testdata",
+                            "tok": 40
+                          },
+                          "field": "fnpkg",
+                          "tok": 42
+                        },
+                        "field": "p",
+                        "tok": 44
                       },
                       "field": "N",
-                      "tok": 34
+                      "tok": 46
                     },
                     "args": [
                       {
                         "k": "ident",
                         "name": "r",
-                        "tok": 36
+                        "tok": 48
                       }
                     ],
-                    "tok": 35
+                    "tok": 47
                   },
                   "rhs": {
                     "k": "ident",
                     "name": "k",
-                    "tok": 39
+                    "tok": 51
                   },
-                  "tok": 38
+                  "tok": 50
                 },
-                "tok": 31
+                "tok": 39
               }
             ],
-            "tok": 27
+            "tok": 35
           }
         ]
       },
-      "tok": 18,
+      "tok": 22,
       "bodiless": false,
       "span": {
-        "start": 17,
-        "end": 43
+        "start": 21,
+        "end": 55
       },
-      "sig_end": 26
+      "sig_end": 34
     },
     {
       "name": "use",
@@ -118,7 +128,7 @@
           "name": "f",
           "type": {
             "k": "name",
-            "name": "p.F"
+            "name": "testdata.fnpkg.p.F"
           },
           "mutable": false
         }
@@ -139,7 +149,7 @@
                 "callee": {
                   "k": "ident",
                   "name": "f",
-                  "tok": 54
+                  "tok": 70
                 },
                 "args": [
                   {
@@ -147,37 +157,47 @@
                     "callee": {
                       "k": "selector",
                       "base": {
-                        "k": "ident",
-                        "name": "p",
-                        "tok": 56
+                        "k": "selector",
+                        "base": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "testdata",
+                            "tok": 72
+                          },
+                          "field": "fnpkg",
+                          "tok": 74
+                        },
+                        "field": "p",
+                        "tok": 76
                       },
                       "field": "Make",
-                      "tok": 58
+                      "tok": 78
                     },
                     "args": [
                       {
                         "k": "int",
                         "value": 1,
-                        "tok": 60
+                        "tok": 80
                       }
                     ],
-                    "tok": 59
+                    "tok": 79
                   }
                 ],
-                "tok": 55
+                "tok": 71
               }
             ],
-            "tok": 53
+            "tok": 69
           }
         ]
       },
-      "tok": 44,
+      "tok": 56,
       "bodiless": false,
       "span": {
-        "start": 43,
-        "end": 66
+        "start": 55,
+        "end": 86
       },
-      "sig_end": 52
+      "sig_end": 68
     },
     {
       "name": "twice",
@@ -187,7 +207,7 @@
           "name": "g",
           "type": {
             "k": "generic",
-            "name": "p.G",
+            "name": "testdata.fnpkg.p.G",
             "args": [
               {
                 "k": "name",
@@ -214,7 +234,7 @@
                 "callee": {
                   "k": "ident",
                   "name": "g",
-                  "tok": 80
+                  "tok": 104
                 },
                 "args": [
                   {
@@ -222,28 +242,38 @@
                     "callee": {
                       "k": "selector",
                       "base": {
-                        "k": "ident",
-                        "name": "p",
-                        "tok": 82
+                        "k": "selector",
+                        "base": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "testdata",
+                            "tok": 106
+                          },
+                          "field": "fnpkg",
+                          "tok": 108
+                        },
+                        "field": "p",
+                        "tok": 110
                       },
                       "field": "Make",
-                      "tok": 84
+                      "tok": 112
                     },
                     "args": [
                       {
                         "k": "int",
                         "value": 2,
-                        "tok": 86
+                        "tok": 114
                       }
                     ],
-                    "tok": 85
+                    "tok": 113
                   },
                   {
                     "k": "call",
                     "callee": {
                       "k": "ident",
                       "name": "g",
-                      "tok": 89
+                      "tok": 117
                     },
                     "args": [
                       {
@@ -251,45 +281,55 @@
                         "callee": {
                           "k": "selector",
                           "base": {
-                            "k": "ident",
-                            "name": "p",
-                            "tok": 91
+                            "k": "selector",
+                            "base": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "testdata",
+                                "tok": 119
+                              },
+                              "field": "fnpkg",
+                              "tok": 121
+                            },
+                            "field": "p",
+                            "tok": 123
                           },
                           "field": "Make",
-                          "tok": 93
+                          "tok": 125
                         },
                         "args": [
                           {
                             "k": "int",
                             "value": 3,
-                            "tok": 95
+                            "tok": 127
                           }
                         ],
-                        "tok": 94
+                        "tok": 126
                       },
                       {
                         "k": "int",
                         "value": 5,
-                        "tok": 98
+                        "tok": 130
                       }
                     ],
-                    "tok": 90
+                    "tok": 118
                   }
                 ],
-                "tok": 81
+                "tok": 105
               }
             ],
-            "tok": 79
+            "tok": 103
           }
         ]
       },
-      "tok": 67,
+      "tok": 87,
       "bodiless": false,
       "span": {
-        "start": 66,
-        "end": 104
+        "start": 86,
+        "end": 136
       },
-      "sig_end": 78
+      "sig_end": 102
     },
     {
       "name": "main",
@@ -305,7 +345,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 109
+                "tok": 141
               },
               "args": [
                 {
@@ -313,7 +353,7 @@
                   "callee": {
                     "k": "ident",
                     "name": "use",
-                    "tok": 111
+                    "tok": 143
                   },
                   "args": [
                     {
@@ -321,22 +361,22 @@
                       "callee": {
                         "k": "ident",
                         "name": "adder",
-                        "tok": 113
+                        "tok": 145
                       },
                       "args": [
                         {
                           "k": "int",
                           "value": 10,
-                          "tok": 115
+                          "tok": 147
                         }
                       ],
-                      "tok": 114
+                      "tok": 146
                     }
                   ],
-                  "tok": 112
+                  "tok": 144
                 }
               ],
-              "tok": 110
+              "tok": 142
             }
           },
           {
@@ -357,24 +397,24 @@
                       "callee": {
                         "k": "ident",
                         "name": "adder",
-                        "tok": 126
+                        "tok": 158
                       },
                       "args": [
                         {
                           "k": "int",
                           "value": 20,
-                          "tok": 128
+                          "tok": 160
                         }
                       ],
-                      "tok": 127
+                      "tok": 159
                     }
                   }
                 ],
-                "tok": 122,
+                "tok": 154,
                 "type_args": []
               }
             ],
-            "tok": 120
+            "tok": 152
           },
           {
             "k": "bind",
@@ -388,13 +428,13 @@
                 "base": {
                   "k": "ident",
                   "name": "h",
-                  "tok": 134
+                  "tok": 166
                 },
                 "field": "f",
-                "tok": 136
+                "tok": 168
               }
             ],
-            "tok": 132
+            "tok": 164
           },
           {
             "k": "expr",
@@ -403,7 +443,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 138
+                "tok": 170
               },
               "args": [
                 {
@@ -411,7 +451,7 @@
                   "callee": {
                     "k": "ident",
                     "name": "f",
-                    "tok": 140
+                    "tok": 172
                   },
                   "args": [
                     {
@@ -419,27 +459,37 @@
                       "callee": {
                         "k": "selector",
                         "base": {
-                          "k": "ident",
-                          "name": "p",
-                          "tok": 142
+                          "k": "selector",
+                          "base": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "testdata",
+                              "tok": 174
+                            },
+                            "field": "fnpkg",
+                            "tok": 176
+                          },
+                          "field": "p",
+                          "tok": 178
                         },
                         "field": "Make",
-                        "tok": 144
+                        "tok": 180
                       },
                       "args": [
                         {
                           "k": "int",
                           "value": 2,
-                          "tok": 146
+                          "tok": 182
                         }
                       ],
-                      "tok": 145
+                      "tok": 181
                     }
                   ],
-                  "tok": 141
+                  "tok": 173
                 }
               ],
-              "tok": 139
+              "tok": 171
             }
           },
           {
@@ -449,7 +499,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 151
+                "tok": 187
               },
               "args": [
                 {
@@ -457,7 +507,7 @@
                   "callee": {
                     "k": "ident",
                     "name": "twice",
-                    "tok": 153
+                    "tok": 189
                   },
                   "args": [
                     {
@@ -478,49 +528,59 @@
                         "lhs": {
                           "k": "ident",
                           "name": "x",
-                          "tok": 161
+                          "tok": 197
                         },
                         "rhs": {
                           "k": "call",
                           "callee": {
                             "k": "selector",
                             "base": {
-                              "k": "ident",
-                              "name": "p",
-                              "tok": 163
+                              "k": "selector",
+                              "base": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "testdata",
+                                  "tok": 199
+                                },
+                                "field": "fnpkg",
+                                "tok": 201
+                              },
+                              "field": "p",
+                              "tok": 203
                             },
                             "field": "N",
-                            "tok": 165
+                            "tok": 205
                           },
                           "args": [
                             {
                               "k": "ident",
                               "name": "r",
-                              "tok": 167
+                              "tok": 207
                             }
                           ],
-                          "tok": 166
+                          "tok": 206
                         },
-                        "tok": 162
+                        "tok": 198
                       },
-                      "tok": 160
+                      "tok": 196
                     }
                   ],
-                  "tok": 154
+                  "tok": 190
                 }
               ],
-              "tok": 152
+              "tok": 188
             }
           }
         ]
       },
-      "tok": 105,
+      "tok": 137,
       "bodiless": false,
       "span": {
-        "start": 104,
-        "end": 174
+        "start": 136,
+        "end": 214
       },
-      "sig_end": 108
+      "sig_end": 140
     }
   ],
   "consts": []

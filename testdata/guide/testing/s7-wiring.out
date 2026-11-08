@@ -1,2 +1,2 @@
-examples/guide/settings: examples/guide/kvstore <= examples/guide/kvstore/mem
+settings: kvstore <= kvstore/mem
 (exit 0)

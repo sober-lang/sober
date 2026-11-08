@@ -25,14 +25,14 @@
             "values": [
               {
                 "k": "composite",
-                "type_name": "lib.box",
+                "type_name": "testdata.vis_generic.lib.box",
                 "elems": [
                   {
                     "key": "v",
                     "value": {
                       "k": "int",
                       "value": 4,
-                      "tok": 22
+                      "tok": 26
                     }
                   }
                 ],
@@ -54,7 +54,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 25
+                "tok": 29
               },
               "args": [
                 {
@@ -62,13 +62,13 @@
                   "base": {
                     "k": "ident",
                     "name": "p",
-                    "tok": 27
+                    "tok": 31
                   },
                   "field": "v",
-                  "tok": 29
+                  "tok": 33
                 }
               ],
-              "tok": 26
+              "tok": 30
             }
           }
         ]
@@ -77,7 +77,7 @@
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 34
+        "end": 38
       },
       "sig_end": 10
     }

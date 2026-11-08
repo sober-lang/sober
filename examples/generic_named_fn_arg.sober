@@ -1,0 +1,23 @@
+package main
+
+// 名前付きの関数を総称の名前付き関数型の仮引数へ渡す（型引数は署名から推論・明示も可 — spec F-11）
+
+type Gen[T] func(x T) T
+
+func Apply[T](g Gen[T], v T) T {
+    return g(v)
+}
+
+func dbl(x int) int {
+    return x * 2
+}
+
+func shout(s string) string {
+    return "${s}!"
+}
+
+func main() {
+    println(Apply(dbl, 5))
+    println(Apply[int](dbl, 7))
+    println(Apply(shout, "hi"))
+}

@@ -1,0 +1,62 @@
+package psl
+
+// 公開の接尾辞（Public Suffix List — 焼き込みの rules.sober）の引き: 名前の最も長く一致する規則（例外の規則が勝つ・一致が無ければ最後のラベル — 既定の規則 "*"）。
+// 名前は ASCII（IDN は punycode で渡す）・大文字小文字を区別しない・末尾の . は無視する
+
+import "std/strings"
+
+// name の公開の接尾辞（空の名前・空のラベルを含む名前は ""）
+@effects()
+func PublicSuffix(name string) string {
+    d := strings.ToLower(strings.TrimSuffix(name, "."))
+    if d == "" || strings.HasPrefix(d, ".") || strings.Contains(d, "..") {
+        return ""
+    }
+    cs := chunks()
+    mut s := d
+    while true {
+        if has(cs, "!${s}") {
+            _, rest, _ := strings.Cut(s, ".")
+            return rest
+        }
+        _, parent, dotted := strings.Cut(s, ".")
+        if has(cs, s) || (dotted && has(cs, "*.${parent}")) {
+            return s
+        }
+        if !dotted {
+            return s
+        }
+        s = parent
+    }
+    return ""
+}
+
+// name が公開の接尾辞そのものか（cookie の Domain 属性の拒否 — RFC 6265 5.3 の 5）
+@effects()
+func IsPublicSuffix(name string) bool {
+    d := strings.ToLower(strings.TrimSuffix(name, "."))
+    return d != "" && PublicSuffix(d) == d
+}
+
+// name の登録可能な名前（公開の接尾辞 + 1 ラベル — 無ければ nil）
+@effects()
+func Registrable(name string) string? {
+    d := strings.ToLower(strings.TrimSuffix(name, "."))
+    ps := PublicSuffix(d)
+    if ps == "" || ps == d || !strings.HasSuffix(d, ".${ps}") {
+        return nil
+    }
+    head := strings.TrimSuffix(d, ".${ps}")
+    _, last, dotted := strings.CutLast(head, ".")
+    return if dotted { "${last}.${ps}" } else { "${head}.${ps}" }
+}
+
+func has(cs []string, rule string) bool {
+    w := "\n${rule}\n"
+    for c <- cs {
+        if strings.Contains(c, w) {
+            return true
+        }
+    }
+    return false
+}

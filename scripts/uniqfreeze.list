@@ -17,3 +17,4 @@ examples/task_chan.sober
 examples/strings_std.sober
 examples/task_chan_hold.sober
 testdata/implicitfreeze/freeze_if_ok.sober
+testdata/implicitfreeze/freeze_lambda_ok.sober

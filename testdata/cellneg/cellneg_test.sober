@@ -6,9 +6,9 @@ import "std/testing/cell"
 
 type F func(n int) int
 
-const C = cell.Cell[F]{init: (n) => n}
+const C = testing.cell.Cell[F]{init: (n) => n}
 
 func TestHoldsFunction() {
-    cell.Set(C, (n) => n + 1)
+    testing.cell.Set(C, (n) => n + 1)
     assert(One() == 1)
 }

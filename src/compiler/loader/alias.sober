@@ -142,7 +142,7 @@ func aliasTarget(ts []ast.Tree, fpkg []string, f0 int, d0 int, n int) (string, s
             return "", "", TD_TARGET
         }
         s := Name(t, x.a)
-        ref, rest, dotted := strings.Cut(s, ".")
+        ref, rest, dotted := strings.CutLast(s, ".")
         base := if dotted { rest } else { s }
         path := if dotted { importPath(t, ref) } else { fpkg[f] }
         if !dotted && builtinTypeName(s) {
@@ -172,7 +172,7 @@ func aliasTarget(ts []ast.Tree, fpkg []string, f0 int, d0 int, n int) (string, s
 // 名前 s（`N` か `ref.N` — ファイル t・package pkg に書いた）が別名を指すなら実体の綴り（ok = true）。
 // 綴りは、実体が同じ package なら裸の名前・ファイルが実体の package を import していればその参照名・でなければ合成の参照名 `$a<k>`（syn = k — 呼び手が import を足す）
 func aliasRef(t ast.Tree, pkg string, tab AliasTab, s string) (string, int, bool) {
-    ref, base, dotted := strings.Cut(s, ".")
+    ref, base, dotted := strings.CutLast(s, ".")
     n := if dotted { base } else { s }
     if tab.names[n] == nil {
         return "", 0 - 1, false
@@ -207,7 +207,7 @@ func refOfPath(t ast.Tree, path string) string {
     for k <- iter.Range(0, ast.ListLen(t, imps)) {
         im := t.nodes[ast.ListAt(t, imps, k)]
         if StrIs(t, im.b, path) {
-            return if im.a >= 0 { Name(t, im.a) } else { Basename(path) }
+            return ImpRef(t, im)
         }
     }
     return ""
@@ -257,7 +257,7 @@ func aliasFile(t ast.Tree, pkg string, tab AliasTab) ast.Tree {
             }
             if x.kind == ast.ESelector {
                 // `ref.N` → 実体の `ref'.N'` の選択子（同じ package の実体なら裸の EIdent）
-                ref, base, dotted := strings.Cut(s, ".")
+                ref, base, dotted := strings.CutLast(s, ".")
                 if dotted {
                     ns = append(ns, ast.Node{ast.EIdent, t.nodes[x.a].tok, ast.PutLit(mut db, ref), 0, 0, 0, 0, 0})
                     ns[i] = ast.Node{x.kind, x.tok, len(ns) - 1, ast.PutLit(mut db, base), x.c, x.d, x.e, x.f}

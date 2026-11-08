@@ -1,0 +1,138 @@
+package ec
+
+// ECDSA の検証の網（white-box）: Wycheproof（testdata/wycheproof — P-256 × SHA-256・P-384 × SHA-384 の DER と P1363 の 4 ファイル・
+// valid は受理・invalid は拒否）。ハッシュは std/crypto/sha256 と std/internal/sha512
+
+import "std/crypto/sha256"
+import "std/hex"
+import "std/internal/sha512"
+import "std/iter"
+import "std/json"
+import "std/strings"
+
+@embed("testdata/wycheproof/ecdsa_secp*_test.json")
+const Files = map[string]string{}
+
+type WKey struct {
+    uncompressed string
+}
+
+type WTest struct {
+    tcId int
+    msg string
+    sig string
+    result string
+}
+
+type WGroup struct {
+    publicKey WKey
+    tests []WTest
+}
+
+type WFile struct {
+    testGroups []WGroup
+}
+
+func unhex(s string) []byte {
+    b, _ := hex.Parse(s)
+    return b
+}
+
+// name の全部の例を回し、期待と食い違った数（読めなければ -1）
+func run(name string, c Curve, fixed bool) int {
+    v := Files["testdata/wycheproof/${name}"]
+    if v == nil {
+        return -1
+    }
+    d, err := json.Parse(bytes(v))
+    if err != nil {
+        return -1
+    }
+    f, derr := json.Decode[WFile](d, json.Root(d))
+    if derr != nil {
+        return -1
+    }
+    mut bad := 0
+    mut n := 0
+    for g <- f.testGroups {
+        pub := unhex(g.publicKey.uncompressed)
+        for t <- g.tests {
+            m := unhex(t.msg)
+            h := if c.size == 32 { crypto.sha256.Sum256(m) } else { internal.sha512.Sum384(m) }
+            ok := if fixed { VerifyFixed(c, pub, h, unhex(t.sig)) } else { Verify(c, pub, h, unhex(t.sig)) }
+            if ok != (t.result == "valid") {
+                println("fail ${name} tcId ${t.tcId}")
+                bad = bad + 1
+            }
+            n = n + 1
+        }
+    }
+    println("${name}: ${n} tests, ${bad} failed")
+    println("conf: wycheproof/${name} ${n}")
+    return if n == 0 { -1 } else { bad }
+}
+
+func TestP256Der() {
+    assert(run("ecdsa_secp256r1_sha256_test.json", P256(), false) == 0)
+}
+
+func TestP256P1363() {
+    assert(run("ecdsa_secp256r1_sha256_p1363_test.json", P256(), true) == 0)
+}
+
+func TestP384Der() {
+    assert(run("ecdsa_secp384r1_sha384_test.json", P384(), false) == 0)
+}
+
+func TestP384P1363() {
+    assert(run("ecdsa_secp384r1_sha384_p1363_test.json", P384(), true) == 0)
+}
+
+@embed("testdata/crypto/ecdsa_sigver.txt")
+const SigVer = map[string]string{}
+
+// 左を 0 で n バイトに
+func pad(b []byte, n int) []byte {
+    mut o := mut []byte{}
+    for i <- iter.Range(len(b), n) {
+        o = append(o, byte(0))
+    }
+    for i <- iter.Range(0, len(b)) {
+        o = append(o, b[i])
+    }
+    return freeze(o)
+}
+
+// NIST CAVP の SigVer（Go の crypto/ecdsa/testdata/SigVer.rsp.bz2 の [P-256,SHA-256] と [P-384,SHA-384] の節 — 行 = `曲線 Msg Qx Qy R S P/F`。
+// 抜き出し: bzcat SigVer.rsp.bz2 を節の名前で切って 1 例 1 行に）
+func TestCavpSigVer() {
+    v := SigVer["testdata/crypto/ecdsa_sigver.txt"]
+    assert(v != nil)
+    if v == nil {
+        return
+    }
+    lines := strings.Split(strings.TrimSpace(v), "\n")
+    assert(len(lines) == 30)
+    println("conf: cavp/ecdsa-sigver ${len(lines)}")
+    for l <- lines {
+        f := strings.Fields(l)
+        c := if f[0] == "P-256" { P256() } else { P384() }
+        m := unhex(f[1])
+        h := if c.size == 32 { crypto.sha256.Sum256(m) } else { internal.sha512.Sum384(m) }
+        pub := []byte{4}
+        q := bytesCat(bytesCat(pub, pad(unhex(f[2]), c.size)), pad(unhex(f[3]), c.size))
+        ok := VerifyRS(c, q, h, unhex(f[4]), unhex(f[5]))
+        assert(ok == (f[6] == "P"))
+    }
+}
+
+func bytesCat(a []byte, b []byte) []byte {
+    mut o := mut []byte{}
+    for i <- iter.Range(0, len(a)) {
+        o = append(o, a[i])
+    }
+    for i <- iter.Range(0, len(b)) {
+        o = append(o, b[i])
+    }
+    return freeze(o)
+}

@@ -109,21 +109,39 @@ lean_key() { # 入力ファイルのパス → 出力の置き場のキー
     printf '%s' "$1" | sha1sum | cut -c1-16
 }
 
+# LEAN_BIG（バイト — 既定 64 MiB）を超える入力は Lean の sober-check が 1 本で数 GB を食う（338 MB の入力で 7 GB — Json の木とコアの項）。
+# 大物どうしが別のチャンクで同時に走ると山が足し算になる（memguard の kill の常連だった）ので、大物は専用のチャンク 1 本に集めて直列に流す
+lean_big() { # $1 = 入力ファイル。LEAN_BIG を超えれば 0
+    [ "$(stat -c %s "$1")" -gt "${LEAN_BIG:-67108864}" ]
+}
+
 lean_batch() { # $1 = 入力ファイルの一覧（1 行 1 パス）、$2 = 出力の置き場。各入力の判定を $2/<lean_key>.out へ（1 件ずつの stdout と同じ形）
-    local list=$1 out=$2 k=${JOBS:-1} c chk=${SOBER_CHECK:-$GATELIB_ROOT/lean/.lake/build/bin/sober-check}
+    local list=$1 out=$2 k=${JOBS:-1} c f chk=${SOBER_CHECK:-$GATELIB_ROOT/lean/.lake/build/bin/sober-check}
     mkdir -p "$out/.chunk"
+    : > "$out/.chunk/big.list"
+    : > "$out/.chunk/small.list"
+    while IFS= read -r f; do
+        if lean_big "$f"; then echo "$f" >> "$out/.chunk/big.list"; else echo "$f" >> "$out/.chunk/small.list"; fi
+    done < "$list"
     local n
-    n=$(wc -l < "$list")
-    [ "$n" -gt 0 ] || return 0
+    n=$(wc -l < "$out/.chunk/small.list")
     [ "$k" -le "$n" ] || k=$n
+    local chunks=()
     for c in $(seq 0 $((k - 1))); do
-        awk -v k="$k" -v c="$c" 'NR % k == c' "$list" > "$out/.chunk/$c.list"
+        awk -v k="$k" -v c="$c" 'NR % k == c' "$out/.chunk/small.list" > "$out/.chunk/$c.list"
+        chunks+=("$c")
+    done
+    if [ -s "$out/.chunk/big.list" ]; then
+        mv "$out/.chunk/big.list" "$out/.chunk/big0.list"
+        chunks+=(big0)
+    fi
+    for c in "${chunks[@]}"; do
         (
             while IFS= read -r f; do tr '\n' ' ' < "$f"; echo; done < "$out/.chunk/$c.list" | "$chk" --batch > "$out/.chunk/$c.res"
         ) &
     done
     wait
-    for c in $(seq 0 $((k - 1))); do
+    for c in "${chunks[@]}"; do
         paste -d '\n' "$out/.chunk/$c.list" "$out/.chunk/$c.res" | while IFS= read -r f && IFS= read -r r; do
             printf '%s\n' "$r" > "$out/$(lean_key "$f").out"
         done
@@ -189,7 +207,8 @@ beyond_stage1() { # $1 = IR テキスト。stage1（凍結した Zig）の IR �
     # compiler/ 自身が std/task を使い始めて、コンパイラ自身の IR がこの語彙を越えた（stages の cross・errtrace の自己適用が踏んだ）
     # 6 度目（TLS 便 796）: AES-GCM の塊（`aes.cpu` / `aes.key` / `aes.ctr` / `aes.ghash` — compiler/lower/aes.sober）
     # 7 度目（RSA の続き — report-864）: 多倍長の塊（`mm.cpu` / `mm.mul` — compiler/lower/mulx.sober）
-    grep -qE '= (fadd|fsub|fmul|fdiv|fsqrt|fofint|ftoint|feq|fne|flt|fle|fgt|fge|trap|fsaddr|atomic\.[a-z]+|clone|mulhi|aes\.[a-z]+|mm\.[a-z]+) |^ *(unwind|tswitch |tstart |fence|pause|fsaddr |atomic\.|clone )' "$1"
+    # 8 度目（deflate v2）: 狭い語の読み書き（`load16` / `store16` / `load32` / `store32` — pool.Scratch の LoadRaw16 等）
+    grep -qE '= (fadd|fsub|fmul|fdiv|fsqrt|fofint|ftoint|feq|fne|flt|fle|fgt|fge|trap|fsaddr|atomic\.[a-z]+|clone|mulhi|aes\.[a-z]+|mm\.[a-z]+|load16|load32) |^ *(unwind|tswitch |tstart |fence|pause|fsaddr |atomic\.|clone |store16 |store32 )' "$1"
 }
 
 neg_beyond_stage1() { # $1 = 負例の entry（testdata/loader_neg/<名前>/app）。その負例の置き場に印 beyond_stage1（中身 = 理由）があれば 0 —

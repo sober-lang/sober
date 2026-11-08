@@ -1,0 +1,273 @@
+package ec
+
+// ECDSA の署名の検証（FIPS 186-5 6.4.2 / SEC 1 4.1.4 — P-256 と P-384・std の内側の核: X.509 の鎖の検証の下）。署名と鍵の生成は持たない。
+// 検証が触る値（公開鍵・署名・ハッシュ）は全部公開なので、点の演算とスカラー倍は定数時間にしない（Jacobian 座標・a = -3 の倍算・
+// Shamir の同時 2 スカラー倍 — 早抜けと値に依る分岐がある）。秘密の値を通さないこと（署名の側は定数時間の別の核が要る）
+//
+//     ok := ec.Verify(ec.P256(), pub, sha256.Sum256(msg), der)   // pub = SEC 1 の非圧縮 0x04 ‖ X ‖ Y・der = ECDSA-Sig-Value
+
+import "std/iter"
+
+// 曲線 y² = x³ - 3x + b（素数 p の上・位数 n の基点 (gx, gy)・余因子 1）。size = 座標のバイト数
+type Curve struct {
+    size int
+    p []int
+    n []int
+    b []int
+    gx []int
+    gy []int
+}
+
+// 16 進の定数を limb に（定数の表だけに使う — 字は 0-9a-f の偶数個）
+func hx(s string) []int {
+    b := bytes(s)
+    mut o := mut []byte{}
+    mut i := 0
+    while i < len(b) {
+        o = append(o, byte(16 * hv(int(b[i])) + hv(int(b[i + 1]))))
+        i = i + 2
+    }
+    return fromBytes(freeze(o), (len(b) / 2 + 7) / 8)
+}
+
+func hv(c int) int {
+    return if c <= 57 { c - 48 } else { c - 87 }
+}
+
+// NIST P-256（secp256r1 — FIPS 186-5 / SP 800-186 3.2.1.3）
+@effects()
+func P256() Curve {
+    return Curve{
+        size: 32,
+        p: hx("ffffffff00000001000000000000000000000000ffffffffffffffffffffffff"),
+        n: hx("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551"),
+        b: hx("5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b"),
+        gx: hx("6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"),
+        gy: hx("4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5"),
+    }
+}
+
+// NIST P-384（secp384r1 — SP 800-186 3.2.1.4）
+@effects()
+func P384() Curve {
+    return Curve{
+        size: 48,
+        p: hx("fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff"),
+        n: hx("ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52973"),
+        b: hx("b3312fa7e23ee7e4988e056be3f82d19181d9c6efe8141120314088f5013875ac656398d8a2ed19d2a85c8edd3ec2aef"),
+        gx: hx("aa87ca22be8b05378eb1c71ef320ad746e1d3b628ba79b9859f741e082542a385502f25dbf55296c3a545e3872760ab7"),
+        gy: hx("3617de4a96262c6f5d9e98bf9292dc29f8f41dbd289a147ce9da3113b5f0b8c00a60b1ce1d7e819d7a431d7c90ea0e5f"),
+    }
+}
+
+// Jacobian 座標の点（x = X / Z²・y = Y / Z³ — 座標は Montgomery の形。Z = 0 は無限遠点）
+type pt struct {
+    x []int
+    y []int
+    z []int
+}
+
+func inf(f fld) pt {
+    z := oneN(f.n)
+    mut zr := mut []int{}
+    fill(mut zr, f.n)
+    return pt{x: z, y: z, z: freeze(zr)}
+}
+
+// 2P（dbl-2001-b — a = -3）
+func dbl(f fld, a pt) pt {
+    if isZero(a.z) || isZero(a.y) {
+        return inf(f)
+    }
+    m := f.m
+    delta := mont(f, a.z, a.z)
+    gamma := mont(f, a.y, a.y)
+    beta := mont(f, a.x, gamma)
+    t := mont(f, subm(m, a.x, delta), addm(m, a.x, delta))
+    alpha := addm(m, addm(m, t, t), t)
+    b4 := addm(m, addm(m, beta, beta), addm(m, beta, beta))
+    x3 := subm(m, mont(f, alpha, alpha), addm(m, b4, b4))
+    yz := addm(m, a.y, a.z)
+    z3 := subm(m, subm(m, mont(f, yz, yz), gamma), delta)
+    g2 := mont(f, gamma, gamma)
+    g4 := addm(m, g2, g2)
+    g8 := addm(m, g4, g4)
+    y3 := subm(m, mont(f, alpha, subm(m, b4, x3)), addm(m, g8, g8))
+    return pt{x: x3, y: y3, z: z3}
+}
+
+// P + Q（add-2007-bl — P = Q なら倍算・P = -Q なら無限遠点）
+func add(f fld, a pt, b pt) pt {
+    if isZero(a.z) {
+        return b
+    }
+    if isZero(b.z) {
+        return a
+    }
+    m := f.m
+    z1z1 := mont(f, a.z, a.z)
+    z2z2 := mont(f, b.z, b.z)
+    u1 := mont(f, a.x, z2z2)
+    u2 := mont(f, b.x, z1z1)
+    s1 := mont(f, a.y, mont(f, b.z, z2z2))
+    s2 := mont(f, b.y, mont(f, a.z, z1z1))
+    h := subm(m, u2, u1)
+    if isZero(h) {
+        if eqn(s1, s2) {
+            return dbl(f, a)
+        }
+        return inf(f)
+    }
+    h2 := addm(m, h, h)
+    i := mont(f, h2, h2)
+    j := mont(f, h, i)
+    d := subm(m, s2, s1)
+    r := addm(m, d, d)
+    v := mont(f, u1, i)
+    x3 := subm(m, subm(m, mont(f, r, r), j), addm(m, v, v))
+    sj := mont(f, s1, j)
+    y3 := subm(m, mont(f, r, subm(m, v, x3)), addm(m, sj, sj))
+    zz := addm(m, a.z, b.z)
+    z3 := mont(f, subm(m, subm(m, mont(f, zz, zz), z1z1), z2z2), h)
+    return pt{x: x3, y: y3, z: z3}
+}
+
+// 点 (x, y)（普通の形・< p）が曲線に乗るか
+func onCurve(f fld, c Curve, x []int, y []int) bool {
+    m := f.m
+    xm := toM(f, x)
+    ym := toM(f, y)
+    rhs0 := mont(f, mont(f, xm, xm), xm)
+    x3 := addm(m, addm(m, xm, xm), xm)
+    rhs := addm(m, subm(m, rhs0, x3), toM(f, c.b))
+    return eqn(mont(f, ym, ym), rhs)
+}
+
+// 公開鍵 pub（SEC 1 2.3.4 の非圧縮 0x04 ‖ X ‖ Y）の検証つきの点（座標 < p・曲線の上。余因子 1 なので位数の検査は要らない）
+func pubPoint(f fld, c Curve, pub []byte) (pt, bool) {
+    if len(pub) != 1 + 2 * c.size || pub[0] != byte(4) {
+        return inf(f), false
+    }
+    x := fromBytes(pub[1:1 + c.size], f.n)
+    y := fromBytes(pub[1 + c.size:1 + 2 * c.size], f.n)
+    if !lt(x, c.p) || !lt(y, c.p) || !onCurve(f, c, x, y) {
+        return inf(f), false
+    }
+    return pt{x: toM(f, x), y: toM(f, y), z: toM(f, oneN(f.n))}, true
+}
+
+// 署名 (r, s)（大きい端のバイト列・先頭の 0 は可）を pub と hash に照らす（hash は左から曲線の位数のバイト数まで — bits2int。P-256 / P-384 の位数のビット長は 8 の倍数）
+@effects()
+func VerifyRS(c Curve, pub []byte, hash []byte, rb []byte, sb []byte) bool {
+    nl := len(c.n)
+    if len(rb) > c.size + 1 || len(sb) > c.size + 1 {
+        return false
+    }
+    r := fromBytes(rb, nl + 1)
+    s := fromBytes(sb, nl + 1)
+    if r[nl] != 0 || s[nl] != 0 {
+        return false
+    }
+    rn := r[0:nl]
+    sn := s[0:nl]
+    if isZero(rn) || isZero(sn) || !lt(rn, c.n) || !lt(sn, c.n) {
+        return false
+    }
+    fp := newFld(c.p)
+    q, ok := pubPoint(fp, c, pub)
+    if !ok {
+        return false
+    }
+    fn := newFld(c.n)
+    hb := if len(hash) > c.size { hash[0:c.size] } else { hash }
+    e := reduce1(c.n, fromBytes(hb, nl))
+    w := invm(fn, toM(fn, sn))
+    u1 := fromM(fn, mont(fn, toM(fn, e), w))
+    u2 := fromM(fn, mont(fn, toM(fn, rn), w))
+    g := pt{x: toM(fp, c.gx), y: toM(fp, c.gy), z: toM(fp, oneN(fp.n))}
+    gq := add(fp, g, q)
+    mut acc := inf(fp)
+    mut i := 64 * nl - 1
+    while i >= 0 {
+        acc = dbl(fp, acc)
+        b1 := (u1[i / 64] >> (i % 64)) & 1
+        b2 := (u2[i / 64] >> (i % 64)) & 1
+        if b1 == 1 && b2 == 1 {
+            acc = add(fp, acc, gq)
+        } else if b1 == 1 {
+            acc = add(fp, acc, g)
+        } else if b2 == 1 {
+            acc = add(fp, acc, q)
+        }
+        i = i - 1
+    }
+    if isZero(acc.z) {
+        return false
+    }
+    zi := invm(fp, acc.z)
+    x := fromM(fp, mont(fp, acc.x, mont(fp, zi, zi)))
+    return eqn(reduce1(c.n, x), rn)
+}
+
+// 署名 sig（DER の ECDSA-Sig-Value — SEQUENCE { INTEGER r, INTEGER s }・最短の長さ・最短の整数の符号化・後ろに余りなし）を pub と hash に照らす
+@effects()
+func Verify(c Curve, pub []byte, hash []byte, sig []byte) bool {
+    if len(sig) < 2 || sig[0] != byte(0x30) {
+        return false
+    }
+    ln, off, ok := derLen(sig, 1)
+    if !ok || off + ln != len(sig) {
+        return false
+    }
+    r, o2, ok2 := derInt(sig, off)
+    if !ok2 {
+        return false
+    }
+    s, o3, ok3 := derInt(sig, o2)
+    if !ok3 || o3 != len(sig) {
+        return false
+    }
+    return VerifyRS(c, pub, hash, r, s)
+}
+
+// 署名 sig（IEEE P1363 の r ‖ s — どちらも曲線のバイト数ちょうど）を pub と hash に照らす
+@effects()
+func VerifyFixed(c Curve, pub []byte, hash []byte, sig []byte) bool {
+    if len(sig) != 2 * c.size {
+        return false
+    }
+    return VerifyRS(c, pub, hash, sig[0:c.size], sig[c.size:2 * c.size])
+}
+
+// b[i] からの DER の長さ（短い形 < 128・長い形は 0x81 の 1 バイトで 128 以上だけ — 署名の大きさの範囲）→ (長さ, 中身の始め, ok)
+func derLen(b []byte, i int) (int, int, bool) {
+    if i >= len(b) {
+        return 0, 0, false
+    }
+    l := int(b[i])
+    if l < 128 {
+        return l, i + 1, true
+    }
+    if l == 0x81 && i + 1 < len(b) && int(b[i + 1]) >= 128 {
+        return int(b[i + 1]), i + 2, true
+    }
+    return 0, 0, false
+}
+
+// b[i] からの DER の INTEGER（正の数・最短の符号化）→ (中身, 次の位置, ok)
+func derInt(b []byte, i int) ([]byte, int, bool) {
+    if i >= len(b) || b[i] != byte(2) {
+        return []byte{}, 0, false
+    }
+    l, o, ok := derLen(b, i + 1)
+    if !ok || l == 0 || o + l > len(b) {
+        return []byte{}, 0, false
+    }
+    if int(b[o]) >= 128 {
+        return []byte{}, 0, false
+    }
+    if b[o] == byte(0) && l > 1 && int(b[o + 1]) < 128 {
+        return []byte{}, 0, false
+    }
+    return b[o:o + l], o + l, true
+}

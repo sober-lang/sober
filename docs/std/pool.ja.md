@@ -173,6 +173,42 @@ func StoreRaw(s mut Scratch, i int, v int)
 
 s の i 番目を v にする（生のアクセサ — 世代に触れず、値の範囲の制限も無い。LoadRaw の対）
 
+## LoadRaw16
+
+```sober
+@effects()
+func LoadRaw16(s mut Scratch, i int) int
+```
+
+s を 16 ビットの項目の列と見た i 番目（語 i >> 2 の (i & 3) × 16 ビット目から — little endian・0〜65535）。生のアクセサ（LoadRaw と同じ契約 — 世代に触れない・鮮度は呼び手が持つ）。i の範囲は 0〜4 × Cap − 1（外は列の添字と同じ panic）。64 ビットの LoadRaw / StoreRaw と同じ Scratch で混ぜてよい（読み書きする語を分けて使う限り）
+
+## StoreRaw16
+
+```sober
+@effects()
+func StoreRaw16(s mut Scratch, i int, v int)
+```
+
+s の 16 ビットの i 番目に v の下位 16 ビットを書く（生のアクセサ — LoadRaw16 の対）
+
+## LoadRaw32
+
+```sober
+@effects()
+func LoadRaw32(s mut Scratch, i int) int
+```
+
+s を 32 ビットの項目の列と見た i 番目（語 i >> 1 の (i & 1) × 32 ビット目から — 0〜2^32 − 1）。i の範囲は 0〜2 × Cap − 1
+
+## StoreRaw32
+
+```sober
+@effects()
+func StoreRaw32(s mut Scratch, i int, v int)
+```
+
+s の 32 ビットの i 番目に v の下位 32 ビットを書く（LoadRaw32 の対）
+
 ## RenewDense
 
 ```sober

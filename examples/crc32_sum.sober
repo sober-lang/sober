@@ -1,6 +1,6 @@
 package main
 
-// std/hash/crc32.Sum の全部の道の網（64 バイト以上は PCLMULQDQ の折り畳み〔x86 の最適化のバックエンド・CPUID の判定つき〕・
+// std/hash/hash.crc32.Sum の全部の道の網（64 バイト以上は PCLMULQDQ の折り畳み〔x86 の最適化のバックエンド・CPUID の判定つき〕・
 // 他と倒れ先は slicing-by-8 / 1 バイトずつ）: 長さ 0〜300 の全部 × 番地のずれ 0〜3・1K / 8K / 64K + 1 を 1 ビットずつの割り算（参照の実装）と照合し、
 // 混ぜた値と RFC 1952 の照合値 0xcbf43926 を出す。SOBER_NOCLMUL=1（倒れ先へ強制）でも同じ出力
 
@@ -34,7 +34,7 @@ func main() int {
     for off <- iter.Range(0, 4) {
         for n <- iter.Range(0, 301) {
             s := d[off:off + n]
-            c := crc32.Sum(s)
+            c := hash.crc32.Sum(s)
             if c != ref(s) {
                 bad += 1
             }
@@ -47,8 +47,8 @@ func main() int {
     big := []int{1024, 8192, 65537}
     for n <- big {
         s := d[3:3 + n]
-        println("${n} ${convert.FormatInt(crc32.Sum(s))} ${crc32.Sum(s) == ref(s)}")
+        println("${n} ${convert.FormatInt(hash.crc32.Sum(s))} ${hash.crc32.Sum(s) == ref(s)}")
     }
-    println(convert.FormatInt(crc32.Sum(bytes("123456789"))))
+    println(convert.FormatInt(hash.crc32.Sum(bytes("123456789"))))
     return 0
 }

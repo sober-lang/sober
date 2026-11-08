@@ -1,24 +1,24 @@
 package main
 
-import "std/http"
+import "std/http/server"
 
 // 共有のルートのハンドラが補助関数の 2 段奥で Authorization を読む（効果のビットの閉包）
-func token(r http.Request) bool {
-    return http.Authorization(r) != nil
+func token(r http.server.Request) bool {
+    return http.server.Authorization(r) != nil
 }
 
-func authed(r http.Request) bool {
+func authed(r http.server.Request) bool {
     return token(r)
 }
 
-func page(r http.Request) http.Response {
+func page(r http.server.Request) http.server.Response {
     if authed(r) {
-        return http.Text("member\n")
+        return http.server.Text("member\n")
     }
-    return http.Text("guest\n")
+    return http.server.Text("guest\n")
 }
 
 func main() {
-    rs := []http.Route{http.Route{method: "GET", path: "/p", handler: page, cache: http.Shared{maxAge: 60}}}
+    rs := []http.server.Route{http.server.Route{method: "GET", path: "/p", handler: page, cache: http.server.Shared{maxAge: 60}}}
     println(len(rs))
 }

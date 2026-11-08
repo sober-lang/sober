@@ -80,7 +80,7 @@ func regionFlowModule(st mut St) {
                     // [呼び手, 引数の数, 結果の型]
                     isite = append(isite, kx)
                     isite = append(isite, lenL(mut st, desugar.ListRef(irInsB(mut st, ins))))
-                    isite = append(isite, irInsC(mut st, ins))
+                    isite = append(isite, calliTy(irInsC(mut st, ins)))
                 } else if (op == OpGlobal || op == OpFsAddr) && irInsA(mut st, ins) == st.meta {
                     mts = append(mts, irInsRes(mut st, ins))
                 } else if op == OpLoad && irInsB(mut st, ins) == W_DEPTH && apIn(mut mts, irInsA(mut st, ins)) {
@@ -659,7 +659,7 @@ func rfJudge(st mut St, ff FnRef, fx mut map[int]int, fl mut []int, isRtF mut []
                             }
                         }
                     }
-                    isOut := if op == OpCallI { irInsC(mut st, ins) == CALLI_SRET } else { (irFnMutP(mut st, irInsFn(mut st, ins)) >> F_SRET_BIT) & 1 == 1 }
+                    isOut := if op == OpCallI { calliTy(irInsC(mut st, ins)) == CALLI_SRET } else { (irFnMutP(mut st, irInsFn(mut st, ins)) >> F_SRET_BIT) & 1 == 1 }
                     if isOut && lenL(mut st, ll) > 0 {
                         pv := latI(mut st, ll, 0)
                         if pv >= 0 && pv < nval && vR[pv] {
@@ -688,7 +688,7 @@ func rfJudge(st mut St, ff FnRef, fx mut map[int]int, fl mut []int, isRtF mut []
                             moved = true
                         }
                     }
-                } else if rv >= 0 && rv < nval && op != OpConst && op != OpRDepth && op != OpCmp && op != OpLoad8 && op != OpGlobal && op != OpFsAddr && op != OpFuncaddr {
+                } else if rv >= 0 && rv < nval && op != OpConst && op != OpRDepth && op != OpCmp && !isNarrowLd(op) && op != OpGlobal && op != OpFsAddr && op != OpFuncaddr {
                     // 知らない結果は外の番地（保守 — 書けば着かない・読めば中身は空）
                     if !vU[rv] {
                         vU[rv] = true

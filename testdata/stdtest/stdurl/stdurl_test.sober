@@ -93,3 +93,17 @@ func TestParseQueryRejects() {
         assert(badQuery(xs[i]))
     }
 }
+
+func TestFormatQuery() {
+    ps := []url.Pair{url.Pair{key: "q", value: "a b"}, url.Pair{key: "tag", value: "あ"}, url.Pair{key: "tag", value: "x&y=z"}, url.Pair{key: "", value: ""}, url.Pair{key: "k+", value: "%"}}
+    s := url.FormatQuery(ps)
+    assert(s == "q=a%20b&tag=%E3%81%82&tag=x%26y%3Dz&=&k%2B=%25")
+    back, e := url.ParseQuery(s)
+    assert(e == nil)
+    // 空の key と value の組は ParseQuery では "=" の項目 — 組として戻る
+    assert(len(back) == 5)
+    for i <- iter.Range(0, 5) {
+        assert(back[i].key == ps[i].key && back[i].value == ps[i].value)
+    }
+    assert(url.FormatQuery([]url.Pair{}) == "")
+}

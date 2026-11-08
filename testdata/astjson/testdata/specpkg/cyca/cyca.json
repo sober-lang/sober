@@ -32,22 +32,32 @@
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "cycb",
-                      "tok": 13
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 13
+                        },
+                        "field": "specpkg",
+                        "tok": 15
+                      },
+                      "field": "cycb",
+                      "tok": 17
                     },
                     "field": "B",
-                    "tok": 15
+                    "tok": 19
                   },
                   "args": [],
-                  "tok": 16
+                  "tok": 20
                 },
                 "rhs": {
                   "k": "int",
                   "value": 1,
-                  "tok": 19
+                  "tok": 23
                 },
-                "tok": 18
+                "tok": 22
               }
             ],
             "tok": 12
@@ -58,7 +68,7 @@
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 23
+        "end": 27
       },
       "sig_end": 11
     }

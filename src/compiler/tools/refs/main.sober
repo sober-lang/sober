@@ -125,6 +125,44 @@ func lastSeg(path string) string {
     return if ok { b } else { path }
 }
 
+// 選択子の基底の識別子の連鎖の綴り（`http.server` — 連鎖でなければ ""）
+func chainText(t ast.Tree, i int) string {
+    x := t.nodes[i]
+    if x.kind == ast.EIdent {
+        return loader.Name(t, x.a)
+    }
+    if x.kind == ast.ESelector && x.a >= 0 {
+        b := chainText(t, x.a)
+        return if b == "" { "" } else { "${b}.${loader.Name(t, x.b)}" }
+    }
+    return ""
+}
+
+// 字句 k（名前）の直前の `a.b.c.` の連鎖のうち参照名になる最長のもの（修飾子は import のパスの全段 — language.md 20 節。無ければ直前の識別子 1 つ）
+func lexQual(f File, ts []lexer.Token, k int) string {
+    mut segs := mut []string{}
+    mut j := k
+    while j >= 2 && ts[j - 1].tag == lexer.Dot && ts[j - 2].tag == lexer.Identifier {
+        segs = append(segs, lexeme(f.src, ts[j - 2]))
+        j -= 2
+    }
+    // segs は名前に近い順 — 根から i 段（i = len … 1）の綴りを長い順に試す
+    mut n := len(segs)
+    while n > 1 {
+        mut q := segs[n - 1]
+        mut i := n - 2
+        while i >= 0 {
+            q = "${q}.${segs[i]}"
+            i -= 1
+        }
+        if refPkg(f, q) != "" {
+            return q
+        }
+        n -= 1
+    }
+    return if len(segs) > 0 { segs[0] } else { "" }
+}
+
 func refPkg(f File, ref string) string {
     for i <- iter.Range(0, len(f.refs)) {
         if f.refs[i] == ref {
@@ -142,7 +180,7 @@ func importsOf(t ast.Tree) ([]string, []string) {
         x := t.nodes[i]
         if x.kind == ast.KImport {
             p := loader.Name(t, x.b)
-            r := if x.a >= 0 { loader.Name(t, x.a) } else { lastSeg(p) }
+            r := if x.a >= 0 { loader.Name(t, x.a) } else { loader.QualOf(p) }
             if !strings.HasSuffix(r, "#") {
                 rs = append(rs, r)
                 ps = append(ps, p)
@@ -167,7 +205,7 @@ func importsLex(src []byte, ts []lexer.Token) ([]string, []string) {
             if ts[q].tag == lexer.StringLiteral {
                 raw := bytes(lexeme(src, ts[q]))
                 p := string(raw[1:len(raw) - 1]) catch ""
-                rs = append(rs, if alias != "" { alias } else { lastSeg(p) })
+                rs = append(rs, if alias != "" { alias } else { loader.QualOf(p) })
                 ps = append(ps, p)
             }
         }
@@ -331,7 +369,8 @@ func astHits(f File, tt Toks, t ast.Tree, q string, name string) ([]Hit, int) {
                     b := t.nodes[x.a]
                     // `string(b)` の書き換え先 `$utf8.Parse(b)`（parser の合成 — 基底 EUtf8Ref は std/internal/utf8）
                     utf := b.kind == ast.EUtf8Ref
-                    cls := if utf { if q == "std/internal/utf8" { Target } else { Other } } else if b.kind == ast.EIdent && refPkg(f, loader.Name(t, b.a)) != "" { refCls(f, loader.Name(t, b.a), q) } else { Other }
+                    bc := chainText(t, x.a)
+                    cls := if utf { if q == "std/internal/utf8" { Target } else { Other } } else if bc != "" && refPkg(f, bc) != "" { refCls(f, bc, q) } else { Other }
                     kd := if cls == Target { "ref" } else { "field-sel" }
                     if !utf && (inHole || isName(f.src, ts, x.tok, name)) {
                         hs = append(hs, Hit{x.tok, cls, kd})
@@ -388,7 +427,7 @@ func annotHits(f File, ts []lexer.Token, q string, name string) []Hit {
             while p < len(ts) && ts[p].tag != lexer.RParen {
                 if isName(f.src, ts, p, name) {
                     dotted := p >= 2 && ts[p - 1].tag == lexer.Dot && ts[p - 2].tag == lexer.Identifier
-                    cls := if dotted { refCls(f, lexeme(f.src, ts[p - 2]), q) } else { bareCls(f, q) }
+                    cls := if dotted { refCls(f, lexQual(f, ts, p), q) } else { bareCls(f, q) }
                     hs = append(hs, Hit{p, cls, "errors-annot"})
                 }
                 p += 1
@@ -405,8 +444,7 @@ func lexCls(f File, tt Toks, k int, q string) (int, string) {
     same := k >= 2 && tt.host[k - 1] == tt.host[k] && tt.host[k - 2] == tt.host[k]
     if same && ts[k - 1].tag == lexer.Dot {
         if ts[k - 2].tag == lexer.Identifier {
-            r := lexeme(f.src, ts[k - 2])
-            p := refPkg(f, r)
+            p := refPkg(f, lexQual(f, ts, k))
             if p != "" {
                 return if p == q { Target } else { Other }, "other-pkg:" + p
             }
@@ -1072,7 +1110,8 @@ func calleeIs(f File, t ast.Tree, c0 int, q string, fn string) bool {
     }
     if x.kind == ast.ESelector {
         bn := unparen(t, x.a)
-        return bn >= 0 && t.nodes[bn].kind == ast.EIdent && refPkg(f, loader.Name(t, t.nodes[bn].a)) == q && loader.Name(t, x.b) == fn
+        bc := if bn >= 0 { chainText(t, bn) } else { "" }
+        return bc != "" && refPkg(f, bc) == q && loader.Name(t, x.b) == fn
     }
     return false
 }

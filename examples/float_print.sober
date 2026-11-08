@@ -10,7 +10,7 @@ func show(s string) {
     f, err := convert.ParseFloat(s)
     if err != nil {
         msg := switch err {
-        case convert.InvalidFloat{}: "invalid"
+        case convert.BadFloat{}: "invalid"
         case convert.FloatOutOfRange{}: "range"
         }
         println(s, msg, f)

@@ -2,11 +2,11 @@ package chacha20poly1305
 
 // AEAD_CHACHA20_POLY1305（RFC 8439 2.8 — 鍵 32 バイト・nonce 12 バイト・tag 16 バイト）。Open は tag を crypto.Equal（定数時間）で照合し、食い違えば平文を返さない。同じ鍵で nonce を 2 回使ってはならない（2 つの暗号文の xor から平文の xor が漏れ、Poly1305 の鍵も同じになって tag を偽造できる）
 //
-//     ct := chacha20poly1305.Seal(key, nonce, ad, pt)?       // 暗号文 ‖ tag
-//     pt := chacha20poly1305.Open(key, nonce, ad, ct)?       // 改竄なら chacha20poly1305.Auth
+//     ct := crypto.chacha20poly1305.Seal(key, nonce, ad, pt)?       // 暗号文 ‖ tag
+//     pt := crypto.chacha20poly1305.Open(key, nonce, ad, ct)?       // 改竄なら crypto.chacha20poly1305.Auth
 //
 // record 層向けの API（aesgcm と同じ形）: Prepare（鍵の長さを見る）・SealTo（head ‖ 暗号文 ‖ tag）・OpenAt（b[off, off + n) を
-// 写さずに検証してから復号）。MAC は入力を繋がずに poly1305.SumAead で
+// 写さずに検証してから復号）。MAC は入力を繋がずに crypto.poly1305.SumAead で
 
 import "std/crypto"
 import "std/crypto/chacha20"
@@ -89,7 +89,7 @@ func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte)
     if len(nonce) != NonceSize {
         return []byte{}, BadSize{}
     }
-    ct := chacha20.XorKeyStream(k.key, nonce, 1, pt)
+    ct := crypto.chacha20.XorKeyStream(k.key, nonce, 1, pt)
     h := len(head)
     mut out := mut []byte{}
     mut i := 0
@@ -106,7 +106,7 @@ func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte)
         ctTail(mut out, k.key, nonce, len(pt), tail)
     }
     n := len(out) - h
-    tag := poly1305.SumAead(polyKey(k.key, nonce), ad, freeze(out), h, n)
+    tag := crypto.poly1305.SumAead(polyKey(k.key, nonce), ad, freeze(out), h, n)
     mut t := 0
     while t < Overhead {
         out = append(out, tag[t])
@@ -131,7 +131,7 @@ func ctTail(out mut []byte, key []byte, nonce []byte, p int, tail []byte) {
         src = append(src, tail[i])
         i += 1
     }
-    x := chacha20.XorKeyStream(key, nonce, 1 + p / 64, freeze(src))
+    x := crypto.chacha20.XorKeyStream(key, nonce, 1 + p / 64, freeze(src))
     mut j := q
     while j < len(x) {
         out = append(out, x[j])
@@ -147,15 +147,15 @@ func OpenAt(k Key, nonce []byte, ad []byte, b []byte, off int, n int) ([]byte, e
         return []byte{}, BadSize{}
     }
     m := n - Overhead
-    if !crypto.Equal(poly1305.SumAead(polyKey(k.key, nonce), ad, b, off, m), b[off + m:off + n]) {
+    if !crypto.Equal(crypto.poly1305.SumAead(polyKey(k.key, nonce), ad, b, off, m), b[off + m:off + n]) {
         return []byte{}, Auth{}
     }
-    return chacha20.XorKeyStreamAt(k.key, nonce, 1, b, off, m), nil
+    return crypto.chacha20.XorKeyStreamAt(k.key, nonce, 1, b, off, m), nil
 }
 
 // 1 回きりの Poly1305 の鍵（ブロック 0 の鍵ストリームの先頭 32 バイト — RFC 8439 2.6）
 func polyKey(key []byte, nonce []byte) []byte {
-    b := chacha20.Block(key, nonce, 0)
+    b := crypto.chacha20.Block(key, nonce, 0)
     mut out := mut []byte{}
     for i <- iter.Range(0, 32) {
         out = append(out, b[i])

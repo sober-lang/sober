@@ -1,0 +1,108 @@
+package lower
+
+// 短絡の合流の飛び越し（ccThread — 否定 / 辺の実引数 / 中継を扱う）の負例の網: 利用者のプログラムの `!` は
+// 0/1 にしか掛からず、0/1 でない値への `xor q, 1` や、行き先の実引数に出る xor の結果は例・題材から作れない — IR を手で組んで直に見る
+// （`cd compiler && ../bin/sober test lower`）
+
+import "desugar"
+
+const THR_CMP = 0    // 入る値 = 比較の結果（0/1）
+const THR_PARAM = 1  // 入る値 = 関数の引数（0/1 と言えない）
+const THR_C2 = 2     // 入る値 = 定数 2（xor 2, 1 = 3 ≠ 0 → T）
+const THR_C1 = 3     // 入る値 = 定数 1（xor 1, 1 = 0 → E）
+const THR_NARG = 4   // 入る値 = 比較の結果だが、J の xor の結果が行き先の実引数に出る
+
+// `b0: br J(a)`・`J(q): n = xor q, 1; condbr n, T, E`・`T: ret %0`・`E: ret %1` の関数に ccThread を 1 回掛け、
+// 入口の終端を返す: 0 = br J のまま・1 = condbr a, E, T（入れ替え）・2 = br T・3 = br E・-1 = それ以外
+func thrT(kind int) int {
+    mut st := St{}
+    initScalars(mut st)
+    desugar.HeapPush(mut st.d, 0)
+    pt := listN(mut st, 2)
+    desugar.HeapSet(mut st.d, pt + 1, TyI64)
+    desugar.HeapSet(mut st.d, pt + 2, TyI64)
+    f := addFunc(mut st, 0, desugar.ListRef(pt), TyI64)
+    st.fn = f
+    b0 := newBlock(mut st)
+    j := newBlock(mut st)
+    t := newBlock(mut st)
+    e := newBlock(mut st)
+    q := param(mut st, j, TyI64)
+    tp := if kind == THR_NARG { param(mut st, t, TyI64) } else { -1 }
+    st.cur = b0
+    a := if kind == THR_PARAM { 0 } else if kind == THR_C2 { iconst(mut st, 2) } else if kind == THR_C1 { iconst(mut st, 1) } else { cmp(mut st, CNe, 0, 1) }
+    br(mut st, j, list1(mut st, a))
+    setCur(mut st, j)
+    n := bin(mut st, BXor, q, iconst(mut st, 1))
+    condbr(mut st, n, t, if kind == THR_NARG { list1(mut st, n) } else { -1 }, e, -1)
+    setCur(mut st, t)
+    ret(mut st, if tp >= 0 { tp } else { 0 })
+    setCur(mut st, e)
+    ret(mut st, 1)
+    _ = ccThread(mut st, f)
+    tm := irBlkTerm(mut st, b0)
+    if tm == TmBr {
+        to := irBrTo(mut st, b0)
+        return if to == j { 0 } else if to == t { 2 } else if to == e { 3 } else { -1 }
+    }
+    if tm == TmCondbr && irBlkX1(mut st, b0) == a && irCondThen(mut st, b0) == e && irCondElse(mut st, b0) == t {
+        return 1
+    }
+    return -1
+}
+
+func TestThreadNeg() {
+    // 0/1 の値は否定の J を入れ替えた分岐で飛び越す
+    assert(thrT(THR_CMP) == 1)
+    // 0/1 と言えない値は飛び越さない（q = 2 なら xor q, 1 = 3 で T・入れ替えた分岐は 2 ≠ 0 で E — 0/1 の証明を外す変異はここで落ちる）
+    assert(thrT(THR_PARAM) == 0)
+    // 定数は値どおり: xor 2, 1 = 3 → T・xor 1, 1 = 0 → E
+    assert(thrT(THR_C2) == 2)
+    assert(thrT(THR_C1) == 3)
+    // xor の結果が行き先の実引数に出る J は消せない（消すと定義が消える。この形は使用の数〔n = 2〕でも弾かれる — 周の頭の数え方が古くなる形は
+    // TestThreadSameRound）
+    assert(thrT(THR_NARG) == 0)
+}
+
+// 自己 build の xSplitMoves の壊れの形: `b0: br X(c)`・`X(p): n = xor p, 1; br J(n)`・`J(q): condbr q, T, E(q)`・`E(r): ret r`。
+// J を飛び越すと X の終端が `condbr n, T, E(n)` になり X が否定の J の形に見えるが、使用の数は周の頭の数え方のまま（n = 1）— 同じ周で
+// 書き換えた X を J にすると E(n) が消えた n を指す。入口の終端の行き先を返す（X のまま = 0・それ以外 = 1）
+func thrChain() int {
+    mut st := St{}
+    initScalars(mut st)
+    desugar.HeapPush(mut st.d, 0)
+    pt := listN(mut st, 2)
+    desugar.HeapSet(mut st.d, pt + 1, TyI64)
+    desugar.HeapSet(mut st.d, pt + 2, TyI64)
+    f := addFunc(mut st, 0, desugar.ListRef(pt), TyI64)
+    st.fn = f
+    // 並びは J を X より前に（J の書き換えの後に同じ周で X を見る — xSplitMoves の b41 / b43 と同じ順）
+    b0 := newBlock(mut st)
+    j := newBlock(mut st)
+    t := newBlock(mut st)
+    e := newBlock(mut st)
+    x := newBlock(mut st)
+    p := param(mut st, x, TyI64)
+    q := param(mut st, j, TyI64)
+    r := param(mut st, e, TyI64)
+    st.cur = b0
+    c := cmp(mut st, CNe, 0, 1)
+    br(mut st, x, list1(mut st, c))
+    setCur(mut st, x)
+    n := bin(mut st, BXor, p, iconst(mut st, 1))
+    br(mut st, j, list1(mut st, n))
+    setCur(mut st, j)
+    condbr(mut st, q, t, -1, e, list1(mut st, q))
+    setCur(mut st, t)
+    ret(mut st, 0)
+    setCur(mut st, e)
+    ret(mut st, r)
+    _ = ccThread(mut st, f)
+    return if irBlkTerm(mut st, b0) == TmBr && irBrTo(mut st, b0) == x { 0 } else { 1 }
+}
+
+func TestThreadSameRound() {
+    // 守りは 2 つ（同じ周で終端を書き換えたブロックは J にしない・xor の結果が行き先の実引数に出る J は消さない）— この形はどちらか 1 つで
+    // 防げる。両方を外す変異（自己 build を壊した元の形）はここで落ちる
+    assert(thrChain() == 0)
+}

@@ -1,0 +1,2 @@
+sober: desugar error at examples/fn_type_conv_generic_neg.sober:12:13 (TypeMismatch): a generic named function type is not a value type — it can only be a parameter's type (pass a lambda or a function there)
+exit=1

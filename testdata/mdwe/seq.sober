@@ -1,0 +1,6 @@
+package main
+
+// mdwecheck の題材（逐次）: 入口の rt が掛けた PR_SET_MDWE を SOBER_MDWE_REPORT で読む
+func main() {
+    println("seq")
+}

@@ -1,0 +1,675 @@
+package client
+
+// 送受の網（loopback — 親の task が listener で受けて std/http/server のサーバの役をし、子の task が Request で要求する）: 平文の往復・redirect・
+// 本文の上限・壊れた応答・TLS（サーバの役 = std/internal/hs — 証明書は testdata の自己署名を extraRoots で足す）
+
+import "std/crypto/pem"
+import "std/crypto/rsa"
+import "std/http"
+import "std/http/server"
+import "std/internal/hs"
+import "std/internal/hsc"
+import "std/internal/x509"
+import "std/io"
+import "std/net"
+import "std/os"
+import "std/strings"
+import "std/task"
+import "std/tls"
+import "std/internal/record"
+
+@embed("testdata/crypto/httparena-server.*")
+const Certs = map[string]string{}
+
+func certFile(p string) string {
+    v := Certs[p]
+    return if v != nil { v } else { "" }
+}
+
+// 試験の CA の信頼の起点（読めなければ試験の誤り）
+func rootsOf(pem string) tls.Roots {
+    r, e := tls.ParseRoots(pem)
+    assert(e == nil)
+    return r
+}
+
+// 試験の proxy（読めなければ試験の誤り）
+func proxyOf(u string) Proxy {
+    p, e := ParseProxy(u)
+    assert(e == nil)
+    return p
+}
+
+// proxy の形: http / https の origin だけ（path・userinfo・別の scheme は BadProxy）
+func TestParseProxy() {
+    _, e1 := ParseProxy("http://proxy.internal:3128")
+    assert(e1 == nil)
+    _, e2 := ParseProxy("https://proxy.internal")
+    assert(e2 == nil)
+    bads := []string{"proxy.internal:3128", "socks5://p:1080", "http://p:3128/x", "http://u:p@p:3128", ""}
+    for bad <- bads {
+        _, e := ParseProxy(bad)
+        assert(isBadProxy(e))
+    }
+}
+
+func isBadProxy(e error?) bool {
+    return switch e {
+    case nil: false
+    case BadProxy{}: true
+    }
+}
+
+func testRoots() tls.Roots {
+    return rootsOf(certFile("testdata/crypto/httparena-server.crt"))
+}
+
+func redirectTo(loc string) http.server.Response {
+    return http.server.Response{status: 302, contentType: "", body: []byte{}, length: nil, stream: nil, headers: http.server.Headers{list: []http.Field{http.Field{name: "Location", value: loc}}}, coded: nil, cache: nil, validators: nil, cookies: []http.server.SetCookie{}}
+}
+
+func loginResponse() http.server.Response {
+    sc := http.server.SetCookie{name: "sid", value: "abc", maxAge: nil, path: nil, domain: nil, sameSite: nil, dangerouslyAllowHttp: true, dangerouslyScriptReadable: false}
+    return http.server.Response{status: 302, contentType: "", body: []byte{}, length: nil, stream: nil, headers: http.server.Headers{list: []http.Field{http.Field{name: "Location", value: "/me"}}}, coded: nil, cache: nil, validators: nil, cookies: []http.server.SetCookie{sc}}
+}
+
+func meText(r http.server.Request) string {
+    v := http.server.Cookie(r, "sid")
+    return if v == nil { "anonymous" } else { "sid=${v}" }
+}
+
+func route(r http.server.Request) http.server.Response {
+    p := r.path
+    return if p == "/login" { loginResponse() } else if p == "/me" { http.server.Text(meText(r)) } else if p == "/hello" { http.server.Text("hello ${r.method}") } else if p == "/to-hello" { redirectTo("/hello") } else if p == "/to-me" { redirectTo("/me") } else if p == "/loop" { redirectTo("/loop") } else if p == "/big" { http.server.Text("0123456789abcdef0123456789abcdef") } else if p == "/echo" { http.server.Text(bytesToString(r.body)) } else { http.server.Status(404) }
+}
+
+// 子の task の要求の結果の要約（"status:body" か誤りの名前）
+func summary(url string, method string, body string, maxBody int?, redirects int?) string {
+    r, e := Request(url, method: method, body: bytes(body), policy: Policy{maxBody: maxBody, timeout: 5000 * task.MS, redirects: redirects})
+    return switch e {
+    case nil: "${r.status}:${bytesToString(r.body)}"
+    case TooManyRedirects{}: "TooManyRedirects"
+    case BodyTooLarge{}: "BodyTooLarge"
+    case BadResponse{}: "BadResponse"
+    case Closed{}: "Closed"
+    case Timeout{}: "Timeout"
+    case Tls{}: "Tls"
+    case Dns{}: "Dns"
+    default: "other"
+    }
+}
+
+// l で n 本の接続を受けて std/http/server のサーバの役をする
+func serveN(l net.Listener, n int) error? {
+    mut i := 0
+    for c <- net.Accept(l)? {
+        _ = http.server.ServeConn(c, route)
+        i += 1
+        if i >= n {
+            break
+        }
+    }
+    return nil
+}
+
+func TestPlainLoopback() {
+    e := net.Listen("127.0.0.1:0", (l) => {
+        base := "http://127.0.0.1:${net.Port(l)}"
+        got, _ := task.Run((s) => {
+            h := task.Spawn(s, () => []string{
+                summary("${base}/hello", "", "", nil, nil),
+                summary("${base}/echo", "POST", "ping", nil, nil),
+                summary("${base}/to-hello", "", "", nil, nil),
+                summary("${base}/big", "", "", 8, nil),
+                summary("${base}/to-hello", "", "", nil, 0),
+                summary("${base}/loop", "", "", nil, 3),
+            })
+            _ = serveN(l, 1 + 1 + 2 + 1 + 1 + 4)
+            task.Join(h)
+        }, deadline: 10000 * task.MS)
+        assert(len(got) == 6)
+        assert(got[0] == "200:hello GET")
+        assert(got[1] == "200:ping")
+        assert(got[2] == "200:hello GET")
+        assert(got[3] == "BodyTooLarge")
+        assert(got[4] == "302:")
+        assert(got[5] == "TooManyRedirects")
+    })
+    assert(e == nil)
+}
+
+func srvParams() internal.hs.Params {
+    cb, _ := crypto.pem.Parse(certFile("testdata/crypto/httparena-server.crt"))
+    kb, _ := crypto.pem.Parse(certFile("testdata/crypto/httparena-server.key"))
+    k, _ := crypto.rsa.ParsePKCS8(kb[0].der)
+    return internal.hs.NewParams([][]byte{cb[0].der}, k, []string{"http/1.1"}, []int{internal.record.AesGcm, internal.record.ChaCha}, []byte{})
+}
+
+// l で n 本の接続を受けて TLS 1.3 のサーバの役をする（要求の頭が揃ったら固定の応答を 1 つ返して close_notify）
+func tlsServeN(l net.Listener, n int) error? {
+    sp := srvParams()
+    mut i := 0
+    for c <- net.Accept(l)? {
+        i += 1
+        _ = tlsServeConn(c, sp)
+        if i >= n {
+            break
+        }
+    }
+    return nil
+}
+
+func tlsServeConn(c net.Conn, sp internal.hs.Params) error? {
+    mut s := internal.hs.New()
+    mut got := mut []byte{}
+    for f <- internal.record.Frames((k) => net.Recv(c, k))? {
+        o := internal.hs.Feed(mut s, sp, f)?
+        if len(o.send) > 0 {
+            net.Send(c, o.send)?
+        }
+        for x <- o.app {
+            got = append(got, x)
+        }
+        if strings.Contains(bytesToString(freeze(got)), "\r\n\r\n") {
+            resp := internal.hs.SealApp(mut s, bytes("HTTP/1.1 200 OK\r\nContent-Length: 6\r\nConnection: close\r\n\r\nsecret"))?
+            net.Send(c, resp)?
+            net.Send(c, internal.hs.CloseNotify(mut s))?
+            break
+        }
+    }
+    return nil
+}
+
+func tlsSummary(url string, extra bool) string {
+    pol := if extra { Policy{extraRoots: testRoots(), timeout: 5000 * task.MS} } else { Policy{timeout: 5000 * task.MS} }
+    r, e := Request(url, policy: pol)
+    return switch e {
+    case nil: "${r.status}:${bytesToString(r.body)}"
+    case Tls{cause: internal.hsc.CertFailed{cause: internal.x509.UnknownAuthority{}}}: "UnknownAuthority"
+    case Tls{}: "Tls"
+    default: "other"
+    }
+}
+
+func TestTlsLoopback() {
+    e := net.Listen("127.0.0.1:0", (l) => {
+        base := "https://localhost:${net.Port(l)}"
+        got, _ := task.Run((s) => {
+            h := task.Spawn(s, () => []string{
+                tlsSummary("${base}/", true),
+                tlsSummary("${base}/", false),
+            })
+            _ = tlsServeN(l, 2)
+            task.Join(h)
+        }, deadline: 20000 * task.MS)
+        assert(len(got) == 2)
+        assert(got[0] == "200:secret")
+        assert(got[1] == "UnknownAuthority")
+    })
+    assert(e == nil)
+}
+
+// 応答しない相手（listen はしているが受けない）は期限で Timeout・誰も listen していない port は Closed
+func TestTimeoutAndRefused() {
+    e := net.Listen("127.0.0.1:0", (l) => {
+        _, te := Request("http://127.0.0.1:${net.Port(l)}/", policy: Policy{timeout: 300 * task.MS})
+        assert(kindName(te) == "Timeout")
+    })
+    assert(e == nil)
+    c2 := Policy{timeout: 2000 * task.MS}
+    _, re := Request("http://127.0.0.1:1/", policy: c2)
+    assert(kindName(re) == "Closed")
+    _, be := Request("http://例え.jp/", policy: c2)
+    assert(kindName(be) == "BadUrl")
+}
+
+func kindName(e error?) string {
+    return switch e {
+    case nil: "ok"
+    case Timeout{}: "Timeout"
+    case Closed{}: "Closed"
+    case BadUrl{}: "BadUrl"
+    case InsecureRedirect{}: "InsecureRedirect"
+    case Tls{}: "Tls"
+    default: "other"
+    }
+}
+
+// 相互接続（scripts/httpinterop.sh が Go の net/http のサーバを起こし、環境変数 SOBER_HTTP_INTEROP にその置き場を渡す — 無ければ何もしない）
+func TestHttpInterop() {
+    d, e := os.Getenv("SOBER_HTTP_INTEROP")
+    if e != nil || d == nil {
+        return
+    }
+    caPem, e1 := io.ReadFile("${d}/ca.pem")
+    portsText, e2 := io.ReadFile("${d}/ports")
+    assert(e1 == nil && e2 == nil)
+    mut plain := ""
+    mut t13 := ""
+    mut t12 := ""
+    mut px := ""
+    mut spx := ""
+    mut apx := ""
+    for l <- strings.Split(strings.TrimSpace(bytesToString(portsText)), "\n") {
+        f := strings.Fields(l)
+        if f[0] == "plain" {
+            plain = f[1]
+        } else if f[0] == "tls13" {
+            t13 = f[1]
+        } else if f[0] == "tls12" {
+            t12 = f[1]
+        } else if f[0] == "proxy" {
+            px = f[1]
+        } else if f[0] == "sproxy" {
+            spx = f[1]
+        } else {
+            apx = f[1]
+        }
+    }
+    ca := rootsOf(bytesToString(caPem))
+    c := Policy{extraRoots: ca, timeout: 5000 * task.MS}
+    p := "http://127.0.0.1:${plain}"
+    s := "https://localhost:${t13}"
+    check(c, "", "${p}/len", "", "200:hello")
+    check(c, "", "${p}/chunked", "", "200:one,two,three")
+    check(c, "POST", "${p}/echo", "ping", "200:ping")
+    check(c, "HEAD", "${p}/len", "", "200:")
+    check(c, "POST", "${p}/see-other", "x", "200:GET:")
+    check(c, "", "${s}/len", "", "200:hello")
+    check(c, "", "${s}/chunked", "", "200:one,two,three")
+    // 同じ origin の redirect は Authorization を保つ・origin が変われば落とす
+    auth := []http.Field{http.Field{name: "Authorization", value: "Bearer t"}}
+    r1, a1 := Request("${p}/redirect?to=/auth", headers: auth, policy: c)
+    assert(a1 == nil && bytesToString(r1.body) == "auth=Bearer t")
+    r2, a2 := Request("${p}/redirect?to=http://localhost:${plain}/auth", headers: auth, policy: c)
+    assert(a2 == nil && bytesToString(r2.body) == "auth=" && r2.url == "http://localhost:${plain}/auth")
+    // https → http は追わない
+    _, a3 := Request("${s}/redirect?to=${p}/len", policy: c)
+    assert(kindName(a3) == "InsecureRedirect")
+    // TLS 1.2 だけのサーバ: 既定（1.3 だけ）は繋がらない・dangerouslyAllowTls12 なら繋がる
+    _, a4 := Request("https://localhost:${t12}/len", policy: c)
+    assert(kindName(a4) == "Tls")
+    c12 := Policy{extraRoots: ca, timeout: 5000 * task.MS, dangerouslyAllowTls12: true}
+    check(c12, "", "https://localhost:${t12}/chunked", "", "200:one,two,three")
+    // 試験用の CA を足さないと鎖が繋がらない
+    _, a5 := Request("${s}/len", policy: Policy{timeout: 5000 * task.MS})
+    assert(kindName(a5) == "Tls")
+    // 束: 平文と TLS 1.3（Go は握手の後に NewSessionTicket を送る）と TLS 1.2 の各 1 本の接続の上で 4 往復
+    sp := sessionWith(ca, false, p, []string{"/len", "/chunked", "/method", "/len"})
+    assert(sp == "200:hello|200:one,two,three|200:GET:|200:hello")
+    ss := sessionWith(ca, false, s, []string{"/len", "/chunked", "/method", "/len"})
+    assert(ss == "200:hello|200:one,two,three|200:GET:|200:hello")
+    s12 := sessionWith(ca, true, "https://localhost:${t12}", []string{"/len", "/chunked", "/len"})
+    assert(s12 == "200:hello|200:one,two,three|200:hello")
+    // Stream: 生成元の for の形で Go の chunked（Flush 3 回）を平文と TLS 1.3 で受ける
+    assert(streamFor(c, "${p}/chunked") == "200|one,two,three")
+    assert(streamFor(c, "${s}/chunked") == "200|one,two,three")
+    assert(streamFor(c, "${p}/redirect?to=/len") == "200|hello")
+    // proxy: 平文の proxy で http（絶対 URI）と https（CONNECT）・TLS の proxy で https（TLS の中の TLS）・認証つきの proxy（値なしは ProxyRefused{407}）・
+    // 束（Open）も proxy を通る
+    proxies := []string{"http://127.0.0.1:${px}", "https://localhost:${spx}"}
+    for pu <- proxies {
+        pc := Policy{extraRoots: ca, timeout: 5000 * task.MS, proxy: proxyOf(pu)}
+        check(pc, "", "${p}/chunked", "", "200:one,two,three")
+        check(pc, "", "${s}/chunked", "", "200:one,two,three")
+        assert(streamFor(pc, "${s}/chunked") == "200|one,two,three")
+        assert(sessionVia(pc, s, []string{"/len", "/chunked", "/len"}) == "200:hello|200:one,two,three|200:hello")
+        assert(sessionVia(pc, p, []string{"/len", "/len"}) == "200:hello|200:hello")
+    }
+    _, pe := Request("${s}/len", policy: Policy{extraRoots: ca, timeout: 5000 * task.MS, proxy: proxyOf("http://127.0.0.1:${apx}")})
+    assert(proxyStatus(pe) == 407)
+    withAuth := Policy{extraRoots: ca, timeout: 5000 * task.MS, proxy: proxyOf("http://127.0.0.1:${apx}"), proxyAuth: "Basic dTpw"}
+    check(withAuth, "", "${s}/len", "", "200:hello")
+    check(withAuth, "", "${p}/len", "", "200:hello")
+    println("httpinterop: ok")
+    println("conf-item: interop/http plain")
+    println("conf-item: interop/http tls13")
+    println("conf-item: interop/http tls12-opt-in")
+    println("conf-item: interop/http tls12-default-refused")
+    println("conf-item: interop/http content-length")
+    println("conf-item: interop/http chunked")
+    println("conf-item: interop/http head")
+    println("conf-item: interop/http redirect-303")
+    println("conf-item: interop/http redirect-auth-same-origin-only")
+    println("conf-item: interop/http insecure-redirect-refused")
+    println("conf-item: interop/http stream")
+    println("conf-item: interop/http session")
+    println("conf-item: interop/http proxy-connect")
+    println("conf-item: interop/http proxy-auth")
+    println("conf-item: interop/http unknown-ca-refused")
+}
+
+func sessionWith(ca tls.Roots, allow12 bool, at string, paths []string) string {
+    return sessionVia(Policy{extraRoots: ca, timeout: 5000 * task.MS, dangerouslyAllowTls12: allow12}, at, paths)
+}
+
+func streamFor(c Policy, url string) string {
+    mut st := 0
+    mut text := ""
+    e := streamLoop(c, url, mut st, mut text)
+    return if e == nil { "${st}|${text}" } else { "error" }
+}
+
+func streamLoop(c Policy, url string, st mut int, text mut string) error? {
+    for part <- Stream(url, policy: c)? {
+        st = part.head.status
+        text = "${text}${bytesToString(part.chunk)}"
+    }
+    return nil
+}
+
+func proxyStatus(e error?) int {
+    return switch e {
+    case nil: 0
+    case ProxyRefused{status}: status
+    default: 0 - 1
+    }
+}
+
+func sessionVia(c Policy, at string, paths []string) string {
+    mut out := ""
+    oe := Open(at, (sn) => {
+        for q <- paths {
+            r, e := Send(sn, q)
+            piece := if e == nil { "${r.status}:${bytesToString(r.body)}" } else { kindName(e) }
+            out = if out == "" { piece } else { "${out}|${piece}" }
+        }
+    }, policy: c)
+    return if oe != nil { "open:${kindName(oe)}" } else { out }
+}
+
+func check(c Policy, method string, url string, body string, want string) {
+    r, e := Request(url, method: method, body: bytes(body), policy: c)
+    got := if e == nil { "${r.status}:${bytesToString(r.body)}" } else { "error" }
+    if got != want {
+        println("httpinterop: ${method} ${url} → ${got} (want ${want})")
+    }
+    assert(got == want)
+}
+
+// 束の網: 1 本の接続の上で 3 往復（親の task は接続を 1 本だけ受ける — keep-alive でなければ 2 本目以降が届かない）
+func sessionSummary(at string, paths []string, extra bool) []string {
+    pol := if extra { Policy{extraRoots: testRoots(), timeout: 5000 * task.MS} } else { Policy{timeout: 5000 * task.MS} }
+    mut out := mut []string{}
+    oe := Open(at, (s) => {
+        for p <- paths {
+            r, e := Send(s, p)
+            out = append(out, if e == nil { "${r.status}:${bytesToString(r.body)}" } else { kindName(e) })
+        }
+    }, policy: pol)
+    if oe != nil {
+        out = append(out, "open:${kindName(oe)}")
+    }
+    return freeze(out)
+}
+
+func TestSessionPlain() {
+    e := net.Listen("127.0.0.1:0", (l) => {
+        o := "http://127.0.0.1:${net.Port(l)}"
+        got, _ := task.Run((s) => {
+            h := task.Spawn(s, () => sessionSummary(o, []string{"/hello", "/big", "/nope", "http://other.example/x", "/hello"}, false))
+            _ = serveN(l, 1)
+            task.Join(h)
+        }, deadline: 10000 * task.MS)
+        assert(len(got) == 5)
+        assert(got[0] == "200:hello GET")
+        assert(got[1] == "200:0123456789abcdef0123456789abcdef")
+        assert(got[2] == "404:")
+        assert(got[3] == "BadUrl")
+        assert(got[4] == "200:hello GET")
+    })
+    assert(e == nil)
+}
+
+// TLS の束のサーバの役: 要求の頭が揃うたびに応答を 1 つ返す（n 往復で close_notify）
+func tlsServeKeep(l net.Listener, n int) error? {
+    sp := srvParams()
+    for c <- net.Accept(l)? {
+        mut s := internal.hs.New()
+        mut got := mut []byte{}
+        mut done := 0
+        for f <- internal.record.Frames((k) => net.Recv(c, k))? {
+            o := internal.hs.Feed(mut s, sp, f)?
+            if len(o.send) > 0 {
+                net.Send(c, o.send)?
+            }
+            for x <- o.app {
+                got = append(got, x)
+            }
+            if strings.Contains(bytesToString(freeze(got)), "\r\n\r\n") {
+                got = mut []byte{}
+                done += 1
+                resp := internal.hs.SealApp(mut s, bytes("HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nr${done}/${n}"))?
+                net.Send(c, resp)?
+                if done >= n {
+                    net.Send(c, internal.hs.CloseNotify(mut s))?
+                    break
+                }
+            }
+        }
+        break
+    }
+    return nil
+}
+
+func TestSessionTls() {
+    e := net.Listen("127.0.0.1:0", (l) => {
+        o := "https://localhost:${net.Port(l)}"
+        got, _ := task.Run((s) => {
+            h := task.Spawn(s, () => sessionSummary(o, []string{"/a", "/b", "/c", "/d"}, true))
+            _ = tlsServeKeep(l, 3)
+            task.Join(h)
+        }, deadline: 20000 * task.MS)
+        assert(len(got) == 4)
+        assert(got[0] == "200:r1/3")
+        assert(got[1] == "200:r2/3")
+        assert(got[2] == "200:r3/3")
+        // 相手が close_notify を送った後の Send は Closed
+        assert(got[3] == "Closed")
+    })
+    assert(e == nil)
+}
+
+// KeyUpdate の網: 2 往復目の応答の前にサーバが update_requested の KeyUpdate を送り、以後は新しい送りの鍵で封じる。
+// クライアントは受けの鍵を進め、3 往復目の要求の前に自分の KeyUpdate を送る（サーバの internal.hs.Feed が受けの鍵を進めて読めれば通る）
+func tlsServeKeyUpdate(l net.Listener) error? {
+    sp := srvParams()
+    for c <- net.Accept(l)? {
+        mut s := internal.hs.New()
+        mut got := mut []byte{}
+        mut done := 0
+        mut wr := emptyWr()
+        for f <- internal.record.Frames((k) => net.Recv(c, k))? {
+            o := internal.hs.Feed(mut s, sp, f)?
+            if len(o.send) > 0 {
+                net.Send(c, o.send)?
+            }
+            for x <- o.app {
+                got = append(got, x)
+            }
+            if strings.Contains(bytesToString(freeze(got)), "\r\n\r\n") {
+                got = mut []byte{}
+                done += 1
+                body := bytes("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nk${done}")
+                if done == 1 {
+                    net.Send(c, internal.hs.SealApp(mut s, body)?)?
+                } else {
+                    if done == 2 {
+                        _, w0 := internal.hs.Dirs(s)
+                        wr = w0
+                        net.Send(c, internal.record.Seal(mut wr, internal.record.CtHandshake, []byte{24, 0, 0, 1, 1}, 0))?
+                        internal.record.Update(mut wr)?
+                    }
+                    net.Send(c, internal.record.Seal(mut wr, internal.record.CtApp, body, 0))?
+                }
+                if done >= 3 {
+                    break
+                }
+            }
+        }
+        break
+    }
+    return nil
+}
+
+func emptyWr() internal.record.Dir {
+    _, w := internal.hs.Dirs(internal.hs.New())
+    return w
+}
+
+func TestSessionKeyUpdate() {
+    e := net.Listen("127.0.0.1:0", (l) => {
+        o := "https://localhost:${net.Port(l)}"
+        got, _ := task.Run((s) => {
+            h := task.Spawn(s, () => sessionSummary(o, []string{"/a", "/b", "/c"}, true))
+            _ = tlsServeKeyUpdate(l)
+            task.Join(h)
+        }, deadline: 20000 * task.MS)
+        assert(len(got) == 3)
+        assert(got[0] == "200:k1")
+        assert(got[1] == "200:k2")
+        assert(got[2] == "200:k3")
+    })
+    assert(e == nil)
+}
+
+// cookie の運びの網: login の 302 の Set-Cookie を CookieValue で取り出し、次の要求の cookies: に載せる（載せなければ載らない — 状態は呼び手の値だけ）
+func cookieRound(base string) []string {
+    pol := Policy{timeout: 5000 * task.MS, redirects: 0}
+    r1, _ := Request("${base}/login", method: "POST", body: bytes("pw"), policy: pol)
+    sid := CookieValue(r1, "sid")
+    v := if sid == nil { "" } else { sid }
+    r2, _ := Request("${base}/me", cookies: []Cookie{Cookie{name: "sid", value: v}}, policy: pol)
+    r3, _ := Request("${base}/me", policy: pol)
+    // 同じ origin の redirect の先へは cookies: を持っていく
+    r4, _ := Request("${base}/to-me", cookies: []Cookie{Cookie{name: "sid", value: v}}, policy: Policy{timeout: 5000 * task.MS})
+    return []string{"${r1.status}", v, bytesToString(r2.body), bytesToString(r3.body), bytesToString(r4.body)}
+}
+
+func TestCookieLoopback() {
+    e := net.Listen("127.0.0.1:0", (l) => {
+        base := "http://127.0.0.1:${net.Port(l)}"
+        got, _ := task.Run((s) => {
+            h := task.Spawn(s, () => cookieRound(base))
+            _ = serveN(l, 5)
+            task.Join(h)
+        }, deadline: 10000 * task.MS)
+        assert(len(got) == 5)
+        assert(got[0] == "302" && got[1] == "abc")
+        assert(got[2] == "sid=abc")
+        assert(got[3] == "anonymous")
+        assert(got[4] == "sid=abc")
+    })
+    assert(e == nil)
+}
+
+func orNone(v string?) string {
+    return if v == nil { "(none)" } else { v }
+}
+
+func TestCookieValue() {
+    r := Response{status: 200, headers: []http.Field{http.Field{name: "set-cookie", value: "a=1; Path=/"}, http.Field{name: "set-cookie", value: " sid = x2 ; HttpOnly"}, http.Field{name: "set-cookie", value: "a=3"}}, body: []byte{}, url: ""}
+    assert(orNone(CookieValue(r, "a")) == "3")
+    assert(orNone(CookieValue(r, "sid")) == "x2")
+    assert(orNone(CookieValue(r, "none")) == "(none)")
+    assert(cookieLine([]Cookie{Cookie{name: "a", value: "1"}, Cookie{name: "b", value: "2"}}) == "a=1; b=2")
+    assert(cookieLine(nil) == "")
+}
+
+// Stream の網（平文の loopback）: 頭が先に空の切片で渡る・本文が繋がる・redirect を追った応答は渡らない・本文の上限
+func streamSummary(url string, maxBody int?) string {
+    mut n := 0
+    mut text := ""
+    mut st := 0
+    e := Stream(url, (part) => {
+        n += 1
+        st = part.head.status
+        text = "${text}${bytesToString(part.chunk)}"
+    }, policy: Policy{maxBody: maxBody, timeout: 5000 * task.MS})
+    return if e == nil { "${st}:${n > 0}:${text}" } else { kindName2(e) }
+}
+
+func kindName2(e error) string {
+    return switch e {
+    case BodyTooLarge{}: "BodyTooLarge"
+    default: "other"
+    }
+}
+
+func TestStreamPlain() {
+    e := net.Listen("127.0.0.1:0", (l) => {
+        base := "http://127.0.0.1:${net.Port(l)}"
+        got, _ := task.Run((s) => {
+            h := task.Spawn(s, () => []string{
+                streamSummary("${base}/hello", nil),
+                streamSummary("${base}/to-hello", nil),
+                streamSummary("${base}/big", 8),
+                streamSummary("${base}/nope", nil),
+            })
+            _ = serveN(l, 1 + 2 + 1 + 1)
+            task.Join(h)
+        }, deadline: 10000 * task.MS)
+        assert(len(got) == 4)
+        assert(got[0] == "200:true:hello GET")
+        assert(got[1] == "200:true:hello GET")
+        assert(got[2] == "BodyTooLarge")
+        assert(got[3] == "404:true:")
+    })
+    assert(e == nil)
+}
+
+// proxy の loopback の網（gates に載る形 — 偽の proxy）: CONNECT に Proxy-Authorization があれば 200 を返してそのまま TLS のサーバの役・無ければ 407・
+// 絶対 URI の要求は対象の綴りを確かめて直に答える
+func fakeProxy(l net.Listener, n int) error? {
+    sp := srvParams()
+    mut i := 0
+    for c <- net.Accept(l)? {
+        i += 1
+        mut head := ""
+        for chunk <- net.Recv(c)? {
+            head = bytesToString(chunk)
+            break
+        }
+        if strings.HasPrefix(head, "CONNECT localhost:443 HTTP/1.1\r\n") && strings.Contains(head, "\r\nProxy-Authorization: Basic dTpw\r\n") {
+            net.Send(c, bytes("HTTP/1.1 200 Connection established\r\n\r\n"))?
+            _ = tlsServeConn(c, sp)
+        } else if strings.HasPrefix(head, "CONNECT ") {
+            net.Send(c, bytes("HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n"))?
+        } else if strings.HasPrefix(head, "GET http://plain.test/abs?q=1 HTTP/1.1\r\n") && strings.Contains(head, "\r\nHost: plain.test\r\n") && strings.Contains(head, "\r\nProxy-Authorization: Basic dTpw\r\n") {
+            net.Send(c, bytes("HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nabs"))?
+        } else {
+            net.Send(c, bytes("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n"))?
+        }
+        if i >= n {
+            break
+        }
+    }
+    return nil
+}
+
+func viaProxy(port int, auth bool, url string) string {
+    proxyUrl := "http://127.0.0.1:${port}"
+    pa := if auth { "Basic dTpw" } else { nilStr() }
+    r, e := Request(url, policy: Policy{extraRoots: testRoots(), timeout: 5000 * task.MS, proxy: proxyOf(proxyUrl), proxyAuth: pa})
+    return if e == nil { "${r.status}:${bytesToString(r.body)}" } else { "refused:${proxyStatus(e)}" }
+}
+
+func TestProxyLoopback() {
+    e := net.Listen("127.0.0.1:0", (l) => {
+        port := net.Port(l)
+        got, _ := task.Run((s) => {
+            h := task.Spawn(s, () => []string{
+                viaProxy(port, true, "https://localhost/"),
+                viaProxy(port, false, "https://localhost/"),
+                viaProxy(port, true, "http://plain.test/abs?q=1"),
+            })
+            _ = fakeProxy(l, 3)
+            task.Join(h)
+        }, deadline: 20000 * task.MS)
+        assert(len(got) == 3)
+        assert(got[0] == "200:secret")
+        assert(got[1] == "refused:407")
+        assert(got[2] == "200:abs")
+    })
+    assert(e == nil)
+}

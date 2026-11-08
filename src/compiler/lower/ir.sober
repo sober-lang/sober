@@ -198,6 +198,13 @@ const OpCallI = 16    // a = callee, b = 引数, c = 結果の型（-1 / TyI64 /
 // 読まない — 直接呼び出しの F_SRET_BIT と同じ約束。関数値の呼び先は全部 lower が建てた関数で、sret の規約は同じ）。zeroinit / slotcolor が
 // 受け皿を「全語の書き」と読む口（無いと受け皿は逃げで、呼び出しごとに要零の専用スロットになる）
 const CALLI_SRET = -2
+// OpCallI の c の上位: 関数型の mut の席に渡した実引数の印（ビット j = 引数の列の j 番目 — 呼び手のセルの番地 1 語）。呼ばれた関数はその番地を
+// 呼び出しの間だけ読み書きし、格納・捕捉・返しで残さない（関数型の mut 仮引数 — language.md 25・26 節）= 直接呼び出しの F_MUTP と同じ約束。
+// slotcolor / zeroinit がそのスロットを逃げでなく読み書きの事象と読む口。c = 結果の型 + 印 << CALLI_MSH（印が 0 なら c は結果の型のまま）。
+// 結果の型は calliTy・印は calliMut で読む（c を直に比べない）。IR テキストには出ない（iconst の札と同じ — 展開の写しは c をそのまま運ぶ）
+const CALLI_MSH = 8
+func calliTy(c int) int { return ((c + 2) & 255) - 2 }
+func calliMut(c int) int { return (c + 2) >> CALLI_MSH }
 const OpSyscall = 17  // a = 引数・b = 1 なら vDSO の呼び出し（a の頭 = 関数の番地・残り = 引数 — C の呼び出し規約。vdsoCall）・b = 2 なら AES-GCM の塊（c = 種類 — aes.sober）
 const OpREnter = 18
 const OpRDepth = 19
@@ -239,6 +246,17 @@ const AT_PAUSE = 4  // pause（スピンの待ちの 1 回。fence と同じく�
 // CRC-32 の折り畳み（clmul.sober）: x86 の最適化のバックエンドの ELF の経路だけ（IR テキスト・.ll・写しのバックエンドには出ない — stage1 の語彙の外）。
 // c = CF_FOLD: a = [p, k, crc] → 畳んだ crc（p[0:k] を読む — 最適化器からは syscall と同じ不透明な読み）・c = CF_PCLMUL: a = [] → CPUID の PCLMULQDQ の bit（rt.cpu_probe）
 const OpCrcFold = 34
+// 狭い語の読み書き（pool.Scratch の LoadRaw16 / StoreRaw16 / LoadRaw32 / StoreRaw32 — stage1 の語彙の外・gatelib の beyond_stage1）。
+// 欄は load8 / store8 と同じ（a = 番地・b = バイトの変位・c = 値）。読みは 0 拡張（16 = 0〜65535・32 = 0〜2^32 − 1）・書きは値の下位だけ
+const OpLoad16 = 35
+const OpStore16 = 36
+const OpLoad32 = 37
+const OpStore32 = 38
+// 狭い load（8 / 16 / 32 ビット — 0 拡張の読み）・狭い store か
+func isNarrowLd(op int) bool { return op == OpLoad8 || op == OpLoad16 || op == OpLoad32 }
+func isNarrowSt(op int) bool { return op == OpStore8 || op == OpStore16 || op == OpStore32 }
+// 狭い op のバイト幅（狭い op でなければ 8）
+func narrowW(op int) int { return if op == OpLoad8 || op == OpStore8 { 1 } else if op == OpLoad16 || op == OpStore16 { 2 } else if op == OpLoad32 || op == OpStore32 { 4 } else { 8 } }
 const OpUnwind = 26    // 罠が張られていれば最内の罠へ巻き戻る（戻らない）。張られていなければ何もしない（続く exit 101 / 102 がプロセスを終える）
 
 // ── 欄の種別の表: op ごとの [A, B, C]・終端ごとの [X1〜X5] が何を持つか。被演算子の走査（opt の insOperands /
@@ -262,8 +280,8 @@ func opRow(op int) int {
     return switch op {
     case OpConst: K_OPAQ
     case OpBin | OpCmp | OpPArith: K_OPAQ | K_VAL << 4 | K_VAL << 8
-    case OpLoad | OpLoad8: K_VAL | K_OPAQ << 4 | K_OPAQ << 8 // c = 1 なら ptr を読む（valueTypes）
-    case OpStore | OpStore8 | OpRReloc | OpPMem: K_VAL | K_OPAQ << 4 | K_VAL << 8
+    case OpLoad | OpLoad8 | OpLoad16 | OpLoad32: K_VAL | K_OPAQ << 4 | K_OPAQ << 8 // c = 1 なら ptr を読む（valueTypes）
+    case OpStore | OpStore8 | OpStore16 | OpStore32 | OpRReloc | OpPMem: K_VAL | K_OPAQ << 4 | K_VAL << 8
     case OpGepW | OpGepB | OpRAlloc: K_VAL | K_VAL << 4
     case OpPtoi | OpItop | OpRSetDepth | OpRBump: K_VAL
     case OpSlotaddr: K_SLOT
@@ -289,7 +307,7 @@ func termRow(t int) int {
     }
 }
 
-const OP_N = 35 // op の番号の上限（OpDead = 0〜OpCrcFold = 34）
+const OP_N = 39 // op の番号の上限（OpDead = 0〜OpStore32 = 38）
 
 // St の表（op ごとの行・終端ごとの行）を opRow / termRow から組む（St を組む側で 1 回 — initScalars・x86 の群の子。
 // 読み口で遅延して組む形は、確保しうる呼び出しが展開で各パスのループに入り反復ごとの region の enter を呼んだ）
@@ -331,6 +349,8 @@ const BFOfInt = 15
 const BFToInt = 16
 // 64 × 64 → 128 の符号なしの積の上位 64 ビット（map のハッシュ — wyhash の芯 mum）。float の段の後ろに置く — float の判定は BFAdd〜BFToInt の範囲で
 const BMulHi = 17
+// 末尾の 0 ビットの数（単項 — c = b〔読まない〕・x = 0 は 64）。float の段の範囲の外
+const BCtz = 18
 
 const CEq = 0
 const CNe = 1
@@ -614,6 +634,15 @@ func store8(st mut St, p int, off int, v int) {
     push(mut st, false, OpStore8, p, off, v)
 }
 
+// 狭い語の読み書き（w = 2 / 4 — OpLoad16 / OpLoad32 の欄は load8 と同じ）
+func loadN(st mut St, w int, p int, off int) int {
+    return push(mut st, true, if w == 2 { OpLoad16 } else { OpLoad32 }, p, off, 0)
+}
+
+func storeN(st mut St, w int, p int, off int, v int) {
+    push(mut st, false, if w == 2 { OpStore16 } else { OpStore32 }, p, off, v)
+}
+
 func gepWord(st mut St, p int, idx int) int {
     return push(mut st, true, OpGepW, p, idx, 0)
 }
@@ -667,6 +696,11 @@ func funcaddr(st mut St, f FnRef) int {
 
 func callIndirect(st mut St, callee int, args int, rty int) int {
     return push(mut st, rty >= 0, OpCallI, callee, args, rty)
+}
+
+// callIndirect に mut の席の印 mm（CALLI_MSH の注）を付けた形
+func callIndirectM(st mut St, callee int, args int, rty int, mm int) int {
+    return push(mut st, rty >= 0, OpCallI, callee, args, rty + (mm << CALLI_MSH))
 }
 
 // 罠を張って関数値 callee を arg で呼ぶ（結果 0 = 戻った・1 = 死んだ）
@@ -876,6 +910,8 @@ func binName(out mut []byte, op int) {
         obuf.Lit(mut out, "sar")
     } else if op == BMulHi {
         obuf.Lit(mut out, "mulhi")
+    } else if op == BCtz {
+        obuf.Lit(mut out, "ctz")
     } else {
         obuf.Lit(mut out, switch op {
         case BFAdd: "fadd"
@@ -960,14 +996,14 @@ func printOp(st mut St, out mut []byte, i InsRef) {
         obuf.Lit(mut out, "load.i64 ")
         mem(mut out, a, b)
         return
-    case OpStore | OpStore8:
-        obuf.Lit(mut out, if op == OpStore { "store " } else { "store8 " })
+    case OpStore | OpStore8 | OpStore16 | OpStore32:
+        obuf.Lit(mut out, if op == OpStore { "store " } else if op == OpStore8 { "store8 " } else if op == OpStore16 { "store16 " } else { "store32 " })
         mem(mut out, a, b)
         obuf.Lit(mut out, ", ")
         val(mut out, c)
         return
-    case OpLoad8:
-        obuf.Lit(mut out, "load8 ")
+    case OpLoad8 | OpLoad16 | OpLoad32:
+        obuf.Lit(mut out, if op == OpLoad8 { "load8 " } else if op == OpLoad16 { "load16 " } else { "load32 " })
         mem(mut out, a, b)
         return
     case OpGepW | OpGepB:
@@ -1007,9 +1043,9 @@ func printOp(st mut St, out mut []byte, i InsRef) {
         return
     case OpCallI:
         obuf.Lit(mut out, "call.indirect")
-        if c >= 0 {
+        if calliTy(c) >= 0 {
             out = append(out, '.')
-            tyName(mut out, c)
+            tyName(mut out, calliTy(c))
         }
         out = append(out, ' ')
         val(mut out, a)

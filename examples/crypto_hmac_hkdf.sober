@@ -50,45 +50,45 @@ func sub(b []byte, from int, to int) []byte {
 }
 
 func main() {
-    println("hmac 1", show(hmac.Sum256(rep(0x0b, 20), bytes("Hi There")), "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"))
-    println("hmac 2", show(hmac.Sum256(bytes("Jefe"), bytes("what do ya want for nothing?")), "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"))
-    println("hmac 3", show(hmac.Sum256(rep(0xaa, 20), rep(0xdd, 50)), "773ea91e36800e46854db8ebd09181a72959098b3ef8c122d9635514ced565fe"))
-    println("hmac 4", show(hmac.Sum256(seq(1, 25), rep(0xcd, 50)), "82558a389a443c0ea4cc819899f2083a85f0faa3e578f8077a2e3ff46729665b"))
-    println("hmac 5", show(sub(hmac.Sum256(rep(0x0c, 20), bytes("Test With Truncation")), 0, 16), "a3b6167473100ee06e0c796c2955552b"))
-    println("hmac 6", show(hmac.Sum256(rep(0xaa, 131), bytes("Test Using Larger Than Block-Size Key - Hash Key First")), "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54"))
-    println("hmac 7", show(hmac.Sum256(rep(0xaa, 131), bytes("This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm.")), "9b09ffa71b942fcb27635fbcd5b0e944bfdc63644f0713938a7f51535c3a35e2"))
+    println("hmac 1", show(crypto.hmac.Sum256(rep(0x0b, 20), bytes("Hi There")), "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"))
+    println("hmac 2", show(crypto.hmac.Sum256(bytes("Jefe"), bytes("what do ya want for nothing?")), "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"))
+    println("hmac 3", show(crypto.hmac.Sum256(rep(0xaa, 20), rep(0xdd, 50)), "773ea91e36800e46854db8ebd09181a72959098b3ef8c122d9635514ced565fe"))
+    println("hmac 4", show(crypto.hmac.Sum256(seq(1, 25), rep(0xcd, 50)), "82558a389a443c0ea4cc819899f2083a85f0faa3e578f8077a2e3ff46729665b"))
+    println("hmac 5", show(sub(crypto.hmac.Sum256(rep(0x0c, 20), bytes("Test With Truncation")), 0, 16), "a3b6167473100ee06e0c796c2955552b"))
+    println("hmac 6", show(crypto.hmac.Sum256(rep(0xaa, 131), bytes("Test Using Larger Than Block-Size Key - Hash Key First")), "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54"))
+    println("hmac 7", show(crypto.hmac.Sum256(rep(0xaa, 131), bytes("This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm.")), "9b09ffa71b942fcb27635fbcd5b0e944bfdc63644f0713938a7f51535c3a35e2"))
     // RFC 5869 A.1〜A.3
-    p1 := hkdf.Extract(seq(0, 12), rep(0x0b, 22))
+    p1 := crypto.hkdf.Extract(seq(0, 12), rep(0x0b, 22))
     println("hkdf 1 prk", show(p1, "077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5"))
-    o1, _ := hkdf.Expand(p1, seq(0xf0, 0xf9), 42)
+    o1, _ := crypto.hkdf.Expand(p1, seq(0xf0, 0xf9), 42)
     println("hkdf 1 okm", show(o1, "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865"))
-    p2 := hkdf.Extract(seq(0x60, 0xaf), seq(0, 0x4f))
+    p2 := crypto.hkdf.Extract(seq(0x60, 0xaf), seq(0, 0x4f))
     println("hkdf 2 prk", show(p2, "06a6b88c5853361a06104c9ceb35b45cef760014904671014a193f40c15fc244"))
-    o2, _ := hkdf.Expand(p2, seq(0xb0, 0xff), 82)
+    o2, _ := crypto.hkdf.Expand(p2, seq(0xb0, 0xff), 82)
     println("hkdf 2 okm", show(o2, "b11e398dc80327a1c8e7f78c596a49344f012eda2d4efad8a050cc4c19afa97c59045a99cac7827271cb41c65e590e09da3275600c2f09b8367793a9aca3db71cc30c58179ec3e87c14c01d5c1f3434f1d87"))
-    p3 := hkdf.Extract(bytes(""), rep(0x0b, 22))
+    p3 := crypto.hkdf.Extract(bytes(""), rep(0x0b, 22))
     println("hkdf 3 prk", show(p3, "19ef24a32c717b167f33a91d6f648bdf96596776afdb6377ac434c1c293ccb04"))
-    o3, _ := hkdf.Expand(p3, bytes(""), 42)
+    o3, _ := crypto.hkdf.Expand(p3, bytes(""), 42)
     println("hkdf 3 okm", show(o3, "8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8"))
-    om, em := hkdf.Expand(p1, bytes(""), 8160)
+    om, em := crypto.hkdf.Expand(p1, bytes(""), 8160)
     println("hkdf max", len(om), em == nil)
-    _, eo := hkdf.Expand(p1, bytes(""), 8161)
+    _, eo := crypto.hkdf.Expand(p1, bytes(""), 8161)
     println("hkdf over", eo != nil)
     // 逐次: 長さ 0〜200 × 切り幅 1〜70 が一回の口と一致した数
     mut ok := 0
     mut bad := 0
     for n <- iter.Range(0, 201) {
         d := pattern(n)
-        want := hex.Format(sha256.Sum256(d))
+        want := hex.Format(crypto.sha256.Sum256(d))
         for step <- iter.Range(1, 71) {
-            mut s := sha256.New()
+            mut s := crypto.sha256.New()
             mut off := 0
             while off < n {
                 e := if off + step < n { off + step } else { n }
-                sha256.Write(mut s, sub(d, off, e))
+                crypto.sha256.Write(mut s, sub(d, off, e))
                 off = e
             }
-            if hex.Format(sha256.Sum(s)) == want {
+            if hex.Format(crypto.sha256.Sum(s)) == want {
                 ok = ok + 1
             } else {
                 bad = bad + 1
@@ -97,11 +97,11 @@ func main() {
     }
     println("incremental", ok, bad)
     // 途中の Sum は状態を変えない（transcript hash の形）
-    mut t := sha256.New()
-    sha256.Write(mut t, bytes("abc"))
-    h1 := sha256.Sum(t)
-    h1b := sha256.Sum(t)
-    sha256.Write(mut t, pattern(100))
+    mut t := crypto.sha256.New()
+    crypto.sha256.Write(mut t, bytes("abc"))
+    h1 := crypto.sha256.Sum(t)
+    h1b := crypto.sha256.Sum(t)
+    crypto.sha256.Write(mut t, pattern(100))
     println("snapshot", hex.Format(h1), hex.Format(h1) == hex.Format(h1b))
-    println("snapshot2", hex.Format(sha256.Sum(t)))
+    println("snapshot2", hex.Format(crypto.sha256.Sum(t)))
 }

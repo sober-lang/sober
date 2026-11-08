@@ -1,3 +1,2 @@
-sober: type error at examples/closure_anon_field_bound.sober:15:19
-{"errors":[{"msg":"type error"}],"ok":false}
+sober: desugar error at examples/closure_anon_field_bound.sober:14:20 (TypeMismatch): a local binding of a named function cannot be stored as a value (spec F-11) — use the function's name directly or a lambda
 exit=1

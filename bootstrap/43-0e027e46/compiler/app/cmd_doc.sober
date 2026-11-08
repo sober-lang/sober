@@ -1,0 +1,116 @@
+package main
+
+// `sober doc` の handler（--cli — プログラムの std/cli の表の Markdown）
+
+import "std/io"
+import "std/hex"
+import "std/hash"
+import "std/iter"
+import "std/os"
+import "std/cli"
+import "std/strings"
+import "ast"
+import "loader"
+import "analyzer"
+import "clidoc"
+
+// `sober doc --cli <entry> [--ja <訳表>] [-o <file>]`: entry を建てて（run の置き場）`<exe> --cli-spec` の
+// 表の JSON を引き、表の const の `run: <関数>` の欄の関数の効果（analyzer の導出）を添えて clidoc が Markdown にする。表は実行ファイル自身に
+// 吐かせる（文書 ≡ 実装が構成で成り立つ — const の初期化式を読み直す 2 本目の解釈器を持たない）。標準出力は os.Run が捕まえないので /bin/sh の
+// リダイレクトで一時ファイルへ（std/os に出力を捕まえる口が来たら置き換え）
+func cmdDoc(cl cli.Parsed) int {
+    if !cli.Bool(cl, DocCli) {
+        return misuse("doc needs --cli (the only document so far)")
+    }
+    std := Std
+    p, _, lerr := loadNamed(cli.Pos(cl, Entry), false, std, loader.PcOff())
+    if lerr != nil {
+        return fail(loadDiag(p, std, lerr))
+    }
+    exe, bc := docExe(p, std, cli.StrOpt(cl, DocExe))
+    if bc != 0 {
+        return bc
+    }
+    cd := cacheDir()
+    tmp := "${if cd == "" { "/tmp" } else { cd }}/sober-doc-${hex.Format(hash.Sha256(bytes(exe)))}.json"
+    code, rerr := os.Run("/bin/sh", []string{"-c", "exec \"$0\" --cli-spec > \"$1\"", exe, tmp})
+    if rerr != nil || code != 0 {
+        return fail("cannot run ${exe} --cli-spec")
+    }
+    spec := io.ReadFile(tmp) catch {
+        return fail("cannot read ${tmp}")
+    }
+    _ = os.Remove(tmp)
+    cmds, fns := runFns(p, std)
+    mut names := mut []string{}
+    for k <- iter.Range(0, len(fns)) {
+        names = append(names, fns[k])
+    }
+    effs := analyzer.EffectsOf(p, freeze(names))
+    mut shown := mut []string{}
+    for k <- iter.Range(0, len(fns)) {
+        shown = append(shown, if fns[k] == "" { "(lambda)" } else { effs[k] })
+    }
+    ja := cli.StrOpt(cl, DocJa)
+    jt := if ja == nil { []byte{} } else { io.ReadFile(ja) catch []byte{} }
+    if ja != nil && len(jt) == 0 {
+        return fail("cannot read ${ja}")
+    }
+    page, derr := clidoc.Render(spec, cmds, freeze(shown), jt)
+    if derr != nil {
+        return switch derr {
+        case clidoc.BadSpec{what}: fail("doc: the table of ${exe}: ${what}")
+        case clidoc.NoTranslation{text}: fail("doc: no translation for \"${text}\"")
+        case clidoc.UnusedTranslation{text}: fail("doc: unused translation of \"${text}\"")
+        }
+    }
+    o := cli.StrOpt(cl, DocOut)
+    return if o == nil { writeStdout(bytes(page)) } else { writeFile(o, bytes(page)) }
+}
+
+// 表を引く実行ファイル（given があればそれ・無ければ p を run の置き場に建てる）
+func docExe(p loader.Program, std map[string]string, given string?) (string, int) {
+    if given != nil {
+        return given, 0
+    }
+    return runExe(p, std)
+}
+
+// p の（std の外の）const の表の `cli.Command{name: "<名前>", …, run: <関数>}` の組（名前の列・`<package>.<関数名>` の列 — ラムダは ""）。
+// 読むのは「欄 name が文字列のリテラル・欄 run が関数の名前かラムダ」の composite だけ（run の欄の lint — 名前の参照に限る）。木は字句のまま読み直す
+// （loader の木では辞書 const の関数の参照がラムダに書き換わっている）
+func runFns(p loader.Program, std map[string]string) ([]string, []string) {
+    mut cmds := mut []string{}
+    mut fns := mut []string{}
+    for f <- iter.Range(0, len(p.file_path)) {
+        pkg := p.pkg_path[p.file_pkg[f]]
+        if strings.HasPrefix(pkg, "std/") {
+            continue
+        }
+        t := rawTree(p, f, std)
+        for c <- t.nodes {
+            if c.kind == ast.KConst && t.nodes[c.b].kind == ast.EComposite {
+                v := t.nodes[c.b]
+                mut name := -1
+                mut run := -1
+                for j <- iter.Range(0, ast.ListLen(t, v.b)) {
+                    el := t.nodes[ast.ListAt(t, v.b, j)]
+                    if el.a != -1 && loader.Name(t, el.a) == "name" && t.nodes[el.b].kind == ast.EStrlit {
+                        name = t.nodes[el.b].a
+                    }
+                    if el.a != -1 && loader.Name(t, el.a) == "run" {
+                        run = el.b
+                    }
+                }
+                if name != -1 && run != -1 {
+                    r := t.nodes[run]
+                    if r.kind == ast.EIdent || r.kind == ast.ELambda {
+                        cmds = append(cmds, loader.Name(t, name))
+                        fns = append(fns, if r.kind == ast.ELambda { "" } else { "${pkg}.${loader.Name(t, r.a)}" })
+                    }
+                }
+            }
+        }
+    }
+    return freeze(cmds), freeze(fns)
+}

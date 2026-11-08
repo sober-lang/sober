@@ -15,13 +15,13 @@
         "k": "alias",
         "type": {
           "k": "name",
-          "name": "lib.Work"
+          "name": "testdata.loader_neg.lease_fwd_deep.lib.Work"
         }
       },
       "tok": 7,
       "span": {
         "start": 6,
-        "end": 13
+        "end": 19
       }
     }
   ],
@@ -49,27 +49,27 @@
               "callee": {
                 "k": "ident",
                 "name": "P4",
-                "tok": 21
+                "tok": 27
               },
               "args": [
                 {
                   "k": "mut_arg",
                   "name": "w",
-                  "tok": 24
+                  "tok": 30
                 }
               ],
-              "tok": 22
+              "tok": 28
             }
           }
         ]
       },
-      "tok": 14,
+      "tok": 20,
       "bodiless": false,
       "span": {
-        "start": 13,
-        "end": 29
+        "start": 19,
+        "end": 35
       },
-      "sig_end": 20
+      "sig_end": 26
     },
     {
       "name": "P4",
@@ -94,27 +94,27 @@
               "callee": {
                 "k": "ident",
                 "name": "P3",
-                "tok": 37
+                "tok": 43
               },
               "args": [
                 {
                   "k": "mut_arg",
                   "name": "w",
-                  "tok": 40
+                  "tok": 46
                 }
               ],
-              "tok": 38
+              "tok": 44
             }
           }
         ]
       },
-      "tok": 30,
+      "tok": 36,
       "bodiless": false,
       "span": {
-        "start": 29,
-        "end": 45
+        "start": 35,
+        "end": 51
       },
-      "sig_end": 36
+      "sig_end": 42
     },
     {
       "name": "P3",
@@ -139,27 +139,27 @@
               "callee": {
                 "k": "ident",
                 "name": "P2",
-                "tok": 53
+                "tok": 59
               },
               "args": [
                 {
                   "k": "mut_arg",
                   "name": "w",
-                  "tok": 56
+                  "tok": 62
                 }
               ],
-              "tok": 54
+              "tok": 60
             }
           }
         ]
       },
-      "tok": 46,
+      "tok": 52,
       "bodiless": false,
       "span": {
-        "start": 45,
-        "end": 61
+        "start": 51,
+        "end": 67
       },
-      "sig_end": 52
+      "sig_end": 58
     },
     {
       "name": "P2",
@@ -184,27 +184,27 @@
               "callee": {
                 "k": "ident",
                 "name": "P1",
-                "tok": 69
+                "tok": 75
               },
               "args": [
                 {
                   "k": "mut_arg",
                   "name": "w",
-                  "tok": 72
+                  "tok": 78
                 }
               ],
-              "tok": 70
+              "tok": 76
             }
           }
         ]
       },
-      "tok": 62,
+      "tok": 68,
       "bodiless": false,
       "span": {
-        "start": 61,
-        "end": 77
+        "start": 67,
+        "end": 83
       },
-      "sig_end": 68
+      "sig_end": 74
     },
     {
       "name": "P1",
@@ -229,32 +229,47 @@
               "callee": {
                 "k": "selector",
                 "base": {
-                  "k": "ident",
-                  "name": "lib",
-                  "tok": 85
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "testdata",
+                        "tok": 91
+                      },
+                      "field": "loader_neg",
+                      "tok": 93
+                    },
+                    "field": "lease_fwd_deep",
+                    "tok": 95
+                  },
+                  "field": "lib",
+                  "tok": 97
                 },
                 "field": "Prepare",
-                "tok": 87
+                "tok": 99
               },
               "args": [
                 {
                   "k": "mut_arg",
                   "name": "w",
-                  "tok": 90
+                  "tok": 102
                 }
               ],
-              "tok": 88
+              "tok": 100
             }
           }
         ]
       },
-      "tok": 78,
+      "tok": 84,
       "bodiless": false,
       "span": {
-        "start": 77,
-        "end": 95
+        "start": 83,
+        "end": 107
       },
-      "sig_end": 84
+      "sig_end": 90
     }
   ],
   "consts": []

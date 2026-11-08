@@ -1,0 +1,3 @@
+GET / -> 200 hello
+GET /api/status -> 200 {"ok":true}
+GET /nope -> 404

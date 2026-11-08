@@ -1,0 +1,375 @@
+package main
+
+// カバレッジの計器の口（`sober build --cover` の点の表・`sober test --cover` の読み込み・合わせ・報告・--cover-out）。
+// 点の表は loader（coverx.sober）が決め、印は実行ファイルが終わりに $SOBER_COVER へ書く（見出し `sober cover v1 <鍵>` + 点の数のバイト）
+
+import "std/io"
+import "std/iter"
+import "std/sort"
+import "std/strings"
+import "ast"
+import "lexer"
+import "loader"
+import "desugar"
+
+// 点 1 つ（位置・種類・fn の点なら関数の名前 — ラムダは空）。line = 0 はファイルが読めなかった点（col = 字句の番号）
+type CovPt struct {
+    path string
+    line int
+    col int
+    kind int
+    fn string
+}
+
+// 点の列と踏んだか（添字 = 点の番号）
+type CovData struct {
+    pts []CovPt
+    hit []bool
+}
+
+func noCover() CovData {
+    return CovData{pts: []CovPt{}, hit: []bool{}}
+}
+
+// loadNamed のカバレッジの計器つき（loader.LoadFsCover — parse のキャッシュは使わない）
+func loadCover(entry string, std map[string]string) (loader.Program, []loader.PcPut, error?) {
+    p, lerr := loader.LoadFsCover(entry, std)
+    if lerr != nil {
+        return p, []loader.PcPut{}, lerr
+    }
+    q, nerr := desugar.NamedValueArgs(p)
+    return q, []loader.PcPut{}, nerr
+}
+
+// テストのビルドのカバレッジの計器つき（pats = 写す package のパターン）
+func loadTestCover(pkg string, std map[string]string, pats []string) (loader.Program, []loader.PcPut, error?) {
+    p, lerr := loader.LoadTestFsCover(pkg, std, pats)
+    if lerr != nil {
+        return p, []loader.PcPut{}, lerr
+    }
+    q, nerr := desugar.NamedValueArgs(p)
+    return q, []loader.PcPut{}, nerr
+}
+
+// p の点の表（番号の順）。ファイルごとに 1 回だけ字句化して位置を出す（点はファイルごとに連続する）
+func coverPoints(p loader.Program, std map[string]string) []CovPt {
+    mut out := mut []CovPt{}
+    mut cur := -1
+    mut lc := []int{}
+    mut toks := []lexer.Token{}
+    mut names := []string{}
+    for i <- iter.Range(0, len(p.cover_pts) / 3) {
+        f := p.cover_pts[i * 3]
+        mut tok := p.cover_pts[i * 3 + 1]
+        kind := p.cover_pts[i * 3 + 2]
+        if f != cur {
+            cur = f
+            src, ok := loader.SourceFs(p, f, std)
+            toks = if ok { lexer.Lex(src) } else { []lexer.Token{} }
+            lc = tokLines(src, toks)
+            names = fnNames(p.trees[f], len(toks))
+        }
+        nm := if kind == loader.CvFn && tok >= 0 && tok < len(names) { names[tok] } else { "" }
+        // default の腕の点は loader が switch の字句に置く（木から `default` の字句を引けない）— ここで字句から引き直す
+        tok = if kind == loader.CvCase && tok >= 0 && tok < len(toks) && toks[tok].tag == lexer.KwSwitch { defaultTok(toks, tok) } else { tok }
+        if tok >= 0 && tok * 2 + 1 < len(lc) {
+            out = append(out, CovPt{path: p.file_path[f], line: lc[tok * 2], col: lc[tok * 2 + 1], kind: kind, fn: nm})
+        } else {
+            out = append(out, CovPt{path: p.file_path[f], line: 0, col: tok, kind: kind, fn: nm})
+        }
+    }
+    return freeze(out)
+}
+
+// ソースの字句ごとの [行, 列]（diag.Where と同じ数え方 — 列はバイト）
+func tokLines(src []byte, toks []lexer.Token) []int {
+    mut out := mut []int{}
+    mut line := 1
+    mut col := 1
+    mut at := 0
+    for t <- iter.Range(0, len(toks)) {
+        while at < toks[t].start && at < len(src) {
+            if src[at] == '\n' {
+                line += 1
+                col = 1
+            } else {
+                col += 1
+            }
+            at += 1
+        }
+        out = append(append(out, line), col)
+    }
+    return freeze(out)
+}
+
+// switch の字句 sw の本体（最初の `{` から対の `}` まで）の深さ 1 の `default` の字句（無ければ sw）
+func defaultTok(toks []lexer.Token, sw int) int {
+    mut d := 0
+    mut i := sw + 1
+    while i < len(toks) {
+        tg := toks[i].tag
+        if tg == lexer.LBrace {
+            d += 1
+        } else if tg == lexer.RBrace {
+            d -= 1
+            if d == 0 {
+                return sw
+            }
+        } else if tg == lexer.KwDefault && d == 1 {
+            return i
+        }
+        i += 1
+    }
+    return sw
+}
+
+// 字句の番号 → その字句で始まる関数の宣言の名前（宣言でなければ空）
+func fnNames(t ast.Tree, ntok int) []string {
+    mut out := mut []string{}
+    for i <- iter.Range(0, ntok) {
+        out = append(out, "")
+    }
+    fl := t.nodes[t.file].d
+    for i <- iter.Range(0, ast.ListLen(t, fl)) {
+        x := t.nodes[ast.ListAt(t, fl, i)]
+        if x.kind == ast.KFuncDecl && x.tok >= 0 && x.tok < ntok {
+            out[x.tok] = loader.Name(t, x.a)
+        }
+    }
+    return freeze(out)
+}
+
+// 点の位置の綴り（`<path>:<行>:<列>` — ファイルが読めなかった点は `token <番号>`）
+func covAt(c CovPt) string {
+    return if c.line == 0 { "token ${c.col}" } else { "${c.path}:${c.line}:${c.col}" }
+}
+
+// カバレッジの点の表（1 行目 `sober cover pts v1 <鍵>`・以下 1 行 1 点 `<path>:<行>:<列> <種類>` — 番号 = 行の順）
+func coverPts(p loader.Program, std map[string]string) []byte {
+    mut b := mut []byte{}
+    appendStr(mut b, "sober cover pts v1 ${p.cover_key}\n")
+    ps := coverPoints(p, std)
+    for i <- iter.Range(0, len(ps)) {
+        appendStr(mut b, "${covAt(ps[i])} ${loader.CoverKindName(ps[i].kind)}\n")
+    }
+    return freeze(b)
+}
+
+func appendStr(b mut []byte, s string) {
+    sb := bytes(s)
+    for i <- iter.Range(0, len(sb)) {
+        b = append(b, sb[i])
+    }
+}
+
+// 実行ファイルが path に書いた印（見出しの鍵が key・点の数 n）を hit へ OR で合わせる（無い・鍵が違う・短いファイルは黙って飛ばす —
+// シグナルで止まった子は書かない）
+func coverOr(hit mut []bool, path string, key string, n int) {
+    b := io.ReadFile(path) catch return
+    h := bytes("sober cover v1 ${key}\n")
+    if len(b) < len(h) + n {
+        return
+    }
+    for i <- iter.Range(0, len(h)) {
+        if b[i] != h[i] {
+            return
+        }
+    }
+    for i <- iter.Range(0, n) {
+        if b[len(h) + i] != 0 {
+            hit[i] = true
+        }
+    }
+}
+
+// 点の位置の順（パス・行・列・種類）の並び
+func covOrder(ps []CovPt) []int {
+    return sort.Order(len(ps), (i, j) => covLess(ps[i], ps[j]))
+}
+
+func covLess(a CovPt, b CovPt) bool {
+    if a.path != b.path {
+        return bytesLess(bytes(a.path), bytes(b.path))
+    }
+    if a.line != b.line {
+        return a.line < b.line
+    }
+    if a.col != b.col {
+        return a.col < b.col
+    }
+    return a.kind < b.kind
+}
+
+// 未到達の腕の表示の打ち切り
+const CovShow = 20
+
+// package pkg のカバレッジの報告（`cover: <pkg> 87.5% of N arms (fn a/b)` + 未到達の腕を位置の順に CovShow 本まで）
+func coverReport(log mut []byte, pkg string, d CovData) {
+    n := len(d.pts)
+    if n == 0 {
+        say(mut log, 1, bytes("cover: ${pkg} no arms\n"))
+        return
+    }
+    mut h := 0
+    mut fnN := 0
+    mut fnH := 0
+    for i <- iter.Range(0, n) {
+        if d.hit[i] {
+            h += 1
+        }
+        if d.pts[i].kind == loader.CvFn {
+            fnN += 1
+            if d.hit[i] {
+                fnH += 1
+            }
+        }
+    }
+    pm := h * 1000 / n
+    say(mut log, 1, bytes("cover: ${pkg} ${pm / 10}.${pm % 10}% of ${n} arms (fn ${fnH}/${fnN})\n"))
+    ord := covOrder(d.pts)
+    mut miss := mut []int{}
+    for i <- iter.Range(0, len(ord)) {
+        if !d.hit[ord[i]] {
+            miss = append(miss, ord[i])
+        }
+    }
+    shown := if len(miss) < CovShow { len(miss) } else { CovShow }
+    mut w := 0
+    for i <- iter.Range(0, shown) {
+        l := len(bytes(covAt(d.pts[miss[i]])))
+        w = if l > w { l } else { w }
+    }
+    for i <- iter.Range(0, shown) {
+        c := d.pts[miss[i]]
+        nm := if c.fn == "" { "lambda" } else { c.fn }
+        what := if c.kind == loader.CvFn { "never called  (${nm})" } else { "never taken" }
+        say(mut log, 1, bytes("  ${padTo(covAt(c), w)}  ${padTo(loader.CoverKindName(c.kind), 5)}  ${what}\n"))
+    }
+    if len(miss) > shown {
+        say(mut log, 1, bytes("  … ${len(miss) - shown} more (--cover-out)\n"))
+    }
+}
+
+// s の後ろを空白で埋めて w バイトに
+func padTo(s string, w int) string {
+    mut r := s
+    mut l := len(bytes(s))
+    while l < w {
+        r = r + " "
+        l += 1
+    }
+    return r
+}
+
+// package ごとのカバレッジ ds を合わせて（同じ位置と種類の点は 1 つ — 踏んだかは OR）位置の順に並べる
+func coverMerge(ds []CovData) CovData {
+    mut all := mut []CovPt{}
+    mut ah := mut []bool{}
+    for k <- iter.Range(0, len(ds)) {
+        for i <- iter.Range(0, len(ds[k].pts)) {
+            all = append(all, ds[k].pts[i])
+            ah = append(ah, ds[k].hit[i])
+        }
+    }
+    ps := freeze(all)
+    hs := freeze(ah)
+    ord := covOrder(ps)
+    mut out := mut []CovPt{}
+    mut oh := mut []bool{}
+    for i <- iter.Range(0, len(ord)) {
+        c := ps[ord[i]]
+        m := len(out)
+        if m > 0 && !covLess(out[m - 1], c) {
+            oh[m - 1] = oh[m - 1] || hs[ord[i]]
+        } else {
+            out = append(out, c)
+            oh = append(oh, hs[ord[i]])
+        }
+    }
+    return CovData{pts: freeze(out), hit: freeze(oh)}
+}
+
+// --cover-out の中身（path が `.lcov` で終われば LCOV・他は 1 行 1 点 `<path>:<行>:<列> <種類> <0|1>`）
+func coverOut(path string, d CovData) []byte {
+    mut b := mut []byte{}
+    if !strings.HasSuffix(path, ".lcov") {
+        for i <- iter.Range(0, len(d.pts)) {
+            hv := if d.hit[i] { 1 } else { 0 }
+            appendStr(mut b, "${covAt(d.pts[i])} ${loader.CoverKindName(d.pts[i].kind)} ${hv}\n")
+        }
+        return freeze(b)
+    }
+    // LCOV: ファイルごとに FN / FNDA・BRDA（fn 以外の点 — 点 1 つ = 枝 1 本の塊）・DA（点のある行 — 行の点のどれかを踏めば 1）
+    mut lo := 0
+    while lo < len(d.pts) {
+        mut hi := lo
+        while hi < len(d.pts) && d.pts[hi].path == d.pts[lo].path {
+            hi += 1
+        }
+        appendStr(mut b, "TN:\nSF:${d.pts[lo].path}\n")
+        mut fnN := 0
+        mut fnH := 0
+        for i <- iter.Range(lo, hi) {
+            if d.pts[i].kind == loader.CvFn {
+                appendStr(mut b, "FN:${d.pts[i].line},${lcovFn(d.pts[i])}\n")
+            }
+        }
+        for i <- iter.Range(lo, hi) {
+            if d.pts[i].kind == loader.CvFn {
+                hv := if d.hit[i] { 1 } else { 0 }
+                appendStr(mut b, "FNDA:${hv},${lcovFn(d.pts[i])}\n")
+                fnN += 1
+                fnH += hv
+            }
+        }
+        appendStr(mut b, "FNF:${fnN}\nFNH:${fnH}\n")
+        mut brN := 0
+        mut brH := 0
+        for i <- iter.Range(lo, hi) {
+            if d.pts[i].kind != loader.CvFn {
+                hv := if d.hit[i] { 1 } else { 0 }
+                appendStr(mut b, "BRDA:${d.pts[i].line},${brN},0,${hv}\n")
+                brN += 1
+                brH += hv
+            }
+        }
+        appendStr(mut b, "BRF:${brN}\nBRH:${brH}\n")
+        mut lN := 0
+        mut lH := 0
+        mut i := lo
+        while i < hi {
+            mut j := i
+            mut any := false
+            while j < hi && d.pts[j].line == d.pts[i].line {
+                any = any || d.hit[j]
+                j += 1
+            }
+            hv := if any { 1 } else { 0 }
+            appendStr(mut b, "DA:${d.pts[i].line},${hv}\n")
+            lN += 1
+            lH += hv
+            i = j
+        }
+        appendStr(mut b, "LF:${lN}\nLH:${lH}\nend_of_record\n")
+        lo = hi
+    }
+    return freeze(b)
+}
+
+// LCOV の関数の名前（ラムダは `lambda@<行>:<列>` — 同じファイルの中で分ける）
+func lcovFn(c CovPt) string {
+    return if c.fn == "" { "lambda@${c.line}:${c.col}" } else { c.fn }
+}
+
+// --cover-pkg の綴り（カンマ区切り）を並べる
+func coverPats(s string) []string {
+    fs := strings.Split(s, ",")
+    mut out := mut []string{}
+    for i <- iter.Range(0, len(fs)) {
+        t := strings.TrimSpace(fs[i])
+        if t != "" {
+            out = append(out, t)
+        }
+    }
+    return freeze(out)
+}

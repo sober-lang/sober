@@ -1,0 +1,715 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "Expr",
+      "type_params": [],
+      "body": {
+        "k": "union",
+        "variants": [
+          {
+            "name": "Num",
+            "fields": [
+              {
+                "name": "v",
+                "type": {
+                  "k": "name",
+                  "name": "int"
+                },
+                "tok": 9
+              }
+            ],
+            "tok": 7
+          },
+          {
+            "name": "Neg",
+            "fields": [
+              {
+                "name": "arg",
+                "type": {
+                  "k": "opt",
+                  "type": {
+                    "k": "name",
+                    "name": "Expr"
+                  }
+                },
+                "tok": 15
+              }
+            ],
+            "tok": 13
+          },
+          {
+            "name": "Add",
+            "fields": [
+              {
+                "name": "args",
+                "type": {
+                  "k": "slice_of",
+                  "elem": {
+                    "k": "name",
+                    "name": "Expr"
+                  },
+                  "mut": false
+                },
+                "tok": 22
+              }
+            ],
+            "tok": 20
+          },
+          {
+            "name": "Mul",
+            "fields": [
+              {
+                "name": "args",
+                "type": {
+                  "k": "slice_of",
+                  "elem": {
+                    "k": "name",
+                    "name": "Expr"
+                  },
+                  "mut": false
+                },
+                "tok": 30
+              }
+            ],
+            "tok": 28
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 38
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "eval",
+      "type_params": [],
+      "params": [
+        {
+          "name": "e",
+          "type": {
+            "k": "name",
+            "name": "Expr"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "switch",
+                "subjects": [
+                  {
+                    "k": "ident",
+                    "name": "e",
+                    "tok": 48
+                  }
+                ],
+                "cases": [
+                  {
+                    "patterns": [
+                      {
+                        "k": "type",
+                        "bind": null,
+                        "variant": "Num",
+                        "fields": [
+                          {
+                            "name": "v",
+                            "sub": null,
+                            "tok": 53
+                          }
+                        ],
+                        "tok": 51
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "ident",
+                            "name": "v",
+                            "tok": 56
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 50
+                  },
+                  {
+                    "patterns": [
+                      {
+                        "k": "type",
+                        "bind": null,
+                        "variant": "Neg",
+                        "fields": [
+                          {
+                            "name": "arg",
+                            "sub": null,
+                            "tok": 61
+                          }
+                        ],
+                        "tok": 59
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "if",
+                            "cond": {
+                              "k": "binary",
+                              "op": "!=",
+                              "lhs": {
+                                "k": "ident",
+                                "name": "arg",
+                                "tok": 65
+                              },
+                              "rhs": {
+                                "k": "nil",
+                                "tok": 67
+                              },
+                              "tok": 66
+                            },
+                            "then": {
+                              "stmts": [
+                                {
+                                  "k": "expr",
+                                  "expr": {
+                                    "k": "unary",
+                                    "op": "-",
+                                    "operand": {
+                                      "k": "call",
+                                      "callee": {
+                                        "k": "ident",
+                                        "name": "eval",
+                                        "tok": 70
+                                      },
+                                      "args": [
+                                        {
+                                          "k": "ident",
+                                          "name": "arg",
+                                          "tok": 72
+                                        }
+                                      ],
+                                      "tok": 71
+                                    },
+                                    "tok": 69
+                                  }
+                                }
+                              ]
+                            },
+                            "else": {
+                              "k": "block",
+                              "stmts": [
+                                {
+                                  "k": "expr",
+                                  "expr": {
+                                    "k": "int",
+                                    "value": 0,
+                                    "tok": 77
+                                  }
+                                }
+                              ]
+                            },
+                            "tok": 64
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 58
+                  },
+                  {
+                    "patterns": [
+                      {
+                        "k": "type",
+                        "bind": null,
+                        "variant": "Add",
+                        "fields": [
+                          {
+                            "name": "args",
+                            "sub": null,
+                            "tok": 83
+                          }
+                        ],
+                        "tok": 81
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "block",
+                            "stmts": [
+                              {
+                                "k": "bind",
+                                "names": [
+                                  "s"
+                                ],
+                                "mutable": true,
+                                "values": [
+                                  {
+                                    "k": "int",
+                                    "value": 0,
+                                    "tok": 90
+                                  }
+                                ],
+                                "tok": 87
+                              },
+                              {
+                                "k": "expr",
+                                "expr": {
+                                  "k": "for",
+                                  "gens": [
+                                    {
+                                      "names": [
+                                        "a"
+                                      ],
+                                      "src": {
+                                        "k": "ident",
+                                        "name": "args",
+                                        "tok": 95
+                                      },
+                                      "guards": [],
+                                      "tok": 93
+                                    }
+                                  ],
+                                  "body": {
+                                    "k": "block",
+                                    "stmts": [
+                                      {
+                                        "k": "assign",
+                                        "targets": [
+                                          {
+                                            "k": "ident",
+                                            "name": "s",
+                                            "tok": 97
+                                          }
+                                        ],
+                                        "op": "+=",
+                                        "values": [
+                                          {
+                                            "k": "call",
+                                            "callee": {
+                                              "k": "ident",
+                                              "name": "eval",
+                                              "tok": 99
+                                            },
+                                            "args": [
+                                              {
+                                                "k": "ident",
+                                                "name": "a",
+                                                "tok": 101
+                                              }
+                                            ],
+                                            "tok": 100
+                                          }
+                                        ],
+                                        "tok": 97
+                                      }
+                                    ]
+                                  },
+                                  "tok": 92
+                                }
+                              },
+                              {
+                                "k": "expr",
+                                "expr": {
+                                  "k": "ident",
+                                  "name": "s",
+                                  "tok": 106
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 80
+                  },
+                  {
+                    "patterns": [
+                      {
+                        "k": "type",
+                        "bind": null,
+                        "variant": "Mul",
+                        "fields": [
+                          {
+                            "name": "args",
+                            "sub": null,
+                            "tok": 113
+                          }
+                        ],
+                        "tok": 111
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "block",
+                            "stmts": [
+                              {
+                                "k": "bind",
+                                "names": [
+                                  "p"
+                                ],
+                                "mutable": true,
+                                "values": [
+                                  {
+                                    "k": "int",
+                                    "value": 1,
+                                    "tok": 120
+                                  }
+                                ],
+                                "tok": 117
+                              },
+                              {
+                                "k": "expr",
+                                "expr": {
+                                  "k": "for",
+                                  "gens": [
+                                    {
+                                      "names": [
+                                        "a"
+                                      ],
+                                      "src": {
+                                        "k": "ident",
+                                        "name": "args",
+                                        "tok": 125
+                                      },
+                                      "guards": [],
+                                      "tok": 123
+                                    }
+                                  ],
+                                  "body": {
+                                    "k": "block",
+                                    "stmts": [
+                                      {
+                                        "k": "assign",
+                                        "targets": [
+                                          {
+                                            "k": "ident",
+                                            "name": "p",
+                                            "tok": 127
+                                          }
+                                        ],
+                                        "op": "*=",
+                                        "values": [
+                                          {
+                                            "k": "call",
+                                            "callee": {
+                                              "k": "ident",
+                                              "name": "eval",
+                                              "tok": 129
+                                            },
+                                            "args": [
+                                              {
+                                                "k": "ident",
+                                                "name": "a",
+                                                "tok": 131
+                                              }
+                                            ],
+                                            "tok": 130
+                                          }
+                                        ],
+                                        "tok": 127
+                                      }
+                                    ]
+                                  },
+                                  "tok": 122
+                                }
+                              },
+                              {
+                                "k": "expr",
+                                "expr": {
+                                  "k": "ident",
+                                  "name": "p",
+                                  "tok": 136
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 110
+                  }
+                ],
+                "default": null,
+                "tok": 47
+              }
+            ],
+            "tok": 46
+          }
+        ]
+      },
+      "tok": 39,
+      "bodiless": false,
+      "span": {
+        "start": 38,
+        "end": 144
+      },
+      "sig_end": 45
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "e"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Mul",
+                "elems": [
+                  {
+                    "key": "args",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "Expr"
+                      },
+                      "elems": [
+                        {
+                          "k": "composite",
+                          "type_name": "Add",
+                          "elems": [
+                            {
+                              "key": "args",
+                              "value": {
+                                "k": "slicelit",
+                                "elem": {
+                                  "k": "name",
+                                  "name": "Expr"
+                                },
+                                "elems": [
+                                  {
+                                    "k": "composite",
+                                    "type_name": "Num",
+                                    "elems": [
+                                      {
+                                        "key": "v",
+                                        "value": {
+                                          "k": "int",
+                                          "value": 2,
+                                          "tok": 171
+                                        }
+                                      }
+                                    ],
+                                    "tok": 167,
+                                    "type_args": []
+                                  },
+                                  {
+                                    "k": "composite",
+                                    "type_name": "Mul",
+                                    "elems": [
+                                      {
+                                        "key": "args",
+                                        "value": {
+                                          "k": "slicelit",
+                                          "elem": {
+                                            "k": "name",
+                                            "name": "Expr"
+                                          },
+                                          "elems": [
+                                            {
+                                              "k": "composite",
+                                              "type_name": "Num",
+                                              "elems": [
+                                                {
+                                                  "key": "v",
+                                                  "value": {
+                                                    "k": "int",
+                                                    "value": 3,
+                                                    "tok": 186
+                                                  }
+                                                }
+                                              ],
+                                              "tok": 182,
+                                              "type_args": []
+                                            },
+                                            {
+                                              "k": "composite",
+                                              "type_name": "Num",
+                                              "elems": [
+                                                {
+                                                  "key": "v",
+                                                  "value": {
+                                                    "k": "int",
+                                                    "value": 4,
+                                                    "tok": 193
+                                                  }
+                                                }
+                                              ],
+                                              "tok": 189,
+                                              "type_args": []
+                                            }
+                                          ],
+                                          "mut": false,
+                                          "tok": 178
+                                        }
+                                      }
+                                    ],
+                                    "tok": 174,
+                                    "type_args": []
+                                  }
+                                ],
+                                "mut": false,
+                                "tok": 163
+                              }
+                            }
+                          ],
+                          "tok": 159,
+                          "type_args": []
+                        },
+                        {
+                          "k": "composite",
+                          "type_name": "Neg",
+                          "elems": [
+                            {
+                              "key": "arg",
+                              "value": {
+                                "k": "composite",
+                                "type_name": "Add",
+                                "elems": [
+                                  {
+                                    "key": "args",
+                                    "value": {
+                                      "k": "slicelit",
+                                      "elem": {
+                                        "k": "name",
+                                        "name": "Expr"
+                                      },
+                                      "elems": [
+                                        {
+                                          "k": "composite",
+                                          "type_name": "Num",
+                                          "elems": [
+                                            {
+                                              "key": "v",
+                                              "value": {
+                                                "k": "int",
+                                                "value": 1,
+                                                "tok": 216
+                                              }
+                                            }
+                                          ],
+                                          "tok": 212,
+                                          "type_args": []
+                                        },
+                                        {
+                                          "k": "composite",
+                                          "type_name": "Num",
+                                          "elems": [
+                                            {
+                                              "key": "v",
+                                              "value": {
+                                                "k": "int",
+                                                "value": 1,
+                                                "tok": 223
+                                              }
+                                            }
+                                          ],
+                                          "tok": 219,
+                                          "type_args": []
+                                        }
+                                      ],
+                                      "mut": false,
+                                      "tok": 208
+                                    }
+                                  }
+                                ],
+                                "tok": 204,
+                                "type_args": []
+                              }
+                            }
+                          ],
+                          "tok": 200,
+                          "type_args": []
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 155
+                    }
+                  }
+                ],
+                "tok": 151,
+                "type_args": []
+              }
+            ],
+            "tok": 149
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 232
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "eval",
+                    "tok": 234
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "e",
+                      "tok": 236
+                    }
+                  ],
+                  "tok": 235
+                }
+              ],
+              "tok": 233
+            }
+          }
+        ]
+      },
+      "tok": 145,
+      "bodiless": false,
+      "span": {
+        "start": 144,
+        "end": 242
+      },
+      "sig_end": 148
+    }
+  ],
+  "consts": []
+}

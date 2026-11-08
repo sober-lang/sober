@@ -31,7 +31,7 @@ Sober の唯一の中間表現。`sober build` は AST → IR → 正規バッ�
 
 - 値: iconst / bin（add sub mul div rem and or xor shl sar）/ cmp（eq ne lt le gt ge ult uge — 結果は 0 / 1）
   - iconst の札（2026-10-26 — インクリの波 段 2・docs/incremental.md）: 発見順の番号（panic / spawn の点）を運ぶ定数は記録の欄 b に札を持つ（テキスト形式には出ない — `const n` のまま）。札つきは札なしと GVN で併合されず、正規バックエンドは imm32 を後埋めにする
-- メモリ: load・store（語、ptr + 語オフセット）/ load8・store8（[]byte・string のセルと io のバイトバッファ — byte の段）/ gep（語・バイト）/ ptoi・itop / slotaddr / globaladdr / funcaddr
+- メモリ: load・store（語、ptr + 語オフセット）/ load8・store8（[]byte・string のセルと io のバイトバッファ — byte の段）/ load16・store16・load32・store32（pool.Scratch の狭い語の口 — ptr + バイトの変位・読みは 0 拡張・書きは値の下位だけ。stage1 の語彙の外 — gatelib の beyond_stage1）/ gep（語・バイト）/ ptoi・itop / slotaddr / globaladdr / funcaddr
 - 呼び出し: call / call_indirect / syscall
   - syscall の札の op（x86 の正規バックエンドの ELF の道だけ命令 — 他の出力では値 0 か無発行）: vcall・aes の塊・montmul・cycles / tsc・`prefetch(%a)`（2026-11-01 — rt 専用の prefetcht0。値も効果も無い・番地が不正でも落ちない — 走れる積みの次の候補の先読み）
 - region: region.enter / depth / setdepth / alloc / bump / relocate
@@ -116,6 +116,7 @@ Sober の唯一の中間表現。`sober build` は AST → IR → 正規バッ�
   - mut 仮引数（再帰する mut 引数の関数 = mut_def — R2）は、呼び手のセルのアドレス 1 語
   - mut 仮引数を転送するときは、受け取ったアドレスをそのまま渡す
   - 呼ばれた関数は mut 仮引数の番地を呼び出しの間だけ使う（格納・task への受け渡し・ret の語彙は無い）。バックエンドのスロットの彩色（slotcolor.sober — F-1 段 2）はこれを前提に、mut 仮引数へ渡したスロットの番地を呼び出しの点の読み書きとして数える（印の無い引数へ渡した番地は逃げ — 専用の置き場）
+  - 関数値の呼び出し（call_indirect）の関数型の mut の席（`func(out mut Out, …)` — language.md 25・26 節）も同じ約束。呼び先の記録が無いので、印は命令の結果の型の欄の上位ビットに持つ（ir.sober CALLI_MSH — 結果の型 + 印 << 8・印のビット j = 引数の列の j 番目。IR テキストには出ない — iconst の札と同じ・展開の写しは欄をそのまま運ぶ）。slotcolor はその実引数の番地を直接呼び出しの mut 仮引数と同じ読み書きの事象として数える（2026-11-07 — 棄てた案: 命令 → 印の横の表〔展開の写しで印が落ちる〕・引数の列の頭に印の語〔被演算子の番号が全部ずれる〕）
 - region 透過の実体関数（language.md 26 節 — mut 引数だけが展開の理由の非再帰関数を `--passes` で実体にしたもの）: 規約は mut_def と同じ（mut 仮引数は
   呼び手のセルのアドレス 1 語）で、違いは本体の入口だけ — `region.depth` を読んで退避するが `region.enter` しない。出口は退避した深度へ `region.setdepth`、
   戻りの境界コピーの floor = 入口の深度（= 呼び手の最内 region — 展開の呼び出し点の深度と同じ値）。既定の `--emit=ir|ll`（黄金・Zig ≡ Sober の照合の相手）は
@@ -143,6 +144,13 @@ Sober の唯一の中間表現。`sober build` は AST → IR → 正規バッ�
     rt の起動だけで、上の rt の呼び出し（slice_grow / slice_grow8・region_alloc / region_alloc8 — 書くのは新しい列と W_BUMP の語・panic / panic_mem — 戻らない）も
     この 2 語を書かない。番地が `globaladdr @rt.meta` 直の `load [W_SLOTS | W_SLOT_SIZE]` は、ループの中の呼び出しがこれらの rt だけ（間接呼び出し・syscall・
     原子・罠・task の op・relocate・この 2 語の語への store が無い）ならループ不変（taskUse のスロットの先頭はワーカーの記録から来るので、gep を挟み種にならない）
+  - 同じ型の論証で、展開後の欄の読みの巻き上げ（src/compiler/lower/ldhoist.sober — deflate v2 の波・2026-11-07）: 展開の後、mut の印のある ptr 仮引数 P から
+    定数の gep.word の鎖で届く語（展開した小関数の mut 仮引数が呼び手の struct の欄を指す形 — Scratch や slice の欄のヘッダ）の load は、ループの中にその語を
+    書きうるものが無ければ前置きの 1 本にしてよい。書かない番地の根は hdr.sober の hdrRoot の一般化: メモリから読んだ番地（`itop(load …)` を経る根 — 値は
+    セルの番地を持たない）・別の mut 仮引数（同じ呼び出しの mut 実引数は排他）・スロット・大域・確保する rt の結果。ループの中で許す呼び出しは P のセルを
+    書かない rt（panic / panic_mem・matchlen / str_eq / jclean・反復の軽い enter・region_alloc / alloc8・slice_grow / grow8）で、実引数に P の鎖を渡さないもの。
+    関数の中で P の鎖の値がメモリへの書きの値・ブロックの実引数・算術に出たら P は対象外（展開の内部の形の保険）。掛けるのは狭い語の op
+    （pool.Scratch の表の口）を含むループの関数だけ（全関数に掛ける形は自己 build の判定の仕事 +0.6% に対しコンパイラ自身の効き +0.06% で棄却）
   - 同じ型の論証で、写しの転送（src/compiler/lower/cpfwd.sober — G 便・2026-10-12 裁定）: rt.str_eq は引数の指す先（文字列の語 0 / 1 とそのバイト）を読むだけで、
     書かず・番地を残さない。番地 A からの語ごとの写しで書かれたスロット S の使い道が load と str_eq の引数だけで、写しから使い道までの道に A の指す先か S を
     書きうるもの（根がほかのスロットでない store・str_eq / panic 以外の呼び出し・region の入り / 深度の書き換え ほか）が無いなら、使い道は S でなく A を読んでよい
@@ -158,6 +166,7 @@ Sober の唯一の中間表現。`sober build` は AST → IR → 正規バッ�
 - ir_rt.zig・ir_rt_io.zig: 入口 `sober_entry(sp)`（アリーナの mmap 予約・深度 0）、region の enter / alloc / relocate、行バッファの印字、map の探索・文字列比較、io（cstr / read_file / write_file / write_all / read_args / read_dir / write_fd — 2026-09-28 の io の器、language.md 28 節）、`--mem-trace`（深度ごとの割り当て総量を exit 時に stderr へ）
 - 両バックエンドが普通の関数として下ろす
 - アリーナのスロット（2026-09-28）: 大きさは実行時の値で、メタ領域の SLOT_SIZE に置く（enter / alloc / memtrace はそこから読む）。既定 4GiB × 1024 深度 = 4TiB の MAP_NORESERVE 予約、環境変数 `SOBER_REGION_MB`（MiB の 10 進、1〜65536。それ以外は無視）で上書き、予約が断られたら半分にして 1MiB まで再試行（language.md 27 節）
+- 実行可能メモリの放棄（2026-11-07）: 入口がアリーナの madvise の直後に `prctl(PR_SET_MDWE, PR_MDWE_REFUSE_EXEC_GAIN | PR_MDWE_NO_INHERIT)` を 1 回（結果は見ない）。Linux 6.6+ で W+X の頁と実行の昇格を恒久に禁じ、fork の子には引き継がない（os.Run の子の JIT を壊さない）。NO_INHERIT を知らないカーネル（6.3〜6.5）・MDWE の無いカーネルは EINVAL で何も掛からない（継承する形では掛けない）。`SOBER_MDWE=0`（起動時の環境変数）のときだけ掛けない（valgrind 等の動的計装のため — 起動前に env を操れる者は別のバイナリを走らせられるので脅威モデルは削れない）。確認の口 = `SOBER_MDWE_REPORT`（main の正常終了で rt.depth_report が `mdwe <PR_GET_MDWE>` を stderr へ — 旗は W_DREP のビット DREP_MDWE）・網 = scripts/mdwecheck.sh
 - huge page を使わない（2026-10-05、RSS 回収便）: 入口が予約したアリーナに madvise(MADV_NOHUGEPAGE) を掛ける（失敗は無視）。透過的 huge page では深度のスロットに 1 バイト触るだけで 2 MB が RSS に乗り、小さいプログラムでも 4〜6 MB・コンパイラ自身の自己 build で 540 MB だった（→ 226 MB）。代価 = TLB の利得（自己 build の cycles +1.5〜3%・題材は揺れの範囲）
 - slice の幾何成長（2026-10-05、データ構造便 — src/compiler/lower/rtgrow.sober）: append が先端でないときは rt.slice_grow / rt.slice_grow8（ヘッダの値を受け取り新しい列の先頭を返す）。初回の全コピーは長さちょうど（先端に戻る）・rt の側の表（rt.gcache — 直接写像 64 項 × [番地, 深度, 世代, 水位, 容量の終わり]）に載った列がもう一度全コピーになるとき（2 本が先端を奪い合う）は余剰容量つき（2 × (長さ + 1)）。表の項の番地・深度・世代が一致しヘッダの終わり == 水位で容量に空きがあればその場で水位を進める — 同じ割り当てを共有するヘッダのうち伸ばせるのは先に伸ばした方だけ（先端の判定と同じ排他）なので値の意味論は不変（容量・水位は観測不能 — Lean 無変更）。世代（rt.rgen — 深度ごと）は full の enter とループの反復の軽い enter（rt.region_enter_lloop）が進める（関数の入口の軽い enter は自分の深度に確保しないので進めない）
 - 深度の計測口（2026-10-05、宛先構築レーン M5c）: 環境変数 `SOBER_DEPTH_REPORT`（1 以上の 10 進）が立っていれば、main の正常終了で `rt.depth_report` が `region_depth{max: d}` を stderr へ書く（d = 一度でも入った最深の深度 — 深度ごとの bump は enter〔full・軽い〕でだけ初期化され出ても 0 に戻らないので、熱い経路に計測の命令を足さずに読める）。旗はメタ領域の末尾の W_DREP（入口が置く）。panic（101 / 102）の経路は書かない（102 は死亡ダンプが深度を出す）。用途 = 深度の契約（language.md 27 節 — 1023 段）の消費の実測

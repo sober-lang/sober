@@ -1,0 +1,131 @@
+package loader
+
+// 多段の修飾子の畳み（language.md 20 節）: `http.server.Serve` の選択子の連鎖のうち、package の import の修飾子
+// （`http.server` — alias の無い多段の import）に一致する最長の頭を、名前がその修飾子の EIdent 1 つに写す。
+// 以降の段（検査・desugar・lower・analyzer）は「EIdent を基底とする選択子 = 修飾参照」の 1 段の形だけを見る。
+// 修飾子の段は小文字・公開の名前は大文字なので、一致する頭は高々 1 つに決まる（探索も優先順位も持たない）。
+// 型名の綴り（`http.server.Request`）は parser が 1 本の文字列にするので畳まない — 修飾子と名前の境は最後の '.'。
+// 一致の表は package 単位（import はファイルごとの約束の検査 — NotImported — は畳んだ後の木で fileimports.sober が見る）
+
+import "std/builder"
+import "std/iter"
+import "ast"
+
+// 木の列を畳む（多段の修飾子を持たない package の木はそのまま。ファイルは package ごとに連続 — finish の約束）
+func qualFoldAll(trees []ast.Tree, fpkg []string) []ast.Tree {
+    mut out := mut []ast.Tree{}
+    mut lo := 0
+    while lo < len(trees) {
+        mut hi := lo
+        while hi < len(trees) && fpkg[hi] == fpkg[lo] {
+            hi += 1
+        }
+        qs := pkgQuals(trees, lo, hi)
+        for f <- iter.Range(lo, hi) {
+            out = append(out, if len(qs) == 0 { trees[f] } else { qualFold(trees[f], qs) })
+        }
+        lo = hi
+    }
+    return freeze(out)
+}
+
+// ファイル [lo, hi)（1 つの package）の import の多段の修飾子（alias の無いもの）
+func pkgQuals(trees []ast.Tree, lo int, hi int) []string {
+    mut qs := mut []string{}
+    for f <- iter.Range(lo, hi) {
+        t := trees[f]
+        imps := t.nodes[t.file].b
+        for k <- iter.Range(0, ast.ListLen(t, imps)) {
+            im := t.nodes[ast.ListAt(t, imps, k)]
+            if im.a < 0 && dottedPath(t, im.b) {
+                q := QualOf(Name(t, im.b))
+                if !has(freeze(qs), q) {
+                    qs = append(qs, q)
+                }
+            }
+        }
+    }
+    return freeze(qs)
+}
+
+// データプールのパス s が多段の修飾子になるか（`std/` を除いて '/' を含む）
+func dottedPath(t ast.Tree, s int) bool {
+    n := t.data[s]
+    from := if n > 4 && t.data[s + 1] == 's' && t.data[s + 2] == 't' && t.data[s + 3] == 'd' && t.data[s + 4] == '/' { 4 } else { 0 }
+    for i <- iter.Range(from, n) {
+        if t.data[s + 1 + i] == '/' {
+            return true
+        }
+    }
+    return false
+}
+
+// 節 i の識別子の連鎖の綴り（`a` / `a.b.c` — 連鎖でなければ ""）
+func chainText(t ast.Tree, i int) string {
+    x := t.nodes[i]
+    if x.kind == ast.EIdent {
+        return Name(t, x.a)
+    }
+    if x.kind == ast.ESelector && x.a >= 0 {
+        base := chainText(t, x.a)
+        return if base == "" { "" } else { "${base}.${Name(t, x.b)}" }
+    }
+    return ""
+}
+
+// 木 t の選択子 y で、基底 y.a の連鎖の綴りが qs にあり y 自身の綴りが qs に無いもの（= 最長の一致）の基底を、
+// その綴りの EIdent に写す。基底の下の節も同じ綴りの EIdent に写す（根から辿れない節を名前の検査が拾わないように）
+func qualFold(t ast.Tree, qs []string) ast.Tree {
+    mut roots := mut []string{}
+    for q <- qs {
+        roots = append(roots, RootSeg(q))
+    }
+    rs := freeze(roots)
+    mut hits := mut []int{}
+    for i <- iter.Range(0, len(t.nodes)) {
+        y := t.nodes[i]
+        if y.kind == ast.ESelector && y.a >= 0 && t.nodes[y.a].kind == ast.ESelector && has(rs, chainRoot(t, y.a)) {
+            if has(qs, chainText(t, y.a)) && !has(qs, chainText(t, i)) {
+                hits = append(hits, y.a)
+            }
+        }
+    }
+    if len(hits) == 0 {
+        return t
+    }
+    mut ns := mut []ast.Node{}
+    for i <- iter.Range(0, len(t.nodes)) {
+        ns = append(ns, t.nodes[i])
+    }
+    mut db := builder.Builder[int]{}
+    for j <- iter.Range(0, len(t.data)) {
+        builder.Push(mut db, t.data[j])
+    }
+    for h <- hits {
+        mut n := h
+        while n >= 0 && (t.nodes[n].kind == ast.ESelector || t.nodes[n].kind == ast.EIdent) {
+            x := t.nodes[n]
+            ns[n] = ast.Node{ast.EIdent, rootTok(t, h), ast.PutLit(mut db, chainText(t, n)), 0, 0, 0, 0, 0}
+            n = if x.kind == ast.ESelector { x.a } else { -1 }
+        }
+    }
+    return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
+}
+
+// 連鎖の根の識別子の名前（連鎖でなければ ""）
+func chainRoot(t ast.Tree, i int) string {
+    mut n := i
+    while t.nodes[n].kind == ast.ESelector && t.nodes[n].a >= 0 {
+        n = t.nodes[n].a
+    }
+    return if t.nodes[n].kind == ast.EIdent { Name(t, t.nodes[n].a) } else { "" }
+}
+
+// 連鎖の根の識別子の字句（診断の位置 — 修飾子の頭）
+func rootTok(t ast.Tree, i int) int {
+    mut n := i
+    while t.nodes[n].kind == ast.ESelector && t.nodes[n].a >= 0 {
+        n = t.nodes[n].a
+    }
+    return t.nodes[n].tok
+}

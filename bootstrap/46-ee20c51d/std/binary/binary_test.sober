@@ -1,0 +1,53 @@
+package binary
+
+// AppendWord の網: 速い道（先端で 8 バイトを 1 本で書く — 粒の余り・粒をはみ出す道）と遅い道（先端でない列 — 1 バイトずつ）の両方が
+// k 回の 1 バイトの append と同じ列を作る
+
+import "std/iter"
+
+func ref(b mut []byte, v int, k int) {
+    mut x := v
+    for _ <- iter.Range(0, k) {
+        b = append(b, byte(x & 0xff))
+        x = x >> 8
+    }
+}
+
+func TestAppendWordSmall() {
+    mut b := mut []byte{}
+    AppendWord(mut b, 0x0807060504030201, 3)
+    assert(len(b) == 3 && b[0] == 1 && b[1] == 2 && b[2] == 3)
+    AppendWord(mut b, -1, 0)
+    assert(len(b) == 3)
+    AppendWord(mut b, -1, 8)
+    assert(len(b) == 11 && b[3] == 255 && b[10] == 255)
+}
+
+func TestAppendWordMixed() {
+    mut a := mut []byte{}
+    mut r := mut []byte{}
+    mut x := 88172645463325252
+    for i <- iter.Range(0, 5000) {
+        x = x ^ (x << 13)
+        x = x ^ (x >> 7)
+        x = x ^ (x << 17)
+        k := ((x >> 3) & 15) % 9
+        AppendWord(mut a, x, k)
+        ref(mut r, x, k)
+        if (i % 97) == 5 {
+            // 別の列で先端を奪う（次の AppendWord は遅い道か写しの後の先端）
+            mut o := mut []byte{}
+            o = append(o, byte(i & 0xff))
+            AppendWord(mut o, x, 8)
+            assert(len(o) == 9)
+        }
+        if (i % 31) == 3 {
+            a = append(a, byte(i & 0xff))
+            r = append(r, byte(i & 0xff))
+        }
+    }
+    assert(len(a) == len(r))
+    for i <- iter.Range(0, len(a)) {
+        assert(a[i] == r[i])
+    }
+}

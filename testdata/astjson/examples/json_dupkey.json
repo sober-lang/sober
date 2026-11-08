@@ -105,7 +105,7 @@
                     {
                       "k": "type",
                       "bind": null,
-                      "variant": "json.InvalidJson",
+                      "variant": "json.BadJson",
                       "fields": [
                         {
                           "name": "pos",

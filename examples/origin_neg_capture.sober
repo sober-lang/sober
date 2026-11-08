@@ -1,11 +1,11 @@
 package main
 
-import "std/http"
+import "std/http/server"
 
 // 要求の Authorization から作った値を捕捉したハンドラの共有のルート（値の依存）
-func routesFor(r http.Request) []http.Route {
-    who := http.Authorization(r)
-    return []http.Route{http.Route{method: "GET", path: "/who", handler: (r2) => http.Text(if who != nil { who } else { "-" }), cache: http.Fresh{maxAge: 60}}}
+func routesFor(r http.server.Request) []http.server.Route {
+    who := http.server.Authorization(r)
+    return []http.server.Route{http.server.Route{method: "GET", path: "/who", handler: (r2) => http.server.Text(if who != nil { who } else { "-" }), cache: http.server.Fresh{maxAge: 60}}}
 }
 
 func main() {

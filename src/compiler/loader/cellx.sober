@@ -39,7 +39,7 @@ func cellRef(t ast.Tree) (string, int) {
     for k <- iter.Range(0, ast.ListLen(t, imps)) {
         im := t.nodes[ast.ListAt(t, imps, k)]
         if Name(t, im.b) == CELL_PATH {
-            return if im.a >= 0 { Name(t, im.a) } else { "cell" }, im.tok
+            return ImpRef(t, im), im.tok
         }
     }
     return "", 0

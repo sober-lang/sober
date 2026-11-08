@@ -1,0 +1,28 @@
+package main
+
+// 名前付き関数型への変換 `W(e)`: e を W の値の位置に置いたもの — ラムダ（捕捉も）・名前付きの関数・同じ W の値（spec F-11）。
+// 値の呼び出しの実引数にも名前付きの関数を直に渡せる（`h(1, base)` — 呼び先の仮引数が名前付き関数型でも）
+
+type W func(v int) int
+
+type H func(n int, next W?) int
+
+func dbl(v int) int {
+    return v * 2
+}
+
+func base(n int, next W?) int {
+    return if next != nil { next(n) } else { n }
+}
+
+func main() {
+    k := 3
+    a := W((v) => v + k)
+    b := W(a)
+    c := W(dbl)
+    println(a(1), b(2), c(5))
+    hs := []H{base}
+    for h <- hs {
+        println(h(4, dbl), h(4, (v) => v - 1), h(4, nil))
+    }
+}

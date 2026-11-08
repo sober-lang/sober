@@ -1,0 +1,2 @@
+sober: load error at examples/client_neg_field.sober:14:14: an io.File, io.Root, net.Listener, net.Conn, tls.Conn or client.Session cannot be put in a struct, slice, map or channel, or appended (it has identity — keep it in the binding made by io.Open)
+exit=1

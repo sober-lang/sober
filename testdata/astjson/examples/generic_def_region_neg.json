@@ -1,0 +1,176 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Bx",
+      "type_params": [
+        "T"
+      ],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "v",
+            "type": {
+              "k": "name",
+              "name": "T"
+            },
+            "tok": 10
+          },
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 13
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 18
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "get",
+      "type_params": [
+        "T"
+      ],
+      "params": [
+        {
+          "name": "b",
+          "type": {
+            "k": "generic",
+            "name": "Bx",
+            "args": [
+              {
+                "k": "name",
+                "name": "T"
+              }
+            ]
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "b",
+                  "tok": 33
+                },
+                "field": "n",
+                "tok": 35
+              }
+            ],
+            "tok": 32
+          }
+        ]
+      },
+      "tok": 19,
+      "bodiless": false,
+      "span": {
+        "start": 18,
+        "end": 39
+      },
+      "sig_end": 31
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 44
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "index",
+                    "base": {
+                      "k": "ident",
+                      "name": "get",
+                      "tok": 46
+                    },
+                    "idx": {
+                      "k": "ident",
+                      "name": "string",
+                      "tok": 48
+                    },
+                    "tok": 47
+                  },
+                  "args": [
+                    {
+                      "k": "composite",
+                      "type_name": "Bx",
+                      "elems": [
+                        {
+                          "key": "v",
+                          "value": {
+                            "k": "strlit",
+                            "value": "x",
+                            "tok": 58
+                          }
+                        },
+                        {
+                          "key": "n",
+                          "value": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 62
+                          }
+                        }
+                      ],
+                      "tok": 51,
+                      "type_args": [
+                        {
+                          "k": "name",
+                          "name": "string"
+                        }
+                      ]
+                    }
+                  ],
+                  "tok": 50
+                }
+              ],
+              "tok": 45
+            }
+          }
+        ]
+      },
+      "tok": 40,
+      "bodiless": false,
+      "span": {
+        "start": 39,
+        "end": 69
+      },
+      "sig_end": 43
+    }
+  ],
+  "consts": []
+}

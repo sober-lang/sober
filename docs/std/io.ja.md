@@ -354,14 +354,14 @@ ReadDir が返すディレクトリの項目 1 つ（名前と種類）
 ## ReadDir
 
 ```sober
-@errors(NotFound, Denied, Other, Timeout, Expired, strings.InvalidUtf8)
+@errors(NotFound, Denied, Other, Timeout, Expired, strings.BadUtf8)
 @effects(io, nondet)
 func ReadDir(path string) ([]DirEntry, error?)
 ```
 
-path の項目を名前のバイト順で返す（`.` / `..` は含めない — Go の os.ReadDir と同じ）。並びはファイルシステムの列挙順に依らない（loader の決定性 — [language.md 29 節](../language.md)）。名前が 1 つでも不正な UTF-8 なら全体が strings.InvalidUtf8
+path の項目を名前のバイト順で返す（`.` / `..` は含めない — Go の os.ReadDir と同じ）。並びはファイルシステムの列挙順に依らない（loader の決定性 — [language.md 29 節](../language.md)）。名前が 1 つでも不正な UTF-8 なら全体が strings.BadUtf8
 
-失敗のラベル: [`NotFound`](#notfound)・[`Denied`](#denied)・[`Other`](#other)・[`Timeout`](#timeout)・[`Expired`](#expired)・`strings.InvalidUtf8`
+失敗のラベル: [`NotFound`](#notfound)・[`Denied`](#denied)・[`Other`](#other)・[`Timeout`](#timeout)・[`Expired`](#expired)・`strings.BadUtf8`
 
 ## Writer
 

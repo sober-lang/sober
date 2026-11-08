@@ -36,6 +36,11 @@ func closPrep(st mut St) error? {
     // 欄の閉包の型〔の struct のレイアウト〕が確定するので、その鍵の形が先に揃っていること）
     for ix <- iter.Range(0, 2 * n) {
         i := ix % n
+        if ix == n {
+            // 1 周目の終わりで捕捉のある形を持たない鍵を外す — 2 周目（借りの実引数の行）が捕捉する名前付き関数型の値の型（閉包の struct か
+            // 素の関数値か）を、最後に外れる鍵の閉包の型で数えないように（外れた鍵の値は素の関数値 — 形の照合が食い違う）
+            closPrune(mut st)
+        }
         if (ix < n) == desugar.CapBorrowArg(mut st.d, i) {
             continue
         }
@@ -76,7 +81,12 @@ func closPrep(st mut St) error? {
             }
         }
     }
-    // 捕捉のある形を持たない K は外す（鎖を作り直す）
+    closPrune(mut st)
+    return nil
+}
+
+// 捕捉のある形を持たない K は外す（鎖を作り直す）
+func closPrune(st mut St) {
     mut x := st.closKs - 1
     mut keep := 0
     while x >= 0 {
@@ -88,7 +98,6 @@ func closPrep(st mut St) error? {
         x = nx
     }
     st.closKs = keep
-    return nil
 }
 
 // 行 i の env の形の列（展開待ちの捕捉は、的へ流れる行ごとの平たい形の積 — 作成点が展開ごとに 1 つを選ぶ）
@@ -616,8 +625,8 @@ func isFnValT(st mut St, t int) bool {
 }
 
 // 捕捉できる型か（desugar の capTyOk + 同一性の族 idDecl の lower の型での写し — check と build が同じ形を拒否する）:
-// スカラー・string・imm の slice / map と、その struct / option / union の組。関数値・mut の器・同一性の型（task.Scope / Task / 端点 / Pool / Local・
-// io.File・net.Conn / Listener — 欄を通して推移的に）は不可
+// スカラー・string・imm の slice / map と、その struct / option / union の組。関数値・mut の器・同一性の型（diag の表 —
+// 欄を通して推移的に）は不可
 func closCapOk(st mut St, t int, fuel int, idok bool) bool {
     if fuel == 0 {
         return false
@@ -659,7 +668,7 @@ func closCapOk(st mut St, t int, fuel int, idok bool) bool {
     }
 }
 
-// struct の情報 info が同一性の族の型宣言か（desugar の idDeclName と同じ閉じた集合）
+// struct の情報 info が同一性の族の型宣言か（diag の IdPaths / IdNames の表）
 func closIdInfo(st mut St, info int) bool {
     d := desugar.HeapGet(mut st.d, info + SI_DECL)
     if d < 0 {
@@ -667,14 +676,10 @@ func closIdInfo(st mut St, info int) bool {
     }
     pp := pkgPath(mut st, desugar.HeapGet(mut st.d, info + SI_PKG))
     nm := sA(nodeOf(mut st, desugar.NodeRef(d)))
-    if strIs(mut st, pp, "std/task") {
-        return strIs(mut st, nm, "Scope") || strIs(mut st, nm, "Handle") || strIs(mut st, nm, "Sender") || strIs(mut st, nm, "Receiver") || strIs(mut st, nm, "Pool") || strIs(mut st, nm, "Local")
-    }
-    if strIs(mut st, pp, "std/io") {
-        return strIs(mut st, nm, "File")
-    }
-    if strIs(mut st, pp, "std/net") {
-        return strIs(mut st, nm, "Conn") || strIs(mut st, nm, "Listener")
+    for i <- iter.Range(0, len(diag.IdPaths)) {
+        if strIs(mut st, pp, diag.IdPaths[i]) && strIs(mut st, nm, diag.IdNames[i]) {
+            return true
+        }
     }
     return false
 }

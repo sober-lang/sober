@@ -1,0 +1,23 @@
+package main
+
+// parsedump: 標準入力のソースを字句に分けて parse し、C4 の AST JSON（Zig 版 `sober parse --ast-json` と同じバイト列）を
+// 標準出力に書く。selfhost の parser 差分オラクル（scripts/selfhost_parse.sh）の Sober 側
+
+import "std/io"
+import "lexer"
+import "parser"
+import "ast"
+
+func main() {
+    src, err := io.ReadFile("/dev/stdin")
+    if err != nil {
+        println("parsedump: cannot read /dev/stdin")
+        return
+    }
+    t, ok := parser.Parse(src, lexer.Lex(src))
+    if !ok {
+        println("parsedump: parse error")
+        return
+    }
+    _ = io.WriteFile("/dev/stdout", ast.Json(t))
+}

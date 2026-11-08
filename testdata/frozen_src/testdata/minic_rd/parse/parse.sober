@@ -7,8 +7,8 @@ package parse
 // 子が親より先に並ぶ（後置順 = そのままスタック機械の順。演算子順位法版と同じ並びになる）
 
 import "std/builder"
-import "testdata/frozen_src/testdata/minic_rd/lex"
-import "testdata/frozen_src/testdata/minic_rd/diag"
+import lex "testdata/frozen_src/testdata/minic_rd/lex"
+import diag "testdata/frozen_src/testdata/minic_rd/diag"
 
 // 節の種類
 const Lit = 0

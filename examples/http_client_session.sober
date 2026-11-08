@@ -1,0 +1,54 @@
+package main
+
+// HTTP クライアントの束（std/http/client の Open / Send）: 1 本の接続の上で要求を 3 往復。loopback で、親の task が接続を 1 本だけ受けて
+// std/http/server のサーバの役をし（ServeConn — keep-alive）、子の task が Open の範囲の中で Send を 3 回呼ぶ。Session は Open の k の仮引数としてだけ生まれ、
+// k が返ると接続が閉じる（同一性の型 — 写し・欄・捕獲・持ち出しは負例 client_neg_*）
+
+import "std/http/client"
+import "std/http/server"
+import "std/net"
+import "std/task"
+
+func route(r http.server.Request) http.server.Response {
+    return http.server.Text("${r.method} ${r.path}")
+}
+
+func fetch(port int) []string {
+    mut out := mut []string{}
+    paths := []string{"/a", "/b", "/c"}
+    e := http.client.Open("http://127.0.0.1:${port}", (s) => {
+        for p <- paths {
+            r, err := http.client.Send(s, p)
+            out = append(out, if err == nil { "${r.status} ${string(r.body) catch ""}" } else { "error" })
+        }
+    })
+    if e != nil {
+        out = append(out, "open failed")
+    }
+    return freeze(out)
+}
+
+func serveOne(l net.Listener) error? {
+    for c <- net.Accept(l)? {
+        http.server.ServeConn(c, route)?
+        break
+    }
+    return nil
+}
+
+func main() {
+    e := net.Listen("127.0.0.1:0", (l) => {
+        port := net.Port(l)
+        got, _ := task.Run((s) => {
+            h := task.Spawn(s, () => fetch(port))
+            _ = serveOne(l)
+            task.Join(h)
+        })
+        for line <- got {
+            println(line)
+        }
+    })
+    if e != nil {
+        println("listen failed")
+    }
+}

@@ -129,7 +129,7 @@ func checksPar(cx Cx, pnames []string) (NameHit, bool) {
     }
     for f <- iter.Range(0, n) {
         if rs[f].es >= 0 {
-            return NameHit{f, rs[f].es, diag.PureExprStmt{at: diag.Pos{f, rs[f].es}}}, true
+            return NameHit{f, rs[f].es / 2, diag.PureExprStmt{at: diag.Pos{f, rs[f].es / 2}, kind: rs[f].es % 2}}, true
         }
     }
     return noHit(), true

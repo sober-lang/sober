@@ -190,6 +190,49 @@ func StoreRaw(s mut Scratch, i int, v int) {
     s.words[i] = v
 }
 
+// s を 16 ビットの項目の列と見た i 番目（語 i >> 2 の (i & 3) × 16 ビット目から — little endian・0〜65535）。生のアクセサ（LoadRaw と同じ契約 —
+// 世代に触れない・鮮度は呼び手が持つ）。i の範囲は 0〜4 × Cap − 1（外は列の添字と同じ panic）。64 ビットの LoadRaw / StoreRaw と同じ Scratch で
+// 混ぜてよい（読み書きする語を分けて使う限り）
+@effects()
+func LoadRaw16(s mut Scratch, i int) int {
+    _ = s.words[i >> 2]
+    return load16(s.words, i)
+}
+
+// s の 16 ビットの i 番目に v の下位 16 ビットを書く（生のアクセサ — LoadRaw16 の対）
+@effects()
+func StoreRaw16(s mut Scratch, i int, v int) {
+    _ = s.words[i >> 2]
+    _ = store16(s.words, i, v)
+}
+
+// s を 32 ビットの項目の列と見た i 番目（語 i >> 1 の (i & 1) × 32 ビット目から — 0〜2^32 − 1）。i の範囲は 0〜2 × Cap − 1
+@effects()
+func LoadRaw32(s mut Scratch, i int) int {
+    _ = s.words[i >> 1]
+    return load32(s.words, i)
+}
+
+// s の 32 ビットの i 番目に v の下位 32 ビットを書く（LoadRaw32 の対）
+@effects()
+func StoreRaw32(s mut Scratch, i int, v int) {
+    _ = s.words[i >> 1]
+    _ = store32(s.words, i, v)
+}
+
+// 狭い語の読み書きの組み込み（検査なし — 境界は上の 4 つが語の添字で見る）
+@intrinsic("load16")
+func load16(w []int, i int) int
+
+@intrinsic("store16")
+func store16(w []int, i int, v int) int
+
+@intrinsic("load32")
+func load32(w []int, i int) int
+
+@intrinsic("store32")
+func store32(w []int, i int, v int) int
+
 // s の先頭 n 項目を本当に 0 に書く（生のアクセサ版の Renew — O(n)。世代は進めない: 生のアクセサは世代を読まないので、
 // この後 LoadRaw する範囲（< n）を 0 にすれば「全部 0 に戻した」と同じ観測。lease の窓の約束（前の窓の書きは見えない）も
 // 同じ理由で保たれる — 窓の頭の LeaseAttach の世代は生のアクセサには効かないが、読む範囲を 0 にするのはこの関数）

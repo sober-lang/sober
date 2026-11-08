@@ -4,11 +4,11 @@ package handler
 import "testdata/doubles/store/fake"
 
 func TestLookup() {
-    c := fake.With([]fake.Row{fake.Row{k: "a", v: "1"}})
+    c := testdata.doubles.store.fake.With([]testdata.doubles.store.fake.Row{testdata.doubles.store.fake.Row{k: "a", v: "1"}})
     assert(Lookup(c, "a") == "1")
     assert(Lookup(c, "b") == "none")
 }
 
 func TestSaveDenied() {
-    assert(!Save(fake.Denying(), "a", "1"))
+    assert(!Save(testdata.doubles.store.fake.Denying(), "a", "1"))
 }

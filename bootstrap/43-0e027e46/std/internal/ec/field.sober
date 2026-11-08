@@ -1,0 +1,274 @@
+package ec
+
+import "std/iter"
+
+// 素数の法の上の多倍長（64 bit の limb・小さい端から・int を符号なしの語として読む — 積の上位語は組み込み mulhi・繰り上がり / 借りは最上位 bit の式）。
+// 検証は公開の値だけを扱うので定数時間にしない（値に依る分岐と早抜けがある）。値は確保して返す — 1 回の検証で数百 KB 級（呼び手の region に積もって抜けるときに消える）
+
+@intrinsic("mulhi")
+func mulhi(a int, b int) int
+
+// 符号なしの 64 bit の最上位 bit（0 / 1）
+func top(x int) int {
+    return (x >> 63) & 1
+}
+
+// s = a + b（+ 入り）の繰り上がりの出
+func cy(a int, b int, s int) int {
+    return top((a & b) | ((a | b) & ^s))
+}
+
+// d = a - b（- 入り）の借りの出
+func bw(a int, b int, d int) int {
+    return top((^a & b) | ((^a | b) & d))
+}
+
+// 符号なしの a < b
+func ult(a int, b int) bool {
+    return (a ^ (-0x7fffffffffffffff - 1)) < (b ^ (-0x7fffffffffffffff - 1))
+}
+
+// 法 m（奇数・n limb）の Montgomery の文脈（R = 2^(64n)・m0i = -m^-1 mod 2^64・r2 = R^2 mod m）
+type fld struct {
+    m []int
+    n int
+    m0i int
+    r2 []int
+}
+
+func newFld(m []int) fld {
+    n := len(m)
+    mut y := m[0]
+    for i <- iter.Range(0, 6) {
+        y = y * (2 - m[0] * y)
+    }
+    mut x := mut []int{}
+    fill(mut x, n)
+    x[0] = 1
+    mut r := freeze(x)
+    for i <- iter.Range(0, 128 * n) {
+        r = addm(m, r, r)
+    }
+    return fld{m: m, n: n, m0i: -y, r2: r}
+}
+
+// z の後ろに 0 を n 個
+func fill(z mut []int, n int) {
+    for i <- iter.Range(0, n) {
+        z = append(z, 0)
+    }
+}
+
+// a == b（limb の数は同じ）
+func eqn(a []int, b []int) bool {
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+func isZero(a []int) bool {
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != 0 {
+            return false
+        }
+    }
+    return true
+}
+
+// 符号なしの a < b（limb の数は同じ）
+func lt(a []int, b []int) bool {
+    mut i := len(a) - 1
+    while i >= 0 {
+        if a[i] != b[i] {
+            return ult(a[i], b[i])
+        }
+        i = i - 1
+    }
+    return false
+}
+
+// a - b の下 n limb と借りの出
+func subRaw(a []int, b []int) ([]int, int) {
+    mut d := mut []int{}
+    fill(mut d, len(a))
+    mut br := 0
+    for i <- iter.Range(0, len(a)) {
+        x := a[i] - b[i]
+        y := x - br
+        br = bw(a[i], b[i], x) | bw(x, br, y)
+        d[i] = y
+    }
+    return freeze(d), br
+}
+
+// a + b の下 n limb と繰り上がりの出
+func addRaw(a []int, b []int) ([]int, int) {
+    mut s := mut []int{}
+    fill(mut s, len(a))
+    mut c := 0
+    for i <- iter.Range(0, len(a)) {
+        x := a[i] + b[i]
+        y := x + c
+        c = cy(a[i], b[i], x) | cy(x, c, y)
+        s[i] = y
+    }
+    return freeze(s), c
+}
+
+// a + b mod m（a, b < m）
+func addm(m []int, a []int, b []int) []int {
+    s, c := addRaw(a, b)
+    if c == 1 || !lt(s, m) {
+        d, _ := subRaw(s, m)
+        return d
+    }
+    return s
+}
+
+// a - b mod m（a, b < m）
+func subm(m []int, a []int, b []int) []int {
+    d, br := subRaw(a, b)
+    if br == 1 {
+        s, _ := addRaw(d, m)
+        return s
+    }
+    return d
+}
+
+// a < 2m の a を [0, m) に
+func reduce1(m []int, a []int) []int {
+    if lt(a, m) {
+        return a
+    }
+    d, _ := subRaw(a, m)
+    return d
+}
+
+// a × b × R^-1 mod m（CIOS — a, b < m）
+func mont(f fld, a []int, b []int) []int {
+    n := f.n
+    mut t := mut []int{}
+    fill(mut t, n + 2)
+    for i <- iter.Range(0, n) {
+        mut c := 0
+        for j <- iter.Range(0, n) {
+            lo := a[j] * b[i]
+            hi := mulhi(a[j], b[i])
+            s1 := t[j] + lo
+            c1 := cy(t[j], lo, s1)
+            s2 := s1 + c
+            c2 := cy(s1, c, s2)
+            t[j] = s2
+            c = hi + c1 + c2
+        }
+        u := t[n] + c
+        t[n + 1] = t[n + 1] + cy(t[n], c, u)
+        t[n] = u
+        mm := t[0] * f.m0i
+        c = 0
+        for j <- iter.Range(0, n) {
+            lo := mm * f.m[j]
+            hi := mulhi(mm, f.m[j])
+            s1 := t[j] + lo
+            c1 := cy(t[j], lo, s1)
+            s2 := s1 + c
+            c2 := cy(s1, c, s2)
+            t[j] = s2
+            c = hi + c1 + c2
+        }
+        v := t[n] + c
+        t[n + 1] = t[n + 1] + cy(t[n], c, v)
+        t[n] = v
+        for j <- iter.Range(0, n + 1) {
+            t[j] = t[j + 1]
+        }
+        t[n + 1] = 0
+    }
+    mut r := mut []int{}
+    fill(mut r, n)
+    for j <- iter.Range(0, n) {
+        r[j] = t[j]
+    }
+    res := freeze(r)
+    if t[n] != 0 || !lt(res, f.m) {
+        d, _ := subRaw(res, f.m)
+        return d
+    }
+    return res
+}
+
+func toM(f fld, a []int) []int {
+    return mont(f, a, f.r2)
+}
+
+func fromM(f fld, a []int) []int {
+    mut o := mut []int{}
+    fill(mut o, f.n)
+    o[0] = 1
+    return mont(f, a, freeze(o))
+}
+
+// a^e（a は Montgomery の形・e は公開の limb の列 — 上の bit から 2 乗と掛け算）
+func powm(f fld, a []int, e []int) []int {
+    mut r := toM(f, oneN(f.n))
+    mut i := 64 * len(e) - 1
+    while i >= 0 {
+        r = mont(f, r, r)
+        if ((e[i / 64] >> (i % 64)) & 1) == 1 {
+            r = mont(f, r, a)
+        }
+        i = i - 1
+    }
+    return r
+}
+
+func oneN(n int) []int {
+    mut o := mut []int{}
+    fill(mut o, n)
+    o[0] = 1
+    return freeze(o)
+}
+
+// a^-1（Montgomery の形のまま — Fermat: a^(m-2)。a ≠ 0）
+func invm(f fld, a []int) []int {
+    mut two := mut []int{}
+    fill(mut two, f.n)
+    two[0] = 2
+    e, _ := subRaw(f.m, freeze(two))
+    return powm(f, a, e)
+}
+
+// 大きい端のバイト列 b（長さ ≤ 8n）を n limb に
+func fromBytes(b []byte, n int) []int {
+    mut r := mut []int{}
+    fill(mut r, n)
+    for i <- iter.Range(0, len(b)) {
+        k := len(b) - 1 - i
+        r[k / 8] = r[k / 8] | (int(b[i]) << (8 * (k % 8)))
+    }
+    return freeze(r)
+}
+
+// a を k バイトの大きい端のバイト列に
+func toBytes(a []int, k int) []byte {
+    mut o := mut []byte{}
+    for i <- iter.Range(0, k) {
+        j := k - 1 - i
+        o = append(o, byte((a[j / 8] >> (8 * (j % 8))) & 0xff))
+    }
+    return freeze(o)
+}
+
+// x^e mod m（大きい端のバイト列 — m は奇数・x < m。結果は len(m) バイト。公開の値だけに使う — RSA の検証の公開鍵の演算）
+@effects()
+func PowMod(mb []byte, xb []byte, eb []byte) []byte {
+    n := (len(mb) + 7) / 8
+    m := fromBytes(mb, n)
+    f := newFld(m)
+    x := fromBytes(xb, n)
+    e := fromBytes(eb, (len(eb) + 7) / 8)
+    return toBytes(fromM(f, powm(f, toM(f, x), e)), len(mb))
+}

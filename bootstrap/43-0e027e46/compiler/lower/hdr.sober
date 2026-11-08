@@ -1,0 +1,346 @@
+package lower
+
+// ヘッダの読みの一本化（mut slice の LICM）: GVN の後の SSA に掛ける。関数の ptr の仮引数 P（mut slice の仮引数は
+// 呼び手のセルの番地）について、関数のどこにも P[0..2]（slice のヘッダ — データの番地・長さ・深度）を書きうる命令が無ければ、
+// `load P[k]`（k = 0..2）を入口の 1 本にまとめる。要素の書き込みのたびにヘッダを読み直していた（GVN の load はブロックの中だけ・
+// store で表を空にする — n-body の advance は境界検査の分岐でブロックが切れ、要素ごとに 2 回ヘッダを読んでいた）。
+// 書きうる命令（保守的）: 番地の根が P 自身で P[0..2] を指す store・番地の根が分からない store / store8・呼び出し（落ちる rt.panic を除く）・
+// 間接呼び出し・syscall・番地の根が分からない region.relocate。書かない番地の根: P 自身のデータ（`itop(load P[0])` から gep した番地 —
+// slice は自分自身を要素に含められないので、P のデータの中に P のヘッダは無い）・スロット・大域（rt.meta 等）・P[3] 以降
+
+import "desugar"
+import "std/iter"
+
+const HDR_SAFE = -2   // 番地の根: P のヘッダを書かない
+const HDR_SELF = -3   // 番地の根: P そのもの（オフセットで判定）
+const HDR_UNK = -4    // 番地の根: 分からない
+
+func hdrModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            hdrFunc(mut st, f)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+func hdrFunc(st mut St, f FnRef) {
+    pt := irFnPtys(mut st, f)
+    np := desugar.HeapGet(mut st.d, pt)
+    nv := irFnNVal(mut st, f)
+    // 先に安い走査: 仮引数のヘッダの load が 2 本以上無ければ何もしない
+    mut nload := 0
+    mut b := irFnBHead(mut st, f)
+    while b != -1 && nload < 2 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if irInsOp(mut st, i) == OpLoad && irInsA(mut st, i) < np && irInsB(mut st, i) >= 0 && irInsB(mut st, i) <= 2 {
+                nload += 1
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    if nload < 2 {
+        return
+    }
+    // 値 → 定義の命令（引数・ブロックの引数は -1）
+    mut def := mut []int{}
+    xFill(mut def, nv + 1, -1)
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            r := irInsRes(mut st, i)
+            if r >= 0 && r < nv {
+                def[r] = int(i)
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    optReset(mut st, nv, irFnNBlk(mut st, f))
+    mut hit := false
+    for p <- iter.Range(0, np) {
+        if desugar.HeapGet(mut st.d, pt + 1 + p) == TyPtr && hdrClean(mut st, f, p, mut def) {
+            if hdrHoist(mut st, f, p) {
+                hit = true
+            }
+        }
+    }
+    if hit {
+        optDce(mut st, f)
+        optRenumber(mut st, f)
+        // 寄せた load で同じ式になった比較（読みと書きの境界検査 `uge i, len` 等）を 1 つの値に — 後の bce の ② が 2 度目を畳む
+        // （nbody のレジスタ昇格 — B2 の bce は展開後の全関数に支配木を組む値札が +1.1 G で棄却）
+        gvnFunc(mut st, f)
+    }
+}
+
+// 値 v が関数 f の mut 仮引数（印 F_MUTP — 利用者の関数の、呼び手のセルを指す仮引数）か
+func hdrMut(st mut St, f FnRef, v int) bool {
+    np := desugar.HeapGet(mut st.d, irFnPtys(mut st, f))
+    return v >= 0 && v < np && v < 62 && (irFnMutP(mut st, f) >> v) & 1 == 1
+}
+
+// 番地の値 v の根（P に対して — HDR_SAFE / HDR_SELF / HDR_UNK）。
+// 根が別の mut 仮引数 Q のデータ（`load Q[0]`）で P も mut 仮引数なら SAFE: mut 仮引数の指すセルは mut の場所
+// （mut ローカルか、その欄 — 実引数は欄を辿る経路だけで、要素の場所は書けない）で、slice のデータの中には無い。同じ呼び出しの mut 実引数は排他
+// （language.md 26 節 — diag.MutAlias）なので P と Q のセルは重ならず、値はセルの番地を持たない。だから Q の要素への書き込みは P のヘッダに届かない。
+// 印の無い ptr 仮引数（rt の補助・sret）は slice のデータの中のヘッダを指しうるので対象外。region.relocate は据え置き（ext = false — P のデータの根だけ）
+func hdrRoot(st mut St, f FnRef, v0 int, p int, def mut []int, ext bool) int {
+    mut v := v0
+    mut n := 0
+    while n < 64 {
+        if v == p {
+            return HDR_SELF
+        }
+        if v < 0 || v >= len(def) || def[v] < 0 {
+            return HDR_UNK
+        }
+        i := InsRef(def[v])
+        op := irInsOp(mut st, i)
+        if op == OpGepW || op == OpGepB || op == OpItop || op == OpPtoi {
+            v = irInsA(mut st, i)
+        } else if op == OpLoad {
+            q := irInsA(mut st, i)
+            if irInsB(mut st, i) == 0 && (q == p || (ext && hdrMut(mut st, f, p) && hdrMut(mut st, f, q))) {
+                return HDR_SAFE
+            }
+            return HDR_UNK
+        } else if op == OpSlotaddr || op == OpGlobal || op == OpFsAddr {
+            return HDR_SAFE
+        } else {
+            return HDR_UNK
+        }
+        n += 1
+    }
+    return HDR_UNK
+}
+
+// 関数 f の中に仮引数 p のヘッダ（p[0..2]）を書きうる命令が無いか
+func hdrClean(st mut St, f FnRef, p int, def mut []int) bool {
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpStore || op == OpStore8 {
+                a := irInsA(mut st, i)
+                r := hdrRoot(mut st, f, a, p, mut def, true)
+                if r == HDR_UNK || (r == HDR_SELF && (a != p || irInsB(mut st, i) <= 2)) {
+                    return false
+                }
+            } else if op == OpRReloc {
+                if hdrRoot(mut st, f, irInsA(mut st, i), p, mut def, false) != HDR_SAFE {
+                    return false
+                }
+            } else if op == OpCall {
+                g := irInsFn(mut st, i)
+                if g != st.rtPanic && g != st.rtPanicMem {
+                    return false
+                }
+            } else if op == OpCallI || op == OpSyscall || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone || op == OpUnwind {
+                return false
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return true
+}
+
+// p[k]（k = 0..2）の load をそれぞれ入口のブロックの頭の 1 本にまとめる（真 = まとめた）
+func hdrHoist(st mut St, f FnRef, p int) bool {
+    b0 := irFnBHead(mut st, f)
+    mut did := false
+    for k <- iter.Range(0, 3) {
+        mut keep := InsRef(-1)
+        mut keepV := -1
+        mut b := b0
+        while b != -1 {
+            mut prev := InsRef(-1)
+            mut i := irBlkIHead(mut st, b)
+            while i != -1 {
+                nx := irInsNext(mut st, i)
+                if irInsOp(mut st, i) == OpLoad && irInsA(mut st, i) == p && irInsB(mut st, i) == k {
+                    if keep == -1 {
+                        // 最初の 1 本を入口のブロックの頭へ移す
+                        keep = i
+                        keepV = irInsRes(mut st, i)
+                        if prev == -1 {
+                            irSetBlkIHead(mut st, b, nx)
+                        } else {
+                            irSetInsNext(mut st, prev, nx)
+                        }
+                        if irBlkITail(mut st, b) == i {
+                            irSetBlkITail(mut st, b, prev)
+                        }
+                        irSetInsNext(mut st, i, irBlkIHead(mut st, b0))
+                        irSetBlkIHead(mut st, b0, i)
+                        if irBlkITail(mut st, b0) == -1 {
+                            irSetBlkITail(mut st, b0, i)
+                        }
+                        i = nx
+                        continue
+                    }
+                    aliasTo(mut st, i, irInsRes(mut st, i), keepV)
+                    did = true
+                }
+                prev = i
+                i = nx
+            }
+            b = irBlkNext(mut st, b)
+        }
+    }
+    return did
+}
+
+// ── 分岐の条件の比較の複製 ──
+// condbr の条件が別のブロックで定義された比較（GVN の共通化・LICM の巻き上げ — 複数の分岐が共有する）なら、
+// 比較をそのブロックの末尾に複製して条件を付け替える。x86 の cmp + jcc の融合（xFuseScan — 最後の命令で
+// 使いが 1 回の比較）に乗り、真偽値の実体化（setcc / movzx / spill / `cmp $0`）が消える。元の比較は使われなくなれば DCE が消す。
+// float の eq / ne は融合しない（NaN のパリティ）ので複製しない
+func cmpDupModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            _ = cmpDupFunc(mut st, f)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+func cmpDupFunc(st mut St, f FnRef) bool {
+    // 先に安い走査: 条件が自分のブロックの外で定義された condbr が無ければ何もしない
+    mut any := false
+    mut b0 := irFnBHead(mut st, f)
+    while b0 != -1 && !any {
+        if irBlkTerm(mut st, b0) == TmCondbr {
+            cv0 := irBlkX1(mut st, b0)
+            mut here := false
+            mut i := irBlkIHead(mut st, b0)
+            while i != -1 && !here {
+                if irInsRes(mut st, i) == cv0 {
+                    here = true
+                }
+                i = irInsNext(mut st, i)
+            }
+            if !here {
+                any = true
+            }
+        }
+        b0 = irBlkNext(mut st, b0)
+    }
+    if !any {
+        return false
+    }
+    nv := irFnNVal(mut st, f)
+    mut def := mut []int{}
+    xFill(mut def, nv + 1, -1)
+    mut dblk := mut []int{}
+    xFill(mut dblk, nv + 1, -1)
+    mut uses := mut []int{}
+    xFill(mut uses, nv + 1, 0)
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            r := irInsRes(mut st, i)
+            if r >= 0 && r < nv && irInsOp(mut st, i) == OpCmp {
+                def[r] = int(i)
+                dblk[r] = int(b)
+            }
+            for k <- iter.Range(0, xNOps(mut st, i)) {
+                v := xOpnd(mut st, i, k)
+                if v >= 0 && v < nv {
+                    uses[v] = uses[v] + 1
+                }
+            }
+            i = irInsNext(mut st, i)
+        }
+        for k <- iter.Range(0, xNTermOps(mut st, b)) {
+            v := xTermOpnd(mut st, b, k)
+            if v >= 0 && v < nv {
+                uses[v] = uses[v] + 1
+            }
+        }
+        b = irBlkNext(mut st, b)
+    }
+    mut hit := false
+    mut moved := mut []int{}
+    xFill(mut moved, nv + 1, 0)
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        if irBlkTerm(mut st, b) == TmCondbr {
+            cv := irBlkX1(mut st, b)
+            if cv >= 0 && cv < nv && def[cv] >= 0 {
+                ci := InsRef(def[cv])
+                k := irInsA(mut st, ci)
+                // 同じブロックの中で定義された比較は動かさない（後ろへ寄せると rt.map_find の探索ループが 47% 遅くなった — 実測）
+                if k != CFEq && k != CFNe && dblk[cv] != int(b) && cdExt(mut st, b, irInsB(mut st, ci), mut uses) + cdExt(mut st, b, irInsC(mut st, ci), mut uses) <= 1 {
+                    nr := newValueIn(mut st, f)
+                    ni := mkInst(mut st, nr, OpCmp, k, irInsB(mut st, ci), irInsC(mut st, ci))
+                    linkInst(mut st, b, ni)
+                    irSetBlkX1(mut st, b, nr)
+                    moved[cv] = moved[cv] + 1
+                    hit = true
+                }
+            }
+        }
+        b = irBlkNext(mut st, b)
+    }
+    // 使いが全部付け替えた分岐だった元の比較は `const 0` にする（使われない imm32 の定数は x86 が使う点で作り直すので命令が出ない。
+    // DCE と番号詰めを関数ごとに掛けると自己 build で +0.4 G・鎖から外すと値が欠番になり検証器が拒む）
+    if hit {
+        for v <- iter.Range(0, nv) {
+            if moved[v] > 0 && moved[v] == uses[v] {
+                irSetInsOp(mut st, InsRef(def[v]), OpConst)
+                irSetInsA(mut st, InsRef(def[v]), 0)
+            }
+        }
+    }
+    return hit
+}
+
+
+// 比較を b へ複製したとき被演算子 v の生存区間が延びうるか（1 / 0）。複製は「真偽値 1 本の代わりに被演算子を生かす」交換なので、
+// 延びる被演算子が 1 本以下なら割り当ての圧は増えない（n-body の境界検査 = 添字 1 本・rt.map_find の探索 = 2 本で 47% 遅くなった）。
+// 延びない = 定数・関数の中で 4 回以上使われる長命な値（ヘッダの長さ等）・b かその後続でどのみち使う値
+func cdExt(st mut St, b BlkRef, v int, uses mut []int) int {
+    if v >= 0 && v < len(uses) && uses[v] >= 4 {
+        return 0
+    }
+    return if cdLive(mut st, b, v) { 0 } else { 1 }
+}
+
+// 比較の被演算子 v が、使うブロック b かその後続でどのみち使われるか（複製で生存区間をループの中へ延ばさない — rt.map_find の探索ループで
+// 割り当てが劣化して 47% 遅くなった）。定数は常に真
+func cdLive(st mut St, b BlkRef, v int) bool {
+    if cdUses(mut st, b, v) {
+        return true
+    }
+    t := irBlkTerm(mut st, b)
+    if t == TmCondbr {
+        return cdUses(mut st, irCondThen(mut st, b), v) || cdUses(mut st, irCondElse(mut st, b), v)
+    }
+    return false
+}
+
+// ブロック b の命令か終端（条件を除く）が v を使うか
+func cdUses(st mut St, b BlkRef, v int) bool {
+    mut i := irBlkIHead(mut st, b)
+    while i != -1 {
+        if irInsOp(mut st, i) == OpConst && irInsRes(mut st, i) == v {
+            return true
+        }
+        for k <- iter.Range(0, xNOps(mut st, i)) {
+            if xOpnd(mut st, i, k) == v {
+                return true
+            }
+        }
+        i = irInsNext(mut st, i)
+    }
+    return false
+}

@@ -1,0 +1,108 @@
+package stdtime
+
+// std/time の black-box テスト: 暦と書式（Python の datetime で作った値 — 1970 の前後・閏日・9999 年・西暦 1 年）・オフセットつきの RFC 3339・
+// 端数の秒・HTTP の日付の 3 形・負例・Now と Mono の粗い性質
+
+import "std/iter"
+import "std/time"
+
+type Row struct {
+    sec int
+    rfc string
+    http string
+    y int
+    mo int
+    d int
+    wd int
+}
+
+func TestCivilAndFormats() {
+    rows := []Row{
+        Row{sec: 0, rfc: "1970-01-01T00:00:00Z", http: "Thu, 01 Jan 1970 00:00:00 GMT", y: 1970, mo: 1, d: 1, wd: 4},
+        Row{sec: 1, rfc: "1970-01-01T00:00:01Z", http: "Thu, 01 Jan 1970 00:00:01 GMT", y: 1970, mo: 1, d: 1, wd: 4},
+        Row{sec: -1, rfc: "1969-12-31T23:59:59Z", http: "Wed, 31 Dec 1969 23:59:59 GMT", y: 1969, mo: 12, d: 31, wd: 3},
+        Row{sec: 86399, rfc: "1970-01-01T23:59:59Z", http: "Thu, 01 Jan 1970 23:59:59 GMT", y: 1970, mo: 1, d: 1, wd: 4},
+        Row{sec: 86400, rfc: "1970-01-02T00:00:00Z", http: "Fri, 02 Jan 1970 00:00:00 GMT", y: 1970, mo: 1, d: 2, wd: 5},
+        Row{sec: 951782400, rfc: "2000-02-29T00:00:00Z", http: "Tue, 29 Feb 2000 00:00:00 GMT", y: 2000, mo: 2, d: 29, wd: 2},
+        Row{sec: 951868799, rfc: "2000-02-29T23:59:59Z", http: "Tue, 29 Feb 2000 23:59:59 GMT", y: 2000, mo: 2, d: 29, wd: 2},
+        Row{sec: 1677615892, rfc: "2023-02-28T20:24:52Z", http: "Tue, 28 Feb 2023 20:24:52 GMT", y: 2023, mo: 2, d: 28, wd: 2},
+        Row{sec: -2208988800, rfc: "1900-01-01T00:00:00Z", http: "Mon, 01 Jan 1900 00:00:00 GMT", y: 1900, mo: 1, d: 1, wd: 1},
+        Row{sec: 253402300799, rfc: "9999-12-31T23:59:59Z", http: "Fri, 31 Dec 9999 23:59:59 GMT", y: 9999, mo: 12, d: 31, wd: 5},
+        Row{sec: -62135596800, rfc: "0001-01-01T00:00:00Z", http: "Mon, 01 Jan 0001 00:00:00 GMT", y: 1, mo: 1, d: 1, wd: 1},
+        Row{sec: 1700000000, rfc: "2023-11-14T22:13:20Z", http: "Tue, 14 Nov 2023 22:13:20 GMT", y: 2023, mo: 11, d: 14, wd: 2},
+    }
+    for r <- rows {
+        t := time.Unix(r.sec, 0)
+        c := time.ToCivil(t, 0)
+        assert(c.year == r.y && c.month == r.mo && c.day == r.d && c.weekday == r.wd)
+        assert(time.FormatRFC3339(t, 0) == r.rfc)
+        back, e := time.ParseRFC3339(r.rfc)
+        assert(e == nil && time.Equal(back, t))
+        if r.y >= 1 {
+            assert(time.FormatHTTP(t) == r.http)
+            h, e2 := time.ParseHTTP(r.http)
+            assert(e2 == nil && time.Equal(h, t))
+        }
+        assert(time.Equal(time.FromCivil(c, 0), t))
+    }
+}
+
+func TestOffsetsAndFraction() {
+    t := time.Unix(1700000000, 0)
+    assert(time.FormatRFC3339(t, 9 * 3600) == "2023-11-15T07:13:20+09:00")
+    assert(time.FormatRFC3339(t, -(3 * 3600 + 30 * 60)) == "2023-11-14T18:43:20-03:30")
+    a, e := time.ParseRFC3339("2023-11-15T07:13:20+09:00")
+    assert(e == nil && time.Equal(a, t))
+    b, e2 := time.ParseRFC3339("2023-11-14T18:43:20-03:30")
+    assert(e2 == nil && time.Equal(b, t))
+    f := time.Unix(1700000000, 120000000)
+    assert(time.FormatRFC3339(f, 0) == "2023-11-14T22:13:20.12Z")
+    g, e3 := time.ParseRFC3339("2023-11-14t22:13:20.000000001z")
+    assert(e3 == nil && time.Nano(g) == 1 && time.UnixSec(g) == 1700000000)
+}
+
+func TestHTTPForms() {
+    want := time.Unix(784111777, 0)
+    a, e1 := time.ParseHTTP("Sun, 06 Nov 1994 08:49:37 GMT")
+    b, e2 := time.ParseHTTP("Sunday, 06-Nov-94 08:49:37 GMT")
+    c, e3 := time.ParseHTTP("Sun Nov  6 08:49:37 1994")
+    assert(e1 == nil && e2 == nil && e3 == nil)
+    assert(time.Equal(a, want) && time.Equal(b, want) && time.Equal(c, want))
+}
+
+func TestRejects() {
+    bad := []string{"", "2023-11-14 22:13:20Z", "2023-13-01T00:00:00Z", "2023-02-29T00:00:00Z", "2023-11-14T24:00:00Z", "2023-11-14T22:13:20", "2023-11-14T22:13:20.Z",
+        "2023-11-14T22:13:20.1234567890Z", "2023-11-14T22:13:20+0900", "2023-11-14T22:13:20+24:00"}
+    for s <- bad {
+        _, e := time.ParseRFC3339(s)
+        assert(e != nil)
+    }
+    hb := []string{"", "Sun, 06 Nov 1994 08:49:37 UTC", "Sun, 06 Foo 1994 08:49:37 GMT", "Sun, 31 Nov 1994 08:49:37 GMT", "Sun, 06 Nov 1994 25:49:37 GMT"}
+    for s <- hb {
+        _, e := time.ParseHTTP(s)
+        assert(e != nil)
+    }
+}
+
+func TestArith() {
+    t := time.Unix(10, 999999999)
+    u := time.Add(t, 2)
+    assert(time.UnixSec(u) == 11 && time.Nano(u) == 1)
+    assert(time.Sub(u, t) == 2)
+    assert(time.Before(t, u) && !time.Before(u, t))
+    v := time.Add(t, -11 * time.Second)
+    assert(time.UnixSec(v) == -1 && time.Nano(v) == 999999999)
+    w := time.Unix(0, -1)
+    assert(time.UnixSec(w) == -1 && time.Nano(w) == 999999999)
+}
+
+func TestClocks() {
+    a := time.Mono()
+    n := time.Now()
+    assert(time.UnixSec(n) > 1700000000)
+    mut x := 0
+    for i <- iter.Range(0, 100000) {
+        x += i
+    }
+    assert(time.Since(a) >= 0 && x > 0)
+}

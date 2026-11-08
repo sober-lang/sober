@@ -9,7 +9,7 @@ func Area(kind int, a int, b int) int {
     return switch kind {
     case 0: a * a
     case 1: a * b
-    default: unit.Half(a * b)
+    default: testdata.cover.shapes.unit.Half(a * b)
     }
 }
 

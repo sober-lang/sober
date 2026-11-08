@@ -1,0 +1,24 @@
+package main
+
+// 子 4 本がそれぞれ重い仕事 — ワーカー 4 なら盗みで並んで走り、盗みが止まれば W1 と同じ wall になる（scripts/dqbcheck.sh）
+
+import "std/iter"
+import "std/task"
+
+func work(seed int) int {
+    mut h := seed
+    for i <- iter.Range(0, 60000000) {
+        h = h * 1103515245 + 12345 + i
+    }
+    return h & 1
+}
+
+func main() {
+    ds := []int{1, 2, 3, 4}
+    vs, e := task.Map(ds, (s) => work(s))
+    if e != nil {
+        println("err")
+        return
+    }
+    println(vs[0] + vs[1] + vs[2] + vs[3])
+}

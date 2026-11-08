@@ -89,6 +89,8 @@ func timedOut(e error?) bool {
     case io.Denied{}: false
     case io.Other{errno}: false
     case net.Bad{}: false
+    case net.NoHost{}: false
+    case net.NonASCIIHost{}: false
     }
 }
 

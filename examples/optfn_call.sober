@@ -1,0 +1,49 @@
+package main
+
+// 関数値の option（`F?`）は絞ってから呼ぶ: 束縛して if / 早期 return / `&&` / while の条件で絞る（欄や map の読みを直には呼べない — optfn_call_neg）
+
+type F func(a int) int
+
+type W struct {
+    f F?
+}
+
+func dbl(a int) int { return a * 2 }
+
+func early(g F?) int {
+    if g == nil {
+        return 0
+    }
+    return g(5)
+}
+
+func both(c bool, g F?) int {
+    return if c && g != nil { g(6) } else { -1 }
+}
+
+func main() {
+    w := W{f: dbl}
+    f := w.f
+    if f != nil {
+        println(f(1))
+    }
+    ops := map[string]F{"k": dbl}
+    o := ops["k"]
+    if o != nil {
+        println(o(2))
+    }
+    fs := []F?{dbl, nil}
+    for g <- fs {
+        if g != nil {
+            println(g(3))
+        }
+    }
+    println(early(dbl))
+    println(early(nil))
+    println(both(true, dbl))
+    mut h := w.f
+    while h != nil {
+        println(h(4))
+        h = nil
+    }
+}

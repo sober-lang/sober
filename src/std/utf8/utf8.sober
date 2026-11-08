@@ -1,7 +1,7 @@
 package utf8
 
 // 検査済みの UTF-8 のビュー（View — 全体を 1 回検査すれば、文字境界で切った部分列は検査し直さずに string にできる）。
-// UTF-8 の妥当性の検査そのもの（Valid / IndexInvalid / InvalidUtf8）は std/strings、`string(b)` の裏方は std/internal/utf8
+// UTF-8 の妥当性の検査そのもの（Valid / IndexInvalid / BadUtf8）は std/strings、`string(b)` の裏方は std/internal/utf8
 
 import "std/iter"
 import "std/task"
@@ -23,13 +23,13 @@ type View struct {
 type sealed struct {
 }
 
-// b 全体を検査して View にする（不正なら最初の不正なシーケンスの位置の InvalidUtf8 — string(b) と同じ位置）
-@errors(strings.InvalidUtf8)
+// b 全体を検査して View にする（不正なら最初の不正なシーケンスの位置の BadUtf8 — string(b) と同じ位置）
+@errors(strings.BadUtf8)
 @effects(block)
 func Check(b []byte) (View, error?) {
     at := if len(b) < CHECK_PAR_MIN { strings.IndexInvalid(b) } else { indexInvalidPar(b) }
     if at >= 0 {
-        return View{}, strings.InvalidUtf8{pos: at}
+        return View{}, strings.BadUtf8{pos: at}
     }
     return View{b: b, seal: sealed{}}, nil
 }
@@ -45,16 +45,16 @@ func boundary(v View, p int) bool {
     return p == 0 || p == len(v.b) || (p > 0 && p < len(v.b) && int(v.b[p]) & 192 != 128)
 }
 
-// v の [s, i) を検査し直さずに string にする。s と i が文字境界でなければ strings.InvalidUtf8{pos: 境界でない側}（範囲外の添字は slice と同じく panic）
-@errors(strings.InvalidUtf8)
+// v の [s, i) を検査し直さずに string にする。s と i が文字境界でなければ strings.BadUtf8{pos: 境界でない側}（範囲外の添字は slice と同じく panic）
+@errors(strings.BadUtf8)
 @effects()
 func Str(v View, s int, i int) (string, error?) {
     sub := v.b[s:i]
     if !boundary(v, s) {
-        return "", strings.InvalidUtf8{pos: s}
+        return "", strings.BadUtf8{pos: s}
     }
     if !boundary(v, i) {
-        return "", strings.InvalidUtf8{pos: i}
+        return "", strings.BadUtf8{pos: i}
     }
     return bytesToString(sub), nil
 }

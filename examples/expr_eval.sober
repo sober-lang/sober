@@ -1,0 +1,40 @@
+package main
+
+// 式の評価器: 再帰の union を組んで、網羅の switch で畳む
+
+type Expr union {
+    Num { v int }
+    Neg { arg Expr? }
+    Add { args []Expr }
+    Mul { args []Expr }
+}
+
+func eval(e Expr) int {
+    return switch e {
+    case Num{v}: v
+    case Neg{arg}: if arg != nil { -eval(arg) } else { 0 }
+    case Add{args}: {
+        mut s := 0
+        for a <- args {
+            s += eval(a)
+        }
+        s
+    }
+    case Mul{args}: {
+        mut p := 1
+        for a <- args {
+            p *= eval(a)
+        }
+        p
+    }
+    }
+}
+
+func main() {
+    // (2 + 3 * 4) * -(1 + 1)
+    e := Mul{args: []Expr{
+        Add{args: []Expr{Num{v: 2}, Mul{args: []Expr{Num{v: 3}, Num{v: 4}}}}},
+        Neg{arg: Add{args: []Expr{Num{v: 1}, Num{v: 1}}}},
+    }}
+    println(eval(e))
+}

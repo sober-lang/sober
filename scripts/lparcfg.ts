@@ -23,9 +23,11 @@ const ALLOW: Record<string, string> = {
   hfOn: "ro", hf: "ro",   // x86 の読み口 xg — 束の子では既定の偽（ヒープを読む）
   noVec: "cfg",
   taskUse: "cfg",   // SLP（slp.sober）を task のプログラムで外す — lParCfg の 5 番の bit 1
+  winOn: "cfg",     // 窓を組むか — 展開の予算の確保の重み（unroll.sober の UR_RALLOCW）— lParCfg の 5 番の bit 2
   ubCheck: "cfg", ubBound: "cfg",
   rtGrow: "cfg", rtGrow8: "cfg", rtRalloc: "cfg", rtAlloc8: "cfg",
   meta: "cfg",
+  rtMatchLen: "cfg", rtJClean: "cfg",   // 展開後の欄の読みの巻き上げ（ldhoist.sober — ループの中で許す読むだけの rt）・lParCfg の 15 / 16 番
   rtStreq: "cfg",   // 写しの転送（cpfwd.sober — 読むだけの rt.str_eq）   // 展開後の上限の巻き上げ（rlim.sober — 種の番地 @rt.meta）   // ヘッダのループ昇格（hloop.sober — 許す rt の呼び出し・確保の根）   // UTF-8 の境界の畳み（ubf.sober — Check の呼び出しの点・boundary の写しの印の有無）
   lkid: "kid", lret: "kid",   // 群の子の印と呼び先の戻りの型の表（lFnRet — move.sober）
   bcAud: "ro",   // 扉の監査の印（子では既定の偽 — 監査は束を回さない: lParOn）

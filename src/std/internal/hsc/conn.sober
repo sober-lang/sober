@@ -1,0 +1,103 @@
+package hsc
+
+// 握手の済んだ接続の状態（record の鍵と番号・受けた KeyUpdate の要求・握手のメッセージの残り）と固定の長さの語の列の間の写し。
+// std/http/client の束は接続の状態を値の外の置き場に置く — 値に置くと値の写しが鍵と番号を複製し、二つの写しが同じ番号で別の平文を封じる（nonce の再利用）
+
+import "std/crypto/sha256"
+import "std/internal/record"
+
+// 語の列の長さ（Dir 2 本 × dirW + 1.2 の鍵と IV + 握手の残り hbufMax バイト + 頭）
+const ConnW = 760
+const dirW = 80
+const hbufMax = 4096
+
+// 列に入らない状態（握手の残りが hbufMax を超えた — 相手が握手の後のメッセージを途中まで送って止まった）
+type ConnTooLarge panic
+
+// 握手の済んだ h の状態の語の列（ConnW 語ちょうど）
+@effects(panic)
+func PackConn(h Ch) []int {
+    if len(h.hbuf) > hbufMax {
+        panic(ConnTooLarge{})
+    }
+    mut w := mut []int{}
+    w = append(w, if h.v12 { 1 } else { 0 })
+    w = append(w, if h.upd { 1 } else { 0 })
+    w = append(w, h.suite)
+    w = append(w, if h.rkeyed { 1 } else { 0 })
+    w = append(w, if h.wkeyed { 1 } else { 0 })
+    w = append(w, h.wseq)
+    w = append(w, h.rseq)
+    putDir(mut w, h.rd)
+    putDir(mut w, h.wr)
+    putWords(mut w, h.wkey)
+    putWords(mut w, h.wiv)
+    putWords(mut w, h.rkey)
+    putWords(mut w, h.riv)
+    putWords(mut w, h.hbuf)
+    while len(w) < ConnW {
+        w = append(w, 0)
+    }
+    return freeze(w)
+}
+
+// PackConn の逆（w[at:] から — 握手の済んだ Ch。transcript・鍵交換の秘密・証明書は持たない）
+@effects()
+func UnpackConn(w []int, at int) Ch {
+    rd := internal.record.Unpack(w, at + 7)
+    wr := internal.record.Unpack(w, at + 7 + dirW)
+    wkey, a1 := getWords(w, at + 7 + 2 * dirW)
+    wiv, a2 := getWords(w, a1)
+    rkey, a3 := getWords(w, a2)
+    riv, a4 := getWords(w, a3)
+    hbuf, _ := getWords(w, a4)
+    return Ch{ph: CConnected{}, th: crypto.sha256.New(), priv: []byte{}, ch1: []byte{}, hrr: false, suite: w[at + 2], rd: rd, wr: wr, hsS: []byte{}, cHs: []byte{}, sHs: []byte{},
+        alpn: "", leaf: noLeaf(), hbuf: hbuf, ccs: true, sessid: []byte{}, upd: w[at + 1] != 0,
+        v12: w[at] != 0, crandom: []byte{}, srandom: []byte{}, pms: []byte{}, ms: []byte{}, wkey: wkey, wiv: wiv, wseq: w[at + 5], rkey: rkey, riv: riv, rseq: w[at + 6],
+        rkeyed: w[at + 3] != 0, wkeyed: w[at + 4] != 0, certReq: false}
+}
+
+// d の語の列を dirW 語に詰めて w へ
+func putDir(w mut []int, d internal.record.Dir) {
+    p := internal.record.Pack(d)
+    if len(p) > dirW {
+        panic(ConnTooLarge{})
+    }
+    for x <- p {
+        w = append(w, x)
+    }
+    mut i := len(p)
+    while i < dirW {
+        w = append(w, 0)
+        i += 1
+    }
+}
+
+// b を [長さ, 8 バイト / 語 …] で w へ
+func putWords(w mut []int, b []byte) {
+    n := len(b)
+    w = append(w, n)
+    mut i := 0
+    while i < n {
+        mut v := 0
+        mut j := 0
+        while j < 8 && i + j < n {
+            v = v | (int(b[i + j]) << (j * 8))
+            j += 1
+        }
+        w = append(w, v)
+        i += 8
+    }
+}
+
+// putWords の逆（バイト列と次の位置）
+func getWords(w []int, at int) ([]byte, int) {
+    n := w[at]
+    mut b := mut []byte{}
+    mut k := 0
+    while k < n {
+        b = append(b, byte((w[at + 1 + k / 8] >> ((k % 8) * 8)) & 0xff))
+        k += 1
+    }
+    return freeze(b), at + 1 + (n + 7) / 8
+}

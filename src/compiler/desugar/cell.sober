@@ -15,7 +15,7 @@ func cellCall(st mut S, key int, args ListRef, at NodeRef, eb int, ef int, depth
     }
     h0 := latN(mut st, args, 0)
     ht0 := computeTy(mut st, h0, eb, ef)
-    if ht0 != -1 && tg(mut st, ht0) == TPr && !capTyOk(mut st, tRight(mut st, ht0)) {
+    if ht0 != -1 && tg(mut st, ht0) == TPr && !cellTyOk(mut st, tRight(mut st, ht0), 64) {
         return 0, diag.Cell{at: posOf(mut st, h0), kind: 11}
     }
     h := expr(mut st, h0, eb, ef, depth)?
@@ -53,6 +53,25 @@ func cellCall(st mut S, key int, args ListRef, at NodeRef, eb int, ef int, depth
     lbody := nB(nodeOf(mut st, lam))
     body := if kindN(mut st, lbody) == ast.EBlock { scoped(mut st, lA(nodeOf(mut st, lbody)), eb2, ef, depth + 2, false, false, -1)? } else { expr(mut st, lbody, eb2, ef, depth + 2)? }
     return cLet(mut st, h, cLet(mut st, cAnn(mut st, projection(mut st, cVar(mut st, 0), 1, 2), want), cLet(mut st, cAnn(mut st, body, want), cTriv(mut st)))), nil
+}
+
+// 置き場に置ける型か: 閉包の捕捉と同じ素のデータ（capTyOk）に、再帰型（μ の本体を見る・再帰の変数は組の成分 = 同じ判定の中）を足したもの
+// （置き場の写しは再帰型を写せる — チャネルの送りと同じ梱包）
+func cellTyOk(st mut S, t TyRef, fuel int) bool {
+    if fuel == 0 {
+        return false
+    }
+    k := tg(mut st, t)
+    switch k {
+    case TRVar: return true
+    case TMuRs: return cellTyOk(mut st, muRsBody(mut st, t), fuel - 1)
+    case TMuS: return cellTyOk(mut st, TyRef(tyAt(mut st, t).c), fuel - 1)
+    case TPr | TUn: return cellTyOk(mut st, tLeft(mut st, t), fuel - 1) && cellTyOk(mut st, tRight(mut st, t), fuel - 1)
+    case TOpt: return cellTyOk(mut st, tInner(mut st, t), fuel - 1)
+    case TSl: return tMutBit(mut st, t) == 0 && cellTyOk(mut st, tElem(mut st, t), fuel - 1)
+    case TMp: return tMutBit(mut st, t) == 0 && cellTyOk(mut st, tKey(mut st, t), fuel - 1) && cellTyOk(mut st, tVal(mut st, t), fuel - 1)
+    default: return capTyOk(mut st, t)
+    }
 }
 
 // `cell.Get(h)` の結果の型宣言（elem なら要素の宣言）: 把手の const の右辺 `cell.Cell[T]{…}` の型引数 T の型式から読む

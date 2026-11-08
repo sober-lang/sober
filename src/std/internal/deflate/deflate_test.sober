@@ -93,8 +93,8 @@ func le32(d []byte, q int) int {
 
 // 生の DEFLATE の z を復号した列（形が違えば印 "<bad>"）
 func raw(z []byte) []byte {
-    out, end, st := inflate.At(z, 0, 0 - 1)
-    return if st == inflate.Ok && end == len(z) { out } else { bytes("<bad>") }
+    out, end, st := internal.inflate.At(z, 0, 0 - 1)
+    return if st == internal.inflate.Ok && end == len(z) { out } else { bytes("<bad>") }
 }
 
 // gzip の 1 メンバの z を頭（10 バイト）・中身・CRC-32 と長さを照合して復号した列
@@ -102,8 +102,8 @@ func unzip(z []byte) []byte {
     if len(z) < 18 || z[0] != byte(0x1f) || z[1] != byte(0x8b) || z[2] != byte(8) || z[3] != byte(0) {
         return bytes("<bad head>")
     }
-    out, end, st := inflate.At(z, 10, 0 - 1)
-    if st != inflate.Ok || end + 8 != len(z) || le32(z, end) != crc32.Update(0, out) || le32(z, end + 4) != len(out) {
+    out, end, st := internal.inflate.At(z, 10, 0 - 1)
+    if st != internal.inflate.Ok || end + 8 != len(z) || le32(z, end) != internal.crc32.Update(0, out) || le32(z, end + 4) != len(out) {
         return bytes("<bad>")
     }
     return out
@@ -296,40 +296,49 @@ func TestStreamBench() {
     println("bench cut ${cut} reps ${reps} level ${lv} out ${total / (if reps > 0 { reps } else { 1 })}")
 }
 
-// setup の lcode / dcode（表のまま書いた値）を RFC 1951 3.2.5 の範囲からの組み立てと照合する
+// setup の符号の表 ct（表のまま書いた値）を RFC 1951 3.2.5 の範囲（始まりと extra のビット数）からの組み立てと照合する。
+// recMatch の extra の値の取り方（長さ − 3・距離 − 1 の下位 extra ビット）の前提 = 範囲の始まり − 3 / − 1 が 2^extra の倍数、も見る
 func TestCodeTables() {
     mut e := enc{}
     setup(mut e)
-    mut lcode := mut []byte{}
-    mut c := 0
-    while c < 28 {
-        for j <- iter.Range(0, 1 << e.lext[c]) {
-            lcode = append(lcode, byte(c))
+    lbase := []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258}
+    lext := []int{0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0}
+    dbase := []int{1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577}
+    dext := []int{0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13}
+    mut want := mut []byte{}
+    for c <- iter.Range(0, 28) {
+        assert(((lbase[c] - 3) & ((1 << lext[c]) - 1)) == 0)
+        for j <- iter.Range(0, 1 << lext[c]) {
+            want = append(want, byte(c))
         }
-        c += 1
     }
-    lcode[255] = byte(28)
-    mut dcode := mut []byte{}
-    c = 0
-    while c < 16 {
-        for j <- iter.Range(0, 1 << e.dext[c]) {
-            dcode = append(dcode, byte(c))
+    want[255] = byte(28)
+    for c <- iter.Range(0, 16) {
+        assert(((dbase[c] - 1) & ((1 << dext[c]) - 1)) == 0)
+        for j <- iter.Range(0, 1 << dext[c]) {
+            want = append(want, byte(c))
         }
-        c += 1
     }
-    dcode = append(dcode, byte(0))
-    dcode = append(dcode, byte(0))
-    while c < 30 {
-        for j <- iter.Range(0, 1 << (e.dext[c] - 7)) {
-            dcode = append(dcode, byte(c))
+    want = append(want, byte(0))
+    want = append(want, byte(0))
+    for c <- iter.Range(16, 30) {
+        assert(((dbase[c] - 1) & ((1 << dext[c]) - 1)) == 0)
+        for j <- iter.Range(0, 1 << (dext[c] - 7)) {
+            want = append(want, byte(c))
         }
-        c += 1
     }
-    assert(same(e.lcode, freeze(lcode)))
-    assert(same(e.dcode, freeze(dcode)))
+    assert(len(want) == lxOff)
+    for c <- iter.Range(0, 29) {
+        want = append(want, byte(lext[c]))
+    }
+    assert(len(want) == dxOff)
+    for c <- iter.Range(0, 30) {
+        want = append(want, byte(dext[c]))
+    }
+    assert(same(e.ct, freeze(want)))
     // 範囲の端: 長さ 3 → 符号 0・長さ 258 → 符号 28・距離 1 → 0・距離 32768 → 29
-    assert(e.lcode[0] == 0 && e.lcode[255] == 28)
-    assert(e.dcode[0] == 0 && e.dcode[256 + (32767 >> 7)] == 29)
+    assert(e.ct[0] == 0 && e.ct[255] == 28)
+    assert(e.ct[dcOff] == 0 && e.ct[dcOff + 256 + (32767 >> 7)] == 29)
 }
 
 // 旧 lengths（頻度の鍵の挿入ソート）の写し — 数え上げのソートに換えた lengths と出力の一致を照合する
@@ -554,5 +563,107 @@ func TestRev() {
             }
             assert(rev(v, l) == r)
         }
+    }
+}
+
+// 表の幅（16 ビットの項目 — Work の head の注釈）の網: 入口の消去（同じ Work を使い回して値の上限を何度も越える）とずらし（1 回の符号化・Stream の中で
+// 上限に届く）の後も、出力は新しい Work の Encode・64 ビットの表の頃の出力（CRC-32 の黄金）とバイト一致
+func TestTableWidth() {
+    // 同じ Work に 8 KB 級を 24 本（入口の消去が 3 回）・大きい入力（ずらし）の直後の小さい入力・hb の違う入力の交互
+    mut w := Work{}
+    NewWork(mut w)
+    for r <- iter.Range(0, 24) {
+        d := text(6000 + (r * 997) % 4000, r)
+        mut f := Work{}
+        assert(same(EncodeWith(mut w, d, 6), EncodeWith(mut f, d, 6)))
+    }
+    // 小さい入力（ハッシュの表 2^8 項目）を同じ Work に 600 本 — 入口の消去が 2 回・消し残しがあれば前の周の値が偽の候補になる
+    for r <- iter.Range(0, 600) {
+        d := text(150 + (r * 37) % 100, r * 3 + 1)
+        mut f := Work{}
+        assert(same(EncodeWith(mut w, d, 6), EncodeWith(mut f, d, 6)))
+    }
+    big := text(300000, 7)
+    small := text(300, 9)
+    // 64 ビットの表の頃（9f8fd82a2）の出力の CRC-32
+    lvs := []int{1, 3152095773, 6, 3425056632, 9, 885930943}
+    mut k := 0
+    while k < len(lvs) {
+        lv := lvs[k]
+        mut f := Work{}
+        a := EncodeWith(mut w, big, lv)
+        assert(same(a, EncodeWith(mut f, big, lv)))
+        mut g := Work{}
+        assert(same(EncodeWith(mut w, small, lv), EncodeWith(mut g, small, lv)))
+        assert(internal.crc32.Update(0, a) == lvs[k + 1])
+        k += 2
+    }
+    // Stream: 64 KiB の切片と無作為の切り方（窓の持ち越しの中のずらし）
+    d := text(300000, 5)
+    mut cs := mut []int{}
+    mut at := 0
+    while at < len(d) {
+        at = if at + 65536 > len(d) { len(d) } else { at + 65536 }
+        cs = append(cs, at)
+    }
+    slvs := []int{1, 388202343, 1682117032, 6, 2744036928, 276029054}
+    mut j := 0
+    while j < len(slvs) {
+        lv := slvs[j]
+        a, _ := run(d, lv, true, freeze(cs))
+        b, _ := run(d, lv, false, cuts(len(d), 2, lv + 4))
+        assert(internal.crc32.Update(0, a) == slvs[j + 1])
+        assert(internal.crc32.Update(0, b) == slvs[j + 2])
+        j += 3
+    }
+}
+
+// 記録の木（History）: 入力の列を 2 本の別の History で符号化して、各段の出力が同じ（決定性）・復号が入力と一致・
+// 大きさは History なしの (1 + ε) 倍まで（ブロックの頭の 3 ビットの丸めの分 + 1 バイト）・同じ入力の繰り返しで当たる
+func TestHistory() {
+    mut w := Work{}
+    NewWork(mut w)
+    mut h1 := History{}
+    mut h2 := History{}
+    a0, b0 := HistoryStats(mut h1)
+    assert(a0 == 0 && b0 == 0)
+    for r <- iter.Range(0, 40) {
+        // 3 本の循環（当たりの形）と、毎回違う種の列（外れの形）を交互に
+        ln := if r % 2 == 0 { 600 + (r % 6) * 300 } else { 200 + r * 37 }
+        sd := if r % 2 == 0 { (r / 2) % 3 + 1 } else { 100 + r }
+        d := text(ln, sd)
+        lvs := []int{1, 6, 9}
+        for lv <- lvs {
+            p := EncodeWith(mut w, d, lv)
+            z1 := EncodeHistory(mut w, mut h1, d, lv)
+            z2 := EncodeHistory(mut w, mut h2, d, lv)
+            assert(same(z1, z2), "history deterministic r=${r} lv=${lv}")
+            assert(same(raw(z1), d), "history roundtrip r=${r} lv=${lv}")
+            n1 := len(z1)
+            n0 := len(p)
+            assert(n1 * hEpsD <= (n0 + 1) * hEpsN, "history ratio r=${r} lv=${lv} ${n1} ${n0}")
+        }
+    }
+    hits, miss := HistoryStats(mut h1)
+    assert(hits > 0 && miss > 0, "history hits ${hits} miss ${miss}")
+    // 空の入力・1 バイト（固定 / stored の道）
+    ds := []string{"", "x"}
+    for d <- ds {
+        z := EncodeHistory(mut w, mut h1, bytes(d), 6)
+        assert(same(raw(z), bytes(d)))
+    }
+}
+
+func TestLg16() {
+    // log2 の 16 ビット固定小数の精度（2^k は正確・中間は誤差 ≤ 0.0013 ≈ 86 / 65536）
+    for k <- iter.Range(0, 16) {
+        assert(lg16(1 << k) == k << 16)
+    }
+    xs := []int{3, 5, 7, 10, 100, 1000, 12345, 65535}
+    ys := []int{103872, 152170, 183983, 217706, 435412, 653118, 890742, 1048575}
+    for i <- iter.Range(0, len(xs)) {
+        d := lg16(xs[i]) - ys[i]
+        x := xs[i]
+        assert(d <= 86 && d >= -86, "lg16 ${x} ${d}")
     }
 }

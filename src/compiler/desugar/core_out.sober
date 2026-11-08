@@ -194,7 +194,7 @@ func PlanHeap(d DefPlan) int {
 
 // 前段（prefix）を走らせて Def ごとの費用の代理を出す（前段の拒否はそのまま返す — 逐次の run と同じ順の最初の拒否）。
 // 費用の代理 = 展開込みの節の数（ExpCost — 自分の節の数は、木は後置順に積むので同じファイルの前の関数の宣言の節との添字の差〔間の型・const の宣言も含む粗い上界〕）
-@errors(diag.CoreFragment)
+@errors(diag.CoreFragment, diag.TypeMismatch)
 func PlanDefs(p loader.Program, excl []int, only int, trust bool, self []byte) (DefPlan, error?) {
     mut st := S{}
     initState(mut st, p)

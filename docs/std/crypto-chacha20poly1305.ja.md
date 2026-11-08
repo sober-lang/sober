@@ -7,11 +7,11 @@
 AEAD\_CHACHA20\_POLY1305（RFC 8439 2.8 — 鍵 32 バイト・nonce 12 バイト・tag 16 バイト）。Open は tag を crypto.Equal（定数時間）で照合し、食い違えば平文を返さない。同じ鍵で nonce を 2 回使ってはならない（2 つの暗号文の xor から平文の xor が漏れ、Poly1305 の鍵も同じになって tag を偽造できる）
 
 ```sober
-ct := chacha20poly1305.Seal(key, nonce, ad, pt)?       // 暗号文 ‖ tag
-pt := chacha20poly1305.Open(key, nonce, ad, ct)?       // 改竄なら chacha20poly1305.Auth
+ct := crypto.chacha20poly1305.Seal(key, nonce, ad, pt)?       // 暗号文 ‖ tag
+pt := crypto.chacha20poly1305.Open(key, nonce, ad, ct)?       // 改竄なら crypto.chacha20poly1305.Auth
 ```
 
-record 層向けの API（aesgcm と同じ形）: Prepare（鍵の長さを見る）・SealTo（head ‖ 暗号文 ‖ tag）・OpenAt（b[off, off + n) を写さずに検証してから復号）。MAC は入力を繋がずに poly1305.SumAead で
+record 層向けの API（aesgcm と同じ形）: Prepare（鍵の長さを見る）・SealTo（head ‖ 暗号文 ‖ tag）・OpenAt（b[off, off + n) を写さずに検証してから復号）。MAC は入力を繋がずに crypto.poly1305.SumAead で
 
 ## KeySize
 

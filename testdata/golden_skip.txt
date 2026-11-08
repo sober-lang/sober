@@ -1,0 +1,14 @@
+# 黄金（irtext / lltext / corejson）を作らない例 — 1 行 1 entry（irtext.sh --list の綴り）。# の行は注
+# std/http/client を使う例は TLS のクライアントの閉包（hsc・x509・ec・rsa・sha512・焼き込みの信頼ストア）を丸ごと持ち、1 本で 3 種の黄金が ~37 MB になる。
+# 閉包は例どうしで同じなので IR の網の被覆は減らない — 例ごとの差（main）は obs の .out と checkverdict が見る
+examples/http_client_session.sober
+examples/web_client_do.sober
+examples/web_client_errors.sober
+examples/web_client_session.sober
+examples/web_client_stream.sober
+examples/web_client_time.sober
+examples/web_login.sober
+examples/web_server_hello.sober
+examples/web_server_route.sober
+# TLS のサーバの閉包（hs・record・rsa）と std/http/server の閉包は examples/tls_serve と examples/http_servewith の黄金が持つ — 例の差（main）は obs と checkverdict が見る
+examples/web_server_tls.sober

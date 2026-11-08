@@ -69,7 +69,9 @@ func fnTab(cx Cx) FnTab {
             mut fl := if np > 0 && t.nodes[t.nodes[ast.ListAt(t, ps, np - 1)].b].kind == ast.TOpt { FN_OPT } else { 0 }
             mut q := 0
             while q < np {
-                if t.nodes[t.nodes[ast.ListAt(t, ps, q)].b].kind == ast.TFunc {
+                // 型引数つきの型（総称の名前付き関数型の借りの仮引数でありうる — eta.sober の etaFnTy が絞る）も η の候補
+                pt := t.nodes[t.nodes[ast.ListAt(t, ps, q)].b]
+                if pt.kind == ast.TFunc || pt.kind == ast.TGeneric && namedFunc(cx, f, Name(t, pt.a)) {
                     fl = fl | FN_FPARAM
                     q = np
                 }
@@ -233,7 +235,8 @@ type NaPlan struct {
     tok int
 }
 
-func naPlan(cx Cx, ft FnTab, f int, args int, np int, fi int, ctok int) NaPlan {
+// gk = for の生成元の呼び出しなら継続 k の仮引数の番号（= 位置引数の数 np — 実引数に書かない席。印つきの nil〔-3 → GenSlot〕を置いて desugar の forGen が埋める）・違えば -1
+func naPlan(cx Cx, ft FnTab, f int, args int, np int, fi int, ctok int, gk int) NaPlan {
     t := cx.trees[f]
     dt := cx.trees[ft.file[fi]]
     ps := dt.nodes[ft.node[fi]].c
@@ -245,6 +248,10 @@ func naPlan(cx Cx, ft FnTab, f int, args int, np int, fi int, ctok int) NaPlan {
     }
     mut j := np
     for k <- iter.Range(np, npar) {
+        if k == gk {
+            out = append(out, -3)
+            continue
+        }
         p := dt.nodes[ast.ListAt(dt, ps, k)]
         pname := Name(dt, p.a)
         if j < na && Name(t, t.nodes[ast.ListAt(t, args, j)].a) == pname {
@@ -270,6 +277,9 @@ func naPlan(cx Cx, ft FnTab, f int, args int, np int, fi int, ctok int) NaPlan {
     return NaPlan{freeze(out), 0, 0}
 }
 
+// 生成元の継続 k の席の印（ENil の欄 e — desugar の forGen がこの節を k に差し替える）
+const GenSlot = 1
+
 // 写し切れなかった名前付きの実引数 j の理由（仮引数 at まで並べ終えた時点）: 位置で渡した仮引数の名前（4）・既に並べた仮引数の名前 =
 // 順でない / 重複（3）・無い名前（2）。まだ並べていない仮引数の名前なら 0（呼び手が「省略できない仮引数が無い」を言う）
 func naLeft(t ast.Tree, dt ast.Tree, args int, j int, ps int, np int, at int) NaPlan {
@@ -294,12 +304,19 @@ func namedArgs(cx Cx, ft FnTab, f int) NaOut {
     mut changed := false
     // for の生成元に置かれた呼び出し（`for l <- task.Recv(rx)` の付け替えの候補 — 下の recvGen）
     mut gsrc := mut []int{}
+    // 失敗しうる生成元 `g(a)?` の内側の呼び出し（継続 k の席を数える — 下の gk）
+    mut gtry := mut []int{}
     for i <- iter.Range(0, n0) {
         if t.nodes[i].kind == ast.KGen {
-            gsrc = append(gsrc, t.nodes[i].b)
+            g := t.nodes[i].b
+            gsrc = append(gsrc, g)
+            if g >= 0 && t.nodes[g].kind == ast.ETry {
+                gtry = append(gtry, t.nodes[g].a)
+            }
         }
     }
     gs := freeze(gsrc)
+    gt := freeze(gtry)
     for i <- iter.Range(0, n0) {
         // 種類だけを先に読む（節の写しを全節ぶん作らない — 自己適用の load の RSS）
         if t.nodes[i].kind != ast.ECall && t.nodes[i].kind != ast.EPipe {
@@ -389,7 +406,10 @@ func namedArgs(cx Cx, ft FnTab, f int) NaOut {
         }
         dt := cx.trees[ft.file[fi]]
         npar := ast.ListLen(dt, dt.nodes[ft.node[fi]].c)
-        if !named && np >= npar {
+        // for の生成元の呼び出し（`for x <- g(a, n: v)? { … }`）: 位置引数の次の仮引数が関数型なら継続 k がその席を取る
+        //（slice を返す呼び出しの生成元は k を取らない — 席は数えない）
+        gk := if !pipe && (isIn(gs, i) || isIn(gt, i)) && np < npar && dt.nodes[dt.nodes[ast.ListAt(dt, dt.nodes[ft.node[fi]].c, np)].b].kind == ast.TFunc { np } else { -1 }
+        if !named && np + (if gk >= 0 { 1 } else { 0 }) >= npar {
             continue
         }
         // `task.Spawn(s, (ep) => …, give: ep)`（端点の引き渡し・language.md 11 節）: give の有無でラムダの仮引数の数が変わるので 1 つの総称の宣言では
@@ -420,7 +440,7 @@ func namedArgs(cx Cx, ft FnTab, f int) NaOut {
             ns[i] = ast.Node{x.kind, x.tok, sel, l, x.c, x.d, x.e, x.f}
             continue
         }
-        plan := naPlan(cx, ft, f, args, np, fi, x.tok)
+        plan := naPlan(cx, ft, f, args, np, fi, x.tok, gk)
         if plan.bad != 0 {
             if !named && plan.bad == 5 {
                 // 名前付きの無い呼び出しで足りない仮引数が `T?` でない: 今までどおり後段（実引数の数の拒否）に任せる
@@ -439,9 +459,9 @@ func namedArgs(cx Cx, ft FnTab, f int) NaOut {
         }
         mut out := mut []int{}
         for k <- iter.Range(0, len(plan.args)) {
-            if plan.args[k] == -2 {
+            if plan.args[k] == -2 || plan.args[k] == -3 {
                 out = append(out, n0 + builder.Len(mut nb))
-                builder.Push(mut nb, ast.Node{ast.ENil, x.tok, 0, 0, 0, 0, 0, 0})
+                builder.Push(mut nb, ast.Node{ast.ENil, x.tok, 0, 0, 0, 0, if plan.args[k] == -3 { GenSlot } else { 0 }, 0})
             } else {
                 out = append(out, plan.args[k])
             }

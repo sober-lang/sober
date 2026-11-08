@@ -4,6 +4,6 @@ import "testdata/doubles/handler"
 import "testdata/doubles/store"
 
 func main() {
-    c := store.Open("/nonexistent-dir")
-    println(handler.Lookup(c, "a"))
+    c := testdata.doubles.store.Open("/nonexistent-dir")
+    println(testdata.doubles.handler.Lookup(c, "a"))
 }

@@ -2,7 +2,7 @@ package main
 
 // std/crypto/rsa + std/crypto/pem: PKCS#8 の PEM の秘密鍵（testdata/crypto — 試験用の RSA-2048 と HttpArena の harness の鍵〔公開済み〕）を読み、
 // RSASSA-PSS（SHA-256・MGF1-SHA256・salt 32）で決定的な salt の署名を出して、自分の検証器で受理・改竄で拒否を見る。
-// Go の双子 = scripts/oracles/crypto_rsa.go（同じ salt の EMSA-PSS を big.Int の m^d mod n で作った署名とバイト一致 + crypto/rsa.VerifyPSS で受理）
+// Go の双子 = scripts/oracles/crypto_rsa.go（同じ salt の EMSA-PSS を big.Int の m^d mod n で作った署名とバイト一致 + crypto/crypto.rsa.VerifyPSS で受理）
 
 import "std/crypto/pem"
 import "std/crypto/rsa"
@@ -40,46 +40,46 @@ func flip(b []byte, at int) []byte {
 }
 
 func one(fs map[string]string, name string) {
-    blocks, pe := pem.Parse(file(fs, "testdata/crypto/${name}.key"))
+    blocks, pe := crypto.pem.Parse(file(fs, "testdata/crypto/${name}.key"))
     if pe != nil || len(blocks) != 1 {
         println(name, "pem error")
         return
     }
     println(name, blocks[0].label, len(blocks[0].der))
-    k, ke := rsa.ParsePKCS8(blocks[0].der)
+    k, ke := crypto.rsa.ParsePKCS8(blocks[0].der)
     if ke != nil {
         println(name, "key error")
         return
     }
-    pub := rsa.Public(k)
-    println(name, "size", rsa.Size(pub))
+    pub := crypto.rsa.Public(k)
+    println(name, "size", crypto.rsa.Size(pub))
     msgs := []string{"", "hello", "TLS 1.3, server CertificateVerify"}
     for i <- iter.Range(0, len(msgs)) {
         m := bytes(msgs[i])
-        sig, se := rsa.SignPSS(k, m, salt(i))
+        sig, se := crypto.rsa.SignPSS(k, m, salt(i))
         if se != nil {
             println(name, i, "sign error")
             continue
         }
         println(name, i, hex.Format(sig))
-        println(name, i, "verify", rsa.VerifyPSS(pub, m, sig, 32), rsa.VerifyPSS(pub, flip(m, 0), sig, 32), rsa.VerifyPSS(pub, m, flip(sig, 100), 32), rsa.VerifyPSS(pub, m, sig, 20))
+        println(name, i, "verify", crypto.rsa.VerifyPSS(pub, m, sig, 32), crypto.rsa.VerifyPSS(pub, flip(m, 0), sig, 32), crypto.rsa.VerifyPSS(pub, m, flip(sig, 100), 32), crypto.rsa.VerifyPSS(pub, m, sig, 20))
     }
 }
 
 // PEM の読みの境目: 証明書・2 つ続きの塊（鎖の形）・END の欠け・base64 の綴りの誤り・'=' の位置の誤り
 func pems(cs map[string]string) {
     crt := file(cs, "testdata/crypto/httparena-server.crt")
-    b1, e1 := pem.Parse(crt)
+    b1, e1 := crypto.pem.Parse(crt)
     println("crt", e1 == nil, len(b1), if len(b1) == 1 { "${b1[0].label} ${len(b1[0].der)} ${hex.Format(b1[0].der)}" } else { "-" })
-    b2, e2 := pem.Parse(crt + "junk between\n" + crt)
+    b2, e2 := crypto.pem.Parse(crt + "junk between\n" + crt)
     println("chain", e2 == nil, len(b2))
-    _, e3 := pem.Parse("-----BEGIN CERTIFICATE-----\nAAAA\n")
+    _, e3 := crypto.pem.Parse("-----BEGIN CERTIFICATE-----\nAAAA\n")
     println("no end", e3 != nil)
-    _, e4 := pem.Parse("-----BEGIN X-----\nAA*A\n-----END X-----\n")
+    _, e4 := crypto.pem.Parse("-----BEGIN X-----\nAA*A\n-----END X-----\n")
     println("bad char", e4 != nil)
-    _, e5 := pem.Parse("-----BEGIN X-----\nA=AA\n-----END X-----\n")
+    _, e5 := crypto.pem.Parse("-----BEGIN X-----\nA=AA\n-----END X-----\n")
     println("bad pad", e5 != nil)
-    b6, e6 := pem.Parse("-----BEGIN X-----\nAAE=\n-----END X-----\n")
+    b6, e6 := crypto.pem.Parse("-----BEGIN X-----\nAAE=\n-----END X-----\n")
     println("pad ok", e6 == nil, if len(b6) == 1 { hex.Format(b6[0].der) } else { "-" })
 }
 

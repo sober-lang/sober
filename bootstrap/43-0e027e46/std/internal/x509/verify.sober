@@ -1,0 +1,680 @@
+package x509
+
+// 鎖の検証（RFC 5280 6 章の WebPKI の範囲 — std の内側: TLS のクライアントの下）。leaf から、送られた中間とルートの中を名前（DER のバイトの一致）と
+// AKI / SKI で辿って鎖を組み（深さ 8 まで・同じ証明書は 1 本の鎖に 1 度）、各段で署名・有効期間・CA の印・keyUsage・pathLen・EKU・知らない critical の拡張・
+// nameConstraints（dNSName / iPAddress — 他の形の部分木を持つ CA は Unsupported）を確かめる。名前の照合は SAN だけ（CN は見ない）。
+// 時刻は呼び手が渡す（決定的・失効は見ない — CRL / OCSP は取りに行かない）。証明書ポリシーは処理しない（知っている拡張として critical でも通す）。
+// 署名は ECDSA P-256 / P-384 × SHA-256 / 384 / 512 と RSA PKCS#1 v1.5（2048 bit 以上）× SHA-256 / 384 / 512。SHA-1・RSA-PSS・DSA は Unsupported
+
+import "std/base64"
+import "std/crypto/pem"
+import "std/crypto/sha256"
+import "std/internal/ec"
+import "std/internal/sha512"
+import "std/iter"
+import "std/strings"
+
+// 証明書が読めない
+type Malformed error
+// 鎖のどれかが有効期間を過ぎた
+type Expired error
+// 鎖のどれかの有効期間がまだ始まっていない
+type NotYetValid error
+// ルートまで辿れない
+type UnknownAuthority error
+// leaf の SAN が host と合わない
+type NameMismatch error
+// 署名が合わない
+type BadSignature error
+// 扱わないアルゴリズム・鍵の大きさ・critical の拡張・nameConstraints の形
+type Unsupported error
+// CA の印・keyUsage・pathLen・EKU・nameConstraints に反する
+type ConstraintViolated error
+
+const eOk = 0
+const eExpired = 1
+const eNotYet = 2
+const eUnknown = 3
+const eName = 4
+const eSig = 5
+const eUnsup = 6
+const eConstr = 7
+const eMalformed = 8
+
+// 深さの上限（leaf の上の証明書の数）
+const maxDepth = 8
+
+// leaf（DER）を中間 inters（DER — 読めないものは飛ばす）とルート roots で検証し、leaf からルートまでの鎖を返す。host が空でなければ leaf の SAN と照合する
+@errors(Malformed, Expired, NotYetValid, UnknownAuthority, NameMismatch, BadSignature, Unsupported, ConstraintViolated)
+@effects()
+func Verify(leaf []byte, inters [][]byte, roots []Cert, host string, now int) ([]Cert, error?) {
+    l, ok := Parse(leaf)
+    if !ok {
+        return []Cert{}, Malformed{}
+    }
+    mut is := mut []Cert{}
+    for d <- inters {
+        c, okc := Parse(d)
+        if okc {
+            is = append(is, c)
+        }
+    }
+    if host != "" && !hostOk(l, host) {
+        return []Cert{}, NameMismatch{}
+    }
+    e0 := certOk(l, true, now)
+    if e0 != eOk {
+        return []Cert{}, label(e0)
+    }
+    // leaf がそのままルートにある（自己署名の信頼の起点を直に使う形）
+    for r <- roots {
+        if same(r.raw, l.raw) {
+            return []Cert{l}, nil
+        }
+    }
+    chain, code, _ := walk(freeze(is), roots, []Cert{l}, now, maxSigChecks)
+    if code != eOk {
+        return []Cert{}, label(code)
+    }
+    return chain, nil
+}
+
+func label(code int) error {
+    return switch code {
+    case eExpired: Expired{}
+    case eNotYet: NotYetValid{}
+    case eName: NameMismatch{}
+    case eSig: BadSignature{}
+    case eUnsup: Unsupported{}
+    case eConstr: ConstraintViolated{}
+    case eMalformed: Malformed{}
+    default: UnknownAuthority{}
+    }
+}
+
+// 署名の検査の回数の上限（1 回の Verify — 候補の多い中間の束で鎖の探索が指数的に伸びる形〔x509-limbo の pathological〕を止める。Go と同じ 100）
+const maxSigChecks = 100
+
+// path（leaf から今の段まで）の最後の証明書の親を探す。left = 残りの署名の検査の回数。見つかればルートまでの鎖・無ければ最も具体的な失敗（候補が無ければ eUnknown）と使った回数
+func walk(is []Cert, roots []Cert, path []Cert, now int, left int) ([]Cert, int, int) {
+    child := path[len(path) - 1]
+    mut best := eUnknown
+    mut used := 0
+    for r <- roots {
+        if issues(r, child) && !inPath(path, r) && (r.distrustAfter == 0 || path[0].notBefore <= r.distrustAfter) {
+            if used >= left {
+                return []Cert{}, best, used
+            }
+            used += 1
+            code := linkOk(r, path, true, now)
+            if code == eOk {
+                return push(path, r), eOk, used
+            }
+            best = worse(best, code)
+        }
+    }
+    if len(path) > maxDepth {
+        return []Cert{}, best, used
+    }
+    for c <- is {
+        if issues(c, child) && !inPath(path, c) {
+            if used >= left {
+                return []Cert{}, best, used
+            }
+            used += 1
+            code := linkOk(c, path, false, now)
+            if code == eOk {
+                chain, sub, u := walk(is, roots, push(path, c), now, left - used)
+                used += u
+                if sub == eOk {
+                    return chain, eOk, used
+                }
+                best = worse(best, sub)
+            } else {
+                best = worse(best, code)
+            }
+        }
+    }
+    return []Cert{}, best, used
+}
+
+// 失敗の具体さ（UnknownAuthority より他の理由を優先）
+func worse(a int, b int) int {
+    return if a == eUnknown { b } else { a }
+}
+
+// p が child の発行者の候補か（名前のバイトの一致 — 両方に鍵 ID があれば一致も）
+func issues(p Cert, child Cert) bool {
+    if !same(p.subject, child.issuer) {
+        return false
+    }
+    if len(child.aki) > 0 && len(p.ski) > 0 && !same(child.aki, p.ski) {
+        return false
+    }
+    return true
+}
+
+func inPath(path []Cert, c Cert) bool {
+    for x <- path {
+        if same(x.raw, c.raw) {
+            return true
+        }
+    }
+    return false
+}
+
+// path の最後の証明書を p が発行した段の検査（anchor = ルート — CA の印・keyUsage・pathLen・EKU は問わない〔信頼の起点〕）
+func linkOk(p Cert, path []Cert, anchor bool, now int) int {
+    child := path[len(path) - 1]
+    s := sigOk(p, child)
+    if s != eOk {
+        return s
+    }
+    t := timeOk(p, now)
+    if t != eOk {
+        return t
+    }
+    if !anchor {
+        if p.version != 3 || !p.bcValid || !p.isCA {
+            return eConstr
+        }
+        if hasExt(p, "551d0f") && (p.keyUsage & 32) == 0 {
+            return eConstr
+        }
+        if p.pathLen >= 0 && issuedBelow(path) > p.pathLen {
+            return eConstr
+        }
+        if len(p.eku) > 0 && !ekuServer(p.eku) {
+            return eConstr
+        }
+        if unknownCritical(p) {
+            return eUnsup
+        }
+    }
+    if p.ncPresent {
+        if p.ncOther {
+            return eUnsup
+        }
+        // 照合の回数の上限（名前の多い証明書 × 制約の多い CA で指数的でなくても重くなる形 — x509-limbo の nc-dos）
+        ncs := len(p.ncPermDNS) + len(p.ncExclDNS) + len(p.ncPermIP) + len(p.ncExclIP)
+        mut names := 0
+        for x <- path {
+            names += len(x.dns) + len(x.ips)
+        }
+        if names * ncs > maxNcChecks {
+            return eUnsup
+        }
+        // 自己発行の中間は制約の外（RFC 5280 6.1.3 (b) — leaf は自己発行でも照合する）
+        for i <- iter.Range(0, len(path)) {
+            x := path[i]
+            if (i == 0 || !same(x.subject, x.issuer)) && !namesOk(p, x) {
+                return eConstr
+            }
+        }
+    }
+    return eOk
+}
+
+// nameConstraints の照合の回数の上限（1 段 — 名前の数 × 制約の数）
+const maxNcChecks = 65536
+
+// path の中の CA の数（leaf と自己発行〔subject = issuer〕を数えない — RFC 5280 4.2.1.9）
+func issuedBelow(path []Cert) int {
+    mut n := 0
+    for i <- iter.Range(1, len(path)) {
+        if !same(path[i].subject, path[i].issuer) {
+            n += 1
+        }
+    }
+    return n
+}
+
+// leaf の検査（有効期間・EKU・知らない critical の拡張）
+func certOk(c Cert, leaf bool, now int) int {
+    t := timeOk(c, now)
+    if t != eOk {
+        return t
+    }
+    if leaf && len(c.eku) > 0 && !ekuServer(c.eku) {
+        return eConstr
+    }
+    // keyCertSign は cA と組でだけ（RFC 5280 4.2.1.3）・nameConstraints は CA にだけ（4.2.1.10）。CA の証明書を leaf に使う形は受ける（RFC の範囲 — PKITS 4.6.8 / 4.6.14）
+    if leaf && (((c.keyUsage & 32) != 0 && !(c.bcValid && c.isCA)) || c.ncPresent) {
+        return eConstr
+    }
+    // leaf の鍵は扱う形だけ（P-256・P-384・RSA 2048 bit 以上で 8 の倍数）— TLS の握手で使えない鍵の証明書を通さない
+    if leaf && !keyOk(c) {
+        return eUnsup
+    }
+    if unknownCritical(c) {
+        return eUnsup
+    }
+    return eOk
+}
+
+func keyOk(c Cert) bool {
+    if c.pubAlg == PubP256 || c.pubAlg == PubP384 {
+        return true
+    }
+    if c.pubAlg == PubRsa {
+        n, _, ok := RsaKey(c.pubKey)
+        bl := BitLen(n)
+        return ok && bl >= 2048 && bl % 8 == 0
+    }
+    return false
+}
+
+func timeOk(c Cert, now int) int {
+    if now < c.notBefore {
+        return eNotYet
+    }
+    if now > c.notAfter {
+        return eExpired
+    }
+    return eOk
+}
+
+// leaf が CA/B Forum の Baseline Requirements の subscriber 証明書の形か（焼き込みの WebPKI の起点で止まる鎖だけに掛ける — 私的 PKI の追加の起点には掛けない）:
+// v3・CA でない・EKU があって serverAuth を含み anyExtendedKeyUsage を含まない・SAN に名前か番地が 1 つ以上・有効期間 398 日以下。外れれば ConstraintViolated
+@errors(ConstraintViolated)
+@effects()
+func CabLeaf(c Cert) error? {
+    mut server := false
+    mut any := false
+    for e <- c.eku {
+        server = server || e == "1.3.6.1.5.5.7.3.1"
+        any = any || e == "2.5.29.37.0"
+    }
+    if c.version != 3 || (c.bcValid && c.isCA) || !server || any || len(c.dns) + len(c.ips) == 0 || c.notAfter - c.notBefore + 1 > 398 * 86400 {
+        return ConstraintViolated{}
+    }
+    return nil
+}
+
+// EKU の列が serverAuth か anyExtendedKeyUsage を含むか
+func ekuServer(eku []string) bool {
+    for e <- eku {
+        if e == "1.3.6.1.5.5.7.3.1" || e == "2.5.29.37.0" {
+            return true
+        }
+    }
+    return false
+}
+
+func hasExt(c Cert, oid string) bool {
+    o := hexBytes(oid)
+    for x <- c.exts {
+        if same(x.oid, o) {
+            return true
+        }
+    }
+    return false
+}
+
+// critical の拡張で知らないものがあるか（知っている = BC・KU・EKU・SAN・SKI・AKI・nameConstraints・証明書ポリシーの 4 つ〔処理しない〕）
+func unknownCritical(c Cert) bool {
+    known := []string{"551d13", "551d0f", "551d25", "551d11", "551d0e", "551d23", "551d1e", "551d20", "551d21", "551d24", "551d36"}
+    for x <- c.exts {
+        if x.critical {
+            mut k := false
+            for o <- known {
+                k = k || same(x.oid, hexBytes(o))
+            }
+            if !k {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+// p の nameConstraints に x の SAN（dNSName・iPAddress）が収まるか
+func namesOk(p Cert, x Cert) bool {
+    for d <- x.dns {
+        for e <- p.ncExclDNS {
+            if dnsUnder(d, e) || wildMeets(d, e) {
+                return false
+            }
+        }
+        if len(p.ncPermDNS) > 0 {
+            mut hit := false
+            for e <- p.ncPermDNS {
+                hit = hit || (dnsUnder(d, e) && !wildWider(d, e))
+            }
+            if !hit {
+                return false
+            }
+        }
+    }
+    for ip <- x.ips {
+        for e <- p.ncExclIP {
+            if ipUnder(ip, e) {
+                return false
+            }
+        }
+        if len(p.ncPermIP) > 0 {
+            mut hit := false
+            for e <- p.ncPermIP {
+                hit = hit || ipUnder(ip, e)
+            }
+            if !hit {
+                return false
+            }
+        }
+    }
+    return true
+}
+
+// 名前 n が DNS の制約 c の下か（大文字小文字を区別しない・c = "" は全部・".x" はその下だけ・"x" は x とその下）
+func dnsUnder(n string, c string) bool {
+    nl := strings.ToLower(n)
+    cl := strings.ToLower(c)
+    if cl == "" {
+        return true
+    }
+    if strings.HasPrefix(cl, ".") {
+        return strings.HasSuffix(nl, cl) && len(bytes(nl)) > len(bytes(cl))
+    }
+    return nl == cl || strings.HasSuffix(nl, ".${cl}")
+}
+
+// ワイルドカードの名前 "*.B" が覆う名前のどれかが制約 c の下か（c が B の下にある — 除外の照合で "*.B" の文字だけを比べると c = "x.B" を見逃す）
+func wildMeets(d string, c string) bool {
+    if !strings.HasPrefix(d, "*.") {
+        return false
+    }
+    b := strings.ToLower(strings.TrimPrefix(d, "*."))
+    cl := strings.ToLower(strings.TrimPrefix(c, "."))
+    return strings.HasSuffix(cl, ".${b}")
+}
+
+// ワイルドカードの名前 "*.B" が許可の制約 c より広いか（c が B より深い — "*.B" は c の外の B の子も覆う）
+func wildWider(d string, c string) bool {
+    return wildMeets(d, c)
+}
+
+// 番地 ip（4 / 16 バイト）が制約 c（番地 ‖ マスク — 8 / 32 バイト）の下か
+func ipUnder(ip []byte, c []byte) bool {
+    if 2 * len(ip) != len(c) {
+        return false
+    }
+    n := len(ip)
+    for i <- iter.Range(0, n) {
+        if (int(ip[i]) & int(c[n + i])) != (int(c[i]) & int(c[n + i])) {
+            return false
+        }
+    }
+    return true
+}
+
+// leaf の SAN が host に合うか（host は小文字にして末尾の . を落とす・IP の綴りなら iPAddress と・名前なら dNSName と — ワイルドカードは最左のラベル丸ごとの "*." だけ）
+func hostOk(c Cert, host string) bool {
+    h := strings.ToLower(strings.TrimSuffix(host, "."))
+    ip4 := parseIP(h)
+    ip := if len(ip4) > 0 { ip4 } else { parseIP6(h) }
+    if len(ip) > 0 {
+        for x <- c.ips {
+            if same(x, ip) {
+                return true
+            }
+        }
+        return false
+    }
+    for d <- c.dns {
+        if nameMatch(strings.ToLower(d), h) {
+            return true
+        }
+    }
+    return false
+}
+
+func nameMatch(pat string, h string) bool {
+    if pat == h {
+        return true
+    }
+    if !strings.HasPrefix(pat, "*.") {
+        return false
+    }
+    rest := strings.TrimPrefix(pat, "*")
+    dot := strings.IndexByte(h, '.')
+    if dot <= 0 {
+        return false
+    }
+    hb := bytes(h)
+    tail := string(hb[dot:len(hb)]) catch ""
+    return tail == rest && strings.Count(rest, ".") >= 2
+}
+
+// IPv4 の 10 進の点区切り（4 バイト — 他の綴りは空。IPv6 の綴りの照合は持たない）
+func parseIP(s string) []byte {
+    f := strings.Split(s, ".")
+    if len(f) != 4 {
+        return []byte{}
+    }
+    mut o := mut []byte{}
+    for p <- f {
+        pb := bytes(p)
+        if len(pb) == 0 || len(pb) > 3 || (len(pb) > 1 && pb[0] == '0') {
+            return []byte{}
+        }
+        mut v := 0
+        for x <- pb {
+            if x < '0' || x > '9' {
+                return []byte{}
+            }
+            v = v * 10 + int(x) - 48
+        }
+        if v > 255 {
+            return []byte{}
+        }
+        o = append(o, byte(v))
+    }
+    return freeze(o)
+}
+
+// IPv6 の綴り（RFC 4291 2.2 — 16 進の 8 群・"::" の省略 1 か所・末尾の IPv4 の形は持たない。[] の括りは外してから渡す）→ 16 バイト（他は空）
+func parseIP6(s0 string) []byte {
+    s := strings.TrimSuffix(strings.TrimPrefix(s0, "["), "]")
+    if !strings.Contains(s, ":") {
+        return []byte{}
+    }
+    head, tail, dbl := strings.Cut(s, "::")
+    if dbl && strings.Contains(tail, "::") {
+        return []byte{}
+    }
+    hs := if head == "" { []string{} } else { strings.Split(head, ":") }
+    ts := if !dbl || tail == "" { []string{} } else { strings.Split(tail, ":") }
+    n := len(hs) + len(ts)
+    if (!dbl && n != 8) || (dbl && n > 7) {
+        return []byte{}
+    }
+    mut groups := mut []int{}
+    for g <- hs {
+        groups = append(groups, hex16(g))
+    }
+    if dbl {
+        for k <- iter.Range(0, 8 - n) {
+            groups = append(groups, 0)
+        }
+    }
+    for g <- ts {
+        groups = append(groups, hex16(g))
+    }
+    mut o := mut []byte{}
+    for g <- groups {
+        if g < 0 {
+            return []byte{}
+        }
+        o = append(o, byte(g >> 8))
+        o = append(o, byte(g & 0xff))
+    }
+    return freeze(o)
+}
+
+// 16 進の 1〜4 桁（他は -1）
+func hex16(g string) int {
+    b := bytes(g)
+    if len(b) == 0 || len(b) > 4 {
+        return -1
+    }
+    mut v := 0
+    for x <- b {
+        d := if x >= '0' && x <= '9' { int(x) - 48 } else if x >= 'a' && x <= 'f' { int(x) - 87 } else { -1 }
+        if d < 0 {
+            return -1
+        }
+        v = v * 16 + d
+    }
+    return v
+}
+
+// p の鍵で child の署名が合うか（eOk・eSig・eUnsup）
+func sigOk(p Cert, child Cert) int {
+    if child.sigPad != 0 {
+        return eSig
+    }
+    a := child.sigAlg
+    if a == SigEcdsaSha256 || a == SigEcdsaSha384 || a == SigEcdsaSha512 {
+        if p.pubAlg != PubP256 && p.pubAlg != PubP384 {
+            return eUnsup
+        }
+        cv := if p.pubAlg == PubP256 { ec.P256() } else { ec.P384() }
+        return if ec.Verify(cv, p.pubKey, digest(a, child.tbs), child.sig) { eOk } else { eSig }
+    }
+    if a == SigRsaSha256 || a == SigRsaSha384 || a == SigRsaSha512 {
+        if p.pubAlg != PubRsa {
+            return eUnsup
+        }
+        n, e, ok := RsaKey(p.pubKey)
+        if !ok || BitLen(n) < 2048 || BitLen(n) % 8 != 0 {
+            return eUnsup
+        }
+        return if rsaV15(n, e, digest(a, child.tbs), a, child.sig) { eOk } else { eSig }
+    }
+    return eUnsup
+}
+
+func digest(a int, m []byte) []byte {
+    if a == SigEcdsaSha384 || a == SigRsaSha384 {
+        return sha512.Sum384(m)
+    }
+    if a == SigEcdsaSha512 || a == SigRsaSha512 {
+        return sha512.Sum512(m)
+    }
+    return sha256.Sum256(m)
+}
+
+// RSASSA-PKCS1-v1_5 の検証（RFC 8017 8.2.2 — EM = 00 01 FF…FF 00 ‖ DigestInfo ‖ H を組んで復号の値とバイトで比べる）
+func rsaV15(nb []byte, eb []byte, h []byte, a int, sig []byte) bool {
+    mut i := 0
+    while i < len(nb) && nb[i] == byte(0) {
+        i += 1
+    }
+    n := nb[i:len(nb)]
+    k := len(n)
+    if len(sig) != k || (int(n[k - 1]) & 1) == 0 {
+        return false
+    }
+    // s < n（大きい端の比較）
+    mut below := false
+    mut decided := false
+    for j <- iter.Range(0, k) {
+        if !decided && sig[j] != n[j] {
+            below = sig[j] < n[j]
+            decided = true
+        }
+    }
+    if !below {
+        return false
+    }
+    m := ec.PowMod(n, sig, eb)
+    pre := if a == SigRsaSha384 { "3041300d060960864801650304020205000430" } else if a == SigRsaSha512 { "3051300d060960864801650304020305000440" } else { "3031300d060960864801650304020105000420" }
+    t := cat(hexBytes(pre), h)
+    if k < len(t) + 11 {
+        return false
+    }
+    mut em := mut []byte{0, 1}
+    for j <- iter.Range(0, k - len(t) - 3) {
+        em = append(em, byte(0xff))
+    }
+    em = append(em, byte(0))
+    for x <- t {
+        em = append(em, x)
+    }
+    return same(freeze(em), m)
+}
+
+func cat(a []byte, b []byte) []byte {
+    mut o := mut []byte{}
+    for x <- a {
+        o = append(o, x)
+    }
+    for x <- b {
+        o = append(o, x)
+    }
+    return freeze(o)
+}
+
+// path ++ [c]
+func push(path []Cert, c Cert) []Cert {
+    mut o := mut []Cert{}
+    for x <- path {
+        o = append(o, x)
+    }
+    o = append(o, c)
+    return freeze(o)
+}
+
+// 焼き込みの信頼ストア（Mozilla NSS のサーバ認証の信頼の起点 — roots.sober は scripts/nssroots.ts の生成物）。distrust-after を付けて返す
+@effects()
+func Roots() []Cert {
+    mut out := mut []Cert{}
+    for l <- rootLines() {
+        a, rest, _ := strings.Cut(l, " ")
+        b64, _, _ := strings.Cut(rest, " ")
+        da := atoiOr0(a)
+        der, err := base64.Decode(b64)
+        if err == nil {
+            c, ok := Parse(der)
+            if ok {
+                mut r := c
+                r.distrustAfter = da
+                r.baked = true
+                out = append(out, r)
+            }
+        }
+    }
+    return freeze(out)
+}
+
+func atoiOr0(s string) int {
+    mut v := 0
+    for x <- bytes(s) {
+        if x < '0' || x > '9' {
+            return 0
+        }
+        v = v * 10 + int(x) - 48
+    }
+    return v
+}
+
+// PEM の文字列 text の CERTIFICATE の塊を全部読んだ追加の信頼の起点（私的 PKI — 利用者が値で渡す。外部ファイルを読む口は作らない）。読めない塊があれば Malformed
+@errors(Malformed)
+@effects()
+func RootsFromPEM(text string) ([]Cert, error?) {
+    bs, err := pem.Parse(text)
+    if err != nil {
+        return []Cert{}, Malformed{}
+    }
+    mut out := mut []Cert{}
+    for b <- bs {
+        if b.label == "CERTIFICATE" {
+            c, ok := Parse(b.der)
+            if !ok {
+                return []Cert{}, Malformed{}
+            }
+            out = append(out, c)
+        }
+    }
+    return freeze(out), nil
+}

@@ -1,0 +1,294 @@
+package net
+
+// 名前の解決（スタブリゾルバ — libc の getaddrinfo を使わない）: Dial が IPv4 の綴りでないホストを受けたときに、/etc/hosts → /etc/resolv.conf の nameserver
+// （最大 3 本を順に・1 回の問い合わせは期限つき）へ A を問う。search / ndots の候補の順（resolv.conf(5)）・応答の切り詰め（TC）は TCP で問い直す・
+// 応答の CNAME の鎖を追う（answer 節の中だけ・8 段まで）・txid は getrandom・応答は txid と問いの名前と型の一致を確かめる。AAAA も読めるが、Dial は IPv4 だけ。
+// 非 ASCII のホスト名（IDN）は名指しで拒否する（punycode は URL の層の仕事）。DNSSEC・DoH / DoT・キャッシュは持たない
+
+import "std/io"
+import "std/iter"
+import "std/strings"
+import "std/task"
+
+// ホストの名前が引けない（NXDOMAIN・どの候補にも答えが無い・hosts にも無い）
+type NoHost error
+
+// ホストの名前に非 ASCII の字がある（IDN は punycode〔xn--〕で渡す — 名前の解決の層は扱わない）
+type NonASCIIHost error
+
+const qtA = 1
+const qtCname = 5
+const qtAaaa = 28
+
+// resolv.conf の設定（servers = IPv4 の nameserver 最大 3 本・search = 探す domain の列・ndots・timeout = 1 回の問い合わせの期限〔ns〕・attempts = 一巡の回数）
+type dnsConf struct {
+    servers []string
+    search []string
+    ndots int
+    timeout int
+    attempts int
+}
+
+// resolv.conf の本文を読む（無い項目は既定 — nameserver 無し = 127.0.0.1・ndots 1・timeout 5 秒・attempts 2。IPv6 の nameserver は飛ばす — 接続は IPv4 だけ）
+func parseResolvConf(text string) dnsConf {
+    mut servers := mut []string{}
+    mut search := mut []string{}
+    mut ndots := 1
+    mut timeout := 5
+    mut attempts := 2
+    for l0 <- strings.Split(text, "\n") {
+        l1, _, _ := strings.Cut(l0, "#")
+        l, _, _ := strings.Cut(l1, ";")
+        f := strings.Fields(l)
+        if len(f) >= 2 && f[0] == "nameserver" && len(servers) < 3 && len(sockaddr("${f[1]}:53")) == 16 {
+            servers = append(servers, f[1])
+        } else if len(f) >= 2 && (f[0] == "search" || f[0] == "domain") {
+            search = mut []string{}
+            for i <- iter.Range(1, len(f)) {
+                search = append(search, strings.TrimSuffix(f[i], "."))
+            }
+        } else if len(f) >= 2 && f[0] == "options" {
+            for i <- iter.Range(1, len(f)) {
+                k, v, ok := strings.Cut(f[i], ":")
+                n := decimal(v)
+                if ok && n >= 0 {
+                    if k == "ndots" {
+                        ndots = if n > 15 { 15 } else { n }
+                    } else if k == "timeout" {
+                        timeout = if n < 1 { 1 } else if n > 30 { 30 } else { n }
+                    } else if k == "attempts" {
+                        attempts = if n < 1 { 1 } else if n > 5 { 5 } else { n }
+                    }
+                }
+            }
+        }
+    }
+    sv := if len(servers) == 0 { []string{"127.0.0.1"} } else { freeze(servers) }
+    return dnsConf{servers: sv, search: freeze(search), ndots: ndots, timeout: timeout * task.MS * 1000, attempts: attempts}
+}
+
+func decimal(s string) int {
+    b := bytes(s)
+    if len(b) == 0 || len(b) > 6 {
+        return -1
+    }
+    mut v := 0
+    for x <- b {
+        if x < '0' || x > '9' {
+            return -1
+        }
+        v = v * 10 + int(x) - 48
+    }
+    return v
+}
+
+// hosts の本文から name の IPv4 の番地（大文字小文字を区別しない・コメントは # から）
+func hostsLookup(text string, name string) [][]byte {
+    want := strings.ToLower(strings.TrimSuffix(name, "."))
+    mut out := mut [][]byte{}
+    for l0 <- strings.Split(text, "\n") {
+        l, _, _ := strings.Cut(l0, "#")
+        f := strings.Fields(l)
+        if len(f) >= 2 {
+            sa := sockaddr("${f[0]}:0")
+            if len(sa) == 16 {
+                for i <- iter.Range(1, len(f)) {
+                    if strings.ToLower(f[i]) == want {
+                        out = append(out, sliceBytes(sa, 4, 8))
+                    }
+                }
+            }
+        }
+    }
+    return freeze(out)
+}
+
+func sliceBytes(b []byte, s int, e int) []byte {
+    mut o := mut []byte{}
+    for i <- iter.Range(s, e) {
+        o = append(o, b[i])
+    }
+    return freeze(o)
+}
+
+// 問い合わせる名前の候補の順（末尾の . は絶対名 = そのままだけ・点の数が ndots 以上ならそのままを先に・少なければ search を先に）
+func candidates(name string, c dnsConf) []string {
+    if strings.HasSuffix(name, ".") {
+        return []string{strings.TrimSuffix(name, ".")}
+    }
+    mut out := mut []string{}
+    dots := strings.Count(name, ".")
+    if dots >= c.ndots {
+        out = append(out, name)
+    }
+    for s <- c.search {
+        if s != "" {
+            out = append(out, "${name}.${s}")
+        }
+    }
+    if dots < c.ndots {
+        out = append(out, name)
+    }
+    return freeze(out)
+}
+
+// name の綴りの検査（ASCII だけ・ラベル 1〜63 字・全体 253 字まで）— 0 = 良い・1 = 非 ASCII・2 = 形の誤り
+func nameCheck(name string) int {
+    b := bytes(strings.TrimSuffix(name, "."))
+    if len(b) == 0 || len(b) > 253 {
+        return 2
+    }
+    mut lab := 0
+    for x <- b {
+        if int(x) >= 0x80 {
+            return 1
+        }
+        if x == '.' {
+            if lab == 0 {
+                return 2
+            }
+            lab = 0
+        } else {
+            lab += 1
+            if lab > 63 || x <= ' ' {
+                return 2
+            }
+        }
+    }
+    return if lab == 0 { 2 } else { 0 }
+}
+
+// 問い合わせ（id・RD・問い 1 つ）
+func dnsQuery(id int, name string, qtype int) []byte {
+    mut q := mut []byte{byte(id >> 8), byte(id & 0xff), 1, 0, 0, 1, 0, 0, 0, 0, 0, 0}
+    for lab <- strings.Split(strings.TrimSuffix(name, "."), ".") {
+        lb := bytes(lab)
+        q = append(q, byte(len(lb)))
+        for x <- lb {
+            q = append(q, x)
+        }
+    }
+    q = append(q, byte(0))
+    q = append(q, byte(qtype >> 8))
+    q = append(q, byte(qtype & 0xff))
+    q = append(q, byte(0))
+    q = append(q, byte(1))
+    return freeze(q)
+}
+
+// 応答の読み（rcode・切り詰め・答えの番地の列・形が正しいか）
+type dnsAnswer struct {
+    rcode int
+    tc bool
+    addrs [][]byte
+    ok bool
+}
+
+func badAnswer() dnsAnswer {
+    return dnsAnswer{rcode: 0, tc: false, addrs: [][]byte{}, ok: false}
+}
+
+// b の at からの名前（圧縮の指し先は前へだけ・64 回まで — 輪を断つ）と、名前の直後の位置（-1 = 形の誤り）
+func readName(b []byte, at0 int) (string, int) {
+    mut at := at0
+    mut end := -1
+    mut parts := mut []string{}
+    mut jumps := 0
+    while true {
+        if at >= len(b) {
+            return "", -1
+        }
+        l := int(b[at])
+        if l == 0 {
+            if end < 0 {
+                end = at + 1
+            }
+            return strings.Join(freeze(parts), "."), end
+        }
+        if (l & 0xc0) == 0xc0 {
+            if at + 1 >= len(b) || jumps >= 64 {
+                return "", -1
+            }
+            ptr := ((l & 0x3f) << 8) | int(b[at + 1])
+            if ptr >= at {
+                return "", -1
+            }
+            if end < 0 {
+                end = at + 2
+            }
+            at = ptr
+            jumps += 1
+        } else {
+            if (l & 0xc0) != 0 || at + 1 + l > len(b) {
+                return "", -1
+            }
+            parts = append(parts, strings.ToLower(bytesToString(sliceBytes(b, at + 1, at + 1 + l))))
+            at = at + 1 + l
+        }
+    }
+    return "", -1
+}
+
+// 応答 b を問い（id・name・qtype）と照らして読む（answer 節の CNAME の鎖を追って qtype の番地を集める）
+func parseAnswer(b []byte, id int, name string, qtype int) dnsAnswer {
+    if len(b) < 12 || (int(b[0]) << 8 | int(b[1])) != id || (int(b[2]) & 0x80) == 0 {
+        return badAnswer()
+    }
+    tc := (int(b[2]) & 0x02) != 0
+    rcode := int(b[3]) & 0x0f
+    qd := int(b[4]) << 8 | int(b[5])
+    an := int(b[6]) << 8 | int(b[7])
+    if qd != 1 {
+        return dnsAnswer{rcode: rcode, tc: tc, addrs: [][]byte{}, ok: tc}
+    }
+    qn, p0 := readName(b, 12)
+    want := strings.ToLower(strings.TrimSuffix(name, "."))
+    if p0 < 0 || p0 + 4 > len(b) || qn != want || (int(b[p0]) << 8 | int(b[p0 + 1])) != qtype {
+        return badAnswer()
+    }
+    mut p := p0 + 4
+    mut names := mut []string{}
+    mut types := mut []int{}
+    mut datas := mut [][]byte{}
+    mut cnames := mut []string{}
+    for i <- iter.Range(0, an) {
+        rn, q := readName(b, p)
+        if q < 0 || q + 10 > len(b) {
+            return dnsAnswer{rcode: rcode, tc: tc, addrs: [][]byte{}, ok: tc}
+        }
+        t := int(b[q]) << 8 | int(b[q + 1])
+        rl := int(b[q + 8]) << 8 | int(b[q + 9])
+        if q + 10 + rl > len(b) {
+            return dnsAnswer{rcode: rcode, tc: tc, addrs: [][]byte{}, ok: tc}
+        }
+        names = append(names, rn)
+        types = append(types, t)
+        datas = append(datas, sliceBytes(b, q + 10, q + 10 + rl))
+        mut cn := ""
+        if t == qtCname {
+            c1, _ := readName(b, q + 10)
+            cn = c1
+        }
+        cnames = append(cnames, cn)
+        p = q + 10 + rl
+    }
+    mut target := want
+    mut out := mut [][]byte{}
+    for hop <- iter.Range(0, 8) {
+        mut next := ""
+        for i <- iter.Range(0, len(names)) {
+            if names[i] == target {
+                if types[i] == qtype && len(datas[i]) == (if qtype == qtA { 4 } else { 16 }) {
+                    out = append(out, datas[i])
+                } else if types[i] == qtCname && next == "" {
+                    next = cnames[i]
+                }
+            }
+        }
+        if len(out) > 0 || next == "" {
+            return dnsAnswer{rcode: rcode, tc: tc, addrs: freeze(out), ok: true}
+        }
+        target = next
+    }
+    return dnsAnswer{rcode: rcode, tc: tc, addrs: [][]byte{}, ok: true}
+}

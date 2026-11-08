@@ -1,0 +1,52 @@
+package main
+
+// Web クライアントのガイド 1 節（docs/guide/web-client）: http.client.Request の一発。外の API の代わりに、同じプロセスの中で std/http/server の
+// 小さな API を立てて繋ぐ（本物の API なら url を差し替えるだけ — https も同じ書き方で、証明書の鎖は常に検証される）
+
+import "std/http/client"
+import "std/http/server"
+import "std/net"
+import "std/task"
+
+// 外の API の代役: GET /v1/items は JSON の配列を返す
+func api(r http.server.Request) http.server.Response {
+    return if r.path == "/v1/items" { http.server.Json("[{\"id\":1,\"name\":\"apple\"},{\"id\":2,\"name\":\"pear\"}]") } else { http.server.Status(404) }
+}
+
+func fetch(base string) []string {
+    r, e := http.client.Request("${base}/v1/items")
+    if e != nil {
+        return []string{"request failed"}
+    }
+    ct := http.client.Header(r, "content-type")
+    return []string{"status ${r.status}", "content-type ${if ct != nil { ct } else { "-" }}", string(r.body) catch ""}
+}
+
+func serve(l net.Listener, n int) error? {
+    mut k := 0
+    for c <- net.Accept(l)? {
+        http.server.ServeConn(c, api)?
+        k = k + 1
+        if k == n {
+            break
+        }
+    }
+    return nil
+}
+
+func main() {
+    e := net.Listen("127.0.0.1:0", (l) => {
+        base := "http://127.0.0.1:${net.Port(l)}"
+        got, _ := task.Run((s) => {
+            h := task.Spawn(s, () => fetch(base))
+            _ = serve(l, 1)
+            task.Join(h)
+        })
+        for line <- got {
+            println(line)
+        }
+    })
+    if e != nil {
+        println("listen failed")
+    }
+}

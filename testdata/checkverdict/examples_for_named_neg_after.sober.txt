@@ -1,0 +1,2 @@
+sober: load error at examples/for_named_neg_after.sober:14:25: source does not match the grammar
+exit=1

@@ -1,7 +1,7 @@
-// examples/tls_record.sober の Go の双子（std/tls/record の差分オラクル — TLS 便 R2・report-827）。RFC 9846 5 節（record の保護）と 7.1 / 7.2
+// std/internal/record/oracle_test.sober の Go の双子（record 層の差分オラクル）。RFC 9846 5 節（record の保護）と 7.1 / 7.2
 // （HKDF-Expand-Label・KeyUpdate）を crypto/hkdf + crypto/aes の GCM で組み、AES-128-GCM の record 列のバイト列の SHA-256 と ExpandLabel の値を出す。
 // Go の std に ChaCha20-Poly1305 が無いので ChaCha の行と拒否の行は Sober の期待値をそのまま書く（自己の黄金）。再生成:
-//   (cd scripts/oracles && go run tls_record.go) > examples/tls_record.out
+//   (cd scripts/oracles && go run tls_record.go) > testdata/crypto/tls_record.txt
 package main
 
 import (

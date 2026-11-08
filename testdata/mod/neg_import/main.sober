@@ -1,0 +1,9 @@
+package main
+
+import "json"
+import stdj "std/json"
+
+func main() int {
+    _ = stdj.Parse(bytes("1")) catch return json.Own()
+    return 0
+}

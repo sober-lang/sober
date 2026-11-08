@@ -223,18 +223,47 @@ func pushExprKids(st mut []int, sp0 int, t ast.Tree, n int) int {
     return sp
 }
 
+// 結果を持つ func 宣言の本体の末尾が `panic` 以外の呼び出しの式文なら、その字句 × 2 + 1（spec F-2 — 末尾の式は戻り値にならない。
+// check は末尾の値を本体の値として受け、build は return の無い道として拒否していた — 両方ここで名指す）。でなければ -1
+func tailCallHit(t ast.Tree, fd ast.Node) int {
+    if fd.d < 0 || ast.ListLen(t, fd.d) == 0 {
+        return -1
+    }
+    l := blockStmts(t, fd.e)
+    n := ast.ListLen(t, l)
+    if n == 0 {
+        return -1
+    }
+    s := t.nodes[ast.ListAt(t, l, n - 1)]
+    if s.kind != ast.SExpr {
+        return -1
+    }
+    mut e := s.a
+    while t.nodes[e].kind == ast.EParen {
+        e = t.nodes[e].a
+    }
+    x := t.nodes[e]
+    if x.kind != ast.ECall && x.kind != ast.EPipe {
+        return -1
+    }
+    if x.kind == ast.ECall && t.nodes[x.a].kind == ast.EIdent && StrIs(t, t.nodes[x.a].a, "panic") {
+        return -1
+    }
+    return x.tok * 2 + 1
+}
+
 // 全 package の式文の検査の最初の違反（違反なしは file = -1）
 func exprStmtHit(cx Cx, pnames []string) NameHit {
     for f <- iter.Range(0, len(cx.trees)) {
         hit := exprStmtIn(cx, pnames, f)
         if hit >= 0 {
-            return NameHit{f, hit, diag.PureExprStmt{at: diag.Pos{f, hit}}}
+            return NameHit{f, hit / 2, diag.PureExprStmt{at: diag.Pos{f, hit / 2}, kind: hit % 2}}
         }
     }
     return noHit()
 }
 
-// ファイル f の式文の検査の最も前の違反の字句（無ければ -1 — finpar.sober の子も同じ関数を呼ぶ）
+// ファイル f の式文の検査の最も前の違反（字句 × 2 + 種類 — 種類は diag.PureExprStmt の kind。無ければ -1 — finpar.sober の子も同じ関数を呼ぶ）
 func exprStmtIn(cx Cx, pnames []string, f int) int {
     t := cx.trees[f]
     root := t.nodes[t.file]
@@ -243,7 +272,8 @@ func exprStmtIn(cx Cx, pnames []string, f int) int {
     for i <- iter.Range(0, ast.ListLen(t, root.d)) {
         fd := t.nodes[ast.ListAt(t, root.d, i)]
         if fd.e >= 0 {
-            h := stmtHit(t, fd.e, isMain && StrIs(t, fd.a, "main"))
+            h0 := stmtHit(t, fd.e, isMain && StrIs(t, fd.a, "main"))
+            h := if h0 >= 0 { h0 * 2 } else { tailCallHit(t, fd) }
             if h >= 0 && (hit < 0 || h < hit) {
                 hit = h
             }
@@ -251,7 +281,8 @@ func exprStmtIn(cx Cx, pnames []string, f int) int {
     }
     for i <- iter.Range(0, ast.ListLen(t, root.e)) {
         c := t.nodes[ast.ListAt(t, root.e, i)]
-        h := constHit(t, c.b)
+        h0 := constHit(t, c.b)
+        h := if h0 >= 0 { h0 * 2 } else { -1 }
         if h >= 0 && (hit < 0 || h < hit) {
             hit = h
         }

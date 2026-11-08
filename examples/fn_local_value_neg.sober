@@ -1,0 +1,20 @@
+package main
+
+// 負例（check も build も名指しで拒否 — diag.TypeMismatch kind 6）: 局所に束縛した名前付き関数は値の位置に置けない（spec F-11）—
+// `R{g: dbl}` と名前を直に書くか、ラムダに
+
+type G func(x int) int
+
+type R struct {
+    g G
+}
+
+func dbl(x int) int {
+    return x * 2
+}
+
+func main() {
+    f := dbl
+    r := R{g: f}
+    println(r.g(3))
+}

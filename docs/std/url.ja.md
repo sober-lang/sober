@@ -4,7 +4,7 @@
 
 `import "std/url"`
 
-URL の部品の符号化: percent-encoding（RFC 3986 2.1）の Escape ⇄ Unescape と、クエリ文字列（application/x-www-form-urlencoded — `k=v&…`）の全部の組を読む ParseQuery。std/http の Query / Form は生のまま（デコードしない）の 1 キーの読み — デコードした値・同じキーの全部が要るときはこちら
+URL の部品の符号化: percent-encoding（RFC 3986 2.1）の Escape ⇄ Unescape と、クエリ文字列（application/x-www-form-urlencoded — `k=v&…`）の全部の組を読む ParseQuery。std/http/server の Query / Form は生のまま（デコードしない）の 1 キーの読み — デコードした値・同じキーの全部が要るときはこちら
 
 ## Bad
 
@@ -49,6 +49,19 @@ func Unescape(s string) (string, error?)
 s の "%XX"（16 進は大小どちらも）を 1 バイトに戻した文字列（'+' はそのまま — 空白に読むのは ParseQuery だけ）
 
 失敗のラベル: [`Bad`](#bad)
+
+## FormatQuery
+
+```sober
+@effects()
+func FormatQuery(ps []Pair) string
+```
+
+ps のクエリ文字列（`k=v&…` — key と value は Escape〔空白は "%20"〕・書かれた順のまま。ParseQuery で同じ組の列に戻る）
+
+```sober
+url.FormatQuery([]url.Pair{url.Pair{key: "q", value: "a b"}, url.Pair{key: "tag", value: "あ"}})   // "q=a%20b&tag=%E3%81%82"
+```
 
 ## ParseQuery
 

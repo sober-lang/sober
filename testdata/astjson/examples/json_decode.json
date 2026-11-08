@@ -1223,7 +1223,7 @@
                             {
                               "k": "type",
                               "bind": null,
-                              "variant": "json.IntRange",
+                              "variant": "json.IntOutOfRange",
                               "fields": [
                                 {
                                   "name": "pos",

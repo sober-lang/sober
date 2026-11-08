@@ -1,2 +1,2 @@
-sober: desugar error at examples/partial_lit_nozero.sober:16:10 (CoreFragment)
+sober: desugar error at examples/partial_lit_nozero.sober:16:10 (TypeMismatch): a function-typed or union-typed value has no zero value — give every such field in the literal
 exit=1

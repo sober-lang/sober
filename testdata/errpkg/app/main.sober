@@ -1,6 +1,6 @@
 package main
 
-import "testdata/errpkg/lib"
+import lib "testdata/errpkg/lib"
 
 type Mine error {
     n int

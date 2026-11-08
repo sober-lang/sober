@@ -1,0 +1,10 @@
+package main
+
+import "greet"
+import "text/pad"
+
+func main() int {
+    println(greet.Hello("sober"))
+    println(text.pad.Left("42", 6))
+    return 0
+}

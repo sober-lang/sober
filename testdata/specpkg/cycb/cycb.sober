@@ -5,5 +5,5 @@ package cycb
 import "testdata/specpkg/cyca"
 
 func B() int {
-    return cyca.A()
+    return testdata.specpkg.cyca.A()
 }

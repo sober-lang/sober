@@ -1,0 +1,1 @@
+sober: desugar error at testdata/analyzer_neg/field_imm_call.sober:14:17 (TypeMismatch): a mut slice / map that is not a local path cannot be stored in an imm field — only `x`, `x.f` or `x[i]` is frozen implicitly there: bind the value first (`v := …`) and store `v`, or build the field's value as imm

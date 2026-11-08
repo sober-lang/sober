@@ -1,0 +1,121 @@
+package exact
+
+// 検算そのものの網: 正しい結果を受け、ビット列で 1 つずらした結果を拒む（同点の偶数への丸め・溢れ・非正規数・0 の符号・特殊値・最短の印字）。
+// 加えて bigint.Mul の網 — bigint の中には白箱のテストを置けない（std/testing が convert → floatfmt → bigint に届いて循環する）。
+// 参照 = 肢ごとの MulAdd と Shl で組んだ Σ a × b[j] × 2^(30j)・可換・境界
+
+import "std/internal/bigint"
+import "std/iter"
+import "std/math"
+import "std/rand"
+
+func next(f float) float {
+    return math.FromBits(math.Bits(f) + 1)
+}
+
+func prev(f float) float {
+    return math.FromBits(math.Bits(f) - 1)
+}
+
+func TestArith() {
+    assert(CheckAdd(0.1, 0.2, 0.30000000000000004))
+    assert(!CheckAdd(0.1, 0.2, 0.3))
+    assert(CheckSub(1.0, 1.0, 0.0) && !CheckSub(1.0, 1.0, -0.0))
+    assert(CheckAdd(-0.0, -0.0, -0.0) && !CheckAdd(-0.0, -0.0, 0.0))
+    assert(CheckAdd(-0.0, 0.0, 0.0))
+    assert(CheckMul(3.0, -0.0, -0.0) && !CheckMul(3.0, -0.0, 0.0))
+    q := 1.0 / 3.0
+    assert(CheckDiv(1.0, 3.0, q) && !CheckDiv(1.0, 3.0, next(q)) && !CheckDiv(1.0, 3.0, prev(q)))
+    assert(CheckDiv(1.0, 0.0, 1.0 / 0.0) && CheckDiv(-1.0, 0.0, -1.0 / 0.0))
+    nan := 0.0 / 0.0
+    assert(CheckDiv(0.0, 0.0, nan) && !CheckDiv(0.0, 0.0, 0.0))
+    inf := 1.0 / 0.0
+    assert(CheckSub(inf, inf, nan) && CheckAdd(inf, 1.0, inf) && CheckMul(inf, 0.0, nan))
+    // 溢れ: 最大の有限値 × 2 は +Inf・最大の有限値 + 最下位の半分ちょうど（同点）は仮数が奇数なので Inf へ
+    mx := 1.7976931348623157e308
+    assert(CheckMul(mx, 2.0, inf) && !CheckMul(mx, 2.0, mx))
+    assert(CheckAdd(mx, 9.9792015476736e291, inf))
+    assert(CheckAdd(mx, 9.9792015476735e291, mx))
+    // 非正規数
+    tiny := 5.0e-324
+    assert(CheckMul(tiny, 0.5, 0.0) && CheckMul(tiny, 0.75, tiny) && CheckMul(-tiny, 0.5, -0.0))
+    assert(CheckSub(2.2250738585072014e-308, 2.225073858507201e-308, tiny))
+}
+
+func TestSqrtAndInt() {
+    s := math.Sqrt(2.0)
+    assert(CheckSqrt(2.0, s) && !CheckSqrt(2.0, next(s)) && !CheckSqrt(2.0, prev(s)))
+    assert(CheckSqrt(-0.0, -0.0) && CheckSqrt(-1.0, 0.0 / 0.0) && CheckSqrt(4.0, 2.0))
+    // 2^53 + 1 は同点 — 偶数の 2^53 へ
+    assert(CheckFromInt(9007199254740993, 9007199254740992.0) && !CheckFromInt(9007199254740993, 9007199254740994.0))
+    assert(CheckFromInt(0 - 9223372036854775807 - 1, -9.223372036854775808e18))
+    assert(CheckFromInt(0, 0.0) && !CheckFromInt(0, -0.0))
+}
+
+func TestDecimal() {
+    assert(CheckDecimal(false, bytes("1"), -1, 0.1) && !CheckDecimal(false, bytes("1"), -1, next(0.1)))
+    // 最大の有限値と 2^1024 の中点 1.797693134862315807937…e308 の両側
+    assert(CheckDecimal(false, bytes("17976931348623158"), 292, 1.7976931348623157e308))
+    assert(CheckDecimal(false, bytes("17976931348623159"), 292, 1.0 / 0.0))
+    // 最小の非正規数の半分 2.47e-324 の両側
+    assert(CheckDecimal(false, bytes("2"), -324, 0.0) && CheckDecimal(false, bytes("3"), -324, 5.0e-324))
+    assert(CheckDecimal(true, bytes(""), 0, -0.0) && !CheckDecimal(true, bytes(""), 0, 0.0))
+}
+
+func TestFormat() {
+    assert(CheckFormat(0.1, "0.1") && !CheckFormat(0.1, "0.10000000000000001") && !CheckFormat(0.1, "0.2"))
+    assert(CheckFormat(1.0e21, "1e+21") && CheckFormat(123456789.0, "1.23456789e+08") && CheckFormat(100.0, "100"))
+    assert(CheckFormat(-0.0, "-0") && !CheckFormat(0.0, "-0"))
+    assert(CheckFormat(5.0e-324, "5e-324") && CheckFormat(1.7976931348623157e308, "1.7976931348623157e+308"))
+    assert(CheckFormat(0.30000000000000004, "0.30000000000000004") && !CheckFormat(0.30000000000000004, "0.3"))
+    assert(CheckFormat(1.0 / 0.0, "+Inf") && CheckFormat(0.0 / 0.0, "NaN") && !CheckFormat(1.0, "NaN"))
+}
+
+func refMul(d mut []int, a mut []int, b mut []int) {
+    bigint.SetInt(mut d, 0)
+    for j <- iter.Range(0, len(b)) {
+        mut t := mut []int{}
+        bigint.Set(mut t, mut a)
+        bigint.MulAdd(mut t, b[j], 0)
+        bigint.Shl(mut t, 30 * j)
+        bigint.Add(mut d, mut t)
+    }
+}
+
+func limbs(r mut rand.Rand) mut []int {
+    mut out := mut []int{}
+    n := 1 + rand.Intn(mut r, 12)
+    for k <- iter.Range(0, n) {
+        out = append(out, if rand.Bool(mut r) { bigint.Limb - 1 } else { rand.Intn(mut r, bigint.Limb) })
+    }
+    return out
+}
+
+func TestBigintMul() {
+    mut r := rand.New(30)
+    for t <- iter.Range(0, 500) {
+        mut a := limbs(mut r)
+        mut b := limbs(mut r)
+        mut d := mut []int{}
+        mut e := mut []int{}
+        mut f := mut []int{}
+        bigint.Mul(mut d, mut a, mut b)
+        bigint.Mul(mut e, mut b, mut a)
+        refMul(mut f, mut a, mut b)
+        assert(bigint.Cmp(mut d, mut f) == 0 && bigint.Cmp(mut e, mut f) == 0)
+    }
+    mut z := mut []int{}
+    mut x := mut []int{}
+    mut d := mut []int{}
+    bigint.SetInt(mut z, 0)
+    bigint.SetInt(mut x, bigint.Limb - 1)
+    bigint.Mul(mut d, mut z, mut x)
+    assert(bigint.Top(mut d) < 0)
+    mut y := mut []int{}
+    bigint.SetInt(mut y, bigint.Limb - 1)
+    bigint.Mul(mut d, mut x, mut y)
+    // (2^30 − 1)^2 = 2^60 − 2^31 + 1
+    mut w := mut []int{}
+    bigint.SetInt(mut w, 1152921502459363329)
+    assert(bigint.Cmp(mut d, mut w) == 0)
+}

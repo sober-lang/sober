@@ -2,14 +2,14 @@
   "package": "main",
   "imports": [
     {
-      "alias": null,
+      "alias": "util",
       "path": "testdata/loader_neg/refcollide/x/util",
-      "tok": 4
+      "tok": 5
     },
     {
-      "alias": null,
+      "alias": "util",
       "path": "testdata/loader_neg/refcollide/y/util",
-      "tok": 7
+      "tok": 9
     }
   ],
   "types": [],
@@ -28,7 +28,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 14
+                "tok": 16
               },
               "args": [
                 {
@@ -38,27 +38,27 @@
                     "base": {
                       "k": "ident",
                       "name": "util",
-                      "tok": 16
+                      "tok": 18
                     },
                     "field": "F",
-                    "tok": 18
+                    "tok": 20
                   },
                   "args": [],
-                  "tok": 19
+                  "tok": 21
                 }
               ],
-              "tok": 15
+              "tok": 17
             }
           }
         ]
       },
-      "tok": 10,
+      "tok": 12,
       "bodiless": false,
       "span": {
-        "start": 9,
-        "end": 25
+        "start": 11,
+        "end": 27
       },
-      "sig_end": 13
+      "sig_end": 15
     }
   ],
   "consts": []

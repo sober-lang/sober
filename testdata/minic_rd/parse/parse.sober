@@ -24,9 +24,9 @@ type Node struct {
 }
 
 // peek は次の字句を読むだけ（Cursor の写しを進める）
-func peek(c mut lex.Cursor) lex.Token {
+func peek(c mut testdata.minic_rd.lex.Cursor) testdata.minic_rd.lex.Token {
     mut d := c
-    return lex.Next(mut d)
+    return testdata.minic_rd.lex.Next(mut d)
 }
 
 // node は節を積んで添字を返す
@@ -36,15 +36,15 @@ func node(nb mut builder.Builder[Node], n Node) int {
 }
 
 // expr := term (('+' | '-') term)*
-func expr(nb mut builder.Builder[Node], c mut lex.Cursor) (int, error?) {
+func expr(nb mut builder.Builder[Node], c mut testdata.minic_rd.lex.Cursor) (int, error?) {
     mut l := term(mut nb, mut c)?
     mut more := true
     while more {
         t := peek(mut c)
-        if t.kind == lex.Plus || t.kind == lex.Minus {
-            lex.Next(mut c)
+        if t.kind == testdata.minic_rd.lex.Plus || t.kind == testdata.minic_rd.lex.Minus {
+            testdata.minic_rd.lex.Next(mut c)
             r := term(mut nb, mut c)?
-            k := if t.kind == lex.Plus { Add } else { Sub }
+            k := if t.kind == testdata.minic_rd.lex.Plus { Add } else { Sub }
             l = node(mut nb, Node{k, 0, t.pos, l, r})
         } else {
             more = false
@@ -54,15 +54,15 @@ func expr(nb mut builder.Builder[Node], c mut lex.Cursor) (int, error?) {
 }
 
 // term := unary (('*' | '/') unary)*
-func term(nb mut builder.Builder[Node], c mut lex.Cursor) (int, error?) {
+func term(nb mut builder.Builder[Node], c mut testdata.minic_rd.lex.Cursor) (int, error?) {
     mut l := unary(mut nb, mut c)?
     mut more := true
     while more {
         t := peek(mut c)
-        if t.kind == lex.Star || t.kind == lex.Slash {
-            lex.Next(mut c)
+        if t.kind == testdata.minic_rd.lex.Star || t.kind == testdata.minic_rd.lex.Slash {
+            testdata.minic_rd.lex.Next(mut c)
             r := unary(mut nb, mut c)?
-            k := if t.kind == lex.Star { Mul } else { Div }
+            k := if t.kind == testdata.minic_rd.lex.Star { Mul } else { Div }
             l = node(mut nb, Node{k, 0, t.pos, l, r})
         } else {
             more = false
@@ -72,47 +72,47 @@ func term(nb mut builder.Builder[Node], c mut lex.Cursor) (int, error?) {
 }
 
 // unary := '-' unary | 数 | '(' expr ')'
-func unary(nb mut builder.Builder[Node], c mut lex.Cursor) (int, error?) {
-    t := lex.Next(mut c)
-    if t.kind == lex.Minus {
+func unary(nb mut builder.Builder[Node], c mut testdata.minic_rd.lex.Cursor) (int, error?) {
+    t := testdata.minic_rd.lex.Next(mut c)
+    if t.kind == testdata.minic_rd.lex.Minus {
         v := unary(mut nb, mut c)?
         return node(mut nb, Node{Neg, 0, t.pos, 0 - 1, v}), nil
     }
-    if t.kind == lex.Num {
+    if t.kind == testdata.minic_rd.lex.Num {
         return node(mut nb, Node{Lit, t.val, t.pos, 0 - 1, 0 - 1}), nil
     }
-    if t.kind == lex.LParen {
+    if t.kind == testdata.minic_rd.lex.LParen {
         e := expr(mut nb, mut c)?
-        u := lex.Next(mut c)
-        if u.kind == lex.RParen {
+        u := testdata.minic_rd.lex.Next(mut c)
+        if u.kind == testdata.minic_rd.lex.RParen {
             return e, nil
         }
-        if u.kind == lex.End {
-            return 0, diag.Expected{pos: u.pos, want: 5}
+        if u.kind == testdata.minic_rd.lex.End {
+            return 0, testdata.minic_rd.diag.Expected{pos: u.pos, want: 5}
         }
-        return 0, diag.Expected{pos: u.pos, want: 1}
+        return 0, testdata.minic_rd.diag.Expected{pos: u.pos, want: 1}
     }
-    if t.kind == lex.End {
-        return 0, diag.UnexpectedEnd{pos: t.pos}
+    if t.kind == testdata.minic_rd.lex.End {
+        return 0, testdata.minic_rd.diag.UnexpectedEnd{pos: t.pos}
     }
-    return 0, diag.Expected{pos: t.pos, want: 0}
+    return 0, testdata.minic_rd.diag.Expected{pos: t.pos, want: 0}
 }
 
 // Parse は 1 行の字句列を木にする（根は最後の節）
-@errors(diag.UnexpectedEnd, diag.Expected, diag.Unbalanced)
-func Parse(ts []lex.Token) ([]Node, error?) {
+@errors(testdata.minic_rd.diag.UnexpectedEnd, testdata.minic_rd.diag.Expected, testdata.minic_rd.diag.Unbalanced)
+func Parse(ts []testdata.minic_rd.lex.Token) ([]Node, error?) {
     mut nb := builder.Builder[Node]{}
-    mut c := lex.Start(ts)
+    mut c := testdata.minic_rd.lex.Start(ts)
     // 別 package の再帰する mut 関数（.sobi では本体なし）を写しの Cursor で呼ぶ — 結果は使わない（R2 の分割検査の経路）
     mut d := c
-    lex.Remaining(mut d)
+    testdata.minic_rd.lex.Remaining(mut d)
     expr(mut nb, mut c)?
-    t := lex.Next(mut c)
-    if t.kind == lex.RParen {
-        return []Node{}, diag.Unbalanced{pos: t.pos}
+    t := testdata.minic_rd.lex.Next(mut c)
+    if t.kind == testdata.minic_rd.lex.RParen {
+        return []Node{}, testdata.minic_rd.diag.Unbalanced{pos: t.pos}
     }
-    if t.kind != lex.End {
-        return []Node{}, diag.Expected{pos: t.pos, want: 1}
+    if t.kind != testdata.minic_rd.lex.End {
+        return []Node{}, testdata.minic_rd.diag.Expected{pos: t.pos, want: 1}
     }
     return builder.Build(mut nb), nil
 }

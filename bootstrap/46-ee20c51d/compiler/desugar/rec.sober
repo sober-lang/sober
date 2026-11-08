@@ -1,0 +1,271 @@
+package desugar
+
+// 再帰の型宣言の脱糖（language.md 1 節・formal.md の再帰型の段）: 表層の名前の型 → コアの同時の μ。
+// 組 = loader.RecGroups（型宣言の参照グラフの SCC・成分は宣言順）。組の宣言 d を引くと、展開中の組の枠に (組, 型引数の束縛) が
+// あれば再帰の変数（de Bruijn — 内側の枠の幅を足す）、無ければ枠を積んで組の全成分の本体を局所座標（region 0）で展開し
+// `muRs 0 n i bs` を返す（座標は呼び手の文脈 — pointTy / retTy / upRegion が slice と同じく r を差し替える）。
+// 値は構築の点で fold・分解の点（欄の読み・switch）で unfold（iso — 暗黙に開かない）
+
+import "ast"
+import "std/iter"
+import "std/table"
+
+// 枠の語数（[種類, n, 組の位置, 型引数の束縛]）
+const RECFR = 4
+
+// 宣言 decl の再帰の組の位置（st.recGroups の n の添字）と成分の番号（再帰しなければ (-1, -1)）
+func recGroupOf(st mut S, decl NodeRef) (int, int) {
+    if !isTreeNode(int(decl)) {
+        return -1, -1
+    }
+    f := refFile(int(decl))
+    x := refIdx(int(decl))
+    g := st.recGroups
+    mut o := 0
+    while o < len(g) {
+        n := g[o]
+        for j <- iter.Range(0, n) {
+            if g[o + 1 + 2 * j] == f && g[o + 2 + 2 * j] == x {
+                return o, j
+            }
+        }
+        o += 2 + 2 * n + 2 * g[o + 1 + 2 * n]
+    }
+    return -1, -1
+}
+
+// 閉路の上の匿名の関数型の節 te の組の位置と S の成分の番号（named fn type の成分の後 — 無ければ (-1, -1)）
+func recAnonOf(st mut S, te NodeRef) (int, int) {
+    if !isTreeNode(int(te)) {
+        return -1, -1
+    }
+    f := refFile(int(te))
+    x := refIdx(int(te))
+    g := st.recGroups
+    mut o := 0
+    while o < len(g) {
+        n := g[o]
+        m := g[o + 1 + 2 * n]
+        for k <- iter.Range(0, m) {
+            if g[o + 2 + 2 * n + 2 * k] == f && g[o + 3 + 2 * n + 2 * k] == x {
+                nf, _ := recSIndex(mut st, o, -1)
+                return o, nf + k
+            }
+        }
+        o += 2 + 2 * n + 2 * m
+    }
+    return -1, -1
+}
+
+// 組の位置 g の k 番目の閉路の上の匿名の関数型の節
+func recAnonAt(st mut S, g int, k int) NodeRef {
+    n := st.recGroups[g]
+    return NodeRef(ABASE + st.recGroups[g + 2 + 2 * n + 2 * k] * FW + st.recGroups[g + 3 + 2 * n + 2 * k])
+}
+
+// 宣言 decl が再帰の組に属するか
+func isRecDecl(st mut S, decl NodeRef) bool {
+    g, _ := recGroupOf(mut st, decl)
+    return g >= 0
+}
+
+// 型宣言の参照 dr（[decl, pkg, tenv]）が再帰の組に属するか
+func isRecDr(st mut S, dr int) bool {
+    return dr >= 0 && isRecDecl(mut st, hgetN(mut st, dr))
+}
+
+// 組の位置 g の j 番目の成分の宣言の節
+func recMember(st mut S, g int, j int) NodeRef {
+    return NodeRef(ABASE + st.recGroups[g + 1 + 2 * j] * FW + st.recGroups[g + 2 + 2 * j])
+}
+
+// 枠の種類: D の組（データの成分）と S の組（関数型の成分）。同じ組の両方の枠が積まれうる（Mw ↔ Next — 閉路が関数型と slice を両方通る）
+const RECD = 0
+const RECS = 1
+
+// 展開中の枠から (種類 kind, 組 g, 型引数の束縛 env) の成分 j の再帰の変数（見えなければ -1）。
+// D の束縛は関数型の中から見えない（S の枠で探索を止める — 関数型の中の D は関数型の座標で展開し直す）。S の束縛はどの枠も越えて見える
+func recLookup(st mut S, kind int, g int, env int, j int) int {
+    mut acc := 0
+    mut k := st.recN
+    while k > 0 {
+        k -= 1
+        b := k * RECFR
+        fk := table.Get(mut st.recFr, b)
+        n := table.Get(mut st.recFr, b + 1)
+        if fk == kind && table.Get(mut st.recFr, b + 2) == g && envSame(mut st, table.Get(mut st.recFr, b + 3), env) {
+            return acc + j
+        }
+        if kind == RECD && fk == RECS {
+            return -1
+        }
+        acc += n
+    }
+    return -1
+}
+
+// 組の位置 g の S の成分（named fn type の成分 + 閉路の上の匿名の関数型）のうち named fn type の数と、成分 j の S の成分の番号（j が named fn type でなければ -1）
+func recSIndex(st mut S, g int, j int) (int, int) {
+    mut n := 0
+    mut at := -1
+    for m <- iter.Range(0, st.recGroups[g]) {
+        if declKind(mut st, recMember(mut st, g, m)) == ast.BFunc {
+            if m == j {
+                at = n
+            }
+            n += 1
+        }
+    }
+    return n, at
+}
+
+// 組の位置 g の S の成分の数
+func recSCount(st mut S, g int) int {
+    nf, _ := recSIndex(mut st, g, -1)
+    return nf + st.recGroups[g + 1 + 2 * st.recGroups[g]]
+}
+
+// 再帰の組の named fn type の宣言 decl の閉包の核の型
+func recFnCore(st mut S, pk int, decl NodeRef, at NodeRef, fuel int) (TyRef, error?) {
+    g, j := recGroupOf(mut st, decl)
+    _, i := recSIndex(mut st, g, j)
+    return recSCore(mut st, pk, g, i, at, fuel)
+}
+
+// 組の位置 g の S の成分 i の閉包の核の型（`fn (prod U P) R` の同時の μ — 展開中なら再帰の変数）。
+// 匿名の関数型の成分の env の鍵は束縛の中で引く（brwKey — 値の位置の欄か借りの位置か）
+func recSCore(st mut S, pk int, g int, i int, at NodeRef, fuel int) (TyRef, error?) {
+    n := recSCount(mut st, g)
+    v := recLookup(mut st, RECS, g, -1, i)
+    if v >= 0 {
+        return tRVar(mut st, v), nil
+    }
+    recPush(mut st, RECS, n, g, -1)
+    defer {
+        st.recN -= 1
+    }
+    bodies := ListRef(listN(mut st, n))
+    mut k := 0
+    for m <- iter.Range(0, st.recGroups[g]) {
+        md := recMember(mut st, g, m)
+        if declKind(mut st, md) == ast.BFunc {
+            hsetTy(mut st, int(bodies) + 1 + k, closCoreOfKey(mut st, pk, nC(nodeOf(mut st, md)), md, at, fuel - 1)?)
+            k += 1
+        }
+    }
+    for a <- iter.Range(0, n - k) {
+        te := recAnonAt(mut st, g, a)
+        key := brwKey(mut st, pk, te, at, fuel - 1, anonFieldTE(mut st, te))?
+        hsetTy(mut st, int(bodies) + 1 + k + a, closCoreOfKey(mut st, pk, te, key, at, fuel - 1)?)
+    }
+    mut bs := st.tUnit
+    mut q := n - 1
+    while q >= 0 {
+        bs = tProd(mut st, latTy(mut st, bodies, q), bs)
+        q -= 1
+    }
+    return tMuS(mut st, n, i, bs), nil
+}
+
+// 成分の宣言 member の型引数の束縛（env の型を member 自身の型パラメータの名前で — 組の成分は型引数を同じ順で渡し合う〔loader の検査〕）
+func recEnvFor(st mut S, member NodeRef, env int) int {
+    if env < 0 {
+        return env
+    }
+    n := hget(mut st, env)
+    tps := lB(nodeOf(mut st, member))
+    e := listN(mut st, n * 3)
+    for i <- iter.Range(0, n) {
+        hset(mut st, e + 1 + i * 3, latI(mut st, tps, i))
+        hset(mut st, e + 2 + i * 3, hget(mut st, env + 2 + i * 3))
+        hset(mut st, e + 3 + i * 3, hget(mut st, env + 3 + i * 3))
+    }
+    hset(mut st, e, n)
+    return e
+}
+
+// 枠を 1 つ積む（表は使い回す — 論理の長さ = st.recN）
+func recPush(st mut S, kind int, n int, g int, env int) {
+    b := st.recN * RECFR
+    if b == table.Len(mut st.recFr) {
+        for _ <- iter.Range(0, RECFR) {
+            table.Push(mut st.recFr, 0)
+        }
+    }
+    table.Set(mut st.recFr, b, kind)
+    table.Set(mut st.recFr, b + 1, n)
+    table.Set(mut st.recFr, b + 2, g)
+    table.Set(mut st.recFr, b + 3, env)
+    st.recN += 1
+}
+
+// 再帰の組の宣言 decl（package pk・型引数の束縛 env — 非ジェネリックは -1）の型: 展開中なら再帰の変数・そうでなければ同時の μ（局所座標）
+func recTy(st mut S, pk int, decl NodeRef, env int, at NodeRef, fuel int) (TyRef, error?) {
+    g, i := recGroupOf(mut st, decl)
+    v := recLookup(mut st, RECD, g, env, i)
+    if v >= 0 {
+        return tRVar(mut st, v), nil
+    }
+    n := st.recGroups[g]
+    recPush(mut st, RECD, n, g, env)
+    saved := st.tenv
+    defer {
+        st.tenv = saved
+        st.recN -= 1
+    }
+    bodies := ListRef(listN(mut st, n))
+    for j <- iter.Range(0, n) {
+        m := recMember(mut st, g, j)
+        st.tenv = recEnvFor(mut st, m, env)
+        body := nC(nodeOf(mut st, m))
+        // named fn type の成分は D の変数として指されない（関数型への参照は S の μ — recSCore）ので本体は unit の置き場
+        bt := if declKind(mut st, m) == ast.BStruct {
+            fieldsTy(mut st, pk, lA(nodeOf(mut st, body)), at, fuel - 1)?
+        } else if declKind(mut st, m) == ast.BFunc {
+            st.tUnit
+        } else {
+            unionTreeTy(mut st, pk, m, 0, at, fuel - 1)?
+        }
+        hsetTy(mut st, int(bodies) + 1 + j, bt)
+    }
+    mut bs := st.tUnit
+    mut j := n - 1
+    while j >= 0 {
+        bs = tProd(mut st, latTy(mut st, bodies, j), bs)
+        j -= 1
+    }
+    return tMuRs(mut st, 0, n, i, bs), nil
+}
+
+// 型宣言の参照 dr の値の型（構築・分解の注釈 — 座標は最内 region。dest > 0 なら region dest - 1）
+func recDrTy(st mut S, dr int, dest int, at NodeRef) (TyRef, error?) {
+    t := recTy(mut st, hget(mut st, dr + 1), hgetN(mut st, dr), hget(mut st, dr + 2), at, TYFUEL)?
+    // imm の組は最内（欄の値は ann で上界へ上がる — 行き先へは境界コピーが運ぶ）・mut を含む組だけ行き先の座標（mut は上げられない）
+    imm := tyMutFreeD(mut st, muRsBody(mut st, t))
+    return tMuRsAt(mut st, t, if dest > 0 && !imm { dest - 1 } else { st.rdepth - 1 }), nil
+}
+
+// 型が D の μ を（関数型の外に）含むか
+func tyHasMu(st mut S, t TyRef) bool {
+    k := tg(mut st, t)
+    return switch k {
+    case TMuRs: true
+    case TOpt: tyHasMu(mut st, tInner(mut st, t))
+    case TUn | TPr: tyHasMu(mut st, tLeft(mut st, t)) || tyHasMu(mut st, tRight(mut st, t))
+    case TSl | TRef: tyHasMu(mut st, tElem(mut st, t))
+    case TMp: tyHasMu(mut st, tKey(mut st, t)) || tyHasMu(mut st, tVal(mut st, t))
+    default: false
+    }
+}
+
+// fold（中身は 1 段の展開の型そのもの — Lean の foldRs は等しさを要求するので ann で展開の型へ緩める）
+func recFold(st mut S, t TyRef, v CoreRef) CoreRef {
+    return cFold(mut st, t, cAnn(mut st, v, tyUnfold(mut st, t)))
+}
+
+// 宣言 a と b が同じ再帰の組に属するか
+func SameRecGroup(st mut S, a NodeRef, b NodeRef) bool {
+    ga, _ := recGroupOf(mut st, a)
+    gb, _ := recGroupOf(mut st, b)
+    return ga >= 0 && ga == gb
+}

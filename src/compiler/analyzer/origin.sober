@@ -6,7 +6,7 @@ package analyzer
 // 原子: O = `@credential` の関数の結果と `@credential` の欄の読み（std の外の package の読みだけ — std の中の読み〔Header・condOf・Dispatch の写し〕は源にしない）・
 // SH = `@shared` の variant のリテラル・C = 呼ぶと源に届きうる関数値（Eff[f] — 源の口を呼ぶ・Eff の呼び先を呼ぶ・C を持つ関数値を呼ぶ）。
 // 拒否 = 出会い: std の外の struct の構築（リテラル・欄の書き込み）で SH の欄（`@shared` の variant を持つ union の型の欄）の値と他の欄の値の
-// O / C が出会う・利用者が応答 1 件の方針の欄（std/http の Response.cache）へ SH を書く・std/http の Mount（名指しの出会いの口）の routes の SH と mw の O / C。
+// O / C が出会う・利用者が応答 1 件の方針の欄（std/http/server の Response.cache）へ SH を書く・std/http/server の Mount（名指しの出会いの口）の routes の SH と mw の O / C。
 // 仮引数由来の値は Pin で文脈に鈍く具体化して照合する（違反の名指しは構築の位置）
 
 import "ast"
@@ -43,7 +43,7 @@ func ogInitFn(az mut Az, fi int, fd ast.Node) {
     if !std && desugar.FuncBlessOrigin(mut az.d, fd) && !desugar.FuncBless(mut az.d, fd) {
         report(mut az, MOrgStd, desugar.FnAt(mut az.d, fi).node, desugar.NodeRef(3))
     }
-    if std && desugar.StrIs(mut az.d, desugar.StrRef(fd.a), "Mount") && desugar.StrIs(mut az.d, desugar.PkgPath(mut az.d, pk), "std/http") {
+    if std && desugar.StrIs(mut az.d, desugar.StrRef(fd.a), "Mount") && desugar.StrIs(mut az.d, desugar.PkgPath(mut az.d, pk), "std/http/server") {
         az.sv.mountFn = fi
     }
 }
@@ -88,7 +88,7 @@ func ogInitRest(az mut Az) {
             td := node(mut az, desugar.NodeRef(table.Get(mut az.sv.fl, q * 3)))
             nm := desugar.StrRef(table.Get(mut az.sv.fl, q * 3 + 1))
             resp := nm != -1 && desugar.StrIs(mut az.d, nm, "cache") && desugar.StrIs(mut az.d, desugar.StrRef(td.a), "Response") &&
-                desugar.StrIs(mut az.d, desugar.PkgPath(mut az.d, pk), "std/http")
+                desugar.StrIs(mut az.d, desugar.PkgPath(mut az.d, pk), "std/http/server")
             flag = if resp { 2 } else { 1 }
         }
         table.Push(mut az.sv.shf, flag)
@@ -302,7 +302,7 @@ func ogShName(az mut Az, a int) string {
 // 源の原子 a の綴り（-1 = C だけ — 源の口を呼ぶ関数値）
 func ogSrcName(az mut Az, a int) string {
     if a < 0 {
-        return "a handler or middleware that reaches a credential source (http.Authorization / http.Cookie / Request.head)"
+        return "a handler or middleware that reaches a credential source (server.Authorization / server.Cookie / Request.head)"
     }
     k := table.Get(mut az.sv.atoms, a * 3)
     x := table.Get(mut az.sv.atoms, a * 3 + 1)
@@ -320,12 +320,12 @@ func ogMessage(az mut Az, i int) string {
     src := ogSrcName(mut az, table.Get(mut az.sv.ov, i * 4 + 3))
     why := "a response that depends on Authorization / Cookie must not be stored by a shared cache — it would be served to other users (language.md 12 節「出所の依存」)"
     if k == OgResp {
-        return "${sh} is written into a single response — declare a shared cache policy on the route (Route.cache / Static's cache:), where the analyzer checks that the route does not read credentials; a single response can say http.Private or http.NoStore (language.md 12 節「出所の依存」)"
+        return "${sh} is written into a single response — declare a shared cache policy on the route (Route.cache / Static's cache:), where the analyzer checks that the route does not read credentials; a single response can say server.Private or server.NoStore (language.md 12 節「出所の依存」)"
     }
     if k == OgMount {
-        return "Mount puts routes with ${sh} under middleware that reaches ${if table.Get(mut az.sv.ov, i * 4 + 3) < 0 { "a credential source (http.Authorization / http.Cookie / Request.head)" } else { src }} — ${why}"
+        return "Mount puts routes with ${sh} under middleware that reaches ${if table.Get(mut az.sv.ov, i * 4 + 3) < 0 { "a credential source (server.Authorization / server.Cookie / Request.head)" } else { src }} — ${why}"
     }
-    return "${sh} meets ${src} in one route — ${why}; use http.Private / http.NoStore for this route, or move the credential read out of it"
+    return "${sh} meets ${src} in one route — ${why}; use server.Private / server.NoStore for this route, or move the credential read out of it"
 }
 
 // std の外の印の本文
@@ -341,7 +341,7 @@ func ogStdMessage(x int) string {
 
 // 出所の導出（開発用 `check --origin-dump`）: 源の口（`@credential` の関数と欄）・`@shared` の variant・SH の欄（route = ルートの行 /
 // response = 応答 1 件の方針の欄）・出会いの口（Mount）・Eff の関数（呼ぶと源に届きうる — 源の口そのものと `@bless(origin)` を除く）・違反を 1 件 1 行、最後に要約（位置の無い 1 行）。
-// 源の無い木（std/http を import しない — compiler/ 自身）では表は空
+// 源の無い木（std/http/server を import しない — compiler/ 自身）では表は空
 func OriginDump(p loader.Program) []Finding {
     mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, er: Eng{sets: table.Table[int]{}, rhead: table.Table[int]{}, rnode: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0, envChanged: false},
         pbase: table.Table[int]{}, errfn: table.Table[int]{},

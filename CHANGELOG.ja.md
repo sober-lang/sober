@@ -2,6 +2,108 @@
 
 このファイルは公開リリースごとの利用者向けの変更点を記録する。形式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に倣う。バージョンは [Semantic Versioning](https://semver.org/lang/ja/) に従う（0.x の間は後方互換を約束しない）。
 
+## v0.7.0 — 2026-11-08
+
+import の体系を刷新した版。修飾子は import パスの全段（`std/http/server` → `http.server.Serve`）になり、ビルドの起点の `sober.mod` でモジュールの名前とローカルの依存を宣言できるようになった。std は Web アプリに欠けていた部品を揃えた: パスワードハッシュ・暗号用の乱数と UUID・時刻とタイムゾーン・cookie・世代つきのセッション・DNS のスタブリゾルバ・証明書の鎖を常に検証する HTTP クライアント。std/http はサーバ（std/http/server）・クライアント（std/http/client）・共有の語彙（std/http）に分けた。deflate は似た本文の続く接続で Huffman の木を作り直さない記録を持ち、HTTP サーバの gzip の応答が速くなった。実行時は起動で W^X を固定する（Linux 6.6 以上）。
+
+破壊的変更が多い版なので、0.6.7 から上げるときは下の「移行」の節から読むこと。
+
+### 移行
+
+0.6.7 のコードを 0.7.0 に上げる手順:
+
+1. 修飾子をパスの全段にする。`import "std/compress/gzip"` の参照は `gzip.Encode` → `compress.gzip.Encode`、自分の木の `import "util/strings"` は `strings.X` → `util.strings.X`。`std/` は落とす（`import "std/json"` は `json.X` のまま）。1 段のパスは変わらない。長い修飾子はファイル局所の別名 `import gz "std/compress/gzip"` で短くできる
+2. HTTP サーバのコードを `import "std/http/server"` に移し、`http.X` → `http.server.X` にする（`http.server.ServeConn`・`http.server.Request`・`http.server.Text` …）。`std/http` に残るのは共有の語彙（`Field`・`BadHeader`・`StatusCode` と `http.OK` などの const）だけ
+3. `ServeConn` / `ServeWith` の名前付き引数 `compress:` → `compression:`
+4. 改名を追う（下の「破壊的変更」の一覧）。ラベルの改名は `catch` / `switch` の腕にも及ぶ
+5. 応答に Set-Cookie を任意ヘッダで書いていたら `Response.cookies`（`[]http.server.SetCookie`）へ移す（任意ヘッダの Set-Cookie は `panic(BadHeader)`）
+6. gzip の応答の本文を要求の本文だけで決めたい（内容アドレスのキャッシュなど）なら `compression: http.server.Gzip{fresh: true}`（既定は接続ごとの記録を使う — 下記）
+
+### 破壊的変更
+
+- 修飾子 = import パスの全段（`std/` だけ落とす）。パスの最後の段だけで参照する旧綴りは受理しない。パスの段はどれも小文字の識別子でキーワードでないこと。修飾子の根の段（`http.server` の `http`）と同名の局所の束縛はエラー
+- std/http を三分割: サーバの API は `std/http/server` へ（`http.Serve…` → `http.server.Serve…`・`http.Stream` → `http.server.Stream` ほか全部）。`std/http` は共有の語彙だけ
+- `http.server.ServeConn` / `ServeWith` の `compress:` → `compression:`（`std/compress` の根の段と衝突するため）
+- 形の誤りのラベルを `Bad…` に揃えた: `convert.InvalidInt` / `InvalidFloat` / `InvalidBool` → `BadInt` / `BadFloat` / `BadBool`・`json.InvalidJson` → `BadJson`・`strings.InvalidUtf8` / `env.InvalidUtf8` → `BadUtf8`
+- 範囲外のラベルを `…OutOfRange` に揃えた: `json.IntRange` → `json.IntOutOfRange`
+- `compress.flate.Prepare` → `compress.flate.NewWork`
+- `crypto.chacha20.XorKeyStreamAt` の位置の仮引数 `at` → `off`（位置で渡す呼び手は無変更）
+- `std/tls/record` を公開面から外した（`std/internal/record`）
+- `crypto.rsa.MontSelfCheck` / `crypto.rsa.SelSelfCheck` / `crypto.sha256.ShaSelfCheck` / `crypto.x25519.FeSelfCheck` を公開面から外した（各 package のテストへ）
+- Set-Cookie は `Response.cookies` の型の欄でだけ書ける。任意ヘッダの Set-Cookie は `panic(BadHeader{name: "Set-Cookie"})`
+- 外の package の struct の、mut の中身（mut の slice / map）を持つ欄は、composite の構築でも値を与えられない（読み・書きは前から不可）。外のリテラルではその欄を省く（ゼロ値の空の中身）。この形で std の不変の約束（`table.Freeze`・`strings.Clone` の結果）を外から壊せた穴を塞いだ
+- 関数値の option（`F?` — 欄・map の読み・`[]F?` の要素）を絞らずに呼ぶ形を check / build とも名指しで拒否する（build は受理して nil なら落ちていた）
+- 結果を持つ func の本体の末尾が、panic 以外の呼び出しの式文で終わる形を拒否する（check は末尾の値を戻り値として受けていた）
+
+### 言語
+
+- import と package（言語仕様 8 章）: 修飾子 = import パスの全段。別名の import は修飾子を丸ごと置き換える。import パスの根の段は「木での名前」の 1 つの名前空間（std の根・dep の名前・起点の木の根のディレクトリ）に住み、衝突はどちらも優先せず拒否する
+- `sober.mod`: ビルドの起点（cwd）に置く任意の 1 枚のモジュールの宣言。`module "example.com/app"`（最後の段が名前）・`dep "../kv"` / `dep kv2 "../kv"`（ローカルパスの依存 — import パスは木での名前から書き、出所は sober.mod にだけ書く）・`alias stdjson "std/json"`（std の根の付け替え — 衝突の解消）。起点より上のディレクトリは探さない。この版の dep はローカルパスだけで、版の指定・他の出所・dep の dep は名指しで拒否する
+- Go との違い（修飾子・出所の置き場・根の決め方・衝突の解き方）と命名規約（package 名は 1 語の小文字・仮引数と欄は名詞）は language.md 20 節に表で置いた
+- 名前付き関数型への変換 `W(e)`: ラムダ・名前付き関数・W の値を W の値の位置に置く。値の呼び出しの実引数に名前付き関数を渡せる
+- 名前付き引数つきの呼び出しを for の生成元に置ける: `for x <- g(a, n: v)? { … }`
+- 新しく受理する形（今まで check か build の片方が拒否していた）: struct の mut map 欄への格納 `s.m[k] = v`・列の要素への複合代入 `xs[i] op= v`・欄の改名束縛 `case A{e: inner}`・variant 1 つの union（再帰・総称も）・cell に再帰型の値を置く・総称の名前付き関数型へ名前付き関数を渡す
+- 文面なしだった拒否を名指しにした: `string?` と string の比較・Def として呼ぶジェネリックの region を持つ型引数・局所に束縛した名前付き関数を値の位置へ・ゼロ値の無い型の欄を部分リテラルで省く
+- 他 package の名前の診断の表示を修飾子で出す
+
+### std
+
+- `std/http/client`（新）: HTTP/1.1 のクライアント。`http.client.Request(url, method:, headers:, body:, cookies:, policy:)`・本文を切片で受ける `Stream`・接続を束ねる `Open` / `Session` / `Send`。TLS は 1.3 が既定（1.2 は `dangerouslyAllowTls12` の明示でだけ）で、証明書の鎖は常に検証する（検証を切る欄は無い）。信頼の起点は焼き込みの Mozilla NSS のストアと `Policy` の `extraRoots`（`tls.ParseRoots`）。焼き込みの起点で止まる鎖の leaf には CA/B Forum の Baseline Requirements の規則を掛ける。リダイレクト（origin が変われば Authorization / Cookie を落とす）・proxy（http は絶対 URI・https は CONNECT — `ParseProxy`）・cookie は `CookieValue` で取り出して次の要求に載せるデータ（jar は持たない）。設定は状態の無い `Policy` 1 型
+- `std/http/server`: 応答の `cookies []SetCookie`。省いた欄のゼロ値が安全な側（Secure・HttpOnly・SameSite=Lax・Path=/）で、緩める欄は `dangerouslyAllowHttp` / `dangerouslyScriptReadable` の綴りだけ。属性の規則（`__Host-` / `__Secure-` ほか）を破れば panic
+- `std/http/server`: gzip の応答は接続ごとに直近の動的 Huffman の木を記録し、似た本文が続く接続では木を作らずに使う（接続あたり 4 KB・圧縮しない接続は 0 B）。圧縮した本文は接続の要求の列で決まり（同じ列なら同じバイト列）、大きさは記録を使ったブロックで記録なしの 1.03 倍まで。`Gzip{fresh: true}` で記録を持たない（0.6.7 までの、本文だけで決まる道）
+- `std/http/server`: `Dispatch` の方針（`cache:`）の無いルートは handler の応答をそのまま返す（写しが 1 回減る）
+- `std/session`（新）: 世代つきのセッショントークン（HMAC-SHA256 の封・サーバ側にセッションの表を持たない）。照合は `Open` → `Subject` → `Check` の二段で、パスワードの変更などで世代を上げると古いトークンは `Stale`。読みは `Who` / `Of`（ゼロ値の `Claims` は検証済みとして読めない）。脅威モデル（備えるもの・守らないもの）を doc に載せた
+- `std/crypto/password`（新）: Argon2id・bcrypt・PBKDF2-HMAC-SHA256 と、PHC 文字列の `Verify` / `NeedsRehash`。費用は省略可の名前付き引数で、省くと OWASP Password Storage Cheat Sheet の推奨の下限（Argon2id 19456 KiB・2・1 / bcrypt cost 10 / PBKDF2 600000 回）。既定の改訂は std の版で行い、この変更履歴に載せる。`Policy` の `UseDefault` は方式も費用も std の版に任せる
+- `std/crypto`: `RandIntn`（暗号用の乱数の一様な整数）
+- `std/uuid`（新）: `NewV4`・`NewV7`・`Format` / `Parse`・`Equal`
+- `std/time`（新）: 壁時計の `Time` と単調時計の `Instant` を別の型で持つ（壁時計の差で期限を測る事故を型で防ぐ）。RFC 3339 / HTTP-date の書式と読み・暦（`Civil`）・IANA tzdata 2026f の焼き込み（`LoadZone`・`ToCivilIn` / `FromCivilIn`）
+- `std/net`: 名前の解決（スタブリゾルバ — libc を使わない）。`net.Dial` がホスト名を受ける（/etc/hosts → /etc/resolv.conf の DNS）
+- `std/url`: `FormatQuery`（`ParseQuery` と往復）
+- `std/compress/flate` / `gzip`: 動的の木の記録 `History` と `EncodeHistory` / `EncodeWithHistory`（出力は (data, level, 記録の値) で決まる）
+- `std/binary`: `AppendWord`（値の下位 k バイトを末尾に積む）
+- `std/pool`: 狭い語の生のアクセサ `LoadRaw16` / `StoreRaw16` / `LoadRaw32` / `StoreRaw32`
+- 焼き込みの外の事実の表（信頼ストア・tzdata）は、生成のスクリプト・照合のゲート・定期の更新（GitHub Actions）を同じ型で持つ。使わないプログラムには表が入らない（ゲート datadce で見張る）
+- 誤りの語の定義を docs/terms.md に: `TooLong`（渡した値が上限を超える）・`TooLarge`（走りながら積もった量が上限を超える）
+
+### ランタイム
+
+下の `SOBER_MDWE=0`・`SOBER_NET_FUSE=0`・`SOBER_TASK_WIN=0` は、問題の切り分けと一時的な退避のための口です。既定のまま使うことを勧めます。
+
+- 起動で実行可能メモリを放棄する（`PR_SET_MDWE` — Linux 6.6 以上）。以後プロセスは W+X の頁を作れず、実行できない頁に実行を足せない。処理系にバグがあってもコード注入への昇格路が無い。`os.Run` で起動する子には引き継がない。動的計装（valgrind など）と同居させるときは `SOBER_MDWE=0`
+- keep-alive の HTTP（平文）で、応答の送りと次の要求の受けの待ちを 1 回の眠りに畳む（1 要求あたりの io_uring_enter ≈1.7 → ≈1.0 回）。`SOBER_NET_FUSE=0` で畳まない
+- 接続の task の浅い 4 深度の region を、task の塊の末尾の頁から始める（溢れたら今までの小さいスロットへ移す）。接続を張るたびに触る頁が減り、ページテーブルの消費が接続あたり ≈8.8 → ≈2.1 KB（手元）。region 1 つの上限は `region:` ちょうどのまま。窓を組むのは std/net の Serve を持つプログラムだけ。`SOBER_TASK_WIN=0` で窓を張らない
+- 暇なワーカーの盗みと眠りの手前の見直しが、空でないかもしれない列だけを読む（列ごとの印のビット集合）。低い負荷でワーカー数に比例して乗っていた要求ごとの線の読みが消える（手元・W64 で 1 要求 −4〜4.7K cycles）
+
+### ツール
+
+- `sober` は起点の `sober.mod` を読む（check / build の答えの再生の照合にも入る）
+- 文書: Web サーバ（docs/guide/web-server）と Web クライアント（docs/guide/web-client）のガイド・準拠文書（docs/conformance — std の通信プロトコルと暗号の規格への準拠。表と数はテストの実物から生成し、ゲート confsync が照合する）
+
+### 修理
+
+- `freeze` の解析が、局所の束縛のラムダの呼び出しの結果を新しい値とみなしていた。`g := () => m; im := freeze(g()); m[0] = 9` が check も build も通り、凍った値が書き換わっていた（形式モデルは拒否していた — 実装だけの穴）
+- imm の欄に、暗黙の freeze の点にならない mut のコンテナ（呼び出しの結果）を置く形を、check は受理し build は文面なしで落としていた。両方で名指しの拒否に
+- 外の package の composite で mut の中身を持つ欄に別名を与え、std の不変の約束を壊せた穴（上の破壊的変更）
+- 関数値の option を絞らずに呼ぶと build の出力が nil で落ちていた（上の破壊的変更）
+
+### 性能
+
+- HTTP — bench/httparena（自前の物差し。HttpArena の負荷発生器と要求のファイルを使うが、HttpArena の公式の結果ではない）。GitHub Actions の 16 vCPU の箱で、サーバに 8 CPU を割り当て、同じジョブで v0.6.7 と周ごとに交互に走らせた（5 周の中央値）。箱の CPU が 2 世代（AMD EPYC 9V45 = Zen 5・7763 = Zen 3）に分かれたので、両方の箱で同じ向きに出た差だけを数で載せる:
+
+  | 題材 | 要求 / 秒（対 v0.6.7） | CPU / 要求（対 v0.6.7） |
+  |---|---|---|
+  | json-comp | +12〜13% | −11〜12% |
+  | json-comp-16k | +9〜11% | −8〜10% |
+  | latency-1m | 同等（レートを保つ） | — （p99 464 → 402 µs 級 — 両箱で改善） |
+  | latency-10k | 同等（レートを保つ） | — （p99 は 9V45 で 181 → 93 µs・7763 は同等） |
+  | json-tls・8gbit・latency-500k-8cpu | 同等 | 同等 |
+  | baseline・pipelined・limited-conn・async | 同等圏（箱の世代により ±数%） | — |
+
+  - baseline・pipelined・limited-conn・async は箱によって −6%〜+12% の幅に出た。Zen 5 の箱（9V45）では改善、Zen 3 の箱（7763）では数 % の退行の向きで、1 つの数にまとめられない
+  - json-comp の得は deflate の記録（上の std）と、記号の記録・ビット出力・鎖とハッシュの表の 16 ビット化など圧縮器の核の書き直しによる。記録の値札は圧縮する接続あたり 4 KB で、json-comp の最大 RSS は +13〜61 MB（接続数による）
+  - カーネル側のメモリ（cgroup の pagetables — 9V45）: baseline 30.8 → 8.9 MB・json-comp 47 → 9 MB・async 283 → 154 MB。接続の task の浅い region の窓（上のランタイム）による構造的な削減
+  - 全題材で 2xx 以外の応答なし
+
 ## v0.6.7 — 2026-11-05
 
 言語の波の版。素直に書いた再帰の型宣言（`type L struct { v int; next L? }` や `type Value union { Array { items []Value }; … }` のような形）を受理するようになり、std/json は値そのものを再帰の木として持つ `json.Value` / `json.Tree` を手に入れた。浮動小数点は補間・定数式・`std/math` の語彙・リテラルの範囲検査が揃って整備を終えた。言語では局所の束縛のラムダと、状態を呼び手が持ち運ぶ「関数型の mut 仮引数」を足し、絞り（narrowing）は mut への代入やループの条件をまたいでも規則が一様になった。0.6.6 以前から潜んでいた誤コンパイルを 1 件、`freeze` の見落としを 2 件直した。

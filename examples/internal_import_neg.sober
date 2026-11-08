@@ -6,5 +6,5 @@ package main
 import "std/internal/hs"
 
 func main() {
-    println(hs.Version)
+    println(internal.hs.Version)
 }

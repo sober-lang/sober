@@ -1,20 +1,20 @@
 package main
 
-// http.ServeWith の put:（省略可の匿名関数型 — language.md 25 節 Z）: 送りを 2 段にする — 受けた切片 1 つ分の応答を put で積み（送らない）、積んだ分は recv が
+// http.server.ServeWith の put:（省略可の匿名関数型 — language.md 25 節 Z）: 送りを 2 段にする — 受けた切片 1 つ分の応答を put で積み（送らない）、積んだ分は recv が
 // 次の受けを待つ前に送る約束（tls.Recv は切片 1 つを配り終えるたびに tls.Flush する）。send はその場で送る口で、stream の応答（前の応答と頭・
 // emit ごと）だけが使う。ここでは偽の転送路で、積み・送り・flush の順を印字する
 // （TLS の接続なら `(k) => tls.Recv(c, k)`・`(b) => tls.Send(c, b)`・`put: (b) => tls.Put(c, b)`）
 
-import "std/http"
+import "std/http/server"
 
-func route(r http.Request) http.Response {
+func route(r http.server.Request) http.server.Response {
     if r.path == "/stream" {
-        return http.Response{status: 200, contentType: "text/plain", length: 12, stream: (out, emit) => twice(mut out, emit)}
+        return http.server.Response{status: 200, contentType: "text/plain", length: 12, stream: (out, emit) => twice(mut out, emit)}
     }
-    return http.Text("hello\n")
+    return http.server.Text("hello\n")
 }
 
-func twice(out mut http.Out, emit func(out mut http.Out, b []byte) error?) error? {
+func twice(out mut http.server.Out, emit func(out mut http.server.Out, b []byte) error?) error? {
     emit(mut out, bytes("chunk\n"))?
     return emit(mut out, bytes("chunk\n"))
 }
@@ -34,8 +34,8 @@ func say(what string, b []byte) error? {
 func main() {
     reqs := "GET / HTTP/1.1\r\nHost: x\r\n\r\nGET / HTTP/1.1\r\nHost: x\r\n\r\n"
     reqs2 := "GET / HTTP/1.1\r\nHost: x\r\n\r\nGET /stream HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"
-    e := http.ServeWith((k) => feed(reqs, k), (b) => say("send", b), route, put: (b) => say("put", b))
+    e := http.server.ServeWith((k) => feed(reqs, k), (b) => say("send", b), route, put: (b) => say("put", b))
     println(e == nil)
-    e2 := http.ServeWith((k) => feed(reqs2, k), (b) => say("send", b), route, put: (b) => say("put", b))
+    e2 := http.server.ServeWith((k) => feed(reqs2, k), (b) => say("send", b), route, put: (b) => say("put", b))
     println(e2 == nil)
 }

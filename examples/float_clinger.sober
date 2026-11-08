@@ -19,7 +19,7 @@ func main() int {
         v := math.Bits(f)
         st := switch err {
         case nil: 0
-        case convert.InvalidFloat{}: 1
+        case convert.BadFloat{}: 1
         default: 2
         }
         println(if st == 1 { 0 } else { v }, st)

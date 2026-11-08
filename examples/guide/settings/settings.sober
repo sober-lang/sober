@@ -2,8 +2,8 @@ package settings
 
 // Settings kept as one `key=value;key=value` line per file in a kvstore directory.
 
-import "examples/guide/kv"
-import "examples/guide/kvstore"
+import "kv"
+import "kvstore"
 
 // the value of key in the file name, or def when the file or the key is missing
 func Value(d kvstore.Dir, name string, key string, def string) string {

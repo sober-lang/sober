@@ -24,7 +24,7 @@
   ],
   "types": [
     {
-      "name": "InvalidJson",
+      "name": "BadJson",
       "type_params": [],
       "body": {
         "k": "error",
@@ -9695,7 +9695,7 @@
                       },
                       {
                         "k": "composite",
-                        "type_name": "InvalidJson",
+                        "type_name": "BadJson",
                         "elems": [
                           {
                             "key": "pos",
@@ -10208,7 +10208,7 @@
                                     },
                                     {
                                       "k": "composite",
-                                      "type_name": "InvalidJson",
+                                      "type_name": "BadJson",
                                       "elems": [
                                         {
                                           "key": "pos",
@@ -10358,7 +10358,7 @@
                                             },
                                             {
                                               "k": "composite",
-                                              "type_name": "InvalidJson",
+                                              "type_name": "BadJson",
                                               "elems": [
                                                 {
                                                   "key": "pos",
@@ -11165,7 +11165,7 @@
                                               },
                                               {
                                                 "k": "composite",
-                                                "type_name": "InvalidJson",
+                                                "type_name": "BadJson",
                                                 "elems": [
                                                   {
                                                     "key": "pos",
@@ -11387,7 +11387,7 @@
                                                 },
                                                 {
                                                   "k": "composite",
-                                                  "type_name": "InvalidJson",
+                                                  "type_name": "BadJson",
                                                   "elems": [
                                                     {
                                                       "key": "pos",
@@ -11807,7 +11807,7 @@
                                               },
                                               {
                                                 "k": "composite",
-                                                "type_name": "InvalidJson",
+                                                "type_name": "BadJson",
                                                 "elems": [
                                                   {
                                                     "key": "pos",
@@ -12043,7 +12043,7 @@
                                       },
                                       {
                                         "k": "composite",
-                                        "type_name": "InvalidJson",
+                                        "type_name": "BadJson",
                                         "elems": [
                                           {
                                             "key": "pos",
@@ -12600,7 +12600,7 @@
                                         },
                                         {
                                           "k": "composite",
-                                          "type_name": "InvalidJson",
+                                          "type_name": "BadJson",
                                           "elems": [
                                             {
                                               "key": "pos",
@@ -12749,7 +12749,7 @@
                       },
                       {
                         "k": "composite",
-                        "type_name": "InvalidJson",
+                        "type_name": "BadJson",
                         "elems": [
                           {
                             "key": "pos",
@@ -13189,7 +13189,7 @@
                       },
                       {
                         "k": "composite",
-                        "type_name": "InvalidJson",
+                        "type_name": "BadJson",
                         "elems": [
                           {
                             "key": "pos",
@@ -13388,7 +13388,7 @@
                       },
                       {
                         "k": "composite",
-                        "type_name": "InvalidJson",
+                        "type_name": "BadJson",
                         "elems": [
                           {
                             "key": "pos",
@@ -13488,7 +13488,7 @@
                       },
                       {
                         "k": "composite",
-                        "type_name": "InvalidJson",
+                        "type_name": "BadJson",
                         "elems": [
                           {
                             "key": "pos",
@@ -13688,7 +13688,7 @@
                       },
                       {
                         "k": "composite",
-                        "type_name": "InvalidJson",
+                        "type_name": "BadJson",
                         "elems": [
                           {
                             "key": "pos",

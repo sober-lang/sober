@@ -1,0 +1,2 @@
+sober: load error at sober.mod:2:5: the directory of this dependency has no sober.mod with a module line
+(check exit 1)

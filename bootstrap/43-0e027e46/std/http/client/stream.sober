@@ -1,0 +1,330 @@
+package client
+
+// 本文を切片で受ける口（Stream）: 応答の頭が揃ったら、受けた切片の本文の分をその場で k へ渡す（応答を丸ごと積まない — 積むのは頭と chunked の
+// 長さの行の途中まで）。本文の読みは状態機械（Content-Length の残り・chunked の長さの行 / データ / CRLF / trailer・閉じ区切り）
+
+import "std/internal/hsc"
+import "std/io"
+import "std/net"
+import "std/task"
+import "std/time"
+import "std/internal/record"
+
+// chunked の読みの段
+const cSize = 0
+const cExt = 1
+const cSizeLf = 2
+const cData = 3
+const cDataCr = 4
+const cDataLf = 5
+const cTrailer = 6
+const cTrailerLf = 7
+
+// 本文の読みの状態（rem = Content-Length の残りか chunk のデータの残り・size = 読んでいる長さ・digits = 長さの桁数・line = trailer の行の長さ・
+// got = 渡した本文の合計）
+type bodySt struct {
+    cs int
+    rem int
+    size int
+    digits int
+    line int
+    got int
+    done bool
+    bad bool
+    big bool
+}
+
+func newBody(st scanSt) bodySt {
+    return bodySt{cs: cSize, rem: st.clen, size: 0, digits: 0, line: 0, got: 0, done: st.mode == mNone || (st.mode == mLength && st.clen == 0), bad: false, big: st.big}
+}
+
+// 1 往復の中の読みの状態（頭の積み・頭の読み・本文の読み・redirect を追うときの Location）
+type streamSt struct {
+    st scanSt
+    d bodySt
+    head bool
+    follow bool
+    loc string
+    // 頭の Set-Cookie の値（jar へ — Stream が往復の後に貯める）
+    setCookies []string
+}
+
+// Stream の生成元の要素（head = 応答の頭〔body は空 — 要素ごとに同じ値〕・chunk = 本文の切片）
+type Part struct {
+    head Response
+    chunk []byte
+}
+
+// 要求 r を送り、応答の頭と本文の切片を k へ渡す（最初の要素は頭と空の切片で、本文が空でも 1 度は渡る）。redirect は Do と同じ規則で追い、
+// 追った応答は k へ渡さない。本文の合計が c の maxBody: を超えたら BodyTooLarge（大きい本文は maxBody: で明示的に上げる）
+//
+//     for part <- client.Stream(mut c, client.Request{url: u})? {
+//         if part.head.status != 200 { … }
+//         io.Write(f, part.chunk)?
+//     }
+@errors(Dns, Tls, Timeout, TooManyRedirects, InsecureRedirect, BodyTooLarge, Closed, BadUrl, BadResponse, ProxyRefused, io.Expired)
+@effects(block, io, panic, nondet)
+func Stream(c mut Client, r Request, k func(p Part)) error? {
+    mut cur := r
+    mut hops := 0
+    while true {
+        t, ok := parseTarget(cur.url)
+        if !ok {
+            return BadUrl{}
+        }
+        follow := c.redirects > hops
+        ss := streamOnce(c, t, cur, follow, cookieHeader(c, t, time.UnixSec(time.Now())), k)?
+        for v <- ss.setCookies {
+            take(mut c, t, v, time.UnixSec(time.Now()))
+        }
+        if ss.loc == "" {
+            return nil
+        }
+        hops += 1
+        status := ss.st.status
+        nu := resolveLocation(t, ss.loc)
+        nt, nok := parseTarget(nu)
+        if !nok {
+            return BadUrl{}
+        }
+        if t.tls && !nt.tls {
+            return InsecureRedirect{}
+        }
+        keepBody := status == 307 || status == 308 || (status != 303 && cur.method != "POST")
+        m := if keepBody { cur.method } else if cur.method == "HEAD" { "HEAD" } else { "GET" }
+        cur = Request{method: m, url: nu, headers: carried(cur.headers, origin(t) == origin(nt), keepBody), body: if keepBody { cur.body } else { []byte{} }}
+    }
+    return TooManyRedirects{}
+}
+
+// 1 往復（follow = この応答が redirect なら k へ渡さずに Location を返す）
+@errors(Dns, Tls, Timeout, BodyTooLarge, Closed, BadUrl, BadResponse, ProxyRefused, io.Expired)
+@effects(block, io, panic, nondet)
+func streamOnce(c Client, t target, r Request, follow bool, cookie string, k func(p Part)) (streamSt, error?) {
+    rt := viaOf(c, t)
+    req := requestBytes(r.method, requestTarget(rt, t), withProxyAuth(rt, t, r.headers), r.body, c.userAgent, false, cookie)
+    noBody := r.method == "HEAD"
+    mb := c.maxBody
+    pa := params(c, rt.px)
+    pb := params(c, t)
+    start := time.Mono()
+    mut ss := streamSt{st: newScan(), d: newBody(newScan()), head: false, follow: follow, loc: "", setCookies: []string{}}
+    mut hb := mut []byte{}
+    mut err := noErr()
+    _, re := task.Run((s) => {
+        de := net.Dial(firstHop(rt, t), (conn) => {
+            blk := newLink()
+            err = setupLink(conn, blk, rt, t, pa, pb)
+            if err == nil {
+                err = streamLink(conn, blk, pa, pb, req, mut hb, mut ss, noBody, mb, k)
+            }
+        })
+        if de != nil {
+            err = de
+        }
+        0
+    }, deadline: c.timeout)
+    timedOut := time.Since(start) >= c.timeout
+    if re != nil {
+        return ss, if timedOut { Timeout{} } else { Closed{} }
+    }
+    if err != nil {
+        return ss, classify(err, timedOut)
+    }
+    if ss.st.bad || ss.d.bad {
+        return ss, BadResponse{}
+    }
+    if ss.st.big || ss.d.big {
+        return ss, BodyTooLarge{}
+    }
+    if ss.loc != "" {
+        return ss, nil
+    }
+    // 閉じ区切りの本文は相手の閉じで終わる
+    if !ss.head || (!ss.d.done && ss.st.mode != mClose) {
+        return ss, if !ss.head && len(hb) == 0 { Closed{} } else { BadResponse{} }
+    }
+    return ss, nil
+}
+
+// 経路の上で要求を送り、頭が揃ったら本文の切片をその場で k へ
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, record.Alert, hsc.CertFailed)
+@effects(block, io, panic, nondet)
+func streamLink(conn net.Conn, blk []int, pa hsc.CParams, pb hsc.CParams, req []byte, hb mut []byte, ss mut streamSt, noBody bool, maxBody int, k func(p Part)) error? {
+    linkSend(conn, blk, req)?
+    mut head := noResponse()
+    mut eof := false
+    while !eof {
+        d, e := linkPoll(conn, blk, pa, pb)?
+        eof = e
+        if !ss.head {
+            for x <- d {
+                hb = append(hb, x)
+            }
+            ss.st = scan(mut hb, len(hb), ss.st, noBody, maxBody)
+            if ss.st.hend >= 0 && !ss.st.bad {
+                h := headOf2(mut hb, ss.st)
+                head = h
+                ss.head = true
+                ss.d = newBody(ss.st)
+                ss.setCookies = setCookiesOf(head)
+                if isRedirect(head) && ss.follow {
+                    ss.loc = location(head)
+                    return nil
+                }
+                k(Part{head: head, chunk: []byte{}})
+                rest := tailOf(mut hb, ss.st.hend)
+                readBody(mut ss.d, ss.st.mode, rest, 0, maxBody, (q) => k(Part{head: head, chunk: q}))
+            }
+        } else {
+            readBody(mut ss.d, ss.st.mode, d, 0, maxBody, (q) => k(Part{head: head, chunk: q}))
+        }
+        if ss.st.bad || (ss.head && (ss.d.done || ss.d.bad || ss.d.big)) {
+            return nil
+        }
+    }
+    return nil
+}
+
+// 揃った頭の Response（body は空）
+func headOf2(hb mut []byte, st scanSt) Response {
+    b := tailOf(mut hb, 0)
+    return Response{status: st.status, headers: fieldsOf(b, st), body: []byte{}, url: ""}
+}
+
+func setCookiesOf(r Response) []string {
+    mut o := mut []string{}
+    for f <- r.headers {
+        if f.name == "set-cookie" {
+            o = append(o, f.value)
+        }
+    }
+    return freeze(o)
+}
+
+func isRedirect(r Response) bool {
+    s := r.status
+    return (s == 301 || s == 302 || s == 303 || s == 307 || s == 308) && Header(r, "location") != nil
+}
+
+func location(r Response) string {
+    v := Header(r, "location")
+    return if v == nil { "" } else { v }
+}
+
+// b[from:] の本文のバイトを d で読み、データの区間を emit へ（mode = 区切りの形）
+func readBody(d mut bodySt, mode int, b []byte, from int, maxBody int, emit func(p []byte)) {
+    if d.done || d.bad || d.big || from >= len(b) {
+        return
+    }
+    if mode == mLength {
+        n := if len(b) - from < d.rem { len(b) - from } else { d.rem }
+        emit(slicePiece(b, from, from + n))
+        d.rem -= n
+        d.got += n
+        d.done = d.rem == 0
+        return
+    }
+    if mode == mClose {
+        n := len(b) - from
+        d.got += n
+        if d.got > maxBody {
+            d.big = true
+            return
+        }
+        emit(slicePiece(b, from, len(b)))
+        return
+    }
+    if mode != mChunked {
+        return
+    }
+    mut i := from
+    while i < len(b) && !d.done && !d.bad && !d.big {
+        x := b[i]
+        if d.cs == cData {
+            n := if len(b) - i < d.rem { len(b) - i } else { d.rem }
+            emit(slicePiece(b, i, i + n))
+            d.rem -= n
+            i += n
+            if d.rem == 0 {
+                d.cs = cDataCr
+            }
+        } else {
+            step(mut d, x, maxBody)
+            i += 1
+        }
+    }
+}
+
+// chunked の 1 バイト（データの外）
+func step(d mut bodySt, x byte, maxBody int) {
+    if d.cs == cSize {
+        h := hexDigit(x)
+        if h >= 0 {
+            d.digits += 1
+            d.size = d.size * 16 + h
+            d.bad = d.digits > 15
+        } else if x == ';' || x == ' ' || x == '\t' {
+            d.bad = d.digits == 0
+            d.cs = cExt
+        } else if x == '\r' {
+            d.bad = d.digits == 0
+            d.cs = cSizeLf
+        } else {
+            d.bad = true
+        }
+    } else if d.cs == cExt {
+        if x == '\r' {
+            d.cs = cSizeLf
+        } else if x == '\n' {
+            d.bad = true
+        }
+    } else if d.cs == cSizeLf {
+        if x != '\n' {
+            d.bad = true
+        } else if d.size == 0 {
+            d.cs = cTrailer
+            d.line = 0
+        } else {
+            d.got += d.size
+            d.big = d.got > maxBody
+            d.rem = d.size
+            d.size = 0
+            d.digits = 0
+            d.cs = cData
+        }
+    } else if d.cs == cDataCr {
+        d.bad = x != '\r'
+        d.cs = cDataLf
+    } else if d.cs == cDataLf {
+        d.bad = x != '\n'
+        d.cs = cSize
+    } else if d.cs == cTrailer {
+        if x == '\r' {
+            d.cs = cTrailerLf
+        } else {
+            d.line += 1
+            d.bad = d.line > 4096
+        }
+    } else if d.cs == cTrailerLf {
+        if x != '\n' {
+            d.bad = true
+        } else if d.line == 0 {
+            d.done = true
+        } else {
+            d.line = 0
+            d.cs = cTrailer
+        }
+    }
+}
+
+// b[s, e) の写し
+func slicePiece(b []byte, s int, e int) []byte {
+    mut o := mut []byte{}
+    mut i := s
+    while i < e {
+        o = append(o, b[i])
+        i += 1
+    }
+    return freeze(o)
+}

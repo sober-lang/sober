@@ -2,18 +2,18 @@ package main
 
 // Security: shared caches — public assets may be cached by a CDN; responses that read a cookie stay private (docs/guide/security.md)
 
-import "std/http"
+import "std/http/server"
 
 // me depends on the session cookie, so its response must not be stored by a shared cache
-func me(r http.Request) http.Response {
-    sid := http.Cookie(r, "sid")
-    return http.Text(if sid != nil { "signed in" } else { "guest" })
+func me(r http.server.Request) http.server.Response {
+    sid := http.server.Cookie(r, "sid")
+    return http.server.Text(if sid != nil { "signed in" } else { "guest" })
 }
 
 func main() {
-    auth := http.Middleware{before: (r) => if http.Cookie(r, "sid") == nil { http.Status(401) } else { nil }}
-    api := http.Mount("/api", []http.Route{http.Route{method: "GET", path: "/me", handler: me, cache: http.Private{maxAge: 30}}}, []http.Middleware{auth})
-    assets := http.Static("/assets", "/srv/www", cache: http.Shared{maxAge: 3600, sMaxAge: 86400})
-    routes := http.Merge(api, assets)
+    auth := http.server.Middleware{before: (r) => if http.server.Cookie(r, "sid") == nil { http.server.Status(401) } else { nil }}
+    api := http.server.Mount("/api", []http.server.Route{http.server.Route{method: "GET", path: "/me", handler: me, cache: http.server.Private{maxAge: 30}}}, []http.server.Middleware{auth})
+    assets := http.server.Static("/assets", "/srv/www", cache: http.server.Shared{maxAge: 3600, sMaxAge: 86400})
+    routes := http.server.Merge(api, assets)
     println(len(routes))
 }

@@ -11,7 +11,7 @@ import "parser"
 import "std/iter"
 
 // entry のプログラムを package target の視点で読む（main package のソースは entry — .sober ファイルか main のディレクトリ）
-@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.LeadingZero, diag.LitRange, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Cell)
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.Mod, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.LeadingZero, diag.LitRange, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Cell)
 func LoadView(entry string, target string, dir string, sm map[string]string) (Program, error?) {
     lb, lok := readPath(dir + "/link.txt")
     if !lok {
@@ -40,7 +40,7 @@ func MakeSobi(path string, src []byte) Sobi {
 
 // LoadView のプロセス内版: リンク集合 paths の順に、target だけソースから・他は sobis（path で引く）から読む。
 // 診断の位置のパスは `<path>.sobi`（ファイルは無い — 依存の .sobi の中の位置は引けない）
-@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.LeadingZero, diag.LitRange, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Cell)
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.Mod, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.LeadingZero, diag.LitRange, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Cell)
 func LoadViewMem(entry string, target string, paths []string, sobis []Sobi, sm map[string]string) (Program, error?) {
     p, _, err := loadViewRaw(entry, target, paths, "", sobis, sm)
     return p, err
@@ -48,20 +48,20 @@ func LoadViewMem(entry string, target string, paths []string, sobis []Sobi, sm m
 
 // LoadViewMem に加えて、loader の写しの前の生の木（ファイルごと — target のファイルは parse したまま・他は .sobi の木）を返す
 // （iface.Emit が target の原文の形で .sobi を書くのに使う — 書き出しのたびにソースを読み直して parse し直さない）
-@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.LeadingZero, diag.LitRange, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Cell)
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.Mod, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.LeadingZero, diag.LitRange, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Cell)
 func LoadViewMemRaw(entry string, target string, paths []string, sobis []Sobi, sm map[string]string) (Program, []ast.Tree, error?) {
     return loadViewRaw(entry, target, paths, "", sobis, sm)
 }
 
-@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.LeadingZero, diag.LitRange, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Cell)
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.Mod, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.LeadingZero, diag.LitRange, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Cell)
 func loadView(entry string, target string, paths []string, dir string, sobis []Sobi, sm map[string]string) (Program, error?) {
     p, _, err := loadViewRaw(entry, target, paths, dir, sobis, sm)
     return p, err
 }
 
-@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.LeadingZero, diag.LitRange, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Cell)
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.Mod, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.LeadingZero, diag.LitRange, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Cell)
 func loadViewRaw(entry string, target string, paths []string, dir string, sobis []Sobi, sm map[string]string) (Program, []ast.Tree, error?) {
-    m := Manifest{entry, "", []string{}, "", "", false, []string{}, 0, []string{}, []string{}}
+    m := Manifest{entry, "", []string{}, "", "", false, []string{}, 0, []string{}, []string{}, NoMod()}
     mut trees := mut []ast.Tree{}
     // 生の木（loader の写しの前 — iface.Emit が原文の形で書く）。trees は写した木（catch の束縛 — 以降の段が読む）
     mut raws := mut []ast.Tree{}
@@ -113,7 +113,9 @@ func loadViewRaw(entry string, target string, paths []string, dir string, sobis 
     rt := freeze(trees)
     rw := freeze(raws)
     rp := freeze(fpath)
-    r, err := finish(rt, freeze(fpkg), rp, freeze(fstd), []string{}, false, 0)
+    // sober.mod の拒否は丸ごとの読み（load）が先に出す — ここは表だけ
+    md := modLax(sm)
+    r, err := finish(rt, freeze(fpkg), rp, freeze(fstd), []string{}, false, 0, md)
     mut p := r
     p.std_src = sm
     // 生の木を finish の後の Program のファイルの並びにそろえる（finish は並べ替え・合成のファイル〔`$layout/…`〕の追加をする — パスで引く。

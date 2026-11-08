@@ -5,5 +5,5 @@ package main
 import "testdata/specpkg/nosuch"
 
 func main() {
-    println(nosuch.F())
+    println(testdata.specpkg.nosuch.F())
 }

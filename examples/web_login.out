@@ -1,0 +1,12 @@
+POST /signup -> 201 created alice
+laptop: POST /login -> 200 welcome alice
+phone: POST /login -> 200 welcome alice
+phone: GET /me -> 200 hello alice
+laptop: POST /change-password -> 200 password changed: other sessions are revoked
+phone: GET /me -> 401 session revoked (the password was changed): log in again
+laptop (old cookie): GET /me -> 401 session revoked (the password was changed): log in again
+laptop (new cookie): GET /me -> 200 hello alice
+phone: POST /login -> 401 wrong name or password
+phone: POST /login -> 200 welcome alice
+phone: POST /logout -> 200 bye (cookie cleared: true)
+phone: GET /me -> 401 not logged in

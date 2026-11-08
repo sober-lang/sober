@@ -4,5 +4,5 @@ package main
 import "testdata/loader_neg/missing/nope"
 
 func main() {
-    println(nope.F())
+    println(testdata.loader_neg.missing.nope.F())
 }

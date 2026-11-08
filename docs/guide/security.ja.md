@@ -10,10 +10,10 @@ Sober のプログラムがどんな事故から守られていて、どんな�
 
 Sober は事故の種類ごとに、2 つの層のどちらかで答えます。
 
-- **構造で消す**: その事故を起こす形が、言語に書けない。メモリの破壊・データ競合・資源の漏れ・パストラバーサルがこちらです。書けば `sober build` も `sober check` も拒否します。
-- **宣言と解析で消す**: 構造では言えない性質を、解析器（analyzer）が呼び出しのグラフと値の流れから導き、宣言と照合します。エラーの取りこぼし・秘密に依存した分岐・認証つきの応答の共有キャッシュへの保存・関数の効果がこちらです。
+- 構造で消す: その事故を起こす形が、言語に書けない。メモリの破壊・データ競合・資源の漏れ・パストラバーサルがこちらです。書けば `sober build` も `sober check` も拒否します。
+- 宣言と解析で消す: 構造では言えない性質を、解析器（analyzer）が呼び出しのグラフと値の流れから導き、宣言と照合します。エラーの取りこぼし・秘密に依存した分岐・認証つきの応答の共有キャッシュへの保存・関数の効果がこちらです。
 
-**解析器の規則は `sober check` だけが掛けます。** `sober build` は解析器を走らせず、受理を変えません（解析器は受理を狭めるだけで、プログラムの意味を変えないため）。この文書で「check が拒否」と書いた規則を効かせるには、CI やコミットの前に `sober check <file.sober>` を回してください。build が拒否する規則（構造の層）は、どちらでも止まります。
+解析器の規則は `sober check` だけが掛けます。 `sober build` は解析器を走らせず、受理を変えません（解析器は受理を狭めるだけで、プログラムの意味を変えないため）。この文書で「check が拒否」と書いた規則を効かせるには、CI やコミットの前に `sober check <file.sober>` を回してください。build が拒否する規則（構造の層）は、どちらでも止まります。
 
 この後の各節は脅威ごとの詳しい答えですが、早見には次の 3 分類が目安になります。
 
@@ -79,6 +79,9 @@ xs[5]: out of range
 `at` が `int?` を返すので、呼び手は範囲外の場合を書かずに値を使えません。`xs[5]` と直に書けば、範囲外は panic で止まります。
 
 実世界の対比: 2026 年 10 月の Node.js のセキュリティリリースでは、同梱の Brotli（C 実装）の展開処理の境界外書き込みがリモートコード実行につながるおそれがある脆弱性（CVE-2026-111497）が修正されました。同じ形を Sober で書くと、展開器の出力の書き込みは slice の境界検査つきなので、細工された圧縮データが起こせるのは「展開の失敗 = ラベルつきの panic（その接続の task だけが死ぬ）」までです — メモリ破壊や RCE の形にはなりません。それでも、panic を起こす入力を送りつけて接続を切らせること自体は残る側です（[9 節](#9-資源の枯渇サービス拒否)の受け入れの設計を参照）。
+
+
+実行可能メモリの放棄: Sober のプログラムは起動の最初に、プロセスが以後「書けて実行できるメモリ」を作ることと、実行できないメモリに実行の権限を足すことを、カーネルに恒久的に禁じさせます（`PR_SET_MDWE` — Linux 6.6 以降で既定装着）。Sober は実行時にコードを作らない（JIT も動的なライブラリの読み込みもない）ので、失うものはありません。処理系や std にバグがあってメモリを書き換えられても、それを注入したコードの実行へ昇格させる道がカーネルの側で閉じています。外す口はプログラムの中には無いので、依存のライブラリがこれを破ることもできません。valgrind のような動的計装の下で動かすときだけ、起動時の環境変数 `SOBER_MDWE=0` で掛けずに起動できます（計装はプロセスの中でコードを作るため）。守っているのはプロセスの中のメモリ破壊からの昇格で、起動前に環境変数を操れる者はそもそも別のプログラムを走らせられるので、この口はその守りを弱めません。`os.Run` で起動する子のプロセスには引き継がないので、JIT を使うほかの処理系を子として動かしても壊しません。古いカーネル（6.5 以前）では掛からず、プログラムはそのまま動きます。
 
 詳しく: [言語仕様 9 章 メモリ](../spec/09-memory.ja.md)・[設計ノート: 安全](../design-notes/safe.md)
 
@@ -289,9 +292,9 @@ hello.txt: 17 bytes
 missing.txt: not found
 ```
 
-`http.Static`（静的ファイルの配信）はこの口で開きます。根の外を指す要求は、無いファイルと同じ 404 を返します（外のファイルの存在を漏らさない）。
+`http.server.Static`（静的ファイルの配信）はこの口で開きます。根の外を指す要求は、無いファイルと同じ 404 を返します（外のファイルの存在を漏らさない）。
 
-詳しく: [言語仕様 11 章 I-7](../spec/11-io.ja.md)・[std/http の Static](../std/http.ja.md#static)
+詳しく: [言語仕様 11 章 I-7](../spec/11-io.ja.md)・[std/http/server の Static](../std/http-server.ja.md#static)
 
 ## 7. タイミングで秘密が漏れる
 
@@ -313,12 +316,12 @@ import "std/crypto/hmac"
 // the key is a secret: no branch, index or division may depend on it
 @secret(key)
 func valid(key []byte, msg []byte, tag []byte) bool {
-    return crypto.Equal(hmac.Sum256(key, msg), tag)
+    return crypto.Equal(crypto.hmac.Sum256(key, msg), tag)
 }
 
 func main() {
     key := bytes("k3y-0f-the-server")
-    tag := hmac.Sum256(key, bytes("user=ada"))
+    tag := crypto.hmac.Sum256(key, bytes("user=ada"))
     println(valid(key, bytes("user=ada"), tag))
     println(valid(key, bytes("user=root"), tag))
 }
@@ -375,8 +378,8 @@ examples/security_secret_neg.sober:12:19: error: a value derived from the @secre
 
 Sober の答え: 2 つの層で答えます。
 
-- 構造（std/http）: 保存の方針は型の欄（`Route.cache`・`Response.cache`・Static の `cache:`）でだけ書き、任意のヘッダとして Cache-Control を書く口はありません。動的な応答の既定は `Cache-Control: private` です。認証の値は名指しの口 `http.Authorization` / `http.Cookie` でだけ読めます（`http.Header` は認証のヘッダに nil を返す）。
-- 解析: 共有キャッシュにも保存させる方針（`http.Fresh`・`http.Shared`）は、ルートの行でだけ書けます。そのルートのハンドラや middleware が認証の口に届きうる形、認証の middleware の下に共有の方針のルートを Mount する形を、check が拒否します。
+- 構造（std/http/server）: 保存の方針は型の欄（`Route.cache`・`Response.cache`・Static の `cache:`）でだけ書き、任意のヘッダとして Cache-Control を書く口はありません。動的な応答の既定は `Cache-Control: private` です。認証の値は名指しの口 `http.server.Authorization` / `http.server.Cookie` でだけ読めます（`http.server.Header` は認証のヘッダに nil を返す）。
+- 解析: 共有キャッシュにも保存させる方針（`http.server.Fresh`・`http.server.Shared`）は、ルートの行でだけ書けます。そのルートのハンドラや middleware が認証の口に届きうる形、認証の middleware の下に共有の方針のルートを Mount する形を、check が拒否します。
 
 公開の資産は共有させ、認証の後ろの API は private にする形は受理されます。
 
@@ -386,19 +389,19 @@ package main
 
 // Security: shared caches — public assets may be cached by a CDN; responses that read a cookie stay private (docs/guide/security.md)
 
-import "std/http"
+import "std/http/server"
 
 // me depends on the session cookie, so its response must not be stored by a shared cache
-func me(r http.Request) http.Response {
-    sid := http.Cookie(r, "sid")
-    return http.Text(if sid != nil { "signed in" } else { "guest" })
+func me(r http.server.Request) http.server.Response {
+    sid := http.server.Cookie(r, "sid")
+    return http.server.Text(if sid != nil { "signed in" } else { "guest" })
 }
 
 func main() {
-    auth := http.Middleware{before: (r) => if http.Cookie(r, "sid") == nil { http.Status(401) } else { nil }}
-    api := http.Mount("/api", []http.Route{http.Route{method: "GET", path: "/me", handler: me, cache: http.Private{maxAge: 30}}}, []http.Middleware{auth})
-    assets := http.Static("/assets", "/srv/www", cache: http.Shared{maxAge: 3600, sMaxAge: 86400})
-    routes := http.Merge(api, assets)
+    auth := http.server.Middleware{before: (r) => if http.server.Cookie(r, "sid") == nil { http.server.Status(401) } else { nil }}
+    api := http.server.Mount("/api", []http.server.Route{http.server.Route{method: "GET", path: "/me", handler: me, cache: http.server.Private{maxAge: 30}}}, []http.server.Middleware{auth})
+    assets := http.server.Static("/assets", "/srv/www", cache: http.server.Shared{maxAge: 3600, sMaxAge: 86400})
+    routes := http.server.Merge(api, assets)
     println(len(routes))
 }
 ```
@@ -417,15 +420,15 @@ package main
 
 // Security: shared caches — a route that lets a CDN store its response must not read a cookie (rejected by check) (docs/guide/security.md)
 
-import "std/http"
+import "std/http/server"
 
-func me(r http.Request) http.Response {
-    sid := http.Cookie(r, "sid")
-    return http.Text(if sid != nil { "signed in" } else { "guest" })
+func me(r http.server.Request) http.server.Response {
+    sid := http.server.Cookie(r, "sid")
+    return http.server.Text(if sid != nil { "signed in" } else { "guest" })
 }
 
 func main() {
-    routes := []http.Route{http.Route{method: "GET", path: "/me", handler: me, cache: http.Shared{maxAge: 60}}}
+    routes := []http.server.Route{http.server.Route{method: "GET", path: "/me", handler: me, cache: http.server.Shared{maxAge: 60}}}
     println(len(routes))
 }
 ```
@@ -433,10 +436,10 @@ func main() {
 拒否:
 
 ```
-examples/security_cache_neg.sober:13:28: error: the shared cache policy 'Shared' meets a handler or middleware that reaches a credential source (http.Authorization / http.Cookie / Request.head) in one route — a response that depends on Authorization / Cookie must not be stored by a shared cache — it would be served to other users (language.md 12 節「出所の依存」); use http.Private / http.NoStore for this route, or move the credential read out of it (Analyzer)
+examples/security_cache_neg.sober:13:35: error: the shared cache policy 'Shared' meets a handler or middleware that reaches a credential source (server.Authorization / server.Cookie / Request.head) in one route — a response that depends on Authorization / Cookie must not be stored by a shared cache — it would be served to other users (language.md 12 節「出所の依存」); use server.Private / server.NoStore for this route, or move the credential read out of it (Analyzer)
 ```
 
-詳しく: [std/http の Cache](../std/http.ja.md#cache)・[言語仕様 12 章 A-12・A-13](../spec/12-annotations.ja.md)
+詳しく: [std/http/server の Cache](../std/http-server.ja.md#cache)・[言語仕様 12 章 A-12・A-13](../spec/12-annotations.ja.md)
 
 ## 9. 資源の枯渇（サービス拒否）
 
@@ -444,11 +447,11 @@ examples/security_cache_neg.sober:13:28: error: the shared cache policy 'Shared'
 
 Sober の答え: サーバ（`net.Serve`）は 3 つの層で資源に天井を持ちます。
 
-- **受け入れ（admission）**: `conns:` は同時の接続の数の天井です（既定 10000）。天井を超えた接続には、利用者のコードを走らせずに `reject:` のバイト列を送って閉じます。
-- **予算（`budget:`）**: 接続 1 本が使うメモリの上界の宣言です（既定 64 KiB）。受け入れの天井は `conns × budget` のバイト数で数えます。task 一般でも、`task.Spawn` などに `budget:` を書くと、天井に入らない子は並列にせず逐次に走ります（値と出力は変わりません）。
-- **region の上限（`region:`）**: 接続の task の region 1 つの上限です（既定 128 MiB）。超えたらその接続の task だけが死に、Serve は吸収して他の接続を続けます。
+- 受け入れ（admission）: `conns:` は同時の接続の数の天井です（既定 10000）。天井を超えた接続には、利用者のコードを走らせずに `reject:` のバイト列を送って閉じます。
+- 予算（`budget:`）: 接続 1 本が使うメモリの上界の宣言です（既定 64 KiB）。受け入れの天井は `conns × budget` のバイト数で数えます。task 一般でも、`task.Spawn` などに `budget:` を書くと、天井に入らない子は並列にせず逐次に走ります（値と出力は変わりません）。
+- region の上限（`region:`）: 接続の task の region 1 つの上限です（既定 128 MiB）。超えたらその接続の task だけが死に、Serve は吸収して他の接続を続けます。
 
-HTTP の層では、要求の頭と本文に上限があります（`http.ServeConn` の `maxHead:` 既定 8 KiB を超えたら 431・`maxBody:` 既定 16 KiB を超えたら 413 — ハンドラは走りません）。待ちには期限を付けられます（`task.Run(…, deadline:)` — 期限の後の io は `io.Expired` を返し、net の待ちは期限で切れる）。
+HTTP の層では、要求の頭と本文に上限があります（`http.server.ServeConn` の `maxHead:` 既定 8 KiB を超えたら 431・`maxBody:` 既定 16 KiB を超えたら 413 — ハンドラは走りません）。待ちには期限を付けられます（`task.Run(…, deadline:)` — 期限の後の io は `io.Expired` を返し、net の待ちは期限で切れる）。
 
 ```sober
 // examples/security_limits.sober
@@ -457,17 +460,17 @@ package main
 // Security: resource exhaustion — admission, a per-connection budget and a per-connection region cap (docs/guide/security.md)
 // a server: check and build only (it does not stop by itself)
 
-import "std/http"
+import "std/http/server"
 import "std/net"
 import "std/task"
 
-func route(r http.Request) http.Response {
-    return http.Text("ok")
+func route(r http.server.Request) http.server.Response {
+    return http.server.Text("ok")
 }
 
 // app serves one connection; oversized heads and bodies get 431 / 413 before route runs
 func app(c net.Conn) error? {
-    return http.ServeConn(c, route, maxHead: 8 * task.KB, maxBody: 64 * task.KB)
+    return http.server.ServeConn(c, route, maxHead: 8 * task.KB, maxBody: 64 * task.KB)
 }
 
 func run() error? {
@@ -488,7 +491,7 @@ func main() {
 
 この例はサーバなので、網は検査と建てるところまでを確かめます（走らせて止まらないため、出力の照合はありません）。
 
-詳しく: [std/net の Serve](../std/net.ja.md)・[言語仕様 10 章 10.6 予算・プール・期限](../spec/10-concurrency.ja.md)・[std/http の ServeConn](../std/http.ja.md)
+詳しく: [std/net の Serve](../std/net.ja.md)・[言語仕様 10 章 10.6 予算・プール・期限](../spec/10-concurrency.ja.md)・[std/http/server の ServeConn](../std/http-server.ja.md)
 
 ## 10. 関数が隠れて何かをする
 
@@ -589,15 +592,15 @@ Sober の答え:
 
 言語が消せる事故には限りがあります。次のものは、Sober を使っても書き手の責任のまま残ります。
 
-- **認可とビジネスロジック**: 誰が何をしてよいか、その要求がその利用者に許されるか、金額や在庫の規則が正しいか。言語はこれを消しません。認証の値を読んで分岐するのは正しいプログラムの普通の形で、その分岐が正しいかは言語には分かりません。
-- **解析器を回さない場合**: 3・7・8・10 節の規則は `sober check` だけが掛けます。build だけで済ませると効きません。
-- **入力の意味の検証**: 型と UTF-8 の検査の先 — 値の範囲・形式・業務上の妥当さ — は書き手が確かめます。
-- **SQL injection**: データベースのクライアントはまだ std にありません。今の Sober はこの事故に固有の答えを持っていません。
-- **秘密の扱いの誤り**: `@secret` が見るのはソースの上のタイミングの流れ（分岐・添字・除算）だけです。秘密をログや応答に書き出すこと（印字は検査の対象外）、鍵や nonce の使い回し、乱数の誤用は止めません。利用者のコードについて、生成された機械語に分岐が無いことまでは確かめません。
-- **キャッシュの残り**: CDN 側の設定が `private` を無視して保存する場合・Vary の漏れ・query や本文に載せた token・相手の IP で変わる応答は、8 節の検査の外です。
-- **計算で詰まる要求**: 期限（`deadline:`）は待ちの上限であって、実行時間の上限ではありません。走っている計算は止めません。重い計算を受ける口には、書き手が入力の大きさの上限を置いてください。また、処理中の接続を流し切る優雅な停止はまだありません（止めると処理中の接続は切れます）。
-- **同じ uid のプロセスとの port の共有**: `net.Listen` は SO_REUSEPORT を立てます（`net.Serve` がワーカーごとに同じ番地の listener を足して、accept をワーカーごとに並べるため）。このため、同じ uid で動く別のプロセスは同じ番地に bind でき、届く接続をカーネルの振り分けで分け合います。同じ番地での 2 つ目の起動は「使用中」で失敗せず、黙って接続の一部を受けます。別の uid のプロセスは bind できません。同じ uid は、もともと ptrace や `/proc/<pid>/mem` でプロセスに届く範囲の内側なので新しい境界の破れではありませんが、サービスごとに uid を分けてください（systemd の `DynamicUser`・コンテナの既定の分け方）。
-- **証明の射程**: メモリ安全・データ競合自由は、言語のコアを形式化したモデルで Lean 4 により証明していますが、証明されているのはモデルの性質で、コンパイラの実装そのものではありません（[設計ノート: 安全](../design-notes/safe.md#その安全性はどこまで証明されているのか)）。コンパイラ・ランタイム・カーネルの不具合は、この文書のどの答えの外にもあります。
+- 認可とビジネスロジック: 誰が何をしてよいか、その要求がその利用者に許されるか、金額や在庫の規則が正しいか。言語はこれを消しません。認証の値を読んで分岐するのは正しいプログラムの普通の形で、その分岐が正しいかは言語には分かりません。
+- 解析器を回さない場合: 3・7・8・10 節の規則は `sober check` だけが掛けます。build だけで済ませると効きません。
+- 入力の意味の検証: 型と UTF-8 の検査の先 — 値の範囲・形式・業務上の妥当さ — は書き手が確かめます。
+- SQL injection: データベースのクライアントはまだ std にありません。今の Sober はこの事故に固有の答えを持っていません。
+- 秘密の扱いの誤り: `@secret` が見るのはソースの上のタイミングの流れ（分岐・添字・除算）だけです。秘密をログや応答に書き出すこと（印字は検査の対象外）、鍵や nonce の使い回し、乱数の誤用は止めません。利用者のコードについて、生成された機械語に分岐が無いことまでは確かめません。
+- キャッシュの残り: CDN 側の設定が `private` を無視して保存する場合・Vary の漏れ・query や本文に載せた token・相手の IP で変わる応答は、8 節の検査の外です。
+- 計算で詰まる要求: 期限（`deadline:`）は待ちの上限であって、実行時間の上限ではありません。走っている計算は止めません。重い計算を受ける口には、書き手が入力の大きさの上限を置いてください。また、処理中の接続を流し切る優雅な停止はまだありません（止めると処理中の接続は切れます）。
+- 同じ uid のプロセスとの port の共有: `net.Listen` は SO_REUSEPORT を立てます（`net.Serve` がワーカーごとに同じ番地の listener を足して、accept をワーカーごとに並べるため）。このため、同じ uid で動く別のプロセスは同じ番地に bind でき、届く接続をカーネルの振り分けで分け合います。同じ番地での 2 つ目の起動は「使用中」で失敗せず、黙って接続の一部を受けます。別の uid のプロセスは bind できません。同じ uid は、もともと ptrace や `/proc/<pid>/mem` でプロセスに届く範囲の内側なので新しい境界の破れではありませんが、サービスごとに uid を分けてください（systemd の `DynamicUser`・コンテナの既定の分け方）。
+- 証明の射程: メモリ安全・データ競合自由は、言語のコアを形式化したモデルで Lean 4 により証明していますが、証明されているのはモデルの性質で、コンパイラの実装そのものではありません（[設計ノート: 安全](../design-notes/safe.md#その安全性はどこまで証明されているのか)）。コンパイラ・ランタイム・カーネルの不具合は、この文書のどの答えの外にもあります。
 
 ---
 

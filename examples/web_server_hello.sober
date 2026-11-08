@@ -1,0 +1,55 @@
+package main
+
+// Web サーバのガイド 1 節: net.Serve が接続 1 本 = task 1 本で受け、http.server.ServeConn がその接続の要求を順に route へ渡す。
+// 客（http.client.Request）は同じプロセスの task。Serve は包む scope の期限で accept を止め、走っている接続の決着を待ってから返す
+
+import "std/http/client"
+import "std/http/server"
+import "std/net"
+import "std/task"
+
+func route(r http.server.Request) http.server.Response {
+    if r.method == "GET" && r.path == "/" {
+        return http.server.Text("hello")
+    }
+    if r.method == "GET" && r.path == "/api/status" {
+        return http.server.Json("{\"ok\":true}")
+    }
+    return http.server.Status(404)
+}
+
+// 接続 1 本の handler（net.Serve がこれを接続ごとの task で走らせる）
+func app(c net.Conn) error? {
+    return http.server.ServeConn(c, route)
+}
+
+func get(base string, path string) string {
+    r, e := http.client.Request("${base}${path}")
+    if e != nil {
+        return "GET ${path}: failed"
+    }
+    b := string(r.body) catch ""
+    return if b == "" { "GET ${path} -> ${r.status}" } else { "GET ${path} -> ${r.status} ${b}" }
+}
+
+func visit(base string) []string {
+    return []string{get(base, "/"), get(base, "/api/status"), get(base, "/nope")}
+}
+
+func main() {
+    e := net.Listen("127.0.0.1:0", (l) => {
+        base := "http://127.0.0.1:${net.Port(l)}"
+        got, _ := task.Run((s) => {
+            h := task.Spawn(s, () => visit(base))
+            // この例では 2 秒で受けを止める（本番の Serve は期限で包まない — 止めるのは SIGTERM）
+            _, _ = task.Run((s2) => net.Serve(l, app), deadline: 2000 * task.MS)
+            task.Join(h)
+        })
+        for line <- got {
+            println(line)
+        }
+    })
+    if e != nil {
+        println("listen failed")
+    }
+}

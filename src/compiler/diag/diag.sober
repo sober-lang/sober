@@ -8,6 +8,7 @@ package diag
 
 import "lexer"
 import "std/iter"
+import "std/strings"
 
 // ファイル file（loader の Program のファイルの番号 — 無ければ -1）の字句 tok
 type Pos struct {
@@ -39,7 +40,10 @@ type Malformed error {
 }
 
 // 型の違反。kind 0 = 型宣言の区別の違反（language.md 32 節 — 表層型の照合）・1 = string の値の switch（15 節 — 単値の subject は
-// int / union / error / T?）・2 = T? と値の == / !=（絞り込んでから比べる — 15 節）・3 = string を for の生成元に直に置いた（7 節）
+// int / union / error / T?）・2 = T? と値の == / !=（絞り込んでから比べる — 15 節）・3 = string を for の生成元に直に置いた（7 節）・
+// 4 = 関数値の option（`F?` の欄・束縛・map の読み）を絞らずに呼んだ・5 = Def として呼ぶジェネリックに region を持つ型引数（31 節 R1）・
+// 6 = 局所に束縛した名前付き関数を値の位置に置いた（spec F-11）・7 = ゼロ値の無い型（関数値・union）の欄をリテラルで省いた・
+// 8 = 値化できない名前付き関数型（型引数つき）への変換 `Gen[T](f)`・9 = 別の名前付き関数型の値の変換（nominal）
 type TypeMismatch error {
     at Pos
     kind int
@@ -118,6 +122,10 @@ type GrammarMismatch error {
 }
 
 type NoPkgDir error {
+    at Pos
+}
+
+type ImportPath error {
     at Pos
 }
 
@@ -230,6 +238,8 @@ type Shadow error {
 
 type PureExprStmt error {
     at Pos
+    // 0 = 純粋な式の値を捨てる文・1 = 結果を持つ func の本体の末尾の呼び出しの式文（値は戻り値にならない — spec F-2）
+    kind int
 }
 
 // `case nil:` の腕を写せない形（loader/nilcase.sober — D1）。kind = 1 nil の腕が 2 つ以上・2 `nil | …`・3 前に名前のパターン・4 nil の腕しか無い・5〜8 は 2 位置の `case P, nil:`（loader/mvcase.sober の mvBad）
@@ -422,6 +432,12 @@ type Cell error {
     kind int
 }
 
+// モジュールの宣言（sober.mod — language.md 20 節）の拒否と木での名前の衝突。kind は Format の文面の番号
+type Mod error {
+    at Pos
+    kind int
+}
+
 // 拒否 err の位置（ここのラベルでなければ None）
 func At(err error?) Pos {
     return switch err {
@@ -447,6 +463,7 @@ func At(err error?) Pos {
     case GrammarMismatch{at}: at
     case NoPkgDir{at}: at
     case NoStd{at}: at
+    case ImportPath{at}: at
     case EmbedReceiver{at}: at
     case EmbedPattern{at}: at
     case EmbedNoMatch{at}: at
@@ -474,6 +491,7 @@ func At(err error?) Pos {
     case PureExprStmt{at}: at
     case TestSignature{at}: at
     case Double{at}: at
+    case Mod{at}: at
     case Cell{at}: at
     case Frozen{n}: None()
     case NilCase{at}: at
@@ -513,6 +531,13 @@ func Format(err error?, where string) string {
         case 1: "desugar error at ${where} (TypeMismatch): switch on a string value is not in the language — the subject of a value switch is an int (with default), a union, an error or a T?; compare strings with if / else if"
         case 2: "desugar error at ${where} (TypeMismatch): cannot compare a T? with a value — narrow it first (`if x != nil { … }`, `x != nil && …`, or switch with case nil)"
         case 3: "desugar error at ${where} (TypeMismatch): a string is not a for source — name the view: `for c <- bytes(s)`"
+        case 4: "desugar error at ${where} (TypeMismatch): cannot call an optional function value (F?) — narrow it first (`if f != nil { f(…) }`)"
+        case 6: "desugar error at ${where} (TypeMismatch): a local binding of a named function cannot be stored as a value (spec F-11) — use the function's name directly or a lambda"
+        case 7: "desugar error at ${where} (TypeMismatch): a function-typed or union-typed value has no zero value — give every such field in the literal"
+        case 8: "desugar error at ${where} (TypeMismatch): a generic named function type is not a value type — it can only be a parameter's type (pass a lambda or a function there)"
+        case 9: "desugar error at ${where} (TypeMismatch): a value of another named function type cannot be converted — named function types are distinct even with the same signature"
+        case 10: "desugar error at ${where} (TypeMismatch): a mut slice / map that is not a local path cannot be stored in an imm field — only `x`, `x.f` or `x[i]` is frozen implicitly there: bind the value first (`v := …`) and store `v`, or build the field's value as imm"
+        case 5: "desugar error at ${where} (TypeMismatch): a generic func called as a function (not expanded) takes type arguments without regions — string / slice / map / channel types are not allowed here (a func with a mut or function-typed parameter is expanded and takes them)"
         default: "desugar error at ${where} (TypeMismatch)"
     }
     case PrintArg{at}: "desugar error at ${where} (PrintArg): println prints int, byte, bool and string values"
@@ -532,6 +557,7 @@ func Format(err error?, where string) string {
     case GrammarMismatch{at}: loadLine(err, where, "source does not match the grammar")
     case NoPkgDir{at}: loadLine(err, where, "cannot open package directory")
     case NoStd{at}: loadLine(err, where, "no such std package")
+    case ImportPath{at}: loadLine(err, where, "every segment of an import path is a lowercase identifier (a-z, 0-9, _ — not starting with a digit) that is not a keyword — the path is also the qualifier (std/http/server → http.server)")
     case EmbedReceiver{at}: loadLine(err, where, "@embed needs the receiver `map[string]string{}` (empty, imm)")
     case EmbedPattern{at}: loadLine(err, where, "invalid @embed pattern")
     case EmbedNoMatch{at}: loadLine(err, where, "@embed pattern matches no file")
@@ -566,7 +592,7 @@ func Format(err error?, where string) string {
     case VariantDup{at}: loadLine(err, where, "a variant name must be unique among the package's top-level names")
     case TopDup{at}: loadLine(err, where, "a top-level name is declared more than once in the package")
     case Shadow{at}: loadLine(err, where, "a local binding cannot shadow or redeclare another local binding")
-    case PureExprStmt{at}: loadLine(err, where, "an expression statement must be a call: the value of a pure expression is unused (bind or assign it, or remove it)")
+    case PureExprStmt{at, kind}: loadLine(err, where, if kind == 1 { "the body of a func with results ends in a call whose value is not returned — the last expression is not the result: write `return f(…)`" } else { "an expression statement must be a call: the value of a pure expression is unused (bind or assign it, or remove it)" })
     case TestSignature{at}: loadLine(err, where, "a test function (Test… in a _test.sober file) takes no parameters, type parameters or results")
     case Double{at, kind}: loadLine(err, where, switch kind {
         case 1: "@replaces is written only before the package clause of a _double.sober file"
@@ -590,6 +616,18 @@ func Format(err error?, where string) string {
         case 20: "the function of the same name in the package the double replaces has no @effects (and @errors, when it returns an error): add them there (sober fix --effects --errors)"
         case 21: "this function's @effects is not within the @effects of the function of the same name in the package the double replaces"
         default: "the replaced declaration names a type in @effects or uses a negated label in @errors, which a double cannot be checked against yet"
+    })
+    case Mod{at, kind}: loadLine(err, where, switch kind {
+        case 1: "sober.mod is a `module \"path\"` line followed by `dep [name] \"source\"` and `alias name \"std/root\"` lines (plain string literals — no escapes or interpolation)"
+        case 2: "the last segment of a module path is its name: a lowercase identifier (a-z, 0-9, _ — not starting with a digit) that is not a keyword"
+        case 3: "a tree name (the name of a dep or an alias) is a lowercase identifier (a-z, 0-9, _ — not starting with a digit) that is not a keyword"
+        case 4: "only local-path dependencies (`./…`, `../…`) are supported in this version — fetching a module from elsewhere is not"
+        case 5: "a local-path dependency takes no version"
+        case 6: "the directory of this dependency has no sober.mod with a module line"
+        case 7: "this tree name is already taken (a std root, another dep or alias, or a directory at the root of this module) — rename one of them with the dep's name or an alias line"
+        case 8: "an alias renames a std root: write `alias name \"std/<root>\"`"
+        case 9: "a dependency's own dep and alias lines are not supported in this version"
+        default: "the tree name of this import is also the tree name of another package root imported in this module (a std root, a dep, or a directory at the root) — rename one of them in sober.mod"
     })
     case Cell{at, kind}: if kind < 10 { loadLine(err, where, switch kind {
         case 1: "std/testing/cell is imported only from _test.sober and _double.sober files"
@@ -708,13 +746,13 @@ func Format(err error?, where string) string {
         case 2: "the file opened here must be closed by the next statement: insert `defer io.Close(f)` (with the name bound here — `defer io.CloseRoot(r)` for io.OpenRoot) right after this line"
         case 3: "io.Close may only appear as `defer io.Close(f)` right after the `f := io.Open(…)` it closes (io.CloseRoot likewise after `r := io.OpenRoot(…)`)"
         case 4: "this defer must close the file opened just before it: write `defer io.Close(f)` with the name bound by io.Open"
-        case 5: "an io.File, io.Root, net.Conn, net.Listener or tls.Conn cannot be copied to another binding (it has identity — keep using the name bound by io.Open or by the for)"
-        case 6: "an io.File, io.Root, net.Conn, net.Listener or tls.Conn cannot be assigned (it has identity — keep using the name bound by io.Open or by the for)"
-        case 7: "an io.File, io.Root, net.Conn, net.Listener or tls.Conn cannot leave the block that opened it (no return, and no call that returns one) — pass it down as an argument instead"
-        case 8: "an io.File, io.Root, net.Conn, net.Listener or tls.Conn cannot be put in a struct, slice, map or channel, or appended (it has identity — keep it in the binding made by io.Open)"
-        case 9: "a closure cannot capture an io.File, io.Root, net.Conn, net.Listener or tls.Conn — pass it as an argument (only the body of task.Run and a lambda passed straight to a call may capture it)"
+        case 5: "${resourceList()} cannot be copied to another binding (it has identity — keep using the name bound by io.Open or by the for)"
+        case 6: "${resourceList()} cannot be assigned (it has identity — keep using the name bound by io.Open or by the for)"
+        case 7: "${resourceList()} cannot leave the block that opened it (no return, and no call that returns one) — pass it down as an argument instead"
+        case 8: "${resourceList()} cannot be put in a struct, slice, map or channel, or appended (it has identity — keep it in the binding made by io.Open)"
+        case 9: "a closure cannot capture ${resourceList()} — pass it as an argument (only the body of task.Run and a lambda passed straight to a call may capture it)"
         case 11: "a borrowed function (a parameter of anonymous function type of a function value) can only be called, passed on to a call, or captured by a lambda passed to a call — it cannot be stored, returned, bound, or handed to another task"
-        default: "an io.File, io.Root, net.Conn, net.Listener or tls.Conn cannot be given to a task with give: (the opener's defer closes it when its block ends, which can be before the child is done) — give the path and open it in the child"
+        default: "${resourceList()} cannot be given to a task with give: (the opener's defer closes it when its block ends, which can be before the child is done) — give the path and open it in the child"
     })
     case PanicLabel{at, kind}: loadLine(err, where, switch kind {
         case 1: "panic needs a reason: panic(L{…}) with a panic label (Unreachable, InvariantBroken, or one declared as type L panic{…})"
@@ -752,36 +790,52 @@ func Format(err error?, where string) string {
 
 // loadLine は loader の拒否の 1 行（位置があれば `load error at <where>: <理由>`）
 // identityName / identityMaker は同一性の族の番号（Identity の kind）の型の綴りと生成の口
-func identityName(k int) string {
-    return switch k {
-    case 1: "task.Scope"
-    case 2: "task.Handle"
-    case 3: "task.Sender"
-    case 4: "task.Receiver"
-    case 5: "task.Pool"
-    case 7: "task.Local"
-    case 8: "io.Root"
-    case 9: "net.Listener"
-    case 10: "net.Conn"
-    case 11: "tls.Conn"
-    default: "io.File"
+// 同一性の族の表（i 行目 = package の path・型の名前・族の番号・資源か・作れる口）。loader のゼロ値の検査・desugar の捕捉の検査と filecheck・
+// lower の閉包の照合・この package の文面はみなこの表を読む（名前の集合を 1 か所に — diag はその全部が import する底の package）。
+// 資源 = 開いた接続やファイルの類（filecheck が写し・持ち出し・composite・捕獲・give: を見る）— task の札・handle・端点・Pool・Local は資源でない（task の規則が見る）
+const IdPaths = []string{"std/task", "std/task", "std/task", "std/task", "std/task", "std/task", "std/io", "std/io", "std/net", "std/net", "std/tls", "std/http/client"}
+const IdNames = []string{"Scope", "Handle", "Sender", "Receiver", "Pool", "Local", "File", "Root", "Listener", "Conn", "Conn", "Session"}
+const IdFamilies = []int{1, 2, 3, 4, 5, 7, 6, 8, 9, 10, 11, 12}
+const IdResources = []bool{false, false, false, false, false, false, true, true, true, true, true, true}
+const IdMakers = []string{"task.Run (the body's parameter)", "task.Spawn", "task.NewChannel", "task.NewChannel", "task.NewPool", "task.NewLocal", "io.Open", "io.OpenRoot",
+    "net.Listen (the parameter of its function)", "net.Accept or net.Dial (the parameter of its function)", "tls.Serve (the handler's parameter)", "client.Open (the parameter of its function)"}
+
+// 表の i 行目の型の綴り（package の path の最後の段 + 名前 — "client.Session"）
+func idSpelling(i int) string {
+    _, last, _ := strings.CutLast(IdPaths[i], "/")
+    return "${last}.${IdNames[i]}"
+}
+
+func idRow(k int) int {
+    for i <- iter.Range(0, len(IdFamilies)) {
+        if IdFamilies[i] == k {
+            return i
+        }
     }
+    return 6
+}
+
+func identityName(k int) string {
+    return idSpelling(idRow(k))
 }
 
 func identityMaker(k int) string {
-    return switch k {
-    case 1: "task.Run (the body's parameter)"
-    case 2: "task.Spawn"
-    case 3: "task.NewChannel"
-    case 4: "task.NewChannel"
-    case 5: "task.NewPool"
-    case 7: "task.NewLocal"
-    case 8: "io.OpenRoot"
-    case 9: "net.Listen (the parameter of its function)"
-    case 10: "net.Accept or net.Dial (the parameter of its function)"
-    case 11: "tls.Serve (the handler's parameter)"
-    default: "io.Open"
+    return IdMakers[idRow(k)]
+}
+
+// 資源の型の列の文面（"an io.File, io.Root, …, tls.Conn or client.Session"）
+func resourceList() string {
+    mut names := mut []string{}
+    for i <- iter.Range(0, len(IdPaths)) {
+        if IdResources[i] {
+            names = append(names, idSpelling(i))
+        }
     }
+    mut o := "an ${names[0]}"
+    for i <- iter.Range(1, len(names)) {
+        o = if i == len(names) - 1 { "${o} or ${names[i]}" } else { "${o}, ${names[i]}" }
+    }
+    return o
 }
 
 func loadLine(err error?, where string, why string) string {

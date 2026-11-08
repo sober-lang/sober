@@ -42,26 +42,31 @@
                 "callee": {
                   "k": "selector",
                   "base": {
-                    "k": "ident",
-                    "name": "crc32",
-                    "tok": 23
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "internal",
+                      "tok": 23
+                    },
+                    "field": "crc32",
+                    "tok": 25
                   },
                   "field": "Update",
-                  "tok": 25
+                  "tok": 27
                 },
                 "args": [
                   {
                     "k": "int",
                     "value": 0,
-                    "tok": 27
+                    "tok": 29
                   },
                   {
                     "k": "ident",
                     "name": "data",
-                    "tok": 29
+                    "tok": 31
                   }
                 ],
-                "tok": 26
+                "tok": 28
               }
             ],
             "tok": 22
@@ -72,7 +77,7 @@
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 34
+        "end": 36
       },
       "sig_end": 21
     }

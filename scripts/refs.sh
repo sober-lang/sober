@@ -286,6 +286,7 @@ case "${1:-}" in
         for sym in std/task.MarkFailed testdata/refs/neg/lib.MarkFailed; do
             exp=testdata/refs/$(echo "$sym" | tr '/.' '__').tsv
             got=$(corpus | "$BIN" refs "$sym" 2> /dev/null | grep -v '^TEXT\|^COMPILER-LIT' | grep 'testdata/refs/neg/' || true)
+            [ -n "${REFS_REGEN:-}" ] && printf '%s\n' "$got" > "$exp"   # 期待の TSV を作り直す（分類を目で確かめてから）
             if [ "$got" != "$(cat "$exp")" ]; then
                 echo "FAIL: refs $sym — 負例の振り分けが $exp と違う"; diff <(printf '%s\n' "$got") "$exp" | head -20; rc=1
             fi
@@ -297,11 +298,12 @@ case "${1:-}" in
         for sym in testdata/refs/member/m.Req.code testdata/refs/member/m.Wire.code 'testdata/refs/member/m.Handle(scale)'; do
             exp=testdata/refs/$(echo "$sym" | tr '/.()' '____').tsv
             got=$(corpus | "$BIN" refs "$sym" --typed "$T/typed" 2> /dev/null | grep -av '^TEXT\|^COMPILER-LIT' | grep -a 'testdata/refs/member/\|^WARN' || true)
+            [ -n "${REFS_REGEN:-}" ] && printf '%s\n' "$got" > "$exp"   # 期待の TSV を作り直す（分類を目で確かめてから）
             if [ "$got" != "$(cat "$exp")" ]; then
                 echo "FAIL: refs $sym — 欄・仮引数の振り分けが $exp と違う"; diff <(printf '%s\n' "$got") "$exp" | head -20; rc=1
             fi
         done
-        for sym in std/task.MarkFailed std/os.SleepExpired std/sort.OrderUnstable std/http.ServeWith; do
+        for sym in std/task.MarkFailed std/os.SleepExpired std/sort.OrderUnstable std/http/server.ServeWith; do
             corpus | "$BIN" refs "$sym" > /dev/null 2>&1 || { echo "FAIL: refs $sym — 未分類か合成の参照がある"; rc=1; }
         done
         [ $rc -eq 0 ] && echo "refs selftest ok"

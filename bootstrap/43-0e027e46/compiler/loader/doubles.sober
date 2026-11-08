@@ -1,0 +1,820 @@
+package loader
+
+// テストの構成の差し替え（language.md 41 節）: テストの package の `_test.sober` の package 節の前の `@doubles("…", …)` が名指した double の
+// ディレクトリ（ファイルは全部 `_double.sober`・先頭に `@replaces("相手")`）を、そのテストのビルドの中で相手の package として読む。
+// 名乗り（@replaces）の検査・import の付け替え・本物の公開面との契約（名前・署名・型・const・@errors・@effects）の検査をここに置く
+
+import "std/iter"
+import "std/strings"
+import "std/builder"
+import "ast"
+import "diag"
+import "printer"
+
+// 差し替えの表（@doubles の列の順）: d = double のディレクトリ・t = 相手の package・at = 列の要素の位置
+type Wiring struct {
+    d []string
+    t []string
+    at []diag.Pos
+}
+
+func noWiring() Wiring {
+    return Wiring{[]string{}, []string{}, []diag.Pos{}}
+}
+
+func isDoubleFile(path string) bool {
+    return strings.HasSuffix(path, "_double.sober")
+}
+
+// ファイルの木の package 節の前の注釈の節で種類が kind のもの（KReplaces / KDoubles — 無ければ -1）
+func preNode(t ast.Tree, kind int) int {
+    f := t.nodes[t.file].f
+    if f == 0 {
+        return -1
+    }
+    x := ast.ListAt(t, f, 0)
+    return if t.nodes[x].kind == kind { x } else { -1 }
+}
+
+func replacesNode(t ast.Tree) int {
+    return preNode(t, ast.KReplaces)
+}
+
+// ディレクトリ dir（std の外）の .sober が 1 つ以上あって全部 `_double.sober` か
+func doubleDir(m Manifest, fsm bool, sm map[string]string, dir string) bool {
+    if isStd(dir) {
+        return false
+    }
+    fs := pkgFiles(m, fsm, sm, dir)
+    for i <- iter.Range(0, len(fs)) {
+        if !isDoubleFile(fs[i]) {
+            return false
+        }
+    }
+    return len(fs) > 0
+}
+
+// 差し替えを Manifest が先に決めている構成（double を entry にした check — loadDouble）の表
+func presetWiring(m Manifest) Wiring {
+    mut at := mut []diag.Pos{}
+    for i <- iter.Range(0, len(m.dbl_t)) {
+        at = append(at, diag.None())
+    }
+    return Wiring{m.dbl_d, m.dbl_t, freeze(at)}
+}
+
+// double のディレクトリ dir を entry にした読み（`sober check <double>` — 相手を import するだけの合成の main で、相手を dir から読み契約を検査する）
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.ImportPath, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.LitRange, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Double, diag.Cell)
+func loadDouble(dir string, sm map[string]string) (Program, error?) {
+    m0 := Manifest{}
+    tgt, ok := targetOf(m0, true, sm, dir)
+    if !ok {
+        return Program{}, diag.Double{at: diag.None(), kind: 2}
+    }
+    if isStd(tgt) {
+        return Program{}, diag.Double{at: diag.None(), kind: 9}
+    }
+    src := "package main\n\nimport tp \"${tgt}\"\n\nfunc main() {\n}\n"
+    mut sink := PcSink{}
+    return load(Manifest{TestMainPath(), "", []string{}, "", src, false, []string{}, 0, []string{tgt}, []string{dir}}, true, sm, PcOff(), mut sink)
+}
+
+// テストの package（m.test）の `_test.sober` の @doubles から差し替えの表を組む（trees = 読んだ木 — テストの package は読み終わっている）
+@errors(diag.Double, diag.Cell)
+func wiringOf(m Manifest, fsm bool, sm map[string]string, trees []ast.Tree, fpkg []string, fpath []string) (Wiring, error?) {
+    mut ds := mut []string{}
+    mut tg := mut []string{}
+    mut ats := mut []diag.Pos{}
+    mut seen := false
+    for i <- iter.Range(0, len(trees)) {
+        t := trees[i]
+        dx := preNode(t, ast.KDoubles)
+        if dx >= 0 && fpkg[i] == m.test && strings.HasSuffix(fpath[i], "_test.sober") {
+            if seen {
+                return noWiring(), diag.Double{at: diag.Pos{file: i, tok: t.nodes[dx].tok}, kind: 4}
+            }
+            seen = true
+            l := t.nodes[dx].a
+            for j <- iter.Range(0, ast.ListLen(t, l)) {
+                e := t.nodes[ast.ListAt(t, l, j)]
+                at := diag.Pos{file: i, tok: e.tok}
+                d := Name(t, e.a)
+                if !doubleDir(m, fsm, sm, d) {
+                    fs := pkgFiles(m, fsm, sm, d)
+                    mut any := false
+                    for q <- iter.Range(0, len(fs)) {
+                        any = any || isDoubleFile(fs[q])
+                    }
+                    return noWiring(), diag.Double{at: at, kind: if any { 3 } else { 6 }}
+                }
+                tgt, ok := targetOf(m, fsm, sm, d)
+                if !ok {
+                    return noWiring(), diag.Double{at: at, kind: 2}
+                }
+                if isStd(tgt) || tgt == m.test {
+                    return noWiring(), diag.Double{at: at, kind: 9}
+                }
+                if has(freeze(ds), d) || has(freeze(tg), tgt) {
+                    return noWiring(), diag.Double{at: at, kind: 7}
+                }
+                ds = append(ds, d)
+                tg = append(tg, tgt)
+                ats = append(ats, at)
+            }
+        }
+    }
+    return Wiring{freeze(ds), freeze(tg), freeze(ats)}, nil
+}
+
+// double のディレクトリ d のファイルが揃って名乗る相手（食い違い・欠け・読めないファイルは ok = false — 位置つきの拒否は読んだ後の dblCheck が出す）
+func targetOf(m Manifest, fsm bool, sm map[string]string, d string) (string, bool) {
+    fs := pkgFiles(m, fsm, sm, d)
+    mut tgt := ""
+    for i <- iter.Range(0, len(fs)) {
+        t, err := parseFileRaw(m, fsm, sm, fs[i], false, 0)
+        if err != nil {
+            return "", false
+        }
+        r := replacesNode(t)
+        if r < 0 {
+            return "", false
+        }
+        nm := Name(t, t.nodes[r].a)
+        if i > 0 && nm != tgt {
+            return "", false
+        }
+        tgt = nm
+    }
+    return tgt, true
+}
+
+// 木 t の import のうち double のディレクトリ（w.d）を指すものを相手の package へ付け替える（参照名は double のパスの末尾のまま）。
+// 付け替えたら changed = true
+func rewireImports(t ast.Tree, w Wiring) (ast.Tree, bool) {
+    imps := t.nodes[t.file].b
+    mut hit := false
+    for k <- iter.Range(0, ast.ListLen(t, imps)) {
+        im := t.nodes[ast.ListAt(t, imps, k)]
+        hit = hit || wireIndex(w, Name(t, im.b)) >= 0
+    }
+    if !hit {
+        return t, false
+    }
+    mut nb := builder.Builder[ast.Node]{}
+    mut db := builder.Builder[int]{}
+    for j <- iter.Range(0, len(t.data)) {
+        builder.Push(mut db, t.data[j])
+    }
+    for j <- iter.Range(0, len(t.nodes)) {
+        x := t.nodes[j]
+        k := if x.kind == ast.KImport { wireIndex(w, Name(t, x.b)) } else { -1 }
+        if k >= 0 {
+            path := w.t[k]
+            alias := if x.a >= 0 { x.a } else { ast.PutLit(mut db, Basename(w.d[k])) }
+            builder.Push(mut nb, ast.Node{x.kind, x.tok, alias, ast.PutLit(mut db, path), x.c, x.d, x.e, x.f})
+        } else {
+            builder.Push(mut nb, x)
+        }
+    }
+    return ast.Tree{builder.Build(mut nb), builder.Build(mut db), t.file}, true
+}
+
+func wireIndex(w Wiring, d string) int {
+    for i <- iter.Range(0, len(w.d)) {
+        if w.d[i] == d {
+            return i
+        }
+    }
+    return -1
+}
+
+func wireTarget(w Wiring, t string) int {
+    for i <- iter.Range(0, len(w.t)) {
+        if w.t[i] == t {
+            return i
+        }
+    }
+    return -1
+}
+
+// 木 t から package 節の前の注釈を外した木（KFile の f を 0 に）
+func dropReplaces(t ast.Tree) ast.Tree {
+    mut ns := mut []ast.Node{}
+    for j <- iter.Range(0, len(t.nodes)) {
+        x := t.nodes[j]
+        ns = append(ns, if j == t.file { ast.Node{x.kind, x.tok, x.a, x.b, x.c, x.d, x.e, 0} } else { x })
+    }
+    return ast.Tree{freeze(ns), t.data, t.file}
+}
+
+// 読み終えた木の検査と写し: @replaces の置き場と外し・@doubles の置き場・double の名前と import・相手が閉包にあるか・本物との契約・
+// double にだけある名前の参照。dbl = import を付け替えた import の (ファイル, 参照名) の列（double のパス経由の参照）
+// 契約の検査が読む本物のファイル（テストの結果・答えの再生が照合する読んだファイルに足す — 本物は Program に入らない）
+func contractFiles(m Manifest, fsm bool, sm map[string]string, w Wiring) []string {
+    mut m0 := m
+    m0.dbl_t = []string{}
+    m0.dbl_d = []string{}
+    mut out := mut []string{}
+    for k <- iter.Range(0, len(w.t)) {
+        fs := dirFiles(m0, fsm, sm, w.t[k])
+        for i <- iter.Range(0, len(fs)) {
+            out = append(out, fs[i])
+        }
+    }
+    return freeze(out)
+}
+
+@errors(diag.Double, diag.ReadFail, diag.LeadingZero, diag.LitRange, diag.GrammarMismatch)
+func dblCheck(m Manifest, fsm bool, sm map[string]string, w Wiring, trees []ast.Tree, fpkg []string, fpath []string, dblFile []int, dblRef []string) ([]ast.Tree, error?) {
+    mut out := mut []ast.Tree{}
+    for i <- iter.Range(0, len(trees)) {
+        t := trees[i]
+        r := replacesNode(t)
+        if r >= 0 {
+            if !isDoubleFile(fpath[i]) || wireTarget(w, fpkg[i]) < 0 {
+                return []ast.Tree{}, diag.Double{at: diag.Pos{file: i, tok: t.nodes[r].tok}, kind: 1}
+            }
+            if !StrIs(t, t.nodes[t.file].a, Basename(fpkg[i])) {
+                return []ast.Tree{}, diag.Double{at: diag.Pos{file: i, tok: t.nodes[r].b}, kind: 13}
+            }
+            out = append(out, dropReplaces(t))
+        } else {
+            if isDoubleFile(fpath[i]) {
+                return []ast.Tree{}, diag.Double{at: diag.Pos{file: i, tok: 0}, kind: 2}
+            }
+            dx := preNode(t, ast.KDoubles)
+            if dx >= 0 {
+                // @doubles はテストの package の `_test.sober` だけ（wiringOf が読む場所）
+                if fpkg[i] != m.test || !strings.HasSuffix(fpath[i], "_test.sober") {
+                    return []ast.Tree{}, diag.Double{at: diag.Pos{file: i, tok: t.nodes[dx].tok}, kind: 4}
+                }
+                out = append(out, dropReplaces(t))
+            } else {
+                out = append(out, t)
+            }
+        }
+    }
+    mut ts := freeze(out)
+    for k <- iter.Range(0, len(w.t)) {
+        if !has(fpkg, w.t[k]) {
+            return ts, diag.Double{at: w.at[k], kind: 8}
+        }
+        // double のファイルが相手を import しない
+        for i <- iter.Range(0, len(ts)) {
+            if fpkg[i] == w.t[k] {
+                imps := ts[i].nodes[ts[i].file].b
+                for q <- iter.Range(0, ast.ListLen(ts[i], imps)) {
+                    im := ts[i].nodes[ast.ListAt(ts[i], imps, q)]
+                    if StrIs(ts[i], im.b, w.t[k]) {
+                        return ts, diag.Double{at: diag.Pos{file: i, tok: im.tok}, kind: 10}
+                    }
+                }
+            }
+        }
+        rts, rerr := realTrees(m, fsm, sm, w.t[k], len(ts))
+        if rerr != nil {
+            return ts, rerr
+        }
+        rd := declsAll(rts)
+        dd := declsOf(ts, pkgFilesOf(fpkg, w.t[k]))
+        cerr := contract(ts, dd, rts, rd)
+        if cerr != nil {
+            return ts, cerr
+        }
+        rerr2 := onlyRefs(w.t[k], ts, fpkg, dblFile, dblRef, dd, rd)
+        if rerr2 != nil {
+            return ts, rerr2
+        }
+        mut nx := mut []ast.Tree{}
+        for i <- iter.Range(0, len(ts)) {
+            nx = append(nx, if fpkg[i] == w.t[k] { injectEffects(ts[i], rts, rd) } else { ts[i] })
+        }
+        ts = freeze(nx)
+    }
+    return ts, nil
+}
+
+// fpkg が pkg のファイルの番号
+func pkgFilesOf(fpkg []string, pkg string) []int {
+    mut out := mut []int{}
+    for i <- iter.Range(0, len(fpkg)) {
+        if fpkg[i] == pkg {
+            out = append(out, i)
+        }
+    }
+    return freeze(out)
+}
+
+func declsAll(ts []ast.Tree) Decls {
+    mut fs := mut []int{}
+    for i <- iter.Range(0, len(ts)) {
+        fs = append(fs, i)
+    }
+    return declsOf(ts, freeze(fs))
+}
+
+// ── 公開面の表 ──
+
+// 木の列の公開の宣言（名前・種類〔0 = func・1 = type・2 = const〕・木・節）
+type Decls struct {
+    name []string
+    kind []int
+    tree []int
+    node []int
+}
+
+func isPublic(nm string) bool {
+    b := bytes(nm)
+    return len(b) > 0 && b[0] >= 'A' && b[0] <= 'Z'
+}
+
+// 木の列 ts のうち files に挙げた番号の木の公開の宣言
+func declsOf(ts []ast.Tree, files []int) Decls {
+    mut nm := mut []string{}
+    mut kd := mut []int{}
+    mut tr := mut []int{}
+    mut nd := mut []int{}
+    for q <- iter.Range(0, len(files)) {
+        i := files[q]
+        t := ts[i]
+        f := t.nodes[t.file]
+        for g <- iter.Range(0, 3) {
+            l := if g == 0 { f.d } else if g == 1 { f.c } else { f.e }
+            for k <- iter.Range(0, ast.ListLen(t, l)) {
+                x := ast.ListAt(t, l, k)
+                n := Name(t, t.nodes[x].a)
+                if isPublic(n) {
+                    nm = append(nm, n)
+                    kd = append(kd, g)
+                    tr = append(tr, i)
+                    nd = append(nd, x)
+                }
+            }
+        }
+    }
+    return Decls{freeze(nm), freeze(kd), freeze(tr), freeze(nd)}
+}
+
+func declIndex(ds Decls, n string) int {
+    for i <- iter.Range(0, len(ds.name)) {
+        if ds.name[i] == n {
+            return i
+        }
+    }
+    return -1
+}
+
+// 本物の package tgt（相手）のファイルの木（テストと double を除く — 本体は検査しない・宣言だけを読む）
+@errors(diag.ReadFail, diag.LeadingZero, diag.LitRange, diag.GrammarMismatch)
+func realTrees(m Manifest, fsm bool, sm map[string]string, tgt string, base int) ([]ast.Tree, error?) {
+    mut m0 := m
+    m0.dbl_t = []string{}
+    m0.dbl_d = []string{}
+    fs := dirFiles(m0, fsm, sm, tgt)
+    mut out := mut []ast.Tree{}
+    for i <- iter.Range(0, len(fs)) {
+        t, err := parseFileRaw(m0, fsm, sm, fs[i], false, base + i)
+        if err != nil {
+            return []ast.Tree{}, err
+        }
+        out = append(out, t)
+    }
+    return freeze(out), nil
+}
+
+// double（ts の宣言 dd）と本物（rts の宣言 rd）の公開面の契約: 同じ名前は同じ種類・関数の署名・const・型（struct / error の
+// 共通の欄の型・それ以外は形ごと）・@errors（double ⊆ 本物）・@effects（本物の宣言が要る — double の宣言があれば ⊆）
+@errors(diag.Double, diag.Cell)
+func contract(ts []ast.Tree, dd Decls, rts []ast.Tree, rd Decls) error? {
+    for i <- iter.Range(0, len(dd.name)) {
+        j := declIndex(rd, dd.name[i])
+        if j >= 0 {
+            dt := ts[dd.tree[i]]
+            rt := rts[rd.tree[j]]
+            dx := dd.node[i]
+            rx := rd.node[j]
+            at := diag.Pos{file: dd.tree[i], tok: dt.nodes[dx].tok}
+            if dd.kind[i] != rd.kind[j] {
+                return diag.Double{at: at, kind: 15}
+            }
+            if dd.kind[i] == 0 {
+                if !sigEq(dt, dx, rt, rx) {
+                    return diag.Double{at: at, kind: 16}
+                }
+                k := annotCheck(dt, dx, rt, rx)
+                if k != 0 {
+                    return diag.Double{at: at, kind: k}
+                }
+            } else if dd.kind[i] == 1 {
+                if !typeDeclEq(dt, dx, rt, rx) {
+                    return diag.Double{at: at, kind: 18}
+                }
+            } else if !constEq(dt, dx, rt, rx) {
+                return diag.Double{at: at, kind: 17}
+            }
+        }
+    }
+    return nil
+}
+
+// ── 型の比較（参照名は import のパスへ・型パラメータは番号へ — 修飾のない名前は両側とも相手の package の名前か組み込み）──
+
+func qualName(t ast.Tree, s int, tps []string) string {
+    n := Name(t, s)
+    ref, rest, dotted := strings.CutLast(n, ".")
+    if dotted {
+        imps := t.nodes[t.file].b
+        for k <- iter.Range(0, ast.ListLen(t, imps)) {
+            im := t.nodes[ast.ListAt(t, imps, k)]
+            path := Name(t, im.b)
+            if ImpRefIs(t, im, ref) {
+                return path + "." + rest
+            }
+        }
+        return n
+    }
+    for i <- iter.Range(0, len(tps)) {
+        if tps[i] == n {
+            return "%${i}"
+        }
+    }
+    return n
+}
+
+func strList(t ast.Tree, l int) []string {
+    mut out := mut []string{}
+    for k <- iter.Range(0, ast.ListLen(t, l)) {
+        out = append(out, Name(t, ast.ListAt(t, l, k)))
+    }
+    return freeze(out)
+}
+
+// 型式 a（木 ta・型パラメータ pa）と b が同じ型か
+func tyEq(ta ast.Tree, a int, pa []string, tb ast.Tree, b int, pb []string) bool {
+    if a < 0 || b < 0 {
+        return a == b
+    }
+    x := ta.nodes[a]
+    y := tb.nodes[b]
+    if x.kind != y.kind {
+        return false
+    }
+    return switch x.kind {
+    case ast.TName: qualName(ta, x.a, pa) == qualName(tb, y.a, pb)
+    case ast.TOpt: x.b == y.b && tyEq(ta, x.a, pa, tb, y.a, pb)
+    case ast.TSlice: x.b == y.b && tyEq(ta, x.a, pa, tb, y.a, pb)
+    case ast.TMap: x.c == y.c && tyEq(ta, x.a, pa, tb, y.a, pb) && tyEq(ta, x.b, pa, tb, y.b, pb)
+    case ast.TArray: x.a == y.a && tyEq(ta, x.b, pa, tb, y.b, pb)
+    case ast.TGeneric: qualName(ta, x.a, pa) == qualName(tb, y.a, pb) && tyListEq(ta, x.b, pa, tb, y.b, pb)
+    case ast.TFunc: tyListEq(ta, x.a, pa, tb, y.a, pb) && tyListEq(ta, x.b, pa, tb, y.b, pb)
+    case ast.TTuple: tyListEq(ta, x.a, pa, tb, y.a, pb)
+    default: false
+    }
+}
+
+func tyListEq(ta ast.Tree, la int, pa []string, tb ast.Tree, lb int, pb []string) bool {
+    n := ast.ListLen(ta, la)
+    if n != ast.ListLen(tb, lb) {
+        return false
+    }
+    for k <- iter.Range(0, n) {
+        if !tyEq(ta, ast.ListAt(ta, la, k), pa, tb, ast.ListAt(tb, lb, k), pb) {
+            return false
+        }
+    }
+    return true
+}
+
+// 関数の署名（型パラメータの数・仮引数の mut と型・結果の型）
+func sigEq(ta ast.Tree, a int, tb ast.Tree, b int) bool {
+    x := ta.nodes[a]
+    y := tb.nodes[b]
+    pa := strList(ta, x.b)
+    pb := strList(tb, y.b)
+    if len(pa) != len(pb) || ast.ListLen(ta, x.c) != ast.ListLen(tb, y.c) {
+        return false
+    }
+    for k <- iter.Range(0, ast.ListLen(ta, x.c)) {
+        u := ta.nodes[ast.ListAt(ta, x.c, k)]
+        v := tb.nodes[ast.ListAt(tb, y.c, k)]
+        if u.c != v.c || !tyEq(ta, u.b, pa, tb, v.b, pb) {
+            return false
+        }
+    }
+    return tyListEq(ta, x.d, pa, tb, y.d, pb)
+}
+
+// 欄の列 la と lb（KField / KVariant の列）の共通の名前の欄が同じ型か（all = 名前の集合と並びも同じであること）
+func fieldsEq(ta ast.Tree, la int, pa []string, tb ast.Tree, lb int, pb []string, all bool) bool {
+    if all && ast.ListLen(ta, la) != ast.ListLen(tb, lb) {
+        return false
+    }
+    for k <- iter.Range(0, ast.ListLen(ta, la)) {
+        u := ta.nodes[ast.ListAt(ta, la, k)]
+        mut found := false
+        for q <- iter.Range(0, ast.ListLen(tb, lb)) {
+            v := tb.nodes[ast.ListAt(tb, lb, q)]
+            if Name(ta, u.a) == Name(tb, v.a) {
+                found = true
+                if all && q != k {
+                    return false
+                }
+                if !tyEq(ta, u.b, pa, tb, v.b, pb) {
+                    return false
+                }
+            }
+        }
+        if all && !found {
+            return false
+        }
+    }
+    return true
+}
+
+// 型宣言（struct / error / panic は共通の欄の型だけ・union は variant の名前と欄が同じ・名前付き関数型は署名と後置の注釈の綴り・他は下地）
+func typeDeclEq(ta ast.Tree, a int, tb ast.Tree, b int) bool {
+    x := ta.nodes[a]
+    y := tb.nodes[b]
+    pa := strList(ta, x.b)
+    pb := strList(tb, y.b)
+    if len(pa) != len(pb) || x.f != y.f {
+        return false
+    }
+    u := ta.nodes[x.c]
+    v := tb.nodes[y.c]
+    if u.kind != v.kind {
+        return false
+    }
+    return switch u.kind {
+    case ast.BStruct: fieldsEq(ta, u.a, pa, tb, v.a, pb, false)
+    case ast.BError: fieldsEq(ta, u.a, pa, tb, v.a, pb, false)
+    case ast.BPanic: fieldsEq(ta, u.a, pa, tb, v.a, pb, false)
+    case ast.BUnion: variantsEq(ta, u.a, pa, tb, v.a, pb)
+    case ast.BFunc: tyListEq(ta, u.a, pa, tb, v.a, pb) && tyListEq(ta, u.b, pa, tb, v.b, pb) && strListEq(ta, u.d - 1, tb, v.d - 1) && strListEq(ta, u.f - 1, tb, v.f - 1)
+    default: tyEq(ta, u.a, pa, tb, v.a, pb)
+    }
+}
+
+func variantsEq(ta ast.Tree, la int, pa []string, tb ast.Tree, lb int, pb []string) bool {
+    if ast.ListLen(ta, la) != ast.ListLen(tb, lb) {
+        return false
+    }
+    for k <- iter.Range(0, ast.ListLen(ta, la)) {
+        u := ta.nodes[ast.ListAt(ta, la, k)]
+        v := tb.nodes[ast.ListAt(tb, lb, k)]
+        if Name(ta, u.a) != Name(tb, v.a) || u.c != v.c || !fieldsEq(ta, u.b, pa, tb, v.b, pb, true) {
+            return false
+        }
+    }
+    return true
+}
+
+// 文字列の列（-1 = 無し）の綴りが同じか
+func strListEq(ta ast.Tree, la int, tb ast.Tree, lb int) bool {
+    if la < 0 || lb < 0 {
+        return la == lb
+    }
+    a := strList(ta, la)
+    b := strList(tb, lb)
+    if len(a) != len(b) {
+        return false
+    }
+    for k <- iter.Range(0, len(a)) {
+        if a[k] != b[k] {
+            return false
+        }
+    }
+    return true
+}
+
+// const は値の式の綴りが同じ
+func constEq(ta ast.Tree, a int, tb ast.Tree, b int) bool {
+    x := string(printer.Expr(ta, ta.nodes[a].b)) catch ""
+    y := string(printer.Expr(tb, tb.nodes[b].b)) catch "?"
+    return x == y
+}
+
+// ── 注釈の契約 ──
+
+// KFuncDecl の付加の列の k 番（無ければ def）
+func extAt(t ast.Tree, x ast.Node, k int, def int) int {
+    return if t.data[x.f] > k { t.data[x.f + 1 + k] } else { def }
+}
+
+const EXT_ERRS = 5
+const EXT_EFFS = 12
+
+// 効果の項の列の許容のビット（語だけ — 型の名前の項があれば -1）
+func effAllow(t ast.Tree, l int) int {
+    ws := strList(t, l)
+    mut bits := 0
+    mut neg := false
+    for k <- iter.Range(0, len(ws)) {
+        w := strings.TrimPrefix(ws[k], "!")
+        neg = neg || w != ws[k]
+        b := if w == "block" { EffBlock } else if w == "io" { EffIo } else if w == "panic" { EffPanic } else if w == "nondet" { EffNondet } else { 0 }
+        if b == 0 {
+            return -1
+        }
+        bits = bits | b
+    }
+    return if neg { (EffBlock | EffIo | EffPanic | EffNondet) & ^bits } else { bits }
+}
+
+// @errors のラベルの列をパスつきの名前へ（否定・読めない項があれば ok = false）
+func errNames(t ast.Tree, l int) ([]string, bool) {
+    ws := strList(t, l)
+    mut out := mut []string{}
+    for k <- iter.Range(0, len(ws)) {
+        if strings.HasPrefix(ws[k], "!") || ws[k] == "?" {
+            return []string{}, false
+        }
+    }
+    for k <- iter.Range(0, ast.ListLen(t, l)) {
+        out = append(out, qualName(t, ast.ListAt(t, l, k), []string{}))
+    }
+    return freeze(out), true
+}
+
+// 関数 a（double）と b（本物）の @errors / @effects の契約（違反の kind — 無ければ 0）
+func annotCheck(ta ast.Tree, a int, tb ast.Tree, b int) int {
+    x := ta.nodes[a]
+    y := tb.nodes[b]
+    de := extAt(ta, x, EXT_ERRS, -1)
+    re := extAt(tb, y, EXT_ERRS, -1)
+    if de >= 0 && ast.ListLen(ta, de) > 0 {
+        if re < 0 {
+            return 19
+        }
+        dn, dok := errNames(ta, de)
+        rn, rok := errNames(tb, re)
+        if !dok || !rok {
+            return 22
+        }
+        for k <- iter.Range(0, len(dn)) {
+            if !has(rn, dn[k]) {
+                return 19
+            }
+        }
+    }
+    rf := extAt(tb, y, EXT_EFFS, -1)
+    if rf < 0 || (ast.ListLen(tb, y.d) > 0 && returnsError(tb, y) && re < 0) {
+        return 20
+    }
+    ra := effAllow(tb, rf)
+    if ra < 0 {
+        return 22
+    }
+    df := extAt(ta, x, EXT_EFFS, -1)
+    if df >= 0 {
+        da := effAllow(ta, df)
+        if da < 0 {
+            return 22
+        }
+        if (da & ^ra) != 0 {
+            return 21
+        }
+    }
+    return 0
+}
+
+// 関数宣言 x の最後の結果が error? か
+func returnsError(t ast.Tree, x ast.Node) bool {
+    n := ast.ListLen(t, x.d)
+    if n == 0 {
+        return false
+    }
+    r := t.nodes[ast.ListAt(t, x.d, n - 1)]
+    return r.kind == ast.TOpt && t.nodes[r.a].kind == ast.TName && StrIs(t, t.nodes[r.a].a, "error")
+}
+
+// 木 t の公開の関数で @effects の無いものに、本物（rts・rd）の同じ名前の関数の @effects の項を写した木
+func injectEffects(t ast.Tree, rts []ast.Tree, rd Decls) ast.Tree {
+    fl := t.nodes[t.file].d
+    mut db := builder.Builder[int]{}
+    for j <- iter.Range(0, len(t.data)) {
+        builder.Push(mut db, t.data[j])
+    }
+    mut any := false
+    mut ns2 := mut []ast.Node{}
+    for j <- iter.Range(0, len(t.nodes)) {
+        ns2 = append(ns2, t.nodes[j])
+    }
+    for k <- iter.Range(0, ast.ListLen(t, fl)) {
+        fx := ast.ListAt(t, fl, k)
+        x := t.nodes[fx]
+        q := declIndex(rd, Name(t, x.a))
+        if q >= 0 && rd.kind[q] == 0 && extAt(t, x, EXT_EFFS, -1) < 0 {
+            rt := rts[rd.tree[q]]
+            rf := extAt(rt, rt.nodes[rd.node[q]], EXT_EFFS, -1)
+            if rf >= 0 {
+                ws := strList(rt, rf)
+                mut ids := mut []int{}
+                for w <- iter.Range(0, len(ws)) {
+                    ids = append(ids, ast.PutLit(mut db, ws[w]))
+                }
+                el := ast.PutList(mut db, freeze(ids))
+                mut ext := mut []int{}
+                for e <- iter.Range(0, 12) {
+                    ext = append(ext, extAt(t, x, e, if e == 9 { -1 } else { 0 }))
+                }
+                ext = append(ext, el)
+                ext = append(ext, x.tok)
+                ns2[fx] = ast.Node{x.kind, x.tok, x.a, x.b, x.c, x.d, x.e, ast.PutList(mut db, freeze(ext))}
+                any = true
+            }
+        }
+    }
+    if !any {
+        return t
+    }
+    return ast.Tree{freeze(ns2), builder.Build(mut db), t.file}
+}
+
+// double にだけある公開の名前を、相手の package のパスの import（付け替えた double のパスの import でないもの）経由で参照していないか
+@errors(diag.Double, diag.Cell)
+func onlyRefs(tgt string, ts []ast.Tree, fpkg []string, dblFile []int, dblRef []string, dd Decls, rd Decls) error? {
+    mut only := mut []string{}
+    for i <- iter.Range(0, len(dd.name)) {
+        if declIndex(rd, dd.name[i]) < 0 {
+            only = append(only, dd.name[i])
+        }
+    }
+    if len(only) == 0 {
+        return nil
+    }
+    for i <- iter.Range(0, len(ts)) {
+        if fpkg[i] != tgt {
+            at := refOnly(ts[i], tgt, freeze(only), refsDbl(i, dblFile, dblRef))
+            if at >= 0 {
+                return diag.Double{at: diag.Pos{file: i, tok: at}, kind: 14}
+            }
+        }
+    }
+    return nil
+}
+
+func refsDbl(i int, dblFile []int, dblRef []string) []string {
+    mut out := mut []string{}
+    for k <- iter.Range(0, len(dblFile)) {
+        if dblFile[k] == i {
+            out = append(out, dblRef[k])
+        }
+    }
+    return freeze(out)
+}
+
+// 木 t で、tgt を指す import の参照名（skip に無いもの）を通して only の名前を参照する最初の字句（無ければ -1）
+func refOnly(t ast.Tree, tgt string, only []string, skip []string) int {
+    imps := t.nodes[t.file].b
+    mut refs := mut []string{}
+    for k <- iter.Range(0, ast.ListLen(t, imps)) {
+        im := t.nodes[ast.ListAt(t, imps, k)]
+        if StrIs(t, im.b, tgt) {
+            r := ImpRef(t, im)
+            if !has(skip, r) {
+                refs = append(refs, r)
+            }
+            lr := Basename(tgt)
+            if im.a < 0 && lr != r && !has(skip, lr) {
+                refs = append(refs, lr)
+            }
+        }
+    }
+    if len(refs) == 0 {
+        return -1
+    }
+    rs := freeze(refs)
+    for j <- iter.Range(0, len(t.nodes)) {
+        x := t.nodes[j]
+        q := switch x.kind {
+        case ast.TName: Name(t, x.a)
+        case ast.TGeneric: Name(t, x.a)
+        case ast.EComposite: Name(t, x.a)
+        case ast.KPType: Name(t, x.b)
+        case ast.ESelector: if x.a >= 0 && t.nodes[x.a].kind == ast.EIdent { Name(t, t.nodes[x.a].a) + "." + Name(t, x.b) } else { "" }
+        default: ""
+        }
+        ref, rest, dotted := strings.CutLast(q, ".")
+        if dotted && has(rs, ref) && has(only, rest) {
+            return x.tok
+        }
+    }
+    return -1
+}
+
+// テストのビルド p の配線: 読んだ double のディレクトリ ds[i] と、それが @replaces で名乗る相手 ts[i]（読み込み順）
+func TestWiring(p Program) ([]string, []string) {
+    mut ds := mut []string{}
+    mut ts := mut []string{}
+    for f <- iter.Range(0, len(p.trees)) {
+        d := Dirname(p.file_path[f])
+        if isDoubleFile(p.file_path[f]) && !has(freeze(ds), d) {
+            t := p.trees[f]
+            r := replacesNode(t)
+            ds = append(ds, d)
+            ts = append(ts, if r >= 0 { Name(t, t.nodes[r].a) } else { p.pkg_path[p.file_pkg[f]] })
+        }
+    }
+    return freeze(ds), freeze(ts)
+}

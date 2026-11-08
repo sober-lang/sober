@@ -341,8 +341,9 @@ type LGroup struct {
 }
 
 // 子の St に写す欄（scripts/lparcfg.ts の許しの表の cfg）
+// （winOn の 4 = 窓を組むか — 子の展開の予算の数え〔unroll.sober の UR_RALLOCW〕が読む。関数キャッシュの鍵〔cfg の正準形〕も分ける）
 func lParCfg(st mut St, b2 bool) []int {
-    return mfCfg(mut st, []int{int(st.rtPanic), int(st.rtPanicMem), int(st.rtMapfind), int(st.rtRenterL), int(st.rtRenterLL), (if st.noVec { 1 } else { 0 }) | (if st.taskUse { 2 } else { 0 }), if b2 { 1 } else if st.optInB1 { 2 } else { 0 }, int(st.ubCheck), int(st.ubBound), int(st.rtGrow), int(st.rtGrow8), int(st.rtRalloc), int(st.rtAlloc8), st.meta, int(st.rtStreq), int(st.rtMatchLen), int(st.rtJClean)})
+    return mfCfg(mut st, []int{int(st.rtPanic), int(st.rtPanicMem), int(st.rtMapfind), int(st.rtRenterL), int(st.rtRenterLL), (if st.noVec { 1 } else { 0 }) | (if st.taskUse { 2 } else { 0 }) | (if st.winOn { 4 } else { 0 }), if b2 { 1 } else if st.optInB1 { 2 } else { 0 }, int(st.ubCheck), int(st.ubBound), int(st.rtGrow), int(st.rtGrow8), int(st.rtRalloc), int(st.rtAlloc8), st.meta, int(st.rtStreq), int(st.rtMatchLen), int(st.rtJClean)})
 }
 
 // 呼び先の戻りの型の表 [関数の記録, F_RET]…（記録の番地の昇順 — lFnRet が二分探索で引く。鎖の順とは限らないので fnIds で並べる）
@@ -527,6 +528,7 @@ func lParGroup(g LGroup, cfg []int, lret []int, ckt CkTab, bv BcView) LOut {
     st.noVec = cfg[5] & 1 == 1
     // task を使うプログラムには SLP を掛けない（slp.sober — キャンセルの検査点が v128 の区間を跨ぎうる）
     st.taskUse = cfg[5] & 2 == 2
+    st.winOn = cfg[5] & 4 == 4
     st.lkid = true
     st.lret = lret
     desugar.HeapPush(mut st.d, 0)
@@ -639,7 +641,13 @@ func lB2Func(st mut St, f FnRef) {
         ccDeadAfterM2r(mut st, f)
         ccPostFold(mut st, f)
     }
-    rlimFunc(mut st, f)
+    lb := lbScan(mut st, f)
+    if lb & 1 != 0 {
+        rlimBody(mut st, f)
+    }
+    if lb & 2 != 0 {
+        ldhoistFunc(mut st, f)
+    }
     _ = ubfFunc(mut st, f)
     if !st.noVec {
         _ = vecFunc(mut st, f)

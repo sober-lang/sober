@@ -5,6 +5,7 @@ package main
 // ネットの代わりに recv が決まった要求の列を 1 切片で渡し、send が応答を印字する（examples/http_router の形 — 行末の CR は外して印字）
 
 import "std/http"
+import "std/http/server"
 import "std/io"
 import "std/json"
 import "std/strings"
@@ -18,23 +19,23 @@ func or(s string?) string {
     return if s != nil { s } else { "-" }
 }
 
-func login(r http.Request) http.Response {
-    return http.Text("form user=${or(http.Form(r, "user"))} pass=${or(http.Form(r, "pass"))}\n")
+func login(r http.server.Request) http.server.Response {
+    return http.server.Text("form user=${or(http.server.Form(r, "user"))} pass=${or(http.server.Form(r, "pass"))}\n")
 }
 
-func create(r http.Request) http.Response {
-    d := http.JsonDoc(r) catch return http.Status(400)
-    u := json.Decode[User](d, json.Root(d)) catch return http.Status(400)
-    return http.Response{status: 201, contentType: "application/json", body: bytes(json.Encode[User](u)), headers: http.Headers{list: []http.Field{http.Field{name: "Location", value: "/users/${u.name}"}}}}
+func create(r http.server.Request) http.server.Response {
+    d := http.server.JsonDoc(r) catch return http.server.Status(400)
+    u := json.Decode[User](d, json.Root(d)) catch return http.server.Status(400)
+    return http.server.Response{status: 201, contentType: "application/json", body: bytes(json.Encode[User](u)), headers: http.server.Headers{list: []http.Field{http.Field{name: "Location", value: "/users/${u.name}"}}}}
 }
 
-func static(r http.Request) http.Response {
-    rest := or(http.Param(r, "rest"))
+func static(r http.server.Request) http.server.Response {
+    rest := or(http.server.Param(r, "rest"))
     if strings.Contains(rest, "..") {
-        return http.Status(403)
+        return http.server.Status(403)
     }
-    b := io.ReadFile("out/${rest}") catch return http.Status(404)
-    return http.Response{status: 200, contentType: "text/plain", body: b, headers: http.Headers{list: []http.Field{http.Field{name: "X-Source", value: "out"}}}}
+    b := io.ReadFile("out/${rest}") catch return http.server.Status(404)
+    return http.server.Response{status: 200, contentType: "text/plain", body: b, headers: http.server.Headers{list: []http.Field{http.Field{name: "X-Source", value: "out"}}}}
 }
 
 func show(b []byte) error? {
@@ -58,10 +59,10 @@ func main() {
     if we != nil {
         println("cannot write")
     }
-    rs := []http.Route{
-        http.Route{method: "POST", path: "/login", handler: login},
-        http.Route{method: "POST", path: "/users", handler: create},
-        http.Route{method: "GET", path: "/static/*rest", handler: static, cache: http.Fresh{maxAge: 60}}}
+    rs := []http.server.Route{
+        http.server.Route{method: "POST", path: "/login", handler: login},
+        http.server.Route{method: "POST", path: "/users", handler: create},
+        http.server.Route{method: "GET", path: "/static/*rest", handler: static, cache: http.server.Fresh{maxAge: 60}}}
     form := "user=kr&pass=x%21"
     js := "{\"name\":\"ann\",\"age\":7}"
     reqs := "POST /login HTTP/1.1\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: ${len(bytes(form))}\r\n\r\n${form}" +
@@ -72,6 +73,6 @@ func main() {
         "GET /static/../secret HTTP/1.1\r\n\r\n" +
         "GET /static/none.tmp HTTP/1.1\r\n\r\n" +
         "DELETE /users HTTP/1.1\r\nConnection: close\r\n\r\n"
-    e := http.ServeWith((k) => feed(reqs, k), (b) => show(b), (r) => http.Dispatch(rs, r))
+    e := http.server.ServeWith((k) => feed(reqs, k), (b) => show(b), (r) => http.server.Dispatch(rs, r))
     println(e == nil)
 }

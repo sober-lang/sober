@@ -1,0 +1,9 @@
+package main
+
+// datadce の題材: std/time を import して Now だけを使う — 焼き込みのゾーンの表は ELF に入らない
+
+import "std/time"
+
+func main() {
+    println(time.FormatRFC3339(time.Now(), 0))
+}

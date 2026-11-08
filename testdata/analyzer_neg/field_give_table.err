@@ -1,0 +1,1 @@
+testdata/analyzer_neg/field_give_table.sober:9:39: error: cannot give field `chunks` of `Table` outside package std/table — it holds mutable contents, and an alias passed in from outside would bypass the type's invariants (omit the field — it starts empty — and fill it with the package's functions) (Analyzer)

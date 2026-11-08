@@ -10,8 +10,10 @@ A path for people using Sober for the first time. Read from top to bottom and yo
 4. [Abstraction — instead of interfaces](abstraction.md) — rewrite other languages' interfaces with function types, structs of functions and unions
 5. [Writing tests](testing.md) — add tests to a small package step by step: unit tests, property-based testing, coverage, mutation testing, fuzzing
 6. [Standard library guide](std.md) — a map by package
-7. [Security guide](security.md) — threat by threat: what Sober removes, how, and what it leaves to you
-8. [Environment variables](env.md) — the variables a Sober program reads at run time (the runtime and the standard library)
+7. [Web client](web-client.md) — calling HTTP APIs with `std/http/client`: one-shot requests, failure labels, carrying cookies as values, streamed bodies and keep-alive sessions
+8. [Web server](web-server.md) — serving HTTP with `std/http/server`: routing, where state lives, streaming and SSE, safe cookies, login sessions, TLS, running in production
+9. [Security guide](security.md) — threat by threat: what Sober removes, how, and what it leaves to you
+10. [Environment variables](env.md) — the variables a Sober program reads at run time (the runtime and the standard library)
 
 Every code example in the guide is a real file in `examples/`; the compiler's verification net (`scripts/gates.sh`) builds and runs each one every time and checks the output.
 

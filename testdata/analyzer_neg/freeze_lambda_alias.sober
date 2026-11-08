@@ -1,0 +1,13 @@
+package main
+
+// 局所のラムダの結果を束縛すると捕捉した束縛の別名（持つの辺）— 元を freeze した後の別名からの書き（U1）
+
+func main() int {
+    mut m := mut []int{1, 2}
+    g := () => m
+    mut a := g()
+    im := freeze(m)
+    a[0] = 9
+    println("${im[0]}")
+    return 0
+}

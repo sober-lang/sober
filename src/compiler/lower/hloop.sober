@@ -158,10 +158,10 @@ func hlLoop(st mut St, f FnRef, w mut m2rW, pw mut PrW, pre int) bool {
         mut ins := irBlkIHead(mut st, b)
         while ins != -1 {
             op := irInsOp(mut st, ins)
-            if op == OpLoad || op == OpStore || op == OpLoad8 || op == OpStore8 {
+            if op == OpLoad || op == OpStore || isNarrowLd(op) || isNarrowSt(op) {
                 a := irInsA(mut st, ins)
                 if hlIsParam(mut st, f, a) {
-                    if op == OpLoad8 || op == OpStore8 || (op == OpLoad && irInsC(mut st, ins) != 0) {
+                    if isNarrowLd(op) || isNarrowSt(op) || (op == OpLoad && irInsC(mut st, ins) != 0) {
                         return false
                     }
                     if p0 == -1 {

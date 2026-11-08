@@ -48,6 +48,8 @@ const W_ANCHOR = W_DEST + 1
 // 深度の計測口の旗（宛先構築レーン M5c — 入口が環境変数 SOBER_DEPTH_REPORT を読んで置く。真なら main の正常終了で rt.depth_report が
 // 到達した最深の深度を stderr へ）
 const W_DREP = W_ANCHOR + 1
+// W_DREP のうち MDWE の確認の口の旗のビット（下位は SOBER_DEPTH_REPORT の値）
+const DREP_MDWE = 1099511627776
 const META_WORDS = W_DREP + 1
 // 子 task のスロットの既定の大きさ（バイト — std/task を使うプログラムだけが meta をこの 1 語伸ばして書く・task.sober。使わないプログラムの出力を変えない）。
 // W_SLOT_SIZE は今の task のスロットの大きさ（切替で task の記録 TC_SLOTSZ から置き直す — main は起動の値）
@@ -96,8 +98,6 @@ func installRt(st mut St) {
     buildFlush(mut st)
     buildPrintChar(mut st)
     buildPrintInt(mut st)
-    buildRegionEnter(mut st)
-    buildRegionAlloc(mut st)
     buildCopy(mut st)
     buildRelocate(mut st)
     buildStrEq(mut st)
@@ -160,6 +160,16 @@ func buildEntry(st mut St, main_fn FnRef, main_int bool) {
     // madvise(アリーナ, スロット × MAX_DEPTH, MADV_NOHUGEPAGE): 透過的 huge page だと深度のスロットに 1 バイト触るだけで 2 MB が
     // RSS に乗る（小さいプログラムでも 4〜6 MB・触った深度ごとに 2 MB）。題材の cycles は揺れの範囲だった。失敗は無視
     syscall(mut st, list4(mut st, iconst(mut st, 28), bs, a2, iconst(mut st, 15)))
+    // 実行可能メモリの放棄: prctl(PR_SET_MDWE = 65, PR_MDWE_REFUSE_EXEC_GAIN | PR_MDWE_NO_INHERIT = 3, 0, 0, 0) — 以後プロセスは書けて実行できる
+    // 頁を作れず、実行できない頁に実行を足せない（コード注入への昇格路を閉じる — Sober は実行時にコードを作らない）。NO_INHERIT（Linux 6.6+）は
+    // fork の子に引き継がない印（os.Run で起動する JIT の処理系を壊さない）。それを知らないカーネル（6.3〜6.5 は EINVAL）・MDWE の無いカーネル
+    // （ENOSYS / EINVAL）では何も掛からない — 継承する形で掛けると子が壊れるので、倒れ先は「掛けない」。
+    // SOBER_MDWE=0 だけは掛けない（valgrind 等の動的計装は同じプロセスの中でコードを作る — 起動前に env を操れる者は別のバイナリも走らせられるので守りは減らない）
+    mdwe := envMb(mut st, sp, "SOBER_MDWE=", 1, true)
+    mdweOff := branchIf(mut st, cmp(mut st, CNe, mdwe, iconst(mut st, 0)))
+    prctl5(mut st, 65, 3)
+    br(mut st, mdweOff, -1)
+    setCur(mut st, mdweOff)
     // PID 1（コンテナの init）ではカーネルが既定の動作のシグナルを届けない — SIGTERM / SIGINT で止まらない。PID 1 のときだけ両方にハンドラを張り、
     // 既定の動作の終了を exit_group(128 + sig) で再現する（143 / 130 — defer も行バッファも走らない既定の死と同じ）。PID 1 でなければ何も張らない
     // （振る舞いは今と同じ — 既定の動作のまま）。sigaction = [handler, flags = SA_RESTORER, restorer, mask 0]（ハンドラは戻らない）
@@ -187,7 +197,11 @@ func buildEntry(st mut St, main_fn FnRef, main_int bool) {
     store(mut st, meta, W_MADV, bin(mut st, BShl, madv, iconst(mut st, 20)))
     store(mut st, meta, W_MAXD, iconst(mut st, 0))
     drep := envMb(mut st, sp, "SOBER_DEPTH_REPORT=", 0, true)
-    store(mut st, meta, W_DREP, drep)
+    // MDWE の確認の口（SOBER_MDWE_REPORT が 0 でなければ main の正常終了で rt.depth_report が `mdwe <PR_GET_MDWE>` を stderr へ —
+    // scripts/mdwecheck.sh）: 旗は W_DREP のビット DREP_MDWE に相乗り（メタの語を増やさない）
+    mrep := envMb(mut st, sp, "SOBER_MDWE_REPORT=", 0, true)
+    mbit := bin(mut st, BMul, cmp(mut st, CNe, mrep, iconst(mut st, 0)), iconst(mut st, DREP_MDWE))
+    store(mut st, meta, W_DREP, bin(mut st, BOr, bin(mut st, BAnd, drep, iconst(mut st, DREP_MDWE - 1)), mbit))
     if st.taskUse {
         taskInitMain(mut st, sp)
     }
@@ -227,6 +241,18 @@ func buildEntry(st mut St, main_fn FnRef, main_int bool) {
     begin(mut st, fInt)
     syscall(mut st, list2(mut st, iconst(mut st, 231), iconst(mut st, 130)))
     exit(mut st, 130)
+}
+
+// prctl(op, a, 0, 0, 0)（MDWE の口は 3〜5 番目の引数が 0 でないと EINVAL — 明示の 0 を渡す）
+func prctl5(st mut St, op int, a int) int {
+    args := listN(mut st, 6)
+    desugar.HeapSet(mut st.d, args + 1, iconst(mut st, 157))
+    desugar.HeapSet(mut st.d, args + 2, iconst(mut st, op))
+    desugar.HeapSet(mut st.d, args + 3, iconst(mut st, a))
+    desugar.HeapSet(mut st.d, args + 4, iconst(mut st, 0))
+    desugar.HeapSet(mut st.d, args + 5, iconst(mut st, 0))
+    desugar.HeapSet(mut st.d, args + 6, iconst(mut st, 0))
+    return syscall(mut st, args)
 }
 
 // 環境変数 key（`NAME=` の形）の値（MiB の 10 進 — 無い・空・数字以外・MAX_SLOT_MB 超なら既定 dflt。0 は zeroOk のときだけ採る）。
@@ -434,6 +460,13 @@ func buildRegionEnter(st mut St) {
     used := bin(mut st, BSub, load(mut st, gepWord(mut st, meta, k), W_BUMP), start)
     condbr(mut st, cmp(mut st, CGt, used, keep), rel, -1, nxt, -1)
     setCur(mut st, rel)
+    // 窓（移す前 — 塊の頁）は返さない（偽の基底から数えると窓の下の 128 MiB を返してしまう）。窓から移したスロットは普通のスロット
+    // 変異 43（wincheck の網）: 窓の守りを外す — 偽の基底から数えて窓の下の塊を返す
+    if winArm(mut st) && st.rtMut != 43 {
+        relW := newBlock(mut st)
+        condbr(mut st, call(mut st, st.rtWinIs, list1(mut st, start)), nxt, -1, relW, -1)
+        setCur(mut st, relW)
+    }
     // madvise(start + keep, used - keep, MADV_DONTNEED = 4)。失敗は無視（返せなくても意味は変わらない）
     syscall(mut st, list4(mut st, iconst(mut st, 28), bin(mut st, BAdd, start, keep), bin(mut st, BSub, used, keep), iconst(mut st, 4)))
     br(mut st, nxt, -1)
@@ -448,7 +481,22 @@ func buildRegionEnter(st mut St) {
     ret(mut st, -1)
 }
 
-// region_alloc(d, n): 深度 d の bump を n 語進め、旧 bump を返す。スロット末尾を超えたら exit 102
+// 確保の溢れ: 窓を組むプログラムは rt.win_ralloc（深度 d が窓なら移して確保し直す — 冷たい道・速い道は今の形のまま）の答えを返す。他は死 102
+// （mode 0 = n 語・1 = n バイトの byte の列 — btip = 先頭 + n はここで置く）
+func slotOver(st mut St, d int, n int, mode int) {
+    // 変異 42（wincheck の網）: 窓を移さない — 窓の溢れで死 102
+    if winArm(mut st) && st.rtMut != 42 {
+        r := call(mut st, st.rtWinRalloc, list3(mut st, d, n, iconst(mut st, mode)))
+        if mode == 1 {
+            store(mut st, gepWord(mut st, globaladdr(mut st, st.btip), d), 0, bin(mut st, BAdd, ptoi(mut st, r), n))
+        }
+        ret(mut st, r)
+        return
+    }
+    memPanic(mut st, PM_SLOT)
+}
+
+// region_alloc(d, n): 深度 d の bump を n 語進め、旧 bump を返す。スロット末尾を超えたら exit 102（窓は移して続ける）
 func buildRegionAlloc(st mut St) {
     begin(mut st, st.rtRalloc)
     d := 0
@@ -462,7 +510,7 @@ func buildRegionAlloc(st mut St) {
     ok := newBlock(mut st)
     condbr(mut st, cmp(mut st, CGt, nw, limit), over, -1, ok, -1)
     setCur(mut st, over)
-    memPanic(mut st, PM_SLOT)
+    slotOver(mut st, d, n, 0)
     setCur(mut st, ok)
     store(mut st, bp, W_BUMP, nw)
     ret(mut st, itop(mut st, old))
@@ -876,11 +924,15 @@ func installIo(st mut St) {
     st.rtWfd = addFunc(mut st, int(strLit(mut st, "rt.write_fd")), desugar.ListRef(list2(mut st, TyI64, TyPtr)), TyI64)
     buildCstr(mut st, cstr)
     buildWriteAll(mut st, wall)
-    buildReadFile(mut st, cstr)
     buildWriteFile(mut st, cstr, wall)
-    buildReadArgs(mut st)
-    buildReadDir(mut st, cstr)
     buildWriteFd(mut st, wall)
+}
+
+// 先端で作る io の列の本体（read_file / read_args / read_dir — 窓の移し〔colGrow〕は名前つきプールの有無で決まる — 本体の下ろしの後に組む）
+func buildIoCols(st mut St) {
+    buildReadFile(mut st, st.rtCstr)
+    buildReadArgs(mut st)
+    buildReadDir(mut st, st.rtCstr)
 }
 
 // rt.run を（初出なら）宣言する — sysRun を使うプログラムでだけ足す（他の出力はバイト不変）。本体は program の最後（buildRun）
@@ -1017,7 +1069,7 @@ func buildReadFd(st mut St) {
     br(mut st, done, -1)
     setCur(mut st, nonzero)
     // std/task を使うプログラムは region の先端へ直に読む（read_file と同じ — 読みの間に task が切り替わるので、ワーカーごとの iobuf は使えない）
-    r := if st.taskUse { rfdDirect(mut st, depth, bin(mut st, BAdd, load(mut st, out, 0), load(mut st, out, 1)), fd, c, direct) } else { syscall(mut st, list4(mut st, iconst(mut st, 0), fd, ptoi(mut st, buf), c)) }
+    r := if st.taskUse { rfdDirect(mut st, depth, out, fd, c, direct) } else { syscall(mut st, list4(mut st, iconst(mut st, 0), fd, ptoi(mut st, buf), c)) }
     if st.taskUse {
         // 読みの中で task が待つ（ring の読み・net の受け）間に、同じワーカーの他の task が errno の語を書く — 待ちの後で置き直す（失敗は下で上書き）
         setErrno(mut st, iconst(mut st, 0))
@@ -1033,8 +1085,7 @@ func buildReadFd(st mut St) {
     br(mut st, done, -1)
     setCur(mut st, got)
     if !st.taskUse {
-        end := bin(mut st, BAdd, load(mut st, out, 0), load(mut st, out, 1))
-        call(mut st, st.rtExtend8, list3(mut st, depth, end, r))
+        end := colGrow(mut st, depth, out, r)
         call(mut st, st.rtCopy8, list3(mut st, itop(mut st, end), buf, r))
     }
     store(mut st, out, 1, bin(mut st, BAdd, load(mut st, out, 1), r))
@@ -1047,8 +1098,8 @@ func buildReadFd(st mut St) {
 }
 
 // read_fd の 1 回の読み（std/task を使うプログラム）: 先端 end を c バイト仮に伸ばして rt.uio で読み、読めた分（失敗・EOF は 0）に詰め直す
-func rfdDirect(st mut St, depth int, end int, fd int, c int, direct int) int {
-    call(mut st, st.rtExtend8, list3(mut st, depth, end, c))
+func rfdDirect(st mut St, depth int, out int, fd int, c int, direct int) int {
+    end := colGrow(mut st, depth, out, c)
     mut r := 0
     if direct < 0 {
         r = ioRw(mut st, 0, fd, end, c)
@@ -1357,8 +1408,7 @@ func buildEnviron(st mut St) {
     setCur(mut st, body)
     s := itop(mut st, sv)
     n := strLen(mut st, s)
-    end := bin(mut st, BAdd, load(mut st, out, 0), load(mut st, out, 1))
-    call(mut st, st.rtExtend8, list3(mut st, depth, end, bin(mut st, BAdd, n, iconst(mut st, 1))))
+    end := colGrow(mut st, depth, out, bin(mut st, BAdd, n, iconst(mut st, 1)))
     dst := itop(mut st, end)
     call(mut st, st.rtCopy8, list3(mut st, dst, s, n))
     store8(mut st, gepByte(mut st, dst, n), 0, iconst(mut st, 0))
@@ -1466,8 +1516,8 @@ func buildReadFile(st mut St, cstr FnRef) {
     setCur(mut st, big)
     br(mut st, chunk, list1(mut st, iconst(mut st, READ_CHUNK)))
     setCur(mut st, chunk)
-    call(mut st, st.rtExtend8, list3(mut st, depth, end, ch))
-    n := ioRw(mut st, 0, fd, end, ch)
+    end2 := colGrow(mut st, depth, out, ch)
+    n := ioRw(mut st, 0, fd, end2, ch)
     // 読めた分（失敗・EOF は 0）に先端を詰め直す
     got0 := newBlock(mut st)
     gn := param(mut st, got0, TyI64)
@@ -1479,7 +1529,7 @@ func buildReadFile(st mut St, cstr FnRef) {
     setCur(mut st, nonpos)
     br(mut st, got0, list1(mut st, iconst(mut st, 0)))
     setCur(mut st, got0)
-    call(mut st, st.rtExtend8, list3(mut st, depth, end, gn))
+    call(mut st, st.rtExtend8, list3(mut st, depth, end2, gn))
     not_intr := branchIf(mut st, cmp(mut st, CEq, n, iconst(mut st, -4)))
     br(mut st, loop, -1)
     setCur(mut st, not_intr)
@@ -1576,6 +1626,22 @@ func initOut(st mut St, out int) int {
 
 // initOut の深度 depth 版（out を深度 depth の region の先端から始める空の列にして depth を返す）
 func initOutAt(st mut St, out int, depth int) int {
+    return initOutRaw(mut st, out, depth)
+}
+
+// 先端で作る列 out（深度 depth）を n バイト伸ばし、伸ばす前の終わりを返す。窓の境を越えるなら rt.win_col が作りかけの列を
+// 本物のスロットへ写して付け替える（公開前の列なので写してよい — task.sober の窓の注）
+func colGrow(st mut St, depth int, out int, n int) int {
+    if winArm(mut st) {
+        call(mut st, st.rtWinCol, list3(mut st, depth, ptoi(mut st, out), n))
+    }
+    end := bin(mut st, BAdd, load(mut st, out, 0), load(mut st, out, 1))
+    call(mut st, st.rtExtend8, list3(mut st, depth, end, n))
+    return end
+}
+
+// 空の列（窓を移さない — 伸ばさない列）
+func initOutRaw(st mut St, out int, depth int) int {
     store(mut st, out, 0, ptoi(mut st, regionBump(mut st, depth)))
     store(mut st, out, 1, iconst(mut st, 0))
     store(mut st, out, 2, depth)
@@ -1615,8 +1681,7 @@ func buildReadArgs(st mut St) {
     setCur(mut st, body)
     s := itop(mut st, load(mut st, gepWord(mut st, sp, bin(mut st, BAdd, k, iconst(mut st, 1))), 0))
     n := strLen(mut st, s)
-    end := bin(mut st, BAdd, load(mut st, out, 0), load(mut st, out, 1))
-    call(mut st, st.rtExtend8, list3(mut st, depth, end, bin(mut st, BAdd, n, iconst(mut st, 1))))
+    end := colGrow(mut st, depth, out, bin(mut st, BAdd, n, iconst(mut st, 1)))
     dst := itop(mut st, end)
     call(mut st, st.rtCopy8, list3(mut st, dst, s, n))
     store8(mut st, gepByte(mut st, dst, n), 0, iconst(mut st, 0))
@@ -1682,8 +1747,7 @@ func buildReadDir(st mut St, cstr FnRef) {
     reclen := bin(mut st, BOr, load8(mut st, rec, 16), bin(mut st, BShl, load8(mut st, rec, 17), iconst(mut st, 8)))
     name := gepByte(mut st, rec, iconst(mut st, 19))
     ln := strLen(mut st, name)
-    end := bin(mut st, BAdd, load(mut st, out, 0), load(mut st, out, 1))
-    call(mut st, st.rtExtend8, list3(mut st, depth, end, bin(mut st, BAdd, ln, iconst(mut st, 2))))
+    end := colGrow(mut st, depth, out, bin(mut st, BAdd, ln, iconst(mut st, 2)))
     dst := itop(mut st, end)
     store8(mut st, dst, 0, load8(mut st, rec, 18))
     call(mut st, st.rtCopy8, list3(mut st, gepByte(mut st, dst, iconst(mut st, 1)), name, ln))

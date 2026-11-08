@@ -1,0 +1,188 @@
+{
+  "package": "store",
+  "imports": [
+    {
+      "alias": "$testing",
+      "path": "std/testing",
+      "tok": 0
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "TestFind",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "s"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "With",
+                  "tok": 10
+                },
+                "args": [
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "With",
+                      "tok": 12
+                    },
+                    "args": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "Empty",
+                          "tok": 14
+                        },
+                        "args": [],
+                        "tok": 15
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "a",
+                        "tok": 18
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "1",
+                        "tok": 20
+                      }
+                    ],
+                    "tok": 13
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "b",
+                    "tok": 23
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "2",
+                    "tok": 25
+                  }
+                ],
+                "tok": 11
+              }
+            ],
+            "tok": 8
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 28
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Find",
+                      "tok": 30
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "s",
+                        "tok": 32
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "b",
+                        "tok": 34
+                      }
+                    ],
+                    "tok": 31
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "2",
+                    "tok": 37
+                  },
+                  "tok": 36
+                }
+              ],
+              "tok": 29
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 40
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Find",
+                      "tok": 42
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "s",
+                        "tok": 44
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "c",
+                        "tok": 46
+                      }
+                    ],
+                    "tok": 43
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "",
+                    "tok": 49
+                  },
+                  "tok": 48
+                }
+              ],
+              "tok": 41
+            }
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 54
+      },
+      "sig_end": 7
+    }
+  ],
+  "consts": []
+}

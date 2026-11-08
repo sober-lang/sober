@@ -64,7 +64,7 @@ func presetWiring(m Manifest) Wiring {
 }
 
 // double のディレクトリ dir を entry にした読み（`sober check <double>` — 相手を import するだけの合成の main で、相手を dir から読み契約を検査する）
-@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.LitRange, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Double, diag.Cell)
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.Mod, diag.ImportPath, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.LitRange, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Double, diag.Cell)
 func loadDouble(dir string, sm map[string]string) (Program, error?) {
     m0 := Manifest{}
     tgt, ok := targetOf(m0, true, sm, dir)
@@ -76,7 +76,7 @@ func loadDouble(dir string, sm map[string]string) (Program, error?) {
     }
     src := "package main\n\nimport tp \"${tgt}\"\n\nfunc main() {\n}\n"
     mut sink := PcSink{}
-    return load(Manifest{TestMainPath(), "", []string{}, "", src, false, []string{}, 0, []string{tgt}, []string{dir}}, true, sm, PcOff(), mut sink)
+    return load(Manifest{TestMainPath(), "", []string{}, "", src, false, []string{}, 0, []string{tgt}, []string{dir}, NoMod()}, true, sm, PcOff(), mut sink)
 }
 
 // テストの package（m.test）の `_test.sober` の @doubles から差し替えの表を組む（trees = 読んだ木 — テストの package は読み終わっている）
@@ -170,7 +170,7 @@ func rewireImports(t ast.Tree, w Wiring) (ast.Tree, bool) {
         k := if x.kind == ast.KImport { wireIndex(w, Name(t, x.b)) } else { -1 }
         if k >= 0 {
             path := w.t[k]
-            alias := if x.a >= 0 { x.a } else { ast.PutLit(mut db, Basename(w.d[k])) }
+            alias := if x.a >= 0 { x.a } else { ast.PutLit(mut db, QualOf(w.d[k])) }
             builder.Push(mut nb, ast.Node{x.kind, x.tok, alias, ast.PutLit(mut db, path), x.c, x.d, x.e, x.f})
         } else {
             builder.Push(mut nb, x)
@@ -421,14 +421,13 @@ func contract(ts []ast.Tree, dd Decls, rts []ast.Tree, rd Decls) error? {
 
 func qualName(t ast.Tree, s int, tps []string) string {
     n := Name(t, s)
-    ref, rest, dotted := strings.Cut(n, ".")
+    ref, rest, dotted := strings.CutLast(n, ".")
     if dotted {
         imps := t.nodes[t.file].b
         for k <- iter.Range(0, ast.ListLen(t, imps)) {
             im := t.nodes[ast.ListAt(t, imps, k)]
             path := Name(t, im.b)
-            r := if im.a >= 0 { Name(t, im.a) } else { Basename(path) }
-            if r == ref {
+            if ImpRefIs(t, im, ref) {
                 return path + "." + rest
             }
         }
@@ -772,7 +771,7 @@ func refOnly(t ast.Tree, tgt string, only []string, skip []string) int {
     for k <- iter.Range(0, ast.ListLen(t, imps)) {
         im := t.nodes[ast.ListAt(t, imps, k)]
         if StrIs(t, im.b, tgt) {
-            r := if im.a >= 0 { Name(t, im.a) } else { Basename(tgt) }
+            r := ImpRef(t, im)
             if !has(skip, r) {
                 refs = append(refs, r)
             }
@@ -789,10 +788,10 @@ func refOnly(t ast.Tree, tgt string, only []string, skip []string) int {
         case ast.TGeneric: Name(t, x.a)
         case ast.EComposite: Name(t, x.a)
         case ast.KPType: Name(t, x.b)
-        case ast.ESelector: if x.a >= 0 && t.nodes[x.a].kind == ast.EIdent { Name(t, t.nodes[x.a].a) + "." + Name(t, x.b) } else { "" }
+        case ast.ESelector: if x.a >= 0 && chainText(t, x.a) != "" { chainText(t, x.a) + "." + Name(t, x.b) } else { "" }
         default: ""
         }
-        ref, rest, dotted := strings.Cut(q, ".")
+        ref, rest, dotted := strings.CutLast(q, ".")
         if dotted && has(rs, ref) && has(only, rest) {
             return x.tok
         }

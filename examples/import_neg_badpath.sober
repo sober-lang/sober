@@ -1,0 +1,8 @@
+package main
+
+// 負例（language.md 20 節）: import のパスの段は小文字の識別子だけ（パスがそのまま修飾子になる）
+
+import "std/Hash/crc32"
+
+func main() {
+}

@@ -410,7 +410,7 @@ func grow(st mut St, h int, cellw int, d int, tip bool) (int, int) {
         condbr(mut st, cmp(mut st, CEq, bump, end), tip_b, -1, copy_b, -1)
         setCur(mut st, tip_b)
         cell := regionAlloc(mut st, d, iconst(mut st, cellw))
-        br(mut st, join, list2(mut st, itop(mut st, bs), cell))
+        tipJoin(mut st, cell, end, bs, join, copy_b)
     } else {
         br(mut st, copy_b, -1)
     }
@@ -421,6 +421,19 @@ func grow(st mut St, h int, cellw int, d int, tip bool) (int, int) {
     br(mut st, join, list2(mut st, p, gepWord(mut st, p, n)))
     setCur(mut st, join)
     return np, dst
+}
+
+// 先端の伸長の確保 cell が列の終わり end に続いたら (bs, cell) で join へ。続かない（窓が溢れて確保が本物のスロットへ移った —
+// task.sober の窓の注）なら写しの道 copy_b へ（取った分は捨てる）。std/task を使わないプログラムは窓が無いので比べない
+func tipJoin(st mut St, cell int, end int, bs int, join BlkRef, copy_b BlkRef) {
+    if !st.winOn {
+        br(mut st, join, list2(mut st, itop(mut st, bs), cell))
+        return
+    }
+    bT := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, ptoi(mut st, cell), end), bT, -1, copy_b, -1)
+    setCur(mut st, bT)
+    br(mut st, join, list2(mut st, itop(mut st, bs), cell))
 }
 
 // map のセル列を 1 セル伸ばす先を取る（grow の tip 形の map 版）。先端に接していれば 1 セル伸長・でなければ全コピー（rt.slice_grow — 2 つの map が先端を奪い合う〔表に載った列の再コピー〕なら
@@ -444,7 +457,7 @@ func mapGrow(st mut St, h int, cellw int) (int, int) {
     if st.rtMut == 13 {
         msAdd(mut st, MS_TIPB, iconst(mut st, cellw * 8))
     }
-    br(mut st, join, list2(mut st, itop(mut st, bs), regionAlloc(mut st, d, iconst(mut st, cellw))))
+    tipJoin(mut st, regionAlloc(mut st, d, iconst(mut st, cellw)), end, bs, join, copy_b)
     // 先端でなければ rt.map_grow（rtgrow.sober — 水位でその場・自分の索引が先端なら索引を先に長さちょうど・でなければ幾何成長。
     // 代入の点ごとに展開しない — 熱い関数が膨らんで IR インライナの予算を外れた）
     setCur(mut st, copy_b)
@@ -818,7 +831,7 @@ func builtin(st mut St, name desugar.StrRef, args desugar.ListRef, at desugar.No
 // 組み込みでなければ -2
 func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
     // 鍵の番号 → 実装の種類 k（下の switch — rt の呼び出し）。引数の数は鍵の署名から
-    k := if sk == loader.IReadFile { 1 } else if sk == loader.IWriteFile { 2 } else if sk == loader.IErrno { 3 } else if sk == loader.IArgs { 4 } else if sk == loader.IReadDir { 5 } else if sk == loader.IWriteFd { 6 } else if sk == loader.IRun { 7 } else if sk == loader.IWriteMode { 8 } else if sk == loader.IMkdir { 9 } else if sk == loader.IRename { 10 } else if sk == loader.IEnviron { 11 } else if sk == loader.IStat { 12 } else if sk == loader.ISleep { 13 } else if sk == loader.IReadFd { 14 } else if sk == loader.IParPool { 15 } else if sk == loader.IParLedger { 16 } else if sk == loader.IOpen { 17 } else if sk == loader.IClose { 18 } else if sk == loader.IChunkOpen { 19 } else if sk == loader.IChunkNext { 20 } else if sk == loader.IChunkClose { 21 } else if sk == loader.IDeadline { 22 } else if sk == loader.ISyscall { 23 } else if sk == loader.IAddr { 24 } else if sk == loader.IWaitFd { 25 } else if sk == loader.IFdOwn { 26 } else if sk == loader.IParFail { 27 } else if sk == loader.INetOp { 28 } else if sk == loader.ILeaseOp { 29 } else if sk == loader.ILeaseView { 30 } else if sk == loader.ILoad64 { 31 } else if sk == loader.ICpuClmul { 32 } else if sk == loader.ICrcFold { 33 } else if sk == loader.IAesCpu { 34 } else if sk == loader.IAesKey { 35 } else if sk == loader.IAesCtr { 36 } else if sk == loader.IAesGhash { 37 } else if sk == loader.IMulHi { 38 } else if sk == loader.IAddrN { 39 } else if sk == loader.IMmCpu { 40 } else if sk == loader.IMmMul { 41 } else if sk == loader.ICycles { 42 } else if sk == loader.IAesTag { 43 } else if sk == loader.ILeaseBytes { 44 } else if sk == loader.IMatchLen { 45 } else if sk == loader.IJClean { 46 } else if sk == loader.IRunFd { 47 } else if sk == loader.IRunFdEnv { 48 } else if sk == loader.ICover { 49 } else if sk == loader.ICoverFd { 50 } else if sk == loader.ICoverGet { 51 } else if sk == loader.ICoverN { 52 } else if sk == loader.ICoverMid { 53 } else if sk == loader.ICoverSetMid { 54 } else if sk == loader.ICellReset { 55 } else if sk == loader.IMmSel { 56 } else if sk == loader.IMmSqr { 57 } else if sk == loader.IFeMul { 58 } else if sk == loader.IShaCpu { 59 } else if sk == loader.IShaBlk { 60 } else if sk == loader.IAesSeal { 61 } else if sk == loader.IAesOpen { 62 } else { 0 }
+    k := if sk == loader.IReadFile { 1 } else if sk == loader.IWriteFile { 2 } else if sk == loader.IErrno { 3 } else if sk == loader.IArgs { 4 } else if sk == loader.IReadDir { 5 } else if sk == loader.IWriteFd { 6 } else if sk == loader.IRun { 7 } else if sk == loader.IWriteMode { 8 } else if sk == loader.IMkdir { 9 } else if sk == loader.IRename { 10 } else if sk == loader.IEnviron { 11 } else if sk == loader.IStat { 12 } else if sk == loader.ISleep { 13 } else if sk == loader.IReadFd { 14 } else if sk == loader.IParPool { 15 } else if sk == loader.IParLedger { 16 } else if sk == loader.IOpen { 17 } else if sk == loader.IClose { 18 } else if sk == loader.IChunkOpen { 19 } else if sk == loader.IChunkNext { 20 } else if sk == loader.IChunkClose { 21 } else if sk == loader.IDeadline { 22 } else if sk == loader.ISyscall { 23 } else if sk == loader.IAddr { 24 } else if sk == loader.IWaitFd { 25 } else if sk == loader.IFdOwn { 26 } else if sk == loader.IParFail { 27 } else if sk == loader.INetOp { 28 } else if sk == loader.ILeaseOp { 29 } else if sk == loader.ILeaseView { 30 } else if sk == loader.ILoad64 { 31 } else if sk == loader.ICpuClmul { 32 } else if sk == loader.ICrcFold { 33 } else if sk == loader.IAesCpu { 34 } else if sk == loader.IAesKey { 35 } else if sk == loader.IAesCtr { 36 } else if sk == loader.IAesGhash { 37 } else if sk == loader.IMulHi { 38 } else if sk == loader.IAddrN { 39 } else if sk == loader.IMmCpu { 40 } else if sk == loader.IMmMul { 41 } else if sk == loader.ICycles { 42 } else if sk == loader.IAesTag { 43 } else if sk == loader.ILeaseBytes { 44 } else if sk == loader.IMatchLen { 45 } else if sk == loader.IJClean { 46 } else if sk == loader.IRunFd { 47 } else if sk == loader.IRunFdEnv { 48 } else if sk == loader.ICover { 49 } else if sk == loader.ICoverFd { 50 } else if sk == loader.ICoverGet { 51 } else if sk == loader.ICoverN { 52 } else if sk == loader.ICoverMid { 53 } else if sk == loader.ICoverSetMid { 54 } else if sk == loader.ICellReset { 55 } else if sk == loader.IMmSel { 56 } else if sk == loader.IMmSqr { 57 } else if sk == loader.IFeMul { 58 } else if sk == loader.IShaCpu { 59 } else if sk == loader.IShaBlk { 60 } else if sk == loader.IAesSeal { 61 } else if sk == loader.IAesOpen { 62 } else if sk == loader.ILoad16 { 63 } else if sk == loader.IStore16 { 64 } else if sk == loader.ILoad32 { 65 } else if sk == loader.IStore32 { 66 } else if sk == loader.IAppendWord { 67 } else if sk == loader.IBLoad32 { 68 } else if sk == loader.ICtz64 { 69 } else { 0 }
     arity := if k == 0 { 0 } else { desugar.SysArity(sk) }
     if k == 0 {
         return -2, nil
@@ -946,6 +959,16 @@ func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int
             return 0, diag.Mismatch{at: posOf(mut st, at)}
         }
         return one1(mut st, tInt(mut st), bin(mut st, BMulHi, a.v, b.v)), nil
+    case 69:
+        // 末尾の 0 ビットの数（0 は 64 — 全部の出力が BCtz を持つ〔x86 の bsf + cmovz・.ll の cttz・IR テキストの ctz〕）
+        a := expr(mut st, latN(mut st, args, 0))?
+        if isTag(mut st, a.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, a.t, TInt) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        return one1(mut st, tInt(mut st), bin(mut st, BCtz, a.v, a.v)), nil
     case 34:
         return one1(mut st, tInt(mut st), cpuAes(mut st)), nil
     case 32:
@@ -1007,8 +1030,98 @@ func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int
         }
         needJClean(mut st)
         return one1(mut st, tInt(mut st), call(mut st, st.rtJClean, list2(mut st, itop(mut st, load(mut st, b.v, 0)), load(mut st, b.v, 1)))), nil
-    case 31:
-        // b[i:i+8] の 8 バイトの読み（境界は呼び手の std/binary.Load64 が見た — ここは gep.byte + 語の load 1 本。x86 の mov は番地の揃いを問わない）
+    case 67:
+        // v の下位 k バイトを b の末尾へ（std/binary.AppendWord — k は 0〜8 を呼び手が見た）。速い道 = b の終わりが深度 d の byte の先端で、
+        // 終わりから 8 バイトが粒の余りか bump の先（誰も確保していない）に収まるとき: 8 バイトを 1 本で書き、先端を k だけ進める
+        // （後状態は rt.tipn8(d, end, k) と同じ — 他の伸長の道の不変はそのまま）。でなければ b をそのまま返し、呼び手が 1 バイトずつ積む
+        b := expr(mut st, latN(mut st, args, 0))?
+        if isTag(mut st, b.t, TNever) {
+            return -1, nil
+        }
+        if !isBytes(mut st, b.t) || isString(mut st, b.t) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        v := expr(mut st, latN(mut st, args, 1))?
+        if isTag(mut st, v.t, TNever) {
+            return -1, nil
+        }
+        kx := expr(mut st, latN(mut st, args, 2))?
+        if isTag(mut st, kx.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, v.t, TInt) || !isTag(mut st, kx.t, TInt) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        needByteRt(mut st)
+        bs := load(mut st, b.v, 0)
+        ln := load(mut st, b.v, 1)
+        d := load(mut st, b.v, 2)
+        end := bin(mut st, BAdd, bs, ln)
+        grain := bin(mut st, BAnd, bin(mut st, BAdd, end, iconst(mut st, 7)), iconst(mut st, -8))
+        e8 := bin(mut st, BAdd, end, iconst(mut st, 8))
+        bt := gepWord(mut st, globaladdr(mut st, st.btip), d)
+        join := newBlock(mut st)
+        nl := param(mut st, join, TyI64)
+        c1 := newBlock(mut st)
+        c2 := newBlock(mut st)
+        c3 := newBlock(mut st)
+        more := newBlock(mut st)
+        fast := newBlock(mut st)
+        slow := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CEq, load(mut st, bt, 0), end), c1, -1, slow, -1)
+        setCur(mut st, c1)
+        condbr(mut st, cmp(mut st, CLe, e8, grain), fast, -1, c2, -1)
+        // 粒をはみ出す: 粒の後ろに誰も確保していない（bump が粒の終わり）かつスロットに収まるなら、bump を新しい終わりの粒へ
+        setCur(mut st, c2)
+        meta := globaladdr(mut st, st.meta)
+        bp := gepWord(mut st, meta, d)
+        condbr(mut st, cmp(mut st, CEq, load(mut st, bp, W_BUMP), grain), c3, -1, slow, -1)
+        setCur(mut st, c3)
+        condbr(mut st, cmp(mut st, CGt, e8, slotLimit(mut st, meta, d)), slow, -1, more, -1)
+        setCur(mut st, more)
+        store(mut st, bp, W_BUMP, bin(mut st, BAnd, bin(mut st, BAdd, bin(mut st, BAdd, end, kx.v), iconst(mut st, 7)), iconst(mut st, -8)))
+        br(mut st, fast, -1)
+        setCur(mut st, fast)
+        store(mut st, gepByte(mut st, itop(mut st, bs), ln), 0, v.v)
+        store(mut st, bt, 0, bin(mut st, BAdd, end, kx.v))
+        br(mut st, join, list1(mut st, bin(mut st, BAdd, ln, kx.v)))
+        setCur(mut st, slow)
+        br(mut st, join, list1(mut st, ln))
+        setCur(mut st, join)
+        t := mkSlice(mut st, tByte(mut st), true)
+        return one1(mut st, t, newHeader(mut st, t, itop(mut st, bs), nl, d)), nil
+    case 63 | 64 | 65 | 66:
+        // 語の列 w を 2 / 4 バイトの項目の列と見た i 番目の読み / 書き（境界は呼び手の std/pool が語の添字で見た — gep.byte + 狭い load / store 1 本）
+        w := expr(mut st, latN(mut st, args, 0))?
+        if isTag(mut st, w.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, w.t, TSlice) || isString(mut st, w.t) || !isTag(mut st, desugar.HeapGet(mut st.d, w.t + 1), TInt) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        x := expr(mut st, latN(mut st, args, 1))?
+        if isTag(mut st, x.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, x.t, TInt) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        nw := if k == 63 || k == 64 { 2 } else { 4 }
+        at2 := gepByte(mut st, itop(mut st, load(mut st, w.v, 0)), bin(mut st, BShl, x.v, iconst(mut st, if nw == 2 { 1 } else { 2 })))
+        if k == 63 || k == 65 {
+            return one1(mut st, tInt(mut st), loadN(mut st, nw, at2, 0)), nil
+        }
+        v := expr(mut st, latN(mut st, args, 2))?
+        if isTag(mut st, v.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, v.t, TInt) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        storeN(mut st, nw, at2, 0, v.v)
+        return one1(mut st, tInt(mut st), iconst(mut st, 0)), nil
+    case 31 | 68:
+        // b[i:i+8]（bload32 は b[i:i+4]）のバイトの読み（境界は呼び手の std/binary.Load64 が見た — ここは gep.byte + 語の load 1 本。x86 の mov は番地の揃いを問わない）
         b := expr(mut st, latN(mut st, args, 0))?
         if isTag(mut st, b.t, TNever) {
             return -1, nil
@@ -1023,7 +1136,8 @@ func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int
         if !isTag(mut st, x.t, TInt) {
             return 0, diag.Mismatch{at: posOf(mut st, at)}
         }
-        return one1(mut st, tInt(mut st), load(mut st, gepByte(mut st, itop(mut st, load(mut st, b.v, 0)), x.v), 0)), nil
+        at8 := gepByte(mut st, itop(mut st, load(mut st, b.v, 0)), x.v)
+        return one1(mut st, tInt(mut st), if k == 68 { loadN(mut st, 4, at8, 0) } else { load(mut st, at8, 0) }), nil
     case 24:
         // バイト列の先頭の番地（ヘッダの 0 語目）
         b := expr(mut st, latN(mut st, args, 0))?
@@ -1376,6 +1490,30 @@ func setIndex(st mut St, ix desugar.NodeRef, value desugar.NodeRef) error? {
             v := copyVal(mut st, vx.t, vx.v)
             // 格納点の写し: キー・値を map のヘッダの深度へ（mapSet の中 — 引きの後に）
             mapSet(mut st, h, kp, vx.t, v, mt, containsSlice(mut st, desugar.HeapGet(mut st.d, mt + 1)), containsSlice(mut st, vx.t))
+            return nil
+        }
+    }
+    // 欄の道の map（`s.m[k] = v` — 場所の番地へ mapSet。名前の map と同じ道）
+    if kindN(mut st, base) == ast.ESelector {
+        // 型は表層型の表で先に読む（場所を下ろすと命令が出る — map でなければ下の値の道。`h.ys[0] = 9` の imm の束縛の欄の slice も）
+        yt := yType(mut st, base) catch -1
+        if yt >= 0 && isTag(mut st, yt, TMap) {
+            p := target(mut st, base, at)?
+            mt := p.t
+            if desugar.HeapGet(mut st.d, mt + 3) == 0 {
+                return diag.ImmWrite{at: posOf(mut st, at)}
+            }
+            x := exprExpecting(mut st, nB(nodeOf(mut st, ix)), desugar.HeapGet(mut st.d, mt + 1), at)?
+            kp := keyPtr(mut st, x.t, x.v, mt, at)?
+            if kp < 0 {
+                return nil
+            }
+            vx := exprExpecting(mut st, value, desugar.HeapGet(mut st.d, mt + 2), at)?
+            if isTag(mut st, vx.t, TNever) {
+                return nil
+            }
+            v := copyVal(mut st, vx.t, vx.v)
+            mapSet(mut st, p.v, kp, vx.t, v, mt, containsSlice(mut st, desugar.HeapGet(mut st.d, mt + 1)), containsSlice(mut st, vx.t))
             return nil
         }
     }

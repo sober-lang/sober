@@ -1,0 +1,15 @@
+package main
+
+// 負例: http.client.Session は開いた範囲の外へ出せない（返す関数を書けない — 束の接続は Open の k が返ると閉じる。diag.FileUse — desugar/filecheck）
+
+import "std/http/client"
+
+func keep(s http.client.Session) http.client.Session {
+    return s
+}
+
+func main() {
+    _ = http.client.Open("http://127.0.0.1:9", (s) => {
+        _, _ = http.client.Send(keep(s), "/")
+    })
+}

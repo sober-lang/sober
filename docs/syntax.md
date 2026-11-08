@@ -67,6 +67,7 @@ Go と同じ: 識別子、整数 / 浮動小数 / 文字リテラル（n 進は 
 | 組み込み識別子の再束縛 `len := 3` | `len` `shape` `println` `await` `freeze` `keys` `bytes` `true` `false` `append` `delete` は予約語扱いで再束縛不可（ローカル束縛・型パラメータ・トップレベルの宣言の名前のすべて。検査は loader — 決定 13 と同じ置き場） | 決定 16・22・language.md 22・23・24 |
 | `defer` の「引数は defer 時、本体は出口」の二段階評価 | 式全体を出口で評価（Zig） | 決定 17 |
 | 旧 8 進リテラル `0755` | `0o755` のみ | 決定 18 |
+| import の修飾子 = パスの最後の段・import パスに出所（`github.com/…`）と版（`/v2`）・go.mod を親へ遡って探す | 修飾子 = パスの全段（`std/http/server` → `http.server.Serve`）・import パスは木での名前から・出所と版は起点の sober.mod にだけ・遡らない | language.md 20 節（Go と意図的に違うところ） |
 
 ---
 
@@ -155,6 +156,8 @@ ParameterDecl = [ IdentifierList ] [ "..." ] Type .
 Type         = TypeName [ TypeArgs ] [ "?" ] | TypeLit [ "?" ] | "(" Type ")" [ "?" ] .   (* `(func(…) R)?` = 省略可の匿名関数型（language.md 25 節 Z — 2026-10-25）。
                func 宣言の仮引数の位置だけ（他の位置・裸の `func(…) R?` の形 = FuncType に `?` を直に付けた形は loader が拒否 — 裸の形は「結果が R? の関数」と紛れるので括弧の形へ誘導する）。
                棄てた案: 裸の `func(…) R??`（今の文法で書けるが読めない — 結果の option と関数の option が字面で紛れる）・結果の無い `func()?` だけ裸を許す（紛れない形だけの特例が 1 つ増える） *)
+TypeName     = identifier | QualifiedIdent .
+QualifiedIdent = identifier "." identifier { "." identifier } .   (* Go は PackageName "." identifier の 1 段。修飾子は import パスの全段（`http.server.Request` — language.md 20 節・2026-11-06） *)
 TypeArgs     = "[" TypeArg { "," TypeArg } "]" .
 TypeArg      = Type | "(" Type "," Type { "," Type } ")" .   (* 多値の型は型引数の位置にだけ — `task.Handle[(T, error?)]`（P3b 残穴1）。std/task の Task の型引数の外は loader が拒否 — 一般の匿名タプル型は入れない（決定 4 の線のまま） *)
 TypeLit      = ArrayType | SliceType | MapType | FuncType | PinnedType .
@@ -319,7 +322,7 @@ Go の綴りを継ぐと一緒に持ち込むものを、Go 自身のポリシ�
 13. シャドーイング禁止、`:=` は左辺全部を新規宣言。内側スコープの `x, err := f()` が外の `err` を隠す Go 最古典のバグと、「一部は宣言、一部は再代入」の混在規則を消す。`?` で `err` の再束縛はほぼ消えるので摩擦は小さい。Zig と同じ
     トップレベル名にも及ぶ（裁定 2026-09-27）: ローカル束縛（`:=`・仮引数・ラムダ引数・for の生成元・
     型パターンの束縛）は同じ package のトップレベル名（const・func・型・union の variant）と同名にできない。
-    import の参照名（alias か path 末尾）と同名のローカル束縛、トップレベルの型名と同名の
+    import の参照名（alias か修飾子の根の段 — `http.server` の `http`）と同名のローカル束縛、トップレベルの型名と同名の
     型パラメータ（func / type の `[T]`）も同様にエラー（追加裁定 2026-09-27）。
     検査は loader（src/compiler/loader/localnames.sober — 凍結 Zig 版は src/stage1/localnames.zig）で一度だけ行い、build と check が同じ規則を共有する。
     主役交代（2026-09-28）で Sober 版の loader への移植が漏れ、受理が広がっていた（reaudit 第 2 弾 A0 で発見 → 2026-09-30 に移植。

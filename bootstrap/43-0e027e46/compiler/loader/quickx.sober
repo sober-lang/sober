@@ -1,0 +1,183 @@
+package loader
+
+// `_test.sober` の std/quick の写し（脱糖の固定テンプレート — assert の写しの前に走り、足した `$qassert` は assert の写しが割る）:
+//
+//     quick.New()                                          →  quick.Named("<囲む関数の名前>")
+//     quick.Check(mut q, () => { 文…; e }, …)               →  quick.Check(mut q, () => { 文…; $qassert(quick.Reporting(q), e) }, …)
+//
+// `$qassert(g, e)` は e を power assert と同じく部分式で割って 1 回だけ評価し、その真偽を値にする。偽で g が真（Check が縮めた列を
+// 再生している回）のときだけ部分式を印字して落ちる — 試行と縮めの回は性質の値だけが要るので黙る。
+// 性質のラムダ（仮引数なしのラムダの字面）の中の assert は拒否（diag.AssertOutsideTest の kind 1 — 落ちた試行は縮められないので、偽は最後の bool 式で返す）。
+// 写しは std/quick を import するファイルだけ（参照名は import の別名）。`$qassert` が要る std/testing・std/convert の暗黙 import は parser が足している
+
+import "std/builder"
+import "std/iter"
+import "std/strings"
+import "ast"
+import "diag"
+
+// 全ファイルの std/quick の写し（`_test.sober` だけ）
+@errors(diag.AssertOutsideTest)
+func quicksAll(ts []ast.Tree, paths []string) ([]ast.Tree, error?) {
+    mut out := mut []ast.Tree{}
+    for i <- iter.Range(0, len(ts)) {
+        t := ts[i]
+        al := if strings.HasSuffix(paths[i], "_test.sober") { qkAlias(t) } else { "" }
+        if al == "" {
+            out = append(out, t)
+            continue
+        }
+        bad := qkAssertIn(t, al)
+        if bad >= 0 {
+            return []ast.Tree{}, diag.AssertOutsideTest{at: diag.Pos{file: i, tok: t.nodes[t.nodes[bad].a].tok}, kind: 1}
+        }
+        out = append(out, quicks(t, al))
+    }
+    return freeze(out), nil
+}
+
+// std/quick の参照名（import していなければ ""）
+func qkAlias(t ast.Tree) string {
+    root := t.nodes[t.file]
+    for j <- iter.Range(0, ast.ListLen(t, root.b)) {
+        im := t.nodes[ast.ListAt(t, root.b, j)]
+        if StrIs(t, im.b, "std/quick") {
+            return if im.a >= 0 { Name(t, im.a) } else { "quick" }
+        }
+    }
+    return ""
+}
+
+// 節 x が `<al>.<fn>(…)` の呼び出しか
+func qkCallOf(t ast.Tree, x ast.Node, al string, fn string) bool {
+    if x.kind != ast.ECall {
+        return false
+    }
+    c := t.nodes[x.a]
+    if c.kind != ast.ESelector || !StrIs(t, c.b, fn) {
+        return false
+    }
+    b := t.nodes[c.a]
+    return b.kind == ast.EIdent && StrIs(t, b.a, al)
+}
+
+// Check の性質のラムダ（第 2 実引数が仮引数なしのラムダの字面 — 第 1 実引数は mut の源）の節（形が違えば −1）
+func qkProp(t ast.Tree, x ast.Node, al string) int {
+    if !qkCallOf(t, x, al, "Check") || ast.ListLen(t, x.b) < 2 {
+        return -1
+    }
+    src := t.nodes[ast.ListAt(t, x.b, 0)]
+    p := ast.ListAt(t, x.b, 1)
+    lam := t.nodes[p]
+    return if src.kind == ast.EMutArg && lam.kind == ast.ELambda && ast.ListLen(t, lam.a) == 0 { p } else { -1 }
+}
+
+// 性質のラムダの中の assert の呼び出しの節（無ければ −1）
+func qkAssertIn(t ast.Tree, al string) int {
+    for i <- iter.Range(0, len(t.nodes)) {
+        p := qkProp(t, t.nodes[i], al)
+        if p >= 0 {
+            mut st := mut []int{}
+            mut sp := push(mut st, 0, t.nodes[p].b)
+            while sp > 0 {
+                sp -= 1
+                n := st[sp]
+                x := t.nodes[n]
+                if isAssert(t, x) {
+                    return n
+                }
+                if x.kind == ast.KNamedArg {
+                    sp = push(mut st, sp, x.b)
+                } else {
+                    c := ozDesc(x)
+                    for j <- iter.Range(0, 6) {
+                        v := ozField(x, j)
+                        if v >= 0 && ozCode(c, j) == 1 {
+                            sp = push(mut st, sp, v)
+                        } else if v >= 0 && ozCode(c, j) == 3 {
+                            sp = pushList(mut st, sp, t, v)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return -1
+}
+
+// 字句の位置 tok を本体に含む関数の名前（関数の外なら ""）
+func qkFuncAt(t ast.Tree, tok int) string {
+    root := t.nodes[t.file]
+    for j <- iter.Range(0, ast.ListLen(t, root.d)) {
+        fd := t.nodes[ast.ListAt(t, root.d, j)]
+        if fd.kind == ast.KFuncDecl && ast.ListLen(t, fd.f) >= 3 && ast.ListAt(t, fd.f, 1) <= tok && tok < ast.ListAt(t, fd.f, 2) {
+            return Name(t, fd.a)
+        }
+    }
+    return ""
+}
+
+// 1 ファイルの写し（節は末尾に足し、差し替える節はその場で置き換える）
+func quicks(t ast.Tree, al string) ast.Tree {
+    n0 := len(t.nodes)
+    mut ns := mut []ast.Node{}
+    for i <- iter.Range(0, n0) {
+        ns = append(ns, t.nodes[i])
+    }
+    mut nb := builder.Builder[ast.Node]{}
+    mut db := builder.Builder[int]{}
+    for j <- iter.Range(0, len(t.data)) {
+        builder.Push(mut db, t.data[j])
+    }
+    for i <- iter.Range(0, n0) {
+        x := t.nodes[i]
+        if qkCallOf(t, x, al, "New") && ast.ListLen(t, x.b) == 0 {
+            fname := qkFuncAt(t, x.tok)
+            if fname != "" {
+                at := n0 + builder.Len(mut nb)
+                builder.Push(mut nb, ast.Node{ast.EIdent, x.tok, ast.PutLit(mut db, al), 0, 0, 0, 0, 0})
+                builder.Push(mut nb, ast.Node{ast.ESelector, x.tok, at, ast.PutLit(mut db, "Named"), 0, 0, 0, 0})
+                builder.Push(mut nb, ast.Node{ast.EStrlit, x.tok, ast.PutLit(mut db, fname), 0, 0, 0, 0, 0})
+                ns[i] = ast.Node{ast.ECall, x.tok, at + 1, ast.PutList(mut db, []int{at + 2}), 0, 0, 0, 0}
+            }
+            continue
+        }
+        p := qkProp(t, x, al)
+        if p < 0 {
+            continue
+        }
+        lam := t.nodes[p]
+        body := t.nodes[lam.b]
+        // 性質の値の式（ブロックなら最後の式文）と、それを包む節
+        mut e := lam.b
+        mut holder := p
+        if body.kind == ast.EBlock || body.kind == ast.KBlock {
+            nst := ast.ListLen(t, body.a)
+            if nst == 0 {
+                continue
+            }
+            last := ast.ListAt(t, body.a, nst - 1)
+            if t.nodes[last].kind != ast.SExpr {
+                continue
+            }
+            e = t.nodes[last].a
+            holder = last
+        }
+        tok := t.nodes[e].tok
+        qn := t.nodes[ast.ListAt(t, x.b, 0)].a
+        at := n0 + builder.Len(mut nb)
+        // $qassert(<al>.Reporting(q), e)
+        builder.Push(mut nb, ast.Node{ast.EIdent, tok, ast.PutLit(mut db, al), 0, 0, 0, 0, 0})
+        builder.Push(mut nb, ast.Node{ast.ESelector, tok, at, ast.PutLit(mut db, "Reporting"), 0, 0, 0, 0})
+        builder.Push(mut nb, ast.Node{ast.EIdent, tok, qn, 0, 0, 0, 0, 0})
+        builder.Push(mut nb, ast.Node{ast.ECall, tok, at + 1, ast.PutList(mut db, []int{at + 2}), 0, 0, 0, 0})
+        builder.Push(mut nb, ast.Node{ast.EIdent, tok, ast.PutLit(mut db, "$qassert"), 0, 0, 0, 0, 0})
+        builder.Push(mut nb, ast.Node{ast.ECall, tok, at + 4, ast.PutList(mut db, []int{at + 3, e}), 0, 0, 0, 0})
+        ns[holder] = if holder == p { ast.WithB(lam, at + 5) } else { ast.WithA(t.nodes[holder], at + 5) }
+    }
+    added := builder.Build(mut nb)
+    for i <- iter.Range(0, len(added)) {
+        ns = append(ns, added[i])
+    }
+    return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
+}

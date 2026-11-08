@@ -4,6 +4,6 @@ import "std/task"
 import "testdata/loader_neg/lease_fwd_two/wrap"
 
 func main() {
-    lw := task.NewLocal((w mut wrap.Work) => wrap.Prepare(mut w))
-    println(task.Lease(lw, (w mut wrap.Work) => 1))
+    lw := task.NewLocal((w mut testdata.loader_neg.lease_fwd_two.wrap.Work) => testdata.loader_neg.lease_fwd_two.wrap.Prepare(mut w))
+    println(task.Lease(lw, (w mut testdata.loader_neg.lease_fwd_two.wrap.Work) => 1))
 }

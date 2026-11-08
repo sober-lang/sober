@@ -1,0 +1,58 @@
+package password
+
+// dudect の題材（white-box — scripts/dudect.sh が std/internal/dudect と一緒に回す）。パスワードは 1 回限りの秘密ではない（同じ pw で何度もログインする）ので、
+// HMAC の題材と同じ古典の形 — 固定の pw 対 毎回違う乱数の pw（長さはどちらも 16 バイト・塩と反復は公開の値で固定）。環境変数 SOBER_DUDECT が無ければ何もしない。
+// Argon2id の後半の参照先と bcrypt の S-box の引きは pw に依る（定義どおりのキャッシュの時間の漏れ）ので、2 つの題材は名前を exp_ にして判定を失敗にしない
+
+import "std/internal/dudect"
+import "std/iter"
+import "std/rand"
+
+func dsec(c int, i int) []byte {
+    mut b := mut []byte{}
+    mut r := rand.New(i * 2654435761 + 99)
+    for k <- iter.Range(0, 16) {
+        b = append(b, if c == 0 { byte((k * 37 + 16) & 0xff) } else { byte(rand.Intn(mut r, 256)) })
+    }
+    return freeze(b)
+}
+
+func TestPbkdf2Key() {
+    n := dudect.CountDiv(4)
+    if n == 0 {
+        return
+    }
+    salt := bytes("0123456789abcdef")
+    dudect.Measure("pbkdf2_key", n, 10, dsec, (x) => len(pbkdf2Key(x, salt, 2, 32)) == 32)
+}
+
+func TestExpArgon2id() {
+    n := dudect.CountDiv(200)
+    if n == 0 {
+        return
+    }
+    salt := bytes("0123456789abcdef")
+    dudect.Measure("exp_argon2id", n, 11, dsec, (x) => len(argon2idKey(x, salt, []byte{}, []byte{}, 1, 64, 1, 32)) == 32)
+}
+
+func TestExpBcrypt() {
+    n := dudect.CountDiv(200)
+    if n == 0 {
+        return
+    }
+    salt := bytes("0123456789abcdef")
+    dudect.Measure("exp_bcrypt", n, 12, dsec, (x) => len(bcryptHash(x, salt, 4)) == 23)
+}
+
+// 照合の口（PBKDF2 の保存の文字列 — 値の作り直しと定数時間の比較）
+func TestPasswordVerify() {
+    n := dudect.CountDiv(4)
+    if n == 0 {
+        return
+    }
+    stored := "$pbkdf2-sha256$i=2,l=32$MDEyMzQ1Njc4OWFiY2RlZg$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    dudect.Measure("password_verify", n, 13, dsec, (x) => {
+        ok, _ := Verify(stored, bytesToString(x))
+        ok
+    })
+}

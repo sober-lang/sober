@@ -1,0 +1,135 @@
+package lower
+
+// 欄の種別の表（ir.sober の opRow / termRow）と x86 の専用形（xNOps / xOpnd / xNTermOps / xTermOpnd — 熱い読み口なので
+// if の列のまま）の照合（`cd compiler && ../bin/sober test lower`）。どの欄にも長さ 2 の別々の値の列を入れた命令・終端を全 op × 全終端で作り、
+// 同じ値を同じ順に返すことを見る（値と列の取り違え・欄の取り違えはどれも値が変わる）。置き換える前の if の列 ≡ 表の照合は コミットにある
+
+import "desugar"
+import "std/iter"
+
+func kList(st mut St, l int, out mut []int) {
+    if l < 0 {
+        return
+    }
+    n := desugar.HeapGet(mut st.d, l)
+    for k <- iter.Range(0, n) {
+        out = append(out, l + 1 + k)
+    }
+}
+
+// ── 照合 ──
+
+const K_V0 = 10000000  // 列の中の値の通し番号の起点（番地と重ならない）
+const K_NOP = OP_N     // 照合する op の範囲（語彙の外の op は表の外 — 添字の範囲外で落ちる）
+
+// 長さ 2 の値の列（中身は通し番号 — next を進める）
+func kMk(st mut St, next mut []int) int {
+    l := listN(mut st, 2)
+    desugar.HeapSet(mut st.d, l + 1, next[0])
+    desugar.HeapSet(mut st.d, l + 2, next[0] + 1)
+    next[0] = next[0] + 2
+    return l
+}
+
+func kInst(st mut St, op int, next mut []int) InsRef {
+    a := kMk(mut st, mut next)
+    b := kMk(mut st, mut next)
+    c := kMk(mut st, mut next)
+    return mkInst(mut st, 7, op, a, b, c)
+}
+
+func kBlk(st mut St, t int, next mut []int) BlkRef {
+    b := BlkRef(recN(mut st, BSZ))
+    irSetBlkTerm(mut st, b, t)
+    for x <- iter.Range(0, 5) {
+        desugar.HeapSet(mut st.d, int(b) + B_X1 + x, kMk(mut st, mut next))
+    }
+    return b
+}
+
+// 表の走査（insOperands / termOperands の新しい形と同じ順）
+func insOperandsT(st mut St, ins InsRef, out mut []int) {
+    ks := st.opk[irInsOp(mut st, ins)]
+    for f <- iter.Range(0, 3) {
+        k := ks >> (f * 4) & 15
+        if k == K_VAL {
+            out = append(out, int(ins) + I_A + f)
+        } else if k == K_VLIST {
+            kList(mut st, desugar.HeapGet(mut st.d, int(ins) + I_A + f), mut out)
+        }
+    }
+}
+
+func termOperandsT(st mut St, b BlkRef, out mut []int) {
+    ks := st.tmk[irBlkTerm(mut st, b)]
+    for x <- iter.Range(0, 5) {
+        k := ks >> (x * 4) & 15
+        if k == K_VAL || (k == K_VOPT && desugar.HeapGet(mut st.d, int(b) + B_X1 + x) >= 0) {
+            out = append(out, int(b) + B_X1 + x)
+        } else if k == K_VLIST {
+            kList(mut st, desugar.HeapGet(mut st.d, int(b) + B_X1 + x), mut out)
+        }
+    }
+}
+
+// x86 の読み口の表の走査（欄の順に値・値の列を数える / k 番目を引く）
+func xNOpsT(st mut St, i InsRef) int {
+    mut n := 0
+    for k <- iter.Range(0, 3) {
+        kind := st.opk[xiOp(mut st, i)] >> (k * 4) & 15
+        n += if kind == K_VAL { 1 } else if kind == K_VLIST { xLen(mut st, desugar.HeapGet(mut st.d, int(i) + I_A + k)) } else { 0 }
+    }
+    return n
+}
+
+func xOpndT(st mut St, i InsRef, k0 int) int {
+    mut o := mut []int{}
+    insOperandsT(mut st, i, mut o)
+    return desugar.HeapGet(mut st.d, o[k0])
+}
+
+func xNTermOpsT(st mut St, b BlkRef) int {
+    mut o := mut []int{}
+    termOperandsT(mut st, b, mut o)
+    return len(o)
+}
+
+func xTermOpndT(st mut St, b BlkRef, k0 int) int {
+    mut o := mut []int{}
+    termOperandsT(mut st, b, mut o)
+    return desugar.HeapGet(mut st.d, o[k0])
+}
+
+func TestX86Kinds() {
+    mut st := St{}
+    kindsInit(mut st)
+    desugar.HeapPush(mut st.d, 0)
+    mut next := mut []int{K_V0}
+    for op <- iter.Range(0, K_NOP) {
+        ins := kInst(mut st, op, mut next)
+        n := xNOpsT(mut st, ins)
+        nn := xNOps(mut st, ins)
+        assert(nn == n)
+        for k <- iter.Range(0, n) {
+            v1 := xOpnd(mut st, ins, k)
+            v0 := xOpndT(mut st, ins, k)
+            assert(v1 == v0)
+        }
+    }
+    for t <- iter.Range(0, TmExit + 1) {
+        for none <- iter.Range(0, 2) {
+            b := kBlk(mut st, t, mut next)
+            if none == 1 {
+                desugar.HeapSet(mut st.d, int(b) + B_X1, -1)
+            }
+            n := xNTermOpsT(mut st, b)
+            nn := xNTermOps(mut st, b)
+            assert(nn == n)
+            for k <- iter.Range(0, n) {
+                v1 := xTermOpnd(mut st, b, k)
+                v0 := xTermOpndT(mut st, b, k)
+                assert(v1 == v0)
+            }
+        }
+    }
+}

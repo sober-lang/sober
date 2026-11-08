@@ -63,6 +63,8 @@ func label(e error?) string {
     case io.Denied{}: "denied"
     case io.Other{errno}: "errno ${errno}"
     case net.Bad{}: "bad"
+    case net.NoHost{}: "nohost"
+    case net.NonASCIIHost{}: "nonascii"
     }
 }
 

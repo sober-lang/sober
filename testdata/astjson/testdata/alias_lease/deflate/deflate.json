@@ -41,7 +41,7 @@
   ],
   "funcs": [
     {
-      "name": "Prepare",
+      "name": "NewWork",
       "type_params": [],
       "params": [
         {

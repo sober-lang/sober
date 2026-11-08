@@ -1,0 +1,188 @@
+package desugar
+
+// 他の package の struct の欄の書きと、mut の中身を持つ欄の読み・構築で値を与えることを拒否する（language.md 20 節）。
+// 規則: 書きの行き先の道（代入の左辺・`mut` の実引数・delete の第 1 実引数）を根へ辿ったとき、欄の選択の基底の型が今の package と別の package で
+// 宣言された struct なら拒否（添字・map の格納を挟んでも — 欄が指す buffer への書き）。読みは、欄の型が mut の中身（mut の slice / map — 入れ子の
+// struct・T? の中も）を持つときだけ拒否（中身の別名が package の外にできると、型の不変条件と信頼の口〔std/table.Freeze〕の前提が崩れる）。
+// 表層型検査器が型付けのついでに表 st.yfa へ積み、analyzer が指摘に・lower の build が拒否の数に使う（check と build が同じ表から — 診断は一致）
+
+import "ast"
+import "diag"
+import "std/iter"
+
+// 表層型 t が他の package で宣言された struct（error ラベルの欄も）か
+func yForeignTy(st mut S, t int) bool {
+    if yk(mut st, t) != YDecl || YAt(mut st, t).b == st.ypk {
+        return false
+    }
+    bk := kindN(mut st, nC(nodeOf(mut st, yNa(YAt(mut st, t)))))
+    return bk == ast.BStruct || bk == ast.BError
+}
+
+// 記録を鎖の尾に積む（書きは同じ節の読みの記録を消す — 左辺の道の選択は読みとしても型付けされる）
+func yFieldNote(st mut S, kind int, at NodeRef, field StrRef, t int) {
+    if kind == 0 {
+        mut r := st.yfaHead - 1
+        while r >= 0 {
+            if hget(mut st, r) == 1 && hget(mut st, r + 1) == int(at) {
+                hset(mut st, r, 0 - 1)
+            }
+            r = hget(mut st, r + 4)
+        }
+    }
+    rec := hlen(mut st)
+    hpush(mut st, kind)
+    hpush(mut st, int(at))
+    hpush(mut st, int(field))
+    hpush(mut st, t)
+    hpush(mut st, 0 - 1)
+    if st.yfaTail == 0 {
+        st.yfaHead = rec + 1
+    } else {
+        hset(mut st, st.yfaTail - 1 + 4, rec)
+    }
+    st.yfaTail = rec + 1
+}
+
+// 書きの行き先 target の道の欄の選択を見る（括弧・添字は透過）
+func yFieldWrite(st mut S, target NodeRef) {
+    mut t := target
+    while kindN(mut st, t) == ast.ESelector || kindN(mut st, t) == ast.EIndex || kindN(mut st, t) == ast.EParen {
+        if kindN(mut st, t) == ast.ESelector {
+            bt := YTypeOf(mut st, nA(nodeOf(mut st, t)))
+            if yForeignTy(mut st, bt) {
+                yFieldNote(mut st, 0, t, sB(nodeOf(mut st, t)), bt)
+            }
+        }
+        t = nA(nodeOf(mut st, t))
+    }
+}
+
+// 欄の読み e（型 r）を見る
+func yFieldRead(st mut S, e NodeRef, r int) {
+    // 欄の型が mut の中身を持たない読み（ほとんど全部）は基底の型を引かずに抜ける — 自己 build の値札（全部の欄の読みで表を引くと +0.3 G）
+    if !yHasMut(mut st, r, 8) {
+        return
+    }
+    base := nA(nodeOf(mut st, e))
+    if kindN(mut st, base) == ast.EIdent && yLookup(mut st, sA(nodeOf(mut st, base))) == -2 {
+        // package の修飾（`utf8.Check`）— 欄ではない
+        return
+    }
+    bt := YTypeOf(mut st, base)
+    if yForeignTy(mut st, bt) {
+        yFieldNote(mut st, 1, e, sB(nodeOf(mut st, e)), bt)
+    }
+}
+
+// 他の package の struct の composite の要素（名前 name か位置 i・値 v）が mut の中身を持つ欄に値を与えるか見る — 外から渡した中身の別名が型の中に残ると、
+// 読み・書きの規則と同じく型の不変条件と std の信頼の口の前提が崩れる。欄を省けばゼロ値（新しい空の中身）
+func yFieldGive(st mut S, t int, name StrRef, i int, v NodeRef) {
+    if !yForeignTy(mut st, t) || kindN(mut st, nC(nodeOf(mut st, yNa(YAt(mut st, t))))) != ast.BStruct {
+        return
+    }
+    fs := lA(nodeOf(mut st, nC(nodeOf(mut st, yNa(YAt(mut st, t))))))
+    idx := if name != -1 { fieldIndex(mut st, fs, name) } else { i }
+    if idx < 0 || idx >= lenL(mut st, fs) || !yHasMut(mut st, yFieldAt(mut st, t, idx), 8) {
+        return
+    }
+    yFieldNote(mut st, 7, v, sA(nodeOf(mut st, latN(mut st, fs, idx))), t)
+}
+
+// 記録の種類 k が欄の規則の指摘か（0 書き・1 読み・2 mut の中身を返す・7 構築で与える — 3〜6 は TyRejectAt の型の拒否）
+func yFieldKind(k int) bool {
+    return k >= 0 && (k < 3 || k == 7)
+}
+
+// 表層型 t が mut の中身（mut の slice / map）を持つか（imm のコンテナの中身は mutFree — 型で保証）
+func yHasMut(st mut S, t int, fuel int) bool {
+    if t < 0 || fuel <= 0 {
+        return false
+    }
+    k := yk(mut st, t)
+    if k == YSlice || k == YMap {
+        return yMutTy(mut st, t)
+    }
+    if k == YOpt {
+        return yHasMut(mut st, YAt(mut st, t).a, fuel - 1)
+    }
+    if k != YDecl {
+        return false
+    }
+    return yHasMutDecl(mut st, t, fuel)
+}
+
+func yHasMutDecl(st mut S, t int, fuel int) bool {
+    x := YAt(mut st, t)
+    body := nC(nodeOf(mut st, yNa(x)))
+    bk := kindN(mut st, body)
+    if bk == ast.BStruct || bk == ast.BError {
+        return yFieldsHaveMut(mut st, x, lA(nodeOf(mut st, body)), fuel)
+    }
+    if bk == ast.BUnion {
+        vs := lA(nodeOf(mut st, body))
+        for v <- iter.Range(0, lenL(mut st, vs)) {
+            if yFieldsHaveMut(mut st, x, lB(nodeOf(mut st, latN(mut st, vs, v))), fuel) {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+func yFieldsHaveMut(st mut S, x YT, fs ListRef, fuel int) bool {
+    for i <- iter.Range(0, lenL(mut st, fs)) {
+        ft := ySubst(mut st, yTe(mut st, x.b, lB(nodeOf(mut st, yNa(x))), nB(nodeOf(mut st, latN(mut st, fs, i)))), yLc(x))
+        if yHasMut(mut st, ft, fuel - 1) {
+            return true
+        }
+    }
+    return false
+}
+
+// 記録の数（消した読みは数えない）
+func FieldViolations(st mut S) int {
+    mut n := 0
+    mut r := st.yfaHead - 1
+    while r >= 0 {
+        if yFieldKind(hget(mut st, r)) {
+            n += 1
+        }
+        r = hget(mut st, r + 4)
+    }
+    return n
+}
+
+// 表層型の表が名指す型の拒否（種類 3 以上の最初の記録 — check は desugar の入口・build は buildPre が同じ記録から返す）:
+// 3 = 関数値の option を絞らずに呼んだ（TypeMismatch kind 4）・4 = 値化できない named fn type への変換（kind 8）・5 = 別の named fn type の値の変換（kind 9）・
+// 6 = imm の欄に点にならない mut のコンテナを置いた（kind 10）
+@errors(diag.TypeMismatch)
+func TyRejectAt(st mut S) error? {
+    mut r := st.yfaHead - 1
+    while r >= 0 {
+        k := hget(mut st, r)
+        if k >= 3 && !yFieldKind(k) {
+            at := PosOf(mut st, NodeRef(hget(mut st, r + 1)))
+            return diag.TypeMismatch{at: at, kind: if k == 3 { 4 } else if k == 4 { 8 } else if k == 5 { 9 } else { 10 }}
+        }
+        r = hget(mut st, r + 4)
+    }
+    return nil
+}
+
+// 消していない記録の j 番目 [種類, 節, 欄の名前, 型の宣言の節, 型の package]（analyzer が綴りを組む）
+func FieldViolation(st mut S, j int) (int, NodeRef, StrRef, NodeRef, int) {
+    mut n := 0
+    mut r := st.yfaHead - 1
+    while r >= 0 {
+        if yFieldKind(hget(mut st, r)) {
+            if n == j {
+                t := hget(mut st, r + 3)
+                return hget(mut st, r), NodeRef(hget(mut st, r + 1)), StrRef(hget(mut st, r + 2)), yNa(YAt(mut st, t)), YAt(mut st, t).b
+            }
+            n += 1
+        }
+        r = hget(mut st, r + 4)
+    }
+    return 0 - 1, NodeRef(-1), StrRef(-1), NodeRef(-1), 0 - 1
+}

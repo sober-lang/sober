@@ -2,11 +2,11 @@
 
 [English](env.md) | 日本語
 
-環境変数は 3 つの層に分かれます。この頁は 2 つ目と 3 つ目、つまり **Sober のプログラムが実行時に読む環境変数**の一覧です。
+環境変数は 3 つの層に分かれます。この頁は 2 つ目と 3 つ目、つまり Sober のプログラムが実行時に読む環境変数の一覧です。
 
-1. **コンパイラ（`sober`）が読むもの** — `SOBER_BUILD_CACHE` などです。`sober --help`（開発用のものは `sober --help=dev`）と [CLI の文書](../cli/sober.ja.md) に載っています
-2. **生成した実行ファイルのランタイムが読むもの** — Sober で書いたどのプログラムも読みます（コンパイラ自身も Sober のプログラムなので読みます）。下の表です
-3. **標準ライブラリが読むもの** — 下の表です
+1. コンパイラ（`sober`）が読むもの — `SOBER_BUILD_CACHE` などです。`sober --help`（開発用のものは `sober --help=dev`）と [CLI の文書](../cli/sober.ja.md) に載っています
+2. 生成した実行ファイルのランタイムが読むもの — Sober で書いたどのプログラムも読みます（コンパイラ自身も Sober のプログラムなので読みます）。下の表です
+3. 標準ライブラリが読むもの — 下の表です
 
 自分のプログラムが読む環境変数は、[std/env](../std/env.ja.md) の表で宣言すると、読みの検査（必須・範囲・真偽の綴り）と一覧（`env.Spec`）がその表から出ます。実例は [examples/env_table.sober](../../examples/env_table.sober) です。
 
@@ -41,6 +41,9 @@
 | --- | --- | --- |
 | `SOBER_NOAES` | std/crypto/aesgcm | ランタイムと同じ（AES-NI を使わない道） |
 | `SOBER_DUDECT` | std/internal/dudect | 定数時間の統計の計測の回数（無ければ測らない — テスト用） |
+| `SOBER_TLS_INTEROP` | std/internal/hsc | TLS のクライアントの相互接続の網の置き場（scripts/tlsinterop.sh が Go のサーバを起こして渡す — 無ければ繋がない・テスト用） |
+| `SOBER_DNS_FAKE` | std/net | 名前の解決の送受の網の偽の DNS サーバの port（scripts/dnsinterop.sh が渡す — 無ければ問わない・テスト用） |
+| `SOBER_HTTP_INTEROP` | std/http/client | HTTP クライアントの相互接続の網の置き場（scripts/httpinterop.sh が Go の net/http のサーバを起こして渡す — 無ければ繋がない・テスト用） |
 | `SOBER_QUICK_SEED` | std/quick | 性質ベースのテストの種（10 進・New / Named が混ぜる — 無ければ 0。探索を広げるときに変える） |
 | `SOBER_QUICK_TRIALS` | std/quick | Check の試行の数（1 以上 — 無ければ Check の trials:・既定 100） |
 | `SOBER_TLS_TRACE_LIVE` | std/tls のテスト | TLS の黄金を取り直すときの場合の名前（テスト用） |

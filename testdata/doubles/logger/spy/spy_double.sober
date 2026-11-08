@@ -6,8 +6,8 @@ package logger
 import "std/testing/cell"
 
 // the lines logged, in order
-const Lines = cell.Cell[[]string]{}
+const Lines = testing.cell.Cell[[]string]{}
 
 func Log(msg string) {
-    cell.Update(Lines, (ls []string) => append(ls, msg))
+    testing.cell.Update(Lines, (ls []string) => append(ls, msg))
 }

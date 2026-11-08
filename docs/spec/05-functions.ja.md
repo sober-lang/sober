@@ -13,9 +13,9 @@ F-1. メソッド（レシーバつきの func）・interface・型クラスは�
 拒否: [`examples/func_neg_method.sober`](../../examples/func_neg_method.sober)
 決定: [language.md 3 節](../language.md)
 
-F-2. 結果を持つ func の本体は `return` で値を返す — 本体の末尾の式は戻り値にならない。結果の無い func の本体の末尾の式文の値は捨てる。
+F-2. 結果を持つ func の本体は `return` で値を返す — 本体の末尾の式は戻り値にならない（末尾が `panic` 以外の呼び出しの式文なら名指しで拒否）。結果の無い func の本体の末尾の式文の値は捨てる。
 例: [`examples/stmt_tail_call.sober`](../../examples/stmt_tail_call.sober)
-拒否: [`examples/func_neg_noreturn.sober`](../../examples/func_neg_noreturn.sober)
+拒否: [`examples/func_neg_noreturn.sober`](../../examples/func_neg_noreturn.sober)・[`examples/func_neg_tailcall.sober`](../../examples/func_neg_tailcall.sober)
 決定: [syntax.md 決定 9](../syntax.md)
 
 F-3. ラムダは `x => e`・`(x, y) => e`・`(x T, y U) => e`・`() => e` の形で、本体は式かブロック（最後の式が値）。結果の型は書かない（期待型から決まる）。関数リテラル `func(x int) int { … }` は無い。
@@ -57,7 +57,12 @@ F-10. 値の位置のラムダは mut の束縛と同一性の型（task の Sco
 
 F-11. 値の位置に置けるのは、ラムダ・名前つきの関数・同じ型のクロージャの値だけ。局所に束縛した名前つきの関数（`f := dbl; R{g: f}`）は置けない。
 例: [`examples/closure_param.sober`](../../examples/closure_param.sober)
-拒否: [`examples/closure_bound_named_fn.sober`](../../examples/closure_bound_named_fn.sober)・[`examples/closure_bound_named_fn_nocap.sober`](../../examples/closure_bound_named_fn_nocap.sober)・[`examples/closure_anon_field_bound.sober`](../../examples/closure_anon_field_bound.sober)
+拒否: [`examples/closure_bound_named_fn.sober`](../../examples/closure_bound_named_fn.sober)・[`examples/closure_bound_named_fn_nocap.sober`](../../examples/closure_bound_named_fn_nocap.sober)・[`examples/closure_anon_field_bound.sober`](../../examples/closure_anon_field_bound.sober)・[`examples/fn_local_value_neg.sober`](../../examples/fn_local_value_neg.sober)
+決定: [language.md 25 節](../language.md)
+
+F-24. 名前つき関数型への変換 `W(e)`（`p.W(e)` も）は、e を W の値の位置に置いたもの — e はラムダ・名前つきの関数・W の値で、結果は W の値。値の呼び出しの実引数（呼び先が束縛・欄・添字・呼び出しの結果）に置いた名前つきの関数も同じく値になる。値にできない名前つき関数型（型パラメータを持つ）への変換と、別の名前つき関数型の値の変換（F-12）は拒否する。
+例: [`examples/fn_type_conv.sober`](../../examples/fn_type_conv.sober)
+拒否: [`examples/fn_type_conv_neg.sober`](../../examples/fn_type_conv_neg.sober)・[`examples/fn_type_conv_generic_neg.sober`](../../examples/fn_type_conv_generic_neg.sober)
 決定: [language.md 25 節](../language.md)
 
 F-12. 名前つき関数型（`type Fetcher func(int) string`）は nominal — 形の同じ別の名前つき関数型どうしは互換でない（2 章 T-34）。関数型の仮引数の名前は型の同一性に入らない。

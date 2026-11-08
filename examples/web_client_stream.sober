@@ -1,0 +1,59 @@
+package main
+
+// Web クライアントのガイド 5 節: http.client.Stream で本文を切片のまま受ける（応答を丸ごと積まない）。最初の要素は頭と空の切片で、
+// 以降は届いた切片。外の API の代役は長さ不定（chunked）の本文を 3 回に分けて送る
+
+import "std/http/client"
+import "std/http/server"
+import "std/iter"
+import "std/net"
+import "std/task"
+
+func api(r http.server.Request) http.server.Response {
+    return http.server.Response{status: 200, contentType: "text/plain", cache: http.server.NoStore{}, stream: (out, emit) => feed(mut out, emit)}
+}
+
+func feed(out mut http.server.Out, emit func(out mut http.server.Out, b []byte) error?) error? {
+    for i <- iter.Range(1, 4) {
+        emit(mut out, bytes("line ${i}\n"))?
+    }
+    return nil
+}
+
+func fetch(base string) []string {
+    mut lines := mut []string{}
+    mut total := 0
+    e := http.client.Stream("${base}/feed", (part) => {
+        if len(part.chunk) == 0 {
+            lines = append(lines, "status ${part.head.status}")
+        }
+        total = total + len(part.chunk)
+    })
+    lines = append(lines, if e == nil { "received ${total} bytes" } else { "stream failed" })
+    return freeze(lines)
+}
+
+func serve(l net.Listener) error? {
+    for c <- net.Accept(l)? {
+        http.server.ServeConn(c, api)?
+        break
+    }
+    return nil
+}
+
+func main() {
+    e := net.Listen("127.0.0.1:0", (l) => {
+        base := "http://127.0.0.1:${net.Port(l)}"
+        got, _ := task.Run((s) => {
+            h := task.Spawn(s, () => fetch(base))
+            _ = serve(l)
+            task.Join(h)
+        })
+        for line <- got {
+            println(line)
+        }
+    })
+    if e != nil {
+        println("listen failed")
+    }
+}

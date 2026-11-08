@@ -24,23 +24,23 @@ func ff(c int, i int) []byte {
 }
 
 func TestExpPolyStart() {
-    n := dudect.Count()
+    n := internal.dudect.Count()
     if n == 0 {
         return
     }
-    dudect.Measure("exp_poly_start", n, 8, ff, (x) => {
+    internal.dudect.Measure("exp_poly_start", n, 8, ff, (x) => {
         a := start(x)
         ((a.r0 ^ a.r1 ^ a.r2 ^ a.r3 ^ a.r4) & 1) == 1
     })
 }
 
 func TestExpPolyAbsorb() {
-    n := dudect.Count()
+    n := internal.dudect.Count()
     if n == 0 {
         return
     }
     msg := dpat(64, 7)
-    dudect.Measure("exp_poly_absorb", n, 8, ff, (x) => {
+    internal.dudect.Measure("exp_poly_absorb", n, 8, ff, (x) => {
         mut a := start(x)
         absorb(mut a, msg, 0, len(msg), false)
         ((a.h0 ^ a.h1 ^ a.h2 ^ a.h3 ^ a.h4) & 1) == 1
@@ -48,9 +48,9 @@ func TestExpPolyAbsorb() {
 }
 
 func TestExpPolyFinish() {
-    n := dudect.Count()
+    n := internal.dudect.Count()
     if n == 0 {
         return
     }
-    dudect.Measure("exp_poly_finish", n, 8, ff, (x) => len(finish(start(x), x)) == 16)
+    internal.dudect.Measure("exp_poly_finish", n, 8, ff, (x) => len(finish(start(x), x)) == 16)
 }

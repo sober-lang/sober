@@ -1,0 +1,2 @@
+sober: load error at examples/client_neg_zero.sober:8:10: `client.Session` has identity: only client.Open (the parameter of its function) makes one — a zero value would refer to nothing
+exit=1

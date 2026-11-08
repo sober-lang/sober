@@ -1,0 +1,5 @@
+# leanbatch の入力から外す compiler/tools（照合の約束は scripts/leanbatch.sh の冒頭 — 名前だけ = selfhost_check (ii) が同じ入力の Lean 判定を照合・`t=代表` = 代表の入力で被覆）
+desugardump
+checkdump
+sobercheck
+lldump=lowerdump   # コア JSON の先頭 99.9994% が lowerdump と一致・差は main の Def だけ（その形は他の入力で被覆）。selfhost_ll の lldump の検査は不変

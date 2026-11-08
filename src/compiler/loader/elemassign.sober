@@ -1,6 +1,7 @@
 package loader
 
-// 列の要素の欄への代入（`xs[i].f = v`・`a.xs[i].p.q = v`）: 要素を丸ごと読んで欄を差し替えて書き戻す固定テンプレートで写す:
+// 列の要素の欄への代入（`xs[i].f = v`・`a.xs[i].p.q = v`）と添字への直の複合代入（`xs[i] += v` — 欄の列が空）: 要素を丸ごと読んで欄を差し替えて
+// 書き戻す固定テンプレートで写す:
 //
 //     B[I].p op= V   →   $eaKi := I; $eaKv := V; mut $eaKt := B[$eaKi]; $eaKt.p op= $eaKv; B[$eaKi] = $eaKt
 //
@@ -142,6 +143,10 @@ func elemAssignAt(t ast.Tree, i int) int {
         return -1
     }
     mut c := ast.ListAt(t, x.a, 0)
+    // 添字への直の複合代入 `B[I] op= V`（欄の鎖が空 — `$t op= $v; B[$i] = $t`）。素の `B[I] = V` は格納の道のまま
+    if t.nodes[c].kind == ast.EIndex && x.b != lexer.Equal {
+        return if eaPurePath(t, t.nodes[c].a) { c } else { -1 }
+    }
     if t.nodes[c].kind != ast.ESelector {
         return -1
     }

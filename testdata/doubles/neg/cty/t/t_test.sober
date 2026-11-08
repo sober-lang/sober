@@ -2,8 +2,8 @@ package t
 
 import "std/testing/cell"
 
-const H = cell.Cell[mut []int]{}
+const H = testing.cell.Cell[mut []int]{}
 
 func TestT() {
-    _ = cell.Get(H)
+    _ = testing.cell.Get(H)
 }

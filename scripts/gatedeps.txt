@@ -15,6 +15,7 @@ quickfuzz: testdata/quickfuzz
 cover: examples testdata/cover
 mutate: examples testdata/mutate
 fnpkg: testdata/fnpkg
+modcheck: examples testdata/mod   # examples = hello（stage2 を建て直す口）
 a1oracle: examples testdata/a1   # 題材 = examples の type_recursive* 5 本 + testdata/a1
 memcheck: examples testdata/memcheck testdata/alias testdata/specpkg   # 題材 = .out を持つ examples（上界の黄金は testdata/memcheck/expect.txt）+ 手組み・alias / specpkg = 題材の import 先
 guidetest: examples testdata/guide ~testdata   # 本文の testdata/fuzz は写しの中の題材のコーパス（木の testdata は読まない）
@@ -27,9 +28,9 @@ selfpar: bench/ratchet.txt testdata/selfpar
 nextgen: 
 selfhost_ll: examples src/stage1 testdata/checkneg testdata/errpkg testdata/frozen_src testdata/iface testdata/loader_neg testdata/pkgdemo testdata/selfhost_fmt testdata/selfhost_lex
 selfhost_e2e: examples lean src/stage1 testdata/checkneg testdata/errpkg testdata/frozen_src testdata/iface testdata/loader_neg testdata/pkgdemo testdata/selfhost_fmt testdata/selfhost_lex
-leanbatch: lean scripts/checkmut.ts testdata/corejson testdata/corevec.jsonl
+leanbatch: lean scripts/checkmut.ts scripts/leanbatch_skip.txt scripts/selfhost_check_tools.txt testdata/corejson testdata/corevec.jsonl
 sobi: examples lean src/stage1 testdata
-selfhost_check: lean scripts/checkmut.ts src/stage1 testdata/checkneg testdata/corejson testdata/corevec.jsonl testdata/corevec_byte testdata/corevec_copyto testdata/corevec_float testdata/corevec_par testdata/corevec_narrow testdata/errpkg testdata/frozen_src testdata/iface testdata/pkgdemo
+selfhost_check: lean scripts/checkmut.ts scripts/selfhost_check_tools.txt src/stage1 testdata/checkneg testdata/corejson testdata/corevec.jsonl testdata/corevec_byte testdata/corevec_copyto testdata/corevec_float testdata/corevec_par testdata/corevec_narrow testdata/errpkg testdata/frozen_src testdata/iface testdata/pkgdemo
 selfhost_lower: examples src/stage1 testdata/checkneg testdata/errpkg testdata/frozen_src testdata/iface testdata/loader_neg testdata/pkgdemo testdata/selfhost_fmt testdata/selfhost_lex
 selfhost_fmt: README.ja.md README.md bench docs examples lean scripts src/stage1 testdata/checkneg testdata/errpkg testdata/frozen_src testdata/iface testdata/loader_neg testdata/pkgdemo testdata/selfhost_fmt ~testdata   # testdata は監査（report-1222）で読む単位に詰めた — M2 で確認
 selfhost_load: README.ja.md README.md bench docs examples lean scripts src/stage1 testdata
@@ -51,9 +52,9 @@ cachekey: examples testdata
 panicmsg: examples testdata
 optdiff: bench examples fuzz/progen src/stage1 testdata scripts/noopt-excluded.list   # fuzz/progen = 乱択の母集団の生成器（抽出が拾わない — 手で足す）
 typerdiff: examples scripts/irtext.sh src/stage1 testdata
-corejson: examples testdata
-irtext: examples testdata
-lltext: examples testdata
+corejson: examples testdata testdata/golden_skip.txt
+irtext: examples testdata testdata/golden_skip.txt
+lltext: examples testdata testdata/golden_skip.txt
 llcheck: testdata/lltext
 astjson: examples testdata
 loaderjson: examples scripts/loaderjson.list testdata/embed testdata/errpkg testdata/iface testdata/loaderjson testdata/minic testdata/minic_rd testdata/pkgdemo testdata/pool ~testdata   # testdata は監査（report-1222）で読む単位に詰めた — M2 で確認
@@ -69,13 +70,13 @@ implicitfreeze: bench examples scripts/implicitfreeze.ts testdata
 sobertest: testdata/sobertest ~testdata
 doubles: testdata/cells testdata/cells.expect testdata/cellneg testdata/doubles ~testdata   # 本文の testdata は一時の場所に写した木の中の名前（木の testdata は doubles の下だけ読む）   # 本文の propsfuzz/testdata は一時の場所に写した package の中の名前（木の testdata は読まない）
 jsonsuite: scripts/oracles testdata/jsonpkg testdata/jsontestsuite
-unittest: testdata/crypto testdata/stdtest testdata/tls   # M2（report-1222）が名指し: Sober のプログラムが実行時に読む・import する入力（本文の抽出では見えない）
+unittest: testdata/crypto testdata/stdtest testdata/tls testdata/wycheproof testdata/x509   # M2（report-1222）が名指し: Sober のプログラムが実行時に読む・import する入力（本文の抽出では見えない）
 x86enc: 
 trapprobe: testdata/trapprobe
 seqpar: examples scripts/seqpar.list
 lparcfg: scripts/lparcfg.ts
 schedvec: examples scripts/schedvec.list scripts/schedvec.ts
-schedfuzz: examples scripts/schedfuzz.list testdata/readyspill
+schedfuzz: examples scripts/schedfuzz.list testdata/readyspill bench/spawn
 parbudget: bench/skynet examples scripts/schedfuzz.list testdata/parbudget
 cutstat: bench/par bench/skynet examples testdata/cutstat
 mapfuse: examples
@@ -83,7 +84,8 @@ partinl: bench/1brc bench/fasta bench/httparena bench/knucleotide examples
 clidoc: bin/sober docs/cli docs/guide/env.ja.md ~docs/guide scripts testdata/clidoc ~src/stage1   # ③ は scripts/ の全部の呼び出しの形を読む（bin/sober の本文が言及する stage1 は読まない）
 outline: examples src/stage1 testdata/outline
 doclead: examples scripts/doclead.ts src/stage1
-docsync: README.ja.md README.md docs examples scripts/docsync.ts testdata/checkverdict testdata/guide
+docsync: README.ja.md README.md docs examples scripts/docsync.ts testdata/checkverdict testdata/guide testdata/mod ~testdata   # 本文の testdata/mod/${…} は規則の参照の題材の黄金（宣言の testdata/mod の中）
+confsync: docs/conformance examples testdata/conformance testdata/crypto testdata/ctcheck testdata/httpcheck testdata/stdtest testdata/tls testdata/wycheproof testdata/x509 scripts/confsync.ts ~scripts   # std の _test.sober が @embed で読む testdata と主張の証拠の黄金・~scripts = 文書と道具の注が名指す相互接続の道具（読まない — 記録は testdata/conformance）
 benchsync: README.ja.md README.md bench docs scripts/bench.sh scripts/benchchart.ts scripts/benchfetch.sh scripts/benchsync.ts
 maprepr: bench examples testdata
 streq: bench examples testdata
@@ -105,9 +107,15 @@ tyhash:
 iouring: examples testdata/io_par ~testdata   # testdata は監査（report-1222）で読む単位に詰めた — M2 で確認
 httpcheck: scripts/flight.ts testdata/httpcheck
 starve: testdata/starve
+fusecheck: scripts/flight.ts testdata/httpcheck
+wincheck: testdata/wincheck testdata/httpcheck/dataset.json
 pid1stop: scripts/pid1stop.ts testdata/pid1stop
+mdwecheck: testdata/mdwe
 vaslot: testdata/vaslot
 refs: bench docs examples lean scripts src/stage1 testdata
+rootsync: scripts/rootstore.sh scripts/nssroots.ts testdata/x509/nss src/std/internal/x509/roots.sober   # 生成物と取り込んだ certdata.txt と銘
+tzsync: scripts/tzstore.sh scripts/tzgen.ts testdata/tz src/std/time/zones.sober   # 生成物と組んだ TZif の束と銘
+datadce: testdata/datadce examples   # 題材（目印は std の生成物から — std は共通の成分）
 stdref: docs/language.md docs/std examples scripts/stdref/head.ja.md testdata/stdref   # M2（report-1222）が名指し: Sober のプログラムが実行時に読む・import する入力（本文の抽出では見えない）
 corevec: lean scripts/corevec_cov.ts testdata/corevec.jsonl
 extract: lean
@@ -116,5 +124,5 @@ hermetic_zig: examples src/stage1 testdata
 ir_roundtrip: examples src/stage1
 gatememo: scripts   # 本体は全部の宣言のパスと本文を読む — @always で毎回走る
 
-@nondet: stages selfpar incrrace seqpar schedvec schedfuzz parbudget iouring httpcheck starve pid1stop
+@nondet: stages selfpar incrrace seqpar schedvec schedfuzz parbudget iouring httpcheck starve fusecheck wincheck pid1stop
 @always: gatememo refs   # refs は .git を読むので M2 の写し（.git なし）で確かめられない — 毎回走らせる（29 s）。 M1 と lint は全部の宣言と本文を読む（数秒）— 記録せず毎回走らせる

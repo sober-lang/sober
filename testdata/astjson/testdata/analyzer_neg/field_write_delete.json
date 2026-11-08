@@ -25,14 +25,14 @@
             "values": [
               {
                 "k": "composite",
-                "type_name": "box.Box",
+                "type_name": "testdata.fieldpkg.box.Box",
                 "elems": [
                   {
                     "key": "n",
                     "value": {
                       "k": "int",
                       "value": 0,
-                      "tok": 20
+                      "tok": 24
                     }
                   },
                   {
@@ -40,56 +40,26 @@
                     "value": {
                       "k": "strlit",
                       "value": "x",
-                      "tok": 24
+                      "tok": 28
                     }
                   },
                   {
                     "key": "inner",
                     "value": {
                       "k": "composite",
-                      "type_name": "box.Inner",
+                      "type_name": "testdata.fieldpkg.box.Inner",
                       "elems": [
                         {
                           "key": "k",
                           "value": {
                             "k": "int",
                             "value": 0,
-                            "tok": 34
+                            "tok": 42
                           }
                         }
                       ],
-                      "tok": 28,
+                      "tok": 32,
                       "type_args": []
-                    }
-                  },
-                  {
-                    "key": "xs",
-                    "value": {
-                      "k": "slicelit",
-                      "elem": {
-                        "k": "name",
-                        "name": "int"
-                      },
-                      "elems": [],
-                      "mut": true,
-                      "tok": 40
-                    }
-                  },
-                  {
-                    "key": "tags",
-                    "value": {
-                      "k": "maplit",
-                      "key": {
-                        "k": "name",
-                        "name": "string"
-                      },
-                      "value": {
-                        "k": "name",
-                        "name": "int"
-                      },
-                      "entries": [],
-                      "mut": true,
-                      "tok": 49
                     }
                   }
                 ],
@@ -106,7 +76,7 @@
               "callee": {
                 "k": "ident",
                 "name": "delete",
-                "tok": 58
+                "tok": 46
               },
               "args": [
                 {
@@ -114,18 +84,18 @@
                   "base": {
                     "k": "ident",
                     "name": "b",
-                    "tok": 60
+                    "tok": 48
                   },
                   "field": "tags",
-                  "tok": 62
+                  "tok": 50
                 },
                 {
                   "k": "strlit",
                   "value": "a",
-                  "tok": 64
+                  "tok": 52
                 }
               ],
-              "tok": 59
+              "tok": 47
             }
           },
           {
@@ -135,7 +105,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 67
+                "tok": 55
               },
               "args": [
                 {
@@ -143,13 +113,13 @@
                   "base": {
                     "k": "ident",
                     "name": "b",
-                    "tok": 69
+                    "tok": 57
                   },
                   "field": "n",
-                  "tok": 71
+                  "tok": 59
                 }
               ],
-              "tok": 68
+              "tok": 56
             }
           }
         ]
@@ -158,7 +128,7 @@
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 76
+        "end": 64
       },
       "sig_end": 10
     }

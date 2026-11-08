@@ -216,6 +216,14 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
                 v := expr(mut st, latN(mut st, args, 0), eb, ef, depth)?
                 return cFConv(mut st, if sk == loader.IFSqrt { FCSqrt } else if sk == loader.IFBits { FCBits } else { FCFromBits }, v), nil
             }
+            if sk == loader.IAppendWord {
+                // 末尾への語の書き（std/binary.AppendWord の `b = sysAppendWord(b, v, k)`）: コアの近似は b への append（結果は b と同じ region の列 —
+                // 新しい slice の近似では外の region の b へ代入できない）。v・k は要素の位置で左から評価して捨てる
+                subject := expr(mut st, latN(mut st, args, 0), eb, ef, depth)?
+                v1 := expr(mut st, latN(mut st, args, 1), eb, ef, depth)?
+                v2 := expr(mut st, latN(mut st, args, 2), eb, ef, depth + 1)?
+                return c2(mut st, CAppend, subject, cLet(mut st, v1, cLet(mut st, v2, c1(mut st, CToByte, cLit(mut st, 0))))), nil
+            }
             mut body := if SysResult(sk) == 'b' { c1(mut st, CFreeze, cMkslice(mut st, 1, tByte(mut st))) } else if SysResult(sk) == 'm' { cMkslice(mut st, 1, st.tInt) } else if SysResult(sk) == 'x' { cMkslice(mut st, 1, tByte(mut st)) } else { cLit(mut st, 0) }
             mut i := na - 1
             while i >= 0 {
@@ -292,6 +300,11 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
     }
     fi := findFn(mut st, callee, eb)
     if fi < 0 {
+        // 名前付き関数型への変換 `W(e)`（language.md 25 節）: e を W の値の位置に置く（関数でなかったときだけ — 名前は関数と型で衝突しない）
+        fcv := if na == 1 { fnConvDr(mut st, callee, eb) } else { -1 }
+        if fcv >= 0 {
+            return fnConvExpr(mut st, fcv, args, at, eb, ef, depth)
+        }
         return 0, diag.CoreFragment{at: posOf(mut st, at)}
     }
     pkey := ParKey(mut st, fi)
@@ -908,7 +921,31 @@ func CallGenFn(st mut S, src NodeRef, from int) int {
     }
     ps := fnParams(mut st, fi)
     np := lenL(mut st, ps)
+    // 名前付き引数を並べ直した呼び出し: 継続 k の席は loader の印（GenSlot）の位置で、実引数の数 = 仮引数の数
+    slot := genSlotOf(mut st, lB(nodeOf(mut st, src)))
+    if slot >= 0 {
+        return if np == lenL(mut st, lB(nodeOf(mut st, src))) && kindN(mut st, nB(nodeOf(mut st, latN(mut st, ps, slot)))) == ast.TFunc { fi } else { -1 }
+    }
     return if np == lenL(mut st, lB(nodeOf(mut st, src))) + 1 && kindN(mut st, nB(nodeOf(mut st, latN(mut st, ps, np - 1)))) == ast.TFunc { fi } else { -1 }
+}
+
+// for 式 fe の生成元の呼び出しで継続 k が入る実引数の番号（loader の印の席 — 印が無ければ末尾 = 実引数の数 - 1 を返すのは呼び手）。印が無ければ -1
+func GenSlotIn(st mut S, fe NodeRef) int {
+    g := latN(mut st, lA(nodeOf(mut st, fe)), 0)
+    src := nB(nodeOf(mut st, g))
+    c := if kindN(mut st, src) == ast.ETry { nA(nodeOf(mut st, src)) } else { src }
+    return if kindN(mut st, c) == ast.ECall { genSlotOf(mut st, lB(nodeOf(mut st, c))) } else { -1 }
+}
+
+// 実引数の列の継続 k の席（loader が名前付き引数を並べ直したときに置く印つきの nil — loader.GenSlot）。無ければ -1
+func genSlotOf(st mut S, args ListRef) int {
+    for j <- iter.Range(0, lenL(mut st, args)) {
+        aj := NodeRef(latI(mut st, args, j))
+        if kindN(mut st, aj) == ast.ENil && nodeOf(mut st, aj).e == loader.GenSlot {
+            return j
+        }
+    }
+    return -1
 }
 
 // for 式 → Iter[T] 型のラムダ（forexpand.zig の lower — 表層 AST の節をヒープに足す）:
@@ -984,11 +1021,15 @@ func forGen(st mut S, fe NodeRef, kind int) NodeRef {
         src := if kind == FCallV && kindN(mut st, try0) == ast.ETry { nA(nodeOf(mut st, try0)) } else { GenCallOf(mut st, try0, st.curPkg) }
         sargs := lB(nodeOf(mut st, src))
         na := lenL(mut st, sargs)
-        args := listN(mut st, na + 1)
+        // 継続 k の席: loader が名前付き引数を並べ直した呼び出しは k の仮引数の席に印つきの nil（loader.GenSlot）を置く — そこを埋める。無ければ末尾に足す
+        hole := genSlotOf(mut st, sargs)
+        args := listN(mut st, if hole >= 0 { na } else { na + 1 })
         for j <- iter.Range(0, na) {
-            hset(mut st, args + 1 + j, latI(mut st, sargs, j))
+            hset(mut st, args + 1 + j, if j == hole { int(kf) } else { latI(mut st, sargs, j) })
         }
-        hset(mut st, args + 1 + na, int(kf))
+        if hole < 0 {
+            hset(mut st, args + 1 + na, int(kf))
+        }
         gen = NodeRef(rec8(mut st, ast.ECall, g, nodeOf(mut st, src).a, args, 0, 0, 0, 0))
         if src != try0 {
             gen = NodeRef(rec8(mut st, ast.ETry, try0, int(gen), nodeOf(mut st, try0).b, 0, 0, 0, 0))

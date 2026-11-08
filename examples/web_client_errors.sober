@@ -1,0 +1,35 @@
+package main
+
+// Web クライアントのガイド 2 節: 失敗はラベルで分ける。誰も待っていない port は Closed・形の誤った URL は BadUrl・
+// 受けるだけで応答しない相手は期限（Policy の timeout）で Timeout
+
+import "std/http/client"
+import "std/net"
+import "std/task"
+
+func label(e error?) string {
+    return switch e {
+    case nil: "ok"
+    case http.client.Closed{}: "Closed"
+    case http.client.BadUrl{}: "BadUrl"
+    case http.client.Timeout{}: "Timeout"
+    case http.client.Dns{}: "Dns"
+    case http.client.Tls{}: "Tls"
+    default: "other"
+    }
+}
+
+func main() {
+    pol := http.client.Policy{timeout: 300 * task.MS}
+    _, e1 := http.client.Request("http://127.0.0.1:1/", policy: pol)
+    println("refused: ${label(e1)}")
+    _, e2 := http.client.Request("ftp://example.com/", policy: pol)
+    println("bad url: ${label(e2)}")
+    e := net.Listen("127.0.0.1:0", (l) => {
+        _, e3 := http.client.Request("http://127.0.0.1:${net.Port(l)}/", policy: pol)
+        println("silent: ${label(e3)}")
+    })
+    if e != nil {
+        println("listen failed")
+    }
+}

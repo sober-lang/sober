@@ -2,39 +2,40 @@ package main
 
 // 保存の方針と認証の源（language.md 12 節・28 節）: 応答の Cache-Control の既定は private（共有キャッシュに載せない）・
 // 応答 1 件の方針は Private / NoStore・共有キャッシュも保存してよい方針（Fresh）はルートの行で書く（Dispatch が cache の無い応答に写す — 応答の方針が勝つ）。
-// 認証のヘッダ（Authorization・Cookie）は名指しの口 http.Authorization / http.Cookie でだけ読める（http.Header は nil）。
+// 認証のヘッダ（Authorization・Cookie）は名指しの口 http.server.Authorization / http.server.Cookie でだけ読める（http.server.Header は nil）。
 // 保存の方針と検証子の名前（Cache-Control・ETag ほか）を任意ヘッダに書くと panic(BadHeader) — 最後の要求がそれで死ぬ（終了 101）。
 // ネットの代わりに recv が決まった要求の列を 1 切片で渡し、send が応答を印字する（examples/http_router の形 — 行末の CR は外して印字）
 
 import "std/http"
+import "std/http/server"
 
 func or(s string?) string {
     return if s != nil { s } else { "-" }
 }
 
 // 認証に届く応答（共有の宣言はしない — 既定の private のまま）
-func me(r http.Request) http.Response {
-    return http.Text("sid=${or(http.Cookie(r, "sid"))} auth=${or(http.Authorization(r))} header=${or(http.Header(r, "cookie"))}\n")
+func me(r http.server.Request) http.server.Response {
+    return http.server.Text("sid=${or(http.server.Cookie(r, "sid"))} auth=${or(http.server.Authorization(r))} header=${or(http.server.Header(r, "cookie"))}\n")
 }
 
 // 個人の応答をブラウザに 30 秒持たせる
-func feed(r http.Request) http.Response {
-    return http.Response{status: 200, contentType: "text/plain", body: bytes("feed\n"), cache: http.Private{maxAge: 30}}
+func feed(r http.server.Request) http.server.Response {
+    return http.server.Response{status: 200, contentType: "text/plain", body: bytes("feed\n"), cache: http.server.Private{maxAge: 30}}
 }
 
 // 秘密の応答はどこにも保存させない
-func token(r http.Request) http.Response {
-    return http.Response{status: 200, contentType: "text/plain", body: bytes("t\n"), cache: http.NoStore{}}
+func token(r http.server.Request) http.server.Response {
+    return http.server.Response{status: 200, contentType: "text/plain", body: bytes("t\n"), cache: http.server.NoStore{}}
 }
 
 // 共有の資産（認証を読まない — ルートの行が Fresh を宣言）
-func logo(r http.Request) http.Response {
-    return http.Text("logo\n")
+func logo(r http.server.Request) http.server.Response {
+    return http.server.Text("logo\n")
 }
 
 // 方針を文字列で書く（予約名 — panic）
-func raw(r http.Request) http.Response {
-    return http.Response{status: 200, contentType: "text/plain", body: bytes("raw\n"), headers: http.Headers{list: []http.Field{http.Field{name: "cache-control", value: "public, max-age=60"}}}}
+func raw(r http.server.Request) http.server.Response {
+    return http.server.Response{status: 200, contentType: "text/plain", body: bytes("raw\n"), headers: http.server.Headers{list: []http.Field{http.Field{name: "cache-control", value: "public, max-age=60"}}}}
 }
 
 func show(b []byte) error? {
@@ -56,18 +57,18 @@ func give(a string, b string, k func([]byte)) error? {
 }
 
 func main() {
-    rs := []http.Route{
-        http.Route{method: "GET", path: "/me", handler: me},
-        http.Route{method: "GET", path: "/feed", handler: feed},
-        http.Route{method: "GET", path: "/token", handler: token, cache: http.Fresh{maxAge: 60}},
-        http.Route{method: "GET", path: "/logo", handler: logo, cache: http.Fresh{maxAge: 86400, immutable: true}},
-        http.Route{method: "GET", path: "/raw", handler: raw}}
+    rs := []http.server.Route{
+        http.server.Route{method: "GET", path: "/me", handler: me},
+        http.server.Route{method: "GET", path: "/feed", handler: feed},
+        http.server.Route{method: "GET", path: "/token", handler: token, cache: http.server.Fresh{maxAge: 60}},
+        http.server.Route{method: "GET", path: "/logo", handler: logo, cache: http.server.Fresh{maxAge: 86400, immutable: true}},
+        http.server.Route{method: "GET", path: "/raw", handler: raw}}
     reqs := "GET /me HTTP/1.1\r\nCookie: theme=dark; sid=\"s-42\"\r\nAuthorization: Bearer abc\r\n\r\n" +
         "GET /me HTTP/1.1\r\n\r\n" +
         "GET /feed HTTP/1.1\r\n\r\n" +
         "GET /token HTTP/1.1\r\n\r\n" +
         "GET /logo HTTP/1.1\r\n\r\n" +
         "GET /none HTTP/1.1\r\n\r\n"
-    e := http.ServeWith((k) => give(reqs, "GET /raw HTTP/1.1\r\nConnection: close\r\n\r\n", k), (b) => show(b), (r) => http.Dispatch(rs, r))
+    e := http.server.ServeWith((k) => give(reqs, "GET /raw HTTP/1.1\r\nConnection: close\r\n\r\n", k), (b) => show(b), (r) => http.server.Dispatch(rs, r))
     println(e == nil)
 }

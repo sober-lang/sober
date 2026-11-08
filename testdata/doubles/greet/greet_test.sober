@@ -7,11 +7,11 @@ import "testdata/doubles/logger/spy"
 func TestGreetLogs() {
     assert(Greet("a") == "hello, a")
     assert(Greet("b") == "hello, b")
-    lines := cell.Get(spy.Lines)
+    lines := testing.cell.Get(testdata.doubles.logger.spy.Lines)
     assert(len(lines) == 2)
     assert(lines[1] == "hello, b")
 }
 
 func TestFreshPerTest() {
-    assert(len(cell.Get(spy.Lines)) == 0)
+    assert(len(testing.cell.Get(testdata.doubles.logger.spy.Lines)) == 0)
 }

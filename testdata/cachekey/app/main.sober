@@ -5,7 +5,7 @@ import "testdata/cachekey/mid"
 import "testdata/cachekey/side"
 
 func main() {
-    println(mid.Twice(1))
-    println(leaf.Count())
-    println(side.Half(10))
+    println(testdata.cachekey.mid.Twice(1))
+    println(testdata.cachekey.leaf.Count())
+    println(testdata.cachekey.side.Half(10))
 }

@@ -12,7 +12,7 @@ src/std/os/os.sober  package os
   func sysEnviron() []byte  @intrinsic("environ")  :37-38
   func sysCall(nr int, a int, b int, c int, d int, e int, f int) int  @intrinsic("syscall")  :41-42
   func sysAddr(b []byte) int  @intrinsic("addr")  :44-45
-  func Args() ([]string, error?)  @errors(strings.InvalidUtf8) @effects(io)  :51-68
+  func Args() ([]string, error?)  @errors(strings.BadUtf8) @effects(io)  :51-68
   func Run(path string, args []string) (int, error?)  @errors(io.NotFound, io.Denied, io.Other) @effects(block, io)  :74-91
   func RunTo(path string, args []string, out string, errOut string) (int, error?)  @errors(io.NotFound, io.Denied, io.Other) @effects(block, io)  :96-108
   func RunToEnv(path string, args []string, env []string, out string, errOut string) (int, error?)  @errors(io.NotFound, io.Denied, io.Other) @effects(block, io)  :113-126
@@ -33,7 +33,7 @@ src/std/os/os.sober  package os
   func Alarm(ms int)  @effects(io)  :312-323
   func Monotonic() int  @effects(io)  :326-335
   func word(b []byte, at int) int  :338-344
-  func Getenv(name string) (string?, error?)  @errors(strings.InvalidUtf8) @effects(io)  :348-366
+  func Getenv(name string) (string?, error?)  @errors(strings.BadUtf8) @effects(io)  :348-366
   func keyIs(b []byte, start int, end int, nb []byte) bool  :369-379
   func argz(b mut []byte, s string) bool  :382-392
   func errOf(e int) error  :395-403

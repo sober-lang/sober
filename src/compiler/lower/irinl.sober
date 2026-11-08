@@ -184,7 +184,8 @@ func ilLeafSweep(st mut St, f FnRef, leaf []int) {
     }
 }
 
-// 葉の極小関数か: 呼び出しは exit で終わるブロック（panic の点）にだけあり、命令が IL_LEAF 以下。region.depth / setdepth は数えない
+// 葉の極小関数か: 呼び出しは exit で終わるブロック（panic の点）か窓の溢れ（rt.win_ralloc — rt.region_alloc / alloc8 の冷たい道。
+// 写した先でも x86 が冷たい呼び出しとして末尾へ寄せる）にだけあり、命令が IL_LEAF 以下。region.depth / setdepth は数えない
 // （mut 引数の関数が持つ深さの保存と復元 — 確保の無い葉では対で打ち消し合う。写しても呼び手の深さを変えない）
 func ilLeafTiny(st mut St, f FnRef) bool {
     mut n := 0
@@ -193,7 +194,7 @@ func ilLeafTiny(st mut St, f FnRef) bool {
         mut i := irBlkIHead(mut st, b)
         while i != -1 {
             op := irInsOp(mut st, i)
-            if op == OpCall && irBlkTerm(mut st, b) != TmExit {
+            if op == OpCall && irBlkTerm(mut st, b) != TmExit && irInsFn(mut st, i) != st.rtWinRalloc {
                 return false
             }
             if op != OpDead && op != OpRDepth && op != OpRSetDepth {
@@ -772,8 +773,9 @@ func ilShape(st mut St, g FnRef, n int) int {
 func ilShapeD(st mut St, g FnRef, n int, dep bool) int {
     b := irFnBHead(mut st, g)
     // rt.copy / rt.copy8 は x86 が rep movs に置き換えるので写さない。rt.matchlen / rt.jclean も手書きの本体に置き換えるので写さない。rt.out_node / out_fork / out_adv（出力の区間の冷たい道）
-    // （写すと spawn の切替点〔rt.task_go〕の割り当てが増え、退避が全部の spawn に乗る）
-    if b == -1 || irFnSHead(mut st, g) >= 0 || irBlkPHead(mut st, b) >= 0 || xIsEntry(mut st, g) || g == st.rtCopy || g == st.rtCopy8 || g == st.rtMatchLen || g == st.rtJClean || (st.taskUse && (g == st.rtOutNode || g == st.rtOutFork || g == st.rtOutAdv)) {
+    // （写すと spawn の切替点〔rt.task_go〕の割り当てが増え、退避が全部の spawn に乗る）。rt.win_ralloc（窓の溢れ — 確保の冷たい道）も写さない:
+    // 写すと rt.region_alloc / alloc8 の本体に rt.win_spill の呼び出しが入り、葉の極小関数（ilLeafTiny）でなくなって確保の点ごとの呼び出しに戻る
+    if b == -1 || irFnSHead(mut st, g) >= 0 || irBlkPHead(mut st, b) >= 0 || xIsEntry(mut st, g) || g == st.rtCopy || g == st.rtCopy8 || g == st.rtMatchLen || g == st.rtJClean || g == st.rtWinRalloc || (st.taskUse && (g == st.rtOutNode || g == st.rtOutFork || g == st.rtOutAdv)) {
         return 0
     }
     mut x := b

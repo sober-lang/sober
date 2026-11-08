@@ -28,7 +28,7 @@ func TestExpPolyZero() {
     }
     msg := pat(64, 7)
     // クラス 0 = 全 0 の鍵（r = 0 — 積が全部 0）・クラス 1 = 乱数
-    Measure("exp_poly_zero", n, 8, (c, i) => if c == 0 { fill(32, 0) } else { rnd(32, i) }, (x) => len(poly1305.Sum(x, msg)) == 16)
+    Measure("exp_poly_zero", n, 8, (c, i) => if c == 0 { fill(32, 0) } else { rnd(32, i) }, (x) => len(crypto.poly1305.Sum(x, msg)) == 16)
 }
 
 func TestExpPolyOnes() {
@@ -38,7 +38,7 @@ func TestExpPolyOnes() {
     }
     msg := pat(64, 7)
     // クラス 0 = 全 0xff の鍵（r は締めの mask の全ビット）・クラス 1 = 乱数
-    Measure("exp_poly_ones", n, 8, (c, i) => if c == 0 { fill(32, 255) } else { rnd(32, i) }, (x) => len(poly1305.Sum(x, msg)) == 16)
+    Measure("exp_poly_ones", n, 8, (c, i) => if c == 0 { fill(32, 255) } else { rnd(32, i) }, (x) => len(crypto.poly1305.Sum(x, msg)) == 16)
 }
 
 func TestExpPolyAa() {
@@ -48,7 +48,7 @@ func TestExpPolyAa() {
     }
     msg := pat(64, 7)
     // 両クラスとも乱数（A/A — クラスは名札だけ）
-    Measure("exp_poly_aa", n, 8, (c, i) => rnd(32, i), (x) => len(poly1305.Sum(x, msg)) == 16)
+    Measure("exp_poly_aa", n, 8, (c, i) => rnd(32, i), (x) => len(crypto.poly1305.Sum(x, msg)) == 16)
 }
 
 func TestExpPolyFf() {
@@ -58,7 +58,7 @@ func TestExpPolyFf() {
     }
     msg := pat(64, 7)
     // クラス 0 = poly1305_sum の固定鍵・クラス 1 = 別の固定鍵
-    Measure("exp_poly_ff", n, 8, (c, i) => pat(32, if c == 0 { 1 } else { 2 }), (x) => len(poly1305.Sum(x, msg)) == 16)
+    Measure("exp_poly_ff", n, 8, (c, i) => pat(32, if c == 0 { 1 } else { 2 }), (x) => len(crypto.poly1305.Sum(x, msg)) == 16)
 }
 
 func TestExpPolyFixed() {
@@ -68,7 +68,7 @@ func TestExpPolyFixed() {
     }
     msg := pat(64, 7)
     // 旧 poly1305_sum（固定 対 乱数 — dudect の古典の形）。bench/data/dudect.tsv の poly1305_sum の行はこの形
-    Measure("exp_poly_fixed", n, 8, (c, i) => sec(c, i, 32), (x) => len(poly1305.Sum(x, msg)) == 16)
+    Measure("exp_poly_fixed", n, 8, (c, i) => sec(c, i, 32), (x) => len(crypto.poly1305.Sum(x, msg)) == 16)
 }
 
 // b[p..p+4) の小さい端の 32 bit の語

@@ -361,7 +361,7 @@ func buildChunkNext(st mut St) {
     setErrno(mut st, zero)
     ret(mut st, -1)
     setCur(mut st, bFin)
-    initOut(mut st, out)
+    initOutRaw(mut st, out, load(mut st, globaladdr(mut st, st.meta), W_DEPTH))
     setErrno(mut st, load(mut st, rp, CH_ERR))
     ret(mut st, -1)
 }

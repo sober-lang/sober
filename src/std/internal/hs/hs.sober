@@ -5,11 +5,11 @@ package hs
 //
 // - 状態 = Phase（1 状態 1 variant — Start〔最初の ClientHello 待ち〕/ WaitCH2〔HelloRetryRequest を送った後〕/ WaitFin〔サーバの flight を送り終え
 //   クライアントの Finished 待ち〕/ Connected / Closed）。Feed は record の枠 1 つを受けて、送るバイト列・受けた application の平文・閉じたかを返す
-//   （転送路の受けの口は 1 本の record.Frames のループ — handshake の直後に同じ切片に乗ってきた application data も同じループで受ける）
+//   （転送路の受けの口は 1 本の internal.record.Frames のループ — handshake の直後に同じ切片に乗ってきた application data も同じループで受ける）
 // - v1 の範囲: TLS 1.3 だけ・サーバだけ・X25519 だけ・TLS_AES_128_GCM_SHA256 / TLS_CHACHA20_POLY1305_SHA256・
 //   署名は rsa_pss_rsae_sha256（証明書は RSA-2048）・PSK / 0-RTT / クライアント証明書なし。ALPN の不一致は no_application_protocol（RFC 7301）
 // - 乱数の源は Params.seed（空 = crypto.Rand・空でなければ SHA-256(seed ‖ 用途) — 網の決定的な黄金のため）
-// - 誤りは record.Alert{desc}（相手へ送る alert の番号 — 呼び手は AlertRecord を送って閉じる）。相手の alert は Out.peer に
+// - 誤りは internal.record.Alert{desc}（相手へ送る alert の番号 — 呼び手は AlertRecord を送って閉じる）。相手の alert は Out.peer に
 
 import "std/crypto"
 import "std/crypto/hkdf"
@@ -20,7 +20,7 @@ import "std/crypto/x25519"
 import "std/hex"
 import "std/internal/bless"
 import "std/iter"
-import "std/tls/record"
+import "std/internal/record"
 
 // handshake のメッセージの型（RFC 9846 4）
 const tClientHello = 1
@@ -56,20 +56,20 @@ const aNoAlpn = 120
 
 // HelloRetryRequest の random（SHA-256("HelloRetryRequest") — RFC 9846 4.1.3 の値 cf21ad74…8339c）
 func hrrRandom() []byte {
-    return sha256.Sum256(bytes("HelloRetryRequest"))
+    return crypto.sha256.Sum256(bytes("HelloRetryRequest"))
 }
 
 // サーバの設定（std/tls の Config がここへ写す）
 type Params struct {
     chain [][]byte          // 証明書の列（DER — 葉が先頭）
-    key rsa.PrivateKey      // 葉の鍵（RSA-2048）
+    key crypto.rsa.PrivateKey      // 葉の鍵（RSA-2048）
     alpn []string           // 受ける ALPN（サーバの好みの順 — 空 = ALPN を使わない）
-    suites []int            // suite の好みの順（record.AesGcm / record.ChaCha）
+    suites []int            // suite の好みの順（internal.record.AesGcm / internal.record.ChaCha）
     seed []byte             // 乱数の源（空 = crypto.Rand）
 }
 
 // Params（std/tls の Config から — 網からも）
-func NewParams(chain [][]byte, key rsa.PrivateKey, alpn []string, suites []int, seed []byte) Params {
+func NewParams(chain [][]byte, key crypto.rsa.PrivateKey, alpn []string, suites []int, seed []byte) Params {
     return Params{chain: chain, key: key, alpn: alpn, suites: suites, seed: seed}
 }
 
@@ -85,10 +85,10 @@ type Phase union {
 // 1 接続の handshake と record の状態
 type Hs struct {
     ph Phase
-    th sha256.State      // transcript
+    th crypto.sha256.State      // transcript
     suite int
-    rd record.Dir
-    wr record.Dir
+    rd internal.record.Dir
+    wr internal.record.Dir
     cHs []byte           // client / server handshake traffic secret
     sHs []byte
     cAp []byte           // client / server application traffic secret（0 番目の世代）
@@ -121,13 +121,13 @@ func none() Out {
 
 // 最初の ClientHello を待つ Hs
 func New() Hs {
-    return Hs{ph: Start{}, th: sha256.New(), suite: 0, rd: emptyDir(), wr: emptyDir(), cHs: []byte{}, sHs: []byte{}, cAp: []byte{}, sAp: []byte{},
+    return Hs{ph: Start{}, th: crypto.sha256.New(), suite: 0, rd: emptyDir(), wr: emptyDir(), cHs: []byte{}, sHs: []byte{}, cAp: []byte{}, sAp: []byte{},
         expFin: []byte{}, alpn: "", hbuf: []byte{}, ccs: false, hrr: false, ch1: []int{}, keyed: false, upd: false}
 }
 
 // handshake の済んだ接続の受けの方向 rd だけを持つ Connected の Hs（std/tls の Recv が置き場の rd から作る — Connected の受けの表を
 // Feed の 1 か所に置くため。送りの方向は持たない — 送りは std/tls の置き場が持つ）
-func Resume(rd record.Dir) Hs {
+func Resume(rd internal.record.Dir) Hs {
     mut h := New()
     h.rd = rd
     h.ph = Connected{}
@@ -136,12 +136,12 @@ func Resume(rd record.Dir) Hs {
 
 // Connected の Feed に渡す空の Params（Connected の受けは Params を見ない）
 func Bare() Params {
-    k, _ := rsa.ParsePKCS8([]byte{})
+    k, _ := crypto.rsa.ParsePKCS8([]byte{})
     return NewParams([][]byte{}, k, []string{}, []int{}, []byte{})
 }
 
-func emptyDir() record.Dir {
-    d, _ := record.NewDir(0, []byte{})
+func emptyDir() internal.record.Dir {
+    d, _ := internal.record.NewDir(0, []byte{})
     return d
 }
 
@@ -180,21 +180,21 @@ func Suite(h Hs) int {
 }
 
 // 受けと送りの方向（handshake が済んだ後に std/tls の Conn の置き場へ写す）
-func Dirs(h Hs) (record.Dir, record.Dir) {
+func Dirs(h Hs) (internal.record.Dir, internal.record.Dir) {
     return h.rd, h.wr
 }
 
 // 4 つの traffic secret（client hs ‖ server hs ‖ client ap ‖ server ap の 16 進 — 網が Go の KeyLogWriter と照合する口）。
 // key log は鍵を故意に開示する口: ここで祝福してから 16 進にする（hex.Format の表引きの時間は開示した値にだけ掛かる）
 func Secrets(h Hs) string {
-    return "${hex.Format(bless.Bytes(h.cHs))} ${hex.Format(bless.Bytes(h.sHs))} ${hex.Format(bless.Bytes(h.cAp))} ${hex.Format(bless.Bytes(h.sAp))}"
+    return "${hex.Format(internal.bless.Bytes(h.cHs))} ${hex.Format(internal.bless.Bytes(h.sHs))} ${hex.Format(internal.bless.Bytes(h.cAp))} ${hex.Format(internal.bless.Bytes(h.sAp))}"
 }
 
 // ── 受け ──
 
 // record の枠 f を 1 つ受ける（誤りのときは自分で Closed に落ちる — 以降の枠は全部 unexpected_message）
-@errors(record.Alert)
-func Feed(h mut Hs, p Params, f record.Frame) (Out, error?) {
+@errors(internal.record.Alert)
+func Feed(h mut Hs, p Params, f internal.record.Frame) (Out, error?) {
     o, e := feedIn(mut h, p, f)
     if e != nil {
         h.ph = Closed{}
@@ -204,8 +204,8 @@ func Feed(h mut Hs, p Params, f record.Frame) (Out, error?) {
 
 // Connected の受けの入口（mut の仮引数を持たない — std/tls の Recv の展開点ごとに handshake の道ごと inline させないため。
 // 表は Feed の暗号化した record の枝〔feedSealed〕そのもの — Connected / Closed の h に対して Feed と同じ結果。誤りで Closed に落ちるのも同じ）
-@errors(record.Alert)
-func Step(h Hs, f record.Frame) (Hs, Out, error?) {
+@errors(internal.record.Alert)
+func Step(h Hs, f internal.record.Frame) (Hs, Out, error?) {
     mut x := h
     if !IsConnected(x) {
         x.ph = Closed{}
@@ -218,8 +218,8 @@ func Step(h Hs, f record.Frame) (Hs, Out, error?) {
     return x, o, e
 }
 
-@errors(record.Alert)
-func feedIn(h mut Hs, p Params, f record.Frame) (Out, error?) {
+@errors(internal.record.Alert)
+func feedIn(h mut Hs, p Params, f internal.record.Frame) (Out, error?) {
     ct := int(f.b[f.off])
     k := switch h.ph {
         case Start{}: 0
@@ -238,17 +238,17 @@ func feedIn(h mut Hs, p Params, f record.Frame) (Out, error?) {
 }
 
 func alert(d int) error? {
-    return record.Alert{desc: d}
+    return internal.record.Alert{desc: d}
 }
 
 // 暗号化前の record（最初の ClientHello・HRR の後の互換の CCS と 2 番目の ClientHello）
-@errors(record.Alert)
-func feedPlain(h mut Hs, p Params, f record.Frame, ct int) (Out, error?) {
-    _, body := record.Plain(f)
-    if ct == record.CtCcs {
+@errors(internal.record.Alert)
+func feedPlain(h mut Hs, p Params, f internal.record.Frame, ct int) (Out, error?) {
+    _, body := internal.record.Plain(f)
+    if ct == internal.record.CtCcs {
         return ccsOnce(mut h, body)
     }
-    if ct != record.CtHandshake || len(body) == 0 {
+    if ct != internal.record.CtHandshake || len(body) == 0 {
         return none(), alert(aUnexpected)
     }
     h.hbuf = cat(h.hbuf, body)
@@ -272,7 +272,7 @@ func feedPlain(h mut Hs, p Params, f record.Frame, ct int) (Out, error?) {
 }
 
 // 互換の CCS（中身 0x01 の 1 枚だけ読み飛ばす — RFC 9846 5 / D.4）
-@errors(record.Alert)
+@errors(internal.record.Alert)
 func ccsOnce(h mut Hs, body []byte) (Out, error?) {
     if h.ccs || len(body) != 1 || body[0] != 1 {
         return none(), alert(aUnexpected)
@@ -282,26 +282,26 @@ func ccsOnce(h mut Hs, body []byte) (Out, error?) {
 }
 
 // 暗号化した record（クライアントの Finished・application data・KeyUpdate・alert）
-@errors(record.Alert)
-func feedSealed(h mut Hs, f record.Frame, ct int) (Out, error?) {
-    if ct == record.CtCcs {
+@errors(internal.record.Alert)
+func feedSealed(h mut Hs, f internal.record.Frame, ct int) (Out, error?) {
+    if ct == internal.record.CtCcs {
         if IsConnected(h) {
             return none(), alert(aUnexpected)
         }
-        _, body := record.Plain(f)
+        _, body := internal.record.Plain(f)
         return ccsOnce(mut h, body)
     }
-    ict, pt := record.Open(mut h.rd, f)?
-    if ict == record.CtAlert {
+    ict, pt := internal.record.Open(mut h.rd, f)?
+    if ict == internal.record.CtAlert {
         return peerAlert(mut h, pt)
     }
-    if ict == record.CtApp {
+    if ict == internal.record.CtApp {
         if !IsConnected(h) || len(h.hbuf) > 0 {
             return none(), alert(aUnexpected)
         }
         return Out{send: []byte{}, app: pt, done: false, closed: false, peer: 0 - 1, upd: false}, nil
     }
-    if ict != record.CtHandshake || len(pt) == 0 {
+    if ict != internal.record.CtHandshake || len(pt) == 0 {
         return none(), alert(aUnexpected)
     }
     h.hbuf = cat(h.hbuf, pt)
@@ -320,7 +320,7 @@ func feedSealed(h mut Hs, f record.Frame, ct int) (Out, error?) {
 }
 
 // 暗号化した handshake のメッセージ 1 つ（WaitFin = Finished・Connected = KeyUpdate）
-@errors(record.Alert)
+@errors(internal.record.Alert)
 func onSealedMsg(h mut Hs, m []byte) (Out, error?) {
     t := int(m[0])
     connected := IsConnected(h)
@@ -332,7 +332,7 @@ func onSealedMsg(h mut Hs, m []byte) (Out, error?) {
         if len(h.hbuf) > 0 {
             return none(), alert(aUnexpected)
         }
-        h.rd = record.NewDir(h.suite, h.cAp)?
+        h.rd = internal.record.NewDir(h.suite, h.cAp)?
         h.ph = Connected{}
         return Out{send: []byte{}, app: []byte{}, done: true, closed: false, peer: 0 - 1, upd: false}, nil
     }
@@ -343,7 +343,7 @@ func onSealedMsg(h mut Hs, m []byte) (Out, error?) {
         if len(h.hbuf) > 0 {
             return none(), alert(aUnexpected)
         }
-        record.Update(mut h.rd)?
+        internal.record.Update(mut h.rd)?
         // update_requested: 自分の KeyUpdate（update_not_requested）は次の application data の前に送る（RFC 9846 4.6.3 — 送りは SealApp / tls.Send の 1 か所）
         req := int(m[4]) == 1
         h.upd = h.upd || req
@@ -353,7 +353,7 @@ func onSealedMsg(h mut Hs, m []byte) (Out, error?) {
 }
 
 // 相手の alert（close_notify なら静かに閉じる・他は相手の誤り — 送り返さずに閉じる）
-@errors(record.Alert)
+@errors(internal.record.Alert)
 func peerAlert(h mut Hs, pt []byte) (Out, error?) {
     if len(pt) != 2 {
         return none(), alert(aDecodeError)
@@ -379,7 +379,7 @@ type hello struct {
 }
 
 // ClientHello の本体（型と長さの 4 バイトの後ろ）を読む（読めなければ decode_error・同じ拡張が 2 つなら illegal_parameter）
-@errors(record.Alert)
+@errors(internal.record.Alert)
 func parseHello(m []byte) (hello, error?) {
     mut c := cur(4, len(m))
     _ = u16(m, mut c)
@@ -469,7 +469,7 @@ func emptyHello() hello {
 }
 
 // ClientHello m（型と長さの頭込み）を受けて、サーバの flight（または HelloRetryRequest）を返す
-@errors(record.Alert)
+@errors(internal.record.Alert)
 func onClientHello(h mut Hs, p Params, m []byte) (Out, error?) {
     ch := parseHello(m)?
     if !ch.v13 {
@@ -498,61 +498,61 @@ func onClientHello(h mut Hs, p Params, m []byte) (Out, error?) {
     if len(ch.share) != 32 {
         return none(), alert(aIllegalParameter)
     }
-    sha256.Write(mut h.th, m)
+    crypto.sha256.Write(mut h.th, m)
     h.suite = suite
     h.alpn = alpn
     priv := rnd(p, "x25519", 32)
-    shared := x25519.Shared(priv, ch.share)
+    shared := crypto.x25519.Shared(priv, ch.share)
     // 全 0 の共有値（低位数の点 — RFC 7748 6.1）は拒否。比べは crypto.Equal（全バイトを畳んで最後に 1 回だけ判定 — 漏れるのは「全 0 か」の 1 ビット）
     if crypto.Equal(shared, zeros(32)) {
         return none(), alert(aIllegalParameter)
     }
     // ServerHello（平文）
-    sh := serverHello(rnd(p, "random", 32), ch.sessid, suite, x25519.Base(priv))
-    sha256.Write(mut h.th, sh)
+    sh := serverHello(rnd(p, "random", 32), ch.sessid, suite, crypto.x25519.Base(priv))
+    crypto.sha256.Write(mut h.th, sh)
     zero := zeros(32)
-    early := hkdf.Extract([]byte{}, zero)
-    hsS := hkdf.Extract(deriveSecret(early, "derived", sha256.Sum256([]byte{})), shared)
-    t1 := sha256.Sum(h.th)
+    early := crypto.hkdf.Extract([]byte{}, zero)
+    hsS := crypto.hkdf.Extract(deriveSecret(early, "derived", crypto.sha256.Sum256([]byte{})), shared)
+    t1 := crypto.sha256.Sum(h.th)
     h.cHs = deriveSecret(hsS, "c hs traffic", t1)
     h.sHs = deriveSecret(hsS, "s hs traffic", t1)
-    h.wr = record.NewDir(suite, h.sHs)?
+    h.wr = internal.record.NewDir(suite, h.sHs)?
     h.keyed = true
-    h.rd = record.NewDir(suite, h.cHs)?
+    h.rd = internal.record.NewDir(suite, h.cHs)?
     // EncryptedExtensions・Certificate・CertificateVerify・Finished（暗号化 — 1 回の Seal）
     ee := encryptedExtensions(alpn)
-    sha256.Write(mut h.th, ee)
+    crypto.sha256.Write(mut h.th, ee)
     cert := certificate(p.chain)
-    sha256.Write(mut h.th, cert)
-    cv := certificateVerify(p, sha256.Sum(h.th))?
-    sha256.Write(mut h.th, cv)
-    fin := msg(tFinished, hmac.Sum256(record.ExpandLabel(h.sHs, "finished", []byte{}, 32), sha256.Sum(h.th)))
-    sha256.Write(mut h.th, fin)
-    t2 := sha256.Sum(h.th)
-    ms := hkdf.Extract(deriveSecret(hsS, "derived", sha256.Sum256([]byte{})), zero)
+    crypto.sha256.Write(mut h.th, cert)
+    cv := certificateVerify(p, crypto.sha256.Sum(h.th))?
+    crypto.sha256.Write(mut h.th, cv)
+    fin := msg(tFinished, crypto.hmac.Sum256(internal.record.ExpandLabel(h.sHs, "finished", []byte{}, 32), crypto.sha256.Sum(h.th)))
+    crypto.sha256.Write(mut h.th, fin)
+    t2 := crypto.sha256.Sum(h.th)
+    ms := crypto.hkdf.Extract(deriveSecret(hsS, "derived", crypto.sha256.Sum256([]byte{})), zero)
     h.cAp = deriveSecret(ms, "c ap traffic", t2)
     h.sAp = deriveSecret(ms, "s ap traffic", t2)
-    h.expFin = hmac.Sum256(record.ExpandLabel(h.cHs, "finished", []byte{}, 32), t2)
+    h.expFin = crypto.hmac.Sum256(internal.record.ExpandLabel(h.cHs, "finished", []byte{}, 32), t2)
     mut send := mut []byte{}
-    putBytes(mut send, plain(record.CtHandshake, sh))
+    putBytes(mut send, plain(internal.record.CtHandshake, sh))
     if len(ch.sessid) > 0 && !h.hrr {
-        putBytes(mut send, plain(record.CtCcs, []byte{1}))
+        putBytes(mut send, plain(internal.record.CtCcs, []byte{1}))
     }
     flight := cat(cat(ee, cert), cat(cv, fin))
-    putBytes(mut send, record.Seal(mut h.wr, record.CtHandshake, flight, 0))
-    h.wr = record.NewDir(suite, h.sAp)?
+    putBytes(mut send, internal.record.Seal(mut h.wr, internal.record.CtHandshake, flight, 0))
+    h.wr = internal.record.NewDir(suite, h.sAp)?
     h.ph = WaitFin{}
     return Out{send: freeze(send), app: []byte{}, done: false, closed: false, peer: 0 - 1, upd: false}, nil
 }
 
 // HelloRetryRequest（transcript の先頭を message_hash(ClientHello1) に置き換え — RFC 9846 4.4.1）
-@errors(record.Alert)
+@errors(internal.record.Alert)
 func helloRetry(h mut Hs, ch hello, suite int, m []byte) (Out, error?) {
     h.hrr = true
     h.suite = suite
     h.ch1 = ch.suites
-    mh := msg(tMessageHash, sha256.Sum256(m))
-    sha256.Write(mut h.th, mh)
+    mh := msg(tMessageHash, crypto.sha256.Sum256(m))
+    crypto.sha256.Write(mut h.th, mh)
     hr := hrrRandom()
     mut x := mut []byte{}
     put16(mut x, xSupportedVersions)
@@ -562,11 +562,11 @@ func helloRetry(h mut Hs, ch hello, suite int, m []byte) (Out, error?) {
     put16(mut x, 2)
     put16(mut x, groupX25519)
     hrr := helloBody(hr, ch.sessid, suite, freeze(x))
-    sha256.Write(mut h.th, hrr)
+    crypto.sha256.Write(mut h.th, hrr)
     mut send := mut []byte{}
-    putBytes(mut send, plain(record.CtHandshake, hrr))
+    putBytes(mut send, plain(internal.record.CtHandshake, hrr))
     if len(ch.sessid) > 0 {
-        putBytes(mut send, plain(record.CtCcs, []byte{1}))
+        putBytes(mut send, plain(internal.record.CtCcs, []byte{1}))
     }
     h.ph = WaitCH2{}
     return Out{send: freeze(send), app: []byte{}, done: false, closed: false, peer: 0 - 1, upd: false}, nil
@@ -656,7 +656,7 @@ func certificate(chain [][]byte) []byte {
 }
 
 // rsa_pss_rsae_sha256 の署名（64 × 0x20 ‖ "TLS 1.3, server CertificateVerify" ‖ 0 ‖ transcript の hash — RFC 9846 4.4.3・salt 32 バイト）
-@errors(record.Alert)
+@errors(internal.record.Alert)
 func certificateVerify(p Params, th []byte) ([]byte, error?) {
     mut c := mut []byte{}
     for i <- iter.Range(0, 64) {
@@ -665,7 +665,7 @@ func certificateVerify(p Params, th []byte) ([]byte, error?) {
     putBytes(mut c, bytes("TLS 1.3, server CertificateVerify"))
     put8(mut c, 0)
     putBytes(mut c, th)
-    sig, e := rsa.SignPSS(p.key, freeze(c), rnd(p, "salt", 32))
+    sig, e := crypto.rsa.SignPSS(p.key, freeze(c), rnd(p, "salt", 32))
     if e != nil {
         return []byte{}, alert(aInternal)
     }
@@ -678,7 +678,7 @@ func certificateVerify(p Params, th []byte) ([]byte, error?) {
 
 // Derive-Secret(secret, label, transcript の hash)（RFC 9846 7.1）
 func deriveSecret(secret []byte, label string, th []byte) []byte {
-    return record.ExpandLabel(secret, label, th, 32)
+    return internal.record.ExpandLabel(secret, label, th, 32)
 }
 
 // 暗号化しない record（頭 = 型 / 0x0303 / 長さ — 2^14 ずつ割る）
@@ -686,7 +686,7 @@ func plain(ct int, body []byte) []byte {
     mut o := mut []byte{}
     mut at := 0
     while at < len(body) || at == 0 {
-        n := if len(body) - at < record.MaxPlain { len(body) - at } else { record.MaxPlain }
+        n := if len(body) - at < internal.record.MaxPlain { len(body) - at } else { internal.record.MaxPlain }
         put8(mut o, ct)
         put16(mut o, 0x0303)
         put16(mut o, n)
@@ -714,24 +714,24 @@ func rnd(p Params, label string, n int) []byte {
     if len(p.seed) == 0 {
         return crypto.Rand(n)
     }
-    return sliceOf(sha256.Sum256(cat(p.seed, bytes(label))), 0, n)
+    return sliceOf(crypto.sha256.Sum256(cat(p.seed, bytes(label))), 0, n)
 }
 
 // ── 送り ──
 
 // application の平文 pt の record の列（AES-GCM の鍵の使用上限の手前なら KeyUpdate を先に送って鍵を進める）
-@errors(record.Alert)
+@errors(internal.record.Alert)
 func SealApp(h mut Hs, pt []byte) ([]byte, error?) { // 対の OpenApp は実需まで足さない（34 節 2 の注記）
     if !IsConnected(h) {
         return []byte{}, alert(aInternal)
     }
     mut pre := []byte{}
-    if h.upd || record.NeedUpdate(h.wr) {
-        pre = record.Seal(mut h.wr, record.CtHandshake, msg(tKeyUpdate, []byte{0}), 0)
-        record.Update(mut h.wr)?
+    if h.upd || internal.record.NeedUpdate(h.wr) {
+        pre = internal.record.Seal(mut h.wr, internal.record.CtHandshake, msg(tKeyUpdate, []byte{0}), 0)
+        internal.record.Update(mut h.wr)?
         h.upd = false
     }
-    return cat(pre, record.Seal(mut h.wr, record.CtApp, pt, 0)), nil
+    return cat(pre, internal.record.Seal(mut h.wr, internal.record.CtApp, pt, 0)), nil
 }
 
 // alert desc の record（送りの鍵があれば暗号化・無ければ平文。close_notify は warning〔1〕・他は fatal〔2〕）。送った後は閉じる
@@ -740,9 +740,9 @@ func AlertRecord(h mut Hs, desc int) []byte {
     body := []byte{byte(if desc == aCloseNotify { 1 } else { 2 }), byte(desc)}
     h.ph = Closed{}
     if h.keyed {
-        return record.Seal(mut h.wr, record.CtAlert, body, 0)
+        return internal.record.Seal(mut h.wr, internal.record.CtAlert, body, 0)
     }
-    return plain(record.CtAlert, body)
+    return plain(internal.record.CtAlert, body)
 }
 
 // close_notify の record

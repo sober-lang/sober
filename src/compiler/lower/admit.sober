@@ -48,6 +48,9 @@ func buildAdmitRt(st mut St) {
         buildLedger(mut st)
         buildSmGive(mut st)
         buildSmTake(mut st)
+        if st.winOn {
+            buildWinRt(mut st)
+        }
     }
 }
 

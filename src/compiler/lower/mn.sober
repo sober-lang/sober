@@ -39,6 +39,11 @@ const MN_SPINN = 33   // 眠る前に回っているワーカーの数（回る�
 const MN_SPINMAX = 2
 const MN_OLOCK = 48   // 出力の区間（out.sober）の鍵
 const MN_EXIT = 49    // 終わりの drain を始めた印
+// 列が空でないかもしれないワーカーのビット集合（ビット k = ワーカー k — MAXW 64 なので 1 語・線を独り占めする）。立てるのも倒すのも持ち主だけ
+// （空から積むときに立て・眠る前に自分の列が空なら倒す）なので、0 のビットの列は空。盗みと眠りの手前の見直しは立ったワーカーの列だけを読む
+// （列を使わない keep-alive の接続では 1 語の読みで済み、眠りごとにワーカー数ぶんの線を引かない）。立て損ねても失うのは盗みだけで、
+// デッドロックの判定（rt.mn_anydq_all）はこの語を見ずに全部の列を読む
+const MN_DQB = 56
 const MN_RLOCK = 64   // 共有の予備（塊・スロット）の鍵
 const MN_RTCB = 65    // 共有の予備の塊の鎖（TC_NEXT）
 const MN_TID = 80     // task の通し番号（trace）
@@ -348,6 +353,7 @@ func needMnRt(st mut St) {
     st.rtMnPullPop = addFunc(mut st, int(strLit(mut st, "rt.mn_pull_pop")), desugar.ListRef(list0(mut st)), TyPtr)
     st.rtMnSteal = addFunc(mut st, int(strLit(mut st, "rt.mn_steal")), desugar.ListRef(list0(mut st)), TyPtr)
     st.rtMnAnyDq = addFunc(mut st, int(strLit(mut st, "rt.mn_anydq")), desugar.ListRef(list0(mut st)), TyI64)
+    st.rtMnAnyDqAll = addFunc(mut st, int(strLit(mut st, "rt.mn_anydq_all")), desugar.ListRef(list0(mut st)), TyI64)
     st.rtMnTrace = addFunc(mut st, int(strLit(mut st, "rt.mn_trace")), desugar.ListRef(list2(mut st, TyI64, TyI64)), -1)
     st.rtTcbFree = addFunc(mut st, int(strLit(mut st, "rt.tcb_free")), desugar.ListRef(list1(mut st, TyPtr)), -1)
     st.rtMnPin = addFunc(mut st, int(strLit(mut st, "rt.mn_pin")), desugar.ListRef(list1(mut st, TyI64)), -1)
@@ -368,6 +374,7 @@ func buildMnRt(st mut St) {
     buildMnPullPop(mut st)
     buildMnSteal(mut st)
     buildMnAnyDq(mut st)
+    buildMnAnyDqAll(mut st)
     buildMnTrace(mut st)
     buildTcbFree(mut st)
     buildMnPin(mut st)
@@ -750,9 +757,36 @@ func buildTaskGoMn(st mut St) {
     lim := bin(mut st, BAdd, bl, bin(mut st, BMul, cmp(mut st, CEq, bl, iconst(mut st, 0)), iconst(mut st, DQ_CAP - 1)))
     condbr(mut st, cmp(mut st, CLt, had, lim), bDq, -1, bOv, -1)
     setCur(mut st, bDq)
+    // 空から積むなら MN_DQB の自分のビットを T の公開より前に立てる（T が見えればビットも見える。積みが続く間は列が空にならないのでビットは
+    // 立ったまま — 共有の線を書くのは空からの遷移だけ）。空の判定は had ≤ 0: 引き返す盗み手は H を一瞬 T + 1 にしてから戻すので had は −1 に
+    // 読めることがある（== 0 では立て損ねて、ビットが 0 のまま列に子が残る）。変異 44（網の自己検査）: 立てない
+    if st.rtMut != 44 {
+        bChk := newBlock(mut st)
+        bSet := newBlock(mut st)
+        bSet2 := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CLe, had, iconst(mut st, 0)), bChk, -1, bSet2, -1)
+        setCur(mut st, bChk)
+        bit := bin(mut st, BShl, iconst(mut st, 1), load(mut st, wk, WK_ID))
+        condbr(mut st, cmp(mut st, CEq, bin(mut st, BAnd, load(mut st, mn, MN_DQB), bit), iconst(mut st, 0)), bSet, -1, bSet2, -1)
+        setCur(mut st, bSet)
+        atomicXadd(mut st, mn, MN_DQB, bit)
+        br(mut st, bSet2, -1)
+        setCur(mut st, bSet2)
+    }
     store(mut st, gepWord(mut st, wk, bin(mut st, BAdd, bin(mut st, BAnd, dt, iconst(mut st, DQ_CAP - 1)), iconst(mut st, WK_DQ))), 0, ptoi(mut st, 1))
     // T を xchg で進める（全順序の柵 — 公開してから暇の数を読む: 眠る側は暇の数を足してから列を見る）
     atomicXchg(mut st, wk, WK_DT, bin(mut st, BAdd, dt, iconst(mut st, 1)))
+    // 変異 45（網の自己検査）: 積んだ直後に自分のビットを倒す（空でない列のビットが 0 — 盗みから見えない）
+    if st.rtMut == 45 {
+        bC := newBlock(mut st)
+        bC2 := newBlock(mut st)
+        bit := bin(mut st, BShl, iconst(mut st, 1), load(mut st, wk, WK_ID))
+        condbr(mut st, cmp(mut st, CNe, bin(mut st, BAnd, load(mut st, mn, MN_DQB), bit), iconst(mut st, 0)), bC, -1, bC2, -1)
+        setCur(mut st, bC)
+        atomicXadd(mut st, mn, MN_DQB, bin(mut st, BSub, iconst(mut st, 0), bit))
+        br(mut st, bC2, -1)
+        setCur(mut st, bC2)
+    }
     br(mut st, bPushed, list1(mut st, cmp(mut st, CGe, had, iconst(mut st, DQ_NEED))))
     // あふれ（列に未着手の子が上限の本数 — 生む速さに掃く速さが追いつかない）: 子を積まずに今ここで走らせ、親は自分の走れる積みへ譲る
     // （未着手の子の上限 = ワーカーあたり DQ_CAP − 1 — language.md 11 節「未着手の子の上限」。親は積みに残るので子が待っても詰まらない・
@@ -818,8 +852,8 @@ func buildMnPullPop(st mut St) {
     ret(mut st, itop(mut st, h))
 }
 
-// rt.mn_steal() ptr（暇なワーカーから — Skynet 回収 (a)）: 自分の次の番号から一巡し、列が空でない被害者の頭から未着手の子を 1 つ盗む
-// （無ければ 0）。被害者の鍵の中で h = H・T > h を見て、H = h + 1 を xchg（柵）して T を読み直す: T ≤ h なら持ち主が底から取った（衝突）—
+// rt.mn_steal() ptr（暇なワーカーから — Skynet 回収 (a)）: MN_DQB の立ったワーカーを自分の次の番号から一巡し、列が空でない被害者の頭から
+// 未着手の子を 1 つ盗む（無ければ 0）。被害者の鍵の中で h = H・T > h を見て、H = h + 1 を xchg（柵）して T を読み直す: T ≤ h なら持ち主が底から取った（衝突）—
 // H = h に戻して退く。取れたら q[h] をその後で読む（前に読むと、持ち主が h を底から取って同じ h に積み直す間に古い子を掴む — 子が 2 回走り、
 // 終わった塊が再開されて rt.task_start_mn が戻る）。持ち主は T − H < DQ_CAP − 1 までしか積まない — H を進めた盗み手が
 // 読む前に添字 h + DQ_CAP（同じ位置）へ積まれない
@@ -827,31 +861,40 @@ func buildMnSteal(st mut St) {
     begin(mut st, st.rtMnSteal)
     mn := globaladdr(mut st, st.mnG)
     me := load(mut st, globaladdr(mut st, st.wkG), WK_ID)
-    n := load(mut st, mn, MN_N)
     zero := iconst(mut st, 0)
+    // 自分より上の番号（x）を先に、下の番号（rest）を後に — 盗み手ごとに始まりがずれる（被害者の鍵へ殺到しない）
+    db := load(mut st, mn, MN_DQB)
+    mb := bin(mut st, BShl, iconst(mut st, 1), me)
+    above := bin(mut st, BShl, bin(mut st, BSub, zero, mb), iconst(mut st, 1))
     loop := newBlock(mut st)
-    i := param(mut st, loop, TyI64)
+    x := param(mut st, loop, TyI64)
+    rest := param(mut st, loop, TyI64)
     body := newBlock(mut st)
+    bSwap := newBlock(mut st)
     bTry := newBlock(mut st)
     bRd := newBlock(mut st)
     bOk := newBlock(mut st)
     bBack := newBlock(mut st)
     bFail := newBlock(mut st)
     next := newBlock(mut st)
+    nx := param(mut st, next, TyI64)
+    nrest := param(mut st, next, TyI64)
     done := newBlock(mut st)
-    br(mut st, loop, list1(mut st, iconst(mut st, 1)))
+    br(mut st, loop, list2(mut st, bin(mut st, BAnd, db, above), bin(mut st, BAnd, db, bin(mut st, BSub, mb, iconst(mut st, 1)))))
     setCur(mut st, loop)
-    condbr(mut st, cmp(mut st, CLt, i, n), body, -1, done, -1)
+    condbr(mut st, cmp(mut st, CNe, x, zero), body, -1, bSwap, -1)
+    setCur(mut st, bSwap)
+    condbr(mut st, cmp(mut st, CNe, rest, zero), loop, list2(mut st, rest, zero), done, -1)
     setCur(mut st, body)
-    v0 := bin(mut st, BAdd, me, i)
-    v := bin(mut st, BSub, v0, bin(mut st, BMul, n, cmp(mut st, CGe, v0, n)))
+    v := bin(mut st, BCtz, x, x)
+    x2 := bin(mut st, BAnd, x, bin(mut st, BSub, x, iconst(mut st, 1)))
     // 表がまだ無いワーカー（mn_start が順に起こしている途中 — 番地 0）は飛ばす
     wa := load(mut st, gepWord(mut st, mn, bin(mut st, BAdd, v, iconst(mut st, MN_WK))), 0)
     bHas := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CNe, wa, zero), bHas, -1, next, -1)
+    condbr(mut st, cmp(mut st, CNe, wa, zero), bHas, -1, next, list2(mut st, x2, rest))
     setCur(mut st, bHas)
     wp := itop(mut st, wa)
-    condbr(mut st, cmp(mut st, CGt, load(mut st, wp, WK_DT), load(mut st, wp, WK_DH)), bTry, -1, next, -1)
+    condbr(mut st, cmp(mut st, CGt, load(mut st, wp, WK_DT), load(mut st, wp, WK_DH)), bTry, -1, next, list2(mut st, x2, rest))
     setCur(mut st, bTry)
     // 変異 6（開発用 — 盗みの網の自己検査）: 盗み手が被害者の鍵を取らない（盗み手どうしが同じ h を取る — 子が 2 回走る）
     if st.rtMut != 6 {
@@ -868,21 +911,53 @@ func buildMnSteal(st mut St) {
     br(mut st, bFail, -1)
     setCur(mut st, bFail)
     store(mut st, wp, WK_DLOCK, zero)
-    br(mut st, next, -1)
+    br(mut st, next, list2(mut st, x2, rest))
     // 取れた: q[h] は確認の後・鍵の中で読む（持ち主は添字 h へ底から届けば衝突で鍵を待つ — それまで h の位置は動かない）
     setCur(mut st, bOk)
     t := load(mut st, gepWord(mut st, wp, bin(mut st, BAdd, bin(mut st, BAnd, h, iconst(mut st, DQ_CAP - 1)), iconst(mut st, WK_DQ))), 0)
     store(mut st, wp, WK_DLOCK, zero)
     ret(mut st, itop(mut st, t))
     setCur(mut st, next)
-    br(mut st, loop, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))))
+    br(mut st, loop, list2(mut st, nx, nrest))
     setCur(mut st, done)
     ret(mut st, itop(mut st, zero))
 }
 
-// rt.mn_anydq() i64: どれかのワーカーの列が空でないか（素の読み — 回る者・眠る前の見直し・デッドロックの判定から。表がまだ無いワーカーは飛ばす）
+// rt.mn_anydq() i64: どれかのワーカーの列が空でないか（素の読み — 眠りの手前の見直し・起こしの連鎖から）。読むのは MN_DQB の立ったワーカーの列だけ
 func buildMnAnyDq(st mut St) {
     begin(mut st, st.rtMnAnyDq)
+    mn := globaladdr(mut st, st.mnG)
+    zero := iconst(mut st, 0)
+    loop := newBlock(mut st)
+    x := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    yes := newBlock(mut st)
+    next := newBlock(mut st)
+    nx := param(mut st, next, TyI64)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, load(mut st, mn, MN_DQB)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CNe, x, zero), body, -1, done, -1)
+    setCur(mut st, body)
+    k := bin(mut st, BCtz, x, x)
+    x2 := bin(mut st, BAnd, x, bin(mut st, BSub, x, iconst(mut st, 1)))
+    wa := load(mut st, gepWord(mut st, mn, bin(mut st, BAdd, k, iconst(mut st, MN_WK))), 0)
+    bHas := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, wa, zero), bHas, -1, next, list1(mut st, x2))
+    setCur(mut st, bHas)
+    wp := itop(mut st, wa)
+    condbr(mut st, cmp(mut st, CGt, load(mut st, wp, WK_DT), load(mut st, wp, WK_DH)), yes, -1, next, list1(mut st, x2))
+    setCur(mut st, yes)
+    ret(mut st, iconst(mut st, 1))
+    setCur(mut st, next)
+    br(mut st, loop, list1(mut st, nx))
+    setCur(mut st, done)
+    ret(mut st, zero)
+}
+
+// rt.mn_anydq_all() i64: 全ワーカーの列を読む版（デッドロックの判定 — MN_DQB を信用しない最後の網・眠る前に回る間の見直し。表がまだ無いワーカーは飛ばす）
+func buildMnAnyDqAll(st mut St) {
+    begin(mut st, st.rtMnAnyDqAll)
     mn := globaladdr(mut st, st.mnG)
     loop := newBlock(mut st)
     k := param(mut st, loop, TyI64)
@@ -1172,7 +1247,9 @@ func buildMnNext(st mut St) {
     condbr(mut st, cmp(mut st, CLt, spi, iconst(mut st, MN_SPIN)), spb, -1, spOut, -1)
     setCur(mut st, spb)
     seen0 := bin(mut st, BOr, cmp(mut st, CNe, load(mut st, wk, WK_INBOX), zero), cmp(mut st, CNe, load(mut st, mn, MN_PHEAD), zero))
-    seen := bin(mut st, BOr, seen0, call(mut st, st.rtMnAnyDq, list0(mut st)))
+    // 回る間の見直しは全部の列を読む版（rt.mn_anydq_all — 回る回数 MN_SPIN は 1 周の重さ込みで眠りまでの時間を決める: 要約の版にすると周が軽くなって
+    // 早く眠り、spawn → Join の往復の重い形で眠りと起こしが増える。ring に io のあるワーカーはここを通らない）
+    seen := bin(mut st, BOr, seen0, call(mut st, st.rtMnAnyDqAll, list0(mut st)))
     condbr(mut st, seen, spSeen, -1, spn, -1)
     setCur(mut st, spn)
     atomicPause(mut st)
@@ -1197,6 +1274,27 @@ func buildMnNext(st mut St) {
     ret(mut st, gp)
     // 眠る: 眠りの語 = 1・暇の数 + 1 → 見直し
     setCur(mut st, bSleep)
+    // 眠る前に MN_DQB の自分のビットを倒す（ここへ来たのは自分の列を空と見た周 — 回っている間は積まない）。立っていれば自分の列の鍵の中で T と H を
+    // 読み直して空なら倒す。鍵の外の読みは信用しない: 引き返す盗み手は鍵を持ったまま H を一瞬 T と同じにしてから戻すので、その瞬間の「空」で倒すと
+    // H が戻った後に子が残ってビットが 0 になる。鍵の中なら H は動かず、積めるのは自分だけなので、倒した後に空でない列のビットが 0 になることはない。
+    // 倒すのは眠るときだけ（暇のたびに倒すと、spawn → Join の往復の重い形で立てと倒しが共有の線を往復する）。立ったままの空の列は走査が 1 本余分に
+    // なるだけ
+    bDqc := newBlock(mut st)
+    bDqcL := newBlock(mut st)
+    bDqcU := newBlock(mut st)
+    bDqc2 := newBlock(mut st)
+    dbit := bin(mut st, BShl, iconst(mut st, 1), load(mut st, wk, WK_ID))
+    condbr(mut st, cmp(mut st, CNe, bin(mut st, BAnd, load(mut st, mn, MN_DQB), dbit), iconst(mut st, 0)), bDqc, -1, bDqc2, -1)
+    setCur(mut st, bDqc)
+    spinLock(mut st, wk, WK_DLOCK)
+    condbr(mut st, cmp(mut st, CLe, load(mut st, wk, WK_DT), load(mut st, wk, WK_DH)), bDqcL, -1, bDqcU, -1)
+    setCur(mut st, bDqcL)
+    atomicXadd(mut st, mn, MN_DQB, bin(mut st, BSub, iconst(mut st, 0), dbit))
+    br(mut st, bDqcU, -1)
+    setCur(mut st, bDqcU)
+    store(mut st, wk, WK_DLOCK, zero)
+    br(mut st, bDqc2, -1)
+    setCur(mut st, bDqc2)
     bRing := newBlock(mut st)
     bFutex := newBlock(mut st)
     condbr(mut st, ioBusy(mut st, wk, zero), bRing, -1, bFutex, -1)
@@ -1255,7 +1353,7 @@ func buildMnNext(st mut St) {
     setCur(mut st, sd)
     bDl := newBlock(mut st)
     still0 := bin(mut st, BAnd, cmp(mut st, CEq, load(mut st, mn, MN_PHEAD), zero), cmp(mut st, CEq, load(mut st, mn, MN_IDLE), load(mut st, mn, MN_N)))
-    still := bin(mut st, BAnd, still0, cmp(mut st, CEq, call(mut st, st.rtMnAnyDq, list0(mut st)), zero))
+    still := bin(mut st, BAnd, still0, cmp(mut st, CEq, call(mut st, st.rtMnAnyDqAll, list0(mut st)), zero))
     condbr(mut st, still, bDl, -1, unsleep, -1)
     setCur(mut st, bDl)
     call(mut st, st.rtDeadlock, list0(mut st))
@@ -1748,14 +1846,14 @@ func slotReleaseMn(st mut St, tcb int) int {
     setCur(mut st, body)
     s := load(mut st, gepWord(mut st, sg, k), 0)
     bp := gepWord(mut st, meta, k)
-    used := bin(mut st, BSub, load(mut st, bp, W_BUMP), s)
+    used := winUsed(mut st, meta, s, bin(mut st, BSub, load(mut st, bp, W_BUMP), s), ptoi(mut st, tcb))
     // 既定より大きいスロット（自前の mmap — slot_new）はプールへ返さず munmap
     bBig := newBlock(mut st)
     bDef := newBlock(mut st)
     bGo := newBlock(mut st)
     sz := load(mut st, meta, W_SLOT_SIZE)
     // 既定より小さいスロット（task.sober smallRel）はワーカーの小さいスロットの鎖へ
-    smallRel(mut st, meta, k, s, used, sz, bBig, bDef, bGo)
+    smallRel(mut st, meta, k, s, used, sz, bBig, bDef, bGo, tcb)
     setCur(mut st, bBig)
     syscall(mut st, list3(mut st, iconst(mut st, 11), s, sz))
     if st.poolOn {

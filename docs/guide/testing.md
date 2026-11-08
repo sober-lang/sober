@@ -107,7 +107,7 @@ func count(l string) int {
 }
 ```
 
-The intermediate states of the subject are in `examples/guide/`. If you type along in your own package, compare with the state at the end of each section.
+The intermediate states of the subject are in `examples/guide/`. If you type along in your own package, compare with the state at the end of each section. `examples/guide/` is one module with a `sober.mod` (`module "example.com/guide"`), and the commands in this guide run from there (`cd examples/guide`). Import paths and qualifiers are every segment from the module root (`import "kvstore"` → `kvstore.Load`, `import "kvstore/mem"` → `kvstore.mem.Empty`).
 
 | Directory | State |
 | --- | --- |
@@ -149,20 +149,20 @@ func TestFormat() {
 Run it (`--run` selects tests by name prefix):
 
 ```sh
-$ sober test examples/guide/kv2 --run TestParse
+$ sober test kv2 --run TestParse
 ```
 
 Output:
 
 ```
-ok   examples/guide/kv2.TestParse
+ok   kv2.TestParse
 1 passed, 0 failed
 ```
 
 On `kvbug`, the version before the fixes, the same test fails, and `assert` prints the value of each part of the expression. `Parse` read none of the two pairs on the line (the loop condition is `<=` instead of `<`, so it tries to read one more piece after the trailing `;` and fails):
 
 ```sh
-$ sober test examples/guide/kvbug --run TestParse
+$ sober test kvbug --run TestParse
 ```
 
 Output:
@@ -170,8 +170,8 @@ Output:
 ```
 assert failed: len(ps) == 2
   len(ps) = 0
-panic: testing.AssertFailed{} at examples/guide/kvbug/kv_test.sober:10:5
-FAIL examples/guide/kvbug.TestParse (exit 101)
+panic: testing.AssertFailed{} at kvbug/kv_test.sober:10:5
+FAIL kvbug.TestParse (exit 101)
 0 passed, 1 failed
 ```
 
@@ -213,7 +213,7 @@ func same(a []Pair, b []Pair) bool {
 The seed of `quick.New()` is decided by the test's name, so every run draws the same inputs. Run it on `kvbug`, before the fixes:
 
 ```sh
-$ sober test examples/guide/kvbug --run TestRoundTrip
+$ sober test kvbug --run TestRoundTrip
 ```
 
 Output:
@@ -225,8 +225,8 @@ quick: falsified at trial 49 of 100 (seed 392200337, 92 shrink runs)
     String = ";"
   (1 items)
 assert failed: same(back, ps)
-panic: testing.AssertFailed{} at examples/guide/kvbug/kv_test.sober:26:13
-FAIL examples/guide/kvbug.TestRoundTrip (exit 101)
+panic: testing.AssertFailed{} at kvbug/kv_test.sober:26:13
+FAIL kvbug.TestRoundTrip (exit 101)
 0 passed, 1 failed
 ```
 
@@ -237,15 +237,15 @@ Run it again and the same trial gives the same counterexample: the same test nam
 Escape `;` and `=` too in `escape`, and fix the loop condition of section 1 back to `<`: that is the state at the end of section 2 (`kv2`; the third bug is still there, and section 4 finds it).
 
 ```sh
-$ sober test examples/guide/kv2
+$ sober test kv2
 ```
 
 Output:
 
 ```
-ok   examples/guide/kv2.TestParse
-ok   examples/guide/kv2.TestFormat
-ok   examples/guide/kv2.TestRoundTrip
+ok   kv2.TestParse
+ok   kv2.TestFormat
+ok   kv2.TestRoundTrip
 3 passed, 0 failed
 ```
 
@@ -256,24 +256,24 @@ All tests passing does not mean the tests are enough. Two measures.
 First, `--cover` shows which branches no test took (the output calls each side of a branch an arm):
 
 ```sh
-$ sober test examples/guide/kv2 --cover
+$ sober test kv2 --cover
 ```
 
 Output:
 
 ```
-ok   examples/guide/kv2.TestParse
-ok   examples/guide/kv2.TestFormat
-ok   examples/guide/kv2.TestRoundTrip
-cover: examples/guide/kv2 69.2% of 26 arms (fn 4/6)
-  examples/guide/kv2/kv.sober:26:9   then   never taken
-  examples/guide/kv2/kv.sober:47:32  catch  never taken
-  examples/guide/kv2/kv.sober:60:32  catch  never taken
-  examples/guide/kv2/kv.sober:75:6   fn     never called  (CountAll)
-  examples/guide/kv2/kv.sober:77:12  then   never taken
-  examples/guide/kv2/kv.sober:77:12  else   never taken
-  examples/guide/kv2/kv.sober:80:6   fn     never called  (count)
-  examples/guide/kv2/kv.sober:81:20  catch  never taken
+ok   kv2.TestParse
+ok   kv2.TestFormat
+ok   kv2.TestRoundTrip
+cover: kv2 69.2% of 26 arms (fn 4/6)
+  kv2/kv.sober:26:9   then   never taken
+  kv2/kv.sober:47:32  catch  never taken
+  kv2/kv.sober:60:32  catch  never taken
+  kv2/kv.sober:75:6   fn     never called  (CountAll)
+  kv2/kv.sober:77:12  then   never taken
+  kv2/kv.sober:77:12  else   never taken
+  kv2/kv.sober:80:6   fn     never called  (count)
+  kv2/kv.sober:81:20  catch  never taken
 3 passed, 0 failed
 ```
 
@@ -282,18 +282,18 @@ The `then` at `kv.sober:26:9` is the branch where `Parse` finds a piece without 
 Next, `--mutate` measures whether the tests really look at what they pass through. Every small breakage of the code (a mutant) goes into one executable, and for each mutant the tests that reach it run. If a test fails the mutant is killed; if all pass it survived.
 
 ```sh
-$ sober test examples/guide/kv2 --mutate
+$ sober test kv2 --mutate
 ```
 
 Output:
 
 ```
-ok   examples/guide/kv2.TestFormat
-ok   examples/guide/kv2.TestParse
-ok   examples/guide/kv2.TestRoundTrip
-mutate: examples/guide/kv2 94.4% killed (34 of 36 reached) · 0 unreached · 2 timeout
-  examples/guide/kv2/kv.sober:26:9 cond → false       survived  (reached by TestParse, TestRoundTrip)
-  examples/guide/kv2/kv.sober:26:14 >= → >             survived  (reached by TestParse, TestRoundTrip)
+ok   kv2.TestFormat
+ok   kv2.TestParse
+ok   kv2.TestRoundTrip
+mutate: kv2 94.4% killed (34 of 36 reached) · 0 unreached · 2 timeout
+  kv2/kv.sober:26:9        cond → false       survived  (reached by TestParse, TestRoundTrip)
+  kv2/kv.sober:26:14       >= → >             survived  (reached by TestParse, TestRoundTrip)
 3 passed, 0 failed
 ```
 
@@ -322,17 +322,17 @@ func badAt(s string) int {
 ```
 
 ```sh
-$ sober test examples/guide/kv3 --mutate
+$ sober test kv3 --mutate
 ```
 
 Output:
 
 ```
-ok   examples/guide/kv3.TestBadPiece
-ok   examples/guide/kv3.TestFormat
-ok   examples/guide/kv3.TestParse
-ok   examples/guide/kv3.TestRoundTrip
-mutate: examples/guide/kv3 100.0% killed (36 of 36 reached) · 0 unreached · 2 timeout
+ok   kv3.TestBadPiece
+ok   kv3.TestFormat
+ok   kv3.TestParse
+ok   kv3.TestRoundTrip
+mutate: kv3 100.0% killed (36 of 36 reached) · 0 unreached · 2 timeout
 4 passed, 0 failed
 ```
 
@@ -361,7 +361,7 @@ func TestAnyLine() {
 `sober test` tries the property 100 times, which does not find the bug even on `kvbug`. `sober fuzz` runs the same property until a deadline and grows inputs that open new branches, guided by coverage:
 
 ```sh
-$ sober fuzz examples/guide/kvbug --run TestAnyLine --time 5s
+$ sober fuzz kvbug --run TestAnyLine --time 5s
 ```
 
 Output:
@@ -369,44 +369,44 @@ Output:
 ```
 quick: fuzz: panic at trial 122 (seed 516221799, 43 shrink runs)
   String = "\\"
-panic: index out of range at examples/guide/kvbug/kv.sober:44:28
-quick: wrote examples/guide/kvbug/testdata/fuzz/TestAnyLine/0-6285beb84c4f3dee
+panic: index out of range at kvbug/kv.sober:44:28
+quick: wrote kvbug/testdata/fuzz/TestAnyLine/0-6285beb84c4f3dee
 panic: quick.Crashed{exit: 101} at std/quick/fuzz.sober:232:10
 ```
 
 `field` read past the end on `"\\"` (a line of a single `\`). `Format` never ends a line with a lone `\`, so the round trip could not reach this input. The counterexample is shrunk and written to `testdata/fuzz/TestAnyLine/`. From now on a plain `sober test` replays that file before its trials, so if the bug comes back it fails every time:
 
 ```sh
-$ sober test examples/guide/kvbug --run TestAnyLine
+$ sober test kvbug --run TestAnyLine
 ```
 
 Output:
 
 ```
-quick: panic in the corpus case examples/guide/kvbug/testdata/fuzz/TestAnyLine/0-6285beb84c4f3dee (seed 516221799, 20 shrink runs)
+quick: panic in the corpus case kvbug/testdata/fuzz/TestAnyLine/0-6285beb84c4f3dee (seed 516221799, 20 shrink runs)
   String = "\\"
-panic: index out of range at examples/guide/kvbug/kv.sober:44:28
+panic: index out of range at kvbug/kv.sober:44:28
 panic: quick.Crashed{exit: 101} at std/quick/fuzz.sober:232:10
-FAIL examples/guide/kvbug.TestAnyLine (exit 101)
+FAIL kvbug.TestAnyLine (exit 101)
 0 passed, 1 failed
 ```
 
 Add `j + 1 < len(b)` to the escape condition in `field` and you have the final state (`kv`). The fixed condition adds its own mutants, and this property kills them all:
 
 ```sh
-$ sober test examples/guide/kv --mutate
+$ sober test kv --mutate
 ```
 
 Output:
 
 ```
-ok   examples/guide/kv.TestAnyLine
-ok   examples/guide/kv.TestBadPiece
-ok   examples/guide/kv.TestCountAll
-ok   examples/guide/kv.TestFormat
-ok   examples/guide/kv.TestParse
-ok   examples/guide/kv.TestRoundTrip
-mutate: examples/guide/kv 100.0% killed (40 of 40 reached) · 0 unreached · 3 timeout
+ok   kv.TestAnyLine
+ok   kv.TestBadPiece
+ok   kv.TestCountAll
+ok   kv.TestFormat
+ok   kv.TestParse
+ok   kv.TestRoundTrip
+mutate: kv 100.0% killed (40 of 40 reached) · 0 unreached · 3 timeout
 6 passed, 0 failed
 ```
 
@@ -435,7 +435,7 @@ func TestCountAll() {
 `sober fuzz --sched` also varies the task schedule (the order tasks run in) by a seed on each trial. A failure that depends on the order can be replayed with the same interleaving from that seed, any number of times.
 
 ```sh
-$ sober fuzz examples/guide/kv --run TestCountAll --sched --time 2s
+$ sober fuzz kv --run TestCountAll --sched --time 2s
 ```
 
 Output:
@@ -507,8 +507,8 @@ package settings
 
 // Settings kept as one `key=value;key=value` line per file in a kvstore directory.
 
-import "examples/guide/kv"
-import "examples/guide/kvstore"
+import "kv"
+import "kvstore"
 
 // the value of key in the file name, or def when the file or the key is missing
 func Value(d kvstore.Dir, name string, key string, def string) string {
@@ -554,7 +554,7 @@ A double lives in a directory under the package it replaces, and its file names 
 
 ```sober
 // examples/guide/kvstore/mem/mem_double.sober
-@replaces("examples/guide/kvstore")
+@replaces("kvstore")
 package kvstore
 
 // A double of kvstore: the files live in a cell instead of on disk, and a directory from Failing refuses every write.
@@ -577,7 +577,7 @@ type Missing error {
 type Denied error {}
 
 // the files written so far, in the order of the writes
-const Files = cell.Cell[[]File]{}
+const Files = testing.cell.Cell[[]File]{}
 
 func Empty() Dir {
     return Dir{failing: false}
@@ -589,7 +589,7 @@ func Failing() Dir {
 
 @errors(Missing)
 func Load(d Dir, name string) (string, error?) {
-    fs := cell.Get(Files)
+    fs := testing.cell.Get(Files)
     mut i := len(fs) - 1
     while i >= 0 {
         if fs[i].name == name {
@@ -605,7 +605,7 @@ func Store(d Dir, name string, line string) error? {
     if d.failing {
         return Denied{}
     }
-    cell.Update(Files, (fs []File) => append(fs, File{name: name, line: line}))
+    testing.cell.Update(Files, (fs []File) => append(fs, File{name: name, line: line}))
     return nil
 }
 ```
@@ -616,57 +616,57 @@ A test package names the doubles it uses with `@doubles` before the package clau
 
 ```sober
 // examples/guide/settings/settings_test.sober
-@doubles("examples/guide/kvstore/mem")
+@doubles("kvstore/mem")
 package settings
 
-import "examples/guide/kvstore/mem"
+import "kvstore/mem"
 import "std/testing/cell"
 
 func TestSetThenValue() {
-    d := mem.Empty()
+    d := kvstore.mem.Empty()
     assert(Set(d, "app", "port", "80") == nil)
     assert(Set(d, "app", "host", "a=b") == nil)
     assert(Set(d, "app", "port", "8080") == nil)
     assert(Value(d, "app", "port", "") == "8080")
     assert(Value(d, "app", "host", "") == "a=b")
     assert(Value(d, "app", "user", "-") == "-")
-    files := cell.Get(mem.Files)
+    files := testing.cell.Get(kvstore.mem.Files)
     assert(files[len(files) - 1].line == "port=8080;host=a\\=b")
 }
 
 func TestMissingFile() {
-    assert(Value(mem.Empty(), "app", "port", "8080") == "8080")
+    assert(Value(kvstore.mem.Empty(), "app", "port", "8080") == "8080")
 }
 
 func TestDenied() {
-    assert(Set(mem.Failing(), "app", "port", "80") != nil)
-    assert(len(cell.Get(mem.Files)) == 0)
+    assert(Set(kvstore.mem.Failing(), "app", "port", "80") != nil)
+    assert(len(testing.cell.Get(kvstore.mem.Files)) == 0)
 }
 ```
 
 ```sh
-$ sober test examples/guide/settings
+$ sober test settings
 ```
 
 Output:
 
 ```
-ok   examples/guide/settings.TestSetThenValue
-ok   examples/guide/settings.TestMissingFile
-ok   examples/guide/settings.TestDenied
+ok   settings.TestSetThenValue
+ok   settings.TestMissingFile
+ok   settings.TestDenied
 3 passed, 0 failed
 ```
 
 In that test's build, every file that imports `kvstore` reads the double (`settings.sober` too). The production build and check never read `_double.sober`. `--wiring` lists which test runs with which double (it builds the tests but does not run them).
 
 ```sh
-$ sober test examples/guide/settings --wiring
+$ sober test settings --wiring
 ```
 
 Output:
 
 ```
-examples/guide/settings: examples/guide/kvstore <= examples/guide/kvstore/mem
+settings: kvstore <= kvstore/mem
 ```
 
 A double cannot drift away from the real package. For each name both have, the function signatures, the types of struct fields and `@errors` are checked against each other, and the double's effects (derived by the analyzer) must lie within the real package's `@effects`. A double with an effect the real package does not have (a panic, or io where the real package has none) is rejected. Names the real package has and the double lacks can be left out: write only what the tests use.

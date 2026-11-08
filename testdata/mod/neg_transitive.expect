@@ -1,0 +1,2 @@
+sober: load error at ../kvdeps/sober.mod:3:1: a dependency's own dep and alias lines are not supported in this version
+(check exit 1)

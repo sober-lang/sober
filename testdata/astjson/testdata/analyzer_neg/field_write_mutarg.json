@@ -90,14 +90,14 @@
             "values": [
               {
                 "k": "composite",
-                "type_name": "box.Box",
+                "type_name": "testdata.fieldpkg.box.Box",
                 "elems": [
                   {
                     "key": "n",
                     "value": {
                       "k": "int",
                       "value": 0,
-                      "tok": 41
+                      "tok": 45
                     }
                   },
                   {
@@ -105,56 +105,26 @@
                     "value": {
                       "k": "strlit",
                       "value": "x",
-                      "tok": 45
+                      "tok": 49
                     }
                   },
                   {
                     "key": "inner",
                     "value": {
                       "k": "composite",
-                      "type_name": "box.Inner",
+                      "type_name": "testdata.fieldpkg.box.Inner",
                       "elems": [
                         {
                           "key": "k",
                           "value": {
                             "k": "int",
                             "value": 0,
-                            "tok": 55
+                            "tok": 63
                           }
                         }
                       ],
-                      "tok": 49,
+                      "tok": 53,
                       "type_args": []
-                    }
-                  },
-                  {
-                    "key": "xs",
-                    "value": {
-                      "k": "slicelit",
-                      "elem": {
-                        "k": "name",
-                        "name": "int"
-                      },
-                      "elems": [],
-                      "mut": true,
-                      "tok": 61
-                    }
-                  },
-                  {
-                    "key": "tags",
-                    "value": {
-                      "k": "maplit",
-                      "key": {
-                        "k": "name",
-                        "name": "string"
-                      },
-                      "value": {
-                        "k": "name",
-                        "name": "int"
-                      },
-                      "entries": [],
-                      "mut": true,
-                      "tok": 70
                     }
                   }
                 ],
@@ -171,16 +141,16 @@
               "callee": {
                 "k": "ident",
                 "name": "push",
-                "tok": 79
+                "tok": 67
               },
               "args": [
                 {
                   "k": "mut_arg",
                   "name": "b.xs",
-                  "tok": 82
+                  "tok": 70
                 }
               ],
-              "tok": 80
+              "tok": 68
             }
           },
           {
@@ -190,7 +160,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 87
+                "tok": 75
               },
               "args": [
                 {
@@ -198,13 +168,13 @@
                   "base": {
                     "k": "ident",
                     "name": "b",
-                    "tok": 89
+                    "tok": 77
                   },
                   "field": "n",
-                  "tok": 91
+                  "tok": 79
                 }
               ],
-              "tok": 88
+              "tok": 76
             }
           }
         ]
@@ -213,7 +183,7 @@
       "bodiless": false,
       "span": {
         "start": 27,
-        "end": 96
+        "end": 84
       },
       "sig_end": 31
     }

@@ -199,6 +199,42 @@
           "callees": []
         },
         {
+          "name": "LoadRaw16",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "load16"
+          ]
+        },
+        {
+          "name": "StoreRaw16",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "store16"
+          ]
+        },
+        {
+          "name": "LoadRaw32",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "load32"
+          ]
+        },
+        {
+          "name": "StoreRaw32",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "store32"
+          ]
+        },
+        {
           "name": "RenewDense",
           "expands": true,
           "mut_def": false,

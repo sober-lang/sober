@@ -61,18 +61,23 @@
               "callee": {
                 "k": "selector",
                 "base": {
-                  "k": "ident",
-                  "name": "cell",
-                  "tok": 39
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "testing",
+                    "tok": 41
+                  },
+                  "field": "cell",
+                  "tok": 43
                 },
                 "field": "Set",
-                "tok": 41
+                "tok": 45
               },
               "args": [
                 {
                   "k": "ident",
                   "name": "C",
-                  "tok": 43
+                  "tok": 47
                 },
                 {
                   "k": "lambda",
@@ -88,19 +93,19 @@
                     "lhs": {
                       "k": "ident",
                       "name": "n",
-                      "tok": 49
+                      "tok": 53
                     },
                     "rhs": {
                       "k": "int",
                       "value": 1,
-                      "tok": 51
+                      "tok": 55
                     },
-                    "tok": 50
+                    "tok": 54
                   },
-                  "tok": 48
+                  "tok": 52
                 }
               ],
-              "tok": 42
+              "tok": 46
             }
           },
           {
@@ -110,7 +115,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 54
+                "tok": 58
               },
               "args": [
                 {
@@ -121,31 +126,31 @@
                     "callee": {
                       "k": "ident",
                       "name": "One",
-                      "tok": 56
+                      "tok": 60
                     },
                     "args": [],
-                    "tok": 57
+                    "tok": 61
                   },
                   "rhs": {
                     "k": "int",
                     "value": 1,
-                    "tok": 60
+                    "tok": 64
                   },
-                  "tok": 59
+                  "tok": 63
                 }
               ],
-              "tok": 55
+              "tok": 59
             }
           }
         ]
       },
-      "tok": 35,
+      "tok": 37,
       "bodiless": false,
       "span": {
-        "start": 34,
-        "end": 65
+        "start": 36,
+        "end": 69
       },
-      "sig_end": 38
+      "sig_end": 40
     }
   ],
   "consts": [
@@ -153,7 +158,7 @@
       "name": "C",
       "expr": {
         "k": "composite",
-        "type_name": "cell.Cell",
+        "type_name": "testing.cell.Cell",
         "elems": [
           {
             "key": "init",
@@ -168,9 +173,9 @@
               "body": {
                 "k": "ident",
                 "name": "n",
-                "tok": 31
+                "tok": 33
               },
-              "tok": 30
+              "tok": 32
             }
           }
         ],
@@ -185,7 +190,7 @@
       "tok": 16,
       "span": {
         "start": 15,
-        "end": 34
+        "end": 36
       }
     }
   ]

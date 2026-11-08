@@ -4,7 +4,7 @@
 
 `import "std/tls"`
 
-TLS 1.3 のサーバ（RFC 9846 — X25519・AES-128-GCM / ChaCha20-Poly1305・RSA-PSS の証明書・resumption / 0-RTT なし）。tls.Serve(addr, cfg, k) が net.Serve を包み、handshake が済んだ接続だけを k に渡す（handshake 中の接続を利用者に触らせない）。tls.Conn は net.Conn と同じ顔の同一性の型（写せない・外へ出せない・give: で渡せない）で、tls.Recv / tls.Send が net.Recv / net.Send と同じ形。net.Conn と顔が違う唯一の点: tls.Recv を break で途中で抜けると、その接続の読みは終わる（次の tls.Recv は Closed — 切片に残った record を持ち越さない）。誤りは粗い 3 ラベル（HandshakeFailed〔alert の種は欄〕・BadRecord・Closed）
+TLS 1.3 のサーバ（RFC 9846 — X25519・AES-128-GCM / ChaCha20-Poly1305・RSA-PSS の証明書・resumption / 0-RTT なし）。tls.Serve(addr, cfg, k) が net.Serve を包み、handshake が済んだ接続だけを k に渡す（handshake 中の接続を利用者に触らせない）。tls.Conn は net.Conn と同じ顔の同一性の型（写せない・外へ出せない・give: で渡せない）で、tls.Recv / tls.Send が net.Recv / net.Send と同じ形。net.Conn と顔が違う唯一の点: tls.Recv を break で途中で抜けると、その接続の読みは終わる（次の tls.Recv は Closed — 切片に残った record を持ち越さない）。誤りは粗い 3 ラベル（HandshakeFailed〔alert の種は欄〕・BadRecord・Closed）。信頼の起点の値 Roots（ParseRoots が作る — 私的 PKI の CA を足すとき std/http/client の Policy の extraRoots: に渡す）もここに住む
 
 ## HandshakeFailed
 
@@ -37,12 +37,31 @@ type Closed error
 ```sober
 type Config struct {
     chain [][]byte
-    key rsa.PrivateKey
+    key crypto.rsa.PrivateKey
     alpn []string
 }
 ```
 
 サーバの設定（Load / Parse が作る — 証明書の鎖・葉の鍵・受ける ALPN）
+
+## Roots
+
+```sober
+type Roots struct {
+    certs []internal.x509.Cert
+    seal rootsSeal
+}
+```
+
+足す信頼の起点（ParseRoots が作る — 封の型。中身は読めた CERTIFICATE の列）
+
+## BadRoots
+
+```sober
+type BadRoots error
+```
+
+ParseRoots の PEM が読めない（CERTIFICATE の塊が無い・塊の DER が証明書の形でない）
 
 ## Conn
 
@@ -50,7 +69,7 @@ type Config struct {
 type Conn struct {
     c net.Conn
     blk []int
-    wr record.Dir
+    wr internal.record.Dir
     seal tlsSeal
 }
 ```
@@ -68,14 +87,26 @@ handshake の済んだ接続 1 本の処理（名前つきの関数型 — 値�
 ## Parse
 
 ```sober
-@errors(pem.Bad, rsa.BadKey)
+@errors(crypto.pem.Bad, crypto.rsa.BadKey)
 @effects()
 func Parse(certPem string, keyPem string) (Config, error?)
 ```
 
 PEM の証明書の鎖（CERTIFICATE が 1 つ以上 — 葉が先頭）と PKCS#8 の RSA の鍵の Config（ALPN の既定 = http/1.1 — 変えるなら Alpn）
 
-失敗のラベル: `pem.Bad`・`rsa.BadKey`
+失敗のラベル: `crypto.pem.Bad`・`crypto.rsa.BadKey`
+
+## ParseRoots
+
+```sober
+@errors(BadRoots)
+@effects()
+func ParseRoots(pem string) (Roots, error?)
+```
+
+PEM の文字列 pem の CERTIFICATE の塊を全部読んだ信頼の起点（私的 PKI の CA — 外部ファイルを読む口は作らない。読めない塊が 1 つでもあれば BadRoots）
+
+失敗のラベル: [`BadRoots`](#badroots)
 
 ## Alpn
 
@@ -89,14 +120,14 @@ func Alpn(cfg Config, alpn []string) Config
 ## Load
 
 ```sober
-@errors(pem.Bad, rsa.BadKey, strings.InvalidUtf8, io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired)
+@errors(crypto.pem.Bad, crypto.rsa.BadKey, strings.BadUtf8, io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired)
 @effects(io, nondet)
 func Load(certPath string, keyPath string) (Config, error?)
 ```
 
 Parse のファイル版（certPath / keyPath を読む）
 
-失敗のラベル: `pem.Bad`・`rsa.BadKey`・`strings.InvalidUtf8`・`io.NotFound`・`io.Denied`・`io.Other`・`io.Timeout`・`io.Expired`
+失敗のラベル: `crypto.pem.Bad`・`crypto.rsa.BadKey`・`strings.BadUtf8`・`io.NotFound`・`io.Denied`・`io.Other`・`io.Timeout`・`io.Expired`
 
 ## Serve
 
@@ -126,7 +157,7 @@ type Overflow panic
 func Recv(c Conn, k func([]byte)) error?
 ```
 
-c の受けた application の平文を k に順に渡す（呼び出し形の生成元 — `for b <- tls.Recv(c)? { … }`）。相手の close\_notify で nil。受けの表は hs.Feed の Connected の枝が持つ（受けの方向 rd から作った Hs に枠を 1 つずつ hs.Step〔mut なしの入口 — 表は Feed と共有〕で通す — 表を 1 か所に）。受けた KeyUpdate は受けの鍵を進め、update\_requested なら次の Send が先に自分の KeyUpdate を送る。改竄・形の誤り・想定外は alert を送って BadRecord。k が Put で積んだ分は、受けた切片 1 つ分の record を k へ配り終えるたびに送る（Flush — 次の受けを待つ前に。pump）。1 つの接続で 1 度だけ回せる（break で途中で抜けた後・2 度目は Closed）
+c の受けた application の平文を k に順に渡す（呼び出し形の生成元 — `for b <- tls.Recv(c)? { … }`）。相手の close\_notify で nil。受けの表は internal.hs.Feed の Connected の枝が持つ（受けの方向 rd から作った Hs に枠を 1 つずつ internal.hs.Step〔mut なしの入口 — 表は Feed と共有〕で通す — 表を 1 か所に）。受けた KeyUpdate は受けの鍵を進め、update\_requested なら次の Send が先に自分の KeyUpdate を送る。改竄・形の誤り・想定外は alert を送って BadRecord。k が Put で積んだ分は、受けた切片 1 つ分の record を k へ配り終えるたびに送る（Flush — 次の受けを待つ前に。pump）。1 つの接続で 1 度だけ回せる（break で途中で抜けた後・2 度目は Closed）
 
 失敗のラベル: [`BadRecord`](#badrecord)・[`Closed`](#closed)
 

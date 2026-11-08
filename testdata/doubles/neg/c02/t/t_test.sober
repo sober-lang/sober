@@ -3,6 +3,6 @@ package t
 import "std/testing/cell"
 
 func TestT() {
-    h := cell.Cell[int]{}
-    cell.Set(h, 1)
+    h := testing.cell.Cell[int]{}
+    testing.cell.Set(h, 1)
 }

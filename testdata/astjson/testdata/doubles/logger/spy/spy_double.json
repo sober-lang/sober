@@ -32,18 +32,23 @@
               "callee": {
                 "k": "selector",
                 "base": {
-                  "k": "ident",
-                  "name": "cell",
-                  "tok": 33
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "testing",
+                    "tok": 35
+                  },
+                  "field": "cell",
+                  "tok": 37
                 },
                 "field": "Update",
-                "tok": 35
+                "tok": 39
               },
               "args": [
                 {
                   "k": "ident",
                   "name": "Lines",
-                  "tok": 37
+                  "tok": 41
                 },
                 {
                   "k": "lambda",
@@ -65,37 +70,37 @@
                     "callee": {
                       "k": "ident",
                       "name": "append",
-                      "tok": 46
+                      "tok": 50
                     },
                     "args": [
                       {
                         "k": "ident",
                         "name": "ls",
-                        "tok": 48
+                        "tok": 52
                       },
                       {
                         "k": "ident",
                         "name": "msg",
-                        "tok": 50
+                        "tok": 54
                       }
                     ],
-                    "tok": 47
+                    "tok": 51
                   },
-                  "tok": 45
+                  "tok": 49
                 }
               ],
-              "tok": 36
+              "tok": 40
             }
           }
         ]
       },
-      "tok": 27,
+      "tok": 29,
       "bodiless": false,
       "span": {
-        "start": 26,
-        "end": 56
+        "start": 28,
+        "end": 60
       },
-      "sig_end": 32
+      "sig_end": 34
     }
   ],
   "consts": [
@@ -103,7 +108,7 @@
       "name": "Lines",
       "expr": {
         "k": "composite",
-        "type_name": "cell.Cell",
+        "type_name": "testing.cell.Cell",
         "elems": [],
         "tok": 15,
         "type_args": [
@@ -120,7 +125,7 @@
       "tok": 13,
       "span": {
         "start": 12,
-        "end": 26
+        "end": 28
       }
     }
   ],

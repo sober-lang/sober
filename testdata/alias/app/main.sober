@@ -6,17 +6,17 @@ import "testdata/alias/wrap"
 // （双子の alias_x はここで lib を import する — 行を揃える）
 
 func main() {
-    mut w := wrap.Work{}
+    mut w := testdata.alias.wrap.Work{}
     xs := []int{3, 5, 10}
     for x <- xs {
-        wrap.Feed(mut w, x)
+        testdata.alias.wrap.Feed(mut w, x)
     }
-    r := wrap.Mean(w)
-    println(wrap.Value(r), wrap.Value(wrap.Mean(wrap.Work{})))
-    println(wrap.Twice((x int) => x * 3, 2))
-    a := wrap.NewAcc(9)
-    println(wrap.Last(a))
-    mut ws := mut []wrap.W2{}
+    r := testdata.alias.wrap.Mean(w)
+    println(testdata.alias.wrap.Value(r), testdata.alias.wrap.Value(testdata.alias.wrap.Mean(testdata.alias.wrap.Work{})))
+    println(testdata.alias.wrap.Twice((x int) => x * 3, 2))
+    a := testdata.alias.wrap.NewAcc(9)
+    println(testdata.alias.wrap.Last(a))
+    mut ws := mut []testdata.alias.wrap.W2{}
     ws = append(ws, w)
     println(len(ws), other(ws[0]))
 }

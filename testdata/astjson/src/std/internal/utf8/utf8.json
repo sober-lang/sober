@@ -103,7 +103,7 @@
                       },
                       {
                         "k": "composite",
-                        "type_name": "strings.InvalidUtf8",
+                        "type_name": "strings.BadUtf8",
                         "elems": [
                           {
                             "key": "pos",

@@ -1,0 +1,182 @@
+package loader
+
+// 列の要素の欄への代入（`xs[i].f = v`・`a.xs[i].p.q = v`）と添字への直の複合代入（`xs[i] += v` — 欄の列が空）: 要素を丸ごと読んで欄を差し替えて
+// 書き戻す固定テンプレートで写す:
+//
+//     B[I].p op= V   →   $eaKi := I; $eaKv := V; mut $eaKt := B[$eaKi]; $eaKt.p op= $eaKv; B[$eaKi] = $eaKt
+//
+// p は欄の列（1 つ以上）・op は = か複合代入の演算子。B は名前・欄・添字（添字は名前か整数のリテラル）だけの経路 — 読みと書き戻しで 2 回評価しても同じ値になる形に限る
+// （それ以外は写さず、後段が今どおり拒否する）。評価の順は添字 → 右辺 → 要素の読み → 書き（Go の「左辺の添字・右辺を先に評価してから書く」と同じ）。
+// 書き戻しは今の `B[I] = x` の道（imm の列への書きの名指し・region の写し）をそのまま通る。desugar・lower・Lean は写した後の木だけを読む。
+// parse の直後（catchExprs の後 — surfaceRewrites）に掛ける
+
+import "std/builder"
+import "std/iter"
+import "ast"
+import "lexer"
+
+// parse の直後の表層の写し（catch 式 → 列の要素の欄への代入）
+func surfaceRewrites(t ast.Tree) ast.Tree {
+    return elemAssigns(catchExprs(t))
+}
+
+func elemAssigns(t ast.Tree) ast.Tree {
+    n0 := len(t.nodes)
+    mut hit := mut []bool{}
+    mut found := false
+    for i <- iter.Range(0, n0) {
+        h := t.nodes[i].kind == ast.SAssign && elemAssignAt(t, i) >= 0
+        hit = append(hit, h)
+        if h {
+            found = true
+        }
+    }
+    if !found {
+        return t
+    }
+    mut ns := mut []ast.Node{}
+    for i <- iter.Range(0, n0) {
+        ns = append(ns, t.nodes[i])
+    }
+    mut nb := builder.Builder[ast.Node]{}
+    mut db := builder.Builder[int]{}
+    for j <- iter.Range(0, len(t.data)) {
+        builder.Push(mut db, t.data[j])
+    }
+    // 写した文（元の文 → r5 の中の 5 文の位置 — 無ければ -1）
+    mut r5 := mut []int{}
+    mut repl := mut []int{}
+    for i <- iter.Range(0, n0) {
+        repl = append(repl, 0 - 1)
+    }
+    mut k := 0
+    for i <- iter.Range(0, n0) {
+        if hit[i] {
+            x := t.nodes[i]
+            tok := x.tok
+            tgt := ast.ListAt(t, x.a, 0)
+            ix := elemAssignAt(t, i)
+            bse := t.nodes[ix].a
+            inm := ast.PutLit(mut db, "$ea${k}i")
+            vnm := ast.PutLit(mut db, "$ea${k}v")
+            tnm := ast.PutLit(mut db, "$ea${k}t")
+            base := n0 + builder.Len(mut nb)
+            // base + 0 = $i の束縛・1 = $v の束縛・2 = $i の名前・3 = B[$i]・4 = mut $t の束縛・5 = $t の名前（欄の鎖の底）
+            builder.Push(mut nb, ast.Node{ast.SBind, tok, ast.PutList(mut db, []int{inm}), 0, ast.PutList(mut db, []int{t.nodes[ix].b}), 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.SBind, tok, ast.PutList(mut db, []int{vnm}), 0, ast.PutList(mut db, []int{ast.ListAt(t, x.c, 0)}), 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EIdent, tok, inm, 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EIndex, tok, bse, base + 2, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.SBind, tok, ast.PutList(mut db, []int{tnm}), 1, ast.PutList(mut db, []int{base + 3}), 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EIdent, tok, tnm, 0, 0, 0, 0, 0})
+            // 欄の鎖を底（$t）から上へ組み直す: 元の鎖を上から集めて逆順に
+            mut sels := mut []int{}
+            mut c := tgt
+            while c != ix {
+                sels = append(sels, c)
+                c = t.nodes[c].a
+            }
+            mut below := base + 5
+            mut j := len(sels) - 1
+            while j >= 0 {
+                s := t.nodes[sels[j]]
+                w := n0 + builder.Len(mut nb)
+                builder.Push(mut nb, ast.Node{ast.ESelector, s.tok, below, s.b, 0, 0, 0, 0})
+                below = w
+                j -= 1
+            }
+            w := n0 + builder.Len(mut nb)
+            // w + 0 = $v の名前・1 = $t.p = $v・2 = B[$i]（書き戻しの左辺）・3 = $t の名前・4 = B[$i] = $t
+            builder.Push(mut nb, ast.Node{ast.EIdent, tok, vnm, 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.SAssign, tok, ast.PutList(mut db, []int{below}), x.b, ast.PutList(mut db, []int{w}), 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EIndex, tok, bse, base + 2, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EIdent, tok, tnm, 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.SAssign, tok, ast.PutList(mut db, []int{w + 2}), lexer.Equal, ast.PutList(mut db, []int{w + 3}), 0, 0, 0})
+            repl[i] = len(r5)
+            r5 = append(r5, base)
+            r5 = append(r5, base + 1)
+            r5 = append(r5, base + 4)
+            r5 = append(r5, w + 1)
+            r5 = append(r5, w + 4)
+            k += 1
+        }
+    }
+    // 文の列へ差し込む
+    for i <- iter.Range(0, n0) {
+        x := t.nodes[i]
+        sl := stmtList(x)
+        if sl >= 0 {
+            mut any := false
+            for j <- iter.Range(0, ast.ListLen(t, sl)) {
+                if repl[ast.ListAt(t, sl, j)] >= 0 {
+                    any = true
+                }
+            }
+            if any {
+                mut l := mut []int{}
+                for j <- iter.Range(0, ast.ListLen(t, sl)) {
+                    sn := ast.ListAt(t, sl, j)
+                    r := repl[sn]
+                    if r >= 0 {
+                        for q <- iter.Range(0, 5) {
+                            l = append(l, r5[r + q])
+                        }
+                    } else {
+                        l = append(l, sn)
+                    }
+                }
+                nl := ast.PutList(mut db, freeze(l))
+                ns[i] = if x.kind == ast.EFor { ast.Node{x.kind, x.tok, x.a, x.b, nl, x.d, x.e, x.f} } else { ast.Node{x.kind, x.tok, nl, x.b, x.c, x.d, x.e, x.f} }
+            }
+        }
+    }
+    added := builder.Build(mut nb)
+    for i <- iter.Range(0, len(added)) {
+        ns = append(ns, added[i])
+    }
+    return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
+}
+
+// 代入 i が「欄の鎖の下に列の要素」の形（`B[I].p op= V` — 1 対 1・B は 2 回評価しても同じ経路）なら要素の読みの節 B[I]（でなければ -1）
+func elemAssignAt(t ast.Tree, i int) int {
+    x := t.nodes[i]
+    if ast.ListLen(t, x.a) != 1 || ast.ListLen(t, x.c) != 1 {
+        return -1
+    }
+    mut c := ast.ListAt(t, x.a, 0)
+    // 添字への直の複合代入 `B[I] op= V`（欄の鎖が空 — `$t op= $v; B[$i] = $t`）。素の `B[I] = V` は格納の道のまま
+    if t.nodes[c].kind == ast.EIndex && x.b != lexer.Equal {
+        return if eaPurePath(t, t.nodes[c].a) { c } else { -1 }
+    }
+    if t.nodes[c].kind != ast.ESelector {
+        return -1
+    }
+    while c >= 0 && t.nodes[c].kind == ast.ESelector {
+        c = t.nodes[c].a
+    }
+    if c < 0 || t.nodes[c].kind != ast.EIndex || !eaPurePath(t, t.nodes[c].a) {
+        return -1
+    }
+    return c
+}
+
+// e が名前・欄・添字（添字は名前か整数のリテラル）だけの経路か
+func eaPurePath(t ast.Tree, e0 int) bool {
+    mut e := e0
+    while e >= 0 {
+        x := t.nodes[e]
+        if x.kind == ast.EIdent {
+            return true
+        }
+        if x.kind == ast.ESelector || x.kind == ast.EParen {
+            e = x.a
+        } else if x.kind == ast.EIndex {
+            if x.b < 0 || (t.nodes[x.b].kind != ast.EIdent && t.nodes[x.b].kind != ast.EInt) {
+                return false
+            }
+            e = x.a
+        } else {
+            return false
+        }
+    }
+    return false
+}

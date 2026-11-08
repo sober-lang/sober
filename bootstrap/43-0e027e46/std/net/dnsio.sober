@@ -1,0 +1,150 @@
+package net
+
+// 名前の解決の送受（UDP の問い合わせ・切り詰めなら TCP・nameserver の巡回・期限）
+
+import "std/io"
+import "std/iter"
+import "std/task"
+
+// ホスト host の IPv4 の番地（/etc/hosts → /etc/resolv.conf — どちらも無ければ空の本文として読む）
+@errors(Bad, NoHost, NonASCIIHost, io.Timeout, io.Expired)
+@effects(block, io, nondet)
+func resolveSys(host string) ([][]byte, error?) {
+    hosts := io.ReadFile("/etc/hosts") catch []byte{}
+    conf := io.ReadFile("/etc/resolv.conf") catch []byte{}
+    return resolveIn(host, parseResolvConf(bytesToString(conf)), bytesToString(hosts), 53)
+}
+
+// 名前の解決の本体（port = nameserver の port — 網の偽のサーバのため）
+@errors(Bad, NoHost, NonASCIIHost, io.Timeout, io.Expired)
+@effects(block, io, nondet)
+func resolveIn(host string, c dnsConf, hostsText string, port int) ([][]byte, error?) {
+    nc := nameCheck(host)
+    if nc == 1 {
+        return [][]byte{}, NonASCIIHost{}
+    }
+    if nc == 2 {
+        return [][]byte{}, Bad{}
+    }
+    h := hostsLookup(hostsText, host)
+    if len(h) > 0 {
+        return h, nil
+    }
+    mut answered := false
+    for name <- candidates(host, c) {
+        mut next := false
+        for a <- iter.Range(0, c.attempts) {
+            for srv <- c.servers {
+                if !next {
+                    r := ask("${srv}:${port}", name, qtA, c.timeout)
+                    if r.ok && r.rcode == 0 && len(r.addrs) > 0 {
+                        return r.addrs, nil
+                    }
+                    // NXDOMAIN（3）か答えの無い NOERROR（NODATA）= この名前は無い → 次の候補
+                    if r.ok && (r.rcode == 3 || r.rcode == 0) {
+                        answered = true
+                        next = true
+                    }
+                }
+            }
+        }
+    }
+    if answered {
+        return [][]byte{}, NoHost{}
+    }
+    return [][]byte{}, io.Timeout{}
+}
+
+// server（"a.b.c.d:port"）に name の qtype を問う（期限 timeout ns — UDP・切り詰めなら同じ期限で TCP）。届かない・期限切れ・形の誤りは ok = false
+@effects(block, io, nondet)
+func ask(server string, name string, qtype int, timeout int) dnsAnswer {
+    id := txid()
+    q := dnsQuery(id, name, qtype)
+    u, ue := task.Run((s) => udpAsk(server, q, id, name, qtype), deadline: timeout)
+    if ue != nil || !u.tc {
+        return if ue != nil { badAnswer() } else { u }
+    }
+    t, te := task.Run((s) => tcpAsk(server, q, id, name, qtype), deadline: timeout)
+    return if te != nil { badAnswer() } else { t }
+}
+
+// 問い合わせの txid（getrandom の 2 バイト — 偽の応答への備え。getrandom が無いカーネル〔3.17 未満〕では単調時計の下位で埋める:
+// crypto.Rand の panic を Dial の効果に持ち込まないため）
+@effects(io)
+func txid() int {
+    mut b := mut []byte{0, 0}
+    r := sysCall(318, sysAddr(b), 2, 0, 0, 0, 0)
+    if r == 2 {
+        return int(b[0]) << 8 | int(b[1])
+    }
+    mut tb := mut []byte{}
+    for i <- iter.Range(0, 16) {
+        tb = append(tb, byte(0))
+    }
+    _ = sysCall(228, 1, sysAddr(tb), 0, 0, 0, 0)
+    return (int(tb[8]) << 8 | int(tb[9])) ^ int(tb[10])
+}
+
+// UDP で 1 回問う（txid と問いの合わない応答は捨てて次の datagram を待つ — 期限まで）
+@effects(block, io, nondet)
+func udpAsk(server string, q []byte, id int, name string, qtype int) dnsAnswer {
+    sa := sockaddr(server)
+    fd := sysCall(41, 2, 526338, 0, 0, 0, 0)
+    if fd < 0 || len(sa) != 16 {
+        return badAnswer()
+    }
+    defer closeFd(fd)
+    if sysCall(42, fd, sysAddr(sa), 16, 0, 0, 0) < 0 {
+        return badAnswer()
+    }
+    if sysCall(1, fd, sysAddr(q), len(q), 0, 0, 0) != len(q) {
+        return badAnswer()
+    }
+    while true {
+        b := sysReadFd(fd, 65535 + 1099511627776)
+        e := sysErrno()
+        if e != 0 {
+            if again(0 - e, fd, evIn) != 0 {
+                return badAnswer()
+            }
+        } else {
+            r := parseAnswer(b, id, name, qtype)
+            if r.ok {
+                return r
+            }
+        }
+    }
+    return badAnswer()
+}
+
+// TCP で問う（2 バイトの長さの前置き — RFC 1035 4.2.2）
+@effects(block, io, nondet)
+func tcpAsk(server string, q []byte, id int, name string, qtype int) dnsAnswer {
+    mut got := mut []byte{}
+    msg := cat2([]byte{byte(len(q) >> 8), byte(len(q) & 0xff)}, q)
+    e := dialSa(sockaddr(server), (c) => {
+        if Send(c, msg) == nil {
+            _ = Recv(c, (chunk) => {
+                for x <- chunk {
+                    got = append(got, x)
+                }
+            })
+        }
+    })
+    g := freeze(got)
+    if e != nil || len(g) < 2 || len(g) < 2 + (int(g[0]) << 8 | int(g[1])) {
+        return badAnswer()
+    }
+    return parseAnswer(sliceBytes(g, 2, 2 + (int(g[0]) << 8 | int(g[1]))), id, name, qtype)
+}
+
+func cat2(a []byte, b []byte) []byte {
+    mut o := mut []byte{}
+    for x <- a {
+        o = append(o, x)
+    }
+    for x <- b {
+        o = append(o, x)
+    }
+    return freeze(o)
+}

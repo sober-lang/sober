@@ -7,15 +7,15 @@
 AES-128-GCM（NIST SP 800-38D — 鍵 16 バイト・nonce 12 バイト・tag 16 バイト）。本体は x86 の AES-NI + PCLMULQDQ + SSSE3 の専用命令の実装で、ソフトの AES は書かない（表引きは定数時間にならない）: 専用命令の無い機械・x86 の最適化のバックエンド以外の出力では Available() = false で、Seal / Open は NoHardware を返す（TLS は suite の選択で ChaCha20-Poly1305 に倒れる）。SOBER\_NOAES=1 で専用命令の無い機械を装える。同じ鍵で nonce を 2 回使ってはならない（CTR の鍵ストリームが重なって平文の xor が漏れ、GHASH の鍵 H も解けて tag を偽造できる）
 
 ```sober
-if aesgcm.Available() { ct := aesgcm.Seal(key, nonce, ad, pt)? }
+if crypto.aesgcm.Available() { ct := crypto.aesgcm.Seal(key, nonce, ad, pt)? }
 ```
 
 record 層向けの API: 鍵の展開は Prepare で 1 回（接続ごと方向ごと — 鍵の表は以後読むだけ）・record ごとは小さい状態の列（計数器・GHASH の溜め・端のブロック）を 1 本だけ作る。SealTo は head ‖ 暗号文 ‖ tag を 1 回の確保に直に書き、OpenAt は b[off, off + n) を平文の列へ復号しながら検証する（tag が合わなければ平文を 0 で消して Auth — 平文は外へ出ない）
 
 ```sober
-k := aesgcm.Prepare(key)?
-rec := aesgcm.SealTo(k, nonce, ad, pt, hdr, tail)?     // hdr ‖ 暗号文（pt ‖ tail）‖ tag
-pt := aesgcm.OpenAt(k, nonce, ad, buf, off, n)?        // buf[off, off + n) = 暗号文 ‖ tag
+k := crypto.aesgcm.Prepare(key)?
+rec := crypto.aesgcm.SealTo(k, nonce, ad, pt, hdr, tail)?     // hdr ‖ 暗号文（pt ‖ tail）‖ tag
+pt := crypto.aesgcm.OpenAt(k, nonce, ad, buf, off, n)?        // buf[off, off + n) = 暗号文 ‖ tag
 ```
 
 ## KeySize

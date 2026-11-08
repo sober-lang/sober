@@ -1,0 +1,51 @@
+package x25519
+
+// 体の積の塊（MULX）の照合（white-box）: 塊の fmul と Sober の fmulS を乱数の元・入力と同じ区画への積・2 乗・上限寄りの limb で突き合わせる。
+// scripts/cryptocheck.sh が SOBER_NOMULX の有無の両方で回す（倒れ先では両方 Sober — 同じ値になる）
+
+import "std/iter"
+
+func TestFeSelfCheck() {
+    assert(feSelfCheck(1, 20000) == 0)
+    assert(feSelfCheck(99, 5000) == 0)
+}
+
+// 専用命令の体の積 femul と Sober の fmulS の照合。
+// 種 seed の擬似乱数で limb < 2^52（積の前提の上限）の元を rounds 組作り、別の区画への積・入力と同じ区画への積（d = a）・2 乗で両方を比べる。
+// 食い違いの数を返す
+func feSelfCheck(seed int, rounds int) int {
+    mut x := seed
+    mut bad := 0
+    // 区画（語の番地）: 0 = a・5 = b・10 / 15 = 積の塊 / Sober・20 / 25 = d = a の塊 / Sober・30 / 35 = 2 乗の塊 / Sober
+    blk := make0(40)
+    mut w := leaseView(blk, 0, 40)
+    wa := addrn(blk)
+    for r <- iter.Range(0, rounds) {
+        for i <- iter.Range(0, 10) {
+            x = x * 6364136223846793005 + 1442695040888963407
+            top := if r % 3 == 0 { mask52 } else { mask51 }
+            w[i] = if r % 5 == 4 { top } else { (x >> 11) & top }
+        }
+        fmul(mut w, wa, 10, 0, 5)
+        fmulS(mut w, 15, 0, 5)
+        fmul(mut w, wa, 30, 0, 0)
+        for i <- iter.Range(0, 5) {
+            w[20 + i] = w[i]
+            w[25 + i] = w[i]
+        }
+        fmul(mut w, wa, 20, 20, 5)
+        fmulS(mut w, 25, 25, 5)
+        for i <- iter.Range(0, 5) {
+            if w[10 + i] != w[15 + i] || w[20 + i] != w[25 + i] {
+                bad += 1
+            }
+        }
+        fmulS(mut w, 35, 0, 0)
+        for i <- iter.Range(0, 5) {
+            if w[30 + i] != w[35 + i] {
+                bad += 1
+            }
+        }
+    }
+    return bad
+}

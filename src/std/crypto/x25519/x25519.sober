@@ -2,8 +2,8 @@ package x25519
 
 // X25519（RFC 7748 5 節 — Curve25519 の Montgomery ladder）。
 //
-//     pub := x25519.Base(priv)              // 公開鍵（32 バイト）
-//     shared := x25519.Shared(priv, peer)    // 共有値（32 バイト — 全 0 の検査〔低位数の点〕は呼び手 = TLS 7.4.2 の側）
+//     pub := crypto.x25519.Base(priv)              // 公開鍵（32 バイト）
+//     shared := crypto.x25519.Shared(priv, peer)    // 共有値（32 バイト — 全 0 の検査〔低位数の点〕は呼び手 = TLS 7.4.2 の側）
 //
 // 定数時間: 秘密（鍵のビット・体の元）に依る分岐・添字は無い — ladder の入れ替えは mask の xor（cswap）・ループは 255 段固定・逆元は p - 2 乗（指数は公開）
 
@@ -261,47 +261,6 @@ func pack(w []int, d int) []byte {
         bs = append(bs, byte(out[i]))
     }
     return freeze(bs)
-}
-
-// 専用命令の体の積 femul と Sober の fmulS の照合（検証の網の API — 利用者は使わない: examples/crypto_femul と cryptocheck の格子が叩く）。
-// 種 seed の擬似乱数で limb < 2^52（積の前提の上限）の元を rounds 組作り、別の区画への積・入力と同じ区画への積（d = a）・2 乗で両方を比べる。
-// 食い違いの数を返す
-@effects(!io, !block, !nondet)
-func FeSelfCheck(seed int, rounds int) int {
-    mut x := seed
-    mut bad := 0
-    // 区画（語の番地）: 0 = a・5 = b・10 / 15 = 積の塊 / Sober・20 / 25 = d = a の塊 / Sober・30 / 35 = 2 乗の塊 / Sober
-    blk := make0(40)
-    mut w := leaseView(blk, 0, 40)
-    wa := addrn(blk)
-    for r <- iter.Range(0, rounds) {
-        for i <- iter.Range(0, 10) {
-            x = x * 6364136223846793005 + 1442695040888963407
-            top := if r % 3 == 0 { mask52 } else { mask51 }
-            w[i] = if r % 5 == 4 { top } else { (x >> 11) & top }
-        }
-        fmul(mut w, wa, 10, 0, 5)
-        fmulS(mut w, 15, 0, 5)
-        fmul(mut w, wa, 30, 0, 0)
-        for i <- iter.Range(0, 5) {
-            w[20 + i] = w[i]
-            w[25 + i] = w[i]
-        }
-        fmul(mut w, wa, 20, 20, 5)
-        fmulS(mut w, 25, 25, 5)
-        for i <- iter.Range(0, 5) {
-            if w[10 + i] != w[15 + i] || w[20 + i] != w[25 + i] {
-                bad += 1
-            }
-        }
-        fmulS(mut w, 35, 0, 0)
-        for i <- iter.Range(0, 5) {
-            if w[30 + i] != w[35 + i] {
-                bad += 1
-            }
-        }
-    }
-    return bad
 }
 
 // n 個の 0

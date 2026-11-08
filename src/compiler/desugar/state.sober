@@ -160,6 +160,10 @@ type S struct {
     // 型パターンの欄の型を引く型引数の束縛（ジェネリック union の subject の宣言の — -1 = 無し）
     swEnv int
     swSubjTy TyRef
+    // 型パターンの switch の union の宣言（subjFieldTy — 欄の束縛の型を subject の型から引く）
+    swDecl NodeRef
+    // convTarget が見た名前付き関数型の宣言（LastFnConv — lower の変換の判定）
+    lastFnConv NodeRef
     swSubjSty int
     psteps table.Table[PatStep]  // 入れ子の型パターンを前順に平たくした手（switch.sober の nestedArm）
     pslots table.Table[int]      // 手の値の枠 → レベル（生成中に決まる）
@@ -498,6 +502,18 @@ func StrEqPart(st mut S, a StrRef, s StrRef, lo int, hi int) bool {
     return strEqPart(mut st, a, s, lo, hi)
 }
 
+// 文字列 s の最後の '.' の位置（無ければ -1）— 修飾名 `http.server.N` の修飾子と名前の境（名前は '.' を含まない）
+func lastDotAt(st mut S, s StrRef) int {
+    mut i := slen(mut st, s) - 1
+    while i >= 0 {
+        if sat(mut st, s, i) == '.' {
+            return i
+        }
+        i -= 1
+    }
+    return -1
+}
+
 // 文字列 s の最初の '.' の位置（無ければ -1）
 func dotAt(st mut S, s StrRef) int {
     mut i := 0
@@ -830,25 +846,31 @@ func ImportOf(st mut S, pk int, s StrRef, lo int, hi int) int {
     return -1
 }
 
-// ファイル f の import 宣言に参照名 s[lo:hi) があるか（参照名 = 別名、無ければ path の最後の段）
+// path r（長さ n）の修飾子（`std/` を落とし '/' を '.' に — loader.QualOf）が s[lo:hi) か
+func qualIs(st mut S, r StrRef, n int, s StrRef, lo int, hi int) bool {
+    off := if n > 4 && dat(mut st, int(r) + 1) == 's' && dat(mut st, int(r) + 2) == 't' && dat(mut st, int(r) + 3) == 'd' && dat(mut st, int(r) + 4) == '/' { 4 } else { 0 }
+    if n - off != hi - lo {
+        return false
+    }
+    for j <- iter.Range(0, hi - lo) {
+        c := dat(mut st, int(r) + 1 + off + j)
+        if (if c == '/' { '.' } else { c }) != dat(mut st, int(s) + 1 + lo + j) {
+            return false
+        }
+    }
+    return true
+}
+
+// ファイル f の import 宣言に参照名 s[lo:hi) があるか（参照名 = 別名、無ければ修飾子）
 func fileImports(st mut S, f int, s StrRef, lo int, hi int) bool {
     imps := lB(nodeOf(mut st, FileRoot(mut st, f)))
     for i <- iter.Range(0, lenL(mut st, imps)) {
         im := nodeOf(mut st, latN(mut st, imps, i))
         r := if im.a >= 0 { sA(im) } else { sB(im) }
         n := slen(mut st, r)
-        // path の最後の段は末尾 hi − lo バイトの手前が '/' か先頭か（参照名は '/' を含まない — path を頭から走査しない）
-        b := n - (hi - lo)
-        if b >= 0 && (im.a >= 0 && b == 0 || im.a < 0 && (b == 0 || dat(mut st, int(r) + b) == '/')) {
-            mut same := true
-            for j <- iter.Range(0, hi - lo) {
-                if dat(mut st, int(r) + 1 + b + j) != dat(mut st, int(s) + 1 + lo + j) {
-                    same = false
-                }
-            }
-            if same {
-                return true
-            }
+        hit := if im.a >= 0 { n == hi - lo && strEqPart(mut st, r, s, lo, hi) } else { qualIs(mut st, r, n, s, lo, hi) }
+        if hit {
+            return true
         }
     }
     return false

@@ -1,0 +1,52 @@
+package lower
+
+// AES-128-GCM の塊（std/crypto/aesgcm）: 組み込みの鍵 4 つ。cpuaes = この機械で塊を使えるか（0 / 1 — rt.cpu の印の bit 1・clmul.sober）・
+// aeskey(key, 表)・aesctr(状態, src, dst, n)・aesghash(状態, p, n)・aestag(状態, dst)・aesseal / aesopen(状態, src, dst, n)（引数は全部番地と長さの int — 書くのは表・状態・dst だけ）。
+// IR は OpSyscall の b = AES_B（c = 種類）: 番地を通して読み書きする不透明な op なので、効果の扱いは syscall と同じ（vcall〔b = 1〕の前例 —
+// 新しい op にすると最適化の各パスの効果の列に 1 語ずつ足すことになり、漏れが誤コンパイルになる）。x86 の最適化のバックエンドの ELF の道でだけ
+// 塊になり（x86.sober xAes）、IR テキストには `aes.<種類>` で出る（stage1 の語彙の外 — gatelib の beyond_stage1 が照合を飛ばす）・.ll では 0。
+// IR テキスト・.ll・写しのバックエンドでは cpuaes = 0 の印（AK_CPU）を出すだけで、std の分岐が塊を呼ばない
+//
+// 鍵の表（Prepare が 1 回作る・塊は読むだけ — 512 バイト）: [0, 176) 展開した鍵 11 段・[176, 304) GHASH の H^1〜H^8（バイト順を反転して 2 倍した形 —
+// Go の gcm_amd64 の productTable と同じ流儀）・[304, 432) H^i の上下の xor（Karatsuba の中の積の片側 — 両半分に同じ値）・[432, 480) 定数（バイト順の反転の印・
+// GHASH の多項式・計数器の 1）。
+// record の状態（std が record ごとに作る小さい列 — 塊が読み書きする）: [0, 16) CTR の計数器のブロック（そのままのバイト順 — 末尾 4 バイトが大きい端の
+// 32 ビットの計数器）・[16, 32) GHASH の溜め Y（反転したバイト順）・[32, 40) 鍵の表の番地（小さい端）。塊の引数の ctx はこの状態を指す
+
+const AK_H = 176      // 鍵の表: H^1〜H^8
+const AK_KAR = 304    // 鍵の表: H^i の上下の xor
+const AK_SHUF = 432   // 鍵の表: バイト順の反転の印
+const AK_POLY = 448   // 鍵の表: GHASH の多項式
+const AK_ONE = 464    // 鍵の表: 計数器の 1
+const AK_MASK = 480   // 鍵の表: CTR の半端の mask
+const AS_Y = 16       // record の状態: Y
+const AS_KEY = 32     // record の状態: 鍵の表の番地
+
+const AES_B = 2
+
+// 種類（OpSyscall の c）
+const AK_CPU = 0    // a = [] → 0（hw の道でない出力の cpuaes の印）
+const AK_KEY = 1    // a = [key, 鍵の表]
+const AK_CTR = 2    // a = [状態, src, dst, n]
+const AK_GHASH = 3  // a = [状態, p, n]
+const AK_TAG = 4    // a = [状態, dst]（dst[0:16] = Y ⊕ E(J0) — 状態は読むだけ）
+const AK_SEAL = 5   // a = [状態, src, dst, n]（n は 128 の倍数 — CTR と、書いた暗号文の GHASH を縫い合わせて 1 回の走査）
+const AK_OPEN = 6   // a = [状態, src, dst, n]（n は 128 の倍数 — 暗号文 src の GHASH と CTR の復号を縫い合わせて 1 回の走査）
+
+// cpuaes の値（hw の道: rt.cpu の印の bit 1）
+func cpuAes(st mut St) int {
+    if !st.hwFold {
+        return push(mut st, true, OpSyscall, list0(mut st), AES_B, AK_CPU)
+    }
+    return bin(mut st, BAnd, bin(mut st, BSar, cpuMarks(mut st), iconst(mut st, 1)), iconst(mut st, 1))
+}
+
+// aeskey / aesctr / aesghash（kind = AK_KEY〜AK_GHASH・vs = 引数の列）
+func aesOp(st mut St, kind int, vs int) int {
+    return push(mut st, true, OpSyscall, vs, AES_B, kind)
+}
+
+// IR テキストの綴り
+func aesName(kind int) string {
+    return if kind == AK_CPU { "aes.cpu " } else if kind == AK_KEY { "aes.key " } else if kind == AK_CTR { "aes.ctr " } else if kind == AK_GHASH { "aes.ghash " } else if kind == AK_TAG { "aes.tag " } else if kind == AK_SEAL { "aes.seal " } else { "aes.open " }
+}

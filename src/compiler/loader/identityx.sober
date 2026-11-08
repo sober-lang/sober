@@ -11,20 +11,14 @@ import "std/builder"
 import "std/iter"
 import "std/strings"
 import "ast"
+import "diag"
 
-// package の path と型の名前が同一性の族か（族の番号 — 違えば 0）
+// package の path と型の名前が同一性の族か（族の番号 — 違えば 0。表は diag の IdPaths / IdNames）
 func idBase(path string, base string) int {
-    if path == "std/task" {
-        return if base == "Scope" { 1 } else if base == "Handle" { 2 } else if base == "Sender" { 3 } else if base == "Receiver" { 4 } else if base == "Pool" { 5 } else if base == "Local" { 7 } else { 0 }
-    }
-    if path == "std/io" {
-        return if base == "File" { 6 } else if base == "Root" { 8 } else { 0 }
-    }
-    if path == "std/net" {
-        return if base == "Listener" { 9 } else if base == "Conn" { 10 } else { 0 }
-    }
-    if path == "std/tls" && base == "Conn" {
-        return 11
+    for i <- iter.Range(0, len(diag.IdPaths)) {
+        if diag.IdPaths[i] == path && diag.IdNames[i] == base {
+            return diag.IdFamilies[i]
+        }
     }
     return 0
 }

@@ -38,7 +38,7 @@ for v in passes no-opt; do
     done
 done
 mkdir -p "$W/stream"
-DEFLATE_DUMP="$W/stream" "$S2" test std/internal/deflate > "$W/stream.log" 2>&1 || { echo "FAIL: sober test std/internal/deflate"; tail -5 "$W/stream.log"; fail=$((fail + 1)); }
+DEFLATE_DUMP="$W/stream" "$S2" test --fresh std/internal/deflate > "$W/stream.log" 2>&1 || { echo "FAIL: sober test std/internal/deflate"; tail -5 "$W/stream.log"; fail=$((fail + 1)); }
 node --experimental-strip-types --no-warnings testdata/flatecheck/stream.ts "$W/stream" || fail=$((fail + 1))
 node --experimental-strip-types --no-warnings testdata/flatecheck/check.ts "$W/opt.list" "$W/d.opt" testdata/flatecheck/sizes.golden "$W/twin/index" $regen || fail=$((fail + 1))
 [ $fail = 0 ]

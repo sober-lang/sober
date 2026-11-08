@@ -543,8 +543,8 @@ func less(a string, b string) bool {
 }
 
 // path の項目を名前のバイト順で返す（`.` / `..` は含めない — Go の os.ReadDir と同じ）。
-// 並びはファイルシステムの列挙順に依らない（loader の決定性 — language.md 29 節）。名前が 1 つでも不正な UTF-8 なら全体が strings.InvalidUtf8
-@errors(NotFound, Denied, Other, Timeout, Expired, strings.InvalidUtf8)
+// 並びはファイルシステムの列挙順に依らない（loader の決定性 — language.md 29 節）。名前が 1 つでも不正な UTF-8 なら全体が strings.BadUtf8
+@errors(NotFound, Denied, Other, Timeout, Expired, strings.BadUtf8)
 @effects(io, nondet)
 func ReadDir(path string) ([]DirEntry, error?) {
     // 「d_type + 名前のバイト + 0」の連結（getdents64 の順のまま）

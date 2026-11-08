@@ -23,6 +23,15 @@
 | 生成器（generator の訳として — std/quick） | ジェネレータ | 同上 | |
 | 検出力（テストの） | テストの強さ（数字はミューテーションスコア） | 同上 | |
 
+## error ラベルの語彙（識別子）
+
+上の表は文書の語だが、std の error / panic のラベルの語のうち、似た意味で 2 語に分かれるものの使い分けもここに記録する。
+
+| 語 | 意味 | 裁定 | 今の口 |
+|---|---|---|---|
+| `TooLong` | 呼び手が渡した値（入力・求める長さ）が仕様の上限を超える | 2026-11-06（std の流儀の棚卸し — ユーザー裁定 U-13） | `crypto.hkdf.TooLong`（求めた出力の長さ n が 255 × 32 を超える）・`crypto.password.TooLong`（bcrypt に渡す pw が 72 バイトを超える） |
+| `TooLarge` | 走りながら積もった量（受けた本文・展開した出力）が上限を越える | 同上 | `compress.flate.TooLarge`（Decode の出力が maxSize を越える）・`http.client.BodyTooLarge`（本文が maxBody を超える）・`ConnTooLarge`（std/internal/hsc の握手の残りの列） |
+
 ## 未裁定
 
 README の推敲で直訳調だと指摘したものの、言い換え先がまだ決まっていない語。決まるまでは文書の語をそのまま残す。

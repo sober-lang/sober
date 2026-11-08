@@ -1,0 +1,208 @@
+package time
+
+// 時刻: 壁時計の Time（UNIX 時刻 — 秒 + ns・UTC）と経過を測る Instant（単調時計）を別の型で持つ（壁時計の差で期限を測る事故を型で消す）。
+// 壁時計を読む口は Now の 1 か所だけ — 時刻を使う std の口（x509 の検証・クッキーの期限など）は Time を値で受ける（決定的・テストは値を渡す）。
+// 書式は RFC 3339（UTC か固定のオフセット）と HTTP の日付（IMF-fixdate — 読みは RFC 9110 5.6.7 の旧い 2 形も）。地域の時刻の規則（tzdata）は Zone
+//
+//     t := time.Now()
+//     s := time.FormatRFC3339(t, 0)          // "2026-11-05T09:15:00Z"
+//     u, _ := time.ParseHTTP("Sun, 06 Nov 1994 08:49:37 GMT")
+//     start := time.Mono()
+//     …
+//     took := time.Since(start)                // ns
+
+import "std/iter"
+
+// 長さ（ns の int — 経過・期限の値）
+const Nanosecond = 1
+const Microsecond = 1000
+const Millisecond = 1000000
+const Second = 1000000000
+const Minute = 60000000000
+const Hour = 3600000000000
+
+// 壁時計の時刻（UNIX 時刻の秒と 0〜999999999 の ns・UTC。作るのは Now・Unix・Parse… — 欄を直に書くなら ns は範囲の中で）
+type Time struct {
+    sec int
+    nsec int
+}
+
+// 単調時計の読み（ns — 起点は不定で、同じプロセスの中の 2 つの差だけに意味がある）
+type Instant struct {
+    ns int
+}
+
+// RFC 3339 / HTTP の日付が読めない
+type Bad error
+
+@intrinsic("syscall")
+func sysCall(nr int, a int, b int, c int, d int, e int, f int) int
+
+@intrinsic("addr")
+func sysAddr(b []byte) int
+
+// clock_gettime(2) の clk の (秒, ns)
+func clock(clk int) (int, int) {
+    mut tb := mut []byte{}
+    for i <- iter.Range(0, 16) {
+        tb = append(tb, byte(0))
+    }
+    b := freeze(tb)
+    _ = sysCall(228, clk, sysAddr(b), 0, 0, 0, 0)
+    return word(b, 0), word(b, 8)
+}
+
+func word(b []byte, at int) int {
+    mut v := 0
+    for i <- iter.Range(0, 8) {
+        v = v | (int(b[at + i]) << (8 * i))
+    }
+    return v
+}
+
+// 今の壁時計（CLOCK_REALTIME — 調整で戻ることがある。経過を測るのは Mono）
+@effects(io)
+func Now() Time {
+    s, ns := clock(0)
+    return Time{sec: s, nsec: ns}
+}
+
+// 今の単調時計（CLOCK_MONOTONIC）
+@effects(io)
+func Mono() Instant {
+    s, ns := clock(1)
+    return Instant{ns: s * Second + ns}
+}
+
+// start からの経過（ns）
+@effects(io)
+func Since(start Instant) int {
+    return Mono().ns - start.ns
+}
+
+// b - a（ns）
+@effects()
+func Elapsed(a Instant, b Instant) int {
+    return b.ns - a.ns
+}
+
+// UNIX 時刻 sec 秒 + nsec ns（nsec は範囲の外でも繰り上げ / 繰り下げる）
+@effects()
+func Unix(sec int, nsec int) Time {
+    mut s := sec + nsec / Second
+    mut n := nsec % Second
+    if n < 0 {
+        n += Second
+        s -= 1
+    }
+    return Time{sec: s, nsec: n}
+}
+
+// t の UNIX 時刻の秒（端数は切り捨て — 1970 年より前は負）
+@effects()
+func UnixSec(t Time) int {
+    return t.sec
+}
+
+// t の秒の端数（0〜999999999 ns）
+@effects()
+func Nano(t Time) int {
+    return t.nsec
+}
+
+// t + d（d は ns — 負も可）
+@effects()
+func Add(t Time, d int) Time {
+    return Unix(t.sec + d / Second, t.nsec + d % Second)
+}
+
+// a - b（ns）
+@effects()
+func Sub(a Time, b Time) int {
+    return (a.sec - b.sec) * Second + (a.nsec - b.nsec)
+}
+
+// a が b より前か
+@effects()
+func Before(a Time, b Time) bool {
+    return a.sec < b.sec || (a.sec == b.sec && a.nsec < b.nsec)
+}
+
+// a と b が同じ時刻か
+@effects()
+func Equal(a Time, b Time) bool {
+    return a.sec == b.sec && a.nsec == b.nsec
+}
+
+// 暦の上の日時（UTC からのオフセット offset 秒を足した壁の読み — weekday は 0 = 日曜〜6 = 土曜）
+type Civil struct {
+    year int
+    month int
+    day int
+    hour int
+    minute int
+    second int
+    nsec int
+    weekday int
+}
+
+// t をオフセット offset 秒（東が正 — 日本は 9 × 3600）の暦の日時に
+@effects()
+func ToCivil(t Time, offset int) Civil {
+    s := t.sec + offset
+    days := floorDiv(s, 86400)
+    r := s - days * 86400
+    y, m, d := civilOf(days)
+    return Civil{year: y, month: m, day: d, hour: r / 3600, minute: r / 60 % 60, second: r % 60, nsec: t.nsec, weekday: floorMod(days + 4, 7)}
+}
+
+// 暦の日時 c（オフセット offset 秒の壁の読み）の時刻。月日・時分秒の範囲は検査しない（呼び手の値 — 範囲の外は繰り上がる）
+@effects()
+func FromCivil(c Civil, offset int) Time {
+    return Unix(daysOf(c.year, c.month, c.day) * 86400 + c.hour * 3600 + c.minute * 60 + c.second - offset, c.nsec)
+}
+
+func floorDiv(a int, b int) int {
+    q := a / b
+    return if (a % b != 0) && ((a < 0) != (b < 0)) { q - 1 } else { q }
+}
+
+func floorMod(a int, b int) int {
+    return a - floorDiv(a, b) * b
+}
+
+// エポックからの日数 z の（年, 月 1〜12, 日 1〜31）— 先発グレゴリオ暦（H. Hinnant の civil_from_days）
+func civilOf(z0 int) (int, int, int) {
+    z := z0 + 719468
+    era := floorDiv(z, 146097)
+    doe := z - era * 146097
+    yoe := (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
+    doy := doe - (365 * yoe + yoe / 4 - yoe / 100)
+    mp := (5 * doy + 2) / 153
+    d := doy - (153 * mp + 2) / 5 + 1
+    m := if mp < 10 { mp + 3 } else { mp - 9 }
+    y := yoe + era * 400 + (if m <= 2 { 1 } else { 0 })
+    return y, m, d
+}
+
+// (年, 月, 日) のエポックからの日数（days_from_civil）
+func daysOf(y0 int, m int, d int) int {
+    y := if m <= 2 { y0 - 1 } else { y0 }
+    era := floorDiv(y, 400)
+    yoe := y - era * 400
+    mp := if m > 2 { m - 3 } else { m + 9 }
+    doy := (153 * mp + 2) / 5 + d - 1
+    doe := yoe * 365 + yoe / 4 - yoe / 100 + doy
+    return era * 146097 + doe - 719468
+}
+
+func isLeap(y int) bool {
+    return (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+}
+
+func monthDays(y int, m int) int {
+    if m == 2 {
+        return if isLeap(y) { 29 } else { 28 }
+    }
+    return if m == 4 || m == 6 || m == 9 || m == 11 { 30 } else { 31 }
+}

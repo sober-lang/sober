@@ -1,0 +1,2 @@
+sober: load error at sober.mod:2:10: only local-path dependencies (`./…`, `../…`) are supported in this version — fetching a module from elsewhere is not
+(check exit 1)

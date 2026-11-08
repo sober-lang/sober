@@ -5,9 +5,9 @@ package main
 import "testdata/vis_variant/lib"
 
 func main() {
-    sh := lib.Mk(0)
+    sh := testdata.vis_variant.lib.Mk(0)
     println(switch sh {
-    case lib.circ{r}: r
+    case testdata.vis_variant.lib.circ{r}: r
     default: 1
     })
 }

@@ -1,0 +1,369 @@
+package client
+
+// cookie jar（RFC 6265 — client.New(cookies: true) の明示でだけ持つ）: 応答の Set-Cookie を Client の値に貯め、要求ごとに一致する cookie を Cookie の頭に載せる。
+// Domain 属性が公開の接尾辞（Public Suffix List — std/internal/psl の焼き込み）なら、要求の host そのものでない限り捨てる（注入の封）。
+// RFC 6265bis の締めも掛ける: Secure の cookie は https の応答からだけ受ける・__Secure- / __Host- の名前の前置きの約束。HttpOnly・SameSite は記録だけ
+// （クライアントに JS は無く、「サイト」の文脈はブラウザの規則）。上限: 1 本 4096 バイト・1 domain 50 本・全体 3000 本（超えたら古い順に捨てる）
+
+import "std/http"
+import "std/internal/psl"
+import "std/iter"
+import "std/strings"
+import "std/time"
+
+// 貯めた cookie 1 本（expires = 失効の UNIX 秒〔-1 = セッション〕・seq = 作った順）
+type stored struct {
+    name string
+    value string
+    domain string
+    hostOnly bool
+    path string
+    secure bool
+    httpOnly bool
+    expires int
+    seq int
+}
+
+const jarPerDomain = 50
+const jarTotal = 3000
+const jarMaxBytes = 4096
+
+// 応答の頭 fields の Set-Cookie を t（要求の対象）の文脈で jar へ（now = 受けた時刻の UNIX 秒）
+func absorb(c mut Client, t target, fields []http.Field, now int) {
+    if !c.cookiesOn {
+        return
+    }
+    for f <- fields {
+        if f.name == "set-cookie" {
+            take(mut c, t, f.value, now)
+        }
+    }
+}
+
+// Set-Cookie の値 1 本（RFC 6265 5.2 の読み → 5.3 の保存）
+func take(c mut Client, t target, line string, now int) {
+    pair, attrs, _ := strings.Cut(line, ";")
+    rawName, rawValue, eq := strings.Cut(pair, "=")
+    name := strings.TrimSpace(rawName)
+    value := strings.TrimSpace(rawValue)
+    if !eq || name == "" || len(bytes(name)) + len(bytes(value)) > jarMaxBytes {
+        return
+    }
+    mut expires := -1
+    mut maxAgeSet := false
+    mut domain := ""
+    mut path := ""
+    mut secure := false
+    mut httpOnly := false
+    for a0 <- strings.Split(attrs, ";") {
+        k0, v0, _ := strings.Cut(a0, "=")
+        k := strings.ToLower(strings.TrimSpace(k0))
+        v := strings.TrimSpace(v0)
+        if k == "max-age" {
+            n := signedInt(v)
+            if n != nil {
+                maxAgeSet = true
+                expires = if n <= 0 { 0 } else { now + n }
+            }
+        } else if k == "expires" && !maxAgeSet {
+            e := cookieDate(v)
+            if e != nil {
+                expires = e
+            }
+        } else if k == "domain" && v != "" {
+            domain = strings.ToLower(strings.TrimPrefix(v, "."))
+        } else if k == "path" {
+            path = v
+        } else if k == "secure" {
+            secure = true
+        } else if k == "httponly" {
+            httpOnly = true
+        }
+    }
+    // Secure は https の応答からだけ・名前の前置きの約束（RFC 6265bis 5.6）
+    if secure && !t.tls {
+        return
+    }
+    if (strings.HasPrefix(name, "__Secure-") || strings.HasPrefix(name, "__Host-")) && !secure {
+        return
+    }
+    mut hostOnly := true
+    if domain != "" {
+        if psl.IsPublicSuffix(domain) && domain != t.host {
+            return
+        }
+        if domain != t.host {
+            if !domainMatch(t.host, domain) {
+                return
+            }
+            hostOnly = false
+        }
+    }
+    if !strings.HasPrefix(path, "/") {
+        path = defaultPath(t.path)
+    }
+    // __Host- は Domain 属性そのものを持てない（host と同じ値でも — RFC 6265bis 4.1.3.2）
+    if strings.HasPrefix(name, "__Host-") && (domain != "" || path != "/") {
+        return
+    }
+    d := if hostOnly { t.host } else { domain }
+    // 同じ名前・domain・path を置き換える（作った順は保つ）・失効した cookie は消すだけ
+    mut keep := mut []stored{}
+    mut seq := c.cookieSeq
+    for s <- c.cookies {
+        if s.name == name && s.domain == d && s.path == path {
+            seq = s.seq
+        } else if s.expires < 0 || s.expires > now {
+            keep = append(keep, s)
+        }
+    }
+    if expires < 0 || expires > now {
+        keep = append(keep, stored{name: name, value: value, domain: d, hostOnly: hostOnly, path: path, secure: secure, httpOnly: httpOnly, expires: expires, seq: seq})
+    }
+    c.cookieSeq += 1
+    c.cookies = trim(freeze(keep), d)
+}
+
+// 上限を超えた分を古い順に捨てる（同じ domain 50 本・全体 3000 本）
+func trim(xs []stored, d string) []stored {
+    mut nd := 0
+    for s <- xs {
+        if s.domain == d {
+            nd += 1
+        }
+    }
+    mut dropD := if nd > jarPerDomain { nd - jarPerDomain } else { 0 }
+    mut dropAll := if len(xs) - dropD > jarTotal { len(xs) - dropD - jarTotal } else { 0 }
+    if dropD == 0 && dropAll == 0 {
+        return xs
+    }
+    mut out := mut []stored{}
+    for s <- byAge(xs) {
+        if dropD > 0 && s.domain == d {
+            dropD -= 1
+        } else if dropAll > 0 {
+            dropAll -= 1
+        } else {
+            out = append(out, s)
+        }
+    }
+    return freeze(out)
+}
+
+// 作った順（seq の小さい順 — 挿入の整列・本数は 3000 本まで）
+func byAge(xs []stored) []stored {
+    mut out := mut []stored{}
+    for s <- xs {
+        out = append(out, s)
+        mut i := len(out) - 1
+        while i > 0 && out[i - 1].seq > out[i].seq {
+            tmp := out[i - 1]
+            out[i - 1] = out[i]
+            out[i] = tmp
+            i -= 1
+        }
+    }
+    return freeze(out)
+}
+
+// 要求 t に載せる Cookie の値（RFC 6265 5.4 — 長い path が先・同じ長さは作った順。無ければ ""）
+func cookieHeader(c Client, t target, now int) string {
+    if !c.cookiesOn {
+        return ""
+    }
+    p, _, _ := strings.Cut(t.path, "?")
+    mut hits := mut []stored{}
+    for s <- c.cookies {
+        hostOk := if s.hostOnly { t.host == s.domain } else { domainMatch(t.host, s.domain) }
+        live := s.expires < 0 || s.expires > now
+        if hostOk && live && pathMatch(p, s.path) && (!s.secure || t.tls) {
+            hits = append(hits, s)
+        }
+    }
+    // 長い path が先（同じ長さは作った順 — 挿入の整列）
+    mut ord := mut []stored{}
+    for s <- byAge(freeze(hits)) {
+        ord = append(ord, s)
+        mut i := len(ord) - 1
+        while i > 0 && len(bytes(ord[i - 1].path)) < len(bytes(ord[i].path)) {
+            tmp := ord[i - 1]
+            ord[i - 1] = ord[i]
+            ord[i] = tmp
+            i -= 1
+        }
+    }
+    mut out := ""
+    for s <- ord {
+        out = if out == "" { "${s.name}=${s.value}" } else { "${out}; ${s.name}=${s.value}" }
+    }
+    return out
+}
+
+// host が domain に一致するか（同じか、domain の下のサブドメイン — host が番地なら同じだけ）
+func domainMatch(host string, domain string) bool {
+    if host == domain {
+        return true
+    }
+    return strings.HasSuffix(host, ".${domain}") && !isIPv4(host)
+}
+
+func isIPv4(h string) bool {
+    mut dots := 0
+    for x <- bytes(h) {
+        if x == '.' {
+            dots += 1
+        } else if x < '0' || x > '9' {
+            return false
+        }
+    }
+    return dots == 3
+}
+
+// 要求の path が cookie の path に一致するか（RFC 6265 5.1.4）
+func pathMatch(reqPath string, cookiePath string) bool {
+    if reqPath == cookiePath {
+        return true
+    }
+    if !strings.HasPrefix(reqPath, cookiePath) {
+        return false
+    }
+    return strings.HasSuffix(cookiePath, "/") || strings.HasPrefix(strings.TrimPrefix(reqPath, cookiePath), "/")
+}
+
+// 要求の path の既定の cookie の path（RFC 6265 5.1.4 — 最後の '/' の前まで・無ければ "/"）
+func defaultPath(full string) string {
+    p, _, _ := strings.Cut(full, "?")
+    if !strings.HasPrefix(p, "/") {
+        return "/"
+    }
+    dir, _, _ := strings.CutLast(p, "/")
+    return if dir == "" { "/" } else { dir }
+}
+
+// Max-Age の値（先頭の '-' と数字だけ — 他は nil）
+func signedInt(v string) int? {
+    b := bytes(v)
+    if len(b) == 0 || len(b) > 18 {
+        return nil
+    }
+    mut neg := false
+    mut i := 0
+    if b[0] == '-' {
+        neg = true
+        i = 1
+    }
+    if i >= len(b) {
+        return nil
+    }
+    mut n := 0
+    while i < len(b) {
+        if b[i] < '0' || b[i] > '9' {
+            return nil
+        }
+        n = n * 10 + int(b[i]) - 48
+        i += 1
+    }
+    return if neg { 0 - n } else { n }
+}
+
+// cookie の日付（RFC 6265 5.1.1 の寛容な読み — 区切りの字で語に分け、時刻・日・月・年をこの順に最初に合う語から拾う）。読めなければ nil
+func cookieDate(v string) int? {
+    b := bytes(v)
+    mut hour := -1
+    mut minute := 0
+    mut second := 0
+    mut day := -1
+    mut month := -1
+    mut year := -1
+    mut at := 0
+    while at < len(b) {
+        while at < len(b) && dateDelim(b[at]) {
+            at += 1
+        }
+        mut e := at
+        while e < len(b) && !dateDelim(b[e]) {
+            e += 1
+        }
+        if e > at {
+            tok := sub(b, at, e)
+            if hour < 0 && timeTok(tok) {
+                hms := strings.Split(tok, ":")
+                hour = leadDigits(hms[0])
+                minute = leadDigits(hms[1])
+                second = leadDigits(hms[2])
+            } else if day < 0 && digitRun(tok, 1, 2) {
+                day = leadDigits(tok)
+            } else if month < 0 && monthOf3(tok) >= 0 {
+                month = monthOf3(tok)
+            } else if year < 0 && digitRun(tok, 2, 4) {
+                year = leadDigits(tok)
+            }
+        }
+        at = e
+    }
+    if year >= 70 && year <= 99 {
+        year += 1900
+    } else if year >= 0 && year <= 69 {
+        year += 2000
+    }
+    if hour < 0 || day < 1 || day > 31 || month < 0 || year < 1601 || hour > 23 || minute > 59 || second > 59 {
+        return nil
+    }
+    t := time.FromCivil(time.Civil{year: year, month: month + 1, day: day, hour: hour, minute: minute, second: second, nsec: 0, weekday: 0}, 0)
+    return time.UnixSec(t)
+}
+
+func dateDelim(c byte) bool {
+    x := int(c)
+    return x == 0x09 || (x >= 0x20 && x <= 0x2f) || (x >= 0x3b && x <= 0x40) || (x >= 0x5b && x <= 0x60) || (x >= 0x7b && x <= 0x7e)
+}
+
+// "h:m:s"（各 1〜2 桁 — 後ろに数字でない字が続いてよい）
+func timeTok(tok string) bool {
+    parts := strings.Split(tok, ":")
+    return len(parts) == 3 && digitRun(parts[0], 1, 2) && digitRun(parts[1], 1, 2) && leadCount(parts[2]) >= 1 && leadCount(parts[2]) <= 2
+}
+
+// 先頭の数字の並びが lo〜hi 桁（後ろに数字でない字が続いてよい — RFC 6265 5.1.1 の non-digit の尾）
+func digitRun(s string, lo int, hi int) bool {
+    n := leadCount(s)
+    return n >= lo && n <= hi
+}
+
+func leadCount(s string) int {
+    mut n := 0
+    for x <- bytes(s) {
+        if x < '0' || x > '9' {
+            return n
+        }
+        n += 1
+    }
+    return n
+}
+
+func leadDigits(s string) int {
+    mut v := 0
+    for x <- bytes(s) {
+        if x < '0' || x > '9' {
+            return v
+        }
+        v = v * 10 + int(x) - 48
+    }
+    return v
+}
+
+// 月の名前の先頭 3 字（大文字小文字を区別しない — 0〜11・違えば -1）
+func monthOf3(tok string) int {
+    b := bytes(strings.ToLower(tok))
+    if len(b) < 3 {
+        return -1
+    }
+    m := "janfebmaraprmayjunjulaugsepoctnovdec"
+    mb := bytes(m)
+    for i <- iter.Range(0, 12) {
+        if b[0] == mb[i * 3] && b[1] == mb[i * 3 + 1] && b[2] == mb[i * 3 + 2] {
+            return i
+        }
+    }
+    return -1
+}

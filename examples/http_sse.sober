@@ -1,15 +1,15 @@
 package main
 
 // Server-Sent Events（language.md 28 節の「SSE」）: 応答の stream で text/event-stream を送る。長さ不定の stream なので chunked で、
-// emit 1 回 = chunk 1 つ = 送り 1 回（std は emit をまたいで溜めない — イベントは組んだ順にすぐ届く）。イベントの行は http.FormatEvent で組む
+// emit 1 回 = chunk 1 つ = 送り 1 回（std は emit をまたいで溜めない — イベントは組んだ順にすぐ届く）。イベントの行は http.server.FormatEvent で組む
 // （data の改行は行ごとの `data:` に割る・event / id の改行は panic(BadEvent) — examples/http_sse_bad）。保存させない（cache: NoStore）。
-// text/event-stream は compress: の対象外（ServeWith に compress: を渡しても圧縮しない — 頭に Content-Encoding も Vary も無い）。
-// 繋ぎ直した受け手は最後に受けた id を Last-Event-ID で返す（http.Header で読む — ここではその続きから送る）。
+// text/event-stream は compression: の対象外（ServeWith に compression: を渡しても圧縮しない — 頭に Content-Encoding も Vary も無い）。
+// 繋ぎ直した受け手は最後に受けた id を Last-Event-ID で返す（http.server.Header で読む — ここではその続きから送る）。
 // 長命の接続は scope の deadline の外に置く（ServeConn を deadline つきの task.Run で包むと流れが切れる）。
 // ネットの代わりに recv が決まった要求の列を渡し、send が送りの 1 回ずつを印字する（行末の CR は外す・送りの区切りに `--`）
 
-import "std/http"
 import "std/convert"
+import "std/http/server"
 
 func show(b []byte) error? {
     mut out := mut []byte{}
@@ -23,26 +23,26 @@ func show(b []byte) error? {
 }
 
 // from の次から 3 つのイベントを送る（心拍のコメントを 1 つ挟む）
-func events(from int, out mut http.Out, emit func(out mut http.Out, b []byte) error?) error? {
+func events(from int, out mut http.server.Out, emit func(out mut http.server.Out, b []byte) error?) error? {
     mut i := from + 1
     while i <= from + 3 {
-        emit(mut out, bytes(http.FormatEvent(http.Event{event: "tick", data: "n = ${i}\nsquare = ${i * i}", id: convert.FormatInt(i)})))?
+        emit(mut out, bytes(http.server.FormatEvent(http.server.Event{event: "tick", data: "n = ${i}\nsquare = ${i * i}", id: convert.FormatInt(i)})))?
         if i == from + 1 {
             emit(mut out, bytes(": ping\n\n"))?
         }
         i += 1
     }
-    emit(mut out, bytes(http.FormatEvent(http.Event{data: "bye", retry: 5000})))?
+    emit(mut out, bytes(http.server.FormatEvent(http.server.Event{data: "bye", retry: 5000})))?
     return nil
 }
 
-func route(r http.Request) http.Response {
+func route(r http.server.Request) http.server.Response {
     if r.path != "/events" {
-        return http.Status(404)
+        return http.server.Status(404)
     }
-    last := http.Header(r, "Last-Event-ID")
+    last := http.server.Header(r, "Last-Event-ID")
     from := if last != nil { convert.ParseInt(last) catch 0 } else { 0 }
-    return http.Response{status: 200, contentType: "text/event-stream", cache: http.NoStore{}, stream: (out, emit) => events(from, mut out, emit)}
+    return http.server.Response{status: 200, contentType: "text/event-stream", cache: http.server.NoStore{}, stream: (out, emit) => events(from, mut out, emit)}
 }
 
 func give(a string, k func([]byte)) error? {
@@ -53,6 +53,6 @@ func give(a string, k func([]byte)) error? {
 func main() {
     reqs := "GET /events HTTP/1.1\r\nAccept: text/event-stream\r\nAccept-Encoding: gzip\r\n\r\n" +
         "GET /events HTTP/1.1\r\nLast-Event-ID: 41\r\nConnection: close\r\n\r\n"
-    e := http.ServeWith((k) => give(reqs, k), (b) => show(b), route, compress: http.Gzip{})
+    e := http.server.ServeWith((k) => give(reqs, k), (b) => show(b), route, compression: http.server.Gzip{})
     println(e == nil)
 }

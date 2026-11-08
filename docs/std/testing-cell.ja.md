@@ -4,7 +4,7 @@
 
 `import "std/testing/cell"`
 
-テストの構成（`_test.sober`・`_double.sober`）の状態の置き場（[language.md 41 節](../language.md)「状態を貯める fake」）。把手は const の宣言だけが作り（`const Rows = cell.Cell[[]Row]{}`・初期値は `init:`）、値はプロセスに 1 つの置き場に写して持つ。Get / Set / Update の呼び出しは compiler が呼び出し点で置き場の読み書きに写す（下の本体は使われない）
+テストの構成（`_test.sober`・`_double.sober`）の状態の置き場（[language.md 41 節](../language.md)「状態を貯める fake」）。把手は const の宣言だけが作り（`const Rows = testing.cell.Cell[[]Row]{}`・初期値は `init:`）、値はプロセスに 1 つの置き場に写して持つ。Get / Set / Update の呼び出しは compiler が呼び出し点で置き場の読み書きに写す（下の本体は使われない）
 
 ## Cell
 

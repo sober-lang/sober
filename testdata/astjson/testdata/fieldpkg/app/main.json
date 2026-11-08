@@ -60,14 +60,14 @@
             "values": [
               {
                 "k": "composite",
-                "type_name": "box.Box",
+                "type_name": "testdata.fieldpkg.box.Box",
                 "elems": [
                   {
                     "key": "n",
                     "value": {
                       "k": "int",
                       "value": 0,
-                      "tok": 35
+                      "tok": 39
                     }
                   },
                   {
@@ -75,56 +75,26 @@
                     "value": {
                       "k": "strlit",
                       "value": "first",
-                      "tok": 39
+                      "tok": 43
                     }
                   },
                   {
                     "key": "inner",
                     "value": {
                       "k": "composite",
-                      "type_name": "box.Inner",
+                      "type_name": "testdata.fieldpkg.box.Inner",
                       "elems": [
                         {
                           "key": "k",
                           "value": {
                             "k": "int",
                             "value": 0,
-                            "tok": 49
+                            "tok": 57
                           }
                         }
                       ],
-                      "tok": 43,
+                      "tok": 47,
                       "type_args": []
-                    }
-                  },
-                  {
-                    "key": "xs",
-                    "value": {
-                      "k": "slicelit",
-                      "elem": {
-                        "k": "name",
-                        "name": "int"
-                      },
-                      "elems": [],
-                      "mut": true,
-                      "tok": 55
-                    }
-                  },
-                  {
-                    "key": "tags",
-                    "value": {
-                      "k": "maplit",
-                      "key": {
-                        "k": "name",
-                        "name": "string"
-                      },
-                      "value": {
-                        "k": "name",
-                        "name": "int"
-                      },
-                      "entries": [],
-                      "mut": true,
-                      "tok": 64
                     }
                   }
                 ],
@@ -141,26 +111,36 @@
               "callee": {
                 "k": "selector",
                 "base": {
-                  "k": "ident",
-                  "name": "box",
-                  "tok": 73
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "testdata",
+                      "tok": 61
+                    },
+                    "field": "fieldpkg",
+                    "tok": 63
+                  },
+                  "field": "box",
+                  "tok": 65
                 },
                 "field": "Add",
-                "tok": 75
+                "tok": 67
               },
               "args": [
                 {
                   "k": "mut_arg",
                   "name": "b",
-                  "tok": 78
+                  "tok": 70
                 },
                 {
                   "k": "int",
                   "value": 3,
-                  "tok": 80
+                  "tok": 72
                 }
               ],
-              "tok": 76
+              "tok": 68
             }
           },
           {
@@ -170,26 +150,36 @@
               "callee": {
                 "k": "selector",
                 "base": {
-                  "k": "ident",
-                  "name": "box",
-                  "tok": 83
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "testdata",
+                      "tok": 75
+                    },
+                    "field": "fieldpkg",
+                    "tok": 77
+                  },
+                  "field": "box",
+                  "tok": 79
                 },
                 "field": "Add",
-                "tok": 85
+                "tok": 81
               },
               "args": [
                 {
                   "k": "mut_arg",
                   "name": "b",
-                  "tok": 88
+                  "tok": 84
                 },
                 {
                   "k": "int",
                   "value": 4,
-                  "tok": 90
+                  "tok": 86
                 }
               ],
-              "tok": 86
+              "tok": 82
             }
           },
           {
@@ -199,7 +189,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 93
+                "tok": 89
               },
               "args": [
                 {
@@ -207,20 +197,20 @@
                   "base": {
                     "k": "ident",
                     "name": "b",
-                    "tok": 95
+                    "tok": 91
                   },
                   "field": "n",
-                  "tok": 97
+                  "tok": 93
                 },
                 {
                   "k": "selector",
                   "base": {
                     "k": "ident",
                     "name": "b",
-                    "tok": 99
+                    "tok": 95
                   },
                   "field": "name",
-                  "tok": 101
+                  "tok": 97
                 },
                 {
                   "k": "selector",
@@ -229,21 +219,31 @@
                     "base": {
                       "k": "ident",
                       "name": "b",
-                      "tok": 103
+                      "tok": 99
                     },
                     "field": "inner",
-                    "tok": 105
+                    "tok": 101
                   },
                   "field": "k",
-                  "tok": 107
+                  "tok": 103
                 },
                 {
                   "k": "call",
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "box",
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 105
+                        },
+                        "field": "fieldpkg",
+                        "tok": 107
+                      },
+                      "field": "box",
                       "tok": 109
                     },
                     "field": "Len",
@@ -259,7 +259,7 @@
                   "tok": 112
                 }
               ],
-              "tok": 94
+              "tok": 90
             }
           },
           {

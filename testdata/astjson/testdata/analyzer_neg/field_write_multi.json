@@ -25,14 +25,14 @@
             "values": [
               {
                 "k": "composite",
-                "type_name": "box.Box",
+                "type_name": "testdata.fieldpkg.box.Box",
                 "elems": [
                   {
                     "key": "n",
                     "value": {
                       "k": "int",
                       "value": 0,
-                      "tok": 20
+                      "tok": 24
                     }
                   },
                   {
@@ -40,56 +40,26 @@
                     "value": {
                       "k": "strlit",
                       "value": "x",
-                      "tok": 24
+                      "tok": 28
                     }
                   },
                   {
                     "key": "inner",
                     "value": {
                       "k": "composite",
-                      "type_name": "box.Inner",
+                      "type_name": "testdata.fieldpkg.box.Inner",
                       "elems": [
                         {
                           "key": "k",
                           "value": {
                             "k": "int",
                             "value": 0,
-                            "tok": 34
+                            "tok": 42
                           }
                         }
                       ],
-                      "tok": 28,
+                      "tok": 32,
                       "type_args": []
-                    }
-                  },
-                  {
-                    "key": "xs",
-                    "value": {
-                      "k": "slicelit",
-                      "elem": {
-                        "k": "name",
-                        "name": "int"
-                      },
-                      "elems": [],
-                      "mut": true,
-                      "tok": 40
-                    }
-                  },
-                  {
-                    "key": "tags",
-                    "value": {
-                      "k": "maplit",
-                      "key": {
-                        "k": "name",
-                        "name": "string"
-                      },
-                      "value": {
-                        "k": "name",
-                        "name": "int"
-                      },
-                      "entries": [],
-                      "mut": true,
-                      "tok": 49
                     }
                   }
                 ],
@@ -109,10 +79,10 @@
               {
                 "k": "int",
                 "value": 0,
-                "tok": 61
+                "tok": 49
               }
             ],
-            "tok": 58
+            "tok": 46
           },
           {
             "k": "assign",
@@ -120,17 +90,17 @@
               {
                 "k": "ident",
                 "name": "a",
-                "tok": 63
+                "tok": 51
               },
               {
                 "k": "selector",
                 "base": {
                   "k": "ident",
                   "name": "b",
-                  "tok": 65
+                  "tok": 53
                 },
                 "field": "n",
-                "tok": 67
+                "tok": 55
               }
             ],
             "op": "=",
@@ -138,15 +108,15 @@
               {
                 "k": "int",
                 "value": 1,
-                "tok": 69
+                "tok": 57
               },
               {
                 "k": "int",
                 "value": 2,
-                "tok": 71
+                "tok": 59
               }
             ],
-            "tok": 63
+            "tok": 51
           },
           {
             "k": "expr",
@@ -155,16 +125,16 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 73
+                "tok": 61
               },
               "args": [
                 {
                   "k": "ident",
                   "name": "a",
-                  "tok": 75
+                  "tok": 63
                 }
               ],
-              "tok": 74
+              "tok": 62
             }
           }
         ]
@@ -173,7 +143,7 @@
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 80
+        "end": 68
       },
       "sig_end": 10
     }

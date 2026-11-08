@@ -383,6 +383,51 @@ func fieldFnValDecl(st mut S, pk int, fenv int, ftype NodeRef) (int, error?) {
     return rec5(mut st, hget(mut st, dr), hget(mut st, dr + 1), hget(mut st, dr + 2), int(nC(nodeOf(mut st, hgetN(mut st, dr)))), 0), nil
 }
 
+// 呼び出しの callee が名前付き関数型の名前（`W(e)` / `p.W(e)` — 変換）ならその宣言の参照 [decl, pkg, tenv]（でなければ -1）
+func fnConvDr(st mut S, callee NodeRef, eb int) int {
+    k := kindN(mut st, callee)
+    mut name := StrRef(-1)
+    if k == ast.EIdent {
+        name = sA(nodeOf(mut st, callee))
+        if lookup(mut st, eb, name) >= 0 {
+            return -1
+        }
+    } else if k == ast.ESelector {
+        name = qualName(mut st, callee, eb, st.curPkg)
+    }
+    if name == -1 {
+        return -1
+    }
+    dr := lookupType(mut st, st.curPkg, name)
+    if dr < 0 || kindN(mut st, nC(nodeOf(mut st, hgetN(mut st, dr)))) != ast.BFunc {
+        return -1
+    }
+    return dr
+}
+
+// 変換 `W(e)` の結果の型（W の閉包の型 — 値化できない W は -1）
+func fnConvTy(st mut S, dr int, at NodeRef) TyRef {
+    decl := hgetN(mut st, dr)
+    if !fnValDeclNode(mut st, decl) {
+        return -1
+    }
+    return closTyOf(mut st, hget(mut st, dr + 1), decl, at, TYFUEL) catch TyRef(-1)
+}
+
+// 変換 `W(e)`（language.md 25 節 — e を W の値の位置に置いたもの）: 値の位置の閉包の値の脱糖（closureValue）そのもの
+func fnConvExpr(st mut S, dr int, args ListRef, at NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+    if lenL(mut st, args) != 1 {
+        return 0, diag.Malformed{at: posOf(mut st, at)}
+    }
+    decl := hgetN(mut st, dr)
+    if !fnValDeclNode(mut st, decl) {
+        return 0, diag.TypeMismatch{at: posOf(mut st, at), kind: 8}
+    }
+    want := closTyOf(mut st, hget(mut st, dr + 1), decl, at, TYFUEL)?
+    vp := rec5(mut st, hget(mut st, dr), hget(mut st, dr + 1), hget(mut st, dr + 2), int(nC(nodeOf(mut st, decl))), 0)
+    return closureValue(mut st, latN(mut st, args, 0), want, vp, eb, ef, depth, at)
+}
+
 // 値の位置（期待型 want = 閉包の型かその option・値の位置の記録 vp — fieldFnValDecl）の値 e の脱糖: ラムダは持ち上げて閉包の組に、nil は nil、
 // それ以外（閉包の値の束縛・欄の読み — 関数の名前は loader が η 展開済みで来ない）は素通し
 func closureValue(st mut S, e NodeRef, want TyRef, dr int, eb int, ef int, depth int, at NodeRef) (CoreRef, error?) {
@@ -400,6 +445,13 @@ func closureValue(st mut S, e NodeRef, want TyRef, dr int, eb int, ef int, depth
     if k == ast.ELambda {
         st.liftHint = rec5(mut st, hget(mut st, dr + 1), hget(mut st, dr + 2), hget(mut st, dr + 3), 0, 0)
         return liftLambdaCap(mut st, e, want, hgetN(mut st, dr), eb, ef, depth, at)
+    }
+    // 局所に束縛した名前付き関数（`f := dbl` — 素の関数の参照）は値の位置に置けない（spec F-11）
+    if k == ast.EIdent {
+        b := lookup(mut st, eb, sA(nodeOf(mut st, e)))
+        if b >= 0 && tg(mut st, bnd(mut st, b).ty) == TFn {
+            return 0, diag.TypeMismatch{at: posOf(mut st, e), kind: 6}
+        }
     }
     return expr(mut st, e, eb, ef, depth)
 }
@@ -420,7 +472,7 @@ func capEntry(st mut S, lam NodeRef) int {
 }
 
 // 値の位置のラムダの行 row が main から届く関数の中にあるか。届かない関数の中の閉包の env の形は U_F に入れない —
-// import しただけで呼ばない std の閉包（http.Static の stream）が、そのプログラムの全部の値の型を太らせない（閉じた union は世界全体でなく届く世界で閉じる）。
+// import しただけで呼ばない std の閉包（server.Static の stream）が、そのプログラムの全部の値の型を太らせない（閉じた union は世界全体でなく届く世界で閉じる）。
 // 届く = mainReach（名前の参照の辺 — 呼び出しに限らず関数値も・ラムダの中の参照は囲む関数から — 保守的）。届かない関数の本体は実行されないので
 // 作成点は unreach、持ち上げた Def は自分の形を直に受ける（本体の検査は今どおり）。lower は main から届く関数だけを下ろす（作業列）ので、
 // 届く扱いの誤り（脱糖テンプレートの暗黙の呼び出しの先の std が値の位置の捕捉つき閉包を作る形 — 今は無い）は build の Mismatch で表に出る
@@ -491,21 +543,14 @@ func capBrwTyOk(st mut S, t TyRef) bool {
     }
 }
 
-// 型宣言の参照 dr が同一性の族か（loader/identityx.sober の idBase と同じ名前の閉じた集合 + net の Conn / Listener・tls の Conn）
+// 型宣言の参照 dr が同一性の族か（diag の IdPaths / IdNames の表）
 func idDeclName(st mut S, dr int) bool {
     pp := PkgPath(mut st, hget(mut st, dr + 1))
     nm := sA(nodeOf(mut st, hgetN(mut st, dr)))
-    if strIs(mut st, pp, "std/task") {
-        return strIs(mut st, nm, "Scope") || strIs(mut st, nm, "Handle") || strIs(mut st, nm, "Sender") || strIs(mut st, nm, "Receiver") || strIs(mut st, nm, "Pool") || strIs(mut st, nm, "Local")
-    }
-    if strIs(mut st, pp, "std/io") {
-        return strIs(mut st, nm, "File")
-    }
-    if strIs(mut st, pp, "std/net") {
-        return strIs(mut st, nm, "Conn") || strIs(mut st, nm, "Listener")
-    }
-    if strIs(mut st, pp, "std/tls") {
-        return strIs(mut st, nm, "Conn")
+    for i <- iter.Range(0, len(diag.IdPaths)) {
+        if strIs(mut st, pp, diag.IdPaths[i]) && strIs(mut st, nm, diag.IdNames[i]) {
+            return true
+        }
     }
     return false
 }
@@ -955,7 +1000,9 @@ func callClosure(st mut S, callee NodeRef, ct TyRef, args ListRef, at NodeRef, e
             st.liftAnchor = anchor + 1
             hsetCore(mut st, int(vs) + 1 + i, liftLambdaCap(mut st, a, want, bk, eb, ef, depth + 1, at)?)
         } else {
-            av := coerceExpr(mut st, a, want, eb, ef, depth + 1, at)?
+            // 値化可能な named fn type（かその option）の仮引数へのラムダは値の位置（閉包の値 — 欄・func 宣言の実引数と同じ脱糖）
+            pvp := if bte != -1 && kindN(mut st, a) == ast.ELambda { fieldFnValDecl(mut st, hget(mut st, dr + 1), hget(mut st, dr + 2), bte)? } else { -1 }
+            av := if pvp >= 0 { closureValue(mut st, a, want, pvp, eb, ef, depth + 1, at)? } else { coerceExpr(mut st, a, want, eb, ef, depth + 1, at)? }
             hsetCore(mut st, int(vs) + 1 + i, if anchor >= 0 { copyAt(mut st, av, computeTy(mut st, a, eb, ef), want, anchor) } else { av })
         }
     }

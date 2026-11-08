@@ -1,0 +1,61 @@
+package main
+
+// Web クライアントのガイド 4 節: ログインの状態は cookie の値として自分で持つ。外の API の代役は POST /login で
+// セッションの cookie を置き（Set-Cookie は型の欄 cookies だけで書く）、GET /me はその cookie を読む。客は応答から CookieValue で取り出し、
+// 次の要求の cookies: に載せる — 載せたものだけが届く
+
+import "std/http/client"
+import "std/http/server"
+import "std/net"
+import "std/task"
+
+func api(r http.server.Request) http.server.Response {
+    if r.method == "POST" && r.path == "/login" {
+        return http.server.Response{status: 200, contentType: "text/plain", body: bytes("welcome"), cookies: []http.server.SetCookie{http.server.SetCookie{name: "sid", value: "s123", dangerouslyAllowHttp: true}}}
+    }
+    if r.path == "/me" {
+        sid := http.server.Cookie(r, "sid")
+        return http.server.Text(if sid != nil { "you are ${sid}" } else { "who are you?" })
+    }
+    return http.server.Status(404)
+}
+
+func visit(base string) []string {
+    r1, _ := http.client.Request("${base}/login", method: "POST")
+    sid := http.client.CookieValue(r1, "sid")
+    if sid == nil {
+        return []string{"no session"}
+    }
+    r2, _ := http.client.Request("${base}/me", cookies: []http.client.Cookie{http.client.Cookie{name: "sid", value: sid}})
+    r3, _ := http.client.Request("${base}/me")
+    return []string{"login: ${string(r1.body) catch ""} (sid ${sid})", "with cookie: ${string(r2.body) catch ""}", "without: ${string(r3.body) catch ""}"}
+}
+
+func serve(l net.Listener, n int) error? {
+    mut k := 0
+    for c <- net.Accept(l)? {
+        http.server.ServeConn(c, api)?
+        k = k + 1
+        if k == n {
+            break
+        }
+    }
+    return nil
+}
+
+func main() {
+    e := net.Listen("127.0.0.1:0", (l) => {
+        base := "http://127.0.0.1:${net.Port(l)}"
+        got, _ := task.Run((s) => {
+            h := task.Spawn(s, () => visit(base))
+            _ = serve(l, 3)
+            task.Join(h)
+        })
+        for line <- got {
+            println(line)
+        }
+    })
+    if e != nil {
+        println("listen failed")
+    }
+}

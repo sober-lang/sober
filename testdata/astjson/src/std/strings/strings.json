@@ -29,7 +29,7 @@
       }
     },
     {
-      "name": "InvalidUtf8",
+      "name": "BadUtf8",
       "type_params": [],
       "body": {
         "k": "error",

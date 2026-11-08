@@ -4,8 +4,8 @@ package main
 
 import "std/testing/cell"
 
-const N = cell.Cell[int]{}
+const N = testing.cell.Cell[int]{}
 
 func main() {
-    cell.Set(N, 1)
+    testing.cell.Set(N, 1)
 }

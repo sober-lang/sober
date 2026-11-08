@@ -1,0 +1,324 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "greet",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "json",
+      "tok": 7
+    },
+    {
+      "alias": null,
+      "path": "kv",
+      "tok": 10
+    },
+    {
+      "alias": null,
+      "path": "kv/store",
+      "tok": 13
+    },
+    {
+      "alias": null,
+      "path": "std/json",
+      "tok": 16
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 24
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "greet",
+                      "tok": 26
+                    },
+                    "field": "Hello",
+                    "tok": 28
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "mod",
+                      "tok": 30
+                    }
+                  ],
+                  "tok": 29
+                }
+              ],
+              "tok": 25
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 34
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "json",
+                      "tok": 36
+                    },
+                    "field": "Own",
+                    "tok": 38
+                  },
+                  "args": [],
+                  "tok": 39
+                }
+              ],
+              "tok": 35
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "v"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "stdjson",
+                      "tok": 45
+                    },
+                    "field": "Parse",
+                    "tok": 47
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "bytes",
+                        "tok": 49
+                      },
+                      "args": [
+                        {
+                          "k": "strlit",
+                          "value": "[1,2]",
+                          "tok": 51
+                        }
+                      ],
+                      "tok": 50
+                    }
+                  ],
+                  "tok": 48
+                },
+                "rhs": {
+                  "k": "ret",
+                  "values": [
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 56
+                    }
+                  ],
+                  "tok": 55
+                },
+                "tok": 54
+              }
+            ],
+            "tok": 43
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 58
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "stdjson",
+                      "tok": 60
+                    },
+                    "field": "Format",
+                    "tok": 62
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "v",
+                      "tok": 64
+                    },
+                    {
+                      "k": "int",
+                      "value": 0,
+                      "tok": 66
+                    }
+                  ],
+                  "tok": 63
+                }
+              ],
+              "tok": 59
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "s"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "kv",
+                    "tok": 72
+                  },
+                  "field": "Put",
+                  "tok": 74
+                },
+                "args": [
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "kv",
+                          "tok": 76
+                        },
+                        "field": "store",
+                        "tok": 78
+                      },
+                      "field": "Empty",
+                      "tok": 80
+                    },
+                    "args": [],
+                    "tok": 81
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "k",
+                    "tok": 84
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "v",
+                    "tok": 86
+                  }
+                ],
+                "tok": 75
+              }
+            ],
+            "tok": 70
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 89
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "kv",
+                      "tok": 91
+                    },
+                    "field": "Get",
+                    "tok": 93
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "s",
+                      "tok": 95
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "k",
+                      "tok": 97
+                    }
+                  ],
+                  "tok": 94
+                }
+              ],
+              "tok": 90
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 102
+              }
+            ],
+            "tok": 101
+          }
+        ]
+      },
+      "tok": 19,
+      "bodiless": false,
+      "span": {
+        "start": 18,
+        "end": 106
+      },
+      "sig_end": 23
+    }
+  ],
+  "consts": []
+}

@@ -1,7 +1,7 @@
 package main
 
 // UTF-8 の境界の畳み（compiler/lower/ubf.sober）の負例: 区切りの事実があっても境界を保証しない形では、Str が境界の
-// 検査を残して InvalidUtf8 の位置を返すこと。Str の部分インラインはループの中の点だけなので、全部ループの中で呼ぶ（opt / no-opt の出力が同じ — optdiff）。
+// 検査を残して BadUtf8 の位置を返すこと。Str の部分インラインはループの中の点だけなので、全部ループの中で呼ぶ（opt / no-opt の出力が同じ — optdiff）。
 // 正例（畳める形 — `;` の位置・ASCII の次）も並べて、畳んだ後の値が検査を残した値と同じことを見る
 
 import "std/iter"
@@ -13,7 +13,7 @@ func code(v utf8.View, s int, i int) int {
     x, err := utf8.Str(v, s, i)
     return if err != nil {
         switch err {
-        case strings.InvalidUtf8{pos}: 1000 + pos
+        case strings.BadUtf8{pos}: 1000 + pos
         }
     } else {
         len(bytes(x))

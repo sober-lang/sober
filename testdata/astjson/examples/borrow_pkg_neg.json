@@ -119,12 +119,17 @@
               "callee": {
                 "k": "selector",
                 "base": {
-                  "k": "ident",
-                  "name": "brwpkg",
-                  "tok": 47
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "testdata",
+                    "tok": 47
+                  },
+                  "field": "brwpkg",
+                  "tok": 49
                 },
                 "field": "Pass",
-                "tok": 49
+                "tok": 51
               },
               "args": [
                 {
@@ -142,29 +147,29 @@
                       "base": {
                         "k": "ident",
                         "name": "net",
-                        "tok": 55
+                        "tok": 57
                       },
                       "field": "Send",
-                      "tok": 57
+                      "tok": 59
                     },
                     "args": [
                       {
                         "k": "ident",
                         "name": "c",
-                        "tok": 59
+                        "tok": 61
                       },
                       {
                         "k": "ident",
                         "name": "b",
-                        "tok": 61
+                        "tok": 63
                       }
                     ],
-                    "tok": 58
+                    "tok": 60
                   },
-                  "tok": 54
+                  "tok": 56
                 }
               ],
-              "tok": 50
+              "tok": 52
             }
           }
         ]
@@ -173,7 +178,7 @@
       "bodiless": false,
       "span": {
         "start": 38,
-        "end": 67
+        "end": 69
       },
       "sig_end": 46
     },
@@ -185,13 +190,13 @@
       "body": {
         "stmts": []
       },
-      "tok": 68,
+      "tok": 70,
       "bodiless": false,
       "span": {
-        "start": 67,
-        "end": 74
+        "start": 69,
+        "end": 76
       },
-      "sig_end": 71
+      "sig_end": 73
     }
   ],
   "consts": []

@@ -1,0 +1,4 @@
+# scripts/dnsinterop.sh の記録（scripts/confrecord.sh が書く — 手で直さない）
+commit 8314196f0ed4 (dirty)
+date 2026-11-06
+conf: interop/dns 7

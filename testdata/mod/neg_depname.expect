@@ -1,0 +1,2 @@
+sober: load error at sober.mod:2:5: a tree name (the name of a dep or an alias) is a lowercase identifier (a-z, 0-9, _ — not starting with a digit) that is not a keyword
+(check exit 1)

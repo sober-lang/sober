@@ -14,13 +14,13 @@ const OpSub = 3
 const OpMul = 4
 const OpDiv = 5
 
-// 節の種類と命令は同じ番号（parse.Lit = OpPush …）— 節を後置順に並べ直すだけでコードになる
-func Compile(nodes []parse.Node) []int {
+// 節の種類と命令は同じ番号（testdata.minic_rd.parse.Lit = OpPush …）— 節を後置順に並べ直すだけでコードになる
+func Compile(nodes []testdata.minic_rd.parse.Node) []int {
     mut cb := builder.Builder[int]{}
     mut i := 0
     while i < len(nodes) {
         n := nodes[i]
-        arg := if n.kind == parse.Lit { n.val } else if n.kind == parse.Div { n.pos } else { 0 }
+        arg := if n.kind == testdata.minic_rd.parse.Lit { n.val } else if n.kind == testdata.minic_rd.parse.Div { n.pos } else { 0 }
         builder.Push(mut cb, n.kind)
         builder.Push(mut cb, arg)
         i += 1
@@ -29,7 +29,7 @@ func Compile(nodes []parse.Node) []int {
 }
 
 // Run はコードを実行して最後にスタックに残った値を返す
-@errors(diag.DivByZero)
+@errors(testdata.minic_rd.diag.DivByZero)
 func Run(code []int) (int, error?) {
     mut st := mut []int{}
     mut sp := 0
@@ -50,7 +50,7 @@ func Run(code []int) (int, error?) {
             a := st[sp - 2]
             b := st[sp - 1]
             if op == OpDiv && b == 0 {
-                return 0, diag.DivByZero{pos: arg}
+                return 0, testdata.minic_rd.diag.DivByZero{pos: arg}
             }
             st[sp - 2] = switch op {
             case 2: a + b

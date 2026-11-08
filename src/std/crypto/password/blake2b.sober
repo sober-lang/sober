@@ -1,0 +1,111 @@
+package password
+
+import "std/iter"
+
+// BLAKE2b（RFC 7693 — 鍵なし・出力の長さ 1〜64 バイト）。Argon2 の H と H' の下。算術は 64 bit の語の mod 2^64（int の和の wrap）で、
+// 右回転は算術シフトの上の bit を mask で落とす。データに依る分岐・添字は無い
+
+// 64 bit の右回転（k は 1..63）
+func rotr64(x int, k int) int {
+    return ((x >> k) & ((1 << (64 - k)) - 1)) | (x << (64 - k))
+}
+
+// 初期値（SHA-512 の IV — 2^63 以上の語は負の int で書く）
+func b2iv() []int {
+    return []int{0x6a09e667f3bcc908, -0x4498517a7b3558c5, 0x3c6ef372fe94f82b, -0x5ab00ac5a0e2c90f, 0x510e527fade682d1, -0x64fa9773d4c193e1, 0x1f83d9abfb41bd6b, 0x5be0cd19137e2179}
+}
+
+// メッセージの語の並べ替え（10 段 — 11・12 段目は 1・2 段目の繰り返し）
+func b2sigma() []int {
+    return []int{
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+        14, 10, 4, 8, 9, 15, 13, 6, 1, 12, 0, 2, 11, 7, 5, 3,
+        11, 8, 12, 0, 5, 2, 15, 13, 10, 14, 3, 6, 7, 1, 9, 4,
+        7, 9, 3, 1, 13, 12, 11, 14, 2, 6, 5, 10, 4, 0, 15, 8,
+        9, 0, 5, 7, 2, 4, 10, 15, 14, 1, 11, 12, 6, 8, 3, 13,
+        2, 12, 6, 10, 0, 11, 8, 3, 4, 13, 7, 5, 15, 14, 1, 9,
+        12, 5, 1, 15, 14, 13, 4, 10, 0, 7, 6, 3, 9, 2, 8, 11,
+        13, 11, 7, 14, 12, 1, 3, 9, 5, 0, 15, 4, 8, 6, 2, 10,
+        6, 15, 14, 9, 11, 3, 0, 8, 12, 2, 13, 7, 1, 4, 10, 5,
+        10, 2, 8, 4, 7, 6, 1, 5, 15, 11, 9, 14, 3, 12, 13, 0,
+    }
+}
+
+// 混ぜ G（RFC 7693 3.1）
+func b2g(v mut []int, a int, b int, c int, d int, x int, y int) {
+    v[a] = v[a] + v[b] + x
+    v[d] = rotr64(v[d] ^ v[a], 32)
+    v[c] = v[c] + v[d]
+    v[b] = rotr64(v[b] ^ v[c], 24)
+    v[a] = v[a] + v[b] + y
+    v[d] = rotr64(v[d] ^ v[a], 16)
+    v[c] = v[c] + v[d]
+    v[b] = rotr64(v[b] ^ v[c], 63)
+}
+
+// 圧縮 F（RFC 7693 3.2）: h に data[off:off + 128]（足りない分は 0）を畳む。t = これまでに畳んだバイト数（このブロックを含む — 2^63 未満）・last = 最後のブロック
+@secret(data)
+func b2compress(h mut []int, v mut []int, m mut []int, sigma []int, data []byte, off int, t int, last bool) {
+    for i <- iter.Range(0, 16) {
+        mut w := 0
+        for j <- iter.Range(0, 8) {
+            p := off + 8 * i + j
+            b := if p < len(data) { int(data[p]) } else { 0 }
+            w = w | (b << (8 * j))
+        }
+        m[i] = w
+    }
+    iv := b2iv()
+    for i <- iter.Range(0, 8) {
+        v[i] = h[i]
+        v[i + 8] = iv[i]
+    }
+    v[12] = v[12] ^ t
+    if last {
+        v[14] = ^v[14]
+    }
+    for r <- iter.Range(0, 12) {
+        s := 16 * (r % 10)
+        b2g(mut v, 0, 4, 8, 12, m[sigma[s + 0]], m[sigma[s + 1]])
+        b2g(mut v, 1, 5, 9, 13, m[sigma[s + 2]], m[sigma[s + 3]])
+        b2g(mut v, 2, 6, 10, 14, m[sigma[s + 4]], m[sigma[s + 5]])
+        b2g(mut v, 3, 7, 11, 15, m[sigma[s + 6]], m[sigma[s + 7]])
+        b2g(mut v, 0, 5, 10, 15, m[sigma[s + 8]], m[sigma[s + 9]])
+        b2g(mut v, 1, 6, 11, 12, m[sigma[s + 10]], m[sigma[s + 11]])
+        b2g(mut v, 2, 7, 8, 13, m[sigma[s + 12]], m[sigma[s + 13]])
+        b2g(mut v, 3, 4, 9, 14, m[sigma[s + 14]], m[sigma[s + 15]])
+    }
+    for i <- iter.Range(0, 8) {
+        h[i] = h[i] ^ v[i] ^ v[i + 8]
+    }
+}
+
+// data の BLAKE2b の値（n バイト — 1 ≤ n ≤ 64 は呼び手が保証する）
+@secret(data)
+@effects(!io, !block, !nondet)
+func blake2b(data []byte, n int) []byte {
+    iv := b2iv()
+    mut h := mut []int{}
+    for i <- iter.Range(0, 8) {
+        h = append(h, iv[i])
+    }
+    h[0] = h[0] ^ 0x01010000 ^ n
+    mut v := mut []int{}
+    mut m := mut []int{}
+    for i <- iter.Range(0, 16) {
+        v = append(v, 0)
+        m = append(m, 0)
+    }
+    sigma := b2sigma()
+    nb := if len(data) == 0 { 1 } else { (len(data) + 127) / 128 }
+    for k <- iter.Range(0, nb) {
+        last := k == nb - 1
+        t := if last { len(data) } else { 128 * (k + 1) }
+        b2compress(mut h, mut v, mut m, sigma, data, 128 * k, t, last)
+    }
+    mut out := mut []byte{}
+    for i <- iter.Range(0, n) {
+        out = append(out, byte((h[i / 8] >> (8 * (i % 8))) & 0xff))
+    }
+    return freeze(out)
+}

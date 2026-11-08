@@ -4,7 +4,7 @@ package main
 import "testdata/fieldpkg/box"
 
 func main() {
-    mut b := box.Box{n: 0, name: "x", inner: box.Inner{k: 0}, xs: mut []int{}, tags: mut map[string]int{}}
+    mut b := testdata.fieldpkg.box.Box{n: 0, name: "x", inner: testdata.fieldpkg.box.Inner{k: 0}}
     b.n += 1
     println(b.name)
 }

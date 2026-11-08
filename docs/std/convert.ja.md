@@ -26,10 +26,10 @@ f を小数点以下 prec 桁で（Go の strconv.FormatFloat(f, 'f', prec, 64)�
 
 対の `ParseFixed` は実需まで足さない（[language.md 34 節](../language.md) の規則 2）。
 
-## InvalidFloat
+## BadFloat
 
 ```sober
-type InvalidFloat error
+type BadFloat error
 ```
 
 ParseFloat の構文の違い（10 進の数字・小数点・指数、または inf / infinity / nan でない）
@@ -45,19 +45,19 @@ ParseFloat の溢れ（値は ±Inf — Go の ErrRange と同じ）
 ## ParseFloat
 
 ```sober
-@errors(InvalidFloat, FloatOutOfRange)
+@errors(BadFloat, FloatOutOfRange)
 @effects()
 func ParseFloat(s string) (float, error?)
 ```
 
 s の値（10 進の正確な値を 1 回だけ最近接・偶数へ丸める — 浮動小数のリテラルと同じ算法。0 に丸まる小さい値は誤りでない）。受ける形は [+-]? 数字の列（小数点 1 つ・指数 e / E [+-] 数字）か inf / infinity（符号可）/ nan（大文字小文字を問わない）。16 進・\_ は受けない
 
-失敗のラベル: [`InvalidFloat`](#invalidfloat)・[`FloatOutOfRange`](#floatoutofrange)
+失敗のラベル: [`BadFloat`](#badfloat)・[`FloatOutOfRange`](#floatoutofrange)
 
-## InvalidInt
+## BadInt
 
 ```sober
-type InvalidInt error
+type BadInt error
 ```
 
 ParseInt の構文の違い（[+-]? と 10 進の数字の列でない — 空・空白・\_・16 進は受けない）
@@ -73,14 +73,14 @@ ParseInt の溢れ（int〔64 ビット〕の範囲の外 — Go の ErrRange �
 ## ParseInt
 
 ```sober
-@errors(InvalidInt, IntOutOfRange)
+@errors(BadInt, IntOutOfRange)
 @effects()
 func ParseInt(s string) (int, error?)
 ```
 
 s の 10 進の値（Go の strconv.Atoi と同じ受け方 — `[+-]? 数字+`）
 
-失敗のラベル: [`InvalidInt`](#invalidint)・[`IntOutOfRange`](#intoutofrange)
+失敗のラベル: [`BadInt`](#badint)・[`IntOutOfRange`](#intoutofrange)
 
 ## FormatInt
 
@@ -91,10 +91,10 @@ func FormatInt(n int) string
 
 n の 10 進表記（Go の strconv.Itoa と同じ — ParseInt の対）。文字列補間 `${n}` の int の変換もこれ（parser の合成の暗黙 import $convert — コアに変換 op を足さない）。最小値は符号反転が溢れるので綴りをそのまま返す
 
-## InvalidBool
+## BadBool
 
 ```sober
-type InvalidBool error
+type BadBool error
 ```
 
 ParseBool の構文の違い（受ける綴りの外 — Go の strconv.ErrSyntax と同じ）
@@ -102,14 +102,14 @@ ParseBool の構文の違い（受ける綴りの外 — Go の strconv.ErrSynta
 ## ParseBool
 
 ```sober
-@errors(InvalidBool)
+@errors(BadBool)
 @effects()
 func ParseBool(s string) (bool, error?)
 ```
 
-s の真偽（Go の strconv.ParseBool と同じ受け方 — 真 = "1" "t" "T" "TRUE" "true" "True"・偽 = "0" "f" "F" "FALSE" "false" "False"。他の綴り〔"yes"・"on"・"tRUE"・前後の空白〕は InvalidBool。値は false）
+s の真偽（Go の strconv.ParseBool と同じ受け方 — 真 = "1" "t" "T" "TRUE" "true" "True"・偽 = "0" "f" "F" "FALSE" "false" "False"。他の綴り〔"yes"・"on"・"tRUE"・前後の空白〕は BadBool。値は false）
 
-失敗のラベル: [`InvalidBool`](#invalidbool)
+失敗のラベル: [`BadBool`](#badbool)
 
 ## FormatBool
 

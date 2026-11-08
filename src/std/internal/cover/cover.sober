@@ -1,7 +1,7 @@
 package cover
 
 // カバレッジの計器の数え口（std の実装の詳細）: `sober build --cover` の loader の写し（loader/coverx.sober）が利用者の分岐・if の条件・
-// 短絡の右辺に数え口（Hit / Br / Br1 / On — 小さい包みで、lower の irinl が呼ぶ側の大きさを問わず写す）・main の頭に `$cover.Start(鍵)` を足す（参照名が `$` の合成の import — 20 節）。
+// 短絡の右辺に数え口（Hit / Br / Br1 / On — 小さい包みで、lower の irinl が呼ぶ側の大きさを問わず写す）・main の頭に `$internal.cover.Start(鍵)` を足す（参照名が `$` の合成の import — 20 節）。
 // 点 k の印は rt の大域のバイト列の k 番目に 1 を書くだけ（冪等 — 並行の task が同じ点を踏んでも数えこぼさない）。
 // 書き出しは rt がプロセスの終わり（main の後・panic ほか終わりの道の全部）に、Start が渡した fd へバイト列を 1 回 write する
 
@@ -38,7 +38,7 @@ func Hit(k int) {
     _ = hit(k)
 }
 
-// 点 k を踏んだ印を付けて真（短絡の右辺の頭 — `a && b` → `a && ($cover.On(k) && b)`）
+// 点 k を踏んだ印を付けて真（短絡の右辺の頭 — `a && b` → `a && ($internal.cover.On(k) && b)`）
 func On(k int) bool {
     return hit(k) == 0
 }

@@ -9,6 +9,10 @@
 #   scripts/gates.sh --auto          作業木の変更ファイル（git status）からタグを推定（推定できない変更があれば --full、src/ の変更は --all）
 #   オプション: -j G（同時に走らせるゲートの数、既定 8 — 2026-10-27 に 6 から: 段 3 の網 4 本で -j 6 の詰めの下限がゲート秒の和 / 6 ≈ 657 s になり、
 #   24 コアの箱で -j 8 = 592 s。--full の wall の線は 10 分〔旧 8 分〕— ナビ裁定・report-1204 3 節）・--jobs J（ゲートの中の並列、既定 = CPU 数 / 同時ゲート数、最低 4）・--no-cache（差分スキップ・tool の再利用を切る）
+#   --budget S（起動から S 秒で打ち切り — 新しいゲートを始めず、走行中のゲートは止めて「未走」に。PASS / FAIL / 未走の三分類と、未走を走らせる
+#   `scripts/gates.sh --gate …` の行を印字する。PASS は記録に残るので、同じコマンドの再走は HIT で飛ばして続きから走る = 分割実行）
+# 走行の状態は out/gates-status.json（GATES_STATUS で差し替え）に常に書く: phase（build / gates / retry / done / aborted）・走行中のゲート・済んだゲートの
+# 終了コードと秒・done のとき結果の要約と終了コード。完了の検知は通知でなくこのファイルの phase で
 #
 # 段:
 #   1. 共有ビルド: `zig build`（stage1）→ scripts/stage2.sh（stage2 — 古ければ作り直す。bin/sober と共有）→ compiler/tools/* を主の sober（stage2）で並列に
@@ -40,6 +44,7 @@ export SOBER_CHECK_REPLAY=${SOBER_CHECK_REPLAY:-0}
 # lower の分割（席 A — 既定は W ≥ 2 で分割）は直の道に固定（W8 の線と黄金を動かさない。既定の道の網は selfpar が口を外して試す）
 export SOBER_LOWER_SPLIT=${SOBER_LOWER_SPLIT:-1}
 
+GATES_ARGS="${*//\"/}"
 mode=full
 withzig=0
 tags=()
@@ -48,6 +53,7 @@ J=
 cache=1
 memo=1
 verify=0
+BUDGET=
 while [ $# -gt 0 ]; do
     case "$1" in
         --full) mode=full ;;
@@ -60,6 +66,7 @@ while [ $# -gt 0 ]; do
         --no-cache) cache=0 ;;
         --memo) memo=1 ;;
         --verify) memo=1; verify=1 ;;
+        --budget) BUDGET=$2; shift ;;
         *) echo "gates: unknown argument $1"; exit 2 ;;
     esac
     shift
@@ -135,6 +142,7 @@ declare -A GTAG=(
     [outline]="parse docs"
     [doclead]="docs"
     [benchsync]="docs"
+    [confsync]="docs lower backend"
     [maprepr]="lower"
     [streq]="lower"
     [strix]="lower"
@@ -163,6 +171,7 @@ declare -A GTAG=(
     [mutate]="load lower backend"
     [guidetest]="load lower backend docs"
     [fnpkg]="load desugar lower backend"
+    [modcheck]="load lower backend"
     [a1oracle]="desugar lower backend"
     [memcheck]="lower backend"
     [incrrace]="all"
@@ -172,8 +181,11 @@ declare -A GTAG=(
     [iouring]="lower backend"
     [httpcheck]="lower backend"
     [pid1stop]="lower backend"
+    [mdwecheck]="lower backend"
     [vaslot]="lower backend"
     [starve]="lower backend"
+    [fusecheck]="lower backend"
+    [wincheck]="lower backend"
     [selfpar]="check desugar load"
     [gatememo]="all"
     [axes]="all"
@@ -182,11 +194,14 @@ declare -A GTAG=(
     [sobi]="lex parse fmt load desugar check"
     [refs]="lex parse load"
     [stdref]="docs"
+    [rootsync]="docs"
+    [tzsync]="docs"
+    [datadce]="lower backend"
 )
 # 長いものから（並列の詰め順 — 2026-10-27 に R1 の実測の札で並べ直した: selfpar の並列化〔R0〕で最長の札が incrbuild / leanbatch / hermetic の群に移った）。段 3 のキャッシュの網 4 本（incrmut / incrbuild / incrrace / cacheaudit — 3〜4 分ずつ）は stages の直後に置く —
 # 後ろに置くと最後に長い札が重なって --full の wall が伸びる（R3 の 766 s — report-1204 3 節）
 # incrmut は単独で最長の札（冷の --full で 900 s 級）— 13 番目に置くと開始が 5 分近く遅れて臨界路になるので先頭に置く
-ORDER=(incrmut zigtest incrbuild leanbatch hermetic implicitfreeze cachesplit selfhost_check stages nextgen elfeq incrrace iouring selfpar incrcheck_self incrcheck_ex watchcheck testreplay quickfuzz cover mutate guidetest fnpkg a1oracle memcheck errtrace typerdiff efftrace cachekey streq strix fitcheck numpert sobi obs cacheaudit tyorder selfhost_ll selfhost_e2e selfhost_lower selfhost_fmt selfhost_load toolcheck pkgcheck selfhost_parse io_args passes regionbound checkverdict checksplit checkpos panicmsg optdiff corejson irtext lltext llcheck astjson loaderjson selfhost_lex pool_oracle analyzer_neg secretdump effectsdump fixcheck uniqfreeze sobertest doubles jsonsuite unittest x86enc trapprobe seqpar lparcfg schedvec schedfuzz parbudget cutstat mapfuse partinl docsync clidoc outline doclead benchsync maprepr ubfstat framestat sortcheck matchlencheck jcleancheck flatecheck ctcheck cryptocheck tlsfsm iterregion fnhash tyhash gatememo httpcheck starve pid1stop vaslot refs stdref corevec extract axes obs_zig hermetic_zig ir_roundtrip)
+ORDER=(incrmut zigtest incrbuild leanbatch hermetic implicitfreeze cachesplit selfhost_check stages nextgen elfeq incrrace iouring selfpar incrcheck_self incrcheck_ex watchcheck testreplay quickfuzz cover mutate guidetest fnpkg modcheck a1oracle memcheck errtrace typerdiff efftrace cachekey streq strix fitcheck numpert sobi obs cacheaudit tyorder selfhost_ll selfhost_e2e selfhost_lower selfhost_fmt selfhost_load toolcheck pkgcheck selfhost_parse io_args passes regionbound checkverdict checksplit checkpos panicmsg optdiff corejson irtext lltext llcheck astjson loaderjson selfhost_lex pool_oracle analyzer_neg secretdump effectsdump fixcheck uniqfreeze sobertest doubles jsonsuite unittest x86enc trapprobe seqpar lparcfg schedvec schedfuzz parbudget cutstat mapfuse partinl docsync clidoc outline doclead benchsync confsync maprepr ubfstat framestat sortcheck matchlencheck jcleancheck flatecheck ctcheck cryptocheck tlsfsm iterregion fnhash tyhash gatememo httpcheck starve fusecheck wincheck pid1stop mdwecheck vaslot refs stdref rootsync tzsync datadce corevec extract axes obs_zig hermetic_zig ir_roundtrip)
 
 auto_tags() { # 変更ファイル → タグ（推定できない変更は all）
     local f
@@ -225,11 +240,14 @@ auto_tags() { # 変更ファイル → タグ（推定できない変更は all�
             scripts/selfhost_desugar.sh|scripts/corejson.sh) echo desugar ;;
             scripts/selfhost_check.sh|scripts/selfhost_e2e.sh|scripts/checkmut.ts|scripts/corevec.sh) echo check ;;
             scripts/obs.sh|scripts/hermetic.sh|scripts/pkgcheck.sh|scripts/io_args.sh|scripts/x86enc.sh|scripts/elfeq.sh|scripts/elfeq.list) echo backend ;;
-            scripts/selfhost_lower.sh|scripts/lparcfg.sh|scripts/lparcfg.ts|scripts/trapprobe.sh|testdata/trapprobe/*|scripts/seqpar.sh|scripts/seqpar.list|scripts/schedvec.sh|scripts/schedvec.ts|scripts/schedvec.list|scripts/schedfuzz.sh|scripts/schedfuzz.list|testdata/readyspill/*|scripts/parbudget.sh|testdata/parbudget/*|scripts/cutstat.sh|scripts/mapfuse.sh|scripts/partinl.sh|scripts/maprepr.sh|scripts/streq.sh|scripts/strix.sh|scripts/sortcheck.sh|scripts/matchlencheck.sh|testdata/matchlen/*|scripts/jcleancheck.sh|testdata/jclean/*|scripts/iterregion.sh|testdata/sortcheck/*|scripts/flatecheck.sh|testdata/flatecheck/*|scripts/ctcheck.sh|testdata/ctcheck/*|scripts/cryptocheck.sh|scripts/ubfstat.sh|scripts/ubfstat.list|scripts/framestat.sh|scripts/framestat.list|scripts/fitcheck.sh|scripts/numpert.sh|scripts/tyorder.sh|scripts/cacheaudit.sh|scripts/incrbuild.sh|scripts/incrmut.sh|scripts/incrrace.sh|scripts/iouring.sh|scripts/httpcheck.sh|testdata/httpcheck/*|scripts/pid1stop.*|testdata/pid1stop/*|scripts/vaslot.sh|testdata/vaslot/*|scripts/starve.sh|testdata/starve/*|testdata/cutstat/*|scripts/optdiff.sh|scripts/typerdiff.sh|scripts/irtext.sh|scripts/lltext.sh|scripts/llcheck.sh|scripts/selfhost_ll.sh|scripts/stages.sh|scripts/selfhost_cli.sh|scripts/passes.sh|scripts/regionbound.sh|scripts/memcheck.sh|testdata/memcheck/*) echo lower ;;
+            scripts/selfhost_lower.sh|scripts/lparcfg.sh|scripts/lparcfg.ts|scripts/trapprobe.sh|testdata/trapprobe/*|scripts/seqpar.sh|scripts/seqpar.list|scripts/schedvec.sh|scripts/schedvec.ts|scripts/schedvec.list|scripts/schedfuzz.sh|scripts/schedfuzz.list|testdata/readyspill/*|scripts/parbudget.sh|testdata/parbudget/*|scripts/cutstat.sh|scripts/mapfuse.sh|scripts/partinl.sh|scripts/maprepr.sh|scripts/streq.sh|scripts/strix.sh|scripts/sortcheck.sh|scripts/matchlencheck.sh|testdata/matchlen/*|scripts/jcleancheck.sh|testdata/jclean/*|scripts/iterregion.sh|testdata/sortcheck/*|scripts/flatecheck.sh|testdata/flatecheck/*|scripts/ctcheck.sh|testdata/ctcheck/*|scripts/cryptocheck.sh|scripts/ubfstat.sh|scripts/ubfstat.list|scripts/framestat.sh|scripts/framestat.list|scripts/fitcheck.sh|scripts/numpert.sh|scripts/tyorder.sh|scripts/cacheaudit.sh|scripts/incrbuild.sh|scripts/incrmut.sh|scripts/incrrace.sh|scripts/iouring.sh|scripts/httpcheck.sh|testdata/httpcheck/*|scripts/pid1stop.*|testdata/pid1stop/*|scripts/mdwecheck.sh|testdata/mdwe/*|scripts/vaslot.sh|testdata/vaslot/*|scripts/starve.sh|testdata/starve/*|scripts/fusecheck.sh|scripts/wincheck.sh|testdata/wincheck/*|testdata/cutstat/*|scripts/optdiff.sh|scripts/typerdiff.sh|scripts/irtext.sh|scripts/lltext.sh|scripts/llcheck.sh|scripts/selfhost_ll.sh|scripts/stages.sh|scripts/selfhost_cli.sh|scripts/passes.sh|scripts/regionbound.sh|scripts/memcheck.sh|testdata/memcheck/*) echo lower ;;
             scripts/checkverdict.sh|testdata/checkverdict/*) echo check; echo docs ;;
             scripts/checkpos.sh|scripts/checkpos.ts|scripts/incrcheck.sh|scripts/watchcheck.sh|testdata/watchcheck/*) echo check ;;
             scripts/refs.sh|scripts/alphacheck.sh|scripts/alphamap.ts|src/compiler/tools/refs/*|testdata/refs/*) echo load ;;
             scripts/stdref.sh|scripts/stdref/*|src/compiler/tools/docgen/*|testdata/stdref/*|docs/std/*) echo docs ;;
+            scripts/rootsync.sh|scripts/rootstore.sh|scripts/nssroots.ts|testdata/x509/nss/*) echo docs ;;
+            scripts/tzsync.sh|scripts/tzstore.sh|scripts/tzgen.ts|testdata/tz/*) echo docs ;;
+            scripts/datadce.sh|testdata/datadce/*) echo lower; echo backend ;;
             scripts/clidoc.*|docs/cli/*|testdata/clidoc/*) echo docs ;;
             src/compiler/clidoc/*) echo docs; echo lower ;;
             scripts/outline.sh|testdata/outline/*|src/compiler/outline/*) echo parse ;;
@@ -239,6 +257,7 @@ auto_tags() { # 変更ファイル → タグ（推定できない変更は all�
             scripts/implicitfreeze.sh|scripts/implicitfreeze.ts) echo desugar; echo lower ;;
             lean/Extract/*|lean/ExtractMain.lean|lean/FeatherweightSober/TyVec.lean|scripts/extract.sh|lean/Extract/sober/*) echo lean ;;
             lean/FeatherweightSober/Tls.lean|scripts/tlsfsm.sh|testdata/tls/fsm.golden) echo lean ;;
+            docs/conformance/*|scripts/confsync.*|scripts/confrecord.sh|testdata/conformance/*) echo docs ;;
             docs/guide/*|docs/spec/*|docs/design-notes/fast.md|docs/language.md|README.md|README.ja.md|scripts/docsync.*|bench/README.md|bench/data/*|scripts/benchsync.*|scripts/benchchart.ts|docs/assets/bench-*) echo docs ;;
             docs/*|*.md) ;;
             *) echo all ;;
@@ -286,8 +305,29 @@ rm -rf "$LOGS"
 mkdir -p "$CACHE"
 mkdir -p "$LOGS"
 W=$(mktemp -d)
-trap 'rm -rf "$W"' EXIT
 T0=$(date +%s)
+STATUS=${GATES_STATUS:-$ROOT/out/gates-status.json}
+mkdir -p "$(dirname "$STATUS")" "$W/res" "$W/gpid" "$W/unrun"
+status() { # $1 = phase、$2 = 結果の要約の JSON（done のときだけ）。済み = $W/res・走行中 = $W/gpid にあって res に無いもの・未走 = $W/unrun
+    local tmpf="$STATUS.$BASHPID.tmp" g ec secs first=1 running=()
+    [ -d "$W" ] || return 0   # gates が先に終わった（止められた）後に残りのゲートが書き戻さない
+    for g in $(ls "$W/gpid" 2> /dev/null); do [ -f "$W/res/$g" ] || [ -f "$W/unrun/$g" ] || running+=("\"$g\""); done
+    {
+        printf '{"pid":%s,"started":%s,"updated":%s,"phase":"%s","args":"%s","budget":%s,"total":%s,"running":[%s],"done":{' \
+            "$$" "$T0" "$(date +%s)" "$1" "$GATES_ARGS" "${BUDGET:-null}" "${#sel[@]}" "$(IFS=,; echo "${running[*]}")"
+        for g in $(ls "$W/res" 2> /dev/null); do
+            read -r ec secs < "$W/res/$g" 2> /dev/null || continue
+            [ $first = 1 ] || printf ','
+            first=0
+            printf '"%s":{"ec":"%s","secs":%s}' "$g" "$ec" "${secs:-0}"
+        done
+        printf '},"unrun":[%s]' "$(ls "$W/unrun" 2> /dev/null | sed 's/.*/"&"/' | paste -sd,)"
+        [ -n "${2:-}" ] && printf ',"result":%s' "$2"
+        printf '}\n'
+    } > "$tmpf" && mv -f "$tmpf" "$STATUS"
+}
+trap '[ "${STATUS_DONE:-0}" = 1 ] || status aborted; rm -rf "$W"' EXIT
+status build
 
 # ── 1. 共有ビルド ──
 s=$(date +%s)
@@ -349,6 +389,7 @@ run_gate() { # $1 = ゲート名。終了コードと所要を $W/res/<gate> に
     local g=$1 s ec=0
     s=$(date +%s)
     echo "$BASHPID" > "$W/gpid/$g"   # メモリの番人がプロセスからゲートを引く口
+    status gates
     case "$g" in
         # zigtest は凍結後に動いた入力（std/ の集合・examples/・Lean の sober-check）を読むテストが赤い — scripts/frozen/zigtest-expected-fail.list の
         # 宣言と赤の集合が一致すれば緑（新しい赤・宣言の古び（緑に戻った行）はどちらも赤。G1）
@@ -376,6 +417,7 @@ run_gate() { # $1 = ゲート名。終了コードと所要を $W/res/<gate> に
         # obs_zig は凍結コーパスの .out 持ちだけ（凍結後の例は stage1 の範囲外の言語で書かれうる — 正規バックエンド列の到達リスト化と同じ筋。決定 2026-09-29）
         obs_zig) SOBER=$STAGE1 scripts/obs.sh $(zig_frozen) > "$LOGS/$g.log" 2>&1 || ec=$? ;;
         benchsync) scripts/benchsync.sh --check > "$LOGS/$g.log" 2>&1 || ec=$? ;;
+        confsync) scripts/confsync.sh --check > "$LOGS/$g.log" 2>&1 || ec=$? ;;
         # リネーム道具（report-883）: loadcheck + 負例の期待 TSV + 仮決め名の未分類 0
         refs) scripts/refs.sh --selftest > "$LOGS/$g.log" 2>&1 || ec=$? ;;
         # 段 2 R2（report-1191）: 関数ごとの成果物のハッシュの stray の網（W1 ≡ W8・別パス・panic-add・lambda-add）。numpert と同じく --full だけ（GTAG に無い）
@@ -388,6 +430,7 @@ run_gate() { # $1 = ゲート名。終了コードと所要を $W/res/<gate> に
     esac
     if [ -f "$W/memguard/$g" ]; then cat "$W/memguard/$g" >> "$LOGS/$g.log"; [ "$ec" = 0 ] && ec=137; fi
     echo "$ec $(( $(date +%s) - s ))" > "$W/res/$g"
+    status gates
     # CPU 秒（待った子孫の user + sys — bash の times の 2 行目）。wall のゲート秒は並走で膨らむので、削る的は CPU 秒で選ぶ
     # （times は組み込みのままファイルへ — パイプや $(…) の子では子自身の値になる）
     times > "$W/cpu/$g.raw"
@@ -435,27 +478,33 @@ fi
 mkdir -p "$W/gpid" "$W/memguard"
 GUARD_MB=${GATES_MEMGUARD_MB:-1024}
 memguard() { # 5 秒ごとに available を記録（$W/mem）。床 GUARD_MB を割ったら gates の子孫（自分の子孫は除く）で RSS 最大のプロセスを止め、
-    # それを抱えるゲートを FAIL にする（$W/memguard/<gate> — run_gate が読む）。gates の子孫以外には手を出さない（PID の名指しだけ）
-    local a t victim
+    # それを抱えるゲートを FAIL にする（$W/memguard/<gate> — run_gate が読む）。gates の子孫以外には手を出さない（PID の名指しだけ）。
+    # GATES_MEMGUARD_FAKE=<gate> = 床と無関係にそのゲートの最大のプロセスを 1 回だけ止める（自動補走の網の口）
+    local a t victim want fake=${GATES_MEMGUARD_FAKE:-}
     while :; do
         a=$(awk '/^MemAvailable:/ { print int($2 / 1024) }' /proc/meminfo)
         t=$(( $(date +%s) - T0 ))
         echo "$t $a" >> "$W/mem"
-        if [ "$a" -lt "$GUARD_MB" ]; then
-            victim=$(ps -eo pid=,ppid=,rss=,comm= | awk -v root=$$ -v me=$BASHPID -v gdir="$W/gpid" '
+        want=""
+        if [ "$a" -lt "$GUARD_MB" ]; then want=any
+        elif [ -n "$fake" ] && [ -f "$W/gpid/$fake" ] && [ ! -e "$W/memguard.faked" ]; then want=$fake
+        fi
+        if [ -n "$want" ]; then
+            victim=$(ps -eo pid=,ppid=,rss=,comm= | awk -v root=$$ -v me=$BASHPID -v gdir="$W/gpid" -v want="$want" '
                 { pp[$1] = $2; rss[$1] = $3; cm[$1] = $4 }
                 END {
                     while ((("ls " gdir) | getline g) > 0) { getline gp < (gdir "/" g); gate[gp] = g }
                     for (p in pp) {
                         q = p; under = 0; mine = 0; gn = ""
                         while (q != "" && q != 0 && q != 1) { if (q == me) mine = 1; if (gn == "" && (q in gate)) gn = gate[q]; if (q == root) { under = 1; break } ; q = pp[q] }
-                        if (under && !mine && p != root && gn != "" && rss[p] > best) { best = rss[p]; bp = p; bg = gn }
+                        if (under && !mine && p != root && gn != "" && (want == "any" || gn == want) && !(p in gate) && rss[p] > best) { best = rss[p]; bp = p; bg = gn }
                     }
                     if (bp != "") print bp, bg, best, cm[bp]
                 }')
             if [ -n "$victim" ]; then
                 read -r vp vg vr vc <<< "$victim"
                 kill -9 "$vp" 2> /dev/null
+                [ "$want" = any ] || { : > "$W/memguard.faked"; a="$a (fake)"; }
                 echo "FAIL: memguard: killed $vp ($vc) rss=$(( vr / 1024 )) MB in gate $vg — available ${a} MB < ${GUARD_MB} MB at +${t}s" >> "$W/memguard/$vg"
                 sleep 5
             fi
@@ -465,16 +514,63 @@ memguard() { # 5 秒ごとに available を記録（$W/mem）。床 GUARD_MB を
 }
 memguard &
 GUARD_PID=$!
+# 予算（--budget S）: 起動から S 秒で $W/expired を立て、走行中のゲートを「未走」に記してからプロセスの木ごと止める（結果は書かせない）
+kill_tree() { # $1 = PID。子孫から先に止める
+    local c
+    for c in $(ps -o pid= --ppid "$1" 2> /dev/null); do kill_tree "$c"; done
+    kill -9 "$1" 2> /dev/null
+}
+expired() { [ -e "$W/expired" ]; }
+BUDGET_PID=
+if [ -n "$BUDGET" ]; then
+    (
+        sleep $(( T0 + BUDGET - $(date +%s) > 0 ? T0 + BUDGET - $(date +%s) : 0 ))
+        : > "$W/expired"
+        for g in $(ls "$W/gpid"); do
+            [ -f "$W/res/$g" ] && continue
+            : > "$W/unrun/$g"
+            kill_tree "$(cat "$W/gpid/$g")"
+        done
+    ) &
+    BUDGET_PID=$!
+    disown "$BUDGET_PID"
+fi
 for g in "${run[@]}"; do
     while [ "$(jobs -rp | wc -l)" -ge "$((G + 1))" ]; do wait -n || true; done
+    if expired; then : > "$W/unrun/$g"; continue; fi
     run_gate "$g" &
 done
 while [ "$(jobs -rp | grep -vx "$GUARD_PID" | wc -l)" -gt 0 ]; do wait -n || true; done
+# 自動補走: memguard に止められたゲートは、他のゲートが全部終わってから available が GATES_RETRY_MB（既定 = 物理メモリの半分）に
+# 戻るのを待って（最長 GATES_RETRY_WAIT 秒）1 本ずつ単独でもう 1 回だけ走らせる。補走の判定がそのゲートの結果
+# （補走でも止められたら FAIL のまま・最初の走りのログは <gate>.log.memguard に残す）
+RETRY_MB=${GATES_RETRY_MB:-$(awk '/^MemTotal:/ { print int($2 / 1024 / 2) }' /proc/meminfo)}
+retried=()
+status retry
+for g in "${run[@]}"; do
+    [ -f "$W/memguard/$g" ] || continue
+    if expired; then : > "$W/unrun/$g"; rm -f "$W/res/$g"; continue; fi
+    mv "$W/memguard/$g" "$W/memguard/$g.first"
+    cp "$LOGS/$g.log" "$LOGS/$g.log.memguard"
+    rs=$(date +%s)
+    while a=$(awk '/^MemAvailable:/ { print int($2 / 1024) }' /proc/meminfo); [ "$a" -lt "$RETRY_MB" ] && [ $(( $(date +%s) - rs )) -lt "${GATES_RETRY_WAIT:-300}" ]; do sleep 5; done
+    echo "gates: retry $g alone (memguard killed it: $(cut -d" " -f3-7 "$W/memguard/$g.first" | head -1); available ${a} MB)"
+    run_gate "$g"
+    retried+=("$g")
+    {
+        echo "retry: memguard killed the first run (log: $g.log.memguard) — re-ran alone with ${a} MB available"
+        sed 's/^FAIL: memguard:/memguard (first run):/' "$W/memguard/$g.first"
+        cat "$LOGS/$g.log"
+    } > "$LOGS/$g.log.tmp" && mv "$LOGS/$g.log.tmp" "$LOGS/$g.log"
+done
 kill "$GUARD_PID" 2> /dev/null
 wait "$GUARD_PID" 2> /dev/null || true
+[ -n "$BUDGET_PID" ] && kill_tree "$BUDGET_PID"
+rm -f "$STATUS".*.tmp
 # 記録は PASS だけ（環境の SKIP を含むログは gatememo.ts が断る）
 if [ "$memo" = 1 ]; then
     for g in "${run[@]}"; do
+        [ -f "$W/res/$g" ] || continue
         read -r ec secs < "$W/res/$g"
         [ "$ec" = 0 ] && NODE_NO_WARNINGS=1 node --experimental-strip-types scripts/gatememo.ts record "$g" "$secs" "$LOGS/$g.log" >> "$LOGS/gatememo-record.log" 2>&1
         if [ -f "$LOGS/$g.hit" ]; then
@@ -489,11 +585,17 @@ fi
 
 # ── サマリ ──
 fails=0
+unrun=()
 echo "gates: summary (wall $(( $(date +%s) - T0 ))s, -j $G --jobs $J, logs in scripts/.gatecache/logs/)"
 [ -z "$memonote" ] || echo "gates: $memonote"
 for g in "${sel[@]}"; do
     # 結果のファイルが無い（走らず HIT でもない）= FAIL — 表示のない緑を作らない
     ec=none secs=0
+    if [ -f "$W/unrun/$g" ]; then
+        unrun+=("$g")
+        printf '  %-4s %-17s %4ss  %s\n' UNRN "$g" - "budget ${BUDGET}s expired before it finished"
+        continue
+    fi
     [ -f "$W/res/$g" ] && read -r ec secs < "$W/res/$g"
     if [ "$ec" = hit ]; then
         # HIT の行 = 鍵の頭・記録のコミット・日時・[非決定の札]・| 記録の最後の行
@@ -507,6 +609,8 @@ for g in "${sel[@]}"; do
     fi
     if [ "$ec" != 0 ] && [ -f "$LOGS/$g.hit" ]; then st=FAIL; fails=$((fails + 1)); last="偽緑 — $last"
     elif [ "$ec" != 0 ]; then st=FAIL; fails=$((fails + 1)); elif grep -q '^SKIP' "$LOGS/$g.log"; then st=SKIP; else st=PASS; fi
+    case " ${retried[*]} " in *" $g "*)
+        if [ "$ec" = 0 ]; then last="(retried after memguard — PASS alone) $last"; else last="(memguard killed it again when run alone — environment: not enough memory) $last"; fi ;; esac
     printf '  %-4s %-17s %4ss  %s\n' "$st" "$g" "$secs" "$last"
 done
 # 揺れる軸（WARN — FAIL にしない・2026-10-04 の裁定〔wall は時間帯で揺れる〕）: ゲート秒の和・wall の前回比（×1.3 かつ +60 s）・メモリの床（< 4 GB）
@@ -540,5 +644,23 @@ if [ -s "$W/mem" ]; then
     echo "gates: mem floor ${fa} MB available at +${ft}s"
     [ "$fa" -lt 4096 ] && echo "  WARN mem floor ${fa} MB < 4096 MB"
 fi
-if [ "$fails" = 0 ]; then echo "gates: ALL PASS"; else echo "gates: $fails FAILED"; fi
-[ "$fails" = 0 ]
+npass=0 nhit=0 nskip=0
+for g in "${sel[@]}"; do
+    [ -f "$W/res/$g" ] && [ ! -f "$W/unrun/$g" ] || continue
+    read -r ec secs < "$W/res/$g"
+    if [ "$ec" = hit ]; then nhit=$((nhit + 1)); elif [ "$ec" = 0 ]; then
+        if grep -q '^SKIP' "$LOGS/$g.log"; then nskip=$((nskip + 1)); else npass=$((npass + 1)); fi
+    fi
+done
+if [ "${#unrun[@]}" -gt 0 ]; then
+    echo "gates: budget ${BUDGET}s — PASS $npass · HIT $nhit · SKIP $nskip · FAIL $fails · UNRUN ${#unrun[@]}"
+    echo "gates: unrun: scripts/gates.sh --gate ${unrun[*]}"
+fi
+STATUS_DONE=1
+ex=0
+if [ "$fails" = 0 ] && [ "${#unrun[@]}" = 0 ]; then echo "gates: ALL PASS"
+elif [ "$fails" = 0 ]; then echo "gates: NO FAIL (${#unrun[@]} unrun — budget)"; ex=3
+else echo "gates: $fails FAILED"; ex=1
+fi
+status done "$(printf '{"exit":%s,"pass":%s,"hit":%s,"skip":%s,"fail":%s,"unrun":%s,"wall":%s}' "$ex" "$npass" "$nhit" "$nskip" "$fails" "${#unrun[@]}" "$(( $(date +%s) - T0 ))")"
+exit "$ex"

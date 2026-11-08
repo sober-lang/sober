@@ -1,0 +1,55 @@
+package http
+
+// HTTP の語彙のうちサーバ（std/http/server）とクライアント（std/http/client）が共に使うもの: ヘッダの 1 本・書けないヘッダの panic ラベル・状態の番号
+
+// 応答の状態の番号（RFC 9110 15 節）。std/http/server が理由句を知る番号は下の型つきの const（http.OK …）— 状態行の表はこの const の全部を
+// 名指す（@exhaustive — language.md 13 節の補「表の網羅」）。const に無い番号も `http.StatusCode(418)` や整数のリテラル（`status: 418`）で書ける（理由句は空）
+type StatusCode int
+
+// 200 OK
+const OK = StatusCode(200)
+// 201 Created
+const Created = StatusCode(201)
+// 204 No Content（本文なし・Content-Length を書かない）
+const NoContent = StatusCode(204)
+// 301 Moved Permanently
+const MovedPermanently = StatusCode(301)
+// 302 Found
+const Found = StatusCode(302)
+// 304 Not Modified（条件付き GET の一致 — 本文なし）
+const NotModified = StatusCode(304)
+// 400 Bad Request（要求の頭が読めない）
+const BadRequest = StatusCode(400)
+// 401 Unauthorized
+const Unauthorized = StatusCode(401)
+// 403 Forbidden
+const Forbidden = StatusCode(403)
+// 404 Not Found（Dispatch の一致なし・Static のファイルなし）
+const NotFound = StatusCode(404)
+// 405 Method Not Allowed（Dispatch — Allow を付ける）
+const MethodNotAllowed = StatusCode(405)
+// 412 Precondition Failed（If-Match / If-Unmodified-Since の不一致）
+const PreconditionFailed = StatusCode(412)
+// 413 Content Too Large（本文が上限を超える）
+const ContentTooLarge = StatusCode(413)
+// 431 Request Header Fields Too Large（要求の頭が上限を超える）
+const RequestHeaderFieldsTooLarge = StatusCode(431)
+// 500 Internal Server Error（handler の失敗）
+const InternalServerError = StatusCode(500)
+// 501 Not Implemented（知らない Transfer-Encoding）
+const NotImplemented = StatusCode(501)
+// 503 Service Unavailable
+const ServiceUnavailable = StatusCode(503)
+// 505 HTTP Version Not Supported
+const HTTPVersionNotSupported = StatusCode(505)
+
+// 任意ヘッダの 1 本
+type Field struct {
+    name string
+    value string
+}
+
+// Response の headers の 1 本が書けない（名前が空か tchar でない・値に CR / LF / NUL・std/http/server が書く名前 — 呼び手の契約違反。panic ラベル）
+type BadHeader panic {
+    name string
+}

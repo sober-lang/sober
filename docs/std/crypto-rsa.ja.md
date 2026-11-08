@@ -7,30 +7,12 @@
 RSA の秘密鍵の読み（PKCS#8 の DER）と RSASSA-PSS（RFC 8017 8.1 — SHA-256・MGF1-SHA256）の署名と検証。TLS 1.3 の CertificateVerify（rsa\_pss\_rsae\_sha256）の本体。
 
 ```sober
-k := rsa.ParsePKCS8(der)?
-sig := rsa.SignPSS(k, msg, crypto.Rand(32))?   // salt は呼び手が渡す（決定的な網のため）
-ok := rsa.VerifyPSS(rsa.Public(k), msg, sig, 32)
+k := crypto.rsa.ParsePKCS8(der)?
+sig := crypto.rsa.SignPSS(k, msg, crypto.Rand(32))?   // salt は呼び手が渡す（決定的な網のため）
+ok := crypto.rsa.VerifyPSS(crypto.rsa.Public(k), msg, sig, 32)
 ```
 
-署名は CRT（m^dp mod p・m^dq mod q を合わせる）で、出した署名を公開鍵で検証してから返す（CRT の故障攻撃〔Bellcore〕の古典の防御 — 合わなければ rsa.Fault）。多倍長は 64 bit の limb（bn.sober — 積の上位は組み込み mulhi・montMul は x86 の専用命令の実装）・定数時間の規律は std/crypto の頭の 4 項
-
-## MontSelfCheck
-
-```sober
-@effects(!io, !block, !nondet)
-func MontSelfCheck(seed int, maxN int, rounds int) int
-```
-
-専用命令の montMul と Sober の montMulS の照合（検証の網の API — 利用者は使わない: examples/crypto\_montmul と cryptocheck の格子が叩く）。種 seed の擬似乱数で limb の数 1〜maxN の奇数の法 m（最上位の limb は 0 でない）と m 未満の a・b を rounds 組ずつ作り、montMul（専用命令 — 専用命令の無い出力ではmontMulS そのもの）と montMulS の結果を比べる。2 乗（a = b）と最大値寄り（m − 1）も混ぜる。食い違いの数を返す
-
-## SelSelfCheck
-
-```sober
-@effects(!io, !block, !nondet)
-func SelSelfCheck(seed int, maxN int) int
-```
-
-専用命令の表引き sel と Sober の selS の照合（検証の網の API — 利用者は使わない: examples/crypto\_montmul と cryptocheck の格子が叩く）。種 seed の擬似乱数で語の数 1〜maxN の表 16 本を作り、idx 0〜15 の全部で両方の結果と表そのものを比べる。食い違いの数を返す
+署名は CRT（m^dp mod p・m^dq mod q を合わせる）で、出した署名を公開鍵で検証してから返す（CRT の故障攻撃〔Bellcore〕の古典の防御 — 合わなければ crypto.rsa.Fault）。多倍長は 64 bit の limb（bn.sober — 積の上位は組み込み mulhi・montMul は x86 の専用命令の実装）・定数時間の規律は std/crypto の頭の 4 項
 
 ## ParsePKCS8
 

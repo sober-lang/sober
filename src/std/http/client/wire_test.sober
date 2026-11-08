@@ -1,0 +1,149 @@
+package client
+
+// URL の読み・要求の書き出し・応答の読み（white-box — 切片の分かれ目を全部の位置で試す）
+
+import "std/http"
+import "std/iter"
+
+func TestTarget() {
+    t, ok := parseTarget("HTTPS://Api.Example:8443/v1/x?q=1#frag")
+    assert(ok && t.tls && t.host == "api.example" && t.port == 8443 && t.path == "/v1/x?q=1")
+    assert(hostHeader(t) == "api.example:8443")
+    u, ok2 := parseTarget("http://example.com")
+    assert(ok2 && !u.tls && u.port == 80 && u.path == "/" && hostHeader(u) == "example.com")
+    v, ok3 := parseTarget("http://example.com?a=b")
+    assert(ok3 && v.path == "/?a=b")
+    bads := []string{"ftp://x/", "http://user:pw@x/", "http://[::1]/", "http:///p", "http://x:0/", "http://x:65536/", "http://x/a b", "x/y"}
+    for bad <- bads {
+        _, okb := parseTarget(bad)
+        assert(!okb)
+    }
+}
+
+func TestLocation() {
+    b, _ := parseTarget("https://a.example/dir/page?x=1")
+    assert(resolveLocation(b, "https://b.example/") == "https://b.example/")
+    assert(resolveLocation(b, "//c.example/z") == "https://c.example/z")
+    assert(resolveLocation(b, "/root") == "https://a.example/root")
+    assert(resolveLocation(b, "next") == "https://a.example/dir/next")
+}
+
+func TestRequestBytes() {
+    t, _ := parseTarget("http://h.example:8080/p")
+    r := bytesToString(requestBytes("POST", t, []http.Field{http.Field{name: "X-A", value: "1"}}, bytes("hi"), "sober", false, ""))
+    assert(r == "POST /p HTTP/1.1\r\nHost: h.example:8080\r\nUser-Agent: sober\r\nX-A: 1\r\nContent-Length: 2\r\nConnection: close\r\n\r\nhi")
+    g := bytesToString(requestBytes("", t, []http.Field{}, []byte{}, "ua", true, ""))
+    assert(g == "GET /p HTTP/1.1\r\nHost: h.example:8080\r\nUser-Agent: ua\r\n\r\n")
+}
+
+// 応答 text を k バイトずつ積んで読む（status・本文・済んだか・誤り）
+func feedBy(text string, k int, noBody bool, maxBody int) (scanSt, []byte) {
+    src := bytes(text)
+    mut raw := mut []byte{}
+    mut st := newScan()
+    mut i := 0
+    while i < len(src) && !settled(st) {
+        mut j := 0
+        while j < k && i < len(src) {
+            raw = append(raw, src[i])
+            i += 1
+            j += 1
+        }
+        st = scan(mut raw, len(raw), st, noBody, maxBody)
+    }
+    b := freeze(raw)
+    if st.mode == mClose && st.hend >= 0 && !st.bad && !st.big {
+        st.end = len(b)
+    }
+    return st, if st.end >= 0 { bodyOf(b, len(b), st) } else { []byte{} }
+}
+
+func TestScanSplits() {
+    cases := []string{
+        "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nX: y\r\n\r\nhello",
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip, chunked\r\n\r\n2;ext=1\r\nhe\r\n3\r\nllo\r\n0\r\nT: 1\r\n\r\n",
+        "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+        "HTTP/1.0 200 OK\r\n\r\nhello",
+    }
+    for text <- cases {
+        for k <- iter.Range(1, 9) {
+            st, body := feedBy(text, k, false, 1024)
+            assert(st.end >= 0 && st.status == 200 && bytesToString(body) == "hello")
+        }
+    }
+    // 204・HEAD は本文なし（Content-Length があっても）
+    s204, b204 := feedBy("HTTP/1.1 204 No Content\r\n\r\n", 3, false, 1024)
+    assert(s204.status == 204 && s204.end >= 0 && len(b204) == 0)
+    sh, bh := feedBy("HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\n", 4, true, 1024)
+    assert(sh.end >= 0 && len(bh) == 0)
+    hd := bytes("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n")
+    mut raw := mut []byte{}
+    for x <- hd {
+        raw = append(raw, x)
+    }
+    st := scan(mut raw, len(raw), newScan(), false, 10)
+    f := fieldsOf(freeze(raw), st)
+    assert(len(f) == 2 && f[0].name == "content-type" && f[0].value == "text/plain")
+}
+
+func TestScanBad() {
+    bads := []string{
+        "HTTP/2 200 OK\r\n\r\n",
+        "HTTP/1.1 2x0 OK\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\nab",
+        "HTTP/1.1 200 OK\r\nBad Name: 1\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n",
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nhexx\r\n",
+    }
+    for text <- bads {
+        st, _ := feedBy(text, 5, false, 1024)
+        assert(st.bad)
+    }
+    big, _ := feedBy("HTTP/1.1 200 OK\r\nContent-Length: 2000\r\n\r\n", 7, false, 1024)
+    assert(big.big)
+    bigc, _ := feedBy("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n400\r\n", 7, false, 1000)
+    assert(bigc.big)
+}
+
+// 本文の状態機械: chunked を k バイトずつ渡して、渡ったデータを繋ぐ
+func bodyBy(text string, mode int, clen int, k int, maxBody int) (bodySt, string) {
+    src := bytes(text)
+    mut st := newScan()
+    st.mode = mode
+    st.clen = clen
+    mut d := newBody(st)
+    mut got := mut []byte{}
+    mut i := 0
+    while i < len(src) {
+        mut part := mut []byte{}
+        mut j := 0
+        while j < k && i < len(src) {
+            part = append(part, src[i])
+            i += 1
+            j += 1
+        }
+        readBody(mut d, mode, freeze(part), 0, maxBody, (p) => {
+            for x <- p {
+                got = append(got, x)
+            }
+        })
+    }
+    return d, bytesToString(freeze(got))
+}
+
+func TestBodyMachine() {
+    for k <- iter.Range(1, 12) {
+        d, s := bodyBy("2;ext=1\r\nhe\r\n3\r\nllo\r\n0\r\nT: 1\r\n\r\n", mChunked, 0, k, 1024)
+        assert(d.done && !d.bad && s == "hello")
+        d2, s2 := bodyBy("hello world", mLength, 5, k, 1024)
+        assert(d2.done && s2 == "hello")
+    }
+    bad, _ := bodyBy("zz\r\n", mChunked, 0, 3, 1024)
+    assert(bad.bad)
+    bad2, _ := bodyBy("2\r\nhexx", mChunked, 0, 3, 1024)
+    assert(bad2.bad)
+    big, _ := bodyBy("400\r\n", mChunked, 0, 2, 1000)
+    assert(big.big)
+    bigc, _ := bodyBy("0123456789", mClose, 0, 4, 8)
+    assert(bigc.big)
+}

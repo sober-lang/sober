@@ -1,0 +1,17 @@
+package main
+
+// 添字への直の複合代入 `xs[i] op= v`（欄越しの列も）: 要素を読んで演算して書き戻す（spec V-10 — 添字は 1 回だけ評価）
+
+type P struct {
+    xs mut []int
+}
+
+func main() {
+    mut calls := mut []int{0, 0}
+    calls[0] += 1
+    calls[1] += 2
+    calls[1] *= 5
+    mut p := P{xs: mut []int{1, 2}}
+    p.xs[1] += 5
+    println(calls[0], calls[1], p.xs[1])
+}

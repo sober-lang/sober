@@ -6,17 +6,17 @@ import "testdata/alias_x/wrap"
 import "testdata/alias_x/lib"
 
 func main() {
-    mut w := lib.Work{}
+    mut w := testdata.alias_x.lib.Work{}
     xs := []int{3, 5, 10}
     for x <- xs {
-        wrap.Feed(mut w, x)
+        testdata.alias_x.wrap.Feed(mut w, x)
     }
-    r := wrap.Mean(w)
-    println(wrap.Value(r), wrap.Value(wrap.Mean(lib.Work{})))
-    println(wrap.Twice((x int) => x * 3, 2))
-    a := wrap.NewAcc(9)
-    println(wrap.Last(a))
-    mut ws := mut []lib.Work{}
+    r := testdata.alias_x.wrap.Mean(w)
+    println(testdata.alias_x.wrap.Value(r), testdata.alias_x.wrap.Value(testdata.alias_x.wrap.Mean(testdata.alias_x.lib.Work{})))
+    println(testdata.alias_x.wrap.Twice((x int) => x * 3, 2))
+    a := testdata.alias_x.wrap.NewAcc(9)
+    println(testdata.alias_x.wrap.Last(a))
+    mut ws := mut []testdata.alias_x.lib.Work{}
     ws = append(ws, w)
     println(len(ws), other(ws[0]))
 }

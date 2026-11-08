@@ -1,0 +1,21 @@
+package main
+
+// 負例: http.client.Session は値の閉包に捕獲できない（名前つきの関数型の値は Open の範囲の外へ運ばれて呼ばれうる。借りの位置のラムダ — Open の k 自身 — は
+// 捕獲してよい。diag.FileUse — desugar/filecheck）
+
+import "std/http/client"
+
+type Probe func() int
+
+func call(p Probe) int {
+    return p()
+}
+
+func main() {
+    _ = http.client.Open("http://127.0.0.1:9", (s) => {
+        _ = call(() => {
+            r, _ := http.client.Send(s, "/")
+            r.status
+        })
+    })
+}

@@ -1,0 +1,129 @@
+package rsa
+
+// 多倍長の塊（MULX）と表引きの塊の照合（white-box）: 塊の montMul / sel と Sober の montMulS / selS を乱数で突き合わせる。
+// scripts/cryptocheck.sh が SOBER_NOMULX / SOBER_NOSHA の有無の両方で回す（倒れ先では両方 Sober — 同じ値になる）
+
+import "std/iter"
+
+func TestMontSelfCheck() {
+    assert(montSelfCheck(1, 40, 24) == 0)
+    assert(montSelfCheck(77, 34, 40) == 0)
+}
+
+func TestSelSelfCheck() {
+    assert(selSelfCheck(5, 40) == 0)
+}
+
+// xmm を作業に使う塊（表引き mmsel）を含む呼び出しを、float を 14 本 xmm に持ったまま跨ぐ（塊を含む関数が呼び手の xmm2〜15 を
+// 退避しないと float が壊れる）
+func TestSelKeepsXmm() {
+    want := []float{248.5166015625, 334.2119140625, 419.9072265625}
+    mut s := 0
+    for r <- iter.Range(0, 3) {
+        a := float(r) + 1.5
+        b := a * 2.0
+        c := b + 0.25
+        d := c * 3.0
+        f := d - 1.0
+        g := f * 0.5
+        h := g + 7.0
+        i := h * 1.25
+        j := i - 2.0
+        k := j * 1.5
+        l := k + 0.75
+        m := l * 2.5
+        n := m - 3.0
+        o := n * 1.125
+        s = s + selSelfCheck(r + 1, 16)
+        assert(a + b + c + d + f + g + h + i + j + k + l + m + n + o == want[r])
+    }
+    assert(s == 0)
+}
+
+// 専用命令の montMul と Sober の montMulS の照合。
+// 種 seed の擬似乱数で limb の数 1〜maxN の奇数の法 m（最上位の limb は 0 でない）と m 未満の a・b を rounds 組ずつ作り、montMul（専用命令 — 専用命令の無い出力では
+// montMulS そのもの）と montMulS の結果を比べる。2 乗（a = b）と最大値寄り（m − 1）も混ぜる。食い違いの数を返す
+func montSelfCheck(seed int, maxN int, rounds int) int {
+    mut x := seed
+    mut bad := 0
+    for n <- iter.Range(1, maxN + 1) {
+        for r <- iter.Range(0, rounds) {
+            mut m := mut []int{}
+            mut av := mut []int{}
+            mut bv := mut []int{}
+            for i <- iter.Range(0, n) {
+                x = x * 6364136223846793005 + 1442695040888963407
+                m = append(m, x)
+                x = x * 6364136223846793005 + 1442695040888963407
+                av = append(av, x)
+                x = x * 6364136223846793005 + 1442695040888963407
+                bv = append(bv, x)
+            }
+            m[0] = m[0] | 1
+            m[n - 1] = m[n - 1] | (1 << 63)
+            // a, b < m: 最上位の limb を m の最上位より小さく（m の最上位は 2^63 以上 — 最上位 bit を落とせば足りる。r % 4 == 1 は a の最上位 = m の最上位 − 1・
+            // r % 4 == 3 は a = b = m − 1 — 最大値寄り・r % 4 == 2 は 2 乗）
+            av[n - 1] = av[n - 1] & 0x7fffffffffffffff
+            bv[n - 1] = bv[n - 1] & 0x7fffffffffffffff
+            if r % 4 == 1 {
+                av[n - 1] = m[n - 1] - 1
+            }
+            if r % 4 == 3 {
+                for i <- iter.Range(0, n) {
+                    av[i] = m[i]
+                    bv[i] = m[i]
+                }
+                av[0] = av[0] - 1
+                bv[0] = bv[0] - 1
+            }
+            mt := newMont(freeze(m))
+            l := n + 1
+            // 区画: 0 = a・1 = b・2 = 塊の結果・3 = Sober の結果・4 = 塊の 2 乗・5 = Sober の 2 乗
+            blk := zeros(6 * l)
+            mut w := leaseView(blk, 0, 6 * l)
+            wa := addrn(blk)
+            put(mut w, 0, freeze(av), n)
+            put(mut w, l, if r % 4 == 2 { freeze(av) } else { freeze(bv) }, n)
+            montMul(mut w, wa, 2 * l, 0, if r % 4 == 2 { 0 } else { l }, mt)
+            montMulS(mut w, 3 * l, 0, if r % 4 == 2 { 0 } else { l }, mt)
+            montSqr(mut w, wa, 4 * l, 0, mt)
+            montMulS(mut w, 5 * l, 0, 0, mt)
+            for i <- iter.Range(0, l) {
+                if w[2 * l + i] != w[3 * l + i] || w[4 * l + i] != w[5 * l + i] {
+                    bad += 1
+                }
+            }
+        }
+    }
+    return bad
+}
+
+// 専用命令の表引き sel と Sober の selS の照合。種 seed の擬似乱数で
+// 語の数 1〜maxN の表 16 本を作り、idx 0〜15 の全部で両方の結果と表そのものを比べる。食い違いの数を返す
+func selSelfCheck(seed int, maxN int) int {
+    mut x := seed
+    mut bad := 0
+    for n <- iter.Range(1, maxN + 1) {
+        l := n + 1
+        // 区画: 0〜15 = 表・16 = 塊の結果・17 = Sober の結果
+        blk := zeros(18 * l)
+        mut w := leaseView(blk, 0, 18 * l)
+        wa := addrn(blk)
+        for i <- iter.Range(0, 16 * l) {
+            x = x * 6364136223846793005 + 1442695040888963407
+            w[i] = x
+        }
+        for idx <- iter.Range(0, 16) {
+            w[16 * l + n] = 7
+            w[17 * l + n] = 7
+            sel(mut w, wa, 16 * l, 0, idx, n, l, 16)
+            selS(mut w, 17 * l, 0, idx, n, l, 16)
+            for i <- iter.Range(0, l) {
+                if w[16 * l + i] != w[17 * l + i] || (i < n && w[16 * l + i] != w[idx * l + i]) {
+                    bad += 1
+                }
+            }
+        }
+    }
+    return bad
+}

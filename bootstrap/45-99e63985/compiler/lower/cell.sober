@@ -1,0 +1,292 @@
+package lower
+
+// std/testing/cell の呼び出し点（language.md 41 節「状態を貯める fake」）: 置き場はプロセスに 1 つの表 @rt.cells とロック 1 本。
+// 表の項 = [把手の鍵, アリーナ（プールのスロット）の基底, 使った量, 値の箱の番地]。Set は値をアリーナへ写し（チャネルの送りと同じ梱包 —
+// 写した部分の印は MAX_DEPTH なので読み手が必ず自分の region へ写し直す）、前のアリーナをプールへ返す。Get は呼び手の最内の region へ写す。
+// Update はロックを持ったまま読み → ラムダの本体 → 書き。置き場を使うプログラムは task の rt を持つ（desugar.ParRtUse — プールと写しの印のため）
+
+import "desugar"
+import "diag"
+import "std/iter"
+
+const CELL_CAP = 4096
+const CELL_LOCK = 0
+const CELL_N = 1
+const CELL_TAB = 2
+const CELL_EW = 4
+
+// 表の大域（installRt — 置き場の package を読んだ task のプログラムだけ）
+func needCellRt(st mut St) {
+    st.cellG = addGlobalInit(mut st, int(strLit(mut st, "rt.cells")), CELL_TAB + CELL_EW * CELL_CAP, -1)
+}
+
+// 鍵 key の呼び出し（実引数 args）を下ろす
+func cellCall(st mut St, key int, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
+    if !st.taskUse || st.cellG == 0 {
+        panic(InvariantBroken{})
+    }
+    traceLeaf(mut st, if key == desugar.CELL_GET { 10 } else { 2 })
+    hx := expr(mut st, latN(mut st, args, 0))?
+    if isTag(mut st, hx.t, TNever) {
+        return -1, nil
+    }
+    fs := hgetL(mut st, desugar.HeapGet(mut st.d, hx.t + 1) + SI_FIELDS)
+    if lenL(mut st, fs) != 2 {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    kOff := desugar.HeapGet(mut st.d, latI(mut st, fs, 0) + 2)
+    t := desugar.HeapGet(mut st.d, latI(mut st, fs, 1) + 1)
+    if !cellValOk(mut st, t, 64, desugar.ListRef(list0(mut st))) {
+        return 0, diag.Cell{at: posOf(mut st, latN(mut st, args, 0)), kind: 11}
+    }
+    iOff := desugar.HeapGet(mut st.d, latI(mut st, fs, 1) + 2)
+    hk := load(mut st, hx.v, kOff)
+    hinit := loadVal(mut st, hx.v, iOff, t)
+    tb := globaladdr(mut st, st.cellG)
+    if key == desugar.CELL_SET {
+        x := expr(mut st, latN(mut st, args, 1))?
+        if isTag(mut st, x.t, TNever) {
+            return -1, nil
+        }
+        x2 := coerce(mut st, x.t, x.v, t, at)?
+        vbox := newAgg(mut st, t)
+        storeVal(mut st, vbox, 0, t, x2.v)
+        cellLock(mut st, tb)
+        cellStore(mut st, cellFind(mut st, tb, hk, true, at), t, vbox)
+        cellUnlock(mut st, tb)
+        return list0(mut st), nil
+    }
+    cellLock(mut st, tb)
+    e := cellFind(mut st, tb, hk, key == desugar.CELL_UPDATE, at)
+    cv := cellRead(mut st, e, t, hinit)
+    if key == desugar.CELL_GET {
+        cellUnlock(mut st, tb)
+        return parOne(mut st, t, loadVal(mut st, cv, 0, t)), nil
+    }
+    lam := latN(mut st, args, 1)
+    lp := latN(mut st, lA(nodeOf(mut st, lam)), 0)
+    pushScope(mut st)
+    declare(mut st, sA(nodeOf(mut st, lp)), LVal, t, copyVal(mut st, t, loadVal(mut st, cv, 0, t)))
+    y := exprExpecting(mut st, nB(nodeOf(mut st, lam)), t, at)?
+    popScope(mut st)
+    if isTag(mut st, y.t, TNever) {
+        return -1, nil
+    }
+    y2 := coerce(mut st, y.t, y.v, t, at)?
+    vbox := newAgg(mut st, t)
+    storeVal(mut st, vbox, 0, t, y2.v)
+    cellStore(mut st, e, t, vbox)
+    cellUnlock(mut st, tb)
+    return list0(mut st), nil
+}
+
+// ロックを取る（xchg で 0 → 1 を取れるまで回る — 持ち手は待ちに入らない: Update の本体は効果なし）
+func cellLock(st mut St, tb int) {
+    loop := newBlock(mut st)
+    got := newBlock(mut st)
+    br(mut st, loop, -1)
+    setCur(mut st, loop)
+    o := atomicXchg(mut st, tb, CELL_LOCK, iconst(mut st, 1))
+    condbr(mut st, cmp(mut st, CEq, o, iconst(mut st, 0)), got, -1, loop, -1)
+    setCur(mut st, got)
+}
+
+func cellUnlock(st mut St, tb int) {
+    atomicXchg(mut st, tb, CELL_LOCK, iconst(mut st, 0))
+}
+
+// 鍵 hk の項の番地（ロックの中で）。無ければ insert なら新しい項（値の箱 0 = まだ Set していない）を足し、でなければ 0
+func cellFind(st mut St, tb int, hk int, insert bool, at desugar.NodeRef) int {
+    n := load(mut st, tb, CELL_N)
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    next := newBlock(mut st)
+    miss := newBlock(mut st)
+    done := newBlock(mut st)
+    r := param(mut st, done, TyPtr)
+    br(mut st, loop, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, i, n), body, -1, miss, -1)
+    setCur(mut st, body)
+    e := gepWord(mut st, tb, bin(mut st, BAdd, iconst(mut st, CELL_TAB), bin(mut st, BMul, i, iconst(mut st, CELL_EW))))
+    condbr(mut st, cmp(mut st, CEq, load(mut st, e, 0), hk), done, list1(mut st, e), next, -1)
+    setCur(mut st, next)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))))
+    setCur(mut st, miss)
+    if !insert {
+        br(mut st, done, list1(mut st, itop(mut st, iconst(mut st, 0))))
+        setCur(mut st, done)
+        return r
+    }
+    full := newBlock(mut st)
+    room := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, n, iconst(mut st, CELL_CAP)), room, -1, full, -1)
+    setCur(mut st, full)
+    panicSite(mut st, PK_UNREACH, at)
+    setCur(mut st, room)
+    ne := gepWord(mut st, tb, bin(mut st, BAdd, iconst(mut st, CELL_TAB), bin(mut st, BMul, n, iconst(mut st, CELL_EW))))
+    store(mut st, ne, 0, hk)
+    store(mut st, ne, 1, iconst(mut st, 0))
+    store(mut st, ne, 2, iconst(mut st, 0))
+    store(mut st, ne, 3, iconst(mut st, 0))
+    store(mut st, tb, CELL_N, bin(mut st, BAdd, n, iconst(mut st, 1)))
+    br(mut st, done, list1(mut st, ne))
+    setCur(mut st, done)
+    return r
+}
+
+// 項 e（0 = 無し）の今の値を呼び手の最内の region へ写した箱（無い・まだ Set していなければ把手の init の写し）
+func cellRead(st mut St, e int, t int, hinit int) int {
+    res := newAgg(mut st, t)
+    bHave := newBlock(mut st)
+    bInit := newBlock(mut st)
+    bEnd := newBlock(mut st)
+    vpi := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, ptoi(mut st, e), iconst(mut st, 0)), bInit, -1, vpi, -1)
+    setCur(mut st, vpi)
+    vp := load(mut st, e, 3)
+    condbr(mut st, cmp(mut st, CEq, vp, iconst(mut st, 0)), bInit, -1, bHave, -1)
+    setCur(mut st, bHave)
+    storeVal(mut st, res, 0, t, copyVal(mut st, t, loadVal(mut st, itop(mut st, vp), 0, t)))
+    if containsSlice(mut st, t) {
+        // 置き場は何度も読まれる — 元（アリーナ）のセルを書き換えない写し
+        st.relocFresh = true
+        relocateTo(mut st, res, 0, t, regionDepth(mut st))
+        st.relocFresh = false
+    }
+    br(mut st, bEnd, -1)
+    setCur(mut st, bInit)
+    storeVal(mut st, res, 0, t, hinit)
+    br(mut st, bEnd, -1)
+    setCur(mut st, bEnd)
+    return res
+}
+
+// 箱 vbox の値を項 e のアリーナへ写して置く（ロックの中で — 前のアリーナはプールへ返す）。深度 0 のスロットと bump を新しいアリーナへ
+// 付け替えて深度 0 より深い部分を写し（印 = MAX_DEPTH）、戻す。深度 0 の部分は main の region でプロセスの終わりまで生きるので写さない
+func cellStore(st mut St, e int, t int, vbox int) {
+    old := load(mut st, e, 1)
+    bFree := newBlock(mut st)
+    bGo := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, old, iconst(mut st, 0)), bFree, -1, bGo, -1)
+    setCur(mut st, bFree)
+    call(mut st, st.rtSlotGive, list2(mut st, old, load(mut st, e, 2)))
+    br(mut st, bGo, -1)
+    setCur(mut st, bGo)
+    sealMaps(mut st, vbox, 0, t, SEAL_FUEL)
+    meta := globaladdr(mut st, st.meta)
+    sg := globaladdr(mut st, st.slotsG)
+    wk := globaladdr(mut st, st.wkG)
+    a := call(mut st, st.rtSlotTake, list0(mut st))
+    z := iconst(mut st, 0)
+    sp := gepWord(mut st, sg, z)
+    bp := gepWord(mut st, meta, z)
+    oldS := load(mut st, sp, 0)
+    oldB := load(mut st, bp, W_BUMP)
+    oldZ := load(mut st, meta, W_SLOT_SIZE)
+    store(mut st, meta, W_SLOT_SIZE, load(mut st, meta, W_SLOT_DEF))
+    store(mut st, sp, 0, a)
+    store(mut st, bp, W_BUMP, a)
+    tw := tWords(mut st, t)
+    vp := regionAlloc(mut st, z, iconst(mut st, if tw < 1 { 1 } else { tw }))
+    storeVal(mut st, vp, 0, t, loadVal(mut st, vbox, 0, t))
+    if containsSlice(mut st, t) {
+        store(mut st, wk, WK_RLAB, iconst(mut st, MAX_DEPTH))
+        // 書き手の値はこの後も読まれ、アリーナは次の Set で返る — 元のセルを書き換えない写し
+        st.relocFresh = true
+        relocateTo(mut st, vp, 0, t, z)
+        st.relocFresh = false
+        store(mut st, wk, WK_RLAB, z)
+    }
+    store(mut st, e, 1, a)
+    store(mut st, e, 2, bin(mut st, BSub, load(mut st, bp, W_BUMP), a))
+    store(mut st, e, 3, ptoi(mut st, vp))
+    store(mut st, sp, 0, oldS)
+    store(mut st, bp, W_BUMP, oldB)
+    store(mut st, meta, W_SLOT_SIZE, oldZ)
+}
+
+// 表の全部の項を空にする（std/quick の試行の頭 — 縮めと再生が種と番号で決まるように）。アリーナはプールへ返す
+func cellReset(st mut St) {
+    if st.cellG == 0 {
+        return
+    }
+    tb := globaladdr(mut st, st.cellG)
+    cellLock(mut st, tb)
+    n := load(mut st, tb, CELL_N)
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    give := newBlock(mut st)
+    next := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, i, n), body, -1, done, -1)
+    setCur(mut st, body)
+    e := gepWord(mut st, tb, bin(mut st, BAdd, iconst(mut st, CELL_TAB), bin(mut st, BMul, i, iconst(mut st, CELL_EW))))
+    a := load(mut st, e, 1)
+    condbr(mut st, cmp(mut st, CNe, a, iconst(mut st, 0)), give, -1, next, -1)
+    setCur(mut st, give)
+    call(mut st, st.rtSlotGive, list2(mut st, a, load(mut st, e, 2)))
+    br(mut st, next, -1)
+    setCur(mut st, next)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))))
+    setCur(mut st, done)
+    store(mut st, tb, CELL_N, iconst(mut st, 0))
+    cellUnlock(mut st, tb)
+}
+
+// 置き場に置ける値の型か: 閉包の捕捉と同じ素のデータ（closCapOk の idok = false）に、再帰型（調べている途中の struct / union へ戻る辺は
+// 置ける — 写しは再帰型を写せる）を足したもの。seen = 調べている途中の型の記録の列
+func cellValOk(st mut St, t int, fuel int, seen desugar.ListRef) bool {
+    if fuel == 0 {
+        return false
+    }
+    k := desugar.HeapGet(mut st.d, t)
+    if k == TOpt {
+        return cellValOk(mut st, desugar.HeapGet(mut st.d, t + 1), fuel - 1, seen)
+    }
+    if k == TSlice {
+        return desugar.HeapGet(mut st.d, t + 2) == 0 && cellValOk(mut st, desugar.HeapGet(mut st.d, t + 1), fuel - 1, seen)
+    }
+    if k == TMap {
+        return desugar.HeapGet(mut st.d, t + 3) == 0 && cellValOk(mut st, desugar.HeapGet(mut st.d, t + 1), fuel - 1, seen) && cellValOk(mut st, desugar.HeapGet(mut st.d, t + 2), fuel - 1, seen)
+    }
+    if k != TStruct && k != TUnion {
+        return closCapOk(mut st, t, 1, false)
+    }
+    info := desugar.HeapGet(mut st.d, t + 1)
+    for i <- iter.Range(0, lenL(mut st, seen)) {
+        if latI(mut st, seen, i) == info {
+            return true
+        }
+    }
+    if closIdInfo(mut st, info) || desugar.HeapGet(mut st.d, info + SI_STATE) != LDone {
+        return false
+    }
+    n := lenL(mut st, seen)
+    s2 := desugar.ListRef(listN(mut st, n + 1))
+    for i <- iter.Range(0, n) {
+        lput(mut st, s2, i, latI(mut st, seen, i))
+    }
+    lput(mut st, s2, n, info)
+    fs := hgetL(mut st, info + SI_FIELDS)
+    for i <- iter.Range(0, lenL(mut st, fs)) {
+        f := latI(mut st, fs, i)
+        if k == TStruct {
+            if !cellValOk(mut st, desugar.HeapGet(mut st.d, f + 1), fuel - 1, s2) {
+                return false
+            }
+        } else {
+            vfs := hgetL(mut st, f + 2)
+            for j <- iter.Range(0, lenL(mut st, vfs)) {
+                if !cellValOk(mut st, desugar.HeapGet(mut st.d, latI(mut st, vfs, j) + 1), fuel - 1, s2) {
+                    return false
+                }
+            }
+        }
+    }
+    return true
+}

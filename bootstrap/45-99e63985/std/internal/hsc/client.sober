@@ -1,0 +1,639 @@
+package hsc
+
+// TLS 1.3 のクライアントの handshake（RFC 9846 — std/http/client の下）。鍵交換は X25519 だけ・suite は TLS_AES_128_GCM_SHA256 と TLS_CHACHA20_POLY1305_SHA256・
+// サーバの証明書の鎖は std/internal/x509 の Verify（時刻と信頼の起点は値で受ける — 失効は見ない）・CertificateVerify は ECDSA P-256 / P-384 と RSA-PSS（rsae）。
+// HelloRetryRequest は cookie だけを受ける（X25519 の key_share は最初から送る — 別の群を求める HRR は illegal_parameter）。PSK / 0-RTT / クライアント証明書なし・
+// NewSessionTicket は読み捨てる。サーバの役の Hs と同じく、record の枠を Feed に食わせて送る record の列と受けた平文を Out で返す
+
+import "std/crypto"
+import "std/crypto/hkdf"
+import "std/crypto/hmac"
+import "std/crypto/sha256"
+import "std/crypto/x25519"
+import "std/internal/x509"
+import "std/iter"
+import "std/internal/record"
+
+const tNewSessionTicket = 4
+const xCookie = 44
+const aBadCertificate = 42
+const aUnsupportedCertificate = 43
+const aCertificateExpired = 45
+const aUnknownCa = 48
+
+// クライアントの設定（host = SNI と証明書の名前の照合・alpn = 申し出る ALPN〔空 = 使わない〕・roots = 信頼の起点・now = 証明書の時刻の照合の UNIX 秒・
+// seed = 乱数の源〔空 = crypto.Rand — 網の決定的な黄金〕・allowTls12 = TLS 1.2 も申し出る〔既定 false — 公開の綴りは dangerouslyAllowTls12〕）
+type CParams struct {
+    host string
+    alpn []string
+    roots []internal.x509.Cert
+    now int
+    seed []byte
+    allowTls12 bool
+}
+
+@effects()
+func NewCParams(host string, alpn []string, roots []internal.x509.Cert, now int, seed []byte) CParams {
+    return CParams{host: host, alpn: alpn, roots: roots, now: now, seed: seed, allowTls12: false}
+}
+
+// p に TLS 1.2 も申し出させる（緩める側 — 公開の綴りは std/http/client の dangerouslyAllowTls12）
+@effects()
+func WithTls12(p CParams) CParams {
+    mut q := p
+    q.allowTls12 = true
+    return q
+}
+
+type CPhase union {
+    C12Cert {}
+    C12Skx {}
+    C12Done {}
+    C12Ccs {}
+    C12Fin {}
+    CWaitSH {}
+    CWaitEE {}
+    CWaitCert {}
+    CWaitCV {}
+    CWaitFin {}
+    CConnected {}
+    CClosed {}
+}
+
+// 1 接続のクライアントの handshake と record の状態
+type Ch struct {
+    ph CPhase
+    th crypto.sha256.State
+    priv []byte
+    ch1 []byte
+    hrr bool
+    suite int
+    rd internal.record.Dir
+    wr internal.record.Dir
+    hsS []byte
+    cHs []byte
+    sHs []byte
+    alpn string
+    leaf internal.x509.Cert
+    hbuf []byte
+    ccs bool
+    sessid []byte
+    upd bool
+    // TLS 1.2 の道（v12 = 1.2 で握手中か済んだ・crandom / srandom = hello の乱数・ms = master secret・w* / r* = 送り / 受けの鍵と IV と番号・
+    // rkeyed = サーバの CCS を受けた・certReq = CertificateRequest を受けた）
+    v12 bool
+    crandom []byte
+    srandom []byte
+    pms []byte
+    ms []byte
+    wkey []byte
+    wiv []byte
+    wseq int
+    rkey []byte
+    riv []byte
+    rseq int
+    rkeyed bool
+    wkeyed bool
+    certReq bool
+}
+
+// 鎖の検証の失敗（包み替えの cause に x509 の誤りのラベル — std/http/client が Tls の誤りに運ぶ）
+type CertFailed error
+
+// handshake を始める: 最初の ClientHello の record と状態
+@effects(io, panic)
+func StartClient(p CParams) (Ch, []byte) {
+    priv := crnd(p, "x25519", 32)
+    sessid := crnd(p, "sessid", 32)
+    random := crnd(p, "random", 32)
+    ch := clientHello(p, random, sessid, crypto.x25519.Base(priv), []byte{})
+    mut th := crypto.sha256.New()
+    crypto.sha256.Write(mut th, ch)
+    h := Ch{ph: CWaitSH{}, th: th, priv: priv, ch1: ch, hrr: false, suite: 0, rd: emptyDir(), wr: emptyDir(), hsS: []byte{}, cHs: []byte{}, sHs: []byte{},
+        alpn: "", leaf: noLeaf(), hbuf: []byte{}, ccs: false, sessid: sessid, upd: false,
+        v12: false, crandom: random, srandom: []byte{}, pms: []byte{}, ms: []byte{}, wkey: []byte{}, wiv: []byte{}, wseq: 0, rkey: []byte{}, riv: []byte{}, rseq: 0,
+        rkeyed: false, wkeyed: false, certReq: false}
+    return h, plain(internal.record.CtHandshake, ch)
+}
+
+func noLeaf() internal.x509.Cert {
+    c, _ := internal.x509.Parse([]byte{})
+    return c
+}
+
+// 決まった ALPN（無ければ ""）
+@effects()
+func ClientAlpn(h Ch) string {
+    return h.alpn
+}
+
+@effects()
+func ClientConnected(h Ch) bool {
+    return switch h.ph {
+    case CConnected{}: true
+    default: false
+    }
+}
+
+func crnd(p CParams, label string, n int) []byte {
+    if len(p.seed) == 0 {
+        return crypto.Rand(n)
+    }
+    return sliceOf(crypto.sha256.Sum256(cat(p.seed, bytes(label))), 0, n)
+}
+
+// ClientHello（cookie が空でなければ HRR の後の 2 番目）
+func clientHello(p CParams, random []byte, sessid []byte, pub []byte, cookie []byte) []byte {
+    mut x := mut []byte{}
+    hb := bytes(p.host)
+    if len(hb) > 0 && !isIPLit(p.host) {
+        put16(mut x, xServerName)
+        put16(mut x, 5 + len(hb))
+        put16(mut x, 3 + len(hb))
+        put8(mut x, 0)
+        put16(mut x, len(hb))
+        putBytes(mut x, hb)
+    }
+    put16(mut x, xSupportedGroups)
+    put16(mut x, 4)
+    put16(mut x, 2)
+    put16(mut x, groupX25519)
+    // 署名: ECDSA P-256 / P-384 と RSA-PSS（rsae）— 証明書の署名のために RSA PKCS#1 v1.5 も（RFC 9846 4.2.3 — CertificateVerify には使わない）
+    schemes := []int{0x0403, 0x0503, 0x0804, 0x0805, 0x0806, 0x0401, 0x0501, 0x0601}
+    put16(mut x, xSignatureAlgorithms)
+    put16(mut x, 2 + 2 * len(schemes))
+    put16(mut x, 2 * len(schemes))
+    for s <- schemes {
+        put16(mut x, s)
+    }
+    put16(mut x, xSupportedVersions)
+    put16(mut x, if p.allowTls12 { 5 } else { 3 })
+    put8(mut x, if p.allowTls12 { 4 } else { 2 })
+    put16(mut x, 0x0304)
+    if p.allowTls12 {
+        put16(mut x, 0x0303)
+        // extended_master_secret（RFC 7627 — 必須）・renegotiation_info（RFC 5746 — 空）・ec_point_formats（非圧縮だけ）
+        put16(mut x, 0x0017)
+        put16(mut x, 0)
+        put16(mut x, 0xff01)
+        put16(mut x, 1)
+        put8(mut x, 0)
+        put16(mut x, 0x000b)
+        put16(mut x, 2)
+        put8(mut x, 1)
+        put8(mut x, 0)
+    }
+    put16(mut x, xKeyShare)
+    put16(mut x, 2 + 4 + len(pub))
+    put16(mut x, 4 + len(pub))
+    put16(mut x, groupX25519)
+    put16(mut x, len(pub))
+    putBytes(mut x, pub)
+    if len(p.alpn) > 0 {
+        mut l := mut []byte{}
+        for a <- p.alpn {
+            ab := bytes(a)
+            put8(mut l, len(ab))
+            putBytes(mut l, ab)
+        }
+        lb := freeze(l)
+        put16(mut x, xAlpn)
+        put16(mut x, 2 + len(lb))
+        put16(mut x, len(lb))
+        putBytes(mut x, lb)
+    }
+    if len(cookie) > 0 {
+        put16(mut x, xCookie)
+        put16(mut x, 2 + len(cookie))
+        put16(mut x, len(cookie))
+        putBytes(mut x, cookie)
+    }
+    xs := freeze(x)
+    mut b := mut []byte{}
+    put16(mut b, 0x0303)
+    putBytes(mut b, random)
+    put8(mut b, len(sessid))
+    putBytes(mut b, sessid)
+    sts := if p.allowTls12 { suites12() } else { []int{} }
+    put16(mut b, 4 + 2 * len(sts))
+    put16(mut b, internal.record.AesGcm)
+    put16(mut b, internal.record.ChaCha)
+    for st <- sts {
+        put16(mut b, st)
+    }
+    put8(mut b, 1)
+    put8(mut b, 0)
+    put16(mut b, len(xs))
+    putBytes(mut b, xs)
+    return msg(tClientHello, freeze(b))
+}
+
+// IPv4 / IPv6 の綴りか（SNI に IP は載せない — RFC 6066 3）
+func isIPLit(h string) bool {
+    hb := bytes(h)
+    mut dots := 0
+    for x <- hb {
+        if x == ':' {
+            return true
+        }
+        if x == '.' {
+            dots += 1
+        } else if x < '0' || x > '9' {
+            return false
+        }
+    }
+    return dots == 3
+}
+
+// 受けた record の枠を 1 つ食わせる
+@errors(internal.record.Alert, CertFailed)
+@effects(io, panic)
+func FeedClient(h mut Ch, p CParams, f internal.record.Frame) (Out, error?) {
+    o, e := cfeed(mut h, p, f)
+    if e != nil {
+        h.ph = CClosed{}
+    }
+    return o, e
+}
+
+@errors(internal.record.Alert, CertFailed)
+func cfeed(h mut Ch, p CParams, f internal.record.Frame) (Out, error?) {
+    ct := int(f.b[f.off])
+    plainPhase := switch h.ph {
+    case CWaitSH{}: true
+    default: false
+    }
+    closed := switch h.ph {
+    case CClosed{}: true
+    default: false
+    }
+    if closed {
+        return none(), alert(aUnexpected)
+    }
+    if h.v12 {
+        return feed12(mut h, p, f)
+    }
+    if ct == internal.record.CtCcs {
+        _, body := internal.record.Plain(f)
+        if h.ccs || len(body) != 1 || body[0] != 1 || ClientConnected(h) {
+            return none(), alert(aUnexpected)
+        }
+        h.ccs = true
+        return none(), nil
+    }
+    if plainPhase {
+        rct, body := internal.record.Plain(f)
+        if rct == internal.record.CtAlert {
+            if len(body) != 2 {
+                return none(), alert(aDecodeError)
+            }
+            h.ph = CClosed{}
+            return Out{send: []byte{}, app: []byte{}, done: false, closed: true, peer: int(body[1]), upd: false}, nil
+        }
+        if rct != internal.record.CtHandshake || len(body) == 0 {
+            return none(), alert(aUnexpected)
+        }
+        h.hbuf = cat(h.hbuf, body)
+        if len(h.hbuf) < 4 {
+            return none(), nil
+        }
+        n := int(h.hbuf[1]) << 16 | int(h.hbuf[2]) << 8 | int(h.hbuf[3])
+        if len(h.hbuf) < 4 + n {
+            return none(), nil
+        }
+        if int(h.hbuf[0]) != tServerHello || len(h.hbuf) != 4 + n {
+            return none(), alert(aUnexpected)
+        }
+        m := h.hbuf
+        h.hbuf = []byte{}
+        return onServerHello(mut h, p, m)
+    }
+    ict, pt := internal.record.Open(mut h.rd, f)?
+    if ict == internal.record.CtAlert {
+        if len(pt) != 2 {
+            return none(), alert(aDecodeError)
+        }
+        h.ph = CClosed{}
+        return Out{send: []byte{}, app: []byte{}, done: false, closed: true, peer: int(pt[1]), upd: false}, nil
+    }
+    if ict == internal.record.CtApp {
+        if !ClientConnected(h) || len(h.hbuf) > 0 {
+            return none(), alert(aUnexpected)
+        }
+        return Out{send: []byte{}, app: pt, done: false, closed: false, peer: 0 - 1, upd: false}, nil
+    }
+    if ict != internal.record.CtHandshake || len(pt) == 0 {
+        return none(), alert(aUnexpected)
+    }
+    h.hbuf = cat(h.hbuf, pt)
+    mut out := none()
+    while len(h.hbuf) >= 4 {
+        n := int(h.hbuf[1]) << 16 | int(h.hbuf[2]) << 8 | int(h.hbuf[3])
+        if len(h.hbuf) < 4 + n {
+            return out, nil
+        }
+        m := sliceOf(h.hbuf, 0, 4 + n)
+        h.hbuf = sliceOf(h.hbuf, 4 + n, len(h.hbuf) - 4 - n)
+        o := onClientSealed(mut h, p, m)?
+        out = Out{send: cat(out.send, o.send), app: out.app, done: out.done || o.done, closed: false, peer: 0 - 1, upd: out.upd || o.upd}
+    }
+    return out, nil
+}
+
+// ServerHello / HelloRetryRequest
+@errors(internal.record.Alert)
+func onServerHello(h mut Ch, p CParams, m []byte) (Out, error?) {
+    mut c := cur(4, len(m))
+    if u16(m, mut c) != 0x0303 {
+        return none(), alert(aProtocolVersion)
+    }
+    random := take(m, mut c, 32)
+    sid := take(m, mut c, u8(m, mut c))
+    suite := u16(m, mut c)
+    comp := u8(m, mut c)
+    if comp != 0 {
+        return none(), alert(aIllegalParameter)
+    }
+    mut xs := sub(mut c, u16(m, mut c))
+    if rest(c) != 0 {
+        return none(), alert(aDecodeError)
+    }
+    mut ver := 0
+    mut share := []byte{}
+    mut group := 0
+    mut cookie := []byte{}
+    while rest(xs) >= 4 {
+        t := u16(m, mut xs)
+        mut v := sub(mut xs, u16(m, mut xs))
+        if t == xSupportedVersions {
+            ver = u16(m, mut v)
+        } else if t == xKeyShare {
+            group = u16(m, mut v)
+            if rest(v) > 0 {
+                share = take(m, mut v, u16(m, mut v))
+            }
+        } else if t == xCookie {
+            cookie = take(m, mut v, u16(m, mut v))
+        }
+    }
+    if ver == 0 && p.allowTls12 {
+        // supported_versions の無い ServerHello = 1.2（dangerouslyAllowTls12 の明示でだけ — 既定は 1.3 だけ）
+        return onServerHello12(mut h, p, m, random, suite)
+    }
+    if ver != 0x0304 {
+        return none(), alert(aProtocolVersion)
+    }
+    // 1.3 のサーバは legacy_session_id をそのまま返す（RFC 9846 4.1.3 — 1.2 のサーバは自分の session_id を返すので 1.2 の道では見ない）
+    if !same(sid, h.sessid) {
+        return none(), alert(aIllegalParameter)
+    }
+    if same(random, hrrRandom()) {
+        // HelloRetryRequest: 2 回目は無い・X25519 は送ってあるので key_share を求める HRR は不正・cookie だけを写して 2 番目の ClientHello
+        if h.hrr || group != 0 || len(cookie) == 0 {
+            return none(), alert(aIllegalParameter)
+        }
+        h.hrr = true
+        h.suite = suite
+        mut th := crypto.sha256.New()
+        crypto.sha256.Write(mut th, msg(tMessageHash, crypto.sha256.Sum256(h.ch1)))
+        crypto.sha256.Write(mut th, m)
+        ch2 := clientHello(p, crnd(p, "random2", 32), h.sessid, crypto.x25519.Base(h.priv), cookie)
+        crypto.sha256.Write(mut th, ch2)
+        h.th = th
+        // 互換の CCS（session_id を送った — RFC 9846 D.4）を 2 番目の ClientHello の前に
+        return Out{send: cat(plain(internal.record.CtCcs, []byte{1}), plain(internal.record.CtHandshake, ch2)), app: []byte{}, done: false, closed: false, peer: 0 - 1, upd: false}, nil
+    }
+    if (suite != internal.record.AesGcm && suite != internal.record.ChaCha) || (h.hrr && suite != h.suite) || group != groupX25519 || len(share) != 32 {
+        return none(), alert(aIllegalParameter)
+    }
+    crypto.sha256.Write(mut h.th, m)
+    h.suite = suite
+    shared := crypto.x25519.Shared(h.priv, share)
+    if crypto.Equal(shared, zeros(32)) {
+        return none(), alert(aIllegalParameter)
+    }
+    zero := zeros(32)
+    early := crypto.hkdf.Extract([]byte{}, zero)
+    h.hsS = crypto.hkdf.Extract(deriveSecret(early, "derived", crypto.sha256.Sum256([]byte{})), shared)
+    t1 := crypto.sha256.Sum(h.th)
+    h.cHs = deriveSecret(h.hsS, "c hs traffic", t1)
+    h.sHs = deriveSecret(h.hsS, "s hs traffic", t1)
+    h.rd = internal.record.NewDir(suite, h.sHs)?
+    h.wr = internal.record.NewDir(suite, h.cHs)?
+    h.ph = CWaitEE{}
+    return none(), nil
+}
+
+// 暗号化した handshake のメッセージ 1 つ（EE → Certificate → CertificateVerify → Finished・接続後は KeyUpdate / NewSessionTicket）
+@errors(internal.record.Alert, CertFailed)
+func onClientSealed(h mut Ch, p CParams, m []byte) (Out, error?) {
+    t := int(m[0])
+    k := switch h.ph {
+    case CWaitEE{}: 1
+    case CWaitCert{}: 2
+    case CWaitCV{}: 3
+    case CWaitFin{}: 4
+    case CConnected{}: 5
+    default: 0
+    }
+    if k == 1 && t == tEncryptedExtensions {
+        h.alpn = eeAlpn(m, p)?
+        crypto.sha256.Write(mut h.th, m)
+        h.ph = CWaitCert{}
+        return none(), nil
+    }
+    if k == 2 && t == tCertificate {
+        h.leaf = onCertificate(m, p)?
+        crypto.sha256.Write(mut h.th, m)
+        h.ph = CWaitCV{}
+        return none(), nil
+    }
+    if k == 3 && t == tCertificateVerify {
+        verifyCV(h.leaf, m, crypto.sha256.Sum(h.th))?
+        crypto.sha256.Write(mut h.th, m)
+        h.ph = CWaitFin{}
+        return none(), nil
+    }
+    if k == 4 && t == tFinished {
+        want := crypto.hmac.Sum256(internal.record.ExpandLabel(h.sHs, "finished", []byte{}, 32), crypto.sha256.Sum(h.th))
+        if len(m) != 4 + 32 || !crypto.Equal(sliceOf(m, 4, 32), want) {
+            return none(), alert(aDecryptError)
+        }
+        if len(h.hbuf) > 0 {
+            return none(), alert(aUnexpected)
+        }
+        crypto.sha256.Write(mut h.th, m)
+        t2 := crypto.sha256.Sum(h.th)
+        ms := crypto.hkdf.Extract(deriveSecret(h.hsS, "derived", crypto.sha256.Sum256([]byte{})), zeros(32))
+        cAp := deriveSecret(ms, "c ap traffic", t2)
+        sAp := deriveSecret(ms, "s ap traffic", t2)
+        fin := msg(tFinished, crypto.hmac.Sum256(internal.record.ExpandLabel(h.cHs, "finished", []byte{}, 32), t2))
+        mut send := mut []byte{}
+        if !h.hrr {
+            putBytes(mut send, plain(internal.record.CtCcs, []byte{1}))
+        }
+        putBytes(mut send, internal.record.Seal(mut h.wr, internal.record.CtHandshake, fin, 0))
+        h.rd = internal.record.NewDir(h.suite, sAp)?
+        h.wr = internal.record.NewDir(h.suite, cAp)?
+        h.ph = CConnected{}
+        return Out{send: freeze(send), app: []byte{}, done: true, closed: false, peer: 0 - 1, upd: false}, nil
+    }
+    if k == 5 && t == tNewSessionTicket {
+        return none(), nil
+    }
+    if k == 5 && t == tKeyUpdate {
+        if len(m) != 5 || int(m[4]) > 1 || len(h.hbuf) > 0 {
+            return none(), alert(if len(m) != 5 { aDecodeError } else if len(h.hbuf) > 0 { aUnexpected } else { aIllegalParameter })
+        }
+        internal.record.Update(mut h.rd)?
+        req := int(m[4]) == 1
+        h.upd = h.upd || req
+        return Out{send: []byte{}, app: []byte{}, done: false, closed: false, peer: 0 - 1, upd: req}, nil
+    }
+    return none(), alert(aUnexpected)
+}
+
+// EncryptedExtensions の ALPN（申し出た中の 1 つ — 他の拡張は読み飛ばす）
+@errors(internal.record.Alert)
+func eeAlpn(m []byte, p CParams) (string, error?) {
+    mut c := cur(4, len(m))
+    mut xs := sub(mut c, u16(m, mut c))
+    if rest(c) != 0 {
+        return "", alert(aDecodeError)
+    }
+    mut got := ""
+    while rest(xs) >= 4 {
+        t := u16(m, mut xs)
+        mut v := sub(mut xs, u16(m, mut xs))
+        if t == xAlpn {
+            mut l := sub(mut v, u16(m, mut v))
+            a := bytesToString(take(m, mut l, u8(m, mut l)))
+            mut ok := false
+            for x <- p.alpn {
+                ok = ok || x == a
+            }
+            if !ok || rest(l) != 0 {
+                return "", alert(aIllegalParameter)
+            }
+            got = a
+        }
+    }
+    return got, nil
+}
+
+// Certificate（文脈は空・1 本以上）→ 鎖の検証（internal.x509.Verify — 失敗は CertFailed）
+@errors(internal.record.Alert, CertFailed)
+func onCertificate(m []byte, p CParams) (internal.x509.Cert, error?) {
+    mut c := cur(4, len(m))
+    if u8(m, mut c) != 0 {
+        return noLeaf(), alert(aDecodeError)
+    }
+    mut l := sub(mut c, u24(m, mut c))
+    mut ders := mut [][]byte{}
+    while rest(l) > 0 {
+        d := take(m, mut l, u24(m, mut l))
+        _ = sub(mut l, u16(m, mut l))
+        ders = append(ders, d)
+    }
+    ds := freeze(ders)
+    if len(ds) == 0 {
+        return noLeaf(), alert(aDecodeError)
+    }
+    mut inters := mut [][]byte{}
+    for i <- iter.Range(1, len(ds)) {
+        inters = append(inters, ds[i])
+    }
+    chain := internal.x509.Verify(ds[0], freeze(inters), p.roots, p.host, p.now)? CertFailed{}
+    if chain[len(chain) - 1].baked {
+        internal.x509.CabLeaf(chain[0])? CertFailed{}
+    }
+    return chain[0], nil
+}
+
+// CertificateVerify（64 × 0x20 ‖ "TLS 1.3, server CertificateVerify" ‖ 0 ‖ transcript の hash に対する署名 — RFC 9846 4.4.3）
+@errors(internal.record.Alert)
+func verifyCV(leaf internal.x509.Cert, m []byte, th []byte) error? {
+    mut c := cur(4, len(m))
+    scheme := u16(m, mut c)
+    sig := take(m, mut c, u16(m, mut c))
+    if rest(c) != 0 {
+        return alert(aDecodeError)
+    }
+    mut content := mut []byte{}
+    for i <- iter.Range(0, 64) {
+        content = append(content, byte(0x20))
+    }
+    putBytes(mut content, bytes("TLS 1.3, server CertificateVerify"))
+    put8(mut content, 0)
+    putBytes(mut content, th)
+    tbs := freeze(content)
+    ok := if scheme == 0x0403 && leaf.pubAlg == internal.x509.PubP256 {
+        internal.x509.VerifyEcdsa(leaf, internal.x509.Digest(256, tbs), sig)
+    } else if scheme == 0x0503 && leaf.pubAlg == internal.x509.PubP384 {
+        internal.x509.VerifyEcdsa(leaf, internal.x509.Digest(384, tbs), sig)
+    } else if scheme == 0x0804 || scheme == 0x0805 || scheme == 0x0806 {
+        hb := if scheme == 0x0804 { 256 } else if scheme == 0x0805 { 384 } else { 512 }
+        internal.x509.VerifyRsaPss(leaf, hb, internal.x509.Digest(hb, tbs), sig)
+    } else {
+        false
+    }
+    if !ok {
+        return alert(aDecryptError)
+    }
+    return nil
+}
+
+func same(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+// application の平文 pt の record の列（相手が update_requested を送っていれば先に自分の KeyUpdate）
+@errors(internal.record.Alert)
+@effects()
+func ClientSeal(h mut Ch, pt []byte) ([]byte, error?) {
+    if !ClientConnected(h) {
+        return []byte{}, alert(aInternal)
+    }
+    if h.v12 {
+        return seal12App(mut h, pt), nil
+    }
+    mut out := mut []byte{}
+    if h.upd || internal.record.NeedUpdate(h.wr) {
+        putBytes(mut out, internal.record.Seal(mut h.wr, internal.record.CtHandshake, msg(tKeyUpdate, []byte{0}), 0))
+        internal.record.Update(mut h.wr)?
+        h.upd = false
+    }
+    mut at := 0
+    while at < len(pt) {
+        n := if len(pt) - at < internal.record.MaxPlain { len(pt) - at } else { internal.record.MaxPlain }
+        putBytes(mut out, internal.record.Seal(mut h.wr, internal.record.CtApp, sliceOf(pt, at, n), 0))
+        at += n
+    }
+    return freeze(out), nil
+}
+
+// 送る alert（鍵があれば暗号化 — close_notify は aCloseNotify）
+@effects()
+func ClientAlert(h mut Ch, desc int) []byte {
+    keyed := switch h.ph {
+    case CWaitSH{}: false
+    default: true
+    }
+    body := []byte{byte(if desc == aCloseNotify { 1 } else { 2 }), byte(desc)}
+    h.ph = CClosed{}
+    if h.v12 {
+        return if h.wkeyed { seal12(mut h, internal.record.CtAlert, body) } else { plain(internal.record.CtAlert, body) }
+    }
+    if keyed {
+        return internal.record.Seal(mut h.wr, internal.record.CtAlert, body, 0)
+    }
+    return plain(internal.record.CtAlert, body)
+}

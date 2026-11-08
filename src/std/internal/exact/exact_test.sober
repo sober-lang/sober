@@ -1,7 +1,7 @@
 package exact
 
 // 検算そのものの網: 正しい結果を受け、ビット列で 1 つずらした結果を拒む（同点の偶数への丸め・溢れ・非正規数・0 の符号・特殊値・最短の印字）。
-// 加えて bigint.Mul の網 — bigint の中には白箱のテストを置けない（std/testing が convert → floatfmt → bigint に届いて循環する）。
+// 加えて internal.bigint.Mul の網 — bigint の中には白箱のテストを置けない（std/testing が convert → floatfmt → bigint に届いて循環する）。
 // 参照 = 肢ごとの MulAdd と Shl で組んだ Σ a × b[j] × 2^(30j)・可換・境界
 
 import "std/internal/bigint"
@@ -72,13 +72,13 @@ func TestFormat() {
 }
 
 func refMul(d mut []int, a mut []int, b mut []int) {
-    bigint.SetInt(mut d, 0)
+    internal.bigint.SetInt(mut d, 0)
     for j <- iter.Range(0, len(b)) {
         mut t := mut []int{}
-        bigint.Set(mut t, mut a)
-        bigint.MulAdd(mut t, b[j], 0)
-        bigint.Shl(mut t, 30 * j)
-        bigint.Add(mut d, mut t)
+        internal.bigint.Set(mut t, mut a)
+        internal.bigint.MulAdd(mut t, b[j], 0)
+        internal.bigint.Shl(mut t, 30 * j)
+        internal.bigint.Add(mut d, mut t)
     }
 }
 
@@ -86,7 +86,7 @@ func limbs(r mut rand.Rand) mut []int {
     mut out := mut []int{}
     n := 1 + rand.Intn(mut r, 12)
     for k <- iter.Range(0, n) {
-        out = append(out, if rand.Bool(mut r) { bigint.Limb - 1 } else { rand.Intn(mut r, bigint.Limb) })
+        out = append(out, if rand.Bool(mut r) { internal.bigint.Limb - 1 } else { rand.Intn(mut r, internal.bigint.Limb) })
     }
     return out
 }
@@ -99,23 +99,23 @@ func TestBigintMul() {
         mut d := mut []int{}
         mut e := mut []int{}
         mut f := mut []int{}
-        bigint.Mul(mut d, mut a, mut b)
-        bigint.Mul(mut e, mut b, mut a)
+        internal.bigint.Mul(mut d, mut a, mut b)
+        internal.bigint.Mul(mut e, mut b, mut a)
         refMul(mut f, mut a, mut b)
-        assert(bigint.Cmp(mut d, mut f) == 0 && bigint.Cmp(mut e, mut f) == 0)
+        assert(internal.bigint.Cmp(mut d, mut f) == 0 && internal.bigint.Cmp(mut e, mut f) == 0)
     }
     mut z := mut []int{}
     mut x := mut []int{}
     mut d := mut []int{}
-    bigint.SetInt(mut z, 0)
-    bigint.SetInt(mut x, bigint.Limb - 1)
-    bigint.Mul(mut d, mut z, mut x)
-    assert(bigint.Top(mut d) < 0)
+    internal.bigint.SetInt(mut z, 0)
+    internal.bigint.SetInt(mut x, internal.bigint.Limb - 1)
+    internal.bigint.Mul(mut d, mut z, mut x)
+    assert(internal.bigint.Top(mut d) < 0)
     mut y := mut []int{}
-    bigint.SetInt(mut y, bigint.Limb - 1)
-    bigint.Mul(mut d, mut x, mut y)
+    internal.bigint.SetInt(mut y, internal.bigint.Limb - 1)
+    internal.bigint.Mul(mut d, mut x, mut y)
     // (2^30 − 1)^2 = 2^60 − 2^31 + 1
     mut w := mut []int{}
-    bigint.SetInt(mut w, 1152921502459363329)
-    assert(bigint.Cmp(mut d, mut w) == 0)
+    internal.bigint.SetInt(mut w, 1152921502459363329)
+    assert(internal.bigint.Cmp(mut d, mut w) == 0)
 }

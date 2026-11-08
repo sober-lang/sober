@@ -7,8 +7,8 @@
 HKDF-SHA256（RFC 5869）。TLS 1.3 の HKDF-Expand-Label は std/tls の側（ラベルの綴りは TLS の約束）
 
 ```sober
-prk := hkdf.Extract(salt, ikm)
-okm := hkdf.Expand(prk, info, 42)?   // 255 × 32 バイトを超える長さは hkdf.TooLong
+prk := crypto.hkdf.Extract(salt, ikm)
+okm := crypto.hkdf.Expand(prk, info, 42)?   // 255 × 32 バイトを超える長さは crypto.hkdf.TooLong
 ```
 
 ## Extract

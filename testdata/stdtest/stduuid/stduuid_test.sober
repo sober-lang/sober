@@ -1,0 +1,109 @@
+package stduuid
+
+// std/uuid の black-box テスト: RFC 9562 の版 4 の例の往復・大文字の読み・負例（長さ・区切りの位置・16 進の外）・NewV4 の版と変種のビットと重なりなし・
+// 文字列を map の鍵に。std/crypto.RandIntn の範囲と偏りの粗い検査と、上限 1 未満の panic
+
+import "std/crypto"
+import "std/iter"
+import "std/uuid"
+
+func TestRfcExample() {
+    s := "919108f7-52d1-4320-9bac-f847db4148a8"
+    u, e := uuid.Parse(s)
+    assert(e == nil)
+    assert(uuid.Format(u) == s)
+    v, e2 := uuid.Parse("919108F7-52D1-4320-9BAC-F847DB4148A8")
+    assert(e2 == nil)
+    assert(uuid.Equal(v, u))
+    z, e3 := uuid.Parse("00000000-0000-0000-0000-000000000000")
+    assert(e3 == nil)
+    assert(uuid.Format(z) == "00000000-0000-0000-0000-000000000000")
+    f, e4 := uuid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff")
+    assert(e4 == nil)
+    assert(uuid.Format(f) == "ffffffff-ffff-ffff-ffff-ffffffffffff")
+}
+
+func TestParseRejects() {
+    bad := []string{"", "919108f7-52d1-4320-9bac-f847db4148a", "919108f7-52d1-4320-9bac-f847db4148a80", "919108f7052d1-4320-9bac-f847db4148a8",
+        "919108f7-52d1-4320-9bac+f847db4148a8", "919108g7-52d1-4320-9bac-f847db4148a8", "{919108f7-52d1-4320-9bac-f847db4148a}",
+        "919108f752d143209bacf847db4148a8"}
+    for i <- iter.Range(0, len(bad)) {
+        _, e := uuid.Parse(bad[i])
+        bad1 := switch e {
+        case nil: false
+        case uuid.Bad{}: true
+        }
+        assert(bad1)
+    }
+}
+
+func TestNewV4() {
+    mut seen := mut map[string]bool{}
+    for i <- iter.Range(0, 1000) {
+        u := uuid.NewV4()
+        s := bytes(uuid.Format(u))
+        // 版 4（15 文字目）・変種 10（20 文字目が 8 9 a b）
+        assert(s[14] == byte(52))
+        assert(s[19] == byte(56) || s[19] == byte(57) || s[19] == byte(97) || s[19] == byte(98))
+        back, e := uuid.Parse(uuid.Format(u))
+        assert(e == nil)
+        assert(uuid.Equal(back, u))
+        assert(seen[uuid.Format(u)] == nil)
+        seen[uuid.Format(u)] = true
+    }
+    assert(len(seen) == 1000)
+}
+
+func TestRandIntn() {
+    mut c := mut []int{0, 0, 0, 0, 0, 0}
+    for i <- iter.Range(0, 6000) {
+        v := crypto.RandIntn(6)
+        assert(v >= 0 && v < 6)
+        c[v] = c[v] + 1
+    }
+    for k <- iter.Range(0, 6) {
+        assert(c[k] > 800 && c[k] < 1200)
+    }
+    assert(crypto.RandIntn(1) == 0)
+    big := crypto.RandIntn(1 << 61)
+    assert(big >= 0 && big < (1 << 61))
+}
+
+func TestNewV7() {
+    mut prev := ""
+    for i <- iter.Range(0, 200) {
+        u := uuid.NewV7()
+        s := uuid.Format(u)
+        b := bytes(s)
+        assert(b[14] == byte(55))
+        assert(b[19] == byte(56) || b[19] == byte(57) || b[19] == byte(97) || b[19] == byte(98))
+        // 先頭 48 bit（12 桁）は今の時刻のミリ秒 — 作った順に減らない
+        ts := bytesToStringOf(b, 0, 8) + bytesToStringOf(b, 9, 13)
+        assert(prev == "" || !lessHex(ts, prev))
+        prev = ts
+    }
+}
+
+func bytesToStringOf(b []byte, s int, e int) string {
+    mut o := ""
+    for i <- iter.Range(s, e) {
+        o = "${o}${hexDigit(int(b[i]))}"
+    }
+    return o
+}
+
+func hexDigit(c int) string {
+    return []string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f"}[if c >= 97 { c - 87 } else { c - 48 }]
+}
+
+// a < b（同じ長さの 16 進の小文字）
+func lessHex(a string, b string) bool {
+    ab := bytes(a)
+    bb := bytes(b)
+    for i <- iter.Range(0, len(ab)) {
+        if ab[i] != bb[i] {
+            return ab[i] < bb[i]
+        }
+    }
+    return false
+}

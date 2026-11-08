@@ -7,6 +7,7 @@ package lower
 
 import "desugar"
 import "diag"
+import "std/iter"
 
 const CELL_CAP = 4096
 const CELL_LOCK = 0
@@ -35,7 +36,7 @@ func cellCall(st mut St, key int, args desugar.ListRef, at desugar.NodeRef) (int
     }
     kOff := desugar.HeapGet(mut st.d, latI(mut st, fs, 0) + 2)
     t := desugar.HeapGet(mut st.d, latI(mut st, fs, 1) + 1)
-    if !closCapOk(mut st, t, 16, false) {
+    if !cellValOk(mut st, t, 64, desugar.ListRef(list0(mut st))) {
         return 0, diag.Cell{at: posOf(mut st, latN(mut st, args, 0)), kind: 11}
     }
     iOff := desugar.HeapGet(mut st.d, latI(mut st, fs, 1) + 2)
@@ -235,4 +236,57 @@ func cellReset(st mut St) {
     setCur(mut st, done)
     store(mut st, tb, CELL_N, iconst(mut st, 0))
     cellUnlock(mut st, tb)
+}
+
+// 置き場に置ける値の型か: 閉包の捕捉と同じ素のデータ（closCapOk の idok = false）に、再帰型（調べている途中の struct / union へ戻る辺は
+// 置ける — 写しは再帰型を写せる）を足したもの。seen = 調べている途中の型の記録の列
+func cellValOk(st mut St, t int, fuel int, seen desugar.ListRef) bool {
+    if fuel == 0 {
+        return false
+    }
+    k := desugar.HeapGet(mut st.d, t)
+    if k == TOpt {
+        return cellValOk(mut st, desugar.HeapGet(mut st.d, t + 1), fuel - 1, seen)
+    }
+    if k == TSlice {
+        return desugar.HeapGet(mut st.d, t + 2) == 0 && cellValOk(mut st, desugar.HeapGet(mut st.d, t + 1), fuel - 1, seen)
+    }
+    if k == TMap {
+        return desugar.HeapGet(mut st.d, t + 3) == 0 && cellValOk(mut st, desugar.HeapGet(mut st.d, t + 1), fuel - 1, seen) && cellValOk(mut st, desugar.HeapGet(mut st.d, t + 2), fuel - 1, seen)
+    }
+    if k != TStruct && k != TUnion {
+        return closCapOk(mut st, t, 1, false)
+    }
+    info := desugar.HeapGet(mut st.d, t + 1)
+    for i <- iter.Range(0, lenL(mut st, seen)) {
+        if latI(mut st, seen, i) == info {
+            return true
+        }
+    }
+    if closIdInfo(mut st, info) || desugar.HeapGet(mut st.d, info + SI_STATE) != LDone {
+        return false
+    }
+    n := lenL(mut st, seen)
+    s2 := desugar.ListRef(listN(mut st, n + 1))
+    for i <- iter.Range(0, n) {
+        lput(mut st, s2, i, latI(mut st, seen, i))
+    }
+    lput(mut st, s2, n, info)
+    fs := hgetL(mut st, info + SI_FIELDS)
+    for i <- iter.Range(0, lenL(mut st, fs)) {
+        f := latI(mut st, fs, i)
+        if k == TStruct {
+            if !cellValOk(mut st, desugar.HeapGet(mut st.d, f + 1), fuel - 1, s2) {
+                return false
+            }
+        } else {
+            vfs := hgetL(mut st, f + 2)
+            for j <- iter.Range(0, lenL(mut st, vfs)) {
+                if !cellValOk(mut st, desugar.HeapGet(mut st.d, latI(mut st, vfs, j) + 1), fuel - 1, s2) {
+                    return false
+                }
+            }
+        }
+    }
+    return true
 }

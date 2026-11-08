@@ -8,7 +8,7 @@
     },
     {
       "alias": null,
-      "path": "std/http",
+      "path": "std/http/server",
       "tok": 7
     },
     {
@@ -23,12 +23,12 @@
     },
     {
       "alias": null,
-      "path": "std/task",
+      "path": "std/strings",
       "tok": 16
     },
     {
       "alias": null,
-      "path": "std/strings",
+      "path": "std/task",
       "tok": 19
     },
     {
@@ -209,7 +209,7 @@
           "name": "r",
           "type": {
             "k": "name",
-            "name": "http.Request"
+            "name": "http.server.Request"
           },
           "mutable": false
         }
@@ -217,7 +217,7 @@
       "results": [
         {
           "k": "name",
-          "name": "http.Response"
+          "name": "http.server.Response"
         }
       ],
       "body": {
@@ -242,17 +242,17 @@
                               "base": {
                                 "k": "ident",
                                 "name": "r",
-                                "tok": 82
+                                "tok": 86
                               },
                               "field": "path",
-                              "tok": 84
+                              "tok": 88
                             },
                             "rhs": {
                               "k": "strlit",
                               "value": "/pipeline",
-                              "tok": 86
+                              "tok": 90
                             },
-                            "tok": 85
+                            "tok": 89
                           }
                         ]
                       }
@@ -266,26 +266,31 @@
                             "callee": {
                               "k": "selector",
                               "base": {
-                                "k": "ident",
-                                "name": "http",
-                                "tok": 88
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "http",
+                                  "tok": 92
+                                },
+                                "field": "server",
+                                "tok": 94
                               },
                               "field": "Text",
-                              "tok": 90
+                              "tok": 96
                             },
                             "args": [
                               {
                                 "k": "strlit",
                                 "value": "ok",
-                                "tok": 92
+                                "tok": 98
                               }
                             ],
-                            "tok": 91
+                            "tok": 97
                           }
                         }
                       ]
                     },
-                    "tok": 81
+                    "tok": 85
                   },
                   {
                     "patterns": [
@@ -300,17 +305,17 @@
                               "base": {
                                 "k": "ident",
                                 "name": "r",
-                                "tok": 96
+                                "tok": 102
                               },
                               "field": "path",
-                              "tok": 98
+                              "tok": 104
                             },
                             "rhs": {
                               "k": "strlit",
                               "value": "/baseline11",
-                              "tok": 100
+                              "tok": 106
                             },
-                            "tok": 99
+                            "tok": 105
                           }
                         ]
                       }
@@ -339,17 +344,17 @@
                                         "base": {
                                           "k": "ident",
                                           "name": "r",
-                                          "tok": 106
+                                          "tok": 112
                                         },
                                         "field": "method",
-                                        "tok": 108
+                                        "tok": 114
                                       },
                                       "rhs": {
                                         "k": "strlit",
                                         "value": "POST",
-                                        "tok": 110
+                                        "tok": 116
                                       },
-                                      "tok": 109
+                                      "tok": 115
                                     },
                                     "then": {
                                       "stmts": [
@@ -360,7 +365,7 @@
                                             "callee": {
                                               "k": "ident",
                                               "name": "num",
-                                              "tok": 112
+                                              "tok": 118
                                             },
                                             "args": [
                                               {
@@ -372,10 +377,10 @@
                                                     "base": {
                                                       "k": "ident",
                                                       "name": "$utf8",
-                                                      "tok": 114
+                                                      "tok": 120
                                                     },
                                                     "field": "Parse",
-                                                    "tok": 114
+                                                    "tok": 120
                                                   },
                                                   "args": [
                                                     {
@@ -383,23 +388,23 @@
                                                       "base": {
                                                         "k": "ident",
                                                         "name": "r",
-                                                        "tok": 116
+                                                        "tok": 122
                                                       },
                                                       "field": "body",
-                                                      "tok": 118
+                                                      "tok": 124
                                                     }
                                                   ],
-                                                  "tok": 115
+                                                  "tok": 121
                                                 },
                                                 "rhs": {
                                                   "k": "strlit",
                                                   "value": "",
-                                                  "tok": 121
+                                                  "tok": 127
                                                 },
-                                                "tok": 120
+                                                "tok": 126
                                               }
                                             ],
-                                            "tok": 113
+                                            "tok": 119
                                           }
                                         }
                                       ]
@@ -412,15 +417,15 @@
                                           "expr": {
                                             "k": "int",
                                             "value": 0,
-                                            "tok": 126
+                                            "tok": 132
                                           }
                                         }
                                       ]
                                     },
-                                    "tok": 105
+                                    "tok": 111
                                   }
                                 ],
-                                "tok": 103
+                                "tok": 109
                               },
                               {
                                 "k": "expr",
@@ -429,12 +434,17 @@
                                   "callee": {
                                     "k": "selector",
                                     "base": {
-                                      "k": "ident",
-                                      "name": "http",
-                                      "tok": 129
+                                      "k": "selector",
+                                      "base": {
+                                        "k": "ident",
+                                        "name": "http",
+                                        "tok": 135
+                                      },
+                                      "field": "server",
+                                      "tok": 137
                                     },
                                     "field": "Text",
-                                    "tok": 131
+                                    "tok": 139
                                   },
                                   "args": [
                                     {
@@ -444,10 +454,10 @@
                                         "base": {
                                           "k": "ident",
                                           "name": "convert",
-                                          "tok": 133
+                                          "tok": 141
                                         },
                                         "field": "FormatInt",
-                                        "tok": 135
+                                        "tok": 143
                                       },
                                       "args": [
                                         {
@@ -461,7 +471,7 @@
                                               "callee": {
                                                 "k": "ident",
                                                 "name": "num",
-                                                "tok": 137
+                                                "tok": 145
                                               },
                                               "args": [
                                                 {
@@ -469,36 +479,41 @@
                                                   "callee": {
                                                     "k": "selector",
                                                     "base": {
-                                                      "k": "ident",
-                                                      "name": "http",
-                                                      "tok": 139
+                                                      "k": "selector",
+                                                      "base": {
+                                                        "k": "ident",
+                                                        "name": "http",
+                                                        "tok": 147
+                                                      },
+                                                      "field": "server",
+                                                      "tok": 149
                                                     },
                                                     "field": "Query",
-                                                    "tok": 141
+                                                    "tok": 151
                                                   },
                                                   "args": [
                                                     {
                                                       "k": "ident",
                                                       "name": "r",
-                                                      "tok": 143
+                                                      "tok": 153
                                                     },
                                                     {
                                                       "k": "strlit",
                                                       "value": "a",
-                                                      "tok": 145
+                                                      "tok": 155
                                                     }
                                                   ],
-                                                  "tok": 142
+                                                  "tok": 152
                                                 }
                                               ],
-                                              "tok": 138
+                                              "tok": 146
                                             },
                                             "rhs": {
                                               "k": "call",
                                               "callee": {
                                                 "k": "ident",
                                                 "name": "num",
-                                                "tok": 149
+                                                "tok": 159
                                               },
                                               "args": [
                                                 {
@@ -506,44 +521,49 @@
                                                   "callee": {
                                                     "k": "selector",
                                                     "base": {
-                                                      "k": "ident",
-                                                      "name": "http",
-                                                      "tok": 151
+                                                      "k": "selector",
+                                                      "base": {
+                                                        "k": "ident",
+                                                        "name": "http",
+                                                        "tok": 161
+                                                      },
+                                                      "field": "server",
+                                                      "tok": 163
                                                     },
                                                     "field": "Query",
-                                                    "tok": 153
+                                                    "tok": 165
                                                   },
                                                   "args": [
                                                     {
                                                       "k": "ident",
                                                       "name": "r",
-                                                      "tok": 155
+                                                      "tok": 167
                                                     },
                                                     {
                                                       "k": "strlit",
                                                       "value": "b",
-                                                      "tok": 157
+                                                      "tok": 169
                                                     }
                                                   ],
-                                                  "tok": 154
+                                                  "tok": 166
                                                 }
                                               ],
-                                              "tok": 150
+                                              "tok": 160
                                             },
-                                            "tok": 148
+                                            "tok": 158
                                           },
                                           "rhs": {
                                             "k": "ident",
                                             "name": "body",
-                                            "tok": 161
+                                            "tok": 173
                                           },
-                                          "tok": 160
+                                          "tok": 172
                                         }
                                       ],
-                                      "tok": 136
+                                      "tok": 144
                                     }
                                   ],
-                                  "tok": 132
+                                  "tok": 140
                                 }
                               }
                             ]
@@ -551,7 +571,7 @@
                         }
                       ]
                     },
-                    "tok": 95
+                    "tok": 101
                   },
                   {
                     "patterns": [
@@ -565,10 +585,10 @@
                               "base": {
                                 "k": "ident",
                                 "name": "strings",
-                                "tok": 168
+                                "tok": 180
                               },
                               "field": "HasPrefix",
-                              "tok": 170
+                              "tok": 182
                             },
                             "args": [
                               {
@@ -576,18 +596,18 @@
                                 "base": {
                                   "k": "ident",
                                   "name": "r",
-                                  "tok": 172
+                                  "tok": 184
                                 },
                                 "field": "path",
-                                "tok": 174
+                                "tok": 186
                               },
                               {
                                 "k": "strlit",
                                 "value": "/delay/",
-                                "tok": 176
+                                "tok": 188
                               }
                             ],
-                            "tok": 171
+                            "tok": 183
                           }
                         ]
                       }
@@ -611,7 +631,7 @@
                                     "callee": {
                                       "k": "ident",
                                       "name": "num",
-                                      "tok": 182
+                                      "tok": 194
                                     },
                                     "args": [
                                       {
@@ -621,10 +641,10 @@
                                           "base": {
                                             "k": "ident",
                                             "name": "strings",
-                                            "tok": 184
+                                            "tok": 196
                                           },
                                           "field": "TrimPrefix",
-                                          "tok": 186
+                                          "tok": 198
                                         },
                                         "args": [
                                           {
@@ -632,24 +652,24 @@
                                             "base": {
                                               "k": "ident",
                                               "name": "r",
-                                              "tok": 188
+                                              "tok": 200
                                             },
                                             "field": "path",
-                                            "tok": 190
+                                            "tok": 202
                                           },
                                           {
                                             "k": "strlit",
                                             "value": "/delay/",
-                                            "tok": 192
+                                            "tok": 204
                                           }
                                         ],
-                                        "tok": 187
+                                        "tok": 199
                                       }
                                     ],
-                                    "tok": 183
+                                    "tok": 195
                                   }
                                 ],
-                                "tok": 180
+                                "tok": 192
                               },
                               {
                                 "k": "expr",
@@ -660,19 +680,19 @@
                                     "base": {
                                       "k": "ident",
                                       "name": "os",
-                                      "tok": 196
+                                      "tok": 208
                                     },
                                     "field": "Sleep",
-                                    "tok": 198
+                                    "tok": 210
                                   },
                                   "args": [
                                     {
                                       "k": "ident",
                                       "name": "ms",
-                                      "tok": 200
+                                      "tok": 212
                                     }
                                   ],
-                                  "tok": 199
+                                  "tok": 211
                                 }
                               },
                               {
@@ -682,12 +702,17 @@
                                   "callee": {
                                     "k": "selector",
                                     "base": {
-                                      "k": "ident",
-                                      "name": "http",
-                                      "tok": 203
+                                      "k": "selector",
+                                      "base": {
+                                        "k": "ident",
+                                        "name": "http",
+                                        "tok": 215
+                                      },
+                                      "field": "server",
+                                      "tok": 217
                                     },
                                     "field": "Text",
-                                    "tok": 205
+                                    "tok": 219
                                   },
                                   "args": [
                                     {
@@ -697,22 +722,22 @@
                                         "base": {
                                           "k": "ident",
                                           "name": "convert",
-                                          "tok": 207
+                                          "tok": 221
                                         },
                                         "field": "FormatInt",
-                                        "tok": 209
+                                        "tok": 223
                                       },
                                       "args": [
                                         {
                                           "k": "ident",
                                           "name": "ms",
-                                          "tok": 211
+                                          "tok": 225
                                         }
                                       ],
-                                      "tok": 210
+                                      "tok": 224
                                     }
                                   ],
-                                  "tok": 206
+                                  "tok": 220
                                 }
                               }
                             ]
@@ -720,7 +745,7 @@
                         }
                       ]
                     },
-                    "tok": 167
+                    "tok": 179
                   }
                 ],
                 "default": {
@@ -732,29 +757,34 @@
                         "callee": {
                           "k": "selector",
                           "base": {
-                            "k": "ident",
-                            "name": "http",
-                            "tok": 219
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "http",
+                              "tok": 233
+                            },
+                            "field": "server",
+                            "tok": 235
                           },
                           "field": "Status",
-                          "tok": 221
+                          "tok": 237
                         },
                         "args": [
                           {
                             "k": "int",
                             "value": 404,
-                            "tok": 223
+                            "tok": 239
                           }
                         ],
-                        "tok": 222
+                        "tok": 238
                       }
                     }
                   ]
                 },
-                "tok": 79
+                "tok": 83
               }
             ],
-            "tok": 78
+            "tok": 82
           }
         ]
       },
@@ -762,9 +792,9 @@
       "bodiless": false,
       "span": {
         "start": 66,
-        "end": 230
+        "end": 246
       },
-      "sig_end": 77
+      "sig_end": 81
     },
     {
       "name": "app",
@@ -798,39 +828,44 @@
                 "callee": {
                   "k": "selector",
                   "base": {
-                    "k": "ident",
-                    "name": "http",
-                    "tok": 242
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "http",
+                      "tok": 258
+                    },
+                    "field": "server",
+                    "tok": 260
                   },
                   "field": "ServeConn",
-                  "tok": 244
+                  "tok": 262
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "c",
-                    "tok": 246
+                    "tok": 264
                   },
                   {
                     "k": "ident",
                     "name": "route",
-                    "tok": 248
+                    "tok": 266
                   }
                 ],
-                "tok": 245
+                "tok": 263
               }
             ],
-            "tok": 241
+            "tok": 257
           }
         ]
       },
-      "tok": 231,
+      "tok": 247,
       "bodiless": false,
       "span": {
-        "start": 230,
-        "end": 253
+        "start": 246,
+        "end": 271
       },
-      "sig_end": 240
+      "sig_end": 256
     },
     {
       "name": "serve",
@@ -866,21 +901,21 @@
                   "base": {
                     "k": "ident",
                     "name": "net",
-                    "tok": 265
+                    "tok": 283
                   },
                   "field": "Serve",
-                  "tok": 267
+                  "tok": 285
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "l",
-                    "tok": 269
+                    "tok": 287
                   },
                   {
                     "k": "ident",
                     "name": "app",
-                    "tok": 271
+                    "tok": 289
                   },
                   {
                     "k": "named_arg",
@@ -888,25 +923,25 @@
                     "value": {
                       "k": "int",
                       "value": 64,
-                      "tok": 275
+                      "tok": 293
                     },
-                    "tok": 273
+                    "tok": 291
                   }
                 ],
-                "tok": 268
+                "tok": 286
               }
             ],
-            "tok": 264
+            "tok": 282
           }
         ]
       },
-      "tok": 254,
+      "tok": 272,
       "bodiless": false,
       "span": {
-        "start": 253,
-        "end": 280
+        "start": 271,
+        "end": 298
       },
-      "sig_end": 263
+      "sig_end": 281
     },
     {
       "name": "talk",
@@ -963,10 +998,10 @@
                 },
                 "elems": [],
                 "mut": true,
-                "tok": 302
+                "tok": 320
               }
             ],
-            "tok": 298
+            "tok": 316
           },
           {
             "k": "expr",
@@ -986,10 +1021,10 @@
                         "base": {
                           "k": "ident",
                           "name": "net",
-                          "tok": 311
+                          "tok": 329
                         },
                         "field": "Dial",
-                        "tok": 313
+                        "tok": 331
                       },
                       "args": [
                         {
@@ -1003,20 +1038,20 @@
                               {
                                 "k": "ident",
                                 "name": "port",
-                                "tok": 315
+                                "tok": 333
                               }
                             ]
                           },
-                          "tok": 315
+                          "tok": 333
                         }
                       ],
-                      "tok": 314
+                      "tok": 332
                     },
                     "wrap": null,
-                    "tok": 317
+                    "tok": 335
                   },
                   "guards": [],
-                  "tok": 309
+                  "tok": 327
                 }
               ],
               "body": {
@@ -1032,10 +1067,10 @@
                       {
                         "k": "ident",
                         "name": "true",
-                        "tok": 322
+                        "tok": 340
                       }
                     ],
-                    "tok": 319
+                    "tok": 337
                   },
                   {
                     "k": "expr",
@@ -1049,10 +1084,10 @@
                           "src": {
                             "k": "ident",
                             "name": "parts",
-                            "tok": 327
+                            "tok": 345
                           },
                           "guards": [],
-                          "tok": 325
+                          "tok": 343
                         }
                       ],
                       "body": {
@@ -1068,9 +1103,9 @@
                                 "operand": {
                                   "k": "ident",
                                   "name": "first",
-                                  "tok": 331
+                                  "tok": 349
                                 },
-                                "tok": 330
+                                "tok": 348
                               },
                               "then": {
                                 "stmts": [
@@ -1083,25 +1118,25 @@
                                         "base": {
                                           "k": "ident",
                                           "name": "os",
-                                          "tok": 333
+                                          "tok": 351
                                         },
                                         "field": "Sleep",
-                                        "tok": 335
+                                        "tok": 353
                                       },
                                       "args": [
                                         {
                                           "k": "int",
                                           "value": 20,
-                                          "tok": 337
+                                          "tok": 355
                                         }
                                       ],
-                                      "tok": 336
+                                      "tok": 354
                                     }
                                   }
                                 ]
                               },
                               "else": null,
-                              "tok": 329
+                              "tok": 347
                             }
                           },
                           {
@@ -1110,7 +1145,7 @@
                               {
                                 "k": "ident",
                                 "name": "first",
-                                "tok": 342
+                                "tok": 360
                               }
                             ],
                             "op": "=",
@@ -1118,10 +1153,10 @@
                               {
                                 "k": "ident",
                                 "name": "false",
-                                "tok": 344
+                                "tok": 362
                               }
                             ],
-                            "tok": 342
+                            "tok": 360
                           },
                           {
                             "k": "expr",
@@ -1134,43 +1169,43 @@
                                   "base": {
                                     "k": "ident",
                                     "name": "net",
-                                    "tok": 346
+                                    "tok": 364
                                   },
                                   "field": "Send",
-                                  "tok": 348
+                                  "tok": 366
                                 },
                                 "args": [
                                   {
                                     "k": "ident",
                                     "name": "c",
-                                    "tok": 350
+                                    "tok": 368
                                   },
                                   {
                                     "k": "call",
                                     "callee": {
                                       "k": "ident",
                                       "name": "bytes",
-                                      "tok": 352
+                                      "tok": 370
                                     },
                                     "args": [
                                       {
                                         "k": "ident",
                                         "name": "p",
-                                        "tok": 354
+                                        "tok": 372
                                       }
                                     ],
-                                    "tok": 353
+                                    "tok": 371
                                   }
                                 ],
-                                "tok": 349
+                                "tok": 367
                               },
                               "wrap": null,
-                              "tok": 357
+                              "tok": 375
                             }
                           }
                         ]
                       },
-                      "tok": 324
+                      "tok": 342
                     }
                   },
                   {
@@ -1191,25 +1226,25 @@
                                 "base": {
                                   "k": "ident",
                                   "name": "net",
-                                  "tok": 364
+                                  "tok": 382
                                 },
                                 "field": "Recv",
-                                "tok": 366
+                                "tok": 384
                               },
                               "args": [
                                 {
                                   "k": "ident",
                                   "name": "c",
-                                  "tok": 368
+                                  "tok": 386
                                 }
                               ],
-                              "tok": 367
+                              "tok": 385
                             },
                             "wrap": null,
-                            "tok": 370
+                            "tok": 388
                           },
                           "guards": [],
-                          "tok": 362
+                          "tok": 380
                         }
                       ],
                       "body": {
@@ -1227,10 +1262,10 @@
                                   "src": {
                                     "k": "ident",
                                     "name": "chunk",
-                                    "tok": 375
+                                    "tok": 393
                                   },
                                   "guards": [],
-                                  "tok": 373
+                                  "tok": 391
                                 }
                               ],
                               "body": {
@@ -1246,15 +1281,15 @@
                                         "lhs": {
                                           "k": "ident",
                                           "name": "x",
-                                          "tok": 378
+                                          "tok": 396
                                         },
                                         "rhs": {
                                           "k": "int",
                                           "value": 13,
                                           "char": true,
-                                          "tok": 380
+                                          "tok": 398
                                         },
-                                        "tok": 379
+                                        "tok": 397
                                       },
                                       "then": {
                                         "stmts": [
@@ -1264,7 +1299,7 @@
                                               {
                                                 "k": "ident",
                                                 "name": "got",
-                                                "tok": 382
+                                                "tok": 400
                                               }
                                             ],
                                             "op": "=",
@@ -1274,44 +1309,44 @@
                                                 "callee": {
                                                   "k": "ident",
                                                   "name": "append",
-                                                  "tok": 384
+                                                  "tok": 402
                                                 },
                                                 "args": [
                                                   {
                                                     "k": "ident",
                                                     "name": "got",
-                                                    "tok": 386
+                                                    "tok": 404
                                                   },
                                                   {
                                                     "k": "ident",
                                                     "name": "x",
-                                                    "tok": 388
+                                                    "tok": 406
                                                   }
                                                 ],
-                                                "tok": 385
+                                                "tok": 403
                                               }
                                             ],
-                                            "tok": 382
+                                            "tok": 400
                                           }
                                         ]
                                       },
                                       "else": null,
-                                      "tok": 377
+                                      "tok": 395
                                     }
                                   }
                                 ]
                               },
-                              "tok": 372
+                              "tok": 390
                             }
                           }
                         ]
                       },
-                      "tok": 361
+                      "tok": 379
                     }
                   }
                 ]
               },
-              "tok": 308
+              "tok": 326
             }
           },
           {
@@ -1326,10 +1361,10 @@
                     "base": {
                       "k": "ident",
                       "name": "$utf8",
-                      "tok": 400
+                      "tok": 418
                     },
                     "field": "Parse",
-                    "tok": 400
+                    "tok": 418
                   },
                   "args": [
                     {
@@ -1337,39 +1372,39 @@
                       "callee": {
                         "k": "ident",
                         "name": "freeze",
-                        "tok": 402
+                        "tok": 420
                       },
                       "args": [
                         {
                           "k": "ident",
                           "name": "got",
-                          "tok": 404
+                          "tok": 422
                         }
                       ],
-                      "tok": 403
+                      "tok": 421
                     }
                   ],
-                  "tok": 401
+                  "tok": 419
                 },
                 "wrap": null,
-                "tok": 407
+                "tok": 425
               },
               {
                 "k": "nil",
-                "tok": 409
+                "tok": 427
               }
             ],
-            "tok": 399
+            "tok": 417
           }
         ]
       },
-      "tok": 281,
+      "tok": 299,
       "bodiless": false,
       "span": {
-        "start": 280,
-        "end": 413
+        "start": 298,
+        "end": 431
       },
-      "sig_end": 297
+      "sig_end": 315
     },
     {
       "name": "client",
@@ -1417,24 +1452,24 @@
                 "callee": {
                   "k": "ident",
                   "name": "talk",
-                  "tok": 430
+                  "tok": 448
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "port",
-                    "tok": 432
+                    "tok": 450
                   },
                   {
                     "k": "ident",
                     "name": "parts",
-                    "tok": 434
+                    "tok": 452
                   }
                 ],
-                "tok": 431
+                "tok": 449
               }
             ],
-            "tok": 426
+            "tok": 444
           },
           {
             "k": "ret",
@@ -1447,13 +1482,13 @@
                   "lhs": {
                     "k": "ident",
                     "name": "e",
-                    "tok": 439
+                    "tok": 457
                   },
                   "rhs": {
                     "k": "nil",
-                    "tok": 441
+                    "tok": 459
                   },
-                  "tok": 440
+                  "tok": 458
                 },
                 "then": {
                   "stmts": [
@@ -1462,7 +1497,7 @@
                       "expr": {
                         "k": "strlit",
                         "value": "client error",
-                        "tok": 443
+                        "tok": 461
                       }
                     }
                   ]
@@ -1475,25 +1510,25 @@
                       "expr": {
                         "k": "ident",
                         "name": "v",
-                        "tok": 447
+                        "tok": 465
                       }
                     }
                   ]
                 },
-                "tok": 438
+                "tok": 456
               }
             ],
-            "tok": 437
+            "tok": 455
           }
         ]
       },
-      "tok": 414,
+      "tok": 432,
       "bodiless": false,
       "span": {
-        "start": 413,
-        "end": 452
+        "start": 431,
+        "end": 470
       },
-      "sig_end": 425
+      "sig_end": 443
     },
     {
       "name": "okCount",
@@ -1526,37 +1561,37 @@
                   "base": {
                     "k": "ident",
                     "name": "strings",
-                    "tok": 461
+                    "tok": 479
                   },
                   "field": "Count",
-                  "tok": 463
+                  "tok": 481
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "s",
-                    "tok": 465
+                    "tok": 483
                   },
                   {
                     "k": "strlit",
                     "value": "\n\nok",
-                    "tok": 467
+                    "tok": 485
                   }
                 ],
-                "tok": 464
+                "tok": 482
               }
             ],
-            "tok": 460
+            "tok": 478
           }
         ]
       },
-      "tok": 453,
+      "tok": 471,
       "bodiless": false,
       "span": {
-        "start": 452,
-        "end": 472
+        "start": 470,
+        "end": 490
       },
-      "sig_end": 459
+      "sig_end": 477
     },
     {
       "name": "bigHead",
@@ -1585,10 +1620,10 @@
                 },
                 "elems": [],
                 "mut": true,
-                "tok": 482
+                "tok": 500
               }
             ],
-            "tok": 478
+            "tok": 496
           },
           {
             "k": "expr",
@@ -1604,19 +1639,19 @@
                     "callee": {
                       "k": "ident",
                       "name": "bytes",
-                      "tok": 491
+                      "tok": 509
                     },
                     "args": [
                       {
                         "k": "strlit",
                         "value": "GET / HTTP/1.1\r\nX-Big: ",
-                        "tok": 493
+                        "tok": 511
                       }
                     ],
-                    "tok": 492
+                    "tok": 510
                   },
                   "guards": [],
-                  "tok": 489
+                  "tok": 507
                 }
               ],
               "body": {
@@ -1628,7 +1663,7 @@
                       {
                         "k": "ident",
                         "name": "b",
-                        "tok": 496
+                        "tok": 514
                       }
                     ],
                     "op": "=",
@@ -1638,28 +1673,28 @@
                         "callee": {
                           "k": "ident",
                           "name": "append",
-                          "tok": 498
+                          "tok": 516
                         },
                         "args": [
                           {
                             "k": "ident",
                             "name": "b",
-                            "tok": 500
+                            "tok": 518
                           },
                           {
                             "k": "ident",
                             "name": "x",
-                            "tok": 502
+                            "tok": 520
                           }
                         ],
-                        "tok": 499
+                        "tok": 517
                       }
                     ],
-                    "tok": 496
+                    "tok": 514
                   }
                 ]
               },
-              "tok": 488
+              "tok": 506
             }
           },
           {
@@ -1672,10 +1707,10 @@
               {
                 "k": "int",
                 "value": 0,
-                "tok": 510
+                "tok": 528
               }
             ],
-            "tok": 507
+            "tok": 525
           },
           {
             "k": "while",
@@ -1685,14 +1720,14 @@
               "lhs": {
                 "k": "ident",
                 "name": "i",
-                "tok": 513
+                "tok": 531
               },
               "rhs": {
                 "k": "int",
                 "value": 9000,
-                "tok": 515
+                "tok": 533
               },
-              "tok": 514
+              "tok": 532
             },
             "body": {
               "stmts": [
@@ -1702,7 +1737,7 @@
                     {
                       "k": "ident",
                       "name": "b",
-                      "tok": 517
+                      "tok": 535
                     }
                   ],
                   "op": "=",
@@ -1712,25 +1747,25 @@
                       "callee": {
                         "k": "ident",
                         "name": "append",
-                        "tok": 519
+                        "tok": 537
                       },
                       "args": [
                         {
                           "k": "ident",
                           "name": "b",
-                          "tok": 521
+                          "tok": 539
                         },
                         {
                           "k": "int",
                           "value": 97,
                           "char": true,
-                          "tok": 523
+                          "tok": 541
                         }
                       ],
-                      "tok": 520
+                      "tok": 538
                     }
                   ],
-                  "tok": 517
+                  "tok": 535
                 },
                 {
                   "k": "assign",
@@ -1738,7 +1773,7 @@
                     {
                       "k": "ident",
                       "name": "i",
-                      "tok": 526
+                      "tok": 544
                     }
                   ],
                   "op": "+=",
@@ -1746,14 +1781,14 @@
                     {
                       "k": "int",
                       "value": 1,
-                      "tok": 528
+                      "tok": 546
                     }
                   ],
-                  "tok": 526
+                  "tok": 544
                 }
               ]
             },
-            "tok": 512
+            "tok": 530
           },
           {
             "k": "expr",
@@ -1769,19 +1804,19 @@
                     "callee": {
                       "k": "ident",
                       "name": "bytes",
-                      "tok": 535
+                      "tok": 553
                     },
                     "args": [
                       {
                         "k": "strlit",
                         "value": "\r\n\r\n",
-                        "tok": 537
+                        "tok": 555
                       }
                     ],
-                    "tok": 536
+                    "tok": 554
                   },
                   "guards": [],
-                  "tok": 533
+                  "tok": 551
                 }
               ],
               "body": {
@@ -1793,7 +1828,7 @@
                       {
                         "k": "ident",
                         "name": "b",
-                        "tok": 540
+                        "tok": 558
                       }
                     ],
                     "op": "=",
@@ -1803,28 +1838,28 @@
                         "callee": {
                           "k": "ident",
                           "name": "append",
-                          "tok": 542
+                          "tok": 560
                         },
                         "args": [
                           {
                             "k": "ident",
                             "name": "b",
-                            "tok": 544
+                            "tok": 562
                           },
                           {
                             "k": "ident",
                             "name": "x",
-                            "tok": 546
+                            "tok": 564
                           }
                         ],
-                        "tok": 543
+                        "tok": 561
                       }
                     ],
-                    "tok": 540
+                    "tok": 558
                   }
                 ]
               },
-              "tok": 532
+              "tok": 550
             }
           },
           {
@@ -1839,10 +1874,10 @@
                     "base": {
                       "k": "ident",
                       "name": "$utf8",
-                      "tok": 552
+                      "tok": 570
                     },
                     "field": "Parse",
-                    "tok": 552
+                    "tok": 570
                   },
                   "args": [
                     {
@@ -1850,39 +1885,39 @@
                       "callee": {
                         "k": "ident",
                         "name": "freeze",
-                        "tok": 554
+                        "tok": 572
                       },
                       "args": [
                         {
                           "k": "ident",
                           "name": "b",
-                          "tok": 556
+                          "tok": 574
                         }
                       ],
-                      "tok": 555
+                      "tok": 573
                     }
                   ],
-                  "tok": 553
+                  "tok": 571
                 },
                 "rhs": {
                   "k": "strlit",
                   "value": "",
-                  "tok": 560
+                  "tok": 578
                 },
-                "tok": 559
+                "tok": 577
               }
             ],
-            "tok": 551
+            "tok": 569
           }
         ]
       },
-      "tok": 473,
+      "tok": 491,
       "bodiless": false,
       "span": {
-        "start": 472,
-        "end": 564
+        "start": 490,
+        "end": 582
       },
-      "sig_end": 477
+      "sig_end": 495
     },
     {
       "name": "main",
@@ -1898,7 +1933,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 569
+                "tok": 587
               },
               "args": [
                 {
@@ -1908,31 +1943,31 @@
                     "callee": {
                       "k": "ident",
                       "name": "run",
-                      "tok": 571
+                      "tok": 589
                     },
                     "args": [],
-                    "tok": 572
+                    "tok": 590
                   },
                   "rhs": {
                     "k": "strlit",
                     "value": "listen failed",
-                    "tok": 575
+                    "tok": 593
                   },
-                  "tok": 574
+                  "tok": 592
                 }
               ],
-              "tok": 570
+              "tok": 588
             }
           }
         ]
       },
-      "tok": 565,
+      "tok": 583,
       "bodiless": false,
       "span": {
-        "start": 564,
-        "end": 580
+        "start": 582,
+        "end": 598
       },
-      "sig_end": 568
+      "sig_end": 586
     },
     {
       "name": "run",
@@ -1963,10 +1998,10 @@
               {
                 "k": "strlit",
                 "value": "",
-                "tok": 594
+                "tok": 612
               }
             ],
-            "tok": 591
+            "tok": 609
           },
           {
             "k": "expr",
@@ -1986,25 +2021,25 @@
                         "base": {
                           "k": "ident",
                           "name": "net",
-                          "tok": 599
+                          "tok": 617
                         },
                         "field": "Listen",
-                        "tok": 601
+                        "tok": 619
                       },
                       "args": [
                         {
                           "k": "strlit",
                           "value": "127.0.0.1:0",
-                          "tok": 603
+                          "tok": 621
                         }
                       ],
-                      "tok": 602
+                      "tok": 620
                     },
                     "wrap": null,
-                    "tok": 605
+                    "tok": 623
                   },
                   "guards": [],
-                  "tok": 597
+                  "tok": 615
                 }
               ],
               "body": {
@@ -2024,22 +2059,22 @@
                           "base": {
                             "k": "ident",
                             "name": "net",
-                            "tok": 609
+                            "tok": 627
                           },
                           "field": "Port",
-                          "tok": 611
+                          "tok": 629
                         },
                         "args": [
                           {
                             "k": "ident",
                             "name": "l",
-                            "tok": 613
+                            "tok": 631
                           }
                         ],
-                        "tok": 612
+                        "tok": 630
                       }
                     ],
-                    "tok": 607
+                    "tok": 625
                   },
                   {
                     "k": "bind",
@@ -2056,10 +2091,10 @@
                           "base": {
                             "k": "ident",
                             "name": "task",
-                            "tok": 620
+                            "tok": 638
                           },
                           "field": "Run",
-                          "tok": 622
+                          "tok": 640
                         },
                         "args": [
                           {
@@ -2086,10 +2121,10 @@
                                     {
                                       "k": "strlit",
                                       "value": "Host: x\r\n",
-                                      "tok": 634
+                                      "tok": 652
                                     }
                                   ],
-                                  "tok": 632
+                                  "tok": 650
                                 },
                                 {
                                   "k": "bind",
@@ -2105,16 +2140,16 @@
                                         "base": {
                                           "k": "ident",
                                           "name": "task",
-                                          "tok": 638
+                                          "tok": 656
                                         },
                                         "field": "Spawn",
-                                        "tok": 640
+                                        "tok": 658
                                       },
                                       "args": [
                                         {
                                           "k": "ident",
                                           "name": "s",
-                                          "tok": 642
+                                          "tok": 660
                                         },
                                         {
                                           "k": "lambda",
@@ -2124,13 +2159,13 @@
                                             "callee": {
                                               "k": "ident",
                                               "name": "client",
-                                              "tok": 647
+                                              "tok": 665
                                             },
                                             "args": [
                                               {
                                                 "k": "ident",
                                                 "name": "port",
-                                                "tok": 649
+                                                "tok": 667
                                               },
                                               {
                                                 "k": "slicelit",
@@ -2150,26 +2185,26 @@
                                                         {
                                                           "k": "ident",
                                                           "name": "h",
-                                                          "tok": 655
+                                                          "tok": 673
                                                         }
                                                       ]
                                                     },
-                                                    "tok": 655
+                                                    "tok": 673
                                                   }
                                                 ],
                                                 "mut": false,
-                                                "tok": 651
+                                                "tok": 669
                                               }
                                             ],
-                                            "tok": 648
+                                            "tok": 666
                                           },
-                                          "tok": 646
+                                          "tok": 664
                                         }
                                       ],
-                                      "tok": 641
+                                      "tok": 659
                                     }
                                   ],
-                                  "tok": 636
+                                  "tok": 654
                                 },
                                 {
                                   "k": "bind",
@@ -2185,16 +2220,16 @@
                                         "base": {
                                           "k": "ident",
                                           "name": "task",
-                                          "tok": 662
+                                          "tok": 680
                                         },
                                         "field": "Spawn",
-                                        "tok": 664
+                                        "tok": 682
                                       },
                                       "args": [
                                         {
                                           "k": "ident",
                                           "name": "s",
-                                          "tok": 666
+                                          "tok": 684
                                         },
                                         {
                                           "k": "lambda",
@@ -2204,13 +2239,13 @@
                                             "callee": {
                                               "k": "ident",
                                               "name": "client",
-                                              "tok": 671
+                                              "tok": 689
                                             },
                                             "args": [
                                               {
                                                 "k": "ident",
                                                 "name": "port",
-                                                "tok": 673
+                                                "tok": 691
                                               },
                                               {
                                                 "k": "slicelit",
@@ -2230,26 +2265,26 @@
                                                         {
                                                           "k": "ident",
                                                           "name": "h",
-                                                          "tok": 679
+                                                          "tok": 697
                                                         }
                                                       ]
                                                     },
-                                                    "tok": 679
+                                                    "tok": 697
                                                   }
                                                 ],
                                                 "mut": false,
-                                                "tok": 675
+                                                "tok": 693
                                               }
                                             ],
-                                            "tok": 672
+                                            "tok": 690
                                           },
-                                          "tok": 670
+                                          "tok": 688
                                         }
                                       ],
-                                      "tok": 665
+                                      "tok": 683
                                     }
                                   ],
-                                  "tok": 660
+                                  "tok": 678
                                 },
                                 {
                                   "k": "bind",
@@ -2265,16 +2300,16 @@
                                         "base": {
                                           "k": "ident",
                                           "name": "task",
-                                          "tok": 686
+                                          "tok": 704
                                         },
                                         "field": "Spawn",
-                                        "tok": 688
+                                        "tok": 706
                                       },
                                       "args": [
                                         {
                                           "k": "ident",
                                           "name": "s",
-                                          "tok": 690
+                                          "tok": 708
                                         },
                                         {
                                           "k": "lambda",
@@ -2284,13 +2319,13 @@
                                             "callee": {
                                               "k": "ident",
                                               "name": "client",
-                                              "tok": 695
+                                              "tok": 713
                                             },
                                             "args": [
                                               {
                                                 "k": "ident",
                                                 "name": "port",
-                                                "tok": 697
+                                                "tok": 715
                                               },
                                               {
                                                 "k": "slicelit",
@@ -2310,31 +2345,31 @@
                                                         {
                                                           "k": "ident",
                                                           "name": "h",
-                                                          "tok": 703
+                                                          "tok": 721
                                                         }
                                                       ]
                                                     },
-                                                    "tok": 703
+                                                    "tok": 721
                                                   },
                                                   {
                                                     "k": "strlit",
                                                     "value": "\n7\r\n0\r\n\r\n",
-                                                    "tok": 705
+                                                    "tok": 723
                                                   }
                                                 ],
                                                 "mut": false,
-                                                "tok": 699
+                                                "tok": 717
                                               }
                                             ],
-                                            "tok": 696
+                                            "tok": 714
                                           },
-                                          "tok": 694
+                                          "tok": 712
                                         }
                                       ],
-                                      "tok": 689
+                                      "tok": 707
                                     }
                                   ],
-                                  "tok": 684
+                                  "tok": 702
                                 },
                                 {
                                   "k": "bind",
@@ -2350,16 +2385,16 @@
                                         "base": {
                                           "k": "ident",
                                           "name": "task",
-                                          "tok": 712
+                                          "tok": 730
                                         },
                                         "field": "Spawn",
-                                        "tok": 714
+                                        "tok": 732
                                       },
                                       "args": [
                                         {
                                           "k": "ident",
                                           "name": "s",
-                                          "tok": 716
+                                          "tok": 734
                                         },
                                         {
                                           "k": "lambda",
@@ -2369,13 +2404,13 @@
                                             "callee": {
                                               "k": "ident",
                                               "name": "client",
-                                              "tok": 721
+                                              "tok": 739
                                             },
                                             "args": [
                                               {
                                                 "k": "ident",
                                                 "name": "port",
-                                                "tok": 723
+                                                "tok": 741
                                               },
                                               {
                                                 "k": "slicelit",
@@ -2387,7 +2422,7 @@
                                                   {
                                                     "k": "strlit",
                                                     "value": "GET /basel",
-                                                    "tok": 729
+                                                    "tok": 747
                                                   },
                                                   {
                                                     "k": "interp",
@@ -2400,31 +2435,31 @@
                                                         {
                                                           "k": "ident",
                                                           "name": "h",
-                                                          "tok": 731
+                                                          "tok": 749
                                                         }
                                                       ]
                                                     },
-                                                    "tok": 731
+                                                    "tok": 749
                                                   },
                                                   {
                                                     "k": "strlit",
                                                     "value": "ose\r\n\r\n",
-                                                    "tok": 733
+                                                    "tok": 751
                                                   }
                                                 ],
                                                 "mut": false,
-                                                "tok": 725
+                                                "tok": 743
                                               }
                                             ],
-                                            "tok": 722
+                                            "tok": 740
                                           },
-                                          "tok": 720
+                                          "tok": 738
                                         }
                                       ],
-                                      "tok": 715
+                                      "tok": 733
                                     }
                                   ],
-                                  "tok": 710
+                                  "tok": 728
                                 },
                                 {
                                   "k": "bind",
@@ -2440,16 +2475,16 @@
                                         "base": {
                                           "k": "ident",
                                           "name": "task",
-                                          "tok": 740
+                                          "tok": 758
                                         },
                                         "field": "Spawn",
-                                        "tok": 742
+                                        "tok": 760
                                       },
                                       "args": [
                                         {
                                           "k": "ident",
                                           "name": "s",
-                                          "tok": 744
+                                          "tok": 762
                                         },
                                         {
                                           "k": "lambda",
@@ -2459,13 +2494,13 @@
                                             "callee": {
                                               "k": "ident",
                                               "name": "client",
-                                              "tok": 749
+                                              "tok": 767
                                             },
                                             "args": [
                                               {
                                                 "k": "ident",
                                                 "name": "port",
-                                                "tok": 751
+                                                "tok": 769
                                               },
                                               {
                                                 "k": "slicelit",
@@ -2481,10 +2516,10 @@
                                                       "base": {
                                                         "k": "ident",
                                                         "name": "strings",
-                                                        "tok": 757
+                                                        "tok": 775
                                                       },
                                                       "field": "Join",
-                                                      "tok": 759
+                                                      "tok": 777
                                                     },
                                                     "args": [
                                                       {
@@ -2494,159 +2529,6 @@
                                                           "name": "string"
                                                         },
                                                         "elems": [
-                                                          {
-                                                            "k": "interp",
-                                                            "tmpl": {
-                                                              "lits": [
-                                                                "GET /pipeline HTTP/1.1\r\n",
-                                                                "\r\n"
-                                                              ],
-                                                              "holes": [
-                                                                {
-                                                                  "k": "ident",
-                                                                  "name": "h",
-                                                                  "tok": 765
-                                                                }
-                                                              ]
-                                                            },
-                                                            "tok": 765
-                                                          },
-                                                          {
-                                                            "k": "interp",
-                                                            "tmpl": {
-                                                              "lits": [
-                                                                "GET /pipeline HTTP/1.1\r\n",
-                                                                "\r\n"
-                                                              ],
-                                                              "holes": [
-                                                                {
-                                                                  "k": "ident",
-                                                                  "name": "h",
-                                                                  "tok": 767
-                                                                }
-                                                              ]
-                                                            },
-                                                            "tok": 767
-                                                          },
-                                                          {
-                                                            "k": "interp",
-                                                            "tmpl": {
-                                                              "lits": [
-                                                                "GET /pipeline HTTP/1.1\r\n",
-                                                                "\r\n"
-                                                              ],
-                                                              "holes": [
-                                                                {
-                                                                  "k": "ident",
-                                                                  "name": "h",
-                                                                  "tok": 769
-                                                                }
-                                                              ]
-                                                            },
-                                                            "tok": 769
-                                                          },
-                                                          {
-                                                            "k": "interp",
-                                                            "tmpl": {
-                                                              "lits": [
-                                                                "GET /pipeline HTTP/1.1\r\n",
-                                                                "\r\n"
-                                                              ],
-                                                              "holes": [
-                                                                {
-                                                                  "k": "ident",
-                                                                  "name": "h",
-                                                                  "tok": 771
-                                                                }
-                                                              ]
-                                                            },
-                                                            "tok": 771
-                                                          },
-                                                          {
-                                                            "k": "interp",
-                                                            "tmpl": {
-                                                              "lits": [
-                                                                "GET /pipeline HTTP/1.1\r\n",
-                                                                "\r\n"
-                                                              ],
-                                                              "holes": [
-                                                                {
-                                                                  "k": "ident",
-                                                                  "name": "h",
-                                                                  "tok": 773
-                                                                }
-                                                              ]
-                                                            },
-                                                            "tok": 773
-                                                          },
-                                                          {
-                                                            "k": "interp",
-                                                            "tmpl": {
-                                                              "lits": [
-                                                                "GET /pipeline HTTP/1.1\r\n",
-                                                                "\r\n"
-                                                              ],
-                                                              "holes": [
-                                                                {
-                                                                  "k": "ident",
-                                                                  "name": "h",
-                                                                  "tok": 775
-                                                                }
-                                                              ]
-                                                            },
-                                                            "tok": 775
-                                                          },
-                                                          {
-                                                            "k": "interp",
-                                                            "tmpl": {
-                                                              "lits": [
-                                                                "GET /pipeline HTTP/1.1\r\n",
-                                                                "\r\n"
-                                                              ],
-                                                              "holes": [
-                                                                {
-                                                                  "k": "ident",
-                                                                  "name": "h",
-                                                                  "tok": 777
-                                                                }
-                                                              ]
-                                                            },
-                                                            "tok": 777
-                                                          },
-                                                          {
-                                                            "k": "interp",
-                                                            "tmpl": {
-                                                              "lits": [
-                                                                "GET /pipeline HTTP/1.1\r\n",
-                                                                "\r\n"
-                                                              ],
-                                                              "holes": [
-                                                                {
-                                                                  "k": "ident",
-                                                                  "name": "h",
-                                                                  "tok": 779
-                                                                }
-                                                              ]
-                                                            },
-                                                            "tok": 779
-                                                          },
-                                                          {
-                                                            "k": "interp",
-                                                            "tmpl": {
-                                                              "lits": [
-                                                                "GET /pipeline HTTP/1.1\r\n",
-                                                                "\r\n"
-                                                              ],
-                                                              "holes": [
-                                                                {
-                                                                  "k": "ident",
-                                                                  "name": "h",
-                                                                  "tok": 781
-                                                                }
-                                                              ]
-                                                            },
-                                                            "tok": 781
-                                                          },
                                                           {
                                                             "k": "interp",
                                                             "tmpl": {
@@ -2754,7 +2636,7 @@
                                                             "tmpl": {
                                                               "lits": [
                                                                 "GET /pipeline HTTP/1.1\r\n",
-                                                                "Connection: close\r\n\r\n"
+                                                                "\r\n"
                                                               ],
                                                               "holes": [
                                                                 {
@@ -2765,33 +2647,186 @@
                                                               ]
                                                             },
                                                             "tok": 795
+                                                          },
+                                                          {
+                                                            "k": "interp",
+                                                            "tmpl": {
+                                                              "lits": [
+                                                                "GET /pipeline HTTP/1.1\r\n",
+                                                                "\r\n"
+                                                              ],
+                                                              "holes": [
+                                                                {
+                                                                  "k": "ident",
+                                                                  "name": "h",
+                                                                  "tok": 797
+                                                                }
+                                                              ]
+                                                            },
+                                                            "tok": 797
+                                                          },
+                                                          {
+                                                            "k": "interp",
+                                                            "tmpl": {
+                                                              "lits": [
+                                                                "GET /pipeline HTTP/1.1\r\n",
+                                                                "\r\n"
+                                                              ],
+                                                              "holes": [
+                                                                {
+                                                                  "k": "ident",
+                                                                  "name": "h",
+                                                                  "tok": 799
+                                                                }
+                                                              ]
+                                                            },
+                                                            "tok": 799
+                                                          },
+                                                          {
+                                                            "k": "interp",
+                                                            "tmpl": {
+                                                              "lits": [
+                                                                "GET /pipeline HTTP/1.1\r\n",
+                                                                "\r\n"
+                                                              ],
+                                                              "holes": [
+                                                                {
+                                                                  "k": "ident",
+                                                                  "name": "h",
+                                                                  "tok": 801
+                                                                }
+                                                              ]
+                                                            },
+                                                            "tok": 801
+                                                          },
+                                                          {
+                                                            "k": "interp",
+                                                            "tmpl": {
+                                                              "lits": [
+                                                                "GET /pipeline HTTP/1.1\r\n",
+                                                                "\r\n"
+                                                              ],
+                                                              "holes": [
+                                                                {
+                                                                  "k": "ident",
+                                                                  "name": "h",
+                                                                  "tok": 803
+                                                                }
+                                                              ]
+                                                            },
+                                                            "tok": 803
+                                                          },
+                                                          {
+                                                            "k": "interp",
+                                                            "tmpl": {
+                                                              "lits": [
+                                                                "GET /pipeline HTTP/1.1\r\n",
+                                                                "\r\n"
+                                                              ],
+                                                              "holes": [
+                                                                {
+                                                                  "k": "ident",
+                                                                  "name": "h",
+                                                                  "tok": 805
+                                                                }
+                                                              ]
+                                                            },
+                                                            "tok": 805
+                                                          },
+                                                          {
+                                                            "k": "interp",
+                                                            "tmpl": {
+                                                              "lits": [
+                                                                "GET /pipeline HTTP/1.1\r\n",
+                                                                "\r\n"
+                                                              ],
+                                                              "holes": [
+                                                                {
+                                                                  "k": "ident",
+                                                                  "name": "h",
+                                                                  "tok": 807
+                                                                }
+                                                              ]
+                                                            },
+                                                            "tok": 807
+                                                          },
+                                                          {
+                                                            "k": "interp",
+                                                            "tmpl": {
+                                                              "lits": [
+                                                                "GET /pipeline HTTP/1.1\r\n",
+                                                                "\r\n"
+                                                              ],
+                                                              "holes": [
+                                                                {
+                                                                  "k": "ident",
+                                                                  "name": "h",
+                                                                  "tok": 809
+                                                                }
+                                                              ]
+                                                            },
+                                                            "tok": 809
+                                                          },
+                                                          {
+                                                            "k": "interp",
+                                                            "tmpl": {
+                                                              "lits": [
+                                                                "GET /pipeline HTTP/1.1\r\n",
+                                                                "\r\n"
+                                                              ],
+                                                              "holes": [
+                                                                {
+                                                                  "k": "ident",
+                                                                  "name": "h",
+                                                                  "tok": 811
+                                                                }
+                                                              ]
+                                                            },
+                                                            "tok": 811
+                                                          },
+                                                          {
+                                                            "k": "interp",
+                                                            "tmpl": {
+                                                              "lits": [
+                                                                "GET /pipeline HTTP/1.1\r\n",
+                                                                "Connection: close\r\n\r\n"
+                                                              ],
+                                                              "holes": [
+                                                                {
+                                                                  "k": "ident",
+                                                                  "name": "h",
+                                                                  "tok": 813
+                                                                }
+                                                              ]
+                                                            },
+                                                            "tok": 813
                                                           }
                                                         ],
                                                         "mut": false,
-                                                        "tok": 761
+                                                        "tok": 779
                                                       },
                                                       {
                                                         "k": "strlit",
                                                         "value": "",
-                                                        "tok": 798
+                                                        "tok": 816
                                                       }
                                                     ],
-                                                    "tok": 760
+                                                    "tok": 778
                                                   }
                                                 ],
                                                 "mut": false,
-                                                "tok": 753
+                                                "tok": 771
                                               }
                                             ],
-                                            "tok": 750
+                                            "tok": 768
                                           },
-                                          "tok": 748
+                                          "tok": 766
                                         }
                                       ],
-                                      "tok": 743
+                                      "tok": 761
                                     }
                                   ],
-                                  "tok": 738
+                                  "tok": 756
                                 },
                                 {
                                   "k": "bind",
@@ -2807,16 +2842,16 @@
                                         "base": {
                                           "k": "ident",
                                           "name": "task",
-                                          "tok": 806
+                                          "tok": 824
                                         },
                                         "field": "Spawn",
-                                        "tok": 808
+                                        "tok": 826
                                       },
                                       "args": [
                                         {
                                           "k": "ident",
                                           "name": "s",
-                                          "tok": 810
+                                          "tok": 828
                                         },
                                         {
                                           "k": "lambda",
@@ -2826,13 +2861,13 @@
                                             "callee": {
                                               "k": "ident",
                                               "name": "client",
-                                              "tok": 815
+                                              "tok": 833
                                             },
                                             "args": [
                                               {
                                                 "k": "ident",
                                                 "name": "port",
-                                                "tok": 817
+                                                "tok": 835
                                               },
                                               {
                                                 "k": "slicelit",
@@ -2852,31 +2887,31 @@
                                                         {
                                                           "k": "ident",
                                                           "name": "h",
-                                                          "tok": 823
+                                                          "tok": 841
                                                         }
                                                       ]
                                                     },
-                                                    "tok": 823
+                                                    "tok": 841
                                                   },
                                                   {
                                                     "k": "strlit",
                                                     "value": "HEAD /pipeline HTTP/1.0\r\n\r\n",
-                                                    "tok": 825
+                                                    "tok": 843
                                                   }
                                                 ],
                                                 "mut": false,
-                                                "tok": 819
+                                                "tok": 837
                                               }
                                             ],
-                                            "tok": 816
+                                            "tok": 834
                                           },
-                                          "tok": 814
+                                          "tok": 832
                                         }
                                       ],
-                                      "tok": 809
+                                      "tok": 827
                                     }
                                   ],
-                                  "tok": 804
+                                  "tok": 822
                                 },
                                 {
                                   "k": "bind",
@@ -2892,16 +2927,16 @@
                                         "base": {
                                           "k": "ident",
                                           "name": "task",
-                                          "tok": 832
+                                          "tok": 850
                                         },
                                         "field": "Spawn",
-                                        "tok": 834
+                                        "tok": 852
                                       },
                                       "args": [
                                         {
                                           "k": "ident",
                                           "name": "s",
-                                          "tok": 836
+                                          "tok": 854
                                         },
                                         {
                                           "k": "lambda",
@@ -2911,13 +2946,13 @@
                                             "callee": {
                                               "k": "ident",
                                               "name": "client",
-                                              "tok": 841
+                                              "tok": 859
                                             },
                                             "args": [
                                               {
                                                 "k": "ident",
                                                 "name": "port",
-                                                "tok": 843
+                                                "tok": 861
                                               },
                                               {
                                                 "k": "slicelit",
@@ -2929,22 +2964,22 @@
                                                   {
                                                     "k": "strlit",
                                                     "value": "HELLO\r\n\r\n",
-                                                    "tok": 849
+                                                    "tok": 867
                                                   }
                                                 ],
                                                 "mut": false,
-                                                "tok": 845
+                                                "tok": 863
                                               }
                                             ],
-                                            "tok": 842
+                                            "tok": 860
                                           },
-                                          "tok": 840
+                                          "tok": 858
                                         }
                                       ],
-                                      "tok": 835
+                                      "tok": 853
                                     }
                                   ],
-                                  "tok": 830
+                                  "tok": 848
                                 },
                                 {
                                   "k": "bind",
@@ -2960,16 +2995,16 @@
                                         "base": {
                                           "k": "ident",
                                           "name": "task",
-                                          "tok": 856
+                                          "tok": 874
                                         },
                                         "field": "Spawn",
-                                        "tok": 858
+                                        "tok": 876
                                       },
                                       "args": [
                                         {
                                           "k": "ident",
                                           "name": "s",
-                                          "tok": 860
+                                          "tok": 878
                                         },
                                         {
                                           "k": "lambda",
@@ -2979,13 +3014,13 @@
                                             "callee": {
                                               "k": "ident",
                                               "name": "client",
-                                              "tok": 865
+                                              "tok": 883
                                             },
                                             "args": [
                                               {
                                                 "k": "ident",
                                                 "name": "port",
-                                                "tok": 867
+                                                "tok": 885
                                               },
                                               {
                                                 "k": "slicelit",
@@ -2997,22 +3032,22 @@
                                                   {
                                                     "k": "strlit",
                                                     "value": "GET / HTTP/2.0\r\n\r\n",
-                                                    "tok": 873
+                                                    "tok": 891
                                                   }
                                                 ],
                                                 "mut": false,
-                                                "tok": 869
+                                                "tok": 887
                                               }
                                             ],
-                                            "tok": 866
+                                            "tok": 884
                                           },
-                                          "tok": 864
+                                          "tok": 882
                                         }
                                       ],
-                                      "tok": 859
+                                      "tok": 877
                                     }
                                   ],
-                                  "tok": 854
+                                  "tok": 872
                                 },
                                 {
                                   "k": "bind",
@@ -3028,16 +3063,16 @@
                                         "base": {
                                           "k": "ident",
                                           "name": "task",
-                                          "tok": 880
+                                          "tok": 898
                                         },
                                         "field": "Spawn",
-                                        "tok": 882
+                                        "tok": 900
                                       },
                                       "args": [
                                         {
                                           "k": "ident",
                                           "name": "s",
-                                          "tok": 884
+                                          "tok": 902
                                         },
                                         {
                                           "k": "lambda",
@@ -3047,13 +3082,13 @@
                                             "callee": {
                                               "k": "ident",
                                               "name": "client",
-                                              "tok": 889
+                                              "tok": 907
                                             },
                                             "args": [
                                               {
                                                 "k": "ident",
                                                 "name": "port",
-                                                "tok": 891
+                                                "tok": 909
                                               },
                                               {
                                                 "k": "slicelit",
@@ -3067,25 +3102,25 @@
                                                     "callee": {
                                                       "k": "ident",
                                                       "name": "bigHead",
-                                                      "tok": 897
+                                                      "tok": 915
                                                     },
                                                     "args": [],
-                                                    "tok": 898
+                                                    "tok": 916
                                                   }
                                                 ],
                                                 "mut": false,
-                                                "tok": 893
+                                                "tok": 911
                                               }
                                             ],
-                                            "tok": 890
+                                            "tok": 908
                                           },
-                                          "tok": 888
+                                          "tok": 906
                                         }
                                       ],
-                                      "tok": 883
+                                      "tok": 901
                                     }
                                   ],
-                                  "tok": 878
+                                  "tok": 896
                                 },
                                 {
                                   "k": "bind",
@@ -3101,16 +3136,16 @@
                                         "base": {
                                           "k": "ident",
                                           "name": "task",
-                                          "tok": 906
+                                          "tok": 924
                                         },
                                         "field": "Spawn",
-                                        "tok": 908
+                                        "tok": 926
                                       },
                                       "args": [
                                         {
                                           "k": "ident",
                                           "name": "s",
-                                          "tok": 910
+                                          "tok": 928
                                         },
                                         {
                                           "k": "lambda",
@@ -3120,13 +3155,13 @@
                                             "callee": {
                                               "k": "ident",
                                               "name": "client",
-                                              "tok": 915
+                                              "tok": 933
                                             },
                                             "args": [
                                               {
                                                 "k": "ident",
                                                 "name": "port",
-                                                "tok": 917
+                                                "tok": 935
                                               },
                                               {
                                                 "k": "slicelit",
@@ -3146,26 +3181,26 @@
                                                         {
                                                           "k": "ident",
                                                           "name": "h",
-                                                          "tok": 923
+                                                          "tok": 941
                                                         }
                                                       ]
                                                     },
-                                                    "tok": 923
+                                                    "tok": 941
                                                   }
                                                 ],
                                                 "mut": false,
-                                                "tok": 919
+                                                "tok": 937
                                               }
                                             ],
-                                            "tok": 916
+                                            "tok": 934
                                           },
-                                          "tok": 914
+                                          "tok": 932
                                         }
                                       ],
-                                      "tok": 909
+                                      "tok": 927
                                     }
                                   ],
-                                  "tok": 904
+                                  "tok": 922
                                 },
                                 {
                                   "k": "bind",
@@ -3181,16 +3216,16 @@
                                         "base": {
                                           "k": "ident",
                                           "name": "task",
-                                          "tok": 930
+                                          "tok": 948
                                         },
                                         "field": "Spawn",
-                                        "tok": 932
+                                        "tok": 950
                                       },
                                       "args": [
                                         {
                                           "k": "ident",
                                           "name": "s",
-                                          "tok": 934
+                                          "tok": 952
                                         },
                                         {
                                           "k": "lambda",
@@ -3200,13 +3235,13 @@
                                             "callee": {
                                               "k": "ident",
                                               "name": "client",
-                                              "tok": 939
+                                              "tok": 957
                                             },
                                             "args": [
                                               {
                                                 "k": "ident",
                                                 "name": "port",
-                                                "tok": 941
+                                                "tok": 959
                                               },
                                               {
                                                 "k": "slicelit",
@@ -3226,26 +3261,26 @@
                                                         {
                                                           "k": "ident",
                                                           "name": "h",
-                                                          "tok": 947
+                                                          "tok": 965
                                                         }
                                                       ]
                                                     },
-                                                    "tok": 947
+                                                    "tok": 965
                                                   }
                                                 ],
                                                 "mut": false,
-                                                "tok": 943
+                                                "tok": 961
                                               }
                                             ],
-                                            "tok": 940
+                                            "tok": 958
                                           },
-                                          "tok": 938
+                                          "tok": 956
                                         }
                                       ],
-                                      "tok": 933
+                                      "tok": 951
                                     }
                                   ],
-                                  "tok": 928
+                                  "tok": 946
                                 },
                                 {
                                   "k": "assign",
@@ -3253,12 +3288,12 @@
                                     {
                                       "k": "ident",
                                       "name": "_",
-                                      "tok": 952
+                                      "tok": 970
                                     },
                                     {
                                       "k": "ident",
                                       "name": "_",
-                                      "tok": 954
+                                      "tok": 972
                                     }
                                   ],
                                   "op": "=",
@@ -3270,10 +3305,10 @@
                                         "base": {
                                           "k": "ident",
                                           "name": "task",
-                                          "tok": 956
+                                          "tok": 974
                                         },
                                         "field": "Run",
-                                        "tok": 958
+                                        "tok": 976
                                       },
                                       "args": [
                                         {
@@ -3292,18 +3327,18 @@
                                             "callee": {
                                               "k": "ident",
                                               "name": "serve",
-                                              "tok": 967
+                                              "tok": 985
                                             },
                                             "args": [
                                               {
                                                 "k": "ident",
                                                 "name": "l",
-                                                "tok": 969
+                                                "tok": 987
                                               }
                                             ],
-                                            "tok": 968
+                                            "tok": 986
                                           },
-                                          "tok": 966
+                                          "tok": 984
                                         },
                                         {
                                           "k": "named_arg",
@@ -3314,27 +3349,27 @@
                                             "lhs": {
                                               "k": "int",
                                               "value": 500,
-                                              "tok": 974
+                                              "tok": 992
                                             },
                                             "rhs": {
                                               "k": "selector",
                                               "base": {
                                                 "k": "ident",
                                                 "name": "task",
-                                                "tok": 976
+                                                "tok": 994
                                               },
                                               "field": "MS",
-                                              "tok": 978
+                                              "tok": 996
                                             },
-                                            "tok": 975
+                                            "tok": 993
                                           },
-                                          "tok": 972
+                                          "tok": 990
                                         }
                                       ],
-                                      "tok": 959
+                                      "tok": 977
                                     }
                                   ],
-                                  "tok": 952
+                                  "tok": 970
                                 },
                                 {
                                   "k": "bind",
@@ -3350,22 +3385,22 @@
                                         "base": {
                                           "k": "ident",
                                           "name": "task",
-                                          "tok": 983
+                                          "tok": 1001
                                         },
                                         "field": "Join",
-                                        "tok": 985
+                                        "tok": 1003
                                       },
                                       "args": [
                                         {
                                           "k": "ident",
                                           "name": "pipe",
-                                          "tok": 987
+                                          "tok": 1005
                                         }
                                       ],
-                                      "tok": 986
+                                      "tok": 1004
                                     }
                                   ],
-                                  "tok": 981
+                                  "tok": 999
                                 },
                                 {
                                   "k": "expr",
@@ -3394,19 +3429,19 @@
                                             "base": {
                                               "k": "ident",
                                               "name": "task",
-                                              "tok": 990
+                                              "tok": 1008
                                             },
                                             "field": "Join",
-                                            "tok": 990
+                                            "tok": 1008
                                           },
                                           "args": [
                                             {
                                               "k": "ident",
                                               "name": "get",
-                                              "tok": 990
+                                              "tok": 1008
                                             }
                                           ],
-                                          "tok": 990
+                                          "tok": 1008
                                         },
                                         {
                                           "k": "call",
@@ -3415,19 +3450,19 @@
                                             "base": {
                                               "k": "ident",
                                               "name": "task",
-                                              "tok": 990
+                                              "tok": 1008
                                             },
                                             "field": "Join",
-                                            "tok": 990
+                                            "tok": 1008
                                           },
                                           "args": [
                                             {
                                               "k": "ident",
                                               "name": "post",
-                                              "tok": 990
+                                              "tok": 1008
                                             }
                                           ],
-                                          "tok": 990
+                                          "tok": 1008
                                         },
                                         {
                                           "k": "call",
@@ -3436,19 +3471,19 @@
                                             "base": {
                                               "k": "ident",
                                               "name": "task",
-                                              "tok": 990
+                                              "tok": 1008
                                             },
                                             "field": "Join",
-                                            "tok": 990
+                                            "tok": 1008
                                           },
                                           "args": [
                                             {
                                               "k": "ident",
                                               "name": "chunked",
-                                              "tok": 990
+                                              "tok": 1008
                                             }
                                           ],
-                                          "tok": 990
+                                          "tok": 1008
                                         },
                                         {
                                           "k": "call",
@@ -3457,35 +3492,35 @@
                                             "base": {
                                               "k": "ident",
                                               "name": "task",
-                                              "tok": 990
+                                              "tok": 1008
                                             },
                                             "field": "Join",
-                                            "tok": 990
+                                            "tok": 1008
                                           },
                                           "args": [
                                             {
                                               "k": "ident",
                                               "name": "frag",
-                                              "tok": 990
+                                              "tok": 1008
                                             }
                                           ],
-                                          "tok": 990
+                                          "tok": 1008
                                         },
                                         {
                                           "k": "call",
                                           "callee": {
                                             "k": "ident",
                                             "name": "okCount",
-                                            "tok": 990
+                                            "tok": 1008
                                           },
                                           "args": [
                                             {
                                               "k": "ident",
                                               "name": "p",
-                                              "tok": 990
+                                              "tok": 1008
                                             }
                                           ],
-                                          "tok": 990
+                                          "tok": 1008
                                         },
                                         {
                                           "k": "call",
@@ -3494,19 +3529,19 @@
                                             "base": {
                                               "k": "ident",
                                               "name": "task",
-                                              "tok": 990
+                                              "tok": 1008
                                             },
                                             "field": "Join",
-                                            "tok": 990
+                                            "tok": 1008
                                           },
                                           "args": [
                                             {
                                               "k": "ident",
                                               "name": "keep",
-                                              "tok": 990
+                                              "tok": 1008
                                             }
                                           ],
-                                          "tok": 990
+                                          "tok": 1008
                                         },
                                         {
                                           "k": "call",
@@ -3515,19 +3550,19 @@
                                             "base": {
                                               "k": "ident",
                                               "name": "task",
-                                              "tok": 990
+                                              "tok": 1008
                                             },
                                             "field": "Join",
-                                            "tok": 990
+                                            "tok": 1008
                                           },
                                           "args": [
                                             {
                                               "k": "ident",
                                               "name": "bad",
-                                              "tok": 990
+                                              "tok": 1008
                                             }
                                           ],
-                                          "tok": 990
+                                          "tok": 1008
                                         },
                                         {
                                           "k": "call",
@@ -3536,19 +3571,19 @@
                                             "base": {
                                               "k": "ident",
                                               "name": "task",
-                                              "tok": 990
+                                              "tok": 1008
                                             },
                                             "field": "Join",
-                                            "tok": 990
+                                            "tok": 1008
                                           },
                                           "args": [
                                             {
                                               "k": "ident",
                                               "name": "ver",
-                                              "tok": 990
+                                              "tok": 1008
                                             }
                                           ],
-                                          "tok": 990
+                                          "tok": 1008
                                         },
                                         {
                                           "k": "call",
@@ -3557,19 +3592,19 @@
                                             "base": {
                                               "k": "ident",
                                               "name": "task",
-                                              "tok": 990
+                                              "tok": 1008
                                             },
                                             "field": "Join",
-                                            "tok": 990
+                                            "tok": 1008
                                           },
                                           "args": [
                                             {
                                               "k": "ident",
                                               "name": "big",
-                                              "tok": 990
+                                              "tok": 1008
                                             }
                                           ],
-                                          "tok": 990
+                                          "tok": 1008
                                         },
                                         {
                                           "k": "call",
@@ -3578,19 +3613,19 @@
                                             "base": {
                                               "k": "ident",
                                               "name": "task",
-                                              "tok": 990
+                                              "tok": 1008
                                             },
                                             "field": "Join",
-                                            "tok": 990
+                                            "tok": 1008
                                           },
                                           "args": [
                                             {
                                               "k": "ident",
                                               "name": "dl",
-                                              "tok": 990
+                                              "tok": 1008
                                             }
                                           ],
-                                          "tok": 990
+                                          "tok": 1008
                                         },
                                         {
                                           "k": "call",
@@ -3599,28 +3634,28 @@
                                             "base": {
                                               "k": "ident",
                                               "name": "task",
-                                              "tok": 990
+                                              "tok": 1008
                                             },
                                             "field": "Join",
-                                            "tok": 990
+                                            "tok": 1008
                                           },
                                           "args": [
                                             {
                                               "k": "ident",
                                               "name": "nf",
-                                              "tok": 990
+                                              "tok": 1008
                                             }
                                           ],
-                                          "tok": 990
+                                          "tok": 1008
                                         }
                                       ]
                                     },
-                                    "tok": 990
+                                    "tok": 1008
                                   }
                                 }
                               ]
                             },
-                            "tok": 630
+                            "tok": 648
                           },
                           {
                             "k": "named_arg",
@@ -3631,27 +3666,27 @@
                               "lhs": {
                                 "k": "int",
                                 "value": 10000,
-                                "tok": 996
+                                "tok": 1014
                               },
                               "rhs": {
                                 "k": "selector",
                                 "base": {
                                   "k": "ident",
                                   "name": "task",
-                                  "tok": 998
+                                  "tok": 1016
                                 },
                                 "field": "MS",
-                                "tok": 1000
+                                "tok": 1018
                               },
-                              "tok": 997
+                              "tok": 1015
                             },
-                            "tok": 994
+                            "tok": 1012
                           }
                         ],
-                        "tok": 623
+                        "tok": 641
                       }
                     ],
-                    "tok": 616
+                    "tok": 634
                   },
                   {
                     "k": "assign",
@@ -3659,7 +3694,7 @@
                       {
                         "k": "ident",
                         "name": "out",
-                        "tok": 1003
+                        "tok": 1021
                       }
                     ],
                     "op": "=",
@@ -3667,14 +3702,14 @@
                       {
                         "k": "ident",
                         "name": "r",
-                        "tok": 1005
+                        "tok": 1023
                       }
                     ],
-                    "tok": 1003
+                    "tok": 1021
                   }
                 ]
               },
-              "tok": 596
+              "tok": 614
             }
           },
           {
@@ -3683,24 +3718,24 @@
               {
                 "k": "ident",
                 "name": "out",
-                "tok": 1010
+                "tok": 1028
               },
               {
                 "k": "nil",
-                "tok": 1012
+                "tok": 1030
               }
             ],
-            "tok": 1009
+            "tok": 1027
           }
         ]
       },
-      "tok": 581,
+      "tok": 599,
       "bodiless": false,
       "span": {
-        "start": 580,
-        "end": 1016
+        "start": 598,
+        "end": 1034
       },
-      "sig_end": 590
+      "sig_end": 608
     }
   ],
   "consts": []

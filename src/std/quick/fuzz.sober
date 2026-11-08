@@ -615,7 +615,7 @@ func strLess(a string, b string) bool {
 // 誘導つきの束の試行（search の all の形 — 試行 a0, a0 + 1, … を n 本）。束が最後まで回り r.poolw なら、新しい点を開いた試行の列と見た点を置き場へ
 func searchGuided(q mut Src, prop func() bool, r role, a0 int, n int) (int, int) {
     pool := poolLists(r.pool)
-    nc := cover.N()
+    nc := internal.cover.N()
     seenB := io.ReadFile(r.pool + "/seen") catch []byte{}
     mut seen := mut []bool{}
     for i <- iter.Range(0, nc) {
@@ -629,7 +629,7 @@ func searchGuided(q mut Src, prop func() bool, r role, a0 int, n int) (int, int)
         held := run(prop, r.hang)
         mut fresh := false
         for i <- iter.Range(0, nc) {
-            if !seen[i] && cover.Got(i) {
+            if !seen[i] && internal.cover.Got(i) {
                 seen[i] = true
                 fresh = true
             }

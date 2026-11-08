@@ -1,0 +1,201 @@
+package loader
+
+// `T?` の単値 subject の switch の `case nil:` の腕（language.md 13 / 22 節）— 脱糖の固定テンプレートで if に写す:
+//
+//     switch S { …前の腕…  case nil: A  …後の腕…  default: D }
+//  →  { $nilK := S; if $nilK != nil { switch $nilK { …前の腕… …後の腕… default: D } } else { A } }
+//
+// S が名前なら束縛を置かずにその名前を使う（if の flow typing で then の中は T）。腕の並びは保つ（nil の腕だけ抜く）。
+// desugar・lower・typer・analyzer は写した後の木（`if x != nil { switch x { … } }` の形）だけを読む — コア・Lean は無変更。網羅は内側の switch の
+// 既存の検査（nil の腕 + 全ラベル / 全 variant なら default は要らない）。
+// 残りの腕が default だけなら then は default の本体。
+// 写せない形は loader の拒否（diag.NilCase — 位置 = nil の腕・理由ごとの文言。D1）: nil の腕が 2 つ以上・`nil | …` の選択・nil の腕より前に名前のパターン
+// （`_`・束縛・const — nil にも当たりうるので、源の順の意味と写した後の意味がずれる）・nil の腕しか無い形。subject が 2 つ以上の switch の nil は
+// 多値の subject の形（`case v, nil:` — 13 節）なので触らない。subject が 1 つでも多値を返す呼び出し（パターン 2 つ以上の腕がある）も同じ
+
+import "std/builder"
+import "std/iter"
+import "ast"
+import "lexer"
+import "diag"
+
+// 全ファイルの木の `case nil:` を写す（写せない形は拒否）
+@errors(diag.NilCase)
+func nilCasesAll(ts []ast.Tree) ([]ast.Tree, error?) {
+    mut out := mut []ast.Tree{}
+    for i <- iter.Range(0, len(ts)) {
+        t := ts[i]
+        for n <- iter.Range(0, len(t.nodes)) {
+            x := t.nodes[n]
+            if x.kind == ast.ESwitch {
+                kind, tok := nilCaseBad(t, x)
+                if kind != 0 {
+                    return []ast.Tree{}, diag.NilCase{at: diag.Pos{file: i, tok: tok}, kind: kind}
+                }
+                if mvApplies(t, x) {
+                    mk, mt := mvBad(t, x)
+                    if mk != 0 {
+                        return []ast.Tree{}, diag.NilCase{at: diag.Pos{file: i, tok: mt}, kind: mk}
+                    }
+                }
+            }
+        }
+        // 単値の `case nil:`（このファイル）→ 2 位置の `case P, nil:`（mvcase.sober）の順に写す
+        out = append(out, mvCases(nilCases(t)))
+    }
+    return freeze(out), nil
+}
+
+// switch 節 x がパターン 2 つ以上の腕を持つか（多値の subject — `case v, nil:`（13 節）。nil は単値の nil の腕ではない）
+func multiPat(t ast.Tree, x ast.Node) bool {
+    for i <- iter.Range(0, ast.ListLen(t, x.b)) {
+        if ast.ListLen(t, t.nodes[ast.ListAt(t, x.b, i)].a) > 1 {
+            return true
+        }
+    }
+    return false
+}
+
+// 単値 subject の switch 節 x の nil の腕が写せない理由（0 = 写せるか nil の腕が無い・1 = 2 つ以上・2 = `nil | …` / 他のパターンと並ぶ・
+// 3 = 前に名前のパターン・4 = nil の腕しか無い）と位置（nil の腕の字句）。パターン 2 つ以上の腕がある switch（多値の subject）は見ない
+func nilCaseBad(t ast.Tree, x ast.Node) (int, int) {
+    if ast.ListLen(t, x.a) != 1 || multiPat(t, x) {
+        return 0, 0
+    }
+    mut seen := false
+    mut named := false
+    for i <- iter.Range(0, ast.ListLen(t, x.b)) {
+        cn := t.nodes[ast.ListAt(t, x.b, i)]
+        ps := cn.a
+        for j <- iter.Range(0, ast.ListLen(t, ps)) {
+            p := t.nodes[ast.ListAt(t, ps, j)]
+            if p.kind == ast.KPConst {
+                for k <- iter.Range(0, ast.ListLen(t, p.a)) {
+                    alt := t.nodes[ast.ListAt(t, p.a, k)].kind
+                    if alt == ast.ENil {
+                        if seen {
+                            return 1, cn.tok
+                        }
+                        if ast.ListLen(t, ps) != 1 || ast.ListLen(t, p.a) != 1 {
+                            return 2, cn.tok
+                        }
+                        if named {
+                            return 3, cn.tok
+                        }
+                        if ast.ListLen(t, x.b) == 1 && x.c < 0 {
+                            return 4, cn.tok
+                        }
+                        seen = true
+                    } else if alt == ast.EIdent && !seen {
+                        named = true
+                    }
+                }
+            }
+        }
+    }
+    return 0, 0
+}
+
+// switch の節 x の nil の腕の添字（写せなければ -1）
+func nilCaseAt(t ast.Tree, x ast.Node) int {
+    if ast.ListLen(t, x.a) != 1 || multiPat(t, x) {
+        return -1
+    }
+    mut at := -1
+    mut named := false
+    for i <- iter.Range(0, ast.ListLen(t, x.b)) {
+        ps := t.nodes[ast.ListAt(t, x.b, i)].a
+        for j <- iter.Range(0, ast.ListLen(t, ps)) {
+            p := t.nodes[ast.ListAt(t, ps, j)]
+            if p.kind == ast.KPConst {
+                for k <- iter.Range(0, ast.ListLen(t, p.a)) {
+                    alt := t.nodes[ast.ListAt(t, p.a, k)].kind
+                    if alt == ast.ENil {
+                        if at >= 0 || named || ast.ListLen(t, ps) != 1 || ast.ListLen(t, p.a) != 1 {
+                            return -1
+                        }
+                        at = i
+                    } else if alt == ast.EIdent && at < 0 {
+                        named = true
+                    }
+                }
+            }
+        }
+    }
+    // nil の腕のほかに腕も default も無い形は写さない（nil 以外の値の行き先が無い — 網羅の拒否に落とす）
+    if at >= 0 && ast.ListLen(t, x.b) == 1 && x.c < 0 {
+        return -1
+    }
+    return at
+}
+
+// 木 t の `case nil:` を写した木（節は末尾に足し、switch の節をその場で差し替える — 既存の添字は動かない）
+func nilCases(t ast.Tree) ast.Tree {
+    n0 := len(t.nodes)
+    mut found := false
+    for i <- iter.Range(0, n0) {
+        x := t.nodes[i]
+        if x.kind == ast.ESwitch && nilCaseAt(t, x) >= 0 {
+            found = true
+        }
+    }
+    if !found {
+        return t
+    }
+    mut ns := mut []ast.Node{}
+    for i <- iter.Range(0, n0) {
+        ns = append(ns, t.nodes[i])
+    }
+    mut nb := builder.Builder[ast.Node]{}
+    mut db := builder.Builder[int]{}
+    for j <- iter.Range(0, len(t.data)) {
+        builder.Push(mut db, t.data[j])
+    }
+    mut k := 0
+    for i <- iter.Range(0, n0) {
+        x := t.nodes[i]
+        c := if x.kind == ast.ESwitch { nilCaseAt(t, x) } else { -1 }
+        if c >= 0 {
+            base := n0 + builder.Len(mut nb)
+            tok := x.tok
+            nc := t.nodes[ast.ListAt(t, x.b, c)]
+            s0 := ast.ListAt(t, x.a, 0)
+            // 名前の subject はそのまま、他は $nilK に束縛する
+            nm := if t.nodes[s0].kind == ast.EIdent { t.nodes[s0].a } else { ast.PutLit(mut db, "$nil${k}") }
+            mut rest := mut []int{}
+            for j <- iter.Range(0, ast.ListLen(t, x.b)) {
+                if j != c {
+                    rest = append(rest, ast.ListAt(t, x.b, j))
+                }
+            }
+            // base + 0 = 内側の switch の subject・1 = 内側の switch・2 = then の SExpr・3 = then の KBlock・4 = 判定の名前・5 = nil・6 = 判定
+            builder.Push(mut nb, ast.Node{ast.EIdent, tok, nm, 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.ESwitch, tok, ast.PutList(mut db, []int{base}), ast.PutList(mut db, freeze(rest)), x.c, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.SExpr, tok, base + 1, 0, 0, 0, 0, 0})
+            // 残りの腕が default だけなら then は default の本体（腕の無い switch は書けない）
+            then := if len(rest) == 0 { t.nodes[x.c].a } else { ast.PutList(mut db, []int{base + 2}) }
+            builder.Push(mut nb, ast.Node{ast.KBlock, tok, then, 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EIdent, tok, nm, 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.ENil, nc.tok, 0, 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EBinary, tok, lexer.BangEqual, base + 4, base + 5, 0, 0, 0})
+            // base + 7 = else（EBlock — nil の腕の本体の文の列）
+            builder.Push(mut nb, ast.Node{ast.EBlock, nc.tok, t.nodes[nc.b].a, 0, 0, 0, 0, 0})
+            ifn := ast.Node{ast.EIf, tok, base + 6, base + 3, base + 7, 0, 0, 0}
+            if t.nodes[s0].kind == ast.EIdent {
+                ns[i] = ifn
+            } else {
+                // base + 8 = if・9 = 束縛・10 = if の SExpr
+                builder.Push(mut nb, ifn)
+                builder.Push(mut nb, ast.Node{ast.SBind, tok, ast.PutList(mut db, []int{nm}), 0, ast.PutList(mut db, []int{s0}), 0, 0, 0})
+                builder.Push(mut nb, ast.Node{ast.SExpr, tok, base + 8, 0, 0, 0, 0, 0})
+                ns[i] = ast.Node{ast.EBlock, tok, ast.PutList(mut db, []int{base + 9, base + 10}), 0, 0, 0, 0, 0}
+                k += 1
+            }
+        }
+    }
+    added := builder.Build(mut nb)
+    for i <- iter.Range(0, len(added)) {
+        ns = append(ns, added[i])
+    }
+    return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
+}

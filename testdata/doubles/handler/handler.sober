@@ -3,13 +3,13 @@ package handler
 import "testdata/doubles/store"
 
 // the value under k, or "none"
-func Lookup(c store.Conn, k string) string {
-    v := store.Get(c, k)
+func Lookup(c testdata.doubles.store.Conn, k string) string {
+    v := testdata.doubles.store.Get(c, k)
     return if v == nil { "none" } else { v }
 }
 
 // whether k = v was saved
-func Save(c store.Conn, k string, v string) bool {
-    err := store.Put(c, k, v)
+func Save(c testdata.doubles.store.Conn, k string, v string) bool {
+    err := testdata.doubles.store.Put(c, k, v)
     return err == nil
 }

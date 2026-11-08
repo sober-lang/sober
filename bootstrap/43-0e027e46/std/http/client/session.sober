@@ -1,0 +1,182 @@
+package client
+
+// keep-alive の束: Open が 1 つの origin への接続を 1 本張り（https なら握手まで）、その接続の Session を k に渡し、k が返ったら閉じる。
+// k の中の Send は同じ接続の上で要求と応答を 1 往復ずつ進める。接続の状態（TLS の鍵と番号・受けて配っていないバイト・死んだ印）は
+// Session の値の外の置き場（接続の寿命の int の列 — std/tls の Conn と同じ lease の口）に住む: 値に置くと値の写しが鍵と番号を複製し、
+// 二つの写しが同じ番号で別の平文を封じる（AES-GCM / ChaCha20-Poly1305 の nonce の再利用）。Session は同一性の型で、写し・持ち出し・
+// 欄・捕獲を構文で拒否する
+//
+//     mut c := client.New()
+//     client.Open(c, "https://api.example", (s) => {
+//         a := client.Send(mut c, s, client.Request{url: "/v1/a"}) catch …
+//         b := client.Send(mut c, s, client.Request{url: "/v1/b"}) catch …
+//     })?
+
+import "std/internal/hsc"
+import "std/io"
+import "std/iter"
+import "std/net"
+import "std/task"
+import "std/time"
+import "std/internal/record"
+
+// 1 つの origin への keep-alive の接続（同一性の型 — Open の k の仮引数としてだけ生まれる。blk = 経路の層の置き場〔link.sober〕・pa / pb = proxy / 行き先の握手の設定）
+type Session struct {
+    c net.Conn
+    blk []int
+    t target
+    pa hsc.CParams
+    pb hsc.CParams
+    seal sessionSeal
+}
+
+type sessionSeal struct {
+}
+
+// at の origin（"https://host[:port]" — path は見ない）へ接続を張り（proxy があれば proxy を通す）、Session を k に渡す（k が返ったら TLS なら close_notify を送って閉じる）。
+// c の timeout: の期限は経路の層を重ねるまで（proxy への TLS・CONNECT・行き先への TLS の握手）— TCP の接続そのものの不達は OS の connect の期限に任せる。
+// k の中の誤りは k の中で受ける（Open が返すのは接続と経路の失敗だけ）
+@errors(Dns, Tls, Timeout, Closed, BadUrl, BadResponse, ProxyRefused, io.Expired)
+@effects(block, io, panic, nondet)
+func Open(c Client, at string, k func(s Session)) error? {
+    t, ok := parseTarget(at)
+    if !ok {
+        return BadUrl{}
+    }
+    rt := viaOf(c, t)
+    pa := params(c, rt.px)
+    pb := params(c, t)
+    to := c.timeout
+    start := time.Mono()
+    mut err := noErr()
+    mut cut := false
+    de := net.Dial(firstHop(rt, t), (conn) => {
+        err = openOn(conn, rt, t, pa, pb, to, mut cut, k)
+    })
+    timedOut := time.Since(start) >= to
+    if de != nil {
+        return classify(de, timedOut)
+    }
+    if err != nil {
+        return classify(err, timedOut)
+    }
+    if cut {
+        return if timedOut { Timeout{} } else { Closed{} }
+    }
+    return nil
+}
+
+// 張った接続 conn の上に経路の層を重ね（期限 to）、Session を k に渡し、k が返ったら close_notify を送る（cut = 期限で切れた）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, record.Alert, hsc.CertFailed, ProxyRefused, BadResponse)
+@effects(block, io, panic, nondet)
+func openOn(conn net.Conn, rt via, t target, pa hsc.CParams, pb hsc.CParams, to int, cut mut bool, k func(s Session)) error? {
+    blk := newLink()
+    mut err := noErr()
+    _, re := task.Run((sc) => {
+        err = setupLink(conn, blk, rt, t, pa, pb)
+        0
+    }, deadline: to)
+    cut = re != nil
+    if err != nil || cut {
+        return err
+    }
+    s := Session{c: conn, blk: blk, t: t, pa: pa, pb: pb, seal: sessionSeal{}}
+    k(s)
+    if !dead(blk) {
+        _ = closeTop(conn, blk)
+    }
+    return nil
+}
+
+// s の接続の上で要求 r を 1 往復（r.url は "/path" か s と同じ origin の絶対 URL — 別の origin は BadUrl）。redirect は追わない
+// （3xx をそのまま返す — 束は 1 本の接続の往復）。期限は c の timeout:・本文の上限は c の maxBody:。相手が閉じた後・閉じで区切る応答の後・
+// Connection: close の応答の後・途中の失敗の後の Send は Closed（張り直すのは呼び手 — 新しい Open で）
+@errors(Tls, Timeout, BodyTooLarge, Closed, BadUrl, BadResponse, io.Expired)
+@effects(block, io, panic, nondet)
+func Send(c mut Client, s Session, r Request) (Response, error?) {
+    if dead(s.blk) {
+        return noResponse(), Closed{}
+    }
+    t, ok := sameOrigin(s.t, r.url)
+    if !ok {
+        return noResponse(), BadUrl{}
+    }
+    rt := viaOf(c, t)
+    req := requestBytes(r.method, requestTarget(rt, t), withProxyAuth(rt, t, r.headers), r.body, c.userAgent, true, cookieHeader(c, t, time.UnixSec(time.Now())))
+    noBody := r.method == "HEAD"
+    mb := c.maxBody
+    to := c.timeout
+    start := time.Mono()
+    mut raw := mut []byte{}
+    mut st := newScan()
+    mut err := noErr()
+    _, re := task.Run((sc) => {
+        err = linkTrip(s.c, s.blk, s.pa, s.pb, req, mut raw, mut st, noBody, mb)
+        0
+    }, deadline: to)
+    timedOut := time.Since(start) >= to
+    b := freeze(raw)
+    if st.mode == mClose && st.hend >= 0 && !st.bad && !st.big && err == nil && re == nil {
+        st.end = len(b)
+    }
+    if re != nil || err != nil || st.end < 0 || st.bad || st.big || st.mode == mClose {
+        setFlag(s.blk, bDead)
+    }
+    if re != nil {
+        return noResponse(), if timedOut { Timeout{} } else { Closed{} }
+    }
+    if err != nil {
+        return noResponse(), classifyTrip(err, timedOut)
+    }
+    if st.big {
+        return noResponse(), BodyTooLarge{}
+    }
+    if st.bad {
+        return noResponse(), BadResponse{}
+    }
+    if st.end < 0 {
+        return noResponse(), if st.hend < 0 && len(b) == 0 { Closed{} } else { BadResponse{} }
+    }
+    res := Response{status: st.status, headers: fieldsOf(b, st), body: bodyOf(b, len(b), st), url: ""}
+    absorb(mut c, t, res.headers, time.UnixSec(time.Now()))
+    conn := Header(res, "connection")
+    if conn != nil && lowerStr(conn) == "close" {
+        setFlag(s.blk, bDead)
+    }
+    return res, nil
+}
+
+// 張った接続の上の往復の誤りを公開のラベルに（名前の解決と URL の誤りは Open の側で済んでいる）
+@errors(Tls, Timeout, Closed, io.Expired)
+func classifyTrip(e error, timedOut bool) error? {
+    k := kindOf(e)
+    if k == kTls {
+        wrap(e)? Tls{}
+    }
+    if k == kTimeout || (k == kExpired && timedOut) {
+        return Timeout{}
+    }
+    if k == kExpired {
+        return io.Expired{}
+    }
+    wrap(e)? Closed{}
+    return nil
+}
+
+// r.url を s の origin の上の要求の対象に（"/path" はそのまま・絶対 URL は origin が同じときだけ）
+func sameOrigin(base target, u string) (target, bool) {
+    b := bytes(u)
+    if len(b) > 0 && b[0] == '/' {
+        for x <- b {
+            if x <= ' ' || x == 0x7f || int(x) >= 0x80 || x == '#' {
+                return badTarget(), false
+            }
+        }
+        return target{tls: base.tls, host: base.host, port: base.port, path: u}, true
+    }
+    t, ok := parseTarget(u)
+    if !ok || origin(t) != origin(base) {
+        return badTarget(), false
+    }
+    return t, true
+}

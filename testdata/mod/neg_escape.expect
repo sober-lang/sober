@@ -1,0 +1,2 @@
+sober: load error at sober.mod:1:1: sober.mod is a `module "path"` line followed by `dep [name] "source"` and `alias name "std/root"` lines (plain string literals — no escapes or interpolation)
+(check exit 1)

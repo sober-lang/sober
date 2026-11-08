@@ -213,6 +213,11 @@ func sort[T](xs Iter[T], ord Ord[T]) []T { ... }
   判定は宣言の署名だけで決まる固定テンプレート。yield 形・文形の両方に効く。std/iter.Range（半開区間 `[lo, hi)`・昇順）を置いた。
   逆順・刻み幅つきは要るときに std へ足す（言語は変わらない）。最後の仮引数は関数型リテラル（`func(int)`）に限る（名前付き関数型は
   積み）
+  - 名前付き引数つきの生成元（決定 2026-11-07 — client 改修便・report-cl-3 のナビ裁定）: 継続 k の仮引数の後ろに省略可の `T?` が続く生成元
+    （`func Stream(url string, k func(p Part), policy Policy?) error?`）は、名前付き引数を渡しても同じ for の形で書ける — `for p <- http.client.Stream(u, policy: pol)? { … }`。
+    k の席 = 位置引数の次の仮引数（関数型のときだけ — slice を返す呼び出しの生成元は席を取らない）。loader の名前付き引数の並べ直しが k の席に印つきの nil を置き、
+    脱糖がそこへ継続を差す（コアには届かない — 生成方式）。手で書く呼び出しは今までどおり名前付きの後ろに位置引数を置けない（文法 — examples/for_named_neg_after）。
+    棄てた案: 名前付き引数を渡す生成元は for で書けない（条件付きの制約 — 方針を渡した途端にコールバックの形へ書き換えが要る）・方針を位置引数に（Request と非対称）
 - 失敗しうる生成元（決定 2026-10-13 — IO 設計の Q1。実装 2026-10-13 — IO 便 段 2・report-592 / 593）: 走査の途中で失敗しうる生成元（`io.Chunks(f)` —
   読みの errno・デッドライン）は、for 自体が error を返す形で書く — `for chunk <- io.Chunks(f)? { … }`。生成元は呼び出し形の生成元（上の項）で、
   callee の結果が `error?` のもの（`func Chunks(f File, k func(Bytes)) error?`）。脱糖は呼び出し形の継続の付け足しのまま、`?` が継続を足した
@@ -238,7 +243,7 @@ func sort[T](xs Iter[T], ord Ord[T]) []T { ... }
   結果が `error?` 1 つでないのに印 = 拒否）。本体の `?`・break / continue・非局所 return・生成元の defer は普通の文形 for と同じ
   - 範囲: 匿名の関数型の仮引数だけ。名前付き関数型の仮引数（値の位置の閉包 — 25 節）と値の関数の借りの仮引数（α-L0）は展開されないので生成元にならない
     （名前付き関数型の仮引数は loader が専用の文面で拒否 — diag.ForFallible kind 4・負例 for_closure_gen_named。借りの仮引数は今どおり desugar / lower の拒否）
-  - 第一顧客 = 転送路の抽象: `http.ServeWith(recv, send, route, …)` の核の中で `for chunk <- recv()? { … send(out)? }` と書け、ServeConn は
+  - 第一顧客 = 転送路の抽象: `http.server.ServeWith(recv, send, route, …)` の核の中で `for chunk <- recv()? { … send(out)? }` と書け、ServeConn は
     `ServeWith((k) => net.Recv(c, k), (b) => net.Send(c, b), …)` の 1 行の包み・tls も同じ核に乗る（report-811 3 節）。
     送りを 2 段にする省略可の `put:`（S レーン — 2026-10-25・28 節 tls の送りの 2 段・25 節 Z）は応答の列を put で積み、stream の応答だけ send で送る
     （TLS の接続は `(b) => tls.Send(c, b)`・`put: (b) => tls.Put(c, b)` — 積んだ分は tls.Recv が次の受けを待つ前に送る）
@@ -379,7 +384,7 @@ if err != nil { restart() }
   - 宣言: `task.Spawn(s, g, budget: 64 * task.MB)`・`task.Map(xs, f, budget: 8 * task.MB)`（パイプは `xs |> task.Map(_, f, budget: …)`）・`task.Run(body, budget: 512 * task.MB)`（`wait: true` — 下の wait の項）・`task.Spawn(s, g, give: tx, budget: …)`・`task.SpawnIn(s, pool, g, budget: …)` — 末尾の名前付き引数で省略可（名前付き引数の後ろに位置引数は置けない — give: と同じ末尾形。2026-10-07 P5-3 で綴りを実装に合わせた）。budget: は呼び出し・割り算を含まない整数式（check の経路は捨てる — diag.Par kind 20）（書かない形が既定で正しい — 宣言は精度を上げる口）。`budget:` の意味は 1 つ: その task（scope）を逐次（ワーカー 1・子を先に）で走らせたときの使用量の上界（逐次の上界は子の上界を含む — 下の縮退の根拠）。脱糖がコアへ運ばない（rt への実引数としてだけ lower が渡す）。棄てた案: 関数の属性（`@budget`）— 同じ関数を別の文脈で別の予算で使えない・会計の点は spawn の境界／並列度の宣言（`workers:`）
   - task の上界の梯子: ① mem-report の静的上界（未実装 — 差し込み口だけ）② 宣言値 ③ 見積もり（spawn の点ごとに観測した使用量の高水位の最大・初期値 1 MiB）。宣言 > 見積もりの順に使う。見積もりは入場の判断（= 並列度）だけを動かし値を動かさない。宣言を超えた task は今は記帳だけ（強制 = task 境界の `RegionExceeded{cause: budget}` は後便 — 見積もりの外れで正しいプログラムを殺す形を先に作らない）
   - 子の region のスロット（2026-10-14 — ユーザー裁定 = 案 C・net 4a-4 の直し report-654/655）: 子 task の深度ごとの region 1 つの上限 = その task のスロットの大きさ。**宣言（budget:）の無い子 = 既定 512 MiB**（ユーザー裁定 2026-10-14・`SOBER_TASK_REGION_MB` は試験の口 — main のスロットより大きくはしない）・**宣言のある子 = 宣言以上の 2 の冪**（既定より小さくはしない — 宣言の超過は上の「記帳だけ」の約束のまま）。main は `SOBER_REGION_MB`（既定 4 GiB — 27 節）のまま。帰結の約束: 宣言の無い子が region 1 つに既定を超えて積むと `RegionExceeded{cause: slot_capacity}` の死 — 大きい作業域の子は budget: を書く（または main で持つ）。縮退（逐次）した子は親の task の上で走るので親のスロットの大きさ。チャネルのペイロードの写しの区画も既定の大きさ（1 回の送りの値が既定を超えると送り手の死）。スロットの VA の予約（mmap）の失敗は `RegionExceeded{cause: va_exhausted}`（旧 = slot_capacity の誤名乗り）。既定 512 の理由: 自己 check-par の子の region 1 つの高水位 217 MB の 2.4 倍（64 MiB ではコンパイラ自身が死ぬ・256 は余白 1.23 倍で薄い）（旧 = 全 task 4 GiB で約 5,000〜6,000 本の同時 task で 128 TiB の VA が尽きた）。棄てた案: 伸ばせるスロット（mremap — 番地が動いて region の値の番地を持つ設計と合わない）・宣言ちょうどの大きさ（宣言の超過が死に変わる — 記帳だけの約束が崩れる）
-  - 接続の task の小さいスロット（2026-10-23 — ユーザー裁定 = A1・report-1076）: std/net の Serve の接続の task は `region:`（Serve の名前付き引数・既定 128 MiB・2 の冪に切り上げ・下限 1 MiB・既定の子の大きさを越えない）の大きさのスロット — 接続の task の region 1 つの上限。超えるとその接続の task の死（`RegionExceeded{cause: slot_capacity}` — Serve が吸収し Ledger の died が数える）。置き場は既定のスロット 1 本を k = 既定 ÷ 小さい大きさ 本の小さいスロットに割ってワーカーの小さいスロットの列に積み、深度ごとに 1 本ずつ使う（既定の子と同じ深度ごとの置き場 — park で死んだ深度を予備に返して同じワーカーの次の接続がそのまま採る〔予備は大きさの印つきで、採るのは同じ大きさの task だけ〕・小さいスロットは既定のプールへは返さない。返した小さいスロットの列はスロットの外 — ワーカーの深度ごとの列〔256 本〕と溢れの共有の列〔下半分をまとめて移す・専用の鍵〕で、既定のスロットの深度ごとのプールと同じ形。task は寝たワーカーと起きたワーカーが違うのでスロットはワーカーをまたいで流れ、keep-alive 4096 の cycles は旧比 −7〜9%・32000 接続の常駐は旧の圏 — report-1079）。VA の実測（2026-10-23）: 接続あたりのスロット ≈6 本（自前 ≈4 + プールの予備の取り分 ≈2）— 既定 512 MiB のままだと 32000 接続で 93〜101 TiB・48000 接続で va_exhausted、128 MiB の区画なら 32000 接続 ≈28 TiB（旧の前提「16k 接続 × 5 深度 × 512 MiB = 40 TiB」は外れていた）。VA の天井は死でなく shed にもする: SpawnIn の入場は写したスロットの VA が VA_SHED（96 TiB）を越えていたら shed（Serve は reject）。棄てた案: budget: から小さいスロットを導く（コンパイラ自身の子の budget: は入場の見積もりで region の高水位より小さく、死ぬ）・既定を 256 / 128 MiB に下げる（上の 2026-10-14 の理由のまま）・task.Spawn / SpawnIn の一般の名前付き引数（実需が Serve だけ — 実需が出たら Serve の rt の印を脱糖先にする）・大きさごとのプール（列と予備が大きさの数だけ割れ、溢れの網を張り直す）・既定のスロット 1 本を task の連続する k 深度で区画に割って共有する（2026-10-23 に一度入れて戻した — 区画は park の予備に乗れず、keep-alive 4096 で命令 +5%・cycles +4〜9% — report-1077 / 1078）・返した小さいスロットをスロットの中の鎖の語で繋ぎ、上限なしでワーカーに溜める（2026-10-23 の I3 — keep-alive 4096 の cycles は旧比 −13〜15% だったが、鎖を 1 度通ったスロットの先頭の頁が全部常駐し、溜めの分と足りないワーカーが切り出す分のスロットも頁を持つ: 32000 接続で +6〜8 KB/接続。速さの大半は流さない溜めの温かさで、列の深さ・鍵の分け方・まとめ移しの 8 形で RSS と両立しなかった — report-1079）
+  - 接続の task の小さいスロット（2026-10-23 — ユーザー裁定 = A1・report-1076）: std/net の Serve の接続の task は `region:`（Serve の名前付き引数・既定 128 MiB・2 の冪に切り上げ・下限 1 MiB・既定の子の大きさを越えない）の大きさのスロット — 接続の task の region 1 つの上限。超えるとその接続の task の死（`RegionExceeded{cause: slot_capacity}` — Serve が吸収し Ledger の died が数える）。置き場は既定のスロット 1 本を k = 既定 ÷ 小さい大きさ 本の小さいスロットに割ってワーカーの小さいスロットの列に積み、深度ごとに 1 本ずつ使う（既定の子と同じ深度ごとの置き場 — park で死んだ深度を予備に返して同じワーカーの次の接続がそのまま採る〔予備は大きさの印つきで、採るのは同じ大きさの task だけ〕・小さいスロットは既定のプールへは返さない。返した小さいスロットの列はスロットの外 — ワーカーの深度ごとの列〔256 本〕と溢れの共有の列〔下半分をまとめて移す・専用の鍵〕で、既定のスロットの深度ごとのプールと同じ形。task は寝たワーカーと起きたワーカーが違うのでスロットはワーカーをまたいで流れ、keep-alive 4096 の cycles は旧比 −7〜9%・32000 接続の常駐は旧の圏 — report-1079）。浅い region の窓（2026-11-07 — B 便・report-fuse-4〜7）: 接続の task の最初の 4 深度（自前の深度の BASE + 1〜BASE + 4）の region は、task の塊（機械スタック + TCB）の末尾の頁（深度ごとに 1 頁 = 4 KiB）から始まる。1 頁を越えたら小さいスロットへ移り（窓の中身は動かさない — 値の番地は安定）、以後の確保はスロットから。region 1 つの上限は窓を使っても `region:` ちょうど（移した先のスロットは先頭から窓の使った分だけ進めて使い始める — 窓を使った接続だけ上限が伸びる、の条件付きの形を作らない）。移した後のその深度は普通の小さいスロットで、入り直し・返しは窓を見ない。接続ごとに触る頁が塊と同じ PTE の頁に乗るので、ページテーブル（VmPTE）は 4096 接続で 31.6 → 9.0 MB（傾き 8.8 → 2.1 KB/接続）。要求ごとの深度（park で空になって手放す深度）は、その task では以後窓にしない（窓の頁を返し、次からはワーカーの予備か小さいスロット — 前の要求の触った頁を接続ごとに残さない）。先端で作る列（io の読みの結果・append の先端の伸長）が窓の境を越えるときは、作りかけの列を本物のスロットへ写して付け替える（公開前の列だけ・1 回の写しは窓の大きさ 4 KiB で有界）。開発の口 `SOBER_TASK_WIN=0` は窓を張らない（同一バイナリの A/B）。網 = scripts/wincheck.sh（変異 42 / 43）。棄てた案: 窓の深度を定数 1 つ（BASE + 3 — 今の std/http の形に合わせた値で、形が変われば効きが黙って消える）・深度ごとの上限の語（lim[d] — 速い道は 1 load 減るが切替の退避と全確保の道の書き換えが要る）・塊の直後の連続スロット・ワーカーごとに深度の高水位を学ぶ・窓の溢れで中身を写して 1 本の連続に保つ（番地が動く — mremap を棄てたのと同じ理由）・移した後の上限を「region: + 窓の使った分」まで緩める（条件付きの約束が残る）・移した先の表の基底を「本物 − 窓の使った分」（偽の基底）にして入り直しで窓へ戻す（2026-11-08 に外した — 深度の入りの毎回の検査と窓の判定で rt.region_enter が IR インライナーの全展開の上限を越え、pipelined の命令 +11% — report-tj-0）。VA の実測（2026-10-23）: 接続あたりのスロット ≈6 本（自前 ≈4 + プールの予備の取り分 ≈2）— 既定 512 MiB のままだと 32000 接続で 93〜101 TiB・48000 接続で va_exhausted、128 MiB の区画なら 32000 接続 ≈28 TiB（旧の前提「16k 接続 × 5 深度 × 512 MiB = 40 TiB」は外れていた）。VA の天井は死でなく shed にもする: SpawnIn の入場は写したスロットの VA が VA_SHED（96 TiB）を越えていたら shed（Serve は reject）。棄てた案: budget: から小さいスロットを導く（コンパイラ自身の子の budget: は入場の見積もりで region の高水位より小さく、死ぬ）・既定を 256 / 128 MiB に下げる（上の 2026-10-14 の理由のまま）・task.Spawn / SpawnIn の一般の名前付き引数（実需が Serve だけ — 実需が出たら Serve の rt の印を脱糖先にする）・大きさごとのプール（列と予備が大きさの数だけ割れ、溢れの網を張り直す）・既定のスロット 1 本を task の連続する k 深度で区画に割って共有する（2026-10-23 に一度入れて戻した — 区画は park の予備に乗れず、keep-alive 4096 で命令 +5%・cycles +4〜9% — report-1077 / 1078）・返した小さいスロットをスロットの中の鎖の語で繋ぎ、上限なしでワーカーに溜める（2026-10-23 の I3 — keep-alive 4096 の cycles は旧比 −13〜15% だったが、鎖を 1 度通ったスロットの先頭の頁が全部常駐し、溜めの分と足りないワーカーが切り出す分のスロットも頁を持つ: 32000 接続で +6〜8 KB/接続。速さの大半は流さない溜めの温かさで、列の深さ・鍵の分け方・まとめ移しの 8 形で RSS と両立しなかった — report-1079）
   - 受けられない子は逐次へ縮退する: `task.Spawn` / `task.Map` の子は、入場できなければその場で親の task の上で呼ぶ（P3a の即時形 — 罠を張って呼び、枠に結果 / 死因を書く。Join / Try は今どおり）。縮退は「子を先に」の 1 つのスケジュールなので、値・死因・stdout（O1）は変わらない（Kahn）。縮退した子が待てるのは自分の子孫だけ（端点は `give:` でしか渡らず handle は捕獲できない）なので、親の続きを待つデッドロックの辺を足さない。端点を受け取る子（`give:`）は縮退しない — 常に入場（超過を記帳）。予算が細ると並列が細り、最後は逐次になる — 死なない・待たない
   - 未着手の子の上限（2026-10-31 — ユーザー裁定・report-backlog-0 / report-iterregion-1）: spawn した未着手の子はワーカーごとの両端の列に入り、列が満杯（ワーカーあたり 255 本）なら子を積まずにその場で先に走らせ、生んだ task は自分のワーカーの走れる積みへ譲る（背圧 — 生む速さに掃く速さが追いつかない間、生む側が子の仕事を肩代わりして止まる）。未着手の子の数 ≤ ワーカー数 × 255 なので、生み続けるループ（net.Serve の accept の形）の peak RSS は CPU の取り合いに依らず有界（子 1 本 ≈ 4.3 KB — 旧は列のあふれを共有の積みへ上限なしに積み、負荷の窓で 2M spawn が 47〜77 MB）。譲るのは子を先にの 1 つのスケジュールなので値・死因・stdout は変わらず（Kahn）、親は積みに残るので子が親を待っても詰まらない（縮退〔親の上で呼ぶ〕と違い give: の子も同じ道でよい）。熱い道の値札 = spawn ごとに TCB の語 1 load（上限の比較）。**宣言 = `task.Run(body, backlog: K)` / `net.Serve(…, backlog: K)`**（R2 — 1〜255 に丸め・書いた scope の中だけ今の task の語を付け替えて出口で戻す・子の task は spawn の時点の値を継ぐ・既定 255 = 列の容量。値は budget: と同じ形の整数式 — ParCheck kind 29。maxWait: と同じ「宣言され・既定値つき・アプリが選ぶ」系譜 — 2026-10-25 の裁定）。将来の過負荷の方針（degrade | wait | reject — PINS）は同じ分岐の点に差せる。観測 = `task.Ledger()` の `backlog`（今の未着手の子の数）・`backlogYield`（譲った回数の累計）。棄てた案: 越えたら待つ（11 節の待ちの 2 つの穴 — report-638）・env だけの口（SOBER_* は試験の口で設定項目ではない）・命令の口 task.SetBacklog（宣言でない）・根の task 数の天井を下げる（park 中の接続まで数える）・数えの原子操作を足す（列の深さで足りる）
   - 縮退分の記帳と約束の段（2026-10-14 — ユーザー確定・段 3 の ②）: 縮退した子の上界（宣言 / 見積もり）も台帳に載せる — 入場できなかった子は足した量を戻さずに計上したまま親の上で走り、子（と子が開いた scope の子孫）が終わったら返す（give: の超過の記帳と同じ形）。走っている間は兄弟の入場がそれを見る。約束は 2 段: **inline（既定 — 前進保証）= 台帳は縮退分も数える（計上 ≥ 実使用）・実使用は天井を縮退した子の上界の分だけ超えうる**（天井が埋まった時点で親が子を 1 本その場で走らせる — 縮退した子がさらに縮退すれば入れ子の深さの分。前進保証の対価）。**宣言 = 本当の上限は wait（入れなければ待つ — 下の項）の約束**。網 = gate parbudget（inline の 2 本: 台帳の計上の高水位 ≥ 実測・実測 ≤ 宣言 + 縮退の上界）。棄てた案: inline でも縮退 1 本分を予約として天井から引く（並列度が 1 子分細り、入れ子の縮退の深さが静的に決まらない）・記帳しない（旧 — 「天井は spawn した task を数える・縮退は親の分」。wait の入場判断が台帳の外の縮退分を見落とす）
@@ -511,7 +516,7 @@ structured io の線（決定 2026-10-05）: 意味論だけ先に引く — io 
   | 失敗の取りこぼし | 規律（済） | @errors（13 節） |
   | 待ち・IO・panic・非決定の隠れ | 規律 — 関数の効果 | `@effects`（この節の下の箇条） |
   | 秘密に依存した分岐・添字・除算 | 規律 — 値の流れ | `@secret`（下の「秘密の値の宣言」・13 節の補 2） |
-  | 認証由来の応答が共有キャッシュへ（web cache deception） | 規律 — 値の流れ + 関数の効果のビット（依存を「認証の源に届きうる」で上から覆う — 改訂 2026-10-21 段 4） | 出所の依存（下の「出所の依存」・13 節の補 3 — 顧客は std/http のルートの行の保存の方針）+ 構造（保存の方針は型の欄だけ・動的な応答の既定は private — 28 節） |
+  | 認証由来の応答が共有キャッシュへ（web cache deception） | 規律 — 値の流れ + 関数の効果のビット（依存を「認証の源に届きうる」で上から覆う — 改訂 2026-10-21 段 4） | 出所の依存（下の「出所の依存」・13 節の補 3 — 顧客は std/http/server のルートの行の保存の方針）+ 構造（保存の方針は型の欄だけ・動的な応答の既定は private — 28 節） |
   | トランザクションの読み書き範囲 | 規律 — 関数の効果 + 引数 | DB の波（引数つきの効果 + 実行時の守り） |
   | 認可・ビジネスロジック | 残る | 言語は消さない（正直に「残る」と言う） |
 
@@ -537,17 +542,17 @@ structured io の線（決定 2026-10-05）: 意味論だけ先に引く — io 
   導出と照合する（~~tightness つき~~ → 改訂 2026-10-21 段 1: **tightness は持たない** — ライブラリの型の契約は未来の利用者の全員に対するもので、1 つのプログラムの母集団で「古い」と言えない）。
   **段 1 の着地（2026-10-21 — report-971 の案 A・report-973）**: 名前付き関数型の後置 `@errors` は**契約だけ**（上界）— F を通した呼び出しの集合 = 宣言（+ 仮引数の名前の項の位置の実引数の失敗）・
   F の値になるラムダは宣言と照合（漏れはラムダの位置で拒否）・宣言の無い F は従来どおり導出できない側（TOP）・error? を返す公開の F に宣言を強いない（tls.Handler のように
-  失敗を吸収する型に契約を強いても得が無い）。**閉じた世界の導出（宣言の無い F を母集団の合併で）は段 1b** — Stream の値は利用者の package で作られ std/http が呼ぶので、
+  失敗を吸収する型に契約を強いても得が無い）。**閉じた世界の導出（宣言の無い F を母集団の合併で）は段 1b** — Stream の値は利用者の package で作られ std/http/server が呼ぶので、
   導出をそのまま使うと std の宣言が利用者のラベルに依存する（宣言として書けない）。答えの候補 = 型の名前の項 `@errors(recv, send, Stream)`（13 節の語彙の追加 — 実需まで記帳）。改訂: 下の箇条の「公開 struct の関数型フィールド経由は注釈を要求」と 14 節の「注釈が必須なのは関数型フィールドだけ」は、
   導出が unknown に落ちる前提の決定だった — 注釈は契約の席として残り、必須の理由（追えない）は U_F の導出で消える
 - **Lean**: v1 では開かない。tracking の effect は受理を狭めるだけの analyzer の規則で、formal.md の射程の外（13 節の論拠 ② — 集合の計算の誤りを健全性の誤りに昇格させない）。
   守りは動的オラクル（観測 ⊆ 導出 — errtrace の形。@secret は ctcheck と統計の計測）。**非干渉の定理**（コアで秘密の値が分岐・添字に影響しない）は 1.0 手前の Lean の射程拡張と
   同席の候補として記帳（「Lean は単独で開かない」）
-- **段割り**: 段 0 = この面の docs → 段 1 = 名前付き関数型の後置注釈（syntax.md の `FuncType { Annotation }` — 今の parser は読まない）と @errors の照合（http.Stream の `?` の正の道）→
+- **段割り**: 段 0 = この面の docs → 段 1 = 名前付き関数型の後置注釈（syntax.md の `FuncType { Annotation }` — 今の parser は読まない）と @errors の照合（http.server.Stream の `?` の正の道）→
   段 2 = ラベル集合の 2 語化と値の流れのエンジンの名前空間化（**着地 2026-10-21 — report-975**: 集合は 2 語の値 LSet〔ラベル 126 本 + TOP + FLOW〕・パターン行列の
   PmErr も 2 語・解き手の核〔スロット・読み手・作業の列・局所〕を名前空間ごとの Eng に括り出した — analyzer/flow.sober。転送関数の差し替えの口は段 3 の起案で切る。
   compiler/ の閉包〔ラベル 82 本〕の自己 check で導出できない関数が 229 → 2 本に）→ **段 3 = `@secret`（第一便の実弾 — 顧客 std/crypto・答え合わせ = ctcheck の手書きの関数の表を導出が覆うか。起案 report-977・3a〜3d は下の「秘密の値の宣言」）** →
-  段 4 = 出所の依存（std/http の public 系のキャッシュの解禁と拒否 — 起案 report-987・下の「出所の依存」）→ 段 5 = `@effects` の本体（葉の宣言・導出・公開関数の強制と fix — compiler/ の公開関数に掛かるので鎖の段との交差を
+  段 4 = 出所の依存（std/http/server の public 系のキャッシュの解禁と拒否 — 起案 report-987・下の「出所の依存」）→ 段 5 = `@effects` の本体（葉の宣言・導出・公開関数の強制と fix — compiler/ の公開関数に掛かるので鎖の段との交差を
   その時期に裁定）→ DB の波（引数つきの効果・実行時の守り・std/sql の const クエリ）
 - 棄てた案: algebraic effect の handler（下の箇条 — tracking であって handling ではない）・型レベルの effect 多相（Koka の行・行多相 — 13 節の棄てた案と同じ理由: 高階の署名に行変数が生える）・
   解析の導出そのものを Lean で証明する（証明面積が掛け算 — 動的オラクルで足りる）・v1 の利用者定義 effect（実需が std 側にしか無い — 席だけ空ける）・
@@ -565,10 +570,14 @@ structured io の線（決定 2026-10-05）: 意味論だけ先に引く — io 
   - **結果の `@secret` は持たない — 導出する**（改訂: 起案 report-969 の素描の「欄・仮引数・結果・const に付く」から結果を落とした — 結果の秘密は本体から導出でき、書かせる理由が無い）
   - sink は組み込みの固定集合（13 節の補 2）。std の `@sink` の印は作らない（需要が出たら席）
 - **std の源と祝福**（段 3b で印を付ける）: 源 = 鍵と秘密の材料だけ（aesgcm / chacha20poly1305 / chacha20 / poly1305 / hmac / hkdf の key・prk・ikm・x25519 の k・
-  rsa.PrivateKey の秘密の欄・tls の鍵の材料・ct.Equal / Select / NonZero の実引数）。平文は源にしない。祝福 = ct.Equal の結果・x25519.Base・rsa.SignPSS / Public・
-  AEAD の Seal / SealTo（暗号文 + タグ）・poly1305.Sum。秘密のまま流すもの = x25519.Shared の結果・hkdf と hmac の出力。
+  crypto.rsa.PrivateKey の秘密の欄・tls の鍵の材料・ct.Equal / Select / NonZero の実引数）。平文は源にしない。祝福 = ct.Equal の結果・crypto.x25519.Base・crypto.rsa.SignPSS / Public・
+  AEAD の Seal / SealTo（暗号文 + タグ）・crypto.poly1305.Sum。秘密のまま流すもの = crypto.x25519.Shared の結果・hkdf と hmac の出力。
+  **std/crypto/password**（0.6.8）: 源 = pw。祝福 = 書く側の保存の値（Argon2id / Bcrypt / Pbkdf2 の結果 — 照合の相手として外へ出す）・Verify の結果（crypto.Equal）。
+  定義どおりに秘密で番地を選ぶ方式（argon2d 側の参照先・bcrypt の S-box の引き）は、番地を決める語を値の祝福の口 `bless.Int` で公開に落としてから添字・剰余に使う
+  （番地としてメモリの引きに出る情報 — 剰余の時間はそれ以上を漏らさない。dudect の題材は exp_ — informational）。bcrypt の pw の NUL の有無も拒否の答えとして外に出る 1 bit なので同じ口で落とす。
+  棄てた案: 番地を定数時間で引く（作業域の全走査 — Argon2 の m に比例の倍率で、メモリハードの意味が変わる）
   **値の祝福の口**（裁定 2026-10-21 — 3b-2）: 関数単位の祝福で言えない「この値はここで公開してよい」は std/internal/bless の恒等関数 `bless.Bytes(b)`（`@bless` — std の中からだけ
-  import できる）を値に通して書く。置くたびに理由を添える。今の置き場 = rsa.SignPSS の自己検証（署名は出力・em は公開鍵で署名から戻せる）と hs の key log（意図した開示）
+  import できる）を値に通して書く。置くたびに理由を添える。今の置き場 = crypto.rsa.SignPSS の自己検証（署名は出力・em は公開鍵で署名から戻せる）と hs の key log（意図した開示）
   **TLS の record 層の平文**: OpenAt の結果（平文）は秘密のまま流し、stripTail の結果（中身の種類と長さが決まった record）を祝福にする — record 層までは平文も定数時間の対象
   （詰め物の長さを漏らさない — TLS 1.3 の作法）。http 以降が平文で分岐するのは当然なので、祝福は record 層の出口に置く
 - **検査の置き場**: analyzer（check だけ — build の受理は変えない）。エンジンは error と別の walker（analyzer/secret.sober）で、共有するのは段 2 の解き手の核 Eng だけ
@@ -590,10 +599,10 @@ structured io の線（決定 2026-10-05）: 意味論だけ先に引く — io 
   他の出力は 0）と駆動 std/internal/dudect（入力は計時の前に全部作る・クラスを乱数で交互・f の結果は窓の外で畳む）。題材は同じ package の _test.sober（std/internal は
   std の外から import できない — 20 節。`sober test` の経路で直列に走らせ、環境変数 SOBER_DUDECT〔回数〕が無ければ測らない）。集計 = scripts/dudect.sh（Welch の t・
   上位の切り 9 段・|t| の最大値 > 4.5 で漏れ — 名前が neg_ の負例は漏れと出なければ赤）。gates に入れない（暗号の便の締めに手で回す）
-  **3d-2（report-986）: dudect の題材を std/crypto の公開の口の全部に**（ct.Select / NonZero・aesgcm と chacha20poly1305 の SealTo / OpenAt・poly1305.Sum・x25519.Shared〔回数 1/10〕・
-  hmac.Sum256・rsa.SignPSS〔1/500 — 鍵は試験鍵 1 本で平文を変える〕）— WSL2 の 1e6 回で全部 |t| ≤ 3.00。GHA の job（.github/workflows/dudect.yml — 手動の起動）と記録 bench/data/dudect.tsv。
+  **3d-2（report-986）: dudect の題材を std/crypto の公開の口の全部に**（ct.Select / NonZero・aesgcm と chacha20poly1305 の SealTo / OpenAt・crypto.poly1305.Sum・crypto.x25519.Shared〔回数 1/10〕・
+  crypto.hmac.Sum256・crypto.rsa.SignPSS〔1/500 — 鍵は試験鍵 1 本で平文を変える〕）— WSL2 の 1e6 回で全部 |t| ≤ 3.00。GHA の job（.github/workflows/dudect.yml — 手動の起動）と記録 bench/data/dudect.tsv。
   **段 3（@secret）はここで完了**
-  **3d-3（決定 2026-10-22 — report-1025〜1028）: poly1305.Sum の題材は「1 回限りの鍵」の形に**（poly1305_sum_otk — 両クラスとも毎回違う鍵・クラスで変えるのは鍵の性質〔r の上の limb が小さい群 対 一様乱数〕だけ）。
+  **3d-3（決定 2026-10-22 — report-1025〜1028）: crypto.poly1305.Sum の題材は「1 回限りの鍵」の形に**（poly1305_sum_otk — 両クラスとも毎回違う鍵・クラスで変えるのは鍵の性質〔r の上の limb が小さい群 対 一様乱数〕だけ）。
   固定 対 乱数の形は、Zen 3 / Zen 4（GHA の EPYC 7763 / 9V74）で固定鍵の値ごとに決まる 0.1 cycle 級のずれ（仕組みは未特定 — ハーネスの偏り・繰り返しの効果・積の早抜け・ビットの重みは否定）を拾っていた。
   Poly1305 の鍵は 1 回限りなので、そのずれは使われ方では掘れない。固定 対 乱数の形は exp_poly_fixed（informational — 名前が exp_ の題材は判定を印字するが失敗にしない）として残し、
   仕組みの切り分けの題材（exp_poly_start / absorb / finish・exp_imul_chain）を足した。記録の箱の名に CPU の型番（gha-<runner>/EPYC-9V74 等 — GHA の箱は世代が混ざる）・
@@ -608,22 +617,22 @@ structured io の線（決定 2026-10-05）: 意味論だけ先に引く — io 
   （RFC 9111 3.5 は Authorization の要求への応答を public / s-maxage / must-revalidate なしでは共有キャッシュに保存させないが、**Cookie には同じ保護が無く**、max-age だけで保存される）。
   CDN 側の規則が origin の宣言を無視して保存する web cache deception は、構造の側（動的な応答の既定の `Cache-Control: private`・ルーターの区切りの完全一致）で入口を狭める —
   CDN が private まで無視する設定は言語の外（残る）。範囲外（残る）: 要求の本文・query の token・相手の IP・Vary の漏れ（正しさの事故 — 別便）・認可のロジック
-- **@secret との差 = 暗黙の流れ**: 認証の値で分岐するのは正しいプログラムの普通の形（`if http.Cookie(r, "sid") == nil { return 401 }`）なので分岐を sink にできない。一方で事故の本体は
+- **@secret との差 = 暗黙の流れ**: 認証の値で分岐するのは正しいプログラムの普通の形（`if http.server.Cookie(r, "sid") == nil { return 401 }`）なので分岐を sink にできない。一方で事故の本体は
   暗黙の流れ（門の後ろの応答を共有すると、門の外の人にキャッシュから配られる）。**採った形 = 依存を「認証の源に届きうる」で上から覆う**: ハンドラ・middleware の関数値に
   「呼ぶと認証の源に届きうる」の効果のビットを載せて値の流れで運び（pc の汚れの機構は持たない）、共有キャッシュも保存してよい方針（以下 SH）は**ルートの行でだけ**宣言できるようにして、
   1 つの struct の値（Route のリテラル・Mount の呼び出し）の中で SH と「認証に届く」が出会ったら拒否する
-- **構造の側（段 4a — std/http）**: 保存の方針は型の欄（`Response.cache` / `Route.cache` / Static の `cache:` — `http.Cache`）だけで書く（任意ヘッダの Cache-Control・CDN-Cache-Control・
-  Surrogate-Control・ETag・Last-Modified は panic(BadHeader)）・動的な応答の既定は `private`・認証の源は名指しの口 `http.Authorization` / `http.Cookie`（`http.Header` は認証の 3 名で nil）・
-  検証子（ETag・Last-Modified）は std/http だけが作る封の型 `http.Validators`。詳細は 28 節の http「保存の方針と認証の源」
+- **構造の側（段 4a — std/http/server）**: 保存の方針は型の欄（`Response.cache` / `Route.cache` / Static の `cache:` — `http.server.Cache`）だけで書く（任意ヘッダの Cache-Control・CDN-Cache-Control・
+  Surrogate-Control・ETag・Last-Modified は panic(BadHeader)）・動的な応答の既定は `private`・認証の源は名指しの口 `http.server.Authorization` / `http.server.Cookie`（`http.server.Header` は認証の 3 名で nil）・
+  検証子（ETag・Last-Modified）は std/http/server だけが作る封の型 `http.server.Validators`。詳細は 28 節の http「保存の方針と認証の源」
 - **宣言の面（段 4b）**: `@credential`（std 限定 — 関数の前置: 結果は源・呼ぶ関数は効果のビットを持つ / 欄の後置: 欄の読みは源）・`@shared`（std 限定 — union の variant の後置:
   その variant のリテラルの値は SH）・`@bless(origin)`（std 限定 — 名前空間つきの祝福。無引数の `@bless` は全部の名前空間 — 段 3 の印は不変）。利用者の源の宣言と祝福は持たない
   （セッションの表を Cookie の値で引けば結果は実引数の流れで届く・共有のルートでログのためだけに認証を読む形は拒否のまま — 正直な近似）
 - **検査の置き場**: analyzer（check だけ）。エンジンは段 3 の secret の walker を名前空間のモードで共有する（転送は同じ — 違うのは sink の判定と源の印の読みだけ）。Eng の 3 区間目
-- **段割り**: 4a = docs と std/http の構造（analyzer なし — public 系の Shared はまだ出さない）→ 4b = analyzer（walker のモード・効果のビット・出会い・std の印・Shared の解禁）→
+- **段割り**: 4a = docs と std/http/server の構造（analyzer なし — public 系の Shared はまだ出さない）→ 4b = analyzer（walker のモード・効果のビット・出会い・std の印・Shared の解禁）→
   4c = オラクル（`--origin-dump`・開発の口の動的オラクル）。線の引き直しは 4b の着地時に実測 × 1.005
-  **現在地（4a）**: std/http の構造の側が入った（28 節の http「保存の方針と認証の源」）。
-  **4b（report-989）: analyzer の規則が入った** — 文法 3 語・secret の walker の og のモード（origin.sober）・効果のビット・出会い・std/http の印（`http.Authorization` /
-  `http.Cookie` / `Request.head` に `@credential`・`Fresh` / 新設の `Shared` に `@shared`）・**`http.Shared{maxAge, sMaxAge}`（`public, max-age=N[, s-maxage=M]`）の解禁**。
+  **現在地（4a）**: std/http/server の構造の側が入った（28 節の http「保存の方針と認証の源」）。
+  **4b（report-989）: analyzer の規則が入った** — 文法 3 語・secret の walker の og のモード（origin.sober）・効果のビット・出会い・std/http/server の印（`http.server.Authorization` /
+  `http.server.Cookie` / `Request.head` に `@credential`・`Fresh` / 新設の `Shared` に `@shared`）・**`http.server.Shared{maxAge, sMaxAge}`（`public, max-age=N[, s-maxage=M]`）の解禁**。
   実装で決めたこと（起案 987 からの詰め — 13 節の補 3）: 源の欄の読みは std の外の package の読みだけを源にする（std の中の head の読みに `@bless(origin)` を付ける起案の形は、
   Dispatch が要求を写してハンドラへ渡すので写しの値が源になり全部のハンドラが源に届く — 読みの場所で切る）・出会いの照合は std の外の構築だけ（Dispatch / chain の配管は
   ルートの表の合併を運ぶ — 照合すると共有の静的ルートと認証の API があるだけで出会う）・std の出会いの口は Mount の名指し（要約 Meet[f] は Mount の中の行の欄の
@@ -754,7 +763,7 @@ structured io の線（決定 2026-10-05）: 意味論だけ先に引く — io 
   （匿名の関数型で結果に error を持つ仮引数だけ — 上の仮引数の名前の @errors と同じ条件）。F の値を通した呼び出し（`g(x)?`・欄の読み `st(emit)?`）の集合 = 宣言のラベル ∪
   宣言の仮引数の名前の項の位置に渡した実引数の失敗（名前付き関数の Flow と同じ合流）。F の値になる値の位置のラムダ（表層型検査器が期待型の F を記録した分）は本体の集合を宣言と照合し、
   宣言の外のラベル・導出できない失敗・宣言に書いていない仮引数の失敗（呼ぶか Flow の位置へ渡したら漏れうるに数える — 過大近似）を**ラムダの位置で**拒否する。
-  tightness は持たない（12 節）・公開の F への強制はしない・宣言の無い F は TOP のまま。std の顧客 = `http.Stream`（`@errors(emit, io.NotFound, io.Denied, io.Timeout,
+  tightness は持たない（12 節）・公開の F への強制はしない・宣言の無い F は TOP のまま。std の顧客 = `http.server.Stream`（`@errors(emit, io.NotFound, io.Denied, io.Timeout,
   io.Expired, io.Other)`）で、serveBuf は `st((p) => send(p))?` と書け、ServeConn / ServeWith は stream の失敗を誤りとして返す（28 節 w2 — 暫定の約束「閉じて nil」を正の道に）。
   例 examples/fntype_errors・fntype_errors_flow・負例 examples/fntype_errors_neg_{leak, flow, label, prefix}。
   棄てた案: 前置 `@errors` を型宣言に許す（関数の注釈と区別が付かず、struct / union に付いた形を黙って捨てていた — 2026-10-21 まで）・
@@ -786,7 +795,7 @@ structured io の線（決定 2026-10-05）: 意味論だけ先に引く — io 
      関数宣言以外に付いた `@errors` は読み捨てのまま〈文法の受理は変えない〉。A5: error の switch の網羅 — 下の F-33 の解決。
      A4: 宣言と導出の照合 — error を返す公開関数は `@errors` 必須〈指摘に導出集合を示す〉・導出 ⊄ 宣言は拒否〈導出が TOP も〉・公開関数の宣言 ⊋ 導出は拒否
      〈tightness〉・内部関数の宣言は上界の検査だけ。package をまたぐ呼び出しは呼び先の宣言を読む〈裁定 E2〉。std の公開関数 7 本・compiler/ 22 本・
-     testdata 7 本に宣言を書いた〈std/io・std/os は InvalidUtf8 を名指すため `import "std/utf8"` を明示 — `string(b)` の暗黙 import `$utf8` は綴れない〉）
+     testdata 7 本に宣言を書いた〈std/io・std/os は BadUtf8 を名指すため `import "std/utf8"` を明示 — `string(b)` の暗黙 import `$utf8` は綴れない〉）
 - 構文の確認事項（確定 2026-09-27、V4-4）:
   1. 包み替え `f(x)? BadLine{...}` とセミコロン自動挿入: `?` は文末トークン（endsStatement）なので、同じ行のリテラルは包み替え、
      改行後のリテラルは別の文。条件位置は包み替えを読まない（括弧で書く）— grammar は既存のまま
@@ -806,10 +815,10 @@ structured io の線（決定 2026-10-05）: 意味論だけ先に引く — io 
 - 未決の論点（記録 2026-09-28、selfhost の F-33 — 解決は analyzer の段）: std の依存の追加が利用側の網羅を壊す。
   error はリンク集合の全ラベルの閉じた union（上の V4 1・29 節 X1）なので、std の中の import の追加（利用者から見えない実装の変更）で
   利用側の union が広がり、`default` なしでラベルを網羅していた switch が「switch does not cover every variant」で落ちる
-  （実地: std/io の ReadDir が std/utf8 を import した結果、ReadDir を呼ばないプログラムにも `utf8.InvalidUtf8` が入った —
+  （実地: std/io の ReadDir が std/utf8 を import した結果、ReadDir を呼ばないプログラムにも `utf8.BadUtf8` が入った —
   union は到達可能性でなくリンク集合で決まる）。候補: (a) 網羅の対象を「その `error?` 値に到達しうるラベル」に絞る
   （上の導出集合をそのまま使う — 本来の形。analyzer の戻り経路ラベル解析が要る）/ (b) 利用者に `default` を書かせる慣習（網羅の価値が落ちる）/
-  (c) 現状のまま（1.0 前の std の変更は破壊的変更として受ける）。当面は (c)（踏んだ 2 か所は `case utf8.InvalidUtf8{pos}` を足して受けた）
+  (c) 現状のまま（1.0 前の std の変更は破壊的変更として受ける）。当面は (c)（踏んだ 2 か所は `case utf8.BadUtf8{pos}` を足して受けた）
   → 解決（2026-10-01、error 網羅 analyzer A5 — 決定 E4-U = U-a・E4-B）: (a)。error の switch の網羅の対象は subject の導出集合
   （package の中は導出・package をまたぐ呼び先は `@errors` の宣言 — A4）で、覆えば default は要らない。覆っていないラベルの腕は脱糖器がコアの
   到達しない項 `unreach t`（formal.md「到達しない項の段」— 来たら panic）で埋め、lower は外れたら exit 101。analyzer は導出集合を覆わない switch を
@@ -877,9 +886,9 @@ structured io の線（決定 2026-10-05）: 意味論だけ先に引く — io 
      checked exception は規律を型に入れて硬直した失敗、Go は規律の層を作らなかった失敗で、Sober はその間の点に立つ。この点の成立条件は analyzer の完成
      （導出・@errors・網羅の 3 つが揃うまで、Sober のエラーは Go と同じ不透明さのまま）
 
-#### 13 節の補 — 表の網羅 `@exhaustive`（決定 2026-10-21 — report-964 / 966。段 1 = analyzer と std/http の顧客）
+#### 13 節の補 — 表の網羅 `@exhaustive`（決定 2026-10-21 — report-964 / 966。段 1 = analyzer と std/http/server の顧客）
 
-有限の集合を `default` で黙って畳む表（理由句の表・文面の表）は、集合に一員を足したときに欠けが音を立てない（実例: std/http の状態行の表が 412 を持っていなかった —
+有限の集合を `default` で黙って畳む表（理由句の表・文面の表）は、集合に一員を足したときに欠けが音を立てない（実例: std/http/server の状態行の表が 412 を持っていなかった —
 report-962。status が int なので機械で見る手段が無かった）。関数の注釈 `@exhaustive` で「この関数の switch は表だ」と宣言し、analyzer が名指しの欠けを拒否する。
 
 - 規則: `@exhaustive` を付けた関数の中の switch のうち、subject が閉じた集合のものは、その集合の全員を case に名指す（関数単位 — 中の全部の switch に掛かる。
@@ -896,14 +905,14 @@ report-962。status が int なので機械で見る手段が無かった）。�
   到達しない `default` の拒否（S ⊆ 名指した集合）はそのまま残る（「default は集合の外専用」と同じ向き）。前の腕と重なる腕の拒否も残る
 - 層: analyzer（check だけ — build は走らせない。13 節の error 網羅と同じ E4-B の線）。受理を狭めるだけでコアの意味論は変えない — Lean 不要。
   注釈の名前は parser の閉じた集合に 1 語足した（syntax.md 5.1）。鎖の最後の boot の parser は `@exhaustive` を読めないので、compiler/ の中（diag.At / Format・
-  lexer.TagName 等）に付けるのは鎖の段の後（段 2）。std/http は compiler の import の閉包の外なので鎖なしで付く
-- 顧客: std/http の statusLine（`http.StatusCode` の const の全部 — 例 examples/exhaustive_table・http の状態行）
+  lexer.TagName 等）に付けるのは鎖の段の後（段 2）。std/http/server は compiler の import の閉包の外なので鎖なしで付く
+- 顧客: std/http/server の statusLine（`http.StatusCode` の const の全部 — 例 examples/exhaustive_table・http の状態行）
 - 棄てた案: (A) 注釈なしの一般 lint（「default のある switch で集合の 8 割以上を名指していたら残りも」— Go の exhaustive linter の
   default-signifies-exhaustive=false 相当）— 閾値が恣意的で警告の口も要る / (B) 表を const の複合リテラル（データ）で書き const に注釈 — const の表の実装
   （737 (a)）が先に要る。入った後の第 2 の形として据え置き / (C) switch の式に注釈（`@exhaustive switch …`）— 文法が式の前置の注釈を持たず、関数単位の方が
   変更が小さい / (D) `default` の腕に「集合の外だけ」の印を書く新しい構文 — 構文を増やす / error の集合を「package の全ラベル ∩ S」にする（Q2 (ii)）— 足したラベルを
   呼び手が返さない限り S に入らず、「足したときに黙って欠ける」を割れない
-- 段割り: 段 1（この節 — analyzer・parser の 1 語・std/http）/ 段 2（鎖の段の後 — compiler/ の diag・lexer の tag・I 定数を named scalar へ移して付ける）/
+- 段割り: 段 1（この節 — analyzer・parser の 1 語・std/http/server）/ 段 2（鎖の段の後 — compiler/ の diag・lexer の tag・I 定数を named scalar へ移して付ける）/
   段 3（有限集合を string / int で持ち回る所を union / named scalar に寄せる便 — Coded.encoding 等。lint の口 `sober vet` は実需まで据え置き）
 
 #### 13 節の補 2 — 秘密の値の流れの規則（決定 2026-10-21 — 段 3 の起案 report-977。宣言の面は 12 節「秘密の値の宣言」。検査は段 3b から）
@@ -914,7 +923,7 @@ report-962。status が int なので機械で見る手段が無かった）。�
   TOP = 秘密かもしれない — 拒否の側）。P = 今の関数の仮引数の集合（1 語 — 仮引数の位置から届いた分）
 - **転送**: 算術・比較・変換は両辺の合併を運ぶ（比較の結果の bool も値として運ぶ — setcc は分岐でない）。`len` / `cap` の結果は公開。添字の読みの値は被添字 ∪ 添字。
   ~~欄の書き込み・読みは欄のスロット（型 × 名前ごとの S — 文脈に鈍い）を通す~~ → 改訂 3b-2（ユーザー裁定 2026-10-21 — 文脈欄 = 型 × 欄名 × 値の出所。下の項）
-- **文脈欄**（3b-2 — report-983。型 × 名前のスロットだけでは、汎用の型〔sha256.State〕を HMAC の鍵で回すと全部の SHA-256 の出力が秘密に見え、公開鍵の検証が偽の拒否に回った — report-980）:
+- **文脈欄**（3b-2 — report-983。型 × 名前のスロットだけでは、汎用の型〔crypto.sha256.State〕を HMAC の鍵で回すと全部の SHA-256 の出力が秘密に見え、公開鍵の検証が偽の拒否に回った — report-980）:
   - 道 = 局所・仮引数の名前を根にした欄の列（深さ 2 まで — 深い所は深さ 2 の道の丸ごとへ畳む）。**丸ごとの値は欄の中身を持たない** — 欄の秘密は 3 か所にある:
     型 × 名前のスロット（struct リテラルの欄・名前でない基底への書き込み・名前の根の道への書き込みの具体の部分〔源の原子〕・逃げた道）・
     今の関数の道の表（名前の根の道への書き込みの仮引数由来の部分〔P〕と、呼び先の mut の仮引数の道への書き込みの戻り）・欄のビット（下）
@@ -925,7 +934,7 @@ report-962。status が int なので機械で見る手段が無かった）。�
   - **別名**: `y := x` / `y := x.f`（名前の根の道）と、仮引数を丸ごと返す呼び出しの結果の束縛（`h2 := step(h)` — 結果は実引数の道の別名）は y を行き先の道の別名にする
     （y の欄の読みは行き先の欄・y への書き込みは y の道）。`x.f = y`（両辺が名前の根の道）は y の下の道を x.f の下へ写す
   - **逃げる所**: 名前の丸ごとの読みが呼び出しの実引数・別名の右辺以外（return・リテラルの要素・組み込み・関数値の呼び出し）にあれば、その名前の道の表を根の型の
-    最初の段の欄の型 × 名前のスロットへ吐く（下の段の型〔sha256.State〕の共有のスロットへは吐かない）
+    最初の段の欄の型 × 名前のスロットへ吐く（下の段の型〔crypto.sha256.State〕の共有のスロットへは吐かない）
   - 残り（3c-2 の席）: struct リテラルの欄の仮引数由来の部分は今どおり Pin で文脈に鈍く具体化する — 秘密の素数と公開の法で同じ newMont を呼ぶと mont の欄が全部秘密になるので、
     rsa.newMont は手書きの表に残す（結果の道の要約〔呼び出しの結果の欄を呼び手の道へ〕が要る — 実需が出たら）。mut の実引数の綴り `x.f` の道の読みは根の型が引けないので
     型 × 名前のスロットを足さない（3b-1 の j と同じ近似）
@@ -969,18 +978,18 @@ report-962。status が int なので機械で見る手段が無かった）。�
   分岐・番地・除算は sink にしない
 - **暗黙の流れは追わない**: 共有の宣言をルートの行に限り、ハンドラ・middleware の「源に届きうる」を効果のビットで運ぶので、制御依存は「読みうる」が上から覆う（健全側の近似）
 - **SH に入る variant**: 共有キャッシュも保存してよい方針（Fresh・4b で入る Shared）。Revalidate（no-cache）は入れない（使う前に毎回 origin へ確かめに来て、確かめの要求は今の要求者の頭を運ぶ —
-  検証子は std/http だけが作るので、別人の中身に同じ検証子が付く形は構造で無い）。Private・NoStore は入れない
-- **応答 1 件の SH**: `Response.cache` に SH の variant を書けるのは std/http の配管（Dispatch がルートの行の方針を写す）だけ — 利用者の package で SH の値が `Response.cache` へ流れたら拒否（段 4b）
+  検証子は std/http/server だけが作るので、別人の中身に同じ検証子が付く形は構造で無い）。Private・NoStore は入れない
+- **応答 1 件の SH**: `Response.cache` に SH の variant を書けるのは std/http/server の配管（Dispatch がルートの行の方針を写す）だけ — 利用者の package で SH の値が `Response.cache` へ流れたら拒否（段 4b）
 - **値は丸ごと**（4b の実装 — report-989）: og のモードの struct の値は欄の値の合併を持ち、欄の読みは基底の丸ごと（文脈欄・道・別名・型 × 名前のスロットは使わない —
-  文脈に鈍い型 × 名前のスロットは std/http の配管の写しで全部の Route の欄を混ぜる）。値の型の意味論（値は写す）なので丸ごとで健全
+  文脈に鈍い型 × 名前のスロットは std/http/server の配管の写しで全部の Route の欄を混ぜる）。値の型の意味論（値は写す）なので丸ごとで健全
 - **源の欄の読みの場所**: `@credential` の欄の読みが源になるのは std の外の package の読みだけ（std の中の読みは std が中身を承知して運ぶ — Header は認証の名前で nil）
-- **出会いの照合の場所**: std の外の構築と、std の出会いの口 std/http.Mount の呼び出し（routes の SH と mw の O / C）。仮引数由来の値は Pin で具体化して照合する
-- **SH の欄**: 型が `@shared` の variant を持つ union（option の中身も）の欄。std/http の Response.cache は応答 1 件の方針の欄（利用者は SH を書けない）
+- **出会いの照合の場所**: std の外の構築と、std の出会いの口 std/http/server.Mount の呼び出し（routes の SH と mw の O / C）。仮引数由来の値は Pin で具体化して照合する
+- **SH の欄**: 型が `@shared` の variant を持つ union（option の中身も）の欄。std/http/server の Response.cache は応答 1 件の方針の欄（利用者は SH を書けない）
 - 棄てた案: 12 節「出所の依存」の棄てた案と同じ
 
 ### 14. 公開境界の関数型は名前付きのみ
 
-Go のイディオム（`http.HandlerFunc`、`sort.Interface`）を規則に昇格。範囲は公開境界に限定。
+Go のイディオム（`http.server.HandlerFunc`、`sort.Interface`）を規則に昇格。範囲は公開境界に限定。
 
 - 改訂 2026-10-20（ユーザー裁定 — 25 節の線へ）: **公開境界でも匿名の関数型の仮引数は可 — 匿名 = 借り・名前付き = 値**。匿名の関数型の仮引数は呼び出しの間だけ使う借り
   （展開される関数の仮引数・値の F の借りの仮引数 — 25 節 (α)）で、格納も持ち出しもされないので契約の置き場が要らない（std の CPS の口 `io.Chunks(f, k)`・`net.Recv(c, k)` が正）。
@@ -1012,6 +1021,7 @@ Go の nil を踏襲しない。nil が這い回る経路（interface、メソ�
   分かれるなら式の型は `T?`（`r := if c { 4 } else { q }`・q は `int?` → r は `int?`。絞った腕と絞らない腕 `if p != nil { p } else { q }` も同じ）。
   兄弟の nil の腕と同じく推論は腕の型だけを見て、脱糖も同じ道（T の腕を `T?` へ寄せる — desugar の coerceExpr・lower の joinArms）。
   T と U?（T ≠ U）は今までどおり拒否。根拠 = 審査基準（nil の腕だけを特別扱いすると「nil なら合流・T? の値なら拒否」の条件付き制約が残る）。例 examples/opt_arm_join
+- 関数値の option `F?`（欄・束縛・map の読み・`[]F?` の要素）も絞ってから呼ぶ（2026-11-05 — build が nil を呼んで落ちていた穴の修理。check と build が表層型の表から同じ名指しで拒否 — diag.TypeMismatch kind 4・負例 examples/optfn_call_neg・正例 examples/optfn_call）。欄は絞らない（下の項）ので、欄の `F?` は束縛してから絞る
 - 絞り込みはコンパイラの flow typing — `if err != nil { return }` の後で `err` は `error`。switch の腕でも同様。Kotlin の smart cast が `var` で壊れる問題は出ない（ラムダは mut の束縛を捕捉しない — 2026-11-04 L1 の撤去。mut の x を変えるのは名前への書きだけで、書いた文の後ろで絞りが外れる — 下の項）
   - 代入で絞りが外れる（決定 2026-11-04 — ユーザー裁定 U8 W1-b。旧 2026-11-02 の拒否〔diag.NarrowAssign〕を置き換え）: 絞った領域で mut の x に書く文
     （`x = e`・`x op= e`・`f(mut x)`・`x.f = e`）の後ろでは、名前 x は外の `T?` のセルに戻る（Kotlin の smart cast の var と同じ）。名前への代入の右辺は絞ったまま読む
@@ -1088,7 +1098,7 @@ Go の nil を踏襲しない。nil が這い回る経路（interface、メソ�
      入った — 20 節。残るのは構築の私有）
    - Num は字句のまま（`Num { lit string }`）— 解釈はデコードの点（shape[T] の欄の型）まで遅らせる。64 ビットを超える整数・精度・金額を float に黙って丸めない
      （Go の json.Number を既定にした形）。棄てた案: `Num { v float }`（読んだ瞬間に binary64 へ丸まる — 64 ビット整数の id・金額が黙って壊れる）
-   - 重複したキーは拒否（`InvalidJson{pos, kind: DuplicateKey}` — 位置は 2 つ目のキー）。パーサ間で解釈が割れる（先勝ち・後勝ち・両方）のは攻撃面なので防御の既定。
+   - 重複したキーは拒否（`BadJson{pos, kind: DuplicateKey}` — 位置は 2 つ目のキー）。パーサ間で解釈が割れる（先勝ち・後勝ち・両方）のは攻撃面なので防御の既定。
      棄てた案: 後勝ち（Go・JS と同じ — 互換は取れるが、前段の検査器と後段のデコーダが別の値を見る型の脆弱性を受け入れることになる）
    - 不正な UTF-8 は文書のどこでも拒否（kind BadUtf8 — Go は文字列の中の不正を U+FFFD に置き換える）・単独のサロゲートの `\u` も拒否（UTF-8 に写せない）。
      先頭の BOM は拒否（RFC 8259 の「付けてはならない」）
@@ -1119,7 +1129,7 @@ Go の nil を踏襲しない。nil が這い回る経路（interface、メソ�
      コア / Lean / lower は無変更（辞書の定数伝播で特化する上の形は、R3〔region を持つ型引数の実体 Def〕が入ったら移す — @layout の撤去条件 Y4 と同じ）。
      範囲 = struct の欄の int・float・bool・string・入れ子の struct・`[]U`・`U?`（U は前の型のどれか — `[]U?` は「U? の slice」〔型の文法で `?` は直前の名前に付く — slice / map 自体の T? は書けない〕で、要素の null を nil で受ける・例 json_opt_elems）。欄の名前 = JSON のキー（Rename は第二便）。
      規則 = 欠けた欄は `json.Missing{pos, field}`・`U?` の欄だけ欠けと null を nil で受ける・余った欄は無視（前方互換 — 厳格モードは後段）・種類の合わない節は
-     `json.WrongType{pos, want}`・int の欄は整数の字句だけ（小数・指数は WrongType）で範囲外は `json.IntRange{pos}`・float の欄は最近接・偶数への丸め（convert.ParseFloat）。
+     `json.WrongType{pos, want}`・int の欄は整数の字句だけ（小数・指数は WrongType）で範囲外は `json.IntOutOfRange{pos}`・float の欄は最近接・偶数への丸め（convert.ParseFloat）。
      範囲外の型（総称の struct・union・map・named scalar の欄）は diag.JsonShape で名指して拒否（第二便以降 — 例 json_decode_neg_field / json_decode_neg_type）。例 json_decode
    - 第二便（2026-10-04 — Encode と欄名の対応）: `json.Encode[T](v) string`（逆向き — 同じ合成方式。写しの関数は mut の builder に積む）。
      綴り = 空白なし・欄は宣言の順・`U?` の nil は null・int は 10 進・float は最短の往復表現（convert.FormatFloat）・文字列は `"` `\` と制御文字だけエスケープ
@@ -1176,7 +1186,10 @@ Go の nil を踏襲しない。nil が這い回る経路（interface、メソ�
     信頼の根拠はカプセル化: 他の package の struct の欄は外から書けず、mut の中身を持つ欄は外から読めない（20 節「欄の書きと mut の中身の読み」）ので、
     呼び手は Table / Arena の中身の別名を作れず、返す Frozen / string の中身にも外から書く口が無い（封）。2026-10-11 までは欄が外から読み書きでき、
     この根拠は成り立っていなかった（`c := t.chunks[0]` の後の table.Freeze の結果が `c[0] = …` で書き換わった — F-ar・report-492。Lean の uniqFreeze も
-    同じ免除を読むので受理していた — 塞ぐのは 20 節の規則だけ）。
+    同じ免除を読むので受理していた — 塞ぐのは 20 節の規則だけ）。構築で別名を与える道も 2026-11-05 に 20 節で塞いだ。
+    述語の側（Lean の uniqFreeze）は、信頼の口の呼び出しを呼び手の側で取り出し形として要約する: mut の実引数から届く buffer は凍って結果へ移り、
+    実引数のセルは新しい値に戻る。呼び手の手元に同じ buffer の別名が残っていれば後の書きは U2 で拒否される — 表層の規則が塞ぐ前提を述語の側でも見る
+    （2026-11-05 まで述語は呼び先の免除だけを持ち、呼び手の側は「結果は新しい値」〔U3〕と読んでいた）。
     静的な「取り出し」の証明は採らなかった — 空の seed ヘッダの写しを chunk の位置に積む技（その場の伸びで seed と最初の chunk が buffer を共有しうる）で、
     取り出した buffer が一意だと局所の解析では言えない（report-475）。棄てた案: 写して凍らせる（2026-10-08 の取り出し形の裁定を戻す・自己 check の RSS が伸びる）
 - 暗黙の freeze（決定 2026-10-11 — 便②・report-482〜485）: 期待型が imm のコンテナ（`[]T`・`map[K]V`）の位置に、同じ形の mut のコンテナの道
@@ -1186,6 +1199,10 @@ Go の nil を踏襲しない。nil が這い回る経路（interface、メソ�
   xs の位置〔imm の `[]T`〕。文形・yield 形とも。本体や for の後で同じ道に書けば U2 が拒否する — 凍らせたものを回している間に書けば中身が変わる）。
   起こさない = 束縛 `y := x`（期待型が無い — スナップショットは明示の `freeze(x)` で書く）・if / switch の腕の合流・ラムダの return・par の子の捕獲・
   道でない式（呼び出しの結果・if 式の値 — ただし clone(x) は点。下の「写しの手段」）・par の handle を含む型（freeze できない — 11 節）・総称 `Id[T](x T)` に mut を渡す形（T が mut に推論されて期待型が mut）。
+  起こさない位置の mut のコンテナは、imm の期待型に合わず拒否（実引数も composite の欄も同じ — 2026-11-05 まで composite の欄だけ check が受理して
+  build の lower が文面なしで落としていた〔コアの struct は直積で欄の型を持たない〕。表層型検査器が TypeMismatch で名指す。直し方 = 束縛してから置く）。
+  局所の束縛のラムダの呼び出しは展開と同じに読む（25 節 — 結果は捕捉した束縛や mut の仮引数の席の別名でありうる）: `g := () => m` の `freeze(g())` は m を凍らせ、
+  `a := g()` は m の別名（U1）。呼び出しの結果を新しい値とみなす U3 の読みは局所のラムダには掛からない（2026-11-05 まで analyzer がそう読んで後の書きを通していた — Lean は拒否）。
   U1〜U3 は暗黙の点にも明示の freeze と同じく掛かり、診断は点を注で名指す（直し方 =「書き終えてから渡すか、写しを渡す」）。
   受理の集合は U2 そのもので規則は増えない — 点を「最後の書きの直後」へ動かす推論は採らない（凍らせる時点が字面から離れる）。
   明示の freeze は残る: 期待型の無い位置では必須、ある位置では冗長（冗長の lint は後）。
@@ -1269,13 +1286,67 @@ func minmax(xs []int) MinMax { return MinMax{min: m, max: M} }
 ### 20. 名前解決の最小形 — package の形（決定 2026-09-19）
 
 モジュールシステム全体（interface・リンク・配布・バージョン）はセルフホスト前の未決のまま、
-Phase 2 の名前解決に要る最小形だけ先に確定する。
+Phase 2 の名前解決に要る最小形だけ先に確定する（2026-11-06 改稿 — 0.6.8 の import 便: 修飾子 = パスの全段・sober.mod・命名規約）。
 
-- 単一モジュール前提。import パスはプロジェクトルート相対
-  （`import "util/strings"` = ルート下の `util/strings/`）。ルート = ビルド起点のディレクトリ。
-  go.mod 相当のモジュール宣言ファイルはまだ持たない。
-  棄てた案: モジュールパス prefix（`github.com/...`）— バージョン選択・配布形と一体なので
-  そのとき prefix を足す（互換な拡張）
+#### Go と意図的に違うところ
+
+Go を書く読者は Go の import の規則を既定値として持ち込むので、違うところは抜けでなく裁定だと明示する。どれも「名前は構造から導く・出所は 1 か所に置く・解決は表引き 1 回」の帰結。
+
+| Go | Sober | 理由 |
+|---|---|---|
+| 修飾子 = パスの最後の段（`net/http/httputil` → `httputil`） | 修飾子 = パスの全段（`std/http/server` → `http.server`・`std/` だけ落とす） | 末尾 1 段は深さの情報を捨てる。Go では写経の alias（aws-sdk-go-v2 の `service/s3/types` → 全員が `s3types`・k8s の `apis/meta/v1` → `metav1`）と、階層を名前に埋めた複合名（`httputil`・`ioutil`・`s3client`）が生まれた。全段なら深さが本当に情報を持つとき名前を壊さずに書ける |
+| import パスに出所を書く（`github.com/x/kv/store`）・`/v2` の版の段 | import パスは木での名前から（`kv/store`）。出所と版は sober.mod にだけ | 出所がソースの全 import に漏れると、引越し・fork・版上げのたびに全ファイルを書き換える（Go の `sed` 祭り）。`/v2` は修飾子 `v2` を生む |
+| package 名とディレクトリ名は独立・複合名の慣習 | package 名 = ディレクトリ名・1 語の小文字（下の命名規約） | 一致させる慣習ならズレの自由に価値がない。複合したくなったら階層の信号（`http.util` と書ける） |
+| モジュールの根 = 上へ遡って見つけた go.mod | 根 = ビルドの起点（cwd）・遡らない | 解決がディレクトリの位置という隠れた状態に依らない |
+| 衝突は import の別名で各ファイルが個別に避ける | 木での名前の衝突はモジュールの単位で拒否し、解消は sober.mod の 1 行（alias・dep の名前） | 同じ名前がファイルごとに別のものを指さない |
+| 局所の束縛が package 名を隠せる（シャドーイング） | 修飾子の根の段と同名の局所束縛はエラー | `http.server.X` が局所の欄か修飾子かで割れない（決定 13 のシャドーイング禁止の延長） |
+| `x.Foo()` はメソッドか package の関数か、x の解決まで不定 | `.` の連鎖の頭は常に修飾子か局所（メソッドが無い） | 呼び出しの行を型の情報なしで静的に読める — 下の「メソッドが無いから全段で書ける」 |
+
+メソッドが無いから全段で書ける: Sober の名前空間の装置は package だけ（型は静的メンバーもメソッドも持たない）。Go では型が名前空間の代用を半分だけ務め（`http.Client` 型）、溢れた語彙（`NewClient`・`ClientOption`・`ErrClient…`）が package に積もって複合名の病気が一段下で再発する。Sober は参照の綴りが全荷重を受けるので、綴りが構造の深さを運べる形にした。
+
+#### 命名規約（決定 2026-11-06）
+
+- package 名は 1 語・小文字（a-z・0-9・_ の識別子 — 検査されるのは識別子の規則まで・「1 語」は規約）。`httputil` でなく `http/util`（修飾子 `http.util`）。構造は浅く保つ — 深さの代償は自分の全使用行の綴りに出る（違反のコストが違反者に即時に返る規律だけを残す）
+- モジュールの名前（module のパスの最後の段）は版を跨いで安定させる — 利用者の全使用行の綴りになる
+- 仮引数と欄は名詞（値の名前）。動詞を値の席に置かない（`compress:` でなく `compression:` — 品詞の話で、修飾子の根との衝突回避は副次）
+- 公開 = 大文字（12 節）
+
+- モジュール = ビルドの起点（cwd）のディレクトリの木。import パス（`std/` と dep の外）は起点からの相対
+  （`import "util/strings"` = 起点の下の `util/strings/`）。起点の外へモジュールの宣言を探しに行かない（親のディレクトリを遡らない —
+  決定 2026-11-06。解決がディレクトリの位置という隠れた状態に依らない）。
+  棄てた案: 自分の木の修飾にモジュール名の prefix を付ける（`example.com/app/util` — 毎回名乗る冗長。自分の木の名前は空）
+- sober.mod（決定 2026-11-06 — 0.6.8 の import 便）: 起点に置く任意の 1 枚のモジュールの宣言。字句は Sober のまま（改行 → `;`・`//` のコメント）で、
+  `module` / `dep` / `alias` はこのファイルの中だけの語（キーワードではない）:
+
+  ```
+  module "example.com/app"     // モジュールのパス — 最後の段が名前
+  dep "../kv"                  // 木での名前 = 相手の module の名前（kv）
+  dep kv2 "../kv"              // 木での名前を付け替える
+  alias stdjson "std/json"     // std の根の付け替え（衝突の解消）
+  ```
+
+  `ModFile = "module" string ";" { ( "dep" [ identifier ] string [ string ] | "alias" identifier string ) ";" }`（文字列はエスケープ・補間なし）。
+  - モジュールのパスは任意の段数で、最後の段が名前（小文字の識別子・キーワード不可 — import パスの段と同じ規則）。前の段は出所の名前空間で字句は自由。
+    **名前は版を跨いで安定させる**（相手の木での既定の名前 = 利用者の全使用行の綴り — 変えると利用者の全行が変わる）
+  - 木での名前 = import パスの根の段の名前空間: std の根（`json`・`http` …）・dep の名前・起点の木の根の段（ディレクトリ）が 1 つの名前空間に住む。
+    dep の import パスは木での名前から（`import "kv/store"` → `kv.store.X`）で、出所（URL・ローカルパス・版）は sober.mod にだけ書く — ソースに漏れない。
+    std は省略のまま（`import "std/json"` → `json.X`）
+  - 衝突はどちらも優先せず拒否し、解消は sober.mod の行（dep の名前・alias）だけ。sober.mod の検証: dep・alias・std の根の重複・
+    dep / alias の名前と同名のディレクトリが起点にある（import パスがどちらを指すか割れる）。起点の木のファイルの import: 同じ木での名前に
+    別の出所（自分の `json/` と std/json）が両方 import されている（ファイル局所の alias では解消しない — 木での名前はモジュールの単位）
+  - alias は std の根だけを付け替える（`alias stdjson "std/json"` → `import "std/json"` の修飾子が `stdjson`・`std/json/x` は `stdjson.x`。
+    dep は dep の行で名前を付け替える）。付け替えは起点の木のファイルだけに掛かり、std と dep のファイルは自分の綴りのまま
+  - dep の木の中の import は相手のモジュールの綴りのまま読む（相手のファイルの `import "store"` は相手の木の `store` — 利用者の木の `store` ではない）。
+    dep の木の根の package の package 名は相手の module の名前（dep の名前で付け替えても package 節は書き換えない）
+  - 0.6.8 の範囲: 仕様 + パースと検証 + ローカルパスの dep（`./…`・`../…`・`/…`）まで。それ以外の出所・版の指定は「この版は未対応」の拒否、
+    dep の sober.mod の dep / alias の行（推移的な依存）も同じく未対応の拒否。取得・レジストリ・lock は将来（綴りと解決の規則はこのまま変わらない）
+  - 拒否はどれも load error（Mod）の名指しで、位置は sober.mod の行（dep の sober.mod の誤りはそのファイルの行）か import の行。
+    答えの再生（check / build）の照合には読んだ sober.mod（dep の分も）が入る。題材 = testdata/mod（scripts/modcheck.sh）
+  - 解決器に知恵を足さない（negative requirement）: 綴り → 表引き 1 回。探索の順・優先順位・暗黙の遡りを持たない
+  - 棄てた案: ファイル名 `module.sober` / `MANIFEST`（`.sober` は package のファイルの拡張子と読み違える・中身が Sober の宣言でない）・
+    dep の import パスを相手の module のパスで書く（Go 流 `import "example.com/kv/store"` — 出所がソースの全 import に漏れ、引越しで全行が変わる）・
+    module に名前の欄を別に持つ（末尾の段と二重の正 — 末尾が識別子でないパスは宣言で拒否すれば足りる）・衝突の自動の優先（std 優先・近い方優先 —
+    ADL / Node の解決の反面教師）・親のディレクトリを遡って sober.mod を探す（go.mod の探索 — 起点の位置で解決が変わる隠れた状態）
 - import はファイルごと（追記 2026-10-01 — 決定。Go と同じ）: ファイルに書いた修飾名 `ref.N`（式の選択子・型名・型パターン・
   composite の型名・`@errors` のラベル名）の参照名 ref は、そのファイル自身の import 宣言に要る。同じ package の別ファイルの import は見えない
   （根拠: そのファイルを読むだけで参照名がどこを指すか分かる — 審査基準。ツールと解析がファイル単位で閉じる）。違反は loader が
@@ -1331,18 +1402,40 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
   - 棄てた案: 初期値なしの `const Name map[string]string`（go:embed の `var f embed.FS` に近いが文法の変更が要る — 受け皿の空リテラルで型は書ける）・
     パッケージ相対（go:embed の既定 — std を焼き込む compiler/ の package から std/ を指せない）・`..` を許す（ルートの外を読める — hermetic の穴）
   - 残る仮決め: ビルドの起点。compiler/ の package は compiler/ を根に import し合うが、`@embed` はルート相対で `..` を拒否するので、stages.sh は
-    「compiler/* + std/ の写し」の作業木を組んでそこを cwd にする（selfhost の R35-1）。恒久の形はモジュール宣言（この節の冒頭の「go.mod 相当のモジュール宣言ファイルはまだ持たない」— モジュールのルートを決める）の段で決め直す
+    「compiler/* + std/ の写し」の作業木を組んでそこを cwd にする（selfhost の R35-1）。決着（2026-11-06）: 起点 = cwd・遡らない（この節の冒頭と sober.mod の項）— 作業木の形はそのまま
 - package 名 = ディレクトリ名を強制（1 ディレクトリ 1 package。main のみ例外で
-  どこに置いてもよい）。import パス末尾 = 参照名が定義から保証され、パスだけで参照名が分かる。
-  alias（`import name "path"`）は末尾要素が衝突したときの回避用（用途の lint は analyzer 行き）。
+  どこに置いてもよい）。
   棄てた案: Go の「package 名とディレクトリ名は独立」— 慣習で一致させるならズレを許す自由に
   価値がなく、ズレは読み手のコスト
+- 修飾子 = import パスの全段（決定 2026-11-06 — 0.6.8 の import 便）: 修飾名は import のパスの全段を `.` でつないだ修飾子 + 名前
+  （`std/` は落とす — `std/http/server` → `http.server.Serve`・`std/json` → `json.Parse`・自分の木はルートからの全段 `testdata.box.X`）。
+  綴りは常に 1 通りで、短縮はファイル局所の alias（`import srv "std/http/server"` — 修飾子を丸ごと置き換える）だけ。
+  パスの段はどれも小文字の識別子（a-z・0-9・_ — 数字始まりでない）でキーワードでない（パスがそのまま修飾子になる — ImportPath）。
+  解決は表引き 1 回: 修飾名の頭のうち import の修飾子に一致する最長のものが修飾子、続く段が名前（package のパスの段は小文字・公開の名前は大文字なので、
+  `http.server.Serve`〔std/http と std/http/server の両方を import〕の読みは 1 つに決まる — 探索の順も優先順位も持たない）。
+  修飾子の根の段（`http.server` の `http`）はファイルの名前空間の住人で、局所の束縛に使えない（LocalImport — 使えると `http.server.X` が局所の欄か修飾子かで割れる）。
+  根の段だけの修飾（`http.Serve` — import は std/http/server だけ）は NotImported。
+  帰結: std/http/server の ServeConn / ServeWith の仮引数 `compress:` は `compression:` に改名（同じ package が std/compress/… を import し、
+  本体の `compress.flate.X` と仮引数が割れる。名前は算法に中立な席 — `compression: Gzip{}`・将来の算法も同じ席に入る）。
+  型名の綴り（`http.server.Request`・composite・型パターン・`@errors` のラベル）は parser が修飾子ごと 1 本の名前にし（`type_name <- IDENT ('.' IDENT)*`）、
+  式の選択子の連鎖は loader が最長一致の頭を 1 つの参照に畳む（loader/qualfold.sober — 以降の段は 1 段の修飾参照だけを見る）。
+  std の内側の `std/internal/…` も修飾子にそのまま出る（`internal.record.Seal` — 利用者からは import できないので std の中だけの綴り）。
+  棄てた案: Go の「パスの最後の段 = 修飾子」（package の大きさに上限がある前提 — 深さが情報を持つとき `s3types`・`metav1`・`httputil` のような
+  写経の alias と複合名を生む。sober はメソッドを持たず package が唯一の名前空間なので、参照の綴りが深さを運べる形にする）・
+  裸の名前の import（Java / Rust の `use` — 出所が import のブロックに移り、import が機械の管理物になる）・
+  区切りを `::` にする（`http::server::Serve` — メソッドが無いので `.` の意味は位置で一意に決まり、意味論の必要がない。予約 1 件の撤廃に全行のノイズは釣り合わない）・
+  std も名乗る（`std.json.Parse` — 衝突が構造的に消えるが、最頻の参照に毎回 4 文字の税）・`internal` を修飾子から落とす（規則に例外が 1 本増える）
 - 欄の書きと mut の中身の読み（決定 2026-10-11 — F-am / F-ar の修理・report-492 / 493）: 他の package で宣言された struct（error ラベルの欄も）の欄は、
   外から書けない。書き = 代入の左辺・複合代入・多値代入の左辺・`mut` の実引数（`g(mut v.f)` — 呼び先が書きうる・差し替えも書き戻る）・`delete` の第 1 実引数で、
   道のどこかに他の package の struct の欄の選択があれば拒否（入れ子の `v.f.g = x`・添字や map の格納を挟む `v.f[i] = x` / `v.f[k] = x` — 欄が指す buffer への書きも）。
   型で決まるので、mut の仮引数越し（`func h(v mut utf8.View) { v.b = … }`）・写しの mut 束縛越し（`mut w := v; w.b = …`）も同じ。
   読みは許すが、欄の型が mut の中身（mut の slice / map — 入れ子の struct・`T?` の中も）を持つときは外から読めない（中身の別名が package の外にできると、
-  型の不変条件と std の信頼の口〔17 節 — table.Freeze〕の前提が崩れる）。構築（composite — 部分リテラルも）は今までどおり外から書ける（封の型の外での欄つきリテラルは拒否 — 15 節の共存の規則 ①）。
+  型の不変条件と std の信頼の口〔17 節 — table.Freeze〕の前提が崩れる）。構築（composite — 部分リテラルも）は外から書ける（封の型の外での欄つきリテラルは拒否 — 15 節の共存の規則 ①）が、
+  mut の中身を持つ欄には外のリテラルで値を与えられない — 欄を省いてゼロ値（新しい空の中身）から始める（決定 2026-11-05 — 健全性便 R1b・report-sound-0 2 節）。
+  読み・書き・構築で 1 つの規則: mut の中身を持つ欄は外の package から名前を付けられない。2026-11-05 までは構築だけが開いていて、`table.Table[int]{chunks: 自分の別名, …}`
+  を table.Freeze に渡すと凍った中身が別名から書き換わり、`strings.Arena{seed: big}` で strings.Clone の string が big への書きで変わった（Table の形は Lean の uniqFreeze も受理していた）。
+  棄てた案（構築 — 同日）: 外からの欄つきの構築の全面禁止（imm の欄だけの構築 413 か所が壊れる・健全性に無関係）・構築で渡した束縛の消費（移動の意味論を言語に持ち込む）・
+  新しい値（リテラル・呼び出しの結果）だけを許す（条件付きの制約で「新しい」の解析が要る）・信頼の口をやめる（2026-10-11 と同じ理由で棄却）。
   struct ごと `mut` で渡す `g(mut v)` は許す（書くのは受け手の関数で、その中の欄の書きもこの規則に掛かる）。
   実装: 表層型検査器が型付けのついでに表へ積み（desugar/fieldwrite.sober）、check は analyzer の指摘・build は lower の Typed の表の数で拒否（行は analyzer が
   引き直す — 診断は一致）。コアと Lean の規則は不変（受理の集合を狭めるだけ）。負例 testdata/analyzer_neg/field_*（check と build の診断がバイト一致）・
@@ -1643,7 +1736,7 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
   mut は `string(freeze(b))` と名指しし、検査の後はヘッダの同一性だけでコピーしない — 33 節）。std/strings は問い合わせ系
   （HasPrefix / HasSuffix / Contains / Index / Count / IndexByte）に限り、位置は
   bytes(s) 上のバイトオフセットで返す（Go の strings.Index と同じ）。
-  戻しの形は決定 2026-09-27（27 節）: UTF-8 検査あり + `(string, error?)`、ラベルは std の `InvalidUtf8`
+  戻しの形は決定 2026-09-27（27 節）: UTF-8 検査あり + `(string, error?)`、ラベルは std の `BadUtf8`
 - 棄てた案: (a) 二つの string 型（byte 版 / Rune 版）— 全 API が二重化し世界が割れる
   （Python 2 の教訓） (b) string = []Rune — 結合文字・ZWJ で「1 文字 = 1 コードポイント」が
   また嘘になる + 4 倍幅か暗黙変換 (c) 現状維持（string = imm byte slice のまま表面にも出す）—
@@ -1672,7 +1765,7 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
   - **env は named fn type ごとの閉じた union**（工程 4 B1 — 2026-10-17・report-751 2 節）: F の閉包の核の型は `prod (fn (prod U_F P) R) U_F`。
     U_F = プログラム中で F の値の位置に作った閉包の env の形（捕捉の型の鎖・捕捉なしは int — 形ごとに重複なし）の閉じた union
     （1 種類ならその形）。**数えるのは main から届く関数の中の閉包だけ**（2026-10-20 — static 便・ユーザー裁定・report-956 / 957: import しただけで呼ばない
-    std の閉包〔http.Static の stream〕が、使わないプログラムの全部の Response を太らせていた — baseline の命令 +2%。届く = main と const の初期化式から
+    std の閉包〔http.server.Static の stream〕が、使わないプログラムの全部の Response を太らせていた — baseline の命令 +2%。届く = main と const の初期化式から
     名前の参照の辺〔呼び出しに限らず関数値として渡す形も・ラムダの中の参照は囲む関数から〕で届く — 保守的。届かない関数の閉包は作成点が unreach・
     持ち上げた Def は自分の形を直に受け、本体の検査は今どおり。lower は main から届く関数だけを下ろすので、届く扱いの誤りは build の Mismatch で表に出る。
     main の無い検査〔package の検査〕は全部届く扱い。網 = examples/closure_unreached・http の例の irtext の Response の大きさ）。作成点は自分の形の variant へ包み、持ち上げた Def は case で取り出す（他の腕は unreach）。これで捕捉つきの閉包が
@@ -1682,6 +1775,12 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
     その仮引数だけが展開の理由の関数は展開せず Def）。build は工程 5（lower の値形）まで従来の展開のまま（判定は loader の同じ表を読む）。
     棄てた案（一行）: A = コアに存在型（隠した env の region に有界量化が要り案 C の毒が戻る — Lean の大波）・B2 = 純粋な脱関数化（apply_F は型引数を
     知らずジェネリックな文脈のラムダが書けない）・env の符号化（捕捉の型が固定集合に縮む）・env を宣言型に出す（型引数が http の API へ伝播）
+  - **名前付き関数型への変換 `W(e)`（決定 2026-11-05 ユーザー裁定 — F 掃除便 2 号 R7）**: e を W の値の位置に置いたもの（期待型 W の注釈）。
+    e に書けるのは値の位置（spec F-11）と同じ — ラムダ・名前付きの関数（loader の η）・W の値。新しい受理の規則は足さず、値の位置の規則を式の位置へ開くだけ
+    （脱糖 = 値の位置の閉包の値の道 closureValue・コアに新しい形は出ない — Lean 不変）。値化できない W（型引数つき）と別の named fn type の値は名指しで拒否
+    （diag.TypeMismatch kind 8 / 9 — 表層型の表が記録し check / build が同じ文面）。同じ便で、値の呼び出しの実引数に置いた名前付きの関数も η（自身の署名で —
+    呼び先の仮引数の型は構文から見えない）・値の呼び出しの実引数のラムダを名前付き関数型の仮引数の値の位置として脱糖（F-p1）。
+    棄てた案: 構造的な関数型への変換（`func(int) int(f)` — 文法の衝突・値の位置と別の規則が要る）・変換で別の named fn type の値を受ける（nominal を崩す）
   - **値化可能 = 最大不動点・値の位置に slice / map の要素（決定 2026-11-04 — 再帰型の波 R4a-2・ナビ裁定）**: 値化可能な named fn type の仮引数・結果に
     **値化可能な named fn type を値の位置（`F`・`F?`・`[]F`・`[]F?`・`map[K]F`・`map[K]F?` — K は第一階）で置いてよい**（閉包の値 — `type State func(n int) State`）。
     資格は最大不動点（調べている途中の宣言は値化可能と仮定 — 自分を名指す宣言が資格を得る）。匿名の関数型（借りの深さ 1 を除く）・高階・ジェネリックは従来どおり資格外。
@@ -1709,12 +1808,12 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
     ラムダに捕捉するだけなら借りの位置（net.Serve の h のように子 task へ渡すものは借りの位置でない — 外の Conn を捕捉したラムダは置けない）。
     値の位置のラムダの借りの仮引数は loader の表（ラムダごとのビット）で運ぶ。網 = examples/borrow_*（受理 3・拒否 6）
     棄てた案（一行）: 借りの印を仮引数に書く `borrow`（匿名 / named の区別が既に運ぶ）・**(δ) emit を同一性の書き口にする**
-    （`stream: func(w http.Sink) error?` + `http.Send(w, b)?` — 今の言語で書けるが w2 の CPS の形を変える。(α) が詰まったときの退路として記録）
+    （`stream: func(w http.server.Sink) error?` + `http.server.Send(w, b)?` — 今の言語で書けるが w2 の CPS の形を変える。(α) が詰まったときの退路として記録）
   - ~~借りの閉包の mut 捕捉（(α-L1) — 決定 2026-10-22 ユーザー裁定・report-1034）~~ → **撤去（2026-11-04 ユーザー裁定 — report-pp-0 R-1 (a) + U-3 (iii)）**:
     借りのラムダも mut の束縛を捕捉しない（値の位置のラムダと同じ FnCap 1）。状態は呼び手が持って関数型の mut 仮引数の席で渡す（下の「関数型の mut 仮引数」）。
     理由 = 捕捉した mut と実引数の mut が 1 つの呼び出しで anchor 1 slot を取り合い（report-pp-0 P8）、捕捉越しの別名が呼び出し点の綴りで見えない（MutAlias が届かず
     hdr の非別名の前提が破れうる）。撤去で条件付きの縛り 2 本（旧 FnCap 6「1 つの呼び出しが捕捉する mut の束縛は 1 つ」・旧 FnCap 7「転送する借りとの同居」）も消えた。
-    第一顧客だった std/http の serveBuf は送りの状態を `http.Out` に置き、Stream の emit が mut で渡し回す形になった（28 節 — `stream: (out, emit) => …`・`emit(mut out, b)`）。
+    第一顧客だった std/http/server の serveBuf は送りの状態を `http.server.Out` に置き、Stream の emit が mut で渡し回す形になった（28 節 — `stream: (out, emit) => …`・`emit(mut out, b)`）。
     旧の網（examples/borrow_mut_*）は案 P の形へ書き直した（count・deep・store・state・param・iter_region_rcell — 出力は旧と同じ）・L1 だけの題材（shared・union・anon_field・
     neg_two・neg_two_args・neg_forward）は撤去。lower の捕捉セル（TCell・region 置きのセル rcellOk）と analyzer の捕捉の freeze の印（MFzCapture / MFzCapWrite）も撤去
     - 借りの閉包の env は**関数値（閉包の値）を持つ値**も捕捉できる（2026-10-22 — 案 A の η が匿名欄を持つ値を捕捉するため。寿命は呼び出しの内側。
@@ -1811,7 +1910,7 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
       呼ぶ / 渡す / nil と比べる以外の使用（束縛・格納・return）は拒否（5）・実引数は nil / ラムダ / 名前 / 囲む関数の省略可の仮引数だけ（3）。
       範囲は func 宣言の仮引数だけで、名前付き関数型の中（値の呼び出しの借り）・struct の欄・結果・ラムダの仮引数は名指しで拒否（2）・裸の `func(…) R?` は括弧の形へ誘導（1）。
       例 examples/optfn・optfn_errors・負例 examples/optfn_neg_*
-    - 第一顧客 = http.ServeWith の `put:`（S-2 — report-1130: 受けた切片 1 つ分の応答を積み、tls.Recv が受けの反復の後に送る。暫定の ServeFlushed〔0.6.3〕を畳んだ — report-1158）
+    - 第一顧客 = http.server.ServeWith の `put:`（S-2 — report-1130: 受けた切片 1 つ分の応答を積み、tls.Recv が受けの反復の後に送る。暫定の ServeFlushed〔0.6.3〕を畳んだ — report-1158）
     - 棄てた案（一行ずつ — report-1156 4 節）: `flush:`（ServeWith の本体は recv の k の中に展開されるので region を切れない — S-2 の 1〜3 版の実測）・
       仮引数の側の省略の印 / デフォルト式（syntax.md 決定 7 と二重の仕組み）・省略時の既定を no-op（渡し忘れで応答が黙って消える — 無いときの振る舞いは `else` に書く）・
       **Z-B = 実行時の option の借り**（範囲は広いが顧客がいない・借りの閉包の値の型付けに option の腕が入り Lean に触れる — 名前付き関数型の借りの option の需要が出たら Z から広げる）・
@@ -2066,7 +2165,7 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
     panic 側を緩めず checked 形の選択で受ける
   - panic の最終受け皿（プロセス境界・組み込み）は別未決のまま動かさない
 - 連動する裁定 — `string(b)`（未決から決定）: 案 (b) = UTF-8 検査あり + `(string, error?)`、ラベルは std の
-  `InvalidUtf8`（壊れた UTF-8 は入力次第で起きる = error 側）。この機構の第一顧客。std 内部の検査済み構築には
+  `BadUtf8`（壊れた UTF-8 は入力次第で起きる = error 側）。この機構の第一顧客。std 内部の検査済み構築には
   内部プリミティブを許す（検査の二重払い回避）。`bytes(s)[a:b]` が rune 境界を割る件: bytes はただのバイト列で
   rune 非関知とし、検査は string 構築時に一元化する。棄てた案: (a) 検査なし（不正 UTF-8 が string に入り 24 節の
   不透明化の意味が薄れる）、(c) 戻しを持たず std がオフセット対で受ける（std の外で string を作る手段が無くなる）。
@@ -2074,9 +2173,9 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
   for の std/iter・補間の std/strings と同じ形）に置き換える。検査は std/utf8 の Sober（Go の unicode/utf8.Valid と同じ受理集合 —
   過長符号化・サロゲート・U+10FFFF 超・途中切れを弾く。scripts/utf8_oracle.ts の 34 ケースで Go と一致）、検査後の戻しは
   std 専用プリミティブ `bytesToString`（表現が同じなので恒等 — 形の変換。std/ 配下の package からだけ解決）。
-  ラベルは `strings.InvalidUtf8{pos}`（pos = 最初の不正なシーケンスの先頭バイト。名前で受けるには `import "std/strings"`）。
+  ラベルは `strings.BadUtf8{pos}`（pos = 最初の不正なシーケンスの先頭バイト。名前で受けるには `import "std/strings"`）。
   検査の本体 `Parse` は std/internal/utf8（合成の暗黙 import の行き先 — 20 節）、妥当性の問い合わせ `Valid` / `IndexInvalid`（位置）は std/strings に公開。
-  旧: ラベル・Valid・IndexInvalid・Parse は std/utf8（「補間を使うだけのプログラムの error に InvalidUtf8 が入らない」置き場 — 2026-10-20 の API 総再審 便 3 で分割。
+  旧: ラベル・Valid・IndexInvalid・Parse は std/utf8（「補間を使うだけのプログラムの error に BadUtf8 が入らない」置き場 — 2026-10-20 の API 総再審 便 3 で分割。
   std/utf8 には検査済みの見方 View / Check / Bytes / Str が残る）
 - 終了コード（決定 2026-09-28、selfhost の R31）: `func main() int` を許す — 戻り値が終了コード。0〜255 の外は panic 101（到達 = バグ類 —
   カーネルの下位 8 bit への黙った切り詰めを見せない）。`func main()` は従来どおり 0。101 / 102 は予約しない（書き手が返すのは自由 — Rust の panic 101 と
@@ -2124,12 +2223,12 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
   （終了コードは 27 節）。共通の形 = std 専用 builtin が生のバイト列（1 バイト 1 語）か errno だけを返し、分割・UTF-8 検査・ソート・種類の解釈は std の Sober に置く
   （見える・検査が通る・Zig / Sober の 2 つのランタイムで二重に書く量が最小）。check 側は既存の代役（外界は型だけ）で、Lean・IR の op は無変更
   - argv: `std/os.Args() ([]string, error?)`。0 番 = プログラム名（Go / C と同じ並び）。トップレベルは const 式だけ（14 節）なのでパッケージ変数でなく関数。
-    呼ぶたびに呼び手の region へ写す（ReadFile と同じ）。string は UTF-8 検査済みなので、不正な UTF-8 の引数が 1 つでもあれば呼び出し全体が `strings.InvalidUtf8`
+    呼ぶたびに呼び手の region へ写す（ReadFile と同じ）。string は UTF-8 検査済みなので、不正な UTF-8 の引数が 1 つでもあれば呼び出し全体が `strings.BadUtf8`
     （27 節の規準 — 入力次第で起きる）。環境変数はスコープ外のまま（`SOBER_REGION_MB` はランタイムが読むだけ）
   - ディレクトリ列挙: `std/io.ReadDir(path string) ([]DirEntry, error?)`、`DirEntry{Name string, Kind EntryKind}`、
     `EntryKind` = `Regular` / `Dir` / `Symlink` / `Irregular`（d_type をそのまま写す。通常のファイルの variant は 2026-10-13 に `File` → `Regular`〔資源の型 `io.File` と名前が衝突 — Irregular と対〕。Irregular = fifo・socket・デバイス・DT_UNKNOWN — stat の追い打ちはしない。
     Irregular は Go の fs.ModeIrregular に合わせた — `Other` は io のラベル名と衝突する）。並びは名前のバイト列の辞書順を API の契約にする
-    （ファイルシステムの列挙順に依らせない — loader の決定性、29 節）。`.` / `..` は含めない（Go と同じ）。不正な UTF-8 の名前があれば全体が `strings.InvalidUtf8`
+    （ファイルシステムの列挙順に依らせない — loader の決定性、29 節）。`.` / `..` は含めない（Go と同じ）。不正な UTF-8 の名前があれば全体が `strings.BadUtf8`
     （1 件だけ飛ばすと黙って欠ける）。種類を返す理由: loader の「通常ファイルの `.sober`」は名前だけでは書けない（symlink・`x.sober/` ディレクトリを拾う）
   - 標準出力 / 標準エラー: `std/io.WriteStdout(b []byte) error?` / `WriteStderr(b []byte) error?`（旧: `[]int`）（Go の `os.Stdout.Write(b)` に当たる）。開いている fd 1 / 2 へ直接書く
     （open しない — `WriteFile("/dev/stdout")` の O_TRUNC で前の出力が消える問題の根治。WriteFile 側の path の特別扱いはしない）。書く前に println の行バッファを
@@ -2142,7 +2241,7 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
     WriteFile の署名は変えない（作成は 0644 のまま）。std 専用 builtin `sysWriteMode(path, mode) int`（errno）— check 側は既存の代役と同形（int の 0）・使うプログラムでだけ rt.write_mode を足す
   - ディレクトリ・付け替え・環境変数（追記 2026-10-03 — 3'' 第 2 段 C0 のキャッシュの置き場の前提）: `std/os.Mkdir(path string) error?`（mkdir(2)・0o755・親は作らない・
     既にあれば `io.Other{errno: 17}` — ラベルは足さない）・`std/os.Rename(from string, to string) error?`（rename(2) — 一時ファイル + Rename で書きかけを見せない公開の形）・
-    `std/os.Getenv(name string) (string?, error?)`（無ければ nil・空の値は ""・不正な UTF-8 は strings.InvalidUtf8 — Args と同じ）。std 専用 builtin
+    `std/os.Getenv(name string) (string?, error?)`（無ければ nil・空の値は ""・不正な UTF-8 は strings.BadUtf8 — Args と同じ）。std 専用 builtin
     `sysMkdir(path) int`・`sysRename(from, to) int`（errno）・`sysEnviron() []byte`（「NAME=値 + 0」の連結 — sysArgs と同形・解析は Sober の本体）。使うプログラムでだけ rt を足す
   - 更新時刻・眠り（追記 2026-10-03 — sober watch 第一便の mtime ポーリング）: `std/os.ModTime(path string) (int, error?)`（stat(2) の st_mtim —
     エポックからの ns。値は比べるためだけ・失敗は io の errno のラベル）・`std/os.Sleep(ms int)`（nanosleep(2) — std/task のプログラムは rt の期限つき待ち・28 節のデッドライン）。std 専用 builtin `sysStat(path) int`（更新時刻 / 負の errno）・
@@ -2211,7 +2310,7 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
     並置〔fstat 3 回の書き方を誘う〕）— path の属性は std/os（ModTime）・開いた資源の属性は std/io。生の syscall は std/io の囲いの sysCall（net と同じ信頼の島 — 28 節「生の syscall の囲い」。std/io は
     compiler の import の閉包だが、鎖の最後の段の boot が sysCall を知っているので鎖の行は要らない）。開いた fd は task の登録簿に積む（task の死でも出口で閉じる — Open と同じ）。
     名前は Go 1.24 の `os.Root` / `os.OpenRoot` の前例（`io.Dir` はディレクトリの項目の種類 EntryKind の variant `Dir` と衝突 — variant の改名は鎖の二相と公開 API の破壊）。
-    棄てた案: 文字列の正規化 + `..` の拒否（Go の http.Dir の形 — 正規化の誤りと symlink の脱出が残る）・`os.Dir`（File の封が std/io の中でしか組めない）・
+    棄てた案: 文字列の正規化 + `..` の拒否（Go の http.server.Dir の形 — 正規化の誤りと symlink の脱出が残る）・`os.Dir`（File の封が std/io の中でしか組めない）・
     専用の組み込み open_under（compiler の伸びが口の数に比例）・openat への倒れ先・プロセスの寿命の値の型の Root（Stream の仲間 — 一度だけ開けるが同一性の型の線を崩す）
   - 標準ストリーム（決定 2026-10-13 — 段 2 の前の fd の封の穴の裁定・report-578 4 節 / report-590。型の名前は同日に `io.File` → `io.Stream` — 名前を Open の側へ空けた・Qa4）:
     `io.Stdin` / `io.Stdout` / `io.Stderr`（封の値の型 `io.Stream` の const —
@@ -2294,7 +2393,7 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
       待ち手を -110 で起こすだけで multishot は張ったまま — 4b）その口が Expired を返す（2026-10-17 に Timeout から分離）。切れた位置は io の入力（11 節の表の「デッドライン」の行）。ファイルの io は今のまま（完了まで — ディスクの待ちは有界）。約束の文
       「待ちの上限であって実行時間の上限ではない」は変えない — net でこそ文字どおりになる。棄てた案: 今の意味のまま（アイドルの接続を畳めない）・Recv の `idle:` 引数（期限の席が 2 つ）
     - 受信（N7・N10・N16）: `net.Recv(c Conn, k func([]byte)) error?` は Chunks と別の生成元（Chunks は File だけ — 位置の巻き戻し・ChunksAt が Conn に無い）。FIN = 列の終わり。
-      for を抜けても、届いて配っていない切片は **Conn の受信の列に残る**（次の Recv が続きから配る — ファイルの巻き戻しの net 版）。切片をまたぐ持ち越しは上の層（std/http）が写す。
+      for を抜けても、届いて配っていない切片は **Conn の受信の列に残る**（次の Recv が続きから配る — ファイルの巻き戻しの net 版）。切片をまたぐ持ち越しは上の層（std/http/server）が写す。
       Conn の rt 側の状態（受信の列・待ち・期限）は fd で引く rt の表に置く（呼び手の region に枠を置かない）。受信の pool は 4c 節の「net の受信の pool」
     - 送信（N8' — G'）: `net.Send(c, b)` は task から見て同期（カーネルがバイトを受け取るまで task が待ち、ワーカーは他の task を回す）・写しはカーネルへの 1 回。応答は呼び手が
       反復（= リクエスト）の region に組む。送信は MSG_NOSIGNAL（相手が閉じた後の書きでプロセスが落ちない）。棄てた案: 書き枠を貸す `net.Send(c, k func(mut Writer))`
@@ -2314,6 +2413,14 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
         accept = listener の multishot ACCEPT（受けた fd は fd で引く listener の記録の列へ — 鎖は受けた fd 自身の記録の空き語）・閉じ = 張った RECV / ACCEPT を
         ASYNC_CANCEL で止めてから（multishot は close では止まらない — 止まる前に閉じると後の完了が同じ番号の別の接続の記録に落ちる）、受けの列のスロットを返し、
         listener なら列に残った受けた fd を閉じてから close
+      - 送りと次の受けの畳み（2026-11-07 — report-perf-2 の案 F・ユーザー裁定）: std/http の ServeConn の平文の keep-alive の輪の末尾（閉じない応答の送りの後は
+        受けしかしない点）だけ、送りの完了で task を走らせず、同じ接続の次の受けの事象（データ・FIN・誤り・期限・孤児）まで rt の 1 回の待ちで眠る（std 専用の印 —
+        `rt.netop 9` を立てた次の送り 1 回。利用者の語彙は増やさない）。N8' は不変 — task は送りの完了まで進まず、送りの誤り・短い送りは今の送りと同じ点で返る。
+        畳んだ SEND は MSG_DONTWAIT（詰まれば -EAGAIN の完了 → 今の送りの道へ）なので必ず提出の中で完了し、眠りの enter の min_complete に畳んだ数を足しても
+        他の接続の起こしを遅らせない（数え違いの保険は enter の timeout 100 ms）。畳むのは受けが張ってあり列・FIN・誤りが無いときだけ。1 要求の enter 1.7 → ≈1.0・
+        task の走り 2 → 1（低〜中レートの keep-alive）。開発の口 `SOBER_NET_FUSE=0` は畳まない（httpcheck の 1 構成）。棄てた案: 送りの非同期化（N8' の変更 —
+        誤りの報告点が後ろへずれる）・成功の CQE を消す（CQE_SKIP_SUCCESS — 送りの完了の時点が見えずバッファの寿命の証拠が無い）・
+        min_complete だけ足して SEND は今の形（詰まった送りが CQE を出さず、他の接続の起こしが次の事象まで遅れる）
       - close を ring に積むのは task の出口（rt.fd_drain — Serve の接続）だけ（IORING_OP_CLOSE — 出口の直後のスケジューラの提出に乗る）。std の生成元の後始末
         （Listen / Dial / Accept の for）は同期の close。棄てた案: close を全部 ring へ（積んだ SQE は次の enter まで出ないので、task が走り続けると相手の FIN や
         listener の閉じが遅れる — 閉じた直後の Dial が backlog に繋がりうる）
@@ -2412,6 +2519,60 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
       poll(2) で塞ぐ。期限つきの待ち手は線形の走査で最小の期限を epoll_wait の timeout に載せる（数千接続で要れば最小ヒープ）。net を使わないプログラムは rt を組まない（出力不変）。
       受信は ring を通さない（read_fd の n の印 — 5.15 の io_uring の READ は非ブロックの socket でも中で poll して待ち、期限で切れない）。
       生成元の後始末（fd の close）は defer で書く — 本体の break / return / `?` は生成元の展開ごと抜けるので、k の後の文は走らない（4a-1 の Listen / Dial / Accept はここで漏れていた）
+    - **名前の解決（std/net — ④ R15・2026-11-05 PIN の範囲）**: `net.Dial` は "ホスト名:port" も受け、/etc/hosts → /etc/resolv.conf の nameserver（IPv4・最大 3 本を順に・
+      1 回の問い合わせは timeout の期限つき〔task.Run の deadline〕・attempts 巡）で A を引いて、引けた番地へ順に繋ぐ（最初に繋がった 1 つ）。スタブリゾルバは自前（libc の getaddrinfo を使わない —
+      挙動が環境の libc に依らない）: search / ndots の候補の順・TC は TCP で問い直し・answer 節の CNAME の鎖を 8 段まで追う・txid は getrandom（無いカーネルでは単調時計 — crypto.Rand の panic を
+      Dial の効果に持ち込まない）・txid と問いの合わない応答は捨てて期限まで待つ・非 ASCII の名前は `net.NonASCIIHost`（IDN は URL の層で punycode に）・引けなければ `net.NoHost`
+      （どの nameserver も答えなければ io.Timeout）。AAAA は読めるが接続は IPv4 だけ（IPv6 の接続は後便）。DNSSEC・DoH / DoT・キャッシュ（TTL の管理が要る）・EDNS0 は持たない
+      （EDNS0 が無くても TC の TCP 倒しで正しさは保たれる — 遅さの値札だけ）
+    - **TLS のクライアントの側**（④ HTTP クライアントの前提 — 2026-11-05 ユーザー裁定 1〜3・report-std-13 / 14）: std/internal/hs のクライアントの握手（公開の口は std/http/client だけ — `tls.Dial` は出さない）。
+      既定は **TLS 1.3 だけ**（X25519・AES-128-GCM / ChaCha20-Poly1305・CertificateVerify は ECDSA P-256 / P-384 と RSA-PSS rsae SHA-256/384/512・HRR は cookie だけ・
+      サーバの証明書の鎖は std/internal/x509 の Verify — 時刻と信頼の起点は値で受け、失効は見ない）。**TLS 1.2 は `dangerouslyAllowTls12` の明示でだけ申し出る**
+      （緩める側の綴り — 2026-11-05 の二段構えの裁定の ① 綴り。② analyzer の常時 warning は effect の波の席に送り — 機構ができたら警告の網を掛ける）。1.2 の範囲 = ECDHE（X25519）×
+      ECDSA / RSA × AES-128-GCM / ChaCha20-Poly1305・extended master secret（RFC 7627）必須・renegotiation_info（RFC 5746）必須で再交渉は断る（HelloRequest には no_renegotiation の警告）・
+      CertificateRequest には空の Certificate。1.3 を申し出たのに 1.2 を選んだサーバの降格の印（RFC 8446 4.1.3）は中止。
+      棄てた案: 1.2 を既定で申し出る（降格の面が既定で開く — 1.3 に非対応のサーバは少数）・1.2 の CBC / RSA 鍵交換の suite（前方秘匿なし・Lucky13 の類）
+    - **HTTP クライアント（std/http/client — ④ R16・2026-11-05 ユーザー裁定 4〜8 と PIN のスケッチ。表面は 2026-11-07 のユーザー裁定で組み替え — report-cl-0）**:
+      **型は方針のデータ `http.client.Policy` 1 個で、状態はゼロ**（Client・New・Request の struct・cookie jar は無い）。Policy は imm のただの struct で、ゼロ値 = 既定・
+      欄はどれも安全な側（timeout = 要求 1 本の全体の期限 30 秒・redirects = 10 回〔0 = 追わない〕・maxBody = 8 MiB〔最大 1 GiB — 無制限は書けない〕・userAgent = "sober"・
+      extraRoots・dangerouslyAllowTls12・proxy・proxyAuth — 「ゼロ ≠ 既定」の欄は `T?` で nil = 既定）。動詞は **`http.client.Request(url, method:, headers:, body:, cookies:, policy:)`**
+      （位置引数 = 必須の url だけ・残りは省略可の名前付き — 方針は `policy:` の席）で、要求 1 本ごとに接続を張って閉じる（Connection: close — 署名どおり「張って・送って・受けて・閉じる」の 1 往復）。
+      method は動詞に焼かない（Get / Post の組は棄却 — QUERY 等メソッドは増える）。Response はただの struct（応答の頭の名前は小文字）。誤りはラベルの union（Dns{cause} / Tls{cause} / Timeout / TooManyRedirects / InsecureRedirect / BodyTooLarge / Closed / BadUrl / BadResponse —
+      呼び手の scope の期限は他の io の口と同じ io.Expired）。redirect: 301 / 302 / 303 の POST は GET に変えて本文を落とす・307 / 308 は保つ・https → http は追わない（InsecureRedirect）・
+      origin が変われば Authorization / Cookie / Proxy-Authorization を落とす。TLS の検証を切る欄は無い（常に検証）。信頼の起点 = 焼き込みの WebPKI（Mozilla NSS）+ Policy の `extraRoots`
+      （私的 PKI — 足す・置き換えない。値は `tls.ParseRoots(pem)?` の型つきの `tls.Roots` — parse don't validate: 読めない PEM は作る点の誤り tls.BadRoots で、要求の側に検証の失敗の道が無い。
+      信頼の起点は TLS の概念なので tls に住む — サーバ側の mTLS でも同じ型を使える）。**焼き込みの起点で止まる鎖の leaf にだけ CA/B Forum の Baseline Requirements の leaf 規則を掛ける**（v3・CA でない・EKU に serverAuth があり
+      anyExtendedKeyUsage が無い・SAN が 1 つ以上・有効期間 398 日以下 — 裁定 5。私的 PKI の起点には掛けない）。URL の読みは client の中に閉じる（http / https の絶対 URL・
+      userinfo と IPv6 の番地と非 ASCII〔IDN〕は BadUrl — 公開の url.Parse は実需から）。呼び手の頭は Host / Content-Length / Transfer-Encoding / Connection を書けない（panic(http.BadHeader) — 要求の分割の封）。
+      **本文を切片で受ける `http.client.Stream(url, k, …)`（生成元・名前付き引数は Request と同じ — 2026-11-05 ナビ裁定 (a)）**: 要素は `http.client.Part{head, chunk}`（頭は要素ごとに同じ値・最初の要素は頭と空の切片で、本文が空でも 1 度は渡る）。
+      2xx 以外も同じ形で渡す（API の誤りの JSON が読める）・redirect は Request と同じ規則で追い追った応答は渡さない・maxBody は掛ける（ゼロ値で安全・大きい本文は Policy の maxBody で明示的に上げる）。
+      受けた切片の本文の分をその場で渡し、応答を丸ごと積まない（積むのは頭と chunked の長さの行の途中まで）。生成元の継続は 1 引数なので (頭, 切片) は struct の要素にした。
+      棄てた案: 頭を返す 2 段（接続を値の外に持ち越す — 束の中でしか書けない）・2xx 以外を誤りのラベルに（4xx の本文が読めない）
+      **cookie はデータ（2026-11-07 ユーザー裁定 — jar を退役）**: 応答の Set-Cookie から `http.client.CookieValue(r, name) string?` で値を取り出し、次の要求の
+      `cookies: []http.client.Cookie{…}`（{name, value} — 名前が token でない・値が cookie-octet でなければ panic(http.BadHeader)）に載せる。origin が変わる redirect では cookies: を落とす
+      （Cookie の頭と同じ）。セッションの運搬は「貰った値を自分が持ち、載せるものは書いてある」— サーバ側 std/session（トークンを保持せず検証する値）と対称。
+      クローラのように任意の origin を渡る使い手は部品から自分の表で組む（アプリの構造 — std は決めない）。
+      棄てた案: cookie jar（2026-11-05 裁定 6 — `New(cookies: true)` で Client の値に RFC 6265 の保存と送り・Domain の検査に焼き込みの Public Suffix List）— jar の本質は
+      「ブラウザのふりをする機械」で、どの要求に何が載るかを RFC 6265 のマッチングが中で決め（やっていることが書いていない）・見えずに溜まる状態になり・マッチングが要るのは
+      任意の origin を渡る汎用エージェントだけ（アプリのクライアントは相手を知っている）。PSL の表（std/internal/psl）と週 1 の cron は使い手が消えたので一緒に退役（戻すときは git から生成器ごと）
+      **proxy（2026-11-05 ユーザー裁定 7 — 初版から）**: Policy の `proxy: http.client.ParseProxy("http://host:port" | "https://host:port")?`・`proxyAuth: "Basic …"` の値だけ（環境変数は読まない — 設定は呼び手の値。
+      proxy は roots と同じく型つきの値 `http.client.Proxy`〔2026-11-07 ユーザー指摘〕— 形の誤りは parse の点の error `http.client.BadProxy` で、Policy に入った後は不正が表現できない。
+      client の panic は契約違反の http.BadHeader〔頭・cookies:・proxyAuth の CR / LF〕だけ。棄てた案: 要求の入口の panic(BadProxy)〔設定のデータの誤りを契約違反に数える — 型で言えることを実行時に言う〕）。
+      http の行き先は proxy へ絶対 URI の要求（Proxy-Authorization つき）・https の行き先は CONNECT のトンネルの上で行き先と TLS（proxy が https なら TLS の中の TLS — 内の record を外の record の平文で運ぶ）。
+      proxyAuth は値そのまま（"Basic …" の組み立ては呼び手 — 秘密の扱いの口を client に作らない）。CONNECT が 2xx 以外なら `http.client.ProxyRefused{status}`（407 = 認証の要求）。束（Open）も proxy を通る。
+      送受は 1 つの経路の層（接続 → 外の TLS → CONNECT → 内の TLS）に寄せ、Request / Stream / Send がその上に載る — 層の状態は値の外の置き場（束と同じ nonce の論証）。
+      **Open の期限は経路の層を重ねるまで**（proxy への TLS・CONNECT・行き先への TLS の握手）— TCP の接続そのものの不達は OS の connect の期限に任せる（Dial の k の中で期限を張り直す net の口は棚）
+      **keep-alive は範囲つきの束 `http.client.Open`（2026-11-05 ユーザー裁定 (b)）**: 束の接続は同一性の型 `http.client.Session`（Open の k の仮引数としてだけ生まれ、k が返ったら閉じる）。
+      `http.client.Open(at, k, policy:)` の policy が束の全往復に掛かり、`http.client.Send(s, url, method:, headers:, body:, cookies:)` は同じ接続の上の 1 往復で、redirect は追わない（束は 1 本の接続の往復 — 「同じ origin なら追う」の条件つきの規則を作らない。
+      redirect を追うのは接続を毎回張る Request / Stream の役 — 束の Send は接続を保つ役、と口ごとに役を 1 つにする）。死んだ接続（相手の閉じ・閉じ区切り・
+      Connection: close・途中の失敗）の後の Send は Closed で、張り直しは呼び手が新しい Open で（黙った再送はしない — 冪等でない要求の二重送りの面を作らない）。
+      同一性の族の名前の集合（ゼロ値の検査・捕捉の検査・filecheck・lower の閉包・診断の文面）は compiler/diag の 1 つの表から読む（以前は 5 か所に焼き込みで、io.Root と tls.Conn が一部の照合から漏れていた）。
+      接続を値に持てないのは二つの理由: ① net.Conn / tls.Conn は同一性の型で欄に入らない（fd を封の struct に持つと、値の写しが閉じた後の fd を握り、番号の再利用で別の socket へ書ける）
+      ② **TLS の接続の状態（送りの鍵と seq）を値に置くと、値の写しが鍵と seq を複製し、二つの写しが同じ seq で別の平文を封じる = AES-GCM / ChaCha20-Poly1305 の nonce の再利用**
+      （鍵ストリームの再利用と GHASH の鍵の漏れ — 機密性と完全性が両方落ちる）。だから束の状態は tls.Conn と同じく値の外（lease の int の列）に置き、同一性の型の規則で写しを構文から消す。
+      棄てた案: 束を設定の値に持つ（上の ① ② で不健全）・設定の値そのものを同一性の型に（呼び手が持つ値の形と double への差し替えが崩れる）・1 要求 1 接続だけ（握手の値札が要求ごと）・
+      `mut c := http.client.New(…)` + `Do(mut c, Request{…})`（2026-11-05 の初版 — Go の http.Client の輸入で、設定〔ただのデータなのに New の中に隠れゼロ値で使えない〕・jar・
+      接続プール〔実は無かった〕を 1 個の封の値に束ねていた。mut の実体は jar だけ — 2026-11-07 に Policy + Request の動詞へ）
     - tls（TLS 便 R4 — 2026-10-18・ユーザー裁定〔表面 4 点・S2・Q1 (b)〕・report-811 / 831 / 832。名前と署名は 2026-10-20 の API 総再審で本決め）: TLS 1.3 only・サーバ only
       （RFC 9846 — X25519・AES-128-GCM / ChaCha20-Poly1305・RSA-PSS の証明書・resumption / 0-RTT なし）。`tls.Serve(addr, cfg, k)`（`region:`・`maxWait:` は net.Serve へそのまま — 2026-10-23 / 10-25）が net.Listen + net.Serve を包み、
       handshake を済ませた接続だけを k（`tls.Handler` = `func(c tls.Conn) error?` — 名前つきの関数型〔14 節〕。値として接続の task へ渡る。匿名の関数型の仮引数だと
@@ -2435,25 +2596,25 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
         束に入らない b（record 1 つを越える）・鍵を進める前後は、積んだ分を送ってからその場で送る（順序を保つ）。Serve の出口と alert の前も積み残しを送る。
         的 = 送りの完了待ち（park）の間に応答の作業の region を抱えない（rt の R — 空のスロットを手放す — と組で、働く接続 1 本あたり 44.8 → 34 KB・json-tls 4096 の
         cycles/要求 −9%）。値札 = 寝ている TLS 接続 1 本あたり +12.9 KB（束の 0 積みが頁に触れる — 頁に触れない確保は別便）。
-        http の口 = `http.ServeWith(recv, send, route, …, put: (b) => tls.Put(c, b))`（省略可の匿名関数型 — 25 節 Z。put を渡さない ServeConn / net の利用者のコードは put の無い形と同じ —
-        report-1158 で IR の一致を確認・ELF の差は panic の位置の表の行番号だけ）。0.6.3 の暫定の `http.ServeFlushed(recv, send, put, route, …)`（ServeWith の写し）は畳んだ。
+        http の口 = `http.server.ServeWith(recv, send, route, …, put: (b) => tls.Put(c, b))`（省略可の匿名関数型 — 25 節 Z。put を渡さない ServeConn / net の利用者のコードは put の無い形と同じ —
+        report-1158 で IR の一致を確認・ELF の差は panic の位置の表の行番号だけ）。0.6.3 の暫定の `http.server.ServeFlushed(recv, send, put, route, …)`（ServeWith の写し）は畳んだ。
         棄てた案: ServeWith に `flush:`（ユーザー確定の形 A — ServeWith の本体は recv の k の中に展開されるので region を切れない〔S-2 の 1〜3 版の実測〕。
         当時は省略可能な匿名の関数型も文法に無く、名前つきの型は自分の @errors を持つので tls のラベルを書けなかった — 後者は Z で解消）・
         ServeWith / serveBuf の中で関数や式ブロックで応答の region を閉じてから送る（関数型の仮引数の関数は呼び出し点に展開され、ループでない式ブロックの region は
         最適化の道で消える — どちらも呼び手の region に合流した。確実な region の切れ目は受けの反復の終わり）・tls.Send の「空の b = 送る」（Send の約束を壊す）・
         ServeWith が out を自前の列に写す（写しが 1 回増え、接続ごとの列が 2 本常駐）・S-1 だけ（record が束へ引っ越すだけで値札ゼロ — report-1129）
-    - http（段 4c — std/http の最小・2026-10-15 夜間のナビ裁定 C1〜C8〔表面は 2026-10-20 の API 総再審で本決め〕・report-669 / 670）: HttpArena（TFB の後継のコミュニティのベンチ — plaintext と json の種目は無く、
-      HTTP/1.1 の種目は baseline / pipelined / limited-conn / latency-* / async / json-comp）の題材が書ける最小。`http.ServeConn(c, route, maxHead:, maxBody:) error?` は接続 1 本の要求を
-      順に `route func(http.Request) http.Response` へ渡して応答を書く — Serve は包まない（C1: 接続 1 本 = task 1 本は net.Serve・要求の列は http の分担が
-      `func app(c net.Conn) error? { return http.ServeConn(c, route) }` の 2 行で見える。包む形は今は書けない — std/http の関数型の仮引数を Serve の h のラムダが捕獲すると
+    - http（段 4c — std/http/server の最小・2026-10-15 夜間のナビ裁定 C1〜C8〔表面は 2026-10-20 の API 総再審で本決め〕・report-669 / 670）: HttpArena（TFB の後継のコミュニティのベンチ — plaintext と json の種目は無く、
+      HTTP/1.1 の種目は baseline / pipelined / limited-conn / latency-* / async / json-comp）の題材が書ける最小。`http.server.ServeConn(c, route, maxHead:, maxBody:) error?` は接続 1 本の要求を
+      順に `route func(http.server.Request) http.server.Response` へ渡して応答を書く — Serve は包まない（C1: 接続 1 本 = task 1 本は net.Serve・要求の列は http の分担が
+      `func app(c net.Conn) error? { return http.server.ServeConn(c, route) }` の 2 行で見える。包む形は今は書けない — std/http/server の関数型の仮引数を Serve の h のラムダが捕獲すると
       build が拒否する〔Spawn の子の捕獲 — check は受理する F 候補〕）。要求 1 件 = route の呼び出し 1 回 = 反復の region 1 つ。切片 1 つに入った要求（パイプライン）の応答は
-      まとめて send 1 回（C2）。`http.Request`（method / path / query〔生のまま〕/ head〔検査済みの頭〕/ headers〔頭の上の位置の線形の表 — C3: map にしない〕/ body）・
-      `http.Response`（status / contentType / body）・`http.Text` / `http.Json` / `http.Status`・`http.Header(r, name) string?`（大文字小文字を区別しない）・`http.Query(r, key) string?`・`http.Param(r, key) string?`・`http.Form(r, key) string?`（form の本文 — Query と同じ切り方・デコードしない）・`http.JsonDoc(r)`（本文 → std/json の Doc — 型へは json.Decode）・応答の任意ヘッダ `hdrs: http.Headers{list: []http.Field{…}}`（std/http が書く名前・CR / LF / NUL は panic(BadHeader)・option の包みは欄を持たない応答の道の値札を消すため）・405 の `Allow`。
+      まとめて send 1 回（C2）。`http.server.Request`（method / path / query〔生のまま〕/ head〔検査済みの頭〕/ headers〔頭の上の位置の線形の表 — C3: map にしない〕/ body）・
+      `http.server.Response`（status / contentType / body）・`http.server.Text` / `http.server.Json` / `http.server.Status`・`http.server.Header(r, name) string?`（大文字小文字を区別しない）・`http.server.Query(r, key) string?`・`http.server.Param(r, key) string?`・`http.server.Form(r, key) string?`（form の本文 — Query と同じ切り方・デコードしない）・`http.server.JsonDoc(r)`（本文 → std/json の Doc — 型へは json.Decode）・応答の任意ヘッダ `hdrs: http.server.Headers{list: []http.Field{…}}`（std/http/server が書く名前・CR / LF / NUL は panic(BadHeader)・option の包みは欄を持たない応答の道の値札を消すため）・405 の `Allow`。
       ~~ルーターは持たない（C4 — 利用者の switch）~~ → **ルーター = ルートの表 + 純関数の合成**（C4 の改訂 2026-10-18 — HttpArena の completeness の routing / middleware・report-850 / 852）:
-      `http.Route{method, path, handler, middleware}`（leaf だけ — union にしない）の `[]http.Route` が唯一の実体で、モジュールは表を返す関数を export し `http.Mount(prefix, routes, mw)`
-      （prefix の前置 + middleware を各行の middleware の頭に — 純関数）/ `http.Merge(a, b)`（連結）で合成する。口は `http.ServeConn(c, (r) => http.Dispatch(routes, r))`（ServeConn は無変更・
+      `http.server.Route{method, path, handler, middleware}`（leaf だけ — union にしない）の `[]http.server.Route` が唯一の実体で、モジュールは表を返す関数を export し `http.server.Mount(prefix, routes, mw)`
+      （prefix の前置 + middleware を各行の middleware の頭に — 純関数）/ `http.server.Merge(a, b)`（連結）で合成する。口は `http.server.ServeConn(c, (r) => http.server.Dispatch(routes, r))`（ServeConn は無変更・
       ルーターを使わない既定の道は不変）。パターン = 静的 / `:name` / 末尾の `*name`・優先順は表の並びに依らず 静的 > :name > *name（同じ具体さは表の先）・
-      HEAD → GET・path が合って method が違えば 405・`http.Param(r, key)`。ミドルウェア = `http.Middleware{before, after}`（before: `func(Request) Response?` — 応答を返すと
+      HEAD → GET・path が合って method が違えば 405・`http.server.Param(r, key)`。ミドルウェア = `http.server.Middleware{before, after}`（before: `func(Request) Response?` — 応答を返すと
       short-circuit・after: `func(Request, Response) Response`。before は外→内・after は内→外・short-circuit したら外の after だけ）。アプリ単位の mw は `Mount("", routes, mw)`。
       棄てた案（一行ずつ）: next を受けて内側を呼ぶ形（Express / Koa — `func(r, next) Response` の next は残りの鎖を辿るので、閉包でもデータでも型が自分を関数型の中で
       名指す再帰型になる — report-850 2 節。再帰型の偵察 report-851 の (b)「関数型の中だけの循環」の波〔提出後・(c') と同じ Lean の波〕で再訪（再帰型の波の決定 2026-11-03 — 1 節の S。next 形は S の証人として足す） — Middleware の型の名前は next 形の席を残してある）・
@@ -2466,10 +2627,10 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
       HTTP/2・TLS・圧縮（json-comp は別便 — C7。無圧縮の stored ブロックの gzip で検証を通す形は採らない）・~~応答の chunked~~（C6 の改訂 2026-10-22 — 0.7.0 便 8: 長さ不定・圧縮つきの stream の応答は chunked で送る — 下の w2 の「応答の枠」）・100-continue・URL のデコード・Date / Server。
       切片をまたぐ要求（C5）: 残りを接続ごとの持ち越しの列（maxHead + 2 × maxBody + 128 で固定・初めてまたいだときに 1 回だけ確保・添字で書く）へ写し、次の切片と繋いだ写しを
       反復の region で読み直す — 張り直さないので接続の寿命の region が伸びない（断片化つきの 1 万 2 千要求・パイプラインの 20 万要求で RSS が平ら — report-670）。
-      棄てた案: 生成元の形 `for r <- http.Requests(c)? { http.Reply(…) }`（応答を即時に送るのでまとめ送りができない）・io.Lines の持ち越しの形（`carry` を張り直すたびに前の領域が
+      棄てた案: 生成元の形 `for r <- http.server.Requests(c)? { http.server.Reply(…) }`（応答を即時に送るのでまとめ送りができない）・io.Lines の持ち越しの形（`carry` を張り直すたびに前の領域が
       接続の寿命まで残る）。網 = gate httpcheck（HttpArena の validate.sh / validate-frag.py を模した 272 の検査 × W8 / W1）+ gate iouring の格子（examples/http_arena）。
       int の読みは `convert.ParseInt`（C8 — 席は std/convert〔compiler の import の閉包の外・convert の先頭の注の予約〕。strings に置く案は閉包の中で値札が動くので採らない）
-    - 静的ファイル（決定 2026-10-20 — static 便・ユーザー裁定・report-953）: `http.Static(prefix, root, precompressed: …)` は 1 行の表 `GET <prefix>/*path` を返す
+    - 静的ファイル（決定 2026-10-20 — static 便・ユーザー裁定・report-953）: `http.server.Static(prefix, root, precompressed: …)` は 1 行の表 `GET <prefix>/*path` を返す
       （Mount / Merge で合成・表を歩けば見える。prefix は "" か "/" で始まり "/" で終わらない形）。要求ごとに root を OpenRoot し、`*path` を OpenUnder で開いて
       Stat の大きさを length に、本文を stream で送る（キャッシュしない — ディスクに追従・root の付け替え〔symlink の切り替えデプロイ〕にも追従）。stream は値の閉包で File を
       持ち越せないので中で開き直す — 間の差し替えは emit の合計を length で頭打ちにし、足りなければ error（ServeConn が接続を閉じる）。root を開いた Root で受けないのは、
@@ -2478,12 +2639,12 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
       precompressed: は要求の Accept-Encoding で `<name>.br`（br 優先）/ `<name>.gz` を選んで素通しする（圧縮しない — 選ぶだけ・q=0 は受けないと読む・元の名前が無ければ 404）。
       Content-Type は元の名前の拡張子の表（html / css / js / json / svg / png / jpeg / gif / webp / avif / ico / woff2 / woff / ttf / txt / xml / wasm / pdf / map — 既定 application/octet-stream）。
       Response の欄 `coded Coded?`（`Coded{encoding}` — 公開）: ServeConn は coded があれば `Vary: Accept-Encoding` を書き、encoding が空でなければ `Content-Encoding` を書き、
-      compress: を掛けない（encoding "" = 候補を見たが元のまま。option で包むのは headers と同じ理由）。スコープ外: Range・キャッシュ・
+      compression: を掛けない（encoding "" = 候補を見たが元のまま。option で包むのは headers と同じ理由）。スコープ外: Range・キャッシュ・
       ディレクトリのリスティング・index.html・小さいファイルを body で返す併用（性能便で再訪）。
       棄てた案: `Static(prefix, r io.Root)`（handler が Root を捕捉する形 — 捕獲の規則で書けない）・Response の file 欄（同一性の型の欄）・素の `encoding string` 欄
       （選ばなかった応答の Vary が書けない — Content-Encoding: identity は RFC 9110 で非推奨）・`.` で始まるセグメントの 404
       実装済み（2026-10-20・7ecb8239 / e68453bc — report-956 / 957）: 網 = examples/http_static（パイプライン 13 本）・gate httpcheck の static（srv の `/static/*` + check.ts の staticEp —
-      byte 一致・compress: の外・precompressed 6 形・根の外 12 形・POST 405・ディスクに追従・パイプライン）。podman の既定 seccomp で openat2 が通ることを確認（Docker は未確認）。
+      byte 一致・compression: の外・precompressed 6 形・根の外 12 形・POST 405・ディスクに追従・パイプライン）。podman の既定 seccomp で openat2 が通ることを確認（Docker は未確認）。
       値札: Static を使わないプログラムは coded の欄と分岐の分だけ（偽の転送路の baseline で命令 +1.8%）— Static の stream の閉包が U_F を広げる分は 25 節の「届く閉包だけ」で回収
     - 条件付き GET と Cache-Control（決定 2026-10-21 — 条件付き GET 便・ユーザー裁定・report-961 / 962）: Static の応答は弱い ETag・Last-Modified・Cache-Control を持つ。
       ETag = `W/"<modTime の 16 進>-<size の 16 進>[-br|-gz]"` — **送る実体（選んだ変種のファイル）の Stat から作り、変種の印を付ける**（元と .br / .gz で同じ ETag の
@@ -2495,40 +2656,52 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
       無視・HTTP の日付は 3 形（IMF-fixdate・RFC 850・asctime — 5.6.7 の MUST）を読み、RFC 850 の 2 桁の年は 69〜99 = 19xx・00〜68 = 20xx の固定の読み（時計を見ない）。
       If-Range は Range を持たないので無視。304 の頭は ETag・Cache-Control・（precompressed なら）Vary だけ（15.4.5 — Content-Type・Content-Encoding・Last-Modified・
       Content-Length・本文なし）。304 / 412 はファイルを開き直さない。開き直した実体の大きさか modTime が handler で見た値と違えば接続を閉じる（古い ETag に新しいバイト列を載せない）。
-      Cache-Control は `cache:` の型つきの union `http.Cache` = `Revalidate{}`（`no-cache` — 保存してよいが使う前に毎回確かめる）・`Fresh{maxAge, immutable}`
+      Cache-Control は `cache:` の型つきの union `http.server.Cache` = `Revalidate{}`（`no-cache` — 保存してよいが使う前に毎回確かめる）・`Fresh{maxAge, immutable}`
       （`max-age=N[, immutable]`）・`NoStore{}`（`no-store`）で、**省略は Revalidate**（Last-Modified を付けた応答に Cache-Control が無いと、キャッシュは RFC 9111 4.2.2 の
       ヒューリスティック〔(今 − Last-Modified) の 1 割程度〕で勝手に新鮮とみなし、デプロイの後に古い資産を配る窓ができる — 「ディスクに追従」をキャッシュの側まで延ばす既定）。
       共有キャッシュ向けの指示子（public・s-maxage・stale-while-revalidate）は持たない — 認証つきの要求の応答を public で共有キャッシュに載せる形（web cache deception の
       入口 — RFC 9111 3.5）を analyzer が拒否する規則（effect の波 段 4b — 12 節「出所の依存」）が入るまで出さない。
-      改訂（段 4a — 下の「保存の方針と認証の源」）: Static の `cache:` はルートの行の方針（`Route.cache`）になり、Dispatch が応答に写す。ETag / Last-Modified は封の型 `http.Validators` で書く。
-      改訂（段 4b — 解禁）: `http.Shared{maxAge, sMaxAge}`（`public, max-age=N[, s-maxage=M]`）が入った — 認証に届くルート・認証の middleware の Mount の下での共有の宣言は analyzer が拒否する
+      改訂（段 4a — 下の「保存の方針と認証の源」）: Static の `cache:` はルートの行の方針（`Route.cache`）になり、Dispatch が応答に写す。ETag / Last-Modified は封の型 `http.server.Validators` で書く。
+      改訂（段 4b — 解禁）: `http.server.Shared{maxAge, sMaxAge}`（`public, max-age=N[, s-maxage=M]`）が入った — 認証に届くルート・認証の middleware の Mount の下での共有の宣言は analyzer が拒否する
       ETag の一貫性の約束: 同じファイルの実体（同じ modTime と大きさ）なら同じ ETag — 同じコンテナイメージから起動した複数のインスタンスは一致する（イメージの層は mtime を保つ）。
       中身を変えれば（modTime が変われば）ETag は変わる。約束しない: ホストごとに置いたファイル（git の checkout・mtime を保たない写し）はインスタンスの間で一致しない
       （CDN のヒット率が落ちる — 古いものは返さない側）・modTime を戻して大きさも同じまま中身だけ変える書き換え（`touch -r`・mtime を保つ展開）は ETag が変わらない
       （弱い ETag は「意味が同じ」の主張 — 書き換えた側の責任）。内容や build の印から作る ETag（ファイルを読む — キャッシュなしの設計と衝突）は別便。
       Date を書かないのは既存の線（「入れないもの」）のまま — Static は RFC 9110 8.8.2.1 の「時計を持たない origin」として、ファイルシステム（時計を持つ別の系）が付けた
-      mtime を Last-Modified に使い、未来の mtime を今の時刻へ丸めない。std/http の応答の頭は 1xx・204・304 に Content-Length を書かない（8.6 — 204 の `Content-Length: 0` は
+      mtime を Last-Modified に使い、未来の mtime を今の時刻へ丸めない。std/http/server の応答の頭は 1xx・204・304 に Content-Length を書かない（8.6 — 204 の `Content-Length: 0` は
       2026-10-21 まで書いていた不具合）。
       棄てた案: Cache-Control の文字列素通し（後で型に替えると API の破壊・analyzer が方針を値として見られない・CR / LF と綴りの誤りを利用者に返す）・PINS の struct 形
-      `http.Cache{public, maxAge, …}` を今（欄の矛盾を型が防がない・public の毒を今は止められない）・既定は付けない（Go の FileServer・nginx の既定 — ヒューリスティックの窓）・
+      `http.server.Cache{public, maxAge, …}` を今（欄の矛盾を型が防がない・public の毒を今は止められない）・既定は付けない（Go の FileServer・nginx の既定 — ヒューリスティックの窓）・
       If-Modified-Since の RFC どおりの ≤（巻き戻しの窓）・強い ETag・元の ETag に印だけ（.br の作り直し忘れを隠す）・If-None-Match と If-Modified-Since だけ評価（13.1.1 / 13.1.4 は
-      origin に評価を求める）。網 = std/http の cond_test.sober（日付の 3 形と往復・entity-tag の比較・ETag の印・Cache-Control の値・差し替えの窓）・examples/http_static
+      origin に評価を求める）。網 = std/http/server の cond_test.sober（日付の 3 形と往復・entity-tag の比較・ETag の印・Cache-Control の値・差し替えの窓）・examples/http_static
       （304 / 412 / 変種の 23 本）・gate httpcheck の static（mtime を固定した ETag / Last-Modified・3 変種の 304 と Vary・巻き戻しの模擬・304 の後のパイプライン）
     - 保存の方針と認証の源（決定 2026-10-21 — effect の波 段 4a・起案 report-987 の裁定・report-988）: 12 節「出所の依存」の構造の側。
       **保存の方針は型の欄だけ**: `Response.cache Cache?`（応答 1 件）・`Route.cache Cache?`（ルートの行 — cache を持たない 2xx と 304 の応答に Dispatch が写す・応答の方針が勝つ・
-      404 / 412 / 500 には写さない〔行の max-age を「無い」に付けると CDN が行の寿命だけ配り続ける — Fresh{immutable} なら 1 年〕・Mount は行の cache を保つ）・Static の `cache:`（ルートの行の方針 — 省略は Revalidate のまま）。`http.Cache` = Revalidate（no-cache）・Fresh（max-age — 共有キャッシュも保存してよい）・
+      404 / 412 / 500 には写さない〔行の max-age を「無い」に付けると CDN が行の寿命だけ配り続ける — Fresh{immutable} なら 1 年〕・Mount は行の cache を保つ）・Static の `cache:`（ルートの行の方針 — 省略は Revalidate のまま）。`http.server.Cache` = Revalidate（no-cache）・Fresh（max-age — 共有キャッシュも保存してよい）・
       NoStore（no-store）・**Private（新設 — `private` / `private, max-age=N`）**。どこにも方針が無い応答は **`Cache-Control: private`**（動的な応答の既定 — 認証つきの要求の応答を CDN の
       規則が拾う形の入口を狭める・404 / 405 / 誤りの応答も）。Fresh（と 4b の Shared）を書いてよいのはルートの行だけ — 応答 1 件で書くのは Private / NoStore（利用者の package で
       SH の値が `Response.cache` へ流れる形は 4b の analyzer が拒否する）。任意ヘッダの予約名に Cache-Control・CDN-Cache-Control（RFC 9213）・Surrogate-Control・ETag・Last-Modified を
       足した（panic(BadHeader) — 共有の宣言を文字列で書けると analyzer が方針を値として見られない・検証子を利用者が別人の中身に付けると、確かめに来たキャッシュへの 304 で他人の版が出る）。
-      **検証子は封の型** `http.Validators{etag, modified}`（`Response.validators` — 作れるのは std/http だけ。今の作り手は Static）。頭の順 = Content-Type・ETag・Last-Modified・Cache-Control・任意ヘッダ。
-      **認証の源の名指し**: `http.Authorization(r) string?`（最初の行・scheme は解釈しない）・`http.Cookie(r, name) string?`（RFC 6265 5.4 の `;` 区切り — 前後の空白を除き、名前はちょうど
-      等しい〔大文字小文字を区別〕最初の組・`"` の囲みは外す・Cookie の行が 2 本以上なら順に見る・`=` の無い組は飛ばす・デコードしない）。`http.Header` は Authorization・Proxy-Authorization・
+      **検証子は封の型** `http.server.Validators{etag, modified}`（`Response.validators` — 作れるのは std/http/server だけ。今の作り手は Static）。頭の順 = Content-Type・ETag・Last-Modified・Cache-Control・任意ヘッダ。
+      **認証の源の名指し**: `http.server.Authorization(r) string?`（最初の行・scheme は解釈しない）・`http.server.Cookie(r, name) string?`（RFC 6265 5.4 の `;` 区切り — 前後の空白を除き、名前はちょうど
+      等しい〔大文字小文字を区別〕最初の組・`"` の囲みは外す・Cookie の行が 2 本以上なら順に見る・`=` の無い組は飛ばす・デコードしない）。`http.server.Header` は Authorization・Proxy-Authorization・
       Cookie で nil（源を Header から読めなくする — 4b の源の印を 2 つの口に置くため）。`Request.head` の直読みは 4b で源の欄の印（std の外の package の読みだけが源 — 12 節「出所の依存」の現在地）。
+    - **時刻（std/time — 決定 2026-11-05 ユーザー裁定 9〜12）**: 壁時計の `Time`（UNIX 時刻の秒 + ns・UTC）と単調時計の `Instant` は別の型（壁時計の差で期限を測る事故を型で消す）。
+      壁時計を読む口は `time.Now` の 1 か所だけで、時刻を使う std の口（x509 の検証・cookie の期限）は Time を値で受ける（決定的・テストは値を渡す — std の package の double は 41 節の後便なので Now そのものの差し替えはまだ書けない）。
+      書式は RFC 3339（UTC か固定のオフセット）と HTTP の日付（IMF-fixdate・読みは旧い 2 形も — rfc850 の 2 桁の年は 70 未満を 20YY）。地域の規則（tzdata）は焼き込み（信頼ストアと同じ更新フロー — scripts/tzstore.sh --regen が IANA の tzdata を zic -b slim で組んで src/std/time/zones.sober に・gate tzsync・GHA の週 1 の cron）。
+      ゾーンは遷移の列と末尾の POSIX TZ の規則（RFC 9636 3.3 — 最後の遷移より後だけに効く）で、壁の読みから時刻へ（FromCivilIn）は 2 回ある読みは早い方・無い読みは切り替え前のオフセットで読む。
+      **焼き込みの表は参照するプログラムの ELF にだけ入る**（閉世界の DCE が const のデータにも効く — gate datadce が目印の文字列で言明: Now だけの ELF は表の中身に依らずバイト一致・LoadZone の ELF にだけ表がある）。
+      棄てた案: 時計を値（Clock）で配る DI の形（呼び手の全部が時計を運ぶ — Now の 1 か所 + 値渡しで足りる）・1 つの型に単調の読みを同居（Go の形 — 比べ方の規則が暗黙に分かれる）
+    - **cookie の書きは型の欄だけ**（決定 2026-11-05 — ナビ級の承認・ユーザー裁定「安全な既定・緩和は明示で目立つ綴り」の最初の適用点）: `Response.cookies []SetCookie`。
+      省いた欄のゼロ値が安全な側 — Secure・HttpOnly・SameSite=Lax（`sameSite SameSite?` の nil）・Path=/・Domain なし（host-only）・Max-Age なし。緩める欄は `dangerouslyAllowHttp`（Secure を外す）・
+      `dangerouslyScriptReadable`（HttpOnly を外す）の綴りだけ（grep で全部拾える — 常時 warning は analyzer の後便）。名前は token・値は cookie-octet・Path / Domain は CTL と `;` なし・
+      Max-Age は 0 以上・SameSiteNone と `__Host-` / `__Secure-` は Secure 必須・`__Host-` は Path=/ で Domain なし — 破れば panic(BadHeader{name: "Set-Cookie"})。値は符号化しない（呼び手が url.Escape か base64url）。
+      Expires は書かない（Max-Age だけ — 日付の書式は時刻のピースの領分）。任意ヘッダの予約名に Set-Cookie を足した（文字列で書けると既定を迂回できる）。頭の順 = 任意ヘッダの後に cookies を書いた順。
+      棄てた案: 生の Set-Cookie を任意ヘッダに残して属性の lint だけ掛ける（既定が効かない — 書き忘れの Secure が通る）・既定を安全側にした欄を true で有効にする綴り（`secure: true` — 書き忘れが緩い側に倒れる）
       型の分け方（委任の裁定 — report-988）: 応答 1 件の方針を別の union にしない — variant の名前は package で一意（20 節）なので no-store の綴りが 2 つになり、
       かつルートの行の方針は Dispatch → ServeConn の道で応答の値に乗るので、`Response.cache` は SH の値を運べる型でなければならない。「SH はルートの行から」は出所の規則
       （analyzer — 4b）で、型では言わない。値札（HttpArena の baseline — report-988）: 応答あたり +24 B（`Cache-Control: private\r\n`）。
-      網 = std/http の cache_test.sober（Cookie の切り出し・認証の 3 名の nil・既定の頭のバイト列・Dispatch の写し）・examples/http_cache（既定 / Private / NoStore / ルートの Fresh・
+      網 = std/http/server の cache_test.sober（Cookie の切り出し・認証の 3 名の nil・既定の頭のバイト列・Dispatch の写し）・examples/http_cache（既定 / Private / NoStore / ルートの Fresh・
       予約名の panic で終了 101）・gate httpcheck の baseline（既定 private の 2 件）。
       棄てた案: 応答 1 件の方針の別の union（上）・既定を書かない（CDN の「全部キャッシュ」の規則が動的な応答を拾う）・既定 no-store（ブラウザの戻る / 進むのキャッシュまで殺す）・
       Header で認証の名前を読ませたまま 4b で名前の const を見る（名前が const でない呼び出しで源が抜ける — 口を分けるのが「書いてある通り」）
@@ -2550,15 +2723,15 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
     emit は Stream の匿名の関数型の仮引数 = 借り（25 節 (α) 2026-10-17）— ServeConn が渡す `(b) => net.Send(c, b)` は Conn を捕捉してよい借りの閉包。
     **実装済み（2026-10-17・report-763 — クロージャの波の第一顧客）**: `type Stream func(emit func(b []byte) error?) error?`・`Response{…, length int, stream Stream?}`。
     Content-Length = length（長さ既知 — ~~応答の chunked は持たない~~ → 2026-10-22 の改訂で長さ不定は chunked — 下の「応答の枠」・emit の合計が length ちょうどは呼び手の契約 → 2026-10-23 から検査 — 下の「compress + stream」）・~~**stream の応答は圧縮しない**
-    （compress: の対象外 — report-740 4.2 の (c)）~~ → 2026-10-23 段 8-5 で圧縮する（下の「compress + stream」 — 実装済み）・
+    （compression: の対象外 — report-740 4.2 の (c)）~~ → 2026-10-23 段 8-5 で圧縮する（下の「compress + stream」 — 実装済み）・
     HEAD では stream を呼ばない・パイプラインの切片は stream の応答で区切って送る（前の応答と頭 → stream → 残りの要求）。stream の失敗は頭の後なので
     接続を閉じる（~~誤りは呼び手へ返さない — 閉包越しの誤りのラベルは analyzer が導出できない~~ → 2026-10-21 effect の波 段 1: **誤りを返して閉じる** — Stream の後置 `@errors(emit, io の 5 つ)`
     〔13 節「名前付き関数型の @errors」〕で `st(emit)?` の集合が言えるようになった。ServeConn / ServeWith の @errors に io のラベルが足りた・net.Serve の中では接続の task の失敗として吸収）。
     File は閉包に捕捉させず path を捕捉して stream の中で開く（examples/http_stream）。網 = httpcheck の stream（/stream/{n}・/file）
     **形の改訂（2026-11-04 — 旧 (α-L1) の撤去・25 節「関数型の mut 仮引数」）**: `type Stream func(out mut Out, emit func(out mut Out, b []byte) error?) error?`。
-    送りの状態 `http.Out`（中身は std/http の外から見えない struct — 圧縮器・合計・length・超えたか）は ServeConn が作って stream に渡し、stream は受け取った out を
+    送りの状態 `http.server.Out`（中身は std/http/server の外から見えない struct — 圧縮器・合計・length・超えたか）は ServeConn が作って stream に渡し、stream は受け取った out を
     `emit(mut out, b)` で渡し回す（利用者は `stream: (out, emit) => sendFile(path, mut out, emit)`）。閉包は mut を捕捉しない — 状態の持ち主が字面に見える。
-    out を通す 1 語は正直な値札（代わりの形は無い — emit の状態は mut の捕捉か呼び手の受け渡しのどちらか）。棄てた案: Out に send を持たせて `http.Emit(mut out, b)` の関数にする
+    out を通す 1 語は正直な値札（代わりの形は無い — emit の状態は mut の捕捉か呼び手の受け渡しのどちらか）。棄てた案: Out に send を持たせて `http.server.Emit(mut out, b)` の関数にする
     （send は ServeConn の借り — struct の欄に置けない）
     **応答の枠（C6 の改訂 2026-10-22 — 0.7.0 便 8・report-1031 の D1 / D2・ユーザー裁定。report-740 4.1 の「chunked は compress + stream とセットで」の消化）**:
     `Response.length` は `int?`（nil = 長さ不定）。枠を決めるのは std の 1 か所（応答の頭）で、Transfer-Encoding と Content-Length を同じ応答に並べない
@@ -2578,19 +2751,19 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
     棄てた案: 長さ不定の HTTP/1.0 で全部を貯めて Content-Length（stream の目的〔RSS が平ら〕を破る）・番兵 `length: -1`（長さの不在は option — 34 節 4 の番兵は位置の族だけ）・
     欄 `chunked: bool`（length との組の矛盾の規則が 1 つ増える）・flush の口 / 溜めの大きさの名前付き引数（実需まで）
     **SSE（Server-Sent Events — 同じ便の約束・実装は段 8-3）**: 配送は上の chunked + emit の粒度で足りる。std は組み立ての純関数 1 本を持つ —
-    `http.Event{event string?, data string, id string?, retry int?}` と `http.FormatEvent(e) string`（34 節の Format 族: data の改行〔LF / CRLF / CR〕は行ごとの `data:` に割り・
-    event / id に CR / LF / NUL があれば panic(BadEvent) — イベントの差し込みの封・BadHeader と同じ線・空行で終わる）。心拍のコメント・Last-Event-ID の読み（`http.Header`）は口を足さない。
-    **text/event-stream は compress: の対象から既定で外す**（長命で同時接続が多い流れに応答ごとの符号器の作業域〔≈150〜650 KB〕を積まない・中継の溜めで遅延が壊れる・
+    `http.server.Event{event string?, data string, id string?, retry int?}` と `http.server.FormatEvent(e) string`（34 節の Format 族: data の改行〔LF / CRLF / CR〕は行ごとの `data:` に割り・
+    event / id に CR / LF / NUL があれば panic(BadEvent) — イベントの差し込みの封・BadHeader と同じ線・空行で終わる）。心拍のコメント・Last-Event-ID の読み（`http.server.Header`）は口を足さない。
+    **text/event-stream は compression: の対象から既定で外す**（長命で同時接続が多い流れに応答ごとの符号器の作業域〔≈70〜200 KB〕を積まない・中継の溜めで遅延が壊れる・
     秘密を含む流れの圧縮の長さの漏れ）。長命の接続は scope の deadline の外に置く（ServeConn を deadline つきの scope で包むと流れが切れる）。
-    棄てた案: 組み立てを持たない（改行の割りと差し込みの封が利用者に漏れる）・専用の口 `http.SSE(r, k)`（Stream と二重の口）
+    棄てた案: 組み立てを持たない（改行の割りと差し込みの封が利用者に漏れる）・専用の口 `http.server.SSE(r, k)`（Stream と二重の口）
     **compress + stream（同じ便の約束 — 25 節の L1〔借りの閉包の mut の捕捉〕の後・段 8-5 で実装済み 2026-10-23）**: 上の「gzip のストリーム圧縮を同じ署名の段で挟む」の形 —
-    ServeWith が compress: の設定から圧縮の段を挟んだ emit を stream に渡す（利用者の型は Stream の 1 つのまま）。圧縮の段は emit をまたいで符号器の状態を持つので、
-    serveBuf の mut の状態を借りの位置のラムダが捕捉する = L1 が前提（report-1031 の D3 — 案 A。2026-11-04 から状態は Stream の mut の席 out — 上の「形の改訂」）。対象 = compress: が有り・Content-Type が圧縮向き・要求が gzip を受け・
+    ServeWith が compression: の設定から圧縮の段を挟んだ emit を stream に渡す（利用者の型は Stream の 1 つのまま）。圧縮の段は emit をまたいで符号器の状態を持つので、
+    serveBuf の mut の状態を借りの位置のラムダが捕捉する = L1 が前提（report-1031 の D3 — 案 A。2026-11-04 から状態は Stream の mut の席 out — 上の「形の改訂」）。対象 = compression: が有り・Content-Type が圧縮向き・要求が gzip を受け・
     `coded` が無い stream の応答（長さ既知なら length ≥ gzMin のとき — 長さ不定は常に）。掛けたら chunked（HTTP/1.0 は閉じの区切り）。Vary は body の応答と同じ
     （圧縮向きの応答には受けない要求にも Vary: Accept-Encoding）。**emit 1 回 = deflate の sync flush 1 回**（空の stored ブロックで byte に揃える — zlib の Z_SYNC_FLUSH）・
     窓（32 KiB）は emit をまたいで持ち越す・stream が返ったら最後のブロックと CRC-32 と長さ。作業域は応答ごとに新しく取る（work: の lease は窓 1 回 = 符号化 1 回の線で、
     stream は emit の間に譲る）。逐次の符号器は std/internal に非公開で置く（flate / gzip の公開 API は一括のまま — 逐次の公開は実需まで）。
-    Static（precompressed なし）の応答も stream なので、compress: があれば圧縮される（直交の帰結 — precompressed の応答は coded で対象外のまま）。
+    Static（precompressed なし）の応答も stream なので、compression: があれば圧縮される（直交の帰結 — precompressed の応答は coded で対象外のまま）。
     同じ段で長さ既知の stream の emit の合計を数える（不足 / 超過は閉じる — 数える mut の int も L1 の捕捉）。
     実装（2026-10-23）: serveBuf が符号器（std/internal/deflate の Stream）と非圧縮の合計を 1 つの struct の mut の束縛に持ち（L1 の縛り「借りのラムダが捕捉する mut の束縛は 1 つ」）、
     `st((p) => gzFeed(mut z, p, (q) => send(chunkOf(q))))` の形で emit ごとに Feed → chunk 1 つ（空の emit は Feed も送りもしない）・stream が返ったら End の列と終端を送り 1 回。
@@ -2660,7 +2833,7 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
     （rt が先にスロットを選ぶ）・net で provided buffer ring（カーネルが選ぶ）を評価
   - 段: 0 = probe + ワーカーごとの ring（着地 2026-10-13）・1 = std/task を使うプログラムの ReadFile / ReadFd（今は ReadStdin）/ WriteFile を ring で（表面不変）・2 = Open / Close / Chunks / Lines / NewPool（Open / Close / ReadAll と登録簿・Chunks / Lines / ChunksAt は着地 2026-10-13 — NewPool は Web 波へ）・
     3 = デッドライン（着地 2026-10-14）・4 = net（Web 波 0.6.0 — 4a = epoll の道で表面を全部〔Listen / Serve / Dial / Recv / Send・Conn・reject・期限が待ちを切る — 4a-1 表面・4a-2 epoll の待ちと期限・4a-3 Serve と reject は着地 2026-10-14〕・
-    4b = ring の道〔multishot RECV / ACCEPT・PBUF_RING・SEND — 着地 2026-10-14〜15。SO_REUSEPORT × ワーカーの accept は 2026-10-26〕・4c = std/http の最小〔着地 2026-10-15 — 上の http〕・4d = HTTP/2・大きい本体のゼロコピー・テナントのプール・優雅な停止）
+    4b = ring の道〔multishot RECV / ACCEPT・PBUF_RING・SEND — 着地 2026-10-14〜15。SO_REUSEPORT × ワーカーの accept は 2026-10-26〕・4c = std/http/server の最小〔着地 2026-10-15 — 上の http〕・4d = HTTP/2・大きい本体のゼロコピー・テナントのプール・優雅な停止）
   - WriteFile は ring から外した（追記 2026-10-30 — report-etxt-1）: ring に出した書きの要求はファイルの参照を close(2) の後まで握りうる（io-wq に回った
     書きの最後の参照の解放が遅れる）— 書いた実行ファイルを直後に execve すると ETXTBSY（`sober test` の子が W ≥ 2・負荷下で 12/1200 で exit 127 — 同期の write(2) で 0/1200）。
     丸ごとの書きは「返ったら閉じている」が約束なので、std/task のプログラムでも write(2) で書く（書きの間ワーカーが 1 本ふさがる値札は許容 — 熱い道ではない）。
@@ -2719,7 +2892,7 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
   依らせない — 宣言順 = 関数表 / error タグ順の hermetic の穴）。interface 視点のローダは link.txt の順に P だけソース・他は `.sobi` を積み、
   発見ループを回さない。読む集合はリンク集合全体（X1 — error はリンク時に閉じる実態どおり）。
   棄てた案: X2 推移的依存だけ（union が縮みバイト一致しない）、N0 生 index（`.sobi` に持ち上げ数という実装の数が要る）、
-  M1 import を全部載せる（暗黙 import は字句上書けない — 落とした本体の `string(b)` だけが std/utf8 を引くと InvalidUtf8 が union から消える）
+  M1 import を全部載せる（暗黙 import は字句上書けない — 落とした本体の `string(b)` だけが std/utf8 を引くと BadUtf8 が union から消える）
   - 発見: 辞書 const のラムダは参照されたときだけ持ち上がるので、宣言側 package の Def 集合が他 package の本体に依存する。
     比較出力と部分検査のときだけ P の辞書 const を全部展開して揃える（Lean に渡す通常のコア JSON は不変）
   - 実地（V5-7 minic）: `lex.Next(c mut Cursor)`（mut 引数 → parse に展開）が非公開の `clamp` / `step` を参照 — 両方 `.sobi` に載り、
@@ -2913,7 +3086,7 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
   - 別名は宣言の package を変えない: 欄の書き（20 節）・封の型（15 節 ①）・同一性の族（28 節）・lease の整えの関数の package（4d — 1 文の転送は辿る）・
     variant の名前（union の別名でも variant は実体の package の名前で書く）は実体の宣言の package で決まる
   - 公開は別名の名前の大小で決まる（20 節「公開の単位は名前ごと」）。右辺の可視性は別名の宣言の場所から見る。公開の別名は非公開の型・std/internal の公開の型を指してよい —
-    internal の検問は import パスの字面の規則で、型の到達には掛からない。std の実装の型を internal へ下ろしたまま公開の名前を約束の面に残す口（第一顧客 = `flate.Work = deflate.Work`）
+    internal の検問は import パスの字面の規則で、型の到達には掛からない。std の実装の型を internal へ下ろしたまま公開の名前を約束の面に残す口（第一顧客 = `compress.flate.Work = deflate.Work`）
   - 別名の名前はトップレベルの型の名前の 1 つ — 13 節の名前の規則（ローカル束縛・型パラメータ・同名のトップレベル）が掛かる
   - 定義型との対比: `type A B`（定義型）は新しい型で右辺は int / bool だけ、`type A = B`（別名）は新しい名前だけで右辺は型宣言の名前だけ — 右辺の集合が交わらないので、
     別名のつもりの `type V lib.W` は宣言の位置で落ち（kind 0 が別名を案内する）、黙って通る取り違えは「新しい named scalar のつもりの `type M = lib.Meters`」だけ（named の上の定義型は元々書けない）
@@ -2979,6 +3152,12 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
   optdiff と elfeq が手書き ≡ 参照を照合する）。区間が重なってよい（deflate の一致探しは j < i で距離 < n がありうる — 読むだけなので意味は変わらない）。
   **可変時間**（最初の食い違いで抜ける）— 秘密を渡さない（定数時間の比較は crypto/ct の口）。棄てた案: 新しい IR の op（展開の大きさ × 呼び出し点・
   IR の語彙と検証器と stage1 の照合の外が増える）/ 自動ベクトル化の拡張（2 本の列の同時の走査は vec.sober の形の外 — 0.6.4 の自動ベクトル化の波の領分）
+- **末尾への語の書き（2026-11-07 — deflate v2 の波 S3・report-v2-9）**: `binary.AppendWord(b mut []byte, v, k)` = v の下位 k バイト（0〜8・little-endian）を b の末尾に積む
+  （k 回の 1 バイトの append と同じ結果 — 外れは panic(OutOfRange{k, 8})）。std 限定の鍵 `@intrinsic("appendword")` は、b の終わりが深度の byte の先端で、終わりから
+  8 バイトが粒の余りか bump の先（粒の後ろに誰も確保していない・スロットに収まる）なら 8 バイトの store 1 本 + 先端を k 進める（後状態は rt.tipn8 と同じ —
+  他の伸長の道の不変はそのまま）。でなければ b のまま返し、std が 1 バイトずつ積む。bump の先へ書く最大 7 バイトは誰の値でもない（観測されない）。
+  コアの近似は `append(b, …)`（結果は b と同じ region）・代入 `b = sysAppendWord(b, …)` は append と同じく格納点の写しを省く。
+  棄てた案: `Store64(b, i, v)`（途中の書き換え）+ 出力の前もっての確保 + 終わりの切り詰め（入力の大きさの 0 埋め・Stream の Feed にも確保の約束が要る — 口が素直でない）
 - **JSON のエスケープの要らない区間の核（2026-10-26 — SIMD の核 段 2・report-1164 / 1165）**: std/json の文字列の書き出し（quote — PutString・Encode の
   文字列の欄・Format）は、b の中で最初に `"`・`\`・0x20 未満のバイトが来る位置（無ければ len(b)）を std 限定の鍵 `@intrinsic("jclean")` → `rt.jclean(p, n)` で
   探し、その手前をまとめて積む。全部が要らない文字列（JSON の値の大半）は `builder.PushBetween(b, '"', s, '"')` で引用符と一緒に空きの検査 1 回で積む。
@@ -3014,12 +3193,12 @@ std の公開名は次の 5 つに従う。新しい公開関数はこの規則�
      棄てた案: `OrderFast`（速さは約束でなく記録 — 落とした性質〔安定〕を名前に出す）・`OrderAny`（何でもよいと読める — 決定的であることが伝わらない）・
      `Order(n, less, stable: false)` の名前付き引数（同じ名前で約束が違う 2 つの口になる — 34 節の「族ごとに戻りの形は 1 つ」と同じ線で口を分ける）
    - 圧縮・検査和（追記 2026-10-16 — std/compress/flate・std/compress/gzip・std/hash/crc32 新設・2026-10-20 の API 総再審で本決め）: 圧縮は `Encode`（バイト列 → 符号化したバイト列。
-     layout / json と同じ「表現の写し」の族 — 失敗しないので `(T, error?)` にしない。level の範囲外は panic）、解凍は対の `Decode`（追記 2026-10-22 — 0.7.0 便 5: `Decode(data, maxSize: int?) ([]byte, error?)` — 壊れた列は `Bad`・出力が maxSize を越えたら `TooLarge`〔展開爆弾の封 — 省略 = 上限なし。DEFLATE は 1 バイトで 258 バイトに伸びるので入力の上限は出力の上限にならない〕・gzip は包みの誤りを `gzip.Bad`・中身の誤りを flate のラベルで返し、複数メンバを繋ぐ。`DecodeWith` は持たない — 復号の作業域は数 KB の符号の表だけで lease で借りる大きさでない。棄てた案: 既定の上限〔用途で妥当な値が違う — http の maxBody のような口の既定は呼び手の層が持つ〕・切り詰めの別ラベル〔全部を渡す口なので尽きた = 形の誤り〕）。
-     検査和は `Sum`（`crc32.Sum(data)` — hash.Sha256 の「アルゴリズムの名前が関数名」は package の名前が担う）。棄てた案: `Compress` / `Deflate`（閉集合の外の動詞）・
+     layout / json と同じ「表現の写し」の族 — 失敗しないので `(T, error?)` にしない。level の範囲外は panic）、解凍は対の `Decode`（追記 2026-10-22 — 0.7.0 便 5: `Decode(data, maxSize: int?) ([]byte, error?)` — 壊れた列は `Bad`・出力が maxSize を越えたら `TooLarge`〔展開爆弾の封 — 省略 = 上限なし。DEFLATE は 1 バイトで 258 バイトに伸びるので入力の上限は出力の上限にならない〕・gzip は包みの誤りを `compress.gzip.Bad`・中身の誤りを flate のラベルで返し、複数メンバを繋ぐ。`DecodeWith` は持たない — 復号の作業域は数 KB の符号の表だけで lease で借りる大きさでない。棄てた案: 既定の上限〔用途で妥当な値が違う — http の maxBody のような口の既定は呼び手の層が持つ〕・切り詰めの別ラベル〔全部を渡す口なので尽きた = 形の誤り〕）。
+     検査和は `Sum`（`hash.crc32.Sum(data)` — hash.Sha256 の「アルゴリズムの名前が関数名」は package の名前が担う）。棄てた案: `Compress` / `Deflate`（閉集合の外の動詞）・
      `Checksum` / `ChecksumIEEE`（Go の綴り — 多項式は IEEE だけなので名前に出さない）
      符号器の設定表は zlib / Go と同じ値（good / lazy / nice / chain）が基準で、食い違いは 1 点だけ（追記 2026-10-23 — report-1058 / 1059）: **lv6 の lazy の閾値 16 → 12**
      （長さ 12〜15 の一致の後ろの 1 文字待ちを省く。lv6 の命令 −6%・率は json の本文で +0.2% と小さく、率の線〔flatecheck の check.ts ⑤〕は全部内）。
-     lv6 は compress: の既定なので磨く的をここに置いた。棄てた案: 5 バイトのハッシュ（命令 −8% だが長さ 4 の一致を全部捨て、短い一致が主の入力〔flatecheck の noisy〕で率が zlib × 1.04 — 人工形の線 1.026 を割る）・
+     lv6 は compression: の既定なので磨く的をここに置いた。棄てた案: 5 バイトのハッシュ（命令 −8% だが長さ 4 の一致を全部捨て、短い一致が主の入力〔flatecheck の noisy〕で率が zlib × 1.04 — 人工形の線 1.026 を割る）・
      長い一致の中の挿入の省略（zlib の deflate_fast の形 — 命令 −25% だが dataset の lv6 で zlib × 1.0135 と率の線を割る）
      → **再訪（追記 2026-10-24 — ユーザー裁定・report-1115 / 1116）: Go / zlib を錨にした率の線を廃し、lv4〜6 で長い一致の中の挿入を省く**:
      長さ > 8 で重ならない（距離 ≥ 長さ）一致は、中の位置を鎖に足さず末尾の 2 位置だけ足す（重なる一致は省かない — 0 の列・短い周期で距離が跳ねる）。
@@ -3038,12 +3217,12 @@ std の公開名は次の 5 つに従う。新しい公開関数はこの規則�
      復号は厳格（字母の外・空白と改行・余計な詰め・最後の文字の使わない bit が 0 でない綴りは `Bad` — 1 つのバイト列に綴りは 1 つ・RFC 4648 3.5）。
      url は percent-encoding の `Escape` ⇄ `Unescape`（RFC 3986 2.3 の unreserved 以外を全部 `%XX` — パスの区切りにもクエリの値にも置ける 1 本の口）と
      `ParseQuery`（application/x-www-form-urlencoded の全部の組 `[]Pair` — 書かれた順・同じキーも別の組・`+` は空白・`;` は区切りでない）。
-     std/http の `Query` / `Form` は生のまま 1 キーの読み（デコードしない — 文書の約束を変えない）で、デコードした値・全部の組は url へ。
+     std/http/server の `Query` / `Form` は生のまま 1 キーの読み（デコードしない — 文書の約束を変えない）で、デコードした値・全部の組は url へ。
      棄てた案: `Encode(b, url: true)`（同じ名前で綴りの約束が違う 2 つの口）・`QueryEscape` / `PathEscape` の 2 本（Go の綴り — 片方の集合で両方に置けるので 1 本）・
      `ParseQuery` の結果を `map[string][]string`（順が消える・同じキーの並びが表の形に依る）
-   - multipart/form-data の受け（追記 2026-10-22 — 0.7.0 便 6・std/http）: `http.Multipart(r) ([]Part, error?)`（Form / Query / Cookie の隣の「要求から読む」族 — 名詞の名前は
+   - multipart/form-data の受け（追記 2026-10-22 — 0.7.0 便 6・std/http/server）: `http.server.Multipart(r) ([]Part, error?)`（Form / Query / Cookie の隣の「要求から読む」族 — 名詞の名前は
      Form と同じ線）・`Part{name, filename string?, contentType, body}`（本文は r.body の切り出し — 写さない。filename の無い部分 = テキストの欄は nil・ファイルを選ばない欄の
-     `filename=""` は ""）。誤りは粗い `http.BadMultipart` の 1 つ（媒体の型・boundary・境界の行・部分の頭・閉じの境界・上限 — 応答はふつう 400）。読むのは RFC 7578 の芯だけ
+     `filename=""` は ""）。誤りは粗い `http.server.BadMultipart` の 1 つ（媒体の型・boundary・境界の行・部分の頭・閉じの境界・上限 — 応答はふつう 400）。読むのは RFC 7578 の芯だけ
      （filename*= の RFC 5987・入れ子の multipart・Content-Transfer-Encoding・name / filename の %22 の復号は読まない）。上限は固定: 部分 1000（Go の既定と同じ）・
      部分の頭 8 KiB（要求の頭の既定と同じ）— 本文の大きさは ServeConn の maxBody が先に切る。棄てた案: 部分の列を返す代わりに名前で 1 つ引く口（Form の形 —
      同じ名前の複数ファイル〔`<input multiple>`〕が落ちる）・上限を名前付き引数（本文の上限が先にあり、部分の数と頭の大きさは用途で変わらない）・本文の stream
@@ -3053,14 +3232,16 @@ std の公開名は次の 5 つに従う。新しい公開関数はこの規則�
      - 網（net / http / tls）: `Serve`・`Accept`・`Dial`・`Listen`・`Port`・`Flush`・`Status`・`Text`・`Json`・`Query`・`Header`・`Param`・`Form`・
        `Dispatch`・`Mount`・`Merge`・`Multipart`・`Escape` ⇄ `Unescape`（url）
      - 暗号（crypto）: `Seal` ⇄ `Open`・`Sign` ⇄ `Verify`・`Extract` ⇄ `Expand`（HKDF）・`Shared`・`Base`・`Public`・`Wipe`・`Equal`・`NonZero`・`Select`・
-       `XorKeyStream`・`Block`・`Prepare`（作業域の用意 — compress と共通）・`Available`
-     - 生成: `New…`（constructor — 値を組んで返す）
+       `XorKeyStream`・`Block`・`Prepare`（鍵の前計算 — 鍵の値から Key を作って返す）・`Available`
+     - 生成: `New…`（constructor — 値を組んで返す。mut の仮引数を最初の容量に整える口も同じ族: `pool.NewScratch(mut s, n)`・`compress.flate.NewWork(mut w)` —
+       task.NewLocal の整えの文に置く形。2026-11-06 — `compress.flate.Prepare` → `NewWork`。棄てた案: `Reset`〔std に前例が無く、`pool.Renew` の「使い終えた値を 0 に戻す」と
+       読み違える — 整えは容量を取る口で中身は EncodeWith が入口で捨てる〕・`Prepare` のまま〔aead の Prepare は Key を返す構築 — 同じ名前で mut の整えと値の構築の 2 義〕）
      - 入出力・OS: `Open`・`Lines`・`Chunks`・`Raw`・`Sleep`・`Mkdir`・`Rename`・`AppendFile`・`Remove`・`RemoveDir`・`Getenv`
      - 値・乱数・バイナリ: `Freeze`・`At`・`Rand`・`Intn`・`Int62`・`Next`・`Bool`・`Load64`
    - 文字列の語彙（追記 2026-10-22 — 0.7.0 便 2・裁定 N4 の消化 = 棚から昇格）: strings に `Split`・`Fields`・`TrimSpace`・`TrimSuffix`・`ToLower`・`ToUpper`・
      `EqualFold`・`Replace`・`LastIndex`、convert に `ParseBool` ⇄ `FormatBool`。署名と受理集合は Go の strings / strconv に揃える（`Split(s, sep) []string`〔sep が空 =
      1 文字〔コードポイント〕ずつ — 文字列は妥当な UTF-8 なので列の頭で割れる〕・`Replace(s, old, new, n)`〔n < 0 = 全部・old が空 = 頭と各文字の後ろ〕・
-     `ParseBool` は 1 t T TRUE true True / 0 f F FALSE false False だけ・誤りは `convert.InvalidBool`）。**空白と大文字小文字は ASCII だけを見る**: 空白 = ' ' \t \n \v \f \r・
+     `ParseBool` は 1 t T TRUE true True / 0 f F FALSE false False だけ・誤りは `convert.BadBool`）。**空白と大文字小文字は ASCII だけを見る**: 空白 = ' ' \t \n \v \f \r・
      大小 = A..Z ⇄ a..z — Go の Fields / TrimSpace は Unicode の空白〔U+00A0・U+0085 ほか〕も、ToLower / ToUpper / EqualFold は Unicode の case folding〔É ⇄ é・K〔U+212A〕≡ k〕も
      見るが、ここでは非 ASCII をそのまま写す（Web の日用〔ヘッダ名・トークン・拡張子〕は ASCII で閉じ、Unicode の表は std に大きな表を持ち込む — 要るなら別の口で）。
      Go との一致は scripts/strings_oracle.ts の表（ASCII の範囲）・食い違う所は testdata/stdtest/stdstrings の表が名指しする。
@@ -3069,7 +3250,7 @@ std の公開名は次の 5 つに従う。新しい公開関数はこの規則�
    - 棚（今は使わない）: `Cut` の族の残り（`CutPrefix` / `CutSuffix`）・`LastIndexByte`・`Trim` / `TrimLeft` / `TrimRight`（文字の集合を取る口）・`SplitN` — 実需まで
 2. 対称性: 対になる語は両方を埋めるか、片方だけの理由を宣言の注記に書く（`HasPrefix` ⇄ `HasSuffix`・`ReadFile` ⇄ `WriteFile`・
    `Acquire` ⇄ `Release`）。標準入力の読み（`WriteStdout` の対）は実需まで足さない — `ReadFile("/dev/stdin")` で書ける（裁定 N3）。
-   対の片割れの欠け（`SealTo` ⇄ `OpenTo`・`OpenAt` ⇄ `SealAt`・`sha256.Write` ⇄ `Read`・`ParsePKCS8` ⇄ `FormatPKCS8`・`RecvAll` ⇄ `SendAll`・
+   対の片割れの欠け（`SealTo` ⇄ `OpenTo`・`OpenAt` ⇄ `SealAt`・`crypto.sha256.Write` ⇄ `Read`・`ParsePKCS8` ⇄ `FormatPKCS8`・`RecvAll` ⇄ `SendAll`・
    `EncodeWith` ⇄ `DecodeWith`・`FormatFixed` ⇄ `ParseFixed`・`ReadAll` ⇄ `WriteAll`・`WriteMode` ⇄ `ReadMode` ほか — `TrimPrefix` ⇄ `TrimSuffix` は 2026-10-22 に埋めた）は
    関数を足さず、宣言の注記（直前の doc コメントの末尾か宣言の行の末尾 — 行を増やさない）で一括に断る（「対の X は実需まで足さない」—
    必要になったときに補う。2026-10-20 の総再審 ④）
@@ -3085,15 +3266,19 @@ std の公開名は次の 5 つに従う。新しい公開関数はこの規則�
 SplitN と Cut のような歴史層が積もる）。
 
 適用（2026-10-20 — API 総再審 便 1・リネーム道具 scripts/refs.sh + alphacheck で全数・往復の網つき）: json の `Value` の variant `Num` / `Str` / `Arr` →
-`Number` / `String` / `Array`・`json.DupKey` → `DuplicateKey`・`flate.Prep` → `Prepare`・http の欄 `hdrs` → `headers`（Request / Response）・
-`ctype` → `contentType`・`Route.h` → `handler`・`Route.mw` → `middleware`・`os.SleepCut` → `SleepExpired`・`crypto.Eq` → `Equal`・`pem.Decode` → `pem.Parse`・
+`Number` / `String` / `Array`・`json.DupKey` → `DuplicateKey`・`compress.flate.Prep` → `Prepare`・http の欄 `hdrs` → `headers`（Request / Response）・
+`ctype` → `contentType`・`Route.h` → `handler`・`Route.mw` → `middleware`・`os.SleepCut` → `SleepExpired`・`crypto.Eq` → `Equal`・`crypto.pem.Decode` → `crypto.pem.Parse`・
 package `std/conv` → `std/convert`（5 の略語の禁止・1 の語彙）。棄てた案: `SleepCut`（「切れた」が何の期限かを語らない — `io.Expired` と語を揃えて
-`SleepExpired`）・`pem.Decode` のまま（34 節 1 の `Decode` は @layout の写しの族で読みの不足は nil — `(T, error?)` は `Parse` の族）・`flate.Prep`
+`SleepExpired`）・`crypto.pem.Decode` のまま（34 節 1 の `Decode` は @layout の写しの族で読みの不足は nil — `(T, error?)` は `Parse` の族）・`compress.flate.Prep`
 （略語 — crypto の `Prepare` と同じ語に）・`json.Num` 等の略形（5 の略語の禁止 — 欄名・variant 名にも同じ規則を掛ける）
 適用の続き（2026-10-20 — 便 1 の残党・loader の合成コード〔jsonshape〕の文字列も同じコミットで追従 — compiler-known）: `json.DecString` / `DecBool` / `DecInt` / `DecFloat`
 → `ParseString` / `ParseBool` / `ParseInt` / `ParseFloat`（`(T, error?)` — `Parse` の族・略語の禁止）・`builder.PushStr` → `PushString`・`json.Object`（関数 — 節 n が
 object でなければ error）→ `NeedObject`（Need の族）・variant `json.Obj` → `Object`（関数の名前が空いてから — variant 名はトップレベルの名前と同じ空間）。
 棄てた案: `json.Object` 関数のまま variant を `JsonObject` 等に逃がす（variant が型の顔 — 部品の関数の側が族の名前を名乗る）
+適用（2026-11-06 — std の流儀の棚卸し・ユーザー裁定 U-14 / 形の誤りの語の統一）: 入力の形の誤りのラベルを `Bad…` に揃える — `convert.InvalidInt` / `InvalidFloat` / `InvalidBool` →
+`BadInt` / `BadFloat` / `BadBool`・`json.InvalidJson` → `BadJson`・`strings.InvalidUtf8` / `env.InvalidUtf8` → `BadUtf8`（base64・hex・url・pem・flate・gzip・net の `Bad` と
+`tls.BadRecord`・`http.client.BadUrl` 等の `Bad<名詞>` が多数派）。範囲外は `…OutOfRange` に揃える — `json.IntRange` → `IntOutOfRange`（`convert.IntOutOfRange` / `FloatOutOfRange` と同じ語）。
+棄てた案: `Invalid…` へ寄せる（数が少ない側・`Bad` より長い）・`Malformed`（0.6.8 の新参が一時名乗った — 同じ便で `Bad` へ）
 
 ### 35. テスト — `sober test`（決定 2026-10-01〜02）
 
@@ -3254,7 +3439,7 @@ func readPhdr(b []byte, phoff int, i int) Elf64Phdr? {
 - 文字列: `println(f)`・補間の穴 `${f}`（2026-11-04 追加 — 24 節）と `convert.FormatFloat(f)` は最短の往復表現（読み戻すと同じビットになる最短の 10 進）を Go の `strconv.FormatFloat(f, 'g', -1, 64)` と同じ綴りで
   （`1.5`・`1e+06`・`1e-05`・`NaN`・`+Inf`・`-Inf`・`-0`）。解析は `convert.ParseFloat(s) (float, error?)`（正しく丸めた変換・リテラルと同じ算法）:
   受ける形は `[+-]?` 10 進の数字（小数点 1 つ・`.5` / `5.` も可）と指数、または `inf` / `infinity`（符号可）/ `nan`（大文字小文字を問わない）。16 進・`_` は受けない。
-  誤りは `convert.InvalidFloat`（構文）と `convert.FloatOutOfRange`（溢れ — 値は ±Inf。0 に丸まる小さい値は誤りでない）。
+  誤りは `convert.BadFloat`（構文）と `convert.FloatOutOfRange`（溢れ — 値は ±Inf。0 に丸まる小さい値は誤りでない）。
   口は std/convert（数値と文字列の変換の席 — 遍在する std/strings に置くと float を使わないプログラムの error の集合まで広がるので分けた。将来の int の解析・decimal もここ）・中身は std/floatfmt（整数だけの多倍長 — 最短の往復表現は Burger & Dybvig の free-format・境界は仮数が偶数なら端を含む）。float の字句（リテラル・
   名前 float）を含むファイルには parser が std/floatfmt の暗黙 import を足す（println が float を印字する口 — float の値はどれもその字句を経るので、
   使うプログラムにだけ入る）。オラクル = Go の strconv との差分（例 float_format / float_parse — 境界値 + 乱択 5,000 本ずつを常備・開発時は 10 万本）
@@ -3416,7 +3601,7 @@ func TestLookup() {
 - **本番に混ざらない**: `_double.sober` は差し替えの表が名指したときだけ読む（本番の build・check・テストの外の読みは、ファイル名で落とす — double のディレクトリは空に見え、
   import は「double は @doubles からだけ読む」で拒否）。double のパスの import は `_test.sober` と `_double.sober` からだけ
 - **double のパスの import**: テストは double にだけある名前（fake の調整口 — 決め打ちの応答・注入する誤りを持つ把手を作る関数）を double のパス経由で使う。
-  そのビルドでは double のパスは相手と同じ package の別名（参照名はパスの末尾 — `fake.Conn` と `store.Conn` は同じ型）。double にだけある名前を相手のパス経由で
+  そのビルドでは double のパスは相手と同じ package の別名（修飾子はそれぞれのパスの全段 — `store.fake.Conn` と `store.Conn` は同じ型）。double にだけある名前を相手のパス経由で
   参照すると拒否（本番のコードが double にしか無い名前に依る道を塞ぐ）
 - **契約**（double の公開の名前のうち相手にもある名前 — 相手にあって double に無い名前は可: 閉世界なので使われる分だけ書けばよい）: 種類が同じ・関数の署名が同じ
   （型パラメータの数・仮引数の mut と型・結果。型の比較は参照名を import のパスへ解いて — 修飾の無い名前は両側とも相手の package）・const は値の式が同じ・
@@ -3484,14 +3669,14 @@ func TestGreetLogs() {
 }
 ```
 
-- **把手**: `const X = cell.Cell[T]{}`（初期値は `init:` — `cell.Cell[int]{init: 1}`）。把手を作れるのはトップレベルの const の宣言だけで、同一性は宣言ごと
-  （loader が欄 `key` に package のパスと const の名前から決めた鍵を書く — 利用者は書かない）。const の外の `cell.Cell[T]{…}` のリテラルは拒否（何の置き場も指さない）。
+- **把手**: `const X = testing.cell.Cell[T]{}`（初期値は `init:` — `testing.cell.Cell[int]{init: 1}`）。把手を作れるのはトップレベルの const の宣言だけで、同一性は宣言ごと
+  （loader が欄 `key` に package のパスと const の名前から決めた鍵を書く — 利用者は書かない）。const の外の `testing.cell.Cell[T]{…}` のリテラルは拒否（何の置き場も指さない）。
   把手の値は局所の束縛・実引数・欄に置ける（鍵の写し）
-- **口**: `cell.Get(h) T`（一度も書いていなければ init — 書いていなければ T のゼロ値）・`cell.Set(h, v)`・`cell.Update(h, f)`（読み → f → 書きを置き場のロックの中で 1 回に —
+- **口**: `testing.cell.Get(h) T`（一度も書いていなければ init — 書いていなければ T のゼロ値）・`testing.cell.Set(h, v)`・`testing.cell.Update(h, f)`（読み → f → 書きを置き場のロックの中で 1 回に —
   並行の task の Update は記録を失わない）。効果は Set / Update = `io`・Get = `io, nondet`（並行の task から触ると読める値がスケジュールで変わる — ファイルの読みと同じ扱い）。
   帰結: 本物の宣言が io を持たない関数（純な本物・時刻だけの `@effects(nondet)` の本物）は、置き場を使う fake で差し替えられない（契約で落ちる — 時間とともに答えが変わる偽物を構造で止める）
 - **Update の f**: ラムダのリテラル（仮引数 1 つ）で効果なし（`@effects()` と同じ照合 — ロックを持ったまま走るので、待つ・外と出入りする・panic しうる本体は analyzer が拒否）
-- **T**: 置ける値はチャネルのペイロードと同じ素のデータ（関数値・mut の部分・同一性の値〔札・handle・端点・ファイル〕を持たない）。
+- **T**: 置ける値はチャネルのペイロードと同じ素のデータ（関数値・mut の部分・同一性の値〔札・handle・端点・ファイル〕を持たない）。再帰型も置ける（写しは再帰型を写す — チャネルの送りと同じ梱包。決定 2026-11-05 ユーザー裁定 — F-doc4）。union を置くなら `init:` が要る（union にゼロ値は無い）。
   値は置き場へ写して持ち（Set / Update の書き）、Get は呼び手の最内の region へ写して返す（region をまたぐ参照は出ない）
 - **寿命**: プロセス。`sober test` は 1 テスト 1 プロセスなので、テストごとに空から始まる。std/quick の試行（縮め・コーパスの再生を含む）の頭で rt が置き場を空にする
   （前の試行の書きが次の試行の入力になると、試行が種と番号で決まらなくなる）
@@ -3803,7 +3988,7 @@ analyzer が型システム並みになる条件:
 - チャネルの有界バッファ変種（積み 2026-09-19。決定タイミング: 組み込みターゲット着手時、遅くとも Phase 5 のバッファリング再訪と同時）: 無限バッファ（18 節・段 3c の裁定）はメモリ無界で組み込みの禁じ手。有界にすると send がブロックし得る（`block` 効果の新しい住人）ので、形式化（progress の Blocked が send 側にも増える）と効果語彙に波及する。候補: 生成時の容量引数 `Chan[T](cap)`（cap 省略 = 無限で後方互換）、有界は組み込みプロファイル限定、など。design-dev.md ドッグフーディング題材 4 の着手条件
 - ~~panic の適用範囲を「取り返しがつかないもの」限定に絞る~~ → 決定 2026-09-27（27 節）: panic は健全性の防衛と
   「到達 = バグ」の 2 種、判定規準は「正しいプログラムでも入力次第で起きるか」、`at(xs, i) : T?` を追加、panic は `@errors` 外
-- ~~`string(b)` の形~~ → 決定 2026-09-27（27 節）: UTF-8 検査あり + `(string, error?)`、ラベル `InvalidUtf8`
+- ~~`string(b)` の形~~ → 決定 2026-09-27（27 節）: UTF-8 検査あり + `(string, error?)`、ラベル `BadUtf8`
 - ~~トップレベル const の辞書~~ → 決定 2026-09-26（25 節「辞書定数の置き場」）: const 式の範囲を広げ、
   実体の置き場は参照点での展開（同一性は保証しない）
 - 複数の明示型引数（積み 2026-09-26）: `f[int, bool](x)` は index の文法（単一の式）に乗らない。

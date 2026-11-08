@@ -334,11 +334,11 @@ func vfyInst(st mut St, v mut vfyS, w mut m2rW, f FnRef, ins InsRef, nf int) str
     c := irInsC(mut st, ins)
     hasRes := irInsRes(mut st, ins) >= 0
     if op == OpConst || op == OpSlotaddr || op == OpGlobal || op == OpFsAddr || op == OpFuncaddr || op == OpRDepth || op == OpRAlloc || op == OpRBump || op == OpBin || op == OpCmp ||
-        op == OpLoad || op == OpLoad8 || op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop || op == OpSyscall || op == OpScanB || op == OpCrcFold {
+        op == OpLoad || isNarrowLd(op) || op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop || op == OpSyscall || op == OpScanB || op == OpCrcFold {
         if !hasRes {
             return "the result is missing"
         }
-    } else if op == OpStore || op == OpStore8 || op == OpREnter || op == OpRSetDepth || op == OpRReloc {
+    } else if op == OpStore || isNarrowSt(op) || op == OpREnter || op == OpRSetDepth || op == OpRReloc {
         if hasRes {
             return "an unexpected result"
         }
@@ -347,12 +347,12 @@ func vfyInst(st mut St, v mut vfyS, w mut m2rW, f FnRef, ins InsRef, nf int) str
     case OpBin | OpCmp:
         m := vfyUse(mut st, mut v, mut w, b, TyI64, "bin / cmp")
         return if m != "" { m } else { vfyUse(mut st, mut v, mut w, c, TyI64, "bin / cmp") }
-    case OpLoad | OpLoad8:
+    case OpLoad | OpLoad8 | OpLoad16 | OpLoad32:
         return vfyUse(mut st, mut v, mut w, a, TyPtr, "load")
     case OpStore:
         m := vfyUse(mut st, mut v, mut w, a, TyPtr, "store")
         return if m != "" { m } else { vfyUse(mut st, mut v, mut w, c, -1, "store") }
-    case OpStore8:
+    case OpStore8 | OpStore16 | OpStore32:
         m := vfyUse(mut st, mut v, mut w, a, TyPtr, "store8")
         return if m != "" { m } else { vfyUse(mut st, mut v, mut w, c, TyI64, "store8") }
     case OpGepW | OpGepB:
@@ -383,7 +383,7 @@ func vfyInst(st mut St, v mut vfyS, w mut m2rW, f FnRef, ins InsRef, nf int) str
             return m
         }
         m2 := vfyList(mut st, mut v, mut w, b, -1, "call.indirect argument")
-        return if m2 != "" { m2 } else if hasRes != (c >= 0) { "call.indirect result presence is wrong" } else { "" }
+        return if m2 != "" { m2 } else if hasRes != (calliTy(c) >= 0) { "call.indirect result presence is wrong" } else { "" }
     case OpTrapI:
         if !hasRes {
             return "the result is missing"

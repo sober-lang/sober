@@ -26,11 +26,44 @@ for n, line in enumerate(open(sys.argv[1])):
     with open(f"{sys.argv[2]}.{n:04d}.json", "w") as f:
         f.write(json.dumps(json.loads(line)["e"], separators=(",", ":")))
 EOF
+# 外す tools（scripts/leanbatch_skip.txt）は照合の無い入力を外さない約束: 各行は ① selfhost_check の tools の一覧（scripts/selfhost_check_tools.txt）にある名前（同じ入力の Lean の判定を
+# selfhost_check (ii) が Sober の checker と照合する）か ② `<t>=<代表>` — 代表が leanbatch に残り、両者のコア JSON の差が末尾の
+# main の Def だけ（先頭の一致が全体の 99.99% 以上 — 他の Def は代表の入力で被覆）。どちらでもなければ赤
+sc_tools=" $(cat scripts/selfhost_check_tools.txt) "
+skip=()
+reps=()
+while IFS= read -r line; do
+    line=${line%%#*}
+    line=${line// /}
+    [ -n "$line" ] || continue
+    t=${line%%=*}
+    skip+=("$t")
+    if [ "$line" != "$t" ]; then reps+=("$t=${line#*=}"); continue; fi
+    case "$sc_tools" in *" $t "*) echo "leanbatch: SKIP tool_$t (Lean verdict cross-checked by selfhost_check (ii))" ;;
+        *) echo "FAIL: scripts/leanbatch_skip.txt: $t is not in scripts/selfhost_check_tools.txt — nothing else cross-checks its Lean verdict"; exit 1 ;; esac
+done < scripts/leanbatch_skip.txt
+mkdir -p "$tmp/rep"
 for t in src/compiler/tools/*/; do
     t=$(basename "$t")
-    (cd src/compiler && "$SOBER" check "tools/$t/main.sober" --core-json) > "$tmp/in/tool_$t.json" &
+    out=$tmp/in/tool_$t.json
+    case " ${skip[*]} " in *" $t "*)
+        case " ${reps[*]} " in *" $t="*) out=$tmp/rep/tool_$t.json ;; *) continue ;; esac ;; esac
+    (cd src/compiler && "$SOBER" check "tools/$t/main.sober" --core-json) > "$out" &
 done
 wait
+for r in "${reps[@]}"; do
+    t=${r%%=*} rep=${r#*=}
+    a=$tmp/rep/tool_$t.json b=$tmp/in/tool_$rep.json
+    [ -s "$a" ] && [ -s "$b" ] || { echo "FAIL: scripts/leanbatch_skip.txt: $t=$rep: missing core JSON (is $rep still in leanbatch?)"; exit 1; }
+    sz=$(stat -c %s "$a")
+    same=$( { cmp "$a" "$b" 2> /dev/null || true; } | sed -n 's/.* byte \([0-9]*\),.*/\1/p')
+
+    same=$(( ${same:-$sz} - 1 ))
+    if [ $((same * 10000)) -lt $((sz * 9999)) ]; then
+        echo "FAIL: scripts/leanbatch_skip.txt: $t=$rep: core JSONs share only $same of $sz leading bytes (more than main's Def differs)"; exit 1
+    fi
+    echo "leanbatch: SKIP tool_$t (represented by tool_$rep — $same/$sz leading bytes identical)"
+done
 if [ "${1:-}" = "--all" ]; then
     mkdir -p "$tmp/mut"
     node scripts/checkmut.ts "$tmp/mut" testdata/corejson/*.json > /dev/null
@@ -60,7 +93,12 @@ single() {
     if [ "${want:0:1}" != "{" ]; then echo "FAIL: $(basename "$f"): the single run printed no verdict: $(printf '%s' "$want" | head -c 100)"; echo "@@ fail"; return; fi
     if [ "$want" = "$got" ]; then echo "@@ ok"; else echo "FAIL: $(basename "$f"): single $(printf '%s' "$want" | head -c 100) / batch $(printf '%s' "$got" | head -c 100)"; echo "@@ fail"; fi
 }
-while IFS= read -r f; do par_run single "$f"; done < "$tmp/list"
+# 大物（lean_big）は 1 本の仕事で直列に — 同時に 2 本走ると数 GB ずつ山が重なる（lean_batch の大物のチャンクと同じ理由）
+singles() { local f; for f in "$@"; do single "$f"; done; }
+big=()
+while IFS= read -r f; do if lean_big "$f"; then big+=("$f"); fi; done < "$tmp/list"
+[ ${#big[@]} -gt 0 ] && par_run singles "${big[@]}"
+while IFS= read -r f; do lean_big "$f" || par_run single "$f"; done < "$tmp/list"
 par_wait > "$tmp/all"
 grep -v '^@@ ' "$tmp/all" || true
 ok=$(par_count ok "$tmp/all")

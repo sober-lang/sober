@@ -47,7 +47,7 @@ double の公開の名前のうち相手にもあるものは契約を満たす:
 
 ## 13.2 状態を貯める fake
 
-S-9. `std/testing/cell` は `*_test.sober` と `*_double.sober`（と std）だけが import できる。把手 `cell.Cell[T]` はトップレベルの const の宣言の右辺のリテラル `cell.Cell[T]{…}`（欄は `init:` だけ — 省けば T のゼロ値）だけが作り、置き場は宣言ごとに 1 つ。`cell.Get(h) T` は置き場の値（一度も書いていなければ init）を呼び手の最内の region へ写して返し、`cell.Set(h, v)` は v を置き場へ写して置き、`cell.Update(h, f)` は読み → f → 書きを他の書きと重ならずに行う。f はラムダのリテラル（仮引数 1 つ）で効果を持たない。T は関数値・mut の部分・同一性の値を持たない。Set / Update の効果は `io`、Get は `io, nondet`。置き場の寿命はプロセスで、std/quick の試行（縮め・再生を含む）の頭で全部が空になる。
-例: testdata/doubles/greet（spy の double で走るテスト）・testdata/cells（読み書き・並行の Update・quick の試行ごとの空）
+S-9. `std/testing/cell` は `*_test.sober` と `*_double.sober`（と std）だけが import できる。把手 `testing.cell.Cell[T]` はトップレベルの const の宣言の右辺のリテラル `testing.cell.Cell[T]{…}`（欄は `init:` だけ — 省けば T のゼロ値）だけが作り、置き場は宣言ごとに 1 つ。`testing.cell.Get(h) T` は置き場の値（一度も書いていなければ init）を呼び手の最内の region へ写して返し、`testing.cell.Set(h, v)` は v を置き場へ写して置き、`testing.cell.Update(h, f)` は読み → f → 書きを他の書きと重ならずに行う。f はラムダのリテラル（仮引数 1 つ）で効果を持たない。T は関数値・mut の部分・同一性の値を持たない（再帰型は置ける — ゼロ値の無い T〔union〕は `init:` が要る）。Set / Update の効果は `io`、Get は `io, nondet`。置き場の寿命はプロセスで、std/quick の試行（縮め・再生を含む）の頭で全部が空になる。
+例: testdata/doubles/greet（spy の double で走るテスト）・testdata/cells（読み書き・並行の Update・quick の試行ごとの空・再帰の union の値）
 拒否: [`examples/cell_neg_import.sober`](../../examples/cell_neg_import.sober)（テストの構成の外の import）・testdata/doubles/neg/c01〜c04（import の置き場・const の外のリテラル・`key:`・ラムダでない f）・cfx（f の効果）・cty（置けない T）・cset / cupd（値の型）
 決定: [language.md 41 節](../language.md)

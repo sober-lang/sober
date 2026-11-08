@@ -40,12 +40,12 @@ func pairWant(i int) string {
 }
 
 func main() {
-    println("rfc1", show(x25519.Shared(unhex("a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4"), unhex("e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c")), "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552"))
-    println("rfc2", show(x25519.Shared(unhex("4b66e9d4d1b4673c5ad22691957d6af5c11b6421e0ea01d42ca4169e7918ba0d"), unhex("e5210f12786811d3f4b7959d0538ae2c31dbe7106fc03c3efc4cd549c715a493")), "95cbde9476e8907d7aade45cb4b873f88b595a68799fa152e6f8f7647aac7957"))
+    println("rfc1", show(crypto.x25519.Shared(unhex("a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4"), unhex("e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c")), "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552"))
+    println("rfc2", show(crypto.x25519.Shared(unhex("4b66e9d4d1b4673c5ad22691957d6af5c11b6421e0ea01d42ca4169e7918ba0d"), unhex("e5210f12786811d3f4b7959d0538ae2c31dbe7106fc03c3efc4cd549c715a493")), "95cbde9476e8907d7aade45cb4b873f88b595a68799fa152e6f8f7647aac7957"))
     mut k := unhex("0900000000000000000000000000000000000000000000000000000000000000")
     mut u := k
     for i <- iter.Range(0, 100) {
-        r := x25519.Shared(k, u)
+        r := crypto.x25519.Shared(k, u)
         u = k
         k = r
         if i == 0 {
@@ -55,21 +55,21 @@ func main() {
     println("iter100", show(k, "b1a5a73158904c020866c13939dd7e1aa26852ee1d2609c92e5a8f1debe2150a"))
     ap := unhex("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a")
     bp := unhex("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb")
-    println("alice", hex.Format(x25519.Base(ap)))
-    println("bob", hex.Format(x25519.Base(bp)))
+    println("alice", hex.Format(crypto.x25519.Base(ap)))
+    println("bob", hex.Format(crypto.x25519.Base(bp)))
     sh := "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742"
-    println("shared", show(x25519.Shared(ap, x25519.Base(bp)), sh), show(x25519.Shared(bp, x25519.Base(ap)), sh))
+    println("shared", show(crypto.x25519.Shared(ap, crypto.x25519.Base(bp)), sh), show(crypto.x25519.Shared(bp, crypto.x25519.Base(ap)), sh))
     mut same := 0
     for i <- iter.Range(0, 16) {
         a := key(2 * i)
         b := key(2 * i + 1)
-        s1 := x25519.Shared(a, x25519.Base(b))
-        s2 := x25519.Shared(b, x25519.Base(a))
+        s1 := crypto.x25519.Shared(a, crypto.x25519.Base(b))
+        s2 := crypto.x25519.Shared(b, crypto.x25519.Base(a))
         if crypto.Equal(s1, s2) {
             same = same + 1
         }
         if i % 4 == 0 {
-            println("pair", i, hex.Format(x25519.Base(a)), show(s1, pairWant(i)))
+            println("pair", i, hex.Format(crypto.x25519.Base(a)), show(s1, pairWant(i)))
         }
     }
     println("symmetric", same)

@@ -1,0 +1,78 @@
+package time
+
+// 地域の規則の網（white-box）: 焼き込みの全ゾーンを読み、照合の表（testdata/tz/samples.txt — 同じ tz のソースを zic -b fat -r 1900〜2100 で
+// 全部の遷移に展開した束の値）の時刻ごとのオフセット・夏時間・略称が、slim の遷移 + 末尾の規則の評価と一致するか
+
+import "std/strings"
+
+@embed("testdata/tz/samples.txt")
+const Samples = map[string]string{}
+
+func TestSamples() {
+    v := Samples["testdata/tz/samples.txt"]
+    assert(v != nil)
+    if v == nil {
+        return
+    }
+    mut cur := ""
+    mut z := UTC()
+    mut n := 0
+    mut bad := 0
+    for l <- strings.Split(strings.TrimSpace(v), "\n") {
+        f := strings.Fields(l)
+        if f[0] != cur {
+            zz, e := LoadZone(f[0])
+            if e != nil {
+                println("tz: cannot load ${f[0]}")
+                bad += 1
+            }
+            z = zz
+            cur = f[0]
+        }
+        t := Unix(signedDec(f[1]), 0)
+        o, a, d := lookup(z, t.sec)
+        n += 1
+        if o != signedDec(f[2]) || d != (f[3] == "1") || a != f[4] {
+            println("tz mismatch ${l} — got ${o} ${d} ${a}")
+            bad += 1
+        }
+    }
+    println("tz: ${n} samples, ${bad} mismatched")
+    assert(bad == 0)
+}
+
+func TestLinksAndUnknown() {
+    a, e1 := LoadZone("Japan")
+    b, e2 := LoadZone("Asia/Tokyo")
+    assert(e1 == nil && e2 == nil && ZoneName(a) == "Asia/Tokyo" && ZoneName(b) == "Asia/Tokyo")
+    c, e5 := LoadZone("Africa/Addis_Ababa")
+    assert(e5 == nil && ZoneName(c) == "Africa/Nairobi")
+    _, e3 := LoadZone("Mars/Olympus")
+    assert(e3 != nil)
+    u, e4 := LoadZone("UTC")
+    assert(e4 == nil && OffsetAt(u, Unix(0, 0)) == 0)
+}
+
+func TestFromCivilIn() {
+    ny, _ := LoadZone("America/New_York")
+    // 2026-03-08 02:30 は存在しない（02:00 → 03:00）・2026-11-01 01:30 は 2 回ある（早い方 = EDT）
+    gap := FromCivilIn(Civil{year: 2026, month: 3, day: 8, hour: 2, minute: 30, second: 0, nsec: 0, weekday: 0}, ny)
+    assert(UnixSec(gap) == 1772955000)
+    amb := FromCivilIn(Civil{year: 2026, month: 11, day: 1, hour: 1, minute: 30, second: 0, nsec: 0, weekday: 0}, ny)
+    assert(UnixSec(amb) == 1793511000)
+    tk, _ := LoadZone("Asia/Tokyo")
+    c := ToCivilIn(Unix(1700000000, 0), tk)
+    assert(c.hour == 7 && c.day == 15)
+    assert(FormatRFC3339(Unix(1700000000, 0), OffsetAt(tk, Unix(1700000000, 0))) == "2023-11-15T07:13:20+09:00")
+}
+
+func TestRules() {
+    r, ok := parseRule("EET-2EEST,M3.4.4/50,M10.4.4/50")
+    assert(ok && r.stdOff == 7200 && r.dstOff == 10800 && r.start.secs == 50 * 3600)
+    r2, ok2 := parseRule("<-02>2<-01>,M3.5.0/-1,M10.5.0/0")
+    assert(ok2 && r2.stdAbbr == "-02" && r2.stdOff == -7200 && r2.start.secs == -3600)
+    _, ok3 := parseRule("AB-2")
+    assert(!ok3)
+    j, ok4 := parseRule("XST5XDT,J60,300")
+    assert(ok4 && j.start.kind == 0 && j.end.kind == 1)
+}

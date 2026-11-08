@@ -1,0 +1,10 @@
+package main
+
+// 負例: http.client.Session のゼロ値は std の外で作れない（何の接続も指さない偽物 — 同一性の型のゼロ値の規則。loader/identityx）
+
+import "std/http/client"
+
+func main() {
+    s := http.client.Session{}
+    _, _ = http.client.Send(s, "/")
+}

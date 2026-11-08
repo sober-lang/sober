@@ -13,11 +13,11 @@ func main() int {
     mut x := 12345
     mut sum := 0
     for n <- iter.Range(0, 600) {
-        sum = sum ^ (crc32.Sum(freeze(b)) * (n + 1))
+        sum = sum ^ (hash.crc32.Sum(freeze(b)) * (n + 1))
         x = x * 1103515245 + 12345
         b = append(b, byte((x >> 16) & 0xff))
     }
     println(convert.FormatInt(sum))
-    println(convert.FormatInt(crc32.Sum(bytes("123456789"))))
+    println(convert.FormatInt(hash.crc32.Sum(bytes("123456789"))))
     return 0
 }

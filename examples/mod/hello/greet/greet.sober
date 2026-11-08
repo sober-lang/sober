@@ -1,0 +1,8 @@
+package greet
+
+import "text"
+
+// a greeting for name
+func Hello(name string) string {
+    return text.Shout("hello, ${name}")
+}

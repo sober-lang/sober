@@ -1,0 +1,139 @@
+package lower
+
+// 入口の零初期化の語の判定（zeroinit.sober xZeroNeed）の単体テスト（`cd compiler && ../bin/sober test lower`）: 利用者のプログラムの IR では
+// 0 を観測できる読みが出ない（毒の口の観測でも区別できない）ので、判定の誤り（要零を外す方向）は IR を手で組んで直に見る。
+// スロットは 1 本・2 語（位置 2 = 語 0・位置 1 = 語 1）
+
+import "desugar"
+import "std/iter"
+
+// 形 kind の関数を組んで xZeroNeed の [位置 1, 位置 2] を返す
+// 0: 同じブロックで store の前の load（語 0 が要零）と store の後の load（語 1 は要らない）
+// 1: 前のブロックで書いて後のブロックで読む（要らない）
+// 2: 菱形の片方の腕だけで書いて合流で読む（要零）
+// 3: 語 0 を書いてから番地を call へ渡す（語 0 は要らない・語 1 は要零 — 逃げた先が読みうる）
+// 4: 定数の gep で語 1 を書いて番地 + 1 で読む（要らない）
+// 5: sret の受け皿として call へ渡してから読む（要らない — 呼ばれた関数が全語を書く・F_SRET_BIT の約束）
+// 6: 5 と同じ形で、呼ぶ関数に sret の印が無い（両方要零 — 逃げた先が読みうる）
+// 7: sret の印のある関数へ、受け皿でない引数（引数 1）として渡す（両方要零）
+func zT(kind int) []int {
+    mut st := St{}
+    initScalars(mut st)
+    kindsInit(mut st)
+    desugar.HeapPush(mut st.d, 0)
+    pt := listN(mut st, 1)
+    desugar.HeapSet(mut st.d, pt + 1, TyI64)
+    callee := addFunc(mut st, 0, desugar.ListRef(pt), TyI64)
+    pp := listN(mut st, 2)
+    desugar.HeapSet(mut st.d, pp + 1, TyPtr)
+    desugar.HeapSet(mut st.d, pp + 2, TyPtr)
+    sretF := addFunc(mut st, 0, desugar.ListRef(pp), -1)
+    irSetFnMutP(mut st, sretF, 1 << F_SRET_BIT)
+    plainF := addFunc(mut st, 0, desugar.ListRef(pp), -1)
+    f := addFunc(mut st, 0, desugar.ListRef(pt), TyI64)
+    begin(mut st, f)
+    sa := newSlotAddr(mut st, 2)
+    c := iconst(mut st, 7)
+    if kind == 0 {
+        v := load(mut st, sa, 0)
+        store(mut st, sa, 1, c)
+        w := load(mut st, sa, 1)
+        ret(mut st, bin(mut st, BAdd, v, w))
+    } else if kind == 1 {
+        store(mut st, sa, 0, c)
+        b1 := newBlock(mut st)
+        br(mut st, b1, -1)
+        setCur(mut st, b1)
+        ret(mut st, load(mut st, sa, 0))
+    } else if kind == 2 {
+        t := newBlock(mut st)
+        e := newBlock(mut st)
+        j := newBlock(mut st)
+        condbr(mut st, 0, t, -1, e, -1)
+        setCur(mut st, t)
+        store(mut st, sa, 0, c)
+        br(mut st, j, -1)
+        setCur(mut st, e)
+        br(mut st, j, -1)
+        setCur(mut st, j)
+        ret(mut st, load(mut st, sa, 0))
+    } else if kind == 3 {
+        store(mut st, sa, 0, c)
+        r := call(mut st, callee, list1(mut st, sa))
+        ret(mut st, r)
+    } else if kind == 5 || kind == 6 || kind == 7 {
+        other := newSlotAddr(mut st, 1)
+        store(mut st, other, 0, c)
+        fn := if kind == 6 { plainF } else { sretF }
+        _ = if kind == 7 { call(mut st, fn, list2(mut st, other, sa)) } else { call(mut st, fn, list2(mut st, sa, other)) }
+        ret(mut st, bin(mut st, BAdd, load(mut st, sa, 0), load(mut st, sa, 1)))
+    } else {
+        g := gepWord(mut st, sa, iconst(mut st, 1))
+        store(mut st, g, 0, c)
+        ret(mut st, load(mut st, sa, 1))
+    }
+    zn := xZeroNeed(mut st, f, []int{2})
+    return []int{zn[1], zn[2]}
+}
+
+func TestZeroNeed() {
+    a := zT(0)
+    assert(a[0] == 0 && a[1] == 1)
+    b := zT(1)
+    assert(b[0] == 0 && b[1] == 0)
+    c := zT(2)
+    assert(c[1] == 1)
+    d := zT(3)
+    assert(d[0] == 1 && d[1] == 0)
+    e := zT(4)
+    assert(e[0] == 0 && e[1] == 0)
+    f := zT(5)
+    assert(f[0] == 0 && f[1] == 0)
+    g := zT(6)
+    assert(g[0] == 1 && g[1] == 1)
+    h := zT(7)
+    assert(h[0] == 1 && h[1] == 1)
+}
+
+// store の列の計画が区間 [rbp - 8 × ztop, rbp - 8 × (ztop - cnt)) を 1 語ずつ隙間も重なりもなく覆うか
+func zPlanOk(ztop int, cnt int) bool {
+    pl := xZeroPlan(ztop, cnt)
+    mut d := -8 * ztop
+    for q <- iter.Range(0, len(pl)) {
+        if pl[q] != d {
+            return false
+        }
+        d += 8
+    }
+    return d == -8 * (ztop - cnt)
+}
+
+// store の列（x86.sober xZeroPlan）: 区間の頭・語数・区間が rbp - 8 で終わらない形（変異 m3 = 1 語足りない列を殺す）
+func TestZeroPlan() {
+    for ztop <- iter.Range(1, 20) {
+        for cnt <- iter.Range(1, ztop + 1) {
+            assert(zPlanOk(ztop, cnt))
+        }
+    }
+    assert(len(xZeroPlan(5, 5)) == 5)
+}
+
+// 零初期化の沈めの判定（x86.sober xZeroSinkCalc）: 後続の CSR・ok（区間に重なるスロットの番地を持たない）・ret で前線を見る
+func TestZeroSink() {
+    all := []int{1, 1, 1, 1, 1}
+    // 0: 菱形の片方が早期 return（E）・もう片方が区間に触れる → 前線 = 2
+    a := xZeroSinkCalc([]int{0, 2, 2, 2}, []int{1, 2}, []int{1, 1, 0}, []int{0, 1, 1}, []int{1, 1, 1})
+    assert(len(a) == 3 && a[0] == 0 && a[1] == 0 && a[2] == 1)
+    // 1: E に ret が無い → 沈めない
+    b := xZeroSinkCalc([]int{0, 1, 1}, []int{1}, []int{1, 0}, []int{0, 1}, []int{1, 1})
+    assert(len(b) == 0)
+    // 2: E の外から E へ戻る辺（2 → 0）→ 沈めない（前線を 2 回通りうる）
+    c := xZeroSinkCalc([]int{0, 2, 2, 3}, []int{1, 2, 0}, []int{1, 1, 0}, []int{0, 1, 0}, []int{1, 1, 1})
+    assert(len(c) == 0)
+    // 3: 前線 3 の前任に E の外（2）がある → 沈めない
+    d := xZeroSinkCalc([]int{0, 2, 2, 3, 3, 5}, []int{4, 2, 3, 1, 3}, []int{1, 1, 0, 0, 1}, []int{0, 1, 0, 1, 0}, all)
+    assert(len(d) == 0)
+    // 4: 入口が区間に触れる → 沈めない
+    f := xZeroSinkCalc([]int{0, 1, 1}, []int{1}, []int{0, 1}, []int{0, 1}, []int{1, 1})
+    assert(len(f) == 0)
+}

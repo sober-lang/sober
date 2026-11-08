@@ -281,7 +281,7 @@ func firstSentence(s string) string {
 
 // path の一覧の対象のファイル。path が .sober / .sobi ならそれだけ・他はディレクトリとして、その .sober を名前の順に
 // depth 段下まで（1 = そのディレクトリだけ — 浅い段が先）。`.` で始まる名前は飛ばす・noTest なら *_test.sober を飛ばす
-@errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired, strings.InvalidUtf8)
+@errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired, strings.BadUtf8)
 @effects(io, nondet)
 func Files(path string, depth int, noTest bool) ([]string, error?) {
     if strings.HasSuffix(path, ".sober") || strings.HasSuffix(path, ".sobi") {

@@ -1,0 +1,17 @@
+package main
+
+import "greet"
+import "json"
+import "kv"
+import "kv/store"
+import "std/json"
+
+func main() int {
+    println(greet.Hello("mod"))
+    println(json.Own())
+    v := stdjson.Parse(bytes("[1,2]")) catch return 1
+    println(stdjson.Format(v, 0))
+    s := kv.Put(kv.store.Empty(), "k", "v")
+    println(kv.Get(s, "k"))
+    return 0
+}

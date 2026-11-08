@@ -39,10 +39,10 @@ func lines(b []byte) []int {
 
 // 1 行を通す。結果は（値, 作業記録, err）
 func compile(b []byte, n int, start int, end int) (int, Job, error?) {
-    ts := lex.Lex(b, start, end)?
-    nodes := parse.Parse(ts)?
-    code := emit.Compile(nodes)
-    v := emit.Run(code)?
+    ts := testdata.minic_rd.lex.Lex(b, start, end)?
+    nodes := testdata.minic_rd.parse.Parse(ts)?
+    code := testdata.minic_rd.emit.Compile(nodes)
+    v := testdata.minic_rd.emit.Run(code)?
     return v, Job{line: n, toks: len(ts), nodes: len(nodes), words: len(code)}, nil
 }
 
@@ -85,7 +85,7 @@ func run(p mut pool.Pool[Job], path string) {
         defer pool.Release(mut p, h)
         v, j, e := compile(b, n, ls[k], ls[k + 1])
         if e != nil {
-            println(diag.Render(path, b, e))
+            println(testdata.minic_rd.diag.Render(path, b, e))
         } else {
             pool.Set(mut p, h, j)
             show(path, pool.Get(mut p, h), v)

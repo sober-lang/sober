@@ -1,0 +1,429 @@
+package lower
+
+// 展開後の欄の読みの巻き上げ: IR の展開（irInline）の後の SSA に掛ける。mut の印のある ptr の仮引数 P から定数の gep.word の鎖で届く語
+// （`load (gep.word P, c)[k]` — 展開した小関数の mut 仮引数が呼び手の struct の欄を指す形。Scratch・slice の欄のヘッダ）の読みを、
+// ループの中でその語を書きうるものが無ければ前置きの 1 本にする。hdr.sober（仮引数の直の P[0..2] を入口へ・展開の前）の一般化で、
+// 別名の事実も hdr の hdrRoot と同じ（docs/ir.md 6 節）:
+//   ① 値はセルの番地を持たない — メモリから読んだ番地（`itop(load …)` の根）は確保したデータで、mut 仮引数のセルではない
+//      （この関数の中で P の鎖の値をメモリへ書く・算術に使う・ブロックへ渡す形があれば P は対象外 — 展開の内部の形の保険）
+//   ② mut 仮引数のセルは mut の場所（mut ローカルかその欄）で slice のデータの中に無い・同じ呼び出しの mut 実引数は排他（diag.MutAlias）
+//   ③ スロット・大域（rt.meta 等）・確保する rt の結果は P のセルと重ならない
+// ループの中で許す呼び出しは書く先が P のセルに無い rt だけ（rt.panic / panic_mem — 戻らない・matchlen / str_eq / jclean — 読むだけ・
+// 反復の軽い enter・region_alloc / alloc8 / slice_grow / grow8 — 書くのは新しい列と rt の表）で、実引数に P の鎖の値を渡さないもの。
+// 諦める形: ほかの呼び出し・間接呼び出し・syscall・原子・罠・task の op・relocate の根が P の鎖・番地の根が分からない書き。
+// 前置きの読みはループが 1 周もしなくても安全（P は仮引数 — 常に読める・語はループの中の読みと同じ型の欄）
+// 資格: 狭い語の op（pool.Scratch の表の口）を含むループの関数だけ（rlim.sober の lbScan の印 2 — 走査は rlim と 1 周に相乗り）。
+// 全関数に掛ける形は、判定の走査だけで自己 build +0.27 G・判定と下流で計 +0.7 G（+0.6%）に対し、コンパイラ自身の定常の効きは +0.06% で棄却
+// （コンパイラの輪は呼び出しを含む — 巻き上がる輪が少なく、巻き上げた先の割り当ての仕事だけが増える）
+
+import "desugar"
+import "std/iter"
+
+const LH_SELF = 1   // 番地の根が P の鎖（変位 off — -1 = 定数で言えない）
+const LH_SAFE = 2   // P のセルと重ならない
+const LH_UNK = 3    // 分からない
+
+func ldhoistModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 && lbScan(mut st, f) & 2 != 0 {
+            ldhoistFunc(mut st, f)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// 利用者のループの頭と mut の印の仮引数があり、呼び出しの無いループに load がある関数か（CFG・支配木を組む前の安い走査 — 支配木を
+// 全関数で組むと自己 build の判定の仕事が +0.4 G）。ブロックごとに「許さない呼び出し・命令がある」「load がある」を印にし、入口からの
+// DFS の後ろの辺 t → h ごとに、スタックの h..t の区間（自然ループの一部）に許さない命令が無く load があるかを前置和で見る
+// （必要条件 — 区間の外のループのブロックは CFG の後の判定が見る）
+func lhCheap(st mut St, f FnRef) bool {
+    mp := irFnMutP(mut st, f)
+    if mp == 0 {
+        return false
+    }
+    nb := irFnNBlk(mut st, f)
+    mut loop := false
+    mut blk := mut []int{}
+    xFill(mut blk, nb, -1)
+    // 印: 1 = 許さない命令あり・2 = load あり（候補の形は CFG の後の判定が見る — 門で値 → 定義の表を組まない）
+    mut fl := mut []int{}
+    xFill(mut fl, nb, 0)
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        if irBlkLoop(mut st, b) & 1 == 1 {
+            loop = true
+        }
+        bi := irBlkId(mut st, b)
+        blk[bi] = int(b)
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpCall {
+                if !lhCallOk(mut st, irInsFn(mut st, i)) {
+                    fl[bi] = fl[bi] | 1
+                }
+            } else if op == OpLoad {
+                fl[bi] = fl[bi] | 2
+            } else if !(lhQuiet(op) || isNarrowLd(op) || op == OpStore || isNarrowSt(op) || op == OpPMem) {
+                fl[bi] = fl[bi] | 1
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    if !loop {
+        return false
+    }
+    // 入口からの反復 DFS（stB / stN = スタック・pos = スタックの位置〔-1 = 外〕・nbad / ncand = スタックの前置和）
+    mut stB := mut []int{}
+    mut stN := mut []int{}
+    mut nbad := mut []int{}
+    mut ncand := mut []int{}
+    mut pos := mut []int{}
+    mut seen := mut []int{}
+    xFill(mut stB, nb + 1, 0)
+    xFill(mut stN, nb + 1, 0)
+    xFill(mut nbad, nb + 2, 0)
+    xFill(mut ncand, nb + 2, 0)
+    xFill(mut pos, nb, -1)
+    xFill(mut seen, nb, 0)
+    b0 := irBlkId(mut st, irFnBHead(mut st, f))
+    stB[0] = b0
+    pos[b0] = 0
+    seen[b0] = 1
+    nbad[1] = fl[b0] & 1
+    ncand[1] = (fl[b0] >> 1) & 1
+    mut sp := 1
+    while sp > 0 {
+        tb0 := stB[sp - 1]
+        tb := BlkRef(blk[tb0])
+        if stN[sp - 1] < xNSucc(mut st, tb) {
+            s := xSucc(mut st, tb, stN[sp - 1])
+            stN[sp - 1] = stN[sp - 1] + 1
+            if pos[s] >= 0 {
+                // 後ろの辺 tb0 → s: スタックの s..tb0 の区間
+                h := pos[s]
+                if nbad[sp] - nbad[h] == 0 && ncand[sp] - ncand[h] > 0 {
+                    return true
+                }
+            } else if seen[s] == 0 {
+                seen[s] = 1
+                stB[sp] = s
+                stN[sp] = 0
+                pos[s] = sp
+                nbad[sp + 1] = nbad[sp] + (fl[s] & 1)
+                ncand[sp + 1] = ncand[sp] + ((fl[s] >> 1) & 1)
+                sp += 1
+            }
+        } else {
+            pos[tb0] = -1
+            sp -= 1
+        }
+    }
+    return false
+}
+
+// 値 v が関数 f の mut 仮引数か
+func lhMut(st mut St, f FnRef, np int, v int) bool {
+    return v >= 0 && v < np && v < 62 && (irFnMutP(mut st, f) >> v) & 1 == 1
+}
+
+// 呼び出しの先 g がループの中で許す rt か（ファイルの冒頭の表）
+func lhCallOk(st mut St, g FnRef) bool {
+    return g == st.rtPanic || g == st.rtPanicMem || g == st.rtMatchLen || g == st.rtStreq || g == st.rtJClean || g == st.rtRenterL || g == st.rtRenterLL ||
+        g == st.rtGrow || g == st.rtGrow8 || g == st.rtRalloc || g == st.rtAlloc8
+}
+
+// メモリを書かない・P の鎖の値を運ばない命令か（load / store / 呼び出しは呼び手が見る）
+func lhQuiet(op int) bool {
+    return op == OpDead || op == OpConst || op == OpBin || op == OpCmp || op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop || op == OpSlotaddr ||
+        op == OpGlobal || op == OpFsAddr || op == OpFuncaddr || op == OpScanB || op == OpPArith || op == OpCrcFold
+}
+
+// 番地の値 v0 の根を P（mut 仮引数 p）に対して分類する: (LH_SELF, 語の変位〔-1 = 言えない〕) / (LH_SAFE, 0) / (LH_UNK, 0)。
+// メモリから読んだ値を経たら（viaLoad）根は確保したデータ（①）— 読んだ番地の根が分かる限り SAFE
+func lhRoot(st mut St, f FnRef, np int, def mut []int, v0 int, p int) (int, int) {
+    mut v := v0
+    mut off := 0
+    mut viaLoad := false
+    mut n := 0
+    while n < 64 {
+        n += 1
+        if v == p {
+            return if viaLoad { LH_SAFE } else { LH_SELF }, if viaLoad { 0 } else { off }
+        }
+        if v >= 0 && v < np {
+            return if lhMut(mut st, f, np, v) && lhMut(mut st, f, np, p) { LH_SAFE } else { LH_UNK }, 0
+        }
+        if v < 0 || v >= len(def) || def[v] < 0 {
+            return LH_UNK, 0
+        }
+        i := InsRef(def[v])
+        op := irInsOp(mut st, i)
+        if op == OpGepW {
+            if !viaLoad && off >= 0 {
+                x := irInsB(mut st, i)
+                if x >= 0 && x < len(def) && def[x] >= 0 && irInsOp(mut st, InsRef(def[x])) == OpConst && irInsA(mut st, InsRef(def[x])) >= 0 &&
+                        irInsA(mut st, InsRef(def[x])) < 1048576 {
+                    off += irInsA(mut st, InsRef(def[x]))
+                } else {
+                    off = -1
+                }
+            }
+            v = irInsA(mut st, i)
+        } else if op == OpGepB {
+            if !viaLoad {
+                off = -1
+            }
+            v = irInsA(mut st, i)
+        } else if op == OpItop || op == OpPtoi {
+            v = irInsA(mut st, i)
+        } else if op == OpLoad || isNarrowLd(op) {
+            viaLoad = true
+            v = irInsA(mut st, i)
+        } else if op == OpSlotaddr || op == OpGlobal || op == OpFsAddr {
+            return LH_SAFE, 0
+        } else if op == OpCall {
+            g := irInsFn(mut st, i)
+            return if g == st.rtGrow || g == st.rtGrow8 || g == st.rtRalloc || g == st.rtAlloc8 { LH_SAFE } else { LH_UNK }, 0
+        } else {
+            return LH_UNK, 0
+        }
+    }
+    return LH_UNK, 0
+}
+
+// 値 v が P の鎖（根が P で、メモリの読みを経ない）か
+func lhSelf(st mut St, f FnRef, np int, def mut []int, v int, p int) bool {
+    k, _ := lhRoot(mut st, f, np, mut def, v, p)
+    return k == LH_SELF
+}
+
+// 関数の中で P の鎖の値が番地・gep の基底・itop / ptoi・比較・直の呼び出しの実引数以外に使われていないか（① の保険 — メモリへの書き・
+// ブロックの実引数〔仮引数を経ると根を追えない〕・算術）
+func lhNoEscape(st mut St, f FnRef, np int, def mut []int, p int) bool {
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            // 直の呼び出しの実引数は数えない（呼び先は仮引数のセルの番地を値にできない — ①・ループの中では lhWrites が実引数を見る）
+            if op != OpDead && op != OpConst && op != OpCall {
+                for k <- iter.Range(0, xNOps(mut st, i)) {
+                    v := xOpnd(mut st, i, k)
+                    addr := k == 0 && (op == OpLoad || isNarrowLd(op) || op == OpStore || isNarrowSt(op) || op == OpPMem || op == OpGepW || op == OpGepB ||
+                        op == OpItop || op == OpPtoi)
+                    if !addr && op != OpCmp && lhSelf(mut st, f, np, mut def, v, p) {
+                        return false
+                    }
+                }
+            }
+            i = irInsNext(mut st, i)
+        }
+        for k <- iter.Range(0, xNTermOps(mut st, b)) {
+            if lhSelf(mut st, f, np, mut def, xTermOpnd(mut st, b, k), p) {
+                return false
+            }
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return true
+}
+
+// ループ（印 pw.mark）に書く先の分からない書き・許さない呼び出しが無いか（分類の前の安い門 — 番地の根は見ない）
+func lhLoopGate(st mut St, w mut m2rW, pw mut PrW) bool {
+    mut ld := false
+    for bi <- iter.Range(0, w.nb) {
+        if pw.inl[bi] != pw.mark || w.blk[bi] < 0 {
+            continue
+        }
+        mut ins := irBlkIHead(mut st, BlkRef(w.blk[bi]))
+        while ins != -1 {
+            op := irInsOp(mut st, ins)
+            if op == OpCall {
+                if !lhCallOk(mut st, irInsFn(mut st, ins)) {
+                    return false
+                }
+            } else if op == OpLoad {
+                ld = true
+            } else if !(lhQuiet(op) || isNarrowLd(op) || op == OpStore || isNarrowSt(op) || op == OpPMem) {
+                return false
+            }
+            ins = irInsNext(mut st, ins)
+        }
+    }
+    return ld
+}
+
+// ループ（印 pw.mark）の中で P の鎖の語を書く集合を wr に印 mk で付ける（語の変位 — 言えない書きは真を返して諦める）。
+// 番地の根が分からない書き・P の鎖を実引数に渡す呼び出しも諦める
+func lhWrites(st mut St, f FnRef, np int, w mut m2rW, pw mut PrW, p int, wr mut map[int]int) bool {
+    for bi <- iter.Range(0, w.nb) {
+        if pw.inl[bi] != pw.mark || w.blk[bi] < 0 {
+            continue
+        }
+        mut ins := irBlkIHead(mut st, BlkRef(w.blk[bi]))
+        while ins != -1 {
+            op := irInsOp(mut st, ins)
+            st8 := op == OpStore || isNarrowSt(op) || (op == OpPMem && irInsRes(mut st, ins) < 0)
+            if st8 {
+                k, off := lhRoot(mut st, f, np, mut pw.def, irInsA(mut st, ins), p)
+                if k == LH_UNK || (k == LH_SELF && off < 0) {
+                    return true
+                }
+                if k == LH_SELF {
+                    // 書く語の範囲（store = 語の変位・狭い書き = バイトの変位・PMem = 2 語）
+                    if op == OpStore {
+                        wr[off + irInsB(mut st, ins)] = 1
+                    } else if op == OpPMem {
+                        wr[off + irInsB(mut st, ins)] = 1
+                        wr[off + irInsB(mut st, ins) + 1] = 1
+                    } else {
+                        bo := irInsB(mut st, ins)
+                        if bo < 0 {
+                            return true
+                        }
+                        wr[off + bo / 8] = 1
+                        wr[off + (bo + narrowW(op) - 1) / 8] = 1
+                    }
+                }
+            } else if op == OpCall {
+                for a <- iter.Range(0, xNOps(mut st, ins)) {
+                    if lhSelf(mut st, f, np, mut pw.def, xOpnd(mut st, ins, a), p) {
+                        return true
+                    }
+                }
+            }
+            ins = irInsNext(mut st, ins)
+        }
+    }
+    return false
+}
+
+func ldhoistFunc(st mut St, f FnRef) {
+    if !lhCheap(mut st, f) {
+        return
+    }
+    np := desugar.HeapGet(mut st.d, irFnPtys(mut st, f))
+    nb := irFnNBlk(mut st, f)
+    nv := irFnNVal(mut st, f)
+    mut w := m2rW{nb: nb, blk: mut []int{}, rpoIx: mut []int{}, rpo: mut []int{}, nrpo: 0, pcnt: mut []int{}, preds: mut []int{}, idom: mut []int{}}
+    m2rCfg(mut st, mut w, f)
+    mut pw := PrW{def: mut []int{}, dblk: mut []int{}, inl: mut []int{}, mark: 0}
+    xFill(mut pw.inl, nb, 0)
+    mut ready := false
+    // 仮引数ごとの脱出の判定（0 = まだ・1 = 対象・2 = 対象外）
+    mut esc := mut []int{}
+    xFill(mut esc, np, 0)
+    // 付け替えの対（ループの中の load の結果 → 前置きの新しい値）— optReset は新しい値を作り終えてから
+    mut alR := mut []int{}
+    mut alI := mut []int{}
+    mut alX := mut []int{}
+    // ループの頭ごとに（逆後順で外側から — 外で巻き上げた読みは消えた印〔付け替え済み〕で内側から外れる）
+    for k <- iter.Range(0, w.nrpo) {
+        h := w.rpo[k]
+        if irBlkLoop(mut st, BlkRef(w.blk[h])) & 1 == 0 {
+            continue
+        }
+        outside := loopPre(mut st, mut w, h)
+        if outside < 0 {
+            continue
+        }
+        pw.mark += 1
+        loopMark(mut w, mut pw.inl, pw.mark, h)
+        if !lhLoopGate(mut st, mut w, mut pw) {
+            continue
+        }
+        if !ready {
+            rmDefs(mut st, mut w, mut pw, nv)
+            ready = true
+        }
+        pre := BlkRef(w.blk[outside])
+        for p <- iter.Range(0, np) {
+            if !lhMut(mut st, f, np, p) || desugar.HeapGet(mut st.d, irFnPtys(mut st, f) + 1 + p) != TyPtr {
+                continue
+            }
+            // 候補（P の鎖の語の load）があるか先に見る
+            mut cand := false
+            for bi <- iter.Range(0, w.nb) {
+                if pw.inl[bi] == pw.mark && w.blk[bi] >= 0 && !cand {
+                    mut ins := irBlkIHead(mut st, BlkRef(w.blk[bi]))
+                    while ins != -1 && !cand {
+                        if irInsOp(mut st, ins) == OpLoad && !lhDone(mut alI, int(ins)) {
+                            kk, off := lhRoot(mut st, f, np, mut pw.def, irInsA(mut st, ins), p)
+                            cand = kk == LH_SELF && off >= 0
+                        }
+                        ins = irInsNext(mut st, ins)
+                    }
+                }
+            }
+            if !cand {
+                continue
+            }
+            if esc[p] == 0 {
+                esc[p] = if lhNoEscape(mut st, f, np, mut pw.def, p) { 1 } else { 2 }
+            }
+            if esc[p] != 1 {
+                continue
+            }
+            mut wr := mut map[int]int{}
+            if lhWrites(mut st, f, np, mut w, mut pw, p, mut wr) {
+                continue
+            }
+            // 書かれない語の load を前置きの 1 本へ（語 × 型の印〔c〕ごとに 1 本）
+            mut newK := mut []int{}
+            mut newV := mut []int{}
+            for bi <- iter.Range(0, w.nb) {
+                if pw.inl[bi] != pw.mark || w.blk[bi] < 0 {
+                    continue
+                }
+                mut ins := irBlkIHead(mut st, BlkRef(w.blk[bi]))
+                while ins != -1 {
+                    if irInsOp(mut st, ins) == OpLoad && !lhDone(mut alI, int(ins)) {
+                        kk, off := lhRoot(mut st, f, np, mut pw.def, irInsA(mut st, ins), p)
+                        word := off + irInsB(mut st, ins)
+                        if kk == LH_SELF && off >= 0 && word >= 0 && wr[word] == nil {
+                            key := word * 4 + irInsC(mut st, ins)
+                            mut x := -1
+                            for q <- iter.Range(0, len(newK)) {
+                                if newK[q] == key {
+                                    x = newV[q]
+                                }
+                            }
+                            if x < 0 {
+                                x = newValueIn(mut st, f)
+                                linkInst(mut st, pre, mkInst(mut st, x, OpLoad, p, word, irInsC(mut st, ins)))
+                                newK = append(newK, key)
+                                newV = append(newV, x)
+                            }
+                            alR = append(alR, irInsRes(mut st, ins))
+                            alI = append(alI, int(ins))
+                            alX = append(alX, x)
+                        }
+                    }
+                    ins = irInsNext(mut st, ins)
+                }
+            }
+        }
+    }
+    if len(alR) > 0 {
+        optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+        for q <- iter.Range(0, len(alR)) {
+            aliasTo(mut st, InsRef(alI[q]), alR[q], alX[q])
+        }
+        optDce(mut st, f)
+        optRenumber(mut st, f)
+    }
+}
+
+// 命令 i を付け替え済みか
+func lhDone(al mut []int, i int) bool {
+    for q <- iter.Range(0, len(al)) {
+        if al[q] == i {
+            return true
+        }
+    }
+    return false
+}
+

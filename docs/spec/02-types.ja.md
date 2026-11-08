@@ -85,7 +85,7 @@ T-14. 文字列補間 `"…${e}…"` の穴に置けるのは int・float・stri
 拒否: [`examples/interp_tparam_named.sober`](../../examples/interp_tparam_named.sober)・[`examples/byte_interp.sober`](../../examples/byte_interp.sober)
 決定: [language.md 24 節](../language.md)
 
-T-15. string の中身は見方を名指して読む: `bytes(s)` は同じバイト列の imm `[]byte` で、コピーしない。string と `[]byte` は交わらない（相互の代入・引数渡しは不可）。戻し `string(b)` は imm `[]byte` を受け、UTF-8 を検査して `(string, error?)` を返す（壊れていれば `strings.InvalidUtf8{pos}` — pos は最初の不正なシーケンスの先頭）。mut の `[]byte` は `string(freeze(b))` と書く。
+T-15. string の中身は見方を名指して読む: `bytes(s)` は同じバイト列の imm `[]byte` で、コピーしない。string と `[]byte` は交わらない（相互の代入・引数渡しは不可）。戻し `string(b)` は imm `[]byte` を受け、UTF-8 を検査して `(string, error?)` を返す（壊れていれば `strings.BadUtf8{pos}` — pos は最初の不正なシーケンスの先頭）。mut の `[]byte` は `string(freeze(b))` と書く。
 例: [`examples/utf8_std.sober`](../../examples/utf8_std.sober)・[`examples/slice.sober`](../../examples/slice.sober)
 決定: [language.md 24 節・27 節・33 節](../language.md)
 
@@ -101,8 +101,9 @@ T-17. `T?` の値は絞り込んでから `T` として使う（flow typing）�
 拒否: [`examples/narrow_assign.sober`](../../examples/narrow_assign.sober)・[`examples/narrow_reassign_loop_neg.sober`](../../examples/narrow_reassign_loop_neg.sober)・[`examples/narrow_path_neg.sober`](../../examples/narrow_path_neg.sober)
 決定: [language.md 15 節](../language.md)
 
-T-18. `T?` と `T` の値の `==` / `!=` は無い — 絞り込んでから比べる。`println` も `T?` を受けない。
-拒否: [`examples/opt_compare.sober`](../../examples/opt_compare.sober)・[`examples/println_opt.sober`](../../examples/println_opt.sober)
+T-18. `T?` と `T` の値の `==` / `!=` は無い — 絞り込んでから比べる。`println` も `T?` を受けない。関数値の option `F?` は絞り込んでから呼ぶ（欄・map の読み・`[]F?` の要素を直に呼ぶ形を含む）。
+例: [`examples/optfn_call.sober`](../../examples/optfn_call.sober)
+拒否: [`examples/opt_compare.sober`](../../examples/opt_compare.sober)・[`examples/println_opt.sober`](../../examples/println_opt.sober)・[`examples/optfn_call_neg.sober`](../../examples/optfn_call_neg.sober)
 決定: [language.md 15 節](../language.md)
 
 T-19. `T?` の単値の subject の switch には `case nil:` の腕を書ける。意味は `if x != nil { switch x { 残りの腕 } } else { nil の腕 }` と同じ。nil の腕は 1 つだけで、名前のパターン（`_`・束縛・const）より前に置き、`nil | …` の選択にはできず、nil の腕のほかに腕か default が要る。
@@ -140,7 +141,7 @@ T-25. 添字 `xs[i]` の範囲外は panic（終了コード 101）。
 例: [`examples/panic_index.sober`](../../examples/panic_index.sober)
 決定: [language.md 27 節](../language.md)
 
-T-26. `freeze(x)` は可変のコンテナを不変に（`mut []T → []T`・`mut map[K]V → map[K]V`）、`clone(x)` は浅い写しを可変で作る。期待型が imm のコンテナの位置（実引数・欄・要素・return など）に mut のコンテナを置くと `freeze` と同じ。束縛（期待型が無い）では起こさない。`clone` はスカラーや string を受けない。
+T-26. `freeze(x)` は可変のコンテナを不変に（`mut []T → []T`・`mut map[K]V → map[K]V`）、`clone(x)` は浅い写しを可変で作る。期待型が imm のコンテナの位置（実引数・欄・要素・return など）に mut のコンテナを置くと `freeze` と同じ。束縛（期待型が無い）では起こさない。点になるのは局所の束縛を根に持つ道（`x`・`x.f`・`x[i]`）と `clone(x)` だけで、それ以外の mut のコンテナ（呼び出しの結果など）を imm の位置に置くと拒否。`clone` はスカラーや string を受けない。
 例: [`examples/slice.sober`](../../examples/slice.sober)・[`examples/implicit_freeze.sober`](../../examples/implicit_freeze.sober)・[`examples/clone_std.sober`](../../examples/clone_std.sober)
 拒否: [`examples/clone_neg_scalar.sober`](../../examples/clone_neg_scalar.sober)・[`examples/clone_neg_string.sober`](../../examples/clone_neg_string.sober)
 決定: [language.md 22 節](../language.md)

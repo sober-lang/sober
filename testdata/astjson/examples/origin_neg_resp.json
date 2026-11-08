@@ -3,7 +3,7 @@
   "imports": [
     {
       "alias": null,
-      "path": "std/http",
+      "path": "std/http/server",
       "tok": 4
     }
   ],
@@ -27,19 +27,19 @@
                 "k": "slicelit",
                 "elem": {
                   "k": "name",
-                  "name": "http.Route"
+                  "name": "http.server.Route"
                 },
                 "elems": [
                   {
                     "k": "composite",
-                    "type_name": "http.Route",
+                    "type_name": "http.server.Route",
                     "elems": [
                       {
                         "key": "method",
                         "value": {
                           "k": "strlit",
                           "value": "GET",
-                          "tok": 25
+                          "tok": 29
                         }
                       },
                       {
@@ -47,7 +47,7 @@
                         "value": {
                           "k": "strlit",
                           "value": "/x",
-                          "tok": 29
+                          "tok": 33
                         }
                       },
                       {
@@ -62,14 +62,14 @@
                           ],
                           "body": {
                             "k": "composite",
-                            "type_name": "http.Response",
+                            "type_name": "http.server.Response",
                             "elems": [
                               {
                                 "key": "status",
                                 "value": {
                                   "k": "int",
                                   "value": 200,
-                                  "tok": 43
+                                  "tok": 49
                                 }
                               },
                               {
@@ -77,7 +77,7 @@
                                 "value": {
                                   "k": "strlit",
                                   "value": "text/plain",
-                                  "tok": 47
+                                  "tok": 53
                                 }
                               },
                               {
@@ -87,46 +87,46 @@
                                   "callee": {
                                     "k": "ident",
                                     "name": "bytes",
-                                    "tok": 51
+                                    "tok": 57
                                   },
                                   "args": [
                                     {
                                       "k": "strlit",
                                       "value": "x",
-                                      "tok": 53
+                                      "tok": 59
                                     }
                                   ],
-                                  "tok": 52
+                                  "tok": 58
                                 }
                               },
                               {
                                 "key": "cache",
                                 "value": {
                                   "k": "composite",
-                                  "type_name": "http.Fresh",
+                                  "type_name": "http.server.Fresh",
                                   "elems": [
                                     {
                                       "key": "maxAge",
                                       "value": {
                                         "k": "int",
                                         "value": 60,
-                                        "tok": 64
+                                        "tok": 72
                                       }
                                     }
                                   ],
-                                  "tok": 58,
+                                  "tok": 64,
                                   "type_args": []
                                 }
                               }
                             ],
-                            "tok": 37,
+                            "tok": 41,
                             "type_args": []
                           },
-                          "tok": 36
+                          "tok": 40
                         }
                       }
                     ],
-                    "tok": 19,
+                    "tok": 21,
                     "type_args": []
                   }
                 ],
@@ -143,7 +143,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 70
+                "tok": 78
               },
               "args": [
                 {
@@ -151,19 +151,19 @@
                   "callee": {
                     "k": "ident",
                     "name": "len",
-                    "tok": 72
+                    "tok": 80
                   },
                   "args": [
                     {
                       "k": "ident",
                       "name": "rs",
-                      "tok": 74
+                      "tok": 82
                     }
                   ],
-                  "tok": 73
+                  "tok": 81
                 }
               ],
-              "tok": 71
+              "tok": 79
             }
           }
         ]
@@ -172,7 +172,7 @@
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 80
+        "end": 88
       },
       "sig_end": 10
     }

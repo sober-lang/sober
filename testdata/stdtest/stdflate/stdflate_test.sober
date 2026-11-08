@@ -54,26 +54,26 @@ func at(b []byte, k int, v int) []byte {
 }
 
 func badFlate(b []byte) bool {
-    _, e := flate.Decode(b)
+    _, e := compress.flate.Decode(b)
     return switch e {
     case nil: false
-    case flate.Bad{}: true
-    case flate.TooLarge{}: false
+    case compress.flate.Bad{}: true
+    case compress.flate.TooLarge{}: false
     }
 }
 
 func badGzip(b []byte) bool {
-    _, e := gzip.Decode(b)
+    _, e := compress.gzip.Decode(b)
     return e != nil
 }
 
 func gzipLabel(b []byte) string {
-    _, e := gzip.Decode(b)
+    _, e := compress.gzip.Decode(b)
     return switch e {
     case nil: "nil"
-    case gzip.Bad{}: "gzip.Bad"
-    case flate.Bad{}: "flate.Bad"
-    case flate.TooLarge{}: "flate.TooLarge"
+    case compress.gzip.Bad{}: "gzip.Bad"
+    case compress.flate.Bad{}: "flate.Bad"
+    case compress.flate.TooLarge{}: "flate.TooLarge"
     }
 }
 
@@ -81,12 +81,12 @@ func gzipLabel(b []byte) string {
 func TestTruncated() {
     src := text(3000)
     for lv <- iter.Range(0, 10) {
-        z := flate.Encode(src, lv)
+        z := compress.flate.Encode(src, lv)
         for n <- iter.Range(0, len(z)) {
             assert(badFlate(cut(z, n)))
         }
     }
-    g := gzip.Encode(src, 6)
+    g := compress.gzip.Encode(src, 6)
     for n <- iter.Range(0, len(g)) {
         assert(badGzip(cut(g, n)))
     }
@@ -96,9 +96,9 @@ func TestTruncated() {
 }
 
 func TestTrailing() {
-    z := flate.Encode(text(100), 6)
+    z := compress.flate.Encode(text(100), 6)
     assert(badFlate(plus(z, []byte{0})))
-    g := gzip.Encode(text(100), 6)
+    g := compress.gzip.Encode(text(100), 6)
     assert(gzipLabel(plus(g, []byte{0x1f})) == "gzip.Bad")
     assert(gzipLabel(plus(g, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})) == "gzip.Bad")
 }
@@ -163,7 +163,7 @@ func TestHandMade() {
     lit(mut ok, 257)
     code(mut ok, 1, 5)
     lit(mut ok, 256)
-    good := flate.Decode(done(mut ok)) catch bytes("<bad>")
+    good := compress.flate.Decode(done(mut ok)) catch bytes("<bad>")
     assert(hex.Format(good) == hex.Format(bytes("ababa")))
     // ブロックの型 3
     assert(badFlate([]byte{0x07}))
@@ -226,7 +226,7 @@ func TestHandMade() {
     assert(badFlate(done(mut inc)))
     // 動的: 符号の長さの符号の完全 / 不完全だけが違う対（zlib も不完全を拒む）— 文字・長さは 0〜254 が 8 ビット・255 と 256 が 9 ビット（完全）・
     // 距離は 8 ビット 1 本（1 本だけの不完全は許される）・中身は終わり（256）だけ
-    empty := flate.Decode(lensBlock(true)) catch bytes("<bad>")
+    empty := compress.flate.Decode(lensBlock(true)) catch bytes("<bad>")
     assert(len(empty) == 0)
     assert(badFlate(lensBlock(false)))
 }
@@ -259,7 +259,7 @@ func lensBlock(complete bool) []byte {
 }
 
 func TestGzipWrapper() {
-    g := gzip.Encode(text(500), 6)
+    g := compress.gzip.Encode(text(500), 6)
     assert(gzipLabel(g) == "nil")
     assert(gzipLabel(at(g, 0, 0x1e)) == "gzip.Bad")
     assert(gzipLabel(at(g, 1, 0x8c)) == "gzip.Bad")
@@ -274,7 +274,7 @@ func TestGzipWrapper() {
     n := len(g)
     assert(gzipLabel(at(g, n - 8, int(g[n - 8]) ^ 1)) == "gzip.Bad")
     assert(gzipLabel(at(g, n - 1, int(g[n - 1]) ^ 0x80)) == "gzip.Bad")
-    // 中身の誤りは flate.Bad（ブロックの型 3 にする — 頭 10 バイトの直後の 1 バイト目の bit 1〜2）
+    // 中身の誤りは compress.flate.Bad（ブロックの型 3 にする — 頭 10 バイトの直後の 1 バイト目の bit 1〜2）
     assert(gzipLabel(at(g, 10, int(g[10]) | 6)) == "flate.Bad")
     // 頭の途中で尽きる
     assert(gzipLabel(cut(g, 9)) == "gzip.Bad")
@@ -289,34 +289,34 @@ func TestMaxSize() {
         z0 = append(z0, byte(0))
     }
     zeros := freeze(z0)
-    z := flate.Encode(zeros, 9)
+    z := compress.flate.Encode(zeros, 9)
     // 1 MiB の 0 は 1 KiB ほどに縮む — 入力の大きさは出力の上限にならない
     assert(len(z) < 2048)
-    _, e := flate.Decode(z, maxSize: 4096)
+    _, e := compress.flate.Decode(z, maxSize: 4096)
     big := switch e {
     case nil: false
-    case flate.TooLarge{}: true
-    case flate.Bad{}: false
+    case compress.flate.TooLarge{}: true
+    case compress.flate.Bad{}: false
     }
     assert(big)
-    full := flate.Decode(z, maxSize: 1 << 20) catch []byte{}
+    full := compress.flate.Decode(z, maxSize: 1 << 20) catch []byte{}
     assert(len(full) == 1 << 20)
     // gzip の上限は全メンバの合計
-    g := gzip.Encode(zeros, 9)
+    g := compress.gzip.Encode(zeros, 9)
     two := plus(g, g)
     assert(gzipLabel(two) == "nil")
-    _, e2 := gzip.Decode(two, maxSize: (1 << 21) - 1)
+    _, e2 := compress.gzip.Decode(two, maxSize: (1 << 21) - 1)
     big2 := switch e2 {
     case nil: false
-    case flate.TooLarge{}: true
-    case flate.Bad{}: false
-    case gzip.Bad{}: false
+    case compress.flate.TooLarge{}: true
+    case compress.flate.Bad{}: false
+    case compress.gzip.Bad{}: false
     }
     assert(big2)
-    both := gzip.Decode(two, maxSize: 1 << 21) catch []byte{}
+    both := compress.gzip.Decode(two, maxSize: 1 << 21) catch []byte{}
     assert(len(both) == 1 << 21)
     // 空の出力と maxSize 0
-    e0 := flate.Decode(flate.Encode([]byte{}, 6), maxSize: 0) catch bytes("<bad>")
+    e0 := compress.flate.Decode(compress.flate.Encode([]byte{}, 6), maxSize: 0) catch bytes("<bad>")
     assert(len(e0) == 0)
 }
 
@@ -325,14 +325,14 @@ func TestMaxSize() {
 func TestBitFlips() {
     src := text(400)
     for lv <- iter.Range(0, 10) {
-        z := flate.Encode(src, lv)
+        z := compress.flate.Encode(src, lv)
         for i <- iter.Range(0, 8 * len(z)) {
-            _, e := flate.Decode(flipped(z, i), maxSize: 1 << 16)
+            _, e := compress.flate.Decode(flipped(z, i), maxSize: 1 << 16)
             _ = e
         }
     }
-    g := gzip.Encode(src, 6)
-    pad := 10 + len(flate.Encode(src, 6)) - 1
+    g := compress.gzip.Encode(src, 6)
+    pad := 10 + len(compress.flate.Encode(src, 6)) - 1
     for i <- iter.Range(80, 8 * len(g)) {
         if i >> 3 != pad {
             assert(badGzip(flipped(g, i)))

@@ -224,7 +224,7 @@ func zPlain(fs []Finding) []Finding {
     return freeze(out)
 }
 
-// 欄の書き / 読みの指摘の文面（k = 0 書き・1 mut の中身を持つ欄の読み）
+// 欄の書き / 読みの指摘の文面（k = 0 書き・1 mut の中身を持つ欄の読み・2 mut の中身を返す・7 mut の中身を持つ欄を構築で与える）
 func fieldMessage(az mut Az, k int, f desugar.StrRef, decl desugar.NodeRef, pk int) string {
     if k == 2 {
         return "a function without mut parameters cannot return a value with mutable contents (a mut slice / map, or a struct or option holding one — language.md 26 節): build it in the caller with a zero-value literal (`mut t := table.Table[int]{}`) and pass it as a mut argument"
@@ -234,6 +234,8 @@ func fieldMessage(az mut Az, k int, f desugar.StrRef, decl desugar.NodeRef, pk i
     pkg := str(mut az, desugar.PkgPath(mut az.d, pk))
     return if k == 0 {
         "cannot write field `${fname}` of `${tname}` outside package ${pkg} — a type's fields are written only in the package that declares it (build a new value with the package's functions)"
+    } else if k == 7 {
+        "cannot give field `${fname}` of `${tname}` outside package ${pkg} — it holds mutable contents, and an alias passed in from outside would bypass the type's invariants (omit the field — it starts empty — and fill it with the package's functions)"
     } else {
         "cannot read field `${fname}` of `${tname}` outside package ${pkg} — it holds mutable contents, and an alias of them outside the package would bypass the type's invariants"
     }

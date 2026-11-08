@@ -1,0 +1,246 @@
+package desugar
+
+// check の関数単位キャッシュの desugar の側: 鍵の計画（PlanDefs が組む — 鍵 K-D を関数ごとに）・持ち上げの使いの辺
+// （区間の子が積む — 当たりの Def の値に「その Def が使う持ち上げ〔ラムダ・インスタンス・辞書 const のラムダ〕の落ち」を入れるため。共有の持ち上げは
+// 子の中で最初に触った Def が作るので、作った Def だけに帰すと、作り手が外れて使い手が当たったときに落ちを見落とす）・落ちの位置の相対化
+// （項目の頭からの字句の差 — 項目の中身のハッシュで今の build の項目へ戻す）
+
+import "diag"
+import "loader"
+import "std/iter"
+import "std/table"
+
+// 今の文脈 st.lctx から持ち上げ k への使いの辺を積む
+func luEdge(st mut S, k int) {
+    table.Push(mut st.luse, st.lctx)
+    table.Push(mut st.luse, k)
+}
+
+// 本体を脱糖するラムダの待ちの文脈を立てる（持ち上げの添字は本体の後に決まる — 戻り値 = 外の文脈）
+func luOpen(st mut S) int {
+    o := st.lctx
+    table.Push(mut st.luse, 0)
+    table.Push(mut st.luse, -1)
+    table.Push(mut st.lpend, -1)
+    st.lctx = -table.Len(mut st.lpend)
+    return o
+}
+
+// 待ちの文脈（st.lctx）を持ち上げ k に確定し、外の文脈 o へ戻して o → k の辺を積む
+func luClose(st mut S, o int, k int) {
+    table.Set(mut st.lpend, -st.lctx - 1, k)
+    st.lctx = o
+    luEdge(mut st, k)
+}
+
+// 使いの辺の列（待ちの文脈を持ち上げの文脈 nfn + 1 + k に解いたもの — [ctx, k]…・luOpen の詰め物の対は落とす）
+func luOut(st mut S) []int {
+    mut out := mut []int{}
+    n := table.Len(mut st.luse) / 2
+    for q <- iter.Range(0, n) {
+        c := table.Get(mut st.luse, 2 * q)
+        k := table.Get(mut st.luse, 2 * q + 1)
+        if k >= 0 {
+            out = append(out, if c < 0 { st.nfn + 1 + table.Get(mut st.lpend, -c - 1) } else { c })
+            out = append(out, k)
+        }
+    }
+    return freeze(out)
+}
+
+// 名前付きの Def の添字 → 関数表の添字
+func defFns(st mut S) []int {
+    mut out := mut []int{}
+    for j <- iter.Range(0, st.ndef) {
+        out = append(out, -1)
+    }
+    for i <- iter.Range(0, st.nfn) {
+        dx := fnDef(mut st, i)
+        if dx >= 0 && dx < st.ndef {
+            out[dx] = i
+        }
+    }
+    return freeze(out)
+}
+
+// 鍵の計画: 関数ごとの鍵（has = 鍵を持つ — 検査する Def で std の信頼の外）と、落ちの位置の相対化の項目の表（中身のハッシュ・字句の範囲）
+type DefCk struct {
+    on bool
+    nfn int
+    has []bool
+    k1 []int
+    k2 []int
+    ih1 []int
+    ih2 []int
+    sf []int
+    slo []int
+    shi []int
+    head []int   // 鍵のグラフ（検証 =2 の扉の監査 — 読んだ項目 ∈ 届く集合）・tyNode = 型宣言の節・istd = std の項目（焼き込み — コンパイラの鍵が運ぶ）
+    adj []int
+    tyNode []int
+    istd []bool
+}
+
+func emptyCk() DefCk {
+    return DefCk{on: false, nfn: 0, has: []bool{}, k1: []int{}, k2: []int{}, ih1: []int{}, ih2: []int{}, sf: []int{}, slo: []int{}, shi: []int{}, head: []int{}, adj: []int{}, tyNode: []int{}, istd: []bool{}}
+}
+
+// 前段の後の st から関数ごとの鍵を組む（DefKeys と同じ鍵 — self = コンパイラの鍵）
+func ckPlan(st mut S, self []byte, trust bool) DefCk {
+    g := dkGraph(mut st)
+    loader.Stage("ds-dkgraph")
+    nfn := st.nfn
+    base := dkBytes(DkH{dkMix(TC_S1, DK_VER), dkMix2(TC_S2, if trust { 1 } else { 0 })}, self)
+    mut mark := mut []int{}
+    for e <- iter.Range(0, g.n) {
+        mark = append(mark, 0)
+    }
+    mut stk := mut []int{}
+    mut has := mut []bool{}
+    mut k1 := mut []int{}
+    mut k2 := mut []int{}
+    for i <- iter.Range(0, nfn) {
+        dx := fnDef(mut st, i)
+        if dx >= 0 && int(fnBody(mut st, i)) >= 0 && !(trust && IsStdPkg(mut st, fnPkg(mut st, i))) {
+            k, _, _ := dkKey(g, nfn, i, base, mut mark, mut stk)
+            has = append(has, true)
+            k1 = append(k1, k.a)
+            k2 = append(k2, k.b)
+        } else {
+            has = append(has, false)
+            k1 = append(k1, 0)
+            k2 = append(k2, 0)
+        }
+    }
+    mut istd := mut []bool{}
+    for e <- iter.Range(0, g.n) {
+        pk := if e < 2 * nfn { fnPkg(mut st, e % nfn) } else if e < 2 * nfn + st.ncon { ConPkg(mut st, e - 2 * nfn) } else if e < g.n - 1 { FilePkg(mut st, refFile(g.tyNode[e - 2 * nfn - st.ncon])) } else { -1 }
+        istd = append(istd, pk >= 0 && IsStdPkg(mut st, pk))
+    }
+    return DefCk{on: true, nfn: nfn, has: freeze(has), k1: freeze(k1), k2: freeze(k2), ih1: g.h1, ih2: g.h2, sf: g.sf, slo: g.slo, shi: g.shi, head: g.head, adj: g.adj, tyNode: g.tyNode, istd: freeze(istd)}
+}
+
+// CkOn / CkHas / CkK1 / CkK2 は鍵の計画の読み口（checker から）
+func CkOn(d DefPlan) bool {
+    return d.ck.on
+}
+
+func CkHas(d DefPlan, i int) bool {
+    return d.ck.has[i]
+}
+
+func CkK1(d DefPlan, i int) int {
+    return d.ck.k1[i]
+}
+
+func CkK2(d DefPlan, i int) int {
+    return d.ck.k2[i]
+}
+
+// 位置 pos（PackPos）を項目の頭からの相対 [項目の h1, h2, 字句の差] に（項目の字句の範囲に入らなければ空 — 値に書けない）
+func CkRel(d DefPlan, pos int) []int {
+    c := d.ck
+    if pos <= 0 {
+        return []int{}
+    }
+    p := UnpackPos(pos)
+    for e <- iter.Range(0, len(c.sf)) {
+        if c.sf[e] == p.file && p.tok >= c.slo[e] && p.tok < c.shi[e] {
+            return []int{c.ih1[e], c.ih2[e], p.tok - c.slo[e]}
+        }
+    }
+    return []int{}
+}
+
+// CkRel の逆（今の build の項目へ戻した PackPos — 項目が無ければ 0）
+func CkAbs(d DefPlan, h1 int, h2 int, off int) int {
+    c := d.ck
+    for e <- iter.Range(0, len(c.sf)) {
+        if c.ih1[e] == h1 && c.ih2[e] == h2 && c.sf[e] >= 0 && c.slo[e] + off < c.shi[e] {
+            return PackPos(diag.Pos{file: c.sf[e], tok: c.slo[e] + off})
+        }
+    }
+    return 0
+}
+
+// RngLu / RngPlan / PlanNfn は区間と計画の読み口（checker から）
+func RngLu(r DefRng) bool {
+    return r.lu
+}
+
+func RngPlan(r DefRng) DefPlan {
+    return r.plan
+}
+
+func PlanNfn(d DefPlan) int {
+    return len(d.cost)
+}
+
+// 扉の監査（検証 =2）: Def（関数 i）の脱糖が読んだ項目 code（dkRead の符号 — 署名 fi・本体 nfn + fi・const 2nfn + c・型宣言 = −節・
+// error の variant = −1）が鍵の届く集合の中か（std の項目は焼き込み — コンパイラの鍵が運ぶので外でよい）。mark / stk は呼び手の作業域・
+// stamp = 問い合わせごとに違う正の数（見つけた時点で探索を打ち切るので、同じ Def の 2 回目に前の印を使い回せない）
+func CkDoor(d DefPlan, i int, code int, mark mut []int, stk mut []int, stamp int) bool {
+    c := d.ck
+    nfn := c.nfn
+    n := len(c.head) - 1
+    nty := len(c.tyNode)
+    mut e := -1
+    if code == -1 {
+        e = n - 1
+    } else if code < 0 {
+        for k <- iter.Range(0, nty) {
+            if c.tyNode[k] == 0 - code {
+                e = n - 1 - nty + k
+            }
+        }
+        if e < 0 {
+            return false
+        }
+    } else {
+        e = code
+    }
+    if e < 0 || e >= n {
+        return false
+    }
+    if c.istd[e] {
+        return true
+    }
+    if len(mark) < n {
+        for k <- iter.Range(len(mark), n) {
+            mark = append(mark, 0)
+        }
+    }
+    mut sp := 0
+    for q <- iter.Range(0, 2) {
+        r := if q == 0 { i } else { nfn + i }
+        if mark[r] != stamp {
+            mark[r] = stamp
+            if sp < len(stk) {
+                stk[sp] = r
+            } else {
+                stk = append(stk, r)
+            }
+            sp += 1
+        }
+    }
+    while sp > 0 {
+        sp -= 1
+        x := stk[sp]
+        if x == e {
+            return true
+        }
+        for k <- iter.Range(c.head[x], c.head[x + 1]) {
+            y := c.adj[k]
+            if mark[y] != stamp {
+                mark[y] = stamp
+                if sp < len(stk) {
+                    stk[sp] = y
+                } else {
+                    stk = append(stk, y)
+                }
+                sp += 1
+            }
+        }
+    }
+    return false
+}

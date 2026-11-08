@@ -100,10 +100,10 @@ type BadValue error {
 
 値が受けられない（want = 受ける値の説明 — `an integer`・`an integer in 1..65535`・`1, true, 0 or false`）
 
-## InvalidUtf8
+## BadUtf8
 
 ```sober
-type InvalidUtf8 error {
+type BadUtf8 error {
     name string
 }
 ```
@@ -135,14 +135,14 @@ type Misdeclared panic {
 ## Load
 
 ```sober
-@errors(Missing, BadValue, InvalidUtf8)
+@errors(Missing, BadValue, BadUtf8)
 @effects(io, panic)
 func Load(t Table) (Values, error?)
 ```
 
 t の変数を全部プロセスの環境から読んで検査する（誤りは宣言の順で最初の 1 つ）。入場（main の頭）で 1 回呼んで、値の表を渡して使う
 
-失敗のラベル: [`Missing`](#missing)・[`BadValue`](#badvalue)・[`InvalidUtf8`](#invalidutf8)
+失敗のラベル: [`Missing`](#missing)・[`BadValue`](#badvalue)・[`BadUtf8`](#badutf8)
 
 ## Parse
 

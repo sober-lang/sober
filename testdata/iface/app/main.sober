@@ -6,7 +6,7 @@ package main
 // - lib.Decode の本体だけが std/utf8 を暗黙に引く（`.sobi` では本体が落ちる — ロード順はリンク表から）
 // - lib.Twice（展開される公開関数）が非公開の helper / 非公開 const を参照する（リンク可視）
 // - 辞書 const lib.ByMod のラムダが非公開関数を参照する
-import "testdata/iface/lib"
+import lib "testdata/iface/lib"
 
 type Pick struct {
     f func(int) int

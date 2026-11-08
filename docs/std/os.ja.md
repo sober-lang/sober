@@ -9,14 +9,14 @@
 ## Args
 
 ```sober
-@errors(strings.InvalidUtf8)
+@errors(strings.BadUtf8)
 @effects(io)
 func Args() ([]string, error?)
 ```
 
-プログラムの引数（0 番 = プログラム名 — Go の os.Args と同じ並び）。呼ぶたびに呼び手の region へ写す。string は UTF-8 検査済みなので、不正な UTF-8 の引数が 1 つでもあれば全体が strings.InvalidUtf8（入力次第で起きる = error — [language.md 27 節](../language.md)）
+プログラムの引数（0 番 = プログラム名 — Go の os.Args と同じ並び）。呼ぶたびに呼び手の region へ写す。string は UTF-8 検査済みなので、不正な UTF-8 の引数が 1 つでもあれば全体が strings.BadUtf8（入力次第で起きる = error — [language.md 27 節](../language.md)）
 
-失敗のラベル: `strings.InvalidUtf8`
+失敗のラベル: `strings.BadUtf8`
 
 ## Run
 
@@ -167,14 +167,14 @@ func Monotonic() int
 ## Getenv
 
 ```sober
-@errors(strings.InvalidUtf8)
+@errors(strings.BadUtf8)
 @effects(io)
 func Getenv(name string) (string?, error?)
 ```
 
-環境変数 name の値（無ければ nil — 空の値 `NAME=` は "" で、無いのと区別する）。値が不正な UTF-8 なら strings.InvalidUtf8（Args と同じ — 入力次第で起きる = error）。同名が複数あれば最初の 1 つ（getenv(3) と同じ）
+環境変数 name の値（無ければ nil — 空の値 `NAME=` は "" で、無いのと区別する）。値が不正な UTF-8 なら strings.BadUtf8（Args と同じ — 入力次第で起きる = error）。同名が複数あれば最初の 1 つ（getenv(3) と同じ）
 
-失敗のラベル: `strings.InvalidUtf8`
+失敗のラベル: `strings.BadUtf8`
 
 ## AppendFile
 

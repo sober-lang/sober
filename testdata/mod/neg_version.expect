@@ -1,0 +1,2 @@
+sober: load error at sober.mod:2:13: a local-path dependency takes no version
+(check exit 1)

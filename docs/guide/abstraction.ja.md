@@ -16,7 +16,7 @@ Sober には interface もクラスもメソッドもありません。振る舞
 
 ## 1. 関数 1 つ — 名前付き関数型とクロージャ
 
-std/http のハンドラは interface ではなく、名前付きの関数型です。
+std/http/server のハンドラは interface ではなく、名前付きの関数型です。
 
 ```sober
 type Handler func(r Request) Response
@@ -28,28 +28,28 @@ type Handler func(r Request) Response
 // examples/abstraction_handler.sober
 package main
 
-// Abstraction 1 and 2: a named function type (http.Handler) built by closures, and a struct of
-// function fields (http.Middleware) (docs/guide/abstraction.md). The requests are fed from a string
+// Abstraction 1 and 2: a named function type (http.server.Handler) built by closures, and a struct of
+// function fields (http.server.Middleware) (docs/guide/abstraction.md). The requests are fed from a string
 // instead of the network, and each response is printed (the form of examples/http_router)
 
-import "std/http"
+import "std/http/server"
 
 func or(s string?) string {
     return if s != nil { s } else { "-" }
 }
 
 // stops a request without X-Token (only `before` is given; `after` is left out)
-const Auth = http.Middleware{before: (r) => if http.Header(r, "x-token") == nil { http.Status(401) } else { nil }}
+const Auth = http.server.Middleware{before: (r) => if http.server.Header(r, "x-token") == nil { http.server.Status(401) } else { nil }}
 
 // a Handler that answers with `word`: the closure captures `word` on this line
-func greeter(word string) http.Handler {
-    return (r) => http.Text("${word}, ${or(http.Param(r, "name"))}\n")
+func greeter(word string) http.server.Handler {
+    return (r) => http.server.Text("${word}, ${or(http.server.Param(r, "name"))}\n")
 }
 
-func routes() []http.Route {
-    return http.Mount("", []http.Route{
-        http.Route{method: "GET", path: "/hello/:name", handler: greeter("hello")},
-        http.Route{method: "GET", path: "/bye/:name", handler: greeter("see you")}}, []http.Middleware{Auth})
+func routes() []http.server.Route {
+    return http.server.Mount("", []http.server.Route{
+        http.server.Route{method: "GET", path: "/hello/:name", handler: greeter("hello")},
+        http.server.Route{method: "GET", path: "/bye/:name", handler: greeter("see you")}}, []http.server.Middleware{Auth})
 }
 
 func main() {
@@ -57,7 +57,7 @@ func main() {
         "GET /bye/bob HTTP/1.1\r\nX-Token: t\r\n\r\n" +
         "GET /hello/eve HTTP/1.1\r\nConnection: close\r\n\r\n"
     rs := routes()
-    e := http.ServeWith((k) => feed(reqs, k), (b) => show(b), (r) => http.Dispatch(rs, r))
+    e := http.server.ServeWith((k) => feed(reqs, k), (b) => show(b), (r) => http.server.Dispatch(rs, r))
     println(e == nil)
 }
 
@@ -103,9 +103,9 @@ Connection: close
 true
 ```
 
-- `greeter` は `http.Handler` を返す関数です。返すクロージャが `word` を捕まえていて、何を捕まえたかは `return` の行を見れば分かります。`greeter("hello")` と `greeter("see you")` は、同じ形の別のハンドラです。
+- `greeter` は `http.server.Handler` を返す関数です。返すクロージャが `word` を捕まえていて、何を捕まえたかは `return` の行を見れば分かります。`greeter("hello")` と `greeter("see you")` は、同じ形の別のハンドラです。
 - `Auth` は 2 節の形（関数の欄を持つ struct）で、`before` だけを書いて `after` を省いています。
-- 応答を印字するために、ネットワークの代わりに要求を文字列から流しています（`feed` / `show`）。実際のサーバーでは `http.Serve` に同じ `Dispatch` を渡します。
+- 応答を印字するために、ネットワークの代わりに要求を文字列から流しています（`feed` / `show`）。実際のサーバーでは `http.server.Serve` に同じ `Dispatch` を渡します。
 
 ## 2. 関数の組 — 関数の欄を持つ struct（辞書）
 
@@ -256,22 +256,22 @@ sober: error at examples/abstraction_union_neg.sober:12:12 (NonExhaustive): swit
 
 失ったもの:
 
-- **`this` が無い — これはオブジェクトではありません。** 関数の欄を持つ struct は C の関数ポインタの struct に似ていますが、自分自身を第一引数に受け取る仕組み（`this` / `self`）がありません。状態はクロージャが、作る行で明示に捕まえます
+- `this` が無い — これはオブジェクトではありません。 関数の欄を持つ struct は C の関数ポインタの struct に似ていますが、自分自身を第一引数に受け取る仕組み（`this` / `self`）がありません。状態はクロージャが、作る行で明示に捕まえます
 - メソッドの呼び出しの構文（`x.f()`）と、型にメソッドを足していく書き方。Zig のような method の構文（struct の名前空間に関数を置き、`x.f()` と呼べる糖衣）もありません。呼び方は常に `f(x)` の 1 つです。同じ呼び出しに 2 通りの書き方を作らず、振る舞いがデータに属しているように見える心的モデルの入口を、構文の段階で断っています
 - 暗黙の満足（Go の interface・Haskell の型クラスのインスタンスの解決）。実装は毎回、引数として渡します
 
 得たもの:
 
-- **どの実装が使われるかが、呼び出しの場所に書いてある。** 暗黙の解決を追いかける必要がありません
-- **何を捕まえたかが、クロージャを作った行に書いてある。** 隠れたフィールドや継承した状態はありません
-- **nil の interface の罠が無い。** 関数型にゼロ値が無いので、「欄が空かもしれない」は `?` として型に出ます
+- どの実装が使われるかが、呼び出しの場所に書いてある。 暗黙の解決を追いかける必要がありません
+- 何を捕まえたかが、クロージャを作った行に書いてある。 隠れたフィールドや継承した状態はありません
+- nil の interface の罠が無い。 関数型にゼロ値が無いので、「欄が空かもしれない」は `?` として型に出ます
 - 種類が閉じているなら union と switch で、足し漏れをコンパイラが見つけます
 
 ## 5. 他の言語からの対応表
 
 | 言語 | そこで書いていたもの | Sober |
 | --- | --- | --- |
-| Go | メソッド 1 本の interface（`http.Handler`） | 名前付き関数型（`http.Handler` は関数型） |
+| Go | メソッド 1 本の interface（`http.server.Handler`） | 名前付き関数型（`http.server.Handler` は関数型） |
 | Go | メソッドが複数の interface（`sort.Interface`） | 関数の欄を持つ struct を渡す（`Ord[T]{less: …}`） |
 | Rust | trait と `impl Trait for T`・`dyn Trait` | 関数の欄を持つ struct（辞書）を値として渡す |
 | Rust | `enum` と `match` | union と switch |

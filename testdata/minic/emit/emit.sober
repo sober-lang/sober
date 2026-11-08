@@ -4,8 +4,8 @@ package emit
 // 命令は 2 語（op, arg）。Push の arg は即値、Div の arg はゼロ除算を報告する位置、他は 0
 
 import "std/builder"
-import "testdata/minic/parse"
-import "testdata/minic/diag"
+import parse "testdata/minic/parse"
+import diag "testdata/minic/diag"
 
 const OpPush = 0
 const OpNeg = 1

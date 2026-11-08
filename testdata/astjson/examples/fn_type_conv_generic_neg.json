@@ -1,0 +1,161 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Gen",
+      "type_params": [
+        "T"
+      ],
+      "body": {
+        "k": "func",
+        "params": [
+          {
+            "k": "name",
+            "name": "T"
+          }
+        ],
+        "results": [
+          {
+            "k": "name",
+            "name": "T"
+          }
+        ],
+        "param_names": [
+          "x"
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 15
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "dbl",
+      "type_params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "*",
+                "lhs": {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 24
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 2,
+                  "tok": 26
+                },
+                "tok": 25
+              }
+            ],
+            "tok": 23
+          }
+        ]
+      },
+      "tok": 16,
+      "bodiless": false,
+      "span": {
+        "start": 15,
+        "end": 30
+      },
+      "sig_end": 22
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "g"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "index",
+                  "base": {
+                    "k": "ident",
+                    "name": "Gen",
+                    "tok": 37
+                  },
+                  "idx": {
+                    "k": "ident",
+                    "name": "int",
+                    "tok": 39
+                  },
+                  "tok": 38
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "dbl",
+                    "tok": 42
+                  }
+                ],
+                "tok": 41
+              }
+            ],
+            "tok": 35
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 45
+              },
+              "args": [
+                {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 47
+                }
+              ],
+              "tok": 46
+            }
+          }
+        ]
+      },
+      "tok": 31,
+      "bodiless": false,
+      "span": {
+        "start": 30,
+        "end": 52
+      },
+      "sig_end": 34
+    }
+  ],
+  "consts": []
+}

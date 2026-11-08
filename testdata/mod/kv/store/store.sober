@@ -1,0 +1,25 @@
+package store
+
+type Store struct {
+    keys []string
+    values []string
+}
+
+func Empty() Store {
+    return Store{keys: []string{}, values: []string{}}
+}
+
+func With(s Store, k string, v string) Store {
+    return Store{keys: append(s.keys, k), values: append(s.values, v)}
+}
+
+func Find(s Store, k string) string {
+    mut i := 0
+    while i < len(s.keys) {
+        if s.keys[i] == k {
+            return s.values[i]
+        }
+        i += 1
+    }
+    return ""
+}

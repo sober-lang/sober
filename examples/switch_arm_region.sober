@@ -1,0 +1,55 @@
+package main
+
+// 値の位置の switch の腕の region: 欄の束縛は subject の座標（仮引数の string は仮引数の region）・腕どうしの合流は if と同じ
+
+type J union {
+    JNull {}
+    JStr { v string }
+}
+
+type R union {
+    D { files map[string]int }
+    E { x int }
+}
+
+type L error {}
+
+func show(x J) string {
+    return switch x {
+    case JStr{v}: v
+    default: "?"
+    }
+}
+
+func copied(r R, f map[string]int) R {
+    return switch r {
+    case E{x}: D{files: f}
+    default: r
+    }
+}
+
+func local(x J) int {
+    return switch x {
+    case JStr{v}: {
+        s := v
+        len(bytes(s))
+    }
+    default: 0
+    }
+}
+
+func pick(k int) error? {
+    e := switch k {
+    case 0: L{}
+    default: nil
+    }
+    return e
+}
+
+func main() {
+    println(show(JStr{v: "s"}), show(JNull{}))
+    r := copied(E{x: 1}, map[string]int{"a": 1})
+    println(switch r { case D{files}: len(files); default: -1 })
+    println(local(JStr{v: "abc"}))
+    println(pick(0) == nil, pick(1) == nil)
+}

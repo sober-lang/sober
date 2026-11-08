@@ -1,6 +1,6 @@
 package main
 
-import "testdata/pkgdemo/geo"
+import geo "testdata/pkgdemo/geo"
 
 const Local = geo.Scale + 1
 

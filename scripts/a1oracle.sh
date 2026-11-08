@@ -2,7 +2,7 @@
 # a1oracle（再帰型の差分オラクル — report-rec-15）: 再帰の型宣言を使う題材ごとに、ネイティブの build（再帰型の lowering）と
 # A1 への書き換え（src/compiler/tools/a1dump — 値ごとに自分の部分木の表 + 根・再帰型の無い今の言語）の build を走らせ、
 # stdout と終了コードが一致すること。A1 側は「出力に再帰の組が残っていない」（a1dump --groups = 0）も見る。
-# 断片の外（a1dump の exit 2）は題材の列にある限り赤。
+# 断片の外（a1dump の exit 2）は題材の列にある限り赤。負例 testdata/a1/neg は逆に exit 2 + `a1: unsupported:` で名指されること。
 #   scripts/a1oracle.sh            題材の列の全部
 #   scripts/a1oracle.sh --list     題材の列を出す
 #   scripts/a1oracle.sh --mut      網の確かめ: a1dump の変異 2 本（A1_MUT=shift / kids）でそれぞれ少なくとも 1 題材が赤になること
@@ -59,5 +59,12 @@ mkdir -p "$W/base"
 run base
 fail=$(awk -F'\t' '$2 != ""' "$W/base.res" | wc -l)
 awk -F'\t' '$2 != "" { print "FAIL: " $1 ": " $2 }' "$W/base.res"
-echo "a1oracle: ${#LIST[@]} subjects — native ≡ A1 (stdout + exit code, no recursive group left), fail=$fail"
+# 負例（testdata/a1/neg）: 断片の外を a1dump が exit 2 と `a1: unsupported:` で名指す（黙って書き換えずに通さない）
+nneg=0
+for f in testdata/a1/neg/*.sober; do
+    nneg=$((nneg + 1))
+    "$W/a1dump" src/std "$f" > /dev/null 2> "$W/neg.err"; rc=$?
+    if [ $rc != 2 ] || ! grep -q '^a1: unsupported:' "$W/neg.err"; then echo "FAIL: $f: a1dump exit $rc (want 2 + a1: unsupported)"; fail=$((fail + 1)); fi
+done
+echo "a1oracle: ${#LIST[@]} subjects — native ≡ A1 (stdout + exit code, no recursive group left) + $nneg negatives named, fail=$fail"
 [ "$fail" = 0 ]

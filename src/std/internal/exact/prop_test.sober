@@ -97,7 +97,7 @@ func tieOK(mag int) bool {
     mut k := mut []int{}
     midPair(mut k, mag, mag + 1)
     for j <- iter.Range(0, 1075) {
-        bigint.MulAdd(mut k, 5, 0)
+        internal.bigint.MulAdd(mut k, 5, 0)
     }
     ds := decimalDigits(mut k)
     tie := (string(ds) catch "") + "e-1075"
@@ -116,8 +116,8 @@ func tieOK(mag int) bool {
 // k の 10 進の数字の列（k を壊す — 1 桁ずつ 10 で割る）
 func decimalDigits(k mut []int) []byte {
     mut rev := mut []byte{}
-    while bigint.Top(mut k) >= 0 {
-        rev = append(rev, byte('0' + bigint.DivSmall(mut k, 10)))
+    while internal.bigint.Top(mut k) >= 0 {
+        rev = append(rev, byte('0' + internal.bigint.DivSmall(mut k, 10)))
     }
     mut out := mut []byte{}
     mut i := len(rev) - 1

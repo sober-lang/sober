@@ -10,6 +10,7 @@ package crypto
 // 網: scripts/ctcheck.sh（ct の関数の機械語の条件分岐の数を黄金で照合）
 
 import "std/iter"
+import "std/rand"
 
 @intrinsic("syscall")
 func sysCall(nr int, a int, b int, c int, d int, e int, f int) int
@@ -80,4 +81,24 @@ func Rand(n int) []byte {
         }
     }
     return freeze(b)
+}
+
+// [0, n) の暗号論的な乱数（OS の乱数 8 バイトの下位 62 bit — 偏りなし: n の倍数に収まる範囲の値だけ使う棄却法。std/rand.Intn と同じ契約）。
+// n が 1 未満なら panic(rand.NonPositiveBound{n})・乱数が取れなければ panic(NoEntropy{errno})
+@effects(io, panic)
+func RandIntn(n int) int {
+    if n <= 0 {
+        return panic(rand.NonPositiveBound{n: n})
+    }
+    lim := (1 << 62) - (1 << 62) % n
+    mut v := lim
+    while v >= lim {
+        b := Rand(8)
+        mut x := 0
+        for i <- iter.Range(0, 8) {
+            x = (x << 8) | int(b[i])
+        }
+        v = x & ((1 << 62) - 1)
+    }
+    return v % n
 }

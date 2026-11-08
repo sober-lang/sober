@@ -1,0 +1,128 @@
+package client
+
+// cookie jar の網（white-box — RFC 6265 の保存と送りの規則・PSL の封・RFC 6265bis の締め・日付の寛容な読み・上限）
+
+import "std/http"
+import "std/iter"
+
+const t0 = 1700000000
+
+func tgt(u string) target {
+    t, _ := parseTarget(u)
+    return t
+}
+
+// u の応答に Set-Cookie の列 sets を受けた後の jar（cookies: true）
+func jarAfter(u string, sets []string) Client {
+    mut c := New(cookies: true)
+    mut fs := mut []http.Field{}
+    for v <- sets {
+        fs = append(fs, http.Field{name: "set-cookie", value: v})
+    }
+    absorb(mut c, tgt(u), freeze(fs), t0)
+    return c
+}
+
+func sentTo(c Client, u string) string {
+    return cookieHeader(c, tgt(u), t0 + 10)
+}
+
+func TestJarBasics() {
+    c := jarAfter("https://www.example.com/a/b", []string{"sid=1", "lang=ja; Path=/", "wide=1; Domain=example.com; Path=/"})
+    // host-only は同じ host だけ・Domain は下のサブドメインにも
+    assert(sentTo(c, "https://www.example.com/a/x") == "lang=ja; wide=1; sid=1" || sentTo(c, "https://www.example.com/a/x") == "sid=1; lang=ja; wide=1")
+    assert(sentTo(c, "https://api.example.com/") == "wide=1")
+    assert(sentTo(c, "https://example.org/") == "")
+    // 既定の path = 要求の path の最後の '/' の前（/a）— /b には送らない
+    assert(sentTo(c, "https://www.example.com/b") == "lang=ja; wide=1")
+    // jar を持たない Client は何も貯めない
+    mut off := New()
+    absorb(mut off, tgt("https://x.example/"), []http.Field{http.Field{name: "set-cookie", value: "a=1"}}, t0)
+    assert(cookieHeader(off, tgt("https://x.example/"), t0) == "")
+}
+
+func TestJarPublicSuffix() {
+    // 公開の接尾辞の Domain は捨てる（注入の封）・登録可能な名前の Domain は受ける
+    c := jarAfter("https://www.bank.co.uk/", []string{"evil=1; Domain=co.uk", "ok=1; Domain=bank.co.uk"})
+    assert(sentTo(c, "https://other.co.uk/") == "")
+    assert(sentTo(c, "https://login.bank.co.uk/") == "ok=1")
+    // private 節（github.io）も公開の接尾辞
+    g := jarAfter("https://alice.github.io/", []string{"x=1; Domain=github.io"})
+    assert(sentTo(g, "https://bob.github.io/") == "" && sentTo(g, "https://alice.github.io/") == "")
+    // host そのものが公開の接尾辞なら host-only として受ける
+    h := jarAfter("https://github.io/", []string{"y=1; Domain=github.io"})
+    assert(sentTo(h, "https://github.io/") == "y=1" && sentTo(h, "https://alice.github.io/") == "")
+    // host に一致しない Domain・番地の host は捨てる
+    m := jarAfter("https://www.example.com/", []string{"z=1; Domain=example.org"})
+    assert(sentTo(m, "https://www.example.org/") == "")
+    ip := jarAfter("http://10.0.0.1/", []string{"w=1; Domain=0.0.1"})
+    assert(sentTo(ip, "http://10.0.0.1/") == "")
+}
+
+func TestJarSecureAndPrefixes() {
+    // Secure は https の応答からだけ受け、https にだけ送る
+    c := jarAfter("https://example.com/", []string{"s=1; Secure; Path=/", "p=1; Path=/"})
+    assert(sentTo(c, "https://example.com/") == "s=1; p=1")
+    assert(sentTo(c, "http://example.com/") == "p=1")
+    h := jarAfter("http://example.com/", []string{"s=1; Secure"})
+    assert(sentTo(h, "https://example.com/") == "")
+    // __Secure- は Secure が要る・__Host- は Secure・Domain なし・Path=/ が要る
+    x := jarAfter("https://example.com/", []string{"__Secure-a=1", "__Secure-b=1; Secure", "__Host-c=1; Secure; Path=/", "__Host-d=1; Secure; Path=/; Domain=example.com", "__Host-e=1; Secure; Path=/x"})
+    assert(sentTo(x, "https://example.com/x") == "__Secure-b=1; __Host-c=1")
+}
+
+func TestJarExpiry() {
+    mut c := New(cookies: true)
+    t := tgt("https://example.com/")
+    absorb(mut c, t, []http.Field{http.Field{name: "set-cookie", value: "a=1; Max-Age=60"}, http.Field{name: "set-cookie", value: "b=1; Expires=Wed, 09 Jun 2021 10:18:14 GMT"}}, t0)
+    assert(cookieHeader(c, t, t0 + 30) == "a=1")
+    assert(cookieHeader(c, t, t0 + 61) == "")
+    // Max-Age は Expires より強い・Max-Age=0 は消す・置き換えは同じ名前 / domain / path
+    absorb(mut c, t, []http.Field{http.Field{name: "set-cookie", value: "a=2; Expires=Wed, 09 Jun 2021 10:18:14 GMT; Max-Age=100"}}, t0)
+    assert(cookieHeader(c, t, t0 + 50) == "a=2")
+    absorb(mut c, t, []http.Field{http.Field{name: "set-cookie", value: "a=3; Max-Age=0"}}, t0 + 1)
+    assert(cookieHeader(c, t, t0 + 2) == "")
+}
+
+func TestCookieDate() {
+    want := 1623233894
+    forms := []string{"Wed, 09 Jun 2021 10:18:14 GMT", "Wednesday, 09-Jun-21 10:18:14 GMT", "Wed Jun  9 10:18:14 2021", "9 jun 2021 10:18:14", "Wed, 09-Jun-2021 10:18:14 GMT"}
+    for f <- forms {
+        d := cookieDate(f)
+        assert(d != nil && d == want)
+    }
+    bads := []string{"foo", "Wed, 32 Jun 2021 10:18:14 GMT", "Wed, 09 Jun 1600 10:18:14 GMT", "Wed, 09 Jun 2021 25:18:14 GMT", "09 Jun 2021"}
+    for f <- bads {
+        assert(cookieDate(f) == nil)
+    }
+}
+
+func TestJarLimits() {
+    mut c := New(cookies: true)
+    t := tgt("https://example.com/")
+    for i <- iter.Range(0, 60) {
+        absorb(mut c, t, []http.Field{http.Field{name: "set-cookie", value: "k${i}=v; Path=/"}}, t0)
+    }
+    assert(len(c.cookies) == 50)
+    // 古い順に捨てた — k0〜k9 は無く k10〜k59 が残る
+    mut has0 := false
+    mut has59 := false
+    for s <- c.cookies {
+        has0 = has0 || s.name == "k0"
+        has59 = has59 || s.name == "k59"
+    }
+    assert(!has0 && has59)
+    // 1 本 4096 バイトを超える名前 + 値は捨てる
+    mut big := ""
+    for i <- iter.Range(0, 4100) {
+        big = "${big}x"
+    }
+    absorb(mut c, t, []http.Field{http.Field{name: "set-cookie", value: "huge=${big}"}}, t0)
+    assert(len(c.cookies) == 50)
+}
+
+func TestPathMatch() {
+    assert(pathMatch("/a/b", "/a") && pathMatch("/a/b", "/a/") && pathMatch("/a", "/a"))
+    assert(!pathMatch("/ab", "/a") && !pathMatch("/", "/a"))
+    assert(defaultPath("/a/b?q=1") == "/a" && defaultPath("/a") == "/" && defaultPath("/") == "/")
+}

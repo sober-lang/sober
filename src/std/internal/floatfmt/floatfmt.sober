@@ -104,37 +104,37 @@ func FormatFixed(bits int, prec int) string {
     }
     // q = round(f × 2^e × 10^prec)（最近接・偶数）
     mut n := mut []int{}
-    bigint.SetInt(mut n, f)
+    internal.bigint.SetInt(mut n, f)
     for k <- iter.Range(0, prec) {
-        bigint.MulAdd(mut n, 10, 0)
+        internal.bigint.MulAdd(mut n, 10, 0)
     }
     mut q := mut []int{}
     if e >= 0 {
-        bigint.Shl(mut n, e)
-        bigint.Set(mut q, mut n)
+        internal.bigint.Shl(mut n, e)
+        internal.bigint.Set(mut q, mut n)
     } else {
         // q = floor(n / 2^-e)・余りの比較で丸め
         sh := 0 - e
         mut d := mut []int{}
-        bigint.SetInt(mut d, 1)
-        bigint.Shl(mut d, sh)
-        bigint.Shr(mut q, mut n, sh)
+        internal.bigint.SetInt(mut d, 1)
+        internal.bigint.Shl(mut d, sh)
+        internal.bigint.Shr(mut q, mut n, sh)
         mut back := mut []int{}
-        bigint.Set(mut back, mut q)
-        bigint.Shl(mut back, sh)
+        internal.bigint.Set(mut back, mut q)
+        internal.bigint.Shl(mut back, sh)
         mut r := mut []int{}
-        bigint.Set(mut r, mut n)
-        bigint.Sub(mut r, mut back)
-        bigint.MulAdd(mut r, 2, 0)
-        c := bigint.Cmp(mut r, mut d)
-        if c > 0 || (c == 0 && bigint.Odd(mut q)) {
-            bigint.MulAdd(mut q, 1, 1)
+        internal.bigint.Set(mut r, mut n)
+        internal.bigint.Sub(mut r, mut back)
+        internal.bigint.MulAdd(mut r, 2, 0)
+        c := internal.bigint.Cmp(mut r, mut d)
+        if c > 0 || (c == 0 && internal.bigint.Odd(mut q)) {
+            internal.bigint.MulAdd(mut q, 1, 1)
         }
     }
     // q の 10 進の桁（下位から）
     mut ds := mut []int{}
-    while bigint.Top(mut q) >= 0 {
-        ds = append(ds, bigint.DivSmall(mut q, 10))
+    while internal.bigint.Top(mut q) >= 0 {
+        ds = append(ds, internal.bigint.DivSmall(mut q, 10))
     }
     while len(ds) < prec + 1 {
         ds = append(ds, 0)
@@ -229,31 +229,31 @@ func shortest(ds mut []int, ex int, mant int) int {
     mut mp := mut []int{}
     mut mm := mut []int{}
     if e >= 0 {
-        bigint.SetInt(mut r, f)
-        bigint.SetInt(mut mp, 1)
-        bigint.Shl(mut mp, e)
-        bigint.SetInt(mut mm, 1)
-        bigint.Shl(mut mm, e)
+        internal.bigint.SetInt(mut r, f)
+        internal.bigint.SetInt(mut mp, 1)
+        internal.bigint.Shl(mut mp, e)
+        internal.bigint.SetInt(mut mm, 1)
+        internal.bigint.Shl(mut mm, e)
         if f != HIDDEN {
-            bigint.Shl(mut r, e + 1)
-            bigint.SetInt(mut s, 2)
+            internal.bigint.Shl(mut r, e + 1)
+            internal.bigint.SetInt(mut s, 2)
         } else {
-            bigint.Shl(mut r, e + 2)
-            bigint.SetInt(mut s, 4)
-            bigint.Shl(mut mp, 1)
+            internal.bigint.Shl(mut r, e + 2)
+            internal.bigint.SetInt(mut s, 4)
+            internal.bigint.Shl(mut mp, 1)
         }
     } else {
-        bigint.SetInt(mut r, f)
-        bigint.SetInt(mut s, 1)
-        bigint.SetInt(mut mm, 1)
+        internal.bigint.SetInt(mut r, f)
+        internal.bigint.SetInt(mut s, 1)
+        internal.bigint.SetInt(mut mm, 1)
         if ex <= 1 || f != HIDDEN {
-            bigint.Shl(mut r, 1)
-            bigint.Shl(mut s, 1 - e)
-            bigint.SetInt(mut mp, 1)
+            internal.bigint.Shl(mut r, 1)
+            internal.bigint.Shl(mut s, 1 - e)
+            internal.bigint.SetInt(mut mp, 1)
         } else {
-            bigint.Shl(mut r, 2)
-            bigint.Shl(mut s, 2 - e)
-            bigint.SetInt(mut mp, 2)
+            internal.bigint.Shl(mut r, 2)
+            internal.bigint.Shl(mut s, 2 - e)
+            internal.bigint.SetInt(mut mp, 2)
         }
     }
     // k = 上の端 (r + mp) / s が 10^k 未満（偶数なら以下）になる最小の k。見積もり（log10 2 ≈ 78913 / 2^18）から合わせる
@@ -261,32 +261,32 @@ func shortest(ds mut []int, ex int, mant int) int {
     mut k := if bl >= 1 { ((bl - 1) * 78913) >> 18 } else { 0 - ((((1 - bl) * 78913) >> 18) + 1) }
     if k >= 0 {
         for i <- iter.Range(0, k) {
-            bigint.MulAdd(mut s, 10, 0)
+            internal.bigint.MulAdd(mut s, 10, 0)
         }
     } else {
         for i <- iter.Range(0, 0 - k) {
-            bigint.MulAdd(mut r, 10, 0)
-            bigint.MulAdd(mut mp, 10, 0)
-            bigint.MulAdd(mut mm, 10, 0)
+            internal.bigint.MulAdd(mut r, 10, 0)
+            internal.bigint.MulAdd(mut mp, 10, 0)
+            internal.bigint.MulAdd(mut mm, 10, 0)
         }
     }
     mut hi := mut []int{}
     mut fixed := false
     while !fixed {
-        bigint.Set(mut hi, mut r)
-        bigint.Add(mut hi, mut mp)
-        c := bigint.Cmp(mut hi, mut s)
+        internal.bigint.Set(mut hi, mut r)
+        internal.bigint.Add(mut hi, mut mp)
+        c := internal.bigint.Cmp(mut hi, mut s)
         if c > 0 || (c == 0 && even) {
-            bigint.MulAdd(mut s, 10, 0)
+            internal.bigint.MulAdd(mut s, 10, 0)
             k += 1
         } else {
             // 小さすぎないか: (r + mp) × 10 が s を越えなければ（偶数なら届かなければ）1 つ下げる
-            bigint.MulAdd(mut hi, 10, 0)
-            c2 := bigint.Cmp(mut hi, mut s)
+            internal.bigint.MulAdd(mut hi, 10, 0)
+            c2 := internal.bigint.Cmp(mut hi, mut s)
             if c2 < 0 || (c2 == 0 && !even) {
-                bigint.MulAdd(mut r, 10, 0)
-                bigint.MulAdd(mut mp, 10, 0)
-                bigint.MulAdd(mut mm, 10, 0)
+                internal.bigint.MulAdd(mut r, 10, 0)
+                internal.bigint.MulAdd(mut mp, 10, 0)
+                internal.bigint.MulAdd(mut mm, 10, 0)
                 k -= 1
             } else {
                 fixed = true
@@ -296,19 +296,19 @@ func shortest(ds mut []int, ex int, mant int) int {
     // 桁を出す
     mut done := false
     while !done {
-        bigint.MulAdd(mut r, 10, 0)
-        bigint.MulAdd(mut mp, 10, 0)
-        bigint.MulAdd(mut mm, 10, 0)
+        internal.bigint.MulAdd(mut r, 10, 0)
+        internal.bigint.MulAdd(mut mp, 10, 0)
+        internal.bigint.MulAdd(mut mm, 10, 0)
         mut d := 0
-        while bigint.Cmp(mut r, mut s) >= 0 {
-            bigint.Sub(mut r, mut s)
+        while internal.bigint.Cmp(mut r, mut s) >= 0 {
+            internal.bigint.Sub(mut r, mut s)
             d += 1
         }
-        cl := bigint.Cmp(mut r, mut mm)
+        cl := internal.bigint.Cmp(mut r, mut mm)
         tc1 := cl < 0 || (cl == 0 && even)
-        bigint.Set(mut hi, mut r)
-        bigint.Add(mut hi, mut mp)
-        ch := bigint.Cmp(mut hi, mut s)
+        internal.bigint.Set(mut hi, mut r)
+        internal.bigint.Add(mut hi, mut mp)
+        ch := internal.bigint.Cmp(mut hi, mut s)
         tc2 := ch > 0 || (ch == 0 && even)
         if !tc1 && !tc2 {
             ds = append(ds, d)
@@ -320,9 +320,9 @@ func shortest(ds mut []int, ex int, mant int) int {
                 ds = append(ds, d + 1)
             } else {
                 // 両方の端に届く: 近い方（2r と s の比較 — 同点は偶数の桁）
-                bigint.Set(mut hi, mut r)
-                bigint.MulAdd(mut hi, 2, 0)
-                c3 := bigint.Cmp(mut hi, mut s)
+                internal.bigint.Set(mut hi, mut r)
+                internal.bigint.MulAdd(mut hi, 2, 0)
+                c3 := internal.bigint.Cmp(mut hi, mut s)
                 ds = append(ds, if c3 < 0 || (c3 == 0 && d % 2 == 0) { d } else { d + 1 })
             }
         }
@@ -458,19 +458,19 @@ func decimalBits(ds mut []int, exp10 int) (int, bool) {
     }
     mut n := mut []int{0}
     for k <- iter.Range(0, len(ds)) {
-        bigint.MulAdd(mut n, 10, ds[k])
+        internal.bigint.MulAdd(mut n, 10, ds[k])
     }
     mut den := mut []int{1}
     if exp10 >= 0 {
         for k <- iter.Range(0, exp10) {
-            bigint.MulAdd(mut n, 10, 0)
+            internal.bigint.MulAdd(mut n, 10, 0)
         }
     } else {
         for k <- iter.Range(0, 0 - exp10) {
-            bigint.MulAdd(mut den, 10, 0)
+            internal.bigint.MulAdd(mut den, 10, 0)
         }
     }
-    mut s := 52 - (bigint.BitLen(mut n) - bigint.BitLen(mut den))
+    mut s := 52 - (internal.bigint.BitLen(mut n) - internal.bigint.BitLen(mut den))
     mut q := 0
     mut r := mut []int{}
     mut d2 := mut []int{}
@@ -492,8 +492,8 @@ func decimalBits(ds mut []int, exp10 int) (int, bool) {
         q = bnDivScaled(mut n, mut den, s, mut r, mut d2)
         biased = 0
     }
-    bigint.MulAdd(mut r, 2, 0)
-    c := bigint.Cmp(mut r, mut d2)
+    internal.bigint.MulAdd(mut r, 2, 0)
+    c := internal.bigint.Cmp(mut r, mut d2)
     if c > 0 || (c == 0 && q % 2 == 1) {
         q += 1
     }
@@ -511,21 +511,21 @@ func decimalBits(ds mut []int, exp10 int) (int, bool) {
 }
 
 func bnDivScaled(n mut []int, den mut []int, s int, r mut []int, d2 mut []int) int {
-    bigint.Set(mut r, mut n)
-    bigint.Set(mut d2, mut den)
+    internal.bigint.Set(mut r, mut n)
+    internal.bigint.Set(mut d2, mut den)
     if s >= 0 {
-        bigint.Shl(mut r, s)
+        internal.bigint.Shl(mut r, s)
     } else {
-        bigint.Shl(mut d2, 0 - s)
+        internal.bigint.Shl(mut d2, 0 - s)
     }
     mut q := 0
     mut sh := mut []int{}
     mut k := 55
     while k >= 0 {
-        bigint.Set(mut sh, mut d2)
-        bigint.Shl(mut sh, k)
-        if bigint.Cmp(mut r, mut sh) >= 0 {
-            bigint.Sub(mut r, mut sh)
+        internal.bigint.Set(mut sh, mut d2)
+        internal.bigint.Shl(mut sh, k)
+        if internal.bigint.Cmp(mut r, mut sh) >= 0 {
+            internal.bigint.Sub(mut r, mut sh)
             q = q | (1 << k)
         }
         k -= 1

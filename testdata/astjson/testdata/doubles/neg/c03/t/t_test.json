@@ -23,37 +23,42 @@
               "callee": {
                 "k": "selector",
                 "base": {
-                  "k": "ident",
-                  "name": "cell",
-                  "tok": 26
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "testing",
+                    "tok": 28
+                  },
+                  "field": "cell",
+                  "tok": 30
                 },
                 "field": "Set",
-                "tok": 28
+                "tok": 32
               },
               "args": [
                 {
                   "k": "ident",
                   "name": "H",
-                  "tok": 30
+                  "tok": 34
                 },
                 {
                   "k": "int",
                   "value": 1,
-                  "tok": 32
+                  "tok": 36
                 }
               ],
-              "tok": 29
+              "tok": 33
             }
           }
         ]
       },
-      "tok": 22,
+      "tok": 24,
       "bodiless": false,
       "span": {
-        "start": 21,
-        "end": 37
+        "start": 23,
+        "end": 41
       },
-      "sig_end": 25
+      "sig_end": 27
     }
   ],
   "consts": [
@@ -61,14 +66,14 @@
       "name": "H",
       "expr": {
         "k": "composite",
-        "type_name": "cell.Cell",
+        "type_name": "testing.cell.Cell",
         "elems": [
           {
             "key": "key",
             "value": {
               "k": "int",
               "value": 7,
-              "tok": 18
+              "tok": 20
             }
           }
         ],
@@ -83,7 +88,7 @@
       "tok": 7,
       "span": {
         "start": 6,
-        "end": 21
+        "end": 23
       }
     }
   ]

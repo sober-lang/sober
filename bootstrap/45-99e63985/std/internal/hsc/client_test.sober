@@ -1,0 +1,337 @@
+package hsc
+
+// クライアントの handshake の網（white-box — 同じ package のサーバの役 Hs と、record のバイトを受け渡して往復させる。決定的: 乱数は seed から）:
+// 握手が済む・ALPN・アプリのデータの往復・KeyUpdate・名前違い / 信頼の起点なし / 期限切れは CertFailed（cause が x509 のラベル）・サーバの flight を 1 バイト壊すと alert
+
+import "std/crypto/pem"
+import "std/internal/hs"
+import "std/crypto/rsa"
+import "std/internal/x509"
+import "std/io"
+import "std/iter"
+import "std/net"
+import "std/os"
+import "std/strings"
+import "std/time"
+import "std/internal/record"
+
+@embed("testdata/crypto/httparena-server.*")
+const Certs = map[string]string{}
+
+func certFile(p string) string {
+    v := Certs[p]
+    if v != nil {
+        return v
+    }
+    return ""
+}
+
+func srvParams() internal.hs.Params {
+    cb, _ := crypto.pem.Parse(certFile("testdata/crypto/httparena-server.crt"))
+    kb, _ := crypto.pem.Parse(certFile("testdata/crypto/httparena-server.key"))
+    k, _ := crypto.rsa.ParsePKCS8(kb[0].der)
+    return internal.hs.NewParams([][]byte{cb[0].der}, k, []string{"http/1.1"}, []int{internal.record.AesGcm, internal.record.ChaCha}, bytes("srv-seed"))
+}
+
+func testRoots() []internal.x509.Cert {
+    rs, _ := internal.x509.RootsFromPEM(certFile("testdata/crypto/httparena-server.crt"))
+    return rs
+}
+
+// 2026-11-05（証明書は 2026-08-22〜2036-08-19）
+const testNow = 1793836800
+
+// バイト列 b の record の枠の列
+func frames(b []byte) []internal.record.Frame {
+    mut out := mut []internal.record.Frame{}
+    mut at := 0
+    while at + 5 <= len(b) {
+        n := 5 + (int(b[at + 3]) << 8 | int(b[at + 4]))
+        out = append(out, internal.record.At(b, at, n))
+        at += n
+    }
+    return freeze(out)
+}
+
+// サーバに b を食わせて、送られた record のバイト列
+func toServer(s mut internal.hs.Hs, p internal.hs.Params, b []byte) []byte {
+    mut out := mut []byte{}
+    for f <- frames(b) {
+        o, e := internal.hs.Feed(mut s, p, f)
+        assert(e == nil)
+        putBytes(mut out, o.send)
+    }
+    return freeze(out)
+}
+
+// クライアントに b を食わせて (送る record, 受けた平文, 済んだか, 最初の誤り)
+func toClient(c mut Ch, p CParams, b []byte) ([]byte, []byte, bool, error?) {
+    mut out := mut []byte{}
+    mut app := mut []byte{}
+    mut done := false
+    for f <- frames(b) {
+        o, e := FeedClient(mut c, p, f)
+        if e != nil {
+            return freeze(out), freeze(app), done, e
+        }
+        putBytes(mut out, o.send)
+        putBytes(mut app, o.app)
+        done = done || o.done
+    }
+    return freeze(out), freeze(app), done, nil
+}
+
+func TestHandshakeAndData() {
+    sp := srvParams()
+    cp := NewCParams("localhost", []string{"http/1.1"}, testRoots(), testNow, bytes("cli-seed"))
+    c0, firstHello := StartClient(cp)
+    mut c := c0
+    mut s := internal.hs.New()
+    flight := toServer(mut s, sp, firstHello)
+    fin, _, done, e := toClient(mut c, cp, flight)
+    assert(e == nil && done && ClientConnected(c) && ClientAlpn(c) == "http/1.1")
+    _ = toServer(mut s, sp, fin)
+    assert(internal.hs.IsConnected(s))
+    req, e2 := ClientSeal(mut c, bytes("GET / HTTP/1.1\r\n\r\n"))
+    assert(e2 == nil)
+    mut got := mut []byte{}
+    for f <- frames(req) {
+        o, e3 := internal.hs.Feed(mut s, sp, f)
+        assert(e3 == nil)
+        putBytes(mut got, o.app)
+    }
+    assert(bytesToString(freeze(got)) == "GET / HTTP/1.1\r\n\r\n")
+    resp, e4 := internal.hs.SealApp(mut s, bytes("HTTP/1.1 200 OK\r\n\r\n"))
+    assert(e4 == nil)
+    _, app, _, e5 := toClient(mut c, cp, resp)
+    assert(e5 == nil && bytesToString(app) == "HTTP/1.1 200 OK\r\n\r\n")
+}
+
+// 鎖の検証の失敗の cause（入れ子のパターン — spec E-9）
+func certCause(e error?) string {
+    return switch e {
+    case nil: "ok"
+    case CertFailed{cause: internal.x509.NameMismatch{}}: "NameMismatch"
+    case CertFailed{cause: internal.x509.UnknownAuthority{}}: "UnknownAuthority"
+    case CertFailed{cause: internal.x509.Expired{}}: "Expired"
+    case CertFailed{}: "other"
+    default: "alert"
+    }
+}
+
+func failWith(host string, rs []internal.x509.Cert, t int) string {
+    sp := srvParams()
+    cp := NewCParams(host, []string{"http/1.1"}, rs, t, bytes("cli-seed"))
+    c0, firstHello := StartClient(cp)
+    mut c := c0
+    mut s := internal.hs.New()
+    flight := toServer(mut s, sp, firstHello)
+    _, _, _, e := toClient(mut c, cp, flight)
+    return certCause(e)
+}
+
+func TestCertFailures() {
+    assert(failWith("example.com", testRoots(), testNow) == "NameMismatch")
+    assert(failWith("localhost", []internal.x509.Cert{}, testNow) == "UnknownAuthority")
+    assert(failWith("localhost", testRoots(), 2200000000) == "Expired")
+    assert(failWith("127.0.0.1", testRoots(), testNow) == "ok")
+}
+
+func TestTamperedFlight() {
+    sp := srvParams()
+    cp := NewCParams("localhost", []string{"http/1.1"}, testRoots(), testNow, bytes("cli-seed"))
+    c0, firstHello := StartClient(cp)
+    mut c := c0
+    mut s := internal.hs.New()
+    flight := toServer(mut s, sp, firstHello)
+    mut bad := mut []byte{}
+    for x <- flight {
+        bad = append(bad, x)
+    }
+    // 最後のバイト（暗号化した flight の tag の中）を変える
+    bad[len(bad) - 1] = byte(int(bad[len(bad) - 1]) ^ 1)
+    _, _, done, e := toClient(mut c, cp, freeze(bad))
+    assert(!done && e != nil && certCause(e) == "alert")
+}
+
+// 相互接続（scripts/tlsinterop.sh が Go の crypto/tls のサーバを起こし、環境変数 SOBER_TLS_INTEROP にその置き場を渡す — 無ければ何もしない）:
+// ECDSA P-256 / P-384 / RSA-2048 の葉の 3 つのサーバに TLS 1.3 で繋ぎ、HTTP の要求を送って本文 `ok-<葉>` を受ける
+func TestInterop() {
+    d, e := os.Getenv("SOBER_TLS_INTEROP")
+    if e != nil || d == nil {
+        return
+    }
+    caPem, e1 := io.ReadFile("${d}/ca.pem")
+    ports, e2 := io.ReadFile("${d}/ports")
+    assert(e1 == nil && e2 == nil)
+    rs, e3 := internal.x509.RootsFromPEM(bytesToString(caPem))
+    assert(e3 == nil && len(rs) == 1)
+    mut n := 0
+    for l <- strings.Split(strings.TrimSpace(bytesToString(ports)), "\n") {
+        f := strings.Fields(l)
+        v12 := strings.Contains(f[0], "-12")
+        // 1.2 のサーバには dangerouslyAllowTls12 にあたる WithTls12 で・1.3 のサーバには 1.2 を許したクライアントでも 1.3 で繋がる
+        body, ver := fetch(f[1], rs, true)
+        println("interop ${f[0]} (allowTls12, ${ver}): ${strings.TrimSpace(body)}")
+        assert(strings.HasSuffix(body, "ok-${f[0]}"))
+        assert(ver == (if v12 { "1.2" } else { "1.3" }))
+        // 1.2 を許さないクライアントは 1.2 のサーバに繋がらない（既定は 1.3 だけ）
+        if v12 {
+            b2, _ := fetch(f[1], rs, false)
+            assert(!strings.HasSuffix(b2, "ok-${f[0]}"))
+        }
+        println("conf-item: interop/tls ${f[0]} ${ver}")
+        n += 1
+    }
+    assert(n == 8)
+    println("conf: interop/tls ${n}")
+}
+
+// 127.0.0.1:port に TLS 1.3 で繋いで GET / を送り、受けた平文の全部（相手が閉じるまで）
+func fetch(port string, rs []internal.x509.Cert, allow12 bool) (string, string) {
+    cp0 := NewCParams("localhost", []string{"http/1.1"}, rs, time.UnixSec(time.Now()), []byte{})
+    cp := if allow12 { WithTls12(cp0) } else { cp0 }
+    mut ver := "?"
+    mut got := mut []byte{}
+    err := net.Dial("127.0.0.1:${port}", (c) => {
+        c0, first := StartClient(cp)
+        mut ch := c0
+        e0 := net.Send(c, first)
+        assert(e0 == nil)
+        mut buf := mut []byte{}
+        mut sent := false
+        mut failed := false
+        re := net.Recv(c, (chunk) => {
+            for x <- chunk {
+                buf = append(buf, x)
+            }
+            while !failed && len(buf) >= 5 && len(buf) >= 5 + (int(buf[3]) << 8 | int(buf[4])) {
+                n := 5 + (int(buf[3]) << 8 | int(buf[4]))
+                rec := sliceOf(freeze(buf), 0, n)
+                mut rest2 := mut []byte{}
+                for i <- iter.Range(n, len(buf)) {
+                    rest2 = append(rest2, buf[i])
+                }
+                buf = rest2
+                o, fe := FeedClient(mut ch, cp, internal.record.At(rec, 0, n))
+                if fe != nil {
+                    failed = true
+                    println("  feed error: ${alertDesc(fe)} (phase k=${phaseNo(ch)})")
+                } else {
+                    if len(o.send) > 0 {
+                        _ = net.Send(c, o.send)
+                    }
+                    for x <- o.app {
+                        got = append(got, x)
+                    }
+                    if ClientConnected(ch) && !sent {
+                        ver = if ch.v12 { "1.2" } else { "1.3" }
+                        req, se := ClientSeal(mut ch, bytes("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"))
+                        assert(se == nil)
+                        _ = net.Send(c, req)
+                        sent = true
+                    }
+                }
+            }
+        })
+        _ = re
+    })
+    assert(err == nil)
+    return bytesToString(freeze(got)), ver
+}
+
+func alertDesc(e error?) string {
+    return switch e {
+    case internal.record.Alert{desc}: "alert ${desc}"
+    case CertFailed{}: "CertFailed"
+    case nil: "nil"
+    }
+}
+
+func phaseNo(h Ch) int {
+    return switch h.ph {
+    case C12Cert{}: 1
+    case C12Skx{}: 2
+    case C12Done{}: 3
+    case C12Ccs{}: 4
+    case C12Fin{}: 5
+    case CWaitSH{}: 6
+    case CClosed{}: 9
+    default: 7
+    }
+}
+
+// 手組みの ServerHello（legacy_version 0x0303・random・session_id・suite・圧縮 0・拡張 xs）の平文の record
+func shRecord(random []byte, sessid []byte, suite int, xs []byte) []byte {
+    mut b := mut []byte{}
+    put16(mut b, 0x0303)
+    putBytes(mut b, random)
+    put8(mut b, len(sessid))
+    putBytes(mut b, sessid)
+    put16(mut b, suite)
+    put8(mut b, 0)
+    put16(mut b, len(xs))
+    putBytes(mut b, xs)
+    return plain(internal.record.CtHandshake, msg(tServerHello, freeze(b)))
+}
+
+func ext(t int, body []byte) []byte {
+    mut x := mut []byte{}
+    put16(mut x, t)
+    put16(mut x, len(body))
+    putBytes(mut x, body)
+    return freeze(x)
+}
+
+func rep32(b int) []byte {
+    mut o := mut []byte{}
+    for i <- iter.Range(0, 32) {
+        o = append(o, byte(b))
+    }
+    return freeze(o)
+}
+
+// 1.3 を申し出たのに 1.2 を選んだサーバの降格の印（DOWNGRD\x01）は中止・印の無い 1.2 は先へ進む
+func TestDowngradeSentinel() {
+    cp := WithTls12(NewCParams("localhost", []string{"http/1.1"}, testRoots(), testNow, bytes("cli-seed")))
+    c0, _ := StartClient(cp)
+    mut c := c0
+    rnd0 := cat(sliceOf(rep32(7), 0, 24), cat(bytes("DOWNGRD"), []byte{1}))
+    exts := cat(ext(0x0017, []byte{}), ext(0xff01, []byte{0}))
+    _, _, _, e := toClient(mut c, cp, shRecord(rnd0, rep32(9), s12EcdsaChaCha, exts))
+    assert(alertDesc(e) == "alert 47")
+    c1, _ := StartClient(cp)
+    mut d := c1
+    _, _, _, e2 := toClient(mut d, cp, shRecord(rep32(7), rep32(9), s12EcdsaChaCha, exts))
+    assert(e2 == nil && d.v12)
+    // EMS の無い 1.2 のサーバは断る
+    c2, _ := StartClient(cp)
+    mut g := c2
+    _, _, _, e3 := toClient(mut g, cp, shRecord(rep32(7), rep32(9), s12EcdsaChaCha, ext(0xff01, []byte{0})))
+    assert(alertDesc(e3) == "alert 40")
+    // 1.2 を許さないクライアントは 1.2 の ServerHello を protocol_version で断る
+    cp3 := NewCParams("localhost", []string{"http/1.1"}, testRoots(), testNow, bytes("cli-seed"))
+    c3, _ := StartClient(cp3)
+    mut q := c3
+    _, _, _, e4 := toClient(mut q, cp3, shRecord(rep32(7), rep32(9), s12EcdsaChaCha, exts))
+    assert(alertDesc(e4) == "alert 70")
+}
+
+// HelloRetryRequest: cookie だけなら 2 番目の ClientHello（CCS の後・cookie を写す）・key_share を求める HRR は illegal_parameter
+func TestHelloRetry() {
+    cp := NewCParams("localhost", []string{"http/1.1"}, testRoots(), testNow, bytes("cli-seed"))
+    c0, _ := StartClient(cp)
+    mut c := c0
+    sv := ext(xSupportedVersions, []byte{3, 4})
+    ck := ext(xCookie, cat([]byte{0, 5}, bytes("hello")))
+    out, _, _, e := toClient(mut c, cp, shRecord(hrrRandom(), c.sessid, internal.record.AesGcm, cat(sv, ck)))
+    assert(e == nil && len(out) > 6 && int(out[0]) == internal.record.CtCcs)
+    // 2 番目の ClientHello の本体に cookie の拡張（0x002c・長さ 7・中身 0x0005 "hello"）が入っている
+    ch2 := sliceOf(out, 6, len(out) - 6)
+    assert(strings.Contains(bytesToString(ch2), "hello"))
+    c1, _ := StartClient(cp)
+    mut d := c1
+    ks := ext(xKeyShare, []byte{0, 0x1d})
+    _, _, _, e2 := toClient(mut d, cp, shRecord(hrrRandom(), d.sessid, internal.record.AesGcm, cat(sv, ks)))
+    assert(alertDesc(e2) == "alert 47")
+}

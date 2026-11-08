@@ -4,7 +4,7 @@ package main
 
 import "testdata/loader_neg/alias_hidden/lib"
 
-type S = lib.secret
+type S = testdata.loader_neg.alias_hidden.lib.secret
 
 func main() {
     println(1)

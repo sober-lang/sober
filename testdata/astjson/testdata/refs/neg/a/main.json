@@ -77,7 +77,7 @@
           "name": "s",
           "type": {
             "k": "name",
-            "name": "lib.Shape"
+            "name": "testdata.refs.neg.lib.Shape"
           },
           "mutable": false
         }
@@ -99,7 +99,7 @@
                   {
                     "k": "ident",
                     "name": "s",
-                    "tok": 40
+                    "tok": 46
                   }
                 ],
                 "cases": [
@@ -108,15 +108,15 @@
                       {
                         "k": "type",
                         "bind": null,
-                        "variant": "lib.Bar",
+                        "variant": "testdata.refs.neg.lib.Bar",
                         "fields": [
                           {
                             "name": "MarkFailed",
                             "sub": null,
-                            "tok": 47
+                            "tok": 59
                           }
                         ],
-                        "tok": 43
+                        "tok": 49
                       }
                     ],
                     "body": {
@@ -126,21 +126,21 @@
                           "expr": {
                             "k": "ident",
                             "name": "MarkFailed",
-                            "tok": 50
+                            "tok": 62
                           }
                         }
                       ]
                     },
-                    "tok": 42
+                    "tok": 48
                   },
                   {
                     "patterns": [
                       {
                         "k": "type",
                         "bind": null,
-                        "variant": "lib.Baz",
+                        "variant": "testdata.refs.neg.lib.Baz",
                         "fields": [],
-                        "tok": 53
+                        "tok": 65
                       }
                     ],
                     "body": {
@@ -150,19 +150,19 @@
                           "expr": {
                             "k": "int",
                             "value": 0,
-                            "tok": 59
+                            "tok": 77
                           }
                         }
                       ]
                     },
-                    "tok": 52
+                    "tok": 64
                   }
                 ],
                 "default": null,
-                "tok": 39
+                "tok": 45
               }
             ],
-            "tok": 38
+            "tok": 44
           }
         ]
       },
@@ -170,9 +170,9 @@
       "bodiless": false,
       "span": {
         "start": 28,
-        "end": 65
+        "end": 83
       },
-      "sig_end": 37
+      "sig_end": 43
     },
     {
       "name": "main",
@@ -190,22 +190,22 @@
             "values": [
               {
                 "k": "composite",
-                "type_name": "lib.Rec",
+                "type_name": "testdata.refs.neg.lib.Rec",
                 "elems": [
                   {
                     "key": "MarkFailed",
                     "value": {
                       "k": "int",
                       "value": 3,
-                      "tok": 78
+                      "tok": 102
                     }
                   }
                 ],
-                "tok": 72,
+                "tok": 90,
                 "type_args": []
               }
             ],
-            "tok": 70
+            "tok": 88
           },
           {
             "k": "bind",
@@ -222,36 +222,51 @@
                   "base": {
                     "k": "ident",
                     "name": "r",
-                    "tok": 83
+                    "tok": 107
                   },
                   "field": "MarkFailed",
-                  "tok": 85
+                  "tok": 109
                 },
                 "rhs": {
                   "k": "call",
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "lib",
-                      "tok": 87
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "testdata",
+                            "tok": 111
+                          },
+                          "field": "refs",
+                          "tok": 113
+                        },
+                        "field": "neg",
+                        "tok": 115
+                      },
+                      "field": "lib",
+                      "tok": 117
                     },
                     "field": "MarkFailed",
-                    "tok": 89
+                    "tok": 119
                   },
                   "args": [
                     {
                       "k": "ident",
                       "name": "r",
-                      "tok": 91
+                      "tok": 121
                     }
                   ],
-                  "tok": 90
+                  "tok": 120
                 },
-                "tok": 86
+                "tok": 110
               }
             ],
-            "tok": 81
+            "tok": 105
           },
           {
             "k": "bind",
@@ -262,22 +277,22 @@
             "values": [
               {
                 "k": "composite",
-                "type_name": "lib.Bar",
+                "type_name": "testdata.refs.neg.lib.Bar",
                 "elems": [
                   {
                     "key": "MarkFailed",
                     "value": {
                       "k": "ident",
                       "name": "MarkFailed",
-                      "tok": 102
+                      "tok": 138
                     }
                   }
                 ],
-                "tok": 96,
+                "tok": 126,
                 "type_args": []
               }
             ],
-            "tok": 94
+            "tok": 124
           },
           {
             "k": "expr",
@@ -286,7 +301,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 105
+                "tok": 141
               },
               "args": [
                 {
@@ -305,70 +320,85 @@
                         "base": {
                           "k": "ident",
                           "name": "r",
-                          "tok": 107
+                          "tok": 143
                         },
                         "field": "MarkFailed",
-                        "tok": 107
+                        "tok": 143
                       },
                       {
                         "k": "ident",
                         "name": "MarkFailed",
-                        "tok": 107
+                        "tok": 143
                       },
                       {
                         "k": "call",
                         "callee": {
                           "k": "selector",
                           "base": {
-                            "k": "ident",
-                            "name": "lib",
-                            "tok": 107
+                            "k": "selector",
+                            "base": {
+                              "k": "selector",
+                              "base": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "testdata",
+                                  "tok": 143
+                                },
+                                "field": "refs",
+                                "tok": 143
+                              },
+                              "field": "neg",
+                              "tok": 143
+                            },
+                            "field": "lib",
+                            "tok": 143
                           },
                           "field": "Width",
-                          "tok": 107
+                          "tok": 143
                         },
                         "args": [
                           {
                             "k": "ident",
                             "name": "s",
-                            "tok": 107
+                            "tok": 143
                           }
                         ],
-                        "tok": 107
+                        "tok": 143
                       },
                       {
                         "k": "call",
                         "callee": {
                           "k": "ident",
                           "name": "width",
-                          "tok": 107
+                          "tok": 143
                         },
                         "args": [
                           {
                             "k": "ident",
                             "name": "s",
-                            "tok": 107
+                            "tok": 143
                           }
                         ],
-                        "tok": 107
+                        "tok": 143
                       }
                     ]
                   },
-                  "tok": 107
+                  "tok": 143
                 }
               ],
-              "tok": 106
+              "tok": 142
             }
           }
         ]
       },
-      "tok": 66,
+      "tok": 84,
       "bodiless": false,
       "span": {
-        "start": 65,
-        "end": 112
+        "start": 83,
+        "end": 148
       },
-      "sig_end": 69
+      "sig_end": 87
     }
   ],
   "consts": []

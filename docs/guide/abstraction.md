@@ -16,7 +16,7 @@ Before this page: sections 2 (lambdas) and 4 (structs, unions, dictionaries) of 
 
 ## 1. One function — a named function type and closures
 
-A std/http handler is not an interface but a named function type:
+A std/http/server handler is not an interface but a named function type:
 
 ```sober
 type Handler func(r Request) Response
@@ -28,28 +28,28 @@ To swap a handler, pass another function. When it needs state, a closure capture
 // examples/abstraction_handler.sober
 package main
 
-// Abstraction 1 and 2: a named function type (http.Handler) built by closures, and a struct of
-// function fields (http.Middleware) (docs/guide/abstraction.md). The requests are fed from a string
+// Abstraction 1 and 2: a named function type (http.server.Handler) built by closures, and a struct of
+// function fields (http.server.Middleware) (docs/guide/abstraction.md). The requests are fed from a string
 // instead of the network, and each response is printed (the form of examples/http_router)
 
-import "std/http"
+import "std/http/server"
 
 func or(s string?) string {
     return if s != nil { s } else { "-" }
 }
 
 // stops a request without X-Token (only `before` is given; `after` is left out)
-const Auth = http.Middleware{before: (r) => if http.Header(r, "x-token") == nil { http.Status(401) } else { nil }}
+const Auth = http.server.Middleware{before: (r) => if http.server.Header(r, "x-token") == nil { http.server.Status(401) } else { nil }}
 
 // a Handler that answers with `word`: the closure captures `word` on this line
-func greeter(word string) http.Handler {
-    return (r) => http.Text("${word}, ${or(http.Param(r, "name"))}\n")
+func greeter(word string) http.server.Handler {
+    return (r) => http.server.Text("${word}, ${or(http.server.Param(r, "name"))}\n")
 }
 
-func routes() []http.Route {
-    return http.Mount("", []http.Route{
-        http.Route{method: "GET", path: "/hello/:name", handler: greeter("hello")},
-        http.Route{method: "GET", path: "/bye/:name", handler: greeter("see you")}}, []http.Middleware{Auth})
+func routes() []http.server.Route {
+    return http.server.Mount("", []http.server.Route{
+        http.server.Route{method: "GET", path: "/hello/:name", handler: greeter("hello")},
+        http.server.Route{method: "GET", path: "/bye/:name", handler: greeter("see you")}}, []http.server.Middleware{Auth})
 }
 
 func main() {
@@ -57,7 +57,7 @@ func main() {
         "GET /bye/bob HTTP/1.1\r\nX-Token: t\r\n\r\n" +
         "GET /hello/eve HTTP/1.1\r\nConnection: close\r\n\r\n"
     rs := routes()
-    e := http.ServeWith((k) => feed(reqs, k), (b) => show(b), (r) => http.Dispatch(rs, r))
+    e := http.server.ServeWith((k) => feed(reqs, k), (b) => show(b), (r) => http.server.Dispatch(rs, r))
     println(e == nil)
 }
 
@@ -103,9 +103,9 @@ Connection: close
 true
 ```
 
-- `greeter` is a function that returns an `http.Handler`. The closure it returns captures `word`, and the `return` line shows what it captured. `greeter("hello")` and `greeter("see you")` are two handlers of the same shape.
+- `greeter` is a function that returns an `http.server.Handler`. The closure it returns captures `word`, and the `return` line shows what it captured. `greeter("hello")` and `greeter("see you")` are two handlers of the same shape.
 - `Auth` is the shape of section 2 (a struct with function fields): it gives `before` only and leaves `after` out.
-- To print the responses, the requests come from a string instead of the network (`feed` / `show`). A real server passes the same `Dispatch` to `http.Serve`.
+- To print the responses, the requests come from a string instead of the network (`feed` / `show`). A real server passes the same `Dispatch` to `http.server.Serve`.
 
 ## 2. A group of functions — a struct with function fields (a dictionary)
 
@@ -256,22 +256,22 @@ A `default` arm turns that check off for its switch. For a switch you want to re
 
 What you lose:
 
-- **There is no `this`: these are not objects.** A struct with function fields looks like a C struct of function pointers, but nothing passes the struct itself as the first argument (`this` / `self`). State is captured by closures, explicitly, on the line that builds them
+- There is no `this`: these are not objects. A struct with function fields looks like a C struct of function pointers, but nothing passes the struct itself as the first argument (`this` / `self`). State is captured by closures, explicitly, on the line that builds them
 - method call syntax (`x.f()`) and growing a type by adding methods to it. There is not even Zig-style method syntax (functions in a struct's namespace, callable as `x.f()` as sugar): a call is always written one way, `f(x)`. No call gets two spellings, and the syntax never opens the door to the mental model that behavior belongs to data
 - implicit satisfaction (Go interfaces, Haskell type class instance resolution): you pass the implementation as an argument every time
 
 What you gain:
 
-- **Which implementation is used is written at the call.** There is no implicit resolution to chase
-- **What a closure captured is written on the line that builds it.** No hidden fields, no inherited state
-- **No nil-interface trap.** Function types have no zero value, so "this field may be empty" shows in the type as `?`
+- Which implementation is used is written at the call. There is no implicit resolution to chase
+- What a closure captured is written on the line that builds it. No hidden fields, no inherited state
+- No nil-interface trap. Function types have no zero value, so "this field may be empty" shows in the type as `?`
 - For a closed set of kinds, a union and a switch let the compiler find the cases you forgot
 
 ## 5. From other languages
 
 | Language | What you wrote there | Sober |
 | --- | --- | --- |
-| Go | a one-method interface (`http.Handler`) | a named function type (`http.Handler` is a function type) |
+| Go | a one-method interface (`http.server.Handler`) | a named function type (`http.server.Handler` is a function type) |
 | Go | an interface with several methods (`sort.Interface`) | pass a struct with function fields (`Ord[T]{less: …}`) |
 | Rust | a trait with `impl Trait for T`, `dyn Trait` | pass a struct with function fields (a dictionary) as a value |
 | Rust | `enum` and `match` | a union and a switch |

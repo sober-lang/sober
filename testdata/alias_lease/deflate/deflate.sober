@@ -9,7 +9,7 @@ type Work struct {
     n int
 }
 
-func Prepare(w mut Work) {
+func NewWork(w mut Work) {
     pool.NewScratch(mut w.tab, 64)
 }
 

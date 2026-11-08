@@ -1,0 +1,321 @@
+package client
+
+// 経路の層: 接続 1 本の上に、proxy への TLS（外の層 — proxy が https のとき）・CONNECT のトンネル・行き先への TLS（内の層 — 行き先が https のとき）を
+// 重ね、いちばん上の層の平文を送り受けする。外と内の両方が TLS なら TLS の中の TLS（内の record を外の record の平文で運ぶ）。
+// 各層の状態（握手の済んだ鍵と番号・切片をまたぐ record の持ち越し）と、いちばん上の平文の持ち越しは値の外の置き場（lease の int の列）に住む —
+// 値に置くと値の写しが鍵と番号を複製する（nonce の再利用）。置き場は Session の寿命か、Do / Stream の往復 1 回の寿命。
+// 層の握手の間は、その層の 1 つ下がいちばん上の層（読みと送りは同じ口 — 握手が済んでから層の旗を立てる）
+
+import "std/internal/hsc"
+import "std/io"
+import "std/iter"
+import "std/net"
+import "std/internal/record"
+
+// 置き場の形: [旗, 上の平文の持ち越しのバイト数, 外の層, 内の層, 上の平文の持ち越し × appW]。層 = [接続の状態 × ConnW, 持ち越しのバイト数, 持ち越し × leftW]
+const lFlags = 0
+const lAppLen = 1
+const leftCap = 16384 + 512
+const leftW = (leftCap + 7) / 8
+const slotW = internal.hsc.ConnW + 1 + leftW
+const lOuter = 2
+const lInner = 2 + slotW
+const lApp = 2 + 2 * slotW
+const appCap = 65536 + 16384
+const appW = (appCap + 7) / 8
+
+// 旗のビット
+const bDead = 1    // 接続はもう使えない（相手が閉じた・閉じで区切る応答・Connection: close・途中の失敗）
+const bOuter = 2   // 外の層（proxy への TLS）がある
+const bInner = 4   // 内の層（行き先への TLS）がある
+
+func newLink() []int {
+    mut b := mut []int{}
+    mut i := 0
+    while i < lApp + appW {
+        b = append(b, 0)
+        i += 1
+    }
+    return freeze(b)
+}
+
+func flagsOf(blk []int) int {
+    return leaseOp(4, blk, lFlags, 0)
+}
+
+func setFlag(blk []int, bit int) {
+    _ = leaseOp(5, blk, lFlags, flagsOf(blk) | bit)
+}
+
+func dead(blk []int) bool {
+    return (flagsOf(blk) & bDead) != 0
+}
+
+// いちばん上の層（0 = 素の接続・1 = 外・2 = 内）
+func topLayer(blk []int) int {
+    fl := flagsOf(blk)
+    return if (fl & bInner) != 0 { 2 } else if (fl & bOuter) != 0 { 1 } else { 0 }
+}
+
+func slotOf(layer int) int {
+    return if layer == 1 { lOuter } else { lInner }
+}
+
+// 層 layer で b を送る（TLS の層は record に封じて 1 つ下へ — 内の下は外があれば外）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert)
+@effects(block, io, panic, nondet)
+func sendAt(conn net.Conn, blk []int, layer int, b []byte) error? {
+    if layer == 0 {
+        return net.Send(conn, b)
+    }
+    rec := seal(blk, slotOf(layer), b)?
+    if layer == 2 && (flagsOf(blk) & bOuter) != 0 {
+        outer := seal(blk, lOuter, rec)?
+        return net.Send(conn, outer)
+    }
+    return net.Send(conn, rec)
+}
+
+@errors(internal.record.Alert)
+@effects(panic)
+func seal(blk []int, slot int, b []byte) ([]byte, error?) {
+    mut ch := internal.hsc.UnpackConn(view(blk, slot, internal.hsc.ConnW), 0)
+    rec := internal.hsc.ClientSeal(mut ch, b)?
+    putConn(blk, slot, ch)
+    return rec, nil
+}
+
+// いちばん上の層で送る
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert)
+@effects(block, io, panic, nondet)
+func linkSend(conn net.Conn, blk []int, b []byte) error? {
+    return sendAt(conn, blk, topLayer(blk), b)
+}
+
+// いちばん上の層の平文の次の分（持ち越しがあれば先にそれ・空のこともある — 揃った record が平文を持たなかった）と、相手が閉じたか
+// （pa / pb = 外 / 内の層の握手の設定 — 握手の後のメッセージ〔NewSessionTicket・KeyUpdate〕を読むのに要る）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed)
+@effects(block, io, panic, nondet)
+func linkPoll(conn net.Conn, blk []int, pa internal.hsc.CParams, pb internal.hsc.CParams) ([]byte, bool, error?) {
+    n := leaseOp(4, blk, lAppLen, 0)
+    if n > 0 {
+        _ = leaseOp(5, blk, lAppLen, 0)
+        return getBytes(blk, lApp, n), false, nil
+    }
+    raw, eof := rawPoll(conn)?
+    fl := flagsOf(blk)
+    mut data := raw
+    mut closed := eof
+    if (fl & bOuter) != 0 {
+        d1, c1 := feed(conn, blk, 1, pa, data)?
+        data = d1
+        closed = closed || c1
+    }
+    if (fl & bInner) != 0 {
+        d2, c2 := feed(conn, blk, 2, pb, data)?
+        data = d2
+        closed = closed || c2
+    }
+    return data, closed, nil
+}
+
+// いちばん上の平文の受けすぎた分を次の linkPoll へ持ち越す（入らなければ接続を捨てる）
+func putApp(blk []int, b []byte) {
+    if len(b) > appCap {
+        setFlag(blk, bDead)
+        return
+    }
+    _ = leaseOp(5, blk, lAppLen, len(b))
+    putBytes(blk, lApp, b)
+}
+
+// いちばん上の TLS の層の close_notify を送る（内の層の alert は外の層があれば外で封じて）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert)
+@effects(block, io, panic, nondet)
+func closeTop(conn net.Conn, blk []int) error? {
+    layer := topLayer(blk)
+    if layer == 0 {
+        return nil
+    }
+    s := slotOf(layer)
+    mut ch := internal.hsc.UnpackConn(view(blk, s, internal.hsc.ConnW), 0)
+    rec := internal.hsc.ClientAlert(mut ch, 0)
+    putConn(blk, s, ch)
+    if layer == 2 && (flagsOf(blk) & bOuter) != 0 {
+        return net.Send(conn, seal(blk, lOuter, rec)?)
+    }
+    return net.Send(conn, rec)
+}
+
+// 素の接続の次の切片（相手が閉じたら空と true）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
+func rawPoll(conn net.Conn) ([]byte, bool, error?) {
+    mut out := mut []byte{}
+    mut got := false
+    for chunk <- net.Recv(conn)? {
+        for x <- chunk {
+            out = append(out, x)
+        }
+        got = true
+        break
+    }
+    return freeze(out), !got, nil
+}
+
+// 層 layer（握手の済んだ TLS）に下から来たバイト in を食わせ、揃った record の平文を繋いで返す（相手の close_notify / alert で true）。
+// 切片をまたぐ record の残りは層の持ち越しへ・握手の後のメッセージへの返事（KeyUpdate）は 1 つ下へ送る
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed)
+@effects(block, io, panic, nondet)
+func feed(conn net.Conn, blk []int, layer int, p internal.hsc.CParams, in []byte) ([]byte, bool, error?) {
+    s := slotOf(layer)
+    b := catBytes(getBytes(blk, s + internal.hsc.ConnW + 1, leaseOp(4, blk, s + internal.hsc.ConnW, 0)), in)
+    mut ch := internal.hsc.UnpackConn(view(blk, s, internal.hsc.ConnW), 0)
+    mut out := mut []byte{}
+    mut closed := false
+    mut at := 0
+    while !closed && recordAt(b, at) > 0 {
+        n := recordAt(b, at)
+        o := internal.hsc.FeedClient(mut ch, p, internal.record.At(b, at, n))?
+        at += n
+        for x <- o.app {
+            out = append(out, x)
+        }
+        closed = o.closed
+        if len(o.send) > 0 {
+            putConn(blk, s, ch)
+            if layer == 2 && (flagsOf(blk) & bOuter) != 0 {
+                net.Send(conn, seal(blk, lOuter, o.send)?)?
+            } else {
+                net.Send(conn, o.send)?
+            }
+        }
+    }
+    putConn(blk, s, ch)
+    rest := tailOf2(b, at)
+    if len(rest) > leftCap {
+        return freeze(out), true, io.Closed{}
+    }
+    _ = leaseOp(5, blk, s + internal.hsc.ConnW, len(rest))
+    putBytes(blk, s + internal.hsc.ConnW + 1, rest)
+    return freeze(out), closed, nil
+}
+
+// 層 layer（1 = 外・2 = 内）の TLS の握手（その層の 1 つ下がいちばん上の層 — 送りと読みはその口）。済んだら層の旗を立てる
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed)
+@effects(block, io, panic, nondet)
+func handshakeAt(conn net.Conn, blk []int, layer int, p internal.hsc.CParams, pa internal.hsc.CParams) error? {
+    h0, first := internal.hsc.StartClient(p)
+    mut ch := h0
+    linkSend(conn, blk, first)?
+    mut buf := mut []byte{}
+    while !internal.hsc.ClientConnected(ch) {
+        in, eof := linkPoll(conn, blk, pa, pa)?
+        for x <- in {
+            buf = append(buf, x)
+        }
+        fb := freeze(buf)
+        mut at := 0
+        while !internal.hsc.ClientConnected(ch) && recordAt(fb, at) > 0 {
+            n := recordAt(fb, at)
+            o := internal.hsc.FeedClient(mut ch, p, internal.record.At(fb, at, n))?
+            if len(o.send) > 0 {
+                linkSend(conn, blk, o.send)?
+            }
+            if o.closed {
+                return internal.record.Alert{desc: o.peer}
+            }
+            at += n
+        }
+        buf = mut []byte{}
+        for i <- iter.Range(at, len(fb)) {
+            buf = append(buf, fb[i])
+        }
+        if eof && !internal.hsc.ClientConnected(ch) {
+            return io.Closed{}
+        }
+    }
+    s := slotOf(layer)
+    putConn(blk, s, ch)
+    rest := freeze(buf)
+    _ = leaseOp(5, blk, s + internal.hsc.ConnW, len(rest))
+    putBytes(blk, s + internal.hsc.ConnW + 1, rest)
+    setFlag(blk, if layer == 1 { bOuter } else { bInner })
+    return nil
+}
+
+// b[at:] に揃った record があればその長さ（無ければ 0）
+func recordAt(b []byte, at int) int {
+    if len(b) - at < internal.record.HeadSize {
+        return 0
+    }
+    n := internal.record.HeadSize + (int(b[at + 3]) << 8 | int(b[at + 4]))
+    return if len(b) - at >= n { n } else { 0 }
+}
+
+func catBytes(a []byte, b []byte) []byte {
+    mut o := mut []byte{}
+    for x <- a {
+        o = append(o, x)
+    }
+    for x <- b {
+        o = append(o, x)
+    }
+    return freeze(o)
+}
+
+func tailOf2(b []byte, at int) []byte {
+    mut o := mut []byte{}
+    for i <- iter.Range(at, len(b)) {
+        o = append(o, b[i])
+    }
+    return freeze(o)
+}
+
+// 置き場の語 off からの n バイト（8 バイト / 語）
+func getBytes(blk []int, off int, n int) []byte {
+    mut o := mut []byte{}
+    mut i := 0
+    while i < n {
+        w := leaseOp(4, blk, off + i / 8, 0)
+        o = append(o, byte((w >> ((i % 8) * 8)) & 0xff))
+        i += 1
+    }
+    return freeze(o)
+}
+
+func putBytes(blk []int, off int, b []byte) {
+    mut i := 0
+    while i < len(b) {
+        mut v := 0
+        mut j := 0
+        while j < 8 && i + j < len(b) {
+            v = v | (int(b[i + j]) << (j * 8))
+            j += 1
+        }
+        _ = leaseOp(5, blk, off + i / 8, v)
+        i += 8
+    }
+}
+
+// 接続の状態を置き場の層 slot へ
+func putConn(blk []int, slot int, ch internal.hsc.Ch) {
+    w := internal.hsc.PackConn(ch)
+    v := leaseView(blk, slot, internal.hsc.ConnW)
+    mut i := 0
+    while i < internal.hsc.ConnW {
+        v[i] = w[i]
+        i += 1
+    }
+}
+
+func view(blk []int, off int, n int) []int {
+    return freeze(leaseView(blk, off, n))
+}
+
+// leaseOp / leaseView は rt の口（std/tls・std/pool と同じ鍵 — op 4 = 生の読み・5 = 生の書き）
+@intrinsic("lease_op")
+func leaseOp(op int, blk []int, off int, v int) int
+
+@intrinsic("lease_view")
+func leaseView(blk []int, off int, n int) mut []int

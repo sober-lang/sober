@@ -1,0 +1,170 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/os",
+      "tok": 4
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "rc",
+              "err"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "os",
+                    "tok": 15
+                  },
+                  "field": "Run",
+                  "tok": 17
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "/usr/bin/env",
+                    "tok": 19
+                  },
+                  {
+                    "k": "slicelit",
+                    "elem": {
+                      "k": "name",
+                      "name": "string"
+                    },
+                    "elems": [
+                      {
+                        "k": "strlit",
+                        "value": "python3",
+                        "tok": 25
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "-c",
+                        "tok": 27
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "import ctypes; print('child', ctypes.CDLL(None).prctl(66, 0, 0, 0, 0))",
+                        "tok": 29
+                      }
+                    ],
+                    "mut": false,
+                    "tok": 21
+                  }
+                ],
+                "tok": 18
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "err",
+                  "tok": 34
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 36
+                },
+                "tok": 35
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 38
+                      },
+                      "args": [
+                        {
+                          "k": "strlit",
+                          "value": "run error",
+                          "tok": 40
+                        }
+                      ],
+                      "tok": 39
+                    }
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 33
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 45
+              },
+              "args": [
+                {
+                  "k": "interp",
+                  "tmpl": {
+                    "lits": [
+                      "rc ",
+                      ""
+                    ],
+                    "holes": [
+                      {
+                        "k": "ident",
+                        "name": "rc",
+                        "tok": 47
+                      }
+                    ]
+                  },
+                  "tok": 47
+                }
+              ],
+              "tok": 46
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 52
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

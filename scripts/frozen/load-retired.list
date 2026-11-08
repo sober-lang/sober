@@ -34,3 +34,9 @@ testdata/frozen_src/examples/io_readdir.sober
 examples/io_stdout.sober
 testdata/frozen_src/examples/pool_string.sober
 testdata/frozen_src/examples/utf8_std.sober
+
+# 退役の理由（2026-11-06、import 便 R1 — 修飾子 = import パスの全段・language.md 20 節）: import の表の参照名が修飾子（`testdata.pkgdemo.lib`）と
+# 移行の間の旧綴り（パスの最後の段）の 2 行になり、loader JSON の import の列が凍結した Zig 版（最後の段の 1 行）と割れる（意味の差でなく表の形の差）。
+# 木の綴りを書き換える段（R2）で旧綴りが消えると Zig 版はこの入力の新しい綴りを読めないので、名前解決を通る照合からは戻さない（report-imp-1 N-3）
+testdata/pkgdemo/app
+testdata/errpkg/app

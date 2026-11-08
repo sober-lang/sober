@@ -1,0 +1,110 @@
+package uuid
+
+// UUID（RFC 9562）。作り手は版 4（OS の乱数 122 bit）と版 7（UNIX 時刻のミリ秒 48 bit + 乱数 74 bit — 作った順に並ぶ・DB の主キー向き）。
+// UUID は 16 バイトの値（比べるのは Equal・map の鍵には String の文字列を使う）。文字列は 8-4-4-4-12 の 16 進（書きは小文字・読みは大文字も受ける）
+//
+//     id := uuid.NewV4()
+//     s := uuid.Format(id)          // "919108f7-52d1-4320-9bac-f847db4148a8" の形
+//     back := uuid.Parse(s)?        // uuid.Equal(back, id)
+
+import "std/crypto"
+import "std/time"
+import "std/iter"
+
+// 16 バイトを big endian の 64 bit 2 語で（hi = 0〜7 バイト目・lo = 8〜15 バイト目）
+type UUID struct {
+    hi int
+    lo int
+}
+
+// Parse の入力が 36 文字の 8-4-4-4-12 の 16 進でない
+type Bad error
+
+// 版 4 の UUID（乱数 122 bit + 版 4 + 変種 10 — RFC 9562 5.4）。乱数が取れなければ panic(crypto.NoEntropy{errno})
+@effects(io, panic)
+func NewV4() UUID {
+    b := crypto.Rand(16)
+    mut hi := 0
+    mut lo := 0
+    for i <- iter.Range(0, 8) {
+        hi = (hi << 8) | int(b[i])
+        lo = (lo << 8) | int(b[8 + i])
+    }
+    hi = (hi & ^0xf000) | 0x4000
+    lo = (lo & ((1 << 62) - 1)) | (1 << 63)
+    return UUID{hi: hi, lo: lo}
+}
+
+// a と b が同じ UUID か
+@effects()
+func Equal(a UUID, b UUID) bool {
+    return a.hi == b.hi && a.lo == b.lo
+}
+
+// 版 7 の UUID（RFC 9562 5.7 — 上位 48 bit = time.Now の UNIX 時刻のミリ秒・版 7・変種 10・残り 74 bit は OS の乱数）。
+// 同じミリ秒の中の順は乱数で決まる（単調増加は約束しない）。乱数が取れなければ panic(crypto.NoEntropy{errno})
+@effects(io, panic)
+func NewV7() UUID {
+    return v7(time.Now(), crypto.Rand(10))
+}
+
+// 時刻 t と乱数 r（10 バイト）の版 7
+func v7(t time.Time, r []byte) UUID {
+    ms := time.UnixSec(t) * 1000 + time.Nano(t) / 1000000
+    ra := ((int(r[0]) << 8) | int(r[1])) & 0xfff
+    hi := ((ms & 0xffffffffffff) << 16) | 0x7000 | ra
+    mut lo := 0
+    for i <- iter.Range(2, 10) {
+        lo = (lo << 8) | int(r[i])
+    }
+    lo = (lo & ((1 << 62) - 1)) | (1 << 63)
+    return UUID{hi: hi, lo: lo}
+}
+
+// 8-4-4-4-12 の 16 進（小文字）
+@effects()
+func Format(u UUID) string {
+    mut o := mut []byte{}
+    for i <- iter.Range(0, 32) {
+        if i == 8 || i == 12 || i == 16 || i == 20 {
+            o = append(o, byte(45))
+        }
+        w := if i < 16 { u.hi } else { u.lo }
+        d := (w >> (60 - 4 * (i % 16))) & 0xf
+        o = append(o, byte(if d < 10 { d + 48 } else { d + 87 }))
+    }
+    return bytesToString(freeze(o))
+}
+
+// 8-4-4-4-12 の 16 進（大文字小文字どちらも）の UUID。版と変種は問わない
+@errors(Bad)
+@effects()
+func Parse(s string) (UUID, error?) {
+    b := bytes(s)
+    if len(b) != 36 {
+        return UUID{hi: 0, lo: 0}, Bad{}
+    }
+    mut hi := 0
+    mut lo := 0
+    mut k := 0
+    for i <- iter.Range(0, 36) {
+        c := int(b[i])
+        if i == 8 || i == 13 || i == 18 || i == 23 {
+            if c != 45 {
+                return UUID{hi: 0, lo: 0}, Bad{}
+            }
+        } else {
+            d := if c >= 48 && c <= 57 { c - 48 } else if c >= 97 && c <= 102 { c - 87 } else if c >= 65 && c <= 70 { c - 55 } else { -1 }
+            if d < 0 {
+                return UUID{hi: 0, lo: 0}, Bad{}
+            }
+            if k < 16 {
+                hi = (hi << 4) | d
+            } else {
+                lo = (lo << 4) | d
+            }
+            k = k + 1
+        }
+    }
+    return UUID{hi: hi, lo: lo}, nil
+}

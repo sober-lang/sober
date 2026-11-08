@@ -1,0 +1,441 @@
+package time
+
+// 地域の時刻の規則（tzdata の焼き込み — zones.sober は scripts/tzstore.sh の生成物）。ゾーンは遷移の列（UNIX 秒と種類）と、最後の遷移より後に効く
+// POSIX TZ の規則（`EST5EDT,M3.2.0,M11.1.0` の形 — RFC 9636 3.3）を持つ。最初の遷移より前は種類 0
+//
+//     z := time.LoadZone("Asia/Tokyo")?
+//     c := time.ToCivilIn(time.Now(), z)          // 暦の日時（オフセットは時刻ごとに引く）
+//     s := time.FormatRFC3339(t, time.OffsetAt(z, t))
+
+import "std/iter"
+import "std/strings"
+
+// ゾーンの名前が焼き込みの表に無い
+type UnknownZone error
+
+// 地域の時刻の規則
+type Zone struct {
+    name string
+    offs []int
+    dsts []bool
+    abbrs []string
+    times []int
+    idx []int
+    hasRule bool
+    rule Rule
+}
+
+// POSIX TZ の規則（offset は UTC からの秒 — 東が正）
+type Rule struct {
+    stdOff int
+    stdAbbr string
+    hasDst bool
+    dstOff int
+    dstAbbr string
+    start RuleDate
+    end RuleDate
+}
+
+// 規則の切り替えの日（kind 0 = Jn〔2 月 29 日を数えない 1〜365〕・1 = n〔0〜365〕・2 = Mm.w.d）と地方時のその日の中の秒
+type RuleDate struct {
+    kind int
+    n int
+    m int
+    w int
+    d int
+    secs int
+}
+
+func noRule() Rule {
+    z := RuleDate{kind: 0, n: 0, m: 0, w: 0, d: 0, secs: 0}
+    return Rule{stdOff: 0, stdAbbr: "UTC", hasDst: false, dstOff: 0, dstAbbr: "", start: z, end: z}
+}
+
+// UTC（遷移も夏時間も無い）
+@effects()
+func UTC() Zone {
+    return Zone{name: "UTC", offs: []int{0}, dsts: []bool{false}, abbrs: []string{"UTC"}, times: []int{}, idx: []int{}, hasRule: false, rule: noRule()}
+}
+
+// ゾーンの名前（IANA の名前 — 別名で読んだら正の名前）
+@effects()
+func ZoneName(z Zone) string {
+    return z.name
+}
+
+// 焼き込みの表のゾーン name（`Asia/Tokyo` の IANA の名前・別名〔`Japan` など〕も引ける。"UTC" は UTC）
+@errors(UnknownZone)
+@effects()
+func LoadZone(name string) (Zone, error?) {
+    if name == "UTC" {
+        return UTC(), nil
+    }
+    mut target := name
+    for l <- zoneLinks() {
+        a, b, _ := strings.Cut(l, " ")
+        if a == name {
+            target = b
+        }
+    }
+    for l <- zoneLines() {
+        n, rest, _ := strings.Cut(l, " ")
+        if n == target {
+            z, ok := parseZone(n, rest)
+            if ok {
+                return z, nil
+            }
+        }
+    }
+    return UTC(), UnknownZone{}
+}
+
+// `種類 遷移 規則` を読む
+func parseZone(name string, rest string) (Zone, bool) {
+    f := strings.Fields(rest)
+    if len(f) != 3 {
+        return UTC(), false
+    }
+    mut offs := mut []int{}
+    mut dsts := mut []bool{}
+    mut abbrs := mut []string{}
+    for ty <- strings.Split(f[0], ",") {
+        a, r1, _ := strings.Cut(ty, ":")
+        d, ab, _ := strings.Cut(r1, ":")
+        offs = append(offs, signedDec(a))
+        dsts = append(dsts, d == "1")
+        abbrs = append(abbrs, ab)
+    }
+    mut times := mut []int{}
+    mut idx := mut []int{}
+    if f[1] != "-" {
+        mut prev := 0
+        mut first := true
+        for tr <- strings.Split(f[1], ",") {
+            a, b, _ := strings.Cut(tr, ":")
+            v := base36(a)
+            t := if first { v } else { prev + v }
+            times = append(times, t)
+            idx = append(idx, base36(b))
+            prev = t
+            first = false
+        }
+    }
+    mut z := Zone{name: name, offs: freeze(offs), dsts: freeze(dsts), abbrs: freeze(abbrs), times: freeze(times), idx: freeze(idx), hasRule: false, rule: noRule()}
+    if f[2] != "-" {
+        r, ok := parseRule(f[2])
+        if !ok {
+            return UTC(), false
+        }
+        z.hasRule = true
+        z.rule = r
+    }
+    return z, true
+}
+
+func signedDec(s string) int {
+    b := bytes(s)
+    neg := len(b) > 0 && b[0] == '-'
+    mut v := 0
+    for i <- iter.Range(if neg { 1 } else { 0 }, len(b)) {
+        v = v * 10 + int(b[i]) - 48
+    }
+    return if neg { -v } else { v }
+}
+
+func base36(s string) int {
+    b := bytes(s)
+    neg := len(b) > 0 && b[0] == '-'
+    mut v := 0
+    for i <- iter.Range(if neg { 1 } else { 0 }, len(b)) {
+        x := int(b[i])
+        v = v * 36 + (if x <= 57 { x - 48 } else { x - 87 })
+    }
+    return if neg { -v } else { v }
+}
+
+// t のゾーン z でのオフセット（秒 — 東が正）
+@effects()
+func OffsetAt(z Zone, t Time) int {
+    o, _, _ := lookup(z, t.sec)
+    return o
+}
+
+// t のゾーン z での略称（JST・PDT など — 略称の無い地域は `+09` の形）
+@effects()
+func AbbrAt(z Zone, t Time) string {
+    _, a, _ := lookup(z, t.sec)
+    return a
+}
+
+// t がゾーン z で夏時間か
+@effects()
+func DstAt(z Zone, t Time) bool {
+    _, _, d := lookup(z, t.sec)
+    return d
+}
+
+// t のゾーン z での暦の日時
+@effects()
+func ToCivilIn(t Time, z Zone) Civil {
+    return ToCivil(t, OffsetAt(z, t))
+}
+
+// ゾーン z の壁の読み c の時刻。夏時間の切り替えで 2 回ある読みは前の方（切り替え前のオフセット）・無い読みは切り替え前のオフセットで読んだ時刻（壁の時計で後ろへずれる）
+@effects()
+func FromCivilIn(c Civil, z Zone) Time {
+    naive := FromCivil(c, 0)
+    o1 := OffsetAt(z, Unix(naive.sec - OffsetAt(z, naive), naive.nsec))
+    t1 := Unix(naive.sec - o1, naive.nsec)
+    o2 := OffsetAt(z, t1)
+    if o2 == o1 {
+        // 2 回ある読み: もう一方のオフセットでも同じ読みになるなら、早い方の時刻（大きいオフセットで読んだ方）
+        alt := OffsetAt(z, Unix(t1.sec - 86400, 0))
+        alt2 := OffsetAt(z, Unix(t1.sec + 86400, 0))
+        mut best := t1
+        others := []int{alt, alt2}
+        for o <- others {
+            if o != o1 {
+                t2 := Unix(naive.sec - o, naive.nsec)
+                if OffsetAt(z, t2) == o && Before(t2, best) {
+                    best = t2
+                }
+            }
+        }
+        return best
+    }
+    return Unix(naive.sec - o2, naive.nsec)
+}
+
+// UNIX 秒 s の (オフセット, 略称, 夏時間)
+func lookup(z Zone, s int) (int, string, bool) {
+    n := len(z.times)
+    // 末尾の規則は最後の遷移より後だけ（RFC 9636 3.3 — 最後の遷移の時刻そのものはその遷移の種類）
+    if n == 0 || s > z.times[n - 1] {
+        if z.hasRule {
+            return ruleAt(z.rule, s)
+        }
+        k := if n == 0 { 0 } else { z.idx[n - 1] }
+        return z.offs[k], z.abbrs[k], z.dsts[k]
+    }
+    if s == z.times[n - 1] {
+        k := z.idx[n - 1]
+        return z.offs[k], z.abbrs[k], z.dsts[k]
+    }
+    if s < z.times[0] {
+        return z.offs[0], z.abbrs[0], z.dsts[0]
+    }
+    // times[lo] ≤ s < times[hi]
+    mut lo := 0
+    mut hi := n - 1
+    while hi - lo > 1 {
+        mid := (lo + hi) / 2
+        if z.times[mid] <= s {
+            lo = mid
+        } else {
+            hi = mid
+        }
+    }
+    k := z.idx[lo]
+    return z.offs[k], z.abbrs[k], z.dsts[k]
+}
+
+// 規則 r での UNIX 秒 s の (オフセット, 略称, 夏時間)
+func ruleAt(r Rule, s int) (int, string, bool) {
+    if !r.hasDst {
+        return r.stdOff, r.stdAbbr, false
+    }
+    y := ToCivil(Unix(s, 0), r.stdOff).year
+    st := switchAt(r.start, y) - r.stdOff
+    en := switchAt(r.end, y) - r.dstOff
+    dst := if st < en { s >= st && s < en } else { !(s >= en && s < st) }
+    off := if dst { r.dstOff } else { r.stdOff }
+    ab := if dst { r.dstAbbr } else { r.stdAbbr }
+    return off, ab, dst
+}
+
+// 年 y の切り替えの地方時の秒（エポックからの地方時の秒 — オフセットを引く前）
+func switchAt(d RuleDate, y int) int {
+    jan1 := daysOf(y, 1, 1)
+    mut day := 0
+    if d.kind == 0 {
+        day = jan1 + d.n - 1 + (if isLeap(y) && d.n >= 60 { 1 } else { 0 })
+    } else if d.kind == 1 {
+        day = jan1 + d.n
+    } else {
+        first := daysOf(y, d.m, 1)
+        wd0 := floorMod(first + 4, 7)
+        mut dom := 1 + floorMod(d.d - wd0, 7) + (d.w - 1) * 7
+        while dom > monthDays(y, d.m) {
+            dom -= 7
+        }
+        day = first + dom - 1
+    }
+    return day * 86400 + d.secs
+}
+
+// POSIX TZ の規則の文字（RFC 9636 3.3 — 名前は英字 3 文字以上か <…>・オフセットは西が正の [+-]hh[:mm[:ss]]・時刻は ±167 時まで）
+func parseRule(s string) (Rule, bool) {
+    b := bytes(s)
+    sa, p1, ok1 := ruleName(b, 0)
+    so, p2, ok2 := ruleOffset(b, p1)
+    if !ok1 || !ok2 {
+        return noRule(), false
+    }
+    mut r := noRule()
+    r.stdAbbr = sa
+    r.stdOff = -so
+    if p2 == len(b) {
+        return r, true
+    }
+    da, p3, ok3 := ruleName(b, p2)
+    if !ok3 {
+        return noRule(), false
+    }
+    mut p := p3
+    r.hasDst = true
+    r.dstAbbr = da
+    r.dstOff = r.stdOff + 3600
+    if p < len(b) && b[p] != ',' {
+        dof, p4, ok4 := ruleOffset(b, p)
+        if !ok4 {
+            return noRule(), false
+        }
+        r.dstOff = -dof
+        p = p4
+    }
+    if p >= len(b) || b[p] != ',' {
+        return noRule(), false
+    }
+    st, p5, ok5 := ruleDate(b, p + 1)
+    if !ok5 || p5 >= len(b) || b[p5] != ',' {
+        return noRule(), false
+    }
+    en, p6, ok6 := ruleDate(b, p5 + 1)
+    if !ok6 || p6 != len(b) {
+        return noRule(), false
+    }
+    r.start = st
+    r.end = en
+    return r, true
+}
+
+func ruleName(b []byte, p0 int) (string, int, bool) {
+    if p0 < len(b) && b[p0] == '<' {
+        mut p := p0 + 1
+        while p < len(b) && b[p] != '>' {
+            p += 1
+        }
+        if p >= len(b) {
+            return "", 0, false
+        }
+        return bytesToString(b[p0 + 1:p]), p + 1, true
+    }
+    mut p := p0
+    while p < len(b) && ((b[p] >= 'A' && b[p] <= 'Z') || (b[p] >= 'a' && b[p] <= 'z')) {
+        p += 1
+    }
+    if p - p0 < 3 {
+        return "", 0, false
+    }
+    return bytesToString(b[p0:p]), p, true
+}
+
+// [+-]h[h][:mm[:ss]] の秒
+func ruleOffset(b []byte, p0 int) (int, int, bool) {
+    mut p := p0
+    mut sign := 1
+    if p < len(b) && (b[p] == '+' || b[p] == '-') {
+        sign = if b[p] == '-' { -1 } else { 1 }
+        p += 1
+    }
+    mut parts := mut []int{}
+    mut cur := -1
+    while p < len(b) && ((b[p] >= '0' && b[p] <= '9') || b[p] == ':') {
+        if b[p] == ':' {
+            if cur < 0 {
+                return 0, 0, false
+            }
+            parts = append(parts, cur)
+            cur = -1
+        } else {
+            cur = (if cur < 0 { 0 } else { cur * 10 }) + int(b[p]) - 48
+        }
+        p += 1
+    }
+    if cur < 0 {
+        return 0, 0, false
+    }
+    parts = append(parts, cur)
+    ps := freeze(parts)
+    if len(ps) > 3 {
+        return 0, 0, false
+    }
+    mut v := ps[0] * 3600
+    if len(ps) > 1 {
+        v += ps[1] * 60
+    }
+    if len(ps) > 2 {
+        v += ps[2]
+    }
+    return sign * v, p, true
+}
+
+// 切り替えの日 [/時刻]（時刻の既定 02:00:00）
+func ruleDate(b []byte, p0 int) (RuleDate, int, bool) {
+    mut d := RuleDate{kind: 1, n: 0, m: 0, w: 0, d: 0, secs: 7200}
+    mut p := p0
+    if p < len(b) && b[p] == 'M' {
+        d.kind = 2
+        m, q1 := num(b, p + 1)
+        if q1 >= len(b) || b[q1] != '.' {
+            return d, 0, false
+        }
+        w, q2 := num(b, q1 + 1)
+        if q2 >= len(b) || b[q2] != '.' {
+            return d, 0, false
+        }
+        dd, q3 := num(b, q2 + 1)
+        if m < 1 || m > 12 || w < 1 || w > 5 || dd < 0 || dd > 6 {
+            return d, 0, false
+        }
+        d.m = m
+        d.w = w
+        d.d = dd
+        p = q3
+    } else if p < len(b) && b[p] == 'J' {
+        d.kind = 0
+        n, q := num(b, p + 1)
+        if n < 1 || n > 365 {
+            return d, 0, false
+        }
+        d.n = n
+        p = q
+    } else {
+        n, q := num(b, p)
+        if n < 0 || n > 365 {
+            return d, 0, false
+        }
+        d.n = n
+        p = q
+    }
+    if p < len(b) && b[p] == '/' {
+        t, q, ok := ruleOffset(b, p + 1)
+        if !ok {
+            return d, 0, false
+        }
+        d.secs = t
+        p = q
+    }
+    return d, p, true
+}
+
+// b[p:] の 10 進（数字が無ければ -1）と次の位置
+func num(b []byte, p0 int) (int, int) {
+    mut p := p0
+    mut v := -1
+    while p < len(b) && b[p] >= '0' && b[p] <= '9' {
+        v = (if v < 0 { 0 } else { v * 10 }) + int(b[p]) - 48
+        p += 1
+    }
+    return v, p
+}

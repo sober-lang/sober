@@ -254,6 +254,9 @@ func buildOrphScan(st mut St) {
     epWake(mut st, t, iconst(mut st, ORPH_CODE))
     br(mut st, nx, -1)
     setCur(mut st, bCn)
+    if chF(mut st, NETF_RECV) != -1 {
+        fuseCancelMark(mut st, tp)
+    }
     tag := bin(mut st, BAdd, iconst(mut st, UDT_POLL), bin(mut st, BMul, cmp(mut st, CEq, k, iconst(mut st, OK_SEND)), iconst(mut st, TAG_SEND - UDT_POLL)))
     urSqe(mut st, rg, iconst(mut st, 14), bin(mut st, BOr, t, tag), zero, iconst(mut st, UD_CANCEL), zero)
     br(mut st, nx, -1)

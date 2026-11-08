@@ -23,7 +23,7 @@ s := json.Format(d, json.Root(d))        // 決定的（空白なし・欄はソ
 func Decode[T](d Doc, n int) (T, error?)
 ```
 
-ノード n を struct T に読む。欄の名前 = JSON のキー。T の欄に書ける型は int・float・bool・string・struct・`[]U`・`U?`（U は前のどれか か json.Value — 裸の json.Value の欄は拒否: union はゼロ値を持たない）。T = json.Value は Tree と同じ（値の木）。欠けた欄は Missing（`U?` の欄だけ欠けと null を nil で受ける）・種類の合わないノードは WrongType・int の欄の範囲外は IntRange。余った欄は無視する
+ノード n を struct T に読む。欄の名前 = JSON のキー。T の欄に書ける型は int・float・bool・string・struct・`[]U`・`U?`（U は前のどれか か json.Value — 裸の json.Value の欄は拒否: union はゼロ値を持たない）。T = json.Value は Tree と同じ（値の木）。欠けた欄は Missing（`U?` の欄だけ欠けと null を nil で受ける）・種類の合わないノードは WrongType・int の欄の範囲外は IntOutOfRange。余った欄は無視する
 
 例:
 
@@ -32,7 +32,7 @@ func Decode[T](d Doc, n int) (T, error?)
 package main
 
 // shape[T] の最小形（language.md 16 節 2）: json.Decode[T](d, n) が struct T（欄 = int・float・bool・string・入れ子の struct・[]T・T?）へ写す。
-// 欠けた欄は json.Missing・T? の欄だけ欠けと null が nil・余った欄は無視・型の合わない節は json.WrongType・int に収まらない数は json.IntRange
+// 欠けた欄は json.Missing・T? の欄だけ欠けと null が nil・余った欄は無視・型の合わない節は json.WrongType・int に収まらない数は json.IntOutOfRange
 
 import "std/convert"
 import "std/io"
@@ -94,7 +94,7 @@ func main() {
         case nil: show(s)
         case json.Missing{pos, field}: println("#${i}: missing ${field} (object at ${pos})")
         case json.WrongType{pos, want}: println("#${i}: want ${want} at ${pos}")
-        case json.IntRange{pos}: println("#${i}: int out of range at ${pos}")
+        case json.IntOutOfRange{pos}: println("#${i}: int out of range at ${pos}")
         }
     }
 }
@@ -130,10 +130,10 @@ type WrongType error {
 
 ノードの種類が欄の型に合わない（want = 期待した JSON の種類: object・array・string・number・int・bool）
 
-## IntRange
+## IntOutOfRange
 
 ```sober
-type IntRange error {
+type IntOutOfRange error {
     pos int
 }
 ```
@@ -224,14 +224,14 @@ true / false
 ## ParseInt
 
 ```sober
-@errors(WrongType, IntRange)
+@errors(WrongType, IntOutOfRange)
 @effects()
 func ParseInt(d Doc, n int) (int, error?)
 ```
 
-整数の字句（小数点・指数なし）の数を int に（範囲外は IntRange）
+整数の字句（小数点・指数なし）の数を int に（範囲外は IntOutOfRange）
 
-失敗のラベル: [`WrongType`](#wrongtype)・[`IntRange`](#intrange)
+失敗のラベル: [`WrongType`](#wrongtype)・[`IntOutOfRange`](#intoutofrange)
 
 ## ParseFloat
 
@@ -241,7 +241,7 @@ func ParseInt(d Doc, n int) (int, error?)
 func ParseFloat(d Doc, n int) (float, error?)
 ```
 
-数を binary64 に（最近接・偶数への丸め — convert.ParseFloat。あふれは IntRange でなく WrongType{want: "float"}）
+数を binary64 に（最近接・偶数への丸め — convert.ParseFloat。あふれは IntOutOfRange でなく WrongType{want: "float"}）
 
 失敗のラベル: [`WrongType`](#wrongtype)
 
@@ -414,7 +414,7 @@ const MaxDepth = 1000
 const Syntax = 1
 ```
 
-InvalidJson の kind（形の誤り・不正な UTF-8・MaxDepth を超えた入れ子・オブジェクトのキーの重複）
+BadJson の kind（形の誤り・不正な UTF-8・MaxDepth を超えた入れ子・オブジェクトのキーの重複）
 
 ## BadUtf8
 
@@ -422,7 +422,7 @@ InvalidJson の kind（形の誤り・不正な UTF-8・MaxDepth を超えた入
 const BadUtf8 = 2
 ```
 
-InvalidJson の kind（形の誤り・不正な UTF-8・MaxDepth を超えた入れ子・オブジェクトのキーの重複）
+BadJson の kind（形の誤り・不正な UTF-8・MaxDepth を超えた入れ子・オブジェクトのキーの重複）
 
 ## TooDeep
 
@@ -430,7 +430,7 @@ InvalidJson の kind（形の誤り・不正な UTF-8・MaxDepth を超えた入
 const TooDeep = 3
 ```
 
-InvalidJson の kind（形の誤り・不正な UTF-8・MaxDepth を超えた入れ子・オブジェクトのキーの重複）
+BadJson の kind（形の誤り・不正な UTF-8・MaxDepth を超えた入れ子・オブジェクトのキーの重複）
 
 ## DuplicateKey
 
@@ -438,12 +438,12 @@ InvalidJson の kind（形の誤り・不正な UTF-8・MaxDepth を超えた入
 const DuplicateKey = 4
 ```
 
-InvalidJson の kind（形の誤り・不正な UTF-8・MaxDepth を超えた入れ子・オブジェクトのキーの重複）
+BadJson の kind（形の誤り・不正な UTF-8・MaxDepth を超えた入れ子・オブジェクトのキーの重複）
 
-## InvalidJson
+## BadJson
 
 ```sober
-type InvalidJson error {
+type BadJson error {
     pos int
     kind int
 }
@@ -555,14 +555,14 @@ Get に手掛かりの位置 hint を足したもの: hint 番目の欄のキー
 ## Parse
 
 ```sober
-@errors(InvalidJson)
+@errors(BadJson)
 @effects()
 func Parse(b []byte) (Doc, error?)
 ```
 
 b 全体を 1 つの JSON の値として読む（前後の空白は可・後ろに何か残れば Syntax）
 
-失敗のラベル: [`InvalidJson`](#invalidjson)
+失敗のラベル: [`BadJson`](#badjson)
 
 ## Format
 

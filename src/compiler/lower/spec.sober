@@ -305,7 +305,7 @@ func spInfo(st mut St, g FnRef) int {
                 mask = mask | spBit(irInsB(mut st, i), np) | spBit(irInsC(mut st, i), np)
             } else if op == OpGepW || op == OpGepB {
                 mask = mask | spBit(irInsA(mut st, i), np) | spBit(irInsB(mut st, i), np)
-            } else if op == OpItop || op == OpPtoi || op == OpLoad || op == OpLoad8 {
+            } else if op == OpItop || op == OpPtoi || op == OpLoad || isNarrowLd(op) {
                 mask = mask | spBit(irInsA(mut st, i), np)
             } else if op == OpCall {
                 args := irInsB(mut st, i)

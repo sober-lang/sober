@@ -469,7 +469,7 @@
       "pkg": "main"
     },
     {
-      "name": "InvalidUtf8",
+      "name": "BadUtf8",
       "pkg": "std/strings"
     }
   ]

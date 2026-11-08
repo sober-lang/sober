@@ -16,8 +16,13 @@
 # 2026-11-04 案 P の言語便 R1（旧 (α-L1) の撤去 — 送りの状態 http.Out〔圧縮器の deflate.Stream を含む 88 語級〕が serveBuf の展開先の枠のスロットに乗る。
 # 旧は借りの閉包が捕捉する 64 語以上のセルを region に置いていた〔rcellOk — 撤去〕・Out は stream の 4 つの形で 1 つに畳んだ・report-p-1）: serveTlsConn 6320 → 7088・締め直し = 実測 × 1.01（事後追認の標準運用）
 bench/httparena/main.sober main.serveTlsConn 7159
+bench/httparena/main.sober kid#2 2214
+bench/httparena/main.sober std/http/server.Dispatch 1083
 # 2026-10-26 案 S（accept の輪をワーカーごとに — std/net の Serve の輪の task と scope が 1 段増えた・report-1172 / 1173・実測 × 1.01・標準運用の引き直し — ユーザーへは事後追認）: bench/httparena @sum 105488（線 104668 を越えた）→ 106543
-bench/httparena/main.sober @sum 106543
+# 2026-11-05 std レーン R6（Response に cookies []SetCookie の欄 — 応答の値を持つ枠が 1 欄ぶん太る・report-std-6・実測 × 1.005・標準運用の引き直し — ユーザーへは事後追認）: bench/httparena @sum 107296（線 106543 を越えた）→ 107833
+# 2026-11-07 deflate v2-5 R3（接続ごとの gzip の記録 — serveCore → serveBuf → wire へ mut の記録を通し・記録つきの deflate の道〔pick / putHead / canon〕が乗る・report-v2-15・実測 × 1.01・標準運用の引き直し — 事後追認）: bench/httparena @sum 108080（線 107833 を越えた）→ 109161
+# 2026-11-08 tj 便（窓を組むプログラムで rt.region_alloc が葉の展開に戻り、写した溢れの道〔rt.win_ralloc の冷たい呼び出し — 合流する〕の局所の退避の枠が確保を持つ関数に 96〜144 B ずつ乗る・report-tj-0・実測 × 1.01・標準運用の引き直し — 事後追認）: bench/httparena @sum 115760（線 109161 を越えた）→ 116918
+bench/httparena/main.sober @sum 116918
 # 2026-10-25 P3（飽和下の待ちの上限 D — rt.mn_next / rt.task_new の語が増えた・report-1142 / 1143・実測 × 1.01・標準運用の引き直し — ユーザーへは事後追認）: bench/httparena @zero 2008（線 1996 を越えた）→ 2029
 # 2026-10-26 飛行記録（rt.netop の ACCEPT の getpeername の受け皿・clockNs の時計の受け皿 — on の区画の中の枠・report-1176・実測 × 1.01・標準運用の引き直し — ユーザーへは事後追認）: bench/httparena @zero 2088（線 2029 を越えた）→ 2109
 bench/httparena/main.sober @zero 2133
@@ -57,4 +62,11 @@ bench/httparena/main.sober @zero 2133
 # 2026-11-04 メモリの上界の報告 R1a / R1b（lower/memrep.sober の解析とスタック上界・x86 の群のフレームの返し・report-mem-2 / mem-3・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1305200（線 1305049 を越えた）→ 1318252
 # 2026-11-04 メモリの上界の報告 R2a（lower/memval.sober の値の層・memrep の多項式化の新しい関数の枠・report-mem-6・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1327760（線 1318252 を越えた）→ 1341038
 # 2026-11-05 repr W1-b（絞りの消滅 — desugar / lower の narrowkill・表層型検査器・flowx の新しい関数・実測 × 1.01・事後追認）: @self @sum 1345888 → 1359347
-@self @sum 1359347
+# 2026-11-05 std レーン R7（std/internal/ec・sha512 の 2 package を足した — std の木を扱う main の cmd 群〔cmdCheck・cmdTest・testMutate ほか〕の枠が 1 本 160〜320 B 太る・package を足すと決まって起きる増分・report-std-7・実測 × 1.005・事後追認）: @self @sum 1361216（線 1359347 を越えた）→ 1368023
+# 2026-11-05 std レーン R13（std/internal/hs のクライアントの handshake と x509 の署名の口・⑤ 時刻の std/time を足した — std の木を扱う main の cmd 群の枠の増分・report-std-13・実測 × 1.005・事後追認）: @self @sum 1369952（線 1368023 を越えた）→ 1376802
+# 2026-11-05 std レーン R16b（std/http/client の package を足した・compiler/diag の同一性の族の表〔文面を表から組む〕— std の木を扱う main の cmd 群の枠の増分・report-std-16・実測 × 1.005・事後追認）: @self @sum 1376960（線 1376802 を越えた）→ 1383845
+# 2026-11-06 import 便 R1（loader/qualfold.sober・fileimports の rootOnlyIn・desugar の qualIs ほか新しい関数の枠・report-imp-2・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1386992（線 1383845 を越えた）→ 1400862
+# 2026-11-07 速度便 ②（関数値の mut の席を彩色へ — report-perf-3）: 接続 task の積みを 4 KiB の下に保つ網 — kid#2（平文の接続 task）2192 を実測 × 1.01
+# 2026-11-07 速度便 ②（Dispatch の稀な道〔405 / 方針の写し〕を関数の外へ — report-perf-3）: Dispatch 1600 → 1040 を実測 × 1.01 — 接続 task の積み 4504 → 3944 B（4 KiB の下）
+# 2026-11-07 deflate v2 S3（lower/cont.sober の鍵 appendword の下ろし・desugar/call.sober のコアの近似・std/binary の AppendWord — report-v2-9・実測 × 1.01・標準運用の引き直し — 事後追認）: @self @sum 1401136（線 1400862 を越えた）→ 1415147
+@self @sum 1415147

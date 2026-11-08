@@ -1,0 +1,213 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/fieldpkg/box",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "m"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "int"
+                },
+                "elems": [
+                  {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 19
+                  },
+                  {
+                    "k": "int",
+                    "value": 2,
+                    "tok": 21
+                  }
+                ],
+                "mut": true,
+                "tok": 15
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "bind",
+            "names": [
+              "b"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "testdata.fieldpkg.box.Box",
+                "elems": [
+                  {
+                    "key": "n",
+                    "value": {
+                      "k": "int",
+                      "value": 0,
+                      "tok": 37
+                    }
+                  },
+                  {
+                    "key": "name",
+                    "value": {
+                      "k": "strlit",
+                      "value": "x",
+                      "tok": 41
+                    }
+                  },
+                  {
+                    "key": "inner",
+                    "value": {
+                      "k": "composite",
+                      "type_name": "testdata.fieldpkg.box.Inner",
+                      "elems": [
+                        {
+                          "key": "k",
+                          "value": {
+                            "k": "int",
+                            "value": 0,
+                            "tok": 55
+                          }
+                        }
+                      ],
+                      "tok": 45,
+                      "type_args": []
+                    }
+                  },
+                  {
+                    "key": "xs",
+                    "value": {
+                      "k": "ident",
+                      "name": "m",
+                      "tok": 60
+                    }
+                  },
+                  {
+                    "key": "tags",
+                    "value": {
+                      "k": "maplit",
+                      "key": {
+                        "k": "name",
+                        "name": "string"
+                      },
+                      "value": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "entries": [],
+                      "mut": true,
+                      "tok": 65
+                    }
+                  }
+                ],
+                "tok": 27,
+                "type_args": []
+              }
+            ],
+            "tok": 24
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "index",
+                "base": {
+                  "k": "ident",
+                  "name": "m",
+                  "tok": 74
+                },
+                "idx": {
+                  "k": "int",
+                  "value": 0,
+                  "tok": 76
+                },
+                "tok": 75
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "int",
+                "value": 99,
+                "tok": 79
+              }
+            ],
+            "tok": 74
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 81
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 83
+                        },
+                        "field": "fieldpkg",
+                        "tok": 85
+                      },
+                      "field": "box",
+                      "tok": 87
+                    },
+                    "field": "Len",
+                    "tok": 89
+                  },
+                  "args": [
+                    {
+                      "k": "mut_arg",
+                      "name": "b",
+                      "tok": 92
+                    }
+                  ],
+                  "tok": 90
+                }
+              ],
+              "tok": 82
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 98
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

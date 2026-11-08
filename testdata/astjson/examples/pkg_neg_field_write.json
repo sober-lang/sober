@@ -25,14 +25,14 @@
             "values": [
               {
                 "k": "composite",
-                "type_name": "shapes.Rect",
+                "type_name": "testdata.specpkg.shapes.Rect",
                 "elems": [
                   {
                     "key": "w",
                     "value": {
                       "k": "int",
                       "value": 2,
-                      "tok": 20
+                      "tok": 24
                     }
                   },
                   {
@@ -40,7 +40,7 @@
                     "value": {
                       "k": "int",
                       "value": 3,
-                      "tok": 24
+                      "tok": 28
                     }
                   }
                 ],
@@ -58,10 +58,10 @@
                 "base": {
                   "k": "ident",
                   "name": "r",
-                  "tok": 27
+                  "tok": 31
                 },
                 "field": "w",
-                "tok": 29
+                "tok": 33
               }
             ],
             "op": "=",
@@ -69,10 +69,10 @@
               {
                 "k": "int",
                 "value": 5,
-                "tok": 31
+                "tok": 35
               }
             ],
-            "tok": 27
+            "tok": 31
           },
           {
             "k": "expr",
@@ -81,7 +81,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 33
+                "tok": 37
               },
               "args": [
                 {
@@ -89,24 +89,34 @@
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "shapes",
-                      "tok": 35
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 39
+                        },
+                        "field": "specpkg",
+                        "tok": 41
+                      },
+                      "field": "shapes",
+                      "tok": 43
                     },
                     "field": "Area",
-                    "tok": 37
+                    "tok": 45
                   },
                   "args": [
                     {
                       "k": "ident",
                       "name": "r",
-                      "tok": 39
+                      "tok": 47
                     }
                   ],
-                  "tok": 38
+                  "tok": 46
                 }
               ],
-              "tok": 34
+              "tok": 38
             }
           }
         ]
@@ -115,7 +125,7 @@
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 45
+        "end": 53
       },
       "sig_end": 10
     }

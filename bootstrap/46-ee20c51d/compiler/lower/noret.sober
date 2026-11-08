@@ -1,0 +1,106 @@
+package lower
+
+// 戻らない呼び出しの終端化（report-ct2 (i) / ct5 — 展開の後・cfgClean の前に親で 1 回）: 呼び先が戻らない利用者の関数（TmRet のブロックが無い — ラベル panic を
+// 包む補助関数 binary.outOfRange 等。判定は irinl の ilNonretSeed: rt.* と本体の無い宣言は保守的に「戻る」・関数値の呼び出し OpCallI は見ない）なら、
+// 呼び出しの後ろを切ってブロックを TmExit（PANIC — 到達しない）で閉じる。呼び出しの後ろに続きがあると、
+// ① 呼び出しをまたいで生きる値が callee-saved / スタックへ押し出され（longest の運搬値 best / ch / start の退避）
+// ② ループの中の呼び出しとして読みの持ち上げを止める（LICM / GVN）。
+// 閉じたブロックは x86 の配置で冷たい側へ（TmExit の種 — irinl の ilHot と同じ読み）。切って到達しなくなったブロックは中身を消して TmExit に（値の使い手は
+// 支配される側にしかいないので一緒に消える）— 鎖から外すのは cfgClean の P4
+func noretModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            noretFunc(mut st, f)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+func noretFunc(st mut St, f FnRef) {
+    mut hit := false
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        if irBlkTerm(mut st, b) != TmExit {
+            mut i := irBlkIHead(mut st, b)
+            while i != -1 {
+                if irInsOp(mut st, i) == OpCall && ilNonretSeed(mut st, irInsFn(mut st, i)) {
+                    noretClose(mut st, b)
+                    irSetInsNext(mut st, i, InsRef(-1))
+                    irSetBlkITail(mut st, b, i)
+                    hit = true
+                    i = InsRef(-1)
+                } else {
+                    i = irInsNext(mut st, i)
+                }
+            }
+        }
+        b = irBlkNext(mut st, b)
+    }
+    if hit {
+        noretSweep(mut st, f)
+    }
+}
+
+// b の行き先の前任の数を減らし、b を TmExit（PANIC）で閉じる
+func noretClose(st mut St, b BlkRef) {
+    t := irBlkTerm(mut st, b)
+    if t == TmBr {
+        noretDec(mut st, BlkRef(irBlkX1(mut st, b)))
+    } else if t == TmCondbr {
+        noretDec(mut st, BlkRef(irBlkX2(mut st, b)))
+        noretDec(mut st, BlkRef(irBlkX4(mut st, b)))
+    }
+    irSetBlkTerm(mut st, b, TmExit)
+    irSetBlkX1(mut st, b, PANIC)
+    irSetBlkX2(mut st, b, 0)
+    irSetBlkX3(mut st, b, 0)
+    irSetBlkX4(mut st, b, 0)
+    irSetBlkX5(mut st, b, 0)
+}
+
+func noretDec(st mut St, to BlkRef) {
+    irSetBlkPreds(mut st, to, irBlkPreds(mut st, to) - 1)
+}
+
+// 入口から届かなくなったブロックの中身を消して TmExit に（行き先の前任の数も減らす）
+func noretSweep(st mut St, f FnRef) {
+    nb := irFnNBlk(mut st, f)
+    mut seen := mut []int{}
+    xFill(mut seen, nb, 0)
+    mut work := mut []int{}
+    xFill(mut work, nb, 0)
+    entry := irFnBHead(mut st, f)
+    seen[irBlkId(mut st, entry)] = 1
+    work[0] = int(entry)
+    mut sp := 1
+    while sp > 0 {
+        sp -= 1
+        x := BlkRef(work[sp])
+        t := irBlkTerm(mut st, x)
+        mut k := 0
+        while k < 2 {
+            mut nx := -1
+            if t == TmBr && k == 0 {
+                nx = irBlkX1(mut st, x)
+            } else if t == TmCondbr {
+                nx = if k == 0 { irBlkX2(mut st, x) } else { irBlkX4(mut st, x) }
+            }
+            if nx != -1 && seen[irBlkId(mut st, BlkRef(nx))] == 0 {
+                seen[irBlkId(mut st, BlkRef(nx))] = 1
+                work[sp] = nx
+                sp += 1
+            }
+            k += 1
+        }
+    }
+    mut b := entry
+    while b != -1 {
+        if seen[irBlkId(mut st, b)] == 0 && (irBlkTerm(mut st, b) != TmExit || irBlkIHead(mut st, b) != -1) {
+            noretClose(mut st, b)
+            irSetBlkIHead(mut st, b, InsRef(-1))
+            irSetBlkITail(mut st, b, InsRef(-1))
+        }
+        b = irBlkNext(mut st, b)
+    }
+}

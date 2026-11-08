@@ -1,0 +1,150 @@
+package x509
+
+// 証明書の鍵での署名の検証の口（TLS の CertificateVerify / ServerKeyExchange の下 — 公開の値だけを扱うので定数時間にしない）。
+// hbits = ハッシュの長さ（256 / 384 / 512 — SHA-256 / SHA-384 / SHA-512）
+
+import "std/crypto/sha256"
+import "std/internal/ec"
+import "std/internal/sha512"
+import "std/iter"
+
+// m の SHA-2（hbits = 256 / 384 / 512）
+@effects()
+func Digest(hbits int, m []byte) []byte {
+    if hbits == 384 {
+        return sha512.Sum384(m)
+    }
+    if hbits == 512 {
+        return sha512.Sum512(m)
+    }
+    return sha256.Sum256(m)
+}
+
+// c の ECDSA の鍵（P-256 / P-384）で、メッセージのハッシュ h への DER の署名 sig が合うか（鍵が ECDSA でなければ false）
+@effects()
+func VerifyEcdsa(c Cert, h []byte, sig []byte) bool {
+    if c.pubAlg == PubP256 {
+        return ec.Verify(ec.P256(), c.pubKey, h, sig)
+    }
+    if c.pubAlg == PubP384 {
+        return ec.Verify(ec.P384(), c.pubKey, h, sig)
+    }
+    return false
+}
+
+// c の RSA の鍵（2048 bit 以上で 8 の倍数）で、hbits のハッシュ h への RSASSA-PKCS1-v1_5 の署名 sig が合うか
+@effects()
+func VerifyRsaV15(c Cert, hbits int, h []byte, sig []byte) bool {
+    n, e, ok := rsaOk(c)
+    if !ok {
+        return false
+    }
+    a := if hbits == 384 { SigRsaSha384 } else if hbits == 512 { SigRsaSha512 } else { SigRsaSha256 }
+    return rsaV15(n, e, h, a, sig)
+}
+
+// c の RSA の鍵で、hbits のハッシュ h への RSASSA-PSS の署名 sig が合うか（MGF1 は同じハッシュ・salt の長さ = ハッシュの長さ — TLS 1.3 の rsa_pss_rsae_* / rsa_pss_pss_*）
+@effects()
+func VerifyRsaPss(c Cert, hbits int, h []byte, sig []byte) bool {
+    n0, e, ok := rsaOk(c)
+    if !ok {
+        return false
+    }
+    mut i := 0
+    while i < len(n0) && n0[i] == byte(0) {
+        i += 1
+    }
+    n := n0[i:len(n0)]
+    k := len(n)
+    if len(sig) != k {
+        return false
+    }
+    // s < n
+    for j <- iter.Range(0, k) {
+        if sig[j] != n[j] {
+            if sig[j] > n[j] {
+                return false
+            }
+            m := ec.PowMod(n, sig, e)
+            return pssCheck(hbits, h, m, BitLen(n) - 1)
+        }
+    }
+    return false
+}
+
+func rsaOk(c Cert) ([]byte, []byte, bool) {
+    if c.pubAlg != PubRsa {
+        return []byte{}, []byte{}, false
+    }
+    n, e, ok := RsaKey(c.pubKey)
+    bl := BitLen(n)
+    return n, e, ok && bl >= 2048 && bl % 8 == 0
+}
+
+// EMSA-PSS-VERIFY（RFC 8017 9.1.2 — m は k バイトの復号の値・emBits = modBits - 1）
+func pssCheck(hbits int, mHash []byte, m []byte, emBits int) bool {
+    hLen := hbits / 8
+    emLen := (emBits + 7) / 8
+    // 先頭の k - emLen バイトは 0
+    for j <- iter.Range(0, len(m) - emLen) {
+        if m[j] != byte(0) {
+            return false
+        }
+    }
+    em := m[len(m) - emLen:len(m)]
+    sLen := hLen
+    if len(mHash) != hLen || emLen < hLen + sLen + 2 || em[emLen - 1] != byte(0xbc) {
+        return false
+    }
+    dbLen := emLen - hLen - 1
+    top := 0xff >> (8 * emLen - emBits)
+    if (int(em[0]) & (0xff ^ top)) != 0 {
+        return false
+    }
+    hh := em[dbLen:dbLen + hLen]
+    mask := mgf1(hbits, hh, dbLen)
+    mut db := mut []byte{}
+    for j <- iter.Range(0, dbLen) {
+        db = append(db, byte(int(em[j]) ^ int(mask[j])))
+    }
+    db[0] = byte(int(db[0]) & top)
+    ps := dbLen - sLen - 1
+    for j <- iter.Range(0, ps) {
+        if db[j] != byte(0) {
+            return false
+        }
+    }
+    if db[ps] != byte(1) {
+        return false
+    }
+    mut mp := mut []byte{0, 0, 0, 0, 0, 0, 0, 0}
+    for x <- mHash {
+        mp = append(mp, x)
+    }
+    for j <- iter.Range(ps + 1, dbLen) {
+        mp = append(mp, db[j])
+    }
+    return same(Digest(hbits, freeze(mp)), hh)
+}
+
+// MGF1（RFC 8017 B.2.1 — hbits のハッシュ）の先頭 n バイト
+func mgf1(hbits int, seed []byte, n int) []byte {
+    mut out := mut []byte{}
+    mut c := 0
+    while len(out) < n {
+        mut in := mut []byte{}
+        for x <- seed {
+            in = append(in, x)
+        }
+        for k <- iter.Range(0, 4) {
+            in = append(in, byte((c >> (24 - 8 * k)) & 0xff))
+        }
+        for x <- Digest(hbits, freeze(in)) {
+            if len(out) < n {
+                out = append(out, x)
+            }
+        }
+        c += 1
+    }
+    return freeze(out)
+}

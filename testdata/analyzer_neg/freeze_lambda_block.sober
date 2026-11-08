@@ -1,0 +1,13 @@
+package main
+
+// 局所のラムダの本体がブロックで if の値を返す — 末尾の道の根ごとに凍る（U2）
+
+func main() int {
+    mut m := mut []int{1, 2}
+    mut n := mut []int{3}
+    g := (c bool) => { if c { m } else { n } }
+    im := freeze(g(true))
+    m[0] = 9
+    println("${im[0]}")
+    return 0
+}

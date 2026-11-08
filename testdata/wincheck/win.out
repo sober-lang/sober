@@ -1,0 +1,7 @@
+serve: expired
+acc: rounds 40 last 40 3420160
+tip: rounds 2 last tip 10000 bad 0
+map: rounds 2 last map 3000 bad 0
+file: rounds 2 last file 12482 hash 882326536
+deep: rounds 2 last deep 201
+edge: max 952

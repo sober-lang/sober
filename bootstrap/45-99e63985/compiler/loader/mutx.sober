@@ -1,0 +1,440 @@
+package loader
+
+// mutation testing の写し（`sober test --mutate`）: 利用者の非テストのファイルの変異点を、全部の変異を 1 本の build に入れて実行時に 1 体を選ぶ形
+// （schemata）に写す脱糖の固定テンプレート:
+//
+//     a < b       →  if $cover.Sel(k) { a <= b } else if $cover.Sel(k + 1) { a >= b } else { a < b }   （比較 — 境界と否定）
+//     a - b       →  if $cover.Sel(k) { a + b } else { a - b }                                        （算術・ビット・`&&` ↔ `||`）
+//     !e          →  if $cover.Sel(k) { e } else { !e }
+//     if c { … }  →  if (if $cover.Sel(k) { true } else if $cover.Sel(k + 1) { false } else { c }) { … }   （while は偽だけ）
+//     f(x); …     →  if !$cover.Sel(k) { f(x) }; …                                                    （呼び出しの式文・代入文 — 列の末尾はループの本体だけ）
+//
+// 変異点を含む被演算子は局所に束縛してから両方の腕で名前を読む（`{ $ml7 := a + b; if … { $ml7 * c } else { $ml7 / c } }` — 共有したままだと
+// lower が参照ごとに部分木を建て、左結合の連鎖で指数に太る）。左がリテラルなら束縛しない（束縛すると型が int に決まる — power assert と同じ）。
+// 変異は型を保つものだけ（全部の変異が 1 本の program で同時に型付けを通る）: 絞り込みの nil の条件とそれを含む論理式・catch の写しの if・
+// 文字列にもなる `+`（リテラルの被演算子が無い形）・`return`・宣言・定数の形を求める位置（名前つき引数の値 — budget: / deadline: / cap: — と
+// task.NewLocal の設定〔pool.NewScratch だけを並べる形〕）は変異しない。リテラルの変異（3 → 2）は入れない — 期待の型の位置（byte・名前つきの数・欄）で `if … { 2 } else { 3 }` が
+// int に決まって型が通らない（AST の層では型を保てない）。点はカバレッジの点の表に同居する（種類 = MutCondT 以上）—
+// `$cover.Sel(k)` が点 k の印も付けるので、基線の 1 周の印がテストごとの「届いた変異」になる。
+// one ≥ 0 なら変異 one だけをそのまま写す（選び口なし — 照合の網の「1 体だけの build」。点の表は schemata と同じ）
+
+import "std/builder"
+import "std/iter"
+import "ast"
+import "lexer"
+
+// 変異の点の種類（カバレッジの点の種類 Cv* と同じ欄 — 2 項演算子の入れ替えは MutBin + 元 × 100 + 先）
+const MutCondT = 16
+const MutCondF = 17
+const MutStmt = 19
+const MutNot = 20
+const MutBin = 10000
+
+// 種類 k が変異の点か
+func IsMutKind(k int) bool {
+    return k >= MutCondT
+}
+
+// 変異の綴り（`< → <=`・`cond → true`）
+func MutKindText(k int) string {
+    if k >= MutBin {
+        return "${opText((k - MutBin) / 100)} → ${opText((k - MutBin) % 100)}"
+    }
+    return switch k {
+    case MutCondT: "cond → true"
+    case MutCondF: "cond → false"
+    case MutStmt: "statement deleted"
+    case MutNot: "! removed"
+    default: "?"
+    }
+}
+
+func opText(op int) string {
+    return switch op {
+    case lexer.Less: "<"
+    case lexer.LessEqual: "<="
+    case lexer.Greater: ">"
+    case lexer.GreaterEqual: ">="
+    case lexer.EqualEqual: "=="
+    case lexer.BangEqual: "!="
+    case lexer.Plus: "+"
+    case lexer.Minus: "-"
+    case lexer.Star: "*"
+    case lexer.Slash: "/"
+    case lexer.Ampersand: "&"
+    case lexer.Pipe: "|"
+    case lexer.Shl: "<<"
+    case lexer.Shr: ">>"
+    case lexer.AmpersandAmpersand: "&&"
+    case lexer.PipePipe: "||"
+    default: "?"
+    }
+}
+
+// 2 項演算子 op の変異先の列（空 = 変異しない）
+func binVariants(op int) []int {
+    return switch op {
+    case lexer.Less: []int{lexer.LessEqual, lexer.GreaterEqual}
+    case lexer.LessEqual: []int{lexer.Less, lexer.Greater}
+    case lexer.Greater: []int{lexer.GreaterEqual, lexer.LessEqual}
+    case lexer.GreaterEqual: []int{lexer.Greater, lexer.Less}
+    case lexer.EqualEqual: []int{lexer.BangEqual}
+    case lexer.BangEqual: []int{lexer.EqualEqual}
+    case lexer.Plus: []int{lexer.Minus}
+    case lexer.Minus: []int{lexer.Plus}
+    case lexer.Star: []int{lexer.Slash}
+    case lexer.Slash: []int{lexer.Star}
+    case lexer.Ampersand: []int{lexer.Pipe}
+    case lexer.Pipe: []int{lexer.Ampersand}
+    case lexer.Shl: []int{lexer.Shr}
+    case lexer.Shr: []int{lexer.Shl}
+    case lexer.AmpersandAmpersand: []int{lexer.PipePipe}
+    case lexer.PipePipe: []int{lexer.AmpersandAmpersand}
+    default: []int{}
+    }
+}
+
+// 全ファイルの写し（cov = 写すファイルのパス・one = 1 体だけの build の変異の番号〔-1 = schemata〕）。Start の置き方と鍵は coverAll と同じ
+func mutAll(ts []ast.Tree, paths []string, pkgs []string, cov []string, one int) CoverOut {
+    mut out := mut []ast.Tree{}
+    mut pts := mut []int{}
+    for i <- iter.Range(0, len(ts)) {
+        if has(cov, paths[i]) {
+            mf := muts(ts[i], i, len(pts) / 3, one)
+            out = append(out, mf.t)
+            for j <- iter.Range(0, len(mf.pts)) {
+                pts = append(pts, mf.pts[j])
+            }
+        } else {
+            out = append(out, ts[i])
+        }
+    }
+    ps := freeze(pts)
+    key := coverKey(ps, paths)
+    mut out2 := mut []ast.Tree{}
+    for i <- iter.Range(0, len(out)) {
+        st := pkgs[i] == "main" && (has(cov, paths[i]) || paths[i] == TestMainPath())
+        out2 = append(out2, if st { coverStart(out[i], key, len(ps) / 3, if paths[i] == TestMainPath() { "StartTest" } else { "Start" }) } else { out[i] })
+    }
+    return CoverOut{freeze(out2), ps, key}
+}
+
+// 写しの作業（節の写し・足した節・データ・点の列）
+type mutW struct {
+    ns []ast.Node
+    pts []int
+    fi int
+    base int
+    one int
+    n0 int
+}
+
+// 1 ファイルの写し（fi = ファイルの番号・base = このファイルの最初の点の番号）
+func muts(t ast.Tree, fi int, base int, one int) coverFile {
+    n0 := len(t.nodes)
+    reach := mutReach(t)
+    mut ns := mut []ast.Node{}
+    for i <- iter.Range(0, n0) {
+        ns = append(ns, t.nodes[i])
+    }
+    mut nb := builder.Builder[ast.Node]{}
+    mut db := builder.Builder[int]{}
+    for j <- iter.Range(0, len(t.data)) {
+        builder.Push(mut db, t.data[j])
+    }
+    // while の本体のブロック（末尾の文も値の位置にならない — 消してよい）
+    mut loop := mut []bool{}
+    for i <- iter.Range(0, n0) {
+        loop = append(loop, false)
+    }
+    for i <- iter.Range(0, n0) {
+        if reach[i] && t.nodes[i].kind == ast.SWhile && t.nodes[i].b >= 0 {
+            loop[t.nodes[i].b] = true
+        }
+    }
+    mut pts := mut []int{}
+    for i <- iter.Range(0, n0) {
+        x := t.nodes[i]
+        if !reach[i] {
+            continue
+        }
+        if x.kind == ast.EBinary && mutBinOk(t, i) {
+            vs := binVariants(x.a)
+            mut ks := mut []int{}
+            for j <- iter.Range(0, len(vs)) {
+                ks = append(ks, base + len(pts) / 3)
+                pts = append(append(append(pts, fi), x.tok), MutBin + x.a * 100 + vs[j])
+            }
+            ns[i] = mutBinary(t, reach, mut nb, mut db, n0, i, vs, freeze(ks), one)
+        } else if x.kind == ast.EUnary && x.a == lexer.Bang && !hasNilTest(t, x.b) {
+            k := base + len(pts) / 3
+            pts = append(append(append(pts, fi), x.tok), MutNot)
+            ns[i] = if one == k { mutParen(x.b, x.tok) } else if one >= 0 { x } else {
+                orig := n0 + builder.Len(mut nb)
+                builder.Push(mut nb, x)
+                mutIf(mut nb, mut db, n0, x.tok, k, x.b, orig)
+            }
+        } else if x.kind == ast.EIf && nilTestKind(t, x.a) == 0 && !isCatchIf(t, x.a) && !hasNilTest(t, x.a) {
+            kt := base + len(pts) / 3
+            pts = append(append(append(pts, fi), x.tok), MutCondT)
+            kf := base + len(pts) / 3
+            pts = append(append(append(pts, fi), x.tok), MutCondF)
+            ns[i] = ast.WithA(x, mutCond(mut nb, mut db, n0, x.tok, x.a, kt, kf, one))
+        } else if x.kind == ast.SWhile && !hasNilTest(t, x.a) {
+            kf := base + len(pts) / 3
+            pts = append(append(append(pts, fi), x.tok), MutCondF)
+            ns[i] = ast.WithA(x, mutCond(mut nb, mut db, n0, x.tok, x.a, -1, kf, one))
+        } else if (x.kind == ast.EBlock || x.kind == ast.KBlock) && x.a >= 0 {
+            ml := mutStmts(t, mut nb, mut db, n0, fi, base + len(pts) / 3, one, x.a, loop[i])
+            for j <- iter.Range(0, len(ml.pts)) {
+                pts = append(pts, ml.pts[j])
+            }
+            if ml.changed {
+                ns[i] = ast.WithA(x, ml.list)
+            }
+        } else if x.kind == ast.EFor && x.b == 1 {
+            ml := mutStmts(t, mut nb, mut db, n0, fi, base + len(pts) / 3, one, x.c, true)
+            for j <- iter.Range(0, len(ml.pts)) {
+                pts = append(pts, ml.pts[j])
+            }
+            if ml.changed {
+                ns[i] = ast.WithC(x, ml.list)
+            }
+        }
+    }
+    added := builder.Build(mut nb)
+    for i <- iter.Range(0, len(added)) {
+        ns = append(ns, added[i])
+    }
+    return coverFile{ast.Tree{freeze(ns), builder.Build(mut db), t.file}, freeze(pts)}
+}
+
+// 文の列の写しの結果（list = 写した列・pts = 足した点・changed = 列を差し替えるか）
+type mutList struct {
+    list int
+    pts []int
+    changed bool
+}
+
+// 文の列 l の呼び出しの式文・代入文を消す変異（k0 = 最初の点の番号・lastOk = 末尾の文も消してよい〔ループの本体 — 末尾は値の位置にならない〕）
+func mutStmts(t ast.Tree, nb mut builder.Builder[ast.Node], db mut builder.Builder[int], n0 int, fi int, k0 int, one int, l int, lastOk bool) mutList {
+    n := ast.ListLen(t, l)
+    mut xs := mut []int{}
+    mut pts := mut []int{}
+    mut changed := false
+    for j <- iter.Range(0, n) {
+        s := ast.ListAt(t, l, j)
+        if (j < n - 1 || lastOk) && s >= 0 && mutStmtOk(t, s) {
+            k := k0 + len(pts) / 3
+            pts = append(append(append(pts, fi), t.nodes[s].tok), MutStmt)
+            if one == k {
+                changed = true
+            } else if one >= 0 {
+                xs = append(xs, s)
+            } else {
+                changed = true
+                xs = append(xs, mutDrop(mut nb, mut db, n0, t.nodes[s].tok, k, s))
+            }
+        } else {
+            xs = append(xs, s)
+        }
+    }
+    return mutList{list: if changed { ast.PutList(mut db, freeze(xs)) } else { l }, pts: freeze(pts), changed: changed}
+}
+
+// 2 項演算の節 i を変異にするか（演算子の表に在り・絞り込みの nil の条件でない・`&&` / `||` は左に絞り込みを含まない・
+// `+` は被演算子にリテラルの数がある — 文字列の連結の `+` を `-` にすると型が通らない）
+func mutBinOk(t ast.Tree, i int) bool {
+    x := t.nodes[i]
+    if len(binVariants(x.a)) == 0 || nilTestKind(t, i) != 0 {
+        return false
+    }
+    if x.a == lexer.AmpersandAmpersand || x.a == lexer.PipePipe {
+        return !hasNilTest(t, x.b) && !hasNilTest(t, x.c)
+    }
+    if x.a == lexer.Plus {
+        return isNumLit(t, x.b) || isNumLit(t, x.c)
+    }
+    return true
+}
+
+func isNumLit(t ast.Tree, n0 int) bool {
+    n := unparen(t, n0)
+    return n >= 0 && (t.nodes[n].kind == ast.EInt || t.nodes[n].kind == ast.EFloat)
+}
+
+// 式 n0 が絞り込みの nil の条件を含むか（`!` と `&&` / `||` と括弧を辿る）
+func hasNilTest(t ast.Tree, n0 int) bool {
+    n := unparen(t, n0)
+    if n < 0 {
+        return false
+    }
+    if nilTestKind(t, n) != 0 {
+        return true
+    }
+    x := t.nodes[n]
+    if x.kind == ast.EUnary && x.a == lexer.Bang {
+        return hasNilTest(t, x.b)
+    }
+    if x.kind == ast.EBinary && (x.a == lexer.AmpersandAmpersand || x.a == lexer.PipePipe) {
+        return hasNilTest(t, x.b) || hasNilTest(t, x.c)
+    }
+    return false
+}
+
+// 式 n0 が（括弧を剥いで）変異にする 2 項演算か
+func mutBinSite(t ast.Tree, reach []bool, n0 int) bool {
+    n := unparen(t, n0)
+    return n >= 0 && reach[n] && t.nodes[n].kind == ast.EBinary && mutBinOk(t, n)
+}
+
+// 文 s を消せるか（呼び出しの式文・代入文）
+func mutStmtOk(t ast.Tree, s int) bool {
+    x := t.nodes[s]
+    return (x.kind == ast.SExpr && t.nodes[unparen(t, x.a)].kind == ast.ECall) || x.kind == ast.SAssign
+}
+
+// 2 項演算の節 i の写し（vs = 変異先の演算子・ks = その点の番号）
+func mutBinary(t ast.Tree, reach []bool, nb mut builder.Builder[ast.Node], db mut builder.Builder[int], n0 int, i int, vs []int, ks []int, one int) ast.Node {
+    x := t.nodes[i]
+    if one >= 0 {
+        for j <- iter.Range(0, len(ks)) {
+            if ks[j] == one {
+                return ast.WithA(x, vs[j])
+            }
+        }
+        return x
+    }
+    // 変異点を含む被演算子を束縛する（短絡の右辺は束縛しない — 評価の遅延を保つ）
+    logic := x.a == lexer.AmpersandAmpersand || x.a == lexer.PipePipe
+    ls := mutBinSite(t, reach, x.b)
+    rs := !logic && mutBinSite(t, reach, x.c)
+    lk := t.nodes[unparen(t, x.b)].kind
+    bindL := ls || (rs && lk != ast.EInt && lk != ast.EFloat && lk != ast.EStrlit && lk != ast.ENil)
+    mut stmts := mut []int{}
+    mut y := x
+    if bindL {
+        at := n0 + builder.Len(mut nb)
+        builder.Push(mut nb, ast.Node{ast.SBind, x.tok, ast.PutList(mut db, []int{ast.PutLit(mut db, "$ml${i}")}), 0, ast.PutList(mut db, []int{x.b}), 0, 0, 0})
+        builder.Push(mut nb, ast.Node{ast.EIdent, x.tok, ast.PutLit(mut db, "$ml${i}"), 0, 0, 0, 0, 0})
+        stmts = append(stmts, at)
+        y = ast.WithB(y, at + 1)
+    }
+    if rs {
+        at := n0 + builder.Len(mut nb)
+        builder.Push(mut nb, ast.Node{ast.SBind, x.tok, ast.PutList(mut db, []int{ast.PutLit(mut db, "$mr${i}")}), 0, ast.PutList(mut db, []int{x.c}), 0, 0, 0})
+        builder.Push(mut nb, ast.Node{ast.EIdent, x.tok, ast.PutLit(mut db, "$mr${i}"), 0, 0, 0, 0, 0})
+        stmts = append(stmts, at)
+        y = ast.WithC(y, at + 1)
+    }
+    mut e := n0 + builder.Len(mut nb)
+    builder.Push(mut nb, y)
+    mut j := len(vs) - 1
+    while j >= 0 {
+        v := n0 + builder.Len(mut nb)
+        builder.Push(mut nb, ast.WithA(y, vs[j]))
+        e = mutIfAt(mut nb, mut db, n0, x.tok, ks[j], v, e)
+        j -= 1
+    }
+    if len(stmts) == 0 {
+        return builder.Get(mut nb, e - n0)
+    }
+    at := n0 + builder.Len(mut nb)
+    builder.Push(mut nb, ast.Node{ast.SExpr, x.tok, e, 0, 0, 0, 0, 0})
+    return ast.Node{ast.EBlock, x.tok, ast.PutList(mut db, freeze(append(stmts, at))), 0, 0, 0, 0, 0}
+}
+
+// 条件 c の写し（kt = 真に固定する点〔-1 = 無し — while〕・kf = 偽に固定する点）
+func mutCond(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], n0 int, tok int, c int, kt int, kf int, one int) int {
+    if one >= 0 {
+        return if one == kt { mutBool(mut nb, mut db, n0, tok, "true") } else if one == kf { mutBool(mut nb, mut db, n0, tok, "false") } else { c }
+    }
+    mut e := mutIfAt(mut nb, mut db, n0, tok, kf, mutBool(mut nb, mut db, n0, tok, "false"), c)
+    if kt >= 0 {
+        e = mutIfAt(mut nb, mut db, n0, tok, kt, mutBool(mut nb, mut db, n0, tok, "true"), e)
+    }
+    return e
+}
+
+func mutBool(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], n0 int, tok int, v string) int {
+    at := n0 + builder.Len(mut nb)
+    builder.Push(mut nb, ast.Node{ast.EIdent, tok, ast.PutLit(mut db, v), 0, 0, 0, 0, 0})
+    return at
+}
+
+// 括弧の節（`!e` → `(e)` の写し先 — 節の欄を差し替える形で置く）
+func mutParen(e int, tok int) ast.Node {
+    return ast.Node{ast.EParen, tok, e, 0, 0, 0, 0, 0}
+}
+
+// 選び口 `$cover.Sel(k)` を積んで番号を返す
+func mutSel(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], n0 int, tok int, k int) int {
+    at := n0 + builder.Len(mut nb)
+    builder.Push(mut nb, ast.Node{ast.EIdent, tok, ast.PutLit(mut db, "$cover"), 0, 0, 0, 0, 0})
+    builder.Push(mut nb, ast.Node{ast.ESelector, tok, at, ast.PutLit(mut db, "Sel"), 0, 0, 0, 0})
+    builder.Push(mut nb, ast.Node{ast.EInt, tok, k, 0, 0, 0, 0, 0})
+    builder.Push(mut nb, ast.Node{ast.ECall, tok, at + 1, ast.PutList(mut db, []int{at + 2}), 0, 0, 0, 0})
+    return at + 3
+}
+
+// `if $cover.Sel(k) { m } else { o }` を積んで番号を返す
+func mutIfAt(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], n0 int, tok int, k int, m int, o int) int {
+    s := mutSel(mut nb, mut db, n0, tok, k)
+    at := n0 + builder.Len(mut nb)
+    builder.Push(mut nb, ast.Node{ast.SExpr, tok, m, 0, 0, 0, 0, 0})
+    builder.Push(mut nb, ast.Node{ast.EBlock, tok, ast.PutList(mut db, []int{at}), 0, 0, 0, 0, 0})
+    builder.Push(mut nb, ast.Node{ast.SExpr, tok, o, 0, 0, 0, 0, 0})
+    builder.Push(mut nb, ast.Node{ast.EBlock, tok, ast.PutList(mut db, []int{at + 2}), 0, 0, 0, 0, 0})
+    builder.Push(mut nb, ast.Node{ast.EIf, tok, s, at + 1, at + 3, 0, 0, 0})
+    return at + 4
+}
+
+// `if $cover.Sel(k) { m } else { o }` の節（写し先の節に置く）
+func mutIf(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], n0 int, tok int, k int, m int, o int) ast.Node {
+    e := mutIfAt(mut nb, mut db, n0, tok, k, m, o)
+    return builder.Get(mut nb, e - n0)
+}
+
+// 文 s を `if !$cover.Sel(k) { s }` に包んで番号を返す
+func mutDrop(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], n0 int, tok int, k int, s int) int {
+    sel := mutSel(mut nb, mut db, n0, tok, k)
+    at := n0 + builder.Len(mut nb)
+    builder.Push(mut nb, ast.Node{ast.EUnary, tok, lexer.Bang, sel, 0, 0, 0, 0})
+    builder.Push(mut nb, ast.Node{ast.KBlock, tok, ast.PutList(mut db, []int{s}), 0, 0, 0, 0, 0})
+    builder.Push(mut nb, ast.Node{ast.EIf, tok, at, at + 1, -1, 0, 0, 0})
+    builder.Push(mut nb, ast.Node{ast.SExpr, tok, at + 2, 0, 0, 0, 0, 0})
+    return at + 3
+}
+
+// 変異にしてよい節（関数の本体から辿れて、定数の形を求める位置の外）
+func mutReach(t ast.Tree) []bool {
+    r := cvReach(t)
+    mut keep := mut []bool{}
+    for i <- iter.Range(0, len(t.nodes)) {
+        keep = append(keep, false)
+    }
+    mut stk := mut []int{}
+    for i <- iter.Range(0, len(t.nodes)) {
+        x := t.nodes[i]
+        if r[i] && x.kind == ast.KNamedArg {
+            stk = append(stk, x.b)
+        } else if r[i] && x.kind == ast.ECall && t.nodes[x.a].kind == ast.ESelector && (StrIs(t, t.nodes[x.a].b, "NewScratch") || StrIs(t, t.nodes[x.a].b, "NewLocal")) {
+            cvPushList(t, x.b, mut stk)
+        }
+    }
+    mut h := 0
+    while h < len(stk) {
+        n := stk[h]
+        h += 1
+        if n < 0 || keep[n] {
+            continue
+        }
+        keep[n] = true
+        cvPushKids(t, n, mut stk)
+    }
+    mut out := mut []bool{}
+    for i <- iter.Range(0, len(t.nodes)) {
+        out = append(out, r[i] && !keep[i])
+    }
+    return freeze(out)
+}

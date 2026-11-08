@@ -5,5 +5,5 @@ package main
 import "testdata/specpkg/shapes"
 
 func main() {
-    println(shapes.scale(2))
+    println(testdata.specpkg.shapes.scale(2))
 }

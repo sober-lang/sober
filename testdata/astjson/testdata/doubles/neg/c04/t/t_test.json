@@ -39,27 +39,27 @@
                 "lhs": {
                   "k": "ident",
                   "name": "n",
-                  "tok": 27
+                  "tok": 29
                 },
                 "rhs": {
                   "k": "int",
                   "value": 1,
-                  "tok": 29
+                  "tok": 31
                 },
-                "tok": 28
+                "tok": 30
               }
             ],
-            "tok": 26
+            "tok": 28
           }
         ]
       },
-      "tok": 19,
+      "tok": 21,
       "bodiless": false,
       "span": {
-        "start": 18,
-        "end": 33
+        "start": 20,
+        "end": 35
       },
-      "sig_end": 25
+      "sig_end": 27
     },
     {
       "name": "TestT",
@@ -75,37 +75,42 @@
               "callee": {
                 "k": "selector",
                 "base": {
-                  "k": "ident",
-                  "name": "cell",
-                  "tok": 38
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "testing",
+                    "tok": 40
+                  },
+                  "field": "cell",
+                  "tok": 42
                 },
                 "field": "Update",
-                "tok": 40
+                "tok": 44
               },
               "args": [
                 {
                   "k": "ident",
                   "name": "H",
-                  "tok": 42
+                  "tok": 46
                 },
                 {
                   "k": "ident",
                   "name": "inc",
-                  "tok": 44
+                  "tok": 48
                 }
               ],
-              "tok": 41
+              "tok": 45
             }
           }
         ]
       },
-      "tok": 34,
+      "tok": 36,
       "bodiless": false,
       "span": {
-        "start": 33,
-        "end": 49
+        "start": 35,
+        "end": 53
       },
-      "sig_end": 37
+      "sig_end": 39
     }
   ],
   "consts": [
@@ -113,7 +118,7 @@
       "name": "H",
       "expr": {
         "k": "composite",
-        "type_name": "cell.Cell",
+        "type_name": "testing.cell.Cell",
         "elems": [],
         "tok": 9,
         "type_args": [
@@ -126,7 +131,7 @@
       "tok": 7,
       "span": {
         "start": 6,
-        "end": 18
+        "end": 20
       }
     }
   ]

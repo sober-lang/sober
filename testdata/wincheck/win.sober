@@ -1,0 +1,204 @@
+package main
+
+// 浅い region の窓の網（scripts/wincheck.sh）: net.Serve の region: 1 MiB の接続の task が、窓（深度ごとに 1 頁）を越えて
+// 小さいスロットへ移る道を一通り踏む。出力は窓を張らない構成（SOBER_TASK_WIN=0）と一致しなければならない。
+//   acc  — 持続する深度に往復ごとに 1 KiB を積む（何往復目かで窓を越えて移る）
+//   tip  — 先端で 1 バイトずつ伸ばす列が窓の境を跨ぐ
+//   map  — map の成長が窓の境を跨ぐ
+//   file — ファイルの読み（先端で作る io の列）が窓の境を跨ぐ
+//   deep — ハンドラが深く再帰しながら各段で列を作る
+//   edge — 1 回の往復で K KiB を持続する深度に積む。生き残る最大の K を二分探索（窓を使っても上限はちょうど region: のまま）
+
+import "std/convert"
+import "std/io"
+import "std/iter"
+import "std/net"
+import "std/strings"
+import "std/task"
+
+func show(e error?) string {
+    return switch e {
+    case nil: "ok"
+    case io.Timeout{}: "timeout"
+    case io.Expired{}: "expired"
+    case io.Closed{}: "closed"
+    case io.Denied{}: "denied"
+    case io.Other{errno}: "errno ${errno}"
+    case net.Bad{}: "bad"
+    case net.NoHost{}: "nohost"
+    case net.NonASCIIHost{}: "nonascii"
+    case strings.BadUtf8{}: "invalid utf8"
+    }
+}
+
+// seed から決まる n 語の列
+func fill(n int, seed int) []int {
+    mut xs := mut []int{}
+    for i <- iter.Range(0, n) {
+        xs = append(xs, seed * 31 + i)
+    }
+    return freeze(xs)
+}
+
+func sum(xs []int) int {
+    mut s := 0
+    for x <- xs {
+        s = s + x
+    }
+    return s
+}
+
+func tip(n int) string {
+    mut bs := mut []byte{}
+    for i <- iter.Range(0, n) {
+        bs = append(bs, byte(i % 251))
+    }
+    mut bad := 0
+    for i <- iter.Range(0, n) {
+        if bs[i] != byte(i % 251) {
+            bad = bad + 1
+        }
+    }
+    return "tip ${len(bs)} bad ${bad}"
+}
+
+func grow(n int) string {
+    mut m := mut map[int]int{}
+    for i <- iter.Range(0, n) {
+        m[i] = i * 7
+    }
+    mut bad := 0
+    for i <- iter.Range(0, n) {
+        v := m[i]
+        if v == nil {
+            bad = bad + 1
+        } else if v != i * 7 {
+            bad = bad + 1
+        }
+    }
+    return "map ${len(m)} bad ${bad}"
+}
+
+func file() string {
+    b := io.ReadFile("testdata/httpcheck/dataset.json") catch []byte{}
+    mut s := 0
+    for x <- b {
+        s = (s * 131 + int(x)) % 1000000007
+    }
+    return "file ${len(b)} hash ${s}"
+}
+
+// n 段の再帰の各段で w 語の列を作り、戻り際に壊れていない段の数を返す
+func deep(n int, w int) int {
+    xs := fill(w, n)
+    r := if n == 0 { 0 } else { deep(n - 1, w) }
+    return r + (if sum(xs) == sum(fill(w, n)) { 1 } else { 0 })
+}
+
+// 1 往復目の語で道を選ぶ。acc / edge は以後の往復ごとに持続する深度へ 1 KiB を積む
+func handle(c net.Conn) error? {
+    mut keep := mut [][]int{}
+    mut mode := ""
+    for chunk <- net.Recv(c)? {
+        cmd := string(chunk)?
+        if mode == "" {
+            mode = cmd
+        }
+        r := if mode == "tip" {
+            tip(10000)
+        } else if mode == "map" {
+            grow(3000)
+        } else if mode == "file" {
+            file()
+        } else if mode == "deep" {
+            "deep ${deep(200, 64)}"
+        } else if strings.HasPrefix(mode, "edge:") {
+            k := convert.ParseInt(strings.TrimPrefix(mode, "edge:")) catch 0
+            for i <- iter.Range(0, k) {
+                keep = append(keep, fill(128, i))
+            }
+            "${len(keep)}"
+        } else {
+            keep = append(keep, fill(128, len(keep)))
+            mut t := 0
+            for xs <- keep {
+                t = t + sum(xs)
+            }
+            "${len(keep)} ${t}"
+        }
+        net.Send(c, bytes(r))?
+    }
+    return nil
+}
+
+func main() {
+    println(run() catch "listen failed")
+}
+
+func run() (string, error?) {
+    mut out := ""
+    for l <- net.Listen("127.0.0.1:0")? {
+        port := net.Port(l)
+        r, _ := task.Run((s task.Scope) => {
+            mut cs := mut []task.Handle[string]{}
+            modes := []string{"acc", "tip", "map", "file", "deep", "edge"}
+            for m <- modes {
+                cs = append(cs, task.Spawn(s, () => client(port, m)))
+            }
+            sv, _ := task.Run((s2 task.Scope) => show(net.Serve(l, handle, region: 1 * task.MB)), deadline: 3000 * task.MS)
+            mut acc := "serve: ${sv}"
+            for v <- task.Gather(cs) {
+                acc = acc + "\n" + v
+            }
+            acc
+        }, deadline: 20000 * task.MS)
+        out = r
+    }
+    return out, nil
+}
+
+func client(port int, m string) string {
+    if m == "edge" {
+        return "edge: ${edge(port)}"
+    }
+    v, e := ask(port, m, if m == "acc" { 40 } else { 2 })
+    return if e == nil { "${m}: ${v}" } else { "${m}: ${show(e)}" }
+}
+
+// edge: K KiB を積んで生き残る最大の K（接続ごとに 1 回 — 死ねば応答なし）
+func edge(port int) string {
+    mut lo := 256
+    mut hi := 2048
+    while lo + 1 < hi {
+        mid := (lo + hi) / 2
+        v, _ := ask(port, "edge:${mid}", 1)
+        if v == "rounds 1 last ${mid}" {
+            lo = mid
+        } else {
+            hi = mid
+        }
+    }
+    return "max ${lo}"
+}
+
+// acc は 40 往復（40 KiB — 窓を越える）・他は 2 往復（2 回目は前の往復の窓を使い直す）
+func ask(port int, m string, rounds int) (string, error?) {
+    mut last := ""
+    mut n := 0
+    for a <- net.Dial("127.0.0.1:${port}")? {
+        for round <- iter.Range(0, rounds) {
+            net.Send(a, bytes(m))?
+            mut got := false
+            for chunk <- net.Recv(a)? {
+                last = string(chunk)?
+                got = true
+                break
+            }
+            if !got {
+                break
+            }
+            n = n + 1
+        }
+    }
+    return "rounds ${n} last ${last}", nil
+}

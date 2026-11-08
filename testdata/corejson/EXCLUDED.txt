@@ -48,8 +48,16 @@ examples/catch_infallible.sober: sober: load error at examples/catch_infallible.
 examples/catch_infallible_pkg.sober: sober: load error at examples/catch_infallible_pkg.sober:7:39: the left of catch must be a call that returns (T, error?)
 examples/cell_neg_import.sober: sober: load error at examples/cell_neg_import.sober:5:8: std/testing/cell is imported only from _test.sober and _double.sober files
 examples/char_lit_nonascii.sober: sober: load error at examples/char_lit_nonascii.sober:5:12: source does not match the grammar
+examples/client_neg_capture.sober: sober: load error at examples/client_neg_capture.sober:18:41: a closure cannot capture an io.File, io.Root, net.Listener, net.Conn, tls.Conn or client.Session — pass it as an argument (only the body of task.Run and a lambda passed straight to a call may capture it)
+examples/client_neg_copy.sober: sober: load error at examples/client_neg_copy.sober:11:14: an io.File, io.Root, net.Listener, net.Conn, tls.Conn or client.Session cannot be copied to another binding (it has identity — keep using the name bound by io.Open or by the for)
+examples/client_neg_field.sober: sober: load error at examples/client_neg_field.sober:15:14: an io.File, io.Root, net.Listener, net.Conn, tls.Conn or client.Session cannot be put in a struct, slice, map or channel, or appended (it has identity — keep it in the binding made by io.Open)
+examples/client_neg_return.sober: sober: load error at examples/client_neg_return.sober:8:12: an io.File, io.Root, net.Listener, net.Conn, tls.Conn or client.Session cannot leave the block that opened it (no return, and no call that returns one) — pass it down as an argument instead
+examples/client_neg_zero.sober: sober: load error at examples/client_neg_zero.sober:9:10: `client.Session` has identity: only client.Open (the parameter of its function) makes one — a zero value would refer to nothing
 examples/clone_neg_scalar.sober: sober: desugar error at examples/clone_neg_scalar.sober:5:15 (Malformed)
 examples/clone_neg_string.sober: sober: desugar error at examples/clone_neg_string.sober:5:15 (Malformed)
+examples/closure_anon_field_bound.sober: sober: desugar error at examples/closure_anon_field_bound.sober:14:20 (TypeMismatch): a local binding of a named function cannot be stored as a value (spec F-11) — use the function's name directly or a lambda
+examples/closure_bound_named_fn.sober: sober: desugar error at examples/closure_bound_named_fn.sober:19:15 (TypeMismatch): a local binding of a named function cannot be stored as a value (spec F-11) — use the function's name directly or a lambda
+examples/closure_bound_named_fn_nocap.sober: sober: desugar error at examples/closure_bound_named_fn_nocap.sober:16:15 (TypeMismatch): a local binding of a named function cannot be stored as a value (spec F-11) — use the function's name directly or a lambda
 examples/closure_field_cap_identity.sober: sober: load error at examples/closure_field_cap_identity.sober:17:27: a lambda in a value position (a named function type field) can only capture plain values (scalars, strings, immutable slices / maps and structs of them) — not a value with identity (par.S, par.Task, a channel end, io.File, net.Conn …), a function value or a mutable container
 examples/closure_field_cap_mut.sober: sober: load error at examples/closure_field_cap_mut.sober:14:30: a lambda kept as a value (a function-typed field, a value of named function type, or a lambda that flows on to another call) cannot capture a mut binding — captures are immutable copies taken at creation; only a lambda passed straight to a call of a function value (a borrowed closure) can capture one
 examples/closure_field_return.sober: sober: load error at examples/closure_field_return.sober:12:42: a lambda in a value position (a named function type field) cannot use return — its body is an expression; return would escape the enclosing function
@@ -74,10 +82,13 @@ examples/exprstmt_pure.sober: sober: load error at examples/exprstmt_pure.sober:
 examples/float_neg_mapkey.sober: sober: desugar error at examples/float_neg_mapkey.sober:6:18 (TypeMismatch)
 examples/float_neg_mix.sober: sober: desugar error at examples/float_neg_mix.sober:6:14 (TypeMismatch)
 examples/float_neg_range.sober: sober: load error at examples/float_neg_range.sober:6:13: a float literal must be finite — it rounds to Inf (the largest float is 1.7976931348623157e308)
+examples/fn_local_value_neg.sober: sober: desugar error at examples/fn_local_value_neg.sober:18:15 (TypeMismatch): a local binding of a named function cannot be stored as a value (spec F-11) — use the function's name directly or a lambda
 examples/fn_mut_param_neg_arg.sober: sober: load error at examples/fn_mut_param_neg_arg.sober:9:7: this argument does not match the function's parameter: a mut parameter takes `mut x` (a mut binding or one of its fields), and a parameter taken by value takes a plain value
 examples/fn_mut_param_neg_eta.sober: sober: load error at examples/fn_mut_param_neg_eta.sober:18:17: the mut parameters of this function are not where the function type has them — a function type marks its mut parameter (`func(st mut S, x int)`), and the function must take the same parameters mut
 examples/fn_mut_param_neg_lambda.sober: sober: load error at examples/fn_mut_param_neg_lambda.sober:14:32: this lambda's parameters do not match the function type it is passed as — write `mut` on a parameter exactly where the function type has it (`(st mut S, x int) => …`), or leave the parameter types out to take them from the function type
 examples/fn_mut_param_neg_two.sober: sober: load error at examples/fn_mut_param_neg_two.sober:5:28: a function type has at most one mut parameter — put the state in one struct and take that (`func(st mut S, …)` with `type S struct { … }`)
+examples/fn_type_conv_generic_neg.sober: sober: desugar error at examples/fn_type_conv_generic_neg.sober:12:13 (TypeMismatch): a generic named function type is not a value type — it can only be a parameter's type (pass a lambda or a function there)
+examples/fn_type_conv_neg.sober: sober: desugar error at examples/fn_type_conv_neg.sober:11:12 (TypeMismatch): a value of another named function type cannot be converted — named function types are distinct even with the same signature
 examples/fnarg_arity.sober: sober: load error at examples/fnarg_arity.sober:14:13: this function takes a different number of parameters than the function type expects
 examples/fnarg_mut.sober: sober: load error at examples/fnarg_mut.sober:15:13: a function with mut parameters cannot be passed where a function type is expected (function types have no mut parameters)
 examples/fntype_errors_neg_prefix.sober: sober: load error at examples/fntype_errors_neg_prefix.sober:5:10: source does not match the grammar
@@ -90,10 +101,14 @@ examples/for_closure_gen_unmarked.sober: sober: load error at examples/for_closu
 examples/for_fallible_result.sober: sober: load error at examples/for_fallible_result.sober:8:30: `?` on a generator needs a generator that returns error? only
 examples/for_fallible_unmarked.sober: sober: load error at examples/for_fallible_unmarked.sober:24:20: this generator can fail (it returns error?): mark the for with `?` — `for x <- g(…)? { … }` — or drop the error explicitly with `_ = g(…, (x) => { … })`
 examples/for_fallible_yield.sober: sober: load error at examples/for_fallible_yield.sober:24:29: a generator that can fail is only allowed in the statement form of for (for x <- g(…)? { … }), not in a for expression
+examples/for_named_neg_after.sober: sober: load error at examples/for_named_neg_after.sober:14:25: source does not match the grammar
 examples/for_neg_yield_outside.sober: sober: desugar error at examples/for_neg_yield_outside.sober:8:9 (CoreFragment)
 examples/for_string_src.sober: sober: desugar error at examples/for_string_src.sober:8:14 (TypeMismatch): a string is not a for source — name the view: `for c <- bytes(s)`
 examples/func_neg_method.sober: sober: load error at examples/func_neg_method.sober:7:1: source does not match the grammar
+examples/func_neg_noreturn.sober: sober: load error at examples/func_neg_noreturn.sober:6:12: the body of a func with results ends in a call whose value is not returned — the last expression is not the result: write `return f(…)`
 examples/func_neg_recursive_fnparam.sober: sober: desugar error at examples/func_neg_recursive_fnparam.sober:6:43 (CoreFragment)
+examples/func_neg_tailcall.sober: sober: load error at examples/func_neg_tailcall.sober:10:6: the body of a func with results ends in a call whose value is not returned — the last expression is not the result: write `return f(…)`
+examples/generic_def_region_neg.sober: sober: desugar error at examples/generic_def_region_neg.sober:16:24 (TypeMismatch): a generic func called as a function (not expanded) takes type arguments without regions — string / slice / map / channel types are not allowed here (a func with a mut or function-typed parameter is expanded and takes them)
 examples/generic_union_arity.sober: sober: desugar error at examples/generic_union_arity.sober:11:10 (Malformed)
 examples/generic_union_noargs.sober: sober: desugar error at examples/generic_union_noargs.sober:18:17 (CoreFragment)
 examples/identity_neg_conn.sober: sober: load error at examples/identity_neg_conn.sober:8:10: `net.Conn` has identity: only net.Accept or net.Dial (the parameter of its function) makes one — a zero value would refer to nothing
@@ -105,6 +120,9 @@ examples/identity_neg_root.sober: sober: load error at examples/identity_neg_roo
 examples/identity_neg_tls_field.sober: sober: load error at examples/identity_neg_tls_field.sober:13:10: this literal leaves a field at its zero value that holds a `tls.Conn`, which has identity: only tls.Serve (the handler's parameter) makes one — set the field, or declare it `T?`
 examples/identity_neg_tx.sober: sober: load error at examples/identity_neg_tx.sober:10:11: `par.Tx` has identity: only par.NewChan makes one — a zero value would refer to nothing
 examples/imm_write.sober: sober: error at examples/imm_write.sober:8:5 (ImmWrite): cannot write into an imm map / slice — create it writable (`mut m := mut map[K]V{}`, `mut xs := mut []T{}`)
+examples/import_neg_badpath.sober: sober: load error at examples/import_neg_badpath.sober:5:8: every segment of an import path is a lowercase identifier (a-z, 0-9, _ — not starting with a digit) that is not a keyword — the path is also the qualifier (std/http/server → http.server)
+examples/import_neg_rootlocal.sober: sober: load error at examples/import_neg_rootlocal.sober:8:5: a local binding cannot reuse an import reference name
+examples/import_neg_rootonly.sober: sober: load error at examples/import_neg_rootonly.sober:8:13: this file does not import the package it names (imports are per file — add the import to this file)
 examples/inline_unknown_fnparam.sober: sober: desugar error at examples/inline_unknown_fnparam.sober:6:24 (UnknownName)
 examples/inline_unknown_mutparam.sober: sober: desugar error at examples/inline_unknown_mutparam.sober:6:12 (UnknownName)
 examples/inline_unknown_param.sober: sober: desugar error at examples/inline_unknown_param.sober:6:12 (UnknownName)
@@ -198,6 +216,8 @@ examples/nominal_struct_arg.sober: sober: desugar error at examples/nominal_stru
 examples/nominal_struct_eq.sober: sober: desugar error at examples/nominal_struct_eq.sober:10:15 (TypeMismatch)
 examples/nominal_struct_slice.sober: sober: desugar error at examples/nominal_struct_slice.sober:20:17 (TypeMismatch)
 examples/opt_compare.sober: sober: desugar error at examples/opt_compare.sober:7:26 (TypeMismatch): cannot compare a T? with a value — narrow it first (`if x != nil { … }`, or switch with case nil); `x == nil || …` narrows x only in an if whose then exits
+examples/opt_compare_string.sober: sober: desugar error at examples/opt_compare_string.sober:11:15 (TypeMismatch): cannot compare a T? with a value — narrow it first (`if x != nil { … }`, `x != nil && …`, or switch with case nil)
+examples/optfn_call_neg.sober: sober: desugar error at examples/optfn_call_neg.sober:13:15 (TypeMismatch): cannot call an optional function value (F?) — narrow it first (`if f != nil { f(…) }`)
 examples/optfn_neg_arg.sober: sober: load error at examples/optfn_neg_arg.sober:13:17: the argument for an optional function parameter is nil, a lambda, a function name, or an optional function parameter of the enclosing function
 examples/optfn_neg_bare.sober: sober: load error at examples/optfn_neg_bare.sober:5:21: an optional function type is written in parentheses: `(func(…) R)?` — a bare `func(…) R?` reads as a function returning `R?`
 examples/optfn_neg_bind.sober: sober: load error at examples/optfn_neg_bind.sober:7:14: an optional function parameter can only be called, passed on to another call, or compared with nil — not bound, stored or returned
@@ -235,6 +255,7 @@ examples/secret_neg_variant.sober: sober: load error at examples/secret_neg_vari
 examples/security_file_neg.sober: sober: load error at examples/security_file_neg.sober:8:17: the file opened here must be closed by the next statement: insert `defer io.Close(f)` (with the name bound here — `defer io.CloseRoot(r)` for io.OpenRoot) right after this line
 examples/security_panic_neg.sober: sober: load error at examples/security_panic_neg.sober:6:10: panic needs a reason: panic(L{…}) with a panic label (Unreachable, InvariantBroken, or one declared as type L panic{…})
 examples/security_race_neg.sober: sober: load error at examples/security_race_neg.sober:9:70: a spawned task cannot capture a mut binding (the child sees only imm values — pass a copy: v := x before the Spawn)
+examples/session_claims_neg.sober: sober: load error at examples/session_claims_neg.sober:12:10: this type is sealed (a field has a non-public type of its package): only its own package builds it with fields — write T{} for the zero value, or use the package's constructor
 examples/shadow_block.sober: sober: load error at examples/shadow_block.sober:8:9: a local binding cannot shadow or redeclare another local binding
 examples/shadow_lambda.sober: sober: load error at examples/shadow_lambda.sober:7:14: a local binding cannot shadow or redeclare another local binding
 examples/shadow_pattern.sober: sober: load error at examples/shadow_pattern.sober:13:12: a local binding cannot shadow or redeclare another local binding
@@ -299,6 +320,7 @@ examples/unknown_type_main.sober: sober: desugar error at examples/unknown_type_
 examples/utf8_view_neg.sober: sober: desugar error at examples/utf8_view_neg.sober:8:10 (CoreFragment)
 examples/variant_dup.sober: sober: load error at examples/variant_dup.sober:6:5: a variant name must be unique among the package's top-level names
 examples/variant_label_dup.sober: sober: load error at examples/variant_label_dup.sober:6:5: a variant name must be unique among the package's top-level names
+examples/zero_value_fn_neg.sober: sober: desugar error at examples/zero_value_fn_neg.sober:11:10 (TypeMismatch): a function-typed or union-typed value has no zero value — give every such field in the literal
 testdata/import_file/app: sober: load error at testdata/import_file/app/helper.sober:5:19: this file does not import the package it names (imports are per file — add the import to this file)
 testdata/vis_generic/app: sober: desugar error at testdata/vis_generic/app/main.sober:7:10 (CoreFragment)
 testdata/vis_label/app: sober: desugar error at testdata/vis_label/app/main.sober:8:15 (CoreFragment)

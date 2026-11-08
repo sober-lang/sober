@@ -91,7 +91,8 @@ func pkgNames(cx Cx, pk int) NameIx {
     }
     for e <- iter.Range(0, len(cx.imp_pkg)) {
         if cx.imp_pkg[e] == pk {
-            ns = append(ns, cx.imp_ref[e])
+            // 多段の修飾子は根の段がファイルの名前空間の住人（`http.server` の `http` — 局所名にすると修飾子と欄の読みが割れる）
+            ns = append(ns, RootSeg(cx.imp_ref[e]))
             ks = append(ks, NImport)
             pos = append(pos, 0 - 1)
             pos = append(pos, 0 - 1)

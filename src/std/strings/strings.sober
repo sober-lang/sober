@@ -404,7 +404,7 @@ func Join(ps []string, sep string) string {
 // 仕様のオラクル（scripts/utf8_oracle.ts）。`string(b)` の裏方（std/internal/utf8.Parse）と検査済みのビュー（std/utf8.Check）もこの IndexInvalid を使う ──
 
 // 不正な UTF-8（pos = 最初の不正なシーケンスの先頭バイトのオフセット）
-type InvalidUtf8 error {
+type BadUtf8 error {
     pos int
 }
 

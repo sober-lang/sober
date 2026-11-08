@@ -234,10 +234,8 @@ func importPath(t ast.Tree, ref string) string {
     imps := t.nodes[t.file].b
     for k <- iter.Range(0, ast.ListLen(t, imps)) {
         im := t.nodes[ast.ListAt(t, imps, k)]
-        path := Name(t, im.b)
-        r := if im.a >= 0 { Name(t, im.a) } else { Basename(path) }
-        if r == ref {
-            return path
+        if ImpRefIs(t, im, ref) {
+            return Name(t, im.b)
         }
     }
     return ""
@@ -281,7 +279,7 @@ func resolveT(t ast.Tree, pkg string, ds []LDecl, e int) int {
 
 // ファイル t（package pkg）の型の名前の綴り（`H` か `p.H` — composite リテラルの type_name）の @layout の struct（無ければ -1）
 func resolveName(t ast.Tree, pkg string, ds []LDecl, nm string) int {
-    ref, name, dotted := strings.Cut(nm, ".")
+    ref, name, dotted := strings.CutLast(nm, ".")
     if !dotted {
         return findDecl(ds, pkg, nm)
     }

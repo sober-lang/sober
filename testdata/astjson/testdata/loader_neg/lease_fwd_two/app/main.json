@@ -58,7 +58,7 @@
                         "name": "w",
                         "type": {
                           "k": "name",
-                          "name": "wrap.Work"
+                          "name": "testdata.loader_neg.lease_fwd_two.wrap.Work"
                         },
                         "mutable": true
                       }
@@ -68,23 +68,38 @@
                       "callee": {
                         "k": "selector",
                         "base": {
-                          "k": "ident",
-                          "name": "wrap",
-                          "tok": 28
+                          "k": "selector",
+                          "base": {
+                            "k": "selector",
+                            "base": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "testdata",
+                                "tok": 34
+                              },
+                              "field": "loader_neg",
+                              "tok": 36
+                            },
+                            "field": "lease_fwd_two",
+                            "tok": 38
+                          },
+                          "field": "wrap",
+                          "tok": 40
                         },
                         "field": "Prepare",
-                        "tok": 30
+                        "tok": 42
                       },
                       "args": [
                         {
                           "k": "mut_arg",
                           "name": "w",
-                          "tok": 33
+                          "tok": 45
                         }
                       ],
-                      "tok": 31
+                      "tok": 43
                     },
-                    "tok": 27
+                    "tok": 33
                   }
                 ],
                 "tok": 19
@@ -99,7 +114,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 37
+                "tok": 49
               },
               "args": [
                 {
@@ -109,16 +124,16 @@
                     "base": {
                       "k": "ident",
                       "name": "task",
-                      "tok": 39
+                      "tok": 51
                     },
                     "field": "Lease",
-                    "tok": 41
+                    "tok": 53
                   },
                   "args": [
                     {
                       "k": "ident",
                       "name": "lw",
-                      "tok": 43
+                      "tok": 55
                     },
                     {
                       "k": "lambda",
@@ -127,7 +142,7 @@
                           "name": "w",
                           "type": {
                             "k": "name",
-                            "name": "wrap.Work"
+                            "name": "testdata.loader_neg.lease_fwd_two.wrap.Work"
                           },
                           "mutable": true
                         }
@@ -135,15 +150,15 @@
                       "body": {
                         "k": "int",
                         "value": 1,
-                        "tok": 53
+                        "tok": 71
                       },
-                      "tok": 52
+                      "tok": 70
                     }
                   ],
-                  "tok": 42
+                  "tok": 54
                 }
               ],
-              "tok": 38
+              "tok": 50
             }
           }
         ]
@@ -152,7 +167,7 @@
       "bodiless": false,
       "span": {
         "start": 9,
-        "end": 59
+        "end": 77
       },
       "sig_end": 13
     }

@@ -45,9 +45,9 @@ func CheckMul(a float, b float, r float) bool {
     mut vb := mut []int{}
     units(mut va, am)
     units(mut vb, bm)
-    bigint.Mul(mut p, mut va, mut vb)
+    internal.bigint.Mul(mut p, mut va, mut vb)
     mut one := mut []int{}
-    bigint.SetInt(mut one, 1)
+    internal.bigint.SetInt(mut one, 1)
     return rounds(rb, neg, mut p, -2150, mut one, 0)
 }
 
@@ -104,22 +104,22 @@ func CheckSqrt(a float, r float) bool {
     // lo² ≤ a ≤ hi²（単位 2^-1075 で: lo_u² ≤ a_u × 2^1075）
     mut va := mut []int{}
     units(mut va, ab)
-    bigint.Shl(mut va, 1075)
+    internal.bigint.Shl(mut va, 1075)
     mut lo := mut []int{}
     mut hi := mut []int{}
     mids(mut lo, mut hi, rb)
     mut sq := mut []int{}
     mut cp := mut []int{}
     if rb > 0 {
-        bigint.Set(mut cp, mut lo)
-        bigint.Mul(mut sq, mut lo, mut cp)
-        if bigint.Cmp(mut sq, mut va) > 0 {
+        internal.bigint.Set(mut cp, mut lo)
+        internal.bigint.Mul(mut sq, mut lo, mut cp)
+        if internal.bigint.Cmp(mut sq, mut va) > 0 {
             return false
         }
     }
-    bigint.Set(mut cp, mut hi)
-    bigint.Mul(mut sq, mut hi, mut cp)
-    return bigint.Cmp(mut va, mut sq) <= 0
+    internal.bigint.Set(mut cp, mut hi)
+    internal.bigint.Mul(mut sq, mut hi, mut cp)
+    return internal.bigint.Cmp(mut va, mut sq) <= 0
 }
 
 // float(i) の結果として r が正しいか
@@ -131,7 +131,7 @@ func CheckFromInt(i int, r float) bool {
     mut p := mut []int{}
     absInt(mut p, i)
     mut one := mut []int{}
-    bigint.SetInt(mut one, 1)
+    internal.bigint.SetInt(mut one, 1)
     return rounds(rb, i < 0, mut p, 0, mut one, 0)
 }
 
@@ -148,19 +148,19 @@ func CheckToInt(f float, i int) bool {
     mut hi := mut []int{}
     absInt(mut lo, i)
     absInt(mut hi, i)
-    bigint.MulAdd(mut hi, 1, 1)
-    bigint.Shl(mut lo, 1075)
-    bigint.Shl(mut hi, 1075)
-    return bigint.Cmp(mut lo, mut v) <= 0 && bigint.Cmp(mut v, mut hi) < 0
+    internal.bigint.MulAdd(mut hi, 1, 1)
+    internal.bigint.Shl(mut lo, 1075)
+    internal.bigint.Shl(mut hi, 1075)
+    return internal.bigint.Cmp(mut lo, mut v) <= 0 && internal.bigint.Cmp(mut v, mut hi) < 0
 }
 
 // d = |i|（i = −2^63 を含む）
 func absInt(d mut []int, i int) {
     if i == 0 - 9223372036854775807 - 1 {
-        bigint.SetInt(mut d, 1)
-        bigint.Shl(mut d, 63)
+        internal.bigint.SetInt(mut d, 1)
+        internal.bigint.Shl(mut d, 63)
     } else {
-        bigint.SetInt(mut d, if i < 0 { 0 - i } else { i })
+        internal.bigint.SetInt(mut d, if i < 0 { 0 - i } else { i })
     }
 }
 
@@ -169,22 +169,22 @@ func absInt(d mut []int, i int) {
 func CheckDecimal(neg bool, digits []byte, exp10 int, r float) bool {
     rb := math.Bits(r)
     mut p := mut []int{}
-    bigint.SetInt(mut p, 0)
+    internal.bigint.SetInt(mut p, 0)
     for c <- digits {
-        bigint.MulAdd(mut p, 10, int(c) - '0')
+        internal.bigint.MulAdd(mut p, 10, int(c) - '0')
     }
-    if bigint.Top(mut p) < 0 {
+    if internal.bigint.Top(mut p) < 0 {
         return rb == signed(0, neg)
     }
     mut q := mut []int{}
-    bigint.SetInt(mut q, 1)
+    internal.bigint.SetInt(mut q, 1)
     if exp10 >= 0 {
         for k <- iter.Range(0, exp10) {
-            bigint.MulAdd(mut p, 10, 0)
+            internal.bigint.MulAdd(mut p, 10, 0)
         }
     } else {
         for k <- iter.Range(0, 0 - exp10) {
-            bigint.MulAdd(mut q, 10, 0)
+            internal.bigint.MulAdd(mut q, 10, 0)
         }
     }
     return rounds(rb, neg, mut p, 0, mut q, 0)
@@ -355,37 +355,37 @@ func nearer(ds []byte, other []byte, e int, rb int) bool {
     digitsTo(mut s, ds, e + k10)
     digitsTo(mut o, other, e + k10)
     digitsTo(mut t, []byte{'1'}, e + k10)
-    bigint.Shl(mut s, 1075)
-    bigint.Shl(mut o, 1075)
-    bigint.Shl(mut t, 1075)
+    internal.bigint.Shl(mut s, 1075)
+    internal.bigint.Shl(mut o, 1075)
+    internal.bigint.Shl(mut t, 1075)
     mut rr := mut []int{}
     units(mut rr, rb & magMask)
     for k <- iter.Range(0, k10) {
-        bigint.MulAdd(mut rr, 10, 0)
+        internal.bigint.MulAdd(mut rr, 10, 0)
     }
     // |S − R| ≤ |O − R|: O = S ± T なので、O > S なら 2S + T ≥ 2R、O < S なら 2S ≤ 2R + T
     mut l := mut []int{}
     mut rgt := mut []int{}
-    bigint.Set(mut l, mut s)
-    bigint.Add(mut l, mut s)
-    bigint.Set(mut rgt, mut rr)
-    bigint.Add(mut rgt, mut rr)
-    if bigint.Cmp(mut o, mut s) > 0 {
-        bigint.Add(mut l, mut t)
-        return bigint.Cmp(mut l, mut rgt) >= 0
+    internal.bigint.Set(mut l, mut s)
+    internal.bigint.Add(mut l, mut s)
+    internal.bigint.Set(mut rgt, mut rr)
+    internal.bigint.Add(mut rgt, mut rr)
+    if internal.bigint.Cmp(mut o, mut s) > 0 {
+        internal.bigint.Add(mut l, mut t)
+        return internal.bigint.Cmp(mut l, mut rgt) >= 0
     }
-    bigint.Add(mut rgt, mut t)
-    return bigint.Cmp(mut l, mut rgt) <= 0
+    internal.bigint.Add(mut rgt, mut t)
+    return internal.bigint.Cmp(mut l, mut rgt) <= 0
 }
 
 // d = 数字の列 × 10^e（e ≥ 0）
 func digitsTo(d mut []int, ds []byte, e int) {
-    bigint.SetInt(mut d, 0)
+    internal.bigint.SetInt(mut d, 0)
     for c <- ds {
-        bigint.MulAdd(mut d, 10, int(c) - '0')
+        internal.bigint.MulAdd(mut d, 10, int(c) - '0')
     }
     for k <- iter.Range(0, e) {
-        bigint.MulAdd(mut d, 10, 0)
+        internal.bigint.MulAdd(mut d, 10, 0)
     }
 }
 
@@ -409,22 +409,22 @@ func addCheck(ab int, bb int, rb int) bool {
     mut p := mut []int{}
     mut neg := ab < 0
     if (ab < 0) == (bb < 0) {
-        bigint.Set(mut p, mut va)
-        bigint.Add(mut p, mut vb)
-    } else if bigint.Cmp(mut va, mut vb) >= 0 {
-        bigint.Set(mut p, mut va)
-        bigint.Sub(mut p, mut vb)
+        internal.bigint.Set(mut p, mut va)
+        internal.bigint.Add(mut p, mut vb)
+    } else if internal.bigint.Cmp(mut va, mut vb) >= 0 {
+        internal.bigint.Set(mut p, mut va)
+        internal.bigint.Sub(mut p, mut vb)
     } else {
-        bigint.Set(mut p, mut vb)
-        bigint.Sub(mut p, mut va)
+        internal.bigint.Set(mut p, mut vb)
+        internal.bigint.Sub(mut p, mut va)
         neg = bb < 0
     }
-    if bigint.Top(mut p) < 0 {
+    if internal.bigint.Top(mut p) < 0 {
         // 正確な 0: 両方が -0 のときだけ -0（最近接の丸めでは打ち消しの 0 は +0）
         return rb == signed(0, ab < 0 && bb < 0)
     }
     mut one := mut []int{}
-    bigint.SetInt(mut one, 1)
+    internal.bigint.SetInt(mut one, 1)
     return rounds(rb, neg, mut p, -1075, mut one, 0)
 }
 
@@ -452,22 +452,22 @@ func rounds(rb int, neg bool, p mut []int, ps int, q mut []int, qs int) bool {
 func cmpUnits(k mut []int, p mut []int, ps int, q mut []int, qs int) int {
     mut l := mut []int{}
     mut r := mut []int{}
-    bigint.Mul(mut l, mut k, mut q)
-    bigint.Set(mut r, mut p)
+    internal.bigint.Mul(mut l, mut k, mut q)
+    internal.bigint.Set(mut r, mut p)
     s := qs - 1075 - ps
     if s >= 0 {
-        bigint.Shl(mut l, s)
+        internal.bigint.Shl(mut l, s)
     } else {
-        bigint.Shl(mut r, 0 - s)
+        internal.bigint.Shl(mut r, 0 - s)
     }
-    return bigint.Cmp(mut l, mut r)
+    return internal.bigint.Cmp(mut l, mut r)
 }
 
 // 非負の有限の float（ビット列 mag）とその隣との中点（単位 2^-1075）: lo = 下の隣との中点（mag = 0 なら 0）・hi = 上の隣との中点
 // （最大の有限値の上の隣は 2^1024 — ビット列 infBits を同じ式で読んだ値）
 func mids(lo mut []int, hi mut []int, mag int) {
     if mag == 0 {
-        bigint.SetInt(mut lo, 0)
+        internal.bigint.SetInt(mut lo, 0)
     } else {
         midPair(mut lo, mag - 1, mag)
     }
@@ -478,9 +478,9 @@ func midPair(d mut []int, a int, b int) {
     mut vb := mut []int{}
     units(mut d, a)
     units(mut vb, b)
-    bigint.Add(mut d, mut vb)
-    bigint.Shr(mut vb, mut d, 1)
-    bigint.Set(mut d, mut vb)
+    internal.bigint.Add(mut d, mut vb)
+    internal.bigint.Shr(mut vb, mut d, 1)
+    internal.bigint.Set(mut d, mut vb)
 }
 
 // 非負のビット列 mag（infBits まで）の値を単位 2^-1075 で: 正規数 (2^52 + 仮数) × 2^指数・非正規数 仮数 × 2
@@ -488,11 +488,11 @@ func units(d mut []int, mag int) {
     ex := mag >> 52
     m := mag & 4503599627370495
     if ex == 0 {
-        bigint.SetInt(mut d, m)
-        bigint.Shl(mut d, 1)
+        internal.bigint.SetInt(mut d, m)
+        internal.bigint.Shl(mut d, 1)
     } else {
-        bigint.SetInt(mut d, m + 4503599627370496)
-        bigint.Shl(mut d, ex)
+        internal.bigint.SetInt(mut d, m + 4503599627370496)
+        internal.bigint.Shl(mut d, ex)
     }
 }
 

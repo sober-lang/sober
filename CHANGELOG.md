@@ -2,6 +2,108 @@
 
 This file records user-facing changes per public release. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/) (no backward-compatibility promise while on 0.x).
 
+## v0.7.0 — 2026-11-08
+
+The release that reworks imports. A qualifier is now every segment of the import path (`std/http/server` → `http.server.Serve`), and a `sober.mod` at the build root declares the module's name and its local dependencies. std fills in the pieces web applications were missing: password hashing, cryptographic randomness and UUIDs, time and time zones, cookies, versioned sessions, a stub DNS resolver, and an HTTP client that always verifies the certificate chain. `std/http` is split into the server (`std/http/server`), the client (`std/http/client`) and the shared vocabulary (`std/http`). deflate keeps a record of recent Huffman trees so a connection with similar bodies does not rebuild them, which makes the HTTP server's gzip responses faster. At startup, the runtime now locks in W^X (Linux 6.6 and later).
+
+This release has many breaking changes; when upgrading from 0.6.7, start with the "Migration" section below.
+
+### Migration
+
+Steps to move 0.6.7 code to 0.7.0:
+
+1. Use every segment of the path as the qualifier. With `import "std/compress/gzip"`, `gzip.Encode` becomes `compress.gzip.Encode`; with your own `import "util/strings"`, `strings.X` becomes `util.strings.X`. `std/` is dropped (`import "std/json"` is still `json.X`). Single-segment paths do not change. A file-local alias, `import gz "std/compress/gzip"`, shortens a long qualifier
+2. Move HTTP server code to `import "std/http/server"` and change `http.X` to `http.server.X` (`http.server.ServeConn`, `http.server.Request`, `http.server.Text`, …). Only the shared vocabulary stays in `std/http` (`Field`, `BadHeader`, `StatusCode` and consts such as `http.OK`)
+3. The named argument `compress:` of `ServeConn` / `ServeWith` is now `compression:`
+4. Follow the renames (listed under "Breaking changes"). Renamed labels also affect `catch` and `switch` arms
+5. If a response wrote Set-Cookie as an arbitrary header, move it to `Response.cookies` (`[]http.server.SetCookie`); an arbitrary Set-Cookie header now panics with `BadHeader`
+6. If a gzip response body must depend only on the response body (for a content-addressed cache, say), use `compression: http.server.Gzip{fresh: true}` (the default now uses a per-connection record — see below)
+
+### Breaking changes
+
+- The qualifier is every segment of the import path (only `std/` is dropped). The old spelling that referred by the last segment alone is no longer accepted. Every path segment must be a lowercase identifier that is not a keyword. A local binding with the same name as a qualifier's root segment (the `http` of `http.server`) is an error
+- `std/http` is split in three: the server API moved to `std/http/server` (`http.Serve…` → `http.server.Serve…`, `http.Stream` → `http.server.Stream`, and the rest). `std/http` keeps only the shared vocabulary
+- `compress:` of `http.server.ServeConn` / `ServeWith` is now `compression:` (it collided with the root segment of `std/compress`)
+- Labels for malformed input are now `Bad…`: `convert.InvalidInt` / `InvalidFloat` / `InvalidBool` → `BadInt` / `BadFloat` / `BadBool`, `json.InvalidJson` → `BadJson`, `strings.InvalidUtf8` / `env.InvalidUtf8` → `BadUtf8`
+- Out-of-range labels are now `…OutOfRange`: `json.IntRange` → `json.IntOutOfRange`
+- `compress.flate.Prepare` → `compress.flate.NewWork`
+- The position parameter of `crypto.chacha20.XorKeyStreamAt` is now `off` instead of `at` (positional callers are unaffected)
+- `std/tls/record` is no longer public (`std/internal/record`)
+- `crypto.rsa.MontSelfCheck` / `crypto.rsa.SelSelfCheck` / `crypto.sha256.ShaSelfCheck` / `crypto.x25519.FeSelfCheck` are no longer public (they moved into each package's tests)
+- Set-Cookie can only be written through the typed field `Response.cookies`. An arbitrary Set-Cookie header panics with `BadHeader{name: "Set-Cookie"}`
+- A field of another package's struct that holds mutable contents (a mut slice / map) cannot be given a value even in a composite literal (reading and writing it were already rejected). A literal from outside leaves the field out (zero value: empty contents). This closes a hole through which std's immutability promises (the results of `table.Freeze` and `strings.Clone`) could be broken from outside
+- Calling an optional function value (`F?` — a field, a map read, an element of `[]F?`) without narrowing it is now rejected by name in both check and build (build used to accept it and crash on nil)
+- A func with results whose body ends in a call expression statement other than panic is rejected (check used to take the last value as the result)
+
+### Language
+
+- Imports and packages (spec chapter 8): the qualifier is every segment of the import path. An aliased import replaces the whole qualifier. The root segment of an import path lives in one namespace of "names in the tree" (std roots, dep names, root directories of the starting tree); collisions are rejected rather than resolved by priority
+- `sober.mod`: an optional single module declaration at the build root (cwd). `module "example.com/app"` (the last segment is the name), `dep "../kv"` / `dep kv2 "../kv"` (a dependency by local path — import paths are written from the name in the tree, and the origin appears only in sober.mod), `alias stdjson "std/json"` (renames a std root to resolve a collision). Directories above the root are never searched. In this version a dep must be a local path; versions, other origins and deps of deps are rejected by name
+- How this differs from Go (the qualifier, where the origin lives, how the root is found, how collisions are resolved) and the naming conventions (a package name is one lowercase word; parameters and fields are nouns) are tabulated in language.md section 20 (in Japanese)
+- Conversion to a named function type, `W(e)`: puts a lambda, a named function or a W value in the value position of W. A named function can be passed as an argument when calling a function value
+- A call with named arguments can be a for generator: `for x <- g(a, n: v)? { … }`
+- Newly accepted forms (previously rejected by either check or build): storing into a struct's mut map field `s.m[k] = v`, compound assignment to a list element `xs[i] op= v`, renaming field bindings `case A{e: inner}`, unions with a single variant (recursive and generic ones too), recursive values in a cell, passing a named function to a generic named function type
+- Rejections that had no message now name the problem: comparing `string?` with string, a region-carrying type argument to a generic called as a Def, a locally bound named function in a value position, omitting a field of a type with no zero value in a partial literal
+- Diagnostics print other packages' names with their qualifier
+
+### std
+
+- `std/http/client` (new): an HTTP/1.1 client. `http.client.Request(url, method:, headers:, body:, cookies:, policy:)`, `Stream` for receiving the body in slices, and `Open` / `Session` / `Send` for reusing a connection. TLS 1.3 is the default (1.2 only with an explicit `dangerouslyAllowTls12`), and the certificate chain is always verified (there is no field that turns verification off). Trust anchors are the built-in Mozilla NSS store plus `Policy`'s `extraRoots` (`tls.ParseRoots`). Chains ending at a built-in anchor have the CA/B Forum Baseline Requirements leaf rules applied. Redirects (Authorization / Cookie are dropped when the origin changes), proxies (absolute URI for http, CONNECT for https — `ParseProxy`), and cookies as data that you read with `CookieValue` and put on the next request (there is no jar). Configuration is a single stateless `Policy` type
+- `std/http/server`: `cookies []SetCookie` on responses. Omitted fields default to the safe side (Secure, HttpOnly, SameSite=Lax, Path=/); only fields spelled `dangerouslyAllowHttp` / `dangerouslyScriptReadable` relax them. Breaking the attribute rules (`__Host-` / `__Secure-` and others) panics
+- `std/http/server`: gzip responses keep, per connection, a record of the most recent dynamic Huffman trees and reuse them without building a new tree when similar bodies follow (4 KB per connection; 0 B for connections that never compress). The compressed body is determined by the connection's sequence of requests (the same sequence gives the same bytes), and blocks that use the record are at most 1.03 times the size without it. `Gzip{fresh: true}` keeps no record (the path up to 0.6.7, determined by the body alone)
+- `std/http/server`: for a route without a policy (`cache:`), `Dispatch` returns the handler's response as is (one copy fewer)
+- `std/session` (new): versioned session tokens (sealed with HMAC-SHA256; the server keeps no session table). Verification has two stages, `Open` → `Subject` → `Check`; bumping the generation (on a password change, say) makes older tokens `Stale`. Read claims with `Who` / `Of` (a zero-valued `Claims` cannot be read as verified). The doc lists the threat model (what it defends against and what it does not)
+- `std/crypto/password` (new): Argon2id, bcrypt and PBKDF2-HMAC-SHA256, with `Verify` / `NeedsRehash` over PHC strings. Costs are optional named arguments; when omitted, they are the minimums recommended by the OWASP Password Storage Cheat Sheet (Argon2id 19456 KiB, 2, 1 / bcrypt cost 10 / PBKDF2 600000 iterations). Defaults are revised only in std releases and recorded in this changelog. `Policy`'s `UseDefault` leaves both the scheme and the costs to the std version
+- `std/crypto`: `RandIntn` (a uniform integer from cryptographic randomness)
+- `std/uuid` (new): `NewV4`, `NewV7`, `Format` / `Parse`, `Equal`
+- `std/time` (new): the wall-clock `Time` and the monotonic `Instant` are separate types (so measuring a deadline with a wall-clock difference is a type error). RFC 3339 / HTTP-date formatting and parsing, calendar fields (`Civil`), and a built-in IANA tzdata 2026f (`LoadZone`, `ToCivilIn` / `FromCivilIn`)
+- `std/net`: name resolution (a stub resolver that does not use libc). `net.Dial` accepts host names (/etc/hosts, then DNS from /etc/resolv.conf)
+- `std/url`: `FormatQuery` (round-trips with `ParseQuery`)
+- `std/compress/flate` / `gzip`: a record of dynamic trees, `History`, with `EncodeHistory` / `EncodeWithHistory` (the output is determined by (data, level, the record's value))
+- `std/binary`: `AppendWord` (appends the low k bytes of a value)
+- `std/pool`: narrow raw accessors `LoadRaw16` / `StoreRaw16` / `LoadRaw32` / `StoreRaw32`
+- The built-in tables of outside facts (the trust store, tzdata) share one shape: a generator script, a checking gate, and scheduled updates (GitHub Actions). Programs that do not use a table do not contain it (watched by the datadce gate)
+- Error words are defined in docs/terms.md: `TooLong` (a value passed in exceeds a limit) and `TooLarge` (an amount accumulated while running exceeds a limit)
+
+### Runtime
+
+`SOBER_MDWE=0`, `SOBER_NET_FUSE=0` and `SOBER_TASK_WIN=0` below are switches for isolating a problem or temporarily falling back. We recommend leaving the defaults in place.
+
+- At startup the process gives up executable memory (`PR_SET_MDWE` — Linux 6.6 and later). From then on it cannot create W+X pages or add execute permission to non-executable pages, so even a bug in the toolchain offers no path to code injection. Children started with `os.Run` do not inherit it. Set `SOBER_MDWE=0` to run alongside dynamic instrumentation (valgrind and the like)
+- For plaintext keep-alive HTTP, sending a response and waiting for the next request are folded into one sleep (io_uring_enter per request ≈1.7 → ≈1.0). `SOBER_NET_FUSE=0` turns this off
+- A connection task's first four region depths start from the pages at the end of the task's block (and move to the usual small slots on overflow). Fewer pages are touched per new connection, and page-table use drops from ≈8.8 to ≈2.1 KB per connection (local measurement). The limit of a single region stays exactly `region:`. Only programs with std/net's Serve build this window. `SOBER_TASK_WIN=0` turns it off
+- Idle workers, when stealing and when re-checking before sleeping, read only the queues that may be non-empty (a bit set of per-queue marks). The per-request cache-line reads that grew with the worker count under low load are gone (local, W64: −4 to −4.7K cycles per request)
+
+### Tools
+
+- `sober` reads `sober.mod` at the build root (it is also part of the key for replaying check / build answers)
+- Documentation: guides for web servers (docs/guide/web-server) and web clients (docs/guide/web-client), and conformance statements (docs/conformance — how std's protocols and cryptography conform to their standards; tables and numbers are generated from the tests and checked by the confsync gate)
+
+### Fixes
+
+- The `freeze` analysis treated the result of calling a locally bound lambda as a fresh value. `g := () => m; im := freeze(g()); m[0] = 9` passed both check and build and modified a frozen value (the formal model rejected it — a hole in the implementation only)
+- Putting a mut container that is not an implicit freeze point (the result of a call) into an imm field was accepted by check and failed without a message in build. Both now reject it by name
+- The hole that let a composite literal from another package alias a field with mutable contents and break std's immutability promises (see Breaking changes)
+- Calling an optional function value without narrowing crashed the build output on nil (see Breaking changes)
+
+### Performance
+
+- HTTP — bench/httparena (our own yardstick: it uses HttpArena's load generator and request files but is not an official HttpArena result). On 16 vCPU GitHub Actions boxes, with 8 CPUs given to the server, alternating with v0.6.7 round by round in the same job (median of 5 rounds). The boxes came in two CPU generations (AMD EPYC 9V45 = Zen 5, 7763 = Zen 3), so only differences that went the same way on both are given as numbers:
+
+  | Profile | Requests / s (vs v0.6.7) | CPU / request (vs v0.6.7) |
+  |---|---|---|
+  | json-comp | +12 to +13% | −11 to −12% |
+  | json-comp-16k | +9 to +11% | −8 to −10% |
+  | latency-1m | same (rate held) | — (p99 around 464 → 402 µs, better on both boxes) |
+  | latency-10k | same (rate held) | — (p99 181 → 93 µs on 9V45, same on 7763) |
+  | json-tls, 8gbit, latency-500k-8cpu | same | same |
+  | baseline, pipelined, limited-conn, async | about the same (± a few % depending on the box generation) | — |
+
+  - baseline, pipelined, limited-conn and async spread from −6% to +12% depending on the box: better on the Zen 5 box (9V45), a few % worse on the Zen 3 box (7763), too far apart to state as one number
+  - The json-comp gain comes from deflate's record (see std) and from rewriting the compressor's core: symbol records, bit output, and 16-bit chain and hash tables. The record costs 4 KB per compressing connection; json-comp's max RSS is up 13–61 MB (depending on the connection count)
+  - Kernel-side memory (cgroup pagetables, 9V45): baseline 30.8 → 8.9 MB, json-comp 47 → 9 MB, async 283 → 154 MB — a structural saving from the shallow region window of connection tasks (see Runtime)
+  - No non-2xx responses in any profile
+
 ## v0.6.7 — 2026-11-05
 
 A language-focused release. Sober now accepts plainly written recursive type declarations (forms like `type L struct { v int; next L? }` or `type Value union { Array { items []Value }; … }`), and `std/json` gained `json.Value` / `json.Tree`, which hold JSON values as an actual recursive tree. Floating point reached completion: string interpolation, constant-expression arithmetic, a handful of `std/math` functions, and better out-of-range literal diagnostics. The language also gained locally-bound lambdas and "mut parameters on function types," which let closures carry mutable state through an explicit parameter instead of capture. Narrowing (nil-checking) rules were made uniform across assignment and loop conditions. One miscompilation that predates 0.6.6 and two soundness gaps in `freeze` checking were fixed.

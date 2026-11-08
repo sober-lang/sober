@@ -70,8 +70,9 @@ R-4. slice は `x <- xs` で要素を先頭から回す。map は `k <- m` で�
 拒否: [`examples/for_string_src.sober`](../../examples/for_string_src.sober)
 決定: [language.md 7 節・22 節](../language.md)
 
-R-5. 生成元が名前つきの関数の呼び出しで、仮引数が実引数より 1 つ多く、最後の仮引数が関数型なら、for は継続 `(x) => …` を末尾の実引数に足して呼ぶ（呼び出し形の生成元 — `for i <- iter.Range(0, n)`）。判定は呼び先の宣言の署名だけで決まる。
-例: [`examples/for_stmt.sober`](../../examples/for_stmt.sober)・[`examples/for_callgen_expr.sober`](../../examples/for_callgen_expr.sober)
+R-5. 生成元が名前つきの関数の呼び出しで、仮引数が実引数より 1 つ多く、最後の仮引数が関数型なら、for は継続 `(x) => …` を末尾の実引数に足して呼ぶ（呼び出し形の生成元 — `for i <- iter.Range(0, n)`）。判定は呼び先の宣言の署名だけで決まる。継続の仮引数の後ろに省略可の仮引数（`T?`）が続くなら、名前付き引数を渡しても同じ形で書ける — 継続は位置引数の次の仮引数（関数型のとき）の席に入る（`for x <- g(a, n: v)? { … }` = `g(a, (x) => { … }, n: v)?`）。手で書く呼び出しは名前付き引数の後ろに位置引数を置けない。
+例: [`examples/for_stmt.sober`](../../examples/for_stmt.sober)・[`examples/for_callgen_expr.sober`](../../examples/for_callgen_expr.sober)・[`examples/for_named.sober`](../../examples/for_named.sober)
+拒否: [`examples/for_named_neg_after.sober`](../../examples/for_named_neg_after.sober)
 決定: [language.md 7 節](../language.md)
 
 ## 6.3 文形の for

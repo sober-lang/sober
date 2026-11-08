@@ -1,0 +1,252 @@
+package password
+
+import "std/internal/bless"
+import "std/iter"
+
+// Argon2id（RFC 9106 — 版 0x13）の核。作業域は m' = 4p⌊m / 4p⌋ 個の 1 KiB のブロック（128 語）を 1 本の []int に置き、関数の region で抜けるときに解放する
+// （最初に確保して region の先端で伸ばす — append の伸長がその場で済み、高水位は作業域の大きさのまま）。
+//
+// 定数時間の規律との関係: 第 1 パスの前半 2 スライスは参照先を公開の値（パス・レーン・スライス・数え）だけから作る（argon2i）が、以降は前のブロックの最初の語
+// （秘密の派生物）で参照先を選ぶ（argon2d — RFC 9106 が GPU 耐性と引き換えに受け入れたキャッシュの時間の漏れ）。その語は参照先の番地そのものとして
+// メモリの引きに出るので、internal.bless.Int で公開に落としてから添字・剰余に使う（剰余の時間が漏らすのは番地が漏らすのと同じ情報）
+
+const m32 = 0xffffffff
+
+// x の下 4 バイト（little endian）
+func le32(x int) []byte {
+    return []byte{byte(x & 0xff), byte((x >> 8) & 0xff), byte((x >> 16) & 0xff), byte((x >> 24) & 0xff)}
+}
+
+// a ++ b
+@secret(a, b)
+func cat2(a []byte, b []byte) []byte {
+    mut o := mut []byte{}
+    for i <- iter.Range(0, len(a)) {
+        o = append(o, a[i])
+    }
+    for i <- iter.Range(0, len(b)) {
+        o = append(o, b[i])
+    }
+    return freeze(o)
+}
+
+// 長さ 4 バイトの前置つきの x（LE32(len x) ++ x — H0 の可変長の欄）
+@secret(x)
+func lenPrefixed(x []byte) []byte {
+    return cat2(le32(len(x)), x)
+}
+
+// 可変長の H'（RFC 9106 3.3）: n バイト（n ≥ 1）
+@secret(x)
+@effects(!io, !block, !nondet)
+func hprime(x []byte, n int) []byte {
+    pre := cat2(le32(n), x)
+    if n <= 64 {
+        return blake2b(pre, n)
+    }
+    r := (n + 31) / 32 - 2
+    mut v := blake2b(pre, 64)
+    mut out := mut []byte{}
+    for j <- iter.Range(0, 32) {
+        out = append(out, v[j])
+    }
+    for i <- iter.Range(1, r) {
+        v = blake2b(v, 64)
+        for j <- iter.Range(0, 32) {
+            out = append(out, v[j])
+        }
+    }
+    last := blake2b(v, n - 32 * r)
+    for j <- iter.Range(0, len(last)) {
+        out = append(out, last[j])
+    }
+    return freeze(out)
+}
+
+// BlaMka の GB（RFC 9106 3.6 — BLAKE2b の G の和に 2·lo32(a)·lo32(b) を足したもの）
+func gb(z mut []int, a int, b int, c int, d int) {
+    z[a] = z[a] + z[b] + 2 * (z[a] & m32) * (z[b] & m32)
+    z[d] = rotr64(z[d] ^ z[a], 32)
+    z[c] = z[c] + z[d] + 2 * (z[c] & m32) * (z[d] & m32)
+    z[b] = rotr64(z[b] ^ z[c], 24)
+    z[a] = z[a] + z[b] + 2 * (z[a] & m32) * (z[b] & m32)
+    z[d] = rotr64(z[d] ^ z[a], 16)
+    z[c] = z[c] + z[d] + 2 * (z[c] & m32) * (z[d] & m32)
+    z[b] = rotr64(z[b] ^ z[c], 63)
+}
+
+// 置換 P を 16 語に（行 i = 語 16i..16i+15・列 i = 16 バイトのレジスタ i, i+8, …, i+56 = 語 2i+16k と 2i+16k+1）
+func pround(z mut []int, i int, col bool) {
+    b := if col { 2 * i } else { 16 * i }
+    s := if col { 16 } else { 2 }
+    // v_k の語の位置 = b + s·(k / 2) + k % 2
+    gb(mut z, b, b + 2 * s, b + 4 * s, b + 6 * s)
+    gb(mut z, b + 1, b + 2 * s + 1, b + 4 * s + 1, b + 6 * s + 1)
+    gb(mut z, b + s, b + 3 * s, b + 5 * s, b + 7 * s)
+    gb(mut z, b + s + 1, b + 3 * s + 1, b + 5 * s + 1, b + 7 * s + 1)
+    gb(mut z, b, b + 2 * s + 1, b + 5 * s, b + 7 * s + 1)
+    gb(mut z, b + 1, b + 3 * s, b + 5 * s + 1, b + 6 * s)
+    gb(mut z, b + s, b + 3 * s + 1, b + 4 * s, b + 6 * s + 1)
+    gb(mut z, b + s + 1, b + 2 * s, b + 4 * s + 1, b + 7 * s)
+}
+
+// z に P を行 8 本・列 8 本の順に掛ける
+func blamka(z mut []int) {
+    for i <- iter.Range(0, 8) {
+        pround(mut z, i, false)
+    }
+    for i <- iter.Range(0, 8) {
+        pround(mut z, i, true)
+    }
+}
+
+// 圧縮 G（RFC 9106 3.5）を作業域の上で: dst ← G(prev, ref)（xor なら dst ← dst ⊕ G(prev, ref) — 版 0x13 の 2 パス目以降）。
+// 引数はブロックの番号・r と z は 128 語の作業用
+func fillBlock(mem mut []int, prev int, ref int, dst int, xor bool, r mut []int, z mut []int) {
+    for k <- iter.Range(0, 128) {
+        x := mem[128 * prev + k] ^ mem[128 * ref + k]
+        r[k] = x
+        z[k] = x
+    }
+    blamka(mut z)
+    for k <- iter.Range(0, 128) {
+        y := z[k] ^ r[k]
+        mem[128 * dst + k] = if xor { mem[128 * dst + k] ^ y } else { y }
+    }
+}
+
+// 参照先の番地のブロック addr ← G(0, G(0, in))（argon2i の段 — in[6] は呼び手が数え上げる）
+func nextAddresses(addr mut []int, in mut []int, r mut []int, z mut []int) {
+    for k <- iter.Range(0, 128) {
+        r[k] = in[k]
+        z[k] = in[k]
+    }
+    blamka(mut z)
+    for k <- iter.Range(0, 128) {
+        addr[k] = z[k] ^ r[k]
+    }
+    for k <- iter.Range(0, 128) {
+        r[k] = addr[k]
+        z[k] = addr[k]
+    }
+    blamka(mut z)
+    for k <- iter.Range(0, 128) {
+        addr[k] = z[k] ^ r[k]
+    }
+}
+
+// 1024 バイトを 128 語（little endian）として mem のブロック blk に置く
+@secret(b)
+func putBlock(mem mut []int, blk int, b []byte) {
+    for k <- iter.Range(0, 128) {
+        mut w := 0
+        for j <- iter.Range(0, 8) {
+            w = w | (int(b[8 * k + j]) << (8 * j))
+        }
+        mem[128 * blk + k] = w
+    }
+}
+
+// Argon2id の n バイトのタグ。pw・salt・秘密 key・付随データ ad・パス t・メモリ m KiB・レーン p。
+// 1 ≤ p・8p ≤ m・1 ≤ t・4 ≤ n は呼び手が検査する（レーンは逐次に回す — 値は並列に回したときと同じ）
+@secret(pw, key)
+@effects(!io, !block, !nondet)
+func argon2idKey(pw []byte, salt []byte, key []byte, ad []byte, t int, m int, p int, n int) []byte {
+    mp := 4 * p * (m / (4 * p))
+    q := mp / p
+    seg := q / 4
+    mut mem := mut []int{}
+    for i <- iter.Range(0, 128 * mp) {
+        mem = append(mem, 0)
+    }
+    mut hin := mut []byte{}
+    head := []int{p, n, m, t, 0x13, 2}
+    for i <- iter.Range(0, len(head)) {
+        e := le32(head[i])
+        for j <- iter.Range(0, 4) {
+            hin = append(hin, e[j])
+        }
+    }
+    h0 := cat2(cat2(cat2(cat2(freeze(hin), lenPrefixed(pw)), lenPrefixed(salt)), lenPrefixed(key)), lenPrefixed(ad))
+    hh := blake2b(h0, 64)
+    for l <- iter.Range(0, p) {
+        putBlock(mut mem, q * l, hprime(cat2(cat2(hh, le32(0)), le32(l)), 1024))
+        putBlock(mut mem, q * l + 1, hprime(cat2(cat2(hh, le32(1)), le32(l)), 1024))
+    }
+    mut r := mut []int{}
+    mut z := mut []int{}
+    mut addr := mut []int{}
+    mut in := mut []int{}
+    for k <- iter.Range(0, 128) {
+        r = append(r, 0)
+        z = append(z, 0)
+        addr = append(addr, 0)
+        in = append(in, 0)
+    }
+    for pass <- iter.Range(0, t) {
+        for s <- iter.Range(0, 4) {
+            for l <- iter.Range(0, p) {
+                indep := pass == 0 && s < 2
+                if indep {
+                    in[0] = pass
+                    in[1] = l
+                    in[2] = s
+                    in[3] = mp
+                    in[4] = t
+                    in[5] = 2
+                    in[6] = 0
+                }
+                start := if pass == 0 && s == 0 { 2 } else { 0 }
+                if indep && start == 2 {
+                    in[6] = in[6] + 1
+                    nextAddresses(mut addr, mut in, mut r, mut z)
+                }
+                for idx <- iter.Range(start, seg) {
+                    col := s * seg + idx
+                    cur := q * l + col
+                    prev := if col == 0 { q * l + q - 1 } else { cur - 1 }
+                    if indep && idx % 128 == 0 {
+                        in[6] = in[6] + 1
+                        nextAddresses(mut addr, mut in, mut r, mut z)
+                    }
+                    rnd := internal.bless.Int(if indep { addr[idx % 128] } else { mem[128 * prev] })
+                    j1 := rnd & m32
+                    j2 := (rnd >> 32) & m32
+                    rl := if pass == 0 && s == 0 { l } else { j2 % p }
+                    same := rl == l
+                    mut area := if pass == 0 { s * seg } else { 3 * seg }
+                    if same {
+                        area = area + idx
+                    }
+                    if idx == 0 || same {
+                        area = area - 1
+                    }
+                    from := if pass == 0 || s == 3 { 0 } else { (s + 1) * seg }
+                    x := ((j1 * j1) >> 32) & m32
+                    y := (area * x) >> 32
+                    ref := q * rl + (from + area - (y + 1)) % q
+                    fillBlock(mut mem, prev, ref, cur, pass > 0, mut r, mut z)
+                }
+            }
+        }
+    }
+    mut c := mut []int{}
+    for k <- iter.Range(0, 128) {
+        c = append(c, mem[128 * (q - 1) + k])
+    }
+    for l <- iter.Range(1, p) {
+        for k <- iter.Range(0, 128) {
+            c[k] = c[k] ^ mem[128 * (q * l + q - 1) + k]
+        }
+    }
+    mut cb := mut []byte{}
+    for k <- iter.Range(0, 128) {
+        for j <- iter.Range(0, 8) {
+            cb = append(cb, byte((c[k] >> (8 * j)) & 0xff))
+        }
+    }
+    for k <- iter.Range(0, len(mem)) {
+        mem[k] = 0
+    }
+    return hprime(freeze(cb), n)
+}

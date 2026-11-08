@@ -1,0 +1,13 @@
+package main
+
+// mdwecheck の題材（M:N — ワーカーのスレッドは同じアドレス空間なので印も同じ）
+import "std/task"
+
+func main() {
+    r, _ := task.Run((s task.Scope) => {
+        h := task.Spawn(s, () => 1)
+        g := task.Spawn(s, () => 2)
+        task.Join(h) + task.Join(g)
+    })
+    println(r)
+}

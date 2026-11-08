@@ -8,7 +8,8 @@ package lower
 //
 // 番地の使い道（zeroinit の分類の写し）: load / store の番地（定数の変位・スロットの中）・gep.word の基底（定数の変位 — 結果も同じスロットの番地）・
 // call の実引数のうち ① sret の受け皿（呼ぶ関数の F_SRET_BIT・スロットの頭 — 全語を書く）② 呼ぶ関数の mut 仮引数（F_MUTP のビット k — 呼び手のセルの
-// 番地 1 語。呼ばれた関数は呼び出しの間だけ読み書きし、番地を残す語彙が無い — docs/ir.md の引数の節）③ rt の写し / relocate（rt.copy / copy8 /
+// 番地 1 語。呼ばれた関数は呼び出しの間だけ読み書きし、番地を残す語彙が無い — docs/ir.md の引数の節。関数値の呼び出しは関数型の mut の席の印
+// = ir.sober calliMut）③ rt の写し / relocate（rt.copy / copy8 /
 // region_relocate / relocate8 — 呼び出しの間だけ読み書き）。それ以外（汎用の被演算子・辺の引数・ret・格納される値・定数でない gep・印の無い call の
 // 引数・task / 罠の口）は逃げ — そのスロットは専用。
 //
@@ -181,14 +182,21 @@ func xSlotColor(st mut St, f FnRef, ws []int, zn []int) []int {
                     }
                 } else if op == OpCall {
                     xSlotCallEv(mut st, ins, aslot, aoff, nv, mut excl, mut evS, mut evK, mut evW)
-                } else if op == OpCallI && xiC(mut st, ins) == CALLI_SRET {
-                    // 間接の sret（ir.sober CALLI_SRET）: 受け皿（被演算子 1 = 引数 0・スロットの頭）は全語の書き・他は逃げ（直接の sret と同じ読み）
+                } else if op == OpCallI {
+                    // 間接の呼び出し: 被演算子 = [callee, 引数…]。sret（ir.sober CALLI_SRET）の受け皿（被演算子 1 = 引数 0・スロットの頭）は全語の書き・
+                    // 関数型の mut の席の実引数（calliMut — 直接の F_MUTP と同じ約束）は読み書き・他は逃げ
+                    cc := xiC(mut st, ins)
+                    mm := calliMut(cc)
                     mut sr := -1
                     for k <- iter.Range(0, xNOps(mut st, ins)) {
                         o := xOpnd(mut st, ins, k)
                         if o >= 0 && o < nv && aslot[o] >= 0 {
-                            if k == 1 && aoff[o] == 0 {
+                            if k == 1 && aoff[o] == 0 && calliTy(cc) == CALLI_SRET {
                                 sr = aslot[o]
+                            } else if k >= 1 && (mm >> (k - 1)) & 1 == 1 {
+                                evS = append(evS, aslot[o])
+                                evK = append(evK, SC_RW)
+                                evW = append(evW, aoff[o])
                             } else {
                                 excl[aslot[o]] = 1
                             }

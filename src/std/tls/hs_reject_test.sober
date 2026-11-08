@@ -13,13 +13,13 @@ import "std/crypto/x25519"
 import "std/hex"
 import "std/iter"
 import "std/internal/hs"
-import "std/tls/record"
+import "std/internal/record"
 
-func rjParams() hs.Params {
-    cb, _ := pem.Parse(testFile(testCerts, "testdata/crypto/httparena-server.crt"))
-    kb, _ := pem.Parse(testFile(testCerts, "testdata/crypto/httparena-server.key"))
-    k, _ := rsa.ParsePKCS8(kb[0].der)
-    return hs.NewParams([][]byte{cb[0].der}, k, []string{"http/1.1"}, []int{record.AesGcm, record.ChaCha}, bytes("sober-tls-reject"))
+func rjParams() internal.hs.Params {
+    cb, _ := crypto.pem.Parse(testFile(testCerts, "testdata/crypto/httparena-server.crt"))
+    kb, _ := crypto.pem.Parse(testFile(testCerts, "testdata/crypto/httparena-server.key"))
+    k, _ := crypto.rsa.ParsePKCS8(kb[0].der)
+    return internal.hs.NewParams([][]byte{cb[0].der}, k, []string{"http/1.1"}, []int{internal.record.AesGcm, internal.record.ChaCha}, bytes("sober-tls-reject"))
 }
 
 // 組み立てる ClientHello の形
@@ -36,7 +36,7 @@ type rjHello struct {
 }
 
 func rjGood() rjHello {
-    return rjHello{versions: []int{0x0304}, groups: []int{0x001d}, shareGroup: 0x001d, share: x25519.Base(rjSeq(7, 32)), sigs: []int{0x0804},
+    return rjHello{versions: []int{0x0304}, groups: []int{0x001d}, shareGroup: 0x001d, share: crypto.x25519.Base(rjSeq(7, 32)), sigs: []int{0x0804},
         alpn: []string{"http/1.1"}, suites: []int{0x1301, 0x1303}, comp: []int{0}, dup: false}
 }
 
@@ -158,27 +158,27 @@ func rjFeed(s []byte, k func([]byte)) error? {
 func rjDesc(e error?) int {
     return switch e {
         case nil: 0
-        case record.Alert{desc}: desc
-        case record.Transport{}: -1
+        case internal.record.Alert{desc}: desc
+        case internal.record.Transport{}: -1
     }
 }
 
 // s を 1 切片で流して、最初の誤りの alert の番号（無ければ 0）と送ったバイト数と接続の状態を返す
 func rjRun(s []byte) (int, int, bool) {
-    mut h := hs.New()
+    mut h := internal.hs.New()
     mut sent := 0
     mut d := 0
     e := rjFrames(s, mut h, mut sent, mut d)
     if e != nil {
         d = rjDesc(e)
     }
-    return d, sent, hs.IsConnected(h)
+    return d, sent, internal.hs.IsConnected(h)
 }
 
-func rjFrames(s []byte, h mut hs.Hs, sent mut int, d mut int) error? {
+func rjFrames(s []byte, h mut internal.hs.Hs, sent mut int, d mut int) error? {
     p := rjParams()
-    for f <- record.Frames((k) => rjFeed(s, k))? {
-        o, e := hs.Feed(mut h, p, f)
+    for f <- internal.record.Frames((k) => rjFeed(s, k))? {
+        o, e := internal.hs.Feed(mut h, p, f)
         if e != nil {
             d = rjDesc(e)
             return nil
@@ -190,18 +190,18 @@ func rjFrames(s []byte, h mut hs.Hs, sent mut int, d mut int) error? {
 
 // 正しい ClientHello の後の、client handshake traffic secret の鍵で封じた Finished（verify_data = vd）
 func rjBadFin(ch []byte) []byte {
-    mut h := hs.New()
+    mut h := internal.hs.New()
     mut sent := 0
     mut d := 0
     _ = rjFrames(ch, mut h, mut sent, mut d)
-    sec, _ := hex.Parse(rjFirstWord(hs.Secrets(h)))
-    mut w, _ := record.NewDir(record.AesGcm, sec)
+    sec, _ := hex.Parse(rjFirstWord(internal.hs.Secrets(h)))
+    mut w, _ := internal.record.NewDir(internal.record.AesGcm, sec)
     mut m := mut []byte{}
     rjP8(mut m, 20)
     rjP8(mut m, 0)
     rjP16(mut m, 32)
     rjPb(mut m, rjSeq(9, 32))
-    return record.Seal(mut w, record.CtHandshake, freeze(m), 0)
+    return internal.record.Seal(mut w, internal.record.CtHandshake, freeze(m), 0)
 }
 
 func rjFirstWord(s string) string {
@@ -252,6 +252,8 @@ func TestReject() {
             println("reject ${c.name}: alert ${d}, want ${c.want}")
             bad += 1
         }
+        println("conf-item: tls/reject ${c.name} ${c.want}")
     }
     assert(bad == 0)
+    println("conf: tls/reject ${len(cases)}")
 }

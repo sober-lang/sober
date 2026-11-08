@@ -3,5 +3,5 @@ package main
 import "testdata/named_qual/mid"
 
 func main() {
-    println(mid.F(40))
+    println(testdata.named_qual.mid.F(40))
 }

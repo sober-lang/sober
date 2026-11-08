@@ -31,7 +31,7 @@ src を鍵ストリーム（ブロック番号 counter から）と xor した�
 ```sober
 @secret(key)
 @effects(!io, !block, !nondet)
-func XorKeyStreamAt(key []byte, nonce []byte, counter int, src []byte, at int, n int) []byte
+func XorKeyStreamAt(key []byte, nonce []byte, counter int, src []byte, off int, n int) []byte
 ```
 
-src[at, at + n) を鍵ストリームと xor したもの（写さずに読む — record 層向けの API）。同じ鍵・nonce の鍵ストリームを 2 つの平文に使ってはならない
+src[off, off + n) を鍵ストリームと xor したもの（写さずに読む — record 層向けの API）。同じ鍵・nonce の鍵ストリームを 2 つの平文に使ってはならない

@@ -1,0 +1,132 @@
+package exact
+
+// float の網（PBT — quick.Float で引いた値）: 実行時の演算・sqrt・int との変換・解析・最短の印字が IEEE 754 の定義どおりかを検算で見る。
+// 定義の側（このパッケージの Check*）は実装（SSE2・floatfmt）と算法を共有しない。コンパイル時の畳みは TestFold（リテラルどうしの演算 — 畳んだ値を同じ検算に通す）
+
+import "std/convert"
+import "std/internal/bigint"
+import "std/iter"
+import "std/math"
+import "std/quick"
+
+func TestPropArith() {
+    mut q := quick.Named("TestPropArith")
+    quick.Check(mut q, () => {
+        a := quick.Float(mut q)
+        b := quick.Float(mut q)
+        CheckAdd(a, b, a + b) && CheckSub(a, b, a - b) && CheckMul(a, b, a * b) && CheckDiv(a, b, a / b)
+    }, trials: 3000)
+}
+
+func TestPropSqrt() {
+    mut q := quick.Named("TestPropSqrt")
+    quick.Check(mut q, () => {
+        a := quick.Float(mut q)
+        CheckSqrt(a, math.Sqrt(a))
+    }, trials: 3000)
+}
+
+func TestPropInt() {
+    mut q := quick.Named("TestPropInt")
+    quick.Check(mut q, () => {
+        i := switch quick.Pick(mut q, 3) {
+        case 0: quick.Int(mut q, -100, 100)
+        case 1: quick.Int(mut q, 0 - (1 << 60), 1 << 60)
+        default: quick.Int(mut q, 9007199254740990, 9007199254741000)
+        }
+        f := quick.Float(mut q)
+        // int(f) は 0 方向の切り捨て — 範囲内（|f| < 2^63）の有限の値だけ（外は panic — 別の例 float_toint_panic）
+        okTo := !(f == f) || math.Abs(f) >= 9.223372036854775808e18 || CheckToInt(f, int(f))
+        CheckFromInt(i, float(i)) && okTo
+    }, trials: 3000)
+}
+
+func TestPropFormat() {
+    mut q := quick.Named("TestPropFormat")
+    quick.Check(mut q, () => {
+        x := quick.Float(mut q)
+        s := convert.FormatFloat(x)
+        y, err := convert.ParseFloat(s)
+        CheckFormat(x, s) && (x != x || err == nil && math.Bits(y) == math.Bits(x))
+    }, trials: 3000)
+}
+
+// 10 進の文字列（有効数字 1〜25 桁・指数 −350〜330）を解析した値が、正確な値を 1 回だけ丸めた値か（溢れは ±Inf + FloatOutOfRange）
+func TestPropParse() {
+    mut q := quick.Named("TestPropParse")
+    quick.Check(mut q, () => {
+        neg := quick.Bool(mut q)
+        n := quick.Int(mut q, 1, 25)
+        mut ds := mut []byte{}
+        for k <- iter.Range(0, n) {
+            ds = append(ds, byte('0' + quick.Int(mut q, 0, 9)))
+        }
+        fz := freeze(ds)
+        e := quick.Int(mut q, -350, 330)
+        s := (if neg { "-" } else { "" }) + (string(fz) catch "") + "e" + convert.FormatInt(e)
+        r, err := convert.ParseFloat(s)
+        rb := math.Bits(r)
+        over := rb & magMask == infBits
+        CheckDecimal(neg, fz, e, r) && (err == nil) != over
+    }, trials: 3000)
+}
+
+// コンパイル時の畳み（リテラルどうしの演算 — 実行時と同じ IEEE の丸め・language.md 37 節）を同じ検算に通す
+func TestFold() {
+    assert(CheckAdd(0.1, 0.2, 0.1 + 0.2) && CheckSub(1.0, 0.9, 1.0 - 0.9))
+    assert(CheckMul(1.1, 1.1, 1.1 * 1.1) && CheckDiv(1.0, 3.0, 1.0 / 3.0) && CheckDiv(2.0, 3.0, 2.0 / 3.0))
+    assert(CheckMul(1.7976931348623157e308, 2.0, 1.7976931348623157e308 * 2.0))
+    assert(CheckMul(5.0e-324, 0.5, 5.0e-324 * 0.5) && CheckMul(5.0e-324, 0.75, 5.0e-324 * 0.75))
+    assert(CheckDiv(1.0, 0.0, 1.0 / 0.0) && CheckDiv(0.0, 0.0, 0.0 / 0.0) && CheckSub(-0.0, 0.0, -0.0 - 0.0))
+    assert(CheckSqrt(2.0, math.Sqrt(2.0)) && CheckFromInt(9007199254740993, float(9007199254740993)))
+    assert(CheckDecimal(false, bytes("1"), -1, 0.1) && CheckDecimal(false, bytes("123456789012345678901234567890"), -30, 0.12345678901234568))
+}
+
+// 同点の解析: 隣り合う float の中点ちょうどの 10 進（中点 = K × 2^-1075 = K × 5^1075 × 10^-1075 — 有限の桁で正確に書ける）は偶数の側へ、
+// その直上（末尾に 1 を足した桁）は上へ丸まる。乱択の 10 進は同点にまず当たらないので、同点は作って当てる
+func TestPropParseTie() {
+    mut q := quick.Named("TestPropParseTie")
+    quick.Check(mut q, () => {
+        mag := math.Bits(math.Abs(quick.Float(mut q))) & magMask
+        mag >= infBits - 1 || tieOK(mag)
+    }, trials: 500)
+}
+
+// 有限の正の float（ビット列 mag）と上の隣との中点ちょうどの 10 進・その直上の 10 進を解析した値が、どちらも正しく丸まっているか
+func tieOK(mag int) bool {
+    mut k := mut []int{}
+    midPair(mut k, mag, mag + 1)
+    for j <- iter.Range(0, 1075) {
+        internal.bigint.MulAdd(mut k, 5, 0)
+    }
+    ds := decimalDigits(mut k)
+    tie := (string(ds) catch "") + "e-1075"
+    above := (string(ds) catch "") + "1e-1076"
+    r1, _ := convert.ParseFloat(tie)
+    r2, _ := convert.ParseFloat(above)
+    b2 := bytes(string(ds) catch "")
+    mut up := mut []byte{}
+    for c <- b2 {
+        up = append(up, c)
+    }
+    up = append(up, '1')
+    return CheckDecimal(false, ds, -1075, r1) && CheckDecimal(false, freeze(up), -1076, r2)
+}
+
+// k の 10 進の数字の列（k を壊す — 1 桁ずつ 10 で割る）
+func decimalDigits(k mut []int) []byte {
+    mut rev := mut []byte{}
+    while internal.bigint.Top(mut k) >= 0 {
+        rev = append(rev, byte('0' + internal.bigint.DivSmall(mut k, 10)))
+    }
+    mut out := mut []byte{}
+    mut i := len(rev) - 1
+    while i >= 0 {
+        out = append(out, rev[i])
+        i -= 1
+    }
+    if len(out) == 0 {
+        out = append(out, '0')
+    }
+    return freeze(out)
+}

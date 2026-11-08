@@ -34,7 +34,7 @@
             "name": "home",
             "type": {
               "k": "name",
-              "name": "geo.Pt"
+              "name": "testdata.jsonpkg.geo.Pt"
             },
             "tok": 16
           },
@@ -44,11 +44,11 @@
               "k": "slice_of",
               "elem": {
                 "k": "name",
-                "name": "geo.Pt"
+                "name": "testdata.jsonpkg.geo.Pt"
               },
               "mut": false
             },
-            "tok": 21
+            "tok": 25
           },
           {
             "name": "boss",
@@ -59,14 +59,14 @@
                 "name": "Ref"
               }
             },
-            "tok": 28
+            "tok": 36
           }
         ]
       },
       "tok": 7,
       "span": {
         "start": 6,
-        "end": 34
+        "end": 42
       }
     },
     {
@@ -81,14 +81,14 @@
               "k": "name",
               "name": "int"
             },
-            "tok": 38
+            "tok": 46
           }
         ]
       },
-      "tok": 35,
+      "tok": 43,
       "span": {
-        "start": 34,
-        "end": 43
+        "start": 42,
+        "end": 51
       }
     }
   ],

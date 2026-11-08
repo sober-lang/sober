@@ -5,25 +5,25 @@ package main
 import "testdata/fnpkg/p"
 
 type H struct {
-    f p.F
+    f testdata.fnpkg.p.F
 }
 
-func adder(k int) p.F {
-    return (r) => p.N(r) + k
+func adder(k int) testdata.fnpkg.p.F {
+    return (r) => testdata.fnpkg.p.N(r) + k
 }
 
-func use(f p.F) int {
-    return f(p.Make(1))
+func use(f testdata.fnpkg.p.F) int {
+    return f(testdata.fnpkg.p.Make(1))
 }
 
-func twice(g p.G[int]) int {
-    return g(p.Make(2), g(p.Make(3), 5))
+func twice(g testdata.fnpkg.p.G[int]) int {
+    return g(testdata.fnpkg.p.Make(2), g(testdata.fnpkg.p.Make(3), 5))
 }
 
 func main() {
     println(use(adder(10)))
     h := H{f: adder(20)}
     f := h.f
-    println(f(p.Make(2)))
-    println(twice((r, x) => x * p.N(r)))
+    println(f(testdata.fnpkg.p.Make(2)))
+    println(twice((r, x) => x * testdata.fnpkg.p.N(r)))
 }

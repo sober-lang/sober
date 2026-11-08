@@ -1,0 +1,97 @@
+package main
+
+// Web サーバのガイド 2 節: ルートの表（[]http.server.Route — ただのデータ）を Mount / Merge で合成し、Dispatch で引く。
+// /users の下には X-Token を見る middleware（before が応答を返すとハンドラは走らない）。:id は Param で読む。
+// 一致しない path は 404・path は合うが method が違えば 405（Allow つき）
+
+import "std/http"
+import "std/http/client"
+import "std/http/server"
+import "std/net"
+import "std/task"
+
+func or(s string?) string {
+    return if s != nil { s } else { "-" }
+}
+
+func listUsers(r http.server.Request) http.server.Response {
+    return http.server.Text("users: alice, bob")
+}
+
+func getUser(r http.server.Request) http.server.Response {
+    return http.server.Text("user ${or(http.server.Param(r, "id"))}")
+}
+
+func health(r http.server.Request) http.server.Response {
+    return http.server.Text("ok")
+}
+
+// X-Token の無い要求をここで 401 にする
+func auth(r http.server.Request) http.server.Response? {
+    return if http.server.Header(r, "x-token") == nil { http.server.Status(401) } else { nil }
+}
+
+func routes() []http.server.Route {
+    users := []http.server.Route{
+        http.server.Route{method: "GET", path: "/", handler: listUsers},
+        http.server.Route{method: "GET", path: "/:id", handler: getUser}}
+    return http.server.Merge(
+        http.server.Mount("/users", users, []http.server.Middleware{http.server.Middleware{before: auth}}),
+        []http.server.Route{http.server.Route{method: "GET", path: "/health", handler: health}})
+}
+
+func call(base string, method string, path string, token bool) string {
+    hs := if token { []http.Field{http.Field{name: "x-token", value: "t"}} } else { []http.Field{} }
+    r, e := http.client.Request("${base}${path}", method: method, headers: hs)
+    if e != nil {
+        return "${method} ${path}: failed"
+    }
+    allow := http.client.Header(r, "allow")
+    b := string(r.body) catch ""
+    tail := if allow != nil { " (allow: ${allow})" } else if b != "" { " ${b}" } else { "" }
+    return "${method} ${path}${if token { " +token" } else { "" }} -> ${r.status}${tail}"
+}
+
+func visit(base string) []string {
+    return []string{
+        call(base, "GET", "/health", false),
+        call(base, "GET", "/users/42", false),
+        call(base, "GET", "/users/42", true),
+        call(base, "GET", "/users/", true),
+        call(base, "DELETE", "/health", false),
+        call(base, "GET", "/nope", false)}
+}
+
+// n 本の接続を順に受ける
+func serve(l net.Listener, n int) error? {
+    rs := routes()
+    mut k := 0
+    for c <- net.Accept(l)? {
+        http.server.ServeConn(c, (r) => http.server.Dispatch(rs, r))?
+        k = k + 1
+        if k == n {
+            break
+        }
+    }
+    return nil
+}
+
+func main() {
+    for x <- routes() {
+        println("${x.method} ${x.path}")
+    }
+    e := net.Listen("127.0.0.1:0", (l) => {
+        base := "http://127.0.0.1:${net.Port(l)}"
+        got, _ := task.Run((s) => {
+            h := task.Spawn(s, () => visit(base))
+            _ = serve(l, 6)
+            task.Join(h)
+        })
+        for line <- got {
+            println(line)
+        }
+    })
+    if e != nil {
+        println("listen failed")
+    }
+}

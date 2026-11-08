@@ -2,11 +2,11 @@
 
 English | [日本語](env.ja.md)
 
-Environment variables come in three layers. This page lists the second and the third: **the variables a Sober program reads at run time**.
+Environment variables come in three layers. This page lists the second and the third: the variables a Sober program reads at run time.
 
-1. **Read by the compiler (`sober`)** — such as `SOBER_BUILD_CACHE`. They are in `sober --help` (the development ones in `sober --help=dev`) and in [the CLI document](../cli/sober.md)
-2. **Read by the runtime of a generated executable** — every program written in Sober reads them (the compiler too, being a Sober program). The table below
-3. **Read by the standard library** — the table below
+1. Read by the compiler (`sober`) — such as `SOBER_BUILD_CACHE`. They are in `sober --help` (the development ones in `sober --help=dev`) and in [the CLI document](../cli/sober.md)
+2. Read by the runtime of a generated executable — every program written in Sober reads them (the compiler too, being a Sober program). The table below
+3. Read by the standard library — the table below
 
 Declare the variables your own program reads in a [std/env](../std/env.ja.md) table: the checks on reading (required, ranges, bool spellings) and the listing (`env.Spec`) come from that table. See [examples/env_table.sober](../../examples/env_table.sober).
 
@@ -41,6 +41,9 @@ Declare the variables your own program reads in a [std/env](../std/env.ja.md) ta
 | --- | --- | --- |
 | `SOBER_NOAES` | std/crypto/aesgcm | the same as the runtime's (no AES-NI) |
 | `SOBER_DUDECT` | std/internal/dudect | the number of constant-time statistical measurements (none when unset — for tests) |
+| `SOBER_TLS_INTEROP` | std/internal/hsc | the directory of the TLS client interop net (scripts/tlsinterop.sh starts the Go servers and passes it — no connection when unset; for tests) |
+| `SOBER_DNS_FAKE` | std/net | the port of the fake DNS server for the name-resolution net (scripts/dnsinterop.sh passes it — no query when unset; for tests) |
+| `SOBER_HTTP_INTEROP` | std/http/client | the directory of the HTTP client interop net (scripts/httpinterop.sh starts the Go net/http servers and passes it — no connection when unset; for tests) |
 | `SOBER_QUICK_SEED` | std/quick | the seed of property-based tests (decimal — New / Named mix it in; 0 when unset. Change it to widen the search) |
 | `SOBER_QUICK_TRIALS` | std/quick | the number of trials per Check (1 or more — falls back to Check's trials:, default 100) |
 | `SOBER_TLS_TRACE_LIVE` | std/tls tests | the case name when retaking the TLS golden traces (for tests) |

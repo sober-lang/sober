@@ -1,0 +1,35 @@
+package main
+
+// `sober outline` の handler（宣言の一覧 — compiler/outline）
+
+import "std/iter"
+import "std/cli"
+import "outline"
+
+// `sober outline <path>`: ファイル（ディレクトリなら --depth 段下までの .sober）ごとの宣言の一覧（compiler/outline）。
+// 読めない・parse できないファイルは名指しして飛ばし、終了 1
+func cmdOutline(cl cli.Parsed) int {
+    path := cli.Pos(cl, OPath)
+    ps := outline.Files(path, cli.Int(cl, ODepth), cli.Bool(cl, ONoTest)) catch {
+        return fail("cannot read ${path}")
+    }
+    pub := cli.Bool(cl, OPublic)
+    mut fs := mut []outline.File{}
+    mut code := 0
+    for i <- iter.Range(0, len(ps)) {
+        src, ok := readSrc(ps[i])
+        if !ok {
+            code = fail("cannot read ${ps[i]}")
+        } else {
+            f, perr := outline.Of(ps[i], src, pub)
+            if perr != nil {
+                code = fail("parse error in ${ps[i]}")
+            } else {
+                fs = append(fs, f)
+            }
+        }
+    }
+    out := if cli.Choice(cl, OFormat) == "json" { outline.Json(freeze(fs)) } else { outline.Text(freeze(fs)) }
+    w := writeStdout(out)
+    return if code != 0 { code } else { w }
+}

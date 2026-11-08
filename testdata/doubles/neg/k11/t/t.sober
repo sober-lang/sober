@@ -3,5 +3,5 @@ package t
 import "testdata/doubles/neg/k11/r/fake"
 
 func g() int {
-    return fake.New().n
+    return testdata.doubles.neg.k11.r.fake.New().n
 }

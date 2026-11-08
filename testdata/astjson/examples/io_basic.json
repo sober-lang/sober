@@ -263,7 +263,7 @@
                       {
                         "k": "type",
                         "bind": null,
-                        "variant": "strings.InvalidUtf8",
+                        "variant": "strings.BadUtf8",
                         "fields": [
                           {
                             "name": "pos",

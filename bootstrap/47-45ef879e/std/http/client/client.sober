@@ -1,0 +1,396 @@
+package client
+
+// HTTP/1.1 のクライアント（http と https — TLS は 1.3 が既定・証明書の鎖は常に検証する〔検証を切る欄は無い〕）。状態は持たない: 方針は呼び手が持つ
+// データ Policy（ゼロ値 = 既定 — 欄はどれも安全な側: 本文の上限つき・期限つき・redirect は 10 回まで追い https → http へは降りない）を `policy:` で渡し、
+// cookie は応答から CookieValue で取り出して次の要求の `cookies:` に自分で載せる。Request は要求 1 本ごとに接続を張って閉じる（Connection: close）。
+// 同じ origin への keep-alive は Open の範囲の中の束で
+//
+//     r := http.client.Request("https://api.example/v1/items")?
+//     println(r.status)
+
+import "std/http"
+import "std/internal/hsc"
+import "std/internal/x509"
+import "std/io"
+import "std/net"
+import "std/strings"
+import "std/task"
+import "std/time"
+import "std/tls"
+import "std/internal/record"
+
+// 方針（省いた欄・nil は既定）: timeout = 要求 1 本の全体の期限 30 秒〔ns・0 以下も既定〕・redirects = 追う回数 10〔0 = 追わない — 3xx をそのまま返す〕・
+// maxBody = 本文の上限 8 MiB〔上限 1 GiB — 無制限は書けない〕・userAgent = "sober"・extraRoots = 焼き込みの WebPKI のルート〔Mozilla NSS — 鎖の leaf に
+// CA/B の規則を掛ける〕に足す起点〔私的 PKI — tls.ParseRoots の値。この起点で止まる鎖には CA/B の規則を掛けない〕・dangerouslyAllowTls12 = TLS 1.2 も
+// 申し出る（既定は 1.3 だけ — 1.2 だけのサーバのための緩和。綴りで緩めたことが grep で拾える）・proxy = 通す proxy（ParseProxy の値 — nil = 直結。
+// 環境変数は読まない）・proxyAuth = proxy へ渡す Proxy-Authorization の値そのもの（"Basic …" の組み立ては呼び手 — CR / LF / NUL があれば panic(http.BadHeader) — route.sober）
+type Policy struct {
+    timeout int?
+    redirects int?
+    maxBody int?
+    userAgent string?
+    extraRoots tls.Roots?
+    dangerouslyAllowTls12 bool
+    proxy Proxy?
+    proxyAuth string?
+}
+
+// 要求に載せる cookie 1 本（Cookie の頭に `name=value` を `; ` で繋いで載せる。名前が token でない・値に `;` や制御文字があれば panic(http.BadHeader)）
+type Cookie struct {
+    name string
+    value string
+}
+
+// Policy を読み解いた設定（信頼の起点は焼き込み + extraRoots）
+type cfg struct {
+    roots []internal.x509.Cert
+    maxBody int
+    timeout int
+    redirects int
+    userAgent string
+    allowTls12 bool
+    proxied bool
+    px target
+    proxyAuth string
+}
+
+// 送る要求 1 本（redirect を追うときの写し — method の "" = GET）
+type outgoing struct {
+    method string
+    url string
+    headers []http.Field
+    body []byte
+}
+
+// 応答（headers の名前は小文字・url = redirect を辿った後の URL）
+type Response struct {
+    status int
+    headers []http.Field
+    body []byte
+    url string
+}
+
+// 名前の解決の失敗（cause = net.NoHost / net.NonASCIIHost）
+type Dns error
+
+// TLS の失敗（証明書の鎖の検証・相手の alert・record の形の誤り — cause に内側の誤り）
+type Tls error
+
+// 要求 1 本の期限（Policy の timeout）が過ぎた・相手が応答しない
+type Timeout error
+
+// redirect が上限を超えた
+type TooManyRedirects error
+
+// https から http への redirect（降格は追わない）
+type InsecureRedirect error
+
+// 本文が上限（Policy の maxBody）を超えた
+type BodyTooLarge error
+
+// 相手が接続を拒んだ・応答の途中で閉じた
+type Closed error
+
+// URL の形の誤り（scheme が http / https でない・userinfo・IPv6 の番地・空白や制御文字）
+type BadUrl error
+
+// 応答の形の誤り（状態行・頭・chunked の形・頭の上限 64 KiB 超え）
+type BadResponse error
+
+// 既定の上限と期限
+const defaultMaxBody = 8 * 1024 * 1024
+const limitMaxBody = 1024 * 1024 * 1024
+const defaultTimeout = 30 * 1000 * task.MS
+const defaultRedirects = 10
+
+// 方針 p を読み解く（proxyAuth に CR / LF / NUL があれば panic(http.BadHeader) — 頭の分割の封）
+@effects(panic)
+func resolve(p Policy) cfg {
+    mut roots := mut []internal.x509.Cert{}
+    for r <- internal.x509.Roots() {
+        roots = append(roots, r)
+    }
+    ex := p.extraRoots
+    if ex != nil {
+        for r <- ex.certs {
+            roots = append(roots, r)
+        }
+    }
+    pm := p.maxBody
+    pt := p.timeout
+    pr := p.redirects
+    pu := p.userAgent
+    mb := if pm == nil { defaultMaxBody } else if pm < 0 { 0 } else if pm > limitMaxBody { limitMaxBody } else { pm }
+    to := if pt == nil || pt <= 0 { defaultTimeout } else { pt }
+    rd := if pr == nil { defaultRedirects } else if pr < 0 { 0 } else { pr }
+    ua := if pu == nil { "sober" } else { pu }
+    pp := p.proxy
+    px := if pp == nil { badTarget() } else { pp.t }
+    pq := p.proxyAuth
+    pa := if pq == nil { "" } else { pq }
+    for x <- bytes(pa) {
+        if x == '\r' || x == '\n' || x == 0 {
+            panic(http.BadHeader{name: "proxy-authorization"})
+        }
+    }
+    return cfg{roots: freeze(roots), maxBody: mb, timeout: to, redirects: rd, userAgent: ua, allowTls12: p.dangerouslyAllowTls12, proxied: p.proxy != nil, px: px, proxyAuth: pa}
+}
+
+func policyOf(p Policy?) Policy {
+    return if p == nil { Policy{} } else { p }
+}
+
+func outgoingOf(url string, method string?, headers ([]http.Field)?, body ([]byte)?) outgoing {
+    return outgoing{method: if method == nil { "" } else { method }, url: url, headers: if headers == nil { []http.Field{} } else { headers }, body: if body == nil { []byte{} } else { body }}
+}
+
+// 応答の頭の最初の 1 本（名前は大文字小文字を区別しない）
+@effects()
+func Header(r Response, name string) string? {
+    want := lowerStr(name)
+    for f <- r.headers {
+        if f.name == want {
+            return f.value
+        }
+    }
+    return nil
+}
+
+func lowerStr(s string) string {
+    mut o := mut []byte{}
+    for x <- bytes(s) {
+        o = append(o, lower(x))
+    }
+    return bytesToString(freeze(o))
+}
+
+// url へ要求を送って応答を返す（method の既定 = GET・headers は Host / Content-Length / Transfer-Encoding / Connection を書けない〔std が書く —
+// 書くと panic(http.BadHeader)〕・body があれば Content-Length をつけて送る・cookies は Cookie の頭に載せる・policy の既定 = Policy{}）。
+// redirect を追う — 301 / 302 / 303 は POST を GET に変えて本文を落とす・307 / 308 は保つ・origin が変われば Authorization と Cookie の頭と cookies を落とす。
+// 接続は要求ごとに張って閉じる
+@errors(Dns, Tls, Timeout, TooManyRedirects, InsecureRedirect, BodyTooLarge, Closed, BadUrl, BadResponse, ProxyRefused, io.Expired)
+@effects(block, io, panic, nondet)
+func Request(url string, method string?, headers ([]http.Field)?, body ([]byte)?, cookies ([]Cookie)?, policy Policy?) (Response, error?) {
+    c := resolve(policyOf(policy))
+    mut cur := outgoingOf(url, method, headers, body)
+    mut ck := cookieLine(cookies)
+    mut hops := 0
+    while true {
+        t, ok := parseTarget(cur.url)
+        if !ok {
+            return noResponse(), BadUrl{}
+        }
+        res := once(c, t, cur, ck)?
+        loc := Header(res, "location")
+        if c.redirects == 0 || loc == nil || !(res.status == 301 || res.status == 302 || res.status == 303 || res.status == 307 || res.status == 308) {
+            return Response{status: res.status, headers: res.headers, body: res.body, url: cur.url}, nil
+        }
+        hops += 1
+        if hops > c.redirects {
+            return noResponse(), TooManyRedirects{}
+        }
+        nu := resolveLocation(t, loc)
+        nt, nok := parseTarget(nu)
+        if !nok {
+            return noResponse(), BadUrl{}
+        }
+        if t.tls && !nt.tls {
+            return noResponse(), InsecureRedirect{}
+        }
+        keepBody := res.status == 307 || res.status == 308 || (res.status != 303 && cur.method != "POST")
+        m := if keepBody { cur.method } else if cur.method == "HEAD" { "HEAD" } else { "GET" }
+        same := origin(t) == origin(nt)
+        cur = outgoing{method: m, url: nu, headers: carried(cur.headers, same, keepBody), body: if keepBody { cur.body } else { []byte{} }}
+        ck = if same { ck } else { "" }
+    }
+    return noResponse(), TooManyRedirects{}
+}
+
+// 応答の Set-Cookie のうち名前が name の最後の 1 本の値（無ければ nil — 属性〔Path・Max-Age …〕は読まない。載せ直すのは呼び手 — `cookies:`）
+@effects()
+func CookieValue(r Response, name string) string? {
+    mut out := nilStr()
+    for f <- r.headers {
+        if f.name == "set-cookie" {
+            pair, _, _ := strings.Cut(f.value, ";")
+            n, v, eq := strings.Cut(pair, "=")
+            if eq && strings.TrimSpace(n) == name {
+                out = strings.TrimSpace(v)
+            }
+        }
+    }
+    return out
+}
+
+func nilStr() string? {
+    return nil
+}
+
+// cookies を Cookie の頭の値に（無ければ ""）
+@effects(panic)
+func cookieLine(cs ([]Cookie)?) string {
+    mut out := ""
+    for k <- cookiesOf(cs) {
+        if !tokenOk(bytes(k.name)) || !cookieValueOk(bytes(k.value)) {
+            panic(http.BadHeader{name: "cookie"})
+        }
+        out = if out == "" { "${k.name}=${k.value}" } else { "${out}; ${k.name}=${k.value}" }
+    }
+    return out
+}
+
+func cookiesOf(cs ([]Cookie)?) []Cookie {
+    return if cs == nil { []Cookie{} } else { cs }
+}
+
+// cookie の値に置ける字（制御文字・空白・`;`・`,`・`"`・バックスラッシュを除く — RFC 6265 4.1.1 の cookie-octet）
+func cookieValueOk(b []byte) bool {
+    for x <- b {
+        if x <= ' ' || x == 0x7f || x == ';' || x == ',' || x == '"' || x == '\\' {
+            return false
+        }
+    }
+    return true
+}
+
+func noResponse() Response {
+    return Response{status: 0, headers: []http.Field{}, body: []byte{}, url: ""}
+}
+
+// redirect の先へ持っていく頭（origin が変われば認証の頭を落とす・本文を落とすなら本文の頭も）
+func carried(fs []http.Field, same bool, keepBody bool) []http.Field {
+    mut o := mut []http.Field{}
+    for f <- fs {
+        n := lowerStr(f.name)
+        drop := (!same && (n == "authorization" || n == "cookie" || n == "proxy-authorization")) || (!keepBody && (n == "content-type" || n == "content-encoding"))
+        if !drop {
+            o = append(o, f)
+        }
+    }
+    return freeze(o)
+}
+
+// 1 往復（接続 → 経路の層 → 要求 → 応答 → 閉じる — 期限つき）
+@errors(Dns, Tls, Timeout, BodyTooLarge, Closed, BadUrl, BadResponse, ProxyRefused, io.Expired)
+@effects(block, io, panic, nondet)
+func once(c cfg, t target, r outgoing, cookie string) (Response, error?) {
+    rt := viaOf(c, t)
+    req := requestBytes(r.method, requestTarget(rt, t), withProxyAuth(rt, t, r.headers), r.body, c.userAgent, false, cookie)
+    noBody := r.method == "HEAD"
+    pa := params(c, rt.px)
+    pb := params(c, t)
+    mb := c.maxBody
+    start := time.Mono()
+    mut raw := mut []byte{}
+    mut st := newScan()
+    mut err := noErr()
+    _, re := task.Run((s) => {
+        de := net.Dial(firstHop(rt, t), (conn) => {
+            blk := newLink()
+            err = setupLink(conn, blk, rt, t, pa, pb)
+            if err == nil {
+                err = linkTrip(conn, blk, pa, pb, req, mut raw, mut st, noBody, mb)
+            }
+        })
+        if de != nil {
+            err = de
+        }
+        0
+    }, deadline: c.timeout)
+    timedOut := time.Since(start) >= c.timeout
+    if re != nil {
+        return noResponse(), if timedOut { Timeout{} } else { Closed{} }
+    }
+    if err != nil {
+        return noResponse(), classify(err, timedOut)
+    }
+    b := freeze(raw)
+    if st.mode == mClose && st.hend >= 0 && !st.bad && !st.big {
+        st.end = len(b)
+    }
+    if st.big {
+        return noResponse(), BodyTooLarge{}
+    }
+    if st.bad {
+        return noResponse(), BadResponse{}
+    }
+    if st.end < 0 {
+        return noResponse(), if st.hend < 0 && len(b) == 0 { Closed{} } else { BadResponse{} }
+    }
+    return Response{status: st.status, headers: fieldsOf(b, st), body: bodyOf(b, len(b), st), url: ""}, nil
+}
+
+func noErr() error? {
+    return nil
+}
+
+// 内側の誤りを公開のラベルに包み替える
+@errors(Dns, Tls, Timeout, Closed, BadUrl, BadResponse, ProxyRefused, io.Expired)
+func classify(e error, timedOut bool) error? {
+    k := kindOf(e)
+    if k == kProxy {
+        return ProxyRefused{status: refusedStatus(e)}
+    }
+    if k == kBadResponse {
+        return BadResponse{}
+    }
+    if k == kDns {
+        wrap(e)? Dns{}
+    }
+    if k == kTls {
+        wrap(e)? Tls{}
+    }
+    if k == kBadUrl {
+        return BadUrl{}
+    }
+    if k == kTimeout || (k == kExpired && timedOut) {
+        return Timeout{}
+    }
+    if k == kExpired {
+        return io.Expired{}
+    }
+    wrap(e)? Closed{}
+    return nil
+}
+
+const kOther = 0
+const kDns = 1
+const kTls = 2
+const kBadUrl = 3
+const kTimeout = 4
+const kExpired = 5
+const kProxy = 6
+const kBadResponse = 7
+
+func refusedStatus(e error) int {
+    return switch e {
+    case ProxyRefused{status}: status
+    default: 0
+    }
+}
+
+func kindOf(e error) int {
+    return switch e {
+    case net.NoHost{}: kDns
+    case net.NonASCIIHost{}: kDns
+    case net.Bad{}: kBadUrl
+    case internal.record.Alert{}: kTls
+    case internal.hsc.CertFailed{}: kTls
+    case io.Expired{}: kExpired
+    case io.Timeout{}: kTimeout
+    case ProxyRefused{}: kProxy
+    case BadResponse{}: kBadResponse
+    default: kOther
+    }
+}
+
+func wrap(e error) error? {
+    return e
+}
+
+// TLS の握手の設定（SNI と名前の照合 = host・時刻 = 今の壁時計）
+@effects(io)
+func params(c cfg, t target) internal.hsc.CParams {
+    p := internal.hsc.NewCParams(t.host, []string{"http/1.1"}, c.roots, time.UnixSec(time.Now()), []byte{})
+    return if c.allowTls12 { internal.hsc.WithTls12(p) } else { p }
+}

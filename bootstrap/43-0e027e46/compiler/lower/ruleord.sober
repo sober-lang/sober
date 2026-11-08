@@ -1,0 +1,441 @@
+package lower
+
+// 規則順: build の最後で関数とグローバルの鎖を規則の鍵の順に繋ぎ直す（記録の番地は動かさない — 番号は
+// 番地の昇順の位置のまま〔step 1 の recIds〕）。並びが発見順（作業列の順）に依らなくなるので、直の道と分割の道が同じ並びを見る。
+// 鍵（語の列の辞書式 — 語は符号つきで比べる。名前は 1 バイト 1 語）:
+// - buildPre までに作った記録（入口より前 — 発見順に依らない）: [0, 番地]
+// - 名前つきの関数: [1, 関数表の添字, 0]・インスタンス: [1, ジェネリック関数の表の添字, 1, 名前（型引数の綴り）, 0]
+// - ラムダ / 子の関数（st.sk の SK_LAM / SK_KID）: 持ち主の鍵 ‖ [2, 種類, 持ち主の中の序数]
+// - FnInfo の無い記録（rt の関数 — need* が下ろしの途中で作る）: [3, 名前]
+// - グローバル: buildPre まで [0, 番地]・文字列の rodata（str.N）[2, 中身の語…, 語数]・他 [1, 名前]
+// 鍵が等しい 2 つは鎖の入力の順に依って並ぶ（発見順が漏れる）— SOBER_RULEORD_STATS=1 の証人 `#ruleord … dupf= dupg=` と CHAINREV ≡ 既定の網で名指しする
+// 棄てた案: インスタンス = 最小の持ち主 + 序数（持ち主の記録が無い）・rt = NEED の番号順（記録の数と順の表が要る）・str = 最小の持ち主 + 序数（重複除去を跨ぐ）
+
+import "desugar"
+import "std/io"
+import "std/iter"
+import "std/table"
+
+type RoCx struct {
+    ix XSkIdx
+    byName map[string]int  // 関数の名前（"pkg_path.Name"）→ 関数表の添字（名前つきの関数と、インスタンスの名前の '[' より前）
+    preF int               // buildPre の終わりの関数の鎖の尾（これ以下の記録は [0, 番地]）
+    preG int
+}
+
+// 関数とグローバルの鎖を規則の鍵の順に繋ぎ直す
+func ruleOrder(st mut St, preF int, preG int) {
+    mut byName := mut map[string]int{}
+    for i <- iter.Range(0, nfn(mut st)) {
+        mut nb := mut []byte{}
+        roStr(mut st, mut nb, pkgPath(mut st, fnPkg(mut st, i)))
+        nb = append(nb, '.')
+        roStr(mut st, mut nb, fnName(mut st, i))
+        k := string(freeze(nb)) catch ""
+        byName[k] = i
+    }
+    c := RoCx{ix: xSkIndex(mut st), byName: freeze(byName), preF: preF, preG: preG}
+    mut fs := mut []int{}
+    mut fks := mut [][]int{}
+    mut f := st.fhead
+    while f != -1 {
+        fs = append(fs, int(f))
+        fks = append(fks, roFnKey(mut st, c, int(f)))
+        f = irFnNext(mut st, f)
+    }
+    fo := roSort(freeze(fks))
+    if len(fo) > 0 {
+        st.fhead = FnRef(fs[fo[0]])
+        for k <- iter.Range(0, len(fo)) {
+            irSetFnNext(mut st, FnRef(fs[fo[k]]), if k + 1 < len(fo) { FnRef(fs[fo[k + 1]]) } else { FnRef(-1) })
+        }
+        st.ftail = FnRef(fs[fo[len(fo) - 1]])
+    }
+    mut gs := mut []int{}
+    mut gks := mut [][]int{}
+    mut g := st.ghead
+    while g >= 0 {
+        gs = append(gs, g)
+        gks = append(gks, roGlobKey(mut st, c, g))
+        g = xGlobNext(mut st, g)
+    }
+    gord := roSort(freeze(gks))
+    if len(gord) > 0 {
+        st.ghead = gs[gord[0]]
+        for k <- iter.Range(0, len(gord)) {
+            desugar.HeapSet(mut st.d, gs[gord[k]] + G_NEXT, if k + 1 < len(gord) { gs[gord[k + 1]] } else { -1 })
+        }
+        st.gtail = gs[gord[len(gord) - 1]]
+    }
+    // 名前の通し番号（lambda#N・kid#N・str.N）と panic / spawn の点の番号を規則順で付け直す（step 2b — 名前は番号の集合はそのまま・鎖の順に
+    // 小さい番号から）。開発の口 SOBER_RULEORD_NORENUM=1 = 並びだけ（step 2a の形 — 写像同値の照合器の旧の側）
+    mut pw := 0
+    if lsEnvInt("SOBER_RULEORD_NORENUM") <= 0 {
+        roRenum(mut st, true, "lambda#")
+        roRenum(mut st, true, "kid#")
+        roRenum(mut st, false, "str.")
+        pw = roPoints(mut st)
+    }
+    if lsEnvInt("SOBER_RULEORD_STATS") > 0 {
+        df := roDups(freeze(fks), fo)
+        dg := roDups(freeze(gks), gord)
+        _ = io.WriteStderr(bytes("#ruleord fns=${len(fs)} globs=${len(gs)} dupf=${df} dupg=${dg} pmiss=${pw}\n"))
+    }
+}
+
+// panic の点（札 CT_PSITE — 0 起点）と spawn の点（札 CT_SITE — 1 起点・下 2 ビットは印）の番号を、持ち主（st.sk の SK_PSITE /
+// SK_SITE — 下ろしていた関数）の鎖の順 × 持ち主の中の作った順で振り直す（発見順に依らない）。定数の命令は作った点で控えた表（st.ptIns /
+// st.stIns — lsEv・分割の道は lsReplay の 2 周目）から引く（全命令を歩かない）。番号で引く表も同じ置換で並べ替える: 点の表 st.psites・
+// ラベルの表 st.plabs・st.sk の SK_PSITE / SK_SITE（k 番目の記録 = 点 k の持ち主）。返り値 = 鎖に無い持ち主の点の数（証人 — 後ろに作った順で）
+func roPoints(st mut St) int {
+    np := table.Len(mut st.psites) / 3
+    ns := st.nsite
+    // 旧の持ち主（SK の積んだ順 = 点の番号の順）
+    mut ownP := mut []int{}
+    mut ownS := mut []int{}
+    mut q := 0
+    n := table.Len(mut st.sk)
+    while q < n {
+        kind := table.Get(mut st.sk, q)
+        if kind == SK_PSITE {
+            ownP = append(ownP, table.Get(mut st.sk, q + 2))
+        } else if kind == SK_SITE {
+            ownS = append(ownS, table.Get(mut st.sk, q + 2))
+        }
+        q += 2 + table.Get(mut st.sk, q + 1)
+    }
+    if table.Len(mut st.stIns) == 0 {
+        table.Push(mut st.stIns, -1)
+    }
+    if len(ownP) != np || len(ownS) != ns || table.Len(mut st.ptIns) != np || table.Len(mut st.stIns) != ns + 1 {
+        panic(InvariantBroken{})
+    }
+    // 持ち主の鎖の位置（鎖に無い持ち主は後ろ）
+    mut rank := mut map[int]int{}
+    mut nf := 0
+    mut f := st.fhead
+    while f != -1 {
+        rank[int(f)] = nf
+        nf += 1
+        f = irFnNext(mut st, f)
+    }
+    mut miss := 0
+    mut kp := mut [][]int{}
+    for o <- iter.Range(0, np) {
+        r0 := rank[ownP[o]]
+        kp = append(kp, []int{if r0 != nil { r0 } else { nf }})
+        if r0 == nil {
+            miss += 1
+        }
+    }
+    mut ks := mut [][]int{}
+    for o <- iter.Range(0, ns) {
+        r0 := rank[ownS[o]]
+        ks = append(ks, []int{if r0 != nil { r0 } else { nf }})
+        if r0 == nil {
+            miss += 1
+        }
+    }
+    // 安定な整列: 新しい点 k = 旧の点 op[k]
+    op := roSort(freeze(kp))
+    so := roSort(freeze(ks))
+    mut pp := mut []int{}
+    xFill(mut pp, np, 0)
+    for k <- iter.Range(0, np) {
+        pp[op[k]] = k
+    }
+    off := st.numOff
+    for o <- iter.Range(0, np) {
+        i := InsRef(table.Get(mut st.ptIns, o))
+        if irInsOp(mut st, i) != OpConst || irInsB(mut st, i) != CT_PSITE || irInsA(mut st, i) != o + off {
+            panic(InvariantBroken{})
+        }
+        irSetInsA(mut st, i, pp[o] + off)
+    }
+    // spawn の点（1 起点 — 旧の点 o + 1 → 新しい点 k + 1）
+    mut sp := mut []int{}
+    xFill(mut sp, ns, 0)
+    for k <- iter.Range(0, ns) {
+        sp[so[k]] = k
+    }
+    for o <- iter.Range(0, ns) {
+        i := InsRef(table.Get(mut st.stIns, o + 1))
+        v := irInsA(mut st, i)
+        if irInsOp(mut st, i) != OpConst || irInsB(mut st, i) != CT_SITE || (v >> 2) != o + 1 + off {
+            panic(InvariantBroken{})
+        }
+        irSetInsA(mut st, i, ((sp[o] + 1 + off) << 2) | (v & 3))
+    }
+    // 点の表（[種類, ファイル, 字句] × np）を新しい番号の順へ
+    mut old := mut []int{}
+    for k <- iter.Range(0, 3 * np) {
+        old = append(old, table.Get(mut st.psites, k))
+    }
+    for o <- iter.Range(0, np) {
+        for j <- iter.Range(0, 3) {
+            table.Set(mut st.psites, 3 * pp[o] + j, old[3 * o + j])
+        }
+    }
+    // ラベルの表は点の番号の降順の鎖に積み直す（作った順に頭へ積む形と同じ向き — 番号の昇順に積む）
+    mut lab := mut []int{}
+    xFill(mut lab, np, -1)
+    mut x := st.plabs
+    while x >= 0 {
+        lab[pp[desugar.HeapGet(mut st.d, x + 1)]] = desugar.HeapGet(mut st.d, x + 2)
+        x = desugar.HeapGet(mut st.d, x)
+    }
+    if st.plabs >= 0 {
+        st.plabs = -1
+        for k <- iter.Range(0, np) {
+            if lab[k] >= 0 {
+                st.plabs = rec4(mut st, st.plabs, k, lab[k], 0)
+            }
+        }
+    }
+    // 安定な鍵の材料: k 番目の SK_PSITE / SK_SITE の持ち主 = 新しい点 k の持ち主
+    mut jp := 0
+    mut js := 0
+    q = 0
+    while q < n {
+        kind := table.Get(mut st.sk, q)
+        if kind == SK_PSITE {
+            table.Set(mut st.sk, q + 2, ownP[op[jp]])
+            jp += 1
+        } else if kind == SK_SITE {
+            table.Set(mut st.sk, q + 2, ownS[so[js]])
+            js += 1
+        }
+        q += 2 + table.Get(mut st.sk, q + 1)
+    }
+    return miss
+}
+
+// 関数（fn）かグローバルの鎖のうち名前が pre ‖ 10 進の記録の番号を、鎖の順に小さい番号から振り直す（番号の集合は変えない —
+// 後から作る記録の通し番号〔st.nlambda・st.nkid・st.nstr〕と重ならない）
+func roRenum(st mut St, fn bool, pre string) {
+    pb := bytes(pre)
+    mut rs := mut []int{}
+    mut ns := mut []int{}
+    mut r := if fn { int(st.fhead) } else { st.ghead }
+    while r >= 0 {
+        nr := if fn { irFnName(mut st, FnRef(r)) } else { desugar.HeapGet(mut st.d, r + G_NAME) }
+        n := roNum(mut st, nr, pb)
+        if n >= 0 {
+            rs = append(rs, r)
+            ns = append(ns, n)
+        }
+        r = if fn { int(irFnNext(mut st, FnRef(r))) } else { xGlobNext(mut st, r) }
+    }
+    // 番号の昇順（1 語の鍵で roSort）
+    mut ks := mut [][]int{}
+    for k <- iter.Range(0, len(ns)) {
+        ks = append(ks, []int{ns[k]})
+    }
+    ord := roSort(freeze(ks))
+    for k <- iter.Range(0, len(rs)) {
+        n := ns[ord[k]]
+        if n != ns[k] {
+            nm := int(strCat(mut st, strLit(mut st, pre), decimal(mut st, n)))
+            if fn {
+                irSetFnName(mut st, FnRef(rs[k]), nm)
+            } else {
+                desugar.HeapSet(mut st.d, rs[k] + G_NAME, nm)
+            }
+        }
+    }
+}
+
+// 控えの表 t の添字 k に v を置く（足りない分は -1 で伸ばす）
+func ptSet(t mut table.Table[int], k int, v int) {
+    while table.Len(mut t) <= k {
+        table.Push(mut t, -1)
+    }
+    table.Set(mut t, k, v)
+}
+
+// 名前 nr が pb ‖ 10 進（1 桁以上）ならその値・でなければ -1
+func roNum(st mut St, nr int, pb []byte) int {
+    n := dat(mut st, nr)
+    if n <= len(pb) {
+        return -1
+    }
+    for i <- iter.Range(0, len(pb)) {
+        if dat(mut st, nr + 1 + i) != int(pb[i]) {
+            return -1
+        }
+    }
+    mut v := 0
+    for i <- iter.Range(len(pb), n) {
+        c := dat(mut st, nr + 1 + i)
+        if c < '0' || c > '9' {
+            return -1
+        }
+        v = v * 10 + c - '0'
+    }
+    return v
+}
+
+// 関数の記録 r の規則の鍵
+func roFnKey(st mut St, c RoCx, r int) []int {
+    mut o := mut []int{}
+    if r <= c.preF {
+        o = append(o, 0)
+        o = append(o, r)
+        return freeze(o)
+    }
+    q0 := c.ix.at[r]
+    if q0 != nil {
+        kind := table.Get(mut st.sk, q0)
+        if kind == SK_LAM || kind == SK_KID {
+            for b <- roFnKey(mut st, c, table.Get(mut st.sk, q0 + 3)) {
+                o = append(o, b)
+            }
+            o = append(o, 2)
+            o = append(o, kind)
+            mut n := 0
+            n0 := c.ix.ord[r]
+            if n0 != nil {
+                n = n0
+            }
+            o = append(o, n)
+            return freeze(o)
+        }
+    }
+    // 名前つき / インスタンス / FnInfo の無い記録は名前で分ける（分割の道の結合はインスタンスに FnInfo を作らない — FnInfo に依らない）
+    mut nm := mut []byte{}
+    nr := irFnName(mut st, FnRef(r))
+    n := dat(mut st, nr)
+    mut lb := -1
+    for i <- iter.Range(0, n) {
+        ch := dat(mut st, nr + 1 + i)
+        if ch == '[' && lb < 0 {
+            lb = i
+        }
+        nm = append(nm, byte(ch))
+    }
+    whole := string(freeze(nm)) catch ""
+    i0 := c.byName[whole]
+    if i0 != nil {
+        o = append(o, 1)
+        o = append(o, i0)
+        o = append(o, 0)
+        return freeze(o)
+    }
+    if lb > 0 {
+        mut pre := mut []byte{}
+        for i <- iter.Range(0, lb) {
+            pre = append(pre, nm[i])
+        }
+        ps := string(freeze(pre)) catch ""
+        g0 := c.byName[ps]
+        if g0 != nil {
+            o = append(o, 1)
+            o = append(o, g0)
+            o = append(o, 1)
+            for b <- nm {
+                o = append(o, int(b))
+            }
+            o = append(o, 0)
+            return freeze(o)
+        }
+    }
+    o = append(o, 3)
+    for b <- nm {
+        o = append(o, int(b))
+    }
+    return freeze(o)
+}
+
+// lower の文字列 s のバイトを o へ
+func roStr(st mut St, o mut []byte, s desugar.StrRef) {
+    for i <- iter.Range(0, slen(mut st, s)) {
+        o = append(o, byte(sat(mut st, s, i)))
+    }
+}
+
+// グローバルの記録 g の規則の鍵
+func roGlobKey(st mut St, c RoCx, g int) []int {
+    mut o := mut []int{}
+    if g <= c.preG {
+        o = append(o, 0)
+        o = append(o, g)
+        return freeze(o)
+    }
+    nr := desugar.HeapGet(mut st.d, g + G_NAME)
+    n := dat(mut st, nr)
+    if n > 4 && dat(mut st, nr + 1) == 's' && dat(mut st, nr + 2) == 't' && dat(mut st, nr + 3) == 'r' && dat(mut st, nr + 4) == '.' {
+        o = append(o, 2)
+        init := xGlobInit(mut st, g)
+        if init >= 0 {
+            for k <- iter.Range(0, xLen(mut st, init)) {
+                o = append(o, xAt(mut st, init, k))
+            }
+        }
+        o = append(o, xGlobWords(mut st, g))
+        return freeze(o)
+    }
+    o = append(o, 1)
+    for i <- iter.Range(0, n) {
+        o = append(o, dat(mut st, nr + 1 + i))
+    }
+    return freeze(o)
+}
+
+// 鍵の辞書式の比較（a < b）
+func roLess(a []int, b []int) bool {
+    n := if len(a) < len(b) { len(a) } else { len(b) }
+    for k <- iter.Range(0, n) {
+        if a[k] != b[k] {
+            return a[k] < b[k]
+        }
+    }
+    return len(a) < len(b)
+}
+
+// 鍵の順の添字の列（安定な併合整列 — 下から幅 1, 2, 4 …）
+func roSort(ks [][]int) []int {
+    mut a := mut []int{}
+    for k <- iter.Range(0, len(ks)) {
+        a = append(a, k)
+    }
+    mut b := mut []int{}
+    xFill(mut b, len(a), 0)
+    mut w := 1
+    while w < len(a) {
+        mut lo := 0
+        while lo < len(a) {
+            mid := if lo + w < len(a) { lo + w } else { len(a) }
+            hi := if lo + 2 * w < len(a) { lo + 2 * w } else { len(a) }
+            mut i := lo
+            mut j := mid
+            mut k := lo
+            while k < hi {
+                if i < mid && (j >= hi || !roLess(ks[a[j]], ks[a[i]])) {
+                    b[k] = a[i]
+                    i += 1
+                } else {
+                    b[k] = a[j]
+                    j += 1
+                }
+                k += 1
+            }
+            lo = hi
+        }
+        for k <- iter.Range(0, len(a)) {
+            a[k] = b[k]
+        }
+        w = w * 2
+    }
+    return freeze(a)
+}
+
+// 整列の後で隣どうしの鍵が等しい組の数（証人）
+func roDups(ks [][]int, ord []int) int {
+    mut n := 0
+    for k <- iter.Range(1, len(ord)) {
+        if !roLess(ks[ord[k - 1]], ks[ord[k]]) {
+            n += 1
+        }
+    }
+    return n
+}

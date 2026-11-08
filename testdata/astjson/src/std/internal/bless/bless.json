@@ -52,6 +52,48 @@
         "end": 23
       },
       "sig_end": 17
+    },
+    {
+      "name": "Int",
+      "type_params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "x",
+                "tok": 35
+              }
+            ],
+            "tok": 34
+          }
+        ]
+      },
+      "tok": 27,
+      "bodiless": false,
+      "span": {
+        "start": 23,
+        "end": 39
+      },
+      "sig_end": 33
     }
   ],
   "consts": []

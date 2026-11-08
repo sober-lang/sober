@@ -1,0 +1,2 @@
+sober: load error at sober.mod:1:8: the last segment of a module path is its name: a lowercase identifier (a-z, 0-9, _ — not starting with a digit) that is not a keyword
+(check exit 1)

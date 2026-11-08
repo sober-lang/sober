@@ -5,5 +5,5 @@ package main
 import "testdata/specpkg/badname"
 
 func main() {
-    println(badname.F())
+    println(testdata.specpkg.badname.F())
 }

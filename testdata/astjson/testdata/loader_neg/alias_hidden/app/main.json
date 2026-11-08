@@ -15,13 +15,13 @@
         "k": "alias",
         "type": {
           "k": "name",
-          "name": "lib.secret"
+          "name": "testdata.loader_neg.alias_hidden.lib.secret"
         }
       },
       "tok": 7,
       "span": {
         "start": 6,
-        "end": 13
+        "end": 19
       }
     }
   ],
@@ -40,27 +40,27 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 18
+                "tok": 24
               },
               "args": [
                 {
                   "k": "int",
                   "value": 1,
-                  "tok": 20
+                  "tok": 26
                 }
               ],
-              "tok": 19
+              "tok": 25
             }
           }
         ]
       },
-      "tok": 14,
+      "tok": 20,
       "bodiless": false,
       "span": {
-        "start": 13,
-        "end": 25
+        "start": 19,
+        "end": 31
       },
-      "sig_end": 17
+      "sig_end": 23
     }
   ],
   "consts": []

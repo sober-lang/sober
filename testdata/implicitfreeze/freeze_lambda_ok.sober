@@ -1,0 +1,25 @@
+package main
+
+// 局所の束縛のラムダの結果の freeze と別名の正例（後に書かない — 受理）: 捕捉した束縛・mut の仮引数の席・ブロックの if を返す形。
+// 凍らせた束縛には書かず、書くのは別の値（w）
+
+type H struct {
+    xs []int
+    k int
+}
+
+func main() {
+    mut m := mut []int{1, 2}
+    mut n := mut []int{3}
+    g := () => m
+    id := (x mut []int) => x
+    pick := (c bool) => { if c { m } else { n } }
+    a := freeze(g())
+    b := freeze(id(mut n))
+    c := freeze(pick(false))
+    v := g()
+    h := H{xs: v, k: 0}
+    mut w := mut []int{7}
+    w[0] = 8
+    println(a[0] + b[0] + c[0] + h.xs[0] + w[0])
+}

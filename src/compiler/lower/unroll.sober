@@ -19,6 +19,9 @@ const UR_BUDGET = 2048
 // 呼び出しの重み: B1 の呼び出しは後段（rtlower の展開・インライン）で伸びる — 1 と数えると最終の直線が K を超えた（examples/task_chan_hold の
 // 15 回の Recv / Send のループ — 最終 1,213 IR 命令。検証器の網が鳴った実例）
 const UR_CALLW = 32
+// 確保の重み（窓を組むプログラム — st.winOn）: region.alloc は後段で上限の検査に展開され、先端の伸長では列の終わりとの比較（tipJoin）が
+// 続く — どちらも縮まないので 1 と数えると最終の直線が K を超えた（examples/web_login の blake2b の 16 回の append のループ — 最終 1,068）
+const UR_RALLOCW = 8
 
 // モジュールの全関数に全展開を掛ける
 func unrollModule(st mut St) {
@@ -241,7 +244,7 @@ func urPlus(st mut St, uw mut UrW, v int, x int, k int) bool {
     return o >= 0 && urConst(mut st, mut uw, o) && irInsA(mut st, InsRef(uw.def[o])) == k
 }
 
-// 印 mark の付いたブロックの命令の数（終端を 1・呼び出しを UR_CALLW と数える）
+// 印 mark の付いたブロックの命令の数（終端を 1・呼び出しを UR_CALLW・窓を組むプログラムの確保を UR_RALLOCW と数える）
 func urCount(st mut St, w mut m2rW, in mut []int, mark int) int {
     mut n := 0
     for bi <- iter.Range(0, w.nb) {
@@ -250,7 +253,7 @@ func urCount(st mut St, w mut m2rW, in mut []int, mark int) int {
             mut i := irBlkIHead(mut st, BlkRef(w.blk[bi]))
             while i != -1 {
                 op := irInsOp(mut st, i)
-                n += if op == OpCall || op == OpCallI || op == OpSyscall { UR_CALLW } else { 1 }
+                n += if op == OpCall || op == OpCallI || op == OpSyscall { UR_CALLW } else if op == OpRAlloc && st.winOn { UR_RALLOCW } else { 1 }
                 i = irInsNext(mut st, i)
             }
         }

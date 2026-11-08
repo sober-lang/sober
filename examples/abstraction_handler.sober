@@ -1,27 +1,27 @@
 package main
 
-// Abstraction 1 and 2: a named function type (http.Handler) built by closures, and a struct of
-// function fields (http.Middleware) (docs/guide/abstraction.md). The requests are fed from a string
+// Abstraction 1 and 2: a named function type (http.server.Handler) built by closures, and a struct of
+// function fields (http.server.Middleware) (docs/guide/abstraction.md). The requests are fed from a string
 // instead of the network, and each response is printed (the form of examples/http_router)
 
-import "std/http"
+import "std/http/server"
 
 func or(s string?) string {
     return if s != nil { s } else { "-" }
 }
 
 // stops a request without X-Token (only `before` is given; `after` is left out)
-const Auth = http.Middleware{before: (r) => if http.Header(r, "x-token") == nil { http.Status(401) } else { nil }}
+const Auth = http.server.Middleware{before: (r) => if http.server.Header(r, "x-token") == nil { http.server.Status(401) } else { nil }}
 
 // a Handler that answers with `word`: the closure captures `word` on this line
-func greeter(word string) http.Handler {
-    return (r) => http.Text("${word}, ${or(http.Param(r, "name"))}\n")
+func greeter(word string) http.server.Handler {
+    return (r) => http.server.Text("${word}, ${or(http.server.Param(r, "name"))}\n")
 }
 
-func routes() []http.Route {
-    return http.Mount("", []http.Route{
-        http.Route{method: "GET", path: "/hello/:name", handler: greeter("hello")},
-        http.Route{method: "GET", path: "/bye/:name", handler: greeter("see you")}}, []http.Middleware{Auth})
+func routes() []http.server.Route {
+    return http.server.Mount("", []http.server.Route{
+        http.server.Route{method: "GET", path: "/hello/:name", handler: greeter("hello")},
+        http.server.Route{method: "GET", path: "/bye/:name", handler: greeter("see you")}}, []http.server.Middleware{Auth})
 }
 
 func main() {
@@ -29,7 +29,7 @@ func main() {
         "GET /bye/bob HTTP/1.1\r\nX-Token: t\r\n\r\n" +
         "GET /hello/eve HTTP/1.1\r\nConnection: close\r\n\r\n"
     rs := routes()
-    e := http.ServeWith((k) => feed(reqs, k), (b) => show(b), (r) => http.Dispatch(rs, r))
+    e := http.server.ServeWith((k) => feed(reqs, k), (b) => show(b), (r) => http.server.Dispatch(rs, r))
     println(e == nil)
 }
 

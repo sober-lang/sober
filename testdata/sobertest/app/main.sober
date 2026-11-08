@@ -4,5 +4,5 @@ package main
 import "testdata/sobertest/calc"
 
 func main() {
-    println(calc.Add(20, 22))
+    println(testdata.sobertest.calc.Add(20, 22))
 }

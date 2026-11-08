@@ -350,11 +350,11 @@ func apTaint(st mut St, f FnRef, fw mut []int, at int) bool {
                     fw = append(fw, c)
                     fw[at + 1] = fw[at + 1] + 1
                 }
-            } else if op == OpLoad || op == OpLoad8 || op == OpPtoi || op == OpItop || op == OpRSetDepth || op == OpRBump {
+            } else if op == OpLoad || isNarrowLd(op) || op == OpPtoi || op == OpItop || op == OpRSetDepth || op == OpRBump {
                 if apT(mut tv, irInsA(mut st, i)) {
                     return true
                 }
-            } else if op == OpStore || op == OpStore8 || op == OpRReloc {
+            } else if op == OpStore || isNarrowSt(op) || op == OpRReloc {
                 if apT(mut tv, irInsA(mut st, i)) || apT(mut tv, irInsC(mut st, i)) {
                     return true
                 }

@@ -60,7 +60,8 @@ job() { # $1 = entry
     cmp -s "$tmp/out/$k.json" "$PAR_W/again" || echo "FAIL: $e: output is not deterministic"
     echo "@@ ok"
 }
-while IFS= read -r e; do par_run job "$e"; done < <(entries)
+# testdata/golden_skip.txt の entry は黄金を作らない（--list は絞らない — 他のゲートが全 entry を読む）
+while IFS= read -r e; do par_run job "$e"; done < <(entries | grep -vxF -f <(grep -v "^#" testdata/golden_skip.txt))
 par_wait > "$tmp/res"
 grep '^@@ excl ' "$tmp/res" | sed 's/^@@ excl //' > "$tmp/out/EXCLUDED.txt" || true
 if grep '^FAIL' "$tmp/res"; then fail=1; fi

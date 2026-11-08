@@ -1,0 +1,7 @@
+package store
+
+func TestFind() {
+    s := With(With(Empty(), "a", "1"), "b", "2")
+    assert(Find(s, "b") == "2")
+    assert(Find(s, "c") == "")
+}

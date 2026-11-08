@@ -539,7 +539,7 @@ func mrLocal(st mut St, f FnRef, names map[int]string, sums []MvSum, uix map[int
                 l := desugar.ListRef(irInsB(mut st, ins))
                 cblk = append(cblk, bi)
                 cpos = append(cpos, pos)
-                mrCallPush(mut calls, mut callT, mut ap, mv, mut st, w, cfg, lof, TP, tF, bi, pos, -1, l, lenL(mut st, l) * 4 + (if irInsC(mut st, ins) == -1 || irInsC(mut st, ins) == CALLI_SRET { 0 } else { 1 }))
+                mrCallPush(mut calls, mut callT, mut ap, mv, mut st, w, cfg, lof, TP, tF, bi, pos, -1, l, lenL(mut st, l) * 4 + (if calliTy(irInsC(mut st, ins)) < 0 { 0 } else { 1 }))
             } else if op == OpCall {
                 g := irInsFn(mut st, ins)
                 n := mrNm(names, int(g))
@@ -1506,7 +1506,7 @@ func mrCallees(st mut St, f FnRef, names map[int]string) []int {
             op := irInsOp(mut st, i)
             if op == OpCallI || op == OpTrapI {
                 o = append(o, -1)
-                o = append(o, lenL(mut st, desugar.ListRef(irInsB(mut st, i))) * 4 + (if irInsC(mut st, i) == -1 || irInsC(mut st, i) == CALLI_SRET { 0 } else { 1 }))
+                o = append(o, lenL(mut st, desugar.ListRef(irInsB(mut st, i))) * 4 + (if calliTy(irInsC(mut st, i)) < 0 { 0 } else { 1 }))
             } else if op == OpCall {
                 g := irInsFn(mut st, i)
                 if !strings.HasPrefix(mrNm(names, int(g)), "rt.") {
@@ -1640,7 +1640,7 @@ func memStackPrep(st mut St) {
                     table.Push(mut st.memEd, fi)
                     table.Push(mut st.memEd, -1)
                     table.Push(mut st.memEd, na)
-                    table.Push(mut st.memEd, na * 4 + (if irInsC(mut st, i) == -1 || irInsC(mut st, i) == CALLI_SRET { 0 } else { 1 }))
+                    table.Push(mut st.memEd, na * 4 + (if calliTy(irInsC(mut st, i)) < 0 { 0 } else { 1 }))
                 } else if op == OpFuncaddr {
                     table.Push(mut st.memTk, irInsA(mut st, i))
                 }

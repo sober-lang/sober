@@ -49,7 +49,7 @@ Main commands:
 
 ## Running servers
 
-Programs that use std/net (and so std/http and std/tls) need three things from the environment:
+Programs that use std/net (and so std/http/server and std/tls) need three things from the environment:
 
 - io_uring: Docker's default seccomp profile (and gVisor) block io_uring. Sober then falls back to epoll automatically — it works, but slower. For full speed, run with a seccomp profile that allows `io_uring_setup` / `io_uring_enter` / `io_uring_register` (for example `docker run --security-opt seccomp=unconfined …`). The network path on io_uring needs Linux 6.1 or later
 - memlock: each worker owns an io_uring ring, and older kernels charge ring memory to `RLIMIT_MEMLOCK` for the whole user. When ring setup fails with ENOMEM, Sober falls back as above (slower); raise the limit (`ulimit -l unlimited`, `LimitMEMLOCK=infinity` under systemd, `--ulimit memlock=-1` under Docker). From Linux 5.12 the memory is charged to the cgroup instead and this rarely matters

@@ -65,9 +65,9 @@ func main() {
             iv := unhex(t.iv)
             aad := unhex(t.aad)
             want := t.ct + t.tag
-            sealed, se := chacha20poly1305.Seal(key, iv, aad, unhex(t.msg))
+            sealed, se := crypto.chacha20poly1305.Seal(key, iv, aad, unhex(t.msg))
             sealOk := se == nil && hex.Format(sealed) == want
-            pt, oe := chacha20poly1305.Open(key, iv, aad, unhex(want))
+            pt, oe := crypto.chacha20poly1305.Open(key, iv, aad, unhex(want))
             openOk := oe == nil && crypto.Equal(pt, unhex(t.msg))
             valid := t.result == "valid"
             ok := if valid { sealOk && openOk } else { oe != nil }

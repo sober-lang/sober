@@ -9,3 +9,9 @@ package bless
 func Bytes(b []byte) []byte {
     return b
 }
+
+// x をそのまま返す（結果は公開の値）
+@bless
+func Int(x int) int {
+    return x
+}

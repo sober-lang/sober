@@ -38,12 +38,22 @@
                 "callee": {
                   "k": "selector",
                   "base": {
-                    "k": "ident",
-                    "name": "leaf",
-                    "tok": 15
+                    "k": "selector",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "testdata",
+                        "tok": 15
+                      },
+                      "field": "cachekey",
+                      "tok": 17
+                    },
+                    "field": "leaf",
+                    "tok": 19
                   },
                   "field": "Inc",
-                  "tok": 17
+                  "tok": 21
                 },
                 "args": [
                   {
@@ -51,24 +61,34 @@
                     "callee": {
                       "k": "selector",
                       "base": {
-                        "k": "ident",
-                        "name": "leaf",
-                        "tok": 19
+                        "k": "selector",
+                        "base": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "testdata",
+                            "tok": 23
+                          },
+                          "field": "cachekey",
+                          "tok": 25
+                        },
+                        "field": "leaf",
+                        "tok": 27
                       },
                       "field": "Inc",
-                      "tok": 21
+                      "tok": 29
                     },
                     "args": [
                       {
                         "k": "ident",
                         "name": "x",
-                        "tok": 23
+                        "tok": 31
                       }
                     ],
-                    "tok": 22
+                    "tok": 30
                   }
                 ],
-                "tok": 18
+                "tok": 22
               }
             ],
             "tok": 14
@@ -79,7 +99,7 @@
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 29
+        "end": 37
       },
       "sig_end": 13
     }

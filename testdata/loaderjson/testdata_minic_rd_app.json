@@ -14,24 +14,8 @@
           "path": "std/internal/utf8"
         },
         {
-          "ref": "diag",
-          "path": "testdata/minic_rd/diag"
-        },
-        {
-          "ref": "emit",
-          "path": "testdata/minic_rd/emit"
-        },
-        {
           "ref": "io",
           "path": "std/io"
-        },
-        {
-          "ref": "lex",
-          "path": "testdata/minic_rd/lex"
-        },
-        {
-          "ref": "parse",
-          "path": "testdata/minic_rd/parse"
         },
         {
           "ref": "pool",
@@ -40,6 +24,22 @@
         {
           "ref": "strings",
           "path": "std/strings"
+        },
+        {
+          "ref": "testdata.minic_rd.diag",
+          "path": "testdata/minic_rd/diag"
+        },
+        {
+          "ref": "testdata.minic_rd.emit",
+          "path": "testdata/minic_rd/emit"
+        },
+        {
+          "ref": "testdata.minic_rd.lex",
+          "path": "testdata/minic_rd/lex"
+        },
+        {
+          "ref": "testdata.minic_rd.parse",
+          "path": "testdata/minic_rd/parse"
         }
       ],
       "funcs": [
@@ -60,11 +60,11 @@
           "mut_def": false,
           "has_try": true,
           "callees": [
-            "emit.Compile",
-            "emit.Run",
             "len",
-            "lex.Lex",
-            "parse.Parse"
+            "testdata.minic_rd.emit.Compile",
+            "testdata.minic_rd.emit.Run",
+            "testdata.minic_rd.lex.Lex",
+            "testdata.minic_rd.parse.Parse"
           ]
         },
         {
@@ -91,7 +91,6 @@
           "callees": [
             "$utf8.Parse",
             "compile",
-            "diag.Render",
             "io.ReadFile",
             "ioWhy",
             "len",
@@ -103,7 +102,8 @@
             "println",
             "show",
             "strings.Count",
-            "strings.HasSuffix"
+            "strings.HasSuffix",
+            "testdata.minic_rd.diag.Render"
           ]
         },
         {
@@ -715,6 +715,42 @@
           "callees": []
         },
         {
+          "name": "LoadRaw16",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "load16"
+          ]
+        },
+        {
+          "name": "StoreRaw16",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "store16"
+          ]
+        },
+        {
+          "name": "LoadRaw32",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "load32"
+          ]
+        },
+        {
+          "name": "StoreRaw32",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "store32"
+          ]
+        },
+        {
           "name": "RenewDense",
           "expands": true,
           "mut_def": false,
@@ -1123,7 +1159,7 @@
           "path": "std/builder"
         },
         {
-          "ref": "diag",
+          "ref": "testdata.minic_rd.diag",
           "path": "testdata/minic_rd/diag"
         }
       ],
@@ -1247,11 +1283,11 @@
           "path": "std/builder"
         },
         {
-          "ref": "diag",
+          "ref": "testdata.minic_rd.diag",
           "path": "testdata/minic_rd/diag"
         },
         {
-          "ref": "lex",
+          "ref": "testdata.minic_rd.lex",
           "path": "testdata/minic_rd/lex"
         }
       ],
@@ -1262,7 +1298,7 @@
           "mut_def": false,
           "has_try": false,
           "callees": [
-            "lex.Next"
+            "testdata.minic_rd.lex.Next"
           ]
         },
         {
@@ -1281,10 +1317,10 @@
           "mut_def": true,
           "has_try": true,
           "callees": [
-            "lex.Next",
             "node",
             "peek",
-            "term"
+            "term",
+            "testdata.minic_rd.lex.Next"
           ]
         },
         {
@@ -1293,9 +1329,9 @@
           "mut_def": true,
           "has_try": true,
           "callees": [
-            "lex.Next",
             "node",
             "peek",
+            "testdata.minic_rd.lex.Next",
             "unary"
           ]
         },
@@ -1306,8 +1342,8 @@
           "has_try": true,
           "callees": [
             "expr",
-            "lex.Next",
             "node",
+            "testdata.minic_rd.lex.Next",
             "unary"
           ]
         },
@@ -1319,9 +1355,9 @@
           "callees": [
             "builder.Build",
             "expr",
-            "lex.Next",
-            "lex.Remaining",
-            "lex.Start"
+            "testdata.minic_rd.lex.Next",
+            "testdata.minic_rd.lex.Remaining",
+            "testdata.minic_rd.lex.Start"
           ]
         }
       ],
@@ -1367,11 +1403,11 @@
           "path": "std/builder"
         },
         {
-          "ref": "diag",
+          "ref": "testdata.minic_rd.diag",
           "path": "testdata/minic_rd/diag"
         },
         {
-          "ref": "parse",
+          "ref": "testdata.minic_rd.parse",
           "path": "testdata/minic_rd/parse"
         }
       ],
@@ -1496,7 +1532,7 @@
           "path": "std/internal/floatfmt"
         },
         {
-          "ref": "floatfmt",
+          "ref": "internal.floatfmt",
           "path": "std/internal/floatfmt"
         }
       ],
@@ -1507,7 +1543,7 @@
           "mut_def": false,
           "has_try": false,
           "callees": [
-            "floatfmt.Format",
+            "internal.floatfmt.Format",
             "sysFBits"
           ]
         },
@@ -1517,7 +1553,7 @@
           "mut_def": false,
           "has_try": false,
           "callees": [
-            "floatfmt.FormatFixed",
+            "internal.floatfmt.FormatFixed",
             "sysFBits"
           ]
         },
@@ -1529,7 +1565,7 @@
           "callees": [
             "bytes",
             "fastFloat",
-            "floatfmt.ParseBits",
+            "internal.floatfmt.ParseBits",
             "sysFFromBits"
           ]
         },
@@ -1815,7 +1851,7 @@
       "name": "floatfmt",
       "imports": [
         {
-          "ref": "bigint",
+          "ref": "internal.bigint",
           "path": "std/internal/bigint"
         },
         {
@@ -1851,19 +1887,19 @@
           "has_try": false,
           "callees": [
             "append",
-            "bigint.Cmp",
-            "bigint.DivSmall",
-            "bigint.MulAdd",
-            "bigint.Odd",
-            "bigint.Set",
-            "bigint.SetInt",
-            "bigint.Shl",
-            "bigint.Shr",
-            "bigint.Sub",
-            "bigint.Top",
             "byte",
             "bytesToString",
             "freeze",
+            "internal.bigint.Cmp",
+            "internal.bigint.DivSmall",
+            "internal.bigint.MulAdd",
+            "internal.bigint.Odd",
+            "internal.bigint.Set",
+            "internal.bigint.SetInt",
+            "internal.bigint.Shl",
+            "internal.bigint.Shr",
+            "internal.bigint.Sub",
+            "internal.bigint.Top",
             "iter.Range",
             "len"
           ]
@@ -1885,14 +1921,14 @@
           "has_try": false,
           "callees": [
             "append",
-            "bigint.Add",
-            "bigint.Cmp",
-            "bigint.MulAdd",
-            "bigint.Set",
-            "bigint.SetInt",
-            "bigint.Shl",
-            "bigint.Sub",
             "bitLen",
+            "internal.bigint.Add",
+            "internal.bigint.Cmp",
+            "internal.bigint.MulAdd",
+            "internal.bigint.Set",
+            "internal.bigint.SetInt",
+            "internal.bigint.Shl",
+            "internal.bigint.Sub",
             "iter.Range"
           ]
         },
@@ -1936,10 +1972,10 @@
           "mut_def": false,
           "has_try": false,
           "callees": [
-            "bigint.BitLen",
-            "bigint.Cmp",
-            "bigint.MulAdd",
             "bnDivScaled",
+            "internal.bigint.BitLen",
+            "internal.bigint.Cmp",
+            "internal.bigint.MulAdd",
             "iter.Range",
             "len"
           ]
@@ -1950,10 +1986,10 @@
           "mut_def": false,
           "has_try": false,
           "callees": [
-            "bigint.Cmp",
-            "bigint.Set",
-            "bigint.Shl",
-            "bigint.Sub"
+            "internal.bigint.Cmp",
+            "internal.bigint.Set",
+            "internal.bigint.Shl",
+            "internal.bigint.Sub"
           ]
         },
         {
@@ -2164,7 +2200,7 @@
       "pkg": "std/io"
     },
     {
-      "name": "InvalidUtf8",
+      "name": "BadUtf8",
       "pkg": "std/strings"
     },
     {
@@ -2188,7 +2224,7 @@
       "pkg": "testdata/minic_rd/diag"
     },
     {
-      "name": "InvalidFloat",
+      "name": "BadFloat",
       "pkg": "std/convert"
     },
     {
@@ -2196,7 +2232,7 @@
       "pkg": "std/convert"
     },
     {
-      "name": "InvalidInt",
+      "name": "BadInt",
       "pkg": "std/convert"
     },
     {
@@ -2204,7 +2240,7 @@
       "pkg": "std/convert"
     },
     {
-      "name": "InvalidBool",
+      "name": "BadBool",
       "pkg": "std/convert"
     },
     {

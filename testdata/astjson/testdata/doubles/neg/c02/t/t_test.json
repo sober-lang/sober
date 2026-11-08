@@ -25,7 +25,7 @@
             "values": [
               {
                 "k": "composite",
-                "type_name": "cell.Cell",
+                "type_name": "testing.cell.Cell",
                 "elems": [],
                 "tok": 13,
                 "type_args": [
@@ -45,26 +45,31 @@
               "callee": {
                 "k": "selector",
                 "base": {
-                  "k": "ident",
-                  "name": "cell",
-                  "tok": 22
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "testing",
+                    "tok": 24
+                  },
+                  "field": "cell",
+                  "tok": 26
                 },
                 "field": "Set",
-                "tok": 24
+                "tok": 28
               },
               "args": [
                 {
                   "k": "ident",
                   "name": "h",
-                  "tok": 26
+                  "tok": 30
                 },
                 {
                   "k": "int",
                   "value": 1,
-                  "tok": 28
+                  "tok": 32
                 }
               ],
-              "tok": 25
+              "tok": 29
             }
           }
         ]
@@ -73,7 +78,7 @@
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 33
+        "end": 37
       },
       "sig_end": 10
     }

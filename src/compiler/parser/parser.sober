@@ -408,7 +408,7 @@ func errorsArgs(db mut builder.Builder[int], cx Cx, p0 int) int {
         if ok {
             spell(cx, p, mut b)
             p += 1
-            if tg(cx, p) == lexer.Dot && tg(cx, p + 1) == lexer.Identifier {
+            while tg(cx, p) == lexer.Dot && tg(cx, p + 1) == lexer.Identifier {
                 b = append(b, '.')
                 spell(cx, p + 1, mut b)
                 p += 2

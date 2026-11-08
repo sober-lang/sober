@@ -1,0 +1,206 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/http/client",
+      "tok": 4
+    }
+  ],
+  "types": [
+    {
+      "name": "Pool",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "s",
+            "type": {
+              "k": "name",
+              "name": "http.client.Session"
+            },
+            "tok": 10
+          },
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 17
+          }
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 22
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "_",
+                "tok": 27
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "http",
+                      "tok": 29
+                    },
+                    "field": "client",
+                    "tok": 31
+                  },
+                  "field": "Open",
+                  "tok": 33
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "http://127.0.0.1:9",
+                    "tok": 35
+                  },
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "s",
+                        "type": null
+                      }
+                    ],
+                    "body": {
+                      "k": "block",
+                      "stmts": [
+                        {
+                          "k": "bind",
+                          "names": [
+                            "p"
+                          ],
+                          "mutable": false,
+                          "values": [
+                            {
+                              "k": "composite",
+                              "type_name": "Pool",
+                              "elems": [
+                                {
+                                  "key": "s",
+                                  "value": {
+                                    "k": "ident",
+                                    "name": "s",
+                                    "tok": 48
+                                  }
+                                },
+                                {
+                                  "key": "n",
+                                  "value": {
+                                    "k": "int",
+                                    "value": 1,
+                                    "tok": 52
+                                  }
+                                }
+                              ],
+                              "tok": 44,
+                              "type_args": []
+                            }
+                          ],
+                          "tok": 42
+                        },
+                        {
+                          "k": "assign",
+                          "targets": [
+                            {
+                              "k": "ident",
+                              "name": "_",
+                              "tok": 55
+                            },
+                            {
+                              "k": "ident",
+                              "name": "_",
+                              "tok": 57
+                            }
+                          ],
+                          "op": "=",
+                          "values": [
+                            {
+                              "k": "call",
+                              "callee": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "selector",
+                                  "base": {
+                                    "k": "ident",
+                                    "name": "http",
+                                    "tok": 59
+                                  },
+                                  "field": "client",
+                                  "tok": 61
+                                },
+                                "field": "Send",
+                                "tok": 63
+                              },
+                              "args": [
+                                {
+                                  "k": "selector",
+                                  "base": {
+                                    "k": "ident",
+                                    "name": "p",
+                                    "tok": 65
+                                  },
+                                  "field": "s",
+                                  "tok": 67
+                                },
+                                {
+                                  "k": "strlit",
+                                  "value": "/",
+                                  "tok": 69
+                                }
+                              ],
+                              "tok": 64
+                            }
+                          ],
+                          "tok": 55
+                        }
+                      ]
+                    },
+                    "tok": 40
+                  }
+                ],
+                "tok": 34
+              }
+            ],
+            "tok": 27
+          }
+        ]
+      },
+      "tok": 23,
+      "bodiless": false,
+      "span": {
+        "start": 22,
+        "end": 77
+      },
+      "sig_end": 26
+    }
+  ],
+  "consts": []
+}

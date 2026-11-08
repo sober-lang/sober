@@ -1,0 +1,346 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/session",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/time",
+      "tok": 7
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "k"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "session",
+                    "tok": 16
+                  },
+                  "field": "KeyNew",
+                  "tok": 18
+                },
+                "args": [],
+                "tok": 19
+              }
+            ],
+            "tok": 14
+          },
+          {
+            "k": "bind",
+            "names": [
+              "raw"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "session",
+                    "tok": 24
+                  },
+                  "field": "Seal",
+                  "tok": 26
+                },
+                "args": [
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "session",
+                        "tok": 28
+                      },
+                      "field": "Mint",
+                      "tok": 30
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "k",
+                        "tok": 32
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "alice",
+                        "tok": 34
+                      },
+                      {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 36
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "time",
+                            "tok": 38
+                          },
+                          "field": "Now",
+                          "tok": 40
+                        },
+                        "args": [],
+                        "tok": 41
+                      },
+                      {
+                        "k": "int",
+                        "value": 60,
+                        "tok": 44
+                      }
+                    ],
+                    "tok": 31
+                  }
+                ],
+                "tok": 27
+              }
+            ],
+            "tok": 22
+          },
+          {
+            "k": "bind",
+            "names": [
+              "u",
+              "_"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "session",
+                    "tok": 52
+                  },
+                  "field": "Open",
+                  "tok": 54
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "k",
+                    "tok": 56
+                  },
+                  {
+                    "k": "ident",
+                    "name": "raw",
+                    "tok": 58
+                  },
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "time",
+                        "tok": 60
+                      },
+                      "field": "Now",
+                      "tok": 62
+                    },
+                    "args": [],
+                    "tok": 63
+                  }
+                ],
+                "tok": 55
+              }
+            ],
+            "tok": 48
+          },
+          {
+            "k": "bind",
+            "names": [
+              "c"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "session.Claims",
+                "elems": [
+                  {
+                    "key": "v",
+                    "value": {
+                      "k": "composite",
+                      "type_name": "session.Info",
+                      "elems": [
+                        {
+                          "key": "subject",
+                          "value": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "session",
+                                "tok": 81
+                              },
+                              "field": "Subject",
+                              "tok": 83
+                            },
+                            "args": [
+                              {
+                                "k": "ident",
+                                "name": "u",
+                                "tok": 85
+                              }
+                            ],
+                            "tok": 84
+                          }
+                        },
+                        {
+                          "key": "gen",
+                          "value": {
+                            "k": "int",
+                            "value": 0,
+                            "tok": 90
+                          }
+                        },
+                        {
+                          "key": "id",
+                          "value": {
+                            "k": "strlit",
+                            "value": "",
+                            "tok": 94
+                          }
+                        },
+                        {
+                          "key": "issued",
+                          "value": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "time",
+                                "tok": 98
+                              },
+                              "field": "Now",
+                              "tok": 100
+                            },
+                            "args": [],
+                            "tok": 101
+                          }
+                        },
+                        {
+                          "key": "expires",
+                          "value": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "time",
+                                "tok": 106
+                              },
+                              "field": "Now",
+                              "tok": 108
+                            },
+                            "args": [],
+                            "tok": 109
+                          }
+                        }
+                      ],
+                      "tok": 75,
+                      "type_args": []
+                    }
+                  }
+                ],
+                "tok": 69,
+                "type_args": []
+              }
+            ],
+            "tok": 67
+          },
+          {
+            "k": "bind",
+            "names": [
+              "who",
+              "_"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "session",
+                    "tok": 118
+                  },
+                  "field": "Who",
+                  "tok": 120
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "c",
+                    "tok": 122
+                  }
+                ],
+                "tok": 121
+              }
+            ],
+            "tok": 114
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 125
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "who",
+                  "tok": 127
+                }
+              ],
+              "tok": 126
+            }
+          }
+        ]
+      },
+      "tok": 10,
+      "bodiless": false,
+      "span": {
+        "start": 9,
+        "end": 132
+      },
+      "sig_end": 13
+    }
+  ],
+  "consts": []
+}

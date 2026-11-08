@@ -1,2 +1,2 @@
-{"ok":true,"ty":{"k":"unit"}}
-exit=0
+examples/http_static.sober:99:1: error: 'run' may return net.NoHost, net.NonASCIIHost not listed in its @errors (Analyzer)
+exit=1

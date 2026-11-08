@@ -12,5 +12,5 @@ import "std/crypto/sha256"
 // 本体は std/crypto/sha256（インクリメンタル API New / Write / Sum もそこ）
 @effects()
 func Sha256(data []byte) []byte {
-    return sha256.Sum256(data)
+    return crypto.sha256.Sum256(data)
 }

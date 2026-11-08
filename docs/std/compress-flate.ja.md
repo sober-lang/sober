@@ -16,7 +16,7 @@ func Encode(data []byte, level int) []byte
 data を DEFLATE（RFC 1951 — 頭も検査和もない生の圧縮列）に符号化する。level は 0〜9（zlib と同じ目盛り — 0 = 圧縮しないstored・1 = 速さ優先・9 = 大きさ優先。gzip / zlib の既定は 6）。範囲外は panic(BadLevel{level}):
 
 ```sober
-z := flate.Encode(bytes(s), 6)
+z := compress.flate.Encode(bytes(s), 6)
 ```
 
 同じ入力・同じ level なら常に同じバイト列（決定的 — 大きさの黄金で照合できる）。作業域は呼ぶたびに入力の長さに合わせて取る — 何度も符号化する task は EncodeWith でワーカー局所の作業域を借りる（下の Work）。
@@ -28,23 +28,23 @@ z := flate.Encode(bytes(s), 6)
 ## Work
 
 ```sober
-type Work = deflate.Work
+type Work = internal.deflate.Work
 ```
 
-符号器の作業域（ハッシュ鎖と記号の溜め — 8 KiB の本文で ≈ 150 KB・最大 ≈ 650 KB）。ワーカー局所の lease に置ける形（スカラーとpool.Scratch の欄だけ — region-domain-pool.md 4d 節）で、Prepare が最大の容量に整える:
+符号器の作業域（ハッシュ鎖と記号の溜め — 8 KiB の本文で ≈ 70 KB・最大 ≈ 200 KB）。ワーカー局所の lease に置ける形（スカラーとpool.Scratch の欄だけ — region-domain-pool.md 4d 節）で、NewWork が最大の容量に整える:
 
 ```sober
-gzw := task.NewLocal((w mut flate.Work) => flate.Prepare(mut w))            // ワーカーごとに 1 つ（≈ 650 KB × ワーカー数）
-z := task.Lease(gzw, (w mut flate.Work) => flate.EncodeWith(mut w, b, 6))  // 窓のたびにまっさら — 結果は Encode と同じバイト列
+gzw := task.NewLocal((w mut compress.flate.Work) => compress.flate.NewWork(mut w))            // ワーカーごとに 1 つ（≈ 200 KB × ワーカー数）
+z := task.Lease(gzw, (w mut compress.flate.Work) => compress.flate.EncodeWith(mut w, b, 6))  // 窓のたびにまっさら — 結果は Encode と同じバイト列
 ```
 
-整えていない Work{} は EncodeWith が入力の長さに合わせて取る（Encode の形）。容量が足りない Work（Prepare 以外で整えた）は新しい作業域に倒す（結果は同じ）
+整えていない Work{} は EncodeWith が入力の長さに合わせて取る（Encode の形）。容量が足りない Work（NewWork 以外で整えた）は新しい作業域に倒す（結果は同じ）
 
-## Prepare
+## NewWork
 
 ```sober
 @effects(!io, !block, !nondet)
-func Prepare(w mut Work)
+func NewWork(w mut Work)
 ```
 
 w を最大の入力（窓 32 KiB の鎖・2^15 のハッシュの表・ブロック 1 つの記号）の容量に整える（task.NewLocal の整え方）
@@ -59,6 +59,39 @@ func EncodeWith(w mut Work, data []byte, level int) []byte
 Encode と同じ符号化を作業域 w で行う（w の中身は入口で捨てる — 結果は w に依らず Encode(data, level) と同じバイト列）
 
 対の `DecodeWith` は実需まで足さない（[language.md 34 節](../language.md) の規則 2）。
+
+## History
+
+```sober
+type History = internal.deflate.History
+```
+
+直近の符号化で作った動的 Huffman の木の記録（最大 4 本・1 本 ≈ 300 バイト — 最初の記録で確保・ゼロ値 = 空）。EncodeHistory / EncodeWithHistory にmut で渡すと、ブロックの頻度に記録の木で足りる（費用が下限の見積もりの 1.03 倍以内の）ものがあれば木を作らずに使い、なければ作って記録する:
+
+```sober
+mut h := compress.flate.History{}          // 接続ごとなど、似た本文を続けて符号化する列ごとに 1 つ
+z := compress.flate.EncodeHistory(mut h, b, 6)
+```
+
+出力は (data, level, h の値) で決まる — 同じ列を同じ順に符号化した h なら同じバイト列（h を共有する列の順に依る）。大きさは記録を使ったブロックで h なしの最適の木の 1.03 倍まで（ε = 0.03 — 似た本文の列では実測 +0.3〜0.8%）
+
+## EncodeHistory
+
+```sober
+@effects(!io, !block, !nondet)
+func EncodeHistory(h mut History, data []byte, level int) []byte
+```
+
+Encode と同じ符号化を記録 h つきで行う（History の注釈）
+
+## EncodeWithHistory
+
+```sober
+@effects(!io, !block, !nondet)
+func EncodeWithHistory(w mut Work, h mut History, data []byte, level int) []byte
+```
+
+EncodeHistory を作業域 w で行う（EncodeWith と同じ作業域 — 結果は w に依らない）
 
 ## BadLevel
 
@@ -97,7 +130,7 @@ func Decode(data []byte, maxSize int?) ([]byte, error?)
 DEFLATE（RFC 1951 — 頭も検査和もない生の圧縮列。Encode の対）の data を復号したバイト列。data は最後のブロック（BFINAL）でちょうど終わる（最後のバイトの使わないビットは見ない・その後にバイトが余れば Bad）。maxSize を渡すと、出力がそれを越える時点で TooLarge（省略 = 上限なし — 信頼できない入力〔要求の本文・外から来たファイル〕には必ず渡す: DEFLATE は 1 バイトで最大 258 バイトに伸びるので、入力の大きさの上限は出力の上限にならない）:
 
 ```sober
-b := flate.Decode(z, maxSize: 1 << 20)?
+b := compress.flate.Decode(z, maxSize: 1 << 20)?
 ```
 
 作業域は符号の表（数 KB）だけで、ブロックごとに作り直す

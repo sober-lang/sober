@@ -30,10 +30,10 @@
         "k": "error",
         "fields": []
       },
-      "tok": 129,
+      "tok": 133,
       "span": {
-        "start": 128,
-        "end": 132
+        "start": 132,
+        "end": 136
       }
     }
   ],
@@ -161,12 +161,17 @@
                               {
                                 "k": "selector",
                                 "base": {
-                                  "k": "ident",
-                                  "name": "sha256",
-                                  "tok": 75
+                                  "k": "selector",
+                                  "base": {
+                                    "k": "ident",
+                                    "name": "crypto",
+                                    "tok": 75
+                                  },
+                                  "field": "sha256",
+                                  "tok": 77
                                 },
                                 "field": "Size",
-                                "tok": 77
+                                "tok": 79
                               }
                             ],
                             "tok": 72
@@ -184,7 +189,7 @@
                               {
                                 "k": "ident",
                                 "name": "z",
-                                "tok": 80
+                                "tok": 82
                               }
                             ],
                             "op": "=",
@@ -194,35 +199,35 @@
                                 "callee": {
                                   "k": "ident",
                                   "name": "append",
-                                  "tok": 82
+                                  "tok": 84
                                 },
                                 "args": [
                                   {
                                     "k": "ident",
                                     "name": "z",
-                                    "tok": 84
+                                    "tok": 86
                                   },
                                   {
                                     "k": "call",
                                     "callee": {
                                       "k": "ident",
                                       "name": "byte",
-                                      "tok": 86
+                                      "tok": 88
                                     },
                                     "args": [
                                       {
                                         "k": "int",
                                         "value": 0,
-                                        "tok": 88
+                                        "tok": 90
                                       }
                                     ],
-                                    "tok": 87
+                                    "tok": 89
                                   }
                                 ],
-                                "tok": 83
+                                "tok": 85
                               }
                             ],
-                            "tok": 80
+                            "tok": 82
                           }
                         ]
                       },
@@ -252,23 +257,23 @@
                     "callee": {
                       "k": "ident",
                       "name": "len",
-                      "tok": 99
+                      "tok": 101
                     },
                     "args": [
                       {
                         "k": "ident",
                         "name": "salt",
-                        "tok": 101
+                        "tok": 103
                       }
                     ],
-                    "tok": 100
+                    "tok": 102
                   },
                   "rhs": {
                     "k": "int",
                     "value": 0,
-                    "tok": 104
+                    "tok": 106
                   },
-                  "tok": 103
+                  "tok": 105
                 },
                 "then": {
                   "stmts": [
@@ -279,16 +284,16 @@
                         "callee": {
                           "k": "ident",
                           "name": "freeze",
-                          "tok": 106
+                          "tok": 108
                         },
                         "args": [
                           {
                             "k": "ident",
                             "name": "z",
-                            "tok": 108
+                            "tok": 110
                           }
                         ],
-                        "tok": 107
+                        "tok": 109
                       }
                     }
                   ]
@@ -301,15 +306,15 @@
                       "expr": {
                         "k": "ident",
                         "name": "salt",
-                        "tok": 113
+                        "tok": 115
                       }
                     }
                   ]
                 },
-                "tok": 98
+                "tok": 100
               }
             ],
-            "tok": 96
+            "tok": 98
           },
           {
             "k": "ret",
@@ -319,29 +324,34 @@
                 "callee": {
                   "k": "selector",
                   "base": {
-                    "k": "ident",
-                    "name": "hmac",
-                    "tok": 117
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "crypto",
+                      "tok": 119
+                    },
+                    "field": "hmac",
+                    "tok": 121
                   },
                   "field": "Sum256",
-                  "tok": 119
+                  "tok": 123
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "s",
-                    "tok": 121
+                    "tok": 125
                   },
                   {
                     "k": "ident",
                     "name": "ikm",
-                    "tok": 123
+                    "tok": 127
                   }
                 ],
-                "tok": 120
+                "tok": 124
               }
             ],
-            "tok": 116
+            "tok": 118
           }
         ]
       },
@@ -349,7 +359,7 @@
       "bodiless": false,
       "span": {
         "start": 12,
-        "end": 128
+        "end": 132
       },
       "sig_end": 47
     },
@@ -422,14 +432,14 @@
                   "lhs": {
                     "k": "ident",
                     "name": "n",
-                    "tok": 183
+                    "tok": 187
                   },
                   "rhs": {
                     "k": "int",
                     "value": 0,
-                    "tok": 185
+                    "tok": 189
                   },
-                  "tok": 184
+                  "tok": 188
                 },
                 "rhs": {
                   "k": "binary",
@@ -437,7 +447,7 @@
                   "lhs": {
                     "k": "ident",
                     "name": "n",
-                    "tok": 187
+                    "tok": 191
                   },
                   "rhs": {
                     "k": "binary",
@@ -445,23 +455,28 @@
                     "lhs": {
                       "k": "int",
                       "value": 255,
-                      "tok": 189
+                      "tok": 193
                     },
                     "rhs": {
                       "k": "selector",
                       "base": {
-                        "k": "ident",
-                        "name": "sha256",
-                        "tok": 191
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "crypto",
+                          "tok": 195
+                        },
+                        "field": "sha256",
+                        "tok": 197
                       },
                       "field": "Size",
-                      "tok": 193
+                      "tok": 199
                     },
-                    "tok": 190
+                    "tok": 194
                   },
-                  "tok": 188
+                  "tok": 192
                 },
-                "tok": 186
+                "tok": 190
               },
               "then": {
                 "stmts": [
@@ -476,22 +491,22 @@
                         },
                         "elems": [],
                         "mut": false,
-                        "tok": 196
+                        "tok": 202
                       },
                       {
                         "k": "composite",
                         "type_name": "TooLong",
                         "elems": [],
-                        "tok": 202,
+                        "tok": 208,
                         "type_args": []
                       }
                     ],
-                    "tok": 195
+                    "tok": 201
                   }
                 ]
               },
               "else": null,
-              "tok": 182
+              "tok": 186
             }
           },
           {
@@ -509,10 +524,10 @@
                 },
                 "elems": [],
                 "mut": true,
-                "tok": 212
+                "tok": 218
               }
             ],
-            "tok": 208
+            "tok": 214
           },
           {
             "k": "bind",
@@ -529,10 +544,10 @@
                 },
                 "elems": [],
                 "mut": false,
-                "tok": 221
+                "tok": 227
               }
             ],
-            "tok": 218
+            "tok": 224
           },
           {
             "k": "bind",
@@ -544,10 +559,10 @@
               {
                 "k": "int",
                 "value": 1,
-                "tok": 230
+                "tok": 236
               }
             ],
-            "tok": 227
+            "tok": 233
           },
           {
             "k": "while",
@@ -559,23 +574,23 @@
                 "callee": {
                   "k": "ident",
                   "name": "len",
-                  "tok": 233
+                  "tok": 239
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "out",
-                    "tok": 235
+                    "tok": 241
                   }
                 ],
-                "tok": 234
+                "tok": 240
               },
               "rhs": {
                 "k": "ident",
                 "name": "n",
-                "tok": 238
+                "tok": 244
               },
-              "tok": 237
+              "tok": 243
             },
             "body": {
               "stmts": [
@@ -594,10 +609,10 @@
                       },
                       "elems": [],
                       "mut": true,
-                      "tok": 244
+                      "tok": 250
                     }
                   ],
-                  "tok": 240
+                  "tok": 246
                 },
                 {
                   "k": "expr",
@@ -615,38 +630,38 @@
                             "base": {
                               "k": "ident",
                               "name": "iter",
-                              "tok": 253
+                              "tok": 259
                             },
                             "field": "Range",
-                            "tok": 255
+                            "tok": 261
                           },
                           "args": [
                             {
                               "k": "int",
                               "value": 0,
-                              "tok": 257
+                              "tok": 263
                             },
                             {
                               "k": "call",
                               "callee": {
                                 "k": "ident",
                                 "name": "len",
-                                "tok": 259
+                                "tok": 265
                               },
                               "args": [
                                 {
                                   "k": "ident",
                                   "name": "t",
-                                  "tok": 261
+                                  "tok": 267
                                 }
                               ],
-                              "tok": 260
+                              "tok": 266
                             }
                           ],
-                          "tok": 256
+                          "tok": 262
                         },
                         "guards": [],
-                        "tok": 251
+                        "tok": 257
                       }
                     ],
                     "body": {
@@ -658,7 +673,7 @@
                             {
                               "k": "ident",
                               "name": "m",
-                              "tok": 265
+                              "tok": 271
                             }
                           ],
                           "op": "=",
@@ -668,37 +683,37 @@
                               "callee": {
                                 "k": "ident",
                                 "name": "append",
-                                "tok": 267
+                                "tok": 273
                               },
                               "args": [
                                 {
                                   "k": "ident",
                                   "name": "m",
-                                  "tok": 269
+                                  "tok": 275
                                 },
                                 {
                                   "k": "index",
                                   "base": {
                                     "k": "ident",
                                     "name": "t",
-                                    "tok": 271
+                                    "tok": 277
                                   },
                                   "idx": {
                                     "k": "ident",
                                     "name": "j",
-                                    "tok": 273
+                                    "tok": 279
                                   },
-                                  "tok": 272
+                                  "tok": 278
                                 }
                               ],
-                              "tok": 268
+                              "tok": 274
                             }
                           ],
-                          "tok": 265
+                          "tok": 271
                         }
                       ]
                     },
-                    "tok": 250
+                    "tok": 256
                   }
                 },
                 {
@@ -717,38 +732,38 @@
                             "base": {
                               "k": "ident",
                               "name": "iter",
-                              "tok": 282
+                              "tok": 288
                             },
                             "field": "Range",
-                            "tok": 284
+                            "tok": 290
                           },
                           "args": [
                             {
                               "k": "int",
                               "value": 0,
-                              "tok": 286
+                              "tok": 292
                             },
                             {
                               "k": "call",
                               "callee": {
                                 "k": "ident",
                                 "name": "len",
-                                "tok": 288
+                                "tok": 294
                               },
                               "args": [
                                 {
                                   "k": "ident",
                                   "name": "info",
-                                  "tok": 290
+                                  "tok": 296
                                 }
                               ],
-                              "tok": 289
+                              "tok": 295
                             }
                           ],
-                          "tok": 285
+                          "tok": 291
                         },
                         "guards": [],
-                        "tok": 280
+                        "tok": 286
                       }
                     ],
                     "body": {
@@ -760,7 +775,7 @@
                             {
                               "k": "ident",
                               "name": "m",
-                              "tok": 294
+                              "tok": 300
                             }
                           ],
                           "op": "=",
@@ -770,37 +785,37 @@
                               "callee": {
                                 "k": "ident",
                                 "name": "append",
-                                "tok": 296
+                                "tok": 302
                               },
                               "args": [
                                 {
                                   "k": "ident",
                                   "name": "m",
-                                  "tok": 298
+                                  "tok": 304
                                 },
                                 {
                                   "k": "index",
                                   "base": {
                                     "k": "ident",
                                     "name": "info",
-                                    "tok": 300
+                                    "tok": 306
                                   },
                                   "idx": {
                                     "k": "ident",
                                     "name": "j",
-                                    "tok": 302
+                                    "tok": 308
                                   },
-                                  "tok": 301
+                                  "tok": 307
                                 }
                               ],
-                              "tok": 297
+                              "tok": 303
                             }
                           ],
-                          "tok": 294
+                          "tok": 300
                         }
                       ]
                     },
-                    "tok": 279
+                    "tok": 285
                   }
                 },
                 {
@@ -809,7 +824,7 @@
                     {
                       "k": "ident",
                       "name": "m",
-                      "tok": 308
+                      "tok": 314
                     }
                   ],
                   "op": "=",
@@ -819,35 +834,35 @@
                       "callee": {
                         "k": "ident",
                         "name": "append",
-                        "tok": 310
+                        "tok": 316
                       },
                       "args": [
                         {
                           "k": "ident",
                           "name": "m",
-                          "tok": 312
+                          "tok": 318
                         },
                         {
                           "k": "call",
                           "callee": {
                             "k": "ident",
                             "name": "byte",
-                            "tok": 314
+                            "tok": 320
                           },
                           "args": [
                             {
                               "k": "ident",
                               "name": "i",
-                              "tok": 316
+                              "tok": 322
                             }
                           ],
-                          "tok": 315
+                          "tok": 321
                         }
                       ],
-                      "tok": 311
+                      "tok": 317
                     }
                   ],
-                  "tok": 308
+                  "tok": 314
                 },
                 {
                   "k": "assign",
@@ -855,7 +870,7 @@
                     {
                       "k": "ident",
                       "name": "t",
-                      "tok": 320
+                      "tok": 326
                     }
                   ],
                   "op": "=",
@@ -865,40 +880,45 @@
                       "callee": {
                         "k": "selector",
                         "base": {
-                          "k": "ident",
-                          "name": "hmac",
-                          "tok": 322
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "crypto",
+                            "tok": 328
+                          },
+                          "field": "hmac",
+                          "tok": 330
                         },
                         "field": "Sum256",
-                        "tok": 324
+                        "tok": 332
                       },
                       "args": [
                         {
                           "k": "ident",
                           "name": "prk",
-                          "tok": 326
+                          "tok": 334
                         },
                         {
                           "k": "call",
                           "callee": {
                             "k": "ident",
                             "name": "freeze",
-                            "tok": 328
+                            "tok": 336
                           },
                           "args": [
                             {
                               "k": "ident",
                               "name": "m",
-                              "tok": 330
+                              "tok": 338
                             }
                           ],
-                          "tok": 329
+                          "tok": 337
                         }
                       ],
-                      "tok": 325
+                      "tok": 333
                     }
                   ],
-                  "tok": 320
+                  "tok": 326
                 },
                 {
                   "k": "expr",
@@ -916,38 +936,38 @@
                             "base": {
                               "k": "ident",
                               "name": "iter",
-                              "tok": 337
+                              "tok": 345
                             },
                             "field": "Range",
-                            "tok": 339
+                            "tok": 347
                           },
                           "args": [
                             {
                               "k": "int",
                               "value": 0,
-                              "tok": 341
+                              "tok": 349
                             },
                             {
                               "k": "call",
                               "callee": {
                                 "k": "ident",
                                 "name": "len",
-                                "tok": 343
+                                "tok": 351
                               },
                               "args": [
                                 {
                                   "k": "ident",
                                   "name": "t",
-                                  "tok": 345
+                                  "tok": 353
                                 }
                               ],
-                              "tok": 344
+                              "tok": 352
                             }
                           ],
-                          "tok": 340
+                          "tok": 348
                         },
                         "guards": [],
-                        "tok": 335
+                        "tok": 343
                       }
                     ],
                     "body": {
@@ -965,23 +985,23 @@
                                 "callee": {
                                   "k": "ident",
                                   "name": "len",
-                                  "tok": 350
+                                  "tok": 358
                                 },
                                 "args": [
                                   {
                                     "k": "ident",
                                     "name": "out",
-                                    "tok": 352
+                                    "tok": 360
                                   }
                                 ],
-                                "tok": 351
+                                "tok": 359
                               },
                               "rhs": {
                                 "k": "ident",
                                 "name": "n",
-                                "tok": 355
+                                "tok": 363
                               },
-                              "tok": 354
+                              "tok": 362
                             },
                             "then": {
                               "stmts": [
@@ -991,7 +1011,7 @@
                                     {
                                       "k": "ident",
                                       "name": "out",
-                                      "tok": 357
+                                      "tok": 365
                                     }
                                   ],
                                   "op": "=",
@@ -1001,43 +1021,43 @@
                                       "callee": {
                                         "k": "ident",
                                         "name": "append",
-                                        "tok": 359
+                                        "tok": 367
                                       },
                                       "args": [
                                         {
                                           "k": "ident",
                                           "name": "out",
-                                          "tok": 361
+                                          "tok": 369
                                         },
                                         {
                                           "k": "index",
                                           "base": {
                                             "k": "ident",
                                             "name": "t",
-                                            "tok": 363
+                                            "tok": 371
                                           },
                                           "idx": {
                                             "k": "ident",
                                             "name": "j",
-                                            "tok": 365
+                                            "tok": 373
                                           },
-                                          "tok": 364
+                                          "tok": 372
                                         }
                                       ],
-                                      "tok": 360
+                                      "tok": 368
                                     }
                                   ],
-                                  "tok": 357
+                                  "tok": 365
                                 }
                               ]
                             },
                             "else": null,
-                            "tok": 349
+                            "tok": 357
                           }
                         }
                       ]
                     },
-                    "tok": 334
+                    "tok": 342
                   }
                 },
                 {
@@ -1046,7 +1066,7 @@
                     {
                       "k": "ident",
                       "name": "i",
-                      "tok": 373
+                      "tok": 381
                     }
                   ],
                   "op": "=",
@@ -1057,21 +1077,21 @@
                       "lhs": {
                         "k": "ident",
                         "name": "i",
-                        "tok": 375
+                        "tok": 383
                       },
                       "rhs": {
                         "k": "int",
                         "value": 1,
-                        "tok": 377
+                        "tok": 385
                       },
-                      "tok": 376
+                      "tok": 384
                     }
                   ],
-                  "tok": 373
+                  "tok": 381
                 }
               ]
             },
-            "tok": 232
+            "tok": 238
           },
           {
             "k": "ret",
@@ -1081,33 +1101,33 @@
                 "callee": {
                   "k": "ident",
                   "name": "freeze",
-                  "tok": 382
+                  "tok": 390
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "out",
-                    "tok": 384
+                    "tok": 392
                   }
                 ],
-                "tok": 383
+                "tok": 391
               },
               {
                 "k": "nil",
-                "tok": 387
+                "tok": 395
               }
             ],
-            "tok": 381
+            "tok": 389
           }
         ]
       },
-      "tok": 158,
+      "tok": 162,
       "bodiless": false,
       "span": {
-        "start": 132,
-        "end": 391
+        "start": 136,
+        "end": 399
       },
-      "sig_end": 181
+      "sig_end": 185
     }
   ],
   "consts": []

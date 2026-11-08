@@ -36,6 +36,8 @@
 # SOBER_SRV_ENV の後に書く）のどちらかがあれば、名前 sober-alt を sober / go と同じ周の輪に入れる（実行ファイルが無ければ主の Sober と同じもの）。
 # 要約には sober-alt / sober の比の表が付く
 # 注: seki の seccomp の下では時間（req/s・CPU）が歪む — 値は参考。公式の数字は GH Actions（.github/workflows/httparena.yml）
+# cgroup の数え（HTTPARENA_CG = 書ける cgroup v2 の dir — memory の制御器を子に配り済みで、このシェルが中の兄弟の葉にいること・
+# workflow が用意する）: サーバを走りごとの子の cgroup で起動し、"$out.rss" の cg_* の列と要約に memory.peak と内訳を足す（本家の mem の数え方）
 set -uo pipefail
 cd "$(dirname "$0")"
 HERE=$PWD
@@ -160,7 +162,16 @@ start() {
         local xenv=
         [ "$1" = sober ] && xenv=${SOBER_SRV_ENV:-}
         [ "$1" = sober-alt ] && xenv="${SOBER_SRV_ENV:-} ${SOBER_ALT_ENV:-}"
-        env SOBER_WORKERS=$ns GOMAXPROCS=$ns DATASET_PATH="$DATA" TLS_CERT="$CERT" TLS_KEY="$KEY" $xenv taskset -c "$scpus" "$b" "$port" "$tport" > "$W/srv.out" 2> "$W/srv.err" &
+        # HTTPARENA_CG（下の注）: 走りごとの子の cgroup で起動する — 移すのは exec の前（cgroup v2 は移った後の確保だけを数える）
+        CGDIR=
+        if [ -n "${HTTPARENA_CG:-}" ]; then
+            CGDIR=$HTTPARENA_CG/srv-$1-${cur_prof:-x}-$try-$$-$RANDOM
+            mkdir "$CGDIR" 2> /dev/null || { echo "local.sh: cannot mkdir $CGDIR — cgroup columns off" >&2; CGDIR=; }
+        fi
+        (
+            [ -n "$CGDIR" ] && { echo "$BASHPID" > "$CGDIR/cgroup.procs" || echo "local.sh: cannot join $CGDIR" >&2; }
+            exec env SOBER_WORKERS=$ns GOMAXPROCS=$ns DATASET_PATH="$DATA" TLS_CERT="$CERT" TLS_KEY="$KEY" $xenv taskset -c "$scpus" "$b" "$port" "$tport"
+        ) > "$W/srv.out" 2> "$W/srv.err" &
         SP=$!
         for i in $(seq 100); do
             if grep -q '^ready' "$W/srv.out" 2> /dev/null; then
@@ -170,11 +181,16 @@ start() {
             sleep 0.05
         done
         kill "$SP" 2> /dev/null; wait "$SP" 2> /dev/null; SP=
+        [ -n "$CGDIR" ] && { rmdir "$CGDIR" 2> /dev/null; CGDIR=; }
         echo "local.sh: $1 did not start on port $port (try $try): out=$(head -c 120 "$W/srv.out") err=$(head -c 200 "$W/srv.err")" >&2
     done
     return 1
 }
-stop() { kill "$SP" 2> /dev/null; wait "$SP" 2> /dev/null; SP=; }
+stop() {
+    kill "$SP" 2> /dev/null; wait "$SP" 2> /dev/null; SP=
+    [ -n "${CGDIR:-}" ] && { rmdir "$CGDIR" 2> /dev/null; CGDIR=; }
+    return 0
+}
 # cpu_ticks: サーバの utime + stime（clock tick）。走りの間に死んだサーバ（/proc が消える）は 0 — 行は残り、req/s = 0 で見える
 cpu_ticks() { awk '{ print $14 + $15 }' "/proc/$SP/stat" 2> /dev/null || echo 0; }
 # thr_snap: サーバのスレッドごとの [tid utime stime]（tick）を標準出力へ。thr_row <名前> <種目> <周> <前の写し> <壁の秒>: 前後差をスレッドごとの CPU %
@@ -189,10 +205,17 @@ thr_row() {
 
 # rss_row <名前> <種目> <周>: 走りの直後（stop の前）のサーバの VmHWM（ピーク）と VmRSS（終端）を kB で "$out.rss" へ。
 # サーバは周ごとに建て直すので VmHWM = その周のピーク。死んだサーバは行を出さない（欠けで見える）
+# cg_* の列（HTTPARENA_CG のときだけ — 無ければ "-"）: サーバの cgroup の memory.peak と、終端の memory.stat の anon / file / kernel / sock / pagetables（kB）。
+# 本家の mem はコンテナの cgroup の数え方で、VmHWM に入らない分（ソケットの受け / 送りの束・slab・page cache）を含む —
+# 公式との差（report-mem2-3 の 3 節 — ≈0.5 GiB）の帰属の口
 rss_row() {
-    local ahp
+    local ahp cg="-	-	-	-	-	-"
     ahp=$(awk '/^AnonHugePages:/ { print $2 }' "/proc/$SP/smaps_rollup" 2> /dev/null)
-    awk -v n="$1" -v p="$2" -v k="$3" -v a="${ahp:-0}" -v e="$HENV" '/^VmHWM:/ { h = $2 } /^VmRSS:/ { r = $2 } END { if (h != "") printf "%s\t%s\t%d\t%d\t%d\t%d\t%s\n", n, p, k, h, r, a, e }' \
+    if [ -n "${CGDIR:-}" ] && [ -r "$CGDIR/memory.peak" ]; then
+        cg=$(awk -v pk="$(cat "$CGDIR/memory.peak" 2> /dev/null)" '$1 == "anon" { a = $2 } $1 == "file" { f = $2 } $1 == "kernel" { k = $2 } $1 == "sock" { s = $2 } $1 == "pagetables" { t = $2 }
+            END { printf "%d\t%d\t%d\t%d\t%d\t%d", pk / 1024, a / 1024, f / 1024, k / 1024, s / 1024, t / 1024 }' "$CGDIR/memory.stat" 2> /dev/null)
+    fi
+    awk -v n="$1" -v p="$2" -v k="$3" -v a="${ahp:-0}" -v e="$HENV" -v cg="$cg" '/^VmHWM:/ { h = $2 } /^VmRSS:/ { r = $2 } END { if (h != "") printf "%s\t%s\t%d\t%d\t%d\t%d\t%s\t%s\n", n, p, k, h, r, a, cg, e }' \
         "/proc/$SP/status" 2> /dev/null >> "$out.rss"
 }
 
@@ -303,7 +326,7 @@ run_one() {
 # 箱の CPU の世代と大きさは run ごとに変わりうる（16vcpu と 64vcpu の取り違え — report-1147）ので行ごとに残す
 HENV=${HTTPARENA_ENV:-local/$(lscpu 2> /dev/null | sed -n 's/^Model name: *//p' | sed "s/^AMD //; s/ [0-9]*-Core Processor\$//; s/ w\/ .*//; s/ /-/g")}
 printf 'name\tprofile\tround\treq_s\tresponses\tnon2xx\tcpu_us_per_req\tp99\tp99_9\tenv\n' > "$out"
-printf 'name\tprofile\tround\tvmhwm_kb\tvmrss_kb\tanonhuge_kb\tenv\n' > "$out.rss"
+printf 'name\tprofile\tround\tvmhwm_kb\tvmrss_kb\tanonhuge_kb\tcg_peak_kb\tcg_anon_kb\tcg_file_kb\tcg_kernel_kb\tcg_sock_kb\tcg_pagetables_kb\tenv\n' > "$out.rss"
 printf 'name\tprofile\tround\ttid\tmain\tuser_pct\tsys_pct\tcpu_pct\tenv\n' > "$out.thr"
 printf 'name\tprofile\tround\trate_ratio\tmean_us\tp50_us\tp75_us\tp90_us\tp99_us\tp99_9_us\tmax_us\tmax_schedule_lag_us\tcpu_us_per_req\tenv\n' > "$out.lat"
 for prof in $profiles; do
@@ -346,6 +369,14 @@ if [ -s "$out.rss" ]; then
                     printf "%s\t%.1f MB\n", key, m / 1024
                 }
             }' "$out.rss" | sort
+        # cgroup の列があれば（HTTPARENA_CG）: memory.peak と終端の内訳の周の中央値（MB）— VmHWM との差が cgroup にだけ乗る分
+        if awk -F'\t' 'NR > 1 && $7 != "-" { f = 1 } END { exit !f }' "$out.rss"; then
+            echo
+            echo "## server cgroup memory (memory.peak and end-of-run memory.stat, per-round median, MB — the container-style count)"
+            awk -F'\t' 'function med(s,   n, a, i, j, t) { n = split(s, a, " "); for (i = 1; i < n; i++) for (j = i + 1; j <= n; j++) if (a[j] + 0 < a[i] + 0) { t = a[i]; a[i] = a[j]; a[j] = t }; return a[int((n + 1) / 2)] / 1024 }
+                NR > 1 && $7 != "-" { key = $2 "\t" $1; h[key] = h[key] " " $4; pk[key] = pk[key] " " $7; an[key] = an[key] " " $8; fi[key] = fi[key] " " $9; ke[key] = ke[key] " " $10; so[key] = so[key] " " $11; pt[key] = pt[key] " " $12 }
+                END { for (key in pk) printf "%s\tpeak %.1f\tvmhwm %.1f\tanon %.1f\tfile %.1f\tkernel %.1f\tsock %.1f\tpagetables %.1f\n", key, med(pk[key]), med(h[key]), med(an[key]), med(fi[key]), med(ke[key]), med(so[key]), med(pt[key]) }' "$out.rss" | sort
+        fi
     } >> "$W/summary.md"
 fi
 # latency 系の分布（zrk — 周ごとに全部・µs。周の中央値に畳まない: 二峰や尾の跳ねは周ごとに読む — report-1170）

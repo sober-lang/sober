@@ -1,0 +1,13 @@
+package main
+
+// 外からの構築で Arena の seed に容量の残る自分の buffer を与えると、strings.Clone の string がその buffer を指し、後の書きで string が変わっていた
+import "std/strings"
+
+func main() {
+    mut big := mut []byte{}
+    big = append(big, 120)
+    mut a := strings.Arena{seed: big}
+    s := strings.Clone(mut a, "ab")
+    big[0] = 90
+    println(s)
+}

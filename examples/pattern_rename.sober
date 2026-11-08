@@ -1,0 +1,27 @@
+package main
+
+// 欄のパターンの改名の束縛（`case A{e: inner}` — 欄 e を inner で束縛する）: 入れ子の型パターンの中でも同じ
+
+type In union {
+    P { a int; b string }
+    Q { c int }
+}
+
+type U union {
+    A { e int }
+    B { x In }
+}
+
+func show(u U) string {
+    return switch u {
+    case A{e: inner}: "a${inner}"
+    case B{x: P{a: n, b}}: "p${n}${b}"
+    case B{x: Q{c: k}}: "q${k}"
+    }
+}
+
+func main() {
+    println(show(A{e: 3}))
+    println(show(B{x: P{a: 1, b: "z"}}))
+    println(show(B{x: Q{c: 9}}))
+}

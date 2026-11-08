@@ -42,21 +42,31 @@
                 "callee": {
                   "k": "selector",
                   "base": {
-                    "k": "ident",
-                    "name": "lib",
-                    "tok": 16
+                    "k": "selector",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "testdata",
+                        "tok": 16
+                      },
+                      "field": "named_qual",
+                      "tok": 18
+                    },
+                    "field": "lib",
+                    "tok": 20
                   },
                   "field": "R",
-                  "tok": 18
+                  "tok": 22
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "x",
-                    "tok": 20
+                    "tok": 24
                   }
                 ],
-                "tok": 19
+                "tok": 23
               }
             ],
             "tok": 14
@@ -72,33 +82,53 @@
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "lib",
-                      "tok": 24
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 28
+                        },
+                        "field": "named_qual",
+                        "tok": 30
+                      },
+                      "field": "lib",
+                      "tok": 32
                     },
                     "field": "Next",
-                    "tok": 26
+                    "tok": 34
                   },
                   "args": [
                     {
                       "k": "ident",
                       "name": "r",
-                      "tok": 28
+                      "tok": 36
                     }
                   ],
-                  "tok": 27
+                  "tok": 35
                 },
                 "rhs": {
                   "k": "call",
                   "callee": {
                     "k": "selector",
                     "base": {
-                      "k": "ident",
-                      "name": "lib",
-                      "tok": 31
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "testdata",
+                          "tok": 39
+                        },
+                        "field": "named_qual",
+                        "tok": 41
+                      },
+                      "field": "lib",
+                      "tok": 43
                     },
                     "field": "Next",
-                    "tok": 33
+                    "tok": 45
                   },
                   "args": [
                     {
@@ -106,12 +136,22 @@
                       "callee": {
                         "k": "selector",
                         "base": {
-                          "k": "ident",
-                          "name": "lib",
-                          "tok": 35
+                          "k": "selector",
+                          "base": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "testdata",
+                              "tok": 47
+                            },
+                            "field": "named_qual",
+                            "tok": 49
+                          },
+                          "field": "lib",
+                          "tok": 51
                         },
                         "field": "R",
-                        "tok": 37
+                        "tok": 53
                       },
                       "args": [
                         {
@@ -120,25 +160,25 @@
                           "lhs": {
                             "k": "ident",
                             "name": "x",
-                            "tok": 39
+                            "tok": 55
                           },
                           "rhs": {
                             "k": "int",
                             "value": 1,
-                            "tok": 41
+                            "tok": 57
                           },
-                          "tok": 40
+                          "tok": 56
                         }
                       ],
-                      "tok": 38
+                      "tok": 54
                     }
                   ],
-                  "tok": 34
+                  "tok": 46
                 },
-                "tok": 30
+                "tok": 38
               }
             ],
-            "tok": 23
+            "tok": 27
           }
         ]
       },
@@ -146,7 +186,7 @@
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 47
+        "end": 63
       },
       "sig_end": 13
     }

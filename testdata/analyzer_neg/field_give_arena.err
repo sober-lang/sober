@@ -1,0 +1,1 @@
+testdata/analyzer_neg/field_give_arena.sober:9:34: error: cannot give field `seed` of `Arena` outside package std/strings — it holds mutable contents, and an alias passed in from outside would bypass the type's invariants (omit the field — it starts empty — and fill it with the package's functions) (Analyzer)

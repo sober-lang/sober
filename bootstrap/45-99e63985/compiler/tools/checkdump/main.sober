@@ -1,0 +1,24 @@
+package main
+
+// checkdump: 標準入力のコア AST JSON を検査し、判定 JSON（Lean 製 sober-check の stdout と同じバイト列 — parse error の文言を除く）を
+// 標準出力に書く。selfhost の型検査器の差分オラクル（scripts/selfhost_check.sh）の Sober 側。判定は出力で読む — 終了コードは
+// 入出力の失敗だけ（読めない / 書けない = stderr に一言 + 1。以前は /dev/stdout を開いて書き、失敗を黙って捨てていた —
+// stdout がソケットだと open が失敗して出力が無言で消えた）
+
+import "std/io"
+import "checker"
+
+func main() int {
+    src, err := io.ReadStdin()
+    if err != nil {
+        _ = io.WriteStderr(bytes("checkdump: cannot read stdin\n"))
+        return 1
+    }
+    out := checker.Check(src)
+    werr := io.WriteStdout(out)
+    if werr != nil {
+        _ = io.WriteStderr(bytes("checkdump: cannot write stdout\n"))
+        return 1
+    }
+    return 0
+}

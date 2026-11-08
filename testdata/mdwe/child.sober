@@ -1,0 +1,13 @@
+package main
+
+// mdwecheck の題材（os.Run の子）: 子は印を引き継がない（PR_MDWE_NO_INHERIT — JIT の処理系を起動しても壊さない）。
+// 子の側で PR_GET_MDWE を読むのは python3 の ctypes
+import "std/os"
+
+func main() {
+    rc, err := os.Run("/usr/bin/env", []string{"python3", "-c", "import ctypes; print('child', ctypes.CDLL(None).prctl(66, 0, 0, 0, 0))"})
+    if err != nil {
+        println("run error")
+    }
+    println("rc ${rc}")
+}
