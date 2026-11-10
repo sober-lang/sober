@@ -46,7 +46,8 @@ if [ $# -gt 0 ]; then
     for e in "$@"; do par_run one "$e"; done
 else
     # scripts/noopt-excluded.list の entry（展開の口で肥大して建たない entry — 理由はリストの中）は外す
-    excl=$(sed 's/#.*//; s/^ *//; s/ *$//' scripts/noopt-excluded.list | grep -v '^$') || true
+    # scripts/regionbound-known.list の entry（境界の数の既知の食い違い — 帰属待ち）も外す
+    excl=$(sed 's/#.*//; s/^ *//; s/ *$//' scripts/noopt-excluded.list scripts/regionbound-known.list | grep -v '^$') || true
     while IFS= read -r e; do par_run one "$e"; done < <(scripts/irtext.sh --list | grep -vxF -e "${excl:-//}")
 fi
 par_wait > "$tmp/list"

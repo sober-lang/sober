@@ -421,6 +421,26 @@ theorem stepLeaf_closeK (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) 
   first | kR | (cases v <;> kR)
 
 set_option maxHeartbeats 0 in
+theorem stepLeaf_dnewK (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) (v : Expr) (K K2 : ChanSt) (r : Nat) (t : Ty) :
+    step Δ π' (.ret H ((.dnewK r t) :: S) v) K2 = (step Δ π (.ret H ((.dnewK r t) :: S) v) K).map (fun p => (p.1.fixLeaf, K2)) := by
+  first | kR | (cases v <;> kR)
+
+set_option maxHeartbeats 0 in
+theorem stepLeaf_denterK (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) (v : Expr) (K K2 : ChanSt) (t : Ty) :
+    step Δ π' (.ret H ((.denterK t) :: S) v) K2 = (step Δ π (.ret H ((.denterK t) :: S) v) K).map (fun p => (p.1.fixLeaf, K2)) := by
+  first | kR | (cases v <;> kR)
+
+set_option maxHeartbeats 0 in
+theorem stepLeaf_dexitL (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) (v : Expr) (K K2 : ChanSt) (e : Expr) :
+    step Δ π' (.ret H ((.dexitL e) :: S) v) K2 = (step Δ π (.ret H ((.dexitL e) :: S) v) K).map (fun p => (p.1.fixLeaf, K2)) := by
+  first | kR | (cases v <;> kR)
+
+set_option maxHeartbeats 0 in
+theorem stepLeaf_dexitR (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) (v : Expr) (K K2 : ChanSt) (d : Expr) :
+    step Δ π' (.ret H ((.dexitR d) :: S) v) K2 = (step Δ π (.ret H ((.dexitR d) :: S) v) K).map (fun p => (p.1.fixLeaf, K2)) := by
+  first | kR | (cases d <;> kR)
+
+set_option maxHeartbeats 0 in
 theorem stepLeaf_foldK (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) (v : Expr) (K K2 : ChanSt) (t : Ty) :
     step Δ π' (.ret H ((.foldK t) :: S) v) K2 = (step Δ π (.ret H ((.foldK t) :: S) v) K).map (fun p => (p.1.fixLeaf, K2)) := by
   first | kR | (cases v <;> kR)
@@ -539,6 +559,10 @@ theorem stepLeaf_ret (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) (v 
     | joinK t => exact stepLeaf_joinK Δ π π' H S v K K2 t
     | taskK => exact stepLeaf_taskK Δ π π' H S v K K2
     | closeK => exact stepLeaf_closeK Δ π π' H S v K K2
+    | dnewK r t => exact stepLeaf_dnewK Δ π π' H S v K K2 r t
+    | denterK t => exact stepLeaf_denterK Δ π π' H S v K K2 t
+    | dexitL e => exact stepLeaf_dexitL Δ π π' H S v K K2 e
+    | dexitR d => exact stepLeaf_dexitR Δ π π' H S v K K2 d
     | foldK t => exact stepLeaf_foldK Δ π π' H S v K K2 t
     | unfoldK => exact stepLeaf_unfoldK Δ π π' H S v K K2
     | tryK t => exact stepLeaf_tryK Δ π π' H S v K K2 t

@@ -68,11 +68,21 @@ func Emit(p loader.Program, pk int, excl []int, raw []ast.Tree) []byte {
                 obuf.Lit(mut out, "const ")
                 obuf.Lit(mut out, items[i].name)
                 obuf.Lit(mut out, " = ")
+                // 型つきの const（`const OK = StatusCode(200)`）は畳んだ値を同じ型の変換で包む — 素の数にすると型なしの定数に化け、
+                // 読み戻した側で束縛の表層型が int になる（check と check --split が食い違う）
+                conv := convType(q, items, items[i], names)
+                if conv != "" {
+                    obuf.Lit(mut out, conv)
+                    out = append(out, '(')
+                }
                 // min int は字句で書けない（-9223372036854775808 は単項 − と溢れるリテラル — 読み戻しの check --split が grammar error）ので式の形で
                 if q.c_value[ci] == minInt {
                     obuf.Lit(mut out, "-9223372036854775807 - 1")
                 } else {
                     obuf.Int(mut out, q.c_value[ci])
+                }
+                if conv != "" {
+                    out = append(out, ')')
                 }
             } else {
                 appendB(mut out, printer.ConstText(q.trees[items[i].file], items[i].node))
@@ -99,6 +109,25 @@ func Emit(p loader.Program, pk int, excl []int, raw []ast.Tree) []byte {
 }
 
 const minInt = -9223372036854775807 - 1
+
+// 畳む const の値が同じ package の型への変換 `T(…)` なら T の名前（でなければ ""）
+func convType(p loader.Program, items []Item, it Item, names map[string]int) string {
+    t := p.trees[it.file]
+    v := t.nodes[it.node].b
+    if v < 0 || t.nodes[v].kind != ast.ECall {
+        return ""
+    }
+    callee := t.nodes[v].a
+    if callee < 0 || t.nodes[callee].kind != ast.EIdent {
+        return ""
+    }
+    name := strings.TrimSpace(string(printer.Expr(t, callee)) catch "")
+    j := names[name]
+    if j == nil {
+        return ""
+    }
+    return if items[j].kind == 0 && items[j].name == name { name } else { "" }
+}
 
 // リンク集合（package のパスをロード順に 1 行ずつ — link.txt）
 func Link(p loader.Program) []byte {
@@ -282,6 +311,9 @@ func itemRefs(p loader.Program, it Item) []string {
         ci := constIndex(p, it)
         if ci < 0 || p.c_dict[ci] || !p.c_has[ci] {
             roots = append(roots, x.b)
+        } else if t.nodes[x.b].kind == ast.ECall {
+            // 畳む型つきの const は変換の型名だけ（convType）
+            roots = append(roots, t.nodes[x.b].a)
         }
     }
     ids := identsUnder(t, freeze(roots))

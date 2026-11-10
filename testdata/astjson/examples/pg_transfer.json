@@ -1,0 +1,2286 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/env",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/io",
+      "tok": 7
+    },
+    {
+      "alias": null,
+      "path": "std/pg",
+      "tok": 10
+    },
+    {
+      "alias": null,
+      "path": "std/tls",
+      "tok": 13
+    },
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    },
+    {
+      "alias": "$utf8",
+      "path": "std/internal/utf8",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "policyOf",
+      "type_params": [],
+      "params": [
+        {
+          "name": "e",
+          "type": {
+            "k": "name",
+            "name": "env.Values"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "pg.Policy"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "pw"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "env",
+                    "tok": 108
+                  },
+                  "field": "StrOpt",
+                  "tok": 110
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "e",
+                    "tok": 112
+                  },
+                  {
+                    "k": "ident",
+                    "name": "Password",
+                    "tok": 114
+                  }
+                ],
+                "tok": 111
+              }
+            ],
+            "tok": 106
+          },
+          {
+            "k": "bind",
+            "names": [
+              "ca"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "env",
+                    "tok": 119
+                  },
+                  "field": "StrOpt",
+                  "tok": 121
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "e",
+                    "tok": 123
+                  },
+                  {
+                    "k": "ident",
+                    "name": "Ca",
+                    "tok": 125
+                  }
+                ],
+                "tok": 122
+              }
+            ],
+            "tok": 117
+          },
+          {
+            "k": "bind",
+            "names": [
+              "roots"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "if",
+                "cond": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "ca",
+                    "tok": 131
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 133
+                  },
+                  "tok": 132
+                },
+                "then": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "nil",
+                        "tok": 135
+                      }
+                    }
+                  ]
+                },
+                "else": {
+                  "k": "block",
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "rootsOf",
+                          "tok": 139
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "ca",
+                            "tok": 141
+                          }
+                        ],
+                        "tok": 140
+                      }
+                    }
+                  ]
+                },
+                "tok": 130
+              }
+            ],
+            "tok": 128
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "pg.Policy",
+                "elems": [
+                  {
+                    "key": "password",
+                    "value": {
+                      "k": "if",
+                      "cond": {
+                        "k": "binary",
+                        "op": "==",
+                        "lhs": {
+                          "k": "ident",
+                          "name": "pw",
+                          "tok": 153
+                        },
+                        "rhs": {
+                          "k": "nil",
+                          "tok": 155
+                        },
+                        "tok": 154
+                      },
+                      "then": {
+                        "stmts": [
+                          {
+                            "k": "expr",
+                            "expr": {
+                              "k": "strlit",
+                              "value": "",
+                              "tok": 157
+                            }
+                          }
+                        ]
+                      },
+                      "else": {
+                        "k": "block",
+                        "stmts": [
+                          {
+                            "k": "expr",
+                            "expr": {
+                              "k": "ident",
+                              "name": "pw",
+                              "tok": 161
+                            }
+                          }
+                        ]
+                      },
+                      "tok": 152
+                    }
+                  },
+                  {
+                    "key": "extraRoots",
+                    "value": {
+                      "k": "ident",
+                      "name": "roots",
+                      "tok": 166
+                    }
+                  }
+                ],
+                "tok": 146,
+                "type_args": []
+              }
+            ],
+            "tok": 145
+          }
+        ]
+      },
+      "tok": 95,
+      "bodiless": false,
+      "span": {
+        "start": 94,
+        "end": 171
+      },
+      "sig_end": 105
+    },
+    {
+      "name": "rootsOf",
+      "type_params": [],
+      "params": [
+        {
+          "name": "path",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "tls.Roots"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "pem"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "io",
+                      "tok": 184
+                    },
+                    "field": "ReadFile",
+                    "tok": 186
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "path",
+                      "tok": 188
+                    }
+                  ],
+                  "tok": 187
+                },
+                "rhs": {
+                  "k": "ret",
+                  "values": [
+                    {
+                      "k": "nil",
+                      "tok": 192
+                    }
+                  ],
+                  "tok": 191
+                },
+                "tok": 190
+              }
+            ],
+            "tok": 182
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "tls",
+                      "tok": 195
+                    },
+                    "field": "ParseRoots",
+                    "tok": 197
+                  },
+                  "args": [
+                    {
+                      "k": "catch",
+                      "e": {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "$utf8",
+                            "tok": 199
+                          },
+                          "field": "Parse",
+                          "tok": 199
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "pem",
+                            "tok": 201
+                          }
+                        ],
+                        "tok": 200
+                      },
+                      "rhs": {
+                        "k": "strlit",
+                        "value": "",
+                        "tok": 204
+                      },
+                      "tok": 203
+                    }
+                  ],
+                  "tok": 198
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 207
+                },
+                "tok": 206
+              }
+            ],
+            "tok": 194
+          }
+        ]
+      },
+      "tok": 172,
+      "bodiless": false,
+      "span": {
+        "start": 171,
+        "end": 211
+      },
+      "sig_end": 181
+    },
+    {
+      "name": "transfer",
+      "type_params": [],
+      "params": [
+        {
+          "name": "c",
+          "type": {
+            "k": "name",
+            "name": "pg.Conn"
+          },
+          "mutable": false
+        },
+        {
+          "name": "from",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        },
+        {
+          "name": "to",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        },
+        {
+          "name": "amount",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "error"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "try",
+              "e": {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "pg",
+                    "tok": 231
+                  },
+                  "field": "Tx",
+                  "tok": 233
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "c",
+                    "tok": 235
+                  },
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "tc",
+                        "type": null
+                      }
+                    ],
+                    "body": {
+                      "k": "block",
+                      "stmts": [
+                        {
+                          "k": "assign",
+                          "targets": [
+                            {
+                              "k": "ident",
+                              "name": "_",
+                              "tok": 242
+                            }
+                          ],
+                          "op": "=",
+                          "values": [
+                            {
+                              "k": "try",
+                              "e": {
+                                "k": "call",
+                                "callee": {
+                                  "k": "selector",
+                                  "base": {
+                                    "k": "ident",
+                                    "name": "pg",
+                                    "tok": 244
+                                  },
+                                  "field": "Exec",
+                                  "tok": 246
+                                },
+                                "args": [
+                                  {
+                                    "k": "ident",
+                                    "name": "tc",
+                                    "tok": 248
+                                  },
+                                  {
+                                    "k": "strlit",
+                                    "value": "update account set balance = balance - $1 where id = $2",
+                                    "tok": 250
+                                  },
+                                  {
+                                    "k": "named_arg",
+                                    "name": "args",
+                                    "value": {
+                                      "k": "slicelit",
+                                      "elem": {
+                                        "k": "name",
+                                        "name": "pg.Value"
+                                      },
+                                      "elems": [
+                                        {
+                                          "k": "composite",
+                                          "type_name": "pg.Int",
+                                          "elems": [
+                                            {
+                                              "key": "v",
+                                              "value": {
+                                                "k": "ident",
+                                                "name": "amount",
+                                                "tok": 266
+                                              }
+                                            }
+                                          ],
+                                          "tok": 260,
+                                          "type_args": []
+                                        },
+                                        {
+                                          "k": "composite",
+                                          "type_name": "pg.Int",
+                                          "elems": [
+                                            {
+                                              "key": "v",
+                                              "value": {
+                                                "k": "ident",
+                                                "name": "from",
+                                                "tok": 275
+                                              }
+                                            }
+                                          ],
+                                          "tok": 269,
+                                          "type_args": []
+                                        }
+                                      ],
+                                      "mut": false,
+                                      "tok": 254
+                                    },
+                                    "tok": 252
+                                  }
+                                ],
+                                "tok": 247
+                              },
+                              "wrap": null,
+                              "tok": 279
+                            }
+                          ],
+                          "tok": 242
+                        },
+                        {
+                          "k": "assign",
+                          "targets": [
+                            {
+                              "k": "ident",
+                              "name": "_",
+                              "tok": 281
+                            }
+                          ],
+                          "op": "=",
+                          "values": [
+                            {
+                              "k": "try",
+                              "e": {
+                                "k": "call",
+                                "callee": {
+                                  "k": "selector",
+                                  "base": {
+                                    "k": "ident",
+                                    "name": "pg",
+                                    "tok": 283
+                                  },
+                                  "field": "Exec",
+                                  "tok": 285
+                                },
+                                "args": [
+                                  {
+                                    "k": "ident",
+                                    "name": "tc",
+                                    "tok": 287
+                                  },
+                                  {
+                                    "k": "strlit",
+                                    "value": "update account set balance = balance + $1 where id = $2",
+                                    "tok": 289
+                                  },
+                                  {
+                                    "k": "named_arg",
+                                    "name": "args",
+                                    "value": {
+                                      "k": "slicelit",
+                                      "elem": {
+                                        "k": "name",
+                                        "name": "pg.Value"
+                                      },
+                                      "elems": [
+                                        {
+                                          "k": "composite",
+                                          "type_name": "pg.Int",
+                                          "elems": [
+                                            {
+                                              "key": "v",
+                                              "value": {
+                                                "k": "ident",
+                                                "name": "amount",
+                                                "tok": 305
+                                              }
+                                            }
+                                          ],
+                                          "tok": 299,
+                                          "type_args": []
+                                        },
+                                        {
+                                          "k": "composite",
+                                          "type_name": "pg.Int",
+                                          "elems": [
+                                            {
+                                              "key": "v",
+                                              "value": {
+                                                "k": "ident",
+                                                "name": "to",
+                                                "tok": 314
+                                              }
+                                            }
+                                          ],
+                                          "tok": 308,
+                                          "type_args": []
+                                        }
+                                      ],
+                                      "mut": false,
+                                      "tok": 293
+                                    },
+                                    "tok": 291
+                                  }
+                                ],
+                                "tok": 286
+                              },
+                              "wrap": null,
+                              "tok": 318
+                            }
+                          ],
+                          "tok": 281
+                        }
+                      ]
+                    },
+                    "tok": 240
+                  },
+                  {
+                    "k": "named_arg",
+                    "name": "isolation",
+                    "value": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pg",
+                        "tok": 324
+                      },
+                      "field": "Serializable",
+                      "tok": 326
+                    },
+                    "tok": 322
+                  }
+                ],
+                "tok": 234
+              },
+              "wrap": null,
+              "tok": 328
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "nil",
+                "tok": 331
+              }
+            ],
+            "tok": 330
+          }
+        ]
+      },
+      "tok": 212,
+      "bodiless": false,
+      "span": {
+        "start": 211,
+        "end": 335
+      },
+      "sig_end": 230
+    },
+    {
+      "name": "transferRetry",
+      "type_params": [],
+      "params": [
+        {
+          "name": "c",
+          "type": {
+            "k": "name",
+            "name": "pg.Conn"
+          },
+          "mutable": false
+        },
+        {
+          "name": "from",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        },
+        {
+          "name": "to",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        },
+        {
+          "name": "amount",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "error"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "last"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "transfer",
+                  "tok": 358
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "c",
+                    "tok": 360
+                  },
+                  {
+                    "k": "ident",
+                    "name": "from",
+                    "tok": 362
+                  },
+                  {
+                    "k": "ident",
+                    "name": "to",
+                    "tok": 364
+                  },
+                  {
+                    "k": "ident",
+                    "name": "amount",
+                    "tok": 366
+                  }
+                ],
+                "tok": 359
+              }
+            ],
+            "tok": 355
+          },
+          {
+            "k": "bind",
+            "names": [
+              "n"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "int",
+                "value": 1,
+                "tok": 372
+              }
+            ],
+            "tok": 369
+          },
+          {
+            "k": "while",
+            "cond": {
+              "k": "binary",
+              "op": "&&",
+              "lhs": {
+                "k": "binary",
+                "op": "<",
+                "lhs": {
+                  "k": "ident",
+                  "name": "n",
+                  "tok": 375
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 3,
+                  "tok": 377
+                },
+                "tok": 376
+              },
+              "rhs": {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "serialization",
+                  "tok": 379
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "last",
+                    "tok": 381
+                  }
+                ],
+                "tok": 380
+              },
+              "tok": 378
+            },
+            "body": {
+              "stmts": [
+                {
+                  "k": "assign",
+                  "targets": [
+                    {
+                      "k": "ident",
+                      "name": "last",
+                      "tok": 384
+                    }
+                  ],
+                  "op": "=",
+                  "values": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "transfer",
+                        "tok": 386
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "c",
+                          "tok": 388
+                        },
+                        {
+                          "k": "ident",
+                          "name": "from",
+                          "tok": 390
+                        },
+                        {
+                          "k": "ident",
+                          "name": "to",
+                          "tok": 392
+                        },
+                        {
+                          "k": "ident",
+                          "name": "amount",
+                          "tok": 394
+                        }
+                      ],
+                      "tok": 387
+                    }
+                  ],
+                  "tok": 384
+                },
+                {
+                  "k": "assign",
+                  "targets": [
+                    {
+                      "k": "ident",
+                      "name": "n",
+                      "tok": 397
+                    }
+                  ],
+                  "op": "+=",
+                  "values": [
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 399
+                    }
+                  ],
+                  "tok": 397
+                }
+              ]
+            },
+            "tok": 374
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "last",
+                "tok": 404
+              }
+            ],
+            "tok": 403
+          }
+        ]
+      },
+      "tok": 336,
+      "bodiless": false,
+      "span": {
+        "start": 335,
+        "end": 408
+      },
+      "sig_end": 354
+    },
+    {
+      "name": "serialization",
+      "type_params": [],
+      "params": [
+        {
+          "name": "e",
+          "type": {
+            "k": "opt",
+            "type": {
+              "k": "name",
+              "name": "error"
+            }
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "bool"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "switch",
+                "subjects": [
+                  {
+                    "k": "ident",
+                    "name": "e",
+                    "tok": 419
+                  }
+                ],
+                "cases": [
+                  {
+                    "patterns": [
+                      {
+                        "k": "const",
+                        "alts": [
+                          {
+                            "k": "nil",
+                            "tok": 422
+                          }
+                        ]
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "ident",
+                            "name": "false",
+                            "tok": 424
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 421
+                  },
+                  {
+                    "patterns": [
+                      {
+                        "k": "type",
+                        "bind": null,
+                        "variant": "pg.Server",
+                        "fields": [
+                          {
+                            "name": "code",
+                            "sub": null,
+                            "tok": 431
+                          },
+                          {
+                            "name": "message",
+                            "sub": null,
+                            "tok": 433
+                          },
+                          {
+                            "name": "detail",
+                            "sub": null,
+                            "tok": 435
+                          },
+                          {
+                            "name": "constraint",
+                            "sub": null,
+                            "tok": 437
+                          },
+                          {
+                            "name": "hint",
+                            "sub": null,
+                            "tok": 439
+                          }
+                        ],
+                        "tok": 427
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "binary",
+                            "op": "==",
+                            "lhs": {
+                              "k": "ident",
+                              "name": "code",
+                              "tok": 442
+                            },
+                            "rhs": {
+                              "k": "strlit",
+                              "value": "40001",
+                              "tok": 444
+                            },
+                            "tok": 443
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 426
+                  }
+                ],
+                "default": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "ident",
+                        "name": "false",
+                        "tok": 448
+                      }
+                    }
+                  ]
+                },
+                "tok": 418
+              }
+            ],
+            "tok": 417
+          }
+        ]
+      },
+      "tok": 409,
+      "bodiless": false,
+      "span": {
+        "start": 408,
+        "end": 454
+      },
+      "sig_end": 416
+    },
+    {
+      "name": "balances",
+      "type_params": [],
+      "params": [
+        {
+          "name": "c",
+          "type": {
+            "k": "name",
+            "name": "pg.Conn"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "error"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "r"
+                  ],
+                  "src": {
+                    "k": "try",
+                    "e": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "pg",
+                          "tok": 468
+                        },
+                        "field": "Query",
+                        "tok": 470
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "c",
+                          "tok": 472
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "select id, balance from account order by id",
+                          "tok": 474
+                        }
+                      ],
+                      "tok": 471
+                    },
+                    "wrap": null,
+                    "tok": 476
+                  },
+                  "guards": [],
+                  "tok": 466
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 478
+                      },
+                      "args": [
+                        {
+                          "k": "interp",
+                          "tmpl": {
+                            "lits": [
+                              "  account ",
+                              ": ",
+                              ""
+                            ],
+                            "holes": [
+                              {
+                                "k": "try",
+                                "e": {
+                                  "k": "call",
+                                  "callee": {
+                                    "k": "selector",
+                                    "base": {
+                                      "k": "ident",
+                                      "name": "pg",
+                                      "tok": 480
+                                    },
+                                    "field": "ColInt",
+                                    "tok": 480
+                                  },
+                                  "args": [
+                                    {
+                                      "k": "ident",
+                                      "name": "r",
+                                      "tok": 480
+                                    },
+                                    {
+                                      "k": "int",
+                                      "value": 0,
+                                      "tok": 480
+                                    }
+                                  ],
+                                  "tok": 480
+                                },
+                                "wrap": null,
+                                "tok": 480
+                              },
+                              {
+                                "k": "try",
+                                "e": {
+                                  "k": "call",
+                                  "callee": {
+                                    "k": "selector",
+                                    "base": {
+                                      "k": "ident",
+                                      "name": "pg",
+                                      "tok": 480
+                                    },
+                                    "field": "ColInt",
+                                    "tok": 480
+                                  },
+                                  "args": [
+                                    {
+                                      "k": "ident",
+                                      "name": "r",
+                                      "tok": 480
+                                    },
+                                    {
+                                      "k": "int",
+                                      "value": 1,
+                                      "tok": 480
+                                    }
+                                  ],
+                                  "tok": 480
+                                },
+                                "wrap": null,
+                                "tok": 480
+                              }
+                            ]
+                          },
+                          "tok": 480
+                        }
+                      ],
+                      "tok": 479
+                    }
+                  }
+                ]
+              },
+              "tok": 465
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "nil",
+                "tok": 486
+              }
+            ],
+            "tok": 485
+          }
+        ]
+      },
+      "tok": 455,
+      "bodiless": false,
+      "span": {
+        "start": 454,
+        "end": 490
+      },
+      "sig_end": 464
+    },
+    {
+      "name": "bank",
+      "type_params": [],
+      "params": [
+        {
+          "name": "c",
+          "type": {
+            "k": "name",
+            "name": "pg.Conn"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "se"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "pg",
+                    "tok": 501
+                  },
+                  "field": "Script",
+                  "tok": 503
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "c",
+                    "tok": 505
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "create temp table account (id int8 primary key, balance int8 not null check (balance >= 0)); insert into account values (1, 100), (2, 0)",
+                    "tok": 507
+                  }
+                ],
+                "tok": 504
+              }
+            ],
+            "tok": 499
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "se",
+                  "tok": 511
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 513
+                },
+                "tok": 512
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 515
+                      },
+                      "args": [
+                        {
+                          "k": "strlit",
+                          "value": "setup failed",
+                          "tok": 517
+                        }
+                      ],
+                      "tok": 516
+                    }
+                  },
+                  {
+                    "k": "ret",
+                    "values": [],
+                    "tok": 520
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 510
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "ok"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "transferRetry",
+                  "tok": 526
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "c",
+                    "tok": 528
+                  },
+                  {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 530
+                  },
+                  {
+                    "k": "int",
+                    "value": 2,
+                    "tok": 532
+                  },
+                  {
+                    "k": "int",
+                    "value": 30,
+                    "tok": 534
+                  }
+                ],
+                "tok": 527
+              }
+            ],
+            "tok": 524
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 537
+              },
+              "args": [
+                {
+                  "k": "interp",
+                  "tmpl": {
+                    "lits": [
+                      "transfer 30: ",
+                      ""
+                    ],
+                    "holes": [
+                      {
+                        "k": "if",
+                        "cond": {
+                          "k": "binary",
+                          "op": "==",
+                          "lhs": {
+                            "k": "ident",
+                            "name": "ok",
+                            "tok": 539
+                          },
+                          "rhs": {
+                            "k": "nil",
+                            "tok": 539
+                          },
+                          "tok": 539
+                        },
+                        "then": {
+                          "stmts": [
+                            {
+                              "k": "expr",
+                              "expr": {
+                                "k": "strlit",
+                                "value": "ok",
+                                "tok": 539
+                              }
+                            }
+                          ]
+                        },
+                        "else": {
+                          "k": "block",
+                          "stmts": [
+                            {
+                              "k": "expr",
+                              "expr": {
+                                "k": "strlit",
+                                "value": "failed",
+                                "tok": 539
+                              }
+                            }
+                          ]
+                        },
+                        "tok": 539
+                      }
+                    ]
+                  },
+                  "tok": 539
+                }
+              ],
+              "tok": 538
+            }
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "_",
+                "tok": 542
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "balances",
+                  "tok": 544
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "c",
+                    "tok": 546
+                  }
+                ],
+                "tok": 545
+              }
+            ],
+            "tok": 542
+          },
+          {
+            "k": "bind",
+            "names": [
+              "over"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "transferRetry",
+                  "tok": 551
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "c",
+                    "tok": 553
+                  },
+                  {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 555
+                  },
+                  {
+                    "k": "int",
+                    "value": 2,
+                    "tok": 557
+                  },
+                  {
+                    "k": "int",
+                    "value": 500,
+                    "tok": 559
+                  }
+                ],
+                "tok": 552
+              }
+            ],
+            "tok": 549
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 562
+              },
+              "args": [
+                {
+                  "k": "interp",
+                  "tmpl": {
+                    "lits": [
+                      "transfer 500: ",
+                      ""
+                    ],
+                    "holes": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "describe",
+                          "tok": 564
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "over",
+                            "tok": 564
+                          }
+                        ],
+                        "tok": 564
+                      }
+                    ]
+                  },
+                  "tok": 564
+                }
+              ],
+              "tok": 563
+            }
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "_",
+                "tok": 567
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "balances",
+                  "tok": 569
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "c",
+                    "tok": 571
+                  }
+                ],
+                "tok": 570
+              }
+            ],
+            "tok": 567
+          }
+        ]
+      },
+      "tok": 491,
+      "bodiless": false,
+      "span": {
+        "start": 490,
+        "end": 576
+      },
+      "sig_end": 498
+    },
+    {
+      "name": "describe",
+      "type_params": [],
+      "params": [
+        {
+          "name": "e",
+          "type": {
+            "k": "opt",
+            "type": {
+              "k": "name",
+              "name": "error"
+            }
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "string"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "switch",
+              "subjects": [
+                {
+                  "k": "ident",
+                  "name": "e",
+                  "tok": 586
+                }
+              ],
+              "cases": [
+                {
+                  "patterns": [
+                    {
+                      "k": "const",
+                      "alts": [
+                        {
+                          "k": "nil",
+                          "tok": 589
+                        }
+                      ]
+                    }
+                  ],
+                  "body": {
+                    "stmts": [
+                      {
+                        "k": "ret",
+                        "values": [
+                          {
+                            "k": "strlit",
+                            "value": "ok",
+                            "tok": 592
+                          }
+                        ],
+                        "tok": 591
+                      }
+                    ]
+                  },
+                  "tok": 588
+                },
+                {
+                  "patterns": [
+                    {
+                      "k": "type",
+                      "bind": null,
+                      "variant": "pg.Server",
+                      "fields": [
+                        {
+                          "name": "code",
+                          "sub": null,
+                          "tok": 599
+                        },
+                        {
+                          "name": "message",
+                          "sub": null,
+                          "tok": 601
+                        },
+                        {
+                          "name": "detail",
+                          "sub": null,
+                          "tok": 603
+                        },
+                        {
+                          "name": "constraint",
+                          "sub": null,
+                          "tok": 605
+                        },
+                        {
+                          "name": "hint",
+                          "sub": null,
+                          "tok": 607
+                        }
+                      ],
+                      "tok": 595
+                    }
+                  ],
+                  "body": {
+                    "stmts": [
+                      {
+                        "k": "ret",
+                        "values": [
+                          {
+                            "k": "interp",
+                            "tmpl": {
+                              "lits": [
+                                "server error ",
+                                ""
+                              ],
+                              "holes": [
+                                {
+                                  "k": "ident",
+                                  "name": "code",
+                                  "tok": 611
+                                }
+                              ]
+                            },
+                            "tok": 611
+                          }
+                        ],
+                        "tok": 610
+                      }
+                    ]
+                  },
+                  "tok": 594
+                }
+              ],
+              "default": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "block",
+                      "stmts": []
+                    }
+                  }
+                ]
+              },
+              "tok": 585
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "strlit",
+                "value": "other error",
+                "tok": 621
+              }
+            ],
+            "tok": 620
+          }
+        ]
+      },
+      "tok": 577,
+      "bodiless": false,
+      "span": {
+        "start": 576,
+        "end": 625
+      },
+      "sig_end": 584
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "e",
+              "err"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "env",
+                    "tok": 635
+                  },
+                  "field": "Load",
+                  "tok": 637
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "Vars",
+                    "tok": 639
+                  }
+                ],
+                "tok": 638
+              }
+            ],
+            "tok": 631
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "err",
+                  "tok": 643
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 645
+                },
+                "tok": 644
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "assign",
+                    "targets": [
+                      {
+                        "k": "ident",
+                        "name": "_",
+                        "tok": 647
+                      }
+                    ],
+                    "op": "=",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "io",
+                            "tok": 649
+                          },
+                          "field": "WriteStdout",
+                          "tok": 651
+                        },
+                        "args": [
+                          {
+                            "k": "call",
+                            "callee": {
+                              "k": "ident",
+                              "name": "bytes",
+                              "tok": 653
+                            },
+                            "args": [
+                              {
+                                "k": "call",
+                                "callee": {
+                                  "k": "selector",
+                                  "base": {
+                                    "k": "ident",
+                                    "name": "env",
+                                    "tok": 655
+                                  },
+                                  "field": "Format",
+                                  "tok": 657
+                                },
+                                "args": [
+                                  {
+                                    "k": "ident",
+                                    "name": "err",
+                                    "tok": 659
+                                  }
+                                ],
+                                "tok": 658
+                              }
+                            ],
+                            "tok": 654
+                          }
+                        ],
+                        "tok": 652
+                      }
+                    ],
+                    "tok": 647
+                  },
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 665
+                      }
+                    ],
+                    "tok": 664
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 642
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "oe"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "pg",
+                    "tok": 671
+                  },
+                  "field": "Open",
+                  "tok": 673
+                },
+                "args": [
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "env",
+                        "tok": 675
+                      },
+                      "field": "Str",
+                      "tok": 677
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "e",
+                        "tok": 679
+                      },
+                      {
+                        "k": "ident",
+                        "name": "Url",
+                        "tok": 681
+                      }
+                    ],
+                    "tok": 678
+                  },
+                  {
+                    "k": "ident",
+                    "name": "bank",
+                    "tok": 684
+                  },
+                  {
+                    "k": "named_arg",
+                    "name": "policy",
+                    "value": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "policyOf",
+                        "tok": 688
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "e",
+                          "tok": 690
+                        }
+                      ],
+                      "tok": 689
+                    },
+                    "tok": 686
+                  }
+                ],
+                "tok": 674
+              }
+            ],
+            "tok": 669
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "oe",
+                  "tok": 695
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 697
+                },
+                "tok": 696
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 699
+                      },
+                      "args": [
+                        {
+                          "k": "strlit",
+                          "value": "open failed",
+                          "tok": 701
+                        }
+                      ],
+                      "tok": 700
+                    }
+                  },
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 705
+                      }
+                    ],
+                    "tok": 704
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 694
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 710
+              }
+            ],
+            "tok": 709
+          }
+        ]
+      },
+      "tok": 626,
+      "bodiless": false,
+      "span": {
+        "start": 625,
+        "end": 714
+      },
+      "sig_end": 630
+    }
+  ],
+  "consts": [
+    {
+      "name": "Url",
+      "expr": {
+        "k": "composite",
+        "type_name": "env.StrVar",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "PG_URL",
+              "tok": 24
+            }
+          },
+          {
+            "key": "help",
+            "value": {
+              "k": "strlit",
+              "value": "the database URL (postgres://user@host[:port]/db)",
+              "tok": 28
+            }
+          }
+        ],
+        "tok": 18,
+        "type_args": []
+      },
+      "tok": 16,
+      "span": {
+        "start": 15,
+        "end": 31
+      }
+    },
+    {
+      "name": "Password",
+      "expr": {
+        "k": "composite",
+        "type_name": "env.StrVar",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "PG_PASSWORD",
+              "tok": 40
+            }
+          },
+          {
+            "key": "help",
+            "value": {
+              "k": "strlit",
+              "value": "the SCRAM password",
+              "tok": 44
+            }
+          },
+          {
+            "key": "opt",
+            "value": {
+              "k": "ident",
+              "name": "true",
+              "tok": 48
+            }
+          }
+        ],
+        "tok": 34,
+        "type_args": []
+      },
+      "tok": 32,
+      "span": {
+        "start": 31,
+        "end": 51
+      }
+    },
+    {
+      "name": "Ca",
+      "expr": {
+        "k": "composite",
+        "type_name": "env.StrVar",
+        "elems": [
+          {
+            "key": "name",
+            "value": {
+              "k": "strlit",
+              "value": "PG_CA",
+              "tok": 60
+            }
+          },
+          {
+            "key": "help",
+            "value": {
+              "k": "strlit",
+              "value": "a PEM file of extra trusted CAs",
+              "tok": 64
+            }
+          },
+          {
+            "key": "opt",
+            "value": {
+              "k": "ident",
+              "name": "true",
+              "tok": 68
+            }
+          }
+        ],
+        "tok": 54,
+        "type_args": []
+      },
+      "tok": 52,
+      "span": {
+        "start": 51,
+        "end": 71
+      }
+    },
+    {
+      "name": "Vars",
+      "expr": {
+        "k": "composite",
+        "type_name": "env.Table",
+        "elems": [
+          {
+            "key": "strs",
+            "value": {
+              "k": "slicelit",
+              "elem": {
+                "k": "name",
+                "name": "env.StrVar"
+              },
+              "elems": [
+                {
+                  "k": "ident",
+                  "name": "Url",
+                  "tok": 86
+                },
+                {
+                  "k": "ident",
+                  "name": "Password",
+                  "tok": 88
+                },
+                {
+                  "k": "ident",
+                  "name": "Ca",
+                  "tok": 90
+                }
+              ],
+              "mut": false,
+              "tok": 80
+            }
+          }
+        ],
+        "tok": 74,
+        "type_args": []
+      },
+      "tok": 72,
+      "span": {
+        "start": 71,
+        "end": 94
+      }
+    }
+  ]
+}

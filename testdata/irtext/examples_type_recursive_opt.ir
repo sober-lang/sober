@@ -1822,26 +1822,26 @@ b3:
   store %19[2], %18
   br b4
 b4:
-  %36 = slotaddr s2
-  %37 = const 0
-  store %36[0], %37
-  store %36[1], %37
-  store %36[2], %37
-  store %36[3], %37
-  store %36[0], %15
+  %36 = const 0
+  %37 = slotaddr s2
+  store %37[0], %36
+  store %37[1], %36
+  store %37[2], %36
+  store %37[3], %36
+  store %37[0], %15
   %38 = load.i64 %19[0]
-  store %36[1], %38
+  store %37[1], %38
   %39 = load.i64 %19[1]
-  store %36[2], %39
+  store %37[2], %39
   %40 = load.i64 %19[2]
-  store %36[3], %40
-  %41 = load.i64 %36[0]
+  store %37[3], %40
+  %41 = load.i64 %37[0]
   store %0[0], %41
-  %42 = load.i64 %36[1]
+  %42 = load.i64 %37[1]
   store %0[1], %42
-  %43 = load.i64 %36[2]
+  %43 = load.i64 %37[2]
   store %0[2], %43
-  %44 = load.i64 %36[3]
+  %44 = load.i64 %37[3]
   store %0[3], %44
   %45 = const 0
   call @rt.rec_relocate#1(%0, %2, %45)
@@ -1897,26 +1897,26 @@ b6:
   store %57[2], %56
   br b7
 b7:
-  %74 = slotaddr s2
-  %75 = const 0
-  store %74[0], %75
-  store %74[1], %75
-  store %74[2], %75
-  store %74[3], %75
-  store %74[0], %1
+  %74 = const 0
+  %75 = slotaddr s2
+  store %75[0], %74
+  store %75[1], %74
+  store %75[2], %74
+  store %75[3], %74
+  store %75[0], %1
   %76 = load.i64 %57[0]
-  store %74[1], %76
+  store %75[1], %76
   %77 = load.i64 %57[1]
-  store %74[2], %77
+  store %75[2], %77
   %78 = load.i64 %57[2]
-  store %74[3], %78
-  %79 = load.i64 %74[0]
+  store %75[3], %78
+  %79 = load.i64 %75[0]
   store %0[0], %79
-  %80 = load.i64 %74[1]
+  %80 = load.i64 %75[1]
   store %0[1], %80
-  %81 = load.i64 %74[2]
+  %81 = load.i64 %75[2]
   store %0[2], %81
-  %82 = load.i64 %74[3]
+  %82 = load.i64 %75[3]
   store %0[3], %82
   %83 = const 0
   call @rt.rec_relocate#1(%0, %2, %83)
@@ -2157,41 +2157,41 @@ b5:
   store %51[2], %50
   br b6
 b6:
-  %71 = slotaddr s5
-  %72 = const 0
-  store %71[0], %72
-  store %71[1], %72
-  store %71[2], %72
-  store %71[3], %72
-  store %71[4], %72
-  store %71[5], %72
-  store %71[6], %72
-  store %71[0], %9
+  %71 = const 0
+  %72 = slotaddr s5
+  store %72[0], %71
+  store %72[1], %71
+  store %72[2], %71
+  store %72[3], %71
+  store %72[4], %71
+  store %72[5], %71
+  store %72[6], %71
+  store %72[0], %9
   %73 = load.i64 %28[0]
-  store %71[1], %73
+  store %72[1], %73
   %74 = load.i64 %28[1]
-  store %71[2], %74
+  store %72[2], %74
   %75 = load.i64 %28[2]
-  store %71[3], %75
+  store %72[3], %75
   %76 = load.i64 %51[0]
-  store %71[4], %76
+  store %72[4], %76
   %77 = load.i64 %51[1]
-  store %71[5], %77
+  store %72[5], %77
   %78 = load.i64 %51[2]
-  store %71[6], %78
-  %79 = load.i64 %71[0]
+  store %72[6], %78
+  %79 = load.i64 %72[0]
   store %0[0], %79
-  %80 = load.i64 %71[1]
+  %80 = load.i64 %72[1]
   store %0[1], %80
-  %81 = load.i64 %71[2]
+  %81 = load.i64 %72[2]
   store %0[2], %81
-  %82 = load.i64 %71[3]
+  %82 = load.i64 %72[3]
   store %0[3], %82
-  %83 = load.i64 %71[4]
+  %83 = load.i64 %72[4]
   store %0[4], %83
-  %84 = load.i64 %71[5]
+  %84 = load.i64 %72[5]
   store %0[5], %84
-  %85 = load.i64 %71[6]
+  %85 = load.i64 %72[6]
   store %0[6], %85
   %86 = const 0
   call @rt.rec_relocate#0(%0, %11, %86)
@@ -2762,42 +2762,42 @@ b3:
   store %36[2], %35
   br b4
 b4:
-  %56 = slotaddr s5
-  %57 = const 0
-  store %56[0], %57
-  store %56[1], %57
-  store %56[2], %57
-  store %56[3], %57
-  store %56[4], %57
-  store %56[5], %57
-  store %56[6], %57
-  store %56[0], %9
+  %56 = const 0
+  %57 = slotaddr s5
+  store %57[0], %56
+  store %57[1], %56
+  store %57[2], %56
+  store %57[3], %56
+  store %57[4], %56
+  store %57[5], %56
+  store %57[6], %56
+  store %57[0], %9
   %58 = load.i64 %13[0]
-  store %56[1], %58
+  store %57[1], %58
   %59 = load.i64 %13[1]
-  store %56[2], %59
+  store %57[2], %59
   %60 = load.i64 %13[2]
-  store %56[3], %60
+  store %57[3], %60
   %61 = load.i64 %36[0]
-  store %56[4], %61
+  store %57[4], %61
   %62 = load.i64 %36[1]
-  store %56[5], %62
+  store %57[5], %62
   %63 = load.i64 %36[2]
-  store %56[6], %63
+  store %57[6], %63
   %64 = slotaddr s6
-  %65 = load.i64 %56[0]
+  %65 = load.i64 %57[0]
   store %64[0], %65
-  %66 = load.i64 %56[1]
+  %66 = load.i64 %57[1]
   store %64[1], %66
-  %67 = load.i64 %56[2]
+  %67 = load.i64 %57[2]
   store %64[2], %67
-  %68 = load.i64 %56[3]
+  %68 = load.i64 %57[3]
   store %64[3], %68
-  %69 = load.i64 %56[4]
+  %69 = load.i64 %57[4]
   store %64[4], %69
-  %70 = load.i64 %56[5]
+  %70 = load.i64 %57[5]
   store %64[5], %70
-  %71 = load.i64 %56[6]
+  %71 = load.i64 %57[6]
   store %64[6], %71
   %72 = const 30
   %73 = const 70

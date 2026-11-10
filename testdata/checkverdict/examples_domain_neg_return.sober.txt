@@ -1,0 +1,2 @@
+sober: load error at examples/domain_neg_return.sober:12:12: task.Scope, task.Handle and channel endpoints do not cross a function boundary, and a task.Domain is not returned from a function (pass values to the function and spawn in the scope body)
+exit=1

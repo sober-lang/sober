@@ -416,6 +416,21 @@ def typecheck (Δ : Defs) (Ξ : ChanTy) (Ψ : StoreTy) (f : Nat) : Nat → Nat �
       | _ => none
   | _, _, _, _, .scopeV _ _ => none
   | _, _, _, _, .taskV _ _ => none
+  -- domain（実行時の値 domV はソースに現れない）
+  | b, d, Γ, Λ, .dnew r i t =>
+      match typecheck Δ Ξ Ψ f b d Γ Λ i with
+      | some te =>
+          if decide (b ≤ r) && decide (r < d) && Ty.payOk te t then some (.dom r t) else none
+      | none => none
+  | _, _, _, _, .domV _ _ _ => none
+  | b, d, Γ, Λ, .denter t e =>
+      match typecheck Δ Ξ Ψ f b d Γ Λ e with
+      | some (.dom _ t') => if decide (t' = t) && decide (b < d) && t.mutFree && t.chanFree then some (t.relocR (d - 1)) else none
+      | _ => none
+  | b, d, Γ, Λ, .dexit e v =>
+      match typecheck Δ Ξ Ψ f b d Γ Λ e, typecheck Δ Ξ Ψ f b d Γ Λ v with
+      | some (.dom _ t), some te => if Ty.payOk te t then some .unit else none
+      | _, _ => none
 
 /-- 健全性: typecheck が受理すれば型付け導出がある -/
 theorem typecheck_sound {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f : Nat} :
@@ -938,6 +953,30 @@ theorem typecheck_sound {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f : Nat} :
     exact .closeE (ih ‹_›)
   | loc r a => intro _ _ _ _ _ h; simp [typecheck] at h
   | blit n => intro _ _ _ _ _ h; simp [typecheck] at h
+  | dnew r i t ih =>
+    intro b d Γ Λ τ h
+    simp only [typecheck] at h
+    split at h <;> try cases h
+    split at h <;> try cases h
+    rename_i hcond
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
+    exact .dnewE hcond.1.1 hcond.1.2 (ih ‹_›) hcond.2
+  | domV _ _ _ => intro _ _ _ _ _ h; simp [typecheck] at h
+  | denter t e ih =>
+    intro b d Γ Λ τ h
+    simp only [typecheck] at h
+    split at h <;> try cases h
+    split at h <;> try cases h
+    rename_i hcond
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
+    obtain ⟨⟨⟨rfl, hbd⟩, hm⟩, hc⟩ := hcond
+    exact .denterE (ih ‹_›) hbd hm hc
+  | dexit e v ihe ihv =>
+    intro b d Γ Λ τ h
+    simp only [typecheck] at h
+    split at h <;> try cases h
+    split at h <;> try cases h
+    exact .dexitE (ihe ‹_›) (ihv ‹_›) ‹_›
   | chanV c => intro _ _ _ _ _ h; simp [typecheck] at h
   | scope t₀ ε₀ e ih =>
     intro b d Γ Λ t h
@@ -1328,6 +1367,19 @@ theorem typecheck_complete {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f : Nat} :
     simp only [typecheck, h1, h2, h3, h4, h5, h6, decide_true, Bool.and_self, if_true]
   | epTx _ _ _ => intro hs; simp [Expr.src] at hs
   | epRx _ _ _ => intro hs; simp [Expr.src] at hs
+  | dnewE h1 h2 h3 hp ih =>
+    intro hs
+    simp only [Expr.src] at hs
+    simp [typecheck, ih hs, h1, h2, hp]
+  | domVT _ _ _ => intro hs; simp [Expr.src] at hs
+  | denterE h hbd hm hc ih =>
+    intro hs
+    simp only [Expr.src] at hs
+    simp [typecheck, ih hs, hbd, hm, hc]
+  | dexitE h1 h2 hp ih1 ih2 =>
+    intro hs
+    simp only [Expr.src, Bool.and_eq_true] at hs
+    simp [typecheck, ih1 hs.1, ih2 hs.2, hp]
   | loc _ _ _ _ _ => intro hs; simp [Expr.src] at hs
   | chanV _ _ _ => intro hs; simp [Expr.src] at hs
   | scope h1 hrel hrb hem hec hbd ih =>

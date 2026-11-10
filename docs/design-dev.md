@@ -54,7 +54,7 @@ Rust の 2 保証（メモリ安全・データ競合自由）を借用検査な
 
 1. 動的性が主役のソフト（閉じた世界の裏面）: プラグイン、dlopen、JIT、ホットリロード常用、REPL 的探索。スタック上界・DCE 完全・mem-report は全部「リンク時に世界が閉じる」に依存し、開けた瞬間に売りが全滅する。wasm FFI は檻つきの部分緩和まで。「世界はリンク時に閉じる」は決定 2026-09-27（language.md 29 節） — プラットフォーム境界の dylib（GPU ドライバ・macOS libSystem・Windows system DLL 等）は `@native` FFI の実装詳細であってリンクモデルの例外ではない（決定。動的リンクの強いユースケースを棚卸しした結果、残るのは OS / ドライバ境界だけで、FFI の箱に閉じられる）
 2. 寿命が構文に従わないメモリパターン（region = LIFO の裏面）: 相互参照が絡む長寿命の可変オブジェクトグラフ — GUI のリテインドツリー + オブザーバ、undo グラフ、イベント駆動の寿命。GC 言語の本領。Handle / Pool のはしごで書けるが「Go の見た目」から遠ざかる
-3. 数値計算・HPC・ML（単相化なし + 演算子を開かない、の裏面）: 辞書渡しの未特化と演算子閉鎖で、エルゴノミクスと性能の両方が弱い。GPU は Domain 経由でカーネルは別世界。非目標と明言する
+3. 数値計算・HPC・ML（単相化なし + 演算子を開かない、の裏面）: 辞書渡しの未特化と演算子閉鎖で、エルゴノミクスと性能の両方が弱い。GPU は Place 経由でカーネルは別世界。非目標と明言する
 4. アロケータ職人芸の極限系（region が既定意味論、の裏面）: HFT・AAA エンジン級の自前アロケータ・レイアウト職人芸。Zig / Rust の領分で競合しない
 
 1〜4 は意味論に根差した本質的な不向き。以下 2 つは賭けの裏面（覆る可能性を残す）:
@@ -77,7 +77,7 @@ Rust の 2 保証（メモリ安全・データ競合自由）を借用検査な
 
 規律を構造へ（2026-11-06 — import 便の起案から）。Go は構造の穴を規律で塞いだ（「package は特徴的に名付けよ」「client という package を作るな」「短く」）— モノレポとレビューの文化の中では働くが、規律の及ばないエコシステムの規模で穴が露出した（`s3types`・`metav1`・`httputil`）。Sober は規律を構造に翻訳する: 名前は構造から導く（修飾子 = import パスの全段）・出所の置き場は文法が決める（sober.mod — ソースに漏れない）・規則は検査できる形にする（package の段は小文字の識別子）。規律として残すのは、違反のコストが違反者自身に即時に返るものだけ（「浅く書け」— 深くすると自分の全使用行の綴りが長くなる）。メソッドが無いことがこの連鎖の根にある: メソッドが無い → package が唯一の名前空間 → 参照の綴りが全荷重を受けられる → `.` の連鎖の意味が位置で一意（呼び出しの行が型の情報なしで静的に読める）。詳細と Go との対照の表 = language.md 20 節。
 
-未決を片付けるときの手順。この日の決定（キャンセル、escape、スタック上界、効果宣言、辞書解決、ジェネリクス、FFI、`@export`、Domain 越境）は全部この 5 手で済み、新しい型規則は一つも要らなかった。
+未決を片付けるときの手順。この日の決定（キャンセル、escape、スタック上界、効果宣言、辞書解決、ジェネリクス、FFI、`@export`、Place 越境）は全部この 5 手で済み、新しい型規則は一つも要らなかった。
 
 1. 問いを層に割る。コンパイラ（健全性）、analyzer（拒否と提案）、最適化器（見えない変換）、std のどこの仕事かを先に決める。キャンセルは「配達と巻き戻し」、escape は「意味論と最適化」に割れた
 2. 意味論は最も単純な 1 規則にする。「region 境界越えはコピー」「切られた task は検査点で止まる（キャンセルは値にならない — 2026-10-05 改訂。旧「`Cancelled` は `block` 効果のエラー面」）」「注釈は導出集合の上界」。例外や場合分けを意味論に持たない
@@ -92,7 +92,7 @@ Rust の 2 保証（メモリ安全・データ競合自由）を借用検査な
 | 文書 | 内容 |
 |---|---|
 | [docs/language.md](language.md) | 言語設計の決定 15 項目 + サンプル + 賭けの線引き + 未決 |
-| [docs/region-domain-pool.md](region-domain-pool.md) | region（言語）/ defer / Handle / Domain・Pool（std）の層割り当て。SoA 強制の決定 |
+| [docs/region-domain-pool.md](region-domain-pool.md) | region（言語）/ defer / Handle / Place・Pool（std）の層割り当て。SoA 強制の決定 |
 | [docs/oracles.md](oracles.md) | 全層のオラクル計画。外部ツール / 参照実装 / 実行時計測の 3 種類を層ごとに割り当て、「オラクルと食い違う入力を探す」を唯一のテスト形式にする |
 | [docs/ir.md](ir.md) | 独自 SSA IR の仕様。-O0 形・型 2 つ・全域で定義された op・region を op で残す理由・境界コピーの規則・ランタイムを IR で書く・LLVM への対応と UB 遮断・観測の列 |
 | [docs/regalloc.md](regalloc.md) | x86 正規バックエンドのレジスタ割り当て。線形の外包と部分区間・二段方式のループ境界分割・運搬値の穴・重みと冷たい領域・優先度順の貪欲彩色・合流の写しと spill 先の正しさ・既知の弱点（最適割り当てオラクル L1 / L2 との差） |
@@ -108,7 +108,7 @@ Rust の 2 保証（メモリ安全・データ競合自由）を借用検査な
 | コンパイラ（健全必須） | 型検査、sum type の網羅、region の escape 規則、並列スコープの不変値制約、`T?` flow typing | 拒否 |
 | analyzer（受理の定義に含む、degrade 可） | 効果（language.md 12 節「effect の面」— build に載せるのは効果をコンパイラ / rt が使うときだけ・倒れ先つき）、純粋性、error ラベル網羅、ゼロ値検査、`@noblock` 区間、acquire/release 対応、`Value` の公開境界隔離と変換関数の生成・一致検査 | unknown。注釈で契約に変えて精度を戻す |
 | ランタイム（Zig + asm、数千行） | region の push / pop / bump 割り当て、コルーチンのスタック切替、ワーカーごとの協調的キュー、spawn / join、チャネル（5b: MPMC + futex）、スレッド生成、atomics、abort、syscall シム（mmap / futex / clone / exit）。入る条件は「Sober で書けない（asm / syscall / atomics）」か「コンパイラが直接呼ぶ」の 2 つだけ | — |
-| std（Sober で書く。使った分だけリンク） | Handle、Domain、Pool、Iter、Ord / Key / Layout 等の辞書型、`Value` と変換、io、Executor（M:1 既定とスレッドプールは別モジュール） | — |
+| std（Sober で書く。使った分だけリンク） | Handle、Place、Pool、Iter、Ord / Key / Layout 等の辞書型、`Value` と変換、io、Executor（M:1 既定とスレッドプールは別モジュール） | — |
 
 ランタイムに無いもの（それぞれ設計上の理由で消えた）: GC（→ region）、シグナルによる非同期プリエンプション（→ バックエッジの検査点。ランタイムはフラグを持つだけ）、パニックの巻き戻し器（→ エラーは値で `?`、defer はスコープ出口にインライン展開）、型情報テーブルとリフレクション（→ `Layout[T]` と `Shape[T]` は参照された型の分だけ出る静的データ。language.md 16 節）、release のガードページ（→ スタック上界のリンク時計算）、netpoller（→ std の io と Executor）。リフレクションが無いのでリンク時の dead code elimination が完全に効き、std を厚くしてもバイナリは使った分だけ。SoberSQL を C ライブラリとして組み込むときにランタイム込みで小さく収まる根拠。
 
@@ -119,11 +119,11 @@ Rust の 2 保証（メモリ安全・データ競合自由）を借用検査な
   - 2026-09-18 完了（`for ... yield` を除く）。`-O0` との差分実行は比較対象が無いので `examples/*.out` の期待値で代用。`for ... yield` は Phase 2 へ送った: 価値は `Iter[T]` と `|> map |> collect` の合成にあり、型もジェネリクスも無い Phase 1 で int 専用の脱糖を書いても作り直しになる。ラムダの inline 展開機構は Phase 1 で出来ているので、型が付いた時点でその上に載せる。Phase 1 の副産物: int / struct / union だけの最小の型表（Phase 2 の Lean 型検査器が正になったら、Zig 側は脱糖とレイアウトだけを残す）
 - Featherweight Sober（Phase 1 と並行可）: docs/formal.md。型検査の規則を証明済みにしてから Phase 2 に入る
 - Phase 2: （オラクル: Lean 型検査器・評価器、region の poison）型検査 — 関数内推論 + 双方向型検査、`T?` flow typing、region の escape 規則、並列スコープの不変値制約、ゼロ値 / definite initialization。型検査器は Lean で書き、別プロセスとして接続する（Zig は脱糖後のコア AST を JSON で渡す）。Zig 再実装は後で、Lean 実装を差分テストのオラクルにして行う（docs/formal.md「実装との照合」）
-- Phase 3: （オラクル: Pool 未返却カウンタ）std — Handle / Domain / Pool / Iter。region-domain-pool.md の 1〜4 節がここで検証される
+- Phase 3: （オラクル: Pool 未返却カウンタ）std — Handle / Place / Pool / Iter。region-domain-pool.md の 1〜4 節がここで検証される
 - Phase 4: （オラクル: 計装ランタイムで観測 ⊆ 導出、fuzz でラベル観測）analyzer 第 1 本 — acquire/release の局所照合（call graph 不要）。続いて効果導出、error ラベル導出、公開境界の宣言強制 + fix
 - Phase 5: （オラクル: Lean トレース照合、TLA+、スタック高水位 ≤ 上界）コルーチン + structured concurrency、`parallel scope`、チャネル。スタック上界のリンク時計算と再帰 SCC の深さカウンタ（language.md 11 節）はここで入れ、コルーチンのスタックは上界どおりに region から取る。3 段に割る。マルチスレッドは 5b で入る（5a は内部マイルストーン）
   - 5a: 1 OS スレッド。`parallel scope` は構文・型検査とも最終形だが、実行は 1 スレッド上の協調的インターリーブ。意味論（region と寿命、join、キャンセル、チャネル）をここで固める。seed 付き決定的スケジューラを最初のテスト基盤にする（切替順を再現できないと並列の反例が再現できない）
-  - 5b: `parallel scope` の子を N ワーカースレッドに載せる。各ワーカーは 5a のスケジューラを 1 つ持つ。決定: タスクは生成時にワーカーへ固定され、生涯移動しない（stackful でスタックを動かさない決定、FFI のスレッドローカルと整合）。スレッド境界を越えるのはチャネル・join・不変メモリの読みの 3 つだけ。子スコープの region はそれを走らせるスレッドが確保し、解放は join の後（happens-before は join に乗る）。spawn 先は Domain の Executor で、`Policy.threads` が 1 なら 5a と同じ動き
+  - 5b: `parallel scope` の子を N ワーカースレッドに載せる。各ワーカーは 5a のスケジューラを 1 つ持つ。決定: タスクは生成時にワーカーへ固定され、生涯移動しない（stackful でスタックを動かさない決定、FFI のスレッドローカルと整合）。スレッド境界を越えるのはチャネル・join・不変メモリの読みの 3 つだけ。子スコープの region はそれを走らせるスレッドが確保し、解放は join の後（happens-before は join に乗る）。spawn 先は Place の Executor で、`Policy.threads` が 1 なら 5a と同じ動き
   - 5c（実測で必要になったら）: work stealing / タスク移送。Phase 6 のゲームの移植で負荷偏りが出たら入れる。入れると「実行中にスタックと region の所有スレッドが変わる」が加わり検証コストが一桁上がるので、デフォルトは入れない
   - ランタイムの検証（Lean の 3 定理の対象外。docs/formal.md「想定するリスク」参照）: 信頼核をスケジューラ・チャネル・region 解放の 3 つに限る。5a は決定的シミュレーション → 中断点の全順序列挙、5b の前に MPMC チャネルと join バリアを TLA+ で設計検証し、実装のイベントトレース（spawn / switch / send / recv / free）を仕様に対して照合する。5a のトレースは Lean の small-step 意味論をオラクルにして比較できる（formal.md 段 2）
 - バックエンド戦略（裁定 2026-09-26。Phase の外 — IR 移行のタイミングは独立に決める）: 独自 SSA IR を唯一の入力に、正規と開発時専用の 2 バックエンドを両輪で育てる
@@ -183,17 +183,17 @@ Rust の 2 保証（メモリ安全・データ競合自由）を借用検査な
   3. SoberSQL の上に載る小さな Web アプリ — language.md 16 節（`Value` の隔離と `shape[T]` 辞書によるデコード）を試す。RDBMS では試されない「退屈な部分の広さ」（シリアライズ、形の分からないデータ、文字列）がここで出る。DB とアプリを同じ言語・同じデコーダで書き、両方を一度に検証する
   4. 組み込みターゲット（構想 2026-09-19。第 4 の題材） — 「サブセット無しで上から下まで同じ言語」の主張（本文書 賭けの節）を実地で立てる。試すもの: mem-report の必需品化（固定メモリ予算に収まる保証）、region = 固定予算の静的アリーナへの差し替え、有界チャネル、`@layout` + MMIO、panic の組み込み受け皿、ARM / RISC-V ターゲット（Phase 6 の QEMU オラクル）。着手条件: Phase 6（ターゲット追加）+ mem-report の実装 + 有界チャネルの裁定。題材は未定（ベアメタルで動く小さな何か — 決まったらゴール登録）
   - 長期方針: エコシステムは Sober で完結させる（TLS・HTTP・JSON を std に持つ。暗号は `@consttime` 効果が前提、16 節）
-- Phase 6: （オラクル: clang で `offsetof` / `sizeof` と C ハーネス、wasm 仕様インタプリタ、QEMU で ARM / RISC-V）FFI + GPU Domain、ゲームの移植。FFI は 2 段（決定 2026-09-17）
-  - 既定の FFI は wasm。C ライブラリを wasm32 にコンパイルし、Sober のコンパイル時に wasm → x86_64 へ AOT 変換して静的リンクする（wazero の compiler mode と同型。sqlshape で libpg_query を wasm 経由にして cgo を消した前例）。宣言は `@wasm("libz.wasm")` のような注釈。効果は `block`（AOT が fuel 検査点を挿すのでキャンセルが C の中に届く）。得るもの: C の UB は線形メモリに閉じ region を壊せない（3 定理が FFI を越えて生きる）、wasm のスタックはエンジン管理なのでシステムスタック切替も上界計算の例外も不要、線形メモリは「自分の memory policy を持つ Domain」で値の受け渡しは `receive` のコピー（region 規則そのまま）、ターゲットごとの C ツールチェーン不要。払うもの: 計算ライブラリで 1.2〜2 倍程度の性能、AOT 変換器（数千行）の実装。Phase 6 の最初の成果物はこの AOT 変換器で、独自 SSA IR に流し込む（wasm → IR → 正規バックエンド。バックエンド戦略の項）
+- Phase 6: （オラクル: clang で `offsetof` / `sizeof` と C ハーネス、wasm 仕様インタプリタ、QEMU で ARM / RISC-V）FFI + GPU Place、ゲームの移植。FFI は 2 段（決定 2026-09-17）
+  - 既定の FFI は wasm。C ライブラリを wasm32 にコンパイルし、Sober のコンパイル時に wasm → x86_64 へ AOT 変換して静的リンクする（wazero の compiler mode と同型。sqlshape で libpg_query を wasm 経由にして cgo を消した前例）。宣言は `@wasm("libz.wasm")` のような注釈。効果は `block`（AOT が fuel 検査点を挿すのでキャンセルが C の中に届く）。得るもの: C の UB は線形メモリに閉じ region を壊せない（3 定理が FFI を越えて生きる）、wasm のスタックはエンジン管理なのでシステムスタック切替も上界計算の例外も不要、線形メモリは「自分の memory policy を持つ Place」で値の受け渡しは `receive` のコピー（region 規則そのまま）、ターゲットごとの C ツールチェーン不要。払うもの: 計算ライブラリで 1.2〜2 倍程度の性能、AOT 変換器（数千行）の実装。Phase 6 の最初の成果物はこの AOT 変換器で、独自 SSA IR に流し込む（wasm → IR → 正規バックエンド。バックエンド戦略の項）
   - native FFI は `@native` で明示し、GPU ドライバとプラットフォーム API に限る。Sober は libc 非依存で syscall を直接叩くので OS 接点は std が担い、C を経由する必要があるのは wasm に落ちないものだけ。ここだけ呼び出し時にワーカーのシステムスタックへ切り替え、スタック上界計算の対象外、キャンセルは戻ってから観測。analyzer は `native` を効果として追跡し公開境界の宣言に出す
   - 逆向き: C から Sober を呼ぶ `@export(c)`（決定 2026-09-17）。SoberSQL の「組み込み可能」の実体で、Phase 6 を待たず SoberSQL の最初の公開面として先に効く。内部 ABI は自由（多値・暗黙辞書・scope・region 付き参照は C に対応物が無い）、境界だけ C ABI を持つ
     - 署名は C で表現できる部分集合に制限し、コンパイラが検査: スカラー、`@layout(c)` の struct とその参照、`(ptr, len)` に展開される slice / string。`(T, error?)` は戻り値コード + 出力引数で、`@errors` が閉じているのでエラーコード enum が機械的に決まる。`T?` は参照なら NULL 可能、値なら有無フラグ付き struct。辞書・関数型引数は不可（コールバックは `@layout(c)` の関数ポインタ型を別に定義）
     - ヘッダ `sober.h` は fix が書き、analyzer が export 署名との一致を検査する（16 節の fix 生成と同じ扱い。ビルド時生成ではなくリポジトリのファイル）
     - 不透明ハンドルは Handle そのもの（index + 世代の整数）。閉じた後の使用は UB ではなくエラーコード。DB 接続・prepared statement・カーソルを全部 Handle で渡す。SQLite の `sqlite3*` のダングリングが構成的に消える
-    - ホストは別 Domain。境界を越える値は常にコピー（region 規則）。結果はホストのバッファに書くか Sober 側 region に置いて `sober_free(h)` で返す。ホストのメモリを Sober の参照で指さないので 3 定理が境界でも生きる
-    - 実行文脈: (1) export 呼び出し 1 回 = 1 scope。入口で region を作り出口で解放、ホストからのキャンセルは `sober_cancel(ctx)` で scope のフラグを立てる（`sqlite3_interrupt` と同型） (2) 呼び出しをまたぐ状態は `sober_init()` が作るルート Domain の region に住み Handle で参照 (3) ホストのスタックサイズは不明なので入口で Sober 管理のスタック（上界どおりの大きさ）へ切り替える（native FFI の逆向き） (4) ホストスレッドごとに 5a のスケジューラを 1 つ持つ（ホストスレッド = 外から来たワーカー。ワーカー固定と整合し、共有は不変値かチャネルだけ。単一書き手 + CoW の SoberSQL なら読み手はどのスレッドでも不変ページを読める） (5) export 関数内で `parallel scope` を使うなら Domain の Executor が init 時に起動していること
+    - ホストは別 Place。境界を越える値は常にコピー（region 規則）。結果はホストのバッファに書くか Sober 側 region に置いて `sober_free(h)` で返す。ホストのメモリを Sober の参照で指さないので 3 定理が境界でも生きる
+    - 実行文脈: (1) export 呼び出し 1 回 = 1 scope。入口で region を作り出口で解放、ホストからのキャンセルは `sober_cancel(ctx)` で scope のフラグを立てる（`sqlite3_interrupt` と同型） (2) 呼び出しをまたぐ状態は `sober_init()` が作るルート Place の region に住み Handle で参照 (3) ホストのスタックサイズは不明なので入口で Sober 管理のスタック（上界どおりの大きさ）へ切り替える（native FFI の逆向き） (4) ホストスレッドごとに 5a のスケジューラを 1 つ持つ（ホストスレッド = 外から来たワーカー。ワーカー固定と整合し、共有は不変値かチャネルだけ。単一書き手 + CoW の SoberSQL なら読み手はどのスレッドでも不変ページを読める） (5) export 関数内で `parallel scope` を使うなら Place の Executor が init 時に起動していること
   - 「エコシステムを Sober で完結」への移行路: C ライブラリは wasm の檻の中で使い、Sober で書き直せたものから外す。移行中もメモリ安全の穴が開かない
-  - 副産物（別件として置く。ランタイムが小さく GC もリフレクションも無いので TinyGo が Go から削るものが元から無い）: (1) Sober 自身を wasm ターゲットにする道（ブラウザ） (2) マイコン（ARM Thumb / RISC-V）ターゲット。ランタイムの mmap を静的な固定 arena に、syscall シムを HAL に差し替え、スタック上界の数字でスタック全体を静的確保する（RAM 予算に合わなければリンクで落とす）。足りないのはバックエンドの実装量で、codegen の入力 IR を一本にしておけばターゲット依存部だけ足せばよい。未検討: 割り込み（Executor が interrupt である Domain と読めるか）、ヒープの静的上限（ループ内の無制限割り当てを `alloc` 効果の lint で指摘）
+  - 副産物（別件として置く。ランタイムが小さく GC もリフレクションも無いので TinyGo が Go から削るものが元から無い）: (1) Sober 自身を wasm ターゲットにする道（ブラウザ） (2) マイコン（ARM Thumb / RISC-V）ターゲット。ランタイムの mmap を静的な固定 arena に、syscall シムを HAL に差し替え、スタック上界の数字でスタック全体を静的確保する（RAM 予算に合わなければリンクで落とす）。足りないのはバックエンドの実装量で、codegen の入力 IR を一本にしておけばターゲット依存部だけ足せばよい。未検討: 割り込み（Executor が interrupt である Place と読めるか）、ヒープの静的上限（ループ内の無制限割り当てを `alloc` 効果の lint で指摘）
   - 棄てた案: native FFI のみ（C を呼んだ瞬間に全保証が消える。Go の cgo と同じ立場になる）、既存 wasm ランタイムの組み込み（wasmtime は Rust + C、wazero は Go。libc 非依存・単一バイナリの方針と合わない）
   SoA 強制の撤退条件（書けない並列パターン 3 つ）をここで計測
 - IO 便（0.6.0 Web 波 — 設計の壁打ち完了 2026-10-17。裁定の正 = language.md 7 節「規約の二層」・28 節「読み書きの規約」「壊れ方の規律」/

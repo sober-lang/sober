@@ -2250,16 +2250,16 @@ b24:
   call @rt.print_char(%129)
   %130 = const 43
   %131 = const 1
-  %132 = slotaddr s1
-  %133 = const 0
-  store %132[0], %133
-  store %132[1], %133
-  store %132[0], %130
-  store %132[1], %131
+  %132 = const 0
+  %133 = slotaddr s1
+  store %133[0], %132
+  store %133[1], %132
+  store %133[0], %130
+  store %133[1], %131
   %134 = slotaddr s2
-  %135 = load.i64 %132[0]
+  %135 = load.i64 %133[0]
   store %134[0], %135
-  %136 = load.i64 %132[1]
+  %136 = load.i64 %133[1]
   store %134[1], %136
   %137 = load.i64 %134[0]
   %138 = load.i64 %134[1]
@@ -2269,14 +2269,14 @@ b24:
   call @rt.print_int(%138)
   %140 = const 10
   call @rt.print_char(%140)
-  %141 = slotaddr s1
-  %142 = const 0
-  store %141[0], %142
-  store %141[1], %142
+  %141 = const 0
+  %142 = slotaddr s1
+  store %142[0], %141
+  store %142[1], %141
   %143 = slotaddr s3
-  %144 = load.i64 %141[0]
+  %144 = load.i64 %142[0]
   store %143[0], %144
-  %145 = load.i64 %141[1]
+  %145 = load.i64 %142[1]
   store %143[1], %145
   %146 = load.i64 %143[0]
   call @rt.print_int(%146)
@@ -2667,27 +2667,27 @@ b55:
   call @rt.print_int(%1)
   %398 = const 10
   call @rt.print_char(%398)
-  %399 = slotaddr s13
-  %400 = const 0
-  store %399[0], %400
-  store %399[1], %400
-  store %399[2], %400
-  store %399[3], %400
-  store %399[4], %400
-  store %399[5], %400
-  store %399[6], %400
-  store %399[7], %400
-  store %399[8], %400
-  store %399[9], %400
+  %399 = const 0
+  %400 = slotaddr s13
+  store %400[0], %399
+  store %400[1], %399
+  store %400[2], %399
+  store %400[3], %399
+  store %400[4], %399
+  store %400[5], %399
+  store %400[6], %399
+  store %400[7], %399
+  store %400[8], %399
+  store %400[9], %399
   %401 = region.depth
   %402 = region.bump %401
   %403 = ptoi %402
-  store %399[0], %403
+  store %400[0], %403
   %404 = const 0
-  store %399[1], %404
-  store %399[2], %401
+  store %400[1], %404
+  store %400[2], %401
   %405 = const 3
-  %406 = gep.word %399, %405
+  %406 = gep.word %400, %405
   %407 = region.depth
   %408 = region.bump %407
   %409 = ptoi %408
@@ -2696,25 +2696,25 @@ b55:
   store %406[1], %410
   store %406[2], %407
   %411 = slotaddr s14
-  %412 = load.i64 %399[0]
+  %412 = load.i64 %400[0]
   store %411[0], %412
-  %413 = load.i64 %399[1]
+  %413 = load.i64 %400[1]
   store %411[1], %413
-  %414 = load.i64 %399[2]
+  %414 = load.i64 %400[2]
   store %411[2], %414
-  %415 = load.i64 %399[3]
+  %415 = load.i64 %400[3]
   store %411[3], %415
-  %416 = load.i64 %399[4]
+  %416 = load.i64 %400[4]
   store %411[4], %416
-  %417 = load.i64 %399[5]
+  %417 = load.i64 %400[5]
   store %411[5], %417
-  %418 = load.i64 %399[6]
+  %418 = load.i64 %400[6]
   store %411[6], %418
-  %419 = load.i64 %399[7]
+  %419 = load.i64 %400[7]
   store %411[7], %419
-  %420 = load.i64 %399[8]
+  %420 = load.i64 %400[8]
   store %411[8], %420
-  %421 = load.i64 %399[9]
+  %421 = load.i64 %400[9]
   store %411[9], %421
   %422 = const 97
   %423 = const 1
@@ -2815,24 +2815,24 @@ b66:
   call @rt.print_int(%454)
   %457 = const 10
   call @rt.print_char(%457)
-  %458 = slotaddr s16
-  %459 = const 0
-  store %458[0], %459
-  store %458[1], %459
-  store %458[2], %459
-  store %458[3], %459
-  store %458[4], %459
-  store %458[5], %459
-  store %458[6], %459
+  %458 = const 0
+  %459 = slotaddr s16
+  store %459[0], %458
+  store %459[1], %458
+  store %459[2], %458
+  store %459[3], %458
+  store %459[4], %458
+  store %459[5], %458
+  store %459[6], %458
   %460 = region.depth
   %461 = region.bump %460
   %462 = ptoi %461
-  store %458[0], %462
+  store %459[0], %462
   %463 = const 0
-  store %458[1], %463
-  store %458[2], %460
+  store %459[1], %463
+  store %459[2], %460
   %464 = const 3
-  %465 = gep.word %458, %464
+  %465 = gep.word %459, %464
   %466 = region.depth
   %467 = region.bump %466
   %468 = ptoi %467
@@ -2841,19 +2841,19 @@ b66:
   store %465[1], %469
   store %465[2], %466
   %470 = slotaddr s17
-  %471 = load.i64 %458[0]
+  %471 = load.i64 %459[0]
   store %470[0], %471
-  %472 = load.i64 %458[1]
+  %472 = load.i64 %459[1]
   store %470[1], %472
-  %473 = load.i64 %458[2]
+  %473 = load.i64 %459[2]
   store %470[2], %473
-  %474 = load.i64 %458[3]
+  %474 = load.i64 %459[3]
   store %470[3], %474
-  %475 = load.i64 %458[4]
+  %475 = load.i64 %459[4]
   store %470[4], %475
-  %476 = load.i64 %458[5]
+  %476 = load.i64 %459[5]
   store %470[5], %476
-  %477 = load.i64 %458[6]
+  %477 = load.i64 %459[6]
   store %470[6], %477
   %478 = const 7
   %479 = const 1

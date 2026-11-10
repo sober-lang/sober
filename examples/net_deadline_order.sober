@@ -1,0 +1,86 @@
+package main
+
+// A short deadline that starts waiting after long ones still fires on time: the ring's deadline scan skips a worker's chain
+// while now is before the earliest deadline it knows, so a new waiter must lower that bound. 32 children wait on Recv under a
+// one-hour deadline (enough to put one on every worker's chain); once they are parked and main's worker has scanned its chain
+// during a sleep, main's Recv under a 30 ms deadline must expire, not wait for the hour. Then main wakes every child.
+
+import "std/io"
+import "std/net"
+import "std/os"
+import "std/task"
+
+const hour = 3600000 * task.MS
+const kids = 32
+
+func main() {
+    println(run() catch "listen failed")
+}
+
+func run() (string, error?) {
+    mut out := ""
+    for l <- net.Listen("127.0.0.1:0")? {
+        addr := "127.0.0.1:${net.Port(l)}"
+        r, e := task.Run((s task.Scope) => {
+            mut i := 0
+            while i < kids {
+                h := task.Spawn(s, () => child(addr))
+                _ = h
+                i = i + 1
+            }
+            short(l, addr, kids) catch "short failed"
+        })
+        out = if e == nil { r } else { "scope: err" }
+        break
+    }
+    return out, nil
+}
+
+// Accepts the children's n connections (one per level — a connection stays in its binding), then, with every child
+// parked, sleeps so the worker scans its chain, lets a 30 ms Recv expire and wakes the children on the way out
+func short(l net.Listener, addr string, n int) (string, error?) {
+    mut res := ""
+    for sc <- net.Accept(l)? {
+        res = if n == 1 { probe(addr) } else { short(l, addr, n - 1)? }
+        net.Send(sc, bytes("ping"))?
+        break
+    }
+    return res, nil
+}
+
+func probe(addr string) string {
+    os.Sleep(50)
+    y, _ := task.Run((s task.Scope) => recvFrom(addr), deadline: 30 * task.MS)
+    return "short: ${y}"
+}
+
+func child(addr string) int {
+    v, _ := task.Run((s task.Scope) => recvFrom(addr), deadline: hour)
+    println("long: ${v}")
+    return 0
+}
+
+// Dials addr and returns the first chunk (or the error's label)
+func recvFrom(addr string) string {
+    v, e := recv1(addr)
+    return if e == nil { v } else { show(e) }
+}
+
+func recv1(addr string) (string, error?) {
+    mut got := ""
+    for c <- net.Dial(addr)? {
+        for chunk <- net.Recv(c)? {
+            got = string(chunk)?
+            break
+        }
+    }
+    return got, nil
+}
+
+func show(e error?) string {
+    return switch e {
+    case nil: "ok"
+    case io.Expired{}: "expired"
+    default: "other"
+    }
+}

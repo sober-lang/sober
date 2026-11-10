@@ -1,0 +1,27 @@
+package main
+
+// The body of a domain call can pass the state as a mut argument only to a function that keeps the same rule as the body
+// (diag.Par kind 37): here grow appends to the state's slice, which would grow the domain's region on every call. Make the
+// function take values and return the new ones, then assign them in the body
+
+import "std/task"
+
+type Log struct {
+    n int
+    lines mut []int
+}
+
+func grow(c mut Log) {
+    c.lines = append(c.lines, c.n)
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, Log{n: 0, lines: mut []int{}})
+        task.Update(d, (st mut Log) => {
+            grow(mut st)
+            st.n
+        })
+    })
+    println(r)
+}

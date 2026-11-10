@@ -1765,28 +1765,28 @@ func @main.main() {
 b0:
   %0 = region.depth
   region.enter
-  %1 = slotaddr s0
-  %2 = const 0
-  store %1[0], %2
-  store %1[1], %2
-  store %1[2], %2
-  store %1[3], %2
-  store %1[4], %2
-  store %1[5], %2
-  store %1[6], %2
-  store %1[7], %2
-  store %1[8], %2
-  store %1[9], %2
-  store %1[10], %2
+  %1 = const 0
+  %2 = slotaddr s0
+  store %2[0], %1
+  store %2[1], %1
+  store %2[2], %1
+  store %2[3], %1
+  store %2[4], %1
+  store %2[5], %1
+  store %2[6], %1
+  store %2[7], %1
+  store %2[8], %1
+  store %2[9], %1
+  store %2[10], %1
   %3 = region.depth
   %4 = region.bump %3
   %5 = ptoi %4
-  store %1[0], %5
+  store %2[0], %5
   %6 = const 0
-  store %1[1], %6
-  store %1[2], %3
+  store %2[1], %6
+  store %2[2], %3
   %7 = const 3
-  %8 = gep.word %1, %7
+  %8 = gep.word %2, %7
   %9 = region.depth
   %10 = region.bump %9
   %11 = ptoi %10
@@ -1795,7 +1795,7 @@ b0:
   store %8[1], %12
   store %8[2], %9
   %13 = const 6
-  %14 = gep.word %1, %13
+  %14 = gep.word %2, %13
   %15 = region.depth
   %16 = region.bump %15
   %17 = ptoi %16
@@ -1804,27 +1804,27 @@ b0:
   store %14[1], %18
   store %14[2], %15
   %19 = slotaddr s1
-  %20 = load.i64 %1[0]
+  %20 = load.i64 %2[0]
   store %19[0], %20
-  %21 = load.i64 %1[1]
+  %21 = load.i64 %2[1]
   store %19[1], %21
-  %22 = load.i64 %1[2]
+  %22 = load.i64 %2[2]
   store %19[2], %22
-  %23 = load.i64 %1[3]
+  %23 = load.i64 %2[3]
   store %19[3], %23
-  %24 = load.i64 %1[4]
+  %24 = load.i64 %2[4]
   store %19[4], %24
-  %25 = load.i64 %1[5]
+  %25 = load.i64 %2[5]
   store %19[5], %25
-  %26 = load.i64 %1[6]
+  %26 = load.i64 %2[6]
   store %19[6], %26
-  %27 = load.i64 %1[7]
+  %27 = load.i64 %2[7]
   store %19[7], %27
-  %28 = load.i64 %1[8]
+  %28 = load.i64 %2[8]
   store %19[8], %28
-  %29 = load.i64 %1[9]
+  %29 = load.i64 %2[9]
   store %19[9], %29
-  %30 = load.i64 %1[10]
+  %30 = load.i64 %2[10]
   store %19[10], %30
   %31 = const 7
   %32 = slotaddr s2
@@ -2081,15 +2081,15 @@ b19:
   %151 = mul %144, %150
   %152 = gep.word %149, %151
   %153 = load.i64 %152[0]
-  %154 = slotaddr s3
-  %155 = const 0
-  store %154[0], %155
-  store %154[1], %155
-  store %154[0], %141
-  store %154[1], %153
-  %156 = load.i64 %154[0]
+  %154 = const 0
+  %155 = slotaddr s3
+  store %155[0], %154
+  store %155[1], %154
+  store %155[0], %141
+  store %155[1], %153
+  %156 = load.i64 %155[0]
   store %0[0], %156
-  %157 = load.i64 %154[1]
+  %157 = load.i64 %155[1]
   store %0[1], %157
   region.setdepth %3
   ret

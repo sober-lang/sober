@@ -15,6 +15,9 @@ import "std/iter"
 const PS_LIVE = 0     // 生きている task の数（main を除く）
 const PS_PEAK = 1     // その高水位
 const PS_TCBMAP = 2   // 新しく mmap した task の塊の数（入力に比例しないことの網）
+const PS_WINREL = 3   // rt.win_park が窓の頁を返した回数（塊ごとに高々 1 回 — ≤ PS_TCBMAP の網）
+const PS_STACKHW = 4  // task の積みの最深（TCB からの B — 終わりの時点で塊の積みを走査した最大・使い回しの塊は前の task の最深を保つ）
+const PS_STACK_SCAN = 65536 // その走査の範囲（TCB の下 64 KiB — 越える積みは 64 KiB と読む）
 const PS_ENDED = 8    // 終わった task の数
 const PS_MAXB = 9     // task の使用量（終わりの時点の自前のスロットの使った量の和）の最大
 const PS_SUMB = 10    // その和
@@ -121,6 +124,19 @@ func buildPstatEnd(st mut St) {
     sp := gepWord(mut st, ps, bin(mut st, BAdd, bin(mut st, BMul, site, iconst(mut st, 2)), iconst(mut st, PS_SITE)))
     atomicXadd(mut st, sp, 0, iconst(mut st, 1))
     atomicMax(mut st, sp, 1, acc)
+    // 積みの最深: [TCB − PS_STACK_SCAN, TCB) を下から上へ、非 0 の最初の語まで（新しい塊の積みは 0 の頁 — 書かれた所だけ非 0）
+    tcb := ptoi(mut st, 0)
+    sl := newBlock(mut st)
+    a := param(mut st, sl, TyI64)
+    sb := newBlock(mut st)
+    sd := newBlock(mut st)
+    br(mut st, sl, list1(mut st, bin(mut st, BSub, tcb, iconst(mut st, PS_STACK_SCAN))))
+    setCur(mut st, sl)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CLt, a, tcb), cmp(mut st, CEq, load(mut st, itop(mut st, a), 0), iconst(mut st, 0))), sb, -1, sd, -1)
+    setCur(mut st, sb)
+    br(mut st, sl, list1(mut st, bin(mut st, BAdd, a, iconst(mut st, 8))))
+    setCur(mut st, sd)
+    atomicMax(mut st, ps, PS_STACKHW, bin(mut st, BSub, tcb, a))
     ret(mut st, -1)
 }
 
@@ -174,6 +190,8 @@ func buildPstatDump(st mut St) {
     pfield(mut st, "va_slots", load(mut st, ps, PS_VA))
     pfield(mut st, "slot_bytes", load(mut st, meta, W_SLOT_DEF))
     pfield(mut st, "tcb_mmaps", load(mut st, ps, PS_TCBMAP))
+    pfield(mut st, "win_rel", load(mut st, ps, PS_WINREL))
+    pfield(mut st, "stack_hw", load(mut st, ps, PS_STACKHW))
     call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\n')))
     // 入場の台帳: 入場・縮退・超過の数・計上の高水位・task の数の天井・終わりの計上（全部返れば 0）
     printLit(mut st, "#par admit")

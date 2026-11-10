@@ -1,0 +1,46 @@
+package main
+
+// 反復の region の約束と mut の器を持つ domain の状態: 本体は状態の mut slice の要素・入れ子の器の要素・mut map を読むだけ・欄のスカラーをその場で書く。
+// 呼び出しを 10 倍にしても domain の region は伸びない — scripts/iterregion.sh が回数を 10 倍にして RSS を比べる
+
+import "std/convert"
+import "std/iter"
+import "std/os"
+import "std/task"
+
+type Row struct {
+    xs mut []int
+}
+
+type Slots struct {
+    used mut []int
+    rows mut []Row
+    tags mut map[int]int
+    n int
+}
+
+func main() {
+    args, e := os.Args()
+    mut n := 2000
+    if e == nil && len(args) >= 2 {
+        x, pe := convert.ParseInt(args[1])
+        if pe == nil {
+            n = x
+        }
+    }
+    r, re := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, Slots{used: mut []int{0, 0, 0, 0}, rows: mut []Row{Row{xs: mut []int{0, 0}}}, tags: mut map[int]int{1: 1}, n: 0})
+        for i <- iter.Range(0, n) {
+            k := i
+            _ = task.Update(d, (st mut Slots) => {
+                st.used[k % 4] = k
+                st.rows[0].xs[k % 2] = k
+                st.n += 1
+                st.used[0] + len(st.tags)
+            })
+            _ = task.Read(d, (st Slots) => st.used[1] + st.rows[0].xs[1])
+        }
+        task.Read(d, (st Slots) => st.n)
+    })
+    println("${r} ${re == nil}")
+}

@@ -1,0 +1,23 @@
+package main
+
+// domain の本体の捕獲は imm のデータだけ（diag.Par kind 32 — 本体は呼び手と別の task で走ってよい）: 呼び手の mut の束縛を書く本体は拒否
+
+import "std/task"
+
+type Hits struct {
+    n int
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, Hits{n: 0})
+        mut seen := 0
+        task.Update(d, (st mut Hits) => {
+            st.n += 1
+            seen = st.n
+            0
+        })
+        seen
+    })
+    println(r)
+}

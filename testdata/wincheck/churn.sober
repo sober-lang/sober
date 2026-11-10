@@ -1,0 +1,53 @@
+package main
+
+import "std/http/server"
+import "std/iter"
+import "std/net"
+import "std/task"
+
+func page(r http.server.Request) http.server.Response {
+    return http.server.Text("ok ${len(bytes(r.path))}")
+}
+
+// 1 接続 2 要求（limited-conn の形）
+func once(port int, i int) (int, error?) {
+    mut ok := 0
+    for a <- net.Dial("127.0.0.1:${port}")? {
+        for k <- iter.Range(0, 2) {
+            net.Send(a, bytes("GET /p${i} HTTP/1.1\r\nHost: x\r\n\r\n"))?
+            for chunk <- net.Recv(a)? {
+                ok = ok + 1
+                break
+            }
+        }
+    }
+    return ok, nil
+}
+
+// n 本を 1 本ずつ順に（塊が使い回される）
+func client(port int, n int) int {
+    mut ok := 0
+    for i <- iter.Range(0, n) {
+        v, _ := once(port, i)
+        ok = ok + v
+    }
+    return ok
+}
+
+func run() (string, error?) {
+    mut out := ""
+    for l <- net.Listen("127.0.0.1:0")? {
+        port := net.Port(l)
+        r, _ := task.Run((s task.Scope) => {
+            h := task.Spawn(s, () => client(port, 300))
+            _, _ = task.Run((s2 task.Scope) => net.Serve(l, (c net.Conn) => http.server.ServeConn(c, (q http.server.Request) => page(q)), region: 1 * task.MB), deadline: 3000 * task.MS)
+            task.Join(h)
+        }, deadline: 20000 * task.MS)
+        out = "responses ${r}"
+    }
+    return out, nil
+}
+
+func main() {
+    println(run() catch "listen failed")
+}

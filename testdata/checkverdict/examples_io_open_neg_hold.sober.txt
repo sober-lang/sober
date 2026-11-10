@@ -1,2 +1,2 @@
-sober: load error at examples/io_open_neg_hold.sober:15:10: an io.File, io.Root, net.Listener, net.Conn, tls.Conn or client.Session cannot be put in a struct, slice, map or channel, or appended (it has identity — keep it in the binding made by io.Open)
+sober: load error at examples/io_open_neg_hold.sober:15:10: an io.File, io.Root, net.Listener, net.Conn, tls.Conn, client.Session or pg.Conn cannot be put in a struct, slice, map or channel, or appended (it has identity — keep it in the binding made by io.Open)
 exit=1

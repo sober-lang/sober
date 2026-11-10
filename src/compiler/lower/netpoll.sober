@@ -24,6 +24,7 @@ const EV_ONESHOT = 1073741824
 const NETF_WAIT = 5   // ioRec の欄（chunk.sober の CHF_* の次）
 const NETF_POLL = 6
 const RFD_DIRECT = 1099511627776   // read_fd の n の印（1 << 40 — std/net の Recv: ring を通さずその場の read。rt.sober の buildReadFd）
+const RFD_PLAIN = 2199023255552    // RFD_DIRECT と併せる印（1 << 41 — net の ring の受け〔multishot RECV〕も張らない素の read。std/internal/sock）
 
 // rt.fdwait（と std/task のプログラムなら rt.ep_poll）を（初出なら）宣言して rt.fdwait を返す（cont.sober の wait_fd から）
 func needNet(st mut St) FnRef {
@@ -119,28 +120,7 @@ func buildFdWait(st mut St) {
     setCur(mut st, bRw)
     fdWaitRing(mut st, rg)
     setCur(mut st, bEpw)
-    // 記録（ワーカーの最初の待ち）
-    bMk := newBlock(mut st)
-    bHave := newBlock(mut st)
-    rec := param(mut st, bHave, TyI64)
-    r0 := load(mut st, wk, WK_EP)
-    condbr(mut st, cmp(mut st, CEq, r0, zero), bMk, -1, bHave, list1(mut st, r0))
-    setCur(mut st, bMk)
-    m := sysMmap(mut st, iconst(mut st, 4096))
-    mp := itop(mut st, m)
-    store(mut st, mp, EP_FD, urSys(mut st, 291, []int{iconst(mut st, 524288)}))
-    efd := urSys(mut st, 290, []int{zero, iconst(mut st, 526336)})
-    store(mut st, mp, UR_EFD, efd)
-    store(mut st, mp, UR_ONE, iconst(mut st, 1))
-    epCtl(mut st, m, 1, efd, iconst(mut st, 1), iconst(mut st, UD_WAKE))
-    ring := load(mut st, wk, WK_RING)
-    bNr := branchIf(mut st, cmp(mut st, CNe, ring, zero))
-    epCtl(mut st, m, 1, load(mut st, itop(mut st, ring), 0), iconst(mut st, 1), iconst(mut st, UD_RING))
-    br(mut st, bNr, -1)
-    setCur(mut st, bNr)
-    store(mut st, wk, WK_EP, m)
-    br(mut st, bHave, list1(mut st, m))
-    setCur(mut st, bHave)
+    rec := epRec(mut st, wk)
     rp := itop(mut st, rec)
     me := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
     tp := itop(mut st, me)
@@ -173,7 +153,7 @@ func buildFdWait(st mut St) {
         orphLeave(mut st, me)
     }
     if dl {
-        dlUnlink(mut st, urAdd(mut st, rec, EP_DLQ * 8), me, dlv)
+        dlUnlink(mut st, me, dlv)
     }
     // 期限で切れた待ちは登録を外す（ONESHOT のまま残すと、後の readiness が別の待ちの task を起こす）
     bD := branchIf(mut st, cmp(mut st, CNe, r, zero))
@@ -181,6 +161,33 @@ func buildFdWait(st mut St) {
     br(mut st, bD, -1)
     setCur(mut st, bD)
     ret(mut st, r)
+}
+
+// ワーカー wk の epoll の記録（最初の待ちで作る — 起こしの eventfd と、ring があればその fd も登録）
+func epRec(st mut St, wk int) int {
+    zero := iconst(mut st, 0)
+    bMk := newBlock(mut st)
+    bHave := newBlock(mut st)
+    rec := param(mut st, bHave, TyI64)
+    r0 := load(mut st, wk, WK_EP)
+    condbr(mut st, cmp(mut st, CEq, r0, zero), bMk, -1, bHave, list1(mut st, r0))
+    setCur(mut st, bMk)
+    m := sysMmap(mut st, iconst(mut st, 4096))
+    mp := itop(mut st, m)
+    store(mut st, mp, EP_FD, urSys(mut st, 291, []int{iconst(mut st, 524288)}))
+    efd := urSys(mut st, 290, []int{zero, iconst(mut st, 526336)})
+    store(mut st, mp, UR_EFD, efd)
+    store(mut st, mp, UR_ONE, iconst(mut st, 1))
+    epCtl(mut st, m, 1, efd, iconst(mut st, 1), iconst(mut st, UD_WAKE))
+    ring := load(mut st, wk, WK_RING)
+    bNr := branchIf(mut st, cmp(mut st, CNe, ring, zero))
+    epCtl(mut st, m, 1, load(mut st, itop(mut st, ring), 0), iconst(mut st, 1), iconst(mut st, UD_RING))
+    br(mut st, bNr, -1)
+    setCur(mut st, bNr)
+    store(mut st, wk, WK_EP, m)
+    br(mut st, bHave, list1(mut st, m))
+    setCur(mut st, bHave)
+    return rec
 }
 
 // rt.ep_poll(wait): 期限の過ぎた待ち手を -110 で起こし、epoll_wait（wait なら残りの最小の期限まで眠る・でなければ 0）で
@@ -217,9 +224,20 @@ func buildEpPoll(st mut St) {
         tp := itop(mut st, t)
         dlv := load(mut st, tp, TC_DL)
         nx := load(mut st, tp, TC_AWNEXT)
-        dead := cmp(mut st, CNe, load(mut st, tp, TC_IORES), pend)
+        ior := load(mut st, tp, TC_IORES)
+        dead := if st.domUse { bin(mut st, BAnd, cmp(mut st, CNe, ior, pend), cmp(mut st, CNe, ior, iconst(mut st, PEND_DOM))) } else { cmp(mut st, CNe, ior, pend) }
         condbr(mut st, bin(mut st, BAnd, cmp(mut st, CEq, dead, zero), cmp(mut st, CGe, now, dlv)), sx, -1, sk, -1)
         setCur(mut st, sx)
+        if st.domUse {
+            // domain の Await の待ち手（domain.sober）は手渡しと CAS で競う
+            bDw := newBlock(mut st)
+            bIo := newBlock(mut st)
+            condbr(mut st, cmp(mut st, CEq, ior, iconst(mut st, PEND_DOM)), bDw, -1, bIo, -1)
+            setCur(mut st, bDw)
+            domExpire(mut st, t)
+            br(mut st, sl, list2(mut st, nx, mn))
+            setCur(mut st, bIo)
+        }
         epWake(mut st, t, iconst(mut st, -110))
         br(mut st, sl, list2(mut st, nx, mn))
         setCur(mut st, sk)
@@ -295,12 +313,14 @@ func buildEpPoll(st mut St) {
 func dlWait(st mut St, rec int, q int, me int, pend int) int {
     zero := iconst(mut st, 0)
     tp := itop(mut st, me)
-    rp := itop(mut st, rec)
     dlv := if dlFn(st.rtD3) != 0 && q >= 0 { load(mut st, tp, TC_DL) } else { zero }
     if dlFn(st.rtD3) != 0 && q >= 0 {
         bL := branchIf(mut st, cmp(mut st, CNe, dlv, zero))
-        store(mut st, tp, TC_AWNEXT, load(mut st, rp, q))
-        store(mut st, rp, q, me)
+        if q == UR_DLQ {
+            dlqPush(mut st, rec, me, dlv)
+        } else {
+            awPush(mut st, urAdd(mut st, rec, q * 8), me)
+        }
         br(mut st, bL, -1)
         setCur(mut st, bL)
     }
@@ -314,27 +334,62 @@ func dlWait(st mut St, rec int, q int, me int, pend int) int {
     return dlv
 }
 
-// 期限があれば（dlv ≠ 0）鎖（頭の語の番地 head）から me を外す（無ければ何もしない — net の ring の道は期限の走査が先に外す）
-func dlUnlink(st mut St, head int, me int, dlv int) {
-    zero := iconst(mut st, 0)
-    bU := branchIf(mut st, cmp(mut st, CNe, dlv, zero))
-    ul := newBlock(mut st)
-    pa := param(mut st, ul, TyI64)
-    un := newBlock(mut st)
-    ux := newBlock(mut st)
-    br(mut st, ul, list1(mut st, head))
-    setCur(mut st, ul)
-    cw := load(mut st, itop(mut st, pa), 0)
-    condbr(mut st, cmp(mut st, CEq, cw, me), ux, -1, un, -1)
-    setCur(mut st, un)
-    bNx := branchIf(mut st, cmp(mut st, CEq, cw, zero))
-    br(mut st, bU, -1)
-    setCur(mut st, bNx)
-    br(mut st, ul, list1(mut st, urAdd(mut st, cw, TC_AWNEXT * 8)))
-    setCur(mut st, ux)
-    store(mut st, itop(mut st, pa), 0, load(mut st, itop(mut st, me), TC_AWNEXT))
+// 期限があれば（dlv ≠ 0）me を鎖から外す（鎖に居なければ何もしない — net の ring の道は期限の走査・孤児の走査が先に外す）
+func dlUnlink(st mut St, me int, dlv int) {
+    bU := branchIf(mut st, cmp(mut st, CNe, dlv, iconst(mut st, 0)))
+    awUnlink(mut st, me)
     br(mut st, bU, -1)
     setCur(mut st, bU)
+}
+
+// ring の期限の鎖 UR_DLQ に me（期限 dlv ≠ 0）を積み、最早の期限の下界 UR_DLMIN を dlv まで下げる
+func dlqPush(st mut St, rg int, me int, dlv int) {
+    awPush(mut st, urAdd(mut st, rg, UR_DLQ * 8), me)
+    if st.rtMut != 51 {
+        rp := itop(mut st, rg)
+        store(mut st, rp, UR_DLMIN, imin(mut st, load(mut st, rp, UR_DLMIN), dlv))
+    }
+}
+
+// 双方向の待ちの鎖（TC_AWNEXT / TC_AWPREV — 期限の待ちの鎖と入場の待ちの鎖。task は同時に 1 本の鎖にしか居ない）: 頭の語の番地 head に t を積む
+func awPush(st mut St, head int, t int) {
+    tp := itop(mut st, t)
+    old := load(mut st, itop(mut st, head), 0)
+    store(mut st, tp, TC_AWNEXT, old)
+    store(mut st, tp, TC_AWPREV, head)
+    bO := branchIf(mut st, cmp(mut st, CNe, old, iconst(mut st, 0)))
+    store(mut st, itop(mut st, old), TC_AWPREV, urAdd(mut st, t, TC_AWNEXT * 8))
+    br(mut st, bO, -1)
+    setCur(mut st, bO)
+    store(mut st, itop(mut st, head), 0, t)
+}
+
+// t を鎖から外す（TC_AWPREV = 0 なら鎖に居ない — 何もしない）。外したら TC_AWPREV を 0 に
+func awUnlink(st mut St, t int) {
+    zero := iconst(mut st, 0)
+    tp := itop(mut st, t)
+    pv := load(mut st, tp, TC_AWPREV)
+    bIn := newBlock(mut st)
+    bD := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, pv, zero), bD, -1, bIn, -1)
+    setCur(mut st, bIn)
+    awCut(mut st, pv, t)
+    br(mut st, bD, -1)
+    setCur(mut st, bD)
+}
+
+// 鎖に居る t（前の語の番地 pv）を外す: 前の語に次を書き、次の節の前を pv に、t の前を 0 に
+func awCut(st mut St, pv int, t int) {
+    tp := itop(mut st, t)
+    nx := load(mut st, tp, TC_AWNEXT)
+    store(mut st, itop(mut st, pv), 0, nx)
+    if st.rtMut != 50 {
+        bN := branchIf(mut st, cmp(mut st, CNe, nx, iconst(mut st, 0)))
+        store(mut st, itop(mut st, nx), TC_AWPREV, pv)
+        br(mut st, bN, -1)
+        setCur(mut st, bN)
+    }
+    store(mut st, tp, TC_AWPREV, iconst(mut st, 0))
 }
 
 // rt.fdwait の net の ring の道（引数 0 = fd・1 = 向き）: POLL_ADD（一度きり・user_data = TCB | UDT_POLL）を積んで待ち、完了の結果
@@ -354,7 +409,7 @@ func fdWaitRing(st mut St, rg int) {
     dlv := dlWait(mut st, rg, UR_DLQ, me, IO_PENDING)
     r := load(mut st, itop(mut st, me), TC_IORES)
     if dlFn(st.rtD3) != 0 {
-        dlUnlink(mut st, urAdd(mut st, rg, UR_DLQ * 8), me, dlv)
+        dlUnlink(mut st, me, dlv)
     }
     if st.orphOn {
         orphLeave(mut st, me)

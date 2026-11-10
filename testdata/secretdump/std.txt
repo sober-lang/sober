@@ -55,9 +55,7 @@ std/crypto/password/password.sober:81:6: secret std/crypto/password.Bcrypt
 std/crypto/password/password.sober:101:6: secret std/crypto/password.Pbkdf2
 std/crypto/password/password.sober:117:6: secret std/crypto/password.Verify
 std/crypto/password/password.sober:176:6: secret std/crypto/password.bcryptPwOk
-std/crypto/password/pbkdf2.sober:9:6: secret std/crypto/password.macPad
-std/crypto/password/pbkdf2.sober:23:6: secret std/crypto/password.mac
-std/crypto/password/pbkdf2.sober:37:6: secret std/crypto/password.pbkdf2Key
+std/crypto/password/pbkdf2.sober:8:6: secret std/crypto/password.pbkdf2Key
 std/crypto/poly1305/poly1305.sober:16:6: secret std/crypto/poly1305.Sum
 std/crypto/poly1305/poly1305.sober:26:6: secret std/crypto/poly1305.SumAead
 std/crypto/poly1305/poly1305.sober:53:6: secret std/crypto/poly1305.start
@@ -106,6 +104,8 @@ std/crypto/x25519/x25519.sober:212:6: secret std/crypto/x25519.invert
 std/crypto/x25519/x25519.sober:228:6: secret std/crypto/x25519.unpack
 std/crypto/x25519/x25519.sober:240:6: secret std/crypto/x25519.pack
 std/http/client/link.sober:302:6: secret std/http/client.putConn
+std/pg/pg.sober:195:6: secret std/pg.startup
+std/pg/transport.sober:337:6: secret std/pg.putConn
 std/session/session.sober:141:6: secret std/session.KeyFrom
 std/session/session.sober:153:6: secret std/session.Mint
 std/session/session.sober:200:6: secret std/session.Open
@@ -122,8 +122,11 @@ std/tls/tls.sober:443:6: secret std/tls.setSeq
 std/tls/tls.sober:448:6: secret std/tls.putWr
 std/tls/tls.sober:458:6: secret std/tls.view
 std/tls/tls.sober:464:6: secret std/tls.leftBytes
-std/internal/hsc/client.sober:345:6: secret std/internal/hsc.onServerHello
-std/internal/hsc/client.sober:429:6: secret std/internal/hsc.onClientSealed
+std/internal/pbkdf2/pbkdf2.sober:11:6: secret std/internal/pbkdf2.macPad
+std/internal/pbkdf2/pbkdf2.sober:25:6: secret std/internal/pbkdf2.mac
+std/internal/pbkdf2/pbkdf2.sober:39:6: secret std/internal/pbkdf2.Key
+std/internal/hsc/client.sober:356:6: secret std/internal/hsc.onServerHello
+std/internal/hsc/client.sober:452:6: secret std/internal/hsc.onClientSealed
 std/internal/hsc/client12.sober:158:6: secret std/internal/hsc.on12
 std/internal/hsc/client12.sober:236:6: secret std/internal/hsc.skx12
 std/internal/hsc/client12.sober:273:6: secret std/internal/hsc.flight12
@@ -137,7 +140,7 @@ std/internal/hsc/codec.sober:99:6: secret std/internal/hsc.putBytes
 std/internal/hsc/codec.sober:108:6: secret std/internal/hsc.msg
 std/internal/hsc/codec.sober:117:6: secret std/internal/hsc.cat
 std/internal/hsc/codec.sober:125:6: secret std/internal/hsc.sliceOf
-std/internal/hsc/codec.sober:187:6: secret std/internal/hsc.deriveSecret
+std/internal/hsc/codec.sober:189:6: secret std/internal/hsc.deriveSecret
 std/internal/hsc/conn.sober:19:6: secret std/internal/hsc.PackConn
 std/internal/hsc/conn.sober:61:6: secret std/internal/hsc.putDir
 std/internal/hsc/conn.sober:77:6: secret std/internal/hsc.putWords
@@ -154,6 +157,9 @@ std/internal/record/record.sober:269:6: secret std/internal/record.strip
 std/internal/record/record.sober:286:6: secret std/internal/record.stripTail
 std/internal/record/record.sober:417:6: secret std/internal/record.Pack
 std/internal/record/record.sober:453:6: secret std/internal/record.packBytes
+std/internal/pgwire/scram.sober:54:6: secret std/internal/pgwire.ScramStart
+std/internal/pgwire/scram.sober:89:6: secret std/internal/pgwire.ScramContinue
+std/internal/pgwire/scram.sober:169:6: secret std/internal/pgwire.xorBytes
 std/internal/hs/codec.sober:82:6: secret std/internal/hs.put8
 std/internal/hs/codec.sober:91:6: secret std/internal/hs.put24
 std/internal/hs/codec.sober:97:6: secret std/internal/hs.putBytes
@@ -168,6 +174,30 @@ std/internal/hs/hs.sober:324:6: secret std/internal/hs.onSealedMsg
 std/internal/hs/hs.sober:473:6: secret std/internal/hs.onClientHello
 std/internal/hs/hs.sober:660:6: secret std/internal/hs.certificateVerify
 std/internal/hs/hs.sober:680:6: secret std/internal/hs.deriveSecret
+std/internal/p256/p256.sober:15:6: secret std/internal/p256.top
+std/internal/p256/p256.sober:20:6: secret std/internal/p256.cy
+std/internal/p256/p256.sober:25:6: secret std/internal/p256.bw
+std/internal/p256/p256.sober:30:6: secret std/internal/p256.isZeroW
+std/internal/p256/p256.sober:75:6: secret std/internal/p256.putWord
+std/internal/p256/p256.sober:83:6: secret std/internal/p256.putFe
+std/internal/p256/p256.sober:96:6: secret std/internal/p256.add4
+std/internal/p256/p256.sober:114:6: secret std/internal/p256.sub4
+std/internal/p256/p256.sober:132:6: secret std/internal/p256.fmul
+std/internal/p256/p256.sober:378:6: secret std/internal/p256.sel
+std/internal/p256/p256.sober:383:6: secret std/internal/p256.reduce
+std/internal/p256/p256.sober:388:6: secret std/internal/p256.fadd
+std/internal/p256/p256.sober:393:6: secret std/internal/p256.fsub
+std/internal/p256/p256.sober:399:6: secret std/internal/p256.feIsZero
+std/internal/p256/p256.sober:442:6: secret std/internal/p256.newField
+std/internal/p256/p256.sober:515:6: secret std/internal/p256.psel
+std/internal/p256/p256.sober:520:6: secret std/internal/p256.smul
+std/internal/p256/p256.sober:550:6: secret std/internal/p256.ltP
+std/internal/p256/p256.sober:556:6: secret std/internal/p256.decodePoint
+std/internal/p256/p256.sober:579:6: secret std/internal/p256.affineX
+std/internal/p256/p256.sober:587:6: secret std/internal/p256.affine
+std/internal/p256/p256.sober:597:6: secret std/internal/p256.infinite
+std/internal/p256/p256.sober:604:6: secret std/internal/p256.PublicKey
+std/internal/p256/p256.sober:617:6: secret std/internal/p256.Shared
 std/crypto/chacha20poly1305/chacha20poly1305.sober:28:6: field Key.key from the @secret parameter 'key' of 'std/crypto/chacha20poly1305.Prepare'
 std/crypto/poly1305/poly1305.sober:40:6: field acc.r0 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
 std/crypto/poly1305/poly1305.sober:40:6: field acc.r1 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
@@ -179,22 +209,28 @@ std/crypto/poly1305/poly1305.sober:40:6: field acc.h1 from the @secret parameter
 std/crypto/poly1305/poly1305.sober:40:6: field acc.h2 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
 std/crypto/poly1305/poly1305.sober:40:6: field acc.h3 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
 std/crypto/poly1305/poly1305.sober:40:6: field acc.h4 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
+std/pg/pg.sober:124:6: field cfg.password from the @secret field 'Policy.password'
 std/session/session.sober:51:6: field Key.k from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
 std/tls/tls.sober:54:6: field Conn.blk from the @secret parameter 'key' of 'std/crypto/chacha20poly1305.Prepare'
-std/internal/hsc/client.sober:64:6: field Ch.hsS from the @secret parameter 'ikm' of 'std/crypto/hkdf.Extract'
-std/internal/hsc/client.sober:64:6: field Ch.cHs from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
-std/internal/hsc/client.sober:64:6: field Ch.sHs from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
-std/internal/hsc/client.sober:64:6: field Ch.pms from the @secret parameter 'k' of 'std/crypto/x25519.Shared'
-std/internal/hsc/client.sober:64:6: field Ch.ms from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
-std/internal/hsc/client.sober:64:6: field Ch.wkey from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
-std/internal/hsc/client.sober:64:6: field Ch.wiv from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
-std/internal/hsc/client.sober:64:6: field Ch.rkey from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
-std/internal/hsc/client.sober:64:6: field Ch.riv from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
+std/internal/hsc/client.sober:66:6: field Ch.hsS from the @secret parameter 'ikm' of 'std/crypto/hkdf.Extract'
+std/internal/hsc/client.sober:66:6: field Ch.cHs from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
+std/internal/hsc/client.sober:66:6: field Ch.sHs from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
+std/internal/hsc/client.sober:66:6: field Ch.pms from the @secret parameter 'k' of 'std/crypto/x25519.Shared'
+std/internal/hsc/client.sober:66:6: field Ch.ms from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
+std/internal/hsc/client.sober:66:6: field Ch.wkey from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
+std/internal/hsc/client.sober:66:6: field Ch.wiv from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
+std/internal/hsc/client.sober:66:6: field Ch.rkey from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
+std/internal/hsc/client.sober:66:6: field Ch.riv from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
 std/internal/record/record.sober:56:6: field Dir.secret from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
 std/internal/record/record.sober:56:6: field Dir.iv from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
+std/internal/pgwire/scram.sober:37:6: field Scram.password from the @secret parameter 'password' of 'std/internal/pgwire.ScramStart'
 std/internal/hs/hs.sober:86:6: field Hs.cHs from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
 std/internal/hs/hs.sober:86:6: field Hs.sHs from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
 std/internal/hs/hs.sober:86:6: field Hs.cAp from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
 std/internal/hs/hs.sober:86:6: field Hs.sAp from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
 std/internal/hs/hs.sober:86:6: field Hs.expFin from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
-summary atoms=55 secret-fns=170 secret-fields=29 violations=0 walks=2803
+std/internal/p256/p256.sober:35:6: field fe.l0 from the @secret parameter 'd' of 'std/internal/p256.PublicKey'
+std/internal/p256/p256.sober:35:6: field fe.l1 from the @secret parameter 'd' of 'std/internal/p256.PublicKey'
+std/internal/p256/p256.sober:35:6: field fe.l2 from the @secret parameter 'd' of 'std/internal/p256.PublicKey'
+std/internal/p256/p256.sober:35:6: field fe.l3 from the @secret parameter 'd' of 'std/internal/p256.PublicKey'
+summary atoms=62 secret-fns=200 secret-fields=35 violations=0 walks=3364

@@ -1,0 +1,631 @@
+package p256
+
+// P-256 の ECDH の核（定数時間 — 秘密のスカラーに依る分岐・添字・早抜けを持たない。TLS の key_share の secp256r1 — std/internal/hsc の下）。
+// internal/ec（ECDSA の検証 — 公開の値だけを扱い定数時間にしない）とは共有しない。
+// 体 = 法 p の 4 limb（64 bit・小さい端から）Montgomery（R = 2^256）・点 = 射影座標 (X : Y : Z)・加算 = Renes–Costello–Batina 2016 の
+// 完全な公式（a = −3 — 倍算・逆元・無限遠点の場合分けが無い）・スカラー倍 = 4 bit の固定窓と全項を読むマスクの表引き
+
+import "std/hex"
+import "std/internal/bless"
+
+// 符号なし 64 × 64 の積の上位 64 bit
+@intrinsic("mulhi")
+func mulhi(a int, b int) int
+
+func top(x int) int {
+    return (x >> 63) & 1
+}
+
+// s = a + b（+ 入り）の繰り上がりの出
+func cy(a int, b int, s int) int {
+    return top((a & b) | ((a | b) & ^s))
+}
+
+// d = a - b（- 入り）の借りの出
+func bw(a int, b int, d int) int {
+    return top((^a & b) | ((^a | b) & d))
+}
+
+// x == 0 なら 1・それ以外 0（分岐なし）
+func isZeroW(x int) int {
+    return 1 - top(x | (0 - x))
+}
+
+// 体の元（法 p の 4 limb・小さい端から — 値の struct なので演算ごとの確保がない）
+type fe struct {
+    l0 int
+    l1 int
+    l2 int
+    l3 int
+}
+
+// 法 p = 2^256 − 2^224 + 2^192 + 2^96 − 1 の limb（符号つきの語として — p0 = 2^64 − 1・p3 = 0xffffffff00000001）
+const p0 = -1
+const p1 = 4294967295
+const p2 = 0
+const p3 = -4294967295
+
+const bHex = "5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b"
+const gxHex = "6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"
+const gyHex = "4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5"
+
+func pfe() fe {
+    return fe{l0: p0, l1: p1, l2: p2, l3: p3}
+}
+
+func zfe() fe {
+    return fe{l0: 0, l1: 0, l2: 0, l3: 0}
+}
+
+// 32 バイトの大きい端の b[at:at+32] → 体の元（< p かは呼び手が確かめる）
+func feOf(b []byte, at int) fe {
+    return fe{l0: word(b, at + 24), l1: word(b, at + 16), l2: word(b, at + 8), l3: word(b, at)}
+}
+
+func word(b []byte, at int) int {
+    mut w := 0
+    mut k := 0
+    while k < 8 {
+        w = (w << 8) | int(b[at + k])
+        k += 1
+    }
+    return w
+}
+
+func putWord(o mut []byte, w int) {
+    mut k := 7
+    while k >= 0 {
+        o = append(o, byte((w >> (8 * k)) & 255))
+        k -= 1
+    }
+}
+
+func putFe(o mut []byte, a fe) {
+    putWord(mut o, a.l3)
+    putWord(mut o, a.l2)
+    putWord(mut o, a.l1)
+    putWord(mut o, a.l0)
+}
+
+func constFe(h string) fe {
+    b, _ := hex.Parse(h)
+    return feOf(b, 0)
+}
+
+// a + b と繰り上がり
+func add4(a fe, b fe) (fe, int) {
+    mut c := 0
+    x0 := a.l0 + b.l0
+    s0 := x0 + c
+    c = cy(a.l0, b.l0, x0) | cy(x0, c, s0)
+    x1 := a.l1 + b.l1
+    s1 := x1 + c
+    c = cy(a.l1, b.l1, x1) | cy(x1, c, s1)
+    x2 := a.l2 + b.l2
+    s2 := x2 + c
+    c = cy(a.l2, b.l2, x2) | cy(x2, c, s2)
+    x3 := a.l3 + b.l3
+    s3 := x3 + c
+    c = cy(a.l3, b.l3, x3) | cy(x3, c, s3)
+    return fe{l0: s0, l1: s1, l2: s2, l3: s3}, c
+}
+
+// a - b と借り
+func sub4(a fe, b fe) (fe, int) {
+    mut br := 0
+    x0 := a.l0 - b.l0
+    d0 := x0 - br
+    br = bw(a.l0, b.l0, x0) | bw(x0, br, d0)
+    x1 := a.l1 - b.l1
+    d1 := x1 - br
+    br = bw(a.l1, b.l1, x1) | bw(x1, br, d1)
+    x2 := a.l2 - b.l2
+    d2 := x2 - br
+    br = bw(a.l2, b.l2, x2) | bw(x2, br, d2)
+    x3 := a.l3 - b.l3
+    d3 := x3 - br
+    br = bw(a.l3, b.l3, x3) | bw(x3, br, d3)
+    return fe{l0: d0, l1: d1, l2: d2, l3: d3}, br
+}
+
+// Montgomery の積 a·b·R⁻¹ mod p（CIOS を limb ごとに展開 — p の最下位 limb は 2^64 − 1 なので −p⁻¹ mod 2^64 = 1）
+func fmul(a fe, b fe) fe {
+    mut t0 := 0
+    mut t1 := 0
+    mut t2 := 0
+    mut t3 := 0
+    mut t4 := 0
+    mut t5 := 0
+    mut c := 0
+    mut lo := 0
+    mut hi := 0
+    mut s1 := 0
+    mut s2 := 0
+    mut m := 0
+    // b の limb 0
+    c = 0
+    lo = a.l0 * b.l0
+    hi = mulhi(a.l0, b.l0)
+    s1 = t0 + lo
+    s2 = s1 + c
+    c = hi + cy(t0, lo, s1) + cy(s1, c, s2)
+    t0 = s2
+    lo = a.l1 * b.l0
+    hi = mulhi(a.l1, b.l0)
+    s1 = t1 + lo
+    s2 = s1 + c
+    c = hi + cy(t1, lo, s1) + cy(s1, c, s2)
+    t1 = s2
+    lo = a.l2 * b.l0
+    hi = mulhi(a.l2, b.l0)
+    s1 = t2 + lo
+    s2 = s1 + c
+    c = hi + cy(t2, lo, s1) + cy(s1, c, s2)
+    t2 = s2
+    lo = a.l3 * b.l0
+    hi = mulhi(a.l3, b.l0)
+    s1 = t3 + lo
+    s2 = s1 + c
+    c = hi + cy(t3, lo, s1) + cy(s1, c, s2)
+    t3 = s2
+    s1 = t4 + c
+    t5 = cy(t4, c, s1)
+    t4 = s1
+    m = t0
+    c = 0
+    lo = m * p0
+    hi = mulhi(m, p0)
+    s1 = t0 + lo
+    s2 = s1 + c
+    c = hi + cy(t0, lo, s1) + cy(s1, c, s2)
+    lo = m * p1
+    hi = mulhi(m, p1)
+    s1 = t1 + lo
+    s2 = s1 + c
+    c = hi + cy(t1, lo, s1) + cy(s1, c, s2)
+    t0 = s2
+    lo = m * p2
+    hi = mulhi(m, p2)
+    s1 = t2 + lo
+    s2 = s1 + c
+    c = hi + cy(t2, lo, s1) + cy(s1, c, s2)
+    t1 = s2
+    lo = m * p3
+    hi = mulhi(m, p3)
+    s1 = t3 + lo
+    s2 = s1 + c
+    c = hi + cy(t3, lo, s1) + cy(s1, c, s2)
+    t2 = s2
+    s1 = t4 + c
+    t3 = s1
+    t4 = t5 + cy(t4, c, s1)
+    // b の limb 1
+    c = 0
+    lo = a.l0 * b.l1
+    hi = mulhi(a.l0, b.l1)
+    s1 = t0 + lo
+    s2 = s1 + c
+    c = hi + cy(t0, lo, s1) + cy(s1, c, s2)
+    t0 = s2
+    lo = a.l1 * b.l1
+    hi = mulhi(a.l1, b.l1)
+    s1 = t1 + lo
+    s2 = s1 + c
+    c = hi + cy(t1, lo, s1) + cy(s1, c, s2)
+    t1 = s2
+    lo = a.l2 * b.l1
+    hi = mulhi(a.l2, b.l1)
+    s1 = t2 + lo
+    s2 = s1 + c
+    c = hi + cy(t2, lo, s1) + cy(s1, c, s2)
+    t2 = s2
+    lo = a.l3 * b.l1
+    hi = mulhi(a.l3, b.l1)
+    s1 = t3 + lo
+    s2 = s1 + c
+    c = hi + cy(t3, lo, s1) + cy(s1, c, s2)
+    t3 = s2
+    s1 = t4 + c
+    t5 = cy(t4, c, s1)
+    t4 = s1
+    m = t0
+    c = 0
+    lo = m * p0
+    hi = mulhi(m, p0)
+    s1 = t0 + lo
+    s2 = s1 + c
+    c = hi + cy(t0, lo, s1) + cy(s1, c, s2)
+    lo = m * p1
+    hi = mulhi(m, p1)
+    s1 = t1 + lo
+    s2 = s1 + c
+    c = hi + cy(t1, lo, s1) + cy(s1, c, s2)
+    t0 = s2
+    lo = m * p2
+    hi = mulhi(m, p2)
+    s1 = t2 + lo
+    s2 = s1 + c
+    c = hi + cy(t2, lo, s1) + cy(s1, c, s2)
+    t1 = s2
+    lo = m * p3
+    hi = mulhi(m, p3)
+    s1 = t3 + lo
+    s2 = s1 + c
+    c = hi + cy(t3, lo, s1) + cy(s1, c, s2)
+    t2 = s2
+    s1 = t4 + c
+    t3 = s1
+    t4 = t5 + cy(t4, c, s1)
+    // b の limb 2
+    c = 0
+    lo = a.l0 * b.l2
+    hi = mulhi(a.l0, b.l2)
+    s1 = t0 + lo
+    s2 = s1 + c
+    c = hi + cy(t0, lo, s1) + cy(s1, c, s2)
+    t0 = s2
+    lo = a.l1 * b.l2
+    hi = mulhi(a.l1, b.l2)
+    s1 = t1 + lo
+    s2 = s1 + c
+    c = hi + cy(t1, lo, s1) + cy(s1, c, s2)
+    t1 = s2
+    lo = a.l2 * b.l2
+    hi = mulhi(a.l2, b.l2)
+    s1 = t2 + lo
+    s2 = s1 + c
+    c = hi + cy(t2, lo, s1) + cy(s1, c, s2)
+    t2 = s2
+    lo = a.l3 * b.l2
+    hi = mulhi(a.l3, b.l2)
+    s1 = t3 + lo
+    s2 = s1 + c
+    c = hi + cy(t3, lo, s1) + cy(s1, c, s2)
+    t3 = s2
+    s1 = t4 + c
+    t5 = cy(t4, c, s1)
+    t4 = s1
+    m = t0
+    c = 0
+    lo = m * p0
+    hi = mulhi(m, p0)
+    s1 = t0 + lo
+    s2 = s1 + c
+    c = hi + cy(t0, lo, s1) + cy(s1, c, s2)
+    lo = m * p1
+    hi = mulhi(m, p1)
+    s1 = t1 + lo
+    s2 = s1 + c
+    c = hi + cy(t1, lo, s1) + cy(s1, c, s2)
+    t0 = s2
+    lo = m * p2
+    hi = mulhi(m, p2)
+    s1 = t2 + lo
+    s2 = s1 + c
+    c = hi + cy(t2, lo, s1) + cy(s1, c, s2)
+    t1 = s2
+    lo = m * p3
+    hi = mulhi(m, p3)
+    s1 = t3 + lo
+    s2 = s1 + c
+    c = hi + cy(t3, lo, s1) + cy(s1, c, s2)
+    t2 = s2
+    s1 = t4 + c
+    t3 = s1
+    t4 = t5 + cy(t4, c, s1)
+    // b の limb 3
+    c = 0
+    lo = a.l0 * b.l3
+    hi = mulhi(a.l0, b.l3)
+    s1 = t0 + lo
+    s2 = s1 + c
+    c = hi + cy(t0, lo, s1) + cy(s1, c, s2)
+    t0 = s2
+    lo = a.l1 * b.l3
+    hi = mulhi(a.l1, b.l3)
+    s1 = t1 + lo
+    s2 = s1 + c
+    c = hi + cy(t1, lo, s1) + cy(s1, c, s2)
+    t1 = s2
+    lo = a.l2 * b.l3
+    hi = mulhi(a.l2, b.l3)
+    s1 = t2 + lo
+    s2 = s1 + c
+    c = hi + cy(t2, lo, s1) + cy(s1, c, s2)
+    t2 = s2
+    lo = a.l3 * b.l3
+    hi = mulhi(a.l3, b.l3)
+    s1 = t3 + lo
+    s2 = s1 + c
+    c = hi + cy(t3, lo, s1) + cy(s1, c, s2)
+    t3 = s2
+    s1 = t4 + c
+    t5 = cy(t4, c, s1)
+    t4 = s1
+    m = t0
+    c = 0
+    lo = m * p0
+    hi = mulhi(m, p0)
+    s1 = t0 + lo
+    s2 = s1 + c
+    c = hi + cy(t0, lo, s1) + cy(s1, c, s2)
+    lo = m * p1
+    hi = mulhi(m, p1)
+    s1 = t1 + lo
+    s2 = s1 + c
+    c = hi + cy(t1, lo, s1) + cy(s1, c, s2)
+    t0 = s2
+    lo = m * p2
+    hi = mulhi(m, p2)
+    s1 = t2 + lo
+    s2 = s1 + c
+    c = hi + cy(t2, lo, s1) + cy(s1, c, s2)
+    t1 = s2
+    lo = m * p3
+    hi = mulhi(m, p3)
+    s1 = t3 + lo
+    s2 = s1 + c
+    c = hi + cy(t3, lo, s1) + cy(s1, c, s2)
+    t2 = s2
+    s1 = t4 + c
+    t3 = s1
+    t4 = t5 + cy(t4, c, s1)
+    return reduce(fe{l0: t0, l1: t1, l2: t2, l3: t3}, t4)
+}
+
+
+// mask（全 1 か 0）で a / b を選ぶ
+func sel(mask int, a fe, b fe) fe {
+    return fe{l0: (a.l0 & mask) | (b.l0 & ^mask), l1: (a.l1 & mask) | (b.l1 & ^mask), l2: (a.l2 & mask) | (b.l2 & ^mask), l3: (a.l3 & mask) | (b.l3 & ^mask)}
+}
+
+// t（+ 繰り上がり c）を p 未満へ: t ≥ p か c = 1 なら t − p（分岐なし）
+func reduce(t fe, c int) fe {
+    d, br := sub4(t, pfe())
+    return sel(0 - (c | (1 - br)), d, t)
+}
+
+func fadd(a fe, b fe) fe {
+    s, c := add4(a, b)
+    return reduce(s, c)
+}
+
+func fsub(a fe, b fe) fe {
+    d, br := sub4(a, b)
+    s, _ := add4(d, sel(0 - br, pfe(), zfe()))
+    return s
+}
+
+func feIsZero(a fe) int {
+    return isZeroW(a.l0 | a.l1 | a.l2 | a.l3)
+}
+
+// 体の文脈（Montgomery の R mod p・R² mod p・b と基点の Montgomery の形）
+type field struct {
+    one fe
+    r2 fe
+    b fe
+    gx fe
+    gy fe
+}
+
+// a^(p−2)（逆元 — 指数は公開の定数なので bit で分岐してよい・a = 0 なら 0）
+func finvOf(a fe) fe {
+    return finv(newField(), a)
+}
+
+func finv(f field, a fe) fe {
+    // p − 2 の limb（大きい端から — 体の元の欄を読まずに定数で持つ: 欄の読みは秘密の網が型 × 欄名で追う）
+    ws := []int{-4294967295, 0, 4294967295, -3}
+    mut r := f.one
+    for w <- ws {
+        mut k := 63
+        while k >= 0 {
+            r = fmul(r, r)
+            if ((w >> k) & 1) == 1 {
+                r = fmul(r, a)
+            }
+            k -= 1
+        }
+    }
+    return r
+}
+
+func toMont(f field, a fe) fe {
+    return fmul(a, f.r2)
+}
+
+func fromMont(a fe) fe {
+    return fmul(a, fe{l0: 1, l1: 0, l2: 0, l3: 0})
+}
+
+func newField() field {
+    // R mod p = 2^256 − p・R² mod p は R mod p を 256 回倍にして（公開の値 — 準備だけ）
+    rm, _ := sub4(zfe(), pfe())
+    mut r := rm
+    mut i := 0
+    while i < 256 {
+        s, c := add4(r, r)
+        r = reduce(s, c)
+        i += 1
+    }
+    f0 := field{one: rm, r2: r, b: zfe(), gx: zfe(), gy: zfe()}
+    return field{one: rm, r2: r, b: toMont(f0, constFe(bHex)), gx: toMont(f0, constFe(gxHex)), gy: toMont(f0, constFe(gyHex))}
+}
+
+// 射影座標の点（Montgomery の形）
+type pt struct {
+    x fe
+    y fe
+    z fe
+}
+
+func identity(f field) pt {
+    return pt{x: zfe(), y: f.one, z: zfe()}
+}
+
+// P + Q（Renes–Costello–Batina 2016 Algorithm 4・a = −3 — 完全: P = Q・P = −Q・無限遠点も同じ式）
+func padd(f field, q1 pt, q2 pt) pt {
+    mut t0 := fmul(q1.x, q2.x)
+    mut t1 := fmul(q1.y, q2.y)
+    mut t2 := fmul(q1.z, q2.z)
+    mut t3 := fadd(q1.x, q1.y)
+    mut t4 := fadd(q2.x, q2.y)
+    t3 = fmul(t3, t4)
+    t4 = fadd(t0, t1)
+    t3 = fsub(t3, t4)
+    t4 = fadd(q1.y, q1.z)
+    mut x3 := fadd(q2.y, q2.z)
+    t4 = fmul(t4, x3)
+    x3 = fadd(t1, t2)
+    t4 = fsub(t4, x3)
+    x3 = fadd(q1.x, q1.z)
+    mut y3 := fadd(q2.x, q2.z)
+    x3 = fmul(x3, y3)
+    y3 = fadd(t0, t2)
+    y3 = fsub(x3, y3)
+    mut z3 := fmul(f.b, t2)
+    x3 = fsub(y3, z3)
+    z3 = fadd(x3, x3)
+    x3 = fadd(x3, z3)
+    z3 = fsub(t1, x3)
+    x3 = fadd(t1, x3)
+    y3 = fmul(f.b, y3)
+    t1 = fadd(t2, t2)
+    t2 = fadd(t1, t2)
+    y3 = fsub(y3, t2)
+    y3 = fsub(y3, t0)
+    t1 = fadd(y3, y3)
+    y3 = fadd(t1, y3)
+    t1 = fadd(t0, t0)
+    t0 = fadd(t1, t0)
+    t0 = fsub(t0, t2)
+    t1 = fmul(t4, y3)
+    t2 = fmul(t0, y3)
+    y3 = fmul(x3, z3)
+    y3 = fadd(y3, t2)
+    x3 = fmul(t3, x3)
+    x3 = fsub(x3, t1)
+    z3 = fmul(t4, z3)
+    t1 = fmul(t3, t0)
+    z3 = fadd(z3, t1)
+    return pt{x: x3, y: y3, z: z3}
+}
+
+func psel(mask int, a pt, b pt) pt {
+    return pt{x: sel(mask, a.x, b.x), y: sel(mask, a.y, b.y), z: sel(mask, a.z, b.z)}
+}
+
+// k·Q（k = 32 バイトの大きい端・4 bit の固定窓・表 16 点は全項を読んでマスクで選ぶ）
+func smul(f field, k []byte, q pt) pt {
+    mut tbl := mut []pt{identity(f)}
+    mut i := 1
+    while i < 16 {
+        tbl = append(tbl, padd(f, tbl[i - 1], q))
+        i += 1
+    }
+    t := freeze(tbl)
+    mut r := identity(f)
+    mut n := 0
+    while n < 64 {
+        r = padd(f, r, r)
+        r = padd(f, r, r)
+        r = padd(f, r, r)
+        r = padd(f, r, r)
+        w := (int(k[n / 2]) >> (4 - 4 * (n % 2))) & 15
+        mut s := identity(f)
+        mut j := 0
+        while j < 16 {
+            s = psel(0 - isZeroW(j ^ w), t[j], s)
+            j += 1
+        }
+        r = padd(f, r, s)
+        n += 1
+    }
+    return r
+}
+
+// 座標 a（普通の形）が p 未満。相手の公開鍵の検証だけが使う公開の値の判定なので結果を公開に変える
+// （秘密の網は体の元の欄を型 × 欄名で追うので、公開の座標の欄の読みも秘密に見える）
+func ltP(a fe) bool {
+    _, br := sub4(a, pfe())
+    return internal.bless.Int(br) == 1
+}
+
+// 非圧縮の点（0x04 ‖ X ‖ Y）の検証つきの読み（公開の値 — 分岐してよい）
+func decodePoint(f field, b []byte) (pt, bool) {
+    if len(b) != 65 || b[0] != 4 {
+        return identity(f), false
+    }
+    x := feOf(b, 1)
+    y := feOf(b, 33)
+    if !ltP(x) || !ltP(y) {
+        return identity(f), false
+    }
+    xm := toMont(f, x)
+    ym := toMont(f, y)
+    // y² = x³ − 3x + b
+    lhs := fmul(ym, ym)
+    x3 := fmul(fmul(xm, xm), xm)
+    three := fadd(fadd(xm, xm), xm)
+    rhs := fadd(fsub(x3, three), f.b)
+    if internal.bless.Int(feIsZero(fsub(lhs, rhs))) == 0 {
+        return identity(f), false
+    }
+    return pt{x: xm, y: ym, z: f.one}, true
+}
+
+// アフィンの x 座標（32 バイト — 無限遠点なら意味のない値・呼び手が infinite で先に見る）
+func affineX(q pt) []byte {
+    zi := finvOf(q.z)
+    mut out := mut []byte{}
+    putFe(mut out, fromMont(fmul(q.x, zi)))
+    return freeze(out)
+}
+
+// アフィンの非圧縮の点（65 バイト）
+func affine(q pt) []byte {
+    zi := finvOf(q.z)
+    mut out := mut []byte{4}
+    putFe(mut out, fromMont(fmul(q.x, zi)))
+    putFe(mut out, fromMont(fmul(q.y, zi)))
+    return freeze(out)
+}
+
+// q が無限遠点か。スカラー倍の結果が無限遠点になるのはスカラーが位数 n の倍数のときだけ（検証済みの点は位数 n の群の元 — 余因子 1）
+// なので、この印は公開に変えてよい
+func infinite(q pt) bool {
+    return internal.bless.Int(feIsZero(q.z)) == 1
+}
+
+// 秘密のスカラー d（32 バイトの大きい端）の公開鍵 d·G（非圧縮 0x04 ‖ X ‖ Y の 65 バイト）。d が 32 バイトでないか位数 n の倍数なら空
+@secret(d)
+@effects()
+func PublicKey(d []byte) []byte {
+    if len(d) != 32 {
+        return []byte{}
+    }
+    f := newField()
+    q := smul(f, d, pt{x: f.gx, y: f.gy, z: f.one})
+    return internal.bless.Bytes(if infinite(q) { []byte{} } else { affine(q) })
+}
+
+// 相手の公開鍵 pub（非圧縮の 65 バイト — 座標 < p・曲線の上を確かめる）と自分の d（32 バイト）の共有秘密 = d·pub の x 座標（32 バイト）。
+// pub が読めない・d が 32 バイトでない・結果が無限遠点なら空（成否は長さで読む — 長さは公開）
+@secret(d)
+@effects()
+func Shared(d []byte, pub []byte) []byte {
+    if len(d) != 32 {
+        return []byte{}
+    }
+    f := newField()
+    q, ok := decodePoint(f, pub)
+    if !ok {
+        return []byte{}
+    }
+    r := smul(f, d, q)
+    if infinite(r) {
+        return []byte{}
+    }
+    return affineX(r)
+}

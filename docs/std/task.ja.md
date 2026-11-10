@@ -4,7 +4,7 @@
 
 `import "std/task"`
 
-structured concurrency の表層（[language.md 11 節](../language.md)「表層」）。task.Run が scope を開き、その中で task.Spawn した子の task を Join / Try で待つ。task の結果は写せる imm のデータ（string・slice・map も Join / Try が scope の region へ写す）。error を返す task（g が `(T, error?)` を返す）の Join は 2 値・Try は Outcome の Failed・Join も Try もしなかった失敗は scope の err へ集約
+structured concurrency の表層（[language.md 11 節](../language.md)「表層」）と、多くの task から 1 つの状態への直列の更新 domain（NewDomain / Update / Read / Await — [language.md 11 節](../language.md)「domain」）。task.Run が scope を開き、その中で task.Spawn した子の task を Join / Try で待つ。task の結果は写せる imm のデータ（string・slice・map も Join / Try が scope の region へ写す）。error を返す task（g が `(T, error?)` を返す）の Join は 2 値・Try は Outcome の Failed・Join も Try もしなかった失敗は scope の err へ集約
 
 ## Scope
 
@@ -301,6 +301,26 @@ type PoolView struct {
 - `fail` — MarkFailed で記帳した失敗の数（net.Serve — handler が error を返した接続）
 - `died` — このプールで入場した task の死の数（net.Serve — handler が死んだ接続）
 
+## DomainView
+
+```sober
+type DomainView struct {
+    waiting int
+    maxWait int
+    expired int
+    poisoned int
+}
+```
+
+domain の合計の行（Ledger().domains — [language.md 11 節](../language.md)「domain」の観測の口）: 全 domain をまとめた 1 行
+
+欄:
+
+- `waiting` — 今 Await で待っている呼び出しの数
+- `maxWait` — 待った Await の到着から入るまでの最大（ns — 読むと 0 に戻る窓の値・maxWait と同じ流儀）
+- `expired` — 待ちの上限が来て io.Expired で返った回数の累計
+- `poisoned` — 本体が死んで毒になった domain の数の累計
+
 ## LedgerView
 
 ```sober
@@ -318,7 +338,10 @@ type LedgerView struct {
     aged int
     backlog int
     backlogYield int
+    pin int
+    pinGroups int
     pools []PoolView
+    domains DomainView
 }
 ```
 
@@ -331,6 +354,9 @@ type LedgerView struct {
 - `aged` — 待ちの上限が効いて積みの底から取った回数の累計（飽和の印）
 - `backlog` — 今の未着手の子の数（全ワーカーの列の和 — ワーカーあたり 255 まで。[language.md 11 節](../language.md)「未着手の子の上限」）
 - `backlogYield` — 列があふれて子をその場で先に走らせた（生んだ task が譲った）回数の累計（背圧が効いた印）
+- `pin` — ワーカーの CPU の固定の形（0 = なし・1 = L3 キャッシュを共有する CPU の群・2 = CPU 1 つ・3 = L3 の群が読めず CPU 1 つへ縮退したワーカーがある）
+- `pinGroups` — 固定した群の数（ワーカーは起動の後に自分を固定する — 全部が数えられるのはワーカーが立ち上がった後）
+- `domains` — domain の合計の行
 
 ## Ledger
 
@@ -424,3 +450,52 @@ func LeaseBlock(lp Local) []int
 ```
 
 task.NewLocal / task.Lease の写し先（loader が組む — 利用者の直の呼び出しは loader が拒否）: ストレージの列（pool.LeaseAttach へ渡す）
+
+## Domain
+
+```sober
+type Domain[S] struct {
+    seal sealed
+}
+```
+
+domain — 直列化された共有状態（[language.md 11 節](../language.md)「domain」）: 状態 S を 1 つ持ち、Update / Read / Await の本体を 1 つずつ当てる。捕獲でき、関数の実引数にできる。scope の値・task の結果・チャネルのペイロードにはできない（札・handle と同じ側 — 作った scope の出口で状態ごと消える）
+
+## NewDomain
+
+```sober
+@effects()
+func NewDomain[S](s Scope, init S, wait int?) Domain[S]
+```
+
+札 s の scope に状態の初期値 init を持つ domain を作る。wait = Await の待ちの上限（ナノ秒の相対時間・省略で既定値）。呼び出し点は desugar がコアの dnew へ写す（本体は写しが外れたときの柵）
+
+## Update
+
+```sober
+@effects(nondet)
+func Update[S, R](d Domain[S], f func(st mut S) R) R
+```
+
+f を d の状態に当て、f の値を写して返す。f は待たない・io なし・nondet なし・明示の panic なし・捕獲は imm のデータだけ
+
+## Read
+
+```sober
+@effects(nondet)
+func Read[S, R](d Domain[S], g func(st S) R) R
+```
+
+g の値を写して返す（状態は変えない）。g の約束は Update の f と同じ
+
+## Await
+
+```sober
+@errors(io.Expired)
+@effects(nondet)
+func Await[S, R](d Domain[S], f func(st mut S) R, when func(st S) bool, wait int?) (R, error?)
+```
+
+when が真になるまで待ってから f を当てる（待つ呼び出しは来た順に入る）。wait = 待ちの上限（省略なら NewDomain の wait）。when の約束は f と同じ。待ちが上限（か囲む task.Run の期限）を越えたら io.Expired
+
+失敗のラベル: `io.Expired`

@@ -1,0 +1,445 @@
+package lower
+
+// domain（language.md 11 節「domain」）の呼び出し点: 記録は NewDomain を字面に囲む最も外の scope の region（チャネルの記録と同じ置き場）。
+// 状態は作るときに記録と同じ region へ 1 回だけ深く写し（印 MAX_DEPTH — 読み手は必ず自分の region へ写し直す）、以後はその場で書く
+// （本体が状態に書けるのは loc-free の値だけ — 照合は parcheck の kind 36 / 37 — なので region は伸びない）。入る = 鍵を取り状態の箱を浅く読む・
+// 出る = 浅く書き戻して鍵を返す・本体の結果は呼び手の最内へ写す（domOut）。本体で死んだ task は task の終わりで毒を立てて鍵を返す
+
+import "desugar"
+import "std/iter"
+
+const DM_LOCK = 0    // 鍵（cellLock と同じ xchg — 本体は待たないので持ち手は待ちに入らない）
+const DM_POISON = 1  // 1 = 本体が死んだ（以後の呼び出しは呼び手を死なせる）
+const DM_BOX = 2     // 状態の箱の番地
+const DM_D = 3       // Await の待ちの上限（ns）
+const DM_WHEAD = 4   // Await の待ちの列（TC_DQNEXT / TC_DQPREV）
+const DM_WTAIL = 5
+const DM_NWAIT = 6   // 統計: 今待っている数・最長の待ち・満了の数
+const DM_MAXW = 7
+const DM_EXP = 8
+// 待ち手の束ね（domHand）: 版 = 出るたびに +1・偽の記録 = この版で偽と分かった when の鍵（0 = なし）。列の待ち手の鍵の代表と、
+// その鍵の待ち手の数（全員が偽の鍵なら手渡しは列を歩かない）
+const DM_VER = 9
+const DM_FKEY = 10
+const DM_FVER = 11
+const DM_KEY1 = 12
+const DM_NKEY1 = 13
+const DM_WORDS = 14
+// Await の待ちの上限の既定（ns — NewDomain にも呼び出しにも wait: が無いとき）
+const DM_DDEF = 2000000000
+
+// 鍵 key（desugar.PAR_DNEW〜PAR_DOUT）の呼び出し（実引数 args）を下ろす。結果の形は parCall と同じ（値の列）
+func domCall(st mut St, key int, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
+    if !st.taskUse {
+        panic(InvariantBroken{})
+    }
+    if key == desugar.PAR_DNEW {
+        return domNew(mut st, args, at)
+    }
+    if key == desugar.PAR_DMISS {
+        // Await が満了で返す本体の値の穴埋め（呼び手は err を見る）— R のゼロ値
+        t := yType(mut st, at)?
+        z := newAgg(mut st, t)
+        zeroFill(mut st, z, 0, t)
+        return parOne(mut st, t, loadVal(mut st, z, 0, t)), nil
+    }
+    if key == desugar.PAR_DVIEW {
+        x := expr(mut st, latN(mut st, args, 0))?
+        if isTag(mut st, x.t, TNever) {
+            return -1, nil
+        }
+        return parOne(mut st, x.t, x.v), nil
+    }
+    if key == desugar.PAR_DOUT {
+        x := expr(mut st, latN(mut st, args, 0))?
+        if isTag(mut st, x.t, TNever) {
+            return -1, nil
+        }
+        res := newAgg(mut st, x.t)
+        storeVal(mut st, res, 0, x.t, x.v)
+        if containsSlice(mut st, x.t) {
+            st.relocFresh = true
+            relocateTo(mut st, res, 0, x.t, regionDepth(mut st))
+            st.relocFresh = false
+        }
+        return parOne(mut st, x.t, loadVal(mut st, res, 0, x.t)), nil
+    }
+    dx := expr(mut st, latN(mut st, args, 0))?
+    if isTag(mut st, dx.t, TNever) {
+        return -1, nil
+    }
+    rec := itop(mut st, load(mut st, dx.v, 0))
+    me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+    if key == desugar.PAR_DENTER {
+        t := yType(mut st, at)?
+        cellLock(mut st, rec)
+        bOk := branchIf(mut st, cmp(mut st, CNe, load(mut st, rec, DM_POISON), iconst(mut st, 0)))
+        cellUnlock(mut st, rec)
+        panicSite(mut st, PK_POISONED, if st.domAt != -1 { desugar.NodeRef(st.domAt) } else { at })
+        setCur(mut st, bOk)
+        store(mut st, me, TC_DOM, ptoi(mut st, rec))
+        return parOne(mut st, t, loadVal(mut st, itop(mut st, load(mut st, rec, DM_BOX)), 0, t)), nil
+    }
+    if key == desugar.PAR_DEXIT {
+        sv := expr(mut st, latN(mut st, args, 1))?
+        if isTag(mut st, sv.t, TNever) {
+            return -1, nil
+        }
+        storeVal(mut st, itop(mut st, load(mut st, rec, DM_BOX)), 0, sv.t, sv.v)
+        if st.domWait {
+            // 待ってから入った Await は列から抜ける・列があれば頭から手渡す（状態が変わったので待ち手が when を見直す）
+            bQ := branchIf(mut st, cmp(mut st, CNe, load(mut st, me, TC_DQDL), iconst(mut st, 0)))
+            domMaxWait(mut st, bin(mut st, BSub, clockNs(mut st), load(mut st, me, TC_DQDL)))
+            domDequeue(mut st, rec, me)
+            store(mut st, me, TC_DQDL, iconst(mut st, 0))
+            br(mut st, bQ, -1)
+            setCur(mut st, bQ)
+            store(mut st, rec, DM_VER, urAdd(mut st, load(mut st, rec, DM_VER), 1))
+            domHand(mut st, rec, load(mut st, rec, DM_WHEAD))
+        }
+        store(mut st, me, TC_DOM, iconst(mut st, 0))
+        cellUnlock(mut st, rec)
+        return list0(mut st), nil
+    }
+    if key == desugar.PAR_DLOAD {
+        t := yType(mut st, at)?
+        return parOne(mut st, t, loadVal(mut st, itop(mut st, load(mut st, rec, DM_BOX)), 0, t)), nil
+    }
+    if key == desugar.PAR_DWAIT {
+        wv := budgetArg(mut st, latN(mut st, args, 1))?
+        wk := domWhenKey(mut st, args)
+        return parOne(mut st, tBool(mut st), domWaitOn(mut st, rec, me, wv, wk, at)), nil
+    }
+    panic(InvariantBroken{})
+}
+
+// NewDomain(s, init, wait): 記録と状態の箱を囲む scope の region に置き、init を深く写す（どの深度のセルも写す — 状態はその場で書くので
+// init の元のセルと別名にしない）。深度 0 のスロットと bump を記録の region の今の位置へ付け替えて深度 0 より深い部分を写し（印 MAX_DEPTH）、
+// 進んだ bump を記録の region へ戻す（cellStore の付け替えと同じ形 — 置き場がプールのアリーナでなく scope の region なので出口の後始末が要らない）
+func domNew(st mut St, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
+    _ = expr(mut st, latN(mut st, args, 0))?
+    x := expr(mut st, latN(mut st, args, 1))?
+    if isTag(mut st, x.t, TNever) {
+        return -1, nil
+    }
+    dt := yType(mut st, at)?
+    t := x.t
+    rdep := if st.chanDepth >= 0 { st.chanDepth } else { regionDepth(mut st) }
+    rec := regionAlloc(mut st, rdep, iconst(mut st, DM_WORDS))
+    zero := iconst(mut st, 0)
+    for i <- iter.Range(0, DM_WORDS) {
+        store(mut st, rec, i, zero)
+    }
+    tw := tWords(mut st, t)
+    box := regionAlloc(mut st, rdep, iconst(mut st, if tw < 1 { 1 } else { tw }))
+    storeVal(mut st, box, 0, t, copyVal(mut st, t, x.v))
+    if containsSlice(mut st, t) {
+        sealMaps(mut st, box, 0, t, SEAL_FUEL)
+        meta := globaladdr(mut st, st.meta)
+        sg := globaladdr(mut st, st.slotsG)
+        wk := globaladdr(mut st, st.wkG)
+        sp := gepWord(mut st, sg, zero)
+        bp := gepWord(mut st, meta, zero)
+        spR := gepWord(mut st, sg, rdep)
+        bpR := gepWord(mut st, meta, rdep)
+        oldS := load(mut st, sp, 0)
+        oldB := load(mut st, bp, W_BUMP)
+        store(mut st, sp, 0, load(mut st, spR, 0))
+        store(mut st, bp, W_BUMP, load(mut st, bpR, W_BUMP))
+        store(mut st, wk, WK_RLAB, iconst(mut st, MAX_DEPTH))
+        st.relocFresh = true
+        relocateTo(mut st, box, 0, t, zero)
+        st.relocFresh = false
+        store(mut st, wk, WK_RLAB, zero)
+        store(mut st, bpR, W_BUMP, load(mut st, bp, W_BUMP))
+        store(mut st, sp, 0, oldS)
+        store(mut st, bp, W_BUMP, oldB)
+    }
+    store(mut st, rec, DM_BOX, ptoi(mut st, box))
+    store(mut st, rec, DM_D, budgetArg(mut st, latN(mut st, args, 2))?)
+    dv := newAgg(mut st, dt)
+    store(mut st, dv, 0, ptoi(mut st, rec))
+    return parOne(mut st, dt, loadVal(mut st, dv, 0, dt)), nil
+}
+
+// task の終わり（rt.task_start — 罠から戻った後）: 入ったまま死んだ domain（TC_DOM ≠ 0）に毒を立てて鍵を返す
+func domDiedIn(st mut St, tcb int) {
+    dm := load(mut st, tcb, TC_DOM)
+    bD := branchIf(mut st, cmp(mut st, CNe, dm, iconst(mut st, 0)))
+    p := itop(mut st, dm)
+    store(mut st, p, DM_POISON, iconst(mut st, 1))
+    store(mut st, tcb, TC_DOM, iconst(mut st, 0))
+    atomicXadd(mut st, globaladdr(mut st, st.mnG), MN_DPOIS, iconst(mut st, 1))
+    if st.domWait {
+        // 待ち手を全部起こす（入り直しで毒を見て死ぬ）
+        domHandAll(mut st, load(mut st, p, DM_WHEAD))
+    }
+    cellUnlock(mut st, p)
+    br(mut st, bD, -1)
+    setCur(mut st, bD)
+}
+
+// Await の待ち（domWait — 鍵を持って呼ぶ）: 最初の待ちなら期限 TC_DQDL = 今 + D を置いて列の尾に積む・手渡しで戻った待ち手なら列の次へ
+// 手渡しを続ける。鍵を返して自分のワーカーの poller の期限の鎖に min(TC_DL, TC_DQDL) で積み（io の待ちに数える — poller で眠る・デッドロックの
+// 判定の外）、task_wait をちょうど 1 回（起こしは CAS の勝者が 1 回だけ — 先に来た起こしは task_wait が吸う）。手渡されたら鍵を取り直して 1、
+// 満了なら鍵の下で列から外して 0
+func domWaitOn(st mut St, rec int, me int, wv int, key int, at desugar.NodeRef) int {
+    _ = needNet(mut st)
+    zero := iconst(mut st, 0)
+    one := iconst(mut st, 1)
+    wk := globaladdr(mut st, st.wkG)
+    // 偽の記録: この版で when（鍵 key）が偽（key = 0 なら記録を消す）
+    kv := iconst(mut st, key)
+    store(mut st, rec, DM_FKEY, kv)
+    store(mut st, rec, DM_FVER, load(mut st, rec, DM_VER))
+    dq := load(mut st, me, TC_DQDL)
+    bJ := newBlock(mut st)
+    bOld := branchIf(mut st, cmp(mut st, CEq, dq, zero))
+    store(mut st, me, TC_DQDL, clockNs(mut st))
+    tl := load(mut st, rec, DM_WTAIL)
+    store(mut st, me, TC_DQPREV, tl)
+    store(mut st, me, TC_DQNEXT, zero)
+    bT := newBlock(mut st)
+    bH := newBlock(mut st)
+    bE := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, tl, zero), bT, -1, bH, -1)
+    setCur(mut st, bT)
+    store(mut st, itop(mut st, tl), TC_DQNEXT, ptoi(mut st, me))
+    br(mut st, bE, -1)
+    setCur(mut st, bH)
+    store(mut st, rec, DM_WHEAD, ptoi(mut st, me))
+    br(mut st, bE, -1)
+    setCur(mut st, bE)
+    store(mut st, rec, DM_WTAIL, ptoi(mut st, me))
+    store(mut st, me, TC_DQKEY, kv)
+    // 空の列に積むならこの鍵が代表になる
+    nw := load(mut st, rec, DM_NWAIT)
+    fst := cmp(mut st, CEq, nw, zero)
+    k1o := load(mut st, rec, DM_KEY1)
+    k1 := bin(mut st, BAdd, k1o, bin(mut st, BMul, fst, bin(mut st, BSub, kv, k1o)))
+    n1 := bin(mut st, BMul, load(mut st, rec, DM_NKEY1), bin(mut st, BSub, one, fst))
+    store(mut st, rec, DM_KEY1, k1)
+    store(mut st, rec, DM_NKEY1, if key != 0 { bin(mut st, BAdd, n1, cmp(mut st, CEq, kv, k1)) } else { n1 })
+    store(mut st, rec, DM_NWAIT, urAdd(mut st, nw, 1))
+    atomicXadd(mut st, globaladdr(mut st, st.mnG), MN_DWAITING, one)
+    br(mut st, bJ, -1)
+    setCur(mut st, bOld)
+    domHand(mut st, rec, load(mut st, me, TC_DQNEXT))
+    br(mut st, bJ, -1)
+    setCur(mut st, bJ)
+    store(mut st, me, TC_IORES, iconst(mut st, PEND_DOM))
+    store(mut st, me, TC_DOM, zero)
+    cellUnlock(mut st, rec)
+    // 自分のワーカーの poller の期限の鎖へ（net の ring か epoll — 無ければ作る）
+    old := load(mut st, me, TC_DL)
+    // 期限 = 到着 + D（呼び出しの wait: か domain の wait: か既定）— 手渡しで戻っても到着から数える
+    d0 := load(mut st, rec, DM_D)
+    dd := bin(mut st, BAdd, d0, bin(mut st, BMul, cmp(mut st, CEq, d0, zero), iconst(mut st, DM_DDEF)))
+    d := bin(mut st, BAdd, wv, bin(mut st, BMul, cmp(mut st, CEq, wv, zero), dd))
+    dqv := bin(mut st, BAdd, load(mut st, me, TC_DQDL), d)
+    dlv := bin(mut st, BAdd, dqv, bin(mut st, BMul, bin(mut st, BAnd, cmp(mut st, CNe, old, zero), cmp(mut st, CLt, old, dqv)), bin(mut st, BSub, old, dqv)))
+    store(mut st, me, TC_DL, dlv)
+    rg := load(mut st, wk, WK_RING)
+    bR0 := newBlock(mut st)
+    bR := newBlock(mut st)
+    bEp := newBlock(mut st)
+    bW := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, rg, zero), bR0, -1, bEp, -1)
+    setCur(mut st, bR0)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, itop(mut st, rg), UR_NET), zero), bR, -1, bEp, -1)
+    setCur(mut st, bR)
+    dlqPush(mut st, rg, ptoi(mut st, me), dlv)
+    br(mut st, bW, -1)
+    setCur(mut st, bEp)
+    ep := epRec(mut st, wk)
+    awPush(mut st, urAdd(mut st, ep, EP_DLQ * 8), ptoi(mut st, me))
+    br(mut st, bW, -1)
+    setCur(mut st, bW)
+    store(mut st, wk, WK_NETW, urAdd(mut st, load(mut st, wk, WK_NETW), 1))
+    call(mut st, st.rtTaskWait, list0(mut st))
+    awUnlink(mut st, ptoi(mut st, me))
+    store(mut st, me, TC_DL, old)
+    res := load(mut st, me, TC_IORES)
+    got := cmp(mut st, CEq, res, one)
+    // 手渡しの起こしは待ち手の数を減らさない（期限の走査の起こしは減らす — epWake と同じ）
+    store(mut st, wk, WK_NETW, bin(mut st, BSub, load(mut st, wk, WK_NETW), got))
+    cellLock(mut st, rec)
+    bOk := branchIf(mut st, cmp(mut st, CNe, load(mut st, rec, DM_POISON), zero))
+    cellUnlock(mut st, rec)
+    panicSite(mut st, PK_POISONED, if st.domAt != -1 { desugar.NodeRef(st.domAt) } else { at })
+    setCur(mut st, bOk)
+    bG := newBlock(mut st)
+    bX := newBlock(mut st)
+    bD := newBlock(mut st)
+    r := param(mut st, bD, TyI64)
+    condbr(mut st, got, bG, -1, bX, -1)
+    setCur(mut st, bG)
+    store(mut st, me, TC_DOM, ptoi(mut st, rec))
+    br(mut st, bD, list1(mut st, one))
+    setCur(mut st, bX)
+    domDequeue(mut st, rec, me)
+    store(mut st, me, TC_DQDL, zero)
+    store(mut st, rec, DM_EXP, urAdd(mut st, load(mut st, rec, DM_EXP), 1))
+    atomicXadd(mut st, globaladdr(mut st, st.mnG), MN_DEXP, one)
+    cellUnlock(mut st, rec)
+    br(mut st, bD, list1(mut st, zero))
+    setCur(mut st, bD)
+    return r
+}
+
+// 待ちの列から me を外す（鍵の下で）
+func domDequeue(st mut St, rec int, me int) {
+    zero := iconst(mut st, 0)
+    pv := load(mut st, me, TC_DQPREV)
+    nx := load(mut st, me, TC_DQNEXT)
+    b1 := newBlock(mut st)
+    b2 := newBlock(mut st)
+    b3 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, pv, zero), b1, -1, b2, -1)
+    setCur(mut st, b1)
+    store(mut st, itop(mut st, pv), TC_DQNEXT, nx)
+    br(mut st, b3, -1)
+    setCur(mut st, b2)
+    store(mut st, rec, DM_WHEAD, nx)
+    br(mut st, b3, -1)
+    setCur(mut st, b3)
+    c1 := newBlock(mut st)
+    c2 := newBlock(mut st)
+    c3 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, nx, zero), c1, -1, c2, -1)
+    setCur(mut st, c1)
+    store(mut st, itop(mut st, nx), TC_DQPREV, pv)
+    br(mut st, c3, -1)
+    setCur(mut st, c2)
+    store(mut st, rec, DM_WTAIL, pv)
+    br(mut st, c3, -1)
+    setCur(mut st, c3)
+    mk := load(mut st, me, TC_DQKEY)
+    dec := bin(mut st, BAnd, cmp(mut st, CEq, mk, load(mut st, rec, DM_KEY1)), cmp(mut st, CNe, mk, zero))
+    store(mut st, rec, DM_NKEY1, bin(mut st, BSub, load(mut st, rec, DM_NKEY1), dec))
+    store(mut st, rec, DM_NWAIT, urAdd(mut st, load(mut st, rec, DM_NWAIT), -1))
+    atomicXadd(mut st, globaladdr(mut st, st.mnG), MN_DWAITING, iconst(mut st, -1))
+}
+
+// 列の w から順に、待ち中（PEND_DOM）の最初の待ち手へ CAS で手渡して起こす（負けた = 満了 — 本人が後で外す）。今の版で偽と分かった
+// 鍵の待ち手は起こさずに位置のまま飛ばす（when は効果を持たず捕捉の無い when は状態だけの関数なので、見直しても同じ偽 — 観測等価な省略）。
+// 列の全員がその鍵なら歩かない
+func domHand(st mut St, rec int, w0 int) {
+    zero := iconst(mut st, 0)
+    fk := load(mut st, rec, DM_FKEY)
+    known := bin(mut st, BAnd, cmp(mut st, CNe, fk, zero), cmp(mut st, CEq, load(mut st, rec, DM_FVER), load(mut st, rec, DM_VER)))
+    allK := bin(mut st, BAnd, cmp(mut st, CEq, fk, load(mut st, rec, DM_KEY1)), cmp(mut st, CEq, load(mut st, rec, DM_NKEY1), load(mut st, rec, DM_NWAIT)))
+    l := newBlock(mut st)
+    w := param(mut st, l, TyI64)
+    b := newBlock(mut st)
+    cs := newBlock(mut st)
+    nx := newBlock(mut st)
+    wake := newBlock(mut st)
+    d := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, known, allK), d, -1, l, list1(mut st, w0))
+    setCur(mut st, l)
+    condbr(mut st, cmp(mut st, CEq, w, zero), d, -1, b, -1)
+    setCur(mut st, b)
+    wp := itop(mut st, w)
+    condbr(mut st, bin(mut st, BAnd, known, cmp(mut st, CEq, load(mut st, wp, TC_DQKEY), fk)), nx, -1, cs, -1)
+    setCur(mut st, cs)
+    o := atomicCas(mut st, wp, TC_IORES, iconst(mut st, PEND_DOM), iconst(mut st, 1))
+    condbr(mut st, cmp(mut st, CEq, o, iconst(mut st, PEND_DOM)), wake, -1, nx, -1)
+    setCur(mut st, wake)
+    taskWakeAny(mut st, wp)
+    br(mut st, d, -1)
+    setCur(mut st, nx)
+    br(mut st, l, list1(mut st, load(mut st, wp, TC_DQNEXT)))
+    setCur(mut st, d)
+}
+
+// 列の全部の待ち手へ手渡して起こす（毒 — 起きた待ち手は毒を見て死ぬ）
+func domHandAll(st mut St, w0 int) {
+    zero := iconst(mut st, 0)
+    l := newBlock(mut st)
+    w := param(mut st, l, TyI64)
+    b := newBlock(mut st)
+    wake := newBlock(mut st)
+    nx := newBlock(mut st)
+    d := newBlock(mut st)
+    br(mut st, l, list1(mut st, w0))
+    setCur(mut st, l)
+    condbr(mut st, cmp(mut st, CEq, w, zero), d, -1, b, -1)
+    setCur(mut st, b)
+    wp := itop(mut st, w)
+    n := load(mut st, wp, TC_DQNEXT)
+    o := atomicCas(mut st, wp, TC_IORES, iconst(mut st, PEND_DOM), iconst(mut st, 1))
+    condbr(mut st, cmp(mut st, CEq, o, iconst(mut st, PEND_DOM)), wake, -1, nx, -1)
+    setCur(mut st, wake)
+    taskWakeAny(mut st, wp)
+    br(mut st, nx, -1)
+    setCur(mut st, nx)
+    br(mut st, l, list1(mut st, n))
+    setCur(mut st, d)
+}
+
+// 期限の走査（自分のワーカーの poller — uring.sober / netpoll.sober）が満了を見た待ち手 t: 手渡しと CAS で競い、勝てば -110 で起こす
+func domExpire(st mut St, t int) {
+    tp := itop(mut st, t)
+    o := atomicCas(mut st, tp, TC_IORES, iconst(mut st, PEND_DOM), iconst(mut st, -110))
+    bW := branchIf(mut st, cmp(mut st, CEq, o, iconst(mut st, PEND_DOM)))
+    tk := globaladdr(mut st, st.taskG)
+    wk := globaladdr(mut st, st.wkG)
+    readyPush(mut st, tk, t)
+    store(mut st, wk, WK_NETW, urAdd(mut st, load(mut st, wk, WK_NETW), -1))
+    br(mut st, bW, -1)
+    setCur(mut st, bW)
+}
+
+// Ledger().domains.maxWait を w（ns）まで上げる（CAS の輪 — 読み手は xchg で 0 に戻す）
+func domMaxWait(st mut St, w int) {
+    mn := globaladdr(mut st, st.mnG)
+    l := newBlock(mut st)
+    d := newBlock(mut st)
+    b := newBlock(mut st)
+    br(mut st, l, -1)
+    setCur(mut st, l)
+    mx := load(mut st, mn, MN_DMAXW)
+    condbr(mut st, cmp(mut st, CGe, mx, w), d, -1, b, -1)
+    setCur(mut st, b)
+    o := atomicCas(mut st, mn, MN_DMAXW, mx, w)
+    condbr(mut st, cmp(mut st, CEq, o, mx), d, -1, l, -1)
+    setCur(mut st, d)
+}
+
+// Await の when（domWait の 3 つ目の実引数 — 閉包に束縛された名前）の束ねの鍵: 捕捉の無い when はラムダの節と型環境の組の通し番号（1 始まり）・
+// 捕捉のある when・閉包でない実引数は 0（束ねない — 捕捉の値が待ち手ごとに違いうる）
+func domWhenKey(st mut St, args desugar.ListRef) int {
+    if lenL(mut st, args) < 3 {
+        return 0
+    }
+    a := latN(mut st, args, 2)
+    if !closureName(mut st, a) {
+        return 0
+    }
+    l := lookup(mut st, sA(nodeOf(mut st, a)))
+    cr := cloAt(mut st, desugar.HeapGet(mut st.d, l + 4))
+    names := desugar.LamFree(mut st.d, cr.lambda)
+    saved := st.chain
+    st.chain = cr.chain
+    mut caps := false
+    for i <- iter.Range(0, lenL(mut st, names)) {
+        if lookup(mut st, desugar.StrRef(latI(mut st, names, i))) >= 0 {
+            caps = true
+        }
+    }
+    st.chain = saved
+    if caps {
+        return 0
+    }
+    mut i := 0
+    while i + 1 < len(st.domKeys) {
+        if st.domKeys[i] == int(cr.lambda) && st.domKeys[i + 1] == cr.env {
+            return i / 2 + 1
+        }
+        i += 2
+    }
+    st.domKeys = append(st.domKeys, int(cr.lambda))
+    st.domKeys = append(st.domKeys, cr.env)
+    return len(st.domKeys) / 2
+}

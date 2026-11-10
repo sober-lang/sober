@@ -1,0 +1,2 @@
+sober: load error at examples/domain_neg_grow.sober:17:16: the body of a domain call writes only region-free values (int, bool, byte, float and structs of them) into the state, and not through a map index — the state lives as long as the domain and is written in place, so append, re-slicing, strings or map writes would grow it on every call. Rewrite: (1) preallocate a mut slice in init: and write its elements (st.items[i] = v), (2) keep a count or an index in the state and the growing data outside the domain, or (3) return the value from the body and store it outside
+exit=1

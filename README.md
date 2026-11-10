@@ -93,7 +93,7 @@ func main() int {
 ### Minimal
 
 - A single binary with zero dependencies. The compiler is one static ELF that depends on neither libc nor LLVM, and the executables it produces are static ELFs as well.
-- The compiler is about 140,000 lines (excluding the development tools in `src/compiler/tools/`), plus about 30,000 for the standard library (non-test source, comments and blank lines included).
+- The compiler is about 140,000 lines (excluding the development tools in `src/compiler/tools/`), plus about 34,000 for the standard library (non-test source, comments and blank lines included).
 - Fully bootstrapped from Zig and source alone. Starting from stage1, a frozen compiler written in Zig, the source snapshots in `bootstrap/` are built in order until they produce the current compiler ([the full chain](bootstrap/chain.txt)). There is no seed binary.
 
 → [Why minimal](docs/design-notes/minimal.md) (in Japanese)
@@ -110,7 +110,7 @@ func main() int {
 
 - Memory safety and freedom from data races, with no GC and no borrow checker. Lifetimes match the nesting of scopes (every block is a region — [rules](docs/spec/09-memory.ja.md), in Japanese), and only immutable values and channels can be passed into a parallel scope ([rules](docs/spec/10-concurrency.ja.md), in Japanese).
 - Unhandled errors are rejected. Errors are sets of labels that the analyzer derives from the call graph, and public boundaries must declare them ([rules](docs/spec/07-errors.ja.md), in Japanese).
-- The only thing to learn is what you cannot write. There are no lifetime annotations and no borrowing rules; the forms that cannot be written (shared mutable state, escaping references) are simply compile errors.
+- The only thing to learn is what you cannot write. There are no lifetime annotations and no borrowing rules; the forms that cannot be written (shared mutable state outside a domain, escaping references) are simply compile errors.
 
 → [Why safe](docs/design-notes/safe.md) (in Japanese)
 
@@ -203,6 +203,7 @@ How it goes about solving these (the design moves):
 - [DESIGN.md](DESIGN.md) — the main design decisions (five pillars)
 - [Design notes (Q&A)](docs/design-notes/) (in Japanese) — "why Y rather than X"
 - [Left out on purpose](docs/design-notes/not-in-sober.md) (in Japanese) — what Sober decided not to have, as opposed to what is not built yet
+- [Related work](docs/design-notes/related-work.md) (in Japanese) — for each mechanism, what Sober took from earlier research and languages, and what it changed
 - [Language specification](docs/spec/README.ja.md) (in Japanese) — the rules for what is accepted and how accepted programs behave (rules only; examples are the real files in examples/)
 - For developers (in Japanese): [decision record](docs/language.md), [syntax](docs/syntax.md), [IR](docs/ir.md), [formalization](docs/formal.md), [oracles](docs/oracles.md)
 
@@ -212,10 +213,10 @@ Everything below is a real artifact in this tree:
 
 - An HTTP/1.1 + TLS 1.3 server — the `std/http/server` entry sits alongside C / Rust / V implementations on the public [HttpArena](https://github.com/MDA2AV/HttpArena) leaderboard (`bench/httparena/`)
 - This compiler itself — ~140K lines of self-hosted Sober, from lexing to x86-64 machine code and ELF emission, with no libc (`src/compiler/`)
-- The standard library — JSON, gzip/deflate, TLS 1.3, an HTTP client (with certificate-chain verification), crypto (AES-GCM / SHA-256 / RSA / x25519 / password hashing), session tokens and the io_uring M:N runtime (`src/std/`)
+- The standard library — JSON, gzip/deflate, TLS 1.3, an HTTP client (with certificate-chain verification), crypto (AES-GCM / SHA-256 / RSA / x25519 / password hashing), session tokens, a PostgreSQL client and the io_uring M:N runtime (`src/std/`)
 - Developer tooling — the test runner, property-based testing, fuzzing, coverage, mutation testing and watch (the whole `sober test` stack is itself written in Sober as part of the compiler)
 - Data-processing subjects — 1BRC and benchmarks-game problems, output-identical to their Go / Rust twins (`bench/`)
-- ~510 small examples — the guide's kvstore and more (`examples/` — all output-checked by gates)
+- ~530 small examples — the guide's kvstore and more (`examples/` — all output-checked by gates)
 
 ## What is already there
 
@@ -229,18 +230,18 @@ Language:
 - Functions: lambdas, function values and closures, named arguments (no methods, type classes or macros)
 - Errors: error types, `?`, `catch`, label sets derived and checked for exhaustiveness by the analyzer (`@errors`), distinct from panics
 - Memory: regions (lifetime = the nesting of scopes), Pool, declared resource limits (budgets)
-- Concurrency: structured concurrency (scopes and tasks), channels, deterministic parallelism, budgets and deadlines, leases
+- Concurrency: structured concurrency (scopes and tasks), channels, deterministic parallelism, budgets and deadlines, leases, domains (serialized updates from many tasks to one state, with a bound on waiting; no locks in the source)
 - Packages and imports: one directory = one package, the qualifier is every segment of the import path (`std/http/server` → `http.server.X`), and a `sober.mod` at the build root declares the module's name and its local dependencies ([rules](docs/spec/08-packages.ja.md), in Japanese)
 - Annotations: `@embed`, `@layout`, secret-value tracking, and more
 - Testing: `sober test` and assert (prints the values of subexpressions and the assert's position when false; an optional label `assert(e, label)`), property-based testing with std/quick, `sober fuzz`, `--cover` (coverage), `--mutate` (mutation testing), build-time substitution (a test's `@doubles` names a double — `*_double.sober` — that its build reads in place of the real package; signatures, types and effects are checked against the real declarations)
 
-Standard library (32 packages — signatures and descriptions in the [std reference](docs/std/README.ja.md)):
+Standard library (33 packages — signatures and descriptions in the [std reference](docs/std/README.ja.md)):
 
-- I/O and networking: io, os, net (TCP, a stub DNS resolver), http/server (an HTTP/1.1 server, SSE, multipart, cookies), http/client (an HTTP/1.1 client — TLS 1.3 by default, the certificate chain always verified), tls (a TLS 1.3 server), url, session (signed session tokens), time (wall clock and monotonic clock, RFC 3339 / HTTP-date, time zones), cli (a CLI declared as a table), env (a table of declared environment variables)
+- I/O and networking: io, os, net (TCP, a stub DNS resolver), http/server (an HTTP/1.1 server, SSE, multipart, cookies), http/client (an HTTP/1.1 client — TLS 1.3 by default, the certificate chain always verified), tls (a TLS 1.3 server), url, session (signed session tokens), time (wall clock and monotonic clock, RFC 3339 / HTTP-date, time zones), cli (a CLI declared as a table), env (a table of declared environment variables), pg (a PostgreSQL client — wire protocol 3.0, TLS / SCRAM, transactions, a connection pool)
 - Cryptography and hashing: crypto (AES-GCM, ChaCha20-Poly1305, SHA-256, HMAC, HKDF, X25519, RSA, PEM, password hashing — Argon2id, bcrypt, PBKDF2 — cryptographic randomness, constant-time operations), hash (crc32, sha256), uuid (v4 / v7)
 - Encoding and conversion: json, base64, hex, binary, convert, strings, utf8, compress (flate / gzip encoding and decoding)
 - Data and computation: iter, sort, math, rand, table, builder, pool, layout
-- Parallelism and testing: task (a deterministic parallel Map, among others), testing (cell — state that test doubles keep), quick (property-based testing)
+- Parallelism and testing: task (a deterministic parallel Map, domains, among others), testing (cell — state that test doubles keep), quick (property-based testing)
 
 Tools (subcommands of the single `sober` binary):
 
@@ -256,7 +257,8 @@ Standard library (features to implement before 1.0):
 - [ ] More compression algorithms
 - [x] ECDSA verification and X.509 certificate-chain verification (used by the HTTP client's TLS)
 - [ ] TLS features for operations (certificate reload, client authentication, session resumption)
-- [ ] Database clients: PostgreSQL and MySQL
+- [x] Database clients: PostgreSQL (wire protocol 3.0, TLS / SCRAM, transactions, a connection pool)
+- [ ] Database clients: MySQL
 - [x] An HTTP client (HTTP/1.1, TLS 1.3 / 1.2, proxy CONNECT)
 - [ ] Full coverage of HTTP/1.1
 - [ ] The missing halves of one-sided API pairs
@@ -268,6 +270,7 @@ Language and compiler:
 - [x] Floating-point completeness (a single float type, IEEE 754 binary64 — bit-deterministic arithmetic and printing, no libm)
 - [x] Recursive data types (recursion through `[]T` / `map[K]T` elements or function types, including mutual recursion and generic recursive unions — design in section 1 of [language.md](docs/language.md), in Japanese)
 - [x] Closures that carry mutable state (locally-bound lambdas capture `mut` bindings by inlining; function types take explicit `mut` parameters — capturing `mut` into a function *value* was deliberately rejected)
+- [x] Long-lived shared state (domains — serialized updates, bounded waits, no locks in the source)
 - [ ] Merging value streams (zip)
 - [ ] A stronger analyzer: better diagnostics and lints
 - [ ] Effect tracking: bring the effects now described by separate mechanisms (errors, mut, identity, …) into a single framework (design under consideration)

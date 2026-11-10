@@ -1,0 +1,100 @@
+package main
+
+// PostgreSQL のガイド 5 節（docs/guide/postgres）: トランザクション。pg.Tx の k が普通に終われば COMMIT・k の中の ? で抜けたら ROLLBACK。
+// 入れ子は SAVEPOINT・直列化の失敗（40001）は自動で再試行しない — 呼び手が回数を決めて書き直す。繋ぎ先は pg_shop と同じ環境変数
+
+import "std/env"
+import "std/io"
+import "std/pg"
+import "std/tls"
+
+const Url = env.StrVar{name: "PG_URL", help: "the database URL (postgres://user@host[:port]/db)"}
+const Password = env.StrVar{name: "PG_PASSWORD", help: "the SCRAM password", opt: true}
+const Ca = env.StrVar{name: "PG_CA", help: "a PEM file of extra trusted CAs", opt: true}
+
+const Vars = env.Table{strs: []env.StrVar{Url, Password, Ca}}
+
+func policyOf(e env.Values) pg.Policy {
+    pw := env.StrOpt(e, Password)
+    ca := env.StrOpt(e, Ca)
+    roots := if ca == nil { nil } else { rootsOf(ca) }
+    return pg.Policy{password: if pw == nil { "" } else { pw }, extraRoots: roots}
+}
+
+func rootsOf(path string) tls.Roots? {
+    pem := io.ReadFile(path) catch return nil
+    return tls.ParseRoots(string(pem) catch "") catch nil
+}
+
+// 残高の移し替え: 2 つの文が両方効くか、どちらも効かないか
+func transfer(c pg.Conn, from int, to int, amount int) error? {
+    pg.Tx(c, (tc) => {
+        _ = pg.Exec(tc, "update account set balance = balance - $1 where id = $2", args: []pg.Value{pg.Int{v: amount}, pg.Int{v: from}})?
+        // 残高が負になる移し替えは check 制約（balance >= 0）が 23514 で断る → ? で抜けて ROLLBACK
+        _ = pg.Exec(tc, "update account set balance = balance + $1 where id = $2", args: []pg.Value{pg.Int{v: amount}, pg.Int{v: to}})?
+    }, isolation: pg.Serializable)?
+    return nil
+}
+
+// 直列化の失敗だけを数回まで書き直す（他の誤りはそのまま返す）
+func transferRetry(c pg.Conn, from int, to int, amount int) error? {
+    mut last := transfer(c, from, to, amount)
+    mut n := 1
+    while n < 3 && serialization(last) {
+        last = transfer(c, from, to, amount)
+        n += 1
+    }
+    return last
+}
+
+func serialization(e error?) bool {
+    return switch e {
+    case nil: false
+    case pg.Server{code, message, detail, constraint, hint}: code == "40001"
+    default: false
+    }
+}
+
+func balances(c pg.Conn) error? {
+    for r <- pg.Query(c, "select id, balance from account order by id")? {
+        println("  account ${pg.ColInt(r, 0)?}: ${pg.ColInt(r, 1)?}")
+    }
+    return nil
+}
+
+func bank(c pg.Conn) {
+    se := pg.Script(c, "create temp table account (id int8 primary key, balance int8 not null check (balance >= 0)); insert into account values (1, 100), (2, 0)")
+    if se != nil {
+        println("setup failed")
+        return
+    }
+    ok := transferRetry(c, 1, 2, 30)
+    println("transfer 30: ${if ok == nil { "ok" } else { "failed" }}")
+    _ = balances(c)
+    over := transferRetry(c, 1, 2, 500)
+    println("transfer 500: ${describe(over)}")
+    _ = balances(c)
+}
+
+func describe(e error?) string {
+    switch e {
+    case nil: return "ok"
+    case pg.Server{code, message, detail, constraint, hint}: return "server error ${code}"
+    default: {}
+    }
+    return "other error"
+}
+
+func main() int {
+    e, err := env.Load(Vars)
+    if err != nil {
+        _ = io.WriteStdout(bytes(env.Format(err)))
+        return 1
+    }
+    oe := pg.Open(env.Str(e, Url), bank, policy: policyOf(e))
+    if oe != nil {
+        println("open failed")
+        return 1
+    }
+    return 0
+}

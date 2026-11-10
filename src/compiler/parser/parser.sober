@@ -502,11 +502,13 @@ type Annot struct {
     cred int
     effs int
     effsTok int
+    cst int
+    cstTok int
 }
 
 // 読めなかった注釈の並び（p = -1）
 func annotBad() Annot {
-    return Annot{p: -1, noinl: 0, emb: -1, errs: -1, errsTok: 0, layout: 0, expand: 0, intr: -1, exh: 0, sec: -1, secTok: 0, secBare: 0, bless: 0, cred: 0, effs: -1, effsTok: 0}
+    return Annot{p: -1, noinl: 0, emb: -1, errs: -1, errsTok: 0, layout: 0, expand: 0, intr: -1, exh: 0, sec: -1, secTok: 0, secBare: 0, bless: 0, cred: 0, effs: -1, effsTok: 0, cst: -1, cstTok: 0}
 }
 
 // 位置 p0 の `(` から対応する `)` の次の位置（入れ子の括弧は数える — 閉じずに終わりに来たら -1）
@@ -552,7 +554,25 @@ func annots(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx
     // `@effects(…)` は続く関数宣言の効果の宣言（項の読みは @errors と同じ — 語・型の名前・否定の `!`。照合は analyzer/effects.sober）
     mut effs := 0 - 1
     mut effsTok := 0
+    // `@const(sql, …)` は続く関数宣言の const の席の仮引数の名前の列（読みは @errors と同じ。照合は analyzer/constseat.sober）
+    mut cst := 0 - 1
+    mut cstTok := 0
     while tg(cx, p) == lexer.At {
+        if textIs(cx, p + 1, "const") && tg(cx, p + 2) == lexer.LParen {
+            if tg(cx, p + 3) == lexer.RParen {
+                return annotBad()
+            }
+            cstTok = tk(cx, p)
+            cst = errorsArgs(mut db, cx, p + 2)
+            p = skipParens(cx, p + 2)
+            if p < 0 {
+                return annotBad()
+            }
+            if tg(cx, p) == lexer.Semicolon {
+                p += 1
+            }
+            continue
+        }
         if textIs(cx, p + 1, "effects") && tg(cx, p + 2) == lexer.LParen {
             effsTok = tk(cx, p)
             effs = errorsArgs(mut db, cx, p + 2)
@@ -694,7 +714,7 @@ func annots(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx
             p += 1
         }
     }
-    return Annot{p: p, noinl: noinl, emb: emb, errs: errs, errsTok: errsTok, layout: layout, expand: expand, intr: intr, exh: exh, sec: sec, secTok: secTok, secBare: secBare, bless: bless, cred: cred, effs: effs, effsTok: effsTok}
+    return Annot{p: p, noinl: noinl, emb: emb, errs: errs, errsTok: errsTok, layout: layout, expand: expand, intr: intr, exh: exh, sec: sec, secTok: secTok, secBare: secBare, bless: bless, cred: cred, effs: effs, effsTok: effsTok, cst: cst, cstTok: cstTok}
 }
 
 // const 宣言（p = `const` の位置 — `const` identifier_list '=' expression_list。値の畳み込みは loader の仕事）の KConst を

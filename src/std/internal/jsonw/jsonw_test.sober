@@ -1,0 +1,81 @@
+package jsonw
+
+// 部品の網: Int の詰めの境（1 桁・2 桁の偶奇・10^8 の前後・負・最小値）・Str のエスケープの −1・Word の余りを次の書きが上書きする形・上界ちょうど
+
+import "std/convert"
+import "std/iter"
+
+func put(n int) string {
+    mut b := mut []byte{}
+    Grow(mut b, 32)
+    p := Int(mut b, 0, n)
+    return Finish(freeze(b), p)
+}
+
+func TestInt() {
+    ns := []int{0, 7, 9, 10, 42, 99, 100, 101, 999, 1000, 12345, 99999999, 100000000, 123456789, -1, -100, 9223372036854775807, -9223372036854775807 - 1}
+    for n <- ns {
+        assert(put(n) == convert.FormatInt(n), convert.FormatInt(n))
+    }
+    for i <- iter.Range(0, 2000) {
+        n := i * i * 37 + i
+        assert(put(n) == convert.FormatInt(n), convert.FormatInt(n))
+    }
+}
+
+func TestWordTail() {
+    // 語の余りの 0 は次の書きで上書きされる
+    mut b := mut []byte{}
+    Grow(mut b, 24)
+    Word(mut b, 0, 0x3a226469227b)
+    mut p := Int(mut b, 6, 42)
+    b[p] = '}'
+    p += 1
+    assert(Finish(freeze(b), p) == "{\"id\":42}")
+}
+
+func TestStr() {
+    mut b := mut []byte{}
+    Grow(mut b, 32)
+    p := Str(mut b, 0, "héllo")
+    assert(Finish(freeze(b), p) == "\"héllo\"")
+    mut c := mut []byte{}
+    Grow(mut c, 32)
+    assert(Str(mut c, 0, "a\"b") == -1)
+    assert(Str(mut c, 0, "a\nb") == -1)
+    assert(Str(mut c, 0, "a\\b") == -1)
+}
+
+func TestFloat() {
+    mut b := mut []byte{}
+    Grow(mut b, 40)
+    p := Float(mut b, 0, 1.5)
+    assert(Finish(freeze(b), p) == "1.5")
+}
+
+func TestExact() {
+    // 上界ちょうど: 10 桁の int（10 + 余白 8 = 18）
+    mut b := mut []byte{}
+    Grow(mut b, 18)
+    p := Int(mut b, 0, 1234567890)
+    assert(Finish(freeze(b), p) == "1234567890")
+    // 8 桁以下は Word（8 バイト）を書く — 余白 8 があれば足りる
+    mut c := mut []byte{}
+    Grow(mut c, 8)
+    q := Int(mut c, 0, 12345678)
+    assert(Finish(freeze(c), q) == "12345678")
+}
+
+func TestWords() {
+    mut b := mut []byte{}
+    Grow(mut b, 24)
+    Word2(mut b, 0, 0x3a226469227b, 0)
+    assert(Finish(freeze(b), 6) == "{\"id\":")
+    mut c := mut []byte{}
+    Grow(mut c, 24)
+    Word3(mut c, 0, 0x6867666564636261, 0x706f6e6d6c6b6a69, 0x7877767574737271)
+    assert(Finish(freeze(c), 24) == "abcdefghijklmnopqrstuvwx")
+    assert(IntSize(99999999) == 8)
+    assert(IntSize(100000000) == 20)
+    assert(IntSize(-1) == 20)
+}

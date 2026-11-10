@@ -1917,23 +1917,23 @@ b12:
   store %90[1], %92
   %93 = load.i64 %88[2]
   store %90[2], %93
-  %94 = slotaddr s6
-  %95 = const 0
-  store %94[0], %95
-  store %94[1], %95
-  store %94[2], %95
+  %94 = const 0
+  %95 = slotaddr s6
+  store %95[0], %94
+  store %95[1], %94
+  store %95[2], %94
   %96 = load.i64 %90[0]
-  store %94[0], %96
+  store %95[0], %96
   %97 = load.i64 %90[1]
-  store %94[1], %97
+  store %95[1], %97
   %98 = load.i64 %90[2]
-  store %94[2], %98
+  store %95[2], %98
   %99 = slotaddr s7
-  %100 = load.i64 %94[0]
+  %100 = load.i64 %95[0]
   store %99[0], %100
-  %101 = load.i64 %94[1]
+  %101 = load.i64 %95[1]
   store %99[1], %101
-  %102 = load.i64 %94[2]
+  %102 = load.i64 %95[2]
   store %99[2], %102
   %103 = const 1
   %104 = const 5

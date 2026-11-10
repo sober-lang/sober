@@ -3013,18 +3013,18 @@ b0:
   %v0 = load i64, ptr %v0.p
   call void @"rt.region_enter"()
   %v1 = getelementptr i64, ptr %s0, i64 0
-  %v2 = getelementptr i64, ptr %s1, i64 0
-  %v3 = add i64 0, 0
-  %st0 = getelementptr i64, ptr %v2, i64 0
-  store i64 %v3, ptr %st0
-  %st1 = getelementptr i64, ptr %v2, i64 1
-  store i64 %v3, ptr %st1
+  %v2 = add i64 0, 0
+  %v3 = getelementptr i64, ptr %s1, i64 0
+  %st0 = getelementptr i64, ptr %v3, i64 0
+  store i64 %v2, ptr %st0
+  %st1 = getelementptr i64, ptr %v3, i64 1
+  store i64 %v2, ptr %st1
   %v4 = add i64 0, 1
-  %st2 = getelementptr i64, ptr %v2, i64 0
+  %st2 = getelementptr i64, ptr %v3, i64 0
   store i64 %v4, ptr %st2
-  %v5.p = getelementptr i64, ptr %v2, i64 0
+  %v5.p = getelementptr i64, ptr %v3, i64 0
   %v5 = load i64, ptr %v5.p
-  %v6.p = getelementptr i64, ptr %v2, i64 1
+  %v6.p = getelementptr i64, ptr %v3, i64 1
   %v6 = load i64, ptr %v6.p
   call void @"main.name"(ptr %v1, i64 %v5, i64 %v6)
   call void @"rt.print_str"(ptr %v1)

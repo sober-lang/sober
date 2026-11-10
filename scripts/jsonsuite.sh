@@ -4,6 +4,7 @@
 #   ② 不変条件: n_ は全部拒否・y_ は全部受理（例外 = 重複キーの 2 件 — 防御の既定で拒否。16 節）
 #   ③ 受理したものは印字の不動点（Parse → Format → Parse → Format が同じ・値の木を通した Parse → Tree → Encode[json.Value] → Parse も同じ — 検査は check/main.sober の中）
 #   ④ shape[T] の T が別 package の struct（testdata/jsonpkg — 合成ファイルの参照名の import）: 実行の出力が app.out と一致
+#   ⑤ json.Encode の速い道（上界 → 1 本確保 → 位置で書く）≡ builder の道（EncodeWith に空の辞書）: testdata/jsonfast の無作為の値 3,000 件でバイト一致
 #   --regen: expect.txt を書き直す（緑の木からだけ）・--go: Go encoding/json の判定と並べて表示（scripts/oracles/jsonsuite.go）
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -24,5 +25,6 @@ grep -E '^n_' "$W/got" | grep -v ' reject$' | sed 's/^/FAIL: n_ accepted: /' && 
 grep -E '^y_' "$W/got" | grep -v ' ok$' | grep -v '^y_object_duplicated_key' | sed 's/^/FAIL: y_ rejected: /' && fail=1
 grep -E ' roundtrip' "$W/got" | sed 's/^/FAIL: roundtrip: /' && fail=1
 "$SOBER" build -o "$W/app" testdata/jsonpkg/app > /dev/null && "$W/app" > "$W/app.out" && diff testdata/jsonpkg/app.out "$W/app.out" > /dev/null || { echo "FAIL: testdata/jsonpkg/app"; fail=1; }
+"$SOBER" build -o "$W/fast" testdata/jsonfast/main.sober > /dev/null && "$W/fast" > "$W/fast.out" 2>&1 || { echo "FAIL: testdata/jsonfast"; head -5 "$W/fast.out"; fail=1; }
 echo "jsonsuite: $(wc -l < "$W/got") cases ($(grep -c ' ok$' "$W/got") ok / $(grep -c ' reject$' "$W/got") reject), fail=$fail"
 [ "$fail" = 0 ]

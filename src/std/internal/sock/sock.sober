@@ -1,0 +1,140 @@
+package sock
+
+// 預かる接続の fd の上の I/O（std/internal/lot と std/pg — 接続をワーカーを跨いで借りる道）。std/net の Send / Recv と同じ syscall と待ちだが、受けは
+// net の ring の受け（multishot RECV — 張ったワーカーの ring に完了が届く）を張らずに素の read + 待ち（ring の POLL_ADD 一度きり / epoll の ONESHOT —
+// どちらも待つワーカーで閉じる）で読む。だから別のワーカーの task へ借り渡しても受けの状態が残らない。fd は呼び手が持つ（ここでは閉じない — Close を除く）
+
+import "std/io"
+import "std/net"
+
+@intrinsic("syscall")
+func sysCall(nr int, a int, b int, c int, d int, e int, f int) int
+
+@intrinsic("addr")
+func sysAddr(b []byte) int
+
+@intrinsic("read_fd")
+func sysReadFd(fd int, n int) []byte
+
+@intrinsic("errno")
+func sysErrno() int
+
+@intrinsic("deadline")
+func sysDeadline() int
+
+@intrinsic("wait_fd")
+func sysWaitFd(fd int, ev int) int
+
+@intrinsic("net_op")
+func sysNetOp(op int, fd int, a int, b int) int
+
+// read_fd の n の印: 1 << 40（rt の read を通さない）| 1 << 41（net の ring の受けも張らない — lower/netpoll.sober の RFD_PLAIN）
+const plainRead = 1099511627776 + 2199023255552
+
+const evIn = 1
+const evOut = 4
+
+// syscall の結果 r が「待てばやり直せる」なら fd の向き ev を待って 0、待ちの失敗はその負の errno、他は 1（r が結果）— std/net の again と同じ
+func again(r int, fd int, ev int) int {
+    if r != -11 && r != -4 && r != -115 {
+        return 1
+    }
+    w := sysWaitFd(fd, ev)
+    return if w < 0 { w } else { 0 }
+}
+
+// errno → ラベル（std/net の errOf と同じ表）
+func errOf(e int) error {
+    if e == 32 || e == 104 || e == 111 {
+        return io.Closed{}
+    }
+    if e == 110 {
+        return if sysDeadline() != 0 { io.Expired{} } else { io.Timeout{} }
+    }
+    if e == 125 {
+        return io.Expired{}
+    }
+    if e == 13 || e == 1 {
+        return io.Denied{}
+    }
+    return io.Other{errno: e}
+}
+
+func waitErr(w int) error {
+    if w == 0 - 110 {
+        return io.Expired{}
+    }
+    return errOf(0 - w)
+}
+
+// addr へ繋いだ fd（std/net の Dial で名前を引いて繋ぎ、その接続の fd を写して持つ — Dial の k を抜けると元の fd は閉じる。写しは close-on-exec）
+@errors(net.Bad, net.NoHost, net.NonASCIIHost, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
+func Dial(addr string) (int, error?) {
+    mut fd := -1
+    e := net.Dial(addr, (c) => {
+        // fcntl(F_DUPFD_CLOEXEC = 1030) — 写しは非ブロックの印も共有する（ファイルの状態の旗は開いたファイルの側）
+        fd = sysCall(72, c.fd, 1030, 0, 0, 0, 0)
+    })
+    if e != nil {
+        return -1, e
+    }
+    if fd < 0 {
+        return -1, errOf(0 - fd)
+    }
+    return fd, nil
+}
+
+// b を全部 fd へ送る（std/net の Send と同じ — 短い書きは続きから）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
+func Send(fd int, b []byte) error? {
+    if sysDeadline() != 0 {
+        return io.Expired{}
+    }
+    mut off := 0
+    while off < len(b) {
+        r := sysNetOp(1, fd, sysAddr(b) + off, len(b) - off)
+        a := again(r, fd, evOut)
+        if a < 0 {
+            return waitErr(a)
+        }
+        if a == 1 && r < 0 {
+            return errOf(0 - r)
+        }
+        if r > 0 {
+            off += r
+        }
+    }
+    return nil
+}
+
+// fd の次の切片（最大 64 KiB）と、相手が閉じたか（閉じていれば空と true）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
+func Poll(fd int) ([]byte, bool, error?) {
+    while true {
+        if sysDeadline() != 0 {
+            return []byte{}, false, io.Expired{}
+        }
+        b := sysReadFd(fd, 65536 + plainRead)
+        e := sysErrno()
+        n := if e != 0 { 0 - e } else { len(b) }
+        a := again(n, fd, evIn)
+        if a < 0 {
+            return []byte{}, false, waitErr(a)
+        }
+        if a == 1 && n < 0 {
+            return []byte{}, false, errOf(0 - n)
+        }
+        if a == 1 {
+            return b, n == 0, nil
+        }
+    }
+    return []byte{}, false, nil
+}
+
+// fd を閉じる（net の ring の記録も外す — rt.netop 2）
+func Close(fd int) {
+    _ = sysNetOp(2, fd, 0, 0)
+}

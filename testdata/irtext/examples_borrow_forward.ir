@@ -1907,33 +1907,33 @@ b0:
   store %21[3], %25
   %26 = load.i64 %15[4]
   store %21[4], %26
-  %27 = slotaddr s5
-  %28 = const 0
-  store %27[0], %28
-  store %27[1], %28
-  store %27[2], %28
-  store %27[3], %28
-  store %27[4], %28
+  %27 = const 0
+  %28 = slotaddr s5
+  store %28[0], %27
+  store %28[1], %27
+  store %28[2], %27
+  store %28[3], %27
+  store %28[4], %27
   %29 = load.i64 %21[0]
-  store %27[0], %29
+  store %28[0], %29
   %30 = load.i64 %21[1]
-  store %27[1], %30
+  store %28[1], %30
   %31 = load.i64 %21[2]
-  store %27[2], %31
+  store %28[2], %31
   %32 = load.i64 %21[3]
-  store %27[3], %32
+  store %28[3], %32
   %33 = load.i64 %21[4]
-  store %27[4], %33
+  store %28[4], %33
   %34 = slotaddr s6
-  %35 = load.i64 %27[0]
+  %35 = load.i64 %28[0]
   store %34[0], %35
-  %36 = load.i64 %27[1]
+  %36 = load.i64 %28[1]
   store %34[1], %36
-  %37 = load.i64 %27[2]
+  %37 = load.i64 %28[2]
   store %34[2], %37
-  %38 = load.i64 %27[3]
+  %38 = load.i64 %28[3]
   store %34[3], %38
-  %39 = load.i64 %27[4]
+  %39 = load.i64 %28[4]
   store %34[4], %39
   %40 = load.i64 %34[0]
   %41 = load.i64 %34[1]

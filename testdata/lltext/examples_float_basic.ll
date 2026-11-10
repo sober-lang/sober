@@ -3773,22 +3773,22 @@ b39:
   call void @"rt.print_char"(i64 %v257)
   %v258 = add i64 0, 4613937818241073152
   %v259 = add i64 0, 4616189618054758400
-  %v260 = getelementptr i64, ptr %s0, i64 0
-  %v261 = add i64 0, 0
-  %st30 = getelementptr i64, ptr %v260, i64 0
-  store i64 %v261, ptr %st30
-  %st31 = getelementptr i64, ptr %v260, i64 1
-  store i64 %v261, ptr %st31
-  %st32 = getelementptr i64, ptr %v260, i64 0
+  %v260 = add i64 0, 0
+  %v261 = getelementptr i64, ptr %s0, i64 0
+  %st30 = getelementptr i64, ptr %v261, i64 0
+  store i64 %v260, ptr %st30
+  %st31 = getelementptr i64, ptr %v261, i64 1
+  store i64 %v260, ptr %st31
+  %st32 = getelementptr i64, ptr %v261, i64 0
   store i64 %v258, ptr %st32
-  %st33 = getelementptr i64, ptr %v260, i64 1
+  %st33 = getelementptr i64, ptr %v261, i64 1
   store i64 %v259, ptr %st33
   %v262 = getelementptr i64, ptr %s1, i64 0
-  %v263.p = getelementptr i64, ptr %v260, i64 0
+  %v263.p = getelementptr i64, ptr %v261, i64 0
   %v263 = load i64, ptr %v263.p
   %st34 = getelementptr i64, ptr %v262, i64 0
   store i64 %v263, ptr %st34
-  %v264.p = getelementptr i64, ptr %v260, i64 1
+  %v264.p = getelementptr i64, ptr %v261, i64 1
   %v264 = load i64, ptr %v264.p
   %st35 = getelementptr i64, ptr %v262, i64 1
   store i64 %v264, ptr %st35
@@ -3824,19 +3824,19 @@ b40:
 b41:
   %v275 = add i64 0, 4607182418800017408
   %v276 = add i64 0, 4607182418800017408
-  %v277 = getelementptr i64, ptr %s0, i64 0
-  %v278 = add i64 0, 0
-  %st38 = getelementptr i64, ptr %v277, i64 0
-  store i64 %v278, ptr %st38
-  %st39 = getelementptr i64, ptr %v277, i64 1
-  store i64 %v278, ptr %st39
-  %st40 = getelementptr i64, ptr %v277, i64 0
+  %v277 = add i64 0, 0
+  %v278 = getelementptr i64, ptr %s0, i64 0
+  %st38 = getelementptr i64, ptr %v278, i64 0
+  store i64 %v277, ptr %st38
+  %st39 = getelementptr i64, ptr %v278, i64 1
+  store i64 %v277, ptr %st39
+  %st40 = getelementptr i64, ptr %v278, i64 0
   store i64 %v275, ptr %st40
-  %st41 = getelementptr i64, ptr %v277, i64 1
+  %st41 = getelementptr i64, ptr %v278, i64 1
   store i64 %v276, ptr %st41
-  %v279.p = getelementptr i64, ptr %v277, i64 0
+  %v279.p = getelementptr i64, ptr %v278, i64 0
   %v279 = load i64, ptr %v279.p
-  %v280.p = getelementptr i64, ptr %v277, i64 1
+  %v280.p = getelementptr i64, ptr %v278, i64 1
   %v280 = load i64, ptr %v280.p
   %v281 = call i64 @"main.norm"(i64 %v279, i64 %v280)
   %v282 = call i64 @"std/math.Bits"(i64 %v281)

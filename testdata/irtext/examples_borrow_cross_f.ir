@@ -1754,12 +1754,12 @@ b0:
   region.enter
   %1 = const 3
   %2 = funcaddr @lambda#0
-  %3 = slotaddr s0
-  %4 = const 0
-  store %3[0], %4
-  store %3[0], %2
+  %3 = const 0
+  %4 = slotaddr s0
+  store %4[0], %3
+  store %4[0], %2
   %5 = slotaddr s1
-  %6 = load.i64 %3[0]
+  %6 = load.i64 %4[0]
   store %5[0], %6
   %7 = load.i64 %5[0]
   %8 = slotaddr s2
@@ -1787,12 +1787,12 @@ b0:
   %3 = region.depth
   region.enter
   %4 = funcaddr @lambda#1
-  %5 = slotaddr s1
-  %6 = const 0
-  store %5[0], %6
-  store %5[0], %4
+  %5 = const 0
+  %6 = slotaddr s1
+  store %6[0], %5
+  store %6[0], %4
   %7 = slotaddr s2
-  %8 = load.i64 %5[0]
+  %8 = load.i64 %6[0]
   store %7[0], %8
   %9 = load.i64 %7[0]
   %10 = load.i64 %2[0]

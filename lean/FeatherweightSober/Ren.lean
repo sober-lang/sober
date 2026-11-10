@@ -51,6 +51,7 @@ theorem Ty.renR_top (δ : Nat) : ∀ t : Ty, t.renR δ δ = t.shiftR δ
   | .slice m r t => by simp [Ty.renR, Ty.shiftR, Ty.renR_top δ t, rmap_top]
   | .map m r t => by simp [Ty.renR, Ty.shiftR, Ty.renR_top δ t, rmap_top]
   | .chan rc t => by simp [Ty.renR, Ty.shiftR, Ty.renR_top δ t, rmap_top]
+  | .dom rc t => by simp [Ty.renR, Ty.shiftR, Ty.renR_top δ t, rmap_top]
   | .own k r t => by simp [Ty.renR, Ty.shiftR, Ty.renR_top δ t, rmap_top]
   | .fn p r => rfl
   | .mus _ _ p => rfl
@@ -75,6 +76,8 @@ theorem Ty.shiftR_renR {ρ0 δ ρ : Nat} (hρ : 1 ≤ ρ) : ∀ t : Ty, (t.shift
   | .map m r t => by
     simp only [Ty.shiftR, Ty.renR, Ty.shiftR_renR hρ t, rmap_pos (show 1 ≤ r + ρ by omega)]; congr 1; omega
   | .chan rc t => by
+    simp only [Ty.shiftR, Ty.renR, Ty.shiftR_renR hρ t, rmap_pos (show 1 ≤ rc + ρ by omega)]; congr 1; omega
+  | .dom rc t => by
     simp only [Ty.shiftR, Ty.renR, Ty.shiftR_renR hρ t, rmap_pos (show 1 ≤ rc + ρ by omega)]; congr 1; omega
   | .own k r t => by
     simp only [Ty.shiftR, Ty.renR, Ty.shiftR_renR hρ t, rmap_pos (show 1 ≤ r + ρ by omega)]; congr 1; omega
@@ -115,6 +118,7 @@ theorem Ty.renR_relocR_mf {ρ0 δ k : Nat} : ∀ {t : Ty}, t.mutFree = true → 
   | .slice true _ _, hm, _ => by simp [Ty.mutFree] at hm
   | .map true _ _, hm, _ => by simp [Ty.mutFree] at hm
   | .chan _ _, _, hc => by simp [Ty.chanFree] at hc
+  | .dom _ _, _, hc => by simp [Ty.chanFree] at hc
   | .own _ _ _, hm, _ => by simp [Ty.mutFree] at hm
   | .fn _ _, _, _ => rfl
   | .mus _ _ _, _, _ => rfl
@@ -152,6 +156,7 @@ theorem Ty.relocR_renR_left {ρ0 δ k : Nat} : ∀ {t : Ty}, t.mutFree = true �
   | .slice true _ _, hm, _ => by simp [Ty.mutFree] at hm
   | .map true _ _, hm, _ => by simp [Ty.mutFree] at hm
   | .chan _ _, _, hc => by simp [Ty.chanFree] at hc
+  | .dom _ _, _, hc => by simp [Ty.chanFree] at hc
   | .own _ _ _, hm, _ => by simp [Ty.mutFree] at hm
   | .fn _ _, _, _ => rfl
   | .mus _ _ _, _, _ => rfl
@@ -179,6 +184,8 @@ theorem Ty.relocR_renR {ρ0 δ ρ : Nat} (hρ : 1 ≤ ρ) : ∀ t : Ty, (t.reloc
   | .map true r t => by
     simp only [Ty.relocR, Ty.renR, Ty.shiftR_renR hρ t, rmap_pos (show 1 ≤ r + ρ by omega)]; congr 1; omega
   | .chan rc t => by
+    simp only [Ty.relocR, Ty.renR, Ty.shiftR_renR hρ t, rmap_pos (show 1 ≤ rc + ρ by omega)]; congr 1; omega
+  | .dom rc t => by
     simp only [Ty.relocR, Ty.renR, Ty.shiftR_renR hρ t, rmap_pos (show 1 ≤ rc + ρ by omega)]; congr 1; omega
   | .own k r t => by
     simp only [Ty.relocR, Ty.renR, Ty.shiftR_renR hρ t, rmap_pos (show 1 ≤ r + ρ by omega)]; congr 1; omega
@@ -226,6 +233,7 @@ theorem Ty.renR_regionsBelow_succ {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
     simp only [Ty.renR, Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq]
     exact ⟨Nat.lt_succ_of_le (rmap_le h0 (Nat.le_of_lt_succ h.1)), Ty.renR_regionsBelow_succ h0 hc h.2⟩
   | .chan _ _, _, hc, _ => by simp [Ty.chanFree] at hc
+  | .dom _ _, _, hc, _ => by simp [Ty.chanFree] at hc
   | .fn _ _, _, _, _ => rfl
   | .mus _ _ _, _, _, _ => rfl
   | .rvar _, _, _, _ => rfl
@@ -271,6 +279,10 @@ theorem Ty.renR_regionsBelow {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
     simp only [Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq] at h
     simp only [Ty.renR, Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq]
     exact ⟨rmap_le h0 h.1, Ty.renR_regionsBelow h0 h.2⟩
+  | .dom r t, _, h => by
+    simp only [Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [Ty.renR, Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq]
+    exact ⟨rmap_lt h0 h.1, Ty.renR_regionsBelow h0 h.2⟩
   | .own k r t, _, h => by
     simp only [Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq] at h
     simp only [Ty.renR, Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq]
@@ -297,6 +309,7 @@ theorem Ty.renR_mutFree {ρ0 δ : Nat} : ∀ t : Ty, (t.renR ρ0 δ).mutFree = t
   | .slice m r t => by simp [Ty.renR, Ty.mutFree, Ty.renR_mutFree t]
   | .map m r t => by simp [Ty.renR, Ty.mutFree, Ty.renR_mutFree t]
   | .chan rc t => rfl
+  | .dom rc t => rfl
   | .own k r t => rfl
   | .fn p r => rfl
   | .mus _ _ p => rfl
@@ -327,6 +340,7 @@ theorem Ty.annFree_renR {ρ0 δ : Nat} : ∀ t : Ty, (t.renR ρ0 δ).annFree = t
   | .slice m r t => by simp [Ty.renR, Ty.annFree, Ty.annFree_renR t]
   | .map m r t => by simp [Ty.renR, Ty.annFree, Ty.annFree_renR t]
   | .chan _ _ => rfl
+  | .dom _ _ => rfl
   | .own _ _ _ => rfl
   | .fn _ _ => rfl
   | .mus _ _ _ => rfl
@@ -381,6 +395,10 @@ theorem Ty.sub_renR {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
   | .chan rc t, tb, hs => by
     obtain rfl := Ty.sub_chan_inv hs
     exact Ty.sub_refl _
+  | .dom rc t, tb, hs => by
+    obtain ⟨r', rfl, hle⟩ := Ty.sub_dom_inv hs
+    simp only [Ty.renR, Ty.sub, Bool.and_eq_true, decide_eq_true_eq]
+    exact ⟨rmap_le h0 hle, trivial⟩
   | .own k r t, tb, hs => by
     obtain rfl := Ty.sub_own_inv hs
     exact Ty.sub_refl _
@@ -416,7 +434,7 @@ theorem Ty.mutTop_renR (ρ0 δ : Nat) : ∀ ta : Ty, (ta.renR ρ0 δ).mutTop = t
   | .ref m r _ => by cases m <;> simp [Ty.mutTop, Ty.renR]
   | .slice m r _ => by cases m <;> simp [Ty.mutTop, Ty.renR]
   | .map m r _ => by cases m <;> simp [Ty.mutTop, Ty.renR]
-  | .int | .tvar _ | .bool | .byte | .f64 | .unit | .opt _ | .union _ _ | .prod _ _ | .chan _ _ | .fn _ _ | .own _ _ _ | .rvar _ | .mus _ _ _ | .muRs _ _ _ _ => by
+  | .int | .tvar _ | .bool | .byte | .f64 | .unit | .opt _ | .union _ _ | .prod _ _ | .chan _ _ | .dom _ _ | .fn _ _ | .own _ _ _ | .rvar _ | .mus _ _ _ | .muRs _ _ _ _ => by
     simp [Ty.mutTop, Ty.renR]
 
 theorem Ty.anchorOf_renR (ρ0 δ : Nat) :
@@ -458,6 +476,7 @@ theorem Ty.renR_renR {ρ0 δ a d' : Nat} (hd' : 1 ≤ d') :
   | .slice m r t => by simp [Ty.renR, Ty.renR_renR hd' t, rmap_comp hd']
   | .map m r t => by simp [Ty.renR, Ty.renR_renR hd' t, rmap_comp hd']
   | .chan rc t => by simp [Ty.renR, Ty.renR_renR hd' t, rmap_comp hd']
+  | .dom rc t => by simp [Ty.renR, Ty.renR_renR hd' t, rmap_comp hd']
   | .own k r t => by simp [Ty.renR, Ty.renR_renR hd' t, rmap_comp hd']
   | .fn p r => rfl
   | .mus _ _ p => rfl
@@ -485,6 +504,7 @@ theorem Ty.relocA_renR {ρ0 δ a d' : Nat} (hd' : 1 ≤ d') :
   | .slice true r t => by simp [Ty.relocA, Ty.renR, Ty.renR_renR hd' t, rmap_comp hd']
   | .map true r t => by simp [Ty.relocA, Ty.renR, Ty.renR_renR hd' t, rmap_comp hd']
   | .chan rc t => by simp [Ty.relocA, Ty.renR, Ty.renR_renR hd' t, rmap_comp hd']
+  | .dom rc t => by simp [Ty.relocA, Ty.renR, Ty.renR_renR hd' t, rmap_comp hd']
   | .own k r t => by simp [Ty.relocA, Ty.renR, Ty.renR_renR hd' t, rmap_comp hd']
   | .fn p r => rfl
   | .mus _ _ p => rfl
@@ -539,6 +559,10 @@ theorem Ty.renR_regionsBelow_refl {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
     simp only [Ty.renR, Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq] at h
     simp only [Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq]
     exact ⟨(rmap_le_iff h0).mp h.1, Ty.renR_regionsBelow_refl h0 h.2⟩
+  | .dom r t, _, h => by
+    simp only [Ty.renR, Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq]
+    exact ⟨(rmap_lt_iff h0).mp h.1, Ty.renR_regionsBelow_refl h0 h.2⟩
   | .own k r t, _, h => by
     simp only [Ty.renR, Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq] at h
     simp only [Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq]
@@ -587,6 +611,7 @@ theorem Ty.relocA_of_below1 {ρ0 δ : Nat} : ∀ {t : Ty}, t.regionsBelow 1 = tr
     subst this
     cases m <;> simp [Ty.relocA, Ty.renR, rmap, Ty.relocA_of_below1 ht]
   | .chan rc t, _ => rfl
+  | .dom rc t, _ => rfl
   | .own k r t, _ => rfl
   | .fn _ _, _ => rfl
   | .mus _ _ _, _ => rfl
@@ -640,6 +665,7 @@ theorem Ty.relocA_regionsBelow {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
       simp only [Ty.relocA, Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq]
       exact ⟨by split <;> omega, Ty.relocA_regionsBelow h0 h.2⟩
   | .chan _ _, h => by simp [Ty.retOk] at h
+  | .dom _ _, h => by simp [Ty.retOk] at h
   | .fn _ _, _ => rfl
   | .mus _ _ _, _ => rfl
   | .rvar _, _ => rfl
@@ -689,6 +715,7 @@ theorem Ty.relocA_mutFree {ρ0 δ : Nat} : ∀ {t : Ty}, t.retOk = true → (t.r
       simp only [Ty.relocA, Ty.mutFree, Bool.not_false, Bool.true_and]
       exact Ty.relocA_mutFree h.2
   | .chan _ _, h => by simp [Ty.retOk] at h
+  | .dom _ _, h => by simp [Ty.retOk] at h
   | .fn _ _, _ => rfl
   | .mus _ _ _, _ => rfl
   | .rvar _, _ => rfl
@@ -718,6 +745,7 @@ theorem Ty.clampR_renR {ρ0 δ k : Nat} (h0 : ρ0 ≤ δ) :
   | .slice m r t => by cases m <;> simp [Ty.renR, Ty.clampR, Ty.clampR_renR h0 t, rmap_min h0]
   | .map m r t => by cases m <;> simp [Ty.renR, Ty.clampR, Ty.clampR_renR h0 t, rmap_min h0]
   | .chan _ _ => rfl
+  | .dom _ _ => rfl
   | .own _ _ _ => rfl
   | .fn _ _ => rfl
   | .mus _ _ _ => rfl
@@ -739,6 +767,7 @@ theorem Ty.noClamp_renR {ρ0 δ k : Nat} (h0 : ρ0 ≤ δ) :
   | .slice m r t => by cases m <;> simp [Ty.renR, Ty.noClamp, Ty.noClamp_renR h0 t, rmap_le_iff h0]
   | .map m r t => by cases m <;> simp [Ty.renR, Ty.noClamp, Ty.noClamp_renR h0 t, rmap_le_iff h0]
   | .chan _ _ => rfl
+  | .dom _ _ => rfl
   | .own _ _ _ => rfl
   | .fn _ _ => rfl
   | .mus _ _ _ => rfl
@@ -759,6 +788,7 @@ theorem Ty.chanFree_renR {ρ0 δ : Nat} : ∀ t : Ty, (t.renR ρ0 δ).chanFree =
   | .slice m r t => by simp [Ty.renR, Ty.chanFree, Ty.chanFree_renR t]
   | .map m r t => by simp [Ty.renR, Ty.chanFree, Ty.chanFree_renR t]
   | .chan _ _ => rfl
+  | .dom _ _ => rfl
   | .own _ _ _ => rfl
   | .fn _ _ => rfl
   | .mus _ _ _ => rfl
@@ -828,9 +858,14 @@ theorem Ty.givable_renR {ρ0 δ rs : Nat} (h0 : ρ0 ≤ δ) :
       simp only [Ty.givable, Bool.and_eq_true] at ht
       simp only [Ty.renR, Ty.givable, Bool.and_eq_true]
       rw [Ty.renR_mutFree, Ty.chanFree_renR]; exact ht
+  | dom r u _ =>
+    simp only [Ty.givable, Bool.and_eq_true, decide_eq_true_eq] at ht
+    simp only [Ty.renR, Ty.givable, Bool.and_eq_true, decide_eq_true_eq]
+    rw [Ty.renR_mutFree, Ty.chanFree_renR]
+    exact ⟨⟨rmap_le h0 ht.1.1, ht.1.2⟩, ht.2⟩
   | _ =>
-    rw [Ty.givable_eq_data (by intros; simp) (by intros; simp)] at ht
-    rw [Ty.givable_eq_data (by intros; simp [Ty.renR]) (by intros; simp [Ty.renR])]
+    rw [Ty.givable_eq_data (by intros; simp) (by intros; simp) (by intros; simp)] at ht
+    rw [Ty.givable_eq_data (by intros; simp [Ty.renR]) (by intros; simp [Ty.renR]) (by intros; simp [Ty.renR])]
     simp only [Bool.and_eq_true] at ht ⊢
     exact ⟨⟨by rw [Ty.renR_mutFree]; exact ht.1.1, by rw [Ty.chanFree_renR]; exact ht.1.2⟩,
       Ty.renR_regionsBelow_succ h0 ht.1.2 ht.2⟩
@@ -1299,6 +1334,28 @@ theorem ren_typing {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) {e : Expr} {Δ : Defs} {f b 
     simp only [Expr.src] at hs
     cases he with
     | closeE h => exact .closeE (ihc h hd hs)
+  | dnew r i t ihi =>
+    simp only [Expr.src] at hs
+    cases he with
+    | dnewE h1 h2 h3 hp =>
+      simp only [Expr.renTy, Ty.renR]
+      refine .dnewE (rmap_le h0 h1) ?_ (ihi h3 hd hs) (Ty.payOk_renR hp)
+      have := rmap_lt (ρ0 := ρ0) (δ := δ) h0 h2
+      rwa [rmap_pos (k := d) (by omega)] at this
+  | domV p k r => simp [Expr.src] at hs
+  | denter t e ihd =>
+    simp only [Expr.src] at hs
+    cases he with
+    | denterE h hbd hm hc =>
+      have h' := HasType.denterE (ihd h hd hs) (by unfold rmap; split <;> omega) (by rw [Ty.renR_mutFree]; exact hm)
+        (by rw [Ty.chanFree_renR]; exact hc)
+      rw [Ty.relocR_renR_left hm hc] at h'
+      rw [Ty.renR_relocR_mf hm hc, rmap_pos (k := d - 1) (by omega), Ty.relocR_renR_left hm hc]
+      rwa [show d - 1 + δ = d + δ - 1 by omega]
+  | dexit e v ihd ihv =>
+    simp only [Expr.src, Bool.and_eq_true] at hs
+    cases he with
+    | dexitE h1 h2 hp => exact .dexitE (ihd h1 hd hs.1) (ihv h2 hd hs.2) (Ty.payOk_renR hp)
   | loc r a => simp [Expr.src] at hs
   | slicev mt r base len => simp [Expr.src] at hs
   | mapv mt r base len => simp [Expr.src] at hs

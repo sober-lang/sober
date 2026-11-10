@@ -1919,26 +1919,26 @@ b3:
   store %80[2], %83
   %84 = const 10
   %85 = mul %58, %84
-  %86 = slotaddr s10
-  %87 = const 0
-  store %86[0], %87
-  store %86[1], %87
-  store %86[2], %87
-  store %86[3], %87
+  %86 = const 0
+  %87 = slotaddr s10
+  store %87[0], %86
+  store %87[1], %86
+  store %87[2], %86
+  store %87[3], %86
   %88 = load.i64 %80[0]
-  store %86[0], %88
+  store %87[0], %88
   %89 = load.i64 %80[1]
-  store %86[1], %89
+  store %87[1], %89
   %90 = load.i64 %80[2]
-  store %86[2], %90
-  store %86[3], %85
-  %91 = load.i64 %86[0]
+  store %87[2], %90
+  store %87[3], %85
+  %91 = load.i64 %87[0]
   store %59[0], %91
-  %92 = load.i64 %86[1]
+  %92 = load.i64 %87[1]
   store %59[1], %92
-  %93 = load.i64 %86[2]
+  %93 = load.i64 %87[2]
   store %59[2], %93
-  %94 = load.i64 %86[3]
+  %94 = load.i64 %87[3]
   store %59[3], %94
   call @rt.region_relocate8(%59, %60)
   region.setdepth %60

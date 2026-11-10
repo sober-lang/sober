@@ -1,0 +1,2 @@
+examples/domain_neg_effect.sober:14:38: error: the body of a domain call (task.Update / task.Read / task.Await and its when:) may have the effect io via the call of 'println': it runs holding the domain, so it has no effects (no waiting, no io, no other domain, no explicit panic) (Analyzer)
+exit=1

@@ -5,7 +5,7 @@
 # 4096 接続・pipelined = /pipeline を 16 本ずつ・limited-conn = 10 要求ごとに張り直し）。HttpArena の採点は 64 スレッド・3 回の最良・5 秒 —
 # ここは機の大きさに合わせて縮め、最良でなく中央値で読む（比を正にする — PINS の「HttpArena のベンチ環境」の勘所）。
 #
-#   bench/httparena/local.sh [-n 周] [-d 秒] [-c 接続] [--profiles "baseline pipelined limited-conn json json-comp json-comp-16k latency-1m latency-10k latency-500k-8cpu async"] [-o 結果の TSV] [--summary 要約の md]
+#   bench/httparena/local.sh [-n 周] [-d 秒] [-c 接続] [--profiles "baseline pipelined limited-conn json json-comp json-comp-16k latency-1m latency-10k latency-500k-8cpu async async-db"] [-o 結果の TSV] [--summary 要約の md]
 # 種目（meta.json の tests 全 7 つ — 本家 scripts/lib/profiles.sh の形 — と json）:
 #   baseline / pipelined / limited-conn = gcannon・-c（既定 4096）
 #   json           = gcannon・GET /json/{count}?m=（本家 json-comp の (25,4)・(40,8)・(50,6) の巡回を Accept-Encoding なしで — 本家に素の json 種目は無い
@@ -19,6 +19,10 @@
 #                    wrk は $WRK か PATH〔workflow は apt の wrk〕・p99 は --latency の分布から。report-841 / 843）
 #   async          = gcannon・GET /delay/10・接続 32000（$ASYNC_CONNS — 保持した接続の数だけ保留のタイマーを運ぶ。天井 = conns/delay = 3.2M）。
 #                    TIME_WAIT を大量に残すので一覧の最後に置くこと（本家 PROFILE_ORDER と同じ理由）
+#   async-db       = gcannon・GET /async-db?min=10&max=50&limit={5,10,20,35,50}（本家 requests/async-db-*.raw の巡回・1024 接続・25 要求ごとに張り直し〔-r 25〕）。
+#                    本家の参考種目（採点に入らない）。PostgreSQL は外で立てて $ASYNC_DB_URL（本家の DATABASE_URL の形 — postgres://bench:bench@host:port/benchmark・
+#                    items 表を data/pgdb-seed.sql で入れたもの）を渡す — この種目だけサーバに DATABASE_URL と DATABASE_MAX_CONN（$ASYNC_DB_MAX_CONN・既定 256 —
+#                    PG の max_connections と揃える）を渡す（本家 scripts/lib/framework.sh と同じ）。Go の対照は本家 go-stdlib と同じ pgx の pool（go/db.go）
 #   8gbit          = zrk（本家の形 — POST /echo を TLS の port へ・本文 10,240 B〔本家 tools/zrk.sh の決定的な "echo-body:" の繰り返し〕・接続 512・
 #                    レート固定 50K req/s〔$ZRK_RATE_8GBIT〕・5 秒〔$ZRK_DUR_8GBIT〕。採点は latency と同じ式〔CPU / 要求・p99・mean〕— report-848 / 855）
 #   latency-1m/10k = zrk（レート固定 1M / 10K req/s・接続 1024・20 秒 $ZRK_DUR — /baseline11?a=1&b=2）。測るのはサーバの CPU / 要求。
@@ -32,6 +36,8 @@
 #                    GOMAXPROCS も 8）。本家の箱の 4 コアと手元の 4 コアは同じ桁なので、レートは箱で割り直さない（採点 = rate_ratio・CPU / 要求・p99）
 # 前提: gcannon（PATH か $GCANNON）と HttpArena の requests/（$ARENA_REQ — 無ければ GitHub から取る）・go・bin/sober
 # CPU の割り当て: SMT の兄弟を同じ側に置き、前半の物理コアをサーバ・後半を gcannon（$SERVER_CPUS / $LOAD_CPUS で上書き）
+# json-tls の wrk のスレッド数 = $WRK_THREADS（既定 = 負荷側の CPU 数 — 本家は 64。1 スレッドあたりの接続数が wrk の作業集合を決める — report-jtls-0）。
+# SOBER_MAIN_BIN = 建て済みの主の Sober のサーバ（main.sober を建てない）
 # 3 本目の交互（同じ箱で版や env を比べる口）: SOBER_ALT_BIN（別の版で建てた Sober のサーバの実行ファイル）か SOBER_ALT_ENV（Sober のサーバに足す env —
 # SOBER_SRV_ENV の後に書く）のどちらかがあれば、名前 sober-alt を sober / go と同じ周の輪に入れる（実行ファイルが無ければ主の Sober と同じもの）。
 # 要約には sober-alt / sober の比の表が付く
@@ -83,6 +89,12 @@ if [ ! -f "$REQ/get.raw" ]; then
         curl -fsSL -o "$REQ/$f" "https://raw.githubusercontent.com/MDA2AV/HttpArena/main/requests/$f" || { echo "local.sh: cannot fetch requests/$f" >&2; exit 2; }
     done
 fi
+case " $profiles " in *" async-db "*)
+    [ -n "${ASYNC_DB_URL:-}" ] || { echo "local.sh: async-db needs \$ASYNC_DB_URL (postgres://bench:bench@host:port/benchmark — seeded with data/pgdb-seed.sql)" >&2; exit 2; }
+    for l in 5 10 20 35 50; do
+        [ -f "$REQ/async-db-$l.raw" ] || curl -fsSL -o "$REQ/async-db-$l.raw" "https://raw.githubusercontent.com/MDA2AV/HttpArena/main/requests/async-db-$l.raw" || { echo "local.sh: cannot fetch requests/async-db-$l.raw" >&2; exit 2; }
+    done
+esac
 # json の要求（本家 json-comp の巡回 (25,4)・(40,8)・(50,6) — json は Accept-Encoding なし・json-comp は本家の頭 Accept-Encoding: gzip, br）と dataset
 DATA=${ARENA_DATA:-$W/dataset.json}
 case " $profiles " in *" json "*|*" json-comp"*)
@@ -125,7 +137,12 @@ case " $profiles " in *" latency-"*|*" 8gbit "*)
 esac
 
 # 建てる（Sober = 主の sober・Go = 静的）
-"$ROOT/bin/sober" build main.sober -o "$W/sober-srv" > "$W/b1.log" 2>&1 || { echo "local.sh: sober build failed: $(head -c 300 "$W/b1.log")" >&2; exit 1; }
+# SOBER_MAIN_BIN = 建て済みの主のサーバ（箱で鎖を回さない — EC2 の A/B は手元で建てた 2 版を運ぶ。report-jtls-0）
+if [ -n "${SOBER_MAIN_BIN:-}" ]; then
+    cp "$SOBER_MAIN_BIN" "$W/sober-srv" || { echo "local.sh: cannot copy SOBER_MAIN_BIN ($SOBER_MAIN_BIN)" >&2; exit 1; }
+else
+    "$ROOT/bin/sober" build main.sober -o "$W/sober-srv" > "$W/b1.log" 2>&1 || { echo "local.sh: sober build failed: $(head -c 300 "$W/b1.log")" >&2; exit 1; }
+fi
 ALT=
 if [ -n "${SOBER_ALT_BIN:-}" ] || [ -n "${SOBER_ALT_ENV:-}" ]; then
     ALT=1
@@ -159,9 +176,16 @@ start() {
         port=$((port + 1))
         tport=$((port + 400))
         # SOBER_SRV_ENV（httparena.yml の sober_env）は Sober のサーバだけに足す env — 後に書くので SOBER_WORKERS を上書きできる（report-1161 の pin の A/B）
+        # SOBER_UPSTREAM_FORM=1: Sober のサーバに SOBER_WORKERS を渡さない（本家の entry の形 — ワーカー数は affinity から・Serve の CPU の固定の既定が効く。
+        # SOBER_WORKERS を付けると固定が外れる — report-ec2w-0 5 節）。Go の GOMAXPROCS はそのまま
+        local wenv="SOBER_WORKERS=$ns"
+        case "$1" in sober|sober-alt) [ "${SOBER_UPSTREAM_FORM:-0}" = 1 ] && wenv="-u SOBER_WORKERS" ;; esac
         local xenv=
         [ "$1" = sober ] && xenv=${SOBER_SRV_ENV:-}
         [ "$1" = sober-alt ] && xenv="${SOBER_SRV_ENV:-} ${SOBER_ALT_ENV:-}"
+        # async-db の周だけ DB の繋ぎ先を渡す（本家 framework.sh — 他の種目のサーバは DATABASE_URL なしで立つ）
+        local denv=
+        [ "${cur_prof:-}" = async-db ] && denv="DATABASE_URL=$ASYNC_DB_URL DATABASE_MAX_CONN=${ASYNC_DB_MAX_CONN:-256}"
         # HTTPARENA_CG（下の注）: 走りごとの子の cgroup で起動する — 移すのは exec の前（cgroup v2 は移った後の確保だけを数える）
         CGDIR=
         if [ -n "${HTTPARENA_CG:-}" ]; then
@@ -170,7 +194,7 @@ start() {
         fi
         (
             [ -n "$CGDIR" ] && { echo "$BASHPID" > "$CGDIR/cgroup.procs" || echo "local.sh: cannot join $CGDIR" >&2; }
-            exec env SOBER_WORKERS=$ns GOMAXPROCS=$ns DATASET_PATH="$DATA" TLS_CERT="$CERT" TLS_KEY="$KEY" $xenv taskset -c "$scpus" "$b" "$port" "$tport"
+            exec env $wenv GOMAXPROCS=$ns DATASET_PATH="$DATA" TLS_CERT="$CERT" TLS_KEY="$KEY" $denv $xenv taskset -c "$scpus" "$b" "$port" "$tport"
         ) > "$W/srv.out" 2> "$W/srv.err" &
         SP=$!
         for i in $(seq 100); do
@@ -196,6 +220,8 @@ cpu_ticks() { awk '{ print $14 + $15 }' "/proc/$SP/stat" 2> /dev/null || echo 0;
 # thr_snap: サーバのスレッドごとの [tid utime stime]（tick）を標準出力へ。thr_row <名前> <種目> <周> <前の写し> <壁の秒>: 前後差をスレッドごとの CPU %
 # （user / sys / 計）にして "$out.thr" へ — limited-conn と latency 系の Sober の回だけ（report-1162: accept の輪の 1 本が直列の天井かの裏取り）。
 # main = 1 はプロセスの最初のスレッド（ワーカー 0 — Serve の accept の輪が走る）
+# cpu_busy <CPU の列 a,b,c>: /proc/stat のその CPU たちの busy（idle・iowait 以外）の tick の和
+cpu_busy() { awk -v l="$1" 'BEGIN { n = split(l, a, ","); for (i = 1; i <= n; i++) w["cpu" a[i]] = 1 } ($1 in w) { for (i = 2; i <= NF; i++) if (i != 5 && i != 6) b += $i } END { print b + 0 }' /proc/stat; }
 thr_snap() { for t in /proc/"$SP"/task/*; do echo "${t##*/} $(awk '{ print $14, $15 }' "$t/stat" 2> /dev/null)"; done; }
 thr_row() {
     local hz; hz=$(getconf CLK_TCK)
@@ -285,10 +311,17 @@ run_one() {
     fi
     # json-tls は wrk（--latency で分布を出す — 本家の採点は rps だけ・p99 は手元の読み）
     if [ "$prof" = json-tls ]; then
+        # サーバのスレッドごとの CPU（sober / sober-alt — ワーカーの偏り・遊び）と wrk 側の CPU（負荷側が天井かの判定 — 子の CPU の累計の差）
+        local thr= t0 w0 w1
+        case "$name" in sober|sober-alt) thr=1; thr_snap | sort > "$W/thr0"; t0=$(date +%s.%N) ;; esac
+        w0=$(cpu_busy "$LOAD_CPUS"); s0=$(cpu_busy "$SERVER_CPUS")
         c0=$(cpu_ticks)
-        txt=$(timeout $((dur + 30)) taskset -c "$LOAD_CPUS" "$WRKBIN" -t "$nload" -c "$conns" -d "${dur}s" --latency -s "$REQ/json-tls-rotate.lua" "https://localhost:$tport" 2>&1)
+        txt=$(timeout $((dur + 30)) taskset -c "$LOAD_CPUS" "$WRKBIN" -t "${WRK_THREADS:-$nload}" -c "$conns" -d "${dur}s" --latency -s "$REQ/json-tls-rotate.lua" "https://localhost:$tport" 2>&1)
         c1=$(cpu_ticks)
+        w1=$(cpu_busy "$LOAD_CPUS"); s1=$(cpu_busy "$SERVER_CPUS")
+        [ -n "$thr" ] && thr_row "$name" "$prof" "$k" "$W/thr0" "$(awk -v a="$t0" -v b="$(date +%s.%N)" 'BEGIN { print b - a }')"
         echo "$txt" > "$W/gc-$name-$prof-$k.txt"
+        echo "cpu-busy-ticks: load $((w1 - w0)) server $((s1 - s0)) (/proc/stat の CPU ごとの busy〔idle・iowait 以外〕の差・clock tick — 負荷側が天井かの判定)" >> "$W/gc-$name-$prof-$k.txt"
         local rps resp bad p99
         rps=$(echo "$txt" | sed -n 's/^Requests\/sec: *\([0-9.]*\).*/\1/p' | awk '{ printf "%.0f", $1 }')
         resp=$(echo "$txt" | sed -n 's/^ *\([0-9]*\) requests in .*/\1/p')
@@ -306,6 +339,7 @@ run_one() {
         limited-conn) args=(--raw "$REQ/get.raw,$REQ/post_cl.raw,$REQ/post_chunked.raw" -p 1 -r 10); url=http://localhost:$port ;;
         # 本家の形 = GET /delay/10 を 32000 接続で保持（req_per_conn 無制限・天井 = conns/delay = 3.2M）
         async) args=(--raw "$REQ/async-delay.raw" -p 1); url=http://localhost:$port; pc=${ASYNC_CONNS:-32000} ;;
+        async-db) args=(--raw "$REQ/async-db-5.raw,$REQ/async-db-10.raw,$REQ/async-db-20.raw,$REQ/async-db-35.raw,$REQ/async-db-50.raw" -p 1 -r 25); url=http://localhost:$port; pc=1024 ;;
         *) echo "local.sh: unknown profile $prof" >&2; return 1 ;;
     esac
     c0=$(cpu_ticks)

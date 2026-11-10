@@ -1943,29 +1943,29 @@ b0:
   %20 = const 10
   call @rt.print_char(%20)
   %21 = const 2
-  %22 = slotaddr s3
-  %23 = const 0
-  store %22[0], %23
-  store %22[1], %23
+  %22 = const 0
+  %23 = slotaddr s3
+  store %23[0], %22
+  store %23[1], %22
   %24 = const 0
-  store %22[0], %24
-  store %22[1], %21
-  %25 = load.i64 %22[0]
-  %26 = load.i64 %22[1]
+  store %23[0], %24
+  store %23[1], %21
+  %25 = load.i64 %23[0]
+  %26 = load.i64 %23[1]
   %27 = call @main.area(%25, %26)
   call @rt.print_int(%27)
   %28 = const 10
   call @rt.print_char(%28)
   %29 = const 3
-  %30 = slotaddr s3
-  %31 = const 0
-  store %30[0], %31
-  store %30[1], %31
+  %30 = const 0
+  %31 = slotaddr s3
+  store %31[0], %30
+  store %31[1], %30
   %32 = const 1
-  store %30[0], %32
-  store %30[1], %29
-  %33 = load.i64 %30[0]
-  %34 = load.i64 %30[1]
+  store %31[0], %32
+  store %31[1], %29
+  %33 = load.i64 %31[0]
+  %34 = load.i64 %31[1]
   %35 = call @main.area(%33, %34)
   call @rt.print_int(%35)
   %36 = const 10

@@ -216,6 +216,25 @@ if [ "${INCR_SELF_ONLY:-0}" != 1 ] && [ "$MODE" != self ]; then
             echo "incrcheck examples default-cold: FAIL the check cache is not on by default (nothing written to SOBER_CACHE)"
         fi
     done
+    # domain の脱出の被覆（diag.Par kind 39 — 健全性の規則が増分のキャッシュの当たり外れに依らないこと）: 作る側（main — pg.OpenPool の k）は
+    # γ の当たりのまま、受け取る側の package（keep）だけを規則 2 を破る本体に編集して温の build と check — 冷の check と同じ拒否であること
+    D=$W/domkeep
+    mkdir -p "$D/testdata/domkeep" "$D/testdata/checkneg"
+    cp -r testdata/domkeep/keep "$D/testdata/domkeep/"
+    cp -r testdata/checkneg/domain_keep "$D/testdata/checkneg/"
+    sed 's/^    out = append(out, p)$/    _ = len(out)/' testdata/domkeep/keep/keep.sober > "$D/testdata/domkeep/keep/keep.sober"
+    ( cd "$D" && SOBER_CACHE=$D/c SOBER_BUILD_CACHE=1 "$C" build testdata/checkneg/domain_keep -o "$D/ok" > /dev/null 2>&1 ) || { bad=$((bad + 1)); echo "incrcheck domkeep: FAIL base build"; }
+    cp testdata/domkeep/keep/keep.sober "$D/testdata/domkeep/keep/keep.sober"
+    want=$(cd "$D" && SOBER_CHECK_CACHE=0 "$C" check testdata/checkneg/domain_keep 2>&1 | head -1)
+    gotb=$(cd "$D" && SOBER_CACHE=$D/c SOBER_BUILD_CACHE=1 "$C" build testdata/checkneg/domain_keep -o "$D/bad" 2>&1 | head -1)
+    gotc=$(cd "$D" && SOBER_CACHE=$D/c SOBER_CHECK_CACHE=1 SOBER_CHECK_REPLAY=0 "$C" check testdata/checkneg/domain_keep 2>&1 | grep -v '^cache:' | head -1)
+    case "$want" in *"outlives the scope"*) ;; *) bad=$((bad + 1)); echo "incrcheck domkeep: FAIL cold check is not kind 39: $want" ;; esac
+    if [ "$gotb" = "$want" ] && [ "$gotc" = "$want" ]; then
+        echo "incrcheck domkeep: warm build + check match the cold check (kind 39 with the maker package hit)"
+    else
+        bad=$((bad + 1))
+        echo "incrcheck domkeep: FAIL warm build: $gotb / warm check: $gotc"
+    fi
 fi
 if [ $bad = 0 ]; then
     echo "incrcheck: ok"

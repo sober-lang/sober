@@ -1909,16 +1909,16 @@ b9:
   call @rt.print_char(%45)
   %46 = load.i64 %2[0]
   %47 = const 1
-  %48 = slotaddr s1
-  %49 = const 0
-  store %48[0], %49
-  store %48[1], %49
-  store %48[0], %46
-  store %48[1], %47
+  %48 = const 0
+  %49 = slotaddr s1
+  store %49[0], %48
+  store %49[1], %48
+  store %49[0], %46
+  store %49[1], %47
   %50 = slotaddr s2
-  %51 = load.i64 %48[0]
+  %51 = load.i64 %49[0]
   store %50[0], %51
-  %52 = load.i64 %48[1]
+  %52 = load.i64 %49[1]
   store %50[1], %52
   %53 = load.i64 %50[0]
   %54 = const 42
@@ -2030,24 +2030,24 @@ b17:
   call @rt.print_int(%109)
   %110 = const 10
   call @rt.print_char(%110)
-  %111 = slotaddr s5
-  %112 = const 0
-  store %111[0], %112
-  store %111[1], %112
-  store %111[2], %112
-  store %111[3], %112
-  store %111[4], %112
-  store %111[5], %112
-  store %111[6], %112
+  %111 = const 0
+  %112 = slotaddr s5
+  store %112[0], %111
+  store %112[1], %111
+  store %112[2], %111
+  store %112[3], %111
+  store %112[4], %111
+  store %112[5], %111
+  store %112[6], %111
   %113 = region.depth
   %114 = region.bump %113
   %115 = ptoi %114
-  store %111[0], %115
+  store %112[0], %115
   %116 = const 0
-  store %111[1], %116
-  store %111[2], %113
+  store %112[1], %116
+  store %112[2], %113
   %117 = const 3
-  %118 = gep.word %111, %117
+  %118 = gep.word %112, %117
   %119 = region.depth
   %120 = region.bump %119
   %121 = ptoi %120
@@ -2056,19 +2056,19 @@ b17:
   store %118[1], %122
   store %118[2], %119
   %123 = slotaddr s6
-  %124 = load.i64 %111[0]
+  %124 = load.i64 %112[0]
   store %123[0], %124
-  %125 = load.i64 %111[1]
+  %125 = load.i64 %112[1]
   store %123[1], %125
-  %126 = load.i64 %111[2]
+  %126 = load.i64 %112[2]
   store %123[2], %126
-  %127 = load.i64 %111[3]
+  %127 = load.i64 %112[3]
   store %123[3], %127
-  %128 = load.i64 %111[4]
+  %128 = load.i64 %112[4]
   store %123[4], %128
-  %129 = load.i64 %111[5]
+  %129 = load.i64 %112[5]
   store %123[5], %129
-  %130 = load.i64 %111[6]
+  %130 = load.i64 %112[6]
   store %123[6], %130
   %131 = load.i64 %2[0]
   %132 = const 1

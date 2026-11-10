@@ -51,7 +51,7 @@ func UnpackConn(w []int, at int) Ch {
     rkey, a3 := getWords(w, a2)
     riv, a4 := getWords(w, a3)
     hbuf, _ := getWords(w, a4)
-    return Ch{ph: CConnected{}, th: crypto.sha256.New(), priv: []byte{}, ch1: []byte{}, hrr: false, suite: w[at + 2], rd: rd, wr: wr, hsS: []byte{}, cHs: []byte{}, sHs: []byte{},
+    return Ch{ph: CConnected{}, th: crypto.sha256.New(), group: 0, priv: []byte{}, ch1: []byte{}, hrr: false, suite: w[at + 2], rd: rd, wr: wr, hsS: []byte{}, cHs: []byte{}, sHs: []byte{},
         alpn: "", leaf: noLeaf(), hbuf: hbuf, ccs: true, sessid: []byte{}, upd: w[at + 1] != 0,
         v12: w[at] != 0, crandom: []byte{}, srandom: []byte{}, pms: []byte{}, ms: []byte{}, wkey: wkey, wiv: wiv, wseq: w[at + 5], rkey: rkey, riv: riv, rseq: w[at + 6],
         rkeyed: w[at + 3] != 0, wkeyed: w[at + 4] != 0, certReq: false}

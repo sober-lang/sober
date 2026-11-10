@@ -1,0 +1,16 @@
+package main
+
+// A pg.Pool holds a domain, so it cannot outlive pg.OpenPool's k (diag.Par kind 39): appending it to a slice made outside k
+
+import "std/pg"
+
+func main() {
+    mut hold := mut []pg.Pool{}
+    e := pg.OpenPool("postgres://u:p@127.0.0.1:1/db", (p) => {
+        hold = append(hold, p)
+    })
+    println(e == nil)
+    _ = pg.With(hold[0], (c) => {
+        println("borrowed")
+    })
+}

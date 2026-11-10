@@ -1,0 +1,166 @@
+package pg
+
+// 接続のプール（language.md 28 節「資源とストリーム」・11 節「domain」）: 接続の実体は std の内側の預かり所（internal.lot — fd と値の外の置き場）に住み、
+// 何本を待機・何本を張ってよいかは domain が数える。With は待機の接続を借りるか新しく張り、k が普通に返れば預け直す。
+// k を `?` / return で抜けた・接続が壊れた・トランザクションの途中で返った接続は預け直さずに閉じる（途中の状態の接続を他の借り手に渡さない）。
+// 借り手の task が死んだ枠は、次の With の頭で預かり所が回収して数えを直す（死は domain の毒にしない — 二相: 回収はここ・数えの直しは domain）
+
+import "std/internal/hsc"
+import "std/internal/lot"
+import "std/internal/pgwire"
+import "std/internal/record"
+import "std/internal/sock"
+import "std/io"
+import "std/net"
+import "std/task"
+import "std/time"
+
+// プール（domain と預かり所の組 — 捕獲でき、関数の実引数にできる。OpenPool の k の中でだけ生きる）
+type Pool struct {
+    d task.Domain[poolSt]
+    lot internal.lot.Lot
+    c cfg
+    cp internal.hsc.CParams
+}
+
+// domain の状態: 待機の本数・張っている本数（待機 + 貸し出し中）・上限
+type poolSt struct {
+    idle int
+    open int
+    max int
+}
+
+const defaultPoolSize = 10
+const defaultPoolWait = 30 * 1000 * task.MS
+
+// at（Open と同じ URL・Policy）の接続を最大 size 本（既定 10・1 未満は 1）まで張って共有するプールを k に渡す。k が返ったら待機の接続に Terminate を送って全部閉じる。
+// wait = With が空きを待つ上限（ns・既定 30 秒 — 越えたら io.Expired）。接続は With の初めての借りで張る（OpenPool は繋がない）
+@errors(BadUrl)
+@effects(block, io, panic, nondet)
+func OpenPool(at string, k func(p Pool), size int?, wait int?, policy Policy?) error? {
+    t, ok := parseUrl(at)
+    if !ok {
+        return BadUrl{}
+    }
+    n := if size == nil { defaultPoolSize } else if size < 1 { 1 } else { size }
+    w := if wait == nil { defaultPoolWait } else { wait }
+    c := resolve(t, if policy == nil { Policy{} } else { policy })
+    cp0 := internal.hsc.NewCParams(c.host, []string{}, c.roots, time.UnixSec(time.Now()), []byte{})
+    cp := if c.allowTls12 { internal.hsc.WithTls12(cp0) } else { cp0 }
+    l := internal.lot.New(n, linkW)
+    _, _ = task.Run((s task.Scope) => {
+        d := task.NewDomain(s, poolSt{idle: 0, open: 0, max: n}, wait: w)
+        k(Pool{d: d, lot: l, c: c, cp: cp})
+        0
+    })
+    internal.lot.Close(l, (fd, blk) => {
+        if !dead(blk) {
+            _ = sendMsg(fd, blk, internal.pgwire.EncTerminate())
+            _ = closeTls(fd, blk)
+        }
+    })
+    return nil
+}
+
+// p から接続を 1 本借りて k に渡す（待機が無く張れる本数も尽きていれば、返されるまで来た順に待つ）。k の中の誤りは k の中で受ける。
+// k が普通に返り、接続が使える状態（トランザクションの外・読み残しなし）なら預け直す — それ以外は閉じる
+@errors(Dns, Tls, Auth, Server, Protocol, Closed, io.Expired)
+@effects(block, io, panic, nondet)
+func With(p Pool, k func(c Conn)) error? {
+    lost := internal.lot.Reap(p.lot)
+    if lost > 0 {
+        _ = task.Update(p.d, (st mut poolSt) => {
+            st.open -= lost
+            0
+        })
+    }
+    mode, we := task.Await(p.d, (st mut poolSt) => {
+        if st.idle > 0 {
+            st.idle -= 1
+            1
+        } else {
+            st.open += 1
+            2
+        }
+    }, when: (st poolSt) => st.idle > 0 || st.open < st.max)
+    if we != nil {
+        return io.Expired{}
+    }
+    i := if mode == 1 { internal.lot.TakeIdle(p.lot) } else { internal.lot.TakeFree(p.lot) }
+    if i < 0 {
+        // 数えと枠が食い違った（到達しない）: 取った分を返して閉じた扱い
+        giveBack(p, mode)
+        return Closed{}
+    }
+    if mode == 2 {
+        de := dialInto(p, i)
+        if de != nil {
+            internal.lot.Release(p.lot, i)
+            giveBack(p, 2)
+            return classify(de)
+        }
+    }
+    internal.lot.Hold(p.lot, i)
+    mut done := false
+    defer abandon(p, i, done)
+    c := Conn{fd: internal.lot.Fd(p.lot, i), blk: internal.lot.Place(p.lot, i), cp: p.cp, p: p.c, seal: connSeal{}}
+    k(c)
+    done = true
+    if reusable(c.blk) {
+        internal.lot.Park(p.lot, i)
+        _ = task.Update(p.d, (st mut poolSt) => {
+            st.idle += 1
+            0
+        })
+    } else {
+        internal.lot.Drop(p.lot, i)
+        giveBack(p, 2)
+    }
+    return nil
+}
+
+// 枠 i に新しく張って認証まで済ませる（期限 = Policy.timeout）
+@errors(net.Bad, net.NoHost, net.NonASCIIHost, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed, internal.pgwire.Protocol, Tls, Auth, Server)
+@effects(block, io, panic, nondet)
+func dialInto(p Pool, i int) error? {
+    fd := internal.sock.Dial("${p.c.host}:${p.c.port}")?
+    internal.lot.Fresh(p.lot, i, fd)
+    blk := internal.lot.Place(p.lot, i)
+    to := p.c.timeout
+    mut err := noErr()
+    _, re := task.Run((sc) => {
+        err = startup(fd, blk, p.c, p.cp)
+        0
+    }, deadline: to)
+    if re != nil {
+        return io.Expired{}
+    }
+    return err
+}
+
+// k を `?` / return で抜けた枠を閉じて数えを直す（普通に返った枠は done = true で何もしない）
+@effects(block, io, nondet)
+func abandon(p Pool, i int, done bool) {
+    if !done {
+        internal.lot.Drop(p.lot, i)
+        giveBack(p, 2)
+    }
+}
+
+// 取った許可を返す: mode 1 = 待機の 1 本を戻す・2 = 張る本数を 1 減らす
+@effects(nondet)
+func giveBack(p Pool, mode int) {
+    _ = task.Update(p.d, (st mut poolSt) => {
+        if mode == 1 {
+            st.idle += 1
+        } else {
+            st.open -= 1
+        }
+        0
+    })
+}
+
+// 預け直せる接続か: 壊れていない・往復の途中でない・トランザクションの外（ReadyForQuery の 'I'）・読み残しがない
+func reusable(blk []int) bool {
+    return !dead(blk) && (flagsOf(blk) & bBusy) == 0 && getW(blk, lTxStatus) == int('I') && getW(blk, lTxDepth) == 0 && getW(blk, lAppLen) == 0 && getW(blk, lRecLen) == 0
+}

@@ -1,0 +1,168 @@
+package main
+
+// json.Encode の速い道（上界 → 1 本確保 → 位置で書く・loader/jsonshape.sober の $jsonSize / $jsonWrite）と builder の道
+// （EncodeWith に空の辞書 — 同じ綴りを欄ごとの部品で書く）の照合: 無作為の値でバイト一致。エスケープの要る文字列・JSON に書けない float は
+// 速い道が −1 を返して builder の道でやり直す形（float の NaN / ±Inf は両方 panic なので外す）。不一致なら最初の 1 件を印字して 1
+
+import "std/iter"
+import "std/json"
+import "std/quick"
+
+type Inner struct {
+    a int
+    s string
+    b bool
+}
+
+type Deep struct {
+    in Inner
+    ins []Inner
+    op Inner?
+}
+
+type Rec struct {
+    i int
+    neg int
+    big int
+    f float
+    s string
+    t bool
+    xs []int
+    ss []string
+    bs []bool
+    fs []float
+    oi int?
+    os string?
+    in Inner
+    ins []Inner
+    deep Deep
+    deeps []Deep
+    od Deep?
+    sso []string?
+}
+
+
+// エスケープの要らない断片（速い道）と要る断片（やり直しの道）— 要る断片は 1/300 で混ぜる（1 件の値の中の文字列が全部きれいな試行が多数派になるように）
+func clean() []string {
+    return []string{"", "a", "héllo", "日本語", "😀", "abcdefghijklmnopqrstuvwxyz0123456789", "/", "<&>", " "}
+}
+
+func dirty() []string {
+    c1 := string([]byte{1}) catch ""
+    c31 := string([]byte{'x', 31, 'y'}) catch ""
+    return []string{"\"", "\\", "\n", "\t", c1, c31, "\r"}
+}
+
+func str(q mut quick.Src) string {
+    cs := clean()
+    ds := dirty()
+    mut s := ""
+    n := quick.Int(mut q, 0, 4)
+    for i <- iter.Range(0, n) {
+        s = s + if quick.Int(mut q, 0, 1000) == 437 { quick.Elem(mut q, ds) } else { quick.Elem(mut q, cs) }
+    }
+    return s
+}
+
+func num(q mut quick.Src) int {
+    return switch quick.Pick(mut q, 6) {
+    case 0: quick.Int(mut q, 0, 9)
+    case 1: quick.Int(mut q, 10, 99999999)
+    case 2: quick.Int(mut q, 100000000, 4611686018427387903) * 2 + quick.Int(mut q, 0, 1)
+    case 3: 0 - quick.Int(mut q, 1, 4611686018427387903) * 2
+    case 4: -9223372036854775807 - 1
+    default: quick.Elem(mut q, []int{0, 9, 10, 99, 100, 99999999, 100000000, 9223372036854775807})
+    }
+}
+
+func flt(q mut quick.Src) float {
+    mut f := quick.Float(mut q)
+    if f != f || f - f != 0.0 {
+        f = 0.25
+    }
+    return f
+}
+
+func ostr(q mut quick.Src) string? {
+    if quick.Bool(mut q) {
+        return str(mut q)
+    }
+    return nil
+}
+
+func onum(q mut quick.Src) int? {
+    if quick.Bool(mut q) {
+        return num(mut q)
+    }
+    return nil
+}
+
+func oinner(q mut quick.Src) Inner? {
+    if quick.Bool(mut q) {
+        return inner(mut q)
+    }
+    return nil
+}
+
+func odeep(q mut quick.Src) Deep? {
+    if quick.Bool(mut q) {
+        return deep(mut q)
+    }
+    return nil
+}
+
+func inner(q mut quick.Src) Inner {
+    return Inner{a: num(mut q), s: str(mut q), b: quick.Bool(mut q)}
+}
+
+func deep(q mut quick.Src) Deep {
+    return Deep{in: inner(mut q), ins: quick.Slice(mut q, 3, () => inner(mut q)), op: oinner(mut q)}
+}
+
+func rec(q mut quick.Src) Rec {
+    return Rec{
+        i: num(mut q), neg: 0 - quick.Int(mut q, 0, 1000), big: num(mut q), f: flt(mut q), s: str(mut q), t: quick.Bool(mut q),
+        xs: quick.Slice(mut q, 5, () => num(mut q)), ss: quick.Slice(mut q, 4, () => str(mut q)), bs: quick.Slice(mut q, 3, () => quick.Bool(mut q)),
+        fs: quick.Slice(mut q, 3, () => flt(mut q)),
+        oi: onum(mut q), os: ostr(mut q),
+        in: inner(mut q), ins: quick.Slice(mut q, 4, () => inner(mut q)), deep: deep(mut q), deeps: quick.Slice(mut q, 2, () => deep(mut q)),
+        od: odeep(mut q),
+        sso: quick.Slice(mut q, 2, () => ostr(mut q)),
+    }
+}
+
+func hasEsc(s string) bool {
+    for c <- bytes(s) {
+        if c == '\\' {
+            return true
+        }
+    }
+    return false
+}
+
+func main() int {
+    mut q := quick.Seed(20261109)
+    mut bad := 0
+    mut fast := 0
+    quick.Check(mut q, () => {
+        r := rec(mut q)
+        a := json.Encode[Rec](r)
+        b := json.EncodeWith[Rec](r, map[string]string{})
+        if a != b && bad == 0 {
+            println("fast:    ${a}")
+            println("builder: ${b}")
+            bad = 1
+        }
+        if !hasEsc(a) {
+            fast += 1
+        }
+        a == b
+    }, trials: 3000)
+    // 速い道を通った試行（エスケープの無い出力）が十分にあること
+    if fast < 1000 {
+        println("jsonfast: too few fast-path trials (${fast})")
+        return 1
+    }
+    println("jsonfast: ok (fast ${fast})")
+    return 0
+}

@@ -1,0 +1,412 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/http/client",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/http/server",
+      "tok": 7
+    }
+  ],
+  "types": [
+    {
+      "name": "Mine",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "dangerouslyLoud",
+            "type": {
+              "k": "name",
+              "name": "bool"
+            },
+            "tok": 13
+          }
+        ]
+      },
+      "tok": 10,
+      "span": {
+        "start": 9,
+        "end": 18
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "pick",
+      "type_params": [],
+      "params": [
+        {
+          "name": "b",
+          "type": {
+            "k": "name",
+            "name": "bool"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "bool"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "b",
+                "tok": 27
+              }
+            ],
+            "tok": 26
+          }
+        ]
+      },
+      "tok": 19,
+      "bodiless": false,
+      "span": {
+        "start": 18,
+        "end": 31
+      },
+      "sig_end": 25
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "allow"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "pick",
+                  "tok": 38
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "true",
+                    "tok": 40
+                  }
+                ],
+                "tok": 39
+              }
+            ],
+            "tok": 36
+          },
+          {
+            "k": "bind",
+            "names": [
+              "loud"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "http.client.Policy",
+                "elems": [
+                  {
+                    "key": "dangerouslyAllowTls12",
+                    "value": {
+                      "k": "ident",
+                      "name": "true",
+                      "tok": 53
+                    }
+                  }
+                ],
+                "tok": 45,
+                "type_args": []
+              }
+            ],
+            "tok": 43
+          },
+          {
+            "k": "bind",
+            "names": [
+              "viaVar"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "http.client.Policy",
+                "elems": [
+                  {
+                    "key": "dangerouslyAllowTls12",
+                    "value": {
+                      "k": "ident",
+                      "name": "allow",
+                      "tok": 66
+                    }
+                  }
+                ],
+                "tok": 58,
+                "type_args": []
+              }
+            ],
+            "tok": 56
+          },
+          {
+            "k": "bind",
+            "names": [
+              "quiet"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "http.client.Policy",
+                "elems": [
+                  {
+                    "key": "dangerouslyAllowTls12",
+                    "value": {
+                      "k": "ident",
+                      "name": "false",
+                      "tok": 79
+                    }
+                  }
+                ],
+                "tok": 71,
+                "type_args": []
+              }
+            ],
+            "tok": 69
+          },
+          {
+            "k": "bind",
+            "names": [
+              "omitted"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "http.client.Policy",
+                "elems": [],
+                "tok": 84,
+                "type_args": []
+              }
+            ],
+            "tok": 82
+          },
+          {
+            "k": "bind",
+            "names": [
+              "c"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "http.server.SetCookie",
+                "elems": [
+                  {
+                    "key": "name",
+                    "value": {
+                      "k": "strlit",
+                      "value": "s",
+                      "tok": 102
+                    }
+                  },
+                  {
+                    "key": "value",
+                    "value": {
+                      "k": "strlit",
+                      "value": "v",
+                      "tok": 106
+                    }
+                  },
+                  {
+                    "key": "dangerouslyAllowHttp",
+                    "value": {
+                      "k": "ident",
+                      "name": "true",
+                      "tok": 110
+                    }
+                  },
+                  {
+                    "key": "dangerouslyScriptReadable",
+                    "value": {
+                      "k": "ident",
+                      "name": "allow",
+                      "tok": 114
+                    }
+                  }
+                ],
+                "tok": 94,
+                "type_args": []
+              }
+            ],
+            "tok": 92
+          },
+          {
+            "k": "bind",
+            "names": [
+              "m"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Mine",
+                "elems": [
+                  {
+                    "key": "dangerouslyLoud",
+                    "value": {
+                      "k": "ident",
+                      "name": "true",
+                      "tok": 123
+                    }
+                  }
+                ],
+                "tok": 119,
+                "type_args": []
+              }
+            ],
+            "tok": 117
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "_",
+                "tok": 126
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "ident",
+                "name": "loud",
+                "tok": 128
+              }
+            ],
+            "tok": 126
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "_",
+                "tok": 130
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "ident",
+                "name": "viaVar",
+                "tok": 132
+              }
+            ],
+            "tok": 130
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "_",
+                "tok": 134
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "ident",
+                "name": "quiet",
+                "tok": 136
+              }
+            ],
+            "tok": 134
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "_",
+                "tok": 138
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "ident",
+                "name": "omitted",
+                "tok": 140
+              }
+            ],
+            "tok": 138
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "_",
+                "tok": 142
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "ident",
+                "name": "c",
+                "tok": 144
+              }
+            ],
+            "tok": 142
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "_",
+                "tok": 146
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "ident",
+                "name": "m",
+                "tok": 148
+              }
+            ],
+            "tok": 146
+          }
+        ]
+      },
+      "tok": 32,
+      "bodiless": false,
+      "span": {
+        "start": 31,
+        "end": 152
+      },
+      "sig_end": 35
+    }
+  ],
+  "consts": []
+}

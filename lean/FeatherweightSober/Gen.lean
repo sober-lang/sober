@@ -112,6 +112,7 @@ def genBase (t : Ty) : Rand Expr := do
   | .slice _ _ _ => return .triv
   | .map _ _ _ => return .triv
   | .chan _ _ => return .triv
+  | .dom _ _ => return .triv
   | .own _ _ _ => return .triv
   | .fn _ _ => return .triv
   | .tvar _ => return .triv
@@ -709,7 +710,7 @@ def genTyped (t : Ty) (Γ : Ctx) (b d : Nat) : Nat → Rand Expr
       -- scope の型は union t (union unit int)（inr (inl) = 子の死・inr (inr) = 未回収の失敗）: case で t へ戻す（inr の腕は unreach — 乱数を消費しない）
       let sc : Expr → Expr := fun e => .case (.scope t .int e) (.var 0) (.unreach t)
       let ok : Expr → Expr := fun v => .pair v (.nil .int)
-      match ← rnd (if t = .int then 5 else 2) with
+      match ← rnd (if t = .int then 6 else 2) with
       | 0 => -- join
         let s ← genTy 1
         let a ← genTyped s Γ1 b dS fuel
@@ -734,6 +735,16 @@ def genTyped (t : Ty) (Γ : Ctx) (b d : Nat) : Nat → Rand Expr
         let a ← genTyped s Γ1 b dS fuel
         let bs ← genBytes
         return sc (.letE (.spawn (.var 0) a (ok (.strlit bs dS))) (.lenE (.fst (.join (ktI (.slice false d .byte)) (.var 0)))))
+      | 6 => -- domain（家の region = d）: 子が入って状態を受け、新しい状態で出て、入ったときの状態を返す・親は join の後に続ける
+        let s ← genTy 1
+        let init ← genTyped s Γ1 b dS fuel
+        let sIn := s.relocR dS
+        let nv ← genTyped s [sIn, Ty.dom d s] dS (dS + 1) fuel
+        let body : Expr := .letE (.denter s (.var 0)) (.letE (.dexit (.var 1) nv) (.var 1))
+        let hk := Ty.prod sIn (.opt .int)
+        let k ← genTyped t (hk.relocR d :: Ty.own .task d (hk.relocR d) :: Ty.dom d s :: Γ1) b dS fuel
+        return sc (.letE (.dnew d init s)
+          (.letE (.spawn (.var 1) (.var 0) (ok body)) (.letE (.join (hk.relocR d) (.var 0)) k)))
       | 1 => -- try（死んだら nil — nil の腕は続きの値）
         let s ← genTy 1
         let a ← genTyped s Γ1 b dS fuel
@@ -792,7 +803,7 @@ def genChaos : Nat → Rand Expr
     | 6 => return .strlit (← genBytes) (← rnd 2)
     | _ => return .nil (← genChaosTy 1)
   | fuel + 1 => do
-    match ← rnd 67 with
+    match ← rnd 70 with
     | 0 => genChaos 0
     | 1 => return .letE (← genChaos fuel) (← genChaos fuel)
     | 2 => return .add (← genChaos fuel) (← genChaos fuel)
@@ -876,6 +887,9 @@ def genChaos : Nat → Rand Expr
     | 64 => return .callMv (← rnd 2) (← genChaos fuel) (← genChaos fuel)
     | 65 => return .fold (← genChaosTy fuel) (← genChaos fuel)
     | 66 => return .unfold (← genChaos fuel)
+    | 67 => return .dnew (← rnd 2) (← genChaos fuel) (← genChaosTy fuel)
+    | 68 => return .denter (← genChaosTy fuel) (← genChaos fuel)
+    | 69 => return .dexit (← genChaos fuel) (← genChaos fuel)
     | _ => do
       let op ← pickD [CmpOp.eq, .ne, .le, .gt, .ge]
       return .cmp op (← genChaos fuel) (← genChaos fuel)
@@ -914,6 +928,8 @@ def kids : Expr → List Expr
   | .scope _ _ e | .join _ e | .tryJ _ e => [e]
   | .spawn sc a e => [sc, a, e]
   | .fold _ e | .unfold e => [e]
+  | .dnew _ i _ | .denter _ i => [i]
+  | .dexit d v => [d, v]
   | _ => []
 
 /-- 子を差し替える（kids と同じ順・同じ数。数が合わなければ元のまま） -/
@@ -977,6 +993,9 @@ def setKids (x : Expr) (cs : List Expr) : Expr :=
   | .spawn _ _ _, [sc, a, e] => .spawn sc a e
   | .fold t _, [e] => .fold t e
   | .unfold _, [e] => .unfold e
+  | .dnew r _ t, [i] => .dnew r i t
+  | .denter t _, [d] => .denter t d
+  | .dexit _ _, [d, v] => .dexit d v
   | x, _ => x
 
 /-- 前順の節の列（fuel = 深さの上限） -/
@@ -1004,7 +1023,8 @@ def mutKinds : Expr → List String
   | .mkmapAt _ _ _ => ["flag", "region", "key"]
   | .strlit _ _ | .newchan _ _ | .newch _ _ _ => ["region"]
   | .scope _ _ _ | .tryJ _ _ | .join _ _ => ["annty"]
-  | .copyTo _ _ _ => ["region", "annty"]
+  | .copyTo _ _ _ | .dnew _ _ _ => ["region", "annty"]
+  | .denter _ _ => ["annty"]
   | .callMv _ _ _ => ["region"]
   | .var _ => ["var"]
   | .ann _ _ | .nil _ | .inl _ _ | .inr _ _ | .label _ _ | .unreach _ | .getm _ _ _ | .delm _ _ _ => ["annty"]
@@ -1039,6 +1059,9 @@ def applyMut (kind : String) (e : Expr) : Rand Expr := do
   | "region", .newchan rc t => return .newchan (rc + 1) t
   | "region", .newch r cap t => if (← rnd 1) = 0 then return .newch (← bumpR r) cap t else return .newch r 0 t
   | "region", .copyTo k t x => return .copyTo (← bumpR k) t x
+  | "region", .dnew r i t => return .dnew (← bumpR r) i t
+  | "annty", .dnew r i t => return .dnew r i (← otherTy t)
+  | "annty", .denter t x => return .denter (← otherTy t) x
   | "region", .callMv a f x => return .callMv (← bumpR a) f x
   | "key", .mkmap m (.prod _ v) => return .mkmap m (.prod (← pickD [Ty.bool, .f64, .opt .int]) v)
   | "key", .mkmapAt m (.prod _ v) r => return .mkmapAt m (.prod (← pickD [Ty.bool, .f64, .opt .int]) v) r

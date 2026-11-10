@@ -182,3 +182,31 @@ C-20. `lp := task.NewLocal((w mut T) => 整え)` はワーカーごとの作業�
 例: [`examples/lease.sober`](../../examples/lease.sober)・[`examples/lease_alias.sober`](../../examples/lease_alias.sober)・[`examples/lease_iter.sober`](../../examples/lease_iter.sober)・[`examples/lease_bytes.sober`](../../examples/lease_bytes.sober)・[`examples/lease_yield.sober`](../../examples/lease_yield.sober)
 拒否: [`examples/lease_neg_form.sober`](../../examples/lease_neg_form.sober)・[`examples/lease_neg_mutlam.sober`](../../examples/lease_neg_mutlam.sober)・[`examples/lease_neg_shape.sober`](../../examples/lease_neg_shape.sober)・[`examples/lease_neg_prep.sober`](../../examples/lease_neg_prep.sober)・[`examples/lease_neg_zero.sober`](../../examples/lease_neg_zero.sober)・[`examples/lease_neg_reserved.sober`](../../examples/lease_neg_reserved.sober)
 決定: [language.md 11 節・26 節・32 節](../language.md)・[region-domain-pool.md 4d 節](../region-domain-pool.md)
+
+## 10.8 domain
+
+C-21. `d := task.NewDomain(s, init)` は札 s の scope に状態の初期値 init を持つ domain `task.Domain[S]` を作る（S は init の型）。S は mut の器（mut slice / mut map — 要素が mut の器を持つ入れ子も）を持てる。init は作るときに深く写す（init に渡した器と別名にならない）。`wait:`（Await の待ちの上限・ナノ秒の相対時間）は省略でき、値は budget: と同じ形の整数式。d は捕獲でき（子の task へも）、関数の実引数にできる（struct の欄に入れて渡すのも）。scope の値・task の結果・チャネルのペイロード・関数の戻り値にはできない（札・handle と同じ側）。d は scope の出口で状態ごと消えるので、d（と d を持つ値）は s より外で作った場所へ書けず、mut 仮引数を根とする場所へも書けない（呼び先は場所の scope を知らない）。s より外の scope の札で Spawn した task は d を捕獲できない（kind 39）。
+例: [`examples/domain_counter.sober`](../../examples/domain_counter.sober)・[`examples/domain_arg.sober`](../../examples/domain_arg.sober)・[`examples/domain_scope_place.sober`](../../examples/domain_scope_place.sober)・[`examples/domain_slots.sober`](../../examples/domain_slots.sober)
+拒否: [`examples/domain_neg_escape.sober`](../../examples/domain_neg_escape.sober)・[`examples/domain_neg_return.sober`](../../examples/domain_neg_return.sober)・[`examples/domain_neg_outlive_append.sober`](../../examples/domain_neg_outlive_append.sober)・[`examples/domain_neg_outlive_field.sober`](../../examples/domain_neg_outlive_field.sober)・[`examples/domain_neg_outlive_spawn.sober`](../../examples/domain_neg_outlive_spawn.sober)・[`examples/domain_neg_outlive_mutparam.sober`](../../examples/domain_neg_outlive_mutparam.sober)・[`examples/domain_neg_outlive_swap.sober`](../../examples/domain_neg_outlive_swap.sober)・[`examples/domain_neg_outlive_pool.sober`](../../examples/domain_neg_outlive_pool.sober)
+決定: [language.md 11 節「domain」](../language.md)
+
+C-22. `task.Update(d, (st mut S) => 本体)` は本体を d の状態に当て、本体の値を呼び手の最内の region へ写して返す。`task.Read(d, (st S) => 本体)` は状態を変えずに本体の値を返す。d の呼び出しは 1 つずつ走り、走った順は録られる入力（C-15 の「io の入力」に含む — 順を固定すれば scope の値はスケジュールに依らない）。3 つの関数は効果 `nondet` を持つ。
+例: [`examples/domain_counter.sober`](../../examples/domain_counter.sober)
+決定: [language.md 11 節「domain」・12 節](../language.md)
+
+C-23. `task.Await(d, (st mut S) => 本体, when: (st S) => 条件)` は条件が真になるまで待ってから本体を当て、`(R, error?)` を返す。待つ呼び出しは来た順に入る。待ちが d の `wait:`（呼び出しに `wait:` を書けばその値）を越えたら `io.Expired`。
+例: [`examples/domain_await.sober`](../../examples/domain_await.sober)・[`examples/domain_expire.sober`](../../examples/domain_expire.sober)・[`examples/domain_handoff.sober`](../../examples/domain_handoff.sober)
+決定: [language.md 11 節「domain」](../language.md)
+
+C-24. 本体と `when:` は呼び出しに書いた字面のラムダ（仮引数 1 つ）。imm のデータだけを捕獲し（mut の束縛・mut の中身・札・handle・端点・関数型の仮引数は捕獲できない）、return・break・continue・`?` で外へ出ない。効果は持たない — 待たない・io なし・nondet なし・明示の panic なし。別の domain の呼び出しは nondet なので書けない（持ったまま待つ形が無い）。本体が状態 st に書けるのは region を持たない値（int・bool・byte・float とそれらの struct / union・option）だけで、map の添字を通らない場所へだけ（append・再スライス・string・map への書き・状態に触れる region を持つ値の mut の束縛〔`mut v := st.items`・`w := st.items` の後の `mut v := w` — 別名を経た append が状態を伸ばす。状態に触れる region を持つ値の束縛・代入（代入先の根）の名前は状態と同じ規則で見る〕は拒否）。st とその部分を本体の中で mut の実引数に渡せるのは、呼び先がその仮引数を根として本体と同じ規則で書く（呼び先の本体に同じ検査を当てて確かめる — 呼び先が分からない・総称・再帰・std/task の口は確かめられない側）ときだけ（確かめられなければ拒否 — 関数は値を受けて新しい値を返し、本体で代入する）。
+例: [`examples/domain_mutarg.sober`](../../examples/domain_mutarg.sober)
+拒否: [`examples/domain_neg_capture.sober`](../../examples/domain_neg_capture.sober)・[`examples/domain_neg_effect.sober`](../../examples/domain_neg_effect.sober)・[`examples/domain_neg_nested.sober`](../../examples/domain_neg_nested.sober)・[`examples/domain_neg_grow.sober`](../../examples/domain_neg_grow.sober)・[`examples/domain_neg_mutarg.sober`](../../examples/domain_neg_mutarg.sober)・[`examples/domain_neg_alias.sober`](../../examples/domain_neg_alias.sober)
+決定: [language.md 11 節「domain」](../language.md)
+
+C-25. 本体（`when:` を含む）が死ぬと（境界検査・ゼロ除算・RegionExceeded 等）、呼び手の task が死に、d は毒された状態になる。以後の d の呼び出しは呼び手を `task.Poisoned{}` で死なせ、待っている Await も起きて同じく死ぬ（状態は半端に書かれたまま進めない）。
+例: [`examples/domain_poison.sober`](../../examples/domain_poison.sober)
+決定: [language.md 11 節「domain」](../language.md)
+
+C-26. `task.Ledger().domains` は全 domain をまとめた 1 行 `task.DomainView{waiting, maxWait, expired, poisoned}`: waiting = 今 Await で待っている呼び出しの数・maxWait = 待った Await の到着から入るまでの最大（ns — 読むと 0 に戻る窓の値。Ledger の maxWait と同じ流儀）・expired = 待ちの上限で `io.Expired` を返した回数の累計・poisoned = 毒になった domain の数の累計。
+例: [`examples/domain_expire.sober`](../../examples/domain_expire.sober)・[`examples/domain_poison.sober`](../../examples/domain_poison.sober)
+決定: [language.md 11 節「domain」](../language.md)

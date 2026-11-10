@@ -29,6 +29,7 @@ const PK_TASKDIED = 10 // task.Join の子が死んでいた（この子の死�
 const PK_STALE = 11    // 失効したチャネルの端点（give: で子へ移した後の親の別名）を使った
 const PK_SENDCLOSED = 12 // 閉じたチャネルへの送り（P3b-4 ③）
 const PK_CLOSE2 = 13   // 閉じたチャネルをもう一度閉じた（P3b-4 ③）
+const PK_POISONED = 15 // 毒された domain への呼び出し（前に本体が死んだ — 状態は半端に書かれているかもしれない・domain.sober）
 const PK_BUDGET = 14   // wait の scope の子の宣言（budget:）が天井を超える — 待っても入れない（段 3 の ③ — language.md 11 節「wait」）
 
 // region の超過の種類（rt.panic_mem）
@@ -520,7 +521,7 @@ func buildPanic(st mut St, p loader.Program) {
     mut tdied := false
     for i <- iter.Range(0, n) {
         ftoi = ftoi || table.Get(mut st.psites, i * 3) == PK_FTOINT
-        tdied = tdied || table.Get(mut st.psites, i * 3) == PK_TASKDIED || table.Get(mut st.psites, i * 3) == PK_STALE || table.Get(mut st.psites, i * 3) == PK_SENDCLOSED || table.Get(mut st.psites, i * 3) == PK_CLOSE2 || table.Get(mut st.psites, i * 3) == PK_BUDGET
+        tdied = tdied || table.Get(mut st.psites, i * 3) == PK_TASKDIED || table.Get(mut st.psites, i * 3) == PK_STALE || table.Get(mut st.psites, i * 3) == PK_SENDCLOSED || table.Get(mut st.psites, i * 3) == PK_CLOSE2 || table.Get(mut st.psites, i * 3) == PK_BUDGET || table.Get(mut st.psites, i * 3) == PK_POISONED
     }
     if labels {
         head := newBlock(mut st)
@@ -654,7 +655,7 @@ func panicTexts() []string {
 // 文面の表（float → int の点があれば PK_LABEL の空きを挟んで 9 番まで・task.Join の点があれば 10 番まで）
 func panicTextsFor(ftoi bool, tdied bool) []string {
     if tdied {
-        return []string{"index out of range", "slice bounds out of range", "value out of range for byte", "negative shift amount", "integer divide by zero", "explicit panic()", "unreachable code reached", "", "float value out of range for int", "ChildDied", "stale channel endpoint (it was given to a child)", "send on closed channel", "close of closed channel", "budget: is larger than the ceiling of the wait: scope (the child can never be admitted)"}
+        return []string{"index out of range", "slice bounds out of range", "value out of range for byte", "negative shift amount", "integer divide by zero", "explicit panic()", "unreachable code reached", "", "float value out of range for int", "ChildDied", "stale channel endpoint (it was given to a child)", "send on closed channel", "close of closed channel", "budget: is larger than the ceiling of the wait: scope (the child can never be admitted)", "task.Poisoned{} (an earlier body on this domain died — its state may be half-written)"}
     }
     if !ftoi {
         return panicTexts()

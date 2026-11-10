@@ -1,0 +1,37 @@
+package main
+
+// 失敗の戻りの道だけで確保する呼び先（欄を持つ error ラベルを返す — セルは呼び手の深度）を、失敗を catch して回し続けるループの回帰例:
+// 失敗の辺がループの頭へ戻るので、反復ごとの確保として数えられて反復の enter が残る（入口 + 反復 = 2）。失敗の辺がループの外へ出る形
+// （`catch return` — iter_region_outer_assign の utf8.Str）は enter が消える。scripts/iterregion.sh が ① 形（llight 後の main の enter の数）と
+// ② RSS（N と 10N で比例しない — 失敗 1 回ごとのセルが反復の region で捨てられること）を見る
+
+import "std/convert"
+import "std/os"
+
+type Odd error {
+    at int
+}
+
+func half(i int) (int, error?) {
+    if i % 2 == 1 {
+        return 0, Odd{at: i}
+    }
+    return i / 2, nil
+}
+
+func main() int {
+    args := os.Args() catch return 2
+    mut n := 20000
+    if len(args) == 2 {
+        v, _ := convert.ParseInt(args[1])
+        n = v
+    }
+    mut s := 0
+    mut i := 0
+    while i < n {
+        s += half(i) catch 1
+        i += 1
+    }
+    println(s)
+    return 0
+}

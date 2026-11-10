@@ -114,6 +114,12 @@ func tyJson(st mut S, out mut []byte, t TyRef) {
         obuf.Lit(mut out, ",\"t\":")
         tyJson(mut st, mut out, tChanElem(mut st, t))
         out = append(out, '}')
+    } else if k == TOwn && tyAt(mut st, t).a == OWN_DOM {
+        obuf.Lit(mut out, "{\"k\":\"dom\",\"r\":")
+        obuf.Int(mut out, tRegion(mut st, t))
+        obuf.Lit(mut out, ",\"t\":")
+        tyJson(mut st, mut out, tElem(mut st, t))
+        out = append(out, '}')
     } else if k == TOwn {
         o := tyAt(mut st, t).a
         obuf.Lit(mut out, if o == OWN_SCOPE { "{\"k\":\"own\",\"o\":\"scope\",\"r\":" } else if o == OWN_TASK { "{\"k\":\"own\",\"o\":\"task\",\"r\":" } else if o == OWN_TX { "{\"k\":\"own\",\"o\":\"tx\",\"r\":" } else { "{\"k\":\"own\",\"o\":\"rx\",\"r\":" })
@@ -408,6 +414,29 @@ func exprJson(st mut S, out mut []byte, e0 CoreRef) {
             obuf.Lit(mut out, ",\"t\":")
             tyJson(mut st, mut out, TyRef(cx.c))
             out = append(out, '}')
+        } else if k == CDnew {
+            // {"k":"dnew","r":r,"t":T,"i":I}
+            obuf.Lit(mut out, "{\"k\":\"dnew\",\"r\":")
+            obuf.Int(mut out, a)
+            obuf.Lit(mut out, ",\"t\":")
+            tyJson(mut st, mut out, TyRef(cx.c))
+            obuf.Lit(mut out, ",\"i\":")
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            sp = spush(mut st, sp, OE, b)
+        } else if k == CDenter {
+            // {"k":"denter","t":T,"d":D}
+            obuf.Lit(mut out, "{\"k\":\"denter\",\"t\":")
+            tyJson(mut st, mut out, TyRef(a))
+            obuf.Lit(mut out, ",\"d\":")
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            sp = spush(mut st, sp, OE, b)
+        } else if k == CDexit {
+            // {"k":"dexit","d":D,"v":V}
+            obuf.Lit(mut out, "{\"k\":\"dexit\",\"d\":")
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            sp = spush(mut st, sp, OE, b)
+            sp = spush(mut st, sp, OS, J_V)
+            sp = spush(mut st, sp, OE, a)
         } else if k == CSend {
             // {"k":"send","c":C,"e":E}
             obuf.Lit(mut out, "{\"k\":\"send\",\"c\":")

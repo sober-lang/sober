@@ -1808,23 +1808,23 @@ b5:
   %29 = load.i64 %5[3]
   %30 = const 1
   %31 = add %29, %30
-  %32 = slotaddr s2
-  %33 = const 0
-  store %32[0], %33
-  store %32[1], %33
-  store %32[2], %33
-  store %32[3], %33
+  %32 = const 0
+  %33 = slotaddr s2
+  store %33[0], %32
+  store %33[1], %32
+  store %33[2], %32
+  store %33[3], %32
   %34 = load.i64 %25[0]
-  store %32[0], %34
+  store %33[0], %34
   %35 = load.i64 %25[1]
-  store %32[1], %35
+  store %33[1], %35
   %36 = load.i64 %25[2]
-  store %32[2], %36
-  store %32[3], %31
-  %37 = load.i64 %32[0]
-  %38 = load.i64 %32[1]
-  %39 = load.i64 %32[2]
-  %40 = load.i64 %32[3]
+  store %33[2], %36
+  store %33[3], %31
+  %37 = load.i64 %33[0]
+  %38 = load.i64 %33[1]
+  %39 = load.i64 %33[2]
+  %40 = load.i64 %33[3]
   %41 = call.indirect.i64 %21(%24, %4, %37, %38, %39, %40)
   region.setdepth %6
   ret %41
@@ -1985,23 +1985,23 @@ b0:
   %55 = load.i64 %48[2]
   store %52[2], %55
   %56 = const 0
-  %57 = slotaddr s10
-  %58 = const 0
-  store %57[0], %58
-  store %57[1], %58
-  store %57[2], %58
-  store %57[3], %58
+  %57 = const 0
+  %58 = slotaddr s10
+  store %58[0], %57
+  store %58[1], %57
+  store %58[2], %57
+  store %58[3], %57
   %59 = load.i64 %52[0]
-  store %57[0], %59
+  store %58[0], %59
   %60 = load.i64 %52[1]
-  store %57[1], %60
+  store %58[1], %60
   %61 = load.i64 %52[2]
-  store %57[2], %61
-  store %57[3], %56
-  %62 = load.i64 %57[0]
-  %63 = load.i64 %57[1]
-  %64 = load.i64 %57[2]
-  %65 = load.i64 %57[3]
+  store %58[2], %61
+  store %58[3], %56
+  %62 = load.i64 %58[0]
+  %63 = load.i64 %58[1]
+  %64 = load.i64 %58[2]
+  %65 = load.i64 %58[3]
   %66 = const 1
   %67 = call @main.call(%62, %63, %64, %65, %66)
   call @rt.print_int(%67)
@@ -2015,23 +2015,23 @@ b0:
   %72 = load.i64 %48[2]
   store %69[2], %72
   %73 = const 2
-  %74 = slotaddr s10
-  %75 = const 0
-  store %74[0], %75
-  store %74[1], %75
-  store %74[2], %75
-  store %74[3], %75
+  %74 = const 0
+  %75 = slotaddr s10
+  store %75[0], %74
+  store %75[1], %74
+  store %75[2], %74
+  store %75[3], %74
   %76 = load.i64 %69[0]
-  store %74[0], %76
+  store %75[0], %76
   %77 = load.i64 %69[1]
-  store %74[1], %77
+  store %75[1], %77
   %78 = load.i64 %69[2]
-  store %74[2], %78
-  store %74[3], %73
-  %79 = load.i64 %74[0]
-  %80 = load.i64 %74[1]
-  %81 = load.i64 %74[2]
-  %82 = load.i64 %74[3]
+  store %75[2], %78
+  store %75[3], %73
+  %79 = load.i64 %75[0]
+  %80 = load.i64 %75[1]
+  %81 = load.i64 %75[2]
+  %82 = load.i64 %75[3]
   %83 = const 1
   %84 = call @main.call(%79, %80, %81, %82, %83)
   call @rt.print_int(%84)

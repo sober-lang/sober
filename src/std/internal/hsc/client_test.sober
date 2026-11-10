@@ -4,6 +4,8 @@ package hsc
 // 握手が済む・ALPN・アプリのデータの往復・KeyUpdate・名前違い / 信頼の起点なし / 期限切れは CertFailed（cause が x509 のラベル）・サーバの flight を 1 バイト壊すと alert
 
 import "std/crypto/pem"
+import "std/hex"
+import "std/internal/p256"
 import "std/internal/hs"
 import "std/crypto/rsa"
 import "std/internal/x509"
@@ -183,7 +185,7 @@ func TestInterop() {
         println("conf-item: interop/tls ${f[0]} ${ver}")
         n += 1
     }
-    assert(n == 8)
+    assert(n == 9)
     println("conf: interop/tls ${n}")
 }
 
@@ -334,4 +336,64 @@ func TestHelloRetry() {
     ks := ext(xKeyShare, []byte{0, 0x1d})
     _, _, _, e2 := toClient(mut d, cp, shRecord(hrrRandom(), d.sessid, internal.record.AesGcm, cat(sv, ks)))
     assert(alertDesc(e2) == "alert 47")
+}
+
+// secp256r1 だけを受けるサーバ（PostgreSQL 17 以前の既定ほか）: HRR が secp256r1 を求めたら 2 番目の ClientHello の key_share を P-256 に・
+// 以後の ServerHello は P-256 の群と 65 バイトの点だけを受ける（群の食い違い・長さ違い・曲線の外の点は illegal_parameter）
+func TestHelloRetryP256() {
+    cp := NewCParams("localhost", []string{"http/1.1"}, testRoots(), testNow, bytes("cli-seed"))
+    sv := ext(xSupportedVersions, []byte{3, 4})
+    hrr := ext(xKeyShare, []byte{0, 0x17})
+    // 2 番目の ClientHello: supported_groups は X25519 と secp256r1・key_share は secp256r1 の非圧縮の点（65 バイト）
+    c0, first := StartClient(cp)
+    assert(strings.Contains(hex.Format(first), "000a00060004001d0017"), "supported_groups lists both")
+    mut c := c0
+    out, _, _, e := toClient(mut c, cp, shRecord(hrrRandom(), c.sessid, internal.record.AesGcm, cat(sv, hrr)))
+    assert(e == nil && int(out[0]) == internal.record.CtCcs, "hrr accepted")
+    ch2hex := hex.Format(sliceOf(out, 6, len(out) - 6))
+    assert(strings.Contains(ch2hex, "00330047004500170041" + "04"), "p256 key_share")
+    // 2 番目の ClientHello の random は 1 番目と同じ（RFC 8446 4.1.2 — 作り直すとサーバが拒否する）
+    assert(strings.Contains(ch2hex, hex.Format(sliceOf(first, 11, 32))), "same random")
+    assert(c.group == groupSecp256r1)
+    // ServerHello に P-256 の点（基点）→ 鍵の導出まで進む
+    g := internal.p256.PublicKey(cat(zeros(31), []byte{1}))
+    ksOk := ext(xKeyShare, cat(cat([]byte{0, 0x17, 0, 65}, g), []byte{}))
+    _, _, _, e1 := toClient(mut c, cp, shRecord(rep32(7), c.sessid, internal.record.AesGcm, cat(sv, ksOk)))
+    assert(e1 == nil && phaseOf(c) == "WaitEE", "p256 server hello")
+    // 食い違いの 3 形
+    bads := [][]byte{
+        ext(xKeyShare, cat([]byte{0, 0x1d, 0, 32}, rep32(9))),
+        ext(xKeyShare, cat([]byte{0, 0x17, 0, 32}, rep32(9))),
+        ext(xKeyShare, cat([]byte{0, 0x17, 0, 65}, offCurve(g))),
+    }
+    for ks <- bads {
+        c1, _ := StartClient(cp)
+        mut d := c1
+        _, _, _, eh := toClient(mut d, cp, shRecord(hrrRandom(), d.sessid, internal.record.AesGcm, cat(sv, hrr)))
+        assert(eh == nil)
+        _, _, _, eb := toClient(mut d, cp, shRecord(rep32(7), d.sessid, internal.record.AesGcm, cat(sv, ks)))
+        assert(alertDesc(eb) == "alert 47", "mismatched server hello")
+    }
+    // 知らない群（0x0018）を求める HRR・群も cookie も無い HRR は拒否
+    badHrrs := [][]byte{ext(xKeyShare, []byte{0, 0x18}), []byte{}}
+    for x <- badHrrs {
+        c2, _ := StartClient(cp)
+        mut d2 := c2
+        _, _, _, ex := toClient(mut d2, cp, shRecord(hrrRandom(), d2.sessid, internal.record.AesGcm, cat(sv, x)))
+        assert(alertDesc(ex) == "alert 47", "bad hrr")
+    }
+}
+
+func offCurve(g []byte) []byte {
+    mut o := mut []byte{}
+    putBytes(mut o, g)
+    o[64] = byte(int(o[64]) ^ 1)
+    return freeze(o)
+}
+
+func phaseOf(h Ch) string {
+    return switch h.ph {
+    case CWaitEE{}: "WaitEE"
+    default: "other"
+    }
 }

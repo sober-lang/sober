@@ -1831,34 +1831,34 @@ b0:
   store %4[0], %3
   %5 = const 0
   %6 = const 0
-  %7 = slotaddr s2
-  %8 = const 0
-  store %7[0], %8
-  store %7[1], %8
-  store %7[0], %5
-  store %7[1], %6
+  %7 = const 0
+  %8 = slotaddr s2
+  store %8[0], %7
+  store %8[1], %7
+  store %8[0], %5
+  store %8[1], %6
   %9 = slotaddr s3
-  %10 = load.i64 %7[0]
+  %10 = load.i64 %8[0]
   store %9[0], %10
-  %11 = load.i64 %7[1]
+  %11 = load.i64 %8[1]
   store %9[1], %11
   %12 = const 7
-  %13 = slotaddr s4
-  %14 = const 0
-  store %13[0], %14
-  store %13[1], %14
-  store %13[2], %14
+  %13 = const 0
+  %14 = slotaddr s4
+  store %14[0], %13
+  store %14[1], %13
+  store %14[2], %13
   %15 = load.i64 %9[0]
-  store %13[0], %15
+  store %14[0], %15
   %16 = load.i64 %9[1]
-  store %13[1], %16
-  store %13[2], %12
+  store %14[1], %16
+  store %14[2], %12
   %17 = slotaddr s5
-  %18 = load.i64 %13[0]
+  %18 = load.i64 %14[0]
   store %17[0], %18
-  %19 = load.i64 %13[1]
+  %19 = load.i64 %14[1]
   store %17[1], %19
-  %20 = load.i64 %13[2]
+  %20 = load.i64 %14[2]
   store %17[2], %20
   %21 = const 1
   %22 = add %0, %21

@@ -1801,29 +1801,29 @@ b1:
   store %10[2], %9
   br b2
 b2:
-  %27 = slotaddr s1
-  %28 = const 0
-  store %27[0], %28
-  store %27[1], %28
-  store %27[2], %28
-  store %27[3], %28
-  store %27[0], %1
+  %27 = const 0
+  %28 = slotaddr s1
+  store %28[0], %27
+  store %28[1], %27
+  store %28[2], %27
+  store %28[3], %27
+  store %28[0], %1
   %29 = load.i64 %10[0]
-  store %27[1], %29
+  store %28[1], %29
   %30 = load.i64 %10[1]
-  store %27[2], %30
+  store %28[2], %30
   %31 = load.i64 %10[2]
-  store %27[3], %31
+  store %28[3], %31
   %32 = slotaddr s2
   %33 = const 1
   store %32[0], %33
-  %34 = load.i64 %27[0]
+  %34 = load.i64 %28[0]
   store %32[1], %34
-  %35 = load.i64 %27[1]
+  %35 = load.i64 %28[1]
   store %32[2], %35
-  %36 = load.i64 %27[2]
+  %36 = load.i64 %28[2]
   store %32[3], %36
-  %37 = load.i64 %27[3]
+  %37 = load.i64 %28[3]
   store %32[4], %37
   %38 = slotaddr s3
   %39 = load.i64 %32[0]
@@ -2030,29 +2030,29 @@ b1:
   store %6[2], %5
   br b2
 b2:
-  %23 = slotaddr s2
-  %24 = const 0
-  store %23[0], %24
-  store %23[1], %24
-  store %23[2], %24
-  store %23[3], %24
-  store %23[0], %2
+  %23 = const 0
+  %24 = slotaddr s2
+  store %24[0], %23
+  store %24[1], %23
+  store %24[2], %23
+  store %24[3], %23
+  store %24[0], %2
   %25 = load.i64 %6[0]
-  store %23[1], %25
+  store %24[1], %25
   %26 = load.i64 %6[1]
-  store %23[2], %26
+  store %24[2], %26
   %27 = load.i64 %6[2]
-  store %23[3], %27
+  store %24[3], %27
   %28 = slotaddr s3
   %29 = const 1
   store %28[0], %29
-  %30 = load.i64 %23[0]
+  %30 = load.i64 %24[0]
   store %28[1], %30
-  %31 = load.i64 %23[1]
+  %31 = load.i64 %24[1]
   store %28[2], %31
-  %32 = load.i64 %23[2]
+  %32 = load.i64 %24[2]
   store %28[3], %32
-  %33 = load.i64 %23[3]
+  %33 = load.i64 %24[3]
   store %28[4], %33
   %34 = region.depth
   %35 = slotaddr s4
@@ -2086,27 +2086,27 @@ b3:
   store %35[2], %34
   br b4
 b4:
-  %52 = slotaddr s5
-  %53 = const 0
-  store %52[0], %53
-  store %52[1], %53
-  store %52[2], %53
-  store %52[3], %53
-  store %52[0], %1
+  %52 = const 0
+  %53 = slotaddr s5
+  store %53[0], %52
+  store %53[1], %52
+  store %53[2], %52
+  store %53[3], %52
+  store %53[0], %1
   %54 = load.i64 %35[0]
-  store %52[1], %54
+  store %53[1], %54
   %55 = load.i64 %35[1]
-  store %52[2], %55
+  store %53[2], %55
   %56 = load.i64 %35[2]
-  store %52[3], %56
+  store %53[3], %56
   %57 = slotaddr s6
-  %58 = load.i64 %52[0]
+  %58 = load.i64 %53[0]
   store %57[0], %58
-  %59 = load.i64 %52[1]
+  %59 = load.i64 %53[1]
   store %57[1], %59
-  %60 = load.i64 %52[2]
+  %60 = load.i64 %53[2]
   store %57[2], %60
-  %61 = load.i64 %52[3]
+  %61 = load.i64 %53[3]
   store %57[3], %61
   %62 = funcaddr @lambda#0
   %63 = funcaddr @lambda#1
@@ -2365,29 +2365,29 @@ b20:
   store %176[2], %175
   br b21
 b21:
-  %193 = slotaddr s5
-  %194 = const 0
-  store %193[0], %194
-  store %193[1], %194
-  store %193[2], %194
-  store %193[3], %194
-  store %193[0], %174
+  %193 = const 0
+  %194 = slotaddr s5
+  store %194[0], %193
+  store %194[1], %193
+  store %194[2], %193
+  store %194[3], %193
+  store %194[0], %174
   %195 = load.i64 %176[0]
-  store %193[1], %195
+  store %194[1], %195
   %196 = load.i64 %176[1]
-  store %193[2], %196
+  store %194[2], %196
   %197 = load.i64 %176[2]
-  store %193[3], %197
+  store %194[3], %197
   %198 = slotaddr s0
   %199 = const 1
   store %198[0], %199
-  %200 = load.i64 %193[0]
+  %200 = load.i64 %194[0]
   store %198[1], %200
-  %201 = load.i64 %193[1]
+  %201 = load.i64 %194[1]
   store %198[2], %201
-  %202 = load.i64 %193[2]
+  %202 = load.i64 %194[2]
   store %198[3], %202
-  %203 = load.i64 %193[3]
+  %203 = load.i64 %194[3]
   store %198[4], %203
   %204 = load.i64 %198[0]
   store %162[0], %204
@@ -2492,29 +2492,29 @@ b26:
   store %245[2], %244
   br b27
 b27:
-  %262 = slotaddr s5
-  %263 = const 0
-  store %262[0], %263
-  store %262[1], %263
-  store %262[2], %263
-  store %262[3], %263
-  store %262[0], %243
+  %262 = const 0
+  %263 = slotaddr s5
+  store %263[0], %262
+  store %263[1], %262
+  store %263[2], %262
+  store %263[3], %262
+  store %263[0], %243
   %264 = load.i64 %245[0]
-  store %262[1], %264
+  store %263[1], %264
   %265 = load.i64 %245[1]
-  store %262[2], %265
+  store %263[2], %265
   %266 = load.i64 %245[2]
-  store %262[3], %266
+  store %263[3], %266
   %267 = slotaddr s0
   %268 = const 1
   store %267[0], %268
-  %269 = load.i64 %262[0]
+  %269 = load.i64 %263[0]
   store %267[1], %269
-  %270 = load.i64 %262[1]
+  %270 = load.i64 %263[1]
   store %267[2], %270
-  %271 = load.i64 %262[2]
+  %271 = load.i64 %263[2]
   store %267[3], %271
-  %272 = load.i64 %262[3]
+  %272 = load.i64 %263[3]
   store %267[4], %272
   %273 = load.i64 %267[0]
   store %231[0], %273

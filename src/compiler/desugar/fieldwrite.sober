@@ -89,6 +89,52 @@ func yFieldGive(st mut S, t int, name StrRef, i int, v NodeRef) {
     yFieldNote(mut st, 7, v, sA(nodeOf(mut st, latN(mut st, fs, idx))), t)
 }
 
+// std の外のコードが std の struct の `dangerously` で始まる欄に値を与えた点（字面の false 以外 — 安全な既定を緩めうる構築）を記録する
+// （種類 8 — analyzer の常時の警告。受理は変えない: 欄の規則の指摘・型の拒否・build の拒否の数のどれにも入らない。抑止の口は作らない —
+// 黙らせるには安全な設定に戻すしかない）
+func yDangerGive(st mut S, t int, name StrRef, v NodeRef) {
+    if name == -1 || !strHasPrefix(mut st, name, "dangerously") || yk(mut st, t) != YDecl {
+        return
+    }
+    if strHasPrefix(mut st, PkgPath(mut st, st.ypk), "std/") || !strHasPrefix(mut st, PkgPath(mut st, YAt(mut st, t).b), "std/") {
+        return
+    }
+    if kindN(mut st, v) == ast.EIdent && strIs(mut st, sA(nodeOf(mut st, v)), "false") {
+        return
+    }
+    yFieldNote(mut st, 8, v, name, t)
+}
+
+// 種類 8（緩和の欄に値を与えた — yDangerGive）の記録の数
+func DangerNotes(st mut S) int {
+    mut n := 0
+    mut r := st.yfaHead - 1
+    while r >= 0 {
+        if hget(mut st, r) == 8 {
+            n += 1
+        }
+        r = hget(mut st, r + 4)
+    }
+    return n
+}
+
+// 種類 8 の j 番目 [節, 欄の名前, 型の宣言の節, 型の package]
+func DangerNote(st mut S, j int) (NodeRef, StrRef, NodeRef, int) {
+    mut n := 0
+    mut r := st.yfaHead - 1
+    while r >= 0 {
+        if hget(mut st, r) == 8 {
+            if n == j {
+                t := hget(mut st, r + 3)
+                return NodeRef(hget(mut st, r + 1)), StrRef(hget(mut st, r + 2)), yNa(YAt(mut st, t)), YAt(mut st, t).b
+            }
+            n += 1
+        }
+        r = hget(mut st, r + 4)
+    }
+    return NodeRef(-1), StrRef(-1), NodeRef(-1), 0 - 1
+}
+
 // 記録の種類 k が欄の規則の指摘か（0 書き・1 読み・2 mut の中身を返す・7 構築で与える — 3〜6 は TyRejectAt の型の拒否）
 func yFieldKind(k int) bool {
     return k >= 0 && (k < 3 || k == 7)
@@ -161,7 +207,7 @@ func TyRejectAt(st mut S) error? {
     mut r := st.yfaHead - 1
     while r >= 0 {
         k := hget(mut st, r)
-        if k >= 3 && !yFieldKind(k) {
+        if k >= 3 && k <= 6 {
             at := PosOf(mut st, NodeRef(hget(mut st, r + 1)))
             return diag.TypeMismatch{at: at, kind: if k == 3 { 4 } else if k == 4 { 8 } else if k == 5 { 9 } else { 10 }}
         }

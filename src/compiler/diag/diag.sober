@@ -719,16 +719,16 @@ func Format(err error?, where string) string {
         case 5: "a spawned task cannot capture the scope token (task.Scope), also inside a struct field or T? — spawn from the scope body"
         case 6: "a spawned task cannot capture a task handle (task.Handle), also inside a struct field or T? — join it in the scope body"
         case 7: "return and break / continue cannot leave a task.Run / task.Spawn body, and ? cannot leave a task.Spawn body (the scope waits for its children at its end; ? in a task.Run body fails the scope)"
-        case 8: "the result of a spawned task must be copyable to the scope (data — not a function value, task.Scope, task.Handle or a channel endpoint)"
-        case 9: "the result of task.Run cannot hold a task.Scope or task.Handle (it would outlive the scope)"
+        case 8: "the result of a spawned task must be copyable to the scope (data — not a function value, task.Scope, task.Handle, a channel endpoint or a task.Domain)"
+        case 9: "the result of task.Run cannot hold a task.Scope, task.Handle or task.Domain (it would outlive the scope)"
         case 13: "task.NewChannel takes its capacity as an integer literal of 1 or more (cap: 16)"
         case 14: "task.NewChannel needs its payload type written: task.NewChannel[T](cap: n)"
         case 15: "a channel endpoint (task.Sender / task.Receiver) moves to a child only through give: — task.Spawn(s, (out) => …, give: tx)"
         case 17: "an error-returning task's handle goes in a slice of task.Handle[(T, error?)] (the element type says the task can fail — Join gives two values)"
         case 18: "a multi-value type (T, error?) is written only as the type argument of task.Handle — task.Handle[(T, error?)] (no anonymous tuple types)"
         case 20: "budget: is a size written without calls or division (a literal, a name, task.MB, + - *) — it is read for the admission only"
-        case 19: "a channel payload cannot hold task.Scope, task.Handle or a channel endpoint (also inside struct fields or T?) — they stay with the task that owns them"
-        case 16: "handles (task.Handle) go in a mut slice: mut hs := mut []task.Handle[T]{} (an imm slice copies its elements, and a handle is not copied)"
+        case 19: "a channel payload cannot hold task.Scope, task.Handle, a channel endpoint or a task.Domain (also inside struct fields or T?) — they stay with the task that owns them"
+        case 16: "handles (task.Handle) and domains (task.Domain) go in a mut slice: mut hs := mut []task.Handle[T]{} (an imm slice copies its elements, and a handle or a domain is not copied)"
         case 22: "wait: is written as the literal true or false — the admission policy of a scope is fixed where it is written"
         case 23: "deadline: is a relative time written without calls or division (a literal, a name, task.MS, + - *)"
         case 30: "give: hands one channel endpoint (task.Sender / task.Receiver) to the child — capture any other value in the lambda instead"
@@ -739,7 +739,14 @@ func Format(err error?, where string) string {
         case 27: "the setup of task.NewLocal sizes each pool.Scratch field exactly once — pool.NewScratch(mut w.f, n) with n a constant (a literal, a const name, + - * <<) — and does nothing else"
         case 28: "LocalNew / LeaseTake / LeaseGive / LeaseBlock / LeaseAttach are what task.NewLocal / task.Lease are rewritten into — call task.NewLocal / task.Lease instead"
         case 11: "a spawned task cannot capture a function-typed parameter (it is a closure inlined at the call — call it in the scope body and spawn with the value)"
-        default: "task.Scope and task.Handle do not cross a function boundary (pass values to the function and spawn in the scope body)"
+        case 31: "task.Update / task.Read / task.Await take lambda literals written at the call with one parameter — (st mut S) => … for the body, (st S) => … for task.Read and when:"
+        case 32: "the body of a domain call (and when:) captures only imm data — not a mut binding or mut contents, task.Scope, task.Handle, a channel endpoint or a function-typed parameter (the body may run on another task)"
+        case 33: "return and break / continue and ? cannot leave the body of a domain call or when: (the call ends where the body ends)"
+        case 35: "wait: is a relative time written without calls or division (a literal, a name, task.MS, + - *)"
+        case 36: "the body of a domain call writes only region-free values (int, bool, byte, float and structs of them) into the state, and not through a map index — the state lives as long as the domain and is written in place, so append, re-slicing, strings or map writes would grow it on every call. Rewrite: (1) preallocate a mut slice in init: and write its elements (st.items[i] = v), (2) keep a count or an index in the state and the growing data outside the domain, or (3) return the value from the body and store it outside"
+        case 37: "the body of a domain call cannot pass the state (or a part of it) as a mut argument — the function could grow the state, which is written in place. Rewrite: (1) make the function take values and return the new ones, then assign them in the body (st.n = next(st.n)), (2) write the fields directly in the body, or (3) pass an imm copy and assign what the function returns"
+        case 39: "a domain cannot be put where it outlives the scope that made it — here it is stored in a place made outside that scope (or in a mut parameter, whose place the function does not know), or captured by a task spawned on an outer scope. Rewrite: (1) keep it in a binding made inside the scope that made the domain (a struct made there can hold it), or (2) spawn the task on the scope that made the domain"
+        default: "task.Scope, task.Handle and channel endpoints do not cross a function boundary, and a task.Domain is not returned from a function (pass values to the function and spawn in the scope body)"
     }) }
     case FileUse{at, kind}: loadLine(err, where, switch kind {
         case 1: "io.Open must be bound as a statement of its own — `f := io.Open(path)?` or `f := io.Open(path) catch …` — and closed by the next statement `defer io.Close(f)` (io.OpenUnder the same way; io.OpenRoot closed by `defer io.CloseRoot(r)`)"
@@ -793,12 +800,12 @@ func Format(err error?, where string) string {
 // 同一性の族の表（i 行目 = package の path・型の名前・族の番号・資源か・作れる口）。loader のゼロ値の検査・desugar の捕捉の検査と filecheck・
 // lower の閉包の照合・この package の文面はみなこの表を読む（名前の集合を 1 か所に — diag はその全部が import する底の package）。
 // 資源 = 開いた接続やファイルの類（filecheck が写し・持ち出し・composite・捕獲・give: を見る）— task の札・handle・端点・Pool・Local は資源でない（task の規則が見る）
-const IdPaths = []string{"std/task", "std/task", "std/task", "std/task", "std/task", "std/task", "std/io", "std/io", "std/net", "std/net", "std/tls", "std/http/client"}
-const IdNames = []string{"Scope", "Handle", "Sender", "Receiver", "Pool", "Local", "File", "Root", "Listener", "Conn", "Conn", "Session"}
-const IdFamilies = []int{1, 2, 3, 4, 5, 7, 6, 8, 9, 10, 11, 12}
-const IdResources = []bool{false, false, false, false, false, false, true, true, true, true, true, true}
+const IdPaths = []string{"std/task", "std/task", "std/task", "std/task", "std/task", "std/task", "std/io", "std/io", "std/net", "std/net", "std/tls", "std/http/client", "std/pg"}
+const IdNames = []string{"Scope", "Handle", "Sender", "Receiver", "Pool", "Local", "File", "Root", "Listener", "Conn", "Conn", "Session", "Conn"}
+const IdFamilies = []int{1, 2, 3, 4, 5, 7, 6, 8, 9, 10, 11, 12, 13}
+const IdResources = []bool{false, false, false, false, false, false, true, true, true, true, true, true, true}
 const IdMakers = []string{"task.Run (the body's parameter)", "task.Spawn", "task.NewChannel", "task.NewChannel", "task.NewPool", "task.NewLocal", "io.Open", "io.OpenRoot",
-    "net.Listen (the parameter of its function)", "net.Accept or net.Dial (the parameter of its function)", "tls.Serve (the handler's parameter)", "client.Open (the parameter of its function)"}
+    "net.Listen (the parameter of its function)", "net.Accept or net.Dial (the parameter of its function)", "tls.Serve (the handler's parameter)", "client.Open (the parameter of its function)", "pg.Open (the parameter of its function)"}
 
 // 表の i 行目の型の綴り（package の path の最後の段 + 名前 — "client.Session"）
 func idSpelling(i int) string {
@@ -823,7 +830,7 @@ func identityMaker(k int) string {
     return IdMakers[idRow(k)]
 }
 
-// 資源の型の列の文面（"an io.File, io.Root, …, tls.Conn or client.Session"）
+// 資源の型の列の文面（"an io.File, io.Root, …, client.Session or pg.Conn"）
 func resourceList() string {
     mut names := mut []string{}
     for i <- iter.Range(0, len(IdPaths)) {

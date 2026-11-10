@@ -30,6 +30,8 @@ const TOwn = 15
 const TRVar = 16
 const TMuS = 17
 const TMuRs = 18
+// domain（直列化された共有状態 — Lean の Ty.dom）: a = rc（作った scope の region）・b = 状態の型
+const TDom = 19
 
 // 型 1 つ（st.types の要素 — 作ったら変えない）。参照 = TYBASE + 添字（ヒープ st.h の番地と取り違えて読むと範囲外で panic する — 音を立てる）
 type Ty struct {

@@ -1,0 +1,222 @@
+package pg
+
+// 行の読み（列は 0 起点の番号 — 範囲の外は panic〔添字と同じ〕）。型つきの読みは NULL で NullColumn・型違いで WrongType
+
+import "std/time"
+import "std/uuid"
+
+// 列 i の値
+@effects()
+func Col(r Row, i int) Value {
+    return r.vals[i]
+}
+
+// 列の数
+@effects()
+func Width(r Row) int {
+    return len(r.vals)
+}
+
+// 列 i が NULL か
+@effects()
+func IsNull(r Row, i int) bool {
+    return switch r.vals[i] {
+    case Null{}: true
+    default: false
+    }
+}
+
+@errors(NullColumn, WrongType)
+func miss(r Row, i int) error? {
+    return switch r.vals[i] {
+    case Null{}: NullColumn{index: i}
+    default: WrongType{index: i, oid: r.oids[i]}
+    }
+}
+
+// 列 i の値 — bool の列
+@errors(NullColumn, WrongType)
+@effects()
+func ColBool(r Row, i int) (bool, error?) {
+    switch r.vals[i] {
+    case Bool{v}: return v, nil
+    default: return false, miss(r, i)
+    }
+}
+
+// 列 i の値 — int2 / int4 / int8 の列
+@errors(NullColumn, WrongType)
+@effects()
+func ColInt(r Row, i int) (int, error?) {
+    switch r.vals[i] {
+    case Int{v}: return v, nil
+    default: return 0, miss(r, i)
+    }
+}
+
+// 列 i の値 — float4 / float8 の列
+@errors(NullColumn, WrongType)
+@effects()
+func ColFloat(r Row, i int) (float, error?) {
+    switch r.vals[i] {
+    case Float{v}: return v, nil
+    default: return 0.0, miss(r, i)
+    }
+}
+
+// 列 i の値 — text / varchar / char / name の列
+@errors(NullColumn, WrongType)
+@effects()
+func ColString(r Row, i int) (string, error?) {
+    switch r.vals[i] {
+    case String{v}: return v, nil
+    default: return "", miss(r, i)
+    }
+}
+
+// 列 i の値 — bytea の列
+@errors(NullColumn, WrongType)
+@effects()
+func ColBytes(r Row, i int) ([]byte, error?) {
+    switch r.vals[i] {
+    case Bytes{v}: return v, nil
+    default: return []byte{}, miss(r, i)
+    }
+}
+
+// 列 i の値 — uuid の列
+@errors(NullColumn, WrongType)
+@effects()
+func ColUuid(r Row, i int) (uuid.UUID, error?) {
+    switch r.vals[i] {
+    case Uuid{v}: return v, nil
+    default: return uuid.UUID{hi: 0, lo: 0}, miss(r, i)
+    }
+}
+
+// 列 i の値 — timestamptz の列（UTC の時刻）
+@errors(NullColumn, WrongType)
+@effects()
+func ColTime(r Row, i int) (time.Time, error?) {
+    switch r.vals[i] {
+    case Time{v}: return v, nil
+    default: return time.Unix(0, 0), miss(r, i)
+    }
+}
+
+// 列 i の値 — timestamp / date の列（zone の無い壁の読み — date は時刻 0）
+@errors(NullColumn, WrongType)
+@effects()
+func ColCivil(r Row, i int) (time.Civil, error?) {
+    switch r.vals[i] {
+    case Civil{v}: return v, nil
+    default: return time.ToCivil(time.Unix(0, 0), 0), miss(r, i)
+    }
+}
+
+// 列 i の値 — json / jsonb の列（JSON の字句）
+@errors(NullColumn, WrongType)
+@effects()
+func ColJson(r Row, i int) ([]byte, error?) {
+    switch r.vals[i] {
+    case Json{v}: return v, nil
+    default: return []byte{}, miss(r, i)
+    }
+}
+
+// numeric の十進の字句
+@errors(NullColumn, WrongType)
+@effects()
+func ColNumeric(r Row, i int) (string, error?) {
+    switch r.vals[i] {
+    case Numeric{digits}: return digits, nil
+    default: return "", miss(r, i)
+    }
+}
+
+// Numeric / Int の値の 10^scale 倍の int（金額の固定小数点 — scale 桁より下に 0 でない端数があれば Inexact・int に入らなければ OutOfRange・
+// NaN / Infinity と他の variant は WrongType{index: -1}）
+@errors(Inexact, OutOfRange, WrongType)
+@effects()
+func Scaled(v Value, scale int) (int, error?) {
+    switch v {
+    case Int{v: n}: return scaleInt(n, scale)
+    case Numeric{digits}: return scaleDigits(digits, scale)
+    case Null{}: return 0, WrongType{index: -1, oid: 0}
+    default: return 0, WrongType{index: -1, oid: 0}
+    }
+}
+
+const maxInt = 9223372036854775807
+
+@errors(OutOfRange)
+func scaleInt(n int, scale int) (int, error?) {
+    mut v := n
+    for _ <- iterN(scale) {
+        if v > maxInt / 10 || v < -(maxInt / 10) {
+            return 0, OutOfRange{}
+        }
+        v = v * 10
+    }
+    return v, nil
+}
+
+func iterN(n int) []int {
+    mut o := mut []int{}
+    mut i := 0
+    while i < n {
+        o = append(o, i)
+        i += 1
+    }
+    return freeze(o)
+}
+
+@errors(Inexact, OutOfRange, WrongType)
+func scaleDigits(s string, scale int) (int, error?) {
+    b := bytes(s)
+    mut i := 0
+    neg := len(b) > 0 && b[0] == '-'
+    if neg {
+        i = 1
+    }
+    if i >= len(b) || b[i] < '0' || b[i] > '9' {
+        return 0, WrongType{index: -1, oid: 0}
+    }
+    mut v := 0
+    mut frac := -1
+    while i < len(b) {
+        x := b[i]
+        if x == '.' {
+            if frac >= 0 {
+                return 0, WrongType{index: -1, oid: 0}
+            }
+            frac = 0
+        } else if x >= '0' && x <= '9' {
+            if frac >= scale {
+                if x != '0' {
+                    return 0, Inexact{}
+                }
+            } else {
+                if v > (maxInt - 9) / 10 {
+                    return 0, OutOfRange{}
+                }
+                v = v * 10 + (int(x) - 48)
+                if frac >= 0 {
+                    frac += 1
+                }
+            }
+        } else {
+            return 0, WrongType{index: -1, oid: 0}
+        }
+        i += 1
+    }
+    mut k := if frac < 0 { 0 } else { frac }
+    while k < scale {
+        if v > maxInt / 10 {
+            return 0, OutOfRange{}
+        }
+        v = v * 10
+        k += 1
+    }
+    return if neg { -v } else { v }, nil
+}

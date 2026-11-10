@@ -1,0 +1,6 @@
+transfer 30: ok
+  account 1: 70
+  account 2: 30
+transfer 500: server error 23514
+  account 1: 70
+  account 2: 30

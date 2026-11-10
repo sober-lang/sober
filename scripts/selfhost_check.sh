@@ -126,7 +126,7 @@ prefetch testdata/corevec_copyto/*.json
 for f in testdata/corevec_copyto/*.json; do par_run one "$f" "$f"; done
 section "(i'''') corevec_copyto"
 # (i''''') 手書きのコア JSON（段 6 P2a: scope / spawn / join / try / newch・send / recv の端点。Gen の型指向の腕 task と同形 + 規則ごとに
-# 1 か所だけ破る neg_*〔try の注釈・spawn の引数の givable・端点の向き・newch の cap / region〕— Gen の近傍変異が作りにくい reject の網）
+# 1 か所だけ破る neg_*〔try の注釈・spawn の引数の givable・端点の向き・newch の cap / region・domain の入りの注釈 / 出の型 / 家の region / 渡せる範囲〕— Gen の近傍変異が作りにくい reject の網）
 prefetch testdata/corevec_par/*.json
 for f in testdata/corevec_par/*.json; do par_run one "$f" "$f"; done
 section "(i''''') corevec_par"

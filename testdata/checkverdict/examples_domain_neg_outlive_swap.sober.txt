@@ -1,0 +1,2 @@
+sober: load error at examples/domain_neg_outlive_swap.sober:16:7: a domain cannot be put where it outlives the scope that made it — here it is stored in a place made outside that scope (or in a mut parameter, whose place the function does not know), or captured by a task spawned on an outer scope. Rewrite: (1) keep it in a binding made inside the scope that made the domain (a struct made there can hold it), or (2) spawn the task on the scope that made the domain
+exit=1

@@ -2125,4 +2125,52 @@ example : (tFG 0).musOk = true := by native_decide
 example : (tFG 0).unfold = .fn (tFG 1) .int := by native_decide
 example : (tFG 1).unfold = .fn .int (tFG 0) := by native_decide
 
+/-! ## domain（直列化された共有状態）: 入る順はオラクル（K の入力 ora）が決め、各オラクルの下ではスケジュールに依らない -/
+
+/-- 子の本体: 入って状態を受け、1 足して出る。入ったときの状態を返す -/
+def domChild : Expr := letE (denter .int (var 0)) (letE (dexit (var 1) (add (var 0) (lit 1))) (var 1))
+
+/-- 状態 0 の domain を 2 人の子（id [0] / [1]）が共有する。値 = 子0 が見た状態 × 10 + 子1 が見た状態 -/
+def exDom (child : Expr) : Expr :=
+  block (scope .int (letE (Expr.dnew 0 (lit 0) .int)
+    (letE (spawn (var 1) (var 0) child)
+      (letE (spawn (var 2) (var 1) child)
+        (add (Expr.arith .mul (join .int (var 1)) (lit 10)) (join .int (var 0)))))))
+
+/-- 根の task の最初の domain（鍵 ([], 0)）に入る順 -/
+def oraK (o : List (List Nat)) : ChanSt := { ora := fun k => if k = ([], 0) then o else [] }
+
+example : typecheck [] ∅ [] 0 0 0 [] [] (exDom domChild) = some (sty .int) := by native_decide
+-- オラクル [子0, 子1]: 子0 は 0・子1 は 1 を見る（どちらのスケジュールでも）
+example : taskDone (runAny [] false 400 (loadT (exDom domChild)) (oraK [[0], [1]])).1 =
+    Option.some (inl (.union .unit .int) (lit 1)) := by native_decide
+example : taskDone (runAny [] true 400 (loadT (exDom domChild)) (oraK [[0], [1]])).1 =
+    Option.some (inl (.union .unit .int) (lit 1)) := by native_decide
+-- オラクル [子1, 子0]: 結果が変わる — 非決定はオラクルという入力に閉じる
+example : taskDone (runAny [] false 400 (loadT (exDom domChild)) (oraK [[1], [0]])).1 =
+    Option.some (inl (.union .unit .int) (lit 10)) := by native_decide
+example : taskDone (runAny [] true 400 (loadT (exDom domChild)) (oraK [[1], [0]])).1 =
+    Option.some (inl (.union .unit .int) (lit 10)) := by native_decide
+
+/-- 待ちの形の判定: 完了せず、どの経路でも 1 歩も進めない -/
+def stuck (r : State × ChanSt) : Bool := (taskDone r.1).isNone && (stepAny [] false r.1 r.2).isNone
+
+-- オラクルの番でない task は入れない（Blocked）: 子0 がオラクルに居なければ、子1 が出た後も子0 は待ち続ける
+example : stuck (runAny [] false 400 (loadT (exDom domChild)) (oraK [[1]])) = true := by native_decide
+example : stuck (runAny [] true 400 (loadT (exDom domChild)) (oraK [[1]])) = true := by native_decide
+-- 出ないまま終わった task は持ち手を握ったまま — 次の番は永遠に入れない（実装は毒 → 死に解く）
+example : stuck (runAny [] false 400 (loadT (exDom (letE (denter .int (var 0)) (var 0)))) (oraK [[0], [1]])) = true := by
+  native_decide
+-- 本体で死んだ持ち手（毒）: 後の呼び出しは入れない — コアでは待ち（Blocked）
+example : stuck (runAny [] false 400
+    (loadT (exDom (letE (denter .int (var 0)) (Expr.arith .div (var 0) (lit 0))))) (oraK [[0], [1]])) = true := by
+  native_decide
+-- 持ち手でない task が出るのは定義された panic
+example : (runAny [] false 200 (loadT (block (scope .int (letE (Expr.dnew 0 (lit 0) .int) (letE (dexit (var 0) (lit 5)) (lit 0))))))
+    (oraK [[]])).1.mainDead = true := by native_decide
+-- 状態の型と食い違う出口・domain でない値への入りは型で拒否
+example : typecheck [] ∅ [] 0 0 0 [] [] (block (scope .int (letE (Expr.dnew 0 (lit 0) .int) (letE (dexit (var 0) .tt) (lit 0))))) = none := by
+  native_decide
+example : typecheck [] ∅ [] 0 0 0 [] [] (block (denter .int (lit 0))) = none := by native_decide
+
 end FS.Examples

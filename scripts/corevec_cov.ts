@@ -15,7 +15,8 @@ const MIN_ACC = 3;
 const MIN_REJ = 3;
 // accept 側の被覆から外す構成子（型指向がまだ出さない — Gen 総追いつき段 B で region を持つターゲットを入れたら外す）
 const EXEMPT_ACC = new Set(["blockR", "copyTo"]);
-// 被覆を丸ごと外す構成子（今は無し — 段 6 P1 の並列の構成子 scope / spawn / join / tryJ / newch は P2aで compiler/checker と Gen が追いついて解除）
+// 被覆を丸ごと外す構成子（段 6 P1 の並列の構成子 scope / spawn / join / tryJ / newch は P2a で、domain の dnew / denter / dexit は
+// 型付けの規則と同時に compiler/checker と Gen が追いついて解除済み）
 const EXEMPT_ALL = new Set<string>([]);
 
 const root = new URL("..", import.meta.url).pathname;

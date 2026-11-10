@@ -29,15 +29,16 @@ TLS 1.3（RFC 8446）のサーバ（`std/tls` — `tls.Serve`）とクライア�
 <!-- confsync:begin claims tls-client yes,partial -->
 | 項目 | 状態 | 証拠 |
 |---|---|---|
-| TLS 1.3（既定 — 1.3 だけを申し出る） | 対応 | `std/internal/hsc.TestHandshakeAndData`<br>相互接続 tls: p256（2026-11-06） |
-| TLS 1.2（dangerouslyAllowTls12 の明示でだけ・ECDHE X25519 × AES-128-GCM / ChaCha20-Poly1305 × ECDSA / RSA の 4 suite） | 一部 | 相互接続 tls: p256-12-gcm（2026-11-06）<br>相互接続 tls: p256-12-chacha（2026-11-06）<br>相互接続 tls: rsa-12-gcm（2026-11-06）<br>相互接続 tls: rsa-12-chacha（2026-11-06） |
-| TLS 1.2: extended master secret（RFC 7627）必須・renegotiation_info（RFC 5746）必須で再交渉は断る | 対応 | 相互接続 tls: rsa-12-gcm（2026-11-06） |
+| TLS 1.3（既定 — 1.3 だけを申し出る） | 対応 | `std/internal/hsc.TestHandshakeAndData`<br>相互接続 tls: p256（2026-11-08） |
+| TLS 1.2（dangerouslyAllowTls12 の明示でだけ・ECDHE X25519 × AES-128-GCM / ChaCha20-Poly1305 × ECDSA / RSA の 4 suite） | 一部 | 相互接続 tls: p256-12-gcm（2026-11-08）<br>相互接続 tls: p256-12-chacha（2026-11-08）<br>相互接続 tls: rsa-12-gcm（2026-11-08）<br>相互接続 tls: rsa-12-chacha（2026-11-08） |
+| TLS 1.2: extended master secret（RFC 7627）必須・renegotiation_info（RFC 5746）必須で再交渉は断る | 対応 | 相互接続 tls: rsa-12-gcm（2026-11-08） |
 | 降格の印（RFC 8446 4.1.3 — 1.3 を申し出て 1.2 を選んだサーバは中止） | 対応 | `std/internal/hsc.TestDowngradeSentinel` |
-| サーバの署名 ECDSA P-256 / P-384・RSA-PSS（rsae） | 対応 | 相互接続 tls: p256（2026-11-06）<br>相互接続 tls: p384（2026-11-06）<br>相互接続 tls: rsa（2026-11-06） |
+| サーバの署名 ECDSA P-256 / P-384・RSA-PSS（rsae） | 対応 | 相互接続 tls: p256（2026-11-08）<br>相互接続 tls: p384（2026-11-08）<br>相互接続 tls: rsa（2026-11-08） |
 | 証明書の鎖は常に検証する（検証を切る設定は無い — x509 の章） | 対応 | `std/internal/hsc.TestCertFailures`<br>相互接続 http: unknown-ca-refused（2026-11-07） |
 | HelloRetryRequest の cookie | 対応 | `std/internal/hsc.TestHelloRetry` |
+| secp256r1 を求める HelloRetryRequest（P-256 の鍵交換 — X25519 を受けないサーバ） | 対応 | `std/internal/hsc.TestHelloRetryP256`<br>相互接続 tls: p256-ecdhe（2026-11-08） |
 | SNI・ALPN の申し出 | 対応 | `std/internal/hsc.TestHandshakeAndData` |
-| CertificateRequest（TLS 1.2 — 空の Certificate で答える。クライアント証明書は持たない） | 一部 | 相互接続 tls: rsa-12-req（2026-11-06） |
+| CertificateRequest（TLS 1.2 — 空の Certificate で答える。クライアント証明書は持たない） | 一部 | 相互接続 tls: rsa-12-req（2026-11-08） |
 | 改竄した flight の拒否 | 対応 | `std/internal/hsc.TestTamperedFlight` |
 <!-- confsync:end claims tls-client yes,partial -->
 
@@ -70,12 +71,6 @@ TLS 1.3（RFC 8446）のサーバ（`std/tls` — `tls.Serve`）とクライア�
 | OCSP stapling | 0.8 圏 | — |
 | HTTP/2 の ALPN（h2） | 0.8 圏 | — |
 <!-- confsync:end claims tls-server planned -->
-
-<!-- confsync:begin claims tls-client planned -->
-| 項目 | 時期 | 今の挙動の証拠 |
-|---|---|---|
-| 別の群を求める HelloRetryRequest（P-256 の鍵交換と一緒に） | 0.8 圏 | — |
-<!-- confsync:end claims tls-client planned -->
 
 ## 証拠
 
@@ -111,13 +106,14 @@ record の封と開け（AES-128-GCM / ChaCha20-Poly1305・0 埋め・KeyUpdate�
 ### 相互接続（クライアント — 相手 = Go crypto/tls）
 
 <!-- confsync:begin interop-tls -->
-最終確認: 2026-11-06（木 8314196f0ed4 (dirty) — scripts/tlsinterop.sh）
+最終確認: 2026-11-08（木 858cb8e83ab2 (dirty) — scripts/tlsinterop.sh）
 
 | Go のサーバ | 繋がった版 |
 |---|---|
 | p256 | TLS 1.3 |
 | p384 | TLS 1.3 |
 | rsa | TLS 1.3 |
+| p256-ecdhe | TLS 1.3 |
 | p256-12-gcm | TLS 1.2 |
 | p256-12-chacha | TLS 1.2 |
 | rsa-12-gcm | TLS 1.2 |

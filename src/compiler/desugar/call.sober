@@ -681,7 +681,9 @@ func inlineCall(st mut S, fi int, cn NodeRef, explicit NodeRef, args ListRef, at
                 // std/task の端点の仮引数（RecvAll）: コアの型は own — 実引数の型のまま束ねる（ann しない）
                 hsetCore(mut st, int(vals) + 1 + nv, expr(mut st, arg, eb, ef, level)?)
                 nv += 1
-                benv = bind(mut st, benv, sA(nodeOf(mut st, p)), level, false, -1, computeTy(mut st, arg, eb, ef), -1, 0, -1, false, SUNK)
+                // domain の仮引数（Update / Read / Await）は実引数の宣言を運ぶ — 状態の struct の宣言を domEnter の束縛まで届ける（mut の欄のセルの割り）
+                ad := if parDomParam(mut st, pk, pt) { declOfExpr(mut st, arg, eb, ef) } else { -1 }
+                benv = bind(mut st, benv, sA(nodeOf(mut st, p)), level, false, ad, computeTy(mut st, arg, eb, ef), -1, 0, -1, false, SUNK)
                 level += 1
             } else {
                 saved := st.tenv

@@ -1,0 +1,33 @@
+package main
+
+// task.Await takes one slot from a counter: it waits until when: is true, and waiting calls enter in arrival order. A wait longer
+// than wait: returns io.Expired (here a slot is free, so it does not wait)
+
+import "std/task"
+
+type Slots struct {
+    free int
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, Slots{free: 2}, wait: 5 * task.MS)
+        h := task.Spawn(s, () => {
+            v, err := task.Await(d, (st mut Slots) => {
+                st.free -= 1
+                st.free
+            }, when: (st Slots) => st.free > 0)
+            if err != nil {
+                -1
+            } else {
+                v
+            }
+        })
+        task.Join(h) + task.Read(d, (st Slots) => st.free)
+    })
+    if e != nil {
+        println("died")
+        return
+    }
+    println(r)
+}

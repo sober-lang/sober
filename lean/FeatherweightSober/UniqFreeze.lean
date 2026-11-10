@@ -185,7 +185,14 @@ partial def ev (env : List AV) (e : Expr) (s : St) : AV × St :=
   if s.dead || s.err.isSome then (.bufs [], s) else
   match e with
   | .lit _ | .tt | .ff | .triv | .nil _ | .fnref _ _ | .unreach _ | .blit _ | .flit _ | .newchan _ _ | .newch _ _ _
-  | .strlit _ _ => (.bufs [], s)
+  | .strlit _ _ | .domV _ _ _ => (.bufs [], s)
+  | .dnew _ a _ =>
+    let (_, s) := ev env a s
+    (.bufs [], s)
+  | .dexit a b =>
+    let (_, s) := ev env a s
+    let (_, s) := ev env b s
+    (.bufs [], s)
   | .var i => (env.getD i (.bufs []), s)
   | .letE a body =>
     let (v, s) := ev env a s
@@ -322,7 +329,7 @@ partial def ev (env : List AV) (e : Expr) (s : St) : AV × St :=
     let (v, s) := ev env a s
     let (_, s) := ev env k s
     (.bufs ((H s v).foldl (fun acc b => union acc (s.cont b)) []), s)
-  | .lenE a | .lenm a | .recv a | .close a =>
+  | .lenE a | .lenm a | .recv a | .close a | .denter _ a =>
     let (_, s) := ev env a s
     (.bufs [], s)
   | .keysm a =>

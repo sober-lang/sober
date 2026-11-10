@@ -1,0 +1,22 @@
+package main
+
+// A domain cannot be put where it outlives the scope that made it (diag.Par kind 39): a task spawned on an outer scope captures it
+
+import "std/task"
+
+type C struct {
+    n int
+}
+
+func main() {
+    r, e := task.Run((s0 task.Scope) => {
+        _, e1 := task.Run((s1 task.Scope) => {
+            d := task.NewDomain(s1, C{n: 7})
+            _ = task.Spawn(s0, () => task.Read(d, (st C) => st.n))
+            0
+        })
+        _ = e1
+        0
+    })
+    println("${r} ${e == nil}")
+}

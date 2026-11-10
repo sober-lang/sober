@@ -1,0 +1,14 @@
+package main
+
+// Cache-Control を書かない方針（Unstated — 共有キャッシュも保存しうる側の @shared）は応答 1 件には書けない — ルートの行でだけ
+
+import "std/http"
+import "std/http/server"
+
+func h(r http.server.Request) http.server.Response {
+    return http.server.Response{status: http.OK, contentType: "text/plain", body: bytes("x"), cache: http.server.Unstated{}}
+}
+
+func main() {
+    _ = h
+}

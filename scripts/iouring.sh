@@ -102,7 +102,7 @@ done
 # 期限が待ちを切る両端・相手がもういない（Closed）の 3 経路
 # net 段 4c（report-670）: std/http の例（http_arena — 切片をまたぐ要求・パイプライン・誤りの応答の後の読み捨て）も同じ格子
 # net 段 4b-0（report-664）: net の例と期限つきの Sleep（timerfd の待ち）は SOBER_NET ∈ {自動〔net の ring — カーネルが受ければ〕, 1〔epoll の道に固定〕} も掛ける
-for ex in io_chunks_par io_chunks_par_die io_chunks_at_par net_echo net_multi net_deadline net_deadline_spawn net_orphan net_orphan_dl net_closed net_serve net_reject net_region net_region_mix net_accept_break http_arena task_sleep_deadline task_sleep_many; do
+for ex in io_chunks_par io_chunks_par_die io_chunks_at_par net_echo net_multi net_deadline net_deadline_spawn net_deadline_order net_orphan net_orphan_dl net_closed net_serve net_reject net_region net_region_mix net_accept_break http_arena task_sleep_deadline task_sleep_many; do
     "$S2" build examples/$ex.sober --emit=elf --passes -o "$W/$ex" > "$W/build4.log" 2>&1 || { echo "iouring: FAIL build $ex ($(head -c 200 "$W/build4.log"))"; exit 1; }
     { cat examples/$ex.out; echo "exit=0"; } > "$W/$ex.want"
     case $ex in net_*|http_*|par_sleep_*) nets="0 1" ;; *) nets="0" ;; esac
@@ -136,8 +136,20 @@ if [ "$auto" = uring ]; then
         fi
     done
 fi
+# 期限の鎖の網の自己検査: 変異 50（双方向の鎖の外しが次の節の前を直し忘れる）は epoll の道の net_serve（W1）が止まる・
+# 変異 51（積みが最早の期限の下界を下げ忘れる — 走査が鎖を歩かず短い期限が長い期限まで待つ）は net の ring の net_deadline_order（W2）が止まる
+for mc in "50 net_serve 1" "51 net_deadline_order 2"; do
+    set -- $mc
+    "$S2" build examples/$2.sober --emit=elf --passes --rt-mutant=$1 -o "$W/m$1" > "$W/buildm.log" 2>&1 || { echo "iouring: FAIL build $2 m$1"; exit 1; }
+    ec=0
+    env SOBER_WORKERS=$3 timeout 10 "$W/m$1" < /dev/null > "$W/m$1.got" 2> /dev/null || ec=$?
+    echo "exit=$ec" >> "$W/m$1.got"
+    n=$((n + 1))
+    if [ "$1" = 51 ] && [ "$auto" != uring ]; then continue; fi
+    if cmp -s "$W/$2.want" "$W/m$1.got"; then echo "iouring: FAIL — mutant $1 was not caught by $2 W$3"; fail=1; fi
+done
 if [ $fail = 0 ]; then
-    echo "iouring: $n runs — observation ≡ W1 for SOBER_IO ∈ {auto(${auto}), 1, 2} × W ∈ {1, 2, 8} (collatz_par + io_par + io_par_stdin + io_chunks_par + io_chunks_par_die + io_chunks_at_par + net_echo + net_multi + net_deadline + net_deadline_spawn + net_orphan + net_orphan_dl + net_closed + net_serve + net_reject + net_region + net_region_mix〔SOBER_TASK_REGION_MB ∈ {既定, 4} も〕 + net_accept_break + http_arena + task_sleep_deadline + task_sleep_many — net / http の例は SOBER_NET ∈ {auto, 1} も), one probe line per worker, net ring selection, fail=0"
+    echo "iouring: $n runs — observation ≡ W1 for SOBER_IO ∈ {auto(${auto}), 1, 2} × W ∈ {1, 2, 8} (collatz_par + io_par + io_par_stdin + io_chunks_par + io_chunks_par_die + io_chunks_at_par + net_echo + net_multi + net_deadline + net_deadline_spawn + net_deadline_order + net_orphan + net_orphan_dl + net_closed + net_serve + net_reject + net_region + net_region_mix〔SOBER_TASK_REGION_MB ∈ {既定, 4} も〕 + net_accept_break + http_arena + task_sleep_deadline + task_sleep_many — net / http の例は SOBER_NET ∈ {auto, 1} も), one probe line per worker, net ring selection, deadline-chain mutants 50/51 caught, fail=0"
 else
     echo "iouring: FAIL"
 fi

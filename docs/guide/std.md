@@ -43,7 +43,7 @@ Slices (`[]T`) and maps (`map[K]V`) are built into the language (`append`, `len`
 
 | Package | Purpose | Main items |
 |---|---|---|
-| [`std/task`](../std/task.ja.md) | Structured concurrency | `Map`, `Run` (opens a scope — the body receives a `Scope` token) + `Spawn` + `Join` / `Gather` / `Try`, channels `NewChannel` / `Send` / `Recv` / `Close`, `Pool` (`NewPool` / `SpawnIn`) |
+| [`std/task`](../std/task.ja.md) | Structured concurrency | `Map`, `Run` (opens a scope — the body receives a `Scope` token) + `Spawn` + `Join` / `Gather` / `Try`, channels `NewChannel` / `Send` / `Recv` / `Close`, `Pool` (`NewPool` / `SpawnIn`), serialized updates from many tasks to one state with `Domain` (`NewDomain` / `Update` / `Read` / `Await` — section 5 of [Concurrency](concurrency.md)) |
 
 Only immutable values and channels can be passed to a child task. The output is the same regardless of the number of workers ([language tour, section 7](tour.md#7-parallelism--structured-concurrency-channels)).
 
@@ -53,7 +53,7 @@ Only immutable values and channels can be passed to a child task. The output is 
 |---|---|---|
 | [`std/math`](../std/math.ja.md) | Floating-point basics | `Sqrt`, `Abs`, `Bits` / `FromBits` |
 | [`std/time`](../std/time.ja.md) | Time (wall-clock `Time` and monotonic `Instant` are separate types; only `Now` reads the wall clock) | `Now`, `Mono`, `Since`, `Unix`, `Add` / `Sub`, `ToCivil` / `FromCivil`, `FormatRFC3339` / `ParseRFC3339`, `FormatHTTP` / `ParseHTTP`, time zones `LoadZone` / `ToCivilIn` / `OffsetAt` (IANA tzdata baked in) |
-| [`std/uuid`](../std/uuid.ja.md) | UUIDs (RFC 9562 — versions 4 and 7) | `NewV4`, `NewV7`, `Parse`, `String`, `Equal` |
+| [`std/uuid`](../std/uuid.ja.md) | UUIDs (RFC 9562 — versions 4 and 7) | `NewV4`, `NewV7`, `Parse`, `Format`, `Equal` |
 | [`std/rand`](../std/rand.ja.md) | Deterministic pseudo-random numbers | `New` (from a seed), `Intn`, `Int62`, `Bool`, `Split` (split per parallel task) |
 | [`std/hash`](../std/hash.ja.md) | Hashing | `Sha256` |
 | [`std/hash/crc32`](../std/hash-crc32.ja.md) | Checksums | `Sum` (CRC-32 — the same value as gzip, zlib and PNG) |
@@ -74,6 +74,7 @@ Only immutable values and channels can be passed to a child task. The output is 
 | [`std/http/server`](../std/http-server.ja.md) | HTTP/1.1 server | `ServeConn` (on a net connection) / `ServeWith` (on receive and send functions — e.g. a TLS connection; the optional `put:` takes responses without sending them, flushed by the receive side, as `tls.Put`), `SetCookie` (Response.cookies — Secure / HttpOnly / SameSite=Lax by default), `Request` / `Response`, `Text` / `Json` / `Status`, `Header` / `Query` / `Form` / `Multipart` (file uploads) / `JsonDoc`, a router `Route` + `Mount` / `Merge` / `Dispatch` / `Param`, `Middleware` (`Before` / `After`), gzip and streamed responses |
 | [`std/http/client`](../std/http-client.ja.md) | HTTP/1.1 client (TLS is always verified — 1.3 only by default) | Holds no state. `Request(url, method:, headers:, body:, cookies:, policy:)` per request; `Policy`, a plain data value (the zero values are the safe defaults: an 8 MiB body limit, a 30 s deadline, 10 redirects; `extraRoots` for a private PKI via `tls.ParseRoots`, `proxy` via `ParseProxy` / `proxyAuth`, `dangerouslyAllowTls12`); cookies are values (read with `CookieValue`, sent with `cookies:`); `for part <- http.client.Stream(url)?` to receive the body in pieces, and `Send` inside a keep-alive `Open` (Session is an identity type). Errors are `Dns`, `Tls`, `Timeout`, `TooManyRedirects`, `InsecureRedirect`, `BodyTooLarge`, `Closed`, `BadUrl`, `BadResponse`, `ProxyRefused`, `BadProxy` (from ParseProxy) |
 | [`std/tls`](../std/tls.ja.md) | TLS 1.3 server | `Serve` (hands over only connections whose handshake is done), a `Config` from `Load` / `Parse`, `Recv` / `Send` (same shape as net) / `Put` + `Flush` (put without sending — `Recv` sends what was put before the next receive); `ParseRoots` makes the `Roots` a client adds to its trust anchors (error `BadRoots`). Errors are `HandshakeFailed`, `BadRecord`, `Closed` |
+| [`std/pg`](../std/pg.ja.md) | PostgreSQL client (wire protocol 3.0 — TLS 1.3 + SCRAM-SHA-256-PLUS by default) | `Open` (a connection `Conn`), `Exec` / `Query` / `Script` (the SQL text sits in a const slot), reading rows with `Col*`, transactions with `Tx`, a connection pool with `OpenPool` / `With` ([PostgreSQL](postgres.md)) |
 
 ## Cryptography
 

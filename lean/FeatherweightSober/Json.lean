@@ -90,6 +90,7 @@ def tyToJson : Ty → Json
   | .map m r c =>
       Json.mkObj [("k", "map"), ("m", m), ("r", (r : Nat)), ("cell", tyToJson c)]
   | .chan rc t => Json.mkObj [("k", "chan"), ("rc", (rc : Nat)), ("t", tyToJson t)]
+  | .dom r t => Json.mkObj [("k", "dom"), ("r", (r : Nat)), ("t", tyToJson t)]
   | .fn p r => Json.mkObj [("k", "fn"), ("p", tyToJson p), ("r", tyToJson r)]
   | .own k r t => Json.mkObj [("k", "own"), ("o", ownKToStr k), ("r", (r : Nat)), ("t", tyToJson t)]
   | .mus n i b => Json.mkObj [("k", "mus"), ("n", (n : Nat)), ("i", (i : Nat)), ("b", tyToJson b)]
@@ -230,6 +231,10 @@ def exprToJson : Expr → Json
   | .taskV _ _ => Json.mkObj [("k", "taskv-not-in-source")]
   | .newch r cap t => Json.mkObj [("k", "newch"), ("r", (r : Nat)), ("cap", (cap : Nat)), ("t", tyToJson t)]
   | .epV _ _ _ _ => Json.mkObj [("k", "epv-not-in-source")]
+  | .dnew r i t => Json.mkObj [("k", "dnew"), ("r", (r : Nat)), ("i", exprToJson i), ("t", tyToJson t)]
+  | .domV _ _ _ => Json.mkObj [("k", "domv-not-in-source")]
+  | .denter t d => Json.mkObj [("k", "denter"), ("t", tyToJson t), ("d", exprToJson d)]
+  | .dexit d v => Json.mkObj [("k", "dexit"), ("d", exprToJson d), ("v", exprToJson v)]
 
 /-- JSON → Ty（燃料つき） -/
 def tyFromJson : Nat → Json → Except String Ty
@@ -283,6 +288,10 @@ def tyFromJson : Nat → Json → Except String Ty
         let p ← j.getObjVal? "p" >>= tyFromJson fuel
         let r ← j.getObjVal? "r" >>= tyFromJson fuel
         pure (.fn p r)
+    | "dom" => do
+        let r ← j.getObjVal? "r" >>= Json.getNat?
+        let t ← j.getObjVal? "t" >>= tyFromJson fuel
+        pure (.dom r t)
     | "own" => do
         let o ← j.getObjVal? "o" >>= Json.getStr? >>= ownKFromStr
         let r ← j.getObjVal? "r" >>= Json.getNat?
@@ -669,6 +678,19 @@ def exprFromJson : Nat → Json → Except String Expr
         let cap ← j.getObjVal? "cap" >>= Json.getNat?
         let t ← j.getObjVal? "t" >>= tyFromJson fuel
         pure (.newch r cap t)
+    | "dnew" => do
+        let r ← j.getObjVal? "r" >>= Json.getNat?
+        let i ← j.getObjVal? "i" >>= exprFromJson fuel
+        let t ← j.getObjVal? "t" >>= tyFromJson fuel
+        pure (.dnew r i t)
+    | "denter" => do
+        let t ← j.getObjVal? "t" >>= tyFromJson fuel
+        let d ← j.getObjVal? "d" >>= exprFromJson fuel
+        pure (.denter t d)
+    | "dexit" => do
+        let d ← j.getObjVal? "d" >>= exprFromJson fuel
+        let v ← j.getObjVal? "v" >>= exprFromJson fuel
+        pure (.dexit d v)
     | other => .error s!"exprFromJson: unknown kind {other}"
 
 /-- 入力テキストからのパース。燃料は入力長で必ず足りる（1 ノード ≥ 数文字） -/

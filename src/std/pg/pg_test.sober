@@ -1,0 +1,137 @@
+package pg
+
+import "std/time"
+
+func TestParseUrl() {
+    t, ok := parseUrl("postgres://app@db.local/shop")
+    assert(ok && t.user == "app" && t.host == "db.local" && t.port == 5432 && t.db == "shop")
+    t2, ok2 := parseUrl("postgresql://u%40x@127.0.0.1:6543")
+    assert(ok2 && t2.user == "u@x" && t2.port == 6543 && t2.db == "u@x")
+    t3, ok3 := parseUrl("postgres://u@[::1]:5433/d")
+    assert(ok3 && t3.host == "::1" && t3.port == 5433)
+    // password・クエリ・port の形・スキーム・ホスト無し・複数ホストは読まない
+    for bad <- badUrls() {
+        _, okb := parseUrl(bad)
+        assert(!okb, bad)
+    }
+}
+
+func badUrls() []string {
+    return []string{"postgres://u:pw@h/d", "postgres://u@h/d?sslmode=disable", "postgres://u@h:0/d", "postgres://u@h:99999/d", "postgres://u@h:x/d",
+        "mysql://u@h/d", "postgres://u@/d", "postgres://h/d", "postgres://u@h1,h2/d", "postgres://u@[::1/d"}
+}
+
+func TestNumericText() {
+    // 1.5 = ndigits 2・weight 0・sign +・dscale 1・桁 0001 5000（R0 の実測の形）
+    s, ok := numericText([]byte{0, 2, 0, 0, 0, 0, 0, 1, 0, 1, 0x13, 0x88})
+    assert(ok && s == "1.5", s)
+    z, okz := numericText([]byte{0, 0, 0, 0, 0, 0, 0, 2})
+    assert(okz && z == "0.00", z)
+    n, okn := numericText([]byte{0, 1, 0xff, 0xff, 0x40, 0, 0, 2, 0x02, 0xbc})
+    assert(okn && n == "-0.07", n)
+    big, okb := numericText([]byte{0, 2, 0, 1, 0, 0, 0, 0, 0, 12, 0, 34})
+    assert(okb && big == "120034", big)
+    nan, okc := numericText([]byte{0, 0, 0, 0, 0xc0, 0, 0, 0})
+    assert(okc && nan == "NaN")
+    _, okd := numericText([]byte{0, 1, 0, 0, 0, 0, 0, 0})
+    assert(!okd)
+}
+
+func TestScaled() {
+    a := Scaled(Numeric{digits: "12.50"}, 2) catch -1
+    assert(a == 1250)
+    b := Scaled(Numeric{digits: "-0.07"}, 2) catch -1
+    assert(b == -7)
+    c := Scaled(Int{v: 3}, 3) catch -1
+    assert(c == 3000)
+    d := Scaled(Numeric{digits: "1.005"}, 2) catch -1
+    assert(d == -1)
+    e := Scaled(Numeric{digits: "1.000"}, 1) catch -1
+    assert(e == 10)
+    f := Scaled(Numeric{digits: "NaN"}, 2) catch -1
+    assert(f == -1)
+    g := Scaled(Numeric{digits: "99999999999999999999"}, 0) catch -1
+    assert(g == -1)
+}
+
+func TestDecode() {
+    i, ok := decode(oidInt4, 1, []byte{0xff, 0xff, 0xff, 0xfe})
+    assert(ok && isInt(i, -2))
+    _, okw := decode(oidInt8, 1, []byte{1, 2})
+    assert(!okw)
+    d, okd := decode(oidDate, 1, []byte{0, 0, 0x22, 0x79})
+    assert(okd && civilDay(d) == 20240229, "${civilDay(d)}")
+    ts, okt := decode(oidTimestamptz, 1, []byte{0, 0, 0, 0, 0, 0, 0, 1})
+    assert(okt && timeIs(ts, 946684800, 1000))
+    f, okf := decode(oidFloat4, 1, []byte{0x3f, 0xc0, 0, 0})
+    assert(okf && floatIs(f, 1.5))
+    u, oku := decode(oidText, 0, []byte{0x61})
+    assert(oku && unknownIs(u, "a"))
+    j, okj := decode(oidJsonb, 1, []byte{1, 0x5b, 0x5d})
+    assert(okj && jsonLen(j) == 2)
+}
+
+func TestEncode() {
+    a, ok := encode(oidInt2, Int{v: 32767})
+    assert(ok && len(a.b) == 2 && a.bin)
+    _, ok2 := encode(oidInt2, Int{v: 32768})
+    assert(!ok2)
+    _, ok3 := encode(oidBool, Int{v: 1})
+    assert(!ok3)
+    t, ok4 := encode(oidDate, Civil{v: time.ToCivil(time.Unix(946684800 + 86400, 0), 0)})
+    assert(ok4 && len(t.b) == 4 && t.b[3] == 1)
+    _, ok5 := encode(oidDate, Civil{v: time.ToCivil(time.Unix(946684800 + 1, 0), 0)})
+    assert(!ok5)
+    n, ok6 := encode(oidNumeric, Numeric{digits: "1.5"})
+    assert(ok6 && !n.bin)
+    s, ok7 := encode(1186, String{v: "1 day"})
+    assert(ok7 && !s.bin)
+}
+
+func TestCountOf() {
+    assert(countOf("INSERT 0 5") == 5)
+    assert(countOf("UPDATE 3") == 3)
+    assert(countOf("CREATE TABLE") == 0)
+}
+
+func isInt(v Value, n int) bool {
+    return switch v {
+    case Int{v: x}: x == n
+    default: false
+    }
+}
+
+func civilDay(v Value) int {
+    return switch v {
+    case Civil{v: c}: c.year * 10000 + c.month * 100 + c.day
+    default: 0
+    }
+}
+
+func timeIs(v Value, sec int, nsec int) bool {
+    return switch v {
+    case Time{v: t}: time.UnixSec(t) == sec && time.Nano(t) == nsec
+    default: false
+    }
+}
+
+func floatIs(v Value, f float) bool {
+    return switch v {
+    case Float{v: x}: x == f
+    default: false
+    }
+}
+
+func unknownIs(v Value, s string) bool {
+    return switch v {
+    case Unknown{oid, text}: text == s
+    default: false
+    }
+}
+
+func jsonLen(v Value) int {
+    return switch v {
+    case Json{v: b}: len(b)
+    default: -1
+    }
+}

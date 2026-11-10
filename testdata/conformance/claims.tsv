@@ -26,7 +26,7 @@ tls-client	intentional	-	TLS 1.2 の CBC・RSA 鍵交換・静的 DH の suite�
 tls-client	yes	-	サーバの署名 ECDSA P-256 / P-384・RSA-PSS（rsae）	Server signatures ECDSA P-256 / P-384, RSA-PSS (rsae)	interop:tls:p256 interop:tls:p384 interop:tls:rsa
 tls-client	yes	-	証明書の鎖は常に検証する（検証を切る設定は無い — x509 の章）	The certificate chain is always verified (there is no setting to turn it off — see the x509 chapter)	test:std/internal/hsc.TestCertFailures interop:http:unknown-ca-refused
 tls-client	yes	-	HelloRetryRequest の cookie	HelloRetryRequest with a cookie	test:std/internal/hsc.TestHelloRetry
-tls-client	planned	0.8	別の群を求める HelloRetryRequest（P-256 の鍵交換と一緒に）	HelloRetryRequest asking for another group (together with P-256 key exchange)	-
+tls-client	yes	-	secp256r1 を求める HelloRetryRequest（P-256 の鍵交換 — X25519 を受けないサーバ）	HelloRetryRequest asking for secp256r1 (P-256 key exchange — servers without X25519)	test:std/internal/hsc.TestHelloRetryP256 interop:tls:p256-ecdhe
 tls-client	yes	-	SNI・ALPN の申し出	SNI and ALPN in the ClientHello	test:std/internal/hsc.TestHandshakeAndData
 tls-client	partial	-	CertificateRequest（TLS 1.2 — 空の Certificate で答える。クライアント証明書は持たない）	CertificateRequest (TLS 1.2 — answered with an empty Certificate; no client certificates)	interop:tls:rsa-12-req
 tls-client	intentional	-	session resumption・0-RTT（NewSessionTicket は読み捨てる）	Session resumption, 0-RTT (NewSessionTicket is discarded)	-
@@ -51,9 +51,10 @@ crypto-prims	intentional	-	ソフトウェアの AES（塊の無い機械では 
 crypto-prims	planned	0.8	AES-256-GCM	AES-256-GCM	-
 crypto-prims	yes	-	ハッシュ・MAC・KDF: SHA-256・SHA-384 / 512（std の内側）・HMAC-SHA256・HKDF-SHA256	Hashes, MAC, KDF: SHA-256, SHA-384 / 512 (internal to std), HMAC-SHA256, HKDF-SHA256	conf:wycheproof/hmac-sha256 conf:wycheproof/hkdf-sha256 conf:hashlib/sha512
 crypto-prims	yes	-	鍵交換 X25519	Key exchange X25519	conf:wycheproof/x25519
+crypto-prims	yes	-	鍵交換 P-256（ECDH・定数時間 — TLS の secp256r1）	Key exchange P-256 (ECDH, constant-time — TLS secp256r1)	conf:wycheproof/ecdh_secp256r1
 crypto-prims	yes	-	署名の検証 ECDSA P-256 / P-384・RSA-PSS・RSA PKCS#1 v1.5	Signature verification ECDSA P-256 / P-384, RSA-PSS, RSA PKCS#1 v1.5	conf:cavp/ecdsa-sigver conf:wycheproof/rsa-pss-2048-sha256-mgf1-32
 crypto-prims	partial	-	署名の生成（RSA-PSS だけ — TLS のサーバの CertificateVerify）	Signing (RSA-PSS only — the TLS server's CertificateVerify)	test:std/tls.TestTrace
-crypto-prims	planned	0.8	ECDSA の署名（RFC 6979）・P-256 の ECDHE	ECDSA signing (RFC 6979), P-256 ECDHE	-
+crypto-prims	planned	0.8	ECDSA の署名（RFC 6979）	ECDSA signing (RFC 6979)	-
 crypto-prims	yes	-	秘密に触る関数の定数時間（静的な網 ctcheck — 関数ごとの条件分岐の列を黄金と照合）	Constant time for functions that touch secrets (static gate ctcheck — per-function conditional branches checked against a golden)	gold:testdata/ctcheck/expect.txt:aesgcm
 crypto-prims	yes	-	パスワードハッシュ: Argon2id（推し）・bcrypt・PBKDF2-HMAC-SHA256・PHC 文字列の Verify	Password hashing: Argon2id (recommended), bcrypt, PBKDF2-HMAC-SHA256, Verify of PHC strings	conf:xcrypto/argon2id conf:xcrypto/bcrypt conf:go/pbkdf2-sha256
 crypto-prims	intentional	-	scrypt・MD5 / SHA-1 のハッシュ	scrypt, MD5 / SHA-1 hashes	-

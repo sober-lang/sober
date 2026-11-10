@@ -1764,14 +1764,14 @@ func @main.main() {
 b0:
   %0 = region.depth
   region.enter
-  %1 = slotaddr s0
-  %2 = const 0
-  store %1[0], %2
-  store %1[1], %2
+  %1 = const 0
+  %2 = slotaddr s0
+  store %2[0], %1
+  store %2[1], %1
   %3 = slotaddr s1
-  %4 = load.i64 %1[0]
+  %4 = load.i64 %2[0]
   store %3[0], %4
-  %5 = load.i64 %1[1]
+  %5 = load.i64 %2[1]
   store %3[1], %5
   %6 = const 1
   %7 = add %0, %6
@@ -1886,11 +1886,11 @@ func @testdata/alias/wrap.NewAcc(%0 ptr, %1 i64) {
 b0:
   %2 = region.depth
   region.enter
-  %3 = slotaddr s0
-  %4 = const 0
-  store %3[0], %4
-  store %3[0], %1
-  %5 = load.i64 %3[0]
+  %3 = const 0
+  %4 = slotaddr s0
+  store %4[0], %3
+  store %4[0], %1
+  %5 = load.i64 %4[0]
   store %0[0], %5
   region.setdepth %2
   ret
@@ -1933,13 +1933,13 @@ b0:
   %7 = eq %5, %6
   condbr %7, b1, b2
 b1:
-  %8 = slotaddr s1
-  %9 = const 0
-  store %8[0], %9
-  store %8[1], %9
+  %8 = const 0
+  %9 = slotaddr s1
+  store %9[0], %8
+  store %9[1], %8
   %10 = const 1
-  store %8[0], %10
-  br b5(%8)
+  store %9[0], %10
+  br b5(%9)
 b2:
   %11 = load.i64 %3[1]
   %12 = load.i64 %3[0]
@@ -1952,14 +1952,14 @@ b3:
   exit 101
 b4:
   %16 = div %11, %12
-  %17 = slotaddr s2
-  %18 = const 0
-  store %17[0], %18
-  store %17[1], %18
+  %17 = const 0
+  %18 = slotaddr s2
+  store %18[0], %17
+  store %18[1], %17
   %19 = const 0
-  store %17[0], %19
-  store %17[1], %16
-  br b5(%17)
+  store %18[0], %19
+  store %18[1], %16
+  br b5(%18)
 b5(%20 ptr):
   %21 = load.i64 %20[0]
   store %0[0], %21

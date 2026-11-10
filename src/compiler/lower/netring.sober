@@ -470,7 +470,7 @@ func nrWaitRt(st mut St, rg int, nr int, dl bool) int {
     store(mut st, wk, WK_NETW, urAdd(mut st, load(mut st, wk, WK_NETW), 1))
     r := if dl && dlFn(st.rtD3) != 0 {
         dlv := dlWait(mut st, rg, UR_DLQ, me, PEND_RT)
-        dlUnlink(mut st, urAdd(mut st, rg, UR_DLQ * 8), me, dlv)
+        dlUnlink(mut st, me, dlv)
         load(mut st, itop(mut st, me), TC_IORES)
     } else {
         dlWait(mut st, rg, -1, me, PEND_RT)
@@ -490,12 +490,10 @@ func nrWaitRt(st mut St, rg int, nr int, dl bool) int {
 func fuseWait(st mut St, rg int, me int) int {
     zero := iconst(mut st, 0)
     tp := itop(mut st, me)
-    rp := itop(mut st, rg)
     dlv := if dlFn(st.rtD3) != 0 { load(mut st, tp, TC_DL) } else { zero }
     if dlFn(st.rtD3) != 0 {
         bL := branchIf(mut st, cmp(mut st, CNe, dlv, zero))
-        store(mut st, tp, TC_AWNEXT, load(mut st, rp, UR_DLQ))
-        store(mut st, rp, UR_DLQ, me)
+        dlqPush(mut st, rg, me, dlv)
         br(mut st, bL, -1)
         setCur(mut st, bL)
     }
@@ -837,7 +835,7 @@ func buildNetOp(st mut St) {
         store(mut st, np, NR_WAIT, zero)
         frRecP(mut st, FK_SEND, fd, 3, r)
         if dlFn(st.rtD3) != 0 {
-            dlUnlink(mut st, urAdd(mut st, rg, UR_DLQ * 8), me, dlv)
+            dlUnlink(mut st, me, dlv)
         }
         if st.orphOn {
             orphLeave(mut st, me)

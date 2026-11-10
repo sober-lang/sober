@@ -3237,14 +3237,14 @@ b0:
   %v16 = add i64 0, 10
   call void @"rt.print_char"(i64 %v16)
   %v17 = add i64 0, 0
-  %v18 = getelementptr i64, ptr %s2, i64 0
-  %v19 = add i64 0, 0
-  %st7 = getelementptr i64, ptr %v18, i64 0
-  store i64 %v19, ptr %st7
-  %st8 = getelementptr i64, ptr %v18, i64 0
+  %v18 = add i64 0, 0
+  %v19 = getelementptr i64, ptr %s2, i64 0
+  %st7 = getelementptr i64, ptr %v19, i64 0
+  store i64 %v18, ptr %st7
+  %st8 = getelementptr i64, ptr %v19, i64 0
   store i64 %v17, ptr %st8
   %v20 = getelementptr i64, ptr %s3, i64 0
-  %v21.p = getelementptr i64, ptr %v18, i64 0
+  %v21.p = getelementptr i64, ptr %v19, i64 0
   %v21 = load i64, ptr %v21.p
   %st9 = getelementptr i64, ptr %v20, i64 0
   store i64 %v21, ptr %st9

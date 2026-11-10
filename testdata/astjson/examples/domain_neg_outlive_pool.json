@@ -1,0 +1,238 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/pg",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "hold"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "pg.Pool"
+                },
+                "elems": [],
+                "mut": true,
+                "tok": 15
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "bind",
+            "names": [
+              "e"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "pg",
+                    "tok": 25
+                  },
+                  "field": "OpenPool",
+                  "tok": 27
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "postgres://u:p@127.0.0.1:1/db",
+                    "tok": 29
+                  },
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "p",
+                        "type": null
+                      }
+                    ],
+                    "body": {
+                      "k": "block",
+                      "stmts": [
+                        {
+                          "k": "assign",
+                          "targets": [
+                            {
+                              "k": "ident",
+                              "name": "hold",
+                              "tok": 36
+                            }
+                          ],
+                          "op": "=",
+                          "values": [
+                            {
+                              "k": "call",
+                              "callee": {
+                                "k": "ident",
+                                "name": "append",
+                                "tok": 38
+                              },
+                              "args": [
+                                {
+                                  "k": "ident",
+                                  "name": "hold",
+                                  "tok": 40
+                                },
+                                {
+                                  "k": "ident",
+                                  "name": "p",
+                                  "tok": 42
+                                }
+                              ],
+                              "tok": 39
+                            }
+                          ],
+                          "tok": 36
+                        }
+                      ]
+                    },
+                    "tok": 34
+                  }
+                ],
+                "tok": 28
+              }
+            ],
+            "tok": 23
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 48
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "e",
+                    "tok": 50
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 52
+                  },
+                  "tok": 51
+                }
+              ],
+              "tok": 49
+            }
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "_",
+                "tok": 55
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "pg",
+                    "tok": 57
+                  },
+                  "field": "With",
+                  "tok": 59
+                },
+                "args": [
+                  {
+                    "k": "index",
+                    "base": {
+                      "k": "ident",
+                      "name": "hold",
+                      "tok": 61
+                    },
+                    "idx": {
+                      "k": "int",
+                      "value": 0,
+                      "tok": 63
+                    },
+                    "tok": 62
+                  },
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "c",
+                        "type": null
+                      }
+                    ],
+                    "body": {
+                      "k": "block",
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "call",
+                            "callee": {
+                              "k": "ident",
+                              "name": "println",
+                              "tok": 71
+                            },
+                            "args": [
+                              {
+                                "k": "strlit",
+                                "value": "borrowed",
+                                "tok": 73
+                              }
+                            ],
+                            "tok": 72
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 69
+                  }
+                ],
+                "tok": 60
+              }
+            ],
+            "tok": 55
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 81
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

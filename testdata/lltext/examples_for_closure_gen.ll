@@ -2895,11 +2895,15 @@ b0:
 
 define internal void @"main.sendv"(ptr %v0, i64 %v1, i64 %v2) #0 {
 b0:
-  %s0 = alloca [2 x i64], align 8
+  %s0 = alloca [4 x i64], align 8
   %s0.z0 = getelementptr i64, ptr %s0, i64 0
   store i64 0, ptr %s0.z0
   %s0.z1 = getelementptr i64, ptr %s0, i64 1
   store i64 0, ptr %s0.z1
+  %s0.z2 = getelementptr i64, ptr %s0, i64 2
+  store i64 0, ptr %s0.z2
+  %s0.z3 = getelementptr i64, ptr %s0, i64 3
+  store i64 0, ptr %s0.z3
   %s1 = alloca [5 x i64], align 8
   %s1.z0 = getelementptr i64, ptr %s1, i64 0
   store i64 0, ptr %s1.z0
@@ -2911,19 +2915,13 @@ b0:
   store i64 0, ptr %s1.z3
   %s1.z4 = getelementptr i64, ptr %s1, i64 4
   store i64 0, ptr %s1.z4
-  %s2 = alloca [6 x i64], align 8
+  %s2 = alloca [3 x i64], align 8
   %s2.z0 = getelementptr i64, ptr %s2, i64 0
   store i64 0, ptr %s2.z0
   %s2.z1 = getelementptr i64, ptr %s2, i64 1
   store i64 0, ptr %s2.z1
   %s2.z2 = getelementptr i64, ptr %s2, i64 2
   store i64 0, ptr %s2.z2
-  %s2.z3 = getelementptr i64, ptr %s2, i64 3
-  store i64 0, ptr %s2.z3
-  %s2.z4 = getelementptr i64, ptr %s2, i64 4
-  store i64 0, ptr %s2.z4
-  %s2.z5 = getelementptr i64, ptr %s2, i64 5
-  store i64 0, ptr %s2.z5
   %s3 = alloca [3 x i64], align 8
   %s3.z0 = getelementptr i64, ptr %s3, i64 0
   store i64 0, ptr %s3.z0
@@ -2938,15 +2936,8 @@ b0:
   store i64 0, ptr %s4.z1
   %s4.z2 = getelementptr i64, ptr %s4, i64 2
   store i64 0, ptr %s4.z2
-  %s5 = alloca [3 x i64], align 8
-  %s5.z0 = getelementptr i64, ptr %s5, i64 0
-  store i64 0, ptr %s5.z0
-  %s5.z1 = getelementptr i64, ptr %s5, i64 1
-  store i64 0, ptr %s5.z1
-  %s5.z2 = getelementptr i64, ptr %s5, i64 2
-  store i64 0, ptr %s5.z2
-  %v69 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v3.p = getelementptr i64, ptr %v69, i64 0
+  %v67 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v3.p = getelementptr i64, ptr %v67, i64 0
   %v3 = load i64, ptr %v3.p
   call void @"rt.region_enter"()
   %v4.c = icmp sgt i64 %v1, %v2
@@ -2958,205 +2949,188 @@ b0.t1:
 b0.e2:
   br label %b2
 b1:
-  %v5 = getelementptr i64, ptr %s0, i64 0
+  %v5 = add i64 0, 0
   %v6 = add i64 0, 0
-  %st2 = getelementptr i64, ptr %v5, i64 0
+  %v7 = getelementptr i64, ptr %s0, i64 0
+  %st2 = getelementptr i64, ptr %v7, i64 0
   store i64 %v6, ptr %st2
-  %st3 = getelementptr i64, ptr %v5, i64 1
-  store i64 %v6, ptr %st3
-  %v7 = add i64 0, 0
-  %st4 = getelementptr i64, ptr %v5, i64 0
-  store i64 %v7, ptr %st4
-  %st5 = getelementptr i64, ptr %v5, i64 1
-  store i64 %v1, ptr %st5
-  %v8 = getelementptr i64, ptr %s1, i64 0
-  %v9.p = getelementptr i64, ptr %v5, i64 0
-  %v9 = load i64, ptr %v9.p
-  %st6 = getelementptr i64, ptr %v8, i64 0
-  store i64 %v9, ptr %st6
-  %v10.p = getelementptr i64, ptr %v5, i64 1
-  %v10 = load i64, ptr %v10.p
-  %st7 = getelementptr i64, ptr %v8, i64 1
-  store i64 %v10, ptr %st7
-  %v11 = add i64 0, 0
-  %st8 = getelementptr i64, ptr %v8, i64 2
-  store i64 %v11, ptr %st8
-  %st9 = getelementptr i64, ptr %v8, i64 3
-  store i64 %v11, ptr %st9
-  %st10 = getelementptr i64, ptr %v8, i64 4
-  store i64 %v11, ptr %st10
-  %v12 = getelementptr i64, ptr %s2, i64 0
-  %v13 = add i64 0, 1
-  %st11 = getelementptr i64, ptr %v12, i64 0
-  store i64 %v13, ptr %st11
-  %v14.p = getelementptr i64, ptr %v8, i64 0
-  %v14 = load i64, ptr %v14.p
-  %st12 = getelementptr i64, ptr %v12, i64 1
-  store i64 %v14, ptr %st12
-  %v15.p = getelementptr i64, ptr %v8, i64 1
+  %v8 = add i64 0, 2
+  %v9 = call ptr @"rt.region_alloc"(i64 %v3, i64 %v8)
+  %v10 = ptrtoint ptr %v9 to i64
+  %st3 = getelementptr i64, ptr %v7, i64 1
+  store i64 %v10, ptr %st3
+  %v11 = add i64 0, 1
+  %st4 = getelementptr i64, ptr %v7, i64 2
+  store i64 %v11, ptr %st4
+  %st5 = getelementptr i64, ptr %v7, i64 3
+  store i64 %v3, ptr %st5
+  %st6 = getelementptr i64, ptr %v9, i64 1
+  store i64 %v5, ptr %st6
+  %v12 = add i64 0, 0
+  %st7 = getelementptr i64, ptr %v9, i64 0
+  store i64 %v12, ptr %st7
+  %st8 = getelementptr i64, ptr %v9, i64 1
+  store i64 %v1, ptr %st8
+  %v13 = getelementptr i64, ptr %s1, i64 0
+  %v14 = add i64 0, 1
+  %st9 = getelementptr i64, ptr %v13, i64 0
+  store i64 %v14, ptr %st9
+  %v15.p = getelementptr i64, ptr %v7, i64 0
   %v15 = load i64, ptr %v15.p
-  %st13 = getelementptr i64, ptr %v12, i64 2
-  store i64 %v15, ptr %st13
-  %v16.p = getelementptr i64, ptr %v8, i64 2
+  %st10 = getelementptr i64, ptr %v13, i64 1
+  store i64 %v15, ptr %st10
+  %v16.p = getelementptr i64, ptr %v7, i64 1
   %v16 = load i64, ptr %v16.p
-  %st14 = getelementptr i64, ptr %v12, i64 3
-  store i64 %v16, ptr %st14
-  %v17.p = getelementptr i64, ptr %v8, i64 3
+  %st11 = getelementptr i64, ptr %v13, i64 2
+  store i64 %v16, ptr %st11
+  %v17.p = getelementptr i64, ptr %v7, i64 2
   %v17 = load i64, ptr %v17.p
-  %st15 = getelementptr i64, ptr %v12, i64 4
-  store i64 %v17, ptr %st15
-  %v18.p = getelementptr i64, ptr %v8, i64 4
+  %st12 = getelementptr i64, ptr %v13, i64 3
+  store i64 %v17, ptr %st12
+  %v18.p = getelementptr i64, ptr %v7, i64 3
   %v18 = load i64, ptr %v18.p
-  %st16 = getelementptr i64, ptr %v12, i64 5
-  store i64 %v18, ptr %st16
-  %v19.p = getelementptr i64, ptr %v12, i64 0
+  %st13 = getelementptr i64, ptr %v13, i64 4
+  store i64 %v18, ptr %st13
+  %v19.p = getelementptr i64, ptr %v13, i64 0
   %v19 = load i64, ptr %v19.p
-  %st17 = getelementptr i64, ptr %v0, i64 0
-  store i64 %v19, ptr %st17
-  %v20.p = getelementptr i64, ptr %v12, i64 1
+  %st14 = getelementptr i64, ptr %v0, i64 0
+  store i64 %v19, ptr %st14
+  %v20.p = getelementptr i64, ptr %v13, i64 1
   %v20 = load i64, ptr %v20.p
-  %st18 = getelementptr i64, ptr %v0, i64 1
-  store i64 %v20, ptr %st18
-  %v21.p = getelementptr i64, ptr %v12, i64 2
+  %st15 = getelementptr i64, ptr %v0, i64 1
+  store i64 %v20, ptr %st15
+  %v21.p = getelementptr i64, ptr %v13, i64 2
   %v21 = load i64, ptr %v21.p
-  %st19 = getelementptr i64, ptr %v0, i64 2
-  store i64 %v21, ptr %st19
-  %v22.p = getelementptr i64, ptr %v12, i64 3
+  %st16 = getelementptr i64, ptr %v0, i64 2
+  store i64 %v21, ptr %st16
+  %v22.p = getelementptr i64, ptr %v13, i64 3
   %v22 = load i64, ptr %v22.p
-  %st20 = getelementptr i64, ptr %v0, i64 3
-  store i64 %v22, ptr %st20
-  %v23.p = getelementptr i64, ptr %v12, i64 4
+  %st17 = getelementptr i64, ptr %v0, i64 3
+  store i64 %v22, ptr %st17
+  %v23.p = getelementptr i64, ptr %v13, i64 4
   %v23 = load i64, ptr %v23.p
-  %st21 = getelementptr i64, ptr %v0, i64 4
-  store i64 %v23, ptr %st21
-  %v24.p = getelementptr i64, ptr %v12, i64 5
+  %st18 = getelementptr i64, ptr %v0, i64 4
+  store i64 %v23, ptr %st18
+  %v24.p = getelementptr i64, ptr %v0, i64 0
   %v24 = load i64, ptr %v24.p
-  %st22 = getelementptr i64, ptr %v0, i64 5
-  store i64 %v24, ptr %st22
-  %v25.p = getelementptr i64, ptr %v0, i64 0
-  %v25 = load i64, ptr %v25.p
-  %v26 = add i64 0, 0
-  %v27.c = icmp ne i64 %v25, %v26
-  %v27 = zext i1 %v27.c to i64
-  %c.b1 = icmp ne i64 %v27, 0
-  br i1 %c.b1, label %b1.t24, label %b1.e25
-b1.t24:
+  %v25 = add i64 0, 0
+  %v26.c = icmp ne i64 %v24, %v25
+  %v26 = zext i1 %v26.c to i64
+  %c.b1 = icmp ne i64 %v26, 0
+  br i1 %c.b1, label %b1.t20, label %b1.e21
+b1.t20:
   br label %b3
-b1.e25:
+b1.e21:
   br label %b4
 b2:
   br label %b5
 b3:
-  %v28 = add i64 0, 1
-  %v29 = getelementptr i64, ptr %v0, i64 %v28
-  call void @"rt.err_relocate"(ptr %v29, i64 %v3)
+  %v27 = add i64 0, 1
+  %v28 = getelementptr i64, ptr %v0, i64 %v27
+  call void @"rt.err_relocate"(ptr %v28, i64 %v3)
   br label %b4
 b4:
-  %v70 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st25 = getelementptr i64, ptr %v70, i64 0
-  store i64 %v3, ptr %st25
+  %v68 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st21 = getelementptr i64, ptr %v68, i64 0
+  store i64 %v3, ptr %st21
   ret void
 b5:
-  %v30 = getelementptr i64, ptr @"str.5", i64 0
-  %v31 = add i64 0, 7
-  %v32 = add i64 0, 0
-  %v33 = getelementptr i64, ptr %s3, i64 0
-  %v34 = ptrtoint ptr %v30 to i64
-  %st26 = getelementptr i64, ptr %v33, i64 0
-  store i64 %v34, ptr %st26
-  %st27 = getelementptr i64, ptr %v33, i64 1
-  store i64 %v31, ptr %st27
-  %st28 = getelementptr i64, ptr %v33, i64 2
-  store i64 %v32, ptr %st28
-  %v35 = getelementptr i64, ptr %s4, i64 0
-  call void @"std/convert.FormatInt"(ptr %v35, i64 %v1)
-  %v36 = add i64 0, 0
-  %v37.p = getelementptr i64, ptr %v33, i64 1
-  %v37 = load i64, ptr %v37.p
-  %v38 = add i64 %v36, %v37
-  %v39.p = getelementptr i64, ptr %v35, i64 1
-  %v39 = load i64, ptr %v39.p
-  %v40 = add i64 %v38, %v39
-  %v71 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v41.p = getelementptr i64, ptr %v71, i64 0
+  %v29 = getelementptr i64, ptr @"str.5", i64 0
+  %v30 = add i64 0, 7
+  %v31 = add i64 0, 0
+  %v32 = getelementptr i64, ptr %s2, i64 0
+  %v33 = ptrtoint ptr %v29 to i64
+  %st22 = getelementptr i64, ptr %v32, i64 0
+  store i64 %v33, ptr %st22
+  %st23 = getelementptr i64, ptr %v32, i64 1
+  store i64 %v30, ptr %st23
+  %st24 = getelementptr i64, ptr %v32, i64 2
+  store i64 %v31, ptr %st24
+  %v34 = getelementptr i64, ptr %s3, i64 0
+  call void @"std/convert.FormatInt"(ptr %v34, i64 %v1)
+  %v35 = add i64 0, 0
+  %v36.p = getelementptr i64, ptr %v32, i64 1
+  %v36 = load i64, ptr %v36.p
+  %v37 = add i64 %v35, %v36
+  %v38.p = getelementptr i64, ptr %v34, i64 1
+  %v38 = load i64, ptr %v38.p
+  %v39 = add i64 %v37, %v38
+  %v69 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v40.p = getelementptr i64, ptr %v69, i64 0
+  %v40 = load i64, ptr %v40.p
+  %v41.p = getelementptr i64, ptr %v32, i64 1
   %v41 = load i64, ptr %v41.p
-  %v42.p = getelementptr i64, ptr %v33, i64 1
-  %v42 = load i64, ptr %v42.p
-  %v43 = sub i64 %v40, %v42
-  %v44.p = getelementptr i64, ptr %v33, i64 0
+  %v42 = sub i64 %v39, %v41
+  %v43.p = getelementptr i64, ptr %v32, i64 0
+  %v43 = load i64, ptr %v43.p
+  %v44.p = getelementptr i64, ptr %v32, i64 1
   %v44 = load i64, ptr %v44.p
-  %v45.p = getelementptr i64, ptr %v33, i64 1
+  %v45.p = getelementptr i64, ptr %v32, i64 2
   %v45 = load i64, ptr %v45.p
-  %v46.p = getelementptr i64, ptr %v33, i64 2
-  %v46 = load i64, ptr %v46.p
-  %v47 = call ptr @"rt.cat8"(i64 %v44, i64 %v45, i64 %v46, i64 %v41, i64 %v43)
-  %v48.p = getelementptr i64, ptr %v35, i64 1
-  %v48 = load i64, ptr %v48.p
-  %v49 = getelementptr i8, ptr %v47, i64 %v42
-  %v50.p = getelementptr i64, ptr %v35, i64 0
-  %v50 = load i64, ptr %v50.p
-  %v51 = inttoptr i64 %v50 to ptr
-  call void @"rt.copy8"(ptr %v49, ptr %v51, i64 %v48)
-  %v52 = add i64 %v42, %v48
-  %v53 = getelementptr i64, ptr %s5, i64 0
-  %v54 = ptrtoint ptr %v47 to i64
-  %st29 = getelementptr i64, ptr %v53, i64 0
-  store i64 %v54, ptr %st29
-  %st30 = getelementptr i64, ptr %v53, i64 1
-  store i64 %v40, ptr %st30
-  %st31 = getelementptr i64, ptr %v53, i64 2
-  store i64 %v41, ptr %st31
-  call void @"rt.print_str"(ptr %v53)
-  %v55 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v55)
-  %v56 = getelementptr i64, ptr %s2, i64 0
-  %v57 = add i64 0, 0
-  %st32 = getelementptr i64, ptr %v56, i64 0
-  store i64 %v57, ptr %st32
-  %v58.p = getelementptr i64, ptr %v56, i64 0
+  %v46 = call ptr @"rt.cat8"(i64 %v43, i64 %v44, i64 %v45, i64 %v40, i64 %v42)
+  %v47.p = getelementptr i64, ptr %v34, i64 1
+  %v47 = load i64, ptr %v47.p
+  %v48 = getelementptr i8, ptr %v46, i64 %v41
+  %v49.p = getelementptr i64, ptr %v34, i64 0
+  %v49 = load i64, ptr %v49.p
+  %v50 = inttoptr i64 %v49 to ptr
+  call void @"rt.copy8"(ptr %v48, ptr %v50, i64 %v47)
+  %v51 = add i64 %v41, %v47
+  %v52 = getelementptr i64, ptr %s4, i64 0
+  %v53 = ptrtoint ptr %v46 to i64
+  %st25 = getelementptr i64, ptr %v52, i64 0
+  store i64 %v53, ptr %st25
+  %st26 = getelementptr i64, ptr %v52, i64 1
+  store i64 %v39, ptr %st26
+  %st27 = getelementptr i64, ptr %v52, i64 2
+  store i64 %v40, ptr %st27
+  call void @"rt.print_str"(ptr %v52)
+  %v54 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v54)
+  %v55 = getelementptr i64, ptr %s1, i64 0
+  %v56 = add i64 0, 0
+  %st28 = getelementptr i64, ptr %v55, i64 0
+  store i64 %v56, ptr %st28
+  %v57.p = getelementptr i64, ptr %v55, i64 0
+  %v57 = load i64, ptr %v57.p
+  %st29 = getelementptr i64, ptr %v0, i64 0
+  store i64 %v57, ptr %st29
+  %v58.p = getelementptr i64, ptr %v55, i64 1
   %v58 = load i64, ptr %v58.p
-  %st33 = getelementptr i64, ptr %v0, i64 0
-  store i64 %v58, ptr %st33
-  %v59.p = getelementptr i64, ptr %v56, i64 1
+  %st30 = getelementptr i64, ptr %v0, i64 1
+  store i64 %v58, ptr %st30
+  %v59.p = getelementptr i64, ptr %v55, i64 2
   %v59 = load i64, ptr %v59.p
-  %st34 = getelementptr i64, ptr %v0, i64 1
-  store i64 %v59, ptr %st34
-  %v60.p = getelementptr i64, ptr %v56, i64 2
+  %st31 = getelementptr i64, ptr %v0, i64 2
+  store i64 %v59, ptr %st31
+  %v60.p = getelementptr i64, ptr %v55, i64 3
   %v60 = load i64, ptr %v60.p
-  %st35 = getelementptr i64, ptr %v0, i64 2
-  store i64 %v60, ptr %st35
-  %v61.p = getelementptr i64, ptr %v56, i64 3
+  %st32 = getelementptr i64, ptr %v0, i64 3
+  store i64 %v60, ptr %st32
+  %v61.p = getelementptr i64, ptr %v55, i64 4
   %v61 = load i64, ptr %v61.p
-  %st36 = getelementptr i64, ptr %v0, i64 3
-  store i64 %v61, ptr %st36
-  %v62.p = getelementptr i64, ptr %v56, i64 4
+  %st33 = getelementptr i64, ptr %v0, i64 4
+  store i64 %v61, ptr %st33
+  %v62.p = getelementptr i64, ptr %v0, i64 0
   %v62 = load i64, ptr %v62.p
-  %st37 = getelementptr i64, ptr %v0, i64 4
-  store i64 %v62, ptr %st37
-  %v63.p = getelementptr i64, ptr %v56, i64 5
-  %v63 = load i64, ptr %v63.p
-  %st38 = getelementptr i64, ptr %v0, i64 5
-  store i64 %v63, ptr %st38
-  %v64.p = getelementptr i64, ptr %v0, i64 0
-  %v64 = load i64, ptr %v64.p
-  %v65 = add i64 0, 0
-  %v66.c = icmp ne i64 %v64, %v65
-  %v66 = zext i1 %v66.c to i64
-  %c.b5 = icmp ne i64 %v66, 0
-  br i1 %c.b5, label %b5.t40, label %b5.e41
-b5.t40:
+  %v63 = add i64 0, 0
+  %v64.c = icmp ne i64 %v62, %v63
+  %v64 = zext i1 %v64.c to i64
+  %c.b5 = icmp ne i64 %v64, 0
+  br i1 %c.b5, label %b5.t35, label %b5.e36
+b5.t35:
   br label %b6
-b5.e41:
+b5.e36:
   br label %b7
 b6:
-  %v67 = add i64 0, 1
-  %v68 = getelementptr i64, ptr %v0, i64 %v67
-  call void @"rt.err_relocate"(ptr %v68, i64 %v3)
+  %v65 = add i64 0, 1
+  %v66 = getelementptr i64, ptr %v0, i64 %v65
+  call void @"rt.err_relocate"(ptr %v66, i64 %v3)
   br label %b7
 b7:
-  %v72 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st41 = getelementptr i64, ptr %v72, i64 0
-  store i64 %v3, ptr %st41
+  %v70 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st36 = getelementptr i64, ptr %v70, i64 0
+  store i64 %v3, ptr %st36
   ret void
 }
 
@@ -3210,9 +3184,9 @@ b2:
   ret i64 %v12
 }
 
-define internal void @"main.show"(i64 %v0, i64 %v1, i64 %v2, i64 %v3, i64 %v4, i64 %v5) #0 {
+define internal void @"main.show"(i64 %v0, i64 %v1, i64 %v2, i64 %v3, i64 %v4) #0 {
 b0:
-  %s0 = alloca [6 x i64], align 8
+  %s0 = alloca [5 x i64], align 8
   %s0.z0 = getelementptr i64, ptr %s0, i64 0
   store i64 0, ptr %s0.z0
   %s0.z1 = getelementptr i64, ptr %s0, i64 1
@@ -3223,8 +3197,6 @@ b0:
   store i64 0, ptr %s0.z3
   %s0.z4 = getelementptr i64, ptr %s0, i64 4
   store i64 0, ptr %s0.z4
-  %s0.z5 = getelementptr i64, ptr %s0, i64 5
-  store i64 0, ptr %s0.z5
   %s1 = alloca [3 x i64], align 8
   %s1.z0 = getelementptr i64, ptr %s1, i64 0
   store i64 0, ptr %s1.z0
@@ -3232,7 +3204,7 @@ b0:
   store i64 0, ptr %s1.z1
   %s1.z2 = getelementptr i64, ptr %s1, i64 2
   store i64 0, ptr %s1.z2
-  %s2 = alloca [5 x i64], align 8
+  %s2 = alloca [4 x i64], align 8
   %s2.z0 = getelementptr i64, ptr %s2, i64 0
   store i64 0, ptr %s2.z0
   %s2.z1 = getelementptr i64, ptr %s2, i64 1
@@ -3241,8 +3213,6 @@ b0:
   store i64 0, ptr %s2.z2
   %s2.z3 = getelementptr i64, ptr %s2, i64 3
   store i64 0, ptr %s2.z3
-  %s2.z4 = getelementptr i64, ptr %s2, i64 4
-  store i64 0, ptr %s2.z4
   %s3 = alloca [3 x i64], align 8
   %s3.z0 = getelementptr i64, ptr %s3, i64 0
   store i64 0, ptr %s3.z0
@@ -3285,224 +3255,238 @@ b0:
   store i64 0, ptr %s8.z1
   %s8.z2 = getelementptr i64, ptr %s8, i64 2
   store i64 0, ptr %s8.z2
-  %v6 = getelementptr i64, ptr %s0, i64 0
-  %st0 = getelementptr i64, ptr %v6, i64 0
+  %v5 = getelementptr i64, ptr %s0, i64 0
+  %st0 = getelementptr i64, ptr %v5, i64 0
   store i64 %v0, ptr %st0
-  %st1 = getelementptr i64, ptr %v6, i64 1
+  %st1 = getelementptr i64, ptr %v5, i64 1
   store i64 %v1, ptr %st1
-  %st2 = getelementptr i64, ptr %v6, i64 2
+  %st2 = getelementptr i64, ptr %v5, i64 2
   store i64 %v2, ptr %st2
-  %st3 = getelementptr i64, ptr %v6, i64 3
+  %st3 = getelementptr i64, ptr %v5, i64 3
   store i64 %v3, ptr %st3
-  %st4 = getelementptr i64, ptr %v6, i64 4
+  %st4 = getelementptr i64, ptr %v5, i64 4
   store i64 %v4, ptr %st4
-  %st5 = getelementptr i64, ptr %v6, i64 5
-  store i64 %v5, ptr %st5
-  %v86 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v7.p = getelementptr i64, ptr %v86, i64 0
-  %v7 = load i64, ptr %v7.p
+  %v100 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v6.p = getelementptr i64, ptr %v100, i64 0
+  %v6 = load i64, ptr %v6.p
   call void @"rt.region_enter"()
-  %v8.p = getelementptr i64, ptr %v6, i64 0
-  %v8 = load i64, ptr %v8.p
-  %v9 = add i64 0, 0
-  %v10.c = icmp eq i64 %v8, %v9
-  %v10 = zext i1 %v10.c to i64
-  %c.b0 = icmp ne i64 %v10, 0
-  br i1 %c.b0, label %b0.t7, label %b0.e8
-b0.t7:
+  %v7.p = getelementptr i64, ptr %v5, i64 0
+  %v7 = load i64, ptr %v7.p
+  %v8 = add i64 0, 0
+  %v9.c = icmp eq i64 %v7, %v8
+  %v9 = zext i1 %v9.c to i64
+  %c.b0 = icmp ne i64 %v9, 0
+  br i1 %c.b0, label %b0.t6, label %b0.e7
+b0.t6:
   br label %b1
-b0.e8:
+b0.e7:
   br label %b2
 b1:
-  %v11 = getelementptr i64, ptr @"str.2", i64 0
-  %v12 = add i64 0, 2
-  %v13 = add i64 0, 0
-  %v14 = getelementptr i64, ptr %s1, i64 0
-  %v15 = ptrtoint ptr %v11 to i64
-  %st8 = getelementptr i64, ptr %v14, i64 0
-  store i64 %v15, ptr %st8
-  %st9 = getelementptr i64, ptr %v14, i64 1
+  %v10 = getelementptr i64, ptr @"str.2", i64 0
+  %v11 = add i64 0, 2
+  %v12 = add i64 0, 0
+  %v13 = getelementptr i64, ptr %s1, i64 0
+  %v14 = ptrtoint ptr %v10 to i64
+  %st7 = getelementptr i64, ptr %v13, i64 0
+  store i64 %v14, ptr %st7
+  %st8 = getelementptr i64, ptr %v13, i64 1
+  store i64 %v11, ptr %st8
+  %st9 = getelementptr i64, ptr %v13, i64 2
   store i64 %v12, ptr %st9
-  %st10 = getelementptr i64, ptr %v14, i64 2
-  store i64 %v13, ptr %st10
-  call void @"rt.print_str"(ptr %v14)
-  %v16 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v16)
+  call void @"rt.print_str"(ptr %v13)
+  %v15 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v15)
   br label %b8
 b2:
-  %v17 = add i64 0, 1
-  %v18 = getelementptr i64, ptr %v6, i64 %v17
-  %v19 = getelementptr i64, ptr %s2, i64 0
-  %v20.p = getelementptr i64, ptr %v18, i64 0
+  %v16 = add i64 0, 1
+  %v17 = getelementptr i64, ptr %v5, i64 %v16
+  %v18 = getelementptr i64, ptr %s2, i64 0
+  %v19.p = getelementptr i64, ptr %v17, i64 0
+  %v19 = load i64, ptr %v19.p
+  %st10 = getelementptr i64, ptr %v18, i64 0
+  store i64 %v19, ptr %st10
+  %v20.p = getelementptr i64, ptr %v17, i64 1
   %v20 = load i64, ptr %v20.p
-  %st11 = getelementptr i64, ptr %v19, i64 0
+  %st11 = getelementptr i64, ptr %v18, i64 1
   store i64 %v20, ptr %st11
-  %v21.p = getelementptr i64, ptr %v18, i64 1
+  %v21.p = getelementptr i64, ptr %v17, i64 2
   %v21 = load i64, ptr %v21.p
-  %st12 = getelementptr i64, ptr %v19, i64 1
+  %st12 = getelementptr i64, ptr %v18, i64 2
   store i64 %v21, ptr %st12
-  %v22.p = getelementptr i64, ptr %v18, i64 2
+  %v22.p = getelementptr i64, ptr %v17, i64 3
   %v22 = load i64, ptr %v22.p
-  %st13 = getelementptr i64, ptr %v19, i64 2
+  %st13 = getelementptr i64, ptr %v18, i64 3
   store i64 %v22, ptr %st13
-  %v23.p = getelementptr i64, ptr %v18, i64 3
+  %v23.p = getelementptr i64, ptr %v18, i64 0
   %v23 = load i64, ptr %v23.p
-  %st14 = getelementptr i64, ptr %v19, i64 3
-  store i64 %v23, ptr %st14
-  %v24.p = getelementptr i64, ptr %v18, i64 4
-  %v24 = load i64, ptr %v24.p
-  %st15 = getelementptr i64, ptr %v19, i64 4
-  store i64 %v24, ptr %st15
-  %v25.p = getelementptr i64, ptr %v19, i64 0
-  %v25 = load i64, ptr %v25.p
-  %v26 = add i64 0, 0
-  %v27.c = icmp eq i64 %v25, %v26
-  %v27 = zext i1 %v27.c to i64
-  %c.b2 = icmp ne i64 %v27, 0
-  br i1 %c.b2, label %b2.t17, label %b2.e18
-b2.t17:
+  %v24 = add i64 0, 0
+  %v25.c = icmp eq i64 %v23, %v24
+  %v25 = zext i1 %v25.c to i64
+  %c.b2 = icmp ne i64 %v25, 0
+  br i1 %c.b2, label %b2.t15, label %b2.e16
+b2.t15:
   br label %b4
-b2.e18:
+b2.e16:
   br label %b3
 b3:
-  %v54.p = getelementptr i64, ptr %v19, i64 0
-  %v54 = load i64, ptr %v54.p
-  %v55 = add i64 0, 1
-  %v56.c = icmp eq i64 %v54, %v55
-  %v56 = zext i1 %v56.c to i64
-  %c.b3 = icmp ne i64 %v56, 0
-  br i1 %c.b3, label %b3.t19, label %b3.e20
-b3.t19:
+  %v60.p = getelementptr i64, ptr %v18, i64 0
+  %v60 = load i64, ptr %v60.p
+  %v61 = add i64 0, 1
+  %v62.c = icmp eq i64 %v60, %v61
+  %v62 = zext i1 %v62.c to i64
+  %c.b3 = icmp ne i64 %v62, 0
+  br i1 %c.b3, label %b3.t17, label %b3.e18
+b3.t17:
   br label %b6
-b3.e20:
+b3.e18:
   br label %b5
 b4:
-  %v28.p = getelementptr i64, ptr %v19, i64 1
+  %v26.p = getelementptr i64, ptr %v18, i64 1
+  %v26 = load i64, ptr %v26.p
+  %v27 = inttoptr i64 %v26 to ptr
+  %v28.p = getelementptr i64, ptr %v18, i64 2
   %v28 = load i64, ptr %v28.p
-  %v29 = getelementptr i64, ptr @"str.4", i64 0
-  %v30 = add i64 0, 6
-  %v31 = add i64 0, 0
-  %v32 = getelementptr i64, ptr %s3, i64 0
-  %v33 = ptrtoint ptr %v29 to i64
-  %st20 = getelementptr i64, ptr %v32, i64 0
-  store i64 %v33, ptr %st20
-  %st21 = getelementptr i64, ptr %v32, i64 1
-  store i64 %v30, ptr %st21
-  %st22 = getelementptr i64, ptr %v32, i64 2
-  store i64 %v31, ptr %st22
-  %v34 = getelementptr i64, ptr %s4, i64 0
-  call void @"std/convert.FormatInt"(ptr %v34, i64 %v28)
-  %v35 = add i64 0, 0
-  %v36.p = getelementptr i64, ptr %v32, i64 1
-  %v36 = load i64, ptr %v36.p
-  %v37 = add i64 %v35, %v36
-  %v38.p = getelementptr i64, ptr %v34, i64 1
-  %v38 = load i64, ptr %v38.p
-  %v39 = add i64 %v37, %v38
-  %v87 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v40.p = getelementptr i64, ptr %v87, i64 0
-  %v40 = load i64, ptr %v40.p
-  %v41.p = getelementptr i64, ptr %v32, i64 1
-  %v41 = load i64, ptr %v41.p
-  %v42 = sub i64 %v39, %v41
-  %v43.p = getelementptr i64, ptr %v32, i64 0
-  %v43 = load i64, ptr %v43.p
-  %v44.p = getelementptr i64, ptr %v32, i64 1
+  %v29 = add i64 0, 1
+  %v30 = sub i64 %v28, %v29
+  %v31 = add i64 0, 2
+  %v32 = mul i64 %v30, %v31
+  %v33 = getelementptr i64, ptr %v27, i64 %v32
+  %v34.p = getelementptr i64, ptr %v33, i64 1
+  %v34 = load i64, ptr %v34.p
+  %v35 = getelementptr i64, ptr @"str.4", i64 0
+  %v36 = add i64 0, 6
+  %v37 = add i64 0, 0
+  %v38 = getelementptr i64, ptr %s3, i64 0
+  %v39 = ptrtoint ptr %v35 to i64
+  %st18 = getelementptr i64, ptr %v38, i64 0
+  store i64 %v39, ptr %st18
+  %st19 = getelementptr i64, ptr %v38, i64 1
+  store i64 %v36, ptr %st19
+  %st20 = getelementptr i64, ptr %v38, i64 2
+  store i64 %v37, ptr %st20
+  %v40 = getelementptr i64, ptr %s4, i64 0
+  call void @"std/convert.FormatInt"(ptr %v40, i64 %v34)
+  %v41 = add i64 0, 0
+  %v42.p = getelementptr i64, ptr %v38, i64 1
+  %v42 = load i64, ptr %v42.p
+  %v43 = add i64 %v41, %v42
+  %v44.p = getelementptr i64, ptr %v40, i64 1
   %v44 = load i64, ptr %v44.p
-  %v45.p = getelementptr i64, ptr %v32, i64 2
-  %v45 = load i64, ptr %v45.p
-  %v46 = call ptr @"rt.cat8"(i64 %v43, i64 %v44, i64 %v45, i64 %v40, i64 %v42)
-  %v47.p = getelementptr i64, ptr %v34, i64 1
+  %v45 = add i64 %v43, %v44
+  %v101 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v46.p = getelementptr i64, ptr %v101, i64 0
+  %v46 = load i64, ptr %v46.p
+  %v47.p = getelementptr i64, ptr %v38, i64 1
   %v47 = load i64, ptr %v47.p
-  %v48 = getelementptr i8, ptr %v46, i64 %v41
-  %v49.p = getelementptr i64, ptr %v34, i64 0
+  %v48 = sub i64 %v45, %v47
+  %v49.p = getelementptr i64, ptr %v38, i64 0
   %v49 = load i64, ptr %v49.p
-  %v50 = inttoptr i64 %v49 to ptr
-  call void @"rt.copy8"(ptr %v48, ptr %v50, i64 %v47)
-  %v51 = add i64 %v41, %v47
-  %v52 = getelementptr i64, ptr %s5, i64 0
-  %v53 = ptrtoint ptr %v46 to i64
-  %st23 = getelementptr i64, ptr %v52, i64 0
-  store i64 %v53, ptr %st23
-  %st24 = getelementptr i64, ptr %v52, i64 1
-  store i64 %v39, ptr %st24
-  %st25 = getelementptr i64, ptr %v52, i64 2
-  store i64 %v40, ptr %st25
+  %v50.p = getelementptr i64, ptr %v38, i64 1
+  %v50 = load i64, ptr %v50.p
+  %v51.p = getelementptr i64, ptr %v38, i64 2
+  %v51 = load i64, ptr %v51.p
+  %v52 = call ptr @"rt.cat8"(i64 %v49, i64 %v50, i64 %v51, i64 %v46, i64 %v48)
+  %v53.p = getelementptr i64, ptr %v40, i64 1
+  %v53 = load i64, ptr %v53.p
+  %v54 = getelementptr i8, ptr %v52, i64 %v47
+  %v55.p = getelementptr i64, ptr %v40, i64 0
+  %v55 = load i64, ptr %v55.p
+  %v56 = inttoptr i64 %v55 to ptr
+  call void @"rt.copy8"(ptr %v54, ptr %v56, i64 %v53)
+  %v57 = add i64 %v47, %v53
+  %v58 = getelementptr i64, ptr %s5, i64 0
+  %v59 = ptrtoint ptr %v52 to i64
+  %st21 = getelementptr i64, ptr %v58, i64 0
+  store i64 %v59, ptr %st21
+  %st22 = getelementptr i64, ptr %v58, i64 1
+  store i64 %v45, ptr %st22
+  %st23 = getelementptr i64, ptr %v58, i64 2
+  store i64 %v46, ptr %st23
   br label %b7
 b5:
-  %v83 = add i64 0, 1
-  call void @"rt.panic"(i64 %v83)
+  %v97 = add i64 0, 1
+  call void @"rt.panic"(i64 %v97)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
 b6:
-  %v57.p = getelementptr i64, ptr %v19, i64 1
-  %v57 = load i64, ptr %v57.p
-  %v58 = getelementptr i64, ptr @"str.7", i64 0
-  %v59 = add i64 0, 8
-  %v60 = add i64 0, 0
-  %v61 = getelementptr i64, ptr %s6, i64 0
-  %v62 = ptrtoint ptr %v58 to i64
-  %st26 = getelementptr i64, ptr %v61, i64 0
-  store i64 %v62, ptr %st26
-  %st27 = getelementptr i64, ptr %v61, i64 1
-  store i64 %v59, ptr %st27
-  %st28 = getelementptr i64, ptr %v61, i64 2
-  store i64 %v60, ptr %st28
-  %v63 = getelementptr i64, ptr %s7, i64 0
-  call void @"std/convert.FormatInt"(ptr %v63, i64 %v57)
-  %v64 = add i64 0, 0
-  %v65.p = getelementptr i64, ptr %v61, i64 1
+  %v63.p = getelementptr i64, ptr %v18, i64 1
+  %v63 = load i64, ptr %v63.p
+  %v64 = inttoptr i64 %v63 to ptr
+  %v65.p = getelementptr i64, ptr %v18, i64 2
   %v65 = load i64, ptr %v65.p
-  %v66 = add i64 %v64, %v65
-  %v67.p = getelementptr i64, ptr %v63, i64 1
-  %v67 = load i64, ptr %v67.p
-  %v68 = add i64 %v66, %v67
-  %v88 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v69.p = getelementptr i64, ptr %v88, i64 0
-  %v69 = load i64, ptr %v69.p
-  %v70.p = getelementptr i64, ptr %v61, i64 1
-  %v70 = load i64, ptr %v70.p
-  %v71 = sub i64 %v68, %v70
-  %v72.p = getelementptr i64, ptr %v61, i64 0
-  %v72 = load i64, ptr %v72.p
-  %v73.p = getelementptr i64, ptr %v61, i64 1
-  %v73 = load i64, ptr %v73.p
-  %v74.p = getelementptr i64, ptr %v61, i64 2
-  %v74 = load i64, ptr %v74.p
-  %v75 = call ptr @"rt.cat8"(i64 %v72, i64 %v73, i64 %v74, i64 %v69, i64 %v71)
-  %v76.p = getelementptr i64, ptr %v63, i64 1
-  %v76 = load i64, ptr %v76.p
-  %v77 = getelementptr i8, ptr %v75, i64 %v70
-  %v78.p = getelementptr i64, ptr %v63, i64 0
-  %v78 = load i64, ptr %v78.p
-  %v79 = inttoptr i64 %v78 to ptr
-  call void @"rt.copy8"(ptr %v77, ptr %v79, i64 %v76)
-  %v80 = add i64 %v70, %v76
-  %v81 = getelementptr i64, ptr %s8, i64 0
-  %v82 = ptrtoint ptr %v75 to i64
-  %st29 = getelementptr i64, ptr %v81, i64 0
-  store i64 %v82, ptr %st29
-  %st30 = getelementptr i64, ptr %v81, i64 1
-  store i64 %v68, ptr %st30
-  %st31 = getelementptr i64, ptr %v81, i64 2
-  store i64 %v69, ptr %st31
+  %v66 = add i64 0, 1
+  %v67 = sub i64 %v65, %v66
+  %v68 = add i64 0, 2
+  %v69 = mul i64 %v67, %v68
+  %v70 = getelementptr i64, ptr %v64, i64 %v69
+  %v71.p = getelementptr i64, ptr %v70, i64 1
+  %v71 = load i64, ptr %v71.p
+  %v72 = getelementptr i64, ptr @"str.7", i64 0
+  %v73 = add i64 0, 8
+  %v74 = add i64 0, 0
+  %v75 = getelementptr i64, ptr %s6, i64 0
+  %v76 = ptrtoint ptr %v72 to i64
+  %st24 = getelementptr i64, ptr %v75, i64 0
+  store i64 %v76, ptr %st24
+  %st25 = getelementptr i64, ptr %v75, i64 1
+  store i64 %v73, ptr %st25
+  %st26 = getelementptr i64, ptr %v75, i64 2
+  store i64 %v74, ptr %st26
+  %v77 = getelementptr i64, ptr %s7, i64 0
+  call void @"std/convert.FormatInt"(ptr %v77, i64 %v71)
+  %v78 = add i64 0, 0
+  %v79.p = getelementptr i64, ptr %v75, i64 1
+  %v79 = load i64, ptr %v79.p
+  %v80 = add i64 %v78, %v79
+  %v81.p = getelementptr i64, ptr %v77, i64 1
+  %v81 = load i64, ptr %v81.p
+  %v82 = add i64 %v80, %v81
+  %v102 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v83.p = getelementptr i64, ptr %v102, i64 0
+  %v83 = load i64, ptr %v83.p
+  %v84.p = getelementptr i64, ptr %v75, i64 1
+  %v84 = load i64, ptr %v84.p
+  %v85 = sub i64 %v82, %v84
+  %v86.p = getelementptr i64, ptr %v75, i64 0
+  %v86 = load i64, ptr %v86.p
+  %v87.p = getelementptr i64, ptr %v75, i64 1
+  %v87 = load i64, ptr %v87.p
+  %v88.p = getelementptr i64, ptr %v75, i64 2
+  %v88 = load i64, ptr %v88.p
+  %v89 = call ptr @"rt.cat8"(i64 %v86, i64 %v87, i64 %v88, i64 %v83, i64 %v85)
+  %v90.p = getelementptr i64, ptr %v77, i64 1
+  %v90 = load i64, ptr %v90.p
+  %v91 = getelementptr i8, ptr %v89, i64 %v84
+  %v92.p = getelementptr i64, ptr %v77, i64 0
+  %v92 = load i64, ptr %v92.p
+  %v93 = inttoptr i64 %v92 to ptr
+  call void @"rt.copy8"(ptr %v91, ptr %v93, i64 %v90)
+  %v94 = add i64 %v84, %v90
+  %v95 = getelementptr i64, ptr %s8, i64 0
+  %v96 = ptrtoint ptr %v89 to i64
+  %st27 = getelementptr i64, ptr %v95, i64 0
+  store i64 %v96, ptr %st27
+  %st28 = getelementptr i64, ptr %v95, i64 1
+  store i64 %v82, ptr %st28
+  %st29 = getelementptr i64, ptr %v95, i64 2
+  store i64 %v83, ptr %st29
   br label %b7
 b7:
-  %v84 = phi ptr [ %v52, %b4 ], [ %v81, %b6 ]
-  call void @"rt.print_str"(ptr %v84)
-  %v85 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v85)
+  %v98 = phi ptr [ %v58, %b4 ], [ %v95, %b6 ]
+  call void @"rt.print_str"(ptr %v98)
+  %v99 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v99)
   br label %b8
 b8:
-  %v89 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st32 = getelementptr i64, ptr %v89, i64 0
-  store i64 %v7, ptr %st32
+  %v103 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st30 = getelementptr i64, ptr %v103, i64 0
+  store i64 %v6, ptr %st30
   ret void
 }
 
 define internal i64 @"main.main"() #0 {
 b0:
-  %s0 = alloca [6 x i64], align 8
+  %s0 = alloca [5 x i64], align 8
   %s0.z0 = getelementptr i64, ptr %s0, i64 0
   store i64 0, ptr %s0.z0
   %s0.z1 = getelementptr i64, ptr %s0, i64 1
@@ -3513,9 +3497,7 @@ b0:
   store i64 0, ptr %s0.z3
   %s0.z4 = getelementptr i64, ptr %s0, i64 4
   store i64 0, ptr %s0.z4
-  %s0.z5 = getelementptr i64, ptr %s0, i64 5
-  store i64 0, ptr %s0.z5
-  %s1 = alloca [6 x i64], align 8
+  %s1 = alloca [5 x i64], align 8
   %s1.z0 = getelementptr i64, ptr %s1, i64 0
   store i64 0, ptr %s1.z0
   %s1.z1 = getelementptr i64, ptr %s1, i64 1
@@ -3526,16 +3508,18 @@ b0:
   store i64 0, ptr %s1.z3
   %s1.z4 = getelementptr i64, ptr %s1, i64 4
   store i64 0, ptr %s1.z4
-  %s1.z5 = getelementptr i64, ptr %s1, i64 5
-  store i64 0, ptr %s1.z5
   %s2 = alloca [1 x i64], align 8
   %s2.z0 = getelementptr i64, ptr %s2, i64 0
   store i64 0, ptr %s2.z0
-  %s3 = alloca [2 x i64], align 8
+  %s3 = alloca [4 x i64], align 8
   %s3.z0 = getelementptr i64, ptr %s3, i64 0
   store i64 0, ptr %s3.z0
   %s3.z1 = getelementptr i64, ptr %s3, i64 1
   store i64 0, ptr %s3.z1
+  %s3.z2 = getelementptr i64, ptr %s3, i64 2
+  store i64 0, ptr %s3.z2
+  %s3.z3 = getelementptr i64, ptr %s3, i64 3
+  store i64 0, ptr %s3.z3
   %s4 = alloca [5 x i64], align 8
   %s4.z0 = getelementptr i64, ptr %s4, i64 0
   store i64 0, ptr %s4.z0
@@ -3547,27 +3531,25 @@ b0:
   store i64 0, ptr %s4.z3
   %s4.z4 = getelementptr i64, ptr %s4, i64 4
   store i64 0, ptr %s4.z4
-  %s5 = alloca [6 x i64], align 8
+  %s5 = alloca [3 x i64], align 8
   %s5.z0 = getelementptr i64, ptr %s5, i64 0
   store i64 0, ptr %s5.z0
   %s5.z1 = getelementptr i64, ptr %s5, i64 1
   store i64 0, ptr %s5.z1
   %s5.z2 = getelementptr i64, ptr %s5, i64 2
   store i64 0, ptr %s5.z2
-  %s5.z3 = getelementptr i64, ptr %s5, i64 3
-  store i64 0, ptr %s5.z3
-  %s5.z4 = getelementptr i64, ptr %s5, i64 4
-  store i64 0, ptr %s5.z4
-  %s5.z5 = getelementptr i64, ptr %s5, i64 5
-  store i64 0, ptr %s5.z5
-  %s6 = alloca [3 x i64], align 8
+  %s6 = alloca [5 x i64], align 8
   %s6.z0 = getelementptr i64, ptr %s6, i64 0
   store i64 0, ptr %s6.z0
   %s6.z1 = getelementptr i64, ptr %s6, i64 1
   store i64 0, ptr %s6.z1
   %s6.z2 = getelementptr i64, ptr %s6, i64 2
   store i64 0, ptr %s6.z2
-  %s7 = alloca [6 x i64], align 8
+  %s6.z3 = getelementptr i64, ptr %s6, i64 3
+  store i64 0, ptr %s6.z3
+  %s6.z4 = getelementptr i64, ptr %s6, i64 4
+  store i64 0, ptr %s6.z4
+  %s7 = alloca [5 x i64], align 8
   %s7.z0 = getelementptr i64, ptr %s7, i64 0
   store i64 0, ptr %s7.z0
   %s7.z1 = getelementptr i64, ptr %s7, i64 1
@@ -3578,9 +3560,7 @@ b0:
   store i64 0, ptr %s7.z3
   %s7.z4 = getelementptr i64, ptr %s7, i64 4
   store i64 0, ptr %s7.z4
-  %s7.z5 = getelementptr i64, ptr %s7, i64 5
-  store i64 0, ptr %s7.z5
-  %s8 = alloca [6 x i64], align 8
+  %s8 = alloca [5 x i64], align 8
   %s8.z0 = getelementptr i64, ptr %s8, i64 0
   store i64 0, ptr %s8.z0
   %s8.z1 = getelementptr i64, ptr %s8, i64 1
@@ -3591,9 +3571,7 @@ b0:
   store i64 0, ptr %s8.z3
   %s8.z4 = getelementptr i64, ptr %s8, i64 4
   store i64 0, ptr %s8.z4
-  %s8.z5 = getelementptr i64, ptr %s8, i64 5
-  store i64 0, ptr %s8.z5
-  %s9 = alloca [6 x i64], align 8
+  %s9 = alloca [5 x i64], align 8
   %s9.z0 = getelementptr i64, ptr %s9, i64 0
   store i64 0, ptr %s9.z0
   %s9.z1 = getelementptr i64, ptr %s9, i64 1
@@ -3604,9 +3582,7 @@ b0:
   store i64 0, ptr %s9.z3
   %s9.z4 = getelementptr i64, ptr %s9, i64 4
   store i64 0, ptr %s9.z4
-  %s9.z5 = getelementptr i64, ptr %s9, i64 5
-  store i64 0, ptr %s9.z5
-  %s10 = alloca [6 x i64], align 8
+  %s10 = alloca [5 x i64], align 8
   %s10.z0 = getelementptr i64, ptr %s10, i64 0
   store i64 0, ptr %s10.z0
   %s10.z1 = getelementptr i64, ptr %s10, i64 1
@@ -3617,9 +3593,7 @@ b0:
   store i64 0, ptr %s10.z3
   %s10.z4 = getelementptr i64, ptr %s10, i64 4
   store i64 0, ptr %s10.z4
-  %s10.z5 = getelementptr i64, ptr %s10, i64 5
-  store i64 0, ptr %s10.z5
-  %s11 = alloca [6 x i64], align 8
+  %s11 = alloca [5 x i64], align 8
   %s11.z0 = getelementptr i64, ptr %s11, i64 0
   store i64 0, ptr %s11.z0
   %s11.z1 = getelementptr i64, ptr %s11, i64 1
@@ -3630,9 +3604,7 @@ b0:
   store i64 0, ptr %s11.z3
   %s11.z4 = getelementptr i64, ptr %s11, i64 4
   store i64 0, ptr %s11.z4
-  %s11.z5 = getelementptr i64, ptr %s11, i64 5
-  store i64 0, ptr %s11.z5
-  %s12 = alloca [6 x i64], align 8
+  %s12 = alloca [5 x i64], align 8
   %s12.z0 = getelementptr i64, ptr %s12, i64 0
   store i64 0, ptr %s12.z0
   %s12.z1 = getelementptr i64, ptr %s12, i64 1
@@ -3643,9 +3615,7 @@ b0:
   store i64 0, ptr %s12.z3
   %s12.z4 = getelementptr i64, ptr %s12, i64 4
   store i64 0, ptr %s12.z4
-  %s12.z5 = getelementptr i64, ptr %s12, i64 5
-  store i64 0, ptr %s12.z5
-  %s13 = alloca [6 x i64], align 8
+  %s13 = alloca [5 x i64], align 8
   %s13.z0 = getelementptr i64, ptr %s13, i64 0
   store i64 0, ptr %s13.z0
   %s13.z1 = getelementptr i64, ptr %s13, i64 1
@@ -3656,9 +3626,7 @@ b0:
   store i64 0, ptr %s13.z3
   %s13.z4 = getelementptr i64, ptr %s13, i64 4
   store i64 0, ptr %s13.z4
-  %s13.z5 = getelementptr i64, ptr %s13, i64 5
-  store i64 0, ptr %s13.z5
-  %s14 = alloca [6 x i64], align 8
+  %s14 = alloca [5 x i64], align 8
   %s14.z0 = getelementptr i64, ptr %s14, i64 0
   store i64 0, ptr %s14.z0
   %s14.z1 = getelementptr i64, ptr %s14, i64 1
@@ -3669,9 +3637,7 @@ b0:
   store i64 0, ptr %s14.z3
   %s14.z4 = getelementptr i64, ptr %s14, i64 4
   store i64 0, ptr %s14.z4
-  %s14.z5 = getelementptr i64, ptr %s14, i64 5
-  store i64 0, ptr %s14.z5
-  %s15 = alloca [6 x i64], align 8
+  %s15 = alloca [5 x i64], align 8
   %s15.z0 = getelementptr i64, ptr %s15, i64 0
   store i64 0, ptr %s15.z0
   %s15.z1 = getelementptr i64, ptr %s15, i64 1
@@ -3682,9 +3648,7 @@ b0:
   store i64 0, ptr %s15.z3
   %s15.z4 = getelementptr i64, ptr %s15, i64 4
   store i64 0, ptr %s15.z4
-  %s15.z5 = getelementptr i64, ptr %s15, i64 5
-  store i64 0, ptr %s15.z5
-  %s16 = alloca [6 x i64], align 8
+  %s16 = alloca [5 x i64], align 8
   %s16.z0 = getelementptr i64, ptr %s16, i64 0
   store i64 0, ptr %s16.z0
   %s16.z1 = getelementptr i64, ptr %s16, i64 1
@@ -3695,9 +3659,7 @@ b0:
   store i64 0, ptr %s16.z3
   %s16.z4 = getelementptr i64, ptr %s16, i64 4
   store i64 0, ptr %s16.z4
-  %s16.z5 = getelementptr i64, ptr %s16, i64 5
-  store i64 0, ptr %s16.z5
-  %s17 = alloca [6 x i64], align 8
+  %s17 = alloca [5 x i64], align 8
   %s17.z0 = getelementptr i64, ptr %s17, i64 0
   store i64 0, ptr %s17.z0
   %s17.z1 = getelementptr i64, ptr %s17, i64 1
@@ -3708,9 +3670,7 @@ b0:
   store i64 0, ptr %s17.z3
   %s17.z4 = getelementptr i64, ptr %s17, i64 4
   store i64 0, ptr %s17.z4
-  %s17.z5 = getelementptr i64, ptr %s17, i64 5
-  store i64 0, ptr %s17.z5
-  %s18 = alloca [6 x i64], align 8
+  %s18 = alloca [5 x i64], align 8
   %s18.z0 = getelementptr i64, ptr %s18, i64 0
   store i64 0, ptr %s18.z0
   %s18.z1 = getelementptr i64, ptr %s18, i64 1
@@ -3721,30 +3681,22 @@ b0:
   store i64 0, ptr %s18.z3
   %s18.z4 = getelementptr i64, ptr %s18, i64 4
   store i64 0, ptr %s18.z4
-  %s18.z5 = getelementptr i64, ptr %s18, i64 5
-  store i64 0, ptr %s18.z5
-  %s19 = alloca [6 x i64], align 8
+  %s19 = alloca [1 x i64], align 8
   %s19.z0 = getelementptr i64, ptr %s19, i64 0
   store i64 0, ptr %s19.z0
-  %s19.z1 = getelementptr i64, ptr %s19, i64 1
-  store i64 0, ptr %s19.z1
-  %s19.z2 = getelementptr i64, ptr %s19, i64 2
-  store i64 0, ptr %s19.z2
-  %s19.z3 = getelementptr i64, ptr %s19, i64 3
-  store i64 0, ptr %s19.z3
-  %s19.z4 = getelementptr i64, ptr %s19, i64 4
-  store i64 0, ptr %s19.z4
-  %s19.z5 = getelementptr i64, ptr %s19, i64 5
-  store i64 0, ptr %s19.z5
   %s20 = alloca [1 x i64], align 8
   %s20.z0 = getelementptr i64, ptr %s20, i64 0
   store i64 0, ptr %s20.z0
   %s21 = alloca [1 x i64], align 8
   %s21.z0 = getelementptr i64, ptr %s21, i64 0
   store i64 0, ptr %s21.z0
-  %s22 = alloca [1 x i64], align 8
+  %s22 = alloca [3 x i64], align 8
   %s22.z0 = getelementptr i64, ptr %s22, i64 0
   store i64 0, ptr %s22.z0
+  %s22.z1 = getelementptr i64, ptr %s22, i64 1
+  store i64 0, ptr %s22.z1
+  %s22.z2 = getelementptr i64, ptr %s22, i64 2
+  store i64 0, ptr %s22.z2
   %s23 = alloca [3 x i64], align 8
   %s23.z0 = getelementptr i64, ptr %s23, i64 0
   store i64 0, ptr %s23.z0
@@ -3752,15 +3704,8 @@ b0:
   store i64 0, ptr %s23.z1
   %s23.z2 = getelementptr i64, ptr %s23, i64 2
   store i64 0, ptr %s23.z2
-  %s24 = alloca [3 x i64], align 8
-  %s24.z0 = getelementptr i64, ptr %s24, i64 0
-  store i64 0, ptr %s24.z0
-  %s24.z1 = getelementptr i64, ptr %s24, i64 1
-  store i64 0, ptr %s24.z1
-  %s24.z2 = getelementptr i64, ptr %s24, i64 2
-  store i64 0, ptr %s24.z2
-  %v927 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v0.p = getelementptr i64, ptr %v927, i64 0
+  %v897 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v0.p = getelementptr i64, ptr %v897, i64 0
   %v0 = load i64, ptr %v0.p
   call void @"rt.region_enter"()
   %v1 = add i64 0, 99
@@ -3768,313 +3713,293 @@ b0:
   %v3 = add i64 0, 0
   %v4 = sub i64 %v3, %v2
   %v5 = getelementptr i64, ptr %s0, i64 0
-  %v928 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v6.p = getelementptr i64, ptr %v928, i64 0
+  %v898 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v6.p = getelementptr i64, ptr %v898, i64 0
   %v6 = load i64, ptr %v6.p
-  %v929 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v7.p = getelementptr i64, ptr %v929, i64 0
+  %v899 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v7.p = getelementptr i64, ptr %v899, i64 0
   %v7 = load i64, ptr %v7.p
   %v8 = add i64 0, 4
   %v9 = add i64 0, 1
   %v10 = add i64 0, 0
   %v11 = sub i64 %v10, %v9
   %v12 = getelementptr i64, ptr %s1, i64 0
-  %v930 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v13.p = getelementptr i64, ptr %v930, i64 0
+  %v900 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v13.p = getelementptr i64, ptr %v900, i64 0
   %v13 = load i64, ptr %v13.p
   %v14 = add i64 0, 0
   %v15 = getelementptr i64, ptr %s2, i64 0
   %st0 = getelementptr i64, ptr %v15, i64 0
   store i64 %v14, ptr %st0
-  %v931 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v16.p = getelementptr i64, ptr %v931, i64 0
+  %v901 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v16.p = getelementptr i64, ptr %v901, i64 0
   %v16 = load i64, ptr %v16.p
   br label %b4
 b1:
-  %v166.p = getelementptr i64, ptr %v5, i64 0
-  %v166 = load i64, ptr %v166.p
-  %v167.p = getelementptr i64, ptr %v5, i64 1
-  %v167 = load i64, ptr %v167.p
-  %v168.p = getelementptr i64, ptr %v5, i64 2
-  %v168 = load i64, ptr %v168.p
-  %v169.p = getelementptr i64, ptr %v5, i64 3
-  %v169 = load i64, ptr %v169.p
-  %v170.p = getelementptr i64, ptr %v5, i64 4
-  %v170 = load i64, ptr %v170.p
-  %v171.p = getelementptr i64, ptr %v5, i64 5
-  %v171 = load i64, ptr %v171.p
-  call void @"main.show"(i64 %v166, i64 %v167, i64 %v168, i64 %v169, i64 %v170, i64 %v171)
-  %v172 = add i64 0, 3
-  %v173 = add i64 0, 1
-  %v174 = add i64 0, 0
-  %v175 = sub i64 %v174, %v173
-  %v176 = getelementptr i64, ptr %s5, i64 0
-  %v932 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v177.p = getelementptr i64, ptr %v932, i64 0
-  %v177 = load i64, ptr %v177.p
-  %v933 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v178.p = getelementptr i64, ptr %v933, i64 0
-  %v178 = load i64, ptr %v178.p
-  %v179 = add i64 0, 9
-  %v180 = add i64 0, 1
-  %v181 = add i64 0, 0
-  %v182 = sub i64 %v181, %v180
-  %v183 = getelementptr i64, ptr %s8, i64 0
-  %v934 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v184.p = getelementptr i64, ptr %v934, i64 0
-  %v184 = load i64, ptr %v184.p
-  %v185 = add i64 0, 0
-  %v186 = getelementptr i64, ptr %s2, i64 0
-  %st1 = getelementptr i64, ptr %v186, i64 0
-  store i64 %v185, ptr %st1
-  %v935 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v187.p = getelementptr i64, ptr %v935, i64 0
-  %v187 = load i64, ptr %v187.p
-  br label %b39
-b2:
-  %v936 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st2 = getelementptr i64, ptr %v936, i64 0
-  store i64 %v7, ptr %st2
-  %v147 = getelementptr i64, ptr @"str.6", i64 0
-  %v148 = add i64 0, 12
-  %v149 = add i64 0, 0
-  %v150 = getelementptr i64, ptr %s6, i64 0
-  %v151 = ptrtoint ptr %v147 to i64
-  %st3 = getelementptr i64, ptr %v150, i64 0
-  store i64 %v151, ptr %st3
-  %st4 = getelementptr i64, ptr %v150, i64 1
-  store i64 %v148, ptr %st4
-  %st5 = getelementptr i64, ptr %v150, i64 2
-  store i64 %v149, ptr %st5
-  call void @"rt.print_str"(ptr %v150)
-  %v152 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v152)
-  %v153 = getelementptr i64, ptr %s5, i64 0
-  %v154 = add i64 0, 0
-  %st6 = getelementptr i64, ptr %v153, i64 0
-  store i64 %v154, ptr %st6
-  %v155.p = getelementptr i64, ptr %v153, i64 0
-  %v155 = load i64, ptr %v155.p
-  %st7 = getelementptr i64, ptr %v5, i64 0
-  store i64 %v155, ptr %st7
-  %v156.p = getelementptr i64, ptr %v153, i64 1
-  %v156 = load i64, ptr %v156.p
-  %st8 = getelementptr i64, ptr %v5, i64 1
-  store i64 %v156, ptr %st8
-  %v157.p = getelementptr i64, ptr %v153, i64 2
-  %v157 = load i64, ptr %v157.p
-  %st9 = getelementptr i64, ptr %v5, i64 2
-  store i64 %v157, ptr %st9
-  %v158.p = getelementptr i64, ptr %v153, i64 3
-  %v158 = load i64, ptr %v158.p
-  %st10 = getelementptr i64, ptr %v5, i64 3
-  store i64 %v158, ptr %st10
-  %v159.p = getelementptr i64, ptr %v153, i64 4
-  %v159 = load i64, ptr %v159.p
-  %st11 = getelementptr i64, ptr %v5, i64 4
-  store i64 %v159, ptr %st11
-  %v160.p = getelementptr i64, ptr %v153, i64 5
-  %v160 = load i64, ptr %v160.p
-  %st12 = getelementptr i64, ptr %v5, i64 5
-  store i64 %v160, ptr %st12
   %v161.p = getelementptr i64, ptr %v5, i64 0
   %v161 = load i64, ptr %v161.p
-  %v162 = add i64 0, 0
-  %v163.c = icmp ne i64 %v161, %v162
-  %v163 = zext i1 %v163.c to i64
-  %c.b2 = icmp ne i64 %v163, 0
-  br i1 %c.b2, label %b2.t14, label %b2.e15
-b2.t14:
+  %v162.p = getelementptr i64, ptr %v5, i64 1
+  %v162 = load i64, ptr %v162.p
+  %v163.p = getelementptr i64, ptr %v5, i64 2
+  %v163 = load i64, ptr %v163.p
+  %v164.p = getelementptr i64, ptr %v5, i64 3
+  %v164 = load i64, ptr %v164.p
+  %v165.p = getelementptr i64, ptr %v5, i64 4
+  %v165 = load i64, ptr %v165.p
+  call void @"main.show"(i64 %v161, i64 %v162, i64 %v163, i64 %v164, i64 %v165)
+  %v166 = add i64 0, 3
+  %v167 = add i64 0, 1
+  %v168 = add i64 0, 0
+  %v169 = sub i64 %v168, %v167
+  %v170 = getelementptr i64, ptr %s4, i64 0
+  %v902 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v171.p = getelementptr i64, ptr %v902, i64 0
+  %v171 = load i64, ptr %v171.p
+  %v903 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v172.p = getelementptr i64, ptr %v903, i64 0
+  %v172 = load i64, ptr %v172.p
+  %v173 = add i64 0, 9
+  %v174 = add i64 0, 1
+  %v175 = add i64 0, 0
+  %v176 = sub i64 %v175, %v174
+  %v177 = getelementptr i64, ptr %s7, i64 0
+  %v904 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v178.p = getelementptr i64, ptr %v904, i64 0
+  %v178 = load i64, ptr %v178.p
+  %v179 = add i64 0, 0
+  %v180 = getelementptr i64, ptr %s2, i64 0
+  %st1 = getelementptr i64, ptr %v180, i64 0
+  store i64 %v179, ptr %st1
+  %v905 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v181.p = getelementptr i64, ptr %v905, i64 0
+  %v181 = load i64, ptr %v181.p
+  br label %b39
+b2:
+  %v906 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st2 = getelementptr i64, ptr %v906, i64 0
+  store i64 %v7, ptr %st2
+  %v143 = getelementptr i64, ptr @"str.6", i64 0
+  %v144 = add i64 0, 12
+  %v145 = add i64 0, 0
+  %v146 = getelementptr i64, ptr %s5, i64 0
+  %v147 = ptrtoint ptr %v143 to i64
+  %st3 = getelementptr i64, ptr %v146, i64 0
+  store i64 %v147, ptr %st3
+  %st4 = getelementptr i64, ptr %v146, i64 1
+  store i64 %v144, ptr %st4
+  %st5 = getelementptr i64, ptr %v146, i64 2
+  store i64 %v145, ptr %st5
+  call void @"rt.print_str"(ptr %v146)
+  %v148 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v148)
+  %v149 = getelementptr i64, ptr %s4, i64 0
+  %v150 = add i64 0, 0
+  %st6 = getelementptr i64, ptr %v149, i64 0
+  store i64 %v150, ptr %st6
+  %v151.p = getelementptr i64, ptr %v149, i64 0
+  %v151 = load i64, ptr %v151.p
+  %st7 = getelementptr i64, ptr %v5, i64 0
+  store i64 %v151, ptr %st7
+  %v152.p = getelementptr i64, ptr %v149, i64 1
+  %v152 = load i64, ptr %v152.p
+  %st8 = getelementptr i64, ptr %v5, i64 1
+  store i64 %v152, ptr %st8
+  %v153.p = getelementptr i64, ptr %v149, i64 2
+  %v153 = load i64, ptr %v153.p
+  %st9 = getelementptr i64, ptr %v5, i64 2
+  store i64 %v153, ptr %st9
+  %v154.p = getelementptr i64, ptr %v149, i64 3
+  %v154 = load i64, ptr %v154.p
+  %st10 = getelementptr i64, ptr %v5, i64 3
+  store i64 %v154, ptr %st10
+  %v155.p = getelementptr i64, ptr %v149, i64 4
+  %v155 = load i64, ptr %v155.p
+  %st11 = getelementptr i64, ptr %v5, i64 4
+  store i64 %v155, ptr %st11
+  %v156.p = getelementptr i64, ptr %v5, i64 0
+  %v156 = load i64, ptr %v156.p
+  %v157 = add i64 0, 0
+  %v158.c = icmp ne i64 %v156, %v157
+  %v158 = zext i1 %v158.c to i64
+  %c.b2 = icmp ne i64 %v158, 0
+  br i1 %c.b2, label %b2.t13, label %b2.e14
+b2.t13:
   br label %b34
-b2.e15:
+b2.e14:
   br label %b35
 b3:
-  %v132.p = getelementptr i64, ptr %v12, i64 0
-  %v132 = load i64, ptr %v132.p
-  %v133 = add i64 0, 0
-  %v134.c = icmp ne i64 %v132, %v133
-  %v134 = zext i1 %v134.c to i64
-  %c.b3 = icmp ne i64 %v134, 0
-  br i1 %c.b3, label %b3.t16, label %b3.e17
-b3.t16:
+  %v129.p = getelementptr i64, ptr %v12, i64 0
+  %v129 = load i64, ptr %v129.p
+  %v130 = add i64 0, 0
+  %v131.c = icmp ne i64 %v129, %v130
+  %v131 = zext i1 %v131.c to i64
+  %c.b3 = icmp ne i64 %v131, 0
+  br i1 %c.b3, label %b3.t15, label %b3.e16
+b3.t15:
   br label %b30
-b3.e17:
+b3.e16:
   br label %b31
 b4:
-  %v937 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st17 = getelementptr i64, ptr %v937, i64 0
-  store i64 %v16, ptr %st17
+  %v907 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st16 = getelementptr i64, ptr %v907, i64 0
+  store i64 %v16, ptr %st16
   %v17.p = getelementptr i64, ptr %v15, i64 0
   %v17 = load i64, ptr %v17.p
   %v18.c = icmp slt i64 %v17, %v8
   %v18 = zext i1 %v18.c to i64
   %c.b4 = icmp ne i64 %v18, 0
-  br i1 %c.b4, label %b4.t19, label %b4.e20
-b4.t19:
+  br i1 %c.b4, label %b4.t18, label %b4.e19
+b4.t18:
   br label %b5
-b4.e20:
+b4.e19:
   br label %b6
 b5:
   call void @"rt.region_enter"()
-  %v938 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v19.p = getelementptr i64, ptr %v938, i64 0
+  %v908 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v19.p = getelementptr i64, ptr %v908, i64 0
   %v19 = load i64, ptr %v19.p
   %v20.p = getelementptr i64, ptr %v15, i64 0
   %v20 = load i64, ptr %v20.p
   %v21.c = icmp eq i64 %v20, %v11
   %v21 = zext i1 %v21.c to i64
   %c.b5 = icmp ne i64 %v21, 0
-  br i1 %c.b5, label %b5.t21, label %b5.e22
-b5.t21:
+  br i1 %c.b5, label %b5.t20, label %b5.e21
+b5.t20:
   br label %b7
-b5.e22:
+b5.e21:
   br label %b8
 b6:
-  %v939 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st22 = getelementptr i64, ptr %v939, i64 0
-  store i64 %v16, ptr %st22
-  %v113 = getelementptr i64, ptr %s5, i64 0
-  %v114 = add i64 0, 0
-  %st23 = getelementptr i64, ptr %v113, i64 0
-  store i64 %v114, ptr %st23
-  %v115.p = getelementptr i64, ptr %v113, i64 0
+  %v909 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st21 = getelementptr i64, ptr %v909, i64 0
+  store i64 %v16, ptr %st21
+  %v111 = getelementptr i64, ptr %s4, i64 0
+  %v112 = add i64 0, 0
+  %st22 = getelementptr i64, ptr %v111, i64 0
+  store i64 %v112, ptr %st22
+  %v113.p = getelementptr i64, ptr %v111, i64 0
+  %v113 = load i64, ptr %v113.p
+  %st23 = getelementptr i64, ptr %v12, i64 0
+  store i64 %v113, ptr %st23
+  %v114.p = getelementptr i64, ptr %v111, i64 1
+  %v114 = load i64, ptr %v114.p
+  %st24 = getelementptr i64, ptr %v12, i64 1
+  store i64 %v114, ptr %st24
+  %v115.p = getelementptr i64, ptr %v111, i64 2
   %v115 = load i64, ptr %v115.p
-  %st24 = getelementptr i64, ptr %v12, i64 0
-  store i64 %v115, ptr %st24
-  %v116.p = getelementptr i64, ptr %v113, i64 1
+  %st25 = getelementptr i64, ptr %v12, i64 2
+  store i64 %v115, ptr %st25
+  %v116.p = getelementptr i64, ptr %v111, i64 3
   %v116 = load i64, ptr %v116.p
-  %st25 = getelementptr i64, ptr %v12, i64 1
-  store i64 %v116, ptr %st25
-  %v117.p = getelementptr i64, ptr %v113, i64 2
+  %st26 = getelementptr i64, ptr %v12, i64 3
+  store i64 %v116, ptr %st26
+  %v117.p = getelementptr i64, ptr %v111, i64 4
   %v117 = load i64, ptr %v117.p
-  %st26 = getelementptr i64, ptr %v12, i64 2
-  store i64 %v117, ptr %st26
-  %v118.p = getelementptr i64, ptr %v113, i64 3
-  %v118 = load i64, ptr %v118.p
-  %st27 = getelementptr i64, ptr %v12, i64 3
-  store i64 %v118, ptr %st27
-  %v119.p = getelementptr i64, ptr %v113, i64 4
-  %v119 = load i64, ptr %v119.p
-  %st28 = getelementptr i64, ptr %v12, i64 4
-  store i64 %v119, ptr %st28
-  %v120.p = getelementptr i64, ptr %v113, i64 5
-  %v120 = load i64, ptr %v120.p
-  %st29 = getelementptr i64, ptr %v12, i64 5
-  store i64 %v120, ptr %st29
-  %v121 = getelementptr i64, ptr @"str.9", i64 0
-  %v122 = add i64 0, 12
-  %v123 = add i64 0, 0
-  %v124 = getelementptr i64, ptr %s6, i64 0
-  %v125 = ptrtoint ptr %v121 to i64
-  %st30 = getelementptr i64, ptr %v124, i64 0
-  store i64 %v125, ptr %st30
-  %st31 = getelementptr i64, ptr %v124, i64 1
-  store i64 %v122, ptr %st31
-  %st32 = getelementptr i64, ptr %v124, i64 2
-  store i64 %v123, ptr %st32
-  call void @"rt.print_str"(ptr %v124)
-  %v126 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v126)
-  %v127.p = getelementptr i64, ptr %v12, i64 0
-  %v127 = load i64, ptr %v127.p
-  %v128 = add i64 0, 0
-  %v129.c = icmp ne i64 %v127, %v128
-  %v129 = zext i1 %v129.c to i64
-  %c.b6 = icmp ne i64 %v129, 0
-  br i1 %c.b6, label %b6.t34, label %b6.e35
-b6.t34:
+  %st27 = getelementptr i64, ptr %v12, i64 4
+  store i64 %v117, ptr %st27
+  %v118 = getelementptr i64, ptr @"str.9", i64 0
+  %v119 = add i64 0, 12
+  %v120 = add i64 0, 0
+  %v121 = getelementptr i64, ptr %s5, i64 0
+  %v122 = ptrtoint ptr %v118 to i64
+  %st28 = getelementptr i64, ptr %v121, i64 0
+  store i64 %v122, ptr %st28
+  %st29 = getelementptr i64, ptr %v121, i64 1
+  store i64 %v119, ptr %st29
+  %st30 = getelementptr i64, ptr %v121, i64 2
+  store i64 %v120, ptr %st30
+  call void @"rt.print_str"(ptr %v121)
+  %v123 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v123)
+  %v124.p = getelementptr i64, ptr %v12, i64 0
+  %v124 = load i64, ptr %v124.p
+  %v125 = add i64 0, 0
+  %v126.c = icmp ne i64 %v124, %v125
+  %v126 = zext i1 %v126.c to i64
+  %c.b6 = icmp ne i64 %v126, 0
+  br i1 %c.b6, label %b6.t32, label %b6.e33
+b6.t32:
   br label %b28
-b6.e35:
+b6.e33:
   br label %b29
 b7:
   %v22.p = getelementptr i64, ptr %v15, i64 0
   %v22 = load i64, ptr %v22.p
-  %v23 = getelementptr i64, ptr %s3, i64 0
-  %v24 = add i64 0, 0
-  %st35 = getelementptr i64, ptr %v23, i64 0
-  store i64 %v24, ptr %st35
-  %st36 = getelementptr i64, ptr %v23, i64 1
-  store i64 %v24, ptr %st36
-  %v25 = add i64 0, 1
-  %st37 = getelementptr i64, ptr %v23, i64 0
-  store i64 %v25, ptr %st37
-  %st38 = getelementptr i64, ptr %v23, i64 1
-  store i64 %v22, ptr %st38
-  %v26 = getelementptr i64, ptr %s4, i64 0
-  %v27.p = getelementptr i64, ptr %v23, i64 0
-  %v27 = load i64, ptr %v27.p
-  %st39 = getelementptr i64, ptr %v26, i64 0
-  store i64 %v27, ptr %st39
-  %v28.p = getelementptr i64, ptr %v23, i64 1
-  %v28 = load i64, ptr %v28.p
-  %st40 = getelementptr i64, ptr %v26, i64 1
-  store i64 %v28, ptr %st40
-  %v29 = add i64 0, 0
-  %st41 = getelementptr i64, ptr %v26, i64 2
-  store i64 %v29, ptr %st41
-  %st42 = getelementptr i64, ptr %v26, i64 3
-  store i64 %v29, ptr %st42
-  %st43 = getelementptr i64, ptr %v26, i64 4
-  store i64 %v29, ptr %st43
-  %v30 = getelementptr i64, ptr %s5, i64 0
+  %v23 = add i64 0, 0
+  %v24 = add i64 0, 1
+  %v25 = getelementptr i64, ptr %s3, i64 0
+  %st33 = getelementptr i64, ptr %v25, i64 0
+  store i64 %v24, ptr %st33
+  %v910 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v26.p = getelementptr i64, ptr %v910, i64 0
+  %v26 = load i64, ptr %v26.p
+  %v27 = add i64 0, 2
+  %v28 = call ptr @"rt.region_alloc"(i64 %v26, i64 %v27)
+  %v29 = ptrtoint ptr %v28 to i64
+  %st34 = getelementptr i64, ptr %v25, i64 1
+  store i64 %v29, ptr %st34
+  %v30 = add i64 0, 1
+  %st35 = getelementptr i64, ptr %v25, i64 2
+  store i64 %v30, ptr %st35
+  %st36 = getelementptr i64, ptr %v25, i64 3
+  store i64 %v26, ptr %st36
+  %st37 = getelementptr i64, ptr %v28, i64 1
+  store i64 %v23, ptr %st37
   %v31 = add i64 0, 1
-  %st44 = getelementptr i64, ptr %v30, i64 0
-  store i64 %v31, ptr %st44
-  %v32.p = getelementptr i64, ptr %v26, i64 0
-  %v32 = load i64, ptr %v32.p
-  %st45 = getelementptr i64, ptr %v30, i64 1
-  store i64 %v32, ptr %st45
-  %v33.p = getelementptr i64, ptr %v26, i64 1
-  %v33 = load i64, ptr %v33.p
-  %st46 = getelementptr i64, ptr %v30, i64 2
-  store i64 %v33, ptr %st46
-  %v34.p = getelementptr i64, ptr %v26, i64 2
+  %st38 = getelementptr i64, ptr %v28, i64 0
+  store i64 %v31, ptr %st38
+  %st39 = getelementptr i64, ptr %v28, i64 1
+  store i64 %v22, ptr %st39
+  %v32 = getelementptr i64, ptr %s4, i64 0
+  %v33 = add i64 0, 1
+  %st40 = getelementptr i64, ptr %v32, i64 0
+  store i64 %v33, ptr %st40
+  %v34.p = getelementptr i64, ptr %v25, i64 0
   %v34 = load i64, ptr %v34.p
-  %st47 = getelementptr i64, ptr %v30, i64 3
-  store i64 %v34, ptr %st47
-  %v35.p = getelementptr i64, ptr %v26, i64 3
+  %st41 = getelementptr i64, ptr %v32, i64 1
+  store i64 %v34, ptr %st41
+  %v35.p = getelementptr i64, ptr %v25, i64 1
   %v35 = load i64, ptr %v35.p
-  %st48 = getelementptr i64, ptr %v30, i64 4
-  store i64 %v35, ptr %st48
-  %v36.p = getelementptr i64, ptr %v26, i64 4
+  %st42 = getelementptr i64, ptr %v32, i64 2
+  store i64 %v35, ptr %st42
+  %v36.p = getelementptr i64, ptr %v25, i64 2
   %v36 = load i64, ptr %v36.p
-  %st49 = getelementptr i64, ptr %v30, i64 5
-  store i64 %v36, ptr %st49
-  %v37.p = getelementptr i64, ptr %v30, i64 0
+  %st43 = getelementptr i64, ptr %v32, i64 3
+  store i64 %v36, ptr %st43
+  %v37.p = getelementptr i64, ptr %v25, i64 3
   %v37 = load i64, ptr %v37.p
-  %st50 = getelementptr i64, ptr %v12, i64 0
-  store i64 %v37, ptr %st50
-  %v38.p = getelementptr i64, ptr %v30, i64 1
+  %st44 = getelementptr i64, ptr %v32, i64 4
+  store i64 %v37, ptr %st44
+  %v38.p = getelementptr i64, ptr %v32, i64 0
   %v38 = load i64, ptr %v38.p
-  %st51 = getelementptr i64, ptr %v12, i64 1
-  store i64 %v38, ptr %st51
-  %v39.p = getelementptr i64, ptr %v30, i64 2
+  %st45 = getelementptr i64, ptr %v12, i64 0
+  store i64 %v38, ptr %st45
+  %v39.p = getelementptr i64, ptr %v32, i64 1
   %v39 = load i64, ptr %v39.p
-  %st52 = getelementptr i64, ptr %v12, i64 2
-  store i64 %v39, ptr %st52
-  %v40.p = getelementptr i64, ptr %v30, i64 3
+  %st46 = getelementptr i64, ptr %v12, i64 1
+  store i64 %v39, ptr %st46
+  %v40.p = getelementptr i64, ptr %v32, i64 2
   %v40 = load i64, ptr %v40.p
-  %st53 = getelementptr i64, ptr %v12, i64 3
-  store i64 %v40, ptr %st53
-  %v41.p = getelementptr i64, ptr %v30, i64 4
+  %st47 = getelementptr i64, ptr %v12, i64 2
+  store i64 %v40, ptr %st47
+  %v41.p = getelementptr i64, ptr %v32, i64 3
   %v41 = load i64, ptr %v41.p
-  %st54 = getelementptr i64, ptr %v12, i64 4
-  store i64 %v41, ptr %st54
-  %v42.p = getelementptr i64, ptr %v30, i64 5
+  %st48 = getelementptr i64, ptr %v12, i64 3
+  store i64 %v41, ptr %st48
+  %v42.p = getelementptr i64, ptr %v32, i64 4
   %v42 = load i64, ptr %v42.p
-  %st55 = getelementptr i64, ptr %v12, i64 5
-  store i64 %v42, ptr %st55
+  %st49 = getelementptr i64, ptr %v12, i64 4
+  store i64 %v42, ptr %st49
   %v43 = getelementptr i64, ptr @"str.9", i64 0
   %v44 = add i64 0, 12
   %v45 = add i64 0, 0
-  %v46 = getelementptr i64, ptr %s6, i64 0
+  %v46 = getelementptr i64, ptr %s5, i64 0
   %v47 = ptrtoint ptr %v43 to i64
-  %st56 = getelementptr i64, ptr %v46, i64 0
-  store i64 %v47, ptr %st56
-  %st57 = getelementptr i64, ptr %v46, i64 1
-  store i64 %v44, ptr %st57
-  %st58 = getelementptr i64, ptr %v46, i64 2
-  store i64 %v45, ptr %st58
+  %st50 = getelementptr i64, ptr %v46, i64 0
+  store i64 %v47, ptr %st50
+  %st51 = getelementptr i64, ptr %v46, i64 1
+  store i64 %v44, ptr %st51
+  %st52 = getelementptr i64, ptr %v46, i64 2
+  store i64 %v45, ptr %st52
   call void @"rt.print_str"(ptr %v46)
   %v48 = add i64 0, 10
   call void @"rt.print_char"(i64 %v48)
@@ -4084,10 +4009,10 @@ b7:
   %v51.c = icmp ne i64 %v49, %v50
   %v51 = zext i1 %v51.c to i64
   %c.b7 = icmp ne i64 %v51, 0
-  br i1 %c.b7, label %b7.t60, label %b7.e61
-b7.t60:
+  br i1 %c.b7, label %b7.t54, label %b7.e55
+b7.t54:
   br label %b9
-b7.e61:
+b7.e55:
   br label %b10
 b8:
   br label %b11
@@ -4097,35 +4022,35 @@ b9:
   call void @"rt.err_relocate"(ptr %v53, i64 %v13)
   br label %b10
 b10:
-  %v940 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st61 = getelementptr i64, ptr %v940, i64 0
-  store i64 %v13, ptr %st61
+  %v911 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st55 = getelementptr i64, ptr %v911, i64 0
+  store i64 %v13, ptr %st55
   br label %b3
 b11:
   %v54.p = getelementptr i64, ptr %v15, i64 0
   %v54 = load i64, ptr %v54.p
-  %v941 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v55.p = getelementptr i64, ptr %v941, i64 0
+  %v912 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v55.p = getelementptr i64, ptr %v912, i64 0
   %v55 = load i64, ptr %v55.p
   %v56 = add i64 0, 1
   %v57.c = icmp eq i64 %v54, %v56
   %v57 = zext i1 %v57.c to i64
   %c.b11 = icmp ne i64 %v57, 0
-  br i1 %c.b11, label %b11.t63, label %b11.e64
-b11.t63:
+  br i1 %c.b11, label %b11.t57, label %b11.e58
+b11.t57:
   br label %b13
-b11.e64:
+b11.e58:
   br label %b14
 b12:
-  %v942 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st64 = getelementptr i64, ptr %v942, i64 0
-  store i64 %v55, ptr %st64
-  %v110 = add i64 0, 1
-  %v111.p = getelementptr i64, ptr %v15, i64 0
-  %v111 = load i64, ptr %v111.p
-  %v112 = add i64 %v111, %v110
-  %st65 = getelementptr i64, ptr %v15, i64 0
-  store i64 %v112, ptr %st65
+  %v913 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st58 = getelementptr i64, ptr %v913, i64 0
+  store i64 %v55, ptr %st58
+  %v108 = add i64 0, 1
+  %v109.p = getelementptr i64, ptr %v15, i64 0
+  %v109 = load i64, ptr %v109.p
+  %v110 = add i64 %v109, %v108
+  %st59 = getelementptr i64, ptr %v15, i64 0
+  store i64 %v110, ptr %st59
   br label %b4
 b13:
   br label %b12
@@ -4135,23 +4060,23 @@ b15:
   %v58.c = icmp eq i64 %v54, %v1
   %v58 = zext i1 %v58.c to i64
   %c.b15 = icmp ne i64 %v58, 0
-  br i1 %c.b15, label %b15.t67, label %b15.e68
-b15.t67:
+  br i1 %c.b15, label %b15.t61, label %b15.e62
+b15.t61:
   br label %b16
-b15.e68:
+b15.e62:
   br label %b17
 b16:
   %v59 = getelementptr i64, ptr @"str.9", i64 0
   %v60 = add i64 0, 12
   %v61 = add i64 0, 0
-  %v62 = getelementptr i64, ptr %s6, i64 0
+  %v62 = getelementptr i64, ptr %s5, i64 0
   %v63 = ptrtoint ptr %v59 to i64
-  %st68 = getelementptr i64, ptr %v62, i64 0
-  store i64 %v63, ptr %st68
-  %st69 = getelementptr i64, ptr %v62, i64 1
-  store i64 %v60, ptr %st69
-  %st70 = getelementptr i64, ptr %v62, i64 2
-  store i64 %v61, ptr %st70
+  %st62 = getelementptr i64, ptr %v62, i64 0
+  store i64 %v63, ptr %st62
+  %st63 = getelementptr i64, ptr %v62, i64 1
+  store i64 %v60, ptr %st63
+  %st64 = getelementptr i64, ptr %v62, i64 2
+  store i64 %v61, ptr %st64
   call void @"rt.print_str"(ptr %v62)
   %v64 = add i64 0, 10
   call void @"rt.print_char"(i64 %v64)
@@ -4162,2807 +4087,2667 @@ b18:
   %v65.c = icmp eq i64 %v54, %v4
   %v65 = zext i1 %v65.c to i64
   %c.b18 = icmp ne i64 %v65, 0
-  br i1 %c.b18, label %b18.t72, label %b18.e73
-b18.t72:
+  br i1 %c.b18, label %b18.t66, label %b18.e67
+b18.t66:
   br label %b19
-b18.e73:
+b18.e67:
   br label %b20
 b19:
-  %v66 = getelementptr i64, ptr %s5, i64 0
+  %v66 = getelementptr i64, ptr %s4, i64 0
   %v67 = add i64 0, 0
-  %st73 = getelementptr i64, ptr %v66, i64 0
-  store i64 %v67, ptr %st73
+  %st67 = getelementptr i64, ptr %v66, i64 0
+  store i64 %v67, ptr %st67
   %v68.p = getelementptr i64, ptr %v66, i64 0
   %v68 = load i64, ptr %v68.p
-  %st74 = getelementptr i64, ptr %v5, i64 0
-  store i64 %v68, ptr %st74
+  %st68 = getelementptr i64, ptr %v5, i64 0
+  store i64 %v68, ptr %st68
   %v69.p = getelementptr i64, ptr %v66, i64 1
   %v69 = load i64, ptr %v69.p
-  %st75 = getelementptr i64, ptr %v5, i64 1
-  store i64 %v69, ptr %st75
+  %st69 = getelementptr i64, ptr %v5, i64 1
+  store i64 %v69, ptr %st69
   %v70.p = getelementptr i64, ptr %v66, i64 2
   %v70 = load i64, ptr %v70.p
-  %st76 = getelementptr i64, ptr %v5, i64 2
-  store i64 %v70, ptr %st76
+  %st70 = getelementptr i64, ptr %v5, i64 2
+  store i64 %v70, ptr %st70
   %v71.p = getelementptr i64, ptr %v66, i64 3
   %v71 = load i64, ptr %v71.p
-  %st77 = getelementptr i64, ptr %v5, i64 3
-  store i64 %v71, ptr %st77
+  %st71 = getelementptr i64, ptr %v5, i64 3
+  store i64 %v71, ptr %st71
   %v72.p = getelementptr i64, ptr %v66, i64 4
   %v72 = load i64, ptr %v72.p
-  %st78 = getelementptr i64, ptr %v5, i64 4
-  store i64 %v72, ptr %st78
-  %v73.p = getelementptr i64, ptr %v66, i64 5
-  %v73 = load i64, ptr %v73.p
-  %st79 = getelementptr i64, ptr %v5, i64 5
-  store i64 %v73, ptr %st79
-  %v74 = getelementptr i64, ptr @"str.9", i64 0
-  %v75 = add i64 0, 12
-  %v76 = add i64 0, 0
-  %v77 = getelementptr i64, ptr %s6, i64 0
-  %v78 = ptrtoint ptr %v74 to i64
-  %st80 = getelementptr i64, ptr %v77, i64 0
-  store i64 %v78, ptr %st80
-  %st81 = getelementptr i64, ptr %v77, i64 1
-  store i64 %v75, ptr %st81
-  %st82 = getelementptr i64, ptr %v77, i64 2
-  store i64 %v76, ptr %st82
-  call void @"rt.print_str"(ptr %v77)
-  %v79 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v79)
-  %v80.p = getelementptr i64, ptr %v5, i64 0
-  %v80 = load i64, ptr %v80.p
-  %v81 = add i64 0, 0
-  %v82.c = icmp ne i64 %v80, %v81
-  %v82 = zext i1 %v82.c to i64
-  %c.b19 = icmp ne i64 %v82, 0
-  br i1 %c.b19, label %b19.t84, label %b19.e85
-b19.t84:
+  %st72 = getelementptr i64, ptr %v5, i64 4
+  store i64 %v72, ptr %st72
+  %v73 = getelementptr i64, ptr @"str.9", i64 0
+  %v74 = add i64 0, 12
+  %v75 = add i64 0, 0
+  %v76 = getelementptr i64, ptr %s5, i64 0
+  %v77 = ptrtoint ptr %v73 to i64
+  %st73 = getelementptr i64, ptr %v76, i64 0
+  store i64 %v77, ptr %st73
+  %st74 = getelementptr i64, ptr %v76, i64 1
+  store i64 %v74, ptr %st74
+  %st75 = getelementptr i64, ptr %v76, i64 2
+  store i64 %v75, ptr %st75
+  call void @"rt.print_str"(ptr %v76)
+  %v78 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v78)
+  %v79.p = getelementptr i64, ptr %v5, i64 0
+  %v79 = load i64, ptr %v79.p
+  %v80 = add i64 0, 0
+  %v81.c = icmp ne i64 %v79, %v80
+  %v81 = zext i1 %v81.c to i64
+  %c.b19 = icmp ne i64 %v81, 0
+  br i1 %c.b19, label %b19.t77, label %b19.e78
+b19.t77:
   br label %b21
-b19.e85:
+b19.e78:
   br label %b22
 b20:
   br label %b23
 b21:
-  %v83 = add i64 0, 1
-  %v84 = getelementptr i64, ptr %v5, i64 %v83
-  call void @"rt.err_relocate"(ptr %v84, i64 %v6)
+  %v82 = add i64 0, 1
+  %v83 = getelementptr i64, ptr %v5, i64 %v82
+  call void @"rt.err_relocate"(ptr %v83, i64 %v6)
   br label %b22
 b22:
-  %v943 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st85 = getelementptr i64, ptr %v943, i64 0
-  store i64 %v6, ptr %st85
+  %v914 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st78 = getelementptr i64, ptr %v914, i64 0
+  store i64 %v6, ptr %st78
   br label %b1
 b23:
-  %v85 = add i64 0, 10
-  %v86 = mul i64 %v54, %v85
-  %v87 = getelementptr i64, ptr %s7, i64 0
-  %v88 = add i64 0, 99
-  call void @"main.sendv"(ptr %v87, i64 %v86, i64 %v88)
-  %v89.p = getelementptr i64, ptr %v87, i64 0
-  %v89 = load i64, ptr %v89.p
-  %v90 = add i64 0, 0
-  %v91.c = icmp ne i64 %v89, %v90
-  %v91 = zext i1 %v91.c to i64
-  %c.b23 = icmp ne i64 %v91, 0
-  br i1 %c.b23, label %b23.t87, label %b23.e88
-b23.t87:
+  %v84 = add i64 0, 10
+  %v85 = mul i64 %v54, %v84
+  %v86 = getelementptr i64, ptr %s6, i64 0
+  %v87 = add i64 0, 99
+  call void @"main.sendv"(ptr %v86, i64 %v85, i64 %v87)
+  %v88.p = getelementptr i64, ptr %v86, i64 0
+  %v88 = load i64, ptr %v88.p
+  %v89 = add i64 0, 0
+  %v90.c = icmp ne i64 %v88, %v89
+  %v90 = zext i1 %v90.c to i64
+  %c.b23 = icmp ne i64 %v90, 0
+  br i1 %c.b23, label %b23.t80, label %b23.e81
+b23.t80:
   br label %b24
-b23.e88:
+b23.e81:
   br label %b25
 b24:
-  %v92 = add i64 0, 0
-  %v93.p = getelementptr i64, ptr %v87, i64 0
+  %v91 = add i64 0, 0
+  %v92.p = getelementptr i64, ptr %v86, i64 0
+  %v92 = load i64, ptr %v92.p
+  %st81 = getelementptr i64, ptr %v5, i64 0
+  store i64 %v92, ptr %st81
+  %v93.p = getelementptr i64, ptr %v86, i64 1
   %v93 = load i64, ptr %v93.p
-  %st88 = getelementptr i64, ptr %v5, i64 0
-  store i64 %v93, ptr %st88
-  %v94.p = getelementptr i64, ptr %v87, i64 1
+  %st82 = getelementptr i64, ptr %v5, i64 1
+  store i64 %v93, ptr %st82
+  %v94.p = getelementptr i64, ptr %v86, i64 2
   %v94 = load i64, ptr %v94.p
-  %st89 = getelementptr i64, ptr %v5, i64 1
-  store i64 %v94, ptr %st89
-  %v95.p = getelementptr i64, ptr %v87, i64 2
+  %st83 = getelementptr i64, ptr %v5, i64 2
+  store i64 %v94, ptr %st83
+  %v95.p = getelementptr i64, ptr %v86, i64 3
   %v95 = load i64, ptr %v95.p
-  %st90 = getelementptr i64, ptr %v5, i64 2
-  store i64 %v95, ptr %st90
-  %v96.p = getelementptr i64, ptr %v87, i64 3
+  %st84 = getelementptr i64, ptr %v5, i64 3
+  store i64 %v95, ptr %st84
+  %v96.p = getelementptr i64, ptr %v86, i64 4
   %v96 = load i64, ptr %v96.p
-  %st91 = getelementptr i64, ptr %v5, i64 3
-  store i64 %v96, ptr %st91
-  %v97.p = getelementptr i64, ptr %v87, i64 4
-  %v97 = load i64, ptr %v97.p
-  %st92 = getelementptr i64, ptr %v5, i64 4
-  store i64 %v97, ptr %st92
-  %v98.p = getelementptr i64, ptr %v87, i64 5
-  %v98 = load i64, ptr %v98.p
-  %st93 = getelementptr i64, ptr %v5, i64 5
-  store i64 %v98, ptr %st93
-  %v99 = getelementptr i64, ptr @"str.9", i64 0
-  %v100 = add i64 0, 12
-  %v101 = add i64 0, 0
-  %v102 = getelementptr i64, ptr %s6, i64 0
-  %v103 = ptrtoint ptr %v99 to i64
-  %st94 = getelementptr i64, ptr %v102, i64 0
-  store i64 %v103, ptr %st94
-  %st95 = getelementptr i64, ptr %v102, i64 1
-  store i64 %v100, ptr %st95
-  %st96 = getelementptr i64, ptr %v102, i64 2
-  store i64 %v101, ptr %st96
-  call void @"rt.print_str"(ptr %v102)
-  %v104 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v104)
-  %v105.p = getelementptr i64, ptr %v5, i64 0
-  %v105 = load i64, ptr %v105.p
-  %v106 = add i64 0, 0
-  %v107.c = icmp ne i64 %v105, %v106
-  %v107 = zext i1 %v107.c to i64
-  %c.b24 = icmp ne i64 %v107, 0
-  br i1 %c.b24, label %b24.t98, label %b24.e99
-b24.t98:
+  %st85 = getelementptr i64, ptr %v5, i64 4
+  store i64 %v96, ptr %st85
+  %v97 = getelementptr i64, ptr @"str.9", i64 0
+  %v98 = add i64 0, 12
+  %v99 = add i64 0, 0
+  %v100 = getelementptr i64, ptr %s5, i64 0
+  %v101 = ptrtoint ptr %v97 to i64
+  %st86 = getelementptr i64, ptr %v100, i64 0
+  store i64 %v101, ptr %st86
+  %st87 = getelementptr i64, ptr %v100, i64 1
+  store i64 %v98, ptr %st87
+  %st88 = getelementptr i64, ptr %v100, i64 2
+  store i64 %v99, ptr %st88
+  call void @"rt.print_str"(ptr %v100)
+  %v102 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v102)
+  %v103.p = getelementptr i64, ptr %v5, i64 0
+  %v103 = load i64, ptr %v103.p
+  %v104 = add i64 0, 0
+  %v105.c = icmp ne i64 %v103, %v104
+  %v105 = zext i1 %v105.c to i64
+  %c.b24 = icmp ne i64 %v105, 0
+  br i1 %c.b24, label %b24.t90, label %b24.e91
+b24.t90:
   br label %b26
-b24.e99:
+b24.e91:
   br label %b27
 b25:
   br label %b12
 b26:
-  %v108 = add i64 0, 1
-  %v109 = getelementptr i64, ptr %v5, i64 %v108
-  call void @"rt.err_relocate"(ptr %v109, i64 %v6)
+  %v106 = add i64 0, 1
+  %v107 = getelementptr i64, ptr %v5, i64 %v106
+  call void @"rt.err_relocate"(ptr %v107, i64 %v6)
   br label %b27
 b27:
-  %v944 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st99 = getelementptr i64, ptr %v944, i64 0
-  store i64 %v6, ptr %st99
+  %v915 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st91 = getelementptr i64, ptr %v915, i64 0
+  store i64 %v6, ptr %st91
   br label %b1
 b28:
-  %v130 = add i64 0, 1
-  %v131 = getelementptr i64, ptr %v12, i64 %v130
-  call void @"rt.err_relocate"(ptr %v131, i64 %v13)
+  %v127 = add i64 0, 1
+  %v128 = getelementptr i64, ptr %v12, i64 %v127
+  call void @"rt.err_relocate"(ptr %v128, i64 %v13)
   br label %b29
 b29:
-  %v945 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st100 = getelementptr i64, ptr %v945, i64 0
-  store i64 %v13, ptr %st100
+  %v916 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st92 = getelementptr i64, ptr %v916, i64 0
+  store i64 %v13, ptr %st92
   br label %b3
 b30:
-  %v135 = add i64 0, 0
-  %v136.p = getelementptr i64, ptr %v12, i64 0
+  %v132 = add i64 0, 0
+  %v133.p = getelementptr i64, ptr %v12, i64 0
+  %v133 = load i64, ptr %v133.p
+  %st93 = getelementptr i64, ptr %v5, i64 0
+  store i64 %v133, ptr %st93
+  %v134.p = getelementptr i64, ptr %v12, i64 1
+  %v134 = load i64, ptr %v134.p
+  %st94 = getelementptr i64, ptr %v5, i64 1
+  store i64 %v134, ptr %st94
+  %v135.p = getelementptr i64, ptr %v12, i64 2
+  %v135 = load i64, ptr %v135.p
+  %st95 = getelementptr i64, ptr %v5, i64 2
+  store i64 %v135, ptr %st95
+  %v136.p = getelementptr i64, ptr %v12, i64 3
   %v136 = load i64, ptr %v136.p
-  %st101 = getelementptr i64, ptr %v5, i64 0
-  store i64 %v136, ptr %st101
-  %v137.p = getelementptr i64, ptr %v12, i64 1
+  %st96 = getelementptr i64, ptr %v5, i64 3
+  store i64 %v136, ptr %st96
+  %v137.p = getelementptr i64, ptr %v12, i64 4
   %v137 = load i64, ptr %v137.p
-  %st102 = getelementptr i64, ptr %v5, i64 1
-  store i64 %v137, ptr %st102
-  %v138.p = getelementptr i64, ptr %v12, i64 2
+  %st97 = getelementptr i64, ptr %v5, i64 4
+  store i64 %v137, ptr %st97
+  %v138.p = getelementptr i64, ptr %v5, i64 0
   %v138 = load i64, ptr %v138.p
-  %st103 = getelementptr i64, ptr %v5, i64 2
-  store i64 %v138, ptr %st103
-  %v139.p = getelementptr i64, ptr %v12, i64 3
-  %v139 = load i64, ptr %v139.p
-  %st104 = getelementptr i64, ptr %v5, i64 3
-  store i64 %v139, ptr %st104
-  %v140.p = getelementptr i64, ptr %v12, i64 4
-  %v140 = load i64, ptr %v140.p
-  %st105 = getelementptr i64, ptr %v5, i64 4
-  store i64 %v140, ptr %st105
-  %v141.p = getelementptr i64, ptr %v12, i64 5
-  %v141 = load i64, ptr %v141.p
-  %st106 = getelementptr i64, ptr %v5, i64 5
-  store i64 %v141, ptr %st106
-  %v142.p = getelementptr i64, ptr %v5, i64 0
-  %v142 = load i64, ptr %v142.p
-  %v143 = add i64 0, 0
-  %v144.c = icmp ne i64 %v142, %v143
-  %v144 = zext i1 %v144.c to i64
-  %c.b30 = icmp ne i64 %v144, 0
-  br i1 %c.b30, label %b30.t108, label %b30.e109
-b30.t108:
+  %v139 = add i64 0, 0
+  %v140.c = icmp ne i64 %v138, %v139
+  %v140 = zext i1 %v140.c to i64
+  %c.b30 = icmp ne i64 %v140, 0
+  br i1 %c.b30, label %b30.t99, label %b30.e100
+b30.t99:
   br label %b32
-b30.e109:
+b30.e100:
   br label %b33
 b31:
   br label %b2
 b32:
-  %v145 = add i64 0, 1
-  %v146 = getelementptr i64, ptr %v5, i64 %v145
-  call void @"rt.err_relocate"(ptr %v146, i64 %v6)
+  %v141 = add i64 0, 1
+  %v142 = getelementptr i64, ptr %v5, i64 %v141
+  call void @"rt.err_relocate"(ptr %v142, i64 %v6)
   br label %b33
 b33:
-  %v946 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st109 = getelementptr i64, ptr %v946, i64 0
-  store i64 %v6, ptr %st109
+  %v917 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st100 = getelementptr i64, ptr %v917, i64 0
+  store i64 %v6, ptr %st100
   br label %b1
 b34:
-  %v164 = add i64 0, 1
-  %v165 = getelementptr i64, ptr %v5, i64 %v164
-  call void @"rt.err_relocate"(ptr %v165, i64 %v6)
+  %v159 = add i64 0, 1
+  %v160 = getelementptr i64, ptr %v5, i64 %v159
+  call void @"rt.err_relocate"(ptr %v160, i64 %v6)
   br label %b35
 b35:
-  %v947 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st110 = getelementptr i64, ptr %v947, i64 0
-  store i64 %v6, ptr %st110
+  %v918 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st101 = getelementptr i64, ptr %v918, i64 0
+  store i64 %v6, ptr %st101
   br label %b1
 b36:
-  %v337.p = getelementptr i64, ptr %v176, i64 0
+  %v326.p = getelementptr i64, ptr %v170, i64 0
+  %v326 = load i64, ptr %v326.p
+  %v327.p = getelementptr i64, ptr %v170, i64 1
+  %v327 = load i64, ptr %v327.p
+  %v328.p = getelementptr i64, ptr %v170, i64 2
+  %v328 = load i64, ptr %v328.p
+  %v329.p = getelementptr i64, ptr %v170, i64 3
+  %v329 = load i64, ptr %v329.p
+  %v330.p = getelementptr i64, ptr %v170, i64 4
+  %v330 = load i64, ptr %v330.p
+  call void @"main.show"(i64 %v326, i64 %v327, i64 %v328, i64 %v329, i64 %v330)
+  %v331 = add i64 0, 99
+  %v332 = add i64 0, 1
+  %v333 = add i64 0, 0
+  %v334 = sub i64 %v333, %v332
+  %v335 = getelementptr i64, ptr %s8, i64 0
+  %v919 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v336.p = getelementptr i64, ptr %v919, i64 0
+  %v336 = load i64, ptr %v336.p
+  %v920 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v337.p = getelementptr i64, ptr %v920, i64 0
   %v337 = load i64, ptr %v337.p
-  %v338.p = getelementptr i64, ptr %v176, i64 1
-  %v338 = load i64, ptr %v338.p
-  %v339.p = getelementptr i64, ptr %v176, i64 2
-  %v339 = load i64, ptr %v339.p
-  %v340.p = getelementptr i64, ptr %v176, i64 3
-  %v340 = load i64, ptr %v340.p
-  %v341.p = getelementptr i64, ptr %v176, i64 4
-  %v341 = load i64, ptr %v341.p
-  %v342.p = getelementptr i64, ptr %v176, i64 5
-  %v342 = load i64, ptr %v342.p
-  call void @"main.show"(i64 %v337, i64 %v338, i64 %v339, i64 %v340, i64 %v341, i64 %v342)
-  %v343 = add i64 0, 99
-  %v344 = add i64 0, 1
-  %v345 = add i64 0, 0
-  %v346 = sub i64 %v345, %v344
-  %v347 = getelementptr i64, ptr %s9, i64 0
-  %v948 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v348.p = getelementptr i64, ptr %v948, i64 0
-  %v348 = load i64, ptr %v348.p
-  %v949 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v349.p = getelementptr i64, ptr %v949, i64 0
-  %v349 = load i64, ptr %v349.p
-  %v350 = add i64 0, 9
-  %v351 = add i64 0, 1
-  %v352 = add i64 0, 0
-  %v353 = sub i64 %v352, %v351
-  %v354 = getelementptr i64, ptr %s11, i64 0
-  %v950 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v355.p = getelementptr i64, ptr %v950, i64 0
-  %v355 = load i64, ptr %v355.p
-  %v356 = add i64 0, 0
-  %v357 = getelementptr i64, ptr %s2, i64 0
-  %st111 = getelementptr i64, ptr %v357, i64 0
-  store i64 %v356, ptr %st111
-  %v951 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v358.p = getelementptr i64, ptr %v951, i64 0
-  %v358 = load i64, ptr %v358.p
+  %v338 = add i64 0, 9
+  %v339 = add i64 0, 1
+  %v340 = add i64 0, 0
+  %v341 = sub i64 %v340, %v339
+  %v342 = getelementptr i64, ptr %s10, i64 0
+  %v921 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v343.p = getelementptr i64, ptr %v921, i64 0
+  %v343 = load i64, ptr %v343.p
+  %v344 = add i64 0, 0
+  %v345 = getelementptr i64, ptr %s2, i64 0
+  %st102 = getelementptr i64, ptr %v345, i64 0
+  store i64 %v344, ptr %st102
+  %v922 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v346.p = getelementptr i64, ptr %v922, i64 0
+  %v346 = load i64, ptr %v346.p
   br label %b74
 b37:
-  %v952 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st112 = getelementptr i64, ptr %v952, i64 0
-  store i64 %v178, ptr %st112
-  %v318 = getelementptr i64, ptr @"str.6", i64 0
-  %v319 = add i64 0, 12
-  %v320 = add i64 0, 0
-  %v321 = getelementptr i64, ptr %s6, i64 0
-  %v322 = ptrtoint ptr %v318 to i64
-  %st113 = getelementptr i64, ptr %v321, i64 0
-  store i64 %v322, ptr %st113
-  %st114 = getelementptr i64, ptr %v321, i64 1
-  store i64 %v319, ptr %st114
-  %st115 = getelementptr i64, ptr %v321, i64 2
-  store i64 %v320, ptr %st115
-  call void @"rt.print_str"(ptr %v321)
-  %v323 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v323)
-  %v324 = getelementptr i64, ptr %s9, i64 0
-  %v325 = add i64 0, 0
-  %st116 = getelementptr i64, ptr %v324, i64 0
-  store i64 %v325, ptr %st116
-  %v326.p = getelementptr i64, ptr %v324, i64 0
-  %v326 = load i64, ptr %v326.p
-  %st117 = getelementptr i64, ptr %v176, i64 0
-  store i64 %v326, ptr %st117
-  %v327.p = getelementptr i64, ptr %v324, i64 1
-  %v327 = load i64, ptr %v327.p
-  %st118 = getelementptr i64, ptr %v176, i64 1
-  store i64 %v327, ptr %st118
-  %v328.p = getelementptr i64, ptr %v324, i64 2
-  %v328 = load i64, ptr %v328.p
-  %st119 = getelementptr i64, ptr %v176, i64 2
-  store i64 %v328, ptr %st119
-  %v329.p = getelementptr i64, ptr %v324, i64 3
-  %v329 = load i64, ptr %v329.p
-  %st120 = getelementptr i64, ptr %v176, i64 3
-  store i64 %v329, ptr %st120
-  %v330.p = getelementptr i64, ptr %v324, i64 4
-  %v330 = load i64, ptr %v330.p
-  %st121 = getelementptr i64, ptr %v176, i64 4
-  store i64 %v330, ptr %st121
-  %v331.p = getelementptr i64, ptr %v324, i64 5
-  %v331 = load i64, ptr %v331.p
-  %st122 = getelementptr i64, ptr %v176, i64 5
-  store i64 %v331, ptr %st122
-  %v332.p = getelementptr i64, ptr %v176, i64 0
-  %v332 = load i64, ptr %v332.p
-  %v333 = add i64 0, 0
-  %v334.c = icmp ne i64 %v332, %v333
-  %v334 = zext i1 %v334.c to i64
-  %c.b37 = icmp ne i64 %v334, 0
-  br i1 %c.b37, label %b37.t124, label %b37.e125
-b37.t124:
+  %v923 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st103 = getelementptr i64, ptr %v923, i64 0
+  store i64 %v172, ptr %st103
+  %v308 = getelementptr i64, ptr @"str.6", i64 0
+  %v309 = add i64 0, 12
+  %v310 = add i64 0, 0
+  %v311 = getelementptr i64, ptr %s5, i64 0
+  %v312 = ptrtoint ptr %v308 to i64
+  %st104 = getelementptr i64, ptr %v311, i64 0
+  store i64 %v312, ptr %st104
+  %st105 = getelementptr i64, ptr %v311, i64 1
+  store i64 %v309, ptr %st105
+  %st106 = getelementptr i64, ptr %v311, i64 2
+  store i64 %v310, ptr %st106
+  call void @"rt.print_str"(ptr %v311)
+  %v313 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v313)
+  %v314 = getelementptr i64, ptr %s8, i64 0
+  %v315 = add i64 0, 0
+  %st107 = getelementptr i64, ptr %v314, i64 0
+  store i64 %v315, ptr %st107
+  %v316.p = getelementptr i64, ptr %v314, i64 0
+  %v316 = load i64, ptr %v316.p
+  %st108 = getelementptr i64, ptr %v170, i64 0
+  store i64 %v316, ptr %st108
+  %v317.p = getelementptr i64, ptr %v314, i64 1
+  %v317 = load i64, ptr %v317.p
+  %st109 = getelementptr i64, ptr %v170, i64 1
+  store i64 %v317, ptr %st109
+  %v318.p = getelementptr i64, ptr %v314, i64 2
+  %v318 = load i64, ptr %v318.p
+  %st110 = getelementptr i64, ptr %v170, i64 2
+  store i64 %v318, ptr %st110
+  %v319.p = getelementptr i64, ptr %v314, i64 3
+  %v319 = load i64, ptr %v319.p
+  %st111 = getelementptr i64, ptr %v170, i64 3
+  store i64 %v319, ptr %st111
+  %v320.p = getelementptr i64, ptr %v314, i64 4
+  %v320 = load i64, ptr %v320.p
+  %st112 = getelementptr i64, ptr %v170, i64 4
+  store i64 %v320, ptr %st112
+  %v321.p = getelementptr i64, ptr %v170, i64 0
+  %v321 = load i64, ptr %v321.p
+  %v322 = add i64 0, 0
+  %v323.c = icmp ne i64 %v321, %v322
+  %v323 = zext i1 %v323.c to i64
+  %c.b37 = icmp ne i64 %v323, 0
+  br i1 %c.b37, label %b37.t114, label %b37.e115
+b37.t114:
   br label %b69
-b37.e125:
+b37.e115:
   br label %b70
 b38:
-  %v303.p = getelementptr i64, ptr %v183, i64 0
-  %v303 = load i64, ptr %v303.p
-  %v304 = add i64 0, 0
-  %v305.c = icmp ne i64 %v303, %v304
-  %v305 = zext i1 %v305.c to i64
-  %c.b38 = icmp ne i64 %v305, 0
-  br i1 %c.b38, label %b38.t126, label %b38.e127
-b38.t126:
+  %v294.p = getelementptr i64, ptr %v177, i64 0
+  %v294 = load i64, ptr %v294.p
+  %v295 = add i64 0, 0
+  %v296.c = icmp ne i64 %v294, %v295
+  %v296 = zext i1 %v296.c to i64
+  %c.b38 = icmp ne i64 %v296, 0
+  br i1 %c.b38, label %b38.t116, label %b38.e117
+b38.t116:
   br label %b65
-b38.e127:
+b38.e117:
   br label %b66
 b39:
-  %v953 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st127 = getelementptr i64, ptr %v953, i64 0
-  store i64 %v187, ptr %st127
-  %v188.p = getelementptr i64, ptr %v186, i64 0
-  %v188 = load i64, ptr %v188.p
-  %v189.c = icmp slt i64 %v188, %v179
-  %v189 = zext i1 %v189.c to i64
-  %c.b39 = icmp ne i64 %v189, 0
-  br i1 %c.b39, label %b39.t129, label %b39.e130
-b39.t129:
+  %v924 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st117 = getelementptr i64, ptr %v924, i64 0
+  store i64 %v181, ptr %st117
+  %v182.p = getelementptr i64, ptr %v180, i64 0
+  %v182 = load i64, ptr %v182.p
+  %v183.c = icmp slt i64 %v182, %v173
+  %v183 = zext i1 %v183.c to i64
+  %c.b39 = icmp ne i64 %v183, 0
+  br i1 %c.b39, label %b39.t119, label %b39.e120
+b39.t119:
   br label %b40
-b39.e130:
+b39.e120:
   br label %b41
 b40:
   call void @"rt.region_enter"()
-  %v954 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v190.p = getelementptr i64, ptr %v954, i64 0
-  %v190 = load i64, ptr %v190.p
-  %v191.p = getelementptr i64, ptr %v186, i64 0
-  %v191 = load i64, ptr %v191.p
-  %v192.c = icmp eq i64 %v191, %v182
-  %v192 = zext i1 %v192.c to i64
-  %c.b40 = icmp ne i64 %v192, 0
-  br i1 %c.b40, label %b40.t131, label %b40.e132
-b40.t131:
+  %v925 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v184.p = getelementptr i64, ptr %v925, i64 0
+  %v184 = load i64, ptr %v184.p
+  %v185.p = getelementptr i64, ptr %v180, i64 0
+  %v185 = load i64, ptr %v185.p
+  %v186.c = icmp eq i64 %v185, %v176
+  %v186 = zext i1 %v186.c to i64
+  %c.b40 = icmp ne i64 %v186, 0
+  br i1 %c.b40, label %b40.t121, label %b40.e122
+b40.t121:
   br label %b42
-b40.e132:
+b40.e122:
   br label %b43
 b41:
-  %v955 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st132 = getelementptr i64, ptr %v955, i64 0
-  store i64 %v187, ptr %st132
-  %v284 = getelementptr i64, ptr %s9, i64 0
+  %v926 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st122 = getelementptr i64, ptr %v926, i64 0
+  store i64 %v181, ptr %st122
+  %v276 = getelementptr i64, ptr %s8, i64 0
+  %v277 = add i64 0, 0
+  %st123 = getelementptr i64, ptr %v276, i64 0
+  store i64 %v277, ptr %st123
+  %v278.p = getelementptr i64, ptr %v276, i64 0
+  %v278 = load i64, ptr %v278.p
+  %st124 = getelementptr i64, ptr %v177, i64 0
+  store i64 %v278, ptr %st124
+  %v279.p = getelementptr i64, ptr %v276, i64 1
+  %v279 = load i64, ptr %v279.p
+  %st125 = getelementptr i64, ptr %v177, i64 1
+  store i64 %v279, ptr %st125
+  %v280.p = getelementptr i64, ptr %v276, i64 2
+  %v280 = load i64, ptr %v280.p
+  %st126 = getelementptr i64, ptr %v177, i64 2
+  store i64 %v280, ptr %st126
+  %v281.p = getelementptr i64, ptr %v276, i64 3
+  %v281 = load i64, ptr %v281.p
+  %st127 = getelementptr i64, ptr %v177, i64 3
+  store i64 %v281, ptr %st127
+  %v282.p = getelementptr i64, ptr %v276, i64 4
+  %v282 = load i64, ptr %v282.p
+  %st128 = getelementptr i64, ptr %v177, i64 4
+  store i64 %v282, ptr %st128
+  %v283 = getelementptr i64, ptr @"str.9", i64 0
+  %v284 = add i64 0, 12
   %v285 = add i64 0, 0
-  %st133 = getelementptr i64, ptr %v284, i64 0
-  store i64 %v285, ptr %st133
-  %v286.p = getelementptr i64, ptr %v284, i64 0
-  %v286 = load i64, ptr %v286.p
-  %st134 = getelementptr i64, ptr %v183, i64 0
-  store i64 %v286, ptr %st134
-  %v287.p = getelementptr i64, ptr %v284, i64 1
-  %v287 = load i64, ptr %v287.p
-  %st135 = getelementptr i64, ptr %v183, i64 1
-  store i64 %v287, ptr %st135
-  %v288.p = getelementptr i64, ptr %v284, i64 2
-  %v288 = load i64, ptr %v288.p
-  %st136 = getelementptr i64, ptr %v183, i64 2
-  store i64 %v288, ptr %st136
-  %v289.p = getelementptr i64, ptr %v284, i64 3
+  %v286 = getelementptr i64, ptr %s5, i64 0
+  %v287 = ptrtoint ptr %v283 to i64
+  %st129 = getelementptr i64, ptr %v286, i64 0
+  store i64 %v287, ptr %st129
+  %st130 = getelementptr i64, ptr %v286, i64 1
+  store i64 %v284, ptr %st130
+  %st131 = getelementptr i64, ptr %v286, i64 2
+  store i64 %v285, ptr %st131
+  call void @"rt.print_str"(ptr %v286)
+  %v288 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v288)
+  %v289.p = getelementptr i64, ptr %v177, i64 0
   %v289 = load i64, ptr %v289.p
-  %st137 = getelementptr i64, ptr %v183, i64 3
-  store i64 %v289, ptr %st137
-  %v290.p = getelementptr i64, ptr %v284, i64 4
-  %v290 = load i64, ptr %v290.p
-  %st138 = getelementptr i64, ptr %v183, i64 4
-  store i64 %v290, ptr %st138
-  %v291.p = getelementptr i64, ptr %v284, i64 5
-  %v291 = load i64, ptr %v291.p
-  %st139 = getelementptr i64, ptr %v183, i64 5
-  store i64 %v291, ptr %st139
-  %v292 = getelementptr i64, ptr @"str.9", i64 0
-  %v293 = add i64 0, 12
-  %v294 = add i64 0, 0
-  %v295 = getelementptr i64, ptr %s6, i64 0
-  %v296 = ptrtoint ptr %v292 to i64
-  %st140 = getelementptr i64, ptr %v295, i64 0
-  store i64 %v296, ptr %st140
-  %st141 = getelementptr i64, ptr %v295, i64 1
-  store i64 %v293, ptr %st141
-  %st142 = getelementptr i64, ptr %v295, i64 2
-  store i64 %v294, ptr %st142
-  call void @"rt.print_str"(ptr %v295)
-  %v297 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v297)
-  %v298.p = getelementptr i64, ptr %v183, i64 0
-  %v298 = load i64, ptr %v298.p
-  %v299 = add i64 0, 0
-  %v300.c = icmp ne i64 %v298, %v299
-  %v300 = zext i1 %v300.c to i64
-  %c.b41 = icmp ne i64 %v300, 0
-  br i1 %c.b41, label %b41.t144, label %b41.e145
-b41.t144:
+  %v290 = add i64 0, 0
+  %v291.c = icmp ne i64 %v289, %v290
+  %v291 = zext i1 %v291.c to i64
+  %c.b41 = icmp ne i64 %v291, 0
+  br i1 %c.b41, label %b41.t133, label %b41.e134
+b41.t133:
   br label %b63
-b41.e145:
+b41.e134:
   br label %b64
 b42:
-  %v193.p = getelementptr i64, ptr %v186, i64 0
-  %v193 = load i64, ptr %v193.p
-  %v194 = getelementptr i64, ptr %s3, i64 0
-  %v195 = add i64 0, 0
-  %st145 = getelementptr i64, ptr %v194, i64 0
-  store i64 %v195, ptr %st145
-  %st146 = getelementptr i64, ptr %v194, i64 1
-  store i64 %v195, ptr %st146
+  %v187.p = getelementptr i64, ptr %v180, i64 0
+  %v187 = load i64, ptr %v187.p
+  %v188 = add i64 0, 0
+  %v189 = add i64 0, 1
+  %v190 = getelementptr i64, ptr %s3, i64 0
+  %st134 = getelementptr i64, ptr %v190, i64 0
+  store i64 %v189, ptr %st134
+  %v927 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v191.p = getelementptr i64, ptr %v927, i64 0
+  %v191 = load i64, ptr %v191.p
+  %v192 = add i64 0, 2
+  %v193 = call ptr @"rt.region_alloc"(i64 %v191, i64 %v192)
+  %v194 = ptrtoint ptr %v193 to i64
+  %st135 = getelementptr i64, ptr %v190, i64 1
+  store i64 %v194, ptr %st135
+  %v195 = add i64 0, 1
+  %st136 = getelementptr i64, ptr %v190, i64 2
+  store i64 %v195, ptr %st136
+  %st137 = getelementptr i64, ptr %v190, i64 3
+  store i64 %v191, ptr %st137
+  %st138 = getelementptr i64, ptr %v193, i64 1
+  store i64 %v188, ptr %st138
   %v196 = add i64 0, 1
-  %st147 = getelementptr i64, ptr %v194, i64 0
-  store i64 %v196, ptr %st147
-  %st148 = getelementptr i64, ptr %v194, i64 1
-  store i64 %v193, ptr %st148
-  %v197 = getelementptr i64, ptr %s4, i64 0
-  %v198.p = getelementptr i64, ptr %v194, i64 0
-  %v198 = load i64, ptr %v198.p
-  %st149 = getelementptr i64, ptr %v197, i64 0
-  store i64 %v198, ptr %st149
-  %v199.p = getelementptr i64, ptr %v194, i64 1
+  %st139 = getelementptr i64, ptr %v193, i64 0
+  store i64 %v196, ptr %st139
+  %st140 = getelementptr i64, ptr %v193, i64 1
+  store i64 %v187, ptr %st140
+  %v197 = getelementptr i64, ptr %s8, i64 0
+  %v198 = add i64 0, 1
+  %st141 = getelementptr i64, ptr %v197, i64 0
+  store i64 %v198, ptr %st141
+  %v199.p = getelementptr i64, ptr %v190, i64 0
   %v199 = load i64, ptr %v199.p
-  %st150 = getelementptr i64, ptr %v197, i64 1
-  store i64 %v199, ptr %st150
-  %v200 = add i64 0, 0
-  %st151 = getelementptr i64, ptr %v197, i64 2
-  store i64 %v200, ptr %st151
-  %st152 = getelementptr i64, ptr %v197, i64 3
-  store i64 %v200, ptr %st152
-  %st153 = getelementptr i64, ptr %v197, i64 4
-  store i64 %v200, ptr %st153
-  %v201 = getelementptr i64, ptr %s9, i64 0
-  %v202 = add i64 0, 1
-  %st154 = getelementptr i64, ptr %v201, i64 0
-  store i64 %v202, ptr %st154
+  %st142 = getelementptr i64, ptr %v197, i64 1
+  store i64 %v199, ptr %st142
+  %v200.p = getelementptr i64, ptr %v190, i64 1
+  %v200 = load i64, ptr %v200.p
+  %st143 = getelementptr i64, ptr %v197, i64 2
+  store i64 %v200, ptr %st143
+  %v201.p = getelementptr i64, ptr %v190, i64 2
+  %v201 = load i64, ptr %v201.p
+  %st144 = getelementptr i64, ptr %v197, i64 3
+  store i64 %v201, ptr %st144
+  %v202.p = getelementptr i64, ptr %v190, i64 3
+  %v202 = load i64, ptr %v202.p
+  %st145 = getelementptr i64, ptr %v197, i64 4
+  store i64 %v202, ptr %st145
   %v203.p = getelementptr i64, ptr %v197, i64 0
   %v203 = load i64, ptr %v203.p
-  %st155 = getelementptr i64, ptr %v201, i64 1
-  store i64 %v203, ptr %st155
+  %st146 = getelementptr i64, ptr %v177, i64 0
+  store i64 %v203, ptr %st146
   %v204.p = getelementptr i64, ptr %v197, i64 1
   %v204 = load i64, ptr %v204.p
-  %st156 = getelementptr i64, ptr %v201, i64 2
-  store i64 %v204, ptr %st156
+  %st147 = getelementptr i64, ptr %v177, i64 1
+  store i64 %v204, ptr %st147
   %v205.p = getelementptr i64, ptr %v197, i64 2
   %v205 = load i64, ptr %v205.p
-  %st157 = getelementptr i64, ptr %v201, i64 3
-  store i64 %v205, ptr %st157
+  %st148 = getelementptr i64, ptr %v177, i64 2
+  store i64 %v205, ptr %st148
   %v206.p = getelementptr i64, ptr %v197, i64 3
   %v206 = load i64, ptr %v206.p
-  %st158 = getelementptr i64, ptr %v201, i64 4
-  store i64 %v206, ptr %st158
+  %st149 = getelementptr i64, ptr %v177, i64 3
+  store i64 %v206, ptr %st149
   %v207.p = getelementptr i64, ptr %v197, i64 4
   %v207 = load i64, ptr %v207.p
-  %st159 = getelementptr i64, ptr %v201, i64 5
-  store i64 %v207, ptr %st159
-  %v208.p = getelementptr i64, ptr %v201, i64 0
-  %v208 = load i64, ptr %v208.p
-  %st160 = getelementptr i64, ptr %v183, i64 0
-  store i64 %v208, ptr %st160
-  %v209.p = getelementptr i64, ptr %v201, i64 1
-  %v209 = load i64, ptr %v209.p
-  %st161 = getelementptr i64, ptr %v183, i64 1
-  store i64 %v209, ptr %st161
-  %v210.p = getelementptr i64, ptr %v201, i64 2
-  %v210 = load i64, ptr %v210.p
-  %st162 = getelementptr i64, ptr %v183, i64 2
-  store i64 %v210, ptr %st162
-  %v211.p = getelementptr i64, ptr %v201, i64 3
-  %v211 = load i64, ptr %v211.p
-  %st163 = getelementptr i64, ptr %v183, i64 3
-  store i64 %v211, ptr %st163
-  %v212.p = getelementptr i64, ptr %v201, i64 4
-  %v212 = load i64, ptr %v212.p
-  %st164 = getelementptr i64, ptr %v183, i64 4
-  store i64 %v212, ptr %st164
-  %v213.p = getelementptr i64, ptr %v201, i64 5
-  %v213 = load i64, ptr %v213.p
-  %st165 = getelementptr i64, ptr %v183, i64 5
-  store i64 %v213, ptr %st165
-  %v214 = getelementptr i64, ptr @"str.9", i64 0
-  %v215 = add i64 0, 12
-  %v216 = add i64 0, 0
-  %v217 = getelementptr i64, ptr %s6, i64 0
-  %v218 = ptrtoint ptr %v214 to i64
-  %st166 = getelementptr i64, ptr %v217, i64 0
-  store i64 %v218, ptr %st166
-  %st167 = getelementptr i64, ptr %v217, i64 1
-  store i64 %v215, ptr %st167
-  %st168 = getelementptr i64, ptr %v217, i64 2
-  store i64 %v216, ptr %st168
-  call void @"rt.print_str"(ptr %v217)
-  %v219 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v219)
-  %v220.p = getelementptr i64, ptr %v183, i64 0
-  %v220 = load i64, ptr %v220.p
-  %v221 = add i64 0, 0
-  %v222.c = icmp ne i64 %v220, %v221
-  %v222 = zext i1 %v222.c to i64
-  %c.b42 = icmp ne i64 %v222, 0
-  br i1 %c.b42, label %b42.t170, label %b42.e171
-b42.t170:
+  %st150 = getelementptr i64, ptr %v177, i64 4
+  store i64 %v207, ptr %st150
+  %v208 = getelementptr i64, ptr @"str.9", i64 0
+  %v209 = add i64 0, 12
+  %v210 = add i64 0, 0
+  %v211 = getelementptr i64, ptr %s5, i64 0
+  %v212 = ptrtoint ptr %v208 to i64
+  %st151 = getelementptr i64, ptr %v211, i64 0
+  store i64 %v212, ptr %st151
+  %st152 = getelementptr i64, ptr %v211, i64 1
+  store i64 %v209, ptr %st152
+  %st153 = getelementptr i64, ptr %v211, i64 2
+  store i64 %v210, ptr %st153
+  call void @"rt.print_str"(ptr %v211)
+  %v213 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v213)
+  %v214.p = getelementptr i64, ptr %v177, i64 0
+  %v214 = load i64, ptr %v214.p
+  %v215 = add i64 0, 0
+  %v216.c = icmp ne i64 %v214, %v215
+  %v216 = zext i1 %v216.c to i64
+  %c.b42 = icmp ne i64 %v216, 0
+  br i1 %c.b42, label %b42.t155, label %b42.e156
+b42.t155:
   br label %b44
-b42.e171:
+b42.e156:
   br label %b45
 b43:
   br label %b46
 b44:
-  %v223 = add i64 0, 1
-  %v224 = getelementptr i64, ptr %v183, i64 %v223
-  call void @"rt.err_relocate"(ptr %v224, i64 %v184)
+  %v217 = add i64 0, 1
+  %v218 = getelementptr i64, ptr %v177, i64 %v217
+  call void @"rt.err_relocate"(ptr %v218, i64 %v178)
   br label %b45
 b45:
-  %v956 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st171 = getelementptr i64, ptr %v956, i64 0
-  store i64 %v184, ptr %st171
+  %v928 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st156 = getelementptr i64, ptr %v928, i64 0
+  store i64 %v178, ptr %st156
   br label %b38
 b46:
-  %v225.p = getelementptr i64, ptr %v186, i64 0
-  %v225 = load i64, ptr %v225.p
-  %v957 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v226.p = getelementptr i64, ptr %v957, i64 0
-  %v226 = load i64, ptr %v226.p
-  %v227 = add i64 0, 1
-  %v228.c = icmp eq i64 %v225, %v227
-  %v228 = zext i1 %v228.c to i64
-  %c.b46 = icmp ne i64 %v228, 0
-  br i1 %c.b46, label %b46.t173, label %b46.e174
-b46.t173:
+  %v219.p = getelementptr i64, ptr %v180, i64 0
+  %v219 = load i64, ptr %v219.p
+  %v929 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v220.p = getelementptr i64, ptr %v929, i64 0
+  %v220 = load i64, ptr %v220.p
+  %v221 = add i64 0, 1
+  %v222.c = icmp eq i64 %v219, %v221
+  %v222 = zext i1 %v222.c to i64
+  %c.b46 = icmp ne i64 %v222, 0
+  br i1 %c.b46, label %b46.t158, label %b46.e159
+b46.t158:
   br label %b48
-b46.e174:
+b46.e159:
   br label %b49
 b47:
-  %v958 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st174 = getelementptr i64, ptr %v958, i64 0
-  store i64 %v226, ptr %st174
-  %v281 = add i64 0, 1
-  %v282.p = getelementptr i64, ptr %v186, i64 0
-  %v282 = load i64, ptr %v282.p
-  %v283 = add i64 %v282, %v281
-  %st175 = getelementptr i64, ptr %v186, i64 0
-  store i64 %v283, ptr %st175
+  %v930 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st159 = getelementptr i64, ptr %v930, i64 0
+  store i64 %v220, ptr %st159
+  %v273 = add i64 0, 1
+  %v274.p = getelementptr i64, ptr %v180, i64 0
+  %v274 = load i64, ptr %v274.p
+  %v275 = add i64 %v274, %v273
+  %st160 = getelementptr i64, ptr %v180, i64 0
+  store i64 %v275, ptr %st160
   br label %b39
 b48:
   br label %b47
 b49:
   br label %b50
 b50:
-  %v229.c = icmp eq i64 %v225, %v172
-  %v229 = zext i1 %v229.c to i64
-  %c.b50 = icmp ne i64 %v229, 0
-  br i1 %c.b50, label %b50.t177, label %b50.e178
-b50.t177:
+  %v223.c = icmp eq i64 %v219, %v166
+  %v223 = zext i1 %v223.c to i64
+  %c.b50 = icmp ne i64 %v223, 0
+  br i1 %c.b50, label %b50.t162, label %b50.e163
+b50.t162:
   br label %b51
-b50.e178:
+b50.e163:
   br label %b52
 b51:
-  %v230 = getelementptr i64, ptr @"str.9", i64 0
-  %v231 = add i64 0, 12
-  %v232 = add i64 0, 0
-  %v233 = getelementptr i64, ptr %s6, i64 0
-  %v234 = ptrtoint ptr %v230 to i64
-  %st178 = getelementptr i64, ptr %v233, i64 0
-  store i64 %v234, ptr %st178
-  %st179 = getelementptr i64, ptr %v233, i64 1
-  store i64 %v231, ptr %st179
-  %st180 = getelementptr i64, ptr %v233, i64 2
-  store i64 %v232, ptr %st180
-  call void @"rt.print_str"(ptr %v233)
-  %v235 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v235)
+  %v224 = getelementptr i64, ptr @"str.9", i64 0
+  %v225 = add i64 0, 12
+  %v226 = add i64 0, 0
+  %v227 = getelementptr i64, ptr %s5, i64 0
+  %v228 = ptrtoint ptr %v224 to i64
+  %st163 = getelementptr i64, ptr %v227, i64 0
+  store i64 %v228, ptr %st163
+  %st164 = getelementptr i64, ptr %v227, i64 1
+  store i64 %v225, ptr %st164
+  %st165 = getelementptr i64, ptr %v227, i64 2
+  store i64 %v226, ptr %st165
+  call void @"rt.print_str"(ptr %v227)
+  %v229 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v229)
   br label %b37
 b52:
   br label %b53
 b53:
-  %v236.c = icmp eq i64 %v225, %v175
-  %v236 = zext i1 %v236.c to i64
-  %c.b53 = icmp ne i64 %v236, 0
-  br i1 %c.b53, label %b53.t182, label %b53.e183
-b53.t182:
+  %v230.c = icmp eq i64 %v219, %v169
+  %v230 = zext i1 %v230.c to i64
+  %c.b53 = icmp ne i64 %v230, 0
+  br i1 %c.b53, label %b53.t167, label %b53.e168
+b53.t167:
   br label %b54
-b53.e183:
+b53.e168:
   br label %b55
 b54:
-  %v237 = getelementptr i64, ptr %s9, i64 0
-  %v238 = add i64 0, 0
-  %st183 = getelementptr i64, ptr %v237, i64 0
-  store i64 %v238, ptr %st183
-  %v239.p = getelementptr i64, ptr %v237, i64 0
-  %v239 = load i64, ptr %v239.p
-  %st184 = getelementptr i64, ptr %v176, i64 0
-  store i64 %v239, ptr %st184
-  %v240.p = getelementptr i64, ptr %v237, i64 1
-  %v240 = load i64, ptr %v240.p
-  %st185 = getelementptr i64, ptr %v176, i64 1
-  store i64 %v240, ptr %st185
-  %v241.p = getelementptr i64, ptr %v237, i64 2
-  %v241 = load i64, ptr %v241.p
-  %st186 = getelementptr i64, ptr %v176, i64 2
-  store i64 %v241, ptr %st186
-  %v242.p = getelementptr i64, ptr %v237, i64 3
-  %v242 = load i64, ptr %v242.p
-  %st187 = getelementptr i64, ptr %v176, i64 3
-  store i64 %v242, ptr %st187
-  %v243.p = getelementptr i64, ptr %v237, i64 4
-  %v243 = load i64, ptr %v243.p
-  %st188 = getelementptr i64, ptr %v176, i64 4
-  store i64 %v243, ptr %st188
-  %v244.p = getelementptr i64, ptr %v237, i64 5
+  %v231 = getelementptr i64, ptr %s8, i64 0
+  %v232 = add i64 0, 0
+  %st168 = getelementptr i64, ptr %v231, i64 0
+  store i64 %v232, ptr %st168
+  %v233.p = getelementptr i64, ptr %v231, i64 0
+  %v233 = load i64, ptr %v233.p
+  %st169 = getelementptr i64, ptr %v170, i64 0
+  store i64 %v233, ptr %st169
+  %v234.p = getelementptr i64, ptr %v231, i64 1
+  %v234 = load i64, ptr %v234.p
+  %st170 = getelementptr i64, ptr %v170, i64 1
+  store i64 %v234, ptr %st170
+  %v235.p = getelementptr i64, ptr %v231, i64 2
+  %v235 = load i64, ptr %v235.p
+  %st171 = getelementptr i64, ptr %v170, i64 2
+  store i64 %v235, ptr %st171
+  %v236.p = getelementptr i64, ptr %v231, i64 3
+  %v236 = load i64, ptr %v236.p
+  %st172 = getelementptr i64, ptr %v170, i64 3
+  store i64 %v236, ptr %st172
+  %v237.p = getelementptr i64, ptr %v231, i64 4
+  %v237 = load i64, ptr %v237.p
+  %st173 = getelementptr i64, ptr %v170, i64 4
+  store i64 %v237, ptr %st173
+  %v238 = getelementptr i64, ptr @"str.9", i64 0
+  %v239 = add i64 0, 12
+  %v240 = add i64 0, 0
+  %v241 = getelementptr i64, ptr %s5, i64 0
+  %v242 = ptrtoint ptr %v238 to i64
+  %st174 = getelementptr i64, ptr %v241, i64 0
+  store i64 %v242, ptr %st174
+  %st175 = getelementptr i64, ptr %v241, i64 1
+  store i64 %v239, ptr %st175
+  %st176 = getelementptr i64, ptr %v241, i64 2
+  store i64 %v240, ptr %st176
+  call void @"rt.print_str"(ptr %v241)
+  %v243 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v243)
+  %v244.p = getelementptr i64, ptr %v170, i64 0
   %v244 = load i64, ptr %v244.p
-  %st189 = getelementptr i64, ptr %v176, i64 5
-  store i64 %v244, ptr %st189
-  %v245 = getelementptr i64, ptr @"str.9", i64 0
-  %v246 = add i64 0, 12
-  %v247 = add i64 0, 0
-  %v248 = getelementptr i64, ptr %s6, i64 0
-  %v249 = ptrtoint ptr %v245 to i64
-  %st190 = getelementptr i64, ptr %v248, i64 0
-  store i64 %v249, ptr %st190
-  %st191 = getelementptr i64, ptr %v248, i64 1
-  store i64 %v246, ptr %st191
-  %st192 = getelementptr i64, ptr %v248, i64 2
-  store i64 %v247, ptr %st192
-  call void @"rt.print_str"(ptr %v248)
-  %v250 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v250)
-  %v251.p = getelementptr i64, ptr %v176, i64 0
-  %v251 = load i64, ptr %v251.p
-  %v252 = add i64 0, 0
-  %v253.c = icmp ne i64 %v251, %v252
-  %v253 = zext i1 %v253.c to i64
-  %c.b54 = icmp ne i64 %v253, 0
-  br i1 %c.b54, label %b54.t194, label %b54.e195
-b54.t194:
+  %v245 = add i64 0, 0
+  %v246.c = icmp ne i64 %v244, %v245
+  %v246 = zext i1 %v246.c to i64
+  %c.b54 = icmp ne i64 %v246, 0
+  br i1 %c.b54, label %b54.t178, label %b54.e179
+b54.t178:
   br label %b56
-b54.e195:
+b54.e179:
   br label %b57
 b55:
   br label %b58
 b56:
-  %v254 = add i64 0, 1
-  %v255 = getelementptr i64, ptr %v176, i64 %v254
-  call void @"rt.err_relocate"(ptr %v255, i64 %v177)
+  %v247 = add i64 0, 1
+  %v248 = getelementptr i64, ptr %v170, i64 %v247
+  call void @"rt.err_relocate"(ptr %v248, i64 %v171)
   br label %b57
 b57:
-  %v959 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st195 = getelementptr i64, ptr %v959, i64 0
-  store i64 %v177, ptr %st195
+  %v931 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st179 = getelementptr i64, ptr %v931, i64 0
+  store i64 %v171, ptr %st179
   br label %b36
 b58:
-  %v256 = add i64 0, 10
-  %v257 = mul i64 %v225, %v256
-  %v258 = getelementptr i64, ptr %s10, i64 0
-  %v259 = add i64 0, 99
-  call void @"main.sendv"(ptr %v258, i64 %v257, i64 %v259)
-  %v260.p = getelementptr i64, ptr %v258, i64 0
-  %v260 = load i64, ptr %v260.p
-  %v261 = add i64 0, 0
-  %v262.c = icmp ne i64 %v260, %v261
-  %v262 = zext i1 %v262.c to i64
-  %c.b58 = icmp ne i64 %v262, 0
-  br i1 %c.b58, label %b58.t197, label %b58.e198
-b58.t197:
+  %v249 = add i64 0, 10
+  %v250 = mul i64 %v219, %v249
+  %v251 = getelementptr i64, ptr %s9, i64 0
+  %v252 = add i64 0, 99
+  call void @"main.sendv"(ptr %v251, i64 %v250, i64 %v252)
+  %v253.p = getelementptr i64, ptr %v251, i64 0
+  %v253 = load i64, ptr %v253.p
+  %v254 = add i64 0, 0
+  %v255.c = icmp ne i64 %v253, %v254
+  %v255 = zext i1 %v255.c to i64
+  %c.b58 = icmp ne i64 %v255, 0
+  br i1 %c.b58, label %b58.t181, label %b58.e182
+b58.t181:
   br label %b59
-b58.e198:
+b58.e182:
   br label %b60
 b59:
-  %v263 = add i64 0, 0
-  %v264.p = getelementptr i64, ptr %v258, i64 0
-  %v264 = load i64, ptr %v264.p
-  %st198 = getelementptr i64, ptr %v176, i64 0
-  store i64 %v264, ptr %st198
-  %v265.p = getelementptr i64, ptr %v258, i64 1
-  %v265 = load i64, ptr %v265.p
-  %st199 = getelementptr i64, ptr %v176, i64 1
-  store i64 %v265, ptr %st199
-  %v266.p = getelementptr i64, ptr %v258, i64 2
-  %v266 = load i64, ptr %v266.p
-  %st200 = getelementptr i64, ptr %v176, i64 2
-  store i64 %v266, ptr %st200
-  %v267.p = getelementptr i64, ptr %v258, i64 3
-  %v267 = load i64, ptr %v267.p
-  %st201 = getelementptr i64, ptr %v176, i64 3
-  store i64 %v267, ptr %st201
-  %v268.p = getelementptr i64, ptr %v258, i64 4
+  %v256 = add i64 0, 0
+  %v257.p = getelementptr i64, ptr %v251, i64 0
+  %v257 = load i64, ptr %v257.p
+  %st182 = getelementptr i64, ptr %v170, i64 0
+  store i64 %v257, ptr %st182
+  %v258.p = getelementptr i64, ptr %v251, i64 1
+  %v258 = load i64, ptr %v258.p
+  %st183 = getelementptr i64, ptr %v170, i64 1
+  store i64 %v258, ptr %st183
+  %v259.p = getelementptr i64, ptr %v251, i64 2
+  %v259 = load i64, ptr %v259.p
+  %st184 = getelementptr i64, ptr %v170, i64 2
+  store i64 %v259, ptr %st184
+  %v260.p = getelementptr i64, ptr %v251, i64 3
+  %v260 = load i64, ptr %v260.p
+  %st185 = getelementptr i64, ptr %v170, i64 3
+  store i64 %v260, ptr %st185
+  %v261.p = getelementptr i64, ptr %v251, i64 4
+  %v261 = load i64, ptr %v261.p
+  %st186 = getelementptr i64, ptr %v170, i64 4
+  store i64 %v261, ptr %st186
+  %v262 = getelementptr i64, ptr @"str.9", i64 0
+  %v263 = add i64 0, 12
+  %v264 = add i64 0, 0
+  %v265 = getelementptr i64, ptr %s5, i64 0
+  %v266 = ptrtoint ptr %v262 to i64
+  %st187 = getelementptr i64, ptr %v265, i64 0
+  store i64 %v266, ptr %st187
+  %st188 = getelementptr i64, ptr %v265, i64 1
+  store i64 %v263, ptr %st188
+  %st189 = getelementptr i64, ptr %v265, i64 2
+  store i64 %v264, ptr %st189
+  call void @"rt.print_str"(ptr %v265)
+  %v267 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v267)
+  %v268.p = getelementptr i64, ptr %v170, i64 0
   %v268 = load i64, ptr %v268.p
-  %st202 = getelementptr i64, ptr %v176, i64 4
-  store i64 %v268, ptr %st202
-  %v269.p = getelementptr i64, ptr %v258, i64 5
-  %v269 = load i64, ptr %v269.p
-  %st203 = getelementptr i64, ptr %v176, i64 5
-  store i64 %v269, ptr %st203
-  %v270 = getelementptr i64, ptr @"str.9", i64 0
-  %v271 = add i64 0, 12
-  %v272 = add i64 0, 0
-  %v273 = getelementptr i64, ptr %s6, i64 0
-  %v274 = ptrtoint ptr %v270 to i64
-  %st204 = getelementptr i64, ptr %v273, i64 0
-  store i64 %v274, ptr %st204
-  %st205 = getelementptr i64, ptr %v273, i64 1
-  store i64 %v271, ptr %st205
-  %st206 = getelementptr i64, ptr %v273, i64 2
-  store i64 %v272, ptr %st206
-  call void @"rt.print_str"(ptr %v273)
-  %v275 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v275)
-  %v276.p = getelementptr i64, ptr %v176, i64 0
-  %v276 = load i64, ptr %v276.p
-  %v277 = add i64 0, 0
-  %v278.c = icmp ne i64 %v276, %v277
-  %v278 = zext i1 %v278.c to i64
-  %c.b59 = icmp ne i64 %v278, 0
-  br i1 %c.b59, label %b59.t208, label %b59.e209
-b59.t208:
+  %v269 = add i64 0, 0
+  %v270.c = icmp ne i64 %v268, %v269
+  %v270 = zext i1 %v270.c to i64
+  %c.b59 = icmp ne i64 %v270, 0
+  br i1 %c.b59, label %b59.t191, label %b59.e192
+b59.t191:
   br label %b61
-b59.e209:
+b59.e192:
   br label %b62
 b60:
   br label %b47
 b61:
-  %v279 = add i64 0, 1
-  %v280 = getelementptr i64, ptr %v176, i64 %v279
-  call void @"rt.err_relocate"(ptr %v280, i64 %v177)
+  %v271 = add i64 0, 1
+  %v272 = getelementptr i64, ptr %v170, i64 %v271
+  call void @"rt.err_relocate"(ptr %v272, i64 %v171)
   br label %b62
 b62:
-  %v960 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st209 = getelementptr i64, ptr %v960, i64 0
-  store i64 %v177, ptr %st209
+  %v932 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st192 = getelementptr i64, ptr %v932, i64 0
+  store i64 %v171, ptr %st192
   br label %b36
 b63:
-  %v301 = add i64 0, 1
-  %v302 = getelementptr i64, ptr %v183, i64 %v301
-  call void @"rt.err_relocate"(ptr %v302, i64 %v184)
+  %v292 = add i64 0, 1
+  %v293 = getelementptr i64, ptr %v177, i64 %v292
+  call void @"rt.err_relocate"(ptr %v293, i64 %v178)
   br label %b64
 b64:
-  %v961 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st210 = getelementptr i64, ptr %v961, i64 0
-  store i64 %v184, ptr %st210
+  %v933 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st193 = getelementptr i64, ptr %v933, i64 0
+  store i64 %v178, ptr %st193
   br label %b38
 b65:
-  %v306 = add i64 0, 0
-  %v307.p = getelementptr i64, ptr %v183, i64 0
-  %v307 = load i64, ptr %v307.p
-  %st211 = getelementptr i64, ptr %v176, i64 0
-  store i64 %v307, ptr %st211
-  %v308.p = getelementptr i64, ptr %v183, i64 1
-  %v308 = load i64, ptr %v308.p
-  %st212 = getelementptr i64, ptr %v176, i64 1
-  store i64 %v308, ptr %st212
-  %v309.p = getelementptr i64, ptr %v183, i64 2
-  %v309 = load i64, ptr %v309.p
-  %st213 = getelementptr i64, ptr %v176, i64 2
-  store i64 %v309, ptr %st213
-  %v310.p = getelementptr i64, ptr %v183, i64 3
-  %v310 = load i64, ptr %v310.p
-  %st214 = getelementptr i64, ptr %v176, i64 3
-  store i64 %v310, ptr %st214
-  %v311.p = getelementptr i64, ptr %v183, i64 4
-  %v311 = load i64, ptr %v311.p
-  %st215 = getelementptr i64, ptr %v176, i64 4
-  store i64 %v311, ptr %st215
-  %v312.p = getelementptr i64, ptr %v183, i64 5
-  %v312 = load i64, ptr %v312.p
-  %st216 = getelementptr i64, ptr %v176, i64 5
-  store i64 %v312, ptr %st216
-  %v313.p = getelementptr i64, ptr %v176, i64 0
-  %v313 = load i64, ptr %v313.p
-  %v314 = add i64 0, 0
-  %v315.c = icmp ne i64 %v313, %v314
-  %v315 = zext i1 %v315.c to i64
-  %c.b65 = icmp ne i64 %v315, 0
-  br i1 %c.b65, label %b65.t218, label %b65.e219
-b65.t218:
+  %v297 = add i64 0, 0
+  %v298.p = getelementptr i64, ptr %v177, i64 0
+  %v298 = load i64, ptr %v298.p
+  %st194 = getelementptr i64, ptr %v170, i64 0
+  store i64 %v298, ptr %st194
+  %v299.p = getelementptr i64, ptr %v177, i64 1
+  %v299 = load i64, ptr %v299.p
+  %st195 = getelementptr i64, ptr %v170, i64 1
+  store i64 %v299, ptr %st195
+  %v300.p = getelementptr i64, ptr %v177, i64 2
+  %v300 = load i64, ptr %v300.p
+  %st196 = getelementptr i64, ptr %v170, i64 2
+  store i64 %v300, ptr %st196
+  %v301.p = getelementptr i64, ptr %v177, i64 3
+  %v301 = load i64, ptr %v301.p
+  %st197 = getelementptr i64, ptr %v170, i64 3
+  store i64 %v301, ptr %st197
+  %v302.p = getelementptr i64, ptr %v177, i64 4
+  %v302 = load i64, ptr %v302.p
+  %st198 = getelementptr i64, ptr %v170, i64 4
+  store i64 %v302, ptr %st198
+  %v303.p = getelementptr i64, ptr %v170, i64 0
+  %v303 = load i64, ptr %v303.p
+  %v304 = add i64 0, 0
+  %v305.c = icmp ne i64 %v303, %v304
+  %v305 = zext i1 %v305.c to i64
+  %c.b65 = icmp ne i64 %v305, 0
+  br i1 %c.b65, label %b65.t200, label %b65.e201
+b65.t200:
   br label %b67
-b65.e219:
+b65.e201:
   br label %b68
 b66:
   br label %b37
 b67:
-  %v316 = add i64 0, 1
-  %v317 = getelementptr i64, ptr %v176, i64 %v316
-  call void @"rt.err_relocate"(ptr %v317, i64 %v177)
+  %v306 = add i64 0, 1
+  %v307 = getelementptr i64, ptr %v170, i64 %v306
+  call void @"rt.err_relocate"(ptr %v307, i64 %v171)
   br label %b68
 b68:
-  %v962 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st219 = getelementptr i64, ptr %v962, i64 0
-  store i64 %v177, ptr %st219
+  %v934 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st201 = getelementptr i64, ptr %v934, i64 0
+  store i64 %v171, ptr %st201
   br label %b36
 b69:
-  %v335 = add i64 0, 1
-  %v336 = getelementptr i64, ptr %v176, i64 %v335
-  call void @"rt.err_relocate"(ptr %v336, i64 %v177)
+  %v324 = add i64 0, 1
+  %v325 = getelementptr i64, ptr %v170, i64 %v324
+  call void @"rt.err_relocate"(ptr %v325, i64 %v171)
   br label %b70
 b70:
-  %v963 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st220 = getelementptr i64, ptr %v963, i64 0
-  store i64 %v177, ptr %st220
+  %v935 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st202 = getelementptr i64, ptr %v935, i64 0
+  store i64 %v171, ptr %st202
   br label %b36
 b71:
-  %v508.p = getelementptr i64, ptr %v347, i64 0
-  %v508 = load i64, ptr %v508.p
-  %v509.p = getelementptr i64, ptr %v347, i64 1
+  %v491.p = getelementptr i64, ptr %v335, i64 0
+  %v491 = load i64, ptr %v491.p
+  %v492.p = getelementptr i64, ptr %v335, i64 1
+  %v492 = load i64, ptr %v492.p
+  %v493.p = getelementptr i64, ptr %v335, i64 2
+  %v493 = load i64, ptr %v493.p
+  %v494.p = getelementptr i64, ptr %v335, i64 3
+  %v494 = load i64, ptr %v494.p
+  %v495.p = getelementptr i64, ptr %v335, i64 4
+  %v495 = load i64, ptr %v495.p
+  call void @"main.show"(i64 %v491, i64 %v492, i64 %v493, i64 %v494, i64 %v495)
+  %v496 = add i64 0, 99
+  %v497 = add i64 0, 1
+  %v498 = add i64 0, 0
+  %v499 = sub i64 %v498, %v497
+  %v500 = getelementptr i64, ptr %s11, i64 0
+  %v936 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v501.p = getelementptr i64, ptr %v936, i64 0
+  %v501 = load i64, ptr %v501.p
+  %v937 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v502.p = getelementptr i64, ptr %v937, i64 0
+  %v502 = load i64, ptr %v502.p
+  %v503 = add i64 0, 9
+  %v504 = add i64 0, 4
+  %v505 = getelementptr i64, ptr %s13, i64 0
+  %v938 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v506.p = getelementptr i64, ptr %v938, i64 0
+  %v506 = load i64, ptr %v506.p
+  %v507 = add i64 0, 0
+  %v508 = getelementptr i64, ptr %s2, i64 0
+  %st203 = getelementptr i64, ptr %v508, i64 0
+  store i64 %v507, ptr %st203
+  %v939 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v509.p = getelementptr i64, ptr %v939, i64 0
   %v509 = load i64, ptr %v509.p
-  %v510.p = getelementptr i64, ptr %v347, i64 2
-  %v510 = load i64, ptr %v510.p
-  %v511.p = getelementptr i64, ptr %v347, i64 3
-  %v511 = load i64, ptr %v511.p
-  %v512.p = getelementptr i64, ptr %v347, i64 4
-  %v512 = load i64, ptr %v512.p
-  %v513.p = getelementptr i64, ptr %v347, i64 5
-  %v513 = load i64, ptr %v513.p
-  call void @"main.show"(i64 %v508, i64 %v509, i64 %v510, i64 %v511, i64 %v512, i64 %v513)
-  %v514 = add i64 0, 99
-  %v515 = add i64 0, 1
-  %v516 = add i64 0, 0
-  %v517 = sub i64 %v516, %v515
-  %v518 = getelementptr i64, ptr %s12, i64 0
-  %v964 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v519.p = getelementptr i64, ptr %v964, i64 0
-  %v519 = load i64, ptr %v519.p
-  %v965 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v520.p = getelementptr i64, ptr %v965, i64 0
-  %v520 = load i64, ptr %v520.p
-  %v521 = add i64 0, 9
-  %v522 = add i64 0, 4
-  %v523 = getelementptr i64, ptr %s14, i64 0
-  %v966 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v524.p = getelementptr i64, ptr %v966, i64 0
-  %v524 = load i64, ptr %v524.p
-  %v525 = add i64 0, 0
-  %v526 = getelementptr i64, ptr %s2, i64 0
-  %st221 = getelementptr i64, ptr %v526, i64 0
-  store i64 %v525, ptr %st221
-  %v967 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v527.p = getelementptr i64, ptr %v967, i64 0
-  %v527 = load i64, ptr %v527.p
   br label %b109
 b72:
-  %v968 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st222 = getelementptr i64, ptr %v968, i64 0
-  store i64 %v349, ptr %st222
-  %v489 = getelementptr i64, ptr @"str.6", i64 0
-  %v490 = add i64 0, 12
-  %v491 = add i64 0, 0
-  %v492 = getelementptr i64, ptr %s6, i64 0
-  %v493 = ptrtoint ptr %v489 to i64
-  %st223 = getelementptr i64, ptr %v492, i64 0
-  store i64 %v493, ptr %st223
-  %st224 = getelementptr i64, ptr %v492, i64 1
-  store i64 %v490, ptr %st224
-  %st225 = getelementptr i64, ptr %v492, i64 2
-  store i64 %v491, ptr %st225
-  call void @"rt.print_str"(ptr %v492)
-  %v494 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v494)
-  %v495 = getelementptr i64, ptr %s12, i64 0
-  %v496 = add i64 0, 0
-  %st226 = getelementptr i64, ptr %v495, i64 0
-  store i64 %v496, ptr %st226
-  %v497.p = getelementptr i64, ptr %v495, i64 0
-  %v497 = load i64, ptr %v497.p
-  %st227 = getelementptr i64, ptr %v347, i64 0
-  store i64 %v497, ptr %st227
-  %v498.p = getelementptr i64, ptr %v495, i64 1
-  %v498 = load i64, ptr %v498.p
-  %st228 = getelementptr i64, ptr %v347, i64 1
-  store i64 %v498, ptr %st228
-  %v499.p = getelementptr i64, ptr %v495, i64 2
-  %v499 = load i64, ptr %v499.p
-  %st229 = getelementptr i64, ptr %v347, i64 2
-  store i64 %v499, ptr %st229
-  %v500.p = getelementptr i64, ptr %v495, i64 3
-  %v500 = load i64, ptr %v500.p
-  %st230 = getelementptr i64, ptr %v347, i64 3
-  store i64 %v500, ptr %st230
-  %v501.p = getelementptr i64, ptr %v495, i64 4
-  %v501 = load i64, ptr %v501.p
-  %st231 = getelementptr i64, ptr %v347, i64 4
-  store i64 %v501, ptr %st231
-  %v502.p = getelementptr i64, ptr %v495, i64 5
-  %v502 = load i64, ptr %v502.p
-  %st232 = getelementptr i64, ptr %v347, i64 5
-  store i64 %v502, ptr %st232
-  %v503.p = getelementptr i64, ptr %v347, i64 0
-  %v503 = load i64, ptr %v503.p
-  %v504 = add i64 0, 0
-  %v505.c = icmp ne i64 %v503, %v504
-  %v505 = zext i1 %v505.c to i64
-  %c.b72 = icmp ne i64 %v505, 0
-  br i1 %c.b72, label %b72.t234, label %b72.e235
-b72.t234:
+  %v940 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st204 = getelementptr i64, ptr %v940, i64 0
+  store i64 %v337, ptr %st204
+  %v473 = getelementptr i64, ptr @"str.6", i64 0
+  %v474 = add i64 0, 12
+  %v475 = add i64 0, 0
+  %v476 = getelementptr i64, ptr %s5, i64 0
+  %v477 = ptrtoint ptr %v473 to i64
+  %st205 = getelementptr i64, ptr %v476, i64 0
+  store i64 %v477, ptr %st205
+  %st206 = getelementptr i64, ptr %v476, i64 1
+  store i64 %v474, ptr %st206
+  %st207 = getelementptr i64, ptr %v476, i64 2
+  store i64 %v475, ptr %st207
+  call void @"rt.print_str"(ptr %v476)
+  %v478 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v478)
+  %v479 = getelementptr i64, ptr %s11, i64 0
+  %v480 = add i64 0, 0
+  %st208 = getelementptr i64, ptr %v479, i64 0
+  store i64 %v480, ptr %st208
+  %v481.p = getelementptr i64, ptr %v479, i64 0
+  %v481 = load i64, ptr %v481.p
+  %st209 = getelementptr i64, ptr %v335, i64 0
+  store i64 %v481, ptr %st209
+  %v482.p = getelementptr i64, ptr %v479, i64 1
+  %v482 = load i64, ptr %v482.p
+  %st210 = getelementptr i64, ptr %v335, i64 1
+  store i64 %v482, ptr %st210
+  %v483.p = getelementptr i64, ptr %v479, i64 2
+  %v483 = load i64, ptr %v483.p
+  %st211 = getelementptr i64, ptr %v335, i64 2
+  store i64 %v483, ptr %st211
+  %v484.p = getelementptr i64, ptr %v479, i64 3
+  %v484 = load i64, ptr %v484.p
+  %st212 = getelementptr i64, ptr %v335, i64 3
+  store i64 %v484, ptr %st212
+  %v485.p = getelementptr i64, ptr %v479, i64 4
+  %v485 = load i64, ptr %v485.p
+  %st213 = getelementptr i64, ptr %v335, i64 4
+  store i64 %v485, ptr %st213
+  %v486.p = getelementptr i64, ptr %v335, i64 0
+  %v486 = load i64, ptr %v486.p
+  %v487 = add i64 0, 0
+  %v488.c = icmp ne i64 %v486, %v487
+  %v488 = zext i1 %v488.c to i64
+  %c.b72 = icmp ne i64 %v488, 0
+  br i1 %c.b72, label %b72.t215, label %b72.e216
+b72.t215:
   br label %b104
-b72.e235:
+b72.e216:
   br label %b105
 b73:
-  %v474.p = getelementptr i64, ptr %v354, i64 0
-  %v474 = load i64, ptr %v474.p
-  %v475 = add i64 0, 0
-  %v476.c = icmp ne i64 %v474, %v475
-  %v476 = zext i1 %v476.c to i64
-  %c.b73 = icmp ne i64 %v476, 0
-  br i1 %c.b73, label %b73.t236, label %b73.e237
-b73.t236:
+  %v459.p = getelementptr i64, ptr %v342, i64 0
+  %v459 = load i64, ptr %v459.p
+  %v460 = add i64 0, 0
+  %v461.c = icmp ne i64 %v459, %v460
+  %v461 = zext i1 %v461.c to i64
+  %c.b73 = icmp ne i64 %v461, 0
+  br i1 %c.b73, label %b73.t217, label %b73.e218
+b73.t217:
   br label %b100
-b73.e237:
+b73.e218:
   br label %b101
 b74:
-  %v969 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st237 = getelementptr i64, ptr %v969, i64 0
-  store i64 %v358, ptr %st237
-  %v359.p = getelementptr i64, ptr %v357, i64 0
-  %v359 = load i64, ptr %v359.p
-  %v360.c = icmp slt i64 %v359, %v350
-  %v360 = zext i1 %v360.c to i64
-  %c.b74 = icmp ne i64 %v360, 0
-  br i1 %c.b74, label %b74.t239, label %b74.e240
-b74.t239:
+  %v941 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st218 = getelementptr i64, ptr %v941, i64 0
+  store i64 %v346, ptr %st218
+  %v347.p = getelementptr i64, ptr %v345, i64 0
+  %v347 = load i64, ptr %v347.p
+  %v348.c = icmp slt i64 %v347, %v338
+  %v348 = zext i1 %v348.c to i64
+  %c.b74 = icmp ne i64 %v348, 0
+  br i1 %c.b74, label %b74.t220, label %b74.e221
+b74.t220:
   br label %b75
-b74.e240:
+b74.e221:
   br label %b76
 b75:
   call void @"rt.region_enter"()
-  %v970 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v361.p = getelementptr i64, ptr %v970, i64 0
-  %v361 = load i64, ptr %v361.p
-  %v362.p = getelementptr i64, ptr %v357, i64 0
-  %v362 = load i64, ptr %v362.p
-  %v363.c = icmp eq i64 %v362, %v353
-  %v363 = zext i1 %v363.c to i64
-  %c.b75 = icmp ne i64 %v363, 0
-  br i1 %c.b75, label %b75.t241, label %b75.e242
-b75.t241:
+  %v942 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v349.p = getelementptr i64, ptr %v942, i64 0
+  %v349 = load i64, ptr %v349.p
+  %v350.p = getelementptr i64, ptr %v345, i64 0
+  %v350 = load i64, ptr %v350.p
+  %v351.c = icmp eq i64 %v350, %v341
+  %v351 = zext i1 %v351.c to i64
+  %c.b75 = icmp ne i64 %v351, 0
+  br i1 %c.b75, label %b75.t222, label %b75.e223
+b75.t222:
   br label %b77
-b75.e242:
+b75.e223:
   br label %b78
 b76:
-  %v971 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st242 = getelementptr i64, ptr %v971, i64 0
-  store i64 %v358, ptr %st242
-  %v455 = getelementptr i64, ptr %s12, i64 0
-  %v456 = add i64 0, 0
-  %st243 = getelementptr i64, ptr %v455, i64 0
-  store i64 %v456, ptr %st243
-  %v457.p = getelementptr i64, ptr %v455, i64 0
-  %v457 = load i64, ptr %v457.p
-  %st244 = getelementptr i64, ptr %v354, i64 0
-  store i64 %v457, ptr %st244
-  %v458.p = getelementptr i64, ptr %v455, i64 1
-  %v458 = load i64, ptr %v458.p
-  %st245 = getelementptr i64, ptr %v354, i64 1
-  store i64 %v458, ptr %st245
-  %v459.p = getelementptr i64, ptr %v455, i64 2
-  %v459 = load i64, ptr %v459.p
-  %st246 = getelementptr i64, ptr %v354, i64 2
-  store i64 %v459, ptr %st246
-  %v460.p = getelementptr i64, ptr %v455, i64 3
-  %v460 = load i64, ptr %v460.p
-  %st247 = getelementptr i64, ptr %v354, i64 3
-  store i64 %v460, ptr %st247
-  %v461.p = getelementptr i64, ptr %v455, i64 4
-  %v461 = load i64, ptr %v461.p
-  %st248 = getelementptr i64, ptr %v354, i64 4
-  store i64 %v461, ptr %st248
-  %v462.p = getelementptr i64, ptr %v455, i64 5
-  %v462 = load i64, ptr %v462.p
-  %st249 = getelementptr i64, ptr %v354, i64 5
-  store i64 %v462, ptr %st249
-  %v463 = getelementptr i64, ptr @"str.9", i64 0
-  %v464 = add i64 0, 12
-  %v465 = add i64 0, 0
-  %v466 = getelementptr i64, ptr %s6, i64 0
-  %v467 = ptrtoint ptr %v463 to i64
-  %st250 = getelementptr i64, ptr %v466, i64 0
-  store i64 %v467, ptr %st250
-  %st251 = getelementptr i64, ptr %v466, i64 1
-  store i64 %v464, ptr %st251
-  %st252 = getelementptr i64, ptr %v466, i64 2
-  store i64 %v465, ptr %st252
-  call void @"rt.print_str"(ptr %v466)
-  %v468 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v468)
-  %v469.p = getelementptr i64, ptr %v354, i64 0
-  %v469 = load i64, ptr %v469.p
-  %v470 = add i64 0, 0
-  %v471.c = icmp ne i64 %v469, %v470
-  %v471 = zext i1 %v471.c to i64
-  %c.b76 = icmp ne i64 %v471, 0
-  br i1 %c.b76, label %b76.t254, label %b76.e255
-b76.t254:
+  %v943 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st223 = getelementptr i64, ptr %v943, i64 0
+  store i64 %v346, ptr %st223
+  %v441 = getelementptr i64, ptr %s11, i64 0
+  %v442 = add i64 0, 0
+  %st224 = getelementptr i64, ptr %v441, i64 0
+  store i64 %v442, ptr %st224
+  %v443.p = getelementptr i64, ptr %v441, i64 0
+  %v443 = load i64, ptr %v443.p
+  %st225 = getelementptr i64, ptr %v342, i64 0
+  store i64 %v443, ptr %st225
+  %v444.p = getelementptr i64, ptr %v441, i64 1
+  %v444 = load i64, ptr %v444.p
+  %st226 = getelementptr i64, ptr %v342, i64 1
+  store i64 %v444, ptr %st226
+  %v445.p = getelementptr i64, ptr %v441, i64 2
+  %v445 = load i64, ptr %v445.p
+  %st227 = getelementptr i64, ptr %v342, i64 2
+  store i64 %v445, ptr %st227
+  %v446.p = getelementptr i64, ptr %v441, i64 3
+  %v446 = load i64, ptr %v446.p
+  %st228 = getelementptr i64, ptr %v342, i64 3
+  store i64 %v446, ptr %st228
+  %v447.p = getelementptr i64, ptr %v441, i64 4
+  %v447 = load i64, ptr %v447.p
+  %st229 = getelementptr i64, ptr %v342, i64 4
+  store i64 %v447, ptr %st229
+  %v448 = getelementptr i64, ptr @"str.9", i64 0
+  %v449 = add i64 0, 12
+  %v450 = add i64 0, 0
+  %v451 = getelementptr i64, ptr %s5, i64 0
+  %v452 = ptrtoint ptr %v448 to i64
+  %st230 = getelementptr i64, ptr %v451, i64 0
+  store i64 %v452, ptr %st230
+  %st231 = getelementptr i64, ptr %v451, i64 1
+  store i64 %v449, ptr %st231
+  %st232 = getelementptr i64, ptr %v451, i64 2
+  store i64 %v450, ptr %st232
+  call void @"rt.print_str"(ptr %v451)
+  %v453 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v453)
+  %v454.p = getelementptr i64, ptr %v342, i64 0
+  %v454 = load i64, ptr %v454.p
+  %v455 = add i64 0, 0
+  %v456.c = icmp ne i64 %v454, %v455
+  %v456 = zext i1 %v456.c to i64
+  %c.b76 = icmp ne i64 %v456, 0
+  br i1 %c.b76, label %b76.t234, label %b76.e235
+b76.t234:
   br label %b98
-b76.e255:
+b76.e235:
   br label %b99
 b77:
-  %v364.p = getelementptr i64, ptr %v357, i64 0
+  %v352.p = getelementptr i64, ptr %v345, i64 0
+  %v352 = load i64, ptr %v352.p
+  %v353 = add i64 0, 0
+  %v354 = add i64 0, 1
+  %v355 = getelementptr i64, ptr %s3, i64 0
+  %st235 = getelementptr i64, ptr %v355, i64 0
+  store i64 %v354, ptr %st235
+  %v944 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v356.p = getelementptr i64, ptr %v944, i64 0
+  %v356 = load i64, ptr %v356.p
+  %v357 = add i64 0, 2
+  %v358 = call ptr @"rt.region_alloc"(i64 %v356, i64 %v357)
+  %v359 = ptrtoint ptr %v358 to i64
+  %st236 = getelementptr i64, ptr %v355, i64 1
+  store i64 %v359, ptr %st236
+  %v360 = add i64 0, 1
+  %st237 = getelementptr i64, ptr %v355, i64 2
+  store i64 %v360, ptr %st237
+  %st238 = getelementptr i64, ptr %v355, i64 3
+  store i64 %v356, ptr %st238
+  %st239 = getelementptr i64, ptr %v358, i64 1
+  store i64 %v353, ptr %st239
+  %v361 = add i64 0, 1
+  %st240 = getelementptr i64, ptr %v358, i64 0
+  store i64 %v361, ptr %st240
+  %st241 = getelementptr i64, ptr %v358, i64 1
+  store i64 %v352, ptr %st241
+  %v362 = getelementptr i64, ptr %s11, i64 0
+  %v363 = add i64 0, 1
+  %st242 = getelementptr i64, ptr %v362, i64 0
+  store i64 %v363, ptr %st242
+  %v364.p = getelementptr i64, ptr %v355, i64 0
   %v364 = load i64, ptr %v364.p
-  %v365 = getelementptr i64, ptr %s3, i64 0
-  %v366 = add i64 0, 0
-  %st255 = getelementptr i64, ptr %v365, i64 0
-  store i64 %v366, ptr %st255
-  %st256 = getelementptr i64, ptr %v365, i64 1
-  store i64 %v366, ptr %st256
-  %v367 = add i64 0, 1
-  %st257 = getelementptr i64, ptr %v365, i64 0
-  store i64 %v367, ptr %st257
-  %st258 = getelementptr i64, ptr %v365, i64 1
-  store i64 %v364, ptr %st258
-  %v368 = getelementptr i64, ptr %s4, i64 0
-  %v369.p = getelementptr i64, ptr %v365, i64 0
+  %st243 = getelementptr i64, ptr %v362, i64 1
+  store i64 %v364, ptr %st243
+  %v365.p = getelementptr i64, ptr %v355, i64 1
+  %v365 = load i64, ptr %v365.p
+  %st244 = getelementptr i64, ptr %v362, i64 2
+  store i64 %v365, ptr %st244
+  %v366.p = getelementptr i64, ptr %v355, i64 2
+  %v366 = load i64, ptr %v366.p
+  %st245 = getelementptr i64, ptr %v362, i64 3
+  store i64 %v366, ptr %st245
+  %v367.p = getelementptr i64, ptr %v355, i64 3
+  %v367 = load i64, ptr %v367.p
+  %st246 = getelementptr i64, ptr %v362, i64 4
+  store i64 %v367, ptr %st246
+  %v368.p = getelementptr i64, ptr %v362, i64 0
+  %v368 = load i64, ptr %v368.p
+  %st247 = getelementptr i64, ptr %v342, i64 0
+  store i64 %v368, ptr %st247
+  %v369.p = getelementptr i64, ptr %v362, i64 1
   %v369 = load i64, ptr %v369.p
-  %st259 = getelementptr i64, ptr %v368, i64 0
-  store i64 %v369, ptr %st259
-  %v370.p = getelementptr i64, ptr %v365, i64 1
+  %st248 = getelementptr i64, ptr %v342, i64 1
+  store i64 %v369, ptr %st248
+  %v370.p = getelementptr i64, ptr %v362, i64 2
   %v370 = load i64, ptr %v370.p
-  %st260 = getelementptr i64, ptr %v368, i64 1
-  store i64 %v370, ptr %st260
-  %v371 = add i64 0, 0
-  %st261 = getelementptr i64, ptr %v368, i64 2
-  store i64 %v371, ptr %st261
-  %st262 = getelementptr i64, ptr %v368, i64 3
-  store i64 %v371, ptr %st262
-  %st263 = getelementptr i64, ptr %v368, i64 4
-  store i64 %v371, ptr %st263
-  %v372 = getelementptr i64, ptr %s12, i64 0
-  %v373 = add i64 0, 1
-  %st264 = getelementptr i64, ptr %v372, i64 0
-  store i64 %v373, ptr %st264
-  %v374.p = getelementptr i64, ptr %v368, i64 0
-  %v374 = load i64, ptr %v374.p
-  %st265 = getelementptr i64, ptr %v372, i64 1
-  store i64 %v374, ptr %st265
-  %v375.p = getelementptr i64, ptr %v368, i64 1
-  %v375 = load i64, ptr %v375.p
-  %st266 = getelementptr i64, ptr %v372, i64 2
-  store i64 %v375, ptr %st266
-  %v376.p = getelementptr i64, ptr %v368, i64 2
-  %v376 = load i64, ptr %v376.p
-  %st267 = getelementptr i64, ptr %v372, i64 3
-  store i64 %v376, ptr %st267
-  %v377.p = getelementptr i64, ptr %v368, i64 3
-  %v377 = load i64, ptr %v377.p
-  %st268 = getelementptr i64, ptr %v372, i64 4
-  store i64 %v377, ptr %st268
-  %v378.p = getelementptr i64, ptr %v368, i64 4
-  %v378 = load i64, ptr %v378.p
-  %st269 = getelementptr i64, ptr %v372, i64 5
-  store i64 %v378, ptr %st269
-  %v379.p = getelementptr i64, ptr %v372, i64 0
+  %st249 = getelementptr i64, ptr %v342, i64 2
+  store i64 %v370, ptr %st249
+  %v371.p = getelementptr i64, ptr %v362, i64 3
+  %v371 = load i64, ptr %v371.p
+  %st250 = getelementptr i64, ptr %v342, i64 3
+  store i64 %v371, ptr %st250
+  %v372.p = getelementptr i64, ptr %v362, i64 4
+  %v372 = load i64, ptr %v372.p
+  %st251 = getelementptr i64, ptr %v342, i64 4
+  store i64 %v372, ptr %st251
+  %v373 = getelementptr i64, ptr @"str.9", i64 0
+  %v374 = add i64 0, 12
+  %v375 = add i64 0, 0
+  %v376 = getelementptr i64, ptr %s5, i64 0
+  %v377 = ptrtoint ptr %v373 to i64
+  %st252 = getelementptr i64, ptr %v376, i64 0
+  store i64 %v377, ptr %st252
+  %st253 = getelementptr i64, ptr %v376, i64 1
+  store i64 %v374, ptr %st253
+  %st254 = getelementptr i64, ptr %v376, i64 2
+  store i64 %v375, ptr %st254
+  call void @"rt.print_str"(ptr %v376)
+  %v378 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v378)
+  %v379.p = getelementptr i64, ptr %v342, i64 0
   %v379 = load i64, ptr %v379.p
-  %st270 = getelementptr i64, ptr %v354, i64 0
-  store i64 %v379, ptr %st270
-  %v380.p = getelementptr i64, ptr %v372, i64 1
-  %v380 = load i64, ptr %v380.p
-  %st271 = getelementptr i64, ptr %v354, i64 1
-  store i64 %v380, ptr %st271
-  %v381.p = getelementptr i64, ptr %v372, i64 2
-  %v381 = load i64, ptr %v381.p
-  %st272 = getelementptr i64, ptr %v354, i64 2
-  store i64 %v381, ptr %st272
-  %v382.p = getelementptr i64, ptr %v372, i64 3
-  %v382 = load i64, ptr %v382.p
-  %st273 = getelementptr i64, ptr %v354, i64 3
-  store i64 %v382, ptr %st273
-  %v383.p = getelementptr i64, ptr %v372, i64 4
-  %v383 = load i64, ptr %v383.p
-  %st274 = getelementptr i64, ptr %v354, i64 4
-  store i64 %v383, ptr %st274
-  %v384.p = getelementptr i64, ptr %v372, i64 5
-  %v384 = load i64, ptr %v384.p
-  %st275 = getelementptr i64, ptr %v354, i64 5
-  store i64 %v384, ptr %st275
-  %v385 = getelementptr i64, ptr @"str.9", i64 0
-  %v386 = add i64 0, 12
-  %v387 = add i64 0, 0
-  %v388 = getelementptr i64, ptr %s6, i64 0
-  %v389 = ptrtoint ptr %v385 to i64
-  %st276 = getelementptr i64, ptr %v388, i64 0
-  store i64 %v389, ptr %st276
-  %st277 = getelementptr i64, ptr %v388, i64 1
-  store i64 %v386, ptr %st277
-  %st278 = getelementptr i64, ptr %v388, i64 2
-  store i64 %v387, ptr %st278
-  call void @"rt.print_str"(ptr %v388)
-  %v390 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v390)
-  %v391.p = getelementptr i64, ptr %v354, i64 0
-  %v391 = load i64, ptr %v391.p
-  %v392 = add i64 0, 0
-  %v393.c = icmp ne i64 %v391, %v392
-  %v393 = zext i1 %v393.c to i64
-  %c.b77 = icmp ne i64 %v393, 0
-  br i1 %c.b77, label %b77.t280, label %b77.e281
-b77.t280:
+  %v380 = add i64 0, 0
+  %v381.c = icmp ne i64 %v379, %v380
+  %v381 = zext i1 %v381.c to i64
+  %c.b77 = icmp ne i64 %v381, 0
+  br i1 %c.b77, label %b77.t256, label %b77.e257
+b77.t256:
   br label %b79
-b77.e281:
+b77.e257:
   br label %b80
 b78:
   br label %b81
 b79:
-  %v394 = add i64 0, 1
-  %v395 = getelementptr i64, ptr %v354, i64 %v394
-  call void @"rt.err_relocate"(ptr %v395, i64 %v355)
+  %v382 = add i64 0, 1
+  %v383 = getelementptr i64, ptr %v342, i64 %v382
+  call void @"rt.err_relocate"(ptr %v383, i64 %v343)
   br label %b80
 b80:
-  %v972 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st281 = getelementptr i64, ptr %v972, i64 0
-  store i64 %v355, ptr %st281
+  %v945 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st257 = getelementptr i64, ptr %v945, i64 0
+  store i64 %v343, ptr %st257
   br label %b73
 b81:
-  %v396.p = getelementptr i64, ptr %v357, i64 0
-  %v396 = load i64, ptr %v396.p
-  %v973 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v397.p = getelementptr i64, ptr %v973, i64 0
-  %v397 = load i64, ptr %v397.p
-  %v398 = add i64 0, 1
-  %v399.c = icmp eq i64 %v396, %v398
-  %v399 = zext i1 %v399.c to i64
-  %c.b81 = icmp ne i64 %v399, 0
-  br i1 %c.b81, label %b81.t283, label %b81.e284
-b81.t283:
+  %v384.p = getelementptr i64, ptr %v345, i64 0
+  %v384 = load i64, ptr %v384.p
+  %v946 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v385.p = getelementptr i64, ptr %v946, i64 0
+  %v385 = load i64, ptr %v385.p
+  %v386 = add i64 0, 1
+  %v387.c = icmp eq i64 %v384, %v386
+  %v387 = zext i1 %v387.c to i64
+  %c.b81 = icmp ne i64 %v387, 0
+  br i1 %c.b81, label %b81.t259, label %b81.e260
+b81.t259:
   br label %b83
-b81.e284:
+b81.e260:
   br label %b84
 b82:
-  %v974 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st284 = getelementptr i64, ptr %v974, i64 0
-  store i64 %v397, ptr %st284
-  %v452 = add i64 0, 1
-  %v453.p = getelementptr i64, ptr %v357, i64 0
-  %v453 = load i64, ptr %v453.p
-  %v454 = add i64 %v453, %v452
-  %st285 = getelementptr i64, ptr %v357, i64 0
-  store i64 %v454, ptr %st285
+  %v947 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st260 = getelementptr i64, ptr %v947, i64 0
+  store i64 %v385, ptr %st260
+  %v438 = add i64 0, 1
+  %v439.p = getelementptr i64, ptr %v345, i64 0
+  %v439 = load i64, ptr %v439.p
+  %v440 = add i64 %v439, %v438
+  %st261 = getelementptr i64, ptr %v345, i64 0
+  store i64 %v440, ptr %st261
   br label %b74
 b83:
   br label %b82
 b84:
   br label %b85
 b85:
-  %v400.c = icmp eq i64 %v396, %v343
-  %v400 = zext i1 %v400.c to i64
-  %c.b85 = icmp ne i64 %v400, 0
-  br i1 %c.b85, label %b85.t287, label %b85.e288
-b85.t287:
+  %v388.c = icmp eq i64 %v384, %v331
+  %v388 = zext i1 %v388.c to i64
+  %c.b85 = icmp ne i64 %v388, 0
+  br i1 %c.b85, label %b85.t263, label %b85.e264
+b85.t263:
   br label %b86
-b85.e288:
+b85.e264:
   br label %b87
 b86:
-  %v401 = getelementptr i64, ptr @"str.9", i64 0
-  %v402 = add i64 0, 12
-  %v403 = add i64 0, 0
-  %v404 = getelementptr i64, ptr %s6, i64 0
-  %v405 = ptrtoint ptr %v401 to i64
-  %st288 = getelementptr i64, ptr %v404, i64 0
-  store i64 %v405, ptr %st288
-  %st289 = getelementptr i64, ptr %v404, i64 1
-  store i64 %v402, ptr %st289
-  %st290 = getelementptr i64, ptr %v404, i64 2
-  store i64 %v403, ptr %st290
-  call void @"rt.print_str"(ptr %v404)
-  %v406 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v406)
+  %v389 = getelementptr i64, ptr @"str.9", i64 0
+  %v390 = add i64 0, 12
+  %v391 = add i64 0, 0
+  %v392 = getelementptr i64, ptr %s5, i64 0
+  %v393 = ptrtoint ptr %v389 to i64
+  %st264 = getelementptr i64, ptr %v392, i64 0
+  store i64 %v393, ptr %st264
+  %st265 = getelementptr i64, ptr %v392, i64 1
+  store i64 %v390, ptr %st265
+  %st266 = getelementptr i64, ptr %v392, i64 2
+  store i64 %v391, ptr %st266
+  call void @"rt.print_str"(ptr %v392)
+  %v394 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v394)
   br label %b72
 b87:
   br label %b88
 b88:
-  %v407.c = icmp eq i64 %v396, %v346
-  %v407 = zext i1 %v407.c to i64
-  %c.b88 = icmp ne i64 %v407, 0
-  br i1 %c.b88, label %b88.t292, label %b88.e293
-b88.t292:
+  %v395.c = icmp eq i64 %v384, %v334
+  %v395 = zext i1 %v395.c to i64
+  %c.b88 = icmp ne i64 %v395, 0
+  br i1 %c.b88, label %b88.t268, label %b88.e269
+b88.t268:
   br label %b89
-b88.e293:
+b88.e269:
   br label %b90
 b89:
-  %v408 = getelementptr i64, ptr %s12, i64 0
-  %v409 = add i64 0, 0
-  %st293 = getelementptr i64, ptr %v408, i64 0
-  store i64 %v409, ptr %st293
-  %v410.p = getelementptr i64, ptr %v408, i64 0
-  %v410 = load i64, ptr %v410.p
-  %st294 = getelementptr i64, ptr %v347, i64 0
-  store i64 %v410, ptr %st294
-  %v411.p = getelementptr i64, ptr %v408, i64 1
-  %v411 = load i64, ptr %v411.p
-  %st295 = getelementptr i64, ptr %v347, i64 1
-  store i64 %v411, ptr %st295
-  %v412.p = getelementptr i64, ptr %v408, i64 2
-  %v412 = load i64, ptr %v412.p
-  %st296 = getelementptr i64, ptr %v347, i64 2
-  store i64 %v412, ptr %st296
-  %v413.p = getelementptr i64, ptr %v408, i64 3
-  %v413 = load i64, ptr %v413.p
-  %st297 = getelementptr i64, ptr %v347, i64 3
-  store i64 %v413, ptr %st297
-  %v414.p = getelementptr i64, ptr %v408, i64 4
-  %v414 = load i64, ptr %v414.p
-  %st298 = getelementptr i64, ptr %v347, i64 4
-  store i64 %v414, ptr %st298
-  %v415.p = getelementptr i64, ptr %v408, i64 5
-  %v415 = load i64, ptr %v415.p
-  %st299 = getelementptr i64, ptr %v347, i64 5
-  store i64 %v415, ptr %st299
-  %v416 = getelementptr i64, ptr @"str.9", i64 0
-  %v417 = add i64 0, 12
-  %v418 = add i64 0, 0
-  %v419 = getelementptr i64, ptr %s6, i64 0
-  %v420 = ptrtoint ptr %v416 to i64
-  %st300 = getelementptr i64, ptr %v419, i64 0
-  store i64 %v420, ptr %st300
-  %st301 = getelementptr i64, ptr %v419, i64 1
-  store i64 %v417, ptr %st301
-  %st302 = getelementptr i64, ptr %v419, i64 2
-  store i64 %v418, ptr %st302
-  call void @"rt.print_str"(ptr %v419)
-  %v421 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v421)
-  %v422.p = getelementptr i64, ptr %v347, i64 0
-  %v422 = load i64, ptr %v422.p
-  %v423 = add i64 0, 0
-  %v424.c = icmp ne i64 %v422, %v423
-  %v424 = zext i1 %v424.c to i64
-  %c.b89 = icmp ne i64 %v424, 0
-  br i1 %c.b89, label %b89.t304, label %b89.e305
-b89.t304:
+  %v396 = getelementptr i64, ptr %s11, i64 0
+  %v397 = add i64 0, 0
+  %st269 = getelementptr i64, ptr %v396, i64 0
+  store i64 %v397, ptr %st269
+  %v398.p = getelementptr i64, ptr %v396, i64 0
+  %v398 = load i64, ptr %v398.p
+  %st270 = getelementptr i64, ptr %v335, i64 0
+  store i64 %v398, ptr %st270
+  %v399.p = getelementptr i64, ptr %v396, i64 1
+  %v399 = load i64, ptr %v399.p
+  %st271 = getelementptr i64, ptr %v335, i64 1
+  store i64 %v399, ptr %st271
+  %v400.p = getelementptr i64, ptr %v396, i64 2
+  %v400 = load i64, ptr %v400.p
+  %st272 = getelementptr i64, ptr %v335, i64 2
+  store i64 %v400, ptr %st272
+  %v401.p = getelementptr i64, ptr %v396, i64 3
+  %v401 = load i64, ptr %v401.p
+  %st273 = getelementptr i64, ptr %v335, i64 3
+  store i64 %v401, ptr %st273
+  %v402.p = getelementptr i64, ptr %v396, i64 4
+  %v402 = load i64, ptr %v402.p
+  %st274 = getelementptr i64, ptr %v335, i64 4
+  store i64 %v402, ptr %st274
+  %v403 = getelementptr i64, ptr @"str.9", i64 0
+  %v404 = add i64 0, 12
+  %v405 = add i64 0, 0
+  %v406 = getelementptr i64, ptr %s5, i64 0
+  %v407 = ptrtoint ptr %v403 to i64
+  %st275 = getelementptr i64, ptr %v406, i64 0
+  store i64 %v407, ptr %st275
+  %st276 = getelementptr i64, ptr %v406, i64 1
+  store i64 %v404, ptr %st276
+  %st277 = getelementptr i64, ptr %v406, i64 2
+  store i64 %v405, ptr %st277
+  call void @"rt.print_str"(ptr %v406)
+  %v408 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v408)
+  %v409.p = getelementptr i64, ptr %v335, i64 0
+  %v409 = load i64, ptr %v409.p
+  %v410 = add i64 0, 0
+  %v411.c = icmp ne i64 %v409, %v410
+  %v411 = zext i1 %v411.c to i64
+  %c.b89 = icmp ne i64 %v411, 0
+  br i1 %c.b89, label %b89.t279, label %b89.e280
+b89.t279:
   br label %b91
-b89.e305:
+b89.e280:
   br label %b92
 b90:
   br label %b93
 b91:
-  %v425 = add i64 0, 1
-  %v426 = getelementptr i64, ptr %v347, i64 %v425
-  call void @"rt.err_relocate"(ptr %v426, i64 %v348)
+  %v412 = add i64 0, 1
+  %v413 = getelementptr i64, ptr %v335, i64 %v412
+  call void @"rt.err_relocate"(ptr %v413, i64 %v336)
   br label %b92
 b92:
-  %v975 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st305 = getelementptr i64, ptr %v975, i64 0
-  store i64 %v348, ptr %st305
+  %v948 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st280 = getelementptr i64, ptr %v948, i64 0
+  store i64 %v336, ptr %st280
   br label %b71
 b93:
-  %v427 = add i64 0, 10
-  %v428 = mul i64 %v396, %v427
-  %v429 = getelementptr i64, ptr %s13, i64 0
-  %v430 = add i64 0, 40
-  call void @"main.sendv"(ptr %v429, i64 %v428, i64 %v430)
-  %v431.p = getelementptr i64, ptr %v429, i64 0
-  %v431 = load i64, ptr %v431.p
-  %v432 = add i64 0, 0
-  %v433.c = icmp ne i64 %v431, %v432
-  %v433 = zext i1 %v433.c to i64
-  %c.b93 = icmp ne i64 %v433, 0
-  br i1 %c.b93, label %b93.t307, label %b93.e308
-b93.t307:
+  %v414 = add i64 0, 10
+  %v415 = mul i64 %v384, %v414
+  %v416 = getelementptr i64, ptr %s12, i64 0
+  %v417 = add i64 0, 40
+  call void @"main.sendv"(ptr %v416, i64 %v415, i64 %v417)
+  %v418.p = getelementptr i64, ptr %v416, i64 0
+  %v418 = load i64, ptr %v418.p
+  %v419 = add i64 0, 0
+  %v420.c = icmp ne i64 %v418, %v419
+  %v420 = zext i1 %v420.c to i64
+  %c.b93 = icmp ne i64 %v420, 0
+  br i1 %c.b93, label %b93.t282, label %b93.e283
+b93.t282:
   br label %b94
-b93.e308:
+b93.e283:
   br label %b95
 b94:
+  %v421 = add i64 0, 0
+  %v422.p = getelementptr i64, ptr %v416, i64 0
+  %v422 = load i64, ptr %v422.p
+  %st283 = getelementptr i64, ptr %v335, i64 0
+  store i64 %v422, ptr %st283
+  %v423.p = getelementptr i64, ptr %v416, i64 1
+  %v423 = load i64, ptr %v423.p
+  %st284 = getelementptr i64, ptr %v335, i64 1
+  store i64 %v423, ptr %st284
+  %v424.p = getelementptr i64, ptr %v416, i64 2
+  %v424 = load i64, ptr %v424.p
+  %st285 = getelementptr i64, ptr %v335, i64 2
+  store i64 %v424, ptr %st285
+  %v425.p = getelementptr i64, ptr %v416, i64 3
+  %v425 = load i64, ptr %v425.p
+  %st286 = getelementptr i64, ptr %v335, i64 3
+  store i64 %v425, ptr %st286
+  %v426.p = getelementptr i64, ptr %v416, i64 4
+  %v426 = load i64, ptr %v426.p
+  %st287 = getelementptr i64, ptr %v335, i64 4
+  store i64 %v426, ptr %st287
+  %v427 = getelementptr i64, ptr @"str.9", i64 0
+  %v428 = add i64 0, 12
+  %v429 = add i64 0, 0
+  %v430 = getelementptr i64, ptr %s5, i64 0
+  %v431 = ptrtoint ptr %v427 to i64
+  %st288 = getelementptr i64, ptr %v430, i64 0
+  store i64 %v431, ptr %st288
+  %st289 = getelementptr i64, ptr %v430, i64 1
+  store i64 %v428, ptr %st289
+  %st290 = getelementptr i64, ptr %v430, i64 2
+  store i64 %v429, ptr %st290
+  call void @"rt.print_str"(ptr %v430)
+  %v432 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v432)
+  %v433.p = getelementptr i64, ptr %v335, i64 0
+  %v433 = load i64, ptr %v433.p
   %v434 = add i64 0, 0
-  %v435.p = getelementptr i64, ptr %v429, i64 0
-  %v435 = load i64, ptr %v435.p
-  %st308 = getelementptr i64, ptr %v347, i64 0
-  store i64 %v435, ptr %st308
-  %v436.p = getelementptr i64, ptr %v429, i64 1
-  %v436 = load i64, ptr %v436.p
-  %st309 = getelementptr i64, ptr %v347, i64 1
-  store i64 %v436, ptr %st309
-  %v437.p = getelementptr i64, ptr %v429, i64 2
-  %v437 = load i64, ptr %v437.p
-  %st310 = getelementptr i64, ptr %v347, i64 2
-  store i64 %v437, ptr %st310
-  %v438.p = getelementptr i64, ptr %v429, i64 3
-  %v438 = load i64, ptr %v438.p
-  %st311 = getelementptr i64, ptr %v347, i64 3
-  store i64 %v438, ptr %st311
-  %v439.p = getelementptr i64, ptr %v429, i64 4
-  %v439 = load i64, ptr %v439.p
-  %st312 = getelementptr i64, ptr %v347, i64 4
-  store i64 %v439, ptr %st312
-  %v440.p = getelementptr i64, ptr %v429, i64 5
-  %v440 = load i64, ptr %v440.p
-  %st313 = getelementptr i64, ptr %v347, i64 5
-  store i64 %v440, ptr %st313
-  %v441 = getelementptr i64, ptr @"str.9", i64 0
-  %v442 = add i64 0, 12
-  %v443 = add i64 0, 0
-  %v444 = getelementptr i64, ptr %s6, i64 0
-  %v445 = ptrtoint ptr %v441 to i64
-  %st314 = getelementptr i64, ptr %v444, i64 0
-  store i64 %v445, ptr %st314
-  %st315 = getelementptr i64, ptr %v444, i64 1
-  store i64 %v442, ptr %st315
-  %st316 = getelementptr i64, ptr %v444, i64 2
-  store i64 %v443, ptr %st316
-  call void @"rt.print_str"(ptr %v444)
-  %v446 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v446)
-  %v447.p = getelementptr i64, ptr %v347, i64 0
-  %v447 = load i64, ptr %v447.p
-  %v448 = add i64 0, 0
-  %v449.c = icmp ne i64 %v447, %v448
-  %v449 = zext i1 %v449.c to i64
-  %c.b94 = icmp ne i64 %v449, 0
-  br i1 %c.b94, label %b94.t318, label %b94.e319
-b94.t318:
+  %v435.c = icmp ne i64 %v433, %v434
+  %v435 = zext i1 %v435.c to i64
+  %c.b94 = icmp ne i64 %v435, 0
+  br i1 %c.b94, label %b94.t292, label %b94.e293
+b94.t292:
   br label %b96
-b94.e319:
+b94.e293:
   br label %b97
 b95:
   br label %b82
 b96:
-  %v450 = add i64 0, 1
-  %v451 = getelementptr i64, ptr %v347, i64 %v450
-  call void @"rt.err_relocate"(ptr %v451, i64 %v348)
+  %v436 = add i64 0, 1
+  %v437 = getelementptr i64, ptr %v335, i64 %v436
+  call void @"rt.err_relocate"(ptr %v437, i64 %v336)
   br label %b97
 b97:
-  %v976 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st319 = getelementptr i64, ptr %v976, i64 0
-  store i64 %v348, ptr %st319
+  %v949 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st293 = getelementptr i64, ptr %v949, i64 0
+  store i64 %v336, ptr %st293
   br label %b71
 b98:
-  %v472 = add i64 0, 1
-  %v473 = getelementptr i64, ptr %v354, i64 %v472
-  call void @"rt.err_relocate"(ptr %v473, i64 %v355)
+  %v457 = add i64 0, 1
+  %v458 = getelementptr i64, ptr %v342, i64 %v457
+  call void @"rt.err_relocate"(ptr %v458, i64 %v343)
   br label %b99
 b99:
-  %v977 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st320 = getelementptr i64, ptr %v977, i64 0
-  store i64 %v355, ptr %st320
+  %v950 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st294 = getelementptr i64, ptr %v950, i64 0
+  store i64 %v343, ptr %st294
   br label %b73
 b100:
-  %v477 = add i64 0, 0
-  %v478.p = getelementptr i64, ptr %v354, i64 0
-  %v478 = load i64, ptr %v478.p
-  %st321 = getelementptr i64, ptr %v347, i64 0
-  store i64 %v478, ptr %st321
-  %v479.p = getelementptr i64, ptr %v354, i64 1
-  %v479 = load i64, ptr %v479.p
-  %st322 = getelementptr i64, ptr %v347, i64 1
-  store i64 %v479, ptr %st322
-  %v480.p = getelementptr i64, ptr %v354, i64 2
-  %v480 = load i64, ptr %v480.p
-  %st323 = getelementptr i64, ptr %v347, i64 2
-  store i64 %v480, ptr %st323
-  %v481.p = getelementptr i64, ptr %v354, i64 3
-  %v481 = load i64, ptr %v481.p
-  %st324 = getelementptr i64, ptr %v347, i64 3
-  store i64 %v481, ptr %st324
-  %v482.p = getelementptr i64, ptr %v354, i64 4
-  %v482 = load i64, ptr %v482.p
-  %st325 = getelementptr i64, ptr %v347, i64 4
-  store i64 %v482, ptr %st325
-  %v483.p = getelementptr i64, ptr %v354, i64 5
-  %v483 = load i64, ptr %v483.p
-  %st326 = getelementptr i64, ptr %v347, i64 5
-  store i64 %v483, ptr %st326
-  %v484.p = getelementptr i64, ptr %v347, i64 0
-  %v484 = load i64, ptr %v484.p
-  %v485 = add i64 0, 0
-  %v486.c = icmp ne i64 %v484, %v485
-  %v486 = zext i1 %v486.c to i64
-  %c.b100 = icmp ne i64 %v486, 0
-  br i1 %c.b100, label %b100.t328, label %b100.e329
-b100.t328:
+  %v462 = add i64 0, 0
+  %v463.p = getelementptr i64, ptr %v342, i64 0
+  %v463 = load i64, ptr %v463.p
+  %st295 = getelementptr i64, ptr %v335, i64 0
+  store i64 %v463, ptr %st295
+  %v464.p = getelementptr i64, ptr %v342, i64 1
+  %v464 = load i64, ptr %v464.p
+  %st296 = getelementptr i64, ptr %v335, i64 1
+  store i64 %v464, ptr %st296
+  %v465.p = getelementptr i64, ptr %v342, i64 2
+  %v465 = load i64, ptr %v465.p
+  %st297 = getelementptr i64, ptr %v335, i64 2
+  store i64 %v465, ptr %st297
+  %v466.p = getelementptr i64, ptr %v342, i64 3
+  %v466 = load i64, ptr %v466.p
+  %st298 = getelementptr i64, ptr %v335, i64 3
+  store i64 %v466, ptr %st298
+  %v467.p = getelementptr i64, ptr %v342, i64 4
+  %v467 = load i64, ptr %v467.p
+  %st299 = getelementptr i64, ptr %v335, i64 4
+  store i64 %v467, ptr %st299
+  %v468.p = getelementptr i64, ptr %v335, i64 0
+  %v468 = load i64, ptr %v468.p
+  %v469 = add i64 0, 0
+  %v470.c = icmp ne i64 %v468, %v469
+  %v470 = zext i1 %v470.c to i64
+  %c.b100 = icmp ne i64 %v470, 0
+  br i1 %c.b100, label %b100.t301, label %b100.e302
+b100.t301:
   br label %b102
-b100.e329:
+b100.e302:
   br label %b103
 b101:
   br label %b72
 b102:
-  %v487 = add i64 0, 1
-  %v488 = getelementptr i64, ptr %v347, i64 %v487
-  call void @"rt.err_relocate"(ptr %v488, i64 %v348)
+  %v471 = add i64 0, 1
+  %v472 = getelementptr i64, ptr %v335, i64 %v471
+  call void @"rt.err_relocate"(ptr %v472, i64 %v336)
   br label %b103
 b103:
-  %v978 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st329 = getelementptr i64, ptr %v978, i64 0
-  store i64 %v348, ptr %st329
+  %v951 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st302 = getelementptr i64, ptr %v951, i64 0
+  store i64 %v336, ptr %st302
   br label %b71
 b104:
-  %v506 = add i64 0, 1
-  %v507 = getelementptr i64, ptr %v347, i64 %v506
-  call void @"rt.err_relocate"(ptr %v507, i64 %v348)
+  %v489 = add i64 0, 1
+  %v490 = getelementptr i64, ptr %v335, i64 %v489
+  call void @"rt.err_relocate"(ptr %v490, i64 %v336)
   br label %b105
 b105:
-  %v979 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st330 = getelementptr i64, ptr %v979, i64 0
-  store i64 %v348, ptr %st330
+  %v952 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st303 = getelementptr i64, ptr %v952, i64 0
+  store i64 %v336, ptr %st303
   br label %b71
 b106:
-  %v677.p = getelementptr i64, ptr %v518, i64 0
-  %v677 = load i64, ptr %v677.p
-  %v678.p = getelementptr i64, ptr %v518, i64 1
-  %v678 = load i64, ptr %v678.p
-  %v679.p = getelementptr i64, ptr %v518, i64 2
-  %v679 = load i64, ptr %v679.p
-  %v680.p = getelementptr i64, ptr %v518, i64 3
-  %v680 = load i64, ptr %v680.p
-  %v681.p = getelementptr i64, ptr %v518, i64 4
-  %v681 = load i64, ptr %v681.p
-  %v682.p = getelementptr i64, ptr %v518, i64 5
-  %v682 = load i64, ptr %v682.p
-  call void @"main.show"(i64 %v677, i64 %v678, i64 %v679, i64 %v680, i64 %v681, i64 %v682)
-  %v683 = add i64 0, 99
-  %v684 = add i64 0, 3
-  %v685 = getelementptr i64, ptr %s15, i64 0
-  %v980 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v686.p = getelementptr i64, ptr %v980, i64 0
-  %v686 = load i64, ptr %v686.p
-  %v981 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v687.p = getelementptr i64, ptr %v981, i64 0
-  %v687 = load i64, ptr %v687.p
-  %v688 = add i64 0, 9
-  %v689 = add i64 0, 1
-  %v690 = add i64 0, 0
-  %v691 = sub i64 %v690, %v689
-  %v692 = getelementptr i64, ptr %s17, i64 0
-  %v982 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v693.p = getelementptr i64, ptr %v982, i64 0
-  %v693 = load i64, ptr %v693.p
-  %v694 = add i64 0, 0
-  %v695 = getelementptr i64, ptr %s2, i64 0
-  %st331 = getelementptr i64, ptr %v695, i64 0
-  store i64 %v694, ptr %st331
-  %v983 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v696.p = getelementptr i64, ptr %v983, i64 0
-  %v696 = load i64, ptr %v696.p
+  %v654.p = getelementptr i64, ptr %v500, i64 0
+  %v654 = load i64, ptr %v654.p
+  %v655.p = getelementptr i64, ptr %v500, i64 1
+  %v655 = load i64, ptr %v655.p
+  %v656.p = getelementptr i64, ptr %v500, i64 2
+  %v656 = load i64, ptr %v656.p
+  %v657.p = getelementptr i64, ptr %v500, i64 3
+  %v657 = load i64, ptr %v657.p
+  %v658.p = getelementptr i64, ptr %v500, i64 4
+  %v658 = load i64, ptr %v658.p
+  call void @"main.show"(i64 %v654, i64 %v655, i64 %v656, i64 %v657, i64 %v658)
+  %v659 = add i64 0, 99
+  %v660 = add i64 0, 3
+  %v661 = getelementptr i64, ptr %s14, i64 0
+  %v953 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v662.p = getelementptr i64, ptr %v953, i64 0
+  %v662 = load i64, ptr %v662.p
+  %v954 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v663.p = getelementptr i64, ptr %v954, i64 0
+  %v663 = load i64, ptr %v663.p
+  %v664 = add i64 0, 9
+  %v665 = add i64 0, 1
+  %v666 = add i64 0, 0
+  %v667 = sub i64 %v666, %v665
+  %v668 = getelementptr i64, ptr %s16, i64 0
+  %v955 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v669.p = getelementptr i64, ptr %v955, i64 0
+  %v669 = load i64, ptr %v669.p
+  %v670 = add i64 0, 0
+  %v671 = getelementptr i64, ptr %s2, i64 0
+  %st304 = getelementptr i64, ptr %v671, i64 0
+  store i64 %v670, ptr %st304
+  %v956 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v672.p = getelementptr i64, ptr %v956, i64 0
+  %v672 = load i64, ptr %v672.p
   br label %b144
 b107:
-  %v984 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st332 = getelementptr i64, ptr %v984, i64 0
-  store i64 %v520, ptr %st332
-  %v658 = getelementptr i64, ptr @"str.6", i64 0
-  %v659 = add i64 0, 12
-  %v660 = add i64 0, 0
-  %v661 = getelementptr i64, ptr %s6, i64 0
-  %v662 = ptrtoint ptr %v658 to i64
-  %st333 = getelementptr i64, ptr %v661, i64 0
-  store i64 %v662, ptr %st333
-  %st334 = getelementptr i64, ptr %v661, i64 1
-  store i64 %v659, ptr %st334
-  %st335 = getelementptr i64, ptr %v661, i64 2
-  store i64 %v660, ptr %st335
-  call void @"rt.print_str"(ptr %v661)
-  %v663 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v663)
-  %v664 = getelementptr i64, ptr %s15, i64 0
-  %v665 = add i64 0, 0
-  %st336 = getelementptr i64, ptr %v664, i64 0
-  store i64 %v665, ptr %st336
-  %v666.p = getelementptr i64, ptr %v664, i64 0
-  %v666 = load i64, ptr %v666.p
-  %st337 = getelementptr i64, ptr %v518, i64 0
-  store i64 %v666, ptr %st337
-  %v667.p = getelementptr i64, ptr %v664, i64 1
-  %v667 = load i64, ptr %v667.p
-  %st338 = getelementptr i64, ptr %v518, i64 1
-  store i64 %v667, ptr %st338
-  %v668.p = getelementptr i64, ptr %v664, i64 2
-  %v668 = load i64, ptr %v668.p
-  %st339 = getelementptr i64, ptr %v518, i64 2
-  store i64 %v668, ptr %st339
-  %v669.p = getelementptr i64, ptr %v664, i64 3
-  %v669 = load i64, ptr %v669.p
-  %st340 = getelementptr i64, ptr %v518, i64 3
-  store i64 %v669, ptr %st340
-  %v670.p = getelementptr i64, ptr %v664, i64 4
-  %v670 = load i64, ptr %v670.p
-  %st341 = getelementptr i64, ptr %v518, i64 4
-  store i64 %v670, ptr %st341
-  %v671.p = getelementptr i64, ptr %v664, i64 5
-  %v671 = load i64, ptr %v671.p
-  %st342 = getelementptr i64, ptr %v518, i64 5
-  store i64 %v671, ptr %st342
-  %v672.p = getelementptr i64, ptr %v518, i64 0
-  %v672 = load i64, ptr %v672.p
-  %v673 = add i64 0, 0
-  %v674.c = icmp ne i64 %v672, %v673
-  %v674 = zext i1 %v674.c to i64
-  %c.b107 = icmp ne i64 %v674, 0
-  br i1 %c.b107, label %b107.t344, label %b107.e345
-b107.t344:
+  %v957 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st305 = getelementptr i64, ptr %v957, i64 0
+  store i64 %v502, ptr %st305
+  %v636 = getelementptr i64, ptr @"str.6", i64 0
+  %v637 = add i64 0, 12
+  %v638 = add i64 0, 0
+  %v639 = getelementptr i64, ptr %s5, i64 0
+  %v640 = ptrtoint ptr %v636 to i64
+  %st306 = getelementptr i64, ptr %v639, i64 0
+  store i64 %v640, ptr %st306
+  %st307 = getelementptr i64, ptr %v639, i64 1
+  store i64 %v637, ptr %st307
+  %st308 = getelementptr i64, ptr %v639, i64 2
+  store i64 %v638, ptr %st308
+  call void @"rt.print_str"(ptr %v639)
+  %v641 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v641)
+  %v642 = getelementptr i64, ptr %s14, i64 0
+  %v643 = add i64 0, 0
+  %st309 = getelementptr i64, ptr %v642, i64 0
+  store i64 %v643, ptr %st309
+  %v644.p = getelementptr i64, ptr %v642, i64 0
+  %v644 = load i64, ptr %v644.p
+  %st310 = getelementptr i64, ptr %v500, i64 0
+  store i64 %v644, ptr %st310
+  %v645.p = getelementptr i64, ptr %v642, i64 1
+  %v645 = load i64, ptr %v645.p
+  %st311 = getelementptr i64, ptr %v500, i64 1
+  store i64 %v645, ptr %st311
+  %v646.p = getelementptr i64, ptr %v642, i64 2
+  %v646 = load i64, ptr %v646.p
+  %st312 = getelementptr i64, ptr %v500, i64 2
+  store i64 %v646, ptr %st312
+  %v647.p = getelementptr i64, ptr %v642, i64 3
+  %v647 = load i64, ptr %v647.p
+  %st313 = getelementptr i64, ptr %v500, i64 3
+  store i64 %v647, ptr %st313
+  %v648.p = getelementptr i64, ptr %v642, i64 4
+  %v648 = load i64, ptr %v648.p
+  %st314 = getelementptr i64, ptr %v500, i64 4
+  store i64 %v648, ptr %st314
+  %v649.p = getelementptr i64, ptr %v500, i64 0
+  %v649 = load i64, ptr %v649.p
+  %v650 = add i64 0, 0
+  %v651.c = icmp ne i64 %v649, %v650
+  %v651 = zext i1 %v651.c to i64
+  %c.b107 = icmp ne i64 %v651, 0
+  br i1 %c.b107, label %b107.t316, label %b107.e317
+b107.t316:
   br label %b139
-b107.e345:
+b107.e317:
   br label %b140
 b108:
-  %v643.p = getelementptr i64, ptr %v523, i64 0
-  %v643 = load i64, ptr %v643.p
-  %v644 = add i64 0, 0
-  %v645.c = icmp ne i64 %v643, %v644
-  %v645 = zext i1 %v645.c to i64
-  %c.b108 = icmp ne i64 %v645, 0
-  br i1 %c.b108, label %b108.t346, label %b108.e347
-b108.t346:
+  %v622.p = getelementptr i64, ptr %v505, i64 0
+  %v622 = load i64, ptr %v622.p
+  %v623 = add i64 0, 0
+  %v624.c = icmp ne i64 %v622, %v623
+  %v624 = zext i1 %v624.c to i64
+  %c.b108 = icmp ne i64 %v624, 0
+  br i1 %c.b108, label %b108.t318, label %b108.e319
+b108.t318:
   br label %b135
-b108.e347:
+b108.e319:
   br label %b136
 b109:
-  %v985 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st347 = getelementptr i64, ptr %v985, i64 0
-  store i64 %v527, ptr %st347
-  %v528.p = getelementptr i64, ptr %v526, i64 0
-  %v528 = load i64, ptr %v528.p
-  %v529.c = icmp slt i64 %v528, %v521
-  %v529 = zext i1 %v529.c to i64
-  %c.b109 = icmp ne i64 %v529, 0
-  br i1 %c.b109, label %b109.t349, label %b109.e350
-b109.t349:
+  %v958 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st319 = getelementptr i64, ptr %v958, i64 0
+  store i64 %v509, ptr %st319
+  %v510.p = getelementptr i64, ptr %v508, i64 0
+  %v510 = load i64, ptr %v510.p
+  %v511.c = icmp slt i64 %v510, %v503
+  %v511 = zext i1 %v511.c to i64
+  %c.b109 = icmp ne i64 %v511, 0
+  br i1 %c.b109, label %b109.t321, label %b109.e322
+b109.t321:
   br label %b110
-b109.e350:
+b109.e322:
   br label %b111
 b110:
   call void @"rt.region_enter"()
-  %v986 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v530.p = getelementptr i64, ptr %v986, i64 0
-  %v530 = load i64, ptr %v530.p
-  %v531.p = getelementptr i64, ptr %v526, i64 0
-  %v531 = load i64, ptr %v531.p
-  %v532.c = icmp eq i64 %v531, %v522
-  %v532 = zext i1 %v532.c to i64
-  %c.b110 = icmp ne i64 %v532, 0
-  br i1 %c.b110, label %b110.t351, label %b110.e352
-b110.t351:
+  %v959 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v512.p = getelementptr i64, ptr %v959, i64 0
+  %v512 = load i64, ptr %v512.p
+  %v513.p = getelementptr i64, ptr %v508, i64 0
+  %v513 = load i64, ptr %v513.p
+  %v514.c = icmp eq i64 %v513, %v504
+  %v514 = zext i1 %v514.c to i64
+  %c.b110 = icmp ne i64 %v514, 0
+  br i1 %c.b110, label %b110.t323, label %b110.e324
+b110.t323:
   br label %b112
-b110.e352:
+b110.e324:
   br label %b113
 b111:
-  %v987 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st352 = getelementptr i64, ptr %v987, i64 0
-  store i64 %v527, ptr %st352
-  %v624 = getelementptr i64, ptr %s15, i64 0
-  %v625 = add i64 0, 0
-  %st353 = getelementptr i64, ptr %v624, i64 0
-  store i64 %v625, ptr %st353
-  %v626.p = getelementptr i64, ptr %v624, i64 0
-  %v626 = load i64, ptr %v626.p
-  %st354 = getelementptr i64, ptr %v523, i64 0
-  store i64 %v626, ptr %st354
-  %v627.p = getelementptr i64, ptr %v624, i64 1
-  %v627 = load i64, ptr %v627.p
-  %st355 = getelementptr i64, ptr %v523, i64 1
-  store i64 %v627, ptr %st355
-  %v628.p = getelementptr i64, ptr %v624, i64 2
-  %v628 = load i64, ptr %v628.p
-  %st356 = getelementptr i64, ptr %v523, i64 2
-  store i64 %v628, ptr %st356
-  %v629.p = getelementptr i64, ptr %v624, i64 3
-  %v629 = load i64, ptr %v629.p
-  %st357 = getelementptr i64, ptr %v523, i64 3
-  store i64 %v629, ptr %st357
-  %v630.p = getelementptr i64, ptr %v624, i64 4
-  %v630 = load i64, ptr %v630.p
-  %st358 = getelementptr i64, ptr %v523, i64 4
-  store i64 %v630, ptr %st358
-  %v631.p = getelementptr i64, ptr %v624, i64 5
-  %v631 = load i64, ptr %v631.p
-  %st359 = getelementptr i64, ptr %v523, i64 5
-  store i64 %v631, ptr %st359
-  %v632 = getelementptr i64, ptr @"str.9", i64 0
-  %v633 = add i64 0, 12
-  %v634 = add i64 0, 0
-  %v635 = getelementptr i64, ptr %s6, i64 0
-  %v636 = ptrtoint ptr %v632 to i64
-  %st360 = getelementptr i64, ptr %v635, i64 0
-  store i64 %v636, ptr %st360
-  %st361 = getelementptr i64, ptr %v635, i64 1
-  store i64 %v633, ptr %st361
-  %st362 = getelementptr i64, ptr %v635, i64 2
-  store i64 %v634, ptr %st362
-  call void @"rt.print_str"(ptr %v635)
-  %v637 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v637)
-  %v638.p = getelementptr i64, ptr %v523, i64 0
-  %v638 = load i64, ptr %v638.p
-  %v639 = add i64 0, 0
-  %v640.c = icmp ne i64 %v638, %v639
-  %v640 = zext i1 %v640.c to i64
-  %c.b111 = icmp ne i64 %v640, 0
-  br i1 %c.b111, label %b111.t364, label %b111.e365
-b111.t364:
+  %v960 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st324 = getelementptr i64, ptr %v960, i64 0
+  store i64 %v509, ptr %st324
+  %v604 = getelementptr i64, ptr %s14, i64 0
+  %v605 = add i64 0, 0
+  %st325 = getelementptr i64, ptr %v604, i64 0
+  store i64 %v605, ptr %st325
+  %v606.p = getelementptr i64, ptr %v604, i64 0
+  %v606 = load i64, ptr %v606.p
+  %st326 = getelementptr i64, ptr %v505, i64 0
+  store i64 %v606, ptr %st326
+  %v607.p = getelementptr i64, ptr %v604, i64 1
+  %v607 = load i64, ptr %v607.p
+  %st327 = getelementptr i64, ptr %v505, i64 1
+  store i64 %v607, ptr %st327
+  %v608.p = getelementptr i64, ptr %v604, i64 2
+  %v608 = load i64, ptr %v608.p
+  %st328 = getelementptr i64, ptr %v505, i64 2
+  store i64 %v608, ptr %st328
+  %v609.p = getelementptr i64, ptr %v604, i64 3
+  %v609 = load i64, ptr %v609.p
+  %st329 = getelementptr i64, ptr %v505, i64 3
+  store i64 %v609, ptr %st329
+  %v610.p = getelementptr i64, ptr %v604, i64 4
+  %v610 = load i64, ptr %v610.p
+  %st330 = getelementptr i64, ptr %v505, i64 4
+  store i64 %v610, ptr %st330
+  %v611 = getelementptr i64, ptr @"str.9", i64 0
+  %v612 = add i64 0, 12
+  %v613 = add i64 0, 0
+  %v614 = getelementptr i64, ptr %s5, i64 0
+  %v615 = ptrtoint ptr %v611 to i64
+  %st331 = getelementptr i64, ptr %v614, i64 0
+  store i64 %v615, ptr %st331
+  %st332 = getelementptr i64, ptr %v614, i64 1
+  store i64 %v612, ptr %st332
+  %st333 = getelementptr i64, ptr %v614, i64 2
+  store i64 %v613, ptr %st333
+  call void @"rt.print_str"(ptr %v614)
+  %v616 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v616)
+  %v617.p = getelementptr i64, ptr %v505, i64 0
+  %v617 = load i64, ptr %v617.p
+  %v618 = add i64 0, 0
+  %v619.c = icmp ne i64 %v617, %v618
+  %v619 = zext i1 %v619.c to i64
+  %c.b111 = icmp ne i64 %v619, 0
+  br i1 %c.b111, label %b111.t335, label %b111.e336
+b111.t335:
   br label %b133
-b111.e365:
+b111.e336:
   br label %b134
 b112:
-  %v533.p = getelementptr i64, ptr %v526, i64 0
+  %v515.p = getelementptr i64, ptr %v508, i64 0
+  %v515 = load i64, ptr %v515.p
+  %v516 = add i64 0, 0
+  %v517 = add i64 0, 1
+  %v518 = getelementptr i64, ptr %s3, i64 0
+  %st336 = getelementptr i64, ptr %v518, i64 0
+  store i64 %v517, ptr %st336
+  %v961 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v519.p = getelementptr i64, ptr %v961, i64 0
+  %v519 = load i64, ptr %v519.p
+  %v520 = add i64 0, 2
+  %v521 = call ptr @"rt.region_alloc"(i64 %v519, i64 %v520)
+  %v522 = ptrtoint ptr %v521 to i64
+  %st337 = getelementptr i64, ptr %v518, i64 1
+  store i64 %v522, ptr %st337
+  %v523 = add i64 0, 1
+  %st338 = getelementptr i64, ptr %v518, i64 2
+  store i64 %v523, ptr %st338
+  %st339 = getelementptr i64, ptr %v518, i64 3
+  store i64 %v519, ptr %st339
+  %st340 = getelementptr i64, ptr %v521, i64 1
+  store i64 %v516, ptr %st340
+  %v524 = add i64 0, 1
+  %st341 = getelementptr i64, ptr %v521, i64 0
+  store i64 %v524, ptr %st341
+  %st342 = getelementptr i64, ptr %v521, i64 1
+  store i64 %v515, ptr %st342
+  %v525 = getelementptr i64, ptr %s14, i64 0
+  %v526 = add i64 0, 1
+  %st343 = getelementptr i64, ptr %v525, i64 0
+  store i64 %v526, ptr %st343
+  %v527.p = getelementptr i64, ptr %v518, i64 0
+  %v527 = load i64, ptr %v527.p
+  %st344 = getelementptr i64, ptr %v525, i64 1
+  store i64 %v527, ptr %st344
+  %v528.p = getelementptr i64, ptr %v518, i64 1
+  %v528 = load i64, ptr %v528.p
+  %st345 = getelementptr i64, ptr %v525, i64 2
+  store i64 %v528, ptr %st345
+  %v529.p = getelementptr i64, ptr %v518, i64 2
+  %v529 = load i64, ptr %v529.p
+  %st346 = getelementptr i64, ptr %v525, i64 3
+  store i64 %v529, ptr %st346
+  %v530.p = getelementptr i64, ptr %v518, i64 3
+  %v530 = load i64, ptr %v530.p
+  %st347 = getelementptr i64, ptr %v525, i64 4
+  store i64 %v530, ptr %st347
+  %v531.p = getelementptr i64, ptr %v525, i64 0
+  %v531 = load i64, ptr %v531.p
+  %st348 = getelementptr i64, ptr %v505, i64 0
+  store i64 %v531, ptr %st348
+  %v532.p = getelementptr i64, ptr %v525, i64 1
+  %v532 = load i64, ptr %v532.p
+  %st349 = getelementptr i64, ptr %v505, i64 1
+  store i64 %v532, ptr %st349
+  %v533.p = getelementptr i64, ptr %v525, i64 2
   %v533 = load i64, ptr %v533.p
-  %v534 = getelementptr i64, ptr %s3, i64 0
-  %v535 = add i64 0, 0
-  %st365 = getelementptr i64, ptr %v534, i64 0
-  store i64 %v535, ptr %st365
-  %st366 = getelementptr i64, ptr %v534, i64 1
-  store i64 %v535, ptr %st366
-  %v536 = add i64 0, 1
-  %st367 = getelementptr i64, ptr %v534, i64 0
-  store i64 %v536, ptr %st367
-  %st368 = getelementptr i64, ptr %v534, i64 1
-  store i64 %v533, ptr %st368
-  %v537 = getelementptr i64, ptr %s4, i64 0
-  %v538.p = getelementptr i64, ptr %v534, i64 0
-  %v538 = load i64, ptr %v538.p
-  %st369 = getelementptr i64, ptr %v537, i64 0
-  store i64 %v538, ptr %st369
-  %v539.p = getelementptr i64, ptr %v534, i64 1
-  %v539 = load i64, ptr %v539.p
-  %st370 = getelementptr i64, ptr %v537, i64 1
-  store i64 %v539, ptr %st370
-  %v540 = add i64 0, 0
-  %st371 = getelementptr i64, ptr %v537, i64 2
-  store i64 %v540, ptr %st371
-  %st372 = getelementptr i64, ptr %v537, i64 3
-  store i64 %v540, ptr %st372
-  %st373 = getelementptr i64, ptr %v537, i64 4
-  store i64 %v540, ptr %st373
-  %v541 = getelementptr i64, ptr %s15, i64 0
-  %v542 = add i64 0, 1
-  %st374 = getelementptr i64, ptr %v541, i64 0
-  store i64 %v542, ptr %st374
-  %v543.p = getelementptr i64, ptr %v537, i64 0
-  %v543 = load i64, ptr %v543.p
-  %st375 = getelementptr i64, ptr %v541, i64 1
-  store i64 %v543, ptr %st375
-  %v544.p = getelementptr i64, ptr %v537, i64 1
-  %v544 = load i64, ptr %v544.p
-  %st376 = getelementptr i64, ptr %v541, i64 2
-  store i64 %v544, ptr %st376
-  %v545.p = getelementptr i64, ptr %v537, i64 2
-  %v545 = load i64, ptr %v545.p
-  %st377 = getelementptr i64, ptr %v541, i64 3
-  store i64 %v545, ptr %st377
-  %v546.p = getelementptr i64, ptr %v537, i64 3
-  %v546 = load i64, ptr %v546.p
-  %st378 = getelementptr i64, ptr %v541, i64 4
-  store i64 %v546, ptr %st378
-  %v547.p = getelementptr i64, ptr %v537, i64 4
-  %v547 = load i64, ptr %v547.p
-  %st379 = getelementptr i64, ptr %v541, i64 5
-  store i64 %v547, ptr %st379
-  %v548.p = getelementptr i64, ptr %v541, i64 0
-  %v548 = load i64, ptr %v548.p
-  %st380 = getelementptr i64, ptr %v523, i64 0
-  store i64 %v548, ptr %st380
-  %v549.p = getelementptr i64, ptr %v541, i64 1
-  %v549 = load i64, ptr %v549.p
-  %st381 = getelementptr i64, ptr %v523, i64 1
-  store i64 %v549, ptr %st381
-  %v550.p = getelementptr i64, ptr %v541, i64 2
-  %v550 = load i64, ptr %v550.p
-  %st382 = getelementptr i64, ptr %v523, i64 2
-  store i64 %v550, ptr %st382
-  %v551.p = getelementptr i64, ptr %v541, i64 3
-  %v551 = load i64, ptr %v551.p
-  %st383 = getelementptr i64, ptr %v523, i64 3
-  store i64 %v551, ptr %st383
-  %v552.p = getelementptr i64, ptr %v541, i64 4
-  %v552 = load i64, ptr %v552.p
-  %st384 = getelementptr i64, ptr %v523, i64 4
-  store i64 %v552, ptr %st384
-  %v553.p = getelementptr i64, ptr %v541, i64 5
-  %v553 = load i64, ptr %v553.p
-  %st385 = getelementptr i64, ptr %v523, i64 5
-  store i64 %v553, ptr %st385
-  %v554 = getelementptr i64, ptr @"str.9", i64 0
-  %v555 = add i64 0, 12
-  %v556 = add i64 0, 0
-  %v557 = getelementptr i64, ptr %s6, i64 0
-  %v558 = ptrtoint ptr %v554 to i64
-  %st386 = getelementptr i64, ptr %v557, i64 0
-  store i64 %v558, ptr %st386
-  %st387 = getelementptr i64, ptr %v557, i64 1
-  store i64 %v555, ptr %st387
-  %st388 = getelementptr i64, ptr %v557, i64 2
-  store i64 %v556, ptr %st388
-  call void @"rt.print_str"(ptr %v557)
-  %v559 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v559)
-  %v560.p = getelementptr i64, ptr %v523, i64 0
-  %v560 = load i64, ptr %v560.p
-  %v561 = add i64 0, 0
-  %v562.c = icmp ne i64 %v560, %v561
-  %v562 = zext i1 %v562.c to i64
-  %c.b112 = icmp ne i64 %v562, 0
-  br i1 %c.b112, label %b112.t390, label %b112.e391
-b112.t390:
+  %st350 = getelementptr i64, ptr %v505, i64 2
+  store i64 %v533, ptr %st350
+  %v534.p = getelementptr i64, ptr %v525, i64 3
+  %v534 = load i64, ptr %v534.p
+  %st351 = getelementptr i64, ptr %v505, i64 3
+  store i64 %v534, ptr %st351
+  %v535.p = getelementptr i64, ptr %v525, i64 4
+  %v535 = load i64, ptr %v535.p
+  %st352 = getelementptr i64, ptr %v505, i64 4
+  store i64 %v535, ptr %st352
+  %v536 = getelementptr i64, ptr @"str.9", i64 0
+  %v537 = add i64 0, 12
+  %v538 = add i64 0, 0
+  %v539 = getelementptr i64, ptr %s5, i64 0
+  %v540 = ptrtoint ptr %v536 to i64
+  %st353 = getelementptr i64, ptr %v539, i64 0
+  store i64 %v540, ptr %st353
+  %st354 = getelementptr i64, ptr %v539, i64 1
+  store i64 %v537, ptr %st354
+  %st355 = getelementptr i64, ptr %v539, i64 2
+  store i64 %v538, ptr %st355
+  call void @"rt.print_str"(ptr %v539)
+  %v541 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v541)
+  %v542.p = getelementptr i64, ptr %v505, i64 0
+  %v542 = load i64, ptr %v542.p
+  %v543 = add i64 0, 0
+  %v544.c = icmp ne i64 %v542, %v543
+  %v544 = zext i1 %v544.c to i64
+  %c.b112 = icmp ne i64 %v544, 0
+  br i1 %c.b112, label %b112.t357, label %b112.e358
+b112.t357:
   br label %b114
-b112.e391:
+b112.e358:
   br label %b115
 b113:
   br label %b116
 b114:
-  %v563 = add i64 0, 1
-  %v564 = getelementptr i64, ptr %v523, i64 %v563
-  call void @"rt.err_relocate"(ptr %v564, i64 %v524)
+  %v545 = add i64 0, 1
+  %v546 = getelementptr i64, ptr %v505, i64 %v545
+  call void @"rt.err_relocate"(ptr %v546, i64 %v506)
   br label %b115
 b115:
-  %v988 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st391 = getelementptr i64, ptr %v988, i64 0
-  store i64 %v524, ptr %st391
+  %v962 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st358 = getelementptr i64, ptr %v962, i64 0
+  store i64 %v506, ptr %st358
   br label %b108
 b116:
-  %v565.p = getelementptr i64, ptr %v526, i64 0
-  %v565 = load i64, ptr %v565.p
-  %v989 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v566.p = getelementptr i64, ptr %v989, i64 0
-  %v566 = load i64, ptr %v566.p
-  %v567 = add i64 0, 1
-  %v568.c = icmp eq i64 %v565, %v567
-  %v568 = zext i1 %v568.c to i64
-  %c.b116 = icmp ne i64 %v568, 0
-  br i1 %c.b116, label %b116.t393, label %b116.e394
-b116.t393:
+  %v547.p = getelementptr i64, ptr %v508, i64 0
+  %v547 = load i64, ptr %v547.p
+  %v963 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v548.p = getelementptr i64, ptr %v963, i64 0
+  %v548 = load i64, ptr %v548.p
+  %v549 = add i64 0, 1
+  %v550.c = icmp eq i64 %v547, %v549
+  %v550 = zext i1 %v550.c to i64
+  %c.b116 = icmp ne i64 %v550, 0
+  br i1 %c.b116, label %b116.t360, label %b116.e361
+b116.t360:
   br label %b118
-b116.e394:
+b116.e361:
   br label %b119
 b117:
-  %v990 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st394 = getelementptr i64, ptr %v990, i64 0
-  store i64 %v566, ptr %st394
-  %v621 = add i64 0, 1
-  %v622.p = getelementptr i64, ptr %v526, i64 0
-  %v622 = load i64, ptr %v622.p
-  %v623 = add i64 %v622, %v621
-  %st395 = getelementptr i64, ptr %v526, i64 0
-  store i64 %v623, ptr %st395
+  %v964 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st361 = getelementptr i64, ptr %v964, i64 0
+  store i64 %v548, ptr %st361
+  %v601 = add i64 0, 1
+  %v602.p = getelementptr i64, ptr %v508, i64 0
+  %v602 = load i64, ptr %v602.p
+  %v603 = add i64 %v602, %v601
+  %st362 = getelementptr i64, ptr %v508, i64 0
+  store i64 %v603, ptr %st362
   br label %b109
 b118:
   br label %b117
 b119:
   br label %b120
 b120:
-  %v569.c = icmp eq i64 %v565, %v514
-  %v569 = zext i1 %v569.c to i64
-  %c.b120 = icmp ne i64 %v569, 0
-  br i1 %c.b120, label %b120.t397, label %b120.e398
-b120.t397:
+  %v551.c = icmp eq i64 %v547, %v496
+  %v551 = zext i1 %v551.c to i64
+  %c.b120 = icmp ne i64 %v551, 0
+  br i1 %c.b120, label %b120.t364, label %b120.e365
+b120.t364:
   br label %b121
-b120.e398:
+b120.e365:
   br label %b122
 b121:
-  %v570 = getelementptr i64, ptr @"str.9", i64 0
-  %v571 = add i64 0, 12
-  %v572 = add i64 0, 0
-  %v573 = getelementptr i64, ptr %s6, i64 0
-  %v574 = ptrtoint ptr %v570 to i64
-  %st398 = getelementptr i64, ptr %v573, i64 0
-  store i64 %v574, ptr %st398
-  %st399 = getelementptr i64, ptr %v573, i64 1
-  store i64 %v571, ptr %st399
-  %st400 = getelementptr i64, ptr %v573, i64 2
-  store i64 %v572, ptr %st400
-  call void @"rt.print_str"(ptr %v573)
-  %v575 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v575)
+  %v552 = getelementptr i64, ptr @"str.9", i64 0
+  %v553 = add i64 0, 12
+  %v554 = add i64 0, 0
+  %v555 = getelementptr i64, ptr %s5, i64 0
+  %v556 = ptrtoint ptr %v552 to i64
+  %st365 = getelementptr i64, ptr %v555, i64 0
+  store i64 %v556, ptr %st365
+  %st366 = getelementptr i64, ptr %v555, i64 1
+  store i64 %v553, ptr %st366
+  %st367 = getelementptr i64, ptr %v555, i64 2
+  store i64 %v554, ptr %st367
+  call void @"rt.print_str"(ptr %v555)
+  %v557 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v557)
   br label %b107
 b122:
   br label %b123
 b123:
-  %v576.c = icmp eq i64 %v565, %v517
-  %v576 = zext i1 %v576.c to i64
-  %c.b123 = icmp ne i64 %v576, 0
-  br i1 %c.b123, label %b123.t402, label %b123.e403
-b123.t402:
+  %v558.c = icmp eq i64 %v547, %v499
+  %v558 = zext i1 %v558.c to i64
+  %c.b123 = icmp ne i64 %v558, 0
+  br i1 %c.b123, label %b123.t369, label %b123.e370
+b123.t369:
   br label %b124
-b123.e403:
+b123.e370:
   br label %b125
 b124:
-  %v577 = getelementptr i64, ptr %s15, i64 0
-  %v578 = add i64 0, 0
-  %st403 = getelementptr i64, ptr %v577, i64 0
-  store i64 %v578, ptr %st403
-  %v579.p = getelementptr i64, ptr %v577, i64 0
-  %v579 = load i64, ptr %v579.p
-  %st404 = getelementptr i64, ptr %v518, i64 0
-  store i64 %v579, ptr %st404
-  %v580.p = getelementptr i64, ptr %v577, i64 1
-  %v580 = load i64, ptr %v580.p
-  %st405 = getelementptr i64, ptr %v518, i64 1
-  store i64 %v580, ptr %st405
-  %v581.p = getelementptr i64, ptr %v577, i64 2
-  %v581 = load i64, ptr %v581.p
-  %st406 = getelementptr i64, ptr %v518, i64 2
-  store i64 %v581, ptr %st406
-  %v582.p = getelementptr i64, ptr %v577, i64 3
-  %v582 = load i64, ptr %v582.p
-  %st407 = getelementptr i64, ptr %v518, i64 3
-  store i64 %v582, ptr %st407
-  %v583.p = getelementptr i64, ptr %v577, i64 4
-  %v583 = load i64, ptr %v583.p
-  %st408 = getelementptr i64, ptr %v518, i64 4
-  store i64 %v583, ptr %st408
-  %v584.p = getelementptr i64, ptr %v577, i64 5
-  %v584 = load i64, ptr %v584.p
-  %st409 = getelementptr i64, ptr %v518, i64 5
-  store i64 %v584, ptr %st409
-  %v585 = getelementptr i64, ptr @"str.9", i64 0
-  %v586 = add i64 0, 12
-  %v587 = add i64 0, 0
-  %v588 = getelementptr i64, ptr %s6, i64 0
-  %v589 = ptrtoint ptr %v585 to i64
-  %st410 = getelementptr i64, ptr %v588, i64 0
-  store i64 %v589, ptr %st410
-  %st411 = getelementptr i64, ptr %v588, i64 1
-  store i64 %v586, ptr %st411
-  %st412 = getelementptr i64, ptr %v588, i64 2
-  store i64 %v587, ptr %st412
-  call void @"rt.print_str"(ptr %v588)
-  %v590 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v590)
-  %v591.p = getelementptr i64, ptr %v518, i64 0
-  %v591 = load i64, ptr %v591.p
-  %v592 = add i64 0, 0
-  %v593.c = icmp ne i64 %v591, %v592
-  %v593 = zext i1 %v593.c to i64
-  %c.b124 = icmp ne i64 %v593, 0
-  br i1 %c.b124, label %b124.t414, label %b124.e415
-b124.t414:
+  %v559 = getelementptr i64, ptr %s14, i64 0
+  %v560 = add i64 0, 0
+  %st370 = getelementptr i64, ptr %v559, i64 0
+  store i64 %v560, ptr %st370
+  %v561.p = getelementptr i64, ptr %v559, i64 0
+  %v561 = load i64, ptr %v561.p
+  %st371 = getelementptr i64, ptr %v500, i64 0
+  store i64 %v561, ptr %st371
+  %v562.p = getelementptr i64, ptr %v559, i64 1
+  %v562 = load i64, ptr %v562.p
+  %st372 = getelementptr i64, ptr %v500, i64 1
+  store i64 %v562, ptr %st372
+  %v563.p = getelementptr i64, ptr %v559, i64 2
+  %v563 = load i64, ptr %v563.p
+  %st373 = getelementptr i64, ptr %v500, i64 2
+  store i64 %v563, ptr %st373
+  %v564.p = getelementptr i64, ptr %v559, i64 3
+  %v564 = load i64, ptr %v564.p
+  %st374 = getelementptr i64, ptr %v500, i64 3
+  store i64 %v564, ptr %st374
+  %v565.p = getelementptr i64, ptr %v559, i64 4
+  %v565 = load i64, ptr %v565.p
+  %st375 = getelementptr i64, ptr %v500, i64 4
+  store i64 %v565, ptr %st375
+  %v566 = getelementptr i64, ptr @"str.9", i64 0
+  %v567 = add i64 0, 12
+  %v568 = add i64 0, 0
+  %v569 = getelementptr i64, ptr %s5, i64 0
+  %v570 = ptrtoint ptr %v566 to i64
+  %st376 = getelementptr i64, ptr %v569, i64 0
+  store i64 %v570, ptr %st376
+  %st377 = getelementptr i64, ptr %v569, i64 1
+  store i64 %v567, ptr %st377
+  %st378 = getelementptr i64, ptr %v569, i64 2
+  store i64 %v568, ptr %st378
+  call void @"rt.print_str"(ptr %v569)
+  %v571 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v571)
+  %v572.p = getelementptr i64, ptr %v500, i64 0
+  %v572 = load i64, ptr %v572.p
+  %v573 = add i64 0, 0
+  %v574.c = icmp ne i64 %v572, %v573
+  %v574 = zext i1 %v574.c to i64
+  %c.b124 = icmp ne i64 %v574, 0
+  br i1 %c.b124, label %b124.t380, label %b124.e381
+b124.t380:
   br label %b126
-b124.e415:
+b124.e381:
   br label %b127
 b125:
   br label %b128
 b126:
-  %v594 = add i64 0, 1
-  %v595 = getelementptr i64, ptr %v518, i64 %v594
-  call void @"rt.err_relocate"(ptr %v595, i64 %v519)
+  %v575 = add i64 0, 1
+  %v576 = getelementptr i64, ptr %v500, i64 %v575
+  call void @"rt.err_relocate"(ptr %v576, i64 %v501)
   br label %b127
 b127:
-  %v991 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st415 = getelementptr i64, ptr %v991, i64 0
-  store i64 %v519, ptr %st415
+  %v965 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st381 = getelementptr i64, ptr %v965, i64 0
+  store i64 %v501, ptr %st381
   br label %b106
 b128:
-  %v596 = add i64 0, 10
-  %v597 = mul i64 %v565, %v596
-  %v598 = getelementptr i64, ptr %s16, i64 0
-  %v599 = add i64 0, 99
-  call void @"main.sendv"(ptr %v598, i64 %v597, i64 %v599)
-  %v600.p = getelementptr i64, ptr %v598, i64 0
-  %v600 = load i64, ptr %v600.p
-  %v601 = add i64 0, 0
-  %v602.c = icmp ne i64 %v600, %v601
-  %v602 = zext i1 %v602.c to i64
-  %c.b128 = icmp ne i64 %v602, 0
-  br i1 %c.b128, label %b128.t417, label %b128.e418
-b128.t417:
+  %v577 = add i64 0, 10
+  %v578 = mul i64 %v547, %v577
+  %v579 = getelementptr i64, ptr %s15, i64 0
+  %v580 = add i64 0, 99
+  call void @"main.sendv"(ptr %v579, i64 %v578, i64 %v580)
+  %v581.p = getelementptr i64, ptr %v579, i64 0
+  %v581 = load i64, ptr %v581.p
+  %v582 = add i64 0, 0
+  %v583.c = icmp ne i64 %v581, %v582
+  %v583 = zext i1 %v583.c to i64
+  %c.b128 = icmp ne i64 %v583, 0
+  br i1 %c.b128, label %b128.t383, label %b128.e384
+b128.t383:
   br label %b129
-b128.e418:
+b128.e384:
   br label %b130
 b129:
-  %v603 = add i64 0, 0
-  %v604.p = getelementptr i64, ptr %v598, i64 0
-  %v604 = load i64, ptr %v604.p
-  %st418 = getelementptr i64, ptr %v518, i64 0
-  store i64 %v604, ptr %st418
-  %v605.p = getelementptr i64, ptr %v598, i64 1
-  %v605 = load i64, ptr %v605.p
-  %st419 = getelementptr i64, ptr %v518, i64 1
-  store i64 %v605, ptr %st419
-  %v606.p = getelementptr i64, ptr %v598, i64 2
-  %v606 = load i64, ptr %v606.p
-  %st420 = getelementptr i64, ptr %v518, i64 2
-  store i64 %v606, ptr %st420
-  %v607.p = getelementptr i64, ptr %v598, i64 3
-  %v607 = load i64, ptr %v607.p
-  %st421 = getelementptr i64, ptr %v518, i64 3
-  store i64 %v607, ptr %st421
-  %v608.p = getelementptr i64, ptr %v598, i64 4
-  %v608 = load i64, ptr %v608.p
-  %st422 = getelementptr i64, ptr %v518, i64 4
-  store i64 %v608, ptr %st422
-  %v609.p = getelementptr i64, ptr %v598, i64 5
-  %v609 = load i64, ptr %v609.p
-  %st423 = getelementptr i64, ptr %v518, i64 5
-  store i64 %v609, ptr %st423
-  %v610 = getelementptr i64, ptr @"str.9", i64 0
-  %v611 = add i64 0, 12
-  %v612 = add i64 0, 0
-  %v613 = getelementptr i64, ptr %s6, i64 0
-  %v614 = ptrtoint ptr %v610 to i64
-  %st424 = getelementptr i64, ptr %v613, i64 0
-  store i64 %v614, ptr %st424
-  %st425 = getelementptr i64, ptr %v613, i64 1
-  store i64 %v611, ptr %st425
-  %st426 = getelementptr i64, ptr %v613, i64 2
-  store i64 %v612, ptr %st426
-  call void @"rt.print_str"(ptr %v613)
-  %v615 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v615)
-  %v616.p = getelementptr i64, ptr %v518, i64 0
-  %v616 = load i64, ptr %v616.p
-  %v617 = add i64 0, 0
-  %v618.c = icmp ne i64 %v616, %v617
-  %v618 = zext i1 %v618.c to i64
-  %c.b129 = icmp ne i64 %v618, 0
-  br i1 %c.b129, label %b129.t428, label %b129.e429
-b129.t428:
+  %v584 = add i64 0, 0
+  %v585.p = getelementptr i64, ptr %v579, i64 0
+  %v585 = load i64, ptr %v585.p
+  %st384 = getelementptr i64, ptr %v500, i64 0
+  store i64 %v585, ptr %st384
+  %v586.p = getelementptr i64, ptr %v579, i64 1
+  %v586 = load i64, ptr %v586.p
+  %st385 = getelementptr i64, ptr %v500, i64 1
+  store i64 %v586, ptr %st385
+  %v587.p = getelementptr i64, ptr %v579, i64 2
+  %v587 = load i64, ptr %v587.p
+  %st386 = getelementptr i64, ptr %v500, i64 2
+  store i64 %v587, ptr %st386
+  %v588.p = getelementptr i64, ptr %v579, i64 3
+  %v588 = load i64, ptr %v588.p
+  %st387 = getelementptr i64, ptr %v500, i64 3
+  store i64 %v588, ptr %st387
+  %v589.p = getelementptr i64, ptr %v579, i64 4
+  %v589 = load i64, ptr %v589.p
+  %st388 = getelementptr i64, ptr %v500, i64 4
+  store i64 %v589, ptr %st388
+  %v590 = getelementptr i64, ptr @"str.9", i64 0
+  %v591 = add i64 0, 12
+  %v592 = add i64 0, 0
+  %v593 = getelementptr i64, ptr %s5, i64 0
+  %v594 = ptrtoint ptr %v590 to i64
+  %st389 = getelementptr i64, ptr %v593, i64 0
+  store i64 %v594, ptr %st389
+  %st390 = getelementptr i64, ptr %v593, i64 1
+  store i64 %v591, ptr %st390
+  %st391 = getelementptr i64, ptr %v593, i64 2
+  store i64 %v592, ptr %st391
+  call void @"rt.print_str"(ptr %v593)
+  %v595 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v595)
+  %v596.p = getelementptr i64, ptr %v500, i64 0
+  %v596 = load i64, ptr %v596.p
+  %v597 = add i64 0, 0
+  %v598.c = icmp ne i64 %v596, %v597
+  %v598 = zext i1 %v598.c to i64
+  %c.b129 = icmp ne i64 %v598, 0
+  br i1 %c.b129, label %b129.t393, label %b129.e394
+b129.t393:
   br label %b131
-b129.e429:
+b129.e394:
   br label %b132
 b130:
   br label %b117
 b131:
-  %v619 = add i64 0, 1
-  %v620 = getelementptr i64, ptr %v518, i64 %v619
-  call void @"rt.err_relocate"(ptr %v620, i64 %v519)
+  %v599 = add i64 0, 1
+  %v600 = getelementptr i64, ptr %v500, i64 %v599
+  call void @"rt.err_relocate"(ptr %v600, i64 %v501)
   br label %b132
 b132:
-  %v992 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st429 = getelementptr i64, ptr %v992, i64 0
-  store i64 %v519, ptr %st429
+  %v966 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st394 = getelementptr i64, ptr %v966, i64 0
+  store i64 %v501, ptr %st394
   br label %b106
 b133:
-  %v641 = add i64 0, 1
-  %v642 = getelementptr i64, ptr %v523, i64 %v641
-  call void @"rt.err_relocate"(ptr %v642, i64 %v524)
+  %v620 = add i64 0, 1
+  %v621 = getelementptr i64, ptr %v505, i64 %v620
+  call void @"rt.err_relocate"(ptr %v621, i64 %v506)
   br label %b134
 b134:
-  %v993 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st430 = getelementptr i64, ptr %v993, i64 0
-  store i64 %v524, ptr %st430
+  %v967 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st395 = getelementptr i64, ptr %v967, i64 0
+  store i64 %v506, ptr %st395
   br label %b108
 b135:
-  %v646 = add i64 0, 0
-  %v647.p = getelementptr i64, ptr %v523, i64 0
-  %v647 = load i64, ptr %v647.p
-  %st431 = getelementptr i64, ptr %v518, i64 0
-  store i64 %v647, ptr %st431
-  %v648.p = getelementptr i64, ptr %v523, i64 1
-  %v648 = load i64, ptr %v648.p
-  %st432 = getelementptr i64, ptr %v518, i64 1
-  store i64 %v648, ptr %st432
-  %v649.p = getelementptr i64, ptr %v523, i64 2
-  %v649 = load i64, ptr %v649.p
-  %st433 = getelementptr i64, ptr %v518, i64 2
-  store i64 %v649, ptr %st433
-  %v650.p = getelementptr i64, ptr %v523, i64 3
-  %v650 = load i64, ptr %v650.p
-  %st434 = getelementptr i64, ptr %v518, i64 3
-  store i64 %v650, ptr %st434
-  %v651.p = getelementptr i64, ptr %v523, i64 4
-  %v651 = load i64, ptr %v651.p
-  %st435 = getelementptr i64, ptr %v518, i64 4
-  store i64 %v651, ptr %st435
-  %v652.p = getelementptr i64, ptr %v523, i64 5
-  %v652 = load i64, ptr %v652.p
-  %st436 = getelementptr i64, ptr %v518, i64 5
-  store i64 %v652, ptr %st436
-  %v653.p = getelementptr i64, ptr %v518, i64 0
-  %v653 = load i64, ptr %v653.p
-  %v654 = add i64 0, 0
-  %v655.c = icmp ne i64 %v653, %v654
-  %v655 = zext i1 %v655.c to i64
-  %c.b135 = icmp ne i64 %v655, 0
-  br i1 %c.b135, label %b135.t438, label %b135.e439
-b135.t438:
+  %v625 = add i64 0, 0
+  %v626.p = getelementptr i64, ptr %v505, i64 0
+  %v626 = load i64, ptr %v626.p
+  %st396 = getelementptr i64, ptr %v500, i64 0
+  store i64 %v626, ptr %st396
+  %v627.p = getelementptr i64, ptr %v505, i64 1
+  %v627 = load i64, ptr %v627.p
+  %st397 = getelementptr i64, ptr %v500, i64 1
+  store i64 %v627, ptr %st397
+  %v628.p = getelementptr i64, ptr %v505, i64 2
+  %v628 = load i64, ptr %v628.p
+  %st398 = getelementptr i64, ptr %v500, i64 2
+  store i64 %v628, ptr %st398
+  %v629.p = getelementptr i64, ptr %v505, i64 3
+  %v629 = load i64, ptr %v629.p
+  %st399 = getelementptr i64, ptr %v500, i64 3
+  store i64 %v629, ptr %st399
+  %v630.p = getelementptr i64, ptr %v505, i64 4
+  %v630 = load i64, ptr %v630.p
+  %st400 = getelementptr i64, ptr %v500, i64 4
+  store i64 %v630, ptr %st400
+  %v631.p = getelementptr i64, ptr %v500, i64 0
+  %v631 = load i64, ptr %v631.p
+  %v632 = add i64 0, 0
+  %v633.c = icmp ne i64 %v631, %v632
+  %v633 = zext i1 %v633.c to i64
+  %c.b135 = icmp ne i64 %v633, 0
+  br i1 %c.b135, label %b135.t402, label %b135.e403
+b135.t402:
   br label %b137
-b135.e439:
+b135.e403:
   br label %b138
 b136:
   br label %b107
 b137:
-  %v656 = add i64 0, 1
-  %v657 = getelementptr i64, ptr %v518, i64 %v656
-  call void @"rt.err_relocate"(ptr %v657, i64 %v519)
+  %v634 = add i64 0, 1
+  %v635 = getelementptr i64, ptr %v500, i64 %v634
+  call void @"rt.err_relocate"(ptr %v635, i64 %v501)
   br label %b138
 b138:
-  %v994 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st439 = getelementptr i64, ptr %v994, i64 0
-  store i64 %v519, ptr %st439
+  %v968 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st403 = getelementptr i64, ptr %v968, i64 0
+  store i64 %v501, ptr %st403
   br label %b106
 b139:
-  %v675 = add i64 0, 1
-  %v676 = getelementptr i64, ptr %v518, i64 %v675
-  call void @"rt.err_relocate"(ptr %v676, i64 %v519)
+  %v652 = add i64 0, 1
+  %v653 = getelementptr i64, ptr %v500, i64 %v652
+  call void @"rt.err_relocate"(ptr %v653, i64 %v501)
   br label %b140
 b140:
-  %v995 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st440 = getelementptr i64, ptr %v995, i64 0
-  store i64 %v519, ptr %st440
+  %v969 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st404 = getelementptr i64, ptr %v969, i64 0
+  store i64 %v501, ptr %st404
   br label %b106
 b141:
-  %v846.p = getelementptr i64, ptr %v685, i64 0
-  %v846 = load i64, ptr %v846.p
-  %v847.p = getelementptr i64, ptr %v685, i64 1
-  %v847 = load i64, ptr %v847.p
-  %v848.p = getelementptr i64, ptr %v685, i64 2
-  %v848 = load i64, ptr %v848.p
-  %v849.p = getelementptr i64, ptr %v685, i64 3
-  %v849 = load i64, ptr %v849.p
-  %v850.p = getelementptr i64, ptr %v685, i64 4
-  %v850 = load i64, ptr %v850.p
-  %v851.p = getelementptr i64, ptr %v685, i64 5
-  %v851 = load i64, ptr %v851.p
-  call void @"main.show"(i64 %v846, i64 %v847, i64 %v848, i64 %v849, i64 %v850, i64 %v851)
-  %v852 = add i64 0, 5
-  %v853 = getelementptr i64, ptr %s2, i64 0
-  %v996 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v854.p = getelementptr i64, ptr %v996, i64 0
-  %v854 = load i64, ptr %v854.p
-  %v855 = add i64 0, 0
-  %v856 = getelementptr i64, ptr %s20, i64 0
-  %st441 = getelementptr i64, ptr %v856, i64 0
-  store i64 %v855, ptr %st441
-  %v997 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v857.p = getelementptr i64, ptr %v997, i64 0
-  %v857 = load i64, ptr %v857.p
-  %v858 = getelementptr i64, ptr %s21, i64 0
-  %v998 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v859.p = getelementptr i64, ptr %v998, i64 0
-  %v859 = load i64, ptr %v859.p
-  %v860 = add i64 0, 0
-  %v861 = getelementptr i64, ptr %s22, i64 0
-  %st442 = getelementptr i64, ptr %v861, i64 0
-  store i64 %v860, ptr %st442
-  %v999 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v862.p = getelementptr i64, ptr %v999, i64 0
-  %v862 = load i64, ptr %v862.p
+  %v817.p = getelementptr i64, ptr %v661, i64 0
+  %v817 = load i64, ptr %v817.p
+  %v818.p = getelementptr i64, ptr %v661, i64 1
+  %v818 = load i64, ptr %v818.p
+  %v819.p = getelementptr i64, ptr %v661, i64 2
+  %v819 = load i64, ptr %v819.p
+  %v820.p = getelementptr i64, ptr %v661, i64 3
+  %v820 = load i64, ptr %v820.p
+  %v821.p = getelementptr i64, ptr %v661, i64 4
+  %v821 = load i64, ptr %v821.p
+  call void @"main.show"(i64 %v817, i64 %v818, i64 %v819, i64 %v820, i64 %v821)
+  %v822 = add i64 0, 5
+  %v823 = getelementptr i64, ptr %s2, i64 0
+  %v970 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v824.p = getelementptr i64, ptr %v970, i64 0
+  %v824 = load i64, ptr %v824.p
+  %v825 = add i64 0, 0
+  %v826 = getelementptr i64, ptr %s19, i64 0
+  %st405 = getelementptr i64, ptr %v826, i64 0
+  store i64 %v825, ptr %st405
+  %v971 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v827.p = getelementptr i64, ptr %v971, i64 0
+  %v827 = load i64, ptr %v827.p
+  %v828 = getelementptr i64, ptr %s20, i64 0
+  %v972 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v829.p = getelementptr i64, ptr %v972, i64 0
+  %v829 = load i64, ptr %v829.p
+  %v830 = add i64 0, 0
+  %v831 = getelementptr i64, ptr %s21, i64 0
+  %st406 = getelementptr i64, ptr %v831, i64 0
+  store i64 %v830, ptr %st406
+  %v973 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v832.p = getelementptr i64, ptr %v973, i64 0
+  %v832 = load i64, ptr %v832.p
   br label %b179
 b142:
-  %v1000 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st443 = getelementptr i64, ptr %v1000, i64 0
-  store i64 %v687, ptr %st443
-  %v827 = getelementptr i64, ptr @"str.6", i64 0
-  %v828 = add i64 0, 12
-  %v829 = add i64 0, 0
-  %v830 = getelementptr i64, ptr %s6, i64 0
-  %v831 = ptrtoint ptr %v827 to i64
-  %st444 = getelementptr i64, ptr %v830, i64 0
-  store i64 %v831, ptr %st444
-  %st445 = getelementptr i64, ptr %v830, i64 1
-  store i64 %v828, ptr %st445
-  %st446 = getelementptr i64, ptr %v830, i64 2
-  store i64 %v829, ptr %st446
-  call void @"rt.print_str"(ptr %v830)
-  %v832 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v832)
-  %v833 = getelementptr i64, ptr %s18, i64 0
-  %v834 = add i64 0, 0
-  %st447 = getelementptr i64, ptr %v833, i64 0
-  store i64 %v834, ptr %st447
-  %v835.p = getelementptr i64, ptr %v833, i64 0
-  %v835 = load i64, ptr %v835.p
-  %st448 = getelementptr i64, ptr %v685, i64 0
-  store i64 %v835, ptr %st448
-  %v836.p = getelementptr i64, ptr %v833, i64 1
-  %v836 = load i64, ptr %v836.p
-  %st449 = getelementptr i64, ptr %v685, i64 1
-  store i64 %v836, ptr %st449
-  %v837.p = getelementptr i64, ptr %v833, i64 2
-  %v837 = load i64, ptr %v837.p
-  %st450 = getelementptr i64, ptr %v685, i64 2
-  store i64 %v837, ptr %st450
-  %v838.p = getelementptr i64, ptr %v833, i64 3
-  %v838 = load i64, ptr %v838.p
-  %st451 = getelementptr i64, ptr %v685, i64 3
-  store i64 %v838, ptr %st451
-  %v839.p = getelementptr i64, ptr %v833, i64 4
-  %v839 = load i64, ptr %v839.p
-  %st452 = getelementptr i64, ptr %v685, i64 4
-  store i64 %v839, ptr %st452
-  %v840.p = getelementptr i64, ptr %v833, i64 5
-  %v840 = load i64, ptr %v840.p
-  %st453 = getelementptr i64, ptr %v685, i64 5
-  store i64 %v840, ptr %st453
-  %v841.p = getelementptr i64, ptr %v685, i64 0
-  %v841 = load i64, ptr %v841.p
-  %v842 = add i64 0, 0
-  %v843.c = icmp ne i64 %v841, %v842
-  %v843 = zext i1 %v843.c to i64
-  %c.b142 = icmp ne i64 %v843, 0
-  br i1 %c.b142, label %b142.t455, label %b142.e456
-b142.t455:
-  br label %b174
-b142.e456:
-  br label %b175
-b143:
-  %v812.p = getelementptr i64, ptr %v692, i64 0
+  %v974 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st407 = getelementptr i64, ptr %v974, i64 0
+  store i64 %v663, ptr %st407
+  %v799 = getelementptr i64, ptr @"str.6", i64 0
+  %v800 = add i64 0, 12
+  %v801 = add i64 0, 0
+  %v802 = getelementptr i64, ptr %s5, i64 0
+  %v803 = ptrtoint ptr %v799 to i64
+  %st408 = getelementptr i64, ptr %v802, i64 0
+  store i64 %v803, ptr %st408
+  %st409 = getelementptr i64, ptr %v802, i64 1
+  store i64 %v800, ptr %st409
+  %st410 = getelementptr i64, ptr %v802, i64 2
+  store i64 %v801, ptr %st410
+  call void @"rt.print_str"(ptr %v802)
+  %v804 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v804)
+  %v805 = getelementptr i64, ptr %s17, i64 0
+  %v806 = add i64 0, 0
+  %st411 = getelementptr i64, ptr %v805, i64 0
+  store i64 %v806, ptr %st411
+  %v807.p = getelementptr i64, ptr %v805, i64 0
+  %v807 = load i64, ptr %v807.p
+  %st412 = getelementptr i64, ptr %v661, i64 0
+  store i64 %v807, ptr %st412
+  %v808.p = getelementptr i64, ptr %v805, i64 1
+  %v808 = load i64, ptr %v808.p
+  %st413 = getelementptr i64, ptr %v661, i64 1
+  store i64 %v808, ptr %st413
+  %v809.p = getelementptr i64, ptr %v805, i64 2
+  %v809 = load i64, ptr %v809.p
+  %st414 = getelementptr i64, ptr %v661, i64 2
+  store i64 %v809, ptr %st414
+  %v810.p = getelementptr i64, ptr %v805, i64 3
+  %v810 = load i64, ptr %v810.p
+  %st415 = getelementptr i64, ptr %v661, i64 3
+  store i64 %v810, ptr %st415
+  %v811.p = getelementptr i64, ptr %v805, i64 4
+  %v811 = load i64, ptr %v811.p
+  %st416 = getelementptr i64, ptr %v661, i64 4
+  store i64 %v811, ptr %st416
+  %v812.p = getelementptr i64, ptr %v661, i64 0
   %v812 = load i64, ptr %v812.p
   %v813 = add i64 0, 0
   %v814.c = icmp ne i64 %v812, %v813
   %v814 = zext i1 %v814.c to i64
-  %c.b143 = icmp ne i64 %v814, 0
-  br i1 %c.b143, label %b143.t457, label %b143.e458
-b143.t457:
+  %c.b142 = icmp ne i64 %v814, 0
+  br i1 %c.b142, label %b142.t418, label %b142.e419
+b142.t418:
+  br label %b174
+b142.e419:
+  br label %b175
+b143:
+  %v785.p = getelementptr i64, ptr %v668, i64 0
+  %v785 = load i64, ptr %v785.p
+  %v786 = add i64 0, 0
+  %v787.c = icmp ne i64 %v785, %v786
+  %v787 = zext i1 %v787.c to i64
+  %c.b143 = icmp ne i64 %v787, 0
+  br i1 %c.b143, label %b143.t420, label %b143.e421
+b143.t420:
   br label %b170
-b143.e458:
+b143.e421:
   br label %b171
 b144:
-  %v1001 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st458 = getelementptr i64, ptr %v1001, i64 0
-  store i64 %v696, ptr %st458
-  %v697.p = getelementptr i64, ptr %v695, i64 0
-  %v697 = load i64, ptr %v697.p
-  %v698.c = icmp slt i64 %v697, %v688
-  %v698 = zext i1 %v698.c to i64
-  %c.b144 = icmp ne i64 %v698, 0
-  br i1 %c.b144, label %b144.t460, label %b144.e461
-b144.t460:
+  %v975 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st421 = getelementptr i64, ptr %v975, i64 0
+  store i64 %v672, ptr %st421
+  %v673.p = getelementptr i64, ptr %v671, i64 0
+  %v673 = load i64, ptr %v673.p
+  %v674.c = icmp slt i64 %v673, %v664
+  %v674 = zext i1 %v674.c to i64
+  %c.b144 = icmp ne i64 %v674, 0
+  br i1 %c.b144, label %b144.t423, label %b144.e424
+b144.t423:
   br label %b145
-b144.e461:
+b144.e424:
   br label %b146
 b145:
   call void @"rt.region_enter"()
-  %v1002 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v699.p = getelementptr i64, ptr %v1002, i64 0
-  %v699 = load i64, ptr %v699.p
-  %v700.p = getelementptr i64, ptr %v695, i64 0
-  %v700 = load i64, ptr %v700.p
-  %v701.c = icmp eq i64 %v700, %v691
-  %v701 = zext i1 %v701.c to i64
-  %c.b145 = icmp ne i64 %v701, 0
-  br i1 %c.b145, label %b145.t462, label %b145.e463
-b145.t462:
+  %v976 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v675.p = getelementptr i64, ptr %v976, i64 0
+  %v675 = load i64, ptr %v675.p
+  %v676.p = getelementptr i64, ptr %v671, i64 0
+  %v676 = load i64, ptr %v676.p
+  %v677.c = icmp eq i64 %v676, %v667
+  %v677 = zext i1 %v677.c to i64
+  %c.b145 = icmp ne i64 %v677, 0
+  br i1 %c.b145, label %b145.t425, label %b145.e426
+b145.t425:
   br label %b147
-b145.e463:
+b145.e426:
   br label %b148
 b146:
-  %v1003 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st463 = getelementptr i64, ptr %v1003, i64 0
-  store i64 %v696, ptr %st463
-  %v793 = getelementptr i64, ptr %s18, i64 0
-  %v794 = add i64 0, 0
-  %st464 = getelementptr i64, ptr %v793, i64 0
-  store i64 %v794, ptr %st464
-  %v795.p = getelementptr i64, ptr %v793, i64 0
-  %v795 = load i64, ptr %v795.p
-  %st465 = getelementptr i64, ptr %v692, i64 0
-  store i64 %v795, ptr %st465
-  %v796.p = getelementptr i64, ptr %v793, i64 1
-  %v796 = load i64, ptr %v796.p
-  %st466 = getelementptr i64, ptr %v692, i64 1
-  store i64 %v796, ptr %st466
-  %v797.p = getelementptr i64, ptr %v793, i64 2
-  %v797 = load i64, ptr %v797.p
-  %st467 = getelementptr i64, ptr %v692, i64 2
-  store i64 %v797, ptr %st467
-  %v798.p = getelementptr i64, ptr %v793, i64 3
-  %v798 = load i64, ptr %v798.p
-  %st468 = getelementptr i64, ptr %v692, i64 3
-  store i64 %v798, ptr %st468
-  %v799.p = getelementptr i64, ptr %v793, i64 4
-  %v799 = load i64, ptr %v799.p
-  %st469 = getelementptr i64, ptr %v692, i64 4
-  store i64 %v799, ptr %st469
-  %v800.p = getelementptr i64, ptr %v793, i64 5
-  %v800 = load i64, ptr %v800.p
-  %st470 = getelementptr i64, ptr %v692, i64 5
-  store i64 %v800, ptr %st470
-  %v801 = getelementptr i64, ptr @"str.9", i64 0
-  %v802 = add i64 0, 12
-  %v803 = add i64 0, 0
-  %v804 = getelementptr i64, ptr %s6, i64 0
-  %v805 = ptrtoint ptr %v801 to i64
-  %st471 = getelementptr i64, ptr %v804, i64 0
-  store i64 %v805, ptr %st471
-  %st472 = getelementptr i64, ptr %v804, i64 1
-  store i64 %v802, ptr %st472
-  %st473 = getelementptr i64, ptr %v804, i64 2
-  store i64 %v803, ptr %st473
-  call void @"rt.print_str"(ptr %v804)
-  %v806 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v806)
-  %v807.p = getelementptr i64, ptr %v692, i64 0
-  %v807 = load i64, ptr %v807.p
-  %v808 = add i64 0, 0
-  %v809.c = icmp ne i64 %v807, %v808
-  %v809 = zext i1 %v809.c to i64
-  %c.b146 = icmp ne i64 %v809, 0
-  br i1 %c.b146, label %b146.t475, label %b146.e476
-b146.t475:
+  %v977 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st426 = getelementptr i64, ptr %v977, i64 0
+  store i64 %v672, ptr %st426
+  %v767 = getelementptr i64, ptr %s17, i64 0
+  %v768 = add i64 0, 0
+  %st427 = getelementptr i64, ptr %v767, i64 0
+  store i64 %v768, ptr %st427
+  %v769.p = getelementptr i64, ptr %v767, i64 0
+  %v769 = load i64, ptr %v769.p
+  %st428 = getelementptr i64, ptr %v668, i64 0
+  store i64 %v769, ptr %st428
+  %v770.p = getelementptr i64, ptr %v767, i64 1
+  %v770 = load i64, ptr %v770.p
+  %st429 = getelementptr i64, ptr %v668, i64 1
+  store i64 %v770, ptr %st429
+  %v771.p = getelementptr i64, ptr %v767, i64 2
+  %v771 = load i64, ptr %v771.p
+  %st430 = getelementptr i64, ptr %v668, i64 2
+  store i64 %v771, ptr %st430
+  %v772.p = getelementptr i64, ptr %v767, i64 3
+  %v772 = load i64, ptr %v772.p
+  %st431 = getelementptr i64, ptr %v668, i64 3
+  store i64 %v772, ptr %st431
+  %v773.p = getelementptr i64, ptr %v767, i64 4
+  %v773 = load i64, ptr %v773.p
+  %st432 = getelementptr i64, ptr %v668, i64 4
+  store i64 %v773, ptr %st432
+  %v774 = getelementptr i64, ptr @"str.9", i64 0
+  %v775 = add i64 0, 12
+  %v776 = add i64 0, 0
+  %v777 = getelementptr i64, ptr %s5, i64 0
+  %v778 = ptrtoint ptr %v774 to i64
+  %st433 = getelementptr i64, ptr %v777, i64 0
+  store i64 %v778, ptr %st433
+  %st434 = getelementptr i64, ptr %v777, i64 1
+  store i64 %v775, ptr %st434
+  %st435 = getelementptr i64, ptr %v777, i64 2
+  store i64 %v776, ptr %st435
+  call void @"rt.print_str"(ptr %v777)
+  %v779 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v779)
+  %v780.p = getelementptr i64, ptr %v668, i64 0
+  %v780 = load i64, ptr %v780.p
+  %v781 = add i64 0, 0
+  %v782.c = icmp ne i64 %v780, %v781
+  %v782 = zext i1 %v782.c to i64
+  %c.b146 = icmp ne i64 %v782, 0
+  br i1 %c.b146, label %b146.t437, label %b146.e438
+b146.t437:
   br label %b168
-b146.e476:
+b146.e438:
   br label %b169
 b147:
-  %v702.p = getelementptr i64, ptr %v695, i64 0
-  %v702 = load i64, ptr %v702.p
-  %v703 = getelementptr i64, ptr %s3, i64 0
-  %v704 = add i64 0, 0
-  %st476 = getelementptr i64, ptr %v703, i64 0
-  store i64 %v704, ptr %st476
-  %st477 = getelementptr i64, ptr %v703, i64 1
-  store i64 %v704, ptr %st477
-  %v705 = add i64 0, 1
-  %st478 = getelementptr i64, ptr %v703, i64 0
-  store i64 %v705, ptr %st478
-  %st479 = getelementptr i64, ptr %v703, i64 1
-  store i64 %v702, ptr %st479
-  %v706 = getelementptr i64, ptr %s4, i64 0
-  %v707.p = getelementptr i64, ptr %v703, i64 0
-  %v707 = load i64, ptr %v707.p
-  %st480 = getelementptr i64, ptr %v706, i64 0
-  store i64 %v707, ptr %st480
-  %v708.p = getelementptr i64, ptr %v703, i64 1
-  %v708 = load i64, ptr %v708.p
-  %st481 = getelementptr i64, ptr %v706, i64 1
-  store i64 %v708, ptr %st481
-  %v709 = add i64 0, 0
-  %st482 = getelementptr i64, ptr %v706, i64 2
-  store i64 %v709, ptr %st482
-  %st483 = getelementptr i64, ptr %v706, i64 3
-  store i64 %v709, ptr %st483
-  %st484 = getelementptr i64, ptr %v706, i64 4
-  store i64 %v709, ptr %st484
-  %v710 = getelementptr i64, ptr %s18, i64 0
-  %v711 = add i64 0, 1
-  %st485 = getelementptr i64, ptr %v710, i64 0
-  store i64 %v711, ptr %st485
-  %v712.p = getelementptr i64, ptr %v706, i64 0
-  %v712 = load i64, ptr %v712.p
-  %st486 = getelementptr i64, ptr %v710, i64 1
-  store i64 %v712, ptr %st486
-  %v713.p = getelementptr i64, ptr %v706, i64 1
-  %v713 = load i64, ptr %v713.p
-  %st487 = getelementptr i64, ptr %v710, i64 2
-  store i64 %v713, ptr %st487
-  %v714.p = getelementptr i64, ptr %v706, i64 2
-  %v714 = load i64, ptr %v714.p
-  %st488 = getelementptr i64, ptr %v710, i64 3
-  store i64 %v714, ptr %st488
-  %v715.p = getelementptr i64, ptr %v706, i64 3
-  %v715 = load i64, ptr %v715.p
-  %st489 = getelementptr i64, ptr %v710, i64 4
-  store i64 %v715, ptr %st489
-  %v716.p = getelementptr i64, ptr %v706, i64 4
-  %v716 = load i64, ptr %v716.p
-  %st490 = getelementptr i64, ptr %v710, i64 5
-  store i64 %v716, ptr %st490
-  %v717.p = getelementptr i64, ptr %v710, i64 0
-  %v717 = load i64, ptr %v717.p
-  %st491 = getelementptr i64, ptr %v692, i64 0
-  store i64 %v717, ptr %st491
-  %v718.p = getelementptr i64, ptr %v710, i64 1
-  %v718 = load i64, ptr %v718.p
-  %st492 = getelementptr i64, ptr %v692, i64 1
-  store i64 %v718, ptr %st492
-  %v719.p = getelementptr i64, ptr %v710, i64 2
-  %v719 = load i64, ptr %v719.p
-  %st493 = getelementptr i64, ptr %v692, i64 2
-  store i64 %v719, ptr %st493
-  %v720.p = getelementptr i64, ptr %v710, i64 3
-  %v720 = load i64, ptr %v720.p
-  %st494 = getelementptr i64, ptr %v692, i64 3
-  store i64 %v720, ptr %st494
-  %v721.p = getelementptr i64, ptr %v710, i64 4
-  %v721 = load i64, ptr %v721.p
-  %st495 = getelementptr i64, ptr %v692, i64 4
-  store i64 %v721, ptr %st495
-  %v722.p = getelementptr i64, ptr %v710, i64 5
-  %v722 = load i64, ptr %v722.p
-  %st496 = getelementptr i64, ptr %v692, i64 5
-  store i64 %v722, ptr %st496
-  %v723 = getelementptr i64, ptr @"str.9", i64 0
-  %v724 = add i64 0, 12
-  %v725 = add i64 0, 0
-  %v726 = getelementptr i64, ptr %s6, i64 0
-  %v727 = ptrtoint ptr %v723 to i64
-  %st497 = getelementptr i64, ptr %v726, i64 0
-  store i64 %v727, ptr %st497
-  %st498 = getelementptr i64, ptr %v726, i64 1
-  store i64 %v724, ptr %st498
-  %st499 = getelementptr i64, ptr %v726, i64 2
-  store i64 %v725, ptr %st499
-  call void @"rt.print_str"(ptr %v726)
-  %v728 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v728)
-  %v729.p = getelementptr i64, ptr %v692, i64 0
-  %v729 = load i64, ptr %v729.p
-  %v730 = add i64 0, 0
-  %v731.c = icmp ne i64 %v729, %v730
-  %v731 = zext i1 %v731.c to i64
-  %c.b147 = icmp ne i64 %v731, 0
-  br i1 %c.b147, label %b147.t501, label %b147.e502
-b147.t501:
+  %v678.p = getelementptr i64, ptr %v671, i64 0
+  %v678 = load i64, ptr %v678.p
+  %v679 = add i64 0, 0
+  %v680 = add i64 0, 1
+  %v681 = getelementptr i64, ptr %s3, i64 0
+  %st438 = getelementptr i64, ptr %v681, i64 0
+  store i64 %v680, ptr %st438
+  %v978 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v682.p = getelementptr i64, ptr %v978, i64 0
+  %v682 = load i64, ptr %v682.p
+  %v683 = add i64 0, 2
+  %v684 = call ptr @"rt.region_alloc"(i64 %v682, i64 %v683)
+  %v685 = ptrtoint ptr %v684 to i64
+  %st439 = getelementptr i64, ptr %v681, i64 1
+  store i64 %v685, ptr %st439
+  %v686 = add i64 0, 1
+  %st440 = getelementptr i64, ptr %v681, i64 2
+  store i64 %v686, ptr %st440
+  %st441 = getelementptr i64, ptr %v681, i64 3
+  store i64 %v682, ptr %st441
+  %st442 = getelementptr i64, ptr %v684, i64 1
+  store i64 %v679, ptr %st442
+  %v687 = add i64 0, 1
+  %st443 = getelementptr i64, ptr %v684, i64 0
+  store i64 %v687, ptr %st443
+  %st444 = getelementptr i64, ptr %v684, i64 1
+  store i64 %v678, ptr %st444
+  %v688 = getelementptr i64, ptr %s17, i64 0
+  %v689 = add i64 0, 1
+  %st445 = getelementptr i64, ptr %v688, i64 0
+  store i64 %v689, ptr %st445
+  %v690.p = getelementptr i64, ptr %v681, i64 0
+  %v690 = load i64, ptr %v690.p
+  %st446 = getelementptr i64, ptr %v688, i64 1
+  store i64 %v690, ptr %st446
+  %v691.p = getelementptr i64, ptr %v681, i64 1
+  %v691 = load i64, ptr %v691.p
+  %st447 = getelementptr i64, ptr %v688, i64 2
+  store i64 %v691, ptr %st447
+  %v692.p = getelementptr i64, ptr %v681, i64 2
+  %v692 = load i64, ptr %v692.p
+  %st448 = getelementptr i64, ptr %v688, i64 3
+  store i64 %v692, ptr %st448
+  %v693.p = getelementptr i64, ptr %v681, i64 3
+  %v693 = load i64, ptr %v693.p
+  %st449 = getelementptr i64, ptr %v688, i64 4
+  store i64 %v693, ptr %st449
+  %v694.p = getelementptr i64, ptr %v688, i64 0
+  %v694 = load i64, ptr %v694.p
+  %st450 = getelementptr i64, ptr %v668, i64 0
+  store i64 %v694, ptr %st450
+  %v695.p = getelementptr i64, ptr %v688, i64 1
+  %v695 = load i64, ptr %v695.p
+  %st451 = getelementptr i64, ptr %v668, i64 1
+  store i64 %v695, ptr %st451
+  %v696.p = getelementptr i64, ptr %v688, i64 2
+  %v696 = load i64, ptr %v696.p
+  %st452 = getelementptr i64, ptr %v668, i64 2
+  store i64 %v696, ptr %st452
+  %v697.p = getelementptr i64, ptr %v688, i64 3
+  %v697 = load i64, ptr %v697.p
+  %st453 = getelementptr i64, ptr %v668, i64 3
+  store i64 %v697, ptr %st453
+  %v698.p = getelementptr i64, ptr %v688, i64 4
+  %v698 = load i64, ptr %v698.p
+  %st454 = getelementptr i64, ptr %v668, i64 4
+  store i64 %v698, ptr %st454
+  %v699 = getelementptr i64, ptr @"str.9", i64 0
+  %v700 = add i64 0, 12
+  %v701 = add i64 0, 0
+  %v702 = getelementptr i64, ptr %s5, i64 0
+  %v703 = ptrtoint ptr %v699 to i64
+  %st455 = getelementptr i64, ptr %v702, i64 0
+  store i64 %v703, ptr %st455
+  %st456 = getelementptr i64, ptr %v702, i64 1
+  store i64 %v700, ptr %st456
+  %st457 = getelementptr i64, ptr %v702, i64 2
+  store i64 %v701, ptr %st457
+  call void @"rt.print_str"(ptr %v702)
+  %v704 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v704)
+  %v705.p = getelementptr i64, ptr %v668, i64 0
+  %v705 = load i64, ptr %v705.p
+  %v706 = add i64 0, 0
+  %v707.c = icmp ne i64 %v705, %v706
+  %v707 = zext i1 %v707.c to i64
+  %c.b147 = icmp ne i64 %v707, 0
+  br i1 %c.b147, label %b147.t459, label %b147.e460
+b147.t459:
   br label %b149
-b147.e502:
+b147.e460:
   br label %b150
 b148:
   br label %b151
 b149:
-  %v732 = add i64 0, 1
-  %v733 = getelementptr i64, ptr %v692, i64 %v732
-  call void @"rt.err_relocate"(ptr %v733, i64 %v693)
+  %v708 = add i64 0, 1
+  %v709 = getelementptr i64, ptr %v668, i64 %v708
+  call void @"rt.err_relocate"(ptr %v709, i64 %v669)
   br label %b150
 b150:
-  %v1004 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st502 = getelementptr i64, ptr %v1004, i64 0
-  store i64 %v693, ptr %st502
+  %v979 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st460 = getelementptr i64, ptr %v979, i64 0
+  store i64 %v669, ptr %st460
   br label %b143
 b151:
-  %v734.p = getelementptr i64, ptr %v695, i64 0
-  %v734 = load i64, ptr %v734.p
-  %v1005 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v735.p = getelementptr i64, ptr %v1005, i64 0
-  %v735 = load i64, ptr %v735.p
-  %v736 = add i64 0, 1
-  %v737.c = icmp eq i64 %v734, %v736
-  %v737 = zext i1 %v737.c to i64
-  %c.b151 = icmp ne i64 %v737, 0
-  br i1 %c.b151, label %b151.t504, label %b151.e505
-b151.t504:
+  %v710.p = getelementptr i64, ptr %v671, i64 0
+  %v710 = load i64, ptr %v710.p
+  %v980 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v711.p = getelementptr i64, ptr %v980, i64 0
+  %v711 = load i64, ptr %v711.p
+  %v712 = add i64 0, 1
+  %v713.c = icmp eq i64 %v710, %v712
+  %v713 = zext i1 %v713.c to i64
+  %c.b151 = icmp ne i64 %v713, 0
+  br i1 %c.b151, label %b151.t462, label %b151.e463
+b151.t462:
   br label %b153
-b151.e505:
+b151.e463:
   br label %b154
 b152:
-  %v1006 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st505 = getelementptr i64, ptr %v1006, i64 0
-  store i64 %v735, ptr %st505
-  %v790 = add i64 0, 1
-  %v791.p = getelementptr i64, ptr %v695, i64 0
-  %v791 = load i64, ptr %v791.p
-  %v792 = add i64 %v791, %v790
-  %st506 = getelementptr i64, ptr %v695, i64 0
-  store i64 %v792, ptr %st506
+  %v981 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st463 = getelementptr i64, ptr %v981, i64 0
+  store i64 %v711, ptr %st463
+  %v764 = add i64 0, 1
+  %v765.p = getelementptr i64, ptr %v671, i64 0
+  %v765 = load i64, ptr %v765.p
+  %v766 = add i64 %v765, %v764
+  %st464 = getelementptr i64, ptr %v671, i64 0
+  store i64 %v766, ptr %st464
   br label %b144
 b153:
   br label %b152
 b154:
   br label %b155
 b155:
-  %v738.c = icmp eq i64 %v734, %v683
-  %v738 = zext i1 %v738.c to i64
-  %c.b155 = icmp ne i64 %v738, 0
-  br i1 %c.b155, label %b155.t508, label %b155.e509
-b155.t508:
+  %v714.c = icmp eq i64 %v710, %v659
+  %v714 = zext i1 %v714.c to i64
+  %c.b155 = icmp ne i64 %v714, 0
+  br i1 %c.b155, label %b155.t466, label %b155.e467
+b155.t466:
   br label %b156
-b155.e509:
+b155.e467:
   br label %b157
 b156:
-  %v739 = getelementptr i64, ptr @"str.9", i64 0
-  %v740 = add i64 0, 12
-  %v741 = add i64 0, 0
-  %v742 = getelementptr i64, ptr %s6, i64 0
-  %v743 = ptrtoint ptr %v739 to i64
-  %st509 = getelementptr i64, ptr %v742, i64 0
-  store i64 %v743, ptr %st509
-  %st510 = getelementptr i64, ptr %v742, i64 1
-  store i64 %v740, ptr %st510
-  %st511 = getelementptr i64, ptr %v742, i64 2
-  store i64 %v741, ptr %st511
-  call void @"rt.print_str"(ptr %v742)
-  %v744 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v744)
+  %v715 = getelementptr i64, ptr @"str.9", i64 0
+  %v716 = add i64 0, 12
+  %v717 = add i64 0, 0
+  %v718 = getelementptr i64, ptr %s5, i64 0
+  %v719 = ptrtoint ptr %v715 to i64
+  %st467 = getelementptr i64, ptr %v718, i64 0
+  store i64 %v719, ptr %st467
+  %st468 = getelementptr i64, ptr %v718, i64 1
+  store i64 %v716, ptr %st468
+  %st469 = getelementptr i64, ptr %v718, i64 2
+  store i64 %v717, ptr %st469
+  call void @"rt.print_str"(ptr %v718)
+  %v720 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v720)
   br label %b142
 b157:
   br label %b158
 b158:
-  %v745.c = icmp eq i64 %v734, %v684
-  %v745 = zext i1 %v745.c to i64
-  %c.b158 = icmp ne i64 %v745, 0
-  br i1 %c.b158, label %b158.t513, label %b158.e514
-b158.t513:
+  %v721.c = icmp eq i64 %v710, %v660
+  %v721 = zext i1 %v721.c to i64
+  %c.b158 = icmp ne i64 %v721, 0
+  br i1 %c.b158, label %b158.t471, label %b158.e472
+b158.t471:
   br label %b159
-b158.e514:
+b158.e472:
   br label %b160
 b159:
-  %v746 = getelementptr i64, ptr %s18, i64 0
-  %v747 = add i64 0, 0
-  %st514 = getelementptr i64, ptr %v746, i64 0
-  store i64 %v747, ptr %st514
-  %v748.p = getelementptr i64, ptr %v746, i64 0
-  %v748 = load i64, ptr %v748.p
-  %st515 = getelementptr i64, ptr %v685, i64 0
-  store i64 %v748, ptr %st515
-  %v749.p = getelementptr i64, ptr %v746, i64 1
-  %v749 = load i64, ptr %v749.p
-  %st516 = getelementptr i64, ptr %v685, i64 1
-  store i64 %v749, ptr %st516
-  %v750.p = getelementptr i64, ptr %v746, i64 2
-  %v750 = load i64, ptr %v750.p
-  %st517 = getelementptr i64, ptr %v685, i64 2
-  store i64 %v750, ptr %st517
-  %v751.p = getelementptr i64, ptr %v746, i64 3
-  %v751 = load i64, ptr %v751.p
-  %st518 = getelementptr i64, ptr %v685, i64 3
-  store i64 %v751, ptr %st518
-  %v752.p = getelementptr i64, ptr %v746, i64 4
-  %v752 = load i64, ptr %v752.p
-  %st519 = getelementptr i64, ptr %v685, i64 4
-  store i64 %v752, ptr %st519
-  %v753.p = getelementptr i64, ptr %v746, i64 5
-  %v753 = load i64, ptr %v753.p
-  %st520 = getelementptr i64, ptr %v685, i64 5
-  store i64 %v753, ptr %st520
-  %v754 = getelementptr i64, ptr @"str.9", i64 0
-  %v755 = add i64 0, 12
-  %v756 = add i64 0, 0
-  %v757 = getelementptr i64, ptr %s6, i64 0
-  %v758 = ptrtoint ptr %v754 to i64
-  %st521 = getelementptr i64, ptr %v757, i64 0
-  store i64 %v758, ptr %st521
-  %st522 = getelementptr i64, ptr %v757, i64 1
-  store i64 %v755, ptr %st522
-  %st523 = getelementptr i64, ptr %v757, i64 2
-  store i64 %v756, ptr %st523
-  call void @"rt.print_str"(ptr %v757)
-  %v759 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v759)
-  %v760.p = getelementptr i64, ptr %v685, i64 0
-  %v760 = load i64, ptr %v760.p
-  %v761 = add i64 0, 0
-  %v762.c = icmp ne i64 %v760, %v761
-  %v762 = zext i1 %v762.c to i64
-  %c.b159 = icmp ne i64 %v762, 0
-  br i1 %c.b159, label %b159.t525, label %b159.e526
-b159.t525:
+  %v722 = getelementptr i64, ptr %s17, i64 0
+  %v723 = add i64 0, 0
+  %st472 = getelementptr i64, ptr %v722, i64 0
+  store i64 %v723, ptr %st472
+  %v724.p = getelementptr i64, ptr %v722, i64 0
+  %v724 = load i64, ptr %v724.p
+  %st473 = getelementptr i64, ptr %v661, i64 0
+  store i64 %v724, ptr %st473
+  %v725.p = getelementptr i64, ptr %v722, i64 1
+  %v725 = load i64, ptr %v725.p
+  %st474 = getelementptr i64, ptr %v661, i64 1
+  store i64 %v725, ptr %st474
+  %v726.p = getelementptr i64, ptr %v722, i64 2
+  %v726 = load i64, ptr %v726.p
+  %st475 = getelementptr i64, ptr %v661, i64 2
+  store i64 %v726, ptr %st475
+  %v727.p = getelementptr i64, ptr %v722, i64 3
+  %v727 = load i64, ptr %v727.p
+  %st476 = getelementptr i64, ptr %v661, i64 3
+  store i64 %v727, ptr %st476
+  %v728.p = getelementptr i64, ptr %v722, i64 4
+  %v728 = load i64, ptr %v728.p
+  %st477 = getelementptr i64, ptr %v661, i64 4
+  store i64 %v728, ptr %st477
+  %v729 = getelementptr i64, ptr @"str.9", i64 0
+  %v730 = add i64 0, 12
+  %v731 = add i64 0, 0
+  %v732 = getelementptr i64, ptr %s5, i64 0
+  %v733 = ptrtoint ptr %v729 to i64
+  %st478 = getelementptr i64, ptr %v732, i64 0
+  store i64 %v733, ptr %st478
+  %st479 = getelementptr i64, ptr %v732, i64 1
+  store i64 %v730, ptr %st479
+  %st480 = getelementptr i64, ptr %v732, i64 2
+  store i64 %v731, ptr %st480
+  call void @"rt.print_str"(ptr %v732)
+  %v734 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v734)
+  %v735.p = getelementptr i64, ptr %v661, i64 0
+  %v735 = load i64, ptr %v735.p
+  %v736 = add i64 0, 0
+  %v737.c = icmp ne i64 %v735, %v736
+  %v737 = zext i1 %v737.c to i64
+  %c.b159 = icmp ne i64 %v737, 0
+  br i1 %c.b159, label %b159.t482, label %b159.e483
+b159.t482:
   br label %b161
-b159.e526:
+b159.e483:
   br label %b162
 b160:
   br label %b163
 b161:
-  %v763 = add i64 0, 1
-  %v764 = getelementptr i64, ptr %v685, i64 %v763
-  call void @"rt.err_relocate"(ptr %v764, i64 %v686)
+  %v738 = add i64 0, 1
+  %v739 = getelementptr i64, ptr %v661, i64 %v738
+  call void @"rt.err_relocate"(ptr %v739, i64 %v662)
   br label %b162
 b162:
-  %v1007 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st526 = getelementptr i64, ptr %v1007, i64 0
-  store i64 %v686, ptr %st526
+  %v982 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st483 = getelementptr i64, ptr %v982, i64 0
+  store i64 %v662, ptr %st483
   br label %b141
 b163:
-  %v765 = add i64 0, 10
-  %v766 = mul i64 %v734, %v765
-  %v767 = getelementptr i64, ptr %s19, i64 0
-  %v768 = add i64 0, 99
-  call void @"main.sendv"(ptr %v767, i64 %v766, i64 %v768)
-  %v769.p = getelementptr i64, ptr %v767, i64 0
-  %v769 = load i64, ptr %v769.p
-  %v770 = add i64 0, 0
-  %v771.c = icmp ne i64 %v769, %v770
-  %v771 = zext i1 %v771.c to i64
-  %c.b163 = icmp ne i64 %v771, 0
-  br i1 %c.b163, label %b163.t528, label %b163.e529
-b163.t528:
+  %v740 = add i64 0, 10
+  %v741 = mul i64 %v710, %v740
+  %v742 = getelementptr i64, ptr %s18, i64 0
+  %v743 = add i64 0, 99
+  call void @"main.sendv"(ptr %v742, i64 %v741, i64 %v743)
+  %v744.p = getelementptr i64, ptr %v742, i64 0
+  %v744 = load i64, ptr %v744.p
+  %v745 = add i64 0, 0
+  %v746.c = icmp ne i64 %v744, %v745
+  %v746 = zext i1 %v746.c to i64
+  %c.b163 = icmp ne i64 %v746, 0
+  br i1 %c.b163, label %b163.t485, label %b163.e486
+b163.t485:
   br label %b164
-b163.e529:
+b163.e486:
   br label %b165
 b164:
-  %v772 = add i64 0, 0
-  %v773.p = getelementptr i64, ptr %v767, i64 0
-  %v773 = load i64, ptr %v773.p
-  %st529 = getelementptr i64, ptr %v685, i64 0
-  store i64 %v773, ptr %st529
-  %v774.p = getelementptr i64, ptr %v767, i64 1
-  %v774 = load i64, ptr %v774.p
-  %st530 = getelementptr i64, ptr %v685, i64 1
-  store i64 %v774, ptr %st530
-  %v775.p = getelementptr i64, ptr %v767, i64 2
-  %v775 = load i64, ptr %v775.p
-  %st531 = getelementptr i64, ptr %v685, i64 2
-  store i64 %v775, ptr %st531
-  %v776.p = getelementptr i64, ptr %v767, i64 3
-  %v776 = load i64, ptr %v776.p
-  %st532 = getelementptr i64, ptr %v685, i64 3
-  store i64 %v776, ptr %st532
-  %v777.p = getelementptr i64, ptr %v767, i64 4
-  %v777 = load i64, ptr %v777.p
-  %st533 = getelementptr i64, ptr %v685, i64 4
-  store i64 %v777, ptr %st533
-  %v778.p = getelementptr i64, ptr %v767, i64 5
-  %v778 = load i64, ptr %v778.p
-  %st534 = getelementptr i64, ptr %v685, i64 5
-  store i64 %v778, ptr %st534
-  %v779 = getelementptr i64, ptr @"str.9", i64 0
-  %v780 = add i64 0, 12
-  %v781 = add i64 0, 0
-  %v782 = getelementptr i64, ptr %s6, i64 0
-  %v783 = ptrtoint ptr %v779 to i64
-  %st535 = getelementptr i64, ptr %v782, i64 0
-  store i64 %v783, ptr %st535
-  %st536 = getelementptr i64, ptr %v782, i64 1
-  store i64 %v780, ptr %st536
-  %st537 = getelementptr i64, ptr %v782, i64 2
-  store i64 %v781, ptr %st537
-  call void @"rt.print_str"(ptr %v782)
-  %v784 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v784)
-  %v785.p = getelementptr i64, ptr %v685, i64 0
-  %v785 = load i64, ptr %v785.p
-  %v786 = add i64 0, 0
-  %v787.c = icmp ne i64 %v785, %v786
-  %v787 = zext i1 %v787.c to i64
-  %c.b164 = icmp ne i64 %v787, 0
-  br i1 %c.b164, label %b164.t539, label %b164.e540
-b164.t539:
+  %v747 = add i64 0, 0
+  %v748.p = getelementptr i64, ptr %v742, i64 0
+  %v748 = load i64, ptr %v748.p
+  %st486 = getelementptr i64, ptr %v661, i64 0
+  store i64 %v748, ptr %st486
+  %v749.p = getelementptr i64, ptr %v742, i64 1
+  %v749 = load i64, ptr %v749.p
+  %st487 = getelementptr i64, ptr %v661, i64 1
+  store i64 %v749, ptr %st487
+  %v750.p = getelementptr i64, ptr %v742, i64 2
+  %v750 = load i64, ptr %v750.p
+  %st488 = getelementptr i64, ptr %v661, i64 2
+  store i64 %v750, ptr %st488
+  %v751.p = getelementptr i64, ptr %v742, i64 3
+  %v751 = load i64, ptr %v751.p
+  %st489 = getelementptr i64, ptr %v661, i64 3
+  store i64 %v751, ptr %st489
+  %v752.p = getelementptr i64, ptr %v742, i64 4
+  %v752 = load i64, ptr %v752.p
+  %st490 = getelementptr i64, ptr %v661, i64 4
+  store i64 %v752, ptr %st490
+  %v753 = getelementptr i64, ptr @"str.9", i64 0
+  %v754 = add i64 0, 12
+  %v755 = add i64 0, 0
+  %v756 = getelementptr i64, ptr %s5, i64 0
+  %v757 = ptrtoint ptr %v753 to i64
+  %st491 = getelementptr i64, ptr %v756, i64 0
+  store i64 %v757, ptr %st491
+  %st492 = getelementptr i64, ptr %v756, i64 1
+  store i64 %v754, ptr %st492
+  %st493 = getelementptr i64, ptr %v756, i64 2
+  store i64 %v755, ptr %st493
+  call void @"rt.print_str"(ptr %v756)
+  %v758 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v758)
+  %v759.p = getelementptr i64, ptr %v661, i64 0
+  %v759 = load i64, ptr %v759.p
+  %v760 = add i64 0, 0
+  %v761.c = icmp ne i64 %v759, %v760
+  %v761 = zext i1 %v761.c to i64
+  %c.b164 = icmp ne i64 %v761, 0
+  br i1 %c.b164, label %b164.t495, label %b164.e496
+b164.t495:
   br label %b166
-b164.e540:
+b164.e496:
   br label %b167
 b165:
   br label %b152
 b166:
-  %v788 = add i64 0, 1
-  %v789 = getelementptr i64, ptr %v685, i64 %v788
-  call void @"rt.err_relocate"(ptr %v789, i64 %v686)
+  %v762 = add i64 0, 1
+  %v763 = getelementptr i64, ptr %v661, i64 %v762
+  call void @"rt.err_relocate"(ptr %v763, i64 %v662)
   br label %b167
 b167:
-  %v1008 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st540 = getelementptr i64, ptr %v1008, i64 0
-  store i64 %v686, ptr %st540
+  %v983 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st496 = getelementptr i64, ptr %v983, i64 0
+  store i64 %v662, ptr %st496
   br label %b141
 b168:
-  %v810 = add i64 0, 1
-  %v811 = getelementptr i64, ptr %v692, i64 %v810
-  call void @"rt.err_relocate"(ptr %v811, i64 %v693)
+  %v783 = add i64 0, 1
+  %v784 = getelementptr i64, ptr %v668, i64 %v783
+  call void @"rt.err_relocate"(ptr %v784, i64 %v669)
   br label %b169
 b169:
-  %v1009 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st541 = getelementptr i64, ptr %v1009, i64 0
-  store i64 %v693, ptr %st541
+  %v984 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st497 = getelementptr i64, ptr %v984, i64 0
+  store i64 %v669, ptr %st497
   br label %b143
 b170:
-  %v815 = add i64 0, 0
-  %v816.p = getelementptr i64, ptr %v692, i64 0
-  %v816 = load i64, ptr %v816.p
-  %st542 = getelementptr i64, ptr %v685, i64 0
-  store i64 %v816, ptr %st542
-  %v817.p = getelementptr i64, ptr %v692, i64 1
-  %v817 = load i64, ptr %v817.p
-  %st543 = getelementptr i64, ptr %v685, i64 1
-  store i64 %v817, ptr %st543
-  %v818.p = getelementptr i64, ptr %v692, i64 2
-  %v818 = load i64, ptr %v818.p
-  %st544 = getelementptr i64, ptr %v685, i64 2
-  store i64 %v818, ptr %st544
-  %v819.p = getelementptr i64, ptr %v692, i64 3
-  %v819 = load i64, ptr %v819.p
-  %st545 = getelementptr i64, ptr %v685, i64 3
-  store i64 %v819, ptr %st545
-  %v820.p = getelementptr i64, ptr %v692, i64 4
-  %v820 = load i64, ptr %v820.p
-  %st546 = getelementptr i64, ptr %v685, i64 4
-  store i64 %v820, ptr %st546
-  %v821.p = getelementptr i64, ptr %v692, i64 5
-  %v821 = load i64, ptr %v821.p
-  %st547 = getelementptr i64, ptr %v685, i64 5
-  store i64 %v821, ptr %st547
-  %v822.p = getelementptr i64, ptr %v685, i64 0
-  %v822 = load i64, ptr %v822.p
-  %v823 = add i64 0, 0
-  %v824.c = icmp ne i64 %v822, %v823
-  %v824 = zext i1 %v824.c to i64
-  %c.b170 = icmp ne i64 %v824, 0
-  br i1 %c.b170, label %b170.t549, label %b170.e550
-b170.t549:
+  %v788 = add i64 0, 0
+  %v789.p = getelementptr i64, ptr %v668, i64 0
+  %v789 = load i64, ptr %v789.p
+  %st498 = getelementptr i64, ptr %v661, i64 0
+  store i64 %v789, ptr %st498
+  %v790.p = getelementptr i64, ptr %v668, i64 1
+  %v790 = load i64, ptr %v790.p
+  %st499 = getelementptr i64, ptr %v661, i64 1
+  store i64 %v790, ptr %st499
+  %v791.p = getelementptr i64, ptr %v668, i64 2
+  %v791 = load i64, ptr %v791.p
+  %st500 = getelementptr i64, ptr %v661, i64 2
+  store i64 %v791, ptr %st500
+  %v792.p = getelementptr i64, ptr %v668, i64 3
+  %v792 = load i64, ptr %v792.p
+  %st501 = getelementptr i64, ptr %v661, i64 3
+  store i64 %v792, ptr %st501
+  %v793.p = getelementptr i64, ptr %v668, i64 4
+  %v793 = load i64, ptr %v793.p
+  %st502 = getelementptr i64, ptr %v661, i64 4
+  store i64 %v793, ptr %st502
+  %v794.p = getelementptr i64, ptr %v661, i64 0
+  %v794 = load i64, ptr %v794.p
+  %v795 = add i64 0, 0
+  %v796.c = icmp ne i64 %v794, %v795
+  %v796 = zext i1 %v796.c to i64
+  %c.b170 = icmp ne i64 %v796, 0
+  br i1 %c.b170, label %b170.t504, label %b170.e505
+b170.t504:
   br label %b172
-b170.e550:
+b170.e505:
   br label %b173
 b171:
   br label %b142
 b172:
-  %v825 = add i64 0, 1
-  %v826 = getelementptr i64, ptr %v685, i64 %v825
-  call void @"rt.err_relocate"(ptr %v826, i64 %v686)
+  %v797 = add i64 0, 1
+  %v798 = getelementptr i64, ptr %v661, i64 %v797
+  call void @"rt.err_relocate"(ptr %v798, i64 %v662)
   br label %b173
 b173:
-  %v1010 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st550 = getelementptr i64, ptr %v1010, i64 0
-  store i64 %v686, ptr %st550
+  %v985 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st505 = getelementptr i64, ptr %v985, i64 0
+  store i64 %v662, ptr %st505
   br label %b141
 b174:
-  %v844 = add i64 0, 1
-  %v845 = getelementptr i64, ptr %v685, i64 %v844
-  call void @"rt.err_relocate"(ptr %v845, i64 %v686)
+  %v815 = add i64 0, 1
+  %v816 = getelementptr i64, ptr %v661, i64 %v815
+  call void @"rt.err_relocate"(ptr %v816, i64 %v662)
   br label %b175
 b175:
-  %v1011 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st551 = getelementptr i64, ptr %v1011, i64 0
-  store i64 %v686, ptr %st551
+  %v986 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st506 = getelementptr i64, ptr %v986, i64 0
+  store i64 %v662, ptr %st506
   br label %b141
 b176:
-  %v874.p = getelementptr i64, ptr %v853, i64 0
-  %v874 = load i64, ptr %v874.p
-  call void @"rt.print_int"(i64 %v874)
-  %v875 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v875)
-  %v876 = getelementptr i64, ptr %s20, i64 0
-  %v1012 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v877.p = getelementptr i64, ptr %v1012, i64 0
-  %v877 = load i64, ptr %v877.p
-  %v878 = add i64 0, 0
-  %v879 = getelementptr i64, ptr %s22, i64 0
-  %st552 = getelementptr i64, ptr %v879, i64 0
-  store i64 %v878, ptr %st552
-  %v1013 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v880.p = getelementptr i64, ptr %v1013, i64 0
-  %v880 = load i64, ptr %v880.p
-  %v881 = getelementptr i64, ptr %s21, i64 0
-  %v1014 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v882.p = getelementptr i64, ptr %v1014, i64 0
-  %v882 = load i64, ptr %v882.p
-  %v883 = getelementptr i64, ptr @"str.1", i64 0
-  %v884 = add i64 0, 2
-  %v885 = add i64 0, 0
-  %v886 = getelementptr i64, ptr %s6, i64 0
-  %v887 = ptrtoint ptr %v883 to i64
-  %st553 = getelementptr i64, ptr %v886, i64 0
-  store i64 %v887, ptr %st553
-  %st554 = getelementptr i64, ptr %v886, i64 1
-  store i64 %v884, ptr %st554
-  %st555 = getelementptr i64, ptr %v886, i64 2
-  store i64 %v885, ptr %st555
-  %v888 = getelementptr i64, ptr %s23, i64 0
-  %v889.p = getelementptr i64, ptr %v886, i64 0
-  %v889 = load i64, ptr %v889.p
-  %st556 = getelementptr i64, ptr %v888, i64 0
-  store i64 %v889, ptr %st556
-  %v890.p = getelementptr i64, ptr %v886, i64 1
-  %v890 = load i64, ptr %v890.p
-  %st557 = getelementptr i64, ptr %v888, i64 1
-  store i64 %v890, ptr %st557
-  %v891.p = getelementptr i64, ptr %v886, i64 2
-  %v891 = load i64, ptr %v891.p
-  %st558 = getelementptr i64, ptr %v888, i64 2
-  store i64 %v891, ptr %st558
-  %v1015 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v892.p = getelementptr i64, ptr %v1015, i64 0
-  %v892 = load i64, ptr %v892.p
-  %v893 = getelementptr i64, ptr %s24, i64 0
-  %v894.p = getelementptr i64, ptr %v888, i64 0
-  %v894 = load i64, ptr %v894.p
-  %st559 = getelementptr i64, ptr %v893, i64 0
-  store i64 %v894, ptr %st559
-  %v895.p = getelementptr i64, ptr %v888, i64 1
-  %v895 = load i64, ptr %v895.p
-  %st560 = getelementptr i64, ptr %v893, i64 1
-  store i64 %v895, ptr %st560
-  %v896.p = getelementptr i64, ptr %v888, i64 2
-  %v896 = load i64, ptr %v896.p
-  %st561 = getelementptr i64, ptr %v893, i64 2
-  store i64 %v896, ptr %st561
-  %v897.p = getelementptr i64, ptr %v893, i64 0
-  %v897 = load i64, ptr %v897.p
-  %v898.p = getelementptr i64, ptr %v893, i64 1
-  %v898 = load i64, ptr %v898.p
-  %v899.p = getelementptr i64, ptr %v893, i64 2
-  %v899 = load i64, ptr %v899.p
-  %v900 = call i64 @"main.first[byte]"(i64 %v897, i64 %v898, i64 %v899)
-  %v901.p = getelementptr i64, ptr %v879, i64 0
-  %v901 = load i64, ptr %v901.p
-  %v902 = add i64 %v901, %v900
-  %st562 = getelementptr i64, ptr %v879, i64 0
-  store i64 %v902, ptr %st562
+  %v844.p = getelementptr i64, ptr %v823, i64 0
+  %v844 = load i64, ptr %v844.p
+  call void @"rt.print_int"(i64 %v844)
+  %v845 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v845)
+  %v846 = getelementptr i64, ptr %s19, i64 0
+  %v987 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v847.p = getelementptr i64, ptr %v987, i64 0
+  %v847 = load i64, ptr %v847.p
+  %v848 = add i64 0, 0
+  %v849 = getelementptr i64, ptr %s21, i64 0
+  %st507 = getelementptr i64, ptr %v849, i64 0
+  store i64 %v848, ptr %st507
+  %v988 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v850.p = getelementptr i64, ptr %v988, i64 0
+  %v850 = load i64, ptr %v850.p
+  %v851 = getelementptr i64, ptr %s20, i64 0
+  %v989 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v852.p = getelementptr i64, ptr %v989, i64 0
+  %v852 = load i64, ptr %v852.p
+  %v853 = getelementptr i64, ptr @"str.1", i64 0
+  %v854 = add i64 0, 2
+  %v855 = add i64 0, 0
+  %v856 = getelementptr i64, ptr %s5, i64 0
+  %v857 = ptrtoint ptr %v853 to i64
+  %st508 = getelementptr i64, ptr %v856, i64 0
+  store i64 %v857, ptr %st508
+  %st509 = getelementptr i64, ptr %v856, i64 1
+  store i64 %v854, ptr %st509
+  %st510 = getelementptr i64, ptr %v856, i64 2
+  store i64 %v855, ptr %st510
+  %v858 = getelementptr i64, ptr %s22, i64 0
+  %v859.p = getelementptr i64, ptr %v856, i64 0
+  %v859 = load i64, ptr %v859.p
+  %st511 = getelementptr i64, ptr %v858, i64 0
+  store i64 %v859, ptr %st511
+  %v860.p = getelementptr i64, ptr %v856, i64 1
+  %v860 = load i64, ptr %v860.p
+  %st512 = getelementptr i64, ptr %v858, i64 1
+  store i64 %v860, ptr %st512
+  %v861.p = getelementptr i64, ptr %v856, i64 2
+  %v861 = load i64, ptr %v861.p
+  %st513 = getelementptr i64, ptr %v858, i64 2
+  store i64 %v861, ptr %st513
+  %v990 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v862.p = getelementptr i64, ptr %v990, i64 0
+  %v862 = load i64, ptr %v862.p
+  %v863 = getelementptr i64, ptr %s23, i64 0
+  %v864.p = getelementptr i64, ptr %v858, i64 0
+  %v864 = load i64, ptr %v864.p
+  %st514 = getelementptr i64, ptr %v863, i64 0
+  store i64 %v864, ptr %st514
+  %v865.p = getelementptr i64, ptr %v858, i64 1
+  %v865 = load i64, ptr %v865.p
+  %st515 = getelementptr i64, ptr %v863, i64 1
+  store i64 %v865, ptr %st515
+  %v866.p = getelementptr i64, ptr %v858, i64 2
+  %v866 = load i64, ptr %v866.p
+  %st516 = getelementptr i64, ptr %v863, i64 2
+  store i64 %v866, ptr %st516
+  %v867.p = getelementptr i64, ptr %v863, i64 0
+  %v867 = load i64, ptr %v867.p
+  %v868.p = getelementptr i64, ptr %v863, i64 1
+  %v868 = load i64, ptr %v868.p
+  %v869.p = getelementptr i64, ptr %v863, i64 2
+  %v869 = load i64, ptr %v869.p
+  %v870 = call i64 @"main.first[byte]"(i64 %v867, i64 %v868, i64 %v869)
+  %v871.p = getelementptr i64, ptr %v849, i64 0
+  %v871 = load i64, ptr %v871.p
+  %v872 = add i64 %v871, %v870
+  %st517 = getelementptr i64, ptr %v849, i64 0
+  store i64 %v872, ptr %st517
   br label %b186
 b177:
-  %v1016 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st563 = getelementptr i64, ptr %v1016, i64 0
-  store i64 %v857, ptr %st563
-  %v873.p = getelementptr i64, ptr %v856, i64 0
-  %v873 = load i64, ptr %v873.p
-  %st564 = getelementptr i64, ptr %v853, i64 0
-  store i64 %v873, ptr %st564
-  %v1017 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st565 = getelementptr i64, ptr %v1017, i64 0
-  store i64 %v854, ptr %st565
+  %v991 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st518 = getelementptr i64, ptr %v991, i64 0
+  store i64 %v827, ptr %st518
+  %v843.p = getelementptr i64, ptr %v826, i64 0
+  %v843 = load i64, ptr %v843.p
+  %st519 = getelementptr i64, ptr %v823, i64 0
+  store i64 %v843, ptr %st519
+  %v992 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st520 = getelementptr i64, ptr %v992, i64 0
+  store i64 %v824, ptr %st520
   br label %b176
 b178:
   br label %b177
 b179:
-  %v1018 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st566 = getelementptr i64, ptr %v1018, i64 0
-  store i64 %v862, ptr %st566
-  %v863.p = getelementptr i64, ptr %v861, i64 0
-  %v863 = load i64, ptr %v863.p
-  %v864.c = icmp slt i64 %v863, %v852
-  %v864 = zext i1 %v864.c to i64
-  %c.b179 = icmp ne i64 %v864, 0
-  br i1 %c.b179, label %b179.t568, label %b179.e569
-b179.t568:
+  %v993 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st521 = getelementptr i64, ptr %v993, i64 0
+  store i64 %v832, ptr %st521
+  %v833.p = getelementptr i64, ptr %v831, i64 0
+  %v833 = load i64, ptr %v833.p
+  %v834.c = icmp slt i64 %v833, %v822
+  %v834 = zext i1 %v834.c to i64
+  %c.b179 = icmp ne i64 %v834, 0
+  br i1 %c.b179, label %b179.t523, label %b179.e524
+b179.t523:
   br label %b180
-b179.e569:
+b179.e524:
   br label %b181
 b180:
   call void @"rt.region_enter"()
-  %v1019 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v865.p = getelementptr i64, ptr %v1019, i64 0
-  %v865 = load i64, ptr %v865.p
-  %v866.p = getelementptr i64, ptr %v861, i64 0
-  %v866 = load i64, ptr %v866.p
-  %v1020 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v867.p = getelementptr i64, ptr %v1020, i64 0
-  %v867 = load i64, ptr %v867.p
-  %v868.p = getelementptr i64, ptr %v856, i64 0
-  %v868 = load i64, ptr %v868.p
-  %v869 = add i64 %v868, %v866
-  %st569 = getelementptr i64, ptr %v856, i64 0
-  store i64 %v869, ptr %st569
+  %v994 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v835.p = getelementptr i64, ptr %v994, i64 0
+  %v835 = load i64, ptr %v835.p
+  %v836.p = getelementptr i64, ptr %v831, i64 0
+  %v836 = load i64, ptr %v836.p
+  %v995 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v837.p = getelementptr i64, ptr %v995, i64 0
+  %v837 = load i64, ptr %v837.p
+  %v838.p = getelementptr i64, ptr %v826, i64 0
+  %v838 = load i64, ptr %v838.p
+  %v839 = add i64 %v838, %v836
+  %st524 = getelementptr i64, ptr %v826, i64 0
+  store i64 %v839, ptr %st524
   br label %b182
 b181:
-  %v1021 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st570 = getelementptr i64, ptr %v1021, i64 0
-  store i64 %v862, ptr %st570
+  %v996 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st525 = getelementptr i64, ptr %v996, i64 0
+  store i64 %v832, ptr %st525
   br label %b178
 b182:
-  %v1022 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st571 = getelementptr i64, ptr %v1022, i64 0
-  store i64 %v867, ptr %st571
-  %v870 = add i64 0, 1
-  %v871.p = getelementptr i64, ptr %v861, i64 0
-  %v871 = load i64, ptr %v871.p
-  %v872 = add i64 %v871, %v870
-  %st572 = getelementptr i64, ptr %v861, i64 0
-  store i64 %v872, ptr %st572
+  %v997 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st526 = getelementptr i64, ptr %v997, i64 0
+  store i64 %v837, ptr %st526
+  %v840 = add i64 0, 1
+  %v841.p = getelementptr i64, ptr %v831, i64 0
+  %v841 = load i64, ptr %v841.p
+  %v842 = add i64 %v841, %v840
+  %st527 = getelementptr i64, ptr %v831, i64 0
+  store i64 %v842, ptr %st527
   br label %b179
 b183:
-  %v924.p = getelementptr i64, ptr %v876, i64 0
-  %v924 = load i64, ptr %v924.p
-  call void @"rt.print_int"(i64 %v924)
-  %v925 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v925)
-  %v926 = add i64 0, 0
-  %v1023 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st573 = getelementptr i64, ptr %v1023, i64 0
-  store i64 %v0, ptr %st573
-  ret i64 %v926
+  %v894.p = getelementptr i64, ptr %v846, i64 0
+  %v894 = load i64, ptr %v894.p
+  call void @"rt.print_int"(i64 %v894)
+  %v895 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v895)
+  %v896 = add i64 0, 0
+  %v998 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st528 = getelementptr i64, ptr %v998, i64 0
+  store i64 %v0, ptr %st528
+  ret i64 %v896
 b184:
-  %v1024 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st574 = getelementptr i64, ptr %v1024, i64 0
-  store i64 %v880, ptr %st574
-  %v923.p = getelementptr i64, ptr %v879, i64 0
-  %v923 = load i64, ptr %v923.p
-  %st575 = getelementptr i64, ptr %v876, i64 0
-  store i64 %v923, ptr %st575
-  %v1025 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st576 = getelementptr i64, ptr %v1025, i64 0
-  store i64 %v877, ptr %st576
+  %v999 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st529 = getelementptr i64, ptr %v999, i64 0
+  store i64 %v850, ptr %st529
+  %v893.p = getelementptr i64, ptr %v849, i64 0
+  %v893 = load i64, ptr %v893.p
+  %st530 = getelementptr i64, ptr %v846, i64 0
+  store i64 %v893, ptr %st530
+  %v1000 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st531 = getelementptr i64, ptr %v1000, i64 0
+  store i64 %v847, ptr %st531
   br label %b183
 b185:
   br label %b184
 b186:
-  %v1026 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st577 = getelementptr i64, ptr %v1026, i64 0
-  store i64 %v892, ptr %st577
-  %v903 = getelementptr i64, ptr @"str.3", i64 0
-  %v904 = add i64 0, 3
-  %v905 = add i64 0, 0
-  %v906 = getelementptr i64, ptr %s23, i64 0
-  %v907 = ptrtoint ptr %v903 to i64
-  %st578 = getelementptr i64, ptr %v906, i64 0
-  store i64 %v907, ptr %st578
-  %st579 = getelementptr i64, ptr %v906, i64 1
-  store i64 %v904, ptr %st579
-  %st580 = getelementptr i64, ptr %v906, i64 2
-  store i64 %v905, ptr %st580
-  %v908 = getelementptr i64, ptr %s6, i64 0
-  %v909.p = getelementptr i64, ptr %v906, i64 0
-  %v909 = load i64, ptr %v909.p
-  %st581 = getelementptr i64, ptr %v908, i64 0
-  store i64 %v909, ptr %st581
-  %v910.p = getelementptr i64, ptr %v906, i64 1
-  %v910 = load i64, ptr %v910.p
-  %st582 = getelementptr i64, ptr %v908, i64 1
-  store i64 %v910, ptr %st582
-  %v911.p = getelementptr i64, ptr %v906, i64 2
-  %v911 = load i64, ptr %v911.p
-  %st583 = getelementptr i64, ptr %v908, i64 2
-  store i64 %v911, ptr %st583
-  %v1027 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v912.p = getelementptr i64, ptr %v1027, i64 0
-  %v912 = load i64, ptr %v912.p
-  %v913 = getelementptr i64, ptr %s24, i64 0
-  %v914.p = getelementptr i64, ptr %v908, i64 0
-  %v914 = load i64, ptr %v914.p
-  %st584 = getelementptr i64, ptr %v913, i64 0
-  store i64 %v914, ptr %st584
-  %v915.p = getelementptr i64, ptr %v908, i64 1
-  %v915 = load i64, ptr %v915.p
-  %st585 = getelementptr i64, ptr %v913, i64 1
-  store i64 %v915, ptr %st585
-  %v916.p = getelementptr i64, ptr %v908, i64 2
-  %v916 = load i64, ptr %v916.p
-  %st586 = getelementptr i64, ptr %v913, i64 2
-  store i64 %v916, ptr %st586
-  %v917.p = getelementptr i64, ptr %v913, i64 0
-  %v917 = load i64, ptr %v917.p
-  %v918.p = getelementptr i64, ptr %v913, i64 1
-  %v918 = load i64, ptr %v918.p
-  %v919.p = getelementptr i64, ptr %v913, i64 2
-  %v919 = load i64, ptr %v919.p
-  %v920 = call i64 @"main.first[byte]"(i64 %v917, i64 %v918, i64 %v919)
-  %v921.p = getelementptr i64, ptr %v879, i64 0
-  %v921 = load i64, ptr %v921.p
-  %v922 = add i64 %v921, %v920
-  %st587 = getelementptr i64, ptr %v879, i64 0
-  store i64 %v922, ptr %st587
+  %v1001 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st532 = getelementptr i64, ptr %v1001, i64 0
+  store i64 %v862, ptr %st532
+  %v873 = getelementptr i64, ptr @"str.3", i64 0
+  %v874 = add i64 0, 3
+  %v875 = add i64 0, 0
+  %v876 = getelementptr i64, ptr %s22, i64 0
+  %v877 = ptrtoint ptr %v873 to i64
+  %st533 = getelementptr i64, ptr %v876, i64 0
+  store i64 %v877, ptr %st533
+  %st534 = getelementptr i64, ptr %v876, i64 1
+  store i64 %v874, ptr %st534
+  %st535 = getelementptr i64, ptr %v876, i64 2
+  store i64 %v875, ptr %st535
+  %v878 = getelementptr i64, ptr %s5, i64 0
+  %v879.p = getelementptr i64, ptr %v876, i64 0
+  %v879 = load i64, ptr %v879.p
+  %st536 = getelementptr i64, ptr %v878, i64 0
+  store i64 %v879, ptr %st536
+  %v880.p = getelementptr i64, ptr %v876, i64 1
+  %v880 = load i64, ptr %v880.p
+  %st537 = getelementptr i64, ptr %v878, i64 1
+  store i64 %v880, ptr %st537
+  %v881.p = getelementptr i64, ptr %v876, i64 2
+  %v881 = load i64, ptr %v881.p
+  %st538 = getelementptr i64, ptr %v878, i64 2
+  store i64 %v881, ptr %st538
+  %v1002 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v882.p = getelementptr i64, ptr %v1002, i64 0
+  %v882 = load i64, ptr %v882.p
+  %v883 = getelementptr i64, ptr %s23, i64 0
+  %v884.p = getelementptr i64, ptr %v878, i64 0
+  %v884 = load i64, ptr %v884.p
+  %st539 = getelementptr i64, ptr %v883, i64 0
+  store i64 %v884, ptr %st539
+  %v885.p = getelementptr i64, ptr %v878, i64 1
+  %v885 = load i64, ptr %v885.p
+  %st540 = getelementptr i64, ptr %v883, i64 1
+  store i64 %v885, ptr %st540
+  %v886.p = getelementptr i64, ptr %v878, i64 2
+  %v886 = load i64, ptr %v886.p
+  %st541 = getelementptr i64, ptr %v883, i64 2
+  store i64 %v886, ptr %st541
+  %v887.p = getelementptr i64, ptr %v883, i64 0
+  %v887 = load i64, ptr %v887.p
+  %v888.p = getelementptr i64, ptr %v883, i64 1
+  %v888 = load i64, ptr %v888.p
+  %v889.p = getelementptr i64, ptr %v883, i64 2
+  %v889 = load i64, ptr %v889.p
+  %v890 = call i64 @"main.first[byte]"(i64 %v887, i64 %v888, i64 %v889)
+  %v891.p = getelementptr i64, ptr %v849, i64 0
+  %v891 = load i64, ptr %v891.p
+  %v892 = add i64 %v891, %v890
+  %st542 = getelementptr i64, ptr %v849, i64 0
+  store i64 %v892, ptr %st542
   br label %b187
 b187:
-  %v1028 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st588 = getelementptr i64, ptr %v1028, i64 0
-  store i64 %v912, ptr %st588
+  %v1003 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st543 = getelementptr i64, ptr %v1003, i64 0
+  store i64 %v882, ptr %st543
   br label %b185
 }
 
@@ -7624,7 +7409,7 @@ b21:
 
 define internal void @"rt.err_relocate"(ptr %v0, i64 %v1) #0 {
 b0:
-  %v2 = add i64 0, 2
+  %v2 = add i64 0, 1
   %v3 = getelementptr i64, ptr %v0, i64 %v2
   %v4 = add i64 0, 2
   call void @"rt.region_relocate"(ptr %v3, i64 %v4, i64 %v1)

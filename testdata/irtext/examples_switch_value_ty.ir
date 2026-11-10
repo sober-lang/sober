@@ -1784,20 +1784,20 @@ b1:
   store %25[1], %27
   %28 = load.i64 %23[2]
   store %25[2], %28
-  %29 = slotaddr s5
-  %30 = const 0
-  store %29[0], %30
-  store %29[1], %30
-  store %29[2], %30
-  store %29[3], %30
-  store %29[0], %19
+  %29 = const 0
+  %30 = slotaddr s5
+  store %30[0], %29
+  store %30[1], %29
+  store %30[2], %29
+  store %30[3], %29
+  store %30[0], %19
   %31 = load.i64 %25[0]
-  store %29[1], %31
+  store %30[1], %31
   %32 = load.i64 %25[1]
-  store %29[2], %32
+  store %30[2], %32
   %33 = load.i64 %25[2]
-  store %29[3], %33
-  br b3(%29)
+  store %30[3], %33
+  br b3(%30)
 b2:
   %4 = const 1
   %5 = globaladdr @str.4
@@ -1815,20 +1815,20 @@ b2:
   store %10[1], %12
   %13 = load.i64 %8[2]
   store %10[2], %13
-  %14 = slotaddr s2
-  %15 = const 0
-  store %14[0], %15
-  store %14[1], %15
-  store %14[2], %15
-  store %14[3], %15
-  store %14[0], %4
+  %14 = const 0
+  %15 = slotaddr s2
+  store %15[0], %14
+  store %15[1], %14
+  store %15[2], %14
+  store %15[3], %14
+  store %15[0], %4
   %16 = load.i64 %10[0]
-  store %14[1], %16
+  store %15[1], %16
   %17 = load.i64 %10[1]
-  store %14[2], %17
+  store %15[2], %17
   %18 = load.i64 %10[2]
-  store %14[3], %18
-  br b3(%14)
+  store %15[3], %18
+  br b3(%15)
 b3(%34 ptr):
   %35 = slotaddr s6
   %36 = load.i64 %34[0]

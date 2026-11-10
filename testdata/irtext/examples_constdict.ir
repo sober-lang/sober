@@ -2326,11 +2326,11 @@ b0:
   %2 = region.depth
   region.enter
   %3 = funcaddr @lambda#0
-  %4 = slotaddr s0
-  %5 = const 0
-  store %4[0], %5
-  store %4[0], %3
-  %6 = load.i64 %4[0]
+  %4 = const 0
+  %5 = slotaddr s0
+  store %5[0], %4
+  store %5[0], %3
+  %6 = load.i64 %5[0]
   %7 = call.indirect.i64 %6(%0, %1)
   condbr %7, b1, b2
 b1:
@@ -2417,12 +2417,12 @@ b0:
   %15 = load.i64 %10[2]
   store %12[2], %15
   %16 = funcaddr @lambda#0
-  %17 = slotaddr s2
-  %18 = const 0
-  store %17[0], %18
-  store %17[0], %16
+  %17 = const 0
+  %18 = slotaddr s2
+  store %18[0], %17
+  store %18[0], %16
   %19 = slotaddr s3
-  %20 = load.i64 %17[0]
+  %20 = load.i64 %18[0]
   store %19[0], %20
   %21 = slotaddr s4
   %22 = load.i64 %12[0]
@@ -2541,42 +2541,42 @@ b10:
   call @rt.print_char(%92)
   %93 = const 0
   %94 = const 7
-  %95 = slotaddr s6
-  %96 = const 0
-  store %95[0], %96
-  store %95[1], %96
-  store %95[0], %93
-  store %95[1], %94
+  %95 = const 0
+  %96 = slotaddr s6
+  store %96[0], %95
+  store %96[1], %95
+  store %96[0], %93
+  store %96[1], %94
   %97 = slotaddr s7
-  %98 = load.i64 %95[0]
+  %98 = load.i64 %96[0]
   store %97[0], %98
-  %99 = load.i64 %95[1]
+  %99 = load.i64 %96[1]
   store %97[1], %99
   %100 = const 1
   %101 = const 3
-  %102 = slotaddr s8
-  %103 = const 0
-  store %102[0], %103
-  store %102[1], %103
-  store %102[0], %100
-  store %102[1], %101
+  %102 = const 0
+  %103 = slotaddr s8
+  store %103[0], %102
+  store %103[1], %102
+  store %103[0], %100
+  store %103[1], %101
   %104 = slotaddr s9
-  %105 = load.i64 %102[0]
+  %105 = load.i64 %103[0]
   store %104[0], %105
-  %106 = load.i64 %102[1]
+  %106 = load.i64 %103[1]
   store %104[1], %106
   %107 = const 2
   %108 = const 5
-  %109 = slotaddr s10
-  %110 = const 0
-  store %109[0], %110
-  store %109[1], %110
-  store %109[0], %107
-  store %109[1], %108
+  %109 = const 0
+  %110 = slotaddr s10
+  store %110[0], %109
+  store %110[1], %109
+  store %110[0], %107
+  store %110[1], %108
   %111 = slotaddr s11
-  %112 = load.i64 %109[0]
+  %112 = load.i64 %110[0]
   store %111[0], %112
-  %113 = load.i64 %109[1]
+  %113 = load.i64 %110[1]
   store %111[1], %113
   %114 = region.depth
   %115 = const 6
@@ -2607,12 +2607,12 @@ b10:
   %129 = load.i64 %124[2]
   store %126[2], %129
   %130 = funcaddr @main.byStart
-  %131 = slotaddr s3
-  %132 = const 0
-  store %131[0], %132
-  store %131[0], %130
+  %131 = const 0
+  %132 = slotaddr s3
+  store %132[0], %131
+  store %132[0], %130
   %133 = slotaddr s2
-  %134 = load.i64 %131[0]
+  %134 = load.i64 %132[0]
   store %133[0], %134
   %135 = slotaddr s12
   %136 = load.i64 %126[0]
@@ -2682,27 +2682,27 @@ b16:
   %176 = const 10
   call @rt.print_char(%176)
   %177 = funcaddr @lambda#0
-  %178 = slotaddr s2
-  %179 = const 0
-  store %178[0], %179
-  store %178[0], %177
+  %178 = const 0
+  %179 = slotaddr s2
+  store %179[0], %178
+  store %179[0], %177
   %180 = slotaddr s3
-  %181 = load.i64 %178[0]
+  %181 = load.i64 %179[0]
   store %180[0], %181
   %182 = const 0
   %183 = const 10
-  %184 = slotaddr s0
-  %185 = const 0
-  store %184[0], %185
-  store %184[1], %185
-  store %184[2], %185
+  %184 = const 0
+  %185 = slotaddr s0
+  store %185[0], %184
+  store %185[1], %184
+  store %185[2], %184
   %186 = load.i64 %180[0]
-  store %184[0], %186
-  store %184[1], %182
-  store %184[2], %183
-  %187 = load.i64 %184[0]
-  %188 = load.i64 %184[1]
-  %189 = load.i64 %184[2]
+  store %185[0], %186
+  store %185[1], %182
+  store %185[2], %183
+  %187 = load.i64 %185[0]
+  %188 = load.i64 %185[1]
+  %189 = load.i64 %185[2]
   %190 = const 7
   %191 = call @main.inRange(%187, %188, %189, %190)
   condbr %191, b17, b18
@@ -2714,27 +2714,27 @@ b18:
   br b19(%193)
 b19(%194 i64):
   %195 = funcaddr @lambda#0
-  %196 = slotaddr s14
-  %197 = const 0
-  store %196[0], %197
-  store %196[0], %195
+  %196 = const 0
+  %197 = slotaddr s14
+  store %197[0], %196
+  store %197[0], %195
   %198 = slotaddr s15
-  %199 = load.i64 %196[0]
+  %199 = load.i64 %197[0]
   store %198[0], %199
   %200 = const 0
   %201 = const 10
-  %202 = slotaddr s1
-  %203 = const 0
-  store %202[0], %203
-  store %202[1], %203
-  store %202[2], %203
+  %202 = const 0
+  %203 = slotaddr s1
+  store %203[0], %202
+  store %203[1], %202
+  store %203[2], %202
   %204 = load.i64 %198[0]
-  store %202[0], %204
-  store %202[1], %200
-  store %202[2], %201
-  %205 = load.i64 %202[0]
-  %206 = load.i64 %202[1]
-  %207 = load.i64 %202[2]
+  store %203[0], %204
+  store %203[1], %200
+  store %203[2], %201
+  %205 = load.i64 %203[0]
+  %206 = load.i64 %203[1]
+  %207 = load.i64 %203[2]
   %208 = const 12
   %209 = call @main.inRange(%205, %206, %207, %208)
   condbr %209, b20, b21
@@ -2746,25 +2746,25 @@ b21:
   br b22(%211)
 b22(%212 i64):
   %213 = funcaddr @lambda#0
-  %214 = slotaddr s16
-  %215 = const 0
-  store %214[0], %215
-  store %214[0], %213
+  %214 = const 0
+  %215 = slotaddr s16
+  store %215[0], %214
+  store %215[0], %213
   %216 = slotaddr s17
-  %217 = load.i64 %214[0]
+  %217 = load.i64 %215[0]
   store %216[0], %217
   %218 = const 0
   %219 = const 10
-  %220 = slotaddr s18
-  %221 = const 0
-  store %220[0], %221
-  store %220[1], %221
-  store %220[2], %221
+  %220 = const 0
+  %221 = slotaddr s18
+  store %221[0], %220
+  store %221[1], %220
+  store %221[2], %220
   %222 = load.i64 %216[0]
-  store %220[0], %222
-  store %220[1], %218
-  store %220[2], %219
-  %223 = load.i64 %220[2]
+  store %221[0], %222
+  store %221[1], %218
+  store %221[2], %219
+  %223 = load.i64 %221[2]
   call @rt.print_int(%194)
   %224 = const 32
   call @rt.print_char(%224)

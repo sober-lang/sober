@@ -1,0 +1,2 @@
+sober: load error at examples/domain_neg_escape.sober:12:37: the result of task.Run cannot hold a task.Scope, task.Handle or task.Domain (it would outlive the scope)
+exit=1

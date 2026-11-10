@@ -1,0 +1,30 @@
+package p256
+
+// dudect の題材（white-box — scripts/dudect.sh が std/internal/dudect と一緒に回す）。ECDHE のスカラーは握手ごとに作り直す 1 回限りの秘密なので、
+// 両クラスとも毎回違うスカラーにして、クラスで変えるのは性質だけにする（poly1305_sum_otk と同じ形 — 固定 対 乱数は Zen 3 / Zen 4 で偽の漏れを出す）:
+// クラス 0 = 下位の 16 バイトが 0 のスカラー（固定窓の半分が 0 の項を選ぶ）・クラス 1 = 一様乱数。相手の点は公開の値で固定。
+// 環境変数 SOBER_DUDECT が無ければ何もしない
+
+import "std/internal/dudect"
+import "std/iter"
+import "std/rand"
+
+func dscalar(c int, i int) []byte {
+    mut b := mut []byte{}
+    mut r := rand.New(i * 2654435761 + 7)
+    for k <- iter.Range(0, 32) {
+        b = append(b, if c == 0 && k >= 16 { byte(0) } else { byte(rand.Intn(mut r, 256)) })
+    }
+    // 先頭のバイトを 1〜127 にして位数 n 未満・0 でない値に
+    b[0] = byte(1 + (int(b[0]) & 0x7e))
+    return freeze(b)
+}
+
+func TestP256Shared() {
+    n := internal.dudect.CountDiv(100)
+    if n == 0 {
+        return
+    }
+    peer := PublicKey(dscalar(1, 12345))
+    internal.dudect.Measure("p256_shared", n, 21, dscalar, (x) => len(Shared(x, peer)) == 32)
+}

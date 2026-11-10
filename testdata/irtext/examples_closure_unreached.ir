@@ -1761,17 +1761,17 @@ b0:
   store %5[0], %6
   %7 = load.i64 %3[1]
   store %5[1], %7
-  %8 = slotaddr s2
-  %9 = const 0
-  store %8[0], %9
-  store %8[1], %9
+  %8 = const 0
+  %9 = slotaddr s2
+  store %9[0], %8
+  store %9[1], %8
   %10 = load.i64 %5[0]
-  store %8[0], %10
+  store %9[0], %10
   %11 = load.i64 %5[1]
-  store %8[1], %11
-  %12 = load.i64 %8[0]
+  store %9[1], %11
+  %12 = load.i64 %9[0]
   store %0[0], %12
-  %13 = load.i64 %8[1]
+  %13 = load.i64 %9[1]
   store %0[1], %13
   region.setdepth %2
   ret
@@ -1804,17 +1804,17 @@ b0:
   store %5[0], %6
   %7 = load.i64 %3[1]
   store %5[1], %7
-  %8 = slotaddr s2
-  %9 = const 0
-  store %8[0], %9
-  store %8[1], %9
+  %8 = const 0
+  %9 = slotaddr s2
+  store %9[0], %8
+  store %9[1], %8
   %10 = load.i64 %5[0]
-  store %8[0], %10
+  store %9[0], %10
   %11 = load.i64 %5[1]
-  store %8[1], %11
-  %12 = load.i64 %8[0]
+  store %9[1], %11
+  %12 = load.i64 %9[0]
   store %0[0], %12
-  %13 = load.i64 %8[1]
+  %13 = load.i64 %9[1]
   store %0[1], %13
   region.setdepth %2
   ret

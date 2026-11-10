@@ -360,7 +360,11 @@ func callArgs(st mut St, callee0 desugar.NodeRef, args desugar.ListRef, at desug
     if rd >= 0 {
         fi = rd
     }
-    if desugar.ParKey(mut st.d, fi) != 0 {
+    // domain の口（domain.sober）
+    if desugar.ParDom(desugar.ParKey(mut st.d, fi)) {
+        return domCall(mut st, desugar.ParKey(mut st.d, fi), args, at)
+    }
+    if desugar.ParKey(mut st.d, fi) != 0 && !desugar.ParDom(desugar.ParKey(mut st.d, fi)) {
         if !st.taskUse {
             // 並列モードの判定（desugar.ParReach）が届く par の口を落とした — task の rt が無いまま下ろすと壊れるので、ここで止める
             panic(InvariantBroken{})
@@ -374,6 +378,13 @@ func callArgs(st mut St, callee0 desugar.NodeRef, args desugar.ListRef, at desug
         return cellCall(mut st, ckey, args, at)
     }
     if lenL(mut st, fnTParams(mut st, fi)) > 0 {
+        if st.domAt == -1 && desugar.DomKey(mut st.d, fi) != 0 {
+            // 毒の死は利用者の呼び出しの行で出す（展開の中の入るの行でなく）
+            st.domAt = int(at)
+            r, e := genericCall(mut st, fi, args, at, callee0)
+            st.domAt = -1
+            return r, e
+        }
         return genericCall(mut st, fi, args, at, callee0)
     }
     if explicit >= 0 {
@@ -1041,9 +1052,17 @@ func variantInst(st mut St, pk int, name desugar.StrRef, args desugar.ListRef, a
 }
 
 // リテラル: 新しいスロットに位置か名前でフィールドを埋める（名前つきは一部の欄だけでよい — 省いた欄はゼロ値）。
-// 型名が variant なら union 値（語 0 にタグ、ペイロードは語 1 から）。`T{}` はゼロ値
+// 型名が variant なら union 値（語 0 にタグ、ペイロードは語 1 から）。`T{}` はゼロ値。
+// error のラベルは error の値（errs.sober — 欄はラベルの列のセル〔region〕に直に組む。frame に union 幅の一時を置かない）
 func composite(st mut St, e desugar.NodeRef) (Val, error?) {
+    return compositeIn(mut st, e, -1)
+}
+
+// inner >= 0 なら包み替え `? W{…}` の W（inner = 内側の error の番地 — 列の後ろに W のセルを足す）
+func compositeIn(st mut St, e desugar.NodeRef, inner int) (Val, error?) {
     at := e
+    toRet := st.errRet && st.retFloor >= 0
+    st.errRet = false
     pk := st.curPkg
     tn := sA(nodeOf(mut st, e))
     mut t := -1
@@ -1054,6 +1073,7 @@ func composite(st mut St, e desugar.NodeRef) (Val, error?) {
     mut info := if td != -1 { infoOf(mut st, int(td)) } else { -1 }
     mut vinst := -1
     mut vidx := 0
+    mut errLit := false
     if lenL(mut st, lC(nodeOf(mut st, e))) > 0 && td == -1 {
         // ジェネリック union の variant `V[T]{…}`
         u, vi := variantInst(mut st, pk, tn, lC(nodeOf(mut st, e)), at)?
@@ -1076,6 +1096,7 @@ func composite(st mut St, e desugar.NodeRef) (Val, error?) {
         if u < 0 {
             return Val{}, diag.UndefinedType{at: posOf(mut st, at)}
         }
+        errLit = st.errs >= 0 && u == st.errs
         layoutInfo(mut st, u)?
         t = desugar.HeapGet(mut st.d, u + SI_TY)
         vr := latI(mut st, hgetL(mut st, u + SI_FIELDS), vi)
@@ -1145,12 +1166,44 @@ func composite(st mut St, e desugar.NodeRef) (Val, error?) {
             i += 1
         }
     }
-    p := newAgg(mut st, t)
     zero := iconst(mut st, 0)
-    mut w := 0
-    while w < tWords(mut st, t) {
-        store(mut st, p, w, zero)
-        w += 1
+    mut p := 0
+    mut ecell := -1
+    mut enp := 0
+    mut enl := 0
+    mut ed := 0
+    mut efresh := Val{t: -1, v: -1}
+    if errLit {
+        mut vw := 0
+        for k <- iter.Range(0, lenL(mut st, fields)) {
+            f := latI(mut st, fields, k)
+            end := desugar.HeapGet(mut st.d, f + 2) + tWords(mut st, desugar.HeapGet(mut st.d, f + 1))
+            if end > vw {
+                vw = end
+            }
+        }
+        c1, c2, c3, c4 := errCells(mut st, inner, vw > 0)
+        ecell = c1
+        enp = c2
+        enl = c3
+        ed = c4
+        if ecell == -1 {
+            return errMake(mut st, iconst(mut st, tag), enp, enl, ed)
+        }
+        if ecell == -2 {
+            fv, fc := errFresh(mut st, iconst(mut st, tag), toRet)?
+            efresh = fv
+            ecell = fc
+        }
+        p = ecell
+        for w <- iter.Range(1, 1 + vw) {
+            store(mut st, p, w, zero)
+        }
+    } else {
+        p = newAgg(mut st, t)
+        for w <- iter.Range(0, tWords(mut st, t)) {
+            store(mut st, p, w, zero)
+        }
     }
     if tag >= 0 {
         store(mut st, p, 0, iconst(mut st, tag))
@@ -1182,6 +1235,22 @@ func composite(st mut St, e desugar.NodeRef) (Val, error?) {
     while i < n {
         storeVal(mut st, p, desugar.HeapGet(mut st.d, vs + 3 + i * 3), desugar.HeapGet(mut st.d, vs + 1 + i * 3), desugar.HeapGet(mut st.d, vs + 2 + i * 3))
         i += 1
+    }
+    if errLit {
+        if efresh.t >= 0 {
+            if toRet {
+                // セルは宛先（戻りの写し先の深度）にある — 戻りの写しはセルの深度を見て飛ばすので、欄の中身もここで宛先へ写す
+                for k <- iter.Range(0, lenL(mut st, fields)) {
+                    f := latI(mut st, fields, k)
+                    ft := desugar.HeapGet(mut st.d, f + 1)
+                    if containsSlice(mut st, ft) {
+                        relocateTo(mut st, p, bs + desugar.HeapGet(mut st.d, f + 2), ft, st.retFloor)
+                    }
+                }
+            }
+            return efresh, nil
+        }
+        return errMake(mut st, iconst(mut st, tag), enp, enl, ed)
     }
     return Val{t: t, v: p}, nil
 }

@@ -1,0 +1,44 @@
+package main
+
+// The state of a domain can hold mut containers (a mut slice, a mut map — also nested ones): the body writes their elements in place.
+// The initial value is copied into the domain, so writing the original slice afterwards does not reach the state,
+// and a body's result is copied out, so the caller cannot write the state through it
+
+import "std/iter"
+import "std/task"
+
+type Row struct {
+    hits mut []int
+}
+
+type Slots struct {
+    used mut []int
+    rows mut []Row
+    names mut map[int]int
+}
+
+func main() {
+    out, e := task.Run((s task.Scope) => {
+        mut used := mut []int{1, 2, 3}
+        d := task.NewDomain(s, Slots{used: used, rows: mut []Row{Row{hits: mut []int{0, 0}}}, names: mut map[int]int{1: 21}})
+        used[0] = 99
+        _, _ = task.Run((s1 task.Scope) => {
+            for i <- iter.Range(0, 3) {
+                k := i
+                _ = task.Spawn(s1, () => task.Update(d, (st mut Slots) => {
+                    st.used[k] += 10
+                    st.rows[0].hits[k % 2] += 1
+                    st.used[k]
+                }))
+            }
+            0
+        })
+        mut got := task.Update(d, (st mut Slots) => st.used)
+        got[1] = 99
+        task.Read(d, (st Slots) => {
+            n := st.names[1]
+            "${st.used[0]} ${st.used[1]} ${st.used[2]} ${st.rows[0].hits[0]} ${st.rows[0].hits[1]} ${if n != nil { n } else { -1 }} ${len(st.names)}"
+        })
+    })
+    println(if e == nil { out } else { "died" })
+}

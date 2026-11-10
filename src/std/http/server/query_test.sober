@@ -1,0 +1,57 @@
+package server
+
+// pairOf の旧新照合: 書き換え前の pairOf（strings.Cut の 2 段）を Ref の名前で写して基準にし、& と = と短い鍵の切れ端を
+// 並べた query（空・= なし・重複の鍵・& の連続・先頭 / 末尾の &・= の重なり・非 ASCII）で、鍵ごとの結果が一致することを照合する
+
+import "std/quick"
+import "std/strings"
+
+func pairOfRef(s string, key string) string? {
+    mut rest := s
+    while rest != "" {
+        part, tail, _ := strings.Cut(rest, "&")
+        k, v, _ := strings.Cut(part, "=")
+        if k == key {
+            return v
+        }
+        rest = tail
+    }
+    return nil
+}
+
+func sameOpt(x string?, y string?) bool {
+    if x == nil {
+        return y == nil
+    }
+    if y == nil {
+        return false
+    }
+    return x == y
+}
+
+func TestPairOfAgrees() {
+    toks := []string{"a", "b", "ab", "=", "&", "1", "é", "==", "&&", "a=", "=b"}
+    ks := []string{"", "a", "b", "ab", "é", "a=", "x"}
+    mut q := quick.Named("TestPairOfAgrees")
+    quick.Check(mut q, () => {
+        parts := quick.Slice(mut q, 8, () => quick.Elem(mut q, toks))
+        s := strings.Join(parts, "")
+        mut ok := true
+        for k <- ks {
+            ok = sameOpt(pairOf(s, k), pairOfRef(s, k)) && ok
+        }
+        ok
+    }, trials: 3000)
+}
+
+func TestPairOfCases() {
+    assert(sameOpt(pairOf("a=13&b=42", "a"), "13"))
+    assert(sameOpt(pairOf("a=13&b=42", "b"), "42"))
+    assert(pairOf("a=13&b=42", "c") == nil)
+    assert(sameOpt(pairOf("a&b=1", "a"), ""))
+    assert(sameOpt(pairOf("&a=1", ""), ""))
+    assert(pairOf("a=1&", "") == nil)
+    assert(pairOf("", "") == nil)
+    assert(sameOpt(pairOf("a=1&a=2", "a"), "1"))
+    assert(sameOpt(pairOf("a==1", "a"), "=1"))
+}

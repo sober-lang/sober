@@ -20,6 +20,7 @@ import "std/internal/deflate"
 import "std/io"
 import "std/json"
 import "std/net"
+import "std/os"
 import "std/strings"
 import "std/task"
 import "std/utf8"
@@ -86,6 +87,8 @@ type Response struct {
     validators Validators?
     // Set-Cookie（書けるのはこの欄だけ — 下の SetCookie）。書いた順に任意ヘッダの後へ
     cookies []SetCookie
+    // 送る前の待ち（ミリ秒 — Delayed で付ける。0 以下 = 待たない）。接続の task はハンドラから戻った浅い点で待つ
+    delay int
 }
 
 // 応答の検証子（ETag と Last-Modified — Static が作る。modified は秒・0 以下は Last-Modified を書かない）
@@ -157,6 +160,20 @@ type Out struct {
 @effects()
 func Text(s string) Response {
     return Response{status: http.OK, contentType: "text/plain", body: bytes(s)}
+}
+
+// r を ms ミリ秒待ってから送る応答（ms ≤ 0 は待たない）。待つのはその応答の頭を書く直前で、同じ接続の前の要求の応答は先に送る。
+// ハンドラの中で os.Sleep してから返すのと送る時刻は同じだが、待つ間ハンドラの積みと要求の region を持たない（接続の task は
+// ハンドラから戻った浅い点で寝る）。接続の期限は os.Sleep と同じく待ちを切る（language.md 28 節）
+//
+//     return http.server.Delayed(50, http.server.Text("ok"))
+@effects()
+func Delayed(ms int, r Response) Response {
+    return Response{status: r.status, contentType: r.contentType, body: r.body, length: r.length, stream: r.stream, headers: r.headers, coded: r.coded, cache: r.cache, validators: r.validators, cookies: r.cookies, delay: ms}
+}
+
+func delayOf(r Response) int {
+    return r.delay
 }
 
 // 200・application/json の応答（s は組み上がった JSON — std/json の Put… / Done）
@@ -405,15 +422,27 @@ func isMedia(ct string, m string) bool {
 }
 
 // `k=v&…` の s の key の値（最初の一致・= の無い項目は値 ""・無ければ nil）
+// 1 回の前進で項目の境（&）と鍵の終わり（最初の =）を見て、鍵はバイトで比べる — 列を作るのは一致した値の 1 本だけ。
+// 末尾の & の後ろの空の項目は項目に数えない（途中の空の項目は数える）
 func pairOf(s string, key string) string? {
-    mut rest := s
-    while rest != "" {
-        part, tail, _ := strings.Cut(rest, "&")
-        k, v, _ := strings.Cut(part, "=")
-        if k == key {
-            return v
+    b := bytes(s)
+    kb := bytes(key)
+    n := len(b)
+    mut i := 0
+    while i < n {
+        mut j := i
+        mut e := -1
+        while j < n && b[j] != '&' {
+            if e < 0 && b[j] == '=' {
+                e = j
+            }
+            j += 1
         }
-        rest = tail
+        ke := if e < 0 { j } else { e }
+        if isSeg(b, i, ke, kb) {
+            return if e < 0 { "" } else { bytesToString(b[e + 1:j]) }
+        }
+        i = j + 1
     }
     return nil
 }
@@ -554,7 +583,7 @@ func unrouted(routes []Route, pb []byte) Response {
 
 // w に行の方針 rc を写した応答（Dispatch の外に置く理由は unrouted と同じ）
 func withCache(w Response, rc Cache) Response {
-    return Response{status: w.status, contentType: w.contentType, body: w.body, length: w.length, stream: w.stream, headers: w.headers, coded: w.coded, cache: rc, validators: w.validators}
+    return Response{status: w.status, contentType: w.contentType, body: w.body, length: w.length, stream: w.stream, headers: w.headers, coded: w.coded, cache: rc, validators: w.validators, delay: w.delay}
 }
 
 // path に一致する行の method の列（405 の Allow — 表の順・重複なし・GET があれば HEAD も。一致する行が無ければ "" = 404。
@@ -649,10 +678,24 @@ type Cache union {
     // `no-store` — 保存しない
     NoStore {}
     // `private`（maxAge があれば `private, max-age=<maxAge>`）— 利用者のブラウザだけが保存してよい（応答の既定）
-    Private { maxAge int? }
+    Private { maxAge int? }    // Cache-Control を書かない — 保存の可否を受け手の経験則（RFC 9111 4.2.2）に任せるので、共有キャッシュも保存しうる側（`@shared` — ルートの行でだけ書ける）。
+    // 毎応答の頭の 24 バイトが要らない公開の API 向け（認証に届くルートでは書けない — 上の Fresh / Shared と同じ検査）
+    Unstated {} @shared
 }
 
-// c の Cache-Control の値（nil = 応答の既定の private）
+// c の Cache-Control の行（CRLF つき — nil = 応答の既定の private・Unstated は書かない）
+func cacheLine(c Cache?) string {
+    if c == nil {
+        // 既定の private は定数のまま（応答ごとに文字列を組まない）
+        return "Cache-Control: private\r\n"
+    }
+    return switch c {
+    case Unstated{}: ""
+    default: "Cache-Control: ${cacheValue(c)}\r\n"
+    }
+}
+
+// c の Cache-Control の値（nil = 応答の既定の private・Unstated は空 — 行ごと書かない）
 func cacheValue(c Cache?) string {
     if c == nil {
         return "private"
@@ -663,6 +706,7 @@ func cacheValue(c Cache?) string {
     case NoStore{}: "no-store"
     case Private{maxAge}: if maxAge == nil { "private" } else { "private, max-age=${if maxAge < 0 { 0 } else { maxAge }}" }
     case Shared{maxAge, sMaxAge}: sharedValue(maxAge, sMaxAge)
+    case Unstated{}: ""
     }
 }
 
@@ -1348,9 +1392,12 @@ func serveBuf(send func(b []byte) error?, b []byte, route func(Request) Response
     mut out := mut []byte{}
     mut at := 0
     mut shut := 0
+    // out の先頭の応答の前の待ち（ミリ秒 — Delayed。輪を出てから待つ）
+    mut dl := 0
     mut more := true
     while more && shut == 0 {
-        f := frameAt(b, at, mh, mb)
+        mut hs := mut []int{}
+        f := frameAt(b, at, mh, mb, mut hs)
         if f.st == 0 {
             // 足りない: 先頭の空行だけは捨ててよい
             at = f.s
@@ -1361,7 +1408,7 @@ func serveBuf(send func(b []byte) error?, b []byte, route func(Request) Response
             }
             shut = 2
         } else {
-            req, e := request(b, f)
+            req, e := request(b, f, freeze(hs))
             if e != nil {
                 for x <- respHead(Status(http.BadRequest), false, false, 0) {
                     out = append(out, x)
@@ -1379,8 +1426,32 @@ func serveBuf(send func(b []byte) error?, b []byte, route func(Request) Response
                 kp := f.keep && !(ul && f.v10)
                 // 頭と本文（compression: なら圧縮した本文 — 頭の Content-Length もそれに合わせる。HEAD は本文を書かない〔頭は GET と同じ〕）。
                 // 欄は関数越しに読む（関数型の仮引数の呼び出しの結果の欄の読み `resp.body` は check の脱糖が CoreFragment で断る — build は受理する）
-                h, bd := wire(resp, kp, f.v10, gz, fresh, ae, wk, mut hist)
-                for x <- h {
+                ms := delayOf(resp)
+                if ms > 0 || dl > 0 && st != nil && req.method != "HEAD" {
+                    // Delayed: 前の応答を送り、この応答の頭の前で待つ。待つのは輪を出てから（下）。稀な道（同じ束の前に待ちが
+                    // 残っている・stream は頭をここで送る）だけ、残った待ちをここで済ませる
+                    if dl > 0 {
+                        os.Sleep(dl)
+                        dl = 0
+                    }
+                    if len(out) > 0 {
+                        e3 := send(freeze(out))
+                        if e3 != nil {
+                            return at, 1, []byte{}, e3
+                        }
+                        out = mut []byte{}
+                    }
+                    if st != nil && req.method != "HEAD" {
+                        os.Sleep(ms)
+                    } else {
+                        dl = ms
+                    }
+                }
+                hr, enc, bd := wire(resp, gz, fresh, ae, wk, mut hist)
+                // 頭は周回の束縛に積んでから out へ写す（out はループの中で freeze して送るので mut で渡せない）
+                mut hd := mut []byte{}
+                putHead(mut hd, hr, kp, f.v10, enc)
+                for x <- hd {
                     out = append(out, x)
                 }
                 at = f.end
@@ -1430,6 +1501,10 @@ func serveBuf(send func(b []byte) error?, b []byte, route func(Request) Response
             }
         }
     }
+    // Delayed の待ちは要求の輪を出てから（要求の region を手放した後 — ハンドラの積みも持たない）。前の応答は印を付けたときに送り済み
+    if dl > 0 {
+        os.Sleep(dl)
+    }
     return at, shut, freeze(out), nil
 }
 
@@ -1445,14 +1520,13 @@ type frame struct {
     // keep = 応答の後も保つ・v10 = HTTP/1.0
     keep bool
     v10 bool
-    // 要求行の 1 つ目・2 つ目の空白（b の上）と、ヘッダの位置 [名前の始め, 終わり, 値の始め, 終わり] × 本数（s からの相対 — Request.headers の形）
+    // 要求行の 1 つ目・2 つ目の空白（b の上 — ヘッダの位置の表は呼び手の列 hs に積む: frameAt の hs）
     sp1 int
     sp2 int
-    hs []int
 }
 
 func fr(st int, s int) frame {
-    return frame{st: st, s: s, he: 0, end: 0, chunked: false, keep: false, v10: false, sp1: 0, sp2: 0, hs: []int{}}
+    return frame{st: st, s: s, he: 0, end: 0, chunked: false, keep: false, v10: false, sp1: 0, sp2: 0}
 }
 
 // b[i:] の最初の LF の位置（無ければ -1）
@@ -1487,8 +1561,10 @@ func contentEnd(b []byte, ls int, le int) int {
 
 // b の at からの要求の枠を読む（頭の形・Content-Length / Transfer-Encoding / Connection・本文の長さと上限）。頭は 1 回だけなめる:
 // 行ごとに LF を探し（lineEnd — 8 バイトずつ）、空行で頭の終わり。要求行・ヘッダの誤りは最初の 1 つを覚えて空行まで進む
-// （頭の終わりが無ければ誤りより「足りない / 431」が先 — 誤りの順は要求行 → ヘッダの並び）。ヘッダの位置は request のために表へ
-func frameAt(b []byte, at int, mh int, mb int) frame {
+// （頭の終わりが無ければ誤りより「足りない / 431」が先 — 誤りの順は要求行 → ヘッダの並び）。ヘッダの位置は request のために hs へ
+// [名前の始め, 終わり, 値の始め, 終わり] × 本数（s からの相対 — Request.headers の形）を積む（呼び手の空の列 — 揃わなかった枠の分は読まない）。
+// 表を呼び手の列に積むのは、枠を自分の region で組んで写し出す往復を要求ごとに払わないため
+func frameAt(b []byte, at int, mh int, mb int, hs mut []int) frame {
     n := len(b)
     // 要求の前の空行は読み飛ばす（RFC 9112 2.2）
     mut s := at
@@ -1540,7 +1616,6 @@ func frameAt(b []byte, at int, mh int, mb int) frame {
     mut chunked := false
     mut closeTok := false
     mut kaTok := false
-    mut hs := mut []int{}
     mut he := -1
     mut prev := le
     while he < 0 {
@@ -1624,7 +1699,7 @@ func frameAt(b []byte, at int, mh int, mb int) frame {
     if end == -1 {
         return fr(0, s)
     }
-    return frame{st: 1, s: s, he: he, end: end, chunked: chunked, keep: keep, v10: v10, sp1: sp1, sp2: sp2, hs: freeze(hs)}
+    return frame{st: 1, s: s, he: he, end: end, chunked: chunked, keep: keep, v10: v10, sp1: sp1, sp2: sp2}
 }
 
 // he からの chunked の本文の終わり（trailer の空行の後）。-1 = 足りない・-400 / -413 = 誤り
@@ -1695,8 +1770,8 @@ func chunkedEnd(b []byte, he int, mb int) int {
     return -1
 }
 
-// 揃った枠 f の Request（頭が UTF-8 でなければ誤り）
-func request(b []byte, f frame) (Request, error?) {
+// 揃った枠 f の Request（頭が UTF-8 でなければ誤り・hs = frameAt が積んだヘッダの位置の表）
+func request(b []byte, f frame, hs []int) (Request, error?) {
     v := utf8.Check(b[f.s:f.he])?
     hb := utf8.Bytes(v)
     // 要求行の空白とヘッダの位置は frameAt が集めた（頭を読み直さない）
@@ -1707,7 +1782,7 @@ func request(b []byte, f frame) (Request, error?) {
     path := utf8.Str(v, sp1 + 1, if q >= 0 { q } else { sp2 })?
     query := if q >= 0 { utf8.Str(v, q + 1, sp2)? } else { "" }
     body := if f.chunked { unchunk(b, f.he) } else { b[f.he:f.end] }
-    return Request{method: method, path: path, query: query, head: v, headers: f.hs, body: body, pattern: ""}, nil
+    return Request{method: method, path: path, query: query, head: v, headers: hs, body: body, pattern: ""}, nil
 }
 
 // he からの（検査済みの）chunked の本文を繋いだ写し
@@ -1752,29 +1827,29 @@ func gzSize(r Response) bool {
     return len(r.body) >= gzMin
 }
 
-// 応答 r の頭と本文（gz > 0 = compression: の level・ae = 要求が gzip を受ける・wk = work: の置き場）。圧縮しうる応答（gzip が有効・Content-Type が圧縮向き・
+// 応答 r の頭に書く応答・頭の符号化の印（putHead の enc）・本文（gz > 0 = compression: の level・ae = 要求が gzip を受ける・wk = work: の置き場）。圧縮しうる応答（gzip が有効・Content-Type が圧縮向き・
 // 本文が gzMin 以上）には Vary: Accept-Encoding を付け、ae なら本文を gzip にして Content-Encoding: gzip を付ける
-func wire(r Response, keep bool, v10 bool, gz int, fresh bool, ae bool, wk task.Local?, hist mut compress.gzip.History) ([]byte, []byte) {
+func wire(r Response, gz int, fresh bool, ae bool, wk task.Local?, hist mut compress.gzip.History) (Response, int, []byte) {
     if r.coded != nil {
         // 符号化を選び済みの応答（Static の precompressed）は compression: の外 — Vary と Content-Encoding だけ
-        return respHead(r, keep, v10, 3), if r.stream != nil { []byte{} } else { r.body }
+        return r, 3, if r.stream != nil { []byte{} } else { r.body }
     }
     if r.stream != nil {
         // 本文は stream が送る。圧縮しうる stream の応答には Vary・ae なら長さ不定の頭（chunked / HTTP/1.0 は閉じの区切り）に Content-Encoding: gzip
         // （serveBuf が emit ごとに圧縮する — language.md 28 節の「compress + stream」）
         if gz == 0 || !gzSize(r) || !compressible(r.contentType) {
-            return respHead(r, keep, v10, 0), []byte{}
+            return r, 0, []byte{}
         }
         if !ae {
-            return respHead(r, keep, v10, 1), []byte{}
+            return r, 1, []byte{}
         }
-        return respHead(Response{status: r.status, contentType: r.contentType, stream: r.stream, headers: r.headers, cache: r.cache, validators: r.validators}, keep, v10, 2), []byte{}
+        return Response{status: r.status, contentType: r.contentType, stream: r.stream, headers: r.headers, cache: r.cache, validators: r.validators}, 2, []byte{}
     }
     if gz == 0 || len(r.body) < gzMin || !compressible(r.contentType) {
-        return respHead(r, keep, v10, 0), r.body
+        return r, 0, r.body
     }
     if !ae {
-        return respHead(r, keep, v10, 1), r.body
+        return r, 1, r.body
     }
     z := if fresh {
         if wk != nil { task.Lease(wk, (w mut compress.flate.Work) => compress.gzip.EncodeWith(mut w, r.body, gz)) } else { compress.gzip.Encode(r.body, gz) }
@@ -1783,7 +1858,7 @@ func wire(r Response, keep bool, v10 bool, gz int, fresh bool, ae bool, wk task.
     } else {
         compress.gzip.EncodeHistory(mut hist, r.body, gz)
     }
-    return respHead(Response{status: r.status, contentType: r.contentType, body: z, headers: r.headers, cache: r.cache, validators: r.validators}, keep, v10, 2), z
+    return Response{status: r.status, contentType: r.contentType, body: z, headers: r.headers, cache: r.cache, validators: r.validators}, 2, z
 }
 
 // emit 1 回分の p を圧縮して out へ渡す（空の p は何もしない — sync flush の空打ちを送らない）。合計が lim を超えたら以後は送らない
@@ -1948,22 +2023,21 @@ func zeroQ(b []byte, s int, e int) bool {
     return true
 }
 
-// 応答 r の頭（状態行・Content-Type・enc が 2 なら Content-Encoding: gzip・3 なら r.coded の Content-Encoding〔空なら書かない〕・
+// 応答 r の頭を h に積む（状態行・Content-Type・enc が 2 なら Content-Encoding: gzip・3 なら r.coded の Content-Encoding〔空なら書かない〕・
 // 1〜3 なら Vary: Accept-Encoding・Content-Length〔1xx・204・304 は書かない〕・
 // 閉じるなら Connection: close・HTTP/1.0 の keep-alive は明示・空行）
-func respHead(r Response, keep bool, v10 bool, enc int) []byte {
+func putHead(h mut []byte, r Response, keep bool, v10 bool, enc int) {
     // 早道: 頭の飾りの無い 200 の本文の応答（validators・cache・headers・enc・stream なし）は定型の列を
     // 3 つの塊で書く（状態行 + Content-Type の名前・既定の Cache-Control + Content-Length の名前 — 下の一般の道と同じバイト列）
     if r.status == http.OK && r.validators == nil && r.cache == nil && r.headers == nil && len(r.cookies) == 0 && enc == 0 && r.stream == nil && r.contentType != "" {
-        mut g := mut []byte{}
         for x <- bytes("HTTP/1.1 200 OK\r\nContent-Type: ") {
-            g = append(g, x)
+            h = append(h, x)
         }
         for x <- bytes(r.contentType) {
-            g = append(g, x)
+            h = append(h, x)
         }
         for x <- bytes("\r\nCache-Control: private\r\nContent-Length: ") {
-            g = append(g, x)
+            h = append(h, x)
         }
         n := len(r.body)
         mut p := 1
@@ -1971,16 +2045,15 @@ func respHead(r Response, keep bool, v10 bool, enc int) []byte {
             p = p * 10
         }
         while p > 0 {
-            g = append(g, byte(48 + n / p % 10))
+            h = append(h, byte(48 + n / p % 10))
             p = p / 10
         }
         tl := if !keep { "\r\nConnection: close\r\n\r\n" } else if v10 { "\r\nConnection: keep-alive\r\n\r\n" } else { "\r\n\r\n" }
         for x <- bytes(tl) {
-            g = append(g, x)
+            h = append(h, x)
         }
-        return freeze(g)
+        return
     }
-    mut h := mut []byte{}
     for x <- bytes(statusLine(r.status)) {
         h = append(h, x)
     }
@@ -2006,9 +2079,7 @@ func respHead(r Response, keep bool, v10 bool, enc int) []byte {
             }
         }
     }
-    // 既定の private は定数のまま（応答ごとに文字列を組まない）
-    cv := if r.cache == nil { "Cache-Control: private\r\n" } else { "Cache-Control: ${cacheValue(r.cache)}\r\n" }
-    for x <- bytes(cv) {
+    for x <- bytes(cacheLine(r.cache)) {
         h = append(h, x)
     }
     fs := r.headers
@@ -2029,12 +2100,10 @@ func respHead(r Response, keep bool, v10 bool, enc int) []byte {
             }
         }
     }
-    mut ci := 0
-    while ci < len(r.cookies) {
-        for x <- bytes(cookieLine(r.cookies[ci])) {
+    for ck <- r.cookies {
+        for x <- bytes(cookieLine(ck)) {
             h = append(h, x)
         }
-        ci += 1
     }
     if enc == 2 {
         for x <- bytes("Content-Encoding: gzip\r\n") {
@@ -2065,7 +2134,7 @@ func respHead(r Response, keep bool, v10 bool, enc int) []byte {
         for x <- bytes(tail) {
             h = append(h, x)
         }
-        return freeze(h)
+        return
     }
     ln := r.length
     if r.stream != nil && ln == nil {
@@ -2074,7 +2143,7 @@ func respHead(r Response, keep bool, v10 bool, enc int) []byte {
         for x <- bytes(te) {
             h = append(h, x)
         }
-        return freeze(h)
+        return
     }
     for x <- bytes("Content-Length: ") {
         h = append(h, x)
@@ -2096,6 +2165,12 @@ func respHead(r Response, keep bool, v10 bool, enc int) []byte {
     for x <- bytes(tail) {
         h = append(h, x)
     }
+}
+
+// 応答 r の頭の写し（putHead を新しい列に）
+func respHead(r Response, keep bool, v10 bool, enc int) []byte {
+    mut h := mut []byte{}
+    putHead(mut h, r, keep, v10, enc)
     return freeze(h)
 }
 

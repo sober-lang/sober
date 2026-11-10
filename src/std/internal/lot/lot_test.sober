@@ -1,0 +1,110 @@
+package lot
+
+// 預かり所の網（DB なし — fd の欄には負の偽の番号を置くので閉じない）: 多くの task が待機の枠を取り合っても同じ枠を 2 本が同時に持たない・
+// 預け直した枠がまた借りられる・借り手の task が死んだ枠を Reap が数えて空きへ戻す（生きた借り手の枠は回収しない）
+
+import "std/iter"
+import "std/os"
+import "std/task"
+
+type Boom panic
+
+const slots = 4
+
+func fill(l Lot) {
+    for i <- iter.Range(0, slots) {
+        j := TakeFree(l)
+        assert(j >= 0, "free slot")
+        Fresh(l, j, -1 - j)
+        Hold(l, j)
+        Park(l, j)
+    }
+}
+
+// 待機の枠を n 回借りて返す（取れなければ数えない）。借りている間は置き場の語 0 に自分の印を書き、返す前に読み直す
+func churn(l Lot, me int, n int) int {
+    mut got := 0
+    for _ <- iter.Range(0, n) {
+        i := TakeIdle(l)
+        if i >= 0 {
+            Hold(l, i)
+            pl := Place(l, i)
+            _ = leaseOp(5, pl, 0, me)
+            os.Sleep(1)
+            assert(leaseOp(4, pl, 0, 0) == me, "exclusive slot ${i}")
+            Park(l, i)
+            got += 1
+        }
+    }
+    return got
+}
+
+func TestChurn() {
+    l := New(slots, 8)
+    fill(l)
+    total, e := task.Run((s task.Scope) => {
+        mut hs := mut []task.Handle[int]{}
+        for k <- iter.Range(0, 16) {
+            hs = append(hs, task.Spawn(s, () => churn(l, k + 1, 50)))
+        }
+        mut sum := 0
+        for v <- task.Gather(hs) {
+            sum += v
+        }
+        sum
+    })
+    assert(e == nil, "churn scope")
+    assert(total > 0, "churn took slots")
+    // 全部の枠が待機に戻っている
+    mut idle := 0
+    for i <- iter.Range(0, slots) {
+        if state(l, i) == sIdle {
+            idle += 1
+        }
+    }
+    assert(idle == slots, "all parked: ${idle}")
+    assert(Reap(l) == 0, "nothing to reap")
+}
+
+func TestReapDead() {
+    l := New(slots, 8)
+    fill(l)
+    // 2 本は借りたまま死ぬ・1 本は借りたまま生きている（呼び手の task が持つ）
+    held := TakeIdle(l)
+    Hold(l, held)
+    _, e := task.Run((s task.Scope) => {
+        for _ <- iter.Range(0, 2) {
+            _ = task.Spawn(s, () => {
+                i := TakeIdle(l)
+                assert(i >= 0, "dying borrower took a slot")
+                Hold(l, i)
+                if i >= 0 {
+                    panic(Boom{})
+                }
+                0
+            })
+        }
+        0
+    })
+    assert(e != nil, "borrowers died")
+    assert(Reap(l) == 2, "reaped the dead borrowers")
+    assert(state(l, held) == sBusy, "live borrower kept")
+    assert(Reap(l) == 0, "reap is once")
+    Park(l, held)
+    mut free := 0
+    for i <- iter.Range(0, slots) {
+        if state(l, i) == sFree {
+            free += 1
+        }
+    }
+    assert(free == 2, "reaped slots are free: ${free}")
+}
+
+// 比較交換（rt の lease_op 8）: 期待どおりなら書いて成功・違えば書かずに失敗（同じ枠を 2 本が取れない芯 — 取り合いの窓そのものは乱択のスケジュールでは狙えない）
+func TestCas() {
+    l := New(1, 1)
+    assert(cas(l, 0, sFree, sClaim), "free → claim")
+    assert(!cas(l, 0, sFree, sClaim), "second claim fails")
+    assert(state(l, 0) == sClaim, "state kept")
+    assert(cas(l, 0, sClaim, sBusy) && !cas(l, 0, sClaim, sIdle) && state(l, 0) == sBusy, "busy")
+}

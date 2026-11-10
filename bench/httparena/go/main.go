@@ -1,6 +1,6 @@
 // Go の対照（net 4c — report-671）: HttpArena の go-stdlib エントリ（frameworks/go-stdlib/main.go — net/http・ServeMux）から
 // baseline / pipelined / limited-conn / latency / async の端点（/baseline11・/pipeline・/delay/{ms}）と /json/{count}（json-comp の端点 —
-// gzip の枝〔acceptsGzip・gzipPool〕も本家のまま — report-714）だけを写したもの（DB・TLS の依存を外す — 標準ライブラリだけで建つ）。
+// gzip の枝〔acceptsGzip・gzipPool〕も本家のまま — report-714）だけを写したもの（TLS の依存を外す — /async-db だけ本家と同じ pgx〔db.go〕）。
 // ハンドラの本体は go-stdlib と同じ。使い方: go run . [port] [tls の port]（既定 8080 / 8081・dataset = DATASET_PATH か /data/dataset.json）。
 // POST /echo（8gbit — report-848 / 855）も go-stdlib の echoBody のまま。json-tls（report-841 / 843）: 本家と同じく同じ mux を TLS の port の ListenAndServeTLS でも（証明書 = TLS_CERT / TLS_KEY か /certs/server.{crt,key} —
 // 無ければ開かない。本家は /certs の固定の path — 手元と CI で証明書の置き場を変えるために環境変数だけ足した）
@@ -208,6 +208,7 @@ func main() {
 		tlsPort = os.Args[2]
 	}
 	loadDataset()
+	loadPgPool()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /pipeline", pipeline)
 	mux.HandleFunc("GET /delay/{ms}", delay)
@@ -215,6 +216,7 @@ func main() {
 	mux.HandleFunc("POST /baseline11", baseline11)
 	mux.HandleFunc("GET /json/{count}", jsonItems)
 	mux.HandleFunc("POST /echo", echoBody)
+	mux.HandleFunc("GET /async-db", asyncDb)
 	cert, key := os.Getenv("TLS_CERT"), os.Getenv("TLS_KEY")
 	if cert == "" {
 		cert = "/certs/server.crt"

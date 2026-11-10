@@ -1,0 +1,546 @@
+package pgwire
+
+// PostgreSQL の wire protocol 3.0 の符号化と復号（純粋 — 入出力を持たない）。
+// 送る側は 1 メッセージ = 1 関数で、結果のバイト列をそのまま繋いで送る。受ける側は FrameLen で 1 本ずつ切り出して Decode で読む。
+// 受けたバイト列は信用しない: 長さの欄・数の欄・NUL 終端・DataRow の列の長さは全部 body の中に収まるかを確かめ、外れたら Protocol
+
+// サーバの送ってきたバイト列が wire protocol の形でない（長さの欄・数の欄が body に収まらない・NUL 終端が無い・知らない認証の副種別の形）
+type Protocol error
+
+// プロトコルの版 3.0（StartupMessage の先頭の語）
+const protoV30 = 196608
+
+// SSLRequest の要求の番号
+const sslCode = 80877103
+
+// ErrorResponse / NoticeResponse の欄 1 つ（code = 欄の種別の 1 バイト — 'S' 重大度・'C' SQLSTATE・'M' 本文・'D' 詳細・'n' 制約名 ほか）
+type Field struct {
+    code byte
+    value string
+}
+
+// RowDescription の列 1 つ（table / attr = 元の表の OID と列番号〔式なら 0〕・oid = 型の OID・size = 型の大きさ〔可変長は -1〕・
+// mod = 型修飾子・fmt = 0 text / 1 binary）
+type Col struct {
+    name string
+    table int
+    attr int
+    oid int
+    size int
+    mod int
+    fmt int
+}
+
+// Bind の引数 1 つ（null = SQL の NULL・bin = binary 形式〔false は text 形式〕・b = 値のバイト列）
+type Arg struct {
+    null bool
+    bin bool
+    b []byte
+}
+
+// サーバから受けるメッセージ（知らない tag は Unexpected — 受けた側が文脈で拒否する）
+type Msg union {
+    AuthOk {}
+    AuthSasl { mechs []string }
+    AuthSaslContinue { data []byte }
+    AuthSaslFinal { data []byte }
+    // SASL 以外の認証の要求（3 = 平文のパスワード・5 = MD5 ほか — std/pg は受けない）
+    AuthOther { code int }
+    ParamStatus { name string; value string }
+    BackendKey { pid int; key []byte }
+    // 'I' 待機中・'T' トランザクションの中・'E' 失敗したトランザクションの中
+    Ready { status byte }
+    RowDesc { cols []Col }
+    ParamDesc { oids []int }
+    // 列の値は body のまま（Decode が列の長さの並びを確かめ済み — RowCol で切り出す）
+    DataRow { body []byte }
+    CommandComplete { tag string }
+    EmptyQuery {}
+    ParseComplete {}
+    BindComplete {}
+    CloseComplete {}
+    NoData {}
+    PortalSuspended {}
+    ErrorMsg { fields []Field }
+    NoticeMsg { fields []Field }
+    Notification { pid int; channel string; payload string }
+    // サーバが要求の版の一部を受けない（minor = 受ける最大の副版・opts = 知らない protocol の選択肢）
+    NegotiateVersion { minor int; opts []string }
+    Unexpected { tag byte }
+}
+
+// ---- 送るメッセージ
+
+func put32(b mut []byte, v int) {
+    b = append(b, byte((v >> 24) & 255))
+    b = append(b, byte((v >> 16) & 255))
+    b = append(b, byte((v >> 8) & 255))
+    b = append(b, byte(v & 255))
+}
+
+func put16(b mut []byte, v int) {
+    b = append(b, byte((v >> 8) & 255))
+    b = append(b, byte(v & 255))
+}
+
+// s と終端の NUL（s が NUL を含むかは呼び手が確かめる — CstrOk）
+func putCstr(b mut []byte, s string) {
+    for x <- bytes(s) {
+        b = append(b, x)
+    }
+    b = append(b, 0)
+}
+
+func putAll(b mut []byte, s []byte) {
+    for x <- s {
+        b = append(b, x)
+    }
+}
+
+// s が NUL を含まない（C 文字列の欄に載せてよい）
+func CstrOk(s string) bool {
+    for x <- bytes(s) {
+        if x == 0 {
+            return false
+        }
+    }
+    return true
+}
+
+// tag と長さの欄を付けた型つきのメッセージ
+func frame(tag byte, body []byte) []byte {
+    mut b := mut []byte{tag}
+    put32(mut b, len(body) + 4)
+    putAll(mut b, body)
+    return freeze(b)
+}
+
+func cat(a []byte, b []byte) []byte {
+    mut o := mut []byte{}
+    putAll(mut o, a)
+    putAll(mut o, b)
+    return freeze(o)
+}
+
+// StartupMessage（版 3.0・user と database の 2 つの欄）
+func EncStartup(user string, db string) []byte {
+    mut body := mut []byte{}
+    put32(mut body, protoV30)
+    putCstr(mut body, "user")
+    putCstr(mut body, user)
+    putCstr(mut body, "database")
+    putCstr(mut body, db)
+    body = append(body, 0)
+    mut b := mut []byte{}
+    put32(mut b, len(body) + 4)
+    putAll(mut b, freeze(body))
+    return freeze(b)
+}
+
+// StartupMessage に application_name を足した形
+func EncStartupApp(user string, db string, app string) []byte {
+    mut body := mut []byte{}
+    put32(mut body, protoV30)
+    putCstr(mut body, "user")
+    putCstr(mut body, user)
+    putCstr(mut body, "database")
+    putCstr(mut body, db)
+    putCstr(mut body, "application_name")
+    putCstr(mut body, app)
+    body = append(body, 0)
+    mut b := mut []byte{}
+    put32(mut b, len(body) + 4)
+    putAll(mut b, freeze(body))
+    return freeze(b)
+}
+
+func EncSslRequest() []byte {
+    mut b := mut []byte{}
+    put32(mut b, 8)
+    put32(mut b, sslCode)
+    return freeze(b)
+}
+
+// Parse（name = 文の名前〔"" = 無名〕・oids = 引数の型〔0 = サーバに推させる〕）
+func EncParse(name string, sql string, oids []int) []byte {
+    mut b := mut []byte{}
+    putCstr(mut b, name)
+    putCstr(mut b, sql)
+    put16(mut b, len(oids))
+    for o <- oids {
+        put32(mut b, o)
+    }
+    return frame('P', freeze(b))
+}
+
+// Describe（kind = 'S' 文 / 'P' portal）
+func EncDescribe(kind byte, name string) []byte {
+    mut b := mut []byte{kind}
+    putCstr(mut b, name)
+    return frame('D', freeze(b))
+}
+
+// Bind（引数ごとの形式の符号を引数の数だけ・結果の形式は fmts〔空 = 全部 text・1 つ = 全列・列の数 = 列ごと〕）
+func EncBind(portal string, stmt string, args []Arg, fmts []int) []byte {
+    mut b := mut []byte{}
+    putCstr(mut b, portal)
+    putCstr(mut b, stmt)
+    put16(mut b, len(args))
+    for a <- args {
+        put16(mut b, if a.bin { 1 } else { 0 })
+    }
+    put16(mut b, len(args))
+    for a <- args {
+        if a.null {
+            put32(mut b, -1)
+        } else {
+            put32(mut b, len(a.b))
+            putAll(mut b, a.b)
+        }
+    }
+    put16(mut b, len(fmts))
+    for f <- fmts {
+        put16(mut b, f)
+    }
+    return frame('B', freeze(b))
+}
+
+// Execute（max = 返す行の上限〔0 = 全部〕）
+func EncExecute(portal string, max int) []byte {
+    mut b := mut []byte{}
+    putCstr(mut b, portal)
+    put32(mut b, max)
+    return frame('E', freeze(b))
+}
+
+// Close（kind = 'S' 文 / 'P' portal）
+func EncClose(kind byte, name string) []byte {
+    mut b := mut []byte{kind}
+    putCstr(mut b, name)
+    return frame('C', freeze(b))
+}
+
+func EncSync() []byte {
+    return frame('S', []byte{})
+}
+
+func EncTerminate() []byte {
+    return frame('X', []byte{})
+}
+
+// simple query（引数なし・複数の文を ; で繋いでよい）
+func EncQuery(sql string) []byte {
+    mut b := mut []byte{}
+    putCstr(mut b, sql)
+    return frame('Q', freeze(b))
+}
+
+// SASLInitialResponse（mech = 選んだ方式・data = 最初のメッセージ）
+func EncSaslInitial(mech string, data []byte) []byte {
+    mut b := mut []byte{}
+    putCstr(mut b, mech)
+    put32(mut b, len(data))
+    putAll(mut b, data)
+    return frame('p', freeze(b))
+}
+
+func EncSaslResponse(data []byte) []byte {
+    return frame('p', data)
+}
+
+// ---- 受けるメッセージ
+
+// b[at:] に揃ったメッセージの長さ（tag の 1 バイト込み）。揃っていなければ 0・長さの欄が 4 未満か max を超えれば -1
+func FrameLen(b []byte, at int, max int) int {
+    if len(b) - at < 5 {
+        return 0
+    }
+    n := int(b[at + 1]) << 24 | int(b[at + 2]) << 16 | int(b[at + 3]) << 8 | int(b[at + 4])
+    if n < 4 || n > max {
+        return -1
+    }
+    return if len(b) - at >= 1 + n { 1 + n } else { 0 }
+}
+
+// body を前から読む位置（bad = 読みが body の外へ出た — body は読む関数に毎回渡す）
+type rd struct {
+    at int
+    bad bool
+}
+
+func reader() rd {
+    return rd{at: 0, bad: false}
+}
+
+// 符号つき 32 bit（DataRow の -1 = NULL を読むため）
+func r32(b []byte, r mut rd) int {
+    if len(b) - r.at < 4 {
+        r.bad = true
+        return 0
+    }
+    i := r.at
+    u := int(b[i]) << 24 | int(b[i + 1]) << 16 | int(b[i + 2]) << 8 | int(b[i + 3])
+    r.at = i + 4
+    return if u >= 2147483648 { u - 4294967296 } else { u }
+}
+
+// 符号つき 16 bit
+func r16(b []byte, r mut rd) int {
+    if len(b) - r.at < 2 {
+        r.bad = true
+        return 0
+    }
+    u := int(b[r.at]) << 8 | int(b[r.at + 1])
+    r.at += 2
+    return if u >= 32768 { u - 65536 } else { u }
+}
+
+func r8(b []byte, r mut rd) byte {
+    if len(b) - r.at < 1 {
+        r.bad = true
+        return 0
+    }
+    x := b[r.at]
+    r.at += 1
+    return x
+}
+
+// NUL 終端の文字列（UTF-8 でなければ bad — client_encoding は UTF8 に固定する）
+func rcstr(b []byte, r mut rd) string {
+    mut j := r.at
+    while j < len(b) && b[j] != 0 {
+        j += 1
+    }
+    if j >= len(b) {
+        r.bad = true
+        return ""
+    }
+    s, e := string(b[r.at:j])
+    if e != nil {
+        r.bad = true
+    }
+    r.at = j + 1
+    return s
+}
+
+func rbytes(b []byte, r mut rd, n int) []byte {
+    if n < 0 || len(b) - r.at < n {
+        r.bad = true
+        return []byte{}
+    }
+    x := b[r.at:r.at + n]
+    r.at += n
+    return x
+}
+
+// 残り全部
+func rrest(b []byte, r mut rd) []byte {
+    return rbytes(b, mut r, len(b) - r.at)
+}
+
+// 読みきった（body の外へ出ず・余りも無い）
+func done(b []byte, r rd) bool {
+    return !r.bad && r.at == len(b)
+}
+
+// 1 本のメッセージ（tag と body — FrameLen で切り出したもの）を読む
+@errors(Protocol)
+func Decode(tag byte, body []byte) (Msg, error?) {
+    mut r := reader()
+    m := decodeIn(tag, body, mut r)
+    if !done(body, r) {
+        return Unexpected{tag: tag}, Protocol{}
+    }
+    return m, nil
+}
+
+func decodeIn(tag byte, b []byte, r mut rd) Msg {
+    return if tag == 'R' {
+        decodeAuth(b, mut r)
+    } else if tag == 'S' {
+        name := rcstr(b, mut r)
+        ParamStatus{name: name, value: rcstr(b, mut r)}
+    } else if tag == 'K' {
+        pid := r32(b, mut r)
+        BackendKey{pid: pid, key: rrest(b, mut r)}
+    } else if tag == 'Z' {
+        st := r8(b, mut r)
+        if st != 'I' && st != 'T' && st != 'E' {
+            r.bad = true
+        }
+        Ready{status: st}
+    } else if tag == 'T' {
+        RowDesc{cols: decodeCols(b, mut r)}
+    } else if tag == 't' {
+        n := r16(b, mut r)
+        mut oids := mut []int{}
+        mut i := 0
+        while i < n && !r.bad {
+            oids = append(oids, r32(b, mut r) & 4294967295)
+            i += 1
+        }
+        if n < 0 {
+            r.bad = true
+        }
+        ParamDesc{oids: freeze(oids)}
+    } else if tag == 'D' {
+        checkRow(b, mut r)
+        DataRow{body: cat([]byte{}, b)}
+    } else if tag == 'C' {
+        CommandComplete{tag: rcstr(b, mut r)}
+    } else if tag == 'I' {
+        EmptyQuery{}
+    } else if tag == '1' {
+        ParseComplete{}
+    } else if tag == '2' {
+        BindComplete{}
+    } else if tag == '3' {
+        CloseComplete{}
+    } else if tag == 'n' {
+        NoData{}
+    } else if tag == 's' {
+        PortalSuspended{}
+    } else if tag == 'E' {
+        ErrorMsg{fields: decodeFields(b, mut r)}
+    } else if tag == 'N' {
+        NoticeMsg{fields: decodeFields(b, mut r)}
+    } else if tag == 'A' {
+        pid := r32(b, mut r)
+        ch := rcstr(b, mut r)
+        Notification{pid: pid, channel: ch, payload: rcstr(b, mut r)}
+    } else if tag == 'v' {
+        minor := r32(b, mut r)
+        n := r32(b, mut r)
+        mut opts := mut []string{}
+        mut i := 0
+        while i < n && !r.bad {
+            opts = append(opts, rcstr(b, mut r))
+            i += 1
+        }
+        if n < 0 {
+            r.bad = true
+        }
+        NegotiateVersion{minor: minor, opts: freeze(opts)}
+    } else {
+        _ = rrest(b, mut r)
+        Unexpected{tag: tag}
+    }
+}
+
+// 'R'（Authentication* — 副種別の語の後ろが種別ごとの形）
+func decodeAuth(b []byte, r mut rd) Msg {
+    code := r32(b, mut r)
+    return if code == 0 {
+        AuthOk{}
+    } else if code == 10 {
+        // 方式の名前の列（空の名前で終わる）
+        mut ms := mut []string{}
+        mut more := true
+        while more && !r.bad {
+            m := rcstr(b, mut r)
+            if m == "" {
+                more = false
+            } else {
+                ms = append(ms, m)
+            }
+        }
+        AuthSasl{mechs: freeze(ms)}
+    } else if code == 11 {
+        AuthSaslContinue{data: rrest(b, mut r)}
+    } else if code == 12 {
+        AuthSaslFinal{data: rrest(b, mut r)}
+    } else {
+        _ = rrest(b, mut r)
+        AuthOther{code: code}
+    }
+}
+
+func decodeCols(b []byte, r mut rd) []Col {
+    n := r16(b, mut r)
+    if n < 0 {
+        r.bad = true
+    }
+    mut cs := mut []Col{}
+    mut i := 0
+    while i < n && !r.bad {
+        name := rcstr(b, mut r)
+        table := r32(b, mut r) & 4294967295
+        attr := r16(b, mut r)
+        oid := r32(b, mut r) & 4294967295
+        size := r16(b, mut r)
+        tmod := r32(b, mut r)
+        fmt := r16(b, mut r)
+        if fmt != 0 && fmt != 1 {
+            r.bad = true
+        }
+        cs = append(cs, Col{name: name, table: table, attr: attr, oid: oid, size: size, mod: tmod, fmt: fmt})
+        i += 1
+    }
+    return freeze(cs)
+}
+
+// DataRow の body が「列の数 + 各列の長さ（-1 = NULL）と値」の形で body にちょうど収まるか
+func checkRow(b []byte, r mut rd) {
+    n := r16(b, mut r)
+    if n < 0 {
+        r.bad = true
+    }
+    mut i := 0
+    while i < n && !r.bad {
+        ln := r32(b, mut r)
+        if ln < -1 {
+            r.bad = true
+        } else if ln > 0 {
+            _ = rbytes(b, mut r, ln)
+        }
+        i += 1
+    }
+}
+
+// 欄の列（欄の種別 0 で終わる）
+func decodeFields(b []byte, r mut rd) []Field {
+    mut fs := mut []Field{}
+    mut more := true
+    while more && !r.bad {
+        c := r8(b, mut r)
+        if c == 0 {
+            more = false
+        } else {
+            fs = append(fs, Field{code: c, value: rcstr(b, mut r)})
+        }
+    }
+    return freeze(fs)
+}
+
+// fs の欄 code の値（無ければ ""）
+func FieldOf(fs []Field, code byte) string {
+    for f <- fs {
+        if f.code == code {
+            return f.value
+        }
+    }
+    return ""
+}
+
+// DataRow の body（Decode が形を確かめ済み）の列 i の値（NULL なら nil）
+func RowCol(b []byte, i int) ([]byte)? {
+    mut r := reader()
+    n := r16(b, mut r)
+    mut k := 0
+    while k < n {
+        ln := r32(b, mut r)
+        if k == i {
+            return if ln < 0 { nil } else { rbytes(b, mut r, ln) }
+        }
+        if ln > 0 {
+            _ = rbytes(b, mut r, ln)
+        }
+        k += 1
+    }
+    return nil
+}
+
+// DataRow の body の列の数
+func RowLen(body []byte) int {
+    return if len(body) < 2 { 0 } else { int(body[0]) << 8 | int(body[1]) }
+}

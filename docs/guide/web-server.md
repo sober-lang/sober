@@ -215,7 +215,7 @@ GET /nope -> 404
 When you want state that changes across requests, like a table of users, there are exactly two places to put it.
 
 - To keep the state in the process, accept serially. Accept connections one at a time with `for c <- net.Accept(l)`, and pass the `mut` table through the lambda you give to `ServeConn`. `ServeConn`'s `route` parameter is a borrow (used only during the call, never kept), so you can pass it a lambda that captures a `mut` value
-- To accept in parallel, put the state in an outside store (a database or the like). `net.Serve` runs its handler in a separate task per connection, all at once, so the handler cannot capture a `mut` value. Two tasks writing the same table at the same time (a data race) is a shape the language does not let you write. Give the handler only values that do not change (configuration, keys) and ask the outside store for the changing state
+- To accept in parallel, put the state in a domain or an outside store (a database or the like). `net.Serve` runs its handler in a separate task per connection, all at once, so the handler cannot capture a `mut` value. Two tasks writing the same table at the same time (a data race) is a shape the language does not let you write. To keep the state in the process, make it with `task.NewDomain(s, init)` inside the `task.Run` around `net.Serve`, let the handler capture it, and apply updates one at a time with `task.Update(d, (st mut T) => …)` (a domain body is a short update that neither waits nor does io — counters, small tables, the free slots of a connection pool). Ask an outside store for large or durable state
 
 The example in section 7 (`examples/web_login.sober`) takes the first form. `serve` owns the `users` table and the key, and passes them to `route` through a borrowed lambda.
 
@@ -927,6 +927,18 @@ func field(r http.server.Request, key string) string? {
 
 - `__Host-` cookies assume https. Browsers do not accept a `Secure` cookie from an http response, so the example in section 7 (loopback http) cannot be tried in a browser. The example's client (`std/http/client`) keeps the cookie as a value: it reads it with `http.client.CookieValue` and sends it with the next request's `cookies:` (`send`) — the regular way for a client to carry cookies, and it works unchanged against a server published over https (section 9)
 - The values of a `Request` live only for that one request (section 1). Copy them before putting them in a table that outlives the request
+
+- To respond after a wait, return `http.server.Delayed(ms, response)` instead of calling `os.Sleep` inside the handler. The response goes out at the same time, but the connection does not keep the handler's stack and the request region while it waits, so connections that are waiting stay as small as keep-alive connections. The wait happens right before that response's head; earlier responses on the same connection are sent first
+
+```sober
+// examples/http_delayed.sober (excerpt)
+func route(r http.server.Request) http.server.Response {
+    if r.path == "/slow" {
+        return http.server.Delayed(20, http.server.Text("slow\n"))
+    }
+    return http.server.Text("hello\n")
+}
+```
 
 ## 9. Publishing over TLS — `tls.Serve`
 

@@ -1,0 +1,36 @@
+package main
+
+// The body of a domain call can pass the state (or a part of it) as a mut argument to a function that writes it by the same
+// rule as the body: scalars and the elements of the state's mut slices — nothing that would grow the state
+
+import "std/task"
+
+type Board struct {
+    moves int
+    cells mut []int
+}
+
+func play(b mut Board, at int, who int) {
+    b.cells[at] = who
+    b.moves += 1
+}
+
+func swapEnds(cells mut []int) {
+    t := cells[0]
+    cells[0] = cells[len(cells) - 1]
+    cells[len(cells) - 1] = t
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, Board{moves: 0, cells: mut []int{0, 0, 0}})
+        _ = task.Update(d, (st mut Board) => {
+            play(mut st, 0, 1)
+            play(mut st, 1, 2)
+            swapEnds(mut st.cells)
+            st.moves
+        })
+        task.Read(d, (st Board) => "${st.moves} ${st.cells[0]} ${st.cells[1]} ${st.cells[2]}")
+    })
+    println(if e == nil { r } else { "died" })
+}

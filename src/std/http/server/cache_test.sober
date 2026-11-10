@@ -5,11 +5,14 @@ package server
 // cache を cache の無い応答にだけ写す
 
 import "std/http"
+import "std/strings"
 
 // 頭 h（要求行から空行まで）の要求
 func rq(h string) Request {
     b := bytes(h)
-    r, e := request(b, frameAt(b, 0, 8192, 8192))
+    mut hs := mut []int{}
+    f := frameAt(b, 0, 8192, 8192, mut hs)
+    r, e := request(b, f, freeze(hs))
     assert(e == nil)
     return r
 }
@@ -78,4 +81,20 @@ func TestRouteCache() {
     // Mount はルートの cache を保つ
     m := Mount("/p", rs, []Middleware{})
     assert(cacheValue(Dispatch(m, rq("GET /p/a HTTP/1.1\r\n\r\n")).cache) == "max-age=60")
+}
+
+func TestUnstated() {
+    // ルートの行の Unstated は Cache-Control の行を書かない（一般の道・圧縮の道とも）・既定と他の行は不変
+    rs := []Route{
+        Route{method: "GET", path: "/u", handler: (r) => Text("u"), middleware: []Middleware{}, cache: Unstated{}},
+        Route{method: "GET", path: "/d", handler: (r) => Text("d"), middleware: []Middleware{}},
+    }
+    u := Dispatch(rs, rq("GET /u HTTP/1.1\r\n\r\n"))
+    assert(cacheLine(u.cache) == "")
+    h := string(respHead(u, true, false, 0)) catch ""
+    assert(h == "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 1\r\n\r\n")
+    g := string(respHead(u, true, false, 2)) catch ""
+    assert(!strings.Contains(g, "Cache-Control"))
+    d := Dispatch(rs, rq("GET /d HTTP/1.1\r\n\r\n"))
+    assert(string(respHead(d, true, false, 0)) catch "" == "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nCache-Control: private\r\nContent-Length: 1\r\n\r\n")
 }

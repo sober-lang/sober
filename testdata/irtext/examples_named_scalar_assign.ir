@@ -1822,20 +1822,20 @@ b3:
   %24 = const 1
   %25 = const 1
   %26 = const 5
-  %27 = slotaddr s1
-  %28 = const 0
-  store %27[0], %28
-  store %27[1], %28
-  store %27[2], %28
-  store %27[0], %24
-  store %27[1], %25
-  store %27[2], %26
+  %27 = const 0
+  %28 = slotaddr s1
+  store %28[0], %27
+  store %28[1], %27
+  store %28[2], %27
+  store %28[0], %24
+  store %28[1], %25
+  store %28[2], %26
   %29 = slotaddr s2
-  %30 = load.i64 %27[0]
+  %30 = load.i64 %28[0]
   store %29[0], %30
-  %31 = load.i64 %27[1]
+  %31 = load.i64 %28[1]
   store %29[1], %31
-  %32 = load.i64 %27[2]
+  %32 = load.i64 %28[2]
   store %29[2], %32
   %33 = const 9
   store %29[0], %33

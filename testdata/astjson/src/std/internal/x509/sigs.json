@@ -3503,6 +3503,218 @@
         "end": 1081
       },
       "sig_end": 945
+    },
+    {
+      "name": "EndPoint",
+      "type_params": [],
+      "params": [
+        {
+          "name": "c",
+          "type": {
+            "k": "name",
+            "name": "Cert"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "slice_of",
+          "elem": {
+            "k": "name",
+            "name": "byte"
+          },
+          "mut": false
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "hbits"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "if",
+                "cond": {
+                  "k": "binary",
+                  "op": "||",
+                  "lhs": {
+                    "k": "binary",
+                    "op": "==",
+                    "lhs": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "c",
+                        "tok": 1099
+                      },
+                      "field": "sigAlg",
+                      "tok": 1101
+                    },
+                    "rhs": {
+                      "k": "ident",
+                      "name": "SigEcdsaSha384",
+                      "tok": 1103
+                    },
+                    "tok": 1102
+                  },
+                  "rhs": {
+                    "k": "binary",
+                    "op": "==",
+                    "lhs": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "c",
+                        "tok": 1105
+                      },
+                      "field": "sigAlg",
+                      "tok": 1107
+                    },
+                    "rhs": {
+                      "k": "ident",
+                      "name": "SigRsaSha384",
+                      "tok": 1109
+                    },
+                    "tok": 1108
+                  },
+                  "tok": 1104
+                },
+                "then": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "int",
+                        "value": 384,
+                        "tok": 1111
+                      }
+                    }
+                  ]
+                },
+                "else": {
+                  "k": "if",
+                  "cond": {
+                    "k": "binary",
+                    "op": "||",
+                    "lhs": {
+                      "k": "binary",
+                      "op": "==",
+                      "lhs": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "c",
+                          "tok": 1115
+                        },
+                        "field": "sigAlg",
+                        "tok": 1117
+                      },
+                      "rhs": {
+                        "k": "ident",
+                        "name": "SigEcdsaSha512",
+                        "tok": 1119
+                      },
+                      "tok": 1118
+                    },
+                    "rhs": {
+                      "k": "binary",
+                      "op": "==",
+                      "lhs": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "c",
+                          "tok": 1121
+                        },
+                        "field": "sigAlg",
+                        "tok": 1123
+                      },
+                      "rhs": {
+                        "k": "ident",
+                        "name": "SigRsaSha512",
+                        "tok": 1125
+                      },
+                      "tok": 1124
+                    },
+                    "tok": 1120
+                  },
+                  "then": {
+                    "stmts": [
+                      {
+                        "k": "expr",
+                        "expr": {
+                          "k": "int",
+                          "value": 512,
+                          "tok": 1127
+                        }
+                      }
+                    ]
+                  },
+                  "else": {
+                    "k": "block",
+                    "stmts": [
+                      {
+                        "k": "expr",
+                        "expr": {
+                          "k": "int",
+                          "value": 256,
+                          "tok": 1131
+                        }
+                      }
+                    ]
+                  },
+                  "tok": 1114
+                },
+                "tok": 1098
+              }
+            ],
+            "tok": 1096
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "Digest",
+                  "tok": 1135
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "hbits",
+                    "tok": 1137
+                  },
+                  {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "c",
+                      "tok": 1139
+                    },
+                    "field": "raw",
+                    "tok": 1141
+                  }
+                ],
+                "tok": 1136
+              }
+            ],
+            "tok": 1134
+          }
+        ]
+      },
+      "tok": 1087,
+      "bodiless": false,
+      "span": {
+        "start": 1081,
+        "end": 1146
+      },
+      "sig_end": 1095
     }
   ],
   "consts": []

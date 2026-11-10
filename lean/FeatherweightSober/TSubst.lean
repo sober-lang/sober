@@ -43,6 +43,7 @@ theorem Ty.annFree_tsubst {ts : List Ty} : ∀ {t : Ty}, t.annFree = true → (t
       simp [Ty.tsubst, Ty.annFree, Ty.annFree_tsubst h]
     · rfl
   | .chan _ _, _ => rfl
+  | .dom _ _, _ => rfl
   | .own _ _ _, _ => rfl
   | .fn _ _, _ => rfl
   | .mus _ _ _, _ => rfl
@@ -107,6 +108,7 @@ theorem Ty.retOk_of_argOk : ∀ {t : Ty}, t.tyArgOk = true → t.retOk = true
   | .slice _ _ _, h => by simp [Ty.tyArgOk, Ty.regionsBelow] at h
   | .map _ _ _, h => by simp [Ty.tyArgOk, Ty.regionsBelow] at h
   | .chan _ _, h => by simp [Ty.tyArgOk, Ty.chanFree] at h
+  | .dom _ _, h => by simp [Ty.tyArgOk, Ty.chanFree] at h
   | .fn _ _, _ => rfl
   | .mus _ _ _, _ => rfl
   | .rvar _, _ => rfl
@@ -155,6 +157,7 @@ theorem Ty.tsubst_retOk {ts : List Ty} (h : Ty.tyArgsOk ts = true) :
       simp only [Ty.tsubst, Ty.retOk, Bool.and_eq_true]
       exact ⟨hr.1, Ty.tsubst_retOk h hr.2⟩
   | .chan _ _, hr => by simp [Ty.retOk] at hr
+  | .dom _ _, hr => by simp [Ty.retOk] at hr
   | .fn _ _, _ => rfl
   | .mus _ _ _, _ => rfl
   | .rvar _, _ => rfl
@@ -164,7 +167,7 @@ theorem Ty.tsubst_retOk {ts : List Ty} (h : Ty.tyArgsOk ts = true) :
 
 theorem Ty.tsubst_paramOk {ts : List Ty} (h : Ty.tyArgsOk ts = true) {t : Ty} :
     (t.tsubst ts).paramOk = t.paramOk := by
-  simp only [Ty.paramOk, Ty.tsubst_regionsBelow h, Ty.tsubst_mutFree h, Ty.tsubst_chanFree h]
+  simp only [Ty.paramOk, Ty.tsubst_regionsBelow h, Ty.tsubst_mutFree h, Ty.tsubst_argFree h]
 
 theorem Expr.noNewchan_tsubstTy {ts : List Ty} :
     ∀ {e : Expr}, (e.tsubstTy ts).noNewchan = e.noNewchan := by
@@ -175,12 +178,12 @@ theorem Expr.noNewchan_tsubstTy {ts : List Ty} :
 theorem Ty.isMut0_of_locFree : ∀ {t : Ty}, t.regionsBelow 0 = true → t.isMut0 = false
   | .ref _ _ _, h | .slice _ _ _, h | .map _ _ _, h => by simp [Ty.regionsBelow] at h
   | .int, _ | .tvar _, _ | .bool, _ | .byte, _ | .f64, _ | .unit, _ | .opt _, _ | .union _ _, _ | .prod _ _, _
-  | .chan _ _, _ | .fn _ _, _ | .rvar _, _ | .mus _ _ _, _ | .muRs _ _ _ _, _ => rfl
+  | .chan _ _, _ | .dom _ _, _ | .fn _ _, _ | .rvar _, _ | .mus _ _ _, _ | .muRs _ _ _ _, _ => rfl
 
 theorem Ty.mutTop_of_locFree : ∀ {t : Ty}, t.regionsBelow 0 = true → t.mutTop = none
   | .ref _ _ _, h | .slice _ _ _, h | .map _ _ _, h => by simp [Ty.regionsBelow] at h
   | .int, _ | .tvar _, _ | .bool, _ | .byte, _ | .f64, _ | .unit, _ | .opt _, _ | .union _ _, _ | .prod _ _, _
-  | .chan _ _, _ | .fn _ _, _ | .rvar _, _ | .mus _ _ _, _ | .muRs _ _ _ _, _ => rfl
+  | .chan _ _, _ | .dom _ _, _ | .fn _ _, _ | .rvar _, _ | .mus _ _ _, _ | .muRs _ _ _ _, _ => rfl
 
 theorem Ty.anchorOf_of_locFreeL : ∀ {p : Ty} (ta : Ty), p.regionsBelow 0 = true → Ty.anchorOf p ta = none := by
   intro p
@@ -216,7 +219,7 @@ theorem Ty.mutTop_tsubst {ts : List Ty} (h : Ty.tyArgsOk ts = true) : ∀ t : Ty
       simp only [Ty.tyArgOk, Bool.and_eq_true] at this
       exact this.1)
   | .ref m r _ | .slice m r _ | .map m r _ => by simp [Ty.tsubst, Ty.mutTop]
-  | .int | .bool | .byte | .f64 | .unit | .opt _ | .union _ _ | .prod _ _ | .chan _ _ | .fn _ _ | .own _ _ _ | .rvar _ | .mus _ _ _ | .muRs _ _ _ _ => by
+  | .int | .bool | .byte | .f64 | .unit | .opt _ | .union _ _ | .prod _ _ | .chan _ _ | .dom _ _ | .fn _ _ | .own _ _ _ | .rvar _ | .mus _ _ _ | .muRs _ _ _ _ => by
     simp [Ty.tsubst, Ty.mutTop]
 
 theorem Ty.anchorOf_tsubst {ts : List Ty} (h : Ty.tyArgsOk ts = true) :
@@ -262,6 +265,7 @@ theorem Ty.tsubst_renR {ts : List Ty} {a d : Nat} (h : Ty.tyArgsOk ts = true) :
   | .slice m r t => by simp [Ty.tsubst, Ty.renR, Ty.tsubst_renR h t]
   | .map m r t => by simp [Ty.tsubst, Ty.renR, Ty.tsubst_renR h t]
   | .chan rc t => by simp [Ty.tsubst, Ty.renR, Ty.tsubst_renR h t]
+  | .dom rc t => by simp [Ty.tsubst, Ty.renR, Ty.tsubst_renR h t]
   | .own k r t => by simp [Ty.tsubst, Ty.renR, Ty.tsubst_renR h t]
   | .fn p r => rfl
   | .mus _ _ p => rfl
@@ -289,6 +293,7 @@ theorem Ty.relocA_of_argOk {a d : Nat} {t : Ty} (h : t.tyArgOk = true) : t.reloc
   | slice _ _ _ _ => simp [Ty.tyArgOk, Ty.regionsBelow] at h
   | map _ _ _ _ => simp [Ty.tyArgOk, Ty.regionsBelow] at h
   | chan _ _ _ => simp [Ty.tyArgOk, Ty.chanFree] at h
+  | dom _ _ _ => simp [Ty.tyArgOk, Ty.chanFree] at h
   | own _ _ _ _ => simp [Ty.tyArgOk, Ty.chanFree] at h
   | fn _ _ _ _ => rfl
   | muRs _ _ _ _ _ => simp [Ty.tyArgOk, Ty.regionsBelow] at h
@@ -312,6 +317,7 @@ theorem Ty.tsubst_relocA {ts : List Ty} {a d : Nat} (h : Ty.tyArgsOk ts = true) 
   | .slice m r t => by cases m <;> simp [Ty.tsubst, Ty.relocA, Ty.tsubst_renR h t, Ty.tsubst_relocA h t]
   | .map m r t => by cases m <;> simp [Ty.tsubst, Ty.relocA, Ty.tsubst_renR h t, Ty.tsubst_relocA h t]
   | .chan rc t => by simp [Ty.tsubst, Ty.relocA, Ty.tsubst_renR h t]
+  | .dom rc t => by simp [Ty.tsubst, Ty.relocA, Ty.tsubst_renR h t]
   | .own k r t => by simp [Ty.tsubst, Ty.relocA, Ty.tsubst_renR h t]
   | .fn p r => rfl
   | .mus _ _ p => rfl
@@ -357,6 +363,7 @@ theorem Ty.clampR_tsubst {ts : List Ty} {k : Nat} (h : Ty.tyArgsOk ts = true) :
   | .slice m r t => by cases m <;> simp [Ty.tsubst, Ty.clampR, Ty.clampR_tsubst h t]
   | .map m r t => by cases m <;> simp [Ty.tsubst, Ty.clampR, Ty.clampR_tsubst h t]
   | .chan _ _ => rfl
+  | .dom _ _ => rfl
   | .own _ _ _ => rfl
   | .fn _ _ => rfl
   | .mus _ _ _ => rfl
@@ -396,6 +403,7 @@ theorem Ty.noClamp_tsubst {ts : List Ty} {k : Nat} (h : Ty.tyArgsOk ts = true) :
   | .slice m r t => by cases m <;> simp [Ty.tsubst, Ty.noClamp, Ty.noClamp_tsubst h t]
   | .map m r t => by cases m <;> simp [Ty.tsubst, Ty.noClamp, Ty.noClamp_tsubst h t]
   | .chan _ _ => rfl
+  | .dom _ _ => rfl
   | .own _ _ _ => rfl
   | .fn _ _ => rfl
   | .mus _ _ _ => rfl
@@ -417,9 +425,19 @@ theorem Ty.givable_of_argOk {rs : Nat} {t : Ty} (h : t.tyArgOk = true) : t.givab
     simp only [Ty.tyArgOk, Ty.regionsBelow, Ty.chanFree, Ty.rfree, Ty.recOk, Bool.and_eq_true] at h
     simp [Ty.givable, ihl (by simp [Ty.tyArgOk, h]), ihr (by simp [Ty.tyArgOk, h])]
   | own k r t _ => simp [Ty.tyArgOk, Ty.regionsBelow] at h
+  | dom rc t _ => simp [Ty.tyArgOk, Ty.chanFree] at h
   | _ =>
     simp only [Ty.tyArgOk, Bool.and_eq_true] at h
     simp [Ty.givable, Ty.mutFree_of_locFree h.1, h.2, Ty.regionsBelow_mono (Nat.zero_le _) h.1]
+
+/-- 送りの型の一致（payOk）は型引数の代入で保たれる -/
+theorem Ty.payOk_tsubst {ts : List Ty} {te t : Ty} (hts : Ty.tyArgsOk ts = true) (hp : Ty.payOk te t = true) :
+    Ty.payOk (te.tsubst ts) (t.tsubst ts) = true := by
+  simp only [Ty.payOk, Bool.and_eq_true, decide_eq_true_eq] at hp ⊢
+  obtain ⟨⟨⟨⟨p1, p2⟩, p3⟩, p4⟩, p5⟩ := hp
+  refine ⟨⟨⟨⟨by rw [Ty.tsubst_mutFree hts]; exact p1, by rw [Ty.tsubst_chanFree hts]; exact p2⟩,
+    by rw [Ty.tsubst_mutFree hts]; exact p3⟩, by rw [Ty.tsubst_chanFree hts]; exact p4⟩, ?_⟩
+  rw [Ty.tsubst_relocR hts, Ty.tsubst_relocR hts, p5]
 
 theorem Ty.rehome_of_chanFree {d : Nat} {t : Ty} (h : t.chanFree = true) : t.rehome d = t := by
   induction t with
@@ -757,6 +775,18 @@ theorem tsubst_typing {e : Expr} {Δ : Defs} {f b d : Nat} {Γ : Ctx} {t : Ty} {
       exact .recvE (ihc h) (by rw [Ty.tsubst_mutFree hts]; exact hm) (by rw [Ty.tsubst_chanFree hts]; exact hc)
   | close c ihc => cases he with
     | closeE h => exact .closeE (ihc h)
+  | dnew r i t ihi => cases he with
+    | dnewE h1 h2 h3 hp =>
+      simp only [Expr.tsubstTy, Ty.tsubst]
+      exact .dnewE h1 h2 (ihi h3) (Ty.payOk_tsubst hts hp)
+  | domV p k r => cases he with | domVT h0 h1 h2 => simp at h2
+  | denter t d ihd => cases he with
+    | denterE h hbd hm hc =>
+      simp only [Expr.tsubstTy]
+      rw [← Ty.tsubst_relocR hts]
+      exact .denterE (ihd h) hbd (by rw [Ty.tsubst_mutFree hts]; exact hm) (by rw [Ty.tsubst_chanFree hts]; exact hc)
+  | dexit d v ihd ihv => cases he with
+    | dexitE h1 h2 hp => exact .dexitE (ihd h1) (ihv h2) (Ty.payOk_tsubst hts hp)
   | loc r a =>
     cases he with
     | loc h1 h2 h3 h4 h5 h6 => simp at h1

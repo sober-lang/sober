@@ -14,6 +14,7 @@
 | AEAD: AES-128-GCM（AES-NI + PCLMULQDQ）・ChaCha20-Poly1305 | 対応 | wycheproof/aes-gcm = 316<br>wycheproof/chacha20-poly1305 = 325 |
 | ハッシュ・MAC・KDF: SHA-256・SHA-384 / 512（std の内側）・HMAC-SHA256・HKDF-SHA256 | 対応 | wycheproof/hmac-sha256 = 174<br>wycheproof/hkdf-sha256 = 86<br>hashlib/sha512 = 14 |
 | 鍵交換 X25519 | 対応 | wycheproof/x25519 = 518 |
+| 鍵交換 P-256（ECDH・定数時間 — TLS の secp256r1） | 対応 | wycheproof/ecdh_secp256r1 = 355 |
 | 署名の検証 ECDSA P-256 / P-384・RSA-PSS・RSA PKCS#1 v1.5 | 対応 | cavp/ecdsa-sigver = 30<br>wycheproof/rsa-pss-2048-sha256-mgf1-32 = 108 |
 | 署名の生成（RSA-PSS だけ — TLS のサーバの CertificateVerify） | 一部 | `std/tls.TestTrace` |
 | 秘密に触る関数の定数時間（静的な網 ctcheck — 関数ごとの条件分岐の列を黄金と照合） | 対応 | `testdata/ctcheck/expect.txt`: aesgcm |
@@ -35,7 +36,7 @@
 | 項目 | 時期 | 今の挙動の証拠 |
 |---|---|---|
 | AES-256-GCM | 0.8 圏 | — |
-| ECDSA の署名（RFC 6979）・P-256 の ECDHE | 0.8 圏 | — |
+| ECDSA の署名（RFC 6979） | 0.8 圏 | — |
 <!-- confsync:end claims crypto-prims planned -->
 
 ## 証拠 — 通ったベクタ
@@ -48,6 +49,7 @@
 | HMAC-SHA256 | RFC 2104 | Wycheproof hmac_sha256_test.json | 174 |
 | HKDF-SHA256 | RFC 5869 | Wycheproof hkdf_sha256_test.json | 86 |
 | X25519 | RFC 7748 | Wycheproof x25519_test.json | 518（全 0 の共有 31 を拒否） |
+| ECDH P-256 | SP 800-56A | Wycheproof ecdh_secp256r1_ecpoint_test.json | 355 |
 | RSA-PSS 2048 (verify) | RFC 8017 | Wycheproof rsa_pss_2048_sha256_mgf1_32_test.json | 108 |
 | RSA-PSS 2048 (verify) | RFC 8017 | Wycheproof rsa_pss_2048_sha256_mgf1_0_test.json | 103 |
 | RSA-PSS 2048 (verify) | RFC 8017 | Go crypto/rsa (SHA-256/384/512) | 36 |

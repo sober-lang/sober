@@ -43,7 +43,7 @@ elfeq: examples scripts/elfeq.list scripts/obs.sh src/stage1 testdata
 io_args: examples
 errtrace: examples src/stage1 testdata
 passes: examples scripts/irtext.sh src/stage1 testdata
-regionbound: examples scripts/irtext.sh testdata scripts/noopt-excluded.list
+regionbound: examples scripts/irtext.sh testdata scripts/noopt-excluded.list scripts/regionbound-known.list
 checkverdict: examples scripts/irtext.sh testdata
 checksplit: examples scripts/irtext.sh testdata
 checkpos: examples scripts/checkpos.ts testdata   # 変異の題材の生成（node）と黄金の検査器の拒否の entry
@@ -69,8 +69,8 @@ uniqfreeze: bench examples lean scripts/uniqfreeze.list testdata/analyzer_neg te
 implicitfreeze: bench examples scripts/implicitfreeze.ts testdata
 sobertest: testdata/sobertest ~testdata
 doubles: testdata/cells testdata/cells.expect testdata/cellneg testdata/doubles ~testdata   # 本文の testdata は一時の場所に写した木の中の名前（木の testdata は doubles の下だけ読む）   # 本文の propsfuzz/testdata は一時の場所に写した package の中の名前（木の testdata は読まない）
-jsonsuite: scripts/oracles testdata/jsonpkg testdata/jsontestsuite
-unittest: testdata/crypto testdata/stdtest testdata/tls testdata/wycheproof testdata/x509   # M2（report-1222）が名指し: Sober のプログラムが実行時に読む・import する入力（本文の抽出では見えない）
+jsonsuite: scripts/oracles testdata/jsonfast testdata/jsonpkg testdata/jsontestsuite
+unittest: testdata/crypto testdata/pg testdata/stdtest testdata/tls testdata/wycheproof testdata/x509   # M2（report-1222）が名指し: Sober のプログラムが実行時に読む・import する入力（本文の抽出では見えない）
 x86enc: 
 trapprobe: testdata/trapprobe
 seqpar: examples scripts/seqpar.list
@@ -85,7 +85,7 @@ clidoc: bin/sober docs/cli docs/guide/env.ja.md ~docs/guide scripts testdata/cli
 outline: examples src/stage1 testdata/outline
 doclead: examples scripts/doclead.ts src/stage1
 docsync: README.ja.md README.md docs examples scripts/docsync.ts testdata/checkverdict testdata/guide testdata/mod ~testdata   # 本文の testdata/mod/${…} は規則の参照の題材の黄金（宣言の testdata/mod の中）
-confsync: docs/conformance examples testdata/conformance testdata/crypto testdata/ctcheck testdata/httpcheck testdata/stdtest testdata/tls testdata/wycheproof testdata/x509 scripts/confsync.ts ~scripts   # std の _test.sober が @embed で読む testdata と主張の証拠の黄金・~scripts = 文書と道具の注が名指す相互接続の道具（読まない — 記録は testdata/conformance）
+confsync: docs/conformance examples testdata/conformance testdata/crypto testdata/pg testdata/ctcheck testdata/httpcheck testdata/stdtest testdata/tls testdata/wycheproof testdata/x509 scripts/confsync.ts ~scripts   # std の _test.sober が @embed で読む testdata と主張の証拠の黄金・~scripts = 文書と道具の注が名指す相互接続の道具（読まない — 記録は testdata/conformance）
 benchsync: README.ja.md README.md bench docs scripts/bench.sh scripts/benchchart.ts scripts/benchfetch.sh scripts/benchsync.ts
 maprepr: bench examples testdata
 streq: bench examples testdata
@@ -109,6 +109,8 @@ httpcheck: scripts/flight.ts testdata/httpcheck
 starve: testdata/starve
 fusecheck: scripts/flight.ts testdata/httpcheck
 wincheck: testdata/wincheck testdata/httpcheck/dataset.json
+stackcheck: bench/httparena scripts/stackcheck.ts testdata/httpcheck
+pincheck: testdata/pin
 pid1stop: scripts/pid1stop.ts testdata/pid1stop
 mdwecheck: testdata/mdwe
 vaslot: testdata/vaslot
@@ -124,5 +126,5 @@ hermetic_zig: examples src/stage1 testdata
 ir_roundtrip: examples src/stage1
 gatememo: scripts   # 本体は全部の宣言のパスと本文を読む — @always で毎回走る
 
-@nondet: stages selfpar incrrace seqpar schedvec schedfuzz parbudget iouring httpcheck starve fusecheck wincheck pid1stop
+@nondet: stages selfpar incrrace seqpar schedvec schedfuzz parbudget iouring httpcheck starve fusecheck wincheck stackcheck pincheck pid1stop
 @always: gatememo refs   # refs は .git を読むので M2 の写し（.git なし）で確かめられない — 毎回走らせる（29 s）。 M1 と lint は全部の宣言と本文を読む（数秒）— 記録せず毎回走らせる

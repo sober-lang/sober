@@ -1,3 +1,2 @@
-sober: type error in generated code $json/examples/json_opt_elems.sober
-{"errors":[{"msg":"def error"}],"ok":false}
-exit=1
+{"ok":true,"ty":{"k":"unit"}}
+exit=0

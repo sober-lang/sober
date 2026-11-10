@@ -1747,12 +1747,11 @@ b0:
 
 func @main.try(%0 i64) {
   slot s0 [5]
-  slot s1 [1]
-  slot s2 [4]
+  slot s1 [4]
+  slot s2 [5]
   slot s3 [5]
   slot s4 [5]
   slot s5 [5]
-  slot s6 [5]
 b0:
   %1 = region.depth
   region.enter
@@ -1762,7 +1761,7 @@ b0:
   %5 = gt %0, %4
   condbr %5, b2, b3
 b1:
-  %31 = slotaddr s4
+  %31 = slotaddr s3
   %32 = load.i64 %2[0]
   store %31[0], %32
   %33 = load.i64 %2[1]
@@ -1773,38 +1772,36 @@ b1:
   store %31[3], %35
   %36 = load.i64 %2[4]
   store %31[4], %36
-  %37 = slotaddr s3
+  %37 = slotaddr s2
   %38 = region.depth
   %39 = const 100
   %40 = le %0, %39
   condbr %40, b8, b9
 b2:
-  %6 = slotaddr s1
+  %6 = const 0
   %7 = const 0
-  store %6[0], %7
   %8 = const 0
-  store %6[0], %8
-  %9 = slotaddr s2
-  %10 = load.i64 %6[0]
-  store %9[0], %10
-  %11 = const 0
-  store %9[1], %11
-  store %9[2], %11
-  store %9[3], %11
-  %12 = slotaddr s3
+  %9 = const 0
+  %10 = const 0
+  %11 = slotaddr s1
+  store %11[0], %10
+  store %11[1], %7
+  store %11[2], %8
+  store %11[3], %9
+  %12 = slotaddr s2
   %13 = const 1
   store %12[0], %13
-  %14 = load.i64 %9[0]
+  %14 = load.i64 %11[0]
   store %12[1], %14
-  %15 = load.i64 %9[1]
+  %15 = load.i64 %11[1]
   store %12[2], %15
-  %16 = load.i64 %9[2]
+  %16 = load.i64 %11[2]
   store %12[3], %16
-  %17 = load.i64 %9[3]
+  %17 = load.i64 %11[3]
   store %12[4], %17
   br b4(%12)
 b3:
-  %18 = slotaddr s4
+  %18 = slotaddr s3
   %19 = const 0
   store %18[0], %19
   br b4(%18)
@@ -1832,7 +1829,7 @@ b6:
   region.setdepth %3
   br b1
 b7:
-  %66 = slotaddr s6
+  %66 = slotaddr s5
   %67 = load.i64 %37[0]
   store %66[0], %67
   %68 = load.i64 %37[1]
@@ -1851,33 +1848,31 @@ b7:
   %77 = eq %75, %76
   condbr %74, b13, b14
 b8:
-  %41 = slotaddr s5
+  %41 = slotaddr s4
   %42 = const 0
   store %41[0], %42
   br b10(%41)
 b9:
-  %43 = slotaddr s1
+  %43 = const 0
   %44 = const 0
-  store %43[0], %44
   %45 = const 0
-  store %43[0], %45
-  %46 = slotaddr s2
-  %47 = load.i64 %43[0]
-  store %46[0], %47
-  %48 = const 0
-  store %46[1], %48
-  store %46[2], %48
-  store %46[3], %48
-  %49 = slotaddr s6
+  %46 = const 0
+  %47 = const 0
+  %48 = slotaddr s1
+  store %48[0], %47
+  store %48[1], %44
+  store %48[2], %45
+  store %48[3], %46
+  %49 = slotaddr s5
   %50 = const 1
   store %49[0], %50
-  %51 = load.i64 %46[0]
+  %51 = load.i64 %48[0]
   store %49[1], %51
-  %52 = load.i64 %46[1]
+  %52 = load.i64 %48[1]
   store %49[2], %52
-  %53 = load.i64 %46[2]
+  %53 = load.i64 %48[2]
   store %49[3], %53
-  %54 = load.i64 %46[3]
+  %54 = load.i64 %48[3]
   store %49[4], %54
   br b10(%49)
 b10(%55 ptr):

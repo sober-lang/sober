@@ -1,0 +1,203 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/pg",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "testdata/domkeep/keep",
+      "tok": 7
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "hold"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "pg.Pool"
+                },
+                "elems": [],
+                "mut": true,
+                "tok": 18
+              }
+            ],
+            "tok": 14
+          },
+          {
+            "k": "bind",
+            "names": [
+              "e"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "pg",
+                    "tok": 28
+                  },
+                  "field": "OpenPool",
+                  "tok": 30
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "postgres://u:p@127.0.0.1:1/db",
+                    "tok": 32
+                  },
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "p",
+                        "type": null
+                      }
+                    ],
+                    "body": {
+                      "k": "block",
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "selector",
+                                  "base": {
+                                    "k": "ident",
+                                    "name": "testdata",
+                                    "tok": 39
+                                  },
+                                  "field": "domkeep",
+                                  "tok": 41
+                                },
+                                "field": "keep",
+                                "tok": 43
+                              },
+                              "field": "Keep",
+                              "tok": 45
+                            },
+                            "args": [
+                              {
+                                "k": "ident",
+                                "name": "p",
+                                "tok": 47
+                              },
+                              {
+                                "k": "mut_arg",
+                                "name": "hold",
+                                "tok": 50
+                              }
+                            ],
+                            "tok": 46
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 37
+                  }
+                ],
+                "tok": 31
+              }
+            ],
+            "tok": 26
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 56
+              },
+              "args": [
+                {
+                  "k": "interp",
+                  "tmpl": {
+                    "lits": [
+                      "",
+                      " ",
+                      ""
+                    ],
+                    "holes": [
+                      {
+                        "k": "binary",
+                        "op": "==",
+                        "lhs": {
+                          "k": "ident",
+                          "name": "e",
+                          "tok": 58
+                        },
+                        "rhs": {
+                          "k": "nil",
+                          "tok": 58
+                        },
+                        "tok": 58
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "len",
+                          "tok": 58
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "hold",
+                            "tok": 58
+                          }
+                        ],
+                        "tok": 58
+                      }
+                    ]
+                  },
+                  "tok": 58
+                }
+              ],
+              "tok": 57
+            }
+          }
+        ]
+      },
+      "tok": 10,
+      "bodiless": false,
+      "span": {
+        "start": 9,
+        "end": 63
+      },
+      "sig_end": 13
+    }
+  ],
+  "consts": []
+}

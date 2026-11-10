@@ -1817,33 +1817,33 @@ b0:
   store %13[3], %17
   %18 = load.i64 %10[4]
   store %13[4], %18
-  %19 = slotaddr s4
-  %20 = const 0
-  store %19[0], %20
-  store %19[1], %20
-  store %19[2], %20
-  store %19[3], %20
-  store %19[4], %20
+  %19 = const 0
+  %20 = slotaddr s4
+  store %20[0], %19
+  store %20[1], %19
+  store %20[2], %19
+  store %20[3], %19
+  store %20[4], %19
   %21 = load.i64 %13[0]
-  store %19[0], %21
+  store %20[0], %21
   %22 = load.i64 %13[1]
-  store %19[1], %22
+  store %20[1], %22
   %23 = load.i64 %13[2]
-  store %19[2], %23
+  store %20[2], %23
   %24 = load.i64 %13[3]
-  store %19[3], %24
+  store %20[3], %24
   %25 = load.i64 %13[4]
-  store %19[4], %25
+  store %20[4], %25
   %26 = slotaddr s5
-  %27 = load.i64 %19[0]
+  %27 = load.i64 %20[0]
   store %26[0], %27
-  %28 = load.i64 %19[1]
+  %28 = load.i64 %20[1]
   store %26[1], %28
-  %29 = load.i64 %19[2]
+  %29 = load.i64 %20[2]
   store %26[2], %29
-  %30 = load.i64 %19[3]
+  %30 = load.i64 %20[3]
   store %26[3], %30
-  %31 = load.i64 %19[4]
+  %31 = load.i64 %20[4]
   store %26[4], %31
   %32 = slotaddr s4
   %33 = funcaddr @lambda#1

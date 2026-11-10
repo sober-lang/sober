@@ -1834,31 +1834,31 @@ b1:
   store %48[1], %50
   %51 = load.i64 %46[2]
   store %48[2], %51
-  %52 = slotaddr s7
-  %53 = const 0
-  store %52[0], %53
-  store %52[1], %53
-  store %52[2], %53
-  store %52[3], %53
+  %52 = const 0
+  %53 = slotaddr s7
+  store %53[0], %52
+  store %53[1], %52
+  store %53[2], %52
+  store %53[3], %52
   %54 = const 1
-  store %52[0], %54
+  store %53[0], %54
   %55 = load.i64 %48[0]
-  store %52[1], %55
+  store %53[1], %55
   %56 = load.i64 %48[1]
-  store %52[2], %56
+  store %53[2], %56
   %57 = load.i64 %48[2]
-  store %52[3], %57
-  br b3(%52)
+  store %53[3], %57
+  br b3(%53)
 b2:
-  %15 = slotaddr s0
-  %16 = const 0
-  store %15[0], %16
-  store %15[1], %16
-  store %15[2], %16
-  store %15[3], %16
+  %15 = const 0
+  %16 = slotaddr s0
+  store %16[0], %15
+  store %16[1], %15
+  store %16[2], %15
+  store %16[3], %15
   %17 = const 0
-  store %15[0], %17
-  br b3(%15)
+  store %16[0], %17
+  br b3(%16)
 b3(%58 ptr):
   %59 = load.i64 %58[0]
   store %0[0], %59
@@ -1936,15 +1936,15 @@ b0:
   %18 = eq %1, %17
   condbr %18, b1, b2
 b1:
-  %19 = slotaddr s1
-  %20 = const 0
-  store %19[0], %20
-  store %19[1], %20
-  store %19[2], %20
-  store %19[3], %20
+  %19 = const 0
+  %20 = slotaddr s1
+  store %20[0], %19
+  store %20[1], %19
+  store %20[2], %19
+  store %20[3], %19
   %21 = const 0
-  store %19[0], %21
-  br b3(%19)
+  store %20[0], %21
+  br b3(%20)
 b2:
   %22 = slotaddr s2
   %23 = load.i64 %5[0]
@@ -1996,21 +1996,21 @@ b2:
   store %47[1], %49
   %50 = load.i64 %45[2]
   store %47[2], %50
-  %51 = slotaddr s7
-  %52 = const 0
-  store %51[0], %52
-  store %51[1], %52
-  store %51[2], %52
-  store %51[3], %52
+  %51 = const 0
+  %52 = slotaddr s7
+  store %52[0], %51
+  store %52[1], %51
+  store %52[2], %51
+  store %52[3], %51
   %53 = const 1
-  store %51[0], %53
+  store %52[0], %53
   %54 = load.i64 %47[0]
-  store %51[1], %54
+  store %52[1], %54
   %55 = load.i64 %47[1]
-  store %51[2], %55
+  store %52[2], %55
   %56 = load.i64 %47[2]
-  store %51[3], %56
-  br b3(%51)
+  store %52[3], %56
+  br b3(%52)
 b3(%57 ptr):
   %58 = load.i64 %57[0]
   store %0[0], %58

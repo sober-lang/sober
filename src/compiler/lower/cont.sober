@@ -831,7 +831,7 @@ func builtin(st mut St, name desugar.StrRef, args desugar.ListRef, at desugar.No
 // 組み込みでなければ -2
 func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
     // 鍵の番号 → 実装の種類 k（下の switch — rt の呼び出し）。引数の数は鍵の署名から
-    k := if sk == loader.IReadFile { 1 } else if sk == loader.IWriteFile { 2 } else if sk == loader.IErrno { 3 } else if sk == loader.IArgs { 4 } else if sk == loader.IReadDir { 5 } else if sk == loader.IWriteFd { 6 } else if sk == loader.IRun { 7 } else if sk == loader.IWriteMode { 8 } else if sk == loader.IMkdir { 9 } else if sk == loader.IRename { 10 } else if sk == loader.IEnviron { 11 } else if sk == loader.IStat { 12 } else if sk == loader.ISleep { 13 } else if sk == loader.IReadFd { 14 } else if sk == loader.IParPool { 15 } else if sk == loader.IParLedger { 16 } else if sk == loader.IOpen { 17 } else if sk == loader.IClose { 18 } else if sk == loader.IChunkOpen { 19 } else if sk == loader.IChunkNext { 20 } else if sk == loader.IChunkClose { 21 } else if sk == loader.IDeadline { 22 } else if sk == loader.ISyscall { 23 } else if sk == loader.IAddr { 24 } else if sk == loader.IWaitFd { 25 } else if sk == loader.IFdOwn { 26 } else if sk == loader.IParFail { 27 } else if sk == loader.INetOp { 28 } else if sk == loader.ILeaseOp { 29 } else if sk == loader.ILeaseView { 30 } else if sk == loader.ILoad64 { 31 } else if sk == loader.ICpuClmul { 32 } else if sk == loader.ICrcFold { 33 } else if sk == loader.IAesCpu { 34 } else if sk == loader.IAesKey { 35 } else if sk == loader.IAesCtr { 36 } else if sk == loader.IAesGhash { 37 } else if sk == loader.IMulHi { 38 } else if sk == loader.IAddrN { 39 } else if sk == loader.IMmCpu { 40 } else if sk == loader.IMmMul { 41 } else if sk == loader.ICycles { 42 } else if sk == loader.IAesTag { 43 } else if sk == loader.ILeaseBytes { 44 } else if sk == loader.IMatchLen { 45 } else if sk == loader.IJClean { 46 } else if sk == loader.IRunFd { 47 } else if sk == loader.IRunFdEnv { 48 } else if sk == loader.ICover { 49 } else if sk == loader.ICoverFd { 50 } else if sk == loader.ICoverGet { 51 } else if sk == loader.ICoverN { 52 } else if sk == loader.ICoverMid { 53 } else if sk == loader.ICoverSetMid { 54 } else if sk == loader.ICellReset { 55 } else if sk == loader.IMmSel { 56 } else if sk == loader.IMmSqr { 57 } else if sk == loader.IFeMul { 58 } else if sk == loader.IShaCpu { 59 } else if sk == loader.IShaBlk { 60 } else if sk == loader.IAesSeal { 61 } else if sk == loader.IAesOpen { 62 } else if sk == loader.ILoad16 { 63 } else if sk == loader.IStore16 { 64 } else if sk == loader.ILoad32 { 65 } else if sk == loader.IStore32 { 66 } else if sk == loader.IAppendWord { 67 } else if sk == loader.IBLoad32 { 68 } else if sk == loader.ICtz64 { 69 } else { 0 }
+    k := if sk == loader.IReadFile { 1 } else if sk == loader.IWriteFile { 2 } else if sk == loader.IErrno { 3 } else if sk == loader.IArgs { 4 } else if sk == loader.IReadDir { 5 } else if sk == loader.IWriteFd { 6 } else if sk == loader.IRun { 7 } else if sk == loader.IWriteMode { 8 } else if sk == loader.IMkdir { 9 } else if sk == loader.IRename { 10 } else if sk == loader.IEnviron { 11 } else if sk == loader.IStat { 12 } else if sk == loader.ISleep { 13 } else if sk == loader.IReadFd { 14 } else if sk == loader.IParPool { 15 } else if sk == loader.IParLedger { 16 } else if sk == loader.IOpen { 17 } else if sk == loader.IClose { 18 } else if sk == loader.IChunkOpen { 19 } else if sk == loader.IChunkNext { 20 } else if sk == loader.IChunkClose { 21 } else if sk == loader.IDeadline { 22 } else if sk == loader.ISyscall { 23 } else if sk == loader.IAddr { 24 } else if sk == loader.IWaitFd { 25 } else if sk == loader.IFdOwn { 26 } else if sk == loader.IParFail { 27 } else if sk == loader.INetOp { 28 } else if sk == loader.ILeaseOp { 29 } else if sk == loader.ILeaseView { 30 } else if sk == loader.ILoad64 { 31 } else if sk == loader.ICpuClmul { 32 } else if sk == loader.ICrcFold { 33 } else if sk == loader.IAesCpu { 34 } else if sk == loader.IAesKey { 35 } else if sk == loader.IAesCtr { 36 } else if sk == loader.IAesGhash { 37 } else if sk == loader.IMulHi { 38 } else if sk == loader.IAddrN { 39 } else if sk == loader.IMmCpu { 40 } else if sk == loader.IMmMul { 41 } else if sk == loader.ICycles { 42 } else if sk == loader.IAesTag { 43 } else if sk == loader.ILeaseBytes { 44 } else if sk == loader.IMatchLen { 45 } else if sk == loader.IJClean { 46 } else if sk == loader.IRunFd { 47 } else if sk == loader.IRunFdEnv { 48 } else if sk == loader.ICover { 49 } else if sk == loader.ICoverFd { 50 } else if sk == loader.ICoverGet { 51 } else if sk == loader.ICoverN { 52 } else if sk == loader.ICoverMid { 53 } else if sk == loader.ICoverSetMid { 54 } else if sk == loader.ICellReset { 55 } else if sk == loader.IMmSel { 56 } else if sk == loader.IMmSqr { 57 } else if sk == loader.IFeMul { 58 } else if sk == loader.IShaCpu { 59 } else if sk == loader.IShaBlk { 60 } else if sk == loader.IAesSeal { 61 } else if sk == loader.IAesOpen { 62 } else if sk == loader.ILoad16 { 63 } else if sk == loader.IStore16 { 64 } else if sk == loader.ILoad32 { 65 } else if sk == loader.IStore32 { 66 } else if sk == loader.IAppendWord { 67 } else if sk == loader.IBLoad32 { 68 } else if sk == loader.ICtz64 { 69 } else if sk == loader.IBStore64 { 70 } else { 0 }
     arity := if k == 0 { 0 } else { desugar.SysArity(sk) }
     if k == 0 {
         return -2, nil
@@ -1138,6 +1138,28 @@ func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int
         }
         at8 := gepByte(mut st, itop(mut st, load(mut st, b.v, 0)), x.v)
         return one1(mut st, tInt(mut st), if k == 68 { loadN(mut st, 4, at8, 0) } else { load(mut st, at8, 0) }), nil
+    case 70:
+        // b[i:i+8] へ語の書き（境界は呼び手の std/internal/jsonw.Word が見た — gep.byte + 語の store 1 本。load64 の対）
+        b := expr(mut st, latN(mut st, args, 0))?
+        if isTag(mut st, b.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, b.t, TSlice) || isString(mut st, b.t) || !isTag(mut st, desugar.HeapGet(mut st.d, b.t + 1), TByte) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        x := expr(mut st, latN(mut st, args, 1))?
+        if isTag(mut st, x.t, TNever) {
+            return -1, nil
+        }
+        v := expr(mut st, latN(mut st, args, 2))?
+        if isTag(mut st, v.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, x.t, TInt) || !isTag(mut st, v.t, TInt) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        store(mut st, gepByte(mut st, itop(mut st, load(mut st, b.v, 0)), x.v), 0, v.v)
+        return one1(mut st, tInt(mut st), iconst(mut st, 0)), nil
     case 24:
         // バイト列の先頭の番地（ヘッダの 0 語目）
         b := expr(mut st, latN(mut st, args, 0))?
@@ -1585,7 +1607,7 @@ func relocateArm(st mut St, c int) BlkRef {
 func relocateTo(st mut St, p int, off int, t int, floor int) {
     slotPin(mut st, p)
     if isErr(mut st, t) && containsSlice(mut st, t) && !st.relocFresh {
-        // 組み込み error は補助 1 本の呼び出し（先頭ラベルは閉世界の全ラベルの union — その場に並べると点ごとの費用が
+        // 組み込み error は補助 1 本の呼び出し（ラベルの列のセルは閉世界の全ラベルの union — その場に並べると点ごとの費用が
         // 「string を持つラベルの欄の数」に比例して、ラベルを 1 つ足すだけで全部の error の境界コピーが膨らむ）
         call(mut st, needErrReloc(mut st), list2(mut st, fieldPtr(mut st, p, off), floor))
         return
@@ -1686,7 +1708,7 @@ func needErrReloc(st mut St) FnRef {
     return st.rtErrReloc
 }
 
-// 宣言済みなら rt.err_relocate の本体を組む: error の欄（先頭ラベルの union・鎖）ごとに relocateTo（欄は error でないのでその場に並ぶ）
+// 宣言済みなら rt.err_relocate の本体を組む: error の欄（タグ・ラベルの列）ごとに relocateTo（欄は error でないのでその場に並ぶ）
 func buildErrReloc(st mut St) {
     if st.rtErrReloc == -1 {
         return

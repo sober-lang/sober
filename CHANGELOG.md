@@ -2,6 +2,76 @@
 
 This file records user-facing changes per public release. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/) (no backward-compatibility promise while on 0.x).
 
+## v0.7.1 — 2026-11-11
+
+The release of domains — long-lived shared state — and a PostgreSQL client. Many tasks updating one state (a connection pool, a counter, and so on) can now be written without writing locks (`task.NewDomain` / `Update` / `Read` / `Await` — bodies run one at a time, and because a body does not wait and does no io, a lock-ordering deadlock cannot be written). std/pg is a PostgreSQL client over wire protocol 3.0 with TLS 1.3 + SCRAM-SHA-256-PLUS by default, transactions and a connection pool. The HTTP server builds JSON responses with a two-pass encoder, and the fixed cost per request is lower. The limited-conn regression of v0.7.0 (−11.5% on the 64-worker box) is fixed.
+
+### Language
+
+- Domains — serialized shared state (spec section 10.8, section 5 of the [concurrency guide](docs/guide/concurrency.md)): `task.NewDomain(s, init, wait:)` makes a domain that holds one state inside scope `s`, and `task.Update` (write), `task.Read` (read) and `task.Await` (wait in arrival order until `when:` holds; past the bound `wait:` it returns `io.Expired`) apply their bodies one at a time
+  - What a body promises: it does not wait, does no io, does not call another domain and does not panic explicitly. There is no form that waits while holding a lock, so lock-ordering deadlocks cannot be written
+  - Which task enters first is a "recorded input", like input from a file or the network, in the table of determinism promises (with the order fixed, the result does not depend on the schedule — proved by extending the Lean Kahn theorem with an oracle)
+  - A domain whose body died is poisoned; from then on a call kills its caller with `task.Poisoned{}` (it does not go on with a half-written state)
+  - A domain can be captured and passed as a function argument (also inside a struct field). It cannot be a scope's value, a task's result, a channel payload or a function's result (its state disappears at the exit of the scope that made it)
+  - The state can hold mutable containers (mut slices / mut maps — nested ones too). The initial value is copied into the domain and a body's value is copied out to the caller, so the state's containers cannot be written from outside the domain
+  - The checker rejects by name, with a rewrite to use, the writes a body may not do: adding region-holding values to the state (append and friends — through an alias of the state too), storing the domain where it would outlive the scope that made it, and passing the state as a mutable argument (allowed when the callee's body shows that it writes it by the same rule as the body)
+- Const slots, `@const(p, …)`: an argument for a marked parameter must be a string whose text is fixed at build time (a literal without interpolation, a const, or `+` of those) or the caller's own `@const` parameter. std/pg's SQL text sits in such a slot, so concatenating user values into SQL text (SQL injection) cannot be written (values go in as arguments)
+- Newly accepted forms (check used to reject them without a message; build accepted them): a union variant built inside a function (including region-holding payloads), another package's typed const (`http.OK`) passed to a `T?` parameter or read back by `check --split`, and reading a slice inside the expansion of a function with mut parameters
+
+### std
+
+- `std/pg` (new): a PostgreSQL client (wire protocol 3.0, extended query)
+  - Connecting: `pg.Open(url, k, policy:)` (k receives the connection `Conn`; it is closed when k returns). TLS 1.3 + SCRAM-SHA-256-PLUS (with channel binding) is the default, and the certificate chain is always verified. Only the three `dangerously…` fields relax this. The password is `@secret`
+  - Statements: `pg.Exec` / `pg.Script`; rows with `for r <- pg.Query(c, sql, args: …)? { … }` (leaving the body with ? / return / break reads and drops the remaining rows and keeps the connection). SQL text sits in a const slot; arguments are the 12 variants of `pg.Value`, encoded to match the server's types; statements are prepared once per connection and text
+  - Reading rows: `Col` / `ColInt` / `ColString` / `ColTime` / `ColUuid` / `ColJson` / `ColNumeric` (`Scaled`) and more, `IsNull`, `Width`
+  - Failure labels: `Server` (with SQLSTATE and hint), `Auth`, `Tls`, `Dns`, `Closed`, `Protocol`, `BadUrl` and more
+  - Transactions: `pg.Tx(c, k, isolation:, readOnly:)` — COMMIT when k ends normally, ROLLBACK when k leaves with ?. Nesting is SAVEPOINT throughout. If k swallows a statement error and ends normally, the transaction is rolled back and `Aborted` is returned. There are no automatic retries
+  - Connection pool: `pg.OpenPool(url, k, size:, wait:)` and `pg.With(p, k)`. The type `pg.Pool` pairs a domain with a holding table and can be passed as an argument to a named handler. A connection goes back to the pool only when k returns normally, outside a transaction and with nothing left unread (otherwise it is closed). The pool reclaims connections from borrowers whose task died. The name is `OpenPool` because a function `Pool` would collide with the type `Pool` (the same pairing as `Open` → `Conn`)
+  - Round trips with real PostgreSQL 17 / 18 (TLS / plaintext) are checked by `scripts/pgoracle.sh`
+- `std/task`: the four domain calls and `Domain[S]`; `task.Ledger()` gains `domains` (one row summing all domains, `DomainView{waiting, maxWait, expired, poisoned}`) and `pin` / `pinGroups` (how workers are pinned to CPUs)
+- `std/http/server`: `Delayed(ms, r)` — a response sent after a wait. While waiting, the connection task holds neither the handler's stack nor the request's region (the send time is the same as sleeping with `os.Sleep` in the handler before returning, and the footprint is that of a keep-alive connection). Pipelined order does not change
+- `std/http/server`: `Unstated{}` for `Cache` — writes no Cache-Control line (it leaves storability to the recipient, so it is on the may-be-shared side, `@shared` — only allowed on a route's row). The default `private` is unchanged
+- TLS client (http/client and pg): secp256r1 (P-256) key exchange. X25519 stays preferred; when a server asks for P-256 with a HelloRetryRequest, the client follows (PostgreSQL 17 and earlier accept only P-256 by default)
+- analyzer: a construction that gives a std `dangerously…` field anything but a literal false is a warning every time (acceptance unchanged, no way to silence it — it goes away when the setting is safe again)
+
+### Runtime
+
+- For server-shaped programs (std/net's Serve, no `SOBER_WORKERS`), workers are pinned to "the CPUs sharing an L3 cache ∩ the allowed set" instead of one CPU. The groups are read from sysfs; when they cannot be read, pinning falls back to one CPU. `SOBER_PIN=0` turns pinning off, `1` = groups, `2` = one CPU (for comparison)
+- The chain of deadline waits is doubly linked (O(1) removal), and the deadline scan keeps a lower bound. The O(n²) cliff with many connections that have deadlines is gone (16,000 connections, W12, Serve with a deadline: 45–49K → 453–475K requests/s — local. The instruction count of the production shape without deadlines is unchanged)
+- The wait queue of a domain's `Await`: a waiter whose `when:` (a literal lambda with no captures) is already known to be false is not woken again until the state changes. The chain of wakeups with many waiters (wakeups proportional to the number of waiters at each exit) is gone (1,024 waiters on one domain, W1: 596K → 6.3K instructions per acquisition — local). Arrival order, the wait bound and poisoning mean the same as before
+- An error value is now a fixed 4 words: a tag and a list of labels. The label with the largest fields in a program no longer widens the error slot of every function (importing std/pg keeps the deepest frame of an HTTP connection task at 2,112 B — 2,688 B with the previous representation). Labels with fields allocate only on the failure path
+- The headroom at the top of a task's stack goes from 2 to 3 KiB. The deepest stack of one keep-alive HTTP request had only 16 B left in the old budget (going over adds 4 KB of resident memory per connection). The new stackcheck gate watches the depth
+
+### Tools
+
+- Documentation: a concurrency guide (docs/guide/concurrency — tasks, channels, domains) and a PostgreSQL guide (docs/guide/postgres — connecting, statements, rows, failures, transactions, the pool)
+- `bench/httparena`: `perf.sh json-tls` (perf attribution for json-tls), `WRK_THREADS` for `local.sh` (wrk threads for json-tls — defaults to the load side's CPU count; upstream uses 64) and a busy column for the load side's CPUs
+- `bench/httparena`: `SOBER_UPSTREAM_FORM=1` measures with the same launch shape as the upstream entry (no `SOBER_WORKERS` = CPU pinning on)
+
+### Fixes
+
+- The limited-conn regression of v0.7.0 (−11.5% on HttpArena's 64-worker box): every time a connection was re-established, the madvise that returns the window's pages sent TLB shootdowns to every worker's CPU. Pages are now returned only the first time per task block (local W8 page faults 36,004–45,919 → 91–114)
+- The TLS client regenerated the random in the second ClientHello after a HelloRetryRequest (a violation of RFC 8446 4.1.2 — Go's crypto/tls server rejects it)
+- check rejected, without a message, a union variant built inside a function, another package's typed const, and slice reads inside an expansion (build accepted them — see "Newly accepted forms" under Language)
+
+### Performance
+
+- HTTP — bench/httparena (our own yardstick: it uses HttpArena's load generator and request files but is not an official HttpArena result). On a 16 vCPU GitHub Actions box (AMD EPYC 9V74), with 8 CPUs given to the server, alternating with v0.7.0 round by round in the same job (median of 5 rounds, 4,096 connections). This time it is a same-box A/B on one box generation:
+
+  | Profile | Requests / s (vs v0.7.0) | CPU / request (vs v0.7.0) |
+  |---|---|---|
+  | json-comp | +12.2% | −10.8% |
+  | json-comp-16k | +10.2% | −8.9% |
+  | async | +3.9% | −3.6% |
+  | baseline | +2.3% | −2.2% |
+  | pipelined | same | same |
+
+  - The json-comp gain comes from the two-pass encoder for JSON responses (estimate an upper bound, allocate once, write by position). The same encoder also serves JSON responses on the TLS path
+  - async memory (cgroup): peak 847 → 670 MB, pagetables 153 → 66 MB — a delayed response (`Delayed`) holds neither the handler's stack nor the request's region while it waits, so a sleeping connection's footprint is that of a keep-alive connection
+  - The baseline gain comes from a lower fixed cost per request (a single pass over the query, and the header position table and the response head written into the caller's buffer)
+  - The two changes that landed after the table was measured (the wait queue of a domain's `Await` and the error representation) stay within ±2% on all 12 profiles in a before/after A/B alternating on the same 16 vCPU box (no regression)
+  - On this 16 vCPU box json-tls shows −19% against v0.7.0. This is a phase where the server got faster and the load generator (wrk, 8 threads × 4,096 connections) became the bottleneck, not a server regression. Measured in the upstream shape (wrk with 64 threads) against a 64-CPU server (EC2 c6a.metal, AMD EPYC 7R13), requests / s are +1.9% and CPU / request −10% against the version before the JSON encoder
+
 ## v0.7.0 — 2026-11-08
 
 The release that reworks imports. A qualifier is now every segment of the import path (`std/http/server` → `http.server.Serve`), and a `sober.mod` at the build root declares the module's name and its local dependencies. std fills in the pieces web applications were missing: password hashing, cryptographic randomness and UUIDs, time and time zones, cookies, versioned sessions, a stub DNS resolver, and an HTTP client that always verifies the certificate chain. `std/http` is split into the server (`std/http/server`), the client (`std/http/client`) and the shared vocabulary (`std/http`). deflate keeps a record of recent Huffman trees so a connection with similar bodies does not rebuild them, which makes the HTTP server's gzip responses faster. At startup, the runtime now locks in W^X (Linux 6.6 and later).

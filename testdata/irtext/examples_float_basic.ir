@@ -2336,16 +2336,16 @@ b39:
   call @rt.print_char(%257)
   %258 = const 4613937818241073152
   %259 = const 4616189618054758400
-  %260 = slotaddr s0
-  %261 = const 0
-  store %260[0], %261
-  store %260[1], %261
-  store %260[0], %258
-  store %260[1], %259
+  %260 = const 0
+  %261 = slotaddr s0
+  store %261[0], %260
+  store %261[1], %260
+  store %261[0], %258
+  store %261[1], %259
   %262 = slotaddr s1
-  %263 = load.i64 %260[0]
+  %263 = load.i64 %261[0]
   store %262[0], %263
-  %264 = load.i64 %260[1]
+  %264 = load.i64 %261[1]
   store %262[1], %264
   %265 = load.i64 %262[0]
   %266 = load.i64 %262[1]
@@ -2364,14 +2364,14 @@ b40:
 b41:
   %275 = const 4607182418800017408
   %276 = const 4607182418800017408
-  %277 = slotaddr s0
-  %278 = const 0
-  store %277[0], %278
-  store %277[1], %278
-  store %277[0], %275
-  store %277[1], %276
-  %279 = load.i64 %277[0]
-  %280 = load.i64 %277[1]
+  %277 = const 0
+  %278 = slotaddr s0
+  store %278[0], %277
+  store %278[1], %277
+  store %278[0], %275
+  store %278[1], %276
+  %279 = load.i64 %278[0]
+  %280 = load.i64 %278[1]
   %281 = call @main.norm(%279, %280)
   %282 = call @std/math.Bits(%281)
   call @rt.print_int(%268)

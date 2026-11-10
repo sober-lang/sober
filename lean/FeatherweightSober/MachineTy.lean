@@ -382,6 +382,21 @@ inductive StackTy (Δ : Defs) (Ξ : ChanTy) (Ψ : StoreTy) (b : Nat) : Stack →
   /-- close（P3b-4 ③） -/
   | closeKE {S d r t tf} :
       StackTy Δ Ξ Ψ b S Λ d .unit tf → StackTy Δ Ξ Ψ b (.closeK :: S) Λ d (.own .tx r t) tf
+  /-- domain の作成の初期値の評価中 -/
+  | dnewKE {S d r t te tf} :
+      b ≤ r → r < d → Ty.payOk te t = true →
+      StackTy Δ Ξ Ψ b S Λ d (.dom r t) tf → StackTy Δ Ξ Ψ b (.dnewK r t :: S) Λ d te tf
+  /-- domain に入る: 状態は今の最内の region（d - 1）へ写る -/
+  | denterKE {S d rc t tf} :
+      b < d → t.mutFree = true → t.chanFree = true → StackTy Δ Ξ Ψ b S Λ d (t.relocR (d - 1)) tf →
+      StackTy Δ Ξ Ψ b (.denterK t :: S) Λ d (.dom rc t) tf
+  /-- domain から出る: 出口の 2 フレーム（送信と同じ形） -/
+  | dexitLE {S d v rc t te tf} :
+      HasType Δ Ξ (Ψ.take d) b b d [] Λ v te → Ty.payOk te t = true → StackTy Δ Ξ Ψ b S Λ d .unit tf →
+      StackTy Δ Ξ Ψ b (.dexitL v :: S) Λ d (.dom rc t) tf
+  | dexitRE {S d c rc t te tf} :
+      Value c → HasType Δ Ξ (Ψ.take d) b b d [] Λ c (.dom rc t) → Ty.payOk te t = true → StackTy Δ Ξ Ψ b S Λ d .unit tf →
+      StackTy Δ Ξ Ψ b (.dexitR c :: S) Λ d te tf
   | joinK {S d rs t tf} :
       StackTy Δ Ξ Ψ b S Λ d t tf → StackTy Δ Ξ Ψ b (.joinK t :: S) Λ d (.own .task rs t) tf
   | tryK {S d rs t tf} :
@@ -601,6 +616,11 @@ structure ChanOk (Δ : Defs) (Ξ : ChanTy) (K : ChanSt) : Prop where
   （P3b-4b — 旧 P1 は loc-free の値を空の世界で） -/
   eptyped : ∀ (k : EpKey) (t : Ty) (ent : EpEnt), Ξ.ep.lookup k = some t → K.ep k = some ent →
     t.relocR 0 = t ∧ t.mutFree = true ∧ t.chanFree = true ∧ ent.ty = t ∧ ∀ w ∈ ent.q, PktOk Δ (.opt t) w
+  /-- domain: 型の表 Ξ.dom の鍵は機械の表 K.dom にある -/
+  domdom : ∀ (k : EpKey) (t : Ty), Ξ.dom.lookup k = some t → ∃ de, K.dom k = some de
+  /-- 状態の型は region を全部 0 へ締めた形で imm・chan なし・項目の型と一致し、状態の梱包は型付く -/
+  domtyped : ∀ (k : EpKey) (t : Ty) (de : DomEnt), Ξ.dom.lookup k = some t → K.dom k = some de →
+    t.relocR 0 = t ∧ t.mutFree = true ∧ t.chanFree = true ∧ de.ty = t ∧ PktOk Δ t de.st
 
 /-- 機械状態の型付け。b は世界の共有境界（メインは 0、タスクは spawn 時の親の深さ）。
 焦点は深さ Ψ.length（= 生きている region 数）で全 Ψ を見る。
@@ -630,7 +650,7 @@ inductive StateTy (Δ : Defs) : ChanTy → Nat → State → Ty → Prop where
   | fam {Ξ : ChanTy} {b : Nat} {id : List Nat} {o n : Nat} {m : State} {ks : Kids} {tf : Ty}
       (Ξs : Nat → ChanTy) (bs : Nat → Nat) (tcs : Nat → Ty) :
       m.isFam = false → StateTy Δ Ξ b m tf → Ξ.tk.length = o + ks.length →
-      (∀ i, (Ξs i).ch = Ξ.ch) → (∀ i, (Ξs i).ep = Ξ.ep) →
+      (∀ i, (Ξs i).ch = Ξ.ch) → (∀ i, (Ξs i).ep = Ξ.ep) → (∀ i, (Ξs i).dom = Ξ.dom) →
       (∀ (i rs : Nat) (t : Ty), Ξ.tk[i]? = some (rs, t) → t.mutFree = true ∧ t.chanFree = true) →
       (∀ i rs kid, ks.get? i = some (rs, kid) → ∃ t, Ξ.tk[o + i]? = some (rs, t)) →
       (∀ i rs kid t, ks.get? i = some (rs, kid) → Ξ.tk[o + i]? = some (rs, t) →
@@ -848,6 +868,12 @@ theorem StackTy.mono {Δ : Defs} {Ξ : ChanTy} {Ψ Ψ' : StoreTy} {b : Nat} {S d
     exact .sendRE hv (h1.store_mono (hle _ (Nat.le_refl _)) (storePre_of_take_eq (take_pre_take hpre hS.le_depth))) hp (ih hle)
   | recvKE hm hc _ ih => exact .recvKE hm hc (ih hle)
   | closeKE _ ih => exact .closeKE (ih hle)
+  | dnewKE h1 h2 hp _ ih => exact .dnewKE h1 h2 hp (ih hle)
+  | denterKE hbd hm hc _ ih => exact .denterKE hbd hm hc (ih hle)
+  | dexitLE h1 hp hS ih =>
+    exact .dexitLE (h1.store_mono (hle _ (Nat.le_refl _)) (storePre_of_take_eq (take_pre_take hpre hS.le_depth))) hp (ih hle)
+  | dexitRE hv h1 hp hS ih =>
+    exact .dexitRE hv (h1.store_mono (hle _ (Nat.le_refl _)) (storePre_of_take_eq (take_pre_take hpre hS.le_depth))) hp (ih hle)
 
 /-- スタック型付けの transport（Ξ 版）: newchan で Ξ が伸びても保たれる -/
 theorem StackTy.chan_mono {Δ : Defs} {Ξ Ξ' : ChanTy} {Ψ : StoreTy} {b : Nat} {S d t tf}
@@ -947,6 +973,10 @@ theorem StackTy.chan_mono {Δ : Defs} {Ξ Ξ' : ChanTy} {Ψ : StoreTy} {b : Nat}
   | sendRE hv h1 hp _ ih => exact .sendRE hv (h1.chan_mono hle) hp ih
   | recvKE hm hc _ ih => exact .recvKE hm hc ih
   | closeKE _ ih => exact .closeKE ih
+  | dnewKE h1 h2 hp _ ih => exact .dnewKE h1 h2 hp ih
+  | denterKE hbd hm hc _ ih => exact .denterKE hbd hm hc ih
+  | dexitLE h1 hp _ ih => exact .dexitLE (h1.chan_mono hle) hp ih
+  | dexitRE hv h1 hp _ ih => exact .dexitRE hv (h1.chan_mono hle) hp ih
 
 /-! ## take / StoreLE の小補題 -/
 
@@ -2148,7 +2178,7 @@ theorem heapOk_spawn {Δ : Defs} {Ξ : ChanTy} {b : Nat} {Ψ : StoreTy} {H : Hea
 /-! ## ChanOk の遷移補題 -/
 
 theorem chanOk_empty {Δ : Defs} : ChanOk Δ ∅ ∅ := by
-  refine ⟨rfl, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro c Ψc t h
     simp at h
   · intro c q Ψc t h _
@@ -2156,13 +2186,15 @@ theorem chanOk_empty {Δ : Defs} : ChanOk Δ ∅ ∅ := by
   · intro k t h; simp at h
   · intro k ent h; simp [EmptyCollection.emptyCollection] at h
   · intro k t ent h; simp at h
+  · intro k t h; simp at h
+  · intro k t de h; simp at h
 
 /-- newchan / parch: エントリ (Ψc, t) を両側の末尾に足す（Ψc = 生成時の共有プレフィクス）。
 既存キューの値の型付けは chan_mono で引き継ぐ -/
 theorem chanOk_new {Δ : Defs} {Ξ : ChanTy} {K : ChanSt} {Ψc : StoreTy} {t : Ty} (hC : ChanOk Δ Ξ K)
     (hrb : t.regionsBelow Ψc.length) (hmf : t.mutFree) :
     ChanOk Δ (Ξ.addCh (Ψc, t)) K.addLeg := by
-  refine ⟨by simp [hC.len, ChanTy.addCh, ChanSt.addLeg], ?_, ?_, hC.epdom, hC.eprev, hC.eptyped⟩
+  refine ⟨by simp [hC.len, ChanTy.addCh, ChanSt.addLeg], ?_, ?_, hC.epdom, hC.eprev, hC.eptyped, hC.domdom, hC.domtyped⟩
   · intro c Ψ' τ h
     by_cases hc : c < Ξ.ch.length
     · simp only [ChanTy.addCh] at h; rw [List.getElem?_append_left hc] at h
@@ -2203,7 +2235,7 @@ theorem chanOk_send {Δ : Defs} {Ξ : ChanTy} {K : ChanSt} {c : Nat} {q : List E
     ChanOk Δ Ξ (K.setLeg c (q ++ [v])) := by
   replace ht := HasType.value_ctx (Γ' := []) (Λ' := []) hv ht
   have hcK : c < K.leg.length := (List.getElem?_eq_some_iff.mp hKc).1
-  refine ⟨by simp [hC.len, ChanSt.setLeg], hC.wf, ?_, hC.epdom, hC.eprev, hC.eptyped⟩
+  refine ⟨by simp [hC.len, ChanSt.setLeg], hC.wf, ?_, hC.epdom, hC.eprev, hC.eptyped, hC.domdom, hC.domtyped⟩
   intro c' q' Ψ' τ h1 h2 w hw
   simp only [ChanSt.setLeg] at h1
   by_cases hcc : c' = c
@@ -2225,7 +2257,7 @@ theorem chanOk_recv {Δ : Defs} {Ξ : ChanTy} {K : ChanSt} {c : Nat} {v : Expr} 
     (hC : ChanOk Δ Ξ K) (hKc : K.leg[c]? = some (v :: q)) :
     ChanOk Δ Ξ (K.setLeg c q) := by
   have hcK : c < K.leg.length := (List.getElem?_eq_some_iff.mp hKc).1
-  refine ⟨by simp [hC.len, ChanSt.setLeg], hC.wf, ?_, hC.epdom, hC.eprev, hC.eptyped⟩
+  refine ⟨by simp [hC.len, ChanSt.setLeg], hC.wf, ?_, hC.epdom, hC.eprev, hC.eptyped, hC.domdom, hC.domtyped⟩
   intro c' q' Ψ' τ h1 h2 w hw
   simp only [ChanSt.setLeg] at h1
   by_cases hcc : c' = c
@@ -2257,13 +2289,13 @@ theorem chanOk_epNew {Δ : Defs} {Ξ : ChanTy} {K : ChanSt} {k : EpKey} {t : Ty}
     | none => rfl
     | some t' => obtain ⟨e, he⟩ := hC.epdom k t' h; rw [hk] at he; cases he
   have hle : ChanLE Ξ { Ξ with ep := (k, t) :: Ξ.ep } := by
-    refine ⟨fun _ _ h => h, ?_, fun _ _ h => h⟩
+    refine ⟨fun _ _ h => h, ?_, fun _ _ h => h, fun _ _ h => h⟩
     intro k' t' h
     by_cases hkk : k' = k
     · subst hkk; rw [hfresh] at h; cases h
     · show ((k, t) :: Ξ.ep).lookup k' = some t'
       rw [lookup_cons_ne hkk]; exact h
-  refine ⟨hC.len, hC.wf, fun c q Ψc t' h1 h2 v hv => ?_, ?_, ?_, ?_⟩
+  refine ⟨hC.len, hC.wf, fun c q Ψc t' h1 h2 v hv => ?_, ?_, ?_, ?_, hC.domdom, hC.domtyped⟩
   · obtain ⟨hvv, ht⟩ := hC.typed c q Ψc t' h1 h2 v hv
     exact ⟨hvv, ht.chan_mono hle⟩
   · intro k' t' h
@@ -2297,7 +2329,7 @@ theorem chanOk_epSet {Δ : Defs} {Ξ : ChanTy} {K : ChanSt} {k : EpKey} {ent ent
     (hC : ChanOk Δ Ξ K) (hk : K.ep k = some ent) (hty : ent'.ty = ent.ty)
     (hq : ∀ t, Ξ.ep.lookup k = some t → ∀ w ∈ ent'.q, PktOk Δ (.opt t) w) :
     ChanOk Δ Ξ (K.setEp k ent') := by
-  refine ⟨hC.len, hC.wf, hC.typed, ?_, ?_, ?_⟩
+  refine ⟨hC.len, hC.wf, hC.typed, ?_, ?_, ?_, hC.domdom, hC.domtyped⟩
   · intro k' t' h
     by_cases hkk : k' = k
     · subst hkk; exact ⟨ent', by simp [ChanSt.setEp]⟩
@@ -2318,6 +2350,65 @@ theorem chanOk_epSet {Δ : Defs} {Ξ : ChanTy} {K : ChanSt} {k : EpKey} {ent ent
     · simp [ChanSt.setEp, hkk] at h2
       exact hC.eptyped k' t' e' h1 h2
 
+
+/-- domain の生成: 新しい鍵（機械の表に無い — 型の表にも無い）に状態の型 t の項目を足す（状態の梱包は型付く） -/
+theorem chanOk_domNew {Δ : Defs} {Ξ : ChanTy} {K : ChanSt} {k : EpKey} {t : Ty} (de : DomEnt)
+    (hC : ChanOk Δ Ξ K) (hk : K.dom k = none) (hcan : t.relocR 0 = t) (hmf : t.mutFree = true) (hcf : t.chanFree = true)
+    (hty : de.ty = t) (hst : PktOk Δ t de.st) :
+    ChanOk Δ { Ξ with dom := (k, t) :: Ξ.dom } (K.setDom k de) := by
+  have hfresh : Ξ.dom.lookup k = none := by
+    cases h : Ξ.dom.lookup k with
+    | none => rfl
+    | some t' => obtain ⟨e, he⟩ := hC.domdom k t' h; rw [hk] at he; cases he
+  have hle : ChanLE Ξ { Ξ with dom := (k, t) :: Ξ.dom } := by
+    refine ⟨fun _ _ h => h, fun _ _ h => h, fun _ _ h => h, ?_⟩
+    intro k' t' h
+    by_cases hkk : k' = k
+    · subst hkk; rw [hfresh] at h; cases h
+    · show ((k, t) :: Ξ.dom).lookup k' = some t'
+      rw [lookup_cons_ne hkk]; exact h
+  refine ⟨hC.len, hC.wf, fun c q Ψc t' h1 h2 v hv => ?_, hC.epdom, hC.eprev, hC.eptyped, ?_, ?_⟩
+  · obtain ⟨hvv, ht⟩ := hC.typed c q Ψc t' h1 h2 v hv
+    exact ⟨hvv, ht.chan_mono hle⟩
+  · intro k' t' h
+    by_cases hkk : k' = k
+    · subst hkk; exact ⟨de, by simp [ChanSt.setDom]⟩
+    · simp only [] at h; rw [lookup_cons_ne hkk] at h
+      obtain ⟨e', he'⟩ := hC.domdom k' t' h
+      exact ⟨e', by simp [ChanSt.setDom, hkk, he']⟩
+  · intro k' t' e' h1 h2
+    by_cases hkk : k' = k
+    · subst hkk
+      have h1' : ((k', t) :: Ξ.dom).lookup k' = some t' := h1
+      rw [lookup_cons_self] at h1'; cases h1'
+      simp [ChanSt.setDom] at h2
+      subst h2
+      exact ⟨hcan, hmf, hcf, hty, hst⟩
+    · have h1' : ((k, t) :: Ξ.dom).lookup k' = some t' := h1
+      rw [lookup_cons_ne hkk] at h1'
+      simp [ChanSt.setDom, hkk] at h2
+      exact hC.domtyped k' t' e' h1' h2
+
+/-- domain の項目の書き換え（入る・出る）: 型が同じで状態の梱包が型付いたままなら保たれる -/
+theorem chanOk_domSet {Δ : Defs} {Ξ : ChanTy} {K : ChanSt} {k : EpKey} {de de' : DomEnt}
+    (hC : ChanOk Δ Ξ K) (hk : K.dom k = some de) (hty : de'.ty = de.ty)
+    (hst : ∀ t, Ξ.dom.lookup k = some t → PktOk Δ t de'.st) :
+    ChanOk Δ Ξ (K.setDom k de') := by
+  refine ⟨hC.len, hC.wf, hC.typed, hC.epdom, hC.eprev, hC.eptyped, ?_, ?_⟩
+  · intro k' t' h
+    by_cases hkk : k' = k
+    · subst hkk; exact ⟨de', by simp [ChanSt.setDom]⟩
+    · obtain ⟨e', he'⟩ := hC.domdom k' t' h
+      exact ⟨e', by simp [ChanSt.setDom, hkk, he']⟩
+  · intro k' t' e' h1 h2
+    by_cases hkk : k' = k
+    · subst hkk
+      simp [ChanSt.setDom] at h2
+      subst h2
+      obtain ⟨hcan, hmf, hcf, hty0, -⟩ := hC.domtyped k' t' de h1 hk
+      exact ⟨hcan, hmf, hcf, by rw [hty, hty0], hst t' h1⟩
+    · simp [ChanSt.setDom, hkk] at h2
+      exact hC.domtyped k' t' e' h1 h2
 /-- 状態型付けの transport（Ξ 版）: newchan で Ξ が伸びても保たれる。
 Ξ は全タスク共有なので、あるタスクの newchan が兄弟タスクの型付けを壊さないことの中身 -/
 theorem StateTy.chan_mono {Δ : Defs} {Ξ Ξ' : ChanTy} {b : Nat} {s : State} {tf : Ty}
@@ -2330,14 +2421,15 @@ theorem StateTy.chan_mono {Δ : Defs} {Ξ Ξ' : ChanTy} {b : Nat} {s : State} {t
   | par _ _ hf1 hf2 hS hH ih1 ih2 =>
     exact .par (ih1 hle htk) (ih2 hle htk) hf1 hf2 (hS.chan_mono hle) (heapOk_chan_mono hle hH)
   | panic => exact .panic
-  | fam Ξs bs tcs hmf _ hlen hch hep hloc hex hkt _ htg ihm ihk =>
-    -- 子の世界は共有の部分（ch / ep）だけ親に揃えて伸ばす（子自身の tk はそのまま）
-    refine .fam (fun i => { Ξs i with ch := Ξ'.ch, ep := Ξ'.ep }) bs tcs hmf (ihm hle htk) (by rw [htk]; exact hlen)
-      (fun _ => rfl) (fun _ => rfl) (by rw [htk]; exact hloc) (by rw [htk]; exact hex) (by rw [htk]; exact hkt) ?_ htg
+  | fam Ξs bs tcs hmf _ hlen hch hep hdm hloc hex hkt _ htg ihm ihk =>
+    -- 子の世界は共有の部分（ch / ep / dom）だけ親に揃えて伸ばす（子自身の tk はそのまま）
+    refine .fam (fun i => { Ξs i with ch := Ξ'.ch, ep := Ξ'.ep, dom := Ξ'.dom }) bs tcs hmf (ihm hle htk) (by rw [htk]; exact hlen)
+      (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (by rw [htk]; exact hloc) (by rw [htk]; exact hex) (by rw [htk]; exact hkt) ?_ htg
     intro i rs kid hk
-    refine ihk i rs kid hk ⟨?_, ?_, fun _ _ h => h⟩ rfl
+    refine ihk i rs kid hk ⟨?_, ?_, fun _ _ h => h, ?_⟩ rfl
     · intro c p h; rw [hch i] at h; exact hle.ch c p h
     · intro k t' h; rw [hep i] at h; exact hle.ep k t' h
+    · intro k t' h; rw [hdm i] at h; exact hle.dom k t' h
 
 /-- jump の巻き戻しの型付け（V4 / R4b）。スタックの帰納で n 番目の labelK を探す:
 - 途中の regionK は heapOk_pop で region を 1 つ降ろす（ヒープは常に H.take d' の形）

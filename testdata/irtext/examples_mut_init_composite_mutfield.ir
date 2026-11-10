@@ -1876,26 +1876,26 @@ b2:
   store %21[1], %23
   %24 = load.i64 %7[2]
   store %21[2], %24
-  %25 = slotaddr s3
-  %26 = const 0
-  store %25[0], %26
-  store %25[1], %26
-  store %25[2], %26
-  store %25[3], %26
+  %25 = const 0
+  %26 = slotaddr s3
+  store %26[0], %25
+  store %26[1], %25
+  store %26[2], %25
+  store %26[3], %25
   %27 = load.i64 %21[0]
-  store %25[0], %27
+  store %26[0], %27
   %28 = load.i64 %21[1]
-  store %25[1], %28
+  store %26[1], %28
   %29 = load.i64 %21[2]
-  store %25[2], %29
+  store %26[2], %29
   %30 = slotaddr s4
-  %31 = load.i64 %25[0]
+  %31 = load.i64 %26[0]
   store %30[0], %31
-  %32 = load.i64 %25[1]
+  %32 = load.i64 %26[1]
   store %30[1], %32
-  %33 = load.i64 %25[2]
+  %33 = load.i64 %26[2]
   store %30[2], %33
-  %34 = load.i64 %25[3]
+  %34 = load.i64 %26[3]
   store %30[3], %34
   %35 = const 2
   %36 = globaladdr @rt.meta

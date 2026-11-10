@@ -143,7 +143,7 @@ func exprIn(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
         notByte(mut st, nB(nodeOf(mut st, e)), eb, ef)?
         base := expr(mut st, base0, eb, ef, depth)?
         idx := expr(mut st, nB(nodeOf(mut st, e)), eb, ef, depth)?
-        return cIndex(mut st, base, idx, readAnn(mut st, computeTy(mut st, base0, eb, ef))), nil
+        return cIndex(mut st, base, idx, readAnn(mut st, sliceAt(mut st, base0, eb, ef))), nil
     case ast.ESlice3:
         if isStringTy(mut st, computeTy(mut st, nA(nodeOf(mut st, e)), eb, ef)) {
             return 0, diag.Malformed{at: posOf(mut st, at)}
@@ -1097,6 +1097,18 @@ func atBinding(st mut S, base NodeRef, t TyRef, eb int) TyRef {
     return pt
 }
 
+// `xs[i]` の読みの注釈の元にする slice の型: 名前の束縛はコア上の正確な型（展開の仮引数の ann の型）があればそれ — 宣言型は
+// 素の座標で、展開点の最内の座標で組まれた要素と食い違う（mapValueAt と同じ読み）
+func sliceAt(st mut S, base NodeRef, eb int, ef int) TyRef {
+    if kindN(mut st, base) == ast.EIdent {
+        b := lookup(mut st, eb, sA(nodeOf(mut st, base)))
+        if b >= 0 && !bnd(mut st, b).mutable && isTag(mut st, bnd(mut st, b).core, TSl) {
+            return bnd(mut st, b).core
+        }
+    }
+    return computeTy(mut st, base, eb, ef)
+}
+
 // `m[k]` の V（getm の注釈と computeTy の結果）: map の値型をセルが組まれた点の座標で読む（atBinding と同じ読み）。
 // 名前の束縛はコア上の正確な型（BCore）があればそれ、無ければ束縛点。辞書 const の参照は参照点で展開されるので現在の点。他は宣言の型のまま
 func mapValueAt(st mut S, base NodeRef, bt TyRef, eb int) TyRef {
@@ -1338,7 +1350,16 @@ func labelIn(st mut S, e NodeRef, decl NodeRef, pk int, idx int, venv int, eb in
         t := recDrTy(mut st, declRef(mut st, int(decl), pk, renv), dest, at)?
         return letsAround(mut st, lets, recFold(mut st, t, encodeVariantTy(mut st, tyUnfold(mut st, t), vcount(mut st, decl), idx, payload))), nil
     }
-    r := encodeVariant(mut st, pk, decl, 0, idx, payload, at)?
+    // 兄弟の型注釈は宣言の形（region 0）なので、行き先の region へ締める（関数の本体では点が region 0 でなく、slice の要素などの
+    // 期待型〔今の点の region〕と食い違う）
+    k := if dest > 0 { dest - 1 } else { st.rdepth - 1 }
+    r := coreRelocAnn(mut st, encodeVariant(mut st, pk, decl, 0, idx, payload, at)?, k)
+    // region を持つペイロードの値は外の region から来ることがある（仮引数の string 等）— inl / inr の型はペイロードの実の型を運ぶので、
+    // union の型を行き先の座標で組んだ型へ緩める（struct のリテラルの要素の ann と同じ緩め）
+    if decl != NodeRef(ERRS) && vcount(mut st, decl) > 1 && hasRegion(mut st, payloadTy(mut st, pk, v, TYFUEL)?) {
+        ut := tyRelocAll(mut st, unionTreeTy(mut st, pk, decl, 0, at, TYFUEL)?, k)
+        return letsAround(mut st, lets, cAnn(mut st, r, ut)), nil
+    }
     return letsAround(mut st, lets, r), nil
 }
 

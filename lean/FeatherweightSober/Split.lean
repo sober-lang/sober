@@ -154,6 +154,10 @@ def renameFn (ρ : Nat → Nat) : Expr → Expr
   | taskV rs n => taskV rs n
   | newch r cap t => newch r cap t
   | epV p k b r => epV p k b r
+  | dnew r i t => dnew r (renameFn ρ i) t
+  | domV p k r => domV p k r
+  | denter t d => denter t (renameFn ρ d)
+  | dexit d v => dexit (renameFn ρ d) (renameFn ρ v)
 
 end Expr
 

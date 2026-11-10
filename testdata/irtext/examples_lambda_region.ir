@@ -1837,22 +1837,22 @@ b3:
   store %70[1], %72
   %73 = load.i64 %18[2]
   store %70[2], %73
-  %74 = slotaddr s0
-  %75 = const 0
-  store %74[0], %75
-  store %74[1], %75
-  store %74[2], %75
+  %74 = const 0
+  %75 = slotaddr s0
+  store %75[0], %74
+  store %75[1], %74
+  store %75[2], %74
   %76 = load.i64 %70[0]
-  store %74[0], %76
+  store %75[0], %76
   %77 = load.i64 %70[1]
-  store %74[1], %77
+  store %75[1], %77
   %78 = load.i64 %70[2]
-  store %74[2], %78
-  %79 = load.i64 %74[0]
+  store %75[2], %78
+  %79 = load.i64 %75[0]
   store %0[0], %79
-  %80 = load.i64 %74[1]
+  %80 = load.i64 %75[1]
   store %0[1], %80
-  %81 = load.i64 %74[2]
+  %81 = load.i64 %75[2]
   store %0[2], %81
   region.relocate %0, 1, %2
   region.setdepth %2

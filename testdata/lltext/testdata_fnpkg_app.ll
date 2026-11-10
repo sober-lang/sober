@@ -3036,26 +3036,26 @@ b0:
   %v11 = load i64, ptr %v11.p
   %st1 = getelementptr i64, ptr %v9, i64 1
   store i64 %v11, ptr %st1
-  %v12 = getelementptr i64, ptr %s3, i64 0
-  %v13 = add i64 0, 0
-  %st2 = getelementptr i64, ptr %v12, i64 0
-  store i64 %v13, ptr %st2
-  %st3 = getelementptr i64, ptr %v12, i64 1
-  store i64 %v13, ptr %st3
+  %v12 = add i64 0, 0
+  %v13 = getelementptr i64, ptr %s3, i64 0
+  %st2 = getelementptr i64, ptr %v13, i64 0
+  store i64 %v12, ptr %st2
+  %st3 = getelementptr i64, ptr %v13, i64 1
+  store i64 %v12, ptr %st3
   %v14.p = getelementptr i64, ptr %v9, i64 0
   %v14 = load i64, ptr %v14.p
-  %st4 = getelementptr i64, ptr %v12, i64 0
+  %st4 = getelementptr i64, ptr %v13, i64 0
   store i64 %v14, ptr %st4
   %v15.p = getelementptr i64, ptr %v9, i64 1
   %v15 = load i64, ptr %v15.p
-  %st5 = getelementptr i64, ptr %v12, i64 1
+  %st5 = getelementptr i64, ptr %v13, i64 1
   store i64 %v15, ptr %st5
   %v16 = getelementptr i64, ptr %s4, i64 0
-  %v17.p = getelementptr i64, ptr %v12, i64 0
+  %v17.p = getelementptr i64, ptr %v13, i64 0
   %v17 = load i64, ptr %v17.p
   %st6 = getelementptr i64, ptr %v16, i64 0
   store i64 %v17, ptr %st6
-  %v18.p = getelementptr i64, ptr %v12, i64 1
+  %v18.p = getelementptr i64, ptr %v13, i64 1
   %v18 = load i64, ptr %v18.p
   %st7 = getelementptr i64, ptr %v16, i64 1
   store i64 %v18, ptr %st7
@@ -3139,13 +3139,13 @@ b0:
   %v2.p = getelementptr i64, ptr %v6, i64 0
   %v2 = load i64, ptr %v2.p
   call void @"rt.region_enter"()
-  %v3 = getelementptr i64, ptr %s0, i64 0
-  %v4 = add i64 0, 0
-  %st0 = getelementptr i64, ptr %v3, i64 0
-  store i64 %v4, ptr %st0
-  %st1 = getelementptr i64, ptr %v3, i64 0
+  %v3 = add i64 0, 0
+  %v4 = getelementptr i64, ptr %s0, i64 0
+  %st0 = getelementptr i64, ptr %v4, i64 0
+  store i64 %v3, ptr %st0
+  %st1 = getelementptr i64, ptr %v4, i64 0
   store i64 %v1, ptr %st1
-  %v5.p = getelementptr i64, ptr %v3, i64 0
+  %v5.p = getelementptr i64, ptr %v4, i64 0
   %v5 = load i64, ptr %v5.p
   %st2 = getelementptr i64, ptr %v0, i64 0
   store i64 %v5, ptr %st2

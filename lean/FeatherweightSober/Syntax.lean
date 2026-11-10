@@ -75,6 +75,10 @@ inductive Ty : Type where
   部分型は同じ組・同じ成分で外の座標だけ（slice の規則の持ち上げ — 深く共変な組なら r ≤ r'・そうでなければ r = r'）。
   展開は組の全成分を局所座標で代入してから r へ（`Ty.unfold`） -/
   | muRs (r n i : Nat) (bs : Ty)
+  /-- domain（直列化された共有状態 — language.md 11 節「domain」）の値の型: r = 家の region（作った scope の region）・s = 状態の型（imm で chan なし —
+  梱包して持つ）。捕獲できる（mutFree — 状態への mut は本体の中だけ・更新は機械の 1 歩 denter … dexit の間の排他）・送れない（chan を持つ側）・
+  家の region より外へ出ない（regionsBelow は端点と同じく r < d） -/
+  | dom (r : Nat) (s : Ty)
   deriving DecidableEq, Repr
 
 /-- 型が言及する region がすべてレベル d 未満（block の escape 検査に使う） -/
@@ -94,6 +98,7 @@ def Ty.regionsBelow (d : Nat) : Ty → Bool
   -- チャネルはペイロードが参照する region（< rc）より下へ escape できない。
   -- 「参照先はチャネルより長生き」の型付け化（段 3d）
   | .chan rc t => decide (rc ≤ d) && t.regionsBelow rc
+  | .dom r t => decide (r < d) && t.regionsBelow d
   | .own _ r t => decide (r < d) && t.regionsBelow d
   -- 関数値は環境を持たない（Def 参照のみ）。シグネチャは base 座標の型スキーム
   | .fn _ _ => true
@@ -119,6 +124,7 @@ def Ty.mutFree : Ty → Bool
   -- チャネルは Sharable（region-domain-pool.md の方向づけの最小形）:
   -- 内部同期を持つのでタスクに渡せる。mutFree 検査の白リスト
   | .chan _ _ => true
+  | .dom _ _ => true
   | .fn _ _ => true
   | .mus _ _ _ => true
   | .rvar _ => true
@@ -158,6 +164,7 @@ theorem Ty.mutFree_of_locFree : ∀ {t : Ty}, t.regionsBelow 0 = true → t.mutF
   | .slice m r t, h => by simp [Ty.regionsBelow] at h
   | .map m r t, h => by simp [Ty.regionsBelow] at h
   | .chan rc t, _ => rfl
+  | .dom rc t, _ => rfl
   | .fn p r, _ => rfl
   | .mus _ _ _, _ => rfl
   | .rvar _, _ => rfl
@@ -192,6 +199,9 @@ theorem Ty.regionsBelow_mono {m n : Nat} (hmn : m ≤ n) :
   | .chan rc t, h => by
     simp only [Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq] at h ⊢
     exact ⟨by omega, h.2⟩
+  | .dom r t, h => by
+    simp only [Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq] at h ⊢
+    exact ⟨by omega, Ty.regionsBelow_mono hmn h.2⟩
   | .own k r t, h => by
     simp only [Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq] at h ⊢
     exact ⟨by omega, Ty.regionsBelow_mono hmn h.2⟩
@@ -219,6 +229,7 @@ def Ty.shiftR (ρ : Nat) : Ty → Ty
   | .slice m r t => .slice m (r + ρ) (t.shiftR ρ)
   | .map m r t => .map m (r + ρ) (t.shiftR ρ)
   | .chan rc t => .chan (rc + ρ) (t.shiftR ρ)
+  | .dom rc t => .dom (rc + ρ) (t.shiftR ρ)
   | .fn p r => .fn p r
   | .mus n i b => .mus n i b
   | .rvar i => .rvar i
@@ -239,6 +250,7 @@ theorem Ty.shiftR_zero : ∀ t : Ty, t.shiftR 0 = t
   | .slice m r t => by simp [Ty.shiftR, Ty.shiftR_zero t]
   | .map m r t => by simp [Ty.shiftR, Ty.shiftR_zero t]
   | .chan rc t => by simp [Ty.shiftR, Ty.shiftR_zero t]
+  | .dom rc t => by simp [Ty.shiftR, Ty.shiftR_zero t]
   | .own k r t => by simp [Ty.shiftR, Ty.shiftR_zero t]
   | .fn p r => rfl
   | .mus _ _ _ => rfl
@@ -259,6 +271,7 @@ theorem Ty.shiftR_comp (ρ₁ ρ₂ : Nat) : ∀ t : Ty, (t.shiftR ρ₁).shiftR
   | .slice m r t => by simp [Ty.shiftR, Ty.shiftR_comp ρ₁ ρ₂ t]; omega
   | .map m r t => by simp [Ty.shiftR, Ty.shiftR_comp ρ₁ ρ₂ t]; omega
   | .chan rc t => by simp [Ty.shiftR, Ty.shiftR_comp ρ₁ ρ₂ t]; omega
+  | .dom rc t => by simp [Ty.shiftR, Ty.shiftR_comp ρ₁ ρ₂ t]; omega
   | .own k r t => by simp [Ty.shiftR, Ty.shiftR_comp ρ₁ ρ₂ t]; omega
   | .fn p r => rfl
   | .mus _ _ _ => rfl
@@ -287,6 +300,8 @@ theorem Ty.shiftR_regionsBelow {ρ : Nat} :
     simp [Ty.shiftR, Ty.regionsBelow, Ty.shiftR_regionsBelow t d]
   | .chan rc t, d => by
     simp [Ty.shiftR, Ty.regionsBelow, Ty.shiftR_regionsBelow t rc]
+  | .dom r t, d => by
+    simp [Ty.shiftR, Ty.regionsBelow, Ty.shiftR_regionsBelow t d]
   | .own k r t, d => by
     simp [Ty.shiftR, Ty.regionsBelow, Ty.shiftR_regionsBelow t d]
   | .fn p r, d => rfl
@@ -308,6 +323,7 @@ theorem Ty.shiftR_mutFree {ρ : Nat} : ∀ t : Ty, (t.shiftR ρ).mutFree = t.mut
   | .slice m r t => by simp [Ty.shiftR, Ty.mutFree, Ty.shiftR_mutFree t]
   | .map m r t => by simp [Ty.shiftR, Ty.mutFree, Ty.shiftR_mutFree t]
   | .chan rc t => by simp [Ty.shiftR, Ty.mutFree]
+  | .dom rc t => by simp [Ty.shiftR, Ty.mutFree]
   | .own k r t => rfl
   | .fn p r => rfl
   | .mus _ _ _ => rfl
@@ -339,6 +355,7 @@ def Ty.relocR (ρ : Nat) : Ty → Ty
   | .slice true r t => .slice true (r + ρ) (t.shiftR ρ)
   | .map true r t => .map true (r + ρ) (t.shiftR ρ)
   | .chan rc t => .chan (rc + ρ) (t.shiftR ρ)
+  | .dom rc t => .dom (rc + ρ) (t.shiftR ρ)
   | .fn p r => .fn p r
   | .mus n i b => .mus n i b
   | .rvar i => .rvar i
@@ -366,6 +383,7 @@ theorem Ty.relocR_shiftR_comp (ρ₁ ρ₂ : Nat) : ∀ t : Ty, (t.relocR ρ₁)
   | .slice true r t => by simp [Ty.relocR, Ty.shiftR, Ty.shiftR_comp]; omega
   | .map true r t => by simp [Ty.relocR, Ty.shiftR, Ty.shiftR_comp]; omega
   | .chan rc t => by simp [Ty.relocR, Ty.shiftR, Ty.shiftR_comp]; omega
+  | .dom rc t => by simp [Ty.relocR, Ty.shiftR, Ty.shiftR_comp]; omega
   | .own k r t => by simp [Ty.relocR, Ty.shiftR, Ty.shiftR_comp]; omega
   | .fn p r => rfl
   | .mus _ _ _ => rfl
@@ -392,6 +410,7 @@ def Ty.renR (ρ0 δ : Nat) : Ty → Ty
   | .slice m r t => .slice m (rmap ρ0 δ r) (t.renR ρ0 δ)
   | .map m r t => .map m (rmap ρ0 δ r) (t.renR ρ0 δ)
   | .chan rc t => .chan (rmap ρ0 δ rc) (t.renR ρ0 δ)
+  | .dom rc t => .dom (rmap ρ0 δ rc) (t.renR ρ0 δ)
   | .fn p r => .fn p r
   | .mus n i b => .mus n i b
   | .rvar i => .rvar i
@@ -419,6 +438,7 @@ def Ty.relocA (ρ0 d : Nat) : Ty → Ty
   | .slice true r t => .slice true (rmap ρ0 d r) (t.renR ρ0 d)
   | .map true r t => .map true (rmap ρ0 d r) (t.renR ρ0 d)
   | .chan rc t => .chan (rmap ρ0 d rc) (t.renR ρ0 d)
+  | .dom rc t => .dom (rmap ρ0 d rc) (t.renR ρ0 d)
   | .fn p r => .fn p r
   | .mus n i b => .mus n i b
   | .rvar i => .rvar i
@@ -465,6 +485,7 @@ def Ty.annFree : Ty → Bool
   | .slice m _ t => m || t.annFree
   | .map m _ t => m || t.annFree
   | .chan _ _ => true
+  | .dom _ _ => true
   | .fn _ _ => true
   | .mus _ _ _ => true
   | .rvar _ => true
@@ -509,6 +530,7 @@ def Ty.chanFree : Ty → Bool
   | .slice _ _ t => t.chanFree
   | .map _ _ t => t.chanFree
   | .chan _ _ => false
+  | .dom _ _ => false
   | .fn _ _ => true
   | .mus _ _ _ => true
   | .rvar _ => true
@@ -530,6 +552,7 @@ def Ty.rfree (n : Nat) : Ty → Bool
   | .slice _ _ t => t.rfree n
   | .map _ _ t => t.rfree n
   | .chan _ t => t.rfree n
+  | .dom _ t => t.rfree n
   | .fn p r => p.rfree n && r.rfree n
   | .own _ _ t => t.rfree n
   | .mus n' _ b => b.rfree (n + n')
@@ -568,6 +591,8 @@ def Ty.sub : Ty → Ty → Bool
   | .ref false r t, .ref false r' t' => decide (r ≤ r') && decide (t = t')
   | .slice false r t, .slice false r' t' => decide (r ≤ r') && Ty.sub t t'
   | .map false r t, .map false r' t' => decide (r ≤ r') && Ty.sub t t'
+  -- domain の家の region は imm の参照と同じく上界（関数の実引数で呼び手空間へ合わせる — 状態の型は不変）
+  | .dom r t, .dom r' t' => decide (r ≤ r') && decide (t = t')
   | .muRs r n i b, .muRs r' n' i' b' =>
     decide (n = n') && decide (i = i') && decide (b = b') && (decide (r = r') || (decide (r ≤ r') && b.covOk))
   | a, b => decide (a = b)
@@ -593,6 +618,7 @@ theorem Ty.sub_refl : ∀ t : Ty, Ty.sub t t = true
   | .slice m r t => by cases m <;> simp [Ty.sub, Ty.sub_refl t]
   | .map m r t => by cases m <;> simp [Ty.sub, Ty.sub_refl t]
   | .chan rc t => by simp [Ty.sub]
+  | .dom rc t => by simp [Ty.sub]
   | .own k r t => by simp [Ty.sub]
   | .fn p r => by simp [Ty.sub]
   | .mus _ _ b => by simp [Ty.sub]
@@ -649,6 +675,12 @@ theorem Ty.sub_regionsBelow {d : Nat} :
   | .chan rc t, tb, hs, hb => by
     simp only [Ty.sub, decide_eq_true_eq] at hs
     exact hs ▸ hb
+  | .dom rc t, tb, hs, hb => by
+    obtain ⟨r', rfl, hle⟩ : ∃ r', tb = .dom r' t ∧ rc ≤ r' := by
+      cases tb <;> simp [Ty.sub] at hs
+      · obtain ⟨h1, rfl⟩ := hs; exact ⟨_, rfl, h1⟩
+    simp only [Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq] at hb ⊢
+    exact ⟨by omega, hb.2⟩
   | .own k r t, tb, hs, hb => by
     simp only [Ty.sub, decide_eq_true_eq] at hs
     exact hs ▸ hb
@@ -724,6 +756,11 @@ theorem Ty.sub_mutFree :
   | .chan rc t, tb, hs => by
     simp only [Ty.sub, decide_eq_true_eq] at hs
     rw [hs]
+  | .dom rc t, tb, hs => by
+    obtain ⟨r', rfl⟩ : ∃ r', tb = .dom r' t := by
+      cases tb <;> simp [Ty.sub] at hs
+      · obtain ⟨_, rfl⟩ := hs; exact ⟨_, rfl⟩
+    simp [Ty.mutFree]
   | .own k r t, tb, hs => by
     simp only [Ty.sub, decide_eq_true_eq] at hs
     rw [hs]
@@ -794,6 +831,11 @@ theorem Ty.sub_chan_inv {rc : Nat} {t tb : Ty} (hs : Ty.sub (.chan rc t) tb = tr
     tb = .chan rc t := by
   cases tb <;> simp [Ty.sub] at hs
   · obtain ⟨rfl, rfl⟩ := hs; rfl
+
+theorem Ty.sub_dom_inv {rc : Nat} {t tb : Ty} (hs : Ty.sub (.dom rc t) tb = true) :
+    ∃ r', tb = .dom r' t ∧ rc ≤ r' := by
+  cases tb <;> simp [Ty.sub] at hs
+  · obtain ⟨h1, rfl⟩ := hs; exact ⟨_, rfl, h1⟩
 
 theorem Ty.sub_own_inv {k : OwnK} {r : Nat} {t tb : Ty} (hs : Ty.sub (.own k r t) tb = true) :
     tb = .own k r t := by
@@ -872,6 +914,10 @@ theorem Ty.sub_trans : ∀ {a b c : Ty}, Ty.sub a b = true → Ty.sub b c = true
   | .f64, _, _, h1, h2 => by obtain rfl := Ty.sub_f64_inv h1; exact h2
   | .unit, _, _, h1, h2 => by obtain rfl := Ty.sub_unit_inv h1; exact h2
   | .chan _ _, _, _, h1, h2 => by obtain rfl := Ty.sub_chan_inv h1; exact h2
+  | .dom _ _, _, _, h1, h2 => by
+    obtain ⟨r1, rfl, h1'⟩ := Ty.sub_dom_inv h1
+    obtain ⟨r2, rfl, h2'⟩ := Ty.sub_dom_inv h2
+    simp only [Ty.sub, Bool.and_eq_true, decide_eq_true_eq]; exact ⟨by omega, trivial⟩
   | .own _ _ _, _, _, h1, h2 => by obtain rfl := Ty.sub_own_inv h1; exact h2
   | .fn _ _, _, _, h1, h2 => by obtain rfl := Ty.sub_fn_inv h1; exact h2
   | .mus _ _ _, _, _, h1, h2 => by obtain rfl := Ty.sub_mus_inv h1; exact h2
@@ -963,6 +1009,9 @@ theorem Ty.sub_shiftR {ρ : Nat} :
   | .chan rc t, tb, hs => by
     obtain rfl := Ty.sub_chan_inv hs
     exact Ty.sub_refl _
+  | .dom rc t, tb, hs => by
+    obtain ⟨r', rfl, hle⟩ := Ty.sub_dom_inv hs
+    simp only [Ty.shiftR, Ty.sub, Bool.and_eq_true, decide_eq_true_eq]; exact ⟨by omega, trivial⟩
   | .own k r t, tb, hs => by
     obtain rfl := Ty.sub_own_inv hs
     exact Ty.sub_refl _
@@ -1016,6 +1065,7 @@ def Ty.rsubst : Ty → Nat → Ty → Ty
   | .slice m r t, k, s => .slice m r (t.rsubst k s)
   | .map m r t, k, s => .map m r (t.rsubst k s)
   | .chan rc t, k, s => .chan rc (t.rsubst k s)
+  | .dom rc t, k, s => .dom rc (t.rsubst k s)
   | .fn p r, k, s => .fn (p.rsubst k s) (r.rsubst k s)
   | .own o r t, k, s => .own o r (t.rsubst k s)
   | .mus n i b, k, s => .mus n i (b.rsubst (k + n) s)
@@ -1056,6 +1106,7 @@ def Ty.rguardN (k n : Nat) (inFn : Bool) : Ty → Bool
   | .slice _ _ t => t.rguardN k n inFn
   | .map _ _ t => t.rguardN k n inFn
   | .chan _ t => t.rguardN k n inFn
+  | .dom _ t => t.rguardN k n inFn
   | .own _ _ t => t.rguardN k n inFn
   | .fn p r => p.rguardN k n true && r.rguardN k n true
   | .rvar i => !(decide (k ≤ i) && decide (i < k + n)) || !inFn
@@ -1074,6 +1125,7 @@ def Ty.uoccAny (k n : Nat) (g : Bool) : Ty → Bool
   | .slice _ _ t => t.uoccAny k n true
   | .map _ _ t => t.uoccAny k n true
   | .chan _ t => t.uoccAny k n false
+  | .dom _ t => t.uoccAny k n false
   | .own _ _ t => t.uoccAny k n false
   | .rvar i => !g && decide (k ≤ i) && decide (i < k + n)
   | .mus m _ b => b.uoccAny (k + m) n g
@@ -1130,6 +1182,7 @@ def Ty.localOnly : Ty → Bool
   | .slice _ r t => decide (r = 0) && t.localOnly
   | .map _ r t => decide (r = 0) && t.localOnly
   | .chan rc t => decide (rc = 0) && t.regionsBelow 0 && t.chanFree && t.rfree 0
+  | .dom rc t => decide (rc = 0) && t.regionsBelow 0 && t.chanFree && t.rfree 0
   | .own _ r t => decide (r = 0) && t.regionsBelow 0 && t.chanFree && t.rfree 0
   | .fn _ _ => true
   | .mus _ _ _ => true
@@ -1151,6 +1204,7 @@ def Ty.recOk : Ty → Bool
   | .slice _ _ t => t.recOk
   | .map _ _ t => t.recOk
   | .chan _ t => t.recOk
+  | .dom _ t => t.recOk
   | .own _ _ t => t.recOk
   | .fn p r => p.recOk && r.recOk
   | .mus n i bs => bs.chainFn n && decide (i < n) && bs.recOk
@@ -1179,6 +1233,7 @@ def Ty.tsubst (ts : List Ty) : Ty → Ty
   | .slice m r t => .slice m r (t.tsubst ts)
   | .map m r t => .map m r (t.tsubst ts)
   | .chan rc t => .chan rc (t.tsubst ts)
+  | .dom rc t => .dom rc (t.tsubst ts)
   | .fn p r => .fn (p.tsubst ts) (r.tsubst ts)
   | .mus n i b => .mus n i (b.tsubst ts)
   | .rvar i => .rvar i
@@ -1200,6 +1255,7 @@ def Ty.tvarsBelow (n : Nat) : Ty → Bool
   | .slice _ _ t => t.tvarsBelow n
   | .map _ _ t => t.tvarsBelow n
   | .chan _ t => t.tvarsBelow n
+  | .dom _ t => t.tvarsBelow n
   | .fn p r => p.tvarsBelow n && r.tvarsBelow n
   | .mus _ _ b => b.tvarsBelow n
   | .rvar _ => true
@@ -1234,6 +1290,7 @@ theorem Ty.shiftR_of_argOk {ρ : Nat} : ∀ {t : Ty}, t.tyArgOk = true → t.shi
   | .slice _ _ _, h => by simp [Ty.tyArgOk, Ty.regionsBelow] at h
   | .map _ _ _, h => by simp [Ty.tyArgOk, Ty.regionsBelow] at h
   | .chan _ _, h => by simp [Ty.tyArgOk, Ty.chanFree] at h
+  | .dom _ _, h => by simp [Ty.tyArgOk, Ty.chanFree] at h
   | .fn _ _, _ => rfl
   | .mus _ _ _, _ => rfl
   | .rvar _, _ => rfl
@@ -1261,6 +1318,7 @@ theorem Ty.relocR_of_argOk {ρ : Nat} : ∀ {t : Ty}, t.tyArgOk = true → t.rel
   | .slice _ _ _, h => by simp [Ty.tyArgOk, Ty.regionsBelow] at h
   | .map _ _ _, h => by simp [Ty.tyArgOk, Ty.regionsBelow] at h
   | .chan _ _, h => by simp [Ty.tyArgOk, Ty.chanFree] at h
+  | .dom _ _, h => by simp [Ty.tyArgOk, Ty.chanFree] at h
   | .fn _ _, _ => rfl
   | .mus _ _ _, _ => rfl
   | .rvar _, _ => rfl
@@ -1299,6 +1357,7 @@ theorem Ty.tsubst_shiftR {ts : List Ty} {ρ : Nat} (h : Ty.tyArgsOk ts = true) :
   | .slice m r t => by simp [Ty.tsubst, Ty.shiftR, Ty.tsubst_shiftR h t]
   | .map m r t => by simp [Ty.tsubst, Ty.shiftR, Ty.tsubst_shiftR h t]
   | .chan rc t => by simp [Ty.tsubst, Ty.shiftR, Ty.tsubst_shiftR h t]
+  | .dom rc t => by simp [Ty.tsubst, Ty.shiftR, Ty.tsubst_shiftR h t]
   | .own k r t => by simp [Ty.tsubst, Ty.shiftR, Ty.tsubst_shiftR h t]
   | .fn p r => rfl
   | .mus _ _ _ => rfl
@@ -1324,6 +1383,7 @@ theorem Ty.tsubst_mutFree {ts : List Ty} (h : Ty.tyArgsOk ts = true) :
   | .slice m r t => by simp [Ty.tsubst, Ty.mutFree, Ty.tsubst_mutFree h t]
   | .map m r t => by simp [Ty.tsubst, Ty.mutFree, Ty.tsubst_mutFree h t]
   | .chan rc t => rfl
+  | .dom rc t => rfl
   | .own k r t => rfl
   | .fn p r => rfl
   | .mus _ _ _ => rfl
@@ -1347,6 +1407,7 @@ theorem Ty.tsubst_relocR {ts : List Ty} {ρ : Nat} (h : Ty.tyArgsOk ts = true) :
   | .slice m r t => by cases m <;> simp [Ty.tsubst, Ty.relocR, Ty.tsubst_shiftR h t, Ty.tsubst_relocR h t]
   | .map m r t => by cases m <;> simp [Ty.tsubst, Ty.relocR, Ty.tsubst_shiftR h t, Ty.tsubst_relocR h t]
   | .chan rc t => by simp [Ty.tsubst, Ty.relocR, Ty.tsubst_shiftR h t]
+  | .dom rc t => by simp [Ty.tsubst, Ty.relocR, Ty.tsubst_shiftR h t]
   | .own k r t => by simp [Ty.tsubst, Ty.relocR, Ty.tsubst_shiftR h t]
   | .fn p r => rfl
   | .mus _ _ _ => rfl
@@ -1374,6 +1435,7 @@ theorem Ty.tsubst_regionsBelow {ts : List Ty} (h : Ty.tyArgsOk ts = true) :
   | .slice m r t, d => by simp [Ty.tsubst, Ty.regionsBelow, Ty.tsubst_regionsBelow h t d]
   | .map m r t, d => by simp [Ty.tsubst, Ty.regionsBelow, Ty.tsubst_regionsBelow h t d]
   | .chan rc t, d => by simp [Ty.tsubst, Ty.regionsBelow, Ty.tsubst_regionsBelow h t rc]
+  | .dom r t, d => by simp [Ty.tsubst, Ty.regionsBelow, Ty.tsubst_regionsBelow h t d]
   | .own k r t, d => by simp [Ty.tsubst, Ty.regionsBelow, Ty.tsubst_regionsBelow h t d]
   | .fn p r, _ => rfl
   | .mus _ _ _, _ => rfl
@@ -1399,11 +1461,86 @@ theorem Ty.tsubst_chanFree {ts : List Ty} (h : Ty.tyArgsOk ts = true) :
   | .slice m r t => by simp [Ty.tsubst, Ty.chanFree, Ty.tsubst_chanFree h t]
   | .map m r t => by simp [Ty.tsubst, Ty.chanFree, Ty.tsubst_chanFree h t]
   | .chan rc t => rfl
+  | .dom rc t => rfl
   | .own k r t => rfl
   | .fn p r => rfl
   | .mus _ _ _ => rfl
   | .rvar _ => rfl
   | .muRs r _ _ b => by simp [Ty.tsubst, Ty.chanFree, Ty.tsubst_chanFree h b]
+
+/-- 関数の実引数に置ける（チャネル・handle を含まない — domain は置ける。状態の型はチャネルを含まない）。
+domain の値は家の region に縛られるが、実引数は呼び出しの間だけ生きる（戻り値は retOk が今どおり禁じる） -/
+def Ty.argFree : Ty → Bool
+  | .int => true
+  | .tvar _ => true
+  | .bool => true
+  | .byte => true
+  | .f64 => true
+  | .unit => true
+  | .opt t => t.argFree
+  | .union l r => l.argFree && r.argFree
+  | .prod l r => l.argFree && r.argFree
+  | .ref _ _ t => t.argFree
+  | .slice _ _ t => t.argFree
+  | .map _ _ t => t.argFree
+  | .chan _ _ => false
+  | .dom _ t => t.chanFree
+  | .fn _ _ => true
+  | .mus _ _ _ => true
+  | .rvar _ => true
+  | .own _ _ _ => false
+  | .muRs _ _ _ b => b.argFree
+
+theorem Ty.argFree_of_chanFree : ∀ {t : Ty}, t.chanFree = true → t.argFree = true
+  | .int, _ => rfl
+  | .tvar _, _ => rfl
+  | .bool, _ => rfl
+  | .byte, _ => rfl
+  | .f64, _ => rfl
+  | .unit, _ => rfl
+  | .opt t, h => by simp only [Ty.chanFree] at h; simp only [Ty.argFree]; exact Ty.argFree_of_chanFree h
+  | .union l r, h => by
+    simp only [Ty.chanFree, Bool.and_eq_true] at h
+    simp only [Ty.argFree, Bool.and_eq_true]; exact ⟨Ty.argFree_of_chanFree h.1, Ty.argFree_of_chanFree h.2⟩
+  | .prod l r, h => by
+    simp only [Ty.chanFree, Bool.and_eq_true] at h
+    simp only [Ty.argFree, Bool.and_eq_true]; exact ⟨Ty.argFree_of_chanFree h.1, Ty.argFree_of_chanFree h.2⟩
+  | .ref _ _ t, h => by simp only [Ty.chanFree] at h; simp only [Ty.argFree]; exact Ty.argFree_of_chanFree h
+  | .slice _ _ t, h => by simp only [Ty.chanFree] at h; simp only [Ty.argFree]; exact Ty.argFree_of_chanFree h
+  | .map _ _ t, h => by simp only [Ty.chanFree] at h; simp only [Ty.argFree]; exact Ty.argFree_of_chanFree h
+  | .chan _ _, h => by simp [Ty.chanFree] at h
+  | .dom _ _, h => by simp [Ty.chanFree] at h
+  | .fn _ _, _ => rfl
+  | .mus _ _ _, _ => rfl
+  | .rvar _, _ => rfl
+  | .own _ _ _, h => by simp [Ty.chanFree] at h
+  | .muRs _ _ _ b, h => by simp only [Ty.chanFree] at h; simp only [Ty.argFree]; exact Ty.argFree_of_chanFree h
+
+theorem Ty.tsubst_argFree {ts : List Ty} (h : Ty.tyArgsOk ts = true) :
+    ∀ t : Ty, (t.tsubst ts).argFree = t.argFree
+  | .int => rfl
+  | .tvar i => by
+    simp only [Ty.tsubst, Ty.argFree]
+    have ha := Ty.tsubst_tvar_argOk h i
+    simp only [Ty.tyArgOk, Bool.and_eq_true] at ha
+    exact Ty.argFree_of_chanFree ha.2.1
+  | .bool => rfl
+  | .byte => rfl
+  | .f64 => rfl
+  | .unit => rfl
+  | .opt t => by simp [Ty.tsubst, Ty.argFree, Ty.tsubst_argFree h t]
+  | .union l r => by simp [Ty.tsubst, Ty.argFree, Ty.tsubst_argFree h l, Ty.tsubst_argFree h r]
+  | .prod l r => by simp [Ty.tsubst, Ty.argFree, Ty.tsubst_argFree h l, Ty.tsubst_argFree h r]
+  | .ref m r t => by simp [Ty.tsubst, Ty.argFree, Ty.tsubst_argFree h t]
+  | .slice m r t => by simp [Ty.tsubst, Ty.argFree, Ty.tsubst_argFree h t]
+  | .map m r t => by simp [Ty.tsubst, Ty.argFree, Ty.tsubst_argFree h t]
+  | .chan rc t => rfl
+  | .dom rc t => by simp [Ty.tsubst, Ty.argFree, Ty.tsubst_chanFree h t]
+  | .own k r t => rfl
+  | .fn p r => rfl
+  | .mus _ _ _ => rfl
+  | .rvar _ => rfl
+  | .muRs r _ _ b => by simp [Ty.tsubst, Ty.argFree, Ty.tsubst_argFree h b]
 
 theorem Ty.rfree_mono {m n : Nat} (hmn : m ≤ n) : ∀ {t : Ty}, t.rfree m = true → t.rfree n = true
   | .int, _ => rfl
@@ -1419,6 +1556,7 @@ theorem Ty.rfree_mono {m n : Nat} (hmn : m ≤ n) : ∀ {t : Ty}, t.rfree m = tr
   | .slice _ _ t, h => by simp only [Ty.rfree] at h ⊢; exact Ty.rfree_mono hmn h
   | .map _ _ t, h => by simp only [Ty.rfree] at h ⊢; exact Ty.rfree_mono hmn h
   | .chan _ t, h => by simp only [Ty.rfree] at h ⊢; exact Ty.rfree_mono hmn h
+  | .dom _ t, h => by simp only [Ty.rfree] at h ⊢; exact Ty.rfree_mono hmn h
   | .own _ _ t, h => by simp only [Ty.rfree] at h ⊢; exact Ty.rfree_mono hmn h
   | .fn p r, h => by simp only [Ty.rfree, Bool.and_eq_true] at h ⊢; exact ⟨Ty.rfree_mono hmn h.1, Ty.rfree_mono hmn h.2⟩
   | .mus _ _ b, h => by simp only [Ty.rfree] at h ⊢; exact Ty.rfree_mono (by omega) h
@@ -1450,6 +1588,7 @@ theorem Ty.rfree_tsubst {ts : List Ty} (h : Ty.tyArgsOk ts = true) {n : Nat} :
   | .slice m r t, hr => by simp only [Ty.rfree] at hr; simp [Ty.tsubst, Ty.rfree, Ty.rfree_tsubst h hr]
   | .map m r t, hr => by simp only [Ty.rfree] at hr; simp [Ty.tsubst, Ty.rfree, Ty.rfree_tsubst h hr]
   | .chan rc t, hr => by simp only [Ty.rfree] at hr; simp [Ty.tsubst, Ty.rfree, Ty.rfree_tsubst h hr]
+  | .dom rc t, hr => by simp only [Ty.rfree] at hr; simp [Ty.tsubst, Ty.rfree, Ty.rfree_tsubst h hr]
   | .own k r t, hr => by simp only [Ty.rfree] at hr; simp [Ty.tsubst, Ty.rfree, Ty.rfree_tsubst h hr]
   | .fn p r, hr => by
     simp only [Ty.rfree, Bool.and_eq_true] at hr; simp [Ty.tsubst, Ty.rfree, Ty.rfree_tsubst h hr.1, Ty.rfree_tsubst h hr.2]
@@ -1481,6 +1620,7 @@ theorem Ty.mutFree_of_covOk : ∀ {t : Ty}, t.covOk = true → t.mutFree = true
     · simp only [Ty.covOk] at h; simp [Ty.mutFree, Ty.mutFree_of_covOk h]
     · simp [Ty.covOk] at h
   | .chan _ _, h => by simp [Ty.covOk] at h
+  | .dom _ _, h => by simp [Ty.covOk] at h
   | .own _ _ _, h => by simp [Ty.covOk] at h
   | .fn _ _, _ => rfl
   | .mus _ _ _, _ => rfl
@@ -1507,6 +1647,7 @@ theorem Ty.covOk_of_locFree : ∀ {t : Ty}, t.regionsBelow 0 = true → t.chanFr
   | .slice _ _ _, h, _ => by simp [Ty.regionsBelow] at h
   | .map _ _ _, h, _ => by simp [Ty.regionsBelow] at h
   | .chan _ _, _, c => by simp [Ty.chanFree] at c
+  | .dom _ _, _, c => by simp [Ty.chanFree] at c
   | .own _ _ _, h, _ => by simp [Ty.regionsBelow] at h
   | .fn _ _, _, _ => rfl
   | .mus _ _ _, _, _ => rfl
@@ -1547,6 +1688,7 @@ theorem Ty.covOk_tsubst {ts : List Ty} (h : Ty.tyArgsOk ts = true) : ∀ {t : Ty
     · simp only [Ty.covOk] at hc; simp [Ty.tsubst, Ty.covOk, Ty.covOk_tsubst h hc]
     · simp [Ty.covOk] at hc
   | .chan _ _, hc => by simp [Ty.covOk] at hc
+  | .dom _ _, hc => by simp [Ty.covOk] at hc
   | .own _ _ _, hc => by simp [Ty.covOk] at hc
   | .fn _ _, _ => rfl
   | .mus _ _ _, _ => rfl
@@ -1599,6 +1741,9 @@ theorem Ty.sub_tsubst {ts : List Ty} (h0 : Ty.tyArgsOk ts = true) :
   | .chan rc t, tb, hs => by
     obtain rfl := Ty.sub_chan_inv hs
     exact Ty.sub_refl _
+  | .dom rc t, tb, hs => by
+    obtain ⟨r', rfl, hle⟩ := Ty.sub_dom_inv hs
+    simp only [Ty.tsubst, Ty.sub, Bool.and_eq_true, decide_eq_true_eq]; exact ⟨hle, trivial⟩
   | .own k r t, tb, hs => by
     obtain rfl := Ty.sub_own_inv hs
     exact Ty.sub_refl _
@@ -1652,6 +1797,7 @@ theorem Ty.tsubst_comp {ts ts' : List Ty} :
   | .slice m r t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.tsubst, Ty.tsubst_comp h]
   | .map m r t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.tsubst, Ty.tsubst_comp h]
   | .chan rc t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.tsubst, Ty.tsubst_comp h]
+  | .dom rc t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.tsubst, Ty.tsubst_comp h]
   | .own k r t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.tsubst, Ty.tsubst_comp h]
   | .fn p r, h => by
     simp only [Ty.tvarsBelow, Bool.and_eq_true] at h; simp [Ty.tsubst, Ty.tsubst_comp h.1, Ty.tsubst_comp h.2]
@@ -1682,6 +1828,7 @@ theorem Ty.localOnly_of_lf : ∀ {t : Ty}, t.regionsBelow 0 = true → t.chanFre
   | .slice _ _ _, h, _ => by simp [Ty.regionsBelow] at h
   | .map _ _ _, h, _ => by simp [Ty.regionsBelow] at h
   | .chan _ _, _, c => by simp [Ty.chanFree] at c
+  | .dom _ _, _, c => by simp [Ty.chanFree] at c
   | .own _ _ _, h, _ => by simp [Ty.regionsBelow] at h
   | .fn _ _, _, _ => rfl
   | .mus _ _ _, _, _ => rfl
@@ -1710,6 +1857,10 @@ theorem Ty.localOnly_tsubst {ts : List Ty} (h : Ty.tyArgsOk ts = true) : ∀ {t 
   | .map m r t, hl => by
     simp only [Ty.localOnly, Bool.and_eq_true] at hl; simp [Ty.tsubst, Ty.localOnly, hl.1, Ty.localOnly_tsubst h hl.2]
   | .chan rc t, hl => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at hl
+    simp [Ty.tsubst, Ty.localOnly, hl.1.1.1, Ty.tsubst_regionsBelow h, hl.1.1.2, Ty.tsubst_chanFree h, hl.1.2,
+      Ty.rfree_tsubst h hl.2]
+  | .dom r t, hl => by
     simp only [Ty.localOnly, Bool.and_eq_true] at hl
     simp [Ty.tsubst, Ty.localOnly, hl.1.1.1, Ty.tsubst_regionsBelow h, hl.1.1.2, Ty.tsubst_chanFree h, hl.1.2,
       Ty.rfree_tsubst h hl.2]
@@ -1755,6 +1906,7 @@ theorem Ty.tsubst_of_tvarsBelow0 {ts : List Ty} : ∀ {t : Ty}, t.tvarsBelow 0 =
   | .slice m r t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.tsubst, Ty.tsubst_of_tvarsBelow0 h]
   | .map m r t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.tsubst, Ty.tsubst_of_tvarsBelow0 h]
   | .chan rc t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.tsubst, Ty.tsubst_of_tvarsBelow0 h]
+  | .dom rc t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.tsubst, Ty.tsubst_of_tvarsBelow0 h]
   | .own k r t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.tsubst, Ty.tsubst_of_tvarsBelow0 h]
   | .fn p r, h => by
     simp only [Ty.tvarsBelow, Bool.and_eq_true] at h; simp [Ty.tsubst, Ty.tsubst_of_tvarsBelow0 h.1, Ty.tsubst_of_tvarsBelow0 h.2]
@@ -1780,6 +1932,7 @@ theorem Ty.tvarsBelow_rsubst {n k : Nat} {s : Ty} (hs : s.tvarsBelow n = true) :
   | .slice m r t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.rsubst, Ty.tvarsBelow, Ty.tvarsBelow_rsubst hs h]
   | .map m r t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.rsubst, Ty.tvarsBelow, Ty.tvarsBelow_rsubst hs h]
   | .chan rc t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.rsubst, Ty.tvarsBelow, Ty.tvarsBelow_rsubst hs h]
+  | .dom rc t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.rsubst, Ty.tvarsBelow, Ty.tvarsBelow_rsubst hs h]
   | .own k' r t, h => by simp only [Ty.tvarsBelow] at h; simp [Ty.rsubst, Ty.tvarsBelow, Ty.tvarsBelow_rsubst hs h]
   | .fn p r, h => by
     simp only [Ty.tvarsBelow, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.tvarsBelow, Ty.tvarsBelow_rsubst hs h.1, Ty.tvarsBelow_rsubst hs h.2]
@@ -1804,6 +1957,7 @@ theorem Ty.rsubst_of_rfree {s : Ty} : ∀ {n k : Nat} {t : Ty}, t.rfree n = true
   | _, _, .slice m r t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rsubst, Ty.rsubst_of_rfree h hk]
   | _, _, .map m r t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rsubst, Ty.rsubst_of_rfree h hk]
   | _, _, .chan rc t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rsubst, Ty.rsubst_of_rfree h hk]
+  | _, _, .dom rc t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rsubst, Ty.rsubst_of_rfree h hk]
   | _, _, .own o r t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rsubst, Ty.rsubst_of_rfree h hk]
   | _, _, .fn p r, h, hk => by
     simp only [Ty.rfree, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.rsubst_of_rfree h.1 hk, Ty.rsubst_of_rfree h.2 hk]
@@ -1838,6 +1992,7 @@ theorem Ty.tsubst_rsubst {ts : List Ty} (h : Ty.tyArgsOk ts = true) {s : Ty} :
   | _, .slice m r t => by simp [Ty.rsubst, Ty.tsubst, Ty.tsubst_rsubst h t]
   | _, .map m r t => by simp [Ty.rsubst, Ty.tsubst, Ty.tsubst_rsubst h t]
   | _, .chan rc t => by simp [Ty.rsubst, Ty.tsubst, Ty.tsubst_rsubst h t]
+  | _, .dom rc t => by simp [Ty.rsubst, Ty.tsubst, Ty.tsubst_rsubst h t]
   | _, .own o r t => by simp [Ty.rsubst, Ty.tsubst, Ty.tsubst_rsubst h t]
   | _, .fn p r => by simp [Ty.rsubst, Ty.tsubst, Ty.tsubst_rsubst h p, Ty.tsubst_rsubst h r]
   | _, .mus _ _ b => by simp [Ty.rsubst, Ty.tsubst, Ty.tsubst_rsubst h b]
@@ -1899,6 +2054,7 @@ theorem Ty.uoccAny_of_rfree : ∀ {m k n : Nat} {g : Bool} {t : Ty}, t.rfree m =
   | _, _, _, _, .slice _ _ t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.uoccAny, Ty.uoccAny_of_rfree h hk]
   | _, _, _, _, .map _ _ t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.uoccAny, Ty.uoccAny_of_rfree h hk]
   | _, _, _, _, .chan _ t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.uoccAny, Ty.uoccAny_of_rfree h hk]
+  | _, _, _, _, .dom _ t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.uoccAny, Ty.uoccAny_of_rfree h hk]
   | _, _, _, _, .own _ _ t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.uoccAny, Ty.uoccAny_of_rfree h hk]
   | _, _, _, _, .fn _ _, _, _ => rfl
   | _, _, _, _, .rvar i, h, hk => by simp only [Ty.rfree, decide_eq_true_eq] at h; simp [Ty.uoccAny]; omega
@@ -1921,6 +2077,7 @@ theorem Ty.rguardN_of_rfree : ∀ {m k n : Nat} {inFn : Bool} {t : Ty}, t.rfree 
   | _, _, _, _, .slice _ _ t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rguardN, Ty.rguardN_of_rfree h hk]
   | _, _, _, _, .map _ _ t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rguardN, Ty.rguardN_of_rfree h hk]
   | _, _, _, _, .chan _ t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rguardN, Ty.rguardN_of_rfree h hk]
+  | _, _, _, _, .dom _ t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rguardN, Ty.rguardN_of_rfree h hk]
   | _, _, _, _, .own _ _ t, h, hk => by simp only [Ty.rfree] at h; simp [Ty.rguardN, Ty.rguardN_of_rfree h hk]
   | _, _, _, _, .fn p r, h, hk => by
     simp only [Ty.rfree, Bool.and_eq_true] at h; simp [Ty.rguardN, Ty.rguardN_of_rfree h.1 hk, Ty.rguardN_of_rfree h.2 hk]
@@ -1946,6 +2103,7 @@ theorem Ty.uoccAny_tsubst {ts : List Ty} (h : Ty.tyArgsOk ts = true) :
   | _, _, _, .slice _ _ t => by simp [Ty.tsubst, Ty.uoccAny, Ty.uoccAny_tsubst h (t := t)]
   | _, _, _, .map _ _ t => by simp [Ty.tsubst, Ty.uoccAny, Ty.uoccAny_tsubst h (t := t)]
   | _, _, _, .chan _ t => by simp [Ty.tsubst, Ty.uoccAny, Ty.uoccAny_tsubst h (t := t)]
+  | _, _, _, .dom _ t => by simp [Ty.tsubst, Ty.uoccAny, Ty.uoccAny_tsubst h (t := t)]
   | _, _, _, .own _ _ t => by simp [Ty.tsubst, Ty.uoccAny, Ty.uoccAny_tsubst h (t := t)]
   | _, _, _, .fn _ _ => rfl
   | _, _, _, .rvar _ => rfl
@@ -1970,6 +2128,7 @@ theorem Ty.rguardN_tsubst {ts : List Ty} (h : Ty.tyArgsOk ts = true) :
   | _, _, _, .slice _ _ t => by simp [Ty.tsubst, Ty.rguardN, Ty.rguardN_tsubst h (t := t)]
   | _, _, _, .map _ _ t => by simp [Ty.tsubst, Ty.rguardN, Ty.rguardN_tsubst h (t := t)]
   | _, _, _, .chan _ t => by simp [Ty.tsubst, Ty.rguardN, Ty.rguardN_tsubst h (t := t)]
+  | _, _, _, .dom _ t => by simp [Ty.tsubst, Ty.rguardN, Ty.rguardN_tsubst h (t := t)]
   | _, _, _, .own _ _ t => by simp [Ty.tsubst, Ty.rguardN, Ty.rguardN_tsubst h (t := t)]
   | _, _, _, .fn p r => by simp [Ty.tsubst, Ty.rguardN, Ty.rguardN_tsubst h (t := p), Ty.rguardN_tsubst h (t := r)]
   | _, _, _, .rvar _ => rfl
@@ -2034,6 +2193,7 @@ theorem Ty.recOk_tsubst {ts : List Ty} (h : Ty.tyArgsOk ts = true) : ∀ {t : Ty
   | .slice m r t, hl => by simp only [Ty.recOk] at hl; simp [Ty.tsubst, Ty.recOk, Ty.recOk_tsubst h hl]
   | .map m r t, hl => by simp only [Ty.recOk] at hl; simp [Ty.tsubst, Ty.recOk, Ty.recOk_tsubst h hl]
   | .chan rc t, hl => by simp only [Ty.recOk] at hl; simp [Ty.tsubst, Ty.recOk, Ty.recOk_tsubst h hl]
+  | .dom rc t, hl => by simp only [Ty.recOk] at hl; simp [Ty.tsubst, Ty.recOk, Ty.recOk_tsubst h hl]
   | .own o r t, hl => by simp only [Ty.recOk] at hl; simp [Ty.tsubst, Ty.recOk, Ty.recOk_tsubst h hl]
   | .fn p r, hl => by
     simp only [Ty.recOk, Bool.and_eq_true] at hl; simp [Ty.tsubst, Ty.recOk, Ty.recOk_tsubst h hl.1, Ty.recOk_tsubst h hl.2]
@@ -2077,6 +2237,7 @@ theorem Ty.shiftR_of_lf {ρ : Nat} : ∀ {t : Ty}, t.regionsBelow 0 = true → t
   | .slice _ _ _, h, _ => by simp [Ty.regionsBelow] at h
   | .map _ _ _, h, _ => by simp [Ty.regionsBelow] at h
   | .chan _ _, _, c => by simp [Ty.chanFree] at c
+  | .dom _ _, _, c => by simp [Ty.chanFree] at c
   | .own _ _ _, h, _ => by simp [Ty.regionsBelow] at h
   | .fn _ _, _, _ => rfl
   | .mus _ _ _, _, _ => rfl
@@ -2103,6 +2264,7 @@ theorem Ty.renR_of_lf {ρ0 δ : Nat} : ∀ {t : Ty}, t.regionsBelow 0 = true →
   | .slice _ _ _, h, _ => by simp [Ty.regionsBelow] at h
   | .map _ _ _, h, _ => by simp [Ty.regionsBelow] at h
   | .chan _ _, _, c => by simp [Ty.chanFree] at c
+  | .dom _ _, _, c => by simp [Ty.chanFree] at c
   | .own _ _ _, h, _ => by simp [Ty.regionsBelow] at h
   | .fn _ _, _, _ => rfl
   | .mus _ _ _, _, _ => rfl
@@ -2130,6 +2292,10 @@ theorem Ty.localOnly_rsubst {s : Ty} (hs : s.localOnly = true) :
   | _, .map m r t, h => by
     simp only [Ty.localOnly, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.localOnly, h.1, Ty.localOnly_rsubst hs h.2]
   | k, .chan rc t, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true] at h
+    have : t.rsubst k s = t := Ty.rsubst_of_rfree (n := 0) h.2 (Nat.zero_le _)
+    simp [Ty.rsubst, Ty.localOnly, this, h]
+  | k, .dom r t, h => by
     simp only [Ty.localOnly, Bool.and_eq_true] at h
     have : t.rsubst k s = t := Ty.rsubst_of_rfree (n := 0) h.2 (Nat.zero_le _)
     simp [Ty.rsubst, Ty.localOnly, this, h]
@@ -2168,6 +2334,10 @@ theorem Ty.rb_shift_local {r d : Nat} (hr : r < d) : ∀ {t : Ty}, t.localOnly =
     simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
     obtain ⟨⟨⟨rfl, hb⟩, hc⟩, _⟩ := h
     simp [Ty.shiftR, Ty.regionsBelow, Ty.shiftR_of_lf hb hc, Ty.regionsBelow_mono (Nat.zero_le r) hb, Nat.le_of_lt hr]
+  | .dom r' t, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨rfl, hb⟩, hc⟩, _⟩ := h
+    simp [Ty.shiftR, Ty.regionsBelow, Ty.shiftR_of_lf hb hc, Ty.regionsBelow_mono (Nat.zero_le d) hb, hr]
   | .own o r' t, h => by
     simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
     obtain ⟨⟨⟨rfl, hb⟩, hc⟩, _⟩ := h
@@ -2202,6 +2372,10 @@ theorem Ty.renR_shift_local {ρ0 δ r : Nat} : ∀ {t : Ty}, t.localOnly = true 
     simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
     obtain ⟨rfl, h2⟩ := h; simp [Ty.shiftR, Ty.renR, Ty.renR_shift_local h2]
   | .chan rc t, h => by
+    simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨rfl, hb⟩, hc⟩, _⟩ := h
+    simp [Ty.shiftR, Ty.renR, Ty.shiftR_of_lf hb hc, Ty.renR_of_lf hb hc]
+  | .dom r' t, h => by
     simp only [Ty.localOnly, Bool.and_eq_true, decide_eq_true_eq] at h
     obtain ⟨⟨⟨rfl, hb⟩, hc⟩, _⟩ := h
     simp [Ty.shiftR, Ty.renR, Ty.shiftR_of_lf hb hc, Ty.renR_of_lf hb hc]
@@ -2245,6 +2419,7 @@ theorem Ty.covOk_rsubst {s : Ty} (hs : s.covOk = true) :
     · simp only [Ty.covOk] at h; simp [Ty.rsubst, Ty.covOk, Ty.covOk_rsubst hs h]
     · simp [Ty.covOk] at h
   | _, .chan _ _, h => by simp [Ty.covOk] at h
+  | _, .dom _ _, h => by simp [Ty.covOk] at h
   | _, .own _ _ _, h => by simp [Ty.covOk] at h
   | _, .fn p r, _ => rfl
   | _, .mus _ _ b, _ => rfl
@@ -2290,6 +2465,7 @@ theorem Ty.sub_shift_local {r r' : Nat} (hrr : r ≤ r') :
       simp [Ty.shiftR, Ty.sub, hrr, Ty.sub_shift_local hrr h2 c]
     · simp [Ty.covOk] at c
   | .chan _ _, _, c => by simp [Ty.covOk] at c
+  | .dom _ _, _, c => by simp [Ty.covOk] at c
   | .own _ _ _, _, c => by simp [Ty.covOk] at c
   | .fn _ _, _, _ => Ty.sub_refl _
   | .mus _ _ _, _, _ => Ty.sub_refl _
@@ -2325,6 +2501,7 @@ theorem Ty.mutFree_rsubst {s : Ty} (hs : s.mutFree = true) :
   | _, .map m r t, h => by
     simp only [Ty.mutFree, Bool.and_eq_true] at h; simp [Ty.rsubst, Ty.mutFree, h.1, Ty.mutFree_rsubst hs h.2]
   | _, .chan _ _, _ => rfl
+  | _, .dom _ _, _ => rfl
   | _, .fn _ _, _ => rfl
   | _, .mus _ _ _, _ => rfl
   | k, .rvar i, _ => by simp only [Ty.rsubst]; split <;> simp_all [Ty.mutFree]
@@ -2348,6 +2525,7 @@ theorem Ty.chanFree_rsubst {s : Ty} (hs : s.chanFree = true) :
   | _, .slice m r t, h => by simp only [Ty.chanFree] at h; simp [Ty.rsubst, Ty.chanFree, Ty.chanFree_rsubst hs h]
   | _, .map m r t, h => by simp only [Ty.chanFree] at h; simp [Ty.rsubst, Ty.chanFree, Ty.chanFree_rsubst hs h]
   | _, .chan _ _, h => by simp [Ty.chanFree] at h
+  | _, .dom _ _, h => by simp [Ty.chanFree] at h
   | _, .fn _ _, _ => rfl
   | _, .mus _ _ _, _ => rfl
   | k, .rvar i, _ => by simp only [Ty.rsubst]; split <;> simp_all [Ty.chanFree]
@@ -2368,6 +2546,7 @@ theorem Ty.shiftR_chanFree {ρ : Nat} : ∀ t : Ty, (t.shiftR ρ).chanFree = t.c
   | .slice m r t => by simp [Ty.shiftR, Ty.chanFree, Ty.shiftR_chanFree t]
   | .map m r t => by simp [Ty.shiftR, Ty.chanFree, Ty.shiftR_chanFree t]
   | .chan _ _ => rfl
+  | .dom _ _ => rfl
   | .fn _ _ => rfl
   | .mus _ _ _ => rfl
   | .rvar _ => rfl
@@ -2410,6 +2589,7 @@ theorem Ty.clampR_shift_local {r k : Nat} : ∀ {t : Ty}, t.localOnly = true →
     obtain ⟨rfl, h2⟩ := h; obtain ⟨rfl, m2⟩ := m
     simp [Ty.shiftR, Ty.clampR, Ty.clampR_shift_local h2 m2 c]
   | .chan _ _, _, _, c => by simp [Ty.chanFree] at c
+  | .dom _ _, _, _, c => by simp [Ty.chanFree] at c
   | .fn _ _, _, _, _ => rfl
   | .mus _ _ _, _, _, _ => rfl
   | .rvar _, _, _, _ => rfl
@@ -2454,6 +2634,7 @@ theorem Ty.relocR_shift_local {r ρ : Nat} : ∀ {t : Ty}, t.localOnly = true �
     obtain ⟨rfl, h2⟩ := h; obtain ⟨rfl, m2⟩ := m
     simp [Ty.shiftR, Ty.relocR, Ty.relocR_shift_local h2 m2 c]
   | .chan _ _, _, _, c => by simp [Ty.chanFree] at c
+  | .dom _ _, _, _, c => by simp [Ty.chanFree] at c
   | .fn _ _, _, _, _ => rfl
   | .mus _ _ _, _, _, _ => rfl
   | .rvar _, _, _, _ => rfl
@@ -2490,6 +2671,7 @@ theorem Ty.noClamp_shift_local {r k : Nat} (hrk : r ≤ k) : ∀ {t : Ty}, t.loc
     obtain ⟨rfl, h2⟩ := h
     cases mm <;> simp [Ty.shiftR, Ty.noClamp, hrk, Ty.noClamp_shift_local hrk h2]
   | .chan _ _, _ => rfl
+  | .dom _ _, _ => rfl
   | .fn _ _, _ => rfl
   | .mus _ _ _, _ => rfl
   | .rvar _, _ => rfl
@@ -2719,11 +2901,12 @@ theorem Ty.musOk_tsubst {ts : List Ty} (h : Ty.tyArgsOk ts = true) {t : Ty} (hm 
 どちらも imm で chan を持たず、region を全部 0 へ締めると同じ -/
 def Ty.payOk (te t : Ty) : Bool := te.mutFree && te.chanFree && t.mutFree && t.chanFree && decide (te.relocR 0 = t.relocR 0)
 
-/-- spawn で子へ渡せる型（段 6 P1 — give: の口）: 端点（送り端 / 受け端 — 移す。ペイロードは imm で chan なし — P3b-4b）か、写せるデータ
-（mutFree・旧 chan なし・scope の region rs 以下 — 写す）、その組 -/
+/-- spawn で子へ渡せる型（段 6 P1 — give: の口）: 端点（送り端 / 受け端 — 移す。ペイロードは imm で chan なし — P3b-4b）か、domain（共有する —
+家の region が scope の region rs 以下で、子が走る間は生きている）か、写せるデータ（mutFree・旧 chan なし・scope の region rs 以下 — 写す）、その組 -/
 def Ty.givable (rs : Nat) : Ty → Bool
   | .own .tx _ t => t.mutFree && t.chanFree
   | .own .rx _ t => t.mutFree && t.chanFree
+  | .dom r t => decide (r ≤ rs) && t.mutFree && t.chanFree
   | .prod l r => Ty.givable rs l && Ty.givable rs r
   | t => t.mutFree && t.chanFree && t.regionsBelow (rs + 1)
 
@@ -2735,11 +2918,13 @@ def Ty.rehome (d : Nat) : Ty → Ty
   | t => t
 
 /-- 組でも端点でもない型の givable はデータの条件そのもの -/
-theorem Ty.givable_eq_data {rs : Nat} {t : Ty} (hp : ∀ l r, t ≠ .prod l r) (ho : ∀ k r u, t ≠ .own k r u) :
+theorem Ty.givable_eq_data {rs : Nat} {t : Ty} (hp : ∀ l r, t ≠ .prod l r) (ho : ∀ k r u, t ≠ .own k r u)
+    (hd : ∀ rc u, t ≠ .dom rc u) :
     t.givable rs = (t.mutFree && t.chanFree && t.regionsBelow (rs + 1)) := by
   cases t with
   | prod l r => exact absurd rfl (hp l r)
   | own k r u => exact absurd rfl (ho k r u)
+  | dom rc u => exact absurd rfl (hd rc u)
   | _ => rfl
 
 /-- int × int → int の演算子ファミリ（add は歴史的に独立コンストラクタのまま）。
@@ -3017,6 +3202,15 @@ inductive Expr : Type where
   | fold (t : Ty) (e : Expr)
   /-- 再帰型の値を 1 段開く（fold の逆） -/
   | unfold (e : Expr)
+  /-- domain を作る（task.NewDomain）: r = 札の scope の region・init = 状態の初期値・t = 状態の型（loc-free）。鍵は作った task の id + 局所の通し番号 -/
+  | dnew (r : Nat) (init : Expr) (t : Ty)
+  /-- 実行時のみ: domain の値（鍵 (p, k)・家の region r）。ソースには現れない -/
+  | domV (p : List Nat) (k : Nat) (r : Nat)
+  /-- domain に入る（脱糖の中だけ — Update / Read / Await）: 持ち手が空でオラクルの先頭がこの task なら入り、状態を今の最内の region へ写して返す。
+  それ以外は待つ。t = 状態の型（写しが歩く型） -/
+  | denter (t : Ty) (d : Expr)
+  /-- domain から出る（脱糖の中だけ）: 持ち手なら状態を v に差し替えて出る（オラクルを 1 つ進める）。持ち手でなければ定義された panic -/
+  | dexit (d v : Expr)
   deriving Repr, DecidableEq
 
 /-- 一階関数の定義。引数は 1 つ（多引数は脱糖器が struct に束ねる。formal.md）。
@@ -3106,6 +3300,10 @@ def shift (c : Nat) : Expr → Expr
   | close ch => close (shift c ch)
   | fold t e => fold t (shift c e)
   | unfold e => unfold (shift c e)
+  | dnew r i t => dnew r (shift c i) t
+  | domV p k r => domV p k r
+  | denter t d => denter t (shift c d)
+  | dexit d v => dexit (shift c d) (shift c v)
   | loc r a => loc r a
   | slicev mt r base len => slicev mt r base len
   | mapv mt r base len => mapv mt r base len
@@ -3192,6 +3390,10 @@ def subst (k : Nat) (v : Expr) : Expr → Expr
   | close c => close (subst k v c)
   | fold t e => fold t (subst k v e)
   | unfold e => unfold (subst k v e)
+  | dnew r i t => dnew r (subst k v i) t
+  | domV p k' r => domV p k' r
+  | denter t d => denter t (subst k v d)
+  | dexit d w => dexit (subst k v d) (subst k v w)
   | loc r a => loc r a
   | slicev mt r base len => slicev mt r base len
   | mapv mt r base len => mapv mt r base len
@@ -3280,6 +3482,10 @@ def shiftTy (ρ : Nat) : Expr → Expr
   | close c => close (shiftTy ρ c)
   | fold t e => fold (t.shiftR ρ) (shiftTy ρ e)
   | unfold e => unfold (shiftTy ρ e)
+  | dnew r i t => dnew (r + ρ) (shiftTy ρ i) (t.shiftR ρ)
+  | domV p k r => domV p k (r + ρ)
+  | denter t d => denter (t.shiftR ρ) (shiftTy ρ d)
+  | dexit d v => dexit (shiftTy ρ d) (shiftTy ρ v)
   | loc r a => loc (r + ρ) a
   | slicev mt r base len => slicev mt (r + ρ) base len
   | mapv mt r base len => mapv mt (r + ρ) base len
@@ -3366,6 +3572,10 @@ def tsubstTy (ts : List Ty) : Expr → Expr
   | close c => close (tsubstTy ts c)
   | fold t e => fold (t.tsubst ts) (tsubstTy ts e)
   | unfold e => unfold (tsubstTy ts e)
+  | dnew r i t => dnew r (tsubstTy ts i) (t.tsubst ts)
+  | domV p k r => domV p k r
+  | denter t d => denter (t.tsubst ts) (tsubstTy ts d)
+  | dexit d v => dexit (tsubstTy ts d) (tsubstTy ts v)
   | loc r a => loc r a
   | slicev mt r base len => slicev mt r base len
   | mapv mt r base len => mapv mt r base len
@@ -3454,6 +3664,10 @@ def noNewchan : Expr → Bool
   | close c => noNewchan c
   | fold _ e => noNewchan e
   | unfold e => noNewchan e
+  | dnew _ i _ => noNewchan i
+  | domV _ _ _ => false
+  | denter _ d => noNewchan d
+  | dexit d v => noNewchan d && noNewchan v
   | loc _ _ => true
   | slicev _ _ _ _ => true
   | mapv _ _ _ _ => true
@@ -3543,6 +3757,10 @@ def renTy (ρ0 δ : Nat) : Expr → Expr
   | close c => close (renTy ρ0 δ c)
   | fold t e => fold (t.renR ρ0 δ) (renTy ρ0 δ e)
   | unfold e => unfold (renTy ρ0 δ e)
+  | dnew r i t => dnew (rmap ρ0 δ r) (renTy ρ0 δ i) (t.renR ρ0 δ)
+  | domV p k r => domV p k (rmap ρ0 δ r)
+  | denter t d => denter (t.renR ρ0 δ) (renTy ρ0 δ d)
+  | dexit d v => dexit (renTy ρ0 δ d) (renTy ρ0 δ v)
   | loc r a => loc (rmap ρ0 δ r) a
   | slicev mt r base len => slicev mt (rmap ρ0 δ r) base len
   | mapv mt r base len => mapv mt (rmap ρ0 δ r) base len
@@ -3611,6 +3829,10 @@ def src : Expr → Bool
   | .ite c t e | .ifnil c t e => c.src && t.src && e.src
   | .some e | .inl _ e | .inr _ e | .block e | .blockR _ e | .copyTo _ _ e | .alloc _ e | .deref e
   | .freeze e | .recv e | .close e | .fst e | .snd e | .unfold e | .fold _ e => e.src
+  | .dnew _ i _ => i.src
+  | .domV _ _ _ => false
+  | .denter _ d => d.src
+  | .dexit d v => d.src && v.src
   | .pair a b => a.src && b.src
   | .call _ _ e => e.src
   | .callM _ _ e => e.src
@@ -3680,6 +3902,7 @@ inductive Value : Expr → Prop where
   | scopeV (rs : Nat) (ε : Ty) : Value (.scopeV rs ε)
   | taskV (rs n : Nat) : Value (.taskV rs n)
   | epV (p : List Nat) (k : Nat) (b : Bool) (r : Nat) : Value (.epV p k b r)
+  | domV (p : List Nat) (k : Nat) (r : Nat) : Value (.domV p k r)
   | fnref (fn : Nat) (ts : List Ty) : Value (.fnref fn ts)
   | fold {v : Expr} (t : Ty) : Value v → Value (.fold t v)
 
@@ -3704,6 +3927,7 @@ theorem Value.shift {v : Expr} (hv : Value v) (c : Nat) : Value (v.shift c) := b
   | scopeV rs ε => exact .scopeV rs ε
   | taskV rs n => exact .taskV rs n
   | epV p k b r => exact .epV p k b r
+  | domV p k r => exact .domV p k r
   | fnref fn ts => exact .fnref fn ts
   | fold t _ ih => exact .fold t ih
 
@@ -3729,6 +3953,7 @@ theorem Value.shift_eq {v : Expr} (hv : Value v) (c : Nat) : v.shift c = v := by
   | scopeV _ _ => rfl
   | taskV _ _ => rfl
   | epV _ _ _ _ => rfl
+  | domV _ _ _ => rfl
   | fold t _ ih => simp [Expr.shift, ih]
 
 end FS

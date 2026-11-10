@@ -3201,40 +3201,40 @@ b0:
   %v20 = add i64 0, 10
   call void @"rt.print_char"(i64 %v20)
   %v21 = add i64 0, 2
-  %v22 = getelementptr i64, ptr %s3, i64 0
-  %v23 = add i64 0, 0
-  %st0 = getelementptr i64, ptr %v22, i64 0
-  store i64 %v23, ptr %st0
-  %st1 = getelementptr i64, ptr %v22, i64 1
-  store i64 %v23, ptr %st1
+  %v22 = add i64 0, 0
+  %v23 = getelementptr i64, ptr %s3, i64 0
+  %st0 = getelementptr i64, ptr %v23, i64 0
+  store i64 %v22, ptr %st0
+  %st1 = getelementptr i64, ptr %v23, i64 1
+  store i64 %v22, ptr %st1
   %v24 = add i64 0, 0
-  %st2 = getelementptr i64, ptr %v22, i64 0
+  %st2 = getelementptr i64, ptr %v23, i64 0
   store i64 %v24, ptr %st2
-  %st3 = getelementptr i64, ptr %v22, i64 1
+  %st3 = getelementptr i64, ptr %v23, i64 1
   store i64 %v21, ptr %st3
-  %v25.p = getelementptr i64, ptr %v22, i64 0
+  %v25.p = getelementptr i64, ptr %v23, i64 0
   %v25 = load i64, ptr %v25.p
-  %v26.p = getelementptr i64, ptr %v22, i64 1
+  %v26.p = getelementptr i64, ptr %v23, i64 1
   %v26 = load i64, ptr %v26.p
   %v27 = call i64 @"main.area"(i64 %v25, i64 %v26)
   call void @"rt.print_int"(i64 %v27)
   %v28 = add i64 0, 10
   call void @"rt.print_char"(i64 %v28)
   %v29 = add i64 0, 3
-  %v30 = getelementptr i64, ptr %s3, i64 0
-  %v31 = add i64 0, 0
-  %st4 = getelementptr i64, ptr %v30, i64 0
-  store i64 %v31, ptr %st4
-  %st5 = getelementptr i64, ptr %v30, i64 1
-  store i64 %v31, ptr %st5
+  %v30 = add i64 0, 0
+  %v31 = getelementptr i64, ptr %s3, i64 0
+  %st4 = getelementptr i64, ptr %v31, i64 0
+  store i64 %v30, ptr %st4
+  %st5 = getelementptr i64, ptr %v31, i64 1
+  store i64 %v30, ptr %st5
   %v32 = add i64 0, 1
-  %st6 = getelementptr i64, ptr %v30, i64 0
+  %st6 = getelementptr i64, ptr %v31, i64 0
   store i64 %v32, ptr %st6
-  %st7 = getelementptr i64, ptr %v30, i64 1
+  %st7 = getelementptr i64, ptr %v31, i64 1
   store i64 %v29, ptr %st7
-  %v33.p = getelementptr i64, ptr %v30, i64 0
+  %v33.p = getelementptr i64, ptr %v31, i64 0
   %v33 = load i64, ptr %v33.p
-  %v34.p = getelementptr i64, ptr %v30, i64 1
+  %v34.p = getelementptr i64, ptr %v31, i64 1
   %v34 = load i64, ptr %v34.p
   %v35 = call i64 @"main.area"(i64 %v33, i64 %v34)
   call void @"rt.print_int"(i64 %v35)

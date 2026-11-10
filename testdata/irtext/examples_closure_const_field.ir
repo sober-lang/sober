@@ -1767,23 +1767,23 @@ b0:
   store %5[1], %7
   %8 = load.i64 %2[2]
   store %5[2], %8
-  %9 = slotaddr s2
-  %10 = const 0
-  store %9[0], %10
-  store %9[1], %10
-  store %9[2], %10
+  %9 = const 0
+  %10 = slotaddr s2
+  store %10[0], %9
+  store %10[1], %9
+  store %10[2], %9
   %11 = load.i64 %5[0]
-  store %9[0], %11
+  store %10[0], %11
   %12 = load.i64 %5[1]
-  store %9[1], %12
+  store %10[1], %12
   %13 = load.i64 %5[2]
-  store %9[2], %13
+  store %10[2], %13
   %14 = slotaddr s3
-  %15 = load.i64 %9[0]
+  %15 = load.i64 %10[0]
   store %14[0], %15
-  %16 = load.i64 %9[1]
+  %16 = load.i64 %10[1]
   store %14[1], %16
-  %17 = load.i64 %9[2]
+  %17 = load.i64 %10[2]
   store %14[2], %17
   %18 = load.i64 %14[0]
   %19 = const 1
@@ -1806,20 +1806,20 @@ b0:
   store %28[1], %30
   %31 = load.i64 %25[2]
   store %28[2], %31
-  %32 = slotaddr s0
-  %33 = const 0
-  store %32[0], %33
-  store %32[1], %33
-  store %32[2], %33
+  %32 = const 0
+  %33 = slotaddr s0
+  store %33[0], %32
+  store %33[1], %32
+  store %33[2], %32
   %34 = load.i64 %28[0]
-  store %32[0], %34
+  store %33[0], %34
   %35 = load.i64 %28[1]
-  store %32[1], %35
+  store %33[1], %35
   %36 = load.i64 %28[2]
-  store %32[2], %36
-  %37 = load.i64 %32[0]
+  store %33[2], %36
+  %37 = load.i64 %33[0]
   %38 = const 1
-  %39 = gep.word %32, %38
+  %39 = gep.word %33, %38
   %40 = ptoi %39
   %41 = const 4
   %42 = call.indirect.i64 %37(%40, %41)

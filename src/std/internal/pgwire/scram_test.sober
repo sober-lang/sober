@@ -1,0 +1,159 @@
+package pgwire
+
+// SCRAM の網: 独立の node:crypto で作ったベクタ（testdata/pg/scram.txt — scripts/pgscramvec.ts: RFC 7677 3 節・平文 n,,・束縛なし y,,・
+// PLUS × 証明書の署名のハッシュ 4 種〔sha1 / sha256 → 束縛は SHA-256・sha384 / sha512 はそれ — RFC 5929 4.1〕）とバイト一致・
+// 方式の選び方の表・壊れた server-first / server-final
+
+import "std/base64"
+import "std/hex"
+import "std/internal/x509"
+import "std/strings"
+
+@embed("testdata/pg/scram.txt")
+const scramVectors = map[string]string{}
+
+// 場面 name の鍵 key の値
+func vec(name string, key string) string {
+    text := orStr(scramVectors["testdata/pg/scram.txt"])
+    mut in := false
+    for line <- strings.Split(text, "\n") {
+        if strings.HasPrefix(line, "case ") {
+            in = line == "case ${name}"
+        } else if in {
+            k, v, ok := strings.Cut(line, " ")
+            if ok && k == key {
+                return v
+            }
+            if !ok && line == key {
+                return ""
+            }
+        }
+    }
+    assert(false, "no ${key} in ${name}")
+    return ""
+}
+
+func unb64(s string) []byte {
+    b, _ := base64.Decode(s)
+    return b
+}
+
+func unhexs(s string) []byte {
+    b, _ := hex.Parse(s)
+    return b
+}
+
+// 場面を 1 本通す（mechs = サーバの申し出・tls / allow = 接続の形と緩和・endPoint = 束縛の値）
+func runCase(name string, mechs []string, tls bool, allow bool, endPoint []byte) {
+    s0, first, e := ScramStart(mechs, tls, endPoint, allow, vec(name, "user"), vec(name, "password"), unb64(vec(name, "cnonce")))
+    assert(e == nil, "start ${name}")
+    assert(ScramMech(s0) == vec(name, "mech"), "mech ${name}")
+    assert(hex.Format(first) == hex.Format(EncSaslInitial(vec(name, "mech"), bytes(vec(name, "client-first")))), "client-first ${name}")
+    mut s := s0
+    fin, e2 := ScramContinue(mut s, bytes(vec(name, "server-first")))
+    assert(e2 == nil && hex.Format(fin) == hex.Format(EncSaslResponse(bytes(vec(name, "client-final")))), "client-final ${name}")
+    assert(ScramFinal(mut s, bytes(vec(name, "server-final"))) == nil, "server-final ${name}")
+}
+
+func TestScramVectors() {
+    both := []string{"SCRAM-SHA-256-PLUS", "SCRAM-SHA-256"}
+    plain := []string{"SCRAM-SHA-256"}
+    runCase("rfc7677", plain, false, false, []byte{})
+    runCase("plain", both, false, false, []byte{})
+    runCase("plain-y", plain, true, true, []byte{})
+    certs := []string{"plus-sha1", "plus-sha256", "plus-sha384", "plus-sha512"}
+    for c <- certs {
+        cert, ok := internal.x509.Parse(unhexs(vec(c, "cert")))
+        assert(ok, "cert ${c}")
+        ep := internal.x509.EndPoint(cert)
+        assert(hex.Format(ep) == vec(c, "cbind"), "tls-server-end-point ${c}")
+        runCase(c, both, true, false, ep)
+    }
+}
+
+func testNoMech(mechs []string, tls bool, allow bool) bool {
+    _, _, e := ScramStart(mechs, tls, rep(32), allow, "", "pencil", rep(18))
+    return switch e {
+    case NoMechanism{}: true
+    case nil: false
+    }
+}
+
+func rep(n int) []byte {
+    mut o := mut []byte{}
+    mut i := 0
+    while i < n {
+        o = append(o, byte(i + 1))
+        i += 1
+    }
+    return freeze(o)
+}
+
+func TestScramMechanismChoice() {
+    plusOnly := []string{"SCRAM-SHA-256-PLUS"}
+    plain := []string{"SCRAM-SHA-256"}
+    none := []string{}
+    other := []string{"SCRAM-SHA-1"}
+    // TLS で PLUS が無い → 失敗（緩和なし）・緩和ありなら y,,
+    assert(testNoMech(plain, true, false), "tls without plus")
+    assert(!testNoMech(plain, true, true), "tls without plus, allowed")
+    // 平文で PLUS だけ → 失敗（束縛する TLS が無い）
+    assert(testNoMech(plusOnly, false, false), "plaintext plus only")
+    assert(testNoMech(none, false, false) && testNoMech(none, true, true), "no mechanisms")
+    assert(testNoMech(other, false, false), "unknown mechanism")
+    s, _, _ := ScramStart(plain, true, rep(32), true, "", "pencil", rep(18))
+    assert(ScramMech(s) == "SCRAM-SHA-256")
+}
+
+func testContinueBad(sfirst string) bool {
+    s0, _, _ := ScramStart([]string{"SCRAM-SHA-256"}, false, []byte{}, false, "", "pencil", unb64("fyko+d2lbbFgONRv9qkxdawL"))
+    mut s := s0
+    _, e := ScramContinue(mut s, bytes(sfirst))
+    return switch e {
+    case BadServer{}: true
+    case nil: false
+    }
+}
+
+func TestScramBadServerFirst() {
+    good := vec("plain", "server-first")
+    assert(!testContinueBad(good), "good one passes")
+    assert(testContinueBad("r=OTHERNONCE3rfcNHYJY1ZVvWVs7j,s=QSXCR+Q6sek8bf92,i=4096"), "nonce prefix")
+    assert(testContinueBad("r=fyko+d2lbbFgONRv9qkxdawL,s=QSXCR+Q6sek8bf92,i=4096"), "nonce not extended")
+    assert(testContinueBad("m=ext,r=fyko+d2lbbFgONRv9qkxdawL3rfc,s=QSXCR+Q6sek8bf92,i=4096"), "mandatory extension")
+    assert(testContinueBad("r=fyko+d2lbbFgONRv9qkxdawL3rfc,s=!!!,i=4096"), "salt not base64")
+    assert(testContinueBad("r=fyko+d2lbbFgONRv9qkxdawL3rfc,s=QSXCR+Q6sek8bf92,i=0"), "iterations 0")
+    assert(testContinueBad("r=fyko+d2lbbFgONRv9qkxdawL3rfc,s=QSXCR+Q6sek8bf92,i=2000000"), "iterations over the cap")
+    assert(testContinueBad("r=fyko+d2lbbFgONRv9qkxdawL3rfc,s=QSXCR+Q6sek8bf92,i=x"), "iterations not a number")
+    assert(testContinueBad("r=fyko+d2lbbFgONRv9qkxdawL3rfc,i=4096"), "missing salt")
+}
+
+func TestScramBadServerFinal() {
+    s0, _, _ := ScramStart([]string{"SCRAM-SHA-256"}, false, []byte{}, false, "", vec("plain", "password"), unb64(vec("plain", "cnonce")))
+    // final を continue の前に
+    mut early := s0
+    e0 := ScramFinal(mut early, bytes(vec("plain", "server-final")))
+    assert(errName(e0) == "BadServer", "final before continue")
+    mut s := s0
+    _, e1 := ScramContinue(mut s, bytes(vec("plain", "server-first")))
+    assert(e1 == nil)
+    // 署名違い（plain-y の署名 — 形は正しいが別の交換のもの）・e=・知らない形
+    mut a := s
+    assert(errName(ScramFinal(mut a, bytes(vec("plain-y", "server-final")))) == "BadServer", "wrong signature")
+    mut b := s
+    assert(errName(ScramFinal(mut b, bytes("e=invalid-proof"))) == "ServerRejected", "e=")
+    mut c := s
+    assert(errName(ScramFinal(mut c, bytes("x=1"))) == "BadServer", "unknown")
+    // continue を 2 回
+    mut d := s
+    _, e2 := ScramContinue(mut d, bytes(vec("plain", "server-first")))
+    assert(errName(e2) == "BadServer", "continue twice")
+}
+
+func errName(e error?) string {
+    return switch e {
+    case nil: "nil"
+    case BadServer{}: "BadServer"
+    case ServerRejected{reason}: "ServerRejected"
+    }
+}

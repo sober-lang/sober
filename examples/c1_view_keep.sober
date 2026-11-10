@@ -1,0 +1,57 @@
+package main
+
+// 入力の列のビューで組んだ値（utf8.Check → Str — 写さない）をチャネルで送っても、送り手の値と元の列はそのまま読める（language.md 11 節「チャネル」）。
+// 送り手は送った後に何本も送り続け（チャネルの写しの置き場が使い回される）、最後に最初の値と元の列を読む
+
+import "std/task"
+import "std/utf8"
+
+type Msg struct {
+    head string
+    parts []string
+    raw []byte
+}
+
+func parse(b []byte, k int) (Msg, error?) {
+    v := utf8.Check(b)?
+    h := utf8.Str(v, 0, k)?
+    t := utf8.Str(v, k, len(b))?
+    return Msg{head: h, parts: []string{t, h + t}, raw: utf8.Bytes(v)}, nil
+}
+
+func show(m Msg) string {
+    return "${m.head}|${m.parts[0]}|${m.parts[1]}|${len(m.raw)}"
+}
+
+func main() {
+    src := bytes("héllo-wörld")
+    r, e := task.Run((s task.Scope) => {
+        tx, rx := task.NewChannel[Msg](cap: 1)
+        h := task.Spawn(s, (out) => {
+            m, err := parse(src, 6)
+            task.Send(out, m)
+            mut i := 0
+            while i < 50 {
+                mi, ei := parse(bytes("p${i}-xyz"), 2)
+                if ei == nil {
+                    task.Send(out, mi)
+                }
+                i += 1
+            }
+            "${show(m)} ${err == nil}"
+        }, give: tx)
+        mut first := ""
+        mut n := 0
+        while n < 51 {
+            x := task.Recv(rx)
+            if x != nil && n == 0 {
+                first = show(x)
+            }
+            n += 1
+        }
+        "${first} / ${task.Join(h)} / ${len(src)} ${int(src[0])} ${int(src[12])}"
+    })
+    if e == nil {
+        println(r)
+    }
+}

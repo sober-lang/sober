@@ -21,7 +21,8 @@ def ctorTable : List (Name × String × List String) :=
     (``FS.Ty.map, "TMp", ["tA", "tB", "tC"]), (``FS.Ty.chan, "TChan", ["tA", "tB"]),
     (``FS.Ty.fn, "TFn", ["tA", "tB"]), (``FS.Ty.own, "TOwn", ["tA", "tB", "tC"]),
     (``FS.Ty.rvar, "TRVar", ["tA"]),
-    (``FS.Ty.mus, "TMuS", ["tA", "tB", "tC"]), (``FS.Ty.muRs, "TMuRs", ["tA", "tB", "tC", "tD"]) ]
+    (``FS.Ty.mus, "TMuS", ["tA", "tB", "tC"]), (``FS.Ty.muRs, "TMuRs", ["tA", "tB", "tC", "tD"]),
+    (``FS.Ty.dom, "TDom", ["tA", "tB"]) ]
 
 /-- 欄を持たない列挙の inductive の構成子 → Sober の整数の式（記録の欄に整数で入る — Ty.own の種類 = ty.sober の TOwn の a。
 FConvOp は式の語の番号 — fconv の式の kind がそのまま op） -/
@@ -86,7 +87,9 @@ def nodeTable : List (Name × String × Option String × List String) :=
     one ``FS.Expr.scope "W_SCOPE" [a, c, b], one ``FS.Expr.spawn "W_SPAWN" [a, b, c], one ``FS.Expr.join "W_JOIN" [a, b],
     one ``FS.Expr.tryJ "W_TRY" [a, b], rt ``FS.Expr.scopeV 2, rt ``FS.Expr.taskV 2,
     one ``FS.Expr.newch "W_NEWCH" [a, b, c], rt ``FS.Expr.epV 4, one ``FS.Expr.close "W_CLOSE" [a],
-    one ``FS.Expr.fold "W_FOLD" [a, b], one ``FS.Expr.unfold "W_UNFOLD" [a] ]
+    one ``FS.Expr.fold "W_FOLD" [a, b], one ``FS.Expr.unfold "W_UNFOLD" [a],
+    one ``FS.Expr.dnew "W_DNEW" [a, b, c], rt ``FS.Expr.domV 3, one ``FS.Expr.denter "W_DENTER" [a, b],
+    one ``FS.Expr.dexit "W_DEXIT" [a, b] ]
 
 /-- 節の switch の外れ（札の無い構成子 = 実行時だけの形・未知の kind）の戻り値 -/
 def nodeDefault : String := "actRet(mut st, 0 - 1)"
@@ -113,7 +116,7 @@ def tcTargets : List Name :=
     ``FS.kIndex, ``FS.kLen, ``FS.kTobyte, ``FS.kToint, ``FS.kFconv, ``FS.kAppend, ``FS.kSetidx, ``FS.kSubslice,
     ``FS.kEqs, ``FS.kConcat, ``FS.kMkmap, ``FS.kGetm, ``FS.kSetm, ``FS.kDelm, ``FS.kLenm, ``FS.kKeysm, ``FS.kCloneR, ``FS.kClone, ``FS.kPar,
     ``FS.kParch, ``FS.kNewchan, ``FS.kSend, ``FS.kRecv, ``FS.kClose, ``FS.kFold, ``FS.kUnfold, ``FS.sSpawn2, ``FS.kSpawn, ``FS.kNewch, ``FS.kJoin, ``FS.kTry,
-    ``FS.tcStep ]
+    ``FS.kDnew, ``FS.kDenter, ``FS.kDexit, ``FS.tcStep ]
 
 /-- 欄の無い構成子の作り置き（記録を毎回積まない — state.sober の S が起動時に作る。記録は作ったら変えない・等しさは構造で見るので観測等価） -/
 def constCtors : List (Name × String) :=
@@ -129,7 +132,7 @@ def targets : List Name :=
     ``FS.rmap, ``FS.Ty.renR, ``FS.Ty.relocA, ``FS.Ty.clampR, ``FS.Ty.noClamp, ``FS.Ty.annFree,
     ``FS.Ty.isMut0, ``FS.Ty.mutTop, ``FS.Ty.anchorOf, ``FS.Ty.sub, ``FS.Ty.chanFree, ``FS.Ty.jumpRel,
     ``FS.Ty.readAs, ``FS.Ty.tyArgOk, ``FS.Ty.tyArgsOk, ``FS.Ty.tsubst, ``FS.Ty.tvarsBelow,
-    ``FS.Ty.paramOk, ``FS.Ty.retOk, ``FS.Ty.givable, ``FS.Ty.rehome, ``FS.Ty.payOk,
+    ``FS.Ty.argFree, ``FS.Ty.paramOk, ``FS.Ty.retOk, ``FS.Ty.givable, ``FS.Ty.rehome, ``FS.Ty.payOk,
     ``FS.Ty.rsubst, ``FS.Ty.rfree, ``FS.Ty.isFn, ``FS.Ty.unfold,
     ``FS.Ty.covOk, ``FS.Ty.comp, ``FS.Ty.isChain, ``FS.Ty.chainFn, ``FS.Ty.rguardN, ``FS.Ty.uoccAny, ``FS.Ty.sinkPick,
     ``FS.Ty.sinkStep, ``FS.Ty.sinkRounds, ``FS.Ty.allSink, ``FS.Ty.groupOk, ``FS.Ty.grp, ``FS.Ty.substG,

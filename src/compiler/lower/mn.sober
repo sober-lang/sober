@@ -29,7 +29,7 @@ const MN_CAPSRC = 5   // その出どころ（1 = cgroup の memory.max・2 = Me
 const MN_RSS0 = 6     // 入口の RSS（バイト）
 const MN_CPUQ = 7     // cgroup の cpu.max から出るワーカーの上限（0 = 制限なし）
 const MN_AFFC = 8     // sched_getaffinity のコア数（MN_N を決める前の値 — 計測の表示）
-const MN_PIN = 13     // 1 = ワーカーを許可の CPU へ 1:1 で固定する（rt.mn_pin・mnInit が決める）
+const MN_PIN = 13     // ワーカーの CPU の固定（rt.mn_pin・mnInit が決める）: 0 = なし・1 = 自分の CPU の L3 の群 ∩ 許可・2 = 自分の CPU 1 つ
 const MN_TCAP = 9     // 生きている task の数の天井（VA の上界 — admit.sober: VA_BUDGET ÷ スロットの大きさ ÷ 2）
 const MN_PLOCK = 16
 const MN_PHEAD = 17
@@ -77,7 +77,20 @@ const MN_NS0 = MN_LED + 18
 // 次に走る候補の先読みの開発の口（rt.mn_start が読む — 1 = 今から走る task の TCB の先読み〔SOBER_PF_SELF=0 で外す〕・
 // 2 = 候補〔頭・底〕の冷えの判定〔枠の積んだ時刻〕と先読み〔SOBER_PF_CAND=0 で外す〕。既定 3・mn_next が周ごとに読む — MN_TSCQ と同じ行）
 const MN_PF = MN_LED + 19
-const MN_WORDS = MN_LED + 24
+// 固定の結果（ワーカーの入口でだけ書く — Ledger の pin / pinGroups）: L3 の群が読めず CPU 1 つへ縮退したワーカーの数・固定した群の数
+const MN_PFALL = MN_LED + 22
+const MN_PGRP = MN_LED + 23
+// domain の合計の行（Ledger().domains — domain.sober）: 今待っている Await の数・到着から入るまでの最大（ns — 読むと 0 に戻る）・満了の累計・毒の累計
+const MN_DWAITING = MN_LED + 24
+const MN_DMAXW = MN_LED + 25
+const MN_DEXP = MN_LED + 26
+const MN_DPOIS = MN_LED + 27
+const MN_WORDS = MN_LED + 28
+// rt.mn_llc の作業域（経路 LLC_PATH・読んだ中身 LLC_DATA から LLC_CAP バイト）
+const LLC_PATH = 0
+const LLC_DATA = 128
+const LLC_CAP = 256
+const LLC_WORDS = 48
 const MN_WAIT_DEF = 100000000 // 既定の D（ns — net.Serve の maxWait: の既定と同じ）
 const TSCQ_DEF = 262144        // 校正の前の仮定（4 GHz — D は長めに出る側）
 // 受け箱の先読み（積みが空でなくても受け箱を先に取り込む）は MN_INBOX_EVERY 周に 1 回。毎周だと積みが空まで掃ける周期を壊して
@@ -357,6 +370,7 @@ func needMnRt(st mut St) {
     st.rtMnTrace = addFunc(mut st, int(strLit(mut st, "rt.mn_trace")), desugar.ListRef(list2(mut st, TyI64, TyI64)), -1)
     st.rtTcbFree = addFunc(mut st, int(strLit(mut st, "rt.tcb_free")), desugar.ListRef(list1(mut st, TyPtr)), -1)
     st.rtMnPin = addFunc(mut st, int(strLit(mut st, "rt.mn_pin")), desugar.ListRef(list1(mut st, TyI64)), -1)
+    st.rtMnLlc = addFunc(mut st, int(strLit(mut st, "rt.mn_llc")), desugar.ListRef(list2(mut st, TyI64, TyI64)), TyI64)
     needUringRt(mut st)
 }
 
@@ -378,6 +392,7 @@ func buildMnRt(st mut St) {
     buildMnTrace(mut st)
     buildTcbFree(mut st)
     buildMnPin(mut st)
+    buildMnLlc(mut st)
     buildUringInit(mut st)
     buildUio(mut st)
     buildUpoll(mut st)
@@ -474,19 +489,22 @@ func mnInit(st mut St, sp int) {
     st.mnExtra = int(irBlkITail(mut st, st.cur))
     n := n0w
     store(mut st, mn, MN_N, n)
-    // ワーカーの CPU の固定（thread-per-core の定石: 走れるワーカーが同じ CPU に重なって時間片〔≈ 3 ms〕を待つ形を無くす）。
+    // ワーカーの CPU の固定: 範囲は自分の CPU と L3 を共有する CPU の群（∩ 許可）。群を越える移動（L3 を失う・ソケットを越える）と、
+    // それに伴う時間片〔≈ 3 ms〕の重なりを無くしつつ、群の中の起こし先はカーネルが選ぶ（低い負荷で起きている CPU に寄れる — CPU 1 つに縛ると、
+    // 負荷を全コアへ薄く散らして各コアを深く眠らせ、起床のたびに眠りの出口とキャッシュの冷えを払う）。
     // 既定は Serve のプログラム（置き場の印 = ex）で、ワーカー数を affinity から決めたとき（SOBER_WORKERS なし）— 箱を占有するサーバの形。
-    // 一般のプログラム（コンパイラ自身・並走する網）を固定すると、同じ箱の別のプロセスが同じ CPU の並びに重なる。SOBER_PIN=1 で強制・0 で切る
+    // 一般のプログラム（コンパイラ自身・並走する網）を固定すると、同じ箱の別のプロセスが同じ CPU の並びに重なる。SOBER_PIN=1 で強制（L3 の群）・2 で強制（CPU 1 つ — 比較の口）・0 で切る
     pv := envMb(mut st, sp, "SOBER_PIN=", -1, true)
     // 既定はスレッド数 ≤ 許可の数のときだけ（許可の数を越えると、浮いた 1 本が固定したワーカーのどれかと必ず重なり、
     // 固定したワーカーは逃げられない — 手元 W12 + 1 で churn −47%・W11 + 1〔全部固定〕は churn / keep-alive とも退行なし。
     // ワーカーを足さなくなった後は affinity から決めた数なら常に収まる — cpu.max で減らした数も ≤ 許可の数）
     pfit := cmp(mut st, CLe, n, load(mut st, mn, MN_AFFC))
     pdef := bin(mut st, BAnd, bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CEq, pv, iconst(mut st, -1)), ex), cmp(mut st, CEq, n0, iconst(mut st, 0))), pfit)
-    pin := bin(mut st, BOr, cmp(mut st, CEq, pv, iconst(mut st, 1)), pdef)
+    // 既定と SOBER_PIN=1 は L3 の群・SOBER_PIN=2 は CPU 1 つ（比較の口）
+    pin := bin(mut st, BAdd, bin(mut st, BOr, cmp(mut st, CEq, pv, iconst(mut st, 1)), pdef), bin(mut st, BMul, cmp(mut st, CEq, pv, iconst(mut st, 2)), iconst(mut st, 2)))
     store(mut st, mn, MN_PIN, pin)
     // SOBER_WORKERS があると上で affinity を読んでいない — 固定するなら読む
-    bPa := branchIf(mut st, bin(mut st, BAnd, pin, cmp(mut st, CNe, n0, iconst(mut st, 0))))
+    bPa := branchIf(mut st, bin(mut st, BAnd, cmp(mut st, CNe, pin, iconst(mut st, 0)), cmp(mut st, CNe, n0, iconst(mut st, 0))))
     syscall(mut st, list4(mut st, iconst(mut st, 204), iconst(mut st, 0), iconst(mut st, 128), ptoi(mut st, gepWord(mut st, mn, iconst(mut st, MN_AFF)))))
     br(mut st, bPa, -1)
     setCur(mut st, bPa)
@@ -628,8 +646,9 @@ func mnPinPoint(st mut St) {
     setCur(mut st, bP)
 }
 
-// rt.mn_pin(i): 許可の CPU（MN_AFF のビット — 番号の昇順）の i 番目の 1 つへ sched_setaffinity。i ≥ 許可の数（SOBER_WORKERS で許可の数を越えたワーカー）は
-// 固定しない（許可の全体）。
+// rt.mn_pin(i): 許可の CPU（MN_AFF のビット — 番号の昇順）の i 番目を c として、MN_PIN 1 なら c の L3 の群 ∩ 許可・2 なら c 1 つへ sched_setaffinity。
+// 群が読めない箱（sysfs が無い・level ≠ 3）は c 1 つ。i ≥ 許可の数（SOBER_WORKERS で許可の数を越えたワーカー）は固定しない（許可の全体）。
+// 群への割り付けも同じ昇順（W = 許可の数なら各群に群の CPU の数だけワーカーが乗る）。
 // 昇順の割り当ては、兄弟の番号が N と N + 物理コア数の箱（本家 3995WX・多くのサーバ）ではワーカー数 ≤ 物理コア数のとき別々のコアに乗る。兄弟が隣り合う
 // 番号の箱（WSL2 等）で SOBER_WORKERS < 許可の数のときは 0 と 1 が同じコアに乗る（既定のワーカー数 = 許可の数なら全 CPU を使うので差は無い）。
 // io-wq のワーカー（iou-wrk）はカーネルが cpuset から作るので、この固定に縛られない
@@ -664,7 +683,40 @@ func buildMnPin(st mut St) {
     for k <- iter.Range(0, 16) {
         store(mut st, m, k, zero)
     }
-    store(mut st, gepWord(mut st, m, bin(mut st, BSar, c, iconst(mut st, 6))), 0, bin(mut st, BShl, one, bin(mut st, BAnd, c, iconst(mut st, 63))))
+    cw := bin(mut st, BSar, c, iconst(mut st, 6))
+    cb := bin(mut st, BShl, one, bin(mut st, BAnd, c, iconst(mut st, 63)))
+    // MN_PIN 1 = c の L3 の群 ∩ 許可（読めない・群に c が無い・交差が空なら c 1 つへ縮退して MN_PFALL を数える）・2 = c 1 つ
+    bOne := newBlock(mut st)
+    bL := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, load(mut st, mn, MN_PIN), iconst(mut st, 1)), bL, -1, bOne, -1)
+    setCur(mut st, bL)
+    ok := call(mut st, st.rtMnLlc, list2(mut st, c, ptoi(mut st, m)))
+    for k <- iter.Range(0, 16) {
+        store(mut st, m, k, bin(mut st, BAnd, load(mut st, m, k), load(mut st, mn, MN_AFF + k)))
+    }
+    has := cmp(mut st, CNe, bin(mut st, BAnd, load(mut st, gepWord(mut st, m, cw), 0), cb), zero)
+    bGood := newBlock(mut st)
+    bBad := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CNe, ok, zero), has), bGood, -1, bBad, -1)
+    setCur(mut st, bBad)
+    for k <- iter.Range(0, 16) {
+        store(mut st, m, k, zero)
+    }
+    atomicXadd(mut st, mn, MN_PFALL, one)
+    br(mut st, bOne, -1)
+    setCur(mut st, bOne)
+    store(mut st, gepWord(mut st, m, cw), 0, cb)
+    br(mut st, bGood, -1)
+    // 群の数: c が群（∩ 許可）の最小の CPU なら数える（昇順の割り当てでは触れた群の最小の CPU に必ずワーカーが乗る）
+    setCur(mut st, bGood)
+    mut below := bin(mut st, BAnd, load(mut st, gepWord(mut st, m, cw), 0), bin(mut st, BSub, cb, one))
+    for k <- iter.Range(0, 16) {
+        below = bin(mut st, BOr, below, bin(mut st, BMul, load(mut st, m, k), cmp(mut st, CLt, iconst(mut st, k), cw)))
+    }
+    bLow := branchIf(mut st, cmp(mut st, CEq, below, zero))
+    atomicXadd(mut st, mn, MN_PGRP, one)
+    br(mut st, bLow, -1)
+    setCur(mut st, bLow)
     syscall(mut st, list4(mut st, iconst(mut st, 203), zero, iconst(mut st, 128), ptoi(mut st, m)))
     br(mut st, bEnd, -1)
     // 固定しないワーカー: clone はワーカー 0（固定済み）の affinity を継ぐので許可の全体へ戻す
@@ -673,6 +725,147 @@ func buildMnPin(st mut St) {
     br(mut st, bEnd, -1)
     setCur(mut st, bEnd)
     ret(mut st, -1)
+}
+
+// 定数の文字列 s を番地 base のバイト位置 at（値）から書き、次の位置（値）を返す（nul = true なら最後に NUL も）
+func putBytesAt(st mut St, base int, at int, s string, nul bool) int {
+    // 8 バイトずつ語で書き、端だけバイトで（経路は ASCII — 語の最上位のバイトも 0x7f 以下）
+    b := bytes(s)
+    nw := len(b) / 8
+    for w <- iter.Range(0, nw) {
+        mut v := 0
+        for j <- iter.Range(0, 8) {
+            v = v | (int(b[w * 8 + j]) << (8 * j))
+        }
+        store(mut st, gepByte(mut st, base, bin(mut st, BAdd, at, iconst(mut st, w * 8))), 0, iconst(mut st, v))
+    }
+    for i <- iter.Range(nw * 8, len(b)) {
+        store8(mut st, gepByte(mut st, base, bin(mut st, BAdd, at, iconst(mut st, i))), 0, iconst(mut st, int(b[i])))
+    }
+    end := bin(mut st, BAdd, at, iconst(mut st, len(b)))
+    if nul {
+        store8(mut st, gepByte(mut st, base, end), 0, iconst(mut st, 0))
+    }
+    return end
+}
+
+// 番地 base のバイト位置 LLC_PATH の経路のファイルを LLC_DATA へ読み（≤ LLC_CAP − 1 バイト・後ろに NUL）、読んだバイト数（失敗・溢れは -1）
+func llcRead(st mut St, base int) int {
+    fd := syscall(mut st, list4(mut st, iconst(mut st, 257), iconst(mut st, -100), ptoi(mut st, gepByte(mut st, base, iconst(mut st, LLC_PATH))), iconst(mut st, 524288)))
+    bOk := newBlock(mut st)
+    bJ := newBlock(mut st)
+    r := param(mut st, bJ, TyI64)
+    condbr(mut st, cmp(mut st, CLt, fd, iconst(mut st, 0)), bJ, list1(mut st, iconst(mut st, -1)), bOk, -1)
+    setCur(mut st, bOk)
+    n := syscall(mut st, list4(mut st, iconst(mut st, 0), fd, ptoi(mut st, gepByte(mut st, base, iconst(mut st, LLC_DATA))), iconst(mut st, LLC_CAP)))
+    syscall(mut st, list2(mut st, iconst(mut st, 3), fd))
+    fit := bin(mut st, BAnd, cmp(mut st, CGt, n, iconst(mut st, 0)), cmp(mut st, CLt, n, iconst(mut st, LLC_CAP)))
+    // 溢れ・失敗は -1（fit = 0 → n × 0 − 1）
+    nn := bin(mut st, BSub, bin(mut st, BMul, bin(mut st, BAdd, n, iconst(mut st, 1)), fit), iconst(mut st, 1))
+    store8(mut st, gepByte(mut st, base, bin(mut st, BAdd, imax(mut st, nn, iconst(mut st, 0)), iconst(mut st, LLC_DATA))), 0, iconst(mut st, 0))
+    br(mut st, bJ, list1(mut st, nn))
+    setCur(mut st, bJ)
+    return r
+}
+
+// rt.mn_llc(c, m) i64: CPU c と L3 を共有する CPU の集合（sysfs の cache/index3 — level が 3 のとき・shared_cpu_list の cpulist）を
+// 1024 ビットの mask m（16 語・呼び手が 0 にしておく）へ立てる。1 = 読めた・0 = 読めない（ファイルが無い・level ≠ 3・溢れ・解釈できない）
+func buildMnLlc(st mut St) {
+    begin(mut st, st.rtMnLlc)
+    c := 0
+    m := itop(mut st, 1)
+    zero := iconst(mut st, 0)
+    one := iconst(mut st, 1)
+    base := newSlotAddrOwn(mut st, LLC_WORDS)
+    fail := newBlock(mut st)
+    // 経路 = /sys/devices/system/cpu/cpu<c>/cache/index3/…（c < 1024 — 10 進は高々 4 桁。上の桁から書く: 桁の外の書きは先頭の 1 桁に重なり、本物の先頭の桁が最後に上書きする）
+    // 変異 48 = 群が読めない箱（index9）・49 = 作業ディレクトリの llc-fake/ の作った木を読む（scripts/pincheck.sh — 多群の箱の模造）
+    root := if st.rtMut == 49 { "llc-fake/cpu" } else { "/sys/devices/system/cpu/cpu" }
+    p0 := putBytesAt(mut st, base, iconst(mut st, LLC_PATH), root, false)
+    nd := bin(mut st, BAdd, one, bin(mut st, BAdd, cmp(mut st, CGe, c, iconst(mut st, 10)), bin(mut st, BAdd, cmp(mut st, CGe, c, iconst(mut st, 100)), cmp(mut st, CGe, c, iconst(mut st, 1000)))))
+    for t <- iter.Range(0, 4) {
+        k := 3 - t
+        mut pw := 1
+        for _ <- iter.Range(0, k) {
+            pw = pw * 10
+        }
+        dg := bin(mut st, BAdd, bin(mut st, BRem, bin(mut st, BDiv, c, iconst(mut st, pw)), iconst(mut st, 10)), iconst(mut st, '0'))
+        at := bin(mut st, BAdd, p0, imax(mut st, bin(mut st, BSub, bin(mut st, BSub, nd, one), iconst(mut st, k)), zero))
+        store8(mut st, gepByte(mut st, base, at), 0, dg)
+    }
+    p1 := bin(mut st, BAdd, p0, nd)
+    dir := if st.rtMut == 48 { "/cache/index9/" } else { "/cache/index3/" }
+    p2 := putBytesAt(mut st, base, p1, dir, false)
+    putBytesAt(mut st, base, p2, "level", true)
+    nl := llcRead(mut st, base)
+    d0 := load8(mut st, gepByte(mut st, base, iconst(mut st, LLC_DATA)), 0)
+    d1 := load8(mut st, gepByte(mut st, base, iconst(mut st, LLC_DATA + 1)), 0)
+    lvOk := bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CGt, nl, zero), cmp(mut st, CEq, d0, iconst(mut st, '3'))), bin(mut st, BOr, cmp(mut st, CEq, d1, iconst(mut st, 10)), cmp(mut st, CEq, d1, zero)))
+    bList := newBlock(mut st)
+    condbr(mut st, lvOk, bList, -1, fail, -1)
+    setCur(mut st, bList)
+    putBytesAt(mut st, base, p2, "shared_cpu_list", true)
+    nr := llcRead(mut st, base)
+    bParse := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, nr, zero), bParse, -1, fail, -1)
+    // cpulist = 項（a か a-b）を , で区切り、改行か NUL で終わる
+    setCur(mut st, bParse)
+    lp := newBlock(mut st)
+    i := param(mut st, lp, TyI64)
+    cv := param(mut st, lp, TyI64)
+    lo := param(mut st, lp, TyI64)
+    nds := param(mut st, lp, TyI64)
+    br(mut st, lp, list4(mut st, zero, zero, iconst(mut st, -1), zero))
+    setCur(mut st, lp)
+    ch := load8(mut st, gepByte(mut st, base, bin(mut st, BAdd, i, iconst(mut st, LLC_DATA))), 0)
+    isd := bin(mut st, BAnd, cmp(mut st, CGe, ch, iconst(mut st, '0')), cmp(mut st, CLe, ch, iconst(mut st, '9')))
+    bDig := newBlock(mut st)
+    bNd := newBlock(mut st)
+    condbr(mut st, isd, bDig, -1, bNd, -1)
+    setCur(mut st, bDig)
+    nv := bin(mut st, BAdd, bin(mut st, BMul, cv, iconst(mut st, 10)), bin(mut st, BSub, ch, iconst(mut st, '0')))
+    bDn := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, nv, iconst(mut st, 1023)), fail, -1, bDn, -1)
+    setCur(mut st, bDn)
+    br(mut st, lp, list4(mut st, bin(mut st, BAdd, i, one), nv, lo, bin(mut st, BAdd, nds, one)))
+    setCur(mut st, bNd)
+    bDash := newBlock(mut st)
+    bSep := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, ch, iconst(mut st, '-')), bDash, -1, bSep, -1)
+    setCur(mut st, bDash)
+    bDa := newBlock(mut st)
+    condbr(mut st, bin(mut st, BOr, cmp(mut st, CEq, nds, zero), cmp(mut st, CNe, lo, iconst(mut st, -1))), fail, -1, bDa, -1)
+    setCur(mut st, bDa)
+    br(mut st, lp, list4(mut st, bin(mut st, BAdd, i, one), zero, cv, zero))
+    setCur(mut st, bSep)
+    isEnd := bin(mut st, BOr, cmp(mut st, CEq, ch, iconst(mut st, 10)), cmp(mut st, CEq, ch, zero))
+    isSep := bin(mut st, BOr, isEnd, cmp(mut st, CEq, ch, iconst(mut st, ',')))
+    a := bin(mut st, BAdd, lo, bin(mut st, BMul, cmp(mut st, CEq, lo, iconst(mut st, -1)), bin(mut st, BSub, cv, lo)))
+    bItem := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, bin(mut st, BAnd, isSep, cmp(mut st, CNe, nds, zero)), cmp(mut st, CLe, a, cv)), bItem, -1, fail, -1)
+    // 項 [a, cv] のビットを立てる
+    setCur(mut st, bItem)
+    sl := newBlock(mut st)
+    j := param(mut st, sl, TyI64)
+    sb := newBlock(mut st)
+    sd := newBlock(mut st)
+    br(mut st, sl, list1(mut st, a))
+    setCur(mut st, sl)
+    condbr(mut st, cmp(mut st, CLe, j, cv), sb, -1, sd, -1)
+    setCur(mut st, sb)
+    w := gepWord(mut st, m, bin(mut st, BSar, j, iconst(mut st, 6)))
+    store(mut st, w, 0, bin(mut st, BOr, load(mut st, w, 0), bin(mut st, BShl, one, bin(mut st, BAnd, j, iconst(mut st, 63)))))
+    br(mut st, sl, list1(mut st, bin(mut st, BAdd, j, one)))
+    setCur(mut st, sd)
+    bDone := newBlock(mut st)
+    bMore := newBlock(mut st)
+    condbr(mut st, isEnd, bDone, -1, bMore, -1)
+    setCur(mut st, bMore)
+    br(mut st, lp, list4(mut st, bin(mut st, BAdd, i, one), zero, iconst(mut st, -1), zero))
+    setCur(mut st, bDone)
+    ret(mut st, one)
+    setCur(mut st, fail)
+    ret(mut st, zero)
 }
 
 // rt.task_go_mn(me, tcb)（M:N の spawn の点 — rt.task_go の頭から）: 子の区間を差し込み（鍵の中）、子を pull 列へ積み、
@@ -1742,6 +1935,9 @@ func buildTaskStartMn(st mut St) {
     }
     frame := itop(mut st, load(mut st, 0, TC_FRAME))
     r := trapCall(mut st, load(mut st, 0, TC_KID), fieldPtr(mut st, frame, FR_RES))
+    if st.domUse {
+        domDiedIn(mut st, 0)
+    }
     frRec(mut st, FK_END, ptoi(mut st, 0), r)
     fdDrainCall(mut st)
     orphEnd(mut st, 0)

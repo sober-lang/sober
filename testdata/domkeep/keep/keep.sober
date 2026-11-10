@@ -1,0 +1,9 @@
+package keep
+
+// 受け取った domain（pg.Pool が持つ）を mut 仮引数の場所へ書く（diag.Par kind 39 の規則 2 — 作る側と別の package で破る形）
+
+import "std/pg"
+
+func Keep(p pg.Pool, out mut []pg.Pool) {
+    out = append(out, p)
+}

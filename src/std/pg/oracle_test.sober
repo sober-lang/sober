@@ -1,0 +1,372 @@
+package pg
+
+// 実の PostgreSQL との往復（SOBER_PG_ORACLE が無ければ何もしない — scripts/pgoracle.sh が 17 / 18 を立てて渡す。設定の行は
+// std/internal/pgwire の oracle_test と同じ）: TLS + SCRAM-SHA-256-PLUS と平文の SCRAM で Open・型の第一陣の読み（境界値と NULL）・
+// statement キャッシュの再利用・生成元の break の後の再利用・一意制約違反 23505・hint の欄（42883）・password 違い 28P01・
+// Tx（COMMIT・? で ROLLBACK・入れ子の ROLLBACK TO が外を残す・握りつぶした誤り → Aborted・水準と読みだけは外を受け継ぐ・Serializable の 2 接続で 40001）
+
+import "std/io"
+import "std/iter"
+import "std/os"
+import "std/strings"
+import "std/task"
+import "std/time"
+import "std/tls"
+
+func show(x Value) string {
+    return switch x {
+    case Null{}: "NULL"
+    case Bool{v}: "bool:${v}"
+    case Int{v}: "int:${v}"
+    case Float{v}: "float:${v}"
+    case String{v}: "str:${v}"
+    case Bytes{v}: "bytes:${len(v)}"
+    case Uuid{v}: "uuid:${v.hi}:${v.lo}"
+    case Time{v}: "time:${time.UnixSec(v)}.${time.Nano(v)}"
+    case Civil{v}: "civil:${v.year}-${v.month}-${v.day} ${v.hour}:${v.minute}:${v.second}.${v.nsec}"
+    case Json{v}: "json:${string(v) catch "?"}"
+    case Numeric{digits}: "num:${digits}"
+    case Unknown{oid, text}: "unknown(${oid}):${text}"
+    }
+}
+
+// 型の表: SQL の式（1 列）と読んだ値の表示
+func typeCases() []string {
+    return []string{
+        "true|bool:true", "false|bool:false", "null::bool|NULL",
+        "(-32768)::int2|int:-32768", "2147483647::int4|int:2147483647", "(-9223372036854775808)::int8|int:-9223372036854775808",
+        "1.5::float4|float:1.5", "(-0.1)::float8|float:-0.1", "'NaN'::float8|float:NaN",
+        "'héllo'::text|str:héllo", "'x'::varchar(3)|str:x", "'ab'::char(3)|str:ab ", "'n'::name|str:n",
+        "'\\x00ff'::bytea|bytes:2", "''::bytea|bytes:0",
+        "'00000000-0000-0000-0000-000000000001'::uuid|uuid:0:1",
+        "'2000-01-01 00:00:00.000001+00'::timestamptz|time:946684800.1000", "'infinity'::timestamptz|unknown(1184):infinity",
+        "'1999-12-31 23:59:59'::timestamp|civil:1999-12-31 23:59:59.0", "'2024-02-29'::date|civil:2024-2-29 0:0:0.0", "'-infinity'::date|unknown(1082):-infinity",
+        "'{\"a\": 1}'::json|json:{\"a\": 1}", "'{\"a\":1}'::jsonb|json:{\"a\": 1}",
+        "12.50::numeric(10,2)|num:12.50", "(-0.0007)::numeric|num:-0.0007", "123456789012345678901234567890::numeric|num:123456789012345678901234567890",
+        "'NaN'::numeric|num:NaN", "0::numeric|num:0", "1e-20::numeric|num:0.00000000000000000001",
+        "interval '1 day'|unknown(1186):1 day", "null::int8|NULL"}
+}
+
+func checkTypes(c Conn, name string) int {
+    mut bad := 0
+    for tc <- typeCases() {
+        expr, want, _ := strings.Cut(tc, "|")
+        got := typeOf(c, expr)
+        if got != want {
+            println("pg ${name} type ${expr}: got ${got} want ${want}")
+            bad += 1
+        }
+    }
+    return bad
+}
+
+// 式 1 つを読む（文面は実行時に組むので Script と同じ simple query ではなく、const の席の外の道 — 網の中だけの口 qdyn）
+func typeOf(c Conn, expr string) string {
+    mut out := "none"
+    e := qdyn(c, "select ${expr}", (r) => {
+        out = show(Col(r, 0))
+    })
+    return if e != nil { "error" } else { out }
+}
+
+// 網のための const の席の外の Query（同じ道 — begin / nextRow / finish）
+func qdyn(c Conn, sql string, k func(r Row)) error? {
+    mut q := begin(c, sql, []Value{})?
+    defer finish(c, q)
+    while q.more {
+        row := nextRow(c, mut q)?
+        if q.more {
+            k(row)
+        }
+    }
+    return q.fail
+}
+
+func session(c Conn, name string) {
+    assert(checkTypes(c, name) == 0, "types ${name}")
+    se := Script(c, "create temp table t (id int8 primary key, name text)")
+    assert(se == nil, "script")
+    n := Exec(c, "insert into t select g, 'n' || g from generate_series(1, 3000) g") catch -1
+    assert(n == 3000, "insert ${n}")
+    // 同じ文面の 2 回目はキャッシュの文（s0）を使う
+    m := Exec(c, "select 1") catch -1
+    m2 := Exec(c, "select 1") catch -1
+    assert(m == 1 && m2 == 1 && getW(c.blk, lCacheN) >= 2, "cache")
+    mut seen := 0
+    e := breakAt(c, mut seen)
+    assert(e == nil && seen == 10, "break ${seen}")
+    k := Exec(c, "select count(*) from t") catch -1
+    assert(k == 1, "after break")
+    _, de := Exec(c, "insert into t values (1, 'dup')")
+    assert(stateOf(de) == "23505", "dup ${stateOf(de)}")
+    a := Exec(c, "select 2") catch -1
+    assert(a == 1, "after error")
+    _, he := Exec(c, "select length(1, 2)")
+    assert(stateOf(he) == "42883" && hintOf(he) != "42883:", "hint ${name}")
+    txCases(c, name)
+    println("conf-item: interop/pg ${name} std-pg")
+}
+
+// 1 行 1 列の int（網の中だけ — 文面を実行時に組む）
+func scalar(c Conn, sql string) int {
+    mut v := -1
+    e := qdyn(c, sql, (r) => {
+        v = ColInt(r, 0) catch -2
+    })
+    return if e != nil { -3 } else { v }
+}
+
+func setting(c Conn, key string) string {
+    mut v := "?"
+    _ = qdyn(c, "select current_setting('${key}')", (r) => {
+        v = ColString(r, 0) catch "!"
+    })
+    return v
+}
+
+func idle(c Conn) bool {
+    return getW(c.blk, lTxStatus) == int('I') && getW(c.blk, lTxDepth) == 0
+}
+
+// Tx の抜け方: COMMIT・? で ROLLBACK・入れ子の ROLLBACK TO が外を残す・握りつぶした誤り → Aborted・読みだけ
+func txCases(c Conn, name string) {
+    se := Script(c, "create temp table tx_t (id int8 primary key)")
+    assert(se == nil, "tx table ${name}")
+    ce := Tx(c, (tc) => {
+        _ = Exec(tc, "insert into tx_t values (1)") catch -1
+        assert(getW(tc.blk, lTxStatus) == int('T'), "in tx ${name}")
+    })
+    assert(ce == nil && scalar(c, "select count(*) from tx_t where id = 1") == 1 && idle(c), "tx commit ${name}")
+    fe := txFail(c)
+    assert(stateOf(fe) == "23505" && scalar(c, "select count(*) from tx_t where id = 2") == 0 && idle(c), "tx ? rollback ${name} ${stateOf(fe)}")
+    ne := Tx(c, (tc) => {
+        _ = Exec(tc, "insert into tx_t values (3)") catch -1
+        ie := txFail(tc)
+        assert(stateOf(ie) == "23505" && getW(tc.blk, lTxDepth) == 1, "inner ${name}")
+    })
+    assert(ne == nil && scalar(c, "select count(*) from tx_t where id in (2, 3)") == 1 && idle(c), "tx nested ${name}")
+    ae := Tx(c, (tc) => {
+        _ = Exec(tc, "insert into tx_t values (4)") catch -1
+        _ = Exec(tc, "insert into tx_t values (1)") catch -1
+    })
+    assert(stateOf(ae) == "aborted" && scalar(c, "select count(*) from tx_t where id = 4") == 0 && idle(c), "tx aborted ${name} ${stateOf(ae)}")
+    re := Tx(c, (tc) => {
+        assert(setting(tc, "transaction_read_only") == "on" && setting(tc, "transaction_isolation") == "repeatable read", "read only ${name}")
+        ie := Tx(tc, (t2) => {
+            assert(setting(t2, "transaction_read_only") == "on" && setting(t2, "transaction_isolation") == "repeatable read", "inherit ${name}")
+        }, isolation: Serializable, readOnly: false)
+        assert(ie == nil, "inherit ${name}")
+    }, isolation: RepeatableRead, readOnly: true)
+    assert(re == nil && idle(c), "tx read only ${name}")
+}
+
+// k の中の ? は Tx を ROLLBACK で抜けてから、この関数から誤りで抜ける
+func txFail(c Conn) error? {
+    Tx(c, (tc) => {
+        _ = Exec(tc, "insert into tx_t values (2)")?
+        _ = Exec(tc, "insert into tx_t values (1)")?
+    })?
+    return nil
+}
+
+// Serializable の 2 接続の write skew: 後から COMMIT する側が 40001（自動の再試行はしない）
+func skew(c1 Conn, c2 Conn) error? {
+    Tx(c1, (t1) => {
+        _ = scalar(t1, "select count(*) from tx_ws where kind = 'x'")
+        Tx(c2, (t2) => {
+            _ = scalar(t2, "select count(*) from tx_ws where kind = 'y'")
+            _ = Exec(t2, "insert into tx_ws values ('x')")?
+        }, isolation: Serializable)?
+        _ = Exec(t1, "insert into tx_ws values ('y')")?
+    }, isolation: Serializable)?
+    return nil
+}
+
+func breakAt(c Conn, seen mut int) error? {
+    for r <- Query(c, "select id from t order by id")? {
+        seen = ColInt(r, 0)?
+        if seen >= 10 {
+            break
+        }
+    }
+    return nil
+}
+
+func hintOf(e error?) string {
+    mut out := ""
+    switch e {
+    case nil: {}
+    case Server{code, message, detail, constraint, hint}: out = "${code}:${hint}"
+    default: {}
+    }
+    return out
+}
+
+func msgOf(e error?) string {
+    mut out := ""
+    switch e {
+    case nil: {}
+    case Server{code, message, detail, constraint, hint}: out = "${code} ${message}"
+    default: {}
+    }
+    return out
+}
+
+func stateOf(e error?) string {
+    switch e {
+    case nil: return "nil"
+    case Server{code, message, detail, constraint, hint}: return "${code}"
+    case Aborted{}: return "aborted"
+    default: {}
+    }
+    return "other"
+}
+
+// プールの題材: 20 本の借り手 × size 3（張った接続は 3 本まで・再利用）・Tx の中の行が次の借りから見える・k を return で抜けた / トランザクションの途中で返した /
+// 借り手の task が死んだ接続は預け直さず、数えが戻る（size + 1 回の借りが待ちの上限で詰まらない）
+func poolCases(at string, pol Policy, name string) {
+    pe := OpenPool(at, (p) => {
+        pids, de := task.Run((s task.Scope) => {
+            mut hs := mut []task.Handle[int]{}
+            for _ <- iter.Range(0, 20) {
+                hs = append(hs, task.Spawn(s, () => backendOf(p)))
+            }
+            task.Gather(hs)
+        })
+        assert(de == nil, "pool spawn ${name}")
+        mut seen := mut []int{}
+        for v <- pids {
+            assert(v > 0, "pool pid ${name}")
+            mut dup := false
+            for w <- freeze(seen) {
+                dup = dup || w == v
+            }
+            if !dup {
+                seen = append(seen, v)
+            }
+        }
+        assert(len(seen) >= 1 && len(seen) <= 3, "pool cap ${name}: ${len(seen)} backends")
+        we := With(p, (c) => {
+            te := Script(c, "drop table if exists pool_t; create table pool_t (n int)")
+            assert(te == nil, "pool table ${name}")
+            xe := Tx(c, (t) => {
+                _, ie := Exec(t, "insert into pool_t values (7)")
+                assert(ie == nil, "pool insert ${name}")
+            })
+            assert(xe == nil, "pool tx ${name}")
+        })
+        assert(we == nil, "pool with ${name}")
+        mut rows := -1
+        we2 := With(p, (c) => {
+            rows = scalar(c, "select count(*) from pool_t")
+        })
+        assert(we2 == nil && rows == 1, "pool sees tx ${name}")
+        for _ <- iter.Range(0, 5) {
+            leave(p)
+        }
+        for _ <- iter.Range(0, 5) {
+            _ = With(p, (c) => {
+                _, bgn := Exec(c, "BEGIN")
+                assert(bgn == nil, "pool begin ${name}")
+            })
+        }
+        _, he := task.Run((s task.Scope) => {
+            for _ <- iter.Range(0, 4) {
+                _ = task.Spawn(s, () => {
+                    _ = With(p, (c) => {
+                        panic(Reentered{hint: "pool borrower dies"})
+                    })
+                    0
+                })
+            }
+            0
+        })
+        assert(he != nil, "pool borrower died ${name}")
+        mut fresh := 0
+        for _ <- iter.Range(0, 4) {
+            fe := With(p, (c) => {
+                assert(idle(c), "pool fresh conn ${name}")
+            })
+            if fe == nil {
+                fresh += 1
+            }
+        }
+        assert(fresh == 4, "pool capacity back ${name}: ${fresh}")
+    }, size: 3, wait: 3000 * task.MS, policy: pol)
+    assert(pe == nil, "open pool ${name}")
+    println("conf-item: interop/pg ${name} std-pg-pool")
+}
+
+// 借りた接続の backend の pid
+func backendOf(p Pool) int {
+    mut pid := 0
+    e := With(p, (c) => {
+        pid = scalar(c, "select pg_backend_pid()")
+    })
+    return if e == nil { pid } else { 0 }
+}
+
+// k を return で抜ける借り（接続は閉じられ、数えが戻る）
+func leave(p Pool) {
+    _ = With(p, (c) => {
+        if scalar(c, "select 1") == 1 {
+            return
+        }
+    })
+}
+
+func TestOracle() {
+    path, e := os.Getenv("SOBER_PG_ORACLE")
+    if e != nil || path == nil {
+        return
+    }
+    conf, ce := io.ReadFile(path)
+    assert(ce == nil, "oracle config")
+    mut servers := mut []string{}
+    mut ca := ""
+    mut user := ""
+    mut password := ""
+    for line <- strings.Split(string(conf) catch "", "\n") {
+        f := strings.Fields(line)
+        if len(f) >= 2 && f[0] == "ca" {
+            ca = f[1]
+        } else if len(f) >= 2 && f[0] == "user" {
+            user = f[1]
+        } else if len(f) >= 2 && f[0] == "password" {
+            password = f[1]
+        } else if len(f) >= 3 && f[0] == "server" {
+            servers = append(servers, "${f[1]} ${f[2]}")
+        }
+    }
+    pem, pe := io.ReadFile(ca)
+    assert(pe == nil, "ca")
+    roots := tls.ParseRoots(string(pem) catch "") catch return
+    mut n := 0
+    for sv <- freeze(servers) {
+        f := strings.Fields(sv)
+        name := f[0]
+        hostport := strings.Replace(f[1], "127.0.0.1", "localhost", 1)
+        at := "postgres://${user}@${hostport}/postgres"
+        oe := Open(at, (c) => session(c, "${name}-tls"), policy: Policy{password: password, extraRoots: roots})
+        assert(oe == nil, "open tls ${name}")
+        pe2 := Open(at, (c) => session(c, "${name}-plain"), policy: Policy{password: password, dangerouslyPlaintext: true})
+        assert(pe2 == nil, "open plain ${name}")
+        se := Open(at, (c1) => {
+            te := Script(c1, "drop table if exists tx_ws; create table tx_ws (kind text)")
+            assert(te == nil, "skew table ${name} ${msgOf(te)}")
+            _ = Open(at, (c2) => {
+                ke := skew(c1, c2)
+                assert(stateOf(ke) == "40001" && idle(c1) && idle(c2), "serializable ${name} ${msgOf(ke)}")
+                assert(scalar(c1, "select count(*) from tx_ws") == 1, "skew rows ${name}")
+            }, policy: Policy{password: password, extraRoots: roots})
+        }, policy: Policy{password: password, extraRoots: roots})
+        assert(se == nil, "open serializable ${name}")
+        poolCases(at, Policy{password: password, extraRoots: roots}, "${name}-tls")
+        poolCases(at, Policy{password: password, dangerouslyPlaintext: true}, "${name}-plain")
+        we := Open(at, (c) => {}, policy: Policy{password: "wrong-${password}", extraRoots: roots})
+        assert(stateOf(we) == "28P01", "wrong password ${name}")
+        n += 1
+    }
+    assert(n > 0, "servers")
+    println("conf: interop/pg-std ${n}")
+}

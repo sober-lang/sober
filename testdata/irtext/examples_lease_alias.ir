@@ -25,7 +25,7 @@ global @str.17 [5] = {7309940765259427104, 7599578576357124455, 6874858533597243
 global @str.18 [1] = {139141276781}
 global @str.19 [1] = {10}
 global @str.20 [3] = {7232620951369114994, 8674334734093152357, 8250}
-global @rt.psites [15] = {6473931242340353, 7599831316955137, 9570156422365185, 3940656904929288, 4503606891905025, 4785081885392897, 7036881833295873, 3940651720769800, 4785077036777729, 3377702320996609, 2814752451461384, 8444253696950529, 6473928960639233, 3659179243864321, 5629504248611073}
+global @rt.psites [15] = {6473931460444161, 7599831535058945, 9570156640468993, 3940657123033096, 4503607110008833, 4785082103496705, 7036882051399681, 3940651720769800, 4785077036777729, 3377702320996609, 2814752451461384, 8444253696950529, 6473928960639233, 3659179243864321, 5629504248611073}
 global @str.21 [3] = {8462017926321696361, 7953763900396085364, 25959}
 global @str.22 [4] = {8026013105759284339, 8391735665840385653, 7453001576142499616, 101}
 global @str.23 [4] = {8462017844986274166, 7953763900396085364, 7070777237752014183, 6648953}
@@ -1780,26 +1780,26 @@ b0:
   %1 = region.depth
   region.enter
   %2 = region.depth
-  %3 = slotaddr s0
-  %4 = const 0
-  store %3[0], %4
-  store %3[1], %4
-  store %3[2], %4
-  store %3[3], %4
-  store %3[4], %4
-  store %3[5], %4
-  store %3[6], %4
-  store %3[7], %4
-  store %3[8], %4
+  %3 = const 0
+  %4 = slotaddr s0
+  store %4[0], %3
+  store %4[1], %3
+  store %4[2], %3
+  store %4[3], %3
+  store %4[4], %3
+  store %4[5], %3
+  store %4[6], %3
+  store %4[7], %3
+  store %4[8], %3
   %5 = region.depth
   %6 = region.bump %5
   %7 = ptoi %6
-  store %3[0], %7
+  store %4[0], %7
   %8 = const 0
-  store %3[1], %8
-  store %3[2], %5
+  store %4[1], %8
+  store %4[2], %5
   %9 = const 4
-  %10 = gep.word %3, %9
+  %10 = gep.word %4, %9
   %11 = region.depth
   %12 = region.bump %11
   %13 = ptoi %12
@@ -1808,23 +1808,23 @@ b0:
   store %10[1], %14
   store %10[2], %11
   %15 = slotaddr s1
-  %16 = load.i64 %3[0]
+  %16 = load.i64 %4[0]
   store %15[0], %16
-  %17 = load.i64 %3[1]
+  %17 = load.i64 %4[1]
   store %15[1], %17
-  %18 = load.i64 %3[2]
+  %18 = load.i64 %4[2]
   store %15[2], %18
-  %19 = load.i64 %3[3]
+  %19 = load.i64 %4[3]
   store %15[3], %19
-  %20 = load.i64 %3[4]
+  %20 = load.i64 %4[4]
   store %15[4], %20
-  %21 = load.i64 %3[5]
+  %21 = load.i64 %4[5]
   store %15[5], %21
-  %22 = load.i64 %3[6]
+  %22 = load.i64 %4[6]
   store %15[6], %22
-  %23 = load.i64 %3[7]
+  %23 = load.i64 %4[7]
   store %15[7], %23
-  %24 = load.i64 %3[8]
+  %24 = load.i64 %4[8]
   store %15[8], %24
   %25 = globaladdr @rt.meta
   store %25[2572], %2
@@ -1904,26 +1904,26 @@ b4:
   %67 = load.i64 %61[2]
   %68 = const 2845814786215520742
   %69 = call @std/task.LeaseTake(%65, %66, %67, %68)
-  %70 = slotaddr s1
-  %71 = const 0
-  store %70[0], %71
-  store %70[1], %71
-  store %70[2], %71
-  store %70[3], %71
-  store %70[4], %71
-  store %70[5], %71
-  store %70[6], %71
-  store %70[7], %71
-  store %70[8], %71
+  %70 = const 0
+  %71 = slotaddr s1
+  store %71[0], %70
+  store %71[1], %70
+  store %71[2], %70
+  store %71[3], %70
+  store %71[4], %70
+  store %71[5], %70
+  store %71[6], %70
+  store %71[7], %70
+  store %71[8], %70
   %72 = region.depth
   %73 = region.bump %72
   %74 = ptoi %73
-  store %70[0], %74
+  store %71[0], %74
   %75 = const 0
-  store %70[1], %75
-  store %70[2], %72
+  store %71[1], %75
+  store %71[2], %72
   %76 = const 4
-  %77 = gep.word %70, %76
+  %77 = gep.word %71, %76
   %78 = region.depth
   %79 = region.bump %78
   %80 = ptoi %79
@@ -1932,23 +1932,23 @@ b4:
   store %77[1], %81
   store %77[2], %78
   %82 = slotaddr s0
-  %83 = load.i64 %70[0]
+  %83 = load.i64 %71[0]
   store %82[0], %83
-  %84 = load.i64 %70[1]
+  %84 = load.i64 %71[1]
   store %82[1], %84
-  %85 = load.i64 %70[2]
+  %85 = load.i64 %71[2]
   store %82[2], %85
-  %86 = load.i64 %70[3]
+  %86 = load.i64 %71[3]
   store %82[3], %86
-  %87 = load.i64 %70[4]
+  %87 = load.i64 %71[4]
   store %82[4], %87
-  %88 = load.i64 %70[5]
+  %88 = load.i64 %71[5]
   store %82[5], %88
-  %89 = load.i64 %70[6]
+  %89 = load.i64 %71[6]
   store %82[6], %89
-  %90 = load.i64 %70[7]
+  %90 = load.i64 %71[7]
   store %82[7], %90
-  %91 = load.i64 %70[8]
+  %91 = load.i64 %71[8]
   store %82[8], %91
   %92 = slotaddr s8
   %93 = load.i64 %61[0]
@@ -2411,22 +2411,22 @@ b33:
   store %317[1], %319
   %320 = load.i64 %63[2]
   store %317[2], %320
-  %321 = slotaddr s3
-  %322 = const 0
-  store %321[0], %322
-  store %321[1], %322
-  store %321[2], %322
+  %321 = const 0
+  %322 = slotaddr s3
+  store %322[0], %321
+  store %322[1], %321
+  store %322[2], %321
   %323 = load.i64 %317[0]
-  store %321[0], %323
+  store %322[0], %323
   %324 = load.i64 %317[1]
-  store %321[1], %324
+  store %322[1], %324
   %325 = load.i64 %317[2]
-  store %321[2], %325
-  %326 = load.i64 %321[0]
+  store %322[2], %325
+  %326 = load.i64 %322[0]
   store %0[0], %326
-  %327 = load.i64 %321[1]
+  %327 = load.i64 %322[1]
   store %0[1], %327
-  %328 = load.i64 %321[2]
+  %328 = load.i64 %322[2]
   store %0[2], %328
   region.relocate %0, 1, %6
   region.setdepth %6
@@ -3049,10 +3049,10 @@ func @std/pool.badScratch(%0 i64) {
 b0:
   %1 = region.depth
   region.enter
-  %2 = slotaddr s0
-  %3 = const 0
-  store %2[0], %3
-  store %2[0], %0
+  %2 = const 0
+  %3 = slotaddr s0
+  store %3[0], %2
+  store %3[0], %0
   %4 = globaladdr @rt.meta
   call @rt.flush()
   %5 = const 2
@@ -3102,7 +3102,7 @@ b0:
   store %29[1], %27
   store %29[2], %28
   call @rt.print_str(%29)
-  %31 = load.i64 %2[0]
+  %31 = load.i64 %3[0]
   call @rt.print_int(%31)
   %32 = globaladdr @str.2
   %33 = const 1
@@ -3442,19 +3442,30 @@ b9:
   store %7[0], %3
   ret %8
 b10:
-  %19 = const 3
+  %19 = const 8
   %20 = eq %0, %19
   condbr %20, b11, b12
 b11:
+  %21 = const 255
+  %22 = and_ %3, %21
+  %23 = const 8
+  %24 = sar %3, %23
+  %25 = atomic.cas %7[0](%22, %24)
+  ret %25
+b12:
+  %26 = const 3
+  %27 = eq %0, %26
+  condbr %27, b13, b14
+b13:
   store %7[0], %8
   ret %8
-b12:
-  %21 = load.i64 %7[0]
-  %22 = ne %21, %8
-  condbr %22, b13, b14
-b13:
-  ret %8
 b14:
+  %28 = load.i64 %7[0]
+  %29 = ne %28, %8
+  condbr %29, b15, b16
+b15:
+  ret %8
+b16:
   store %7[0], %9
   ret %9
 }

@@ -1,0 +1,365 @@
+package pg
+
+// 値の表現（引数と結果の両方）と、PostgreSQL の binary 形式との写し。結果の列は Bind で列ごとに形式を選ぶ（第一陣の型 = binary・他 = text）。
+// 引数はサーバが Describe で返した型に合わせて符号化し、合わない組み合わせは BadArg（Int → int2 / int4 の範囲外も）
+
+import "std/internal/pgwire"
+import "std/iter"
+import "std/math"
+import "std/time"
+import "std/uuid"
+
+// 値 1 つ（NULL は Null{}・第一陣の外の型は Unknown — text 形式の字句のまま）
+type Value union {
+    Null {}
+    Bool { v bool }
+    Int { v int }
+    Float { v float }
+    String { v string }
+    Bytes { v []byte }
+    Uuid { v uuid.UUID }
+    // timestamptz（UTC の時刻 — ±infinity は Unknown）
+    Time { v time.Time }
+    // timestamp（zone の無い壁の読み）・date（時刻 0）— weekday は暦から
+    Civil { v time.Civil }
+    Json { v []byte }
+    // numeric の十進の字句（"-12.50"・"NaN"・"Infinity"）
+    Numeric { digits string }
+    Unknown { oid int; text string }
+}
+
+// 型の OID（pg_type の固定の番号）
+const oidBool = 16
+const oidBytea = 17
+const oidName = 19
+const oidInt8 = 20
+const oidInt2 = 21
+const oidInt4 = 23
+const oidText = 25
+const oidJson = 114
+const oidFloat4 = 700
+const oidFloat8 = 701
+const oidBpchar = 1042
+const oidVarchar = 1043
+const oidDate = 1082
+const oidTimestamp = 1114
+const oidTimestamptz = 1184
+const oidNumeric = 1700
+const oidUuid = 2950
+const oidJsonb = 3802
+
+// 2000-01-01 00:00:00 UTC の UNIX 時刻（PostgreSQL の時刻の起点）
+const pgEpoch = 946684800
+
+// 型 oid の結果を binary で受けるか（第一陣の型）
+func binaryOid(oid int) bool {
+    return oid == oidBool || oid == oidBytea || oid == oidName || oid == oidInt8 || oid == oidInt2 || oid == oidInt4 || oid == oidText ||
+        oid == oidJson || oid == oidFloat4 || oid == oidFloat8 || oid == oidBpchar || oid == oidVarchar || oid == oidDate ||
+        oid == oidTimestamp || oid == oidTimestamptz || oid == oidNumeric || oid == oidUuid || oid == oidJsonb
+}
+
+func textOid(oid int) bool {
+    return oid == oidText || oid == oidVarchar || oid == oidBpchar || oid == oidName
+}
+
+// ---- 受け（列の値のバイト列 → Value）
+
+func be(b []byte, at int, n int) int {
+    mut v := 0
+    for i <- iter.Range(0, n) {
+        v = (v << 8) | int(b[at + i])
+    }
+    return v
+}
+
+// n バイトの big-endian を符号つきに
+func sbe(b []byte, at int, n int) int {
+    v := be(b, at, n)
+    return if n < 8 && (v >> (n * 8 - 1)) != 0 { v - (1 << (n * 8)) } else { v }
+}
+
+// 列の値 b（形式 fmt = 0 text / 1 binary・型 oid）の Value。形が型に合わなければ ok = false（Protocol）
+func decode(oid int, fmt int, b []byte) (Value, bool) {
+    if fmt == 0 {
+        s := string(b) catch return Unknown{oid: oid, text: ""}, false
+        return Unknown{oid: oid, text: s}, true
+    }
+    n := len(b)
+    if oid == oidBool {
+        return Bool{v: n == 1 && b[0] != 0}, n == 1
+    }
+    if oid == oidInt2 || oid == oidInt4 || oid == oidInt8 {
+        w := if oid == oidInt2 { 2 } else if oid == oidInt4 { 4 } else { 8 }
+        return if n == w { Int{v: sbe(b, 0, w)} } else { Null{} }, n == w
+    }
+    if oid == oidFloat8 {
+        return if n == 8 { Float{v: math.FromBits(be(b, 0, 8))} } else { Null{} }, n == 8
+    }
+    if oid == oidFloat4 {
+        return if n == 4 { Float{v: f32(be(b, 0, 4))} } else { Null{} }, n == 4
+    }
+    if textOid(oid) {
+        s := string(b) catch return Null{}, false
+        return String{v: s}, true
+    }
+    if oid == oidBytea {
+        return Bytes{v: b}, true
+    }
+    if oid == oidJson {
+        return Json{v: b}, true
+    }
+    if oid == oidJsonb {
+        // 版のバイト 1 + JSON の字句
+        if n < 1 || b[0] != 1 {
+            return Null{}, false
+        }
+        return Json{v: tail(b, 1)}, true
+    }
+    if oid == oidUuid {
+        return if n == 16 { Uuid{v: uuid.UUID{hi: be(b, 0, 8), lo: be(b, 8, 8)}} } else { Null{} }, n == 16
+    }
+    if oid == oidTimestamptz || oid == oidTimestamp {
+        if n != 8 {
+            return Null{}, false
+        }
+        us := sbe(b, 0, 8)
+        if us == 9223372036854775807 || us == -9223372036854775807 - 1 {
+            return Unknown{oid: oid, text: if us > 0 { "infinity" } else { "-infinity" }}, true
+        }
+        t := time.Unix(pgEpoch + floorDiv(us, 1000000), floorMod(us, 1000000) * 1000)
+        return if oid == oidTimestamptz { Time{v: t} } else { Civil{v: time.ToCivil(t, 0)} }, true
+    }
+    if oid == oidDate {
+        if n != 4 {
+            return Null{}, false
+        }
+        d := sbe(b, 0, 4)
+        if d == 2147483647 || d == -2147483648 {
+            return Unknown{oid: oid, text: if d > 0 { "infinity" } else { "-infinity" }}, true
+        }
+        return Civil{v: time.ToCivil(time.Unix(pgEpoch + d * 86400, 0), 0)}, true
+    }
+    if oid == oidNumeric {
+        s, ok := numericText(b)
+        return Numeric{digits: s}, ok
+    }
+    s := string(b) catch return Null{}, false
+    return Unknown{oid: oid, text: s}, true
+}
+
+// float4 のビット（IEEE 754 binary32）の値（float8 へ正確に広げる）
+func f32(w int) float {
+    sign := (w >> 31) & 1
+    ex := (w >> 23) & 0xff
+    fr := w & 0x7fffff
+    mut e64 := 0
+    mut f64 := 0
+    if ex == 0xff {
+        e64 = 0x7ff
+        f64 = fr << 29
+    } else if ex == 0 && fr == 0 {
+        e64 = 0
+    } else if ex == 0 {
+        // 非正規化数: 先頭の 1 を探して正規化する
+        mut m := fr
+        mut e := -126
+        while (m & 0x800000) == 0 {
+            m = m << 1
+            e -= 1
+        }
+        e64 = e + 1023
+        f64 = (m & 0x7fffff) << 29
+    } else {
+        e64 = ex - 127 + 1023
+        f64 = fr << 29
+    }
+    return math.FromBits((sign << 63) | (e64 << 52) | f64)
+}
+
+func floorDiv(a int, b int) int {
+    q := a / b
+    return if (a % b != 0) && ((a < 0) != (b < 0)) { q - 1 } else { q }
+}
+
+func floorMod(a int, b int) int {
+    return a - floorDiv(a, b) * b
+}
+
+func tail(b []byte, at int) []byte {
+    mut o := mut []byte{}
+    for i <- iter.Range(at, len(b)) {
+        o = append(o, b[i])
+    }
+    return freeze(o)
+}
+
+// numeric の binary（ndigits・weight・sign・dscale・base 10000 の桁）の十進の字句
+func numericText(b []byte) (string, bool) {
+    if len(b) < 8 {
+        return "", false
+    }
+    nd := be(b, 0, 2)
+    weight := sbe(b, 2, 2)
+    sign := be(b, 4, 2)
+    dscale := be(b, 6, 2)
+    if len(b) != 8 + nd * 2 {
+        return "", false
+    }
+    if sign == 0xC000 {
+        return "NaN", true
+    }
+    if sign == 0xD000 {
+        return "Infinity", true
+    }
+    if sign == 0xF000 {
+        return "-Infinity", true
+    }
+    if sign != 0 && sign != 0x4000 {
+        return "", false
+    }
+    mut o := mut []byte{}
+    if sign == 0x4000 {
+        o = append(o, '-')
+    }
+    // 整数部: 桁 0..weight（無ければ "0"）
+    if weight < 0 {
+        o = append(o, '0')
+    } else {
+        for i <- iter.Range(0, weight + 1) {
+            d := if i < nd { be(b, 8 + i * 2, 2) } else { 0 }
+            if d > 9999 {
+                return "", false
+            }
+            putGroup(mut o, d, i == 0)
+        }
+    }
+    // 小数部: dscale 桁（桁の位置 weight+1… を 4 桁ずつ）
+    if dscale > 0 {
+        o = append(o, '.')
+        mut written := 0
+        mut i := weight + 1
+        while written < dscale {
+            d := if i >= 0 && i < nd { be(b, 8 + i * 2, 2) } else { 0 }
+            if d > 9999 {
+                return "", false
+            }
+            mut k := 1000
+            while k > 0 && written < dscale {
+                o = append(o, byte(48 + (d / k) % 10))
+                k = k / 10
+                written += 1
+            }
+            i += 1
+        }
+    }
+    s := string(freeze(o)) catch return "", false
+    return s, true
+}
+
+// 4 桁の群 d（先頭の群なら前の 0 を書かない）
+func putGroup(o mut []byte, d int, first bool) {
+    mut k := 1000
+    mut started := !first
+    while k > 0 {
+        x := (d / k) % 10
+        if started || x != 0 || k == 1 {
+            o = append(o, byte(48 + x))
+            started = true
+        }
+        k = k / 10
+    }
+}
+
+// ---- 送り（Value → Bind の引数・型 oid はサーバが Describe で返した型）
+
+func putBe(o mut []byte, v int, n int) {
+    mut i := n - 1
+    while i >= 0 {
+        o = append(o, byte((v >> (i * 8)) & 0xff))
+        i -= 1
+    }
+}
+
+// 引数のバイト列は写しで持つ（Value の元の region に縛らない）
+func binArg(o []byte) internal.pgwire.Arg {
+    return internal.pgwire.Arg{null: false, bin: true, b: catB([]byte{}, o)}
+}
+
+func textArg(s string) internal.pgwire.Arg {
+    return internal.pgwire.Arg{null: false, bin: false, b: catB([]byte{}, bytes(s))}
+}
+
+// x を型 oid の引数に（合わなければ ok = false — BadArg）
+func encode(oid int, x Value) (internal.pgwire.Arg, bool) {
+    switch x {
+    case Null{}: return internal.pgwire.Arg{null: true, bin: false, b: []byte{}}, true
+    case Bool{v}: return binArg(boolByte(v)), oid == oidBool
+    case Int{v}: return encInt(oid, v)
+    case Float{v}: return encFloat(oid, v)
+    case String{v}: return textArg(v), textOid(oid) || !binaryOid(oid)
+    case Bytes{v}: return binArg(v), oid == oidBytea
+    case Json{v}: return encJson(oid, v)
+    case Uuid{v}: return binArg(catB(beBytes(v.hi, 8), beBytes(v.lo, 8))), oid == oidUuid
+    case Time{v}: return binArg(beBytes((time.UnixSec(v) - pgEpoch) * 1000000 + time.Nano(v) / 1000, 8)), oid == oidTimestamptz
+    case Civil{v}: return encCivil(oid, v)
+    case Numeric{digits}: return textArg(digits), oid == oidNumeric
+    case Unknown{text}: return textArg(text), true
+    }
+    return internal.pgwire.Arg{null: true, bin: false, b: []byte{}}, false
+}
+
+func encInt(oid int, v int) (internal.pgwire.Arg, bool) {
+    if oid == oidInt8 || oid == oidInt4 || oid == oidInt2 {
+        w := if oid == oidInt2 { 2 } else if oid == oidInt4 { 4 } else { 8 }
+        fits := w == 8 || (v < (1 << (w * 8 - 1)) && v >= -(1 << (w * 8 - 1)))
+        return binArg(beBytes(v, w)), fits
+    }
+    return textArg("${v}"), oid == oidNumeric || oid == oidFloat4 || oid == oidFloat8
+}
+
+func encFloat(oid int, v float) (internal.pgwire.Arg, bool) {
+    if oid == oidFloat4 {
+        return textArg("${v}"), true
+    }
+    return binArg(beBytes(math.Bits(v), 8)), oid == oidFloat8
+}
+
+func encJson(oid int, v []byte) (internal.pgwire.Arg, bool) {
+    if oid == oidJsonb {
+        return binArg(catB([]byte{1}, v)), true
+    }
+    return binArg(v), oid == oidJson
+}
+
+func encCivil(oid int, v time.Civil) (internal.pgwire.Arg, bool) {
+    t := time.FromCivil(v, 0)
+    if oid == oidDate {
+        whole := v.hour == 0 && v.minute == 0 && v.second == 0 && v.nsec == 0
+        return binArg(beBytes(floorDiv(time.UnixSec(t) - pgEpoch, 86400), 4)), whole
+    }
+    return binArg(beBytes((time.UnixSec(t) - pgEpoch) * 1000000 + time.Nano(t) / 1000, 8)), oid == oidTimestamp
+}
+
+func beBytes(v int, n int) []byte {
+    mut o := mut []byte{}
+    putBe(mut o, v, n)
+    return freeze(o)
+}
+
+func catB(a []byte, b []byte) []byte {
+    mut o := mut []byte{}
+    for c <- a {
+        o = append(o, c)
+    }
+    for c <- b {
+        o = append(o, c)
+    }
+    return freeze(o)
+}
+
+func boolByte(v bool) []byte {
+    if v {
+        return []byte{1}
+    }
+    return []byte{0}
+}

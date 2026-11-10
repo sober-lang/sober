@@ -1,0 +1,409 @@
+package pgwire
+
+// wire の符号化と復号を、実の PostgreSQL 17 / 18 と往復した記録（testdata/pg/trace-<版>.hex — scripts/pgcap.ts が独立の符号化で取る）で照合する:
+// 送ったバイト列 ≡ ここの符号化器の出力・受けたバイト列は全部切り出せて全部読める・切れ目がどこでも同じ並びに切れる・中身の要点
+
+import "std/hex"
+import "std/strings"
+
+@embed("testdata/pg/trace-*.hex")
+const testTraces = map[string]string{}
+
+const testVersions = "17 18"
+
+// 記録の場面 name の送り（C）か受け（S）の行
+func testLine(ver string, name string, kind string) []byte {
+    text := testTraces["testdata/pg/trace-${ver}.hex"]
+    assert(text != nil, "trace ${ver}")
+    mut inScene := false
+    for line <- strings.Split(orStr(text), "\n") {
+        if strings.HasPrefix(line, "# ") {
+            inScene = line == "# ${name}"
+        } else if inScene && strings.HasPrefix(line, "${kind} ") {
+            b, e := hex.Parse(strings.TrimPrefix(line, "${kind} "))
+            assert(e == nil, "hex ${ver} ${name}")
+            return b
+        }
+    }
+    assert(false, "no ${kind} line for ${ver} ${name}")
+    return []byte{}
+}
+
+func testScenes(ver string) []string {
+    text := orStr(testTraces["testdata/pg/trace-${ver}.hex"])
+    mut out := mut []string{}
+    for line <- strings.Split(text, "\n") {
+        if strings.HasPrefix(line, "# ") {
+            out = append(out, strings.TrimPrefix(line, "# "))
+        }
+    }
+    return freeze(out)
+}
+
+// s を全部メッセージに切って読む（切れない・読めないなら assert で落ちる）
+func testMsgs(s []byte, what string) []Msg {
+    mut out := mut []Msg{}
+    mut at := 0
+    while at < len(s) {
+        n := FrameLen(s, at, 1 << 30)
+        assert(n > 0, "frame ${what} at ${at}")
+        m, e := Decode(s[at], s[at + 5:at + n])
+        assert(e == nil, "Decode ${what} tag ${int(s[at])}")
+        out = append(out, m)
+        at += n
+    }
+    return freeze(out)
+}
+
+func testI8(v int) []byte {
+    mut b := mut []byte{}
+    put32(mut b, v >> 32)
+    put32(mut b, v & 4294967295)
+    return freeze(b)
+}
+
+func testI4(v int) []byte {
+    mut b := mut []byte{}
+    put32(mut b, v)
+    return freeze(b)
+}
+
+func cat3(a []byte, b []byte, c []byte) []byte {
+    return cat(cat(a, b), c)
+}
+
+func bin(b []byte) Arg {
+    return Arg{null: false, bin: true, b: b}
+}
+
+// 場面ごとの送り（pgcap.ts の台本の写し — 独立の符号化と一致すること）
+func testWant(name string, user string) []byte {
+    noArgs := []Arg{}
+    return if name == "startup" {
+        EncStartup(user, "postgres")
+    } else if name == "types" {
+        sql := "select \$1::int8 + 1 as n, \$2::text as s, null::int4 as z, 1.5::numeric as d, '\\x78'::bytea as b, true as t, " +
+            "2.5::float8 as f, '2026-11-08 12:34:56.789+00'::timestamptz as ts, '11111111-2222-3333-4444-555555555555'::uuid as u, " +
+            "'-12345.678900'::numeric as d2, 0::numeric as d0, 'NaN'::numeric as dn"
+        cat(cat3(EncParse("", sql, []int{20, 25}), EncDescribe('S', ""), EncBind("", "", []Arg{bin(testI8(41)), bin(bytes("héllo"))}, []int{1})),
+            cat(EncExecute("", 0), EncSync()))
+    } else if name == "named-prepare" {
+        cat3(EncParse("s1", "select generate_series(1, \$1::int4) as i", []int{23}), EncDescribe('S', "s1"), EncSync())
+    } else if name == "named-execute" {
+        cat3(EncBind("", "s1", []Arg{bin(testI4(3))}, []int{1}), EncExecute("", 0), EncSync())
+    } else if name == "null-param" {
+        cat(cat(EncParse("", "select \$1::text is null as isnull", []int{25}), EncBind("", "", []Arg{Arg{null: true, bin: true, b: []byte{}}}, []int{1})),
+            cat(EncExecute("", 0), EncSync()))
+    } else if name == "exec-error" {
+        cat(cat(EncParse("", "select 1 / \$1::int4", []int{23}), EncBind("", "", []Arg{bin(testI4(0))}, []int{1})), cat(EncExecute("", 0), EncSync()))
+    } else if name == "parse-error" {
+        cat(EncParse("", "selec 1", []int{}), EncSync())
+    } else if name == "no-data" {
+        cat(cat3(EncParse("", "create temp table t (x int primary key)", []int{}), EncDescribe('S', ""), EncBind("", "", noArgs, []int{})),
+            cat(EncExecute("", 0), EncSync()))
+    } else if name == "insert" {
+        cat(cat(EncParse("", "insert into t values (\$1::int4), (\$1::int4 + 1)", []int{23}), EncBind("", "", []Arg{bin(testI4(7))}, []int{})),
+            cat(EncExecute("", 0), EncSync()))
+    } else if name == "unique-violation" {
+        cat(cat(EncParse("", "insert into t values (\$1::int4)", []int{23}), EncBind("", "", []Arg{bin(testI4(7))}, []int{})), cat(EncExecute("", 0), EncSync()))
+    } else if name == "tx" {
+        EncQuery("begin; insert into t values (100); savepoint a; rollback to savepoint a; commit")
+    } else if name == "tx-failed" {
+        cat3(EncQuery("begin"), cat(cat(EncParse("", "select 1 / 0", []int{}), EncBind("", "", noArgs, []int{})), cat(EncExecute("", 0), EncSync())),
+            EncQuery("rollback"))
+    } else if name == "empty-query" {
+        cat(cat(EncParse("", "", []int{}), EncBind("", "", noArgs, []int{})), cat(EncExecute("", 0), EncSync()))
+    } else if name == "async" {
+        EncQuery("set application_name = 'pgcap'; do \$\$ begin raise notice 'n1'; end \$\$; listen ch; notify ch, 'hi'")
+    } else if name == "close" {
+        cat(EncClose('S', "s1"), EncSync())
+    } else if name == "terminate" {
+        EncTerminate()
+    } else {
+        []byte{}
+    }
+}
+
+func TestEncodeMatchesCapture() {
+    for ver <- strings.Split(testVersions, " ") {
+        scenes := testScenes(ver)
+        assert(len(scenes) == 16, "scenes ${ver}")
+        for name <- scenes {
+            assert(hex.Format(testWant(name, "trustuser")) == hex.Format(testLine(ver, name, "C")), "encode ${ver} ${name}")
+        }
+    }
+    assert(hex.Format(EncSslRequest()) == "0000000804d2162f")
+}
+
+// 送りの側も FrameLen / Decode の外形で読める（tag と長さの欄の形が同じ — StartupMessage は tag なしなので除く）
+func TestEncodeFrames() {
+    for name <- testScenes("17") {
+        if name != "startup" {
+            c := testWant(name, "trustuser")
+            mut at := 0
+            while at < len(c) {
+                n := FrameLen(c, at, 1 << 30)
+                assert(n > 0, "frontend frame ${name}")
+                at += n
+            }
+            assert(at == len(c))
+        }
+    }
+}
+
+func TestDecodeAll() {
+    for ver <- strings.Split(testVersions, " ") {
+        for name <- testScenes(ver) {
+            ms := testMsgs(testLine(ver, name, "S"), "${ver} ${name}")
+            if name != "terminate" {
+                assert(len(ms) > 0, "nonempty ${ver} ${name}")
+                last := switch ms[len(ms) - 1] {
+                case Ready{status}: true
+                default: false
+                }
+                assert(last, "ends with Ready ${ver} ${name}")
+            } else {
+                assert(len(ms) == 0, "terminate gets nothing")
+            }
+        }
+    }
+}
+
+// 切れ目がどこでも、揃った分だけが同じ並びで切り出される
+func TestSplitAnywhere() {
+    names := []string{"startup", "types", "async"}
+    for name <- names {
+        s := testLine("18", name, "S")
+        whole := len(testMsgs(s, name))
+        mut p := 0
+        while p <= len(s) {
+            pre := s[0:p]
+            mut at := 0
+            mut cnt := 0
+            mut more := true
+            while more {
+                n := FrameLen(pre, at, 1 << 30)
+                assert(n >= 0, "prefix frame")
+                if n == 0 {
+                    more = false
+                } else {
+                    at += n
+                    cnt += 1
+                }
+            }
+            assert(at <= p && cnt <= whole, "prefix ${name} ${p}")
+            assert(p < len(s) || cnt == whole, "whole ${name}")
+            p += 1
+        }
+    }
+}
+
+func testTag(m Msg) string {
+    return switch m {
+    case AuthOk{}: "AuthOk"
+    case AuthSasl{mechs}: "AuthSasl"
+    case AuthSaslContinue{data}: "AuthSaslContinue"
+    case AuthSaslFinal{data}: "AuthSaslFinal"
+    case AuthOther{code}: "AuthOther"
+    case ParamStatus{name, value}: "ParamStatus"
+    case BackendKey{pid, key}: "BackendKey"
+    case Ready{status}: "Ready"
+    case RowDesc{cols}: "RowDesc"
+    case ParamDesc{oids}: "ParamDesc"
+    case DataRow{body}: "DataRow"
+    case CommandComplete{tag}: "CommandComplete"
+    case EmptyQuery{}: "EmptyQuery"
+    case ParseComplete{}: "ParseComplete"
+    case BindComplete{}: "BindComplete"
+    case CloseComplete{}: "CloseComplete"
+    case NoData{}: "NoData"
+    case PortalSuspended{}: "PortalSuspended"
+    case ErrorMsg{fields}: "ErrorMsg"
+    case NoticeMsg{fields}: "NoticeMsg"
+    case Notification{pid, channel, payload}: "Notification"
+    case NegotiateVersion{minor, opts}: "NegotiateVersion"
+    case Unexpected{tag}: "Unexpected"
+    }
+}
+
+func testTags(ms []Msg) string {
+    mut out := mut []string{}
+    for m <- ms {
+        out = append(out, testTag(m))
+    }
+    return strings.Join(freeze(out), " ")
+}
+
+// 往復の外の知らせを Absorb に食わせた残り
+func testAbsorbed(s0 Sess, ms []Msg) (Sess, []Msg) {
+    mut s := s0
+    mut out := mut []Msg{}
+    for m <- ms {
+        if !Absorb(mut s, m) {
+            out = append(out, m)
+        }
+    }
+    return s, freeze(out)
+}
+
+func testErrCode(ms []Msg) string {
+    for m <- ms {
+        c := switch m {
+        case ErrorMsg{fields}: FieldOf(fields, 'C')
+        default: ""
+        }
+        if c != "" {
+            return c
+        }
+    }
+    return ""
+}
+
+func testErrField(ms []Msg, code byte) string {
+    for m <- ms {
+        c := switch m {
+        case ErrorMsg{fields}: FieldOf(fields, code)
+        default: ""
+        }
+        if c != "" {
+            return c
+        }
+    }
+    return ""
+}
+
+func testReady(ms []Msg) string {
+    mut out := mut []byte{}
+    for m <- ms {
+        switch m {
+        case Ready{status}: out = append(out, status)
+        default: {}
+        }
+    }
+    return string(freeze(out)) catch "?"
+}
+
+func testRow(ms []Msg) []byte {
+    for m <- ms {
+        b := switch m {
+        case DataRow{body}: body
+        default: []byte{}
+        }
+        if len(b) > 0 {
+            return b
+        }
+    }
+    return []byte{}
+}
+
+func testCols(ms []Msg) []Col {
+    for m <- ms {
+        cs := switch m {
+        case RowDesc{cols}: cols
+        default: []Col{}
+        }
+        if len(cs) > 0 {
+            return cs
+        }
+    }
+    return []Col{}
+}
+
+func TestContent() {
+    for ver <- strings.Split(testVersions, " ") {
+        s, st := testAbsorbed(NewSess(), testMsgs(testLine(ver, "startup", "S"), "startup"))
+        assert(testTags(st) == "AuthOk Ready", "startup ${ver}: ${testTags(st)}")
+        assert(s.tx == 'I' && s.pid > 0 && len(s.key) == 4, "backend key ${ver}")
+        sv := orStr(Param(s, "server_version"))
+        assert(strings.HasPrefix(sv, "${ver}."), "server_version ${ver}")
+        assert(orStr(Param(s, "client_encoding")) == "UTF8")
+        assert(Param(s, "no_such_param") == nil)
+
+        ty := testMsgs(testLine(ver, "types", "S"), "types")
+        assert(testTags(ty) == "ParseComplete ParamDesc RowDesc BindComplete DataRow CommandComplete Ready", "types ${ver}: ${testTags(ty)}")
+        cs := testCols(ty)
+        mut oids := mut []string{}
+        for c <- cs {
+            oids = append(oids, "${c.oid}")
+        }
+        assert(strings.Join(freeze(oids), ",") == "20,25,23,1700,17,16,701,1184,2950,1700,1700,1700", "oids ${ver}")
+        assert(cs[0].name == "n" && cs[11].name == "dn" && cs[0].fmt == 0, "col names ${ver}")
+        row := testRow(ty)
+        assert(RowLen(row) == 12)
+        assert(hex.Format(orBytes(RowCol(row, 0))) == "000000000000002a", "int8 ${ver}")
+        assert((string(orBytes(RowCol(row, 1))) catch "") == "héllo", "text ${ver}")
+        assert(RowCol(row, 2) == nil, "null ${ver}")
+        assert(hex.Format(orBytes(RowCol(row, 3))) == "000200000000000100011388", "numeric 1.5 ${ver}")
+        assert(hex.Format(orBytes(RowCol(row, 4))) == "78" && hex.Format(orBytes(RowCol(row, 5))) == "01", "bytea bool ${ver}")
+        assert(RowCol(row, 12) == nil, "past the end")
+
+        assert(testTags(testMsgs(testLine(ver, "named-execute", "S"), "ne")) == "BindComplete DataRow DataRow DataRow CommandComplete Ready")
+        assert(testErrCode(testMsgs(testLine(ver, "exec-error", "S"), "ee")) == "22012", "div by zero ${ver}")
+        assert(testErrCode(testMsgs(testLine(ver, "parse-error", "S"), "pe")) == "42601", "syntax ${ver}")
+        uv := testMsgs(testLine(ver, "unique-violation", "S"), "uv")
+        assert(testErrCode(uv) == "23505" && testErrField(uv, 'n') == "t_pkey", "unique ${ver}")
+        assert(testTags(testMsgs(testLine(ver, "no-data", "S"), "nd")) == "ParseComplete ParamDesc NoData BindComplete CommandComplete Ready")
+        assert(testReady(testMsgs(testLine(ver, "tx-failed", "S"), "tf")) == "TEI", "tx statuses ${ver}")
+        assert(testTags(testMsgs(testLine(ver, "empty-query", "S"), "eq")) == "ParseComplete BindComplete EmptyQuery Ready")
+        assert(testTags(testMsgs(testLine(ver, "close", "S"), "cl")) == "CloseComplete Ready")
+
+        sa, rest := testAbsorbed(NewSess(), testMsgs(testLine(ver, "async", "S"), "async"))
+        assert(sa.notices == 1 && sa.notifies == 1, "async counts ${ver}")
+        assert(orStr(Param(sa, "application_name")) == "pgcap", "param update ${ver}")
+        assert(testTags(rest) == "CommandComplete CommandComplete CommandComplete CommandComplete Ready", "async rest ${ver}: ${testTags(rest)}")
+    }
+}
+
+func testDecodeBad(tag byte, body []byte) bool {
+    _, e := Decode(tag, body)
+    return e != nil
+}
+
+func TestMalformed() {
+    assert(FrameLen([]byte{'Z', 0, 0, 0, 3, 'I'}, 0, 100) == -1, "length < 4")
+    assert(FrameLen([]byte{'D', 0, 0, 1, 0}, 0, 100) == -1, "length > max")
+    assert(FrameLen([]byte{'Z', 0, 0, 0, 5}, 0, 100) == 0, "incomplete")
+    assert(FrameLen([]byte{'Z', 0, 0, 0}, 0, 100) == 0, "short head")
+    assert(testDecodeBad('Z', []byte{'X'}), "bad tx status")
+    assert(testDecodeBad('Z', []byte{'I', 'I'}), "trailing bytes")
+    assert(testDecodeBad('Z', []byte{}), "empty ready")
+    assert(testDecodeBad('1', []byte{0}), "ParseComplete with body")
+    assert(testDecodeBad('T', []byte{0, 1}), "rowdesc truncated")
+    assert(testDecodeBad('T', []byte{255, 255}), "rowdesc negative count")
+    assert(testDecodeBad('T', []byte{0, 1, 'a', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 25, 255, 255, 255, 255, 255, 255, 0, 2}), "bad format code")
+    assert(testDecodeBad('D', []byte{0, 1, 0, 0, 0, 5, 'a'}), "column longer than body")
+    assert(testDecodeBad('D', []byte{0, 1, 255, 255, 255, 254}), "column length -2")
+    assert(testDecodeBad('D', []byte{0, 2, 255, 255, 255, 255}), "missing column")
+    assert(!testDecodeBad('D', []byte{0, 2, 255, 255, 255, 255, 0, 0, 0, 0}), "null and empty")
+    assert(testDecodeBad('R', []byte{0, 0, 0, 10, 'S', 'C'}), "sasl list without NUL")
+    assert(testDecodeBad('R', []byte{0, 0, 0}), "auth code truncated")
+    assert(testDecodeBad('E', []byte{'C', '2', '2'}), "field without NUL")
+    assert(testDecodeBad('E', []byte{'C', '2', 0}), "fields without terminator")
+    assert(testDecodeBad('S', []byte{'a', 0, 255, 0}), "invalid UTF-8")
+    assert(testDecodeBad('t', []byte{255, 255}), "paramdesc negative count")
+    assert(testDecodeBad('A', []byte{0, 0, 0, 1, 'c', 0}), "notification missing payload")
+    m, e := Decode('W', []byte{1, 2, 3})
+    assert(e == nil && testTag(m) == "Unexpected", "unknown tag is a value")
+    sasl, e2 := Decode('R', []byte{0, 0, 0, 10, 'A', 0, 'B', 'B', 0, 0})
+    assert(e2 == nil)
+    ok := switch sasl {
+    case AuthSasl{mechs}: len(mechs) == 2 && mechs[1] == "BB"
+    default: false
+    }
+    assert(ok, "sasl mechs")
+    md5, e3 := Decode('R', []byte{0, 0, 0, 5, 1, 2, 3, 4})
+    assert(e3 == nil && testTag(md5) == "AuthOther", "md5 is AuthOther")
+}
+
+func TestCstrOk() {
+    assert(CstrOk("abc") && CstrOk(""))
+    assert(!CstrOk(string([]byte{97, 0, 98}) catch ""))
+}
+
+func orStr(s string?) string {
+    return if s != nil { s } else { "" }
+}
+
+func orBytes(b ([]byte)?) []byte {
+    return if b != nil { b } else { []byte{} }
+}

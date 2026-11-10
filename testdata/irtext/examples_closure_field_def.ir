@@ -1751,11 +1751,11 @@ b0:
   %1 = region.depth
   region.enter
   %2 = funcaddr @lambda#0
-  %3 = slotaddr s0
-  %4 = const 0
-  store %3[0], %4
-  store %3[0], %2
-  %5 = load.i64 %3[0]
+  %3 = const 0
+  %4 = slotaddr s0
+  store %4[0], %3
+  store %4[0], %2
+  %5 = load.i64 %4[0]
   store %0[0], %5
   region.setdepth %1
   ret
@@ -1814,11 +1814,11 @@ b0:
   %6 = const 10
   call @rt.print_char(%6)
   %7 = funcaddr @main.gt
-  %8 = slotaddr s1
-  %9 = const 0
-  store %8[0], %9
-  store %8[0], %7
-  %10 = load.i64 %8[0]
+  %8 = const 0
+  %9 = slotaddr s1
+  store %9[0], %8
+  store %9[0], %7
+  %10 = load.i64 %9[0]
   %11 = const 3
   %12 = const 5
   %13 = call @main.pick(%10, %11, %12)

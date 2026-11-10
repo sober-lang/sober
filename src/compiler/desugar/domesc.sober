@@ -1,0 +1,613 @@
+package desugar
+
+// domain の値がそれを作った scope より長く生きる場所へ流れる形の名指し（diag.Par kind 39 — コアの region の上界: domain は家の region より外へ出ない）。
+// コアの検査（Lean）も同じ形を拒否するが build は通らないので、ここで check と build の両方に鳴らす。
+// 深さ = 関数の本体を 0 として、task.Run の本体と scope を作る関数へ渡したラムダの本体で 1 つ深くなる。値の家 = それが運ぶ domain を作った scope の深さ
+// （仮引数から来たものは 0）。拒否するのは ① 局所の束縛を根とする場所へ、根の束縛より深い家の値を書く ② mut 仮引数を根とする場所へ domain を運ぶ値を書く
+// （呼び手の region が分からない — 家を問わない）③ Spawn の g が札の scope より深い家の値を捕獲する、の 3 つ
+
+import "ast"
+import "std/iter"
+import "std/table"
+
+const DE_NONE = -1
+// 束縛の印: task.Run の札（深さ = その scope の深さ）・mut 仮引数（深さの欄）
+const DE_SCOPE = -5
+const DE_MUTP = -1
+// 束縛の環境の 1 項 = [名前, 深さ, 家]・ヒープの頭 3 語 = [領域の始め, 容量, 先端]
+const DE_W = 3
+const DE_CAP0 = 1024
+
+// 関数 fi の本体の domain の脱出（hd = deEnvNew の頭）
+func deCheckFn(st mut S, fi int, hd int) PcHit {
+    hset(mut st, hd + 2, 0)
+    ps := fnParams(mut st, fi)
+    for i <- iter.Range(0, lenL(mut st, ps)) {
+        p := nodeOf(mut st, latN(mut st, ps, i))
+        dePush(mut st, hd, int(sA(p)), if ast.ParamIsMut(p) { DE_MUTP } else { 0 }, 0)
+    }
+    return deWalk(mut st, hd, fnBody(mut st, fi), 0, DE_NONE)
+}
+
+func deEnvNew(st mut S) int {
+    hd := hlen(mut st)
+    hpush(mut st, hd + 3)
+    hpush(mut st, DE_CAP0)
+    hpush(mut st, 0)
+    for i <- iter.Range(0, DE_CAP0 * DE_W) {
+        hpush(mut st, 0)
+    }
+    return hd
+}
+
+func dePush(st mut S, hd int, name int, depth int, home int) {
+    mut eb := hget(mut st, hd)
+    cap := hget(mut st, hd + 1)
+    tp := hget(mut st, hd + 2)
+    if tp == cap {
+        // 容量を倍にした領域をヒープの末尾に取り直す（項は添字でしか指さないので写してよい）
+        nb := hlen(mut st)
+        for i <- iter.Range(0, cap * 2 * DE_W) {
+            hpush(mut st, if i < cap * DE_W { hget(mut st, eb + i) } else { 0 })
+        }
+        hset(mut st, hd, nb)
+        hset(mut st, hd + 1, cap * 2)
+        eb = nb
+    }
+    at := eb + tp * DE_W
+    hset(mut st, at, name)
+    hset(mut st, at + 1, depth)
+    hset(mut st, at + 2, home)
+    hset(mut st, hd + 2, tp + 1)
+}
+
+// 名前 name（dotted = 経路の根で見る）の最も新しい束縛の項のヒープの添字（無ければ -1）
+func deFind(st mut S, hd int, name StrRef, dotted bool) int {
+    eb := hget(mut st, hd)
+    mut i := hget(mut st, hd + 2) - 1
+    while i >= 0 {
+        at := eb + i * DE_W
+        if pcNameIs(mut st, StrRef(hget(mut st, at)), name, dotted) {
+            return at
+        }
+        i -= 1
+    }
+    return -1
+}
+
+// 式 n の値が domain を運ぶならその家（運ばなければ DE_NONE）
+func deDomHome(st mut S, hd int, n NodeRef) int {
+    return if deHasDom(mut st, YTypeOf(mut st, n), 8) { deHome(mut st, hd, n) } else { DE_NONE }
+}
+
+// 式 n が参照する domain の家の最も深いもの（ラムダの中は見ない）
+func deHome(st mut S, hd int, n NodeRef) int {
+    if n == -1 {
+        return DE_NONE
+    }
+    x := nodeOf(mut st, n)
+    if x.kind == ast.EIdent || x.kind == ast.EMutArg {
+        e := deFind(mut st, hd, sA(x), x.kind == ast.EMutArg)
+        if e < 0 {
+            return DE_NONE
+        }
+        h := hget(mut st, e + 2)
+        return if h == DE_SCOPE { DE_NONE } else { h }
+    }
+    if x.kind == ast.ELambda {
+        return DE_NONE
+    }
+    if x.kind == ast.ECall {
+        fk := findFn(mut st, if kindN(mut st, nA(x)) == ast.EIndex { nA(nodeOf(mut st, nA(x))) } else { nA(x) }, -1)
+        if fk >= 0 && ParKey(mut st, fk) == PAR_DNEW && lenL(mut st, lB(x)) >= 1 {
+            return deScopeDepth(mut st, hd, latN(mut st, lB(x), 0))
+        }
+    }
+    mut best := DE_NONE
+    c := pcDesc(mut st, x)
+    for j <- iter.Range(0, 6) {
+        k := c / pow8(j) % 8
+        v := pcField(x, j)
+        if k == 1 && v != -1 {
+            h := deHome(mut st, hd, NodeRef(v))
+            if h > best {
+                best = h
+            }
+        } else if k == 3 && v != -1 {
+            l := ListRef(v)
+            for i <- iter.Range(0, lenL(mut st, l)) {
+                h := deHome(mut st, hd, latN(mut st, l, i))
+                if h > best {
+                    best = h
+                }
+            }
+        }
+    }
+    return best
+}
+
+// 札の式 s（名前）の scope の深さ（分からなければ 0 — 仮引数の札は無い〔札は関数の境界を越えない〕）
+func deScopeDepth(st mut S, hd int, s NodeRef) int {
+    if kindN(mut st, s) != ast.EIdent {
+        return 0
+    }
+    e := deFind(mut st, hd, sA(nodeOf(mut st, s)), false)
+    return if e >= 0 && hget(mut st, e + 2) == DE_SCOPE { hget(mut st, e + 1) } else { 0 }
+}
+
+// 場所の式 t の根の名前の節（無ければ -1）
+func deRoot(st mut S, t NodeRef) NodeRef {
+    x := nodeOf(mut st, t)
+    if x.kind == ast.EIdent {
+        return t
+    }
+    if x.kind == ast.ESelector || x.kind == ast.EIndex || x.kind == ast.EParen {
+        return deRoot(mut st, nA(x))
+    }
+    return -1
+}
+
+// 根の項 e の場所へ家 h の値を書けるか（書けなければ true）
+func deBad(st mut S, e int, h int) bool {
+    if e < 0 || h == DE_NONE {
+        return false
+    }
+    dep := hget(mut st, e + 1)
+    return dep == DE_MUTP || (dep >= 0 && hget(mut st, e + 2) != DE_SCOPE && h > dep)
+}
+
+// 木 n を深さ d で歩く（ph = パターンが束ねる名前の家 — switch の主語の家）
+func deWalk(st mut S, hd int, n NodeRef, d int, ph int) PcHit {
+    if n == -1 {
+        return pcNone()
+    }
+    x := nodeOf(mut st, n)
+    k := x.kind
+    if k == ast.SBind {
+        vs := lC(x)
+        for i <- iter.Range(0, lenL(mut st, vs)) {
+            h := deWalk(mut st, hd, latN(mut st, vs, i), d, ph)
+            if h.kind != 0 {
+                return h
+            }
+        }
+        names := lA(x)
+        same := lenL(mut st, vs) == lenL(mut st, names)
+        h0 := if !same && lenL(mut st, vs) >= 1 { deDomHome(mut st, hd, latN(mut st, vs, 0)) } else { DE_NONE }
+        for i <- iter.Range(0, lenL(mut st, names)) {
+            dePush(mut st, hd, int(latS(mut st, names, i)), d, if same { deDomHome(mut st, hd, latN(mut st, vs, i)) } else { h0 })
+        }
+        return pcNone()
+    }
+    if k == ast.KGen {
+        h := deWalk(mut st, hd, nB(x), d, ph)
+        if h.kind != 0 {
+            return h
+        }
+        sh := deDomHome(mut st, hd, nB(x))
+        names := lA(x)
+        for i <- iter.Range(0, lenL(mut st, names)) {
+            dePush(mut st, hd, int(latS(mut st, names, i)), d, sh)
+        }
+        gs := lC(x)
+        for i <- iter.Range(0, lenL(mut st, gs)) {
+            h2 := deWalk(mut st, hd, latN(mut st, gs, i), d, ph)
+            if h2.kind != 0 {
+                return h2
+            }
+        }
+        return pcNone()
+    }
+    if k == ast.SAssign {
+        ts := lA(x)
+        vs := lC(x)
+        for i <- iter.Range(0, lenL(mut st, vs)) {
+            h := deWalk(mut st, hd, latN(mut st, vs, i), d, ph)
+            if h.kind != 0 {
+                return h
+            }
+        }
+        for i <- iter.Range(0, lenL(mut st, ts)) {
+            t := latN(mut st, ts, i)
+            v := if lenL(mut st, vs) == lenL(mut st, ts) { latN(mut st, vs, i) } else { latN(mut st, vs, 0) }
+            if deHasDom(mut st, YTypeOf(mut st, t), 8) || deHasDom(mut st, YTypeOf(mut st, v), 8) {
+                r := deRoot(mut st, t)
+                if r != -1 && deBad(mut st, deFind(mut st, hd, sA(nodeOf(mut st, r)), false), deHome(mut st, hd, v)) {
+                    return PcHit{at: t, kind: 39}
+                }
+            }
+        }
+        return pcNone()
+    }
+    if k == ast.ECall {
+        return deCall(mut st, hd, n, d, ph)
+    }
+    if k == ast.ELambda {
+        // 値の位置のラムダ（局所の束縛など）: 仮引数の家は分からない — 本体を 1 つ深く歩く（外の場所へ書けば拒否）
+        return deLam(mut st, hd, n, d + 1, d + 1, ph)
+    }
+    if k == ast.ESwitch {
+        ss := lA(x)
+        mut sh := DE_NONE
+        for i <- iter.Range(0, lenL(mut st, ss)) {
+            h := deWalk(mut st, hd, latN(mut st, ss, i), d, ph)
+            if h.kind != 0 {
+                return h
+            }
+            hh := deDomHome(mut st, hd, latN(mut st, ss, i))
+            if hh > sh {
+                sh = hh
+            }
+        }
+        cs := lB(x)
+        for i <- iter.Range(0, lenL(mut st, cs)) {
+            h := deWalk(mut st, hd, latN(mut st, cs, i), d, sh)
+            if h.kind != 0 {
+                return h
+            }
+        }
+        return deWalk(mut st, hd, nC(x), d, sh)
+    }
+    if (k == ast.KPType && x.a != -1) || (k == ast.KFieldPat && x.b == -1 && x.a != -1) {
+        dePush(mut st, hd, int(sA(x)), d, ph)
+    }
+    return deKids(mut st, hd, x, d, ph)
+}
+
+func deKids(st mut S, hd int, x ast.Node, d int, ph int) PcHit {
+    c := pcDesc(mut st, x)
+    for j <- iter.Range(0, 6) {
+        k := c / pow8(j) % 8
+        v := pcField(x, j)
+        if k == 1 && v != -1 {
+            h := deWalk(mut st, hd, NodeRef(v), d, ph)
+            if h.kind != 0 {
+                return h
+            }
+        } else if k == 3 && v != -1 {
+            l := ListRef(v)
+            for i <- iter.Range(0, lenL(mut st, l)) {
+                h := deWalk(mut st, hd, latN(mut st, l, i), d, ph)
+                if h.kind != 0 {
+                    return h
+                }
+            }
+        }
+    }
+    return pcNone()
+}
+
+// ラムダ lam の仮引数を家 hp で束ね、本体を深さ bd で歩く
+func deLam(st mut S, hd int, lam NodeRef, bd int, hp int, ph int) PcHit {
+    x := nodeOf(mut st, lam)
+    ps := lA(x)
+    for i <- iter.Range(0, lenL(mut st, ps)) {
+        p := nodeOf(mut st, latN(mut st, ps, i))
+        if p.a != -1 {
+            dePush(mut st, hd, int(sA(p)), bd, hp)
+        }
+    }
+    return deWalk(mut st, hd, nB(x), bd, ph)
+}
+
+func deCall(st mut S, hd int, n NodeRef, d int, ph int) PcHit {
+    x := nodeOf(mut st, n)
+    cal := if kindN(mut st, nA(x)) == ast.EIndex { nA(nodeOf(mut st, nA(x))) } else { nA(x) }
+    fk := findFn(mut st, cal, -1)
+    key := if fk >= 0 { ParKey(mut st, fk) } else { 0 }
+    args := lB(x)
+    na := lenL(mut st, args)
+    if key == PAR_SCOPE {
+        // task.Run((s) => 本体, …): 札 s の scope の深さ = d + 1
+        for i <- iter.Range(1, na) {
+            h := deWalk(mut st, hd, latN(mut st, args, i), d, ph)
+            if h.kind != 0 {
+                return h
+            }
+        }
+        lam := if na >= 1 { latN(mut st, args, 0) } else { NodeRef(-1) }
+        if lam == -1 || kindN(mut st, lam) != ast.ELambda {
+            return deKids(mut st, hd, x, d, ph)
+        }
+        ps := lA(nodeOf(mut st, lam))
+        for i <- iter.Range(0, lenL(mut st, ps)) {
+            p := nodeOf(mut st, latN(mut st, ps, i))
+            if p.a != -1 {
+                dePush(mut st, hd, int(sA(p)), d + 1, DE_SCOPE)
+            }
+        }
+        return deWalk(mut st, hd, nB(nodeOf(mut st, lam)), d + 1, ph)
+    }
+    if (key == PAR_SPAWN || key == PAR_SPAWNIN || key == PAR_SPAWNGIVE) && na >= 2 {
+        lam := latN(mut st, args, na - 2)
+        if kindN(mut st, lam) == ast.ELambda {
+            ds := deScopeDepth(mut st, hd, latN(mut st, args, 0))
+            fr := LamFree(mut st, lam)
+            for i <- iter.Range(0, lenL(mut st, fr)) {
+                e := deFind(mut st, hd, latS(mut st, fr, i), false)
+                if e >= 0 && hget(mut st, e + 2) != DE_SCOPE && hget(mut st, e + 2) > ds {
+                    return PcHit{at: lam, kind: 39}
+                }
+            }
+            for i <- iter.Range(0, na) {
+                a := latN(mut st, args, i)
+                h := if a == lam { deLam(mut st, hd, lam, d + 1, DE_NONE, ph) } else { deWalk(mut st, hd, a, d, ph) }
+                if h.kind != 0 {
+                    return h
+                }
+            }
+            return pcNone()
+        }
+    }
+    // 総称の呼び先（本体の型が置換の前で domain を見ない）: mut の実引数の根へ、根より深い家の domain を他の実引数で渡さない
+    if fk >= 0 && key == 0 && DomKey(mut st, fk) == 0 && lenL(mut st, fnTParams(mut st, fk)) > 0 {
+        for i <- iter.Range(0, na) {
+            a := latN(mut st, args, i)
+            if kindN(mut st, a) == ast.EMutArg {
+                e := deFind(mut st, hd, sA(nodeOf(mut st, a)), true)
+                for j <- iter.Range(0, na) {
+                    b := latN(mut st, args, j)
+                    if j != i && kindN(mut st, b) != ast.EMutArg && kindN(mut st, b) != ast.ELambda && deBad(mut st, e, deDomHome(mut st, hd, b)) {
+                        return PcHit{at: b, kind: 39}
+                    }
+                }
+            }
+        }
+    }
+    // 実引数のラムダ（呼び先の本体に展開される）: scope を作る呼び先なら仮引数は呼び先の中の domain でありうる — 本体を 1 つ深く。
+    // そうでなければ仮引数は他の実引数から来る（domain は札なしに作れない）
+    mut hp := DE_NONE
+    sc := fk >= 0 && key == 0 && DomKey(mut st, fk) == 0 && deScopes(mut st, fk)
+    if !sc {
+        for i <- iter.Range(0, na) {
+            a := latN(mut st, args, i)
+            if kindN(mut st, a) != ast.ELambda {
+                h := deDomHome(mut st, hd, a)
+                if h > hp {
+                    hp = h
+                }
+            }
+        }
+    }
+    for i <- iter.Range(0, na) {
+        a := latN(mut st, args, i)
+        h := if kindN(mut st, a) == ast.ELambda { if sc { deLam(mut st, hd, a, d + 1, d + 1, ph) } else { deLam(mut st, hd, a, d, hp, ph) } } else { deWalk(mut st, hd, a, d, ph) }
+        if h.kind != 0 {
+            return h
+        }
+    }
+    return deWalk(mut st, hd, nA(x), d, ph)
+}
+
+// 関数 fk の本体（呼ぶ関数を辿って）が task.Run を呼ぶか（メモ = deMemo の鍵 2^52 + fk: 1 = 呼ぶ・2 = 呼ばない・3 = 調べ中）
+func deScopes(st mut S, fk int) bool {
+    m := deMemoGet(mut st, 4503599627370496 + fk)
+    if m == 1 || m == 3 {
+        return m == 1
+    }
+    if m == 2 {
+        return false
+    }
+    deMemoPut(mut st, 4503599627370496 + fk, 3)
+    if deMemoGet(mut st, 4503599627370496 + fk) != 3 {
+        // メモの表が溢れた（調べ中の印が置けない — 再帰で止まらない）: scope を作るとみなす（拒否の側）
+        return true
+    }
+    // 名前は呼び先の package で引く
+    pk := st.curPkg
+    st.curPkg = fnPkg(mut st, fk)
+    r := deScanScope(mut st, fnBody(mut st, fk))
+    st.curPkg = pk
+    deMemoPut(mut st, 4503599627370496 + fk, if r { 1 } else { 2 })
+    return r
+}
+
+func deScanScope(st mut S, n NodeRef) bool {
+    if n == -1 {
+        return false
+    }
+    x := nodeOf(mut st, n)
+    if x.kind == ast.ECall {
+        cal := if kindN(mut st, nA(x)) == ast.EIndex { nA(nodeOf(mut st, nA(x))) } else { nA(x) }
+        fk := findFn(mut st, cal, -1)
+        if fk >= 0 {
+            key := ParKey(mut st, fk)
+            if key == PAR_SCOPE {
+                return true
+            }
+            if key == 0 && DomKey(mut st, fk) == 0 && fnBody(mut st, fk) != -1 && deScopes(mut st, fk) {
+                return true
+            }
+        }
+    }
+    c := pcDesc(mut st, x)
+    for j <- iter.Range(0, 6) {
+        k := c / pow8(j) % 8
+        v := pcField(x, j)
+        if k == 1 && v != -1 && deScanScope(mut st, NodeRef(v)) {
+            return true
+        } else if k == 3 && v != -1 {
+            l := ListRef(v)
+            for i <- iter.Range(0, lenL(mut st, l)) {
+                if deScanScope(mut st, latN(mut st, l, i)) {
+                    return true
+                }
+            }
+        }
+    }
+    return false
+}
+
+// 表層型 y（欄・`T?`・要素を fuel 段まで）が domain を含むか（構造体は宣言 × 段でメモ — deMemo）
+func deHasDom(st mut S, y int, fuel int) bool {
+    if y < 0 || fuel == 0 {
+        return false
+    }
+    if pcParKind(mut st, y) == 4 {
+        return true
+    }
+    k := yk(mut st, y)
+    if k == YOpt || k == YSlice {
+        return deHasDom(mut st, YAt(mut st, y).a, fuel - 1)
+    }
+    if k == YMap {
+        return deHasDom(mut st, YAt(mut st, y).b, fuel - 1)
+    }
+    if k == YDecl && kindN(mut st, nC(nodeOf(mut st, yNa(YAt(mut st, y))))) == ast.BStruct {
+        dn := int(yNa(YAt(mut st, y)))
+        plain := lenL(mut st, lB(nodeOf(mut st, yNa(YAt(mut st, y))))) == 0
+        if plain {
+            m := deMemoGet(mut st, dn * 16 + fuel)
+            if m >= 0 {
+                return m == 1
+            }
+        }
+        fs := lA(nodeOf(mut st, nC(nodeOf(mut st, yNa(YAt(mut st, y))))))
+        mut hit := false
+        mut i := 0
+        while !hit && i < lenL(mut st, fs) {
+            hit = deHasDom(mut st, yFieldAt(mut st, y, i), fuel - 1)
+            i += 1
+        }
+        if plain {
+            deMemoPut(mut st, dn * 16 + fuel, if hit { 1 } else { 0 })
+        }
+        return hit
+    }
+    return false
+}
+
+// 歩く関数の門（domain の値は仮引数・NewDomain・実引数のラムダの仮引数からしか生まれない — どれも無い関数には当たりが無い）:
+// ParCheck の歩きが NewDomain / domain の口の呼び出しと、仮引数に domain を運ぶラムダの実引数を見たら印を積む
+// （ヒープの鎖 [fi, 前の頭] — 頭は pcMemo の末尾の 2 語目。メモの表と違って溢れで落ちない）
+func deMark(st mut S, fi int) {
+    hd := table.Get(mut st.pcMemo, PC_MEMO * 2 + 1)
+    if deMarked(mut st, fi) {
+        return
+    }
+    nx := hlen(mut st)
+    hpush(mut st, fi)
+    hpush(mut st, hd)
+    table.Set(mut st.pcMemo, PC_MEMO * 2 + 1, nx + 1)
+}
+
+func deMarked(st mut S, fi int) bool {
+    mut c := table.Get(mut st.pcMemo, PC_MEMO * 2 + 1)
+    while c != 0 {
+        if hget(mut st, c - 1) == fi {
+            return true
+        }
+        c = hget(mut st, c)
+    }
+    return false
+}
+
+// 呼び先 fk の関数型の仮引数のどれかが、仮引数に domain を運ぶか（実引数のラムダの仮引数が domain になりうる — deMemo の鍵 2^53 + fk）
+func deFnLamDom(st mut S, fk int) bool {
+    mk := 9007199254740992 + fk
+    m := deMemoGet(mut st, mk)
+    if m >= 0 {
+        return m == 1
+    }
+    mut hit := false
+    ps := fnParams(mut st, fk)
+    for i <- iter.Range(0, lenL(mut st, ps)) {
+        te := nB(nodeOf(mut st, latN(mut st, ps, i)))
+        if !hit && kindN(mut st, te) == ast.TFunc {
+            hit = deLamDom(mut st, yTe(mut st, fnPkg(mut st, fk), fnTParams(mut st, fk), te))
+        }
+    }
+    deMemoPut(mut st, mk, if hit { 1 } else { 0 })
+    return hit
+}
+
+// 関数型 y の仮引数のどれかが domain を運ぶか
+func deLamDom(st mut S, y int) bool {
+    if y < 0 || yk(mut st, y) != YFn {
+        return false
+    }
+    ps := yLa(YAt(mut st, y))
+    for j <- iter.Range(0, lenL(mut st, ps)) {
+        if deHasDom(mut st, latI(mut st, ps, j), 8) {
+            return true
+        }
+    }
+    return false
+}
+
+func deNeeds(st mut S, fi int) bool {
+    if deMarked(mut st, fi) {
+        return true
+    }
+    ps := fnParams(mut st, fi)
+    for i <- iter.Range(0, lenL(mut st, ps)) {
+        if deParamDom(mut st, fi, nB(nodeOf(mut st, latN(mut st, ps, i)))) {
+            return true
+        }
+    }
+    return false
+}
+
+// 仮引数の型式 te が domain を運ぶか。関数型の仮引数は運ばない（展開される閉包 — 呼ぶときに渡すのはこの関数の値）。
+// 名前だけの型式は (package, 名前) でメモする（deMemo の鍵 2^50 + package × 2^26 + 名前 — 自己 check の仮引数の大半は `st mut S` 形）
+func deParamDom(st mut S, fi int, te NodeRef) bool {
+    k := kindN(mut st, te)
+    if k == ast.TFunc {
+        return false
+    }
+    pk := fnPkg(mut st, fi)
+    key := if k == ast.TName && lenL(mut st, fnTParams(mut st, fi)) == 0 { 1125899906842624 + pk * 67108864 + int(sA(nodeOf(mut st, te))) } else { -1 }
+    if key >= 0 {
+        m := deMemoGet(mut st, key)
+        if m >= 0 {
+            return m == 1
+        }
+    }
+    r := deHasDom(mut st, yTe(mut st, pk, fnTParams(mut st, fi), te), 8)
+    if key >= 0 {
+        deMemoPut(mut st, key, if r { 1 } else { 0 })
+    }
+    return r
+}
+
+// domain の検査のメモ（pcMemo の表の後ろの DE_MEMO 枠 — 鍵と値の 2 語。探索は DE_PROBE 歩まで — 溢れたらメモしないだけ）
+const DE_MEMO = 32768
+const DE_PROBE = 32
+
+func deMemoAt(key int) int {
+    return PC_MEMO * 2 + 2 + (((key & 16777215) * 40503 + (key >> 24)) & (DE_MEMO - 1)) * 2
+}
+
+func deMemoGet(st mut S, key int) int {
+    if table.Len(mut st.pcMemo) < PC_MEMO * 2 + 2 + DE_MEMO * 2 {
+        return -1
+    }
+    mut j := deMemoAt(key)
+    for i <- iter.Range(0, DE_PROBE) {
+        kk := table.Get(mut st.pcMemo, j)
+        if kk == 0 {
+            return -1
+        }
+        if kk == key + 1 {
+            return table.Get(mut st.pcMemo, j + 1)
+        }
+        j = PC_MEMO * 2 + 2 + ((j - PC_MEMO * 2 - 2 + 2) & (DE_MEMO * 2 - 1))
+    }
+    return -1
+}
+
+func deMemoPut(st mut S, key int, v int) {
+    if table.Len(mut st.pcMemo) < PC_MEMO * 2 + 2 + DE_MEMO * 2 {
+        return
+    }
+    mut j := deMemoAt(key)
+    for i <- iter.Range(0, DE_PROBE) {
+        kk := table.Get(mut st.pcMemo, j)
+        if kk == 0 || kk == key + 1 {
+            table.Set(mut st.pcMemo, j, key + 1)
+            table.Set(mut st.pcMemo, j + 1, v)
+            return
+        }
+        j = PC_MEMO * 2 + 2 + ((j - PC_MEMO * 2 - 2 + 2) & (DE_MEMO * 2 - 1))
+    }
+}

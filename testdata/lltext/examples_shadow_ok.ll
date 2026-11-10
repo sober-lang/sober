@@ -3159,38 +3159,38 @@ b17:
   %v63 = add i64 %v54, %v62
   %v64 = add i64 %v63, %v44
   %v65 = add i64 0, 1
-  %v66 = getelementptr i64, ptr %s3, i64 0
-  %v67 = add i64 0, 0
-  %st25 = getelementptr i64, ptr %v66, i64 0
-  store i64 %v67, ptr %st25
-  %st26 = getelementptr i64, ptr %v66, i64 1
-  store i64 %v67, ptr %st26
+  %v66 = add i64 0, 0
+  %v67 = getelementptr i64, ptr %s3, i64 0
+  %st25 = getelementptr i64, ptr %v67, i64 0
+  store i64 %v66, ptr %st25
+  %st26 = getelementptr i64, ptr %v67, i64 1
+  store i64 %v66, ptr %st26
   %v68 = add i64 0, 0
-  %st27 = getelementptr i64, ptr %v66, i64 0
+  %st27 = getelementptr i64, ptr %v67, i64 0
   store i64 %v68, ptr %st27
-  %st28 = getelementptr i64, ptr %v66, i64 1
+  %st28 = getelementptr i64, ptr %v67, i64 1
   store i64 %v65, ptr %st28
-  %v69.p = getelementptr i64, ptr %v66, i64 0
+  %v69.p = getelementptr i64, ptr %v67, i64 0
   %v69 = load i64, ptr %v69.p
-  %v70.p = getelementptr i64, ptr %v66, i64 1
+  %v70.p = getelementptr i64, ptr %v67, i64 1
   %v70 = load i64, ptr %v70.p
   %v71 = call i64 @"main.pick"(i64 %v69, i64 %v70)
   %v72 = add i64 %v64, %v71
   %v73 = add i64 0, 2
-  %v74 = getelementptr i64, ptr %s4, i64 0
-  %v75 = add i64 0, 0
-  %st29 = getelementptr i64, ptr %v74, i64 0
-  store i64 %v75, ptr %st29
-  %st30 = getelementptr i64, ptr %v74, i64 1
-  store i64 %v75, ptr %st30
+  %v74 = add i64 0, 0
+  %v75 = getelementptr i64, ptr %s4, i64 0
+  %st29 = getelementptr i64, ptr %v75, i64 0
+  store i64 %v74, ptr %st29
+  %st30 = getelementptr i64, ptr %v75, i64 1
+  store i64 %v74, ptr %st30
   %v76 = add i64 0, 1
-  %st31 = getelementptr i64, ptr %v74, i64 0
+  %st31 = getelementptr i64, ptr %v75, i64 0
   store i64 %v76, ptr %st31
-  %st32 = getelementptr i64, ptr %v74, i64 1
+  %st32 = getelementptr i64, ptr %v75, i64 1
   store i64 %v73, ptr %st32
-  %v77.p = getelementptr i64, ptr %v74, i64 0
+  %v77.p = getelementptr i64, ptr %v75, i64 0
   %v77 = load i64, ptr %v77.p
-  %v78.p = getelementptr i64, ptr %v74, i64 1
+  %v78.p = getelementptr i64, ptr %v75, i64 1
   %v78 = load i64, ptr %v78.p
   %v79 = call i64 @"main.pick"(i64 %v77, i64 %v78)
   %v80 = add i64 %v72, %v79

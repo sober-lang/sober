@@ -1,0 +1,34 @@
+package main
+
+// A domain serializes calls on one state: each child takes a sequence number and adds the bytes it wrote. Which child enters first
+// is a recorded input (the order of the calls), but the printed values (the sum of the numbers and of the bytes) do not depend on it
+
+import "std/task"
+
+type Log struct {
+    seq int
+    bytes int
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, Log{seq: 0, bytes: 0})
+        h1 := task.Spawn(s, () => task.Update(d, (st mut Log) => {
+            st.seq += 1
+            st.bytes += 10
+            st.seq
+        }))
+        h2 := task.Spawn(s, () => task.Update(d, (st mut Log) => {
+            st.seq += 1
+            st.bytes += 32
+            st.seq
+        }))
+        t := task.Join(h1) + task.Join(h2)
+        t * 100 + task.Read(d, (st Log) => st.bytes)
+    })
+    if e != nil {
+        println("died")
+        return
+    }
+    println(r)
+}

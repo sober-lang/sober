@@ -93,7 +93,7 @@ func main() int {
 ### ミニマル
 
 - 依存ゼロの単バイナリ。コンパイラは libc にも LLVM にも依らない静的な ELF 1 つで、出力の実行ファイルも同じく静的な ELF です。
-- コンパイラは約 14 万行（開発道具の `src/compiler/tools/` を除く）。標準ライブラリは別に約 30,000 行です（テストを除くソース・コメントと空行を含む行数）。
+- コンパイラは約 14 万行（開発道具の `src/compiler/tools/` を除く）。標準ライブラリは別に約 34,000 行です（テストを除くソース・コメントと空行を含む行数）。
 - Zig とソースだけで完全ブートストラップ。凍結した Zig 製の stage1 から、`bootstrap/` のソースのスナップショットを順にビルドして今のコンパイラに至ります（[鎖の全行](bootstrap/chain.txt)）。種のバイナリはありません。
 
 → [なぜミニマルか](docs/design-notes/minimal.md)
@@ -110,7 +110,7 @@ func main() int {
 
 - GC なし・借用検査なしで、メモリ安全かつデータ競合なし。寿命はスコープの入れ子に一致し（全ブロックが region — [規則](docs/spec/09-memory.ja.md)）、並列スコープに渡せるのは不変値かチャネルだけです（[規則](docs/spec/10-concurrency.ja.md)）。
 - エラーの取りこぼしを拒否する。解析器が呼び出しのグラフからエラーをラベルの集合として導出し、公開の境界では宣言を求めます（[規則](docs/spec/07-errors.ja.md)）。
-- 学ぶのは「書けないこと」だけ。寿命の注釈も借用の規則もありません。書けない形（共有された可変・逃げる参照）がコンパイルエラーになるだけです。
+- 学ぶのは「書けないこと」だけ。寿命の注釈も借用の規則もありません。書けない形（domain を通さない共有の可変・逃げる参照）がコンパイルエラーになるだけです。
 
 → [なぜ安全か](docs/design-notes/safe.md)
 
@@ -203,6 +203,7 @@ Sober は言語そのものの他に、いくつかの「検証できる主張�
 - [DESIGN.md](DESIGN.ja.md) — 主要な設計判断（柱 5 本）
 - [設計ノート（Q&A）](docs/design-notes/) — 「なぜ X でなく Y か」
 - [意図して入れないもの](docs/design-notes/not-in-sober.md) — 作っていないのではなく、入れないと決めたものの一覧
+- [先行研究](docs/design-notes/related-work.md) — 機構ごとに、先行する研究や言語から何を継ぎ、何を変えたか
 - [言語仕様](docs/spec/README.ja.md) — 何が受理され、受理されたプログラムがどう振る舞うかの規則（規則だけ・例は examples の実物）
 - 開発者向け: [決定の記録](docs/language.md)・[構文](docs/syntax.md)・[IR](docs/ir.md)・[形式化](docs/formal.md)・[オラクル](docs/oracles.md)
 
@@ -212,10 +213,10 @@ Sober は言語そのものの他に、いくつかの「検証できる主張�
 
 - HTTP/1.1 + TLS 1.3 のサーバ — `std/http/server` で書いた entry が [HttpArena](https://github.com/MDA2AV/HttpArena) の公開リーダーボードで C / Rust / V の実装と並んでいます（`bench/httparena/`）
 - このコンパイラ自身 — 約 14 万行のセルフホスト。字句解析から x86-64 の機械語と ELF の生成まで、libc なしで Sober で書かれています（`src/compiler/`）
-- std の中身 — JSON・gzip / deflate・TLS 1.3・HTTP クライアント（証明書の鎖の検証つき）・暗号（AES-GCM / SHA-256 / RSA / x25519 / パスワードハッシュ）・セッショントークン・io_uring の M:N ランタイム（`src/std/`）
+- std の中身 — JSON・gzip / deflate・TLS 1.3・HTTP クライアント（証明書の鎖の検証つき）・暗号（AES-GCM / SHA-256 / RSA / x25519 / パスワードハッシュ）・セッショントークン・PostgreSQL のクライアント・io_uring の M:N ランタイム（`src/std/`）
 - 開発道具 — テストランナー・性質テスト・ファジング・カバレッジ・ミューテーションテスト・watch（`sober test` の一式もコンパイラの一部として Sober 製）
 - データ処理の題材 — 1BRC・ベンチマークゲームの種目（Go / Rust の双子と出力一致 — `bench/`）
-- 小さな実例 約 510 本 — ガイドの kvstore ほか（`examples/` — 全部ゲートで出力照合されています）
+- 小さな実例 約 530 本 — ガイドの kvstore ほか（`examples/` — 全部ゲートで出力照合されています）
 
 ## 今あるもの
 
@@ -229,18 +230,18 @@ v0.7 時点で実装済みの表面の一覧です。規則の全文は[言語�
 - 関数: ラムダ・関数値とクロージャ・名前つき引数（メソッド・型クラス・マクロはなし）
 - エラー: error 型・`?`・`catch`・analyzer によるラベル集合の導出と網羅検査（`@errors`）・panic との区別
 - メモリ: region（寿命 = スコープの入れ子）・Pool・資源の上限の宣言（予算）
-- 並行: structured concurrency（scope と task）・チャネル・決定的な並列・予算と期限・lease
+- 並行: structured concurrency（scope と task）・チャネル・決定的な並列・予算と期限・lease・domain（多くの task から 1 つの状態への直列の更新・待ちの上限つき。ソースに lock は書かない）
 - package と import: 1 ディレクトリ = 1 package・修飾子は import パスの全段（`std/http/server` → `http.server.X`）・ビルドの起点の `sober.mod` でモジュールの名前とローカルの依存を宣言（[規則](docs/spec/08-packages.ja.md)）
 - アノテーション: `@embed`・`@layout`・秘密の値の追跡 ほか
 - テスト: `sober test` と assert（偽なら部分式の値と assert の位置を印字・任意のラベル `assert(e, label)`）・std/quick のプロパティベーステスト・`sober fuzz`・`--cover`（カバレッジ）・`--mutate`（ミューテーションテスト）・ビルド時の差し替え（テストの `@doubles` が名指した double〔`*_double.sober`〕を、そのテストのビルドでだけ本物の package の代わりに読む — 署名・型・効果は本物の宣言と照合）
 
-標準ライブラリ（全 32 package。署名と説明は [std リファレンス](docs/std/README.ja.md)）:
+標準ライブラリ（全 33 package。署名と説明は [std リファレンス](docs/std/README.ja.md)）:
 
-- 入出力と通信: io・os・net（TCP・DNS のスタブリゾルバ）・http/server（HTTP/1.1 サーバ・SSE・multipart・Cookie）・http/client（HTTP/1.1 クライアント — TLS 1.3 が既定・証明書の鎖は常に検証）・tls（TLS 1.3 サーバ）・url・session（署名つきのセッショントークン）・time（壁時計と単調時計・RFC 3339 / HTTP-date・タイムゾーン）・cli（宣言の表の CLI）・env（環境変数の宣言の表）
+- 入出力と通信: io・os・net（TCP・DNS のスタブリゾルバ）・http/server（HTTP/1.1 サーバ・SSE・multipart・Cookie）・http/client（HTTP/1.1 クライアント — TLS 1.3 が既定・証明書の鎖は常に検証）・tls（TLS 1.3 サーバ）・url・session（署名つきのセッショントークン）・time（壁時計と単調時計・RFC 3339 / HTTP-date・タイムゾーン）・cli（宣言の表の CLI）・env（環境変数の宣言の表）・pg（PostgreSQL のクライアント — wire protocol 3.0・TLS / SCRAM・トランザクション・接続プール）
 - 暗号とハッシュ: crypto（AES-GCM・ChaCha20-Poly1305・SHA-256・HMAC・HKDF・X25519・RSA・PEM・パスワードハッシュ〔Argon2id・bcrypt・PBKDF2〕・暗号用の乱数・定数時間演算）・hash（crc32・sha256）・uuid（v4 / v7）
 - 符号化と変換: json・base64・hex・binary・convert・strings・utf8・compress（flate / gzip の符号と復号）
 - データと計算: iter・sort・math・rand・table・builder・pool・layout
-- 並列とテスト: task（決定的な並列 Map ほか）・testing（cell — テストの double が状態を貯める置き場）・quick（プロパティベーステスト）
+- 並列とテスト: task（決定的な並列 Map・domain ほか）・testing（cell — テストの double が状態を貯める置き場）・quick（プロパティベーステスト）
 
 ツール（単バイナリ `sober` のサブコマンド）:
 
@@ -256,7 +257,8 @@ v0.7 時点で実装済みの表面の一覧です。規則の全文は[言語�
 - [ ] 圧縮のアルゴリズムの拡充
 - [x] ECDSA の検証と X.509 の証明書の鎖の検証（HTTP クライアントの TLS で使う）
 - [ ] 運用のための TLS の機能（証明書の差し替え・クライアント認証・セッションの再開）
-- [ ] データベースのクライアント: PostgreSQL と MySQL
+- [x] データベースのクライアント: PostgreSQL（wire protocol 3.0・TLS / SCRAM・トランザクション・接続プール）
+- [ ] データベースのクライアント: MySQL
 - [x] HTTP クライアント（HTTP/1.1・TLS 1.3 / 1.2・プロキシの CONNECT）
 - [ ] HTTP/1.1 の網羅
 - [ ] 対になる API のうち、片側しかないものの残り半分
@@ -268,6 +270,7 @@ v0.7 時点で実装済みの表面の一覧です。規則の全文は[言語�
 - [x] 浮動小数点の整備（IEEE 754 binary64 の float 1 本・ビット決定的な演算と印字・libm なし）
 - [x] 再帰的なデータ型（`[]T` / `map[K]T` の要素か関数型を通る再帰。相互再帰とジェネリックの再帰 union も — 設計は [language.md](docs/language.md) の 1 節）
 - [x] 可変の状態を持つクロージャ（局所の束縛のラムダは mut の束縛を展開で捕捉・関数型は mut 仮引数で状態を明示に受け取る — 関数「値」への mut 捕捉は意図して入れない）
+- [x] 長命の共有状態（domain — 直列の更新・待ちの上限・ソースに lock を書かない）
 - [ ] 値の流れの合流（zip）
 - [ ] analyzer の強化: 診断の改善と lint
 - [ ] 効果の追跡（エフェクトシステム）: error・mut・同一性など点在する効果の語彙を一つの枠組みに統合する（設計を検討中）

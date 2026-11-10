@@ -7,7 +7,7 @@ import FeatherweightSober.TcStep
 namespace FS
 
 /-- typecheck と tcStep の補助関数・読み口を全部開く -/
-macro "tc_unf" : tactic => `(tactic| simp only [typecheck, ctxAllMutFree, ctxCons, ctxGet, defGet, defParam, defRet, defTps, kAlloc, kAnn, kAppend, kAssign, kBlock, kBlockR, kScope, kClose, kCall, kCallM, kCallM2, kCallv, kConcat, kCopyTo, kDelm, kDeref, kEq2, kEqs, kFF, kFconv, kFnref, kFreeze, kFst, kGetm, kII, kIndex, kInl, kInr, kIte, kJoin, kJump, kKeysm, kLabel, kLen, kLenm, kMkmap, kMkmapAt, kMkslice, kMksliceAt, kNewch, kNewchan, kPair, kPar, kParch, kRecv, kSend, kSetidx, kSetm, kSnd, kSome, kSpawn, kStrlit, kSubslice, kTobyte, kToint, kTry, kWhile, lctxCons, lctxK, lctxTy, sCallv1, sCase1, sCase2, sIfnil1, sIfnil2, sLet, sSpawn2, tsLen])
+macro "tc_unf" : tactic => `(tactic| simp only [typecheck, ctxAllMutFree, ctxCons, ctxGet, defGet, defParam, defRet, defTps, kAlloc, kAnn, kAppend, kAssign, kBlock, kBlockR, kScope, kClose, kCall, kCallM, kCallM2, kCallv, kConcat, kCopyTo, kDelm, kDeref, kDexit, kDnew, kDenter, kEq2, kEqs, kFF, kFconv, kFnref, kFreeze, kFst, kGetm, kII, kIndex, kInl, kInr, kIte, kJoin, kJump, kKeysm, kLabel, kLen, kLenm, kMkmap, kMkmapAt, kMkslice, kMksliceAt, kNewch, kNewchan, kPair, kPar, kParch, kRecv, kSend, kSetidx, kSetm, kSnd, kSome, kSpawn, kStrlit, kSubslice, kTobyte, kToint, kTry, kWhile, lctxCons, lctxK, lctxTy, sCallv1, sCase1, sCase2, sIfnil1, sIfnil2, sLet, sSpawn2, tsLen])
 
 set_option hygiene false in
 /-- 腕の締め: 部分項の結果を書き換えた後、両辺の match を割って照らし合わせる（d の場合分けが要る腕は d を割ってから） -/
@@ -884,6 +884,45 @@ theorem tcEq_taskV (x0 : Nat) (x1 : Nat)  :
     simp only [evalRule, tcStep]
     tc_fin
 
+theorem tcEq_dnew (x0 : Nat) (x1 : Expr) (x2 : Ty) (ih_x1 : ∀ n b d Γ Λ, sizeOf x1 < n → evalRule Δ f n b d Γ Λ x1 = typecheck Δ Ξ Ψ f b d Γ Λ x1) :
+    ∀ n b d Γ Λ, sizeOf (Expr.dnew x0 x1 x2) < n → evalRule Δ f n b d Γ Λ (Expr.dnew x0 x1 x2) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.dnew x0 x1 x2) := by
+  intro n b d Γ Λ h; cases n with
+  | zero => omega
+  | succ n =>
+    simp only [Expr.dnew.sizeOf_spec] at h
+    have ihx1 := fun b d Γ Λ => ih_x1 n b d Γ Λ (by omega)
+    simp only [evalRule, tcStep, ihx1]
+    tc_fin
+
+theorem tcEq_domV (x0 : List Nat) (x1 : Nat) (x2 : Nat)  :
+    ∀ n b d Γ Λ, sizeOf (Expr.domV x0 x1 x2) < n → evalRule Δ f n b d Γ Λ (Expr.domV x0 x1 x2) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.domV x0 x1 x2) := by
+  intro n b d Γ Λ h; cases n with
+  | zero => omega
+  | succ n =>
+    simp only [evalRule, tcStep]
+    tc_fin
+
+theorem tcEq_denter (x0 : Ty) (x1 : Expr) (ih_x1 : ∀ n b d Γ Λ, sizeOf x1 < n → evalRule Δ f n b d Γ Λ x1 = typecheck Δ Ξ Ψ f b d Γ Λ x1) :
+    ∀ n b d Γ Λ, sizeOf (Expr.denter x0 x1) < n → evalRule Δ f n b d Γ Λ (Expr.denter x0 x1) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.denter x0 x1) := by
+  intro n b d Γ Λ h; cases n with
+  | zero => omega
+  | succ n =>
+    simp only [Expr.denter.sizeOf_spec] at h
+    have ihx1 := fun b d Γ Λ => ih_x1 n b d Γ Λ (by omega)
+    simp only [evalRule, tcStep, ihx1]
+    tc_fin
+
+theorem tcEq_dexit (x0 : Expr) (x1 : Expr) (ih_x0 : ∀ n b d Γ Λ, sizeOf x0 < n → evalRule Δ f n b d Γ Λ x0 = typecheck Δ Ξ Ψ f b d Γ Λ x0) (ih_x1 : ∀ n b d Γ Λ, sizeOf x1 < n → evalRule Δ f n b d Γ Λ x1 = typecheck Δ Ξ Ψ f b d Γ Λ x1) :
+    ∀ n b d Γ Λ, sizeOf (Expr.dexit x0 x1) < n → evalRule Δ f n b d Γ Λ (Expr.dexit x0 x1) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.dexit x0 x1) := by
+  intro n b d Γ Λ h; cases n with
+  | zero => omega
+  | succ n =>
+    simp only [Expr.dexit.sizeOf_spec] at h
+    have ihx0 := fun b d Γ Λ => ih_x0 n b d Γ Λ (by omega)
+    have ihx1 := fun b d Γ Λ => ih_x1 n b d Γ Λ (by omega)
+    simp only [evalRule, tcStep, ihx0, ihx1]
+    tc_fin
+
 theorem tcEq_newch (x0 : Nat) (x1 : Nat) (x2 : Ty)  :
     ∀ n b d Γ Λ, sizeOf (Expr.newch x0 x1 x2) < n → evalRule Δ f n b d Γ Λ (Expr.newch x0 x1 x2) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.newch x0 x1 x2) := by
   intro n b d Γ Λ h; cases n with
@@ -984,6 +1023,10 @@ theorem evalRule_eq_typecheck :
   | tryJ x0 x1 ih_x1 => exact tcEq_tryJ x0 x1 ih_x1
   | scopeV x0 xε => exact tcEq_scopeV x0 xε
   | taskV x0 x1 => exact tcEq_taskV x0 x1
+  | dnew x0 x1 x2 ih_x1 => exact tcEq_dnew x0 x1 x2 ih_x1
+  | domV x0 x1 x2 => exact tcEq_domV x0 x1 x2
+  | denter x0 x1 ih_x1 => exact tcEq_denter x0 x1 ih_x1
+  | dexit x0 x1 ih_x0 ih_x1 => exact tcEq_dexit x0 x1 ih_x0 ih_x1
   | newch x0 x1 x2 => exact tcEq_newch x0 x1 x2
   | epV x0 x1 x2 x3 => exact tcEq_epV x0 x1 x2 x3
 

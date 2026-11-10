@@ -242,7 +242,7 @@ func buildOrphScan(st mut St) {
     if dlFn(st.rtD3) != 0 {
         // 期限つきで ring の鎖に居れば外す（epoll の鎖は待ち手が自分で外す — epoll の走査は起こした待ち手を飛ばす）
         bU := branchIf(mut st, bin(mut st, BAnd, cmp(mut st, CNe, k, iconst(mut st, OK_EP)), cmp(mut st, CNe, rg, zero)))
-        dlUnlink(mut st, urAdd(mut st, rg, UR_DLQ * 8), t, load(mut st, tp, TC_DL))
+        dlUnlink(mut st, t, load(mut st, tp, TC_DL))
         br(mut st, bU, -1)
         setCur(mut st, bU)
     }

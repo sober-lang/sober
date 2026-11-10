@@ -1,0 +1,22 @@
+package main
+
+// 明示の伝播は `@const` の仮引数だけ — 宣言していない仮引数・局所の束縛は席へ渡せない（推論はしない）
+
+@const(q)
+func run(q string) int {
+    return len(q)
+}
+
+func noDecl(q string) int {
+    return run(q)
+}
+
+@const(q)
+func local(q string) int {
+    s := q
+    return run(s) + run(q) + run(q + "x")
+}
+
+func main() {
+    println("${noDecl("a")} ${local("b")}")
+}

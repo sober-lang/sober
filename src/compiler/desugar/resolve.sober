@@ -774,6 +774,15 @@ func tyOf(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (TyRef, error?) {
         }
         env := genericEnv(mut st, pk, dr, lB(nodeOf(mut st, te)), at)?
         decl := hgetN(mut st, dr)
+        if parDomDecl(mut st, dr) && !strIs(mut st, PkgPath(mut st, pk), "std/task") {
+            // `task.Domain[S]`（関数の仮引数・struct の欄）: コアの dom（家の region 0 = 圧縮された呼び手空間 — imm の参照と同じ上界・状態の型は 0 へ締める）。
+            // std/task の中の署名（NewDomain・domEnter ほか — 呼び出し点で鍵に写す柵）は宣言の struct のまま
+            if lenL(mut st, lB(nodeOf(mut st, te))) != 1 {
+                return 0, diag.CoreFragment{at: posOf(mut st, at)}
+            }
+            s0 := tyOf(mut st, pk, latN(mut st, lB(nodeOf(mut st, te)), 0), at, fuel - 1)?
+            return tOwnDom(mut st, 0, s0), nil
+        }
         if st.parScope1 != 0 && parTaskDecl(mut st, dr) {
             return parTaskTy(mut st, pk, te, at, fuel)
         }

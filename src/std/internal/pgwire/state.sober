@@ -1,0 +1,82 @@
+package pgwire
+
+// 接続 1 本の、どの往復の途中でも届きうるメッセージ（ParameterStatus・NoticeResponse・NotificationResponse）と
+// 往復の区切り（ReadyForQuery）が更新する状態。往復を進める側は Absorb に先に食わせ、true なら読み捨てて次のメッセージへ進む
+
+// names / vals = サーバの実行時の設定（ParameterStatus の最新 — server_version・client_encoding・TimeZone ほか）・
+// pid / key = 取り消しの要求に使う鍵（BackendKeyData）・tx = 最後の ReadyForQuery の状態（'I' / 'T' / 'E'）・
+// notices / notifies = 読み捨てた NoticeResponse / NotificationResponse の数
+type Sess struct {
+    names []string
+    vals []string
+    pid int
+    key []byte
+    tx byte
+    notices int
+    notifies int
+}
+
+func NewSess() Sess {
+    return Sess{names: []string{}, vals: []string{}, pid: 0, key: []byte{}, tx: 'I', notices: 0, notifies: 0}
+}
+
+// m が往復の外の知らせなら s に取り込んで true（往復を進める側は読み捨てる）。ReadyForQuery は tx を更新するが往復の区切りなので false
+func Absorb(s mut Sess, m Msg) bool {
+    return switch m {
+    case ParamStatus{name, value}: {
+        setParam(mut s, name, value)
+        true
+    }
+    case NoticeMsg{fields}: {
+        s.notices += 1
+        true
+    }
+    case Notification{pid, channel, payload}: {
+        s.notifies += 1
+        true
+    }
+    case BackendKey{pid, key}: {
+        s.pid = pid
+        s.key = key
+        true
+    }
+    case Ready{status}: {
+        s.tx = status
+        false
+    }
+    default: false
+    }
+}
+
+func setParam(s mut Sess, name string, value string) {
+    mut ns := mut []string{}
+    mut vs := mut []string{}
+    mut found := false
+    mut i := 0
+    while i < len(s.names) {
+        ns = append(ns, s.names[i])
+        vs = append(vs, if s.names[i] == name { value } else { s.vals[i] })
+        if s.names[i] == name {
+            found = true
+        }
+        i += 1
+    }
+    if !found {
+        ns = append(ns, name)
+        vs = append(vs, value)
+    }
+    s.names = freeze(ns)
+    s.vals = freeze(vs)
+}
+
+// サーバの設定 name の最新の値（届いていなければ nil）
+func Param(s Sess, name string) string? {
+    mut i := 0
+    while i < len(s.names) {
+        if s.names[i] == name {
+            return s.vals[i]
+        }
+        i += 1
+    }
+    return nil
+}

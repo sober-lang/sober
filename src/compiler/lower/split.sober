@@ -84,6 +84,7 @@ const NEED_RUNFD = 35
 const NEED_RUNFDENV = 36
 const NEED_COVER = 37
 const NEED_COVERMID = 38
+const NEED_ERRALLOC = 39
 
 // 安定な鍵の材料: 発見順の番号で名前が付く関数・番号を、持ち主（下ろしていた関数の記録）と持ち主の中の序数で
 // 引けるように st.sk へ積む（[種類, 語数, 中身…]）。直の道は lsEv の鉤（事象と同じ点）・模擬の道は lsReplay の 1 周目（持ち主 = 積み戻す記録）・
@@ -181,7 +182,7 @@ func lsEnvInt(name string) int {
 
 // 子の St に写す口（lowerWith が立てる欄のうち program の下ろし方に効くもの）
 func lsCfg(st mut St) []int {
-    return []int{if st.transparent { 1 } else { 0 }, if st.traceErrs { 1 } else { 0 }, st.rtMut, if st.csSite { 1 } else { 0 }, if st.callStat { 1 } else { 0 }, if st.hwFold { 1 } else { 0 }, if st.cutStat { 1 } else { 0 }, if st.noVec { 1 } else { 0 }, if st.noSpec { 1 } else { 0 }, if st.slotPoison { 1 } else { 0 }, if st.traceEffs { 1 } else { 0 }}
+    return []int{if st.transparent { 1 } else { 0 }, if st.traceErrs { 1 } else { 0 }, st.rtMut, if st.csSite { 1 } else { 0 }, if st.callStat { 1 } else { 0 }, if st.hwFold { 1 } else { 0 }, if st.cutStat { 1 } else { 0 }, if st.noVec { 1 } else { 0 }, if st.noSpec { 1 } else { 0 }, if st.slotPoison { 1 } else { 0 }, if st.traceEffs { 1 } else { 0 }, if st.errMark { 1 } else { 0 }}
 }
 
 func lsCfgSet(st mut St, c []int) {
@@ -196,6 +197,7 @@ func lsCfgSet(st mut St, c []int) {
     st.noSpec = c[8] == 1
     st.slotPoison = c[9] == 1
     st.traceEffs = c[10] == 1
+    st.errMark = c[11] == 1
     st.ls.groups = 1
 }
 
@@ -789,5 +791,6 @@ func lsReplayNeed(st mut St, id int, arg int) {
     case NEED_MATCHLEN: needMatchLen(mut st)
     case NEED_JCLEAN: needJClean(mut st)
     case NEED_ERRRELOC: _ = needErrReloc(mut st)
+    case NEED_ERRALLOC: _ = needErrAlloc(mut st)
     }
 }

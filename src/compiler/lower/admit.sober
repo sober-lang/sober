@@ -110,8 +110,8 @@ func buildPoolNew(st mut St) {
 
 // rt.ledger(k)（std/task の ledgerWord — @intrinsic "par_ledger"・Ledger の読み口）: k = 0 プールの数・1 根の天井・2 計上中のバイト・
 // 3 計上中の task の数・4 縮退・5 天井を超えた入場・6 宣言超過・7 shed・8 ワーカー数・9 wait の待ち・10 待ちの最大（ns — 全ワーカーの WK_MAXW を
-// xchg で 0 に戻して集める）・11 待ちの上限が効いた回数（全ワーカーの WK_AGED の和 — language.md 11 節「メトリクス」）・16 + 8p + f = プール p の {0 天井, 1 計上中のバイト, 2 task の数,
-// 3 入場, 4 shed, 5 親の番号 + 1, 6 失敗, 7 死}（範囲の外は 0）
+// xchg で 0 に戻して集める）・11 待ちの上限が効いた回数（全ワーカーの WK_AGED の和 — language.md 11 節「メトリクス」）・12 未着手の子・13 譲った回数・14 CPU の固定の形・15 固定した群の数・16 + 8p + f = プール p の {0 天井, 1 計上中のバイト, 2 task の数,
+// 3 入場, 4 shed, 5 親の番号 + 1, 6 失敗, 7 死}（範囲の外は 0）・負 = domain の合計の行（-1 待っている数・-2 到着から入るまでの最大・-3 満了・-4 毒）
 func buildLedger(st mut St) {
     begin(mut st, st.rtLedger)
     k := 0
@@ -125,7 +125,24 @@ func buildLedger(st mut St) {
     ledgerPick(mut st, k, rootV)
     ledgerSched(mut st, k, mn)
     ledgerBacklog(mut st, k, mn)
-    ledgerPick(mut st, bin(mut st, BSub, k, iconst(mut st, 13)), []int{load(mut st, mn, MN_LYIELD)})
+    // 14 = 固定の形（0 なし・1 L3 の群・2 CPU 1 つ・3 L3 の群を頼んだが読めずに CPU 1 つへ縮退したワーカーがある）・15 = 固定した群の数
+    pm := load(mut st, mn, MN_PIN)
+    pfb := bin(mut st, BAnd, cmp(mut st, CEq, pm, iconst(mut st, 1)), cmp(mut st, CGt, load(mut st, mn, MN_PFALL), iconst(mut st, 0)))
+    ledgerPick(mut st, bin(mut st, BSub, k, iconst(mut st, 13)), []int{load(mut st, mn, MN_LYIELD), bin(mut st, BAdd, pm, bin(mut st, BMul, pfb, iconst(mut st, 2))), load(mut st, mn, MN_PGRP)})
+    // domain の合計の行（k = -1 待っている数・-2 到着から入るまでの最大〔ns — xchg で 0 に戻す〕・-3 満了・-4 毒）
+    bDm := newBlock(mut st)
+    bNd := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, k, iconst(mut st, 0)), bDm, -1, bNd, -1)
+    setCur(mut st, bDm)
+    bMx := newBlock(mut st)
+    bOt := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, k, iconst(mut st, -2)), bMx, -1, bOt, -1)
+    setCur(mut st, bMx)
+    ret(mut st, atomicXchg(mut st, mn, MN_DMAXW, iconst(mut st, 0)))
+    setCur(mut st, bOt)
+    ledgerPick(mut st, bin(mut st, BSub, iconst(mut st, -1), k), []int{load(mut st, mn, MN_DWAITING), iconst(mut st, 0), load(mut st, mn, MN_DEXP), load(mut st, mn, MN_DPOIS)})
+    ret(mut st, iconst(mut st, 0))
+    setCur(mut st, bNd)
     // プールの節
     j := bin(mut st, BSub, k, iconst(mut st, 16))
     p := bin(mut st, BSar, j, iconst(mut st, 3))
@@ -448,33 +465,21 @@ func admitIn(st mut St, code int, decl int, pool int) Adm {
             // 待って受ける）。動いていなければ rt.task_wait で譲る（ワーカーを塞がない — 起こしは rt.admit_wake）
             gw := bin(mut st, BAdd, g0, one)
             spinLock(mut st, mn, MN_ALOCK)
-            store(mut st, me, TC_AWNEXT, load(mut st, mn, MN_AWAIT))
-            store(mut st, mn, MN_AWAIT, ptoi(mut st, me))
+            awPush(mut st, urAdd(mut st, ptoi(mut st, mn), MN_AWAIT * 8), ptoi(mut st, me))
             atomicXchg(mut st, mn, MN_ALOCK, zero)
             bSleep := newBlock(mut st)
             bOut := newBlock(mut st)
             bDone := newBlock(mut st)
             condbr(mut st, cmp(mut st, CEq, atomicXadd(mut st, mn, MN_AGEN, zero), gw), bSleep, -1, bOut, -1)
-            // 番号が動いた: 鍵の下で鎖から自分を外す（prev の語 = 前の節の TC_AWNEXT か鎖の頭）
+            // 番号が動いた: 鍵の下で鎖から自分を外す（TC_AWPREV = 0 なら起こし手が鎖ごと取った後）
             setCur(mut st, bOut)
             spinLock(mut st, mn, MN_ALOCK)
-            wl := newBlock(mut st)
-            pa := param(mut st, wl, TyPtr)
-            po := param(mut st, wl, TyI64)
-            wbody := newBlock(mut st)
             bGone := newBlock(mut st)
-            br(mut st, wl, list2(mut st, mn, iconst(mut st, MN_AWAIT)))
-            setCur(mut st, wl)
-            cw := load(mut st, gepWord(mut st, pa, po), 0)
             wHit := newBlock(mut st)
-            wNx := newBlock(mut st)
-            condbr(mut st, cmp(mut st, CEq, cw, zero), bGone, -1, wNx, -1)
-            setCur(mut st, wNx)
-            condbr(mut st, cmp(mut st, CEq, cw, ptoi(mut st, me)), wHit, -1, wbody, -1)
-            setCur(mut st, wbody)
-            br(mut st, wl, list2(mut st, itop(mut st, cw), iconst(mut st, TC_AWNEXT)))
+            pv := load(mut st, me, TC_AWPREV)
+            condbr(mut st, cmp(mut st, CEq, pv, zero), bGone, -1, wHit, -1)
             setCur(mut st, wHit)
-            store(mut st, gepWord(mut st, pa, po), 0, load(mut st, me, TC_AWNEXT))
+            awCut(mut st, pv, ptoi(mut st, me))
             atomicXchg(mut st, mn, MN_ALOCK, zero)
             br(mut st, bDone, -1)
             // 鎖に居ない = 起こし手が取った（起こしが来ている／来る — 待って受ける）
@@ -524,6 +529,18 @@ func buildAdmitWake(st mut St) {
     spinLock(mut st, mn, MN_ALOCK)
     h := load(mut st, mn, MN_AWAIT)
     store(mut st, mn, MN_AWAIT, zero)
+    // 取った節の TC_AWPREV を鍵の下で 0 に（番号が動いて自分を外しに来る待ち手に「鎖に居ない」を見せる）
+    cl := newBlock(mut st)
+    ct := param(mut st, cl, TyI64)
+    cb := newBlock(mut st)
+    cd := newBlock(mut st)
+    br(mut st, cl, list1(mut st, h))
+    setCur(mut st, cl)
+    condbr(mut st, cmp(mut st, CEq, ct, zero), cd, -1, cb, -1)
+    setCur(mut st, cb)
+    store(mut st, itop(mut st, ct), TC_AWPREV, zero)
+    br(mut st, cl, list1(mut st, load(mut st, itop(mut st, ct), TC_AWNEXT)))
+    setCur(mut st, cd)
     atomicXchg(mut st, mn, MN_ALOCK, zero)
     loop := newBlock(mut st)
     t := param(mut st, loop, TyI64)
@@ -622,6 +639,10 @@ func buildTaskInline(st mut St) {
         callIndirect(mut st, 1, list1(mut st, fieldPtr(mut st, frame, FR_RES)), -1)
     } else {
         r = trapCall(mut st, 1, fieldPtr(mut st, frame, FR_RES))
+    }
+    if st.domUse {
+        // 縮退した子は親の TCB の上で走る — 子の本体で死んだら親の TC_DOM に残る
+        domDiedIn(mut st, me)
     }
     if st.rtLeaseDrain != -1 {
         call(mut st, st.rtLeaseDrain, list2(mut st, me, lh))

@@ -340,7 +340,7 @@ func findStruct(ts []ast.Tree, fpkg []string, pkg string, name string) (int, int
 func jsonSource(ts []ast.Tree, fpkg []string, f int, rs []JReq) string {
     t := ts[f]
     pkg := fpkg[f]
-    mut s := "package ${Name(t, t.nodes[t.file].a)}\n\nimport $jj \"std/json\"\nimport $jb \"std/builder\"\n"
+    mut s := "package ${Name(t, t.nodes[t.file].a)}\n\nimport $jj \"std/json\"\nimport $jb \"std/builder\"\nimport $jw \"std/internal/jsonw\"\n"
     mut paths := mut []string{}
     for k <- iter.Range(0, len(rs)) {
         p := rs[k].pkg
@@ -350,6 +350,7 @@ func jsonSource(ts []ast.Tree, fpkg []string, f int, rs []JReq) string {
         }
     }
     ps := freeze(paths)
+    fast := fastReqs(ts, fpkg, rs)
     for k <- iter.Range(0, len(rs)) {
         r := rs[k]
         sp := spell(ts, fpkg, rs, ps, pkg, k)
@@ -396,7 +397,10 @@ func jsonSource(ts []ast.Tree, fpkg []string, f int, rs []JReq) string {
             s = s + "\nfunc $jsonDecodeTop_${f}_${k}_0($d $jj.Doc, $n int) ($jj.Value, error?) {\n    return ${fname}($d, $n, map[string]string{})\n}\n"
             s = s + "\nfunc $jsonDecodeTop_${f}_${k}_1($d $jj.Doc, $n int, rename map[string]string) ($jj.Value, error?) {\n    return ${fname}($d, $n, rename)\n}\n"
         }
-        s = s + jsonEncodeFn(ts, fpkg, rs, ps, pkg, f, k, false) + jsonEncodeFn(ts, fpkg, rs, ps, pkg, f, k, true)
+        s = s + jsonEncodeFn(ts, fpkg, rs, ps, pkg, f, k, false, fast[k]) + jsonEncodeFn(ts, fpkg, rs, ps, pkg, f, k, true, false)
+        if fast[k] {
+            s = s + jsonFastFns(ts, fpkg, rs, ps, pkg, f, k)
+        }
     }
     return s
 }
@@ -410,7 +414,7 @@ func decTail(e JReq) string {
 // rn = 偽 — rename なし（Encode）: 欄の頭は定数の断片（`{"name":` / `,"name":` — キーのエスケープは合成時に jsonKeyLit）を 1 回の PushString・
 // 根の口 _0 は空の rename の map を作らずに直に呼ぶ。rn = 真 — rename つき（EncodeWith の根の口 _1 から）: 欄ごとに KeyOf で引いて PutKey（旧の形）。
 // 系統どうしは呼び合わない（rename つきの値の中の struct も rename つきで書く）。lower は届く関数しか下ろさないので、使わない系統は ELF に入らない
-func jsonEncodeFn(ts []ast.Tree, fpkg []string, rs []JReq, ps []string, pkg string, f int, k int, rn bool) string {
+func jsonEncodeFn(ts []ast.Tree, fpkg []string, rs []JReq, ps []string, pkg string, f int, k int, rn bool, fast bool) string {
     r := rs[k]
     sp := spell(ts, fpkg, rs, ps, pkg, k)
     fname := encName(f, k, rn)
@@ -439,7 +443,12 @@ func jsonEncodeFn(ts []ast.Tree, fpkg []string, rs []JReq, ps []string, pkg stri
         if rn {
             s = s + "\nfunc $jsonEncodeTop_${f}_${k}_1($v ${sp}, rename map[string]string) string {\n    mut $o := $jb.Builder[byte]{}\n    ${fname}(mut $o, $v, rename)\n    return $jj.Done(mut $o)\n}\n"
         } else {
-            s = s + "\nfunc $jsonEncodeTop_${f}_${k}_0($v ${sp}) string {\n    mut $o := $jb.Builder[byte]{}\n    ${fname}(mut $o, $v)\n    return $jj.Done(mut $o)\n}\n"
+            s = s + "\nfunc $jsonEncodeTop_${f}_${k}_0($v ${sp}) string {\n"
+            if fast {
+                // 速い道: 上界で 1 本確保して位置で書く（エスケープの要る文字列に当たれば −1 — 下の builder の道でやり直す）
+                s = s + "    mut $b := mut []byte{}\n    $jw.Grow(mut $b, $jsonSize_${f}_${k}($v) + 8)\n    $p := $jsonWrite_${f}_${k}(mut $b, 0, $v)\n    if $p >= 0 {\n        return $jw.Finish(freeze($b), $p)\n    }\n"
+            }
+            s = s + "    mut $o := $jb.Builder[byte]{}\n    ${fname}(mut $o, $v)\n    return $jj.Done(mut $o)\n}\n"
         }
     } else if r.kind == jSlice {
         e, _ := jsonType(ts, fpkg, r.file, r.node)
@@ -548,4 +557,259 @@ func spell(ts []ast.Tree, fpkg []string, rs []JReq, ps []string, pkg string, k0 
         w -= 1
     }
     return s
+}
+
+// 速い道を持てる要求か（値の木 json.Value に届かない — Value の書きは builder の道だけ）。届く要求を不動点まで落とす
+func fastReqs(ts []ast.Tree, fpkg []string, rs []JReq) []bool {
+    mut ok := mut []bool{}
+    for k <- iter.Range(0, len(rs)) {
+        ok = append(ok, rs[k].kind != jValue)
+    }
+    mut changed := true
+    while changed {
+        changed = false
+        for k <- iter.Range(0, len(rs)) {
+            if ok[k] {
+                r := rs[k]
+                mut good := true
+                if r.kind == jStruct {
+                    st := ts[r.file]
+                    body := st.nodes[st.nodes[r.node].c]
+                    for j <- iter.Range(0, ast.ListLen(st, body.a)) {
+                        e, _ := jsonType(ts, fpkg, r.file, st.nodes[ast.ListAt(st, body.a, j)].b)
+                        if !reqFast(rs, mut ok, e) {
+                            good = false
+                        }
+                    }
+                } else if r.kind == jSlice || r.kind == jOpt {
+                    e, _ := jsonType(ts, fpkg, r.file, r.node)
+                    good = reqFast(rs, mut ok, e)
+                }
+                if !good {
+                    ok[k] = false
+                    changed = true
+                }
+            }
+        }
+    }
+    return freeze(ok)
+}
+
+// 要求 e（スカラーは常に可）が速い道を持てるか
+func reqFast(rs []JReq, ok mut []bool, e JReq) bool {
+    if e.kind == jValue {
+        return false
+    }
+    if e.kind == jInt || e.kind == jFloat || e.kind == jBool || e.kind == jString {
+        return true
+    }
+    i := reqIndex(rs, e.canon)
+    return i >= 0 && ok[i]
+}
+
+// 要求 k の速い道の 2 本: $jsonSize（書く量の上界 — 文字列は長さ + 2・int 20・float 24・bool 5）と $jsonWrite（位置 p から書いて次の位置・
+// エスケープの要る文字列に当たれば −1）。定数の綴り（鍵・区切り・括弧）は隣どうしを連結して 8 バイトの語に焼き、$jw.Word で書く
+func jsonFastFns(ts []ast.Tree, fpkg []string, rs []JReq, ps []string, pkg string, f int, k int) string {
+    r := rs[k]
+    sp := spell(ts, fpkg, rs, ps, pkg, k)
+    mut s := "\nfunc $jsonSize_${f}_${k}($v ${sp}) int {\n"
+    mut w := "\nfunc $jsonWrite_${f}_${k}($b mut []byte, $p0 int, $v ${sp}) int {\n    mut $p := $p0\n"
+    if r.kind == jStruct {
+        bw, fixed, sz := structFast(ts, fpkg, rs, f, r, "$v")
+        w = w + bw
+        s = s + "    return ${fixed}${sz}\n}\n"
+    } else if r.kind == jSlice {
+        e, _ := jsonType(ts, fpkg, r.file, r.node)
+        ei := if e.kind == jStruct { reqIndex(rs, e.canon) } else { 0 - 1 }
+        if ei >= 0 {
+            // struct の要素は写しの本体をループに展開する（要素ごとの呼び出しと struct の値の受け渡しを消す）
+            bw, fixed, sz := structFast(ts, fpkg, rs, f, rs[ei], "$e")
+            s = s + "    mut $s := 2\n    mut $i := 0\n    while $i < len($v) {\n        $e := $v[$i]\n        $s += ${1 + fixed}${sz}\n        $i += 1\n    }\n    return $s\n}\n"
+            w = w + "    $b[$p] = '['\n    $p += 1\n    mut $i := 0\n    while $i < len($v) {\n        if $i > 0 {\n            $b[$p] = ','\n            $p += 1\n        }\n        $e := $v[$i]\n"
+            w = w + bw + "        $i += 1\n    }\n    $b[$p] = ']'\n    $p += 1\n"
+        } else {
+            s = s + "    mut $s := 2\n    mut $i := 0\n    while $i < len($v) {\n        $s += 1 + ${fastSize(rs, f, e, "$v[$i]")}\n        $i += 1\n    }\n    return $s\n}\n"
+            w = w + "    $b[$p] = '['\n    $p += 1\n    mut $i := 0\n    while $i < len($v) {\n        if $i > 0 {\n            $b[$p] = ','\n            $p += 1\n        }\n"
+            w = w + fastPut(rs, f, e, "$v[$i]", "", "        ") + "        $i += 1\n    }\n    $b[$p] = ']'\n    $p += 1\n"
+        }
+    } else if r.kind == jOpt {
+        e, _ := jsonType(ts, fpkg, r.file, r.node)
+        s = s + "    if $v != nil {\n        return ${fastSize(rs, f, e, "$v")}\n    }\n    return 4\n}\n"
+        w = w + "    if $v != nil {\n" + fastPut(rs, f, e, "$v", "", "        ") + "    } else {\n" + wordsOf(bytes("null"), "", "        ") + "    }\n"
+    }
+    return s + w + "    return $p\n}\n"
+}
+
+// struct r の値 base（式の綴り）の書きの文・上界の定数部・上界の可変部の式（" + …" の連結）。スカラーだけの入れ子の struct は展開する
+func structFast(ts []ast.Tree, fpkg []string, rs []JReq, f int, r JReq, base string) (string, int, string) {
+    st := ts[r.file]
+    body := st.nodes[st.nodes[r.node].c]
+    mut w := ""
+    n := ast.ListLen(st, body.a)
+    mut fixed := 2
+    mut sz := ""
+    mut pend := mut []byte{}
+    pend = append(pend, '{')
+    for j <- iter.Range(0, n) {
+        fd := st.nodes[ast.ListAt(st, body.a, j)]
+        nm := Name(st, fd.a)
+        e, _ := jsonType(ts, fpkg, r.file, fd.b)
+        if j > 0 {
+            pend = append(pend, ',')
+            fixed += 1
+        }
+        kb := jsonKeyRaw(nm)
+        for c <- kb {
+            pend = append(pend, c)
+        }
+        pend = append(pend, ':')
+        fixed += len(kb) + 1
+        x := "${base}.${nm}"
+        ni := if e.kind == jStruct { reqIndex(rs, e.canon) } else { 0 - 1 }
+        if ni >= 0 && scalarStruct(ts, fpkg, rs[ni]) {
+            // スカラーだけの入れ子の struct は親の写しに展開する（呼び出しと区切りの語が親の定数と連結される）
+            ns := ts[rs[ni].file]
+            nb := ns.nodes[ns.nodes[rs[ni].node].c]
+            pend = append(pend, '{')
+            fixed += 2
+            for q <- iter.Range(0, ast.ListLen(ns, nb.a)) {
+                qd := ns.nodes[ast.ListAt(ns, nb.a, q)]
+                qn := Name(ns, qd.a)
+                qe, _ := jsonType(ts, fpkg, rs[ni].file, qd.b)
+                if q > 0 {
+                    pend = append(pend, ',')
+                    fixed += 1
+                }
+                qb := jsonKeyRaw(qn)
+                for c <- qb {
+                    pend = append(pend, c)
+                }
+                pend = append(pend, ':')
+                fixed += len(qb) + 1
+                qx := "${x}.${qn}"
+                if qe.kind == jBool {
+                    fixed += 5
+                    w = w + "    if ${qx} {\n" + wordsOf(freeze(pend), "true", "        ") + "    } else {\n" + wordsOf(freeze(pend), "false", "        ") + "    }\n"
+                    pend = mut []byte{}
+                } else {
+                    w = w + wordsOf(freeze(pend), "", "    ")
+                    pend = mut []byte{}
+                    w = w + fastPut(rs, f, qe, qx, qn, "    ")
+                    sz = sz + " + " + fastSize(rs, f, qe, qx)
+                }
+            }
+            pend = append(pend, '}')
+        } else if e.kind == jBool {
+            fixed += 5
+            w = w + "    if ${x} {\n" + wordsOf(freeze(pend), "true", "        ") + "    } else {\n" + wordsOf(freeze(pend), "false", "        ") + "    }\n"
+            pend = mut []byte{}
+        } else {
+            w = w + wordsOf(freeze(pend), "", "    ")
+            pend = mut []byte{}
+            w = w + fastPut(rs, f, e, x, nm, "    ")
+            sz = sz + " + " + fastSize(rs, f, e, x)
+        }
+    }
+    pend = append(pend, '}')
+    w = w + wordsOf(freeze(pend), "", "    ")
+    return w, fixed, sz
+}
+
+// 値 x の上界の式（要求 e）
+func fastSize(rs []JReq, f int, e JReq, x string) string {
+    return switch e.kind {
+    case jInt: "$jw.IntSize(${x})"
+    case jFloat: "24"
+    case jBool: "5"
+    case jString: "(len(bytes(${x})) + 2)"
+    default: "$jsonSize_${f}_${reqIndex(rs, e.canon)}(${x})"
+    }
+}
+
+// 値 x を位置 $p に書く文（ind = 字下げ・nm = 欄名 — float の panic の名指し）
+func fastPut(rs []JReq, f int, e JReq, x string, nm string, ind string) string {
+    return switch e.kind {
+    case jInt: "${ind}$p = $jw.Int(mut $b, $p, ${x})\n"
+    case jFloat: "${ind}$p = $jw.Float(mut $b, $p, ${x})\n${ind}if $p < 0 {\n${ind}    return $p\n${ind}}\n"
+    case jBool: "${ind}if ${x} {\n" + wordsOf(bytes("true"), "", ind + "    ") + "${ind}} else {\n" + wordsOf(bytes("false"), "", ind + "    ") + "${ind}}\n"
+    case jString: "${ind}$p = $jw.Str(mut $b, $p, ${x})\n${ind}if $p < 0 {\n${ind}    return $p\n${ind}}\n"
+    default: "${ind}$p = $jsonWrite_${f}_${reqIndex(rs, e.canon)}(mut $b, $p, ${x})\n${ind}if $p < 0 {\n${ind}    return $p\n${ind}}\n"
+    }
+}
+
+// 定数の綴り pre ‖ post を 8 バイトずつの語の書きと位置の前進の文に（空なら ""）
+func wordsOf(pre []byte, post string, ind string) string {
+    mut xs := mut []byte{}
+    for c <- pre {
+        xs = append(xs, c)
+    }
+    for c <- bytes(post) {
+        xs = append(xs, c)
+    }
+    n := len(xs)
+    if n == 0 {
+        return ""
+    }
+    mut s := ""
+    mut i := 0
+    while i < n {
+        // 24 バイトずつ 1 回の検査で（Word / Word2 / Word3）
+        m := if n - i > 16 { 3 } else if n - i > 8 { 2 } else { 1 }
+        mut args := ""
+        for q <- iter.Range(0, m) {
+            mut v := 0
+            mut j := 7
+            while j >= 0 {
+                v = (v << 8) | (if i + 8 * q + j < n { int(xs[i + 8 * q + j]) } else { 0 })
+                j -= 1
+            }
+            args = args + ", " + intLit(v)
+        }
+        nm := if m == 1 { "Word" } else { "Word${m}" }
+        s = s + "${ind}$jw.${nm}(mut $b, $p + ${i}${args})\n"
+        i += 8 * m
+    }
+    return s + "${ind}$p += ${n}\n"
+}
+
+// v の int の字面（最小値も綴れる形 — 負は (0 - (|v| − 1)) − 1）
+func intLit(v int) string {
+    return if v >= 0 { "${v}" } else { "((0 - ${0 - (v + 1)}) - 1)" }
+}
+
+// 欄名 nm の JSON の文字列のバイト列（'"' 込み・std/json の quote と同じエスケープ）
+func jsonKeyRaw(nm string) []byte {
+    h := bytes("0123456789abcdef")
+    mut out := mut []byte{}
+    out = append(out, '"')
+    for c <- bytes(nm) {
+        if c == '"' || c == '\\' {
+            out = append(out, '\\')
+            out = append(out, c)
+        } else if c < 32 {
+            out = append(out, '\\')
+            out = append(out, 'u')
+            out = append(out, '0')
+            out = append(out, '0')
+            out = append(out, h[int(c) >> 4])
+            out = append(out, h[int(c) & 15])
+        } else {
+            out = append(out, c)
+        }
+    }
+    out = append(out, '"')
+    return freeze(out)
+}
+
+// 欄が全部スカラー（int・float・bool・string）の struct か（速い道で親の写しに展開できる — 再帰しない）
+func scalarStruct(ts []ast.Tree, fpkg []string, r JReq) bool {
+    st := ts[r.file]
+    body := st.nodes[st.nodes[r.node].c]
+    for j <- iter.Range(0, ast.ListLen(st, body.a)) {
+        e, _ := jsonType(ts, fpkg, r.file, st.nodes[ast.ListAt(st, body.a, j)].b)
+        if !(e.kind == jInt || e.kind == jFloat || e.kind == jBool || e.kind == jString) {
+            return false
+        }
+    }
+    return true
 }

@@ -838,7 +838,41 @@ func kTry(st mut S, a0 int, a1 int) int {
     return -1
 }
 
-// FS.tcStep（方程式 175 本）
+// FS.kDnew（方程式 2 本）
+func kDnew(st mut S, a0 int, a1 int, a2 int, a3 int, a4 int) int {
+    // FS.kDnew.eq_1
+    if a4 >= 0 {
+        v_r := a2
+        v_t := a3
+        return if (((a0 <= v_r) && (v_r < a1)) && payOk(mut st, a4, v_t)) { mk(mut st, TDom, v_r, v_t, 0) } else { -1 }
+    }
+    // FS.kDnew.eq_2（最後の腕 — 先行の腕が外れれば当たる: a4 < 0）
+    return -1
+}
+
+// FS.kDenter（方程式 2 本）
+func kDenter(st mut S, a0 int, a1 int, a2 int, a3 int) int {
+    // FS.kDenter.eq_1
+    if a3 >= 0 && tg(mut st, a3) == TDom {
+        v_d := a1
+        v_t := a2
+        return if ((((tyEq(mut st, (tB(mut st, a3)), v_t)) && (a0 < v_d)) && mutFree(mut st, v_t)) && chanFree(mut st, v_t)) { relocR(mut st, natSub(v_d, 1), v_t) } else { -1 }
+    }
+    // FS.kDenter.eq_2
+    return -1
+}
+
+// FS.kDexit（方程式 2 本）
+func kDexit(st mut S, a0 int, a1 int) int {
+    // FS.kDexit.eq_1
+    if a0 >= 0 && tg(mut st, a0) == TDom && a1 >= 0 {
+        return if payOk(mut st, a1, (tB(mut st, a0))) { st.tUnit } else { -1 }
+    }
+    // FS.kDexit.eq_2
+    return -1
+}
+
+// FS.tcStep（方程式 183 本）
 func tcStep(st mut S, a0 int, a1 int, a2 int, a3 int, a4 int, a5 int, a6 int, a7 int, a8 int, a9 int) int {
     switch nK(mut st, a8) {
     case W_LIT:
@@ -1445,6 +1479,31 @@ func tcStep(st mut S, a0 int, a1 int, a2 int, a3 int, a4 int, a5 int, a6 int, a7
         }
         // FS.tcStep.eq_173（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kTry(mut st, a5, (nA(mut st, a8))))
+    case W_DNEW:
+        // FS.tcStep.eq_176
+        if a9 == 0 {
+            return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
+        }
+        // FS.tcStep.eq_177（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        return actRet(mut st, kDnew(mut st, a1, a2, (nA(mut st, a8)), (nC(mut st, a8)), a5))
+    case W_DENTER:
+        // FS.tcStep.eq_179
+        if a9 == 0 {
+            return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
+        }
+        // FS.tcStep.eq_180（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        return actRet(mut st, kDenter(mut st, a1, a2, (nA(mut st, a8)), a5))
+    case W_DEXIT:
+        // FS.tcStep.eq_181
+        if a9 == 0 {
+            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
+        }
+        // FS.tcStep.eq_182
+        if a9 == 1 {
+            return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
+        }
+        // FS.tcStep.eq_183（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
+        return actRet(mut st, kDexit(mut st, a5, a6))
     }
     return actRet(mut st, 0 - 1)
 }

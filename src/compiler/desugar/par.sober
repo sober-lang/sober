@@ -14,12 +14,20 @@ func parEpParam(st mut S, pk int, pt NodeRef) NodeRef {
         return -1
     }
     nm := sA(nodeOf(mut st, pt))
-    return if strIs(mut st, nm, "Sender") || strIs(mut st, nm, "Receiver") { latN(mut st, lB(nodeOf(mut st, pt)), 0) } else { NodeRef(-1) }
+    return if strIs(mut st, nm, "Sender") || strIs(mut st, nm, "Receiver") || strIs(mut st, nm, "Domain") { latN(mut st, lB(nodeOf(mut st, pt)), 0) } else { NodeRef(-1) }
+}
+
+// package pk の型式 pt が std/task の `Domain[S]` か
+func parDomParam(st mut S, pk int, pt NodeRef) bool {
+    return parEpParam(mut st, pk, pt) != -1 && strIs(mut st, sA(nodeOf(mut st, pt)), "Domain")
 }
 
 // std/task の鍵 key の呼び出し（実引数 args）のコア
 func parCall(st mut S, key int, fi int, args ListRef, at NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     na := lenL(mut st, args)
+    if ParDom(key) {
+        return parDomCall(mut st, key, args, at, eb, ef, depth)
+    }
     // チャネル（language.md 11 節「チャネル」— 形の名指し〔kind 13 / 14 / 15〕は ParCheck が先に出す）: NewChannel = newch r cap t（家 = 今の最内の region・cap は字面）・Send = send・
     // Recv = recv rx（型は T? — 閉じて空なら nil）・Close = close tx・SpawnGive = let ep in spawn（ep を子の仮引数に束ねて閉包変換 —
     // 端点は渡す値の組に入り、spawn が持ち主を子へ移す）
@@ -483,9 +491,235 @@ func parSpawn(st mut S, sc CoreRef, arg NodeRef, at NodeRef, eb int, ef int, dep
     return cSpawn(mut st, sc, pairChain(mut st, vs), kid), nil
 }
 
+// domain の口（language.md 11 節「domain」）: NewDomain = dnew（家 = 札の region・状態の型 = 初期値の型を region 0 へ締めた形 — 梱包して持つ。
+// wait: はコアへ運ばない — rt への実引数だけ〔呼び出し・割り算を含まない整数式 — ParCheck kind 35〕）・domEnter = denter（状態を今の最内へ写して受ける）・
+// domExit = dexit・domMiss = unreach（Await の when が偽の腕）
+func parDomCall(st mut S, key int, args ListRef, at NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+    na := lenL(mut st, args)
+    if key == PAR_DNEW {
+        if na != 3 {
+            return 0, diag.Malformed{at: posOf(mut st, at)}
+        }
+        stt := computeTy(mut st, latN(mut st, args, 0), eb, ef)
+        it := computeTy(mut st, latN(mut st, args, 1), eb, ef)
+        if stt == -1 || tg(mut st, stt) != TOwn || tyAt(mut st, stt).a != OWN_SCOPE || it == -1 {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+        i := expr(mut st, latN(mut st, args, 1), eb, ef, depth)?
+        ii := domConv(mut st, i, it, false)
+        if ii == -1 {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+        return cDnew(mut st, tRegion(mut st, stt), ii, tElem(mut st, tOwnDom(mut st, 0, it))), nil
+    }
+    if key == PAR_DENTER {
+        dt := if na == 1 { computeTy(mut st, latN(mut st, args, 0), eb, ef) } else { TyRef(-1) }
+        if dt == -1 || tg(mut st, dt) != TOwn || tyAt(mut st, dt).a != OWN_DOM {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+        d := expr(mut st, latN(mut st, args, 0), eb, ef, depth)?
+        v := domConv(mut st, cDenter(mut st, tElem(mut st, dt), d), tyRelocAllM(mut st, tDomFull(mut st, dt), st.rdepth - 1), true)
+        if v == -1 {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+        return v, nil
+    }
+    if key == PAR_DEXIT {
+        if na != 2 {
+            return 0, diag.Malformed{at: posOf(mut st, at)}
+        }
+        dt := computeTy(mut st, latN(mut st, args, 0), eb, ef)
+        if dt == -1 || tg(mut st, dt) != TOwn || tyAt(mut st, dt).a != OWN_DOM {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+        d := expr(mut st, latN(mut st, args, 0), eb, ef, depth)?
+        v := expr(mut st, latN(mut st, args, 1), eb, ef, depth)?
+        vi := domConv(mut st, v, tyRelocAllM(mut st, tDomFull(mut st, dt), st.rdepth - 1), false)
+        if vi == -1 {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+        return cDexit(mut st, d, vi), nil
+    }
+    if key == PAR_DOUT {
+        if na != 1 {
+            return 0, diag.Malformed{at: posOf(mut st, at)}
+        }
+        return expr(mut st, latN(mut st, args, 0), eb, ef, depth)
+    }
+    if key == PAR_DWAIT {
+        return cUnreach(mut st, st.tBool), nil
+    }
+    if key == PAR_DVIEW {
+        if na != 1 {
+            return 0, diag.Malformed{at: posOf(mut st, at)}
+        }
+        vt := computeTy(mut st, latN(mut st, args, 0), eb, ef)
+        v := expr(mut st, latN(mut st, args, 0), eb, ef, depth)?
+        vi := if vt == -1 { CoreRef(-1) } else { domConv(mut st, v, vt, false) }
+        if vi == -1 {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+        return vi, nil
+    }
+    if key == PAR_DLOAD {
+        dt := if na == 1 { computeTy(mut st, latN(mut st, args, 0), eb, ef) } else { TyRef(-1) }
+        if dt == -1 || tg(mut st, dt) != TOwn || tyAt(mut st, dt).a != OWN_DOM {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+        return cUnreach(mut st, tyRelocAllM(mut st, tDomFull(mut st, dt), st.rdepth - 1)), nil
+    }
+    t := parTypeArg(mut st, at)?
+    return cUnreach(mut st, t), nil
+}
+
+// domain の状態の値 e の写し（full = mut の器を残した状態の型）: toMut = false なら mut の器を imm の写しへ（作る・出る — 梱包する形 =
+// 状態の型の像。初期値・本体の器と別名にしないので clone してから freeze）・true なら像の器を最内の新しい mut の器へ（入る — clone）。
+// コアの意味は「写して入れ・写して出す」で、lower は状態をその場で書く（排他なので観測は等価）。写せない形（器の要素が mut の器を持つ・mut の参照）は -1
+func domConv(st mut S, e CoreRef, full TyRef, toMut bool) CoreRef {
+    if tyMutFreeD(mut st, full) {
+        return e
+    }
+    x := tg(mut st, full)
+    if x == TPr {
+        l := domConv(mut st, c1(mut st, CFst, cVar(mut st, 0)), tLeft(mut st, full), toMut)
+        r := domConv(mut st, c1(mut st, CSnd, cVar(mut st, 0)), tRight(mut st, full), toMut)
+        return if l == -1 || r == -1 { CoreRef(-1) } else { cLet(mut st, e, c2(mut st, CPair, l, r)) }
+    }
+    if x == TOpt {
+        iy := tInner(mut st, full)
+        v := domConv(mut st, cVar(mut st, 0), iy, toMut)
+        // 両腕の型を行き先の型（最内 region）に揃える — 写した値は最内・写さない成分は元の region のまま
+        ty := domConvTgt(mut st, iy, toMut)
+        return if v == -1 { CoreRef(-1) } else { c3(mut st, CIfnil, e, cNil(mut st, ty), c1(mut st, CSome, cAnn(mut st, v, ty))) }
+    }
+    if x == TUn {
+        lt := tLeft(mut st, full)
+        rt := tRight(mut st, full)
+        l := domConv(mut st, cVar(mut st, 0), lt, toMut)
+        r := domConv(mut st, cVar(mut st, 0), rt, toMut)
+        lty := domConvTgt(mut st, lt, toMut)
+        rty := domConvTgt(mut st, rt, toMut)
+        return if l == -1 || r == -1 { CoreRef(-1) } else { c3(mut st, CCase, e, cInl(mut st, rty, cAnn(mut st, l, lty)), cInr(mut st, lty, cAnn(mut st, r, rty))) }
+    }
+    if (x == TSl && tyMutFreeD(mut st, tElem(mut st, full))) || (x == TMp && tyMutFreeD(mut st, tKey(mut st, full)) && tyMutFreeD(mut st, tVal(mut st, full))) {
+        // 読み出しの注釈（imm の器から写すときだけ — call.sober の clone と同じ: imm の map はセル型 prod k (opt v) が常に注釈を持つ）
+        im := tyImmImg(mut st, full)
+        ann := if !toMut { TyRef(-1) } else if x == TSl { readAnn(mut st, im) } else { tProd(mut st, tKey(mut st, im), tOpt(mut st, tVal(mut st, im))) }
+        cl := cClone(mut st, e, ann)
+        return if toMut { cl } else { c1(mut st, CFreeze, cl) }
+    }
+    if x == TSl && tMutBit(mut st, full) != 0 {
+        return domConvSl(mut st, e, full, toMut)
+    }
+    if x == TMp && tMutBit(mut st, full) != 0 && tyMutFreeD(mut st, tKey(mut st, full)) {
+        return domConvMp(mut st, e, full, toMut)
+    }
+    return -1
+}
+
+// 要素の写しの行き先の型（最内 region k）: 入るなら mut の器を最内に作り直した型・出るなら像
+func domConvTgt(st mut S, t TyRef, toMut bool) TyRef {
+    k := st.rdepth - 1
+    return if toMut { tyRelocAllM(mut st, t, k) } else { tyRelocAll(mut st, tyImmImg(mut st, t), k) }
+}
+
+// 輪の仕上げ（acc = 新しい mut の器のセル）: 入るならそのまま・出るなら凍らせて像にする
+func domConvFin(st mut S, acc CoreRef, toMut bool) CoreRef {
+    v := c1(mut st, CDeref, acc)
+    return if toMut { v } else { c1(mut st, CFreeze, v) }
+}
+
+// 要素が mut の器を持つ slice の写し（器の写しは浅いので、要素ごとに domConv を当てて新しい器へ積む）:
+//   let src = e; let acc = alloc(mut, mkslice(mut, E')); let i = alloc(mut, 0)
+//   while deref i < len src { acc := append(deref acc, conv(src[deref i])); i := deref i + 1 }; fin(deref acc)
+func domConvSl(st mut S, e CoreRef, full TyRef, toMut bool) CoreRef {
+    et := tElem(mut st, full)
+    tgt := domConvTgt(mut st, et, toMut)
+    ann := if toMut { readAnn(mut st, tyImmImg(mut st, full)) } else { TyRef(-1) }
+    // 輪の中の座標: i = 0・acc = 1・src = 2
+    v := domConv(mut st, cIndex(mut st, cVar(mut st, 2), c1(mut st, CDeref, cVar(mut st, 0)), ann), et, toMut)
+    if v == -1 {
+        return -1
+    }
+    putI := c2(mut st, CAssign, cVar(mut st, 1), c2(mut st, CAppend, c1(mut st, CDeref, cVar(mut st, 1)), cAnn(mut st, v, tgt)))
+    // put の let の下: i = 1
+    next := c2(mut st, CAssign, cVar(mut st, 1), c2(mut st, CAdd, c1(mut st, CDeref, cVar(mut st, 1)), cLit(mut st, 1)))
+    loop := c2(mut st, CWhile, c2(mut st, CLt, c1(mut st, CDeref, cVar(mut st, 0)), c1(mut st, CLen, cVar(mut st, 2))), cLet(mut st, putI, next))
+    // loop の let の下: i = 1・acc = 2
+    body := cLet(mut st, loop, domConvFin(mut st, cVar(mut st, 2), toMut))
+    return cLet(mut st, e, cLet(mut st, cAlloc(mut st, 1, cMkslice(mut st, 1, tgt)), cLet(mut st, cAlloc(mut st, 1, cLit(mut st, 0)), body)))
+}
+
+// 値が mut の器を持つ map の写し（キーのスナップショットを歩いて値ごとに domConv を当てる）:
+//   let src = e; let ks = keys(src); let acc = alloc(mut, mkmap(mut, K', V')); let i = alloc(mut, 0)
+//   while deref i < len ks { let k = ks[deref i]; ifnil src[k] {} some y { acc := setm(deref acc, k, conv(y)) }; i := deref i + 1 }; fin(deref acc)
+func domConvMp(st mut S, e CoreRef, full TyRef, toMut bool) CoreRef {
+    k := st.rdepth - 1
+    vt := tVal(mut st, full)
+    tk := domConvTgt(mut st, tKey(mut st, full), toMut)
+    tv := domConvTgt(mut st, vt, toMut)
+    gt := if toMut { tVal(mut st, tyImmImg(mut st, full)) } else { vt }
+    // 値の写し: y = 0・kx = 1・i = 2・acc = 3・ks = 4・src = 5
+    v := domConv(mut st, cVar(mut st, 0), vt, toMut)
+    if v == -1 {
+        return -1
+    }
+    putM := c2(mut st, CAssign, cVar(mut st, 3), c3(mut st, CSetm, c1(mut st, CDeref, cVar(mut st, 3)), cVar(mut st, 1), cAnn(mut st, v, tv)))
+    // kx の let の下: kx = 0・i = 1・acc = 2・ks = 3・src = 4
+    get := c3(mut st, CIfnil, cGetm(mut st, gt, cVar(mut st, 4), cVar(mut st, 0)), cTriv(mut st), putM)
+    // get の let の下: i = 2
+    next := c2(mut st, CAssign, cVar(mut st, 2), c2(mut st, CAdd, c1(mut st, CDeref, cVar(mut st, 2)), cLit(mut st, 1)))
+    // 輪の中の座標: i = 0・acc = 1・ks = 2・src = 3
+    kx := cIndex(mut st, cVar(mut st, 2), c1(mut st, CDeref, cVar(mut st, 0)), readAnn(mut st, tSliceOf(mut st, 0, k, tk, 0)))
+    loop := c2(mut st, CWhile, c2(mut st, CLt, c1(mut st, CDeref, cVar(mut st, 0)), c1(mut st, CLen, cVar(mut st, 2))), cLet(mut st, kx, cLet(mut st, get, next)))
+    // loop の let の下: i = 1・acc = 2
+    body := cLet(mut st, loop, domConvFin(mut st, cVar(mut st, 2), toMut))
+    inner := cLet(mut st, cAlloc(mut st, 1, cMkmap(mut st, 1, tk, tv)), cLet(mut st, cAlloc(mut st, 1, cLit(mut st, 0)), body))
+    return cLet(mut st, e, cLet(mut st, c1(mut st, CKeysm, cVar(mut st, 0)), inner))
+}
+
+// domain の口の結果のコアの型（parDomCall と同じ形 — 分からなければ -1。tex = 明示の型引数の式）
+func parDomTy(st mut S, key int, args ListRef, eb int, ef int, at NodeRef) TyRef {
+    na := lenL(mut st, args)
+    if key == PAR_DNEW {
+        if na != 3 {
+            return -1
+        }
+        stt := computeTy(mut st, latN(mut st, args, 0), eb, ef)
+        it := computeTy(mut st, latN(mut st, args, 1), eb, ef)
+        return if stt == -1 || tg(mut st, stt) != TOwn || it == -1 { TyRef(-1) } else { tOwnDom(mut st, tRegion(mut st, stt), it) }
+    }
+    if key == PAR_DENTER {
+        dt := if na == 1 { computeTy(mut st, latN(mut st, args, 0), eb, ef) } else { TyRef(-1) }
+        return if dt == -1 || tg(mut st, dt) != TOwn || tyAt(mut st, dt).a != OWN_DOM { TyRef(-1) } else { tyRelocAllM(mut st, tDomFull(mut st, dt), st.rdepth - 1) }
+    }
+    if key == PAR_DEXIT {
+        return st.tUnit
+    }
+    if key == PAR_DOUT {
+        return if na == 1 { computeTy(mut st, latN(mut st, args, 0), eb, ef) } else { TyRef(-1) }
+    }
+    if key == PAR_DWAIT {
+        return st.tBool
+    }
+    if key == PAR_DVIEW {
+        vt := if na == 1 { computeTy(mut st, latN(mut st, args, 0), eb, ef) } else { TyRef(-1) }
+        return if vt == -1 { TyRef(-1) } else { tyImmImg(mut st, vt) }
+    }
+    if key == PAR_DLOAD {
+        dt := if na == 1 { computeTy(mut st, latN(mut st, args, 0), eb, ef) } else { TyRef(-1) }
+        return if dt == -1 || tg(mut st, dt) != TOwn || tyAt(mut st, dt).a != OWN_DOM { TyRef(-1) } else { tyRelocAllM(mut st, tDomFull(mut st, dt), st.rdepth - 1) }
+    }
+    te := if at != -1 { typeNameOf(mut st, at) } else { NodeRef(-1) }
+    return if te == -1 { TyRef(-1) } else { tyOf(mut st, st.curPkg, te, at, TYFUEL) catch TyRef(-1) }
+}
+
 // std/task の鍵 key の呼び出しの結果のコアの型（分からなければ -1 — computeTy の写し）
 func parTy(st mut S, key int, fi int, args ListRef, eb int, ef int, tex NodeRef) TyRef {
     na := lenL(mut st, args)
+    if ParDom(key) {
+        return parDomTy(mut st, key, args, eb, ef, tex)
+    }
     if key == PAR_NEWCHAN {
         if tex == -1 {
             return -1
@@ -604,7 +838,7 @@ func parTy(st mut S, key int, fi int, args ListRef, eb int, ef int, tex NodeRef)
 
 // tag の子の欄（ビット 1 = a・2 = b・4 = c）
 func coreKids(tag int) int {
-    if tag == CLet || tag == CAdd || tag == CLt || tag == CPair || tag == CCallv || tag == CCallMv || tag == CAssign || tag == CWhile || tag == CIndex || tag == CAppend || tag == CEqs || tag == CConcat || tag == CSpawn || tag == CSend {
+    if tag == CLet || tag == CAdd || tag == CLt || tag == CPair || tag == CCallv || tag == CCallMv || tag == CAssign || tag == CWhile || tag == CIndex || tag == CAppend || tag == CEqs || tag == CConcat || tag == CSpawn || tag == CSend || tag == CDexit {
         return 3
     }
     if tag == CBin || tag == CGetm || tag == CDelm || tag == CFBin {
@@ -616,7 +850,7 @@ func coreKids(tag int) int {
     if tag == CSome || tag == CFst || tag == CSnd || tag == CAnn || tag == CBlock || tag == CDeref || tag == CFreeze || tag == CLen || tag == CLenm || tag == CKeysm || tag == CClone || tag == CToByte || tag == CToInt || tag == CRecv || tag == CClose || tag == CUnfold {
         return 1
     }
-    if tag == CInl || tag == CInr || tag == CCall || tag == CBlockR || tag == CAlloc || tag == CFConv || tag == CCopyTo || tag == CScope || tag == CTry || tag == CJoin || tag == CFold {
+    if tag == CInl || tag == CInr || tag == CCall || tag == CBlockR || tag == CAlloc || tag == CFConv || tag == CCopyTo || tag == CScope || tag == CTry || tag == CJoin || tag == CFold || tag == CDnew || tag == CDenter {
         return 2
     }
     if tag == CLabel || tag == CJump {
@@ -688,6 +922,11 @@ func coreCapture(st mut S, e CoreRef, k int, fv []int) CoreRef {
 }
 
 // 型の表の dr が std/task の Task か
+// 型の宣言 dr が std/task の `Domain`（型式の Domain[S] をコアの dom へ — resolve.sober の tyOf）
+func parDomDecl(st mut S, dr int) bool {
+    return strIs(mut st, PkgPath(mut st, hget(mut st, dr + 1)), "std/task") && strIs(mut st, sA(nodeOf(mut st, hgetN(mut st, dr))), "Domain")
+}
+
 func parTaskDecl(st mut S, dr int) bool {
     return strIs(mut st, PkgPath(mut st, hget(mut st, dr + 1)), "std/task") && strIs(mut st, sA(nodeOf(mut st, hgetN(mut st, dr))), "Handle")
 }

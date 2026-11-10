@@ -2228,38 +2228,38 @@ b2:
   store %69[1], %71
   %72 = load.i64 %67[2]
   store %69[2], %72
-  %73 = slotaddr s6
-  %74 = const 0
-  store %73[0], %74
-  store %73[1], %74
-  store %73[2], %74
-  store %73[3], %74
-  store %73[4], %74
-  store %73[5], %74
+  %73 = const 0
+  %74 = slotaddr s6
+  store %74[0], %73
+  store %74[1], %73
+  store %74[2], %73
+  store %74[3], %73
+  store %74[4], %73
+  store %74[5], %73
   %75 = load.i64 %58[0]
-  store %73[0], %75
+  store %74[0], %75
   %76 = load.i64 %58[1]
-  store %73[1], %76
+  store %74[1], %76
   %77 = load.i64 %58[2]
-  store %73[2], %77
+  store %74[2], %77
   %78 = load.i64 %69[0]
-  store %73[3], %78
+  store %74[3], %78
   %79 = load.i64 %69[1]
-  store %73[4], %79
+  store %74[4], %79
   %80 = load.i64 %69[2]
-  store %73[5], %80
+  store %74[5], %80
   %81 = slotaddr s7
-  %82 = load.i64 %73[0]
+  %82 = load.i64 %74[0]
   store %81[0], %82
-  %83 = load.i64 %73[1]
+  %83 = load.i64 %74[1]
   store %81[1], %83
-  %84 = load.i64 %73[2]
+  %84 = load.i64 %74[2]
   store %81[2], %84
-  %85 = load.i64 %73[3]
+  %85 = load.i64 %74[3]
   store %81[3], %85
-  %86 = load.i64 %73[4]
+  %86 = load.i64 %74[4]
   store %81[4], %86
-  %87 = load.i64 %73[5]
+  %87 = load.i64 %74[5]
   store %81[5], %87
   %88 = const 3
   %89 = gep.word %81, %88
@@ -2304,23 +2304,23 @@ b4:
   store %111[1], %113
   %114 = load.i64 %107[2]
   store %111[2], %114
-  %115 = slotaddr s0
-  %116 = const 0
-  store %115[0], %116
-  store %115[1], %116
-  store %115[2], %116
+  %115 = const 0
+  %116 = slotaddr s0
+  store %116[0], %115
+  store %116[1], %115
+  store %116[2], %115
   %117 = load.i64 %111[0]
-  store %115[0], %117
+  store %116[0], %117
   %118 = load.i64 %111[1]
-  store %115[1], %118
+  store %116[1], %118
   %119 = load.i64 %111[2]
-  store %115[2], %119
+  store %116[2], %119
   %120 = slotaddr s8
-  %121 = load.i64 %115[0]
+  %121 = load.i64 %116[0]
   store %120[0], %121
-  %122 = load.i64 %115[1]
+  %122 = load.i64 %116[1]
   store %120[1], %122
-  %123 = load.i64 %115[2]
+  %123 = load.i64 %116[2]
   store %120[2], %123
   %124 = const 8
   %125 = region.depth

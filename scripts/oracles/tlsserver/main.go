@@ -49,24 +49,28 @@ func main() {
 		max    uint16
 		suites []uint16
 		req    bool
+		curve  tls.CurveID
 	}
 	k256, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	k384, _ := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	krsa, _ := rsa.GenerateKey(rand.Reader, 2048)
 	var ports string
-	leaves := []leaf{{"p256", k256, tls.VersionTLS13, nil, false}, {"p384", k384, tls.VersionTLS13, nil, false}, {"rsa", krsa, tls.VersionTLS13, nil, false},
-		{"p256-12-gcm", k256, tls.VersionTLS12, []uint16{tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256}, false},
-		{"p256-12-chacha", k256, tls.VersionTLS12, []uint16{tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256}, false},
-		{"rsa-12-gcm", krsa, tls.VersionTLS12, []uint16{tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256}, false},
-		{"rsa-12-chacha", krsa, tls.VersionTLS12, []uint16{tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256}, false},
-		{"rsa-12-req", krsa, tls.VersionTLS12, []uint16{tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256}, true}}
+	// p256-ecdhe = 鍵共有を secp256r1 だけにしたサーバ（X25519 の key_share に HelloRetryRequest で secp256r1 を求める — PostgreSQL 17 以前の既定と同じ形）
+	x := tls.X25519
+	leaves := []leaf{{"p256", k256, tls.VersionTLS13, nil, false, x}, {"p384", k384, tls.VersionTLS13, nil, false, x}, {"rsa", krsa, tls.VersionTLS13, nil, false, x},
+		{"p256-ecdhe", k256, tls.VersionTLS13, nil, false, tls.CurveP256},
+		{"p256-12-gcm", k256, tls.VersionTLS12, []uint16{tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256}, false, x},
+		{"p256-12-chacha", k256, tls.VersionTLS12, []uint16{tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256}, false, x},
+		{"rsa-12-gcm", krsa, tls.VersionTLS12, []uint16{tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256}, false, x},
+		{"rsa-12-chacha", krsa, tls.VersionTLS12, []uint16{tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256}, false, x},
+		{"rsa-12-req", krsa, tls.VersionTLS12, []uint16{tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256}, true, x}}
 	for i, l := range leaves {
 		tmpl := &x509.Certificate{SerialNumber: big.NewInt(int64(10 + i)), Subject: pkix.Name{CommonName: "localhost"}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(24 * time.Hour),
 			DNSNames: []string{"localhost"}, IPAddresses: []net.IP{net.ParseIP("127.0.0.1")}, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 			KeyUsage: x509.KeyUsageDigitalSignature}
 		der, err := x509.CreateCertificate(rand.Reader, tmpl, ca, l.key.Public(), caKey)
 		must(err)
-		cfg := &tls.Config{MinVersion: l.max, MaxVersion: l.max, CurvePreferences: []tls.CurveID{tls.X25519}, NextProtos: []string{"http/1.1"},
+		cfg := &tls.Config{MinVersion: l.max, MaxVersion: l.max, CurvePreferences: []tls.CurveID{l.curve}, NextProtos: []string{"http/1.1"},
 			CipherSuites: l.suites, Certificates: []tls.Certificate{{Certificate: [][]byte{der, caDer}, PrivateKey: l.key}}}
 		if l.req {
 			cfg.ClientAuth = tls.RequestClientCert

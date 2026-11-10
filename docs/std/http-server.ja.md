@@ -97,6 +97,7 @@ type Response struct {
     cache Cache?
     validators Validators?
     cookies []SetCookie
+    delay int
 }
 ```
 
@@ -122,6 +123,7 @@ func sendFile(path string, out mut http.server.Out, emit func(out mut http.serve
 - `cache` — 保存の方針（Cache-Control）。応答 1 件で書くのは Private / NoStore — 共有キャッシュも保存してよい方針（Fresh）はルートの行（Route.cache・Static の cache:）で書き、Dispatch がこの欄の無い応答に写す〔std の外で応答 1 件に Fresh / Shared を書くと analyzer が拒否する〕）。どこにも無ければ `Cache-Control: private`（利用者のブラウザだけが保存してよい — 認証つきの要求の応答を CDN の規則が拾う形〔web cache deception〕の入口を狭める既定）    http.server.Response{status: 200, contentType: "text/plain", body: b, cache: http.server.NoStore{}}
 - `validators` — 検証子（ETag・Last-Modified — 作れるのは std/http/server だけ: 封の型。同じ検証子を別の利用者の中身に付けると、確かめに来たキャッシュへの 304 で他人の版が出る — 検証子は中身から std が作る）
 - `cookies` — Set-Cookie（書けるのはこの欄だけ — 下の SetCookie）。書いた順に任意ヘッダの後へ
+- `delay` — 送る前の待ち（ミリ秒 — Delayed で付ける。0 以下 = 待たない）。接続の task はハンドラから戻った浅い点で待つ
 
 ## Validators
 
@@ -226,6 +228,19 @@ func Text(s string) Response
 ```
 
 200・text/plain の応答
+
+## Delayed
+
+```sober
+@effects()
+func Delayed(ms int, r Response) Response
+```
+
+r を ms ミリ秒待ってから送る応答（ms ≤ 0 は待たない）。待つのはその応答の頭を書く直前で、同じ接続の前の要求の応答は先に送る。ハンドラの中で os.Sleep してから返すのと送る時刻は同じだが、待つ間ハンドラの積みと要求の region を持たない（接続の task はハンドラから戻った浅い点で寝る）。接続の期限は os.Sleep と同じく待ちを切る（[language.md 28 節](../language.md)）
+
+```sober
+return http.server.Delayed(50, http.server.Text("ok"))
+```
 
 ## Json
 
@@ -497,6 +512,7 @@ type Cache union {
     Shared { maxAge int; sMaxAge int? } @shared
     NoStore {}
     Private { maxAge int? }
+    Unstated {} @shared
 }
 ```
 
@@ -509,6 +525,7 @@ variant:
 - `Shared` — `public, max-age=<maxAge>`（sMaxAge があれば `, s-maxage=<sMaxAge>`）— 共有キャッシュにも明示で保存させる（Authorization つきの要求の応答も — RFC 9111 3.5。負の値は 0）
 - `NoStore` — `no-store` — 保存しない
 - `Private` — `private`（maxAge があれば `private, max-age=<maxAge>`）— 利用者のブラウザだけが保存してよい（応答の既定）
+- `Unstated` — 毎応答の頭の 24 バイトが要らない公開の API 向け（認証に届くルートでは書けない — 上の Fresh / Shared と同じ検査）
 
 ## Param
 

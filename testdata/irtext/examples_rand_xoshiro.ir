@@ -2502,29 +2502,29 @@ b1:
   %44 = const 0
   %45 = const 0
   %46 = const 0
-  %47 = slotaddr s0
-  %48 = const 0
-  store %47[0], %48
-  store %47[1], %48
-  store %47[2], %48
-  store %47[3], %48
-  store %47[0], %43
-  store %47[1], %44
-  store %47[2], %45
-  store %47[3], %46
-  br b3(%47)
+  %47 = const 0
+  %48 = slotaddr s0
+  store %48[0], %47
+  store %48[1], %47
+  store %48[2], %47
+  store %48[3], %47
+  store %48[0], %43
+  store %48[1], %44
+  store %48[2], %45
+  store %48[3], %46
+  br b3(%48)
 b2:
-  %49 = slotaddr s1
-  %50 = const 0
-  store %49[0], %50
-  store %49[1], %50
-  store %49[2], %50
-  store %49[3], %50
-  store %49[0], %13
-  store %49[1], %21
-  store %49[2], %28
-  store %49[3], %37
-  br b3(%49)
+  %49 = const 0
+  %50 = slotaddr s1
+  store %50[0], %49
+  store %50[1], %49
+  store %50[2], %49
+  store %50[3], %49
+  store %50[0], %13
+  store %50[1], %21
+  store %50[2], %28
+  store %50[3], %37
+  br b3(%50)
 b3(%51 ptr):
   %52 = load.i64 %51[0]
   store %0[0], %52
@@ -2640,10 +2640,10 @@ b0:
   %10 = le %1, %9
   condbr %10, b1, b2
 b1:
-  %11 = slotaddr s0
-  %12 = const 0
-  store %11[0], %12
-  store %11[0], %1
+  %11 = const 0
+  %12 = slotaddr s0
+  store %12[0], %11
+  store %12[0], %1
   %13 = globaladdr @rt.meta
   call @rt.flush()
   %14 = const 2
@@ -2693,7 +2693,7 @@ b1:
   store %38[1], %36
   store %38[2], %37
   call @rt.print_str(%38)
-  %40 = load.i64 %11[0]
+  %40 = load.i64 %12[0]
   call @rt.print_int(%40)
   %41 = globaladdr @str.2
   %42 = const 1

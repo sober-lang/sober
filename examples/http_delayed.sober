@@ -1,0 +1,31 @@
+package main
+
+// http.server.Delayed: 待ってから返す応答。待つのはその応答の頭を書く直前で、同じ接続の前の応答は先に送る。
+// ハンドラの中で os.Sleep してから返すのと送る時刻は同じだが、待つ間ハンドラの積みと要求の region を持たない。
+// 転送路は偽物（recv は 3 件の要求を 1 切片で渡す・send は送った切片の大きさを印字する）— 1 件目は待たずに出て、
+// 2 件目（Delayed）と 3 件目は待ちの後に 1 切片で出る
+
+import "std/http/server"
+
+func route(r http.server.Request) http.server.Response {
+    if r.path == "/slow" {
+        return http.server.Delayed(20, http.server.Text("slow\n"))
+    }
+    return http.server.Text("hello\n")
+}
+
+func show(b []byte) error? {
+    println("[${len(b)} bytes]")
+    return nil
+}
+
+func feed(s string, k func([]byte)) error? {
+    k(bytes(s))
+    return nil
+}
+
+func main() {
+    reqs := "GET / HTTP/1.1\r\nHost: x\r\n\r\nGET /slow HTTP/1.1\r\nHost: x\r\n\r\nGET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"
+    e := http.server.ServeWith((k) => feed(reqs, k), (b) => show(b), route)
+    println(e == nil)
+}

@@ -1965,8 +1965,7 @@ b3:
 
 func @main.find(%0 ptr, %1 i64) {
   slot s0 [5]
-  slot s1 [1]
-  slot s2 [4]
+  slot s1 [4]
 b0:
   %2 = region.depth
   region.enter
@@ -2003,28 +2002,26 @@ b4:
   ret
 b5:
   %16 = const 0
-  %17 = slotaddr s1
+  %17 = const 0
   %18 = const 0
-  store %17[0], %18
   %19 = const 0
-  store %17[0], %19
-  %20 = slotaddr s2
-  %21 = load.i64 %17[0]
-  store %20[0], %21
-  %22 = const 0
-  store %20[1], %22
-  store %20[2], %22
-  store %20[3], %22
+  %20 = const 0
+  %21 = const 0
+  %22 = slotaddr s1
+  store %22[0], %21
+  store %22[1], %18
+  store %22[2], %19
+  store %22[3], %20
   %23 = slotaddr s0
   %24 = const 1
   store %23[0], %24
-  %25 = load.i64 %20[0]
+  %25 = load.i64 %22[0]
   store %23[1], %25
-  %26 = load.i64 %20[1]
+  %26 = load.i64 %22[1]
   store %23[2], %26
-  %27 = load.i64 %20[2]
+  %27 = load.i64 %22[2]
   store %23[3], %27
-  %28 = load.i64 %20[3]
+  %28 = load.i64 %22[3]
   store %23[4], %28
   store %0[0], %16
   %29 = load.i64 %23[0]
@@ -2192,23 +2189,23 @@ b3(%50 i64):
   %64 = load.i64 %59[2]
   store %61[2], %64
   %65 = const 1
-  %66 = slotaddr s8
-  %67 = const 0
-  store %66[0], %67
-  store %66[1], %67
-  store %66[2], %67
-  store %66[3], %67
-  store %66[4], %67
-  store %66[5], %67
-  store %66[5], %53
-  store %66[0], %55
+  %66 = const 0
+  %67 = slotaddr s8
+  store %67[0], %66
+  store %67[1], %66
+  store %67[2], %66
+  store %67[3], %66
+  store %67[4], %66
+  store %67[5], %66
+  store %67[5], %53
+  store %67[0], %55
   %68 = load.i64 %61[0]
-  store %66[1], %68
+  store %67[1], %68
   %69 = load.i64 %61[1]
-  store %66[2], %69
+  store %67[2], %69
   %70 = load.i64 %61[2]
-  store %66[3], %70
-  store %66[4], %65
+  store %67[3], %70
+  store %67[4], %65
   %71 = globaladdr @rt.meta
   call @rt.flush()
   %72 = const 2
@@ -2258,7 +2255,7 @@ b3(%50 i64):
   store %96[1], %94
   store %96[2], %95
   call @rt.print_str(%96)
-  %98 = load.i64 %66[0]
+  %98 = load.i64 %67[0]
   call @rt.print_int(%98)
   %99 = globaladdr @str.2
   %100 = const 2
@@ -2288,7 +2285,7 @@ b3(%50 i64):
   store %112[2], %111
   call @rt.print_str(%112)
   %114 = const 1
-  %115 = gep.word %66, %114
+  %115 = gep.word %67, %114
   call @rt.print_qstr(%115)
   %116 = globaladdr @str.2
   %117 = const 2
@@ -2317,7 +2314,7 @@ b3(%50 i64):
   store %129[1], %127
   store %129[2], %128
   call @rt.print_str(%129)
-  %131 = load.i64 %66[4]
+  %131 = load.i64 %67[4]
   %132 = const 0
   %133 = eq %131, %132
   condbr %133, b5, b6
@@ -2349,7 +2346,7 @@ b4:
   store %159[1], %157
   store %159[2], %158
   call @rt.print_str(%159)
-  %161 = load.i64 %66[5]
+  %161 = load.i64 %67[5]
   call @rt.print_int(%161)
   %162 = globaladdr @str.1
   %163 = const 1

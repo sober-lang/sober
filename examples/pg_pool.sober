@@ -1,0 +1,100 @@
+package main
+
+// PostgreSQL のガイド 6 節（docs/guide/postgres）: 接続のプール。pg.OpenPool の k の中で受ける要求ごとに pg.With で 1 本借りる —
+// プールの値 p は関数の実引数にできるので、ハンドラは名前つきの関数のまま p を受ける。ここでは要求をネットの代わりに決まった列で流す
+// （http.server.ServeWith — net の接続なら `net.Serve(l, (c) => http.server.ServeConn(c, (r) => route(p, r)))` の形）。
+// 繋ぎ先は環境変数（PG_URL・PG_PASSWORD・PG_CA — examples/pg_shop と同じ）。scripts/pgoracle.sh が PostgreSQL 17 / 18 で走らせて出力を照合する
+
+import "std/convert"
+import "std/env"
+import "std/http"
+import "std/http/server"
+import "std/io"
+import "std/pg"
+import "std/strings"
+import "std/tls"
+
+const Url = env.StrVar{name: "PG_URL", help: "the database URL (postgres://user@host[:port]/db)"}
+const Password = env.StrVar{name: "PG_PASSWORD", help: "the SCRAM password", opt: true}
+const Ca = env.StrVar{name: "PG_CA", help: "a PEM file of extra trusted CAs", opt: true}
+
+const Vars = env.Table{strs: []env.StrVar{Url, Password, Ca}}
+
+func policyOf(e env.Values) pg.Policy {
+    pw := env.StrOpt(e, Password)
+    ca := env.StrOpt(e, Ca)
+    roots := if ca == nil { nil } else { rootsOf(ca) }
+    return pg.Policy{password: if pw == nil { "" } else { pw }, extraRoots: roots}
+}
+
+func rootsOf(path string) tls.Roots? {
+    pem := io.ReadFile(path) catch return nil
+    return tls.ParseRoots(string(pem) catch "") catch nil
+}
+
+func setup(c pg.Conn) error? {
+    // プールの接続は借りるたびに違う接続でありうる — 一時表（接続ごと）ではなく普通の表に
+    pg.Script(c, "drop table if exists pool_item; create table pool_item (id int8 primary key, name text not null, price int4 not null)")?
+    _ = pg.Exec(c, "insert into pool_item (id, name, price) values (1, 'apple', 120), (2, 'pear', 340), (3, 'fig', 560)")?
+    return nil
+}
+
+// GET /item?id=N — 1 行を読んで返す（借りた接続は With が返したあと次の要求へ回る）
+func route(p pg.Pool, r http.server.Request) http.server.Response {
+    q := http.server.Query(r, "id")
+    id := if q == nil { -1 } else { convert.ParseInt(q) catch -1 }
+    mut body := ""
+    e := pg.With(p, (c) => {
+        body = lookup(c, id) catch ""
+    })
+    if e != nil {
+        return http.server.Status(http.ServiceUnavailable)
+    }
+    return if body == "" { http.server.Status(http.NotFound) } else { http.server.Text(body) }
+}
+
+func lookup(c pg.Conn, id int) (string, error?) {
+    mut out := ""
+    for row <- pg.Query(c, "select name, price from pool_item where id = $1", args: []pg.Value{pg.Int{v: id}})? {
+        out = "${pg.ColString(row, 0)?} ${pg.ColInt(row, 1)?}\n"
+    }
+    return out, nil
+}
+
+// 送られた応答（続けて来た要求の応答は 1 回の送りにまとまることがある — 行の終わりの \r を落として印字）
+func show(b []byte) error? {
+    println(strings.TrimSpace(strings.Replace(string(b) catch "", "\r\n", "\n", -1)))
+    return nil
+}
+
+func feed(s string, k func([]byte)) error? {
+    k(bytes(s))
+    return nil
+}
+
+func main() int {
+    e, err := env.Load(Vars)
+    if err != nil {
+        _ = io.WriteStdout(bytes(env.Format(err)))
+        return 1
+    }
+    reqs := "GET /item?id=1 HTTP/1.1\r\nHost: x\r\n\r\nGET /item?id=3 HTTP/1.1\r\nHost: x\r\n\r\nGET /item?id=9 HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"
+    oe := pg.OpenPool(env.Str(e, Url), (p) => {
+        se := pg.With(p, (c) => {
+            if setup(c) != nil {
+                println("setup failed")
+            }
+        })
+        if se != nil {
+            println("with failed")
+        } else {
+            ve := http.server.ServeWith((k) => feed(reqs, k), (b) => show(b), (r) => route(p, r))
+            println("served: ${ve == nil}")
+        }
+    }, size: 4, policy: policyOf(e))
+    if oe != nil {
+        println("pool failed")
+        return 1
+    }
+    return 0
+}

@@ -2,6 +2,76 @@
 
 このファイルは公開リリースごとの利用者向けの変更点を記録する。形式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に倣う。バージョンは [Semantic Versioning](https://semver.org/lang/ja/) に従う（0.x の間は後方互換を約束しない）。
 
+## v0.7.1 — 2026-11-11
+
+長命の共有状態 domain と PostgreSQL のクライアントの版。多くの task から 1 つの状態（接続のプール・数え口など）を更新する形を、lock を書かずに書けるようになった（`task.NewDomain` / `Update` / `Read` / `Await` — 本体は直列に走り、待たない・io なしの約束で lock の順序のデッドロックが書けない）。std/pg は wire protocol 3.0 の上に TLS 1.3 + SCRAM-SHA-256-PLUS を既定にした PostgreSQL のクライアントで、トランザクションと接続のプールを持つ。HTTP サーバの JSON の応答の組み立てを二段の符号器に変え、要求 1 件の固定費を削った。v0.7.0 の limited-conn の退行（64 ワーカーの箱で −11.5%）を直した。
+
+### 言語
+
+- domain — 直列化された共有状態（spec 10.8 節・[並行ガイド](docs/guide/concurrency.ja.md) 5 節）: `task.NewDomain(s, init, wait:)` が scope `s` の中に状態を 1 つ持つ domain を作り、`task.Update`（書く）・`task.Read`（読む）・`task.Await`（`when:` が真になるまで来た順に待つ・待ちの上限 `wait:` を越えたら `io.Expired`）が本体を 1 つずつ当てる
+  - 本体の約束: 待たない・io なし・別の domain を呼ばない・明示の panic なし。lock を持ったまま待つ形が無いので、lock の順序で起きるデッドロックは書けない
+  - どの task が先に入るかは、ファイルやネットワークの入力と同じ「録られる入力」として決定性の約束の表に載る（順を固定すれば結果はスケジュールに依らない — Lean の Kahn の定理をオラクルつきに拡張して証明）
+  - 本体が死んだ domain は毒になり、以後の呼び出しは `task.Poisoned{}` で呼び手を死なせる（半端に書かれた状態で進まない）
+  - d は捕獲でき、関数の実引数にできる（struct の欄に入れて渡すのも）。scope の値・task の結果・チャネルのペイロード・関数の戻り値にはできない（作った scope の出口で状態ごと消える）
+  - 状態は mut の器（mut slice / mut map — 入れ子も）を持てる。初期値は domain へ写して入れ、本体の値も呼び手へ写して返すので、状態の器は domain の外から書けない
+  - 本体の書きの規則は検査が名指しで拒み、書き換えの形を出す: 状態に region を持つ値を足す（append 等 — 状態の別名を経た書きも）・domain を作った scope より長く生きる場所への格納・状態を mut の実引数に渡す（呼び先が本体と同じ規則で書くと呼び先の本体から導けるときは渡せる）
+- const の席 `@const(p, …)`: 付けた仮引数への実引数は、ビルド時に文面の決まる文字列（補間の無いリテラル・const・それらの `+`）か、呼び手自身の `@const` の仮引数だけ。std/pg の SQL の文面はこの席なので、利用者の値を SQL の文面へ連結する形（SQL injection）は書けない（値は引数で渡す）
+- 新しく受理する形（前は check が文面なしで落としていた — build は受理）: 関数の中で組む union の variant（region を持つペイロードを含む）・外の package の型つきの const（`http.OK`）を `T?` の仮引数や `check --split` の読み戻しで使う形・mut の仮引数を持つ関数の展開の中の slice の読み
+
+### std
+
+- `std/pg`（新）: PostgreSQL のクライアント（wire protocol 3.0・extended query）
+  - 接続: `pg.Open(url, k, policy:)`（k が接続 `Conn` を受け、返ったら閉じる）。TLS 1.3 + SCRAM-SHA-256-PLUS（チャネルバインディングつき）が既定で、証明書の鎖は常に検証する。緩める欄は `dangerously…` の 3 本だけ。パスワードは `@secret`
+  - 文: `pg.Exec` / `pg.Script`・行は `for r <- pg.Query(c, sql, args: …)? { … }`（本体を ? / return / break で抜けても残りの行を読み捨てて接続を保つ）。SQL の文面は const の席・引数は `pg.Value` の 12 variant をサーバの型に合わせて符号化・文の準備は接続ごと・文面ごとに 1 回
+  - 行の読み: `Col` / `ColInt` / `ColString` / `ColTime` / `ColUuid` / `ColJson` / `ColNumeric`（`Scaled`）ほか・`IsNull`・`Width`
+  - 失敗のラベル: `Server`（SQLSTATE・hint つき）・`Auth`・`Tls`・`Dns`・`Closed`・`Protocol`・`BadUrl` ほか
+  - トランザクション: `pg.Tx(c, k, isolation:, readOnly:)` — k が普通に終われば COMMIT・k の中の ? で抜ければ ROLLBACK。入れ子は一様に SAVEPOINT。k の中で文の誤りを握りつぶして普通に終わったら、巻き戻して `Aborted` を返す。自動の再試行はしない
+  - 接続のプール: `pg.OpenPool(url, k, size:, wait:)` と `pg.With(p, k)`。型 `pg.Pool` は domain と預かり所の組で、名前つきのハンドラに実引数で渡せる。預け直すのは k が普通に返り、トランザクションの外で読み残しがない接続だけ（それ以外は閉じる）。借り手の task が死んだ接続はプールが回収する。`OpenPool` の名は、関数 `Pool` が型 `Pool` と衝突するため（`Open` → `Conn` と同じ対の形）
+  - 実 PostgreSQL 17 / 18（TLS / 平文）との往復を `scripts/pgoracle.sh` が照合する
+- `std/task`: domain の 4 つの口と `Domain[S]`・`task.Ledger()` に `domains`（全 domain の合計の行 `DomainView{waiting, maxWait, expired, poisoned}`）・`pin` / `pinGroups`（ワーカーの CPU の固定の形）
+- `std/http/server`: `Delayed(ms, r)` — 待ってから返す応答。待つ間、接続の task はハンドラの積みと要求の region を持たない（ハンドラの中で `os.Sleep` してから返すのと送る時刻は同じで、足跡は keep-alive の接続と同じ）。pipelined の順は変わらない
+- `std/http/server`: `Cache` に `Unstated{}` — Cache-Control の行を書かない（保存の可否を受け手に任せるので共有されうる側 `@shared` — ルートの行でだけ書ける）。既定の `private` は変わらない
+- TLS クライアント（http/client と pg）: 鍵共有に secp256r1（P-256）を足した。X25519 を優先し、サーバが HelloRetryRequest で P-256 を求めたら応じる（PostgreSQL 17 以前の既定の設定は P-256 だけを受ける）
+- analyzer: std の `dangerously…` の欄に字面の false 以外を与える構築を、毎回 warning にする（受理は変えない・抑止の口なし — 安全な設定に戻すと消える）
+
+### ランタイム
+
+- サーバの形（std/net の Serve・`SOBER_WORKERS` なし）のワーカーの CPU の固定を「CPU 1 つ」から「L3 キャッシュを共有する CPU の群 ∩ 許可の集合」へ。群は sysfs から読み、読めなければ CPU 1 つに縮退する。`SOBER_PIN=0` で固定を切る・`1` = 群・`2` = CPU 1 つ（比較の口）
+- 期限の待ちの鎖を双方向にし（取り外し O(1)）、期限の走査に下界を持たせた。期限つきの接続が多いときの O(n²) の崖が消えた（16,000 接続・W12・期限つきの Serve: 45〜49K → 453〜475K 要求/秒 — 手元。期限の無い本番形の命令数は不変）
+- domain の `Await` の待ちの列: 同じ `when:`（捕獲のない字面のラムダ）で偽と分かった待ち手は、状態が変わるまで起こさない。待ち手が多いときの起こしの連鎖（1 回の出口で待ち手の数に比例する起こし）が消えた（1 つの domain に 1,024 本の待ち手・W1: 1 取得あたり 596K → 6.3K 命令 — 手元）。来た順・待ちの上限・毒の意味は変わらない
+- error の値の表現をタグ + ラベルの列の 4 語に固定した。プログラムの中で最も大きい欄を持つラベルが、全関数の error の置き場を広げなくなった（std/pg を import しても HTTP の接続 task の最深の枠は 2,112 B のまま — 前の表現では 2,688 B）。欄つきのラベルは失敗の道でだけ確保する
+- task の積みの頂上の余白を 2 → 3 KiB に。HTTP サーバの keep-alive の要求 1 件の最深の積みが旧の予算に 16 B しか余っていなかった（越えると接続ごとに常駐 +4 KB）。最深は新しいゲート stackcheck が見張る
+
+### ツール
+
+- 文書: 並行のガイド（docs/guide/concurrency — task・チャネル・domain）と PostgreSQL のガイド（docs/guide/postgres — 接続・文・行・失敗・トランザクション・プール）
+- `bench/httparena`: `perf.sh json-tls`（json-tls の perf の帰属）・`local.sh` の `WRK_THREADS`（json-tls の wrk のスレッド数 — 既定は負荷側の CPU 数・本家は 64）と負荷側の CPU の busy の欄
+- `bench/httparena`: 本家の entry と同じ起動の形（`SOBER_WORKERS` なし = CPU の固定 on）で測る口 `SOBER_UPSTREAM_FORM=1`
+
+### 修理
+
+- v0.7.0 の limited-conn の退行（HttpArena の 64 ワーカーの箱で −11.5%）: 接続を張り直すたびに、窓の頁を返す madvise が TLB の撃ち落としを全ワーカーの CPU へ飛ばしていた。返しを task の塊ごとに初回の 1 回だけにした（手元 W8 の page fault 36,004〜45,919 → 91〜114）
+- TLS クライアントが HelloRetryRequest の後の 2 番目の ClientHello で random を作り直していた（RFC 8446 4.1.2 違反 — Go の crypto/tls のサーバは拒否する）
+- 関数の中で組む union の variant・外の package の型つきの const・展開の中の slice の読みを、check が文面なしで落としていた（build は受理 — 言語の節の「新しく受理する形」）
+
+### 性能
+
+- HTTP — bench/httparena（自前の物差し: HttpArena の負荷発生器と要求のファイルを使うが、HttpArena の公式の結果ではない）。16 vCPU の GitHub Actions の箱（AMD EPYC 9V74）で、サーバに 8 CPU を与え、v0.7.0 と同じジョブの中で周ごとに交互に計測（5 周の中央値・4,096 接続）。今回は 1 世代の箱での同箱 A/B:
+
+  | 種目 | 要求/秒（v0.7.0 比） | CPU/要求（v0.7.0 比） |
+  |---|---|---|
+  | json-comp | +12.2% | −10.8% |
+  | json-comp-16k | +10.2% | −8.9% |
+  | async | +3.9% | −3.6% |
+  | baseline | +2.3% | −2.2% |
+  | pipelined | 同等 | 同等 |
+
+  - json-comp の伸びは JSON の応答の二段の符号器（上界を見積もって 1 本だけ確保し、位置で書く）から。同じ符号器は TLS の経路の JSON 応答にも効く
+  - async のメモリ（cgroup）: ピーク 847 → 670 MB・pagetables 153 → 66 MB — 待ってから返す応答（`Delayed`）は待つ間ハンドラの積みと要求の region を持たないので、寝ている接続の足跡が keep-alive の接続と同じになった
+  - baseline の伸びは要求 1 件の固定費の削減（Query の 1 回走査・ヘッダの位置の表と応答の頭を呼び手の列へ）から
+  - 表の計測の後に入った 2 つ（domain の `Await` の待ちの列・error の表現）は、同じ 16 vCPU の箱で前後を交互に測る A/B で 12 種目すべて ±2% 以内（退行なし）
+  - json-tls はこの 16 vCPU の箱で v0.7.0 比 −19% と出るが、サーバが速くなって負荷発生器（wrk 8 スレッド × 4,096 接続）が律速に移る相の現象で、サーバの退行ではない。本家と同じ形（wrk 64 スレッド）で 64 CPU のサーバ（EC2 c6a.metal・AMD EPYC 7R13）を測ると、JSON の符号器が入る前の版と比べて要求/秒 +1.9%・CPU/要求 −10%
+
 ## v0.7.0 — 2026-11-08
 
 import の体系を刷新した版。修飾子は import パスの全段（`std/http/server` → `http.server.Serve`）になり、ビルドの起点の `sober.mod` でモジュールの名前とローカルの依存を宣言できるようになった。std は Web アプリに欠けていた部品を揃えた: パスワードハッシュ・暗号用の乱数と UUID・時刻とタイムゾーン・cookie・世代つきのセッション・DNS のスタブリゾルバ・証明書の鎖を常に検証する HTTP クライアント。std/http はサーバ（std/http/server）・クライアント（std/http/client）・共有の語彙（std/http）に分けた。deflate は似た本文の続く接続で Huffman の木を作り直さない記録を持ち、HTTP サーバの gzip の応答が速くなった。実行時は起動で W^X を固定する（Linux 6.6 以上）。

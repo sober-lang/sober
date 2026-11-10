@@ -1,0 +1,38 @@
+package main
+
+// A body that dies poisons its domain: the caller dies, and every later call on the domain dies with task.Poisoned{} instead of
+// running on a half-written state. Here the first child's body divides by zero after writing a field; the second child's Read
+// then dies too.
+// task.Try shows both deaths as values
+
+import "std/task"
+
+type St struct {
+    n int
+    d int
+}
+
+func main() {
+    _, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, St{n: 0, d: 0})
+        h1 := task.Spawn(s, () => task.Update(d, (st mut St) => {
+            st.n = 7
+            st.n / st.d
+        }))
+        a := switch task.Try(h1) {
+        case task.Ok{v}: "ok"
+        case task.Failed{}: "failed"
+        case task.Died{cause}: "died"
+        }
+        h2 := task.Spawn(s, () => task.Read(d, (st St) => st.n))
+        b := switch task.Try(h2) {
+        case task.Ok{v}: "ok"
+        case task.Failed{}: "failed"
+        case task.Died{cause}: "died"
+        }
+        println("update: ${a} / read: ${b}")
+        0
+    })
+    println(if e == nil { "scope: ok" } else { "scope: err" })
+    println("poisoned domains: ${task.Ledger().domains.poisoned}")
+}

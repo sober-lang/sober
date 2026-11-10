@@ -1,0 +1,90 @@
+package main
+
+// PostgreSQL のガイド 1〜4 節（docs/guide/postgres）: 接続・文の実行・行の読み・誤りの見分け。繋ぎ先は環境変数（std/env）から —
+// PG_URL = "postgres://user@host/db"・PG_PASSWORD・PG_CA = 私的 PKI の CA の PEM のパス（無ければ焼き込みの WebPKI のルートだけ）。
+// リポジトリの検査（scripts/pgoracle.sh）が使い捨ての PostgreSQL 17 / 18 を立ててこの例を走らせ、出力を照合する
+
+import "std/env"
+import "std/io"
+import "std/pg"
+import "std/tls"
+
+const Url = env.StrVar{name: "PG_URL", help: "the database URL (postgres://user@host[:port]/db)"}
+const Password = env.StrVar{name: "PG_PASSWORD", help: "the SCRAM password", opt: true}
+const Ca = env.StrVar{name: "PG_CA", help: "a PEM file of extra trusted CAs", opt: true}
+
+const Vars = env.Table{strs: []env.StrVar{Url, Password, Ca}}
+
+// 方針: password は URL に書かず Policy に（@secret の欄）・私的 PKI の CA は extraRoots に足す
+func policyOf(e env.Values) pg.Policy {
+    pw := env.StrOpt(e, Password)
+    ca := env.StrOpt(e, Ca)
+    roots := if ca == nil { nil } else { rootsOf(ca) }
+    return pg.Policy{password: if pw == nil { "" } else { pw }, extraRoots: roots}
+}
+
+func rootsOf(path string) tls.Roots? {
+    pem := io.ReadFile(path) catch return nil
+    return tls.ParseRoots(string(pem) catch "") catch nil
+}
+
+func setup(c pg.Conn) error? {
+    // 複数の文（; 区切り・引数なし）は Script で 1 回に
+    pg.Script(c, "create temp table item (id int8 primary key, name text not null, price int4 not null)")?
+    add(c, 1, "apple", 120)?
+    add(c, 2, "pear", 340)?
+    add(c, 3, "fig", 560)?
+    return nil
+}
+
+// 値は $1 … の引数で渡す（SQL の文面は const の席 — 実行時に組んだ文字列は渡せない）
+func add(c pg.Conn, id int, name string, price int) error? {
+    _ = pg.Exec(c, "insert into item (id, name, price) values ($1, $2, $3)", args: []pg.Value{pg.Int{v: id}, pg.String{v: name}, pg.Int{v: price}})?
+    return nil
+}
+
+func list(c pg.Conn, limit int) error? {
+    for r <- pg.Query(c, "select id, name, price from item where price <= $1 order by id", args: []pg.Value{pg.Int{v: limit}})? {
+        println("${pg.ColInt(r, 0)?} ${pg.ColString(r, 1)?} ${pg.ColInt(r, 2)?}")
+    }
+    return nil
+}
+
+// サーバの誤りは Server（code = SQLSTATE）— 接続はそのまま使える
+func duplicate(c pg.Conn) {
+    _, e := pg.Exec(c, "insert into item (id, name, price) values (3, 'dup', 1)")
+    switch e {
+    case nil: println("inserted?")
+    case pg.Server{code, message, detail, constraint, hint}: println("server error ${code} on ${constraint}")
+    default: println("other error")
+    }
+    n := pg.Exec(c, "select 1") catch -1
+    println("still usable: ${n}")
+}
+
+func shop(c pg.Conn) {
+    se := setup(c)
+    if se != nil {
+        println("setup failed")
+        return
+    }
+    le := list(c, 400)
+    if le != nil {
+        println("list failed")
+    }
+    duplicate(c)
+}
+
+func main() int {
+    e, err := env.Load(Vars)
+    if err != nil {
+        _ = io.WriteStdout(bytes(env.Format(err)))
+        return 1
+    }
+    oe := pg.Open(env.Str(e, Url), shop, policy: policyOf(e))
+    if oe != nil {
+        println("open failed")
+        return 1
+    }
+    return 0
+}

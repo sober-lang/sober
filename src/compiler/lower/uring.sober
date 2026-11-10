@@ -43,6 +43,8 @@ const UR_NET = 48     // 記録の語: 1 = net の ring（上の形）
 const UR_DLQ = 49     // 期限つきの待ち手の鎖の頭（TC_AWNEXT — net の ring の道。epoll の道は EP_DLQ）
 const UR_TS = 50      // enter の timeout（__kernel_timespec 2 語）
 const UR_GEA = 52     // io_uring_getevents_arg（3 語 — sigmask 0・大きさ 0・ts の番地）
+// 鎖の最早の期限の下界（積むとき min・期限の走査が残りの最小に引き直す・外しは触らない — 下界のまま）。今がこれより前なら走査は鎖を歩かない
+const UR_DLMIN = 55
 const UR_NSQ = 256
 // 登録済みの ring fd（REGISTER_RING_FDS — 5.18）: enter はファイル表の引きと参照の原子操作を省いて添字で入る。登録はスレッドごと（ring を作ったワーカーが自分で）
 const UR_EFDX = 71    // enter に渡す fd（登録できたら添字・できなければ素の fd）
@@ -59,6 +61,7 @@ const UD_CANCEL = 3   // ASYNC_CANCEL の user_data（完了は捨てる）
 const UD_CLOSE = 4    // CLOSE の user_data（完了は捨てる・積んだ io の数を戻す — netring.sober の閉じ）
 const UDT_POLL = 2    // POLL_ADD の user_data の印（TCB | 2）
 const IO_PENDING = -9223372036854775807
+const PEND_DOM = -9223372036854775804 // IO_PENDING + 3: domain の Await の待ち（手渡し = 1・満了 = -110 — 起こし手と期限の走査が CAS で競う・domain.sober）
 
 func needUringRt(st mut St) {
     lsNeed(mut st, NEED_URING, 0)
@@ -422,6 +425,12 @@ func urNetGate(st mut St, rec int, wait int) int {
     sx := newBlock(mut st)
     sk := newBlock(mut st)
     se := newBlock(mut st)
+    sf := newBlock(mut st)
+    fm := param(mut st, sf, TyI64)
+    bWalk := newBlock(mut st)
+    lo := load(mut st, rp, UR_DLMIN)
+    condbr(mut st, cmp(mut st, CLt, now, lo), sf, list1(mut st, lo), bWalk, -1)
+    setCur(mut st, bWalk)
     br(mut st, sl, list3(mut st, urAdd(mut st, rec, UR_DLQ * 8), head, big))
     setCur(mut st, sl)
     condbr(mut st, cmp(mut st, CEq, t, zero), se, -1, sb, -1)
@@ -431,8 +440,18 @@ func urNetGate(st mut St, rec int, wait int) int {
     nx := load(mut st, tp, TC_AWNEXT)
     condbr(mut st, cmp(mut st, CGe, now, dlv), sx, -1, sk, -1)
     setCur(mut st, sx)
-    store(mut st, itop(mut st, pa), 0, nx)
-    // rt が直に起こす待ち（受け — netring.sober の PEND_RT）は起こすだけ・POLL_ADD と送りは取り消す（完了で -110 として起きる）
+    awCut(mut st, pa, t)
+    // rt が直に起こす待ち（受け — netring.sober の PEND_RT）は起こすだけ・POLL_ADD と送りは取り消す（完了で -110 として起きる）・
+    // domain の Await の待ち手（TC_DQDL ≠ 0 — domain.sober）は手渡しと CAS で競う（手渡しが勝っていれば何もしない）
+    if st.domUse {
+        bDw := newBlock(mut st)
+        bNd := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CNe, load(mut st, tp, TC_DQDL), zero), bDw, -1, bNd, -1)
+        setCur(mut st, bDw)
+        domExpire(mut st, t)
+        br(mut st, sl, list3(mut st, pa, nx, mn))
+        setCur(mut st, bNd)
+    }
     k := load(mut st, tp, TC_IORES)
     bRt := newBlock(mut st)
     bCn := newBlock(mut st)
@@ -450,8 +469,11 @@ func urNetGate(st mut St, rec int, wait int) int {
     setCur(mut st, sk)
     br(mut st, sl, list3(mut st, urAdd(mut st, t, TC_AWNEXT * 8), nx, imin(mut st, mn, dlv)))
     setCur(mut st, se)
-    has := cmp(mut st, CNe, mn, big)
-    d := bin(mut st, BMul, has, imax(mut st, bin(mut st, BSub, mn, now), zero))
+    store(mut st, rp, UR_DLMIN, mn)
+    br(mut st, sf, list1(mut st, mn))
+    setCur(mut st, sf)
+    has := cmp(mut st, CNe, fm, big)
+    d := bin(mut st, BMul, has, imax(mut st, bin(mut st, BSub, fm, now), zero))
     store(mut st, rp, UR_TS, bin(mut st, BDiv, d, iconst(mut st, 1000000000)))
     store(mut st, rp, UR_TS + 1, bin(mut st, BRem, d, iconst(mut st, 1000000000)))
     store(mut st, rp, UR_GEA, zero)

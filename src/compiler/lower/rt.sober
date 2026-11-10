@@ -1045,6 +1045,7 @@ func buildReadFd(st mut St) {
     net := chF(mut st, NETF_WAIT) != -1 && st.taskUse
     limit := if net { bin(mut st, BAnd, 1, iconst(mut st, RFD_DIRECT - 1)) } else { 1 }
     direct := if net { cmp(mut st, CNe, bin(mut st, BAnd, 1, iconst(mut st, RFD_DIRECT)), iconst(mut st, 0)) } else { -1 }
+    plain := if net { cmp(mut st, CNe, bin(mut st, BAnd, 1, iconst(mut st, RFD_PLAIN)), iconst(mut st, 0)) } else { -1 }
     out := 2
     call(mut st, st.rtFlush, list0(mut st))
     depth := initOut(mut st, out)
@@ -1069,7 +1070,7 @@ func buildReadFd(st mut St) {
     br(mut st, done, -1)
     setCur(mut st, nonzero)
     // std/task を使うプログラムは region の先端へ直に読む（read_file と同じ — 読みの間に task が切り替わるので、ワーカーごとの iobuf は使えない）
-    r := if st.taskUse { rfdDirect(mut st, depth, out, fd, c, direct) } else { syscall(mut st, list4(mut st, iconst(mut st, 0), fd, ptoi(mut st, buf), c)) }
+    r := if st.taskUse { rfdDirect(mut st, depth, out, fd, c, direct, plain) } else { syscall(mut st, list4(mut st, iconst(mut st, 0), fd, ptoi(mut st, buf), c)) }
     if st.taskUse {
         // 読みの中で task が待つ（ring の読み・net の受け）間に、同じワーカーの他の task が errno の語を書く — 待ちの後で置き直す（失敗は下で上書き）
         setErrno(mut st, iconst(mut st, 0))
@@ -1098,7 +1099,8 @@ func buildReadFd(st mut St) {
 }
 
 // read_fd の 1 回の読み（std/task を使うプログラム）: 先端 end を c バイト仮に伸ばして rt.uio で読み、読めた分（失敗・EOF は 0）に詰め直す
-func rfdDirect(st mut St, depth int, out int, fd int, c int, direct int) int {
+// plain（direct の中の印 RFD_PLAIN）= net の ring の受けを張らずにその場の read（std/internal/sock — ワーカーを跨いで借りられる接続）
+func rfdDirect(st mut St, depth int, out int, fd int, c int, direct int, plain int) int {
     end := colGrow(mut st, depth, out, c)
     mut r := 0
     if direct < 0 {
@@ -1112,7 +1114,17 @@ func rfdDirect(st mut St, depth int, out int, fd int, c int, direct int) int {
         setCur(mut st, bS)
         // net の ring の受け（netring.sober の rt.netrecv — 宣言されていれば。ring の道でなければ中で read）
         nrv := chF(mut st, NETF_RECV)
-        br(mut st, bJ, list1(mut st, if nrv != -1 { call(mut st, nrv, list3(mut st, fd, end, c)) } else { syscall(mut st, list4(mut st, iconst(mut st, 0), fd, end, c)) }))
+        if nrv != -1 {
+            bP := newBlock(mut st)
+            bN := newBlock(mut st)
+            condbr(mut st, plain, bP, -1, bN, -1)
+            setCur(mut st, bP)
+            br(mut st, bJ, list1(mut st, syscall(mut st, list4(mut st, iconst(mut st, 0), fd, end, c))))
+            setCur(mut st, bN)
+            br(mut st, bJ, list1(mut st, call(mut st, nrv, list3(mut st, fd, end, c))))
+        } else {
+            br(mut st, bJ, list1(mut st, syscall(mut st, list4(mut st, iconst(mut st, 0), fd, end, c))))
+        }
         setCur(mut st, bR)
         br(mut st, bJ, list1(mut st, ioRw(mut st, 0, fd, end, c)))
         setCur(mut st, bJ)

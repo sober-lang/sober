@@ -414,7 +414,8 @@ func sameInts(a []int, b []int) bool {
 // b の at からの枠と要求が基準と一致するか（違えば 1 行出して偽）
 func agree(b []byte, at int, mh int, mb int) bool {
     o := frameAtRef(b, at, mh, mb)
-    f := frameAt(b, at, mh, mb)
+    mut hs := mut []int{}
+    f := frameAt(b, at, mh, mb, mut hs)
     if o.st != f.st || o.s != f.s || o.he != f.he || o.end != f.end || o.chunked != f.chunked || o.keep != f.keep || o.v10 != f.v10 {
         println("frame differs: ${string(b) catch "<bytes>"} at ${at} mh ${mh} mb ${mb}: ref st ${o.st} s ${o.s} he ${o.he} end ${o.end} / new st ${f.st} s ${f.s} he ${f.he} end ${f.end}")
         return false
@@ -423,7 +424,7 @@ func agree(b []byte, at int, mh int, mb int) bool {
         return true
     }
     ro, eo := requestRef(b, o)
-    rn, en := request(b, f)
+    rn, en := request(b, f, freeze(hs))
     if (eo == nil) != (en == nil) {
         println("request error differs: ${string(b) catch "<bytes>"}")
         return false

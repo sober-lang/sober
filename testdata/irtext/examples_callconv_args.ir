@@ -1999,16 +1999,16 @@ b0:
   region.enter
   %6 = const 0
   %7 = const 0
-  %8 = slotaddr s0
-  %9 = const 0
-  store %8[0], %9
-  store %8[1], %9
-  store %8[0], %6
-  store %8[1], %7
+  %8 = const 0
+  %9 = slotaddr s0
+  store %9[0], %8
+  store %9[1], %8
+  store %9[0], %6
+  store %9[1], %7
   %10 = slotaddr s1
-  %11 = load.i64 %8[0]
+  %11 = load.i64 %9[0]
   store %10[0], %11
-  %12 = load.i64 %8[1]
+  %12 = load.i64 %9[1]
   store %10[1], %12
   %13 = const 1
   %14 = add %5, %13
@@ -2240,12 +2240,12 @@ b0:
   %104 = const 10
   call @rt.print_char(%104)
   %105 = funcaddr @main.taken5
-  %106 = slotaddr s0
-  %107 = const 0
-  store %106[0], %107
-  store %106[0], %105
+  %106 = const 0
+  %107 = slotaddr s0
+  store %107[0], %106
+  store %107[0], %105
   %108 = slotaddr s1
-  %109 = load.i64 %106[0]
+  %109 = load.i64 %107[0]
   store %108[0], %109
   %110 = const 1
   %111 = const 2

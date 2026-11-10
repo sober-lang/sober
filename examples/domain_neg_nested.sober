@@ -1,0 +1,21 @@
+package main
+
+// domain の本体から別の domain は呼べない（入りは nondet — 本体は効果なし）: 持ったまま待つ形が書けないので、domain が原因のデッドロックは無い
+
+import "std/task"
+
+type Hits struct {
+    n int
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        a := task.NewDomain(s, Hits{n: 0})
+        b := task.NewDomain(s, Hits{n: 0})
+        task.Update(a, (st mut Hits) => {
+            st.n += task.Read(b, (o Hits) => o.n)
+            st.n
+        })
+    })
+    println(r)
+}

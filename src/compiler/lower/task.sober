@@ -72,7 +72,7 @@ const TC_WORDS = TC_FLEN + 5
 // 自前の深度の [スロットの基底, bump] の退避（深度 k → TC_SAVE + 2k・+1）。2 × (MAX_DEPTH + 1) 語 = 16 KiB の列なので記録の末尾に置く —
 // 毎回の io の欄（TC_FLEN〜TC_SLOTSZ・TC_FDS / TC_CHS / TC_DL = 語 27〜34）を TC_NEXT 等と同じ先頭の頁に収め、完了 1 本で TCB の 2 頁を
 // 触らないため（退避の列の後ろに置くと io の欄が 5 頁目に来て、4096 接続の ring で dTLB の取りこぼし 12 / 要求のうち
-// 3.6 が rt.uring_poll の TC_IORES になる）。TC_SAVE は TC_DL・TC_LEASE（語 35）・孤児の登録簿の TC_ORG（語 36 — orphan.sober）・TC_NSLOT（語 37）より後ろ・TC_END × 8 = 16,768 B < 窓の始まり（WIN_OFF = 18,432 — 塊の末尾の 4 頁は浅い region の窓）
+// 3.6 が rt.uring_poll の TC_IORES になる）。TC_SAVE は TC_DL・TC_LEASE（語 35）・孤児の登録簿の TC_ORG（語 36 — orphan.sober）・TC_NSLOT（語 37）より後ろ・TC_END × 8 = 16,816 B < 窓の始まり（WIN_OFF = 18,432 — 塊の末尾の 4 頁は浅い region の窓）
 // 次の spawn 1 回のスロットの大きさの印（バイト — 0 = 印なし。rt.netop 6 が今の task に書き、rt.task_new が親のこの語を読んで消す — std/net の Serve の region:）
 const TC_NSLOT = 37
 // 飽和下の待ちの上限（language.md 28 節 ring の道）: TC_PREV = 溢れの列の 1 つ古い側（走れる積みの環から溢れた task だけ。
@@ -92,7 +92,19 @@ const TC_LRUN = 43
 const TC_FUSE = 44
 // 窓から移した分（深度 BASE + 1 + i の窓の使った分を 16 bit × i — 0 = 移していない）。深度の入り・返しが読むので先頭の頁に
 const TC_WSP = 45
-const TC_SAVE = 46
+// 鎖の前の語の番地（期限の待ちの鎖 UR_DLQ / EP_DLQ と入場の待ちの鎖 MN_AWAIT — TC_AWNEXT と対。鎖の頭の語か前の節の TC_AWNEXT の番地・0 = どの鎖にも居ない）。
+// 取り外しを O(1) にする（受けの完了・期限の走査・孤児の走査が毎回触るので先頭の頁に）
+const TC_AWPREV = 46
+// domain（domain.sober）: TC_DOM = 今入っている domain の記録（0 = 入っていない — 本体で死んだら task の終わりが毒を立てて鍵を返す）・
+// TC_DQNEXT / TC_DQPREV = domain の待ちの列（Await — 期限の鎖と同時に居るので TC_AWNEXT / TC_AWPREV とは別の対）
+const TC_DOM = 47
+const TC_DQNEXT = 48
+const TC_DQPREV = 49
+// Await の待ちの到着の時刻（ns — 最初の待ちで置く・0 = 待っていない。期限 = 到着 + D・手渡しで戻っても列の位置と到着を保つ）
+const TC_DQDL = 50
+// Await の待ち手の when の鍵（domain.sober の domWhenKey — 0 = 束ねない）
+const TC_DQKEY = 51
+const TC_SAVE = 52
 const TC_END = TC_SAVE + 2 * (MAX_DEPTH + 1)
 // 開いた fd の鎖の頭（fd + 1・0 = 空 — 登録簿 rt.sober の needOpen）。sysOpen を使うプログラムでだけ使う語（TC_WORDS の外）。main の記録
 // （rt.main_task）は退避の列の末尾まで（TC_END）なので、TC_FDS / TC_CHS / TC_DL はどのプログラムでも中にある。子の塊の記録は TASK_HEAD の頁の中
@@ -154,6 +166,10 @@ const SCHED_ACT = 4 + SCHED_CAP    // 選択の器を使うか（列・trace・�
 // TCB の頭の頁（記録 TC_END 語 + 浅い region の窓 WIN_N 頁 — 窓の注）
 const TASK_HEAD = 32768
 const TASK_GUARD = 4096
+// TCB の頁の中の積みの頂上の余白（TCB は塊の頁の先頭からこの位置に置き、積みはその直下から下へ伸びる）。接続の task の keep-alive の
+// 1 要求の最深の積みは「この余白 + 下の 1 頁」に収める — 越えると接続ごとに積みの頁が 1 枚増える（網 = stackcheck — pstat の stack_hw）。
+// TCB の取り分は 4096 − この値（毎回触る TC_SAVE より前の 46 語と、浅い深度の退避の列が同じ頁に残る大きさ）
+const TCB_TOP_ROOM = 3072
 // 機械スタックの大きさ: 1 MiB（NORESERVE — 実メモリは触った頁だけ）。子の region の深度の上限（1023）まで再帰しても溢れない大きさ —
 // 102（depth_limit）の境目を P3a（親の 8 MB スタックの上で走った）と同じに保つ（64 KiB では深度 1000 程度の再帰で先にスタックが尽きる）
 const TASK_STACK = 1048576
@@ -626,7 +642,7 @@ func slotBase(st mut St, meta int, d int) int {
 // 窓は予備にならない（park は窓の深度を自前に残す — 予備は同じワーカーの他の task が表の欄のまま採る）。開発の口 SOBER_TASK_WIN=0 は窓を張らない
 const WIN_N = 4
 const WIN_SZ = 4096
-const WIN_OFF = 4096 + TASK_HEAD - 2048 - WIN_N * WIN_SZ
+const WIN_OFF = 4096 + TASK_HEAD - TCB_TOP_ROOM - WIN_N * WIN_SZ
 
 // 基底 base が task tcb の窓（移す前）か: base + 大きさ − (最初の窓の終わり) が 0, W, 2W, 3W のどれか（他の写像のスロットは塊の中に来ない）
 func isWinT(st mut St, meta int, base int, tcb int) int {
@@ -791,6 +807,7 @@ func buildWinPark(st mut St) {
     wend := winEndOf(mut st, tcb, r)
     // 窓の頁は前の実体が触ったまま残る（park の時点で空でも）— 返して、この task では以後窓にしない
     syscall(mut st, list4(mut st, iconst(mut st, 28), bin(mut st, BSub, wend, iconst(mut st, WIN_SZ)), iconst(mut st, WIN_SZ), iconst(mut st, 4)))
+    atomicXadd(mut st, globaladdr(mut st, st.pstatG), PS_WINREL, iconst(mut st, 1))
     store(mut st, gepWord(mut st, sg, k), 0, bin(mut st, BSub, wend, sz))
     winSet(mut st, tcb, r, iconst(mut st, WSP_NOWIN))
     br(mut st, nxt, -1)
@@ -2011,7 +2028,7 @@ func buildTaskNewFn(st mut St, fnr FnRef, inPool bool) {
     setCur(mut st, bMap)
     // 並び（頭の注）: TCB は スタックの終わり + 2 KiB（頁の途中）・その頁の下半分がスタックの頂上。TC_END × 8 は TCB の頁の残りと TASK_HEAD に収まる
     size := TASK_GUARD + TASK_STACK + 4096 + TASK_HEAD
-    tcbOff := TASK_GUARD + TASK_STACK + 2048
+    tcbOff := TASK_GUARD + TASK_STACK + TCB_TOP_ROOM
     args := listN(mut st, 7)
     desugar.HeapSet(mut st.d, args + 1, iconst(mut st, 9))
     desugar.HeapSet(mut st.d, args + 2, iconst(mut st, 0))
@@ -2038,13 +2055,17 @@ func buildTaskNewFn(st mut St, fnr FnRef, inPool bool) {
     bp := itop(mut st, bin(mut st, BAdd, b, iconst(mut st, tcbOff)))
     // 計測口: 新しい塊の数（共有の予備・手元の鎖の取りこぼしは入力に比例して増える — 網）
     atomicXadd(mut st, globaladdr(mut st, st.pstatG), PS_TCBMAP, iconst(mut st, 1))
-    store(mut st, bp, TC_TOP, ptoi(mut st, bp))
+    // 変異 47 = 積みの頂上を 1 KiB 下げる（道が 1 KiB 深くなったのと同じ — stackcheck が捕まえる）
+    store(mut st, bp, TC_TOP, bin(mut st, BSub, ptoi(mut st, bp), iconst(mut st, if st.rtMut == 47 { 1024 } else { 0 })))
     store(mut st, bp, TC_ENTRY, funcaddr(mut st, st.rtTaskStart))
     br(mut st, bGot, list1(mut st, bp))
     setCur(mut st, bGot)
     store(mut st, got, TC_ADM, adm.e)
     if winArm(mut st) {
-        store(mut st, got, TC_WSP, iconst(mut st, 0))
+        // 窓にしない印（WSP_NOWIN — 要求ごとの region の深度）は塊に残す: 窓の頁を返す madvise は塊ごとに初回の 1 回だけになる
+        // （接続ごとに返すと M:N で TLB の撃ち落とし — 下の slotRelease の W_MADV と同じ規律）。変異 46 = 残さない（接続ごとに返す — wincheck の回数の照合が捕まえる）
+        keep := if st.rtMut == 46 { 0 } else { 4611756388245323776 }
+        store(mut st, got, TC_WSP, bin(mut st, BAnd, load(mut st, got, TC_WSP), iconst(mut st, keep)))
     }
     store(mut st, got, TC_NODE, adm.node)
     store(mut st, got, TC_CNODE, adm.node)
@@ -2646,6 +2667,9 @@ func buildTaskStart(st mut St) {
     begin(mut st, st.rtTaskStart)
     frame := itop(mut st, load(mut st, 0, TC_FRAME))
     r := trapCall(mut st, load(mut st, 0, TC_KID), fieldPtr(mut st, frame, FR_RES))
+    if st.domUse {
+        domDiedIn(mut st, 0)
+    }
     frRec(mut st, FK_END, ptoi(mut st, 0), r)
     fdDrainCall(mut st)
     orphEnd(mut st, 0)

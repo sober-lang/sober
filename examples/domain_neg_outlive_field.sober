@@ -1,0 +1,26 @@
+package main
+
+// A domain cannot be put where it outlives the scope that made it (diag.Par kind 39): assigning it to a field of a value made outside the scope
+
+import "std/task"
+
+type C struct {
+    n int
+}
+
+type App struct {
+    d task.Domain[C]
+}
+
+func main() {
+    r, e := task.Run((s0 task.Scope) => {
+        mut app := App{d: task.NewDomain(s0, C{n: 1})}
+        _, e1 := task.Run((s1 task.Scope) => {
+            app.d = task.NewDomain(s1, C{n: 2})
+            0
+        })
+        _ = e1
+        task.Read(app.d, (st C) => st.n)
+    })
+    println("${r} ${e == nil}")
+}

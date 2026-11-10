@@ -1,0 +1,50 @@
+package main
+
+// ワーカーの CPU の固定の形（language.md 11 節「ワーカーの CPU の固定」）を外から確かめる題材 — scripts/pincheck.sh が SOBER_PIN と taskset を
+// 変えて走らせ、印字した Ledger の pin / pinGroups と /proc の Cpus_allowed_list を照合する。
+// 子を生んでワーカーを立て、全ワーカーが自分を固定し終えるまで待ってから印字し、引数のミリ秒だけ眠る（その間に外から /proc を読む）
+
+import "std/convert"
+import "std/os"
+import "std/task"
+
+func main() {
+    args := os.Args() catch return
+    mut hold := 0
+    if len(args) >= 2 {
+        v, _ := convert.ParseInt(args[1])
+        hold = v
+    }
+    r, _ := task.Run((s task.Scope) => {
+        mut hs := mut []task.Handle[int]{}
+        mut i := 0
+        while i < 64 {
+            k := i
+            hs = append(hs, task.Spawn(s, () => k + 1))
+            i += 1
+        }
+        mut sum := 0
+        for v <- task.Gather(hs) {
+            sum += v
+        }
+        sum
+    })
+    // ワーカーは起動の後に自分を固定する — 群の数が動かなくなるまで待つ（固定しない形では 0 のまま）
+    mut g := task.Ledger().pinGroups
+    mut stable := 0
+    while stable < 20 {
+        os.Sleep(5)
+        g2 := task.Ledger().pinGroups
+        if g2 == g {
+            stable += 1
+        } else {
+            g = g2
+            stable = 0
+        }
+    }
+    l := task.Ledger()
+    println("sum ${r} workers ${l.workers} pin ${l.pin} groups ${l.pinGroups}")
+    if hold > 0 {
+        os.Sleep(hold)
+    }
+}

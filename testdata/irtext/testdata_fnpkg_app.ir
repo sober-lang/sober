@@ -1832,18 +1832,18 @@ b0:
   store %9[0], %10
   %11 = load.i64 %7[1]
   store %9[1], %11
-  %12 = slotaddr s3
-  %13 = const 0
-  store %12[0], %13
-  store %12[1], %13
+  %12 = const 0
+  %13 = slotaddr s3
+  store %13[0], %12
+  store %13[1], %12
   %14 = load.i64 %9[0]
-  store %12[0], %14
+  store %13[0], %14
   %15 = load.i64 %9[1]
-  store %12[1], %15
+  store %13[1], %15
   %16 = slotaddr s4
-  %17 = load.i64 %12[0]
+  %17 = load.i64 %13[0]
   store %16[0], %17
-  %18 = load.i64 %12[1]
+  %18 = load.i64 %13[1]
   store %16[1], %18
   %19 = slotaddr s3
   %20 = load.i64 %16[0]
@@ -1900,11 +1900,11 @@ func @testdata/fnpkg/p.Make(%0 ptr, %1 i64) {
 b0:
   %2 = region.depth
   region.enter
-  %3 = slotaddr s0
-  %4 = const 0
-  store %3[0], %4
-  store %3[0], %1
-  %5 = load.i64 %3[0]
+  %3 = const 0
+  %4 = slotaddr s0
+  store %4[0], %3
+  store %4[0], %1
+  %5 = load.i64 %4[0]
   store %0[0], %5
   region.setdepth %2
   ret

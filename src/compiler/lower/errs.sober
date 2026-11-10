@@ -2,7 +2,9 @@ package lower
 
 // 組み込み error（K1'' — src/stage1/lower_types.zig の errType / lower.zig の labelToErr / lower_inline.zig の tryResults / lower_cont.zig の chainPush・causeOf の写し）。
 // - ラベルの型 = 全 error ラベルの union（st.errs — variant の並びは desugar の errv = ロード順 × ファイル順 × 宣言順、タグ = 添字）
-// - error = (先頭ラベル, 鎖) の struct（st.errstruct — フィールド #top / #chain。鎖は内側の error を外側から積んだ imm の []ラベル）
+// - error = (先頭ラベルのタグ, ラベルの列) の struct（st.errstruct — フィールド #tag / #cells・4 語固定 — 閉世界のラベルの大きさに依らない）。
+//   列は imm の []ラベル（セルは region の中）: 空なら先頭は欄なしで cause なし（確保ゼロ）、空でなければ末尾のセルが先頭・その前が鎖
+//   （包み替えで積んだ内側の error — 外側から積んだ並び）
 
 import "diag"
 import "desugar"
@@ -71,8 +73,7 @@ func errType(st mut St) (int, error?) {
     u := errsInfo(mut st)
     layoutInfo(mut st, u)?
     lt := desugar.HeapGet(mut st.d, u + SI_TY)
-    lw := tWords(mut st, lt)
-    fs := list2(mut st, rec4(mut st, int(strLit(mut st, "#top")), lt, 0, 0), rec4(mut st, int(strLit(mut st, "#chain")), mkSlice(mut st, lt, false), lw, 0))
+    fs := list2(mut st, rec4(mut st, int(strLit(mut st, "#tag")), tInt(mut st), 0, 0), rec4(mut st, int(strLit(mut st, "#cells")), mkSlice(mut st, lt, false), 1, 0))
     info := recN(mut st, SISZ)
     desugar.HeapSet(mut st.d, info, TStruct)
     desugar.HeapSet(mut st.d, info + SI_DECL, -2)
@@ -80,12 +81,19 @@ func errType(st mut St) (int, error?) {
     desugar.HeapSet(mut st.d, info + SI_KEY, int(strLit(mut st, "error")))
     desugar.HeapSet(mut st.d, info + SI_PKG, desugar.MainPkg(mut st.d))
     desugar.HeapSet(mut st.d, info + SI_FIELDS, fs)
-    desugar.HeapSet(mut st.d, info + SI_WORDS, lw + 3)
+    desugar.HeapSet(mut st.d, info + SI_WORDS, ERR_WORDS)
     desugar.HeapSet(mut st.d, info + SI_STATE, LDone)
     ty := rec4(mut st, TStruct, info, 0, 0)
     desugar.HeapSet(mut st.d, info + SI_TY, ty)
     st.errstruct = info
     return ty, nil
+}
+
+const ERR_WORDS = 4
+
+// ラベルの列のセルの型（全ラベルの union）
+func errCellTy(st mut St) int {
+    return desugar.HeapGet(mut st.d, errsInfo(mut st) + SI_TY)
 }
 
 // t が組み込み error か
@@ -104,56 +112,150 @@ func isLabel(st mut St, t int) bool {
     return x >= 0 && isTag(mut st, t, TUnion) && desugar.HeapGet(mut st.d, t + 1) == x
 }
 
-// ラベルの値 → error: (L, 空の鎖)。空の鎖はゼロのヘッダ（深度 0 — relocate の対象にならない）
+// ラベルの union の値 → error（セルを 1 つ確保して写す）。ラベルのリテラルは composite が直に error を組むので、ここに来るのは
+// union の値として持ち回った形だけ
 func labelToErr(st mut St, t int, v int) (Val, error?) {
     et := errType(mut st)?
+    lw := tWords(mut st, t)
+    d := regionDepth(mut st)
+    cell := regionAlloc(mut st, d, iconst(mut st, lw))
+    storeVal(mut st, cell, 0, t, v)
     p := newAgg(mut st, et)
-    storeVal(mut st, p, 0, t, v)
-    zero := iconst(mut st, 0)
-    for w <- iter.Range(0, 3) {
-        store(mut st, p, tWords(mut st, t) + w, zero)
-    }
+    store(mut st, p, 0, load(mut st, v, 0))
+    store(mut st, p, 1, ptoi(mut st, cell))
+    store(mut st, p, 2, iconst(mut st, 1))
+    store(mut st, p, 3, d)
     return Val{t: et, v: p}, nil
 }
 
-// error の鎖に内側の error を積む（包み替え）: dst_chain ← append(内側の鎖, 内側の先頭)。
-// 内側の error は src + src_off 語（先頭ラベル lt、その後に鎖のヘッダ）。imm の append なので最内 region へ全コピー + 1 セル
-func chainPush(st mut St, dst_chain int, src int, src_off int, lt int) {
-    inner := fieldPtr(mut st, src, src_off)
-    lw := tWords(mut st, lt)
-    inner_chain := fieldPtr(mut st, inner, lw)
+// error のラベルのリテラルの先頭のセル（region）を取る。inner >= 0 なら包み替え: 内側の error（inner 番地）の列の後ろに 1 セル足した新しい列
+// （imm の append — 最内 region へ全コピー + 1 セル。内側の列が空〔欄なし・cause なし〕なら内側のタグだけのセルを先に置く）。
+// inner < 0 で欄なし（has = false）ならセルは取らない（-1）。inner < 0 で欄ありは -2 — 呼び手が errFresh で error の値ごと組む。(セル, 列の先頭〔i64〕, 列の長さ, 深度)
+func errCells(st mut St, inner int, has bool) (int, int, int, int) {
+    lw := tWords(mut st, errCellTy(mut st))
+    if inner < 0 {
+        if !has {
+            return -1, iconst(mut st, 0), iconst(mut st, 0), iconst(mut st, 0)
+        }
+        return -2, 0, 0, 0
+    }
     d := regionDepth(mut st)
-    gp, gd := grow(mut st, inner_chain, lw, d, false)
-    storeVal(mut st, gd, 0, lt, inner)
-    store(mut st, dst_chain, 0, ptoi(mut st, gp))
-    store(mut st, dst_chain, 1, bin(mut st, BAdd, load(mut st, inner_chain, 1), iconst(mut st, 1)))
-    store(mut st, dst_chain, 2, d)
+    ih := fieldPtr(mut st, inner, 1)
+    ln := load(mut st, ih, 1)
+    join := newBlock(mut st)
+    np := param(mut st, join, TyPtr)
+    cell := param(mut st, join, TyPtr)
+    nl := param(mut st, join, TyI64)
+    empty := newBlock(mut st)
+    some := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, ln, iconst(mut st, 0)), empty, -1, some, -1)
+    setCur(mut st, empty)
+    p2 := regionAlloc(mut st, d, iconst(mut st, 2 * lw))
+    store(mut st, p2, 0, load(mut st, inner, 0))
+    br(mut st, join, list3(mut st, p2, fieldPtr(mut st, p2, lw), iconst(mut st, 2)))
+    setCur(mut st, some)
+    gp, gd := grow(mut st, ih, lw, d, false)
+    br(mut st, join, list3(mut st, gp, gd, bin(mut st, BAdd, ln, iconst(mut st, 1))))
+    setCur(mut st, join)
+    return cell, ptoi(mut st, np), nl, d
 }
 
-// error の cause: e（error の値のアドレス）の 1 つ内側の error?。鎖が空なら nil、
-// でなければ (鎖の末尾, 鎖の [0 : len-1])（部分列はビュー — 同じセル・同じ深度）
+// 欄を持つラベル 1 つの error（列 = 確保した 1 セル）: 値を組み、セルの番地を返す。確保は rt の呼び出し（作る関数の本体に
+// region の op を置かない — インライナーの形の規則に効かせない）。toRet なら return 文の値（関数の戻りへ行く）で、セルは戻りの写し先の深度
+// （呼び手の深度 — retFloor）に rt.err_alloc で直に作る（宛先構築。戻りの写しと同じ置き場なので、作る関数の region に確保が載らない）。
+// 他は今の深度に rt.region_alloc
+func errFresh(st mut St, tag int, toRet bool) (Val, int, error?) {
+    et := errType(mut st)?
+    p := newAgg(mut st, et)
+    store(mut st, p, 0, tag)
+    d := if toRet { st.retFloor } else { regionDepth(mut st) }
+    g := if toRet && st.errMark { needErrAlloc(mut st) } else { st.rtRalloc }
+    cell := call(mut st, g, list2(mut st, d, iconst(mut st, tWords(mut st, errCellTy(mut st)))))
+    store(mut st, p, 1, ptoi(mut st, cell))
+    store(mut st, p, 2, iconst(mut st, 1))
+    store(mut st, p, 3, d)
+    return Val{t: et, v: p}, cell, nil
+}
+
+// rt.err_alloc(d, w) を（初出なら）宣言する（本体は programRt の buildErrAlloc — rt.region_alloc を呼ぶだけ）。return 文の error ラベルの
+// セルだけがこれを通る: 呼んだ道は非 nil の error を返す道なので、region の解析（rlight）が「失敗の戻りの道だけで確保する関数」を見分ける印になる
+func needErrAlloc(st mut St) FnRef {
+    lsNeed(mut st, NEED_ERRALLOC, 0)
+    if st.rtErrAlloc == -1 {
+        st.rtErrAlloc = addFunc(mut st, int(strLit(mut st, "rt.err_alloc")), desugar.ListRef(list2(mut st, TyI64, TyI64)), TyPtr)
+    }
+    return st.rtErrAlloc
+}
+
+func buildErrAlloc(st mut St) {
+    if st.rtErrAlloc == -1 {
+        return
+    }
+    begin(mut st, st.rtErrAlloc)
+    ret(mut st, call(mut st, st.rtRalloc, list2(mut st, 0, 1)))
+}
+
+// rt.err_alloc の呼び出しを rt.region_alloc に置き換える（llight の後）
+func errAllocLower(st mut St) {
+    if st.rtErrAlloc == -1 {
+        return
+    }
+    mut f := st.fhead
+    while f != -1 {
+        mut b := irFnBHead(mut st, f)
+        while b != -1 {
+            mut i := irBlkIHead(mut st, b)
+            while i != -1 {
+                if irInsOp(mut st, i) == OpCall && irInsFn(mut st, i) == st.rtErrAlloc {
+                    irSetInsA(mut st, i, int(st.rtRalloc))
+                }
+                i = irInsNext(mut st, i)
+            }
+            b = irBlkNext(mut st, b)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// (タグ, 列) の error の値を組む
+func errMake(st mut St, tag int, np int, nl int, d int) (Val, error?) {
+    et := errType(mut st)?
+    p := newAgg(mut st, et)
+    store(mut st, p, 0, tag)
+    store(mut st, p, 1, np)
+    store(mut st, p, 2, nl)
+    store(mut st, p, 3, d)
+    return Val{t: et, v: p}, nil
+}
+
+// error（e 番地）の先頭ラベルのセルの番地（列の末尾 — 欄を持つラベルなら列は空でない）
+func errTop(st mut St, e int) int {
+    lw := tWords(mut st, errCellTy(mut st))
+    return cellAt(mut st, itop(mut st, load(mut st, e, 1)), bin(mut st, BSub, load(mut st, e, 2), iconst(mut st, 1)), lw)
+}
+
+// error の cause: e（error の値のアドレス）の 1 つ内側の error?。列の長さが 1 以下なら nil、
+// でなければ (列[len-2] のタグ, 列[0 : len-1])（部分列はビュー — 同じセル・同じ深度）
 func causeOf(st mut St, e int, et int, lt int) int {
     ot := optOf(mut st, et)
     out := newAgg(mut st, ot)
     lw := tWords(mut st, lt)
-    chain := fieldPtr(mut st, e, lw)
-    ln := load(mut st, chain, 1)
+    ln := load(mut st, e, 2)
     some := newBlock(mut st)
     none := newBlock(mut st)
     join := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CNe, ln, iconst(mut st, 0)), some, -1, none, -1)
+    condbr(mut st, cmp(mut st, CGt, ln, iconst(mut st, 1)), some, -1, none, -1)
     setCur(mut st, none)
     store(mut st, out, 0, iconst(mut st, 0))
     br(mut st, join, -1)
     setCur(mut st, some)
     store(mut st, out, 0, iconst(mut st, 1))
     n1 := bin(mut st, BSub, ln, iconst(mut st, 1))
-    last := cellAt(mut st, itop(mut st, load(mut st, chain, 0)), n1, lw)
-    storeVal(mut st, out, 1, lt, last)
-    oc := fieldPtr(mut st, out, 1 + lw)
-    store(mut st, oc, 0, load(mut st, chain, 0))
-    store(mut st, oc, 1, n1)
-    store(mut st, oc, 2, load(mut st, chain, 2))
+    prev := cellAt(mut st, itop(mut st, load(mut st, e, 1)), bin(mut st, BSub, ln, iconst(mut st, 2)), lw)
+    store(mut st, out, 1, load(mut st, prev, 0))
+    store(mut st, out, 2, load(mut st, e, 1))
+    store(mut st, out, 3, n1)
+    store(mut st, out, 4, load(mut st, e, 3))
     br(mut st, join, -1)
     setCur(mut st, join)
     return out
@@ -211,16 +313,14 @@ func tryResults(st mut St, e desugar.NodeRef) (int, error?) {
     }
     wrap := nB(nodeOf(mut st, e))
     if wrap != -1 {
-        // 包み替え: 内側の error (top, 鎖) から (W{…}, append(鎖, top)) を作る。フィールドはエラーの経路でだけ評価する
+        // 包み替え: 内側の error の列の後ろに W{…} のセルを足した列を作る。フィールドはエラーの経路でだけ評価する
         if errLabelOf(mut st, st.curPkg, sA(nodeOf(mut st, wrap))) < 0 {
             return 0, diag.Mismatch{at: posOf(mut st, at)}
         }
-        wrapped := composite(mut st, wrap)?
-        if isTag(mut st, wrapped.t, TNever) {
+        ev := compositeIn(mut st, wrap, fieldPtr(mut st, errv, 1))?
+        if isTag(mut st, ev.t, TNever) {
             return -1, nil
         }
-        ev := labelToErr(mut st, wrapped.t, wrapped.v)?
-        chainPush(mut st, fieldPtr(mut st, ev.v, tWords(mut st, wrapped.t)), errv, 1, wrapped.t)
         c := coerce(mut st, ev.t, ev.v, latI(mut st, rts, n - 1), at)?
         storeVal(mut st, dst, off, c.t, c.v)
     } else {
@@ -244,7 +344,7 @@ func tryResults(st mut St, e desugar.NodeRef) (int, error?) {
 
 // 開発用の計装（st.traceErrs — 関数の出口の後半の入口）: 最後の結果が error? で非 nil（error なら常に）なら
 // `#errtrace <関数の表の添字> <ラベルのタグ>` を標準出力へ（println と同じ行バッファ）。持ち上げたラムダ・インスタンス（fn = -1）は出さない。
-// error? の値は [opt のタグ, error（先頭ラベルの union: タグ, …）, …] — 結果は error を含むので常に sret
+// error? の値は [opt のタグ, error（先頭ラベルのタグ, 列）] — 結果は error を含むので常に sret
 func traceErr(st mut St) {
     fx := infoAt(mut st, st.info)
     rs := fx.results
@@ -306,7 +406,7 @@ func traceTask(st mut St) {
     printChars(mut st, "\n")
 }
 
-// 開発用の計装（st.traceErrs）: error の switch の subject（値 v — 先頭ラベルの union のタグが語 0）ごとに
+// 開発用の計装（st.traceErrs）: error の switch の subject（値 v — 先頭ラベルのタグが語 0）ごとに
 // `#errsw <ファイル> <字句> <ラベルのタグ>` を標準出力へ（仮引数・cause の集合の照合 — 戻りの計装では見えない）
 func traceSwitch(st mut St, sw desugar.NodeRef, v int) {
     at := posOf(mut st, sw)

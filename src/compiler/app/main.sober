@@ -73,6 +73,7 @@ const EIrinlOrder = cli.Env{name: "SOBER_IRINL_ORDER", help: "the order of the I
 const EIrTags = cli.Env{name: "SOBER_IR_TAGS", help: "1 tags the IR text and the .ll with the origins", dev: true}
 const ENoRflow = cli.Env{name: "SOBER_NO_RFLOW", help: "skip the region elision of returned values", dev: true}
 const ERflowMeter = cli.Env{name: "SOBER_RFLOW_METER", help: "count the garbage of the region elision", dev: true}
+const ERflowWhy = cli.Env{name: "SOBER_RFLOW_WHY", help: "print why each function is or is not taken by the region elision", dev: true}
 const ERawExpand = cli.Env{name: "SOBER_RAW_EXPAND", help: "1 expands at every call site without the passes (optdiff, regionbound)", dev: true}
 const EChainRev = cli.Env{name: "SOBER_CHAINREV", help: "reverse the chains of functions and globals (1 both, 2 functions, 3 globals)", dev: true}
 const ERuleordOff = cli.Env{name: "SOBER_RULEORD_OFF", help: "1 keeps the discovery order of the chains", dev: true}
@@ -114,7 +115,7 @@ const TrapProbe = cli.BoolFlag{name: "trap-probe", help: "the task trap probe in
 const TraceErrors = cli.BoolFlag{name: "trace-errors", help: "instrument the error exits", dev: true}
 const TraceEffects = cli.BoolFlag{name: "trace-effects", help: "instrument the function effects", dev: true}
 const Mutant = cli.IntFlag{name: "rt-mutant", help: "build with an rt mutant (self-tests of the nets)", opt: true, dev: true,
-    allow: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45}}
+    allow: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51}}
 const Layout = cli.IntFlag{name: "layout", arg: "<seed>", help: "permute the code layout (v2)", min: 1, max: 999, opt: true, dev: true}
 const LayoutV1 = cli.IntFlag{name: "layout-v1", arg: "<seed>", help: "permute the code layout (v1)", min: 1, max: 999, opt: true, dev: true}
 const FitCheck = cli.BoolFlag{name: "fit-check", help: "make the line-crossing windows but do not pad", dev: true}
@@ -254,7 +255,7 @@ const Sober = cli.App{
     commands: []cli.Command{Build, Run, Check, Test, Fuzz, Watch, Fmt, Iface, Fix, Doc, Outline, CacheInfo, CacheGc, Lex, Parse},
     env: []cli.Env{EBuildCache, ECache, ECacheMax, ECacheGens, EWatchMs, EWatchQuiet, EWatchBuild, EWatchTest, ELowerSplit, ECheckCache, ECheckReplay, EVerify, EStages,
         EBuildPar, EDesugarPar, ECheckStop, EL0, ESelfKey, ECacheStat, ECacheFsck, EDkAudit, ETyAudit, ETyOrder, ETyPadA, ETyPadB, EFinishDie,
-        ELowerDie, ELowerRev, EParStats, EIrinlOrder, EIrTags, ENoRflow, ERflowMeter, ERawExpand, EChainRev, ERuleordOff, ERuleordNorenum,
+        ELowerDie, ELowerRev, EParStats, EIrinlOrder, EIrTags, ENoRflow, ERflowMeter, ERflowWhy, ERawExpand, EChainRev, ERuleordOff, ERuleordNorenum,
         ERuleordStats, ENumOff, EXdbg, ENumNoPatch, ESlotPoison, EMemrepMut, EStrix, ECover, EMutateOne},
 }
 

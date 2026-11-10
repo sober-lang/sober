@@ -82,7 +82,8 @@ func yMatch(st mut St, y int, t int) int {
     case desugar.YErr:
         return b2i(isTag(mut st, t, TStruct) && desugar.HeapGet(mut st.d, t + 1) == st.errstruct)
     case desugar.YLabel:
-        return b2i(isTag(mut st, t, TUnion) && desugar.HeapGet(mut st.d, t + 1) == st.errs)
+        // ラベルのリテラルの値は lower では error（errs.sober — 受け手で包まずに直に組む）
+        return b2i(isTag(mut st, t, TStruct) && desugar.HeapGet(mut st.d, t + 1) == st.errstruct)
     case desugar.YSlice:
         if !isTag(mut st, t, TSlice) || isString(mut st, t) || desugar.HeapGet(mut st.d, t + 2) != x.b {
             return 0
@@ -203,9 +204,7 @@ func yLower(st mut St, y int, at desugar.NodeRef) (int, error?) {
     case desugar.YErr:
         return errType(mut st)
     case desugar.YLabel:
-        u := errsInfo(mut st)
-        layoutInfo(mut st, u)?
-        return desugar.HeapGet(mut st.d, u + SI_TY), nil
+        return errType(mut st)
     case desugar.YVar:
         return envLookup(mut st, st.tenv, desugar.StrRef(x.b)), nil
     case desugar.YSlice:

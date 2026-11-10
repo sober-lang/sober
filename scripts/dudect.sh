@@ -10,7 +10,7 @@
 # 名前が exp_ の題材は対照実験（scripts/dudect.ts が判定を印字するが失敗にしない — report-1026）
 # 題材の package: DUDECT_PKGS（既定 = std/internal/dudect〔公開の口・負例・対照〕+ std/crypto/poly1305〔Sum の段割り — white-box の _test・report-1028〕+
 # std/crypto/rsa〔窓の表引き mmsel・2 乗の塊 montsqr — white-box の _test〕+ std/internal/record〔0 埋めの剥がし strip — white-box の _test〕+
-# std/crypto/password〔PBKDF2 の核 — white-box の _test〕+ std/session〔Open のタグの比較と鍵 — white-box の _test〕）
+# std/crypto/password〔PBKDF2 の核 — white-box の _test〕+ std/session〔Open のタグの比較と鍵 — white-box の _test〕+ std/internal/p256〔ECDHE のスカラー倍 — white-box の _test〕）
 # 箱の名: TSV の env の列は「<DUDECT_ENV>/<CPU の型番の短縮>」（例: gha-linux-x64-16vcpu/EPYC-9V74 — GHA の箱は CPU の世代が混ざる・report-1027）。
 # 型番は DUDECT_CPU（lscpu の Model name の文字列 — workflow が env の記録から渡す）か、無ければこの箱の lscpu
 set -uo pipefail
@@ -19,7 +19,7 @@ N=${1:-1000000}
 shift || true
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
-PKGS=${DUDECT_PKGS:-std/internal/dudect std/crypto/poly1305 std/crypto/rsa std/internal/record std/crypto/password std/session}
+PKGS=${DUDECT_PKGS:-std/internal/dudect std/crypto/poly1305 std/crypto/rsa std/internal/record std/crypto/password std/session std/internal/p256}
 if [ -n "${DUDECT_RUN:-}" ]; then
     : > "$W/out"
     for p in $DUDECT_RUN; do

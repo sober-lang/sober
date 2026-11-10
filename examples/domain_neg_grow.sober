@@ -1,0 +1,22 @@
+package main
+
+// A domain's state is written in place and lives as long as the domain, so the body writes only region-free values into it
+// (diag.Par kind 36): appending to a slice of the state would grow the domain's region on every call. Preallocate the slice in
+// init: and write its elements, or keep the growing data outside the domain
+
+import "std/task"
+
+type Log struct {
+    lines []string
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, Log{lines: []string{}})
+        task.Update(d, (st mut Log) => {
+            st.lines = append(st.lines, "hello")
+            len(st.lines)
+        })
+    })
+    println(r)
+}

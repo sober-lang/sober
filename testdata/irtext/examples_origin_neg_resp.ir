@@ -1792,25 +1792,25 @@ b0:
   %18 = load.i64 %13[2]
   store %15[2], %18
   %19 = funcaddr @lambda#0
-  %20 = slotaddr s4
-  %21 = const 0
-  store %20[0], %21
-  store %20[1], %21
-  store %20[2], %21
-  store %20[3], %21
-  store %20[4], %21
-  store %20[5], %21
-  store %20[6], %21
-  store %20[7], %21
-  store %20[8], %21
-  store %20[9], %21
-  store %20[10], %21
-  store %20[11], %21
-  store %20[12], %21
-  store %20[13], %21
-  store %20[14], %21
+  %20 = const 0
+  %21 = slotaddr s4
+  store %21[0], %20
+  store %21[1], %20
+  store %21[2], %20
+  store %21[3], %20
+  store %21[4], %20
+  store %21[5], %20
+  store %21[6], %20
+  store %21[7], %20
+  store %21[8], %20
+  store %21[9], %20
+  store %21[10], %20
+  store %21[11], %20
+  store %21[12], %20
+  store %21[13], %20
+  store %21[14], %20
   %22 = const 7
-  %23 = gep.word %20, %22
+  %23 = gep.word %21, %22
   %24 = region.depth
   %25 = region.bump %24
   %26 = ptoi %25
@@ -1819,48 +1819,48 @@ b0:
   store %23[1], %27
   store %23[2], %24
   %28 = load.i64 %6[0]
-  store %20[0], %28
+  store %21[0], %28
   %29 = load.i64 %6[1]
-  store %20[1], %29
+  store %21[1], %29
   %30 = load.i64 %6[2]
-  store %20[2], %30
+  store %21[2], %30
   %31 = load.i64 %15[0]
-  store %20[3], %31
+  store %21[3], %31
   %32 = load.i64 %15[1]
-  store %20[4], %32
+  store %21[4], %32
   %33 = load.i64 %15[2]
-  store %20[5], %33
-  store %20[6], %19
+  store %21[5], %33
+  store %21[6], %19
   %34 = slotaddr s5
-  %35 = load.i64 %20[0]
+  %35 = load.i64 %21[0]
   store %34[0], %35
-  %36 = load.i64 %20[1]
+  %36 = load.i64 %21[1]
   store %34[1], %36
-  %37 = load.i64 %20[2]
+  %37 = load.i64 %21[2]
   store %34[2], %37
-  %38 = load.i64 %20[3]
+  %38 = load.i64 %21[3]
   store %34[3], %38
-  %39 = load.i64 %20[4]
+  %39 = load.i64 %21[4]
   store %34[4], %39
-  %40 = load.i64 %20[5]
+  %40 = load.i64 %21[5]
   store %34[5], %40
-  %41 = load.i64 %20[6]
+  %41 = load.i64 %21[6]
   store %34[6], %41
-  %42 = load.i64 %20[7]
+  %42 = load.i64 %21[7]
   store %34[7], %42
-  %43 = load.i64 %20[8]
+  %43 = load.i64 %21[8]
   store %34[8], %43
-  %44 = load.i64 %20[9]
+  %44 = load.i64 %21[9]
   store %34[9], %44
-  %45 = load.i64 %20[10]
+  %45 = load.i64 %21[10]
   store %34[10], %45
-  %46 = load.i64 %20[11]
+  %46 = load.i64 %21[11]
   store %34[11], %46
-  %47 = load.i64 %20[12]
+  %47 = load.i64 %21[12]
   store %34[12], %47
-  %48 = load.i64 %20[13]
+  %48 = load.i64 %21[13]
   store %34[13], %48
-  %49 = load.i64 %20[14]
+  %49 = load.i64 %21[14]
   store %34[14], %49
   %50 = region.depth
   %51 = const 15
@@ -1925,7 +1925,7 @@ func @lambda#0(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64, %7 i64, %
   slot s5 [4]
   slot s6 [5]
   slot s7 [5]
-  slot s8 [32]
+  slot s8 [33]
 b0:
   %22 = slotaddr s0
   store %22[0], %1
@@ -1994,25 +1994,25 @@ b0:
   %52 = load.i64 %47[2]
   store %49[2], %52
   %53 = const 60
-  %54 = slotaddr s5
-  %55 = const 0
-  store %54[0], %55
-  store %54[1], %55
-  store %54[2], %55
-  store %54[3], %55
+  %54 = const 0
+  %55 = slotaddr s5
+  store %55[0], %54
+  store %55[1], %54
+  store %55[2], %54
+  store %55[3], %54
   %56 = const 1
-  store %54[0], %56
-  store %54[1], %53
+  store %55[0], %56
+  store %55[1], %53
   %57 = slotaddr s6
   %58 = const 1
   store %57[0], %58
-  %59 = load.i64 %54[0]
+  %59 = load.i64 %55[0]
   store %57[1], %59
-  %60 = load.i64 %54[1]
+  %60 = load.i64 %55[1]
   store %57[2], %60
-  %61 = load.i64 %54[2]
+  %61 = load.i64 %55[2]
   store %57[3], %61
-  %62 = load.i64 %54[3]
+  %62 = load.i64 %55[3]
   store %57[4], %62
   %63 = slotaddr s7
   %64 = load.i64 %57[0]
@@ -2025,42 +2025,43 @@ b0:
   store %63[3], %67
   %68 = load.i64 %57[4]
   store %63[4], %68
-  %69 = slotaddr s8
-  %70 = const 0
-  store %69[0], %70
-  store %69[1], %70
-  store %69[2], %70
-  store %69[3], %70
-  store %69[4], %70
-  store %69[5], %70
-  store %69[6], %70
-  store %69[7], %70
-  store %69[8], %70
-  store %69[9], %70
-  store %69[10], %70
-  store %69[11], %70
-  store %69[12], %70
-  store %69[13], %70
-  store %69[14], %70
-  store %69[15], %70
-  store %69[16], %70
-  store %69[17], %70
-  store %69[18], %70
-  store %69[19], %70
-  store %69[20], %70
-  store %69[21], %70
-  store %69[22], %70
-  store %69[23], %70
-  store %69[24], %70
-  store %69[25], %70
-  store %69[26], %70
-  store %69[27], %70
-  store %69[28], %70
-  store %69[29], %70
-  store %69[30], %70
-  store %69[31], %70
+  %69 = const 0
+  %70 = slotaddr s8
+  store %70[0], %69
+  store %70[1], %69
+  store %70[2], %69
+  store %70[3], %69
+  store %70[4], %69
+  store %70[5], %69
+  store %70[6], %69
+  store %70[7], %69
+  store %70[8], %69
+  store %70[9], %69
+  store %70[10], %69
+  store %70[11], %69
+  store %70[12], %69
+  store %70[13], %69
+  store %70[14], %69
+  store %70[15], %69
+  store %70[16], %69
+  store %70[17], %69
+  store %70[18], %69
+  store %70[19], %69
+  store %70[20], %69
+  store %70[21], %69
+  store %70[22], %69
+  store %70[23], %69
+  store %70[24], %69
+  store %70[25], %69
+  store %70[26], %69
+  store %70[27], %69
+  store %70[28], %69
+  store %70[29], %69
+  store %70[30], %69
+  store %70[31], %69
+  store %70[32], %69
   %71 = const 29
-  %72 = gep.word %69, %71
+  %72 = gep.word %70, %71
   %73 = region.depth
   %74 = region.bump %73
   %75 = ptoi %74
@@ -2068,206 +2069,208 @@ b0:
   %76 = const 0
   store %72[1], %76
   store %72[2], %73
-  store %69[0], %34
+  store %70[0], %34
   %77 = load.i64 %40[0]
-  store %69[1], %77
+  store %70[1], %77
   %78 = load.i64 %40[1]
-  store %69[2], %78
+  store %70[2], %78
   %79 = load.i64 %40[2]
-  store %69[3], %79
+  store %70[3], %79
   %80 = load.i64 %49[0]
-  store %69[4], %80
+  store %70[4], %80
   %81 = load.i64 %49[1]
-  store %69[5], %81
+  store %70[5], %81
   %82 = load.i64 %49[2]
-  store %69[6], %82
+  store %70[6], %82
   %83 = load.i64 %63[0]
-  store %69[19], %83
+  store %70[19], %83
   %84 = load.i64 %63[1]
-  store %69[20], %84
+  store %70[20], %84
   %85 = load.i64 %63[2]
-  store %69[21], %85
+  store %70[21], %85
   %86 = load.i64 %63[3]
-  store %69[22], %86
+  store %70[22], %86
   %87 = load.i64 %63[4]
-  store %69[23], %87
-  %88 = load.i64 %69[0]
+  store %70[23], %87
+  %88 = load.i64 %70[0]
   store %0[0], %88
-  %89 = load.i64 %69[1]
+  %89 = load.i64 %70[1]
   store %0[1], %89
-  %90 = load.i64 %69[2]
+  %90 = load.i64 %70[2]
   store %0[2], %90
-  %91 = load.i64 %69[3]
+  %91 = load.i64 %70[3]
   store %0[3], %91
-  %92 = load.i64 %69[4]
+  %92 = load.i64 %70[4]
   store %0[4], %92
-  %93 = load.i64 %69[5]
+  %93 = load.i64 %70[5]
   store %0[5], %93
-  %94 = load.i64 %69[6]
+  %94 = load.i64 %70[6]
   store %0[6], %94
-  %95 = load.i64 %69[7]
+  %95 = load.i64 %70[7]
   store %0[7], %95
-  %96 = load.i64 %69[8]
+  %96 = load.i64 %70[8]
   store %0[8], %96
-  %97 = load.i64 %69[9]
+  %97 = load.i64 %70[9]
   store %0[9], %97
-  %98 = load.i64 %69[10]
+  %98 = load.i64 %70[10]
   store %0[10], %98
-  %99 = load.i64 %69[11]
+  %99 = load.i64 %70[11]
   store %0[11], %99
-  %100 = load.i64 %69[12]
+  %100 = load.i64 %70[12]
   store %0[12], %100
-  %101 = load.i64 %69[13]
+  %101 = load.i64 %70[13]
   store %0[13], %101
-  %102 = load.i64 %69[14]
+  %102 = load.i64 %70[14]
   store %0[14], %102
-  %103 = load.i64 %69[15]
+  %103 = load.i64 %70[15]
   store %0[15], %103
-  %104 = load.i64 %69[16]
+  %104 = load.i64 %70[16]
   store %0[16], %104
-  %105 = load.i64 %69[17]
+  %105 = load.i64 %70[17]
   store %0[17], %105
-  %106 = load.i64 %69[18]
+  %106 = load.i64 %70[18]
   store %0[18], %106
-  %107 = load.i64 %69[19]
+  %107 = load.i64 %70[19]
   store %0[19], %107
-  %108 = load.i64 %69[20]
+  %108 = load.i64 %70[20]
   store %0[20], %108
-  %109 = load.i64 %69[21]
+  %109 = load.i64 %70[21]
   store %0[21], %109
-  %110 = load.i64 %69[22]
+  %110 = load.i64 %70[22]
   store %0[22], %110
-  %111 = load.i64 %69[23]
+  %111 = load.i64 %70[23]
   store %0[23], %111
-  %112 = load.i64 %69[24]
+  %112 = load.i64 %70[24]
   store %0[24], %112
-  %113 = load.i64 %69[25]
+  %113 = load.i64 %70[25]
   store %0[25], %113
-  %114 = load.i64 %69[26]
+  %114 = load.i64 %70[26]
   store %0[26], %114
-  %115 = load.i64 %69[27]
+  %115 = load.i64 %70[27]
   store %0[27], %115
-  %116 = load.i64 %69[28]
+  %116 = load.i64 %70[28]
   store %0[28], %116
-  %117 = load.i64 %69[29]
+  %117 = load.i64 %70[29]
   store %0[29], %117
-  %118 = load.i64 %69[30]
+  %118 = load.i64 %70[30]
   store %0[30], %118
-  %119 = load.i64 %69[31]
+  %119 = load.i64 %70[31]
   store %0[31], %119
-  %120 = const 1
-  %121 = gep.word %0, %120
-  call @rt.region_relocate8(%121, %23)
-  %122 = const 4
-  %123 = gep.word %0, %122
-  call @rt.region_relocate8(%123, %23)
-  %124 = load.i64 %0[11]
-  %125 = const 0
-  %126 = ne %124, %125
-  condbr %126, b1, b2
+  %120 = load.i64 %70[32]
+  store %0[32], %120
+  %121 = const 1
+  %122 = gep.word %0, %121
+  call @rt.region_relocate8(%122, %23)
+  %123 = const 4
+  %124 = gep.word %0, %123
+  call @rt.region_relocate8(%124, %23)
+  %125 = load.i64 %0[11]
+  %126 = const 0
+  %127 = ne %125, %126
+  condbr %127, b1, b2
 b1:
-  %127 = const 12
-  %128 = gep.word %0, %127
-  %129 = load.i64 %128[2]
-  %130 = gt %129, %23
-  condbr %130, b3, b4
+  %128 = const 12
+  %129 = gep.word %0, %128
+  %130 = load.i64 %129[2]
+  %131 = gt %130, %23
+  condbr %131, b3, b4
 b2:
-  %144 = load.i64 %0[15]
-  %145 = const 0
-  %146 = ne %144, %145
-  condbr %146, b8, b9
+  %145 = load.i64 %0[15]
+  %146 = const 0
+  %147 = ne %145, %146
+  condbr %147, b8, b9
 b3:
-  %131 = load.i64 %128[0]
-  %132 = itop %131
-  %133 = load.i64 %128[1]
-  %135 = const 0
-  br b5(%135)
+  %132 = load.i64 %129[0]
+  %133 = itop %132
+  %134 = load.i64 %129[1]
+  %136 = const 0
+  br b5(%136)
 b4:
   br b2
-b5(%134 i64):
-  %136 = lt %134, %133
-  condbr %136, b6, b7
+b5(%135 i64):
+  %137 = lt %135, %134
+  condbr %137, b6, b7
 b6:
-  %137 = const 6
-  %138 = mul %134, %137
-  %139 = gep.word %132, %138
-  call @rt.region_relocate8(%139, %23)
-  %140 = const 3
-  %141 = gep.word %139, %140
-  call @rt.region_relocate8(%141, %23)
-  %142 = const 1
-  %143 = add %134, %142
-  br b5(%143)
+  %138 = const 6
+  %139 = mul %135, %138
+  %140 = gep.word %133, %139
+  call @rt.region_relocate8(%140, %23)
+  %141 = const 3
+  %142 = gep.word %140, %141
+  call @rt.region_relocate8(%142, %23)
+  %143 = const 1
+  %144 = add %135, %143
+  br b5(%144)
 b7:
-  region.relocate %128, 6, %23
+  region.relocate %129, 6, %23
   br b4
 b8:
-  %147 = const 16
-  %148 = gep.word %0, %147
-  call @rt.region_relocate8(%148, %23)
+  %148 = const 16
+  %149 = gep.word %0, %148
+  call @rt.region_relocate8(%149, %23)
   br b9
 b9:
-  %149 = load.i64 %0[24]
-  %150 = const 0
-  %151 = ne %149, %150
-  condbr %151, b10, b11
+  %150 = load.i64 %0[24]
+  %151 = const 0
+  %152 = ne %150, %151
+  condbr %152, b10, b11
 b10:
-  %152 = const 25
-  %153 = gep.word %0, %152
-  call @rt.region_relocate8(%153, %23)
+  %153 = const 25
+  %154 = gep.word %0, %153
+  call @rt.region_relocate8(%154, %23)
   br b11
 b11:
-  %154 = const 29
-  %155 = gep.word %0, %154
-  %156 = load.i64 %155[2]
-  %157 = gt %156, %23
-  condbr %157, b12, b13
+  %155 = const 29
+  %156 = gep.word %0, %155
+  %157 = load.i64 %156[2]
+  %158 = gt %157, %23
+  condbr %158, b12, b13
 b12:
-  %158 = load.i64 %155[0]
-  %159 = itop %158
-  %160 = load.i64 %155[1]
-  %162 = const 0
-  br b14(%162)
+  %159 = load.i64 %156[0]
+  %160 = itop %159
+  %161 = load.i64 %156[1]
+  %163 = const 0
+  br b14(%163)
 b13:
   region.setdepth %23
   ret
-b14(%161 i64):
-  %163 = lt %161, %160
-  condbr %163, b15, b16
+b14(%162 i64):
+  %164 = lt %162, %161
+  condbr %164, b15, b16
 b15:
-  %164 = const 20
-  %165 = mul %161, %164
-  %166 = gep.word %159, %165
-  call @rt.region_relocate8(%166, %23)
-  %167 = const 3
-  %168 = gep.word %166, %167
-  call @rt.region_relocate8(%168, %23)
-  %169 = load.i64 %166[8]
-  %170 = const 0
-  %171 = ne %169, %170
-  condbr %171, b17, b18
+  %165 = const 20
+  %166 = mul %162, %165
+  %167 = gep.word %160, %166
+  call @rt.region_relocate8(%167, %23)
+  %168 = const 3
+  %169 = gep.word %167, %168
+  call @rt.region_relocate8(%169, %23)
+  %170 = load.i64 %167[8]
+  %171 = const 0
+  %172 = ne %170, %171
+  condbr %172, b17, b18
 b16:
-  region.relocate %155, 20, %23
+  region.relocate %156, 20, %23
   br b13
 b17:
-  %172 = const 9
-  %173 = gep.word %166, %172
-  call @rt.region_relocate8(%173, %23)
+  %173 = const 9
+  %174 = gep.word %167, %173
+  call @rt.region_relocate8(%174, %23)
   br b18
 b18:
-  %174 = load.i64 %166[12]
-  %175 = const 0
-  %176 = ne %174, %175
-  condbr %176, b19, b20
+  %175 = load.i64 %167[12]
+  %176 = const 0
+  %177 = ne %175, %176
+  condbr %177, b19, b20
 b19:
-  %177 = const 13
-  %178 = gep.word %166, %177
-  call @rt.region_relocate8(%178, %23)
+  %178 = const 13
+  %179 = gep.word %167, %178
+  call @rt.region_relocate8(%179, %23)
   br b20
 b20:
-  %179 = const 1
-  %180 = add %161, %179
-  br b14(%180)
+  %180 = const 1
+  %181 = add %162, %180
+  br b14(%181)
 }
 
 func @rt.sigint() {

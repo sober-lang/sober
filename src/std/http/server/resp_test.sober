@@ -34,7 +34,7 @@ func respHeadRef(r Response, keep bool, v10 bool, enc int) []byte {
         }
     }
     // 既定の private は定数のまま（応答ごとに文字列を組まない）
-    cv := if r.cache == nil { "Cache-Control: private\r\n" } else { "Cache-Control: ${cacheValue(r.cache)}\r\n" }
+    cv := cacheLine(r.cache)
     for x <- bytes(cv) {
         h = append(h, x)
     }

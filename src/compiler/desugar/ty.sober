@@ -35,6 +35,8 @@ const OWN_SCOPE = 0
 const OWN_TASK = 1
 const OWN_TX = 2
 const OWN_RX = 3
+// domain（Lean の Ty.dom r s — 種類 4 の own として持ち、JSON と checker の境で dom へ写す: region のずらし・写しの腕は own と同じ）
+const OWN_DOM = 4
 
 // 推論用のプレースホルダ tvar の底
 const PH = 1048576
@@ -405,6 +407,8 @@ func tyLooser(st mut S, a TyRef, b TyRef) bool {
     case TRef: if tMutBit(mut st, a) != 0 || tMutBit(mut st, b) != 0 { tyEql(mut st, a, b) } else { tRegion(mut st, a) <= tRegion(mut st, b) && tyEql(mut st, tElem(mut st, a), tElem(mut st, b)) }
     // D の μ: 同じ組・同じ成分で外の座標だけ（深く共変な組なら r ≤ r'・そうでなければ r = r' — Lean の sub の muRs の腕）
     case TMuRs: muRsBody(mut st, a) == muRsBody(mut st, b) && tyAt(mut st, a).b == tyAt(mut st, b).b && tyAt(mut st, a).c == tyAt(mut st, b).c && (tyAt(mut st, a).a == tyAt(mut st, b).a || (tyAt(mut st, a).a <= tyAt(mut st, b).a && tyCovOk(mut st, muRsBody(mut st, a))))
+    // domain: 家の region は上界（Lean の sub の dom の腕）・状態の型は一致
+    case TOwn: if tyAt(mut st, a).a == OWN_DOM && tyAt(mut st, b).a == OWN_DOM { tyAt(mut st, a).b <= tyAt(mut st, b).b && tyEql(mut st, TyRef(tyAt(mut st, a).c), TyRef(tyAt(mut st, b).c)) } else { tyEql(mut st, a, b) }
     default: tyEql(mut st, a, b)
     }
 }
@@ -434,6 +438,7 @@ func tyEqlLoose(st mut S, a TyRef, b TyRef) bool {
     case TSl | TRef: tMutBit(mut st, a) == tMutBit(mut st, b) && tyEqlLoose(mut st, tElem(mut st, a), tElem(mut st, b))
     case TMp: tMutBit(mut st, a) == tMutBit(mut st, b) && tyEqlLoose(mut st, tKey(mut st, a), tKey(mut st, b)) && tyEqlLoose(mut st, tVal(mut st, a), tVal(mut st, b))
     case TChan: tyEqlLoose(mut st, tChanElem(mut st, a), tChanElem(mut st, b))
+    case TOwn: tyAt(mut st, a).a == OWN_DOM && tyAt(mut st, b).a == OWN_DOM && tyEqlLoose(mut st, TyRef(tyAt(mut st, a).c), TyRef(tyAt(mut st, b).c))
     default: false
     }
 }
@@ -457,6 +462,11 @@ func pointTy(st mut S, t TyRef) TyRef {
         return tRefOf(mut st, tMutBit(mut st, t), r, pointTy(mut st, tElem(mut st, t)))
     case TMuRs:
         return tMuRsAt(mut st, t, r)
+    case TOwn:
+        // domain（関数の仮引数・欄の型 — 家の region 0 は呼び手空間の上界）: 点の最内へ
+        if tyAt(mut st, t).a == OWN_DOM {
+            return mkTy(mut st, TOwn, OWN_DOM, r, tyAt(mut st, t).c, tyAt(mut st, t).d)
+        }
     }
     return t
 }
@@ -492,6 +502,60 @@ func tyRelocAll(st mut S, t TyRef, k int) TyRef {
         return if tyMutFreeD(mut st, muRsBody(mut st, t)) { tMuRsAt(mut st, t, k) } else { t }
     }
     return t
+}
+
+// domain の型（家の region r）: c = コアの状態の型（mut の器を imm に倒して region を全部 0 へ締めた像 — Lean の dom が梱包して持つ形）・
+// d = 器を mut のまま region を 0 へ締めた状態の型 + 1（脱糖が入る / 出るの写しを組むときに引く — 型の同一性には入らない）
+func tOwnDom(st mut S, r int, full TyRef) TyRef {
+    return mkTy(mut st, TOwn, OWN_DOM, r, int(tyRelocAll(mut st, tyImmImg(mut st, full), 0)), int(tyRelocAllM(mut st, full, 0)) + 1)
+}
+
+// domain の型 t の mut の器を残した状態の型（d が無ければ像そのもの）
+func tDomFull(st mut S, t TyRef) TyRef {
+    d := tyAt(mut st, t).d
+    return if d > 0 { TyRef(d - 1) } else { tElem(mut st, t) }
+}
+
+// mut の器（slice / map / 参照）を imm に倒した型（region はそのまま）
+func tyImmImg(st mut S, t TyRef) TyRef {
+    x := tg(mut st, t)
+    switch x {
+    case TOpt:
+        return tOpt(mut st, tyImmImg(mut st, tInner(mut st, t)))
+    case TUn | TPr:
+        l := tyImmImg(mut st, tLeft(mut st, t))
+        return tPair(mut st, x, l, tyImmImg(mut st, tRight(mut st, t)))
+    case TSl:
+        return tSliceOf(mut st, 0, tRegion(mut st, t), tyImmImg(mut st, tElem(mut st, t)), tStrBit(mut st, t))
+    case TMp:
+        kk := tyImmImg(mut st, tKey(mut st, t))
+        return tMapOf(mut st, 0, tRegion(mut st, t), kk, tyImmImg(mut st, tVal(mut st, t)))
+    case TRef:
+        return tRefOf(mut st, 0, tRegion(mut st, t), tyImmImg(mut st, tElem(mut st, t)))
+    }
+    return t
+}
+
+// tyRelocAll の mut の器も k へ寄せる版（domain の状態を入る側の最内へ写した型 — 器は入る写しで最内に作り直す）
+func tyRelocAllM(st mut S, t TyRef, k int) TyRef {
+    x := tg(mut st, t)
+    switch x {
+    case TOpt:
+        return tOpt(mut st, tyRelocAllM(mut st, tInner(mut st, t), k))
+    case TUn | TPr:
+        l := tyRelocAllM(mut st, tLeft(mut st, t), k)
+        return tPair(mut st, x, l, tyRelocAllM(mut st, tRight(mut st, t), k))
+    case TSl:
+        if tMutBit(mut st, t) != 0 {
+            return tSliceOf(mut st, 1, k, tyRelocAllM(mut st, tElem(mut st, t), k), tStrBit(mut st, t))
+        }
+    case TMp:
+        if tMutBit(mut st, t) != 0 {
+            kk := tyRelocAll(mut st, tKey(mut st, t), k)
+            return tMapOf(mut st, 1, k, kk, tyRelocAllM(mut st, tVal(mut st, t), k))
+        }
+    }
+    return tyRelocAll(mut st, t, k)
 }
 
 func tyClamp(st mut S, t TyRef, k int) TyRef {

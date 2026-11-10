@@ -1,0 +1,20 @@
+package main
+
+// A domain cannot be put where it outlives the scope that made it (diag.Par kind 39): appending it to a slice made outside the scope
+
+import "std/task"
+
+type C struct {
+    n int
+}
+
+func main() {
+    mut hold := mut []task.Domain[C]{}
+    _, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, C{n: 7})
+        hold = append(hold, d)
+        0
+    })
+    println("${e == nil} ${len(hold)}")
+    println(task.Read(hold[0], (st C) => st.n))
+}

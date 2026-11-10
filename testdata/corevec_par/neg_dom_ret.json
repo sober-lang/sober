@@ -1,0 +1,1 @@
+{"defs":[{"param":{"k":"dom","r":0,"t":{"k":"int"}},"ret":{"k":"dom","r":0,"t":{"k":"int"}},"body":{"k":"var","i":0}}],"e":{"k":"block","e":{"k":"let","e":{"k":"dnew","r":0,"t":{"k":"int"},"i":{"k":"lit","n":0}},"body":{"k":"lit","n":0}}}}

@@ -363,6 +363,18 @@ def kNewch (b d r cap : Nat) (t : Ty) : Option Ty :=
     some (.prod (.own .tx r t) (.own .rx r t))
   else none
 
+def kDnew (b d r : Nat) (t : Ty) : Option Ty → Option Ty
+  | some te => if decide (b ≤ r) && decide (r < d) && Ty.payOk te t then some (.dom r t) else none
+  | none => none
+
+def kDenter (b d : Nat) (t : Ty) : Option Ty → Option Ty
+  | some (.dom _ t') => if decide (t' = t) && decide (b < d) && t.mutFree && t.chanFree then some (t.relocR (d - 1)) else none
+  | _ => none
+
+def kDexit : Option Ty → Option Ty → Option Ty
+  | some (.dom _ t), some te => if Ty.payOk te t then some .unit else none
+  | _, _ => none
+
 def kJoin : Option Ty → Ty → Option Ty
   | some (.own .task _ t'), t => if t' = t then some t else none
   | _, _ => none
@@ -550,6 +562,14 @@ def tcStep (Δ : Defs) (f b d : Nat) (Γ : Ctx) (Λ : LCtx) (r1 r2 r3 : Option T
   | .tryJ t _, _ + 1 => .ret (kTry r1 t)
   | .scopeV _ _, _ => .ret none
   | .taskV _ _, _ => .ret none
+  | .dnew _ i _, 0 => .sub i b d Γ Λ
+  | .dnew r _ t, _ + 1 => .ret (kDnew b d r t r1)
+  | .domV _ _ _, _ => .ret none
+  | .denter _ e, 0 => .sub e b d Γ Λ
+  | .denter t _, _ + 1 => .ret (kDenter b d t r1)
+  | .dexit e _, 0 => .sub e b d Γ Λ
+  | .dexit _ v, 1 => .sub v b d Γ Λ
+  | .dexit _ _, _ + 2 => .ret (kDexit r1 r2)
 
 /-- 燃料つきの大ステップ: フレームを段 0〜3 で回す（子は燃料を 1 減らして同じ関数で）。Sober 側の駆動部はこの燃料なし版 -/
 def evalRule (Δ : Defs) (f : Nat) : Nat → Nat → Nat → Ctx → LCtx → Expr → Option Ty

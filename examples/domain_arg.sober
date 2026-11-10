@@ -1,0 +1,54 @@
+package main
+
+// A domain can be passed to a function (also inside a struct): the handlers are named functions that take the shared state.
+// It cannot be returned from a function, put in a task result or sent on a channel — it stays inside the scope that made it
+
+import "std/task"
+
+type Stats struct {
+    hits int
+    bytes int
+}
+
+type App struct {
+    stats task.Domain[Stats]
+    name string
+}
+
+func record(stats task.Domain[Stats], n int) int {
+    return task.Update(stats, (st mut Stats) => {
+        st.hits += 1
+        st.bytes += n
+        st.hits
+    })
+}
+
+func handle(app App, req int) int {
+    _ = record(app.stats, req * 10)
+    return req
+}
+
+func serve(app App, k func(a App)) {
+    k(app)
+}
+
+func main() {
+    out, e := task.Run((s task.Scope) => {
+        app := App{stats: task.NewDomain(s, Stats{hits: 0, bytes: 0}), name: "demo"}
+        _, e2 := task.Run((s2 task.Scope) => {
+            mut i := 1
+            while i <= 4 {
+                r := i
+                _ = task.Spawn(s2, () => handle(app, r))
+                i += 1
+            }
+            0
+        })
+        _ = e2
+        serve(app, (a) => {
+            _ = handle(a, 5)
+        })
+        task.Read(app.stats, (st Stats) => "${app.name}: ${st.hits} hits, ${st.bytes} bytes")
+    })
+    println(if e == nil { out } else { "died" })
+}

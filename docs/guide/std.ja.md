@@ -43,7 +43,7 @@ slice（`[]T`）と map（`map[K]V`）は言語の組み込みです（`append`�
 
 | package | 用途 | 主なもの |
 |---|---|---|
-| [`std/task`](../std/task.ja.md) | structured concurrency | `Map`・`Run`（scope を開く — 本体は札 `Scope` を受ける）+ `Spawn` + `Join` / `Gather` / `Try`・チャネル `NewChannel` / `Send` / `Recv` / `Close`・`Pool`（`NewPool` / `SpawnIn`） |
+| [`std/task`](../std/task.ja.md) | structured concurrency | `Map`・`Run`（scope を開く — 本体は札 `Scope` を受ける）+ `Spawn` + `Join` / `Gather` / `Try`・チャネル `NewChannel` / `Send` / `Recv` / `Close`・`Pool`（`NewPool` / `SpawnIn`）・多くの task から 1 つの状態への直列の更新 `Domain`（`NewDomain` / `Update` / `Read` / `Await` — [並行](concurrency.ja.md) 5 節） |
 
 子の task に渡せるのは不変の値とチャネルだけです。出力はワーカー数に依らず同じです（[言語ツアー 7 節](tour.ja.md#7-並列--structured-concurrencyチャネル)）。
 
@@ -53,7 +53,7 @@ slice（`[]T`）と map（`map[K]V`）は言語の組み込みです（`append`�
 |---|---|---|
 | [`std/math`](../std/math.ja.md) | 浮動小数点の基本 | `Sqrt`・`Abs`・`Bits` / `FromBits` |
 | [`std/time`](../std/time.ja.md) | 時刻（壁時計の `Time` と単調時計の `Instant` は別の型・壁時計を読むのは `Now` だけ） | `Now`・`Mono`・`Since`・`Unix`・`Add` / `Sub`・`ToCivil` / `FromCivil`・`FormatRFC3339` / `ParseRFC3339`・`FormatHTTP` / `ParseHTTP`・地域の規則 `LoadZone` / `ToCivilIn` / `OffsetAt`（IANA の tzdata の焼き込み） |
-| [`std/uuid`](../std/uuid.ja.md) | UUID（RFC 9562 — 版 4 と版 7） | `NewV4`・`NewV7`・`Parse`・`String`・`Equal` |
+| [`std/uuid`](../std/uuid.ja.md) | UUID（RFC 9562 — 版 4 と版 7） | `NewV4`・`NewV7`・`Parse`・`Format`・`Equal` |
 | [`std/rand`](../std/rand.ja.md) | 決定的な疑似乱数 | `New`（種から）・`Intn`・`Int62`・`Bool`・`Split`（並列の task ごとに分ける） |
 | [`std/hash`](../std/hash.ja.md) | ハッシュ | `Sha256` |
 | [`std/hash/crc32`](../std/hash-crc32.ja.md) | 検査和 | `Sum`（CRC-32 — gzip・zlib・PNG と同じ値） |
@@ -74,6 +74,7 @@ slice（`[]T`）と map（`map[K]V`）は言語の組み込みです（`append`�
 | [`std/http/server`](../std/http-server.ja.md) | HTTP/1.1 のサーバ | `ServeConn`（net の接続に）/ `ServeWith`（受けと送りの口に — TLS の接続など。省略可の `put:` に応答を送らずに積む口を渡すと受けの側が送る — tls.Put の形）・`SetCookie`（Response.cookies — Secure / HttpOnly / SameSite=Lax が既定）・`Request` / `Response`・`Text` / `Json` / `Status`・`Header` / `Query` / `Form` / `Multipart`（ファイルのアップロード）/ `JsonDoc`・ルーター `Route` + `Mount` / `Merge` / `Dispatch` / `Param`・`Middleware`（`Before` / `After`）・応答の gzip と stream |
 | [`std/http/client`](../std/http-client.ja.md) | HTTP/1.1 のクライアント（TLS は常に検証 — 既定は 1.3 だけ） | 状態を持たない。要求ごとの `Request(url, method:, headers:, body:, cookies:, policy:)`・方針のデータ `Policy`（ゼロ値が安全な既定: 本文の上限 8 MiB・期限 30 秒・redirect 10 回・`extraRoots`〔私的 PKI — `tls.ParseRoots`〕・`proxy`〔`ParseProxy`〕/ `proxyAuth`・`dangerouslyAllowTls12`）・cookie は値（`CookieValue` で取り出し `cookies:` に載せる）・本文を切片で受ける `for part <- http.client.Stream(url)?`・keep-alive の束 `Open` の中の `Send`（Session は同一性の型）。誤りは `Dns`・`Tls`・`Timeout`・`TooManyRedirects`・`InsecureRedirect`・`BodyTooLarge`・`Closed`・`BadUrl`・`BadResponse`・`ProxyRefused`・`BadProxy`（ParseProxy） |
 | [`std/tls`](../std/tls.ja.md) | TLS 1.3 のサーバ | `Serve`（handshake が済んだ接続だけを渡す）・`Config` を `Load` / `Parse` で・`Recv` / `Send`（net と同じ形）/ `Put` + `Flush`（送らずに積む — 積んだ分は `Recv` が次の受けの前に送る）・クライアントの信頼の起点に足す `Roots` を `ParseRoots` で（誤り `BadRoots`）。誤りは `HandshakeFailed`・`BadRecord`・`Closed` |
+| [`std/pg`](../std/pg.ja.md) | PostgreSQL のクライアント（wire protocol 3.0 — TLS 1.3 + SCRAM-SHA-256-PLUS が既定） | `Open`（接続 `Conn`）・`Exec` / `Query` / `Script`（SQL の文面は const の席）・行の読み `Col*`・トランザクション `Tx`・接続のプール `OpenPool` / `With`（[PostgreSQL](postgres.ja.md)） |
 
 ## 暗号
 

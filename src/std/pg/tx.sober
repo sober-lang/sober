@@ -1,0 +1,96 @@
+package pg
+
+// トランザクション。k が普通に終われば COMMIT（入れ子なら RELEASE SAVEPOINT）。k を ? / return で抜けたら Tx の defer で ROLLBACK
+// （入れ子なら ROLLBACK TO SAVEPOINT + RELEASE）。k の中の panic は task の死 — サーバは接続の切断でトランザクションを巻き戻す。
+// 入れ子は一様に SAVEPOINT（深さは接続の置き場の語 lTxDepth）。分離の水準と読みだけの指定は一番外の Tx だけが効き、入れ子は外を受け継ぐ
+// （SAVEPOINT は水準を変えられない）。自動の再試行はしない（直列化の失敗 40001 は Server で返る）
+
+import "std/io"
+
+// 分離の水準（省くとサーバの既定 — 通常 READ COMMITTED）
+type Isolation int
+
+// READ COMMITTED（文ごとに、その文の始まりまでに COMMIT された行を見る）
+const ReadCommitted = Isolation(1)
+
+// REPEATABLE READ（トランザクションの最初の文の時点の行を見続ける）
+const RepeatableRead = Isolation(2)
+
+// SERIALIZABLE（直列に走らせたのと同じ結果にならない組を 40001 で断る — 呼び手が再試行する）
+const Serializable = Isolation(3)
+
+// k の中で文の誤りを握りつぶしたまま k が普通に終わった（サーバのトランザクションは失敗の状態だったので巻き戻した — 何も COMMIT されていない）
+type Aborted error
+
+// c の上で k をトランザクションとして走らせる。k の仮引数は c と同じ接続
+//
+//     pg.Tx(c, (tc) => {
+//         _ = pg.Exec(tc, "update account set v = v - $1 where id = $2", args: …)?   // ? で抜けると ROLLBACK してから呼び手の関数を抜ける
+//         _ = pg.Exec(tc, "update account set v = v + $1 where id = $2", args: …)?
+//     }, isolation: pg.Serializable)?
+@errors(Server, Protocol, Closed, Aborted, io.Expired)
+@effects(block, io, panic, nondet)
+func Tx(c Conn, k func(c Conn), isolation Isolation?, readOnly bool?) error? {
+    depth := getW(c.blk, lTxDepth)
+    txOpen(c, depth, isolation, readOnly)?
+    mut finished := false
+    defer txAbort(c, depth, finished)
+    k(c)
+    finished = true
+    return txCommit(c, depth)
+}
+
+// BEGIN（一番外）か SAVEPOINT（入れ子）
+@errors(Server, Protocol, Closed, io.Expired)
+@effects(block, io, panic, nondet)
+func txOpen(c Conn, depth int, iso Isolation?, ro bool?) error? {
+    sql := if depth == 0 { beginText(iso, ro) } else { "SAVEPOINT tx${depth}" }
+    plain(c, sql)?
+    setW(c.blk, lTxDepth, depth + 1)
+    return nil
+}
+
+func beginText(iso Isolation?, ro bool?) string {
+    lv := switch iso {
+    case nil: ""
+    case Serializable: " ISOLATION LEVEL SERIALIZABLE"
+    case RepeatableRead: " ISOLATION LEVEL REPEATABLE READ"
+    default: " ISOLATION LEVEL READ COMMITTED"
+    }
+    rw := switch ro {
+    case nil: ""
+    case true: " READ ONLY"
+    default: " READ WRITE"
+    }
+    return "BEGIN${lv}${rw}"
+}
+
+// 普通の終わり: 失敗の状態（ReadyForQuery の 'E'）なら巻き戻して Aborted・でなければ COMMIT / RELEASE
+@errors(Server, Protocol, Closed, Aborted, io.Expired)
+@effects(block, io, panic, nondet)
+func txCommit(c Conn, depth int) error? {
+    setW(c.blk, lTxDepth, depth)
+    if getW(c.blk, lTxStatus) == int('E') {
+        undo(c, depth)
+        return Aborted{}
+    }
+    return plain(c, if depth == 0 { "COMMIT" } else { "RELEASE SAVEPOINT tx${depth}" })
+}
+
+// defer: k を抜けた（finished = false）ときだけ巻き戻す。巻き戻しの失敗は接続を捨てる（次の呼び出しが Closed）
+@effects(block, io, panic, nondet)
+func txAbort(c Conn, depth int, finished bool) {
+    if finished || dead(c.blk) {
+        return
+    }
+    setW(c.blk, lTxDepth, depth)
+    undo(c, depth)
+}
+
+@effects(block, io, panic, nondet)
+func undo(c Conn, depth int) {
+    e := plain(c, if depth == 0 { "ROLLBACK" } else { "ROLLBACK TO SAVEPOINT tx${depth}; RELEASE SAVEPOINT tx${depth}" })
+    if e != nil {
+        setFlag(c.blk, bDead)
+    }
+}

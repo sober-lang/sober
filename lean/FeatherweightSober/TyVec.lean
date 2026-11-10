@@ -37,6 +37,7 @@ def tyTok : Ty → String
   | .slice m r t => s!"S {bTok m} {r} {tyTok t}"
   | .map m r t => s!"M {bTok m} {r} {tyTok t}"
   | .chan rc t => s!"C {rc} {tyTok t}"
+  | .dom rc t => s!"D {rc} {tyTok t}"
   | .fn p r => s!"F {tyTok p} {tyTok r}"
   | .own k r t => s!"W {ownKTok k} {r} {tyTok t}"
   | .mus n i b => s!"G {n} {i} {tyTok b}"
@@ -82,6 +83,7 @@ def perturb : Ty → Rand Ty
   | .slice m _ t => do return .slice (if (← rnd 3) = 0 then !m else m) (← rnd 3) (← perturb t)
   | .map m _ t => do return .map (if (← rnd 3) = 0 then !m else m) (← rnd 3) (← perturb t)
   | .chan _ t => do return .chan (← rnd 3) (← perturb t)
+  | .dom _ t => do return .dom (← rnd 3) (← perturb t)
   | .own k _ t => do
     let k' ← genOwnK
     return .own (if (← rnd 3) = 0 then k' else k) (← rnd 3) (← perturb t)

@@ -980,7 +980,12 @@ func parSpawn(st mut St, pk int, tt SpawnTy, args desugar.ListRef, at desugar.No
     mut tcb := tcbIn
     if !inn {
         bud := budgetArg(mut st, latN(mut st, args, na - 1))?
-        sc := iconstTag(mut st, (site + st.numOff) * 4 + (if parRootOnly(mut st, latN(mut st, args, 0)) { 2 } else { 0 }) + (if give { 1 } else { 0 }), CT_SITE)
+        // 縮退しない子: 端点を受け取る子（give:）と domain の Await に届く子（縮退した子が待てるのは子孫だけ — 親の続きの Update を待てない）
+        if st.domWait && len(st.awaitMarks) == 0 {
+            st.awaitMarks = desugar.AwaitMarks(mut st.d)
+        }
+        noInl := give || (st.domWait && desugar.LamReachesAwait(mut st.d, latN(mut st, args, na - 2), st.awaitMarks))
+        sc := iconstTag(mut st, (site + st.numOff) * 4 + (if parRootOnly(mut st, latN(mut st, args, 0)) { 2 } else { 0 }) + (if noInl { 1 } else { 0 }), CT_SITE)
         lsEv(mut st, EV_SITE, int(irBlkITail(mut st, st.cur)), 0, 0, 0)
         tcb = call(mut st, st.rtTaskNew, list2(mut st, sc, bud))
     }

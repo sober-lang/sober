@@ -3573,20 +3573,20 @@ b0:
   %v1.p = getelementptr i64, ptr %v7, i64 0
   %v1 = load i64, ptr %v1.p
   call void @"rt.region_enter"()
-  %v2 = getelementptr i64, ptr %s0, i64 0
-  %v3 = add i64 0, 0
-  %st0 = getelementptr i64, ptr %v2, i64 0
-  store i64 %v3, ptr %st0
-  %st1 = getelementptr i64, ptr %v2, i64 1
-  store i64 %v3, ptr %st1
+  %v2 = add i64 0, 0
+  %v3 = getelementptr i64, ptr %s0, i64 0
+  %st0 = getelementptr i64, ptr %v3, i64 0
+  store i64 %v2, ptr %st0
+  %st1 = getelementptr i64, ptr %v3, i64 1
+  store i64 %v2, ptr %st1
   %v4 = add i64 0, 1
-  %st2 = getelementptr i64, ptr %v2, i64 0
+  %st2 = getelementptr i64, ptr %v3, i64 0
   store i64 %v4, ptr %st2
-  %v5.p = getelementptr i64, ptr %v2, i64 0
+  %v5.p = getelementptr i64, ptr %v3, i64 0
   %v5 = load i64, ptr %v5.p
   %st3 = getelementptr i64, ptr %v0, i64 0
   store i64 %v5, ptr %st3
-  %v6.p = getelementptr i64, ptr %v2, i64 1
+  %v6.p = getelementptr i64, ptr %v3, i64 1
   %v6 = load i64, ptr %v6.p
   %st4 = getelementptr i64, ptr %v0, i64 1
   store i64 %v6, ptr %st4

@@ -2965,26 +2965,26 @@ b0:
   %v0 = load i64, ptr %v0.p
   call void @"rt.region_enter"()
   %v1 = ptrtoint ptr @"main.ascending" to i64
-  %v2 = getelementptr i64, ptr %s0, i64 0
-  %v3 = add i64 0, 0
-  %st0 = getelementptr i64, ptr %v2, i64 0
-  store i64 %v3, ptr %st0
-  %st1 = getelementptr i64, ptr %v2, i64 0
+  %v2 = add i64 0, 0
+  %v3 = getelementptr i64, ptr %s0, i64 0
+  %st0 = getelementptr i64, ptr %v3, i64 0
+  store i64 %v2, ptr %st0
+  %st1 = getelementptr i64, ptr %v3, i64 0
   store i64 %v1, ptr %st1
   %v4 = getelementptr i64, ptr %s1, i64 0
-  %v5.p = getelementptr i64, ptr %v2, i64 0
+  %v5.p = getelementptr i64, ptr %v3, i64 0
   %v5 = load i64, ptr %v5.p
   %st2 = getelementptr i64, ptr %v4, i64 0
   store i64 %v5, ptr %st2
   %v6 = ptrtoint ptr @"main.descending" to i64
-  %v7 = getelementptr i64, ptr %s0, i64 0
-  %v8 = add i64 0, 0
-  %st3 = getelementptr i64, ptr %v7, i64 0
-  store i64 %v8, ptr %st3
-  %st4 = getelementptr i64, ptr %v7, i64 0
+  %v7 = add i64 0, 0
+  %v8 = getelementptr i64, ptr %s0, i64 0
+  %st3 = getelementptr i64, ptr %v8, i64 0
+  store i64 %v7, ptr %st3
+  %st4 = getelementptr i64, ptr %v8, i64 0
   store i64 %v6, ptr %st4
   %v9 = getelementptr i64, ptr %s2, i64 0
-  %v10.p = getelementptr i64, ptr %v7, i64 0
+  %v10.p = getelementptr i64, ptr %v8, i64 0
   %v10 = load i64, ptr %v10.p
   %st5 = getelementptr i64, ptr %v9, i64 0
   store i64 %v10, ptr %st5

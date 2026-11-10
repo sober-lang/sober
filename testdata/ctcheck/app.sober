@@ -17,6 +17,7 @@ import "std/crypto/pem"
 import "std/crypto/rsa"
 import "std/crypto/sha256"
 import "std/http/client"
+import "std/pg"
 import "std/session"
 import "std/time"
 import "std/iter"
@@ -112,6 +113,12 @@ func main() {
             _, _ = http.client.Send(s, "/")
         }, policy: pol)
         _, _ = http.client.Request("https://x/", policy: pol)
+    }
+    // PostgreSQL のクライアント（SCRAM の証明・接続の置き場）も同じく走らない枝から
+    if len(a) == 1000 {
+        _ = pg.Open("postgres://u@x/d", (pc) => {
+            _, _ = pg.Exec(pc, "select 1")
+        }, policy: pg.Policy{password: "p"})
     }
     ks := Keys
     kt := ks["testdata/crypto/rsa2048.key"]

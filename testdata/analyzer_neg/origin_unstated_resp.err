@@ -1,0 +1,1 @@
+testdata/analyzer_neg/origin_unstated_resp.sober:9:102: error: the shared cache policy 'Unstated' is written into a single response — declare a shared cache policy on the route (Route.cache / Static's cache:), where the analyzer checks that the route does not read credentials; a single response can say server.Private or server.NoStore (language.md 12 節「出所の依存」) (Analyzer)

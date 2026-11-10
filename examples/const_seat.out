@@ -1,0 +1,5 @@
+select 1 -- arg 0
+select id from item order by price -- arg 1
+select id from item order by price desc -- arg 2
+select id from item order by name -- arg 1
+select id from item order by name desc -- arg 2

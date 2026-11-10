@@ -1914,6 +1914,7 @@ func yComposite(st mut S, e NodeRef) int {
         el := nodeOf(mut st, latN(mut st, elems, i))
         v := nB(el)
         yFieldGive(mut st, t, if el.a >= 0 { sA(el) } else { StrRef(-1) }, i, v)
+        yDangerGive(mut st, t, if el.a >= 0 { sA(el) } else { StrRef(-1) }, v)
         if kindN(mut st, v) == ast.ELambda {
             ft := if el.a >= 0 { yField(mut st, t, sA(el)) } else { yFieldAt(mut st, t, i) }
             yLambda(mut st, v, ft)

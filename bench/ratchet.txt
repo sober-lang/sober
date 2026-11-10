@@ -205,7 +205,13 @@ self/build inst 98.07
 # tipJoin・colGrow の分。窓の旗の無い初版は 107.519 G〔+6.8% — コンパイラが名前つきプールを使うので窓の道が熱い道に乗った〕だった。
 # rt の値札 = 同じ新しい木を HEAD の rt / 新しい rt の stage2 で建てたコンパイラの自己 build 115.794 → 115.789 G〔出力バイト一致〕= 0。
 # 残りは木の分〔旧 stage2 × 旧木 115.137 → × 新しい木 115.493 G〕・標準運用 = 実測 × 1.005・事後追認）: 実測 100.665 G → 101.17
-self/build3 inst 101.17
+# 2026-11-09 石 A（json.Encode の二段の符号器 — loader の合成が型ごとに $jsonSize / $jsonWrite の 2 本を足す・report-a-0。2×2 = コンパイラの退行なし〔新 stage2 × 旧木 −0.09 G〕・
+# 木の仕事 +0.55 G〔全部の木 — compiler 自身の json.Encode の合成の compile〕・標準運用 = 実測 × 1.005・事後追認）: 実測 101.383 G → 101.89
+# 2026-11-09 引き上げ（ワーカーの CPU の固定を L3 の群へ — rt.mn_llc〔sysfs の L3 の群の読みと cpulist の解釈〕と rt.mn_pin の分岐・Ledger の 2 欄・report-ccx-0・木の仕事 = 足した lower の生成のコードの compile・標準運用 = 実測 × 1.005・事後追認）: 実測 101.987 G → 102.50
+# 2026-11-10 domain R3b-2（std/task が std/io を import — Await の io.Expired〔裁定 (x)〕・自己 build は std/task を使うのでコアの Def と lower の木が増える・lower/domain.sober の待ちと手渡し — report-dom3-3・標準運用 = 実測 × 1.005・事後追認）: 実測 102.651 G → 103.17
+# 2026-11-10 健全性便 2 号 R3b（domain の脱出の検査の門に「domain を運ぶ仮引数を持つ関数」— 被覆を増分のキャッシュの当たり外れに依らせない・全関数の仮引数の型を解く値札はナビ承認〔+0.1 G 級〕・report-snd2-3・標準運用 = 実測 × 1.005・事後追認）: 実測 103.241 G → 線 103.76
+# 2026-11-10 errsz（error = タグ + ラベルの列の 4 語固定 — 先頭ラベルの payload を列のセルへ・rlight の失敗の辺の読み・標準運用 = 実測 × 1.005 の締め直し）: 実測 102.388 G → 線 102.90
+self/build3 inst 102.90
 # RSS は揺れが小さい（stages ゲートも同じ上限を見る — 段 5 の仕上げ便: 基準 837d0c6 の 506 MB の +30%）
 # 2026-10-05 締め直し（RSS 回収便 — huge page を止め返却の閾値 1 MiB で自己 build 540 → 216 MB・その +35%）
 # 2026-10-12 緩め（展開便 段 1 — 同じ裁定・report-565 / 566）: 290 → 296（stage3 の自己 build 294.9 MB の +1 MB）。値札 = spec の木の伸び +1.6 MB・特化の走り +3.3 MB
@@ -270,7 +276,12 @@ self/build rss 530
 # 2026-11-04 引き上げ（repr β1+β2 — loader/dest.sober の返る列への追記の解析〔関数ごとに 1 回〕と rlight の定義の表の分・report-repr-2・標準運用 = 実測 × 1.005・事後追認。stages 3 回 = 524 / 529 / 529 MB〔大きい方〕・命令は線の内 96.774 G）: → 532
 # 2026-11-05 引き上げ（F 掃除便 2 号 R1 — typer の関数値の option の直の呼び出しの記録〔yOptCall〕と desugar / lower の入口の拒否の分・report-fclean2-1・標準運用 = 実測 × 1.005・事後追認。--fast の並走でも単独の stages でも 533 MB）: → 536
 # 2026-11-06 引き上げ（std/session の焼き込み分の成長 — stage3 は @embed("std/**") で std の木を丸ごと持つ・セッション便 99154bb07〜758aba74b の分。--full と静かな窓の単独の stages で 540 / 541 MB〔大きい方〕・標準運用 = 実測 × 1.005・事後追認・report-websrv-4）: → 544
-self/build3 rss 544
+# 2026-11-09 引き上げ（石 C R1 + R1b — rt の TCB_TOP_ROOM と積みの最深の数え口〔lower/task・pstat〕・std/http/server の Delayed〔delayed_test 込み — stage3 は std の木を焼き込む〕の分。範囲 gates の並走と静かな窓〔load 0.9〕の単独の stages で 546 / 546 MB・R1a の HEAD は単独で 539・標準運用 = 実測 × 1.005・事後追認・report-c-2）: → 549
+# 2026-11-09 引き上げ（c1 レーン — C1 の資格の拡張〔案 a: 新しい確保を返さない呼び出しは点にしない〕+ 入口の深度へ確保する呼び先の外し・report-c1-2）: --full の stages で 558 MB・
+# 帰属 = 同じ新しい木を旧 stage2 / 新 stage2 が建てた stage3 で自己 build（全部の木・W1）すると 656 → 674 MB（2 回とも）— コンパイラ自身で C1 に掛かる関数が
+# 107 → 151 本に増えた分の置き場の差（ゴミ計は鳴らない — report-1112 の +7 MB と同じ族）。単独の stages では 563 / 564 MB（大きい方）。標準運用 = 実測 × 1.005・事後追認: → 567
+# 2026-11-10 健全性便 2 号 R3（desugar/domesc.sober — 足した木と pcMemo の後ろのメモの表 64 K 語・report-snd2-2・標準運用 = 実測 × 1.005・事後追認）: 実測 570 MB（2 回一致）→ 線 573
+self/build3 rss 573
 # 2026-10-10 新設（展開の予算の配り直し便 — ナビ裁定 report-465 (6)）: stage3 の ELF の大きさ（MB = 10^6 バイト・scripts/stages.sh が照合）。
 # 今 7.87 MB（27b4aa60）— 上限 9.0 は +9% 級の膨張（呼び出しグラフの後順を全関数に掛けた棄却形の印）の網
 # 2026-10-18 引き上げ（TLS 便 796 の x86 の塊 + 席 A の A-1 で 9.01 MB — 膨張の網としての幅は保つ・ユーザー追認済み 2026-10-18）
@@ -331,7 +342,13 @@ self/build3 rss 544
 # 2026-11-05 引き上げ（std レーン R15 + R16 の --full — compiler/diag の同一性の族の表・filecheck / lower の表の歩き・std の木の伸び・標準運用 = 実測 × 1.005・事後追認）: 実測 13,789,472 B → 線 13.86 MB
 # 2026-11-06 引き上げ（import 便 R3 — 同上）: 実測 13,968,968 B → 線 14.04 MB
 # 2026-11-07 引き上げ（deflate v2-4b — 鍵 ctz64〔IR の BCtz・x86 の bsf + cmove・.ll の cttz〕の lower / x86 / llvm の分・標準運用 = 実測 × 1.005・事後追認）: 実測 14,040,600 B → 線 14.12 MB
-self/elf size 14.12
+# 2026-11-09 引き上げ（PG の波 R3 — analyzer の const の席〔constseat.sober〕・parser の @const・標準運用 = 実測 × 1.005・事後追認）: 実測 14,129,120 B → 線 14.20 MB
+# 2026-11-09 引き上げ（c1 レーン — rflow の要約〔rfFreshOf / rfFreshBody〕と計器〔SOBER_RFLOW_WHY・ゴミ計の名指し〕の木の伸び。新 stage2 の C1 は同じ木で −15.7 KB・
+# 標準運用 = 実測 × 1.005・事後追認・report-c1-2）: 実測 14,210,600 B → 線 14.29 MB
+# 2026-11-10 domain R3b-1（lower/domain.sober・desugar/parcheck の状態の書きの照合〔kind 36 / 37〕・reach の DomNamed — report-dom3-2・標準運用 = 実測 × 1.005・事後追認）: 実測 14,295,704 B（線 14.29 MB を越えた）→ 線 14.37 MB
+# 2026-11-10 健全性便 2 号 R3（desugar/domesc.sober — domain の脱出の名指し kind 39・2×2: コンパイラの退行 +0.044 G・足した行の仕事 +0.31 G — report-snd2-2・標準運用 = 実測 × 1.005・事後追認）: 実測 14,388,904 B → 線 14.46 MB
+# 2026-11-10 errsz（error の 4 語固定・セルの確保の印と失敗の辺の読み — 締め直し・実測 × 1.005）: 実測 14,222,472 B → 線 14.30 MB
+self/elf size 14.30
 # wall は参考値（基準 837d0c6 の 5.53 s の +20% — 照合しない）
 self/build wall 6.6 ref
 # 2026-10-07 新設（段 6 P6-6 — 決定の範囲・朝に追認を）: self/check rss = 自己 check（一括・W1）の peak RSS — scripts/selfpar.sh が stage2 で照合（bench.sh も W1 で測る）。
@@ -424,7 +441,9 @@ golden/lltext maxfile 17.465
 # 2026-11-05 締め（R17b — 送受を経路の層 1 つに寄せて Do / Stream / Send の重複が消えた: 37.552 → 20.007 MB・× 1.005）
 # 2026-11-07 事後追認待ち（標準運用 × 1.005 — std/http の接続ごとの gzip の記録〔compress.gzip.History を serveCore → serveBuf → wire へ mut で通す・圧縮の 2 道とも記録つき〕: 記録つきの deflate の道が http の閉包に入った・examples_http_servewith_conn.json 18.580 → 23.184 MB）
 # 2026-11-08 事後追認待ち（標準運用 × 1.005 — Dispatch の方針の無い行の速い道〔report-pipe-0〕の分岐 1 本・examples_http_servewith_conn.json 23.184 → 23.330 MB）
-golden/corejson maxfile 23.447
+# 2026-11-09 事後追認待ち（標準運用 × 1.005 — http.server.Delayed〔Response.delay・serveCore の待ちの列と os.Sleep が http の閉包に入った〕: examples_http_servewith_conn.json 23.330 → 23.913 MB）
+# 2026-11-09 事後追認待ち（標準運用 × 1.005 — baseline 4M R0〔frameAt / putHead が呼び手の列へ積む mut の仮引数の形 — check で serveBuf の展開ごとに frameAt 5 回・putHead 6 回の展開が乗る〕: examples_http_servewith_conn.json 23.909 → 25.443 MB）
+golden/corejson maxfile 25.57
 golden/astjson maxfile 5.174
 golden/irtext total 110.1 ref
 golden/lltext total 300.3 ref

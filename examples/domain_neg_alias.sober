@@ -1,0 +1,23 @@
+package main
+
+// A mut binding of a container of the state (`mut v := st.items`) is a write to the state too (diag.Par kind 36): appending
+// through the alias would grow the domain's region in place. Write the elements through the state (st.items[i] = v), or read
+// the slice into an imm binding (v := st.items)
+
+import "std/task"
+
+type Slots struct {
+    items mut []int
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, Slots{items: mut []int{1}})
+        task.Update(d, (st mut Slots) => {
+            mut v := st.items
+            v = append(v, 2)
+            len(v)
+        })
+    })
+    println(r)
+}

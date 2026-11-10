@@ -1,0 +1,24 @@
+package main
+
+// A domain cannot be stored in a mut parameter (diag.Par kind 39): the function does not know which scope the parameter's place belongs to
+
+import "std/task"
+
+type C struct {
+    n int
+}
+
+func put(d task.Domain[C], out mut []task.Domain[C]) {
+    out = append(out, d)
+}
+
+func main() {
+    mut hold := mut []task.Domain[C]{}
+    _, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, C{n: 7})
+        put(d, mut hold)
+        0
+    })
+    println("${e == nil} ${len(hold)}")
+    println(task.Read(hold[0], (st C) => st.n))
+}

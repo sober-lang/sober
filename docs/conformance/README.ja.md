@@ -30,9 +30,9 @@ Sober の std が実装する通信プロトコルと暗号の、規格への準
 <!-- confsync:begin summary -->
 | 章 | 対応 | 一部 | 意図して非対応 | 未実装 |
 |---|---:|---:|---:|---:|
-| [tls](tls.ja.md) | 17 | 2 | 6 | 6 |
+| [tls](tls.ja.md) | 18 | 2 | 6 | 5 |
 | [x509](x509.ja.md) | 7 | 1 | 4 | 3 |
-| [crypto](crypto.ja.md) | 6 | 1 | 2 | 2 |
+| [crypto](crypto.ja.md) | 7 | 1 | 2 | 2 |
 | [http](http.ja.md) | 20 | 1 | 5 | 7 |
 | [dns](dns.ja.md) | 4 | 1 | 3 | 2 |
 <!-- confsync:end summary -->

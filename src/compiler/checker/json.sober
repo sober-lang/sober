@@ -180,9 +180,16 @@ const W_UNFOLD = 147
 const W_RVAR = 148
 const W_MUS = 149
 const W_MURS = 150
-const NW = 151
+// domain の段で足した語（Lean の dnew / denter / dexit の式・dom の型・欄 "d"）。記録は dnew = [dnew, nc, r, i, t]・
+// denter = [denter, nc, t, d]・dexit = [dexit, nc, d, v]・dom の型 = TDom (r, t)
+const W_DNEW = 151
+const W_DENTER = 152
+const W_DEXIT = 153
+const W_DOM = 154
+const W_D = 155
+const NW = 156
 // 注釈つき block（Lean の blockR）の式の kind。綴りは持たない（JSON では "block" + "t"）
-const K_BLOCKR = 151
+const K_BLOCKR = 156
 
 // 綴りの表は switch（if 式の鎖は F-22 の形 — 入れ子が深くなる）
 func wordStr(c int) string {
@@ -336,16 +343,21 @@ func wordStr(c int) string {
     case W_RVAR: "rvar"
     case W_MUS: "mus"
     case W_MURS: "muRs"
+    case W_DNEW: "dnew"
+    case W_DENTER: "denter"
+    case W_DEXIT: "dexit"
+    case W_DOM: "dom"
+    case W_D: "d"
     default: "byte" // W_BYTE
     }
 }
 
 func isExprKind(c int) bool {
-    return c == W_NIL || c == W_SOME || (c >= W_LIT && c <= W_RECV) || c == W_STRLIT || c == W_COPYTO || c == W_KEYSM || c == W_CLONE || c == W_UNREACH || c == W_TOBYTE || c == W_TOINT || (c >= W_FLIT && c <= W_FFROMBITS) || (c >= W_SCOPE && c <= W_NEWCH) || c == W_CLOSE || c == W_CALLMV || c == W_FOLD || c == W_UNFOLD
+    return c == W_NIL || c == W_SOME || (c >= W_LIT && c <= W_RECV) || c == W_STRLIT || c == W_COPYTO || c == W_KEYSM || c == W_CLONE || c == W_UNREACH || c == W_TOBYTE || c == W_TOINT || (c >= W_FLIT && c <= W_FFROMBITS) || (c >= W_SCOPE && c <= W_NEWCH) || c == W_CLOSE || c == W_CALLMV || c == W_FOLD || c == W_UNFOLD || (c >= W_DNEW && c <= W_DEXIT)
 }
 
 func isTyKind(c int) bool {
-    return c >= W_INT && c <= W_FN || c == W_BYTE || c == W_F64 || c == W_OWN || c == W_RVAR || c == W_MUS || c == W_MURS
+    return c >= W_INT && c <= W_FN || c == W_BYTE || c == W_F64 || c == W_OWN || c == W_RVAR || c == W_MUS || c == W_MURS || c == W_DOM
 }
 
 // 値の tag（parse 中の欄・配列の要素）
@@ -567,6 +579,10 @@ func buildTy(st mut S, fb int, c int) int {
         rc := fN(mut st, fb, W_RC)
         t := fT(mut st, fb, W_T)
         return if rc < 0 || t < 0 { -1 } else { mk(mut st, TChan, rc, t, 0) }
+    case W_DOM:
+        r := fN(mut st, fb, W_R)
+        t := fT(mut st, fb, W_T)
+        return if r < 0 || t < 0 { -1 } else { mk(mut st, TDom, r, t, 0) }
     case W_OWN:
         // o の綴り → 種類（0 scope / 1 task / 2 tx / 3 rx — Lean の ownKFromStr。他の綴りは parse error）
         ow := fW(mut st, fb, W_O)
@@ -820,6 +836,19 @@ func buildExpr(st mut S, fb int, c int) int {
         cp := fN(mut st, fb, W_CAP)
         t := fT(mut st, fb, W_T)
         return if r < 0 || cp < 0 || t < 0 { -1 } else { node(mut st, c, 0, r, cp, t) }
+    case W_DNEW:
+        r := fN(mut st, fb, W_R)
+        i := fE(mut st, fb, W_I)
+        t := fT(mut st, fb, W_T)
+        return if r < 0 || i < 0 || t < 0 { -1 } else { node(mut st, c, nc(mut st, i), r, i, t) }
+    case W_DENTER:
+        t := fT(mut st, fb, W_T)
+        d := fE(mut st, fb, W_D)
+        return if t < 0 || d < 0 { -1 } else { node(mut st, c, nc(mut st, d), t, d, 0) }
+    case W_DEXIT:
+        d := fE(mut st, fb, W_D)
+        v := fE(mut st, fb, W_V)
+        return if d < 0 || v < 0 { -1 } else { node(mut st, c, nc(mut st, d) | nc(mut st, v), d, v, 0) }
     }
     return -1
 }

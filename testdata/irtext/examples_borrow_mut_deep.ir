@@ -1793,27 +1793,27 @@ b0:
   %10 = load.i64 %5[2]
   store %7[2], %10
   %11 = const 0
-  %12 = slotaddr s2
-  %13 = const 0
-  store %12[0], %13
-  store %12[1], %13
-  store %12[2], %13
-  store %12[3], %13
+  %12 = const 0
+  %13 = slotaddr s2
+  store %13[0], %12
+  store %13[1], %12
+  store %13[2], %12
+  store %13[3], %12
   %14 = load.i64 %7[0]
-  store %12[0], %14
+  store %13[0], %14
   %15 = load.i64 %7[1]
-  store %12[1], %15
+  store %13[1], %15
   %16 = load.i64 %7[2]
-  store %12[2], %16
-  store %12[3], %11
+  store %13[2], %16
+  store %13[3], %11
   %17 = slotaddr s3
-  %18 = load.i64 %12[0]
+  %18 = load.i64 %13[0]
   store %17[0], %18
-  %19 = load.i64 %12[1]
+  %19 = load.i64 %13[1]
   store %17[1], %19
-  %20 = load.i64 %12[2]
+  %20 = load.i64 %13[2]
   store %17[2], %20
-  %21 = load.i64 %12[3]
+  %21 = load.i64 %13[3]
   store %17[3], %21
   %22 = const 0
   %23 = slotaddr s4

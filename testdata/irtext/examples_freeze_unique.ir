@@ -2181,42 +2181,42 @@ b0:
   %27 = load.i64 %22[2]
   store %24[2], %27
   %28 = const 0
-  %29 = slotaddr s5
-  %30 = const 0
-  store %29[0], %30
-  store %29[1], %30
-  store %29[2], %30
-  store %29[3], %30
-  store %29[4], %30
-  store %29[5], %30
-  store %29[6], %30
+  %29 = const 0
+  %30 = slotaddr s5
+  store %30[0], %29
+  store %30[1], %29
+  store %30[2], %29
+  store %30[3], %29
+  store %30[4], %29
+  store %30[5], %29
+  store %30[6], %29
   %31 = load.i64 %14[0]
-  store %29[0], %31
+  store %30[0], %31
   %32 = load.i64 %14[1]
-  store %29[1], %32
+  store %30[1], %32
   %33 = load.i64 %14[2]
-  store %29[2], %33
+  store %30[2], %33
   %34 = load.i64 %24[0]
-  store %29[3], %34
+  store %30[3], %34
   %35 = load.i64 %24[1]
-  store %29[4], %35
+  store %30[4], %35
   %36 = load.i64 %24[2]
-  store %29[5], %36
-  store %29[6], %28
+  store %30[5], %36
+  store %30[6], %28
   %37 = slotaddr s6
-  %38 = load.i64 %29[0]
+  %38 = load.i64 %30[0]
   store %37[0], %38
-  %39 = load.i64 %29[1]
+  %39 = load.i64 %30[1]
   store %37[1], %39
-  %40 = load.i64 %29[2]
+  %40 = load.i64 %30[2]
   store %37[2], %40
-  %41 = load.i64 %29[3]
+  %41 = load.i64 %30[3]
   store %37[3], %41
-  %42 = load.i64 %29[4]
+  %42 = load.i64 %30[4]
   store %37[4], %42
-  %43 = load.i64 %29[5]
+  %43 = load.i64 %30[5]
   store %37[5], %43
-  %44 = load.i64 %29[6]
+  %44 = load.i64 %30[6]
   store %37[6], %44
   %45 = region.depth
   %46 = const 1
@@ -2745,27 +2745,27 @@ b37:
   store %388[1], %390
   %391 = load.i64 %379[2]
   store %388[2], %391
-  %392 = slotaddr s14
-  %393 = const 0
-  store %392[0], %393
-  store %392[1], %393
-  store %392[2], %393
-  store %392[3], %393
+  %392 = const 0
+  %393 = slotaddr s14
+  store %393[0], %392
+  store %393[1], %392
+  store %393[2], %392
+  store %393[3], %392
   %394 = load.i64 %388[0]
-  store %392[0], %394
+  store %393[0], %394
   %395 = load.i64 %388[1]
-  store %392[1], %395
+  store %393[1], %395
   %396 = load.i64 %388[2]
-  store %392[2], %396
-  store %392[3], %387
+  store %393[2], %396
+  store %393[3], %387
   %397 = slotaddr s15
-  %398 = load.i64 %392[0]
+  %398 = load.i64 %393[0]
   store %397[0], %398
-  %399 = load.i64 %392[1]
+  %399 = load.i64 %393[1]
   store %397[1], %399
-  %400 = load.i64 %392[2]
+  %400 = load.i64 %393[2]
   store %397[2], %400
-  %401 = load.i64 %392[3]
+  %401 = load.i64 %393[3]
   store %397[3], %401
   %402 = load.i64 %397[0]
   %403 = load.i64 %397[1]

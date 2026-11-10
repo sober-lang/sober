@@ -1,0 +1,14 @@
+package main
+
+// domain の値は作った scope の外へ出ない（diag.Par kind 9 — scope の出口で状態ごと消える。札・handle と同じ側）
+
+import "std/task"
+
+type Hits struct {
+    n int
+}
+
+func main() {
+    d, e := task.Run((s task.Scope) => task.NewDomain(s, Hits{n: 0}))
+    println(0)
+}

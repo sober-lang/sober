@@ -1,0 +1,82 @@
+package pbkdf2
+
+// PBKDF2-HMAC-SHA256（RFC 8018 5.2 — std/crypto/password の保存の形と std/pg の SCRAM の Hi() が共有する核）
+
+import "std/crypto/sha256"
+import "std/iter"
+
+// HMAC-SHA256 の鍵の詰め物 key ⊕ pad（64 バイト — 鍵が 64 バイトを超えれば SHA-256 で縮めてから）
+@secret(key)
+@effects(!io, !block, !nondet)
+func macPad(key []byte, pad int) []byte {
+    k := if len(key) > crypto.sha256.BlockSize { crypto.sha256.Sum256(key) } else { key }
+    mut p := mut []byte{}
+    for i <- iter.Range(0, crypto.sha256.BlockSize) {
+        b := if i < len(k) { int(k[i]) } else { 0 }
+        p = append(p, byte(b ^ pad))
+    }
+    return freeze(p)
+}
+
+// 鍵を吸い終えた内側 ki と外側 ko の状態から HMAC-SHA256(msg)（反復のたびに詰め物のブロックを畳み直さない）。
+// 鍵済みの状態は呼び手の局所に置く — struct の欄に入れたり返したりすると crypto.sha256.State の欄のスロットが秘密になり、公開の SHA-256 の出力まで秘密に読まれる（13 節の補 2「逃げる所」）
+@secret(ki, ko, msg)
+@effects(!io, !block, !nondet)
+func mac(ki crypto.sha256.State, ko crypto.sha256.State, msg []byte) []byte {
+    mut s := ki
+    crypto.sha256.Write(mut s, msg)
+    mut o := ko
+    crypto.sha256.Write(mut o, crypto.sha256.Sum(s))
+    return crypto.sha256.Sum(o)
+}
+
+// 反復を区切る数。U_j を前の反復から運ぶ代入は運び先の region に積もるので、この数ごとに式ブロックで区切って高水位を一定にする
+const pbkdf2Chunk = 1024
+
+// PBKDF2-HMAC-SHA256（RFC 8018 5.2）の先頭 n バイト。iters ≥ 1・n ≥ 1 は呼び手が保証する
+@secret(pw)
+@effects(!io, !block, !nondet)
+func Key(pw []byte, salt []byte, iters int, n int) []byte {
+    mut ki := crypto.sha256.New()
+    crypto.sha256.Write(mut ki, macPad(pw, 0x36))
+    mut ko := crypto.sha256.New()
+    crypto.sha256.Write(mut ko, macPad(pw, 0x5c))
+    mut out := mut []byte{}
+    mut i := 1
+    while len(out) < n {
+        mut m := mut []byte{}
+        for j <- iter.Range(0, len(salt)) {
+            m = append(m, salt[j])
+        }
+        for j <- iter.Range(0, 4) {
+            m = append(m, byte((i >> (24 - 8 * j)) & 0xff))
+        }
+        mut u := mac(ki, ko, freeze(m))
+        mut t := mut []byte{}
+        for j <- iter.Range(0, crypto.sha256.Size) {
+            t = append(t, u[j])
+        }
+        mut left := iters - 1
+        while left > 0 {
+            c := if left < pbkdf2Chunk { left } else { pbkdf2Chunk }
+            u = {
+                mut v := u
+                for r <- iter.Range(0, c) {
+                    v = mac(ki, ko, v)
+                    for j <- iter.Range(0, crypto.sha256.Size) {
+                        t[j] = byte(int(t[j]) ^ int(v[j]))
+                    }
+                }
+                v
+            }
+            left = left - c
+        }
+        for j <- iter.Range(0, crypto.sha256.Size) {
+            if len(out) < n {
+                out = append(out, t[j])
+            }
+        }
+        i = i + 1
+    }
+    return freeze(out)
+}

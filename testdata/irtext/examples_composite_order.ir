@@ -1769,20 +1769,20 @@ b0:
   %4 = call @main.f(%3)
   %5 = const 2
   %6 = call @main.f(%5)
-  %7 = slotaddr s0
-  %8 = const 0
-  store %7[0], %8
-  store %7[1], %8
-  store %7[2], %8
-  store %7[2], %2
-  store %7[0], %4
-  store %7[1], %6
+  %7 = const 0
+  %8 = slotaddr s0
+  store %8[0], %7
+  store %8[1], %7
+  store %8[2], %7
+  store %8[2], %2
+  store %8[0], %4
+  store %8[1], %6
   %9 = slotaddr s1
-  %10 = load.i64 %7[0]
+  %10 = load.i64 %8[0]
   store %9[0], %10
-  %11 = load.i64 %7[1]
+  %11 = load.i64 %8[1]
   store %9[1], %11
-  %12 = load.i64 %7[2]
+  %12 = load.i64 %8[2]
   store %9[2], %12
   %13 = load.i64 %9[0]
   %14 = load.i64 %9[1]
@@ -1800,21 +1800,21 @@ b0:
   %20 = call @main.f(%19)
   %21 = const 4
   %22 = call @main.f(%21)
-  %23 = slotaddr s0
-  %24 = const 0
-  store %23[0], %24
-  store %23[1], %24
-  store %23[2], %24
+  %23 = const 0
+  %24 = slotaddr s0
+  store %24[0], %23
+  store %24[1], %23
+  store %24[2], %23
   %25 = const 0
-  store %23[0], %25
-  store %23[2], %20
-  store %23[1], %22
+  store %24[0], %25
+  store %24[2], %20
+  store %24[1], %22
   %26 = slotaddr s2
-  %27 = load.i64 %23[0]
+  %27 = load.i64 %24[0]
   store %26[0], %27
-  %28 = load.i64 %23[1]
+  %28 = load.i64 %24[1]
   store %26[1], %28
-  %29 = load.i64 %23[2]
+  %29 = load.i64 %24[2]
   store %26[2], %29
   %30 = load.i64 %26[0]
   %31 = const 0

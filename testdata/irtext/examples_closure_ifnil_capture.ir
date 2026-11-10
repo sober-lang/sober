@@ -2057,37 +2057,37 @@ b3(%21 ptr):
   store %39[4], %44
   %45 = load.i64 %32[5]
   store %39[5], %45
-  %46 = slotaddr s7
-  %47 = const 0
-  store %46[0], %47
-  store %46[1], %47
-  store %46[2], %47
-  store %46[3], %47
-  store %46[4], %47
-  store %46[5], %47
+  %46 = const 0
+  %47 = slotaddr s7
+  store %47[0], %46
+  store %47[1], %46
+  store %47[2], %46
+  store %47[3], %46
+  store %47[4], %46
+  store %47[5], %46
   %48 = load.i64 %39[0]
-  store %46[0], %48
+  store %47[0], %48
   %49 = load.i64 %39[1]
-  store %46[1], %49
+  store %47[1], %49
   %50 = load.i64 %39[2]
-  store %46[2], %50
+  store %47[2], %50
   %51 = load.i64 %39[3]
-  store %46[3], %51
+  store %47[3], %51
   %52 = load.i64 %39[4]
-  store %46[4], %52
+  store %47[4], %52
   %53 = load.i64 %39[5]
-  store %46[5], %53
-  %54 = load.i64 %46[0]
+  store %47[5], %53
+  %54 = load.i64 %47[0]
   store %0[0], %54
-  %55 = load.i64 %46[1]
+  %55 = load.i64 %47[1]
   store %0[1], %55
-  %56 = load.i64 %46[2]
+  %56 = load.i64 %47[2]
   store %0[2], %56
-  %57 = load.i64 %46[3]
+  %57 = load.i64 %47[3]
   store %0[3], %57
-  %58 = load.i64 %46[4]
+  %58 = load.i64 %47[4]
   store %0[4], %58
-  %59 = load.i64 %46[5]
+  %59 = load.i64 %47[5]
   store %0[5], %59
   %60 = load.i64 %0[0]
   %61 = const 0

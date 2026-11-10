@@ -12,3 +12,8 @@ examples/web_server_hello.sober
 examples/web_server_route.sober
 # TLS のサーバの閉包（hs・record・rsa）と std/http/server の閉包は examples/tls_serve と examples/http_servewith の黄金が持つ — 例の差（main）は obs と checkverdict が見る
 examples/web_server_tls.sober
+# std/pg の例は TLS のクライアントの閉包（hsc・x509・ec・rsa・焼き込みの信頼ストア）と SCRAM を丸ごと持つ — 閉包は std/pg の _test と同じ。
+# 例の差（main）は checkverdict が見る・走らせて出力を照合するのは scripts/pgoracle.sh（DB を持たない網では走らせない — .out なし）
+examples/pg_shop.sober
+examples/pg_transfer.sober
+examples/pg_pool.sober

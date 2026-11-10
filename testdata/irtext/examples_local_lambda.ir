@@ -1768,9 +1768,8 @@ b0:
 func @main.parse(%0 ptr, %1 i64, %2 i64, %3 i64) {
   slot s0 [3]
   slot s1 [3]
-  slot s2 [1]
-  slot s3 [4]
-  slot s4 [5]
+  slot s2 [4]
+  slot s3 [5]
 b0:
   %4 = slotaddr s0
   store %4[0], %1
@@ -1809,28 +1808,26 @@ b2:
   br b1(%26)
 b3:
   %27 = const 0
-  %28 = slotaddr s2
+  %28 = const 0
   %29 = const 0
-  store %28[0], %29
   %30 = const 0
-  store %28[0], %30
-  %31 = slotaddr s3
-  %32 = load.i64 %28[0]
-  store %31[0], %32
-  %33 = const 0
-  store %31[1], %33
-  store %31[2], %33
-  store %31[3], %33
-  %34 = slotaddr s4
+  %31 = const 0
+  %32 = const 0
+  %33 = slotaddr s2
+  store %33[0], %32
+  store %33[1], %29
+  store %33[2], %30
+  store %33[3], %31
+  %34 = slotaddr s3
   %35 = const 1
   store %34[0], %35
-  %36 = load.i64 %31[0]
+  %36 = load.i64 %33[0]
   store %34[1], %36
-  %37 = load.i64 %31[1]
+  %37 = load.i64 %33[1]
   store %34[2], %37
-  %38 = load.i64 %31[2]
+  %38 = load.i64 %33[2]
   store %34[3], %38
-  %39 = load.i64 %31[3]
+  %39 = load.i64 %33[3]
   store %34[4], %39
   store %0[0], %27
   %40 = load.i64 %34[0]
@@ -1859,7 +1856,7 @@ b6:
   ret
 b7:
   %50 = load.i64 %4[1]
-  %51 = slotaddr s4
+  %51 = slotaddr s3
   %52 = const 0
   store %51[0], %52
   store %0[0], %50

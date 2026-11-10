@@ -73,6 +73,11 @@ const CCallMv = 64   // a = f, b = e, c = anchor の region（anchor つきの�
 // 再帰型（iso — Lean の fold / unfold）: CFold の a = 型（μ）, b = e（中身は 1 段の展開の型）/ CUnfold の a = e
 const CFold = 65
 const CUnfold = 66
+// domain（Lean の dnew / denter / dexit）: CDnew の a = 家の region r, b = 初期値, c = 状態の型 / CDenter の a = 状態の型, b = domain /
+// CDexit の a = domain, b = 新しい状態
+const CDnew = 67
+const CDenter = 68
+const CDexit = 69
 
 // float の二項の種類（FAdd..FDiv は farith、FEq..FGe は fcmp）
 const FAdd = 1
@@ -291,6 +296,18 @@ func cJoin(st mut S, t TyRef, h CoreRef) CoreRef {
 // 死を値として見る（完了 = some v・死 = nil t）
 func cTry(st mut S, t TyRef, h CoreRef) CoreRef {
     return ce(mut st, CTry, int(t), int(h), 0, 0)
+}
+
+func cDnew(st mut S, r int, i CoreRef, t TyRef) CoreRef {
+    return ce(mut st, CDnew, r, int(i), int(t), 0)
+}
+
+func cDenter(st mut S, t TyRef, d CoreRef) CoreRef {
+    return ce(mut st, CDenter, int(t), int(d), 0, 0)
+}
+
+func cDexit(st mut S, d CoreRef, v CoreRef) CoreRef {
+    return ce(mut st, CDexit, int(d), int(v), 0, 0)
 }
 
 func cNewch(st mut S, r int, cap int, t TyRef) CoreRef {

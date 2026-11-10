@@ -1790,27 +1790,27 @@ b0:
   %13 = load.i64 %8[2]
   store %10[2], %13
   %14 = const 0
-  %15 = slotaddr s3
-  %16 = const 0
-  store %15[0], %16
-  store %15[1], %16
-  store %15[2], %16
-  store %15[3], %16
+  %15 = const 0
+  %16 = slotaddr s3
+  store %16[0], %15
+  store %16[1], %15
+  store %16[2], %15
+  store %16[3], %15
   %17 = load.i64 %10[0]
-  store %15[0], %17
+  store %16[0], %17
   %18 = load.i64 %10[1]
-  store %15[1], %18
+  store %16[1], %18
   %19 = load.i64 %10[2]
-  store %15[2], %19
-  store %15[3], %14
+  store %16[2], %19
+  store %16[3], %14
   %20 = slotaddr s4
-  %21 = load.i64 %15[0]
+  %21 = load.i64 %16[0]
   store %20[0], %21
-  %22 = load.i64 %15[1]
+  %22 = load.i64 %16[1]
   store %20[1], %22
-  %23 = load.i64 %15[2]
+  %23 = load.i64 %16[2]
   store %20[2], %23
-  %24 = load.i64 %15[3]
+  %24 = load.i64 %16[3]
   store %20[3], %24
   %25 = slotaddr s5
   %26 = const 1

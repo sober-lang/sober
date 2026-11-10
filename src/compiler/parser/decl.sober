@@ -90,12 +90,13 @@ func funcDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx 
     if body < 0 || tg(cx, q2) != lexer.Semicolon {
         return -1, q2
     }
-    ext := if an.sec >= 0 || an.bless != 0 || an.cred != 0 || an.effs >= 0 || exh != 0 { funcExt(mut db, []int{0, start, q2 + 1, sig_end, noinl, errs, errsTok, expand}, an) } else if expand != 0 { ast.PutList(mut db, []int{0, start, q2 + 1, sig_end, noinl, errs, errsTok, expand}) } else { ast.PutList(mut db, []int{0, start, q2 + 1, sig_end, noinl, errs, errsTok}) }
+    ext := if an.sec >= 0 || an.bless != 0 || an.cred != 0 || an.effs >= 0 || an.cst >= 0 || exh != 0 { funcExt(mut db, []int{0, start, q2 + 1, sig_end, noinl, errs, errsTok, expand}, an) } else if expand != 0 { ast.PutList(mut db, []int{0, start, q2 + 1, sig_end, noinl, errs, errsTok, expand}) } else { ast.PutList(mut db, []int{0, start, q2 + 1, sig_end, noinl, errs, errsTok}) }
     return node(mut nb, ast.KFuncDecl, tk(cx, p0 + 1), fname, tps, params, results, body, ext), q2 + 1
 }
 
 // 付加の列 head（8 個 — 番号 0〜7）に注釈の欄を足した列: `@secret` / `@bless` / `@credential` があれば 12 個・`@effects` があれば 14 個
-// （12・13 番 = 項の列・`@` の字句）・`@exhaustive` だけなら 9 個（どれも無ければ head のまま）
+// （12・13 番 = 項の列・`@` の字句）・`@const` があれば 16 個（14・15 番 = 名前の列・`@` の字句 — `@effects` が無ければ 12・13 番は -1 / 0）・
+// `@exhaustive` だけなら 9 個（どれも無ければ head のまま）
 func funcExt(db mut builder.Builder[int], head []int, an Annot) int {
     mut l := mut []int{}
     mut i := 0
@@ -103,14 +104,18 @@ func funcExt(db mut builder.Builder[int], head []int, an Annot) int {
         l = append(l, head[i])
         i += 1
     }
-    if an.sec >= 0 || an.bless != 0 || an.cred != 0 || an.effs >= 0 {
+    if an.sec >= 0 || an.bless != 0 || an.cred != 0 || an.effs >= 0 || an.cst >= 0 {
         l = append(l, an.exh)
         l = append(l, an.sec)
         l = append(l, an.secTok)
         l = append(l, an.bless + an.cred * 4)
-        if an.effs >= 0 {
+        if an.effs >= 0 || an.cst >= 0 {
             l = append(l, an.effs)
             l = append(l, an.effsTok)
+        }
+        if an.cst >= 0 {
+            l = append(l, an.cst)
+            l = append(l, an.cstTok)
         }
     } else if an.exh != 0 {
         l = append(l, an.exh)

@@ -55,3 +55,6 @@ examples/io_open_par.sober
 examples/lease.sober
 examples/lease_yield.sober
 examples/task_chan_loop.sober
+examples/domain_counter.sober
+examples/domain_handoff.sober
+examples/domain_poison.sober

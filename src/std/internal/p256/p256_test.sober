@@ -1,0 +1,121 @@
+package p256
+
+// P-256 の ECDH の網（white-box）: Wycheproof の ECDH secp256r1（非圧縮の点 — valid は共有秘密が一致・invalid と acceptable〔圧縮点 —
+// TLS の key_share は非圧縮だけ〕は拒否）と、独立の実装で作った d·G の 30 組（testdata/crypto/p256_base.txt）
+
+import "std/hex"
+import "std/internal/bless"
+import "std/json"
+import "std/strings"
+
+@embed("testdata/wycheproof/ecdh_secp256r1_ecpoint_test.json")
+const wycheproof = map[string]string{}
+
+@embed("testdata/crypto/p256_base.txt")
+const baseVectors = map[string]string{}
+
+type WTest struct {
+    tcId int
+    public string
+    private string
+    shared string
+    result string
+}
+
+type WGroup struct {
+    tests []WTest
+}
+
+type WFile struct {
+    testGroups []WGroup
+}
+
+func unhex(s string) []byte {
+    b, _ := hex.Parse(s)
+    return b
+}
+
+// 秘密のスカラーの hex を 32 バイトに（Wycheproof は先頭に符号の 00 を付けることがある・短ければ左を 0 で埋める）
+func scalar32(h string) []byte {
+    mut s := unhex(h)
+    while len(s) > 32 && s[0] == 0 {
+        s = s[1:len(s)]
+    }
+    mut out := mut []byte{}
+    mut i := len(s)
+    while i < 32 {
+        out = append(out, 0)
+        i += 1
+    }
+    for x <- s {
+        out = append(out, x)
+    }
+    return freeze(out)
+}
+
+func TestWycheproof() {
+    v := wycheproof["testdata/wycheproof/ecdh_secp256r1_ecpoint_test.json"]
+    assert(v != nil, "vectors embedded")
+    d, err := json.Parse(bytes(if v != nil { v } else { "" }))
+    assert(err == nil, "json")
+    f, derr := json.Decode[WFile](d, json.Root(d))
+    assert(derr == nil, "decode")
+    mut n := 0
+    mut valid := 0
+    for g <- f.testGroups {
+        for t <- g.tests {
+            sh := internal.bless.Bytes(Shared(scalar32(t.private), unhex(t.public)))
+            if t.result == "valid" {
+                assert(len(sh) == 32 && hex.Format(sh) == t.shared, "valid tcId ${t.tcId}")
+                valid += 1
+            } else {
+                assert(len(sh) == 0, "rejected tcId ${t.tcId} (${t.result})")
+            }
+            n += 1
+        }
+    }
+    assert(n == 355 && valid == 330, "counts ${n} ${valid}")
+    println("conf: wycheproof/ecdh_secp256r1 ${n}")
+}
+
+func TestBasePoint() {
+    v := baseVectors["testdata/crypto/p256_base.txt"]
+    assert(v != nil, "vectors embedded")
+    mut n := 0
+    for line <- strings.Split(if v != nil { v } else { "" }, "\n") {
+        p := strings.Split(line, " ")
+        if len(p) == 2 {
+            assert(hex.Format(PublicKey(unhex(p[0]))) == p[1], "d·G ${p[0]}")
+            n += 1
+        }
+    }
+    assert(n == 30, "count ${n}")
+}
+
+// a·(b·G) ≡ b·(a·G)（共有秘密の対称性 — 鍵の生成と共有の 2 つの道が同じ点に着く）
+func TestAgreement() {
+    a := scalar32("c88f01f510d9ac3f70a292daa2316de544e9aab8afe84049c62a9c57862d1433")
+    b := scalar32("c6ef9c5d78ae012a011164acb397ce2088685d8f06bf9be0b283ab46476bee53")
+    pa := PublicKey(a)
+    pb := PublicKey(b)
+    assert(len(pa) == 65 && len(pb) == 65)
+    sab := internal.bless.Bytes(Shared(a, pb))
+    sba := internal.bless.Bytes(Shared(b, pa))
+    assert(len(sab) == 32 && hex.Format(sab) == hex.Format(sba), "agreement")
+}
+
+func TestRejects() {
+    zero := scalar32("00")
+    assert(len(PublicKey(zero)) == 0, "zero scalar")
+    n := scalar32("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551")
+    assert(len(PublicKey(n)) == 0, "order")
+    assert(len(PublicKey(unhex("01"))) == 0, "short scalar")
+    g := PublicKey(scalar32("01"))
+    assert(len(Shared(scalar32("02"), g[0:33])) == 0, "truncated point")
+    mut bad := mut []byte{}
+    for x <- g {
+        bad = append(bad, x)
+    }
+    bad[64] = byte(int(bad[64]) ^ 1)
+    assert(len(Shared(scalar32("02"), freeze(bad))) == 0, "off curve")
+}

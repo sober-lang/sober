@@ -1,0 +1,31 @@
+package main
+
+// 安全な既定の緩和の常時の警告（受理は変えない — language.md「安全な既定の緩和」）: std の struct の `dangerously` で始まる欄に字面の false 以外を
+// 与える構築は毎回鳴る（変数経由も）。鳴らない形: 字面の false・欄を省く（ゼロ値 = 安全な側）・std の外の struct の同名の欄
+
+import "std/http/client"
+import "std/http/server"
+
+type Mine struct {
+    dangerouslyLoud bool
+}
+
+func pick(b bool) bool {
+    return b
+}
+
+func main() {
+    allow := pick(true)
+    loud := http.client.Policy{dangerouslyAllowTls12: true}
+    viaVar := http.client.Policy{dangerouslyAllowTls12: allow}
+    quiet := http.client.Policy{dangerouslyAllowTls12: false}
+    omitted := http.client.Policy{}
+    c := http.server.SetCookie{name: "s", value: "v", dangerouslyAllowHttp: true, dangerouslyScriptReadable: allow}
+    m := Mine{dangerouslyLoud: true}
+    _ = loud
+    _ = viaVar
+    _ = quiet
+    _ = omitted
+    _ = c
+    _ = m
+}

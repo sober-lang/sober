@@ -45,6 +45,20 @@ func dictConstOf(st mut S, e NodeRef, eb int) int {
     return -1
 }
 
+// e が外の package の辞書でない const の修飾名か
+func qualConst(st mut S, e NodeRef, eb int) bool {
+    name := qualName(mut st, e, eb, st.curPkg)
+    if name == -1 {
+        return false
+    }
+    pk, lo := resolveIn(mut st, st.curPkg, name)
+    if pk < 0 {
+        return false
+    }
+    c := lookupConst(mut st, pk, name, lo)
+    return c >= 0 && !ConDict(mut st, c)
+}
+
 // 辞書 const の文脈（宣言側 package・空の型環境・型パラメータ無し）に切り替え、戻す文脈を返す
 func dictEnter(st mut S, pk int) FnCtx {
     saved := fnCtx(mut st)
@@ -195,6 +209,10 @@ func computeTy0(st mut S, e NodeRef, eb int, ef int) TyRef {
             t := computeTy(mut st, nB(nodeOf(mut st, ConNode(mut st, dc))), -1, -1)
             dictLeave(mut st, r)
             return t
+        }
+        // 外の package の辞書でない const（`http.OK`）は、同じ package の名前の const（EIdent の腕）と同じ読み
+        if qualConst(mut st, e, eb) {
+            return st.tInt
         }
         return selectorTy(mut st, e, eb, ef)
     case ast.EBlock:

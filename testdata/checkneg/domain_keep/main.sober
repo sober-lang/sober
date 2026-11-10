@@ -1,0 +1,14 @@
+package main
+
+// domain を作る側（pg.OpenPool の k を書く main）と mut 仮引数へ書く側（keep）が別の package: 作る側が増分検査のキャッシュの当たりで
+// 歩かれなくても、受け取る側の規則 2（diag.Par kind 39）が鳴る
+import "std/pg"
+import "testdata/domkeep/keep"
+
+func main() {
+    mut hold := mut []pg.Pool{}
+    e := pg.OpenPool("postgres://u:p@127.0.0.1:1/db", (p) => {
+        testdata.domkeep.keep.Keep(p, mut hold)
+    })
+    println("${e == nil} ${len(hold)}")
+}

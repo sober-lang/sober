@@ -1,6 +1,8 @@
-# Sober: Region / Domain / Pool 仕様（種メモ 2026-09-17）
+# Sober: Region / Place / Pool 仕様（種メモ 2026-09-17 — 文書名は旧称 Region / Domain / Pool のまま）
 
-docs/language.md の 11 節「スコープ = 領域」を、Domain / Pool の層と接合して詰めたもの。
+docs/language.md の 11 節「スコープ = 領域」を、Place / Pool の層と接合して詰めたもの。
+
+語の注（2026-11-09 — 改名）: この文書の Place（region + executor + Policy — 走る場所）は旧称 Domain。小文字の domain は language.md 11 節の「直列化された共有状態」を指す（2026-11-08 の裁定で語を譲った）。棄てた案: Executor へ改名（Place の欄 `exec Executor` — spawn の行き先 — と衝突し、既存の Executor の意味が動く）
 
 原則: ブロック = リソース境界 / 所有は上位スコープ・利用は下位スコープ / 直接の alloc は存在しない / 参照は木であってグラフでない / 参照カウントは Pool 内部に隠す。
 
@@ -12,13 +14,13 @@ docs/language.md の 11 節「スコープ = 領域」を、Domain / Pool の層
 | 世代付きハンドル `Handle[T]` と `get(h) T?` | ランタイム + 型（`T?`） | 越境参照を panic でなく分岐にする |
 | 並列スコープに渡せるのは不変値かチャネルのみ | コンパイラ | data race freedom |
 | freeze（mut → 不変の一方向遷移） | 型規則はコンパイラ（薄）、タグ検査はランタイム、use-after-freeze 検出と検査除去は analyzer | 借用検査なしで「mut で構築 → 不変として共有」を可能にする |
-| Domain（region + executor + Policy） | ライブラリ struct | 言語仕様に GPU / IO の語を入れない |
-| Pool（Domain 上の型付きリソースプール） | ライブラリ | Poolable 辞書で backend を差す |
+| Place（region + executor + Policy） | ライブラリ struct | 言語仕様に GPU / IO の語を入れない |
+| Pool（Place 上の型付きリソースプール） | ライブラリ | Poolable 辞書で backend を差す |
 | lease（pool を外の書き手に貸す — 4c 節） | ライブラリ（io の pool）+ ランタイム（世代の回転・fence） | 貸出中の pool への書き・reset は口が無いので書けない。言語に lease の語を入れない |
 | ワーカー局所の lease（作業域を task をまたいで使い回す — 4d 節） | ライブラリ（`task.Local` / `task.Lease`・`pool.Scratch`）+ ランタイム（ワーカーの置き場・使用中の印・世代の進め）+ loader（窓の写し・置き場の T の形の検査） | 意味は「窓のたびに新しいゼロ値」— 割り当ての最適化で、言語の意味（Lean のコア）に現れない |
 | block / alloc（ルート領域への escape）効果 | analyzer | メモ 12 節の効果追跡そのまま |
 
-プリミティブは region だけ（Domain をプリミティブにする案は採らない）。Domain は「region を持ち、spawn 先を決め、Pool を生む」ただの struct。CPU / GPU / IO の対称性（design-dev.md の表）はライブラリ設計として維持する。
+プリミティブは region だけ（Place をプリミティブにする案は採らない）。Place は「region を持ち、spawn 先を決め、Pool を生む」ただの struct。CPU / GPU / IO の対称性（design-dev.md の表）はライブラリ設計として維持する。
 
 ## 1. region（言語側）
 
@@ -27,11 +29,11 @@ docs/language.md の 11 節「スコープ = 領域」を、Domain / Pool の層
 - 全ブロックが region を持つ。ブロック終了で一括解放。if / for / switch の腕もブロックなので同じ
 - 割り当てのデフォルトは囲みスコープの region。構文なし。`x := T{...}` は現在の region に置かれる
 - escape 規則: 親 region の値が子 region の値を参照してはならない（親 → 子参照禁止）。子 → 親は常に可
-- region 境界を越える書き込みは宛先 region へのコピー（決定 2026-09-17）。ブロックの値を親に返す、子ブロックから親の mut 変数に代入する、Domain 間の `receive`（3 節）は全部この 1 規則。コンパイラは宛先 region を字句的に知るので解析は要らず、親 → 子参照は構成的に作れない。移動は最適化
+- region 境界を越える書き込みは宛先 region へのコピー（決定 2026-09-17）。ブロックの値を親に返す、子ブロックから親の mut 変数に代入する、Place 間の `receive`（3 節）は全部この 1 規則。コンパイラは宛先 region を字句的に知るので解析は要らず、親 → 子参照は構成的に作れない。移動は最適化
   - 割り当ては所有者に従う: `append(buf, x)` は現在の region ではなく `buf` の region に割り当てる（参照型が region を持つ、formal.md の `Ref ρ T`）。親で宣言した `buf` を子で伸ばしても escape にならない
   - コピーを消す最適化: ブロック末尾式の割り当ては親 region に直接置く（`{ setup; build(tmp) }` がゼロコスト）。`y := make(); fill(y); y` のように単一の割り当て点が結果にしか流れないなら、その割り当てを親 region に向ける。ブロック内の局所データフローで判定、call graph 不要
   - 消せなかったコピーは analyzer が lint で示し、fix が宣言を親ブロックへ持ち上げる。関数の効果としての `escape` はルート region（グローバル）への書き込みだけ（language.md 12 節）。ブロック境界のコピーは効果ではなく lint
-  - 同一性を持つ型（チャネル・Domain・Pool）はコピーできないので子から親へ返せない（コンパイルエラー）。親で作って子へ渡す方向のみ。structured concurrency の形と一致
+  - 同一性を持つ型（チャネル・Place・Pool）はコピーできないので子から親へ返せない（コンパイルエラー）。親で作って子へ渡す方向のみ。structured concurrency の形と一致
   - 棄てた案: Zig 式に割り当て先を明示（構文が増え Go の見た目を壊す）、Tofte–Talpin の region 多相（formal.md で借りないと決めた）、サイズ閾値で自動/明示を切り替える折衷（閾値の規則が要る）
 - コルーチンのスタックも region から取る（メモ 11 節 1 項）。コルーチンの寿命 = スコープの寿命
 - 並列スコープ `parallel scope { ... }` に渡せるのは不変値かチャネルだけ。mut な値は単一スコープが所有し単一書き手
@@ -59,7 +61,7 @@ docs/language.md の 11 節「スコープ = 領域」を、Domain / Pool の層
 
 - `defer` を持つ。Go と違いブロックスコープ（Zig 意味論）。全ブロックがリソース境界なので defer もブロック終了で走るのが一貫する。Go の for ループ内 defer が溜まる罠が消える
 - 式ブロックでは値の評価後・親に値を渡す前に走る
-- Domain の停止も同じ形: `d := newDomain(policy); defer d |> close()`。close の中で drain → executor 停止 → region 解放の順序をライブラリが持つ
+- Place の停止も同じ形: `d := newPlace(policy); defer d |> close()`。close の中で drain → executor 停止 → region 解放の順序をライブラリが持つ
 - 暗黙に残るのは `parallel scope` 終了時の join だけ。structured concurrency の定義そのものなので例外として明記する
 
 ## 1c. freeze（mut → 不変の一方向遷移。決定 2026-09-18）
@@ -81,11 +83,11 @@ docs/language.md の 11 節「スコープ = 領域」を、Domain / Pool の層
 - 世代チェックはランタイム層。コンパイラは `T?` の flow typing で分岐を強制するだけ
 - 組み込みか std か: std の struct で書けるなら std。言語が知る必要があるのは「値型であること」だけで、それは struct なら自明。→ std（言語組み込みにしない）。Zig 製のゲームの Handle 値型 + 世代チェックがそのまま前例
 
-## 3. Domain（ライブラリ）
+## 3. Place（ライブラリ）
 
 ```
-type Domain struct {
-    region  Region          // 言語側のハンドル。Domain を作ったスコープの region
+type Place struct {
+    region  Region          // 言語側のハンドル。Place を作ったスコープの region
     policy  Policy          // 定数辞書
     exec    Executor        // spawn の行き先（スレッドプール / コマンドキュー / イベントループ）
 }
@@ -99,14 +101,14 @@ type Policy struct {
 ```
 
 - comptime で評価する形にしない — Policy は 定数 struct。分岐は最適化器の定数伝播で消える（メモ 3 節「辞書が定数なら単相化と同じ」と同じ賭け）
-- Domain のスコープ終了 = executor 停止 + `drain` + region 解放。順序はライブラリが持つ
-- Domain 間転送 `receive(dst, src, v)` は (src.policy.memory, dst.policy.memory) の辞書ルックアップ。ユーザーコードは同じ、方式は表で決まる。コピーか移動か: region 規則上「別 region への値」は常にコピー。移動は最適化
-  - Domain 越境のコピー除去（決定 2026-09-17）: 言語にムーブは無い。割り当て点を宛先に向ける。arena モデルでは 1 オブジェクトの所有権を別 region へ移せない（メモリは元の arena に残る）ので、区分はコピーか「最初から宛先に置く」の 2 つだけ。Rust 的なムーブは後者の特殊ケース。`receive(gpu, cpu, buf)` のコピーを消すなら `buf` を最初から宛先 Domain の staging（host_visible）に置く（Vulkan の「マップ済み staging に直接書く」定石）
+- Place のスコープ終了 = executor 停止 + `drain` + region 解放。順序はライブラリが持つ
+- Place 間転送 `receive(dst, src, v)` は (src.policy.memory, dst.policy.memory) の辞書ルックアップ。ユーザーコードは同じ、方式は表で決まる。コピーか移動か: region 規則上「別 region への値」は常にコピー。移動は最適化
+  - Place 越境のコピー除去（決定 2026-09-17）: 言語にムーブは無い。割り当て点を宛先に向ける。arena モデルでは 1 オブジェクトの所有権を別 region へ移せない（メモリは元の arena に残る）ので、区分はコピーか「最初から宛先に置く」の 2 つだけ。Rust 的なムーブは後者の特殊ケース。`receive(gpu, cpu, buf)` のコピーを消すなら `buf` を最初から宛先 Place の staging（host_visible）に置く（Vulkan の「マップ済み staging に直接書く」定石）
   - 判定は ブロック内の局所データフロー（1 節の再標的と同じ）: `buf` の割り当て点がこのブロックにあり、`receive` にしか流れない（他へ代入されず、receive 後に使われない）なら宛先に向けられる。割り当て点が局所なら参照の出所が全部見えるのでエイリアスも閾内。引数やフィールド経由の値は出所不明で対象外（unknown に degrade。`@unique` のような「他に参照が無い」注釈は借用検査の入口になるので入れない）
-  - ブロック境界と違い、最適化器が黙って再標的するのではなく analyzer が lint で示し fix がソースを書き換える: `buf := make([]Vertex, n)` → `h, buf := gpu.staging |> acquire(n)?; defer gpu.staging |> release(h)`。Domain 越境のコピーは性能を決めるので、消えたかどうかがソースに見えるべき。ブロック境界の小さなコピーは見せず最適化器、Domain 境界は fix で明示、の線引き（「見えるものは人が書く、見えないものは最適化器」）
-  - staging は宛先 Domain の Pool から取る（下記の未決を閉じる）。Domain の region に直接置くと寿命が Domain と同じになり staging が溜まる。Pool 管理なら fenced Domain の「fence 完了後に再利用」の既存規則に乗る。`receive` は同一メモリなら所有の引き渡し（Pool の返却先が変わるだけ）でコピーしない
+  - ブロック境界と違い、最適化器が黙って再標的するのではなく analyzer が lint で示し fix がソースを書き換える: `buf := make([]Vertex, n)` → `h, buf := gpu.staging |> acquire(n)?; defer gpu.staging |> release(h)`。Place 越境のコピーは性能を決めるので、消えたかどうかがソースに見えるべき。ブロック境界の小さなコピーは見せず最適化器、Place 境界は fix で明示、の線引き（「見えるものは人が書く、見えないものは最適化器」）
+  - staging は宛先 Place の Pool から取る（下記の未決を閉じる）。Place の region に直接置くと寿命が Place と同じになり staging が溜まる。Pool 管理なら fenced Place の「fence 完了後に再利用」の既存規則に乗る。`receive` は同一メモリなら所有の引き渡し（Pool の返却先が変わるだけ）でコピーしない
 
-## 4. Pool（Domain 上）
+## 4. Pool（Place 上）
 
 ```
 type Poolable[T, A] struct {
@@ -118,15 +120,15 @@ type Poolable[T, A] struct {
 ```
 
 - 型クラス `class Poolable` → 関数値の struct（辞書）。デフォルト値は `T?` フィールドの `nil`。「can_reuse がデフォルトなら Pool はフリーリストを持たない」は comptime 分岐でなく 辞書定数の定数伝播 + dead code 除去 で表す
-- `pool := domain |> pool(backend)` は Domain の region に Pool を置く。Pool のスロット配列も同じ region
+- `pool := place |> pool(backend)` は Place の region に Pool を置く。Pool のスロット配列も同じ region
 - `h, p := pool |> acquire(args)?` は `(Handle[T], *T)` を返す（決定 2026-09-17、language.md サンプル 2 の気づき 1）。`*T` はスロットの中身へのピン済み参照で、実体は Pool の region（祖先）にあるが、型は現在ブロックの region として付く。到達可能な内部参照（`body []byte` 等）も同じ region に見える（Sober の型は region 多相を持たず値の全参照が「値の住む region」を指すので、その 1 変数を現在ブロックに置き換えるだけ）。祖先 → 現在ブロックへの狭め替えなので常に健全で、新しい型規則は無い。効果: ピン済み参照は escape 規則でブロックから出られず、release 後に使う経路が構成的に消える。acquire 直後の `get` と到達不能な `nil` 分岐が要らなくなる
   - acquire を包む helper は書けない（`*T` の region が helper のブロックなので返せず、Handle だけ返すと release の局所照合に落ちる）。資源を渡す helper は inline ラムダを取る形 `withPage(c, no, page => ...)` で書く（language.md 8 節）。展開されるので acquire / defer / 本体が同じブロックに収まる
   - 早すぎる release の後の参照は analyzer が塞ぐ: release は acquire と同じブロックの `defer` 位置にしか書けない（下記の局所照合そのまま）。これはメモリ安全ではなく stale read の防止（スロットの記憶は Pool の region で生きており型も同じ）なので analyzer 層でよい。層の線引きに合う
   - 返却は `defer pool |> release(h)` を明示（destroy ではなく Pool へ戻る）。region の終了フックにライブラリが隠れて乗る形は採らない（暗黙の実行を作らない）
   - release 忘れは安全側: 実体は Pool（親スコープ）が所有するので「Pool のスコープ終了まで再利用されない」だけ。ダングリングも二重解放も起きない。対応する release のない acquire は analyzer が拒否し、fix が defer 行を書く（Go の Body.Close 忘れ検出と同型）。言語メモの「analyzer の通過が受理の定義」に乗るので警告ではなく拒否。検査は「acquire の戻り値 h が、同じブロック内で defer release(h) に渡されているか」の局所照合で、call graph は要らない
 - 返却先は Pool のあるスコープ S、利用は子スコープ C。C の region が消えても T の実体は S の Pool にある。C から漏れた `Handle` は次の acquire で世代が進んで `nil` になる。「所有と利用の分離」が region + Handle で構成的に成立
-- fence 紐づき遅延再利用: `completion: fenced` の Domain の Pool は返却時に現在の fence を記録し、`canReuse` の前に fence 完了を確認する。これは Pool 実装の中の Policy 分岐で、利用側コードは CPU / GPU で同一
-- 外部依存リソース（swapchain、接続プール）も Pool の backend。「待ち → 提供 → 返却」を双方向 yield のジェネレータで表す形は採らない — for-yield は push 型で、双方向 yield を持たない。`create` / `canReuse` が `block` 効果を持つ backend として書けば専用機構は不要。「どう待つか」は Domain の executor が知っている
+- fence 紐づき遅延再利用: `completion: fenced` の Place の Pool は返却時に現在の fence を記録し、`canReuse` の前に fence 完了を確認する。これは Pool 実装の中の Policy 分岐で、利用側コードは CPU / GPU で同一
+- 外部依存リソース（swapchain、接続プール）も Pool の backend。「待ち → 提供 → 返却」を双方向 yield のジェネレータで表す形は採らない — for-yield は push 型で、双方向 yield を持たない。`create` / `canReuse` が `block` 効果を持つ backend として書けば専用機構は不要。「どう待つか」は Place の executor が知っている
 
 ## 4b. Pool のホットパス: 動的検査のはしご（決定 2026-09-18）
 
@@ -140,18 +142,18 @@ freeze（1c 節）と同じパターン「動的検査が健全性の底、静�
 
 - 段 2 の判定は局所照合: 「h が同一ブロックの acquire 由来（または有効性導出済みの h のコピー）で、区間内にその Pool への release / close が届かない」。他コルーチンの release を排除したい区間は `@noblock`（language.md 11 節）で主張。導出できなければ段 0 に degrade するだけで正しさは変わらない
 - B 木探索のような「Handle を保存して辿る」ホットパスは段 2 が本命（SoberSQL の性能を決める項目）。ピン済み参照（段 1）はループ・スコープをまたぐ保存ができないため
-- 段 2 が効いた / 効かなかった場所は lint で可視化する（Domain 越境コピーと同じ「性能を決めるものは見える」の線）
+- 段 2 が効いた / 効かなかった場所は lint で可視化する（Place 越境コピーと同じ「性能を決めるものは見える」の線）
 
 ## 4c. 貸出（lease）— 外の書き手に pool を貸す（決定 2026-10-13 — IO 設計。実装は IO 便 段 2 (c) から — 下の「段取り」）
 
-完了ベースの io（io_uring）は、提出から完了までカーネルがバッファに非同期に書く。プログラムの検査が見えない書き手が、時間の穴をまたいでメモリを持つ — region の「スコープを抜けたら解放」とも、Pool の「返却 = プログラムの release」とも衝突する（language.md 未決「IO ブロッキングとスケジューラの結合方式」の「region × in-flight バッファ」）。これを Pool の第三の状態と pool 単位の世代で受ける。外の書き手の梯子（カーネル → プロセス〔shm〕→ DMA → GPU）の最初の段で、4 節の fenced Domain の遅延再利用は同じ形の特殊例として読み替える。
+完了ベースの io（io_uring）は、提出から完了までカーネルがバッファに非同期に書く。プログラムの検査が見えない書き手が、時間の穴をまたいでメモリを持つ — region の「スコープを抜けたら解放」とも、Pool の「返却 = プログラムの release」とも衝突する（language.md 未決「IO ブロッキングとスケジューラの結合方式」の「region × in-flight バッファ」）。これを Pool の第三の状態と pool 単位の世代で受ける。外の書き手の梯子（カーネル → プロセス〔shm〕→ DMA → GPU）の最初の段で、4 節の fenced Place の遅延再利用は同じ形の特殊例として読み替える。
 
 - スロットの状態は 3 つ: **空き / プログラムが持つ / 外の書き手に貸出中**（4 節の Pool は空き / 使用中の 2 つ）
 - lease の単位は **pool**（スロットごとではない）: 「この pool の世代 g は、外の書き手に貸出中」。io の pool は宣言で世代の段数 k を持つ — `io.NewPool(slots: 64, size: 64 * KB, gens: 2)`（名前つき引数で性質を境界に書く。`gens:` の既定は 2 = ダブルバッファ）
 - 登録 = pool 丸ごと 1 回（io_uring の registered buffers の一括登録と形が一致する。ring はワーカーごとなので、同じメモリを各ワーカーの ring に登録する — language.md 28 節）
 - 世代の回転は **スコープの境界で起きる**: ストリームの for の反復の境目・`task.Run` の出口で、rt は「次に使う世代の完了が全部届いた」ことを待ってから（fence）その世代を使う。回転は rt の中の動作で、利用者のコードに reset の語は無い — **「貸出中の pool を reset する」は構文的に書けない**（DESIGN 柱 1「メモリの詳細は構造と宣言から導出」の、外の書き手の時代の論拠: 手で書く「貸出中」「世代」は検査できない主張だが、構造から導出した世代は定理になる）
 - 非同期の解放の契機（外の合図）は pool の境界の内側に封じる。個体ごとの遅延回収の列は持たない — 寿命は「pool の本数と回し方」の宣言から導出される
-- pool の空きが尽きたら、空きが出るまで task が待つ（有界 = 背圧 — chan の有界と同じ線）。デッドラインがあれば待ちは `io.Timeout` で終わる（language.md 28 節）。上の未決「fenced Domain で fence 未完了のとき」は、lease の pool については「k 段を超えたら待つ」に倒れる
+- pool の空きが尽きたら、空きが出るまで task が待つ（有界 = 背圧 — chan の有界と同じ線）。デッドラインがあれば待ちは `io.Timeout` で終わる（language.md 28 節）。上の未決「fenced Place で fence 未完了のとき」は、lease の pool については「k 段を超えたら待つ」に倒れる
 
 検査の形（何を拒否するか）:
 
@@ -338,9 +340,9 @@ mut パス（`mut(elem.position)` の非重複検査で同一配列への分割�
 ## 未決
 
 - ~~escape の自動化~~ → 決定（1 節）: 境界越えはコピー、割り当ては所有者に従う、末尾式と単一割り当て点は親に再標的、残りは lint
-- fenced Domain で `canReuse` が真だが fence 未完了のとき、acquire はブロックするか新規 create するか。候補は「fence 完了まで再利用しない = 新規 create」と「pipeline_depth を超えたらブロック」
-  - 2026-10-13: lease の pool（4c 節）は後者 — 宣言した世代の段数 k を超えたら待つ（背圧）。一般の fenced Domain の Pool は GPU の段で同じ形に寄せるかを裁定する
-- ~~`receive` の staged 転送で staging buffer をどの region から取るか~~ → 決定（3 節）: 宛先 Domain の staging Pool から acquire。fix がそこへ書き換える
+- fenced Place で `canReuse` が真だが fence 未完了のとき、acquire はブロックするか新規 create するか。候補は「fence 完了まで再利用しない = 新規 create」と「pipeline_depth を超えたらブロック」
+  - 2026-10-13: lease の pool（4c 節）は後者 — 宣言した世代の段数 k を超えたら待つ（背圧）。一般の fenced Place の Pool は GPU の段で同じ形に寄せるかを裁定する
+- ~~`receive` の staged 転送で staging buffer をどの region から取るか~~ → 決定（3 節）: 宛先 Place の staging Pool から acquire。fix がそこへ書き換える
 - ~~Handle の `get` の毎回分岐コスト~~ → 決定（4b 節: 動的検査のはしご）。段 2 の判定精度が実際のホットパスでどこまで効くかは SoberSQL で計測
 - SoA 強制のとき、複数配列をまたぐ「1 エンティティの削除」（index の整合）を誰が守るか。世代付き index をエンティティ ID にすれば Handle と同じ機構で解ける
 - 並列スコープに渡せる第 3 のクラス Sharable（方向づけ 2026-09-18、確定は Phase 3 のアトミック設計と同時）: 「不変値かチャネルのみ」の規則に、内部同期を持つ std 型（チャネル・Pool・アトミック）のマーカーとして Sharable を足す。型システムはマーカーの白リストだけ薄く持ち（mutFree 検査の例外）、内部同期の正しさは TLA+（チャネル・join と同じ枠、design-dev.md Phase 5b）とランタイム検証へ振る。チャネルは formal.md 段 3c で形式化し、Pool は「チャネルで書いた参照実装と観測等価」を差分テストで見る。これで RDBMS 未決の「Pool のスレッド安全性」は (a) 単一書き手 + 共有 Pool の形が取れる方向になる。2026-09-18 追記: Pool の骨格（acquire / release / 排他 / 待機 / 再利用）が新しい型規則ゼロで chan の派生形として書けることを機械化で確認（formal.md「Sharable の断片」、ex14 / ex15）。白リストは chan 1 行のまま。mut スロットの循環は型が付かず、実 Pool の可変スロットは 4b のはしごが受ける
@@ -350,7 +352,7 @@ mut パス（`mut(elem.position)` の非重複検査で同一配列への分割�
 前提: 「並列スコープには不変値かチャネルのみ」は PG / InnoDB 式の「共有バッファプール + ラッチ」を構成的に禁じる。取れる形は (a) 単一書き手 + copy-on-write B 木（LMDB 系。不変ページの共有 = MVCC スナップショット）か (b) thread-per-core の shared-nothing（Seastar 系。Phase 5b のワーカー固定と一致）。SoberSQL の第一形は (a)。これは制約ではなく思想の一致として扱う。相性が良い点: ページのピン/アンピン = Pool の acquire / `defer release`、push 型 for-yield = push-based クエリ実行（子 → 親のタプル返しが無いので region 越境コピーが起きない）、for の反復 = region なので長い走査でも一時割り当てが溜まらない。以下は docs に答えが無く、Phase 3 の std 設計時点で決める必要があるもの:
 
 - アトミック / ラッチの逃げ道: LSN カウンタ、CoW のルート差し替えは原子的でなければならない。std にアトミック型を置くか、型システム上どう扱うか（並列スコープに渡せる「第 3 の種類」になる）。無いと単一書き手ですら書けない
-- バイトレイアウトと再解釈: ページのスロット配列、可変長タプル、非アライン読み。Go の `unsafe` 相当が無く、FFI（Phase 6。既定は wasm で線形メモリは別 Domain なので、そもそも Sober 側のメモリを見せる手段ではない）だけでは足りない。候補は Zig 式: (1) レイアウト定義済み struct（Zig の `extern struct` / `packed struct`）を `@layout(c)` / `@layout(packed)` アノテーションで与える（9〜10 節の方針どおり言語ではなく注釈層。注釈のない struct はレイアウト未規定のまま）、(2) エンディアンを読み時に明示する std 関数（Zig の `std.mem.readInt(u32, bytes, .little)`。ホストエンディアン暗黙の再解釈を持たない）、(3) `[]byte` → レイアウト定義済み struct のビューは std 関数で長さとアライン検査つき `T?` を返す（Zig の `bytesAsValue` + アライン付きポインタ型に相当。失敗は `nil`、UB ではない）。ポインタ演算は持ち込まない。要検討: ビューが元の `[]byte` を参照するので region 規則（子 → 親のみ可）にそのまま乗るか、mut ビューの単一書き手をどう保つか
+- バイトレイアウトと再解釈: ページのスロット配列、可変長タプル、非アライン読み。Go の `unsafe` 相当が無く、FFI（Phase 6。既定は wasm で線形メモリは別 Place なので、そもそも Sober 側のメモリを見せる手段ではない）だけでは足りない。候補は Zig 式: (1) レイアウト定義済み struct（Zig の `extern struct` / `packed struct`）を `@layout(c)` / `@layout(packed)` アノテーションで与える（9〜10 節の方針どおり言語ではなく注釈層。注釈のない struct はレイアウト未規定のまま）、(2) エンディアンを読み時に明示する std 関数（Zig の `std.mem.readInt(u32, bytes, .little)`。ホストエンディアン暗黙の再解釈を持たない）、(3) `[]byte` → レイアウト定義済み struct のビューは std 関数で長さとアライン検査つき `T?` を返す（Zig の `bytesAsValue` + アライン付きポインタ型に相当。失敗は `nil`、UB ではない）。ポインタ演算は持ち込まない。要検討: ビューが元の `[]byte` を参照するので region 規則（子 → 親のみ可）にそのまま乗るか、mut ビューの単一書き手をどう保つか
 - Handle の `get` がホットパス: B 木探索は 1 ステップごとに get で、世代チェックと `T?` 分岐が毎回乗る。上記「analyzer が有効性を導出して分岐を消す」を SoberSQL では性能を決める項目に格上げ
 - ~~CPU 束縛ループのキャンセル~~ → 解決: 中断点を含まないループのバックエッジにコンパイラが検査点を挿す（language.md 11 節「キャンセル」）。公平性のためにも要るので追加コストではない
 - Pool のスレッド安全性: 複数の並列スコープから同じ Pool に acquire してよいか。可なら Pool が唯一の共有可変オブジェクトになり、実装内にアトミックが要る（上記 1 項と同じ答えになる）。不可なら (b) の形しか取れない。→ 方向づけ: Sharable クラス（未決の最終項）で「可」に倒す
@@ -361,6 +363,6 @@ mut パス（`mut(elem.position)` の非重複検査で同一配列への分割�
 
 - Phase 1（fib、if/switch 式、struct、union、`|>`、for-yield）: 本メモと無関係。今すぐ着手可
 - Phase 2（型検査）: region の escape 規則、`T?` flow typing、並列スコープの不変値制約。5 節の決定がここに効く
-- Phase 3 相当: Handle / Domain / Pool を std として書く。ここで 1〜4 節が検証される
-- Phase 5: `parallel scope` の spawn 先は Domain の Executor。タスクは生成時のワーカーに固定（design-dev.md Phase 5b）。`Policy.threads` = 1 なら単一スレッド実行と同じ
+- Phase 3 相当: Handle / Place / Pool を std として書く。ここで 1〜4 節が検証される
+- Phase 5: `parallel scope` の spawn 先は Place の Executor。タスクは生成時のワーカーに固定（design-dev.md Phase 5b）。`Policy.threads` = 1 なら単一スレッド実行と同じ
 - Phase 4 以降: ゲームの移植で 5 節の撤退条件を計測

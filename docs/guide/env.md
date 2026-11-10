@@ -15,7 +15,7 @@ Declare the variables your own program reads in a [std/env](../std/env.ja.md) ta
 | Variable | Meaning |
 | --- | --- |
 | `SOBER_WORKERS` | the number of workers (default the number of cores). Standard output stays byte-for-byte the same when it changes |
-| `SOBER_PIN` | pin the workers to CPUs (1 forces, 0 turns off; by default only for Serve-shaped programs with enough allowed CPUs) |
+| `SOBER_PIN` | pin the workers (1 forces each worker onto the CPUs that share its L3 cache, 2 forces one CPU per worker, 0 turns pinning off; by default only Serve-shaped programs with enough allowed CPUs are pinned, to their L3 group) |
 | `SOBER_REGION_MB` | the size limit of the main region (MiB, default 4096) |
 | `SOBER_TASK_REGION_MB` | the size limit of a task's region (MiB — never above main's) |
 | `SOBER_MADV_MB` | when returning the pages of a dropped region to the OS, the amount kept touched from the start (MiB, 0 = return all) |
@@ -42,6 +42,7 @@ Declare the variables your own program reads in a [std/env](../std/env.ja.md) ta
 | `SOBER_NOAES` | std/crypto/aesgcm | the same as the runtime's (no AES-NI) |
 | `SOBER_DUDECT` | std/internal/dudect | the number of constant-time statistical measurements (none when unset — for tests) |
 | `SOBER_TLS_INTEROP` | std/internal/hsc | the directory of the TLS client interop net (scripts/tlsinterop.sh starts the Go servers and passes it — no connection when unset; for tests) |
+| `SOBER_PG_ORACLE` | std/internal/pgwire | the config file of the real-PostgreSQL round-trip net (scripts/pgoracle.sh starts PostgreSQL 17 / 18 and passes it — no connection when unset; for tests) |
 | `SOBER_DNS_FAKE` | std/net | the port of the fake DNS server for the name-resolution net (scripts/dnsinterop.sh passes it — no query when unset; for tests) |
 | `SOBER_HTTP_INTEROP` | std/http/client | the directory of the HTTP client interop net (scripts/httpinterop.sh starts the Go net/http servers and passes it — no connection when unset; for tests) |
 | `SOBER_QUICK_SEED` | std/quick | the seed of property-based tests (decimal — New / Named mix it in; 0 when unset. Change it to widen the search) |

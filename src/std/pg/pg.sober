@@ -1,0 +1,710 @@
+package pg
+
+// PostgreSQL のクライアント（wire protocol 3.0・extended query・TLS 1.3 + SCRAM-SHA-256-PLUS が既定）。
+// SQL の文面は const の席（`@const` — 文字列リテラルか const）で、値は `$1` … の引数で渡す（実行時に組んだ SQL は書けない）。
+// 接続は Open の範囲の中だけ（CPS — 閉じ忘れが書けない）。文面ごとの prepared statement は接続ごとに 1 回だけ作り、引数の型と列の型を覚える。
+// 結果は binary 形式（第一陣の型）で受けて Value に写す。方針は呼び手のデータ Policy（ゼロ値 = 既定 — どの欄も安全な側）
+//
+//     pg.Open("postgres://app@db.local/shop", (c) => {
+//         _ = list(c, 500)
+//     }, policy: pg.Policy{password: pw})?
+//
+//     func list(c pg.Conn, limit int) error? {
+//         for r <- pg.Query(c, "select id, name from item where price < $1", args: []pg.Value{pg.Int{v: limit}})? {
+//             println("${pg.ColInt(r, 0)?} ${pg.ColString(r, 1)?}")
+//         }
+//         return nil
+//     }
+
+import "std/crypto"
+import "std/internal/hsc"
+import "std/internal/pgwire"
+import "std/internal/record"
+import "std/internal/sock"
+import "std/internal/x509"
+import "std/io"
+import "std/iter"
+import "std/net"
+import "std/strings"
+import "std/task"
+import "std/time"
+import "std/tls"
+
+// 方針（省いた欄・nil は既定）: password = SCRAM の password（URL には書かない・"" = 無し — サーバが SCRAM を求めれば 28P01 で断られる）・extraRoots = 焼き込みの WebPKI のルートに足す起点（私的 PKI — tls.ParseRoots の値）・
+// timeout = 1 回の呼び出し〔Open の握手と認証・Query / Exec / Script の往復 — Query は k の時間も含む〕の期限 ns・既定 30 秒〔0 以下も既定〕・
+// maxRow = 1 つのメッセージ〔行〕の上限バイト・既定 16 MiB・上限 1 GiB・appName = application_name〔既定 "sober"〕・
+// dangerouslyPlaintext = TLS を使わない・dangerouslyAllowNoChannelBinding = TLS の上で SCRAM-SHA-256-PLUS を出さないサーバ〔PgBouncer 等〕も受ける・
+// dangerouslyAllowTls12 = TLS 1.2 も申し出る（どれも既定は安全な側 — 綴りで緩めたことが grep で拾え、check が毎回警告する）
+type Policy struct {
+    password string @secret
+    extraRoots tls.Roots?
+    timeout int?
+    maxRow int?
+    appName string?
+    dangerouslyPlaintext bool
+    dangerouslyAllowNoChannelBinding bool
+    dangerouslyAllowTls12 bool
+}
+
+// サーバの ErrorResponse（code = SQLSTATE — 一意制約違反 23505・password 違い 28P01・直列化の失敗 40001 ほか）。
+// message / detail / hint = 人に見せる文面（hint = サーバの直し方の提案 — 無ければ ""）・constraint = 違反した制約の名前
+type Server error {
+    code string
+    message string
+    detail string
+    constraint string
+    hint string
+}
+
+// 認証が成り立たない（SCRAM の方式が無い・サーバの署名が合わない・SCRAM 以外の方式を求められた）
+type Auth error
+
+// TLS が張れない（サーバが SSLRequest を断った・証明書の検証・握手の失敗）
+type Tls error
+
+// 接続が使えない（相手が閉じた・期限切れや壊れた応答の後）
+type Closed error
+
+// サーバの応答が wire protocol の形でない
+type Protocol error
+
+// URL が読めない（形・port・password や クエリを含む — password は Policy に）
+type BadUrl error
+
+// 名前が引けない
+type Dns error
+
+// 引数 index（0 起点）の値の variant がサーバの型 oid に合わない（Int の範囲外も）
+type BadArg error {
+    index int
+    oid int
+}
+
+// 列 index の値の型 oid が読みの関数に合わない
+type WrongType error {
+    index int
+    oid int
+}
+
+// 列 index が NULL（型つきの読み — IsNull で先に分けるか Col の switch で Null{} を受ける）
+type NullColumn error {
+    index int
+}
+
+// Scaled の値が scale 桁に収まらない端数を持つ
+type Inexact error
+
+// Scaled の結果が int に収まらない
+type OutOfRange error
+
+// Query の本体の中から同じ Conn を使った（行を流している途中の接続は使えない — 行を読み切ってから使うか、別の接続で）
+type Reentered panic {
+    hint string
+}
+
+// 接続 1 本（同一性の型 — Open の k の仮引数としてだけ生まれる。状態は値の外の置き場 blk〔transport.sober〕）
+type Conn struct {
+    fd int
+    blk []int
+    cp internal.hsc.CParams
+    p cfg
+    seal connSeal
+}
+
+type connSeal struct {
+}
+
+// 結果の 1 行（k の中で読む — 列は番号で）
+type Row struct {
+    vals []Value
+    oids []int
+}
+
+// Policy を読み解いた設定と URL の欄
+type cfg struct {
+    user string
+    db string
+    host string
+    port int
+    password string @secret
+    roots []internal.x509.Cert
+    timeout int
+    maxRow int
+    appName string
+    plaintext bool
+    allowNoBinding bool
+    allowTls12 bool
+}
+
+const defaultTimeout = 30 * 1000 * task.MS
+const defaultMaxRow = 16 * 1024 * 1024
+const limitMaxRow = 1024 * 1024 * 1024
+
+// at（URL "postgres://user@host[:port]/db" — "postgresql://" も・port の既定 5432・db の既定 = user）の PostgreSQL へ繋ぎ、認証まで済ませて Conn を k に渡す
+// （k が返ったら Terminate して閉じる）。既定は TLS（SSLRequest → 検証つき TLS 1.3）+ SCRAM-SHA-256-PLUS。k の中の誤りは k の中で受ける
+@errors(BadUrl, Dns, Tls, Auth, Server, Protocol, Closed, io.Expired)
+@effects(block, io, panic, nondet)
+func Open(at string, k func(c Conn), policy Policy?) error? {
+    t, ok := parseUrl(at)
+    if !ok {
+        return BadUrl{}
+    }
+    c := resolve(t, if policy == nil { Policy{} } else { policy })
+    cp0 := internal.hsc.NewCParams(c.host, []string{}, c.roots, time.UnixSec(time.Now()), []byte{})
+    cp := if c.allowTls12 { internal.hsc.WithTls12(cp0) } else { cp0 }
+    mut err := noErr()
+    de := net.Dial("${c.host}:${c.port}", (conn) => {
+        err = openOn(conn.fd, c, cp, k)
+    })
+    if de != nil {
+        return classify(de)
+    }
+    if err != nil {
+        return classify(err)
+    }
+    return nil
+}
+
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed, internal.pgwire.Protocol, Tls, Auth, Server)
+@effects(block, io, panic, nondet)
+func openOn(conn int, c cfg, cp internal.hsc.CParams, k func(c Conn)) error? {
+    blk := newLink()
+    mut err := noErr()
+    to := c.timeout
+    _, re := task.Run((sc) => {
+        err = startup(conn, blk, c, cp)
+        0
+    }, deadline: to)
+    if re != nil {
+        return io.Expired{}
+    }
+    if err != nil {
+        return err
+    }
+    k(Conn{fd: conn, blk: blk, cp: cp, p: c, seal: connSeal{}})
+    if !dead(blk) {
+        _ = sendMsg(conn, blk, internal.pgwire.EncTerminate())
+        _ = closeTls(conn, blk)
+    }
+    return nil
+}
+
+// SSLRequest と TLS（既定）→ StartupMessage → SCRAM → ReadyForQuery
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed, internal.pgwire.Protocol, Tls, Auth, Server)
+@effects(block, io, panic, nondet)
+func startup(conn int, blk []int, c cfg, cp internal.hsc.CParams) error? {
+    mut ep := []byte{}
+    if !c.plaintext {
+        internal.sock.Send(conn, internal.pgwire.EncSslRequest())?
+        yes, _ := rawPoll(conn)?
+        if len(yes) != 1 || yes[0] != 'S' {
+            return Tls{}
+        }
+        ep = handshake(conn, blk, cp)?
+    }
+    sendMsg(conn, blk, internal.pgwire.EncStartupApp(c.user, c.db, c.appName))?
+    onTls := !c.plaintext
+    mut r := rxOpen(blk)
+    mut sc := internal.pgwire.NoScram()
+    mut ss := internal.pgwire.NewSess()
+    mut fail := noErr()
+    mut over := false
+    while !over {
+        t, body := nextMsg(conn, blk, cp, mut r, c.maxRow)?
+        m := internal.pgwire.Decode(t, body)?
+        if internal.pgwire.Absorb(mut ss, m) {
+            continue
+        }
+        switch m {
+        case internal.pgwire.AuthSasl{mechs}: {
+            s0, out, e := internal.pgwire.ScramStart(mechs, onTls, ep, c.allowNoBinding, "", c.password, crypto.Rand(18))
+            if e != nil {
+                return Auth{}
+            }
+            sc = s0
+            sendMsg(conn, blk, out)?
+        }
+        case internal.pgwire.AuthSaslContinue{data}: {
+            out := internal.pgwire.ScramContinue(mut sc, data) catch return Auth{}
+            sendMsg(conn, blk, out)?
+        }
+        case internal.pgwire.AuthSaslFinal{data}: {
+            if internal.pgwire.ScramFinal(mut sc, data) != nil {
+                return Auth{}
+            }
+        }
+        case internal.pgwire.AuthOk{}: {}
+        case internal.pgwire.AuthOther{code}: return Auth{}
+        case internal.pgwire.ErrorMsg{fields}: {
+            // 握手の途中の ErrorResponse は致命（サーバはこの後に閉じる — ReadyForQuery は来ない）
+            fail = serverErr(fields)
+            over = true
+        }
+        case internal.pgwire.Ready{status}: {
+            setW(blk, lTxStatus, int(status))
+            over = true
+        }
+        default: return internal.pgwire.Protocol{}
+        }
+    }
+    rxClose(blk, r)
+    return fail
+}
+
+// 行を 1 行ずつ k に渡す呼び出し形の生成元: `for r <- pg.Query(c, sql, args: …)? { … }`。本体の `?` / return / break で抜けると、残りの行を読み捨てて
+// 接続を使える状態に戻す（生成元の defer）。sql は const の席。本体の中から同じ Conn を使うと panic(Reentered) — 行を読み切ってから使うか、別の接続で
+@const(sql)
+@errors(Server, Protocol, Closed, BadArg, io.Expired)
+@effects(block, io, panic, nondet)
+func Query(c Conn, sql string, k func(r Row), args ([]Value)?) error? {
+    mut q := begin(c, sql, argsOf(args))?
+    defer finish(c, q)
+    while q.more {
+        row := nextRow(c, mut q)?
+        if q.more {
+            k(row)
+        }
+    }
+    return q.fail
+}
+
+// 文を 1 つ実行して影響行数（CommandComplete の数 — 行を返す文は返した行の数）を返す。sql は const の席
+@const(sql)
+@errors(Server, Protocol, Closed, BadArg, io.Expired)
+@effects(block, io, panic, nondet)
+func Exec(c Conn, sql string, args ([]Value)?) (int, error?) {
+    mut q := begin(c, sql, argsOf(args))?
+    defer finish(c, q)
+    while q.more {
+        _ = nextRow(c, mut q)?
+    }
+    if q.fail != nil {
+        return 0, q.fail
+    }
+    return q.count, nil
+}
+
+// 複数の文（; 区切り — migration 用・引数なし）を simple query で 1 回に送る。最初の誤りで止まる（サーバの振る舞い）。sql は const の席
+@const(sql)
+@errors(Server, Protocol, Closed, io.Expired)
+@effects(block, io, panic, nondet)
+func Script(c Conn, sql string) error? {
+    return plain(c, sql)
+}
+
+// simple query の往復（Script と Tx の制御文 — 文面は呼び手が const の席か std の中で組んだもの）
+@errors(Server, Protocol, Closed, io.Expired)
+@effects(block, io, panic, nondet)
+func plain(c Conn, sql string) error? {
+    enter(c)?
+    e := scriptOn(c, sql)
+    clearFlag(c.blk, bBusy)
+    return publicOrServer(c.blk, e)
+}
+
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed, internal.pgwire.Protocol, Server)
+@effects(block, io, panic, nondet)
+func scriptOn(c Conn, sql string) error? {
+    sendMsg(c.fd, c.blk, internal.pgwire.EncQuery(sql))?
+    mut r := rxOpen(c.blk)
+    mut ss := internal.pgwire.NewSess()
+    mut fail := noErr()
+    mut over := false
+    while !over {
+        m := recvMsg(c, mut r)?
+        if internal.pgwire.Absorb(mut ss, m) {
+            continue
+        }
+        if isReady(m) {
+            over = true
+        } else if fail == nil {
+            fail = errorOf(m)
+        }
+    }
+    rxClose(c.blk, r)
+    return fail
+}
+
+// 往復の入口: 死んだ接続は Closed・入れ子（Query の本体の中から同じ Conn）は panic・期限の起点を置き場へ
+@errors(Closed)
+@effects(io, panic, nondet)
+func enter(c Conn) error? {
+    if dead(c.blk) {
+        return Closed{}
+    }
+    if (flagsOf(c.blk) & bBusy) != 0 {
+        panic(Reentered{hint: "this Conn is streaming rows of a Query — read the rows to the end first, or use another connection"})
+    }
+    setFlag(c.blk, bBusy)
+    setW(c.blk, lDeadline, monoNs() + c.p.timeout)
+    return nil
+}
+
+// 往復の内側の誤りを公開のラベルに（サーバの ErrorResponse は接続を保ち、他は接続を捨てる）
+@errors(Server, Protocol, Closed, io.Expired)
+func publicOrServer(blk []int, err error?) error? {
+    if err == nil {
+        return nil
+    }
+    out := publicOf(err)
+    if !isServer(out) {
+        setFlag(blk, bDead)
+    }
+    return out
+}
+
+// 往復の内側の誤り（nil でない）の公開のラベル（サーバの ErrorResponse・壊れた応答・期限・他は接続の失敗）
+@errors(Server, Protocol, Closed, io.Expired)
+func publicOf(err error) error? {
+    return switch err {
+    case Server{code, message, detail, constraint, hint}: Server{code: code, message: message, detail: detail, constraint: constraint, hint: hint}
+    case internal.pgwire.Protocol{}: Protocol{}
+    case io.Expired{}: io.Expired{}
+    default: Closed{}
+    }
+}
+
+func isServer(e error?) bool {
+    return switch e {
+    case nil: false
+    case Server{}: true
+    default: false
+    }
+}
+
+// 1 回の往復の途中の状態（受けの持ち越し・列の型と形式・数・サーバの誤り・行がまだ来るか）
+type cursor struct {
+    r rx
+    ss internal.pgwire.Sess
+    cols []int
+    fmts []int
+    count int
+    fail error?
+    more bool
+}
+
+func doneCursor() cursor {
+    return cursor{r: rx{app: []byte{}, at: 0}, ss: internal.pgwire.NewSess(), cols: []int{}, fmts: []int{}, count: 0, fail: nil, more: false}
+}
+
+// Parse + Describe（キャッシュに無ければ）→ Bind + Execute + Sync を送り、行の受けの状態を返す（失敗なら往復を閉じて誤り）
+@errors(Server, Protocol, Closed, BadArg, io.Expired)
+@effects(block, io, panic, nondet)
+func begin(c Conn, sql string, args []Value) (cursor, error?) {
+    enter(c)?
+    mut r := rxOpen(c.blk)
+    params, cols, pe := prepare(c, mut r, sql)
+    if pe != nil {
+        rxClose(c.blk, r)
+        clearFlag(c.blk, bBusy)
+        return doneCursor(), publicOrServer(c.blk, pe)
+    }
+    wargs, bad := encodeAll(params, args)
+    if bad >= 0 {
+        rxClose(c.blk, r)
+        clearFlag(c.blk, bBusy)
+        return doneCursor(), BadArg{index: bad, oid: if bad < len(params) { params[bad] } else { 0 }}
+    }
+    mut fmts := mut []int{}
+    for o <- cols {
+        fmts = append(fmts, if binaryOid(o) { 1 } else { 0 })
+    }
+    ff := freeze(fmts)
+    se := sendMsg(c.fd, c.blk, catBytes(catBytes(internal.pgwire.EncBind("", stmtName(c.blk, sql), wargs, ff), internal.pgwire.EncExecute("", 0)), internal.pgwire.EncSync()))
+    if se != nil {
+        clearFlag(c.blk, bBusy)
+        return doneCursor(), publicOrServer(c.blk, se)
+    }
+    return cursor{r: r, ss: internal.pgwire.NewSess(), cols: cols, fmts: ff, count: 0, fail: nil, more: true}, nil
+}
+
+// キャッシュの文の名前（無ければ無名）
+func stmtName(blk []int, sql string) string {
+    h := cacheFind(blk, sql)
+    return if h >= 0 { "s${h}" } else { "" }
+}
+
+// 文の引数の型と列の型（キャッシュに無ければ Parse + Describe — 入る場所があれば名前つきで覚える）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed, internal.pgwire.Protocol, Server)
+@effects(block, io, panic, nondet)
+func prepare(c Conn, r mut rx, sql string) ([]int, []int, error?) {
+    hit := cacheFind(c.blk, sql)
+    if hit >= 0 {
+        ps, cs := cacheMeta(c.blk, hit)
+        return ps, cs, nil
+    }
+    n := getW(c.blk, lCacheN)
+    name := if n < cacheN { "s${n}" } else { "" }
+    sendMsg(c.fd, c.blk, catBytes(catBytes(internal.pgwire.EncParse(name, sql, []int{}), internal.pgwire.EncDescribe('S', name)), internal.pgwire.EncSync()))?
+    mut ss := internal.pgwire.NewSess()
+    mut params := []int{}
+    mut cols := []int{}
+    mut fail := noErr()
+    mut over := false
+    while !over {
+        m := recvMsg(c, mut r)?
+        if internal.pgwire.Absorb(mut ss, m) {
+            continue
+        }
+        if isReady(m) {
+            over = true
+        } else if isError(m) {
+            fail = errorOf(m)
+        } else {
+            params = paramsOf(m, params)
+            cols = colsOf(m, cols)
+        }
+    }
+    if fail != nil {
+        return []int{}, []int{}, fail
+    }
+    if name != "" && cacheSlot(c.blk, sql, params, cols) == n {
+        cacheAdd(c.blk, n, sql, params, cols)
+    } else if name != "" {
+        // 語の置き場が満ちた: 名前つきの文は捨てて無名で作り直す（Bind は無名の文を指す）
+        sendMsg(c.fd, c.blk, catBytes(catBytes(internal.pgwire.EncClose('S', name), internal.pgwire.EncParse("", sql, []int{})), internal.pgwire.EncSync()))?
+        drainTo(c, mut r)?
+    }
+    return params, cols, nil
+}
+
+// 次の行（行が尽きたら q.more = false — ReadyForQuery まで読み、数とサーバの誤りを q へ）
+@errors(Server, Protocol, Closed, io.Expired)
+@effects(block, io, panic, nondet)
+func nextRow(c Conn, q mut cursor) (Row, error?) {
+    while q.more {
+        m, e := recvMsg(c, mut q.r)
+        if e != nil {
+            q.more = false
+            clearFlag(c.blk, bBusy)
+            return noRow(), publicOrServer(c.blk, e)
+        }
+        if internal.pgwire.Absorb(mut q.ss, m) {
+            continue
+        }
+        b := rowBody(m)
+        if b != nil {
+            if q.fail == nil {
+                row, re := rowOf(b, q.cols, q.fmts)
+                if re != nil {
+                    q.more = false
+                    setFlag(c.blk, bDead)
+                    clearFlag(c.blk, bBusy)
+                    return noRow(), Protocol{}
+                }
+                return row, nil
+            }
+        } else if isReady(m) {
+            q.more = false
+            rxClose(c.blk, q.r)
+            clearFlag(c.blk, bBusy)
+        } else if isError(m) {
+            q.fail = errorOf(m)
+        } else {
+            q.count = countIn(m, q.count)
+        }
+    }
+    return noRow(), nil
+}
+
+func noRow() Row {
+    return Row{vals: []Value{}, oids: []int{}}
+}
+
+// 往復の後始末（生成元の defer）: 行の途中で抜けたら ReadyForQuery まで読み捨てて接続を保つ（読めなければ捨てる）
+@effects(block, io, panic, nondet)
+func finish(c Conn, q cursor) {
+    if !q.more || dead(c.blk) {
+        clearFlag(c.blk, bBusy)
+        return
+    }
+    mut r := q.r
+    e := drainTo(c, mut r)
+    if e != nil {
+        setFlag(c.blk, bDead)
+    } else {
+        rxClose(c.blk, r)
+    }
+    clearFlag(c.blk, bBusy)
+}
+
+// ReadyForQuery まで読み捨てる
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed, internal.pgwire.Protocol)
+@effects(block, io, panic, nondet)
+func drainTo(c Conn, r mut rx) error? {
+    mut over := false
+    while !over {
+        m := recvMsg(c, mut r)?
+        over = isReady(m)
+    }
+    return nil
+}
+
+// 次のメッセージ（受けの待ちは往復の期限の残りで包む — transport.sober の nextMsg）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed, internal.pgwire.Protocol)
+@effects(block, io, panic, nondet)
+func recvMsg(c Conn, r mut rx) (internal.pgwire.Msg, error?) {
+    t, body, e := nextMsg(c.fd, c.blk, c.cp, mut r, c.p.maxRow)
+    if e != nil {
+        return internal.pgwire.Unexpected{tag: 0}, e
+    }
+    m, de := internal.pgwire.Decode(t, body)
+    noteReady(c.blk, m)
+    return m, de
+}
+
+// ReadyForQuery の状態を置き場へ（Tx が COMMIT の前に失敗の状態 'E' を見る）
+func noteReady(blk []int, m internal.pgwire.Msg) {
+    switch m {
+    case internal.pgwire.Ready{status}: setW(blk, lTxStatus, int(status))
+    default: {}
+    }
+}
+
+func rowBody(m internal.pgwire.Msg) ([]byte)? {
+    switch m {
+    case internal.pgwire.DataRow{body}: return body
+    default: {}
+    }
+    return nil
+}
+
+func isError(m internal.pgwire.Msg) bool {
+    return switch m {
+    case internal.pgwire.ErrorMsg{fields}: true
+    default: false
+    }
+}
+
+@errors(Server)
+func errorOf(m internal.pgwire.Msg) error? {
+    switch m {
+    case internal.pgwire.ErrorMsg{fields}: return serverErr(fields)
+    default: {}
+    }
+    return nil
+}
+
+func paramsOf(m internal.pgwire.Msg, prev []int) []int {
+    switch m {
+    case internal.pgwire.ParamDesc{oids}: return oids
+    default: {}
+    }
+    return prev
+}
+
+func colsOf(m internal.pgwire.Msg, prev []int) []int {
+    switch m {
+    case internal.pgwire.RowDesc{cols}: return oidsOf(cols)
+    case internal.pgwire.NoData{}: return []int{}
+    default: {}
+    }
+    return prev
+}
+
+func countIn(m internal.pgwire.Msg, prev int) int {
+    return switch m {
+    case internal.pgwire.CommandComplete{tag}: countOf(tag)
+    default: prev
+    }
+}
+
+// 引数を Describe の型 params に合わせて符号化（合わない最初の引数の番号 — 全部合えば -1）
+func encodeAll(params []int, args []Value) ([]internal.pgwire.Arg, int) {
+    mut out := mut []internal.pgwire.Arg{}
+    for i <- iter.Range(0, len(args)) {
+        oid := if i < len(params) { params[i] } else { 0 }
+        a, ok := encode(oid, args[i])
+        if !ok {
+            return []internal.pgwire.Arg{}, i
+        }
+        out = append(out, a)
+    }
+    return freeze(out), -1
+}
+
+func isReady(m internal.pgwire.Msg) bool {
+    return switch m {
+    case internal.pgwire.Ready{status}: true
+    default: false
+    }
+}
+
+func oidsOf(cs []internal.pgwire.Col) []int {
+    mut o := mut []int{}
+    for x <- cs {
+        o = append(o, x.oid)
+    }
+    return freeze(o)
+}
+
+// DataRow の body を列ごとの Value に（形が型に合わなければ Protocol）
+@errors(internal.pgwire.Protocol)
+func rowOf(body []byte, cols []int, fmts []int) (Row, error?) {
+    nc := internal.pgwire.RowLen(body)
+    if nc != len(cols) {
+        return Row{vals: []Value{}, oids: []int{}}, internal.pgwire.Protocol{}
+    }
+    mut vs := mut []Value{}
+    for i <- iter.Range(0, nc) {
+        b := internal.pgwire.RowCol(body, i)
+        if b == nil {
+            vs = append(vs, Null{})
+        } else {
+            v, ok := decode(cols[i], fmts[i], b)
+            if !ok {
+                return Row{vals: []Value{}, oids: []int{}}, internal.pgwire.Protocol{}
+            }
+            vs = append(vs, v)
+        }
+    }
+    return Row{vals: freeze(vs), oids: cols}, nil
+}
+
+// CommandComplete の tag の最後の数（"INSERT 0 5" → 5・"UPDATE 3" → 3・数の無い tag は 0）
+func countOf(tag string) int {
+    f := strings.Fields(tag)
+    if len(f) < 2 {
+        return 0
+    }
+    mut v := 0
+    for x <- bytes(f[len(f) - 1]) {
+        if x < '0' || x > '9' {
+            return 0
+        }
+        v = v * 10 + (int(x) - 48)
+    }
+    return v
+}
+
+func serverErr(fs []internal.pgwire.Field) error? {
+    return Server{code: internal.pgwire.FieldOf(fs, 'C'), message: internal.pgwire.FieldOf(fs, 'M'), detail: internal.pgwire.FieldOf(fs, 'D'), constraint: internal.pgwire.FieldOf(fs, 'n'), hint: internal.pgwire.FieldOf(fs, 'H')}
+}
+
+func argsOf(a ([]Value)?) []Value {
+    if a == nil {
+        return []Value{}
+    }
+    return a
+}
+
+func noErr() error? {
+    return nil
+}
+
+// 内側の誤りを公開のラベルに
+@errors(Dns, Tls, Auth, Server, Protocol, Closed, io.Expired)
+func classify(e error) error? {
+    switch e {
+    case net.NoHost{}: return Dns{}
+    case net.NonASCIIHost{}: return Dns{}
+    case internal.record.Alert{}: return Tls{}
+    case internal.hsc.CertFailed{}: return Tls{}
+    case Tls{}: return Tls{}
+    case Auth{}: return Auth{}
+    case Server{code, message, detail, constraint, hint}: return Server{code: code, message: message, detail: detail, constraint: constraint, hint: hint}
+    case internal.pgwire.Protocol{}: return Protocol{}
+    case io.Expired{}: return io.Expired{}
+    default: return Closed{}
+    }
+}

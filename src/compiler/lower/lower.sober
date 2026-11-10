@@ -508,6 +508,7 @@ func elfPrep(st mut St, passes bool, copy bool, stop int, vmode int) {
     st.transparent = transpOf(passes)
     st.stopAt = stop
     st.hwFold = !copy
+    st.errMark = passes && !copy
     st.noVfy = vmode == VfyNone
     st.vfyLast = vmode == VfyLast
 }
@@ -581,6 +582,8 @@ func elfOutSt(st mut St, passes bool, m2r bool, syms bool, copy bool) ([]byte, e
         if stopHere(mut st, 13) {
             return if st.dumpIr { stDump(mut st) } else { []byte{} }, nil
         }
+        // 反復の region の判定が済んだら rt.err_alloc の印は要らない — 後段（葉の region の省略・上界の解析・rtlower）は rt.region_alloc として見る
+        errAllocLower(mut st)
         rlCleanModule(mut st, mut dirty)
         // 葉の region の省略をもう一度: 周回の enter と enter の後の region.depth を loopLight / rlClean が消した後の形で
         // 初めて条件 ① に掛かる葉（fnv・atoi 等）がある。入口の enter が軽い enter（呼び出し）に置き換わった関数は enter を数えないので外れる
@@ -595,6 +598,7 @@ func elfOutSt(st mut St, passes bool, m2r bool, syms bool, copy bool) ([]byte, e
             memReport(mut st)
         }
     }
+    errAllocLower(mut st)
     rtlower(mut st)
     vfyModule(mut st, "rtlower")
     loader.Stage("rtlower")
@@ -944,6 +948,7 @@ func buildInit(st mut St) {
     st.chanFns = -1
     st.cutKids = 0
     st.plabs = -1
+    st.domAt = -1
     // std/task に入口から届くプログラムは罠を使う（入口の前に立てる — 子の死を受ける。使わないプログラムの IR は不変）。届くかは参照の辺で
     // （desugar.ParReach — import しただけ・届かない関数の中だけで使うプログラムは逐次のまま）。席 A の子は親の判定を受け取る
     // （st.ls.par — 判定は自己 build で 0.8 G・子の固定費の大半だった）
@@ -965,6 +970,8 @@ func buildInit(st mut St) {
     if parAny {
         st.trapUse = true
         st.taskUse = true
+        st.domUse = desugar.DomNamed(mut st.d, "NewDomain")
+        st.domWait = st.domUse && desugar.DomNamed(mut st.d, "Await")
         for i <- iter.Range(0, nfn(mut st)) {
             if !st.winOn && strIs(mut st, desugar.PkgPath(mut st.d, fnPkg(mut st, i)), "std/net") && strIs(mut st, sA(nodeOf(mut st, fnNode(mut st, i))), "Serve") {
                 st.winOn = true
@@ -1031,6 +1038,7 @@ func programRt(st mut St) {
     // 先頭: 本体が rt.region_relocate8 / region.relocate を使う（byte の列の rt の宣言をこの後の buildByteRt が組む）
     buildRecRelocs(mut st)
     buildErrReloc(mut st)
+    buildErrAlloc(mut st)
     buildRecRelocs(mut st)
     // 深度の入りと語の確保（窓の守りと移しは名前つきプールの有無で決まる — 本体の下ろしの後に組む）
     buildRegionEnter(mut st)
@@ -2204,7 +2212,9 @@ func retStmt(st mut St, s desugar.NodeRef) error? {
             if i == nv - 1 && (isErr(mut st, wi) || isErrOpt(mut st, wi)) && kindN(mut st, ei) != ast.EIf {
                 // error を返す return 文（最後の値の型が error かラベルのリテラル — nil や error? の変数でない）のブロックは冷たい（B_LOOP のビット 2）: インライナーの
                 // 部分インラインの予算で数えない（。error は例外的な道 — language.md）。x86 の配置の種には繋がない（効かなかった）
+                st.errRet = ctx < 0 && kindN(mut st, ei) == ast.EComposite
                 r := expr(mut st, ei)?
+                st.errRet = false
                 if (isErr(mut st, r.t) || isLabel(mut st, r.t)) && cur(mut st) != -1 {
                     irSetBlkLoop(mut st, cur(mut st), irBlkLoop(mut st, cur(mut st)) | 4)
                 }

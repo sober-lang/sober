@@ -2,6 +2,7 @@ ok   testdata/cells.TestGetSetUpdate
 ok   testdata/cells.TestParallelUpdates
 ok   testdata/cells.TestQuickTrialsStartEmpty
 ok   testdata/cells.TestCopiesLeaveTheSourceIntact
+ok   testdata/cells.TestViewsLeaveTheSourceIntact
 ok   testdata/cells.TestRecursiveValue
 ok   testdata/cells.TestErrorField
-6 passed, 0 failed
+7 passed, 0 failed

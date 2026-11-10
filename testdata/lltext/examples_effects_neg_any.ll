@@ -2904,26 +2904,26 @@ b0:
   %v0 = load i64, ptr %v0.p
   call void @"rt.region_enter"()
   %v1 = ptrtoint ptr @"lambda#0" to i64
-  %v2 = getelementptr i64, ptr %s0, i64 0
-  %v3 = add i64 0, 0
-  %st0 = getelementptr i64, ptr %v2, i64 0
-  store i64 %v3, ptr %st0
-  %st1 = getelementptr i64, ptr %v2, i64 0
+  %v2 = add i64 0, 0
+  %v3 = getelementptr i64, ptr %s0, i64 0
+  %st0 = getelementptr i64, ptr %v3, i64 0
+  store i64 %v2, ptr %st0
+  %st1 = getelementptr i64, ptr %v3, i64 0
   store i64 %v1, ptr %st1
-  %v4.p = getelementptr i64, ptr %v2, i64 0
+  %v4.p = getelementptr i64, ptr %v3, i64 0
   %v4 = load i64, ptr %v4.p
   %v5 = call i64 @"main.call"(i64 %v4)
   call void @"rt.print_int"(i64 %v5)
   %v6 = add i64 0, 10
   call void @"rt.print_char"(i64 %v6)
   %v7 = ptrtoint ptr @"lambda#1" to i64
-  %v8 = getelementptr i64, ptr %s0, i64 0
-  %v9 = add i64 0, 0
-  %st2 = getelementptr i64, ptr %v8, i64 0
-  store i64 %v9, ptr %st2
-  %st3 = getelementptr i64, ptr %v8, i64 0
+  %v8 = add i64 0, 0
+  %v9 = getelementptr i64, ptr %s0, i64 0
+  %st2 = getelementptr i64, ptr %v9, i64 0
+  store i64 %v8, ptr %st2
+  %st3 = getelementptr i64, ptr %v9, i64 0
   store i64 %v7, ptr %st3
-  %v10.p = getelementptr i64, ptr %v8, i64 0
+  %v10.p = getelementptr i64, ptr %v9, i64 0
   %v10 = load i64, ptr %v10.p
   %v11 = call i64 @"main.call"(i64 %v10)
   call void @"rt.print_int"(i64 %v11)

@@ -19,3 +19,4 @@ bench/httparena/server
 
 # yomiyasu（文書推敲プラグイン）の検査記録 — 原文と最終稿の全文を含む
 .yomiyasu/
+.aws-login.json

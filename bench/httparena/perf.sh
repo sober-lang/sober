@@ -6,7 +6,9 @@
 # PMU の無い VM（GH Actions / WSL2）向けに -e cpu-clock。カーネルのシンボルには
 # kernel.perf_event_paranoid=-1 と kernel.kptr_restrict=0 が要る（workflow が sysctl で設定）。
 #
-#   bench/httparena/perf.sh [-d 秒] [-c 接続] [--profile baseline|pipelined|limited-conn|latency-10k|latency-1m|async] [-o レポートの出力先]
+#   bench/httparena/perf.sh [-d 秒] [-c 接続] [--profile baseline|pipelined|limited-conn|latency-10k|latency-1m|async|json-tls] [-b 建て済みのサーバ] [-o レポートの出力先]
+# json-tls = local.sh と同じ形（wrk・-c 4096・本家 requests/json-tls-rotate.lua の 7 組の巡回を TLS の port へ・証明書は本家の対・
+# dataset = $ARENA_DATA〔無ければ GitHub から〕）。wrk は $WRK か PATH。-b = 別の版で建てたサーバを測る（版どうしの帰属 — 無ければ main.sober を建てる）
 # async = local.sh と同じ形（GET /delay/10・接続は -c でなく $ASYNC_CONNS 既定 32000 — 保留のタイマーを運ぶ接続の数が種目の形。
 # TIME_WAIT を大量に残すので、並べるなら最後に）。nofile は呼び手が上げておく（workflow は prlimit）
 # limited-conn = local.sh と同じ形（-r 10 — 10 要求ごとに張り直す churn）。
@@ -22,12 +24,14 @@ dur=10
 conns=4096
 prof=baseline
 out=
+bin=
 while [ $# -gt 0 ]; do
     case "$1" in
         -d) dur=$2; shift ;;
         -c) conns=$2; shift ;;
         --profile) prof=$2; shift ;;
         -o) out=$2; shift ;;
+        -b) bin=$2; shift ;;
         *) echo "perf.sh: unknown option $1" >&2; exit 2 ;;
     esac
     shift
@@ -50,16 +54,42 @@ if [ ! -f "$REQ/get.raw" ]; then
     done
 fi
 
-"$ROOT/bin/sober" build main.sober -o "$W/sober-srv" > "$W/b1.log" 2>&1 || { echo "perf.sh: sober build failed: $(head -c 300 "$W/b1.log")" >&2; exit 1; }
+if [ -n "$bin" ]; then
+    cp "$bin" "$W/sober-srv" || exit 2
+else
+    "$ROOT/bin/sober" build main.sober -o "$W/sober-srv" > "$W/b1.log" 2>&1 || { echo "perf.sh: sober build failed: $(head -c 300 "$W/b1.log")" >&2; exit 1; }
+fi
+# json-tls: wrk・巡回の Lua・dataset・TLS の port（= port + 400 — local.sh と同じ）
+srvargs=()
+if [ "$prof" = json-tls ]; then
+    WRKBIN=${WRK:-$(command -v wrk || true)}
+    [ -x "$WRKBIN" ] || { echo "perf.sh: wrk not found (PATH or \$WRK)" >&2; exit 2; }
+    [ -f "$REQ/json-tls-rotate.lua" ] || curl -fsSL -o "$REQ/json-tls-rotate.lua" "https://raw.githubusercontent.com/MDA2AV/HttpArena/main/requests/json-tls-rotate.lua" \
+        || { echo "perf.sh: cannot fetch requests/json-tls-rotate.lua" >&2; exit 2; }
+    DATA=${ARENA_DATA:-$W/dataset.json}
+    [ -f "$DATA" ] || curl -fsSL -o "$DATA" "https://raw.githubusercontent.com/MDA2AV/HttpArena/main/data/dataset.json" || { echo "perf.sh: cannot fetch data/dataset.json (set \$ARENA_DATA)" >&2; exit 2; }
+fi
 
 # port は 18000 番台（local.sh と同じ — ephemeral の範囲と重ねない。async の後は TIME_WAIT の客側 port に bind して黙って失敗する）
 port=$((18500 + RANDOM % 400))
 for try in 1 2 3; do
     port=$((port + 1))
-    env SOBER_WORKERS=$nsrv taskset -c "$SERVER_CPUS" "$W/sober-srv" "$port" > "$W/srv.out" 2> "$W/srv.err" &
+    tport=$((port + 400))
+    if [ "$prof" = json-tls ]; then
+        env SOBER_WORKERS=$nsrv DATASET_PATH="$DATA" TLS_CERT="$ROOT/testdata/crypto/httparena-server.crt" TLS_KEY="$ROOT/testdata/crypto/httparena-server.key" \
+            taskset -c "$SERVER_CPUS" "$W/sober-srv" "$port" "$tport" > "$W/srv.out" 2> "$W/srv.err" &
+    else
+        env SOBER_WORKERS=$nsrv taskset -c "$SERVER_CPUS" "$W/sober-srv" "$port" > "$W/srv.out" 2> "$W/srv.err" &
+    fi
     SP=$!
-    for i in $(seq 100); do grep -q '^ready' "$W/srv.out" 2> /dev/null && break; sleep 0.05; done
-    grep -q '^ready' "$W/srv.out" && break
+    for i in $(seq 100); do
+        if grep -q '^ready' "$W/srv.out" 2> /dev/null; then
+            [ "$prof" != json-tls ] && break
+            curl -sk -o /dev/null --max-time 2 "https://localhost:$tport/json/1?m=1" && break
+        fi
+        sleep 0.05
+    done
+    grep -q '^ready' "$W/srv.out" && { [ "$prof" != json-tls ] || curl -sk -o /dev/null --max-time 2 "https://localhost:$tport/json/1?m=1"; } && break
     kill "$SP" 2> /dev/null; wait "$SP" 2> /dev/null; SP=
     echo "perf.sh: server did not start on port $port (try $try): $(head -c 200 "$W/srv.err")" >&2
 done
@@ -87,6 +117,7 @@ case "$prof" in
     async) args=(--raw "$REQ/async-delay.raw" -p 1); url=http://localhost:$port; conns=${ASYNC_CONNS:-32000} ;;
     latency-10k) rate=${ZRK_RATE_10K:-10000} ;;
     latency-1m) rate=${ZRK_RATE_1M:-1000000} ;;
+    json-tls) ;;
     *) echo "perf.sh: unknown profile $prof" >&2; exit 2 ;;
 esac
 if [ -n "$rate" ]; then
@@ -97,6 +128,9 @@ if [ -n "$rate" ]; then
     [ "$warm" -gt 0 ] && timeout $((warm + 40)) taskset -c "$LOAD_CPUS" "$ZB" -d "${warm}s" "${zargs[@]}" > /dev/null 2>&1
     c0=$(ticks)
     timeout $((dur + 40)) taskset -c "$LOAD_CPUS" "$ZB" -d "$((dur + 2))s" "${zargs[@]}" > "$W/gc.txt" 2>&1 &
+elif [ "$prof" = json-tls ]; then
+    c0=$(ticks)
+    timeout $((dur + 30)) taskset -c "$LOAD_CPUS" "$WRKBIN" -t "$nload" -c "$conns" -d "$((dur + 2))s" --latency -s "$REQ/json-tls-rotate.lua" "https://localhost:$tport" > "$W/gc.txt" 2>&1 &
 else
     c0=$(ticks)
     timeout $((dur + 30)) taskset -c "$LOAD_CPUS" "$GC" "$url" "${args[@]}" -c "$conns" -t "$nload" -d "$((dur + 2))s" > "$W/gc.txt" 2>&1 &
@@ -117,6 +151,8 @@ if [ -n "$rate" ]; then
         const d = JSON.parse(raw.slice(s, e + 1)), c = d.status_codes || {}, l = d.latency_us || {};
         console.log(["2xx","3xx","4xx","5xx"].reduce((a, k) => a + (c[k] || 0), 0), (d.rate_ratio || 0).toFixed(4), Math.round(l.mean || 0), Math.round(l.p99 || 0), Math.round(l.p99_9 ?? l.p999 ?? 0));
     ' "$W/gc.txt")
+elif [ "$prof" = json-tls ]; then
+    resp=$(sed -n 's/^ *\([0-9]*\) requests in .*/\1/p' "$W/gc.txt")
 else
     resp=$(sed -n 's/.* requests in .*, \([0-9]*\) responses.*/\1/p' "$W/gc.txt")
 fi
@@ -127,7 +163,7 @@ read -r nresp rr lmean lp99 lp999 <<< "${resp:-0}"
     if [ -n "$rate" ]; then
         echo "zrk: responses=$nresp rate_ratio=$rr mean=${lmean}us p99=${lp99}us p99.9=${lp999}us"
     else
-        grep -E 'Throughput|Latency' "$W/gc.txt" | head -3
+        grep -E 'Throughput|Latency|Requests/sec|requests in|^ *(50|75|90|99)%' "$W/gc.txt" | head -9
     fi
     awk -v a="$c0" -v b="$c1" -v n="${nresp:-0}" -v t="$(getconf CLK_TCK)" 'BEGIN { split(a, x, " "); split(b, y, " "); u = (y[1] - x[1]) / t * 1e6; s = (y[2] - x[2]) / t * 1e6
         if (n > 0) printf "cpu/req: %.2f us (user %.2f / sys %.2f — server utime+stime over the whole load window incl. perf sampling ÷ %d responses)\n", (u + s) / n, u / n, s / n, n; else print "cpu/req: - (no responses)" }'

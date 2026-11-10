@@ -15,7 +15,7 @@
 | 変数 | 意味 |
 | --- | --- |
 | `SOBER_WORKERS` | ワーカーの数（既定はコア数）。変えても標準出力は同じバイトになる |
-| `SOBER_PIN` | ワーカーを CPU に固定する（1 で強制・0 で切る。既定は Serve の形のプログラムで許可数が足りるときだけ） |
+| `SOBER_PIN` | ワーカーの CPU の固定（1 = 強制で L3 キャッシュを共有する CPU の群へ・2 = 強制で CPU 1 つへ・0 = 切る。既定は Serve の形のプログラムで許可数が足りるときだけ L3 の群へ） |
 | `SOBER_REGION_MB` | main の region の大きさの上限（MiB・既定 4096） |
 | `SOBER_TASK_REGION_MB` | task の region の大きさの上限（MiB — main より大きくはならない） |
 | `SOBER_MADV_MB` | 捨てた region のページを OS へ返すときに、先頭から触れたまま残す量（MiB・0 = 全部返す） |
@@ -42,6 +42,7 @@
 | `SOBER_NOAES` | std/crypto/aesgcm | ランタイムと同じ（AES-NI を使わない道） |
 | `SOBER_DUDECT` | std/internal/dudect | 定数時間の統計の計測の回数（無ければ測らない — テスト用） |
 | `SOBER_TLS_INTEROP` | std/internal/hsc | TLS のクライアントの相互接続の網の置き場（scripts/tlsinterop.sh が Go のサーバを起こして渡す — 無ければ繋がない・テスト用） |
+| `SOBER_PG_ORACLE` | std/internal/pgwire | 実の PostgreSQL との往復の網の設定のファイル（scripts/pgoracle.sh が PostgreSQL 17 / 18 を立てて渡す — 無ければ繋がない・テスト用） |
 | `SOBER_DNS_FAKE` | std/net | 名前の解決の送受の網の偽の DNS サーバの port（scripts/dnsinterop.sh が渡す — 無ければ問わない・テスト用） |
 | `SOBER_HTTP_INTEROP` | std/http/client | HTTP クライアントの相互接続の網の置き場（scripts/httpinterop.sh が Go の net/http のサーバを起こして渡す — 無ければ繋がない・テスト用） |
 | `SOBER_QUICK_SEED` | std/quick | 性質ベースのテストの種（10 進・New / Named が混ぜる — 無ければ 0。探索を広げるときに変える） |

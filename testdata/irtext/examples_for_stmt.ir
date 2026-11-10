@@ -2267,27 +2267,27 @@ b1:
   call @rt.print_int(%52)
   %53 = const 10
   call @rt.print_char(%53)
-  %54 = slotaddr s6
-  %55 = const 0
-  store %54[0], %55
-  store %54[1], %55
-  store %54[2], %55
-  store %54[3], %55
-  store %54[4], %55
-  store %54[5], %55
-  store %54[6], %55
-  store %54[7], %55
-  store %54[8], %55
-  store %54[9], %55
+  %54 = const 0
+  %55 = slotaddr s6
+  store %55[0], %54
+  store %55[1], %54
+  store %55[2], %54
+  store %55[3], %54
+  store %55[4], %54
+  store %55[5], %54
+  store %55[6], %54
+  store %55[7], %54
+  store %55[8], %54
+  store %55[9], %54
   %56 = region.depth
   %57 = region.bump %56
   %58 = ptoi %57
-  store %54[0], %58
+  store %55[0], %58
   %59 = const 0
-  store %54[1], %59
-  store %54[2], %56
+  store %55[1], %59
+  store %55[2], %56
   %60 = const 3
-  %61 = gep.word %54, %60
+  %61 = gep.word %55, %60
   %62 = region.depth
   %63 = region.bump %62
   %64 = ptoi %63
@@ -2296,25 +2296,25 @@ b1:
   store %61[1], %65
   store %61[2], %62
   %66 = slotaddr s7
-  %67 = load.i64 %54[0]
+  %67 = load.i64 %55[0]
   store %66[0], %67
-  %68 = load.i64 %54[1]
+  %68 = load.i64 %55[1]
   store %66[1], %68
-  %69 = load.i64 %54[2]
+  %69 = load.i64 %55[2]
   store %66[2], %69
-  %70 = load.i64 %54[3]
+  %70 = load.i64 %55[3]
   store %66[3], %70
-  %71 = load.i64 %54[4]
+  %71 = load.i64 %55[4]
   store %66[4], %71
-  %72 = load.i64 %54[5]
+  %72 = load.i64 %55[5]
   store %66[5], %72
-  %73 = load.i64 %54[6]
+  %73 = load.i64 %55[6]
   store %66[6], %73
-  %74 = load.i64 %54[7]
+  %74 = load.i64 %55[7]
   store %66[7], %74
-  %75 = load.i64 %54[8]
+  %75 = load.i64 %55[8]
   store %66[8], %75
-  %76 = load.i64 %54[9]
+  %76 = load.i64 %55[9]
   store %66[9], %76
   %77 = region.depth
   %78 = slotaddr s3
@@ -2694,24 +2694,24 @@ b42:
   call @rt.print_int(%353)
   %354 = const 10
   call @rt.print_char(%354)
-  %355 = slotaddr s13
-  %356 = const 0
-  store %355[0], %356
-  store %355[1], %356
-  store %355[2], %356
+  %355 = const 0
+  %356 = slotaddr s13
+  store %356[0], %355
+  store %356[1], %355
+  store %356[2], %355
   %357 = region.depth
   %358 = region.bump %357
   %359 = ptoi %358
-  store %355[0], %359
+  store %356[0], %359
   %360 = const 0
-  store %355[1], %360
-  store %355[2], %357
+  store %356[1], %360
+  store %356[2], %357
   %361 = slotaddr s12
-  %362 = load.i64 %355[0]
+  %362 = load.i64 %356[0]
   store %361[0], %362
-  %363 = load.i64 %355[1]
+  %363 = load.i64 %356[1]
   store %361[1], %363
-  %364 = load.i64 %355[2]
+  %364 = load.i64 %356[2]
   store %361[2], %364
   %365 = const 1
   %366 = add %0, %365

@@ -6,7 +6,7 @@
 
 アノテーション `@名前(引数)` は宣言に付ける。受理されたプログラムの意味を変えず、拒否を起こすか、宣言の形を決めるだけ。コンパイル時の計算（comptime）は無い。
 
-A-1. 言語が知るアノテーションは `@errors`（7 章）・`@layout`・`@embed`・`@noinline`・`@exhaustive`・`@secret`・`@bless`・`@credential`・`@shared`・`@effects`・`@replaces`・`@doubles`（13 章）の閉じた集合（interface ファイル `.sobi` にだけ書く `@expand` を除く）。知らないアノテーションは拒否する。
+A-1. 言語が知るアノテーションは `@errors`（7 章）・`@layout`・`@embed`・`@noinline`・`@exhaustive`・`@secret`・`@bless`・`@credential`・`@shared`・`@effects`・`@const`・`@replaces`・`@doubles`（13 章）の閉じた集合（interface ファイル `.sobi` にだけ書く `@expand` を除く）。知らないアノテーションは拒否する。
 例: [`examples/errval.sober`](../../examples/errval.sober)・[`examples/layout_elf.sober`](../../examples/layout_elf.sober)・[`examples/embed_demo.sober`](../../examples/embed_demo.sober)・[`examples/noinline.sober`](../../examples/noinline.sober)
 拒否: [`examples/annot_neg_unknown.sober`](../../examples/annot_neg_unknown.sober)
 決定: [language.md 10 節](../language.md)
@@ -52,6 +52,15 @@ A-8. `@exhaustive` を付けた関数の中の switch は、subject が閉じた
 拒否: [`examples/exhaustive_neg_union.sober`](../../examples/exhaustive_neg_union.sober)・[`examples/exhaustive_neg_union_default.sober`](../../examples/exhaustive_neg_union_default.sober)・[`examples/exhaustive_neg_error.sober`](../../examples/exhaustive_neg_error.sober)・[`examples/exhaustive_neg_scalar.sober`](../../examples/exhaustive_neg_scalar.sober)
 決定: [language.md 13 節の補](../language.md)
 
+A-18. std の外のコードが std の struct の `dangerously` で始まる欄に字面の `false` 以外の値を与える構築（composite の要素）は、`sober check` の analyzer が毎回 warning を出す（受理は変えない・抑止の口は無い — 安全な設定に戻すと消える）。字面の `false` と欄の省略（ゼロ値 = 安全な側）・std の外の struct の同名の欄は鳴らない。
+例: [`examples/dangerously_warn.sober`](../../examples/dangerously_warn.sober)（警告の黄金 = testdata/analyzer_neg/dangerously_warn.warn）
+決定: [language.md 12 節](../language.md)
+
+A-19. `@const(p, …)`（関数の前置 — 名前は仮引数・列は空にしない）を付けた仮引数は const の席で、型は string・mut でないものに限る。席への実引数は、補間の無い文字列リテラル・const の名前・それらの `+`・括弧と、呼び出しを含む関数自身の `@const` の仮引数だけ（推論の伝播は無い）。`@const` を持つ関数は呼び出しの callee の位置にだけ書ける（関数値として取り出せない）。検査は `sober check` の analyzer が行う。
+例: [`examples/const_seat.sober`](../../examples/const_seat.sober)
+拒否: [`examples/const_seat_neg.sober`](../../examples/const_seat_neg.sober)（黄金 = testdata/analyzer_neg/const_neg_seat.err・const_neg_prop.err・const_neg_annot.err）
+決定: [language.md 12 節](../language.md)
+
 ## 12.4 秘密の値
 
 A-9. `@secret` は 3 か所に書く: 関数の前置の `@secret(k, …)`（名前は仮引数 — 関数の中でその仮引数を秘密の値の源とする。名前の列は空にしない）・struct の欄の後置の `@secret`（欄の読みは源）・const の前置の `@secret`（読みは源）。union の variant・error・panic の欄、型宣言、結果には書かない。`@bless`（関数の前置 — 結果を公開にする）は std の宣言のためのアノテーション。
@@ -75,7 +84,7 @@ A-12. `@credential` は関数の前置（結果は認証の源）と struct の�
 拒否: [`examples/origin_neg_std.sober`](../../examples/origin_neg_std.sober)
 決定: [language.md 12 節「出所の依存」](../language.md)
 
-A-13. 認証の源（`@credential` の関数の結果・std の外での `@credential` の欄の読み）に届きうる関数値（源を呼ぶ・そういう関数を呼ぶ・そういう関数値を呼ぶ関数とラムダ）と、源から導いた値は、`@shared` の variant の値と 1 つの struct の値の中で出会ってはならない（struct のリテラルと欄の書き込み — slice・map の要素の合併は出会いではない）。std/http/server では、共有キャッシュも保存してよい方針（`http.server.Fresh` / `http.server.Shared`）を持つルートの行のハンドラ・middleware が認証の源に届きうる形、`http.server.Mount` で共有の方針の行を源に届きうる middleware の下に入れる形、std の外で応答 1 件の `cache` に共有の方針を書く形を拒否する。検査は `sober check` の analyzer が行う。
+A-13. 認証の源（`@credential` の関数の結果・std の外での `@credential` の欄の読み）に届きうる関数値（源を呼ぶ・そういう関数を呼ぶ・そういう関数値を呼ぶ関数とラムダ）と、源から導いた値は、`@shared` の variant の値と 1 つの struct の値の中で出会ってはならない（struct のリテラルと欄の書き込み — slice・map の要素の合併は出会いではない）。std/http/server では、共有キャッシュも保存してよい方針（`http.server.Fresh` / `http.server.Shared` / `http.server.Unstated`）を持つルートの行のハンドラ・middleware が認証の源に届きうる形、`http.server.Mount` で共有の方針の行を源に届きうる middleware の下に入れる形、std の外で応答 1 件の `cache` に共有の方針を書く形を拒否する。検査は `sober check` の analyzer が行う。
 例: [`examples/http_origin.sober`](../../examples/http_origin.sober)・[`examples/http_cache.sober`](../../examples/http_cache.sober)
 拒否: [`examples/origin_neg_cookie.sober`](../../examples/origin_neg_cookie.sober)・[`examples/origin_neg_helper.sober`](../../examples/origin_neg_helper.sober)・[`examples/origin_neg_fnvalue.sober`](../../examples/origin_neg_fnvalue.sober)・[`examples/origin_neg_before.sober`](../../examples/origin_neg_before.sober)・[`examples/origin_neg_after.sober`](../../examples/origin_neg_after.sober)・[`examples/origin_neg_mount.sober`](../../examples/origin_neg_mount.sober)・[`examples/origin_neg_capture.sober`](../../examples/origin_neg_capture.sober)・[`examples/origin_neg_head.sober`](../../examples/origin_neg_head.sober)・[`examples/origin_neg_resp.sober`](../../examples/origin_neg_resp.sober)
 決定: [language.md 12 節「出所の依存」・13 節の補 3](../language.md)

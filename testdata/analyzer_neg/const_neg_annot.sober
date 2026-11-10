@@ -1,0 +1,17 @@
+package main
+
+// `@const(…)` の項は string の仮引数（mut でない）の名前だけ
+
+@const(n)
+func notString(n int) int {
+    return n
+}
+
+@const(zz)
+func noSuchParam(q string) string {
+    return q
+}
+
+func main() {
+    println("${notString(1)} ${noSuchParam("x")}")
+}

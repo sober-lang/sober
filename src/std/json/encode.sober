@@ -2,6 +2,7 @@ package json
 
 import "std/builder"
 import "std/convert"
+import "std/internal/jsonw"
 import "std/iter"
 
 // T→JSON の裏方（shape[T] の逆向き — language.md 16 節 2）: 利用者は `json.Encode[T](v)`（欄名の対応つきは `json.EncodeWith[T](v, map[string]string{"欄": "キー"})`）を書き、

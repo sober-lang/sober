@@ -1812,28 +1812,28 @@ b0:
   %0 = region.depth
   region.enter
   %1 = const 5
-  %2 = slotaddr s0
-  %3 = const 0
-  store %2[0], %3
-  store %2[0], %1
+  %2 = const 0
+  %3 = slotaddr s0
+  store %3[0], %2
+  store %3[0], %1
   %4 = slotaddr s1
-  %5 = load.i64 %2[0]
+  %5 = load.i64 %3[0]
   store %4[0], %5
   %6 = const 6
-  %7 = slotaddr s2
-  %8 = const 0
-  store %7[0], %8
-  store %7[0], %6
+  %7 = const 0
+  %8 = slotaddr s2
+  store %8[0], %7
+  store %8[0], %6
   %9 = slotaddr s3
-  %10 = load.i64 %7[0]
+  %10 = load.i64 %8[0]
   store %9[0], %10
   %11 = const 7
-  %12 = slotaddr s4
-  %13 = const 0
-  store %12[0], %13
-  store %12[0], %11
+  %12 = const 0
+  %13 = slotaddr s4
+  store %13[0], %12
+  store %13[0], %11
   %14 = slotaddr s5
-  %15 = load.i64 %12[0]
+  %15 = load.i64 %13[0]
   store %14[0], %15
   %16 = region.depth
   %17 = const 2
@@ -1855,28 +1855,28 @@ b0:
   store %24[1], %26
   %27 = load.i64 %22[2]
   store %24[2], %27
-  %28 = slotaddr s8
-  %29 = const 0
-  store %28[0], %29
-  store %28[1], %29
-  store %28[2], %29
-  store %28[3], %29
+  %28 = const 0
+  %29 = slotaddr s8
+  store %29[0], %28
+  store %29[1], %28
+  store %29[2], %28
+  store %29[3], %28
   %30 = load.i64 %4[0]
-  store %28[0], %30
+  store %29[0], %30
   %31 = load.i64 %24[0]
-  store %28[1], %31
+  store %29[1], %31
   %32 = load.i64 %24[1]
-  store %28[2], %32
+  store %29[2], %32
   %33 = load.i64 %24[2]
-  store %28[3], %33
+  store %29[3], %33
   %34 = slotaddr s9
-  %35 = load.i64 %28[0]
+  %35 = load.i64 %29[0]
   store %34[0], %35
-  %36 = load.i64 %28[1]
+  %36 = load.i64 %29[1]
   store %34[1], %36
-  %37 = load.i64 %28[2]
+  %37 = load.i64 %29[2]
   store %34[2], %37
-  %38 = load.i64 %28[3]
+  %38 = load.i64 %29[3]
   store %34[3], %38
   %39 = load.i64 %34[0]
   %40 = const 1
@@ -1964,27 +1964,27 @@ b6:
   call @rt.print_int(%94)
   %95 = const 10
   call @rt.print_char(%95)
-  %96 = slotaddr s13
-  %97 = const 0
-  store %96[0], %97
-  store %96[1], %97
-  store %96[2], %97
-  store %96[3], %97
-  store %96[4], %97
-  store %96[5], %97
-  store %96[6], %97
-  store %96[7], %97
-  store %96[8], %97
-  store %96[9], %97
+  %96 = const 0
+  %97 = slotaddr s13
+  store %97[0], %96
+  store %97[1], %96
+  store %97[2], %96
+  store %97[3], %96
+  store %97[4], %96
+  store %97[5], %96
+  store %97[6], %96
+  store %97[7], %96
+  store %97[8], %96
+  store %97[9], %96
   %98 = region.depth
   %99 = region.bump %98
   %100 = ptoi %99
-  store %96[0], %100
+  store %97[0], %100
   %101 = const 0
-  store %96[1], %101
-  store %96[2], %98
+  store %97[1], %101
+  store %97[2], %98
   %102 = const 3
-  %103 = gep.word %96, %102
+  %103 = gep.word %97, %102
   %104 = region.depth
   %105 = region.bump %104
   %106 = ptoi %105
@@ -1993,33 +1993,33 @@ b6:
   store %103[1], %107
   store %103[2], %104
   %108 = slotaddr s14
-  %109 = load.i64 %96[0]
+  %109 = load.i64 %97[0]
   store %108[0], %109
-  %110 = load.i64 %96[1]
+  %110 = load.i64 %97[1]
   store %108[1], %110
-  %111 = load.i64 %96[2]
+  %111 = load.i64 %97[2]
   store %108[2], %111
-  %112 = load.i64 %96[3]
+  %112 = load.i64 %97[3]
   store %108[3], %112
-  %113 = load.i64 %96[4]
+  %113 = load.i64 %97[4]
   store %108[4], %113
-  %114 = load.i64 %96[5]
+  %114 = load.i64 %97[5]
   store %108[5], %114
-  %115 = load.i64 %96[6]
+  %115 = load.i64 %97[6]
   store %108[6], %115
-  %116 = load.i64 %96[7]
+  %116 = load.i64 %97[7]
   store %108[7], %116
-  %117 = load.i64 %96[8]
+  %117 = load.i64 %97[8]
   store %108[8], %117
-  %118 = load.i64 %96[9]
+  %118 = load.i64 %97[9]
   store %108[9], %118
   %119 = const 8
-  %120 = slotaddr s5
-  %121 = const 0
-  store %120[0], %121
-  store %120[0], %119
+  %120 = const 0
+  %121 = slotaddr s5
+  store %121[0], %120
+  store %121[0], %119
   %122 = slotaddr s4
-  %123 = load.i64 %120[0]
+  %123 = load.i64 %121[0]
   store %122[0], %123
   %124 = const 1
   %125 = add %0, %124
@@ -2059,23 +2059,23 @@ b8:
   %146 = const 10
   call @rt.print_char(%146)
   %147 = funcaddr @lambda#0
-  %148 = slotaddr s4
-  %149 = const 0
-  store %148[0], %149
-  store %148[0], %147
-  %150 = load.i64 %148[0]
+  %148 = const 0
+  %149 = slotaddr s4
+  store %149[0], %148
+  store %149[0], %147
+  %150 = load.i64 %149[0]
   %151 = const 1
-  %152 = slotaddr s5
-  %153 = const 0
-  store %152[0], %153
-  store %152[0], %151
-  %154 = load.i64 %152[0]
+  %152 = const 0
+  %153 = slotaddr s5
+  store %153[0], %152
+  store %153[0], %151
+  %154 = load.i64 %153[0]
   %155 = const 2
-  %156 = slotaddr s3
-  %157 = const 0
-  store %156[0], %157
-  store %156[0], %155
-  %158 = load.i64 %156[0]
+  %156 = const 0
+  %157 = slotaddr s3
+  store %157[0], %156
+  store %157[0], %155
+  %158 = load.i64 %157[0]
   %159 = call.indirect.i64 %150(%154, %158)
   condbr %159, b9, b10
 b9:

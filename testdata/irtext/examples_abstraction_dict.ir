@@ -1832,62 +1832,62 @@ b0:
   store %28[2], %31
   %32 = load.i64 %23[3]
   store %28[3], %32
-  %33 = slotaddr s7
-  %34 = const 0
-  store %33[0], %34
-  store %33[1], %34
-  store %33[2], %34
-  store %33[3], %34
-  store %33[4], %34
-  store %33[5], %34
-  store %33[6], %34
-  store %33[7], %34
-  store %33[8], %34
-  store %33[9], %34
-  store %33[10], %34
+  %33 = const 0
+  %34 = slotaddr s7
+  store %34[0], %33
+  store %34[1], %33
+  store %34[2], %33
+  store %34[3], %33
+  store %34[4], %33
+  store %34[5], %33
+  store %34[6], %33
+  store %34[7], %33
+  store %34[8], %33
+  store %34[9], %33
+  store %34[10], %33
   %35 = load.i64 %9[0]
-  store %33[0], %35
+  store %34[0], %35
   %36 = load.i64 %9[1]
-  store %33[1], %36
+  store %34[1], %36
   %37 = load.i64 %9[2]
-  store %33[2], %37
+  store %34[2], %37
   %38 = load.i64 %16[0]
-  store %33[3], %38
+  store %34[3], %38
   %39 = load.i64 %16[1]
-  store %33[4], %39
+  store %34[4], %39
   %40 = load.i64 %16[2]
-  store %33[5], %40
+  store %34[5], %40
   %41 = load.i64 %16[3]
-  store %33[6], %41
+  store %34[6], %41
   %42 = load.i64 %28[0]
-  store %33[7], %42
+  store %34[7], %42
   %43 = load.i64 %28[1]
-  store %33[8], %43
+  store %34[8], %43
   %44 = load.i64 %28[2]
-  store %33[9], %44
+  store %34[9], %44
   %45 = load.i64 %28[3]
-  store %33[10], %45
-  %46 = load.i64 %33[0]
+  store %34[10], %45
+  %46 = load.i64 %34[0]
   store %0[0], %46
-  %47 = load.i64 %33[1]
+  %47 = load.i64 %34[1]
   store %0[1], %47
-  %48 = load.i64 %33[2]
+  %48 = load.i64 %34[2]
   store %0[2], %48
-  %49 = load.i64 %33[3]
+  %49 = load.i64 %34[3]
   store %0[3], %49
-  %50 = load.i64 %33[4]
+  %50 = load.i64 %34[4]
   store %0[4], %50
-  %51 = load.i64 %33[5]
+  %51 = load.i64 %34[5]
   store %0[5], %51
-  %52 = load.i64 %33[6]
+  %52 = load.i64 %34[6]
   store %0[6], %52
-  %53 = load.i64 %33[7]
+  %53 = load.i64 %34[7]
   store %0[7], %53
-  %54 = load.i64 %33[8]
+  %54 = load.i64 %34[8]
   store %0[8], %54
-  %55 = load.i64 %33[9]
+  %55 = load.i64 %34[9]
   store %0[9], %55
-  %56 = load.i64 %33[10]
+  %56 = load.i64 %34[10]
   store %0[10], %56
   call @rt.region_relocate8(%0, %3)
   region.setdepth %3
@@ -2257,44 +2257,44 @@ b0:
   store %13[2], %16
   %17 = load.i64 %10[3]
   store %13[3], %17
-  %18 = slotaddr s4
-  %19 = const 0
-  store %18[0], %19
-  store %18[1], %19
-  store %18[2], %19
-  store %18[3], %19
-  store %18[4], %19
-  store %18[5], %19
-  store %18[6], %19
-  store %18[7], %19
-  store %18[8], %19
-  store %18[9], %19
-  store %18[10], %19
+  %18 = const 0
+  %19 = slotaddr s4
+  store %19[0], %18
+  store %19[1], %18
+  store %19[2], %18
+  store %19[3], %18
+  store %19[4], %18
+  store %19[5], %18
+  store %19[6], %18
+  store %19[7], %18
+  store %19[8], %18
+  store %19[9], %18
+  store %19[10], %18
   %20 = load.i64 %6[0]
-  store %18[0], %20
+  store %19[0], %20
   %21 = load.i64 %6[1]
-  store %18[1], %21
+  store %19[1], %21
   %22 = load.i64 %6[2]
-  store %18[2], %22
+  store %19[2], %22
   %23 = load.i64 %13[0]
-  store %18[3], %23
+  store %19[3], %23
   %24 = load.i64 %13[1]
-  store %18[4], %24
+  store %19[4], %24
   %25 = load.i64 %13[2]
-  store %18[5], %25
+  store %19[5], %25
   %26 = load.i64 %13[3]
-  store %18[6], %26
-  %27 = load.i64 %18[0]
-  %28 = load.i64 %18[1]
-  %29 = load.i64 %18[2]
-  %30 = load.i64 %18[3]
-  %31 = load.i64 %18[4]
-  %32 = load.i64 %18[5]
-  %33 = load.i64 %18[6]
-  %34 = load.i64 %18[7]
-  %35 = load.i64 %18[8]
-  %36 = load.i64 %18[9]
-  %37 = load.i64 %18[10]
+  store %19[6], %26
+  %27 = load.i64 %19[0]
+  %28 = load.i64 %19[1]
+  %29 = load.i64 %19[2]
+  %30 = load.i64 %19[3]
+  %31 = load.i64 %19[4]
+  %32 = load.i64 %19[5]
+  %33 = load.i64 %19[6]
+  %34 = load.i64 %19[7]
+  %35 = load.i64 %19[8]
+  %36 = load.i64 %19[9]
+  %37 = load.i64 %19[10]
   %38 = const 120
   %39 = const 10
   call @main.quote(%27, %28, %29, %30, %31, %32, %33, %34, %35, %36, %37, %38, %39)

@@ -1,0 +1,221 @@
+package pgwire
+
+// 実の PostgreSQL との往復（SOBER_PG_ORACLE が無ければ何もしない — scripts/pgoracle.sh が PostgreSQL 17 / 18 を立てて渡す）:
+// SSLRequest → TLS（std/internal/hsc — PG 17 以前は HelloRetryRequest で secp256r1）→ SCRAM-SHA-256-PLUS → AuthenticationOk → ReadyForQuery・
+// 平文の SCRAM-SHA-256・password 違いは ErrorResponse 28P01・TLS で PLUS を出さないサーバは無いので緩和の道は合成の網（scram_test）だけ
+//   SOBER_PG_ORACLE = 設定の行のファイル: `server <名前> <host:port>` の行（複数）・`ca <CA の PEM のパス>`・`user <名前>`・`password <値>`
+
+import "std/crypto"
+import "std/internal/hsc"
+import "std/internal/record"
+import "std/internal/x509"
+import "std/io"
+import "std/net"
+import "std/os"
+import "std/strings"
+import "std/time"
+
+// 接続の上の受けの状態（TLS の record の持ち越しと平文の持ち越し）
+type link struct {
+    tls bool
+    rec []byte
+    app []byte
+}
+
+func chunkOf(c net.Conn) []byte {
+    b, e := chunkOr(c)
+    return if e != nil { []byte{} } else { b }
+}
+
+func chunkOr(c net.Conn) ([]byte, error?) {
+    mut out := []byte{}
+    for x <- net.Recv(c)? {
+        out = x
+        break
+    }
+    return cat([]byte{}, out), nil
+}
+
+// 次の PG のメッセージ（tag と本文 — 切断なら tag 0）
+func nextMsg(c net.Conn, ch mut internal.hsc.Ch, p internal.hsc.CParams, l mut link) (byte, []byte) {
+    while true {
+        n := FrameLen(l.app, 0, 1 << 24)
+        if n > 0 {
+            a := l.app
+            l.app = cat([]byte{}, a[n:len(a)])
+            return a[0], cat([]byte{}, a[5:n])
+        }
+        if !l.tls {
+            more := chunkOf(c)
+            if len(more) == 0 {
+                return 0, []byte{}
+            }
+            l.app = cat(l.app, more)
+        } else {
+            r := l.rec
+            rn := if len(r) >= 5 && len(r) >= 5 + (int(r[3]) << 8 | int(r[4])) { 5 + (int(r[3]) << 8 | int(r[4])) } else { 0 }
+            if rn == 0 {
+                more := chunkOf(c)
+                if len(more) == 0 {
+                    return 0, []byte{}
+                }
+                l.rec = cat(r, more)
+            } else {
+                o, e := internal.hsc.FeedClient(mut ch, p, internal.record.At(r, 0, rn))
+                assert(e == nil, "tls feed")
+                if len(o.send) > 0 {
+                    _ = net.Send(c, o.send)
+                }
+                l.app = cat(l.app, o.app)
+                l.rec = cat([]byte{}, r[rn:len(r)])
+            }
+        }
+    }
+    return 0, []byte{}
+}
+
+func sendMsg(c net.Conn, ch mut internal.hsc.Ch, l link, b []byte) {
+    if l.tls {
+        sealed, e := internal.hsc.ClientSeal(mut ch, b)
+        assert(e == nil)
+        _ = net.Send(c, sealed)
+    } else {
+        _ = net.Send(c, b)
+    }
+}
+
+// addr へ繋いで認証まで（結果 = "ok:<方式>" か "error:<SQLSTATE>" か "fail:<理由>"）
+func authOnce(addr string, host string, roots []internal.x509.Cert, tls bool, user string, password string) string {
+    mut result := "fail:connect"
+    p := internal.hsc.NewCParams(host, []string{}, roots, time.UnixSec(time.Now()), []byte{})
+    _ = net.Dial(addr, (c) => {
+        result = authOn(c, p, tls, user, password)
+    })
+    return result
+}
+
+func authOn(c net.Conn, p internal.hsc.CParams, tls bool, user string, password string) string {
+    mut result := "fail:closed"
+    mut l := link{tls: tls, rec: []byte{}, app: []byte{}}
+    h0, first := internal.hsc.StartClient(p)
+    mut ch := h0
+    if tls {
+        _ = net.Send(c, EncSslRequest())
+        yes := chunkOf(c)
+        if len(yes) != 1 || yes[0] != 'S' {
+            return "fail:no-ssl"
+        }
+        _ = net.Send(c, first)
+        while !internal.hsc.ClientConnected(ch) {
+            r := l.rec
+            rn := if len(r) >= 5 && len(r) >= 5 + (int(r[3]) << 8 | int(r[4])) { 5 + (int(r[3]) << 8 | int(r[4])) } else { 0 }
+            if rn == 0 {
+                more := chunkOf(c)
+                if len(more) == 0 {
+                    return "fail:tls-closed"
+                }
+                l.rec = cat(r, more)
+            } else {
+                o, e := internal.hsc.FeedClient(mut ch, p, internal.record.At(r, 0, rn))
+                if e != nil {
+                    return "fail:tls"
+                }
+                if len(o.send) > 0 {
+                    _ = net.Send(c, o.send)
+                }
+                l.rec = cat([]byte{}, r[rn:len(r)])
+            }
+        }
+    }
+    sendMsg(c, mut ch, l, EncStartup(user, "postgres"))
+    ep := if tls { internal.x509.EndPoint(internal.hsc.ClientLeaf(ch)) } else { []byte{} }
+    mut sc := NoScram()
+    mut over := false
+    while !over {
+        t, body := nextMsg(c, mut ch, p, mut l)
+        if t == 0 {
+            return "fail:closed"
+        }
+        m, de := Decode(t, body)
+        assert(de == nil, "decode")
+        switch m {
+        case AuthSasl{mechs}: {
+            s0, out, e := ScramStart(mechs, tls, ep, false, "", password, crypto.Rand(18))
+            if e != nil {
+                return "fail:mechanism"
+            }
+            sc = s0
+            sendMsg(c, mut ch, l, out)
+        }
+        case AuthSaslContinue{data}: {
+            out, e := ScramContinue(mut sc, data)
+            assert(e == nil, "continue")
+            sendMsg(c, mut ch, l, out)
+        }
+        case AuthSaslFinal{data}: {
+            assert(ScramFinal(mut sc, data) == nil, "server signature")
+        }
+        case AuthOk{}: {
+            result = "ok:${ScramMech(sc)}"
+        }
+        case ErrorMsg{fields}: {
+            result = "error:${FieldOf(fields, 'C')}"
+            over = true
+        }
+        case Ready{status}: {
+            over = true
+        }
+        default: {}
+        }
+    }
+    sendMsg(c, mut ch, l, EncTerminate())
+    return result
+}
+
+func TestOracle() {
+    path, e := os.Getenv("SOBER_PG_ORACLE")
+    if e != nil || path == nil {
+        return
+    }
+    conf, ce := io.ReadFile(path)
+    assert(ce == nil, "oracle config")
+    mut servers := mut []string{}
+    mut ca := ""
+    mut user := ""
+    mut password := ""
+    for line <- strings.Split(string(conf) catch "", "\n") {
+        f := strings.Fields(line)
+        if len(f) >= 2 && f[0] == "ca" {
+            ca = f[1]
+        } else if len(f) >= 2 && f[0] == "user" {
+            user = f[1]
+        } else if len(f) >= 2 && f[0] == "password" {
+            password = f[1]
+        } else if len(f) >= 3 && f[0] == "server" {
+            servers = append(servers, "${f[1]} ${f[2]}")
+        }
+    }
+    pem, pe := io.ReadFile(ca)
+    assert(pe == nil, "ca")
+    roots, re := internal.x509.RootsFromPEM(string(pem) catch "")
+    assert(re == nil, "roots")
+    mut n := 0
+    for sv <- freeze(servers) {
+        f := strings.Fields(sv)
+        name := f[0]
+        addr := f[1]
+        plus := authOnce(addr, "localhost", roots, true, user, password)
+        println("pg ${name} tls: ${plus}")
+        assert(plus == "ok:SCRAM-SHA-256-PLUS", "tls + plus ${name}")
+        plain := authOnce(addr, "localhost", roots, false, user, password)
+        println("pg ${name} plaintext: ${plain}")
+        assert(plain == "ok:SCRAM-SHA-256", "plaintext ${name}")
+        wrong := authOnce(addr, "localhost", roots, true, user, "wrong-${password}")
+        println("pg ${name} wrong password: ${wrong}")
+        assert(wrong == "error:28P01", "wrong password ${name}")
+        println("conf-item: interop/pg ${name} scram-plus")
+        n += 1
+    }
+    assert(n > 0, "servers")
+    println("conf: interop/pg ${n}")
+}

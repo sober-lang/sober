@@ -319,7 +319,7 @@ func matchPattern(st mut St, p desugar.NodeRef, sty int, sv int, nx BlkRef, bs i
     if sty < 0 {
         return diag.Mismatch{at: posOf(mut st, at)}
     }
-    // error: 先頭ラベル（語 0 から — 同じアドレス）で照合し、`cause` は鎖から作る 1 つ内側の error?
+    // error: 先頭ラベルのタグ（語 0）で照合し、欄は列の末尾のセルから・`cause` は列から作る 1 つ内側の error?
     is_err := isErr(mut st, sty)
     sty0 := sty
     ut := if is_err { desugar.HeapGet(mut st.d, errsInfo(mut st) + SI_TY) } else { sty0 }
@@ -340,14 +340,18 @@ func matchPattern(st mut St, p desugar.NodeRef, sty int, sv int, nx BlkRef, bs i
         bindAdd(mut st, bs, nodeOf(mut st, p).a, sty0, sv)
     }
     fps := lC(nodeOf(mut st, p))
+    mut pv := sv
     for i <- iter.Range(0, lenL(mut st, fps)) {
         fp := latN(mut st, fps, i)
         f := findField(mut st, hgetL(mut st, vr + 2), sA(nodeOf(mut st, fp)))
         mut ft := 0
         mut fv := 0
         if f >= 0 {
+            if is_err && pv == sv {
+                pv = errTop(mut st, sv)
+            }
             ft = desugar.HeapGet(mut st.d, f + 1)
-            fv = loadVal(mut st, sv, 1 + desugar.HeapGet(mut st.d, f + 2), ft)
+            fv = loadVal(mut st, pv, 1 + desugar.HeapGet(mut st.d, f + 2), ft)
             if isBox(mut st, ft) {
                 fv = openBox(mut st, ft, fv)
                 ft = surfTy(mut st, ft)

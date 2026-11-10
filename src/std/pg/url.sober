@@ -1,0 +1,111 @@
+package pg
+
+// 接続の指定: libpq の URL の部分集合（"postgres://user@host[:port]/db" — "postgresql://" も）。password・クエリ（sslmode 等）・複数のホストは書けない
+// （password は Policy に・TLS の方針も Policy に — 環境変数も読まない）
+
+import "std/convert"
+import "std/internal/x509"
+import "std/strings"
+import "std/url"
+
+type target struct {
+    user string
+    host string
+    port int
+    db string
+}
+
+func noTarget() target {
+    return target{user: "", host: "", port: 0, db: ""}
+}
+
+// s の欄（読めなければ false）
+func parseUrl(s string) (target, bool) {
+    mut rest := ""
+    if strings.HasPrefix(s, "postgres://") {
+        rest = strings.TrimPrefix(s, "postgres://")
+    } else if strings.HasPrefix(s, "postgresql://") {
+        rest = strings.TrimPrefix(s, "postgresql://")
+    } else {
+        return noTarget(), false
+    }
+    if strings.Contains(rest, "?") || strings.Contains(rest, "#") {
+        return noTarget(), false
+    }
+    auth, hostpath, hasAt := strings.CutLast(rest, "@")
+    if !hasAt || auth == "" || strings.Contains(auth, ":") {
+        return noTarget(), false
+    }
+    hp, path, _ := strings.Cut(hostpath, "/")
+    user := url.Unescape(auth) catch return noTarget(), false
+    db0 := url.Unescape(path) catch return noTarget(), false
+    db := if db0 == "" { user } else { db0 }
+    mut host := hp
+    mut port := 5432
+    if strings.HasPrefix(hp, "[") {
+        // IPv6 の字句 [addr]:port
+        inner, after, ok := strings.Cut(strings.TrimPrefix(hp, "["), "]")
+        if !ok {
+            return noTarget(), false
+        }
+        host = inner
+        if after != "" {
+            p, ok2 := portOf(strings.TrimPrefix(after, ":"))
+            if !ok2 || !strings.HasPrefix(after, ":") {
+                return noTarget(), false
+            }
+            port = p
+        }
+    } else {
+        h, ps, hasPort := strings.Cut(hp, ":")
+        host = h
+        if hasPort {
+            p, ok2 := portOf(ps)
+            if !ok2 {
+                return noTarget(), false
+            }
+            port = p
+        }
+    }
+    if host == "" || strings.Contains(host, ",") || strings.Contains(db, "/") {
+        return noTarget(), false
+    }
+    return target{user: user, host: host, port: port, db: db}, true
+}
+
+func portOf(s string) (int, bool) {
+    if s == "" || len(bytes(s)) > 5 {
+        return 0, false
+    }
+    for x <- bytes(s) {
+        if x < '0' || x > '9' {
+            return 0, false
+        }
+    }
+    p := convert.ParseInt(s) catch return 0, false
+    return p, p > 0 && p < 65536
+}
+
+// 方針 p と URL の欄 t を読み解く
+func resolve(t target, p Policy) cfg {
+    mut roots := mut []internal.x509.Cert{}
+    for r <- internal.x509.Roots() {
+        roots = append(roots, r)
+    }
+    ex := p.extraRoots
+    if ex != nil {
+        for r <- ex.certs {
+            roots = append(roots, r)
+        }
+    }
+    pt := p.timeout
+    pm := p.maxRow
+    pa := p.appName
+    return cfg{user: t.user, db: t.db, host: t.host, port: t.port,
+        password: p.password,
+        roots: freeze(roots),
+        timeout: if pt == nil || pt <= 0 { defaultTimeout } else { pt },
+        maxRow: if pm == nil || pm <= 0 { defaultMaxRow } else if pm > limitMaxRow { limitMaxRow } else { pm },
+        appName: if pa == nil { "sober" } else { pa },
+        plaintext: p.dangerouslyPlaintext, allowNoBinding: p.dangerouslyAllowNoChannelBinding, allowTls12: p.dangerouslyAllowTls12}
+}

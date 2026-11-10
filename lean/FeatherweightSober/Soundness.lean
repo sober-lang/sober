@@ -185,6 +185,13 @@ theorem canonical_rx {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b d : Nat} {Γ 
   cases hv <;> cases ht
   exact ⟨_, _, rfl, by assumption, by assumption, by assumption⟩
 
+/-- domain の canonical form -/
+theorem canonical_dom {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b d : Nat} {Γ : Ctx} {v : Expr}
+    {r : Nat} {t : Ty} (hv : Value v) (ht : HasType Δ Ξ Ψ f b d Γ Λ v (.dom r t)) :
+    ∃ p k r0, v = .domV p k r0 ∧ r0 ≤ r ∧ r0 < d ∧ Ξ.dom.lookup (p, k) = some (t.relocR 0) := by
+  cases hv <;> cases ht
+  exact ⟨_, _, _, rfl, by assumption, by assumption, by assumption⟩
+
 /-- fn の canonical form（V3-1）: 値は fnref で、関数表のシグネチャが型と一致する -/
 theorem canonical_fn {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b d : Nat} {Γ : Ctx} {v : Expr}
     {p r : Ty} (hv : Value v) (ht : HasType Δ Ξ Ψ f b d Γ Λ v (.fn p r)) :
@@ -231,6 +238,7 @@ theorem Value.coerceTo {v : Expr} (hv : Value v) : ∀ t : Ty, Value (Expr.coerc
   | scopeV rs ε => intro t; cases t <;> exact .scopeV rs ε
   | taskV rs n => intro t; cases t <;> exact .taskV rs n
   | epV p k b r => intro t; cases t <;> exact .epV p k b r
+  | domV p k r => intro t; cases t <;> exact .domV p k r
 
 /-- 注釈を持たない型への coerceTo は恒等（R4b-cov: 注釈なしの読み出しは書き換え不要） -/
 theorem Expr.coerceTo_annFree : ∀ {b : Ty} (v : Expr), b.annFree = true → Expr.coerceTo b v = v
@@ -253,6 +261,7 @@ theorem Expr.coerceTo_annFree : ∀ {b : Ty} (v : Expr), b.annFree = true → Ex
   | .slice _ _ _, v, _ => by cases v <;> rfl
   | .map _ _ _, v, _ => by cases v <;> rfl
   | .chan _ _, v, _ => by cases v <;> rfl
+  | .dom _ _, v, _ => by cases v <;> rfl
   | .own _ _ _, v, _ => by cases v <;> rfl
   | .fn _ _, v, _ => by cases v <;> rfl
   | .mus _ _ _, v, _ => by cases v <;> rfl
@@ -413,6 +422,7 @@ theorem Ty.relocA_top (d : Nat) : ∀ t : Ty, t.relocA d d = t.relocR d
   | .slice true r t => by simp [Ty.relocA, Ty.relocR, Ty.renR_top, rmap_top]
   | .map true r t => by simp [Ty.relocA, Ty.relocR, Ty.renR_top, rmap_top]
   | .chan rc t => by simp [Ty.relocA, Ty.relocR, Ty.renR_top, rmap_top]
+  | .dom rc t => by simp [Ty.relocA, Ty.relocR, Ty.renR_top, rmap_top]
   | .own k r t => by simp [Ty.relocA, Ty.relocR, Ty.renR_top, rmap_top]
   | .fn p r => rfl
   | .mus _ _ p => rfl
@@ -621,6 +631,7 @@ theorem Ty.clampR_of_regionsBelow {k : Nat} : ∀ {t : Ty}, t.regionsBelow (k + 
       simp [Ty.clampR, Ty.clampR_of_regionsBelow h.2, Nat.min_eq_left (by omega : r ≤ k)]
     · rfl
   | .chan _ _, _ => rfl
+  | .dom _ _, _ => rfl
   | .own _ _ _, _ => rfl
   | .fn _ _, _ => rfl
   | .mus _ _ _, _ => rfl
@@ -661,6 +672,7 @@ theorem Ty.clampR_mutFree {k : Nat} : ∀ {t : Ty}, t.mutFree = true → (t.clam
       simp [Ty.clampR, Ty.mutFree, Ty.clampR_mutFree h]
     · simp [Ty.mutFree] at h
   | .chan _ _, _ => rfl
+  | .dom _ _, _ => rfl
   | .fn _ _, _ => rfl
   | .mus _ _ _, _ => rfl
   | .rvar _, _ => rfl
@@ -670,7 +682,7 @@ theorem Ty.clampR_mutFree {k : Nat} : ∀ {t : Ty}, t.mutFree = true → (t.clam
 theorem Ty.clampR_sub_leaf {k : Nat} {T W : Ty}
     (hW : ∀ o, W ≠ .opt o) (hU : ∀ l r, W ≠ .union l r) (hP : ∀ l r, W ≠ .prod l r)
     (hR : ∀ r t, W ≠ .ref false r t) (hS : ∀ r t, W ≠ .slice false r t) (hM : ∀ r t, W ≠ .map false r t)
-    (hMuRs : ∀ r n i t, W ≠ .muRs r n i t)
+    (hMuRs : ∀ r n i t, W ≠ .muRs r n i t) (hDom : ∀ r t, W ≠ .dom r t)
     (hs : Ty.sub (T.clampR k) W = true) : T = W := by
   cases T with
   | opt t => cases W <;> simp_all [Ty.clampR, Ty.sub]
@@ -758,6 +770,9 @@ theorem Ty.clampR_mono {k : Nat} : ∀ {a b : Ty}, Ty.sub a b = true → Ty.sub 
   | .f64, _, h => by obtain rfl := Ty.sub_f64_inv h; exact Ty.sub_refl _
   | .unit, _, h => by obtain rfl := Ty.sub_unit_inv h; exact Ty.sub_refl _
   | .chan _ _, _, h => by obtain rfl := Ty.sub_chan_inv h; exact Ty.sub_refl _
+  | .dom _ _, _, h => by
+    obtain ⟨r', rfl, hle⟩ := Ty.sub_dom_inv h
+    simp only [Ty.clampR, Ty.sub, Bool.and_eq_true, decide_eq_true_eq]; exact ⟨by omega, trivial⟩
   | .own _ _ _, _, h => by obtain rfl := Ty.sub_own_inv h; exact Ty.sub_refl _
   | .fn _ _, _, h => by obtain rfl := Ty.sub_fn_inv h; exact Ty.sub_refl _
   | .mus _ _ _, _, h => by obtain rfl := Ty.sub_mus_inv h; exact Ty.sub_refl _
@@ -804,6 +819,7 @@ theorem Ty.sub_chanFree : ∀ {a b : Ty}, Ty.sub a b = true → a.chanFree = b.c
   | .f64, _, h => by obtain rfl := Ty.sub_f64_inv h; rfl
   | .unit, _, h => by obtain rfl := Ty.sub_unit_inv h; rfl
   | .chan _ _, _, h => by obtain rfl := Ty.sub_chan_inv h; rfl
+  | .dom _ _, _, h => by obtain ⟨_, rfl, -⟩ := Ty.sub_dom_inv h; rfl
   | .own _ _ _, _, h => by obtain rfl := Ty.sub_own_inv h; rfl
   | .fn _ _, _, h => by obtain rfl := Ty.sub_fn_inv h; rfl
   | .mus _ _ _, _, h => by obtain rfl := Ty.sub_mus_inv h; rfl
@@ -1229,47 +1245,59 @@ theorem relocW_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {rec : Ty → Heap → E
   induction W with
   | int =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
     exact leaf hH hDk hv he hW (by cases v <;> rfl)
   | tvar i =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
     exact leaf hH hDk hv he hW (by cases v <;> rfl)
   | bool =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
     exact leaf hH hDk hv he hW (by cases v <;> rfl)
   | byte =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
     exact leaf hH hDk hv he hW (by cases v <;> rfl)
   | f64 =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
     exact leaf hH hDk hv he hW (by cases v <;> rfl)
   | unit =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
     exact leaf hH hDk hv he hW (by cases v <;> rfl)
   | chan rc t ih =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
     exact leaf hH hDk hv he hW (by cases v <;> rfl)
+  | dom rc t ih =>
+    intro T v Ψ H D0 hH hD hDk hv he hW hs hc
+    -- 値の家の region は上界の内側（r1 ≤ rc）: domain の値はそのまま W に型が付く
+    obtain ⟨r1, rfl, hr1⟩ : ∃ r1, T = .dom r1 t ∧ r1 ≤ rc := by
+      cases T with
+      | ref m _ _ => cases m <;> simp_all [Ty.clampR, Ty.sub]
+      | slice m _ _ => cases m <;> simp_all [Ty.clampR, Ty.sub]
+      | map m _ _ => cases m <;> simp_all [Ty.clampR, Ty.sub]
+      | muRs _ _ _ tb => cases hm' : tb.mutFree <;> simp_all [Ty.clampR, Ty.sub]
+      | _ => simp_all [Ty.clampR, Ty.sub]
+    obtain ⟨p', k', r0, rfl, hle0, hlt, hlk⟩ := canonical_dom hv he
+    exact leaf hH hDk hv (.domVT hlt (Nat.le_trans hle0 hr1) hlk) hW rfl
   | own _ r t ih =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
     exact leaf hH hDk hv he hW (by cases v <;> rfl)
   | fn p r ihp ihr =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
     exact leaf hH hDk hv he hW (by cases v <;> rfl)
   | mus nW iW p ihp =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
     exact leaf hH hDk hv he hW (by cases v <;> rfl)
   | rvar p =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
     exact leaf hH hDk hv he hW (by cases v <;> rfl)
   | muRs rW nW iW bW _ =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
@@ -1365,7 +1393,7 @@ theorem relocW_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {rec : Ty → Heap → E
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
     cases m with
     | true =>
-      obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+      obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
       exact leaf hH hDk hv he hW (by cases v <;> rfl)
     | false =>
       obtain ⟨r, e, rfl, hmin, rfl⟩ := Ty.clampR_sub_ref hs
@@ -1407,7 +1435,7 @@ theorem relocW_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {rec : Ty → Heap → E
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
     cases m with
     | true =>
-      obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+      obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
       exact leaf hH hDk hv he hW (by cases v <;> rfl)
     | false =>
       obtain ⟨r, e, rfl, hmin, hse⟩ := Ty.clampR_sub_slice hs
@@ -1463,7 +1491,7 @@ theorem relocW_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {rec : Ty → Heap → E
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
     cases m with
     | true =>
-      obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+      obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
       exact leaf hH hDk hv he hW (by cases v <;> rfl)
     | false =>
       obtain ⟨r, e, rfl, hmin, hse⟩ := Ty.clampR_sub_map hs
@@ -1575,6 +1603,7 @@ theorem Ty.relocR_mutFree_of {k : Nat} : ∀ {t : Ty}, t.mutFree = true → (t.r
       simp [Ty.relocR, Ty.mutFree, Ty.relocR_mutFree_of h]
     · simp [Ty.mutFree] at h
   | .chan _ _, _ => rfl
+  | .dom _ _, _ => rfl
   | .fn _ _, _ => rfl
   | .mus _ _ _, _ => rfl
   | .rvar _, _ => rfl
@@ -1614,6 +1643,7 @@ theorem Ty.relocR_chanFree_of {k : Nat} : ∀ {t : Ty}, t.mutFree = true → t.c
       simp [Ty.relocR, Ty.chanFree, Ty.relocR_chanFree_of hm hc]
     · simp [Ty.mutFree] at hm
   | .chan _ _, _, hc => by simp [Ty.chanFree] at hc
+  | .dom _ _, _, hc => by simp [Ty.chanFree] at hc
   | .fn _ _, _, _ => rfl
   | .mus _ _ _, _, _ => rfl
   | .rvar _, _, _ => rfl
@@ -1654,6 +1684,7 @@ theorem Ty.relocR_regionsBelow_of {k : Nat} : ∀ {t : Ty}, t.mutFree = true →
       simp [Ty.relocR, Ty.regionsBelow, Ty.relocR_regionsBelow_of hm hc]
     · simp [Ty.mutFree] at hm
   | .chan _ _, _, hc => by simp [Ty.chanFree] at hc
+  | .dom _ _, _, hc => by simp [Ty.chanFree] at hc
   | .fn _ _, _, _ => rfl
   | .mus _ _ _, _, _ => rfl
   | .rvar _, _, _ => rfl
@@ -1669,6 +1700,9 @@ theorem Ty.relocR_mono_mf {k : Nat} : ∀ {a b : Ty}, Ty.sub a b = true → Ty.s
   | .f64, _, h => by obtain rfl := Ty.sub_f64_inv h; exact Ty.sub_refl _
   | .unit, _, h => by obtain rfl := Ty.sub_unit_inv h; exact Ty.sub_refl _
   | .chan _ _, _, h => by obtain rfl := Ty.sub_chan_inv h; exact Ty.sub_refl _
+  | .dom _ _, _, h => by
+    obtain ⟨r', rfl, hle⟩ := Ty.sub_dom_inv h
+    simp only [Ty.relocR, Ty.sub, Bool.and_eq_true, decide_eq_true_eq]; exact ⟨by omega, trivial⟩
   | .own _ _ _, _, h => by obtain rfl := Ty.sub_own_inv h; exact Ty.sub_refl _
   | .fn _ _, _, h => by obtain rfl := Ty.sub_fn_inv h; exact Ty.sub_refl _
   | .mus _ _ _, _, h => by obtain rfl := Ty.sub_mus_inv h; exact Ty.sub_refl _
@@ -1718,6 +1752,7 @@ theorem Ty.relocR_sub_leaf {k : Nat} {T W : Ty}
   | slice m r t => cases m <;> cases W <;> simp_all [Ty.relocR, Ty.sub, Ty.mutFree]
   | map m r t => cases m <;> cases W <;> simp_all [Ty.relocR, Ty.sub, Ty.mutFree]
   | chan _ _ => simp [Ty.chanFree] at hc
+  | dom _ _ => simp [Ty.chanFree] at hc
   | own _ _ _ => simp [Ty.mutFree] at hm
   | muRs r n i t =>
     cases hm' : t.mutFree <;> cases W <;> simp_all [Ty.relocR, Ty.sub] <;> exact (hMuRs _ _ _ _ rfl rfl rfl rfl).elim
@@ -1981,6 +2016,10 @@ theorem xferW_ok {Δ : Defs} {Ξs : ChanTy} {bs : Nat} {Ψs : StoreTy} {Hs : Hea
     intro T v Ψ H D0 hH hk hD hv he hW hs hm hc
     obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
     simp [Ty.chanFree] at hc
+  | dom rc t ih =>
+    intro T v Ψ H D0 hH hk hD hv he hW hs hm hc
+    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
+    simp [Ty.chanFree] at hc
   | own _ r t ih =>
     intro T v Ψ H D0 hH hk hD hv he hW hs hm hc
     obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
@@ -2197,6 +2236,7 @@ theorem Ty.retOk_chanFree : ∀ {t : Ty}, t.retOk = true → t.chanFree = true
     · simp only [Ty.retOk, Bool.and_eq_true] at h; simp [Ty.chanFree, Ty.retOk_chanFree h.2]
     · simp [Ty.retOk] at h
   | .chan _ _, h => by simp [Ty.retOk] at h
+  | .dom _ _, h => by simp [Ty.retOk] at h
   | .fn _ _, _ => rfl
   | .mus _ _ _, _ => rfl
   | .rvar _, _ => rfl
@@ -2248,6 +2288,7 @@ theorem Ty.relocA_eq_clampR {ρ0 d : Nat} (h0 : ρ0 ≤ d) :
       · omega
     · simp [Ty.retOk] at h
   | .chan _ _, h => by simp [Ty.retOk] at h
+  | .dom _ _, h => by simp [Ty.retOk] at h
   | .fn _ _, _ => rfl
   | .mus _ _ _, _ => rfl
   | .rvar _, _ => rfl
@@ -2529,6 +2570,7 @@ theorem Ty.relocR_relocR_mf {a k : Nat} : ∀ {t : Ty}, t.mutFree = true → t.c
   | .slice true _ _, hm, _ => by simp [Ty.mutFree] at hm
   | .map true _ _, hm, _ => by simp [Ty.mutFree] at hm
   | .chan _ _, _, hc => by simp [Ty.chanFree] at hc
+  | .dom _ _, _, hc => by simp [Ty.chanFree] at hc
   | .fn _ _, _, _ => rfl
   | .mus _ _ _, _, _ => rfl
   | .rvar _, _, _ => rfl
@@ -2759,22 +2801,24 @@ theorem chanLEt_addCh (Ξ : ChanTy) (p : StoreTy × Ty) : ChanLEt Ξ (Ξ.addCh p
 
 /-- ChanOk は共有の部分（ch）だけを見る: 待機中の値は mutFree なので世界ごとの部分に依らない -/
 theorem chanOk_world {Δ : Defs} {Ξ Ξ' : ChanTy} {K : ChanSt} (hC : ChanOk Δ Ξ K) (hch : Ξ'.ch = Ξ.ch)
-    (hep : Ξ'.ep = Ξ.ep) : ChanOk Δ Ξ' K := by
+    (hep : Ξ'.ep = Ξ.ep) (hdom : Ξ'.dom = Ξ.dom) : ChanOk Δ Ξ' K := by
   refine ⟨by rw [hch]; exact hC.len, fun c Ψc t h => hC.wf c Ψc t (by rw [← hch]; exact h), ?_,
     fun k t h => hC.epdom k t (by rw [← hep]; exact h), fun k e h => by rw [hep]; exact hC.eprev k e h,
-    fun k t e h1 h2 => hC.eptyped k t e (by rw [← hep]; exact h1) h2⟩
+    fun k t e h1 h2 => hC.eptyped k t e (by rw [← hep]; exact h1) h2,
+    fun k t h => hC.domdom k t (by rw [← hdom]; exact h),
+    fun k t e h1 h2 => hC.domtyped k t e (by rw [← hdom]; exact h1) h2⟩
   intro c q Ψc t h1 h2 v hv
   rw [hch] at h2
   obtain ⟨hvv, ht⟩ := hC.typed c q Ψc t h1 h2 v hv
-  exact ⟨hvv, HasType.value_world hvv (hC.wf c Ψc t h2).2 hch ht⟩
+  exact ⟨hvv, HasType.value_world hvv (hC.wf c Ψc t h2).2 hch hdom ht⟩
 
 /-- loc-free な値はどの世界へも移せる（共有の ch が同じ世界どうし — 子の task の結果を親の世界で読む口） -/
 theorem HasType.value_anywhere {Δ : Defs} {Ξ Ξ' : ChanTy} {Ψ Ψ' : StoreTy} {f b d f' b' d' : Nat} {Γ Γ' : Ctx}
     {Λ Λ' : LCtx} {v : Expr} {t : Ty} (hv : Value v) (he : HasType Δ Ξ Ψ f b d Γ Λ v t)
-    (hb : t.regionsBelow 0 = true) (hch : Ξ'.ch = Ξ.ch) :
+    (hb : t.regionsBelow 0 = true) (hch : Ξ'.ch = Ξ.ch) (hdom : Ξ'.dom = Ξ.dom) :
     HasType Δ Ξ' Ψ' f' b' d' Γ' Λ' v t := by
   have h1 := HasType.value_export hv he hb
-  have h2 := HasType.value_world hv (Ty.mutFree_of_locFree hb) hch h1
+  have h2 := HasType.value_world hv (Ty.mutFree_of_locFree hb) hch hdom h1
   exact HasType.value_ctx hv (HasType.value_import (Ψ := Ψ') (f := f') (b := b') (d := d') (Γ := Γ') hv h2 hb)
 
 /-- 1 歩踏める状態は panic でない（par_step_commute の要: panic は terminal） -/
@@ -2823,6 +2867,15 @@ inductive Blocked (K : ChanSt) : State → Prop where
   | famRcv {id o n H S p k r ks ent} : K.ep (p, k) = some ent → ent.orx = id → ent.q = [] → ent.closed = false →
       (∀ i rs kid, ks.get? i = some (rs, kid) → (taskDone kid).isSome = false → kid.isPanic = false → Blocked K kid) →
       Blocked K (.fam id o n (.ret H (.recvK :: S) (.epV p k false r)) ks)
+  /-- domain に入れない（持ち手がいるか、オラクルの次の番でないか、まだ無い） -/
+  | famDen {id o n H S t p k r ks} :
+      (∀ de, K.dom (p, k) = some de → ¬ (de.holder = none ∧ (K.ora (p, k))[de.served]? = some id)) →
+      (∀ i rs kid, ks.get? i = some (rs, kid) → (taskDone kid).isSome = false → kid.isPanic = false → Blocked K kid) →
+      Blocked K (.fam id o n (.ret H (.denterK t :: S) (.domV p k r)) ks)
+  /-- まだ無い domain から出る（型付きなら起きない） -/
+  | famDex {id o n H S p k r v ks} : K.dom (p, k) = none →
+      (∀ i rs kid, ks.get? i = some (rs, kid) → (taskDone kid).isSome = false → kid.isPanic = false → Blocked K kid) →
+      Blocked K (.fam id o n (.ret H (.dexitR (.domV p k r) :: S) v) ks)
 
 theorem Blocked.taskDone_none {K : ChanSt} {s : State} (h : Blocked K s) :
     taskDone s = none := by
@@ -2975,6 +3028,31 @@ theorem blocked_no_step {K : ChanSt} {s : State} (h : Blocked K s) :
       | false => simp [hks π']
       | true => simp [famMain, hk, hown, hemp, hcl]
     | nil => simp [famMain, hk, hown, hemp, hcl]
+  | @famDen id o n H S t p k r ks hno _ ihk =>
+    intro π
+    rw [step_fam_def]
+    have hks := stepKids_stuck ihk
+    have hf : ∀ x, famMain id o n (.ret H (.denterK t :: S) (.domV p k r)) ks K x = none := by
+      intro x
+      cases hd : K.dom (p, k) with
+      | none => simp [famMain, hd]
+      | some de => simp [famMain, hd, hno de hd]
+    cases π with
+    | cons c π' =>
+      cases c with
+      | false => simp [hks π']
+      | true => exact hf _
+    | nil => exact hf _
+  | famDex hnone _ ihk =>
+    intro π
+    rw [step_fam_def]
+    have hks := stepKids_stuck ihk
+    cases π with
+    | cons c π' =>
+      cases c with
+      | false => simp [hks π']
+      | true => simp [famMain, hnone]
+    | nil => simp [famMain, hnone]
 
 /-- 完了した task の結果とそのヒープ（P3b-4 — join / try が写す元）: ヒープは task の世界で型付き、値は結果型に型付く -/
 theorem taskRes_typed {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tr : Ty} {Hk : Heap} {v : Expr}
@@ -2997,7 +3075,7 @@ theorem taskRes_typed {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tr : Ty} 
       obtain ⟨rfl, rfl⟩ := hd
       exact ⟨Ψ, hH, hv, by rw [hD]; exact he⟩
     | _ => simp [taskRes] at hd
-  | fam Ξs bs tcs _ _ _ _ _ _ _ _ _ _ ihm _ =>
+  | fam Ξs bs tcs _ _ _ _ _ _ _ _ _ _ _ ihm _ =>
     simp only [taskRes] at hd
     split at hd
     · exact ihm hd
@@ -3498,6 +3576,22 @@ theorem preservation_eval {Δ : Defs} {Ξ : ChanTy} {Λ : LCtx} {b : Nat} {Ψ : 
       simp only [step] at hs; cases hs
       cases he with
       | closeE h1 => exact ⟨Ξ, .refl Ξ, .eval' hD h1 (.closeKE hS) hH, hC⟩
+    | dnew r i t₀ =>
+      simp only [step] at hs; cases hs
+      cases he with
+      | dnewE h1 h2 h3 hp => exact ⟨Ξ, .refl Ξ, .eval' hD h3 (.dnewKE h1 h2 hp hS) hH, hC⟩
+    | domV p k r =>
+      simp only [step] at hs; cases hs
+      cases he with
+      | domVT h0 h1 h2 => exact ⟨Ξ, .refl Ξ, .ret' hD (.domV p k r) (.domVT h0 h1 h2) hS hH, hC⟩
+    | denter t₀ d =>
+      simp only [step] at hs; cases hs
+      cases he with
+      | denterE h1 hbd hm hc => exact ⟨Ξ, .refl Ξ, .eval' hD h1 (.denterKE hbd hm hc hS) hH, hC⟩
+    | dexit d v =>
+      simp only [step] at hs; cases hs
+      cases he with
+      | dexitE h1 h2 hp => exact ⟨Ξ, .refl Ξ, .eval' hD h1 (.dexitLE (h2.to_take_full hD) hp hS) hH, hC⟩
     -- 段 6 P1: 端点（task の外の生成は到達しない形 — panic・端点の値はそのまま値）
     | newch r cap t₀ =>
       simp only [step] at hs; cases hs
@@ -4984,6 +5078,21 @@ theorem preservation_ret {Δ : Defs} {Ξ : ChanTy} {Λ : LCtx} {b : Nat} {Ψ : S
       obtain ⟨p, k, rfl, -⟩ := canonical_tx hv he
       simp only [step] at hs; cases hs
       exact ⟨Ξ, .refl Ξ, .panic, hC⟩
+    -- domain（task の外では到達しない形 — panic）
+    | dnewKE _ _ _ _ =>
+      simp only [step] at hs; cases hs
+      exact ⟨Ξ, .refl Ξ, .panic, hC⟩
+    | denterKE _ _ _ _ =>
+      obtain ⟨p, k, _, rfl, -⟩ := canonical_dom hv he
+      simp only [step] at hs; cases hs
+      exact ⟨Ξ, .refl Ξ, .panic, hC⟩
+    | dexitLE h1 hp hS' =>
+      simp only [step] at hs; cases hs
+      exact ⟨Ξ, .refl Ξ, .eval' hD (h1.of_take_full hD) (.dexitRE hv (he.to_take_full hD) hp hS') hH, hC⟩
+    | dexitRE hvc hc _ _ =>
+      obtain ⟨p, k, _, rfl, -⟩ := canonical_dom hvc hc
+      simp only [step] at hs; cases hs
+      exact ⟨Ξ, .refl Ξ, .panic, hC⟩
     -- 段 6 P1: task の外（子の表を持たない世界）の scope の出口・spawn / join / try
     | scopeK hr hb hem hec hbd hS' =>
       rcases reloc_exit hH hD hv he hr hb hS' with hn | ⟨H'', Ψ', v', hrl, hv', hH'', hl', ht', hS'', -⟩
@@ -5065,6 +5174,7 @@ theorem famTy_rebase {Δ : Defs} {Ξ Ξ' : ChanTy} {b : Nat} {id : List Nat} {o 
     {tf : Ty} {Ξs : Nat → ChanTy} {bs : Nat → Nat} {tcs : Nat → Ty}
     (hle : ChanLE Ξ Ξ') (htk : Ξ'.tk = Ξ.tk) (hmf' : m'.isFam = false) (hm' : StateTy Δ Ξ' b m' tf)
     (hlen : Ξ.tk.length = o + ks.length) (hch : ∀ i, (Ξs i).ch = Ξ.ch) (hep : ∀ i, (Ξs i).ep = Ξ.ep)
+    (hdm : ∀ i, (Ξs i).dom = Ξ.dom)
     (hloc : ∀ (i rs : Nat) (t : Ty), Ξ.tk[i]? = some (rs, t) → t.mutFree = true ∧ t.chanFree = true)
     (hex : ∀ i rs kid, ks.get? i = some (rs, kid) → ∃ t, Ξ.tk[o + i]? = some (rs, t))
     (hkt : ∀ i rs kid t, ks.get? i = some (rs, kid) → Ξ.tk[o + i]? = some (rs, t) →
@@ -5072,12 +5182,12 @@ theorem famTy_rebase {Δ : Defs} {Ξ Ξ' : ChanTy} {b : Nat} {id : List Nat} {o 
     (hk : ∀ i rs kid, ks.get? i = some (rs, kid) → StateTy Δ (Ξs i) (bs i) kid (tcs i))
     (htg : ∀ i tg, ks.tag? i = some tg → ∃ t ε0, tcs i = .prod t (.opt ε0) ∧ ε0.relocR 0 = tg.1) :
     StateTy Δ Ξ' b (.fam id o n m' ks) tf := by
-  refine .fam (fun j => { Ξs j with ch := Ξ'.ch, ep := Ξ'.ep }) bs tcs hmf' hm' (by rw [htk]; exact hlen)
-    (fun _ => rfl) (fun _ => rfl) (by rw [htk]; exact hloc) (by rw [htk]; exact hex) (by rw [htk]; exact hkt) ?_ htg
+  refine .fam (fun j => { Ξs j with ch := Ξ'.ch, ep := Ξ'.ep, dom := Ξ'.dom }) bs tcs hmf' hm' (by rw [htk]; exact hlen)
+    (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (by rw [htk]; exact hloc) (by rw [htk]; exact hex) (by rw [htk]; exact hkt) ?_ htg
   intro i rs kid hg
-  have hle' : ChanLE (Ξs i) { Ξs i with ch := Ξ'.ch, ep := Ξ'.ep } :=
+  have hle' : ChanLE (Ξs i) { Ξs i with ch := Ξ'.ch, ep := Ξ'.ep, dom := Ξ'.dom } :=
     ⟨fun c p h => by rw [hch i] at h; exact hle.ch c p h, fun k t' h => by rw [hep i] at h; exact hle.ep k t' h,
-      fun _ _ h => h⟩
+      fun _ _ h => h, fun k t' h => by rw [hdm i] at h; exact hle.dom k t' h⟩
   exact (hk i rs kid hg).chan_mono hle' rfl
 
 /-- famTy_rebase の回収済みの印つき版（join / try が結果を受けた — 子の状態と札の err の型は変わらない） -/
@@ -5085,6 +5195,7 @@ theorem famTy_rebase_mark {Δ : Defs} {Ξ Ξ' : ChanTy} {b : Nat} {id : List Nat
     {tf : Ty} {Ξs : Nat → ChanTy} {bs : Nat → Nat} {tcs : Nat → Ty}
     (hle : ChanLE Ξ Ξ') (htk : Ξ'.tk = Ξ.tk) (hmf' : m'.isFam = false) (hm' : StateTy Δ Ξ' b m' tf)
     (hlen : Ξ.tk.length = o + ks.length) (hch : ∀ i, (Ξs i).ch = Ξ.ch) (hep : ∀ i, (Ξs i).ep = Ξ.ep)
+    (hdm : ∀ i, (Ξs i).dom = Ξ.dom)
     (hloc : ∀ (i rs : Nat) (t : Ty), Ξ.tk[i]? = some (rs, t) → t.mutFree = true ∧ t.chanFree = true)
     (hex : ∀ i rs kid, ks.get? i = some (rs, kid) → ∃ t, Ξ.tk[o + i]? = some (rs, t))
     (hkt : ∀ i rs kid t, ks.get? i = some (rs, kid) → Ξ.tk[o + i]? = some (rs, t) →
@@ -5092,7 +5203,7 @@ theorem famTy_rebase_mark {Δ : Defs} {Ξ Ξ' : ChanTy} {b : Nat} {id : List Nat
     (hk : ∀ i rs kid, ks.get? i = some (rs, kid) → StateTy Δ (Ξs i) (bs i) kid (tcs i))
     (htg : ∀ i tg, ks.tag? i = some tg → ∃ t ε0, tcs i = .prod t (.opt ε0) ∧ ε0.relocR 0 = tg.1) (j : Nat) :
     StateTy Δ Ξ' b (.fam id o n m' (ks.mark j)) tf :=
-  famTy_rebase hle htk hmf' hm' (by rw [Kids.length_mark]; exact hlen) hch hep hloc
+  famTy_rebase hle htk hmf' hm' (by rw [Kids.length_mark]; exact hlen) hch hep hdm hloc
     (fun i rs kid h => hex i rs kid (by rwa [Kids.get?_mark] at h))
     (fun i rs kid t h => hkt i rs kid t (by rwa [Kids.get?_mark] at h))
     (fun i rs kid h => hk i rs kid (by rwa [Kids.get?_mark] at h))
@@ -5105,7 +5216,7 @@ theorem Ty.rehome_of_mutFree {d : Nat} : ∀ {t : Ty}, t.mutFree = true → t.re
     simp [Ty.rehome, Ty.rehome_of_mutFree h.1, Ty.rehome_of_mutFree h.2]
   | .int, _ => rfl | .tvar _, _ => rfl | .bool, _ => rfl | .byte, _ => rfl | .f64, _ => rfl | .unit, _ => rfl
   | .opt _, _ => rfl | .union _ _, _ => rfl | .ref _ _ _, _ => rfl | .slice _ _ _, _ => rfl
-  | .map _ _ _, _ => rfl | .chan _ _, _ => rfl | .fn _ _, _ => rfl | .rvar _, _ => rfl
+  | .map _ _ _, _ => rfl | .chan _ _, _ => rfl | .dom _ _, _ => rfl | .fn _ _, _ => rfl | .rvar _, _ => rfl
   | .mus _ _ _, _ => rfl | .muRs _ _ _ _, _ => rfl
 
 /-- 端点の引き渡しの型付け（段 6 P1）: 渡す値 va : ta（givable）の giveV は、端点の家を D へ移した値と、
@@ -5114,7 +5225,7 @@ theorem giveV_ok {Δ : Defs} {Ξ : ChanTy} {Ψ Ψ2 : StoreTy} {f b d f2 d2 rs D 
     {me kid : List Nat}
     (htr : ∀ v t, Value v → t.mutFree = true → t.chanFree = true → t.regionsBelow (rs + 1) = true →
       HasType Δ Ξ Ψ f b d Γ Λ v t → HasType Δ Ξ Ψ2 f2 D d2 [] [] v t)
-    (hD : D < d2) :
+    (hD : D < d2) (hdd : d ≤ d2) :
     ∀ {va va' : Expr} {ta : Ty} {K K' : ChanSt}, ChanOk Δ Ξ K → Value va → HasType Δ Ξ Ψ f b d Γ Λ va ta →
       ta.givable rs = true → giveV me kid D va K = some (va', K') →
       Value va' ∧ HasType Δ Ξ Ψ2 f2 D d2 [] [] va' (ta.rehome D) ∧ ChanOk Δ Ξ K' := by
@@ -5150,6 +5261,12 @@ theorem giveV_ok {Δ : Defs} {Ξ : ChanTy} {Ψ Ψ2 : StoreTy} {f b d f2 d2 rs D 
             exact (hC.eptyped _ t ent ht hent).2.2.2.2 w hw
           · cases hgv
         · cases hgv
+  | domV p k r =>
+    cases he with
+    | domVT h0 h1 h2 =>
+      simp only [giveV, Option.some.injEq, Prod.mk.injEq] at hgv
+      obtain ⟨rfl, rfl⟩ := hgv
+      exact ⟨.domV p k r, .domVT (by omega) h1 h2, hC⟩
   | pair hva hvb iha ihb =>
     cases he with
     | pair h1 h2 =>
@@ -5173,15 +5290,25 @@ theorem giveV_ok {Δ : Defs} {Ξ : ChanTy} {Ψ Ψ2 : StoreTy} {f b d f2 d2 rs D 
     have hdat : ta.mutFree = true ∧ ta.chanFree = true ∧ ta.regionsBelow (rs + 1) = true := by
       cases he <;> first
         | (simp [Ty.givable, Ty.mutFree] at hg; done)
-        | (rw [Ty.givable_eq_data (by intros; nofun) (by intros; nofun)] at hg
+        | (rw [Ty.givable_eq_data (by intros; nofun) (by intros; nofun) (by intros; nofun)] at hg
            simpa only [Bool.and_eq_true, and_assoc] using hg)
     rw [Ty.rehome_of_mutFree hdat.1]
     exact htr _ _ (by constructor <;> assumption) hdat.1 hdat.2.1 hdat.2.2 he
 
+/-- domain の生成の型環境の伸び: 新しい鍵を dom の先頭に足しても引ける項目は引けたまま -/
+theorem chanLE_addDom {Ξ : ChanTy} {k : EpKey} {t : Ty} (hfresh : Ξ.dom.lookup k = none) :
+    ChanLE Ξ { Ξ with dom := (k, t) :: Ξ.dom } := by
+  refine ⟨fun _ _ h => h, fun _ _ h => h, fun _ _ h => h, ?_⟩
+  intro k' t' h
+  by_cases hkk : k' = k
+  · subst hkk; rw [hfresh] at h; cases h
+  · show ((k, t) :: Ξ.dom).lookup k' = some t'
+    rw [lookup_cons_ne hkk]; exact h
+
 /-- 端点のチャネルの生成の型環境の伸び（段 6 P1）: 新しい鍵を ep の先頭に足しても引ける項目は引けたまま -/
 theorem chanLE_addEp {Ξ : ChanTy} {k : EpKey} {t : Ty} (hfresh : Ξ.ep.lookup k = none) :
     ChanLE Ξ { Ξ with ep := (k, t) :: Ξ.ep } := by
-  refine ⟨fun _ _ h => h, ?_, fun _ _ h => h⟩
+  refine ⟨fun _ _ h => h, ?_, fun _ _ h => h, fun _ _ h => h⟩
   intro k' t' h
   by_cases hkk : k' = k
   · subst hkk; rw [hfresh] at h; cases h
@@ -5264,7 +5391,7 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
   | panic =>
     intro π K s' K' hC hs
     simp [step] at hs
-  | fam Ξs bs tcs hmf hm hlen hch hep hloc hex hkt hk htg ihm ihk =>
+  | fam Ξs bs tcs hmf hm hlen hch hep hdm hloc hex hkt hk htg ihm ihk =>
     rename_i Ξ b id o n m ks tf
     intro π K s' K' hC hs
     rw [step_fam_def] at hs
@@ -5281,7 +5408,7 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
         case h_2 =>
           simp only [Option.some.injEq, Prod.mk.injEq] at hfm
           obtain ⟨rfl, rfl⟩ := hfm
-          exact ⟨Ξ, .refl Ξ, fun _ => rfl, famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hloc hex hkt hk htg, hC⟩
+          exact ⟨Ξ, .refl Ξ, fun _ => rfl, famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hdm hloc hex hkt hk htg, hC⟩
         rename_i va' Kg hgv
         simp only [Option.some.injEq, Prod.mk.injEq] at hfm
         obtain ⟨rfl, rfl⟩ := hfm
@@ -5309,12 +5436,12 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
                 have h0 := HasType.value_ctx (Γ' := []) (Λ' := []) hw
                   (HasType.value_depth_weaken hw (HasType.value_sb (b' := Ψ.length) hw hmw hwe) (Nat.le_succ _))
                 exact (h0.f_mono hbD).store_mono (storeLE_append Ψ [[]]) hpre)
-              (Nat.lt_succ_self _) hC hv he hmta hgv
+              (Nat.lt_succ_self _) (Nat.le_succ _) hC hv he hmta hgv
             let Ξ' : ChanTy := { Ξ with tk := Ξ.tk ++ [(rs, t.relocR rs)] }
             have hle : ChanLE Ξ Ξ' := ⟨fun _ _ h => h, fun _ _ h => h, fun i p h => by
               have : i < Ξ.tk.length := (List.getElem?_eq_some_iff.mp h).1
               show (Ξ.tk ++ [(rs, t.relocR rs)])[i]? = some p
-              rw [List.getElem?_append_left this]; exact h⟩
+              rw [List.getElem?_append_left this]; exact h, fun _ _ h => h⟩
             have hlook : Ξ'.tk[o + L]? = some (rs, t.relocR rs) := by
               show (Ξ.tk ++ [(rs, t.relocR rs)])[o + L]? = some (rs, t.relocR rs)
               rw [← hlen, List.getElem?_append_right (Nat.le_refl _), Nat.sub_self]; rfl
@@ -5323,20 +5450,21 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
             have hkid : StateTy Δ Ξ Ψ.length
                 (.fam (id ++ [L]) (o + L) 0 (.eval (H ++ [[]]) [.taskK] (Expr.subst 0 va' e)) .nil) t := by
               refine .fam (fun _ => Ξ) (fun _ => 0) (fun _ => t) rfl ?_
-                (by simp only [Kids.length, Nat.add_zero]; exact hlen) (fun _ => rfl) (fun _ => rfl)
+                (by simp only [Kids.length, Nat.add_zero]; exact hlen) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
                 hloc (fun _ _ _ h => by simp [Kids.get?] at h) (fun _ _ _ _ h => by simp [Kids.get?] at h)
                 (fun _ _ _ h => by simp [Kids.get?] at h) (fun _ _ h => by simp [Kids.tag?] at h)
               have he' := (h1.f_mono hbD).store_mono (storeLE_append Ψ [[]]) hpre
               refine .eval' (Ψ := Ψ ++ [[]]) (D := Ψ.length + 1) (by simp) (HasType.subst0 he' hva'v hva) ?_
                 (heapOk_push (heapOk_spawn hbD hH))
               exact .taskK (by omega)
-            refine ⟨Ξ', hle, fun h => by simp [State.isFam] at h, ?_, chanOk_world hCg rfl rfl⟩
+            refine ⟨Ξ', hle, fun h => by simp [State.isFam] at h, ?_, chanOk_world hCg rfl rfl rfl⟩
             refine .fam (fun j => if j = L then Ξ else Ξs j) (fun j => if j = L then Ψ.length else bs j)
               (fun j => if j = L then t else tcs j) rfl
               (.ret' (Ψ := Ψ) hD (.taskV rs (o + L)) (.taskV hbrs hrsD hlook) (hS'.chan_mono hle) (heapOk_chan_mono hle hH))
-              (by simp [Ξ', Kids.length_snoc, hlen]; omega) ?_ ?_ ?_ ?_ ?_ ?_ ?_
+              (by simp [Ξ', Kids.length_snoc, hlen]; omega) ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
             · intro j; by_cases hj : j = L <;> simp [hj, hch j, Ξ']
             · intro j; by_cases hj : j = L <;> simp [hj, hep j, Ξ']
+            · intro j; by_cases hj : j = L <;> simp [hj, hdm j, Ξ']
             · intro i rs' t' h
               by_cases hi : i < Ξ.tk.length
               · have : Ξ'.tk[i]? = Ξ.tk[i]? := List.getElem?_append_left hi
@@ -5390,7 +5518,7 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
       · -- newch: 新しい鍵 (id, n) の空の項目を足し、送り端と受け端の組を返す（鍵が既にあれば panic — 到達しない）
         rename_i H S r cap t0
         have hpanic : ∀ H', StateTy Δ Ξ b (.fam id o (n + 1) (.panic H') ks) tf :=
-          fun H' => famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hloc hex hkt hk htg
+          fun H' => famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hdm hloc hex hkt hk htg
         split at hfm
         · simp only [Option.some.injEq, Prod.mk.injEq] at hfm
           obtain ⟨rfl, rfl⟩ := hfm
@@ -5412,11 +5540,11 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
                 chanOk_epNew _ hC hnone (Ty.relocR_relocR_mf hmf hcf) (Ty.relocR_mutFree_of hmf) (Ty.relocR_chanFree_of hmf hcf) rfl rfl⟩
               exact famTy_rebase hle rfl rfl
                 (.ret' hD (.pair (.epV _ _ _ _) (.epV _ _ _ _)) (.pair (.epTx hbr hrd lookup_cons_self) (.epRx hbr hrd lookup_cons_self))
-                  (hS.chan_mono hle) (heapOk_chan_mono hle hH)) hlen hch hep hloc hex hkt hk htg
+                  (hS.chan_mono hle) (heapOk_chan_mono hle hH)) hlen hch hep hdm hloc hex hkt hk htg
       · -- 送信: 持ち主で空きがあればキューの末尾へ（値は loc-free なので空の世界へ）・満杯は待つ（none）・持ち主違いは panic
         rename_i H p k r' S v
         have hpanic : ∀ H', StateTy Δ Ξ b (.fam id o n (.panic H') ks) tf :=
-          fun H' => famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hloc hex hkt hk htg
+          fun H' => famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hdm hloc hex hkt hk htg
         cases hm with
         | @ret Λ _ _ Ψ _ _ _ _ _ hv he hS hH =>
           generalize hD : Ψ.length = D at he hS
@@ -5455,7 +5583,7 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
                     simp only [Option.some.injEq, Prod.mk.injEq] at hfm
                     obtain ⟨rfl, rfl⟩ := hfm
                     refine ⟨Ξ, .refl Ξ, fun _ => rfl,
-                      famTy_rebase (.refl Ξ) rfl rfl (.ret' hD .triv .triv hS' hH) hlen hch hep hloc hex hkt hk htg,
+                      famTy_rebase (.refl Ξ) rfl rfl (.ret' hD .triv .triv hS' hH) hlen hch hep hdm hloc hex hkt hk htg,
                       chanOk_epSet hC hent rfl ?_⟩
                     intro t' ht' x hx
                     rw [h3] at ht'; cases ht'
@@ -5473,7 +5601,7 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
       · -- 受信: 持ち主でキューが空でなければ先頭を取り出す（空の世界の値を今の世界へ）・空は待つ・持ち主違いは panic
         rename_i H S p k r'
         have hpanic : ∀ H', StateTy Δ Ξ b (.fam id o n (.panic H') ks) tf :=
-          fun H' => famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hloc hex hkt hk htg
+          fun H' => famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hdm hloc hex hkt hk htg
         cases hm with
         | @ret Λ _ _ Ψ _ _ _ _ _ hv he hS hH =>
           generalize hD : Ψ.length = D at he hS
@@ -5504,7 +5632,7 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
                     simp only [Ty.relocR] at ht'
                     rw [Ty.relocR_relocR_mf hmr hcr] at ht'
                     refine ⟨Ξ, .refl Ξ, fun _ => rfl,
-                      famTy_rebase (.refl Ξ) rfl rfl (.ret' hl' hv' ht' hS'' hH') hlen hch hep hloc hex hkt hk htg,
+                      famTy_rebase (.refl Ξ) rfl rfl (.ret' hl' hv' ht' hS'' hH') hlen hch hep hdm hloc hex hkt hk htg,
                       chanOk_epSet hC hent rfl ?_⟩
                     intro t' ht' x hx
                     rw [h3] at ht'; cases ht'
@@ -5516,7 +5644,7 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
                       have hHl : H.length = D := by rw [hH.len, hD]
                       rw [hty, Ty.relocR_relocR_mf hmr hcr, hHl]
                       exact ⟨Ξ, .refl Ξ, fun _ => rfl,
-                        famTy_rebase (.refl Ξ) rfl rfl (.ret' hD (.nil _) .nil hS' hH) hlen hch hep hloc hex hkt hk htg, hC⟩
+                        famTy_rebase (.refl Ξ) rfl rfl (.ret' hD (.nil _) .nil hS' hH) hlen hch hep hdm hloc hex hkt hk htg, hC⟩
                     · cases hfm
                 · simp only [Option.some.injEq, Prod.mk.injEq] at hfm
                   obtain ⟨rfl, rfl⟩ := hfm
@@ -5527,7 +5655,7 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
       · -- close: 持ち主で開いていれば閉じる（キューはそのまま）・それ以外は panic（P3b-4 ③）
         rename_i H S p k r'
         have hpanic : ∀ H', StateTy Δ Ξ b (.fam id o n (.panic H') ks) tf :=
-          fun H' => famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hloc hex hkt hk htg
+          fun H' => famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hdm hloc hex hkt hk htg
         cases hm with
         | @ret Λ _ _ Ψ _ _ _ _ _ hv he hS hH =>
           generalize hD : Ψ.length = D at he hS
@@ -5539,7 +5667,7 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
               · simp only [Option.some.injEq, Prod.mk.injEq] at hfm
                 obtain ⟨rfl, rfl⟩ := hfm
                 refine ⟨Ξ, .refl Ξ, fun _ => rfl,
-                  famTy_rebase (.refl Ξ) rfl rfl (.ret' hD .triv .triv hS' hH) hlen hch hep hloc hex hkt hk htg,
+                  famTy_rebase (.refl Ξ) rfl rfl (.ret' hD .triv .triv hS' hH) hlen hch hep hdm hloc hex hkt hk htg,
                   chanOk_epSet hC hent rfl ?_⟩
                 intro t' ht' x hx
                 exact (hC.eptyped _ _ ent ht' hent).2.2.2.2 x hx
@@ -5561,7 +5689,7 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
             obtain ⟨-, hi⟩ := hvi
             rw [← hi] at hti
             have hpanic : ∀ H', StateTy Δ Ξ b (.fam id o n (.panic H') ks) tf :=
-              fun H' => famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hloc hex hkt hk htg
+              fun H' => famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hdm hloc hex hkt hk htg
             split at hfm
             · rename_i rs'' kid hget hoi
               have hoi' : o ≤ i := of_decide_eq_true hoi
@@ -5579,12 +5707,12 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
                 · rw [hn] at hfm
                   simp only [Option.some.injEq, Prod.mk.injEq] at hfm
                   obtain ⟨rfl, rfl⟩ := hfm
-                  exact ⟨Ξ, .refl Ξ, fun _ => rfl, famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hloc hex hkt hk htg, hC⟩
+                  exact ⟨Ξ, .refl Ξ, fun _ => rfl, famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hdm hloc hex hkt hk htg, hC⟩
                 rw [hx] at hfm
                 simp only [Option.some.injEq, Prod.mk.injEq] at hfm
                 obtain ⟨rfl, rfl⟩ := hfm
                 exact ⟨Ξ, .refl Ξ, fun _ => rfl,
-                  famTy_rebase_mark (.refl Ξ) rfl rfl (.ret' hl' hv' ht'' hS'' hH') hlen hch hep hloc hex hkt hk htg (i - o), hC⟩
+                  famTy_rebase_mark (.refl Ξ) rfl rfl (.ret' hl' hv' ht'' hS'' hH') hlen hch hep hdm hloc hex hkt hk htg (i - o), hC⟩
               · split at hfm
                 · simp only [Option.some.injEq, Prod.mk.injEq] at hfm
                   obtain ⟨rfl, rfl⟩ := hfm
@@ -5605,7 +5733,7 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
             obtain ⟨-, hi⟩ := hvi
             rw [← hi] at hti
             have hpanic : ∀ H', StateTy Δ Ξ b (.fam id o n (.panic H') ks) tf :=
-              fun H' => famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hloc hex hkt hk htg
+              fun H' => famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hdm hloc hex hkt hk htg
             split at hfm
             · rename_i rs'' kid hget hoi
               have hoi' : o ≤ i := of_decide_eq_true hoi
@@ -5623,17 +5751,17 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
                 · rw [hn] at hfm
                   simp only [Option.some.injEq, Prod.mk.injEq] at hfm
                   obtain ⟨rfl, rfl⟩ := hfm
-                  exact ⟨Ξ, .refl Ξ, fun _ => rfl, famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hloc hex hkt hk htg, hC⟩
+                  exact ⟨Ξ, .refl Ξ, fun _ => rfl, famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hdm hloc hex hkt hk htg, hC⟩
                 rw [hx] at hfm
                 simp only [Option.some.injEq, Prod.mk.injEq] at hfm
                 obtain ⟨rfl, rfl⟩ := hfm
                 exact ⟨Ξ, .refl Ξ, fun _ => rfl,
-                  famTy_rebase_mark (.refl Ξ) rfl rfl (.ret' hl' (.some hv') (.some ht'') hS'' hH') hlen hch hep hloc hex hkt hk htg (i - o), hC⟩
+                  famTy_rebase_mark (.refl Ξ) rfl rfl (.ret' hl' (.some hv') (.some ht'') hS'' hH') hlen hch hep hdm hloc hex hkt hk htg (i - o), hC⟩
               · split at hfm
                 · simp only [Option.some.injEq, Prod.mk.injEq] at hfm
                   obtain ⟨rfl, rfl⟩ := hfm
                   exact ⟨Ξ, .refl Ξ, fun _ => rfl,
-                    famTy_rebase (.refl Ξ) rfl rfl (.ret' hD (.nil _) .nil hS' hH) hlen hch hep hloc hex hkt hk htg, hC⟩
+                    famTy_rebase (.refl Ξ) rfl rfl (.ret' hD (.nil _) .nil hS' hH) hlen hch hep hdm hloc hex hkt hk htg, hC⟩
                 · cases hfm
             · simp only [Option.some.injEq, Prod.mk.injEq] at hfm
               obtain ⟨rfl, rfl⟩ := hfm
@@ -5646,7 +5774,7 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
           cases hS with
           | @scopeK _ _ d1 _ _ _ _ hr hb hem hec hbd hS' =>
             have hpanic : ∀ H', StateTy Δ Ξ b (.fam id o n (.panic H') ks) tf :=
-              fun H' => famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hloc hex hkt hk htg
+              fun H' => famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hdm hloc hex hkt hk htg
             split at hfm
             · split at hfm
               · simp only [Option.some.injEq, Prod.mk.injEq] at hfm
@@ -5654,7 +5782,7 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
                 obtain ⟨hH2, hl2, hS2, -⟩ := dead_exit hH hD hS'
                 rw [show H0.length - 2 = Ψ.dropLast.length - 1 by rw [hl2, hH.len, hD]; omega, hl2]
                 exact ⟨Ξ, .refl Ξ, fun _ => rfl,
-                  famTy_rebase (.refl Ξ) rfl rfl (.ret' hl2 (.inr _ (.inl _ .triv)) (.inr (.inl .triv)) hS2 hH2) hlen hch hep hloc hex hkt hk htg, hC⟩
+                  famTy_rebase (.refl Ξ) rfl rfl (.ret' hl2 (.inr _ (.inl _ .triv)) (.inr (.inl .triv)) hS2 hH2) hlen hch hep hdm hloc hex hkt hk htg, hC⟩
               · split at hfm
                 · -- 未回収の失敗: err を子のヒープから親の最内へ写して pop（札の型が注釈と食い違えば panic — 型付きなら起きないが、panic も型付き）
                   rename_i εk Hk e0 hfa
@@ -5669,13 +5797,13 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
                     · rw [hn] at hfm
                       simp only [Option.some.injEq, Prod.mk.injEq] at hfm
                       obtain ⟨rfl, rfl⟩ := hfm
-                      exact ⟨Ξ, .refl Ξ, fun _ => rfl, famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hloc hex hkt hk htg, hC⟩
+                      exact ⟨Ξ, .refl Ξ, fun _ => rfl, famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hdm hloc hex hkt hk htg, hC⟩
                     rw [hx] at hfm
                     simp only [Option.some.injEq, Prod.mk.injEq] at hfm
                     obtain ⟨rfl, rfl⟩ := hfm
                     rw [show H0.length - 2 = Ψ'.dropLast.length - 1 by rw [hl', hH.len, hD]; omega, hl'] at ht'
                     exact ⟨Ξ, .refl Ξ, fun _ => rfl,
-                      famTy_rebase (.refl Ξ) rfl rfl (.ret' hl' (.inr _ (.inr _ hv')) (.inr (.inr ht')) hS'' hH'') hlen hch hep hloc hex hkt hk htg, hC⟩
+                      famTy_rebase (.refl Ξ) rfl rfl (.ret' hl' (.inr _ (.inr _ hv')) (.inr (.inr ht')) hS'' hH'') hlen hch hep hdm hloc hex hkt hk htg, hC⟩
                   · simp only [Option.some.injEq, Prod.mk.injEq] at hfm
                     obtain ⟨rfl, rfl⟩ := hfm
                     exact ⟨Ξ, .refl Ξ, fun _ => rfl, hpanic _, hC⟩
@@ -5683,19 +5811,115 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
                   · rw [hn] at hfm
                     simp only [Option.some.injEq, Prod.mk.injEq] at hfm
                     obtain ⟨rfl, rfl⟩ := hfm
-                    exact ⟨Ξ, .refl Ξ, fun _ => rfl, famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hloc hex hkt hk htg, hC⟩
+                    exact ⟨Ξ, .refl Ξ, fun _ => rfl, famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hdm hloc hex hkt hk htg, hC⟩
                   rw [hrl] at hfm
                   simp only [Option.some.injEq, Prod.mk.injEq] at hfm
                   obtain ⟨rfl, rfl⟩ := hfm
                   rw [show H0.length - 2 = Ψ'.dropLast.length - 1 by rw [hl', hH.len, hD]; omega, hl']
                   exact ⟨Ξ, .refl Ξ, fun _ => rfl,
-                    famTy_rebase (.refl Ξ) rfl rfl (.ret' hl' (.inl _ hv') (.inl ht') hS'' hH'') hlen hch hep hloc hex hkt hk htg, hC⟩
+                    famTy_rebase (.refl Ξ) rfl rfl (.ret' hl' (.inl _ hv') (.inl ht') hS'' hH'') hlen hch hep hdm hloc hex hkt hk htg, hC⟩
             · cases hfm
+      -- domain の作成: 新しい鍵 (id, n) に初期値の梱包の項目を足し、domain の値を返す（鍵が既にあれば panic — 到達しない）
+      · rename_i H r t0 S v
+        have hpanic : ∀ H', StateTy Δ Ξ b (.fam id o (n + 1) (.panic H') ks) tf :=
+          fun H' => famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hdm hloc hex hkt hk htg
+        split at hfm
+        · simp only [Option.some.injEq, Prod.mk.injEq] at hfm
+          obtain ⟨rfl, rfl⟩ := hfm
+          exact ⟨Ξ, .refl Ξ, fun _ => rfl, hpanic _, hC⟩
+        · rename_i hnone
+          cases hm with
+          | @ret Λ _ _ Ψ _ _ _ _ _ hv he hS hH =>
+            generalize hD : Ψ.length = D at he hS
+            cases hS with
+            | dnewKE hbr hrd hp hS' =>
+              have hp' := hp
+              simp only [Ty.payOk, Bool.and_eq_true, decide_eq_true_eq] at hp'
+              obtain ⟨⟨⟨⟨-, -⟩, hmf⟩, hcf⟩, -⟩ := hp'
+              rcases pack_ok hH hv (by rw [hD]; exact HasType.value_ctx hv he) hp with hpk0 | ⟨w, hpk, hw⟩
+              · simp only [hpk0, Option.some.injEq, Prod.mk.injEq] at hfm
+                obtain ⟨rfl, rfl⟩ := hfm
+                exact ⟨Ξ, .refl Ξ, fun _ => rfl, hpanic _, hC⟩
+              simp only [hpk, Option.some.injEq, Prod.mk.injEq] at hfm
+              obtain ⟨rfl, rfl⟩ := hfm
+              have hfresh : Ξ.dom.lookup (id, n) = none := by
+                cases h : Ξ.dom.lookup (id, n) with
+                | none => rfl
+                | some t' => obtain ⟨e', he'⟩ := hC.domdom _ t' h; rw [hnone] at he'; cases he'
+              have hle := chanLE_addDom (t := t0.relocR 0) hfresh
+              refine ⟨_, hle, fun h => by simp [State.isFam] at h, ?_,
+                chanOk_domNew _ hC hnone (Ty.relocR_relocR_mf hmf hcf) (Ty.relocR_mutFree_of hmf)
+                  (Ty.relocR_chanFree_of hmf hcf) rfl hw⟩
+              exact famTy_rebase hle rfl rfl
+                (.ret' hD (.domV _ _ _) (.domVT hrd (Nat.le_refl _) lookup_cons_self) (hS'.chan_mono hle) (heapOk_chan_mono hle hH))
+                hlen hch hep hdm hloc hex hkt hk htg
+      -- domain に入る: 空きでオラクルの番なら持ち手になり、状態の梱包を今の最内へ写して受ける・それ以外は待つ
+      · rename_i H S p k r'
+        have hpanic : ∀ H', StateTy Δ Ξ b (.fam id o n (.panic H') ks) tf :=
+          fun H' => famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hdm hloc hex hkt hk htg
+        cases hm with
+        | @ret Λ _ _ Ψ _ _ _ _ _ hv he hS hH =>
+          generalize hD : Ψ.length = D at he hS
+          cases hS with
+          | denterKE hbD hmr hcr hS' =>
+            cases he with
+            | domVT h0 h1 h3 =>
+              split at hfm
+              · rename_i de hde
+                obtain ⟨hcan, hmf0, hcf0, hty, hst⟩ := hC.domtyped _ _ de h3 hde
+                have hset : ChanOk Δ Ξ (K.setDom (p, k) { de with holder := some id }) :=
+                  chanOk_domSet hC hde rfl (fun t' ht' => by rw [h3] at ht'; cases ht'; exact hst)
+                split at hfm
+                · rcases unpack_ok hH hD (by omega) hst hmf0 hcf0 hS' with
+                    hn | ⟨H'', Ψ', v'', hx', hv', hH', hl', ht', hS'', -⟩
+                  · simp only [hn, Option.some.injEq, Prod.mk.injEq] at hfm
+                    obtain ⟨rfl, rfl⟩ := hfm
+                    exact ⟨Ξ, .refl Ξ, fun _ => rfl, hpanic _, hset⟩
+                  simp only [hx', Option.some.injEq, Prod.mk.injEq] at hfm
+                  obtain ⟨rfl, rfl⟩ := hfm
+                  rw [Ty.relocR_relocR_mf hmr hcr] at ht'
+                  exact ⟨Ξ, .refl Ξ, fun _ => rfl,
+                    famTy_rebase (.refl Ξ) rfl rfl (.ret' hl' hv' ht' hS'' hH') hlen hch hep hdm hloc hex hkt hk htg, hset⟩
+                · cases hfm
+              · cases hfm
+      -- domain から出る: 持ち手なら新しい状態を梱包して差し替え・持ち手でなければ panic
+      · rename_i H p k r' S v
+        have hpanic : ∀ H', StateTy Δ Ξ b (.fam id o n (.panic H') ks) tf :=
+          fun H' => famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hdm hloc hex hkt hk htg
+        cases hm with
+        | @ret Λ _ _ Ψ _ _ _ _ _ hv he hS hH =>
+          generalize hD : Ψ.length = D at he hS
+          cases hS with
+          | dexitRE _ hc hp hS' =>
+            cases hc with
+            | domVT h0 h1 h3 =>
+              split at hfm
+              · rename_i de hde
+                obtain ⟨hcan, hmf0, hcf0, hty, hst⟩ := hC.domtyped _ _ de h3 hde
+                split at hfm
+                · rcases pack_ok hH hv (by rw [hD]; exact HasType.value_ctx hv he) hp with hpk0 | ⟨w', hpk', hw'⟩
+                  · rw [← hty] at hpk0
+                    simp only [hpk0, Option.some.injEq, Prod.mk.injEq] at hfm
+                    obtain ⟨rfl, rfl⟩ := hfm
+                    exact ⟨Ξ, .refl Ξ, fun _ => rfl, hpanic _, hC⟩
+                  rw [← hty] at hpk'
+                  simp only [hpk', Option.some.injEq, Prod.mk.injEq] at hfm
+                  obtain ⟨rfl, rfl⟩ := hfm
+                  refine ⟨Ξ, .refl Ξ, fun _ => rfl,
+                    famTy_rebase (.refl Ξ) rfl rfl (.ret' hD .triv .triv hS' hH) hlen hch hep hdm hloc hex hkt hk htg,
+                    chanOk_domSet hC hde rfl ?_⟩
+                  intro t' ht'
+                  rw [h3] at ht'; cases ht'
+                  exact hw'
+                · simp only [Option.some.injEq, Prod.mk.injEq] at hfm
+                  obtain ⟨rfl, rfl⟩ := hfm
+                  exact ⟨Ξ, .refl Ξ, fun _ => rfl, hpanic _, hC⟩
+              · cases hfm
       -- 旧 par / parch / newchan / 旧 chan の送受（task の中では panic）
       iterate 5
         · simp only [Option.some.injEq, Prod.mk.injEq] at hfm
           obtain ⟨rfl, rfl⟩ := hfm
-          exact ⟨Ξ, .refl Ξ, fun _ => rfl, famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hloc hex hkt hk htg, hC⟩
+          exact ⟨Ξ, .refl Ξ, fun _ => rfl, famTy_rebase (.refl Ξ) rfl rfl .panic hlen hch hep hdm hloc hex hkt hk htg, hC⟩
       · -- それ以外: main 自身の 1 歩（葉の歩 — 子の表は変わらず、main は葉のまま）
         obtain ⟨⟨m', K₁⟩, hstep, heq⟩ := Option.map_eq_some_iff.mp hfm
         simp only [Prod.mk.injEq] at heq
@@ -5703,7 +5927,7 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
         obtain ⟨Ξm, hlem, htkm, htym, hCm⟩ := ihm hC hstep
         have htk := htkm hmf
         exact ⟨Ξm, hlem, fun _ => htk,
-          famTy_rebase hlem htk (step_isFam hmf hstep) htym hlen hch hep hloc hex hkt hk htg, hCm⟩
+          famTy_rebase hlem htk (step_isFam hmf hstep) htym hlen hch hep hdm hloc hex hkt hk htg, hCm⟩
     cases π with
     | cons c π' =>
       cases c with
@@ -5717,14 +5941,15 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
           obtain ⟨rfl, rfl⟩ := hs
           obtain ⟨i, rs, kid, kid', π'', hget, hst, rfl⟩ := stepKids_some hsk
           obtain ⟨t, ht⟩ := hex i rs kid hget
-          obtain ⟨Ξi', hlei, -, htyi, hCi'⟩ := ihk i rs kid hget (chanOk_world hC (hch i) (hep i)) hst
-          let Ξ' : ChanTy := { Ξ with ch := Ξi'.ch, ep := Ξi'.ep }
+          obtain ⟨Ξi', hlei, -, htyi, hCi'⟩ := ihk i rs kid hget (chanOk_world hC (hch i) (hep i) (hdm i)) hst
+          let Ξ' : ChanTy := { Ξ with ch := Ξi'.ch, ep := Ξi'.ep, dom := Ξi'.dom }
           have hle : ChanLE Ξ Ξ' :=
             ⟨fun c p h => hlei.ch c p (by rw [hch i]; exact h), fun k t h => hlei.ep k t (by rw [hep i]; exact h),
-              fun _ _ h => h⟩
-          refine ⟨Ξ', hle, fun h => by simp [State.isFam] at h, ?_, chanOk_world hCi' rfl rfl⟩
-          refine .fam (fun j => if j = i then Ξi' else { Ξs j with ch := Ξi'.ch, ep := Ξi'.ep }) bs tcs hmf
-            (hm.chan_mono hle rfl) (by rw [Kids.length_set]; exact hlen) ?_ ?_ hloc ?_ ?_ ?_ ?_
+              fun _ _ h => h, fun k t h => hlei.dom k t (by rw [hdm i]; exact h)⟩
+          refine ⟨Ξ', hle, fun h => by simp [State.isFam] at h, ?_, chanOk_world hCi' rfl rfl rfl⟩
+          refine .fam (fun j => if j = i then Ξi' else { Ξs j with ch := Ξi'.ch, ep := Ξi'.ep, dom := Ξi'.dom }) bs tcs hmf
+            (hm.chan_mono hle rfl) (by rw [Kids.length_set]; exact hlen) ?_ ?_ ?_ hloc ?_ ?_ ?_ ?_
+          · intro j; by_cases hj : j = i <;> simp [hj, Ξ']
           · intro j; by_cases hj : j = i <;> simp [hj, Ξ']
           · intro j; by_cases hj : j = i <;> simp [hj, Ξ']
           · intro j rs' kid'' hg
@@ -5743,9 +5968,10 @@ theorem preservation {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty}
               simp only [if_true]; exact htyi
             · rw [Kids.get?_set_ne _ hj] at hg
               simp only [hj, if_false]
-              have hle' : ChanLE (Ξs j) { Ξs j with ch := Ξi'.ch, ep := Ξi'.ep } :=
+              have hle' : ChanLE (Ξs j) { Ξs j with ch := Ξi'.ch, ep := Ξi'.ep, dom := Ξi'.dom } :=
                 ⟨fun c p h => hlei.ch c p (by rw [hch i, ← hch j]; exact h),
-                  fun k t'' h => hlei.ep k t'' (by rw [hep i, ← hep j]; exact h), fun _ _ h => h⟩
+                  fun k t'' h => hlei.ep k t'' (by rw [hep i, ← hep j]; exact h), fun _ _ h => h,
+                  fun k t'' h => hlei.dom k t'' (by rw [hdm i, ← hdm j]; exact h)⟩
               exact (hk j rs' kid'' hg).chan_mono hle' rfl
           · intro j tg h; rw [Kids.tag?_set] at h; exact htg j tg h
       | true => exact hmain π' hs
@@ -6260,6 +6486,14 @@ theorem progress {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty} {K : 
     | closeKE hS' =>
       obtain ⟨p, k, rfl, -⟩ := canonical_tx hv he
       exact .inr (.inr (.inr ⟨[], _, _, rfl⟩))
+    | dnewKE _ _ _ hS' => exact .inr (.inr (.inr ⟨[], _, _, rfl⟩))
+    | denterKE _ _ _ hS' =>
+      obtain ⟨p, k, _, rfl, -⟩ := canonical_dom hv he
+      exact .inr (.inr (.inr ⟨[], _, _, rfl⟩))
+    | dexitLE _ _ hS' => exact .inr (.inr (.inr ⟨[], _, _, rfl⟩))
+    | dexitRE hvc hc _ hS' =>
+      obtain ⟨p, k, _, rfl, -⟩ := canonical_dom hvc (hc.of_take_full hD)
+      exact .inr (.inr (.inr ⟨[], _, _, rfl⟩))
   | par hs1 hs2 hf1 hf2 hS hH ih1 ih2 =>
     intro hC hf0
     rename_i Λ b Ψ H S s1 s2 t1 t2 tf
@@ -6461,13 +6695,13 @@ theorem progressT {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty} {K :
   | ret hv he hS hH => intro hC; exact progressT_leaf (.ret hv he hS hH) hC rfl
   | par hs1 hs2 hf1 hf2 hS hH _ _ => intro hC; exact progressT_leaf (.par hs1 hs2 hf1 hf2 hS hH) hC rfl
   | panic => intro _; exact .inr (.inl rfl)
-  | fam Ξs bs tcs hmf hm hlen hch hep hloc hex hkt hk htg ihm ihk =>
+  | fam Ξs bs tcs hmf hm hlen hch hep hdm hloc hex hkt hk htg ihm ihk =>
     rename_i Ξ b id o n m ks tf
     intro hC
     -- 子のどれかが歩けるなら task もその子で歩く。歩けなければ子は全員 完了 / panic の葉 / 待機
     rcases kids_progress (Δ := Δ) ks (fun i rs kid hget => by
         obtain ⟨t, ht⟩ := hex i rs kid hget
-        exact ihk i rs kid hget (chanOk_world hC (hch i) (hep i))) with hstuck | ⟨π', ⟨ks', K'⟩, hsk⟩
+        exact ihk i rs kid hget (chanOk_world hC (hch i) (hep i) (hdm i))) with hstuck | ⟨π', ⟨ks', K'⟩, hsk⟩
     rotate_left
     · refine .inr (.inr (.inr ⟨false :: π', .fam id o n m ks', K', ?_⟩))
       rw [step_fam_def]
@@ -6584,6 +6818,26 @@ theorem progressT {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty} {K :
                 · cases hfm
           · rename_i hset
             exact .inr (.inr (.inl (.famS (by simpa using hset) hstuck)))
+        · -- domain の作成: 待たない（none を返さない）
+          split at hfm
+          · cases hfm
+          · split at hfm <;> cases hfm
+        · -- domain に入る: 入れなければ待つ（Blocked famDen）
+          split at hfm
+          · rename_i de hde
+            split at hfm
+            · split at hfm <;> cases hfm
+            · rename_i hno
+              exact .inr (.inr (.inl (.famDen (fun de' hde' => by rw [hde] at hde'; cases hde'; exact hno) hstuck)))
+          · rename_i hnone
+            exact .inr (.inr (.inl (.famDen (fun de' hde' => by rw [hnone] at hde'; cases hde') hstuck)))
+        · -- domain から出る: まだ無い domain だけが待つ（Blocked famDex — 型付きなら起きない）
+          split at hfm
+          · split at hfm
+            · split at hfm <;> cases hfm
+            · cases hfm
+          · rename_i hnone
+            exact .inr (.inr (.inl (.famDex hnone hstuck)))
         iterate 5
           · cases hfm
         · cases hfm
@@ -6591,7 +6845,7 @@ theorem progressT {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty} {K :
 /-- 根の task（loadT）の型付け -/
 theorem loadT_typed {Δ : Defs} {e : Expr} {t : Ty} (he : HasType Δ ∅ [] 0 0 0 [] [] e t) :
     StateTy Δ ∅ 0 (loadT e) t :=
-  .fam (fun _ => ∅) (fun _ => 0) (fun _ => .unit) rfl (load_typed he) rfl (fun _ => rfl) (fun _ => rfl)
+  .fam (fun _ => ∅) (fun _ => 0) (fun _ => .unit) rfl (load_typed he) rfl (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
     (fun _ _ _ h => by simp at h) (fun _ _ _ h => by simp [Kids.get?] at h) (fun _ _ _ _ h => by simp [Kids.get?] at h)
     (fun _ _ _ h => by simp [Kids.get?] at h) (fun _ _ h => by simp [Kids.tag?] at h)
 
@@ -6723,6 +6977,10 @@ theorem step_shared_stable_leaf {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} 
     | send c e => simp only [step] at hs; cases hs; rfl
     | recv c => simp only [step] at hs; cases hs; rfl
     | close c => simp only [step] at hs; cases hs; rfl
+    | dnew _ _ _ => simp only [step] at hs; cases hs; rfl
+    | domV _ _ _ => simp only [step] at hs; cases hs; rfl
+    | denter _ _ => simp only [step] at hs; cases hs; rfl
+    | dexit _ _ => simp only [step] at hs; cases hs; rfl
     | fnref fn ts => simp only [step] at hs; cases hs; rfl
     | callv ef e => simp only [step] at hs; cases hs; rfl
     | callMv a ef e => simp only [step] at hs; cases hs; rfl
@@ -6968,6 +7226,14 @@ theorem step_shared_stable_leaf {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} 
       simp only [step] at hs; cases hs; rfl
     | closeKE hS' =>
       obtain ⟨p, k, rfl, -⟩ := canonical_tx hv he
+      simp only [step] at hs; cases hs; rfl
+    | dnewKE _ _ _ hS' => simp only [step] at hs; cases hs; rfl
+    | denterKE _ _ _ hS' =>
+      obtain ⟨p, k, _, rfl, -⟩ := canonical_dom hv he
+      simp only [step] at hs; cases hs; rfl
+    | dexitLE _ _ hS' => simp only [step] at hs; cases hs; rfl
+    | dexitRE hvc hc _ hS' =>
+      obtain ⟨p, k, _, rfl, -⟩ := canonical_dom hvc (hc.of_take_full hD)
       simp only [step] at hs; cases hs; rfl
     | callvL hb hsub hbd hS' => simp only [step] at hs; cases hs; rfl
     | callvR hva hb hsub hbd hS' =>
@@ -7348,7 +7614,7 @@ theorem step_shared_stable {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf :
   | false => exact step_shared_stable_leaf h hf hs
   | true =>
     cases h with
-    | fam Ξs bs tcs hmf hm hlen hch hep hloc hex hkt hk htg =>
+    | fam Ξs bs tcs hmf hm hlen hch hep hdm hloc hex hkt hk htg =>
       rename_i id o n m ks
       rw [step_fam_def] at hs
       have hmain : ∀ πt, famMain id o n m ks K (step Δ πt m K) = some (s', K') →
@@ -7473,6 +7739,32 @@ theorem step_shared_stable {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf :
                     simp only [Option.some.injEq, Prod.mk.injEq] at hfm; obtain ⟨rfl, rfl⟩ := hfm
                     simp only [State.heap]; exact htH
           · cases hfm
+        -- domain の作成: main のヒープはそのまま
+        · repeat' split at hfm
+          all_goals first
+            | (simp only [Option.some.injEq, Prod.mk.injEq] at hfm; obtain ⟨rfl, rfl⟩ := hfm; rfl)
+            | (cases hfm; done)
+        -- domain に入る: 状態の梱包を最内の region へ写す（受信と同じ — 最内 ≥ b）
+        · repeat' split at hfm
+          all_goals first
+            | (simp only [Option.some.injEq, Prod.mk.injEq] at hfm; obtain ⟨rfl, rfl⟩ := hfm; rfl)
+            | (cases hfm; done)
+            | skip
+          simp only [Option.some.injEq, Prod.mk.injEq] at hfm
+          obtain ⟨rfl, rfl⟩ := hfm
+          have hx := ‹xfer _ _ _ _ _ = some _›
+          cases hm with
+          | @ret Λ _ _ Ψ _ _ _ _ _ hv he hS hH =>
+            generalize hD : Ψ.length = D at he hS
+            cases hS with
+            | denterKE hbD _ _ hS' =>
+              simp only [State.heap]
+              exact take_of_xfer (by rw [hH.len]; omega) hx
+        -- domain から出る: main のヒープはそのまま
+        · repeat' split at hfm
+          all_goals first
+            | (simp only [Option.some.injEq, Prod.mk.injEq] at hfm; obtain ⟨rfl, rfl⟩ := hfm; rfl)
+            | (cases hfm; done)
         iterate 5
           · simp only [Option.some.injEq, Prod.mk.injEq] at hfm; obtain ⟨rfl, rfl⟩ := hfm; rfl
         · obtain ⟨⟨m', K₁⟩, hstep, heq⟩ := Option.map_eq_some_iff.mp hfm

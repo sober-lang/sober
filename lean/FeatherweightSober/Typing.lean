@@ -33,17 +33,20 @@ abbrev StoreTy := List (List (Bool × Ty))
 - `ch`（全タスク共有）: 旧チャネル id → (生成時の共有プレフィクスのスナップショット, ペイロード型)。
   rc = スナップショットの長さ。ペイロード型の制約（regionsBelow rc・mutFree）は ChanOk が運ぶ
 - `ep`（全タスク共有）: 端点のチャネルの鍵 → ペイロード型（P1 は loc-free）
-- `tk`（**世界ごと**）: この task の子の番号 → (scope の region, 結果型)。handle の型付けが引く -/
+- `tk`（**世界ごと**）: この task の子の番号 → (scope の region, 結果型)。handle の型付けが引く
+- `dom`（全タスク共有）: domain の鍵 → 状態の型（region を全部 0 へ締めた形） -/
 structure ChanTy where
   ch : List (StoreTy × Ty) := []
   ep : List (EpKey × Ty) := []
   tk : List (Nat × Ty) := []
+  dom : List (EpKey × Ty) := []
 
 instance : EmptyCollection ChanTy := ⟨{}⟩
 
 @[simp] theorem ChanTy.empty_ch : (∅ : ChanTy).ch = [] := rfl
 @[simp] theorem ChanTy.empty_ep : (∅ : ChanTy).ep = [] := rfl
 @[simp] theorem ChanTy.empty_tk : (∅ : ChanTy).tk = [] := rfl
+@[simp] theorem ChanTy.empty_dom : (∅ : ChanTy).dom = [] := rfl
 
 /-- 旧チャネルを 1 本足す -/
 def ChanTy.addCh (Ξ : ChanTy) (p : StoreTy × Ty) : ChanTy := { Ξ with ch := Ξ.ch ++ [p] }
@@ -463,6 +466,25 @@ inductive HasType (Δ : Defs) : ChanTy → StoreTy → Nat → Nat → Nat → C
   /-- 送り端を閉じる（P3b-4 ③ — 持ち主でなければ・閉じた後なら定義された panic） -/
   | closeE {Ξ Ψ f b d Γ Λ} {c : Expr} {r : Nat} {t : Ty} :
       HasType Δ Ξ Ψ f b d Γ Λ c (.own .tx r t) → HasType Δ Ξ Ψ f b d Γ Λ (.close c) .unit
+  /-- domain を作る: 家の region r はこの世界のもの（b ≤ r < d — 端点と同じ）・状態は初期値を梱包して持つ（送りと同じ — 初期値の型は状態の型と
+  region を除いて一致） -/
+  | dnewE {Ξ Ψ f b d Γ Λ} {i : Expr} {r : Nat} {t te : Ty} :
+      b ≤ r → r < d → HasType Δ Ξ Ψ f b d Γ Λ i te → Ty.payOk te t = true →
+      HasType Δ Ξ Ψ f b d Γ Λ (.dnew r i t) (.dom r t)
+  /-- 実行時の domain: 状態の型は共有の表 Ξ.dom が与える（region を全部 0 へ締めた形）。持ち主の札は無い — 家の region が生きている世界なら
+  どこでも型が付く（子の task が捕獲して使う）。家の region は imm の参照（loc）と同じく上界（r ≤ rt — 内側の region に住むと読んでよい）:
+  関数の実引数に渡すとき呼び手空間の region へ合わせる（Ty.sub の dom の腕 — 2026-11-10） -/
+  | domVT {Ξ Ψ f b d Γ Λ} {p : List Nat} {k r rt : Nat} {t : Ty} :
+      r < d → r ≤ rt → Ξ.dom.lookup (p, k) = some (t.relocR 0) →
+      HasType Δ Ξ Ψ f b d Γ Λ (.domV p k r) (.dom rt t)
+  /-- domain に入る（脱糖の中だけに現れる）: 状態は今の最内の region（d - 1）へ写る（受信と同じ — 最内はこの世界のもの: b < d） -/
+  | denterE {Ξ Ψ f b d Γ Λ} {e : Expr} {rc : Nat} {t : Ty} :
+      HasType Δ Ξ Ψ f b d Γ Λ e (.dom rc t) → b < d → t.mutFree = true → t.chanFree = true →
+      HasType Δ Ξ Ψ f b d Γ Λ (.denter t e) (t.relocR (d - 1))
+  /-- domain から出る: 新しい状態の型は状態の型と region を除いて一致（送りと同じく梱包する） -/
+  | dexitE {Ξ Ψ f b d Γ Λ} {e v : Expr} {rc : Nat} {t te : Ty} :
+      HasType Δ Ξ Ψ f b d Γ Λ e (.dom rc t) → HasType Δ Ξ Ψ f b d Γ Λ v te → Ty.payOk te t = true →
+      HasType Δ Ξ Ψ f b d Γ Λ (.dexit e v) .unit
   /-- 実行時の handle。結果型はこの世界の子の表（Ξ.tk — 世界ごと）が与える -/
   | taskV {Ξ Ψ f b d Γ Λ} {rs n : Nat} {t : Ty} :
       b ≤ rs → rs < d → Ξ.tk[n]? = some (rs, t) → HasType Δ Ξ Ψ f b d Γ Λ (.taskV rs n) (.own .task rs t)
@@ -483,8 +505,9 @@ inductive HasType (Δ : Defs) : ChanTy → StoreTy → Nat → Nat → Nat → C
 
 /-- 引数境界の条件（round4 V1、R2 で mut を解禁）: 呼び手空間（region 0）への参照までを許す。
 imm は上界、mut は正確（callM の anchor が呼び手の束縛の region を与える。call なら呼び手最内 d）。
-chan は rc が正確（スナップショット長）でシフト・sub に馴染まないため断片外 -/
-def Ty.paramOk (t : Ty) : Bool := t.regionsBelow 1 && t.chanFree
+chan は rc が正確（スナップショット長）でシフト・sub に馴染まないため断片外。domain は家の region が上界（Ty.sub の dom の腕）なので
+実引数に置ける（2026-11-10 — 戻り値は retOk が禁じたまま） -/
+def Ty.paramOk (t : Ty) : Bool := t.regionsBelow 1 && t.argFree
 
 /-- 戻り値の条件（round4 V1、R4a で深く）: imm のコンテナ / 参照は、どの深さでも自フレーム（region < 2）まで
 （中身も自フレーム可 — fretK の境界コピーが中身まで再帰して写す = 深い relocate）。mut は正確 region が relocation で壊れ、chan は rc が正確なので
@@ -506,6 +529,7 @@ def Ty.retOk : Ty → Bool
   | .slice true _ _ => false
   | .map true _ _ => false
   | .chan _ _ => false
+  | .dom _ _ => false
   -- 関数値は loc-free・閉じているので境界を渡れる
   | .fn _ _ => true
   | .mus _ _ _ => true

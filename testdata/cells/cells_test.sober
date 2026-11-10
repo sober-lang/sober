@@ -4,6 +4,7 @@ import "std/iter"
 import "std/quick"
 import "std/task"
 import "std/testing/cell"
+import "std/utf8"
 
 type Row struct {
     k string
@@ -18,6 +19,12 @@ const Seen = testing.cell.Cell[[]string]{}
 const Sum = testing.cell.Cell[int]{}
 const Lines = testing.cell.Cell[[]string]{}
 const Index = testing.cell.Cell[map[string][]string]{}
+const Views = testing.cell.Cell[Parts]{}
+
+type Parts struct {
+    head string
+    tail []string
+}
 
 func add(k int) {
     testing.cell.Update(Rows, (rs []Row) => append(rs, Row{k: "${k}", v: "v${k}"}))
@@ -103,4 +110,33 @@ func TestCopiesLeaveTheSourceIntact() {
     testing.cell.Set(Index, freeze(m))
     assert(indexed("k") == "kv")
     assert(indexed("k") == "kv")
+}
+
+// 入力の列のビューで組んだ値（utf8.Check → Str — 写さない）を書いて読み直しても、次の書きの後も、元の値と元の列はそのまま
+func TestViewsLeaveTheSourceIntact() {
+    src := bytes("héllo-wörld")
+    p, err := viewParts(src, 6)
+    assert(err == nil)
+    testing.cell.Set(Views, p)
+    assert(viewsLine() == "héllo|-wörld|héllo-wörld")
+    assert(viewsLine() == "héllo|-wörld|héllo-wörld")
+    q, qerr := viewParts(bytes("ab-cd"), 2)
+    assert(qerr == nil)
+    testing.cell.Set(Views, q)
+    testing.cell.Update(Views, (x Parts) => Parts{head: x.head + "!", tail: x.tail})
+    assert(p.head == "héllo" && p.tail[1] == "héllo-wörld")
+    assert(len(src) == 13 && src[0] == 104 && src[12] == 100)
+    assert(viewsLine() == "ab!|-cd|ab-cd")
+}
+
+func viewParts(b []byte, k int) (Parts, error?) {
+    v := utf8.Check(b)?
+    h := utf8.Str(v, 0, k)?
+    t := utf8.Str(v, k, len(b))?
+    return Parts{head: h, tail: []string{t, h + t}}, nil
+}
+
+func viewsLine() string {
+    p := testing.cell.Get(Views)
+    return "${p.head}|${p.tail[0]}|${p.tail[1]}"
 }

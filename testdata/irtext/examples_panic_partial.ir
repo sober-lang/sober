@@ -1814,19 +1814,19 @@ b0:
   store %12[1], %14
   %15 = load.i64 %10[2]
   store %12[2], %15
-  %16 = slotaddr s2
-  %17 = const 0
-  store %16[0], %17
-  store %16[1], %17
-  store %16[2], %17
-  store %16[3], %17
-  store %16[4], %17
+  %16 = const 0
+  %17 = slotaddr s2
+  store %17[0], %16
+  store %17[1], %16
+  store %17[2], %16
+  store %17[3], %16
+  store %17[4], %16
   %18 = load.i64 %12[0]
-  store %16[1], %18
+  store %17[1], %18
   %19 = load.i64 %12[1]
-  store %16[2], %19
+  store %17[2], %19
   %20 = load.i64 %12[2]
-  store %16[3], %20
+  store %17[3], %20
   %21 = globaladdr @rt.meta
   call @rt.flush()
   %22 = const 2
@@ -1876,7 +1876,7 @@ b0:
   store %46[1], %44
   store %46[2], %45
   call @rt.print_str(%46)
-  %48 = load.i64 %16[0]
+  %48 = load.i64 %17[0]
   call @rt.print_int(%48)
   %49 = globaladdr @str.2
   %50 = const 2
@@ -1906,7 +1906,7 @@ b0:
   store %62[2], %61
   call @rt.print_str(%62)
   %64 = const 1
-  %65 = gep.word %16, %64
+  %65 = gep.word %17, %64
   call @rt.print_qstr(%65)
   %66 = globaladdr @str.2
   %67 = const 2
@@ -1935,7 +1935,7 @@ b0:
   store %79[1], %77
   store %79[2], %78
   call @rt.print_str(%79)
-  %81 = load.i64 %16[4]
+  %81 = load.i64 %17[4]
   %82 = const 0
   %83 = eq %81, %82
   condbr %83, b2, b3

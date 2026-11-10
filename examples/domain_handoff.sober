@@ -1,0 +1,58 @@
+package main
+
+// Waiting calls are handed the domain in arrival order: 8 consumers each take 25 items with task.Await (when: items are there),
+// while one producer adds 5 items at a time with task.Update. Every item is taken exactly once, whatever the schedule
+
+import "std/os"
+import "std/task"
+
+type Q struct {
+    items int
+    taken int
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, Q{items: 0, taken: 0}, wait: 5000 * task.MS)
+        _, e2 := task.Run((s2 task.Scope) => {
+            mut i := 0
+            while i < 8 {
+                h := task.Spawn(s2, () => {
+                    mut k := 0
+                    while k < 25 {
+                        _, err := task.Await(d, (st mut Q) => {
+                            st.items -= 1
+                            st.taken += 1
+                            0
+                        }, when: (st Q) => st.items > 0)
+                        _ = err
+                        k += 1
+                    }
+                    0
+                })
+                _ = h
+                i += 1
+            }
+            p := task.Spawn(s2, () => {
+                mut k := 0
+                while k < 40 {
+                    task.Update(d, (st mut Q) => {
+                        st.items += 5
+                        0
+                    })
+                    os.Sleep(1)
+                    k += 1
+                }
+                0
+            })
+            _ = p
+            0
+        })
+        if e2 != nil {
+            "died"
+        } else {
+            task.Read(d, (st Q) => "taken ${st.taken} / left ${st.items}")
+        }
+    })
+    println(if e == nil { r } else { "died" })
+}

@@ -1,0 +1,186 @@
+package analyzer
+
+// const の席（language.md 12 節「const の席」・spec A-19）: `@const(p, …)` を付けた関数の仮引数 p への実引数は、ビルド時に文面の決まる
+// 文字列だけ — 補間の無い文字列リテラル・const の名前・それらの `+`・括弧、と呼び手自身の `@const` の仮引数（明示の伝播 — 推論はしない）。
+// 判定は構文だけで足りる（シャドーイングが無い — 裸の名前が const / 仮引数に解決すれば、それがその名前の実体）。
+// 関数値の呼び出しは席が見えないので、`@const` を持つ関数は呼び出しの callee の位置でしか書けない（値として取り出せない）
+
+import "ast"
+import "desugar"
+import "lexer"
+import "std/iter"
+
+const MConstArg = 50    // const の席に文面の決まらない実引数（at = 実引数, 付帯 = 呼び先の関数の添字 * 256 + 仮引数の添字）
+const MConstValue = 51  // `@const` を持つ関数を値として取り出した（at = 名前の節, 付帯 = 関数の添字）
+const MConstAnn = 52    // `@const(…)` の項が仮引数の名前でない・string でない・mut（at = 関数宣言, 付帯 = 項の添字）
+
+// 関数 fi の `@const` の仮引数のビット（仮引数 j がビット j — 64 本目以降は数えない）
+func constMask(az mut Az, fi int) int {
+    return constMaskOf(mut az, fnDecl(mut az, fi))
+}
+
+// 関数宣言 fd の `@const` の仮引数のビット
+func constMaskOf(az mut Az, fd ast.Node) int {
+    l, _ := desugar.FuncConst(mut az.d, fd)
+    if l == -1 {
+        return 0
+    }
+    mut m := 0
+    for k <- iter.Range(0, desugar.LenL(mut az.d, l)) {
+        j := declParam(mut az, fd, desugar.StrRef(desugar.LatI(mut az.d, l, k)))
+        if j >= 0 && j < 63 && cstParamOk(mut az, fd, j) {
+            m = m | (1 << j)
+        }
+    }
+    return m
+}
+
+// 名前の節（裸の名前・`ref.N`）の関数の表の添字（関数でなければ -1）
+func cstFn(az mut Az, e desugar.NodeRef) int {
+    c := if kind(mut az, e) == ast.EIndex { desugar.NodeRef(node(mut az, e).a) } else { e }
+    x := node(mut az, c)
+    if x.kind == ast.EIdent {
+        return desugar.ResolveFn(mut az.d, az.pk, desugar.StrRef(x.a))
+    }
+    if x.kind == ast.ESelector && kind(mut az, desugar.NodeRef(x.a)) == ast.EIdent {
+        return desugar.ResolveSelFn(mut az.d, az.pk, desugar.StrRef(node(mut az, desugar.NodeRef(x.a)).a), desugar.StrRef(x.b))
+    }
+    return -1
+}
+
+// 式 e の中で文面がビルド時に決まらない最初の節（全部決まれば -1 — const の席の実引数の形）
+func cstBad(az mut Az, e desugar.NodeRef) desugar.NodeRef {
+    x := node(mut az, e)
+    k := x.kind
+    if k == ast.EStrlit {
+        return -1
+    }
+    if k == ast.EParen {
+        return cstBad(mut az, desugar.NodeRef(x.a))
+    }
+    if k == ast.EBinary && x.a == lexer.Plus {
+        l := cstBad(mut az, desugar.NodeRef(x.b))
+        return if l != -1 { l } else { cstBad(mut az, desugar.NodeRef(x.c)) }
+    }
+    if k == ast.EIdent {
+        name := desugar.StrRef(x.a)
+        if az.cstMask != 0 && (az.cstMask & (1 << cstParamBit(mut az, name))) != 0 {
+            return -1
+        }
+        return if desugar.ResolveTop(mut az.d, az.pk, name, false, desugar.TopConst).kind == desugar.TopConst { desugar.NodeRef(-1) } else { e }
+    }
+    if k == ast.ESelector && kind(mut az, desugar.NodeRef(x.a)) == ast.EIdent {
+        r := desugar.ResolveSel(mut az.d, az.pk, desugar.StrRef(node(mut az, desugar.NodeRef(x.a)).a), desugar.StrRef(x.b), desugar.TopConst)
+        return if r.kind == desugar.TopConst { desugar.NodeRef(-1) } else { e }
+    }
+    return e
+}
+
+// 今歩いている関数の仮引数 name の添字（無ければ 63 — マスクの外のビット）
+func cstParamBit(az mut Az, name desugar.StrRef) int {
+    j := declParam(mut az, node(mut az, az.cstDecl), name)
+    return if j >= 0 && j < 63 { j } else { 63 }
+}
+
+// 関数宣言 fd の仮引数 name の添字（無ければ -1）
+func declParam(az mut Az, fd ast.Node, name desugar.StrRef) int {
+    ps := desugar.ListRef(fd.c)
+    for j <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
+        if desugar.StrEq(mut az.d, desugar.StrRef(node(mut az, nat(mut az, ps, j)).a), name) {
+            return j
+        }
+    }
+    return -1
+}
+
+// 呼び出し callee(args)（pipe なら左辺 lhs が穴の位置か先頭）の const の席を照合し、callee の名前の節を「呼び出しの位置」と印す
+func constCall(az mut Az, callee desugar.NodeRef, args desugar.ListRef, lhs desugar.NodeRef) {
+    fi := cstFn(mut az, callee)
+    if fi < 0 {
+        return
+    }
+    m := constMask(mut az, fi)
+    if m == 0 {
+        return
+    }
+    markOk(mut az, if kind(mut az, callee) == ast.EIndex { desugar.NodeRef(node(mut az, callee).a) } else { callee })
+    n := desugar.LenL(mut az.d, args)
+    mut hole := false
+    for i <- iter.Range(0, n) {
+        if nat(mut az, args, i) == -1 {
+            hole = true
+        }
+    }
+    mut j := 0
+    if lhs != -1 && !hole {
+        cstArg(mut az, fi, m, 0, lhs)
+        j = 1
+    }
+    for i <- iter.Range(0, n) {
+        a := nat(mut az, args, i)
+        cstArg(mut az, fi, m, j, if a == -1 { lhs } else { a })
+        j += 1
+    }
+}
+
+func cstArg(az mut Az, fi int, m int, j int, a desugar.NodeRef) {
+    if j < 63 && (m & (1 << j)) != 0 && a != -1 {
+        b := cstBad(mut az, a)
+        if b != -1 {
+            report(mut az, MConstArg, b, desugar.NodeRef(fi * 256 + j))
+        }
+    }
+}
+
+// 名前の節 e（裸の名前・選択子）が `@const` を持つ関数を値として取り出していれば指摘（呼び出しの callee の位置は constCall が印した）
+func constValue(az mut Az, e desugar.NodeRef) {
+    if isOk(mut az, e) {
+        return
+    }
+    fi := cstFn(mut az, e)
+    if fi >= 0 && constMask(mut az, fi) != 0 {
+        report(mut az, MConstValue, e, desugar.NodeRef(fi))
+    }
+}
+
+// 関数宣言 fd の仮引数 j が const の席になれるか（型 string・mut でない）
+func cstParamOk(az mut Az, fd ast.Node, j int) bool {
+    p := node(mut az, nat(mut az, desugar.ListRef(fd.c), j))
+    t := node(mut az, desugar.NodeRef(p.b))
+    return p.c == 0 && t.kind == ast.TName && str(mut az, desugar.StrRef(t.a)) == "string"
+}
+
+// 全関数の `@const(…)` の項の照合（仮引数の名前・型 string・mut でない）
+func checkConstAnnots(az mut Az) {
+    for fi <- iter.Range(0, desugar.Nfn(mut az.d)) {
+        fd := fnDecl(mut az, fi)
+        l, _ := desugar.FuncConst(mut az.d, fd)
+        if l != -1 {
+            for k <- iter.Range(0, desugar.LenL(mut az.d, l)) {
+                j := declParam(mut az, fd, desugar.StrRef(desugar.LatI(mut az.d, l, k)))
+                if j < 0 || !cstParamOk(mut az, fd, j) {
+                    report(mut az, MConstAnn, desugar.FnAt(mut az.d, fi).node, desugar.NodeRef(k))
+                }
+            }
+        }
+    }
+}
+
+func constMessage(az mut Az, k int, x int) string {
+    if k == MConstArg {
+        fi := x / 256
+        p := str(mut az, desugar.StrRef(node(mut az, nat(mut az, desugar.ListRef(fnDecl(mut az, fi).c), x % 256)).a))
+        return "`${p}` of ${fnName(mut az, fi)} is a const seat (@const) — pass a string literal, a const, or a `+` of them (a string built at run time cannot be passed here). Pass the varying values as separate arguments, and pick between fixed texts with a switch over consts (language.md 12 節「const の席」)"
+    }
+    if k == MConstValue {
+        return "${fnName(mut az, x)} has a const seat (@const) and can only be called directly — it cannot be taken as a function value (the seat would not be checked through the value — language.md 12 節「const の席」)"
+    }
+    return ""
+}
+
+// `@const` の項の指摘の本文（付帯 = 項の添字）
+func constAnnMessage(az mut Az, fd desugar.NodeRef, k int) string {
+    l, _ := desugar.FuncConst(mut az.d, node(mut az, fd))
+    nm := str(mut az, desugar.StrRef(desugar.LatI(mut az.d, l, k)))
+    return "@const(${nm}): a const seat must name a parameter of type string that is not mut"
+}

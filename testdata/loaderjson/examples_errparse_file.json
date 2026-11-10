@@ -1270,7 +1270,12 @@
     {
       "path": "std/task",
       "name": "task",
-      "imports": [],
+      "imports": [
+        {
+          "ref": "io",
+          "path": "std/io"
+        }
+      ],
       "funcs": [
         {
           "name": "Run",
@@ -1522,6 +1527,122 @@
           "mut_def": false,
           "has_try": false,
           "callees": []
+        },
+        {
+          "name": "NewDomain",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "panic"
+          ]
+        },
+        {
+          "name": "Update",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "domEnter",
+            "domExit",
+            "domOut",
+            "f"
+          ]
+        },
+        {
+          "name": "Read",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "domEnter",
+            "domExit",
+            "domOut",
+            "domView",
+            "g"
+          ]
+        },
+        {
+          "name": "Await",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "domEnter",
+            "domExit",
+            "domLoad",
+            "domOut",
+            "domView",
+            "domWait",
+            "f",
+            "when"
+          ]
+        },
+        {
+          "name": "domEnter",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "panic"
+          ]
+        },
+        {
+          "name": "domExit",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "fence",
+            "panic"
+          ]
+        },
+        {
+          "name": "domOut",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "fence",
+            "panic"
+          ]
+        },
+        {
+          "name": "domWait",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "panic"
+          ]
+        },
+        {
+          "name": "domView",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "fence",
+            "panic"
+          ]
+        },
+        {
+          "name": "domLoad",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "panic"
+          ]
+        },
+        {
+          "name": "domMiss",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "panic"
+          ]
         }
       ],
       "consts": [

@@ -17,7 +17,7 @@ const SOBER = process.env.SOBER ?? path.join(ROOT, "bin/sober");
 // conf の行を出す（か主張の証拠になる）テストの package
 const PKGS = [
   "std/internal/ec", "std/internal/x509", "std/crypto/password", "std/internal/sha512", "std/internal/record", "std/tls",
-  "std/internal/hsc", "std/http/server", "std/http/client", "std/net", "testdata/stdtest/stdurl",
+  "std/internal/hsc", "std/internal/p256", "std/http/server", "std/http/client", "std/net", "testdata/stdtest/stdurl",
 ];
 const EXAMPLES = ["crypto_wycheproof_aead", "crypto_wycheproof_aesgcm", "crypto_wycheproof_mac", "crypto_wycheproof_pss", "crypto_wycheproof_x25519"];
 const INTEROP = ["tls", "http", "dns"];
@@ -244,6 +244,7 @@ const VECTORS: [string, Row[]][] = [
   ["HMAC-SHA256", [["RFC 2104", "Wycheproof hmac_sha256_test.json", "wycheproof/hmac-sha256", ""]]],
   ["HKDF-SHA256", [["RFC 5869", "Wycheproof hkdf_sha256_test.json", "wycheproof/hkdf-sha256", ""]]],
   ["X25519", [["RFC 7748", "Wycheproof x25519_test.json", "wycheproof/x25519", "wycheproof/x25519/all-zero"]]],
+  ["ECDH P-256", [["SP 800-56A", "Wycheproof ecdh_secp256r1_ecpoint_test.json", "wycheproof/ecdh_secp256r1", ""]]],
   ["RSA-PSS 2048 (verify)", [
     ["RFC 8017", "Wycheproof rsa_pss_2048_sha256_mgf1_32_test.json", "wycheproof/rsa-pss-2048-sha256-mgf1-32", ""],
     ["RFC 8017", "Wycheproof rsa_pss_2048_sha256_mgf1_0_test.json", "wycheproof/rsa-pss-2048-sha256-mgf1-0", ""],

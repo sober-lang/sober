@@ -1,0 +1,39 @@
+package main
+
+// A domain can be stored and captured anywhere inside the scope that made it: a field of a value made in that scope,
+// a task spawned on that scope (or an inner one), and a lambda passed straight to a function
+
+import "std/task"
+
+type C struct {
+    n int
+}
+
+type App struct {
+    d task.Domain[C]
+}
+
+func serve(app App, k func(a App)) {
+    k(app)
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        mut keep := App{d: task.NewDomain(s, C{n: 1})}
+        keep.d = task.NewDomain(s, C{n: 2})
+        serve(App{d: task.NewDomain(s, C{n: 3})}, (a) => {
+            keep.d = a.d
+        })
+        d := keep.d
+        _, _ = task.Run((s1 task.Scope) => {
+            h := task.Spawn(s1, () => task.Update(d, (st mut C) => {
+                st.n += 10
+                st.n
+            }))
+            _ = task.Join(h)
+            0
+        })
+        task.Read(keep.d, (st C) => st.n)
+    })
+    println("${r} ${e == nil}")
+}

@@ -1906,27 +1906,27 @@ b17:
   %63 = add %54, %62
   %64 = add %63, %44
   %65 = const 1
-  %66 = slotaddr s3
-  %67 = const 0
-  store %66[0], %67
-  store %66[1], %67
+  %66 = const 0
+  %67 = slotaddr s3
+  store %67[0], %66
+  store %67[1], %66
   %68 = const 0
-  store %66[0], %68
-  store %66[1], %65
-  %69 = load.i64 %66[0]
-  %70 = load.i64 %66[1]
+  store %67[0], %68
+  store %67[1], %65
+  %69 = load.i64 %67[0]
+  %70 = load.i64 %67[1]
   %71 = call @main.pick(%69, %70)
   %72 = add %64, %71
   %73 = const 2
-  %74 = slotaddr s4
-  %75 = const 0
-  store %74[0], %75
-  store %74[1], %75
+  %74 = const 0
+  %75 = slotaddr s4
+  store %75[0], %74
+  store %75[1], %74
   %76 = const 1
-  store %74[0], %76
-  store %74[1], %73
-  %77 = load.i64 %74[0]
-  %78 = load.i64 %74[1]
+  store %75[0], %76
+  store %75[1], %73
+  %77 = load.i64 %75[0]
+  %78 = load.i64 %75[1]
   %79 = call @main.pick(%77, %78)
   %80 = add %72, %79
   call @rt.print_int(%80)

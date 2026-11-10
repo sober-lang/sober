@@ -31,7 +31,7 @@ theorem Ty.mutTop_shiftR (ρ : Nat) : ∀ ta : Ty, (ta.shiftR ρ).mutTop = ta.mu
   | .ref m r _ => by cases m <;> simp [Ty.mutTop, Ty.shiftR]
   | .slice m r _ => by cases m <;> simp [Ty.mutTop, Ty.shiftR]
   | .map m r _ => by cases m <;> simp [Ty.mutTop, Ty.shiftR]
-  | .int | .tvar _ | .bool | .byte | .f64 | .unit | .opt _ | .union _ _ | .prod _ _ | .chan _ _ | .fn _ _ | .own _ _ _ | .rvar _ | .mus _ _ _ | .muRs _ _ _ _ => by
+  | .int | .tvar _ | .bool | .byte | .f64 | .unit | .opt _ | .union _ _ | .prod _ _ | .chan _ _ | .dom _ _ | .fn _ _ | .own _ _ _ | .rvar _ | .mus _ _ _ | .muRs _ _ _ _ => by
     simp [Ty.mutTop, Ty.shiftR]
 
 /-- anchor の読み取りはシフトと可換（実引数の型の mut 位置の region が +ρ ずれるだけ） -/
@@ -80,6 +80,7 @@ theorem Ty.renR_shiftR (a d ρ : Nat) : ∀ t : Ty, (t.renR a d).shiftR ρ = t.r
   | .slice m r t => by simp [Ty.renR, Ty.shiftR, Ty.renR_shiftR a d ρ t, rmap_shift]
   | .map m r t => by simp [Ty.renR, Ty.shiftR, Ty.renR_shiftR a d ρ t, rmap_shift]
   | .chan rc t => by simp [Ty.renR, Ty.shiftR, Ty.renR_shiftR a d ρ t, rmap_shift]
+  | .dom rc t => by simp [Ty.renR, Ty.shiftR, Ty.renR_shiftR a d ρ t, rmap_shift]
   | .fn p r => rfl
   | .own k r t => by simp [Ty.renR, Ty.shiftR, Ty.renR_shiftR a d ρ t, rmap_shift]
   | .mus _ _ _ => rfl
@@ -106,6 +107,7 @@ theorem Ty.relocA_shiftR (a d ρ : Nat) : ∀ t : Ty, (t.relocA a d).shiftR ρ =
   | .slice true r t => by simp [Ty.relocA, Ty.shiftR, Ty.renR_shiftR, rmap_shift]
   | .map true r t => by simp [Ty.relocA, Ty.shiftR, Ty.renR_shiftR, rmap_shift]
   | .chan rc t => by simp [Ty.relocA, Ty.shiftR, Ty.renR_shiftR, rmap_shift]
+  | .dom rc t => by simp [Ty.relocA, Ty.shiftR, Ty.renR_shiftR, rmap_shift]
   | .fn p r => rfl
   | .own k r t => by simp [Ty.relocA, Ty.shiftR, Ty.renR_shiftR, rmap_shift]
   | .mus _ _ _ => rfl

@@ -1999,26 +1999,26 @@ b0:
   store %16[1], %18
   %19 = load.i64 %13[2]
   store %16[2], %19
-  %20 = slotaddr s2
-  %21 = const 0
-  store %20[0], %21
-  store %20[1], %21
-  store %20[2], %21
-  store %20[3], %21
-  store %20[0], %1
+  %20 = const 0
+  %21 = slotaddr s2
+  store %21[0], %20
+  store %21[1], %20
+  store %21[2], %20
+  store %21[3], %20
+  store %21[0], %1
   %22 = load.i64 %16[0]
-  store %20[1], %22
+  store %21[1], %22
   %23 = load.i64 %16[1]
-  store %20[2], %23
+  store %21[2], %23
   %24 = load.i64 %16[2]
-  store %20[3], %24
-  %25 = load.i64 %20[0]
+  store %21[3], %24
+  %25 = load.i64 %21[0]
   store %0[0], %25
-  %26 = load.i64 %20[1]
+  %26 = load.i64 %21[1]
   store %0[1], %26
-  %27 = load.i64 %20[2]
+  %27 = load.i64 %21[2]
   store %0[2], %27
-  %28 = load.i64 %20[3]
+  %28 = load.i64 %21[3]
   store %0[3], %28
   %29 = const 1
   %30 = gep.word %0, %29
@@ -3374,27 +3374,27 @@ b105:
   call @rt.print_int(%679)
   %684 = const 10
   call @rt.print_char(%684)
-  %685 = slotaddr s16
-  %686 = const 0
-  store %685[0], %686
-  store %685[1], %686
-  store %685[2], %686
-  store %685[3], %686
-  store %685[4], %686
-  store %685[5], %686
-  store %685[6], %686
-  store %685[7], %686
-  store %685[8], %686
-  store %685[9], %686
+  %685 = const 0
+  %686 = slotaddr s16
+  store %686[0], %685
+  store %686[1], %685
+  store %686[2], %685
+  store %686[3], %685
+  store %686[4], %685
+  store %686[5], %685
+  store %686[6], %685
+  store %686[7], %685
+  store %686[8], %685
+  store %686[9], %685
   %687 = region.depth
   %688 = region.bump %687
   %689 = ptoi %688
-  store %685[0], %689
+  store %686[0], %689
   %690 = const 0
-  store %685[1], %690
-  store %685[2], %687
+  store %686[1], %690
+  store %686[2], %687
   %691 = const 3
-  %692 = gep.word %685, %691
+  %692 = gep.word %686, %691
   %693 = region.depth
   %694 = region.bump %693
   %695 = ptoi %694
@@ -3403,25 +3403,25 @@ b105:
   store %692[1], %696
   store %692[2], %693
   %697 = slotaddr s17
-  %698 = load.i64 %685[0]
+  %698 = load.i64 %686[0]
   store %697[0], %698
-  %699 = load.i64 %685[1]
+  %699 = load.i64 %686[1]
   store %697[1], %699
-  %700 = load.i64 %685[2]
+  %700 = load.i64 %686[2]
   store %697[2], %700
-  %701 = load.i64 %685[3]
+  %701 = load.i64 %686[3]
   store %697[3], %701
-  %702 = load.i64 %685[4]
+  %702 = load.i64 %686[4]
   store %697[4], %702
-  %703 = load.i64 %685[5]
+  %703 = load.i64 %686[5]
   store %697[5], %703
-  %704 = load.i64 %685[6]
+  %704 = load.i64 %686[6]
   store %697[6], %704
-  %705 = load.i64 %685[7]
+  %705 = load.i64 %686[7]
   store %697[7], %705
-  %706 = load.i64 %685[8]
+  %706 = load.i64 %686[8]
   store %697[8], %706
-  %707 = load.i64 %685[9]
+  %707 = load.i64 %686[9]
   store %697[9], %707
   %708 = region.depth
   %709 = const 0

@@ -5758,10 +5758,9 @@ func @std/crypto/aesgcm.Prepare(%0 ptr, %1 i64, %2 i64, %3 i64) {
   slot s1 [3]
   slot s2 [3]
   slot s3 [3]
-  slot s4 [1]
-  slot s5 [4]
-  slot s6 [5]
-  slot s7 [3]
+  slot s4 [4]
+  slot s5 [5]
+  slot s6 [3]
 b0:
   %4 = slotaddr s0
   store %4[0], %1
@@ -5800,45 +5799,43 @@ b1:
   store %24[1], %26
   %27 = load.i64 %22[2]
   store %24[2], %27
-  %28 = slotaddr s3
-  %29 = const 0
-  store %28[0], %29
-  store %28[1], %29
-  store %28[2], %29
+  %28 = const 0
+  %29 = slotaddr s3
+  store %29[0], %28
+  store %29[1], %28
+  store %29[2], %28
   %30 = load.i64 %24[0]
-  store %28[0], %30
+  store %29[0], %30
   %31 = load.i64 %24[1]
-  store %28[1], %31
+  store %29[1], %31
   %32 = load.i64 %24[2]
-  store %28[2], %32
-  %33 = slotaddr s4
+  store %29[2], %32
+  %33 = const 0
   %34 = const 0
-  store %33[0], %34
   %35 = const 0
-  store %33[0], %35
-  %36 = slotaddr s5
-  %37 = load.i64 %33[0]
-  store %36[0], %37
-  %38 = const 0
-  store %36[1], %38
-  store %36[2], %38
-  store %36[3], %38
-  %39 = slotaddr s6
+  %36 = const 0
+  %37 = const 0
+  %38 = slotaddr s4
+  store %38[0], %37
+  store %38[1], %34
+  store %38[2], %35
+  store %38[3], %36
+  %39 = slotaddr s5
   %40 = const 1
   store %39[0], %40
-  %41 = load.i64 %36[0]
+  %41 = load.i64 %38[0]
   store %39[1], %41
-  %42 = load.i64 %36[1]
+  %42 = load.i64 %38[1]
   store %39[2], %42
-  %43 = load.i64 %36[2]
+  %43 = load.i64 %38[2]
   store %39[3], %43
-  %44 = load.i64 %36[3]
+  %44 = load.i64 %38[3]
   store %39[4], %44
-  %45 = load.i64 %28[0]
+  %45 = load.i64 %29[0]
   store %0[0], %45
-  %46 = load.i64 %28[1]
+  %46 = load.i64 %29[1]
   store %0[1], %46
-  %47 = load.i64 %28[2]
+  %47 = load.i64 %29[2]
   store %0[2], %47
   %48 = load.i64 %39[0]
   store %0[3], %48
@@ -5886,45 +5883,43 @@ b6:
   store %66[1], %68
   %69 = load.i64 %64[2]
   store %66[2], %69
-  %70 = slotaddr s1
-  %71 = const 0
-  store %70[0], %71
-  store %70[1], %71
-  store %70[2], %71
+  %70 = const 0
+  %71 = slotaddr s1
+  store %71[0], %70
+  store %71[1], %70
+  store %71[2], %70
   %72 = load.i64 %66[0]
-  store %70[0], %72
+  store %71[0], %72
   %73 = load.i64 %66[1]
-  store %70[1], %73
+  store %71[1], %73
   %74 = load.i64 %66[2]
-  store %70[2], %74
-  %75 = slotaddr s4
+  store %71[2], %74
+  %75 = const 0
   %76 = const 0
-  store %75[0], %76
-  %77 = const 1
-  store %75[0], %77
-  %78 = slotaddr s5
-  %79 = load.i64 %75[0]
-  store %78[0], %79
-  %80 = const 0
-  store %78[1], %80
-  store %78[2], %80
-  store %78[3], %80
-  %81 = slotaddr s6
+  %77 = const 0
+  %78 = const 0
+  %79 = const 1
+  %80 = slotaddr s4
+  store %80[0], %79
+  store %80[1], %76
+  store %80[2], %77
+  store %80[3], %78
+  %81 = slotaddr s5
   %82 = const 1
   store %81[0], %82
-  %83 = load.i64 %78[0]
+  %83 = load.i64 %80[0]
   store %81[1], %83
-  %84 = load.i64 %78[1]
+  %84 = load.i64 %80[1]
   store %81[2], %84
-  %85 = load.i64 %78[2]
+  %85 = load.i64 %80[2]
   store %81[3], %85
-  %86 = load.i64 %78[3]
+  %86 = load.i64 %80[3]
   store %81[4], %86
-  %87 = load.i64 %70[0]
+  %87 = load.i64 %71[0]
   store %0[0], %87
-  %88 = load.i64 %70[1]
+  %88 = load.i64 %71[1]
   store %0[1], %88
-  %89 = load.i64 %70[2]
+  %89 = load.i64 %71[2]
   store %0[2], %89
   %90 = load.i64 %81[0]
   store %0[3], %90
@@ -5952,7 +5947,7 @@ b9:
   region.setdepth %5
   ret
 b10:
-  %100 = slotaddr s7
+  %100 = slotaddr s6
   %101 = const 512
   %102 = globaladdr @rt.meta
   store %102[2571], %15
@@ -5974,25 +5969,25 @@ b10:
   store %110[1], %112
   %113 = load.i64 %103[2]
   store %110[2], %113
-  %114 = slotaddr s3
-  %115 = const 0
-  store %114[0], %115
-  store %114[1], %115
-  store %114[2], %115
+  %114 = const 0
+  %115 = slotaddr s3
+  store %115[0], %114
+  store %115[1], %114
+  store %115[2], %114
   %116 = load.i64 %110[0]
-  store %114[0], %116
+  store %115[0], %116
   %117 = load.i64 %110[1]
-  store %114[1], %117
+  store %115[1], %117
   %118 = load.i64 %110[2]
-  store %114[2], %118
-  %119 = slotaddr s6
+  store %115[2], %118
+  %119 = slotaddr s5
   %120 = const 0
   store %119[0], %120
-  %121 = load.i64 %114[0]
+  %121 = load.i64 %115[0]
   store %0[0], %121
-  %122 = load.i64 %114[1]
+  %122 = load.i64 %115[1]
   store %0[1], %122
-  %123 = load.i64 %114[2]
+  %123 = load.i64 %115[2]
   store %0[2], %123
   %124 = load.i64 %119[0]
   store %0[3], %124
@@ -6339,12 +6334,12 @@ func @std/crypto/aesgcm.SealTo(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %
   slot s4 [3]
   slot s5 [3]
   slot s6 [3]
-  slot s7 [1]
-  slot s8 [4]
-  slot s9 [5]
+  slot s7 [4]
+  slot s8 [5]
+  slot s9 [3]
   slot s10 [3]
   slot s11 [3]
-  slot s12 [3]
+  slot s12 [1]
   slot s13 [3]
   slot s14 [3]
   slot s15 [3]
@@ -6402,28 +6397,26 @@ b1:
   store %42[0], %43
   store %42[1], %41
   store %42[2], %35
-  %44 = slotaddr s7
+  %44 = const 0
   %45 = const 0
-  store %44[0], %45
-  %46 = const 1
-  store %44[0], %46
-  %47 = slotaddr s8
-  %48 = load.i64 %44[0]
-  store %47[0], %48
-  %49 = const 0
-  store %47[1], %49
-  store %47[2], %49
-  store %47[3], %49
-  %50 = slotaddr s9
+  %46 = const 0
+  %47 = const 0
+  %48 = const 1
+  %49 = slotaddr s7
+  store %49[0], %48
+  store %49[1], %45
+  store %49[2], %46
+  store %49[3], %47
+  %50 = slotaddr s8
   %51 = const 1
   store %50[0], %51
-  %52 = load.i64 %47[0]
+  %52 = load.i64 %49[0]
   store %50[1], %52
-  %53 = load.i64 %47[1]
+  %53 = load.i64 %49[1]
   store %50[2], %53
-  %54 = load.i64 %47[2]
+  %54 = load.i64 %49[2]
   store %50[3], %54
-  %55 = load.i64 %47[3]
+  %55 = load.i64 %49[3]
   store %50[4], %55
   %56 = load.i64 %42[0]
   store %0[0], %56
@@ -6480,7 +6473,7 @@ b5:
   store %87[0], %88
   store %87[1], %86
   store %87[2], %83
-  %89 = slotaddr s10
+  %89 = slotaddr s9
   %90 = load.i64 %87[0]
   store %89[0], %90
   %91 = load.i64 %87[1]
@@ -6522,12 +6515,12 @@ b5:
   %118 = const 0
   %119 = call @rt.region_alloc8(%35, %118)
   %120 = const 0
-  %121 = slotaddr s11
+  %121 = slotaddr s10
   %122 = ptoi %119
   store %121[0], %122
   store %121[1], %120
   store %121[2], %35
-  %123 = slotaddr s12
+  %123 = slotaddr s11
   %124 = load.i64 %121[0]
   store %123[0], %124
   %125 = load.i64 %121[1]
@@ -6535,7 +6528,7 @@ b5:
   %126 = load.i64 %121[2]
   store %123[2], %126
   %127 = const 0
-  %128 = slotaddr s7
+  %128 = slotaddr s12
   store %128[0], %127
   %129 = const 0
   %130 = const 0
@@ -6545,7 +6538,7 @@ b5:
   %134 = le %132, %133
   condbr %134, b8, b9
 b6:
-  %141 = slotaddr s11
+  %141 = slotaddr s10
   %142 = load.i64 %123[0]
   store %141[0], %142
   %143 = load.i64 %123[1]
@@ -6781,7 +6774,7 @@ b36(%261 ptr, %262 ptr):
   call @rt.copy8(%262, %300, %244)
   %301 = load.i64 %253[1]
   %302 = add %301, %244
-  %303 = slotaddr s11
+  %303 = slotaddr s10
   %304 = ptoi %261
   store %303[0], %304
   store %303[1], %302
@@ -6914,7 +6907,7 @@ b51:
   %336 = gep.byte %335, %328
   br b49(%335, %336)
 b52:
-  %366 = slotaddr s11
+  %366 = slotaddr s10
   %367 = load.i64 %123[0]
   store %366[0], %367
   %368 = load.i64 %123[1]
@@ -7099,7 +7092,7 @@ b74:
   %450 = gep.byte %449, %442
   br b72(%449, %450)
 b75:
-  %546 = slotaddr s11
+  %546 = slotaddr s10
   %547 = load.i64 %123[0]
   store %546[0], %547
   %548 = load.i64 %123[1]
@@ -7218,7 +7211,7 @@ b89:
 b90:
   %539 = load.i64 %473[1]
   %540 = add %539, %470
-  %541 = slotaddr s11
+  %541 = slotaddr s10
   %542 = ptoi %481
   store %541[0], %542
   store %541[1], %540
@@ -7297,7 +7290,7 @@ b105:
   %594 = aes.ghash (%552, %592, %593)
   %595 = add %551, %72
   %596 = aes.tag (%552, %595)
-  %597 = slotaddr s9
+  %597 = slotaddr s8
   %598 = const 0
   store %597[0], %598
   %599 = load.i64 %546[0]
@@ -7337,17 +7330,16 @@ func @std/crypto/aesgcm.OpenAt(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %
   slot s2 [3]
   slot s3 [3]
   slot s4 [3]
-  slot s5 [1]
-  slot s6 [4]
-  slot s7 [5]
-  slot s8 [3]
+  slot s5 [4]
+  slot s6 [5]
+  slot s7 [3]
+  slot s8 [1]
   slot s9 [3]
   slot s10 [3]
   slot s11 [1]
   slot s12 [3]
   slot s13 [3]
   slot s14 [3]
-  slot s15 [1]
 b0:
   %15 = slotaddr s0
   store %15[0], %1
@@ -7410,28 +7402,26 @@ b7:
   store %46[0], %47
   store %46[1], %45
   store %46[2], %29
-  %48 = slotaddr s5
+  %48 = const 0
   %49 = const 0
-  store %48[0], %49
-  %50 = const 1
-  store %48[0], %50
-  %51 = slotaddr s6
-  %52 = load.i64 %48[0]
-  store %51[0], %52
-  %53 = const 0
-  store %51[1], %53
-  store %51[2], %53
-  store %51[3], %53
-  %54 = slotaddr s7
+  %50 = const 0
+  %51 = const 0
+  %52 = const 1
+  %53 = slotaddr s5
+  store %53[0], %52
+  store %53[1], %49
+  store %53[2], %50
+  store %53[3], %51
+  %54 = slotaddr s6
   %55 = const 1
   store %54[0], %55
-  %56 = load.i64 %51[0]
+  %56 = load.i64 %53[0]
   store %54[1], %56
-  %57 = load.i64 %51[1]
+  %57 = load.i64 %53[1]
   store %54[2], %57
-  %58 = load.i64 %51[2]
+  %58 = load.i64 %53[2]
   store %54[3], %58
-  %59 = load.i64 %51[3]
+  %59 = load.i64 %53[3]
   store %54[4], %59
   %60 = load.i64 %46[0]
   store %0[0], %60
@@ -7486,7 +7476,7 @@ b11:
   store %89[0], %90
   store %89[1], %88
   store %89[2], %85
-  %91 = slotaddr s8
+  %91 = slotaddr s7
   %92 = load.i64 %89[0]
   store %91[0], %92
   %93 = load.i64 %89[1]
@@ -7508,7 +7498,7 @@ b11:
   store %106[2572], %96
   call @std/crypto/aesgcm.newState(%91, %97, %98, %99, %100, %101, %102, %103, %104, %105, %84, %74)
   %107 = const 0
-  %108 = slotaddr s5
+  %108 = slotaddr s8
   store %108[0], %107
   %109 = region.depth
   br b12
@@ -7927,28 +7917,26 @@ b66:
   store %355[0], %356
   store %355[1], %354
   store %355[2], %29
-  %357 = slotaddr s15
+  %357 = const 0
   %358 = const 0
-  store %357[0], %358
-  %359 = const 2
-  store %357[0], %359
-  %360 = slotaddr s6
-  %361 = load.i64 %357[0]
-  store %360[0], %361
-  %362 = const 0
-  store %360[1], %362
-  store %360[2], %362
-  store %360[3], %362
-  %363 = slotaddr s7
+  %359 = const 0
+  %360 = const 0
+  %361 = const 2
+  %362 = slotaddr s5
+  store %362[0], %361
+  store %362[1], %358
+  store %362[2], %359
+  store %362[3], %360
+  %363 = slotaddr s6
   %364 = const 1
   store %363[0], %364
-  %365 = load.i64 %360[0]
+  %365 = load.i64 %362[0]
   store %363[1], %365
-  %366 = load.i64 %360[1]
+  %366 = load.i64 %362[1]
   store %363[2], %366
-  %367 = load.i64 %360[2]
+  %367 = load.i64 %362[2]
   store %363[3], %367
-  %368 = load.i64 %360[3]
+  %368 = load.i64 %362[3]
   store %363[4], %368
   %369 = load.i64 %355[0]
   store %0[0], %369
@@ -8035,7 +8023,7 @@ b79:
   store %406[0], %407
   store %406[1], %404
   store %406[2], %405
-  %408 = slotaddr s7
+  %408 = slotaddr s6
   %409 = const 0
   store %408[0], %409
   %410 = load.i64 %406[0]
@@ -8971,41 +8959,41 @@ b0:
   %37 = load.i64 %32[2]
   store %34[2], %37
   %38 = const 0
-  %39 = slotaddr s4
-  %40 = const 0
-  store %39[0], %40
-  store %39[1], %40
-  store %39[2], %40
-  store %39[3], %40
-  store %39[4], %40
-  store %39[5], %40
-  store %39[6], %40
+  %39 = const 0
+  %40 = slotaddr s4
+  store %40[0], %39
+  store %40[1], %39
+  store %40[2], %39
+  store %40[3], %39
+  store %40[4], %39
+  store %40[5], %39
+  store %40[6], %39
   %41 = load.i64 %25[0]
-  store %39[0], %41
+  store %40[0], %41
   %42 = load.i64 %25[1]
-  store %39[1], %42
+  store %40[1], %42
   %43 = load.i64 %25[2]
-  store %39[2], %43
+  store %40[2], %43
   %44 = load.i64 %34[0]
-  store %39[3], %44
+  store %40[3], %44
   %45 = load.i64 %34[1]
-  store %39[4], %45
+  store %40[4], %45
   %46 = load.i64 %34[2]
-  store %39[5], %46
-  store %39[6], %38
-  %47 = load.i64 %39[0]
+  store %40[5], %46
+  store %40[6], %38
+  %47 = load.i64 %40[0]
   store %0[0], %47
-  %48 = load.i64 %39[1]
+  %48 = load.i64 %40[1]
   store %0[1], %48
-  %49 = load.i64 %39[2]
+  %49 = load.i64 %40[2]
   store %0[2], %49
-  %50 = load.i64 %39[3]
+  %50 = load.i64 %40[3]
   store %0[3], %50
-  %51 = load.i64 %39[4]
+  %51 = load.i64 %40[4]
   store %0[4], %51
-  %52 = load.i64 %39[5]
+  %52 = load.i64 %40[5]
   store %0[5], %52
-  %53 = load.i64 %39[6]
+  %53 = load.i64 %40[6]
   store %0[6], %53
   region.relocate %0, 1, %1
   %54 = const 3
@@ -12318,13 +12306,12 @@ func @std/hex.Parse(%0 ptr, %1 i64, %2 i64, %3 i64) {
   slot s0 [3]
   slot s1 [3]
   slot s2 [3]
-  slot s3 [1]
-  slot s4 [4]
-  slot s5 [5]
-  slot s6 [3]
+  slot s3 [4]
+  slot s4 [5]
+  slot s5 [3]
+  slot s6 [1]
   slot s7 [1]
-  slot s8 [1]
-  slot s9 [3]
+  slot s8 [3]
 b0:
   %4 = slotaddr s0
   store %4[0], %1
@@ -12365,28 +12352,26 @@ b1:
   store %28[0], %29
   store %28[1], %27
   store %28[2], %15
-  %30 = slotaddr s3
+  %30 = const 0
   %31 = const 0
-  store %30[0], %31
-  %32 = const 3
-  store %30[0], %32
-  %33 = slotaddr s4
-  %34 = load.i64 %30[0]
-  store %33[0], %34
-  %35 = const 0
-  store %33[1], %35
-  store %33[2], %35
-  store %33[3], %35
-  %36 = slotaddr s5
+  %32 = const 0
+  %33 = const 0
+  %34 = const 3
+  %35 = slotaddr s3
+  store %35[0], %34
+  store %35[1], %31
+  store %35[2], %32
+  store %35[3], %33
+  %36 = slotaddr s4
   %37 = const 1
   store %36[0], %37
-  %38 = load.i64 %33[0]
+  %38 = load.i64 %35[0]
   store %36[1], %38
-  %39 = load.i64 %33[1]
+  %39 = load.i64 %35[1]
   store %36[2], %39
-  %40 = load.i64 %33[2]
+  %40 = load.i64 %35[2]
   store %36[3], %40
-  %41 = load.i64 %33[3]
+  %41 = load.i64 %35[3]
   store %36[4], %41
   %42 = load.i64 %28[0]
   store %0[0], %42
@@ -12428,7 +12413,7 @@ b5:
   store %58[0], %59
   store %58[1], %57
   store %58[2], %15
-  %60 = slotaddr s6
+  %60 = slotaddr s5
   %61 = load.i64 %58[0]
   store %60[0], %61
   %62 = load.i64 %58[1]
@@ -12440,7 +12425,7 @@ b5:
   %66 = load.i64 %16[1]
   %67 = const 2
   %68 = div %66, %67
-  %69 = slotaddr s3
+  %69 = slotaddr s6
   %70 = region.depth
   %71 = slotaddr s7
   store %71[0], %65
@@ -12448,7 +12433,7 @@ b5:
   br b8
 b6:
   region.setdepth %64
-  %173 = slotaddr s5
+  %173 = slotaddr s4
   %174 = const 0
   store %173[0], %174
   %175 = load.i64 %60[0]
@@ -12545,28 +12530,26 @@ b18:
   store %109[0], %110
   store %109[1], %108
   store %109[2], %105
-  %111 = slotaddr s8
+  %111 = const 0
   %112 = const 0
-  store %111[0], %112
-  %113 = const 3
-  store %111[0], %113
-  %114 = slotaddr s4
-  %115 = load.i64 %111[0]
-  store %114[0], %115
-  %116 = const 0
-  store %114[1], %116
-  store %114[2], %116
-  store %114[3], %116
-  %117 = slotaddr s5
+  %113 = const 0
+  %114 = const 0
+  %115 = const 3
+  %116 = slotaddr s3
+  store %116[0], %115
+  store %116[1], %112
+  store %116[2], %113
+  store %116[3], %114
+  %117 = slotaddr s4
   %118 = const 1
   store %117[0], %118
-  %119 = load.i64 %114[0]
+  %119 = load.i64 %116[0]
   store %117[1], %119
-  %120 = load.i64 %114[1]
+  %120 = load.i64 %116[1]
   store %117[2], %120
-  %121 = load.i64 %114[2]
+  %121 = load.i64 %116[2]
   store %117[3], %121
-  %122 = load.i64 %114[3]
+  %122 = load.i64 %116[3]
   store %117[4], %122
   %123 = load.i64 %109[0]
   store %0[0], %123
@@ -12633,7 +12616,7 @@ b25(%151 ptr, %152 ptr):
   %162 = load.i64 %138[1]
   %163 = const 1
   %164 = add %162, %163
-  %165 = slotaddr s9
+  %165 = slotaddr s8
   %166 = ptoi %151
   store %165[0], %166
   store %165[1], %164

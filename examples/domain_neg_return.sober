@@ -1,0 +1,21 @@
+package main
+
+// A domain is not returned from a function (diag.Par kind 12 — the core's retOk: it lives as long as the scope that made it)
+
+import "std/task"
+
+type C struct {
+    n int
+}
+
+func pass(d task.Domain[C]) task.Domain[C] {
+    return d
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        d := pass(task.NewDomain(s, C{n: 0}))
+        task.Read(d, (st C) => st.n)
+    })
+    println("${r} ${e == nil}")
+}

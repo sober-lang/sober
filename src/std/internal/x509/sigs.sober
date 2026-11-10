@@ -148,3 +148,10 @@ func mgf1(hbits int, seed []byte, n int) []byte {
     }
     return freeze(out)
 }
+
+// c の tls-server-end-point の束縛の値（RFC 5929 4.1 — 署名のハッシュが SHA-384 / SHA-512 ならそれ、MD5 / SHA-1 / SHA-256 なら SHA-256 で c の DER 全体を）
+@effects()
+func EndPoint(c Cert) []byte {
+    hbits := if c.sigAlg == SigEcdsaSha384 || c.sigAlg == SigRsaSha384 { 384 } else if c.sigAlg == SigEcdsaSha512 || c.sigAlg == SigRsaSha512 { 512 } else { 256 }
+    return Digest(hbits, c.raw)
+}

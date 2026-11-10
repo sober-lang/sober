@@ -1826,16 +1826,16 @@ b0:
   %29 = fmul %27, %28
   %30 = const 4614256656552045848
   %31 = fmul %29, %30
-  %32 = slotaddr s4
-  %33 = const 0
-  store %32[0], %33
-  store %32[1], %33
-  store %32[0], %26
-  store %32[1], %31
+  %32 = const 0
+  %33 = slotaddr s4
+  store %33[0], %32
+  store %33[1], %32
+  store %33[0], %26
+  store %33[1], %31
   %34 = slotaddr s5
-  %35 = load.i64 %32[0]
+  %35 = load.i64 %33[0]
   store %34[0], %35
-  %36 = load.i64 %32[1]
+  %36 = load.i64 %33[1]
   store %34[1], %36
   %37 = const 4565298575141802505
   %38 = const 4645132986222473380
@@ -1847,16 +1847,16 @@ b0:
   %44 = const 4614256656552045848
   %45 = fmul %43, %44
   %46 = fmul %40, %45
-  %47 = slotaddr s6
-  %48 = const 0
-  store %47[0], %48
-  store %47[1], %48
-  store %47[0], %39
-  store %47[1], %46
+  %47 = const 0
+  %48 = slotaddr s6
+  store %48[0], %47
+  store %48[1], %47
+  store %48[0], %39
+  store %48[1], %46
   %49 = slotaddr s7
-  %50 = load.i64 %47[0]
+  %50 = load.i64 %48[0]
   store %49[0], %50
-  %51 = load.i64 %47[1]
+  %51 = load.i64 %48[1]
   store %49[1], %51
   %52 = region.depth
   %53 = const 4

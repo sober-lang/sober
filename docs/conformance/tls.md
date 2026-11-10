@@ -29,15 +29,16 @@ The TLS 1.3 (RFC 8446) server (`std/tls` — `tls.Serve`) and client (under http
 <!-- confsync:begin claims tls-client yes,partial -->
 | Item | Status | Evidence |
 |---|---|---|
-| TLS 1.3 (default — offers 1.3 only) | Supported | `std/internal/hsc.TestHandshakeAndData`<br>interop tls: p256 (2026-11-06) |
-| TLS 1.2 (only with an explicit dangerouslyAllowTls12; 4 suites: ECDHE X25519 × AES-128-GCM / ChaCha20-Poly1305 × ECDSA / RSA) | Partial | interop tls: p256-12-gcm (2026-11-06)<br>interop tls: p256-12-chacha (2026-11-06)<br>interop tls: rsa-12-gcm (2026-11-06)<br>interop tls: rsa-12-chacha (2026-11-06) |
-| TLS 1.2: extended master secret (RFC 7627) required; renegotiation_info (RFC 5746) required and renegotiation refused | Supported | interop tls: rsa-12-gcm (2026-11-06) |
+| TLS 1.3 (default — offers 1.3 only) | Supported | `std/internal/hsc.TestHandshakeAndData`<br>interop tls: p256 (2026-11-08) |
+| TLS 1.2 (only with an explicit dangerouslyAllowTls12; 4 suites: ECDHE X25519 × AES-128-GCM / ChaCha20-Poly1305 × ECDSA / RSA) | Partial | interop tls: p256-12-gcm (2026-11-08)<br>interop tls: p256-12-chacha (2026-11-08)<br>interop tls: rsa-12-gcm (2026-11-08)<br>interop tls: rsa-12-chacha (2026-11-08) |
+| TLS 1.2: extended master secret (RFC 7627) required; renegotiation_info (RFC 5746) required and renegotiation refused | Supported | interop tls: rsa-12-gcm (2026-11-08) |
 | Downgrade sentinel (RFC 8446 4.1.3 — abort when a server picks 1.2 after we offered 1.3) | Supported | `std/internal/hsc.TestDowngradeSentinel` |
-| Server signatures ECDSA P-256 / P-384, RSA-PSS (rsae) | Supported | interop tls: p256 (2026-11-06)<br>interop tls: p384 (2026-11-06)<br>interop tls: rsa (2026-11-06) |
+| Server signatures ECDSA P-256 / P-384, RSA-PSS (rsae) | Supported | interop tls: p256 (2026-11-08)<br>interop tls: p384 (2026-11-08)<br>interop tls: rsa (2026-11-08) |
 | The certificate chain is always verified (there is no setting to turn it off — see the x509 chapter) | Supported | `std/internal/hsc.TestCertFailures`<br>interop http: unknown-ca-refused (2026-11-07) |
 | HelloRetryRequest with a cookie | Supported | `std/internal/hsc.TestHelloRetry` |
+| HelloRetryRequest asking for secp256r1 (P-256 key exchange — servers without X25519) | Supported | `std/internal/hsc.TestHelloRetryP256`<br>interop tls: p256-ecdhe (2026-11-08) |
 | SNI and ALPN in the ClientHello | Supported | `std/internal/hsc.TestHandshakeAndData` |
-| CertificateRequest (TLS 1.2 — answered with an empty Certificate; no client certificates) | Partial | interop tls: rsa-12-req (2026-11-06) |
+| CertificateRequest (TLS 1.2 — answered with an empty Certificate; no client certificates) | Partial | interop tls: rsa-12-req (2026-11-08) |
 | Rejects a tampered flight | Supported | `std/internal/hsc.TestTamperedFlight` |
 <!-- confsync:end claims tls-client yes,partial -->
 
@@ -70,12 +71,6 @@ The TLS 1.3 (RFC 8446) server (`std/tls` — `tls.Serve`) and client (under http
 | OCSP stapling | 0.8 | — |
 | ALPN for HTTP/2 (h2) | 0.8 | — |
 <!-- confsync:end claims tls-server planned -->
-
-<!-- confsync:begin claims tls-client planned -->
-| Item | Planned | Evidence of today's behavior |
-|---|---|---|
-| HelloRetryRequest asking for another group (together with P-256 key exchange) | 0.8 | — |
-<!-- confsync:end claims tls-client planned -->
 
 ## Evidence
 
@@ -111,13 +106,14 @@ Sealing and opening records (AES-128-GCM / ChaCha20-Poly1305, padding, KeyUpdate
 ### Interop (client — peer = Go crypto/tls)
 
 <!-- confsync:begin interop-tls -->
-Last run: 2026-11-06 (tree 8314196f0ed4 (dirty) — scripts/tlsinterop.sh)
+Last run: 2026-11-08 (tree 858cb8e83ab2 (dirty) — scripts/tlsinterop.sh)
 
 | Go server | Negotiated version |
 |---|---|
 | p256 | TLS 1.3 |
 | p384 | TLS 1.3 |
 | rsa | TLS 1.3 |
+| p256-ecdhe | TLS 1.3 |
 | p256-12-gcm | TLS 1.2 |
 | p256-12-chacha | TLS 1.2 |
 | rsa-12-gcm | TLS 1.2 |

@@ -1,0 +1,151 @@
+package jsonw
+
+// json.Encode の速い道の部品（loader の合成テンプレート — compiler/loader/jsonshape.sober — だけが呼ぶ）。符号器は 2 段:
+// 型ごとの写しが書く量の上界を数え（文字列は長さ + 2 — 中身は走査しない）、Grow で 1 本確保し、位置 p から書いて次の位置を返す。
+// 定数の綴り（鍵・区切り・true / false）はテンプレートが 8 バイトの語に焼いて Word で書く（語の後ろの余りは次の書きが上書きする — 上界は末尾に 8 バイトの余白を持つ）。
+// エスケープの要る文字列・JSON に書けない float に当たると −1 を返し、根の口は builder の道（std/json の Put…）でやり直す（出力は同じ）
+
+import "std/convert"
+import "std/iter"
+
+// 書きが上界を越えた（テンプレートの上界の数えの誤り — 利用者の値では起きない）
+type Overflow panic {
+    at int
+    n int
+}
+
+// 語の書きの組み込み（検査なし — 境界は Word の 1 か所で見る）
+@intrinsic("bstore64")
+func sysStore64(b []byte, i int, v int) int
+
+// エスケープの要らない区間の長さ（std/json の sysClean と同じ組み込み）
+@intrinsic("jclean")
+func sysClean(b []byte) int
+
+// b の末尾に 0 を n 個（上界の確保 — 呼び手が空の列 `mut b := mut []byte{}` を渡す）
+func Grow(b mut []byte, n int) {
+    for j <- iter.Range(0, n) {
+        b = append(b, 0)
+    }
+}
+
+// b[p:p+8] に v の 8 バイト（little-endian — 最下位のバイトが先）を書く
+@effects(panic)
+func Word(b mut []byte, p int, v int) {
+    if p < 0 || p > len(b) - 8 {
+        overflow(p, len(b))
+    }
+    _ = sysStore64(b, p, v)
+}
+
+// b[p:p+16] に v0 v1（9〜16 バイトの定数 — 検査 1 回）
+@effects(panic)
+func Word2(b mut []byte, p int, v0 int, v1 int) {
+    if p < 0 || p > len(b) - 16 {
+        overflow(p, len(b))
+    }
+    _ = sysStore64(b, p, v0)
+    _ = sysStore64(b, p + 8, v1)
+}
+
+// b[p:p+24] に v0 v1 v2（17〜24 バイトの定数 — 検査 1 回）
+@effects(panic)
+func Word3(b mut []byte, p int, v0 int, v1 int, v2 int) {
+    if p < 0 || p > len(b) - 24 {
+        overflow(p, len(b))
+    }
+    _ = sysStore64(b, p, v0)
+    _ = sysStore64(b, p + 8, v1)
+    _ = sysStore64(b, p + 16, v2)
+}
+
+// n の 10 進の上界（Int が書くバイト数以上 — 10^8 未満の非負は語 1 本の 8・他は 20）
+@effects()
+func IntSize(n int) int {
+    return if n >= 0 && n < 100000000 { 8 } else { 20 }
+}
+
+func overflow(p int, n int) {
+    panic(Overflow{at: p, n: n})
+}
+
+// p から n の 10 進を書いて次の位置（上界 20 + 余白 8）
+@effects(panic)
+func Int(b mut []byte, p int, n int) int {
+    if n >= 0 && n < 100000000 {
+        // 下の桁から 2 桁ずつ 1 語に詰める（最上位の桁が最下位のバイト — std/json の PutInt と同じ詰め）
+        mut x := n
+        mut acc := 0
+        mut d := 0
+        while x >= 100 {
+            // x < 10^8 < 2^32 なので x / 100 = (x × ⌈2^37 / 100⌉) >> 37（積は 2^63 未満）
+            q := (x * 1374389535) >> 37
+            r := x - q * 100
+            t := (r * 103) >> 10
+            acc = (acc << 16) | ((48 + r - t * 10) << 8) | (48 + t)
+            x = q
+            d += 2
+        }
+        if x >= 10 {
+            t := (x * 103) >> 10
+            acc = (acc << 16) | ((48 + x - t * 10) << 8) | (48 + t)
+            d += 2
+        } else {
+            acc = (acc << 8) | (48 + x)
+            d += 1
+        }
+        Word(mut b, p, acc)
+        return p + d
+    }
+    return raw(mut b, p, bytes(convert.FormatInt(n)))
+}
+
+// p から引用符つきの s を書いて次の位置（上界 len + 2）。エスケープの要るバイトがあれば何も書かずに −1
+@effects(panic)
+func Str(b mut []byte, p int, s string) int {
+    sb := bytes(s)
+    n := len(sb)
+    if sysClean(sb) != n {
+        return 0 - 1
+    }
+    if p < 0 || p > len(b) - n - 2 {
+        overflow(p, len(b))
+    }
+    b[p] = '"'
+    g := p + 1
+    mut j := 0
+    while j < n {
+        b[g + j] = sb[j]
+        j += 1
+    }
+    b[g + n] = '"'
+    return g + n + 1
+}
+
+// p から f の最短の往復表現を書いて次の位置（上界 24）。NaN・±Inf は何も書かずに −1（根の口が builder の道でやり直し、そちらが json.NotFinite を投げる）
+@effects(panic)
+func Float(b mut []byte, p int, f float) int {
+    if f != f || f - f != 0.0 {
+        return 0 - 1
+    }
+    return raw(mut b, p, bytes(convert.FormatFloat(f)))
+}
+
+// p から xs をそのまま書いて次の位置
+func raw(b mut []byte, p int, xs []byte) int {
+    n := len(xs)
+    if p < 0 || p > len(b) - n {
+        overflow(p, len(b))
+    }
+    mut j := 0
+    while j < n {
+        b[p + j] = xs[j]
+        j += 1
+    }
+    return p + n
+}
+
+// 書いた b[0:p] の string（中身は JSON の綴り — 文字列の欄は string の値の写しなので UTF-8 の検査は要らない）
+func Finish(b []byte, p int) string {
+    return bytesToString(b[0:p])
+}

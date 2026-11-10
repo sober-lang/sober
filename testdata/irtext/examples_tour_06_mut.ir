@@ -1961,12 +1961,12 @@ b0:
   %16 = const 10
   call @rt.print_char(%16)
   %17 = const 0
-  %18 = slotaddr s2
-  %19 = const 0
-  store %18[0], %19
-  store %18[0], %17
+  %18 = const 0
+  %19 = slotaddr s2
+  store %19[0], %18
+  store %19[0], %17
   %20 = slotaddr s3
-  %21 = load.i64 %18[0]
+  %21 = load.i64 %19[0]
   store %20[0], %21
   %22 = const 1
   %23 = add %0, %22

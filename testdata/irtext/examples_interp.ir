@@ -1959,16 +1959,16 @@ b0:
   %12 = const 4
   %13 = const 0
   %14 = sub %13, %12
-  %15 = slotaddr s2
-  %16 = const 0
-  store %15[0], %16
-  store %15[1], %16
-  store %15[0], %11
-  store %15[1], %14
+  %15 = const 0
+  %16 = slotaddr s2
+  store %16[0], %15
+  store %16[1], %15
+  store %16[0], %11
+  store %16[1], %14
   %17 = slotaddr s3
-  %18 = load.i64 %15[0]
+  %18 = load.i64 %16[0]
   store %17[0], %18
-  %19 = load.i64 %15[1]
+  %19 = load.i64 %16[1]
   store %17[1], %19
   %20 = slotaddr s0
   %21 = load.i64 %7[0]

@@ -1,0 +1,22 @@
+package main
+
+// const の席の負例: 実行時に組んだ文字列は渡せない（補間・変数・関数の結果）。関数値としても取り出せない
+
+@const(q)
+func describe(q string) string {
+    return q
+}
+
+func pick(n int) string {
+    return if n > 0 { "a" } else { "b" }
+}
+
+func main() {
+    name := "item"
+    println(describe("select * from ${name}"))
+    println(describe(name))
+    println(describe(pick(1)))
+    println(describe("select " + name))
+    f := describe
+    println(f("x"))
+}

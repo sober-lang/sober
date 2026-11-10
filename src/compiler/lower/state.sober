@@ -170,6 +170,7 @@ type St struct {
     rtUpoll FnRef       // rt.uring_poll（同 — 提出と完了の取り込み）
     rtTcbFree FnRef
     rtMnPin FnRef
+    rtMnLlc FnRef
     rtSlotTake FnRef
     rtUnmap FnRef
     rtChanFree FnRef
@@ -182,6 +183,11 @@ type St struct {
     // std/testing/cell の置き場の表（lower/cell.sober — 0 = 無し）
     cellG int
     cellUse bool
+    domWait bool         // 入口の木が task.Await を名指す（domain.sober の待ちの列・手渡し — desugar.DomNamed の Await 版）
+    domAt int            // 展開中の利用者の task.Update / Read / Await の呼び出し点（毒の死の場所 — domain.sober・-1 = 無し）
+    domKeys []int        // Await の when の鍵の表（[ラムダの節, 型環境] の組 — 通し番号 = 組の添字 + 1・domWhenKey）
+    awaitMarks []int     // 関数ごとに task.Await に届くか（desugar.AwaitMarks — domWait のプログラムで最初の Spawn が引く・空 = まだ）
+    domUse bool          // 入口から task.NewDomain に届く（domain.sober — 本体で死んだ task の毒の道を task の終わりに組む）
     // 孤児の待ち（orphan.sober）: orphOn = 組む（std/task のプログラムで wait_fd を使う）・@rt.orphgen・rt.orph_*
     orphOn bool
     orphGenG int
@@ -288,6 +294,7 @@ type St struct {
     rtRecPut FnRef
     rtRecRehash FnRef
     rtErrReloc FnRef  // rt.err_relocate（組み込み error の境界コピー — cont.sober の needErrReloc・-1 = 無し）
+    rtErrAlloc FnRef  // rt.err_alloc（return 文の error ラベルのセルの確保 — errs.sober の needErrAlloc・-1 = 無し）
     rtJClean FnRef    // rt.jclean（JSON のエスケープの要らない区間の長さ — rt8.sober の needJClean・-1 = 無し）
     rtMapfind FnRef   // 最初に建てた map の引き（有無の印 — 族は mapFinds）
     mapFinds int      // map の引きの族の表（maprepr.sober — [数, 鍵, 関数…]・-1 = 無し）
@@ -312,6 +319,10 @@ type St struct {
     entryDepth int
     // 戻り値の写しの床（普通は入口の深度・std/task の子は scope の region の深度 — P3b-4 の境界コピー）
     retFloor int
+    // 次の error ラベルのリテラルが return 文の値（compositeIn が読んで戻す — セルを戻りの写し先に作る）
+    errRet bool
+    // rt.err_alloc の印を出すか（llight の走る経路 — 最適化のバックエンドの ELF だけ。IR / .ll のテキストと写しのバックエンドは rt.region_alloc のまま）
+    errMark bool
     // 宛先構築（loader/dest.sober の印）を使ってよい関数か — main は使わない（入口の深度 0 の region は確保の場所にならない）
     destOk bool
     // ラムダの本体の印（loader/dest.sober の 2 — そのラムダの値へ流れ着く節）を使ってよいか: 持ち上げたラムダの本体を下ろしている間だけ真
@@ -533,6 +544,7 @@ func initScalars(st mut St) {
     st.rtStreq = -1
     st.rtMatchLen = -1
     st.rtErrReloc = -1
+    st.rtErrAlloc = -1
     st.rtWinRalloc = -1
     st.rtWinStart = -1
     st.rtWinIs = -1
@@ -559,6 +571,7 @@ func initScalars(st mut St) {
     st.loop = -1
     st.entryDepth = -1
     st.retFloor = -1
+    st.errRet = false
     st.sret = -1
     st.types = -1
     st.strs = -1

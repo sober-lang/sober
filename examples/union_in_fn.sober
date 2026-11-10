@@ -1,0 +1,66 @@
+package main
+
+// region を持つ欄の variant がある union を、main 以外の関数の中で組む・slice に詰めて渡す・展開される関数（mut の仮引数）の中で読む
+
+import "std/iter"
+
+type V union {
+    A { v int }
+    B { s string }
+    C { xs []int }
+}
+
+type W struct {
+    v V
+    n int
+}
+
+func mk(k int) V {
+    return if k == 0 { A{v: 7} } else { B{s: "b${k}"} }
+}
+
+func mks() []V {
+    return []V{A{v: 1}, B{s: "x"}, C{xs: []int{1, 2}}}
+}
+
+func show(x V) string {
+    return switch x {
+    case A{v}: "A${v}"
+    case B{s}: "B${s}"
+    case C{xs}: "C${len(xs)}"
+    }
+}
+
+func count(xs []V) int {
+    return len(xs)
+}
+
+// mut の仮引数を持つ関数は呼び出し点ごとに展開される — 仮引数の slice の読み xs[i] は展開点の座標で
+func tally(n mut int, xs []V) string {
+    mut out := ""
+    mut i := 0
+    while i < len(xs) {
+        m := xs[i]
+        out = out + show(m) + " "
+        n += 1
+        i += 1
+    }
+    return out
+}
+
+func run() string {
+    mut n := 0
+    xs := []V{A{v: 1}, B{s: "y"}}
+    w := W{v: C{xs: []int{3}}, n: 1}
+    mut acc := mut []V{}
+    for k <- iter.Range(0, 3) {
+        acc = append(acc, mk(k))
+        acc = append(acc, A{v: k})
+    }
+    r := tally(mut n, xs) + tally(mut n, mks()) + tally(mut n, freeze(acc)) + show(w.v)
+    return "${r} n=${n} count=${count([]V{A{v: 2}})}"
+}
+
+func main() {
+    println(run())
+}

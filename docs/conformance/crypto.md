@@ -14,6 +14,7 @@ The public primitives in `std/crypto` and the implementations inside std (under 
 | AEAD: AES-128-GCM (AES-NI + PCLMULQDQ), ChaCha20-Poly1305 | Supported | wycheproof/aes-gcm = 316<br>wycheproof/chacha20-poly1305 = 325 |
 | Hashes, MAC, KDF: SHA-256, SHA-384 / 512 (internal to std), HMAC-SHA256, HKDF-SHA256 | Supported | wycheproof/hmac-sha256 = 174<br>wycheproof/hkdf-sha256 = 86<br>hashlib/sha512 = 14 |
 | Key exchange X25519 | Supported | wycheproof/x25519 = 518 |
+| Key exchange P-256 (ECDH, constant-time — TLS secp256r1) | Supported | wycheproof/ecdh_secp256r1 = 355 |
 | Signature verification ECDSA P-256 / P-384, RSA-PSS, RSA PKCS#1 v1.5 | Supported | cavp/ecdsa-sigver = 30<br>wycheproof/rsa-pss-2048-sha256-mgf1-32 = 108 |
 | Signing (RSA-PSS only — the TLS server's CertificateVerify) | Partial | `std/tls.TestTrace` |
 | Constant time for functions that touch secrets (static gate ctcheck — per-function conditional branches checked against a golden) | Supported | `testdata/ctcheck/expect.txt`: aesgcm |
@@ -35,7 +36,7 @@ The public primitives in `std/crypto` and the implementations inside std (under 
 | Item | Planned | Evidence of today's behavior |
 |---|---|---|
 | AES-256-GCM | 0.8 | — |
-| ECDSA signing (RFC 6979), P-256 ECDHE | 0.8 | — |
+| ECDSA signing (RFC 6979) | 0.8 | — |
 <!-- confsync:end claims crypto-prims planned -->
 
 ## Evidence — passing vectors
@@ -48,6 +49,7 @@ The public primitives in `std/crypto` and the implementations inside std (under 
 | HMAC-SHA256 | RFC 2104 | Wycheproof hmac_sha256_test.json | 174 |
 | HKDF-SHA256 | RFC 5869 | Wycheproof hkdf_sha256_test.json | 86 |
 | X25519 | RFC 7748 | Wycheproof x25519_test.json | 518 (rejects 31 all-zero shared secrets) |
+| ECDH P-256 | SP 800-56A | Wycheproof ecdh_secp256r1_ecpoint_test.json | 355 |
 | RSA-PSS 2048 (verify) | RFC 8017 | Wycheproof rsa_pss_2048_sha256_mgf1_32_test.json | 108 |
 | RSA-PSS 2048 (verify) | RFC 8017 | Wycheproof rsa_pss_2048_sha256_mgf1_0_test.json | 103 |
 | RSA-PSS 2048 (verify) | RFC 8017 | Go crypto/rsa (SHA-256/384/512) | 36 |

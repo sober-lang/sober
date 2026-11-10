@@ -1,0 +1,2 @@
+sober: load error at examples/domain_neg_capture.sober:17:13: the body of a domain call (and when:) captures only imm data — not a mut binding or mut contents, task.Scope, task.Handle, a channel endpoint or a function-typed parameter (the body may run on another task)
+exit=1

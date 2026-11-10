@@ -300,7 +300,8 @@ func efWalkFn(az mut Az, fi int) {
     pk := desugar.FnAt(mut az.d, fi).pkg
     key := desugar.ParKey(mut az.d, fi)
     if key != 0 {
-        efConst(mut az, fi, if key == desugar.PAR_SCOPE || key == desugar.PAR_JOIN || key == desugar.PAR_TRY || key == desugar.PAR_SEND || key == desugar.PAR_RECV { loader.EffBlock } else { 0 }, int(desugar.FnAt(mut az.d, fi).node))
+        // domain の入りは他の task の更新が見える（nondet）・作る / 出る / 到達しない腕は効果なし
+        efConst(mut az, fi, if key == desugar.PAR_DENTER { loader.EffNondet } else if key == desugar.PAR_SCOPE || key == desugar.PAR_JOIN || key == desugar.PAR_TRY || key == desugar.PAR_SEND || key == desugar.PAR_RECV { loader.EffBlock } else { 0 }, int(desugar.FnAt(mut az.d, fi).node))
         return
     }
     ck := desugar.CellKey(mut az.d, fi)
@@ -665,6 +666,22 @@ func efCall(az mut Az, e desugar.NodeRef, callee desugar.NodeRef, args desugar.L
         table.Push(mut az.ef.flam, -2)
         return
     }
+    // domain の本体と when:（Update / Read / Await — language.md 11 節「domain」）は domain を持ったまま走る: 効果なしと照合する（印 -3）。
+    // 本体の中で別の domain を呼ぶと nondet が出て落ちる — 持ったまま待つ形が書けない
+    dk := if g >= 0 && lhs == -1 { desugar.DomKey(mut az.d, g) } else { 0 }
+    if dk != 0 && desugar.LenL(mut az.d, args) == (if dk == 3 { 4 } else { 2 }) {
+        efExpr(mut az, nat(mut az, args, 0))
+        for i <- iter.Range(1, desugar.LenL(mut az.d, args)) {
+            a := nat(mut az, args, i)
+            if i < 3 && kind(mut az, a) == ast.ELambda {
+                table.Push(mut az.ef.flam, efLambda(mut az, a))
+                table.Push(mut az.ef.flam, -3)
+            } else {
+                efArg(mut az, a, g, i)
+            }
+        }
+        return
+    }
     // 実引数（pipe の左辺は穴の位置か先頭）
     n := desugar.LenL(mut az.d, args)
     mut hole := false
@@ -954,7 +971,7 @@ func efCheck(az mut Az) {
 
 // F の位置の値（節 id・置いた節 at）を F の契約と照合する
 func efFnCheck(az mut Az, id int, d int, at int) {
-    if d == -2 {
+    if d == -2 || d == -3 {
         miss := table.Get(mut az.ef.bits, id)
         if miss != 0 {
             report(mut az, MEffFnLeak, desugar.NodeRef(at), desugar.NodeRef(efViol(mut az, id, miss, 0, d)))
@@ -1092,6 +1109,9 @@ func efMessage(az mut Az, k int, at desugar.NodeRef, x int) string {
         d := table.Get(mut az.ef.viol, x * EV_W + 3)
         if d == -2 {
             return "the function given to cell.Update may have the effect ${efBitsStr(miss)} via ${via}: it runs holding the cell's lock, so it has no effects"
+        }
+        if d == -3 {
+            return "the body of a domain call (task.Update / task.Read / task.Await and its when:) may have the effect ${efBitsStr(miss)} via ${via}: it runs holding the domain, so it has no effects (no waiting, no io, no other domain, no explicit panic)"
         }
         return "this function value of type '${fnTyName(mut az, d)}' may have the effect ${efBitsStr(miss)} via ${via}, which the @effects of '${fnTyName(mut az, d)}' does not allow (allowed: ${efBitsStr(allow)})"
     }

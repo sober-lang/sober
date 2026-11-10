@@ -215,7 +215,7 @@ GET /nope -> 404
 ユーザーの表のように、要求をまたいで変わる状態を持ちたくなったら、置き場は 2 つに 1 つです。
 
 - 状態をプロセスの中に持つなら、受けを直列にする。接続を `for c <- net.Accept(l)` で 1 本ずつ受け、`ServeConn` に渡すラムダで `mut` の表を通します。`ServeConn` の `route` の仮引数は借り（呼び出しの間だけ使い、持ち出さない）なので、`mut` を捕まえたラムダを渡せます
-- 並行に受けるなら、状態は外の保存先（DB など）に置く。`net.Serve` の handler は接続ごとに別の task で同時に走るので、`mut` の値を捕まえられません。同じ表を 2 本の task が同時に書く形（データ競合）は、言語の約束として書けない形です。handler には変わらない値（設定・鍵）だけを渡し、変わる状態は外の保存先に問い合わせます
+- 並行に受けるなら、状態は domain か外の保存先（DB など）に置く。`net.Serve` の handler は接続ごとに別の task で同時に走るので、`mut` の値を捕まえられません。同じ表を 2 本の task が同時に書く形（データ競合）は、言語の約束として書けない形です。プロセスの中に持つなら、`net.Serve` を囲む `task.Run` の中で `task.NewDomain(s, 初期値)` を作って handler に捕まえさせ、`task.Update(d, (st mut T) => …)` で 1 つずつ当てます（domain の本体は待たず io もしない短い更新 — 数え口・小さな表・接続のプールの空き）。大きい表や永続させたい状態は外の保存先に問い合わせます
 
 7 節の題材（`examples/web_login.sober`）は前者の形です。`users` の表と鍵を `serve` が持ち、借りのラムダで `route` に通します。
 
@@ -927,6 +927,18 @@ func field(r http.server.Request, key string) string? {
 
 - `__Host-` の cookie は https が前提です。ブラウザは `Secure` の cookie を http の応答から受けないので、7 節の例（loopback の http）はブラウザでは試せません。例の客（`std/http/client`）は cookie を値として持ち、`http.client.CookieValue` で取り出して次の要求の `cookies:` に載せます（`send`）— クライアントが cookie を運ぶ正道の形で、https で公開したサーバ（9 節）にもそのまま使えます
 - `Request` の値は要求 1 件の間だけ生きます（1 節）。要求をまたぐ表に入れるなら写します
+
+- 待ってから返すなら、ハンドラの中で `os.Sleep` せずに `http.server.Delayed(ms, 応答)` を返します。送る時刻は同じですが、待つ間ハンドラの積みと要求の region を持たないので、待つ接続が多いときの常駐が keep-alive の接続と同じに収まります。待つのはその応答の頭の直前で、同じ接続の前の応答は先に出ます
+
+```sober
+// examples/http_delayed.sober（抜粋）
+func route(r http.server.Request) http.server.Response {
+    if r.path == "/slow" {
+        return http.server.Delayed(20, http.server.Text("slow\n"))
+    }
+    return http.server.Text("hello\n")
+}
+```
 
 ## 9. TLS で公開する — `tls.Serve`
 

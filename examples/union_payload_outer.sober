@@ -1,0 +1,35 @@
+package main
+
+// 外から来た値を関数の中で組む値に入れる形: 仮引数の string を持つ variant を union の slice に積む・外の package の const を
+// 省略可の仮引数へ渡す（どちらも check と build で同じに受理される）
+
+import "std/http"
+
+type Field union {
+    Num { v int }
+    Text { s string }
+}
+
+func describe(fs []Field) {
+    for f <- fs {
+        switch f {
+        case Num{v}: println("num ${v}")
+        case Text{s}: println("text ${s}")
+        }
+    }
+}
+
+func row(name string, n int) {
+    describe([]Field{Num{v: n}, Text{s: name}})
+}
+
+func status(code http.StatusCode?) int {
+    return if code == nil { 0 } else { int(code) }
+}
+
+func main() {
+    row("apple", 3)
+    println("${status(code: http.NotFound)} ${status()}")
+    c := http.OK
+    println("${status(code: c)}")
+}

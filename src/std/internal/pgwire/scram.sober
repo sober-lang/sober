@@ -1,0 +1,177 @@
+package pgwire
+
+// SCRAM-SHA-256 / SCRAM-SHA-256-PLUS（RFC 5802・RFC 7677・束縛は tls-server-end-point — RFC 5929 4.1）のクライアントの側（純粋 — 送るメッセージを返すだけ）。
+// 方式の選び方: TLS の接続で PLUS をサーバが出せば PLUS・出さなければ失敗（allowNoBinding のときだけ束縛なしの SCRAM-SHA-256 を gs2 `y,,` で —
+// 「クライアントは束縛できるがサーバが出さなかった」の印で、中間者が PLUS を消した場合はサーバの側で検出できる）・平文の接続は SCRAM-SHA-256（gs2 `n,,`）。
+// SCRAM 以外（平文のパスワード・MD5）は受けない。password は SASLprep を掛けずにそのまま使う（ASCII なら同じ・NFKC で変わる文字を含む password は
+// サーバの保存の形と合わないことがある）
+
+import "std/base64"
+import "std/convert"
+import "std/crypto"
+import "std/crypto/hmac"
+import "std/crypto/sha256"
+import "std/internal/bless"
+import "std/internal/pbkdf2"
+import "std/strings"
+
+// 受けられる認証の方式が無い（サーバが SCRAM を出さない・TLS なのに PLUS を出さない・平文のパスワードや MD5 を求めた）
+type NoMechanism error
+
+// サーバの SCRAM のメッセージが規則に合わない（nonce の頭が違う・salt / iterations が読めない・知らない必須の属性・
+// iterations が上限を超える・サーバの署名が合わない — 偽のサーバか中間者）
+type BadServer error
+
+// サーバが SCRAM の最後に誤りを返した（server-final の e= — 値は RFC 5802 7 の名前）
+type ServerRejected error {
+    reason string
+}
+
+const mechPlus = "SCRAM-SHA-256-PLUS"
+const mechPlain = "SCRAM-SHA-256"
+
+// iterations の上限（サーバが巨大な値で PBKDF2 を回させる — クライアントの CPU を使い潰す — のを断る。PostgreSQL の既定は 4096）
+const maxIterations = 1048576
+
+// 1 回の SCRAM の交換の状態（段 0 = server-first 待ち・1 = server-final 待ち・2 = 済み）
+type Scram struct {
+    stage int
+    mech string
+    bare string
+    cnonce string
+    cbindMsg string
+    password []byte @secret
+    am string
+    serverSig []byte
+}
+
+// mechs = AuthenticationSASL の方式・tls = TLS の接続か・endPoint = 相手の証明書の束縛の値（TLS のとき）・user = n= の名前（PostgreSQL は
+// スタートアップの user を使い n= を読まない — 空でよい）・nonce = client nonce の素（乱数 18 バイト以上 — base64 で印字可能にする）。
+// 状態と SASLInitialResponse のメッセージ（tag と長さ込み）
+@secret(password)
+@errors(NoMechanism)
+@effects()
+func ScramStart(mechs []string, tls bool, endPoint []byte, allowNoBinding bool, user string, password string, nonce []byte) (Scram, []byte, error?) {
+    hasPlus := has(mechs, mechPlus)
+    hasPlain := has(mechs, mechPlain)
+    mut mech := ""
+    mut gs2 := ""
+    mut cb := []byte{}
+    if tls && hasPlus {
+        mech = mechPlus
+        gs2 = "p=tls-server-end-point,,"
+        cb = cat(bytes(gs2), endPoint)
+    } else if tls && hasPlain && allowNoBinding {
+        mech = mechPlain
+        gs2 = "y,,"
+        cb = bytes(gs2)
+    } else if !tls && hasPlain {
+        mech = mechPlain
+        gs2 = "n,,"
+        cb = bytes(gs2)
+    } else {
+        return NoScram(), []byte{}, NoMechanism{}
+    }
+    cnonce := base64.Encode(nonce)
+    bare := "n=${saslName(user)},r=${cnonce}"
+    s := Scram{stage: 0, mech: mech, bare: bare, cnonce: cnonce, cbindMsg: base64.Encode(cb), password: bytes(password), am: "", serverSig: []byte{}}
+    return s, EncSaslInitial(mech, bytes("${gs2}${bare}")), nil
+}
+
+// 選んだ方式の名前
+func ScramMech(s Scram) string {
+    return s.mech
+}
+
+// AuthenticationSASLContinue（server-first）を受けて SASLResponse（client-final — tag と長さ込み）
+@errors(BadServer)
+@effects()
+func ScramContinue(s mut Scram, data []byte) ([]byte, error?) {
+    if s.stage != 0 {
+        return []byte{}, BadServer{}
+    }
+    sfirst, ue := string(data)
+    if ue != nil {
+        return []byte{}, BadServer{}
+    }
+    parts := strings.Split(sfirst, ",")
+    // r= s= i= の順（先頭の m= は知らない必須の拡張 — RFC 5802 5.1）。後ろの拡張は読み捨てる
+    if len(parts) < 3 || !strings.HasPrefix(parts[0], "r=") || !strings.HasPrefix(parts[1], "s=") || !strings.HasPrefix(parts[2], "i=") {
+        return []byte{}, BadServer{}
+    }
+    nonce := strings.TrimPrefix(parts[0], "r=")
+    if !strings.HasPrefix(nonce, s.cnonce) || len(bytes(nonce)) <= len(bytes(s.cnonce)) || strings.Contains(nonce, ",") {
+        return []byte{}, BadServer{}
+    }
+    salt, se := base64.Decode(strings.TrimPrefix(parts[1], "s="))
+    iters, ie := convert.ParseInt(strings.TrimPrefix(parts[2], "i="))
+    if se != nil || ie != nil || len(salt) == 0 || iters < 1 || iters > maxIterations {
+        return []byte{}, BadServer{}
+    }
+    noProof := "c=${s.cbindMsg},r=${nonce}"
+    am := "${s.bare},${sfirst},${noProof}"
+    sp := internal.pbkdf2.Key(s.password, salt, iters, 32)
+    ck := crypto.hmac.Sum256(sp, bytes("Client Key"))
+    sk := crypto.sha256.Sum256(ck)
+    // proof は ClientKey を ClientSignature で隠した値で、送るために作る（RFC 5802 の設計どおり公開）・期待するサーバの署名も照合の相手として公開
+    proof := internal.bless.Bytes(xorBytes(ck, crypto.hmac.Sum256(sk, bytes(am))))
+    s.serverSig = internal.bless.Bytes(crypto.hmac.Sum256(crypto.hmac.Sum256(sp, bytes("Server Key")), bytes(am)))
+    s.am = am
+    s.password = []byte{}
+    s.stage = 1
+    return EncSaslResponse(bytes("${noProof},p=${base64.Encode(proof)}")), nil
+}
+
+// AuthenticationSASLFinal（server-final）を照合する（v= がサーバの署名と合えば nil）
+@errors(BadServer, ServerRejected)
+@effects()
+func ScramFinal(s mut Scram, data []byte) error? {
+    if s.stage != 1 {
+        return BadServer{}
+    }
+    sfinal, ue := string(data)
+    if ue != nil {
+        return BadServer{}
+    }
+    first := strings.Split(sfinal, ",")[0]
+    if strings.HasPrefix(first, "e=") {
+        return ServerRejected{reason: strings.TrimPrefix(first, "e=")}
+    }
+    if !strings.HasPrefix(first, "v=") {
+        return BadServer{}
+    }
+    v, ve := base64.Decode(strings.TrimPrefix(first, "v="))
+    if ve != nil || !crypto.Equal(v, s.serverSig) {
+        return BadServer{}
+    }
+    s.stage = 2
+    return nil
+}
+
+func NoScram() Scram {
+    return Scram{stage: 2, mech: "", bare: "", cnonce: "", cbindMsg: "", password: []byte{}, am: "", serverSig: []byte{}}
+}
+
+func has(xs []string, x string) bool {
+    for y <- xs {
+        if y == x {
+            return true
+        }
+    }
+    return false
+}
+
+// saslname（RFC 5802 5.1 — `=` は =3D・`,` は =2C）
+func saslName(u string) string {
+    return strings.Replace(strings.Replace(u, "=", "=3D", -1), ",", "=2C", -1)
+}
+
+func xorBytes(a []byte, b []byte) []byte {
+    mut o := mut []byte{}
+    mut i := 0
+    while i < len(a) {
+        o = append(o, byte(int(a[i]) ^ int(b[i])))
+        i += 1
+    }
+    return freeze(o)
+}

@@ -493,6 +493,23 @@ func ParReach(st mut S) bool {
     return false
 }
 
+// task の関数 name（NewDomain / Await）を名指す節があるか（std/task の外の `X.name` — lower の domain の rt: 本体で死んだ task の毒の道。
+// 保守的〔届かない関数の中の名指しでも真〕— 参照の辺を全部辿る形は domain を使わないプログラムで全域を歩き、自己 build で +0.9 G だった）
+func DomNamed(st mut S, name string) bool {
+    for f <- iter.Range(0, st.nfile) {
+        if strIs(mut st, PkgPath(mut st, FilePkg(mut st, f)), "std/task") {
+            continue
+        }
+        t := st.trees[f]
+        for n <- iter.Range(0, len(t.nodes)) {
+            if t.nodes[n].kind == ast.ESelector && strIs(mut st, sB(treeNode(f, t.nodes, n, st.descs, st.utf8)), name) {
+                return true
+            }
+        }
+    }
+    return false
+}
+
 // main と const の初期化式から参照の辺で届く関数の印（ParReach の閉包そのもの — lower の並列分割の計画: lower/split.sober が群の受け持ちを決める。
 // 出力には効かない — 漏れは見つけた子が下ろし、余分は親の模擬が取り出さない）
 func PlanMarks(st mut S) []int {
@@ -526,4 +543,71 @@ func PlanMarks(st mut S) []int {
         }
     }
     return freeze(mark)
+}
+
+// 関数ごとに task.Await に届くかの印（1 = 届く — 参照の辺の逆向きの不動点・保守的）。lower: Await に届く Spawn の子は縮退しない
+// （縮退した子が待てるのは子孫だけ、の約束を domain の待ちで崩さない — language.md 11 節「予算と admission」）
+func AwaitMarks(st mut S) []int {
+    g := refGraph(mut st)
+    mut m := mut []int{}
+    for i <- iter.Range(0, st.nfn) {
+        m = append(m, if DomKey(mut st, i) == 3 { 1 } else { 0 })
+    }
+    mut ch := true
+    while ch {
+        ch = false
+        for f <- iter.Range(0, st.nfn) {
+            if m[f] == 0 {
+                mut e := g.head[f + 1]
+                while e < g.head[f + 2] && m[f] == 0 {
+                    if m[g.adj[e]] == 1 {
+                        m[f] = 1
+                        ch = true
+                    }
+                    e += 1
+                }
+            }
+        }
+    }
+    return freeze(m)
+}
+
+// 節 n（Spawn のラムダ）の中の呼び出しが Await に届くか（marks = AwaitMarks。関数値の呼び出しは届く側に数える — 保守的）
+func LamReachesAwait(st mut S, n NodeRef, marks []int) bool {
+    if n == -1 {
+        return false
+    }
+    x := nodeOf(mut st, n)
+    if x.kind == ast.ECall {
+        cal := if kindN(mut st, nA(x)) == ast.EIndex { nA(nodeOf(mut st, nA(x))) } else { nA(x) }
+        pk := st.curPkg
+        st.curPkg = FilePkg(mut st, fileOf(mut st, n))
+        fk := findFn(mut st, cal, -1)
+        st.curPkg = pk
+        if fk >= 0 && marks[fk] == 1 {
+            return true
+        }
+        y := YTypeOf(mut st, cal)
+        if fk < 0 && y >= 0 && yk(mut st, y) == YFn {
+            return true
+        }
+    }
+    c := pcDesc(mut st, x)
+    for j <- iter.Range(0, 6) {
+        d := c / pow8(j) % 8
+        v := pcField(x, j)
+        if d == 1 && v != -1 {
+            if LamReachesAwait(mut st, NodeRef(v), marks) {
+                return true
+            }
+        } else if d == 3 && v != -1 {
+            l := ListRef(v)
+            for i <- iter.Range(0, lenL(mut st, l)) {
+                if LamReachesAwait(mut st, latN(mut st, l, i), marks) {
+                    return true
+                }
+            }
+        }
+    }
+    return false
 }

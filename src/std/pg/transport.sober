@@ -1,0 +1,354 @@
+package pg
+
+// 接続の状態の置き場（lease の int の列 — 値の外）: TLS の鍵と番号・record と平文の持ち越し・statement キャッシュ・旗。
+// 値に置くと Conn の写しが鍵と番号を複製する（nonce の再利用 — std/http/client の link.sober と同じ理由）。
+// 1 回の往復の中の受けは呼び出しの局所（rx）に積み、往復の終わりに余りを置き場へ返す
+
+import "std/internal/hsc"
+import "std/internal/pgwire"
+import "std/internal/record"
+import "std/internal/sock"
+import "std/internal/x509"
+import "std/io"
+import "std/iter"
+import "std/task"
+import "std/time"
+
+// 置き場の形: [旗, 平文の持ち越しの長さ, record の持ち越しの長さ, 次の文の番号, キャッシュの数, キャッシュの語の使用量, 往復の期限〔単調時計の ns — 0 = 無し〕,
+// Tx の入れ子の深さ, 最後の ReadyForQuery の状態〔'I' / 'T' / 'E'〕,
+// 接続の状態 × ConnW, record の持ち越し × recW, 平文の持ち越し × appW, キャッシュの表 × cacheN × eW, キャッシュの語 × cacheWords]
+const lFlags = 0
+const lAppLen = 1
+const lRecLen = 2
+const lNext = 3
+const lCacheN = 4
+const lCacheUsed = 5
+const lDeadline = 6
+const lTxDepth = 7
+const lTxStatus = 8
+const lConn = 9
+const recCap = 16384 + 512
+const recW = (recCap + 7) / 8
+const lRec = lConn + internal.hsc.ConnW
+const appCap = 16384
+const appW = (appCap + 7) / 8
+const lApp = lRec + recW
+const cacheN = 256
+const eW = 4
+const lTab = lApp + appW
+const cacheWords = 16384
+const lWords = lTab + cacheN * eW
+const linkW = lWords + cacheWords
+
+// 旗のビット
+const bDead = 1   // 接続はもう使えない（相手が閉じた・期限切れ・壊れた応答）
+const bTls = 2    // TLS の上
+const bBusy = 4   // 往復の途中（Query の k の中から同じ Conn を使う入れ子の検出）
+
+func newLink() []int {
+    mut b := mut []int{}
+    for _ <- iter.Range(0, linkW) {
+        b = append(b, 0)
+    }
+    return freeze(b)
+}
+
+func getW(blk []int, off int) int {
+    return leaseOp(4, blk, off, 0)
+}
+
+func setW(blk []int, off int, v int) {
+    _ = leaseOp(5, blk, off, v)
+}
+
+func flagsOf(blk []int) int {
+    return getW(blk, lFlags)
+}
+
+func setFlag(blk []int, bit int) {
+    setW(blk, lFlags, flagsOf(blk) | bit)
+}
+
+func clearFlag(blk []int, bit int) {
+    setW(blk, lFlags, flagsOf(blk) & (-1 ^ bit))
+}
+
+func dead(blk []int) bool {
+    return (flagsOf(blk) & bDead) != 0
+}
+
+// 1 回の往復の受け（平文の列と読んだ位置）
+type rx struct {
+    app []byte
+    at int
+}
+
+// 置き場の平文の持ち越しを局所へ
+func rxOpen(blk []int) rx {
+    n := getW(blk, lAppLen)
+    setW(blk, lAppLen, 0)
+    return rx{app: getBytes(blk, lApp, n), at: 0}
+}
+
+// 局所の読み残しを置き場へ（入らなければ接続を捨てる）
+func rxClose(blk []int, r rx) {
+    rest := tailOf(r.app, r.at)
+    if len(rest) > appCap {
+        setFlag(blk, bDead)
+        return
+    }
+    setW(blk, lAppLen, len(rest))
+    putBytes(blk, lApp, rest)
+}
+
+// メッセージを送る（TLS なら record に封じて）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert)
+@effects(block, io, panic, nondet)
+func sendMsg(conn int, blk []int, b []byte) error? {
+    if (flagsOf(blk) & bTls) == 0 {
+        return internal.sock.Send(conn, b)
+    }
+    mut ch := internal.hsc.UnpackConn(view(blk, lConn, internal.hsc.ConnW), 0)
+    rec := internal.hsc.ClientSeal(mut ch, b)?
+    putConn(blk, ch)
+    return internal.sock.Send(conn, rec)
+}
+
+// 次のメッセージ（tag と本文）。max = 本文の上限（超えれば Protocol 相当の印 — tag 0 と false）・相手が閉じたら io.Closed
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed, internal.pgwire.Protocol)
+@effects(block, io, panic, nondet)
+func nextMsg(conn int, blk []int, cp internal.hsc.CParams, r mut rx, max int) (byte, []byte, error?) {
+    while true {
+        n := internal.pgwire.FrameLen(r.app, r.at, max + 4)
+        if n < 0 {
+            return 0, []byte{}, internal.pgwire.Protocol{}
+        }
+        if n > 0 {
+            a := r.app
+            t := a[r.at]
+            body := sliceOf(a, r.at + 5, r.at + n)
+            r.at += n
+            if r.at == len(a) {
+                r.app = []byte{}
+                r.at = 0
+            }
+            return t, body, nil
+        }
+        more, eof := pullBy(conn, blk, cp)?
+        if eof && len(more) == 0 {
+            return 0, []byte{}, io.Closed{}
+        }
+        r.app = catBytes(tailOf(r.app, r.at), more)
+        r.at = 0
+    }
+    return 0, []byte{}, io.Closed{}
+}
+
+// pull を往復の期限の残りで包む（期限が無ければそのまま — Open の握手は呼び手の task.Run が包む）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed)
+@effects(block, io, panic, nondet)
+func pullBy(conn int, blk []int, cp internal.hsc.CParams) ([]byte, bool, error?) {
+    dl := getW(blk, lDeadline)
+    if dl == 0 {
+        return pull(conn, blk, cp)
+    }
+    rem := dl - monoNs()
+    if rem <= 0 {
+        return []byte{}, false, io.Expired{}
+    }
+    mut got := []byte{}
+    mut eof := false
+    mut err := noErr()
+    _, re := task.Run((sc) => {
+        g, f, e := pull(conn, blk, cp)
+        got = g
+        eof = f
+        err = e
+        0
+    }, deadline: rem)
+    if re != nil {
+        return []byte{}, false, io.Expired{}
+    }
+    return got, eof, err
+}
+
+// 単調時計の今（ns）
+@effects(io, nondet)
+func monoNs() int {
+    return time.Elapsed(time.Instant{ns: 0}, time.Mono())
+}
+
+// 下から来た次の平文（TLS なら揃った record を開いて — 空のこともある）と、相手が閉じたか
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed)
+@effects(block, io, panic, nondet)
+func pull(conn int, blk []int, cp internal.hsc.CParams) ([]byte, bool, error?) {
+    raw, eof := rawPoll(conn)?
+    if (flagsOf(blk) & bTls) == 0 {
+        return raw, eof, nil
+    }
+    b := catBytes(getBytes(blk, lRec, getW(blk, lRecLen)), raw)
+    mut ch := internal.hsc.UnpackConn(view(blk, lConn, internal.hsc.ConnW), 0)
+    mut out := mut []byte{}
+    mut closed := eof
+    mut at := 0
+    while !closed && recordAt(b, at) > 0 {
+        n := recordAt(b, at)
+        o := internal.hsc.FeedClient(mut ch, cp, internal.record.At(b, at, n))?
+        at += n
+        for x <- o.app {
+            out = append(out, x)
+        }
+        closed = closed || o.closed
+        if len(o.send) > 0 {
+            internal.sock.Send(conn, o.send)?
+        }
+    }
+    putConn(blk, ch)
+    rest := tailOf(b, at)
+    if len(rest) > recCap {
+        return freeze(out), true, io.Closed{}
+    }
+    setW(blk, lRecLen, len(rest))
+    putBytes(blk, lRec, rest)
+    return freeze(out), closed, nil
+}
+
+// 素の接続の次の切片（相手が閉じたら空と true）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
+func rawPoll(conn int) ([]byte, bool, error?) {
+    return internal.sock.Poll(conn)
+}
+
+// TLS の握手（SSLRequest に 'S' が返った後 — 済んだら旗を立てて相手の証明書の tls-server-end-point を返す）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed)
+@effects(block, io, panic, nondet)
+func handshake(conn int, blk []int, cp internal.hsc.CParams) ([]byte, error?) {
+    h0, first := internal.hsc.StartClient(cp)
+    mut ch := h0
+    internal.sock.Send(conn, first)?
+    mut buf := mut []byte{}
+    while !internal.hsc.ClientConnected(ch) {
+        in, eof := rawPoll(conn)?
+        for x <- in {
+            buf = append(buf, x)
+        }
+        fb := freeze(buf)
+        mut at := 0
+        while !internal.hsc.ClientConnected(ch) && recordAt(fb, at) > 0 {
+            n := recordAt(fb, at)
+            o := internal.hsc.FeedClient(mut ch, cp, internal.record.At(fb, at, n))?
+            if len(o.send) > 0 {
+                internal.sock.Send(conn, o.send)?
+            }
+            if o.closed {
+                return []byte{}, internal.record.Alert{desc: o.peer}
+            }
+            at += n
+        }
+        buf = mut []byte{}
+        for i <- iter.Range(at, len(fb)) {
+            buf = append(buf, fb[i])
+        }
+        if eof && !internal.hsc.ClientConnected(ch) {
+            return []byte{}, io.Closed{}
+        }
+    }
+    ep := internal.x509.EndPoint(internal.hsc.ClientLeaf(ch))
+    putConn(blk, ch)
+    rest := freeze(buf)
+    setW(blk, lRecLen, len(rest))
+    putBytes(blk, lRec, rest)
+    setFlag(blk, bTls)
+    return ep, nil
+}
+
+// TLS なら close_notify を送る
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert)
+@effects(block, io, panic, nondet)
+func closeTls(conn int, blk []int) error? {
+    if (flagsOf(blk) & bTls) == 0 {
+        return nil
+    }
+    mut ch := internal.hsc.UnpackConn(view(blk, lConn, internal.hsc.ConnW), 0)
+    rec := internal.hsc.ClientAlert(mut ch, 0)
+    putConn(blk, ch)
+    return internal.sock.Send(conn, rec)
+}
+
+// b[at:] に揃った record があればその長さ（無ければ 0）
+func recordAt(b []byte, at int) int {
+    if len(b) - at < internal.record.HeadSize {
+        return 0
+    }
+    n := internal.record.HeadSize + (int(b[at + 3]) << 8 | int(b[at + 4]))
+    return if len(b) - at >= n { n } else { 0 }
+}
+
+func catBytes(a []byte, b []byte) []byte {
+    mut o := mut []byte{}
+    for x <- a {
+        o = append(o, x)
+    }
+    for x <- b {
+        o = append(o, x)
+    }
+    return freeze(o)
+}
+
+func tailOf(b []byte, at int) []byte {
+    return sliceOf(b, at, len(b))
+}
+
+func sliceOf(b []byte, lo int, hi int) []byte {
+    mut o := mut []byte{}
+    for i <- iter.Range(lo, hi) {
+        o = append(o, b[i])
+    }
+    return freeze(o)
+}
+
+// 置き場の語 off からの n バイト（8 バイト / 語）
+func getBytes(blk []int, off int, n int) []byte {
+    mut o := mut []byte{}
+    mut i := 0
+    while i < n {
+        w := getW(blk, off + i / 8)
+        o = append(o, byte((w >> ((i % 8) * 8)) & 0xff))
+        i += 1
+    }
+    return freeze(o)
+}
+
+func putBytes(blk []int, off int, b []byte) {
+    mut i := 0
+    while i < len(b) {
+        mut v := 0
+        mut j := 0
+        while j < 8 && i + j < len(b) {
+            v = v | (int(b[i + j]) << (j * 8))
+            j += 1
+        }
+        setW(blk, off + i / 8, v)
+        i += 8
+    }
+}
+
+func putConn(blk []int, ch internal.hsc.Ch) {
+    w := internal.hsc.PackConn(ch)
+    v := leaseView(blk, lConn, internal.hsc.ConnW)
+    for i <- iter.Range(0, internal.hsc.ConnW) {
+        v[i] = w[i]
+    }
+}
+
+func view(blk []int, off int, n int) []int {
+    return freeze(leaseView(blk, off, n))
+}
+
+// leaseOp / leaseView は rt の口（std/tls・std/http/client と同じ鍵 — op 4 = 生の読み・5 = 生の書き）
+@intrinsic("lease_op")
+func leaseOp(op int, blk []int, off int, v int) int
+
+@intrinsic("lease_view")
+func leaseView(blk []int, off int, n int) mut []int

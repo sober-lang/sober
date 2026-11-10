@@ -945,7 +945,7 @@ fib / multi / slice / map の check が脱糖器変更ゼロで通る（本体�
   call fn e : ret.shiftR d`（conclusion は d + 1 の alloc 同型）。
   `b ≤ d` は証明が要求した追加の裁定 — 戻りの relocate が呼び手フレーム
   （region d）に書くため、共有 region の直上では呼べない（タスクは block を開いてから）
-- DefsOk': paramOk（regionsBelow 1 ∧ mutFree ∧ chanFree）・retOk（最上段 imm
+- DefsOk': paramOk（regionsBelow 1 ∧ mutFree ∧ chanFree — 2026-11-10 以降の chanFree は argFree〔domain を通す〕）・retOk（最上段 imm
   コンテナは自フレーム可・中身は呼び手空間・mut / chan 不可）・noNewchan・
   本体は f = b = 1, d = 2 で一度型付け
 - f / b の引き下げが非対称（発見）: 本体はシフトで b = f = フレームの世界に立つが、
@@ -1561,6 +1561,35 @@ S（関数型の中を通る再帰）と D（slice / map の要素の位置を�
   棄てた案 = 1 束縛の μ を残して組と併存（μ の形が 4 種残り、今後の Ty 関数ごとに 4 腕・脱糖器も n = 1 とそれ以外で出し分け）/
   1 束縛の μ だけで相互再帰を符号化（帰還頂点集合 ≥ 2 の SCC — 例 A { as []A; bs []B } / B { bs []B; as []A } — で宣言の型が展開の文脈で別の項になり正準形が無い — report-rec-7）
 - 照合: 実装のネイティブの表現と、値ごとに自己完結の表へ書き換えた模型（language.md 1 節の棄てた案 A1 — 今の言語で書ける）の出力を差分で照合する
+
+### domain の段（2026-11-08 — コアと Lean。裁定は language.md 11 節「domain」）
+
+K（ChanSt）に domain の表（項目 = 状態の梱包・持ち手・入り終えた数・状態の型）と、入る task の列（オラクル — 鍵ごと。走りの入力で、機械は読むだけ）を足し、
+式に `dnew r i t`（家の region r に初期値 i を梱包して作る）・`denter t d`（入る — 状態を今の最内の region へ写して受ける）・`dexit d v`（出る — 新しい状態を梱包して差し替える）・
+実行時の値 `domV p k r` を足した。鍵は端点と同じ形（作った task の id + 局所の通し番号 — 端点と数えを共有）。
+
+- 機械: 入るのは「空き ∧ オラクルの次の番 = 自分」のときだけ・出るのは持ち手だけ（持ち手でなければ定義された panic）・まだ作られていない domain への入り / 出は待ち
+  （失敗にすると作る前後で結果が割れる — 作る前の鍵を他の task が知る道は無いので、型付きのプログラムでは通らない）。task の外では 3 つとも panic（端点と同じ）
+- Kahn（`kahn_schedule` は言明の形のまま）: Op に dnew / denter / dexit・1 鍵の小操作 DMini（domain の欄だけを読み書き）。端点の操作とは別の欄なので常に可換、
+  同じ鍵の違う行為者は両方が状態を変えて進むことがない（入るは持ち手の空きとオラクルの番が 1 本に決め、作るのは鍵の持ち主だけ）— 場合分けは `dmini_f_comm` の全数。
+  オラクルは K の初期値（入力）なので、定理は「どのオラクルを固定しても、どのスケジュールでも同じ結果」になる
+- 型（Typing）: `Ty.dom r s`（r = 家の region — 端点と同じく regionsBelow は r < d）。dnewE（b ≤ r < d・初期値は状態の型と payOk）・domVT（r < d・状態の型は共有の表 Ξ.dom）・
+  denterE（結果は s を今の最内へ写した型・b < d — 受ける最内が自分の世界）・dexitE（新しい状態は payOk）。givable に domain の行（家 ≤ scope の region・
+  共有して渡す — 持ち主の札は無い）。ChanOk に表の対応と状態の梱包の型付き（domdom / domtyped）・StateTy.fam の子の世界は dom の表を共有
+- 進行: 入れない形・まだ無い domain から出る形を Blocked に足した（famDen / famDex）。本体で死んだ持ち手は domain を握ったまま panic の葉になり、他の task は待つ
+  （コアの Blocked — 実装はこれを毒 → 死に解く。デッドロックをエラーに変える方向だけの精密化）
+- 白リストの 2 行目（`dom r s` は mutFree）: 「Sharable の断片」は「Pool の可変スロットのために白リストを足したくなったら穴の信号」とした。警告の対象は、可変スロットへの参照を共有し、
+  正しさを型の外の動的検査に頼る形だった。domain は (a) 状態への mut が本体の中にしか現れず、外へは写した値しか出ない (b) 状態の更新が機械の 1 歩（denter … dexit の間は
+  持ち手が排他）として体系の中に入る — 型の外に逃がす部分がない。1 行目の `chan rc t` は旧 MPMC チャネル（task の中では凍結）なので、task の木の中で生きる共有の型は domain が最初
+- 照合: Examples.lean（オラクル 2 通り × スケジュール 2 通りで結果がオラクルだけに依る・番でない task の Blocked・出ないまま終わった持ち手・本体で死んだ持ち手・
+  持ち手でない出口の panic・型の拒否）・corevec（Gen の task の腕に domain の形・chaos と近傍変異 — 被覆の除外を解除）・corevec_par の手書き 7 本
+- 関数の実引数（2026-11-10 — language.md 11 節「d の値」の改訂）: domVT の家の region を imm の参照（loc）と同じ上界にした（値 `domV p k r` は r ≤ rt の `dom rt s` に型が付く）・
+  Ty.sub に dom の腕（r ≤ r' かつ状態の型は等しい）・paramOk の chanFree を argFree（chanFree のうち dom だけ通す — 状態は chanFree）に。retOk は dom を拒否したまま。
+  Def の本体は Ξ = ∅ の世界で型付くが、domain の値は仮引数の変数としてしか本体に現れず、呼び出しの後の置換は呼び手の Ξ で型が付く（loc と同じ道）。
+  追従したのは domVT の逆転の補題（canonical_dom が r0 ≤ r を返す）・sub の逆転（sub_dom_inv が上界を返す）・sub の保存の族（shiftR / renR / tsubst / clampR / relocR）・relocW_ok の dom の葉。
+  照合 = corevec_par の pos_dom_arg（同じ深さ）/ pos_dom_arg_inner（1 段深い呼び出し — sub の上界の腕）/ neg_dom_ret（retOk）/ neg_dom_arg_chanstate（argFree）
+- 棄てた案: 型の rc を chan と同じ「region の数」で持つ（region の写像 rmap の 0 の境で家の region の対応が崩れ、givable が写像で保てない）・
+  オラクルを項目に写して先頭を消費する形（作る操作がオラクルの表を読むことになり、1 鍵の小操作の可換性の場合分けが表をまたぐ — 入り終えた数で引く形にした）
 
 ## 借りるもの
 

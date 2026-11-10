@@ -2,7 +2,8 @@ package hsc
 
 // TLS 1.3 のクライアントの handshake（RFC 9846 — std/http/client の下）。鍵交換は X25519 だけ・suite は TLS_AES_128_GCM_SHA256 と TLS_CHACHA20_POLY1305_SHA256・
 // サーバの証明書の鎖は std/internal/x509 の Verify（時刻と信頼の起点は値で受ける — 失効は見ない）・CertificateVerify は ECDSA P-256 / P-384 と RSA-PSS（rsae）。
-// HelloRetryRequest は cookie だけを受ける（X25519 の key_share は最初から送る — 別の群を求める HRR は illegal_parameter）。PSK / 0-RTT / クライアント証明書なし・
+// 鍵共有の群は X25519 と secp256r1（最初の key_share は X25519 — secp256r1 だけを受けるサーバ〔PostgreSQL 17 以前の既定ほか〕は HelloRetryRequest で求め、2 番目の ClientHello を P-256 で送る）。
+// HelloRetryRequest は cookie と secp256r1 の要求を受ける（送ってある X25519 や知らない群を求める HRR は illegal_parameter）。PSK / 0-RTT / クライアント証明書なし・
 // NewSessionTicket は読み捨てる。サーバの役の Hs と同じく、record の枠を Feed に食わせて送る record の列と受けた平文を Out で返す
 
 import "std/crypto"
@@ -12,6 +13,7 @@ import "std/crypto/sha256"
 import "std/crypto/x25519"
 import "std/internal/x509"
 import "std/iter"
+import "std/internal/p256"
 import "std/internal/record"
 
 const tNewSessionTicket = 4
@@ -64,6 +66,8 @@ type CPhase union {
 type Ch struct {
     ph CPhase
     th crypto.sha256.State
+    // 今の key_share の群（groupX25519 / groupSecp256r1）と秘密の鍵（どちらも 32 バイト）
+    group int
     priv []byte
     ch1 []byte
     hrr bool
@@ -106,10 +110,10 @@ func StartClient(p CParams) (Ch, []byte) {
     priv := crnd(p, "x25519", 32)
     sessid := crnd(p, "sessid", 32)
     random := crnd(p, "random", 32)
-    ch := clientHello(p, random, sessid, crypto.x25519.Base(priv), []byte{})
+    ch := clientHello(p, random, sessid, groupX25519, crypto.x25519.Base(priv), []byte{})
     mut th := crypto.sha256.New()
     crypto.sha256.Write(mut th, ch)
-    h := Ch{ph: CWaitSH{}, th: th, priv: priv, ch1: ch, hrr: false, suite: 0, rd: emptyDir(), wr: emptyDir(), hsS: []byte{}, cHs: []byte{}, sHs: []byte{},
+    h := Ch{ph: CWaitSH{}, th: th, group: groupX25519, priv: priv, ch1: ch, hrr: false, suite: 0, rd: emptyDir(), wr: emptyDir(), hsS: []byte{}, cHs: []byte{}, sHs: []byte{},
         alpn: "", leaf: noLeaf(), hbuf: []byte{}, ccs: false, sessid: sessid, upd: false,
         v12: false, crandom: random, srandom: []byte{}, pms: []byte{}, ms: []byte{}, wkey: []byte{}, wiv: []byte{}, wseq: 0, rkey: []byte{}, riv: []byte{}, rseq: 0,
         rkeyed: false, wkeyed: false, certReq: false}
@@ -127,6 +131,12 @@ func ClientAlpn(h Ch) string {
     return h.alpn
 }
 
+// 握手で受けた相手の leaf（握手が済む前は空の証明書）
+@effects()
+func ClientLeaf(h Ch) internal.x509.Cert {
+    return h.leaf
+}
+
 @effects()
 func ClientConnected(h Ch) bool {
     return switch h.ph {
@@ -142,8 +152,8 @@ func crnd(p CParams, label string, n int) []byte {
     return sliceOf(crypto.sha256.Sum256(cat(p.seed, bytes(label))), 0, n)
 }
 
-// ClientHello（cookie が空でなければ HRR の後の 2 番目）
-func clientHello(p CParams, random []byte, sessid []byte, pub []byte, cookie []byte) []byte {
+// ClientHello（group / pub = key_share の群と公開の値・cookie が空でなければ HRR の後の 2 番目）
+func clientHello(p CParams, random []byte, sessid []byte, group int, pub []byte, cookie []byte) []byte {
     mut x := mut []byte{}
     hb := bytes(p.host)
     if len(hb) > 0 && !isIPLit(p.host) {
@@ -155,9 +165,10 @@ func clientHello(p CParams, random []byte, sessid []byte, pub []byte, cookie []b
         putBytes(mut x, hb)
     }
     put16(mut x, xSupportedGroups)
+    put16(mut x, 6)
     put16(mut x, 4)
-    put16(mut x, 2)
     put16(mut x, groupX25519)
+    put16(mut x, groupSecp256r1)
     // 署名: ECDSA P-256 / P-384 と RSA-PSS（rsae）— 証明書の署名のために RSA PKCS#1 v1.5 も（RFC 9846 4.2.3 — CertificateVerify には使わない）
     schemes := []int{0x0403, 0x0503, 0x0804, 0x0805, 0x0806, 0x0401, 0x0501, 0x0601}
     put16(mut x, xSignatureAlgorithms)
@@ -186,7 +197,7 @@ func clientHello(p CParams, random []byte, sessid []byte, pub []byte, cookie []b
     put16(mut x, xKeyShare)
     put16(mut x, 2 + 4 + len(pub))
     put16(mut x, 4 + len(pub))
-    put16(mut x, groupX25519)
+    put16(mut x, group)
     put16(mut x, len(pub))
     putBytes(mut x, pub)
     if len(p.alpn) > 0 {
@@ -388,28 +399,40 @@ func onServerHello(h mut Ch, p CParams, m []byte) (Out, error?) {
         return none(), alert(aIllegalParameter)
     }
     if same(random, hrrRandom()) {
-        // HelloRetryRequest: 2 回目は無い・X25519 は送ってあるので key_share を求める HRR は不正・cookie だけを写して 2 番目の ClientHello
-        if h.hrr || group != 0 || len(cookie) == 0 {
+        // HelloRetryRequest: 2 回目は無い・群の要求は secp256r1 だけ（X25519 は送ってある）・何も変えない HRR（群も cookie も無い）は不正
+        if h.hrr || (group != 0 && group != groupSecp256r1) || (group == 0 && len(cookie) == 0) {
             return none(), alert(aIllegalParameter)
         }
         h.hrr = true
         h.suite = suite
+        mut pub := crypto.x25519.Base(h.priv)
+        if group == groupSecp256r1 {
+            h.group = groupSecp256r1
+            h.priv = crnd(p, "p256", 32)
+            pub = internal.p256.PublicKey(h.priv)
+            if len(pub) == 0 {
+                return none(), alert(aInternalError)
+            }
+        }
         mut th := crypto.sha256.New()
         crypto.sha256.Write(mut th, msg(tMessageHash, crypto.sha256.Sum256(h.ch1)))
         crypto.sha256.Write(mut th, m)
-        ch2 := clientHello(p, crnd(p, "random2", 32), h.sessid, crypto.x25519.Base(h.priv), cookie)
+        // 2 番目は key_share と cookie のほかは 1 番目と同じ（random も — RFC 8446 4.1.2）
+        ch2 := clientHello(p, h.crandom, h.sessid, h.group, pub, cookie)
         crypto.sha256.Write(mut th, ch2)
         h.th = th
         // 互換の CCS（session_id を送った — RFC 9846 D.4）を 2 番目の ClientHello の前に
         return Out{send: cat(plain(internal.record.CtCcs, []byte{1}), plain(internal.record.CtHandshake, ch2)), app: []byte{}, done: false, closed: false, peer: 0 - 1, upd: false}, nil
     }
-    if (suite != internal.record.AesGcm && suite != internal.record.ChaCha) || (h.hrr && suite != h.suite) || group != groupX25519 || len(share) != 32 {
+    shareLen := if h.group == groupSecp256r1 { 65 } else { 32 }
+    if (suite != internal.record.AesGcm && suite != internal.record.ChaCha) || (h.hrr && suite != h.suite) || group != h.group || len(share) != shareLen {
         return none(), alert(aIllegalParameter)
     }
     crypto.sha256.Write(mut h.th, m)
     h.suite = suite
-    shared := crypto.x25519.Shared(h.priv, share)
-    if crypto.Equal(shared, zeros(32)) {
+    shared := if h.group == groupSecp256r1 { internal.p256.Shared(h.priv, share) } else { crypto.x25519.Shared(h.priv, share) }
+    // X25519 の全 0（小位数の点）・P-256 の読めない点（座標 ≥ p・曲線の外 — 空の結果）は拒否
+    if len(shared) != 32 || crypto.Equal(shared, zeros(32)) {
         return none(), alert(aIllegalParameter)
     }
     zero := zeros(32)

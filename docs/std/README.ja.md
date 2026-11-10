@@ -53,6 +53,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 | [std/math](math.ja.md) | float の数学（[language.md 37 節](../language.md)）: 基本演算で書けないものだけを組み込みで（sqrtsd・ビット列の読み替え）。 |
 | [std/net](net.ja.md) | 名前の解決（スタブリゾルバ — libc の getaddrinfo を使わない）: Dial が IPv4 の綴りでないホストを受けたときに、/etc/hosts → /etc/resolv.conf の nameserver（最大 3 本を順に・1 回の問い合わせは期限つき）へ A を問う。 |
 | [std/os](os.ja.md) | プロセスと OS の API: 引数（Args）・子プロセス（Run・RunTo・RunToEnv）・環境変数（Getenv）・ファイルの属性と名前（WriteMode・Mkdir・Rename・Remove・RemoveDir・ModTime）・眠り（Sleep）・期限（Alarm）・単調時計（Monotonic） |
+| [std/pg](pg.ja.md) | PostgreSQL のクライアント（wire protocol 3.0・extended query・TLS 1.3 + SCRAM-SHA-256-PLUS が既定）。 |
 | [std/pool](pool.ja.md) | スロットを使い回す資源のプール Pool[T]（region-domain-pool.md 2・4 節の最小形）。 |
 | [std/quick](quick.ja.md) | プロパティベーステスト: 選択の源 Src から値を引き（Int・Bool・Pick・Elem・Bytes・String・Runes・Slice）、Check がプロパティを試行ごとに呼ぶ。 |
 | [std/rand](rand.ja.md) | シードを明示する決定的な擬似乱数 Rand（暗号用途には使わない — 鍵は crypto.Rand） |
@@ -60,7 +61,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 | [std/sort](sort.ja.md) | 並べ替え（[language.md 34 節](../language.md)「並べ替え」の族）。 |
 | [std/strings](strings.ja.md) | Go の strings パッケージが仕様のオラクル。 |
 | [std/table](table.ja.md) | 添字で読み書きできる可変長の列 Table[T]（大きな表を O(1) で読み書きする — 小さな列を積んで Build するなら std/builder） |
-| [std/task](task.ja.md) | structured concurrency の表層（[language.md 11 節](../language.md)「表層」）。 |
+| [std/task](task.ja.md) | structured concurrency の表層（[language.md 11 節](../language.md)「表層」）と、多くの task から 1 つの状態への直列の更新 domain（NewDomain / Update / Read / Await — [language.md 11 節](../language.md)「domain」）。 |
 | [std/testing](testing.ja.md) | テストの語彙の裏方: `_test.sober` の `assert(e)` は loader の固定テンプレート（compiler/loader/assert.sober）が「部分式を束縛 → 偽なら Report して assert の位置で panic」に写す。 |
 | [std/testing/cell](testing-cell.ja.md) | テストの構成（`_test.sober`・`_double.sober`）の状態の置き場（[language.md 41 節](../language.md)「状態を貯める fake」）。 |
 | [std/time](time.ja.md) | 時刻: 壁時計の Time（UNIX 時刻 — 秒 + ns・UTC）と経過を測る Instant（単調時計）を別の型で持つ（壁時計の差で期限を測る事故を型で消す）。 |
@@ -416,6 +417,50 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`pem.Bad`](crypto-pem.ja.md#bad) — PEM の形が違う（BEGIN と END が対にならない・base64 の綴りが違う）
 - [`pem.Block`](crypto-pem.ja.md#block) — 1 つの PEM の塊（label = BEGIN の後ろの名前・der = 中身）
 - [`pem.Parse`](crypto-pem.ja.md#parse) — text の中の PEM の塊の全部（塊の外の行は無視 — RFC 7468 の説明文の扱い）
+- [`pg.Aborted`](pg.ja.md#aborted) — k の中で文の誤りを握りつぶしたまま k が普通に終わった（サーバのトランザクションは失敗の状態だったので巻き戻した — 何も COMMIT されていない）
+- [`pg.Auth`](pg.ja.md#auth) — 認証が成り立たない（SCRAM の方式が無い・サーバの署名が合わない・SCRAM 以外の方式を求められた）
+- [`pg.BadArg`](pg.ja.md#badarg) — 引数 index（0 起点）の値の variant がサーバの型 oid に合わない（Int の範囲外も）
+- [`pg.BadUrl`](pg.ja.md#badurl) — URL が読めない（形・port・password や クエリを含む — password は Policy に）
+- [`pg.Closed`](pg.ja.md#closed) — 接続が使えない（相手が閉じた・期限切れや壊れた応答の後）
+- [`pg.Col`](pg.ja.md#col) — 列 i の値
+- [`pg.ColBool`](pg.ja.md#colbool) — 列 i の値 — bool の列
+- [`pg.ColBytes`](pg.ja.md#colbytes) — 列 i の値 — bytea の列
+- [`pg.ColCivil`](pg.ja.md#colcivil) — 列 i の値 — timestamp / date の列（zone の無い壁の読み — date は時刻 0）
+- [`pg.ColFloat`](pg.ja.md#colfloat) — 列 i の値 — float4 / float8 の列
+- [`pg.ColInt`](pg.ja.md#colint) — 列 i の値 — int2 / int4 / int8 の列
+- [`pg.ColJson`](pg.ja.md#coljson) — 列 i の値 — json / jsonb の列（JSON の字句）
+- [`pg.ColNumeric`](pg.ja.md#colnumeric) — numeric の十進の字句
+- [`pg.ColString`](pg.ja.md#colstring) — 列 i の値 — text / varchar / char / name の列
+- [`pg.ColTime`](pg.ja.md#coltime) — 列 i の値 — timestamptz の列（UTC の時刻）
+- [`pg.ColUuid`](pg.ja.md#coluuid) — 列 i の値 — uuid の列
+- [`pg.Conn`](pg.ja.md#conn) — 接続 1 本（同一性の型 — Open の k の仮引数としてだけ生まれる。
+- [`pg.Dns`](pg.ja.md#dns) — 名前が引けない
+- [`pg.Exec`](pg.ja.md#exec) — 文を 1 つ実行して影響行数（CommandComplete の数 — 行を返す文は返した行の数）を返す。
+- [`pg.Inexact`](pg.ja.md#inexact) — Scaled の値が scale 桁に収まらない端数を持つ
+- [`pg.IsNull`](pg.ja.md#isnull) — 列 i が NULL か
+- [`pg.Isolation`](pg.ja.md#isolation) — 分離の水準（省くとサーバの既定 — 通常 READ COMMITTED）
+- [`pg.NullColumn`](pg.ja.md#nullcolumn) — 列 index が NULL（型つきの読み — IsNull で先に分けるか Col の switch で Null{} を受ける）
+- [`pg.Open`](pg.ja.md#open) — at（URL "postgres://user@host[:port]/db" — "postgresql://" も・port の既定 5432・db の既定 = user）の PostgreSQL へ繋ぎ、認証まで済ませて Conn を k に渡す（k が返ったら Terminate して閉じる）。
+- [`pg.OpenPool`](pg.ja.md#openpool) — at（Open と同じ URL・Policy）の接続を最大 size 本（既定 10・1 未満は 1）まで張って共有するプールを k に渡す。
+- [`pg.OutOfRange`](pg.ja.md#outofrange) — Scaled の結果が int に収まらない
+- [`pg.Policy`](pg.ja.md#policy) — 方針（省いた欄・nil は既定）: password = SCRAM の password（URL には書かない・"" = 無し — サーバが SCRAM を求めれば 28P01 で断られる）・extraRoots = 焼き込みの WebPKI のルートに足す起点（私的 PKI — tls.ParseRoots の値）・timeout = 1 回の呼び出し〔Open の握手と認証・Query / Exec / Script の往復 — Query は k の時間も含む〕の期限 ns・既定 30 秒〔0 以下も既定〕・maxRow = 1 つのメッセージ〔行〕の上限バイト・既定 16 MiB・上限 1 GiB・appName = application\_name〔既定 "sober"〕・dangerouslyPlaintext = TLS を使わない・dangerouslyAllowNoChannelBinding = TLS の上で SCRAM-SHA-256-PLUS を出さないサーバ〔PgBouncer 等〕も受ける・dangerouslyAllowTls12 = TLS 1.2 も申し出る（どれも既定は安全な側 — 綴りで緩めたことが grep で拾え、check が毎回警告する）
+- [`pg.Pool`](pg.ja.md#pool) — プール（domain と預かり所の組 — 捕獲でき、関数の実引数にできる。
+- [`pg.Protocol`](pg.ja.md#protocol) — サーバの応答が wire protocol の形でない
+- [`pg.Query`](pg.ja.md#query) — 行を 1 行ずつ k に渡す呼び出し形の生成元: `for r <- pg.Query(c, sql, args: …)? { … }`。
+- [`pg.ReadCommitted`](pg.ja.md#readcommitted) — READ COMMITTED（文ごとに、その文の始まりまでに COMMIT された行を見る）
+- [`pg.Reentered`](pg.ja.md#reentered) — Query の本体の中から同じ Conn を使った（行を流している途中の接続は使えない — 行を読み切ってから使うか、別の接続で）
+- [`pg.RepeatableRead`](pg.ja.md#repeatableread) — REPEATABLE READ（トランザクションの最初の文の時点の行を見続ける）
+- [`pg.Row`](pg.ja.md#row) — 結果の 1 行（k の中で読む — 列は番号で）
+- [`pg.Scaled`](pg.ja.md#scaled) — Numeric / Int の値の 10^scale 倍の int（金額の固定小数点 — scale 桁より下に 0 でない端数があれば Inexact・int に入らなければ OutOfRange・NaN / Infinity と他の variant は WrongType{index: -1}）
+- [`pg.Script`](pg.ja.md#script) — 複数の文（; 区切り — migration 用・引数なし）を simple query で 1 回に送る。
+- [`pg.Serializable`](pg.ja.md#serializable) — SERIALIZABLE（直列に走らせたのと同じ結果にならない組を 40001 で断る — 呼び手が再試行する）
+- [`pg.Server`](pg.ja.md#server) — サーバの ErrorResponse（code = SQLSTATE — 一意制約違反 23505・password 違い 28P01・直列化の失敗 40001 ほか）。
+- [`pg.Tls`](pg.ja.md#tls) — TLS が張れない（サーバが SSLRequest を断った・証明書の検証・握手の失敗）
+- [`pg.Tx`](pg.ja.md#tx) — c の上で k をトランザクションとして走らせる。
+- [`pg.Value`](pg.ja.md#value) — 値 1 つ（NULL は Null{}・第一陣の外の型は Unknown — text 形式の字句のまま）
+- [`pg.Width`](pg.ja.md#width) — 列の数
+- [`pg.With`](pg.ja.md#with) — p から接続を 1 本借りて k に渡す（待機が無く張れる本数も尽きていれば、返されるまで来た順に待つ）。
+- [`pg.WrongType`](pg.ja.md#wrongtype) — 列 index の値の型 oid が読みの関数に合わない
 - [`poly1305.Sum`](crypto-poly1305.ja.md#sum) — key（32 バイト — 1 回だけ使う鍵。
 - [`poly1305.SumAead`](crypto-poly1305.ja.md#sumaead) — AEAD の MAC の入力（ad ‖ 0 埋め ‖ msg[off, off + n) ‖ 0 埋め ‖ len(ad) ‖ n — 長さは各 64 bit の小さい端・RFC 8439 2.8）の tag。
 - [`pool.Acquire`](pool.ja.md#acquire) — v を空きスロット（無ければ末尾に足す）に置き、そのスロットの Handle を返す
@@ -492,6 +537,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`server.Cache`](http-server.ja.md#cache) — 保存の方針（Cache-Control の値）。
 - [`server.Coded`](http-server.ja.md#coded) — 応答の本文が要求の Accept-Encoding で選ばれたこと（encoding = 選んだ符号化〔"br" / "gzip"〕・"" = 候補を見たが元のまま）。
 - [`server.Cookie`](http-server.ja.md#cookie) — r の Cookie ヘッダの name の値（認証の源 — RFC 6265 5.4 の `name=value; name2=value2` を `;` で切り、前後の空白を除いて名前がちょうど等しい〔大文字小文字を区別する〕最初の組の値。
+- [`server.Delayed`](http-server.ja.md#delayed) — r を ms ミリ秒待ってから送る応答（ms ≤ 0 は待たない）。
 - [`server.Dispatch`](http-server.ja.md#dispatch) — routes から r に一致する行を選んで middleware とハンドラを走らせる。
 - [`server.Event`](http-server.ja.md#event) — Server-Sent Events のイベント 1 つ（WHATWG HTML 9.2 の text/event-stream — FormatEvent で組んで stream の emit に渡す）。
 - [`server.Form`](http-server.ja.md#form) — 本文（Content-Type が application/x-www-form-urlencoded のとき）の key の値（Query と同じ切り方 — `k=v&…` の最初の一致・デコードしない。
@@ -589,9 +635,12 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`table.Read`](table.ja.md#read) — t の [i, i + n) を dst の [0, n) へ写す（Get を n 回呼んで dst に書くのと同じ値 — chunk ごとにまとめて写す）。
 - [`table.Set`](table.ja.md#set) — i 番目（0 起点）の要素を x にする。
 - [`table.Table`](table.ja.md#table) — 添字で読み書きできる可変長の列（[language.md 21 節](../language.md)の緩和策 2 の添字版）。
+- [`task.Await`](task.ja.md#await) — when が真になるまで待ってから f を当てる（待つ呼び出しは来た順に入る）。
 - [`task.Cause`](task.ja.md#cause) — 子の死因（不透明 — 中身は実装が運ぶ実行時の値。
 - [`task.ChildDied`](task.ja.md#childdied) — scope の err: 本体は完走したが死んだ子がいた
 - [`task.Close`](task.ja.md#close) — 送り端を閉じる（以後の Send は panic・二度目の Close も panic。
+- [`task.Domain`](task.ja.md#domain) — domain — 直列化された共有状態（[language.md 11 節](../language.md)「domain」）: 状態 S を 1 つ持ち、Update / Read / Await の本体を 1 つずつ当てる。
+- [`task.DomainView`](task.ja.md#domainview) — domain の合計の行（Ledger().domains — [language.md 11 節](../language.md)「domain」の観測の口）: 全 domain をまとめた 1 行
 - [`task.GB`](task.ja.md#gb) — 予算の単位（バイト — `budget: 64 * MB`）
 - [`task.Gather`](task.ja.md#gather) — handle の列を生んだ順（正準順）で待って結果を集める fan-in（死んだ子があれば呼び手も死ぬ: Join と同じ）。
 - [`task.Handle`](task.ja.md#handle) — 子の task の handle（task.Spawn が返す）
@@ -611,6 +660,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`task.Map`](task.ja.md#map) — xs の各要素に f を並列に（要素ごとに 1 task）適用し、結果を添字の順に返す（[language.md 11 節](../language.md): `([]U, error?)`。
 - [`task.MarkFailed`](task.ja.md#markfailed) — プール p の失敗を 1 つ記帳する（Ledger の fail — 境界の API が「受けた仕事が error で終わった」を数える: net.Serve の handler の失敗）
 - [`task.NewChannel`](task.ja.md#newchannel) — 容量 cap（1 以上の整数の字面）の有界のチャネルの端点の組
+- [`task.NewDomain`](task.ja.md#newdomain) — 札 s の scope に状態の初期値 init を持つ domain を作る。
 - [`task.NewLocal`](task.ja.md#newlocal) — T のストレージをワーカーの数だけ作る: `gzw := task.NewLocal((w mut flate.Work) => { pool.NewScratch(mut w.head, 1 << 15) … })`。
 - [`task.NewPool`](task.ja.md#newpool) — 天井 budget バイトのプール（parent があればその下のノード — 入場は自分のノードから根のノードまで全部の天井を見る）
 - [`task.NotLowered`](task.ja.md#notlowered) — 呼び出し点の写しが外れた柵（到達しない）
@@ -618,6 +668,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`task.Pool`](task.ja.md#pool) — 名前つきプール（テナント・エンドポイント — [language.md 11 節](../language.md)「天井の木」）のハンドル: task.SpawnIn の第 2 実引数。
 - [`task.PoolLimit`](task.ja.md#poollimit) — プールのノードの表が尽きた（NewPool を POOL\_MAX 回より多く呼んだ）
 - [`task.PoolView`](task.ja.md#poolview) — 台帳のプールのノードの 1 行（id = 作った順の番号・parent = 親の id〔-1 = 無し〕・used / tasks = 計上中のバイト / task の数）
+- [`task.Read`](task.ja.md#read) — g の値を写して返す（状態は変えない）。
 - [`task.Receiver`](task.ja.md#receiver) — チャネルの受け端（Sender の対 — NewChannel が組で返す。
 - [`task.Recv`](task.ja.md#recv) — 次の値（空なら待つ。
 - [`task.RecvAll`](task.ja.md#recvall) — `for l <- task.Recv(rx) { … }` の写し先（loader が呼び先を付け替える — 閉じて空になるまで受けて k へ渡す）
@@ -630,6 +681,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`task.SpawnGive`](task.ja.md#spawngive) — `Spawn(s, give: ep, (ep) => …)` の写し先（loader が呼び先を付け替える — 端点 ep をちょうど 1 つの子へ移す。
 - [`task.SpawnIn`](task.ja.md#spawnin) — プール pool の天井に入れれば子の task を生む（handle, nil）・入れなければ (nil, Shed{})（縮退しない — shed を望む境界の API ・[language.md 11 節](../language.md)「shed」）。
 - [`task.Try`](task.ja.md#try) — 子の結果を Outcome で（死は値）
+- [`task.Update`](task.ja.md#update) — f を d の状態に当て、f の値を写して返す。
 - [`testing.AssertFailed`](testing.ja.md#assertfailed) — assert の失敗（panic ラベル — 欄なし: 式と部分式の値は Report が前置で印字する。
 - [`testing.Report`](testing.ja.md#report) — assert の失敗の印字: `assert failed: <式>`（ラベルがあれば `assert failed (<ラベル>): <式>`）と部分式の値を 1 行ずつ標準エラーへ書く。
 - [`time.AbbrAt`](time.ja.md#abbrat) — t のゾーン z での略称（JST・PDT など — 略称の無い地域は `+09` の形）

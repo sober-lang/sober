@@ -1,0 +1,31 @@
+package main
+
+// An Await whose when: never becomes true returns io.Expired once it has waited wait: (the bound on the wait is declared,
+// so a domain wait never hangs). The body does not run and the state is unchanged. task.Ledger().domains counts the expiry
+// (one row for all domains — waiting / maxWait / expired / poisoned)
+
+import "std/io"
+import "std/task"
+
+type Gate struct {
+    open bool
+    passed int
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, Gate{open: false, passed: 0}, wait: 20 * task.MS)
+        v, err := task.Await(d, (st mut Gate) => {
+            st.passed += 1
+            st.passed
+        }, when: (st Gate) => st.open)
+        label := switch err {
+        case nil: "entered ${v}"
+        case io.Expired{}: "expired"
+        }
+        "${label} / passed ${task.Read(d, (st Gate) => st.passed)}"
+    })
+    println(if e == nil { r } else { "died" })
+    dv := task.Ledger().domains
+    println("ledger: waiting ${dv.waiting} / expired ${dv.expired} / poisoned ${dv.poisoned}")
+}

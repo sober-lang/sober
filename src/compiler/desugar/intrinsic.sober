@@ -55,6 +55,19 @@ const PAR_RECV = 7
 const PAR_SPAWNGIVE = 8
 const PAR_CLOSE = 9
 const PAR_SPAWNIN = 10   // task.SpawnIn（名前つきプールの天井に入れなければ (nil, Shed{})）
+// domain（language.md 11 節「domain」）: NewDomain = dnew・Update / Read / Await は展開される普通の std の関数で、その中の写し先の口
+// domEnter = denter・domExit = dexit・domMiss = unreach（Await の when が偽の腕）
+const PAR_DNEW = 11
+const PAR_DENTER = 12
+const PAR_DEXIT = 13
+const PAR_DMISS = 14
+// domOut = 本体の結果を呼び手の最内へ写す（コアでは恒等 — 状態は denter で写して受けるので結果は状態と別名にならない。rt は状態をその場で書くので写しが要る）
+const PAR_DOUT = 15
+// domWait / domLoad = Await の when が偽の腕の中の待ちと読み直し（コアの unreach — 録った順の下では到達しない）
+const PAR_DWAIT = 16
+const PAR_DLOAD = 17
+// domView = 本体の状態を imm の見方で渡す（Read の g・Await の when — コアは freeze(clone(st)) の像・rt は恒等）
+const PAR_DVIEW = 18
 
 // 関数 fi の err が開いた集合か（std/task の Scope と、scope を開く Map・子の err を返す gatherE / mapE — analyzer は呼び出しの集合を
 // TOP にし、宣言の照合をしない）
@@ -98,5 +111,24 @@ func ParKey(st mut S, fi int) int {
         return 0
     }
     n := fnName(mut st, fi)
-    return if strIs(mut st, n, "Run") { PAR_SCOPE } else if strIs(mut st, n, "Spawn") { PAR_SPAWN } else if strIs(mut st, n, "Join") { PAR_JOIN } else if strIs(mut st, n, "Try") { PAR_TRY } else if strIs(mut st, n, "NewChannel") { PAR_NEWCHAN } else if strIs(mut st, n, "Send") { PAR_SEND } else if strIs(mut st, n, "Recv") { PAR_RECV } else if strIs(mut st, n, "SpawnGive") { PAR_SPAWNGIVE } else if strIs(mut st, n, "Close") { PAR_CLOSE } else if strIs(mut st, n, "SpawnIn") { PAR_SPAWNIN } else { 0 }
+    return if strIs(mut st, n, "Run") { PAR_SCOPE } else if strIs(mut st, n, "Spawn") { PAR_SPAWN } else if strIs(mut st, n, "Join") { PAR_JOIN } else if strIs(mut st, n, "Try") { PAR_TRY } else if strIs(mut st, n, "NewChannel") { PAR_NEWCHAN } else if strIs(mut st, n, "Send") { PAR_SEND } else if strIs(mut st, n, "Recv") { PAR_RECV } else if strIs(mut st, n, "SpawnGive") { PAR_SPAWNGIVE } else if strIs(mut st, n, "Close") { PAR_CLOSE } else if strIs(mut st, n, "SpawnIn") { PAR_SPAWNIN } else { parDomKey(mut st, n) }
+}
+
+// domain の口の名前 n の鍵（違えば 0）
+func parDomKey(st mut S, n StrRef) int {
+    return if strIs(mut st, n, "NewDomain") { PAR_DNEW } else if strIs(mut st, n, "domEnter") { PAR_DENTER } else if strIs(mut st, n, "domExit") { PAR_DEXIT } else if strIs(mut st, n, "domMiss") { PAR_DMISS } else if strIs(mut st, n, "domOut") { PAR_DOUT } else if strIs(mut st, n, "domWait") { PAR_DWAIT } else if strIs(mut st, n, "domLoad") { PAR_DLOAD } else if strIs(mut st, n, "domView") { PAR_DVIEW } else { 0 }
+}
+
+// 鍵 key が domain の写し先の口か（build の経路は rt の口ができるまで std の柵の本体へ落とす）
+func ParDom(key int) bool {
+    return key >= PAR_DNEW && key <= PAR_DVIEW
+}
+
+// 関数 fi が std/task の Update / Read / Await ならその番号（1 / 2 / 3 — 違えば 0）。本体のラムダの照合（捕獲・効果）の鍵
+func DomKey(st mut S, fi int) int {
+    if !strIs(mut st, PkgPath(mut st, fnPkg(mut st, fi)), "std/task") {
+        return 0
+    }
+    n := fnName(mut st, fi)
+    return if strIs(mut st, n, "Update") { 1 } else if strIs(mut st, n, "Read") { 2 } else if strIs(mut st, n, "Await") { 3 } else { 0 }
 }

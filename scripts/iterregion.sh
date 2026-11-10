@@ -6,6 +6,8 @@
 #      - iter_region_inner（routing の形 — 外の反復の確保が内側のループの後ろ）: 入口 + 外の反復 = 2（L1 — 本体の範囲が内側のループの頭で止まると 1）
 #      - iter_region_outer_assign（logagg の形 — 外の反復の変数へ内側のループの中で代入）: 入口 + 行の反復 = 2（P1 — 外の反復の深度への写しを
 #        語の反復の確保と数えると 3）
+#      - iter_region_errcont（失敗の戻りの道だけで確保する呼び先の失敗を catch して回すループ）: 入口 + 反復 = 2（失敗の辺が頭へ戻る —
+#        失敗の辺がループの外へ出る形は数えない精密化〔rlight の llErrEdge〕の負例。RSS も N と 10N で比例しない — 壊すと 192 → 1536 KB）
 #   ② RSS: iter_region_inner を行数 N と 10N で走らせ、最大 RSS が比例しないこと（10N の RSS ≤ N の RSS + 1 MiB。比例すると +10 MB を超える）
 #   ③ RSS: iter_region_inline_dest（inline 展開の本体の宛先構築 — report-689・std/http.ServeConn の形）も同じ形で（壊れると 2000 → 20000 で +2.3 MB）
 #   ⑤ 形: inline_dest_direct（展開の宛先の直結 — report-693 / 694）— 展開の呼び出し点に呼び手の印があるとき、本体の印つきの確保は呼び手の宛先に作る。
@@ -39,6 +41,7 @@
 #      反復ごとに外の region へ積もらないこと。鎖は保持する値なので増分は節点の数に比例する — 20000 → 200000 で節点あたり 128 B 以下
 #      （壊れると 1.6 KB / 節点）
 #   ⑮ RSS: iter_region_optcons（opt の中身を通る再帰型 — 欄は 1 セルの箱・report-repr2-2）: ⑬ と同じ形・同じ線（箱のセルと写しの作業域が反復ごとに積もらない）
+#   ⑯ RSS: iter_region_domain_mut（mut の器を持つ domain の状態 — 本体はその場で書く）: 呼び出しを 10 倍にしても RSS は 1 MiB 以内
 #   ⑭ RSS: dest_append_rec（宛先構築の返る列への追記 — loader/dest.sober の印 3・report-repr-2）: `ks = append(ks, mk(…))` の再帰で組む深さ n の鎖が
 #      深さの数だけ写らないこと — 90 → 900 段で +16 MB 以下（深度ごとの region の頁 ≈ 4 KB / 段だけ。壊れると 1.7 → 135 MB）
 #   scripts/iterregion.sh
@@ -48,7 +51,7 @@ S2=${STAGE2:-out/stage2/sober2}
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 fail=0
-for want in iter_region_inner:2 iter_region_outer_assign:2 iter_region_nonret:1 iter_region_writer:2; do
+for want in iter_region_inner:2 iter_region_outer_assign:2 iter_region_nonret:1 iter_region_writer:2 iter_region_errcont:2; do
     e=${want%%:*}; n=${want#*:}
     "$S2" build "examples/$e.sober" --emit=elf --passes --stop-after=llight --dump-ir -o "$W/$e.ir" > /dev/null 2>&1 || { echo "FAIL: dump-ir $e"; fail=$((fail + 1)); continue; }
     got=$(awk '/^func @main.main\(/,/^}/' "$W/$e.ir" | grep -cE 'region\.enter$|call @rt\.region_enter')
@@ -117,6 +120,14 @@ nr=$(awk '/^func / { fn = 0; pre = ""; ent = 0 }
     END { print (note ? bad + 0 : "none") }' "$W/fvd.ir")
 if [ "$nr" != "0" ]; then
     echo "FAIL: iter_region_fnval_dest: the result-less lifted lambda builds its tail's concat at its entry depth ($nr — want 0: its own region)"
+    fail=$((fail + 1))
+fi
+"$S2" build examples/iter_region_errcont.sober -o "$W/errcont" > /dev/null 2>&1 || { echo "FAIL: build iter_region_errcont"; exit 1; }
+/usr/bin/time -f %M -o "$W/e1" "$W/errcont" 20000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/e2" "$W/errcont" 200000 > /dev/null || fail=$((fail + 1))
+e1=$(cat "$W/e1"); e2=$(cat "$W/e2")
+if [ "$e2" -gt $((e1 + 1024)) ]; then
+    echo "FAIL: iter_region_errcont: RSS grows with the caught failures ($e1 KB at 20000 → $e2 KB at 200000 — the error cells must go to the iteration's region)"
     fail=$((fail + 1))
 fi
 "$S2" build examples/iter_region_nonret.sober -o "$W/nonret" > /dev/null 2>&1 || { echo "FAIL: build iter_region_nonret"; exit 1; }
@@ -219,6 +230,15 @@ if [ "$a2" -gt $((a1 + 16384)) ]; then
     echo "FAIL: dest_append_rec: RSS grows with the square of the depth ($a1 KB at 90 → $a2 KB at 900)"
     fail=$((fail + 1))
 fi
+"$S2" build examples/iter_region_domain_mut.sober -o "$W/dmut" > /dev/null 2>&1 || { echo "FAIL: build iter_region_domain_mut"; exit 1; }
+/usr/bin/time -f %M -o "$W/q1" "$W/dmut" 20000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/q2" "$W/dmut" 200000 > /dev/null || fail=$((fail + 1))
+q1=$(cat "$W/q1"); q2=$(cat "$W/q2")
+# ⑯ domain の状態の mut の器（その場で書く）は呼び出しごとに region を伸ばさない
+if [ "$q2" -gt $((q1 + 1024)) ]; then
+    echo "FAIL: iter_region_domain_mut: RSS grows with the calls ($q1 KB at 20000 → $q2 KB at 200000)"
+    fail=$((fail + 1))
+fi
 "$S2" build examples/lease_iter.sober -o "$W/lsi" > /dev/null 2>&1 || { echo "FAIL: build lease_iter"; exit 1; }
 for w in 1 4; do
     SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/l1" "$W/lsi" 2000 > /dev/null || fail=$((fail + 1))
@@ -230,5 +250,5 @@ for w in 1 4; do
     fi
     eval "pl$w=\"$l1 → $l2\""
 done
-echo "iterregion: 4 loop shapes (enters kept/removed after llight) + inline dest direct (entry-depth allocs ${got}) + RSS $r1 → $r2 KB at 10x iterations + nonret RSS $n1 → $n2 KB + writer RSS $w1 → $w2 KB + map dest RSS $m1 → $m2 KB + region cell RSS $c1 → $c2 KB + inline dest RSS $d1 → $d2 KB + dest reg RSS $g1 → $g2 KB + fnval dest RSS $v1 → $v2 KB + discarded spawn residual RSS W1 $pd1 / W4 $pd4 KB + discarded deaths residual RSS W1 $pe1 / W4 $pe4 KB + lease RSS W1 $pl1 / W4 $pl4 KB + recursive cons RSS $k1 → $k2 KB + opt cons RSS $o1 → $o2 KB + dest append RSS $a1 → $a2 KB, fail=$fail"
+echo "iterregion: 5 loop shapes (enters kept/removed after llight) + inline dest direct (entry-depth allocs ${got}) + RSS $r1 → $r2 KB at 10x iterations + caught errors RSS $e1 → $e2 KB + nonret RSS $n1 → $n2 KB + writer RSS $w1 → $w2 KB + map dest RSS $m1 → $m2 KB + region cell RSS $c1 → $c2 KB + inline dest RSS $d1 → $d2 KB + dest reg RSS $g1 → $g2 KB + fnval dest RSS $v1 → $v2 KB + discarded spawn residual RSS W1 $pd1 / W4 $pd4 KB + discarded deaths residual RSS W1 $pe1 / W4 $pe4 KB + lease RSS W1 $pl1 / W4 $pl4 KB + recursive cons RSS $k1 → $k2 KB + opt cons RSS $o1 → $o2 KB + dest append RSS $a1 → $a2 KB + domain mut state RSS $q1 → $q2 KB, fail=$fail"
 [ "$fail" = 0 ]

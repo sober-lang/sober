@@ -1,0 +1,17 @@
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Cache-Control: private
+Content-Length: 10
+
+apple 120
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Cache-Control: private
+Content-Length: 8
+
+fig 560
+HTTP/1.1 404 Not Found
+Cache-Control: private
+Content-Length: 0
+Connection: close
+served: true

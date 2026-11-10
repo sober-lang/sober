@@ -1815,16 +1815,16 @@ b0:
   store %13[2], %16
   %17 = const 5
   %18 = const 6
-  %19 = slotaddr s3
-  %20 = const 0
-  store %19[0], %20
-  store %19[1], %20
-  store %19[0], %17
-  store %19[1], %18
+  %19 = const 0
+  %20 = slotaddr s3
+  store %20[0], %19
+  store %20[1], %19
+  store %20[0], %17
+  store %20[1], %18
   %21 = slotaddr s4
-  %22 = load.i64 %19[0]
+  %22 = load.i64 %20[0]
   store %21[0], %22
-  %23 = load.i64 %19[1]
+  %23 = load.i64 %20[1]
   store %21[1], %23
   %24 = globaladdr @str.0
   %25 = const 2

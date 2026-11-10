@@ -1,2 +1,3 @@
+examples/web_client_session.sober:14:206: warning: `dangerouslyAllowHttp` of std/http/server.SetCookie relaxes a safe default — this warning stays as long as it is set (there is no way to silence it; the safe setting removes it) (Analyzer)
 {"ok":true,"ty":{"k":"unit"}}
 exit=0

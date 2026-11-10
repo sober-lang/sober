@@ -32,6 +32,12 @@ inductive Op : Type where
   | send (me : List Nat) (k : EpKey) (v : Expr) (H : Heap)
   | recv (me : List Nat) (k : EpKey)
   | close (me : List Nat) (k : EpKey)
+  /-- domain を作る（鍵 (me, n)・状態の型 ty・初期値 v を H から梱包） -/
+  | dnew (me : List Nat) (n : Nat) (ty : Ty) (v : Expr) (H : Heap)
+  /-- domain に入る（空きでオラクルの次の番が me なら持ち手になり状態を受ける） -/
+  | denter (me : List Nat) (k : EpKey)
+  /-- domain から出る（持ち手なら新しい状態 v を H から梱包して差し替え・番を進める） -/
+  | dexit (me : List Nat) (k : EpKey) (v : Expr) (H : Heap)
 
 /-- 操作の実行: 外側 none = 待機（満杯の送信・空の受信・梱包の失敗）、結果 none = 失敗（panic）、some v = 成功の値 -/
 def Op.run : Op → ChanSt → Option (Option Pkt × ChanSt)
@@ -71,6 +77,28 @@ def Op.run : Op → ChanSt → Option (Option Pkt × ChanSt)
           if e.otx = me ∧ e.closed = false then some (some (Pkt.ofV .triv), K.setEp k { e with closed := true })
           else some (none, K)
       | Option.none => some (none, K)
+  | .dnew me n ty v H, K =>
+      match K.dom (me, n) with
+      | Option.some _ => some (none, K)
+      | Option.none =>
+          match packV ty H v with
+          | Option.some w => some (some (Pkt.ofV .triv), K.setDom (me, n) ⟨w, none, 0, ty⟩)
+          | Option.none => some (none, K)
+  | .denter me k, K =>
+      match K.dom k with
+      | Option.some d =>
+          if d.holder = none ∧ (K.ora k)[d.served]? = some me then some (some d.st, K.setDom k { d with holder := some me })
+          else none
+      | Option.none => none
+  | .dexit me k v H, K =>
+      match K.dom k with
+      | Option.some d =>
+          if d.holder = some me then
+            match packV d.ty H v with
+            | Option.some w => some (some (Pkt.ofV .triv), K.setDom k { d with st := w, holder := none, served := d.served + 1 })
+            | Option.none => some (none, K)
+          else some (none, K)
+      | Option.none => none
 
 /-- 行為者（pure は誰でもない） -/
 def Op.who : Op → Option (List Nat)
@@ -80,6 +108,9 @@ def Op.who : Op → Option (List Nat)
   | .send me _ _ _ => some me
   | .recv me _ => some me
   | .close me _ => some me
+  | .dnew me _ _ _ _ => some me
+  | .denter me _ => some me
+  | .dexit me _ _ _ => some me
 
 /-- 新しい持ち主（give の子） -/
 def Op.kid : Op → Option (List Nat)
@@ -98,13 +129,18 @@ theorem Op.Indep.symm {a b : Op} (h : a.Indep b) : b.Indep a :=
 
 /-! ## setEp の代数 -/
 
-theorem ChanSt.ext' {K L : ChanSt} (h1 : K.leg = L.leg) (h2 : ∀ k, K.ep k = L.ep k) : K = L := by
-  cases K; cases L; simp only at h1; subst h1; congr; funext k; exact h2 k
+theorem ChanSt.ext' {K L : ChanSt} (h1 : K.leg = L.leg) (h2 : ∀ k, K.ep k = L.ep k) (h3 : K.dom = L.dom := by rfl)
+    (h4 : K.ora = L.ora := by rfl) : K = L := by
+  cases K; cases L; simp only at h1 h3 h4; subst h1 h3 h4; congr; funext k; exact h2 k
 
 @[simp] theorem ChanSt.setEp_ep (K : ChanSt) (k k' : EpKey) (e : EpEnt) :
     (K.setEp k e).ep k' = if k' = k then some e else K.ep k' := rfl
 
 @[simp] theorem ChanSt.setEp_leg (K : ChanSt) (k : EpKey) (e : EpEnt) : (K.setEp k e).leg = K.leg := rfl
+
+@[simp] theorem ChanSt.setEp_dom (K : ChanSt) (k : EpKey) (e : EpEnt) : (K.setEp k e).dom = K.dom := rfl
+
+@[simp] theorem ChanSt.setEp_ora (K : ChanSt) (k : EpKey) (e : EpEnt) : (K.setEp k e).ora = K.ora := rfl
 
 theorem ChanSt.setEp_comm {K : ChanSt} {k1 k2 : EpKey} (e1 e2 : EpEnt) (h : k1 ≠ k2) :
     (K.setEp k1 e1).setEp k2 e2 = (K.setEp k2 e2).setEp k1 e1 := by
@@ -240,7 +276,7 @@ theorem upd_upd {K : ChanSt} {k : EpKey} (o o' : Option EpEnt) : (K.upd k o).upd
 
 theorem upd_congr {K : ChanSt} {k : EpKey} {x y : Option EpEnt} (h : x.or (K.ep k) = y.or (K.ep k)) :
     K.upd k x = K.upd k y := by
-  refine ChanSt.ext' (by cases x <;> cases y <;> rfl) ?_
+  refine ChanSt.ext' (by cases x <;> cases y <;> rfl) ?_ (by cases x <;> cases y <;> rfl) (by cases x <;> cases y <;> rfl)
   intro k'
   by_cases hk : k' = k
   · subst hk; rw [upd_ep_or, upd_ep_or, h]
@@ -267,6 +303,187 @@ theorem mini_comm {m1 m2 : Mini} {K K1 K2 : ChanSt} {r1 r2 : Option Pkt}
       congr 2
       exact (upd_congr heq).symm
   · exact mini_comm_ne hk h1 h2
+
+/-! ## domain の小操作（端点の表と別の欄 — 端点の操作とは常に可換。同じ鍵の違う行為者は高々 1 本しか進めない） -/
+
+@[simp] theorem ChanSt.setDom_dom (K : ChanSt) (k k' : EpKey) (e : DomEnt) :
+    (K.setDom k e).dom k' = if k' = k then some e else K.dom k' := rfl
+
+@[simp] theorem ChanSt.setDom_ep (K : ChanSt) (k : EpKey) (e : DomEnt) : (K.setDom k e).ep = K.ep := rfl
+
+@[simp] theorem ChanSt.setDom_leg (K : ChanSt) (k : EpKey) (e : DomEnt) : (K.setDom k e).leg = K.leg := rfl
+
+@[simp] theorem ChanSt.setDom_ora (K : ChanSt) (k : EpKey) (e : DomEnt) : (K.setDom k e).ora = K.ora := rfl
+
+theorem ChanSt.extD {K L : ChanSt} (h1 : K.leg = L.leg) (h2 : K.ep = L.ep) (h3 : ∀ k, K.dom k = L.dom k)
+    (h4 : K.ora = L.ora) : K = L := by
+  cases K; cases L; simp only at h1 h2 h4; subst h1 h2 h4; congr; funext k; exact h3 k
+
+theorem ChanSt.setDom_comm {K : ChanSt} {k1 k2 : EpKey} (e1 e2 : DomEnt) (h : k1 ≠ k2) :
+    (K.setDom k1 e1).setDom k2 e2 = (K.setDom k2 e2).setDom k1 e1 := by
+  refine ChanSt.extD rfl rfl ?_ rfl
+  intro k
+  simp only [ChanSt.setDom_dom]
+  by_cases hk2 : k = k2
+  · subst hk2; simp [Ne.symm h]
+  · by_cases hk1 : k = k1 <;> simp [hk1, hk2, h]
+
+theorem ChanSt.setDom_setDom {K : ChanSt} {k : EpKey} (e1 e2 : DomEnt) :
+    (K.setDom k e1).setDom k e2 = K.setDom k e2 := by
+  refine ChanSt.extD rfl rfl ?_ rfl
+  intro k'
+  simp only [ChanSt.setDom_dom]
+  by_cases hk : k' = k <;> simp [hk]
+
+theorem ChanSt.setEp_setDom (K : ChanSt) (k1 k2 : EpKey) (e1 : EpEnt) (e2 : DomEnt) :
+    (K.setEp k1 e1).setDom k2 e2 = (K.setDom k2 e2).setEp k1 e1 := rfl
+
+inductive DMini : Type where
+  | dnew (me : List Nat) (n : Nat) (ty : Ty) (v : Expr) (H : Heap)
+  | denter (me : List Nat) (k : EpKey)
+  | dexit (me : List Nat) (k : EpKey) (v : Expr) (H : Heap)
+
+def DMini.key : DMini → EpKey
+  | .dnew me n _ _ _ => (me, n)
+  | .denter _ k => k
+  | .dexit _ k _ _ => k
+
+def DMini.who : DMini → List Nat
+  | .dnew me _ _ _ _ => me
+  | .denter me _ => me
+  | .dexit me _ _ _ => me
+
+/-- 1 鍵の domain の項目への効果（オラクルは読むだけ）: 外側 none = 待機・(結果, 新しい項目〔none = そのまま〕) -/
+def DMini.f : DMini → List (List Nat) → Option DomEnt → Option (Option Pkt × Option DomEnt)
+  | .dnew _ _ ty v H, _, none =>
+      match packV ty H v with
+      | Option.some w => some (some (Pkt.ofV .triv), some ⟨w, none, 0, ty⟩)
+      | Option.none => some (none, none)
+  | .dnew _ _ _ _ _, _, some _ => some (none, none)
+  | .denter me _, ora, some d =>
+      if d.holder = none ∧ ora[d.served]? = some me then some (some d.st, some { d with holder := some me }) else none
+  | .denter _ _, _, none => none
+  | .dexit me _ v H, _, some d =>
+      if d.holder = some me then
+        (match packV d.ty H v with
+         | Option.some w => some (some (Pkt.ofV .triv), some { d with st := w, holder := none, served := d.served + 1 })
+         | Option.none => some (none, none))
+      else some (none, none)
+  | .dexit _ _ _ _, _, none => none
+
+def ChanSt.updD (K : ChanSt) (k : EpKey) : Option DomEnt → ChanSt
+  | some e => K.setDom k e
+  | none => K
+
+def DMini.run (m : DMini) (K : ChanSt) : Option (Option Pkt × ChanSt) :=
+  (m.f (K.ora m.key) (K.dom m.key)).map (fun p => (p.1, K.updD m.key p.2))
+
+@[simp] theorem updD_ora {K : ChanSt} {k : EpKey} {o : Option DomEnt} : (K.updD k o).ora = K.ora := by
+  cases o <;> rfl
+
+@[simp] theorem updD_ep {K : ChanSt} {k : EpKey} {o : Option DomEnt} : (K.updD k o).ep = K.ep := by
+  cases o <;> rfl
+
+@[simp] theorem upd_dom {K : ChanSt} {k : EpKey} {o : Option EpEnt} : (K.upd k o).dom = K.dom := by
+  cases o <;> rfl
+
+@[simp] theorem upd_ora {K : ChanSt} {k : EpKey} {o : Option EpEnt} : (K.upd k o).ora = K.ora := by
+  cases o <;> rfl
+
+theorem updD_dom_ne {K : ChanSt} {k k' : EpKey} {o : Option DomEnt} (h : k' ≠ k) : (K.updD k o).dom k' = K.dom k' := by
+  cases o <;> simp [ChanSt.updD, h]
+
+theorem updD_comm {K : ChanSt} {k1 k2 : EpKey} (o1 o2 : Option DomEnt) (h : k1 ≠ k2) :
+    (K.updD k1 o1).updD k2 o2 = (K.updD k2 o2).updD k1 o1 := by
+  cases o1 <;> cases o2 <;> simp [ChanSt.updD, ChanSt.setDom_comm _ _ h]
+
+theorem updD_dom_or {K : ChanSt} {k : EpKey} {o : Option DomEnt} : (K.updD k o).dom k = o.or (K.dom k) := by
+  cases o <;> simp [ChanSt.updD]
+
+theorem updD_updD {K : ChanSt} {k : EpKey} (o o' : Option DomEnt) : (K.updD k o).updD k o' = K.updD k (o'.or o) := by
+  cases o <;> cases o' <;> simp [ChanSt.updD, ChanSt.setDom_setDom]
+
+theorem updD_congr {K : ChanSt} {k : EpKey} {x y : Option DomEnt} (h : x.or (K.dom k) = y.or (K.dom k)) :
+    K.updD k x = K.updD k y := by
+  refine ChanSt.extD (by cases x <;> cases y <;> rfl) (by simp) ?_ (by simp)
+  intro k'
+  by_cases hk : k' = k
+  · subst hk; rw [updD_dom_or, updD_dom_or, h]
+  · rw [updD_dom_ne hk, updD_dom_ne hk]
+
+theorem upd_updD {K : ChanSt} {k1 k2 : EpKey} (o1 : Option EpEnt) (o2 : Option DomEnt) :
+    (K.upd k1 o1).updD k2 o2 = (K.updD k2 o2).upd k1 o1 := by
+  cases o1 <;> cases o2 <;> rfl
+
+/-- 鍵の違う 2 つの domain の小操作は可換 -/
+theorem dmini_comm_ne {m1 m2 : DMini} {K K1 K2 : ChanSt} {r1 r2 : Option Pkt} (hk : m1.key ≠ m2.key)
+    (h1 : m1.run K = some (r1, K1)) (h2 : m2.run K = some (r2, K2)) :
+    ∃ K', m1.run K2 = some (r1, K') ∧ m2.run K1 = some (r2, K') := by
+  unfold DMini.run at h1 h2 ⊢
+  obtain ⟨⟨a1, o1⟩, hf1, he1⟩ := Option.map_eq_some_iff.mp h1
+  obtain ⟨⟨a2, o2⟩, hf2, he2⟩ := Option.map_eq_some_iff.mp h2
+  simp only [Prod.mk.injEq] at he1 he2
+  obtain ⟨rfl, rfl⟩ := he1
+  obtain ⟨rfl, rfl⟩ := he2
+  refine ⟨(K.updD m1.key o1).updD m2.key o2, ?_, ?_⟩
+  · rw [updD_ora, updD_dom_ne hk, hf1]; simp [updD_comm o1 o2 hk]
+  · rw [updD_ora, updD_dom_ne (Ne.symm hk), hf2]; simp
+
+/-- 鍵の同じ 2 つの domain の小操作（行為者が違う）: 両方が状態を変えて進むことはない（入る・出るは持ち手とオラクルの番が 1 本に決める・
+作るのは鍵の持ち主だけ）— 片方は失敗で項目を変えないか、待機で進まない -/
+theorem dmini_f_comm {m1 m2 : DMini} {ora : List (List Nat)} {o : Option DomEnt} {a1 a2 : Option Pkt} {o1 o2 : Option DomEnt}
+    (hw : m1.who ≠ m2.who) (hk : m1.key = m2.key)
+    (h1 : m1.f ora o = some (a1, o1)) (h2 : m2.f ora o = some (a2, o2)) :
+    ∃ o1' o2', m1.f ora (o2.or o) = some (a1, o1') ∧ m2.f ora (o1.or o) = some (a2, o2') ∧
+      (o1'.or o2).or o = (o2'.or o1).or o := by
+  cases m1 <;> cases m2 <;> cases o <;> simp only [DMini.f, DMini.who, DMini.key] at hw hk h1 h2 ⊢
+  all_goals first
+    | (simp at h1; done)
+    | (simp at h2; done)
+    | skip
+  all_goals (repeat' split at h1) <;> (repeat' split at h2) <;>
+    simp only [Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at h1 h2
+  all_goals (obtain ⟨rfl, rfl⟩ := h1; obtain ⟨rfl, rfl⟩ := h2)
+  all_goals first
+    | (simp_all; done)
+    | ((simp only [Option.or]; repeat' split) <;> simp_all; done)
+    | ((simp only [Option.or]; repeat' split) <;> simp_all <;> omega)
+
+/-- 行為者の違う 2 つの domain の小操作は可換 -/
+theorem dmini_comm {m1 m2 : DMini} {K K1 K2 : ChanSt} {r1 r2 : Option Pkt}
+    (hw : m1.who ≠ m2.who) (h1 : m1.run K = some (r1, K1)) (h2 : m2.run K = some (r2, K2)) :
+    ∃ K', m1.run K2 = some (r1, K') ∧ m2.run K1 = some (r2, K') := by
+  by_cases hk : m1.key = m2.key
+  · unfold DMini.run at h1 h2 ⊢
+    obtain ⟨⟨a1, o1⟩, hf1, he1⟩ := Option.map_eq_some_iff.mp h1
+    obtain ⟨⟨a2, o2⟩, hf2, he2⟩ := Option.map_eq_some_iff.mp h2
+    simp only [Prod.mk.injEq] at he1 he2
+    obtain ⟨rfl, rfl⟩ := he1
+    obtain ⟨rfl, rfl⟩ := he2
+    rw [← hk] at hf2
+    obtain ⟨o1', o2', hf1', hf2', heq⟩ := dmini_f_comm hw hk hf1 hf2
+    refine ⟨(K.updD m1.key o2).updD m1.key o1', ?_, ?_⟩
+    · rw [← hk, updD_ora, updD_dom_or, hf1']; simp
+    · rw [← hk, updD_ora, updD_dom_or, hf2']
+      simp only [Option.map_some, updD_updD]
+      congr 2
+      exact (updD_congr heq).symm
+  · exact dmini_comm_ne hk h1 h2
+
+/-- 端点の小操作と domain の小操作は可換（別の欄） -/
+theorem mini_dmini_comm {m1 : Mini} {m2 : DMini} {K K1 K2 : ChanSt} {r1 r2 : Option Pkt}
+    (h1 : m1.run K = some (r1, K1)) (h2 : m2.run K = some (r2, K2)) :
+    ∃ K', m1.run K2 = some (r1, K') ∧ m2.run K1 = some (r2, K') := by
+  unfold Mini.run at h1 ⊢
+  unfold DMini.run at h2 ⊢
+  obtain ⟨⟨a1, o1⟩, hf1, he1⟩ := Option.map_eq_some_iff.mp h1
+  obtain ⟨⟨a2, o2⟩, hf2, he2⟩ := Option.map_eq_some_iff.mp h2
+  simp only [Prod.mk.injEq] at he1 he2
+  obtain ⟨rfl, rfl⟩ := he1
+  obtain ⟨rfl, rfl⟩ := he2
+  refine ⟨(K.upd m1.key o1).updD m2.key o2, ?_, ?_⟩
+  · rw [updD_ep, hf1]; simp [upd_updD]
+  · rw [upd_ora, upd_dom, hf2]; simp
 
 /-- 引き渡しの 1 端点の形: giveV は送り端 / 受け端の持ち主の書き換え（gtx / grx）そのもの -/
 theorem giveV_tx {me kid : List Nat} {d : Nat} {p : List Nat} {k r : Nat} {K : ChanSt} :
@@ -447,15 +664,45 @@ theorem give_give_comm {me1 kid1 me2 kid2 : List Nat} {d1 d2 : Nat} {v1 v2 : Exp
   exact comm_symm (give_mini_comm (m := m1) (by rw [hmw]; exact Ne.symm h12) (by rw [hmw]; exact hk2)
     (by rw [hmk]; simpa using hk1)) h1 h2
 
+/-- domain の Op は 1 つの domain の小操作 -/
+def Op.dmini : Op → Option DMini
+  | .dnew me n ty v H => some (.dnew me n ty v H)
+  | .denter me k => some (.denter me k)
+  | .dexit me k v H => some (.dexit me k v H)
+  | _ => none
+
+theorem Op.run_dmini {a : Op} {m : DMini} (h : a.dmini = some m) (K : ChanSt) : a.run K = m.run K := by
+  cases a <;> simp only [Op.dmini, Option.some.injEq, reduceCtorEq] at h <;> subst h <;>
+    simp only [Op.run, DMini.run, DMini.key] <;> cases hk : K.dom _ <;> simp [DMini.f, ChanSt.updD] <;>
+    (repeat' split) <;> simp_all
+
+theorem Op.dmini_who {a : Op} {m : DMini} (h : a.dmini = some m) : a.who = some m.who := by
+  cases a <;> simp only [Op.dmini, Option.some.injEq, reduceCtorEq] at h <;> subst h <;> rfl
+
+theorem Op.dmini_kid {a : Op} {m : DMini} (h : a.dmini = some m) : a.kid = none := by
+  cases a <;> simp only [Op.dmini, Option.some.injEq, reduceCtorEq] at h <;> subst h <;> rfl
+
+/-- give と domain の小操作の可換性（give は端点の欄だけを書く） -/
+theorem give_dmini_comm {me kid : List Nat} {d : Nat} {v : Expr} {m : DMini} :
+    ∀ {K Ka Kb ra rb}, (Op.give me kid d v).run K = some (ra, Ka) → m.run K = some (rb, Kb) →
+      ∃ K', (Op.give me kid d v).run Kb = some (ra, K') ∧ m.run Ka = some (rb, K') := by
+  intro K Ka Kb ra rb ha hb
+  refine op_give_comm (run2 := m.run) (fun h => giveV_comm (run2 := m.run) ?_ v h) ha hb
+  intro m1 _ K K1 K2 res r h1 h2
+  exact mini_dmini_comm h1 h2
+
 theorem Op.cases3 (a : Op) :
-    a = .pure ∨ (∃ me kid d v, a = .give me kid d v) ∨ ∃ m, a.mini = some m := by
+    a = .pure ∨ (∃ me kid d v, a = .give me kid d v) ∨ (∃ m, a.mini = some m) ∨ ∃ m, a.dmini = some m := by
   cases a with
   | pure => exact .inl rfl
   | give me kid d v => exact .inr (.inl ⟨me, kid, d, v, rfl⟩)
-  | newch => exact .inr (.inr ⟨_, rfl⟩)
-  | send => exact .inr (.inr ⟨_, rfl⟩)
-  | recv => exact .inr (.inr ⟨_, rfl⟩)
-  | close => exact .inr (.inr ⟨_, rfl⟩)
+  | newch => exact .inr (.inr (.inl ⟨_, rfl⟩))
+  | send => exact .inr (.inr (.inl ⟨_, rfl⟩))
+  | recv => exact .inr (.inr (.inl ⟨_, rfl⟩))
+  | close => exact .inr (.inr (.inl ⟨_, rfl⟩))
+  | dnew => exact .inr (.inr (.inr ⟨_, rfl⟩))
+  | denter => exact .inr (.inr (.inr ⟨_, rfl⟩))
+  | dexit => exact .inr (.inr (.inr ⟨_, rfl⟩))
 
 /-- 操作の可換性（独立な 2 つの操作は、結果を変えずに順序を入れ替えられ、同じ K に着く） -/
 theorem op_comm {a b : Op} (hi : a.Indep b) :
@@ -463,21 +710,21 @@ theorem op_comm {a b : Op} (hi : a.Indep b) :
       ∃ K', a.run Kb = some (ra, K') ∧ b.run Ka = some (rb, K') := by
   intro K Ka Kb ra rb ha hb
   obtain ⟨hw, hk1, hk2⟩ := hi
-  rcases Op.cases3 a with rfl | ⟨me1, kid1, d1, v1, rfl⟩ | ⟨m1, hm1⟩
+  rcases Op.cases3 a with rfl | ⟨me1, kid1, d1, v1, rfl⟩ | ⟨m1, hm1⟩ | ⟨m1, hm1⟩
   · simp only [Op.run, Option.some.injEq, Prod.mk.injEq] at ha
     obtain ⟨rfl, rfl⟩ := ha
     exact ⟨Kb, rfl, hb⟩
-  all_goals rcases Op.cases3 b with rfl | ⟨me2, kid2, d2, v2, rfl⟩ | ⟨m2, hm2⟩
-  · simp only [Op.run, Option.some.injEq, Prod.mk.injEq] at hb
-    obtain ⟨rfl, rfl⟩ := hb
-    exact ⟨Ka, ha, rfl⟩
+  all_goals rcases Op.cases3 b with rfl | ⟨me2, kid2, d2, v2, rfl⟩ | ⟨m2, hm2⟩ | ⟨m2, hm2⟩
+  all_goals try
+    (simp only [Op.run, Option.some.injEq, Prod.mk.injEq] at hb
+     obtain ⟨rfl, rfl⟩ := hb
+     exact ⟨Ka, ha, rfl⟩)
   · exact give_give_comm (hw _ _ rfl rfl) (hk2 _ _ rfl rfl) (Ne.symm (hk1 _ _ rfl rfl)) ha hb
   · rw [Op.run_mini hm2] at hb ⊢
     have hw2 := Op.mini_who hm2
     exact give_mini_comm (hw _ _ rfl hw2) (hk2 _ _ rfl hw2) (by rw [Op.mini_kid hm2]; simp) ha hb
-  · simp only [Op.run, Option.some.injEq, Prod.mk.injEq] at hb
-    obtain ⟨rfl, rfl⟩ := hb
-    exact ⟨Ka, ha, rfl⟩
+  · rw [Op.run_dmini hm2] at hb ⊢
+    exact give_dmini_comm ha hb
   · rw [Op.run_mini hm1] at ha ⊢
     have hw1 := Op.mini_who hm1
     exact comm_symm (give_mini_comm (Ne.symm (hw _ _ hw1 rfl)) (Ne.symm (hk1 _ _ hw1 rfl))
@@ -487,6 +734,21 @@ theorem op_comm {a b : Op} (hi : a.Indep b) :
     have hw1 := Op.mini_who hm1
     have hw2 := Op.mini_who hm2
     exact mini_comm (hw _ _ hw1 hw2) (by rw [Op.mini_kid hm1]; simp) (by rw [Op.mini_kid hm2]; simp) ha hb
+  · rw [Op.run_mini hm1] at ha ⊢
+    rw [Op.run_dmini hm2] at hb ⊢
+    exact mini_dmini_comm ha hb
+  · rw [Op.run_dmini hm1] at ha ⊢
+    obtain ⟨K', h1, h2⟩ := give_dmini_comm hb ha
+    exact ⟨K', h2, h1⟩
+  · rw [Op.run_dmini hm1] at ha ⊢
+    rw [Op.run_mini hm2] at hb ⊢
+    obtain ⟨K', h1, h2⟩ := mini_dmini_comm hb ha
+    exact ⟨K', h2, h1⟩
+  · rw [Op.run_dmini hm1] at ha ⊢
+    rw [Op.run_dmini hm2] at hb ⊢
+    have hw1 := Op.dmini_who hm1
+    have hw2 := Op.dmini_who hm2
+    exact dmini_comm (hw _ _ hw1 hw2) ha hb
 
 open Expr
 
@@ -499,6 +761,9 @@ def mainOp (id : List Nat) (n : Nat) (ks : Kids) : State → Op
   | .ret H (.sendR (epV p k true _) :: _) v => .send id (p, k) v H
   | .ret _ (.recvK :: _) (epV p k false _) => .recv id (p, k)
   | .ret _ (.closeK :: _) (epV p k true _) => .close id (p, k)
+  | .ret H (.dnewK _ t :: _) v => .dnew id n (t.relocR 0) v H
+  | .ret _ (.denterK _ :: _) (domV p k _) => .denter id (p, k)
+  | .ret H (.dexitR (domV p k _) :: _) v => .dexit id (p, k) v H
   | _ => .pure
 
 /-- main の 1 歩の続き（操作の結果 res から、次の task の状態。葉の歩は空の K で走らせた葉の歩の結果） -/
@@ -567,6 +832,21 @@ def mainCont (Δ : Defs) (π : List Bool) (id : List Nat) (o n : Nat) (m : State
               | Option.some (H', v') => some (.fam id o n (.ret H'.dropLast S (inl (.union .unit (ε.relocR (H.length - 2))) v')) ks)
               | Option.none => some (.fam id o n (.panic H) ks)
       else none
+  | .ret H (.dnewK r _ :: S) _ =>
+      match res with
+      | Option.some _ => some (.fam id o (n + 1) (.ret H S (domV id n r)) ks)
+      | Option.none => some (.fam id o (n + 1) (.panic H) ks)
+  | .ret H (.denterK _ :: S) (domV _ _ _) =>
+      match res with
+      | Option.some w =>
+          match xfer (H.length - 1) (w.ty.relocR (H.length - 1)) [w.cs] H w.v with
+          | Option.some (H', v') => some (.fam id o n (.ret H' S v') ks)
+          | Option.none => some (.fam id o n (.panic H) ks)
+      | Option.none => some (.fam id o n (.panic H) ks)
+  | .ret H (.dexitR (domV _ _ _) :: S) _ =>
+      match res with
+      | Option.some _ => some (.fam id o n (.ret H S triv) ks)
+      | Option.none => some (.fam id o n (.panic H) ks)
   | .eval H _ (par _ _) => some (.fam id o n (.panic H) ks)
   | .eval H _ (parch _ _ _) => some (.fam id o n (.panic H) ks)
   | .eval H _ (newchan _ _) => some (.fam id o n (.panic H) ks)
@@ -606,11 +886,11 @@ theorem famMain_spec (Δ : Defs) (π : List Bool) (id : List Nat) (o n : Nat) (m
           | cons w q' => simp only [Option.bind_some, Option.map_some]; cases xfer _ _ _ _ _ <;> rfl
           | nil => by_cases h0 : e.closed = true <;> simp [h0, xfer_opt_nil, Ty.relocR]
     -- 葉の歩（famMain の最後の腕）
-    rename_i h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13
+    rename_i h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 h14 h15 h16
     have hop : mainOp id n ks m = .pure := by
-      unfold mainOp; split <;> first | rfl | (exfalso; first | (apply h1 <;> rfl) | (apply h2 <;> rfl) | (apply h3 <;> rfl) | (apply h4 <;> rfl) | (apply h5 <;> rfl) | (apply h6 <;> rfl) | (apply h7 <;> rfl) | (apply h8 <;> rfl) | (apply h9 <;> rfl) | (apply h10 <;> rfl) | (apply h11 <;> rfl) | (apply h12 <;> rfl) | (apply h13 <;> rfl))
+      unfold mainOp; split <;> first | rfl | (exfalso; first | (apply h1 <;> rfl) | (apply h2 <;> rfl) | (apply h3 <;> rfl) | (apply h4 <;> rfl) | (apply h5 <;> rfl) | (apply h6 <;> rfl) | (apply h7 <;> rfl) | (apply h8 <;> rfl) | (apply h9 <;> rfl) | (apply h10 <;> rfl) | (apply h11 <;> rfl) | (apply h12 <;> rfl) | (apply h13 <;> rfl) | (apply h14 <;> rfl) | (apply h15 <;> rfl) | (apply h16 <;> rfl))
     have hco : mainCont Δ π id o n m ks (Option.some (Pkt.ofV Expr.triv)) = (step Δ π m ∅).map (fun p => .fam id o n p.1.fixLeaf ks) := by
-      unfold mainCont; split <;> first | rfl | (exfalso; first | (apply h1 <;> rfl) | (apply h2 <;> rfl) | (apply h3 <;> rfl) | (apply h4 <;> rfl) | (apply h5 <;> rfl) | (apply h6 <;> rfl) | (apply h7 <;> rfl) | (apply h8 <;> rfl) | (apply h9 <;> rfl) | (apply h10 <;> rfl) | (apply h11 <;> rfl) | (apply h12 <;> rfl) | (apply h13 <;> rfl))
+      unfold mainCont; split <;> first | rfl | (exfalso; first | (apply h1 <;> rfl) | (apply h2 <;> rfl) | (apply h3 <;> rfl) | (apply h4 <;> rfl) | (apply h5 <;> rfl) | (apply h6 <;> rfl) | (apply h7 <;> rfl) | (apply h8 <;> rfl) | (apply h9 <;> rfl) | (apply h10 <;> rfl) | (apply h11 <;> rfl) | (apply h12 <;> rfl) | (apply h13 <;> rfl) | (apply h14 <;> rfl) | (apply h15 <;> rfl) | (apply h16 <;> rfl))
     rw [hop]
     simp only [Op.run, Option.bind_some]
     rw [hco, stepLeaf_all Δ π π m K ∅ hl hr, Option.map_map, Option.map_map]
@@ -886,7 +1166,7 @@ theorem mainCont_set {Δ : Defs} {π : List Bool} {id : List Nat} {o n : Nat} {m
         split <;> (try split) <;> (try split) <;> intro h <;>
           first | (cases h; done) | (simp only [Option.some.injEq] at h; subst h; simp_all [State.setKid])
     · cases h
-  case h_14 =>
+  case h_17 =>
     obtain ⟨p, hp, rfl⟩ := Option.map_eq_some_iff.mp h
     rw [hp]; rfl
 
@@ -905,7 +1185,7 @@ theorem mainCont_out {Δ : Defs} {π : List Bool} {id : List Nat} {o n : Nat} {m
       exact ⟨_, _, _, rfl, rfl, .inr (.inr ⟨_, _, _, rfl, .mk rfl .nil⟩)⟩
     · simp only [Option.some.injEq] at h; subst h
       exact ⟨_, _, _, rfl, rfl, .inl rfl⟩
-  case h_14 =>
+  case h_17 =>
     obtain ⟨p, -, rfl⟩ := Option.map_eq_some_iff.mp h
     exact ⟨_, _, _, rfl, State.fixLeaf_idem _, .inl rfl⟩
   all_goals

@@ -49,15 +49,26 @@ structure EpEnt where
   /-- 閉じた（P3b-4 ③ — close が立てる。以後の送りは panic・空の受けは nil） -/
   closed : Bool := false
 
-/-- チャネルストア: 旧チャネル id → 待機中の値のキュー（先頭が最古）・端点のチャネル（鍵 → 項目の関数 — 挿入の順に依らない） -/
+/-- domain の項目: 状態（梱包 — 送りと同じ 1 region の小さなヒープ）・入っている task（none = 空き）・入り終えた数（オラクルの何番目まで
+進んだか）・状態の型（dnew の注釈の relocR 0 — 梱包が歩く型） -/
+structure DomEnt where
+  st : Pkt
+  holder : Option (List Nat)
+  served : Nat
+  ty : Ty
+
+/-- チャネルストア: 旧チャネル id → 待機中の値のキュー（先頭が最古）・端点のチャネル（鍵 → 項目の関数 — 挿入の順に依らない）・
+domain の表（鍵は端点と同じ形 — 作った task の id と局所の通し番号）・domain に入る task の順（オラクル — 走りの入力で、機械は読むだけ） -/
 structure ChanSt where
   leg : List (List Expr) := []
   ep : EpKey → Option EpEnt := fun _ => none
+  dom : EpKey → Option DomEnt := fun _ => none
+  ora : EpKey → List (List Nat) := fun _ => []
 
 instance : EmptyCollection ChanSt := ⟨{}⟩
 
 /-- 旧チャネルだけのストア（例の比較用） -/
-def ChanSt.ofLeg (l : List (List Expr)) : ChanSt := ⟨l, fun _ => none⟩
+def ChanSt.ofLeg (l : List (List Expr)) : ChanSt := { leg := l }
 
 /-- 旧チャネルを 1 本足す -/
 def ChanSt.addLeg (K : ChanSt) : ChanSt := { K with leg := K.leg ++ [[]] }
@@ -68,6 +79,10 @@ def ChanSt.setLeg (K : ChanSt) (c : Nat) (q : List Expr) : ChanSt := { K with le
 /-- 端点のチャネル k の項目を書き換える -/
 def ChanSt.setEp (K : ChanSt) (k : EpKey) (e : EpEnt) : ChanSt :=
   { K with ep := fun k' => if k' = k then some e else K.ep k' }
+
+/-- domain k の項目を書き換える -/
+def ChanSt.setDom (K : ChanSt) (k : EpKey) (e : DomEnt) : ChanSt :=
+  { K with dom := fun k' => if k' = k then some e else K.dom k' }
 
 /-- 継続フレーム。評価文脈の 1 層 -/
 inductive Frame : Type where
@@ -119,6 +134,14 @@ inductive Frame : Type where
   | recvK
   /-- close のチャネル評価中（P3b-4 ③） -/
   | closeK
+  /-- dnew の初期値の評価中（domain の段） -/
+  | dnewK (r : Nat) (t : Ty)
+  /-- denter の domain の評価中 -/
+  | denterK (t : Ty)
+  /-- dexit の domain の評価中（新しい状態 v を保持） -/
+  | dexitL (v : Expr)
+  /-- dexit の新しい状態の評価中（評価済みの domain の値 d を保持） -/
+  | dexitR (d : Expr)
   /-- 呼び出しの引数評価中。値が戻ったら region を push し、シフト + coerce した
   本体に代入して同世界で評価する（round4） -/
   | callK (fn : Nat) (ts : List Ty)
@@ -856,6 +879,34 @@ def famMain (id : List Nat) (o n : Nat) (m : State) (ks : Kids) (K : ChanSt) (r 
               | Option.some (H', v') => some (.fam id o n (.ret H'.dropLast S (inl (.union .unit (ε.relocR (H.length - 2))) v')) ks, K)
               | Option.none => some (.fam id o n (.panic H) ks, K)
       else none
+  -- domain: 鍵 = (この task の id, 局所の通し番号 — 端点と共有の数え)。初期値を梱包して空きの項目を作る（二重の作成は定義された panic）
+  | .ret H (.dnewK r t :: S) v =>
+      match K.dom (id, n) with
+      | Option.some _ => some (.fam id o (n + 1) (.panic H) ks, K)
+      | Option.none =>
+          match packV (t.relocR 0) H v with
+          | Option.some w => some (.fam id o (n + 1) (.ret H S (domV id n r)) ks, K.setDom (id, n) ⟨w, none, 0, t.relocR 0⟩)
+          | Option.none => some (.fam id o (n + 1) (.panic H) ks, K)
+  -- 入る: 空きで、オラクルの次の番がこの task なら持ち手になり、状態を今の最内の region へ写して受ける。それ以外（まだ無い domain を含む）は待つ
+  | .ret H (.denterK _ :: S) (domV p k _) =>
+      match K.dom (p, k) with
+      | Option.some de =>
+          if de.holder = none ∧ (K.ora (p, k))[de.served]? = some id then
+            match xfer (H.length - 1) (de.st.ty.relocR (H.length - 1)) [de.st.cs] H de.st.v with
+            | Option.some (H', v') => some (.fam id o n (.ret H' S v') ks, K.setDom (p, k) { de with holder := some id })
+            | Option.none => some (.fam id o n (.panic H) ks, K.setDom (p, k) { de with holder := some id })
+          else none
+      | Option.none => none
+  -- 出る: 持ち手なら新しい状態を梱包して差し替え、空きに戻して番を 1 つ進める。持ち手でなければ定義された panic・まだ無い domain は待つ
+  | .ret H (.dexitR (domV p k _) :: S) v =>
+      match K.dom (p, k) with
+      | Option.some de =>
+          if de.holder = some id then
+            match packV de.ty H v with
+            | Option.some w => some (.fam id o n (.ret H S triv) ks, K.setDom (p, k) { de with st := w, holder := none, served := de.served + 1 })
+            | Option.none => some (.fam id o n (.panic H) ks, K)
+          else some (.fam id o n (.panic H) ks, K)
+      | Option.none => none
   -- 旧 par / parch / newchan / 旧 chan の送受は task の中では定義された panic（凍結 — load の側にだけ残る・退役は Kahn の後。
   -- 旧 newchan の id は全 task 共有の通し番号で順序に依り、旧 par は MPMC の並走を作るので、task の木の合流性〔Kahn〕を壊す）
   | .eval H _ (par _ _) => some (.fam id o n (.panic H) ks, K)
@@ -978,6 +1029,11 @@ def step (Δ : Defs) (π : List Bool) : State → ChanSt → Option (State × Ch
   | .eval H S (scopeV rs ε), K => some (.ret H S (scopeV rs ε), K)
   | .eval H S (taskV rs n), K => some (.ret H S (taskV rs n), K)
   | .eval H S (epV p k b r), K => some (.ret H S (epV p k b r), K)
+  -- domain の段: 分解（入る・出る・作るの本体は task の中の famMain — 下の task の外の腕は panic）
+  | .eval H S (dnew r i t), K => some (.eval H (.dnewK r t :: S) i, K)
+  | .eval H S (domV p k r), K => some (.ret H S (domV p k r), K)
+  | .eval H S (denter t d), K => some (.eval H (.denterK t :: S) d, K)
+  | .eval H S (dexit d v), K => some (.eval H (.dexitL v :: S) d, K)
   -- task の外の端点の生成は到達しない形（子の表も id も持たない）: panic で閉じる
   | .eval H S (newch _ _ _), K => some (.panic H, K)
   -- spawn: 各タスクは親ヒープのコピーと空スタックで走る（段 3b: 共有 region の読み出し。
@@ -1262,6 +1318,10 @@ def step (Δ : Defs) (π : List Bool) : State → ChanSt → Option (State × Ch
   | .ret H (.sendR (epV _ _ _ _) :: _) _, K => some (.panic H, K)
   | .ret H (.recvK :: _) (epV _ _ _ _), K => some (.panic H, K)
   | .ret H (.closeK :: _) (epV _ _ _ _), K => some (.panic H, K)
+  -- task の外の domain（子の表も id も持たない）: panic で閉じる
+  | .ret H (.dnewK _ _ :: _) _, K => some (.panic H, K)
+  | .ret H (.denterK _ :: _) (domV _ _ _), K => some (.panic H, K)
+  | .ret H (.dexitR (domV _ _ _) :: _) _, K => some (.panic H, K)
   | .ret H (.copyK k t :: S) v, K =>
       match relocTo k t H v with
       | Option.some (H', v') => some (.ret H' S v', K)
@@ -1274,6 +1334,7 @@ def step (Δ : Defs) (π : List Bool) : State → ChanSt → Option (State × Ch
           | Option.none => some (.panic H, K)
       | Option.none => none
   | .ret H (.sendL e :: S) v, K => some (.eval H (.sendR v :: S) e, K)
+  | .ret H (.dexitL e :: S) v, K => some (.eval H (.dexitR v :: S) e, K)
   -- send: enqueue（無限バッファ。常に進む）
   | .ret H (.sendR (chanV c) :: S) v, K =>
       match K.leg[c]? with

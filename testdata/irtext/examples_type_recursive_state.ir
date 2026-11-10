@@ -2269,38 +2269,38 @@ b1:
   store %71[4], %76
   %77 = load.i64 %61[5]
   store %71[5], %77
-  %78 = slotaddr s9
-  %79 = const 0
-  store %78[0], %79
-  store %78[1], %79
-  store %78[2], %79
-  store %78[3], %79
-  store %78[4], %79
-  store %78[5], %79
+  %78 = const 0
+  %79 = slotaddr s9
+  store %79[0], %78
+  store %79[1], %78
+  store %79[2], %78
+  store %79[3], %78
+  store %79[4], %78
+  store %79[5], %78
   %80 = load.i64 %71[0]
-  store %78[0], %80
+  store %79[0], %80
   %81 = load.i64 %71[1]
-  store %78[1], %81
+  store %79[1], %81
   %82 = load.i64 %71[2]
-  store %78[2], %82
+  store %79[2], %82
   %83 = load.i64 %71[3]
-  store %78[3], %83
+  store %79[3], %83
   %84 = load.i64 %71[4]
-  store %78[4], %84
+  store %79[4], %84
   %85 = load.i64 %71[5]
-  store %78[5], %85
+  store %79[5], %85
   %86 = slotaddr s10
-  %87 = load.i64 %78[0]
+  %87 = load.i64 %79[0]
   store %86[0], %87
-  %88 = load.i64 %78[1]
+  %88 = load.i64 %79[1]
   store %86[1], %88
-  %89 = load.i64 %78[2]
+  %89 = load.i64 %79[2]
   store %86[2], %89
-  %90 = load.i64 %78[3]
+  %90 = load.i64 %79[3]
   store %86[3], %90
-  %91 = load.i64 %78[4]
+  %91 = load.i64 %79[4]
   store %86[4], %91
-  %92 = load.i64 %78[5]
+  %92 = load.i64 %79[5]
   store %86[5], %92
   %93 = load.i64 %86[0]
   %94 = const 1

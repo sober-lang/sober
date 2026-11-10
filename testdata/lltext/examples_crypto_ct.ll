@@ -4904,11 +4904,11 @@ b14.e40:
 b15:
   %v89 = add i64 0, 0
   %v90 = sub i64 %v89, %v81
-  %v91 = getelementptr i64, ptr %s2, i64 0
-  %v92 = add i64 0, 0
-  %st40 = getelementptr i64, ptr %v91, i64 0
-  store i64 %v92, ptr %st40
-  %st41 = getelementptr i64, ptr %v91, i64 0
+  %v91 = add i64 0, 0
+  %v92 = getelementptr i64, ptr %s2, i64 0
+  %st40 = getelementptr i64, ptr %v92, i64 0
+  store i64 %v91, ptr %st40
+  %st41 = getelementptr i64, ptr %v92, i64 0
   store i64 %v90, ptr %st41
   %v93 = getelementptr i64, ptr @"rt.meta", i64 0
   call void @"rt.flush"()
@@ -4975,7 +4975,7 @@ b15:
   %st57 = getelementptr i64, ptr %v118, i64 2
   store i64 %v117, ptr %st57
   call void @"rt.print_str"(ptr %v118)
-  %v120.p = getelementptr i64, ptr %v91, i64 0
+  %v120.p = getelementptr i64, ptr %v92, i64 0
   %v120 = load i64, ptr %v120.p
   call void @"rt.print_int"(i64 %v120)
   %v121 = getelementptr i64, ptr @"str.2", i64 0

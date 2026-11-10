@@ -1,0 +1,639 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/task",
+      "tok": 4
+    },
+    {
+      "alias": "$task",
+      "path": "std/task",
+      "tok": 0
+    },
+    {
+      "alias": "$pool",
+      "path": "std/pool",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "Log",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "seq",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 10
+          },
+          {
+            "name": "bytes",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 13
+          }
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 18
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "r",
+              "e"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 27
+                  },
+                  "field": "Run",
+                  "tok": 29
+                },
+                "args": [
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "s",
+                        "type": {
+                          "k": "name",
+                          "name": "task.Scope"
+                        }
+                      }
+                    ],
+                    "body": {
+                      "k": "block",
+                      "stmts": [
+                        {
+                          "k": "bind",
+                          "names": [
+                            "d"
+                          ],
+                          "mutable": false,
+                          "values": [
+                            {
+                              "k": "call",
+                              "callee": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "task",
+                                  "tok": 41
+                                },
+                                "field": "NewDomain",
+                                "tok": 43
+                              },
+                              "args": [
+                                {
+                                  "k": "ident",
+                                  "name": "s",
+                                  "tok": 45
+                                },
+                                {
+                                  "k": "composite",
+                                  "type_name": "Log",
+                                  "elems": [
+                                    {
+                                      "key": "seq",
+                                      "value": {
+                                        "k": "int",
+                                        "value": 0,
+                                        "tok": 51
+                                      }
+                                    },
+                                    {
+                                      "key": "bytes",
+                                      "value": {
+                                        "k": "int",
+                                        "value": 0,
+                                        "tok": 55
+                                      }
+                                    }
+                                  ],
+                                  "tok": 47,
+                                  "type_args": []
+                                }
+                              ],
+                              "tok": 44
+                            }
+                          ],
+                          "tok": 39
+                        },
+                        {
+                          "k": "bind",
+                          "names": [
+                            "h1"
+                          ],
+                          "mutable": false,
+                          "values": [
+                            {
+                              "k": "call",
+                              "callee": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "task",
+                                  "tok": 61
+                                },
+                                "field": "Spawn",
+                                "tok": 63
+                              },
+                              "args": [
+                                {
+                                  "k": "ident",
+                                  "name": "s",
+                                  "tok": 65
+                                },
+                                {
+                                  "k": "lambda",
+                                  "params": [],
+                                  "body": {
+                                    "k": "call",
+                                    "callee": {
+                                      "k": "selector",
+                                      "base": {
+                                        "k": "ident",
+                                        "name": "task",
+                                        "tok": 70
+                                      },
+                                      "field": "Update",
+                                      "tok": 72
+                                    },
+                                    "args": [
+                                      {
+                                        "k": "ident",
+                                        "name": "d",
+                                        "tok": 74
+                                      },
+                                      {
+                                        "k": "lambda",
+                                        "params": [
+                                          {
+                                            "name": "st",
+                                            "type": {
+                                              "k": "name",
+                                              "name": "Log"
+                                            },
+                                            "mutable": true
+                                          }
+                                        ],
+                                        "body": {
+                                          "k": "block",
+                                          "stmts": [
+                                            {
+                                              "k": "assign",
+                                              "targets": [
+                                                {
+                                                  "k": "selector",
+                                                  "base": {
+                                                    "k": "ident",
+                                                    "name": "st",
+                                                    "tok": 83
+                                                  },
+                                                  "field": "seq",
+                                                  "tok": 85
+                                                }
+                                              ],
+                                              "op": "+=",
+                                              "values": [
+                                                {
+                                                  "k": "int",
+                                                  "value": 1,
+                                                  "tok": 87
+                                                }
+                                              ],
+                                              "tok": 83
+                                            },
+                                            {
+                                              "k": "assign",
+                                              "targets": [
+                                                {
+                                                  "k": "selector",
+                                                  "base": {
+                                                    "k": "ident",
+                                                    "name": "st",
+                                                    "tok": 89
+                                                  },
+                                                  "field": "bytes",
+                                                  "tok": 91
+                                                }
+                                              ],
+                                              "op": "+=",
+                                              "values": [
+                                                {
+                                                  "k": "int",
+                                                  "value": 10,
+                                                  "tok": 93
+                                                }
+                                              ],
+                                              "tok": 89
+                                            },
+                                            {
+                                              "k": "expr",
+                                              "expr": {
+                                                "k": "selector",
+                                                "base": {
+                                                  "k": "ident",
+                                                  "name": "st",
+                                                  "tok": 95
+                                                },
+                                                "field": "seq",
+                                                "tok": 97
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "tok": 81
+                                      }
+                                    ],
+                                    "tok": 73
+                                  },
+                                  "tok": 69
+                                }
+                              ],
+                              "tok": 64
+                            }
+                          ],
+                          "tok": 59
+                        },
+                        {
+                          "k": "bind",
+                          "names": [
+                            "h2"
+                          ],
+                          "mutable": false,
+                          "values": [
+                            {
+                              "k": "call",
+                              "callee": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "task",
+                                  "tok": 105
+                                },
+                                "field": "Spawn",
+                                "tok": 107
+                              },
+                              "args": [
+                                {
+                                  "k": "ident",
+                                  "name": "s",
+                                  "tok": 109
+                                },
+                                {
+                                  "k": "lambda",
+                                  "params": [],
+                                  "body": {
+                                    "k": "call",
+                                    "callee": {
+                                      "k": "selector",
+                                      "base": {
+                                        "k": "ident",
+                                        "name": "task",
+                                        "tok": 114
+                                      },
+                                      "field": "Update",
+                                      "tok": 116
+                                    },
+                                    "args": [
+                                      {
+                                        "k": "ident",
+                                        "name": "d",
+                                        "tok": 118
+                                      },
+                                      {
+                                        "k": "lambda",
+                                        "params": [
+                                          {
+                                            "name": "st",
+                                            "type": {
+                                              "k": "name",
+                                              "name": "Log"
+                                            },
+                                            "mutable": true
+                                          }
+                                        ],
+                                        "body": {
+                                          "k": "block",
+                                          "stmts": [
+                                            {
+                                              "k": "assign",
+                                              "targets": [
+                                                {
+                                                  "k": "selector",
+                                                  "base": {
+                                                    "k": "ident",
+                                                    "name": "st",
+                                                    "tok": 127
+                                                  },
+                                                  "field": "seq",
+                                                  "tok": 129
+                                                }
+                                              ],
+                                              "op": "+=",
+                                              "values": [
+                                                {
+                                                  "k": "int",
+                                                  "value": 1,
+                                                  "tok": 131
+                                                }
+                                              ],
+                                              "tok": 127
+                                            },
+                                            {
+                                              "k": "assign",
+                                              "targets": [
+                                                {
+                                                  "k": "selector",
+                                                  "base": {
+                                                    "k": "ident",
+                                                    "name": "st",
+                                                    "tok": 133
+                                                  },
+                                                  "field": "bytes",
+                                                  "tok": 135
+                                                }
+                                              ],
+                                              "op": "+=",
+                                              "values": [
+                                                {
+                                                  "k": "int",
+                                                  "value": 32,
+                                                  "tok": 137
+                                                }
+                                              ],
+                                              "tok": 133
+                                            },
+                                            {
+                                              "k": "expr",
+                                              "expr": {
+                                                "k": "selector",
+                                                "base": {
+                                                  "k": "ident",
+                                                  "name": "st",
+                                                  "tok": 139
+                                                },
+                                                "field": "seq",
+                                                "tok": 141
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "tok": 125
+                                      }
+                                    ],
+                                    "tok": 117
+                                  },
+                                  "tok": 113
+                                }
+                              ],
+                              "tok": 108
+                            }
+                          ],
+                          "tok": 103
+                        },
+                        {
+                          "k": "bind",
+                          "names": [
+                            "t"
+                          ],
+                          "mutable": false,
+                          "values": [
+                            {
+                              "k": "binary",
+                              "op": "+",
+                              "lhs": {
+                                "k": "call",
+                                "callee": {
+                                  "k": "selector",
+                                  "base": {
+                                    "k": "ident",
+                                    "name": "task",
+                                    "tok": 149
+                                  },
+                                  "field": "Join",
+                                  "tok": 151
+                                },
+                                "args": [
+                                  {
+                                    "k": "ident",
+                                    "name": "h1",
+                                    "tok": 153
+                                  }
+                                ],
+                                "tok": 152
+                              },
+                              "rhs": {
+                                "k": "call",
+                                "callee": {
+                                  "k": "selector",
+                                  "base": {
+                                    "k": "ident",
+                                    "name": "task",
+                                    "tok": 156
+                                  },
+                                  "field": "Join",
+                                  "tok": 158
+                                },
+                                "args": [
+                                  {
+                                    "k": "ident",
+                                    "name": "h2",
+                                    "tok": 160
+                                  }
+                                ],
+                                "tok": 159
+                              },
+                              "tok": 155
+                            }
+                          ],
+                          "tok": 147
+                        },
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "binary",
+                            "op": "+",
+                            "lhs": {
+                              "k": "binary",
+                              "op": "*",
+                              "lhs": {
+                                "k": "ident",
+                                "name": "t",
+                                "tok": 163
+                              },
+                              "rhs": {
+                                "k": "int",
+                                "value": 100,
+                                "tok": 165
+                              },
+                              "tok": 164
+                            },
+                            "rhs": {
+                              "k": "call",
+                              "callee": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "task",
+                                  "tok": 167
+                                },
+                                "field": "Read",
+                                "tok": 169
+                              },
+                              "args": [
+                                {
+                                  "k": "ident",
+                                  "name": "d",
+                                  "tok": 171
+                                },
+                                {
+                                  "k": "lambda",
+                                  "params": [
+                                    {
+                                      "name": "st",
+                                      "type": {
+                                        "k": "name",
+                                        "name": "Log"
+                                      }
+                                    }
+                                  ],
+                                  "body": {
+                                    "k": "selector",
+                                    "base": {
+                                      "k": "ident",
+                                      "name": "st",
+                                      "tok": 178
+                                    },
+                                    "field": "bytes",
+                                    "tok": 180
+                                  },
+                                  "tok": 177
+                                }
+                              ],
+                              "tok": 170
+                            },
+                            "tok": 166
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 37
+                  }
+                ],
+                "tok": 30
+              }
+            ],
+            "tok": 23
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "e",
+                  "tok": 187
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 189
+                },
+                "tok": 188
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 191
+                      },
+                      "args": [
+                        {
+                          "k": "strlit",
+                          "value": "died",
+                          "tok": 193
+                        }
+                      ],
+                      "tok": 192
+                    }
+                  },
+                  {
+                    "k": "ret",
+                    "values": [],
+                    "tok": 196
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 186
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 200
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "r",
+                  "tok": 202
+                }
+              ],
+              "tok": 201
+            }
+          }
+        ]
+      },
+      "tok": 19,
+      "bodiless": false,
+      "span": {
+        "start": 18,
+        "end": 207
+      },
+      "sig_end": 22
+    }
+  ],
+  "consts": []
+}

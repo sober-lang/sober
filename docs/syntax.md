@@ -104,7 +104,7 @@ Go と同じ: 識別子、整数 / 浮動小数 / 文字リテラル（n 進は 
 | scope | `scope { }`、`scope(timeout: 200 * time.ms) { }`、`parallel scope { }` | 11 節 |
 | spawn / await | `spawn f(x)` → `Task[T]`、`await(t)?` | 11 節 |
 | shield | `shield { ... }`（式ブロック。`defer shield { }` と合成） | 11 節 |
-| 注釈 | `@pure`、`@errors(NotFound, Timeout)`、`@layout(c)`、`@recursion(depth: 8)`、`@noblock { }`、`@exhaustive`（関数 — 表の網羅。language.md 13 節の補）、`@secret(k)`（関数 — 仮引数の源）・`k []byte @secret`（struct の欄）・`@secret const`、`@bless`（関数 — std だけ。language.md 12 節「秘密の値の宣言」）、`@credential`（関数 / struct の欄 — std だけ）・`Fresh { … } @shared`（union の variant — std だけ）・`@bless(origin)`（関数 — std だけ。12 節「出所の依存」）、`@effects(io, !block…)`（関数の前置 / 名前付き関数型の後置 — 12 節「関数の効果の宣言」） | 10 節 |
+| 注釈 | `@pure`、`@errors(NotFound, Timeout)`、`@layout(c)`、`@recursion(depth: 8)`、`@noblock { }`、`@exhaustive`（関数 — 表の網羅。language.md 13 節の補）、`@secret(k)`（関数 — 仮引数の源）・`k []byte @secret`（struct の欄）・`@secret const`、`@bless`（関数 — std だけ。language.md 12 節「秘密の値の宣言」）、`@credential`（関数 / struct の欄 — std だけ）・`Fresh { … } @shared`（union の variant — std だけ）・`@bless(origin)`（関数 — std だけ。12 節「出所の依存」）、`@effects(io, !block…)`（関数の前置 / 名前付き関数型の後置 — 12 節「関数の効果の宣言」）、`@const(sql)`（関数 — const の席。12 節「const の席」） | 10 節 |
 | 名前付き引数 | `f(x, sep: ",")`、`scope(timeout: 200 * time.ms)`、`@json(name: "x")`。位置が先・名前が後、省略は `T?` 引数のみ、直接呼び出しと名前付き関数型のみ（決定 7） | 決定 7 |
 
 ---

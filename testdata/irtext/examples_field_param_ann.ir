@@ -1781,14 +1781,14 @@ b0:
   %14 = mul %12, %13
   %15 = add %5, %14
   region.enter
-  %16 = slotaddr s1
-  %17 = const 0
-  store %16[0], %17
-  store %16[1], %17
-  store %16[2], %17
-  store %16[3], %17
+  %16 = const 0
+  %17 = slotaddr s1
+  store %17[0], %16
+  store %17[1], %16
+  store %17[2], %16
+  store %17[3], %16
   %18 = const 1
-  %19 = gep.word %16, %18
+  %19 = gep.word %17, %18
   %20 = region.depth
   %21 = region.bump %20
   %22 = ptoi %21
@@ -1797,13 +1797,13 @@ b0:
   store %19[1], %23
   store %19[2], %20
   %24 = slotaddr s2
-  %25 = load.i64 %16[0]
+  %25 = load.i64 %17[0]
   store %24[0], %25
-  %26 = load.i64 %16[1]
+  %26 = load.i64 %17[1]
   store %24[1], %26
-  %27 = load.i64 %16[2]
+  %27 = load.i64 %17[2]
   store %24[2], %27
-  %28 = load.i64 %16[3]
+  %28 = load.i64 %17[3]
   store %24[3], %28
   %29 = load.i64 %4[1]
   store %24[0], %29
@@ -1841,15 +1841,15 @@ b0:
   store %4[2], %3
   %5 = region.depth
   region.enter
-  %6 = slotaddr s1
-  %7 = const 0
-  store %6[0], %7
-  store %6[1], %7
-  store %6[2], %7
-  store %6[3], %7
-  store %6[4], %7
+  %6 = const 0
+  %7 = slotaddr s1
+  store %7[0], %6
+  store %7[1], %6
+  store %7[2], %6
+  store %7[3], %6
+  store %7[4], %6
   %8 = const 2
-  %9 = gep.word %6, %8
+  %9 = gep.word %7, %8
   %10 = region.depth
   %11 = region.bump %10
   %12 = ptoi %11
@@ -1858,15 +1858,15 @@ b0:
   store %9[1], %13
   store %9[2], %10
   %14 = slotaddr s2
-  %15 = load.i64 %6[0]
+  %15 = load.i64 %7[0]
   store %14[0], %15
-  %16 = load.i64 %6[1]
+  %16 = load.i64 %7[1]
   store %14[1], %16
-  %17 = load.i64 %6[2]
+  %17 = load.i64 %7[2]
   store %14[2], %17
-  %18 = load.i64 %6[3]
+  %18 = load.i64 %7[3]
   store %14[3], %18
-  %19 = load.i64 %6[4]
+  %19 = load.i64 %7[4]
   store %14[4], %19
   %20 = const 7
   store %14[0], %20
@@ -1919,14 +1919,14 @@ b0:
   %14 = mul %12, %13
   %15 = add %5, %14
   region.enter
-  %16 = slotaddr s1
-  %17 = const 0
-  store %16[0], %17
-  store %16[1], %17
-  store %16[2], %17
-  store %16[3], %17
+  %16 = const 0
+  %17 = slotaddr s1
+  store %17[0], %16
+  store %17[1], %16
+  store %17[2], %16
+  store %17[3], %16
   %18 = const 1
-  %19 = gep.word %16, %18
+  %19 = gep.word %17, %18
   %20 = region.depth
   %21 = region.bump %20
   %22 = ptoi %21
@@ -1935,13 +1935,13 @@ b0:
   store %19[1], %23
   store %19[2], %20
   %24 = slotaddr s2
-  %25 = load.i64 %16[0]
+  %25 = load.i64 %17[0]
   store %24[0], %25
-  %26 = load.i64 %16[1]
+  %26 = load.i64 %17[1]
   store %24[1], %26
-  %27 = load.i64 %16[2]
+  %27 = load.i64 %17[2]
   store %24[2], %27
-  %28 = load.i64 %16[3]
+  %28 = load.i64 %17[3]
   store %24[3], %28
   %29 = const 1
   %30 = gep.word %24, %29

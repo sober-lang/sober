@@ -3060,29 +3060,29 @@ b0:
   %v15 = load i64, ptr %v15.p
   %st8 = getelementptr i64, ptr %v12, i64 2
   store i64 %v15, ptr %st8
-  %v16 = getelementptr i64, ptr %s2, i64 0
-  %v17 = add i64 0, 0
-  %st9 = getelementptr i64, ptr %v16, i64 0
-  store i64 %v17, ptr %st9
-  %st10 = getelementptr i64, ptr %v16, i64 1
-  store i64 %v17, ptr %st10
-  %st11 = getelementptr i64, ptr %v16, i64 2
-  store i64 %v17, ptr %st11
-  %st12 = getelementptr i64, ptr %v16, i64 3
-  store i64 %v17, ptr %st12
-  %st13 = getelementptr i64, ptr %v16, i64 4
-  store i64 %v17, ptr %st13
+  %v16 = add i64 0, 0
+  %v17 = getelementptr i64, ptr %s2, i64 0
+  %st9 = getelementptr i64, ptr %v17, i64 0
+  store i64 %v16, ptr %st9
+  %st10 = getelementptr i64, ptr %v17, i64 1
+  store i64 %v16, ptr %st10
+  %st11 = getelementptr i64, ptr %v17, i64 2
+  store i64 %v16, ptr %st11
+  %st12 = getelementptr i64, ptr %v17, i64 3
+  store i64 %v16, ptr %st12
+  %st13 = getelementptr i64, ptr %v17, i64 4
+  store i64 %v16, ptr %st13
   %v18.p = getelementptr i64, ptr %v12, i64 0
   %v18 = load i64, ptr %v18.p
-  %st14 = getelementptr i64, ptr %v16, i64 1
+  %st14 = getelementptr i64, ptr %v17, i64 1
   store i64 %v18, ptr %st14
   %v19.p = getelementptr i64, ptr %v12, i64 1
   %v19 = load i64, ptr %v19.p
-  %st15 = getelementptr i64, ptr %v16, i64 2
+  %st15 = getelementptr i64, ptr %v17, i64 2
   store i64 %v19, ptr %st15
   %v20.p = getelementptr i64, ptr %v12, i64 2
   %v20 = load i64, ptr %v20.p
-  %st16 = getelementptr i64, ptr %v16, i64 3
+  %st16 = getelementptr i64, ptr %v17, i64 3
   store i64 %v20, ptr %st16
   %v21 = getelementptr i64, ptr @"rt.meta", i64 0
   call void @"rt.flush"()
@@ -3149,7 +3149,7 @@ b0:
   %st32 = getelementptr i64, ptr %v46, i64 2
   store i64 %v45, ptr %st32
   call void @"rt.print_str"(ptr %v46)
-  %v48.p = getelementptr i64, ptr %v16, i64 0
+  %v48.p = getelementptr i64, ptr %v17, i64 0
   %v48 = load i64, ptr %v48.p
   call void @"rt.print_int"(i64 %v48)
   %v49 = getelementptr i64, ptr @"str.2", i64 0
@@ -3189,7 +3189,7 @@ b0:
   store i64 %v61, ptr %st41
   call void @"rt.print_str"(ptr %v62)
   %v64 = add i64 0, 1
-  %v65 = getelementptr i64, ptr %v16, i64 %v64
+  %v65 = getelementptr i64, ptr %v17, i64 %v64
   call void @"rt.print_qstr"(ptr %v65)
   %v66 = getelementptr i64, ptr @"str.2", i64 0
   %v67 = add i64 0, 2
@@ -3227,7 +3227,7 @@ b0:
   %st50 = getelementptr i64, ptr %v79, i64 2
   store i64 %v78, ptr %st50
   call void @"rt.print_str"(ptr %v79)
-  %v81.p = getelementptr i64, ptr %v16, i64 4
+  %v81.p = getelementptr i64, ptr %v17, i64 4
   %v81 = load i64, ptr %v81.p
   %v82 = add i64 0, 0
   %v83.c = icmp eq i64 %v81, %v82

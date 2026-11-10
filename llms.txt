@@ -7,7 +7,7 @@ Japanese is the source of truth for most documents; English versions, where they
 ## Start here
 
 - [README.md](README.md): overview, pillars, what you stop thinking about, benchmarks, what you can build, roadmap
-- [docs/guide/](docs/guide/): user guide — install, first program, testing (including build-time DI), environment variables, web servers and clients
+- [docs/guide/](docs/guide/): user guide — install, first program, testing (including build-time DI), environment variables, web servers and clients, concurrency (tasks, channels, domains), PostgreSQL
 - [docs/spec/](docs/spec/): the language rules (normative and terse — rules only, examples live in examples/); packages, imports and `sober.mod` are chapter 8
 
 ## Design and rationale (deep, mostly Japanese)
@@ -20,6 +20,6 @@ Japanese is the source of truth for most documents; English versions, where they
 ## What exists
 
 - [src/compiler/](src/compiler/): the self-hosted compiler
-- [src/std/](src/std/): std — HTTP/1.1 server and client, TLS 1.3, X.509 chain verification, crypto (including password hashing), sessions, time, JSON, deflate/gzip, the io_uring M:N runtime
+- [src/std/](src/std/): std — HTTP/1.1 server and client, TLS 1.3, X.509 chain verification, crypto (including password hashing), sessions, time, JSON, deflate/gzip, a PostgreSQL client (with a connection pool), tasks and domains (std/task), the io_uring M:N runtime
 - [bench/](bench/): benchmarks with Go and Rust twins; [bench/httparena/](bench/httparena/) is the public HttpArena leaderboard entry
-- [examples/](examples/): ~510 runnable, gate-verified examples
+- [examples/](examples/): ~530 runnable, gate-verified examples

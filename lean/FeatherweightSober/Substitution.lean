@@ -43,18 +43,20 @@ structure ChanLE (Ξ Ξ' : ChanTy) : Prop where
   ch : ∀ (c : Nat) (p : StoreTy × Ty), Ξ.ch[c]? = some p → Ξ'.ch[c]? = some p
   ep : ∀ (k : EpKey) (t : Ty), Ξ.ep.lookup k = some t → Ξ'.ep.lookup k = some t
   tk : ∀ (n : Nat) (p : Nat × Ty), Ξ.tk[n]? = some p → Ξ'.tk[n]? = some p
+  dom : ∀ (k : EpKey) (t : Ty), Ξ.dom.lookup k = some t → Ξ'.dom.lookup k = some t
 
-theorem ChanLE.refl (Ξ : ChanTy) : ChanLE Ξ Ξ := ⟨fun _ _ h => h, fun _ _ h => h, fun _ _ h => h⟩
+theorem ChanLE.refl (Ξ : ChanTy) : ChanLE Ξ Ξ := ⟨fun _ _ h => h, fun _ _ h => h, fun _ _ h => h, fun _ _ h => h⟩
 
 /-- 空のチャネル環境からはどこへでも行ける（関数本体の型付け Ξ = ∅ を呼び出し先の世界へ） -/
 theorem chanLE_nil (Ξ : ChanTy) : ChanLE ∅ Ξ :=
-  ⟨fun _ _ h => by simp at h, fun _ _ h => by simp at h, fun _ _ h => by simp at h⟩
+  ⟨fun _ _ h => by simp at h, fun _ _ h => by simp at h, fun _ _ h => by simp at h, fun _ _ h => by simp at h⟩
 
 theorem ChanLE.trans {Ξ₁ Ξ₂ Ξ₃ : ChanTy} (h1 : ChanLE Ξ₁ Ξ₂) (h2 : ChanLE Ξ₂ Ξ₃) : ChanLE Ξ₁ Ξ₃ :=
-  ⟨fun c p h => h2.ch c p (h1.ch c p h), fun k t h => h2.ep k t (h1.ep k t h), fun n p h => h2.tk n p (h1.tk n p h)⟩
+  ⟨fun c p h => h2.ch c p (h1.ch c p h), fun k t h => h2.ep k t (h1.ep k t h), fun n p h => h2.tk n p (h1.tk n p h),
+    fun k t h => h2.dom k t (h1.dom k t h)⟩
 
 theorem chanLE_addCh (Ξ : ChanTy) (p : StoreTy × Ty) : ChanLE Ξ (Ξ.addCh p) := by
-  refine ⟨?_, fun _ _ h => h, fun _ _ h => h⟩
+  refine ⟨?_, fun _ _ h => h, fun _ _ h => h, fun _ _ h => h⟩
   intro c q h
   have hc : c < Ξ.ch.length := (List.getElem?_eq_some_iff.mp h).1
   simp only [ChanTy.addCh]
@@ -167,6 +169,13 @@ theorem store_mono {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ Ψ' : StoreTy} {f b 
     | recvE h hm hc => exact .recvE (ihc h) hm hc
   | close c ihc => cases he with
     | closeE h => exact .closeE (ihc h)
+  | dnew r i t ihi =>
+    cases he with | dnewE h1 h2 h3 hp => exact .dnewE h1 h2 (ihi h3) hp
+  | domV p k r => cases he with | domVT h0 h1 h2 => exact .domVT h0 h1 h2
+  | denter t d ihd =>
+    cases he with | denterE h hbd hm hc => exact .denterE (ihd h) hbd hm hc
+  | dexit d v ihd ihv =>
+    cases he with | dexitE h1 h2 hp => exact .dexitE (ihd h1) (ihv h2) hp
   | mkslice m t => cases he with | mkslice h1 h2 h3 => exact .mkslice h1 h2 h3
   | strlit bs r => cases he with | strlit h1 h2 => exact .strlit h1 h2
   | mksliceAt m t r => cases he with | mksliceAt h1 h2 h3 h4 h5 => exact .mksliceAt h1 h2 h3 h4 h5
@@ -314,6 +323,13 @@ theorem chan_mono {e : Expr} {Ξ Ξ' : ChanTy} {Ψ : StoreTy} {f b d : Nat} {Γ 
     | recvE h hm hc => exact .recvE (ihc h) hm hc
   | close c ihc => cases he with
     | closeE h => exact .closeE (ihc h)
+  | dnew r i t ihi =>
+    cases he with | dnewE h1 h2 h3 hp => exact .dnewE h1 h2 (ihi h3) hp
+  | domV p k r => cases he with | domVT h0 h1 h2 => exact .domVT h0 h1 (hle.dom _ _ h2)
+  | denter t d ihd =>
+    cases he with | denterE h hbd hm hc => exact .denterE (ihd h) hbd hm hc
+  | dexit d v ihd ihv =>
+    cases he with | dexitE h1 h2 hp => exact .dexitE (ihd h1) (ihv h2) hp
   | mkslice m t => cases he with | mkslice h1 h2 h3 => exact .mkslice h1 h2 h3
   | strlit bs r => cases he with | strlit h1 h2 => exact .strlit h1 h2
   | mksliceAt m t r => cases he with | mksliceAt h1 h2 h3 h4 h5 => exact .mksliceAt h1 h2 h3 h4 h5
@@ -443,6 +459,13 @@ theorem f_mono {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f f' b d : N
     | recvE h hm hc => exact .recvE (ihc h) hm hc
   | close c ihc => cases he with
     | closeE h => exact .closeE (ihc h)
+  | dnew r i t ihi =>
+    cases he with | dnewE h1 h2 h3 hp => exact .dnewE h1 h2 (ihi h3) hp
+  | domV p k r => cases he with | domVT h0 h1 h2 => exact .domVT h0 h1 h2
+  | denter t d ihd =>
+    cases he with | denterE h hbd hm hc => exact .denterE (ihd h) hbd hm hc
+  | dexit d v ihd ihv =>
+    cases he with | dexitE h1 h2 hp => exact .dexitE (ihd h1) (ihv h2) hp
   | mkslice m t => cases he with | mkslice h1 h2 h3 => exact .mkslice h1 h2 h3
   | strlit bs r => cases he with | strlit h1 h2 => exact .strlit h1 h2
   | mksliceAt m t r => cases he with | mksliceAt h1 h2 h3 h4 h5 => exact .mksliceAt h1 h2 h3 h4 h5
@@ -533,6 +556,7 @@ theorem value_depth_weaken {v : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {
     cases he with
     | epTx h1 h2 h3 => exact .epTx h1 (by omega) h3
     | epRx h1 h2 h3 => exact .epRx h1 (by omega) h3
+  | domV p k r => cases he with | domVT h0 h1 h2 => exact .domVT (by omega) h1 h2
 
 /-- 値の strengthening: 型が region < d しか言及しないなら、
 値は任意の元深さから深さ d・先頭 d region のストア型で型付けし直せる
@@ -607,6 +631,7 @@ theorem value_strengthen {v : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f 
     cases he with
     | epTx h1 h2 h3 => exact .epTx h1 (by simp [Ty.regionsBelow] at hb; omega) h3
     | epRx h1 h2 h3 => exact .epRx h1 (by simp [Ty.regionsBelow] at hb; omega) h3
+  | domV p k r => cases he with | domVT h0 h1 h2 => exact .domVT (by simp [Ty.regionsBelow] at hb; omega) h1 h2
 
 /-- 値の共有境界の付け替え: mutFree 型の値の loc はすべて immutable セルを指すので、
 loc 規則の条件が `m = false` 側で立ち、b を任意に取り替えられる（par の置換の要）。
@@ -664,11 +689,12 @@ theorem value_sb {v : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b b' d :
   | scopeV rs ε => cases he; simp [Ty.mutFree] at hm
   | taskV rs n => cases he; simp [Ty.mutFree] at hm
   | epV p k b r => cases he <;> simp [Ty.mutFree] at hm
+  | domV p k r => cases he with | domVT h0 h1 h2 => exact .domVT h0 h1 h2
 
 /-- 値の世界の付け替え（段 6 P1）: mutFree な値の型付けは世界ごとの部分（子の表 tk）を引かない — handle（taskV）は
 mutFree でないので現れない。共有の部分（旧 chan の表 ch）が同じなら別の task の世界へ移せる -/
 theorem value_world {v : Expr} {Δ : Defs} {Ξ Ξ' : ChanTy} {Ψ : StoreTy} {f b d : Nat} {Γ : Ctx} {t : Ty}
-    (hv : Value v) (hm : t.mutFree) (hch : Ξ'.ch = Ξ.ch) (he : HasType Δ Ξ Ψ f b d Γ Λ v t) :
+    (hv : Value v) (hm : t.mutFree) (hch : Ξ'.ch = Ξ.ch) (hdom : Ξ'.dom = Ξ.dom) (he : HasType Δ Ξ Ψ f b d Γ Λ v t) :
     HasType Δ Ξ' Ψ f b d Γ Λ v t := by
   induction hv generalizing t with
   | lit n => cases he; exact .lit
@@ -707,6 +733,7 @@ theorem value_world {v : Expr} {Δ : Defs} {Ξ Ξ' : ChanTy} {Ψ : StoreTy} {f b
   | scopeV rs ε => cases he with | scopeV h1 h2 => exact .scopeV h1 h2
   | taskV rs n => cases he; simp [Ty.mutFree] at hm
   | epV p k b r => cases he <;> simp [Ty.mutFree] at hm
+  | domV p k r => cases he with | domVT h0 h1 h2 => exact .domVT h0 h1 (by rw [hdom]; exact h2)
 
 /-- 値の型環境の付け替え（段 6 P1 — 端点のペイロード）: mutFree で chan なしの値の型付けは型環境 Ξ をどこも引かない
 （chanV は chan なしで、handle・端点・札は mutFree でないので現れない）。任意の Ξ' へ移せる -/
@@ -750,6 +777,7 @@ theorem value_anyΞ {v : Expr} {Δ : Defs} {Ξ Ξ' : ChanTy} {Ψ : StoreTy} {f b
   | scopeV rs ε => cases he; simp [Ty.mutFree] at hm
   | taskV rs n => cases he; simp [Ty.mutFree] at hm
   | epV p k b r => cases he <;> simp [Ty.mutFree] at hm
+  | domV p k r => cases he; simp [Ty.chanFree] at hc
 
 /-- 値の床の付け替え: 型の regionsBelow n から値の全 chanV の rc ≤ n が出るので、
 f を n に取り替えられる（send がペイロードをキューの世界 f = rc へ落とすときの要）。
@@ -807,6 +835,7 @@ theorem value_f_set {v : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f n b d
     cases he with
     | epTx h1 h2 h3 => exact .epTx h1 h2 h3
     | epRx h1 h2 h3 => exact .epRx h1 h2 h3
+  | domV p k r => cases he with | domVT h0 h1 h2 => exact .domVT h0 h1 h2
 
 /-- 値は自由変数を含まないので、どの文脈でも型が付く（一般の weakening は par の
 「Γ は全部 mutFree」条件と両立しないため、値に限る。使用箇所は置換補題の値のみ） -/
@@ -840,6 +869,7 @@ theorem value_ctx {v : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b d : N
     cases he with
     | epTx h1 h2 h3 => exact .epTx h1 h2 h3
     | epRx h1 h2 h3 => exact .epRx h1 h2 h3
+  | domV p k r => cases he with | domVT h0 h1 h2 => exact .domVT h0 h1 h2
 
 /-- value_ctx の shift 版（置換補題が束縛を潜るときの形） -/
 theorem value_shift_ctx {v : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b d : Nat} {Γ Γ' : Ctx}
@@ -1079,6 +1109,13 @@ theorem subst_preserve {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b 
   | close c ihc =>
     cases he with
     | closeE h => exact .closeE (ihc h hvv hv)
+  | dnew r i t ihi =>
+    cases he with | dnewE h1 h2 h3 hp => exact .dnewE h1 h2 (ihi h3 hvv hv) hp
+  | domV p k r => cases he with | domVT h0 h1 h2 => exact .domVT h0 h1 h2
+  | denter t d ihd =>
+    cases he with | denterE h hbd hm hc => exact .denterE (ihd h hvv hv) hbd hm hc
+  | dexit d v ihd ihv =>
+    cases he with | dexitE h1 h2 hp => exact .dexitE (ihd h1 hvv hv) (ihv h2 hvv hv) hp
   | loc r a =>
     cases he with
     | loc h1 h2 h3 h4 h5 h6 => exact .loc h1 h2 h3 h4 h5 h6
@@ -1259,6 +1296,13 @@ theorem b_lower {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b b' d : 
     | recvE h hm hc => exact .recvE (ihc hb h) hm hc
   | close c ihc => cases he with
     | closeE h => exact .closeE (ihc hb h)
+  | dnew r i t ihi =>
+    cases he with | dnewE h1 h2 h3 hp => exact .dnewE (Nat.le_trans hb h1) h2 (ihi hb h3) hp
+  | domV p k r => cases he with | domVT h0 h1 h2 => exact .domVT h0 h1 h2
+  | denter t d ihd =>
+    cases he with | denterE h hbd hm hc => exact .denterE (ihd hb h) (by omega) hm hc
+  | dexit d v ihd ihv =>
+    cases he with | dexitE h1 h2 hp => exact .dexitE (ihd hb h1) (ihv hb h2) hp
   | loc r a =>
     cases he with
     | loc h1 h2 h3 h4 h5 h6 =>
@@ -1499,6 +1543,16 @@ theorem f_lower {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f f' b d : 
     simp only [Expr.noNewchan] at hnc
     cases he with
     | closeE h => exact .closeE (ihc hnc h)
+  | dnew r i t ihi =>
+    simp only [Expr.noNewchan] at hnc
+    cases he with | dnewE h1 h2 h3 hp => exact .dnewE h1 h2 (ihi hnc h3) hp
+  | domV p k r => cases he with | domVT h0 h1 h2 => exact .domVT h0 h1 h2
+  | denter t d ihd =>
+    simp only [Expr.noNewchan] at hnc
+    cases he with | denterE h hbd hm hc => exact .denterE (ihd hnc h) hbd hm hc
+  | dexit d v ihd ihv =>
+    simp only [Expr.noNewchan, Bool.and_eq_true] at hnc
+    cases he with | dexitE h1 h2 hp => exact .dexitE (ihd hnc.1 h1) (ihv hnc.2 h2) hp
   | loc r a =>
     cases he with | loc h1 h2 h3 h4 h5 h6 => exact .loc h1 h2 h3 h4 h5 h6
   | slicev mt r base len =>
@@ -1661,6 +1715,11 @@ theorem value_coerce {v : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b d 
     | epRx h1 h2 h3 =>
       obtain rfl := Ty.sub_own_inv hs
       exact ⟨.epV p k false r, .epRx h1 h2 h3⟩
+  | domV p k r =>
+    cases he with
+    | domVT h0 h1 h2 =>
+      obtain ⟨r', rfl, hle⟩ := Ty.sub_dom_inv hs
+      exact ⟨.domV p k r, .domVT h0 (Nat.le_trans h1 hle) h2⟩
 
 end HasType
 
