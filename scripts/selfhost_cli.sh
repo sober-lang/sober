@@ -100,7 +100,7 @@ if (cd "$W/defout" && "$S2ABS" build "$ROOT/examples/hello.sober" > "$W/defout.l
     && cmp -s "$W/defno.bin" "$W/elfno.bin" || { echo "FAIL edge: default build --no-opt ≢ --emit=elf --no-opt"; fail=$((fail + 1)); }
 edge=$((edge + 3))
 # help / version（exit 0・標準出力）と test の --work の既定（<cache>/sober-test/<pid> — --work を渡したときと同じ出力）— 2026-10-10
-"$STAGE2" help > "$W/help.txt" 2> /dev/null && head -n 1 "$W/help.txt" | grep -q '^usage: sober' || { echo "FAIL edge: help (exit 0, usage on stdout)"; fail=$((fail + 1)); }
+"$STAGE2" help > "$W/help.txt" 2> /dev/null && grep -q '^usage: sober' <<< "$(head -n 1 "$W/help.txt")" || { echo "FAIL edge: help (exit 0, usage on stdout)"; fail=$((fail + 1)); }
 [ "$("$STAGE2" --version 2> /dev/null)" = "sober dev" ] || { echo "FAIL edge: --version"; fail=$((fail + 1)); }
 mkdir -p "$W/twork"
 SOBER_CACHE="$W/tcache" "$STAGE2" test testdata/sobertest/calc > "$W/tdef.txt" 2>&1; tdef=$?

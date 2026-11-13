@@ -1019,7 +1019,7 @@ std/net（したがって `std/http/server` と `std/tls`）を使うプログ�
 | `conns:` | 10000 | 同時の接続の数（`budget × conns` が受け入れの天井 — 超えた接続は閉じる） |
 | `reject:` | なし | 受け入れられなかった接続に 1 回だけ送るバイト列（省くと送らずに閉じる） |
 | `region:` | 128 MiB | 接続の task の region 1 つの上限（超えるとその接続の task が死ぬ） |
-| `maxWait:` | 100 ms | 混んでいるときの待ちの上限（走れるようになってからこの時間の内に走る） |
+| `maxWait:` | 100 ms | 混んでいるときの待ちの上限（この時間を過ぎた task から先に走る — 越えた数と量は `task.Ledger()` の `late` / `maxLate`） |
 
 `ServeConn` の `maxHead:` / `maxBody:` を上げるときは、`budget:` も合わせます（目安は `budget ≥ 3 × (maxHead + maxBody) + 16 KiB`）。
 

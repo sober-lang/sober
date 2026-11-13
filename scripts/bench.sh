@@ -222,6 +222,9 @@ while read -r item col lim ref; do
     [ "$col" = size ] && continue
     # self/build3（stage3 の自己 build の命令数）も scripts/stages.sh が照合する — bench.sh の命令数は out/stage2 の物差し
     [ "$item" = self/build3 ] && continue
+    # self/check body（検査器の本体の命令数）は scripts/selfpar.sh が、srv/*（要求 1 件の命令と足跡）は scripts/reqinst.sh が照合する
+    [ "$item $col" = "self/check body" ] && continue
+    case "$item" in srv/*) continue ;; esac
     if [ "$col" = nodes ]; then
         v=$NODES
     elif [ "$col" = inst ]; then

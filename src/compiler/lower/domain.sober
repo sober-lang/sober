@@ -12,9 +12,12 @@ const DM_LOCK = 0    // 鍵（cellLock と同じ xchg — 本体は待たない�
 const DM_POISON = 1  // 1 = 本体が死んだ（以後の呼び出しは呼び手を死なせる）
 const DM_BOX = 2     // 状態の箱の番地
 const DM_D = 3       // Await の待ちの上限（ns）
-const DM_WHEAD = 4   // Await の待ちの列（TC_DQNEXT / TC_DQPREV）
+// Await の待ち手は列 P（眠っている — 到着の番号 TC_DQSEQ の昇順・鎖の対は TC_DQNEXT / TC_DQPREV・手渡しは P の頭から）か、起こされ済みで
+// まだ鍵を取り直していない（TC_DQH = 1 — 鎖に繋がない: 歩く者が居ない）かのどちらか。手渡しは CAS を試した者を P から外すので、出る側の手渡しは
+// 起こされ済みの待ち手を越えて歩かない
+const DM_WHEAD = 4   // P の頭と尾
 const DM_WTAIL = 5
-const DM_NWAIT = 6   // 統計: 今待っている数・最長の待ち・満了の数
+const DM_NWAIT = 6   // P の人数・最長の待ち・満了の数
 const DM_MAXW = 7
 const DM_EXP = 8
 // 待ち手の束ね（domHand）: 版 = 出るたびに +1・偽の記録 = この版で偽と分かった when の鍵（0 = なし）。列の待ち手の鍵の代表と、
@@ -24,9 +27,41 @@ const DM_FKEY = 10
 const DM_FVER = 11
 const DM_KEY1 = 12
 const DM_NKEY1 = 13
-const DM_WORDS = 14
+const DM_SEQ = 14    // 次の到着の番号
+// 最後に眠り直しで P へ入れた待ち手（P に居る間だけ — 外れたら P の前の者へ寄せる・0 = なし）。眠り直しはおおむね番号の順に来るので、
+// 自分より若くなければここから歩き始める（同時に起こされて先に眠り直した古い待ち手を頭から越えない）
+const DM_RLAST = 15
+const DM_WORDS = 16
 // Await の待ちの上限の既定（ns — NewDomain にも呼び出しにも wait: が無いとき）
 const DM_DDEF = 2000000000
+
+// 開発用 --rt-mutant の domain の検査（既定の build には何も足さない）: 出る点で書き戻す状態の最上段のヘッダの印が 0（深度 0 — 写さずに
+// 持ち込んだ部分）か MAX_DEPTH（domNew の写し）でなければ exit 104。呼び手の region へ写された状態（出口で回収される）を捕まえる
+const DM_CHK = 75        // 検査だけ
+const DM_CHK_NOFIX = 76  // 検査 + 状態の読み直しの代入に格納点の写しを戻す（lower.sober relocFree の ④ を外す — 網の自己検査）
+const DM_NOFIX = 77      // ④ を外すだけ
+const DM_EXIT = 104
+
+// 置き場 p + off 語の型 t の値の最上段（struct の欄を辿る — opt / union の中と要素の中は見ない）の slice / map のヘッダの印を確かめる
+func domLabChk(st mut St, p int, off int, t int) {
+    k := desugar.HeapGet(mut st.d, t)
+    if k == TSlice || k == TMap {
+        lab := load(mut st, fieldPtr(mut st, p, off), 2)
+        ok := bin(mut st, BOr, cmp(mut st, CEq, lab, iconst(mut st, 0)), cmp(mut st, CEq, lab, iconst(mut st, MAX_DEPTH)))
+        bad := newBlock(mut st)
+        good := newBlock(mut st)
+        condbr(mut st, ok, good, -1, bad, -1)
+        setCur(mut st, bad)
+        exit(mut st, DM_EXIT)
+        setCur(mut st, good)
+    } else if k == TStruct {
+        fs := hgetL(mut st, desugar.HeapGet(mut st.d, t + 1) + SI_FIELDS)
+        for i <- iter.Range(0, lenL(mut st, fs)) {
+            f := latI(mut st, fs, i)
+            domLabChk(mut st, p, off + desugar.HeapGet(mut st.d, f + 2), desugar.HeapGet(mut st.d, f + 1))
+        }
+    }
+}
 
 // 鍵 key（desugar.PAR_DNEW〜PAR_DOUT）の呼び出し（実引数 args）を下ろす。結果の形は parCall と同じ（値の列）
 func domCall(st mut St, key int, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
@@ -84,6 +119,11 @@ func domCall(st mut St, key int, args desugar.ListRef, at desugar.NodeRef) (int,
         sv := expr(mut st, latN(mut st, args, 1))?
         if isTag(mut st, sv.t, TNever) {
             return -1, nil
+        }
+        if st.rtMut == DM_CHK || st.rtMut == DM_CHK_NOFIX {
+            chk := newAgg(mut st, sv.t)
+            storeVal(mut st, chk, 0, sv.t, sv.v)
+            domLabChk(mut st, chk, 0, sv.t)
         }
         storeVal(mut st, itop(mut st, load(mut st, rec, DM_BOX)), 0, sv.t, sv.v)
         if st.domWait {
@@ -196,6 +236,10 @@ func domWaitOn(st mut St, rec int, me int, wv int, key int, at desugar.NodeRef) 
     bJ := newBlock(mut st)
     bOld := branchIf(mut st, cmp(mut st, CEq, dq, zero))
     store(mut st, me, TC_DQDL, clockNs(mut st))
+    sq := load(mut st, rec, DM_SEQ)
+    store(mut st, me, TC_DQSEQ, sq)
+    store(mut st, rec, DM_SEQ, urAdd(mut st, sq, 1))
+    store(mut st, me, TC_DQH, zero)
     tl := load(mut st, rec, DM_WTAIL)
     store(mut st, me, TC_DQPREV, tl)
     store(mut st, me, TC_DQNEXT, zero)
@@ -212,18 +256,13 @@ func domWaitOn(st mut St, rec int, me int, wv int, key int, at desugar.NodeRef) 
     setCur(mut st, bE)
     store(mut st, rec, DM_WTAIL, ptoi(mut st, me))
     store(mut st, me, TC_DQKEY, kv)
-    // 空の列に積むならこの鍵が代表になる
-    nw := load(mut st, rec, DM_NWAIT)
-    fst := cmp(mut st, CEq, nw, zero)
-    k1o := load(mut st, rec, DM_KEY1)
-    k1 := bin(mut st, BAdd, k1o, bin(mut st, BMul, fst, bin(mut st, BSub, kv, k1o)))
-    n1 := bin(mut st, BMul, load(mut st, rec, DM_NKEY1), bin(mut st, BSub, one, fst))
-    store(mut st, rec, DM_KEY1, k1)
-    store(mut st, rec, DM_NKEY1, if key != 0 { bin(mut st, BAdd, n1, cmp(mut st, CEq, kv, k1)) } else { n1 })
-    store(mut st, rec, DM_NWAIT, urAdd(mut st, nw, 1))
+    domPCount(mut st, rec, key)
     atomicXadd(mut st, globaladdr(mut st, st.mnG), MN_DWAITING, one)
     br(mut st, bJ, -1)
     setCur(mut st, bOld)
+    // 手渡しで起きて when が偽だった待ち手（P の外）: 到着の番号の位置で P へ戻り、P の自分の次へ手渡しを続ける
+    domPInsert(mut st, rec, me)
+    domPCount(mut st, rec, key)
     domHand(mut st, rec, load(mut st, me, TC_DQNEXT))
     br(mut st, bJ, -1)
     setCur(mut st, bJ)
@@ -287,11 +326,21 @@ func domWaitOn(st mut St, rec int, me int, wv int, key int, at desugar.NodeRef) 
     return r
 }
 
-// 待ちの列から me を外す（鍵の下で）
+// 待ち手 me が P に居れば外す（鍵の下で）
 func domDequeue(st mut St, rec int, me int) {
+    bP := branchIf(mut st, cmp(mut st, CEq, load(mut st, me, TC_DQH), iconst(mut st, 0)))
+    domUnlink(mut st, rec, me)
+    domPUncount(mut st, rec, me)
+    br(mut st, bP, -1)
+    setCur(mut st, bP)
+    atomicXadd(mut st, globaladdr(mut st, st.mnG), MN_DWAITING, iconst(mut st, -1))
+}
+
+// P から w を外す
+func domUnlink(st mut St, rec int, w int) {
     zero := iconst(mut st, 0)
-    pv := load(mut st, me, TC_DQPREV)
-    nx := load(mut st, me, TC_DQNEXT)
+    pv := load(mut st, w, TC_DQPREV)
+    nx := load(mut st, w, TC_DQNEXT)
     b1 := newBlock(mut st)
     b2 := newBlock(mut st)
     b3 := newBlock(mut st)
@@ -314,15 +363,102 @@ func domDequeue(st mut St, rec int, me int) {
     store(mut st, rec, DM_WTAIL, pv)
     br(mut st, c3, -1)
     setCur(mut st, c3)
-    mk := load(mut st, me, TC_DQKEY)
-    dec := bin(mut st, BAnd, cmp(mut st, CEq, mk, load(mut st, rec, DM_KEY1)), cmp(mut st, CNe, mk, zero))
-    store(mut st, rec, DM_NKEY1, bin(mut st, BSub, load(mut st, rec, DM_NKEY1), dec))
-    store(mut st, rec, DM_NWAIT, urAdd(mut st, load(mut st, rec, DM_NWAIT), -1))
-    atomicXadd(mut st, globaladdr(mut st, st.mnG), MN_DWAITING, iconst(mut st, -1))
+    rl := load(mut st, rec, DM_RLAST)
+    store(mut st, rec, DM_RLAST, bin(mut st, BAdd, rl, bin(mut st, BMul, cmp(mut st, CEq, rl, ptoi(mut st, w)), bin(mut st, BSub, pv, rl))))
 }
 
-// 列の w から順に、待ち中（PEND_DOM）の最初の待ち手へ CAS で手渡して起こす（負けた = 満了 — 本人が後で外す）。今の版で偽と分かった
-// 鍵の待ち手は起こさずに位置のまま飛ばす（when は効果を持たず捕捉の無い when は状態だけの関数なので、見直しても同じ偽 — 観測等価な省略）。
+// P の数え（人数・鍵の代表とその鍵の人数）に鍵 key の待ち手を 1 人足す。空の P に入るならその鍵が代表になる
+func domPCount(st mut St, rec int, key int) {
+    zero := iconst(mut st, 0)
+    one := iconst(mut st, 1)
+    kv := iconst(mut st, key)
+    nw := load(mut st, rec, DM_NWAIT)
+    fst := cmp(mut st, CEq, nw, zero)
+    k1o := load(mut st, rec, DM_KEY1)
+    k1 := bin(mut st, BAdd, k1o, bin(mut st, BMul, fst, bin(mut st, BSub, kv, k1o)))
+    n1 := bin(mut st, BMul, load(mut st, rec, DM_NKEY1), bin(mut st, BSub, one, fst))
+    store(mut st, rec, DM_KEY1, k1)
+    store(mut st, rec, DM_NKEY1, if key != 0 { bin(mut st, BAdd, n1, cmp(mut st, CEq, kv, k1)) } else { n1 })
+    store(mut st, rec, DM_NWAIT, urAdd(mut st, nw, 1))
+}
+
+// P の数えから待ち手 w を引く
+func domPUncount(st mut St, rec int, w int) {
+    mk := load(mut st, w, TC_DQKEY)
+    dec := bin(mut st, BAnd, cmp(mut st, CEq, mk, load(mut st, rec, DM_KEY1)), cmp(mut st, CNe, mk, iconst(mut st, 0)))
+    store(mut st, rec, DM_NKEY1, bin(mut st, BSub, load(mut st, rec, DM_NKEY1), dec))
+    store(mut st, rec, DM_NWAIT, urAdd(mut st, load(mut st, rec, DM_NWAIT), -1))
+}
+
+// P の w を起こされ済みにする（P から外して印を立てる）
+func domOffP(st mut St, rec int, w int) {
+    // 変異 54 = P から外さずに印だけ立てる（P に残ったまま出口が外さない — 出た task の記録が P に残る）
+    if st.rtMut != 54 {
+        domUnlink(mut st, rec, w)
+        domPUncount(mut st, rec, w)
+    }
+    store(mut st, w, TC_DQH, iconst(mut st, 1))
+}
+
+// me を到着の番号の位置で P へ入れる（DM_RLAST が自分より古ければそこから・でなければ頭から歩く）
+func domPInsert(st mut St, rec int, me int) {
+    zero := iconst(mut st, 0)
+    sq := load(mut st, me, TC_DQSEQ)
+    l := newBlock(mut st)
+    p := param(mut st, l, TyI64)
+    pp := param(mut st, l, TyI64)
+    t := newBlock(mut st)
+    a := newBlock(mut st)
+    d := newBlock(mut st)
+    dp := param(mut st, d, TyI64)
+    dn := param(mut st, d, TyI64)
+    hd := load(mut st, rec, DM_WHEAD)
+    rl := load(mut st, rec, DM_RLAST)
+    bR := newBlock(mut st)
+    bS := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, rl, zero), bR, -1, l, list2(mut st, hd, zero))
+    setCur(mut st, bR)
+    condbr(mut st, cmp(mut st, CLt, load(mut st, itop(mut st, rl), TC_DQSEQ), sq), bS, -1, l, list2(mut st, hd, zero))
+    setCur(mut st, bS)
+    br(mut st, l, list2(mut st, load(mut st, itop(mut st, rl), TC_DQNEXT), rl))
+    setCur(mut st, l)
+    condbr(mut st, cmp(mut st, CEq, p, zero), d, list2(mut st, pp, p), t, -1)
+    setCur(mut st, t)
+    // 変異 53 = 番号を見ずに P の尾へ入れる（眠り直しが FIFO の順を崩す）
+    condbr(mut st, if st.rtMut == 53 { iconst(mut st, 1) } else { cmp(mut st, CLt, load(mut st, itop(mut st, p), TC_DQSEQ), sq) }, a, -1, d, list2(mut st, pp, p))
+    setCur(mut st, a)
+    br(mut st, l, list2(mut st, load(mut st, itop(mut st, p), TC_DQNEXT), p))
+    setCur(mut st, d)
+    store(mut st, me, TC_DQPREV, dp)
+    store(mut st, me, TC_DQNEXT, dn)
+    store(mut st, me, TC_DQH, zero)
+    store(mut st, rec, DM_RLAST, ptoi(mut st, me))
+    b1 := newBlock(mut st)
+    b2 := newBlock(mut st)
+    b3 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, dp, zero), b1, -1, b2, -1)
+    setCur(mut st, b1)
+    store(mut st, itop(mut st, dp), TC_DQNEXT, ptoi(mut st, me))
+    br(mut st, b3, -1)
+    setCur(mut st, b2)
+    store(mut st, rec, DM_WHEAD, ptoi(mut st, me))
+    br(mut st, b3, -1)
+    setCur(mut st, b3)
+    c1 := newBlock(mut st)
+    c2 := newBlock(mut st)
+    c3 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, dn, zero), c1, -1, c2, -1)
+    setCur(mut st, c1)
+    store(mut st, itop(mut st, dn), TC_DQPREV, ptoi(mut st, me))
+    br(mut st, c3, -1)
+    setCur(mut st, c2)
+    store(mut st, rec, DM_WTAIL, ptoi(mut st, me))
+    br(mut st, c3, -1)
+    setCur(mut st, c3)
+}
+
+// P の w から順に、待ち中（PEND_DOM）の最初の待ち手へ CAS で手渡して起こす。CAS を試した者は勝ち負けによらず P から外す（負けた = 満了 —
+// 本人は鍵を取り直して出るだけ。P の歩みが満了した者を 2 度越えない）。今の版で偽と分かった鍵の待ち手は起こさずに位置のまま飛ばす（when は効果を持たず捕捉の無い when は状態だけの関数なので、見直しても同じ偽 — 観測等価な省略）。
 // 列の全員がその鍵なら歩かない
 func domHand(st mut St, rec int, w0 int) {
     zero := iconst(mut st, 0)
@@ -343,8 +479,13 @@ func domHand(st mut St, rec int, w0 int) {
     wp := itop(mut st, w)
     condbr(mut st, bin(mut st, BAnd, known, cmp(mut st, CEq, load(mut st, wp, TC_DQKEY), fk)), nx, -1, cs, -1)
     setCur(mut st, cs)
+    n := load(mut st, wp, TC_DQNEXT)
     o := atomicCas(mut st, wp, TC_IORES, iconst(mut st, PEND_DOM), iconst(mut st, 1))
-    condbr(mut st, cmp(mut st, CEq, o, iconst(mut st, PEND_DOM)), wake, -1, nx, -1)
+    // 変異 52 = 手渡しで起こした待ち手を P から外さない（印も立たない — 眠り直しが P の同じ位置へ入れ直し、鎖が輪になる）
+    if st.rtMut != 52 {
+        domOffP(mut st, rec, wp)
+    }
+    condbr(mut st, cmp(mut st, CEq, o, iconst(mut st, PEND_DOM)), wake, -1, l, list1(mut st, n))
     setCur(mut st, wake)
     taskWakeAny(mut st, wp)
     br(mut st, d, -1)
@@ -353,7 +494,7 @@ func domHand(st mut St, rec int, w0 int) {
     setCur(mut st, d)
 }
 
-// 列の全部の待ち手へ手渡して起こす（毒 — 起きた待ち手は毒を見て死ぬ）
+// P の全部の待ち手へ手渡して起こす（毒 — 起きた待ち手は毒を見て死ぬ。P の外の者は起こされ済みで、鍵を取り直して毒を見る）
 func domHandAll(st mut St, w0 int) {
     zero := iconst(mut st, 0)
     l := newBlock(mut st)

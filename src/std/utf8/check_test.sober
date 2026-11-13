@@ -1,0 +1,103 @@
+package utf8
+
+// Check の ASCII の頭の先読みの網: 先読みの長さの上限の前後・8 / 16 バイトの境目の前後に 0x80 以上の字（妥当な 2 / 3 バイト列・継続バイト単独・0xff）を
+// 置いた列、ASCII の頭の後に妥当な字を挟んでから不正な列を置いた列で、Check の成否と誤りの位置が strings.IndexInvalid（列全体の一般の検査）と一致すること
+
+import "std/iter"
+import "std/strings"
+
+// 長さ n の ASCII の列の位置 at に ins を差し込んだ列（at < 0 なら差し込まない）
+func probe(n int, at int, ins []byte) []byte {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, n) {
+        if i == at {
+            for x <- ins {
+                b = append(b, x)
+            }
+        }
+        b = append(b, byte(97 + i % 26))
+    }
+    if at == n {
+        for x <- ins {
+            b = append(b, x)
+        }
+    }
+    return freeze(b)
+}
+
+// Check と IndexInvalid の判定が一致するか
+func agrees(b []byte) bool {
+    want := strings.IndexInvalid(b)
+    _, e := Check(b)
+    return if e == nil {
+        want < 0
+    } else {
+        switch e {
+        case strings.BadUtf8{pos}: pos == want
+        }
+    }
+}
+
+func TestCheckAsciiFast() {
+    inss := [][]byte{[]byte{}, bytes("é"), bytes("あ"), []byte{byte(0x80)}, []byte{byte(0xff)}, []byte{byte(0xc3)}, []byte{byte(0x7f)}}
+    mut ok := true
+    ns := []int{0, 1, 7, 8, 9, 15, 16, 17, 43, 63, 64, 65, ASCII_FAST_MAX - 2, ASCII_FAST_MAX - 1, ASCII_FAST_MAX, ASCII_FAST_MAX + 1}
+    for n <- ns {
+        for ins <- inss {
+            for at <- iter.Range(0, n + 1) {
+                b := probe(n, if len(ins) == 0 { -1 } else { at }, ins)
+                if !agrees(b) {
+                    println("Check differs: n ${n} at ${at} len ${len(b)}")
+                    ok = false
+                }
+            }
+        }
+    }
+    assert(ok)
+}
+
+// ASCII の頭の外れの位置 × 続きの検査: 長さ n の ASCII の列の位置 at に妥当な字 ok、その後ろ q の位置に不正な列 bad
+func TestCheckContinue() {
+    oks := [][]byte{bytes("é"), bytes("あ"), bytes("😀")}
+    bads := [][]byte{[]byte{}, []byte{byte(0x80)}, []byte{byte(0xc0), byte(0x80)}, []byte{byte(0xed), byte(0xa0), byte(0x80)}, []byte{byte(0xe3), byte(0x81)}, []byte{byte(0xf5)}}
+    ns := []int{1, 15, 16, 17, 43, ASCII_FAST_MAX - 4, ASCII_FAST_MAX + 1}
+    gaps := []int{0, 1, 9}
+    mut ok := true
+    for n <- ns {
+        for at <- iter.Range(0, n + 1) {
+            for gap <- gaps {
+                for bad <- bads {
+                    for g <- oks {
+                        head := probe(n, at, g)
+                        mut b := mut []byte{}
+                        for x <- head {
+                            b = append(b, x)
+                        }
+                        q := at + len(g) + gap
+                        if q <= len(b) {
+                            mut t := mut []byte{}
+                            for i <- iter.Range(0, len(b)) {
+                                if i == q {
+                                    for x <- bad {
+                                        t = append(t, x)
+                                    }
+                                }
+                                t = append(t, b[i])
+                            }
+                            if q == len(b) {
+                                for x <- bad {
+                                    t = append(t, x)
+                                }
+                            }
+                            if !agrees(freeze(t)) {
+                                println("Check differs: n ${n} at ${at} gap ${gap} bad ${len(bad)}")
+                                ok = false
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert(ok)
+}

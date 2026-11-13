@@ -63,7 +63,7 @@ check() {   # check <name> <bin>（実引数は ARGS）
                 echo "FAIL: $e ledger not returned: held_bytes=$hb held_tasks=$ht (SOBER_BUDGET_MB=${b:-既定} W=$w)"; fail=$((fail + 1))
             fi
             # 名前つきプールの節（段 6 P5-4 — `#par pool <id> … used=… tasks=…`）も終わりに全部返っていること
-            if [ $dies = 0 ] && grep '^#par pool ' "$W/run.par" | tr ' ' '\n' | grep -Eq '^(used|tasks)=[^0]'; then
+            if [ $dies = 0 ] && grep -Eq '^(used|tasks)=[^0]' <<< "$(grep '^#par pool ' "$W/run.par" | tr ' ' '\n')"; then
                 echo "FAIL: $e pool ledger not returned (SOBER_BUDGET_MB=${b:-既定} W=$w)"; grep '^#par pool ' "$W/run.par" | head -3; fail=$((fail + 1))
             fi
             [ "$b" = 0 ] && inl0=$((inl0 + inl))

@@ -51,8 +51,8 @@ runc() {
 root=$(pwd)
 SOBER=$(realpath "$SOBER")
 # check の経路（runc — 型引数の照合を含む）から外す entry（FLEDGER F-dom1 — task.Run の本体の総称ラムダの捕獲で inferTs の下見が外の変数を見失う既存の穴。
-# domain_handoff は形 2〔本体の末尾の総称呼び出し task.Read が本体の局所を引く〕・直したら外す）・domain_arg も形 2〔Run の本体の末尾の task.Read〕
-TARGS_SKIP=" examples/domain_neg_nested.sober examples/domain_neg_effect.sober examples/domain_handoff.sober examples/domain_arg.sober examples/domain_scope_place.sober examples/iter_region_domain_mut.sober examples/domain_slots.sober examples/domain_mutarg.sober "
+# domain_handoff は形 2〔本体の末尾の総称呼び出し task.Read が本体の局所を引く〕・直したら外す）・domain_arg も形 2〔Run の本体の末尾の task.Read〕・domain_requeue も形 2（domain_handoff と同じ形）
+TARGS_SKIP=" examples/domain_neg_nested.sober examples/domain_neg_effect.sober examples/domain_handoff.sober examples/domain_arg.sober examples/domain_scope_place.sober examples/iter_region_domain_mut.sober examples/domain_slots.sober examples/domain_mutarg.sober examples/domain_requeue.sober "
 for e in $(scripts/irtext.sh --list); do
     if [[ "$TARGS_SKIP" == *" $e "* ]]; then
         run "$e" "$root"

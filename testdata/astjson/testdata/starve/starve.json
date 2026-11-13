@@ -1040,6 +1040,68 @@
               ],
               "tok": 302
             }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 306
+              },
+              "args": [
+                {
+                  "k": "interp",
+                  "tmpl": {
+                    "lits": [
+                      "late=",
+                      " maxLate_ms=",
+                      ""
+                    ],
+                    "holes": [
+                      {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "lg",
+                          "tok": 308
+                        },
+                        "field": "late",
+                        "tok": 308
+                      },
+                      {
+                        "k": "binary",
+                        "op": "/",
+                        "lhs": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "lg",
+                            "tok": 308
+                          },
+                          "field": "maxLate",
+                          "tok": 308
+                        },
+                        "rhs": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "task",
+                            "tok": 308
+                          },
+                          "field": "MS",
+                          "tok": 308
+                        },
+                        "tok": 308
+                      }
+                    ]
+                  },
+                  "tok": 308
+                }
+              ],
+              "tok": 307
+            }
           }
         ]
       },
@@ -1047,7 +1109,7 @@
       "bodiless": false,
       "span": {
         "start": 145,
-        "end": 308
+        "end": 313
       },
       "sig_end": 149
     }

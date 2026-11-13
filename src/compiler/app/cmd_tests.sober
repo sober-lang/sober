@@ -140,7 +140,12 @@ func testMutate(pkgs []string, work string, prefix string, fresh bool, outPath s
 
 // 環境変数 SOBER_MUTATE_ONE（照合の網 — 変異 n だけの build。無ければ -1）
 func mutateOne() int {
-    v, err := os.Getenv("SOBER_MUTATE_ONE")
+    return envNat("SOBER_MUTATE_ONE")
+}
+
+// 環境変数 name の 10 進の自然数（無い・空・数字でなければ -1）
+func envNat(name string) int {
+    v, err := os.Getenv(name)
     if err != nil || v == nil {
         return -1
     }
@@ -289,6 +294,12 @@ func failTally() TestTally {
 
 // テストのビルドの ELF（置き場 bd があれば後段の関数キャッシュの道）
 func testExe(p loader.Program, bd string, bv lower.BcView, pcs []loader.PcPut) ([]byte, error?) {
+    // SOBER_TEST_RT_MUTANT = n: rt の変異 n を入れたテストのビルド（std の網が壊れた rt を捕まえるかの自己検査 — 関数キャッシュは通さない。
+    // 環境変数は結果の再生の鍵に入るので、変異の結果が素の結果として再生されることはない）
+    m := envNat("SOBER_TEST_RT_MUTANT")
+    if m > 0 {
+        return lower.RtMutantLay(p, m, 0, false, lower.VfyLast)
+    }
     if bd != "" {
         return lower.ElfPassesCache(p, bd, bv, pcs)
     }

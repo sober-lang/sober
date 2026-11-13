@@ -15,6 +15,8 @@ package lower
 //
 // 生存 = スロット単位の後ろ向きのデータフロー: 事象（命令の並びの順）= 読み（load）・部分の書き（store）・読み書き（② ③）・全語の書き（① と、読みを
 // 挟まずにスロットの全語を覆う store の列 — 列の最初の store を書き始めの点にする）。全語の書きの点でスロットは死ぬ（その手前では生きていない）。
+// 呼び出しの事象は受け皿の書きを最初に置き、②③ の読み書きをその後に置く: 呼ばれた関数は受け皿を書いた後にも mut の実引数を読み書きしうる
+// （defer は結果を受け皿に書いてから走る）ので、受け皿は呼び出しの間ずっと他の実引数の席と干渉する。
 // 干渉 = 書きの点で生きている別のスロット（Chaitin の形）と、入口で生きているスロットどうし。彩色 = 大きさの降順（同じなら番号の順）の first-fit —
 // 決定的。ブロックの番号は IR の番号（到達しないブロックも数える — 安全側）
 
@@ -25,9 +27,6 @@ const SC_READ = 0
 const SC_WRITE = 1
 const SC_RW = 2
 const SC_KILL = 3
-
-// 彩色する最小の候補の語数（xSlotColor の門）
-const SC_MIN = 128
 
 // 関数 f のスロットの新しい置き場を返す: [k] = スロット k の累積の位置 cum（スロット k の語 j は rbp - 8 × (cum - j) — 旧の
 // 並びの cum と同じ意味）・[ns] = スロットの区画の語数。ws = スロットごとの語数（1 未満は 1）・zn = 旧の並びの位置ごとの要零（xZeroNeed）
@@ -53,21 +52,6 @@ func xSlotColor(st mut St, f FnRef, ws []int, zn []int) []int {
                 zk[k] = 1
             }
         }
-    }
-    // 門: 彩色の候補（要零でないスロット）が SC_MIN 語未満なら並びを変えない（解析の仕事は関数の命令に比例し、小さい区画の得は小さい — 自己 build の値札）
-    mut cw := 0
-    for k <- iter.Range(0, ns) {
-        if excl[k] == 0 {
-            cw += ws[k]
-        }
-    }
-    if cw < SC_MIN {
-        mut id := mut []int{}
-        for k <- iter.Range(0, ns) {
-            id = append(id, start[k] + ws[k])
-        }
-        id = append(id, total)
-        return freeze(id)
     }
     // 値 → スロット（aslot）と語の変位（aoff）。定数の表と gep の後解き（定義は使う点を支配するが並びの順とは限らない）
     mut aslot := mut []int{}
@@ -185,15 +169,21 @@ func xSlotColor(st mut St, f FnRef, ws []int, zn []int) []int {
                 } else if op == OpCallI {
                     // 間接の呼び出し: 被演算子 = [callee, 引数…]。sret（ir.sober CALLI_SRET）の受け皿（被演算子 1 = 引数 0・スロットの頭）は全語の書き・
                     // 関数型の mut の席の実引数（calliMut — 直接の F_MUTP と同じ約束）は読み書き・他は逃げ
+                    // 受け皿の書きは直の呼び出しと同じく事象の最初に（xSlotCallEv の注）
                     cc := xiC(mut st, ins)
                     mm := calliMut(cc)
-                    mut sr := -1
-                    for k <- iter.Range(0, xNOps(mut st, ins)) {
+                    nop := xNOps(mut st, ins)
+                    o1 := if nop > 1 { xOpnd(mut st, ins, 1) } else { -1 }
+                    sr := calliTy(cc) == CALLI_SRET && o1 >= 0 && o1 < nv && aslot[o1] >= 0 && aoff[o1] == 0
+                    if sr {
+                        evS = append(evS, aslot[o1])
+                        evK = append(evK, SC_KILL)
+                        evW = append(evW, 0)
+                    }
+                    for k <- iter.Range(0, nop) {
                         o := xOpnd(mut st, ins, k)
-                        if o >= 0 && o < nv && aslot[o] >= 0 {
-                            if k == 1 && aoff[o] == 0 && calliTy(cc) == CALLI_SRET {
-                                sr = aslot[o]
-                            } else if k >= 1 && (mm >> (k - 1)) & 1 == 1 {
+                        if o >= 0 && o < nv && aslot[o] >= 0 && !(sr && k == 1) {
+                            if k >= 1 && (mm >> (k - 1)) & 1 == 1 {
                                 evS = append(evS, aslot[o])
                                 evK = append(evK, SC_RW)
                                 evW = append(evW, aoff[o])
@@ -201,11 +191,6 @@ func xSlotColor(st mut St, f FnRef, ws []int, zn []int) []int {
                                 excl[aslot[o]] = 1
                             }
                         }
-                    }
-                    if sr >= 0 {
-                        evS = append(evS, sr)
-                        evK = append(evK, SC_KILL)
-                        evW = append(evW, 0)
                     }
                 } else if op != OpSlotaddr {
                     for k <- iter.Range(0, xNOps(mut st, ins)) {
@@ -435,18 +420,34 @@ func xSlotColor(st mut St, f FnRef, ws []int, zn []int) []int {
 
 // call の実引数のうちスロットの番地のものを事象（sret の受け皿 = 全語の書き・mut 仮引数 / rt の写しと relocate = 読み書き）か逃げにする
 func xSlotCallEv(st mut St, ins InsRef, aslot []int, aoff []int, nv int, excl mut []int, evS mut []int, evK mut []int, evW mut []int) {
-    callee := xiA(mut st, ins)
-    mb := xg(mut st, callee + F_MUTP)
-    rtrw := callee == int(st.rtCopy) || callee == int(st.rtCopy8) || callee == int(st.rtReloc) || callee == int(st.rtReloc8) || callee == int(st.rtErrReloc)
     n := xNOps(mut st, ins)
-    // 受け皿は最後に（呼ばれた関数は他の実引数を読んでから受け皿を書く — 後ろ向きでは書きが先に効く）
-    mut sret := -1
+    // 呼ぶ関数の記録はスロットの番地を渡す呼び出しでだけ読む — 関数ごとのキャッシュの鍵に入れた相手の外（最適化の後に足す rt の呼び出し）の欄を読まない
+    mut any := false
     for k <- iter.Range(0, n) {
         o := xOpnd(mut st, ins, k)
         if o >= 0 && o < nv && aslot[o] >= 0 {
-            if k == 0 && mb >= 0 && (mb >> F_SRET_BIT) & 1 == 1 && aoff[o] == 0 {
-                sret = aslot[o]
-            } else if rtrw || (k < F_SRET_BIT && mb >= 0 && (mb >> k) & 1 == 1) {
+            any = true
+        }
+    }
+    if !any {
+        return
+    }
+    callee := xiA(mut st, ins)
+    mb := xg(mut st, callee + F_MUTP)
+    rtrw := callee == int(st.rtCopy) || callee == int(st.rtCopy8) || callee == int(st.rtReloc) || callee == int(st.rtReloc8) || callee == int(st.rtErrReloc)
+    // 受け皿の全語の書きは事象の最初に（後ろ向きでは実引数の読み書きが先に効き、受け皿の書きの点で mut の席が生きている —
+    // 呼ばれた関数は受け皿を書いた後にも mut の実引数を読み書きしうる〔defer〕ので、受け皿は呼び出しの間ずっとその席と干渉する）
+    o0 := if n > 0 { xOpnd(mut st, ins, 0) } else { -1 }
+    sret := mb >= 0 && (mb >> F_SRET_BIT) & 1 == 1 && o0 >= 0 && o0 < nv && aslot[o0] >= 0 && aoff[o0] == 0
+    if sret {
+        evS = append(evS, aslot[o0])
+        evK = append(evK, SC_KILL)
+        evW = append(evW, 0)
+    }
+    for k <- iter.Range(if sret { 1 } else { 0 }, n) {
+        o := xOpnd(mut st, ins, k)
+        if o >= 0 && o < nv && aslot[o] >= 0 {
+            if rtrw || (k < F_SRET_BIT && mb >= 0 && (mb >> k) & 1 == 1) {
                 evS = append(evS, aslot[o])
                 evK = append(evK, SC_RW)
                 evW = append(evW, aoff[o])
@@ -454,10 +455,5 @@ func xSlotCallEv(st mut St, ins InsRef, aslot []int, aoff []int, nv int, excl mu
                 excl[aslot[o]] = 1
             }
         }
-    }
-    if sret >= 0 {
-        evS = append(evS, sret)
-        evK = append(evK, SC_KILL)
-        evW = append(evW, 0)
     }
 }

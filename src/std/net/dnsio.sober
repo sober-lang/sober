@@ -5,6 +5,7 @@ package net
 import "std/io"
 import "std/iter"
 import "std/task"
+import "std/time"
 
 // ホスト host の IPv4 の番地（/etc/hosts → /etc/resolv.conf — どちらも無ければ空の本文として読む）
 @errors(Bad, NoHost, NonASCIIHost, io.Timeout, io.Expired)
@@ -77,12 +78,8 @@ func txid() int {
     if r == 2 {
         return int(b[0]) << 8 | int(b[1])
     }
-    mut tb := mut []byte{}
-    for i <- iter.Range(0, 16) {
-        tb = append(tb, byte(0))
-    }
-    _ = sysCall(228, 1, sysAddr(tb), 0, 0, 0, 0)
-    return (int(tb[8]) << 8 | int(tb[9])) ^ int(tb[10])
+    ns := time.Mono().ns % time.Second
+    return ((ns & 255) << 8 | (ns >> 8) & 255) ^ (ns >> 16) & 255
 }
 
 // UDP で 1 回問う（txid と問いの合わない応答は捨てて次の datagram を待つ — 期限まで）

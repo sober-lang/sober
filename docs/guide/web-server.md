@@ -1019,7 +1019,7 @@ The fields of `net.Serve` set the limits on accepting connections.
 | `conns:` | 10000 | number of simultaneous connections (`budget × conns` is the ceiling for accepting — connections beyond it are closed) |
 | `reject:` | none | bytes sent once to a connection that was not accepted (left out, it is closed without sending) |
 | `region:` | 128 MiB | limit on one region of a connection's task (beyond it, that connection's task dies) |
-| `maxWait:` | 100 ms | limit on waiting under load (a task runs within this time after it becomes runnable) |
+| `maxWait:` | 100 ms | limit on waiting under load (tasks that have waited past it run first — the count and amount over it are `late` / `maxLate` in `task.Ledger()`) |
 
 When you raise `ServeConn`'s `maxHead:` / `maxBody:`, raise `budget:` with them (a rule of thumb: `budget ≥ 3 × (maxHead + maxBody) + 16 KiB`).
 

@@ -1,0 +1,124 @@
+package main
+
+// reqinst の題材 asyncdb のサーバ: HttpArena の async-db（GET /async-db?min=&max=&limit= → std/pg のプールから準備済みの文で読む →
+// 行を JSON で返す）と /pipeline だけを、bench/httparena/main.sober と同じ道（std/http/server の ServeConn・gzip の作業域）で返す。
+// 相手は DATABASE_URL の PostgreSQL（計測では bench/pgstub の代役 — 平文）。
+//   asyncdb [port]   0.0.0.0:<port>（既定 8080・0 = 空き番号）で待ち、"ready <port>" を出す。DATABASE_URL が無ければ 2 で終わる
+
+import "std/builder"
+import "std/compress/flate"
+import "std/convert"
+import "std/http/server"
+import "std/io"
+import "std/json"
+import "std/net"
+import "std/os"
+import "std/pg"
+import "std/strings"
+import "std/task"
+import "std/url"
+
+const maxBody = 131072
+
+const noRows = "{\"items\":[],\"count\":0}"
+
+const itemsSql = "SELECT id, name, category, price, quantity, active, tags, rating_score, rating_count FROM items WHERE price BETWEEN $1 AND $2 LIMIT $3"
+
+// GET /async-db?min=&max=&limit= (defaults 10 / 50 / 50, limit clamped to 1..50)
+func asyncDb(p pg.Pool, r http.server.Request) http.server.Response {
+    lo := numOr(http.server.Query(r, "min"), 10)
+    hi := numOr(http.server.Query(r, "max"), 50)
+    l := numOr(http.server.Query(r, "limit"), 50)
+    lim := if l < 1 { 1 } else if l > 50 { 50 } else { l }
+    mut body := noRows
+    e := pg.With(p, (c) => {
+        body = itemsJson(c, lo, hi, lim) catch noRows
+    })
+    return http.server.Json(if e != nil { noRows } else { body })
+}
+
+func numOr(s string?, d int) int {
+    if s == nil {
+        return d
+    }
+    return convert.ParseInt(s) catch d
+}
+
+// the rows as the response body (tags is the JSONB text as Postgres sends it; rating_* fold into rating)
+func itemsJson(c pg.Conn, lo int, hi int, lim int) (string, error?) {
+    mut o := builder.Builder[byte]{}
+    json.Put(mut o, "{\"items\":[")
+    mut n := 0
+    for row <- pg.Query(c, itemsSql, args: []pg.Value{pg.Int{v: lo}, pg.Int{v: hi}, pg.Int{v: lim}})? {
+        json.Put(mut o, if n == 0 { "{\"id\":" } else { ",{\"id\":" })
+        json.PutInt(mut o, pg.ColInt(row, 0)?)
+        json.Put(mut o, ",\"name\":")
+        json.PutString(mut o, pg.ColString(row, 1)?)
+        json.Put(mut o, ",\"category\":")
+        json.PutString(mut o, pg.ColString(row, 2)?)
+        json.Put(mut o, ",\"price\":")
+        json.PutInt(mut o, pg.ColInt(row, 3)?)
+        json.Put(mut o, ",\"quantity\":")
+        json.PutInt(mut o, pg.ColInt(row, 4)?)
+        json.Put(mut o, ",\"active\":")
+        json.PutBool(mut o, pg.ColBool(row, 5)?)
+        json.Put(mut o, ",\"tags\":")
+        json.Put(mut o, pg.ColJsonText(row, 6)?)
+        json.Put(mut o, ",\"rating\":{\"score\":")
+        json.PutInt(mut o, pg.ColInt(row, 7)?)
+        json.Put(mut o, ",\"count\":")
+        json.PutInt(mut o, pg.ColInt(row, 8)?)
+        json.Put(mut o, "}}")
+        n += 1
+    }
+    json.Put(mut o, "],\"count\":")
+    json.PutInt(mut o, n)
+    json.Put(mut o, "}")
+    return json.Done(mut o), nil
+}
+
+// DATABASE_URL carries the password (postgres://user:pass@host:port/db); std/pg takes it apart: the URL without it, and the password
+func splitUrl(u string) (string, string) {
+    scheme, rest, ok := strings.Cut(u, "://")
+    auth, hostpath, hasAt := strings.CutLast(rest, "@")
+    if !ok || !hasAt {
+        return u, ""
+    }
+    user, pw, hasPw := strings.Cut(auth, ":")
+    if !hasPw {
+        return u, ""
+    }
+    return "${scheme}://${user}@${hostpath}", url.Unescape(pw) catch pw
+}
+
+// プールの大きさ = DATABASE_MAX_CONN から計測の側の psql / pg_isready の分を引いたもの（既定 256 — HttpArena の入口と同じ）
+func poolSize() int {
+    m := numOr(os.Getenv("DATABASE_MAX_CONN") catch nil, 256)
+    return if m > 16 { m - 6 } else if m > 1 { m - 1 } else { 1 }
+}
+
+func main() int {
+    args := os.Args() catch return 2
+    port := if len(args) >= 2 { args[1] } else { "8080" }
+    u := os.Getenv("DATABASE_URL") catch nil
+    if u == nil {
+        return 2
+    }
+    at, pw := splitUrl(u)
+    gzw := task.NewLocal((w mut compress.flate.Work) => compress.flate.NewWork(mut w))
+    mut rc := 1
+    oe := pg.OpenPool(at, (p) => {
+        rc = if serve(gzw, port, p) == nil { 0 } else { 1 }
+    }, size: poolSize(), policy: pg.Policy{password: pw, dangerouslyPlaintext: true})
+    return if oe == nil { rc } else { 1 }
+}
+
+func serve(gzw task.Local, port string, p pg.Pool) error? {
+    none := []http.server.Middleware{}
+    rs := []http.server.Route{http.server.Route{method: "GET", path: "/pipeline", handler: (r) => http.server.Text("ok"), middleware: none}}
+    for l <- net.Listen("0.0.0.0:${port}")? {
+        io.WriteStdout(bytes("ready ${net.Port(l)}\n"))?
+        net.Serve(l, (c net.Conn) => http.server.ServeConn(c, (r http.server.Request) => if r.path == "/async-db" && r.method == "GET" { asyncDb(p, r) } else { http.server.Dispatch(rs, r) }, maxBody: maxBody, compression: http.server.Gzip{}, work: gzw), conns: 40000)?
+    }
+    return nil
+}

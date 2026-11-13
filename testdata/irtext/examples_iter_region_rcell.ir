@@ -2622,7 +2622,6 @@ b6:
 
 func @lambda#0(%0 ptr, %1 ptr, %2 i64, %3 i64, %4 i64) {
   slot s0 [3]
-  slot s1 [5]
 b0:
   %5 = slotaddr s0
   store %5[0], %2
@@ -2647,31 +2646,20 @@ b0:
   %21 = mul %19, %20
   %22 = add %6, %21
   region.enter
-  %23 = slotaddr s1
-  %24 = load.i64 %5[0]
-  %25 = load.i64 %5[1]
-  %26 = load.i64 %5[2]
-  %27 = globaladdr @rt.meta
-  store %27[2572], %12
-  call @main.feed(%23, %1, %24, %25, %26)
-  %28 = load.i64 %23[0]
-  store %0[0], %28
-  %29 = load.i64 %23[1]
-  store %0[1], %29
-  %30 = load.i64 %23[2]
-  store %0[2], %30
-  %31 = load.i64 %23[3]
-  store %0[3], %31
-  %32 = load.i64 %23[4]
-  store %0[4], %32
-  %33 = load.i64 %0[0]
-  %34 = const 0
-  %35 = ne %33, %34
-  condbr %35, b1, b2
+  %23 = load.i64 %5[0]
+  %24 = load.i64 %5[1]
+  %25 = load.i64 %5[2]
+  %26 = globaladdr @rt.meta
+  store %26[2572], %12
+  call @main.feed(%0, %1, %23, %24, %25)
+  %27 = load.i64 %0[0]
+  %28 = const 0
+  %29 = ne %27, %28
+  condbr %29, b1, b2
 b1:
-  %36 = const 1
-  %37 = gep.word %0, %36
-  call @rt.err_relocate(%37, %6)
+  %30 = const 1
+  %31 = gep.word %0, %30
+  call @rt.err_relocate(%31, %6)
   br b2
 b2:
   region.setdepth %6
@@ -2680,7 +2668,6 @@ b2:
 
 func @lambda#1(%0 ptr, %1 ptr, %2 i64, %3 i64, %4 i64) {
   slot s0 [3]
-  slot s1 [5]
 b0:
   %5 = slotaddr s0
   store %5[0], %2
@@ -2705,31 +2692,20 @@ b0:
   %21 = mul %19, %20
   %22 = add %6, %21
   region.enter
-  %23 = slotaddr s1
-  %24 = load.i64 %5[0]
-  %25 = load.i64 %5[1]
-  %26 = load.i64 %5[2]
-  %27 = globaladdr @rt.meta
-  store %27[2572], %12
-  call @main.feed(%23, %1, %24, %25, %26)
-  %28 = load.i64 %23[0]
-  store %0[0], %28
-  %29 = load.i64 %23[1]
-  store %0[1], %29
-  %30 = load.i64 %23[2]
-  store %0[2], %30
-  %31 = load.i64 %23[3]
-  store %0[3], %31
-  %32 = load.i64 %23[4]
-  store %0[4], %32
-  %33 = load.i64 %0[0]
-  %34 = const 0
-  %35 = ne %33, %34
-  condbr %35, b1, b2
+  %23 = load.i64 %5[0]
+  %24 = load.i64 %5[1]
+  %25 = load.i64 %5[2]
+  %26 = globaladdr @rt.meta
+  store %26[2572], %12
+  call @main.feed(%0, %1, %23, %24, %25)
+  %27 = load.i64 %0[0]
+  %28 = const 0
+  %29 = ne %27, %28
+  condbr %29, b1, b2
 b1:
-  %36 = const 1
-  %37 = gep.word %0, %36
-  call @rt.err_relocate(%37, %6)
+  %30 = const 1
+  %31 = gep.word %0, %30
+  call @rt.err_relocate(%31, %6)
   br b2
 b2:
   region.setdepth %6
@@ -3692,7 +3668,6 @@ b13:
 
 func @lambda#4(%0 ptr, %1 ptr, %2 i64, %3 i64, %4 i64) {
   slot s0 [3]
-  slot s1 [5]
 b0:
   %5 = slotaddr s0
   store %5[0], %2
@@ -3717,31 +3692,20 @@ b0:
   %21 = mul %19, %20
   %22 = add %6, %21
   region.enter
-  %23 = slotaddr s1
-  %24 = load.i64 %5[0]
-  %25 = load.i64 %5[1]
-  %26 = load.i64 %5[2]
-  %27 = globaladdr @rt.meta
-  store %27[2572], %12
-  call @main.feed(%23, %1, %24, %25, %26)
-  %28 = load.i64 %23[0]
-  store %0[0], %28
-  %29 = load.i64 %23[1]
-  store %0[1], %29
-  %30 = load.i64 %23[2]
-  store %0[2], %30
-  %31 = load.i64 %23[3]
-  store %0[3], %31
-  %32 = load.i64 %23[4]
-  store %0[4], %32
-  %33 = load.i64 %0[0]
-  %34 = const 0
-  %35 = ne %33, %34
-  condbr %35, b1, b2
+  %23 = load.i64 %5[0]
+  %24 = load.i64 %5[1]
+  %25 = load.i64 %5[2]
+  %26 = globaladdr @rt.meta
+  store %26[2572], %12
+  call @main.feed(%0, %1, %23, %24, %25)
+  %27 = load.i64 %0[0]
+  %28 = const 0
+  %29 = ne %27, %28
+  condbr %29, b1, b2
 b1:
-  %36 = const 1
-  %37 = gep.word %0, %36
-  call @rt.err_relocate(%37, %6)
+  %30 = const 1
+  %31 = gep.word %0, %30
+  call @rt.err_relocate(%31, %6)
   br b2
 b2:
   region.setdepth %6

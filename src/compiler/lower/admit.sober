@@ -110,7 +110,7 @@ func buildPoolNew(st mut St) {
 
 // rt.ledger(k)（std/task の ledgerWord — @intrinsic "par_ledger"・Ledger の読み口）: k = 0 プールの数・1 根の天井・2 計上中のバイト・
 // 3 計上中の task の数・4 縮退・5 天井を超えた入場・6 宣言超過・7 shed・8 ワーカー数・9 wait の待ち・10 待ちの最大（ns — 全ワーカーの WK_MAXW を
-// xchg で 0 に戻して集める）・11 待ちの上限が効いた回数（全ワーカーの WK_AGED の和 — language.md 11 節「メトリクス」）・12 未着手の子・13 譲った回数・14 CPU の固定の形・15 固定した群の数・16 + 8p + f = プール p の {0 天井, 1 計上中のバイト, 2 task の数,
+// xchg で 0 に戻して集める）・11 待ちの上限が効いた回数（全ワーカーの WK_AGED の和 — language.md 11 節「メトリクス」）・12 未着手の子・13 譲った回数・14 CPU の固定の形・15 固定した群の数・16 D を越えて走った数（全ワーカーの WK_LATE の和）・17 越えた量の最大（ns — WK_MAXL を xchg で 0 に戻して集める）・18 / 19 / 20 / 21 浅い待ち・深い待ち・窓で深くした待ち・浅い待ちの前の交換の数（全ワーカーの WK_PSHAL / WK_PDEEP / WK_PDWIN / WK_PSWAP の和）・22 + 8p + f = プール p の {0 天井, 1 計上中のバイト, 2 task の数,
 // 3 入場, 4 shed, 5 親の番号 + 1, 6 失敗, 7 死}（範囲の外は 0）・負 = domain の合計の行（-1 待っている数・-2 到着から入るまでの最大・-3 満了・-4 毒）
 func buildLedger(st mut St) {
     begin(mut st, st.rtLedger)
@@ -123,7 +123,12 @@ func buildLedger(st mut St) {
     usedT := bin(mut st, BAdd, load(mut st, mn, MN_TCAP), bin(mut st, BSub, bin(mut st, BAnd, bin(mut st, BSar, led, iconst(mut st, LED_TSHIFT)), iconst(mut st, 2 * LED_TMAX + 1)), iconst(mut st, LED_TMAX)))
     rootV := []int{cnt, load(mut st, mn, MN_CAP), usedB, usedT, load(mut st, mn, MN_LINL), load(mut st, mn, MN_LOVER), load(mut st, mn, MN_LDOVER), load(mut st, mn, MN_LSHED), load(mut st, mn, MN_N), load(mut st, mn, MN_LWAIT)}
     ledgerPick(mut st, k, rootV)
-    ledgerSched(mut st, k, mn)
+    ledgerSched(mut st, k, mn, 10, 11, WK_MAXW, WK_AGED)
+    ledgerSched(mut st, k, mn, 17, 16, WK_MAXL, WK_LATE)
+    ledgerSum(mut st, k, mn, 18, WK_PSHAL)
+    ledgerSum(mut st, k, mn, 19, WK_PDEEP)
+    ledgerSum(mut st, k, mn, 20, WK_PDWIN)
+    ledgerSum(mut st, k, mn, 21, WK_PSWAP)
     ledgerBacklog(mut st, k, mn)
     // 14 = 固定の形（0 なし・1 L3 の群・2 CPU 1 つ・3 L3 の群を頼んだが読めずに CPU 1 つへ縮退したワーカーがある）・15 = 固定した群の数
     pm := load(mut st, mn, MN_PIN)
@@ -144,12 +149,12 @@ func buildLedger(st mut St) {
     ret(mut st, iconst(mut st, 0))
     setCur(mut st, bNd)
     // プールの節
-    j := bin(mut st, BSub, k, iconst(mut st, 16))
+    j := bin(mut st, BSub, k, iconst(mut st, POOL_K0))
     p := bin(mut st, BSar, j, iconst(mut st, 3))
     bA := newBlock(mut st)
     bP := newBlock(mut st)
     bZero := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CGe, k, iconst(mut st, 16)), bA, -1, bZero, -1)
+    condbr(mut st, cmp(mut st, CGe, k, iconst(mut st, POOL_K0)), bA, -1, bZero, -1)
     setCur(mut st, bA)
     condbr(mut st, cmp(mut st, CLt, p, cnt), bP, -1, bZero, -1)
     setCur(mut st, bP)
@@ -164,14 +169,17 @@ func buildLedger(st mut St) {
     ret(mut st, iconst(mut st, 0))
 }
 
-// k = 10（待ちの最大 — ns・読むと 0 に戻る）/ 11（aged の和）なら全ワーカーの語を集めて返す（どちらでもなければ次のブロックへ続く）
-func ledgerSched(st mut St, k int, mn int) {
+// 台帳の語の番号でプールの節が始まるところ（それより前は根の語）
+const POOL_K0 = 22
+
+// k = kMax（ワーカーの語 wMax の最大 — TSC の数を ns へ・xchg で 0 に戻す）/ kSum（語 wSum の和）なら全ワーカーの語を集めて返す（どちらでもなければ次のブロックへ続く）
+func ledgerSched(st mut St, k int, mn int, kMax int, kSum int, wMax int, wSum int) {
     zero := iconst(mut st, 0)
     bS := newBlock(mut st)
     bN := newBlock(mut st)
-    condbr(mut st, bin(mut st, BOr, cmp(mut st, CEq, k, iconst(mut st, 10)), cmp(mut st, CEq, k, iconst(mut st, 11))), bS, -1, bN, -1)
+    condbr(mut st, bin(mut st, BOr, cmp(mut st, CEq, k, iconst(mut st, kMax)), cmp(mut st, CEq, k, iconst(mut st, kSum))), bS, -1, bN, -1)
     setCur(mut st, bS)
-    isMax := cmp(mut st, CEq, k, iconst(mut st, 10))
+    isMax := cmp(mut st, CEq, k, iconst(mut st, kMax))
     n := load(mut st, mn, MN_N)
     lp := newBlock(mut st)
     i := param(mut st, lp, TyI64)
@@ -192,10 +200,10 @@ func ledgerSched(st mut St, k int, mn int) {
     setCur(mut st, bW)
     condbr(mut st, isMax, bM, -1, bA, -1)
     setCur(mut st, bM)
-    v := atomicXchg(mut st, w, WK_MAXW, zero)
+    v := atomicXchg(mut st, w, wMax, zero)
     br(mut st, lp, list2(mut st, bin(mut st, BAdd, i, iconst(mut st, 1)), bin(mut st, BAdd, acc, bin(mut st, BMul, cmp(mut st, CGt, v, acc), bin(mut st, BSub, v, acc)))))
     setCur(mut st, bA)
-    br(mut st, lp, list2(mut st, bin(mut st, BAdd, i, iconst(mut st, 1)), bin(mut st, BAdd, acc, load(mut st, w, WK_AGED))))
+    br(mut st, lp, list2(mut st, bin(mut st, BAdd, i, iconst(mut st, 1)), bin(mut st, BAdd, acc, load(mut st, w, wSum))))
     setCur(mut st, done)
     bR := newBlock(mut st)
     bC := newBlock(mut st)
@@ -206,6 +214,34 @@ func ledgerSched(st mut St, k int, mn int) {
     qe := bin(mut st, BAdd, q, bin(mut st, BMul, cmp(mut st, CEq, q, zero), iconst(mut st, TSCQ_DEF)))
     ret(mut st, bin(mut st, BDiv, bin(mut st, BShl, acc, iconst(mut st, 16)), qe))
     setCur(mut st, bR)
+    ret(mut st, acc)
+    setCur(mut st, bN)
+}
+
+// k = kSum なら全ワーカーの語 wSum の和を返す（でなければ次のブロックへ続く）
+func ledgerSum(st mut St, k int, mn int, kSum int, wSum int) {
+    zero := iconst(mut st, 0)
+    bS := newBlock(mut st)
+    bN := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, k, iconst(mut st, kSum)), bS, -1, bN, -1)
+    setCur(mut st, bS)
+    n := load(mut st, mn, MN_N)
+    lp := newBlock(mut st)
+    i := param(mut st, lp, TyI64)
+    acc := param(mut st, lp, TyI64)
+    body := newBlock(mut st)
+    bW := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, lp, list2(mut st, zero, zero))
+    setCur(mut st, lp)
+    condbr(mut st, cmp(mut st, CLt, i, n), body, -1, done, -1)
+    setCur(mut st, body)
+    // ワーカーが立つ前は番地 0: 飛ばす
+    wa := load(mut st, gepWord(mut st, mn, i), MN_WK)
+    condbr(mut st, cmp(mut st, CEq, wa, zero), lp, list2(mut st, bin(mut st, BAdd, i, iconst(mut st, 1)), acc), bW, -1)
+    setCur(mut st, bW)
+    br(mut st, lp, list2(mut st, bin(mut st, BAdd, i, iconst(mut st, 1)), bin(mut st, BAdd, acc, load(mut st, itop(mut st, wa), wSum))))
+    setCur(mut st, done)
     ret(mut st, acc)
     setCur(mut st, bN)
 }

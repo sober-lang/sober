@@ -5617,7 +5617,6 @@ func @std/crypto/chacha20.XorKeyStream(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %
   slot s0 [3]
   slot s1 [3]
   slot s2 [3]
-  slot s3 [3]
 b0:
   %11 = slotaddr s0
   store %11[0], %1
@@ -5644,27 +5643,20 @@ b0:
   %23 = mul %21, %22
   %24 = add %14, %23
   region.enter
-  %25 = slotaddr s3
-  %26 = load.i64 %11[0]
-  %27 = load.i64 %11[1]
-  %28 = load.i64 %11[2]
-  %29 = load.i64 %12[0]
-  %30 = load.i64 %12[1]
-  %31 = load.i64 %12[2]
-  %32 = load.i64 %13[0]
-  %33 = load.i64 %13[1]
-  %34 = load.i64 %13[2]
-  %35 = const 0
-  %36 = load.i64 %13[1]
-  %37 = globaladdr @rt.meta
-  store %37[2571], %24
-  call @std/crypto/chacha20.XorKeyStreamAt(%25, %26, %27, %28, %29, %30, %31, %7, %32, %33, %34, %35, %36)
-  %38 = load.i64 %25[0]
-  store %0[0], %38
-  %39 = load.i64 %25[1]
-  store %0[1], %39
-  %40 = load.i64 %25[2]
-  store %0[2], %40
+  %25 = load.i64 %11[0]
+  %26 = load.i64 %11[1]
+  %27 = load.i64 %11[2]
+  %28 = load.i64 %12[0]
+  %29 = load.i64 %12[1]
+  %30 = load.i64 %12[2]
+  %31 = load.i64 %13[0]
+  %32 = load.i64 %13[1]
+  %33 = load.i64 %13[2]
+  %34 = const 0
+  %35 = load.i64 %13[1]
+  %36 = globaladdr @rt.meta
+  store %36[2571], %24
+  call @std/crypto/chacha20.XorKeyStreamAt(%0, %25, %26, %27, %28, %29, %30, %7, %31, %32, %33, %34, %35)
   call @rt.region_relocate8(%0, %14)
   region.setdepth %14
   ret
@@ -7639,9 +7631,8 @@ func @std/crypto/chacha20poly1305.Seal(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %
   slot s3 [3]
   slot s4 [8]
   slot s5 [3]
-  slot s6 [8]
+  slot s6 [3]
   slot s7 [3]
-  slot s8 [3]
 b0:
   %13 = slotaddr s0
   store %13[0], %1
@@ -7720,67 +7711,52 @@ b2:
   store %53[1], %55
   %56 = load.i64 %28[2]
   store %53[2], %56
-  %57 = slotaddr s6
-  %58 = load.i64 %53[0]
-  %59 = load.i64 %53[1]
-  %60 = load.i64 %53[2]
-  %61 = load.i64 %14[0]
-  %62 = load.i64 %14[1]
-  %63 = load.i64 %14[2]
-  %64 = load.i64 %15[0]
-  %65 = load.i64 %15[1]
-  %66 = load.i64 %15[2]
-  %67 = load.i64 %16[0]
-  %68 = load.i64 %16[1]
-  %69 = load.i64 %16[2]
+  %57 = load.i64 %53[0]
+  %58 = load.i64 %53[1]
+  %59 = load.i64 %53[2]
+  %60 = load.i64 %14[0]
+  %61 = load.i64 %14[1]
+  %62 = load.i64 %14[2]
+  %63 = load.i64 %15[0]
+  %64 = load.i64 %15[1]
+  %65 = load.i64 %15[2]
+  %66 = load.i64 %16[0]
+  %67 = load.i64 %16[1]
+  %68 = load.i64 %16[2]
+  %69 = region.depth
   %70 = const 0
-  %71 = call @rt.region_alloc8(%27, %70)
+  %71 = call @rt.region_alloc8(%69, %70)
   %72 = const 0
-  %73 = slotaddr s7
+  %73 = slotaddr s6
   %74 = ptoi %71
   store %73[0], %74
   store %73[1], %72
-  store %73[2], %27
+  store %73[2], %69
   %75 = load.i64 %73[0]
   %76 = load.i64 %73[1]
   %77 = load.i64 %73[2]
-  %78 = const 0
-  %79 = call @rt.region_alloc8(%27, %78)
-  %80 = const 0
-  %81 = slotaddr s8
-  %82 = ptoi %79
-  store %81[0], %82
-  store %81[1], %80
-  store %81[2], %27
-  %83 = load.i64 %81[0]
-  %84 = load.i64 %81[1]
-  %85 = load.i64 %81[2]
-  %86 = globaladdr @rt.meta
-  store %86[2571], %27
-  call @std/crypto/chacha20poly1305.SealTo(%57, %58, %59, %60, %61, %62, %63, %64, %65, %66, %67, %68, %69, %75, %76, %77, %83, %84, %85)
-  %87 = const 3
-  %88 = gep.word %57, %87
-  %89 = load.i64 %57[0]
-  store %0[0], %89
-  %90 = load.i64 %57[1]
-  store %0[1], %90
-  %91 = load.i64 %57[2]
-  store %0[2], %91
-  %92 = load.i64 %88[0]
-  store %0[3], %92
-  %93 = load.i64 %88[1]
-  store %0[4], %93
-  %94 = load.i64 %88[2]
-  store %0[5], %94
-  %95 = load.i64 %88[3]
-  store %0[6], %95
-  %96 = load.i64 %88[4]
-  store %0[7], %96
+  %78 = region.depth
+  %79 = const 0
+  %80 = call @rt.region_alloc8(%78, %79)
+  %81 = const 0
+  %82 = slotaddr s7
+  %83 = ptoi %80
+  store %82[0], %83
+  store %82[1], %81
+  store %82[2], %78
+  %84 = load.i64 %82[0]
+  %85 = load.i64 %82[1]
+  %86 = load.i64 %82[2]
+  %87 = globaladdr @rt.meta
+  store %87[2571], %27
+  call @std/crypto/chacha20poly1305.SealTo(%0, %57, %58, %59, %60, %61, %62, %63, %64, %65, %66, %67, %68, %75, %76, %77, %84, %85, %86)
+  %88 = const 3
+  %89 = gep.word %0, %88
   call @rt.region_relocate8(%0, %17)
-  %97 = load.i64 %0[3]
-  %98 = const 0
-  %99 = ne %97, %98
-  condbr %99, b5, b6
+  %90 = load.i64 %0[3]
+  %91 = const 0
+  %92 = ne %90, %91
+  condbr %92, b5, b6
 b3:
   %51 = const 4
   %52 = gep.word %0, %51
@@ -7790,9 +7766,9 @@ b4:
   region.setdepth %17
   ret
 b5:
-  %100 = const 4
-  %101 = gep.word %0, %100
-  call @rt.err_relocate(%101, %17)
+  %93 = const 4
+  %94 = gep.word %0, %93
+  call @rt.err_relocate(%94, %17)
   br b6
 b6:
   region.setdepth %17
@@ -7806,7 +7782,6 @@ func @std/crypto/chacha20poly1305.Open(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %
   slot s3 [3]
   slot s4 [8]
   slot s5 [3]
-  slot s6 [8]
 b0:
   %13 = slotaddr s0
   store %13[0], %1
@@ -7885,47 +7860,30 @@ b2:
   store %53[1], %55
   %56 = load.i64 %28[2]
   store %53[2], %56
-  %57 = slotaddr s6
-  %58 = load.i64 %53[0]
-  %59 = load.i64 %53[1]
-  %60 = load.i64 %53[2]
-  %61 = load.i64 %14[0]
-  %62 = load.i64 %14[1]
-  %63 = load.i64 %14[2]
-  %64 = load.i64 %15[0]
-  %65 = load.i64 %15[1]
-  %66 = load.i64 %15[2]
-  %67 = load.i64 %16[0]
-  %68 = load.i64 %16[1]
-  %69 = load.i64 %16[2]
-  %70 = const 0
-  %71 = load.i64 %16[1]
-  %72 = globaladdr @rt.meta
-  store %72[2571], %27
-  call @std/crypto/chacha20poly1305.OpenAt(%57, %58, %59, %60, %61, %62, %63, %64, %65, %66, %67, %68, %69, %70, %71)
-  %73 = const 3
-  %74 = gep.word %57, %73
-  %75 = load.i64 %57[0]
-  store %0[0], %75
-  %76 = load.i64 %57[1]
-  store %0[1], %76
-  %77 = load.i64 %57[2]
-  store %0[2], %77
-  %78 = load.i64 %74[0]
-  store %0[3], %78
-  %79 = load.i64 %74[1]
-  store %0[4], %79
-  %80 = load.i64 %74[2]
-  store %0[5], %80
-  %81 = load.i64 %74[3]
-  store %0[6], %81
-  %82 = load.i64 %74[4]
-  store %0[7], %82
+  %57 = load.i64 %53[0]
+  %58 = load.i64 %53[1]
+  %59 = load.i64 %53[2]
+  %60 = load.i64 %14[0]
+  %61 = load.i64 %14[1]
+  %62 = load.i64 %14[2]
+  %63 = load.i64 %15[0]
+  %64 = load.i64 %15[1]
+  %65 = load.i64 %15[2]
+  %66 = load.i64 %16[0]
+  %67 = load.i64 %16[1]
+  %68 = load.i64 %16[2]
+  %69 = const 0
+  %70 = load.i64 %16[1]
+  %71 = globaladdr @rt.meta
+  store %71[2571], %27
+  call @std/crypto/chacha20poly1305.OpenAt(%0, %57, %58, %59, %60, %61, %62, %63, %64, %65, %66, %67, %68, %69, %70)
+  %72 = const 3
+  %73 = gep.word %0, %72
   call @rt.region_relocate8(%0, %17)
-  %83 = load.i64 %0[3]
-  %84 = const 0
-  %85 = ne %83, %84
-  condbr %85, b5, b6
+  %74 = load.i64 %0[3]
+  %75 = const 0
+  %76 = ne %74, %75
+  condbr %76, b5, b6
 b3:
   %51 = const 4
   %52 = gep.word %0, %51
@@ -7935,9 +7893,9 @@ b4:
   region.setdepth %17
   ret
 b5:
-  %86 = const 4
-  %87 = gep.word %0, %86
-  call @rt.err_relocate(%87, %17)
+  %77 = const 4
+  %78 = gep.word %0, %77
+  call @rt.err_relocate(%78, %17)
   br b6
 b6:
   region.setdepth %17
@@ -8511,242 +8469,240 @@ b54:
   %344 = load.i64 %20[0]
   %345 = load.i64 %20[1]
   %346 = load.i64 %20[2]
-  %347 = globaladdr @rt.meta
-  store %347[2571], %35
   call @std/crypto/chacha20poly1305.polyKey(%340, %341, %342, %343, %344, %345, %346)
-  %348 = load.i64 %340[0]
-  %349 = load.i64 %340[1]
-  %350 = load.i64 %340[2]
-  %351 = load.i64 %21[0]
-  %352 = load.i64 %21[1]
-  %353 = load.i64 %21[2]
-  %354 = load.i64 %91[0]
-  %355 = load.i64 %91[1]
-  %356 = load.i64 %91[2]
-  %357 = globaladdr @rt.meta
-  store %357[2571], %35
-  call @std/crypto/poly1305.SumAead(%339, %348, %349, %350, %351, %352, %353, %354, %355, %356, %85, %338)
-  %358 = slotaddr s10
-  %359 = load.i64 %339[0]
-  store %358[0], %359
-  %360 = load.i64 %339[1]
-  store %358[1], %360
-  %361 = load.i64 %339[2]
-  store %358[2], %361
-  %362 = const 0
-  %363 = slotaddr s19
-  store %363[0], %362
-  %364 = const 16
+  %347 = load.i64 %340[0]
+  %348 = load.i64 %340[1]
+  %349 = load.i64 %340[2]
+  %350 = load.i64 %21[0]
+  %351 = load.i64 %21[1]
+  %352 = load.i64 %21[2]
+  %353 = load.i64 %91[0]
+  %354 = load.i64 %91[1]
+  %355 = load.i64 %91[2]
+  %356 = globaladdr @rt.meta
+  store %356[2571], %35
+  call @std/crypto/poly1305.SumAead(%339, %347, %348, %349, %350, %351, %352, %353, %354, %355, %85, %338)
+  %357 = slotaddr s10
+  %358 = load.i64 %339[0]
+  store %357[0], %358
+  %359 = load.i64 %339[1]
+  store %357[1], %359
+  %360 = load.i64 %339[2]
+  store %357[2], %360
+  %361 = const 0
+  %362 = slotaddr s19
+  store %362[0], %361
+  %363 = const 16
+  %364 = const 0
   %365 = const 0
-  %366 = const 0
-  %367 = load.i64 %363[0]
-  %368 = sub %364, %367
-  %369 = const 0
-  %370 = le %368, %369
-  condbr %370, b57, b58
+  %366 = load.i64 %362[0]
+  %367 = sub %363, %366
+  %368 = const 0
+  %369 = le %367, %368
+  condbr %369, b57, b58
 b55:
-  %377 = slotaddr s13
-  %378 = load.i64 %91[0]
-  store %377[0], %378
-  %379 = load.i64 %91[1]
-  store %377[1], %379
-  %380 = load.i64 %91[2]
-  store %377[2], %380
-  %381 = load.i64 %377[2]
-  %382 = load.i64 %377[0]
-  %383 = load.i64 %377[1]
-  %384 = add %382, %383
-  %387 = globaladdr @rt.btip
-  %388 = gep.word %387, %381
-  %389 = load.i64 %388[0]
-  %390 = eq %389, %384
-  condbr %390, b65, b63
+  %376 = slotaddr s13
+  %377 = load.i64 %91[0]
+  store %376[0], %377
+  %378 = load.i64 %91[1]
+  store %376[1], %378
+  %379 = load.i64 %91[2]
+  store %376[2], %379
+  %380 = load.i64 %376[2]
+  %381 = load.i64 %376[0]
+  %382 = load.i64 %376[1]
+  %383 = add %381, %382
+  %386 = globaladdr @rt.btip
+  %387 = gep.word %386, %380
+  %388 = load.i64 %387[0]
+  %389 = eq %388, %383
+  condbr %389, b65, b63
 b56:
-  %432 = region.depth
+  %431 = region.depth
   br b70
 b57:
-  %476 = slotaddr s8
-  %477 = const 0
-  store %476[0], %477
-  %478 = load.i64 %91[0]
-  store %0[0], %478
-  %479 = load.i64 %91[1]
-  store %0[1], %479
-  %480 = load.i64 %91[2]
-  store %0[2], %480
-  %481 = load.i64 %476[0]
-  store %0[3], %481
-  %482 = load.i64 %476[1]
-  store %0[4], %482
-  %483 = load.i64 %476[2]
-  store %0[5], %483
-  %484 = load.i64 %476[3]
-  store %0[6], %484
-  %485 = load.i64 %476[4]
-  store %0[7], %485
+  %475 = slotaddr s8
+  %476 = const 0
+  store %475[0], %476
+  %477 = load.i64 %91[0]
+  store %0[0], %477
+  %478 = load.i64 %91[1]
+  store %0[1], %478
+  %479 = load.i64 %91[2]
+  store %0[2], %479
+  %480 = load.i64 %475[0]
+  store %0[3], %480
+  %481 = load.i64 %475[1]
+  store %0[4], %481
+  %482 = load.i64 %475[2]
+  store %0[5], %482
+  %483 = load.i64 %475[3]
+  store %0[6], %483
+  %484 = load.i64 %475[4]
+  store %0[7], %484
   call @rt.region_relocate8(%0, %25)
-  %486 = load.i64 %0[3]
-  %487 = const 0
-  %488 = ne %486, %487
-  condbr %488, b78, b79
+  %485 = load.i64 %0[3]
+  %486 = const 0
+  %487 = ne %485, %486
+  condbr %487, b78, b79
 b58:
-  %371 = load.i64 %358[1]
-  %372 = add %366, %367
-  %373 = ge %372, %369
-  condbr %373, b59, b56
+  %370 = load.i64 %357[1]
+  %371 = add %365, %366
+  %372 = ge %371, %368
+  condbr %372, b59, b56
 b59:
-  %374 = add %366, %364
-  %375 = le %374, %371
-  condbr %375, b60, b56
+  %373 = add %365, %363
+  %374 = le %373, %370
+  condbr %374, b60, b56
 b60:
-  %376 = ge %367, %369
-  condbr %376, b61, b56
+  %375 = ge %366, %368
+  condbr %375, b61, b56
 b61:
   br b55
-b62(%385 ptr, %386 ptr):
-  %422 = load.i64 %358[0]
-  %423 = itop %422
-  %424 = gep.byte %423, %372
-  call @rt.copy8(%386, %424, %368)
-  %425 = load.i64 %377[1]
-  %426 = add %425, %368
-  %427 = slotaddr s14
-  %428 = ptoi %385
-  store %427[0], %428
-  store %427[1], %426
-  store %427[2], %381
-  %429 = load.i64 %427[0]
-  store %91[0], %429
-  %430 = load.i64 %427[1]
-  store %91[1], %430
-  %431 = load.i64 %427[2]
-  store %91[2], %431
-  store %363[0], %364
+b62(%384 ptr, %385 ptr):
+  %421 = load.i64 %357[0]
+  %422 = itop %421
+  %423 = gep.byte %422, %371
+  call @rt.copy8(%385, %423, %367)
+  %424 = load.i64 %376[1]
+  %425 = add %424, %367
+  %426 = slotaddr s14
+  %427 = ptoi %384
+  store %426[0], %427
+  store %426[1], %425
+  store %426[2], %380
+  %428 = load.i64 %426[0]
+  store %91[0], %428
+  %429 = load.i64 %426[1]
+  store %91[1], %429
+  %430 = load.i64 %426[2]
+  store %91[2], %430
+  store %362[0], %363
   br b57
 b63:
-  %418 = add %383, %368
-  %419 = call @rt.region_alloc8(%381, %418)
-  %420 = itop %382
-  call @rt.copy8(%419, %420, %383)
-  %421 = gep.byte %419, %383
-  br b62(%419, %421)
+  %417 = add %382, %367
+  %418 = call @rt.region_alloc8(%380, %417)
+  %419 = itop %381
+  call @rt.copy8(%418, %419, %382)
+  %420 = gep.byte %418, %382
+  br b62(%418, %420)
 b64:
-  %416 = itop %382
-  %417 = gep.byte %416, %383
-  br b62(%416, %417)
+  %415 = itop %381
+  %416 = gep.byte %415, %382
+  br b62(%415, %416)
 b65:
-  %391 = const 7
-  %392 = add %384, %391
-  %393 = const -8
-  %394 = and_ %392, %393
-  %395 = add %384, %368
-  %396 = const 7
-  %397 = add %395, %396
-  %398 = const -8
-  %399 = and_ %397, %398
-  %400 = globaladdr @rt.meta
-  %401 = gep.word %400, %381
-  %402 = load.i64 %401[1]
-  %403 = le %395, %394
-  %404 = eq %402, %394
-  %405 = or_ %403, %404
-  %406 = const 0
-  %407 = ne %405, %406
-  condbr %407, b66, b63
+  %390 = const 7
+  %391 = add %383, %390
+  %392 = const -8
+  %393 = and_ %391, %392
+  %394 = add %383, %367
+  %395 = const 7
+  %396 = add %394, %395
+  %397 = const -8
+  %398 = and_ %396, %397
+  %399 = globaladdr @rt.meta
+  %400 = gep.word %399, %380
+  %401 = load.i64 %400[1]
+  %402 = le %394, %393
+  %403 = eq %401, %393
+  %404 = or_ %402, %403
+  %405 = const 0
+  %406 = ne %404, %405
+  condbr %406, b66, b63
 b66:
-  %408 = gt %399, %402
-  condbr %408, b67, b68
+  %407 = gt %398, %401
+  condbr %407, b67, b68
 b67:
-  %409 = load.i64 %400[1029]
-  %410 = const 1
-  %411 = add %381, %410
-  %412 = load.i64 %400[1030]
-  %413 = mul %411, %412
-  %414 = add %409, %413
-  %415 = gt %399, %414
-  condbr %415, b63, b69
+  %408 = load.i64 %399[1029]
+  %409 = const 1
+  %410 = add %380, %409
+  %411 = load.i64 %399[1030]
+  %412 = mul %410, %411
+  %413 = add %408, %412
+  %414 = gt %398, %413
+  condbr %414, b63, b69
 b68:
-  store %388[0], %395
+  store %387[0], %394
   br b64
 b69:
-  store %401[1], %399
+  store %400[1], %398
   br b68
 b70:
-  region.setdepth %432
-  %433 = load.i64 %363[0]
-  %434 = const 16
-  %435 = lt %433, %434
-  condbr %435, b71, b72
+  region.setdepth %431
+  %432 = load.i64 %362[0]
+  %433 = const 16
+  %434 = lt %432, %433
+  condbr %434, b71, b72
 b71:
   region.enter
-  %436 = region.depth
-  %437 = const 1
-  %438 = add %25, %437
-  %439 = slotaddr s15
-  %440 = load.i64 %91[0]
-  store %439[0], %440
-  %441 = load.i64 %91[1]
-  store %439[1], %441
-  %442 = load.i64 %91[2]
-  store %439[2], %442
-  %443 = load.i64 %363[0]
-  %444 = load.i64 %358[1]
-  %445 = uge %443, %444
-  condbr %445, b73, b74
+  %435 = region.depth
+  %436 = const 1
+  %437 = add %25, %436
+  %438 = slotaddr s15
+  %439 = load.i64 %91[0]
+  store %438[0], %439
+  %440 = load.i64 %91[1]
+  store %438[1], %440
+  %441 = load.i64 %91[2]
+  store %438[2], %441
+  %442 = load.i64 %362[0]
+  %443 = load.i64 %357[1]
+  %444 = uge %442, %443
+  condbr %444, b73, b74
 b72:
-  region.setdepth %432
+  region.setdepth %431
   br b57
 b73:
-  %446 = const 62
-  call @rt.panic(%446)
+  %445 = const 62
+  call @rt.panic(%445)
   exit 101
 b74:
-  %447 = load.i64 %358[0]
-  %448 = itop %447
-  %449 = gep.byte %448, %443
-  %450 = load8 %449[0]
-  %451 = load.i64 %439[2]
-  %452 = load.i64 %439[0]
-  %453 = load.i64 %439[1]
-  %456 = add %452, %453
-  %457 = call @rt.tip8(%451, %456)
-  %458 = const 0
-  %459 = ne %457, %458
-  condbr %459, b77, b76
-b75(%454 ptr, %455 ptr):
-  store8 %455[0], %450
-  %465 = load.i64 %439[1]
-  %466 = const 1
-  %467 = add %465, %466
-  %468 = slotaddr s20
-  %469 = ptoi %454
-  store %468[0], %469
-  store %468[1], %467
-  store %468[2], %451
-  %470 = load.i64 %468[0]
-  store %91[0], %470
-  %471 = load.i64 %468[1]
-  store %91[1], %471
-  %472 = load.i64 %468[2]
-  store %91[2], %472
-  %473 = const 1
-  %474 = load.i64 %363[0]
-  %475 = add %474, %473
-  store %363[0], %475
+  %446 = load.i64 %357[0]
+  %447 = itop %446
+  %448 = gep.byte %447, %442
+  %449 = load8 %448[0]
+  %450 = load.i64 %438[2]
+  %451 = load.i64 %438[0]
+  %452 = load.i64 %438[1]
+  %455 = add %451, %452
+  %456 = call @rt.tip8(%450, %455)
+  %457 = const 0
+  %458 = ne %456, %457
+  condbr %458, b77, b76
+b75(%453 ptr, %454 ptr):
+  store8 %454[0], %449
+  %464 = load.i64 %438[1]
+  %465 = const 1
+  %466 = add %464, %465
+  %467 = slotaddr s20
+  %468 = ptoi %453
+  store %467[0], %468
+  store %467[1], %466
+  store %467[2], %450
+  %469 = load.i64 %467[0]
+  store %91[0], %469
+  %470 = load.i64 %467[1]
+  store %91[1], %470
+  %471 = load.i64 %467[2]
+  store %91[2], %471
+  %472 = const 1
+  %473 = load.i64 %362[0]
+  %474 = add %473, %472
+  store %362[0], %474
   br b70
 b76:
-  %462 = const 1
-  %463 = call @rt.slice_grow8(%452, %453, %451, %462)
-  %464 = gep.byte %463, %453
-  br b75(%463, %464)
+  %461 = const 1
+  %462 = call @rt.slice_grow8(%451, %452, %450, %461)
+  %463 = gep.byte %462, %452
+  br b75(%462, %463)
 b77:
-  %460 = itop %452
-  %461 = gep.byte %460, %453
-  br b75(%460, %461)
+  %459 = itop %451
+  %460 = gep.byte %459, %452
+  br b75(%459, %460)
 b78:
-  %489 = const 4
-  %490 = gep.word %0, %489
-  call @rt.err_relocate(%490, %25)
+  %488 = const 4
+  %489 = gep.word %0, %488
+  call @rt.err_relocate(%489, %25)
   br b79
 b79:
   region.setdepth %25
@@ -9898,7 +9854,6 @@ func @std/crypto/poly1305.Sum(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6
   slot s1 [3]
   slot s2 [10]
   slot s3 [10]
-  slot s4 [3]
 b0:
   %7 = slotaddr s0
   store %7[0], %1
@@ -9958,29 +9913,22 @@ b0:
   %43 = globaladdr @rt.meta
   store %43[2572], %36
   call @std/crypto/poly1305.absorb(%24, %37, %38, %39, %40, %41, %42)
-  %44 = slotaddr s4
-  %45 = load.i64 %24[0]
-  %46 = load.i64 %24[1]
-  %47 = load.i64 %24[2]
-  %48 = load.i64 %24[3]
-  %49 = load.i64 %24[4]
-  %50 = load.i64 %24[5]
-  %51 = load.i64 %24[6]
-  %52 = load.i64 %24[7]
-  %53 = load.i64 %24[8]
-  %54 = load.i64 %24[9]
-  %55 = load.i64 %7[0]
-  %56 = load.i64 %7[1]
-  %57 = load.i64 %7[2]
-  %58 = globaladdr @rt.meta
-  store %58[2571], %19
-  call @std/crypto/poly1305.finish(%44, %45, %46, %47, %48, %49, %50, %51, %52, %53, %54, %55, %56, %57)
-  %59 = load.i64 %44[0]
-  store %0[0], %59
-  %60 = load.i64 %44[1]
-  store %0[1], %60
-  %61 = load.i64 %44[2]
-  store %0[2], %61
+  %44 = load.i64 %24[0]
+  %45 = load.i64 %24[1]
+  %46 = load.i64 %24[2]
+  %47 = load.i64 %24[3]
+  %48 = load.i64 %24[4]
+  %49 = load.i64 %24[5]
+  %50 = load.i64 %24[6]
+  %51 = load.i64 %24[7]
+  %52 = load.i64 %24[8]
+  %53 = load.i64 %24[9]
+  %54 = load.i64 %7[0]
+  %55 = load.i64 %7[1]
+  %56 = load.i64 %7[2]
+  %57 = globaladdr @rt.meta
+  store %57[2571], %19
+  call @std/crypto/poly1305.finish(%0, %44, %45, %46, %47, %48, %49, %50, %51, %52, %53, %54, %55, %56)
   call @rt.region_relocate8(%0, %9)
   region.setdepth %9
   ret
@@ -9994,7 +9942,6 @@ func @std/crypto/poly1305.SumAead(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64
   slot s4 [10]
   slot s5 [3]
   slot s6 [3]
-  slot s7 [3]
 b0:
   %12 = slotaddr s0
   store %12[0], %1
@@ -10128,29 +10075,22 @@ b0:
   %101 = globaladdr @rt.meta
   store %101[2572], %94
   call @std/crypto/poly1305.absorb(%30, %95, %96, %97, %98, %99, %100)
-  %102 = slotaddr s7
-  %103 = load.i64 %30[0]
-  %104 = load.i64 %30[1]
-  %105 = load.i64 %30[2]
-  %106 = load.i64 %30[3]
-  %107 = load.i64 %30[4]
-  %108 = load.i64 %30[5]
-  %109 = load.i64 %30[6]
-  %110 = load.i64 %30[7]
-  %111 = load.i64 %30[8]
-  %112 = load.i64 %30[9]
-  %113 = load.i64 %12[0]
-  %114 = load.i64 %12[1]
-  %115 = load.i64 %12[2]
-  %116 = globaladdr @rt.meta
-  store %116[2571], %25
-  call @std/crypto/poly1305.finish(%102, %103, %104, %105, %106, %107, %108, %109, %110, %111, %112, %113, %114, %115)
-  %117 = load.i64 %102[0]
-  store %0[0], %117
-  %118 = load.i64 %102[1]
-  store %0[1], %118
-  %119 = load.i64 %102[2]
-  store %0[2], %119
+  %102 = load.i64 %30[0]
+  %103 = load.i64 %30[1]
+  %104 = load.i64 %30[2]
+  %105 = load.i64 %30[3]
+  %106 = load.i64 %30[4]
+  %107 = load.i64 %30[5]
+  %108 = load.i64 %30[6]
+  %109 = load.i64 %30[7]
+  %110 = load.i64 %30[8]
+  %111 = load.i64 %30[9]
+  %112 = load.i64 %12[0]
+  %113 = load.i64 %12[1]
+  %114 = load.i64 %12[2]
+  %115 = globaladdr @rt.meta
+  store %115[2571], %25
+  call @std/crypto/poly1305.finish(%0, %102, %103, %104, %105, %106, %107, %108, %109, %110, %111, %112, %113, %114)
   call @rt.region_relocate8(%0, %15)
   region.setdepth %15
   ret

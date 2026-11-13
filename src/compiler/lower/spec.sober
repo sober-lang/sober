@@ -298,7 +298,7 @@ func spInfo(st mut St, g FnRef) int {
                     return -1
                 }
             }
-            if op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone || op == OpUnwind || op == OpScanB || op == OpCrcFold || op == OpPMem || op == OpPArith || op == OpCallI {
+            if op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone || op == OpUnwind || op == OpArea || op == OpScanB || op == OpCrcFold || op == OpPMem || op == OpPArith || op == OpCallI {
                 return -1
             }
             if op == OpCmp || op == OpBin {

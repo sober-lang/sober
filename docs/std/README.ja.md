@@ -429,6 +429,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`pg.ColFloat`](pg.ja.md#colfloat) — 列 i の値 — float4 / float8 の列
 - [`pg.ColInt`](pg.ja.md#colint) — 列 i の値 — int2 / int4 / int8 の列
 - [`pg.ColJson`](pg.ja.md#coljson) — 列 i の値 — json / jsonb の列（JSON の字句）
+- [`pg.ColJsonText`](pg.ja.md#coljsontext) — 列 i の値 — json / jsonb の列の JSON の字句を string で（json.Put で応答へそのまま積める）。
 - [`pg.ColNumeric`](pg.ja.md#colnumeric) — numeric の十進の字句
 - [`pg.ColString`](pg.ja.md#colstring) — 列 i の値 — text / varchar / char / name の列
 - [`pg.ColTime`](pg.ja.md#coltime) — 列 i の値 — timestamptz の列（UTC の時刻）
@@ -450,7 +451,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`pg.ReadCommitted`](pg.ja.md#readcommitted) — READ COMMITTED（文ごとに、その文の始まりまでに COMMIT された行を見る）
 - [`pg.Reentered`](pg.ja.md#reentered) — Query の本体の中から同じ Conn を使った（行を流している途中の接続は使えない — 行を読み切ってから使うか、別の接続で）
 - [`pg.RepeatableRead`](pg.ja.md#repeatableread) — REPEATABLE READ（トランザクションの最初の文の時点の行を見続ける）
-- [`pg.Row`](pg.ja.md#row) — 結果の 1 行（k の中で読む — 列は番号で）
+- [`pg.Row`](pg.ja.md#row) — 結果の 1 行（k の中で読む — 列は番号で）。
 - [`pg.Scaled`](pg.ja.md#scaled) — Numeric / Int の値の 10^scale 倍の int（金額の固定小数点 — scale 桁より下に 0 でない端数があれば Inexact・int に入らなければ OutOfRange・NaN / Infinity と他の variant は WrongType{index: -1}）
 - [`pg.Script`](pg.ja.md#script) — 複数の文（; 区切り — migration 用・引数なし）を simple query で 1 回に送る。
 - [`pg.Serializable`](pg.ja.md#serializable) — SERIALIZABLE（直列に走らせたのと同じ結果にならない組を 40001 で断る — 呼び手が再試行する）
@@ -702,7 +703,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`time.Microsecond`](time.ja.md#microsecond) — 長さ（ns の int — 経過・期限の値）
 - [`time.Millisecond`](time.ja.md#millisecond) — 長さ（ns の int — 経過・期限の値）
 - [`time.Minute`](time.ja.md#minute) — 長さ（ns の int — 経過・期限の値）
-- [`time.Mono`](time.ja.md#mono) — 今の単調時計（CLOCK\_MONOTONIC）
+- [`time.Mono`](time.ja.md#mono) — 今の単調時計（CLOCK\_MONOTONIC — vDSO の \_\_vdso\_clock\_gettime で読み、カーネルへの syscall を伴わない。
 - [`time.Nano`](time.ja.md#nano) — t の秒の端数（0〜999999999 ns）
 - [`time.Nanosecond`](time.ja.md#nanosecond) — 長さ（ns の int — 経過・期限の値）
 - [`time.Now`](time.ja.md#now) — 今の壁時計（CLOCK\_REALTIME — 調整で戻ることがある。
@@ -747,6 +748,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`url.Pair`](url.ja.md#pair) — クエリの 1 組（ParseQuery の結果 — 書かれた順・同じ key も別の組）
 - [`url.ParseQuery`](url.ja.md#parsequery) — クエリ文字列 s（先頭の '?' は含めない）の全部の組（'&' で切る・空の項目は飛ばす・'=' の無い項目は値 ""・key と value は '+' を空白に読んでからUnescape と同じ復号 — WHATWG URL の application/x-www-form-urlencoded の読み）。
 - [`url.Unescape`](url.ja.md#unescape) — s の "%XX"（16 進は大小どちらも）を 1 バイトに戻した文字列（'+' はそのまま — 空白に読むのは ParseQuery だけ）
+- [`utf8.ASCII_FAST_MAX`](utf8.ja.md#ascii_fast_max) — Check が ASCII の頭を先に読む長さの上限（これより長い入力は SSE2 の検査器に全部任せる）
 - [`utf8.Bytes`](utf8.ja.md#bytes) — View のバイト列（読むだけ）
 - [`utf8.CHECK_GRAIN`](utf8.ja.md#check_grain) — 大きい入力の Check を区間に割って並列に検査するときの大きさ（バイト）。
 - [`utf8.CHECK_PAR_MIN`](utf8.ja.md#check_par_min) — 大きい入力の Check を区間に割って並列に検査するときの大きさ（バイト）。

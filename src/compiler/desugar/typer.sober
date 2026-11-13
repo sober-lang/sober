@@ -1105,7 +1105,11 @@ func yElem(st mut S, v NodeRef, el int) {
     if kindN(mut st, v) == ast.ELambda && el >= 0 {
         _ = yLambda(mut st, v, el)
     } else {
-        yExpr(mut st, v)
+        vt := yExpr(mut st, v)
+        // 腕が全部型なしの定数の if / switch の要素は、要素の byte / named scalar に割り当てる（return と同じ規則）
+        if vt >= 0 && el >= 0 && yNamedOver(mut st, el, vt) && yArmsUntyped(mut st, v) {
+            yPut(mut st, int(v), el)
+        }
     }
 }
 

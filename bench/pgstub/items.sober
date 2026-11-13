@@ -1,0 +1,171 @@
+package main
+
+// 固定の表の応答器: async-db の文（itemsSql）だけを受け、表（table.sober — 既定の引数で本物が返す 50 行）に
+// price の絞り（$1〜$2）と limit（$3）を当てて返す。既定より広い min / max では本物より少なく返す（表の外の行を持たない）
+
+import "std/convert"
+import "std/iter"
+
+const itemsSql = "SELECT id, name, category, price, quantity, active, tags, rating_score, rating_count FROM items WHERE price BETWEEN $1 AND $2 LIMIT $3"
+
+const oidBool = 16
+const oidInt8 = 20
+const oidInt4 = 23
+const oidText = 25
+const oidJsonb = 3802
+
+// 本物の items の表の OID（bench/pgstub/trace-items.hex の RowDescription と同じ値 — 照合で形をバイトまで合わせるため）
+const itemsTable = 13508
+
+type Item struct {
+    id int
+    name string
+    category string
+    price int
+    quantity int
+    active bool
+    tags string
+    score int
+    count int
+}
+
+func itemsShape() Shape {
+    return Shape{
+        ok: true,
+        params: []int{oidInt4, oidInt4, oidInt8},
+        cols: []Col{
+            Col{name: "id", table: itemsTable, attr: 1, oid: oidInt4, size: 4},
+            Col{name: "name", table: itemsTable, attr: 2, oid: oidText, size: 0 - 1},
+            Col{name: "category", table: itemsTable, attr: 3, oid: oidText, size: 0 - 1},
+            Col{name: "price", table: itemsTable, attr: 4, oid: oidInt4, size: 4},
+            Col{name: "quantity", table: itemsTable, attr: 5, oid: oidInt4, size: 4},
+            Col{name: "active", table: itemsTable, attr: 6, oid: oidBool, size: 1},
+            Col{name: "tags", table: itemsTable, attr: 7, oid: oidJsonb, size: 0 - 1},
+            Col{name: "rating_score", table: itemsTable, attr: 8, oid: oidInt4, size: 4},
+            Col{name: "rating_count", table: itemsTable, attr: 9, oid: oidInt4, size: 4},
+        },
+    }
+}
+
+// 表（全列 binary の DataRow は起動時に 1 回だけ組んでおく — 代役の CPU を軽く保つ）
+type Table struct {
+    rows []Item
+    bin [][]byte
+}
+
+func newTable() Table {
+    rows := table()
+    mut pre := mut [][]byte{}
+    for it <- rows {
+        mut b := mut []byte{}
+        putDataRow(mut b, cells(it, []int{1}))
+        pre = append(pre, freeze(b))
+    }
+    return Table{rows: rows, bin: freeze(pre)}
+}
+
+func shapeOf(tb Table, sql string) Shape {
+    return if sql == itemsSql { itemsShape() } else { Shape{ok: false, params: []int{}, cols: []Col{}} }
+}
+
+func answerOf(tb Table, sql string, args []Arg, fmts []int) Answer {
+    return if sql == itemsSql { answer(tb.rows, tb.bin, args, fmts) } else { Answer{ok: false, rows: []byte{}, n: 0} }
+}
+
+func answer(rows []Item, bin [][]byte, args []Arg, fmts []int) Answer {
+    no := Answer{ok: false, rows: []byte{}, n: 0}
+    if len(args) != 3 {
+        return no
+    }
+    lo := argInt(args[0])
+    hi := argInt(args[1])
+    lim := argInt(args[2])
+    if lo == nil || hi == nil || lim == nil || lim < 0 {
+        return no
+    }
+    allBin := allBinary(fmts)
+    mut out := mut []byte{}
+    mut n := 0
+    for i <- iter.Range(0, len(rows)) {
+        it := rows[i]
+        if n < lim && it.price >= lo && it.price <= hi {
+            if allBin {
+                putAll(mut out, bin[i])
+            } else {
+                putDataRow(mut out, cells(it, fmts))
+            }
+            n += 1
+        }
+    }
+    return Answer{ok: true, rows: freeze(out), n: n}
+}
+
+func allBinary(fmts []int) bool {
+    if len(fmts) == 0 {
+        return false
+    }
+    for i <- iter.Range(0, 9) {
+        if fmtOf(fmts, i) != 1 {
+            return false
+        }
+    }
+    return true
+}
+
+// 整数の引数（binary は 2 / 4 / 8 バイトの符号つき・text は 10 進）— NULL・形の外は nil
+func argInt(a Arg) int? {
+    if a.null {
+        return nil
+    }
+    if !a.bin {
+        s := string(a.b) catch return nil
+        return convert.ParseInt(s) catch nil
+    }
+    w := len(a.b)
+    if w != 2 && w != 4 && w != 8 {
+        return nil
+    }
+    mut v := 0
+    for x <- a.b {
+        v = (v << 8) | int(x)
+    }
+    return if w == 2 && v >= 32768 { v - 65536 } else if w == 4 && v >= 2147483648 { v - 4294967296 } else { v }
+}
+
+// 1 行の 9 列の値（列ごとの書式 fmts — 1 = binary・0 = text）
+func cells(it Item, fmts []int) [][]byte {
+    return [][]byte{
+        int4(it.id, fmtOf(fmts, 0)),
+        bytes(it.name),
+        bytes(it.category),
+        int4(it.price, fmtOf(fmts, 3)),
+        int4(it.quantity, fmtOf(fmts, 4)),
+        boolCell(it.active, fmtOf(fmts, 5)),
+        jsonbCell(it.tags, fmtOf(fmts, 6)),
+        int4(it.score, fmtOf(fmts, 7)),
+        int4(it.count, fmtOf(fmts, 8)),
+    }
+}
+
+func int4(v int, f int) []byte {
+    if f == 0 {
+        return bytes(convert.FormatInt(v))
+    }
+    mut b := mut []byte{}
+    put32(mut b, v)
+    return freeze(b)
+}
+
+func boolCell(v bool, f int) []byte {
+    return if f == 0 { bytes(if v { "t" } else { "f" }) } else { []byte{byte(if v { 1 } else { 0 })} }
+}
+
+// jsonb の binary は版 1 の印 + 字句
+func jsonbCell(s string, f int) []byte {
+    if f == 0 {
+        return bytes(s)
+    }
+    mut b := mut []byte{1}
+    putAll(mut b, bytes(s))
+    return freeze(b)
+}

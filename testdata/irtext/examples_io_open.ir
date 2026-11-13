@@ -1957,7 +1957,6 @@ func @main.sizeOf(%0 ptr, %1 i64, %2 i64, %3 i64) {
   slot s0 [3]
   slot s1 [6]
   slot s2 [1]
-  slot s3 [6]
 b0:
   %4 = slotaddr s0
   store %4[0], %1
@@ -2010,31 +2009,19 @@ b2:
   %37 = slotaddr s2
   %38 = load.i64 %16[0]
   store %37[0], %38
-  %39 = slotaddr s3
-  %40 = load.i64 %37[0]
-  %41 = globaladdr @rt.meta
-  store %41[2571], %15
-  call @main.size(%39, %40)
-  %42 = load.i64 %39[0]
-  %43 = const 1
-  %44 = gep.word %39, %43
-  store %0[0], %42
-  %45 = load.i64 %44[0]
-  store %0[1], %45
-  %46 = load.i64 %44[1]
-  store %0[2], %46
-  %47 = load.i64 %44[2]
-  store %0[3], %47
-  %48 = load.i64 %44[3]
-  store %0[4], %48
-  %49 = load.i64 %44[4]
-  store %0[5], %49
-  %50 = load.i64 %37[0]
-  call @std/io.Close(%50)
-  %51 = load.i64 %0[1]
-  %52 = const 0
-  %53 = ne %51, %52
-  condbr %53, b5, b6
+  %39 = load.i64 %37[0]
+  %40 = globaladdr @rt.meta
+  store %40[2571], %15
+  call @main.size(%0, %39)
+  %41 = load.i64 %0[0]
+  %42 = const 1
+  %43 = gep.word %0, %42
+  %44 = load.i64 %37[0]
+  call @std/io.Close(%44)
+  %45 = load.i64 %0[1]
+  %46 = const 0
+  %47 = ne %45, %46
+  condbr %47, b5, b6
 b3:
   %35 = const 2
   %36 = gep.word %0, %35
@@ -2044,9 +2031,9 @@ b4:
   region.setdepth %5
   ret
 b5:
-  %54 = const 2
-  %55 = gep.word %0, %54
-  call @rt.err_relocate(%55, %5)
+  %48 = const 2
+  %49 = gep.word %0, %48
+  call @rt.err_relocate(%49, %5)
   br b6
 b6:
   region.setdepth %5

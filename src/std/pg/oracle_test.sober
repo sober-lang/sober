@@ -103,6 +103,9 @@ func session(c Conn, name string) {
     assert(a == 1, "after error")
     _, he := Exec(c, "select length(1, 2)")
     assert(stateOf(he) == "42883" && hintOf(he) != "42883:", "hint ${name}")
+    // json / jsonb の字句を string で（json は原文のまま・jsonb はサーバが正規化した字句）
+    assert(jsonText(c, "select '{\"a\":  [1, \"é\"]}'::json") == "{\"a\":  [1, \"é\"]}", "json text ${name}")
+    assert(jsonText(c, "select '{\"a\":[1,\"é\"]}'::jsonb") == "{\"a\": [1, \"é\"]}", "jsonb text ${name}")
     txCases(c, name)
     println("conf-item: interop/pg ${name} std-pg")
 }
@@ -114,6 +117,14 @@ func scalar(c Conn, sql string) int {
         v = ColInt(r, 0) catch -2
     })
     return if e != nil { -3 } else { v }
+}
+
+func jsonText(c Conn, sql string) string {
+    mut v := "?"
+    _ = qdyn(c, sql, (r) => {
+        v = ColJsonText(r, 0) catch "!"
+    })
+    return v
 }
 
 func setting(c Conn, key string) string {

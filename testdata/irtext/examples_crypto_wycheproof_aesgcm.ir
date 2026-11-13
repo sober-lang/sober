@@ -3697,8 +3697,7 @@ b54:
 
 func @main.$jsonDecodeTop_0_0_0(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64, %7 i64, %8 i64, %9 i64, %10 i64, %11 i64, %12 i64, %13 i64, %14 i64, %15 i64, %16 i64, %17 i64, %18 i64, %19 i64, %20 i64, %21 i64, %22 i64) {
   slot s0 [21]
-  slot s1 [8]
-  slot s2 [4]
+  slot s1 [4]
 b0:
   %23 = slotaddr s0
   store %23[0], %1
@@ -3735,139 +3734,123 @@ b0:
   %33 = mul %31, %32
   %34 = add %24, %33
   region.enter
-  %35 = slotaddr s1
-  %36 = load.i64 %23[0]
-  %37 = load.i64 %23[1]
-  %38 = load.i64 %23[2]
-  %39 = load.i64 %23[3]
-  %40 = load.i64 %23[4]
-  %41 = load.i64 %23[5]
-  %42 = load.i64 %23[6]
-  %43 = load.i64 %23[7]
-  %44 = load.i64 %23[8]
-  %45 = load.i64 %23[9]
-  %46 = load.i64 %23[10]
-  %47 = load.i64 %23[11]
-  %48 = load.i64 %23[12]
-  %49 = load.i64 %23[13]
-  %50 = load.i64 %23[14]
-  %51 = load.i64 %23[15]
-  %52 = load.i64 %23[16]
-  %53 = load.i64 %23[17]
-  %54 = load.i64 %23[18]
-  %55 = load.i64 %23[19]
-  %56 = load.i64 %23[20]
-  %57 = slotaddr s2
-  %58 = region.bump %34
+  %35 = load.i64 %23[0]
+  %36 = load.i64 %23[1]
+  %37 = load.i64 %23[2]
+  %38 = load.i64 %23[3]
+  %39 = load.i64 %23[4]
+  %40 = load.i64 %23[5]
+  %41 = load.i64 %23[6]
+  %42 = load.i64 %23[7]
+  %43 = load.i64 %23[8]
+  %44 = load.i64 %23[9]
+  %45 = load.i64 %23[10]
+  %46 = load.i64 %23[11]
+  %47 = load.i64 %23[12]
+  %48 = load.i64 %23[13]
+  %49 = load.i64 %23[14]
+  %50 = load.i64 %23[15]
+  %51 = load.i64 %23[16]
+  %52 = load.i64 %23[17]
+  %53 = load.i64 %23[18]
+  %54 = load.i64 %23[19]
+  %55 = load.i64 %23[20]
+  %56 = slotaddr s1
+  %57 = region.depth
+  %58 = region.bump %57
   %59 = ptoi %58
-  store %57[0], %59
+  store %56[0], %59
   %60 = const 0
-  store %57[1], %60
-  store %57[2], %34
+  store %56[1], %60
+  store %56[2], %57
   %61 = const 0
-  store %57[3], %61
-  %62 = load.i64 %57[0]
-  %63 = load.i64 %57[1]
-  %64 = load.i64 %57[2]
-  %65 = load.i64 %57[3]
+  store %56[3], %61
+  %62 = load.i64 %56[0]
+  %63 = load.i64 %56[1]
+  %64 = load.i64 %56[2]
+  %65 = load.i64 %56[3]
   %66 = globaladdr @rt.meta
   store %66[2571], %34
-  call @main.$jsonDecode_0_0(%35, %36, %37, %38, %39, %40, %41, %42, %43, %44, %45, %46, %47, %48, %49, %50, %51, %52, %53, %54, %55, %56, %22, %62, %63, %64, %65)
+  call @main.$jsonDecode_0_0(%0, %35, %36, %37, %38, %39, %40, %41, %42, %43, %44, %45, %46, %47, %48, %49, %50, %51, %52, %53, %54, %55, %22, %62, %63, %64, %65)
   %67 = const 3
-  %68 = gep.word %35, %67
-  %69 = load.i64 %35[0]
-  store %0[0], %69
-  %70 = load.i64 %35[1]
-  store %0[1], %70
-  %71 = load.i64 %35[2]
-  store %0[2], %71
-  %72 = load.i64 %68[0]
-  store %0[3], %72
-  %73 = load.i64 %68[1]
-  store %0[4], %73
-  %74 = load.i64 %68[2]
-  store %0[5], %74
-  %75 = load.i64 %68[3]
-  store %0[6], %75
-  %76 = load.i64 %68[4]
-  store %0[7], %76
-  %77 = load.i64 %0[2]
-  %78 = gt %77, %24
-  condbr %78, b1, b2
+  %68 = gep.word %0, %67
+  %69 = load.i64 %0[2]
+  %70 = gt %69, %24
+  condbr %70, b1, b2
 b1:
-  %79 = load.i64 %0[0]
-  %80 = itop %79
-  %81 = load.i64 %0[1]
-  %83 = const 0
-  br b3(%83)
+  %71 = load.i64 %0[0]
+  %72 = itop %71
+  %73 = load.i64 %0[1]
+  %75 = const 0
+  br b3(%75)
 b2:
-  %119 = load.i64 %0[3]
-  %120 = const 0
-  %121 = ne %119, %120
-  condbr %121, b11, b12
-b3(%82 i64):
-  %84 = lt %82, %81
-  condbr %84, b4, b5
+  %111 = load.i64 %0[3]
+  %112 = const 0
+  %113 = ne %111, %112
+  condbr %113, b11, b12
+b3(%74 i64):
+  %76 = lt %74, %73
+  condbr %76, b4, b5
 b4:
-  %85 = const 5
-  %86 = mul %82, %85
-  %87 = gep.word %80, %86
-  %88 = const 2
-  %89 = gep.word %87, %88
-  %90 = load.i64 %89[2]
-  %91 = gt %90, %24
-  condbr %91, b6, b7
+  %77 = const 5
+  %78 = mul %74, %77
+  %79 = gep.word %72, %78
+  %80 = const 2
+  %81 = gep.word %79, %80
+  %82 = load.i64 %81[2]
+  %83 = gt %82, %24
+  condbr %83, b6, b7
 b5:
   region.relocate %0, 5, %24
   br b2
 b6:
-  %92 = load.i64 %89[0]
-  %93 = itop %92
-  %94 = load.i64 %89[1]
-  %96 = const 0
-  br b8(%96)
+  %84 = load.i64 %81[0]
+  %85 = itop %84
+  %86 = load.i64 %81[1]
+  %88 = const 0
+  br b8(%88)
 b7:
-  %117 = const 1
-  %118 = add %82, %117
-  br b3(%118)
-b8(%95 i64):
-  %97 = lt %95, %94
-  condbr %97, b9, b10
+  %109 = const 1
+  %110 = add %74, %109
+  br b3(%110)
+b8(%87 i64):
+  %89 = lt %87, %86
+  condbr %89, b9, b10
 b9:
-  %98 = const 22
-  %99 = mul %95, %98
-  %100 = gep.word %93, %99
-  %101 = const 1
-  %102 = gep.word %100, %101
+  %90 = const 22
+  %91 = mul %87, %90
+  %92 = gep.word %85, %91
+  %93 = const 1
+  %94 = gep.word %92, %93
+  call @rt.region_relocate8(%94, %24)
+  %95 = const 4
+  %96 = gep.word %92, %95
+  call @rt.region_relocate8(%96, %24)
+  %97 = const 7
+  %98 = gep.word %92, %97
+  call @rt.region_relocate8(%98, %24)
+  %99 = const 10
+  %100 = gep.word %92, %99
+  call @rt.region_relocate8(%100, %24)
+  %101 = const 13
+  %102 = gep.word %92, %101
   call @rt.region_relocate8(%102, %24)
-  %103 = const 4
-  %104 = gep.word %100, %103
+  %103 = const 16
+  %104 = gep.word %92, %103
   call @rt.region_relocate8(%104, %24)
-  %105 = const 7
-  %106 = gep.word %100, %105
+  %105 = const 19
+  %106 = gep.word %92, %105
   call @rt.region_relocate8(%106, %24)
-  %107 = const 10
-  %108 = gep.word %100, %107
-  call @rt.region_relocate8(%108, %24)
-  %109 = const 13
-  %110 = gep.word %100, %109
-  call @rt.region_relocate8(%110, %24)
-  %111 = const 16
-  %112 = gep.word %100, %111
-  call @rt.region_relocate8(%112, %24)
-  %113 = const 19
-  %114 = gep.word %100, %113
-  call @rt.region_relocate8(%114, %24)
-  %115 = const 1
-  %116 = add %95, %115
-  br b8(%116)
+  %107 = const 1
+  %108 = add %87, %107
+  br b8(%108)
 b10:
-  region.relocate %89, 22, %24
+  region.relocate %81, 22, %24
   br b7
 b11:
-  %122 = const 4
-  %123 = gep.word %0, %122
-  call @rt.err_relocate(%123, %24)
+  %114 = const 4
+  %115 = gep.word %0, %114
+  call @rt.err_relocate(%115, %24)
   br b12
 b12:
   region.setdepth %24
@@ -9751,9 +9734,8 @@ func @std/crypto/aesgcm.Seal(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 
   slot s3 [3]
   slot s4 [8]
   slot s5 [3]
-  slot s6 [8]
+  slot s6 [3]
   slot s7 [3]
-  slot s8 [3]
 b0:
   %13 = slotaddr s0
   store %13[0], %1
@@ -9832,67 +9814,52 @@ b2:
   store %53[1], %55
   %56 = load.i64 %28[2]
   store %53[2], %56
-  %57 = slotaddr s6
-  %58 = load.i64 %53[0]
-  %59 = load.i64 %53[1]
-  %60 = load.i64 %53[2]
-  %61 = load.i64 %14[0]
-  %62 = load.i64 %14[1]
-  %63 = load.i64 %14[2]
-  %64 = load.i64 %15[0]
-  %65 = load.i64 %15[1]
-  %66 = load.i64 %15[2]
-  %67 = load.i64 %16[0]
-  %68 = load.i64 %16[1]
-  %69 = load.i64 %16[2]
+  %57 = load.i64 %53[0]
+  %58 = load.i64 %53[1]
+  %59 = load.i64 %53[2]
+  %60 = load.i64 %14[0]
+  %61 = load.i64 %14[1]
+  %62 = load.i64 %14[2]
+  %63 = load.i64 %15[0]
+  %64 = load.i64 %15[1]
+  %65 = load.i64 %15[2]
+  %66 = load.i64 %16[0]
+  %67 = load.i64 %16[1]
+  %68 = load.i64 %16[2]
+  %69 = region.depth
   %70 = const 0
-  %71 = call @rt.region_alloc8(%27, %70)
+  %71 = call @rt.region_alloc8(%69, %70)
   %72 = const 0
-  %73 = slotaddr s7
+  %73 = slotaddr s6
   %74 = ptoi %71
   store %73[0], %74
   store %73[1], %72
-  store %73[2], %27
+  store %73[2], %69
   %75 = load.i64 %73[0]
   %76 = load.i64 %73[1]
   %77 = load.i64 %73[2]
-  %78 = const 0
-  %79 = call @rt.region_alloc8(%27, %78)
-  %80 = const 0
-  %81 = slotaddr s8
-  %82 = ptoi %79
-  store %81[0], %82
-  store %81[1], %80
-  store %81[2], %27
-  %83 = load.i64 %81[0]
-  %84 = load.i64 %81[1]
-  %85 = load.i64 %81[2]
-  %86 = globaladdr @rt.meta
-  store %86[2571], %27
-  call @std/crypto/aesgcm.SealTo(%57, %58, %59, %60, %61, %62, %63, %64, %65, %66, %67, %68, %69, %75, %76, %77, %83, %84, %85)
-  %87 = const 3
-  %88 = gep.word %57, %87
-  %89 = load.i64 %57[0]
-  store %0[0], %89
-  %90 = load.i64 %57[1]
-  store %0[1], %90
-  %91 = load.i64 %57[2]
-  store %0[2], %91
-  %92 = load.i64 %88[0]
-  store %0[3], %92
-  %93 = load.i64 %88[1]
-  store %0[4], %93
-  %94 = load.i64 %88[2]
-  store %0[5], %94
-  %95 = load.i64 %88[3]
-  store %0[6], %95
-  %96 = load.i64 %88[4]
-  store %0[7], %96
+  %78 = region.depth
+  %79 = const 0
+  %80 = call @rt.region_alloc8(%78, %79)
+  %81 = const 0
+  %82 = slotaddr s7
+  %83 = ptoi %80
+  store %82[0], %83
+  store %82[1], %81
+  store %82[2], %78
+  %84 = load.i64 %82[0]
+  %85 = load.i64 %82[1]
+  %86 = load.i64 %82[2]
+  %87 = globaladdr @rt.meta
+  store %87[2571], %27
+  call @std/crypto/aesgcm.SealTo(%0, %57, %58, %59, %60, %61, %62, %63, %64, %65, %66, %67, %68, %75, %76, %77, %84, %85, %86)
+  %88 = const 3
+  %89 = gep.word %0, %88
   call @rt.region_relocate8(%0, %17)
-  %97 = load.i64 %0[3]
-  %98 = const 0
-  %99 = ne %97, %98
-  condbr %99, b5, b6
+  %90 = load.i64 %0[3]
+  %91 = const 0
+  %92 = ne %90, %91
+  condbr %92, b5, b6
 b3:
   %51 = const 4
   %52 = gep.word %0, %51
@@ -9902,9 +9869,9 @@ b4:
   region.setdepth %17
   ret
 b5:
-  %100 = const 4
-  %101 = gep.word %0, %100
-  call @rt.err_relocate(%101, %17)
+  %93 = const 4
+  %94 = gep.word %0, %93
+  call @rt.err_relocate(%94, %17)
   br b6
 b6:
   region.setdepth %17
@@ -9918,7 +9885,6 @@ func @std/crypto/aesgcm.Open(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 
   slot s3 [3]
   slot s4 [8]
   slot s5 [3]
-  slot s6 [8]
 b0:
   %13 = slotaddr s0
   store %13[0], %1
@@ -9997,47 +9963,30 @@ b2:
   store %53[1], %55
   %56 = load.i64 %28[2]
   store %53[2], %56
-  %57 = slotaddr s6
-  %58 = load.i64 %53[0]
-  %59 = load.i64 %53[1]
-  %60 = load.i64 %53[2]
-  %61 = load.i64 %14[0]
-  %62 = load.i64 %14[1]
-  %63 = load.i64 %14[2]
-  %64 = load.i64 %15[0]
-  %65 = load.i64 %15[1]
-  %66 = load.i64 %15[2]
-  %67 = load.i64 %16[0]
-  %68 = load.i64 %16[1]
-  %69 = load.i64 %16[2]
-  %70 = const 0
-  %71 = load.i64 %16[1]
-  %72 = globaladdr @rt.meta
-  store %72[2571], %27
-  call @std/crypto/aesgcm.OpenAt(%57, %58, %59, %60, %61, %62, %63, %64, %65, %66, %67, %68, %69, %70, %71)
-  %73 = const 3
-  %74 = gep.word %57, %73
-  %75 = load.i64 %57[0]
-  store %0[0], %75
-  %76 = load.i64 %57[1]
-  store %0[1], %76
-  %77 = load.i64 %57[2]
-  store %0[2], %77
-  %78 = load.i64 %74[0]
-  store %0[3], %78
-  %79 = load.i64 %74[1]
-  store %0[4], %79
-  %80 = load.i64 %74[2]
-  store %0[5], %80
-  %81 = load.i64 %74[3]
-  store %0[6], %81
-  %82 = load.i64 %74[4]
-  store %0[7], %82
+  %57 = load.i64 %53[0]
+  %58 = load.i64 %53[1]
+  %59 = load.i64 %53[2]
+  %60 = load.i64 %14[0]
+  %61 = load.i64 %14[1]
+  %62 = load.i64 %14[2]
+  %63 = load.i64 %15[0]
+  %64 = load.i64 %15[1]
+  %65 = load.i64 %15[2]
+  %66 = load.i64 %16[0]
+  %67 = load.i64 %16[1]
+  %68 = load.i64 %16[2]
+  %69 = const 0
+  %70 = load.i64 %16[1]
+  %71 = globaladdr @rt.meta
+  store %71[2571], %27
+  call @std/crypto/aesgcm.OpenAt(%0, %57, %58, %59, %60, %61, %62, %63, %64, %65, %66, %67, %68, %69, %70)
+  %72 = const 3
+  %73 = gep.word %0, %72
   call @rt.region_relocate8(%0, %17)
-  %83 = load.i64 %0[3]
-  %84 = const 0
-  %85 = ne %83, %84
-  condbr %85, b5, b6
+  %74 = load.i64 %0[3]
+  %75 = const 0
+  %76 = ne %74, %75
+  condbr %76, b5, b6
 b3:
   %51 = const 4
   %52 = gep.word %0, %51
@@ -10047,9 +9996,9 @@ b4:
   region.setdepth %17
   ret
 b5:
-  %86 = const 4
-  %87 = gep.word %0, %86
-  call @rt.err_relocate(%87, %17)
+  %77 = const 4
+  %78 = gep.word %0, %77
+  call @rt.err_relocate(%78, %17)
   br b6
 b6:
   region.setdepth %17

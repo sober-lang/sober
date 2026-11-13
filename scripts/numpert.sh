@@ -102,7 +102,7 @@ if [ "$mutants" = 1 ]; then
         nm=$((nm + 1))
     }
     mutant m1-site-tag lower/par.sober 's/(siteIn + st.numOff) \* 4, CT_SITE)/(siteIn + st.numOff) * 4, 0)/; s/(if give { 1 } else { 0 }), CT_SITE)/(if give { 1 } else { 0 }), 0)/' 'CT_SITE)'
-    mutant m2-move-fixup lower/x86.sober 's/^                xTagAt(mut e, mv, xMoveImm(mut c, e.mvD\[ready\], e.constV\[mv\]))$/                _ = xMoveImm(mut c, e.mvD[ready], e.constV[mv])/' 'xTagAt(mut e, mv, xMoveImm('
+    mutant m2-move-fixup lower/x86.sober 's/^                xTagAt(mut e, mv, xMoveImm(mut c, e.mvD\[ready\], e.constV\[mv\], e.opt && e.tg\[mv\] == 2))$/                _ = xMoveImm(mut c, e.mvD[ready], e.constV[mv], e.opt \&\& e.tg[mv] == 2)/' 'xTagAt(mut e, mv, xMoveImm('
     mutant m3-gvn-tag lower/gvn.sober 's/^            mut b := irInsB(mut st, ins)$/            mut b := if op == OpConst { 0 } else { irInsB(mut st, ins) }/' '^            mut b := irInsB(mut st, ins)$'
 fi
 echo "numpert: $n entries × NUMOFF {0, 1, 1000} (number fixups unwritten) — ELF identical, $nm mutants, fail=$fail"

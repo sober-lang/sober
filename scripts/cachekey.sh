@@ -85,7 +85,7 @@ hits=$( ( cd "$W" && SOBER_SELF_KEY=$SELF SOBER_CACHE=$C "$STAGE2" check "$E" --
 f=$(find "$C" -type f -name "$k")
 sed -i '2,$ s/func/fonc/' "$f"
 hits=$( ( cd "$W" && SOBER_SELF_KEY=$SELF SOBER_CACHE=$C "$STAGE2" check "$E" --split --cache-trace 2>&1 >/dev/null ) | awk '$4 == "hit" {print $2}')
-echo "$hits" | grep -qx "$M" && bad "cachekey corrupted value: $M still hits"
+grep -qx -- "$M" <<< "$hits" && bad "cachekey corrupted value: $M still hits"
 grep -q fonc "$f" && bad "cachekey corrupted value was not overwritten"
 
 # 5
@@ -130,7 +130,7 @@ sobicmp() { # $1 = cwd・$2 = entry
     local f g found
     for f in $(find "$H/c" -type f); do
         tail -c +$(( $(head -1 "$f" | wc -c) + 1 )) "$f" > "$H/v"
-        head -1 "$H/v" | grep -q '^// sobi 1' || continue
+        grep -q '^// sobi 1' <<< "$(head -n 1 "$H/v")" || continue
         nh=$((nh + 1)); found=0
         for g in $(find "$H/i" -name '*.sobi'); do cmp -s "$H/v" "$g" && { found=1; break; }; done
         [ $found = 1 ] || bad "G-h: $2: split-written .sobi differs from iface ($(sed -n 2p "$H/v"))"

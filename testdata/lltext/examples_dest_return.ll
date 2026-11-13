@@ -3576,15 +3576,8 @@ b9:
 
 define internal void @"main.outer"(ptr %v0, i64 %v1) #0 {
 b0:
-  %s0 = alloca [3 x i64], align 8
-  %s0.z0 = getelementptr i64, ptr %s0, i64 0
-  store i64 0, ptr %s0.z0
-  %s0.z1 = getelementptr i64, ptr %s0, i64 1
-  store i64 0, ptr %s0.z1
-  %s0.z2 = getelementptr i64, ptr %s0, i64 2
-  store i64 0, ptr %s0.z2
-  %v18 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v2.p = getelementptr i64, ptr %v18, i64 0
+  %v14 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v2.p = getelementptr i64, ptr %v14, i64 0
   %v2 = load i64, ptr %v2.p
   %v3 = getelementptr i64, ptr @"rt.meta", i64 0
   %v4.p = getelementptr i64, ptr %v3, i64 2571
@@ -3602,42 +3595,22 @@ b0:
   %v11 = mul i64 %v9, %v10
   %v12 = add i64 %v2, %v11
   call void @"rt.region_enter"()
-  %v13 = getelementptr i64, ptr %s0, i64 0
-  %v14 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st1 = getelementptr i64, ptr %v14, i64 2571
+  %v13 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st1 = getelementptr i64, ptr %v13, i64 2571
   store i64 %v12, ptr %st1
-  call void @"main.squares"(ptr %v13, i64 %v1)
-  %v15.p = getelementptr i64, ptr %v13, i64 0
-  %v15 = load i64, ptr %v15.p
-  %st2 = getelementptr i64, ptr %v0, i64 0
-  store i64 %v15, ptr %st2
-  %v16.p = getelementptr i64, ptr %v13, i64 1
-  %v16 = load i64, ptr %v16.p
-  %st3 = getelementptr i64, ptr %v0, i64 1
-  store i64 %v16, ptr %st3
-  %v17.p = getelementptr i64, ptr %v13, i64 2
-  %v17 = load i64, ptr %v17.p
-  %st4 = getelementptr i64, ptr %v0, i64 2
-  store i64 %v17, ptr %st4
-  %v19 = add i64 0, 1
-  call void @"rt.region_relocate"(ptr %v0, i64 %v19, i64 %v2)
-  %v20 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st5 = getelementptr i64, ptr %v20, i64 0
-  store i64 %v2, ptr %st5
+  call void @"main.squares"(ptr %v0, i64 %v1)
+  %v15 = add i64 0, 1
+  call void @"rt.region_relocate"(ptr %v0, i64 %v15, i64 %v2)
+  %v16 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st2 = getelementptr i64, ptr %v16, i64 0
+  store i64 %v2, ptr %st2
   ret void
 }
 
 define internal void @"main.outerLabel"(ptr %v0, i64 %v1) #0 {
 b0:
-  %s0 = alloca [3 x i64], align 8
-  %s0.z0 = getelementptr i64, ptr %s0, i64 0
-  store i64 0, ptr %s0.z0
-  %s0.z1 = getelementptr i64, ptr %s0, i64 1
-  store i64 0, ptr %s0.z1
-  %s0.z2 = getelementptr i64, ptr %s0, i64 2
-  store i64 0, ptr %s0.z2
-  %v18 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v2.p = getelementptr i64, ptr %v18, i64 0
+  %v14 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v2.p = getelementptr i64, ptr %v14, i64 0
   %v2 = load i64, ptr %v2.p
   %v3 = getelementptr i64, ptr @"rt.meta", i64 0
   %v4.p = getelementptr i64, ptr %v3, i64 2571
@@ -3655,27 +3628,14 @@ b0:
   %v11 = mul i64 %v9, %v10
   %v12 = add i64 %v2, %v11
   call void @"rt.region_enter"()
-  %v13 = getelementptr i64, ptr %s0, i64 0
-  %v14 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st1 = getelementptr i64, ptr %v14, i64 2571
+  %v13 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st1 = getelementptr i64, ptr %v13, i64 2571
   store i64 %v12, ptr %st1
-  call void @"main.label"(ptr %v13, i64 %v1)
-  %v15.p = getelementptr i64, ptr %v13, i64 0
-  %v15 = load i64, ptr %v15.p
-  %st2 = getelementptr i64, ptr %v0, i64 0
-  store i64 %v15, ptr %st2
-  %v16.p = getelementptr i64, ptr %v13, i64 1
-  %v16 = load i64, ptr %v16.p
-  %st3 = getelementptr i64, ptr %v0, i64 1
-  store i64 %v16, ptr %st3
-  %v17.p = getelementptr i64, ptr %v13, i64 2
-  %v17 = load i64, ptr %v17.p
-  %st4 = getelementptr i64, ptr %v0, i64 2
-  store i64 %v17, ptr %st4
+  call void @"main.label"(ptr %v0, i64 %v1)
   call void @"rt.region_relocate8"(ptr %v0, i64 %v2)
-  %v19 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st5 = getelementptr i64, ptr %v19, i64 0
-  store i64 %v2, ptr %st5
+  %v15 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st2 = getelementptr i64, ptr %v15, i64 0
+  store i64 %v2, ptr %st2
   ret void
 }
 

@@ -208,10 +208,10 @@ cp "$W/pkg.keep" pkg/pkg.sober
 R2=$((R1 + 1))
 swait status-fixed '{"version":1,"entry":"app","round":'$R2',"phase":"idle","verdict":"ok","diags":[],"warm":{"build":"done","test":"done"}}'
 n=$((n + 1))
-"$S" cache info | grep -q "^watch .* app: round $R2 ok · warm build=done test=done\$" || { echo "FAIL cache-info: the watch line"; "$S" cache info | grep '^watch'; fail=1; }
+grep -q "^watch .* app: round $R2 ok · warm build=done test=done\$" <<< "$("$S" cache info)" || { echo "FAIL cache-info: the watch line"; "$S" cache info | grep '^watch'; fail=1; }
 kill "$WP" 2> /dev/null
 wait "$WP" 2> /dev/null
 n=$((n + 1))
-"$S" cache info | grep -q "^watch .* app: round $R2 ok · warm build=done test=done (stale)\$" || { echo "FAIL cache-info: stale"; "$S" cache info | grep '^watch'; fail=1; }
+grep -q "^watch .* app: round $R2 ok · warm build=done test=done (stale)\$" <<< "$("$S" cache info)" || { echo "FAIL cache-info: stale"; "$S" cache info | grep '^watch'; fail=1; }
 echo "testreplay: $n queries, fail=$fail"
 [ "$fail" = 0 ]

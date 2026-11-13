@@ -31,7 +31,7 @@ Each statement text is prepared once per connection; from the second use on, the
 
 ## 3. Reading rows — `pg.Query`
 
-`for r <- pg.Query(c, sql, args: …)? { … }` receives one row at a time. Columns are picked by number and read either typed (`pg.ColInt`, `pg.ColString` and others) or as a value with `pg.Col(r, i)` (the `pg.Value` union — NULL is `pg.Null{}`). A typed read returns `WrongType` if the type differs and `NullColumn` on NULL.
+`for r <- pg.Query(c, sql, args: …)? { … }` receives one row at a time. Columns are picked by number and read either typed (`pg.ColInt`, `pg.ColString` and others) or as a value with `pg.Col(r, i)` (the `pg.Value` union — NULL is `pg.Null{}`). A typed read returns `WrongType` if the type differs and `NullColumn` on NULL. For a json / jsonb column, `pg.ColJsonText(r, i)` returns the JSON text as a string, so `json.Put` can copy it into a response as is (`pg.ColJson` returns the same text as `[]byte`). The UTF-8 of text and json columns is checked when the row arrives; broken UTF-8 is `Protocol`.
 
 Leaving the body early with `break` or `?` discards the remaining rows and keeps the connection usable. Sending another statement on the same connection while its rows are still streaming is a panic (`Reentered`). Read the rows to the end first, or use another connection.
 

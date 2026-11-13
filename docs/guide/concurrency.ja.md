@@ -199,9 +199,33 @@ scope の err がどれになるかは、子の終わった順ではなく生ん
 
 ## 5. domain — 多くの task から 1 つの状態へ
 
-チャネルは送り手 1・受け手 1 なので、多くの task が 1 つの状態（接続のプール・カウンタなど）を更新する形は書けません。この合流に使うのが domain です。
+domain は、多くの task から書き換えられる状態を 1 つ持ち、その状態への呼び出しを 1 つずつ（直列に）走らせる値です。呼び出しには、条件が成り立つまで待ってから状態に入る形（`task.Await`）もあります。lock は見えません。状態に当てる本体は待たないので、domain を持ったまま待つ形が無く、lock の順序で起きるデッドロックは書けません。
 
-domain は状態を 1 つ持ち、その状態への更新を 1 つずつ（直列に）当てます。
+domain は `std/task` の関数 4 つで使います。新しい構文はありません。
+
+| 関数 | すること |
+| --- | --- |
+| `task.NewDomain(s, init, wait: …)` | scope `s` の中に、初期値 `init` の状態を持つ domain を作る |
+| `task.Update(d, (st mut S) => 本体)` | 本体で状態を書き、本体の値を返す |
+| `task.Read(d, (st S) => 本体)` | 状態を変えずに読み、本体の値を返す |
+| `task.Await(d, (st mut S) => 本体, when: (st S) => 条件)` | 条件が真になるまで待ってから本体を当てる。待ちが上限を越えたら `io.Expired` |
+
+Go を知っている読み手へ: Go なら `sync.Mutex` と条件変数（`sync.Cond`）で書く仕事を、Sober では domain の 3 つの呼び出しで書きます。domain には lock の値が無いので、取り忘れも返し忘れも起こりません。lock を持ったまま待つ形は、検査が拒否します（5.5 節）。
+
+### 5.1 いつ domain を使うか
+
+| 形 | 使うもの |
+| --- | --- |
+| 親が組み立てた値を子に読ませる | 捕獲・`freeze`（2 節） |
+| 1 つの task から別の 1 つの task へ値を流す | チャネル（3 節） |
+| 多くの task が 1 つの状態を読み書きする（接続のプール・カウンタ・キーの表・流量の数え） | domain |
+| 状態が大きい・プロセスが落ちても残したい | 外の保存先（データベースなど） |
+
+チャネルは送り手 1・受け手 1 なので、多くの task から 1 つの状態へ集まる形はチャネルでは書けません。子の task は mut の束縛を捕まえられないので（2 節）、共有の変数を直に書く形もありません。この合流に使うのが domain です。
+
+domain の本体は短い更新のためのものです。本体の中では io も待ちもできないので、状態を見て決めたことを、本体の外で実行します（たとえば「空いている接続の数を 1 減らす」は本体の中・「接続を張る」は本体の外）。
+
+### 5.2 Update と Read — 1 つずつ当てる
 
 ```sober
 // examples/domain_counter.sober
@@ -241,22 +265,406 @@ func main() {
 }
 ```
 
-- `task.NewDomain(s, init)` が、scope `s` の中に状態の初期値 `init` を持つ domain を作ります。domain は scope の出口で状態ごと消えます
-- `task.Update(d, (st mut S) => 本体)` は本体を状態に当て、本体の値を返します。`task.Read(d, (st S) => 本体)` は状態を変えずに読みます
-- `task.Await(d, 本体, when: 条件)` は条件が真になるまで待ってから本体を当てます。待つ呼び出しは来た順に入り、待ちが上限（`wait:`）を越えたら `io.Expired` を返します
+出力:
 
-lock は見えません。本体は待たず、io も別の domain の呼び出しも書けません。lock を持ったまま待つ形が無いので、lock の順序で起きるデッドロックは書けません。
+```
+342
+```
 
-どの task の更新が先に走るかはスケジュールで決まります。その順はファイルやネットワークの入力と同じ「録られる入力」として扱います。順を固定すれば、scope の値はスケジュールに依りません。上の例で印字する値（札の和と量の和）は、どちらの子が先に入っても同じです。
+- `task.NewDomain(s, init)` が、scope `s` の中に状態の初期値 `init` を持つ domain を作ります。状態の型 `S` は `init` の型で、domain の型は `task.Domain[S]` です。domain は scope の出口で状態ごと消えます
+- `task.Update(d, (st mut S) => 本体)` は本体を状態に当て、本体の値を返します。本体が `st` に書いた値は、次の呼び出しから見えます
+- `task.Read(d, (st S) => 本体)` は状態を変えずに読みます
 
-状態は mut の slice や map（`mut []T` / `mut map` — 入れ子も）を持て、本体はその要素をその場で書けます（`examples/domain_slots.sober`）。初期値は domain へ写して入れ、本体の値も呼び手へ写して返すので、状態の slice や map が domain の外から書かれることはありません。
+同じ domain の呼び出しは、どの task から来ても 1 つずつ走ります。2 つの本体が同時に状態を書くことはありません。
 
-本体には書けない形が 2 つあり、どちらも検査が名指しで拒み、書き換えの形を提示します。
+どの task の呼び出しが先に走るかはスケジュールで決まります。言語はその順を、ファイルやネットワークから読む値と同じく、プログラムへの入力として扱います（6 節）。同じ順を与えれば、scope の値はスケジュールに依りません。上の例で印字する値（通し番号の和と、書いたバイト数の和）は、どちらの子が先に入っても同じです。3 つの呼び出しは効果 `nondet`（他の task の更新が見える）を持ち、この効果は関数の署名に出ます。
 
-- 本体は region を持つ値を状態に足せません（append 等。状態の別名〔`mut v := st.items`〕を経た書きも同じ）
-- 状態を mut の実引数に渡せるのは、呼び先がそれを本体と同じ規則で書くと呼び先の本体から分かるときだけです（`examples/domain_mutarg.sober` — 分からなければ、値を返して本体で代入します）
+domain は捕獲でき（子の task へも）、関数の実引数にもできます。struct の欄に入れて渡せるので、ハンドラを名前つきの関数のまま書けます。
 
-毒（本体が死んだ domain は以後 `Poisoned`）と満了の実例は `examples/domain_poison.sober`・`examples/domain_handoff.sober` にあります。
+```sober
+// examples/domain_arg.sober
+package main
+
+// A domain can be passed to a function (also inside a struct): the handlers are named functions that take the shared state.
+// It cannot be returned from a function, put in a task result or sent on a channel — it stays inside the scope that made it
+
+import "std/task"
+
+type Stats struct {
+    hits int
+    bytes int
+}
+
+type App struct {
+    stats task.Domain[Stats]
+    name string
+}
+
+func record(stats task.Domain[Stats], n int) int {
+    return task.Update(stats, (st mut Stats) => {
+        st.hits += 1
+        st.bytes += n
+        st.hits
+    })
+}
+
+func handle(app App, req int) int {
+    _ = record(app.stats, req * 10)
+    return req
+}
+
+func serve(app App, k func(a App)) {
+    k(app)
+}
+
+func main() {
+    out, e := task.Run((s task.Scope) => {
+        app := App{stats: task.NewDomain(s, Stats{hits: 0, bytes: 0}), name: "demo"}
+        _, e2 := task.Run((s2 task.Scope) => {
+            mut i := 1
+            while i <= 4 {
+                r := i
+                _ = task.Spawn(s2, () => handle(app, r))
+                i += 1
+            }
+            0
+        })
+        _ = e2
+        serve(app, (a) => {
+            _ = handle(a, 5)
+        })
+        task.Read(app.stats, (st Stats) => "${app.name}: ${st.hits} hits, ${st.bytes} bytes")
+    })
+    println(if e == nil { out } else { "died" })
+}
+```
+
+出力:
+
+```
+demo: 5 hits, 150 bytes
+```
+
+### 5.3 Await — 条件が成り立つまで待つ
+
+`task.Await(d, 本体, when: 条件)` は、状態について条件が真になるまで待ってから本体を当てます。値は `(R, error?)` で、待ちが上限を越えたときの err は `io.Expired` です。
+
+```sober
+// examples/domain_await.sober
+package main
+
+// task.Await takes one slot from a counter: it waits until when: is true, and waiting calls enter in arrival order. A wait longer
+// than wait: returns io.Expired (here a slot is free, so it does not wait)
+
+import "std/task"
+
+type Slots struct {
+    free int
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, Slots{free: 2}, wait: 5 * task.MS)
+        h := task.Spawn(s, () => {
+            v, err := task.Await(d, (st mut Slots) => {
+                st.free -= 1
+                st.free
+            }, when: (st Slots) => st.free > 0)
+            if err != nil {
+                -1
+            } else {
+                v
+            }
+        })
+        task.Join(h) + task.Read(d, (st Slots) => st.free)
+    })
+    if e != nil {
+        println("died")
+        return
+    }
+    println(r)
+}
+```
+
+出力:
+
+```
+2
+```
+
+条件が初めから真なら、待たずに入ります。偽なら呼び出しは domain の待ちの列に並んで眠り、他の呼び出しが状態を変えて出るたびに、列の先頭から起こされて条件を見直します。
+
+8 つの消費者が `Await` で 1 つずつ取り、1 つの生産者が `Update` で 5 つずつ足す例です。どのスケジュールでも、どの品物もちょうど 1 回取られます。
+
+```sober
+// examples/domain_handoff.sober
+package main
+
+// Waiting calls are handed the domain in arrival order: 8 consumers each take 25 items with task.Await (when: items are there),
+// while one producer adds 5 items at a time with task.Update. Every item is taken exactly once, whatever the schedule
+
+import "std/os"
+import "std/task"
+
+type Q struct {
+    items int
+    taken int
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, Q{items: 0, taken: 0}, wait: 5000 * task.MS)
+        _, e2 := task.Run((s2 task.Scope) => {
+            mut i := 0
+            while i < 8 {
+                h := task.Spawn(s2, () => {
+                    mut k := 0
+                    while k < 25 {
+                        _, err := task.Await(d, (st mut Q) => {
+                            st.items -= 1
+                            st.taken += 1
+                            0
+                        }, when: (st Q) => st.items > 0)
+                        _ = err
+                        k += 1
+                    }
+                    0
+                })
+                _ = h
+                i += 1
+            }
+            p := task.Spawn(s2, () => {
+                mut k := 0
+                while k < 40 {
+                    task.Update(d, (st mut Q) => {
+                        st.items += 5
+                        0
+                    })
+                    os.Sleep(1)
+                    k += 1
+                }
+                0
+            })
+            _ = p
+            0
+        })
+        if e2 != nil {
+            "died"
+        } else {
+            task.Read(d, (st Q) => "taken ${st.taken} / left ${st.items}")
+        }
+    })
+    println(if e == nil { r } else { "died" })
+}
+```
+
+出力:
+
+```
+taken 200 / left 0
+```
+
+待ちについて言語が約束すること:
+
+- **順番**: 待っている呼び出しどうしは、来た順に状態へ入ります。起こされても条件がまだ偽なら、列の元の位置へ戻ります（`examples/domain_requeue.sober`）
+- **期限**: 待ちには上限があります。`NewDomain` の `wait:` に書き（省略すると 2 秒）、呼び出しごとに `wait:` で上書きできます。越えた呼び出しは本体を走らせずに `io.Expired` を返し、状態は変わりません
+- **観測**: `task.Ledger().domains` が、全 domain をまとめた 1 行（今待っている数 `waiting`・到着から入るまでの待ちの最大 `maxWait`（読むと 0 に戻る）・満了の累計 `expired`・毒になった domain の累計 `poisoned`）を返します
+
+条件が真にならない `Await` は、上限で `io.Expired` を返します。domain の待ちで止まったままになる task はありません。
+
+```sober
+// examples/domain_expire.sober
+package main
+
+// An Await whose when: never becomes true returns io.Expired once it has waited wait: (the bound on the wait is declared,
+// so a domain wait never hangs). The body does not run and the state is unchanged. task.Ledger().domains counts the expiry
+// (one row for all domains — waiting / maxWait / expired / poisoned)
+
+import "std/io"
+import "std/task"
+
+type Gate struct {
+    open bool
+    passed int
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, Gate{open: false, passed: 0}, wait: 20 * task.MS)
+        v, err := task.Await(d, (st mut Gate) => {
+            st.passed += 1
+            st.passed
+        }, when: (st Gate) => st.open)
+        label := switch err {
+        case nil: "entered ${v}"
+        case io.Expired{}: "expired"
+        }
+        "${label} / passed ${task.Read(d, (st Gate) => st.passed)}"
+    })
+    println(if e == nil { r } else { "died" })
+    dv := task.Ledger().domains
+    println("ledger: waiting ${dv.waiting} / expired ${dv.expired} / poisoned ${dv.poisoned}")
+}
+```
+
+出力:
+
+```
+expired / passed 0
+ledger: waiting 0 / expired 1 / poisoned 0
+```
+
+### 5.4 本体が死んだとき — 毒
+
+本体（`when:` を含む）が死ぬと（境界検査・ゼロ除算・region の上限など）、呼び手の task が死に、domain は毒された状態になります。以後のその domain の呼び出しは、呼び手を `task.Poisoned{}` で死なせます。待っている `Await` も起きて、同じく死にます。半端に書かれた状態の上で、続きの呼び出しが走ることはありません。
+
+```sober
+// examples/domain_poison.sober
+package main
+
+// A body that dies poisons its domain: the caller dies, and every later call on the domain dies with task.Poisoned{} instead of
+// running on a half-written state. Here the first child's body divides by zero after writing a field; the second child's Read
+// then dies too.
+// task.Try shows both deaths as values
+
+import "std/task"
+
+type St struct {
+    n int
+    d int
+}
+
+func main() {
+    _, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, St{n: 0, d: 0})
+        h1 := task.Spawn(s, () => task.Update(d, (st mut St) => {
+            st.n = 7
+            st.n / st.d
+        }))
+        a := switch task.Try(h1) {
+        case task.Ok{v}: "ok"
+        case task.Failed{}: "failed"
+        case task.Died{cause}: "died"
+        }
+        h2 := task.Spawn(s, () => task.Read(d, (st St) => st.n))
+        b := switch task.Try(h2) {
+        case task.Ok{v}: "ok"
+        case task.Failed{}: "failed"
+        case task.Died{cause}: "died"
+        }
+        println("update: ${a} / read: ${b}")
+        0
+    })
+    println(if e == nil { "scope: ok" } else { "scope: err" })
+    println("poisoned domains: ${task.Ledger().domains.poisoned}")
+}
+```
+
+出力:
+
+```
+update: died / read: died
+scope: err
+poisoned domains: 1
+```
+
+### 5.5 本体に書けない形と、その理由
+
+本体は domain を持ったまま走ります。だから、持ったまま待つ形や、状態を際限なく伸ばす形は検査が拒否します。拒否の文面は、どれも書き換えの形を示します。
+
+本体は待たず、io をせず、別の domain も呼びません（効果を持たない — 明示の `panic` もなし）。
+
+```sober
+// examples/domain_neg_nested.sober
+package main
+
+// domain の本体から別の domain は呼べない（入りは nondet — 本体は効果なし）: 持ったまま待つ形が書けないので、domain が原因のデッドロックは無い
+
+import "std/task"
+
+type Hits struct {
+    n int
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        a := task.NewDomain(s, Hits{n: 0})
+        b := task.NewDomain(s, Hits{n: 0})
+        task.Update(a, (st mut Hits) => {
+            st.n += task.Read(b, (o Hits) => o.n)
+            st.n
+        })
+    })
+    println(r)
+}
+```
+
+拒否:
+
+```
+examples/domain_neg_nested.sober:15:38: error: the body of a domain call (task.Update / task.Read / task.Await and its when:) may have the effect nondet via the call of 'std/task.Read': it runs holding the domain, so it has no effects (no waiting, no io, no other domain, no explicit panic) (Analyzer)
+```
+
+本体の中から別の domain を呼べないので、domain を 2 つ持ったまま互いを待つ形はありません。lock の順序の取り決めは要りません。本体の中の `println` も同じ理由で拒否されます（`examples/domain_neg_effect.sober`）。
+
+状態は domain と同じだけ生き、その場で書かれます。だから本体が状態に書けるのは region を持たない値（int・bool・byte・float と、それらの struct・union・option）だけです。状態の slice への append は、呼び出しのたびに状態を伸ばすので拒否されます。
+
+```sober
+// examples/domain_neg_grow.sober
+package main
+
+// A domain's state is written in place and lives as long as the domain, so the body writes only region-free values into it
+// (diag.Par kind 36): appending to a slice of the state would grow the domain's region on every call. Preallocate the slice in
+// init: and write its elements, or keep the growing data outside the domain
+
+import "std/task"
+
+type Log struct {
+    lines []string
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, Log{lines: []string{}})
+        task.Update(d, (st mut Log) => {
+            st.lines = append(st.lines, "hello")
+            len(st.lines)
+        })
+    })
+    println(r)
+}
+```
+
+拒否:
+
+```
+sober: load error at examples/domain_neg_grow.sober:17:16: the body of a domain call writes only region-free values (int, bool, byte, float and structs of them) into the state, and not through a map index — the state lives as long as the domain and is written in place, so append, re-slicing, strings or map writes would grow it on every call. Rewrite: (1) preallocate a mut slice in init: and write its elements (st.items[i] = v), (2) keep a count or an index in the state and the growing data outside the domain, or (3) return the value from the body and store it outside
+```
+
+状態は mut の slice や map を持てて（入れ子も）、本体は slice の要素をその場で書けます（`examples/domain_slots.sober`）。map への書きは状態を伸ばしうるので拒否されます。足りる長さを初期値で用意して要素を書くか、伸びるデータは domain の外に置きます。
+
+ほかに拒否される形:
+
+- 本体が呼び手の mut の束縛を捕まえて書く（`examples/domain_neg_capture.sober`）— 本体は呼び手と別の task で走りうるので、捕まえられるのは imm の値だけです
+- 状態の slice を mut の束縛にして append する（`mut v := st.items` — `examples/domain_neg_alias.sober`）
+- 状態を、状態を伸ばしうる関数へ mut の実引数で渡す（`examples/domain_neg_mutarg.sober`）。呼び先が本体と同じ規則で書くと呼び先の本体から分かるなら渡せます（`examples/domain_mutarg.sober`）
+- domain を作った scope の外へ出す — scope の値・task の結果・チャネルで送る値・関数の戻り値にする、scope の外で作った場所へ入れる（`examples/domain_neg_escape.sober`・`examples/domain_neg_return.sober`・`examples/domain_neg_outlive_*.sober`）。domain は scope の出口で状態ごと消えるからです
+
+初期値は domain へ写して入れ、本体の値も呼び手へ写して返します。だから、状態の slice や map が domain の外から書かれることはありません。
+
+### 5.6 標準ライブラリでの使われ方と費用
+
+`std/pg` の接続のプール（`pg.OpenPool` / `pg.With` — [PostgreSQL のガイド 6 節](postgres.ja.md#6-接続のプール--pgopenpool-と-pgwith)）は domain の上に書かれています。待機中の接続の数と張っている数を domain の状態に置き、空きが無ければ `Await` で来た順に待ちます。
+
+domain の呼び出しにかかる命令数（x86-64・callgrind で数えた、競合のない最小のプログラムの 1 回あたりの命令数）:
+
+| 呼び出し | 命令/回 |
+| --- | --- |
+| `task.Update`（本体はカウンタを 1 足すだけ） | ≈ 60 |
+| `task.Read`（欄を 1 つ読むだけ） | ≈ 80 |
+| `task.Await`（条件が真で、待たずに入る） | ≈ 120 |
+
+競合のない 1 回の出入りは、数十〜百数十命令です。待っている呼び出しが多くても、状態から出る呼び出しが起こすのは列の先頭の 1 つだけで、出る側の仕事は待っている数に依りません。
 
 ## 6. 言語が約束する範囲
 

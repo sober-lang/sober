@@ -4109,15 +4109,6 @@ b0:
   store i64 0, ptr %s1.z2
   %s1.z3 = getelementptr i64, ptr %s1, i64 3
   store i64 0, ptr %s1.z3
-  %s2 = alloca [4 x i64], align 8
-  %s2.z0 = getelementptr i64, ptr %s2, i64 0
-  store i64 0, ptr %s2.z0
-  %s2.z1 = getelementptr i64, ptr %s2, i64 1
-  store i64 0, ptr %s2.z1
-  %s2.z2 = getelementptr i64, ptr %s2, i64 2
-  store i64 0, ptr %s2.z2
-  %s2.z3 = getelementptr i64, ptr %s2, i64 3
-  store i64 0, ptr %s2.z3
   %v6 = getelementptr i64, ptr %s0, i64 0
   %st0 = getelementptr i64, ptr %v6, i64 0
   store i64 %v1, ptr %st0
@@ -4125,8 +4116,8 @@ b0:
   store i64 %v2, ptr %st1
   %st2 = getelementptr i64, ptr %v6, i64 2
   store i64 %v3, ptr %st2
-  %v32 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v7.p = getelementptr i64, ptr %v32, i64 0
+  %v27 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v7.p = getelementptr i64, ptr %v27, i64 0
   %v7 = load i64, ptr %v7.p
   call void @"rt.region_enter"()
   %v8 = add i64 0, 0
@@ -4175,43 +4166,26 @@ b3:
   %v20 = load i64, ptr %v20.p
   %st11 = getelementptr i64, ptr %v0, i64 3
   store i64 %v20, ptr %st11
-  %v33 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st12 = getelementptr i64, ptr %v33, i64 0
+  %v28 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st12 = getelementptr i64, ptr %v28, i64 0
   store i64 %v7, ptr %st12
   ret void
 b4:
   br label %b5
 b5:
-  %v21 = getelementptr i64, ptr %s2, i64 0
-  %v22.p = getelementptr i64, ptr %v6, i64 0
+  %v21.p = getelementptr i64, ptr %v6, i64 0
+  %v21 = load i64, ptr %v21.p
+  %v22.p = getelementptr i64, ptr %v6, i64 1
   %v22 = load i64, ptr %v22.p
-  %v23.p = getelementptr i64, ptr %v6, i64 1
+  %v23.p = getelementptr i64, ptr %v6, i64 2
   %v23 = load i64, ptr %v23.p
-  %v24.p = getelementptr i64, ptr %v6, i64 2
-  %v24 = load i64, ptr %v24.p
-  %v25 = add i64 0, 7
-  %v26 = mul i64 %v5, %v25
-  %v27 = add i64 %v4, %v26
-  call void @"main.$layoutDecode_1_0"(ptr %v21, i64 %v22, i64 %v23, i64 %v24, i64 %v27)
-  %v28.p = getelementptr i64, ptr %v21, i64 0
-  %v28 = load i64, ptr %v28.p
-  %st13 = getelementptr i64, ptr %v0, i64 0
-  store i64 %v28, ptr %st13
-  %v29.p = getelementptr i64, ptr %v21, i64 1
-  %v29 = load i64, ptr %v29.p
-  %st14 = getelementptr i64, ptr %v0, i64 1
-  store i64 %v29, ptr %st14
-  %v30.p = getelementptr i64, ptr %v21, i64 2
-  %v30 = load i64, ptr %v30.p
-  %st15 = getelementptr i64, ptr %v0, i64 2
-  store i64 %v30, ptr %st15
-  %v31.p = getelementptr i64, ptr %v21, i64 3
-  %v31 = load i64, ptr %v31.p
-  %st16 = getelementptr i64, ptr %v0, i64 3
-  store i64 %v31, ptr %st16
-  %v34 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st17 = getelementptr i64, ptr %v34, i64 0
-  store i64 %v7, ptr %st17
+  %v24 = add i64 0, 7
+  %v25 = mul i64 %v5, %v24
+  %v26 = add i64 %v4, %v25
+  call void @"main.$layoutDecode_1_0"(ptr %v0, i64 %v21, i64 %v22, i64 %v23, i64 %v26)
+  %v29 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st13 = getelementptr i64, ptr %v29, i64 0
+  store i64 %v7, ptr %st13
   ret void
 }
 

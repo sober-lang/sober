@@ -7707,7 +7707,7 @@
                                 "targets": [
                                   {
                                     "k": "ident",
-                                    "name": "hs",
+                                    "name": "_",
                                     "tok": 2707
                                   }
                                 ],
@@ -7717,96 +7717,29 @@
                                     "k": "call",
                                     "callee": {
                                       "k": "ident",
-                                      "name": "append",
+                                      "name": "sysNetOp",
                                       "tok": 2709
                                     },
                                     "args": [
                                       {
-                                        "k": "ident",
-                                        "name": "hs",
+                                        "k": "int",
+                                        "value": 7,
                                         "tok": 2711
                                       },
                                       {
-                                        "k": "call",
-                                        "callee": {
-                                          "k": "selector",
-                                          "base": {
-                                            "k": "ident",
-                                            "name": "task",
-                                            "tok": 2713
-                                          },
-                                          "field": "Spawn",
-                                          "tok": 2715
-                                        },
-                                        "args": [
-                                          {
-                                            "k": "ident",
-                                            "name": "s",
-                                            "tok": 2717
-                                          },
-                                          {
-                                            "k": "lambda",
-                                            "params": [],
-                                            "body": {
-                                              "k": "call",
-                                              "callee": {
-                                                "k": "ident",
-                                                "name": "serveOn",
-                                                "tok": 2722
-                                              },
-                                              "args": [
-                                                {
-                                                  "k": "ident",
-                                                  "name": "fd",
-                                                  "tok": 2724
-                                                },
-                                                {
-                                                  "k": "ident",
-                                                  "name": "own",
-                                                  "tok": 2726
-                                                },
-                                                {
-                                                  "k": "ident",
-                                                  "name": "all",
-                                                  "tok": 2728
-                                                },
-                                                {
-                                                  "k": "ident",
-                                                  "name": "h",
-                                                  "tok": 2730
-                                                },
-                                                {
-                                                  "k": "ident",
-                                                  "name": "pool",
-                                                  "tok": 2732
-                                                },
-                                                {
-                                                  "k": "ident",
-                                                  "name": "b",
-                                                  "tok": 2734
-                                                },
-                                                {
-                                                  "k": "ident",
-                                                  "name": "rj",
-                                                  "tok": 2736
-                                                },
-                                                {
-                                                  "k": "ident",
-                                                  "name": "rg",
-                                                  "tok": 2738
-                                                },
-                                                {
-                                                  "k": "ident",
-                                                  "name": "mw",
-                                                  "tok": 2740
-                                                }
-                                              ],
-                                              "tok": 2723
-                                            },
-                                            "tok": 2721
-                                          }
-                                        ],
-                                        "tok": 2716
+                                        "k": "ident",
+                                        "name": "mw",
+                                        "tok": 2713
+                                      },
+                                      {
+                                        "k": "int",
+                                        "value": 0,
+                                        "tok": 2715
+                                      },
+                                      {
+                                        "k": "int",
+                                        "value": 0,
+                                        "tok": 2717
                                       }
                                     ],
                                     "tok": 2710
@@ -7819,8 +7752,120 @@
                                 "targets": [
                                   {
                                     "k": "ident",
+                                    "name": "hs",
+                                    "tok": 2720
+                                  }
+                                ],
+                                "op": "=",
+                                "values": [
+                                  {
+                                    "k": "call",
+                                    "callee": {
+                                      "k": "ident",
+                                      "name": "append",
+                                      "tok": 2722
+                                    },
+                                    "args": [
+                                      {
+                                        "k": "ident",
+                                        "name": "hs",
+                                        "tok": 2724
+                                      },
+                                      {
+                                        "k": "call",
+                                        "callee": {
+                                          "k": "selector",
+                                          "base": {
+                                            "k": "ident",
+                                            "name": "task",
+                                            "tok": 2726
+                                          },
+                                          "field": "Spawn",
+                                          "tok": 2728
+                                        },
+                                        "args": [
+                                          {
+                                            "k": "ident",
+                                            "name": "s",
+                                            "tok": 2730
+                                          },
+                                          {
+                                            "k": "lambda",
+                                            "params": [],
+                                            "body": {
+                                              "k": "call",
+                                              "callee": {
+                                                "k": "ident",
+                                                "name": "serveOn",
+                                                "tok": 2735
+                                              },
+                                              "args": [
+                                                {
+                                                  "k": "ident",
+                                                  "name": "fd",
+                                                  "tok": 2737
+                                                },
+                                                {
+                                                  "k": "ident",
+                                                  "name": "own",
+                                                  "tok": 2739
+                                                },
+                                                {
+                                                  "k": "ident",
+                                                  "name": "all",
+                                                  "tok": 2741
+                                                },
+                                                {
+                                                  "k": "ident",
+                                                  "name": "h",
+                                                  "tok": 2743
+                                                },
+                                                {
+                                                  "k": "ident",
+                                                  "name": "pool",
+                                                  "tok": 2745
+                                                },
+                                                {
+                                                  "k": "ident",
+                                                  "name": "b",
+                                                  "tok": 2747
+                                                },
+                                                {
+                                                  "k": "ident",
+                                                  "name": "rj",
+                                                  "tok": 2749
+                                                },
+                                                {
+                                                  "k": "ident",
+                                                  "name": "rg",
+                                                  "tok": 2751
+                                                },
+                                                {
+                                                  "k": "ident",
+                                                  "name": "mw",
+                                                  "tok": 2753
+                                                }
+                                              ],
+                                              "tok": 2736
+                                            },
+                                            "tok": 2734
+                                          }
+                                        ],
+                                        "tok": 2729
+                                      }
+                                    ],
+                                    "tok": 2723
+                                  }
+                                ],
+                                "tok": 2720
+                              },
+                              {
+                                "k": "assign",
+                                "targets": [
+                                  {
+                                    "k": "ident",
                                     "name": "i",
-                                    "tok": 2745
+                                    "tok": 2758
                                   }
                                 ],
                                 "op": "+=",
@@ -7828,10 +7873,10 @@
                                   {
                                     "k": "int",
                                     "value": 1,
-                                    "tok": 2747
+                                    "tok": 2760
                                   }
                                 ],
-                                "tok": 2745
+                                "tok": 2758
                               }
                             ]
                           },
@@ -7847,10 +7892,10 @@
                             {
                               "k": "int",
                               "value": 0,
-                              "tok": 2754
+                              "tok": 2767
                             }
                           ],
-                          "tok": 2751
+                          "tok": 2764
                         },
                         {
                           "k": "while",
@@ -7860,25 +7905,25 @@
                             "lhs": {
                               "k": "ident",
                               "name": "j",
-                              "tok": 2757
+                              "tok": 2770
                             },
                             "rhs": {
                               "k": "call",
                               "callee": {
                                 "k": "ident",
                                 "name": "len",
-                                "tok": 2759
+                                "tok": 2772
                               },
                               "args": [
                                 {
                                   "k": "ident",
                                   "name": "hs",
-                                  "tok": 2761
+                                  "tok": 2774
                                 }
                               ],
-                              "tok": 2760
+                              "tok": 2773
                             },
-                            "tok": 2758
+                            "tok": 2771
                           },
                           "body": {
                             "stmts": [
@@ -7899,10 +7944,10 @@
                                           "base": {
                                             "k": "ident",
                                             "name": "task",
-                                            "tok": 2767
+                                            "tok": 2780
                                           },
                                           "field": "Try",
-                                          "tok": 2769
+                                          "tok": 2782
                                         },
                                         "args": [
                                           {
@@ -7910,17 +7955,17 @@
                                             "base": {
                                               "k": "ident",
                                               "name": "hs",
-                                              "tok": 2771
+                                              "tok": 2784
                                             },
                                             "idx": {
                                               "k": "ident",
                                               "name": "j",
-                                              "tok": 2773
+                                              "tok": 2786
                                             },
-                                            "tok": 2772
+                                            "tok": 2785
                                           }
                                         ],
-                                        "tok": 2770
+                                        "tok": 2783
                                       }
                                     ],
                                     "cases": [
@@ -7934,10 +7979,10 @@
                                               {
                                                 "name": "v",
                                                 "sub": null,
-                                                "tok": 2782
+                                                "tok": 2795
                                               }
                                             ],
-                                            "tok": 2778
+                                            "tok": 2791
                                           }
                                         ],
                                         "body": {
@@ -7947,12 +7992,12 @@
                                               "expr": {
                                                 "k": "ident",
                                                 "name": "v",
-                                                "tok": 2785
+                                                "tok": 2798
                                               }
                                             }
                                           ]
                                         },
-                                        "tok": 2777
+                                        "tok": 2790
                                       },
                                       {
                                         "patterns": [
@@ -7961,7 +8006,7 @@
                                             "bind": null,
                                             "variant": "task.Failed",
                                             "fields": [],
-                                            "tok": 2788
+                                            "tok": 2801
                                           }
                                         ],
                                         "body": {
@@ -7971,12 +8016,12 @@
                                               "expr": {
                                                 "k": "int",
                                                 "value": 0,
-                                                "tok": 2794
+                                                "tok": 2807
                                               }
                                             }
                                           ]
                                         },
-                                        "tok": 2787
+                                        "tok": 2800
                                       },
                                       {
                                         "patterns": [
@@ -7985,7 +8030,7 @@
                                             "bind": null,
                                             "variant": "task.Died",
                                             "fields": [],
-                                            "tok": 2797
+                                            "tok": 2810
                                           }
                                         ],
                                         "body": {
@@ -7995,19 +8040,19 @@
                                               "expr": {
                                                 "k": "int",
                                                 "value": 0,
-                                                "tok": 2803
+                                                "tok": 2816
                                               }
                                             }
                                           ]
                                         },
-                                        "tok": 2796
+                                        "tok": 2809
                                       }
                                     ],
                                     "default": null,
-                                    "tok": 2766
+                                    "tok": 2779
                                   }
                                 ],
-                                "tok": 2764
+                                "tok": 2777
                               },
                               {
                                 "k": "expr",
@@ -8022,14 +8067,14 @@
                                       "lhs": {
                                         "k": "ident",
                                         "name": "code",
-                                        "tok": 2808
+                                        "tok": 2821
                                       },
                                       "rhs": {
                                         "k": "int",
                                         "value": 0,
-                                        "tok": 2810
+                                        "tok": 2823
                                       },
-                                      "tok": 2809
+                                      "tok": 2822
                                     },
                                     "rhs": {
                                       "k": "binary",
@@ -8043,7 +8088,7 @@
                                           "lhs": {
                                             "k": "ident",
                                             "name": "code",
-                                            "tok": 2813
+                                            "tok": 2826
                                           },
                                           "rhs": {
                                             "k": "binary",
@@ -8051,16 +8096,16 @@
                                             "lhs": {
                                               "k": "int",
                                               "value": 0,
-                                              "tok": 2815
+                                              "tok": 2828
                                             },
                                             "rhs": {
                                               "k": "int",
                                               "value": 22,
-                                              "tok": 2817
+                                              "tok": 2830
                                             },
-                                            "tok": 2816
+                                            "tok": 2829
                                           },
-                                          "tok": 2814
+                                          "tok": 2827
                                         },
                                         "rhs": {
                                           "k": "binary",
@@ -8068,7 +8113,7 @@
                                           "lhs": {
                                             "k": "ident",
                                             "name": "c",
-                                            "tok": 2819
+                                            "tok": 2832
                                           },
                                           "rhs": {
                                             "k": "binary",
@@ -8076,18 +8121,18 @@
                                             "lhs": {
                                               "k": "int",
                                               "value": 0,
-                                              "tok": 2821
+                                              "tok": 2834
                                             },
                                             "rhs": {
                                               "k": "int",
                                               "value": 22,
-                                              "tok": 2823
+                                              "tok": 2836
                                             },
-                                            "tok": 2822
+                                            "tok": 2835
                                           },
-                                          "tok": 2820
+                                          "tok": 2833
                                         },
-                                        "tok": 2818
+                                        "tok": 2831
                                       },
                                       "rhs": {
                                         "k": "binary",
@@ -8095,18 +8140,18 @@
                                         "lhs": {
                                           "k": "ident",
                                           "name": "c",
-                                          "tok": 2825
+                                          "tok": 2838
                                         },
                                         "rhs": {
                                           "k": "int",
                                           "value": 0,
-                                          "tok": 2827
+                                          "tok": 2840
                                         },
-                                        "tok": 2826
+                                        "tok": 2839
                                       },
-                                      "tok": 2824
+                                      "tok": 2837
                                     },
-                                    "tok": 2811
+                                    "tok": 2824
                                   },
                                   "then": {
                                     "stmts": [
@@ -8116,7 +8161,7 @@
                                           {
                                             "k": "ident",
                                             "name": "code",
-                                            "tok": 2830
+                                            "tok": 2843
                                           }
                                         ],
                                         "op": "=",
@@ -8124,15 +8169,15 @@
                                           {
                                             "k": "ident",
                                             "name": "c",
-                                            "tok": 2832
+                                            "tok": 2845
                                           }
                                         ],
-                                        "tok": 2830
+                                        "tok": 2843
                                       }
                                     ]
                                   },
                                   "else": null,
-                                  "tok": 2807
+                                  "tok": 2820
                                 }
                               },
                               {
@@ -8141,7 +8186,7 @@
                                   {
                                     "k": "ident",
                                     "name": "j",
-                                    "tok": 2836
+                                    "tok": 2849
                                   }
                                 ],
                                 "op": "+=",
@@ -8149,21 +8194,21 @@
                                   {
                                     "k": "int",
                                     "value": 1,
-                                    "tok": 2838
+                                    "tok": 2851
                                   }
                                 ],
-                                "tok": 2836
+                                "tok": 2849
                               }
                             ]
                           },
-                          "tok": 2756
+                          "tok": 2769
                         },
                         {
                           "k": "expr",
                           "expr": {
                             "k": "int",
                             "value": 0,
-                            "tok": 2842
+                            "tok": 2855
                           }
                         }
                       ]
@@ -8176,9 +8221,9 @@
                     "value": {
                       "k": "ident",
                       "name": "true",
-                      "tok": 2848
+                      "tok": 2861
                     },
-                    "tok": 2846
+                    "tok": 2859
                   },
                   {
                     "k": "named_arg",
@@ -8186,9 +8231,9 @@
                     "value": {
                       "k": "ident",
                       "name": "bl",
-                      "tok": 2852
+                      "tok": 2865
                     },
-                    "tok": 2850
+                    "tok": 2863
                   }
                 ],
                 "tok": 2642
@@ -8204,19 +8249,19 @@
                 "callee": {
                   "k": "ident",
                   "name": "waitErr",
-                  "tok": 2856
+                  "tok": 2869
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "code",
-                    "tok": 2858
+                    "tok": 2871
                   }
                 ],
-                "tok": 2857
+                "tok": 2870
               }
             ],
-            "tok": 2855
+            "tok": 2868
           }
         ]
       },
@@ -8224,7 +8269,7 @@
       "bodiless": false,
       "span": {
         "start": 2322,
-        "end": 2863
+        "end": 2876
       },
       "sig_end": 2398
     },
@@ -8345,10 +8390,10 @@
               {
                 "k": "int",
                 "value": 0,
-                "tok": 2909
+                "tok": 2922
               }
             ],
-            "tok": 2906
+            "tok": 2919
           },
           {
             "k": "assign",
@@ -8356,12 +8401,12 @@
               {
                 "k": "ident",
                 "name": "_",
-                "tok": 2911
+                "tok": 2924
               },
               {
                 "k": "ident",
                 "name": "_",
-                "tok": 2913
+                "tok": 2926
               }
             ],
             "op": "=",
@@ -8373,10 +8418,10 @@
                   "base": {
                     "k": "ident",
                     "name": "task",
-                    "tok": 2915
+                    "tok": 2928
                   },
                   "field": "Run",
-                  "tok": 2917
+                  "tok": 2930
                 },
                 "args": [
                   {
@@ -8401,14 +8446,14 @@
                             "lhs": {
                               "k": "ident",
                               "name": "code",
-                              "tok": 2928
+                              "tok": 2941
                             },
                             "rhs": {
                               "k": "int",
                               "value": 0,
-                              "tok": 2930
+                              "tok": 2943
                             },
-                            "tok": 2929
+                            "tok": 2942
                           },
                           "body": {
                             "stmts": [
@@ -8424,17 +8469,17 @@
                                       "callee": {
                                         "k": "ident",
                                         "name": "sysDeadline",
-                                        "tok": 2933
+                                        "tok": 2946
                                       },
                                       "args": [],
-                                      "tok": 2934
+                                      "tok": 2947
                                     },
                                     "rhs": {
                                       "k": "int",
                                       "value": 0,
-                                      "tok": 2937
+                                      "tok": 2950
                                     },
-                                    "tok": 2936
+                                    "tok": 2949
                                   },
                                   "then": {
                                     "stmts": [
@@ -8444,7 +8489,7 @@
                                           {
                                             "k": "ident",
                                             "name": "code",
-                                            "tok": 2939
+                                            "tok": 2952
                                           }
                                         ],
                                         "op": "=",
@@ -8455,17 +8500,17 @@
                                             "lhs": {
                                               "k": "int",
                                               "value": 0,
-                                              "tok": 2941
+                                              "tok": 2954
                                             },
                                             "rhs": {
                                               "k": "int",
                                               "value": 110,
-                                              "tok": 2943
+                                              "tok": 2956
                                             },
-                                            "tok": 2942
+                                            "tok": 2955
                                           }
                                         ],
-                                        "tok": 2939
+                                        "tok": 2952
                                       }
                                     ]
                                   },
@@ -8484,34 +8529,34 @@
                                             "callee": {
                                               "k": "ident",
                                               "name": "sysNetOp",
-                                              "tok": 2950
+                                              "tok": 2963
                                             },
                                             "args": [
                                               {
                                                 "k": "int",
                                                 "value": 3,
-                                                "tok": 2952
+                                                "tok": 2965
                                               },
                                               {
                                                 "k": "ident",
                                                 "name": "lfd",
-                                                "tok": 2954
+                                                "tok": 2967
                                               },
                                               {
                                                 "k": "int",
                                                 "value": 0,
-                                                "tok": 2956
+                                                "tok": 2969
                                               },
                                               {
                                                 "k": "int",
                                                 "value": 0,
-                                                "tok": 2958
+                                                "tok": 2971
                                               }
                                             ],
-                                            "tok": 2951
+                                            "tok": 2964
                                           }
                                         ],
-                                        "tok": 2948
+                                        "tok": 2961
                                       },
                                       {
                                         "k": "bind",
@@ -8525,29 +8570,29 @@
                                             "callee": {
                                               "k": "ident",
                                               "name": "again",
-                                              "tok": 2963
+                                              "tok": 2976
                                             },
                                             "args": [
                                               {
                                                 "k": "ident",
                                                 "name": "fd",
-                                                "tok": 2965
+                                                "tok": 2978
                                               },
                                               {
                                                 "k": "ident",
                                                 "name": "lfd",
-                                                "tok": 2967
+                                                "tok": 2980
                                               },
                                               {
                                                 "k": "ident",
                                                 "name": "evIn",
-                                                "tok": 2969
+                                                "tok": 2982
                                               }
                                             ],
-                                            "tok": 2964
+                                            "tok": 2977
                                           }
                                         ],
-                                        "tok": 2961
+                                        "tok": 2974
                                       },
                                       {
                                         "k": "expr",
@@ -8559,14 +8604,14 @@
                                             "lhs": {
                                               "k": "ident",
                                               "name": "a",
-                                              "tok": 2973
+                                              "tok": 2986
                                             },
                                             "rhs": {
                                               "k": "int",
                                               "value": 0,
-                                              "tok": 2975
+                                              "tok": 2988
                                             },
-                                            "tok": 2974
+                                            "tok": 2987
                                           },
                                           "then": {
                                             "stmts": [
@@ -8576,7 +8621,7 @@
                                                   {
                                                     "k": "ident",
                                                     "name": "code",
-                                                    "tok": 2977
+                                                    "tok": 2990
                                                   }
                                                 ],
                                                 "op": "=",
@@ -8584,10 +8629,10 @@
                                                   {
                                                     "k": "ident",
                                                     "name": "a",
-                                                    "tok": 2979
+                                                    "tok": 2992
                                                   }
                                                 ],
-                                                "tok": 2977
+                                                "tok": 2990
                                               }
                                             ]
                                           },
@@ -8602,14 +8647,14 @@
                                                 "lhs": {
                                                   "k": "ident",
                                                   "name": "a",
-                                                  "tok": 2984
+                                                  "tok": 2997
                                                 },
                                                 "rhs": {
                                                   "k": "int",
                                                   "value": 1,
-                                                  "tok": 2986
+                                                  "tok": 2999
                                                 },
-                                                "tok": 2985
+                                                "tok": 2998
                                               },
                                               "rhs": {
                                                 "k": "binary",
@@ -8617,16 +8662,16 @@
                                                 "lhs": {
                                                   "k": "ident",
                                                   "name": "fd",
-                                                  "tok": 2988
+                                                  "tok": 3001
                                                 },
                                                 "rhs": {
                                                   "k": "int",
                                                   "value": 0,
-                                                  "tok": 2990
+                                                  "tok": 3003
                                                 },
-                                                "tok": 2989
+                                                "tok": 3002
                                               },
-                                              "tok": 2987
+                                              "tok": 3000
                                             },
                                             "then": {
                                               "stmts": [
@@ -8636,7 +8681,7 @@
                                                     {
                                                       "k": "ident",
                                                       "name": "code",
-                                                      "tok": 2992
+                                                      "tok": 3005
                                                     }
                                                   ],
                                                   "op": "=",
@@ -8644,10 +8689,10 @@
                                                     {
                                                       "k": "ident",
                                                       "name": "fd",
-                                                      "tok": 2994
+                                                      "tok": 3007
                                                     }
                                                   ],
-                                                  "tok": 2992
+                                                  "tok": 3005
                                                 }
                                               ]
                                             },
@@ -8659,14 +8704,14 @@
                                                 "lhs": {
                                                   "k": "ident",
                                                   "name": "a",
-                                                  "tok": 2999
+                                                  "tok": 3012
                                                 },
                                                 "rhs": {
                                                   "k": "int",
                                                   "value": 1,
-                                                  "tok": 3001
+                                                  "tok": 3014
                                                 },
-                                                "tok": 3000
+                                                "tok": 3013
                                               },
                                               "then": {
                                                 "stmts": [
@@ -8683,17 +8728,17 @@
                                                         "lhs": {
                                                           "k": "ident",
                                                           "name": "fd",
-                                                          "tok": 3006
+                                                          "tok": 3019
                                                         },
                                                         "rhs": {
                                                           "k": "ident",
                                                           "name": "fdCap",
-                                                          "tok": 3008
+                                                          "tok": 3021
                                                         },
-                                                        "tok": 3007
+                                                        "tok": 3020
                                                       }
                                                     ],
-                                                    "tok": 3003
+                                                    "tok": 3016
                                                   },
                                                   {
                                                     "k": "expr",
@@ -8705,9 +8750,9 @@
                                                         "operand": {
                                                           "k": "ident",
                                                           "name": "shed",
-                                                          "tok": 3012
+                                                          "tok": 3025
                                                         },
-                                                        "tok": 3011
+                                                        "tok": 3024
                                                       },
                                                       "then": {
                                                         "stmts": [
@@ -8717,7 +8762,7 @@
                                                               {
                                                                 "k": "ident",
                                                                 "name": "_",
-                                                                "tok": 3014
+                                                                "tok": 3027
                                                               }
                                                             ],
                                                             "op": "=",
@@ -8727,13 +8772,13 @@
                                                                 "callee": {
                                                                   "k": "ident",
                                                                   "name": "sysNetOp",
-                                                                  "tok": 3016
+                                                                  "tok": 3029
                                                                 },
                                                                 "args": [
                                                                   {
                                                                     "k": "int",
                                                                     "value": 5,
-                                                                    "tok": 3018
+                                                                    "tok": 3031
                                                                   },
                                                                   {
                                                                     "k": "unary",
@@ -8741,54 +8786,9 @@
                                                                     "operand": {
                                                                       "k": "int",
                                                                       "value": 1,
-                                                                      "tok": 3021
+                                                                      "tok": 3034
                                                                     },
-                                                                    "tok": 3020
-                                                                  },
-                                                                  {
-                                                                    "k": "int",
-                                                                    "value": 0,
-                                                                    "tok": 3023
-                                                                  },
-                                                                  {
-                                                                    "k": "int",
-                                                                    "value": 0,
-                                                                    "tok": 3025
-                                                                  }
-                                                                ],
-                                                                "tok": 3017
-                                                              }
-                                                            ],
-                                                            "tok": 3014
-                                                          },
-                                                          {
-                                                            "k": "assign",
-                                                            "targets": [
-                                                              {
-                                                                "k": "ident",
-                                                                "name": "_",
-                                                                "tok": 3028
-                                                              }
-                                                            ],
-                                                            "op": "=",
-                                                            "values": [
-                                                              {
-                                                                "k": "call",
-                                                                "callee": {
-                                                                  "k": "ident",
-                                                                  "name": "sysNetOp",
-                                                                  "tok": 3030
-                                                                },
-                                                                "args": [
-                                                                  {
-                                                                    "k": "int",
-                                                                    "value": 6,
-                                                                    "tok": 3032
-                                                                  },
-                                                                  {
-                                                                    "k": "ident",
-                                                                    "name": "rg",
-                                                                    "tok": 3034
+                                                                    "tok": 3033
                                                                   },
                                                                   {
                                                                     "k": "int",
@@ -8801,10 +8801,10 @@
                                                                     "tok": 3038
                                                                   }
                                                                 ],
-                                                                "tok": 3031
+                                                                "tok": 3030
                                                               }
                                                             ],
-                                                            "tok": 3028
+                                                            "tok": 3027
                                                           },
                                                           {
                                                             "k": "assign",
@@ -8827,12 +8827,12 @@
                                                                 "args": [
                                                                   {
                                                                     "k": "int",
-                                                                    "value": 7,
+                                                                    "value": 6,
                                                                     "tok": 3045
                                                                   },
                                                                   {
                                                                     "k": "ident",
-                                                                    "name": "mw",
+                                                                    "name": "rg",
                                                                     "tok": 3047
                                                                   },
                                                                   {
@@ -8852,6 +8852,96 @@
                                                             "tok": 3041
                                                           },
                                                           {
+                                                            "k": "assign",
+                                                            "targets": [
+                                                              {
+                                                                "k": "ident",
+                                                                "name": "_",
+                                                                "tok": 3054
+                                                              }
+                                                            ],
+                                                            "op": "=",
+                                                            "values": [
+                                                              {
+                                                                "k": "call",
+                                                                "callee": {
+                                                                  "k": "ident",
+                                                                  "name": "sysNetOp",
+                                                                  "tok": 3056
+                                                                },
+                                                                "args": [
+                                                                  {
+                                                                    "k": "int",
+                                                                    "value": 7,
+                                                                    "tok": 3058
+                                                                  },
+                                                                  {
+                                                                    "k": "ident",
+                                                                    "name": "mw",
+                                                                    "tok": 3060
+                                                                  },
+                                                                  {
+                                                                    "k": "int",
+                                                                    "value": 0,
+                                                                    "tok": 3062
+                                                                  },
+                                                                  {
+                                                                    "k": "int",
+                                                                    "value": 0,
+                                                                    "tok": 3064
+                                                                  }
+                                                                ],
+                                                                "tok": 3057
+                                                              }
+                                                            ],
+                                                            "tok": 3054
+                                                          },
+                                                          {
+                                                            "k": "assign",
+                                                            "targets": [
+                                                              {
+                                                                "k": "ident",
+                                                                "name": "_",
+                                                                "tok": 3067
+                                                              }
+                                                            ],
+                                                            "op": "=",
+                                                            "values": [
+                                                              {
+                                                                "k": "call",
+                                                                "callee": {
+                                                                  "k": "ident",
+                                                                  "name": "sysNetOp",
+                                                                  "tok": 3069
+                                                                },
+                                                                "args": [
+                                                                  {
+                                                                    "k": "int",
+                                                                    "value": 10,
+                                                                    "tok": 3071
+                                                                  },
+                                                                  {
+                                                                    "k": "int",
+                                                                    "value": 0,
+                                                                    "tok": 3073
+                                                                  },
+                                                                  {
+                                                                    "k": "int",
+                                                                    "value": 0,
+                                                                    "tok": 3075
+                                                                  },
+                                                                  {
+                                                                    "k": "int",
+                                                                    "value": 0,
+                                                                    "tok": 3077
+                                                                  }
+                                                                ],
+                                                                "tok": 3070
+                                                              }
+                                                            ],
+                                                            "tok": 3067
+                                                          },
+                                                          {
                                                             "k": "bind",
                                                             "names": [
                                                               "_",
@@ -8866,21 +8956,21 @@
                                                                   "base": {
                                                                     "k": "ident",
                                                                     "name": "task",
-                                                                    "tok": 3058
+                                                                    "tok": 3084
                                                                   },
                                                                   "field": "SpawnIn",
-                                                                  "tok": 3060
+                                                                  "tok": 3086
                                                                 },
                                                                 "args": [
                                                                   {
                                                                     "k": "ident",
                                                                     "name": "s",
-                                                                    "tok": 3062
+                                                                    "tok": 3088
                                                                   },
                                                                   {
                                                                     "k": "ident",
                                                                     "name": "pool",
-                                                                    "tok": 3064
+                                                                    "tok": 3090
                                                                   },
                                                                   {
                                                                     "k": "lambda",
@@ -8894,7 +8984,7 @@
                                                                             {
                                                                               "k": "ident",
                                                                               "name": "_",
-                                                                              "tok": 3070
+                                                                              "tok": 3096
                                                                             }
                                                                           ],
                                                                           "op": "=",
@@ -8904,19 +8994,19 @@
                                                                               "callee": {
                                                                                 "k": "ident",
                                                                                 "name": "sysFdOwn",
-                                                                                "tok": 3072
+                                                                                "tok": 3098
                                                                               },
                                                                               "args": [
                                                                                 {
                                                                                   "k": "ident",
                                                                                   "name": "fd",
-                                                                                  "tok": 3074
+                                                                                  "tok": 3100
                                                                                 }
                                                                               ],
-                                                                              "tok": 3073
+                                                                              "tok": 3099
                                                                             }
                                                                           ],
-                                                                          "tok": 3070
+                                                                          "tok": 3096
                                                                         },
                                                                         {
                                                                           "k": "expr",
@@ -8930,7 +9020,7 @@
                                                                                 "callee": {
                                                                                   "k": "ident",
                                                                                   "name": "h",
-                                                                                  "tok": 3078
+                                                                                  "tok": 3104
                                                                                 },
                                                                                 "args": [
                                                                                   {
@@ -8942,7 +9032,7 @@
                                                                                         "value": {
                                                                                           "k": "ident",
                                                                                           "name": "fd",
-                                                                                          "tok": 3084
+                                                                                          "tok": 3110
                                                                                         }
                                                                                       },
                                                                                       {
@@ -8951,22 +9041,22 @@
                                                                                           "k": "composite",
                                                                                           "type_name": "netSeal",
                                                                                           "elems": [],
-                                                                                          "tok": 3088,
+                                                                                          "tok": 3114,
                                                                                           "type_args": []
                                                                                         }
                                                                                       }
                                                                                     ],
-                                                                                    "tok": 3080,
+                                                                                    "tok": 3106,
                                                                                     "type_args": []
                                                                                   }
                                                                                 ],
-                                                                                "tok": 3079
+                                                                                "tok": 3105
                                                                               },
                                                                               "rhs": {
                                                                                 "k": "nil",
-                                                                                "tok": 3094
+                                                                                "tok": 3120
                                                                               },
-                                                                              "tok": 3093
+                                                                              "tok": 3119
                                                                             },
                                                                             "then": {
                                                                               "stmts": [
@@ -8979,25 +9069,25 @@
                                                                                       "base": {
                                                                                         "k": "ident",
                                                                                         "name": "task",
-                                                                                        "tok": 3096
+                                                                                        "tok": 3122
                                                                                       },
                                                                                       "field": "MarkFailed",
-                                                                                      "tok": 3098
+                                                                                      "tok": 3124
                                                                                     },
                                                                                     "args": [
                                                                                       {
                                                                                         "k": "ident",
                                                                                         "name": "pool",
-                                                                                        "tok": 3100
+                                                                                        "tok": 3126
                                                                                       }
                                                                                     ],
-                                                                                    "tok": 3099
+                                                                                    "tok": 3125
                                                                                   }
                                                                                 }
                                                                               ]
                                                                             },
                                                                             "else": null,
-                                                                            "tok": 3077
+                                                                            "tok": 3103
                                                                           }
                                                                         },
                                                                         {
@@ -9005,12 +9095,12 @@
                                                                           "expr": {
                                                                             "k": "int",
                                                                             "value": 0,
-                                                                            "tok": 3105
+                                                                            "tok": 3131
                                                                           }
                                                                         }
                                                                       ]
                                                                     },
-                                                                    "tok": 3068
+                                                                    "tok": 3094
                                                                   },
                                                                   {
                                                                     "k": "named_arg",
@@ -9018,15 +9108,15 @@
                                                                     "value": {
                                                                       "k": "ident",
                                                                       "name": "b",
-                                                                      "tok": 3111
+                                                                      "tok": 3137
                                                                     },
-                                                                    "tok": 3109
+                                                                    "tok": 3135
                                                                   }
                                                                 ],
-                                                                "tok": 3061
+                                                                "tok": 3087
                                                               }
                                                             ],
-                                                            "tok": 3054
+                                                            "tok": 3080
                                                           },
                                                           {
                                                             "k": "assign",
@@ -9034,7 +9124,7 @@
                                                               {
                                                                 "k": "ident",
                                                                 "name": "shed",
-                                                                "tok": 3114
+                                                                "tok": 3140
                                                               }
                                                             ],
                                                             "op": "=",
@@ -9045,21 +9135,21 @@
                                                                 "lhs": {
                                                                   "k": "ident",
                                                                   "name": "e",
-                                                                  "tok": 3116
+                                                                  "tok": 3142
                                                                 },
                                                                 "rhs": {
                                                                   "k": "nil",
-                                                                  "tok": 3118
+                                                                  "tok": 3144
                                                                 },
-                                                                "tok": 3117
+                                                                "tok": 3143
                                                               }
                                                             ],
-                                                            "tok": 3114
+                                                            "tok": 3140
                                                           }
                                                         ]
                                                       },
                                                       "else": null,
-                                                      "tok": 3010
+                                                      "tok": 3023
                                                     }
                                                   },
                                                   {
@@ -9069,7 +9159,7 @@
                                                       "cond": {
                                                         "k": "ident",
                                                         "name": "shed",
-                                                        "tok": 3123
+                                                        "tok": 3149
                                                       },
                                                       "then": {
                                                         "stmts": [
@@ -9085,23 +9175,23 @@
                                                                   "callee": {
                                                                     "k": "ident",
                                                                     "name": "len",
-                                                                    "tok": 3126
+                                                                    "tok": 3152
                                                                   },
                                                                   "args": [
                                                                     {
                                                                       "k": "ident",
                                                                       "name": "rj",
-                                                                      "tok": 3128
+                                                                      "tok": 3154
                                                                     }
                                                                   ],
-                                                                  "tok": 3127
+                                                                  "tok": 3153
                                                                 },
                                                                 "rhs": {
                                                                   "k": "int",
                                                                   "value": 0,
-                                                                  "tok": 3131
+                                                                  "tok": 3157
                                                                 },
-                                                                "tok": 3130
+                                                                "tok": 3156
                                                               },
                                                               "then": {
                                                                 "stmts": [
@@ -9111,7 +9201,7 @@
                                                                       {
                                                                         "k": "ident",
                                                                         "name": "_",
-                                                                        "tok": 3133
+                                                                        "tok": 3159
                                                                       }
                                                                     ],
                                                                     "op": "=",
@@ -9121,76 +9211,76 @@
                                                                         "callee": {
                                                                           "k": "ident",
                                                                           "name": "sysCall",
-                                                                          "tok": 3135
+                                                                          "tok": 3161
                                                                         },
                                                                         "args": [
                                                                           {
                                                                             "k": "int",
                                                                             "value": 44,
-                                                                            "tok": 3137
+                                                                            "tok": 3163
                                                                           },
                                                                           {
                                                                             "k": "ident",
                                                                             "name": "fd",
-                                                                            "tok": 3139
+                                                                            "tok": 3165
                                                                           },
                                                                           {
                                                                             "k": "call",
                                                                             "callee": {
                                                                               "k": "ident",
                                                                               "name": "sysAddr",
-                                                                              "tok": 3141
+                                                                              "tok": 3167
                                                                             },
                                                                             "args": [
                                                                               {
                                                                                 "k": "ident",
                                                                                 "name": "rj",
-                                                                                "tok": 3143
+                                                                                "tok": 3169
                                                                               }
                                                                             ],
-                                                                            "tok": 3142
+                                                                            "tok": 3168
                                                                           },
                                                                           {
                                                                             "k": "call",
                                                                             "callee": {
                                                                               "k": "ident",
                                                                               "name": "len",
-                                                                              "tok": 3146
+                                                                              "tok": 3172
                                                                             },
                                                                             "args": [
                                                                               {
                                                                                 "k": "ident",
                                                                                 "name": "rj",
-                                                                                "tok": 3148
+                                                                                "tok": 3174
                                                                               }
                                                                             ],
-                                                                            "tok": 3147
+                                                                            "tok": 3173
                                                                           },
                                                                           {
                                                                             "k": "int",
                                                                             "value": 16448,
-                                                                            "tok": 3151
+                                                                            "tok": 3177
                                                                           },
                                                                           {
                                                                             "k": "int",
                                                                             "value": 0,
-                                                                            "tok": 3153
+                                                                            "tok": 3179
                                                                           },
                                                                           {
                                                                             "k": "int",
                                                                             "value": 0,
-                                                                            "tok": 3155
+                                                                            "tok": 3181
                                                                           }
                                                                         ],
-                                                                        "tok": 3136
+                                                                        "tok": 3162
                                                                       }
                                                                     ],
-                                                                    "tok": 3133
+                                                                    "tok": 3159
                                                                   }
                                                                 ]
                                                               },
                                                               "else": null,
-                                                              "tok": 3125
+                                                              "tok": 3151
                                                             }
                                                           },
                                                           {
@@ -9200,60 +9290,60 @@
                                                               "callee": {
                                                                 "k": "ident",
                                                                 "name": "closeFd",
-                                                                "tok": 3160
+                                                                "tok": 3186
                                                               },
                                                               "args": [
                                                                 {
                                                                   "k": "ident",
                                                                   "name": "fd",
-                                                                  "tok": 3162
+                                                                  "tok": 3188
                                                                 }
                                                               ],
-                                                              "tok": 3161
+                                                              "tok": 3187
                                                             }
                                                           }
                                                         ]
                                                       },
                                                       "else": null,
-                                                      "tok": 3122
+                                                      "tok": 3148
                                                     }
                                                   }
                                                 ]
                                               },
                                               "else": null,
-                                              "tok": 2998
+                                              "tok": 3011
                                             },
-                                            "tok": 2983
+                                            "tok": 2996
                                           },
-                                          "tok": 2972
+                                          "tok": 2985
                                         }
                                       }
                                     ]
                                   },
-                                  "tok": 2932
+                                  "tok": 2945
                                 }
                               }
                             ]
                           },
-                          "tok": 2927
+                          "tok": 2940
                         },
                         {
                           "k": "expr",
                           "expr": {
                             "k": "int",
                             "value": 0,
-                            "tok": 3173
+                            "tok": 3199
                           }
                         }
                       ]
                     },
-                    "tok": 2925
+                    "tok": 2938
                   }
                 ],
-                "tok": 2918
+                "tok": 2931
               }
             ],
-            "tok": 2911
+            "tok": 2924
           },
           {
             "k": "expr",
@@ -9265,7 +9355,7 @@
                 "lhs": {
                   "k": "ident",
                   "name": "code",
-                  "tok": 3179
+                  "tok": 3205
                 },
                 "rhs": {
                   "k": "binary",
@@ -9273,16 +9363,16 @@
                   "lhs": {
                     "k": "int",
                     "value": 0,
-                    "tok": 3181
+                    "tok": 3207
                   },
                   "rhs": {
                     "k": "int",
                     "value": 110,
-                    "tok": 3183
+                    "tok": 3209
                   },
-                  "tok": 3182
+                  "tok": 3208
                 },
-                "tok": 3180
+                "tok": 3206
               },
               "then": {
                 "stmts": [
@@ -9298,10 +9388,10 @@
                           "src": {
                             "k": "ident",
                             "name": "all",
-                            "tok": 3188
+                            "tok": 3214
                           },
                           "guards": [],
-                          "tok": 3186
+                          "tok": 3212
                         }
                       ],
                       "body": {
@@ -9313,7 +9403,7 @@
                               {
                                 "k": "ident",
                                 "name": "_",
-                                "tok": 3190
+                                "tok": 3216
                               }
                             ],
                             "op": "=",
@@ -9323,59 +9413,59 @@
                                 "callee": {
                                   "k": "ident",
                                   "name": "sysCall",
-                                  "tok": 3192
+                                  "tok": 3218
                                 },
                                 "args": [
                                   {
                                     "k": "int",
                                     "value": 48,
-                                    "tok": 3194
+                                    "tok": 3220
                                   },
                                   {
                                     "k": "ident",
                                     "name": "f",
-                                    "tok": 3196
+                                    "tok": 3222
                                   },
                                   {
                                     "k": "int",
                                     "value": 0,
-                                    "tok": 3198
+                                    "tok": 3224
                                   },
                                   {
                                     "k": "int",
                                     "value": 0,
-                                    "tok": 3200
+                                    "tok": 3226
                                   },
                                   {
                                     "k": "int",
                                     "value": 0,
-                                    "tok": 3202
+                                    "tok": 3228
                                   },
                                   {
                                     "k": "int",
                                     "value": 0,
-                                    "tok": 3204
+                                    "tok": 3230
                                   },
                                   {
                                     "k": "int",
                                     "value": 0,
-                                    "tok": 3206
+                                    "tok": 3232
                                   }
                                 ],
-                                "tok": 3193
+                                "tok": 3219
                               }
                             ],
-                            "tok": 3190
+                            "tok": 3216
                           }
                         ]
                       },
-                      "tok": 3185
+                      "tok": 3211
                     }
                   }
                 ]
               },
               "else": null,
-              "tok": 3178
+              "tok": 3204
             }
           },
           {
@@ -9385,7 +9475,7 @@
               "cond": {
                 "k": "ident",
                 "name": "own",
-                "tok": 3214
+                "tok": 3240
               },
               "then": {
                 "stmts": [
@@ -9396,22 +9486,22 @@
                       "callee": {
                         "k": "ident",
                         "name": "closeFd",
-                        "tok": 3216
+                        "tok": 3242
                       },
                       "args": [
                         {
                           "k": "ident",
                           "name": "lfd",
-                          "tok": 3218
+                          "tok": 3244
                         }
                       ],
-                      "tok": 3217
+                      "tok": 3243
                     }
                   }
                 ]
               },
               "else": null,
-              "tok": 3213
+              "tok": 3239
             }
           },
           {
@@ -9420,20 +9510,20 @@
               {
                 "k": "ident",
                 "name": "code",
-                "tok": 3224
+                "tok": 3250
               }
             ],
-            "tok": 3223
+            "tok": 3249
           }
         ]
       },
-      "tok": 2864,
+      "tok": 2877,
       "bodiless": false,
       "span": {
-        "start": 2863,
-        "end": 3228
+        "start": 2876,
+        "end": 3254
       },
-      "sig_end": 2905
+      "sig_end": 2918
     },
     {
       "name": "slotBytes",
@@ -9468,13 +9558,13 @@
                 "base": {
                   "k": "ident",
                   "name": "task",
-                  "tok": 3239
+                  "tok": 3265
                 },
                 "field": "MB",
-                "tok": 3241
+                "tok": 3267
               }
             ],
-            "tok": 3236
+            "tok": 3262
           },
           {
             "k": "while",
@@ -9487,14 +9577,14 @@
                 "lhs": {
                   "k": "ident",
                   "name": "p",
-                  "tok": 3244
+                  "tok": 3270
                 },
                 "rhs": {
                   "k": "ident",
                   "name": "r",
-                  "tok": 3246
+                  "tok": 3272
                 },
-                "tok": 3245
+                "tok": 3271
               },
               "rhs": {
                 "k": "binary",
@@ -9502,7 +9592,7 @@
                 "lhs": {
                   "k": "ident",
                   "name": "p",
-                  "tok": 3248
+                  "tok": 3274
                 },
                 "rhs": {
                   "k": "binary",
@@ -9510,18 +9600,18 @@
                   "lhs": {
                     "k": "int",
                     "value": 1,
-                    "tok": 3250
+                    "tok": 3276
                   },
                   "rhs": {
                     "k": "int",
                     "value": 40,
-                    "tok": 3252
+                    "tok": 3278
                   },
-                  "tok": 3251
+                  "tok": 3277
                 },
-                "tok": 3249
+                "tok": 3275
               },
-              "tok": 3247
+              "tok": 3273
             },
             "body": {
               "stmts": [
@@ -9531,7 +9621,7 @@
                     {
                       "k": "ident",
                       "name": "p",
-                      "tok": 3254
+                      "tok": 3280
                     }
                   ],
                   "op": "=",
@@ -9542,21 +9632,21 @@
                       "lhs": {
                         "k": "ident",
                         "name": "p",
-                        "tok": 3256
+                        "tok": 3282
                       },
                       "rhs": {
                         "k": "int",
                         "value": 2,
-                        "tok": 3258
+                        "tok": 3284
                       },
-                      "tok": 3257
+                      "tok": 3283
                     }
                   ],
-                  "tok": 3254
+                  "tok": 3280
                 }
               ]
             },
-            "tok": 3243
+            "tok": 3269
           },
           {
             "k": "ret",
@@ -9564,20 +9654,20 @@
               {
                 "k": "ident",
                 "name": "p",
-                "tok": 3263
+                "tok": 3289
               }
             ],
-            "tok": 3262
+            "tok": 3288
           }
         ]
       },
-      "tok": 3229,
+      "tok": 3255,
       "bodiless": false,
       "span": {
-        "start": 3228,
-        "end": 3267
+        "start": 3254,
+        "end": 3293
       },
-      "sig_end": 3235
+      "sig_end": 3261
     }
   ],
   "consts": [

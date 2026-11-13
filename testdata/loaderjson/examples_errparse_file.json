@@ -633,7 +633,28 @@
           "mut_def": false,
           "has_try": false,
           "callees": [
+            "asciiPrefix",
+            "indexInvalidFrom",
             "indexInvalidPar",
+            "len",
+            "strings.IndexInvalid"
+          ]
+        },
+        {
+          "name": "asciiPrefix",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "len"
+          ]
+        },
+        {
+          "name": "indexInvalidFrom",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
             "len",
             "strings.IndexInvalid"
           ]
@@ -692,6 +713,11 @@
         }
       ],
       "consts": [
+        {
+          "name": "ASCII_FAST_MAX",
+          "value": 256,
+          "dict": false
+        },
         {
           "name": "CHECK_GRAIN",
           "value": 1048576,

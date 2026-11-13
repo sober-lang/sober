@@ -2091,21 +2091,15 @@ b0:
 
 func @testdata/alias/wrap.Mean(%0 ptr, %1 i64, %2 i64) {
   slot s0 [2]
-  slot s1 [2]
 b0:
   %3 = slotaddr s0
   store %3[0], %1
   store %3[1], %2
   %4 = region.depth
   region.enter
-  %5 = slotaddr s1
-  %6 = load.i64 %3[0]
-  %7 = load.i64 %3[1]
-  call @testdata/alias/lib.Mean(%5, %6, %7)
-  %8 = load.i64 %5[0]
-  store %0[0], %8
-  %9 = load.i64 %5[1]
-  store %0[1], %9
+  %5 = load.i64 %3[0]
+  %6 = load.i64 %3[1]
+  call @testdata/alias/lib.Mean(%0, %5, %6)
   region.setdepth %4
   ret
 }

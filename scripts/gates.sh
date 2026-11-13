@@ -135,6 +135,7 @@ declare -A GTAG=(
     [schedfuzz]="lower backend"
     [parbudget]="lower backend"
     [cutstat]="lower backend"
+    [vecchk]="lower backend"
     [mapfuse]="lower"
     [partinl]="lower"
     [docsync]="docs"
@@ -148,6 +149,8 @@ declare -A GTAG=(
     [strix]="lower"
     [ubfstat]="lower"
     [framestat]="lower"
+    [reqinst]="lower backend"
+    [ringinst]="lower backend"
     [sortcheck]="lower backend"
     [matchlencheck]="lower backend"
     [jcleancheck]="lower backend"
@@ -156,6 +159,7 @@ declare -A GTAG=(
     [cryptocheck]="lower backend"
     [tlsfsm]="lean lower backend"
     [iterregion]="lower backend"
+    [rflowmeter]="lower backend"
     [llcheck]="lower backend"
     [fitcheck]="lower backend"
     [numpert]="all"
@@ -187,6 +191,7 @@ declare -A GTAG=(
     [fusecheck]="lower backend"
     [wincheck]="lower backend"
     [stackcheck]="lower backend"
+    [areacheck]="lower backend"
     [pincheck]="lower backend"
     [selfpar]="check desugar load"
     [gatememo]="all"
@@ -203,7 +208,7 @@ declare -A GTAG=(
 # 長いものから（並列の詰め順 — 2026-10-27 に R1 の実測の札で並べ直した: selfpar の並列化〔R0〕で最長の札が incrbuild / leanbatch / hermetic の群に移った）。段 3 のキャッシュの網 4 本（incrmut / incrbuild / incrrace / cacheaudit — 3〜4 分ずつ）は stages の直後に置く —
 # 後ろに置くと最後に長い札が重なって --full の wall が伸びる（R3 の 766 s — report-1204 3 節）
 # incrmut は単独で最長の札（冷の --full で 900 s 級）— 13 番目に置くと開始が 5 分近く遅れて臨界路になるので先頭に置く
-ORDER=(incrmut zigtest incrbuild leanbatch hermetic implicitfreeze cachesplit selfhost_check stages nextgen elfeq incrrace iouring selfpar incrcheck_self incrcheck_ex watchcheck testreplay quickfuzz cover mutate guidetest fnpkg modcheck a1oracle memcheck errtrace typerdiff efftrace cachekey streq strix fitcheck numpert sobi obs cacheaudit tyorder selfhost_ll selfhost_e2e selfhost_lower selfhost_fmt selfhost_load toolcheck pkgcheck selfhost_parse io_args passes regionbound checkverdict checksplit checkpos panicmsg optdiff corejson irtext lltext llcheck astjson loaderjson selfhost_lex pool_oracle analyzer_neg secretdump effectsdump fixcheck uniqfreeze sobertest doubles jsonsuite unittest x86enc trapprobe seqpar lparcfg schedvec schedfuzz parbudget cutstat mapfuse partinl docsync clidoc outline doclead benchsync confsync maprepr ubfstat framestat sortcheck matchlencheck jcleancheck flatecheck ctcheck cryptocheck tlsfsm iterregion fnhash tyhash gatememo httpcheck starve fusecheck wincheck stackcheck pincheck pid1stop mdwecheck vaslot refs stdref rootsync tzsync datadce corevec extract axes obs_zig hermetic_zig ir_roundtrip)
+ORDER=(incrmut zigtest incrbuild leanbatch hermetic implicitfreeze cachesplit selfhost_check stages nextgen elfeq incrrace iouring selfpar incrcheck_self incrcheck_ex watchcheck testreplay quickfuzz cover mutate guidetest fnpkg modcheck a1oracle memcheck errtrace typerdiff efftrace cachekey streq strix fitcheck numpert sobi obs cacheaudit tyorder selfhost_ll selfhost_e2e selfhost_lower selfhost_fmt selfhost_load toolcheck pkgcheck selfhost_parse io_args passes regionbound checkverdict checksplit checkpos panicmsg optdiff corejson irtext lltext llcheck astjson loaderjson selfhost_lex pool_oracle analyzer_neg secretdump effectsdump fixcheck uniqfreeze sobertest doubles jsonsuite unittest x86enc trapprobe seqpar lparcfg schedvec schedfuzz parbudget cutstat vecchk mapfuse partinl docsync clidoc outline doclead benchsync confsync maprepr ubfstat framestat reqinst ringinst sortcheck matchlencheck jcleancheck flatecheck ctcheck cryptocheck tlsfsm iterregion rflowmeter fnhash tyhash gatememo httpcheck starve fusecheck wincheck stackcheck areacheck pincheck pid1stop mdwecheck vaslot refs stdref rootsync tzsync datadce corevec extract axes obs_zig hermetic_zig ir_roundtrip)
 
 auto_tags() { # 変更ファイル → タグ（推定できない変更は all）
     local f
@@ -242,7 +247,7 @@ auto_tags() { # 変更ファイル → タグ（推定できない変更は all�
             scripts/selfhost_desugar.sh|scripts/corejson.sh) echo desugar ;;
             scripts/selfhost_check.sh|scripts/selfhost_e2e.sh|scripts/checkmut.ts|scripts/corevec.sh) echo check ;;
             scripts/obs.sh|scripts/hermetic.sh|scripts/pkgcheck.sh|scripts/io_args.sh|scripts/x86enc.sh|scripts/elfeq.sh|scripts/elfeq.list) echo backend ;;
-            scripts/selfhost_lower.sh|scripts/lparcfg.sh|scripts/lparcfg.ts|scripts/trapprobe.sh|testdata/trapprobe/*|scripts/seqpar.sh|scripts/seqpar.list|scripts/schedvec.sh|scripts/schedvec.ts|scripts/schedvec.list|scripts/schedfuzz.sh|scripts/schedfuzz.list|testdata/readyspill/*|scripts/parbudget.sh|testdata/parbudget/*|scripts/cutstat.sh|scripts/mapfuse.sh|scripts/partinl.sh|scripts/maprepr.sh|scripts/streq.sh|scripts/strix.sh|scripts/sortcheck.sh|scripts/matchlencheck.sh|testdata/matchlen/*|scripts/jcleancheck.sh|testdata/jclean/*|scripts/iterregion.sh|testdata/sortcheck/*|scripts/flatecheck.sh|testdata/flatecheck/*|scripts/ctcheck.sh|testdata/ctcheck/*|scripts/cryptocheck.sh|scripts/ubfstat.sh|scripts/ubfstat.list|scripts/framestat.sh|scripts/framestat.list|scripts/fitcheck.sh|scripts/numpert.sh|scripts/tyorder.sh|scripts/cacheaudit.sh|scripts/incrbuild.sh|scripts/incrmut.sh|scripts/incrrace.sh|scripts/iouring.sh|scripts/httpcheck.sh|testdata/httpcheck/*|scripts/pid1stop.*|testdata/pid1stop/*|scripts/mdwecheck.sh|testdata/mdwe/*|scripts/vaslot.sh|testdata/vaslot/*|scripts/starve.sh|testdata/starve/*|scripts/fusecheck.sh|scripts/wincheck.sh|scripts/stackcheck.*|scripts/pincheck.sh|testdata/pin/*|testdata/wincheck/*|testdata/cutstat/*|scripts/optdiff.sh|scripts/typerdiff.sh|scripts/irtext.sh|scripts/lltext.sh|scripts/llcheck.sh|scripts/selfhost_ll.sh|scripts/stages.sh|scripts/selfhost_cli.sh|scripts/passes.sh|scripts/regionbound.sh|scripts/memcheck.sh|testdata/memcheck/*) echo lower ;;
+            scripts/selfhost_lower.sh|scripts/lparcfg.sh|scripts/lparcfg.ts|scripts/trapprobe.sh|testdata/trapprobe/*|scripts/seqpar.sh|scripts/seqpar.list|scripts/schedvec.sh|scripts/schedvec.ts|scripts/schedvec.list|scripts/schedfuzz.sh|scripts/schedfuzz.list|testdata/readyspill/*|scripts/parbudget.sh|testdata/parbudget/*|scripts/cutstat.sh|scripts/vecchk.sh|scripts/mapfuse.sh|scripts/partinl.sh|scripts/maprepr.sh|scripts/streq.sh|scripts/strix.sh|scripts/sortcheck.sh|scripts/matchlencheck.sh|testdata/matchlen/*|scripts/jcleancheck.sh|testdata/jclean/*|scripts/iterregion.sh|scripts/rflowmeter.sh|testdata/sortcheck/*|scripts/flatecheck.sh|testdata/flatecheck/*|scripts/ctcheck.sh|testdata/ctcheck/*|scripts/cryptocheck.sh|scripts/ubfstat.sh|scripts/ubfstat.list|scripts/framestat.sh|scripts/framestat.list|scripts/reqinst.sh|scripts/reqinst.ts|scripts/ringinst.sh|scripts/fitcheck.sh|scripts/numpert.sh|scripts/tyorder.sh|scripts/cacheaudit.sh|scripts/incrbuild.sh|scripts/incrmut.sh|scripts/incrrace.sh|scripts/iouring.sh|scripts/httpcheck.sh|testdata/httpcheck/*|scripts/pid1stop.*|testdata/pid1stop/*|scripts/mdwecheck.sh|testdata/mdwe/*|scripts/vaslot.sh|testdata/vaslot/*|scripts/starve.sh|testdata/starve/*|scripts/fusecheck.sh|scripts/wincheck.sh|scripts/stackcheck.*|scripts/areacheck.*|testdata/areacheck/*|scripts/pincheck.sh|testdata/pin/*|testdata/wincheck/*|testdata/cutstat/*|scripts/optdiff.sh|scripts/typerdiff.sh|scripts/irtext.sh|scripts/lltext.sh|scripts/llcheck.sh|scripts/selfhost_ll.sh|scripts/stages.sh|scripts/selfhost_cli.sh|scripts/passes.sh|scripts/regionbound.sh|scripts/memcheck.sh|testdata/memcheck/*) echo lower ;;
             scripts/checkverdict.sh|testdata/checkverdict/*) echo check; echo docs ;;
             scripts/checkpos.sh|scripts/checkpos.ts|scripts/incrcheck.sh|scripts/watchcheck.sh|testdata/watchcheck/*) echo check ;;
             scripts/refs.sh|scripts/alphacheck.sh|scripts/alphamap.ts|src/compiler/tools/refs/*|testdata/refs/*) echo load ;;
@@ -270,18 +275,23 @@ auto_tags() { # 変更ファイル → タグ（推定できない変更は all�
 if [ "$mode" = auto ]; then
     mapfile -t tags < <(auto_tags)
     if [ "${#tags[@]}" = 0 ]; then echo "gates: --auto: no gate-relevant change"; exit 0; fi
-    if printf '%s\n' "${tags[@]}" | grep -qx zig; then withzig=1; fi
-    if printf '%s\n' "${tags[@]}" | grep -qx all; then mode=full; fi
+    for t in "${tags[@]}"; do
+        [ "$t" = zig ] && withzig=1
+        [ "$t" = all ] && mode=full
+    done
     echo "gates: --auto → ${mode/auto/fast} ${tags[*]}"
     [ "$mode" = auto ] && mode=fast
 fi
-[ "$mode" = fast ] && printf '%s\n' "${tags[@]}" | grep -qx all && mode=full
+# 在籍の判定は連想配列で（pipefail の下の `printf | grep -q` は grep が先に抜けると printf が SIGPIPE で落ち、名指しのゲートを黙って選ばない）
+declare -A TAG=()
+for t in "${tags[@]}"; do TAG[$t]=1; done
+[ "$mode" = fast ] && [ -n "${TAG[all]:-}" ] && mode=full
 
 sel=()
 for g in "${ORDER[@]}"; do
     # --gate NAME…（名指し — gatemut.sh / gateaudit.sh の口）
     if [ "$mode" = list ]; then
-        printf '%s\n' "${tags[@]}" | grep -qx "$g" && sel+=("$g")
+        [ -n "${TAG[$g]:-}" ] && sel+=("$g")
         continue
     fi
     if [ "$mode" = full ]; then
@@ -462,8 +472,10 @@ if [ "$memo" = 1 ]; then
             spot=$(NODE_NO_WARNINGS=1 node --experimental-strip-types scripts/gatememo.ts pick 60 "${hits[@]}")
             [ -n "$spot" ] && checkhit=("$spot")
         fi
+        declare -A CHK=()
+        for g in "${checkhit[@]}"; do CHK[$g]=1; done
         for g in "${hits[@]}"; do
-            if printf '%s\n' "${checkhit[@]}" | grep -qx "$g"; then
+            if [ -n "${CHK[$g]:-}" ]; then
                 run+=("$g")
             else
                 cp "$LOGS/$g.hit" "$LOGS/$g.log"; echo "hit 0" > "$W/res/$g"

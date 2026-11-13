@@ -48,10 +48,10 @@ const AR_SLOT = 65536
 // 開いた fd の鎖の次の語（task.sober の TC_FDS の次 — 記録の先頭の頁）
 const TC_CHS = TC_WORDS + 1
 
-// rt の io の関数の記録（Chunks の 5 本 + net の 2 本 — 使わない欄は 0〔chF は -1 で返す〕。St の欄は rtCh 1 つ）
+// rt の io の関数の記録（Chunks の 5 本 + net の 3 本 — 使わない欄は 0〔chF は -1 で返す〕。St の欄は rtCh 1 つ）
 func ioRec(st mut St) int {
     if st.rtCh == -1 {
-        st.rtCh = listN(mut st, NETF_RECV + 1)
+        st.rtCh = listN(mut st, NETF_NWAIT + 1)
     }
     return st.rtCh
 }

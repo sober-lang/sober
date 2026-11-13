@@ -2431,7 +2431,6 @@ b14:
 
 func @std/hash.Sha256(%0 ptr, %1 i64, %2 i64, %3 i64) {
   slot s0 [3]
-  slot s1 [3]
 b0:
   %4 = slotaddr s0
   store %4[0], %1
@@ -2450,19 +2449,12 @@ b0:
   %14 = mul %12, %13
   %15 = add %5, %14
   region.enter
-  %16 = slotaddr s1
-  %17 = load.i64 %4[0]
-  %18 = load.i64 %4[1]
-  %19 = load.i64 %4[2]
-  %20 = globaladdr @rt.meta
-  store %20[2571], %15
-  call @std/crypto/sha256.Sum256(%16, %17, %18, %19)
-  %21 = load.i64 %16[0]
-  store %0[0], %21
-  %22 = load.i64 %16[1]
-  store %0[1], %22
-  %23 = load.i64 %16[2]
-  store %0[2], %23
+  %16 = load.i64 %4[0]
+  %17 = load.i64 %4[1]
+  %18 = load.i64 %4[2]
+  %19 = globaladdr @rt.meta
+  store %19[2571], %15
+  call @std/crypto/sha256.Sum256(%0, %16, %17, %18)
   call @rt.region_relocate8(%0, %5)
   region.setdepth %5
   ret
@@ -4196,7 +4188,6 @@ func @std/crypto/sha256.Sum256(%0 ptr, %1 i64, %2 i64, %3 i64) {
   slot s0 [3]
   slot s1 [7]
   slot s2 [7]
-  slot s3 [3]
 b0:
   %4 = slotaddr s0
   store %4[0], %1
@@ -4242,23 +4233,16 @@ b0:
   %31 = globaladdr @rt.meta
   store %31[2572], %27
   call @std/crypto/sha256.Write(%18, %28, %29, %30)
-  %32 = slotaddr s3
-  %33 = load.i64 %18[0]
-  %34 = load.i64 %18[1]
-  %35 = load.i64 %18[2]
-  %36 = load.i64 %18[3]
-  %37 = load.i64 %18[4]
-  %38 = load.i64 %18[5]
-  %39 = load.i64 %18[6]
-  %40 = globaladdr @rt.meta
-  store %40[2571], %15
-  call @std/crypto/sha256.Sum(%32, %33, %34, %35, %36, %37, %38, %39)
-  %41 = load.i64 %32[0]
-  store %0[0], %41
-  %42 = load.i64 %32[1]
-  store %0[1], %42
-  %43 = load.i64 %32[2]
-  store %0[2], %43
+  %32 = load.i64 %18[0]
+  %33 = load.i64 %18[1]
+  %34 = load.i64 %18[2]
+  %35 = load.i64 %18[3]
+  %36 = load.i64 %18[4]
+  %37 = load.i64 %18[5]
+  %38 = load.i64 %18[6]
+  %39 = globaladdr @rt.meta
+  store %39[2571], %15
+  call @std/crypto/sha256.Sum(%0, %32, %33, %34, %35, %36, %37, %38)
   call @rt.region_relocate8(%0, %5)
   region.setdepth %5
   ret

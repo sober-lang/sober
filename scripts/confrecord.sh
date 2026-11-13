@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 name=$1
 src=$2
-dirty=$(git --no-optional-locks status --porcelain --untracked-files=no | grep -q . && echo " (dirty)" || true)
+dirty=$([ -n "$(git --no-optional-locks status --porcelain --untracked-files=no)" ] && echo " (dirty)" || true)
 {
     echo "# scripts/${name}interop.sh の記録（scripts/confrecord.sh が書く — 手で直さない）"
     echo "commit $(git rev-parse --short=12 HEAD)${dirty}"

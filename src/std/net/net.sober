@@ -391,8 +391,9 @@ func Send(c Conn, b []byte) error? {
 // region = 接続の task の region 1 つの上限（既定 128 * task.MB・2 の冪に切り上げ・1 MiB 未満は 1 MiB・子の task の既定〔512 MiB〕より大きくはならない）: 超えると
 // その接続の task の死（RegionExceeded{cause: slot_capacity} — Serve が吸収し Ledger の died が数える）。小さいスロットは既定のスロットを割って深度ごとに 1 本
 // （接続数 × 深度ぶんの VA を減らす — language.md 11 節「接続の task の小さいスロット」）。
-// maxWait = 飽和下の待ちの上限 D（ns・既定 100 * task.MS・1 ms 未満は 1 ms）: 接続の task とその子は、走れるようになってから D 以内に走る（同じワーカーに違う D の
-// task が混ざると上限は混ざった中の最大）。飽和しない負荷では効かない。観測は task.Ledger() の maxWait / aged（language.md 28 節 ring の道「飽和下の待ちの上限」）。
+// maxWait = 飽和下の待ちの上限 D（ns・既定 100 * task.MS・1 ms 未満は 1 ms）: accept の輪・接続の task とその子が継ぐ。走れるようになってから D を過ぎた task は、
+// 期限の順に、まだ期限の来ていない task より先に走る（同じワーカーに違う D の task が混ざると順は積んだ順）。飽和しない負荷では効かない。D を越えて走った数と越えた量は
+// task.Ledger() の late / maxLate で読める（language.md 28 節 ring の道「飽和下の待ちの上限」）。
 // backlog = 接続の task とその子が列に積んでおける未着手の子の本数（1〜255・既定 255 — task.Run の backlog: と同じ。観測は task.Ledger() の backlog / backlogYield）
 @errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
 @effects(block, io, panic, nondet)
@@ -430,6 +431,8 @@ func Serve(l Listener, h func(Conn) error?, budget int?, conns int?, reject stri
             own := i > 0
             // 置き場の印（net_op 5 — 次の spawn 1 回）: 輪 0（l）は今のワーカー・輪 i は自分を除いた i − 1 番目のワーカー
             _ = sysNetOp(5, i - 1, 0, 0)
+            // 待ちの上限の印（net_op 7 — 次の spawn 1 回）: 輪も接続と同じ D（同じワーカーの積みに D の違う task を混ぜない）
+            _ = sysNetOp(7, mw, 0, 0)
             hs = append(hs, task.Spawn(s, () => serveOn(fd, own, all, h, pool, b, rj, rg, mw)))
             i += 1
         }
@@ -480,6 +483,8 @@ func serveOn(lfd int, own bool, all []int, h func(Conn) error?, pool task.Pool, 
                         _ = sysNetOp(6, rg, 0, 0)
                         // 待ちの上限の印（net_op 7 — 次の spawn 1 回）: 接続の task の D
                         _ = sysNetOp(7, mw, 0, 0)
+                        // 区画の印（net_op 10 — 次の spawn 1 回）: 接続の task の本体より下の積みをワーカーの区画で走らせる
+                        _ = sysNetOp(10, 0, 0, 0)
                         _, e := task.SpawnIn(s, pool, () => {
                             _ = sysFdOwn(fd)
                             if h(Conn{fd: fd, seal: netSeal{}}) != nil {

@@ -18,6 +18,7 @@ const PS_TCBMAP = 2   // 新しく mmap した task の塊の数（入力に比�
 const PS_WINREL = 3   // rt.win_park が窓の頁を返した回数（塊ごとに高々 1 回 — ≤ PS_TCBMAP の網）
 const PS_STACKHW = 4  // task の積みの最深（TCB からの B — 終わりの時点で塊の積みを走査した最大・使い回しの塊は前の task の最深を保つ）
 const PS_STACK_SCAN = 65536 // その走査の範囲（TCB の下 64 KiB — 越える積みは 64 KiB と読む）
+const PS_AFAR = 5     // 印つき（接続）の task のうち本体の枠が頁 0 の余白に入らず区画の形になれなかった数（x86.sober xAreaProlog — area.sober）
 const PS_ENDED = 8    // 終わった task の数
 const PS_MAXB = 9     // task の使用量（終わりの時点の自前のスロットの使った量の和）の最大
 const PS_SUMB = 10    // その和
@@ -192,6 +193,7 @@ func buildPstatDump(st mut St) {
     pfield(mut st, "tcb_mmaps", load(mut st, ps, PS_TCBMAP))
     pfield(mut st, "win_rel", load(mut st, ps, PS_WINREL))
     pfield(mut st, "stack_hw", load(mut st, ps, PS_STACKHW))
+    pfield(mut st, "area_far", load(mut st, ps, PS_AFAR))
     call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\n')))
     // 入場の台帳: 入場・縮退・超過の数・計上の高水位・task の数の天井・終わりの計上（全部返れば 0）
     printLit(mut st, "#par admit")

@@ -4,6 +4,7 @@ package lower
 // ①純粋な命令（const・算術・比較・gep・ptoi / itop・slotaddr・globaladdr・funcaddr）は支配木の上で値番号を引き、支配する同じ式があれば付け替えて消す
 //   （辺の順のスコープつきの表 — 支配木を前順で辿り、ブロックを出るときに足した項を戻す）。可換な演算（add / mul / and / or / xor・eq / ne）は被演算子を番号順に並べる。
 //   div / rem も対象（支配する同じ式が先に評価されている — そこで落ちなければここでも落ちない）
+//   添字が定数 0 の gep は基の番地へ付け替えて消す（mem2reg の後に定数へ畳まれた添字 — opt.sober の P2 は mem2reg の前で見えない）
 // ②load はブロックの中だけで同じ番地・同じオフセット・同じ型の先の load / store の値に付け替える（store の値の転送）。メモリを書きうる命令
 //   （store・store8・call・call.indirect・syscall・region の op）で表を空にする（store は同じ番地の別の語の項だけを残して自分の値を入れる — 語のずれが違えば重ならない）
 // region.depth / region.bump は対象外（深度と先端は region の op で変わる）。付け替えた命令は消し（OpDead — opt.sober の aliasTo）、
@@ -348,12 +349,18 @@ func gvnBlock(st mut St, t mut GvnT, blk BlkRef, vt int, lt mut []int, ln0 int) 
                 b = resolve(mut st, b)
                 irSetInsA(mut st, ins, a)
                 irSetInsB(mut st, ins, b)
+            } else if op == OpConst {
+                owSet(mut st, r, OW_K, 1)
+                owSet(mut st, r, OW_C, a)
             } else if op == OpPtoi || op == OpItop {
                 a = resolve(mut st, a)
                 irSetInsA(mut st, ins, a)
             }
             v := gvnFind(mut t, op, a, b, c)
-            if v >= 0 {
+            if (op == OpGepW || op == OpGepB) && isConst(mut st, b) && constOf(mut st, b) == 0 {
+                // 添字 0 の gep は基の番地そのもの（残すと即値 0 のレジスタと lea が残る）
+                aliasTo(mut st, ins, r, a)
+            } else if v >= 0 {
                 aliasTo(mut st, ins, r, v)
             } else {
                 gvnAdd(mut t, op, a, b, c, r)

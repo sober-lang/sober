@@ -142,7 +142,7 @@ func hdrClean(st mut St, f FnRef, p int, def mut []int) bool {
                 if g != st.rtPanic && g != st.rtPanicMem {
                     return false
                 }
-            } else if op == OpCallI || op == OpSyscall || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone || op == OpUnwind {
+            } else if op == OpCallI || op == OpSyscall || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone || op == OpUnwind || op == OpArea {
                 return false
             }
             i = irInsNext(mut st, i)

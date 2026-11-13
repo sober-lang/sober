@@ -40,6 +40,14 @@ func TestImm() {
     assert(hex(mut c) == "4805001000004883ec084981fb7fffffff49bffeffffffffffffff")
 }
 
+func TestMovImm32() {
+    mut c := table.Table[byte]{}
+    MovRegImm32(mut c, Rdi, 4198400)    // mov rdi, 0x401000 = 48 c7 c7 00 10 40 00（符号拡張）
+    MovReg32Imm32(mut c, Rdi, 4198400)  // mov edi, 0x401000 = bf 00 10 40 00（ゼロ拡張）
+    MovReg32Imm32(mut c, R9, 4096)      // mov r9d, 4096 = 41 b9 00 10 00 00
+    assert(hex(mut c) == "48c7c700104000bf0010400041b900100000")
+}
+
 func TestImulImm() {
     mut c := table.Table[byte]{}
     ImulRegRegImm(mut c, Rax, Rcx, 8)            // imul rax, rcx, 8 = 48 6b c1 08（imm8）

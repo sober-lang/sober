@@ -184,6 +184,11 @@ Sober の唯一の中間表現。`sober build` は AST → IR → 正規バッ�
   rt.jclean(p, n) は p[0:n] の中で最初に JSON のエスケープが要るバイト（`"`・`\`・0x20 未満）の位置か n — 区間の外を読まない（n ≥ 16 は 16 バイトずつ +
   終わりに揃えた重ねた読み・8〜15 は始めと終わりの 8 バイト〔movq × 2〕・4〜7 は始めと終わりの 4 バイト〔movd × 2〕・3 以下は 1 バイトずつ）。--rt-mutant=25 / 26 / 27
   （`\` の判定の省略・端数の重ねた読みの省略・8〜15 の後ろの語の位置の誤り）— testdata/jclean（scripts/jcleancheck.sh）が鳴ることの確認用
+- 手書きの SIMD の塊（scanb・UTF-8 の検査器・数え上げ・crcfold — x86.sober の xScanB / xUtf8Pre / xCountB / xCrcFold）の窓の検査（2026-11-12）: 開発用
+  `sober build --vec-check`（= --rt-mutant=56）は塊の 16 バイトの読みのたびに、窓が列の内側（[p + 0, p + 上限) か crcfold の [p, p + 残り)）にあることを確かめ、
+  外なら exit 103 で止まる（既定の build には何も足さない）。57 / 58 = 検査 + scanb / UTF-8 の検査器の端数の窓を 1 後ろ・59 = 検査 + scanb の入口の符号の検査を外す —
+  scripts/vecchk.sh が網の例をこの形で走らせる。列の直後 1 バイトの範囲外読みは出力を変えないことがあり、頁の端に列を置く口も無い（アリーナの深度のスロットは
+  隣のスロットに接する・std に mmap が無い・valgrind はアリーナの中を丸ごと読める領域と見る）ので、範囲は塊の側で確かめる
 - ランタイムは Zig 版と Sober 版（src/compiler/lower/rt.sober — ir_rt / ir_rt_io の写し。同じ命令列を同じ順で組む）の二重化。IR テキスト / .ll 黄金とのバイト一致が見張る（selfhost_lower / selfhost_ll）
 - 棄てた案: .ll の手書きプレリュード（LLVM 専用になる）、Zig 製オブジェクトのリンク（実装言語が増える）
 

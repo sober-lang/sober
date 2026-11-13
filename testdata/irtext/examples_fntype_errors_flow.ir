@@ -2137,7 +2137,6 @@ b9:
 }
 
 func @lambda#1(%0 ptr, %1 i64) {
-  slot s0 [5]
 b0:
   %2 = region.depth
   %3 = globaladdr @rt.meta
@@ -2152,26 +2151,15 @@ b0:
   %11 = mul %9, %10
   %12 = add %2, %11
   region.enter
-  %13 = slotaddr s0
-  call @main.send(%13, %1)
-  %14 = load.i64 %13[0]
-  store %0[0], %14
-  %15 = load.i64 %13[1]
-  store %0[1], %15
-  %16 = load.i64 %13[2]
-  store %0[2], %16
-  %17 = load.i64 %13[3]
-  store %0[3], %17
-  %18 = load.i64 %13[4]
-  store %0[4], %18
-  %19 = load.i64 %0[0]
-  %20 = const 0
-  %21 = ne %19, %20
-  condbr %21, b1, b2
+  call @main.send(%0, %1)
+  %13 = load.i64 %0[0]
+  %14 = const 0
+  %15 = ne %13, %14
+  condbr %15, b1, b2
 b1:
-  %22 = const 1
-  %23 = gep.word %0, %22
-  call @rt.err_relocate(%23, %2)
+  %16 = const 1
+  %17 = gep.word %0, %16
+  call @rt.err_relocate(%17, %2)
   br b2
 b2:
   region.setdepth %2

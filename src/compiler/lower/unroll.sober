@@ -645,7 +645,7 @@ func urLongest(st mut St, f FnRef) int {
             while i != -1 {
                 cn += 1
                 iop := irInsOp(mut st, i)
-                if iop == OpTSwitch || (iop == OpCall && (irInsFn(mut st, i) == st.rtTaskWait || irInsFn(mut st, i) == st.rtCancel)) {
+                if iop == OpTSwitch || (iop == OpCall && (irInsFn(mut st, i) == st.rtTaskWait || irInsFn(mut st, i) == st.rtTaskWaitK || irInsFn(mut st, i) == st.rtCancel)) {
                     if cn > best {
                         best = cn
                     }

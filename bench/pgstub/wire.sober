@@ -1,0 +1,488 @@
+package main
+
+// PostgreSQL の wire protocol 3.0 のサーバ側（平文・trust）: 枠の切り出し・メッセージの符号化・接続の状態。
+// 応答の中身は知らない — 文面ごとの形と行は表の側（shapeOf / answerOf）に聞く。SQL は解釈しない（文面は Parse で受けて文の名前と対にするだけ）。
+// 受けた列は Sync / Flush / Terminate で終わる束ごとに処理し、束への応答は 1 回の Send で丸ごと送る
+// （客の recv の切れ目を代役の都合で揺らさない — 客の命令の数えを決定的に保つ）
+
+import "std/convert"
+import "std/iter"
+import "std/net"
+import "std/time"
+
+// プロトコルの版 3.0 / SSLRequest / GSSENCRequest / CancelRequest の要求の番号
+const protoV30 = 196608
+const sslCode = 80877103
+const gssCode = 80877104
+const cancelCode = 80877102
+
+// 1 メッセージの長さの上限（越えたら接続を閉じる）
+const maxMsg = 1048576
+
+// RowDescription の 1 列（table / attr = 元の表の OID と列番号・size = 型の大きさ〔可変長は -1〕）
+type Col struct {
+    name string
+    table int
+    attr int
+    oid int
+    size int
+}
+
+// 準備済みの文の形（ok = 表にある文面・ParameterDescription の oid の並びと RowDescription の列 — 行を返さない文は cols が空）
+type Shape struct {
+    ok bool
+    params []int
+    cols []Col
+}
+
+// Bind の引数 1 つ（null = SQL の NULL・bin = binary の書式・b = 値のバイト列）
+type Arg struct {
+    null bool
+    bin bool
+    b []byte
+}
+
+// Execute の答え: ok = 引数を受けた・rows = DataRow のメッセージを並べたもの（putDataRow で組む）・n = 行の数
+type Answer struct {
+    ok bool
+    rows []byte
+    n int
+}
+
+// 応答の中身の口は表の側（items.sober）の 2 つの関数: shapeOf(t, sql) = 文面の形（知らない文面は ok = false）・
+// answerOf(t, sql, args, fmts) = Bind の引数と結果の書式（列ごと — fmtOf）から行（引数を受けなければ ok = false）。t（Table）の中身は見ない
+
+// ---- 符号化
+
+func put32(b mut []byte, v int) {
+    b = append(b, byte((v >> 24) & 255))
+    b = append(b, byte((v >> 16) & 255))
+    b = append(b, byte((v >> 8) & 255))
+    b = append(b, byte(v & 255))
+}
+
+func put16(b mut []byte, v int) {
+    b = append(b, byte((v >> 8) & 255))
+    b = append(b, byte(v & 255))
+}
+
+func putAll(b mut []byte, s []byte) {
+    for x <- s {
+        b = append(b, x)
+    }
+}
+
+func putCstr(b mut []byte, s string) {
+    putAll(mut b, bytes(s))
+    b = append(b, 0)
+}
+
+// 型の印と長さの欄を付けて body を b に足す
+func putMsg(b mut []byte, tag byte, body []byte) {
+    b = append(b, tag)
+    put32(mut b, len(body) + 4)
+    putAll(mut b, body)
+}
+
+// 本体の無いメッセージ（ParseComplete '1'・BindComplete '2'・CloseComplete '3'・NoData 'n'）
+func putEmpty(b mut []byte, tag byte) {
+    b = append(b, tag)
+    put32(mut b, 4)
+}
+
+func putReady(b mut []byte) {
+    b = append(b, 'Z')
+    put32(mut b, 5)
+    b = append(b, 'I')
+}
+
+func putParam(b mut []byte, name string, value string) {
+    mut body := mut []byte{}
+    putCstr(mut body, name)
+    putCstr(mut body, value)
+    putMsg(mut b, 'S', body)
+}
+
+// ErrorResponse（重大度 ERROR・SQLSTATE code・本文 m）
+func putError(b mut []byte, code string, m string) {
+    mut body := mut []byte{}
+    body = append(body, 'S')
+    putCstr(mut body, "ERROR")
+    body = append(body, 'V')
+    putCstr(mut body, "ERROR")
+    body = append(body, 'C')
+    putCstr(mut body, code)
+    body = append(body, 'M')
+    putCstr(mut body, m)
+    body = append(body, 0)
+    putMsg(mut b, 'E', body)
+}
+
+func putParamDesc(b mut []byte, oids []int) {
+    mut body := mut []byte{}
+    put16(mut body, len(oids))
+    for o <- oids {
+        put32(mut body, o)
+    }
+    putMsg(mut b, 't', body)
+}
+
+// RowDescription（列の書式は fmts — Describe('S') は全部 0）・列が無ければ NoData
+func putRowDesc(b mut []byte, cols []Col, fmts []int) {
+    if len(cols) == 0 {
+        putEmpty(mut b, 'n')
+        return
+    }
+    mut body := mut []byte{}
+    put16(mut body, len(cols))
+    mut i := 0
+    for c <- cols {
+        putCstr(mut body, c.name)
+        put32(mut body, c.table)
+        put16(mut body, c.attr)
+        put32(mut body, c.oid)
+        put16(mut body, c.size)
+        put32(mut body, 0 - 1)
+        put16(mut body, fmtOf(fmts, i))
+        i += 1
+    }
+    putMsg(mut b, 'T', body)
+}
+
+// 列 i の結果の書式（Bind の結果の書式の並び: 空 = 全部 text・1 つ = 全列に・それ以外は列ごと）
+func fmtOf(fmts []int, i int) int {
+    return if len(fmts) == 0 { 0 } else if len(fmts) == 1 { fmts[0] } else if i < len(fmts) { fmts[i] } else { 0 }
+}
+
+// DataRow を b に足す（cs = 列ごとの値の符号化済みのバイト列）
+func putDataRow(b mut []byte, cs [][]byte) {
+    mut n := 6
+    for c <- cs {
+        n += 4 + len(c)
+    }
+    b = append(b, 'D')
+    put32(mut b, n)
+    put16(mut b, len(cs))
+    for c <- cs {
+        put32(mut b, len(c))
+        putAll(mut b, c)
+    }
+}
+
+// ---- 読み
+
+// body を前から読む位置（bad = 読みが body の外へ出た）
+type rd struct {
+    at int
+    bad bool
+}
+
+func r32(b []byte, r mut rd) int {
+    if len(b) - r.at < 4 {
+        r.bad = true
+        return 0
+    }
+    i := r.at
+    u := int(b[i]) << 24 | int(b[i + 1]) << 16 | int(b[i + 2]) << 8 | int(b[i + 3])
+    r.at = i + 4
+    return if u >= 2147483648 { u - 4294967296 } else { u }
+}
+
+func r16(b []byte, r mut rd) int {
+    if len(b) - r.at < 2 {
+        r.bad = true
+        return 0
+    }
+    u := int(b[r.at]) << 8 | int(b[r.at + 1])
+    r.at += 2
+    return if u >= 32768 { u - 65536 } else { u }
+}
+
+func r8(b []byte, r mut rd) byte {
+    if len(b) - r.at < 1 {
+        r.bad = true
+        return 0
+    }
+    x := b[r.at]
+    r.at += 1
+    return x
+}
+
+func rcstr(b []byte, r mut rd) string {
+    mut e := r.at
+    while e < len(b) && b[e] != 0 {
+        e += 1
+    }
+    if e >= len(b) {
+        r.bad = true
+        return ""
+    }
+    s := string(b[r.at:e]) catch ""
+    r.at = e + 1
+    return s
+}
+
+func rbytes(b []byte, r mut rd, n int) []byte {
+    if n < 0 || len(b) - r.at < n {
+        r.bad = true
+        return []byte{}
+    }
+    x := b[r.at:r.at + n]
+    r.at += n
+    return x
+}
+
+func be32(b []byte, at int) int {
+    return int(b[at]) << 24 | int(b[at + 1]) << 16 | int(b[at + 2]) << 8 | int(b[at + 3])
+}
+
+// ---- 接続
+
+// 1 接続を終わりまで話す（相手が閉じるか Terminate で nil・形の崩れた列は閉じる）。delay = 起動の後の束への応答を送る前に回して待つ ns
+// （0 = 待たない。本物の PG と同じく、客が応答を読みに来た時点ではまだ届いていない形に揃える — 客の待ちの回数を決定的にする）
+func serveConn(c net.Conn, tb Table, delay int) error? {
+    mut pend := []byte{}
+    mut started := false
+    mut closing := false
+    mut stmts := mut map[string]string{}
+    for chunk <- net.Recv(c)? {
+        buf := if len(pend) == 0 { chunk } else { join(pend, chunk) }
+        mut at := 0
+        mut out := mut []byte{}
+        while !started && !closing && len(buf) - at >= 8 && len(buf) - at >= be32(buf, at) {
+            n := be32(buf, at)
+            code := be32(buf, at + 4)
+            if n < 8 || n > maxMsg {
+                closing = true
+            } else if code == sslCode || code == gssCode {
+                out = append(out, 'N')
+            } else if code == protoV30 {
+                startup(mut out, buf[at + 8:at + n])
+                started = true
+            } else {
+                closing = true
+            }
+            at += if closing { 0 } else { n }
+        }
+        if started && !closing {
+            end := batchEnd(buf, at)
+            if end < 0 {
+                closing = true
+            } else if end > at {
+                closing = batch(mut out, mut stmts, tb, buf[at:end])
+                at = end
+                spin(delay)
+            }
+        }
+        if len(out) > 0 {
+            net.Send(c, freeze(out))?
+        }
+        if closing {
+            return nil
+        }
+        pend = if at == len(buf) { []byte{} } else { buf[at:len(buf)] }
+    }
+    return nil
+}
+
+func spin(ns int) {
+    if ns <= 0 {
+        return
+    }
+    t := time.Mono()
+    while time.Since(t) < ns {
+    }
+}
+
+func join(a []byte, b []byte) []byte {
+    mut o := mut []byte{}
+    putAll(mut o, a)
+    putAll(mut o, b)
+    return freeze(o)
+}
+
+// buf[at:] の完全なメッセージのうち、最後の Sync / Flush / Terminate の終わり（無ければ at・長さの欄が壊れていれば -1）
+func batchEnd(buf []byte, at int) int {
+    mut p := at
+    mut end := at
+    mut ok := true
+    while ok && len(buf) - p >= 5 {
+        n := be32(buf, p + 1)
+        if n < 4 || n > maxMsg {
+            return 0 - 1
+        }
+        if len(buf) - p < 1 + n {
+            ok = false
+        } else {
+            t := buf[p]
+            p += 1 + n
+            if t == 'S' || t == 'H' || t == 'X' {
+                end = p
+            }
+        }
+    }
+    return end
+}
+
+// StartupMessage の本体（版の後ろ — 名前と値の NUL 終端の対の列）への応答: AuthenticationOk・ParameterStatus・BackendKeyData・ReadyForQuery
+func startup(out mut []byte, body []byte) {
+    mut r := rd{at: 0, bad: false}
+    mut user := ""
+    mut app := ""
+    mut more := true
+    while more {
+        k := rcstr(body, mut r)
+        if r.bad || k == "" {
+            more = false
+        } else {
+            v := rcstr(body, mut r)
+            if k == "user" {
+                user = v
+            } else if k == "application_name" {
+                app = v
+            }
+        }
+    }
+    out = append(out, 'R')
+    put32(mut out, 8)
+    put32(mut out, 0)
+    putParam(mut out, "in_hot_standby", "off")
+    putParam(mut out, "integer_datetimes", "on")
+    putParam(mut out, "TimeZone", "UTC")
+    putParam(mut out, "IntervalStyle", "postgres")
+    putParam(mut out, "is_superuser", "off")
+    putParam(mut out, "application_name", app)
+    putParam(mut out, "default_transaction_read_only", "off")
+    putParam(mut out, "scram_iterations", "4096")
+    putParam(mut out, "DateStyle", "ISO, MDY")
+    putParam(mut out, "standard_conforming_strings", "on")
+    putParam(mut out, "session_authorization", user)
+    putParam(mut out, "client_encoding", "UTF8")
+    putParam(mut out, "server_version", "18.3")
+    putParam(mut out, "server_encoding", "UTF8")
+    out = append(out, 'K')
+    put32(mut out, 12)
+    put32(mut out, 1)
+    put32(mut out, 0)
+    putReady(mut out)
+}
+
+// Sync で終わる束 1 つ（または Flush / Terminate まで）を処理して応答を out に足す。Terminate か形の崩れで true（閉じる）。
+// 誤りの後は Sync まで読み捨てる。無名のポータルは束の中だけで生きる（客は Bind と Execute を同じ束で送る）
+func batch(out mut []byte, stmts mut map[string]string, tb Table, b []byte) bool {
+    mut p := 0
+    mut failed := false
+    mut psql := ""
+    mut pargs := []Arg{}
+    mut pfmts := []int{}
+    mut bound := false
+    while p < len(b) {
+        t := b[p]
+        n := be32(b, p + 1)
+        body := b[p + 5:p + 1 + n]
+        p += 1 + n
+        mut rr := rd{at: 0, bad: false}
+        if t == 'X' {
+            return true
+        } else if t == 'S' {
+            failed = false
+            bound = false
+            putReady(mut out)
+        } else if t == 'H' {
+        } else if failed {
+        } else if t == 'P' {
+            name := rcstr(body, mut rr)
+            sql := rcstr(body, mut rr)
+            if rr.bad {
+                return true
+            }
+            known := shapeOf(tb, sql)
+            if !known.ok {
+                putError(mut out, "0A000", "pgstub: statement not in the table")
+                failed = true
+            } else {
+                stmts[name] = sql
+                putEmpty(mut out, '1')
+            }
+        } else if t == 'B' {
+            _ = rcstr(body, mut rr)
+            name := rcstr(body, mut rr)
+            nf := r16(body, mut rr)
+            mut afmts := mut []int{}
+            for i <- iter.Range(0, nf) {
+                afmts = append(afmts, r16(body, mut rr))
+            }
+            na := r16(body, mut rr)
+            mut args := mut []Arg{}
+            for i <- iter.Range(0, na) {
+                ln := r32(body, mut rr)
+                bin := fmtOf(freeze(afmts), i) == 1
+                args = append(args, if ln < 0 { Arg{null: true, bin: bin, b: []byte{}} } else { Arg{null: false, bin: bin, b: rbytes(body, mut rr, ln)} })
+            }
+            nr := r16(body, mut rr)
+            mut rf := mut []int{}
+            for i <- iter.Range(0, nr) {
+                rf = append(rf, r16(body, mut rr))
+            }
+            if rr.bad {
+                return true
+            }
+            sql := stmts[name]
+            if sql == nil {
+                putError(mut out, "26000", "pgstub: unknown prepared statement")
+                failed = true
+            } else {
+                psql = sql
+                pargs = freeze(args)
+                pfmts = freeze(rf)
+                bound = true
+                putEmpty(mut out, '2')
+            }
+        } else if t == 'D' {
+            kind := r8(body, mut rr)
+            name := rcstr(body, mut rr)
+            if rr.bad {
+                return true
+            }
+            sql := if kind == 'S' { stmts[name] } else if bound { psql } else { nil }
+            sh := if sql == nil { Shape{ok: false, params: []int{}, cols: []Col{}} } else { shapeOf(tb, sql) }
+            if !sh.ok {
+                putError(mut out, "26000", "pgstub: unknown statement or portal")
+                failed = true
+            } else {
+                if kind == 'S' {
+                    putParamDesc(mut out, sh.params)
+                }
+                putRowDesc(mut out, sh.cols, if kind == 'S' { []int{} } else { pfmts })
+            }
+        } else if t == 'E' {
+            a := if bound { answerOf(tb, psql, pargs, pfmts) } else { Answer{ok: false, rows: []byte{}, n: 0} }
+            if !a.ok {
+                putError(mut out, "22023", "pgstub: arguments not answered by the table")
+                failed = true
+            } else {
+                putAll(mut out, a.rows)
+                mut tag := mut []byte{}
+                putCstr(mut tag, "SELECT ${convert.FormatInt(a.n)}")
+                putMsg(mut out, 'C', freeze(tag))
+            }
+        } else if t == 'C' {
+            kind := r8(body, mut rr)
+            name := rcstr(body, mut rr)
+            if rr.bad {
+                return true
+            }
+            if kind == 'S' {
+                delete(stmts, name)
+            }
+            putEmpty(mut out, '3')
+        } else if t == 'Q' {
+            putError(mut out, "0A000", "pgstub: simple query is not served")
+            putReady(mut out)
+        } else {
+            putError(mut out, "08P01", "pgstub: message not served")
+            failed = true
+        }
+    }
+    return false
+}

@@ -11,8 +11,6 @@ package time
 //     …
 //     took := time.Since(start)                // ns
 
-import "std/iter"
-
 // 長さ（ns の int — 経過・期限の値）
 const Nanosecond = 1
 const Microsecond = 1000
@@ -35,43 +33,20 @@ type Instant struct {
 // RFC 3339 / HTTP の日付が読めない
 type Bad error
 
-@intrinsic("syscall")
-func sysCall(nr int, a int, b int, c int, d int, e int, f int) int
+@intrinsic("clock")
+func rtClock(clk int) int
 
-@intrinsic("addr")
-func sysAddr(b []byte) int
-
-// clock_gettime(2) の clk の (秒, ns)
-func clock(clk int) (int, int) {
-    mut tb := mut []byte{}
-    for i <- iter.Range(0, 16) {
-        tb = append(tb, byte(0))
-    }
-    b := freeze(tb)
-    _ = sysCall(228, clk, sysAddr(b), 0, 0, 0, 0)
-    return word(b, 0), word(b, 8)
-}
-
-func word(b []byte, at int) int {
-    mut v := 0
-    for i <- iter.Range(0, 8) {
-        v = v | (int(b[at + i]) << (8 * i))
-    }
-    return v
-}
-
-// 今の壁時計（CLOCK_REALTIME — 調整で戻ることがある。経過を測るのは Mono）
+// 今の壁時計（CLOCK_REALTIME — 調整で戻ることがある。経過を測るのは Mono。読み方は Mono と同じ vDSO）
 @effects(io)
 func Now() Time {
-    s, ns := clock(0)
-    return Time{sec: s, nsec: ns}
+    ns := rtClock(0)
+    return Time{sec: ns / Second, nsec: ns % Second}
 }
 
-// 今の単調時計（CLOCK_MONOTONIC）
+// 今の単調時計（CLOCK_MONOTONIC — vDSO の __vdso_clock_gettime で読み、カーネルへの syscall を伴わない。vDSO の無い環境では clock_gettime(2)）
 @effects(io)
 func Mono() Instant {
-    s, ns := clock(1)
-    return Instant{ns: s * Second + ns}
+    return Instant{ns: rtClock(1)}
 }
 
 // start からの経過（ns）

@@ -69,7 +69,7 @@ func xIsEntry(st mut St, f FnRef) bool {
 // 表との一致は lower の単体テスト（kinds_test.sober — 全 op × 全終端）が見る
 func xNOps(st mut St, i InsRef) int {
     op := xiOp(mut st, i)
-    return if op == OpScanB { xLen(mut st, xiA(mut st, i)) } else if op == OpBin || op == OpCmp || op == OpStore || op == OpStore8 || op == OpGepW || op == OpGepB || op == OpStore16 || op == OpStore32 { 2 } else if op == OpLoad || op == OpLoad8 || op == OpLoad16 || op == OpLoad32 || op == OpPtoi || op == OpItop || op == OpRSetDepth || op == OpRBump { 1 } else if op == OpRAlloc || op == OpRReloc { 2 } else if op == OpCall { xLen(mut st, xiB(mut st, i)) } else if op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone { 1 + xLen(mut st, xiB(mut st, i)) } else if op == OpSyscall || op == OpCrcFold { xLen(mut st, xiA(mut st, i)) } else if op == OpPArith || op == OpPMem { 2 } else { 0 }
+    return if op == OpScanB { xLen(mut st, xiA(mut st, i)) } else if op == OpBin || op == OpCmp || op == OpStore || op == OpStore8 || op == OpGepW || op == OpGepB || op == OpStore16 || op == OpStore32 { 2 } else if op == OpLoad || op == OpLoad8 || op == OpLoad16 || op == OpLoad32 || op == OpPtoi || op == OpItop || op == OpRSetDepth || op == OpRBump || op == OpArea { 1 } else if op == OpRAlloc || op == OpRReloc { 2 } else if op == OpCall { xLen(mut st, xiB(mut st, i)) } else if op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone { 1 + xLen(mut st, xiB(mut st, i)) } else if op == OpSyscall || op == OpCrcFold { xLen(mut st, xiA(mut st, i)) } else if op == OpPArith || op == OpPMem { 2 } else { 0 }
 }
 
 func xOpnd(st mut St, i InsRef, k int) int {
@@ -481,6 +481,17 @@ func xModuleFrozen(st mut St, syms bool, entryRec int, names [][]byte, ckt CkTab
             }
             out = append(out, '\n')
         }
+        // SOBER_SYMS_MN=1: 末尾に rt.mn の番地の 1 行（`<番地> =rt.mn` — 外から全ワーカーの記録〔MN_WK〕を読む網 scripts/areacheck.ts の口）
+        if lsEnvInt("SOBER_SYMS_MN") == 1 {
+            for i <- iter.Range(0, ng) {
+                if gr0[i] == st.mnG {
+                    xHex(mut out, (if gro[i] == 1 { lay.Rodata } else { lay.Bss }) + goff[i])
+                    for b <- bytes(" =rt.mn\n") {
+                        out = append(out, b)
+                    }
+                }
+            }
+        }
         return freeze(out)
     }
     // 網 numpert の口（SOBER_NUMNOPATCH=1）: 番号の後埋め（種類 3〜5）を書かない — 欄は 0 のまま。下駄（SOBER_NUMOFF）を変えても ELF が
@@ -583,7 +594,7 @@ type XGroup struct {
 func xParCfg(st mut St) []int {
     // 末尾の語 = SOBER_XDBG の値の長さ。値のバイト列はその後ろへ（xdbgCfg — 鍵にも入るので値を変えればキャッシュに当たらない）
     return xdbgCfg([]int{int(st.rtCopy), int(st.rtCopy8), int(st.rtGrow), int(st.rtGrow8), int(st.rtGrowTry), int(st.rtMapGrow), int(st.rtReloc), int(st.rtReloc8),
-        st.trapG, if st.trapUse { 1 } else { 0 }, if st.taskUse { 1 } else { 0 }, if st.xcopy { 1 } else { 0 }, st.xLay, int(st.rtPanic), int(st.rtPanicMem), if st.slotPoison { 1 } else { 0 }, if st.frStat { 1 } else { 0 }, int(st.rtMatchLen), st.rtMut, int(st.rtJClean), int(st.rtErrReloc), if st.memRep { 1 } else { 0 }, int(st.rtWinRalloc), len(st.xdbgPat)}, st.xdbgPat)
+        st.trapG, if st.trapUse { 1 } else { 0 }, if st.taskUse { 1 } else { 0 }, if st.xcopy { 1 } else { 0 }, st.xLay, int(st.rtPanic), int(st.rtPanicMem), if st.slotPoison { 1 } else { 0 }, if st.frStat { 1 } else { 0 }, int(st.rtMatchLen), st.rtMut, int(st.rtJClean), int(st.rtErrReloc), if st.memRep { 1 } else { 0 }, int(st.rtWinRalloc), st.taskG, st.wkG, st.pstatG, int(st.xNWait), len(st.xdbgPat)}, st.xdbgPat)
 }
 
 // 整列（配置の土台）: 関数の先頭とループの頭を XA_* バイトの境界へ nop で詰める（最適化のバックエンドだけ — 写しのバックエンドは
@@ -763,7 +774,13 @@ func xParGroup(g XGroup, hf table.Frozen[int], cfg []int, addr []int, fr []int, 
     st.memFr = table.Table[int]{}
     // 窓の溢れ（xColdCall・xSlowRt — 写した rt.region_alloc の冷たい道）
     st.rtWinRalloc = FnRef(cfg[22])
-    st.xdbgPat = xdbgPatOf(cfg, cfg[23])
+    // task の本体の prologue（xAreaProlog — 今の task とワーカーの記録の fs の表）
+    st.taskG = cfg[23]
+    st.wkG = cfg[24]
+    st.pstatG = cfg[25]
+    // 浅い待ちの点（xShallowFn / xShCall — rt.netwait）
+    st.xNWait = FnRef(cfg[26])
+    st.xdbgPat = xdbgPatOf(cfg, cfg[27])
     // 段 3 の例外の印（xRegCc）
     st.xAddr = addr
     st.xXmm = 0
@@ -1018,6 +1035,8 @@ type xF struct {
     csd mut []int
     // 段 2（葉のフレームの省略 — opt）: スロット・spill・退避・呼び出しの無い関数は rbp を立てない（xNoFrame）。引数は [rsp + 8 + 8k]・出口は ret だけ
     nofr bool
+    // 接続の task の本体で浅い待ち（rt.netwait の呼び出し）を持つ: 跨いで生きる callee-saved を置く枠の語の始まり（rbp からの変位 — 0 = 持たない）
+    shAt int
     // 入口の零初期化の区間（zeroinit.sober）: 位置 zTop（rbp - 8 × zTop）から上へ zCnt 語。0 語なら零初期化を出さない
     zTop int
     zCnt int
@@ -1047,6 +1066,10 @@ type xF struct {
 // 関数 f のフレームの内訳を 1 行で stdout へ（開発の口 --frame-stat — F-1 段 0）:
 // `frame <関数> <フレーム B> <スロット B> <入口の零初期化 B> <退避 B> <spill ほか B> <spill した部分区間の数>`（フレームの無い関数は印字しない）
 func xFrameStat(st mut St, f FnRef, xs []int) {
+    xStatLine(mut st, "frame", f, xs)
+}
+
+func xStatLine(st mut St, tag string, f FnRef, xs []int) {
     s := xfName(mut st, f)
     mut out := mut []byte{}
     // 名前はヒープの文字列なら凍結した表（xg）から読む。木の文字列（desugar.LBASE 以上 — 凍結の後は読まない約束・lparcfg）は '#' + 関数の番号
@@ -1062,7 +1085,7 @@ func xFrameStat(st mut St, f FnRef, xs []int) {
         out = append(out, ' ')
         xPutDec(mut out, xs[k])
     }
-    println("frame", string(freeze(out)) catch "?")
+    println(tag, string(freeze(out)) catch "?")
 }
 
 // 非負の n の 10 進を out へ
@@ -1421,7 +1444,7 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
     mut e := xF{f: f, nv: xfNVal(mut st, f), np: xFnNParam(mut st, f), nb: xfNBlk(mut st, f), blk: mut []int{}, order: mut []int{}, norder: 0, bpos: mut []int{},
         ivS: mut []int{}, ivE: mut []int{}, loc: mut []int{}, pnx: mut []int{}, pv: mut []int{}, npc: 0, spd: mut []int{}, lpR: mut []int{}, cuts: mut []int{}, sv: mut []int{}, pwt: mut []int{}, ldep: mut []int{}, pfix: mut []int{}, aL: mut []int{}, aB: mut []int{}, aC: mut []int{}, aN: mut []int{}, ev: mut []int{}, slotDisp: mut []int{}, isConst: mut []int{}, constV: mut []int{}, tg: mut []int{}, saveReg: mut []int{}, saveDisp: mut []int{},
         nsave: 0, blockAt: mut []int{}, jAt: mut []int{}, jTo: mut []int{}, nj: 0, eoA: mut []int{}, eoP: mut []int{}, eoT: mut []int{}, eoX: mut []int{}, bdep: mut []int{}, hvV: mut []int{}, hvB: mut []int{}, hdB: mut []int{}, div0: mut []int{}, nd: 0, pos: 0, mvD: mut []int{}, mvS: mut []int{}, mvLive: mut []int{},
-        opt: !st.xcopy, fuse: mut []int{}, flg: mut []int{}, fcc: 0, next: -1, fell: false, hP: mut []int{}, hA1: mut []int{}, hA2: mut []int{}, hOp: mut []int{}, wt: mut []int{}, wc: mut []int{}, hu: mut []int{}, cold: mut []int{}, c0: 9223372036854775807, tS: mut []int{}, tE: mut []int{}, npc0: 0, porig: mut []int{}, remat: mut []int{}, fold: mut []int{}, fA: mut []int{}, fB: mut []int{}, fS: mut []int{}, fcls: mut []int{}, nx: xNXmm, ng: xNAlloc, svOk: mut []int{}, cp: mut []int{}, cpc: mut []int{}, cpm: mut []int{}, csd: mut []int{}, nofr: false, zTop: 0, zCnt: 0, rc: false, nreg: 0, hR: mut []int{}, putV: -1, putR: -1, putAt: -1, zAt: mut []int{}, mA: -1, mC: -1, mD: -1, memOn: false, u8x: -1}
+        opt: !st.xcopy, fuse: mut []int{}, flg: mut []int{}, fcc: 0, next: -1, fell: false, hP: mut []int{}, hA1: mut []int{}, hA2: mut []int{}, hOp: mut []int{}, wt: mut []int{}, wc: mut []int{}, hu: mut []int{}, cold: mut []int{}, c0: 9223372036854775807, tS: mut []int{}, tE: mut []int{}, npc0: 0, porig: mut []int{}, remat: mut []int{}, fold: mut []int{}, fA: mut []int{}, fB: mut []int{}, fS: mut []int{}, fcls: mut []int{}, nx: xNXmm, ng: xNAlloc, svOk: mut []int{}, cp: mut []int{}, cpc: mut []int{}, cpm: mut []int{}, csd: mut []int{}, nofr: false, shAt: 0, zTop: 0, zCnt: 0, rc: false, nreg: 0, hR: mut []int{}, putV: -1, putR: -1, putAt: -1, zAt: mut []int{}, mA: -1, mC: -1, mD: -1, memOn: false, u8x: -1}
     xFill(mut e.blk, e.nb, -1)
     e.rc = xRegCc(mut st, f, frecs)
     e.nreg = if !e.rc { 0 } else if e.np < xNArgReg { e.np } else { xNArgReg }
@@ -1471,6 +1494,18 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
                 r := xiRes(mut st, i)
                 e.constV[r] = xiA(mut st, i)
                 e.remat[r] = 2
+            } else if e.opt && xiOp(mut st, i) == OpGlobal && xiRes(mut st, i) >= 0 {
+                // 大域の番地も使う点で即値として作り直す（札つきの即値 — 後埋めの種類 2。区間に乗せると長く生きて枠へ積まれる）
+                r := xiRes(mut st, i)
+                e.constV[r] = xIndex(grecs, xiA(mut st, i))
+                e.tg[r] = 2
+                e.remat[r] = 1
+            } else if e.opt && (xiOp(mut st, i) == OpPtoi || xiOp(mut st, i) == OpItop) && xiRes(mut st, i) >= 0 && e.tg[xiA(mut st, i)] == 2 && e.remat[xiA(mut st, i)] == 1 {
+                // 大域の番地の ptoi / itop は同じビット列（定義が使う点より前に来ない順なら作り直さないだけ — 正しさは変わらない）
+                r := xiRes(mut st, i)
+                e.constV[r] = e.constV[xiA(mut st, i)]
+                e.tg[r] = 2
+                e.remat[r] = 1
             }
             i = xiNext(mut st, i)
         }
@@ -1530,6 +1565,9 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
         xFoldScan(mut st, mut e)
     }
     xOrder(mut st, mut e)
+    if e.opt {
+        xGlobLoop(mut st, mut e)
+    }
     if e.opt && e.zCnt > 0 && e.zCnt <= XZ_T {
         xZeroSink(mut st, mut e, freeze(sws))
     }
@@ -1590,7 +1628,11 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
     if e.opt && len(e.sv) > 0 {
         xSlotValid(mut st, mut e)
     }
-    frame := (0 - bottom + 15) / 16 * 16
+    areaIn := xAreaEntry(mut st, f)
+    // 浅い待ちの点を持つ本体は、跨いで生きる callee-saved を置く語を枠の底に足す（opt は callee-saved 5 本・写しのバックエンドは 10 本ぜんぶ）
+    e.shAt = if areaIn && xShallowFn(mut st, f) { bottom - 8 * (if e.opt { 5 } else { 10 }) } else { 0 }
+    // 変異 60 は全関数の枠を 512 B 太らせる（意味は変えない — framestat の @room の網の自己検査）
+    frame := (0 - (if e.shAt != 0 { e.shAt } else { bottom }) + 15) / 16 * 16 + if st.rtMut == 60 { 512 } else { 0 }
     if st.memRep {
         table.Push(mut st.memFr, int(f))
         table.Push(mut st.memFr, frame)
@@ -1598,7 +1640,7 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
     if st.frStat && frame > 0 {
         xFrameStat(mut st, f, []int{frame, 8 * slotWords, 8 * e.zCnt, 8 * e.nsave, 0 - bottom - 8 * slotWords - 8 * e.nsave, nsp})
     }
-    e.nofr = e.opt && slotWords == 0 && e.nsave == 0 && nsp == 0 && xNoCall(mut st, mut e)
+    e.nofr = e.opt && slotWords == 0 && e.nsave == 0 && nsp == 0 && xNoCall(mut st, mut e) && !areaIn
     xFill(mut e.blockAt, e.nb, 0)
     xFill(mut e.jAt, 4 * e.nb, 0)
     xFill(mut e.jTo, 4 * e.nb, 0)
@@ -1694,7 +1736,10 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
                 entry = x86.Here(mut c)
             }
             if kb == 0 {
-                xProlog(mut st, mut e, mut c, frame, slotWords)
+                if areaIn {
+                    xAreaProlog(mut st, mut c, mut fx, grecs, frame, e.np)
+                }
+                xProlog(mut st, mut e, mut c, frame, slotWords, areaIn)
             }
             if win {
                 hiMax = xFitHiMax(mut e, kb, candF, preF)
@@ -1924,7 +1969,192 @@ func xZeroPlan(ztop int, cnt int) []int {
     return freeze(pl)
 }
 
-func xProlog(st mut St, e mut xF, c mut table.Table[byte], frame int, slotWords int) {
+// 関数 f が task の本体の入口の印（OpArea AREA_ENTRY — 先頭のブロックの中）を持つか
+func xAreaEntry(st mut St, f FnRef) bool {
+    b := xfBHead(mut st, f)
+    if b == -1 {
+        return false
+    }
+    mut i := xbIHead(mut st, b)
+    while i != -1 {
+        if xiOp(mut st, i) == OpArea && xiC(mut st, i) == AREA_ENTRY {
+            return true
+        }
+        i = xiNext(mut st, i)
+    }
+    return false
+}
+
+// 関数 f が rt.netwait を呼ぶか（接続の task の本体の受けの浅い待ち — lowering が read_fd の前に置く）
+func xShallowFn(st mut St, f FnRef) bool {
+    nw := st.xNWait
+    if nw == -1 {
+        return false
+    }
+    mut b := xfBHead(mut st, f)
+    while b != -1 {
+        mut i := xbIHead(mut st, b)
+        while i != -1 {
+            if xiOp(mut st, i) == OpCall && FnRef(xiA(mut st, i)) == nw {
+                return true
+            }
+            i = xiNext(mut st, i)
+        }
+        b = xbNext(mut st, b)
+    }
+    return false
+}
+
+// 位置 p の rt.netwait の呼び出しを浅い待ちにするか: 本体（枠に置き場がある）で、跨いで生きる xmm が無い（xmm は置き場を持たない — 深い待ちのまま）
+func xShCall(st mut St, e mut xF, fnr FnRef, p int) bool {
+    // 変異 67 = 記しを付けない（受けも深い待ち — areacheck の浅く寝る塊が 0）
+    if e.shAt == 0 || fnr != st.xNWait || st.rtMut == 67 {
+        return false
+    }
+    for v <- iter.Range(0, e.nv) {
+        mut k := v
+        while k >= 0 {
+            if e.ivS[k] >= 0 && e.ivS[k] < p && e.ivE[k] > p && xIsXmm(e.loc[k]) {
+                return false
+            }
+            k = e.pnx[k]
+        }
+    }
+    return true
+}
+
+// 浅い待ちの記し（rt.netwait の呼び出しの前 — area.sober）: 切替が積む汎用レジスタ（rbp を除く — 跨いで生きる値と、本体の呼び手の callee-saved）を
+// 枠の置き場へ・TCB に本体の rbp と戻り先（呼び出しの直後 — 返る lea の rel32 の位置を返す）・TC_ONW の bit 3。r11 / rcx だけを使う（実引数はこの後に置く）
+func xShArm(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int], grecs []int, rs []int) int {
+    x86.MovRegFs(mut c, x86.R11, 0)
+    xFixAdd(mut fx, x86.Here(mut c) - 4, 5, xIndex(grecs, st.taskG))
+    x86.MovRegMem(mut c, x86.R11, x86.R11, 8 * TK_CUR)
+    mut k := 0
+    for r <- rs {
+        if r != x86.Rbp {
+            x86.MovMemReg(mut c, x86.Rbp, e.shAt + 8 * k, r)
+            k += 1
+        }
+    }
+    x86.MovMemReg(mut c, x86.R11, 8 * TC_SRBP, x86.Rbp)
+    at := x86.LeaRegRip(mut c, x86.Rcx)
+    x86.MovMemReg(mut c, x86.R11, 8 * TC_CTX, x86.Rcx)
+    x86.MovRegMem(mut c, x86.Rcx, x86.R11, 8 * TC_ONW)
+    x86.OrRegImm(mut c, x86.Rcx, AREA_SARM)
+    x86.MovMemReg(mut c, x86.R11, 8 * TC_ONW, x86.Rcx)
+    return at
+}
+
+// 浅い待ちの着地（呼び出しの直後 — 普通に返っても shallow_land から跳んで来ても同じ列）: 記しを消し、置き場からレジスタを読み戻す。rax（結果）は触らない
+func xShLand(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int], grecs []int, rs []int) {
+    x86.MovRegFs(mut c, x86.R11, 0)
+    xFixAdd(mut fx, x86.Here(mut c) - 4, 5, xIndex(grecs, st.taskG))
+    x86.MovRegMem(mut c, x86.R11, x86.R11, 8 * TK_CUR)
+    x86.MovRegMem(mut c, x86.Rcx, x86.R11, 8 * TC_ONW)
+    x86.AndRegImm(mut c, x86.Rcx, -1 - AREA_SARM - AREA_SPARK)
+    x86.MovMemReg(mut c, x86.R11, 8 * TC_ONW, x86.Rcx)
+    // 変異 68 = 読み戻さない（浅く寝て起きた本体が死んだ枠の値を使う — areacheck が捕まえる）
+    if st.rtMut == 68 {
+        return
+    }
+    mut k := 0
+    for r <- rs {
+        if r != x86.Rbp {
+            x86.MovRegMem(mut c, r, x86.Rbp, e.shAt + 8 * k)
+            k += 1
+        }
+    }
+}
+
+// task の本体の prologue（area.sober）: 印のある task（TC_ONW の bit 0）だけが付け替える。r11 / rcx だけを使う（引数のレジスタは rsi / r8〜r10）。
+// - 枠の底（入口の rsp − 8 − frame）が塊の頁 0 の余白（TCB − TCB_TOP_ROOM 以上）に収まる: 枠は頁 0 に作り、rsp をワーカーの区画の頂上へ・
+//   TC_ONW の bit 1 と AREA_NEAR を立てる（以後の呼び出しは区画の上 — 止まると rt.task_switch が区画を交換する）
+// - 収まらない: 枠を作る前に、戻り番地と実引数を持ち札の区画の頂上へ写して rsp をそこへ（連続の形を持ち札の上で — 交換しない）。
+//   持ち札は他の塊の積みの領域でありうるので、自分の塊の積みの領域へ伸ばさない
+func xAreaProlog(st mut St, c mut table.Table[byte], fx mut table.Table[int], grecs []int, frame int, np int) {
+    x86.MovRegFs(mut c, x86.R11, 0)
+    xFixAdd(mut fx, x86.Here(mut c) - 4, 5, xIndex(grecs, st.taskG))
+    x86.MovRegMem(mut c, x86.R11, x86.R11, 8 * TK_CUR)
+    x86.MovRegMem(mut c, x86.Rcx, x86.R11, 8 * TC_ONW)
+    x86.TestRegImm(mut c, x86.Rcx, 1)
+    jPlain := x86.JccRel32(mut c, x86.CondE)
+    x86.LeaRegMem(mut c, x86.Rcx, x86.Rsp, -8 - frame)
+    x86.SubRegReg(mut c, x86.Rcx, x86.R11)
+    x86.CmpRegImm(mut c, x86.Rcx, 0 - TCB_TOP_ROOM)
+    jFar := x86.JccRel32(mut c, x86.CondL)
+    x86.PushReg(mut c, x86.Rbp)
+    x86.MovRegReg(mut c, x86.Rbp, x86.Rsp)
+    if frame > 0 {
+        x86.SubRegImm(mut c, x86.Rsp, frame)
+    }
+    x86.MovRegFs(mut c, x86.Rcx, 0)
+    xFixAdd(mut fx, x86.Here(mut c) - 4, 5, xIndex(grecs, st.wkG))
+    x86.MovRegMem(mut c, x86.Rsp, x86.Rcx, 8 * WK_AREA)
+    x86.MovRegMem(mut c, x86.Rcx, x86.R11, 8 * TC_ONW)
+    x86.OrRegImm(mut c, x86.Rcx, 2 + AREA_NEAR)
+    x86.MovMemReg(mut c, x86.R11, 8 * TC_ONW, x86.Rcx)
+    jDone := x86.JmpRel32(mut c)
+    x86.PatchRel32(mut c, jFar, x86.Here(mut c))
+    // 持ち札が自分の積みの領域なら付け替えずにその場で連続の形（頁 0 の余白から下へ — 区画を使わない task と同じ積み）。付け替えると頁 0 の余白が
+    // 空いたまま区画の頁が 1 枚増える。変異 65 = いつも付け替える（areacheck の遠い道の行が捕まえる）
+    mut jOwn := -1
+    if st.rtMut != 65 {
+        x86.MovRegMem(mut c, x86.Rcx, x86.R11, 8 * TC_AREA)
+        x86.AddRegImm(mut c, x86.Rcx, TCB_TOP_ROOM)
+        x86.CmpRegReg(mut c, x86.Rcx, x86.R11)
+        jOth := x86.JccRel32(mut c, x86.CondNe)
+        xAreaFar(mut st, mut c, mut fx, grecs)
+        jOwn = x86.JmpRel32(mut c)
+        x86.PatchRel32(mut c, jOth, x86.Here(mut c))
+    }
+    // 実引数（積みで来るなら多くて np 語 — 余分に写しても読むのは頁 0 の上）を持ち札の区画の頂上へ写し、戻り番地の欄には帰りの口（下の stub —
+    // rsp を入口の値へ戻して元の戻り番地へ ret）を置く。入口の rsp は区画の頂上の 1 語に預ける。揃え（入口の rsp ≡ 8 mod 16）を保つ
+    x86.MovRegMem(mut c, x86.Rcx, x86.R11, 8 * TC_AREA)
+    nw := 3 + np + (np & 1)
+    for k <- iter.Range(1, 1 + np) {
+        x86.MovRegMem(mut c, x86.R11, x86.Rsp, 8 * k)
+        x86.MovMemReg(mut c, x86.Rcx, 8 * (k - nw), x86.R11)
+    }
+    x86.MovMemReg(mut c, x86.Rcx, -8, x86.Rsp)
+    lk := x86.CallRel32(mut c)
+    x86.PatchRel32(mut c, lk, x86.Here(mut c))
+    lab := x86.Here(mut c)
+    x86.PopReg(mut c, x86.R11)
+    addAt := x86.Here(mut c)
+    x86.AddRegImm(mut c, x86.R11, 0)
+    x86.MovMemReg(mut c, x86.Rcx, -8 * nw, x86.R11)
+    x86.LeaRegMem(mut c, x86.Rsp, x86.Rcx, -8 * nw)
+    xAreaFar(mut st, mut c, mut fx, grecs)
+    jPro := x86.JmpRel32(mut c)
+    // 帰りの口（本体の ret が来る — rsp = 区画の頂上 − 8 nw + 8）
+    stub := x86.Here(mut c)
+    x86.MovRegMem(mut c, x86.Rsp, x86.Rsp, 8 * nw - 16)
+    x86.Ret(mut c)
+    x86.PatchRel32(mut c, jPro, x86.Here(mut c))
+    // add r11, imm8（REX.W 83 /0 ib — 即値は 4 バイト目）: 帰りの口までの距離（< 128 — この列は固定の長さ）
+    x86.PatchRel8(mut c, addAt + 3, addAt + 4 + stub - lab)
+    x86.PatchRel32(mut c, jPlain, x86.Here(mut c))
+    if jOwn >= 0 {
+        x86.PatchRel32(mut c, jOwn, x86.Here(mut c))
+    }
+    x86.PushReg(mut c, x86.Rbp)
+    x86.MovRegReg(mut c, x86.Rbp, x86.Rsp)
+    if frame > 0 {
+        x86.SubRegImm(mut c, x86.Rsp, frame)
+    }
+    x86.PatchRel32(mut c, jDone, x86.Here(mut c))
+}
+
+// 区画の形になれなかった印つきの task の数（#par tasks の area_far — ゲートは httparena で 0 を見る）。r11 / rcx を壊す
+func xAreaFar(st mut St, c mut table.Table[byte], fx mut table.Table[int], grecs []int) {
+    x86.MovRegImm32(mut c, x86.R11, 0)
+    xFixAdd(mut fx, x86.Here(mut c) - 4, 2, xIndex(grecs, st.pstatG))
+    x86.MovRegImm32(mut c, x86.Rcx, 1)
+    x86.LockXaddMemReg(mut c, x86.R11, 8 * PS_AFAR, x86.Rcx)
+}
+
+// areaIn: rbp と枠は xAreaProlog が組み済み
+func xProlog(st mut St, e mut xF, c mut table.Table[byte], frame int, slotWords int, areaIn bool) {
     if e.nofr {
         // 段 2: フレームなし — 引数は呼び手の積んだ [rsp + 8 + 8k]（戻り番地の上）。段 3: レジスタで来る引数を先に並行コピー
         xArgMoves(mut e, mut c)
@@ -1940,10 +2170,12 @@ func xProlog(st mut St, e mut xF, c mut table.Table[byte], frame int, slotWords 
         return
     }
     // フレーム → フレーム → 使う callee-saved の退避 → スロットのゼロ初期化（rdi / rcx / rax を壊す）→ レジスタに載る引数
-    x86.PushReg(mut c, x86.Rbp)
-    x86.MovRegReg(mut c, x86.Rbp, x86.Rsp)
-    if frame > 0 {
-        x86.SubRegImm(mut c, x86.Rsp, frame)
+    if !areaIn {
+        x86.PushReg(mut c, x86.Rbp)
+        x86.MovRegReg(mut c, x86.Rbp, x86.Rsp)
+        if frame > 0 {
+            x86.SubRegImm(mut c, x86.Rsp, frame)
+        }
     }
     mut k2 := 0
     k2End := e.nsave
@@ -4907,11 +5139,24 @@ func xAllocFrame(st mut St, e mut xF, frameTop int, used mut []int, spills mut [
     if !e.opt && xfSHead(mut st, e.f) >= 0 {
         used[x86.Rdi] = 1
     }
-    // scanb は xmm0〜7 を作業に使う — 呼び手が xmm2〜7 に値を置く（scanb を含まない関数の広い組 — xNXmmWide）ので、壊す分を退避する
-    if e.opt && e.nx == xNXmm && xHasScanB(mut st, mut e) {
+    // scanb / crcfold の塊は xmm を作業に使う — 呼び手が xmm2〜7 に値を置く（塊を含まない関数の広い組 — xNXmmWide）ので、塊が書く分（xBlkXmm）を退避する
+    if e.opt && e.nx == xNXmm {
+        mut wm := 0
+        for k <- iter.Range(0, e.nb) {
+            bb := BlkRef(e.blk[k])
+            if int(bb) >= 0 {
+                mut i := xbIHead(mut st, bb)
+                while i != -1 {
+                    wm = wm | xBlkXmm(mut st, i)
+                    i = xiNext(mut st, i)
+                }
+            }
+        }
         mut k2 := 2
         while k2 < 8 {
-            used[xX0 + k2] = 1
+            if (wm >> k2) & 1 == 1 {
+                used[xX0 + k2] = 1
+            }
             k2 += 1
         }
     }
@@ -5351,6 +5596,54 @@ func xLocWalk(e mut xF, v int, p int) int {
     return e.loc[k]
 }
 
+// 輪の外で定義し、それより深い輪の中で使う大域の番地（とその ptoi / itop）は作り直さず区間に乗せる（輪の中で毎周の即値にするより
+// 番地をレジスタに持つ形が速い）。深さは並べた順のブロックの深さ（e.ldep）だけを見る — 割り当ての結果には依らない
+func xGlobLoop(st mut St, e mut xF) {
+    nk := if len(e.ldep) < e.norder { len(e.ldep) } else { e.norder }
+    mut gd := mut []int{}
+    for v <- iter.Range(0, e.nv) {
+        gd = append(gd, -1)
+    }
+    for k <- iter.Range(0, nk) {
+        mut i := xbIHead(mut st, BlkRef(e.blk[e.order[k]]))
+        while i != -1 {
+            r := xiRes(mut st, i)
+            if r >= 0 && e.tg[r] == 2 && e.remat[r] == 1 {
+                gd[r] = e.ldep[k]
+            }
+            i = xiNext(mut st, i)
+        }
+    }
+    g := freeze(gd)
+    for k <- iter.Range(0, nk) {
+        d := e.ldep[k]
+        b := BlkRef(e.blk[e.order[k]])
+        mut i := xbIHead(mut st, b)
+        while i != -1 {
+            for j <- iter.Range(0, xNOps(mut st, i)) {
+                v := xOpnd(mut st, i, j)
+                if e.fold[v] == 1 {
+                    xGlobKeep(mut e, g, e.fA[v], d)
+                    xGlobKeep(mut e, g, e.fB[v], d)
+                } else {
+                    xGlobKeep(mut e, g, v, d)
+                }
+            }
+            i = xiNext(mut st, i)
+        }
+        for j <- iter.Range(0, xNTermOps(mut st, b)) {
+            xGlobKeep(mut e, g, xTermOpnd(mut st, b, j), d)
+        }
+    }
+}
+
+func xGlobKeep(e mut xF, gd []int, v int, d int) {
+    if v >= 0 && v < len(gd) && gd[v] >= 0 && gd[v] < d {
+        e.remat[v] = 0
+        e.tg[v] = 0
+    }
+}
+
 // v をレジスタに載せる（置き場がレジスタならそれ、フレームなら scratch に読む）
 func xGet(e mut xF, c mut table.Table[byte], v int, scratch int) int {
     l := if e.remat[v] == 0 { xLocAt(mut e, v, e.pos) } else { 0 }
@@ -5362,8 +5655,7 @@ func xGet(e mut xF, c mut table.Table[byte], v int, scratch int) int {
         return scratch
     }
     if e.remat[v] == 1 {
-        x86.MovRegImm32(mut c, scratch, e.constV[v])
-        xTagAt(mut e, v, x86.Here(mut c) - 4)
+        xImmReg(mut e, mut c, scratch, v)
     } else if e.remat[v] == 2 {
         x86.LeaRegMem(mut c, scratch, x86.Rbp, e.slotDisp[e.constV[v]])
     } else if xIsXmm(l) {
@@ -5453,8 +5745,7 @@ func xPutLive(e mut xF, v int, at int) bool {
 // v を dst へ
 func xGetInto(e mut xF, c mut table.Table[byte], v int, dst int) {
     if e.remat[v] == 1 {
-        x86.MovRegImm32(mut c, dst, e.constV[v])
-        xTagAt(mut e, v, x86.Here(mut c) - 4)
+        xImmReg(mut e, mut c, dst, v)
         return
     }
     if e.remat[v] == 2 {
@@ -5732,6 +6023,8 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
         ix := xGet(mut e, mut c, b, x86.Rcx)
         x86.LeaRegSib(mut c, x86.Rax, p, ix, if op == OpGepW { x86.Scale8 } else { x86.Scale1 })
         xPut(mut e, mut c, res, x86.Rax)
+    } else if (op == OpPtoi || op == OpItop || op == OpGlobal) && e.remat[res] == 1 {
+        // 大域の番地（とその ptoi / itop）は使う点で作り直す
     } else if op == OpPtoi || op == OpItop {
         x := xGet(mut e, mut c, a, x86.Rax)
         xPut(mut e, mut c, res, x)
@@ -5787,6 +6080,22 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
         x86.RepMovsq(mut c)
         x86.PopReg(mut c, x86.Rdi)
         x86.PopReg(mut c, x86.Rsi)
+    } else if op == OpCall && xRegCc(mut st, FnRef(a), frecs) && xShCall(mut st, mut e, FnRef(a), e.pos) {
+        // 浅い待ちの点（rt.netwait — 実引数 1 本はレジスタ・積みに何も置かない: 着地は rsp = 区画の頂上で来る）: 記し → 呼び出し → 着地
+        rs := xCtxRegs(mut e, e.pos, 0)
+        // `--frame-stat` の行 `shallow <本体>`（framestat の @shallow — 本体の浅い待ちの点の数）
+        if st.frStat {
+            xStatLine(mut st, "shallow", e.f, []int{})
+        }
+        at := xShArm(mut st, mut e, mut c, mut fx, grecs, rs)
+        e.mvD[0] = xLocReg(xArgReg(0))
+        e.mvS[0] = xSrcLoc(mut e, xAt(mut st, b, 0))
+        xParallelMove(mut e, mut c, 1)
+        xFixAdd(mut fx, x86.CallRel32(mut c), 0, xIndex(frecs, a))
+        x86.PatchRel32(mut c, at, x86.Here(mut c))
+        // 読み戻しが先: 結果の置き場が跨ぐレジスタの集合に入りうる（呼び出しの前の値を置き場から戻すと結果を上書きする）
+        xShLand(mut st, mut e, mut c, mut fx, grecs, rs)
+        xAfterCall(mut e, mut c, res, 0)
     } else if op == OpCall && xRegCc(mut st, FnRef(a), frecs) {
         // 段 3: 5 本目以降を後ろから push・先頭 4 本は引数レジスタへ並行コピー（ここで caller-saved に載るのはこの呼び出しの実引数と結果だけ — 段 1。
         // 冷たい呼び出しは跨ぐ caller-saved を実引数の前に退避し、結果の写しの後で戻す — xColdCall）
@@ -5823,6 +6132,22 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
         xTrap(mut e, mut c, mut fx, res, a, xAt(mut st, b, 0), xIndex(grecs, st.trapG), xTrapFs(mut st), xSaveXmm(mut st), xCtxRegs(mut e, e.pos, st.xXmm))
     } else if op == OpUnwind {
         xUnwind(mut c, mut fx, xIndex(grecs, st.trapG), xTrapFs(mut st), 0)
+    } else if op == OpArea {
+        // AREA_ENTRY は prologue が持つ（xAreaProlog）
+        if xiC(mut st, i) == AREA_SP {
+            xGetInto(mut e, mut c, a, x86.Rax)
+            x86.MovRegReg(mut c, x86.Rsp, x86.Rax)
+        } else if xiC(mut st, i) == AREA_LAND {
+            // a = 起きた task の TCB: 値は TC_IORES・戻り先は TC_CTX（xShArm が書いた）。この関数の枠は捨てる
+            xGetInto(mut e, mut c, a, x86.Rcx)
+            x86.MovRegMem(mut c, x86.Rax, x86.Rcx, 8 * TC_IORES)
+            x86.MovRegMem(mut c, x86.Rbp, x86.Rcx, 8 * TC_SRBP)
+            x86.MovRegMem(mut c, x86.R11, x86.Rcx, 8 * TC_CTX)
+            x86.MovRegFs(mut c, x86.Rcx, 0)
+            xFixAdd(mut fx, x86.Here(mut c) - 4, 5, xIndex(grecs, st.wkG))
+            x86.MovRegMem(mut c, x86.Rsp, x86.Rcx, 8 * WK_AREA)
+            x86.JmpReg(mut c, x86.R11)
+        }
     } else if op == OpAtomic {
         xAtomic(mut st, mut e, mut c, res, a, b, xiC(mut st, i))
     } else if op == OpClone {
@@ -5857,7 +6182,9 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
 // 番地の imm32（配置の後で埋める）
 func xAbs(e mut xF, c mut table.Table[byte], fx mut table.Table[int], r int, kind int, id int) {
     l := xLocAt(mut e, r, e.pos)
-    if xIsReg(l) {
+    if xIsReg(l) && e.opt {
+        x86.MovReg32Imm32(mut c, xLocVal(l), 0)
+    } else if xIsReg(l) {
         x86.MovRegImm32(mut c, xLocVal(l), 0)
     } else {
         x86.MovMemImm32(mut c, x86.Rbp, xLocVal(l), 0)
@@ -6121,8 +6448,7 @@ func xGetX(e mut xF, c mut table.Table[byte], v int, scratch int) int {
 func xIntoX(e mut xF, c mut table.Table[byte], v int, d int) {
     l := xLocAt(mut e, v, e.pos)
     if e.remat[v] == 1 {
-        x86.MovRegImm32(mut c, x86.Rax, e.constV[v])
-        xTagAt(mut e, v, x86.Here(mut c) - 4)
+        xImmReg(mut e, mut c, x86.Rax, v)
         x86.MovqXR(mut c, d, x86.Rax)
     } else if xIsXmm(l) {
         if xLocVal(l) - xX0 != d {
@@ -6912,9 +7238,76 @@ func xMemSib(e mut xF, c mut table.Table[byte], g int, off int, r int, w int, is
     }
 }
 
+// 開発用 --vec-check（変異 56〜59 — 番号の意味は XV_*）: 手書きの塊（scanb・UTF-8 の検査器・数え上げ・crcfold）の窓の読みの前に、
+// 窓が列の内側にあることを確かめ、外なら exit 103（XV_EXIT）で止まる。既定の build には何も足さない
+func xVecChk(st mut St) bool {
+    return st.rtMut >= XV_CHECK && st.rtMut <= XV_NOSIGN
+}
+
+const XV_CHECK = 56   // 検査だけ
+const XV_SCANB1 = 57  // 検査 + scanb の端数の窓を 1 後ろ（網の自己検査）
+const XV_UTF8P1 = 58  // 検査 + UTF-8 の検査器の端数の窓を 1 後ろ
+const XV_NOSIGN = 59  // 検査 + scanb の入口の符号の検査を外し、塊の比較を符号つきに（負の始点・始点 + 16 のあふれの穴を戻す）
+const XV_EXIT = 103
+
+// 窓 [p + idx, p + idx + 16) ⊂ [p, p + 上限)（0 ≤ idx かつ idx ≤ 上限 − 16 — 符号つき）。レジスタも、続く命令が読む旗も壊さない
+// （上限は 16 を引いて比べ、旗を書かない lea で戻す）
+func xWinChk(st mut St, c mut table.Table[byte], idx int, bound int) {
+    if !xVecChk(mut st) {
+        return
+    }
+    x86.CmpRegImm(mut c, idx, 0)
+    bad1 := x86.JccRel32(mut c, x86.CondL)
+    x86.SubRegImm(mut c, bound, 16)
+    x86.CmpRegReg(mut c, idx, bound)
+    x86.LeaRegMem(mut c, bound, bound, 16)
+    bad2 := x86.JccRel32(mut c, x86.CondG)
+    ok := x86.JmpRel32(mut c)
+    x86.PatchRel32(mut c, bad1, x86.Here(mut c))
+    x86.PatchRel32(mut c, bad2, x86.Here(mut c))
+    xWinExit(mut c)
+    x86.PatchRel32(mut c, ok, x86.Here(mut c))
+}
+
+// 窓 [p + off, p + off + 16) ⊂ [p, p + 残り)（残り ≥ off + 16 — 符号つき。crcfold の形 — p が進み残りが減る）
+func xWinChkRem(st mut St, c mut table.Table[byte], rem int, off int) {
+    if !xVecChk(mut st) {
+        return
+    }
+    x86.CmpRegImm(mut c, rem, off + 16)
+    ok := x86.JccRel32(mut c, x86.CondGe)
+    xWinExit(mut c)
+    x86.PatchRel32(mut c, ok, x86.Here(mut c))
+}
+
+func xWinExit(c mut table.Table[byte]) {
+    x86.MovRegImm32(mut c, x86.Rdi, XV_EXIT)
+    x86.MovRegImm32(mut c, x86.Rax, 231)
+    x86.Syscall(mut c)
+}
+
 // scanb（ベクトル化のスパイク — vec.sober）: 16 バイトの塊ずつ、j + 16 ≤ 上限の間、出口のレーン（述語のどれかが成り立つバイト）が
-// 無ければ j += 16・あれば j += そのレーンの番号で止める。結果 = j。使うレジスタ = rax（j）・rdx（上限）・r11（p）・rcx（作業）・xmm0〜7（外では使わない）。
+// 無ければ j += 16・あれば j += そのレーンの番号で止める。塊を 1 つ以上読んで上限の手前に端数が残れば、最後の 16 バイトを重ねて読み
+// j を出口のレーンか上限へ進める。結果 = j。使うレジスタ = rax（j）・rdx（上限）・r11（p）・rcx（作業）・xmm0〜7（外では使わない）。
 // 述語の種類: 0 = x == K・1 = x != K・2 = x <u K・3 = x >=u K（K は 1〜255 — 2 / 3 は (x ^ 0x80) >s ((K - 1) ^ 0x80) で x >=u K）
+// 塊 i が書く xmm2〜7 の印（ビット k = xmm k — 入口の退避はこの和だけ）。下の吐き方と組: 出口が「x >=u 128」だけの scanb は xmm0 だけ・
+// 他の scanb（述語の定数・xScanLanes・countb・UTF-8 の検査器）は xmm1〜7・crcfold は xmm0〜5
+func xBlkXmm(st mut St, i InsRef) int {
+    op := xiOp(mut st, i)
+    if op == OpCrcFold {
+        return 0x3c
+    }
+    if op == OpScanB {
+        return if xScanBHb(mut st, xiB(mut st, i)) { 0 } else { 0xfc }
+    }
+    return 0
+}
+
+// 出口が「x >=u 128」だけの走査（ASCII の区間の読み飛ばし）: 出口のレーン = 上位ビットなので pmovmskb がそのまま出口の印（xmm0 だけを使う）
+func xScanBHb(st mut St, desc int) bool {
+    return xAt(mut st, desc, 0) != -1 && xAt(mut st, desc, 0) != -2 && xAt(mut st, desc, 1) == 1 && xAt(mut st, desc, 2) == VK_GE && xAt(mut st, desc, 3) == 128
+}
+
 func xScanB(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, desc int) {
     if xAt(mut st, desc, 0) == -1 {
         xUtf8Pre(mut st, mut e, mut c, res, ops)
@@ -6938,14 +7331,23 @@ func xScanB(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, desc
     np := xAt(mut st, desc, 1)
     // 出口 = x >=u 128（utf8 の検査）の語読み（SWAR）と端数の 8 バイトの SIMD の塊は試して不採用（M12 — 命令は減るが 1BRC の cycles が
     // それぞれ +5%: 名前 ≈ 9 バイトの区間ではバイトずつの分岐の当たるスカラーのループと同じかそれより遅い）
+    // i0 か上限が負なら塊を読まずにスカラーへ（i0 < 0 はスカラーが最初の反復で panic する点 — 読み飛ばすと panic が消え範囲外を読む）。
+    // 両方が非負なら j + 16 は符号なしであふれないので、塊の比較は符号なし（符号つきだと i0 が 2^63 − 16 より上で負に回って素通りする）
+    noSign := st.rtMut == XV_NOSIGN
+    mut neg := -1
+    if !noSign {
+        x86.MovRegReg(mut c, x86.Rcx, x86.Rax)
+        x86.OrRegReg(mut c, x86.Rcx, x86.Rdx)
+        neg = x86.JccRel32(mut c, x86.CondS)
+    }
     // 最初の塊が上限を越えるなら定数の用意の前に抜ける（短い区間 — 名前・行の欄 — で固定費を払わない）
     x86.LeaRegMem(mut c, x86.Rcx, x86.Rax, 16)
     x86.CmpRegReg(mut c, x86.Rcx, x86.Rdx)
-    early := x86.JccRel32(mut c, x86.CondG)
+    early := x86.JccRel32(mut c, if noSign { x86.CondG } else { x86.CondA })
     // 出口が「x >=u 128」だけ（ASCII の区間の読み飛ばし — utf8 の検査・`b[i] < 128` の走査）なら出口のレーン = 上位ビットなので、
     // pmovmskb がそのまま出口の印になる: 定数の用意も比較も要らない（utf8.Check は非 ASCII のたびに抜けて入り直すので、
     // 入るたびの定数の用意 7 命令と塊ごとの比較 5 命令が検査の大半だった）
-    hb := np == 1 && xAt(mut st, desc, 2) == VK_GE && xAt(mut st, desc, 3) == 128
+    hb := xScanBHb(mut st, desc)
     // 定数のベクトル: xmm7 = 全 1・xmm6 = 0x80 の並び（符号なしの比較があるとき）・xmm1 / xmm2 = 述語の K（2 / 3 は (K - 1) ^ 0x80）
     if !hb {
         x86.PcmpeqbXX(mut c, 7, 7)
@@ -6971,7 +7373,8 @@ func xScanB(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, desc
     topAt := x86.Here(mut c)
     x86.LeaRegMem(mut c, x86.Rcx, x86.Rax, 16)
     x86.CmpRegReg(mut c, x86.Rcx, x86.Rdx)
-    outJ := x86.JccRel32(mut c, x86.CondG)
+    outJ := x86.JccRel32(mut c, if noSign { x86.CondG } else { x86.CondA })
+    xWinChk(mut st, mut c, x86.Rax, x86.Rdx)
     x86.MovdquXMemSib(mut c, 0, x86.R11, x86.Rax)
     if hb {
         x86.PmovmskbRX(mut c, x86.Rcx, 0)
@@ -6984,11 +7387,29 @@ func xScanB(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, desc
     x86.AddRegImm(mut c, x86.Rax, 16)
     backJ := x86.JmpRel32(mut c)
     x86.PatchRel32(mut c, backJ, topAt)
+    // 端数: 環を抜けたとき（≥ 1 塊を読んだ後 — 上限 − 16 < j ≤ 上限）、最後の 16 バイト [上限 − 16, 上限) を重ねて読む。
+    // 重なり [上限 − 16, j) は出口の無かった直前の塊 [j − 16, j) の内側なので印は 0 — 最初の印のレーンは j 以後。レーン 16 に番兵
+    // （= 上限の位置）を立てるので bsf の入力は 0 にならず、結果 = [j, 上限) の最初の出口のレーンか上限。found の道（塊の中に出口 —
+    // 重なりに出口がありうる）は通さない
+    x86.PatchRel32(mut c, outJ, x86.Here(mut c))
+    x86.LeaRegMem(mut c, x86.Rax, x86.Rdx, if st.rtMut == XV_SCANB1 { -15 } else { -16 })
+    xWinChk(mut st, mut c, x86.Rax, x86.Rdx)
+    x86.MovdquXMemSib(mut c, 0, x86.R11, x86.Rax)
+    if hb {
+        x86.PmovmskbRX(mut c, x86.Rcx, 0)
+    } else {
+        xScanLanes(mut st, mut c, desc, np, useX80)
+        x86.PmovmskbRX(mut c, x86.Rcx, 5)
+    }
+    x86.OrRegImm(mut c, x86.Rcx, 65536)
+    // found の道と端数の合流（端数は rax = 上限 − 16・rcx = 印 | 番兵）
     x86.PatchRel32(mut c, foundJ, x86.Here(mut c))
     x86.BsfRR(mut c, x86.Rcx, x86.Rcx)
     x86.AddRegReg(mut c, x86.Rax, x86.Rcx)
-    x86.PatchRel32(mut c, outJ, x86.Here(mut c))
     x86.PatchRel32(mut c, early, x86.Here(mut c))
+    if neg >= 0 {
+        x86.PatchRel32(mut c, neg, x86.Here(mut c))
+    }
     xPut(mut e, mut c, res, x86.Rax)
 }
 
@@ -6999,6 +7420,7 @@ func xScanB(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, desc
 // 64 バイトずつ r2r1 で畳み、r4r3 で 1 本へ・16 バイトずつの残り・r5 と Barrett（rupoly）で 32 ビットへ。取り出しは psrldq + movq（SSE2 — pextrd の SSE4.1 を
 // 要らなくする）。使うレジスタ = r11（p）・rdx（残り）・rax（crc / 結果）・rcx（定数の作業）・xmm0〜5（scanb と同じ「関数の外では使わない」約束 — xHasScanB）。
 // 定数は .rodata を持たず imm64 から作る（呼ぶたびに数命令 — 本文 ≥ 64 バイトでは無視できる）
+// 前提（入口で検査しない — 呼び手が保つ）: k は 64 以上の 16 の倍数で ≤ len(b)。呼び手は std/internal/crc32 の非公開の sysCrcFold だけ（Update が決める）
 func xCrcFold(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, kind int) {
     if kind == CF_CPUID7 {
         // leaf 7 を持たない CPU（CPUID.0:EAX < 7）は最大の leaf の値を返しうる — BMI2 の bit を誤読して MULX が不正命令で落ちないよう、先に 0 を確かめて無ければ 0
@@ -7034,6 +7456,7 @@ func xCrcFold(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, ki
     xGetInto(mut e, mut c, xAt(mut st, ops, 2), x86.Rax)
     x86.MovqXR(mut c, 0, x86.Rax)
     for k <- iter.Range(0, 4) {
+        xWinChkRem(mut st, mut c, x86.Rdx, 16 * k)
         x86.MovdquXMem(mut c, 1 + k, x86.R11, 16 * k)
     }
     x86.PxorXX(mut c, 1, 0)
@@ -7046,6 +7469,7 @@ func xCrcFold(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, ki
     l64At := x86.Here(mut c)
     for k <- iter.Range(0, 4) {
         xCrcStep(mut c, 1 + k)
+        xWinChkRem(mut st, mut c, x86.Rdx, 16 * k)
         x86.MovdquXMem(mut c, 5, x86.R11, 16 * k)
         x86.PxorXX(mut c, 1 + k, 5)
     }
@@ -7065,6 +7489,7 @@ func xCrcFold(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, ki
     x86.CmpRegImm(mut c, x86.Rdx, 16)
     toFin := x86.JccRel32(mut c, x86.CondB)
     r16At := x86.Here(mut c)
+    xWinChkRem(mut st, mut c, x86.Rdx, 0)
     x86.MovdquXMem(mut c, 2, x86.R11, 0)
     xCrcStep(mut c, 1)
     x86.PxorXX(mut c, 1, 2)
@@ -8260,6 +8685,8 @@ func xGhStepKar(c mut table.Table[byte], k int, base int, disp int) {
 // 狭い範囲と 4 バイト列はスカラーに任せる）。誤りの塊で止め、最後に読み終えた列の頭まで戻る（継続バイトを読み戻す）。ASCII の塊は前の塊からの
 // 持ち越し（rsi）が無ければ pmovmskb 1 本で飛ばす（非 ASCII の塊の後は検査の環に留まる — 下）。使うレジスタ = rax（j）・rdx（n）・r11（p）・
 // rcx（作業）・rsi / rdi / r8（退避）・xmm0〜7・定数 6 本（xmm8〜13 — 関数が割り当てに使っていなければ。でなければスタックの 96 バイト）
+// 前提（入口で検査しない — 呼び手が保つ）: 0 ≤ i ≤ n = len(b)。呼び手は std/strings の非公開の validPrefix だけ（xScanB と違い、負の i や
+// i + 16 のあふれを塊の比較が弾かない — 呼び手を増やすなら xScanB と同じ入口の検査を足す）
 func xUtf8Pre(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     xGetInto(mut e, mut c, xAt(mut st, ops, 0), x86.R11)
     xGetInto(mut e, mut c, xAt(mut st, ops, 1), x86.Rax)
@@ -8301,6 +8728,7 @@ func xUtf8Pre(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     x86.LeaRegMem(mut c, x86.Rcx, x86.Rax, 16)
     x86.CmpRegReg(mut c, x86.Rcx, x86.Rdx)
     endJ := x86.JccRel32(mut c, x86.CondG)
+    xWinChk(mut st, mut c, x86.Rax, x86.Rdx)
     x86.MovdquXMemSib(mut c, 0, x86.R11, x86.Rax)
     x86.PmovmskbRX(mut c, x86.Rcx, 0)
     x86.OrRegReg(mut c, x86.Rcx, x86.Rsi)
@@ -8316,6 +8744,7 @@ func xUtf8Pre(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     x86.LeaRegMem(mut c, x86.Rcx, x86.Rax, 16)
     x86.CmpRegReg(mut c, x86.Rcx, x86.Rdx)
     endJ2 := x86.JccRel32(mut c, x86.CondG)
+    xWinChk(mut st, mut c, x86.Rax, x86.Rdx)
     x86.MovdquXMemSib(mut c, 0, x86.R11, x86.Rax)
     x86.PatchRel32(mut c, toBody, x86.Here(mut c))
     // y・a（xmm2）・b3（xmm3）
@@ -8385,8 +8814,19 @@ func xUtf8Pre(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     x86.PatchRel32(mut c, fastJ, topAt)
     backF := x86.JmpRel32(mut c)
     x86.PatchRel32(mut c, backF, fullAt)
-    // 止め: 最後に読み終えた列の頭まで戻る（j − 1 から継続バイトを読み戻す・i より手前へは行かない）
+    // 端数（速い道の出口だけ）: endJ に着くのは ASCII の塊 [j − 16, j) を読んだ直後（back1 か fastJ — 入口からの最初の比較は early と同じで
+    // 着かない）なので 上限 − 16 < j ≤ 上限。最後の 16 バイト [上限 − 16, 上限) を重ねて読む — 重なりは ASCII で印は 0 なので、最初の印の
+    // レーンは [j, 上限) の最初の非 ASCII か番兵（レーン 16 = 上限）。進めた j の手前は ASCII = 列の頭の並びなので止めの処理をそのまま通る。
+    // 持ち越し（rsi）はこの道では 0（速い道は rsi = 0 でしか回らない）。endJ2・stopJ は通さない
     x86.PatchRel32(mut c, endJ, x86.Here(mut c))
+    x86.LeaRegMem(mut c, x86.Rax, x86.Rdx, if st.rtMut == XV_UTF8P1 { -15 } else { -16 })
+    xWinChk(mut st, mut c, x86.Rax, x86.Rdx)
+    x86.MovdquXMemSib(mut c, 0, x86.R11, x86.Rax)
+    x86.PmovmskbRX(mut c, x86.Rcx, 0)
+    x86.OrRegImm(mut c, x86.Rcx, 65536)
+    x86.BsfRR(mut c, x86.Rcx, x86.Rcx)
+    x86.AddRegReg(mut c, x86.Rax, x86.Rcx)
+    // 止め: 最後に読み終えた列の頭まで戻る（j − 1 から継続バイトを読み戻す・i より手前へは行かない）
     x86.PatchRel32(mut c, stopJ, x86.Here(mut c))
     x86.PatchRel32(mut c, endJ2, x86.Here(mut c))
     if kx < 0 {
@@ -8440,6 +8880,7 @@ func xCountB(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, des
     x86.PxorXX(mut c, 5, 5)
     x86.MovRegImm64(mut c, x86.Rdi, XCOUNT_FLUSH)
     innerAt := x86.Here(mut c)
+    xWinChk(mut st, mut c, x86.Rax, x86.Rdx)
     x86.MovdquXMemSib(mut c, 0, x86.R11, x86.Rax)
     for k <- iter.Range(0, m) {
         x86.MovdqaXX(mut c, 6, 0)
@@ -8830,7 +9271,7 @@ func xParallelMove(e mut xF, c mut table.Table[byte], n int) {
                 }
             } else if e.mvS[ready] >= xRemat {
                 mv := (e.mvS[ready] - xRemat) / 2
-                xTagAt(mut e, mv, xMoveImm(mut c, e.mvD[ready], e.constV[mv]))
+                xTagAt(mut e, mv, xMoveImm(mut c, e.mvD[ready], e.constV[mv], e.opt && e.tg[mv] == 2))
             } else {
                 xMove(mut c, e.mvD[ready], e.mvS[ready])
             }
@@ -8864,18 +9305,31 @@ func xSrcLoc(e mut xF, v int) int {
 }
 
 // 即値を置き場へ
-func xMoveImm(c mut table.Table[byte], dst int, imm int) int {
+func xMoveImm(c mut table.Table[byte], dst int, imm int, addr bool) int {
     if xIsXmm(dst) {
         x86.MovRegImm32(mut c, x86.Rax, imm)
         at := x86.Here(mut c) - 4
         x86.MovqXR(mut c, xLocVal(dst) - xX0, x86.Rax)
         return at
+    } else if xIsReg(dst) && addr {
+        x86.MovReg32Imm32(mut c, xLocVal(dst), imm)
     } else if xIsReg(dst) {
         x86.MovRegImm32(mut c, xLocVal(dst), imm)
     } else {
         x86.MovMemImm32(mut c, x86.Rbp, xLocVal(dst), imm)
     }
     return x86.Here(mut c) - 4
+}
+
+// 札つきの即値 v をレジスタ r へ（番地 — 札の種類 2 — は 0 以上 2^31 未満なのでゼロ拡張の短い形）。
+// 番地の短い形は最適化のバックエンドだけ — 写しのバックエンドは stage1 と同じ REX.W C7 の形（elfeq の照合）
+func xImmReg(e mut xF, c mut table.Table[byte], r int, v int) {
+    if e.opt && e.tg[v] == 2 {
+        x86.MovReg32Imm32(mut c, r, e.constV[v])
+    } else {
+        x86.MovRegImm32(mut c, r, e.constV[v])
+    }
+    xTagAt(mut e, v, x86.Here(mut c) - 4)
 }
 
 // 値 v（定数）の imm32 を位置 at に出した記録: 札つきなら後埋めの点を積む（欄の 0 書きと後埋めの表への移しは xFunc の終わり・

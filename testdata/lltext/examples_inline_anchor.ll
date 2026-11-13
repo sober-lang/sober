@@ -2896,11 +2896,6 @@ b0:
   store i64 0, ptr %s0.z1
   %s0.z2 = getelementptr i64, ptr %s0, i64 2
   store i64 0, ptr %s0.z2
-  %s1 = alloca [2 x i64], align 8
-  %s1.z0 = getelementptr i64, ptr %s1, i64 0
-  store i64 0, ptr %s1.z0
-  %s1.z1 = getelementptr i64, ptr %s1, i64 1
-  store i64 0, ptr %s1.z1
   %v6 = getelementptr i64, ptr %s0, i64 0
   %st0 = getelementptr i64, ptr %v6, i64 0
   store i64 %v2, ptr %st0
@@ -2908,8 +2903,8 @@ b0:
   store i64 %v3, ptr %st1
   %st2 = getelementptr i64, ptr %v6, i64 2
   store i64 %v4, ptr %st2
-  %v37 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v7.p = getelementptr i64, ptr %v37, i64 0
+  %v36 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v7.p = getelementptr i64, ptr %v36, i64 0
   %v7 = load i64, ptr %v7.p
   %v8 = getelementptr i64, ptr @"rt.meta", i64 0
   %v9.p = getelementptr i64, ptr %v8, i64 2572
@@ -2966,35 +2961,30 @@ b4:
   store i64 %v17, ptr %st8
   %st9 = getelementptr i64, ptr %v0, i64 1
   store i64 %v27, ptr %st9
-  %v38 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st10 = getelementptr i64, ptr %v38, i64 0
+  %v37 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st10 = getelementptr i64, ptr %v37, i64 0
   store i64 %v7, ptr %st10
   ret void
 b5:
-  %v28 = getelementptr i64, ptr %s1, i64 0
-  %v29.p = getelementptr i64, ptr %v6, i64 0
+  %v28.p = getelementptr i64, ptr %v6, i64 0
+  %v28 = load i64, ptr %v28.p
+  %v29.p = getelementptr i64, ptr %v6, i64 1
   %v29 = load i64, ptr %v29.p
-  %v30.p = getelementptr i64, ptr %v6, i64 1
+  %v30.p = getelementptr i64, ptr %v6, i64 2
   %v30 = load i64, ptr %v30.p
-  %v31.p = getelementptr i64, ptr %v6, i64 2
-  %v31 = load i64, ptr %v31.p
-  %v32 = add i64 0, 1
-  %v33 = sub i64 %v5, %v32
-  %v34 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st11 = getelementptr i64, ptr %v34, i64 2572
+  %v31 = add i64 0, 1
+  %v32 = sub i64 %v5, %v31
+  %v33 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st11 = getelementptr i64, ptr %v33, i64 2572
   store i64 %v13, ptr %st11
-  call void @"main.rec"(ptr %v28, ptr %v1, i64 %v29, i64 %v30, i64 %v31, i64 %v33)
-  %v35.p = getelementptr i64, ptr %v28, i64 0
+  call void @"main.rec"(ptr %v0, ptr %v1, i64 %v28, i64 %v29, i64 %v30, i64 %v32)
+  %v34.p = getelementptr i64, ptr %v0, i64 0
+  %v34 = load i64, ptr %v34.p
+  %v35.p = getelementptr i64, ptr %v0, i64 1
   %v35 = load i64, ptr %v35.p
-  %v36.p = getelementptr i64, ptr %v28, i64 1
-  %v36 = load i64, ptr %v36.p
-  %st12 = getelementptr i64, ptr %v0, i64 0
-  store i64 %v35, ptr %st12
-  %st13 = getelementptr i64, ptr %v0, i64 1
-  store i64 %v36, ptr %st13
-  %v39 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st14 = getelementptr i64, ptr %v39, i64 0
-  store i64 %v7, ptr %st14
+  %v38 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st12 = getelementptr i64, ptr %v38, i64 0
+  store i64 %v7, ptr %st12
   ret void
 }
 

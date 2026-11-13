@@ -2010,7 +2010,6 @@ b6:
 }
 
 func @std/convert.FormatFixed(%0 ptr, %1 i64, %2 i64) {
-  slot s0 [3]
 b0:
   %3 = region.depth
   %4 = globaladdr @rt.meta
@@ -2025,16 +2024,9 @@ b0:
   %12 = mul %10, %11
   %13 = add %3, %12
   region.enter
-  %14 = slotaddr s0
-  %15 = globaladdr @rt.meta
-  store %15[2571], %13
-  call @std/internal/floatfmt.FormatFixed(%14, %1, %2)
-  %16 = load.i64 %14[0]
-  store %0[0], %16
-  %17 = load.i64 %14[1]
-  store %0[1], %17
-  %18 = load.i64 %14[2]
-  store %0[2], %18
+  %14 = globaladdr @rt.meta
+  store %14[2571], %13
+  call @std/internal/floatfmt.FormatFixed(%0, %1, %2)
   call @rt.region_relocate8(%0, %3)
   region.setdepth %3
   ret

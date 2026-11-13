@@ -604,7 +604,10 @@ func scalarCall(t ast.Tree, x ast.Node, sc []string) bool {
     return false
 }
 
-// 式の列 l の中のリテラル・補間・連結の節を marks に足す（ループ・ラムダの中へは降りない）
+// 式の列 l の中のリテラル・補間・連結の節を marks に足す（ループ・ラムダの中へは降りない）。
+// 利用者の関数の呼び出しには印を立てるが、その実引数（と受け手の式）へは降りない — 実引数の値は呼び先が読んで捨てうる一時で、
+// 宛先の深度（呼び手の region）に作ると、呼び手の enter が C1 で消えたときに呼び手の呼び手の region に残る。
+// freeze / append の実引数は返る値そのものの一部なので降りる
 func markIn(t ast.Tree, l int, one int, marks mut []int, sc []string) {
     mut st := mut []int{}
     mut sp := if one >= 0 { push(mut st, 0, one) } else { pushList(mut st, 0, t, l) }
@@ -616,8 +619,17 @@ func markIn(t ast.Tree, l int, one int, marks mut []int, sc []string) {
         if !sx && (x.kind == ast.ESlicelit || x.kind == ast.EMaplit || x.kind == ast.EInterp || x.kind == ast.ECall || (x.kind == ast.EBinary && x.a == lexer.Plus)) {
             marks = append(marks, n)
         }
-        if !sx && x.kind != ast.SWhile && x.kind != ast.EFor && x.kind != ast.ELambda {
+        if !sx && x.kind != ast.SWhile && x.kind != ast.EFor && x.kind != ast.ELambda && (x.kind != ast.ECall || passThrough(t, x)) {
             sp = pushKids(mut st, sp, t, x)
         }
     }
+}
+
+// 呼び出し x が実引数を返る値の中に残す組み込み（freeze・append）か
+func passThrough(t ast.Tree, x ast.Node) bool {
+    if x.a < 0 || t.nodes[x.a].kind != ast.EIdent {
+        return false
+    }
+    nm := Name(t, t.nodes[x.a].a)
+    return nm == "freeze" || nm == "append"
 }

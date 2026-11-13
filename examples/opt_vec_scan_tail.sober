@@ -1,0 +1,113 @@
+package main
+
+// ベクトル化の回帰例（端数の重ね読み）: 長さ 0〜48 × 出口のバイトの位置（無し・区間の中・上限のすぐ外）× 始点 0〜長さ で、
+// 述語 1 つ（上限 n と長さの小さい方）・述語 2 つ・上位ビット（< 128）・符号なしの範囲の 4 形の走査を、認識に乗らない表引きの参照と
+// 突き合わせる。食い違いの数（0）と和を印字
+
+import "std/iter"
+
+func scanUntil(b []byte, i0 int, n int) int {
+    mut i := i0
+    while i < n && b[i] != ';' {
+        i += 1
+    }
+    return i
+}
+
+func scanTwo(b []byte, i0 int) int {
+    mut i := i0
+    while i < len(b) && b[i] != ';' && b[i] != '\n' {
+        i += 1
+    }
+    return i
+}
+
+func scanAscii(b []byte, i0 int) int {
+    mut i := i0
+    while i < len(b) && b[i] < 128 {
+        i += 1
+    }
+    return i
+}
+
+func scanLower(b []byte, i0 int) int {
+    mut i := i0
+    while i < len(b) && b[i] >= 'a' && b[i] <= 'z' {
+        i += 1
+    }
+    return i
+}
+
+// 表 t で止まるバイトを引く参照（等値・比較の述語でないので認識に乗らない）
+func ref(b []byte, i0 int, n int, t []int) int {
+    for i <- iter.Range(i0, n) {
+        if t[int(b[i])] != 0 {
+            return i
+        }
+    }
+    return n
+}
+
+func table(stop []byte, hi bool, lower bool) []int {
+    mut t := mut []int{}
+    for v <- iter.Range(0, 256) {
+        mut x := 0
+        for k <- iter.Range(0, len(stop)) {
+            if int(stop[k]) == v {
+                x = 1
+            }
+        }
+        if hi && v >= 128 {
+            x = 1
+        }
+        if lower && (v < 97 || v > 122) {
+            x = 1
+        }
+        t = append(t, x)
+    }
+    return t
+}
+
+func buf(n int, at int, c byte) []byte {
+    mut b := mut []byte{}
+    for k <- iter.Range(0, n) {
+        b = append(b, if k == at { c } else { byte('a' + k % 26) })
+    }
+    return b
+}
+
+func main() int {
+    tSemi := table([]byte{';'}, false, false)
+    tTwo := table([]byte{';', '\n'}, false, false)
+    tHi := table([]byte{}, true, false)
+    tLow := table([]byte{}, false, true)
+    mut bad := 0
+    mut sum := 0
+    for l <- iter.Range(0, 49) {
+        // at = l + 16 は出口のバイト無し（buf の外）・l .. l + 15 は上限 n = l のすぐ外
+        for at <- iter.Range(0, l + 17) {
+            w := buf(l + 16, at, ';')
+            b := buf(l, at, ';')
+            nl := buf(l, at, '\n')
+            h := buf(l, at, byte(200))
+            d := buf(l, at, '{')
+            for i0 <- iter.Range(0, l + 1) {
+                u := scanUntil(w, i0, l)
+                s := scanTwo(b, i0)
+                s2 := scanTwo(nl, i0)
+                a := scanAscii(h, i0)
+                z := scanLower(d, i0)
+                if u != ref(w, i0, l, tSemi) || s != ref(b, i0, l, tTwo) || s2 != ref(nl, i0, l, tTwo) || a != ref(h, i0, l, tHi) || z != ref(d, i0, l, tLow) {
+                    bad += 1
+                    if bad <= 5 {
+                        println("mismatch l=${l} at=${at} i0=${i0}: ${u} ${s} ${s2} ${a} ${z}")
+                    }
+                }
+                sum = (sum * 31 + u * 11 + s * 7 + s2 * 5 + a * 3 + z) % 1000000007
+            }
+        }
+    }
+    println("bad ${bad}")
+    println(sum)
+    return 0
+}

@@ -585,6 +585,14 @@ func declOfExpr(st mut S, e NodeRef, eb int, ef int) int {
                     }
                 }
             }
+            // 局所の束縛のラムダの呼び出し: 本体の末尾から
+            if localCloName(mut st, callee, eb, ef) {
+                return localCallDecl(mut st, callee, lB(nodeOf(mut st, e)), skip, eb, ef, e, false)
+            }
+            // 匿名の関数型の欄の呼び出し（`r.f(x)`）: 欄の型式の結果から
+            if kindN(mut st, callee) == ast.ESelector {
+                return selFnResDecl(mut st, callee, 1 + skip, eb, ef, false)
+            }
             return -1
         }
         if CellKey(mut st, fi) == CELL_GET && skip == 0 && lenL(mut st, lB(nodeOf(mut st, e))) == 1 {
@@ -819,6 +827,14 @@ func elemDeclOfExpr(st mut S, e NodeRef, eb int, ef int) int {
                     }
                 }
             }
+            // 局所の束縛のラムダの呼び出し: 本体の末尾から
+            if localCloName(mut st, callee, eb, ef) {
+                return localCallDecl(mut st, callee, args, skip, eb, ef, e, true)
+            }
+            // 匿名の関数型の欄の呼び出し（`r.f(x)`）: 欄の型式の結果から
+            if kindN(mut st, callee) == ast.ESelector {
+                return selFnResDecl(mut st, callee, 1 + skip, eb, ef, true)
+            }
             return -1
         }
         if CellKey(mut st, fi) == CELL_GET && skip == 0 && lenL(mut st, args) == 1 {
@@ -994,20 +1010,9 @@ func localCloName(st mut S, callee NodeRef, eb int, ef int) bool {
 func localCallTy(st mut S, callee NodeRef, args ListRef, eb int, ef int, at NodeRef) TyRef {
     cr := clo(mut st, lookupF(mut st, ef, sA(nodeOf(mut st, callee))))
     lam := cr.lambda
-    lps := lA(nodeOf(mut st, lam))
-    if lenL(mut st, lps) != lenL(mut st, args) {
+    lb := localLamEnv(mut st, cr, args, eb, ef, at)
+    if lb == -2 {
         return -1
-    }
-    mut lb := cr.envB
-    for k <- iter.Range(0, lenL(mut st, lps)) {
-        lp := latN(mut st, lps, k)
-        lte := nB(nodeOf(mut st, lp))
-        t := if lte != -1 { tyOf(mut st, cr.pkg, lte, at, TYFUEL) catch TyRef(-1) } else { computeTy(mut st, latN(mut st, args, k), eb, ef) }
-        if t == -1 {
-            return -1
-        }
-        d := if lte != -1 { declOfTypeExpr(mut st, cr.pkg, lte) } else { declOfExpr(mut st, latN(mut st, args, k), eb, ef) }
-        lb = bind(mut st, lb, sA(nodeOf(mut st, lp)), 0, false, d, t, -1, tRegion(mut st, t), -1, false, SUNK)
     }
     tl := lamTail(mut st, lam)
     if tl != -1 && kindN(mut st, tl) == ast.ECall {
@@ -1026,6 +1031,38 @@ func localCallTy(st mut S, callee NodeRef, args ListRef, eb int, ef int, at Node
         }
     }
     return lambdaBodyTy(mut st, lam, lb, cr.envF)
+}
+
+// 局所の束縛のラムダ cr の仮引数を、書いた型（書かなければ実引数の型）で束縛の点の環境に束ねた鎖（数が合わない・型が分からなければ -2）
+func localLamEnv(st mut S, cr Closure, args ListRef, eb int, ef int, at NodeRef) int {
+    lps := lA(nodeOf(mut st, cr.lambda))
+    if lenL(mut st, lps) != lenL(mut st, args) {
+        return -2
+    }
+    mut lb := cr.envB
+    for k <- iter.Range(0, lenL(mut st, lps)) {
+        lp := latN(mut st, lps, k)
+        lte := nB(nodeOf(mut st, lp))
+        t := if lte != -1 { tyOf(mut st, cr.pkg, lte, at, TYFUEL) catch TyRef(-1) } else { computeTy(mut st, latN(mut st, args, k), eb, ef) }
+        if t == -1 {
+            return -2
+        }
+        d := if lte != -1 { declOfTypeExpr(mut st, cr.pkg, lte) } else { declOfExpr(mut st, latN(mut st, args, k), eb, ef) }
+        lb = bind(mut st, lb, sA(nodeOf(mut st, lp)), 0, false, d, t, -1, tRegion(mut st, t), -1, false, SUNK)
+    }
+    return lb
+}
+
+// 局所の束縛のラムダの呼び出しの結果の型宣言（elem なら要素の宣言。本体の末尾の式から — skip なら末尾の呼び出しの先頭の結果。分からなければ -1）
+func localCallDecl(st mut S, callee NodeRef, args ListRef, skip int, eb int, ef int, at NodeRef, elem bool) int {
+    cr := clo(mut st, lookupF(mut st, ef, sA(nodeOf(mut st, callee))))
+    lb := localLamEnv(mut st, cr, args, eb, ef, at)
+    tl := lamTail(mut st, cr.lambda)
+    if lb == -2 || tl == -1 || skip != 0 && kindN(mut st, tl) != ast.ECall {
+        return -1
+    }
+    st.trySkip = skip
+    return if elem { elemDeclOfExpr(mut st, tl, lb, cr.envF) } else { declOfExpr(mut st, tl, lb, cr.envF) }
 }
 
 // index 位置の式を型名として読む（`f[int]`）— 名前なら同じ綴りの TName 節、でなければ -1

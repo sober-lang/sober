@@ -36,7 +36,10 @@ measure() {
 }
 "$S2" build "$W/arena.sober" -o "$W/srv" > "$W/b.log" 2>&1 || { echo "stackcheck: FAIL build ($(head -c 200 "$W/b.log"))"; exit 1; }
 hw=$(measure "$W/srv")
+# 接続の task が区画の形（本体の枠は頁 0 の余白・下はワーカーの区画）で走ったか: 入らなかった数 area_far が 0（framestat の @room の予測と実際の照合）
+af=$(grep -o 'area_far=[0-9]*' "$W/err" | cut -d= -f2)
 fail=0
+if [ "$af" != 0 ]; then echo "stackcheck: FAIL — area_far=${af:-none}: connection tasks whose body frame did not fit page 0 (framestat @room predicts it fits)"; fail=1; fi
 if [ -z "$hw" ] || ! grep -q '^ok 4800$' "$W/client"; then
     echo "stackcheck: FAIL — no stack_hw or the client did not get 4800 responses ($(head -c 100 "$W/client"))"; fail=1
 elif [ "$hw" -gt "$lim" ]; then
@@ -46,6 +49,11 @@ if [ $MUT = 1 ]; then
     "$S2" build "$W/arena.sober" --rt-mutant=47 -o "$W/srv47" > "$W/b.log" 2>&1 || { echo "stackcheck: FAIL build m47"; exit 1; }
     h47=$(measure "$W/srv47")
     if [ -n "$h47" ] && [ "$h47" -gt "$lim" ]; then echo "stackcheck: m47 caught (stack_hw $h47 > $lim)"; else echo "stackcheck: FAIL — mutant 47 was not caught (stack_hw ${h47:-none})"; fail=1; fi
+    # 変異 60（全関数の枠 +512 B）: 本体が頁 0 の余白に入らず area_far > 0
+    "$S2" build "$W/arena.sober" --rt-mutant=60 -o "$W/srv60" > "$W/b.log" 2>&1 || { echo "stackcheck: FAIL build m60"; exit 1; }
+    measure "$W/srv60" > /dev/null
+    a60=$(grep -o 'area_far=[0-9]*' "$W/err" | cut -d= -f2)
+    if [ -n "$a60" ] && [ "$a60" -gt 0 ] && grep -q '^ok 4800$' "$W/client"; then echo "stackcheck: m60 caught (area_far $a60)"; else echo "stackcheck: FAIL — mutant 60 was not caught (area_far ${a60:-none} · client $(head -c 120 "$W/client"))"; fail=1; fi
 fi
-[ $fail = 0 ] && echo "stackcheck: PASS (stack_hw $hw ≤ $lim B)"
+[ $fail = 0 ] && echo "stackcheck: PASS (stack_hw $hw ≤ $lim B · area_far 0)"
 exit $fail

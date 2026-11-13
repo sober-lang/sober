@@ -114,10 +114,12 @@ type Conn struct {
 type connSeal struct {
 }
 
-// 結果の 1 行（k の中で読む — 列は番号で）
+// 結果の 1 行（k の中で読む — 列は番号で）。DataRow の body のまま持ち、列の値は読むときに body から作る（形は受けたときに全列を確かめ済み）
 type Row struct {
-    vals []Value
+    body []byte
+    cells []int // 列ごとの [body の中の値の位置, 長さ（-1 = NULL）]
     oids []int
+    fmts []int
 }
 
 // Policy を読み解いた設定と URL の欄
@@ -393,7 +395,7 @@ func doneCursor() cursor {
 func begin(c Conn, sql string, args []Value) (cursor, error?) {
     enter(c)?
     mut r := rxOpen(c.blk)
-    params, cols, pe := prepare(c, mut r, sql)
+    params, cols, stmt, pe := prepare(c, mut r, sql)
     if pe != nil {
         rxClose(c.blk, r)
         clearFlag(c.blk, bBusy)
@@ -410,7 +412,7 @@ func begin(c Conn, sql string, args []Value) (cursor, error?) {
         fmts = append(fmts, if binaryOid(o) { 1 } else { 0 })
     }
     ff := freeze(fmts)
-    se := sendMsg(c.fd, c.blk, catBytes(catBytes(internal.pgwire.EncBind("", stmtName(c.blk, sql), wargs, ff), internal.pgwire.EncExecute("", 0)), internal.pgwire.EncSync()))
+    se := sendMsg(c.fd, c.blk, catBytes(catBytes(internal.pgwire.EncBind("", stmt, wargs, ff), internal.pgwire.EncExecute("", 0)), internal.pgwire.EncSync()))
     if se != nil {
         clearFlag(c.blk, bBusy)
         return doneCursor(), publicOrServer(c.blk, se)
@@ -418,20 +420,14 @@ func begin(c Conn, sql string, args []Value) (cursor, error?) {
     return cursor{r: r, ss: internal.pgwire.NewSess(), cols: cols, fmts: ff, count: 0, fail: nil, more: true}, nil
 }
 
-// キャッシュの文の名前（無ければ無名）
-func stmtName(blk []int, sql string) string {
-    h := cacheFind(blk, sql)
-    return if h >= 0 { "s${h}" } else { "" }
-}
-
-// 文の引数の型と列の型（キャッシュに無ければ Parse + Describe — 入る場所があれば名前つきで覚える）
+// 文の引数の型・列の型・Bind が指す文の名前（キャッシュに無ければ Parse + Describe — 入る場所があれば名前つきで覚える・無ければ無名）
 @errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed, internal.pgwire.Protocol, Server)
 @effects(block, io, panic, nondet)
-func prepare(c Conn, r mut rx, sql string) ([]int, []int, error?) {
+func prepare(c Conn, r mut rx, sql string) ([]int, []int, string, error?) {
     hit := cacheFind(c.blk, sql)
     if hit >= 0 {
         ps, cs := cacheMeta(c.blk, hit)
-        return ps, cs, nil
+        return ps, cs, "s${hit}", nil
     }
     n := getW(c.blk, lCacheN)
     name := if n < cacheN { "s${n}" } else { "" }
@@ -456,16 +452,18 @@ func prepare(c Conn, r mut rx, sql string) ([]int, []int, error?) {
         }
     }
     if fail != nil {
-        return []int{}, []int{}, fail
+        return []int{}, []int{}, "", fail
     }
     if name != "" && cacheSlot(c.blk, sql, params, cols) == n {
         cacheAdd(c.blk, n, sql, params, cols)
-    } else if name != "" {
+        return params, cols, name, nil
+    }
+    if name != "" {
         // 語の置き場が満ちた: 名前つきの文は捨てて無名で作り直す（Bind は無名の文を指す）
         sendMsg(c.fd, c.blk, catBytes(catBytes(internal.pgwire.EncClose('S', name), internal.pgwire.EncParse("", sql, []int{})), internal.pgwire.EncSync()))?
         drainTo(c, mut r)?
     }
-    return params, cols, nil
+    return params, cols, "", nil
 }
 
 // 次の行（行が尽きたら q.more = false — ReadyForQuery まで読み、数とサーバの誤りを q へ）
@@ -508,7 +506,11 @@ func nextRow(c Conn, q mut cursor) (Row, error?) {
 }
 
 func noRow() Row {
-    return Row{vals: []Value{}, oids: []int{}}
+    return emptyRow()
+}
+
+func emptyRow() Row {
+    return Row{body: []byte{}, cells: []int{}, oids: []int{}, fmts: []int{}}
 }
 
 // 往復の後始末（生成元の defer）: 行の途中で抜けたら ReadyForQuery まで読み捨てて接続を保つ（読めなければ捨てる）
@@ -638,27 +640,29 @@ func oidsOf(cs []internal.pgwire.Col) []int {
     return freeze(o)
 }
 
-// DataRow の body を列ごとの Value に（形が型に合わなければ Protocol）
+// DataRow の body を行に（どれかの列の形が型に合わなければ Protocol）
 @errors(internal.pgwire.Protocol)
 func rowOf(body []byte, cols []int, fmts []int) (Row, error?) {
     nc := internal.pgwire.RowLen(body)
     if nc != len(cols) {
-        return Row{vals: []Value{}, oids: []int{}}, internal.pgwire.Protocol{}
+        return emptyRow(), internal.pgwire.Protocol{}
     }
-    mut vs := mut []Value{}
+    // body は Decode が形を確かめ済み（列の長さの欄は body に収まる）— 列の位置を前から 1 回で拾い、列ごとに値の形を型に照らす
+    mut cs := mut []int{}
+    mut at := 2
     for i <- iter.Range(0, nc) {
-        b := internal.pgwire.RowCol(body, i)
-        if b == nil {
-            vs = append(vs, Null{})
-        } else {
-            v, ok := decode(cols[i], fmts[i], b)
-            if !ok {
-                return Row{vals: []Value{}, oids: []int{}}, internal.pgwire.Protocol{}
+        ln := internal.pgwire.CellLen(body, at)
+        at += 4
+        cs = append(cs, at)
+        cs = append(cs, ln)
+        if ln >= 0 {
+            if !wellFormed(cols[i], fmts[i], body[at:at + ln]) {
+                return emptyRow(), internal.pgwire.Protocol{}
             }
-            vs = append(vs, v)
+            at += ln
         }
     }
-    return Row{vals: freeze(vs), oids: cols}, nil
+    return Row{body: body, cells: freeze(cs), oids: cols, fmts: fmts}, nil
 }
 
 // CommandComplete の tag の最後の数（"INSERT 0 5" → 5・"UPDATE 3" → 3・数の無い tag は 0）

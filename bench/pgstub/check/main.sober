@@ -1,0 +1,78 @@
+package main
+
+// 代役の客側の照合: std/pg で async-db の文を読み、行の数と id の和を印字する（本物の PG と代役で同じ印字になること — 違うのは
+// 表の外の行を要る narrow と、表に無い文面の unknown の 2 行だけ）。続けてプール（size 250）から 500 本の task が借りて読む。
+//   check <postgres://user@host:port/db>
+
+import "std/iter"
+import "std/os"
+import "std/pg"
+import "std/task"
+
+const itemsSql = "SELECT id, name, category, price, quantity, active, tags, rating_score, rating_count FROM items WHERE price BETWEEN $1 AND $2 LIMIT $3"
+
+func main() int {
+    a := os.Args() catch return 2
+    if len(a) != 2 {
+        return 2
+    }
+    at := a[1]
+    pol := pg.Policy{password: "bench", dangerouslyPlaintext: true}
+    oe := pg.Open(at, (c) => {
+        show(c, "default", 10, 50, 50)
+        show(c, "limit20", 10, 50, 20)
+        show(c, "limit1", 10, 50, 1)
+        show(c, "none", 60, 50, 50)
+        show(c, "narrow", 20, 30, 50)
+        n, e := pg.Exec(c, "select 1", args: []pg.Value{})
+        println("unknown: ${if e == nil { "ok ${n}" } else { "error" }}")
+        show(c, "after-error", 10, 50, 5)
+    }, policy: pol)
+    if oe != nil {
+        println("open failed")
+        return 1
+    }
+    pe := pg.OpenPool(at, (p) => {
+        r, _ := task.Run((s task.Scope) => {
+            mut hs := mut []task.Handle[int]{}
+            for i <- iter.Range(0, 500) {
+                hs = append(hs, task.Spawn(s, () => borrow(p)))
+            }
+            mut good := 0
+            for i <- iter.Range(0, len(hs)) {
+                good += task.Join(hs[i])
+            }
+            good
+        })
+        println("pool: ${r} / 500")
+    }, size: 250, policy: pol)
+    return if pe == nil { 0 } else { 1 }
+}
+
+func show(c pg.Conn, tag string, lo int, hi int, lim int) {
+    n, sum, e := read(c, lo, hi, lim)
+    println(if e == nil { "${tag}: n=${n} idsum=${sum}" } else { "${tag}: error" })
+}
+
+func read(c pg.Conn, lo int, hi int, lim int) (int, int, error?) {
+    mut n := 0
+    mut sum := 0
+    for row <- pg.Query(c, itemsSql, args: []pg.Value{pg.Int{v: lo}, pg.Int{v: hi}, pg.Int{v: lim}})? {
+        sum += pg.ColInt(row, 0)?
+        _ = pg.ColString(row, 1)?
+        _ = pg.ColBool(row, 5)?
+        _ = pg.ColJsonText(row, 6)?
+        n += 1
+    }
+    return n, sum, nil
+}
+
+// 1 本借りて 20 行を読めたら 1
+func borrow(p pg.Pool) int {
+    mut ok := 0
+    e := pg.With(p, (c) => {
+        n, _, re := read(c, 10, 50, 20)
+        ok = if re == nil && n == 20 { 1 } else { 0 }
+    })
+    return if e == nil { ok } else { 0 }
+}

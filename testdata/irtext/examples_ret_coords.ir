@@ -2350,7 +2350,6 @@ b0:
 }
 
 func @main.direct(%0 ptr, %1 i64) {
-  slot s0 [3]
 b0:
   %2 = region.depth
   %3 = globaladdr @rt.meta
@@ -2368,16 +2367,9 @@ b0:
   %13 = region.depth
   region.enter
   %14 = region.depth
-  %15 = slotaddr s0
-  %16 = globaladdr @rt.meta
-  store %16[2571], %12
-  call @main.mk(%15, %1)
-  %17 = load.i64 %15[0]
-  store %0[0], %17
-  %18 = load.i64 %15[1]
-  store %0[1], %18
-  %19 = load.i64 %15[2]
-  store %0[2], %19
+  %15 = globaladdr @rt.meta
+  store %15[2571], %12
+  call @main.mk(%0, %1)
   region.relocate %0, 1, %2
   region.setdepth %2
   ret

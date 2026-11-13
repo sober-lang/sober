@@ -1146,7 +1146,7 @@ func needSleep(st mut St) {
             st.rtTmrFire = addFunc(mut st, int(strLit(mut st, "rt.tmr_fire")), desugar.ListRef(list0(mut st)), TyI64)
             if dlFn(st.rtD3) == 0 {
                 // ABS の目標に今の時刻が要る — deadline: の無いプログラムは vDSO を起動で引かない（エントリは関数本体より先に組む）ので初回の sleep で引く
-                st.vdsoG = addGlobalInit(mut st, int(strLit(mut st, "rt.vdso")), 1, -1)
+                needVdso(mut st)
             }
         }
     }

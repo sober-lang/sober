@@ -31,7 +31,7 @@ SQL の文面は const に限ります。`pg.Exec` / `pg.Query` / `pg.Script` �
 
 ## 3. 行を読む — `pg.Query`
 
-`for r <- pg.Query(c, sql, args: …)? { … }` で 1 行ずつ受けます。列は番号で指し、型つきの読み（`pg.ColInt`・`pg.ColString` ほか）か、値 `pg.Col(r, i)`（`pg.Value` の union — NULL は `pg.Null{}`）で読みます。型つきの読みは、型が違えば `WrongType`、NULL なら `NullColumn` を返します。
+`for r <- pg.Query(c, sql, args: …)? { … }` で 1 行ずつ受けます。列は番号で指し、型つきの読み（`pg.ColInt`・`pg.ColString` ほか）か、値 `pg.Col(r, i)`（`pg.Value` の union — NULL は `pg.Null{}`）で読みます。型つきの読みは、型が違えば `WrongType`、NULL なら `NullColumn` を返します。json / jsonb の列は `pg.ColJsonText(r, i)` が JSON の字句を string で返すので、`json.Put` で応答へそのまま積めます（`pg.ColJson` は同じ字句を `[]byte` で）。text や json の列の UTF-8 は行を受けたときに確かめ、壊れていれば `Protocol` です。
 
 本体を `break` や `?` で途中で抜けても、残りの行は読み捨てられ、接続はそのまま使えます。行を流している途中に同じ接続で別の文を投げると panic（`Reentered`）です。行を読み切ってから使うか、別の接続を使います。
 

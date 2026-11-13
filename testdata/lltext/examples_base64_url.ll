@@ -4212,8 +4212,8 @@ b0:
   store i64 %v2, ptr %st1
   %st2 = getelementptr i64, ptr %v4, i64 2
   store i64 %v3, ptr %st2
-  %v33 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v5.p = getelementptr i64, ptr %v33, i64 0
+  %v32 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v5.p = getelementptr i64, ptr %v32, i64 0
   %v5 = load i64, ptr %v5.p
   %v6 = getelementptr i64, ptr @"rt.meta", i64 0
   %v7.p = getelementptr i64, ptr %v6, i64 2571
@@ -4256,26 +4256,23 @@ b0:
   %v27.p = getelementptr i64, ptr %v23, i64 2
   %v27 = load i64, ptr %v27.p
   %v28 = add i64 0, 1
-  %v29 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st7 = getelementptr i64, ptr %v29, i64 2571
-  store i64 %v15, ptr %st7
   call void @"std/base64.encode"(ptr %v16, i64 %v17, i64 %v18, i64 %v19, i64 %v25, i64 %v26, i64 %v27, i64 %v28)
-  %v30.p = getelementptr i64, ptr %v16, i64 0
+  %v29.p = getelementptr i64, ptr %v16, i64 0
+  %v29 = load i64, ptr %v29.p
+  %st7 = getelementptr i64, ptr %v0, i64 0
+  store i64 %v29, ptr %st7
+  %v30.p = getelementptr i64, ptr %v16, i64 1
   %v30 = load i64, ptr %v30.p
-  %st8 = getelementptr i64, ptr %v0, i64 0
+  %st8 = getelementptr i64, ptr %v0, i64 1
   store i64 %v30, ptr %st8
-  %v31.p = getelementptr i64, ptr %v16, i64 1
+  %v31.p = getelementptr i64, ptr %v16, i64 2
   %v31 = load i64, ptr %v31.p
-  %st9 = getelementptr i64, ptr %v0, i64 1
+  %st9 = getelementptr i64, ptr %v0, i64 2
   store i64 %v31, ptr %st9
-  %v32.p = getelementptr i64, ptr %v16, i64 2
-  %v32 = load i64, ptr %v32.p
-  %st10 = getelementptr i64, ptr %v0, i64 2
-  store i64 %v32, ptr %st10
   call void @"rt.region_relocate8"(ptr %v0, i64 %v5)
-  %v34 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st11 = getelementptr i64, ptr %v34, i64 0
-  store i64 %v5, ptr %st11
+  %v33 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st10 = getelementptr i64, ptr %v33, i64 0
+  store i64 %v5, ptr %st10
   ret void
 }
 
@@ -4309,8 +4306,8 @@ b0:
   store i64 %v2, ptr %st1
   %st2 = getelementptr i64, ptr %v4, i64 2
   store i64 %v3, ptr %st2
-  %v33 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v5.p = getelementptr i64, ptr %v33, i64 0
+  %v32 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v5.p = getelementptr i64, ptr %v32, i64 0
   %v5 = load i64, ptr %v5.p
   %v6 = getelementptr i64, ptr @"rt.meta", i64 0
   %v7.p = getelementptr i64, ptr %v6, i64 2571
@@ -4353,26 +4350,23 @@ b0:
   %v27.p = getelementptr i64, ptr %v23, i64 2
   %v27 = load i64, ptr %v27.p
   %v28 = add i64 0, 0
-  %v29 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st7 = getelementptr i64, ptr %v29, i64 2571
-  store i64 %v15, ptr %st7
   call void @"std/base64.encode"(ptr %v16, i64 %v17, i64 %v18, i64 %v19, i64 %v25, i64 %v26, i64 %v27, i64 %v28)
-  %v30.p = getelementptr i64, ptr %v16, i64 0
+  %v29.p = getelementptr i64, ptr %v16, i64 0
+  %v29 = load i64, ptr %v29.p
+  %st7 = getelementptr i64, ptr %v0, i64 0
+  store i64 %v29, ptr %st7
+  %v30.p = getelementptr i64, ptr %v16, i64 1
   %v30 = load i64, ptr %v30.p
-  %st8 = getelementptr i64, ptr %v0, i64 0
+  %st8 = getelementptr i64, ptr %v0, i64 1
   store i64 %v30, ptr %st8
-  %v31.p = getelementptr i64, ptr %v16, i64 1
+  %v31.p = getelementptr i64, ptr %v16, i64 2
   %v31 = load i64, ptr %v31.p
-  %st9 = getelementptr i64, ptr %v0, i64 1
+  %st9 = getelementptr i64, ptr %v0, i64 2
   store i64 %v31, ptr %st9
-  %v32.p = getelementptr i64, ptr %v16, i64 2
-  %v32 = load i64, ptr %v32.p
-  %st10 = getelementptr i64, ptr %v0, i64 2
-  store i64 %v32, ptr %st10
   call void @"rt.region_relocate8"(ptr %v0, i64 %v5)
-  %v34 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st11 = getelementptr i64, ptr %v34, i64 0
-  store i64 %v5, ptr %st11
+  %v33 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st10 = getelementptr i64, ptr %v33, i64 0
+  store i64 %v5, ptr %st10
   ret void
 }
 

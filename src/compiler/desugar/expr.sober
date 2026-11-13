@@ -1470,10 +1470,12 @@ func fieldValuesIn(st mut S, pk int, fenv int, fs ListRef, elems ListRef, at Nod
         // スカラー（int / bool / byte / unit とその組）だけ — region・型変数・option・union を含む型の注釈は座標や包みの読みが要るので、
         // 使う点の検査に任せる）
         // 値の型が分かって欄の型に合わなければ名指す（文字列・struct 等のスカラーでない型・別のスカラー — 整数リテラルは coerce が byte / float へ寄せる）
+        // 型なしの数の定数（リテラル・const・文字リテラル）と、腕の末尾が全部それの if / switch / ブロックの式は名指さない
+        // （coerceExpr が欄の型へ寄せる）
         if scalarTy(mut st, w) {
             vn := nB(nodeOf(mut st, el))
             vt := computeTy(mut st, vn, eb, ef)
-            if vt != TyRef(-1) && kindN(mut st, vn) != ast.EInt && (!scalarTy(mut st, vt) || tg(mut st, vt) != tg(mut st, w)) {
+            if vt != TyRef(-1) && !tailsUntyped(mut st, vn, eb, ef) && (!scalarTy(mut st, vt) || tg(mut st, vt) != tg(mut st, w)) {
                 return out, lets, diag.FieldType{at: posOf(mut st, vn)}
             }
         }
@@ -1515,6 +1517,34 @@ func fieldValuesIn(st mut S, pk int, fenv int, fs ListRef, elems ListRef, at Nod
 }
 
 // int / bool / byte / unit とその組だけの型か（欄の注釈の対象）
+// 値の式 e の末尾（if / switch の腕・ブロックの末尾 — 入れ子も辿る）が全部型なしの数の定数か（値を持たない腕は数えない・1 つは要る）
+func tailsUntyped(st mut S, e NodeRef, eb int, ef int) bool {
+    k := kindN(mut st, e)
+    if k == ast.EBlock {
+        tl := tailExpr(mut st, e)
+        return tl != -1 && tailsUntyped(mut st, tl, eb, ef)
+    }
+    if k == ast.EIf {
+        th := tailExpr(mut st, nB(nodeOf(mut st, e)))
+        el := nC(nodeOf(mut st, e))
+        return th != -1 && el != -1 && tailsUntyped(mut st, th, eb, ef) && tailsUntyped(mut st, el, eb, ef)
+    }
+    if k == ast.ESwitch {
+        mut any := false
+        for i <- iter.Range(0, swArms(mut st, e)) {
+            tl := swArmTail(mut st, e, i)
+            if tl != -1 {
+                if !tailsUntyped(mut st, tl, eb, ef) {
+                    return false
+                }
+                any = true
+            }
+        }
+        return any
+    }
+    return isTag(mut st, computeTy(mut st, e, eb, ef), TInt) && isUntypedConst(mut st, e, eb, st.curPkg)
+}
+
 func scalarTy(st mut S, t TyRef) bool {
     k := tg(mut st, t)
     if k == TPr {

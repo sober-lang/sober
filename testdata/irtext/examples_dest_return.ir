@@ -2127,7 +2127,6 @@ b9:
 }
 
 func @main.outer(%0 ptr, %1 i64) {
-  slot s0 [3]
 b0:
   %2 = region.depth
   %3 = globaladdr @rt.meta
@@ -2142,23 +2141,15 @@ b0:
   %11 = mul %9, %10
   %12 = add %2, %11
   region.enter
-  %13 = slotaddr s0
-  %14 = globaladdr @rt.meta
-  store %14[2571], %12
-  call @main.squares(%13, %1)
-  %15 = load.i64 %13[0]
-  store %0[0], %15
-  %16 = load.i64 %13[1]
-  store %0[1], %16
-  %17 = load.i64 %13[2]
-  store %0[2], %17
+  %13 = globaladdr @rt.meta
+  store %13[2571], %12
+  call @main.squares(%0, %1)
   region.relocate %0, 1, %2
   region.setdepth %2
   ret
 }
 
 func @main.outerLabel(%0 ptr, %1 i64) {
-  slot s0 [3]
 b0:
   %2 = region.depth
   %3 = globaladdr @rt.meta
@@ -2173,16 +2164,9 @@ b0:
   %11 = mul %9, %10
   %12 = add %2, %11
   region.enter
-  %13 = slotaddr s0
-  %14 = globaladdr @rt.meta
-  store %14[2571], %12
-  call @main.label(%13, %1)
-  %15 = load.i64 %13[0]
-  store %0[0], %15
-  %16 = load.i64 %13[1]
-  store %0[1], %16
-  %17 = load.i64 %13[2]
-  store %0[2], %17
+  %13 = globaladdr @rt.meta
+  store %13[2571], %12
+  call @main.label(%0, %1)
   call @rt.region_relocate8(%0, %2)
   region.setdepth %2
   ret

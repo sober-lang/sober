@@ -1,0 +1,57 @@
+package main
+
+// 関数値の呼び出しの結果の欄を読む。呼ぶ関数値は匿名の関数型の欄・局所の束縛のラムダ（関数型の仮引数と同じく、
+// 結果の型は欄の型式かラムダの本体の末尾から読む）。結果が slice なら要素の欄、可謬なら `?` の後の欄も
+
+type S struct {
+    ok bool
+}
+
+type E error {
+    msg string
+}
+
+type R struct {
+    f func(x string) S
+    many func(x string) []S
+    try func(x string) (S, error?)
+}
+
+func mk(x string) (S, error?) {
+    if x == "" {
+        return S{}, E{msg: "empty"}
+    }
+    return S{ok: x == "a"}, nil
+}
+
+func run() error? {
+    r := R{f: (x) => S{ok: x == "a"}, many: (x) => []S{S{ok: x == "b"}}, try: (x) => mk(x)}
+    s := r.f("a")
+    println(s.ok)
+    xs := r.many("a")
+    println(xs[0].ok)
+    t := r.try("a")?
+    println(t.ok)
+    g := (x string) => S{ok: x == "b"}
+    u := g("b")
+    println(u.ok)
+    h := (x string) => []S{S{ok: x == "c"}}
+    ys := h("a")
+    println(ys[0].ok)
+    k := (x string) => mk(x)
+    v := k("b")?
+    println(v.ok)
+    blk := (x string) => {
+        y := x + "!"
+        S{ok: y == "a!"}
+    }
+    w := blk("a")
+    println(w.ok)
+    return nil
+}
+
+func main() {
+    if run() != nil {
+        println("err")
+    }
+}

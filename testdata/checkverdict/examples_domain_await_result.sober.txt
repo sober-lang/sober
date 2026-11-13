@@ -1,0 +1,2 @@
+sober: desugar error at examples/domain_await_result.sober:53:16 (CoreFragment)
+exit=1

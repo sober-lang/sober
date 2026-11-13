@@ -79,7 +79,7 @@ type Request struct {
 - `path` — 要求の対象の '?' の前（生のまま — % のデコードはしない）
 - `query` — 要求の対象の '?' の後（生のまま — % のデコードはしない）
 - `head` — 要求の頭（要求行からヘッダの終わりの空行まで — 検査済み）。認証のヘッダを含むので認証の源（std の外の package で読むと、その値と読んだ関数は認証に届く — [language.md 12 節](../language.md)「出所の依存」。std の中の読み〔Header・Dispatch の写し〕は源にしない）
-- `headers` — head の上のヘッダの位置 [名前の始め, 終わり, 値の始め, 終わり] × 本数
+- `headers` — head の上のヘッダの位置 × 本数。1 本 = 2 語 [名前の始め | 終わり \<\< 32, 値の始め | 終わり \<\< 32]（lo32 / hi32 で読む — 頭は 4 GiB 未満）
 - `body` — 本文（Content-Length の分・chunked は繋いだ写し）
 - `pattern` — Dispatch が一致させたルートの path（"/users/:id" — ルーターを通らない要求は ""。Param はこれと path を並べて歩く）
 

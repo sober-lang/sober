@@ -185,7 +185,8 @@ func ilLeafSweep(st mut St, f FnRef, leaf []int) {
 }
 
 // 葉の極小関数か: 呼び出しは exit で終わるブロック（panic の点）か窓の溢れ（rt.win_ralloc — rt.region_alloc / alloc8 の冷たい道。
-// 写した先でも x86 が冷たい呼び出しとして末尾へ寄せる）にだけあり、命令が IL_LEAF 以下。region.depth / setdepth は数えない
+// 写した先でも x86 が冷たい呼び出しとして末尾へ寄せる）か戻らない利用者の関数（binary.Load64 の境界の panic — 写した先で noret が
+// ブロックを exit で閉じるので、panic の点と同じく冷たい側へ寄る）にだけあり、命令が IL_LEAF 以下。region.depth / setdepth は数えない
 // （mut 引数の関数が持つ深さの保存と復元 — 確保の無い葉では対で打ち消し合う。写しても呼び手の深さを変えない）
 func ilLeafTiny(st mut St, f FnRef) bool {
     mut n := 0
@@ -194,7 +195,7 @@ func ilLeafTiny(st mut St, f FnRef) bool {
         mut i := irBlkIHead(mut st, b)
         while i != -1 {
             op := irInsOp(mut st, i)
-            if op == OpCall && irBlkTerm(mut st, b) != TmExit && irInsFn(mut st, i) != st.rtWinRalloc {
+            if op == OpCall && irBlkTerm(mut st, b) != TmExit && irInsFn(mut st, i) != st.rtWinRalloc && !ilNonretSeed(mut st, irInsFn(mut st, i)) {
                 return false
             }
             if op != OpDead && op != OpRDepth && op != OpRSetDepth {
@@ -783,7 +784,7 @@ func ilShapeD(st mut St, g FnRef, n int, dep bool) int {
         mut i := irBlkIHead(mut st, x)
         while i != -1 {
             op := irInsOp(mut st, i)
-            if op == OpSlotaddr || op == OpREnter || ((op == OpRDepth || op == OpRSetDepth) && !dep) || op == OpRAlloc || op == OpRBump || op == OpRReloc || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone || op == OpUnwind {
+            if op == OpSlotaddr || op == OpREnter || ((op == OpRDepth || op == OpRSetDepth) && !dep) || op == OpRAlloc || op == OpRBump || op == OpRReloc || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone || op == OpUnwind || op == OpArea {
                 return 0
             }
             i = irInsNext(mut st, i)

@@ -268,7 +268,7 @@ func cfDanger(st mut St, def mut []int, i InsRef, aslot int, s int) bool {
         return g != st.rtStreq && g != st.rtPanic && g != st.rtPanicMem
     }
     return op == OpCallI || op == OpSyscall || op == OpAtomic || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpClone || op == OpRReloc ||
-        op == OpREnter || op == OpRSetDepth || op == OpUnwind
+        op == OpREnter || op == OpRSetDepth || op == OpUnwind || op == OpArea
 }
 
 // 命令 x のブロック b の中の位置（無ければ -1）

@@ -1,0 +1,52 @@
+package time
+
+// 時計の口（rtClock — vDSO か生の clock_gettime）が、生の clock_gettime(2) と同じ時計を読むか
+
+@intrinsic("syscall")
+func rawCall(nr int, a int, b int, c int, d int, e int, f int) int
+
+@intrinsic("addr")
+func rawAddr(b []byte) int
+
+// 生の clock_gettime(clk) の ns
+func rawNs(clk int) int {
+    mut b := mut []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+    _ = rawCall(228, clk, rawAddr(b), 0, 0, 0, 0)
+    mut s := 0
+    mut ns := 0
+    mut i := 7
+    while i >= 0 {
+        s = s << 8 | int(b[i])
+        ns = ns << 8 | int(b[8 + i])
+        i -= 1
+    }
+    return s * Second + ns
+}
+
+func TestMonoIsMonotonic() {
+    mut prev := Mono().ns
+    mut i := 0
+    while i < 10000 {
+        n := Mono().ns
+        assert(n >= prev)
+        prev = n
+        i += 1
+    }
+    assert(Since(Mono()) >= 0)
+}
+
+func TestMonoIsClockMonotonic() {
+    a := rawNs(1)
+    m := Mono().ns
+    b := rawNs(1)
+    assert(a <= m && m <= b)
+}
+
+func TestNowIsClockRealtime() {
+    a := rawNs(0)
+    t := Now()
+    b := rawNs(0)
+    n := t.sec * Second + t.nsec
+    assert(a <= n && n <= b)
+    assert(t.nsec >= 0 && t.nsec < Second)
+}

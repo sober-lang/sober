@@ -1,5 +1,6 @@
 package pg
 
+import "std/iter"
 import "std/time"
 
 func TestParseUrl() {
@@ -134,4 +135,49 @@ func jsonLen(v Value) int {
     case Json{v: b}: len(b)
     default: -1
     }
+}
+
+// text の列の UTF-8 は行を受けたときに確かめる（ColString は確かめ直さない — 不正な UTF-8 の行は受けで Protocol）
+func TestRowUtf8() {
+    good := []byte{0, 2, 0, 0, 0, 2, 97, 98, 0, 0, 0, 2, 195, 169}
+    r0, e0 := rowOf(good, []int{oidText, oidVarchar}, []int{0, 0})
+    assert(e0 == nil, "good row (fmt 0)")
+    r, e := rowOf(good, []int{oidText, oidVarchar}, []int{1, 1})
+    assert(e == nil, "good row (fmt 1)")
+    a := ColString(r, 0) catch "!"
+    b := ColString(r, 1) catch "!"
+    assert(a == "ab" && b == "é", "text columns")
+    oids := []int{oidText, oidVarchar, oidBpchar, oidName}
+    for k <- iter.Range(0, 8) {
+        oid := oids[k / 2]
+        f := k % 2
+        bad := []byte{0, 2, 0, 0, 0, 2, 97, 98, 0, 0, 0, 2, 195, 40}
+        _, eb := rowOf(bad, []int{oidText, oid}, []int{f, f})
+        assert(eb != nil, "invalid UTF-8 rejected on receipt (oid ${oid} fmt ${f})")
+        trunc := []byte{0, 1, 0, 0, 0, 1, 227}
+        _, et := rowOf(trunc, []int{oid}, []int{f})
+        assert(et != nil, "truncated sequence rejected (oid ${oid} fmt ${f})")
+    }
+}
+
+// json / jsonb の列も UTF-8 を受けで確かめ、ColJsonText は字句をそのまま string で返す（jsonb は版のバイト 1 の後ろ）
+func TestRowJsonText() {
+    // [json: ["a"]] [jsonb: 1 "é"]
+    good := []byte{0, 2, 0, 0, 0, 5, 91, 34, 97, 34, 93, 0, 0, 0, 5, 1, 34, 195, 169, 34}
+    r, e := rowOf(good, []int{oidJson, oidJsonb}, []int{1, 1})
+    assert(e == nil, "good json row")
+    j := ColJsonText(r, 0) catch "!"
+    jb := ColJsonText(r, 1) catch "!"
+    assert(j == "[\"a\"]", "json text")
+    assert(jb == "\"é\"", "jsonb text")
+    bad := []byte{0, 1, 0, 0, 0, 3, 34, 195, 40}
+    _, eb := rowOf(bad, []int{oidJson}, []int{1})
+    assert(eb != nil, "invalid UTF-8 in a json column rejected on receipt")
+    badb := []byte{0, 1, 0, 0, 0, 3, 1, 255, 49}
+    _, ebb := rowOf(badb, []int{oidJsonb}, []int{1})
+    assert(ebb != nil, "invalid UTF-8 in a jsonb column rejected on receipt")
+    t, et := rowOf([]byte{0, 1, 0, 0, 0, 1, 120}, []int{oidText}, []int{1})
+    assert(et == nil, "text row")
+    _, wt := ColJsonText(t, 0)
+    assert(wt != nil, "ColJsonText on a text column is WrongType")
 }

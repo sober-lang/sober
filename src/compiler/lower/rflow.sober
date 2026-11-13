@@ -49,10 +49,12 @@ func regionFlowModule(st mut St) {
     mut isite := mut []int{}
     mut dAlloc := mut []bool{}
     mut entAlloc := mut []bool{}
+    mut entOth := mut []bool{}
     for kx <- iter.Range(0, nFns) {
         dg = append(dg, len(ad))
         dAlloc = append(dAlloc, false)
         entAlloc = append(entAlloc, false)
+        entOth = append(entOth, false)
         gf := FnRef(fl[kx])
         mut bb := irFnBHead(mut st, gf)
         mut mts := mut []int{}
@@ -90,12 +92,16 @@ func regionFlowModule(st mut St) {
                         dAlloc[kx] = true
                         if rfAtEntry(mut st, ins, mut entD) {
                             entAlloc[kx] = true
+                            if cf != st.rtErrAlloc {
+                                entOth[kx] = true
+                            }
                         }
                     }
                 } else if op == OpRAlloc || op == OpRBump || op == OpRReloc {
                     dAlloc[kx] = true
                     if op == OpRAlloc && rfAtEntry(mut st, ins, mut entD) {
                         entAlloc[kx] = true
+                        entOth[kx] = true
                     }
                 } else if op == OpCallI {
                     // [呼び手, 引数の数, 結果の型]
@@ -158,8 +164,10 @@ func regionFlowModule(st mut St) {
     mut atCaller := mut []bool{}
     mut hp := mut []bool{}
     mut pmk := mut []int{}
+    mut eoM := mut []int{}
     for kx <- iter.Range(0, nFns) {
         gf := FnRef(fl[kx])
+        eoM = append(eoM, if !isRtF[kx] && nEnt[kx] && entAlloc[kx] && !entOth[kx] { -9 } else { 0 })
         // region を開く関数も、入口の深度（enter より前に読んだ region.depth = 呼び手の深度）へ確保するなら呼び手の深度で確保しうる
         atCaller = append(atCaller, !isRtF[kx] && irFnBHead(mut st, gf) != -1 && dAlloc[kx] && (!nEnt[kx] || entAlloc[kx]))
         // ヒープの語（rfPtrMask）は判定の中で呼び先ごとに遅延で（-9 = 未計算 — rfHeap）
@@ -219,7 +227,7 @@ func regionFlowModule(st mut St) {
             rfWhy(mut st, gf, if tkn[kx] { "gate: address taken or entry" } else if inCycle[kx] { "gate: recursive" } else { "gate: mut parameter" })
         }
         if !isRtF[kx] && nEnt[kx] && !tkn[kx] && !inCycle[kx] && !mutp {
-            if rfJudge(mut st, gf, mut fx, mut fl, mut isRtF, mut rtDep, mut atCaller, mut hp, mut pmk, mut rpt, mut frs) {
+            if rfJudge(mut st, gf, mut fx, mut fl, mut isRtF, mut rtDep, mut atCaller, mut hp, mut pmk, mut rpt, mut frs, mut eoM) {
                 if why {
                     rfWhy(mut st, gf, "elided")
                 }
@@ -351,12 +359,12 @@ const RF_INNER = 4 // 反復の region の enter の直後の region.depth（ル
 const RF_CUR = 5   // それ以外の region.depth（今の深度 — 自分の深度でありうる）
 
 // f が C1 の条件 E1 / E3 を満たすか（E2・アドレス・mut の仮引数は呼び手が見た）
-func rfJudge(st mut St, ff FnRef, fx mut map[int]int, fl mut []int, isRtF mut []bool, rtDep mut []bool, atCaller mut []bool, hp mut []bool, pmk mut []int, rpt mut []bool, frs mut []int) bool {
+func rfJudge(st mut St, ff FnRef, fx mut map[int]int, fl mut []int, isRtF mut []bool, rtDep mut []bool, atCaller mut []bool, hp mut []bool, pmk mut []int, rpt mut []bool, frs mut []int, eoM mut []int) bool {
     nval := irFnNVal(mut st, ff) + 1
     b0 := irFnBHead(mut st, ff)
     // 前検査（表を作る前 — 判定の費用の大半はここで落ちる関数の表づくりだった）: 入口の enter が 1 つ・task の命令なし・暗黙の深度の rt / 透過の呼び先 /
     // map の成長なし・点になりうる命令（確保・relocate・ヒープを返しうる呼び出し）がある
-    if !rfPrescan(mut st, ff, mut fx, mut fl, mut isRtF, mut rtDep, mut atCaller, mut hp, mut pmk) {
+    if !rfPrescan(mut st, ff, mut fx, mut fl, mut isRtF, mut rtDep, mut atCaller, mut hp, mut pmk, mut rpt, mut frs, mut eoM) {
         return false
     }
     // ブロックの並び（番号 → 並びの位置）
@@ -431,6 +439,10 @@ func rfJudge(st mut St, ff FnRef, fx mut map[int]int, fl mut []int, isRtF mut []
     // 1 周目: 深度の種類・定数・前提の検査（E1 と E3 の構造の外し）
     mut mts := mut []int{}
     mut nEnt := 0
+    // 失敗の辺でだけ確保する呼び出し（ブロックの並びの位置 → 命令）
+    mut eoAt := mut map[int]int{}
+    mut defs := map[int]int{}
+    mut haveDefs := false
     for qi <- iter.Range(0, nblk) {
         bb = BlkRef(blks[qi])
         mut seenEnter := false
@@ -475,8 +487,16 @@ func rfJudge(st mut St, ff FnRef, fx mut map[int]int, fl mut []int, isRtF mut []
                         return false
                     }
                     if !isRtF[jx] && atCaller[jx] {
-                        rfWhyCallee(mut st, ff, "callee allocating at the caller depth", gf)
-                        return false
+                        if !haveDefs {
+                            defs = llValDefs(mut st, ff)
+                            haveDefs = true
+                        }
+                        // 失敗の戻りの道だけで確保する呼び先: 結果の error を直後の分岐で調べる形なら、確保は非 nil の辺の点（下のデータフロー）
+                        if !rfEoOf(mut st, mut fx, mut fl, mut isRtF, mut rtDep, mut rpt, mut frs, mut eoM, jx) || !rfErrTail(mut st, ff, bb, ins, defs) || eoAt[qi] != nil {
+                            rfWhyCallee(mut st, ff, "callee allocating at the caller depth", gf)
+                            return false
+                        }
+                        eoAt[qi] = int(ins)
                     }
                     if gf == st.rtMapGrow {
                         rfWhy(mut st, ff, "map growth")
@@ -542,6 +562,8 @@ func rfJudge(st mut St, ff FnRef, fx mut map[int]int, fl mut []int, isRtF mut []
     mut pendMask := 0
     // ヒープを返すが新しい確保を残さない呼び出しがあるか（点にはしない — 点の無い関数の外しの判定では点と同じに数える）
     mut viewCall := false
+    mut eoBit := mut map[int]int{}
+    mut eoSlot := mut map[int]int{}
     for qi <- iter.Range(0, nblk) {
         bb = BlkRef(blks[qi])
         mut ins := irBlkIHead(mut st, bb)
@@ -569,6 +591,8 @@ func rfJudge(st mut St, ff FnRef, fx mut map[int]int, fl mut []int, isRtF mut []
                     kx := if gf == st.rtCat8 || gf == st.rtGrow { 3 } else if gf == st.rtGrow8 { 2 } else { 0 }
                     dv = if lenL(mut st, ll) > kx { latI(mut st, ll, kx) } else { -1 }
                     pk = 3
+                } else if rfMapIs(mut eoAt, qi, int(ins)) {
+                    pk = 5
                 } else {
                     jx := fx[int(gf)]
                     if jx != nil && (hp[jx] || rfMaskOf(mut st, mut fl, mut pmk, jx) != 0) {
@@ -585,7 +609,7 @@ func rfJudge(st mut St, ff FnRef, fx mut map[int]int, fl mut []int, isRtF mut []
             if pk != 0 {
                 dkd := if dv >= 0 && dv < nval { dkind[dv] } else { RF_NONE }
                 // 自分の深度でありうる: 自分の深度・今の深度・読んだ値（ヘッダの深度）・ブロックの引数
-                isMine := pk == 4 || !(dkd == RF_ENTRY || dkd == RF_DEST || dkd == RF_INNER)
+                isMine := pk >= 4 || !(dkd == RF_ENTRY || dkd == RF_DEST || dkd == RF_INNER)
                 if isMine {
                     if pk == 3 {
                         rfWhy(mut st, ff, "growth at the own depth")
@@ -601,6 +625,13 @@ func rfJudge(st mut St, ff FnRef, fx mut map[int]int, fl mut []int, isRtF mut []
                     }
                     orgOf[int(ins)] = nOrg
                     pendMask = pendMask | (1 << nOrg)
+                    if pk == 5 {
+                        eoBit[qi] = nOrg
+                        sd0 := defs[latI(mut st, desugar.ListRef(irInsB(mut st, ins)), 0)]
+                        if sd0 != nil {
+                            eoSlot[qi] = irInsA(mut st, InsRef(sd0))
+                        }
+                    }
                     nOrg += 1
                 } else if pk == 1 {
                     // 外（呼び手以下・反復）の確保: 中身を追う点（未着にはしない — 着く道の中継: 宛先に作った列の中の自前の欄）
@@ -759,10 +790,12 @@ func rfJudge(st mut St, ff FnRef, fx mut map[int]int, fl mut []int, isRtF mut []
                                     pw = rfMaskOf(mut st, mut fl, mut pmk, gj)
                                 }
                             }
+                            // 失敗の辺でだけ確保する呼び先の結果は、呼び出しの直後には新しい確保を持たない（点は分岐の非 nil の辺で立てる）
+                            eb := if rfMapIs(mut eoAt, qi, int(ins)) { 0 } else { mbit }
                             for kx <- iter.Range(0, swd[snum]) {
-                                fcur[sb[snum] + kx] = if pw == -1 || (kx < 62 && (pw >> kx) & 1 == 1) { mbit } else { 0 }
+                                fcur[sb[snum] + kx] = if pw == -1 || (kx < 62 && (pw >> kx) & 1 == 1) { eb } else { 0 }
                             }
-                            fcur[nSw] = fcur[nSw] | mbit
+                            fcur[nSw] = fcur[nSw] | eb
                         } else if mbit != 0 {
                             if fine {
                                 whyR = "sret into an untracked place"
@@ -817,10 +850,22 @@ func rfJudge(st mut St, ff FnRef, fx mut map[int]int, fl mut []int, isRtF mut []
                         }
                     }
                     tqi := bpos[irBlkId(mut st, toB)]
+                    // 結果の error が非 nil の辺（then）: 呼び先の確保（error の語が指すセル）が未着の点として立つ
+                    ebit := eoBit[qi]
+                    esn := eoSlot[qi]
+                    mut eAdd := 0
+                    mut eLo := 0
+                    mut eHi := 0
+                    if tm == TmCondbr && sd == 0 && ebit != nil && esn != nil {
+                        eAdd = 1 << ebit
+                        eHi = sb[esn] + swd[esn]
+                        eLo = eHi - ERR_WORDS
+                    }
                     if tqi != nil {
                         mut bgrow := !bhave[tqi]
                         for kx <- iter.Range(0, slw) {
-                            nwv := inSt[tqi * slw + kx] | fcur[kx]
+                            ex := if kx == nSw || (kx >= eLo && kx < eHi) { eAdd } else { 0 }
+                            nwv := inSt[tqi * slw + kx] | fcur[kx] | ex
                             if nwv != inSt[tqi * slw + kx] {
                                 inSt[tqi * slw + kx] = nwv
                                 bgrow = true
@@ -1240,12 +1285,16 @@ func rfPtrMask(st mut St, gf FnRef) int {
     mut off := mut []int{}
     mut cvl := mut []int{}
     mut isc := mut []bool{}
+    // 宛先の深度（W_DEST の読みに依る算術 — 呼び手が渡した深度か入口の深度。入口の深度以下に限る）
+    mut dst := mut []bool{}
     for kx <- iter.Range(0, nval) {
         off = append(off, -1)
         cvl = append(cvl, 0)
         isc = append(isc, false)
+        dst = append(dst, false)
     }
     off[0] = 0
+    mut mts := mut []int{}
     mut mk := 0
     mut bb := b0
     while bb != -1 {
@@ -1262,6 +1311,14 @@ func rfPtrMask(st mut St, gf FnRef) int {
                 if av >= 0 && av < nval && off[av] >= 0 && iv >= 0 && iv < nval && isc[iv] {
                     off[rv] = off[av] + cvl[iv]
                 }
+            } else if (op == OpGlobal || op == OpFsAddr) && irInsA(mut st, ins) == st.meta {
+                mts = append(mts, rv)
+            } else if op == OpLoad && irInsB(mut st, ins) == W_DEST && apIn(mut mts, irInsA(mut st, ins)) && rv >= 0 && rv < nval {
+                dst[rv] = true
+            } else if (op == OpBin || op == OpCmp) && rv >= 0 && rv < nval {
+                xv := irInsB(mut st, ins)
+                yv := irInsC(mut st, ins)
+                dst[rv] = (xv >= 0 && xv < nval && dst[xv]) || (yv >= 0 && yv < nval && dst[yv])
             }
             mut adr := -1
             mut fl := -1
@@ -1277,7 +1334,9 @@ func rfPtrMask(st mut St, gf FnRef) int {
                 }
             }
             // %0 の定数の位置の語だけ（中の列の要素の relocate — 番地を語から読んだもの — は入れ子の欄で、上の語から辿れる）
-            if fl >= 0 && apIn(mut entD, fl) && adr >= 0 && adr < nval && off[adr] >= 0 {
+            // floor = 入口の深度か宛先の深度（戻りの写しの床 — 呼び手の深度以下）。宛先の深度を落とすと、宛先構築の関数の結果が
+            // 呼び手から見て新しい確保を運ばない値に見え、実引数に渡しても C1 の点の検査に掛からない
+            if fl >= 0 && (apIn(mut entD, fl) || (fl < nval && dst[fl])) && adr >= 0 && adr < nval && off[adr] >= 0 {
                 // rt.err_relocate は error の値の中の複数の語（先頭の union の欄・鎖）を写す — error の全語を印に（多めは安全側）
                 nw := if op == OpCall && irInsFn(mut st, ins) == st.rtErrReloc { desugar.HeapGet(mut st.d, st.errstruct + SI_WORDS) } else { 1 }
                 if off[adr] + nw <= 62 {
@@ -1304,7 +1363,7 @@ func rfMaskOf(st mut St, fl mut []int, pmk mut []int, jx int) int {
 }
 
 // rfJudge の安い前検査（値の表を作らない — 真 = 続けて判定する）
-func rfPrescan(st mut St, ff FnRef, fx mut map[int]int, fl mut []int, isRtF mut []bool, rtDep mut []bool, atCaller mut []bool, hp mut []bool, pmk mut []int) bool {
+func rfPrescan(st mut St, ff FnRef, fx mut map[int]int, fl mut []int, isRtF mut []bool, rtDep mut []bool, atCaller mut []bool, hp mut []bool, pmk mut []int, rpt mut []bool, frs mut []int, eoM mut []int) bool {
     mut nEnter := 0
     mut cand := false
     mut first := true
@@ -1334,8 +1393,11 @@ func rfPrescan(st mut St, ff FnRef, fx mut map[int]int, fl mut []int, isRtF mut 
                         }
                     } else {
                         if atCaller[jx] {
-                            rfWhyCallee(mut st, ff, "callee allocating at the caller depth", gf)
-                            return false
+                            if !rfEoOf(mut st, mut fx, mut fl, mut isRtF, mut rtDep, mut rpt, mut frs, mut eoM, jx) {
+                                rfWhyCallee(mut st, ff, "callee allocating at the caller depth", gf)
+                                return false
+                            }
+                            cand = true
                         }
                         if !cand && (hp[jx] || rfMaskOf(mut st, mut fl, mut pmk, jx) != 0) {
                             cand = true
@@ -1354,6 +1416,39 @@ func rfPrescan(st mut St, ff FnRef, fx mut map[int]int, fl mut []int, isRtF mut 
         rfWhy(mut st, ff, "no point")
     }
     return nEnter == 1 && cand
+}
+
+// 呼び先 jx が失敗の戻りの道だけで呼び手の深度に確保するか: 呼び手の深度への確保が全部 rt.err_alloc（return 文の error ラベルのセル —
+// 呼んだ道は非 nil の error を返す）で、それを除けば新しい確保を呼び手へ残さない（rfFreshBody の err_alloc を数えない版）
+func rfEoOf(st mut St, fx mut map[int]int, fl mut []int, isRtF mut []bool, rtDep mut []bool, rpt mut []bool, frs mut []int, eoM mut []int, jx int) bool {
+    if eoM[jx] == -9 {
+        // 呼び先の要約（frs）を先に埋める
+        _ = rfFreshOf(mut st, mut fx, mut fl, mut isRtF, mut rtDep, mut rpt, mut frs, jx)
+        eoM[jx] = if rfFreshBodyX(mut st, mut fx, mut isRtF, mut rtDep, mut rpt, mut frs, FnRef(fl[jx]), true) { 0 } else { 1 }
+    }
+    return eoM[jx] == 1
+}
+
+// 表 m の k の値が v か
+func rfMapIs(m mut map[int]int, k int, v int) bool {
+    x := m[k]
+    if x == nil {
+        return false
+    }
+    return x == v
+}
+
+// ブロック b の呼び出し c の後ろが「結果の error の印を読んで非 nil で分ける」だけか（llErrEdge の形・間に書きや呼び出しが無い）
+func rfErrTail(st mut St, ff FnRef, bb BlkRef, c InsRef, defs map[int]int) bool {
+    mut i := irInsNext(mut st, c)
+    while i != -1 {
+        op := irInsOp(mut st, i)
+        if op != OpConst && op != OpGepW && op != OpLoad && op != OpCmp {
+            return false
+        }
+        i = irInsNext(mut st, i)
+    }
+    return llErrEdge(mut st, ff, bb, c, defs)
 }
 
 // 落ち方の計器の環境変数 SOBER_RFLOW_WHY が立っているか（値は問わない）
@@ -1466,6 +1561,11 @@ func rfFreshOf(st mut St, fx mut map[int]int, fl mut []int, isRtF mut []bool, rt
 // 真 = ret の値が確保を指しうるか、確保をどこかの番地へ書きうる（番地は区別しない — sret の受け皿・mut の仮引数への書きを含み、
 // 自分のスロットへの書きも数える側に倒す）。どちらかが見えた時点で打ち切る — 番地の読みは確保を指さないとしてよい（書かれていないので）
 func rfFreshBody(st mut St, fx mut map[int]int, isRtF mut []bool, rtDep mut []bool, rpt mut []bool, frs mut []int, gf FnRef) bool {
+    return rfFreshBodyX(mut st, mut fx, mut isRtF, mut rtDep, mut rpt, mut frs, gf, false)
+}
+
+// skipErr = rt.err_alloc の結果を確保に数えない（rfEoOf）
+func rfFreshBodyX(st mut St, fx mut map[int]int, isRtF mut []bool, rtDep mut []bool, rpt mut []bool, frs mut []int, gf FnRef, skipErr bool) bool {
     b0 := irFnBHead(mut st, gf)
     if b0 == -1 {
         return true
@@ -1528,7 +1628,7 @@ func rfFreshBody(st mut St, fx mut map[int]int, isRtF mut []bool, rtDep mut []bo
                         setV = true
                         setM = true
                     } else if cf == st.rtAlloc8 || cf == st.rtRalloc || cf == st.rtErrAlloc || cf == st.rtCat8 || cf == st.rtGrow || cf == st.rtGrow8 || cf == st.rtExtend8 {
-                        setV = true
+                        setV = !(skipErr && cf == st.rtErrAlloc)
                     } else if cf == st.rtReloc || cf == st.rtReloc8 || cf == st.rtErrReloc {
                         kx := if cf == st.rtReloc { 2 } else { 1 }
                         flr := if lenL(mut st, ll) > kx { latI(mut st, ll, kx) } else { -1 }

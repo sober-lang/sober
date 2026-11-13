@@ -141,6 +141,9 @@ func main() {
             at = x86.Here(mut c)
             x86.AndRegImm(mut c, a, n)
             line(mut c, at, "and ${regName(a)}, ${n}")
+            at = x86.Here(mut c)
+            x86.OrRegImm(mut c, a, n)
+            line(mut c, at, "or ${regName(a)}, ${n}")
         }
         at = x86.Here(mut c)
         x86.MovRegImm64(mut c, a, 81985529216486895)

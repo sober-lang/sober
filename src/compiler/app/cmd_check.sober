@@ -16,6 +16,7 @@ import "desugar"
 import "checker"
 import "iface"
 import "analyzer"
+import "diag"
 
 // p を脱糖して検査する（判定 JSON は checker.Out・拒否の位置は checker.At。脱糖の拒否なら diag のラベル）。関数に割るのは脱糖器のヒープの region を分けるため（sobercheck と同じ）
 func check(p loader.Program) (checker.E2Out, error?) {
@@ -234,6 +235,8 @@ func hasBytes(src []byte, w []byte) bool {
 type AzLines struct {
     errs []string
     warns []string
+    // 最初の拒否の位置（拒否が無ければ diag.None()）
+    at diag.Pos
 }
 
 // analyzer 層（受理の定義に含む — language.md 30 節）の指摘の行: 拒否は Zig 版と同じ形 `<位置>: error: <本文> (Analyzer)`（あれば判定 JSON は出さない）、
@@ -248,14 +251,18 @@ func analyzeAllC(p loader.Program, std map[string]string, c desugar.TyCache) AzL
     loader.Stage("ck-analyzer")
     mut es := mut []string{}
     mut ws := mut []string{}
+    mut at := diag.None()
     for i <- iter.Range(0, len(fs)) {
         if fs[i].warn {
             ws = append(ws, "${where(p, std, fs[i].at)}: warning: ${fs[i].what} (Analyzer)")
         } else {
+            if len(es) == 0 {
+                at = fs[i].at
+            }
             es = append(es, "${where(p, std, fs[i].at)}: error: ${fs[i].what} (Analyzer)")
         }
     }
-    return AzLines{freeze(es), freeze(ws)}
+    return AzLines{freeze(es), freeze(ws), at}
 }
 
 // 行を stderr へ（0 = 書けた）
@@ -1143,8 +1150,8 @@ func checkFrontR(entry string, tst bool, std map[string]string, wc bool) CheckRe
         }
         al := switch task.Try(ha) {
         case task.Ok{v}: v
-        case task.Failed{}: AzLines{[]string{}, []string{}}
-        case task.Died{cause}: AzLines{[]string{}, []string{}}
+        case task.Failed{}: AzLines{[]string{}, []string{}, diag.None()}
+        case task.Died{cause}: AzLines{[]string{}, []string{}, diag.None()}
         }
         ck := switch task.Try(hc) {
         case task.Ok{v}: v
@@ -1195,17 +1202,23 @@ func frontRes(r FrontRes, fs []string) CheckRes {
 
 // checkFront の逐次の経路（子が死んだときの走らせ直し — ParCheck → analyzer → check の順。名前付き実引数の写しの後の p から）
 func checkSeqR(p loader.Program, std map[string]string, wc bool, fs []string, cc CkCache) CheckRes {
+    r, _ := checkSeqAt(p, std, wc, fs, cc)
+    return r
+}
+
+// checkSeqR の結果と、拒否ならその最初の位置（受理・位置の無い拒否は diag.None()）
+func checkSeqAt(p loader.Program, std map[string]string, wc bool, fs []string, cc CkCache) (CheckRes, diag.Pos) {
     perr := desugar.ParCheck(p)
     if perr != nil {
-        return failRes(loadDiag(p, std, perr), fs)
+        return failRes(loadDiag(p, std, perr), fs), diag.At(perr)
     }
     az := analyzeAllC(p, std, if cc.v.on { lower.BcGammaCache(cc.v, checkCacheDir(wc)) } else { desugar.TyCacheOff() })
     if len(az.errs) > 0 {
-        return CheckRes{1, []byte{}, az.errs, fs}
+        return CheckRes{1, []byte{}, az.errs, fs}, az.at
     }
     r, cerr := checkWC(p, wc, cc)
     if cerr != nil {
-        return failRes(errDiag(p, std, cerr), fs)
+        return failRes(errDiag(p, std, cerr), fs), diag.At(cerr)
     }
     out := checker.Out(r)
     mut ms := mut []string{}
@@ -1215,7 +1228,8 @@ func checkSeqR(p loader.Program, std map[string]string, wc bool, fs []string, cc
     for x <- rejLines(p, std, r) {
         ms = append(ms, x)
     }
-    return CheckRes{if verdictOk(out) { 0 } else { 1 }, out, freeze(ms), fs}
+    ok := verdictOk(out)
+    return CheckRes{if ok { 0 } else { 1 }, out, freeze(ms), fs}, if ok { diag.None() } else { desugar.UnpackPos(checker.At(r)) }
 }
 
 // ParCheck の拒否の診断（"" = 受理）

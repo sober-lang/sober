@@ -141,7 +141,7 @@ RFC 3339 / HTTP の日付が読めない
 func Now() Time
 ```
 
-今の壁時計（CLOCK\_REALTIME — 調整で戻ることがある。経過を測るのは Mono）
+今の壁時計（CLOCK\_REALTIME — 調整で戻ることがある。経過を測るのは Mono。読み方は Mono と同じ vDSO）
 
 ## Mono
 
@@ -150,7 +150,7 @@ func Now() Time
 func Mono() Instant
 ```
 
-今の単調時計（CLOCK\_MONOTONIC）
+今の単調時計（CLOCK\_MONOTONIC — vDSO の \_\_vdso\_clock\_gettime で読み、カーネルへの syscall を伴わない。vDSO の無い環境では clock\_gettime(2)）
 
 ## Since
 

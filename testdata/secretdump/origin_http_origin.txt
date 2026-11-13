@@ -1,12 +1,12 @@
 examples/http_origin.sober:7:6: eff main.api
 examples/http_origin.sober:16:6: eff main.main
-std/http/server/server.sober:317:6: credential std/http/server.Authorization
-std/http/server/server.sober:326:6: credential std/http/server.Cookie
+std/http/server/server.sober:314:6: credential std/http/server.Authorization
+std/http/server/server.sober:323:6: credential std/http/server.Cookie
 std/http/server/server.sober:29:6: credential field Request.head
-std/http/server/server.sober:63:6: shared-field Response.cache response
-std/http/server/server.sober:478:6: shared-field Route.cache route
-std/http/server/server.sober:670:6: shared Cache the shared cache policy 'Fresh'
-std/http/server/server.sober:670:6: shared Cache the shared cache policy 'Shared'
-std/http/server/server.sober:670:6: shared Cache the shared cache policy 'Unstated'
-std/http/server/server.sober:491:6: meet-point std/http/server.Mount
-summary atoms=7 credentials=3 eff-fns=2 shared=3 shared-fields=2 violations=0 walks=735
+std/http/server/server.sober:64:6: shared-field Response.cache response
+std/http/server/server.sober:475:6: shared-field Route.cache route
+std/http/server/server.sober:667:6: shared Cache the shared cache policy 'Fresh'
+std/http/server/server.sober:667:6: shared Cache the shared cache policy 'Shared'
+std/http/server/server.sober:667:6: shared Cache the shared cache policy 'Unstated'
+std/http/server/server.sober:488:6: meet-point std/http/server.Mount
+summary atoms=7 credentials=3 eff-fns=2 shared=3 shared-fields=2 violations=0 walks=813

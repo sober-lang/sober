@@ -385,7 +385,7 @@ func decodeIn(tag byte, b []byte, r mut rd) Msg {
         ParamDesc{oids: freeze(oids)}
     } else if tag == 'D' {
         checkRow(b, mut r)
-        DataRow{body: cat([]byte{}, b)}
+        DataRow{body: b}
     } else if tag == 'C' {
         CommandComplete{tag: rcstr(b, mut r)}
     } else if tag == 'I' {
@@ -479,22 +479,39 @@ func decodeCols(b []byte, r mut rd) []Col {
     return freeze(cs)
 }
 
-// DataRow の body が「列の数 + 各列の長さ（-1 = NULL）と値」の形で body にちょうど収まるか
+// DataRow の body が「列の数 + 各列の長さ（-1 = NULL）と値」の形で body にちょうど収まるか（行ごとに通るので r32 / rbytes を通さずに直に読む）
 func checkRow(b []byte, r mut rd) {
-    n := r16(b, mut r)
-    if n < 0 {
+    nb := len(b)
+    if nb < 2 || b[0] >= 128 {
         r.bad = true
+        return
     }
-    mut i := 0
-    while i < n && !r.bad {
-        ln := r32(b, mut r)
-        if ln < -1 {
+    n := int(b[0]) << 8 | int(b[1])
+    mut at := 2
+    mut k := 0
+    while k < n {
+        if nb - at < 4 {
             r.bad = true
-        } else if ln > 0 {
-            _ = rbytes(b, mut r, ln)
+            return
         }
-        i += 1
+        ln := CellLen(b, at)
+        at += 4
+        if ln < -1 || ln > nb - at {
+            r.bad = true
+            return
+        }
+        if ln > 0 {
+            at += ln
+        }
+        k += 1
     }
+    r.at = at
+}
+
+// b[at:] の符号つき 32 bit（DataRow の列の長さ — -1 = NULL）
+func CellLen(b []byte, at int) int {
+    u := int(b[at]) << 24 | int(b[at + 1]) << 16 | int(b[at + 2]) << 8 | int(b[at + 3])
+    return if u >= 2147483648 { u - 4294967296 } else { u }
 }
 
 // 欄の列（欄の種別 0 で終わる）

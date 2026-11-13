@@ -146,7 +146,7 @@ func buildFdWait(st mut St) {
     pend := iconst(mut st, IO_PENDING)
     store(mut st, tp, TC_IORES, pend)
     store(mut st, wk, WK_NETW, urAdd(mut st, load(mut st, wk, WK_NETW), 1))
-    dlv := dlWait(mut st, rec, EP_DLQ, me, IO_PENDING)
+    dlv := dlWait(mut st, rec, EP_DLQ, me, IO_PENDING, st.rtTaskWait)
     dl := dlFn(st.rtD3) != 0
     r := load(mut st, tp, TC_IORES)
     if st.orphOn {
@@ -310,7 +310,7 @@ func buildEpPoll(st mut St) {
 }
 
 // 今の task（me — TC_IORES = 待ちの値 pend）を、期限があれば記録 rec の鎖（語 q — 負なら積まない）に積み、TC_IORES が pend でなくなるまで task_wait する。期限の値（0 = 無し）を返す
-func dlWait(st mut St, rec int, q int, me int, pend int) int {
+func dlWait(st mut St, rec int, q int, me int, pend int, tw FnRef) int {
     zero := iconst(mut st, 0)
     tp := itop(mut st, me)
     dlv := if dlFn(st.rtD3) != 0 && q >= 0 { load(mut st, tp, TC_DL) } else { zero }
@@ -328,7 +328,7 @@ func dlWait(st mut St, rec int, q int, me int, pend int) int {
     wd := newBlock(mut st)
     br(mut st, wl, -1)
     setCur(mut st, wl)
-    call(mut st, st.rtTaskWait, list0(mut st))
+    call(mut st, tw, list0(mut st))
     condbr(mut st, cmp(mut st, CEq, load(mut st, tp, TC_IORES), iconst(mut st, pend)), wl, -1, wd, -1)
     setCur(mut st, wd)
     return dlv
@@ -406,7 +406,7 @@ func fdWaitRing(st mut St, rg int) {
     urSqe(mut st, rg, bin(mut st, BOr, iconst(mut st, 6), bin(mut st, BShl, 0, iconst(mut st, 32))), iconst(mut st, 0), bin(mut st, BShl, 1, iconst(mut st, 32)), bin(mut st, BOr, me, iconst(mut st, UDT_POLL)), iconst(mut st, 0))
     store(mut st, itop(mut st, me), TC_IORES, iconst(mut st, IO_PENDING))
     store(mut st, wk, WK_NETW, urAdd(mut st, load(mut st, wk, WK_NETW), 1))
-    dlv := dlWait(mut st, rg, UR_DLQ, me, IO_PENDING)
+    dlv := dlWait(mut st, rg, UR_DLQ, me, IO_PENDING, st.rtTaskWait)
     r := load(mut st, itop(mut st, me), TC_IORES)
     if dlFn(st.rtD3) != 0 {
         dlUnlink(mut st, me, dlv)
@@ -451,7 +451,7 @@ func sleepRing(st mut St, rg int, ms int) {
     setCur(mut st, bIn)
     store(mut st, tp, TC_IORES, iconst(mut st, IO_PENDING))
     store(mut st, wk, WK_NETW, urAdd(mut st, load(mut st, wk, WK_NETW), 1))
-    _ = dlWait(mut st, rg, -1, me, IO_PENDING)
+    _ = dlWait(mut st, rg, -1, me, IO_PENDING, st.rtTaskWait)
     r := load(mut st, tp, TC_IORES)
     // -62 → 110 × cut・他（負の errno）→ −r
     et := cmp(mut st, CEq, r, iconst(mut st, -62))
@@ -465,17 +465,7 @@ func sleepClock(st mut St) int {
         return clockNs(mut st)
     }
     zero := iconst(mut st, 0)
-    g := globaladdr(mut st, st.vdsoG)
-    bInit := newBlock(mut st)
-    bHave := newBlock(mut st)
-    v := param(mut st, bHave, TyI64)
-    v0 := load(mut st, g, 0)
-    condbr(mut st, cmp(mut st, CEq, v0, zero), bInit, -1, bHave, list1(mut st, v0))
-    setCur(mut st, bInit)
-    v1 := urAdd(mut st, vdsoWalk(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.meta), W_ARGV))), 1)
-    store(mut st, g, 0, v1)
-    br(mut st, bHave, list1(mut st, v1))
-    setCur(mut st, bHave)
+    v := vdsoLazy(mut st, zero)
     ts := newSlotAddr(mut st, 2)
     fp := urAdd(mut st, v, -1)
     bV := newBlock(mut st)
@@ -490,6 +480,22 @@ func sleepClock(st mut St) int {
     br(mut st, bGo, -1)
     setCur(mut st, bGo)
     return bin(mut st, BAdd, bin(mut st, BMul, load(mut st, ts, 0), iconst(mut st, 1000000000)), load(mut st, ts, 1))
+}
+
+// rt.vdso の値（__vdso_clock_gettime の番地 + 1・見つからなければ 1）: 0 = まだなら rt.vdso_get で引いて置く
+// （ワーカーが同時に引いても同じ値を書くだけ）
+func vdsoLazy(st mut St, zero int) int {
+    g := globaladdr(mut st, st.vdsoG)
+    bInit := newBlock(mut st)
+    bHave := newBlock(mut st)
+    v := param(mut st, bHave, TyI64)
+    v0 := load(mut st, g, 0)
+    condbr(mut st, cmp(mut st, CEq, v0, zero), bInit, -1, bHave, list1(mut st, v0))
+    setCur(mut st, bInit)
+    v1 := call(mut st, st.rtVdso, list0(mut st))
+    br(mut st, bHave, list1(mut st, v1))
+    setCur(mut st, bHave)
+    return v
 }
 
 // 時計の表（report-ct1 — C timer）: net の ring の道の sleep の目標の時刻を、ワーカーごとの 4 分ヒープ（要素 = {目標 ns, TCB} の 2 語・キーを要素に持つ —

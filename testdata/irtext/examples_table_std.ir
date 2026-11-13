@@ -2112,7 +2112,6 @@ b16:
 }
 
 func @main.getP(%0 ptr, %1 ptr, %2 i64) {
-  slot s0 [2]
 b0:
   %3 = region.depth
   %4 = globaladdr @rt.meta
@@ -2121,14 +2120,9 @@ b0:
   %7 = eq %5, %6
   %8 = mul %7, %3
   %9 = add %5, %8
-  %10 = slotaddr s0
-  %11 = globaladdr @rt.meta
-  store %11[2572], %9
-  call @"std/table.Get[main.P]"(%10, %1, %2)
-  %12 = load.i64 %10[0]
-  store %0[0], %12
-  %13 = load.i64 %10[1]
-  store %0[1], %13
+  %10 = globaladdr @rt.meta
+  store %10[2572], %9
+  call @"std/table.Get[main.P]"(%0, %1, %2)
   region.setdepth %3
   ret
 }

@@ -51,4 +51,5 @@ func main() {
     })
     lg := task.Ledger()
     println("maxWait_ms=${lg.maxWait / task.MS} aged=${lg.aged}")
+    println("late=${lg.late} maxLate_ms=${lg.maxLate / task.MS}")
 }

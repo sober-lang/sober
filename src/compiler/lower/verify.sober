@@ -395,6 +395,11 @@ func vfyInst(st mut St, v mut vfyS, w mut m2rW, f FnRef, ins InsRef, nf int) str
         return if m != "" { m } else { vfyList(mut st, mut v, mut w, b, -1, "trap argument") }
     case OpUnwind:
         return if hasRes { "an unexpected result" } else { "" }
+    case OpArea:
+        if hasRes {
+            return "an unexpected result"
+        }
+        return vfyUse(mut st, mut v, mut w, a, TyI64, if c == AREA_SP { "area.sp" } else if c == AREA_LAND { "area.land" } else { "area.entry" })
     case OpTSwitch | OpTStart:
         if hasRes {
             return "an unexpected result"

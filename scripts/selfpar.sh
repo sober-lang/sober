@@ -34,6 +34,13 @@ G=$ROOT/testdata/selfpar
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 JOBS=${JOBS:-4}
+# 検査器の本体の命令数（下の self/check body の線）: W1 の自己 check と、Def の脱糖で止めた check（SOBER_CHECK_STOP=defs）を perf stat で包み、差を取る。
+# perf が無い・使えない環境ではこの線だけ飛ばす
+PERF=${PERF:-$(command -v perf || ls -d /nix/store/*perf-linux*/bin/perf 2> /dev/null | head -n 1)}
+INSTP=()
+if [ -n "$PERF" ] && "$PERF" stat -x, -e instructions:u -o /dev/null true > /dev/null 2>&1; then
+    INSTP=("$PERF" stat -x, -e instructions:u -o)
+fi
 par_init "$W"
 fail=0
 gen() { # gen <関数の数> <行の数> <def error の関数の番号（空白区切り）>
@@ -80,7 +87,13 @@ j_self() { # j_self <名前> <env…>
     local v=$1
     shift
     if [ "$v" = self1 ]; then
-        (cd "$W/tree" && env "$@" /usr/bin/time -f %M -o "$W/self1.rss" "$S2" check app > "$W/$v" 2>&1)
+        if [ "${#INSTP[@]}" -gt 0 ]; then
+            (cd "$W/tree" && env "$@" "${INSTP[@]}" "$W/self1.inst" /usr/bin/time -f %M -o "$W/self1.rss" "$S2" check app > "$W/$v" 2>&1)
+        else
+            (cd "$W/tree" && env "$@" /usr/bin/time -f %M -o "$W/self1.rss" "$S2" check app > "$W/$v" 2>&1)
+        fi
+    elif [ "$v" = defs1 ]; then
+        [ "${#INSTP[@]}" -gt 0 ] && (cd "$W/tree" && env "$@" "${INSTP[@]}" "$W/defs1.inst" "$S2" check app > "$W/$v" 2>&1)
     else
         (cd "$W/tree" && env "$@" "$S2" check app > "$W/$v" 2>&1)
     fi
@@ -236,6 +249,18 @@ j_cache() {
     grep -q '^cache: alpha .* gamma \([0-9]*\)/\1 ' "$PAR_W/blog" || echo "FAIL: self build (cache warm, split) — gamma did not hit every package: $(grep '^cache: alpha' "$PAR_W/blog" | head -c 160)"
     return 0
 }
+# 語に詰めると同じで長さだけ違う string の字面（testdata/selfpar/strwords）: 1 本道の ELF ≡ 逆順の子の冷 ≡ 温（rodata の大域の鍵の衝突の網）
+j_strwords() {
+    local c=$PAR_W/swcache cfg="SOBER_WORKERS=8 SOBER_LOWER_SPLIT=3 SOBER_LOWER_REV=1 SOBER_PAR_STATS=1 SOBER_BUILD_CACHE=1" r
+    (cd "$G" && SOBER_BUILD_PAR=0 SOBER_LOWER_SPLIT=1 SOBER_WORKERS=8 "$S2" build strwords.sober --emit=elf --passes -o "$PAR_W/sw.seq" > "$PAR_W/swlog" 2>&1) || { echo "FAIL: strwords (1-path): $(head -c 200 "$PAR_W/swlog")"; return 0; }
+    for r in cold warm; do
+        # shellcheck disable=SC2086
+        (cd "$G" && env -u SOBER_VERIFY -u SOBER_CACHE_VERIFY $cfg SOBER_CACHE="$c" "$S2" build strwords.sober --emit=elf --passes -o "$PAR_W/sw.$r" > "$PAR_W/swlog" 2>&1) || { echo "FAIL: strwords ($r): $(head -c 200 "$PAR_W/swlog")"; return 0; }
+        grep -qx "#lower split groups=3 fallback=none" "$PAR_W/swlog" || echo "FAIL: strwords ($r) did not take the lower split path: $(grep "^#lower" "$PAR_W/swlog")"
+        cmp -s "$PAR_W/sw.seq" "$PAR_W/sw.$r" || echo "FAIL: strwords — the $r cache build differs from the 1-path (rodata globals with the same words)"
+    done
+    return 0
+}
 # 変異 4〜9 は「変異の検査器で元の木を建てた ELF（$W/bmut<番号>）が bseq と割れること」— 照合は全部の仕事の後（建たなければ ELF が無く、割れた扱い）
 # mutelf <番号> <元のファイル（木の中）> <env…> — 写しの木を元に戻してから変異の検査器で建てる
 mutelf() {
@@ -372,12 +397,14 @@ for k in 4 5 6 7 8 9 14; do par_run "j_mut$k"; done
 par_run j_bseq
 for i in "${!BCFGS[@]}"; do par_run j_build "$i"; done
 par_run j_cache
+par_run j_strwords
 for k in 1 2 3 10; do par_run "j_mut$k"; done
 par_run j_finmut 11 "pick the last file with a names hit" 's/^        if rs\[f\]\.nm {$/        if rs[f].nm \&\& f == n - 1 {/' names_same
 par_run j_finmut 12 "later files overwrite the rule positions" 's/^            if hit\[r \* 3\] == 0 \&\& rs\[f\]\.hit\[r \* 3\] > 0 {$/            if rs[f].hit[r * 3] > 0 {/' rules_same
 par_run j_finmut 13 "the merge ignores a dead child" 's/^    if cerr != nil {$/    if cerr != nil \&\& n < 0 {/' names_same rules_same
 par_run j_self selfseq SOBER_DESUGAR_PAR=0 SOBER_WORKERS=8
 par_run j_self self1 SOBER_WORKERS=1
+par_run j_self defs1 SOBER_WORKERS=1 SOBER_CHECK_STOP=defs
 par_run j_self self8 SOBER_WORKERS=8
 par_run j_self self0 SOBER_WORKERS=8 SOBER_BUDGET_MB=0
 par_run j_iface ifseq SOBER_DESUGAR_PAR=0 SOBER_WORKERS=8
@@ -397,6 +424,19 @@ rss=$(( $(cat "$W/self1.rss") / 1024 ))
 if [ -n "$rlim" ] && [ "$rss" -gt "$rlim" ]; then
     echo "FAIL: ratchet — 自己 check（W1）の peak RSS ${rss} MB > ${rlim} MB（bench/ratchet.txt）"; fail=$((fail + 1))
 fi
+# 検査器の本体の命令数のラチェット（bench/ratchet.txt の self/check body — G 命令・W1 の「最後まで − defs」。核の節の数に出ない検査器の遅さの網:
+# 同じ節の数のまま検査器の時間が 3 倍になった形〔別の region の mut 実引数 2 つを取る再帰の関数 1 つ〕は RSS の線にたまたま掛かっただけだった）
+blim=$(awk '$1 == "self/check" && $2 == "body" { print $3 }' "$ROOT/bench/ratchet.txt")
+if [ "${#INSTP[@]}" = 0 ]; then
+    echo "SKIP check body ratchet — perf が無いか使えない（PERF で perf の実行ファイルを指す）: 検査器の本体の命令数は照合していない"
+elif [ -n "$blim" ]; then
+    body=$(awk -F, '/instructions/ { v[FILENAME] = $1 } END { printf "%.3f", (v[ARGV[1]] - v[ARGV[2]]) / 1e9 }' "$W/self1.inst" "$W/defs1.inst")
+    if awk -v v="$body" -v l="$blim" 'BEGIN { exit !(v > l) }'; then
+        echo "FAIL: ratchet — 自己 check（W1）の検査器の本体の命令 ${body} G > ${blim} G（bench/ratchet.txt — scripts/checkstats.sh で段ごとに見る）"; fail=$((fail + 1))
+    else
+        echo "ratchet: 自己 check（W1）の検査器の本体の命令 ${body} G ≤ ${blim} G"
+    fi
+fi
 for v in selfseq self8 self0; do
     cmp -s "$W/self1" "$W/$v" || { echo "FAIL: self check $v differs from W1"; diff "$W/self1" "$W/$v" | head -4; fail=$((fail + 1)); }
 done
@@ -413,5 +453,5 @@ for k in 4 5 6 7 8 9; do
         fail=$((fail + 1))
     fi
 done
-echo "selfpar: self check {1-path (W1 rss ${rss} MB ≤ ${rlim} MB), W 1, 8, 8 + budget 0} + self iface + $n synthetic runs + $nf layered runs + self build {1-path, W 1, 8, 8 + budget 0, 8 + roundtrip, 8 + lower split 3 rev, 8 + lower direct, 8 + lower split 8, 8 + lower split 8 child death, 8 + finish child death, 8 + irinl order rev, 8 + irinl order seed 7} + $nfin finish runs + 14 mutants, fail=$fail"
+echo "selfpar: self check {1-path (W1 rss ${rss} MB ≤ ${rlim} MB), W 1, 8, 8 + budget 0} + self iface + $n synthetic runs + $nf layered runs + self build {1-path, W 1, 8, 8 + budget 0, 8 + roundtrip, 8 + lower split 3 rev, 8 + lower direct, 8 + lower split 8, 8 + lower split 8 child death, 8 + finish child death, 8 + irinl order rev, 8 + irinl order seed 7, strwords 1-path ≡ split cold ≡ warm} + $nfin finish runs + 14 mutants, fail=$fail"
 [ $fail = 0 ]

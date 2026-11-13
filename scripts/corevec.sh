@@ -58,7 +58,7 @@ PY
     n=0
     while read -r f want; do
         n=$((n + 1))
-        if lean_result "$f" "$tmp/out" | grep -q '"ok":true'; then got=True; else got=False; fi
+        if grep -q '"ok":true' <<< "$(lean_result "$f" "$tmp/out")"; then got=True; else got=False; fi
         if [ "$want" != "$got" ]; then
             echo "FAIL: vector $n: golden ok=$want but sober-check says ok=$got"
             exit 1

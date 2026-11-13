@@ -7,7 +7,7 @@ Japanese is the source of truth for most documents; English versions, where they
 ## Start here
 
 - [README.md](README.md): overview, pillars, what you stop thinking about, benchmarks, what you can build, roadmap
-- [docs/guide/](docs/guide/): user guide — install, first program, testing (including build-time DI), environment variables, web servers and clients, concurrency (tasks, channels, domains), PostgreSQL
+- [docs/guide/](docs/guide/): user guide — install, first program, testing (including build-time DI), environment variables, web servers and clients, concurrency (tasks, channels, and domains — one state updated serially from many tasks, with waits on a condition), PostgreSQL
 - [docs/spec/](docs/spec/): the language rules (normative and terse — rules only, examples live in examples/); packages, imports and `sober.mod` are chapter 8
 
 ## Design and rationale (deep, mostly Japanese)

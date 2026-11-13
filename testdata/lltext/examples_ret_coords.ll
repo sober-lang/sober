@@ -3985,15 +3985,8 @@ b0:
 
 define internal void @"main.direct"(ptr %v0, i64 %v1) #0 {
 b0:
-  %s0 = alloca [3 x i64], align 8
-  %s0.z0 = getelementptr i64, ptr %s0, i64 0
-  store i64 0, ptr %s0.z0
-  %s0.z1 = getelementptr i64, ptr %s0, i64 1
-  store i64 0, ptr %s0.z1
-  %s0.z2 = getelementptr i64, ptr %s0, i64 2
-  store i64 0, ptr %s0.z2
-  %v20 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v2.p = getelementptr i64, ptr %v20, i64 0
+  %v16 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v2.p = getelementptr i64, ptr %v16, i64 0
   %v2 = load i64, ptr %v2.p
   %v3 = getelementptr i64, ptr @"rt.meta", i64 0
   %v4.p = getelementptr i64, ptr %v3, i64 2571
@@ -4011,35 +4004,22 @@ b0:
   %v11 = mul i64 %v9, %v10
   %v12 = add i64 %v2, %v11
   call void @"rt.region_enter"()
-  %v21 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v13.p = getelementptr i64, ptr %v21, i64 0
+  %v17 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v13.p = getelementptr i64, ptr %v17, i64 0
   %v13 = load i64, ptr %v13.p
   call void @"rt.region_enter"()
-  %v22 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v14.p = getelementptr i64, ptr %v22, i64 0
+  %v18 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v14.p = getelementptr i64, ptr %v18, i64 0
   %v14 = load i64, ptr %v14.p
-  %v15 = getelementptr i64, ptr %s0, i64 0
-  %v16 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st1 = getelementptr i64, ptr %v16, i64 2571
+  %v15 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st1 = getelementptr i64, ptr %v15, i64 2571
   store i64 %v12, ptr %st1
-  call void @"main.mk"(ptr %v15, i64 %v1)
-  %v17.p = getelementptr i64, ptr %v15, i64 0
-  %v17 = load i64, ptr %v17.p
-  %st2 = getelementptr i64, ptr %v0, i64 0
-  store i64 %v17, ptr %st2
-  %v18.p = getelementptr i64, ptr %v15, i64 1
-  %v18 = load i64, ptr %v18.p
-  %st3 = getelementptr i64, ptr %v0, i64 1
-  store i64 %v18, ptr %st3
-  %v19.p = getelementptr i64, ptr %v15, i64 2
-  %v19 = load i64, ptr %v19.p
-  %st4 = getelementptr i64, ptr %v0, i64 2
-  store i64 %v19, ptr %st4
-  %v23 = add i64 0, 1
-  call void @"rt.region_relocate"(ptr %v0, i64 %v23, i64 %v2)
-  %v24 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st5 = getelementptr i64, ptr %v24, i64 0
-  store i64 %v2, ptr %st5
+  call void @"main.mk"(ptr %v0, i64 %v1)
+  %v19 = add i64 0, 1
+  call void @"rt.region_relocate"(ptr %v0, i64 %v19, i64 %v2)
+  %v20 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st2 = getelementptr i64, ptr %v20, i64 0
+  store i64 %v2, ptr %st2
   ret void
 }
 

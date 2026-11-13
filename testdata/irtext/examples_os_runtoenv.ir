@@ -2699,7 +2699,6 @@ func @std/os.RunToEnv(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64, %7
   slot s10 [5]
   slot s11 [7]
   slot s12 [5]
-  slot s13 [6]
 b0:
   %16 = slotaddr s0
   store %16[0], %1
@@ -2918,33 +2917,21 @@ b11:
   region.setdepth %21
   ret
 b12:
-  %137 = slotaddr s13
-  %138 = call @rt.run_fd_env(%40, %49, %100, %101)
-  %139 = globaladdr @rt.meta
-  store %139[2571], %31
-  call @std/os.ranTo(%137, %138, %100, %101)
-  %140 = load.i64 %137[0]
-  %141 = const 1
-  %142 = gep.word %137, %141
-  store %0[0], %140
-  %143 = load.i64 %142[0]
-  store %0[1], %143
-  %144 = load.i64 %142[1]
-  store %0[2], %144
-  %145 = load.i64 %142[2]
-  store %0[3], %145
-  %146 = load.i64 %142[3]
-  store %0[4], %146
-  %147 = load.i64 %142[4]
-  store %0[5], %147
-  %148 = load.i64 %0[1]
-  %149 = const 0
-  %150 = ne %148, %149
-  condbr %150, b13, b14
+  %137 = call @rt.run_fd_env(%40, %49, %100, %101)
+  %138 = globaladdr @rt.meta
+  store %138[2571], %31
+  call @std/os.ranTo(%0, %137, %100, %101)
+  %139 = load.i64 %0[0]
+  %140 = const 1
+  %141 = gep.word %0, %140
+  %142 = load.i64 %0[1]
+  %143 = const 0
+  %144 = ne %142, %143
+  condbr %144, b13, b14
 b13:
-  %151 = const 2
-  %152 = gep.word %0, %151
-  call @rt.err_relocate(%152, %21)
+  %145 = const 2
+  %146 = gep.word %0, %145
+  call @rt.err_relocate(%146, %21)
   br b14
 b14:
   region.setdepth %21

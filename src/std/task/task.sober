@@ -336,11 +336,17 @@ type LedgerView struct {
     shed int
     waits int // wait の scope で入場を待った回数（language.md 11 節「wait」）
     maxWait int // 走れるようになってから走るまでの待ちの最大（ns・全ワーカー — 読むと 0 に戻る。language.md 28 節 ring の道「飽和下の待ちの上限」）
-    aged int // 待ちの上限が効いて積みの底から取った回数の累計（飽和の印）
+    aged int // 待ちの上限が効いて積みの底から取った回数の累計（飽和の印 — 底を期限で救った数）
+    late int // 自分の D を越えてから走った task の数の累計（aged の救いに加え、積みが浅いときの越えも数える — aged ⊆ late）
+    maxLate int // 越えた量（待ち − D）の最大（ns・全ワーカー — 読むと 0 に戻る窓の値・maxWait と同じ流儀）
     backlog int // 今の未着手の子の数（全ワーカーの列の和 — ワーカーあたり 255 まで。language.md 11 節「未着手の子の上限」）
     backlogYield int // 列があふれて子をその場で先に走らせた（生んだ task が譲った）回数の累計（背圧が効いた印）
     pin int // ワーカーの CPU の固定の形（0 = なし・1 = L3 キャッシュを共有する CPU の群・2 = CPU 1 つ・3 = L3 の群が読めず CPU 1 つへ縮退したワーカーがある）
     pinGroups int // 固定した群の数（ワーカーは起動の後に自分を固定する — 全部が数えられるのはワーカーが立ち上がった後）
+    parkShallow int // 接続の task が浅く寝た回数の累計（本体より下の積みを捨て、ワーカーの区画を持たずに寝た — language.md 11 節「メトリクス」）
+    parkDeep int // 接続の task がワーカーの区画を持って寝た回数の累計（区画の交換 — 本体より下の枠が生きている待ち）
+    parkDeepWin int // 浅く寝られる点だったが区画の窓に中身があって深く寝た回数の累計（parkDeep の内数 — 受けの region に途中の要求を持って待つ等）
+    parkSwap int // 浅く寝る前に持ち札の区画とワーカーの区画を入れ替えた回数の累計（parkShallow の内数 — 深い待ちの後の受け）
     pools []PoolView
     domains DomainView // domain の合計の行
 }
@@ -352,11 +358,11 @@ func Ledger() LedgerView {
     mut ps := mut []PoolView{}
     mut i := 0
     while i < np {
-        b := 16 + i * 8
+        b := 22 + i * 8
         ps = append(ps, PoolView{id: i, parent: ledgerWord(b + 5) - 1, cap: ledgerWord(b), used: ledgerWord(b + 1), tasks: ledgerWord(b + 2), admit: ledgerWord(b + 3), shed: ledgerWord(b + 4), fail: ledgerWord(b + 6), died: ledgerWord(b + 7)})
         i += 1
     }
-    return LedgerView{workers: ledgerWord(8), cap: ledgerWord(1), used: ledgerWord(2), tasks: ledgerWord(3), inline: ledgerWord(4), over: ledgerWord(5), declOver: ledgerWord(6), shed: ledgerWord(7), waits: ledgerWord(9), maxWait: ledgerWord(10), aged: ledgerWord(11), backlog: ledgerWord(12), backlogYield: ledgerWord(13), pin: ledgerWord(14), pinGroups: ledgerWord(15), pools: freeze(ps), domains: DomainView{waiting: ledgerWord(-1), maxWait: ledgerWord(-2), expired: ledgerWord(-3), poisoned: ledgerWord(-4)}}
+    return LedgerView{workers: ledgerWord(8), cap: ledgerWord(1), used: ledgerWord(2), tasks: ledgerWord(3), inline: ledgerWord(4), over: ledgerWord(5), declOver: ledgerWord(6), shed: ledgerWord(7), waits: ledgerWord(9), maxWait: ledgerWord(10), aged: ledgerWord(11), late: ledgerWord(16), maxLate: ledgerWord(17), backlog: ledgerWord(12), backlogYield: ledgerWord(13), pin: ledgerWord(14), pinGroups: ledgerWord(15), parkShallow: ledgerWord(18), parkDeep: ledgerWord(19), parkDeepWin: ledgerWord(20), parkSwap: ledgerWord(21), pools: freeze(ps), domains: DomainView{waiting: ledgerWord(-1), maxWait: ledgerWord(-2), expired: ledgerWord(-3), poisoned: ledgerWord(-4)}}
 }
 
 // プール pool の天井に入れれば子の task を生む（handle, nil）・入れなければ (nil, Shed{})（縮退しない — shed を望む境界の API ・

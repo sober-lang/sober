@@ -33,7 +33,7 @@ Sober の言語仕様です。何が受理され、何が拒否され、受理�
 
 ## 用語
 
-- 受理 / 拒否 — コンパイラ（`sober check` / `sober build`）がプログラムを通すか、診断を出して止めるか。拒否はコンパイル時に起きる。check の型の誤りは `type error at <path>:<行>:<列>` の位置つきの 1 行で出る。build の拒否のうち check も拒否するものは check と同じ行で出る（[language.md 38 節](../language.md)）
+- 受理 / 拒否 — コンパイラ（`sober check` / `sober build`）がプログラムを通すか、診断を出して止めるか。拒否はコンパイル時に起きる。check の型の誤りは `type error at <path>:<行>:<列>` の位置つきの 1 行で出る。build の拒否のうち check も同じトップレベル宣言の中で拒否するものは check と同じ行で出る（[language.md 38 節](../language.md)）
 - check / build — `sober check` は型検査・脱糖・analyzer（ラベル集合の導出・網羅・`@errors` の照合など）まで走らせて判定する。`sober build` は実行ファイルを作り、analyzer を走らせない。仕様の「拒否」は check の拒否を指す
 - panic — 実行時の死。終了コード 101（到達 = バグ）か 102（資源の上限）で終わる（[7 章](07-errors.ja.md)）
 - ゼロ値 — `T{}` が作る値（[2 章](02-types.ja.md)）。ゼロ値を持たない型もある

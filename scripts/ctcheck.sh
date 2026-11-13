@@ -20,9 +20,12 @@ if [ "$T" != "$L" ]; then
     echo "ctcheck: FAIL — $D/funcs.txt と導出の表 T（testdata/secretdump/std.txt）がずれた:"; diff <(echo "$T") <(echo "$L") | head -20; exit 1
 fi
 for f in $(grep '^+@' $D/funcs.txt | awk '{ print $1 }' | sed 's/^+//'); do
-    echo "$T" | grep -qxF -- "$f" && { echo "ctcheck: FAIL — 手書きの残置 $f が T に入った（funcs.txt の \`+@\` を \`@\` へ）"; exit 1; }
+    grep -qxF -- "$f" <<< "$T" && { echo "ctcheck: FAIL — 手書きの残置 $f が T に入った（funcs.txt の \`+@\` を \`@\` へ）"; exit 1; }
 done
 mapfile -t FUNCS < <(grep -E '^\+?@' $D/funcs.txt | awk '{ print $1 }' | sed 's/^+//')
+# 在籍の判定は連想配列で（pipefail の下の `printf | grep -q` は grep が先に抜けると printf が SIGPIPE で落ち、照合する関数を黙って飛ばす）
+declare -A INF
+for f in "${FUNCS[@]}"; do INF[$f]=1; done
 "$S2" build $D/app.sober --emit=elf --passes -o "$W/app" > /dev/null || { echo "ctcheck: FAIL build"; exit 1; }
 "$S2" build $D/app.sober --emit=syms -o "$W/syms" > /dev/null || { echo "ctcheck: FAIL syms"; exit 1; }
 # 最後の記号の終わり = 実行の LOAD の終わり（後ろに読み出し専用のデータが続きうるので、最後の関数だけ逆アセンブルを「ret / syscall の直後の nop の詰め・0 のバイト〔add [rax],al〕」で切る。
@@ -34,7 +37,7 @@ VT=$(awk '$2 == "@rt.matchlen" || $2 == "@std/binary.MatchLen" || $2 == "@rt.jcl
 : > "$W/vt"
 end=$(readelf -lW "$W/app" | awk '$1 == "LOAD" && $NF == "0x1000" && $(NF-1) == "E" { printf "%016x", strtonum($3) + strtonum($5); exit }')
 { sort -k1,1 "$W/syms"; echo "$end ~end"; } | awk 'NR > 1 { print pa, $1, pn } { pa = $1; pn = $2 }' | while read -r a b n; do
-    printf '%s\n' "${FUNCS[@]}" | grep -qxF -- "$n" || continue
+    [ -n "${INF[$n]:-}" ] || continue
     "$OD" -D -b binary -m i386:x86-64 -M intel --adjust-vma=0x400000 --start-address=0x$a --stop-address=0x$b "$W/app" | sed -n '8,$p' | cut -f3 \
         | awk -v last="$([ "$b" = "$end" ] && echo 1)" 'last && ($1 == "nop" || $0 ~ /^add +BYTE PTR \[rax\],al/) && (p == "ret" || p == "syscall") { exit } NF { print; p = $1 }' > "$W/dis"
     jcc=$(awk '$1 ~ /^j/ && $1 != "jmp" { printf " %s", $1 }' "$W/dis")
@@ -46,7 +49,7 @@ done | sort > "$W/got"
 for f in "${FUNCS[@]}"; do grep -q "^$f:" "$W/got" || { echo "ctcheck: FAIL — $f not in the ELF"; exit 1; }; done
 # 負例 @main.negPrefix（可変時間の rt.matchlen を呼ぶ見本）は捕まること・それ以外の関数は呼ばないこと
 grep -qxF "@main.negPrefix" "$W/vt" || { echo "ctcheck: FAIL — the variable-time call check did not catch @main.negPrefix"; exit 1; }
-if grep -vxF "@main.negPrefix" "$W/vt" | grep -q .; then echo "ctcheck: FAIL — constant-time functions call the variable-time rt.matchlen / rt.jclean:"; grep -vxF "@main.negPrefix" "$W/vt"; exit 1; fi
+if grep -qvxF "@main.negPrefix" "$W/vt"; then echo "ctcheck: FAIL — constant-time functions call the variable-time rt.matchlen / rt.jclean:"; grep -vxF "@main.negPrefix" "$W/vt"; exit 1; fi
 n=$(wc -l < "$W/got")
 if [ "${1:-}" = --regen ]; then cp "$W/got" $D/expect.txt; echo "ctcheck: regen $n functions"; exit 0; fi
 if ! diff -u $D/expect.txt "$W/got"; then echo "ctcheck: FAIL — conditional branches / DIV of constant-time functions changed ($n functions)"; exit 1; fi

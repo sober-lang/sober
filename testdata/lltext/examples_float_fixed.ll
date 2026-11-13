@@ -3388,15 +3388,8 @@ b6:
 
 define internal void @"std/convert.FormatFixed"(ptr %v0, i64 %v1, i64 %v2) #0 {
 b0:
-  %s0 = alloca [3 x i64], align 8
-  %s0.z0 = getelementptr i64, ptr %s0, i64 0
-  store i64 0, ptr %s0.z0
-  %s0.z1 = getelementptr i64, ptr %s0, i64 1
-  store i64 0, ptr %s0.z1
-  %s0.z2 = getelementptr i64, ptr %s0, i64 2
-  store i64 0, ptr %s0.z2
-  %v19 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v3.p = getelementptr i64, ptr %v19, i64 0
+  %v15 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v3.p = getelementptr i64, ptr %v15, i64 0
   %v3 = load i64, ptr %v3.p
   %v4 = getelementptr i64, ptr @"rt.meta", i64 0
   %v5.p = getelementptr i64, ptr %v4, i64 2571
@@ -3414,27 +3407,14 @@ b0:
   %v12 = mul i64 %v10, %v11
   %v13 = add i64 %v3, %v12
   call void @"rt.region_enter"()
-  %v14 = getelementptr i64, ptr %s0, i64 0
-  %v15 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st1 = getelementptr i64, ptr %v15, i64 2571
+  %v14 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st1 = getelementptr i64, ptr %v14, i64 2571
   store i64 %v13, ptr %st1
-  call void @"std/internal/floatfmt.FormatFixed"(ptr %v14, i64 %v1, i64 %v2)
-  %v16.p = getelementptr i64, ptr %v14, i64 0
-  %v16 = load i64, ptr %v16.p
-  %st2 = getelementptr i64, ptr %v0, i64 0
-  store i64 %v16, ptr %st2
-  %v17.p = getelementptr i64, ptr %v14, i64 1
-  %v17 = load i64, ptr %v17.p
-  %st3 = getelementptr i64, ptr %v0, i64 1
-  store i64 %v17, ptr %st3
-  %v18.p = getelementptr i64, ptr %v14, i64 2
-  %v18 = load i64, ptr %v18.p
-  %st4 = getelementptr i64, ptr %v0, i64 2
-  store i64 %v18, ptr %st4
+  call void @"std/internal/floatfmt.FormatFixed"(ptr %v0, i64 %v1, i64 %v2)
   call void @"rt.region_relocate8"(ptr %v0, i64 %v3)
-  %v20 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st5 = getelementptr i64, ptr %v20, i64 0
-  store i64 %v3, ptr %st5
+  %v16 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st2 = getelementptr i64, ptr %v16, i64 0
+  store i64 %v3, ptr %st2
   ret void
 }
 

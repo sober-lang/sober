@@ -961,6 +961,29 @@ func selFieldTE(st mut S, e NodeRef, eb int, ef int) NodeRef {
     return if i < 0 { NodeRef(-1) } else { nB(nodeOf(mut st, latN(mut st, fs, i))) }
 }
 
+// 匿名の関数型の欄 e（`r.f`）の呼び出しの先頭の結果の型宣言（elem なら要素の宣言。結果が n 個でない・欄が関数型でなければ -1）
+func selFnResDecl(st mut S, e NodeRef, n int, eb int, ef int, elem bool) int {
+    base := declOfExpr(mut st, nA(nodeOf(mut st, e)), eb, ef)
+    fs := structFields(mut st, base)
+    if fs == -1 {
+        return -1
+    }
+    i := fieldIndex(mut st, fs, sB(nodeOf(mut st, e)))
+    if i < 0 {
+        return -1
+    }
+    te := nB(nodeOf(mut st, latN(mut st, fs, i)))
+    if kindN(mut st, te) != ast.TFunc || lenL(mut st, lB(nodeOf(mut st, te))) != n {
+        return -1
+    }
+    saved := st.tenv
+    st.tenv = hget(mut st, base + 2)
+    rt := latN(mut st, lB(nodeOf(mut st, te)), 0)
+    d := if elem { elemDeclOfTypeExpr(mut st, hget(mut st, base + 1), rt) } else { declOfTypeExpr(mut st, hget(mut st, base + 1), rt) }
+    st.tenv = saved
+    return d
+}
+
 // 閉包の呼び出し: `let f := 閉包 in callv (fst f) (pair (snd f) 引数鎖)`（引数は let の内側 = 深さ depth + 1）
 func callClosure(st mut S, callee NodeRef, ct TyRef, args ListRef, at NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     f := expr(mut st, callee, eb, ef, depth)?

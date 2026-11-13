@@ -1,0 +1,80 @@
+package main
+
+// gate areacheck の相手（scripts/areacheck.sh）: 接続の task（区画の形）に 4 つの道を踏ませる — /ok は普通に返る・/sleep/{ms} は深い待ちの後に返る・
+// /big/{n} は n バイトの本文（窓から小さいスロットへ移る深度を作る）・/hold/{ms}/{印} は深く寝た後に要求の path（受けの region の中身）をそのまま返す（区画の窓の中身が寝ている間に守られる証）・
+// /panic は handler の中で死ぬ・/sleep の長い待ちは Serve の期限で寝たまま捨てられる・/ledger は Ledger の待ちの形の数。"ready <port>" を出してから受け、Serve の期限
+// （argv[1] ms）で Serve が返ったら "drained" を出して argv[2] ms 生きている（外から区画の持ち主を数える間）。argv[3] が far なら本体の太い
+// 形（ServeConn の圧縮・作業域 — 本体の枠が塊の頁 0 の余白に入らず遠い道を通る — 計測用の halm と同じ太り方）
+
+import "std/compress/flate"
+import "std/convert"
+import "std/http/server"
+import "std/iter"
+import "std/net"
+import "std/os"
+import "std/strings"
+import "std/task"
+
+type Boom panic {}
+
+func num(s string?) int {
+    return if s == nil { 0 } else { convert.ParseInt(s) catch 0 }
+}
+
+func route(r http.server.Request) http.server.Response {
+    return switch {
+    case r.path == "/ok": http.server.Text("ok")
+    case r.path == "/panic": panic(Boom{})
+    case r.path == "/ledger": ledgerText()
+    case strings.HasPrefix(r.path, "/big/"): http.server.Text(big(num(strings.TrimPrefix(r.path, "/big/"))))
+    case strings.HasPrefix(r.path, "/hold/"): {
+        ms, _, _ := strings.Cut(strings.TrimPrefix(r.path, "/hold/"), "/")
+        os.Sleep(num(ms))
+        http.server.Text(r.path)
+    }
+    case strings.HasPrefix(r.path, "/sleep/"): {
+        ms := num(strings.TrimPrefix(r.path, "/sleep/"))
+        os.Sleep(ms)
+        http.server.Text(convert.FormatInt(ms))
+    }
+    default: http.server.Status(404)
+    }
+}
+
+// n バイトの本文（要求の region に作る — 窓の 1 頁を越えると窓から小さいスロットへ移る）
+func big(n int) string {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, n) {
+        b = append(b, byte('a' + i % 26))
+    }
+    return string(freeze(b)) catch ""
+}
+
+func ledgerText() http.server.Response {
+    l := task.Ledger()
+    return http.server.Text("aged=${l.aged} late=${l.late} maxLate=${l.maxLate} maxWait=${l.maxWait} backlog=${l.backlog} shed=${l.shed} parkShallow=${l.parkShallow} parkDeep=${l.parkDeep} parkSwap=${l.parkSwap} parkDeepWin=${l.parkDeepWin}")
+}
+
+func serve(serveMs int, far bool) error? {
+    gzw := task.NewLocal((w mut compress.flate.Work) => compress.flate.NewWork(mut w))
+    for l <- net.Listen("127.0.0.1:0")? {
+        println("ready ${net.Port(l)}")
+        if far {
+            _, _ = task.Run((s task.Scope) => net.Serve(l, (c net.Conn) => http.server.ServeConn(c, (r http.server.Request) => if r.path == "/ledger" { ledgerText() } else { route(r) }, maxBody: 65536, compression: http.server.Gzip{}, work: gzw), conns: 40000, maxWait: 100 * task.MS), deadline: serveMs * task.MS)
+        } else {
+            _, _ = task.Run((s task.Scope) => net.Serve(l, (c net.Conn) => http.server.ServeConn(c, (r http.server.Request) => route(r))), deadline: serveMs * task.MS)
+        }
+    }
+    return nil
+}
+
+func main() int {
+    args := os.Args() catch return 2
+    if len(args) != 3 && len(args) != 4 {
+        return 2
+    }
+    e := serve(num(args[1]), len(args) == 4 && args[3] == "far")
+    println("drained")
+    os.Sleep(num(args[2]))
+    return if e != nil { 1 } else { 0 }
+}

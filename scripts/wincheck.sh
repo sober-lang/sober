@@ -34,7 +34,7 @@ judge() {
 }
 "$S2" build testdata/wincheck/win.sober --emit=elf --passes -o "$W/win" > "$W/b.log" 2>&1 || { echo "wincheck: FAIL build ($(head -c 200 "$W/b.log"))"; exit 1; }
 # churn: 1 接続 2 要求で張り直す接続を 300 本（limited-conn の形 — std/http の畳みの park で要求の深度が死ぬ）。窓の頁を返す madvise は
-# 塊ごとに高々 1 回（WSP_NOWIN を塊に残す）— 接続ごとに返すと M:N で TLB の撃ち落とし。回数の不変条件 win_rel ≤ tcb_mmaps で縛る
+# 塊の窓ごとに高々 1 回（WSP_NOWIN を塊に残す）— 接続ごとに返すと M:N で TLB の撃ち落とし。回数の不変条件 win_rel ≤ 窓の数 4 × tcb_mmaps で縛る
 # （命令の網にも速さにも鳴らない族）。W2 だけ（窓は M:N のときだけ・W2 で塊の使い回しが最も多い）
 churn() {
     local x=$1 name=$2
@@ -42,7 +42,7 @@ churn() {
     local ec=$? t r
     t=$(grep -o 'tcb_mmaps=[0-9]*' "$W/cerr" | cut -d= -f2)
     r=$(grep -o 'win_rel=[0-9]*' "$W/cerr" | cut -d= -f2)
-    if [ $ec != 0 ] || [ "$(cat "$W/cout")" != "responses 600" ] || [ -z "$t" ] || [ -z "$r" ] || [ "$r" -gt "$t" ]; then
+    if [ $ec != 0 ] || [ "$(cat "$W/cout")" != "responses 600" ] || [ -z "$t" ] || [ -z "$r" ] || [ "$r" -gt $((4 * t)) ]; then
         echo "wincheck: $name churn: exit $ec out=$(head -c 60 "$W/cout") tcb_mmaps=$t win_rel=$r"
         return 1
     fi

@@ -1,0 +1,1020 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": "$task",
+      "path": "std/task",
+      "tok": 0
+    },
+    {
+      "alias": "$pool",
+      "path": "std/pool",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "Q",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "a",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          },
+          {
+            "name": "b",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 10
+          },
+          {
+            "name": "c",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 13
+          },
+          {
+            "name": "d",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 16
+          },
+          {
+            "name": "e",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 19
+          },
+          {
+            "name": "f",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 22
+          },
+          {
+            "name": "g",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 25
+          },
+          {
+            "name": "h",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 28
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 33
+      }
+    },
+    {
+      "name": "R",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "q0",
+            "type": {
+              "k": "name",
+              "name": "Q"
+            },
+            "tok": 37
+          },
+          {
+            "name": "q1",
+            "type": {
+              "k": "name",
+              "name": "Q"
+            },
+            "tok": 40
+          },
+          {
+            "name": "q2",
+            "type": {
+              "k": "name",
+              "name": "Q"
+            },
+            "tok": 43
+          },
+          {
+            "name": "q3",
+            "type": {
+              "k": "name",
+              "name": "Q"
+            },
+            "tok": 46
+          },
+          {
+            "name": "q4",
+            "type": {
+              "k": "name",
+              "name": "Q"
+            },
+            "tok": 49
+          },
+          {
+            "name": "q5",
+            "type": {
+              "k": "name",
+              "name": "Q"
+            },
+            "tok": 52
+          },
+          {
+            "name": "q6",
+            "type": {
+              "k": "name",
+              "name": "Q"
+            },
+            "tok": 55
+          },
+          {
+            "name": "q7",
+            "type": {
+              "k": "name",
+              "name": "Q"
+            },
+            "tok": 58
+          }
+        ]
+      },
+      "tok": 34,
+      "span": {
+        "start": 33,
+        "end": 63
+      }
+    },
+    {
+      "name": "H",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "h",
+            "type": {
+              "k": "func",
+              "params": [
+                {
+                  "k": "mut_param",
+                  "type": {
+                    "k": "name",
+                    "name": "R"
+                  }
+                }
+              ],
+              "results": [
+                {
+                  "k": "name",
+                  "name": "R"
+                }
+              ],
+              "param_names": [
+                "x"
+              ]
+            },
+            "tok": 67
+          }
+        ]
+      },
+      "tok": 64,
+      "span": {
+        "start": 63,
+        "end": 78
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "q",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "Q"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Q",
+                "elems": [
+                  {
+                    "key": "a",
+                    "value": {
+                      "k": "ident",
+                      "name": "n",
+                      "tok": 91
+                    }
+                  },
+                  {
+                    "key": "b",
+                    "value": {
+                      "k": "ident",
+                      "name": "n",
+                      "tok": 95
+                    }
+                  },
+                  {
+                    "key": "c",
+                    "value": {
+                      "k": "ident",
+                      "name": "n",
+                      "tok": 99
+                    }
+                  },
+                  {
+                    "key": "d",
+                    "value": {
+                      "k": "ident",
+                      "name": "n",
+                      "tok": 103
+                    }
+                  },
+                  {
+                    "key": "e",
+                    "value": {
+                      "k": "ident",
+                      "name": "n",
+                      "tok": 107
+                    }
+                  },
+                  {
+                    "key": "f",
+                    "value": {
+                      "k": "ident",
+                      "name": "n",
+                      "tok": 111
+                    }
+                  },
+                  {
+                    "key": "g",
+                    "value": {
+                      "k": "ident",
+                      "name": "n",
+                      "tok": 115
+                    }
+                  },
+                  {
+                    "key": "h",
+                    "value": {
+                      "k": "ident",
+                      "name": "n",
+                      "tok": 119
+                    }
+                  }
+                ],
+                "tok": 87,
+                "type_args": []
+              }
+            ],
+            "tok": 86
+          }
+        ]
+      },
+      "tok": 79,
+      "bodiless": false,
+      "span": {
+        "start": 78,
+        "end": 124
+      },
+      "sig_end": 85
+    },
+    {
+      "name": "bump",
+      "type_params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "R"
+          },
+          "mutable": true
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "z"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "q",
+                  "tok": 134
+                },
+                "args": [
+                  {
+                    "k": "int",
+                    "value": 99,
+                    "tok": 136
+                  }
+                ],
+                "tok": 135
+              }
+            ],
+            "tok": 132
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 139
+                },
+                "field": "q0",
+                "tok": 141
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "ident",
+                "name": "z",
+                "tok": 143
+              }
+            ],
+            "tok": 139
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 145
+                },
+                "field": "q1",
+                "tok": 147
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "ident",
+                "name": "z",
+                "tok": 149
+              }
+            ],
+            "tok": 145
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 151
+                },
+                "field": "q2",
+                "tok": 153
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "ident",
+                "name": "z",
+                "tok": 155
+              }
+            ],
+            "tok": 151
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 157
+                },
+                "field": "q3",
+                "tok": 159
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "ident",
+                "name": "z",
+                "tok": 161
+              }
+            ],
+            "tok": 157
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 163
+                },
+                "field": "q4",
+                "tok": 165
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "ident",
+                "name": "z",
+                "tok": 167
+              }
+            ],
+            "tok": 163
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 169
+                },
+                "field": "q5",
+                "tok": 171
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "ident",
+                "name": "z",
+                "tok": 173
+              }
+            ],
+            "tok": 169
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 175
+                },
+                "field": "q6",
+                "tok": 177
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "ident",
+                "name": "z",
+                "tok": 179
+              }
+            ],
+            "tok": 175
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 181
+                },
+                "field": "q7",
+                "tok": 183
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "ident",
+                "name": "z",
+                "tok": 185
+              }
+            ],
+            "tok": 181
+          }
+        ]
+      },
+      "tok": 125,
+      "bodiless": false,
+      "span": {
+        "start": 124,
+        "end": 189
+      },
+      "sig_end": 131
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "o"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "H",
+                "elems": [
+                  {
+                    "key": "h",
+                    "value": {
+                      "k": "lambda",
+                      "params": [
+                        {
+                          "name": "x",
+                          "type": {
+                            "k": "name",
+                            "name": "R"
+                          },
+                          "mutable": true
+                        }
+                      ],
+                      "body": {
+                        "k": "block",
+                        "stmts": [
+                          {
+                            "k": "defer",
+                            "expr": {
+                              "k": "call",
+                              "callee": {
+                                "k": "ident",
+                                "name": "bump",
+                                "tok": 208
+                              },
+                              "args": [
+                                {
+                                  "k": "mut_arg",
+                                  "name": "x",
+                                  "tok": 211
+                                }
+                              ],
+                              "tok": 209
+                            },
+                            "tok": 207
+                          },
+                          {
+                            "k": "expr",
+                            "expr": {
+                              "k": "composite",
+                              "type_name": "R",
+                              "elems": [
+                                {
+                                  "key": "q0",
+                                  "value": {
+                                    "k": "selector",
+                                    "base": {
+                                      "k": "ident",
+                                      "name": "x",
+                                      "tok": 218
+                                    },
+                                    "field": "q1",
+                                    "tok": 220
+                                  }
+                                },
+                                {
+                                  "key": "q1",
+                                  "value": {
+                                    "k": "selector",
+                                    "base": {
+                                      "k": "ident",
+                                      "name": "x",
+                                      "tok": 224
+                                    },
+                                    "field": "q0",
+                                    "tok": 226
+                                  }
+                                },
+                                {
+                                  "key": "q2",
+                                  "value": {
+                                    "k": "selector",
+                                    "base": {
+                                      "k": "ident",
+                                      "name": "x",
+                                      "tok": 230
+                                    },
+                                    "field": "q2",
+                                    "tok": 232
+                                  }
+                                },
+                                {
+                                  "key": "q3",
+                                  "value": {
+                                    "k": "selector",
+                                    "base": {
+                                      "k": "ident",
+                                      "name": "x",
+                                      "tok": 236
+                                    },
+                                    "field": "q3",
+                                    "tok": 238
+                                  }
+                                },
+                                {
+                                  "key": "q4",
+                                  "value": {
+                                    "k": "selector",
+                                    "base": {
+                                      "k": "ident",
+                                      "name": "x",
+                                      "tok": 242
+                                    },
+                                    "field": "q4",
+                                    "tok": 244
+                                  }
+                                },
+                                {
+                                  "key": "q5",
+                                  "value": {
+                                    "k": "selector",
+                                    "base": {
+                                      "k": "ident",
+                                      "name": "x",
+                                      "tok": 248
+                                    },
+                                    "field": "q5",
+                                    "tok": 250
+                                  }
+                                },
+                                {
+                                  "key": "q6",
+                                  "value": {
+                                    "k": "selector",
+                                    "base": {
+                                      "k": "ident",
+                                      "name": "x",
+                                      "tok": 254
+                                    },
+                                    "field": "q6",
+                                    "tok": 256
+                                  }
+                                },
+                                {
+                                  "key": "q7",
+                                  "value": {
+                                    "k": "selector",
+                                    "base": {
+                                      "k": "ident",
+                                      "name": "x",
+                                      "tok": 260
+                                    },
+                                    "field": "q7",
+                                    "tok": 262
+                                  }
+                                }
+                              ],
+                              "tok": 214,
+                              "type_args": []
+                            }
+                          }
+                        ]
+                      },
+                      "tok": 205
+                    }
+                  }
+                ],
+                "tok": 196,
+                "type_args": []
+              }
+            ],
+            "tok": 194
+          },
+          {
+            "k": "bind",
+            "names": [
+              "x"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "R",
+                "elems": [
+                  {
+                    "key": "q0",
+                    "value": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "q",
+                        "tok": 275
+                      },
+                      "args": [
+                        {
+                          "k": "int",
+                          "value": 0,
+                          "tok": 277
+                        }
+                      ],
+                      "tok": 276
+                    }
+                  },
+                  {
+                    "key": "q1",
+                    "value": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "q",
+                        "tok": 282
+                      },
+                      "args": [
+                        {
+                          "k": "int",
+                          "value": 1,
+                          "tok": 284
+                        }
+                      ],
+                      "tok": 283
+                    }
+                  },
+                  {
+                    "key": "q2",
+                    "value": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "q",
+                        "tok": 289
+                      },
+                      "args": [
+                        {
+                          "k": "int",
+                          "value": 2,
+                          "tok": 291
+                        }
+                      ],
+                      "tok": 290
+                    }
+                  },
+                  {
+                    "key": "q3",
+                    "value": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "q",
+                        "tok": 296
+                      },
+                      "args": [
+                        {
+                          "k": "int",
+                          "value": 3,
+                          "tok": 298
+                        }
+                      ],
+                      "tok": 297
+                    }
+                  },
+                  {
+                    "key": "q4",
+                    "value": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "q",
+                        "tok": 303
+                      },
+                      "args": [
+                        {
+                          "k": "int",
+                          "value": 4,
+                          "tok": 305
+                        }
+                      ],
+                      "tok": 304
+                    }
+                  },
+                  {
+                    "key": "q5",
+                    "value": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "q",
+                        "tok": 310
+                      },
+                      "args": [
+                        {
+                          "k": "int",
+                          "value": 5,
+                          "tok": 312
+                        }
+                      ],
+                      "tok": 311
+                    }
+                  },
+                  {
+                    "key": "q6",
+                    "value": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "q",
+                        "tok": 317
+                      },
+                      "args": [
+                        {
+                          "k": "int",
+                          "value": 6,
+                          "tok": 319
+                        }
+                      ],
+                      "tok": 318
+                    }
+                  },
+                  {
+                    "key": "q7",
+                    "value": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "q",
+                        "tok": 324
+                      },
+                      "args": [
+                        {
+                          "k": "int",
+                          "value": 7,
+                          "tok": 326
+                        }
+                      ],
+                      "tok": 325
+                    }
+                  }
+                ],
+                "tok": 271,
+                "type_args": []
+              }
+            ],
+            "tok": 268
+          },
+          {
+            "k": "bind",
+            "names": [
+              "r"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "o",
+                    "tok": 332
+                  },
+                  "field": "h",
+                  "tok": 334
+                },
+                "args": [
+                  {
+                    "k": "mut_arg",
+                    "name": "x",
+                    "tok": 337
+                  }
+                ],
+                "tok": 335
+              }
+            ],
+            "tok": 330
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 340
+              },
+              "args": [
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 342
+                    },
+                    "field": "q0",
+                    "tok": 344
+                  },
+                  "field": "a",
+                  "tok": 346
+                },
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 348
+                    },
+                    "field": "q1",
+                    "tok": 350
+                  },
+                  "field": "h",
+                  "tok": 352
+                },
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 354
+                    },
+                    "field": "q7",
+                    "tok": 356
+                  },
+                  "field": "d",
+                  "tok": 358
+                }
+              ],
+              "tok": 341
+            }
+          }
+        ]
+      },
+      "tok": 190,
+      "bodiless": false,
+      "span": {
+        "start": 189,
+        "end": 363
+      },
+      "sig_end": 193
+    }
+  ],
+  "consts": []
+}

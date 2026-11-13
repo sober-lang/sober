@@ -28,6 +28,7 @@ examples/borrow_neg_valcap.sober: sober: load error at examples/borrow_neg_valca
 examples/borrow_pend_mut.sober: sober: load error at examples/borrow_pend_mut.sober:13:30: a lambda kept as a value (a function-typed field, a value of named function type, or a lambda that flows on to another call) cannot capture a mut binding — captures are immutable copies taken at creation; only a lambda passed straight to a call of a function value (a borrowed closure) can capture one
 examples/borrow_pend_value.sober: sober: lower error at examples/borrow_pend_value.sober:12:28 (Unsupported)
 examples/borrow_pkg_neg.sober: sober: load error at examples/borrow_pkg_neg.sober:15:33: a closure cannot capture an io.File, net.Conn, net.Listener or tls.Conn — pass it as an argument (only the body of par.Scope and a lambda passed straight to a call may capture it)
+examples/build_diag_other_decl.sober: sober: lower error at examples/build_diag_other_decl.sober:16:14 (Mismatch)
 examples/builtin_decl.sober: sober: load error at examples/builtin_decl.sober:5:6: a top-level declaration cannot reuse a builtin name
 examples/builtin_rebind.sober: sober: load error at examples/builtin_rebind.sober:6:5: a local binding cannot reuse a builtin name (len, shape, println, await, freeze, keys, bytes, true, false)
 examples/builtin_rebind_append.sober: sober: load error at examples/builtin_rebind_append.sober:11:5: a local binding cannot reuse a builtin name (len, shape, println, await, freeze, keys, bytes, true, false, append, delete)

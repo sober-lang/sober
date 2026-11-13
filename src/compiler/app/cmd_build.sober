@@ -140,9 +140,10 @@ func cmdBuild(cl cli.Parsed) int {
     // task の罠の単体の例（lower.TrapProbe。入口が main の代わりに trap.probe を呼ぶ — scripts/trapprobe.sh）
     probe := cli.Bool(cl, TrapProbe)
     // M:N の rt の変異（番号の意味は compiler/lower の rt の変異の表 — schedfuzz・parbudget・cutstat・maprepr・jcleancheck・starve・httpprobe・flightcheck の自己検査）。
-    // --map-stat = 13（map の成長の計数 — `mapstat <番号> <バイト>` を stderr へ・SOBER_WORKERS=1 で）・--death-trace = 14（task の死を吸収せず印字して終了）
+    // --map-stat = 13（map の成長の計数 — `mapstat <番号> <バイト>` を stderr へ・SOBER_WORKERS=1 で）・--death-trace = 14（task の死を吸収せず印字して終了）・
+    // --vec-check = 56（手書きの SIMD の塊の窓の検査 — 外は exit 103。57〜59 は検査 + 窓の変異〔網の自己検査〕）
     mi := cli.IntOpt(cl, Mutant)
-    mutant := if mi == nil { if cli.Bool(cl, MapStat) { 13 } else if cli.Bool(cl, DeathTrace) { 14 } else { 0 } } else { mi }
+    mutant := if mi == nil { if cli.Bool(cl, MapStat) { 13 } else if cli.Bool(cl, DeathTrace) { 14 } else if cli.Bool(cl, VecCheck) { 56 } else { 0 } } else { mi }
     cutStat := cli.Bool(cl, CutStat)
     // 関数ごと（`callstat <関数名> <回数>` を stderr へ）/ 呼び出し点ごと（`callsite <呼び手> <番号> <callee> <ループの深さ> <回数>`）
     cs := cli.ChoiceOpt(cl, CallStat)
@@ -210,7 +211,7 @@ func cmdBuild(cl cli.Parsed) int {
         return emitExe(p, std, op, out, berr)
     }
     if frStat {
-        out, berr := lower.FrameStat(p)
+        out, berr := lower.FrameStat(p, mutant)
         return emitExe(p, std, op, out, berr)
     }
     if memRep {

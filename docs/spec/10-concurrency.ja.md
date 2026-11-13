@@ -167,7 +167,7 @@ C-17. `budget:`（Spawn・Map・Run の末尾の名前つき引数 — `budget: 
 拒否: [`examples/task_neg_budget.sober`](../../examples/task_neg_budget.sober)
 決定: [language.md 11 節](../language.md)
 
-C-18. `task.NewPool(budget:, parent:)` は名前つきの天井の節。`task.SpawnIn(s, pool, g)` だけは逐次にせず、入れなければ `(nil, task.Shed{})` を返す（受けられない、という値）。`task.Ledger()` は天井・計上・逐次化・shed・失敗・死の数と、スケジューラの `maxWait`（走れるようになってから走るまでの待ちの最大 — ns・読むと 0 に戻る）・`aged`（待ちの上限が効いた回数）・`backlog`（今の未着手の子の数）・`backlogYield`（未着手の子の上限で譲った回数）の読み口で、`task.MarkFailed(pool)` は境界の失敗を数える。
+C-18. `task.NewPool(budget:, parent:)` は名前つきの天井の節。`task.SpawnIn(s, pool, g)` だけは逐次にせず、入れなければ `(nil, task.Shed{})` を返す（受けられない、という値）。`task.Ledger()` は天井・計上・逐次化・shed・失敗・死の数と、スケジューラの `maxWait`（走れるようになってから走るまでの待ちの最大 — ns・読むと 0 に戻る）・`aged`（待ちの上限が効いた回数）・`late`（待ちの上限 D を越えて走った task の数の累計）・`maxLate`（越えた量〔待ち − D〕の最大 — ns・読むと 0 に戻る）・`backlog`（今の未着手の子の数）・`backlogYield`（未着手の子の上限で譲った回数）・`parkShallow` / `parkDeep` / `parkDeepWin` / `parkSwap`（接続の task が浅く寝た・ワーカーの区画を持って寝た・浅く寝られる点で窓に中身があって深く寝た・浅く寝る前に区画を交換した回数の累計）の読み口で、`task.MarkFailed(pool)` は境界の失敗を数える。
 例: [`examples/task_shed.sober`](../../examples/task_shed.sober)・[`examples/task_pool_seq.sober`](../../examples/task_pool_seq.sober)
 決定: [language.md 11 節](../language.md)
 
@@ -195,7 +195,7 @@ C-22. `task.Update(d, (st mut S) => 本体)` は本体を d の状態に当て�
 決定: [language.md 11 節「domain」・12 節](../language.md)
 
 C-23. `task.Await(d, (st mut S) => 本体, when: (st S) => 条件)` は条件が真になるまで待ってから本体を当て、`(R, error?)` を返す。待つ呼び出しは来た順に入る。待ちが d の `wait:`（呼び出しに `wait:` を書けばその値）を越えたら `io.Expired`。
-例: [`examples/domain_await.sober`](../../examples/domain_await.sober)・[`examples/domain_expire.sober`](../../examples/domain_expire.sober)・[`examples/domain_handoff.sober`](../../examples/domain_handoff.sober)
+例: [`examples/domain_await.sober`](../../examples/domain_await.sober)・[`examples/domain_expire.sober`](../../examples/domain_expire.sober)・[`examples/domain_handoff.sober`](../../examples/domain_handoff.sober)・[`examples/domain_requeue.sober`](../../examples/domain_requeue.sober)
 決定: [language.md 11 節「domain」](../language.md)
 
 C-24. 本体と `when:` は呼び出しに書いた字面のラムダ（仮引数 1 つ）。imm のデータだけを捕獲し（mut の束縛・mut の中身・札・handle・端点・関数型の仮引数は捕獲できない）、return・break・continue・`?` で外へ出ない。効果は持たない — 待たない・io なし・nondet なし・明示の panic なし。別の domain の呼び出しは nondet なので書けない（持ったまま待つ形が無い）。本体が状態 st に書けるのは region を持たない値（int・bool・byte・float とそれらの struct / union・option）だけで、map の添字を通らない場所へだけ（append・再スライス・string・map への書き・状態に触れる region を持つ値の mut の束縛〔`mut v := st.items`・`w := st.items` の後の `mut v := w` — 別名を経た append が状態を伸ばす。状態に触れる region を持つ値の束縛・代入（代入先の根）の名前は状態と同じ規則で見る〕は拒否）。st とその部分を本体の中で mut の実引数に渡せるのは、呼び先がその仮引数を根として本体と同じ規則で書く（呼び先の本体に同じ検査を当てて確かめる — 呼び先が分からない・総称・再帰・std/task の口は確かめられない側）ときだけ（確かめられなければ拒否 — 関数は値を受けて新しい値を返し、本体で代入する）。

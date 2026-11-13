@@ -19182,6 +19182,159 @@
         "end": 5663
       },
       "sig_end": 5533
+    },
+    {
+      "name": "TestLgTab",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 5668
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "len",
+                      "tok": 5670
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "lgTab",
+                        "tok": 5672
+                      }
+                    ],
+                    "tok": 5671
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 256,
+                    "tok": 5675
+                  },
+                  "tok": 5674
+                }
+              ],
+              "tok": 5669
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "v"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "iter",
+                        "tok": 5681
+                      },
+                      "field": "Range",
+                      "tok": 5683
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 5685
+                      },
+                      {
+                        "k": "int",
+                        "value": 256,
+                        "tok": 5687
+                      }
+                    ],
+                    "tok": 5684
+                  },
+                  "guards": [],
+                  "tok": 5679
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "assert",
+                        "tok": 5690
+                      },
+                      "args": [
+                        {
+                          "k": "binary",
+                          "op": "==",
+                          "lhs": {
+                            "k": "index",
+                            "base": {
+                              "k": "ident",
+                              "name": "lgTab",
+                              "tok": 5692
+                            },
+                            "idx": {
+                              "k": "ident",
+                              "name": "v",
+                              "tok": 5694
+                            },
+                            "tok": 5693
+                          },
+                          "rhs": {
+                            "k": "call",
+                            "callee": {
+                              "k": "ident",
+                              "name": "lg16",
+                              "tok": 5697
+                            },
+                            "args": [
+                              {
+                                "k": "ident",
+                                "name": "v",
+                                "tok": 5699
+                              }
+                            ],
+                            "tok": 5698
+                          },
+                          "tok": 5696
+                        }
+                      ],
+                      "tok": 5691
+                    }
+                  }
+                ]
+              },
+              "tok": 5678
+            }
+          }
+        ]
+      },
+      "tok": 5664,
+      "bodiless": false,
+      "span": {
+        "start": 5663,
+        "end": 5707
+      },
+      "sig_end": 5667
     }
   ],
   "consts": []

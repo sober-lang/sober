@@ -176,12 +176,18 @@ type Conn struct {
 
 ```sober
 type Row struct {
-    vals []Value
+    body []byte
+    cells []int
     oids []int
+    fmts []int
 }
 ```
 
-結果の 1 行（k の中で読む — 列は番号で）
+結果の 1 行（k の中で読む — 列は番号で）。DataRow の body のまま持ち、列の値は読むときに body から作る（形は受けたときに全列を確かめ済み）
+
+欄:
+
+- `cells` — 列ごとの [body の中の値の位置, 長さ（-1 = NULL）]
 
 ## Open
 
@@ -400,6 +406,18 @@ func ColJson(r Row, i int) ([]byte, error?)
 ```
 
 列 i の値 — json / jsonb の列（JSON の字句）
+
+失敗のラベル: [`NullColumn`](#nullcolumn)・[`WrongType`](#wrongtype)
+
+## ColJsonText
+
+```sober
+@errors(NullColumn, WrongType)
+@effects()
+func ColJsonText(r Row, i int) (string, error?)
+```
+
+列 i の値 — json / jsonb の列の JSON の字句を string で（json.Put で応答へそのまま積める）。UTF-8 は行を受けたときに確かめ済み
 
 失敗のラベル: [`NullColumn`](#nullcolumn)・[`WrongType`](#wrongtype)
 

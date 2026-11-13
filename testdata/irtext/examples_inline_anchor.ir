@@ -1763,7 +1763,6 @@ b0:
 
 func @main.rec(%0 ptr, %1 ptr, %2 i64, %3 i64, %4 i64, %5 i64) {
   slot s0 [3]
-  slot s1 [2]
 b0:
   %6 = slotaddr s0
   store %6[0], %2
@@ -1807,19 +1806,16 @@ b4:
   region.setdepth %7
   ret
 b5:
-  %28 = slotaddr s1
-  %29 = load.i64 %6[0]
-  %30 = load.i64 %6[1]
-  %31 = load.i64 %6[2]
-  %32 = const 1
-  %33 = sub %5, %32
-  %34 = globaladdr @rt.meta
-  store %34[2572], %13
-  call @main.rec(%28, %1, %29, %30, %31, %33)
-  %35 = load.i64 %28[0]
-  %36 = load.i64 %28[1]
-  store %0[0], %35
-  store %0[1], %36
+  %28 = load.i64 %6[0]
+  %29 = load.i64 %6[1]
+  %30 = load.i64 %6[2]
+  %31 = const 1
+  %32 = sub %5, %31
+  %33 = globaladdr @rt.meta
+  store %33[2572], %13
+  call @main.rec(%0, %1, %28, %29, %30, %32)
+  %34 = load.i64 %0[0]
+  %35 = load.i64 %0[1]
   region.setdepth %7
   ret
 }

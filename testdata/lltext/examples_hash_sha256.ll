@@ -4094,13 +4094,6 @@ b0:
   store i64 0, ptr %s0.z1
   %s0.z2 = getelementptr i64, ptr %s0, i64 2
   store i64 0, ptr %s0.z2
-  %s1 = alloca [3 x i64], align 8
-  %s1.z0 = getelementptr i64, ptr %s1, i64 0
-  store i64 0, ptr %s1.z0
-  %s1.z1 = getelementptr i64, ptr %s1, i64 1
-  store i64 0, ptr %s1.z1
-  %s1.z2 = getelementptr i64, ptr %s1, i64 2
-  store i64 0, ptr %s1.z2
   %v4 = getelementptr i64, ptr %s0, i64 0
   %st0 = getelementptr i64, ptr %v4, i64 0
   store i64 %v1, ptr %st0
@@ -4108,8 +4101,8 @@ b0:
   store i64 %v2, ptr %st1
   %st2 = getelementptr i64, ptr %v4, i64 2
   store i64 %v3, ptr %st2
-  %v24 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v5.p = getelementptr i64, ptr %v24, i64 0
+  %v20 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v5.p = getelementptr i64, ptr %v20, i64 0
   %v5 = load i64, ptr %v5.p
   %v6 = getelementptr i64, ptr @"rt.meta", i64 0
   %v7.p = getelementptr i64, ptr %v6, i64 2571
@@ -4127,33 +4120,20 @@ b0:
   %v14 = mul i64 %v12, %v13
   %v15 = add i64 %v5, %v14
   call void @"rt.region_enter"()
-  %v16 = getelementptr i64, ptr %s1, i64 0
-  %v17.p = getelementptr i64, ptr %v4, i64 0
+  %v16.p = getelementptr i64, ptr %v4, i64 0
+  %v16 = load i64, ptr %v16.p
+  %v17.p = getelementptr i64, ptr %v4, i64 1
   %v17 = load i64, ptr %v17.p
-  %v18.p = getelementptr i64, ptr %v4, i64 1
+  %v18.p = getelementptr i64, ptr %v4, i64 2
   %v18 = load i64, ptr %v18.p
-  %v19.p = getelementptr i64, ptr %v4, i64 2
-  %v19 = load i64, ptr %v19.p
-  %v20 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st4 = getelementptr i64, ptr %v20, i64 2571
+  %v19 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st4 = getelementptr i64, ptr %v19, i64 2571
   store i64 %v15, ptr %st4
-  call void @"std/crypto/sha256.Sum256"(ptr %v16, i64 %v17, i64 %v18, i64 %v19)
-  %v21.p = getelementptr i64, ptr %v16, i64 0
-  %v21 = load i64, ptr %v21.p
-  %st5 = getelementptr i64, ptr %v0, i64 0
-  store i64 %v21, ptr %st5
-  %v22.p = getelementptr i64, ptr %v16, i64 1
-  %v22 = load i64, ptr %v22.p
-  %st6 = getelementptr i64, ptr %v0, i64 1
-  store i64 %v22, ptr %st6
-  %v23.p = getelementptr i64, ptr %v16, i64 2
-  %v23 = load i64, ptr %v23.p
-  %st7 = getelementptr i64, ptr %v0, i64 2
-  store i64 %v23, ptr %st7
+  call void @"std/crypto/sha256.Sum256"(ptr %v0, i64 %v16, i64 %v17, i64 %v18)
   call void @"rt.region_relocate8"(ptr %v0, i64 %v5)
-  %v25 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st8 = getelementptr i64, ptr %v25, i64 0
-  store i64 %v5, ptr %st8
+  %v21 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st5 = getelementptr i64, ptr %v21, i64 0
+  store i64 %v5, ptr %st5
   ret void
 }
 
@@ -7378,13 +7358,6 @@ b0:
   store i64 0, ptr %s2.z5
   %s2.z6 = getelementptr i64, ptr %s2, i64 6
   store i64 0, ptr %s2.z6
-  %s3 = alloca [3 x i64], align 8
-  %s3.z0 = getelementptr i64, ptr %s3, i64 0
-  store i64 0, ptr %s3.z0
-  %s3.z1 = getelementptr i64, ptr %s3, i64 1
-  store i64 0, ptr %s3.z1
-  %s3.z2 = getelementptr i64, ptr %s3, i64 2
-  store i64 0, ptr %s3.z2
   %v4 = getelementptr i64, ptr %s0, i64 0
   %st0 = getelementptr i64, ptr %v4, i64 0
   store i64 %v1, ptr %st0
@@ -7392,8 +7365,8 @@ b0:
   store i64 %v2, ptr %st1
   %st2 = getelementptr i64, ptr %v4, i64 2
   store i64 %v3, ptr %st2
-  %v44 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v5.p = getelementptr i64, ptr %v44, i64 0
+  %v40 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v5.p = getelementptr i64, ptr %v40, i64 0
   %v5 = load i64, ptr %v5.p
   %v6 = getelementptr i64, ptr @"rt.meta", i64 0
   %v7.p = getelementptr i64, ptr %v6, i64 2571
@@ -7457,41 +7430,28 @@ b0:
   %st12 = getelementptr i64, ptr %v31, i64 2572
   store i64 %v27, ptr %st12
   call void @"std/crypto/sha256.Write"(ptr %v18, i64 %v28, i64 %v29, i64 %v30)
-  %v32 = getelementptr i64, ptr %s3, i64 0
-  %v33.p = getelementptr i64, ptr %v18, i64 0
+  %v32.p = getelementptr i64, ptr %v18, i64 0
+  %v32 = load i64, ptr %v32.p
+  %v33.p = getelementptr i64, ptr %v18, i64 1
   %v33 = load i64, ptr %v33.p
-  %v34.p = getelementptr i64, ptr %v18, i64 1
+  %v34.p = getelementptr i64, ptr %v18, i64 2
   %v34 = load i64, ptr %v34.p
-  %v35.p = getelementptr i64, ptr %v18, i64 2
+  %v35.p = getelementptr i64, ptr %v18, i64 3
   %v35 = load i64, ptr %v35.p
-  %v36.p = getelementptr i64, ptr %v18, i64 3
+  %v36.p = getelementptr i64, ptr %v18, i64 4
   %v36 = load i64, ptr %v36.p
-  %v37.p = getelementptr i64, ptr %v18, i64 4
+  %v37.p = getelementptr i64, ptr %v18, i64 5
   %v37 = load i64, ptr %v37.p
-  %v38.p = getelementptr i64, ptr %v18, i64 5
+  %v38.p = getelementptr i64, ptr %v18, i64 6
   %v38 = load i64, ptr %v38.p
-  %v39.p = getelementptr i64, ptr %v18, i64 6
-  %v39 = load i64, ptr %v39.p
-  %v40 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st13 = getelementptr i64, ptr %v40, i64 2571
+  %v39 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st13 = getelementptr i64, ptr %v39, i64 2571
   store i64 %v15, ptr %st13
-  call void @"std/crypto/sha256.Sum"(ptr %v32, i64 %v33, i64 %v34, i64 %v35, i64 %v36, i64 %v37, i64 %v38, i64 %v39)
-  %v41.p = getelementptr i64, ptr %v32, i64 0
-  %v41 = load i64, ptr %v41.p
-  %st14 = getelementptr i64, ptr %v0, i64 0
-  store i64 %v41, ptr %st14
-  %v42.p = getelementptr i64, ptr %v32, i64 1
-  %v42 = load i64, ptr %v42.p
-  %st15 = getelementptr i64, ptr %v0, i64 1
-  store i64 %v42, ptr %st15
-  %v43.p = getelementptr i64, ptr %v32, i64 2
-  %v43 = load i64, ptr %v43.p
-  %st16 = getelementptr i64, ptr %v0, i64 2
-  store i64 %v43, ptr %st16
+  call void @"std/crypto/sha256.Sum"(ptr %v0, i64 %v32, i64 %v33, i64 %v34, i64 %v35, i64 %v36, i64 %v37, i64 %v38)
   call void @"rt.region_relocate8"(ptr %v0, i64 %v5)
-  %v45 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st17 = getelementptr i64, ptr %v45, i64 0
-  store i64 %v5, ptr %st17
+  %v41 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st14 = getelementptr i64, ptr %v41, i64 0
+  store i64 %v5, ptr %st14
   ret void
 }
 

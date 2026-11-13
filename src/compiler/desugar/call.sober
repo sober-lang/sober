@@ -275,7 +275,8 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
             }
             m := expr(mut st, latN(mut st, args, 0), eb, ef, depth)?
             key := expr(mut st, latN(mut st, args, 1), eb, ef, depth)?
-            return cDelm(mut st, tVal(mut st, bt), m, key), nil
+            // 値の型は map の読み `m[k]` と同じ座標（展開した本体の仮引数なら呼び点の束縛の型 — mapValueAt）
+            return cDelm(mut st, mapValueAt(mut st, latN(mut st, args, 0), bt, eb), m, key), nil
         }
         if strIs(mut st, name, "append") {
             if na != 2 {

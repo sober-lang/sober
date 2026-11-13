@@ -1,0 +1,3 @@
+examples/build_diag_other_decl.sober:10:22: error: acquired handle 'h' must be released by the next statement: insert `defer pool.Release(mut p, h)` right after this line (Analyzer)
+examples/build_diag_other_decl.sober:12:23: error: Release may only appear as `defer ...Release(p, h)` right after the `h := ...Acquire(...)` it releases (Analyzer)
+exit=1

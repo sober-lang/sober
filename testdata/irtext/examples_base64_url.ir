@@ -2483,15 +2483,13 @@ b0:
   %26 = load.i64 %23[1]
   %27 = load.i64 %23[2]
   %28 = const 1
-  %29 = globaladdr @rt.meta
-  store %29[2571], %15
   call @std/base64.encode(%16, %17, %18, %19, %25, %26, %27, %28)
-  %30 = load.i64 %16[0]
-  store %0[0], %30
-  %31 = load.i64 %16[1]
-  store %0[1], %31
-  %32 = load.i64 %16[2]
-  store %0[2], %32
+  %29 = load.i64 %16[0]
+  store %0[0], %29
+  %30 = load.i64 %16[1]
+  store %0[1], %30
+  %31 = load.i64 %16[2]
+  store %0[2], %31
   call @rt.region_relocate8(%0, %5)
   region.setdepth %5
   ret
@@ -2535,15 +2533,13 @@ b0:
   %26 = load.i64 %23[1]
   %27 = load.i64 %23[2]
   %28 = const 0
-  %29 = globaladdr @rt.meta
-  store %29[2571], %15
   call @std/base64.encode(%16, %17, %18, %19, %25, %26, %27, %28)
-  %30 = load.i64 %16[0]
-  store %0[0], %30
-  %31 = load.i64 %16[1]
-  store %0[1], %31
-  %32 = load.i64 %16[2]
-  store %0[2], %32
+  %29 = load.i64 %16[0]
+  store %0[0], %29
+  %30 = load.i64 %16[1]
+  store %0[1], %30
+  %31 = load.i64 %16[2]
+  store %0[2], %31
   call @rt.region_relocate8(%0, %5)
   region.setdepth %5
   ret

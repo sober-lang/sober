@@ -469,8 +469,14 @@ func emitCall0(st mut St, irf FnRef, fv int, params desugar.ListRef, results des
             rw += tWords(mut st, latI(mut st, results, i))
             i += 1
         }
-        // 結果スロットのアドレスは第 0 引数（スロットは入口で取るので先に作ってよい）。使い回さない（newSlotAddrOwn — 逃げるスロットの共用を断つ）
-        sp = newSlotAddrOwn(mut st, if rw > 1 { rw } else { 1 })
+        // 結果スロットのアドレスは第 0 引数（スロットは入口で取るので先に作ってよい）。使い回さない（newSlotAddrOwn — 逃げるスロットの共用を断つ）。
+        // return の値そのものの呼び出しで結果の型が自分の結果と同じなら、自分の受け皿をそのまま渡す（retStmt の転送）
+        if st.sretAt > 0 && int(at) + 1 == st.sretAt && tyListEql(mut st, results, desugar.ListRef(st.sretTs)) {
+            sp = st.sret
+            st.sretHit = true
+        } else {
+            sp = newSlotAddrOwn(mut st, if rw > 1 { rw } else { 1 })
+        }
         desugar.HeapSet(mut st.d, argl + 1, sp)
         k = 1
     }
@@ -706,12 +712,13 @@ func exprExpecting(st mut St, e desugar.NodeRef, w int, at desugar.NodeRef) (Val
         }
         return Val{}, diag.Unsupported{at: posOf(mut st, at)}
     }
-    if k == ast.EIf && isTag(mut st, w, TOpt) && nodeOf(mut st, e).c >= 0 {
+    // 型なしの定数は期待型の named scalar（か T? の中身の named）に割り当てる（language.md 32 節）
+    nt := if takesConst(mut st, w) { w } else if isTag(mut st, w, TOpt) && takesConst(mut st, desugar.HeapGet(mut st.d, w + 1)) { desugar.HeapGet(mut st.d, w + 1) } else { -1 }
+    // if 式は腕ごとに期待型へ合わせる（T? の期待・型なしの定数の腕を named scalar / byte の期待へ）
+    if k == ast.EIf && (isTag(mut st, w, TOpt) || nt >= 0) && nodeOf(mut st, e).c >= 0 {
         x := ifExpr(mut st, e, w)?
         return coerce(mut st, x.t, x.v, w, at)
     }
-    // 型なしの定数は期待型の named scalar（か T? の中身の named）に割り当てる（language.md 32 節）
-    nt := if takesConst(mut st, w) { w } else if isTag(mut st, w, TOpt) && takesConst(mut st, desugar.HeapGet(mut st.d, w + 1)) { desugar.HeapGet(mut st.d, w + 1) } else { -1 }
     if k == ast.ESwitch && nt >= 0 {
         st.swW = nt + 1
     }
@@ -1791,4 +1798,17 @@ func ifExpr(st mut St, e desugar.NodeRef, w int) (Val, error?) {
     }
     rt, rv := joinArms(mut st, ends, t)
     return Val{t: rt, v: rv}, nil
+}
+
+// 型の列 a と b が同じ長さで要素ごとに同じ型か
+func tyListEql(st mut St, a desugar.ListRef, b desugar.ListRef) bool {
+    if lenL(mut st, a) != lenL(mut st, b) {
+        return false
+    }
+    for i <- iter.Range(0, lenL(mut st, a)) {
+        if !tEql(mut st, latI(mut st, a, i), latI(mut st, b, i)) {
+            return false
+        }
+    }
+    return true
 }

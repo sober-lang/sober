@@ -1,0 +1,54 @@
+package main
+
+// byte と named scalar の文脈（戻り・実引数・append・slice / map のリテラルの要素・struct の欄）に置いた if / switch の式:
+// 腕の型なしの定数は期待型に割り当てる。欄にも const と文字リテラルを置ける
+
+const K = 3
+
+type Port int
+
+type T struct {
+    b byte
+    c byte
+    d byte
+}
+
+type U struct {
+    p Port
+}
+
+func bit(v bool) byte {
+    return if v { 1 } else { 0 }
+}
+
+func wide(b byte) int {
+    return int(b)
+}
+
+func main() {
+    v := true
+    println(bit(v))
+    println(wide(if v { 7 } else { 8 }))
+    mut out := mut []byte{}
+    out = append(out, if v { 2 } else { 3 })
+    println(out[0])
+    xs := []byte{if v { 1 } else { 0 }, switch 1 {
+    case 1:
+        5
+    default:
+        6
+    }}
+    println(xs[0])
+    println(xs[1])
+    m := map[int]byte{1: if v { 9 } else { 0 }}
+    mv := m[1]
+    if mv != nil {
+        println(mv)
+    }
+    t := T{b: K, c: 'a', d: if v { 4 } else { 0 }}
+    println(t.b)
+    println(t.c)
+    println(t.d)
+    u := U{p: if v { 80 } else { 443 }}
+    println(int(u.p))
+}

@@ -22,10 +22,11 @@ const wState = 2
 const wFd = 3
 const wHead = 4
 
-// 表の頭: 枠の数・枠ごとの置き場の語数
+// 表の頭: 枠の数・枠ごとの置き場の語数・Reap が最後に走査した時の死の通し番号（lease_op 9）
 const hN = 0
 const hW = 1
-const hHead = 2
+const hSeen = 2
+const hHead = 3
 
 // 預かり所（表は imm の列 — 語の読み書きは lease_op の生の口）
 type Lot struct {
@@ -38,6 +39,7 @@ func New(n int, w int) Lot {
     mut b := mut []int{}
     b = append(b, n)
     b = append(b, w)
+    b = append(b, 0)
     for _ <- iter.Range(0, n * stride) {
         b = append(b, 0)
     }
@@ -142,8 +144,14 @@ func release(l Lot, i int) {
 }
 
 // 死んだ借り手の枠（使用中・印 0）を回収して空きへ戻し、その数を返す（呼び手は domain の数え口から引く — 二相の 1 相目）。
-// 状態 → 印の順に読み、使用中 → 回収中の比較交換で取る（生きた借り手は使用中の間ずっと印が 1・返すときは取り中を挟む）
+// 状態 → 印の順に読み、使用中 → 回収中の比較交換で取る（生きた借り手は使用中の間ずっと印が 1・返すときは取り中を挟む）。
+// 走査は lease の死の通し番号が前の走査から動いたときだけ: rt は印を外してから番号を上げるので、走査の前に読んだ番号までの死は走査に見える。
+// 番号は走査の前に読み、走査の後に書く（後で読むと、走査が通り過ぎた枠の死の番号を見たことにして取りこぼす）。並んだ Reap が古い番号を書き戻しても、次の走査が 1 回増えるだけ
 func Reap(l Lot) int {
+    seen := leaseOp(9, l.blk, 0, 0)
+    if seen == leaseOp(4, l.blk, hSeen, 0) {
+        return 0
+    }
     n := size(l)
     mut lost := 0
     mut i := 0
@@ -155,6 +163,7 @@ func Reap(l Lot) int {
         }
         i += 1
     }
+    _ = leaseOp(5, l.blk, hSeen, seen)
     return lost
 }
 
@@ -171,7 +180,7 @@ func Close(l Lot, k func(fd int, place []int)) {
     }
 }
 
-// lease_op（rt の口 — op 2 = 印を取って鎖へ・3 = 印を外す・4 = 生の読み・5 = 生の書き・8 = 比較交換）
+// lease_op（rt の口 — op 2 = 印を取って鎖へ・3 = 印を外す・4 = 生の読み・5 = 生の書き・8 = 比較交換・9 = lease の死の通し番号）
 @intrinsic("lease_op")
 func leaseOp(op int, blk []int, off int, v int) int
 

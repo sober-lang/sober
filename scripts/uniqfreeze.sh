@@ -31,7 +31,7 @@ while read -r s; do
     # analyzer が受理するものだけ（拒否は analyzer_neg の側の網）
     "$SOBER" check "$s" > /dev/null 2>&1 || { [ "${GATES_ALL:-0}" = 1 ] && continue; echo "FAIL $s: analyzer / check rejects a representative"; fail=1; continue; }
     "$SOBER" check "$s" --core-json > "$W/one" 2> /dev/null || continue
-    head -c 8 "$W/one" | grep -q '{"defs"' || continue
+    [[ $(head -c 8 "$W/one") == '{"defs"'* ]] || continue
     tr -d '\n' < "$W/one" >> "$W/pos.ndjson"; echo >> "$W/pos.ndjson"; echo "$s" >> "$W/pos.names"
 done < "$W/pos.list"
 cat "$W/neg.ndjson" "$W/pos.ndjson" | "$SOBER_CHECK" --uniq-batch > "$W/out" || { echo "FAIL: sober-check --uniq-batch"; exit 1; }

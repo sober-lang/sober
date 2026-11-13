@@ -3921,7 +3921,6 @@ func @std/crypto/hkdf.Extract(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6
   slot s4 [1]
   slot s5 [1]
   slot s6 [3]
-  slot s7 [3]
 b0:
   %7 = slotaddr s0
   store %7[0], %1
@@ -4061,22 +4060,15 @@ b15(%79 ptr):
   store %80[1], %82
   %83 = load.i64 %79[2]
   store %80[2], %83
-  %84 = slotaddr s7
-  %85 = load.i64 %80[0]
-  %86 = load.i64 %80[1]
-  %87 = load.i64 %80[2]
-  %88 = load.i64 %8[0]
-  %89 = load.i64 %8[1]
-  %90 = load.i64 %8[2]
-  %91 = globaladdr @rt.meta
-  store %91[2571], %19
-  call @std/crypto/hmac.Sum256(%84, %85, %86, %87, %88, %89, %90)
-  %92 = load.i64 %84[0]
-  store %0[0], %92
-  %93 = load.i64 %84[1]
-  store %0[1], %93
-  %94 = load.i64 %84[2]
-  store %0[2], %94
+  %84 = load.i64 %80[0]
+  %85 = load.i64 %80[1]
+  %86 = load.i64 %80[2]
+  %87 = load.i64 %8[0]
+  %88 = load.i64 %8[1]
+  %89 = load.i64 %8[2]
+  %90 = globaladdr @rt.meta
+  store %90[2571], %19
+  call @std/crypto/hmac.Sum256(%0, %84, %85, %86, %87, %88, %89)
   call @rt.region_relocate8(%0, %9)
   region.setdepth %9
   ret
@@ -4860,7 +4852,6 @@ func @std/crypto/hmac.Sum256(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 
   slot s12 [3]
   slot s13 [7]
   slot s14 [7]
-  slot s15 [3]
 b0:
   %7 = slotaddr s0
   store %7[0], %1
@@ -5031,23 +5022,16 @@ b4:
   %198 = globaladdr @rt.meta
   store %198[2572], %194
   call @std/crypto/sha256.Write(%179, %195, %196, %197)
-  %199 = slotaddr s15
-  %200 = load.i64 %179[0]
-  %201 = load.i64 %179[1]
-  %202 = load.i64 %179[2]
-  %203 = load.i64 %179[3]
-  %204 = load.i64 %179[4]
-  %205 = load.i64 %179[5]
-  %206 = load.i64 %179[6]
-  %207 = globaladdr @rt.meta
-  store %207[2571], %19
-  call @std/crypto/sha256.Sum(%199, %200, %201, %202, %203, %204, %205, %206)
-  %208 = load.i64 %199[0]
-  store %0[0], %208
-  %209 = load.i64 %199[1]
-  store %0[1], %209
-  %210 = load.i64 %199[2]
-  store %0[2], %210
+  %199 = load.i64 %179[0]
+  %200 = load.i64 %179[1]
+  %201 = load.i64 %179[2]
+  %202 = load.i64 %179[3]
+  %203 = load.i64 %179[4]
+  %204 = load.i64 %179[5]
+  %205 = load.i64 %179[6]
+  %206 = globaladdr @rt.meta
+  store %206[2571], %19
+  call @std/crypto/sha256.Sum(%0, %199, %200, %201, %202, %203, %204, %205)
   call @rt.region_relocate8(%0, %9)
   region.setdepth %9
   ret
@@ -6704,7 +6688,6 @@ func @std/crypto/sha256.Sum256(%0 ptr, %1 i64, %2 i64, %3 i64) {
   slot s0 [3]
   slot s1 [7]
   slot s2 [7]
-  slot s3 [3]
 b0:
   %4 = slotaddr s0
   store %4[0], %1
@@ -6750,23 +6733,16 @@ b0:
   %31 = globaladdr @rt.meta
   store %31[2572], %27
   call @std/crypto/sha256.Write(%18, %28, %29, %30)
-  %32 = slotaddr s3
-  %33 = load.i64 %18[0]
-  %34 = load.i64 %18[1]
-  %35 = load.i64 %18[2]
-  %36 = load.i64 %18[3]
-  %37 = load.i64 %18[4]
-  %38 = load.i64 %18[5]
-  %39 = load.i64 %18[6]
-  %40 = globaladdr @rt.meta
-  store %40[2571], %15
-  call @std/crypto/sha256.Sum(%32, %33, %34, %35, %36, %37, %38, %39)
-  %41 = load.i64 %32[0]
-  store %0[0], %41
-  %42 = load.i64 %32[1]
-  store %0[1], %42
-  %43 = load.i64 %32[2]
-  store %0[2], %43
+  %32 = load.i64 %18[0]
+  %33 = load.i64 %18[1]
+  %34 = load.i64 %18[2]
+  %35 = load.i64 %18[3]
+  %36 = load.i64 %18[4]
+  %37 = load.i64 %18[5]
+  %38 = load.i64 %18[6]
+  %39 = globaladdr @rt.meta
+  store %39[2571], %15
+  call @std/crypto/sha256.Sum(%0, %32, %33, %34, %35, %36, %37, %38)
   call @rt.region_relocate8(%0, %5)
   region.setdepth %5
   ret

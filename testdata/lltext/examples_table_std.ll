@@ -3523,13 +3523,8 @@ b16:
 
 define internal void @"main.getP"(ptr %v0, ptr %v1, i64 %v2) #0 {
 b0:
-  %s0 = alloca [2 x i64], align 8
-  %s0.z0 = getelementptr i64, ptr %s0, i64 0
-  store i64 0, ptr %s0.z0
-  %s0.z1 = getelementptr i64, ptr %s0, i64 1
-  store i64 0, ptr %s0.z1
-  %v14 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v3.p = getelementptr i64, ptr %v14, i64 0
+  %v11 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v3.p = getelementptr i64, ptr %v11, i64 0
   %v3 = load i64, ptr %v3.p
   %v4 = getelementptr i64, ptr @"rt.meta", i64 0
   %v5.p = getelementptr i64, ptr %v4, i64 2572
@@ -3539,22 +3534,13 @@ b0:
   %v7 = zext i1 %v7.c to i64
   %v8 = mul i64 %v7, %v3
   %v9 = add i64 %v5, %v8
-  %v10 = getelementptr i64, ptr %s0, i64 0
-  %v11 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st0 = getelementptr i64, ptr %v11, i64 2572
+  %v10 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st0 = getelementptr i64, ptr %v10, i64 2572
   store i64 %v9, ptr %st0
-  call void @"std/table.Get[main.P]"(ptr %v10, ptr %v1, i64 %v2)
-  %v12.p = getelementptr i64, ptr %v10, i64 0
-  %v12 = load i64, ptr %v12.p
-  %st1 = getelementptr i64, ptr %v0, i64 0
-  store i64 %v12, ptr %st1
-  %v13.p = getelementptr i64, ptr %v10, i64 1
-  %v13 = load i64, ptr %v13.p
-  %st2 = getelementptr i64, ptr %v0, i64 1
-  store i64 %v13, ptr %st2
-  %v15 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st3 = getelementptr i64, ptr %v15, i64 0
-  store i64 %v3, ptr %st3
+  call void @"std/table.Get[main.P]"(ptr %v0, ptr %v1, i64 %v2)
+  %v12 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st1 = getelementptr i64, ptr %v12, i64 0
+  store i64 %v3, ptr %st1
   ret void
 }
 

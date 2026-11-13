@@ -2019,33 +2019,31 @@ b0:
   %24 = load.i64 %8[0]
   %25 = load.i64 %8[1]
   %26 = load.i64 %8[2]
-  %27 = globaladdr @rt.meta
-  store %27[2571], %19
   call @main.unhex(%23, %24, %25, %26)
-  %28 = load.i64 %23[0]
-  %29 = load.i64 %23[1]
-  %30 = load.i64 %23[2]
-  %31 = call @std/crypto.Equal(%20, %21, %22, %28, %29, %30)
-  condbr %31, b1, b2
+  %27 = load.i64 %23[0]
+  %28 = load.i64 %23[1]
+  %29 = load.i64 %23[2]
+  %30 = call @std/crypto.Equal(%20, %21, %22, %27, %28, %29)
+  condbr %30, b1, b2
 b1:
   br b3(%8)
 b2:
-  %32 = globaladdr @str.20
-  %33 = const 8
-  %34 = const 0
-  %35 = slotaddr s3
-  %36 = ptoi %32
-  store %35[0], %36
-  store %35[1], %33
-  store %35[2], %34
-  br b3(%35)
-b3(%37 ptr):
-  %38 = load.i64 %37[0]
-  store %0[0], %38
-  %39 = load.i64 %37[1]
-  store %0[1], %39
-  %40 = load.i64 %37[2]
-  store %0[2], %40
+  %31 = globaladdr @str.20
+  %32 = const 8
+  %33 = const 0
+  %34 = slotaddr s3
+  %35 = ptoi %31
+  store %34[0], %35
+  store %34[1], %32
+  store %34[2], %33
+  br b3(%34)
+b3(%36 ptr):
+  %37 = load.i64 %36[0]
+  store %0[0], %37
+  %38 = load.i64 %36[1]
+  store %0[1], %38
+  %39 = load.i64 %36[2]
+  store %0[2], %39
   call @rt.region_relocate8(%0, %9)
   region.setdepth %9
   ret
@@ -2947,7 +2945,6 @@ func @std/crypto/x25519.Base(%0 ptr, %1 i64, %2 i64, %3 i64) {
   slot s3 [1]
   slot s4 [1]
   slot s5 [3]
-  slot s6 [3]
 b0:
   %4 = slotaddr s0
   store %4[0], %1
@@ -2996,22 +2993,15 @@ b0:
   br b3
 b1:
   region.setdepth %28
-  %72 = slotaddr s6
-  %73 = load.i64 %4[0]
-  %74 = load.i64 %4[1]
-  %75 = load.i64 %4[2]
-  %76 = load.i64 %24[0]
-  %77 = load.i64 %24[1]
-  %78 = load.i64 %24[2]
-  %79 = globaladdr @rt.meta
-  store %79[2571], %15
-  call @std/crypto/x25519.Shared(%72, %73, %74, %75, %76, %77, %78)
-  %80 = load.i64 %72[0]
-  store %0[0], %80
-  %81 = load.i64 %72[1]
-  store %0[1], %81
-  %82 = load.i64 %72[2]
-  store %0[2], %82
+  %72 = load.i64 %4[0]
+  %73 = load.i64 %4[1]
+  %74 = load.i64 %4[2]
+  %75 = load.i64 %24[0]
+  %76 = load.i64 %24[1]
+  %77 = load.i64 %24[2]
+  %78 = globaladdr @rt.meta
+  store %78[2571], %15
+  call @std/crypto/x25519.Shared(%0, %72, %73, %74, %75, %76, %77)
   call @rt.region_relocate8(%0, %5)
   region.setdepth %5
   ret
@@ -3094,7 +3084,6 @@ func @std/crypto/x25519.Shared(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %
   slot s7 [3]
   slot s8 [3]
   slot s9 [1]
-  slot s10 [3]
 b0:
   %7 = slotaddr s0
   store %7[0], %1
@@ -3575,20 +3564,13 @@ b44:
   %470 = globaladdr @rt.meta
   store %470[2572], %466
   call @std/crypto/x25519.fmul(%199, %203, %467, %468, %469)
-  %471 = slotaddr s10
-  %472 = load.i64 %199[0]
-  %473 = load.i64 %199[1]
-  %474 = load.i64 %199[2]
-  %475 = const 80
-  %476 = globaladdr @rt.meta
-  store %476[2571], %19
-  call @std/crypto/x25519.pack(%471, %472, %473, %474, %475)
-  %477 = load.i64 %471[0]
-  store %0[0], %477
-  %478 = load.i64 %471[1]
-  store %0[1], %478
-  %479 = load.i64 %471[2]
-  store %0[2], %479
+  %471 = load.i64 %199[0]
+  %472 = load.i64 %199[1]
+  %473 = load.i64 %199[2]
+  %474 = const 80
+  %475 = globaladdr @rt.meta
+  store %475[2571], %19
+  call @std/crypto/x25519.pack(%0, %471, %472, %473, %474)
   call @rt.region_relocate8(%0, %9)
   region.setdepth %9
   ret

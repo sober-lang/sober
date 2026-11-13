@@ -1,0 +1,225 @@
+package lower
+
+import "desugar"
+import "std/iter"
+
+// 接続の task の積み（language.md 11 節 — std/net の Serve を使うプログラムだけ: st.areaOn）。
+// - 塊はどれも [ガード | 積み 1 MiB | 頁 0 …]。積みの領域（頂上 = 頁 0 の底）を「区画」と呼び、task 1 本（塊ごとの TC_AREA）とワーカー 1 本
+//   （WK_AREA）がそれぞれちょうど 1 枚持つ
+// - 印つきの task（rt.netop 10 — 接続）は本体の枠を頁 0 の余白に置き、本体より下の呼び出しをワーカーの区画の上で走らせる（本体の prologue
+//   — x86.sober xAreaProlog）。その task が止まると rt.task_switch が持ち札とワーカーの区画を入れ替える（寝る task は使っていた区画を持って
+//   眠り、ワーカーは task の持ち札を受け取る）。区画の数は保存され、どの区画も持ち主はちょうど 1 者
+// - 持ち札が自分でない塊は別の鎖（TK_FREEA / MN_RTCBA）に返し、印つきの spawn だけが引く — 印のない task の積みは今の連続の形のまま
+// - 本体の枠が余白に入らない印つきの task は、枠を作る前に持ち札の区画の頂上へ移って連続の形で走る（交換しない）
+
+// 区画を 1 枚写す（[ガード | 積み TASK_STACK] — 塊と同じ旗・ガードは PROT_NONE）→ 頂上の番地。区画の窓を組むプログラムは塊と同じ並びで
+// 頂上の上に頁 0 と頭の分の VA も取る（区画の窓が頂上 + AWIN_OFF に来る — 触るのは窓の頁だけ）
+func areaMap(st mut St) int {
+    args := listN(mut st, 7)
+    desugar.HeapSet(mut st.d, args + 1, iconst(mut st, 9))
+    desugar.HeapSet(mut st.d, args + 2, iconst(mut st, 0))
+    desugar.HeapSet(mut st.d, args + 3, iconst(mut st, TASK_GUARD + TASK_STACK + if winArm(mut st) { 4096 + TASK_HEAD } else { 0 }))
+    desugar.HeapSet(mut st.d, args + 4, iconst(mut st, 3))
+    desugar.HeapSet(mut st.d, args + 5, iconst(mut st, 16418))
+    desugar.HeapSet(mut st.d, args + 6, iconst(mut st, -1))
+    desugar.HeapSet(mut st.d, args + 7, iconst(mut st, 0))
+    b := syscall(mut st, args)
+    bad := newBlock(mut st)
+    ok := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CUge, b, iconst(mut st, -4095)), bad, -1, ok, -1)
+    setCur(mut st, bad)
+    memPanic(mut st, PM_VA)
+    setCur(mut st, ok)
+    pr := syscall(mut st, list4(mut st, iconst(mut st, 10), b, iconst(mut st, TASK_GUARD), iconst(mut st, 0)))
+    bBadP := newBlock(mut st)
+    okP := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, pr, iconst(mut st, 0)), bBadP, -1, okP, -1)
+    setCur(mut st, bBadP)
+    memPanic(mut st, PM_VA)
+    setCur(mut st, okP)
+    return bin(mut st, BAdd, b, iconst(mut st, TASK_GUARD + TASK_STACK))
+}
+
+// 塊 t（TCB の番地）の持ち札が自分の積みの領域か（値は 0 / 1）
+func areaOwn(st mut St, t int) int {
+    return cmp(mut st, CEq, load(mut st, t, TC_AREA), bin(mut st, BSub, ptoi(mut st, t), iconst(mut st, TCB_TOP_ROOM)))
+}
+
+// 切り替える task from がワーカーの区画の上で走っていたら、持ち札とワーカーの区画を入れ替える（rt.task_switch の頭）
+func areaSwap(st mut St, from int) {
+    w := load(mut st, from, TC_ONW)
+    bS := newBlock(mut st)
+    bJ := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, bin(mut st, BAnd, w, iconst(mut st, 2)), iconst(mut st, 0)), bS, -1, bJ, -1)
+    setCur(mut st, bS)
+    wk := globaladdr(mut st, st.wkG)
+    a := load(mut st, from, TC_AREA)
+    // 変異 63 / 64 = 交換の片側だけ（task の側だけ / ワーカーの側だけ — areacheck の保存則が捕まえる）
+    if st.rtMut != 64 {
+        store(mut st, from, TC_AREA, load(mut st, wk, WK_AREA))
+    }
+    if st.rtMut != 63 {
+        store(mut st, wk, WK_AREA, a)
+    }
+    store(mut st, from, TC_ONW, bin(mut st, BAnd, w, iconst(mut st, -3)))
+    store(mut st, wk, WK_PDEEP, bin(mut st, BAdd, load(mut st, wk, WK_PDEEP), iconst(mut st, 1)))
+    br(mut st, bJ, -1)
+    setCur(mut st, bJ)
+}
+
+// 本体が返った（か死んで罠へ戻った）直後の task t: 印つきなら rsp を持つ区画の頂上へ（ワーカーの区画の上で走っていたならワーカーの区画・
+// でなければ持ち札）。task の終わりの積みが頁 0 の余白を越えて自分の塊の積みの領域（交換で他人のものでありうる）へ伸びないように
+func areaExit(st mut St, t int) {
+    w := load(mut st, t, TC_ONW)
+    bE := newBlock(mut st)
+    bJ := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, bin(mut st, BAnd, w, iconst(mut st, 1)), iconst(mut st, 0)), bE, -1, bJ, -1)
+    setCur(mut st, bE)
+    held := load(mut st, t, TC_AREA)
+    onw := bin(mut st, BAnd, bin(mut st, BSar, w, iconst(mut st, 1)), iconst(mut st, 1))
+    sp := bin(mut st, BAdd, held, bin(mut st, BMul, onw, bin(mut st, BSub, load(mut st, globaladdr(mut st, st.wkG), WK_AREA), held)))
+    areaSp(mut st, sp)
+    br(mut st, bJ, -1)
+    setCur(mut st, bJ)
+}
+
+// 浅い待ち（rt.task_switch の頭 — rt.netwait を呼んだ本体が止まる）: from が記し（AREA_SARM）つきで本体の枠が頁 0 にある（AREA_NEAR —
+// 遠い道の本体は持ち札の上の連続の形なので枠ごと区画にある）なら本体より下の枠は死んでいる —
+// 退避しない（退避の先をワーカーの捨て語へ）・浅く寝ている印。持ち札の上で走っていた（深い待ちの後）なら持ち札とワーカーの区画を交換してから —
+// 起きると shallow_land がワーカーの区画の頂上で始まるので、task はワーカーの区画の上（bit 1）になる。記しが無ければ今の深い待ち（交換）。退避の先を返す
+func areaPark(st mut St, from int) int {
+    w := load(mut st, from, TC_ONW)
+    wk := globaladdr(mut st, st.wkG)
+    bS := newBlock(mut st)
+    bX := newBlock(mut st)
+    bY := newBlock(mut st)
+    bD := newBlock(mut st)
+    bJ := newBlock(mut st)
+    sv := param(mut st, bJ, TyPtr)
+    // 変異 71 = AREA_NEAR を見ない（遠い道の本体も浅く寝て、区画にあった本体の枠を失う — areacheck の遠い道の行）
+    shv := if st.rtMut == 71 { AREA_SARM } else { AREA_SARM + AREA_NEAR }
+    sh := iconst(mut st, shv)
+    // 区画の窓の深度に中身があれば（AREA_FULL）浅く寝ない: 窓は区画と一緒に task が持って眠る。
+    // 変異 78 = 区画の窓を見ない（中身を残したまま浅く寝て、ワーカーの区画の窓を次の task が上書きする）
+    shm := if st.rtMut == 78 || !winArm(mut st) { sh } else { iconst(mut st, shv + AREA_FULL) }
+    condbr(mut st, cmp(mut st, CEq, bin(mut st, BAnd, w, shm), sh), bS, -1, bD, -1)
+    setCur(mut st, bS)
+    condbr(mut st, cmp(mut st, CNe, bin(mut st, BAnd, w, iconst(mut st, 2)), iconst(mut st, 0)), bY, -1, bX, -1)
+    setCur(mut st, bX)
+    a := load(mut st, from, TC_AREA)
+    store(mut st, from, TC_AREA, load(mut st, wk, WK_AREA))
+    store(mut st, wk, WK_AREA, a)
+    store(mut st, wk, WK_PSWAP, bin(mut st, BAdd, load(mut st, wk, WK_PSWAP), iconst(mut st, 1)))
+    br(mut st, bY, -1)
+    setCur(mut st, bY)
+    // 変異 70 = bit 1 を立てない（深い待ちの後の受けから浅く寝て起きた本体が、ワーカーの区画の上なのに次の深い待ちで交換しない — areacheck の deep-again の相）
+    on := if st.rtMut == 70 { iconst(mut st, AREA_SPARK) } else { iconst(mut st, AREA_SPARK + 2) }
+    store(mut st, from, TC_ONW, bin(mut st, BOr, w, on))
+    store(mut st, wk, WK_PSHAL, bin(mut st, BAdd, load(mut st, wk, WK_PSHAL), iconst(mut st, 1)))
+    br(mut st, bJ, list1(mut st, gepWord(mut st, wk, iconst(mut st, WK_SJUNK))))
+    setCur(mut st, bD)
+    if winArm(mut st) {
+        // 浅く寝られる点だったが区画の窓に中身があった（Ledger の parkDeepWin）
+        bNw := branchIf(mut st, cmp(mut st, CEq, bin(mut st, BAnd, w, sh), sh))
+        store(mut st, wk, WK_PDWIN, bin(mut st, BAdd, load(mut st, wk, WK_PDWIN), iconst(mut st, 1)))
+        br(mut st, bNw, -1)
+        setCur(mut st, bNw)
+    }
+    // 深く寝るときは記しを消す: 退避が TC_CTX（記しの戻り先）を上書きするので、同じ rt.netwait の呼び出しの中の次の park を浅くしない
+    store(mut st, from, TC_ONW, bin(mut st, BAnd, w, iconst(mut st, -1 - AREA_SARM)))
+    areaSwap(mut st, from)
+    br(mut st, bJ, list1(mut st, from))
+    setCur(mut st, bJ)
+    return sv
+}
+
+// rt.shallow_land(t)（浅く寝ていた t が起きた — rt.task_switch が tstart でワーカーの区画の頂上に始める）: rt.netwait の待ちの起きた後
+// （nrWaitRt・rt.task_wait_k の park の戻り）を済ませ、値を本体の rt.netwait の呼び出しの結果として戻り先へ跳ぶ: 期限・孤児（負）はその値・
+// 起こされた（0）は 1・まだ待ちの値（起こし手が別の理由で積んだ）は 2（本体はもう一度 rt.netwait を呼ぶ）
+func buildShallowLand(st mut St) {
+    begin(mut st, st.rtShLand)
+    t := 0
+    zero := iconst(mut st, 0)
+    if st.areaOn && winArm(mut st) {
+        awinRebase(mut st, t)
+    }
+    parkReacquire(mut st)
+    // 変異 72 = 期限の鎖から外さない（起きた task が鎖に残る — areacheck の discarded の相）
+    if dlFn(st.rtD3) != 0 && st.rtMut != 72 {
+        awUnlink(mut st, ptoi(mut st, t))
+    }
+    store(mut st, itop(mut st, load(mut st, t, TC_SNP)), NR_WAIT, zero)
+    if st.orphOn {
+        orphLeave(mut st, ptoi(mut st, t))
+    }
+    r := load(mut st, t, TC_IORES)
+    // 起こされた（0）→ 1（待った — 本体は read_fd へ・列がまだ空なら read_fd の中で待つ）・まだ待ちの値（見直し）→ 2・負はそのまま
+    mut v := bin(mut st, BAdd, r, bin(mut st, BAdd, cmp(mut st, CEq, r, zero), bin(mut st, BMul, cmp(mut st, CEq, r, iconst(mut st, PEND_RT)), iconst(mut st, 2 - PEND_RT))))
+    // 変異 73 = 起こされた（0）も見直し（2 — 本体がもう一度 rt.netwait を呼ぶ道を毎回踏ませる・保存則も答えも保つ）・74 = 起こされたを誤り（-9）にする
+    // （73 の行がこの値の道を通る証。std の受けは期限が来ていなければ -110 と 2 の取り違えを読み直しで吸収するので、-110 では区別できない）
+    if st.rtMut == 73 || st.rtMut == 74 {
+        v = bin(mut st, BAdd, v, bin(mut st, BMul, cmp(mut st, CEq, r, zero), bin(mut st, BSub, iconst(mut st, if st.rtMut == 73 { 2 } else { -9 }), v)))
+    }
+    store(mut st, t, TC_IORES, v)
+    store(mut st, t, TC_ONW, bin(mut st, BAnd, load(mut st, t, TC_ONW), iconst(mut st, -1 - AREA_SPARK)))
+    areaLand(mut st, ptoi(mut st, t))
+    ret(mut st, -1)
+}
+
+// read_fd(fd, n, out) の接続の受け（n の印が ring の受け — RFD_DIRECT で PLAIN でない）: 先に rt.netwait で待つ（本体が直に呼ぶ点なら浅い待ち —
+// x86.sober xShCall）。2 = 見直す → もう一度・負 = 期限 / 孤児 → read_fd を呼ばずに同じ終わり（空の列・errno）・他は read_fd
+func rfdShallow(st mut St, fd int, n int, out int) {
+    nw := needNetWait(mut st)
+    bW := newBlock(mut st)
+    bChk := newBlock(mut st)
+    bRd := newBlock(mut st)
+    bErr := newBlock(mut st)
+    bJ := newBlock(mut st)
+    m := iconst(mut st, RFD_DIRECT + RFD_PLAIN)
+    on := cmp(mut st, CEq, bin(mut st, BAnd, n, m), iconst(mut st, RFD_DIRECT))
+    condbr(mut st, if st.rtMut == 69 { iconst(mut st, 0) } else { on }, bW, -1, bRd, -1)
+    setCur(mut st, bW)
+    w := call(mut st, nw, list1(mut st, fd))
+    condbr(mut st, cmp(mut st, CEq, w, iconst(mut st, 2)), bW, -1, bChk, -1)
+    setCur(mut st, bChk)
+    condbr(mut st, cmp(mut st, CLt, w, iconst(mut st, 0)), bErr, -1, bRd, -1)
+    setCur(mut st, bErr)
+    initOut(mut st, out)
+    setErrno(mut st, bin(mut st, BSub, iconst(mut st, 0), w))
+    br(mut st, bJ, -1)
+    setCur(mut st, bRd)
+    call(mut st, st.rtRfd, list3(mut st, fd, n, out))
+    br(mut st, bJ, -1)
+    setCur(mut st, bJ)
+}
+
+// 浅く寝ていた t（TCB の番地 — ptr）の区画の窓の深度（空のまま持って寝た — task.sober 区画の窓）を、いまのワーカーの区画の窓へ付け替える（寝ている間に他の
+// task が深く寝て区画を持ち去っていれば違う）。空なので表の基底と bump を差分だけずらす（窓から本物のスロットへ移した深度はそのまま）。
+// 変異 80 = 付け替えない
+func awinRebase(st mut St, t int) {
+    if st.rtMut == 80 {
+        return
+    }
+    tp := t
+    w := load(mut st, tp, TC_WSP)
+    nw := bin(mut st, BAdd, load(mut st, globaladdr(mut st, st.wkG), WK_AREA), iconst(mut st, AWIN_OFF + WIN_SZ))
+    dl := bin(mut st, BSub, nw, load(mut st, tp, TC_WANCH))
+    // 区画の窓を持たない（塊の窓か窓なし）なら錨は塊 — 付け替えない
+    bGo := branchIf(mut st, bin(mut st, BAnd, cmp(mut st, CNe, dl, iconst(mut st, 0)), cmp(mut st, CNe, bin(mut st, BAnd, w, iconst(mut st, WSP_AREAS)), iconst(mut st, 0))))
+    meta := globaladdr(mut st, st.meta)
+    sg := globaladdr(mut st, st.slotsG)
+    base := load(mut st, tp, TC_BASE)
+    for r <- iter.Range(0, WIN_N) {
+        k := bin(mut st, BAdd, base, iconst(mut st, 1 + r))
+        isA := cmp(mut st, CNe, bin(mut st, BAnd, w, iconst(mut st, WSP_AREA << (16 * (WIN_N - 1 - r)))), iconst(mut st, 0))
+        sp := gepWord(mut st, sg, k)
+        // 窓から移した深度（基底が本物のスロット）は付け替えない
+        d := bin(mut st, BMul, bin(mut st, BAnd, isA, isWinT(mut st, meta, load(mut st, sp, 0), ptoi(mut st, tp))), dl)
+        store(mut st, sp, 0, bin(mut st, BAdd, load(mut st, sp, 0), d))
+        bp := gepWord(mut st, meta, k)
+        store(mut st, bp, W_BUMP, bin(mut st, BAdd, load(mut st, bp, W_BUMP), d))
+    }
+    store(mut st, tp, TC_WANCH, nw)
+    br(mut st, bGo, -1)
+    setCur(mut st, bGo)
+}

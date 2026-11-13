@@ -86,7 +86,7 @@ if ! diff -r -x en "$W/out" docs/std > "$W/diff" 2>&1; then
     fail=1
 fi
 # ② lint — en-* 以外は赤・en-* は種類ごとの数だけ
-if grep -v '^WARN	en-' "$W/warn.tsv" | grep -q '^WARN'; then
+if awk '/^WARN/ && !/^WARN\ten-/ { f = 1 } END { exit !f }' "$W/warn.tsv"; then
     echo "stdref: FAIL doc lint (scripts/stdref.sh --lint):"
     grep -v '^WARN	en-' "$W/warn.tsv" | grep '^WARN' | head -n 40
     fail=1

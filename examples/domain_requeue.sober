@@ -1,0 +1,68 @@
+package main
+
+// A woken waiting call whose when: is still false goes back to its arrival place. A, B and C wait in that order. The first item is
+// handed to A, whose when: also needs the gate, so A passes it on and B takes it. Once the gate is open, A (the oldest) takes the
+// next item before C. The log is the order of the takers
+
+import "std/os"
+import "std/task"
+
+type G struct {
+    items int
+    gate int
+    log int
+}
+
+func settle(n int) {
+    while task.Ledger().domains.waiting != n {
+        os.Sleep(1)
+    }
+    // the woken waiters re-check when: and go back to sleep
+    os.Sleep(50)
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, G{items: 0, gate: 0, log: 0}, wait: 5000 * task.MS)
+        _, e2 := task.Run((s2 task.Scope) => {
+            mut id := 1
+            while id <= 3 {
+                me := id
+                h := task.Spawn(s2, () => {
+                    _, err := task.Await(d, (st mut G) => {
+                        st.items -= 1
+                        st.log = st.log * 10 + me
+                        0
+                    }, when: (st G) => st.items > 0 && (me != 1 || st.gate > 0))
+                    _ = err
+                    0
+                })
+                _ = h
+                settle(id)
+                id += 1
+            }
+            task.Update(d, (st mut G) => {
+                st.items += 1
+                0
+            })
+            settle(2)
+            task.Update(d, (st mut G) => {
+                st.items += 1
+                st.gate = 1
+                0
+            })
+            settle(1)
+            task.Update(d, (st mut G) => {
+                st.items += 1
+                0
+            })
+            0
+        })
+        if e2 != nil {
+            "died"
+        } else {
+            task.Read(d, (st G) => "order ${st.log}")
+        }
+    })
+    println(if e == nil { r } else { "died" })
+}

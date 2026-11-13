@@ -76,6 +76,10 @@ type St struct {
     rtSegv FnRef
     rtSlotNew FnRef
     rtTaskWait FnRef
+    rtTaskWaitK FnRef
+    rtShLand FnRef
+    // rt.netwait（codegen の群の子へも写す — x86.sober xParCfg）
+    xNWait FnRef
     rtTaskPop FnRef
     rtRdySpill FnRef   // rt.ready_spill / rt.ready_unspill（走れる積みの溢れの冷たい道 — task.sober）
     rtRdyUnspill FnRef
@@ -148,6 +152,8 @@ type St struct {
     // 浅い region の窓を組むか（std/task を使い std/net の Serve を持つプログラムだけ — 窓を張る task〔region: の接続〕が無いプログラムは
     // 窓の道・先端の伸長の比較を組まない。下ろしの前に決まる）
     winOn bool
+    // 接続の task の積みを本体の枠（塊の頁 0）+ ワーカーの区画に分ける形を組むか（std/net の Serve を使うプログラム — area.sober）
+    areaOn bool
     winG int           // 窓の有効の印（rt.win — 0 = 未読・1 = SOBER_TASK_WIN=0・2 = 有効）と窓の rt（task.sober の窓の注）
     rtWinSpill FnRef
     rtWinRalloc FnRef
@@ -295,6 +301,7 @@ type St struct {
     rtRecRehash FnRef
     rtErrReloc FnRef  // rt.err_relocate（組み込み error の境界コピー — cont.sober の needErrReloc・-1 = 無し）
     rtErrAlloc FnRef  // rt.err_alloc（return 文の error ラベルのセルの確保 — errs.sober の needErrAlloc・-1 = 無し）
+    rtVdso FnRef      // rt.vdso_get（rt.vdso の初回の引き — 歩きを熱い道の外に置く・deadline.sober needVdso・-1 = 無し）
     rtJClean FnRef    // rt.jclean（JSON のエスケープの要らない区間の長さ — rt8.sober の needJClean・-1 = 無し）
     rtMapfind FnRef   // 最初に建てた map の引き（有無の印 — 族は mapFinds）
     mapFinds int      // map の引きの族の表（maprepr.sober — [数, 鍵, 関数…]・-1 = 無し）
@@ -416,6 +423,11 @@ type St struct {
     closFns int // 持ち上げた閉包の関数の捕捉の記録の鎖の頭 + 1（0 = 無し）
     liftBrw int // 次の liftClosure が借りの実引数のラムダか（1 — emitCall の間接呼び出しの実引数が立て、liftClosure が入口で消費する）
     callEnv int // 次の emitCall が隠れ第 1 引数に渡す env の番地 + 1（0 = 無し — emitCall が入口で消費する）
+    // `return g(…)` の転送（retStmt が立てる）: 呼び出しの節 sretAt - 1（0 = 無し）の emitCall は、結果の型の列が sretTs と同じなら新しいスロットでなく
+    // 自分の受け皿 st.sret を g の受け皿に渡す（g が全語を書くので写しが要らない）。使ったら sretHit
+    sretAt int
+    sretTs int
+    sretHit bool
     tenv int // 型環境（generics.sober — [n, (名前, 型)…]、-1 = 空）
     // レイアウトの入れ子の深さと、slice / map の要素の位置で出会って後回しにした型宣言（types.sober — 要素の大きさは外側の大きさに効かない。
     // 再帰の組〔Dir → []File → File.parent Dir?〕で外側が並べ中の宣言を値で持つ形を外側の後に並べる）
@@ -468,7 +480,7 @@ type St struct {
     rtSleep FnRef
     rtTmrPush FnRef // rt.tmr_push / rt.tmr_fire（sleep の時計の表 — ワーカーごとの 4 分ヒープ・netpoll.sober の sleepRing。-1 = 組まない）
     rtTmrFire FnRef
-    vdsoG int      // rt.vdso（sleep の ring の道の時計の口 — deadline: の無い std/task のプログラムが sleep で初回に引く vDSO の番地 + 1・0 = まだ。-1 = 組まない）
+    vdsoG int      // rt.vdso（vDSO の __vdso_clock_gettime の番地 + 1・0 = まだ — deadline: の無いプログラムが初回に引く: std/task の sleep の ring の道・clock の組み込み〔deadline.sober clockAt〕。-1 = 組まない）
     hwFold bool    // x86 の最適化のバックエンドの ELF（crc32 の CLMUL の道 — clmul.sober。他の出力では cpuclmul = 0）
     cpuG int       // rt.cpu（CPUID の判定 + 1・0 = まだ — clmul.sober。-1 = 組まない）
     rtCpuProbe FnRef
@@ -554,6 +566,7 @@ func initScalars(st mut St) {
     st.rcCur = -1
     st.rtRecPush = -1
     st.rtJClean = -1
+    st.rtVdso = -1
     st.rtMapfind = -1
     st.mapFinds = -1
     st.hseed = -1
@@ -600,6 +613,9 @@ func initScalars(st mut St) {
     st.cpuG = -1
     st.rtCpuProbe = -1
     st.rtRfd = -1
+    st.rtTaskWaitK = -1
+    st.rtShLand = -1
+    st.xNWait = -1
     st.rtOpen = -1
     st.rtClose = -1
     st.rtFdDrain = -1

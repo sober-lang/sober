@@ -1,0 +1,57 @@
+package main
+
+// The form of examples/sret_defer_mut one call deeper: f returns g(mut x) directly, so g builds the result in
+// f's receiver (the caller's), and g's defer writes the mut argument after that
+
+type Q struct {
+    a int
+    b int
+    c int
+    d int
+    e int
+    f int
+    g int
+    h int
+}
+
+type R struct {
+    q0 Q
+    q1 Q
+    q2 Q
+    q3 Q
+    q4 Q
+    q5 Q
+    q6 Q
+    q7 Q
+}
+
+func q(n int) Q {
+    return Q{a: n, b: n, c: n, d: n, e: n, f: n, g: n, h: n}
+}
+
+func bump(x mut R) {
+    z := q(99)
+    x.q0 = z
+    x.q1 = z
+    x.q2 = z
+    x.q3 = z
+    x.q4 = z
+    x.q5 = z
+    x.q6 = z
+    x.q7 = z
+}
+
+func g(x mut R) R {
+    defer bump(mut x)
+    return R{q0: x.q1, q1: x.q0, q2: x.q2, q3: x.q3, q4: x.q4, q5: x.q5, q6: x.q6, q7: x.q7}
+}
+
+func f(x mut R) R {
+    return g(mut x)
+}
+
+func main() {
+    mut x := R{q0: q(0), q1: q(1), q2: q(2), q3: q(3), q4: q(4), q5: q(5), q6: q(6), q7: q(7)}
+    r := f(mut x)
+    println(r.q0.a, r.q1.h, r.q7.d)
+}

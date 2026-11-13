@@ -1,0 +1,66 @@
+package lower
+
+// GVN の添字 0 の gep の畳み（gvn.sober）と LICM の網: IR を手で組んで直に見る（`cd src/compiler && ../../bin/sober test lower`）。
+// どちらも観測を変えない変換なので、例・題材の出力では鳴らない — 畳む / 畳まない gep の形をここで固定する
+
+import "desugar"
+
+// `for i < n { x = ptoi(gep.byte(globaladdr G, idx)); i = i + x }` に GVN → LICM を掛け、
+// （入口のブロックの OpGlobal の数・輪の本体の OpGlobal の数・残った OpGepB の数）を返す
+func lcT(idx int) (int, int, int) {
+    mut st := St{}
+    initScalars(mut st)
+    desugar.HeapPush(mut st.d, 0)
+    gl := addGlobalInit(mut st, 0, 4, -1)
+    pt := listN(mut st, 1)
+    desugar.HeapSet(mut st.d, pt + 1, TyI64)
+    f := addFunc(mut st, 0, desugar.ListRef(pt), -1)
+    st.fn = f
+    n := 0
+    entry := newBlock(mut st)
+    st.cur = entry
+    hd := newBlock(mut st)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    irSetBlkLoop(mut st, hd, 1)
+    br(mut st, hd, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, hd)
+    i := param(mut st, hd, TyI64)
+    condbr(mut st, cmp(mut st, CLt, i, n), body, -1, done, -1)
+    setCur(mut st, body)
+    x := ptoi(mut st, gepByte(mut st, globaladdr(mut st, gl), iconst(mut st, idx)))
+    br(mut st, hd, list1(mut st, bin(mut st, BAdd, i, x)))
+    setCur(mut st, done)
+    ret(mut st, -1)
+    gvnFunc(mut st, f)
+    licmFunc(mut st, f)
+    mut inEntry := 0
+    mut inBody := 0
+    mut geps := 0
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut k := irBlkIHead(mut st, b)
+        while k != -1 {
+            op := irInsOp(mut st, k)
+            if op == OpGlobal && b == entry {
+                inEntry += 1
+            } else if op == OpGlobal && b == body {
+                inBody += 1
+            } else if op == OpGepB {
+                geps += 1
+            }
+            k = irInsNext(mut st, k)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return inEntry, inBody, geps
+}
+
+func TestGvnGepZero() {
+    // 添字 0 の gep は基の番地へ畳まれる
+    _, _, g0 := lcT(0)
+    assert(g0 == 0, "gep with index 0 folded")
+    // 添字 0 でない gep は残る
+    _, _, g5 := lcT(5)
+    assert(g5 == 1, "gep with a non-zero index kept")
+}

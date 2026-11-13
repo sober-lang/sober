@@ -15849,13 +15849,6 @@ b0:
   store i64 0, ptr %s0.z1
   %s0.z2 = getelementptr i64, ptr %s0, i64 2
   store i64 0, ptr %s0.z2
-  %s1 = alloca [3 x i64], align 8
-  %s1.z0 = getelementptr i64, ptr %s1, i64 0
-  store i64 0, ptr %s1.z0
-  %s1.z1 = getelementptr i64, ptr %s1, i64 1
-  store i64 0, ptr %s1.z1
-  %s1.z2 = getelementptr i64, ptr %s1, i64 2
-  store i64 0, ptr %s1.z2
   %v4 = getelementptr i64, ptr %s0, i64 0
   %st0 = getelementptr i64, ptr %v4, i64 0
   store i64 %v1, ptr %st0
@@ -15863,8 +15856,8 @@ b0:
   store i64 %v2, ptr %st1
   %st2 = getelementptr i64, ptr %v4, i64 2
   store i64 %v3, ptr %st2
-  %v27 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v5.p = getelementptr i64, ptr %v27, i64 0
+  %v23 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v5.p = getelementptr i64, ptr %v23, i64 0
   %v5 = load i64, ptr %v5.p
   %v6 = getelementptr i64, ptr @"rt.meta", i64 0
   %v7.p = getelementptr i64, ptr %v6, i64 2571
@@ -15882,36 +15875,23 @@ b0:
   %v14 = mul i64 %v12, %v13
   %v15 = add i64 %v5, %v14
   call void @"rt.region_enter"()
-  %v16 = getelementptr i64, ptr %s1, i64 0
-  %v17.p = getelementptr i64, ptr %v4, i64 0
+  %v16.p = getelementptr i64, ptr %v4, i64 0
+  %v16 = load i64, ptr %v16.p
+  %v17.p = getelementptr i64, ptr %v4, i64 1
   %v17 = load i64, ptr %v17.p
-  %v18.p = getelementptr i64, ptr %v4, i64 1
+  %v18.p = getelementptr i64, ptr %v4, i64 2
   %v18 = load i64, ptr %v18.p
-  %v19.p = getelementptr i64, ptr %v4, i64 2
-  %v19 = load i64, ptr %v19.p
-  %v20 = add i64 0, 65
-  %v21 = add i64 0, 90
-  %v22 = add i64 0, 32
-  %v23 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st4 = getelementptr i64, ptr %v23, i64 2571
+  %v19 = add i64 0, 65
+  %v20 = add i64 0, 90
+  %v21 = add i64 0, 32
+  %v22 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st4 = getelementptr i64, ptr %v22, i64 2571
   store i64 %v15, ptr %st4
-  call void @"std/strings.mapCase"(ptr %v16, i64 %v17, i64 %v18, i64 %v19, i64 %v20, i64 %v21, i64 %v22)
-  %v24.p = getelementptr i64, ptr %v16, i64 0
-  %v24 = load i64, ptr %v24.p
-  %st5 = getelementptr i64, ptr %v0, i64 0
-  store i64 %v24, ptr %st5
-  %v25.p = getelementptr i64, ptr %v16, i64 1
-  %v25 = load i64, ptr %v25.p
-  %st6 = getelementptr i64, ptr %v0, i64 1
-  store i64 %v25, ptr %st6
-  %v26.p = getelementptr i64, ptr %v16, i64 2
-  %v26 = load i64, ptr %v26.p
-  %st7 = getelementptr i64, ptr %v0, i64 2
-  store i64 %v26, ptr %st7
+  call void @"std/strings.mapCase"(ptr %v0, i64 %v16, i64 %v17, i64 %v18, i64 %v19, i64 %v20, i64 %v21)
   call void @"rt.region_relocate8"(ptr %v0, i64 %v5)
-  %v28 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st8 = getelementptr i64, ptr %v28, i64 0
-  store i64 %v5, ptr %st8
+  %v24 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st5 = getelementptr i64, ptr %v24, i64 0
+  store i64 %v5, ptr %st5
   ret void
 }
 
@@ -15924,13 +15904,6 @@ b0:
   store i64 0, ptr %s0.z1
   %s0.z2 = getelementptr i64, ptr %s0, i64 2
   store i64 0, ptr %s0.z2
-  %s1 = alloca [3 x i64], align 8
-  %s1.z0 = getelementptr i64, ptr %s1, i64 0
-  store i64 0, ptr %s1.z0
-  %s1.z1 = getelementptr i64, ptr %s1, i64 1
-  store i64 0, ptr %s1.z1
-  %s1.z2 = getelementptr i64, ptr %s1, i64 2
-  store i64 0, ptr %s1.z2
   %v4 = getelementptr i64, ptr %s0, i64 0
   %st0 = getelementptr i64, ptr %v4, i64 0
   store i64 %v1, ptr %st0
@@ -15938,8 +15911,8 @@ b0:
   store i64 %v2, ptr %st1
   %st2 = getelementptr i64, ptr %v4, i64 2
   store i64 %v3, ptr %st2
-  %v29 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v5.p = getelementptr i64, ptr %v29, i64 0
+  %v25 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v5.p = getelementptr i64, ptr %v25, i64 0
   %v5 = load i64, ptr %v5.p
   %v6 = getelementptr i64, ptr @"rt.meta", i64 0
   %v7.p = getelementptr i64, ptr %v6, i64 2571
@@ -15957,38 +15930,25 @@ b0:
   %v14 = mul i64 %v12, %v13
   %v15 = add i64 %v5, %v14
   call void @"rt.region_enter"()
-  %v16 = getelementptr i64, ptr %s1, i64 0
-  %v17.p = getelementptr i64, ptr %v4, i64 0
+  %v16.p = getelementptr i64, ptr %v4, i64 0
+  %v16 = load i64, ptr %v16.p
+  %v17.p = getelementptr i64, ptr %v4, i64 1
   %v17 = load i64, ptr %v17.p
-  %v18.p = getelementptr i64, ptr %v4, i64 1
+  %v18.p = getelementptr i64, ptr %v4, i64 2
   %v18 = load i64, ptr %v18.p
-  %v19.p = getelementptr i64, ptr %v4, i64 2
-  %v19 = load i64, ptr %v19.p
-  %v20 = add i64 0, 97
-  %v21 = add i64 0, 122
-  %v22 = add i64 0, 32
-  %v23 = add i64 0, 0
-  %v24 = sub i64 %v23, %v22
-  %v25 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st4 = getelementptr i64, ptr %v25, i64 2571
+  %v19 = add i64 0, 97
+  %v20 = add i64 0, 122
+  %v21 = add i64 0, 32
+  %v22 = add i64 0, 0
+  %v23 = sub i64 %v22, %v21
+  %v24 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st4 = getelementptr i64, ptr %v24, i64 2571
   store i64 %v15, ptr %st4
-  call void @"std/strings.mapCase"(ptr %v16, i64 %v17, i64 %v18, i64 %v19, i64 %v20, i64 %v21, i64 %v24)
-  %v26.p = getelementptr i64, ptr %v16, i64 0
-  %v26 = load i64, ptr %v26.p
-  %st5 = getelementptr i64, ptr %v0, i64 0
-  store i64 %v26, ptr %st5
-  %v27.p = getelementptr i64, ptr %v16, i64 1
-  %v27 = load i64, ptr %v27.p
-  %st6 = getelementptr i64, ptr %v0, i64 1
-  store i64 %v27, ptr %st6
-  %v28.p = getelementptr i64, ptr %v16, i64 2
-  %v28 = load i64, ptr %v28.p
-  %st7 = getelementptr i64, ptr %v0, i64 2
-  store i64 %v28, ptr %st7
+  call void @"std/strings.mapCase"(ptr %v0, i64 %v16, i64 %v17, i64 %v18, i64 %v19, i64 %v20, i64 %v23)
   call void @"rt.region_relocate8"(ptr %v0, i64 %v5)
-  %v30 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st8 = getelementptr i64, ptr %v30, i64 0
-  store i64 %v5, ptr %st8
+  %v26 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st5 = getelementptr i64, ptr %v26, i64 0
+  store i64 %v5, ptr %st5
   ret void
 }
 

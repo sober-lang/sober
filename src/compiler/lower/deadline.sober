@@ -53,6 +53,53 @@ func clockNs(st mut St) int {
     return bin(mut st, BAdd, bin(mut st, BMul, load(mut st, ts, 0), iconst(mut st, 1000000000)), load(mut st, ts, 1))
 }
 
+// rt.vdso と rt.vdso_get を（初出なら）宣言する（clockAt・sleep の ring の道の初回の引き）
+func needVdso(st mut St) {
+    lsNeed(mut st, NEED_VDSO, 0)
+    if st.vdsoG == -1 {
+        st.vdsoG = addGlobalInit(mut st, int(strLit(mut st, "rt.vdso")), 1, -1)
+        st.rtVdso = addFunc(mut st, int(strLit(mut st, "rt.vdso_get")), desugar.ListRef(list0(mut st)), TyI64)
+    }
+}
+
+// rt.vdso_get(): 初期 rsp〔meta の W_ARGV〕から vdsoWalk で引いた __vdso_clock_gettime の番地 + 1（見つからなければ 1）を rt.vdso に置いて返す。
+// 初回だけ呼ぶ冷たい道 — 呼び手の熱い道に歩きのレジスタの退避を載せない
+func buildVdsoRt(st mut St) {
+    if st.rtVdso == -1 {
+        return
+    }
+    begin(mut st, st.rtVdso)
+    v := urAdd(mut st, vdsoWalk(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.meta), W_ARGV))), 1)
+    store(mut st, globaladdr(mut st, st.vdsoG), 0, v)
+    ret(mut st, v)
+}
+
+// clock の組み込み（std/time の時計）: clk（IR の値 — 0 = CLOCK_REALTIME・1 = CLOCK_MONOTONIC）の今の時刻（ns）。vDSO の番地は deadline: を書く
+// プログラムなら起動で引いた meta の W_VDSO・他は rt.vdso（初回の呼び出しで引く — 起動の値札を足さない）。見つからなければ生の clock_gettime
+func clockAt(st mut St, clk int) int {
+    zero := iconst(mut st, 0)
+    mut fp := 0
+    if dlFn(st.rtD3) != 0 {
+        fp = load(mut st, globaladdr(mut st, st.meta), W_VDSO)
+    } else {
+        needVdso(mut st)
+        fp = urAdd(mut st, vdsoLazy(mut st, zero), -1)
+    }
+    ts := newSlotAddr(mut st, 2)
+    bV := newBlock(mut st)
+    bSys := newBlock(mut st)
+    bGo := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, fp, zero), bV, -1, bSys, -1)
+    setCur(mut st, bV)
+    vdsoCall(mut st, list3(mut st, fp, clk, ptoi(mut st, ts)))
+    br(mut st, bGo, -1)
+    setCur(mut st, bSys)
+    syscall(mut st, list3(mut st, iconst(mut st, 228), clk, ptoi(mut st, ts)))
+    br(mut st, bGo, -1)
+    setCur(mut st, bGo)
+    return bin(mut st, BAdd, bin(mut st, BMul, load(mut st, ts, 0), iconst(mut st, 1000000000)), load(mut st, ts, 1))
+}
+
 // 番地 a + off（i64 の値・バイト）の 8 バイト
 func vdLd(st mut St, a int, off int) int {
     return load(mut st, itop(mut st, bin(mut st, BAdd, a, off)), 0)

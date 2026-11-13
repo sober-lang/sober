@@ -9,7 +9,7 @@
 // 時刻: TSC → CLOCK_MONOTONIC は頭の組と CLOCK のイベント（眠りの前）の区間ごとの線形の補い
 import { readFileSync } from "node:fs";
 
-const KIND = ["?", "ACCEPT", "SPAWN", "RUN", "PARK", "WAKE", "SEND", "RECV", "CLOSE", "ENTER", "EPWAIT", "CLOCK", "END", "PANIC", "READY"];
+const KIND = ["?", "ACCEPT", "SPAWN", "RUN", "PARK", "WAKE", "SEND", "RECV", "CLOSE", "ENTER", "EPWAIT", "CLOCK", "END", "PANIC", "READY", "POST"];
 const MAGIC = 6074307316579192659n;
 
 type Ev = { w: number; seq: number; kind: string; tsc: bigint; a: bigint; b: bigint; t: number };
@@ -79,7 +79,7 @@ function fmt(e: Ev): string {
         case "RUN": f = `tcb=${tcb(a)}`; break;
         case "PARK": f = `fd=${lo32(a)} dir=${hi32(a) === 4 ? "out" : "in"} tcb=${tcb(b)}`; break;
         case "WAKE": f = `tcb=${tcb(a)} res=${b}`; break;
-        case "SEND": case "RECV": f = `fd=${lo32(a)} want=${hi32(a)} res=${b}`; break;
+        case "SEND": case "RECV": case "POST": f = `fd=${lo32(a)} want=${hi32(a)} res=${b}`; break;
         case "CLOSE": f = `fd=${a} exit=${b}`; break;
         case "ENTER": f = `sub=${lo32(a)} wait=${hi32(a)} res=${b}`; break;
         case "EPWAIT": f = `n=${a} tmo=${b}`; break;

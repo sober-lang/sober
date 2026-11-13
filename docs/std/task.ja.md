@@ -336,10 +336,16 @@ type LedgerView struct {
     waits int
     maxWait int
     aged int
+    late int
+    maxLate int
     backlog int
     backlogYield int
     pin int
     pinGroups int
+    parkShallow int
+    parkDeep int
+    parkDeepWin int
+    parkSwap int
     pools []PoolView
     domains DomainView
 }
@@ -351,11 +357,17 @@ type LedgerView struct {
 
 - `waits` — wait の scope で入場を待った回数（[language.md 11 節](../language.md)「wait」）
 - `maxWait` — 走れるようになってから走るまでの待ちの最大（ns・全ワーカー — 読むと 0 に戻る。[language.md 28 節](../language.md) ring の道「飽和下の待ちの上限」）
-- `aged` — 待ちの上限が効いて積みの底から取った回数の累計（飽和の印）
+- `aged` — 待ちの上限が効いて積みの底から取った回数の累計（飽和の印 — 底を期限で救った数）
+- `late` — 自分の D を越えてから走った task の数の累計（aged の救いに加え、積みが浅いときの越えも数える — aged ⊆ late）
+- `maxLate` — 越えた量（待ち − D）の最大（ns・全ワーカー — 読むと 0 に戻る窓の値・maxWait と同じ流儀）
 - `backlog` — 今の未着手の子の数（全ワーカーの列の和 — ワーカーあたり 255 まで。[language.md 11 節](../language.md)「未着手の子の上限」）
 - `backlogYield` — 列があふれて子をその場で先に走らせた（生んだ task が譲った）回数の累計（背圧が効いた印）
 - `pin` — ワーカーの CPU の固定の形（0 = なし・1 = L3 キャッシュを共有する CPU の群・2 = CPU 1 つ・3 = L3 の群が読めず CPU 1 つへ縮退したワーカーがある）
 - `pinGroups` — 固定した群の数（ワーカーは起動の後に自分を固定する — 全部が数えられるのはワーカーが立ち上がった後）
+- `parkShallow` — 接続の task が浅く寝た回数の累計（本体より下の積みを捨て、ワーカーの区画を持たずに寝た — [language.md 11 節](../language.md)「メトリクス」）
+- `parkDeep` — 接続の task がワーカーの区画を持って寝た回数の累計（区画の交換 — 本体より下の枠が生きている待ち）
+- `parkDeepWin` — 浅く寝られる点だったが区画の窓に中身があって深く寝た回数の累計（parkDeep の内数 — 受けの region に途中の要求を持って待つ等）
+- `parkSwap` — 浅く寝る前に持ち札の区画とワーカーの区画を入れ替えた回数の累計（parkShallow の内数 — 深い待ちの後の受け）
 - `domains` — domain の合計の行
 
 ## Ledger

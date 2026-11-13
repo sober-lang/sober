@@ -2804,7 +2804,6 @@ b0:
 }
 
 func @std/rand.Split(%0 ptr, %1 ptr) {
-  slot s0 [4]
 b0:
   %2 = region.depth
   %3 = globaladdr @rt.meta
@@ -2813,25 +2812,16 @@ b0:
   %6 = eq %4, %5
   %7 = mul %6, %2
   %8 = add %4, %7
-  %9 = slotaddr s0
-  %10 = globaladdr @rt.meta
-  store %10[2572], %8
-  %11 = call @std/rand.Next(%1)
-  %12 = const 30
-  %13 = shl %11, %12
-  %14 = globaladdr @rt.meta
-  store %14[2572], %8
-  %15 = call @std/rand.Next(%1)
-  %16 = xor %13, %15
-  call @std/rand.New(%9, %16)
-  %17 = load.i64 %9[0]
-  store %0[0], %17
-  %18 = load.i64 %9[1]
-  store %0[1], %18
-  %19 = load.i64 %9[2]
-  store %0[2], %19
-  %20 = load.i64 %9[3]
-  store %0[3], %20
+  %9 = globaladdr @rt.meta
+  store %9[2572], %8
+  %10 = call @std/rand.Next(%1)
+  %11 = const 30
+  %12 = shl %10, %11
+  %13 = globaladdr @rt.meta
+  store %13[2572], %8
+  %14 = call @std/rand.Next(%1)
+  %15 = xor %12, %14
+  call @std/rand.New(%0, %15)
   region.setdepth %2
   ret
 }

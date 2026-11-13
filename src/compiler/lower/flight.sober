@@ -34,6 +34,7 @@ const FK_CLOCK = 11  // a = CLOCK_MONOTONIC（ns — 眠りの前だけ読む: �
 const FK_END = 12    // a = 終わった TCB・b = 罠の結果（0 = 戻った・1 = 死んだ）
 const FK_PANIC = 13  // a = panic の点の番号・b = 今の TCB
 const FK_READY = 14  // a = epoll が readiness を返した待ち手の TCB・b = 1 なら待ち中（起こす — 対の WAKE が続くはず）
+const FK_POST = 15   // a = fd | 頼んだ長さ << 32・b = 1 なら送り置きした（0 = 送り場に入らず今の送り — 送り置きの印のある送りだけ）
 
 // 記録が on のときだけ通る区画を開く（ワーカーの環の基底 ≠ 0）。返り = 続きの区画（呼び手が区画の終わりで br → setCur する）
 func frOn(st mut St) BlkRef {

@@ -199,12 +199,13 @@ func UbfStat(p loader.Program) ([]byte, error?) {
 }
 
 // ElfPasses と同じ形の実行ファイル（1 本の経路）を建て、関数ごとのフレームの内訳を `frame …` で stdout へ印字する
-// （開発の口 `sober build --frame-stat` — x86.sober xFrameStat・scripts/framestat.sh）
+// （開発の口 `sober build --frame-stat` — x86.sober xFrameStat・scripts/framestat.sh）。mutant > 0 なら変異つき（網の自己検査）
 @errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
-func FrameStat(p loader.Program) ([]byte, error?) {
+func FrameStat(p loader.Program, mutant int) ([]byte, error?) {
     mut k := knob(KElf, true, true, false, false, 0, VfyLast)
     k.xseq = true
     k.frStat = true
+    k.rtMut = mutant
     return lowerWith(p, k)
 }
 
@@ -588,6 +589,7 @@ func elfOutSt(st mut St, passes bool, m2r bool, syms bool, copy bool) ([]byte, e
         // 葉の region の省略をもう一度: 周回の enter と enter の後の region.depth を loopLight / rlClean が消した後の形で
         // 初めて条件 ① に掛かる葉（fnv・atoi 等）がある。入口の enter が軽い enter（呼び出し）に置き換わった関数は enter を数えないので外れる
         regionElideModule(mut st)
+        relocNoopModule(mut st)
         vfyModule(mut st, "region light")
         loader.Stage("llight")
         if st.memRep {
@@ -975,6 +977,8 @@ func buildInit(st mut St) {
         for i <- iter.Range(0, nfn(mut st)) {
             if !st.winOn && strIs(mut st, desugar.PkgPath(mut st.d, fnPkg(mut st, i)), "std/net") && strIs(mut st, sA(nodeOf(mut st, fnNode(mut st, i))), "Serve") {
                 st.winOn = true
+                // 変異 66 = 区画を使わない（段 1 の前の積みの形 — areacheck の遠い道の行の基準）
+                st.areaOn = st.rtMut != 66
             }
         }
     }
@@ -1047,6 +1051,7 @@ func programRt(st mut St) {
     buildByteRt(mut st)
     buildMatchLen(mut st)
     buildJClean(mut st)
+    buildVdsoRt(mut st)
     buildGrowRt(mut st)
     if st.taskUse {
         buildTaskRt(mut st)
@@ -1308,11 +1313,19 @@ func relocFloor(st mut St, l int) int {
 // ①`x = append(x, …)`（x は mut slice の名前 — 自分のヘッダの region で伸びる・要素は append の格納点で写した）
 // ②string の連結・補間（右辺の最上段は行き先の深度で直に作る — forceDest。バイトは参照を持たない）
 // ③`x = sysAppendWord(x, …)`（std/binary の鍵 appendword — ①と同じく x のヘッダの region で伸びる）
+// ④`st = domLoad(d)`（domain の状態の読み直し — 状態は記録の region〔行き先より浅い〕に住み、鍵の下でその場で書く。写すと
+// domExit が写しのヘッダを箱へ書き戻し、状態が呼び手の region〔出口で回収〕に移る）
 func relocFree(st mut St, tgt desugar.NodeRef, v desugar.NodeRef, t int) bool {
     if int(v) < 0 {
         return false
     }
     k := kindN(mut st, v)
+    if k == ast.ECall && kindN(mut st, nA(nodeOf(mut st, v))) == ast.EIdent && st.rtMut != DM_CHK_NOFIX && st.rtMut != DM_NOFIX {
+        fi := desugar.ResolveFn(mut st.d, st.curPkg, sA(nodeOf(mut st, nA(nodeOf(mut st, v)))))
+        if fi >= 0 && desugar.ParKey(mut st.d, fi) == desugar.PAR_DLOAD {
+            return true
+        }
+    }
     if isString(mut st, t) && (k == ast.EInterp || (k == ast.EBinary && nodeOf(mut st, v).a == lexer.Plus)) {
         return true
     }
@@ -1478,6 +1491,9 @@ func funcBody(st mut St, fi int) error? {
     st.tenv = infoAt(mut st, fi).env
     irf := infoAt(mut st, fi).ir
     begin(mut st, irf)
+    if st.areaOn && isKid(mut st, fi) {
+        areaEntry(mut st)
+    }
     pushScope(mut st)
     mut idx := 0
     if infoSret(mut st) {
@@ -2195,13 +2211,58 @@ func retStmt(st mut St, s desugar.NodeRef) error? {
     want_ts := if ctx >= 0 { hgetL(mut st, ctx + IC_RESULTS) } else { desugar.ListRef(infoAt(mut st, st.info).results) }
     nw := lenL(mut st, want_ts)
     nv := lenL(mut st, values)
+    // `return g(…)` の転送: 値が呼び出し 1 つで、自分が sret（task の子でない・展開の中でない）なら、その呼び出しに受け皿を渡させる
+    fwd := ctx < 0 && nv == 1 && infoSret(mut st) && !isKid(mut st, st.info) && kindN(mut st, latN(mut st, values, 0)) == ast.ECall
+    if fwd {
+        st.sretAt = int(latN(mut st, values, 0)) + 1
+        st.sretTs = int(want_ts)
+        st.sretHit = false
+    }
+    vs, err := retValues(mut st, ctx, values, want_ts, nw, nv, at)
+    hit := fwd && st.sretHit
+    st.sretAt = 0
+    st.sretHit = false
+    if err != nil {
+        return err
+    }
+    if vs < 0 {
+        return nil
+    }
+    for i <- iter.Range(0, nw) {
+        if !tEql(mut st, desugar.HeapGet(mut st.d, vs + 1 + i * 2), latI(mut st, want_ts, i)) {
+            return diag.Mismatch{at: posOf(mut st, at)}
+        }
+    }
+    if ctx >= 0 {
+        mut ioff := 0
+        for i <- iter.Range(0, nw) {
+            t := desugar.HeapGet(mut st.d, vs + 1 + i * 2)
+            storeVal(mut st, desugar.HeapGet(mut st.d, ctx + IC_SLOT), ioff, t, desugar.HeapGet(mut st.d, vs + 2 + i * 2))
+            ioff += tWords(mut st, t)
+        }
+        return inlineExit(mut st, ctx, at)
+    }
+    // 結果スロットへ書いてから defer（値は defer より先に確定する）。転送した呼び出しは受け皿へ直に書いた
+    if infoSret(mut st) && !hit {
+        mut off := 0
+        for i <- iter.Range(0, nw) {
+            t := desugar.HeapGet(mut st.d, vs + 1 + i * 2)
+            storeVal(mut st, st.sret, off, t, desugar.HeapGet(mut st.d, vs + 2 + i * 2))
+            off += tWords(mut st, t)
+        }
+    }
+    return funcExit(mut st, if !infoSret(mut st) && nw == 1 { desugar.HeapGet(mut st.d, vs + 2) } else { -1 }, at)
+}
+
+// return の値の列（型と値の組 — 先頭が個数）。負なら到達しない
+func retValues(st mut St, ctx int, values desugar.ListRef, want_ts desugar.ListRef, nw int, nv int, at desugar.NodeRef) (int, error?) {
     mut vs := 0
     if nw > 1 && nv == 1 {
         // `return g()` の転送: g の結果をそのまま自分の結果へ
         vs = multiValue(mut st, values, nw, at)?
     } else {
         if nv != nw {
-            return diag.Mismatch{at: posOf(mut st, at)}
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
         }
         vs = listN(mut st, nv * 2)
         desugar.HeapSet(mut st.d, vs, nv)
@@ -2223,39 +2284,13 @@ func retStmt(st mut St, s desugar.NodeRef) error? {
                 x = exprExpecting(mut st, ei, wi, at)?
             }
             if isTag(mut st, x.t, TNever) {
-                return nil
+                return -1, nil
             }
             desugar.HeapSet(mut st.d, vs + 1 + i * 2, x.t)
             desugar.HeapSet(mut st.d, vs + 2 + i * 2, x.v)
         }
     }
-    if vs < 0 {
-        return nil
-    }
-    for i <- iter.Range(0, nw) {
-        if !tEql(mut st, desugar.HeapGet(mut st.d, vs + 1 + i * 2), latI(mut st, want_ts, i)) {
-            return diag.Mismatch{at: posOf(mut st, at)}
-        }
-    }
-    if ctx >= 0 {
-        mut ioff := 0
-        for i <- iter.Range(0, nw) {
-            t := desugar.HeapGet(mut st.d, vs + 1 + i * 2)
-            storeVal(mut st, desugar.HeapGet(mut st.d, ctx + IC_SLOT), ioff, t, desugar.HeapGet(mut st.d, vs + 2 + i * 2))
-            ioff += tWords(mut st, t)
-        }
-        return inlineExit(mut st, ctx, at)
-    }
-    // 結果スロットへ書いてから defer（値は defer より先に確定する）
-    if infoSret(mut st) {
-        mut off := 0
-        for i <- iter.Range(0, nw) {
-            t := desugar.HeapGet(mut st.d, vs + 1 + i * 2)
-            storeVal(mut st, st.sret, off, t, desugar.HeapGet(mut st.d, vs + 2 + i * 2))
-            off += tWords(mut st, t)
-        }
-    }
-    return funcExit(mut st, if !infoSret(mut st) && nw == 1 { desugar.HeapGet(mut st.d, vs + 2) } else { -1 }, at)
+    return vs, nil
 }
 
 // 関数の出口の後半（結果は書き済み — sret でなければ v）: defer → 結果の relocate → 深度復元 → ret

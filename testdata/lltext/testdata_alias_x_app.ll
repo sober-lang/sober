@@ -3479,37 +3479,23 @@ b0:
   store i64 0, ptr %s0.z0
   %s0.z1 = getelementptr i64, ptr %s0, i64 1
   store i64 0, ptr %s0.z1
-  %s1 = alloca [2 x i64], align 8
-  %s1.z0 = getelementptr i64, ptr %s1, i64 0
-  store i64 0, ptr %s1.z0
-  %s1.z1 = getelementptr i64, ptr %s1, i64 1
-  store i64 0, ptr %s1.z1
   %v3 = getelementptr i64, ptr %s0, i64 0
   %st0 = getelementptr i64, ptr %v3, i64 0
   store i64 %v1, ptr %st0
   %st1 = getelementptr i64, ptr %v3, i64 1
   store i64 %v2, ptr %st1
-  %v10 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v4.p = getelementptr i64, ptr %v10, i64 0
+  %v7 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v4.p = getelementptr i64, ptr %v7, i64 0
   %v4 = load i64, ptr %v4.p
   call void @"rt.region_enter"()
-  %v5 = getelementptr i64, ptr %s1, i64 0
-  %v6.p = getelementptr i64, ptr %v3, i64 0
+  %v5.p = getelementptr i64, ptr %v3, i64 0
+  %v5 = load i64, ptr %v5.p
+  %v6.p = getelementptr i64, ptr %v3, i64 1
   %v6 = load i64, ptr %v6.p
-  %v7.p = getelementptr i64, ptr %v3, i64 1
-  %v7 = load i64, ptr %v7.p
-  call void @"testdata/alias_x/lib.Mean"(ptr %v5, i64 %v6, i64 %v7)
-  %v8.p = getelementptr i64, ptr %v5, i64 0
-  %v8 = load i64, ptr %v8.p
-  %st2 = getelementptr i64, ptr %v0, i64 0
-  store i64 %v8, ptr %st2
-  %v9.p = getelementptr i64, ptr %v5, i64 1
-  %v9 = load i64, ptr %v9.p
-  %st3 = getelementptr i64, ptr %v0, i64 1
-  store i64 %v9, ptr %st3
-  %v11 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st4 = getelementptr i64, ptr %v11, i64 0
-  store i64 %v4, ptr %st4
+  call void @"testdata/alias_x/lib.Mean"(ptr %v0, i64 %v5, i64 %v6)
+  %v8 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st2 = getelementptr i64, ptr %v8, i64 0
+  store i64 %v4, ptr %st2
   ret void
 }
 

@@ -6,6 +6,7 @@ package pg
 import "std/internal/pgwire"
 import "std/iter"
 import "std/math"
+import "std/strings"
 import "std/time"
 import "std/uuid"
 
@@ -78,6 +79,20 @@ func sbe(b []byte, at int, n int) int {
     return if n < 8 && (v >> (n * 8 - 1)) != 0 { v - (1 << (n * 8)) } else { v }
 }
 
+// int2 / int4 / int8 の列の値（長さ 2 / 4 / 8 — 確かめ済み）を符号つきに（列の読みごとに通るので輪を回さずに）
+func intOf(b []byte) int {
+    n := len(b)
+    if n == 8 {
+        return int(b[0]) << 56 | int(b[1]) << 48 | int(b[2]) << 40 | int(b[3]) << 32 | int(b[4]) << 24 | int(b[5]) << 16 | int(b[6]) << 8 | int(b[7])
+    }
+    if n == 4 {
+        u := int(b[0]) << 24 | int(b[1]) << 16 | int(b[2]) << 8 | int(b[3])
+        return if u >= 2147483648 { u - 4294967296 } else { u }
+    }
+    u := int(b[0]) << 8 | int(b[1])
+    return if u >= 32768 { u - 65536 } else { u }
+}
+
 // 列の値 b（形式 fmt = 0 text / 1 binary・型 oid）の Value。形が型に合わなければ ok = false（Protocol）
 func decode(oid int, fmt int, b []byte) (Value, bool) {
     if fmt == 0 {
@@ -89,8 +104,8 @@ func decode(oid int, fmt int, b []byte) (Value, bool) {
         return Bool{v: n == 1 && b[0] != 0}, n == 1
     }
     if oid == oidInt2 || oid == oidInt4 || oid == oidInt8 {
-        w := if oid == oidInt2 { 2 } else if oid == oidInt4 { 4 } else { 8 }
-        return if n == w { Int{v: sbe(b, 0, w)} } else { Null{} }, n == w
+        w := intWidth(oid)
+        return if n == w { Int{v: intOf(b)} } else { Null{} }, n == w
     }
     if oid == oidFloat8 {
         return if n == 8 { Float{v: math.FromBits(be(b, 0, 8))} } else { Null{} }, n == 8
@@ -186,11 +201,49 @@ func floorMod(a int, b int) int {
 }
 
 func tail(b []byte, at int) []byte {
-    mut o := mut []byte{}
-    for i <- iter.Range(at, len(b)) {
-        o = append(o, b[i])
+    return b[at:len(b)]
+}
+
+// 列の値 b の形が型に合うか（decode の ok と同じ — 値は作らない）
+func wellFormed(oid int, fmt int, b []byte) bool {
+    n := len(b)
+    if fmt == 0 {
+        return strings.Valid(b)
     }
-    return freeze(o)
+    if oid == oidBool {
+        return n == 1
+    }
+    if oid == oidInt2 || oid == oidInt4 || oid == oidInt8 {
+        return n == intWidth(oid)
+    }
+    if oid == oidFloat8 || oid == oidTimestamptz || oid == oidTimestamp {
+        return n == 8
+    }
+    if oid == oidFloat4 || oid == oidDate {
+        return n == 4
+    }
+    if oid == oidBytea {
+        return true
+    }
+    // json / jsonb の字句は UTF-8 を受けで確かめる（ColJsonText は確かめ直さない — text の列と同じ形）。JSON の構文はサーバの型が持つ約束で、ここでは見ない
+    if oid == oidJson {
+        return strings.Valid(b)
+    }
+    if oid == oidJsonb {
+        return n >= 1 && b[0] == 1 && strings.Valid(b[1:n])
+    }
+    if oid == oidUuid {
+        return n == 16
+    }
+    if oid == oidNumeric {
+        _, ok := numericText(b)
+        return ok
+    }
+    return strings.Valid(b)
+}
+
+func intWidth(oid int) int {
+    return if oid == oidInt2 { 2 } else if oid == oidInt4 { 4 } else { 8 }
 }
 
 // numeric の binary（ndigits・weight・sign・dscale・base 10000 の桁）の十進の字句
@@ -310,7 +363,7 @@ func encode(oid int, x Value) (internal.pgwire.Arg, bool) {
 
 func encInt(oid int, v int) (internal.pgwire.Arg, bool) {
     if oid == oidInt8 || oid == oidInt4 || oid == oidInt2 {
-        w := if oid == oidInt2 { 2 } else if oid == oidInt4 { 4 } else { 8 }
+        w := intWidth(oid)
         fits := w == 8 || (v < (1 << (w * 8 - 1)) && v >= -(1 << (w * 8 - 1)))
         return binArg(beBytes(v, w)), fits
     }

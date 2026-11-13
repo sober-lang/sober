@@ -3258,7 +3258,6 @@ func @main.$jsonEncodeTop_0_0_0(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, 
   slot s0 [7]
   slot s1 [10]
   slot s2 [10]
-  slot s3 [3]
 b0:
   %8 = slotaddr s0
   store %8[0], %1
@@ -3342,20 +3341,13 @@ b0:
   %52 = globaladdr @rt.meta
   store %52[2572], %44
   call @main.$jsonEncode_0_0(%32, %45, %46, %47, %48, %49, %50, %51)
-  %53 = slotaddr s3
-  %54 = const 1
-  %55 = add %9, %54
+  %53 = const 1
+  %54 = add %9, %53
+  %55 = globaladdr @rt.meta
+  store %55[2572], %54
   %56 = globaladdr @rt.meta
-  store %56[2572], %55
-  %57 = globaladdr @rt.meta
-  store %57[2571], %19
-  call @std/json.Done(%53, %32)
-  %58 = load.i64 %53[0]
-  store %0[0], %58
-  %59 = load.i64 %53[1]
-  store %0[1], %59
-  %60 = load.i64 %53[2]
-  store %0[2], %60
+  store %56[2571], %19
+  call @std/json.Done(%0, %32)
   call @rt.region_relocate8(%0, %9)
   region.setdepth %9
   ret
@@ -4383,8 +4375,7 @@ b75:
 
 func @main.$jsonDecodeTop_0_1_0(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64, %7 i64, %8 i64, %9 i64, %10 i64, %11 i64, %12 i64, %13 i64, %14 i64, %15 i64, %16 i64, %17 i64, %18 i64, %19 i64, %20 i64, %21 i64, %22 i64) {
   slot s0 [21]
-  slot s1 [17]
-  slot s2 [4]
+  slot s1 [4]
 b0:
   %23 = slotaddr s0
   store %23[0], %1
@@ -4421,126 +4412,92 @@ b0:
   %33 = mul %31, %32
   %34 = add %24, %33
   region.enter
-  %35 = slotaddr s1
-  %36 = load.i64 %23[0]
-  %37 = load.i64 %23[1]
-  %38 = load.i64 %23[2]
-  %39 = load.i64 %23[3]
-  %40 = load.i64 %23[4]
-  %41 = load.i64 %23[5]
-  %42 = load.i64 %23[6]
-  %43 = load.i64 %23[7]
-  %44 = load.i64 %23[8]
-  %45 = load.i64 %23[9]
-  %46 = load.i64 %23[10]
-  %47 = load.i64 %23[11]
-  %48 = load.i64 %23[12]
-  %49 = load.i64 %23[13]
-  %50 = load.i64 %23[14]
-  %51 = load.i64 %23[15]
-  %52 = load.i64 %23[16]
-  %53 = load.i64 %23[17]
-  %54 = load.i64 %23[18]
-  %55 = load.i64 %23[19]
-  %56 = load.i64 %23[20]
-  %57 = slotaddr s2
-  %58 = region.bump %34
+  %35 = load.i64 %23[0]
+  %36 = load.i64 %23[1]
+  %37 = load.i64 %23[2]
+  %38 = load.i64 %23[3]
+  %39 = load.i64 %23[4]
+  %40 = load.i64 %23[5]
+  %41 = load.i64 %23[6]
+  %42 = load.i64 %23[7]
+  %43 = load.i64 %23[8]
+  %44 = load.i64 %23[9]
+  %45 = load.i64 %23[10]
+  %46 = load.i64 %23[11]
+  %47 = load.i64 %23[12]
+  %48 = load.i64 %23[13]
+  %49 = load.i64 %23[14]
+  %50 = load.i64 %23[15]
+  %51 = load.i64 %23[16]
+  %52 = load.i64 %23[17]
+  %53 = load.i64 %23[18]
+  %54 = load.i64 %23[19]
+  %55 = load.i64 %23[20]
+  %56 = slotaddr s1
+  %57 = region.depth
+  %58 = region.bump %57
   %59 = ptoi %58
-  store %57[0], %59
+  store %56[0], %59
   %60 = const 0
-  store %57[1], %60
-  store %57[2], %34
+  store %56[1], %60
+  store %56[2], %57
   %61 = const 0
-  store %57[3], %61
-  %62 = load.i64 %57[0]
-  %63 = load.i64 %57[1]
-  %64 = load.i64 %57[2]
-  %65 = load.i64 %57[3]
+  store %56[3], %61
+  %62 = load.i64 %56[0]
+  %63 = load.i64 %56[1]
+  %64 = load.i64 %56[2]
+  %65 = load.i64 %56[3]
   %66 = globaladdr @rt.meta
   store %66[2571], %34
-  call @main.$jsonDecode_0_1(%35, %36, %37, %38, %39, %40, %41, %42, %43, %44, %45, %46, %47, %48, %49, %50, %51, %52, %53, %54, %55, %56, %22, %62, %63, %64, %65)
+  call @main.$jsonDecode_0_1(%0, %35, %36, %37, %38, %39, %40, %41, %42, %43, %44, %45, %46, %47, %48, %49, %50, %51, %52, %53, %54, %55, %22, %62, %63, %64, %65)
   %67 = const 12
-  %68 = gep.word %35, %67
-  %69 = load.i64 %35[0]
-  store %0[0], %69
-  %70 = load.i64 %35[1]
-  store %0[1], %70
-  %71 = load.i64 %35[2]
-  store %0[2], %71
-  %72 = load.i64 %35[3]
-  store %0[3], %72
-  %73 = load.i64 %35[4]
-  store %0[4], %73
-  %74 = load.i64 %35[5]
-  store %0[5], %74
-  %75 = load.i64 %35[6]
-  store %0[6], %75
-  %76 = load.i64 %35[7]
-  store %0[7], %76
-  %77 = load.i64 %35[8]
-  store %0[8], %77
-  %78 = load.i64 %35[9]
-  store %0[9], %78
-  %79 = load.i64 %35[10]
-  store %0[10], %79
-  %80 = load.i64 %35[11]
-  store %0[11], %80
-  %81 = load.i64 %68[0]
-  store %0[12], %81
-  %82 = load.i64 %68[1]
-  store %0[13], %82
-  %83 = load.i64 %68[2]
-  store %0[14], %83
-  %84 = load.i64 %68[3]
-  store %0[15], %84
-  %85 = load.i64 %68[4]
-  store %0[16], %85
-  %86 = load.i64 %0[1]
-  %87 = const 0
-  %88 = ne %86, %87
-  condbr %88, b1, b2
+  %68 = gep.word %0, %67
+  %69 = load.i64 %0[1]
+  %70 = const 0
+  %71 = ne %69, %70
+  condbr %71, b1, b2
 b1:
-  %89 = const 2
-  %90 = gep.word %0, %89
-  %91 = const 0
-  call @rt.rec_relocate#0(%90, %24, %91)
+  %72 = const 2
+  %73 = gep.word %0, %72
+  %74 = const 0
+  call @rt.rec_relocate#0(%73, %24, %74)
   br b2
 b2:
-  %92 = const 9
-  %93 = gep.word %0, %92
-  %94 = load.i64 %93[2]
-  %95 = gt %94, %24
-  condbr %95, b3, b4
+  %75 = const 9
+  %76 = gep.word %0, %75
+  %77 = load.i64 %76[2]
+  %78 = gt %77, %24
+  condbr %78, b3, b4
 b3:
-  %96 = load.i64 %93[0]
-  %97 = itop %96
-  %98 = load.i64 %93[1]
-  %100 = const 0
-  br b5(%100)
+  %79 = load.i64 %76[0]
+  %80 = itop %79
+  %81 = load.i64 %76[1]
+  %83 = const 0
+  br b5(%83)
 b4:
-  %108 = load.i64 %0[12]
-  %109 = const 0
-  %110 = ne %108, %109
-  condbr %110, b8, b9
-b5(%99 i64):
-  %101 = lt %99, %98
-  condbr %101, b6, b7
+  %91 = load.i64 %0[12]
+  %92 = const 0
+  %93 = ne %91, %92
+  condbr %93, b8, b9
+b5(%82 i64):
+  %84 = lt %82, %81
+  condbr %84, b6, b7
 b6:
-  %102 = const 7
-  %103 = mul %99, %102
-  %104 = gep.word %97, %103
-  %105 = const 0
-  call @rt.rec_relocate#0(%104, %24, %105)
-  %106 = const 1
-  %107 = add %99, %106
-  br b5(%107)
+  %85 = const 7
+  %86 = mul %82, %85
+  %87 = gep.word %80, %86
+  %88 = const 0
+  call @rt.rec_relocate#0(%87, %24, %88)
+  %89 = const 1
+  %90 = add %82, %89
+  br b5(%90)
 b7:
-  region.relocate %93, 7, %24
+  region.relocate %76, 7, %24
   br b4
 b8:
-  %111 = const 13
-  %112 = gep.word %0, %111
-  call @rt.err_relocate(%112, %24)
+  %94 = const 13
+  %95 = gep.word %0, %94
+  call @rt.err_relocate(%95, %24)
   br b9
 b9:
   region.setdepth %24
@@ -4650,7 +4607,6 @@ func @main.$jsonEncodeTop_0_1_0(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, 
   slot s0 [12]
   slot s1 [10]
   slot s2 [10]
-  slot s3 [3]
 b0:
   %13 = slotaddr s0
   store %13[0], %1
@@ -4744,20 +4700,13 @@ b0:
   %62 = globaladdr @rt.meta
   store %62[2572], %49
   call @main.$jsonEncode_0_1(%37, %50, %51, %52, %53, %54, %55, %56, %57, %58, %59, %60, %61)
-  %63 = slotaddr s3
-  %64 = const 1
-  %65 = add %14, %64
+  %63 = const 1
+  %64 = add %14, %63
+  %65 = globaladdr @rt.meta
+  store %65[2572], %64
   %66 = globaladdr @rt.meta
-  store %66[2572], %65
-  %67 = globaladdr @rt.meta
-  store %67[2571], %24
-  call @std/json.Done(%63, %37)
-  %68 = load.i64 %63[0]
-  store %0[0], %68
-  %69 = load.i64 %63[1]
-  store %0[1], %69
-  %70 = load.i64 %63[2]
-  store %0[2], %70
+  store %66[2571], %24
+  call @std/json.Done(%0, %37)
   call @rt.region_relocate8(%0, %14)
   region.setdepth %14
   ret
@@ -5062,9 +5011,8 @@ func @main.$jsonField_0_2(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64
   slot s0 [21]
   slot s1 [2]
   slot s2 [4]
-  slot s3 [13]
-  slot s4 [8]
-  slot s5 [5]
+  slot s3 [8]
+  slot s4 [5]
 b0:
   %28 = slotaddr s0
   store %28[0], %1
@@ -5115,140 +5063,113 @@ b0:
   condbr %44, b1, b2
 b1:
   %45 = load.i64 %29[1]
-  %46 = slotaddr s3
-  %47 = load.i64 %28[0]
-  %48 = load.i64 %28[1]
-  %49 = load.i64 %28[2]
-  %50 = load.i64 %28[3]
-  %51 = load.i64 %28[4]
-  %52 = load.i64 %28[5]
-  %53 = load.i64 %28[6]
-  %54 = load.i64 %28[7]
-  %55 = load.i64 %28[8]
-  %56 = load.i64 %28[9]
-  %57 = load.i64 %28[10]
-  %58 = load.i64 %28[11]
-  %59 = load.i64 %28[12]
-  %60 = load.i64 %28[13]
-  %61 = load.i64 %28[14]
-  %62 = load.i64 %28[15]
-  %63 = load.i64 %28[16]
-  %64 = load.i64 %28[17]
-  %65 = load.i64 %28[18]
-  %66 = load.i64 %28[19]
-  %67 = load.i64 %28[20]
-  %68 = load.i64 %30[0]
-  %69 = load.i64 %30[1]
-  %70 = load.i64 %30[2]
-  %71 = load.i64 %30[3]
-  %72 = globaladdr @rt.meta
-  store %72[2571], %41
-  call @main.$jsonDecode_0_2(%46, %47, %48, %49, %50, %51, %52, %53, %54, %55, %56, %57, %58, %59, %60, %61, %62, %63, %64, %65, %66, %67, %45, %68, %69, %70, %71)
-  %73 = const 8
-  %74 = gep.word %46, %73
-  %75 = load.i64 %46[0]
-  store %0[0], %75
-  %76 = load.i64 %46[1]
-  store %0[1], %76
-  %77 = load.i64 %46[2]
-  store %0[2], %77
-  %78 = load.i64 %46[3]
-  store %0[3], %78
-  %79 = load.i64 %46[4]
-  store %0[4], %79
-  %80 = load.i64 %46[5]
-  store %0[5], %80
-  %81 = load.i64 %46[6]
-  store %0[6], %81
-  %82 = load.i64 %46[7]
-  store %0[7], %82
-  %83 = load.i64 %74[0]
-  store %0[8], %83
-  %84 = load.i64 %74[1]
-  store %0[9], %84
-  %85 = load.i64 %74[2]
-  store %0[10], %85
-  %86 = load.i64 %74[3]
-  store %0[11], %86
-  %87 = load.i64 %74[4]
-  store %0[12], %87
-  %88 = load.i64 %0[0]
-  %89 = const 0
-  %90 = ne %88, %89
-  condbr %90, b3, b4
+  %46 = load.i64 %28[0]
+  %47 = load.i64 %28[1]
+  %48 = load.i64 %28[2]
+  %49 = load.i64 %28[3]
+  %50 = load.i64 %28[4]
+  %51 = load.i64 %28[5]
+  %52 = load.i64 %28[6]
+  %53 = load.i64 %28[7]
+  %54 = load.i64 %28[8]
+  %55 = load.i64 %28[9]
+  %56 = load.i64 %28[10]
+  %57 = load.i64 %28[11]
+  %58 = load.i64 %28[12]
+  %59 = load.i64 %28[13]
+  %60 = load.i64 %28[14]
+  %61 = load.i64 %28[15]
+  %62 = load.i64 %28[16]
+  %63 = load.i64 %28[17]
+  %64 = load.i64 %28[18]
+  %65 = load.i64 %28[19]
+  %66 = load.i64 %28[20]
+  %67 = load.i64 %30[0]
+  %68 = load.i64 %30[1]
+  %69 = load.i64 %30[2]
+  %70 = load.i64 %30[3]
+  %71 = globaladdr @rt.meta
+  store %71[2571], %41
+  call @main.$jsonDecode_0_2(%0, %46, %47, %48, %49, %50, %51, %52, %53, %54, %55, %56, %57, %58, %59, %60, %61, %62, %63, %64, %65, %66, %45, %67, %68, %69, %70)
+  %72 = const 8
+  %73 = gep.word %0, %72
+  %74 = load.i64 %0[0]
+  %75 = const 0
+  %76 = ne %74, %75
+  condbr %76, b3, b4
 b2:
   br b7
 b3:
-  %91 = const 1
-  %92 = gep.word %0, %91
-  %93 = const 0
-  call @rt.rec_relocate#0(%92, %31, %93)
+  %77 = const 1
+  %78 = gep.word %0, %77
+  %79 = const 0
+  call @rt.rec_relocate#0(%78, %31, %79)
   br b4
 b4:
-  %94 = load.i64 %0[8]
-  %95 = const 0
-  %96 = ne %94, %95
-  condbr %96, b5, b6
+  %80 = load.i64 %0[8]
+  %81 = const 0
+  %82 = ne %80, %81
+  condbr %82, b5, b6
 b5:
-  %97 = const 9
-  %98 = gep.word %0, %97
-  call @rt.err_relocate(%98, %31)
+  %83 = const 9
+  %84 = gep.word %0, %83
+  call @rt.err_relocate(%84, %31)
   br b6
 b6:
   region.setdepth %31
   ret
 b7:
-  %99 = slotaddr s4
-  %100 = const 0
-  store %99[0], %100
-  %101 = slotaddr s5
-  %102 = const 0
-  store %101[0], %102
-  %103 = load.i64 %99[0]
-  store %0[0], %103
-  %104 = load.i64 %99[1]
-  store %0[1], %104
-  %105 = load.i64 %99[2]
-  store %0[2], %105
-  %106 = load.i64 %99[3]
-  store %0[3], %106
-  %107 = load.i64 %99[4]
-  store %0[4], %107
-  %108 = load.i64 %99[5]
-  store %0[5], %108
-  %109 = load.i64 %99[6]
-  store %0[6], %109
-  %110 = load.i64 %99[7]
-  store %0[7], %110
-  %111 = load.i64 %101[0]
-  store %0[8], %111
-  %112 = load.i64 %101[1]
-  store %0[9], %112
-  %113 = load.i64 %101[2]
-  store %0[10], %113
-  %114 = load.i64 %101[3]
-  store %0[11], %114
-  %115 = load.i64 %101[4]
-  store %0[12], %115
-  %116 = load.i64 %0[0]
-  %117 = const 0
-  %118 = ne %116, %117
-  condbr %118, b8, b9
+  %85 = slotaddr s3
+  %86 = const 0
+  store %85[0], %86
+  %87 = slotaddr s4
+  %88 = const 0
+  store %87[0], %88
+  %89 = load.i64 %85[0]
+  store %0[0], %89
+  %90 = load.i64 %85[1]
+  store %0[1], %90
+  %91 = load.i64 %85[2]
+  store %0[2], %91
+  %92 = load.i64 %85[3]
+  store %0[3], %92
+  %93 = load.i64 %85[4]
+  store %0[4], %93
+  %94 = load.i64 %85[5]
+  store %0[5], %94
+  %95 = load.i64 %85[6]
+  store %0[6], %95
+  %96 = load.i64 %85[7]
+  store %0[7], %96
+  %97 = load.i64 %87[0]
+  store %0[8], %97
+  %98 = load.i64 %87[1]
+  store %0[9], %98
+  %99 = load.i64 %87[2]
+  store %0[10], %99
+  %100 = load.i64 %87[3]
+  store %0[11], %100
+  %101 = load.i64 %87[4]
+  store %0[12], %101
+  %102 = load.i64 %0[0]
+  %103 = const 0
+  %104 = ne %102, %103
+  condbr %104, b8, b9
 b8:
-  %119 = const 1
-  %120 = gep.word %0, %119
-  %121 = const 0
-  call @rt.rec_relocate#0(%120, %31, %121)
+  %105 = const 1
+  %106 = gep.word %0, %105
+  %107 = const 0
+  call @rt.rec_relocate#0(%106, %31, %107)
   br b9
 b9:
-  %122 = load.i64 %0[8]
-  %123 = const 0
-  %124 = ne %122, %123
-  condbr %124, b10, b11
+  %108 = load.i64 %0[8]
+  %109 = const 0
+  %110 = ne %108, %109
+  condbr %110, b10, b11
 b10:
-  %125 = const 9
-  %126 = gep.word %0, %125
-  call @rt.err_relocate(%126, %31)
+  %111 = const 9
+  %112 = gep.word %0, %111
+  call @rt.err_relocate(%112, %31)
   br b11
 b11:
   region.setdepth %31
@@ -7708,15 +7629,13 @@ b0:
   %19 = slotaddr s0
   %20 = globaladdr @rt.meta
   store %20[2572], %8
-  %21 = globaladdr @rt.meta
-  store %21[2571], %18
   call @"std/builder.Build[byte]"(%19, %1)
-  %22 = load.i64 %19[0]
-  store %0[0], %22
-  %23 = load.i64 %19[1]
-  store %0[1], %23
-  %24 = load.i64 %19[2]
-  store %0[2], %24
+  %21 = load.i64 %19[0]
+  store %0[0], %21
+  %22 = load.i64 %19[1]
+  store %0[1], %22
+  %23 = load.i64 %19[2]
+  store %0[2], %23
   call @rt.region_relocate8(%0, %2)
   region.setdepth %2
   ret
@@ -17604,15 +17523,13 @@ b3:
   %319 = add %24, %318
   %320 = globaladdr @rt.meta
   store %320[2572], %319
-  %321 = globaladdr @rt.meta
-  store %321[2571], %34
   call @"std/builder.Build[byte]"(%317, %47)
-  %322 = load.i64 %317[0]
-  store %0[0], %322
-  %323 = load.i64 %317[1]
-  store %0[1], %323
-  %324 = load.i64 %317[2]
-  store %0[2], %324
+  %321 = load.i64 %317[0]
+  store %0[0], %321
+  %322 = load.i64 %317[1]
+  store %0[1], %322
+  %323 = load.i64 %317[2]
+  store %0[2], %323
   call @rt.region_relocate8(%0, %24)
   region.setdepth %24
   ret

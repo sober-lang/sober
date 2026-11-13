@@ -1,12 +1,12 @@
 examples/origin_neg_cookie.sober:6:6: eff main.main
-std/http/server/server.sober:317:6: credential std/http/server.Authorization
-std/http/server/server.sober:326:6: credential std/http/server.Cookie
+std/http/server/server.sober:314:6: credential std/http/server.Authorization
+std/http/server/server.sober:323:6: credential std/http/server.Cookie
 std/http/server/server.sober:29:6: credential field Request.head
-std/http/server/server.sober:63:6: shared-field Response.cache response
-std/http/server/server.sober:478:6: shared-field Route.cache route
-std/http/server/server.sober:670:6: shared Cache the shared cache policy 'Fresh'
-std/http/server/server.sober:670:6: shared Cache the shared cache policy 'Shared'
-std/http/server/server.sober:670:6: shared Cache the shared cache policy 'Unstated'
-std/http/server/server.sober:491:6: meet-point std/http/server.Mount
+std/http/server/server.sober:64:6: shared-field Response.cache response
+std/http/server/server.sober:475:6: shared-field Route.cache route
+std/http/server/server.sober:667:6: shared Cache the shared cache policy 'Fresh'
+std/http/server/server.sober:667:6: shared Cache the shared cache policy 'Shared'
+std/http/server/server.sober:667:6: shared Cache the shared cache policy 'Unstated'
+std/http/server/server.sober:488:6: meet-point std/http/server.Mount
 examples/origin_neg_cookie.sober:7:31: violation the shared cache policy 'Fresh' meets a handler or middleware that reaches a credential source (server.Authorization / server.Cookie / Request.head) in one route — a response that depends on Authorization / Cookie must not be stored by a shared cache — it would be served to other users (language.md 12 節「出所の依存」); use server.Private / server.NoStore for this route, or move the credential read out of it
-summary atoms=7 credentials=3 eff-fns=1 shared=3 shared-fields=2 violations=1 walks=729
+summary atoms=7 credentials=3 eff-fns=1 shared=3 shared-fields=2 violations=1 walks=808

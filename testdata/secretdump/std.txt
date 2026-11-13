@@ -104,7 +104,7 @@ std/crypto/x25519/x25519.sober:212:6: secret std/crypto/x25519.invert
 std/crypto/x25519/x25519.sober:228:6: secret std/crypto/x25519.unpack
 std/crypto/x25519/x25519.sober:240:6: secret std/crypto/x25519.pack
 std/http/client/link.sober:302:6: secret std/http/client.putConn
-std/pg/pg.sober:195:6: secret std/pg.startup
+std/pg/pg.sober:197:6: secret std/pg.startup
 std/pg/transport.sober:337:6: secret std/pg.putConn
 std/session/session.sober:141:6: secret std/session.KeyFrom
 std/session/session.sober:153:6: secret std/session.Mint
@@ -209,7 +209,7 @@ std/crypto/poly1305/poly1305.sober:40:6: field acc.h1 from the @secret parameter
 std/crypto/poly1305/poly1305.sober:40:6: field acc.h2 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
 std/crypto/poly1305/poly1305.sober:40:6: field acc.h3 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
 std/crypto/poly1305/poly1305.sober:40:6: field acc.h4 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
-std/pg/pg.sober:124:6: field cfg.password from the @secret field 'Policy.password'
+std/pg/pg.sober:126:6: field cfg.password from the @secret field 'Policy.password'
 std/session/session.sober:51:6: field Key.k from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
 std/tls/tls.sober:54:6: field Conn.blk from the @secret parameter 'key' of 'std/crypto/chacha20poly1305.Prepare'
 std/internal/hsc/client.sober:66:6: field Ch.hsS from the @secret parameter 'ikm' of 'std/crypto/hkdf.Extract'
@@ -233,4 +233,4 @@ std/internal/p256/p256.sober:35:6: field fe.l0 from the @secret parameter 'd' of
 std/internal/p256/p256.sober:35:6: field fe.l1 from the @secret parameter 'd' of 'std/internal/p256.PublicKey'
 std/internal/p256/p256.sober:35:6: field fe.l2 from the @secret parameter 'd' of 'std/internal/p256.PublicKey'
 std/internal/p256/p256.sober:35:6: field fe.l3 from the @secret parameter 'd' of 'std/internal/p256.PublicKey'
-summary atoms=62 secret-fns=200 secret-fields=35 violations=0 walks=3364
+summary atoms=62 secret-fns=200 secret-fields=35 violations=0 walks=3381

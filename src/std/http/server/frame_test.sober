@@ -411,6 +411,16 @@ func sameInts(a []int, b []int) bool {
     return true
 }
 
+// 1 本 2 語の位置の表（Request.headers）を基準の 1 本 4 語 [名前の始め, 終わり, 値の始め, 終わり] に開く
+func unpack(h []int) []int {
+    mut out := mut []int{}
+    for x <- h {
+        out = append(out, lo32(x))
+        out = append(out, hi32(x))
+    }
+    return freeze(out)
+}
+
 // b の at からの枠と要求が基準と一致するか（違えば 1 行出して偽）
 func agree(b []byte, at int, mh int, mb int) bool {
     o := frameAtRef(b, at, mh, mb)
@@ -432,7 +442,7 @@ func agree(b []byte, at int, mh int, mb int) bool {
     if eo != nil {
         return true
     }
-    if ro.method != rn.method || ro.path != rn.path || ro.query != rn.query || !sameBytes(utf8.Bytes(ro.head), utf8.Bytes(rn.head)) || !sameInts(ro.headers, rn.headers) || !sameBytes(ro.body, rn.body) {
+    if ro.method != rn.method || ro.path != rn.path || ro.query != rn.query || !sameBytes(utf8.Bytes(ro.head), utf8.Bytes(rn.head)) || !sameInts(ro.headers, unpack(rn.headers)) || !sameBytes(ro.body, rn.body) {
         println("request differs: ${string(b) catch "<bytes>"}")
         return false
     }
@@ -469,12 +479,18 @@ func seeds() []string {
         "GET / HTTP/1.1\n\r\n",
         "PUT /u HTTP/1.1\r\ncontent-length: 012\r\n\r\n123456789012",
         "GET /é HTTP/1.1\r\nX: é\r\n\r\n",
+        // 8 バイトずつの読みの罠: 探す字の直後に「字 ^ 1」（SP → '!'・':' → ';'）が来る形と、境目をまたぐ字（CR → 0x0c・LF → 0x0b は muts の置き換えで）
+        "GET /!a !b HTTP/1.1\r\nX:;y\r\n\r\n",
+        "GET /abcd HTTP/1.1\r\nAbcdefg:;;;;;;;:v\r\n\r\n",
+        "GET /a\r b HTTP/1.1\r\nX-Abcde: a\r\r\n\r\n",
+        "GET /abcdefghijkl HTTP/1.1\nX: y\n\n",
+        "OPTIONS /abcdefg HTTP/1.0\r\nAbcdefghijklmn:\r\nAbcdefghijklmno: x:y\r\n\r\n",
     }
 }
 
 // 置き換えに使うバイト
 func muts() []byte {
-    return []byte{'\r', '\n', ' ', '\t', ':', ',', 'a', 'K', '0', '(', '/', byte(0), byte(0x80), byte(0xff)}
+    return []byte{'\r', '\n', ' ', '\t', ':', ',', 'a', 'K', '0', '(', '/', '!', ';', byte(0x0b), byte(0x0c), byte(0), byte(0x80), byte(0xff)}
 }
 
 // 種 s のどの位置でも置き換え・削除・重複した列と、全部の切り詰めを k に渡す

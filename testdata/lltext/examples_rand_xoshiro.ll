@@ -4659,17 +4659,8 @@ b0:
 
 define internal void @"std/rand.Split"(ptr %v0, ptr %v1) #0 {
 b0:
-  %s0 = alloca [4 x i64], align 8
-  %s0.z0 = getelementptr i64, ptr %s0, i64 0
-  store i64 0, ptr %s0.z0
-  %s0.z1 = getelementptr i64, ptr %s0, i64 1
-  store i64 0, ptr %s0.z1
-  %s0.z2 = getelementptr i64, ptr %s0, i64 2
-  store i64 0, ptr %s0.z2
-  %s0.z3 = getelementptr i64, ptr %s0, i64 3
-  store i64 0, ptr %s0.z3
-  %v21 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v2.p = getelementptr i64, ptr %v21, i64 0
+  %v16 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v2.p = getelementptr i64, ptr %v16, i64 0
   %v2 = load i64, ptr %v2.p
   %v3 = getelementptr i64, ptr @"rt.meta", i64 0
   %v4.p = getelementptr i64, ptr %v3, i64 2572
@@ -4679,39 +4670,22 @@ b0:
   %v6 = zext i1 %v6.c to i64
   %v7 = mul i64 %v6, %v2
   %v8 = add i64 %v4, %v7
-  %v9 = getelementptr i64, ptr %s0, i64 0
-  %v10 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st0 = getelementptr i64, ptr %v10, i64 2572
+  %v9 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st0 = getelementptr i64, ptr %v9, i64 2572
   store i64 %v8, ptr %st0
-  %v11 = call i64 @"std/rand.Next"(ptr %v1)
-  %v12 = add i64 0, 30
-  %v13.n = and i64 %v12, 63
-  %v13 = shl i64 %v11, %v13.n
-  %v14 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st1 = getelementptr i64, ptr %v14, i64 2572
+  %v10 = call i64 @"std/rand.Next"(ptr %v1)
+  %v11 = add i64 0, 30
+  %v12.n = and i64 %v11, 63
+  %v12 = shl i64 %v10, %v12.n
+  %v13 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st1 = getelementptr i64, ptr %v13, i64 2572
   store i64 %v8, ptr %st1
-  %v15 = call i64 @"std/rand.Next"(ptr %v1)
-  %v16 = xor i64 %v13, %v15
-  call void @"std/rand.New"(ptr %v9, i64 %v16)
-  %v17.p = getelementptr i64, ptr %v9, i64 0
-  %v17 = load i64, ptr %v17.p
-  %st2 = getelementptr i64, ptr %v0, i64 0
-  store i64 %v17, ptr %st2
-  %v18.p = getelementptr i64, ptr %v9, i64 1
-  %v18 = load i64, ptr %v18.p
-  %st3 = getelementptr i64, ptr %v0, i64 1
-  store i64 %v18, ptr %st3
-  %v19.p = getelementptr i64, ptr %v9, i64 2
-  %v19 = load i64, ptr %v19.p
-  %st4 = getelementptr i64, ptr %v0, i64 2
-  store i64 %v19, ptr %st4
-  %v20.p = getelementptr i64, ptr %v9, i64 3
-  %v20 = load i64, ptr %v20.p
-  %st5 = getelementptr i64, ptr %v0, i64 3
-  store i64 %v20, ptr %st5
-  %v22 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st6 = getelementptr i64, ptr %v22, i64 0
-  store i64 %v2, ptr %st6
+  %v14 = call i64 @"std/rand.Next"(ptr %v1)
+  %v15 = xor i64 %v12, %v14
+  call void @"std/rand.New"(ptr %v0, i64 %v15)
+  %v17 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st2 = getelementptr i64, ptr %v17, i64 0
+  store i64 %v2, ptr %st2
   ret void
 }
 

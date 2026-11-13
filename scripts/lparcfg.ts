@@ -24,6 +24,7 @@ const ALLOW: Record<string, string> = {
   noVec: "cfg",
   taskUse: "cfg",   // SLP（slp.sober）を task のプログラムで外す — lParCfg の 5 番の bit 1
   winOn: "cfg",     // 窓を組むか — 展開の予算の確保の重み（unroll.sober の UR_RALLOCW）— lParCfg の 5 番の bit 2
+  areaOn: "cfg",    // 接続の task の積みの形を組むか — 子の本体の入口の印（lower.sober funcBody）— lParCfg の 5 番の bit 3
   ubCheck: "cfg", ubBound: "cfg",
   rtGrow: "cfg", rtGrow8: "cfg", rtRalloc: "cfg", rtAlloc8: "cfg",
   meta: "cfg",

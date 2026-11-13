@@ -1,0 +1,97 @@
+package main
+
+// xmm を作業に使う塊（バイトの走査 scanb の各形・数え上げ・UTF-8 の検査器・CRC-32 の折り畳み）を含む関数の呼び出しを、呼び手が f64 を
+// 広い組（xmm2〜7 まで）に置いたまま跨ぐ: 呼ばれた関数は塊が書く xmm を入口で退避して戻す約束（x86 の xBlkXmm）。塊の書く集合を
+// 少なく見積もると、呼び手の f64 が壊れて出力が変わる。呼び出しは関数値で（展開されない — 呼び手は塊を持たず広い組を使う）
+
+import "std/hash/crc32"
+import "std/iter"
+import "std/utf8"
+
+type Blk func(b []byte) int
+
+// 2 つの述語の走査（出口のレーン = 述語の当たり — 定数と作業に xmm1〜7）
+func scanTwo(b []byte) int {
+    mut n := 0
+    mut i := 0
+    while i < len(b) && b[i] != ';' && b[i] != '\n' {
+        i += 1
+    }
+    n += i
+    return n
+}
+
+// 出口が「x >=u 128」だけの走査（xmm0 だけ）
+func scanAscii(b []byte) int {
+    mut n := 0
+    mut i := 0
+    while i < len(b) && b[i] < 128 {
+        i += 1
+    }
+    n += i
+    return n
+}
+
+// 数え上げ（json.bound の形 — 16 バイトの塊ずつ当たりを数える）
+func countQuote(b []byte) int {
+    mut n := 0
+    mut c := 0
+    mut i := 0
+    while i < len(b) {
+        if b[i] == '"' || b[i] == '\\' {
+            c += 1
+        }
+        i += 1
+    }
+    n += c
+    return n
+}
+
+// UTF-8 の検査
+func checkUtf8(b []byte) int {
+    mut n := 0
+    _, err := utf8.Check(b)
+    n += if err == nil { 1 } else { 2 }
+    return n
+}
+
+// CRC-32（64 バイト以上は折り畳みの塊）
+func crc(b []byte) int {
+    mut n := 0
+    n += hash.crc32.Sum(b) & 0xffff
+    return n
+}
+
+func main() {
+    mut b := mut []byte{}
+    for k <- iter.Range(0, 200) {
+        b = append(b, if k == 150 { ';' } else if k % 37 == 5 { '"' } else { byte('a' + k % 26) })
+    }
+    for x <- bytes("é ü") {
+        b = append(b, x)
+    }
+    // 呼び出しを跨いで生きる f64 を 14 本（xmm8〜15 を越えて xmm2〜7 にも置かれる数）
+    a0 := float(len(b)) * 0.5
+    a1 := a0 + 1.25
+    a2 := a1 * 1.5
+    a3 := a2 - 0.75
+    a4 := a3 * 2.0
+    a5 := a4 + 3.5
+    a6 := a5 * 0.25
+    a7 := a6 + 7.0
+    a8 := a7 * 1.125
+    a9 := a8 - 2.5
+    a10 := a9 * 0.5
+    a11 := a10 + 9.75
+    a12 := a11 * 1.0625
+    a13 := a12 - 4.0
+    fs := []Blk{scanTwo, scanAscii, countQuote, checkUtf8, crc}
+    mut n := 0
+    for f <- fs {
+        n = n * 7 + f(b)
+    }
+    println(n)
+    println(a0 + a1 + a2 + a3 + a4 + a5 + a6)
+    println(a7 + a8 + a9 + a10 + a11 + a12 + a13)
+    println(a0 * a13 - a1 * a12 + a2 * a11 - a3 * a10 + a4 * a9 - a5 * a8 + a6 * a7)
+}

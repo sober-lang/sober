@@ -763,6 +763,8 @@ func llIns(st mut St, out mut []byte, lc mut LlCur, ins InsRef, bi int, cs int, 
         obuf.Lit(mut out, " = add i64 0, 0\n")
     case OpUnwind:
         // .ll の経路は罠を持たない（何もしない — 続く exit がプロセスを終える）
+    case OpArea:
+        // .ll の経路は task の積みを付け替えない（tstart の呼び出しの中で連続の形のまま走る — 区画の交換も起きない）
     case OpTSwitch:
         // .ll の経路は task の切替を持たない（何もしない。子は tstart の呼び出しの中で走り切る・待つ形は .ll では動かない）
     case OpTStart:

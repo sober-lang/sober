@@ -1,0 +1,31 @@
+package main
+
+// pgstub — PostgreSQL の wire protocol だけを話す代役（計測の道具）。平文・trust（認証を求めずに AuthenticationOk）で、
+// 拡張問い合わせ（Parse / Describe / Bind / Execute / Close / Sync）の固定の表の文（items.sober）だけに答える。
+//   pgstub [port] [delay-us]   127.0.0.1:<port>（既定 0 = 空いている番号）で待ち、"ready <port>" を出す。
+//                              delay-us = 起動の後の束（Sync まで）への応答の前に回して待つマイクロ秒（既定 0）
+// 使い方と限界は bench/pgstub/README.md
+
+import "std/convert"
+import "std/io"
+import "std/net"
+import "std/os"
+
+func main() int {
+    a := os.Args() catch return 2
+    port := if len(a) > 1 { a[1] } else { "0" }
+    us := if len(a) > 2 { convert.ParseInt(a[2]) catch return 2 } else { 0 }
+    if run(port, newTable(), us * 1000) != nil {
+        _ = io.WriteStderr(bytes("pgstub: listen failed\n"))
+        return 1
+    }
+    return 0
+}
+
+func run(port string, tb Table, delay int) error? {
+    for l <- net.Listen("127.0.0.1:${port}")? {
+        io.WriteStdout(bytes("ready ${net.Port(l)}\n"))?
+        net.Serve(l, (c net.Conn) => serveConn(c, tb, delay), conns: 1024)?
+    }
+    return nil
+}

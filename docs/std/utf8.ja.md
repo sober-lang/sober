@@ -29,6 +29,14 @@ b 全体を検査して View にする（不正なら最初の不正なシーケ
 
 失敗のラベル: `strings.BadUtf8`
 
+## ASCII_FAST_MAX
+
+```sober
+const ASCII_FAST_MAX = 256
+```
+
+Check が ASCII の頭を先に読む長さの上限（これより長い入力は SSE2 の検査器に全部任せる）
+
 ## Bytes
 
 ```sober

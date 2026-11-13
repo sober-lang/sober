@@ -23,14 +23,14 @@ SOBER_CACHE= SOBER_CACHE_VERIFY=1 "$STAGE2" check "$tmp/l0/all.sober" --split > 
 for m in whole split; do
     out=$(SOBER_L0=0 SOBER_CACHE= CV_SAMPLE=std scripts/checkverdict.sh $( [ $m = split ] && echo --split ) 2>&1)
     echo "$out" | grep '^FAIL' | head -3
-    echo "$out" | tail -1 | grep -q 'fail=0$' || { echo "FAIL: SOBER_L0=0 $m: $(echo "$out" | tail -1)"; fail=$((fail + 1)); }
+    grep -q 'fail=0$' <<< "$(tail -n 1 <<< "$out")" || { echo "FAIL: SOBER_L0=0 $m: $(echo "$out" | tail -1)"; fail=$((fail + 1)); }
 done
 for phase in cold warm verify; do
     if [ $phase = verify ]; then export SOBER_CACHE_VERIFY=1; fi
     out=$(scripts/checkverdict.sh --split 2>&1)
     last=$(echo "$out" | tail -1)
     echo "$out" | grep '^FAIL' | head -5
-    echo "$last" | grep -q 'fail=0$' || { echo "FAIL: $phase: $last"; fail=$((fail + 1)); }
+    grep -q 'fail=0$' <<< "$last" || { echo "FAIL: $phase: $last"; fail=$((fail + 1)); }
     [ $phase = cold ] && n=$(find "$SOBER_CACHE" -type f -not -name '*.tmp' | wc -l)
 done
 unset SOBER_CACHE_VERIFY

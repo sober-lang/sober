@@ -18,7 +18,7 @@ n=0
 obs() {   # obs <bin> <out> [env…]（-k 5 = SIGTERM で落ちない止まり〔終了処理中に pipe の書きで回る変異 6 — report-785〕は 5 秒後に SIGKILL）
     local b=$1 o=$2 ec=0
     shift 2
-    env "$@" timeout -k 5 60 "$b" > "$o" 2> "$o.err" || ec=$?
+    env "$@" timeout -k 5 "${OBS_T:-60}" "$b" > "$o" 2> "$o.err" || ec=$?
     echo "exit=$ec" >> "$o"
     grep -v '^#sched ' "$o.err" >> "$o"
 }
@@ -63,8 +63,11 @@ done < scripts/schedfuzz.list
 # 変異の自己検査（段 6 P4-4）: M:N の rt に変異を入れたビルド（--rt-mutant=N）で、網が割れを捕まえること（1 件で足りる —
 # 最初の割れで打ち切り）。1 = 未回収の失敗を到着順で選ぶ（正準順の破れ）・2 = 待ち手を素の store で置いて見直さない（起こし損ね → デッドロックの死）・
 # 6 = 盗み手が被害者の鍵を取らない（盗み手どうしが同じ子を取る — 子が 2 回走る。Skynet 回収 (a)）・15 = lease の使用中の印を見ない
-# （窓の中で譲った task の置き場を同じワーカーの別の窓が共有する — region-domain-pool.md 4d 節の倒れの証人。ワーカー 1 で 2 つの窓が必ず重なる）
-for m in "1 examples/task_fail_order.sober" "2 examples/task_join_race.sober" "6 examples/task_steal.sober" "15 examples/lease_yield.sober"; do
+# （窓の中で譲った task の置き場を同じワーカーの別の窓が共有する — region-domain-pool.md 4d 節の倒れの証人。ワーカー 1 で 2 つの窓が必ず重なる）・
+# domain の待ちの列（domain.sober）: 52 = 起こした待ち手を P から外さない・53 = 眠り直しが番号の位置でなく P の尾へ・54 = 外さずに起こされ済みの印だけ
+# （52 / 54 は鍵の中の輪で止まる — 打ち切り 10 秒）・77 = 待った Await の状態の読み直しの代入に格納点の写しを戻す（状態が呼び手の region へ移り、
+# 回収された置き場を本体の結果と producer の書きが共有する）
+for m in "1 examples/task_fail_order.sober" "2 examples/task_join_race.sober" "6 examples/task_steal.sober" "15 examples/lease_yield.sober" "52 examples/domain_requeue.sober" "53 examples/domain_requeue.sober" "54 examples/domain_requeue.sober" "77 examples/domain_await_result.sober"; do
     set -- $m
     "$S2" build "$2" --emit=elf -o "$W/bin.m$1" > /dev/null 2>&1 && "$S2" build "$2" --emit=elf --rt-mutant=$1 -o "$W/mut.$1" > /dev/null 2>&1 || { echo "FAIL: build mutant $1 $2"; fail=$((fail + 1)); continue; }
     chmod +x "$W/bin.m$1" "$W/mut.$1"
@@ -72,7 +75,7 @@ for m in "1 examples/task_fail_order.sober" "2 examples/task_join_race.sober" "6
     caught=0
     for w in 1 2 4; do
         for s in $(seq 1 "$K"); do
-            obs "$W/mut.$1" "$W/run" SOBER_SCHED_SEED=$s SOBER_WORKERS=$w
+            OBS_T=10 obs "$W/mut.$1" "$W/run" SOBER_SCHED_SEED=$s SOBER_WORKERS=$w
             if ! cmp -s "$W/base" "$W/run"; then caught=1; break 2; fi
         done
     done
@@ -81,6 +84,39 @@ for m in "1 examples/task_fail_order.sober" "2 examples/task_join_race.sober" "6
         fail=$((fail + 1))
     fi
 done
+# domain の状態の置き場の検査（--rt-mutant=75 — 出る点で書き戻す状態のヘッダの印が記録の region のもの〔0 か MAX_DEPTH〕でなければ exit 104）:
+# 一覧の domain の例は検査つきでも既定の観測と同じ（偽陽性なし）・76（検査 + 77 の変異）は検査が exit 104 で捕まえる
+dchk=0
+while read -r e mark; do
+    case "$e" in examples/domain_*) ;; *) continue ;; esac
+    "$S2" build "$e" --emit=elf -o "$W/dc.b" > /dev/null 2>&1 && "$S2" build "$e" --emit=elf --rt-mutant=75 -o "$W/dc.c" > /dev/null 2>&1 || { echo "FAIL: build domain check $e"; fail=$((fail + 1)); continue; }
+    chmod +x "$W/dc.b" "$W/dc.c"
+    obs "$W/dc.b" "$W/base" SOBER_WORKERS=1
+    for w in 1 4; do
+        obs "$W/dc.c" "$W/run" SOBER_WORKERS=$w
+        if grep -qx 'exit=104' "$W/run"; then
+            echo "FAIL: $e — the domain check (rt mutant 75) fired at SOBER_WORKERS=$w: the state was written back from outside the region of its record"
+            fail=$((fail + 1))
+        elif [ $w = 1 ] && ! cmp -s "$W/base" "$W/run"; then
+            echo "FAIL: $e — the domain check build (rt mutant 75) changed the observation"; diff "$W/base" "$W/run" | head -6
+            fail=$((fail + 1))
+        fi
+    done
+    dchk=$((dchk + 1))
+done < scripts/schedfuzz.list
+"$S2" build examples/domain_await_result.sober --emit=elf --rt-mutant=76 -o "$W/dc.m" > /dev/null 2>&1 || { echo "FAIL: build domain check mutant 76"; fail=$((fail + 1)); }
+chmod +x "$W/dc.m"
+obs "$W/dc.m" "$W/run" SOBER_WORKERS=1
+grep -qx 'exit=104' "$W/run" || { echo "FAIL: mutant 76 (the state re-read copied into the caller's region) was not caught by the domain check (want exit 104)"; fail=$((fail + 1)); }
+# 預かり所の回収（std/internal/lot の単体の網）: rt の変異 55 = lease_drain が死の通し番号を上げない（Reap が走査を飛ばす — TestReapDead が赤。
+# SOBER_TEST_RT_MUTANT = 試験のビルドに rt の変異）・LOT_REAP_LATE = 番号を走査の後で読む Reap の写し（走査が通り過ぎた枠の死を取りこぼす —
+# TestReapRace が赤。交互はワーカー 4 / 8 の本物の並列でだけ起きる）
+SOBER_TEST_RT_MUTANT=55 "$S2" test --fresh --run TestReapDead std/internal/lot > /dev/null 2>&1 && { echo "FAIL: lot mutant 55 (lease_drain does not bump the death number) was not caught by TestReapDead"; fail=$((fail + 1)); }
+caught=0
+for w in 4 8 4 8 4 8 4 8; do
+    SOBER_WORKERS=$w LOT_REAP_LATE=1 timeout 120 "$S2" test --fresh --run TestReapRace std/internal/lot > /dev/null 2>&1 || { caught=1; break; }
+done
+[ $caught = 1 ] || { echo "FAIL: LOT_REAP_LATE (Reap reads the death number after the scan) was not caught by TestReapRace"; fail=$((fail + 1)); }
 # 走れる積みの溢れの道（report-1168）: 環の容量 8 の build（--rt-mutant=28）はワーカー 1 の実行の順が通常の build と同じ（溢れの列は LIFO の順を保つ）・
 # 溢れの列の順を崩した build（29）は順が変わること（testdata/readyspill — 20 本を一度に走れるようにして走った順に直書き）
 for v in 0 28 29; do
@@ -97,5 +133,5 @@ for r in $(seq 20); do
     SOBER_WORKERS=2 timeout 5 "$W/sp" loop 1000000 > /dev/null 2>&1
     [ $? = 124 ] && { echo "FAIL: bench/spawn loop W2 did not finish — a child stayed in a run queue the steal gate (MN_DQB) does not show"; fail=$((fail + 1)); break; }
 done
-echo "schedfuzz: $n programs × $K seeds × workers {$WS} + 4 mutants + readyspill + steal-gate stall, fail=$fail"
+echo "schedfuzz: $n programs × $K seeds × workers {$WS} + 8 mutants + domain check ($dchk examples · mutant 76) + lot nets (mutant 55 · reap-late) + readyspill + steal-gate stall, fail=$fail"
 [ $fail = 0 ]

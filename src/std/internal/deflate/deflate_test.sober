@@ -667,3 +667,10 @@ func TestLg16() {
         assert(d <= 86 && d >= -86, "lg16 ${x} ${d}")
     }
 }
+
+func TestLgTab() {
+    assert(len(lgTab) == 256)
+    for v <- iter.Range(1, 256) {
+        assert(lgTab[v] == lg16(v))
+    }
+}

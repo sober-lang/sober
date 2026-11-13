@@ -2772,7 +2772,6 @@ b4:
 func @lambda#1(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64, %7 i64) {
   slot s0 [3]
   slot s1 [3]
-  slot s2 [3]
 b0:
   %8 = slotaddr s0
   store %8[0], %2
@@ -2796,20 +2795,13 @@ b0:
   %20 = mul %18, %19
   %21 = add %11, %20
   region.enter
-  %22 = slotaddr s2
-  %23 = load.i64 %8[0]
-  %24 = load.i64 %8[1]
-  %25 = load.i64 %8[2]
-  %26 = load.i64 %9[0]
-  %27 = load.i64 %9[1]
-  %28 = load.i64 %9[2]
-  call @main.first(%22, %23, %24, %25, %26, %27, %28)
-  %29 = load.i64 %22[0]
-  store %0[0], %29
-  %30 = load.i64 %22[1]
-  store %0[1], %30
-  %31 = load.i64 %22[2]
-  store %0[2], %31
+  %22 = load.i64 %8[0]
+  %23 = load.i64 %8[1]
+  %24 = load.i64 %8[2]
+  %25 = load.i64 %9[0]
+  %26 = load.i64 %9[1]
+  %27 = load.i64 %9[2]
+  call @main.first(%0, %22, %23, %24, %25, %26, %27)
   call @rt.region_relocate8(%0, %11)
   region.setdepth %11
   ret
@@ -3241,7 +3233,6 @@ b0:
 func @lambda#3(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64, %7 i64) {
   slot s0 [3]
   slot s1 [3]
-  slot s2 [3]
 b0:
   %8 = slotaddr s0
   store %8[0], %2
@@ -3265,20 +3256,13 @@ b0:
   %20 = mul %18, %19
   %21 = add %11, %20
   region.enter
-  %22 = slotaddr s2
-  %23 = load.i64 %8[0]
-  %24 = load.i64 %8[1]
-  %25 = load.i64 %8[2]
-  %26 = load.i64 %9[0]
-  %27 = load.i64 %9[1]
-  %28 = load.i64 %9[2]
-  call @main.keep(%22, %23, %24, %25, %26, %27, %28)
-  %29 = load.i64 %22[0]
-  store %0[0], %29
-  %30 = load.i64 %22[1]
-  store %0[1], %30
-  %31 = load.i64 %22[2]
-  store %0[2], %31
+  %22 = load.i64 %8[0]
+  %23 = load.i64 %8[1]
+  %24 = load.i64 %8[2]
+  %25 = load.i64 %9[0]
+  %26 = load.i64 %9[1]
+  %27 = load.i64 %9[2]
+  call @main.keep(%0, %22, %23, %24, %25, %26, %27)
   call @rt.region_relocate8(%0, %11)
   region.setdepth %11
   ret
@@ -3287,7 +3271,6 @@ b0:
 func @lambda#4(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64, %7 i64) {
   slot s0 [3]
   slot s1 [3]
-  slot s2 [3]
 b0:
   %8 = slotaddr s0
   store %8[0], %2
@@ -3311,20 +3294,13 @@ b0:
   %20 = mul %18, %19
   %21 = add %11, %20
   region.enter
-  %22 = slotaddr s2
-  %23 = load.i64 %8[0]
-  %24 = load.i64 %8[1]
-  %25 = load.i64 %8[2]
-  %26 = load.i64 %9[0]
-  %27 = load.i64 %9[1]
-  %28 = load.i64 %9[2]
-  call @main.keep(%22, %23, %24, %25, %26, %27, %28)
-  %29 = load.i64 %22[0]
-  store %0[0], %29
-  %30 = load.i64 %22[1]
-  store %0[1], %30
-  %31 = load.i64 %22[2]
-  store %0[2], %31
+  %22 = load.i64 %8[0]
+  %23 = load.i64 %8[1]
+  %24 = load.i64 %8[2]
+  %25 = load.i64 %9[0]
+  %26 = load.i64 %9[1]
+  %27 = load.i64 %9[2]
+  call @main.keep(%0, %22, %23, %24, %25, %26, %27)
   call @rt.region_relocate8(%0, %11)
   region.setdepth %11
   ret
@@ -3333,7 +3309,6 @@ b0:
 func @lambda#5(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64, %7 i64) {
   slot s0 [3]
   slot s1 [3]
-  slot s2 [3]
 b0:
   %8 = slotaddr s0
   store %8[0], %2
@@ -3357,22 +3332,15 @@ b0:
   %20 = mul %18, %19
   %21 = add %11, %20
   region.enter
-  %22 = slotaddr s2
-  %23 = load.i64 %8[0]
-  %24 = load.i64 %8[1]
-  %25 = load.i64 %8[2]
-  %26 = load.i64 %9[0]
-  %27 = load.i64 %9[1]
-  %28 = load.i64 %9[2]
-  %29 = globaladdr @rt.meta
-  store %29[2571], %21
-  call @main.first(%22, %23, %24, %25, %26, %27, %28)
-  %30 = load.i64 %22[0]
-  store %0[0], %30
-  %31 = load.i64 %22[1]
-  store %0[1], %31
-  %32 = load.i64 %22[2]
-  store %0[2], %32
+  %22 = load.i64 %8[0]
+  %23 = load.i64 %8[1]
+  %24 = load.i64 %8[2]
+  %25 = load.i64 %9[0]
+  %26 = load.i64 %9[1]
+  %27 = load.i64 %9[2]
+  %28 = globaladdr @rt.meta
+  store %28[2571], %21
+  call @main.first(%0, %22, %23, %24, %25, %26, %27)
   call @rt.region_relocate8(%0, %11)
   region.setdepth %11
   ret

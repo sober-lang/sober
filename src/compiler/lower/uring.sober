@@ -460,9 +460,6 @@ func urNetGate(st mut St, rec int, wait int) int {
     epWake(mut st, t, iconst(mut st, -110))
     br(mut st, sl, list3(mut st, pa, nx, mn))
     setCur(mut st, bCn)
-    if chF(mut st, NETF_RECV) != -1 {
-        fuseCancelMark(mut st, tp)
-    }
     tag := bin(mut st, BAdd, iconst(mut st, UDT_POLL), bin(mut st, BMul, cmp(mut st, CEq, k, iconst(mut st, PEND_SEND)), iconst(mut st, TAG_SEND - UDT_POLL)))
     urSqe(mut st, rec, iconst(mut st, 14), bin(mut st, BOr, t, tag), zero, iconst(mut st, UD_CANCEL), zero)
     br(mut st, sl, list3(mut st, pa, nx, mn))
@@ -514,7 +511,7 @@ func urTmrGate(st mut St, rec int, wait int, ext int) int {
     return e2
 }
 
-// 畳みの保険の timeout（cur は buildUpoll の関門の後）: 眠りで畳んだ送りがあれば enter の timeout を FUSE_BACKSTOP_NS 以下に（EXT_ARG を立てた ext を返す）
+// 送り置きの保険の timeout（cur は buildUpoll の関門の後）: 眠りで積んだ送り置きがあれば enter の timeout を FUSE_BACKSTOP_NS 以下に（EXT_ARG を立てた ext を返す）
 func fuseGate(st mut St, rec int, wait int, fq int, ext int) int {
     rp := itop(mut st, rec)
     zero := iconst(mut st, 0)
@@ -562,7 +559,7 @@ func buildUpoll(st mut St) {
     // net の ring（UR_NET）: 眠り（wait）のときだけ enter する（D2 — 走れる task が尽きたら提出・取り込み・眠りを 1 回に。完了は enter でしか載らない）。
     // 期限の過ぎた待ち手は鎖から外して ASYNC_CANCEL を積み、残りの最小の期限を enter の timeout（EXT_ARG）に
     ext0 := if net { urNetGate(mut st, rec, wait) } else { zero }
-    // 畳んだ送り（netring.sober）: 眠りの enter は畳んだ SEND の完了（提出の中で必ず載る）の数 + 1 を待つ。数え違い（提出されなかった SEQ）の保険に timeout を FUSE_BACKSTOP_NS 以下へ
+    // 送り置き（netring.sober）: 眠りの enter は積んだ送り置きの SEND の完了（提出の中で必ず載る）の数 + 1 を待つ。数え違い（提出されなかった SQE）の保険に timeout を FUSE_BACKSTOP_NS 以下へ
     fuse := net && chF(mut st, NETF_RECV) != -1
     fq := if fuse { load(mut st, wk, WK_FUSEQ) } else { zero }
     ext := if fuse { fuseGate(mut st, rec, wait, fq, ext0) } else { ext0 }
@@ -663,21 +660,18 @@ func buildUpoll(st mut St) {
             store(mut st, wk, WK_IOFLY, urAdd(mut st, load(mut st, wk, WK_IOFLY), -1))
             br(mut st, hn, -1)
             setCur(mut st, bNcl)
-            // 送り（TCB | TAG_SEND — 結果はバイト数・取り消し -125 → -110）・受け（fd | TAG_RECV）・accept（fd | TAG_ACC）— netring.sober
+            // 送り（TCB | TAG_SEND — 結果はバイト数・取り消し -125 → -110）・送り置き（fd | TAG_WSEND）・受け（fd | TAG_RECV）・accept（fd | TAG_ACC）— netring.sober
             hi := bin(mut st, BSar, ud, iconst(mut st, 56))
+            bWs := newBlock(mut st)
+            bNws := newBlock(mut st)
+            condbr(mut st, cmp(mut st, CEq, hi, iconst(mut st, 6)), bWs, -1, bNws, -1)
+            setCur(mut st, bWs)
+            wbReap(mut st, rec, ud, res, hn)
+            setCur(mut st, bNws)
             bSd := newBlock(mut st)
             bNs := newBlock(mut st)
             condbr(mut st, cmp(mut st, CEq, hi, iconst(mut st, 1)), bSd, -1, bNs, -1)
             setCur(mut st, bSd)
-            // 畳んだ送り（TCB の TC_FUSE が 2 か 3）は送りの完了で起こさない — netring.sober の fuseReap
-            tS := bin(mut st, BSub, ud, iconst(mut st, TAG_SEND))
-            fS := load(mut st, itop(mut st, tS), TC_FUSE)
-            bFs := newBlock(mut st)
-            bPs := newBlock(mut st)
-            condbr(mut st, cmp(mut st, CNe, bin(mut st, BAnd, fS, iconst(mut st, 2)), zero), bFs, -1, bPs, -1)
-            setCur(mut st, bFs)
-            fuseReap(mut st, tS, fS, res, hn)
-            setCur(mut st, bPs)
             isC0 := cmp(mut st, CEq, res, iconst(mut st, -125))
             epWake(mut st, bin(mut st, BSub, ud, iconst(mut st, TAG_SEND)), bin(mut st, BAdd, res, bin(mut st, BMul, isC0, bin(mut st, BSub, iconst(mut st, -110), res))))
             br(mut st, hn, -1)

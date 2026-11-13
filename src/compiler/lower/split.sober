@@ -85,6 +85,8 @@ const NEED_RUNFDENV = 36
 const NEED_COVER = 37
 const NEED_COVERMID = 38
 const NEED_ERRALLOC = 39
+const NEED_VDSO = 40
+const NEED_NWAIT = 41
 
 // 安定な鍵の材料: 発見順の番号で名前が付く関数・番号を、持ち主（下ろしていた関数の記録）と持ち主の中の序数で
 // 引けるように st.sk へ積む（[種類, 語数, 中身…]）。直の道は lsEv の鉤（事象と同じ点）・模擬の道は lsReplay の 1 周目（持ち主 = 積み戻す記録）・
@@ -792,5 +794,7 @@ func lsReplayNeed(st mut St, id int, arg int) {
     case NEED_JCLEAN: needJClean(mut st)
     case NEED_ERRRELOC: _ = needErrReloc(mut st)
     case NEED_ERRALLOC: _ = needErrAlloc(mut st)
+    case NEED_VDSO: needVdso(mut st)
+    case NEED_NWAIT: _ = needNetWait(mut st)
     }
 }

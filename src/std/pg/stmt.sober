@@ -27,21 +27,28 @@ func cacheFind(blk []int, sql string) int {
     n := getW(blk, lCacheN)
     for i <- iter.Range(0, n) {
         e := lTab + i * eW
-        if getW(blk, e + eHash) == h && getW(blk, e + eLen) == len(b) && sameBytes(getBytes(blk, lWords + getW(blk, e + eSql), len(b)), b) {
+        if getW(blk, e + eHash) == h && getW(blk, e + eLen) == len(b) && sameWords(blk, lWords + getW(blk, e + eSql), b) {
             return i
         }
     }
     return -1
 }
 
-func sameBytes(a []byte, b []byte) bool {
-    if len(a) != len(b) {
-        return false
-    }
-    for i <- iter.Range(0, len(a)) {
-        if a[i] != b[i] {
+// 置き場の語 off から（putBytes の詰め方 — 8 バイト / 語・下位から）の文面が b と同じか（語ごとに比べる）
+func sameWords(blk []int, off int, b []byte) bool {
+    ws := view(blk, off, (len(b) + 7) / 8)
+    mut i := 0
+    while i < len(b) {
+        mut v := 0
+        mut j := 0
+        while j < 8 && i + j < len(b) {
+            v = v | (int(b[i + j]) << (j * 8))
+            j += 1
+        }
+        if ws[i / 8] != v {
             return false
         }
+        i += 8
     }
     return true
 }
@@ -50,16 +57,9 @@ func sameBytes(a []byte, b []byte) bool {
 func cacheMeta(blk []int, i int) ([]int, []int) {
     m := lWords + getW(blk, lTab + i * eW + eMeta)
     np := getW(blk, m)
-    mut ps := mut []int{}
-    for j <- iter.Range(0, np) {
-        ps = append(ps, getW(blk, m + 1 + j))
-    }
     nc := getW(blk, m + 1 + np)
-    mut cs := mut []int{}
-    for j <- iter.Range(0, nc) {
-        cs = append(cs, getW(blk, m + 2 + np + j))
-    }
-    return freeze(ps), freeze(cs)
+    ws := view(blk, m, 2 + np + nc)
+    return ws[1:1 + np], ws[2 + np:2 + np + nc]
 }
 
 // 次に足す行の番号（入らなければ -1 — 無名の文で進める）

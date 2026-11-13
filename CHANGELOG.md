@@ -2,6 +2,104 @@
 
 This file records user-facing changes per public release. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/) (no backward-compatibility promise while on 0.x).
 
+## v0.7.2 — 2026-11-13
+
+The release that cuts the fixed cost of one HTTP request. The fixed cost that grew from v0.6.6 to v0.7.1 is back below v0.6.6 (on the local pipelined benchmark, instructions per request are −27% and cycles −33% against v0.7.1). Domains no longer take more work to wake the next task when many tasks are waiting, so throughput no longer drops when there are more connections than PostgreSQL pool slots. std/pg receives a row in one pass and makes the statement cache and the pool's cleanup cheaper. The default CPU pinning of server workers goes back to the form used up to v0.7.0.
+
+### Language
+
+- Newly accepted forms (check, build or both used to reject them; both now accept all of them):
+  - Reading a field or an element's field of the result of calling a function value (a field of function type, or a lambda bound to a local variable): `s := r.f(x); s.ok`, `xs := r.f(x); xs[0].ok`, `t := r.f(x)?; t.ok` — check used to reject them
+  - An if expression whose arms are untyped constants (`if v { 1 } else { 0 }`) in a position that expects a byte or a named scalar (a return value, an argument, append, an element of a slice / map literal) — build used to reject them
+  - The same if expression in a struct field (`T{b: if v { 1 } else { 0 }}`, `U{p: if v { 80 } else { 443 }}`) — check and build used to reject them
+  - An untyped numeric const or a character literal in a byte field (`T{b: K, c: 'a'}`) — check used to reject them
+  - `delete(m, k)` on a `mut map` parameter (in the body of a function that also has other parameters) — check used to reject it
+  - A constant expression (`1 + 2`) still cannot be placed in a byte context (check and build both reject it)
+
+### std
+
+- `std/compress/gzip` / `std/compress/flate` (encoding with a record — the gzip responses of std/http/server): the fixed cost of estimating the recorded trees and of rebuilding their canonical codes is smaller (the output bytes are unchanged). On the local bench/httparena json-comp, cycles per request −1.7% (median over 8 code layouts, lower on all 8)
+- `std/pg`: `pg.ColJsonText(r, i) (string, error?)` — reads the text of a json / jsonb column as a string. `json.Put(mut o, pg.ColJsonText(row, i)?)` puts it into a response as is (no need to write `string(pg.ColJson(row, i)?)`)
+- `std/pg`: json / jsonb columns are also checked for UTF-8 when the row is received (the same treatment as text columns). A row with an invalid byte sequence is a `Protocol` error when it is received (before, the error appeared only when the user converted the bytes to a string). Reading text / json columns as strings does not check them again
+- `std/task`: `task.Ledger()` gains `late` (the running count of tasks that ran after waiting longer than the wait bound D) and `maxLate` (the largest overrun, wait − D, in ns; reading it resets it to 0)
+- `std/task`: `task.Ledger()` gains `parkShallow` / `parkDeep` / `parkDeepWin` / `parkSwap` (running counts of connection tasks that parked shallow, parked holding the worker's stack area, parked deep at a shallow point because the area's window held data, and swapped stack areas with the worker just before parking shallow — the receive wait after a deep wait). `parkDeepWin` counts, for example, a connection that waits with a partial request in its receive region
+- `std/net`: the accept loops of `net.Serve` now inherit `maxWait:` too. Before, only the loops kept the default 100 ms, so under loads that reconnect often a `maxWait:` shorter than 100 ms had no effect (a loop stayed at the bottom of the run stack and the overdue tasks above it could not be rescued)
+- `std/time`: `time.Now` / `time.Mono` / `time.Since` read the clock through the vDSO (`__vdso_clock_gettime`). Before, every call was a clock_gettime syscall (locally on WSL2, ≈300 ns → ≈25 ns per call). Without a vDSO they fall back to the syscall as before. Every std entry point that reads the time — `std/pg` deadlines, `std/http/client` elapsed time, `std/uuid` V7 and the rest — goes through this path. Startup is unchanged for programs that never read the clock (the vDSO address is looked up on the first read)
+- `std/pg`: the pool scans for connections whose borrower died only when some borrower has died. Before, every `pg.With` looked at every slot of the pool (336 instructions per slot — proportional to the pool size)
+
+### Runtime
+
+- The machine stack of a std/net Serve connection task is split in two: the frame of the connection's body stays at the top of the task's own block, and the calls below it run on a per-worker stack area. When the task parks it keeps the area it was running on and the worker takes the task's area in exchange, so the stack pages touched while running stay on the worker's warm area. A body whose frame does not fit the room at the top of the block runs in the previous contiguous form. Memory per connection is unchanged (async with 24,000 connections: RSS and page tables at the level of the previous form). At the point that waits to receive the next request, the task drops the frames below the body and parks without holding an area (a shallow wait) — a sleeping keep-alive connection keeps 8 KB resident instead of 12 KB. A connection that slept inside the handler (Sleep and the like) swaps the area it holds with the worker's before parking for the next receive. On the local bench/httparena (12 workers, median over 8 code layouts): baseline with 4,096 connections −7.6% cycles per request and −29% reads from DRAM, limited-conn (frequent reconnects) −18%, async with 24,000 connections on par (+0.2%). The per-request region window of a connection that parks for the next request now lives on the worker's stack area as well (the area window — a connection that sleeps deep keeps it with the area), so a sleeping keep-alive connection keeps 4 KB resident instead of 8 KB. Median over 8 code layouts: cycles baseline ±0%, pipelined +0.7%, async −0.3%, json +0.3%, limited-conn −6.4%; RSS baseline 71 → 55 MB, json 126 → 112 MB
+- For server-shaped programs (std/net's Serve, no `SOBER_WORKERS`), the default CPU pinning goes back from v0.7.1's "the CPUs sharing an L3 cache" to one CPU per worker (the form up to v0.7.0). On HttpArena's Zen 2 box the p99 of latency-1m was about 20 times that of v0.7.0 (it did not reproduce on other boxes, and the cause is not established). The L3 groups remain available with `SOBER_PIN=1` (`2` = one CPU, `0` = off)
+- The wording of the promise about the wait bound D under saturation changed: "a task that has waited longer than D runs, in deadline order, before tasks whose deadline has not come yet. How many tasks ran past D and by how much can be read from `late` / `maxLate` of `task.Ledger()`". The previous wording (a runnable task runs within D) could not always be kept, because a task runs until it yields and runnable tasks do not move to another worker. The scheduling order itself is unchanged
+- The wait queue of a domain's `Await` is split into "the queue of sleeping waiters" and "a mark for waiters already woken". When a task that finished a body woke the next waiter, it checked the waiters that had been woken but had not run yet, one by one (while holding the lock — about 1,150 checks per request with 1,024 connections and a pool of 250). Now it wakes the one waiter at the head of the queue. Arrival order, the wait bound and poisoning mean the same as before
+- Sending a response on a plain keep-alive HTTP connection no longer sleeps until the send completes (the fused send and receive). The response is copied into the worker's send area and the task goes on to wait for the next request without sleeping on the send. Wake-ups stay at one per request, the stack at the point that waits for the next request is 304 B shallower, and the response's work area is not held while waiting. When the peer reads slowly, the kernel finishes the rest of the send (neither that connection nor others stall). A send error is returned by the next receive on the same connection (`http.server.ServeConn` returns the same labels). The public `net.Send` stays synchronous. On the local HttpArena profiles throughput and percentiles are unchanged (rps ratio 0.99–1.03). `SOBER_NET_FUSE=0` turns it off
+
+### Compiler
+
+- Wider region elision: a function no longer needs to open its own region when its allocations all go to the caller's region, or when its callees allocate only on the failure return path. A relocate that copies nothing (its destination is the depth at the function's entry) is removed. About 40% of the instruction cut per HTTP request comes from here (local callgrind, pipelined, one worker: 5,996 → 5,343). It also helps the compiler itself: building the compiler takes 0.37 G (0.3%) fewer instructions, and the output is 125 KB smaller
+- In `return g(…)`, when g's result type is the same as the function's own, the function passes its own result location straight to g and skips copying the result. On `/pipeline` of bench/httparena this saves 123 instructions per request, and 228 on a request with 8 header lines
+- The address of a global is rebuilt where it is used instead of being kept in the frame (an address defined outside a loop and used inside it stays in a register and is not rebuilt). An address computation whose index is the constant 0 folds into its base address
+- Slot sharing (reusing locations inside a frame) now also applies to functions whose locations total less than 128 words. The frames of all functions in bench/httparena shrink by 12% in total (together with the result forwarding above). Compile work grows by 0.6%
+- The region elision check now repeats until no more functions can be elided. Before, the caller of a function that failed the check once stayed failed even after that function became elidable later. On bench/asyncdb this saves 1,456 instructions per request
+- The tail of a byte scan (loops of the form `while i < n && b[i] != c`, and UTF-8 validation) is now read once as the last 16 bytes, overlapping what was already scanned. Before, the remainder shorter than 16 bytes was checked one byte at a time. On `/pipeline` of bench/httparena this saves 85 instructions per request, and 59 on a request with 8 header lines
+- A function containing a scan block now saves, on entry, only the xmm registers that block actually writes (24 fewer instructions per request)
+- When build failed in the lower stage, it reported a check error from another top-level declaration (hiding where the build actually failed). It now reports the check line only when the check error is in the same declaration, and the lower position otherwise
+
+### Tools
+
+- Documentation: the domain section of the concurrency guide (docs/guide/concurrency) is expanded — what a domain is and when to use one, examples of `Update` / `Read` / `Await`, wait order, deadlines and observation, poisoning, the forms that cannot be written and why, and std/pg's pool
+- `bench/pgstub`: a stand-in that speaks only the PostgreSQL wire protocol (plaintext, trust, extended query, a fixed table). It measures the server's own cost with PostgreSQL's CPU taken out
+
+### Fixes
+
+- Reproducible builds (since v0.6.5): two string literals whose bytes pack into the same 8-byte words but differ in length (`"/"` and `"/\0"`) became two read-only data entries with the same key in the build cache, and a build that reused the cache while lowering in parallel could swap the references between them. The program behaved the same (the bytes read are the same), but the executable could differ from an uncached build. Such literals now share one entry
+- Miscompilation (memory safety, since v0.5.0): a byte-scanning loop that the optimizing backend vectorizes (`while i < n && b[i] != ';' { i += 1 }` and the like) read 16-byte blocks from its start index without checking its sign. Started at a negative index (where the loop panics on its first iteration), it read before the slice and, when no stopping byte was there, went on from index 0 or later, so the panic was lost (for example `scan(b, -8, 40)` returned 40). Started within 16 of the largest int, the index + 16 overflowed and the loop read far outside the slice. Both now panic at the same place as without optimization
+- Memory safety (since v0.7.1): when `task.Await` on a domain whose state holds a slice or a map actually waited, the state was copied into the region of the calling task after the wake-up, and the copy became the domain's state from then on. That region is reclaimed after the call, so the value the body returned (a clone of the state, a string) and the `Update` writes of other tasks shared the same memory, and the received value turned into later writes (at random with 2 or more workers; with 1 worker too when the caller builds strings afterwards). An `Await` that did not wait, `Update` and `Read` were correct. The state now stays in the domain's place after a wait
+- Miscompilation: when a function returning a large struct (in a function whose locations total 128 words or more) wrote to a mut parameter inside `defer`, and the caller did not read that argument after the call, the returned value was mixed with what the defer wrote (for example `func g(x mut R) R { defer bump(mut x); return R{…} }` called as `r := g(mut x)`). The same happened through an indirect call via a field of function type. Only the default backend (x86-64) was affected; `--via=ll` was correct. The location of the returned value and the location of a mut argument no longer overlap during the call
+- std/http/server dropped `Set-Cookie` from responses it compressed with gzip (a body of 1 KB or more with a compressible Content-Type, or a stream of unknown length, to a client that accepts gzip). The response head no longer depends on whether the body is compressed
+- Two oversights in the region elision check: each call to certain functions (such as a call that receives the result of a function that builds its value directly into a destination) left a temporary allocation (24 B and the like) in the caller's region. It was not a memory-safety problem, but the allocation was not reclaimed until the caller's region was left
+
+### Performance
+
+- HTTP — bench/httparena (our own yardstick: it uses HttpArena's load generator and request files but is not an official HttpArena result). On a 16 vCPU GitHub Actions box (AMD EPYC 9V74), with 8 CPUs for the server, measured alternately round by round against v0.7.1 in the same job (every profile, median of 5 rounds, 4,096 connections). The server starts without `SOBER_WORKERS` (the worker count comes from the allowed CPUs; CPU pinning is the default):
+
+  | Profile | Requests/s (vs v0.7.1) | CPU/request (vs v0.7.1) | Peak RSS (v0.7.1 → this release) |
+  |---|---|---|---|
+  | pipelined | **+26.2%** | −20.8% | 79 → 96 MB |
+  | baseline | **+7.2%** | −6.9% | 64 → 50 MB |
+  | async | +2.8% | −1.1% | 401 → 401 MB |
+  | json-tls | +0.9% | +1.3% | 239 → 234 MB |
+  | json-comp | +0.7% | −0.6% | 81 → 81 MB |
+  | json-comp-16k | −0.4% | +0.6% | 277 → 276 MB |
+  | json | −1.5% | +1.4% | 104 → 90 MB |
+  | limited-conn | −6.7% | −2.7% | 73 → 73 MB |
+  | 8gbit | (fixed rate) | −7.4% | 73 → 61 MB |
+  | latency-10k | (fixed rate) | −6.7% | 27 → 23 MB |
+  | latency-1m | (fixed rate) | −4.8% | 27 → 26 MB |
+  | latency-500k-8cpu | (fixed rate) | −4.7% | 28 → 27 MB |
+
+  - The −6.7% on limited-conn is a phase where the load generator's CPU (gcannon, 8 threads) is the bottleneck, not a server regression. The server's CPU/request is −2.7% and p99 goes from 102 to 9.8 ms. When the server's workers go idle and sleep more often, the cost of waking them lands on the load generator's CPUs. Locally, with more CPUs on the load side, the direction reverses (the lighter server is ahead by 6.3%)
+  - Memory: peak RSS goes down on baseline and json (an idle keep-alive connection keeps 4 KB resident instead of 12 KB). On pipelined, peak RSS is +17 MB (page tables go down from 37 to 24 MB), and on json-tls page tables go up from 62 to 77 MB. The source of these two is not identified yet and will be looked into in the next release
+  - The change that landed after this measurement (the fix to the build cache key) does not change the server's code
+
+- The cost of one pipelined request — local (WSL2, AMD Zen 5). The server has 8 workers (CPUs 0–7; with `SOBER_WORKERS=8`, so no CPU pinning) and the load runs on 8 other CPUs (4,096 connections, 16 requests per pipeline). 8 builds with different code layouts, measured alternately for 4 rounds; the median over layouts of each layout's median:
+
+  | | v0.6.6 | v0.7.1 | this release |
+  |---|---|---|---|
+  | instructions / request | 5,371 | 5,791 | **4,200** |
+  | cycles / request | 2,283 | 2,792 | **1,878** |
+  | requests / s | 5.05M | 4.48M | **5.52M** |
+  | size of the code run on every request (total of 64 B lines run 0.5 times or more per request) | 23.9 KiB | 27.3 KiB | **22.4 KiB** |
+
+  - From v0.6.6 to v0.7.1, instructions per request grew by 7.8% and cycles by 22%. Cycles grew more than instructions because the code run on every request swelled to the edge of the L1 instruction cache (32 KiB) and instruction cache misses went up. This release brings both below v0.6.6
+  - What was cut: scanning the request head 8 bytes at a time, a header position table of 2 words per header, writing the response head straight into the output buffer, no longer passing `Response` around by value, a fast path in `utf8.Check` for short all-ASCII input, and the compiler's region elision (above)
+
+- async-db (PostgreSQL) — local (WSL2, AMD Zen 5, one 24-CPU machine that also runs PostgreSQL 18). Server on 12 CPUs, load with 8 threads, a pool of 250:
+  - Requests / s with 1,024 connections (more than the pool): 23–25K → 50–57K before and after the domain fix, the same level as with 260 connections (≈ 55K). Lock waiting per request: 230–540 µs → 1–2 µs
+  - Server user CPU per request: 75–99 µs → 35–50 µs before and after the std/pg changes (row receiving, statement cache, pool cleanup, UTF-8 checks). On this machine requests / s are capped by PostgreSQL's CPU (160–270 µs per request), so the server-side cut hardly shows in requests / s
+  - Against Go's pgx (a copy of the upstream go-stdlib entry), measured alternately on the same machine: 1.6–2.25 times the requests / s (in one pair Go came out ahead). The median response time is shorter than Go's, but the p99 is longer
+
 ## v0.7.1 — 2026-11-11
 
 The release of domains — long-lived shared state — and a PostgreSQL client. Many tasks updating one state (a connection pool, a counter, and so on) can now be written without writing locks (`task.NewDomain` / `Update` / `Read` / `Await` — bodies run one at a time, and because a body does not wait and does no io, a lock-ordering deadlock cannot be written). std/pg is a PostgreSQL client over wire protocol 3.0 with TLS 1.3 + SCRAM-SHA-256-PLUS by default, transactions and a connection pool. The HTTP server builds JSON responses with a two-pass encoder, and the fixed cost per request is lower. The limited-conn regression of v0.7.0 (−11.5% on the 64-worker box) is fixed.

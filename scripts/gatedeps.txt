@@ -24,7 +24,7 @@ incrbuild: bench examples fuzz/progen src/stage1   # fuzz/progen = 鎖の題材�
 incrrace: examples src/stage1
 cacheaudit: bench examples src/stage1
 tyorder: bench examples src/stage1
-selfpar: bench/ratchet.txt testdata/selfpar
+selfpar: bench/ratchet.txt testdata/selfpar ~scripts/checkstats.sh ~src/stage1   # FAIL の文面が段ごとの見方として checkstats.sh を名指すだけ（読まない — src/stage1 はその checkstats.sh の言及）
 nextgen: 
 selfhost_ll: examples src/stage1 testdata/checkneg testdata/errpkg testdata/frozen_src testdata/iface testdata/loader_neg testdata/pkgdemo testdata/selfhost_fmt testdata/selfhost_lex
 selfhost_e2e: examples lean src/stage1 testdata/checkneg testdata/errpkg testdata/frozen_src testdata/iface testdata/loader_neg testdata/pkgdemo testdata/selfhost_fmt testdata/selfhost_lex
@@ -79,6 +79,7 @@ schedvec: examples scripts/schedvec.list scripts/schedvec.ts
 schedfuzz: examples scripts/schedfuzz.list testdata/readyspill bench/spawn
 parbudget: bench/skynet examples scripts/schedfuzz.list testdata/parbudget
 cutstat: bench/par bench/skynet examples testdata/cutstat
+vecchk: examples
 mapfuse: examples
 partinl: bench/1brc bench/fasta bench/httparena bench/knucleotide examples
 clidoc: bin/sober docs/cli docs/guide/env.ja.md ~docs/guide scripts testdata/clidoc ~src/stage1   # ③ は scripts/ の全部の呼び出しの形を読む（bin/sober の本文が言及する stage1 は読まない）
@@ -92,6 +93,8 @@ streq: bench examples testdata
 strix: examples src/stage1
 ubfstat: bench/1brc examples scripts/ubfstat.list
 framestat: bench/httparena scripts/framestat.list
+reqinst: bench/httparena bench/asyncdb bench/pgstub bench/ratchet.txt scripts/reqinst.ts ~bench   # ~bench = DATABASE_URL の user 名（postgres://bench:bench@…）が lint にパスと読まれるだけ
+ringinst: bench/httparena bench/ratchet.txt scripts/reqinst.ts
 sortcheck: testdata/sortcheck
 matchlencheck: testdata/matchlen
 jcleancheck: testdata/jclean
@@ -100,6 +103,7 @@ ctcheck: testdata/ctcheck testdata/secretdump
 cryptocheck: examples testdata/crypto testdata/wycheproof   # M2（report-1222）が名指し: Sober のプログラムが実行時に読む・import する入力（本文の抽出では見えない）
 tlsfsm: lean testdata/tls
 iterregion: examples
+rflowmeter: bench/httparena   # ゴミ計つきのコンパイラで build する題材（std は stage2 の鍵に入る）
 fitcheck: bench examples src/stage1 testdata
 numpert: bench examples src/stage1
 fnhash: 
@@ -110,6 +114,7 @@ starve: testdata/starve
 fusecheck: scripts/flight.ts testdata/httpcheck
 wincheck: testdata/wincheck testdata/httpcheck/dataset.json
 stackcheck: bench/httparena scripts/stackcheck.ts testdata/httpcheck
+areacheck: scripts/areacheck.ts testdata/areacheck examples   # examples = net_area_window（区画の窓の答えの黄金照合）
 pincheck: testdata/pin
 pid1stop: scripts/pid1stop.ts testdata/pid1stop
 mdwecheck: testdata/mdwe
@@ -126,5 +131,5 @@ hermetic_zig: examples src/stage1 testdata
 ir_roundtrip: examples src/stage1
 gatememo: scripts   # 本体は全部の宣言のパスと本文を読む — @always で毎回走る
 
-@nondet: stages selfpar incrrace seqpar schedvec schedfuzz parbudget iouring httpcheck starve fusecheck wincheck stackcheck pincheck pid1stop
+@nondet: stages selfpar incrrace seqpar schedvec schedfuzz parbudget iouring httpcheck starve fusecheck wincheck stackcheck areacheck pincheck pid1stop
 @always: gatememo refs   # refs は .git を読むので M2 の写し（.git なし）で確かめられない — 毎回走らせる（29 s）。 M1 と lint は全部の宣言と本文を読む（数秒）— 記録せず毎回走らせる

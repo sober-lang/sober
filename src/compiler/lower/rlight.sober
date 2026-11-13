@@ -13,6 +13,7 @@ package lower
 
 import "std/iter"
 import "desugar"
+import "std/io"
 
 // 条件を満たす関数の region.enter を軽い enter に置き換える
 func regionLightModule(st mut St) {
@@ -1469,6 +1470,28 @@ func rlEligible(st mut St, f FnRef) bool {
     return enters == 1 && !reDepthArith(mut st, f)
 }
 
+// SOBER_RFLOW_WHY のとき（on — 環境変数はモジュールで 1 回だけ読む）、葉の省略の判定を関数ごとに 1 行（g >= 0 なら理由の後に関数名）
+func reWhy(st mut St, on bool, f FnRef, why string, g FnRef) {
+    if !on {
+        return
+    }
+    mut msg := mut []byte{}
+    for x <- bytes("relide: ") {
+        msg = append(msg, x)
+    }
+    printName(mut st, mut msg, irFnName(mut st, f))
+    msg = append(msg, ' ')
+    for x <- bytes(why) {
+        msg = append(msg, x)
+    }
+    if int(g) >= 0 {
+        msg = append(msg, ' ')
+        printName(mut st, mut msg, irFnName(mut st, g))
+    }
+    msg = append(msg, 10)
+    _ = io.WriteStderr(freeze(msg))
+}
+
 // f の region.enter を軽い enter の呼び出しに置き換える
 func rlRewrite(st mut St, f FnRef) {
     rlNeed(mut st)
@@ -1556,16 +1579,27 @@ func rlBuild(st mut St, fnr FnRef, gen bool) {
 //   ① region.enter がちょうど 1 つで入口のブロックにあり、region.depth は enter より前（呼び手の深度）にしか無い — 確保の深度の被演算子は呼び手以下だけ
 //   ② 直に呼ぶのは P0 の region を使わない関数と、今の深度に確保しない rt（panic・relocate・str_eq）だけ・間接呼び出しなし
 //      — region を使わない関数は region を使う関数を呼ばないので f へ戻る路が無い（再帰に関与しない・深度の加算は静的に 0 段で有界）。
-//      戻らない利用者の関数（ラベル panic の冷たい関数 — 727）も可: 戻らないので f へ戻る路が無く、region を使っても死ぬ道の 1 回分だけ
+//      戻らない利用者の関数（ラベル panic の冷たい関数 — 727）も可: 戻らないので f へ戻る路が無く、region を使っても死ぬ道の 1 回分だけ。
+//      戻る道で region に触れない関数（reQuiet — region を使うのは戻らない呼び出しの先だけ。binary.Load64 の境界の panic の形）も同じ理由で可
 // 書き換え = enter を消し、relocate（宛先 = 呼び手の深度 = 省略後の今の深度。値は全部それ以下に住むので空振り）と出口の setdepth（同じ深度へ戻すだけ）も消す。
 // 観測: 深度の上限（27 節 — 実装の限界であって意味ではない）に届く段数が葉の分だけ遅れる方向にしか動かない（再帰の資源の有界性は再帰の輪の中の enter が守る）
 func regionElideModule(st mut St) {
-    mut f := st.fhead
-    while f != -1 {
-        if irFnBHead(mut st, f) != -1 && reEligible(mut st, f) {
-            reRewrite(mut st, f)
+    why := rflowWhyEnv()
+    // 省いた関数は呼び手の判定（呼び先が region を使うか）を変えうるので、省けた関数が無くなるまで回す（関数の並びの順に依らない）
+    mut changed := true
+    while changed {
+        changed = false
+        mut qm := mut map[int]int{}
+        mut f := st.fhead
+        while f != -1 {
+            if irFnBHead(mut st, f) != -1 && reEligible(mut st, mut qm, why, f) {
+                reRewrite(mut st, f)
+                // 省く前の形で数えた判定（f と f を呼ぶ関数の分）を捨てる
+                qm = mut map[int]int{}
+                changed = true
+            }
+            f = irFnNext(mut st, f)
         }
-        f = irFnNext(mut st, f)
     }
 }
 
@@ -1609,33 +1643,141 @@ func reDepthArith(st mut St, f FnRef) bool {
     return false
 }
 
-func reEligible(st mut St, f FnRef) bool {
+// g が戻る道で region に触れないか: 自身に region の op・間接呼び出し・task の op が無く、直に呼ぶのは ② の関数（region を使わない・
+// 今の深度に確保しない rt・戻らない利用者の関数）か同じ類の関数だけ。戻れば深度も確保も呼ぶ前のまま — 呼び手から見て region を使わない関数と同じ。
+// region を使うのは戻らない呼び出しの先だけ（死ぬ道の 1 回分）。qm: 0 = 未計算・1 = 触れない・2 = 触れうる・3 = 数えている途中（輪 — 触れうるに倒す）
+// 呼び先をたどる深さ優先は再帰でなく積みで回す（枠 = [関数, ブロック, 命令] の 3 語）— mut の仮引数 2 つの再帰は check で Def に上がらず、
+// 自己 check の時間と RSS が倍になる
+func reQuiet(st mut St, qm mut map[int]int, g FnRef) bool {
+    x := qm[int(g)]
+    if x != nil {
+        return x == 1
+    }
+    if !reQuietOpen(mut st, mut qm, g) {
+        return false
+    }
+    mut stk := mut []int{}
+    b0 := irFnBHead(mut st, g)
+    mut sp := llPush(mut stk, 0, int(g))
+    sp = llPush(mut stk, sp, int(b0))
+    sp = llPush(mut stk, sp, int(irBlkIHead(mut st, b0)))
+    mut res := true  // 今閉じた枠の判定
+    mut popped := false // 呼び先の枠を閉じた直後（呼び手の枠は命令がその呼び出しを指したまま）
+    while sp > 0 {
+        f := stk[sp - 3]
+        mut b := BlkRef(stk[sp - 2])
+        mut i := InsRef(stk[sp - 1])
+        mut ok := true
+        mut child := -1
+        if popped {
+            popped = false
+            if res {
+                i = irInsNext(mut st, i)
+            } else {
+                ok = false
+            }
+        }
+        while ok && child == -1 && b != -1 {
+            while ok && child == -1 && i != -1 {
+                op := irInsOp(mut st, i)
+                if (op >= OpREnter && op <= OpRReloc) || op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone {
+                    ok = false
+                } else if op == OpCall {
+                    h := irInsFn(mut st, i)
+                    r := irFnRFree(mut st, h)
+                    free := r >= 0 && desugar.HeapGet(mut st.d, r) == 1
+                    if h == st.rtRalloc || h == st.rtAlloc8 || h == st.rtErrAlloc {
+                        ok = false
+                    } else if !free && !reRtOk(mut st, h) && llReturns(mut st, h) {
+                        y := qm[int(h)]
+                        if y != nil {
+                            ok = y == 1
+                        } else if reQuietOpen(mut st, mut qm, h) {
+                            child = int(h)
+                        } else {
+                            ok = false
+                        }
+                    }
+                }
+                if ok && child == -1 {
+                    i = irInsNext(mut st, i)
+                }
+            }
+            if ok && child == -1 {
+                b = irBlkNext(mut st, b)
+                if b != -1 {
+                    i = irBlkIHead(mut st, b)
+                }
+            }
+        }
+        if child != -1 {
+            stk[sp - 2] = int(b)
+            stk[sp - 1] = int(i)
+            cb := irFnBHead(mut st, FnRef(child))
+            sp = llPush(mut stk, sp, child)
+            sp = llPush(mut stk, sp, int(cb))
+            sp = llPush(mut stk, sp, int(irBlkIHead(mut st, cb)))
+        } else {
+            qm[f] = if ok { 1 } else { 2 }
+            sp -= 3
+            res = ok
+            popped = true
+        }
+    }
+    return res
+}
+
+// g を数え始める（数えている途中の印 3）か。本体の無い関数と rt は中を見ずに触れうる（2）に倒す — rt の本体は深度の表を直に読み書きする（region の op を持たない）
+func reQuietOpen(st mut St, qm mut map[int]int, g FnRef) bool {
+    if irFnBHead(mut st, g) == -1 || ilIsRt(mut st, g) {
+        qm[int(g)] = 2
+        return false
+    }
+    qm[int(g)] = 3
+    return true
+}
+
+func reEligible(st mut St, qm mut map[int]int, why bool, f FnRef) bool {
     entry := irFnBHead(mut st, f)
     mut enters := 0
+    mut ds := mut map[int]int{}
     mut b := entry
     while b != -1 {
         mut i := irBlkIHead(mut st, b)
         mut seenEnter := false
         while i != -1 {
             op := irInsOp(mut st, i)
-            if op == OpREnter {
+            // 入口の軽い enter（regionLightModule が 1 回目の省略の後に替えた形）も同じ enter として数える
+            if op == OpREnter || (op == OpCall && st.rtRenterL != -1 && irInsFn(mut st, i) == st.rtRenterL) {
                 if b != entry {
+                    reWhy(mut st, why, f, "enter outside the entry block", -1)
                     return false
                 }
                 enters += 1
                 seenEnter = true
             } else if op == OpRDepth {
                 if b != entry || seenEnter {
+                    reWhy(mut st, why, f, "depth read after the enter", -1)
+                    return false
+                }
+                ds[irInsRes(mut st, i)] = 1
+            } else if op == OpCall && (irInsFn(mut st, i) == st.rtRalloc || irInsFn(mut st, i) == st.rtAlloc8 || irInsFn(mut st, i) == st.rtErrAlloc) {
+                // 確保の深度が入口の enter より前に読んだ深度（呼び手の深度）なら ① の内 — 省略の前後で同じ region に確保する
+                x := ds[llRtDepthArg(mut st, i)]
+                if x == nil {
+                    reWhy(mut st, why, f, "allocation at a depth other than the caller's:", irInsFn(mut st, i))
                     return false
                 }
             } else if (op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone) {
+                reWhy(mut st, why, f, "indirect call or task op", -1)
                 return false
             } else if op == OpCall {
                 g := irInsFn(mut st, i)
                 r := irFnRFree(mut st, g)
                 free := r >= 0 && desugar.HeapGet(mut st.d, r) == 1
                 // 戻らない利用者の関数も可（rlEligible と同じ特例 — 727。戻らないので f へ戻る路が無く、深度の加算は死ぬ道の 1 回分だけ）
-                if !free && !reRtOk(mut st, g) && llReturns(mut st, g) {
+                if !free && !reRtOk(mut st, g) && llReturns(mut st, g) && !reQuiet(mut st, mut qm, g) {
+                    reWhy(mut st, why, f, "callee using regions:", g)
                     return false
                 }
             }
@@ -1643,7 +1785,16 @@ func reEligible(st mut St, f FnRef) bool {
         }
         b = irBlkNext(mut st, b)
     }
-    return enters == 1 && !reDepthArith(mut st, f)
+    if enters != 1 {
+        reWhy(mut st, why, f, "enters ${enters}", -1)
+        return false
+    }
+    if reDepthArith(mut st, f) {
+        reWhy(mut st, why, f, "depth arithmetic", -1)
+        return false
+    }
+    reWhy(mut st, why, f, "elided", -1)
+    return true
 }
 
 // f の region.enter と relocate を消す
@@ -1653,7 +1804,7 @@ func reRewrite(st mut St, f FnRef) {
         mut i := irBlkIHead(mut st, b)
         while i != -1 {
             op := irInsOp(mut st, i)
-            if op == OpREnter || op == OpRSetDepth || op == OpRReloc || (op == OpCall && (irInsFn(mut st, i) == st.rtReloc || irInsFn(mut st, i) == st.rtReloc8 || irInsFn(mut st, i) == st.rtErrReloc)) {
+            if op == OpREnter || op == OpRSetDepth || op == OpRReloc || (op == OpCall && (irInsFn(mut st, i) == st.rtReloc || irInsFn(mut st, i) == st.rtReloc8 || irInsFn(mut st, i) == st.rtErrReloc || (st.rtRenterL != -1 && irInsFn(mut st, i) == st.rtRenterL))) {
                 irSetInsOp(mut st, i, OpDead)
             }
             i = irInsNext(mut st, i)
@@ -1664,4 +1815,113 @@ func reRewrite(st mut St, f FnRef) {
     optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
     optDce(mut st, f)
     optRenumber(mut st, f)
+}
+
+// enter の無い関数の、今の深度への relocate を消す（葉の省略の 2 回目の後 — C1 で enter を消した関数の出口の relocate が的）。
+// region.enter も深度を上げる rt（軽い enter）も無く、setdepth は region.depth の結果へ戻すだけで、深度の値を算術に使うのは宛先構築の式
+// （W_DEST / W_ANCHOR の読みに依る — どちらも呼び手が書く呼び手の深度以下の値で、結果は D 以下。rfVerify と同じ認識）だけの関数では、
+// region.depth の結果は全部入口の深度 D（呼び先は戻る前に深度を戻す）。生きている値は全部 D 以下に住む（実引数は呼び手の深度以下・
+// 呼び先の結果は呼び先の出口で D 以下へ写されている・自前の確保は D か宛先〔呼び手の深度以下〕）ので、行き先が D の relocate は何も写さない。
+// rflow の判定（rfPtrMask が呼び先の出口の relocate を数える）と葉の省略が済んだ後に掛ける
+func relocNoopModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 && !ilIsRt(mut st, f) {
+            relocNoopFunc(mut st, f)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+func relocNoopFunc(st mut St, f FnRef) {
+    mut ds := mut map[int]int{}
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpREnter || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpClone {
+                return
+            }
+            if op == OpCall {
+                g := irInsFn(mut st, i)
+                if g == st.rtRenter || g == st.rtRenterL || g == st.rtRenterLL {
+                    return
+                }
+            }
+            if op == OpRDepth {
+                ds[irInsRes(mut st, i)] = 1
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    if len(ds) == 0 {
+        return
+    }
+    // W_DEST / W_ANCHOR の読みに依る値（固定点）
+    mut mts := mut []int{}
+    mut fw := mut map[int]int{}
+    mut more := true
+    while more {
+        more = false
+        mut bb := irFnBHead(mut st, f)
+        while bb != -1 {
+            mut jn := irBlkIHead(mut st, bb)
+            while jn != -1 {
+                op := irInsOp(mut st, jn)
+                rv := irInsRes(mut st, jn)
+                if (op == OpGlobal || op == OpFsAddr) && irInsA(mut st, jn) == st.meta {
+                    if !apIn(mut mts, rv) {
+                        mts = append(mts, rv)
+                    }
+                } else if op == OpLoad && (irInsB(mut st, jn) == W_DEST || irInsB(mut st, jn) == W_ANCHOR) && apIn(mut mts, irInsA(mut st, jn)) && fw[rv] == nil {
+                    fw[rv] = 1
+                    more = true
+                } else if (op == OpBin || op == OpCmp) && fw[rv] == nil && (fw[irInsB(mut st, jn)] != nil || fw[irInsC(mut st, jn)] != nil) {
+                    fw[rv] = 1
+                    more = true
+                }
+                jn = irInsNext(mut st, jn)
+            }
+            bb = irBlkNext(mut st, bb)
+        }
+    }
+    mut hit := false
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpRSetDepth && ds[irInsA(mut st, i)] == nil {
+                return
+            }
+            if op == OpBin && (ds[irInsB(mut st, i)] != nil || ds[irInsC(mut st, i)] != nil) && fw[irInsRes(mut st, i)] == nil {
+                return
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpRReloc && ds[irInsC(mut st, i)] != nil {
+                irSetInsOp(mut st, i, OpDead)
+                hit = true
+            } else if op == OpCall && (irInsFn(mut st, i) == st.rtReloc || irInsFn(mut st, i) == st.rtReloc8 || irInsFn(mut st, i) == st.rtErrReloc) && ds[llRtDepthArg(mut st, i)] != nil {
+                irSetInsOp(mut st, i, OpDead)
+                hit = true
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    if hit {
+        optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+        optDce(mut st, f)
+        optRenumber(mut st, f)
+    }
 }

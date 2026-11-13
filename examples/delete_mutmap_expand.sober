@@ -1,0 +1,20 @@
+package main
+
+// mut の map の仮引数への delete（string の鍵）: 呼び点に展開される関数（mut 仮引数 + region を持つ仮引数）の本体でも、
+// 鍵と値の型は呼び点の map の座標で読む
+
+func drop(m mut map[string]string, b []byte) {
+    delete(m, string(b) catch "a")
+}
+
+func count() int {
+    mut m := mut map[string]string{}
+    m["a"] = "x"
+    m["b"] = "y"
+    drop(mut m, bytes("a"))
+    return len(m)
+}
+
+func main() {
+    println(count())
+}

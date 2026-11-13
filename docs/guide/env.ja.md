@@ -15,7 +15,7 @@
 | 変数 | 意味 |
 | --- | --- |
 | `SOBER_WORKERS` | ワーカーの数（既定はコア数）。変えても標準出力は同じバイトになる |
-| `SOBER_PIN` | ワーカーの CPU の固定（1 = 強制で L3 キャッシュを共有する CPU の群へ・2 = 強制で CPU 1 つへ・0 = 切る。既定は Serve の形のプログラムで許可数が足りるときだけ L3 の群へ） |
+| `SOBER_PIN` | ワーカーの CPU の固定（2 = 強制で CPU 1 つへ・1 = 強制で L3 キャッシュを共有する CPU の群へ・0 = 切る。既定は Serve の形のプログラムで許可数が足りるときだけ CPU 1 つへ） |
 | `SOBER_REGION_MB` | main の region の大きさの上限（MiB・既定 4096） |
 | `SOBER_TASK_REGION_MB` | task の region の大きさの上限（MiB — main より大きくはならない） |
 | `SOBER_MADV_MB` | 捨てた region のページを OS へ返すときに、先頭から触れたまま残す量（MiB・0 = 全部返す） |

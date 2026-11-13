@@ -2758,7 +2758,6 @@ func @std/os.RunTo(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64, %7 i6
   slot s7 [5]
   slot s8 [7]
   slot s9 [5]
-  slot s10 [6]
 b0:
   %13 = slotaddr s0
   store %13[0], %1
@@ -2944,33 +2943,21 @@ b9:
   region.setdepth %17
   ret
 b10:
-  %114 = slotaddr s10
-  %115 = call @rt.run_fd(%36, %77, %78)
-  %116 = globaladdr @rt.meta
-  store %116[2571], %27
-  call @std/os.ranTo(%114, %115, %77, %78)
-  %117 = load.i64 %114[0]
-  %118 = const 1
-  %119 = gep.word %114, %118
-  store %0[0], %117
-  %120 = load.i64 %119[0]
-  store %0[1], %120
-  %121 = load.i64 %119[1]
-  store %0[2], %121
-  %122 = load.i64 %119[2]
-  store %0[3], %122
-  %123 = load.i64 %119[3]
-  store %0[4], %123
-  %124 = load.i64 %119[4]
-  store %0[5], %124
-  %125 = load.i64 %0[1]
-  %126 = const 0
-  %127 = ne %125, %126
-  condbr %127, b11, b12
+  %114 = call @rt.run_fd(%36, %77, %78)
+  %115 = globaladdr @rt.meta
+  store %115[2571], %27
+  call @std/os.ranTo(%0, %114, %77, %78)
+  %116 = load.i64 %0[0]
+  %117 = const 1
+  %118 = gep.word %0, %117
+  %119 = load.i64 %0[1]
+  %120 = const 0
+  %121 = ne %119, %120
+  condbr %121, b11, b12
 b11:
-  %128 = const 2
-  %129 = gep.word %0, %128
-  call @rt.err_relocate(%129, %17)
+  %122 = const 2
+  %123 = gep.word %0, %122
+  call @rt.err_relocate(%123, %17)
   br b12
 b12:
   region.setdepth %17

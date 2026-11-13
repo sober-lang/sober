@@ -46,6 +46,7 @@ const MN_EXIT = 49    // 終わりの drain を始めた印
 const MN_DQB = 56
 const MN_RLOCK = 64   // 共有の予備（塊・スロット）の鍵
 const MN_RTCB = 65    // 共有の予備の塊の鎖（TC_NEXT）
+const MN_RTCBA = 66   // 共有の予備の、持ち札が自分でない塊の鎖（area.sober）
 const MN_TID = 80     // task の通し番号（trace）
 const MN_EV = 81      // 出来事の通し番号（trace）
 const MN_CNT_CROSS = 96   // 数え口（変異 4）: spawn した task と別のワーカーで走り始めた数
@@ -85,7 +86,9 @@ const MN_DWAITING = MN_LED + 24
 const MN_DMAXW = MN_LED + 25
 const MN_DEXP = MN_LED + 26
 const MN_DPOIS = MN_LED + 27
-const MN_WORDS = MN_LED + 28
+// lease の死の通し番号（rt.lease_drain が印を 1 つ以上外したら +1 — lease_op 9 が読む。std/internal/lot の Reap が変わったときだけ走査する）
+const MN_LDRAIN = MN_LED + 28
+const MN_WORDS = MN_LED + 29
 // rt.mn_llc の作業域（経路 LLC_PATH・読んだ中身 LLC_DATA から LLC_CAP バイト）
 const LLC_PATH = 0
 const LLC_DATA = 128
@@ -93,6 +96,7 @@ const LLC_CAP = 256
 const LLC_WORDS = 48
 const MN_WAIT_DEF = 100000000 // 既定の D（ns — net.Serve の maxWait: の既定と同じ）
 const TSCQ_DEF = 262144        // 校正の前の仮定（4 GHz — D は長めに出る側）
+const LATE_GATE = 1 << 19      // D を越えたかを正確に比べる待ちの下限（TSC の数 — TSC が 0.53 GHz 以上なら D の下限 1 ms より短い）
 // 受け箱の先読み（積みが空でなくても受け箱を先に取り込む）は MN_INBOX_EVERY 周に 1 回。毎周だと積みが空まで掃ける周期を壊して
 // 底を沈める（64vcpu の本家形で p99 が D に貼り付いた読み）。受け箱の未着手の延びは高々この周の数。2 の冪
 const MN_INBOX_EVERY = 256
@@ -144,7 +148,18 @@ const WK_NOW = WK_HOT   // 今（TSC — mn_next が周の頭で 1 回読む。�
 const WK_AGED = WK_HOT + 1  // 待ちの上限が効いて積みの底から取った回数（Ledger の aged — 持ち主だけが足す）
 const WK_MAXW = WK_HOT + 2  // 走れる積みから取った task の待ちの最大（TSC の数 — Ledger の maxWait が xchg で 0 に戻して集める）
 const WK_PICK = WK_HOT + 3  // rt.mn_next の周の数（持ち主だけが書く — 受け箱の先読み〔MN_INBOX_EVERY〕の間引きの位相）
-const WK_DPC = WK_HOT + 8
+// WK_HOT の行の残り（+4〜+7）は flight.sober・netring.sober の語。D を越えた数え（越えたときだけ書く・Ledger が読む）は次の行に
+const WK_LATE = WK_HOT + 8  // 自分の D を越えてから走った task の数（Ledger の late — 持ち主だけが越えたときだけ足す）
+const WK_MAXL = WK_HOT + 9  // 越えた量の最大（TSC の数 — Ledger の maxLate が xchg で 0 に戻して集める）
+// 接続の task の待ちの形の数え（Ledger の parkShallow / parkDeep / parkDeepWin / parkSwap — 持ち主だけが足す）: 浅い待ち（本体より下の枠を捨てて寝た）・
+// 深い待ち（ワーカーの区画を持って寝た = 区画の交換）・浅い形の点だったが区画の窓に中身があって深くした・浅い待ちの前に持ち札とワーカーの区画を交換した
+const WK_PSHAL = WK_HOT + 10
+const WK_PDEEP = WK_HOT + 11
+const WK_PDWIN = WK_HOT + 12
+const WK_AREA = WK_HOT + 13 // ワーカーの区画の頂上（area.sober — 印つきの task の本体より下の積み・交換で入れ替わる）
+const WK_SJUNK = WK_HOT + 14 // 浅く寝る task の退避の先（捨てる — area.sober areaPark）
+const WK_PSWAP = WK_HOT + 15
+const WK_DPC = WK_HOT + 16
 const WK_DPS = WK_DPC + DP_MASK + 1
 const WK_WORDS = WK_DPS + (DP_MASK + 1) * DP_CAP
 // @rt.sdp = [数の和, 列 r の数 × 32, 列 r の基底 × SRES_CAP × 32]
@@ -176,7 +191,20 @@ const WK_KAN = 8
 // まだ走っていない task は spawn の時刻）。境界は WK_KA と同じ。task の冷え（TCB / 積みが cache から落ちたか）の物差し
 const WK_KO = WK_KA + WK_KAN
 const WK_KON = 8
-const WK_KN = 17 + 32 + WK_KXN + 1 + WK_KDN + WK_KAN + WK_KON
+// 期限切れの底の連続（`#w` の行の 49〜56 列目）: 底を期限で取った（aged）取り出しが途切れずに続いた本数のヒストグラム — 頭から取った時点で、
+// それまでの連続の本数を数える。境界 = 2, 3, 5, 9, 17, 65, 257（バケット 0 = 1 本・7 = 257 本以上）。WK_KRC = 今の連続の本数
+const WK_KR = WK_KO + WK_KON
+const WK_KRN = 8
+const WK_KRC = WK_KR + WK_KRN
+// 待ちの帯ごとの走り（`#w` の行の 57〜64 列目 = 本数・65〜72 列目 = 走りの TSC の和）: 走れる積みから取った task の、取り出しから次に rt.mn_next へ
+// 戻るまで（1 回の走り）の TSC を、取り出しの点の待ち（WK_NOW − TC_WAKE — 境界は WK_KA と同じ）の帯ごとに足す。冷えた task の走りの値段の物差し。
+// WK_KPT = 取り出しの時刻（0 = 測っていない）・WK_KPB = その帯
+const WK_KW = WK_KRC + 1
+const WK_KWN = 8
+const WK_KWS = WK_KW + WK_KWN
+const WK_KPT = WK_KWS + WK_KWN
+const WK_KPB = WK_KPT + 1
+const WK_KN = 17 + 32 + WK_KXN + 1 + WK_KDN + WK_KAN + WK_KON + WK_KRN + 1 + 2 * WK_KWN + 2
 // カオスの変異（開発用 --rt-mutant=30 だけ。表を 1 語だけ延ばす・通常の build の IR は不変）: WK_CHS = ワーカーごとの xorshift の状態
 // （SOBER_CHAOS_SEED — 既定 1・0 = 注入しない。ワーカー 1 以上はワーカーの番号で散らす）。注入点 = 非 ring の道の送り・受け・accept（偽の EAGAIN と短い書き / 読み —
 // どれも非ブロックの socket で合法な返り）と rt.ep_poll（受け皿の縮めと sched_yield）。chRoll の値 r の下 3 ビット: 1 = EAGAIN・2 = 短い（1〜1024 バイト）
@@ -339,6 +367,70 @@ func kAge(st mut St, base int, a int) {
     store(mut st, p, 0, bin(mut st, BAdd, load(mut st, p, 0), iconst(mut st, 1)))
 }
 
+// 期限切れの底の連続を数える（変異 4 だけ — 呼び手が st.rtMut == 4 で呼ぶ）: aged なら今の連続に 1 を足し、でなければ連続が 1 本以上あった
+// ときだけその本数を WK_KR のヒストグラムに数えて 0 に戻す
+func kAgedRun(st mut St, aged int) {
+    wk := globaladdr(mut st, st.wkG)
+    zero := iconst(mut st, 0)
+    c := load(mut st, wk, WK_KRC)
+    bA := newBlock(mut st)
+    bH := newBlock(mut st)
+    bE := newBlock(mut st)
+    bJ := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, aged, zero), bA, -1, bH, -1)
+    setCur(mut st, bA)
+    store(mut st, wk, WK_KRC, bin(mut st, BAdd, c, iconst(mut st, 1)))
+    br(mut st, bJ, -1)
+    setCur(mut st, bH)
+    condbr(mut st, cmp(mut st, CGt, c, zero), bE, -1, bJ, -1)
+    setCur(mut st, bE)
+    mut idx := cmp(mut st, CGe, c, iconst(mut st, 2))
+    idx = bin(mut st, BAdd, idx, cmp(mut st, CGe, c, iconst(mut st, 3)))
+    idx = bin(mut st, BAdd, idx, cmp(mut st, CGe, c, iconst(mut st, 5)))
+    idx = bin(mut st, BAdd, idx, cmp(mut st, CGe, c, iconst(mut st, 9)))
+    idx = bin(mut st, BAdd, idx, cmp(mut st, CGe, c, iconst(mut st, 17)))
+    idx = bin(mut st, BAdd, idx, cmp(mut st, CGe, c, iconst(mut st, 65)))
+    idx = bin(mut st, BAdd, idx, cmp(mut st, CGe, c, iconst(mut st, 257)))
+    p := gepWord(mut st, wk, bin(mut st, BAdd, iconst(mut st, WK_KR), idx))
+    store(mut st, p, 0, bin(mut st, BAdd, load(mut st, p, 0), iconst(mut st, 1)))
+    store(mut st, wk, WK_KRC, zero)
+    br(mut st, bJ, -1)
+    setCur(mut st, bJ)
+}
+
+// 取り出しの点で、待ち a（TSC）の帯と時刻 now を覚える（変異 4 だけ）
+func kRunStart(st mut St, a int, now int) {
+    wk := globaladdr(mut st, st.wkG)
+    mut idx := cmp(mut st, CGe, a, iconst(mut st, 16384))
+    idx = bin(mut st, BAdd, idx, cmp(mut st, CGe, a, iconst(mut st, 65536)))
+    idx = bin(mut st, BAdd, idx, cmp(mut st, CGe, a, iconst(mut st, 262144)))
+    idx = bin(mut st, BAdd, idx, cmp(mut st, CGe, a, iconst(mut st, 1048576)))
+    idx = bin(mut st, BAdd, idx, cmp(mut st, CGe, a, iconst(mut st, 4194304)))
+    idx = bin(mut st, BAdd, idx, cmp(mut st, CGe, a, iconst(mut st, 16777216)))
+    idx = bin(mut st, BAdd, idx, cmp(mut st, CGe, a, iconst(mut st, 67108864)))
+    store(mut st, wk, WK_KPB, idx)
+    store(mut st, wk, WK_KPT, now)
+}
+
+// rt.mn_next の入口で、前の取り出しから今までの走りを帯に足す（変異 4 だけ）
+func kRunEnd(st mut St) {
+    wk := globaladdr(mut st, st.wkG)
+    zero := iconst(mut st, 0)
+    t0 := load(mut st, wk, WK_KPT)
+    bM := newBlock(mut st)
+    bJ := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, t0, zero), bM, -1, bJ, -1)
+    setCur(mut st, bM)
+    b := load(mut st, wk, WK_KPB)
+    pc := gepWord(mut st, wk, bin(mut st, BAdd, iconst(mut st, WK_KW), b))
+    store(mut st, pc, 0, bin(mut st, BAdd, load(mut st, pc, 0), iconst(mut st, 1)))
+    ps := gepWord(mut st, wk, bin(mut st, BAdd, iconst(mut st, WK_KWS), b))
+    store(mut st, ps, 0, bin(mut st, BAdd, load(mut st, ps, 0), bin(mut st, BSub, tscOp(mut st), t0)))
+    store(mut st, wk, WK_KPT, zero)
+    br(mut st, bJ, -1)
+    setCur(mut st, bJ)
+}
+
 const TCB_KEEP = 16
 const KEEP_SMALL = 256 // 預かりの小さな塊の大きさ（使った量がこれ以下の子の結果は塊に — 1 頁ずつの mmap を避ける）
 const KEEP_SLAB = 65536 // 塊の補充の単位（mmap 1 回）
@@ -489,19 +581,18 @@ func mnInit(st mut St, sp int) {
     st.mnExtra = int(irBlkITail(mut st, st.cur))
     n := n0w
     store(mut st, mn, MN_N, n)
-    // ワーカーの CPU の固定: 範囲は自分の CPU と L3 を共有する CPU の群（∩ 許可）。群を越える移動（L3 を失う・ソケットを越える）と、
-    // それに伴う時間片〔≈ 3 ms〕の重なりを無くしつつ、群の中の起こし先はカーネルが選ぶ（低い負荷で起きている CPU に寄れる — CPU 1 つに縛ると、
-    // 負荷を全コアへ薄く散らして各コアを深く眠らせ、起床のたびに眠りの出口とキャッシュの冷えを払う）。
+    // ワーカーの CPU の固定: 既定は CPU 1 つ（走れるワーカーが同じ CPU に重なって時間片〔≈ 3 ms〕を待つ形と、群・ソケットを越える移動を無くす）。
+    // L3 の群（∩ 許可）へ広げる形は SOBER_PIN=1 の口として残す（箱によって低い負荷の尾が大きく崩れた — 既定にはしない）。
     // 既定は Serve のプログラム（置き場の印 = ex）で、ワーカー数を affinity から決めたとき（SOBER_WORKERS なし）— 箱を占有するサーバの形。
-    // 一般のプログラム（コンパイラ自身・並走する網）を固定すると、同じ箱の別のプロセスが同じ CPU の並びに重なる。SOBER_PIN=1 で強制（L3 の群）・2 で強制（CPU 1 つ — 比較の口）・0 で切る
+    // 一般のプログラム（コンパイラ自身・並走する網）を固定すると、同じ箱の別のプロセスが同じ CPU の並びに重なる。SOBER_PIN=2 で強制（CPU 1 つ）・1 で強制（L3 の群）・0 で切る
     pv := envMb(mut st, sp, "SOBER_PIN=", -1, true)
     // 既定はスレッド数 ≤ 許可の数のときだけ（許可の数を越えると、浮いた 1 本が固定したワーカーのどれかと必ず重なり、
     // 固定したワーカーは逃げられない — 手元 W12 + 1 で churn −47%・W11 + 1〔全部固定〕は churn / keep-alive とも退行なし。
     // ワーカーを足さなくなった後は affinity から決めた数なら常に収まる — cpu.max で減らした数も ≤ 許可の数）
     pfit := cmp(mut st, CLe, n, load(mut st, mn, MN_AFFC))
     pdef := bin(mut st, BAnd, bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CEq, pv, iconst(mut st, -1)), ex), cmp(mut st, CEq, n0, iconst(mut st, 0))), pfit)
-    // 既定と SOBER_PIN=1 は L3 の群・SOBER_PIN=2 は CPU 1 つ（比較の口）
-    pin := bin(mut st, BAdd, bin(mut st, BOr, cmp(mut st, CEq, pv, iconst(mut st, 1)), pdef), bin(mut st, BMul, cmp(mut st, CEq, pv, iconst(mut st, 2)), iconst(mut st, 2)))
+    // 既定と SOBER_PIN=2 は CPU 1 つ・SOBER_PIN=1 は L3 の群
+    pin := bin(mut st, BAdd, cmp(mut st, CEq, pv, iconst(mut st, 1)), bin(mut st, BMul, bin(mut st, BOr, cmp(mut st, CEq, pv, iconst(mut st, 2)), pdef), iconst(mut st, 2)))
     store(mut st, mn, MN_PIN, pin)
     // SOBER_WORKERS があると上で affinity を読んでいない — 固定するなら読む
     bPa := branchIf(mut st, bin(mut st, BAnd, cmp(mut st, CNe, pin, iconst(mut st, 0)), cmp(mut st, CNe, n0, iconst(mut st, 0))))
@@ -534,6 +625,10 @@ func buildMnStart(st mut St) {
     store(mut st, mn, MN_PF, bin(mut st, BOr, pfS, bin(mut st, BMul, pfC, iconst(mut st, 2))))
     mnPinPoint(mut st)
     call(mut st, st.rtUringInit, list0(mut st))
+    if st.areaOn {
+        // ワーカー 0 の区画（他のワーカーの区画は下の記録の組み立てで）
+        store(mut st, globaladdr(mut st, st.wkG), WK_AREA, areaMap(mut st))
+    }
     mut total := 0
     mut g := st.ghead
     while g >= 0 {
@@ -577,6 +672,9 @@ func buildMnStart(st mut St) {
             }
             if g == st.wkG {
                 store(mut st, a, WK_ID, k)
+                if st.areaOn {
+                    store(mut st, a, WK_AREA, areaMap(mut st))
+                }
                 // 乱択の状態 = ワーカー 0 の種をワーカーの番号で散らす（0 のままなら注入しない）
                 s0 := load(mut st, globaladdrRaw(mut st, g), WK_RND)
                 mix := bin(mut st, BXor, s0, bin(mut st, BMul, k, iconst(mut st, 40503)))
@@ -1000,7 +1098,7 @@ func buildTaskGoMn(st mut St) {
     // 積む時刻は今を読み直す（WK_NOW は rt.mn_next の周の頭でしか進まない — 一度も譲っていない task なら 0 のまま。置き場の印の道と同じ）
     store(mut st, wk, WK_NOW, tscOp(mut st))
     readyPush(mut st, tk, ptoi(mut st, 0))
-    parkRelease(mut st, 0, false)
+    parkRelease(mut st, 0, false, false)
     call(mut st, st.rtTaskSwitch, list2(mut st, 0, 1))
     ret(mut st, -1)
     setCur(mut st, bPushed)
@@ -1209,6 +1307,9 @@ func buildMnNext(st mut St) {
     wk := globaladdr(mut st, st.wkG)
     tk := globaladdr(mut st, st.taskG)
     zero := iconst(mut st, 0)
+    if st.rtMut == 4 {
+        kRunEnd(mut st)
+    }
     loop := newBlock(mut st)
     br(mut st, loop, -1)
     setCur(mut st, loop)
@@ -1283,6 +1384,8 @@ func buildMnNext(st mut St) {
         kDepth(mut st, bin(mut st, BSub, load(mut st, tk, TK_RQH), load(mut st, tk, TK_RQT)))
         kAge(mut st, WK_KA, bin(mut st, BSub, now, load(mut st, rp, TC_WAKE)))
         kAge(mut st, WK_KO, bin(mut st, BSub, now, load(mut st, rp, TC_LRUN)))
+        kAgedRun(mut st, aged)
+        kRunStart(mut st, bin(mut st, BSub, now, load(mut st, rp, TC_WAKE)), now)
     }
     store(mut st, rp, TC_LRUN, now)
     // 次に取られうる 2 本（頭 = LIFO の次・底 = 期限の拾いの次〔溢れの列の最古か環の底〕）の線を先読みする — 飽和下の積みは深く、
@@ -1326,6 +1429,18 @@ func buildMnNext(st mut St) {
     wt := bin(mut st, BSub, now, load(mut st, rp, TC_WAKE))
     mx := load(mut st, wk, WK_MAXW)
     store(mut st, wk, WK_MAXW, bin(mut st, BAdd, mx, bin(mut st, BMul, cmp(mut st, CGt, wt, mx), bin(mut st, BSub, wt, mx))))
+    // D を越えた数と越えた量（Ledger の late / maxLate）: 待ちが LATE_GATE（どの箱でも D の下限 1 ms 以下の TSC の数）を越えたときだけ task の D で比べる。
+    // 頭から取った task は比べない — D が一様なら底が越えていない限り頭も越えていない
+    bLc := newBlock(mut st)
+    bLt := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, wt, iconst(mut st, LATE_GATE)), bLc, -1, bRet, -1)
+    setCur(mut st, bLc)
+    ov := bin(mut st, BSub, now, readyDl(mut st, rp, load(mut st, rp, TC_WAKE)))
+    condbr(mut st, cmp(mut st, CGt, ov, zero), bLt, -1, bRet, -1)
+    setCur(mut st, bLt)
+    store(mut st, wk, WK_LATE, bin(mut st, BAdd, load(mut st, wk, WK_LATE), iconst(mut st, 1)))
+    lm := load(mut st, wk, WK_MAXL)
+    store(mut st, wk, WK_MAXL, bin(mut st, BAdd, lm, bin(mut st, BMul, cmp(mut st, CGt, ov, lm), bin(mut st, BSub, ov, lm))))
     br(mut st, bRet, -1)
     setCur(mut st, bRet)
     call(mut st, st.rtMnTrace, list2(mut st, iconst(mut st, 2), load(mut st, rp, TC_ID)))
@@ -1830,9 +1945,23 @@ func buildSresTake(st mut St) {
 // ワーカーが抱えて他が尽き、新しい塊の mmap が入力に比例した
 func buildTcbFree(st mut St) {
     begin(mut st, st.rtTcbFree)
+    if st.areaOn {
+        // 持ち札が自分でない塊は別の鎖へ（印つきの spawn だけが引く — area.sober）
+        bA := newBlock(mut st)
+        bN := newBlock(mut st)
+        condbr(mut st, areaOwn(mut st, 0), bN, -1, bA, -1)
+        setCur(mut st, bA)
+        tcbFreeTo(mut st, TK_FREEA, MN_RTCBA)
+        setCur(mut st, bN)
+    }
+    tcbFreeTo(mut st, TK_FREE, MN_RTCB)
+}
+
+// rt.tcb_free の本体（塊 0 を手元の鎖 tkOff へ・溢れは共有の予備 mnOff へ — 返る）
+func tcbFreeTo(st mut St, tkOff int, mnOff int) {
     mn := globaladdr(mut st, st.mnG)
     tk := globaladdr(mut st, st.taskG)
-    h0 := load(mut st, tk, TK_FREE)
+    h0 := load(mut st, tk, tkOff)
     bH := newBlock(mut st)
     bJ := newBlock(mut st)
     n0 := param(mut st, bJ, TyI64)
@@ -1843,7 +1972,7 @@ func buildTcbFree(st mut St) {
     nf := bin(mut st, BAdd, n0, iconst(mut st, 1))
     store(mut st, 0, TC_FLEN, nf)
     store(mut st, 0, TC_NEXT, h0)
-    store(mut st, tk, TK_FREE, ptoi(mut st, 0))
+    store(mut st, tk, tkOff, ptoi(mut st, 0))
     bL := newBlock(mut st)
     bS := newBlock(mut st)
     condbr(mut st, cmp(mut st, CLe, nf, iconst(mut st, 2 * TCB_KEEP)), bL, -1, bS, -1)
@@ -1863,11 +1992,11 @@ func buildTcbFree(st mut St) {
     setCur(mut st, lb)
     br(mut st, lp, list2(mut st, pn, bin(mut st, BAdd, i, iconst(mut st, 1))))
     setCur(mut st, ld)
-    store(mut st, tk, TK_FREE, pn)
+    store(mut st, tk, tkOff, pn)
     store(mut st, itop(mut st, p), TC_NEXT, iconst(mut st, 0))
     spinLock(mut st, mn, MN_RLOCK)
-    store(mut st, 0, TC_INEXT, load(mut st, mn, MN_RTCB))
-    store(mut st, mn, MN_RTCB, ptoi(mut st, 0))
+    store(mut st, 0, TC_INEXT, load(mut st, mn, mnOff))
+    store(mut st, mn, mnOff, ptoi(mut st, 0))
     store(mut st, mn, MN_RLOCK, iconst(mut st, 0))
     ret(mut st, -1)
 }
@@ -1875,14 +2004,19 @@ func buildTcbFree(st mut St) {
 // 共有の予備の束を 1 つ取り、頭を返して残りを手元の鎖にする（無ければ 0 — rt.task_new の新しい塊の道の手前・手元が尽きたとき
 // だけ・M:N のときだけ）。束の節の TC_FLEN は出したときの手元の長さのままなので、残りの節に尾までの本数を振り直す（束の長さ ≤ TCB_KEEP）
 func mnTcbReserve(st mut St) int {
+    return mnTcbReserveAt(mut st, TK_FREE, MN_RTCB)
+}
+
+// mnTcbReserve の鎖を選ぶ形（tkOff = 手元の鎖・mnOff = 共有の予備 — 持ち札が自分でない塊は TK_FREEA / MN_RTCBA — area.sober）
+func mnTcbReserveAt(st mut St, tkOff int, mnOff int) int {
     mn := globaladdr(mut st, st.mnG)
     spinLock(mut st, mn, MN_RLOCK)
-    h := load(mut st, mn, MN_RTCB)
+    h := load(mut st, mn, mnOff)
     bT := newBlock(mut st)
     bE := newBlock(mut st)
     condbr(mut st, cmp(mut st, CNe, h, iconst(mut st, 0)), bT, -1, bE, -1)
     setCur(mut st, bT)
-    store(mut st, mn, MN_RTCB, load(mut st, itop(mut st, h), TC_INEXT))
+    store(mut st, mn, mnOff, load(mut st, itop(mut st, h), TC_INEXT))
     br(mut st, bE, -1)
     setCur(mut st, bE)
     store(mut st, mn, MN_RLOCK, iconst(mut st, 0))
@@ -1891,7 +2025,7 @@ func mnTcbReserve(st mut St) int {
     condbr(mut st, cmp(mut st, CNe, h, iconst(mut st, 0)), bR, -1, bX, -1)
     setCur(mut st, bR)
     rest := load(mut st, itop(mut st, h), TC_NEXT)
-    store(mut st, globaladdr(mut st, st.taskG), TK_FREE, rest)
+    store(mut st, globaladdr(mut st, st.taskG), tkOff, rest)
     // 残りの本数を数えてから、頭から尾までの本数を振る（2 周 — 高々 TCB_KEEP − 1 本）
     c1 := newBlock(mut st)
     cp := param(mut st, c1, TyI64)
@@ -1935,6 +2069,10 @@ func buildTaskStartMn(st mut St) {
     }
     frame := itop(mut st, load(mut st, 0, TC_FRAME))
     r := trapCall(mut st, load(mut st, 0, TC_KID), fieldPtr(mut st, frame, FR_RES))
+    // 変異 62 = 出口形を外す（task の終わりの積みが頁 0 から自分の塊の積みの領域へ伸びる — areacheck が捕まえる）
+    if st.areaOn && st.rtMut != 62 {
+        areaExit(mut st, 0)
+    }
     if st.domUse {
         domDiedIn(mut st, 0)
     }
@@ -2155,9 +2293,13 @@ func prefetchTcb(st mut St, t int) {
     }
 }
 
-// task t の生きた積み [退避した rsp, TCB)（上限 PF_STACK_LINES 線）の先読み。走り始めていない task は rsp が 0 で、番地の外れた線を指すだけ（prefetch は落ちない）
+// task t の生きた積み [退避した rsp, TCB)（上限 PF_STACK_LINES 線）の先読み。走り始めていない task は rsp が 0 で、番地の外れた線を指すだけ（prefetch は落ちない）。
+// 浅く寝た task（AREA_SPARK）の TC_CTX は本体への戻り先（機械語の番地）で、生きた積みは頁 0 の本体の枠 [TCB − TCB_TOP_ROOM, TCB) だけ
 func prefetchStack(st mut St, t int) {
-    sp := load(mut st, itop(mut st, t), TC_CTX)
+    tp := itop(mut st, t)
+    sp0 := load(mut st, tp, TC_CTX)
+    sh := cmp(mut st, CNe, bin(mut st, BAnd, load(mut st, tp, TC_ONW), iconst(mut st, AREA_SPARK)), iconst(mut st, 0))
+    sp := bin(mut st, BAdd, sp0, bin(mut st, BMul, sh, bin(mut st, BSub, bin(mut st, BSub, t, iconst(mut st, TCB_TOP_ROOM)), sp0)))
     nl := bin(mut st, BSar, bin(mut st, BSub, t, sp), iconst(mut st, 6))
     lt := cmp(mut st, CLt, nl, iconst(mut st, PF_STACK_LINES))
     nc := bin(mut st, BAdd, iconst(mut st, PF_STACK_LINES), bin(mut st, BMul, lt, bin(mut st, BSub, nl, iconst(mut st, PF_STACK_LINES))))

@@ -10491,13 +10491,12 @@ func @std/crypto/rsa.expPub(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i
   slot s4 [3]
   slot s5 [3]
   slot s6 [3]
-  slot s7 [3]
+  slot s7 [1]
   slot s8 [1]
   slot s9 [1]
   slot s10 [1]
-  slot s11 [1]
+  slot s11 [3]
   slot s12 [3]
-  slot s13 [3]
 b0:
   %15 = slotaddr s0
   store %15[0], %1
@@ -10532,420 +10531,413 @@ b0:
   %30 = lt %7, %29
   condbr %30, b1, b2
 b1:
-  %31 = slotaddr s3
-  %32 = load.i64 %15[0]
-  %33 = load.i64 %15[1]
-  %34 = load.i64 %15[2]
-  %35 = load.i64 %16[0]
-  %36 = load.i64 %16[1]
-  %37 = load.i64 %16[2]
-  %38 = load.i64 %17[0]
-  %39 = load.i64 %17[1]
-  %40 = load.i64 %17[2]
-  %41 = load.i64 %17[3]
-  %42 = load.i64 %17[4]
-  %43 = load.i64 %17[5]
-  %44 = load.i64 %17[6]
-  %45 = globaladdr @rt.meta
-  store %45[2571], %28
-  call @std/crypto/rsa.expMont(%31, %32, %33, %34, %35, %36, %37, %7, %38, %39, %40, %41, %42, %43, %44)
-  %46 = load.i64 %31[0]
-  store %0[0], %46
-  %47 = load.i64 %31[1]
-  store %0[1], %47
-  %48 = load.i64 %31[2]
-  store %0[2], %48
+  %31 = load.i64 %15[0]
+  %32 = load.i64 %15[1]
+  %33 = load.i64 %15[2]
+  %34 = load.i64 %16[0]
+  %35 = load.i64 %16[1]
+  %36 = load.i64 %16[2]
+  %37 = load.i64 %17[0]
+  %38 = load.i64 %17[1]
+  %39 = load.i64 %17[2]
+  %40 = load.i64 %17[3]
+  %41 = load.i64 %17[4]
+  %42 = load.i64 %17[5]
+  %43 = load.i64 %17[6]
+  %44 = globaladdr @rt.meta
+  store %44[2571], %28
+  call @std/crypto/rsa.expMont(%0, %31, %32, %33, %34, %35, %36, %7, %37, %38, %39, %40, %41, %42, %43)
   region.relocate %0, 1, %18
   region.setdepth %18
   ret
 b2:
   br b3
 b3:
-  %49 = load.i64 %17[1]
-  %50 = const 1
-  %51 = add %49, %50
+  %45 = load.i64 %17[1]
+  %46 = const 1
+  %47 = add %45, %46
+  %48 = slotaddr s3
+  %49 = const 4
+  %50 = mul %49, %47
+  %51 = globaladdr @rt.meta
+  store %51[2571], %28
+  call @std/crypto/rsa.zeros(%48, %50)
   %52 = slotaddr s4
-  %53 = const 4
-  %54 = mul %53, %51
-  %55 = globaladdr @rt.meta
-  store %55[2571], %28
-  call @std/crypto/rsa.zeros(%52, %54)
-  %56 = slotaddr s5
-  %57 = load.i64 %52[0]
-  store %56[0], %57
-  %58 = load.i64 %52[1]
-  store %56[1], %58
-  %59 = load.i64 %52[2]
-  store %56[2], %59
-  %60 = const 0
-  %61 = const 4
-  %62 = mul %61, %51
-  %63 = slotaddr s6
-  %64 = load.i64 %56[0]
-  %65 = const 3
-  %66 = shl %60, %65
-  %67 = add %64, %66
-  store %63[0], %67
-  store %63[1], %62
-  %68 = load.i64 %56[2]
-  store %63[2], %68
-  %69 = slotaddr s7
-  %70 = load.i64 %63[0]
-  store %69[0], %70
-  %71 = load.i64 %63[1]
-  store %69[1], %71
-  %72 = load.i64 %63[2]
-  store %69[2], %72
-  %73 = load.i64 %56[0]
-  %74 = const 1
-  %75 = add %18, %74
-  %76 = const 0
-  %77 = load.i64 %15[0]
-  %78 = load.i64 %15[1]
-  %79 = load.i64 %15[2]
-  %80 = globaladdr @rt.meta
-  store %80[2572], %75
-  call @std/crypto/rsa.put(%69, %76, %77, %78, %79, %49)
-  %81 = const 1
-  %82 = add %18, %81
-  %83 = load.i64 %15[0]
-  %84 = load.i64 %15[1]
-  %85 = load.i64 %15[2]
-  %86 = globaladdr @rt.meta
-  store %86[2572], %82
-  call @std/crypto/rsa.put(%69, %51, %83, %84, %85, %49)
-  %87 = const 3
-  %88 = mul %87, %51
-  %89 = const 1
-  %90 = load.i64 %69[1]
-  %91 = uge %88, %90
-  condbr %91, b4, b5
+  %53 = load.i64 %48[0]
+  store %52[0], %53
+  %54 = load.i64 %48[1]
+  store %52[1], %54
+  %55 = load.i64 %48[2]
+  store %52[2], %55
+  %56 = const 0
+  %57 = const 4
+  %58 = mul %57, %47
+  %59 = slotaddr s5
+  %60 = load.i64 %52[0]
+  %61 = const 3
+  %62 = shl %56, %61
+  %63 = add %60, %62
+  store %59[0], %63
+  store %59[1], %58
+  %64 = load.i64 %52[2]
+  store %59[2], %64
+  %65 = slotaddr s6
+  %66 = load.i64 %59[0]
+  store %65[0], %66
+  %67 = load.i64 %59[1]
+  store %65[1], %67
+  %68 = load.i64 %59[2]
+  store %65[2], %68
+  %69 = load.i64 %52[0]
+  %70 = const 1
+  %71 = add %18, %70
+  %72 = const 0
+  %73 = load.i64 %15[0]
+  %74 = load.i64 %15[1]
+  %75 = load.i64 %15[2]
+  %76 = globaladdr @rt.meta
+  store %76[2572], %71
+  call @std/crypto/rsa.put(%65, %72, %73, %74, %75, %45)
+  %77 = const 1
+  %78 = add %18, %77
+  %79 = load.i64 %15[0]
+  %80 = load.i64 %15[1]
+  %81 = load.i64 %15[2]
+  %82 = globaladdr @rt.meta
+  store %82[2572], %78
+  call @std/crypto/rsa.put(%65, %47, %79, %80, %81, %45)
+  %83 = const 3
+  %84 = mul %83, %47
+  %85 = const 1
+  %86 = load.i64 %65[1]
+  %87 = uge %84, %86
+  condbr %87, b4, b5
 b4:
-  %92 = const 98
-  call @rt.panic(%92)
+  %88 = const 98
+  call @rt.panic(%88)
   exit 101
 b5:
-  %93 = load.i64 %69[0]
-  %94 = itop %93
+  %89 = load.i64 %65[0]
+  %90 = itop %89
+  %91 = const 1
+  %92 = mul %84, %91
+  %93 = gep.word %90, %92
+  store %93[0], %85
+  %94 = region.depth
   %95 = const 1
-  %96 = mul %88, %95
-  %97 = gep.word %94, %96
-  store %97[0], %89
-  %98 = region.depth
-  %99 = const 1
-  %100 = slotaddr s8
-  %101 = region.depth
-  %102 = slotaddr s9
-  store %102[0], %99
-  %103 = region.depth
+  %96 = slotaddr s7
+  %97 = region.depth
+  %98 = slotaddr s8
+  store %98[0], %95
+  %99 = region.depth
   br b8
 b6:
-  region.setdepth %98
-  %201 = const 1
-  %202 = add %18, %201
-  %203 = const 2
-  %204 = mul %203, %51
-  %205 = const 3
-  %206 = mul %205, %51
-  %207 = load.i64 %17[0]
-  %208 = load.i64 %17[1]
-  %209 = load.i64 %17[2]
-  %210 = load.i64 %17[3]
-  %211 = load.i64 %17[4]
-  %212 = load.i64 %17[5]
-  %213 = load.i64 %17[6]
-  %214 = globaladdr @rt.meta
-  store %214[2572], %202
-  call @std/crypto/rsa.montMul(%69, %73, %204, %51, %206, %207, %208, %209, %210, %211, %212, %213)
-  %215 = const 0
-  %216 = region.alloc %28, %215
-  %217 = const 0
-  %218 = slotaddr s6
-  %219 = ptoi %216
-  store %218[0], %219
-  store %218[1], %217
-  store %218[2], %28
-  %220 = slotaddr s12
-  %221 = load.i64 %218[0]
-  store %220[0], %221
-  %222 = load.i64 %218[1]
-  store %220[1], %222
-  %223 = load.i64 %218[2]
-  store %220[2], %223
-  %224 = region.depth
-  %225 = const 0
-  %226 = slotaddr s9
-  %227 = region.depth
-  %228 = slotaddr s8
-  store %228[0], %225
-  %229 = region.depth
+  region.setdepth %94
+  %197 = const 1
+  %198 = add %18, %197
+  %199 = const 2
+  %200 = mul %199, %47
+  %201 = const 3
+  %202 = mul %201, %47
+  %203 = load.i64 %17[0]
+  %204 = load.i64 %17[1]
+  %205 = load.i64 %17[2]
+  %206 = load.i64 %17[3]
+  %207 = load.i64 %17[4]
+  %208 = load.i64 %17[5]
+  %209 = load.i64 %17[6]
+  %210 = globaladdr @rt.meta
+  store %210[2572], %198
+  call @std/crypto/rsa.montMul(%65, %69, %200, %47, %202, %203, %204, %205, %206, %207, %208, %209)
+  %211 = const 0
+  %212 = region.alloc %28, %211
+  %213 = const 0
+  %214 = slotaddr s5
+  %215 = ptoi %212
+  store %214[0], %215
+  store %214[1], %213
+  store %214[2], %28
+  %216 = slotaddr s11
+  %217 = load.i64 %214[0]
+  store %216[0], %217
+  %218 = load.i64 %214[1]
+  store %216[1], %218
+  %219 = load.i64 %214[2]
+  store %216[2], %219
+  %220 = region.depth
+  %221 = const 0
+  %222 = slotaddr s8
+  %223 = region.depth
+  %224 = slotaddr s7
+  store %224[0], %221
+  %225 = region.depth
   br b34
 b7:
   br b6
 b8:
-  region.setdepth %103
-  %104 = load.i64 %102[0]
-  %105 = lt %104, %7
-  condbr %105, b9, b10
+  region.setdepth %99
+  %100 = load.i64 %98[0]
+  %101 = lt %100, %7
+  condbr %101, b9, b10
 b9:
   region.enter
-  %106 = region.depth
-  %107 = load.i64 %102[0]
-  %108 = region.depth
-  %109 = const 1
-  %110 = sub %7, %109
-  %111 = sub %110, %107
-  %112 = const 1
-  %113 = add %18, %112
-  %114 = const 2
-  %115 = mul %114, %51
-  %116 = load.i64 %17[0]
-  %117 = load.i64 %17[1]
-  %118 = load.i64 %17[2]
-  %119 = load.i64 %17[3]
-  %120 = load.i64 %17[4]
-  %121 = load.i64 %17[5]
-  %122 = load.i64 %17[6]
-  %123 = globaladdr @rt.meta
-  store %123[2572], %113
-  call @std/crypto/rsa.montMul(%69, %73, %115, %51, %51, %116, %117, %118, %119, %120, %121, %122)
-  %124 = const 64
-  %125 = div %111, %124
-  %126 = load.i64 %16[1]
-  %127 = uge %125, %126
-  condbr %127, b12, b13
+  %102 = region.depth
+  %103 = load.i64 %98[0]
+  %104 = region.depth
+  %105 = const 1
+  %106 = sub %7, %105
+  %107 = sub %106, %103
+  %108 = const 1
+  %109 = add %18, %108
+  %110 = const 2
+  %111 = mul %110, %47
+  %112 = load.i64 %17[0]
+  %113 = load.i64 %17[1]
+  %114 = load.i64 %17[2]
+  %115 = load.i64 %17[3]
+  %116 = load.i64 %17[4]
+  %117 = load.i64 %17[5]
+  %118 = load.i64 %17[6]
+  %119 = globaladdr @rt.meta
+  store %119[2572], %109
+  call @std/crypto/rsa.montMul(%65, %69, %111, %47, %47, %112, %113, %114, %115, %116, %117, %118)
+  %120 = const 64
+  %121 = div %107, %120
+  %122 = load.i64 %16[1]
+  %123 = uge %121, %122
+  condbr %123, b12, b13
 b10:
-  region.setdepth %103
+  region.setdepth %99
   br b7
 b11:
-  region.setdepth %108
-  %198 = const 1
-  %199 = load.i64 %102[0]
-  %200 = add %199, %198
-  store %102[0], %200
+  region.setdepth %104
+  %194 = const 1
+  %195 = load.i64 %98[0]
+  %196 = add %195, %194
+  store %98[0], %196
   br b8
 b12:
-  %128 = const 99
-  call @rt.panic(%128)
+  %124 = const 99
+  call @rt.panic(%124)
   exit 101
 b13:
-  %129 = load.i64 %16[0]
-  %130 = itop %129
-  %131 = const 1
-  %132 = mul %125, %131
-  %133 = gep.word %130, %132
-  %134 = load.i64 %133[0]
-  %135 = const 64
-  %136 = rem %111, %135
-  %138 = const 64
-  %139 = uge %136, %138
-  condbr %139, b14, b15
+  %125 = load.i64 %16[0]
+  %126 = itop %125
+  %127 = const 1
+  %128 = mul %121, %127
+  %129 = gep.word %126, %128
+  %130 = load.i64 %129[0]
+  %131 = const 64
+  %132 = rem %107, %131
+  %134 = const 64
+  %135 = uge %132, %134
+  condbr %135, b14, b15
 b14:
-  %140 = const 0
-  %141 = lt %136, %140
-  condbr %141, b17, b18
+  %136 = const 0
+  %137 = lt %132, %136
+  condbr %137, b17, b18
 b15:
-  %145 = sar %134, %136
-  br b16(%145)
-b16(%137 i64):
-  %146 = const 1
-  %147 = and_ %137, %146
-  %148 = const 1
-  %149 = eq %147, %148
-  condbr %149, b19, b20
+  %141 = sar %130, %132
+  br b16(%141)
+b16(%133 i64):
+  %142 = const 1
+  %143 = and_ %133, %142
+  %144 = const 1
+  %145 = eq %143, %144
+  condbr %145, b19, b20
 b17:
-  %142 = const 100
-  call @rt.panic(%142)
+  %138 = const 100
+  call @rt.panic(%138)
   exit 101
 b18:
-  %143 = const 63
-  %144 = sar %134, %143
-  br b16(%144)
+  %139 = const 63
+  %140 = sar %130, %139
+  br b16(%140)
 b19:
-  %150 = const 1
-  %151 = add %18, %150
-  %152 = const 2
-  %153 = mul %152, %51
-  %154 = const 0
-  %155 = load.i64 %17[0]
-  %156 = load.i64 %17[1]
-  %157 = load.i64 %17[2]
-  %158 = load.i64 %17[3]
-  %159 = load.i64 %17[4]
-  %160 = load.i64 %17[5]
-  %161 = load.i64 %17[6]
-  %162 = globaladdr @rt.meta
-  store %162[2572], %151
-  call @std/crypto/rsa.montMul(%69, %73, %51, %153, %154, %155, %156, %157, %158, %159, %160, %161)
+  %146 = const 1
+  %147 = add %18, %146
+  %148 = const 2
+  %149 = mul %148, %47
+  %150 = const 0
+  %151 = load.i64 %17[0]
+  %152 = load.i64 %17[1]
+  %153 = load.i64 %17[2]
+  %154 = load.i64 %17[3]
+  %155 = load.i64 %17[4]
+  %156 = load.i64 %17[5]
+  %157 = load.i64 %17[6]
+  %158 = globaladdr @rt.meta
+  store %158[2572], %147
+  call @std/crypto/rsa.montMul(%65, %69, %47, %149, %150, %151, %152, %153, %154, %155, %156, %157)
   br b31
 b20:
-  %163 = region.depth
-  %164 = const 0
-  %165 = slotaddr s10
-  %166 = region.depth
-  %167 = slotaddr s11
-  store %167[0], %164
-  %168 = region.depth
+  %159 = region.depth
+  %160 = const 0
+  %161 = slotaddr s9
+  %162 = region.depth
+  %163 = slotaddr s10
+  store %163[0], %160
+  %164 = region.depth
   br b23
 b21:
-  region.setdepth %163
+  region.setdepth %159
   br b31
 b22:
   br b21
 b23:
-  region.setdepth %168
-  %169 = load.i64 %167[0]
-  %170 = lt %169, %51
-  condbr %170, b24, b25
+  region.setdepth %164
+  %165 = load.i64 %163[0]
+  %166 = lt %165, %47
+  condbr %166, b24, b25
 b24:
   region.enter
-  %171 = region.depth
-  %172 = load.i64 %167[0]
-  %173 = region.depth
-  %174 = add %51, %172
-  %175 = const 2
-  %176 = mul %175, %51
-  %177 = add %176, %172
-  %178 = load.i64 %69[1]
-  %179 = uge %177, %178
-  condbr %179, b27, b28
+  %167 = region.depth
+  %168 = load.i64 %163[0]
+  %169 = region.depth
+  %170 = add %47, %168
+  %171 = const 2
+  %172 = mul %171, %47
+  %173 = add %172, %168
+  %174 = load.i64 %65[1]
+  %175 = uge %173, %174
+  condbr %175, b27, b28
 b25:
-  region.setdepth %168
+  region.setdepth %164
   br b22
 b26:
-  region.setdepth %173
-  %195 = const 1
-  %196 = load.i64 %167[0]
-  %197 = add %196, %195
-  store %167[0], %197
+  region.setdepth %169
+  %191 = const 1
+  %192 = load.i64 %163[0]
+  %193 = add %192, %191
+  store %163[0], %193
   br b23
 b27:
-  %180 = const 101
-  call @rt.panic(%180)
+  %176 = const 101
+  call @rt.panic(%176)
   exit 101
 b28:
-  %181 = load.i64 %69[0]
-  %182 = itop %181
-  %183 = const 1
-  %184 = mul %177, %183
-  %185 = gep.word %182, %184
-  %186 = load.i64 %185[0]
-  %187 = load.i64 %69[1]
-  %188 = uge %174, %187
-  condbr %188, b29, b30
+  %177 = load.i64 %65[0]
+  %178 = itop %177
+  %179 = const 1
+  %180 = mul %173, %179
+  %181 = gep.word %178, %180
+  %182 = load.i64 %181[0]
+  %183 = load.i64 %65[1]
+  %184 = uge %170, %183
+  condbr %184, b29, b30
 b29:
-  %189 = const 102
-  call @rt.panic(%189)
+  %185 = const 102
+  call @rt.panic(%185)
   exit 101
 b30:
-  %190 = load.i64 %69[0]
-  %191 = itop %190
-  %192 = const 1
-  %193 = mul %174, %192
-  %194 = gep.word %191, %193
-  store %194[0], %186
+  %186 = load.i64 %65[0]
+  %187 = itop %186
+  %188 = const 1
+  %189 = mul %170, %188
+  %190 = gep.word %187, %189
+  store %190[0], %182
   br b26
 b31:
   br b11
 b32:
-  region.setdepth %224
-  %284 = load.i64 %220[0]
-  store %0[0], %284
-  %285 = load.i64 %220[1]
-  store %0[1], %285
-  %286 = load.i64 %220[2]
-  store %0[2], %286
+  region.setdepth %220
+  %280 = load.i64 %216[0]
+  store %0[0], %280
+  %281 = load.i64 %216[1]
+  store %0[1], %281
+  %282 = load.i64 %216[2]
+  store %0[2], %282
   region.relocate %0, 1, %18
   region.setdepth %18
   ret
 b33:
   br b32
 b34:
-  region.setdepth %229
-  %230 = load.i64 %228[0]
-  %231 = lt %230, %51
-  condbr %231, b35, b36
+  region.setdepth %225
+  %226 = load.i64 %224[0]
+  %227 = lt %226, %47
+  condbr %227, b35, b36
 b35:
   region.enter
-  %232 = region.depth
-  %233 = load.i64 %228[0]
-  %234 = region.depth
-  %235 = const 1
-  %236 = add %18, %235
-  %237 = slotaddr s6
-  %238 = load.i64 %220[0]
-  store %237[0], %238
-  %239 = load.i64 %220[1]
-  store %237[1], %239
-  %240 = load.i64 %220[2]
-  store %237[2], %240
-  %241 = const 2
-  %242 = mul %241, %51
-  %243 = add %242, %233
-  %244 = load.i64 %69[1]
-  %245 = uge %243, %244
-  condbr %245, b38, b39
+  %228 = region.depth
+  %229 = load.i64 %224[0]
+  %230 = region.depth
+  %231 = const 1
+  %232 = add %18, %231
+  %233 = slotaddr s5
+  %234 = load.i64 %216[0]
+  store %233[0], %234
+  %235 = load.i64 %216[1]
+  store %233[1], %235
+  %236 = load.i64 %216[2]
+  store %233[2], %236
+  %237 = const 2
+  %238 = mul %237, %47
+  %239 = add %238, %229
+  %240 = load.i64 %65[1]
+  %241 = uge %239, %240
+  condbr %241, b38, b39
 b36:
-  region.setdepth %229
+  region.setdepth %225
   br b33
 b37:
-  region.setdepth %234
-  %281 = const 1
-  %282 = load.i64 %228[0]
-  %283 = add %282, %281
-  store %228[0], %283
+  region.setdepth %230
+  %277 = const 1
+  %278 = load.i64 %224[0]
+  %279 = add %278, %277
+  store %224[0], %279
   br b34
 b38:
-  %246 = const 103
-  call @rt.panic(%246)
+  %242 = const 103
+  call @rt.panic(%242)
   exit 101
 b39:
-  %247 = load.i64 %69[0]
-  %248 = itop %247
-  %249 = const 1
-  %250 = mul %243, %249
-  %251 = gep.word %248, %250
-  %252 = load.i64 %251[0]
-  %253 = load.i64 %237[2]
-  %254 = load.i64 %237[0]
-  %255 = load.i64 %237[1]
-  %258 = const 8
-  %259 = mul %255, %258
-  %260 = add %254, %259
-  %261 = region.bump %253
-  %262 = ptoi %261
-  %263 = eq %262, %260
-  condbr %263, b42, b41
-b40(%256 ptr, %257 ptr):
-  store %257[0], %252
-  %273 = load.i64 %237[1]
-  %274 = const 1
-  %275 = add %273, %274
-  %276 = slotaddr s13
-  %277 = ptoi %256
-  store %276[0], %277
-  store %276[1], %275
-  store %276[2], %253
-  %278 = load.i64 %276[0]
-  store %220[0], %278
-  %279 = load.i64 %276[1]
-  store %220[1], %279
-  %280 = load.i64 %276[2]
-  store %220[2], %280
+  %243 = load.i64 %65[0]
+  %244 = itop %243
+  %245 = const 1
+  %246 = mul %239, %245
+  %247 = gep.word %244, %246
+  %248 = load.i64 %247[0]
+  %249 = load.i64 %233[2]
+  %250 = load.i64 %233[0]
+  %251 = load.i64 %233[1]
+  %254 = const 8
+  %255 = mul %251, %254
+  %256 = add %250, %255
+  %257 = region.bump %249
+  %258 = ptoi %257
+  %259 = eq %258, %256
+  condbr %259, b42, b41
+b40(%252 ptr, %253 ptr):
+  store %253[0], %248
+  %269 = load.i64 %233[1]
+  %270 = const 1
+  %271 = add %269, %270
+  %272 = slotaddr s12
+  %273 = ptoi %252
+  store %272[0], %273
+  store %272[1], %271
+  store %272[2], %249
+  %274 = load.i64 %272[0]
+  store %216[0], %274
+  %275 = load.i64 %272[1]
+  store %216[1], %275
+  %276 = load.i64 %272[2]
+  store %216[2], %276
   br b37
 b41:
-  %267 = const 1
-  %268 = mul %255, %267
-  %269 = const 1
-  %270 = const 1
-  %271 = call @rt.slice_grow(%254, %255, %269, %253, %270)
-  %272 = gep.word %271, %268
-  br b40(%271, %272)
+  %263 = const 1
+  %264 = mul %251, %263
+  %265 = const 1
+  %266 = const 1
+  %267 = call @rt.slice_grow(%250, %251, %265, %249, %266)
+  %268 = gep.word %267, %264
+  br b40(%267, %268)
 b42:
-  %264 = const 1
-  %265 = region.alloc %253, %264
-  %266 = itop %254
-  br b40(%266, %265)
+  %260 = const 1
+  %261 = region.alloc %249, %260
+  %262 = itop %250
+  br b40(%262, %261)
 }
 
 func @std/crypto/rsa.bnAddMul(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64, %7 i64, %8 i64, %9 i64, %10 i64) {
@@ -13933,486 +13925,478 @@ b104:
   %1387 = load.i64 %1385[1]
   %1388 = load.i64 %1385[2]
   %1389 = const 1
-  %1390 = globaladdr @rt.meta
-  store %1390[2571], %15
   call @std/crypto/rsa.bnFromBytes(%1376, %1386, %1387, %1388, %1389)
-  %1391 = load.i64 %1376[0]
-  %1392 = load.i64 %1376[1]
-  %1393 = load.i64 %1376[2]
-  %1394 = globaladdr @rt.meta
-  store %1394[2571], %15
-  call @std/crypto/rsa.newPublic(%1372, %1373, %1374, %1375, %1391, %1392, %1393, %1079)
-  %1395 = slotaddr s2
-  %1396 = load.i64 %1372[0]
-  store %1395[0], %1396
-  %1397 = load.i64 %1372[1]
-  store %1395[1], %1397
-  %1398 = load.i64 %1372[2]
-  store %1395[2], %1398
-  %1399 = load.i64 %1372[3]
-  store %1395[3], %1399
-  %1400 = load.i64 %1372[4]
-  store %1395[4], %1400
-  %1401 = load.i64 %1372[5]
-  store %1395[5], %1401
-  %1402 = load.i64 %1372[6]
-  store %1395[6], %1402
-  %1403 = load.i64 %1372[7]
-  store %1395[7], %1403
-  %1404 = load.i64 %1372[8]
-  store %1395[8], %1404
-  %1405 = load.i64 %1372[9]
-  store %1395[9], %1405
-  %1406 = load.i64 %1372[10]
-  store %1395[10], %1406
-  %1407 = load.i64 %1372[11]
-  store %1395[11], %1407
-  %1408 = load.i64 %1372[12]
-  store %1395[12], %1408
-  %1409 = load.i64 %1372[13]
-  store %1395[13], %1409
-  %1410 = load.i64 %1372[14]
-  store %1395[14], %1410
-  %1411 = slotaddr s38
-  %1412 = load.i64 %1395[0]
-  store %1411[0], %1412
-  %1413 = load.i64 %1395[1]
-  store %1411[1], %1413
-  %1414 = load.i64 %1395[2]
-  store %1411[2], %1414
-  %1415 = load.i64 %1395[3]
-  store %1411[3], %1415
-  %1416 = load.i64 %1395[4]
-  store %1411[4], %1416
-  %1417 = load.i64 %1395[5]
-  store %1411[5], %1417
-  %1418 = load.i64 %1395[6]
-  store %1411[6], %1418
-  %1419 = load.i64 %1395[7]
-  store %1411[7], %1419
-  %1420 = load.i64 %1395[8]
-  store %1411[8], %1420
-  %1421 = load.i64 %1395[9]
-  store %1411[9], %1421
-  %1422 = load.i64 %1395[10]
-  store %1411[10], %1422
-  %1423 = load.i64 %1395[11]
-  store %1411[11], %1423
-  %1424 = load.i64 %1395[12]
-  store %1411[12], %1424
-  %1425 = load.i64 %1395[13]
-  store %1411[13], %1425
-  %1426 = load.i64 %1395[14]
-  store %1411[14], %1426
-  %1427 = slotaddr s39
-  %1428 = load.i64 %1248[0]
-  %1429 = load.i64 %1248[1]
-  %1430 = load.i64 %1248[2]
-  %1431 = globaladdr @rt.meta
-  store %1431[2571], %15
-  call @std/crypto/rsa.newMont(%1427, %1428, %1429, %1430)
-  %1432 = slotaddr s6
-  %1433 = load.i64 %1427[0]
-  store %1432[0], %1433
-  %1434 = load.i64 %1427[1]
-  store %1432[1], %1434
-  %1435 = load.i64 %1427[2]
-  store %1432[2], %1435
-  %1436 = load.i64 %1427[3]
-  store %1432[3], %1436
-  %1437 = load.i64 %1427[4]
-  store %1432[4], %1437
-  %1438 = load.i64 %1427[5]
-  store %1432[5], %1438
-  %1439 = load.i64 %1427[6]
-  store %1432[6], %1439
-  %1440 = slotaddr s40
-  %1441 = load.i64 %1257[0]
-  %1442 = load.i64 %1257[1]
-  %1443 = load.i64 %1257[2]
-  %1444 = globaladdr @rt.meta
-  store %1444[2571], %15
-  call @std/crypto/rsa.newMont(%1440, %1441, %1442, %1443)
-  %1445 = slotaddr s4
-  %1446 = load.i64 %1440[0]
-  store %1445[0], %1446
-  %1447 = load.i64 %1440[1]
-  store %1445[1], %1447
-  %1448 = load.i64 %1440[2]
-  store %1445[2], %1448
-  %1449 = load.i64 %1440[3]
-  store %1445[3], %1449
-  %1450 = load.i64 %1440[4]
-  store %1445[4], %1450
-  %1451 = load.i64 %1440[5]
-  store %1445[5], %1451
-  %1452 = load.i64 %1440[6]
-  store %1445[6], %1452
-  %1453 = slotaddr s41
-  %1454 = slotaddr s42
-  %1455 = const 6
-  %1456 = load.i64 %768[1]
-  %1457 = uge %1455, %1456
-  condbr %1457, b105, b106
+  %1390 = load.i64 %1376[0]
+  %1391 = load.i64 %1376[1]
+  %1392 = load.i64 %1376[2]
+  %1393 = globaladdr @rt.meta
+  store %1393[2571], %15
+  call @std/crypto/rsa.newPublic(%1372, %1373, %1374, %1375, %1390, %1391, %1392, %1079)
+  %1394 = slotaddr s2
+  %1395 = load.i64 %1372[0]
+  store %1394[0], %1395
+  %1396 = load.i64 %1372[1]
+  store %1394[1], %1396
+  %1397 = load.i64 %1372[2]
+  store %1394[2], %1397
+  %1398 = load.i64 %1372[3]
+  store %1394[3], %1398
+  %1399 = load.i64 %1372[4]
+  store %1394[4], %1399
+  %1400 = load.i64 %1372[5]
+  store %1394[5], %1400
+  %1401 = load.i64 %1372[6]
+  store %1394[6], %1401
+  %1402 = load.i64 %1372[7]
+  store %1394[7], %1402
+  %1403 = load.i64 %1372[8]
+  store %1394[8], %1403
+  %1404 = load.i64 %1372[9]
+  store %1394[9], %1404
+  %1405 = load.i64 %1372[10]
+  store %1394[10], %1405
+  %1406 = load.i64 %1372[11]
+  store %1394[11], %1406
+  %1407 = load.i64 %1372[12]
+  store %1394[12], %1407
+  %1408 = load.i64 %1372[13]
+  store %1394[13], %1408
+  %1409 = load.i64 %1372[14]
+  store %1394[14], %1409
+  %1410 = slotaddr s38
+  %1411 = load.i64 %1394[0]
+  store %1410[0], %1411
+  %1412 = load.i64 %1394[1]
+  store %1410[1], %1412
+  %1413 = load.i64 %1394[2]
+  store %1410[2], %1413
+  %1414 = load.i64 %1394[3]
+  store %1410[3], %1414
+  %1415 = load.i64 %1394[4]
+  store %1410[4], %1415
+  %1416 = load.i64 %1394[5]
+  store %1410[5], %1416
+  %1417 = load.i64 %1394[6]
+  store %1410[6], %1417
+  %1418 = load.i64 %1394[7]
+  store %1410[7], %1418
+  %1419 = load.i64 %1394[8]
+  store %1410[8], %1419
+  %1420 = load.i64 %1394[9]
+  store %1410[9], %1420
+  %1421 = load.i64 %1394[10]
+  store %1410[10], %1421
+  %1422 = load.i64 %1394[11]
+  store %1410[11], %1422
+  %1423 = load.i64 %1394[12]
+  store %1410[12], %1423
+  %1424 = load.i64 %1394[13]
+  store %1410[13], %1424
+  %1425 = load.i64 %1394[14]
+  store %1410[14], %1425
+  %1426 = slotaddr s39
+  %1427 = load.i64 %1248[0]
+  %1428 = load.i64 %1248[1]
+  %1429 = load.i64 %1248[2]
+  %1430 = globaladdr @rt.meta
+  store %1430[2571], %15
+  call @std/crypto/rsa.newMont(%1426, %1427, %1428, %1429)
+  %1431 = slotaddr s6
+  %1432 = load.i64 %1426[0]
+  store %1431[0], %1432
+  %1433 = load.i64 %1426[1]
+  store %1431[1], %1433
+  %1434 = load.i64 %1426[2]
+  store %1431[2], %1434
+  %1435 = load.i64 %1426[3]
+  store %1431[3], %1435
+  %1436 = load.i64 %1426[4]
+  store %1431[4], %1436
+  %1437 = load.i64 %1426[5]
+  store %1431[5], %1437
+  %1438 = load.i64 %1426[6]
+  store %1431[6], %1438
+  %1439 = slotaddr s40
+  %1440 = load.i64 %1257[0]
+  %1441 = load.i64 %1257[1]
+  %1442 = load.i64 %1257[2]
+  %1443 = globaladdr @rt.meta
+  store %1443[2571], %15
+  call @std/crypto/rsa.newMont(%1439, %1440, %1441, %1442)
+  %1444 = slotaddr s4
+  %1445 = load.i64 %1439[0]
+  store %1444[0], %1445
+  %1446 = load.i64 %1439[1]
+  store %1444[1], %1446
+  %1447 = load.i64 %1439[2]
+  store %1444[2], %1447
+  %1448 = load.i64 %1439[3]
+  store %1444[3], %1448
+  %1449 = load.i64 %1439[4]
+  store %1444[4], %1449
+  %1450 = load.i64 %1439[5]
+  store %1444[5], %1450
+  %1451 = load.i64 %1439[6]
+  store %1444[6], %1451
+  %1452 = slotaddr s41
+  %1453 = slotaddr s42
+  %1454 = const 6
+  %1455 = load.i64 %768[1]
+  %1456 = uge %1454, %1455
+  condbr %1456, b105, b106
 b105:
-  %1458 = const 121
-  call @rt.panic(%1458)
+  %1457 = const 121
+  call @rt.panic(%1457)
   exit 101
 b106:
-  %1459 = load.i64 %768[0]
-  %1460 = itop %1459
-  %1461 = const 3
-  %1462 = mul %1455, %1461
-  %1463 = gep.word %1460, %1462
-  %1464 = load.i64 %1463[0]
-  %1465 = load.i64 %1463[1]
-  %1466 = load.i64 %1463[2]
-  %1467 = globaladdr @rt.meta
-  store %1467[2571], %15
-  call @std/crypto/rsa.bnFromBytes(%1454, %1464, %1465, %1466, %1190)
-  %1468 = load.i64 %1454[0]
-  %1469 = load.i64 %1454[1]
-  %1470 = load.i64 %1454[2]
-  %1471 = globaladdr @rt.meta
-  store %1471[2571], %15
-  call @std/crypto/rsa.bnTrim(%1453, %1468, %1469, %1470, %1234)
-  %1472 = slotaddr s43
-  %1473 = load.i64 %1453[0]
-  store %1472[0], %1473
-  %1474 = load.i64 %1453[1]
-  store %1472[1], %1474
-  %1475 = load.i64 %1453[2]
-  store %1472[2], %1475
-  %1476 = slotaddr s44
-  %1477 = slotaddr s45
-  %1478 = const 7
-  %1479 = load.i64 %768[1]
-  %1480 = uge %1478, %1479
-  condbr %1480, b107, b108
+  %1458 = load.i64 %768[0]
+  %1459 = itop %1458
+  %1460 = const 3
+  %1461 = mul %1454, %1460
+  %1462 = gep.word %1459, %1461
+  %1463 = load.i64 %1462[0]
+  %1464 = load.i64 %1462[1]
+  %1465 = load.i64 %1462[2]
+  call @std/crypto/rsa.bnFromBytes(%1453, %1463, %1464, %1465, %1190)
+  %1466 = load.i64 %1453[0]
+  %1467 = load.i64 %1453[1]
+  %1468 = load.i64 %1453[2]
+  %1469 = globaladdr @rt.meta
+  store %1469[2571], %15
+  call @std/crypto/rsa.bnTrim(%1452, %1466, %1467, %1468, %1234)
+  %1470 = slotaddr s43
+  %1471 = load.i64 %1452[0]
+  store %1470[0], %1471
+  %1472 = load.i64 %1452[1]
+  store %1470[1], %1472
+  %1473 = load.i64 %1452[2]
+  store %1470[2], %1473
+  %1474 = slotaddr s44
+  %1475 = slotaddr s45
+  %1476 = const 7
+  %1477 = load.i64 %768[1]
+  %1478 = uge %1476, %1477
+  condbr %1478, b107, b108
 b107:
-  %1481 = const 122
-  call @rt.panic(%1481)
+  %1479 = const 122
+  call @rt.panic(%1479)
   exit 101
 b108:
-  %1482 = load.i64 %768[0]
-  %1483 = itop %1482
-  %1484 = const 3
-  %1485 = mul %1478, %1484
-  %1486 = gep.word %1483, %1485
-  %1487 = load.i64 %1486[0]
-  %1488 = load.i64 %1486[1]
-  %1489 = load.i64 %1486[2]
-  %1490 = globaladdr @rt.meta
-  store %1490[2571], %15
-  call @std/crypto/rsa.bnFromBytes(%1477, %1487, %1488, %1489, %1190)
-  %1491 = load.i64 %1477[0]
-  %1492 = load.i64 %1477[1]
-  %1493 = load.i64 %1477[2]
-  %1494 = globaladdr @rt.meta
-  store %1494[2571], %15
-  call @std/crypto/rsa.bnTrim(%1476, %1491, %1492, %1493, %1242)
-  %1495 = slotaddr s46
-  %1496 = load.i64 %1476[0]
-  store %1495[0], %1496
-  %1497 = load.i64 %1476[1]
-  store %1495[1], %1497
-  %1498 = load.i64 %1476[2]
-  store %1495[2], %1498
-  %1499 = slotaddr s47
-  %1500 = slotaddr s48
-  %1501 = const 8
-  %1502 = load.i64 %768[1]
-  %1503 = uge %1501, %1502
-  condbr %1503, b109, b110
+  %1480 = load.i64 %768[0]
+  %1481 = itop %1480
+  %1482 = const 3
+  %1483 = mul %1476, %1482
+  %1484 = gep.word %1481, %1483
+  %1485 = load.i64 %1484[0]
+  %1486 = load.i64 %1484[1]
+  %1487 = load.i64 %1484[2]
+  call @std/crypto/rsa.bnFromBytes(%1475, %1485, %1486, %1487, %1190)
+  %1488 = load.i64 %1475[0]
+  %1489 = load.i64 %1475[1]
+  %1490 = load.i64 %1475[2]
+  %1491 = globaladdr @rt.meta
+  store %1491[2571], %15
+  call @std/crypto/rsa.bnTrim(%1474, %1488, %1489, %1490, %1242)
+  %1492 = slotaddr s46
+  %1493 = load.i64 %1474[0]
+  store %1492[0], %1493
+  %1494 = load.i64 %1474[1]
+  store %1492[1], %1494
+  %1495 = load.i64 %1474[2]
+  store %1492[2], %1495
+  %1496 = slotaddr s47
+  %1497 = slotaddr s48
+  %1498 = const 8
+  %1499 = load.i64 %768[1]
+  %1500 = uge %1498, %1499
+  condbr %1500, b109, b110
 b109:
-  %1504 = const 123
-  call @rt.panic(%1504)
+  %1501 = const 123
+  call @rt.panic(%1501)
   exit 101
 b110:
-  %1505 = load.i64 %768[0]
-  %1506 = itop %1505
-  %1507 = const 3
-  %1508 = mul %1501, %1507
-  %1509 = gep.word %1506, %1508
-  %1510 = load.i64 %1509[0]
-  %1511 = load.i64 %1509[1]
-  %1512 = load.i64 %1509[2]
+  %1502 = load.i64 %768[0]
+  %1503 = itop %1502
+  %1504 = const 3
+  %1505 = mul %1498, %1504
+  %1506 = gep.word %1503, %1505
+  %1507 = load.i64 %1506[0]
+  %1508 = load.i64 %1506[1]
+  %1509 = load.i64 %1506[2]
+  call @std/crypto/rsa.bnFromBytes(%1497, %1507, %1508, %1509, %1190)
+  %1510 = load.i64 %1497[0]
+  %1511 = load.i64 %1497[1]
+  %1512 = load.i64 %1497[2]
   %1513 = globaladdr @rt.meta
   store %1513[2571], %15
-  call @std/crypto/rsa.bnFromBytes(%1500, %1510, %1511, %1512, %1190)
-  %1514 = load.i64 %1500[0]
-  %1515 = load.i64 %1500[1]
-  %1516 = load.i64 %1500[2]
-  %1517 = globaladdr @rt.meta
-  store %1517[2571], %15
-  call @std/crypto/rsa.bnTrim(%1499, %1514, %1515, %1516, %1234)
-  %1518 = slotaddr s49
-  %1519 = load.i64 %1499[0]
-  store %1518[0], %1519
-  %1520 = load.i64 %1499[1]
-  store %1518[1], %1520
-  %1521 = load.i64 %1499[2]
-  store %1518[2], %1521
-  %1522 = load.i64 %1248[0]
-  %1523 = load.i64 %1248[1]
-  %1524 = load.i64 %1248[2]
+  call @std/crypto/rsa.bnTrim(%1496, %1510, %1511, %1512, %1234)
+  %1514 = slotaddr s49
+  %1515 = load.i64 %1496[0]
+  store %1514[0], %1515
+  %1516 = load.i64 %1496[1]
+  store %1514[1], %1516
+  %1517 = load.i64 %1496[2]
+  store %1514[2], %1517
+  %1518 = load.i64 %1248[0]
+  %1519 = load.i64 %1248[1]
+  %1520 = load.i64 %1248[2]
+  %1521 = call @std/crypto/rsa.bnBits(%1518, %1519, %1520)
+  %1522 = load.i64 %1257[0]
+  %1523 = load.i64 %1257[1]
+  %1524 = load.i64 %1257[2]
   %1525 = call @std/crypto/rsa.bnBits(%1522, %1523, %1524)
-  %1526 = load.i64 %1257[0]
-  %1527 = load.i64 %1257[1]
-  %1528 = load.i64 %1257[2]
-  %1529 = call @std/crypto/rsa.bnBits(%1526, %1527, %1528)
-  %1530 = const 0
-  %1531 = slotaddr s13
-  store %1531[0], %1530
-  store %1531[1], %1530
-  store %1531[2], %1530
-  store %1531[3], %1530
-  store %1531[4], %1530
-  store %1531[5], %1530
-  store %1531[6], %1530
-  store %1531[7], %1530
-  store %1531[8], %1530
-  store %1531[9], %1530
-  store %1531[10], %1530
-  store %1531[11], %1530
-  store %1531[12], %1530
-  store %1531[13], %1530
-  store %1531[14], %1530
-  store %1531[15], %1530
-  store %1531[16], %1530
-  store %1531[17], %1530
-  store %1531[18], %1530
-  store %1531[19], %1530
-  store %1531[20], %1530
-  store %1531[21], %1530
-  store %1531[22], %1530
-  store %1531[23], %1530
-  store %1531[24], %1530
-  store %1531[25], %1530
-  store %1531[26], %1530
-  store %1531[27], %1530
-  store %1531[28], %1530
-  store %1531[29], %1530
-  store %1531[30], %1530
-  store %1531[31], %1530
-  store %1531[32], %1530
-  store %1531[33], %1530
-  store %1531[34], %1530
-  store %1531[35], %1530
-  store %1531[36], %1530
-  store %1531[37], %1530
-  store %1531[38], %1530
-  store %1531[39], %1530
-  %1532 = load.i64 %1411[0]
-  store %1531[0], %1532
-  %1533 = load.i64 %1411[1]
-  store %1531[1], %1533
-  %1534 = load.i64 %1411[2]
-  store %1531[2], %1534
-  %1535 = load.i64 %1411[3]
-  store %1531[3], %1535
-  %1536 = load.i64 %1411[4]
-  store %1531[4], %1536
-  %1537 = load.i64 %1411[5]
-  store %1531[5], %1537
-  %1538 = load.i64 %1411[6]
-  store %1531[6], %1538
-  %1539 = load.i64 %1411[7]
-  store %1531[7], %1539
-  %1540 = load.i64 %1411[8]
-  store %1531[8], %1540
-  %1541 = load.i64 %1411[9]
-  store %1531[9], %1541
-  %1542 = load.i64 %1411[10]
-  store %1531[10], %1542
-  %1543 = load.i64 %1411[11]
-  store %1531[11], %1543
-  %1544 = load.i64 %1411[12]
-  store %1531[12], %1544
-  %1545 = load.i64 %1411[13]
-  store %1531[13], %1545
-  %1546 = load.i64 %1411[14]
-  store %1531[14], %1546
-  %1547 = load.i64 %1432[0]
-  store %1531[15], %1547
-  %1548 = load.i64 %1432[1]
-  store %1531[16], %1548
-  %1549 = load.i64 %1432[2]
-  store %1531[17], %1549
-  %1550 = load.i64 %1432[3]
-  store %1531[18], %1550
-  %1551 = load.i64 %1432[4]
-  store %1531[19], %1551
-  %1552 = load.i64 %1432[5]
-  store %1531[20], %1552
-  %1553 = load.i64 %1432[6]
-  store %1531[21], %1553
-  %1554 = load.i64 %1445[0]
-  store %1531[22], %1554
-  %1555 = load.i64 %1445[1]
-  store %1531[23], %1555
-  %1556 = load.i64 %1445[2]
-  store %1531[24], %1556
-  %1557 = load.i64 %1445[3]
-  store %1531[25], %1557
-  %1558 = load.i64 %1445[4]
-  store %1531[26], %1558
-  %1559 = load.i64 %1445[5]
-  store %1531[27], %1559
-  %1560 = load.i64 %1445[6]
-  store %1531[28], %1560
-  %1561 = load.i64 %1472[0]
-  store %1531[29], %1561
-  %1562 = load.i64 %1472[1]
-  store %1531[30], %1562
-  %1563 = load.i64 %1472[2]
-  store %1531[31], %1563
-  %1564 = load.i64 %1495[0]
-  store %1531[32], %1564
-  %1565 = load.i64 %1495[1]
-  store %1531[33], %1565
-  %1566 = load.i64 %1495[2]
-  store %1531[34], %1566
-  %1567 = load.i64 %1518[0]
-  store %1531[35], %1567
-  %1568 = load.i64 %1518[1]
-  store %1531[36], %1568
-  %1569 = load.i64 %1518[2]
-  store %1531[37], %1569
-  store %1531[38], %1525
-  store %1531[39], %1529
-  %1570 = slotaddr s17
-  %1571 = const 0
-  store %1570[0], %1571
-  %1572 = load.i64 %1531[0]
-  store %0[0], %1572
-  %1573 = load.i64 %1531[1]
-  store %0[1], %1573
-  %1574 = load.i64 %1531[2]
-  store %0[2], %1574
-  %1575 = load.i64 %1531[3]
-  store %0[3], %1575
-  %1576 = load.i64 %1531[4]
-  store %0[4], %1576
-  %1577 = load.i64 %1531[5]
-  store %0[5], %1577
-  %1578 = load.i64 %1531[6]
-  store %0[6], %1578
-  %1579 = load.i64 %1531[7]
-  store %0[7], %1579
-  %1580 = load.i64 %1531[8]
-  store %0[8], %1580
-  %1581 = load.i64 %1531[9]
-  store %0[9], %1581
-  %1582 = load.i64 %1531[10]
-  store %0[10], %1582
-  %1583 = load.i64 %1531[11]
-  store %0[11], %1583
-  %1584 = load.i64 %1531[12]
-  store %0[12], %1584
-  %1585 = load.i64 %1531[13]
-  store %0[13], %1585
-  %1586 = load.i64 %1531[14]
-  store %0[14], %1586
-  %1587 = load.i64 %1531[15]
-  store %0[15], %1587
-  %1588 = load.i64 %1531[16]
-  store %0[16], %1588
-  %1589 = load.i64 %1531[17]
-  store %0[17], %1589
-  %1590 = load.i64 %1531[18]
-  store %0[18], %1590
-  %1591 = load.i64 %1531[19]
-  store %0[19], %1591
-  %1592 = load.i64 %1531[20]
-  store %0[20], %1592
-  %1593 = load.i64 %1531[21]
-  store %0[21], %1593
-  %1594 = load.i64 %1531[22]
-  store %0[22], %1594
-  %1595 = load.i64 %1531[23]
-  store %0[23], %1595
-  %1596 = load.i64 %1531[24]
-  store %0[24], %1596
-  %1597 = load.i64 %1531[25]
-  store %0[25], %1597
-  %1598 = load.i64 %1531[26]
-  store %0[26], %1598
-  %1599 = load.i64 %1531[27]
-  store %0[27], %1599
-  %1600 = load.i64 %1531[28]
-  store %0[28], %1600
-  %1601 = load.i64 %1531[29]
-  store %0[29], %1601
-  %1602 = load.i64 %1531[30]
-  store %0[30], %1602
-  %1603 = load.i64 %1531[31]
-  store %0[31], %1603
-  %1604 = load.i64 %1531[32]
-  store %0[32], %1604
-  %1605 = load.i64 %1531[33]
-  store %0[33], %1605
-  %1606 = load.i64 %1531[34]
-  store %0[34], %1606
-  %1607 = load.i64 %1531[35]
-  store %0[35], %1607
-  %1608 = load.i64 %1531[36]
-  store %0[36], %1608
-  %1609 = load.i64 %1531[37]
-  store %0[37], %1609
-  %1610 = load.i64 %1531[38]
-  store %0[38], %1610
-  %1611 = load.i64 %1531[39]
-  store %0[39], %1611
-  %1612 = load.i64 %1570[0]
-  store %0[40], %1612
-  %1613 = load.i64 %1570[1]
-  store %0[41], %1613
-  %1614 = load.i64 %1570[2]
-  store %0[42], %1614
-  %1615 = load.i64 %1570[3]
-  store %0[43], %1615
-  %1616 = load.i64 %1570[4]
-  store %0[44], %1616
+  %1526 = const 0
+  %1527 = slotaddr s13
+  store %1527[0], %1526
+  store %1527[1], %1526
+  store %1527[2], %1526
+  store %1527[3], %1526
+  store %1527[4], %1526
+  store %1527[5], %1526
+  store %1527[6], %1526
+  store %1527[7], %1526
+  store %1527[8], %1526
+  store %1527[9], %1526
+  store %1527[10], %1526
+  store %1527[11], %1526
+  store %1527[12], %1526
+  store %1527[13], %1526
+  store %1527[14], %1526
+  store %1527[15], %1526
+  store %1527[16], %1526
+  store %1527[17], %1526
+  store %1527[18], %1526
+  store %1527[19], %1526
+  store %1527[20], %1526
+  store %1527[21], %1526
+  store %1527[22], %1526
+  store %1527[23], %1526
+  store %1527[24], %1526
+  store %1527[25], %1526
+  store %1527[26], %1526
+  store %1527[27], %1526
+  store %1527[28], %1526
+  store %1527[29], %1526
+  store %1527[30], %1526
+  store %1527[31], %1526
+  store %1527[32], %1526
+  store %1527[33], %1526
+  store %1527[34], %1526
+  store %1527[35], %1526
+  store %1527[36], %1526
+  store %1527[37], %1526
+  store %1527[38], %1526
+  store %1527[39], %1526
+  %1528 = load.i64 %1410[0]
+  store %1527[0], %1528
+  %1529 = load.i64 %1410[1]
+  store %1527[1], %1529
+  %1530 = load.i64 %1410[2]
+  store %1527[2], %1530
+  %1531 = load.i64 %1410[3]
+  store %1527[3], %1531
+  %1532 = load.i64 %1410[4]
+  store %1527[4], %1532
+  %1533 = load.i64 %1410[5]
+  store %1527[5], %1533
+  %1534 = load.i64 %1410[6]
+  store %1527[6], %1534
+  %1535 = load.i64 %1410[7]
+  store %1527[7], %1535
+  %1536 = load.i64 %1410[8]
+  store %1527[8], %1536
+  %1537 = load.i64 %1410[9]
+  store %1527[9], %1537
+  %1538 = load.i64 %1410[10]
+  store %1527[10], %1538
+  %1539 = load.i64 %1410[11]
+  store %1527[11], %1539
+  %1540 = load.i64 %1410[12]
+  store %1527[12], %1540
+  %1541 = load.i64 %1410[13]
+  store %1527[13], %1541
+  %1542 = load.i64 %1410[14]
+  store %1527[14], %1542
+  %1543 = load.i64 %1431[0]
+  store %1527[15], %1543
+  %1544 = load.i64 %1431[1]
+  store %1527[16], %1544
+  %1545 = load.i64 %1431[2]
+  store %1527[17], %1545
+  %1546 = load.i64 %1431[3]
+  store %1527[18], %1546
+  %1547 = load.i64 %1431[4]
+  store %1527[19], %1547
+  %1548 = load.i64 %1431[5]
+  store %1527[20], %1548
+  %1549 = load.i64 %1431[6]
+  store %1527[21], %1549
+  %1550 = load.i64 %1444[0]
+  store %1527[22], %1550
+  %1551 = load.i64 %1444[1]
+  store %1527[23], %1551
+  %1552 = load.i64 %1444[2]
+  store %1527[24], %1552
+  %1553 = load.i64 %1444[3]
+  store %1527[25], %1553
+  %1554 = load.i64 %1444[4]
+  store %1527[26], %1554
+  %1555 = load.i64 %1444[5]
+  store %1527[27], %1555
+  %1556 = load.i64 %1444[6]
+  store %1527[28], %1556
+  %1557 = load.i64 %1470[0]
+  store %1527[29], %1557
+  %1558 = load.i64 %1470[1]
+  store %1527[30], %1558
+  %1559 = load.i64 %1470[2]
+  store %1527[31], %1559
+  %1560 = load.i64 %1492[0]
+  store %1527[32], %1560
+  %1561 = load.i64 %1492[1]
+  store %1527[33], %1561
+  %1562 = load.i64 %1492[2]
+  store %1527[34], %1562
+  %1563 = load.i64 %1514[0]
+  store %1527[35], %1563
+  %1564 = load.i64 %1514[1]
+  store %1527[36], %1564
+  %1565 = load.i64 %1514[2]
+  store %1527[37], %1565
+  store %1527[38], %1521
+  store %1527[39], %1525
+  %1566 = slotaddr s17
+  %1567 = const 0
+  store %1566[0], %1567
+  %1568 = load.i64 %1527[0]
+  store %0[0], %1568
+  %1569 = load.i64 %1527[1]
+  store %0[1], %1569
+  %1570 = load.i64 %1527[2]
+  store %0[2], %1570
+  %1571 = load.i64 %1527[3]
+  store %0[3], %1571
+  %1572 = load.i64 %1527[4]
+  store %0[4], %1572
+  %1573 = load.i64 %1527[5]
+  store %0[5], %1573
+  %1574 = load.i64 %1527[6]
+  store %0[6], %1574
+  %1575 = load.i64 %1527[7]
+  store %0[7], %1575
+  %1576 = load.i64 %1527[8]
+  store %0[8], %1576
+  %1577 = load.i64 %1527[9]
+  store %0[9], %1577
+  %1578 = load.i64 %1527[10]
+  store %0[10], %1578
+  %1579 = load.i64 %1527[11]
+  store %0[11], %1579
+  %1580 = load.i64 %1527[12]
+  store %0[12], %1580
+  %1581 = load.i64 %1527[13]
+  store %0[13], %1581
+  %1582 = load.i64 %1527[14]
+  store %0[14], %1582
+  %1583 = load.i64 %1527[15]
+  store %0[15], %1583
+  %1584 = load.i64 %1527[16]
+  store %0[16], %1584
+  %1585 = load.i64 %1527[17]
+  store %0[17], %1585
+  %1586 = load.i64 %1527[18]
+  store %0[18], %1586
+  %1587 = load.i64 %1527[19]
+  store %0[19], %1587
+  %1588 = load.i64 %1527[20]
+  store %0[20], %1588
+  %1589 = load.i64 %1527[21]
+  store %0[21], %1589
+  %1590 = load.i64 %1527[22]
+  store %0[22], %1590
+  %1591 = load.i64 %1527[23]
+  store %0[23], %1591
+  %1592 = load.i64 %1527[24]
+  store %0[24], %1592
+  %1593 = load.i64 %1527[25]
+  store %0[25], %1593
+  %1594 = load.i64 %1527[26]
+  store %0[26], %1594
+  %1595 = load.i64 %1527[27]
+  store %0[27], %1595
+  %1596 = load.i64 %1527[28]
+  store %0[28], %1596
+  %1597 = load.i64 %1527[29]
+  store %0[29], %1597
+  %1598 = load.i64 %1527[30]
+  store %0[30], %1598
+  %1599 = load.i64 %1527[31]
+  store %0[31], %1599
+  %1600 = load.i64 %1527[32]
+  store %0[32], %1600
+  %1601 = load.i64 %1527[33]
+  store %0[33], %1601
+  %1602 = load.i64 %1527[34]
+  store %0[34], %1602
+  %1603 = load.i64 %1527[35]
+  store %0[35], %1603
+  %1604 = load.i64 %1527[36]
+  store %0[36], %1604
+  %1605 = load.i64 %1527[37]
+  store %0[37], %1605
+  %1606 = load.i64 %1527[38]
+  store %0[38], %1606
+  %1607 = load.i64 %1527[39]
+  store %0[39], %1607
+  %1608 = load.i64 %1566[0]
+  store %0[40], %1608
+  %1609 = load.i64 %1566[1]
+  store %0[41], %1609
+  %1610 = load.i64 %1566[2]
+  store %0[42], %1610
+  %1611 = load.i64 %1566[3]
+  store %0[43], %1611
+  %1612 = load.i64 %1566[4]
+  store %0[44], %1612
   region.relocate %0, 1, %5
-  %1617 = const 3
+  %1613 = const 3
+  %1614 = gep.word %0, %1613
+  region.relocate %1614, 1, %5
+  %1615 = const 8
+  %1616 = gep.word %0, %1615
+  region.relocate %1616, 1, %5
+  %1617 = const 12
   %1618 = gep.word %0, %1617
   region.relocate %1618, 1, %5
-  %1619 = const 8
+  %1619 = const 15
   %1620 = gep.word %0, %1619
   region.relocate %1620, 1, %5
-  %1621 = const 12
+  %1621 = const 19
   %1622 = gep.word %0, %1621
   region.relocate %1622, 1, %5
-  %1623 = const 15
+  %1623 = const 22
   %1624 = gep.word %0, %1623
   region.relocate %1624, 1, %5
-  %1625 = const 19
+  %1625 = const 26
   %1626 = gep.word %0, %1625
   region.relocate %1626, 1, %5
-  %1627 = const 22
+  %1627 = const 29
   %1628 = gep.word %0, %1627
   region.relocate %1628, 1, %5
-  %1629 = const 26
+  %1629 = const 32
   %1630 = gep.word %0, %1629
   region.relocate %1630, 1, %5
-  %1631 = const 29
+  %1631 = const 35
   %1632 = gep.word %0, %1631
   region.relocate %1632, 1, %5
-  %1633 = const 32
-  %1634 = gep.word %0, %1633
-  region.relocate %1634, 1, %5
-  %1635 = const 35
-  %1636 = gep.word %0, %1635
-  region.relocate %1636, 1, %5
-  %1637 = load.i64 %0[40]
-  %1638 = const 0
-  %1639 = ne %1637, %1638
-  condbr %1639, b111, b112
+  %1633 = load.i64 %0[40]
+  %1634 = const 0
+  %1635 = ne %1633, %1634
+  condbr %1635, b111, b112
 b111:
-  %1640 = const 41
-  %1641 = gep.word %0, %1640
-  call @rt.err_relocate(%1641, %5)
+  %1636 = const 41
+  %1637 = gep.word %0, %1636
+  call @rt.err_relocate(%1637, %5)
   br b112
 b112:
   region.setdepth %5
@@ -15427,675 +15411,669 @@ b0:
   %79 = load.i64 %48[0]
   %80 = load.i64 %48[1]
   %81 = load.i64 %48[2]
-  %82 = globaladdr @rt.meta
-  store %82[2571], %60
   call @std/crypto/sha256.Sum256(%78, %79, %80, %81)
-  %83 = load.i64 %78[0]
-  %84 = load.i64 %78[1]
-  %85 = load.i64 %78[2]
-  %86 = load.i64 %49[0]
-  %87 = load.i64 %49[1]
-  %88 = load.i64 %49[2]
-  %89 = load.i64 %61[7]
-  %90 = const 1
-  %91 = sub %89, %90
-  %92 = globaladdr @rt.meta
-  store %92[2571], %60
-  call @std/crypto/rsa.pssEncode(%77, %83, %84, %85, %86, %87, %88, %91)
-  %93 = const 3
-  %94 = gep.word %77, %93
-  %95 = slotaddr s6
-  %96 = load.i64 %77[0]
-  store %95[0], %96
-  %97 = load.i64 %77[1]
-  store %95[1], %97
-  %98 = load.i64 %77[2]
-  store %95[2], %98
-  %99 = slotaddr s7
-  %100 = load.i64 %94[0]
-  store %99[0], %100
-  %101 = load.i64 %94[1]
-  store %99[1], %101
-  %102 = load.i64 %94[2]
-  store %99[2], %102
-  %103 = load.i64 %94[3]
-  store %99[3], %103
-  %104 = load.i64 %94[4]
-  store %99[4], %104
-  %105 = load.i64 %99[0]
-  %106 = const 0
-  %107 = ne %105, %106
-  condbr %107, b1, b2
+  %82 = load.i64 %78[0]
+  %83 = load.i64 %78[1]
+  %84 = load.i64 %78[2]
+  %85 = load.i64 %49[0]
+  %86 = load.i64 %49[1]
+  %87 = load.i64 %49[2]
+  %88 = load.i64 %61[7]
+  %89 = const 1
+  %90 = sub %88, %89
+  %91 = globaladdr @rt.meta
+  store %91[2571], %60
+  call @std/crypto/rsa.pssEncode(%77, %82, %83, %84, %85, %86, %87, %90)
+  %92 = const 3
+  %93 = gep.word %77, %92
+  %94 = slotaddr s6
+  %95 = load.i64 %77[0]
+  store %94[0], %95
+  %96 = load.i64 %77[1]
+  store %94[1], %96
+  %97 = load.i64 %77[2]
+  store %94[2], %97
+  %98 = slotaddr s7
+  %99 = load.i64 %93[0]
+  store %98[0], %99
+  %100 = load.i64 %93[1]
+  store %98[1], %100
+  %101 = load.i64 %93[2]
+  store %98[2], %101
+  %102 = load.i64 %93[3]
+  store %98[3], %102
+  %103 = load.i64 %93[4]
+  store %98[4], %103
+  %104 = load.i64 %98[0]
+  %105 = const 0
+  %106 = ne %104, %105
+  condbr %106, b1, b2
 b1:
-  %108 = const 1
-  %109 = gep.word %99, %108
-  %110 = slotaddr s8
-  %111 = load.i64 %109[0]
-  store %110[0], %111
-  %112 = load.i64 %109[1]
-  store %110[1], %112
-  %113 = load.i64 %109[2]
-  store %110[2], %113
-  %114 = load.i64 %109[3]
-  store %110[3], %114
-  %115 = const 0
-  %116 = call @rt.region_alloc8(%60, %115)
-  %117 = const 0
-  %118 = slotaddr s9
-  %119 = ptoi %116
-  store %118[0], %119
-  store %118[1], %117
-  store %118[2], %60
+  %107 = const 1
+  %108 = gep.word %98, %107
+  %109 = slotaddr s8
+  %110 = load.i64 %108[0]
+  store %109[0], %110
+  %111 = load.i64 %108[1]
+  store %109[1], %111
+  %112 = load.i64 %108[2]
+  store %109[2], %112
+  %113 = load.i64 %108[3]
+  store %109[3], %113
+  %114 = const 0
+  %115 = call @rt.region_alloc8(%60, %114)
+  %116 = const 0
+  %117 = slotaddr s9
+  %118 = ptoi %115
+  store %117[0], %118
+  store %117[1], %116
+  store %117[2], %60
+  %119 = const 0
   %120 = const 0
   %121 = const 0
   %122 = const 0
-  %123 = const 0
-  %124 = const 3
-  %125 = slotaddr s10
-  store %125[0], %124
-  store %125[1], %121
-  store %125[2], %122
-  store %125[3], %123
-  %126 = slotaddr s11
-  %127 = const 1
-  store %126[0], %127
-  %128 = load.i64 %125[0]
-  store %126[1], %128
-  %129 = load.i64 %125[1]
-  store %126[2], %129
-  %130 = load.i64 %125[2]
-  store %126[3], %130
-  %131 = load.i64 %125[3]
-  store %126[4], %131
-  %132 = load.i64 %118[0]
-  store %0[0], %132
-  %133 = load.i64 %118[1]
-  store %0[1], %133
-  %134 = load.i64 %118[2]
-  store %0[2], %134
-  %135 = load.i64 %126[0]
-  store %0[3], %135
-  %136 = load.i64 %126[1]
-  store %0[4], %136
-  %137 = load.i64 %126[2]
-  store %0[5], %137
-  %138 = load.i64 %126[3]
-  store %0[6], %138
-  %139 = load.i64 %126[4]
-  store %0[7], %139
+  %123 = const 3
+  %124 = slotaddr s10
+  store %124[0], %123
+  store %124[1], %120
+  store %124[2], %121
+  store %124[3], %122
+  %125 = slotaddr s11
+  %126 = const 1
+  store %125[0], %126
+  %127 = load.i64 %124[0]
+  store %125[1], %127
+  %128 = load.i64 %124[1]
+  store %125[2], %128
+  %129 = load.i64 %124[2]
+  store %125[3], %129
+  %130 = load.i64 %124[3]
+  store %125[4], %130
+  %131 = load.i64 %117[0]
+  store %0[0], %131
+  %132 = load.i64 %117[1]
+  store %0[1], %132
+  %133 = load.i64 %117[2]
+  store %0[2], %133
+  %134 = load.i64 %125[0]
+  store %0[3], %134
+  %135 = load.i64 %125[1]
+  store %0[4], %135
+  %136 = load.i64 %125[2]
+  store %0[5], %136
+  %137 = load.i64 %125[3]
+  store %0[6], %137
+  %138 = load.i64 %125[4]
+  store %0[7], %138
   call @rt.region_relocate8(%0, %50)
-  %140 = load.i64 %0[3]
-  %141 = const 0
-  %142 = ne %140, %141
-  condbr %142, b3, b4
+  %139 = load.i64 %0[3]
+  %140 = const 0
+  %141 = ne %139, %140
+  condbr %141, b3, b4
 b2:
   br b5
 b3:
-  %143 = const 4
-  %144 = gep.word %0, %143
-  call @rt.err_relocate(%144, %50)
+  %142 = const 4
+  %143 = gep.word %0, %142
+  call @rt.err_relocate(%143, %50)
   br b4
 b4:
   region.setdepth %50
   ret
 b5:
-  %145 = slotaddr s12
-  %146 = load.i64 %95[0]
-  %147 = load.i64 %95[1]
-  %148 = load.i64 %95[2]
-  %149 = const 8
-  %150 = load.i64 %95[1]
-  %151 = mul %149, %150
-  %152 = const 63
-  %153 = add %151, %152
-  %154 = const 64
-  %155 = div %153, %154
-  %156 = globaladdr @rt.meta
-  store %156[2571], %60
-  call @std/crypto/rsa.bnFromBytes(%145, %146, %147, %148, %155)
-  %157 = slotaddr s9
-  %158 = load.i64 %145[0]
-  store %157[0], %158
-  %159 = load.i64 %145[1]
-  store %157[1], %159
-  %160 = load.i64 %145[2]
-  store %157[2], %160
-  %161 = const 15
-  %162 = gep.word %47, %161
-  %163 = slotaddr s13
-  %164 = load.i64 %162[0]
-  store %163[0], %164
-  %165 = load.i64 %162[1]
-  store %163[1], %165
-  %166 = load.i64 %162[2]
-  store %163[2], %166
-  %167 = load.i64 %162[3]
-  store %163[3], %167
-  %168 = load.i64 %162[4]
-  store %163[4], %168
-  %169 = load.i64 %162[5]
-  store %163[5], %169
-  %170 = load.i64 %162[6]
-  store %163[6], %170
-  %171 = load.i64 %163[1]
-  %172 = slotaddr s14
-  %173 = slotaddr s15
-  %174 = load.i64 %157[0]
-  %175 = load.i64 %157[1]
-  %176 = load.i64 %157[2]
-  %177 = load.i64 %163[0]
-  %178 = load.i64 %163[1]
-  %179 = load.i64 %163[2]
-  %180 = load.i64 %163[3]
-  %181 = load.i64 %163[4]
-  %182 = load.i64 %163[5]
-  %183 = load.i64 %163[6]
-  call @std/crypto/rsa.toMont(%173, %174, %175, %176, %177, %178, %179, %180, %181, %182, %183)
-  %184 = load.i64 %173[0]
-  %185 = load.i64 %173[1]
-  %186 = load.i64 %173[2]
-  %187 = const 29
-  %188 = gep.word %47, %187
-  %189 = load.i64 %188[0]
-  %190 = load.i64 %188[1]
-  %191 = load.i64 %188[2]
-  %192 = load.i64 %47[38]
-  %193 = load.i64 %163[0]
-  %194 = load.i64 %163[1]
-  %195 = load.i64 %163[2]
-  %196 = load.i64 %163[3]
-  %197 = load.i64 %163[4]
-  %198 = load.i64 %163[5]
-  %199 = load.i64 %163[6]
-  call @std/crypto/rsa.expMont(%172, %184, %185, %186, %189, %190, %191, %192, %193, %194, %195, %196, %197, %198, %199)
-  %200 = slotaddr s16
-  %201 = load.i64 %172[0]
-  store %200[0], %201
-  %202 = load.i64 %172[1]
-  store %200[1], %202
-  %203 = load.i64 %172[2]
-  store %200[2], %203
-  %204 = slotaddr s17
-  %205 = slotaddr s18
-  %206 = load.i64 %157[0]
-  %207 = load.i64 %157[1]
-  %208 = load.i64 %157[2]
-  %209 = const 22
-  %210 = gep.word %47, %209
-  %211 = load.i64 %210[0]
-  %212 = load.i64 %210[1]
-  %213 = load.i64 %210[2]
-  %214 = load.i64 %210[3]
-  %215 = load.i64 %210[4]
-  %216 = load.i64 %210[5]
-  %217 = load.i64 %210[6]
-  %218 = globaladdr @rt.meta
-  store %218[2571], %60
-  call @std/crypto/rsa.toMont(%205, %206, %207, %208, %211, %212, %213, %214, %215, %216, %217)
-  %219 = load.i64 %205[0]
-  %220 = load.i64 %205[1]
-  %221 = load.i64 %205[2]
-  %222 = const 32
-  %223 = gep.word %47, %222
-  %224 = load.i64 %223[0]
-  %225 = load.i64 %223[1]
-  %226 = load.i64 %223[2]
-  %227 = load.i64 %47[39]
-  %228 = const 22
-  %229 = gep.word %47, %228
-  %230 = load.i64 %229[0]
-  %231 = load.i64 %229[1]
-  %232 = load.i64 %229[2]
-  %233 = load.i64 %229[3]
-  %234 = load.i64 %229[4]
-  %235 = load.i64 %229[5]
-  %236 = load.i64 %229[6]
-  %237 = globaladdr @rt.meta
-  store %237[2571], %60
-  call @std/crypto/rsa.expMont(%204, %219, %220, %221, %224, %225, %226, %227, %230, %231, %232, %233, %234, %235, %236)
-  %238 = slotaddr s19
-  %239 = load.i64 %204[0]
-  store %238[0], %239
-  %240 = load.i64 %204[1]
-  store %238[1], %240
-  %241 = load.i64 %204[2]
-  store %238[2], %241
-  %242 = const 1
-  %243 = add %171, %242
-  %244 = slotaddr s20
-  %245 = const 5
-  %246 = mul %245, %243
-  %247 = globaladdr @rt.meta
-  store %247[2571], %60
-  call @std/crypto/rsa.zeros(%244, %246)
-  %248 = slotaddr s21
-  %249 = load.i64 %244[0]
-  store %248[0], %249
-  %250 = load.i64 %244[1]
-  store %248[1], %250
-  %251 = load.i64 %244[2]
-  store %248[2], %251
-  %252 = const 0
-  %253 = const 5
-  %254 = mul %253, %243
-  %255 = slotaddr s22
-  %256 = load.i64 %248[0]
-  %257 = const 3
-  %258 = shl %252, %257
-  %259 = add %256, %258
-  store %255[0], %259
-  store %255[1], %254
-  %260 = load.i64 %248[2]
-  store %255[2], %260
-  %261 = slotaddr s23
-  %262 = load.i64 %255[0]
-  store %261[0], %262
-  %263 = load.i64 %255[1]
-  store %261[1], %263
-  %264 = load.i64 %255[2]
-  store %261[2], %264
-  %265 = load.i64 %248[0]
-  %266 = const 1
-  %267 = add %50, %266
-  %268 = const 0
-  %269 = slotaddr s24
-  %270 = load.i64 %200[0]
-  %271 = load.i64 %200[1]
-  %272 = load.i64 %200[2]
-  %273 = load.i64 %163[0]
-  %274 = load.i64 %163[1]
-  %275 = load.i64 %163[2]
-  %276 = load.i64 %163[3]
-  %277 = load.i64 %163[4]
-  %278 = load.i64 %163[5]
-  %279 = load.i64 %163[6]
-  call @std/crypto/rsa.toMont(%269, %270, %271, %272, %273, %274, %275, %276, %277, %278, %279)
-  %280 = load.i64 %269[0]
-  %281 = load.i64 %269[1]
-  %282 = load.i64 %269[2]
-  %283 = globaladdr @rt.meta
-  store %283[2572], %267
-  call @std/crypto/rsa.put(%261, %268, %280, %281, %282, %171)
-  %284 = const 1
-  %285 = add %50, %284
-  %286 = slotaddr s25
-  %287 = load.i64 %238[0]
-  %288 = load.i64 %238[1]
-  %289 = load.i64 %238[2]
-  %290 = load.i64 %163[0]
-  %291 = load.i64 %163[1]
-  %292 = load.i64 %163[2]
-  %293 = load.i64 %163[3]
-  %294 = load.i64 %163[4]
-  %295 = load.i64 %163[5]
-  %296 = load.i64 %163[6]
-  call @std/crypto/rsa.toMont(%286, %287, %288, %289, %290, %291, %292, %293, %294, %295, %296)
-  %297 = load.i64 %286[0]
-  %298 = load.i64 %286[1]
-  %299 = load.i64 %286[2]
-  %300 = globaladdr @rt.meta
-  store %300[2572], %285
-  call @std/crypto/rsa.put(%261, %243, %297, %298, %299, %171)
-  %301 = const 1
-  %302 = add %50, %301
-  %303 = const 3
-  %304 = mul %303, %243
-  %305 = const 35
-  %306 = gep.word %47, %305
-  %307 = load.i64 %306[0]
-  %308 = load.i64 %306[1]
-  %309 = load.i64 %306[2]
-  %310 = globaladdr @rt.meta
-  store %310[2572], %302
-  call @std/crypto/rsa.put(%261, %304, %307, %308, %309, %171)
-  %311 = const 1
-  %312 = add %50, %311
-  %313 = const 2
-  %314 = mul %313, %243
-  %315 = const 0
-  %316 = load.i64 %163[0]
-  %317 = load.i64 %163[1]
-  %318 = load.i64 %163[2]
-  %319 = globaladdr @rt.meta
-  store %319[2572], %312
-  call @std/crypto/rsa.subMod(%261, %314, %315, %243, %316, %317, %318)
-  %320 = const 1
-  %321 = add %50, %320
-  %322 = const 4
-  %323 = mul %322, %243
-  %324 = const 2
-  %325 = mul %324, %243
-  %326 = const 3
-  %327 = mul %326, %243
-  %328 = load.i64 %163[0]
-  %329 = load.i64 %163[1]
-  %330 = load.i64 %163[2]
-  %331 = load.i64 %163[3]
-  %332 = load.i64 %163[4]
-  %333 = load.i64 %163[5]
-  %334 = load.i64 %163[6]
-  %335 = globaladdr @rt.meta
-  store %335[2572], %321
-  call @std/crypto/rsa.montMul(%261, %265, %323, %325, %327, %328, %329, %330, %331, %332, %333, %334)
+  %144 = slotaddr s12
+  %145 = load.i64 %94[0]
+  %146 = load.i64 %94[1]
+  %147 = load.i64 %94[2]
+  %148 = const 8
+  %149 = load.i64 %94[1]
+  %150 = mul %148, %149
+  %151 = const 63
+  %152 = add %150, %151
+  %153 = const 64
+  %154 = div %152, %153
+  %155 = globaladdr @rt.meta
+  store %155[2571], %60
+  call @std/crypto/rsa.bnFromBytes(%144, %145, %146, %147, %154)
+  %156 = slotaddr s9
+  %157 = load.i64 %144[0]
+  store %156[0], %157
+  %158 = load.i64 %144[1]
+  store %156[1], %158
+  %159 = load.i64 %144[2]
+  store %156[2], %159
+  %160 = const 15
+  %161 = gep.word %47, %160
+  %162 = slotaddr s13
+  %163 = load.i64 %161[0]
+  store %162[0], %163
+  %164 = load.i64 %161[1]
+  store %162[1], %164
+  %165 = load.i64 %161[2]
+  store %162[2], %165
+  %166 = load.i64 %161[3]
+  store %162[3], %166
+  %167 = load.i64 %161[4]
+  store %162[4], %167
+  %168 = load.i64 %161[5]
+  store %162[5], %168
+  %169 = load.i64 %161[6]
+  store %162[6], %169
+  %170 = load.i64 %162[1]
+  %171 = slotaddr s14
+  %172 = slotaddr s15
+  %173 = load.i64 %156[0]
+  %174 = load.i64 %156[1]
+  %175 = load.i64 %156[2]
+  %176 = load.i64 %162[0]
+  %177 = load.i64 %162[1]
+  %178 = load.i64 %162[2]
+  %179 = load.i64 %162[3]
+  %180 = load.i64 %162[4]
+  %181 = load.i64 %162[5]
+  %182 = load.i64 %162[6]
+  call @std/crypto/rsa.toMont(%172, %173, %174, %175, %176, %177, %178, %179, %180, %181, %182)
+  %183 = load.i64 %172[0]
+  %184 = load.i64 %172[1]
+  %185 = load.i64 %172[2]
+  %186 = const 29
+  %187 = gep.word %47, %186
+  %188 = load.i64 %187[0]
+  %189 = load.i64 %187[1]
+  %190 = load.i64 %187[2]
+  %191 = load.i64 %47[38]
+  %192 = load.i64 %162[0]
+  %193 = load.i64 %162[1]
+  %194 = load.i64 %162[2]
+  %195 = load.i64 %162[3]
+  %196 = load.i64 %162[4]
+  %197 = load.i64 %162[5]
+  %198 = load.i64 %162[6]
+  call @std/crypto/rsa.expMont(%171, %183, %184, %185, %188, %189, %190, %191, %192, %193, %194, %195, %196, %197, %198)
+  %199 = slotaddr s16
+  %200 = load.i64 %171[0]
+  store %199[0], %200
+  %201 = load.i64 %171[1]
+  store %199[1], %201
+  %202 = load.i64 %171[2]
+  store %199[2], %202
+  %203 = slotaddr s17
+  %204 = slotaddr s18
+  %205 = load.i64 %156[0]
+  %206 = load.i64 %156[1]
+  %207 = load.i64 %156[2]
+  %208 = const 22
+  %209 = gep.word %47, %208
+  %210 = load.i64 %209[0]
+  %211 = load.i64 %209[1]
+  %212 = load.i64 %209[2]
+  %213 = load.i64 %209[3]
+  %214 = load.i64 %209[4]
+  %215 = load.i64 %209[5]
+  %216 = load.i64 %209[6]
+  call @std/crypto/rsa.toMont(%204, %205, %206, %207, %210, %211, %212, %213, %214, %215, %216)
+  %217 = load.i64 %204[0]
+  %218 = load.i64 %204[1]
+  %219 = load.i64 %204[2]
+  %220 = const 32
+  %221 = gep.word %47, %220
+  %222 = load.i64 %221[0]
+  %223 = load.i64 %221[1]
+  %224 = load.i64 %221[2]
+  %225 = load.i64 %47[39]
+  %226 = const 22
+  %227 = gep.word %47, %226
+  %228 = load.i64 %227[0]
+  %229 = load.i64 %227[1]
+  %230 = load.i64 %227[2]
+  %231 = load.i64 %227[3]
+  %232 = load.i64 %227[4]
+  %233 = load.i64 %227[5]
+  %234 = load.i64 %227[6]
+  %235 = globaladdr @rt.meta
+  store %235[2571], %60
+  call @std/crypto/rsa.expMont(%203, %217, %218, %219, %222, %223, %224, %225, %228, %229, %230, %231, %232, %233, %234)
+  %236 = slotaddr s19
+  %237 = load.i64 %203[0]
+  store %236[0], %237
+  %238 = load.i64 %203[1]
+  store %236[1], %238
+  %239 = load.i64 %203[2]
+  store %236[2], %239
+  %240 = const 1
+  %241 = add %170, %240
+  %242 = slotaddr s20
+  %243 = const 5
+  %244 = mul %243, %241
+  %245 = globaladdr @rt.meta
+  store %245[2571], %60
+  call @std/crypto/rsa.zeros(%242, %244)
+  %246 = slotaddr s21
+  %247 = load.i64 %242[0]
+  store %246[0], %247
+  %248 = load.i64 %242[1]
+  store %246[1], %248
+  %249 = load.i64 %242[2]
+  store %246[2], %249
+  %250 = const 0
+  %251 = const 5
+  %252 = mul %251, %241
+  %253 = slotaddr s22
+  %254 = load.i64 %246[0]
+  %255 = const 3
+  %256 = shl %250, %255
+  %257 = add %254, %256
+  store %253[0], %257
+  store %253[1], %252
+  %258 = load.i64 %246[2]
+  store %253[2], %258
+  %259 = slotaddr s23
+  %260 = load.i64 %253[0]
+  store %259[0], %260
+  %261 = load.i64 %253[1]
+  store %259[1], %261
+  %262 = load.i64 %253[2]
+  store %259[2], %262
+  %263 = load.i64 %246[0]
+  %264 = const 1
+  %265 = add %50, %264
+  %266 = const 0
+  %267 = slotaddr s24
+  %268 = load.i64 %199[0]
+  %269 = load.i64 %199[1]
+  %270 = load.i64 %199[2]
+  %271 = load.i64 %162[0]
+  %272 = load.i64 %162[1]
+  %273 = load.i64 %162[2]
+  %274 = load.i64 %162[3]
+  %275 = load.i64 %162[4]
+  %276 = load.i64 %162[5]
+  %277 = load.i64 %162[6]
+  call @std/crypto/rsa.toMont(%267, %268, %269, %270, %271, %272, %273, %274, %275, %276, %277)
+  %278 = load.i64 %267[0]
+  %279 = load.i64 %267[1]
+  %280 = load.i64 %267[2]
+  %281 = globaladdr @rt.meta
+  store %281[2572], %265
+  call @std/crypto/rsa.put(%259, %266, %278, %279, %280, %170)
+  %282 = const 1
+  %283 = add %50, %282
+  %284 = slotaddr s25
+  %285 = load.i64 %236[0]
+  %286 = load.i64 %236[1]
+  %287 = load.i64 %236[2]
+  %288 = load.i64 %162[0]
+  %289 = load.i64 %162[1]
+  %290 = load.i64 %162[2]
+  %291 = load.i64 %162[3]
+  %292 = load.i64 %162[4]
+  %293 = load.i64 %162[5]
+  %294 = load.i64 %162[6]
+  call @std/crypto/rsa.toMont(%284, %285, %286, %287, %288, %289, %290, %291, %292, %293, %294)
+  %295 = load.i64 %284[0]
+  %296 = load.i64 %284[1]
+  %297 = load.i64 %284[2]
+  %298 = globaladdr @rt.meta
+  store %298[2572], %283
+  call @std/crypto/rsa.put(%259, %241, %295, %296, %297, %170)
+  %299 = const 1
+  %300 = add %50, %299
+  %301 = const 3
+  %302 = mul %301, %241
+  %303 = const 35
+  %304 = gep.word %47, %303
+  %305 = load.i64 %304[0]
+  %306 = load.i64 %304[1]
+  %307 = load.i64 %304[2]
+  %308 = globaladdr @rt.meta
+  store %308[2572], %300
+  call @std/crypto/rsa.put(%259, %302, %305, %306, %307, %170)
+  %309 = const 1
+  %310 = add %50, %309
+  %311 = const 2
+  %312 = mul %311, %241
+  %313 = const 0
+  %314 = load.i64 %162[0]
+  %315 = load.i64 %162[1]
+  %316 = load.i64 %162[2]
+  %317 = globaladdr @rt.meta
+  store %317[2572], %310
+  call @std/crypto/rsa.subMod(%259, %312, %313, %241, %314, %315, %316)
+  %318 = const 1
+  %319 = add %50, %318
+  %320 = const 4
+  %321 = mul %320, %241
+  %322 = const 2
+  %323 = mul %322, %241
+  %324 = const 3
+  %325 = mul %324, %241
+  %326 = load.i64 %162[0]
+  %327 = load.i64 %162[1]
+  %328 = load.i64 %162[2]
+  %329 = load.i64 %162[3]
+  %330 = load.i64 %162[4]
+  %331 = load.i64 %162[5]
+  %332 = load.i64 %162[6]
+  %333 = globaladdr @rt.meta
+  store %333[2572], %319
+  call @std/crypto/rsa.montMul(%259, %263, %321, %323, %325, %326, %327, %328, %329, %330, %331, %332)
+  %334 = const 0
+  %335 = region.alloc %60, %334
   %336 = const 0
-  %337 = region.alloc %60, %336
-  %338 = const 0
-  %339 = slotaddr s22
-  %340 = ptoi %337
+  %337 = slotaddr s22
+  %338 = ptoi %335
+  store %337[0], %338
+  store %337[1], %336
+  store %337[2], %60
+  %339 = slotaddr s26
+  %340 = load.i64 %337[0]
   store %339[0], %340
-  store %339[1], %338
-  store %339[2], %60
-  %341 = slotaddr s26
-  %342 = load.i64 %339[0]
-  store %341[0], %342
-  %343 = load.i64 %339[1]
-  store %341[1], %343
-  %344 = load.i64 %339[2]
-  store %341[2], %344
-  %345 = region.depth
-  %346 = const 0
-  %347 = slotaddr s27
+  %341 = load.i64 %337[1]
+  store %339[1], %341
+  %342 = load.i64 %337[2]
+  store %339[2], %342
+  %343 = region.depth
+  %344 = const 0
+  %345 = slotaddr s27
+  %346 = region.depth
+  %347 = slotaddr s28
+  store %347[0], %344
   %348 = region.depth
-  %349 = slotaddr s28
-  store %349[0], %346
-  %350 = region.depth
   br b8
 b6:
-  region.setdepth %345
-  %405 = slotaddr s30
-  %406 = load.i64 %238[0]
-  %407 = load.i64 %238[1]
-  %408 = load.i64 %238[2]
-  %409 = const 22
-  %410 = gep.word %47, %409
-  %411 = load.i64 %410[0]
-  %412 = load.i64 %410[1]
-  %413 = load.i64 %410[2]
-  %414 = load.i64 %341[0]
-  %415 = load.i64 %341[1]
-  %416 = load.i64 %341[2]
-  %417 = load.i64 %61[1]
-  %418 = globaladdr @rt.meta
-  store %418[2571], %60
-  call @std/crypto/rsa.bnAddMul(%405, %406, %407, %408, %411, %412, %413, %414, %415, %416, %417)
-  %419 = slotaddr s29
-  %420 = load.i64 %405[0]
-  store %419[0], %420
-  %421 = load.i64 %405[1]
-  store %419[1], %421
-  %422 = load.i64 %405[2]
-  store %419[2], %422
-  %423 = slotaddr s31
-  %424 = slotaddr s32
-  %425 = load.i64 %419[0]
-  %426 = load.i64 %419[1]
-  %427 = load.i64 %419[2]
-  %428 = load.i64 %61[6]
-  %429 = globaladdr @rt.meta
-  store %429[2571], %60
-  call @std/crypto/rsa.bnToBytes(%424, %425, %426, %427, %428)
-  %430 = load.i64 %424[0]
-  %431 = load.i64 %424[1]
-  %432 = load.i64 %424[2]
-  call @std/internal/bless.Bytes(%423, %430, %431, %432)
-  %433 = slotaddr s22
-  %434 = load.i64 %423[0]
-  store %433[0], %434
-  %435 = load.i64 %423[1]
-  store %433[1], %435
-  %436 = load.i64 %423[2]
-  store %433[2], %436
-  %437 = slotaddr s33
-  %438 = slotaddr s34
-  %439 = slotaddr s35
-  %440 = slotaddr s36
-  %441 = load.i64 %433[0]
-  %442 = load.i64 %433[1]
-  %443 = load.i64 %433[2]
-  %444 = load.i64 %61[1]
-  call @std/crypto/rsa.bnFromBytes(%440, %441, %442, %443, %444)
-  %445 = load.i64 %440[0]
-  %446 = load.i64 %440[1]
-  %447 = load.i64 %440[2]
-  %448 = const 8
-  %449 = gep.word %61, %448
-  %450 = load.i64 %449[0]
-  %451 = load.i64 %449[1]
-  %452 = load.i64 %449[2]
-  %453 = load.i64 %449[3]
-  %454 = load.i64 %449[4]
-  %455 = load.i64 %449[5]
-  %456 = load.i64 %449[6]
-  call @std/crypto/rsa.toMont(%439, %445, %446, %447, %450, %451, %452, %453, %454, %455, %456)
-  %457 = load.i64 %439[0]
-  %458 = load.i64 %439[1]
-  %459 = load.i64 %439[2]
-  %460 = const 3
-  %461 = gep.word %61, %460
-  %462 = load.i64 %461[0]
-  %463 = load.i64 %461[1]
-  %464 = load.i64 %461[2]
-  %465 = const 3
-  %466 = gep.word %61, %465
-  %467 = load.i64 %466[0]
-  %468 = load.i64 %466[1]
-  %469 = load.i64 %466[2]
-  %470 = call @std/crypto/rsa.bnBits(%467, %468, %469)
-  %471 = const 8
-  %472 = gep.word %61, %471
-  %473 = load.i64 %472[0]
-  %474 = load.i64 %472[1]
-  %475 = load.i64 %472[2]
-  %476 = load.i64 %472[3]
-  %477 = load.i64 %472[4]
-  %478 = load.i64 %472[5]
-  %479 = load.i64 %472[6]
-  call @std/crypto/rsa.expPub(%438, %457, %458, %459, %462, %463, %464, %470, %473, %474, %475, %476, %477, %478, %479)
-  %480 = load.i64 %438[0]
-  %481 = load.i64 %438[1]
-  %482 = load.i64 %438[2]
-  %483 = load.i64 %61[6]
-  call @std/crypto/rsa.bnToBytes(%437, %480, %481, %482, %483)
-  %484 = slotaddr s37
-  %485 = load.i64 %437[0]
-  store %484[0], %485
-  %486 = load.i64 %437[1]
-  store %484[1], %486
-  %487 = load.i64 %437[2]
-  store %484[2], %487
-  %488 = load.i64 %484[0]
-  %489 = load.i64 %484[1]
-  %490 = load.i64 %484[2]
-  %491 = slotaddr s38
-  %492 = load.i64 %95[0]
-  %493 = load.i64 %95[1]
-  %494 = load.i64 %95[2]
-  call @std/internal/bless.Bytes(%491, %492, %493, %494)
-  %495 = load.i64 %491[0]
-  %496 = load.i64 %491[1]
-  %497 = load.i64 %491[2]
-  %498 = call @std/crypto/rsa.sameTail(%488, %489, %490, %495, %496, %497)
-  %499 = const 1
-  %500 = xor %498, %499
-  condbr %500, b17, b18
+  region.setdepth %343
+  %403 = slotaddr s30
+  %404 = load.i64 %236[0]
+  %405 = load.i64 %236[1]
+  %406 = load.i64 %236[2]
+  %407 = const 22
+  %408 = gep.word %47, %407
+  %409 = load.i64 %408[0]
+  %410 = load.i64 %408[1]
+  %411 = load.i64 %408[2]
+  %412 = load.i64 %339[0]
+  %413 = load.i64 %339[1]
+  %414 = load.i64 %339[2]
+  %415 = load.i64 %61[1]
+  %416 = globaladdr @rt.meta
+  store %416[2571], %60
+  call @std/crypto/rsa.bnAddMul(%403, %404, %405, %406, %409, %410, %411, %412, %413, %414, %415)
+  %417 = slotaddr s29
+  %418 = load.i64 %403[0]
+  store %417[0], %418
+  %419 = load.i64 %403[1]
+  store %417[1], %419
+  %420 = load.i64 %403[2]
+  store %417[2], %420
+  %421 = slotaddr s31
+  %422 = slotaddr s32
+  %423 = load.i64 %417[0]
+  %424 = load.i64 %417[1]
+  %425 = load.i64 %417[2]
+  %426 = load.i64 %61[6]
+  call @std/crypto/rsa.bnToBytes(%422, %423, %424, %425, %426)
+  %427 = load.i64 %422[0]
+  %428 = load.i64 %422[1]
+  %429 = load.i64 %422[2]
+  call @std/internal/bless.Bytes(%421, %427, %428, %429)
+  %430 = slotaddr s22
+  %431 = load.i64 %421[0]
+  store %430[0], %431
+  %432 = load.i64 %421[1]
+  store %430[1], %432
+  %433 = load.i64 %421[2]
+  store %430[2], %433
+  %434 = slotaddr s33
+  %435 = slotaddr s34
+  %436 = slotaddr s35
+  %437 = slotaddr s36
+  %438 = load.i64 %430[0]
+  %439 = load.i64 %430[1]
+  %440 = load.i64 %430[2]
+  %441 = load.i64 %61[1]
+  call @std/crypto/rsa.bnFromBytes(%437, %438, %439, %440, %441)
+  %442 = load.i64 %437[0]
+  %443 = load.i64 %437[1]
+  %444 = load.i64 %437[2]
+  %445 = const 8
+  %446 = gep.word %61, %445
+  %447 = load.i64 %446[0]
+  %448 = load.i64 %446[1]
+  %449 = load.i64 %446[2]
+  %450 = load.i64 %446[3]
+  %451 = load.i64 %446[4]
+  %452 = load.i64 %446[5]
+  %453 = load.i64 %446[6]
+  call @std/crypto/rsa.toMont(%436, %442, %443, %444, %447, %448, %449, %450, %451, %452, %453)
+  %454 = load.i64 %436[0]
+  %455 = load.i64 %436[1]
+  %456 = load.i64 %436[2]
+  %457 = const 3
+  %458 = gep.word %61, %457
+  %459 = load.i64 %458[0]
+  %460 = load.i64 %458[1]
+  %461 = load.i64 %458[2]
+  %462 = const 3
+  %463 = gep.word %61, %462
+  %464 = load.i64 %463[0]
+  %465 = load.i64 %463[1]
+  %466 = load.i64 %463[2]
+  %467 = call @std/crypto/rsa.bnBits(%464, %465, %466)
+  %468 = const 8
+  %469 = gep.word %61, %468
+  %470 = load.i64 %469[0]
+  %471 = load.i64 %469[1]
+  %472 = load.i64 %469[2]
+  %473 = load.i64 %469[3]
+  %474 = load.i64 %469[4]
+  %475 = load.i64 %469[5]
+  %476 = load.i64 %469[6]
+  call @std/crypto/rsa.expPub(%435, %454, %455, %456, %459, %460, %461, %467, %470, %471, %472, %473, %474, %475, %476)
+  %477 = load.i64 %435[0]
+  %478 = load.i64 %435[1]
+  %479 = load.i64 %435[2]
+  %480 = load.i64 %61[6]
+  call @std/crypto/rsa.bnToBytes(%434, %477, %478, %479, %480)
+  %481 = slotaddr s37
+  %482 = load.i64 %434[0]
+  store %481[0], %482
+  %483 = load.i64 %434[1]
+  store %481[1], %483
+  %484 = load.i64 %434[2]
+  store %481[2], %484
+  %485 = load.i64 %481[0]
+  %486 = load.i64 %481[1]
+  %487 = load.i64 %481[2]
+  %488 = slotaddr s38
+  %489 = load.i64 %94[0]
+  %490 = load.i64 %94[1]
+  %491 = load.i64 %94[2]
+  call @std/internal/bless.Bytes(%488, %489, %490, %491)
+  %492 = load.i64 %488[0]
+  %493 = load.i64 %488[1]
+  %494 = load.i64 %488[2]
+  %495 = call @std/crypto/rsa.sameTail(%485, %486, %487, %492, %493, %494)
+  %496 = const 1
+  %497 = xor %495, %496
+  condbr %497, b17, b18
 b7:
   br b6
 b8:
-  region.setdepth %350
-  %351 = load.i64 %349[0]
-  %352 = lt %351, %171
-  condbr %352, b9, b10
+  region.setdepth %348
+  %349 = load.i64 %347[0]
+  %350 = lt %349, %170
+  condbr %350, b9, b10
 b9:
   region.enter
+  %351 = region.depth
+  %352 = load.i64 %347[0]
   %353 = region.depth
-  %354 = load.i64 %349[0]
-  %355 = region.depth
-  %356 = const 1
-  %357 = add %50, %356
-  %358 = slotaddr s22
-  %359 = load.i64 %341[0]
-  store %358[0], %359
-  %360 = load.i64 %341[1]
-  store %358[1], %360
-  %361 = load.i64 %341[2]
-  store %358[2], %361
-  %362 = const 4
-  %363 = mul %362, %243
-  %364 = add %363, %354
-  %365 = load.i64 %261[1]
-  %366 = uge %364, %365
-  condbr %366, b12, b13
+  %354 = const 1
+  %355 = add %50, %354
+  %356 = slotaddr s22
+  %357 = load.i64 %339[0]
+  store %356[0], %357
+  %358 = load.i64 %339[1]
+  store %356[1], %358
+  %359 = load.i64 %339[2]
+  store %356[2], %359
+  %360 = const 4
+  %361 = mul %360, %241
+  %362 = add %361, %352
+  %363 = load.i64 %259[1]
+  %364 = uge %362, %363
+  condbr %364, b12, b13
 b10:
-  region.setdepth %350
+  region.setdepth %348
   br b7
 b11:
-  region.setdepth %355
-  %402 = const 1
-  %403 = load.i64 %349[0]
-  %404 = add %403, %402
-  store %349[0], %404
+  region.setdepth %353
+  %400 = const 1
+  %401 = load.i64 %347[0]
+  %402 = add %401, %400
+  store %347[0], %402
   br b8
 b12:
-  %367 = const 130
-  call @rt.panic(%367)
+  %365 = const 130
+  call @rt.panic(%365)
   exit 101
 b13:
-  %368 = load.i64 %261[0]
-  %369 = itop %368
-  %370 = const 1
-  %371 = mul %364, %370
-  %372 = gep.word %369, %371
-  %373 = load.i64 %372[0]
-  %374 = load.i64 %358[2]
-  %375 = load.i64 %358[0]
-  %376 = load.i64 %358[1]
-  %379 = const 8
-  %380 = mul %376, %379
-  %381 = add %375, %380
-  %382 = region.bump %374
-  %383 = ptoi %382
-  %384 = eq %383, %381
-  condbr %384, b16, b15
-b14(%377 ptr, %378 ptr):
-  store %378[0], %373
-  %394 = load.i64 %358[1]
-  %395 = const 1
-  %396 = add %394, %395
-  %397 = slotaddr s29
-  %398 = ptoi %377
-  store %397[0], %398
-  store %397[1], %396
-  store %397[2], %374
-  %399 = load.i64 %397[0]
-  store %341[0], %399
-  %400 = load.i64 %397[1]
-  store %341[1], %400
-  %401 = load.i64 %397[2]
-  store %341[2], %401
+  %366 = load.i64 %259[0]
+  %367 = itop %366
+  %368 = const 1
+  %369 = mul %362, %368
+  %370 = gep.word %367, %369
+  %371 = load.i64 %370[0]
+  %372 = load.i64 %356[2]
+  %373 = load.i64 %356[0]
+  %374 = load.i64 %356[1]
+  %377 = const 8
+  %378 = mul %374, %377
+  %379 = add %373, %378
+  %380 = region.bump %372
+  %381 = ptoi %380
+  %382 = eq %381, %379
+  condbr %382, b16, b15
+b14(%375 ptr, %376 ptr):
+  store %376[0], %371
+  %392 = load.i64 %356[1]
+  %393 = const 1
+  %394 = add %392, %393
+  %395 = slotaddr s29
+  %396 = ptoi %375
+  store %395[0], %396
+  store %395[1], %394
+  store %395[2], %372
+  %397 = load.i64 %395[0]
+  store %339[0], %397
+  %398 = load.i64 %395[1]
+  store %339[1], %398
+  %399 = load.i64 %395[2]
+  store %339[2], %399
   br b11
 b15:
+  %386 = const 1
+  %387 = mul %374, %386
   %388 = const 1
-  %389 = mul %376, %388
-  %390 = const 1
-  %391 = const 1
-  %392 = call @rt.slice_grow(%375, %376, %390, %374, %391)
-  %393 = gep.word %392, %389
-  br b14(%392, %393)
+  %389 = const 1
+  %390 = call @rt.slice_grow(%373, %374, %388, %372, %389)
+  %391 = gep.word %390, %387
+  br b14(%390, %391)
 b16:
-  %385 = const 1
-  %386 = region.alloc %374, %385
-  %387 = itop %375
-  br b14(%387, %386)
+  %383 = const 1
+  %384 = region.alloc %372, %383
+  %385 = itop %373
+  br b14(%385, %384)
 b17:
-  %501 = const 0
-  %502 = call @rt.region_alloc8(%60, %501)
+  %498 = const 0
+  %499 = call @rt.region_alloc8(%60, %498)
+  %500 = const 0
+  %501 = slotaddr s39
+  %502 = ptoi %499
+  store %501[0], %502
+  store %501[1], %500
+  store %501[2], %60
   %503 = const 0
-  %504 = slotaddr s39
-  %505 = ptoi %502
-  store %504[0], %505
-  store %504[1], %503
-  store %504[2], %60
+  %504 = const 0
+  %505 = const 0
   %506 = const 0
-  %507 = const 0
-  %508 = const 0
-  %509 = const 0
-  %510 = const 2
-  %511 = slotaddr s8
-  store %511[0], %510
-  store %511[1], %507
-  store %511[2], %508
-  store %511[3], %509
-  %512 = slotaddr s11
-  %513 = const 1
-  store %512[0], %513
-  %514 = load.i64 %511[0]
-  store %512[1], %514
-  %515 = load.i64 %511[1]
-  store %512[2], %515
-  %516 = load.i64 %511[2]
-  store %512[3], %516
-  %517 = load.i64 %511[3]
-  store %512[4], %517
-  %518 = load.i64 %504[0]
-  store %0[0], %518
-  %519 = load.i64 %504[1]
-  store %0[1], %519
-  %520 = load.i64 %504[2]
-  store %0[2], %520
-  %521 = load.i64 %512[0]
-  store %0[3], %521
-  %522 = load.i64 %512[1]
-  store %0[4], %522
-  %523 = load.i64 %512[2]
-  store %0[5], %523
-  %524 = load.i64 %512[3]
-  store %0[6], %524
-  %525 = load.i64 %512[4]
-  store %0[7], %525
+  %507 = const 2
+  %508 = slotaddr s8
+  store %508[0], %507
+  store %508[1], %504
+  store %508[2], %505
+  store %508[3], %506
+  %509 = slotaddr s11
+  %510 = const 1
+  store %509[0], %510
+  %511 = load.i64 %508[0]
+  store %509[1], %511
+  %512 = load.i64 %508[1]
+  store %509[2], %512
+  %513 = load.i64 %508[2]
+  store %509[3], %513
+  %514 = load.i64 %508[3]
+  store %509[4], %514
+  %515 = load.i64 %501[0]
+  store %0[0], %515
+  %516 = load.i64 %501[1]
+  store %0[1], %516
+  %517 = load.i64 %501[2]
+  store %0[2], %517
+  %518 = load.i64 %509[0]
+  store %0[3], %518
+  %519 = load.i64 %509[1]
+  store %0[4], %519
+  %520 = load.i64 %509[2]
+  store %0[5], %520
+  %521 = load.i64 %509[3]
+  store %0[6], %521
+  %522 = load.i64 %509[4]
+  store %0[7], %522
   call @rt.region_relocate8(%0, %50)
-  %526 = load.i64 %0[3]
-  %527 = const 0
-  %528 = ne %526, %527
-  condbr %528, b19, b20
+  %523 = load.i64 %0[3]
+  %524 = const 0
+  %525 = ne %523, %524
+  condbr %525, b19, b20
 b18:
   br b21
 b19:
-  %529 = const 4
-  %530 = gep.word %0, %529
-  call @rt.err_relocate(%530, %50)
+  %526 = const 4
+  %527 = gep.word %0, %526
+  call @rt.err_relocate(%527, %50)
   br b20
 b20:
   region.setdepth %50
   ret
 b21:
-  %531 = slotaddr s11
-  %532 = const 0
-  store %531[0], %532
-  %533 = load.i64 %433[0]
-  store %0[0], %533
-  %534 = load.i64 %433[1]
-  store %0[1], %534
-  %535 = load.i64 %433[2]
-  store %0[2], %535
-  %536 = load.i64 %531[0]
-  store %0[3], %536
-  %537 = load.i64 %531[1]
-  store %0[4], %537
-  %538 = load.i64 %531[2]
-  store %0[5], %538
-  %539 = load.i64 %531[3]
-  store %0[6], %539
-  %540 = load.i64 %531[4]
-  store %0[7], %540
+  %528 = slotaddr s11
+  %529 = const 0
+  store %528[0], %529
+  %530 = load.i64 %430[0]
+  store %0[0], %530
+  %531 = load.i64 %430[1]
+  store %0[1], %531
+  %532 = load.i64 %430[2]
+  store %0[2], %532
+  %533 = load.i64 %528[0]
+  store %0[3], %533
+  %534 = load.i64 %528[1]
+  store %0[4], %534
+  %535 = load.i64 %528[2]
+  store %0[5], %535
+  %536 = load.i64 %528[3]
+  store %0[6], %536
+  %537 = load.i64 %528[4]
+  store %0[7], %537
   call @rt.region_relocate8(%0, %50)
-  %541 = load.i64 %0[3]
-  %542 = const 0
-  %543 = ne %541, %542
-  condbr %543, b22, b23
+  %538 = load.i64 %0[3]
+  %539 = const 0
+  %540 = ne %538, %539
+  condbr %540, b22, b23
 b22:
-  %544 = const 4
-  %545 = gep.word %0, %544
-  call @rt.err_relocate(%545, %50)
+  %541 = const 4
+  %542 = gep.word %0, %541
+  call @rt.err_relocate(%542, %50)
   br b23
 b23:
   region.setdepth %50
@@ -20746,7 +20724,6 @@ func @std/crypto/sha256.Sum256(%0 ptr, %1 i64, %2 i64, %3 i64) {
   slot s0 [3]
   slot s1 [7]
   slot s2 [7]
-  slot s3 [3]
 b0:
   %4 = slotaddr s0
   store %4[0], %1
@@ -20792,23 +20769,16 @@ b0:
   %31 = globaladdr @rt.meta
   store %31[2572], %27
   call @std/crypto/sha256.Write(%18, %28, %29, %30)
-  %32 = slotaddr s3
-  %33 = load.i64 %18[0]
-  %34 = load.i64 %18[1]
-  %35 = load.i64 %18[2]
-  %36 = load.i64 %18[3]
-  %37 = load.i64 %18[4]
-  %38 = load.i64 %18[5]
-  %39 = load.i64 %18[6]
-  %40 = globaladdr @rt.meta
-  store %40[2571], %15
-  call @std/crypto/sha256.Sum(%32, %33, %34, %35, %36, %37, %38, %39)
-  %41 = load.i64 %32[0]
-  store %0[0], %41
-  %42 = load.i64 %32[1]
-  store %0[1], %42
-  %43 = load.i64 %32[2]
-  store %0[2], %43
+  %32 = load.i64 %18[0]
+  %33 = load.i64 %18[1]
+  %34 = load.i64 %18[2]
+  %35 = load.i64 %18[3]
+  %36 = load.i64 %18[4]
+  %37 = load.i64 %18[5]
+  %38 = load.i64 %18[6]
+  %39 = globaladdr @rt.meta
+  store %39[2571], %15
+  call @std/crypto/sha256.Sum(%0, %32, %33, %34, %35, %36, %37, %38)
   call @rt.region_relocate8(%0, %5)
   region.setdepth %5
   ret

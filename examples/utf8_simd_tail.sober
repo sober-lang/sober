@@ -1,0 +1,93 @@
+package main
+
+// UTF-8 の検査器の速い道の出口の端数（最後の 16 バイトの重ね読み）の網: ASCII の列（長さ 0〜70）の全部の位置に、多バイト文字（2 / 3 / 4 バイト）・
+// 途中で切れた列・孤立した継続バイト・不正なバイトを置き、strings.IndexInvalid の答えをスカラーの参照と突き合わせる。頭に非 ASCII を置いた
+// 変種は検査の環から ASCII の塊 4 つで速い道へ戻る入口（fastJ）も跨ぐ。食い違いの数（0）と答えの和を印字
+
+import "std/iter"
+import "std/strings"
+func cont(b mut []byte, i int, lo int, hi int) bool {
+    return i < len(b) && int(b[i]) >= lo && int(b[i]) <= hi
+}
+
+func refSeq(b mut []byte, i int) int {
+    c := int(b[i])
+    if c < 128 {
+        return 1
+    }
+    if c >= 194 && c <= 223 {
+        return if cont(mut b, i + 1, 128, 191) { 2 } else { 0 }
+    }
+    if c >= 224 && c <= 239 {
+        lo := if c == 224 { 160 } else { 128 }
+        hi := if c == 237 { 159 } else { 191 }
+        return if cont(mut b, i + 1, lo, hi) && cont(mut b, i + 2, 128, 191) { 3 } else { 0 }
+    }
+    if c >= 240 && c <= 244 {
+        lo := if c == 240 { 144 } else { 128 }
+        hi := if c == 244 { 143 } else { 191 }
+        return if cont(mut b, i + 1, lo, hi) && cont(mut b, i + 2, 128, 191) && cont(mut b, i + 3, 128, 191) { 4 } else { 0 }
+    }
+    return 0
+}
+
+func refInvalid(b mut []byte) int {
+    mut i := 0
+    while i < len(b) {
+        n := refSeq(mut b, i)
+        if n == 0 {
+            return i
+        }
+        i += n
+    }
+    return -1
+}
+
+func check(b mut []byte, bad mut int, sum mut int) {
+    got := strings.IndexInvalid(clone(b))
+    want := refInvalid(mut b)
+    if got != want {
+        bad += 1
+        println("mismatch", len(b), got, want)
+    }
+    sum += got + 2
+}
+
+func run(head []byte, unit []byte) {
+    mut bad := 0
+    mut sum := 0
+    for n <- iter.Range(0, 71) {
+        for p <- iter.Range(0, n + 1) {
+            mut b := mut []byte{}
+            for k <- iter.Range(0, len(head)) {
+                b = append(b, head[k])
+            }
+            for k <- iter.Range(0, n) {
+                if k == p {
+                    for u <- iter.Range(0, len(unit)) {
+                        b = append(b, unit[u])
+                    }
+                }
+                b = append(b, byte(97 + k % 26))
+            }
+            if p == n {
+                for u <- iter.Range(0, len(unit)) {
+                    b = append(b, unit[u])
+                }
+            }
+            check(mut b, mut bad, mut sum)
+        }
+    }
+    println(len(unit), bad, sum)
+}
+
+func main() {
+    units := [][]byte{bytes("é"), bytes("あ"), bytes("😀"), []byte{255}, []byte{128}, []byte{227, 129}, []byte{195}, []byte{240, 159, 152}, bytes("éあ")}
+    // 頭なし（入口から速い道）と、頭に非 ASCII（検査の環から ASCII の塊 4 つで速い道へ戻る）
+    heads := [][]byte{bytes(""), bytes("éaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")}
+    for h <- iter.Range(0, len(heads)) {
+        for k <- iter.Range(0, len(units)) {
+            run(heads[h], units[k])
+        }
+    }
+}

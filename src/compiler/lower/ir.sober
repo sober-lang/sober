@@ -38,8 +38,8 @@ const F_LLINC = 14  // 入り辺
 const F_LLCS = 15   // 定数の表（印字中に埋める — 伸ばさない）
 const F_MUTP = 16   // mut 仮引数の印（ビット k = 引数 k が利用者の関数の mut 仮引数 — 呼び手のセル。hdr の資格・language.md 26 節の排他。k < 62 だけ）
 // F_MUTP のビット F_SRET_BIT = 引数 0 が sret の受け皿（newFuncSig が作る結果 2 語以上の関数だけ）。約束: 呼ばれた関数は ret の前に受け皿の全語を
-// 書き（return・後置 ? — 結果の前の語は零・error? は全語）、受け皿を書く前に読まない（受け皿を別の呼び出しへ渡す道も無い — 読むのは書いた後の
-// relocate と計装だけ）。task の子（kidFunc — 受け皿の位置の引数から捕獲を読む）は印を持たない。zeroinit がこの call を受け皿の書き込みに数える
+// 書き（return・後置 ? — 結果の前の語は零・error? は全語）、受け皿を書く前に読まない（別の呼び出しへ渡すのは return の値そのものの呼び出しの受け皿として
+// だけ — その呼び出しが全語を書く。読むのは書いた後の relocate と計装だけ）。task の子（kidFunc — 受け皿の位置の引数から捕獲を読む）は印を持たない。zeroinit がこの call を受け皿の書き込みに数える
 const F_SRET_BIT = 62
 const FSZ = 17
 
@@ -257,6 +257,21 @@ func isNarrowLd(op int) bool { return op == OpLoad8 || op == OpLoad16 || op == O
 func isNarrowSt(op int) bool { return op == OpStore8 || op == OpStore16 || op == OpStore32 }
 // 狭い op のバイト幅（狭い op でなければ 8）
 func narrowW(op int) int { return if op == OpLoad8 || op == OpStore8 { 1 } else if op == OpLoad16 || op == OpStore16 { 2 } else if op == OpLoad32 || op == OpStore32 { 4 } else { 8 } }
+// 接続の task の積みの付け替え（area.sober — x86 の最適化のバックエンドの ELF の経路だけ・.ll は何もしない・stage1 の語彙の外）:
+// c = AREA_ENTRY（a = 定数 0）= task の本体の入口の印（関数の先頭のブロックに 1 つ — x86 が prologue をこの形で組む）・
+// c = AREA_SP（a = 新しい rsp）= rsp を付け替える（rt.task_start_mn の本体の呼び出しの直後 — 枠は rbp 基準なので局所は動かない）
+const OpArea = 39
+const AREA_ENTRY = 0
+const AREA_SP = 1
+// 浅い待ちの着地（area.sober — rt.shallow_land の最後）: rbp = 本体の rbp・rsp = ワーカーの区画の頂上・rax = 値・本体の戻り先へ跳ぶ
+const AREA_LAND = 2
+// TC_ONW の bit 3 = 浅い待ちの記し（本体が rt.netwait を呼ぶ点 — 着地で消す）・bit 4 = 浅く寝ている（退避を持たない — 起きると shallow_land へ）
+const AREA_SARM = 8
+const AREA_SPARK = 16
+// bit 5 = 本体の枠が頁 0 にある（本体の入口で立て、task の間は消さない — 本体より下の枠だけを捨てられるのはこの task だけ）
+const AREA_NEAR = 32
+// bit 6 = 区画の窓の深度に中身がある（rt.task_wait_k が切り替えの前に置く — task.sober 区画の窓。立っていれば浅く寝ない）
+const AREA_FULL = 64
 const OpUnwind = 26    // 罠が張られていれば最内の罠へ巻き戻る（戻らない）。張られていなければ何もしない（続く exit 101 / 102 がプロセスを終える）
 
 // ── 欄の種別の表: op ごとの [A, B, C]・終端ごとの [X1〜X5] が何を持つか。被演算子の走査（opt の insOperands /
@@ -291,6 +306,7 @@ func opRow(op int) int {
     case OpCallI | OpAtomic: K_VAL | K_VLIST << 4 | K_OPAQ << 8
     case OpTrapI | OpTSwitch | OpTStart | OpClone: K_VAL | K_VLIST << 4
     case OpSyscall | OpCrcFold: K_VLIST
+    case OpArea: K_VAL | K_OPAQ << 8
     case OpScanB: K_VLIST | K_OLIST << 4
     default: K_NONE // OpDead・OpREnter・OpRDepth・OpUnwind
     }
@@ -307,7 +323,7 @@ func termRow(t int) int {
     }
 }
 
-const OP_N = 39 // op の番号の上限（OpDead = 0〜OpStore32 = 38）
+const OP_N = 40 // op の番号の上限（OpDead = 0〜OpArea = 39）
 
 // St の表（op ごとの行・終端ごとの行）を opRow / termRow から組む（St を組む側で 1 回 — initScalars・x86 の群の子。
 // 読み口で遅延して組む形は、確保しうる呼び出しが展開で各パスのループに入り反復ごとの region の enter を呼んだ）
@@ -753,6 +769,21 @@ func unwind(st mut St) {
     push(mut st, false, OpUnwind, 0, 0, 0)
 }
 
+// task の本体の入口の印（area.sober）
+func areaEntry(st mut St) {
+    push(mut st, false, OpArea, iconst(mut st, 0), 0, AREA_ENTRY)
+}
+
+// rsp = sp（area.sober — 16 B 揃えの番地）
+func areaSp(st mut St, sp int) {
+    push(mut st, false, OpArea, sp, 0, AREA_SP)
+}
+
+// 浅く寝ていた task t の本体の戻り先へ跳ぶ（area.sober — 戻らない）
+func areaLand(st mut St, t int) {
+    push(mut st, false, OpArea, t, 0, AREA_LAND)
+}
+
 func syscall(st mut St, args int) int {
     return push(mut st, true, OpSyscall, args, 0, 0)
 }
@@ -1062,6 +1093,17 @@ func printOp(st mut St, out mut []byte, i InsRef) {
         return
     case OpUnwind:
         obuf.Lit(mut out, "unwind")
+        return
+    case OpArea:
+        if c == AREA_SP {
+            obuf.Lit(mut out, "area.sp ")
+            val(mut out, a)
+        } else if c == AREA_LAND {
+            obuf.Lit(mut out, "area.land ")
+            val(mut out, a)
+        } else {
+            obuf.Lit(mut out, "area.entry")
+        }
         return
     case OpAtomic:
         k := c & 7

@@ -1,0 +1,28 @@
+package main
+
+// ベクトル化の回帰例: 始点が負の走査は、スカラーのループが最初の反復で panic する（塊を読み飛ばしてはいけない — 読めば範囲外を読み、
+// 出口のバイトが無ければ始点が 0 以上へ進んで panic が消える）。始点 −16〜−1 は j + 16 が 0〜15 になり、上限との比較だけでは塊に入る。
+// 先に panic しない端（始点 > 上限・始点 = 上限・上限が負）を印字する
+
+import "std/iter"
+
+func scanUntil(b []byte, i0 int, n int) int {
+    mut i := i0
+    while i < n && b[i] != ';' {
+        i += 1
+    }
+    return i
+}
+
+func main() int {
+    mut b := mut []byte{}
+    for k <- iter.Range(0, 64) {
+        b = append(b, byte('a' + k % 26))
+    }
+    println(scanUntil(b, 30, 10))
+    println(scanUntil(b, 40, 40))
+    println(scanUntil(b, 0, -5))
+    println(scanUntil(b, -40, -3))
+    println(scanUntil(b, -8, 40))
+    return 0
+}

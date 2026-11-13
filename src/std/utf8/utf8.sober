@@ -27,11 +27,41 @@ type sealed struct {
 @errors(strings.BadUtf8)
 @effects(block)
 func Check(b []byte) (View, error?) {
-    at := if len(b) < CHECK_PAR_MIN { strings.IndexInvalid(b) } else { indexInvalidPar(b) }
+    // 短い入力で先頭が ASCII なら ASCII の頭を先に読み（HTTP の頭・JSON の字句などは全部 ASCII — IndexInvalid の呼び出しと SSE2 の前置きの
+    // 固定費を払わない）、残りだけを一般の検査に渡す（ASCII の頭の後は列の頭なので、最初の不正の位置は全体を検査したのと同じ）
+    s := if len(b) <= ASCII_FAST_MAX && len(b) > 0 && b[0] < 128 { asciiPrefix(b) } else { 0 }
+    at := if s == len(b) {
+        -1
+    } else if s > 0 {
+        indexInvalidFrom(b, s)
+    } else if len(b) < CHECK_PAR_MIN {
+        strings.IndexInvalid(b)
+    } else {
+        indexInvalidPar(b)
+    }
     if at >= 0 {
         return View{}, strings.BadUtf8{pos: at}
     }
     return View{b: b, seal: sealed{}}, nil
+}
+
+// Check が ASCII の頭を先に読む長さの上限（これより長い入力は SSE2 の検査器に全部任せる）
+const ASCII_FAST_MAX = 256
+
+// b の頭の ASCII（0x80 未満）の区間の長さ（IndexInvalid の ASCII の区間の読みと同じ素直な走査 — 最適化のバックエンドのベクトル化の対象の形）
+@effects()
+func asciiPrefix(b []byte) int {
+    mut i := 0
+    while i < len(b) && b[i] < 128 {
+        i += 1
+    }
+    return i
+}
+
+// b[s:] の最初の不正なシーケンスの b での位置（妥当なら -1）。s は列の頭
+func indexInvalidFrom(b []byte, s int) int {
+    at := strings.IndexInvalid(b[s:len(b)])
+    return if at < 0 { -1 } else { s + at }
 }
 
 // View のバイト列（読むだけ）

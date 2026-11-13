@@ -28,11 +28,11 @@ for ex in crypto_aesgcm crypto_wycheproof_aesgcm; do
         fi
         n=$((n + 1))
         SOBER_NOAES=1 timeout 60 "$W/$ex.$v" > "$W/out" 2>&1; e=$?
-        if [ $e != 0 ] || ! head -n 1 "$W/out" | grep -q '^no hardware'; then echo "FAIL $ex [$v] SOBER_NOAES=1 did not fall back (exit $e)"; fail=$((fail + 1)); fi
+        if [ $e != 0 ] || ! grep -q '^no hardware' <<< "$(head -n 1 "$W/out")"; then echo "FAIL $ex [$v] SOBER_NOAES=1 did not fall back (exit $e)"; fail=$((fail + 1)); fi
     done
     n=$((n + 1))
     timeout 60 "$W/$ex.c" > "$W/out" 2>&1; e=$?
-    if [ $e != 0 ] || ! head -n 1 "$W/out" | grep -q '^no hardware'; then echo "FAIL $ex [copy] the copy backend should have no AES path (exit $e)"; fail=$((fail + 1)); fi
+    if [ $e != 0 ] || ! grep -q '^no hardware' <<< "$(head -n 1 "$W/out")"; then echo "FAIL $ex [copy] the copy backend should have no AES path (exit $e)"; fail=$((fail + 1)); fi
 done
 # 多倍長の塊（MULX — RSA の続き report-864）: RSA の例は倒れ先（SOBER_NOMULX=1・--no-opt・写しのバックエンド — Sober の montMulS）も .out と同じ値
 # （RSA は TLS に必須なので NoHardware の逃げは無い — 塊と倒れ先が同じ結果であることを格子で照合）。x25519 の体の積の塊（femul）も同じ格子に載せる

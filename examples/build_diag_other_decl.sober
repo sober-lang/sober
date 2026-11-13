@@ -1,0 +1,22 @@
+package main
+
+// 負例: build を落とすのは same の T? と値の比較。check はそれより先に hold の analyzer の規則（pool.Acquire の直後に Release の defer）で断るが、
+// build の診断は build を落とした箇所（same）を名指す — 別の宣言の check の拒否に差し替えない
+
+import "std/pool"
+
+func hold() {
+    mut p := pool.Pool[int]{}
+    h := pool.Acquire(mut p, 7)
+    println(1)
+    defer pool.Release(mut p, h)
+}
+
+func same(s string?) bool {
+    return s == "a"
+}
+
+func main() {
+    hold()
+    println(same("a"))
+}
